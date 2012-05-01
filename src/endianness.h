@@ -29,7 +29,7 @@
 /* Changes the endianness of a 32-bit value. */
 static inline uint32_t bswap32(uint32_t n)
 {
-#ifdef __GNUC__
+#if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3)
 	return __builtin_bswap32(n);
 #else
 	return (n << 24) | ((n & 0xff00) << 8) | ((n & 0xff0000) >> 8) | 

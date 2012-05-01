@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <inttypes.h>
+#include <sys/types.h>
 #include "config.h"
 
 
