@@ -1,0 +1,137 @@
+.TH IMAGEX 1 "April 2012" "imagex (wimlib 0.6.1)" "User Commands"
+.SH NAME
+imagex \- Create, modify, extract, mount, or unmount a WIM (Windows Imaging Format) archive
+.SH SYNOPSIS
+\fBimagex append\fR \fIarguments...\fR
+.br
+\fBimagex apply\fR \fIarguments...\fR
+.br
+\fBimagex capture\fR \fIarguments...\fR
+.br
+\fBimagex delete\fR \fIarguments...\fR
+.br
+\fBimagex dir\fR \fIarguments...\fR
+.br
+\fBimagex export\fR \fIarguments...\fR
+.br
+\fBimagex info\fR \fIarguments...\fR
+.br
+\fBimagex mount\fR \fIarguments...\fR
+.br
+\fBimagex mountrw\fR \fIarguments...\fR
+.br
+\fBimagex unmount\fR \fIarguments...\fR
+
+.SH DESCRIPTION
+\fBimagex\fR is able to deal with archives in the Windows Imaging Format (.wim
+files). Its interface is meant to be similar to Microsoft's imagex.exe program.
+
+To do its work, \fBimagex\fR uses \fBwimlib\fR, a library which provides
+interfaces for manipulating WIM archives.  You could wimlib in your own programs
+if you wanted to.  Wimlib's public interface is documented.
+
+See \fBWARNING\fR.
+
+.SH COMMANDS
+
+There is a separate manual page for each \fBimagex\fR command.
+
+.SH SUPPORTED FEATURES
+
+The following features are currently supported:
+
+.IP \[bu] 2
+Mount an image in a WIM read-only (\fBimagex mount\fR)
+.IP \[bu] 2
+Mount an image in a WIM read-write (\fBimagex mountrw\fR)
+.IP \[bu] 2
+LZX decompression and compression
+.IP \[bu] 2
+XPRESS decompression and compression
+.IP \[bu] 2
+Integrity table
+.IP \[bu] 2
+XML data (parsed and written using \fBlibxml\fR(3))
+.IP \[bu] 2
+Create a WIM from a directory (\fBimagex capture\fR)
+.IP \[bu] 2
+Append a directory onto a WIM as a new image (\fBimagex append\fR)
+.IP \[bu] 2
+Delete image(s) from a WIM (\fBimagex delete\fR)
+.IP \[bu] 2
+Export image(s) from a WIM (\fBimagex export\fR)
+.IP \[bu] 2
+Display information about a WIM file (\fBimagex info\fR, \fBimagex dir\fR)
+.IP \[bu] 2
+Change the name or description of an image in the WIM (\fBimagex info\fR)
+.IP \[bu] 2
+Change which image in a WIM is bootable (\fBimagex info\fR)
+
+.SH UNSUPPORTED FEATURES
+The following features are currently unsupported:
+.IP \[bu] 2
+File permissions and security descriptors are ignored.  The information
+contained in them in an existing WIM will be lost when wimlib writes a WIM file.
+This does not seem to matter for Windows PE, but this means that you should not
+use this program to image a drive containing Windows Vista/7/8 and expect it to
+be applied with the correct file permissions.
+.IP \[bu] 2
+Split WIMs.  These can be used to split up a WIM to fit on multiple CDs, if you
+can't use a DVD for some reason.
+.IP \[bu] 2
+The \fB--verify\fR option, for all commands that use it.  Without this option,
+there theoretically could be a SHA1 hash collision between two files, although
+it's very unlikely.
+.IP \[bu] 2
+The \fB--config\fR option, for all commands that use it. 
+.IP \[bu] 2
+Alternate stream entries
+.IP \[bu] 2
+Different versions of the WIM file format (if different versions even exist)
+
+Also see the Doxygen documentation for Wimlib.
+
+.SH DIFFERENCES FROM MICROSOFT IMAGEX
+
+See \fBUNSUPPORTED FEATURES\fR.
+
+The \fB/scroll\fR and \fB/log\fR switches from Microsoft's version imagex are
+not planned to be implemented.  Note that to scroll the output in the UNIX shell
+you can just pipe the output into \fBless\fR(1).
+
+Some features, such as the ability to keep files hard-linked when they are
+extracted from a WIM, are not available in Microsoft's version of imagex.
+
+See the documentation for each command; in some cases they do not do exactly the
+same thing as imagex.exe.
+
+Obviously, this version of imagex is free software but Microsoft's version is
+not.
+
+.SH WARNING
+
+Note: \fBwimlib\fR and \fBimagex\fR are experimental.  Use Microsoft's
+imagex.exe if you have to make sure your WIM files are made correctly.  Not all
+features listed under \fBSUPPORTED FEATURES\fR have been thoroughly tested.
+Feel free to submit a bug report if you find a bug.
+
+Some parts of the WIM file format are poorly documented or even completely
+undocumented, so these parts had to be reverse engineered for compatibility
+purposes.
+
+.SH REPORTING BUGS
+
+Report bugs to ebiggers3@gmail.com.
+
+.SH SEE ALSO
+.BR imagex-append (1),
+.BR imagex-apply (1),
+.BR imagex-capture (1),
+.BR imagex-delete (1),
+.BR imagex-dir (1),
+.BR imagex-export (1),
+.BR imagex-info (1),
+.BR imagex-mount (1),
+.BR imagex-mountrw (1),
+.BR imagex-unmount (1),
+

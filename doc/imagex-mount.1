@@ -1,0 +1,25 @@
+.TH IMAGEX "1" "April 2012" "imagex (wimlib) wimlib 0.6.1" "User Commands"
+.SH NAME
+imagex mount \- Mount an image from a WIM archive readonly
+
+.SH SYNOPSIS
+\fBimagex mount\fR \fIWIMFILE\fR (\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR)  \
+\fIDIRECTORY\fR [--check]
+
+.SH DESCRIPTION
+.PP
+\fBimagex mount\fR mounts the image specified by \fIIMAGE_NUM\fR or
+\fIIMAGE_NAME\fR on the directory \fIDIRECTORY\fR using FUSE (Filesystem in
+UserSpace).  It is mounted read-only.
+
+It is permissible to omit the \fIIMAGE_NUM\fR or \fIIMAGE_NAME\fR only if
+\fIWIMFILE\fR contains only one image.
+
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
+present.
+.SH SEE ALSO
+.BR imagex (1)
+

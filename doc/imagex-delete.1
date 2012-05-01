@@ -1,0 +1,34 @@
+.TH IMAGEX "1" "April 2012" "imagex (wimlib) wimlib 0.6.1" "User Commands"
+.SH NAME
+imagex delete \- Delete an image from a WIM archive
+
+.SH SYNOPSIS
+\fBimagex delete\fR \fIWIMFILE\fR (\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR | all ) [--check]
+
+.SH DESCRIPTION
+.PP
+
+\fBimagex delete\fR deletes the specified image from \fIWIMFILE\fR.
+
+The image to delete may be specified by \fIIMAGE_NUM\fR, which must be an
+integer that is an index of an image in the WIM file, starting at 1.
+Alternatively, it may be the name of an image in the WIM file, or the keyword
+"all", which specifies that all images are to be deleted.
+
+The WIM file is recreated with all unnecessary file resources removed.  This is
+different from imagex.exe, which only will delete the metadata and XML entries
+for this operation.
+
+Also, unlike imagex.exe, it is legal to delete all the images from a WIM and
+have a WIM with 0 images, although such a file wouldn't be very useful.
+
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
+present; additionally, when rewriting \fIWIMFILE\fR after the specified image was
+deleted, write an integrity table.  If this option is not specified, no integrity
+table is included in the new WIM file, even if there was one before.
+.SH SEE ALSO
+.BR imagex (1)
+

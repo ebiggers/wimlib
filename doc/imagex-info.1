@@ -1,0 +1,62 @@
+.TH IMAGEX "1" "April 2012" "imagex (wimlib) wimlib 0.6.1" "User Commands"
+.SH NAME
+imagex info \- Display information about a WIM file, or change information about
+an image
+
+.SH SYNOPSIS
+\fBimagex info\fR \fIWIMFILE\fR [\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR]  \
+[\fINEW_NAME\fR] [\fINEW_DESC\fR] [\fIOPTION\fR]...
+
+
+.SH DESCRIPTION
+.PP
+
+\fBimagex info\fR displays information about \fIWIMFILE\fR, and optionally
+changes which image is bootable, or what the name and description of an image
+are.
+
+If neither an image nor any other flags other than \fB--check\fR are specified,
+some basic information about the WIM archive as well as information about the
+images contained in it will be printed.  If an image is specified, the printed
+information is restricted to that concerning the specified image.
+
+Changes to the WIM are made if \fINEW_NAME\fR and/or \fB--boot\fR are specified.
+\fINEW_NAME\fR is taken to be the new name of the image specified by
+\fIIMAGE_NUM\fR or \fIIMAGE_NAME\fR, while \fINEW_DESC\fR is taken to be its new
+description. \fINEW_DESC\fR defaults to the old description if it is not given.
+
+Since none of these changes require changing the file resources, the metadata
+resources, or the lookup table, they can be done very quickly by only re-writing
+the header and XML data.  It will only take significant time if \fB--check\fR is
+specified for a WIM that had no integrity checks before.
+
+.SH OPTIONS
+.TP 6
+\fB--boot\fR
+Indicates that the specified image is to be made the bootable image of the WIM
+archive.
+.TP
+\fB--check\fR
+When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
+present; additionally if an action that requires changing the WIM archive is
+specified, write an integrity table.  If this option is not specified and
+\fIWIMFILE\fR is recreated, no integrity table is included in the new WIM file,
+even if there was one before.
+.TP
+\fB--extract-xml\fR \fIFILE\fR
+Extracts the raw data from the XML resource in the WIM file to \fIFILE\fR.
+.TP
+\fB--header\fR
+Shows detailed information from the WIM header.
+.TP
+\fB--lookup-table\fR
+Prints all the entries in the lookup table of the WIM.
+.TP
+\fB--metadata\fR
+Prints the metadata for the directory tree for the specified image.
+.TP
+\fB--xml\fR
+Prints the XML data for the WIM.
+.SH SEE ALSO
+.BR imagex (1)
+

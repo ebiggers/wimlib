@@ -1,0 +1,20 @@
+.TH IMAGEX "1" "April 2012" "imagex (wimlib) wimlib 0.6.1" "User Commands"
+.SH NAME
+imagex dir \- Show the files contained in a WIM archive
+
+.SH SYNOPSIS
+\fBimagex dir\fR \fIWIMFILE\fR (\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR | all),
+
+.SH DESCRIPTION
+.PP
+Lists all the files and directories contained in the specified image of
+\fIWIMFILE\fR.
+
+The image may be specified by \fIIMAGE_NUM\fR, which must be an integer that is
+an index of an image in the WIM file, starting at 1.  Alternatively, it may be
+the name of an image in the WIM file.  It also may be the keyword "all", which
+specifies all images.
+
+.SH SEE ALSO
+.BR imagex (1)
+

@@ -1,0 +1,41 @@
+.TH IMAGEX "1" "April 2012" "imagex (wimlib) wimlib 0.6.1" "User Commands"
+.SH NAME
+imagex append \- Append a directory to a WIM archive as a new image
+
+.SH SYNOPSIS
+\fBimagex append\fR \fIDIRECTORY\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
+[\fIDESCRIPTION\fR] [\fIOPTION\fR]...
+
+.SH DESCRIPTION
+.PP
+Captures a WIM image from \fIDIRECTORY\fR and appends it to \fIWIMFILE\fR, which
+must be a valid WIM archive.  \fIDIRECTORY\fR becomes the root directory of the
+image.
+
+\fIIMAGE_NAME\fR and \fIDESCRIPTION\fR specify the name and description of the
+new image.  If \fIIMAGE_NAME\fR is not given, it is taken to be the same as the
+base name of \fIDIRECTORY\fR.  If \fIDESCRIPTION\fR is not given, the
+description is taken to be empty.
+
+.SH OPTIONS
+.TP 6
+\fB--boot\fR
+Specifies that the new image is to be the bootable image of the WIM archive.
+.TP
+\fB--check\fR
+When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
+present; additionally, when writing \fIWIMFILE\fR with the new image added,
+write an integrity table.  If this option is not specified, no integrity table
+is included in the new WIM file, even if there was one before.
+.TP
+\fB--config\fR \fICONFIG_FILE\fR
+This option is currently unsupported.
+.TP
+\fB--flags\fR \fIEDITIONID\fR
+Specify a string to use in the <FLAGS> element of the XML data for the image.
+.TP
+\fB--verify\fR
+This option is currently unsupported.
+.SH SEE ALSO
+.BR imagex (1)
+

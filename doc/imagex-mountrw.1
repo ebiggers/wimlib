@@ -1,0 +1,35 @@
+.TH IMAGEX "1" "April 2012" "imagex (wimlib) wimlib 0.6.1" "User Commands"
+.SH NAME
+imagex mountrw \- Mount an image from a WIM archive read-write
+
+.SH SYNOPSIS
+\fBimagex mountrw\fR \fIWIMFILE\fR (\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR)  \
+\fIDIRECTORY\fR [--check]
+
+.SH DESCRIPTION
+.PP
+
+\fBimagex mountrw\fR mounts the image specified by \fIIMAGE_NUM\fR or
+\fIIMAGE_NAME\fR on the directory \fIDIRECTORY\fR using FUSE (Filesystem in
+UserSpace).  It is mounted read-write.  
+
+It is permissible to omit the \fIIMAGE_NUM\fR or \fIIMAGE_NAME\fR only if
+\fIWIMFILE\fR contains only one image.
+
+A temporary directory is created to stage files.  Whenever a new file is created
+in the mounted filesystem, it is created in the staging directory.  Also,
+whenever a file in the WIM file itself is modified, it is copied to the
+staging directory.  When the WIM is unmounted with the \fBimagex unmount
+--commit\fR command, file resources are collected from the original WIM as well
+as the staging directory to create the new WIM file.  When the new WIM file is
+completely written, the old WIM file is overwritten with it.
+
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
+present. 
+
+.SH SEE ALSO
+.BR imagex (1)
+

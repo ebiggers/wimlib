@@ -1,0 +1,476 @@
+#!/bin/bash
+
+# This script can make a customized bootable image of Windows PE.
+#
+# Copyright (C) 2012 Eric Biggers
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+
+script_name="$(basename $0)"
+PREFIX_REG="::"
+
+calc_columns () {
+	STAT_COL=80
+	if [[ -t 0 ]]; then
+		# stty will fail when stdin isn't a terminal
+		STAT_COL=$(stty size)
+		# stty gives "rows cols"; strip the rows number, we just want columns
+		STAT_COL=${STAT_COL##* }
+	elif tput cols &>/dev/null; then
+		# is /usr/share/terminfo already mounted, and TERM recognized?
+		STAT_COL=$(tput cols)
+	fi
+	if (( STAT_COL == 0 )); then
+		# if output was 0 (serial console), set default width to 80
+		STAT_COL=80
+	fi
+
+	# we use 13 characters for our own stuff
+	STAT_COL=$(( STAT_COL - 13 ))
+
+	if [[ -t 1 ]]; then
+		SAVE_POSITION="\e[s"
+		RESTORE_POSITION="\e[u"
+		DEL_TEXT="\e[$(( STAT_COL + 4 ))G"
+	else
+		SAVE_POSITION=""
+		RESTORE_POSITION=""
+		DEL_TEXT=""
+	fi
+}
+
+
+deltext() {
+	printf "${DEL_TEXT}"
+}
+
+stat_busy() {
+	printf "${PREFIX_REG} ${1} "
+	printf "${SAVE_POSITION}"
+	deltext
+	printf "   [BUSY] "
+}
+
+stat_done() {
+	deltext
+	printf "   [DONE] \n"
+}
+
+stat_fail() {
+	deltext
+	printf "   [FAIL] \n"
+	exit 1
+}
+
+
+cleanup() {
+	if mountpoint -q "$mnt_dir" ; then
+		imagex unmount "$mnt_dir"
+	fi
+	rm -rf "$tmp_dir"
+}
+
+usage() {
+	cat << EOF
+Usage: $script_name [OPTIONS] IMAGE
+
+  -i, --iso                Make an ISO image instead of a disk image.
+  -o, --only-wim           Make neither a disk image nor an ISO image; 
+                              instead, only make a modified boot.wim file.
+  -W, --windows-dir=DIR    Use DIR as the location of the mounted Windows 7
+                              or Windows 8 DVD.  Default is /mnt/windows,
+                              then /mnt/windows7, then /mnt/windows8.
+  -A, --waik-dir=DIR       Get the boot files and boot.wim from the ISO of the 
+                              Windows Automated Installation Kit mounted on DIR
+                              instead of from the Windows 7 or Windows 8 DVD.
+  -s, --start-script=FILE  Add FILE to the root directory of Windows PE image 
+                              and adjust \Windows\System32\winpeshl.ini to 
+                              execute FILE when Windows PE starts up.
+  -w, --wim=WIM            Use WIM as the boot.wim file.  Defaults to 
+                              sources/boot.wim in the Windows DVD directory, or
+                              F1_WINPE.WIM from the WAIK if --waik-dir is
+                              specified.
+  -O, --overlay=DIR        Adds all the files in DIR to the Windows PE image.
+  -t, --tmp-dir=DIR        Use DIR as the temporary base of the ISO filesystem.  
+                              Defaults to making one using \"mktemp -d\".
+  -h, --help               Display this information.
+  -v, --version            Show version information.
+
+  See \`man mkwinpeimg' for more information.
+EOF
+}
+
+version() {
+	echo "$script_name (wimlib 0.4.8)"
+	exit 0
+}
+
+make=disk
+
+process_command_line() {
+
+	if ! options=$(getopt -o oiw:W:s:O:t:A:hv -l \
+		only-wim,iso,wim:,windows-dir:,start-script:,overlay:,tmp-dir:,waik-dir:,help,version \
+				-- "$@" ); then
+		usage
+		exit 1
+	fi
+	eval set -- "$options"
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		-i|--iso)
+			make=iso
+			;;
+		-o|--only-wim)
+			make=wim
+			;;
+		-W|--windows-dir)
+			windows_dir="$2"
+			windows_dir_specified=yes
+			if [ -n "$waik_dir" ]; then
+				echo "ERROR: Cannot specify both --windows-dir and --waik-dir!"
+				exit 1
+			fi
+			shift
+			;;
+		-A|--waik-dir)
+			waik_dir="$2"
+			if [ -n "$windows_dir" ]; then
+				echo "ERROR: Cannot specify both --windows-dir and --waik-dir!"
+				exit 1
+			fi
+			shift
+			;;
+		-w|--wim)
+			wim="$2"
+			shift
+			;;
+		-s|--start-script)
+			start_script="$2"
+			shift
+			;;
+		-O|--overlay)
+			overlay="$2"
+			shift
+			;;
+		-t|--tmp-dir)
+			rmdir "$tmp_dir"
+			tmp_dir="$2"
+			shift
+			;;
+		-h|--help)
+			usage
+			exit 0
+			;;
+		-v|--version)
+			version
+			;;
+		--)
+			shift
+			break
+			;;
+		*)
+			echo "Invalid option \"$1\""
+			usage
+			exit 1
+			;;
+		esac
+		shift
+	done
+	if [ $# -ne 1 ]; then
+		echo "You must specify the name of the image file to create!"
+		echo "Run \"$script_name -h\" to see usage information."
+		exit 1
+	else
+		image="$1"
+	fi
+}
+
+
+find_windows_dir() {
+	if [ -z "$windows_dir_specified" ]; then
+		for windows_dir in /mnt/windows /mnt/windows7 /mnt/windows8; do
+			if [ -d "$windows_dir"/sources ]; then
+				break
+			fi
+		done
+	fi
+	if [ ! -d "$windows_dir" ]; then
+		if [ -z "$windows_dir_specified" ]; then
+			cat << EOF
+ERROR: Could not find the directory that the Windows 7 or 8 ISO image is mounted
+on!  Please specify this directory using the --windows-dir option.
+EOF
+		else
+			echo "ERROR: Could not find the directory \"$windows_dir\"!"
+		fi
+		exit 1
+	fi
+	if [ ! -d "$windows_dir/sources" ]; then
+		cat << EOF
+ERROR: The directory "$windows_dir" exists, but it seems that the Windows 7 or 8
+ISO image is not mounted on it.  Please mount the image to continue.
+EOF
+		exit 1
+	fi
+}
+
+check_needed_programs() {
+	if [ -z "$waik_dir" -o -n "$modify_wim" ]; then
+		if ! type -P imagex &> /dev/null ; then
+			cat << EOF
+ERROR: To make a customized image of Windows PE, we need the \"imagex\" program
+from WIMLIB so that we can modify the boot.wim file.  However, \"imagex\"
+doesn't seem to be installed.  Please install WIMLIB to continue.
+EOF
+			exit 1
+		fi
+	fi
+
+	if [ $make = iso ]; then
+		if ! type -P mkisofs &> /dev/null ; then
+			cat << EOF 
+ERROR: To make a bootable ISO image of Windows PE, we need the \"mkisofs\"
+program, but it doesn't seem to be installed.  Please install the \"cdrkit\"
+package to continue, or try omitting the --iso option to make a disk image
+instead of an ISO image.
+EOF
+			exit 1
+		fi
+	elif [ $make = disk ] ; then
+		if ! type -P syslinux &> /dev/null ; then
+			cat << EOF
+ERROR: To make a bootable disk image of Windows PE, we need the \"syslinux\"
+program, but it doesn't seem to be installed.  Please install the \"syslinux\"
+package to continue, or try using the --iso option to make an ISO image instead
+of a disk image.
+EOF
+			exit 1
+		fi
+
+		if ! type -P mformat mcopy &> /dev/null; then
+			cat << EOF
+ERROR: To make a bootable disk image of Windows PE, we need the \"mformat\" and
+\"mcopy\" programs from the \"mtools\" package.  These programs allow us to
+format a FAT filesystem and copy files to it without needing root privileges.
+Please install \"mtools\" if you want to make a disk image of Windows PE.  Or,
+try using the --iso option to make an ISO image instead of a disk image.
+EOF
+		fi
+	fi
+
+	if [ -n "$waik_dir" ]; then
+		if ! type -P cabextract &> /dev/null ; then
+			cat << EOF
+ERROR: The boot files in the Windows Automated Installation Kit (WAIK) are
+inside cabinet archives.  To extract these files, we need the \"cabextract\"
+program, but it doesn't seem to be installed.  Please install \"cabextract\" to
+continue.
+EOF
+			exit 1
+		fi
+	fi
+
+}
+
+get_primary_boot_files() {
+
+	if [ -n "$waik_dir" ]; then
+		# Get boot files from the WAIK.
+
+		stat_busy "Copying primary boot files from the Windows Automated Installation Kit ($waik_dir)"
+		if [ $make = iso ]; then
+			cabextract "$waik_dir"/wAIKX86.msi -F F_WINPE_X86_etfsboot.com -p \
+					> "$tmp_dir"/etfsboot.com || stat_fail
+		fi
+		cabextract "$waik_dir"/wAIKX86.msi -F F1_BOOTMGR -p \
+				> "$tmp_dir"/bootmgr || stat_fail
+		cabextract "$waik_dir"/wAIKX86.msi -F F_WINPE_X86_boot.sdi -p \
+				> "$tmp_dir"/boot/boot.sdi || stat_fail
+		cabextract "$waik_dir"/wAIKX86.msi -F F_WINPE_X86_bcd -p \
+				> "$tmp_dir"/boot/bcd || stat_fail
+		stat_done
+	else
+		# Get boot files from the Windows ISO
+
+		stat_busy "Copying primary boot files from mounted Windows DVD ($windows_dir)"
+		if [ $make = iso ]; then
+			cp "$windows_dir"/boot/etfsboot.com "$tmp_dir" || stat_fail
+		fi
+		cp "$windows_dir"/bootmgr "$tmp_dir" || stat_fail
+		cp "$windows_dir"/boot/{bcd,boot.sdi} "$tmp_dir"/boot || stat_fail
+		stat_done
+	fi
+}
+
+get_boot_wim() {
+	boot_wim="$1"
+	# Copy the WIM over, or export the 2nd image in the WIM in the case of boot.wim
+	# from the Windows DVD.
+	remove_setup=
+	if [ -z "$wim" ]; then
+
+		# WIM file unspecified- grab it from the WAIK or the Windows DVD
+		if [ -n "$waik_dir" ]; then
+			# WAIK
+			stat_busy "Extracting boot.wim from \"$waik_dir/WinPE.cab\""
+			cabextract "$waik_dir/WinPE.cab" -F F1_WINPE.WIM -p \
+					> "$boot_wim" 2>/dev/null || stat_fail
+			stat_done
+		else
+			# Windows DVD
+			remove_setup=yes
+			wim="$windows_dir/sources/boot.wim"
+			stat_busy "Exporting image from \"$wim\""
+			imagex export "$windows_dir"/sources/boot.wim 2 \
+						--compress --boot "$boot_wim" || stat_fail
+			stat_done
+		fi
+	else
+		# WIM file specified
+		stat_busy "Copying $wim to temporary directory"
+		cp "$wim" "$boot_wim"|| stat_fail
+		stat_done
+	fi
+}
+
+modify_boot_wim() {
+
+	boot_wim="$1"
+	mnt_dir="$2"
+
+	# Make modifications to the WIM. 
+	stat_busy "Mounting "$1" read-write"
+
+	mkdir -p "$mnt_dir" || stat_fail
+	imagex mountrw "$boot_wim" "$mnt_dir"|| stat_fail
+
+	stat_done
+
+	if [ -n "$remove_setup" ]; then
+		stat_busy "Renaming setup.exe to prevent it from bothering us"
+		mv "$mnt_dir"/setup.exe{,.bkup} || stat_fail
+		mv "$mnt_dir"/sources/setup.exe{,.bkup} || stat_fail
+		stat_done
+	fi
+
+	if [ -n "$start_script" ]; then
+		stat_busy "Setting \"$start_script\" as the script to be executed"\
+					"when Windows PE boots"
+		cp "$start_script" "$mnt_dir"|| stat_fail
+		cat > "$mnt_dir/Windows/System32/winpeshl.ini" << EOF
+[LaunchApps]
+%SYSTEMDRIVE%\\$start_script
+EOF
+		stat_done
+	fi
+
+	if [ -n "$overlay" ]; then
+		stat_busy "Overlaying \"$overlay\" on the Windows PE filesystem"
+		cp -r "$overlay"/* "$mnt_dir"  || stat_fail
+		stat_done
+	fi
+
+	stat_busy "Rebuilding WIM with changes made"
+	imagex unmount --commit "$mnt_dir" || stat_fail
+	stat_done
+
+	rmdir "$mnt_dir"
+}
+
+make_iso_img() {
+
+	image="$1"
+
+	# Make the ISO using the mkisofs command from cdrkit
+
+	stat_busy "Making ISO image \"$image\""
+
+	mkisofs -sysid ""  -A ""  -V "Microsoft Windows PE (x86)"  -d -N \
+		-b etfsboot.com  -no-emul-boot   -c boot.cat  -hide etfsboot.com  \
+		-hide boot.cat -quiet -o "$image" "$tmp_dir" || stat_fail
+
+	stat_done
+
+}
+
+make_disk_img() {
+
+	image="$1"
+
+	stat_busy "Making disk image \"$image\""
+
+	image_du=$(du -s -b "$tmp_dir" | cut -f 1)
+	image_size=$(( image_du + 10000000 ))
+
+	mtool_conf="$(mktemp)"
+
+	dd if=/dev/zero of="$image" count=$(( (image_size + 4095) / 4096)) \
+			bs=4096 &> /dev/null
+
+	cat > "$mtool_conf" << EOF
+MTOOLS_SKIP_CHECK=1
+MTOOLS_FAT_COMPATIBILITY=1
+drive s:
+	file="$image"
+EOF
+
+	export MTOOLSRC="$mtool_conf"
+
+	mformat -h 255 -s 63 -T $(( image_size / 512)) s:
+	mcopy -s "$tmp_dir"/* s:
+
+	syslinux --install "$image"
+	mcopy /usr/lib/syslinux/chain.c32 s:
+	mcopy - 's:syslinux.cfg' << EOF
+	DEFAULT winpe
+	LABEL	winpe
+	COM32	chain.c32
+	APPEND	ntldr=/bootmgr
+EOF
+	rm -f "$mtool_conf"
+	stat_done
+}
+
+
+calc_columns
+tmp_dir="$(mktemp -d)"
+mnt_dir="$tmp_dir"/.boot.wim.mount
+process_command_line "$@"
+if [ -z "$waik_dir" ]; then
+	find_windows_dir
+fi
+if [ -n "$start_script" -o -n "$overlay" -o -n "$remove_setup" ]; then
+	modify_wim=yes
+fi
+check_needed_programs
+trap cleanup exit
+
+if [ $make != wim ]; then
+	mkdir -p "$tmp_dir"/{boot,sources}
+	get_primary_boot_files
+fi
+
+if [ $make = wim ]; then
+	boot_wim="$image"
+else
+	boot_wim="$tmp_dir"/sources/boot.wim
+fi
+
+get_boot_wim "$boot_wim"
+
+if [ -n "$modify_wim" ]; then
+	modify_boot_wim "$boot_wim" "$mnt_dir"
+fi
+
+if [ $make = iso ]; then
+	make_iso_img "$image"
+elif [ $make = disk ]; then
+	make_disk_img "$image"
+fi
+
+echo "The image ($image) is $(stat -c %s "$image") bytes."

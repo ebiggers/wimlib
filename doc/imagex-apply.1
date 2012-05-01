@@ -1,0 +1,47 @@
+.TH IMAGEX "1" "April 2012" "imagex (wimlib) wimlib 0.6.1" "User Commands"
+.SH NAME
+imagex apply \- Extract one image, or all images, from a WIM archive
+
+.SH SYNOPSIS
+\fBimagex apply\fR \fIWIMFILE\fR [\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR | all] \
+\fIDIRECTORY\fR [\fIOPTION\fR]...
+
+.SH DESCRIPTION
+.PP
+
+\fBimagex apply\fR extracts the specified image from \fIWIMFILE\fR to
+\fIDIRECTORY\fR.
+
+The image to extract may be specified by \fIIMAGE_NUM\fR, which must be an
+integer that is an index of an image in the WIM file, starting at 1.
+Alternatively, it may be the name of an image in the WIM file.  It also may be
+the keyword \fBall\fR, which indicates that all images in the WIM are to be
+extracted. If the keyword \fBall\fR is given, the images are extracted into
+subdirectories of \fIDIRECTORY\fR that will be named after the image names.
+
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
+present.
+.TP
+\fB--hardlink\fR
+When extracting a file from the WIM that is identical to a file that is already
+extracted, create a hard link using \fBlink\fR (3) rather than creating a
+separate file.  Files of this type are already hard linked together inside the
+WIM to save space.
+.TP
+\fB--symlink\fR
+When extracting a file from the WIM that is identical to a file that is already
+extracted, create a symbolic link using \fBsymlink\fR (3) rather than creating a
+separate file.  Files of this type are already hard linked together inside the
+WIM to save space.
+.TP
+\fB--verbose\fR
+Print the path to of each file or directory within the WIM image as it is extracted.
+.TP
+\fB--verify\fR
+This option is currently unsupported.
+.SH SEE ALSO
+.BR imagex (1)
+

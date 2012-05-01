@@ -1,0 +1,51 @@
+.TH IMAGEX "1" "April 2012" "imagex (wimlib) wimlib 0.6.1" "User Commands"
+.SH NAME
+imagex capture \- Create a new WIM file from a directory.
+
+.SH SYNOPSIS
+\fBimagex capture\fR \fIDIRECTORY\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
+[\fIDESCRIPTION\fR] [\fIOPTION\fR]...
+
+.SH DESCRIPTION
+.PP
+
+Captures a WIM image from \fIDIRECTORY\fR and creates a new WIM archive,
+\fIWIMFILE\fR, that contains it.  \fIDIRECTORY\fR becomes the root directory of
+the image.
+
+\fIIMAGE_NAME\fR and \fIDESCRIPTION\fR specify the name and description of the
+new image.  If \fIIMAGE_NAME\fR is not given, it is taken to be the same as the
+base name of \fIDIRECTORY\fR.  If \fIDESCRIPTION\fR is not given, the
+description is taken to be empty.
+
+.SH OPTIONS
+.TP 6
+\fB--boot\fR
+Specifies that the new image is to be made the bootable image of the WIM archive.
+.TP
+\fB--check\fR
+Include an integrity table in the new WIM file.
+.TP
+\fB--compress\fR[=\fITYPE\fR]
+Specifies the compression type for the WIM file.  \fITYPE\fR may be "none",
+"maximum", or "fast".  By default, the compression type is "none".  If \fB--compress\fR
+is specified but \fITYPE\fR is not, the compression type is taken to be
+"maximum", which is LZX compression.  "fast" compression is XPRESS compression.
+.TP
+\fB--config\fR \fICONFIG_FILE\fR
+This option is currently unsupported.
+.TP
+\fB--flags\fR \fIEDITIONID\fR
+Specify a string to use in the <FLAGS> element of the XML data for the image.
+.TP
+\fB--norpfix
+This option is currently unsupported.
+.TP
+\fB--verify\fR
+This option is currently unsupported.
+.TP
+\fB--verbose\fR
+Print the names of files and directories as they are captured.
+.SH SEE ALSO
+.BR imagex (1)
+

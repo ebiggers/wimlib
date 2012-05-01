@@ -1,0 +1,59 @@
+.TH IMAGEX "1" "April 2012" "imagex (wimlib) wimlib 0.6.1" "User Commands"
+.SH NAME
+imagex export \- Exports an image from a WIM archive to an existing or new WIM archive
+
+.SH SYNOPSIS
+\fBimagex export\fR \fISRC_WIMFILE\fR (\fISRC_IMAGE_NUM\fR | \
+\fISRC_IMAGE_NAME\fR | all ) \fIDEST_WIMFILE\fR [\fIDEST_IMAGE_NAME\fR\] \
+[\fIDEST_IMAGE_DESCRIPTION\fR] [\fIOPTION\fR]...
+
+.SH DESCRIPTION
+.PP
+
+Copies the specified image in \fISRC_WIMFILE\fR to \fIDEST_WIMFILE\fR,
+optionally changing its name and/or description and/or compression type.
+If \fIDEST_WIMFILE\fR exists, it is taken be be a WIM archive to which the image
+will be appended.  Otherwise, it is created as a new WIM archive containing only
+the exported image.
+
+The source image may be specified by \fISRC_IMAGE_NUM\fR, which must be an integer that is
+an index of an image in \fISRC_WIMFILE\fR, starting at 1.  Alternatively, it may be
+the name of an image in \fISRC_WIMFILE\fR, or it may be the keyword "all" to
+specify that all images are to be exported.
+
+If given, \fIDEST_IMAGE_NAME\fR specifies the name to give the image being
+exported to \fIDEST_WIMFILE\fR.  The default is its name in \fISRC_WIMFILE\fR.
+\fIDEST_IMAGE_NAME\fR cannot be specified if multiple images are being exported.
+
+If given, \fIDEST_IMAGE_DESCRIPTION\fR specifies the description to give the
+image being exported to \fIDEST_WIMFILE\fR.  The default is its description in
+\fISRC_WIMFILE\fR.
+
+.SH OPTIONS
+.TP 6
+\fB--boot\fR
+Specifies that the exported image is to be the bootable image of the WIM archive.
+
+If multiple images are being exported, this flag indicates that the image in the
+\fISRC_WIMFILE\fR that is currently marked as bootable is to be made bootable in
+\fIDEST_WIMFILE\fR.  If no image in \fISRC_WIMFILE\fR is bootable, it is an
+error.
+.TP
+\fB--check\fR
+When reading \fISRC_WIMFILE\fR, verify its integrity if the integrity table is
+present; additionally, when writing \fIDEST_WIMFILE\fR with the new image added,
+write an integrity table.  If this option is not specified, no integrity table
+is included in \fIDEST_WIMFILE\fR, even if there was one before.
+.TP
+\fB--compress\fR[=\fITYPE\fR]
+Specifies the compression type for \fIDEST_WIMFILE\fR.  This is only valid if
+\fIDEST_WIMFILE\fR does not yet exist.
+
+\fITYPE\fR may be "none",
+"maximum", or "fast".  By default, the compression type is "none".  If \fB--compress\fR
+is specified but \fITYPE\fR is not, the compression type is taken to be
+"maximum", which is LZX compression.  "fast" compression is XPRESS compression.
+
+.SH SEE ALSO
+.BR imagex (1)
+
