@@ -1,0 +1,55 @@
+Summary:  Library to extract, create, and modify WIM files
+Name: wimlib
+Version: @VERSION@
+Release: 1
+License: LGPL
+Group: System Environment/Libraries
+Packager: Eric Biggers (ebiggers3@gmail.com)
+URL:  http://wimlib.sourceforge.net
+Source: http://sourceforge.net/projects/wimlib/files/wimlib-%{version}.tar.gz
+BuildRoot: %{_tmppath}/%{name}/wimlib-root
+BuildRequires:  libxml2-devel fuse-devel openssl-devel
+Requires:  libxml2 fuse-libs openssl
+%description
+wimlib is a library that can be used to create, extract, and modify files in the
+Windows Imaging Format. These files are normally created by the 'imagex.exe'
+program on Windows, but this library provides a free implementation of 'imagex'
+for UNIX-based systems. wimlib supports mounting WIM files, just like
+imagex.exe.
+
+%package devel
+Summary: Development files for wimlib
+Group: Development/Libraries
+Requires: %{name} = %{version}-%{release}
+%description devel
+Development files for wimlib
+
+%prep
+%setup -q
+
+%build
+./configure --disable-verify-compression --enable-libcrypto 
+make
+
+%install
+rm -rf $RPM_BUILD_ROOT
+%makeinstall
+
+%post -p /sbin/ldconfig
+%postun -p /sbin/ldconfig
+
+%clean
+rm -rf $RPM_BUILD_ROOT
+
+%files
+%defattr(-, root, root)
+%{_bindir}/imagex
+%{_bindir}/mkwinpeimg
+%{_libdir}/libwim.so*
+%doc %{_mandir}/man1/*.1.gz
+
+%files devel
+%defattr(-, root, root)
+%{_libdir}/*.a
+%{_libdir}/*.la
+%{_includedir}/*.h

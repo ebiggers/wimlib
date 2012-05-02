@@ -1,4 +1,4 @@
-AC_INIT([wimlib], [0.6.4], [ebiggers3@gmail.com])
+AC_INIT([wimlib], [0.6.3], [ebiggers3@gmail.com])
 AC_CONFIG_SRCDIR([src/wim.c])
 AM_INIT_AUTOMAKE([-Wall -Werror])
 AC_CONFIG_MACRO_DIR([m4])
@@ -24,6 +24,9 @@ AC_CONFIG_FILES([Makefile
 		doc/imagex-mountrw.1
 		doc/imagex-unmount.1
 		doc/mkwinpeimg.1
+		debian/changelog
+		rpm/wimlib.spec
+		archlinux/PKGBUILD
 		])
 AC_PROG_CC
 

@@ -1,0 +1,25 @@
+Source: wimlib
+Priority: optional
+Maintainer: Eric Biggers <ebiggers3@gmail.com>
+Build-Depends: debhelper (>= 8.0.0), autotools-dev, libfuse-dev, libxml2-dev, libssl-dev
+Standards-Version: 3.9.2
+Section: libs
+Homepage: http://sourceforge.net/projects/wimlib
+Vcs-Git: git://git.code.sf.net/p/wimlib/code
+
+Package: wimlib-dev
+Section: libdevel
+Architecture: any
+Depends: wimlib (= ${binary:Version})
+Description: Development files for wimlib
+
+Package: wimlib
+Section: libs
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libfuse2, libxml2, libssl1.0.0
+Description: Library to extract, create, and modify WIM files
+ wimlib is a library that can be used to create, extract, and modify files in
+ the Windows Imaging Format. These files are normally created by the
+ 'imagex.exe' program on Windows, but this library provides a free
+ implementation of 'imagex' for UNIX-based systems. wimlib supports mounting
+ WIM files, just like imagex.exe.
