@@ -51,8 +51,14 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 subdir = doc
-DIST_COMMON = $(dist_man1_MANS) $(srcdir)/Doxyfile.in \
-	$(srcdir)/Makefile.am $(srcdir)/Makefile.in
+DIST_COMMON = $(srcdir)/Doxyfile.in $(srcdir)/Makefile.am \
+	$(srcdir)/Makefile.in $(srcdir)/imagex-append.1.in \
+	$(srcdir)/imagex-apply.1.in $(srcdir)/imagex-capture.1.in \
+	$(srcdir)/imagex-delete.1.in $(srcdir)/imagex-dir.1.in \
+	$(srcdir)/imagex-export.1.in $(srcdir)/imagex-info.1.in \
+	$(srcdir)/imagex-mount.1.in $(srcdir)/imagex-mountrw.1.in \
+	$(srcdir)/imagex-unmount.1.in $(srcdir)/imagex.1.in \
+	$(srcdir)/mkwinpeimg.1.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_prog_nasm.m4 \
 	$(top_srcdir)/m4/iconv.m4 $(top_srcdir)/m4/libtool.m4 \
@@ -63,7 +69,10 @@ am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
-CONFIG_CLEAN_FILES = Doxyfile
+CONFIG_CLEAN_FILES = Doxyfile imagex.1 imagex-append.1 imagex-apply.1 \
+	imagex-capture.1 imagex-delete.1 imagex-dir.1 imagex-export.1 \
+	imagex-info.1 imagex-mount.1 imagex-mountrw.1 imagex-unmount.1 \
+	mkwinpeimg.1
 CONFIG_CLEAN_VPATH_FILES =
 SOURCES =
 DIST_SOURCES =
@@ -102,7 +111,7 @@ am__uninstall_files_from_dir = { \
 man1dir = $(mandir)/man1
 am__installdirs = "$(DESTDIR)$(man1dir)"
 NROFF = nroff
-MANS = $(dist_man1_MANS)
+MANS = $(man1_MANS)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 ACLOCAL = @ACLOCAL@
 AMTAR = @AMTAR@
@@ -218,6 +227,7 @@ mkdir_p = @mkdir_p@
 nasm = @nasm@
 oldincludedir = @oldincludedir@
 pdfdir = @pdfdir@
+pkgconfigdir = @pkgconfigdir@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 psdir = @psdir@
@@ -229,7 +239,7 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-dist_man1_MANS = imagex.1 \
+man1_MANS = imagex.1 \
 		 imagex-append.1 \
 		 imagex-apply.1 \
 		 imagex-capture.1 \
@@ -277,15 +287,39 @@ $(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 $(am__aclocal_m4_deps):
 Doxyfile: $(top_builddir)/config.status $(srcdir)/Doxyfile.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex.1: $(top_builddir)/config.status $(srcdir)/imagex.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex-append.1: $(top_builddir)/config.status $(srcdir)/imagex-append.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex-apply.1: $(top_builddir)/config.status $(srcdir)/imagex-apply.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex-capture.1: $(top_builddir)/config.status $(srcdir)/imagex-capture.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex-delete.1: $(top_builddir)/config.status $(srcdir)/imagex-delete.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex-dir.1: $(top_builddir)/config.status $(srcdir)/imagex-dir.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex-export.1: $(top_builddir)/config.status $(srcdir)/imagex-export.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex-info.1: $(top_builddir)/config.status $(srcdir)/imagex-info.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex-mount.1: $(top_builddir)/config.status $(srcdir)/imagex-mount.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex-mountrw.1: $(top_builddir)/config.status $(srcdir)/imagex-mountrw.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+imagex-unmount.1: $(top_builddir)/config.status $(srcdir)/imagex-unmount.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+mkwinpeimg.1: $(top_builddir)/config.status $(srcdir)/mkwinpeimg.1.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 
 mostlyclean-libtool:
 	-rm -f *.lo
 
 clean-libtool:
 	-rm -rf .libs _libs
-install-man1: $(dist_man1_MANS)
+install-man1: $(man1_MANS)
 	@$(NORMAL_INSTALL)
-	@list1='$(dist_man1_MANS)'; \
+	@list1='$(man1_MANS)'; \
 	list2=''; \
 	test -n "$(man1dir)" \
 	  && test -n "`echo $$list1$$list2`" \
@@ -319,7 +353,7 @@ install-man1: $(dist_man1_MANS)
 
 uninstall-man1:
 	@$(NORMAL_UNINSTALL)
-	@list='$(dist_man1_MANS)'; test -n "$(man1dir)" || exit 0; \
+	@list='$(man1_MANS)'; test -n "$(man1dir)" || exit 0; \
 	files=`{ for i in $$list; do echo "$$i"; done; \
 	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^1][0-9a-z]*$$,1,;x' \
 	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
@@ -495,6 +529,8 @@ uninstall-man: uninstall-man1
 	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
 	uninstall uninstall-am uninstall-man uninstall-man1
 
+
+$(man1_MANS): ../config.status
 
 EXTRA_DIST:Doxyfile.in
 

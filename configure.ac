@@ -1,4 +1,4 @@
-AC_INIT([wimlib], [0.6.3], [ebiggers3@gmail.com])
+AC_INIT([wimlib], [0.6.4], [ebiggers3@gmail.com])
 AC_CONFIG_SRCDIR([src/wim.c])
 AM_INIT_AUTOMAKE([-Wall -Werror])
 AC_CONFIG_MACRO_DIR([m4])
@@ -10,8 +10,23 @@ AC_CONFIG_FILES([Makefile
 		doc/Makefile 
 		doc/Doxyfile
 		src/Makefile 
-		programs/Makefile])
+		programs/Makefile
+		wimlib.pc
+		doc/imagex.1
+		doc/imagex-append.1
+		doc/imagex-apply.1
+		doc/imagex-capture.1
+		doc/imagex-delete.1
+		doc/imagex-dir.1
+		doc/imagex-export.1
+		doc/imagex-info.1
+		doc/imagex-mount.1
+		doc/imagex-mountrw.1
+		doc/imagex-unmount.1
+		doc/mkwinpeimg.1
+		])
 AC_PROG_CC
+
 
 AM_ICONV
 if test "x$am_cv_func_iconv" != "xyes"; then
@@ -22,10 +37,16 @@ if test "x$am_cv_func_iconv" != "xyes"; then
 	libraries.])
 fi
 
-LIBXML2_LDADD=`pkg-config libxml-2.0 --libs`
-LIBXML2_CFLAGS=`pkg-config libxml-2.0 --cflags`
+AC_ARG_WITH(pkgconfigdir,
+            [  --with-pkgconfigdir=DIR      pkgconfig file in DIR @<:@LIBDIR/pkgconfig@:>@],
+            [pkgconfigdir=$withval],
+            [pkgconfigdir='${libdir}/pkgconfig'])
+AC_SUBST(pkgconfigdir)
+
 AC_CHECK_LIB([xml2], [xmlParseFile], [have_libxml=true],
 	     [AC_MSG_ERROR(["cannot find libxml2"])])
+LIBXML2_LDADD=`pkg-config libxml-2.0 --libs`
+LIBXML2_CFLAGS=`pkg-config libxml-2.0 --cflags`
 AC_SUBST([LIBXML2_LDADD], [$LIBXML2_LDADD])
 AC_SUBST([LIBXML2_CFLAGS], [$LIBXML2_CFLAGS])
 

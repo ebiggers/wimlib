@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "May 2012" "imagex (wimlib) wimlib 0.6.3" "User Commands"
+.TH IMAGEX "1" "May 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
 imagex mountrw \- Mount an image from a WIM archive read-write
 

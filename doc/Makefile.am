@@ -1,4 +1,4 @@
-dist_man1_MANS = imagex.1 \
+man1_MANS = 	 imagex.1 \
 		 imagex-append.1 \
 		 imagex-apply.1 \
 		 imagex-capture.1 \
@@ -10,5 +10,7 @@ dist_man1_MANS = imagex.1 \
 		 imagex-mountrw.1 \
 		 imagex-unmount.1 \
 		 mkwinpeimg.1
+
+$(man1_MANS): ../config.status
 
 EXTRA_DIST:Doxyfile.in

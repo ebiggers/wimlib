@@ -245,6 +245,7 @@ mkdir_p = @mkdir_p@
 nasm = @nasm@
 oldincludedir = @oldincludedir@
 pdfdir = @pdfdir@
+pkgconfigdir = @pkgconfigdir@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 psdir = @psdir@
