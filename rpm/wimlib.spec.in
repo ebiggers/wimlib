@@ -28,7 +28,7 @@ Development files for wimlib
 %setup -q
 
 %build
-./configure --disable-verify-compression --enable-libcrypto 
+./configure --disable-verify-compression --enable-libcrypto  --prefix=/usr
 make
 
 %install
@@ -53,3 +53,4 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/*.a
 %{_libdir}/*.la
 %{_includedir}/*.h
+%{_libdir}/pkgconfig/wimlib.pc
