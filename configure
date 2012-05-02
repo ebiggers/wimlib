@@ -11625,7 +11625,7 @@ CC="$lt_save_CC"
 
 ac_config_headers="$ac_config_headers config.h"
 
-ac_config_files="$ac_config_files Makefile doc/Makefile doc/Doxyfile src/Makefile programs/Makefile wimlib.pc doc/imagex.1 doc/imagex-append.1 doc/imagex-apply.1 doc/imagex-capture.1 doc/imagex-delete.1 doc/imagex-dir.1 doc/imagex-export.1 doc/imagex-info.1 doc/imagex-mount.1 doc/imagex-mountrw.1 doc/imagex-unmount.1 doc/mkwinpeimg.1 debian/changelog rpm/wimlib.spec archlinux/PKGBUILD"
+ac_config_files="$ac_config_files Makefile doc/Makefile doc/Doxyfile src/Makefile programs/Makefile wimlib.pc doc/imagex.1 doc/imagex-append.1 doc/imagex-apply.1 doc/imagex-capture.1 doc/imagex-delete.1 doc/imagex-dir.1 doc/imagex-export.1 doc/imagex-info.1 doc/imagex-mount.1 doc/imagex-mountrw.1 doc/imagex-unmount.1 doc/mkwinpeimg.1 rpm/wimlib.spec archlinux/PKGBUILD"
 
 ac_ext=c
 ac_cpp='$CPP $CPPFLAGS'
@@ -14740,7 +14740,6 @@ do
     "doc/imagex-mountrw.1") CONFIG_FILES="$CONFIG_FILES doc/imagex-mountrw.1" ;;
     "doc/imagex-unmount.1") CONFIG_FILES="$CONFIG_FILES doc/imagex-unmount.1" ;;
     "doc/mkwinpeimg.1") CONFIG_FILES="$CONFIG_FILES doc/mkwinpeimg.1" ;;
-    "debian/changelog") CONFIG_FILES="$CONFIG_FILES debian/changelog" ;;
     "rpm/wimlib.spec") CONFIG_FILES="$CONFIG_FILES rpm/wimlib.spec" ;;
     "archlinux/PKGBUILD") CONFIG_FILES="$CONFIG_FILES archlinux/PKGBUILD" ;;
 
