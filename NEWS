@@ -1,1 +1,12 @@
-See ChangeLog.
+Only the most important changes more recent than version 0.6 are noted here.
+
+Version 0.6.3:
+	Can now build with older gcc and system headers, like on CentOS 5.
+
+Version 0.6.2:
+	Fixed bug that made it impossible to overwrite files in read-write
+	mount.
+
+Version 0.6.1:
+	Write byte-order mark before WIM XML data.  (imagex.exe requires this to
+	be there.)

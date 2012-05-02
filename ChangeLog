@@ -1,3 +1,11 @@
+5-1-2012	Eric Biggers	<ebiggers3@gmail.com>
+	* WIMLIB version 0.6.3
+
+	Now using git (git://git.code.sf.net/p/wimlib/code)
+	Project page at http://sourceforge.net/projects/wimlib
+	Library documentation at http://wimlib.sourceforge.net
+	Will not put stuff in this ChangeLog anymore.
+
 4-22-2012	Eric Biggers	<ebiggers3@gmail.com>
 	* WIMLIB version 0.6.2
 	* extract_resource_to_staging_dir():  Fixed infinite loop and a couple
