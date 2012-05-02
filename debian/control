@@ -16,7 +16,7 @@ Description: Development files for wimlib
 Package: wimlib
 Section: libs
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libfuse2, libxml2, libssl1.0.0
+Depends: ${shlibs:Depends}, ${misc:Depends}, libfuse2, libxml2, libssl0.9.8 | libssl1.0.0
 Description: Library to extract, create, and modify WIM files
  wimlib is a library that can be used to create, extract, and modify files in
  the Windows Imaging Format. These files are normally created by the
