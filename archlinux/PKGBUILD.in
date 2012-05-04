@@ -12,7 +12,7 @@ optdepends=("cdrkit: for making ISO image of Windows PE"
 	"mtools: for making disk image of Windows PE"	
 	"syslinux: for making disk image of Windows PE"	
 	"cabextract: for extracting Windows PE from the WAIK")
-source=("$url/files/$pkgname-$pkgver.tar.gz")
+source=("http://downloads.sourceforge.net/$pkgname/$pkgname-$pkgver.tar.gz")
 md5sums=("ce01547173dbac170b324dbb6fc84243")
 
 build() {

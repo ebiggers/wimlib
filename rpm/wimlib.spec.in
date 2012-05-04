@@ -6,7 +6,7 @@ License: LGPL
 Group: System Environment/Libraries
 Packager: Eric Biggers (ebiggers3@gmail.com)
 URL:  http://wimlib.sourceforge.net
-Source: http://sourceforge.net/projects/wimlib/files/wimlib-%{version}.tar.gz
+Source: http://downloads.sourceforge.net/wimlib/wimlib-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}/wimlib-root
 BuildRequires:  libxml2-devel fuse-devel openssl-devel
 Requires:  libxml2 fuse-libs openssl
