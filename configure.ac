@@ -142,8 +142,6 @@ AC_MSG_RESULT([$WITH_FUSE])
 if test "x$WITH_FUSE" = "xyes"; then
 	AC_DEFINE([WITH_FUSE], [1], [Define to 1 if using FUSE.])
 
-	LIBFUSE_LDADD=`pkg-config --libs fuse`
-	LIBFUSE_CFLAGS=`pkg-config --cflags fuse`
 
 	AC_CHECK_LIB([fuse], [fuse_main_real], [have_fuse=true],
 			[AC_MSG_ERROR([Cannot find libfuse.  
@@ -158,6 +156,8 @@ if test "x$WITH_FUSE" = "xyes"; then
 	version of glibc, or configure with --without-fuse to disable support
 	for mounting WIMs.])
 	])
+	LIBFUSE_LDADD="`pkg-config --libs fuse` -lrt"
+	LIBFUSE_CFLAGS="`pkg-config --cflags fuse`"
 else
 	LIBFUSE_LDADD=
 	LIBFUSE_CFLAGS=
@@ -205,8 +205,11 @@ AC_MSG_RESULT([$WITH_LIBCRYPTO])
 
 if test "x$WITH_LIBCRYPTO" = "xyes" -a "x$ENABLE_SSSE3_SHA1" = "xno"; then
 	AC_DEFINE([WITH_LIBCRYPTO], [1], [Define to 1 if using libcrypto SHA1])
-	LIBCRYPTO_LDADD=`pkg-config --libs libcrypto`
-	LIBCRYPTO_CFLAGS=`pkg-config --cflags libcrypto`
+	LIBCRYPTO_LDADD=`pkg-config --libs libcrypto 2>/dev/null`
+	if test $? -ne 0; then
+		LIBCRYPTO_LDADD=-lcrypto;
+	fi
+	LIBCRYPTO_CFLAGS=`pkg-config --cflags libcrypto 2>/dev/null`
 else
 	LIBCRYPTO_LDADD=
 	LIBCRYPTO_CFLAGS=

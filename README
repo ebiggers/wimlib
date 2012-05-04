@@ -123,22 +123,15 @@ Retrieving files from the Windows Automated Installation Kit requires
 
 				  PORTABILITY
 
-I have been developing and testing wimlib on x86_64 (64-bit) GNU/Linux.
+wimlib has mostly been developed and tested on x86_64 (64-bit) GNU/Linux.
 
-wimlib has been tested on x86 (32-bit) GNU/Linux occasionally.
+It has been tested on x86 (32-bit) GNU/Linux occasionally.
 
-I have not tried to compile wimlib with compilers other than gcc.
+It can also be compiled and run on FreeBSD.
 
-It should be possible to compile wimlib on other UNIX systems such as FreeBSD.
-If this doesn't work, let me know.  If libfuse is not available, try compiling
-with --without-fuse.
+wimlib should work on big endian machines but it has not been tested.
 
-While the code has been tested on a little endian machine, it has been written
-to work on big endian machines as well.  (See endianness.h).  However it has
-never actually been tested on a big endian machine.  Let me know if it doesn't
-work.
-
-I am not planning to port wimlib to Windows since the programming interface on
+There are no plans to port wimlib to Windows since the programming interface on
 Windows is very different and Microsoft's imagex.exe is already available.
 
 ------------------------------------------------------------------------------

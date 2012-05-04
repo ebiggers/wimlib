@@ -13454,8 +13454,6 @@ if test "x$WITH_FUSE" = "xyes"; then
 $as_echo "@%:@define WITH_FUSE 1" >>confdefs.h
 
 
-	LIBFUSE_LDADD=`pkg-config --libs fuse`
-	LIBFUSE_CFLAGS=`pkg-config --cflags fuse`
 
 	{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for fuse_main_real in -lfuse" >&5
 $as_echo_n "checking for fuse_main_real in -lfuse... " >&6; }
@@ -13550,6 +13548,8 @@ else
 	
 fi
 
+	LIBFUSE_LDADD="`pkg-config --libs fuse` -lrt"
+	LIBFUSE_CFLAGS="`pkg-config --cflags fuse`"
 else
 	LIBFUSE_LDADD=
 	LIBFUSE_CFLAGS=
@@ -13699,8 +13699,11 @@ if test "x$WITH_LIBCRYPTO" = "xyes" -a "x$ENABLE_SSSE3_SHA1" = "xno"; then
 	
 $as_echo "@%:@define WITH_LIBCRYPTO 1" >>confdefs.h
 
-	LIBCRYPTO_LDADD=`pkg-config --libs libcrypto`
-	LIBCRYPTO_CFLAGS=`pkg-config --cflags libcrypto`
+	LIBCRYPTO_LDADD=`pkg-config --libs libcrypto 2>/dev/null`
+	if test $? -ne 0; then
+		LIBCRYPTO_LDADD=-lcrypto;
+	fi
+	LIBCRYPTO_CFLAGS=`pkg-config --cflags libcrypto 2>/dev/null`
 else
 	LIBCRYPTO_LDADD=
 	LIBCRYPTO_CFLAGS=
