@@ -383,7 +383,7 @@ extern int wimlib_add_image(WIMStruct *wim, const char *dir,
  * @param wim_ret
  * 	On success, a pointer to an opaque ::WIMStruct for the new WIM file is
  * 	written to the memory location pointed to by this paramater.  The
- * 	::WIMStruct must be freed using using FREE() when finished with
+ * 	::WIMStruct must be freed using using wimlib_free() when finished with
  * 	it.
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
@@ -734,7 +734,7 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags);
  * @param wim_ret
  * 	On success, a pointer to an opaque ::WIMStruct for the opened WIM file
  * 	is written to the memory location pointed to by this parameter.  The
- * 	::WIMStruct must be freed using using FREE() when finished with
+ * 	::WIMStruct must be freed using using wimlib_free() when finished with
  * 	it.
  *
  * @return 0 on success; nonzero on error.
@@ -795,7 +795,7 @@ extern int wimlib_open_wim(const char *wim_file, int flags,
  * before having written the new file because it is very likely that file
  * resources in the new WIM file need to be retrieved from the old WIM file.
  *
- * After this function returns, @a wim must be freed using FREE().  Any
+ * After this function returns, @a wim must be freed using wimlib_free().  Any
  * further actions on @a wim before doing this are undefined.
  *
  * @param wim
@@ -825,7 +825,7 @@ extern int wimlib_overwrite(WIMStruct *wim, int flags);
  * added, removed, or changed in the WIM.  It must be used when only the boot
  * index or the name or description of image(s) has been changed.
  *
- * After this function returns, @a wim must be freed using FREE().  Any
+ * After this function returns, @a wim must be freed using wimlib_free().  Any
  * further actions on @a wim before doing this are undefined.
  *
  * @param wim
