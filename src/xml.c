@@ -395,9 +395,15 @@ static int xml_read_image_info(xmlNode *image_node,
 			return ret;
 	}
 	if (!image_info->name) {
-		ERROR("Image with index %"PRIu64" has no name\n", 
+		WARNING("Image with index %"PRIu64" has no name\n", 
 					image_info->index);
-		return WIMLIB_ERR_XML;
+		image_info->name = MALLOC(1);
+		if (!image_info->name) {
+			ERROR("Out of memory!\n");
+			return WIMLIB_ERR_NOMEM;
+		}
+		image_info->name[0] = '\0';
+		return 0;
 	}
 	
 	return 0;
