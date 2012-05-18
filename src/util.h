@@ -51,9 +51,12 @@ typedef unsigned uint;
 #ifdef ENABLE_ERROR_MESSAGES
 extern bool __wimlib_print_errors;
 extern void wimlib_error(const char *format, ...);
+extern void wimlib_warning(const char *format, ...);
 #  define ERROR wimlib_error
+#  define WARNING wimlib_warning
 #else
 #  define ERROR(format, ...)
+#  define WARNING(format, ...)
 #endif /* ENABLE_ERROR_MESSAGES */
 
 #if defined(ENABLE_DEBUG) || defined(ENABLE_MORE_DEBUG)

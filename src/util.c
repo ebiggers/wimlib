@@ -53,6 +53,22 @@ void wimlib_error(const char *format, ...)
 		va_end(va);
 	}
 }
+
+void wimlib_warning(const char *format, ...)
+{
+ 	if (__wimlib_print_errors) {
+		va_list va;
+		int errno_save;
+
+		va_start(va, format);
+		errno_save = errno;
+		fputs("WARNING: ", stderr);
+		vfprintf(stderr, format, va);
+		errno = errno_save;
+		va_end(va);
+	}
+}
+
 #endif
 
 WIMLIBAPI int wimlib_set_print_errors(bool show_error_messages)

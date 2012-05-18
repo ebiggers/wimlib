@@ -409,10 +409,9 @@ static int wim_begin_read(WIMStruct *w, const char *in_wim_path, int flags)
 
 	/* If the boot index is invalid, print a warning and set it to 0 */
 	if (w->hdr.boot_idx > w->hdr.image_count) {
-		ERROR("WARNING:  In `%s', image %u is marked as bootable,\n",
-				in_wim_path, w->hdr.boot_idx);
-		ERROR("    but there are only %u images!\n", 
-				w->hdr.image_count);
+		WARNING("In `%s', image %u is marked as bootable,\n"
+			"\tbut there are only %u images!\n",
+			 in_wim_path, w->hdr.boot_idx, w->hdr.image_count);
 		w->hdr.boot_idx = 0;
 	}
 
@@ -433,7 +432,7 @@ static int wim_begin_read(WIMStruct *w, const char *in_wim_path, int flags)
 			goto done;
 		}
 		if (integrity_status == WIM_INTEGRITY_NONEXISTENT) {
-			DEBUG("WARNING: No integrity information; skipping "
+			WARNING("No integrity information; skipping "
 					"integrity check.\n");
 		} else if (integrity_status == WIM_INTEGRITY_NOT_OK) {
 			ERROR("WIM is not intact! (Failed integrity check)\n");

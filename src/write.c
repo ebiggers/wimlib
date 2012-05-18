@@ -530,7 +530,7 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int flags)
 	/* Close the original WIM file that was opened for reading. */
 	if (w->fp) {
 		if (fclose(w->fp) != 0) {
-			DEBUG("WARNING: Failed to close the file `%s'\n",
+			WARNING("Failed to close the file `%s'\n",
 					wimfile_name);
 		}
 		w->fp = NULL;
