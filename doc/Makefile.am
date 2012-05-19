@@ -6,6 +6,7 @@ man1_MANS = 	 imagex.1 \
 		 imagex-dir.1 \
 		 imagex-export.1 \
 		 imagex-info.1 \
+		 imagex-join.1 \
 		 imagex-mount.1 \
 		 imagex-mountrw.1 \
 		 imagex-unmount.1 \

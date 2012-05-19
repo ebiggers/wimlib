@@ -16,6 +16,8 @@ imagex \- Create, modify, extract, mount, or unmount a WIM (Windows Imaging Form
 .br
 \fBimagex info\fR \fIarguments...\fR
 .br
+\fBimagex join\fR \fIarguments...\fR
+.br
 \fBimagex mount\fR \fIarguments...\fR
 .br
 \fBimagex mountrw\fR \fIarguments...\fR
@@ -66,6 +68,8 @@ Display information about a WIM file (\fBimagex info\fR, \fBimagex dir\fR)
 Change the name or description of an image in the WIM (\fBimagex info\fR)
 .IP \[bu] 2
 Change which image in a WIM is bootable (\fBimagex info\fR)
+.IP \[bu] 2
+Combining split WIMs into one WIM (\fB image join\fR)
 
 .SH UNSUPPORTED FEATURES
 The following features are currently unsupported:
@@ -76,8 +80,9 @@ This does not seem to matter for Windows PE, but this means that you should not
 use this program to image a drive containing Windows Vista/7/8 and expect it to
 be applied with the correct file permissions.
 .IP \[bu] 2
-Split WIMs.  These can be used to split up a WIM to fit on multiple CDs, if you
-can't use a DVD for some reason.
+Split WIMs are not fully supported.  These can be used to split up a WIM to fit
+on multiple CDs, if you can't use a DVD for some reason.  You can use
+\fBimagex join\fR to combine split WIMs, but you cannot yet create split WIMs.
 .IP \[bu] 2
 The \fB--verify\fR option, for all commands that use it.  Without this option,
 there theoretically could be a SHA1 hash collision between two files, although
@@ -131,6 +136,7 @@ Report bugs to ebiggers3@gmail.com.
 .BR imagex-dir (1),
 .BR imagex-export (1),
 .BR imagex-info (1),
+.BR imagex-join (1),
 .BR imagex-mount (1),
 .BR imagex-mountrw (1),
 .BR imagex-unmount (1),
