@@ -30,6 +30,7 @@ other_srcs = \
 	header.c \
 	integrity.c \
 	io.h \
+	join.c \
 	lookup_table.c \
 	lookup_table.h \
 	modify.c \

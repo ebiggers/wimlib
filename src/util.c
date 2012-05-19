@@ -147,8 +147,10 @@ static const char *error_strings[] = {
 		= "Could not read data from a file",
 	[WIMLIB_ERR_RENAME] 
 		= "Could not rename a file",
-	[WIMLIB_ERR_SPLIT] 
-		= "The WIM is part of a split WIM, which Wimlib does not support",
+	[WIMLIB_ERR_SPLIT_INVALID] 
+		= "The WIM is part of an invalid split WIM",
+	[WIMLIB_ERR_SPLIT_UNSUPPORTED] 
+		= "The WIM is part of a split WIM, which is not supported for this operation",
 	[WIMLIB_ERR_STAT] 
 		= "Could not read the metadata for a file or directory",
 	[WIMLIB_ERR_TIMEOUT] 

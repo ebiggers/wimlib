@@ -43,7 +43,7 @@ static int print_files(WIMStruct *w)
 				  NULL);
 }
 
-static WIMStruct *new_wim_struct()
+WIMStruct *new_wim_struct()
 {
 	WIMStruct *w;
 	
@@ -228,14 +228,20 @@ int wimlib_select_image(WIMStruct *w, int image)
 
 	w->current_image = image;
 
-	if (wim_root_dentry(w))
+	if (wim_root_dentry(w)) {
 		return 0;
-	else
+	} else {
+		#ifdef ENABLE_DEBUG
+		DEBUG("Reading metadata resource specified by the following "
+				"lookup table entry:\n");
+		print_lookup_table_entry(wim_metadata_lookup_table_entry(w), NULL);
+		#endif
 		return read_metadata_resource(w->fp, 
 				wim_metadata_resource_entry(w),
 				wimlib_get_compression_type(w), 
 				/*wim_security_data(w), */
 				wim_root_dentry_p(w));
+	}
 }
 
 
@@ -306,7 +312,7 @@ WIMLIBAPI void wimlib_print_wim_information(const WIMStruct *w)
 	printf("Image Count:    %d\n", hdr->image_count);
 	printf("Compression:    %s\n", wimlib_get_compression_type_string(
 						wimlib_get_compression_type(w)));
-	printf("Part Number:    %d/%d\n", 1, 1);
+	printf("Part Number:    %d/%d\n", hdr->part_number, hdr->total_parts);
 	printf("Boot Index:     %d\n", hdr->boot_idx);
 	printf("Size:           %"PRIu64" bytes\n", 
 				wim_info_get_total_bytes(w->wim_info));
@@ -369,6 +375,14 @@ WIMLIBAPI int wimlib_set_boot_idx(WIMStruct *w, int boot_idx)
 	return 0;
 }
 
+WIMLIBAPI int wimlib_get_part_number(const WIMStruct *w, int *total_parts_ret)
+{
+	if (total_parts_ret)
+		*total_parts_ret = w->hdr.total_parts;
+	return w->hdr.part_number;
+}
+				    
+
 WIMLIBAPI int wimlib_get_boot_idx(const WIMStruct *w)
 {
 	return w->hdr.boot_idx;
@@ -378,7 +392,7 @@ WIMLIBAPI int wimlib_get_boot_idx(const WIMStruct *w)
  * Begins the reading of a WIM file; opens the file and reads its header and
  * lookup table, and optionally checks the integrity.
  */
-static int wim_begin_read(WIMStruct *w, const char *in_wim_path, int flags)
+static int begin_read(WIMStruct *w, const char *in_wim_path, int flags)
 {
 	int ret;
 	uint xml_num_images;
@@ -401,7 +415,7 @@ static int wim_begin_read(WIMStruct *w, const char *in_wim_path, int flags)
 		goto done;
 	}
 
-	ret = read_header(w->fp, &w->hdr);
+	ret = read_header(w->fp, &w->hdr, flags & WIMLIB_OPEN_FLAG_SPLIT_OK);
 	if (ret != 0)
 		goto done;
 
@@ -432,8 +446,8 @@ static int wim_begin_read(WIMStruct *w, const char *in_wim_path, int flags)
 			goto done;
 		}
 		if (integrity_status == WIM_INTEGRITY_NONEXISTENT) {
-			WARNING("No integrity information; skipping "
-					"integrity check.\n");
+			WARNING("No integrity information for `%s'; skipping "
+					"integrity check.\n", w->filename);
 		} else if (integrity_status == WIM_INTEGRITY_NOT_OK) {
 			ERROR("WIM is not intact! (Failed integrity check)\n");
 			ret = WIMLIB_ERR_INTEGRITY;
@@ -471,26 +485,27 @@ static int wim_begin_read(WIMStruct *w, const char *in_wim_path, int flags)
 	ret = for_lookup_table_entry(w->lookup_table, 
 	  			     append_metadata_resource_entry, w);
 
-	if (ret != 0)
+	if (ret != 0 && w->hdr.part_number == 1)
 		goto done;
 
 	/* Make sure all the expected images were found.  (We already have
 	 * returned false if *extra* images were found) */
-	if (w->current_image != w->hdr.image_count) {
+	if (w->current_image != w->hdr.image_count && w->hdr.part_number == 1) {
 		ERROR("Only found %u images in WIM, but expected %u!\n",
 				w->current_image, w->hdr.image_count);
 		ret = WIMLIB_ERR_IMAGE_COUNT;
 		goto done;
 	}
 
-	w->current_image = WIM_NO_IMAGE;
 
 	/* Sort images by the position of their metadata resources.  I'm
 	 * assuming that is what determines the other of the images in the WIM
 	 * file, rather than their order in the lookup table, which may be
 	 * random because of hashing. */
-	qsort(w->image_metadata, w->hdr.image_count, 
+	qsort(w->image_metadata, w->current_image,
 	      sizeof(struct image_metadata), sort_image_metadata_by_position);
+
+	w->current_image = WIM_NO_IMAGE;
 
 	/* Read the XML data. */
 	ret = read_xml_data(w->fp, &w->hdr.xml_res_entry, 
@@ -534,7 +549,7 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int flags,
 	if (!w)
 		return WIMLIB_ERR_NOMEM;
 
-	ret = wim_begin_read(w, wim_file, flags);
+	ret = begin_read(w, wim_file, flags);
 	if (ret != 0) {
 		ERROR("Could not begin reading the WIM file `%s'\n", wim_file);
 		FREE(w);
@@ -542,15 +557,6 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int flags,
 	}
 	*w_ret = w;
 	return 0;
-}
-
-/**
- * Frees internal memory allocated by WIMLIB for a WIM file, and closes it if it
- * is still open.
- */
-void wimlib_destroy(WIMStruct *w)
-{
-
 }
 
 /* Frees the memory for the WIMStruct, including all internal memory; also

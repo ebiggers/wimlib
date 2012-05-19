@@ -52,13 +52,6 @@ enum wim_integrity_status {
 	WIM_INTEGRITY_NONEXISTENT,
 };
 
-
-#define RINOK(expr) do { \
-	int __ret = (expr); \
-	if (__ret != 0) \
-		return __ret; \
-} while (0) 
-
 /* Metadata for a resource in a WIM file. */
 struct resource_entry {
 	/* Size, in bytes, of the resource in the WIM file. */
@@ -117,10 +110,10 @@ struct wim_header {
 	u8  guid[WIM_GID_LEN];
 
 	/* Part number of the WIM file in a spanned set. */
-	//u16 part_number;
+	u16 part_number;
 
 	/* Total number of parts in a spanned set. */
-	//u16 total_parts;
+	u16 total_parts;
 
 	/* Number of images in the WIM file. */
 	u32 image_count;
@@ -327,7 +320,7 @@ static inline void print_hash(const u8 hash[])
 
 
 /* header.c */
-extern int read_header(FILE *fp, struct wim_header *hdr);
+extern int read_header(FILE *fp, struct wim_header *hdr, int split_ok);
 extern int write_header(const struct wim_header *hdr, FILE *out);
 extern int init_header(struct wim_header *hdr, int ctype);
 
@@ -388,17 +381,23 @@ void destroy_security_data(WIMSecurityData *sd);
 #endif
 
 /* wim.c */
+extern WIMStruct *new_wim_struct();
 extern int wimlib_select_image(WIMStruct *w, int image);
-extern void wimlib_destroy(WIMStruct *w);
 extern int wim_hdr_flags_compression_type(int wim_hdr_flags);
 extern int wim_resource_compression_type(const WIMStruct *w, 
 					 const struct resource_entry *entry);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 
 /* write.c */
+extern int finish_write(WIMStruct *w, int image, int flags, 
+			int write_lookup_table);
+extern int copy_between_files(FILE *in, off_t in_offset, FILE *out, size_t len);
 extern int write_resource_from_memory(const u8 resource[], int out_ctype,
 				      u64 resource_original_size, FILE *out,
 				      u64 *resource_size_ret);
+
+extern int begin_write(WIMStruct *w, const char *path, int flags);
+extern int write_metadata_resource(WIMStruct *w);
 
 
 #include "wimlib.h"

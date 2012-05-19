@@ -45,6 +45,7 @@ enum imagex_op_type {
 	DIR,
 	EXPORT,
 	INFO,
+	JOIN,
 	MOUNT,
 	MOUNTRW,
 	UNMOUNT,
@@ -91,6 +92,8 @@ static const char *usage_strings[] = {
 "    imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
 "        [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
 "        [--xml] [--extract-xml FILE] [--metadata]\n",
+[JOIN] = 
+"    imagex join [--check] --output WIMFILE SPLIT_WIM...\n",
 [MOUNT] = 
 "    imagex mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
 "        [--check] [--debug]\n",
@@ -156,6 +159,13 @@ static const struct option info_options[] = {
 	{"metadata",     no_argument, NULL, 'm'},
 	{NULL, 0, NULL, 0},
 };
+
+static const struct option join_options[] = {
+	{"check", no_argument, NULL, 'c'},
+	{"output", required_argument, NULL, 'o'},
+	{NULL, 0, NULL, 0},
+};
+
 static const struct option mount_options[] = {
 	{"check", no_argument, NULL, 'c'},
 	{"debug", no_argument, NULL, 'd'},
@@ -556,6 +566,7 @@ static int imagex_dir(int argc, const char **argv)
 	int image;
 	int ret;
 	int num_images;
+	int part_number;
 
 	if (argc < 2) {
 		imagex_error("Must specify a WIM file!\n");
@@ -569,9 +580,18 @@ static int imagex_dir(int argc, const char **argv)
 	}
 
 	wimfile = argv[1];
-	ret = wimlib_open_wim(wimfile, 0, &w);
+	ret = wimlib_open_wim(wimfile, WIMLIB_OPEN_FLAG_SPLIT_OK, &w);
 	if (ret != 0)
 		return ret;
+
+	part_number = wimlib_get_part_number(w, NULL);
+	if (part_number != 1) {
+		imagex_error("`%s' is part %d of a split WIM!  Specify the first part "
+				"to see the files.\n",
+				wimfile, part_number);
+		ret = WIMLIB_ERR_SPLIT_UNSUPPORTED;
+		goto done;
+	}
 
 	if (argc == 3) {
 		image = wimlib_resolve_image(w, argv[2]);
@@ -735,6 +755,10 @@ static int imagex_info(int argc, const char **argv)
 	FILE *fp;
 	int image;
 	int ret;
+	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS | 
+			 WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int part_number;
+	int total_parts;
 
 	for_opt(c, info_options) {
 		switch (c) {
@@ -787,14 +811,21 @@ static int imagex_info(int argc, const char **argv)
 		}
 	}
 
-	ret = wimlib_open_wim(wimfile, 
-			      check ? 
-			      	WIMLIB_OPEN_FLAG_CHECK_INTEGRITY |
-					WIMLIB_OPEN_FLAG_SHOW_PROGRESS
-				: 0, 
-			      &w);
+	if (check)
+		open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+
+	ret = wimlib_open_wim(wimfile, open_flags, &w);
 	if (ret != 0)
 		return ret;
+
+	part_number = wimlib_get_part_number(w, &total_parts);
+
+	/*if (total_parts > 1 && part_number > 1) {*/
+		/*printf("Warning: this is part %d of a %d-part split WIM.\n"*/
+		       /*"         Select the first part if you want to see information\n"*/
+		       /*"         about images in the WIM.\n", */
+		       /*part_number, total_parts);*/
+	/*}*/
 
 	image = wimlib_resolve_image(w, image_num_or_name);
 	if (image == WIM_NO_IMAGE && strcmp(image_num_or_name, "0") != 0) {
@@ -842,8 +873,14 @@ static int imagex_info(int argc, const char **argv)
 		if (header)
 			wimlib_print_header(w);
 
-		if (lookup_table)
+		if (lookup_table) {
+			if (total_parts != 1) {
+				printf("Warning: Only showing the lookup table "
+						"for part %d of a %d-part WIM.\n",
+						part_number, total_parts);
+			}
 			wimlib_print_lookup_table(w);
+		}
 
 		if (xml) {
 			ret = wimlib_extract_xml_data(w, stdout);
@@ -874,11 +911,21 @@ static int imagex_info(int argc, const char **argv)
 			wimlib_print_available_images(w, image);
 
 		if (metadata) {
+			if (total_parts != 1 && part_number != 1) {
+				imagex_error("Select part 1 of this %d-part WIM "
+						"to see the image metadata.\n",
+						total_parts);
+				return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+			}
 			ret = wimlib_print_metadata(w, image);
 			if (ret != 0)
 				goto done;
 		}
 	} else {
+		if (total_parts != 1) {
+			imagex_error("Modifying a split WIM is not supported.\n");
+			return -1;
+		}
 		if (image == WIM_ALL_IMAGES)
 			image = 1;
 
@@ -948,6 +995,45 @@ static int imagex_info(int argc, const char **argv)
 done:
 	wimlib_free(w);
 	return ret;
+}
+
+/* Join split WIMs into one part WIM */
+static int imagex_join(int argc, const char **argv)
+{
+	int c;
+	int flags = WIMLIB_OPEN_FLAG_SPLIT_OK | WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
+	int image;
+	int ret;
+	const char *output_path = NULL;
+
+	for_opt(c, join_options) {
+		switch (c) {
+		case 'c':
+			flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			break;
+		case 'o':
+			output_path = optarg;
+			break;
+		default:
+			goto err;
+		}
+	}
+	argc -= optind;
+	argv += optind;
+
+	if (argc < 2) {
+		imagex_error("Must specify at least two split WIM "
+				"(.swm) parts to join!\n");
+		goto err;
+	}
+	if (!output_path) {
+		imagex_error("Must specify output_path!\n");
+		goto err;
+	}
+	return wimlib_join(argv, argc, output_path, flags);
+err:
+	usage(JOIN);
+	return -1;
 }
 
 /* Mounts an image using a FUSE mount. */
@@ -1070,6 +1156,7 @@ static struct imagex_command imagex_commands[] = {
 	{"dir",     imagex_dir,		   DIR},
 	{"export",  imagex_export,	   EXPORT},
 	{"info",    imagex_info,	   INFO},
+	{"join",    imagex_join,	   JOIN},
 	{"mount",   imagex_mount_rw_or_ro, MOUNT},
 	{"mountrw", imagex_mount_rw_or_ro, MOUNTRW},
 	{"unmount", imagex_unmount,	   UNMOUNT},

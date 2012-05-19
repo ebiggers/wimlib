@@ -30,7 +30,7 @@ static const u8 wim_magic_chars[WIM_MAGIC_LEN] = {
 			'M', 'S', 'W', 'I', 'M', '\0', '\0', '\0' };
 
 /* Reads the header for a WIM file.  */
-int read_header(FILE *fp, struct wim_header *hdr)
+int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 {
 	size_t bytes_read;
 	u8 buf[WIM_HEADER_DISK_SIZE];
@@ -101,17 +101,19 @@ int read_header(FILE *fp, struct wim_header *hdr)
 	}
 
 	p = get_bytes(p, WIM_GID_LEN, hdr->guid);
-	p = get_u16(p, &part_number);
-	p = get_u16(p, &total_parts);
+	p = get_u16(p, &hdr->part_number);
+	p = get_u16(p, &hdr->total_parts);
 
-	if (part_number != 1 || total_parts != 1) {
-		ERROR("Error: This WIM is part %u of a %u-part WIM.  Wimlib "
-				"does not support multi-part (split/spanned) "
-				"WIMs.\n", part_number, total_parts);
-		return WIMLIB_ERR_SPLIT;
+	if (!split_ok && (hdr->part_number != 1 || hdr->total_parts != 1)) {
+		ERROR("This WIM is part %u of a %u-part WIM.\n",
+			hdr->part_number, hdr->total_parts);
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
 
 	p = get_u32(p, &hdr->image_count);
+
+	DEBUG("part_number = %u, total_parts = %u, image_count = %u\n",
+			hdr->part_number, hdr->total_parts, hdr->image_count);
 
 	/* Byte 48 */
 
@@ -165,8 +167,8 @@ int write_header(const struct wim_header *hdr, FILE *out)
 				WIM_CHUNK_SIZE : 0);
 	randomize_byte_array(p, WIM_GID_LEN);
 	p += WIM_GID_LEN;
-	p = put_u16(p, 1);
-	p = put_u16(p, 1);
+	p = put_u16(p, 1); /* part number */
+	p = put_u16(p, 1); /* total parts */
 	p = put_u32(p, hdr->image_count);
 	p = put_resource_entry(p, &hdr->lookup_table_res_entry);
 	p = put_resource_entry(p, &hdr->xml_res_entry);
@@ -207,20 +209,38 @@ int init_header(struct wim_header *hdr, int ctype)
 	return 0;
 }
 
+struct hdr_flag {
+	u32 flag;
+	const char *name;
+};
+struct hdr_flag hdr_flags[] = {
+	{WIM_HDR_FLAG_RESERVED, 	"RESERVED"},
+	{WIM_HDR_FLAG_COMPRESSION,	"COMPRESSION"},
+	{WIM_HDR_FLAG_READONLY,		"READONLY"},
+	{WIM_HDR_FLAG_SPANNED,		"SPANNED"},
+	{WIM_HDR_FLAG_RESOURCE_ONLY,	"RESOURCE_ONLY"},
+	{WIM_HDR_FLAG_METADATA_ONLY,	"METADATA_ONLY"},
+	{WIM_HDR_FLAG_WRITE_IN_PROGRESS,"WRITE_IN_PROGRESS"},
+	{WIM_HDR_FLAG_RP_FIX,		"RP_FIX"},
+	{WIM_HDR_FLAG_COMPRESS_RESERVED,"COMPRESS_RESERVED"},
+	{WIM_HDR_FLAG_COMPRESS_LZX,	"COMPRESS_LZX"},
+	{WIM_HDR_FLAG_COMPRESS_XPRESS,	"COMPRESS_XPRESS"},
+};
+
 /* Prints information from the header of the WIM file associated with @w. */
 WIMLIBAPI void wimlib_print_header(const WIMStruct *w)
 {
 	const struct wim_header *hdr = &w->hdr;
+	uint i;
+
 	printf("Magic Characters            = MSWIM\\000\\000\\000\n");
 	printf("Header Size                 = %u\n", WIM_HEADER_DISK_SIZE);
 	printf("Version                     = 0x%x\n", WIM_VERSION);
+
 	printf("Flags                       = 0x%x\n", hdr->flags);
-
-	if (hdr->flags & WIM_HDR_FLAG_COMPRESS_XPRESS)
-		printf("    COMPRESS XPRESS FLAG is set\n");
-
-	if (hdr->flags & WIM_HDR_FLAG_COMPRESS_LZX)
-		printf("    COMPRESS LZX FLAG is set\n");
+	for (i = 0; i < ARRAY_LEN(hdr_flags); i++)
+		if (hdr_flags[i].flag & hdr->flags)
+			printf("    WIM_HDR_FLAG_%s is set\n", hdr_flags[i].name);
 
 	printf("Chunk Size                  = %u\n", WIM_CHUNK_SIZE);
 	fputs ("GUID                        = ", stdout);

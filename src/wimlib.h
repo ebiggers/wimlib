@@ -264,6 +264,12 @@ enum wim_compression_type {
 /** Print progress information when verifying integrity table. */
 #define WIMLIB_OPEN_FLAG_SHOW_PROGRESS		0x2
 
+/** If this flag is not given, an error is issued if the WIM is part of a split
+ * WIM.  Giving this flag makes the function allows split WIMS to be opened, but
+ * beware: wimlib has little support for split WIMs and only certain functions
+ * will work on them. */
+#define WIMLIB_OPEN_FLAG_SPLIT_OK		0x4
+
 /**
  * Possible values of the error code returned by many functions in wimlib.
  *
@@ -300,7 +306,8 @@ enum wimlib_error_code {
 	WIMLIB_ERR_OPENDIR,
 	WIMLIB_ERR_READ,
 	WIMLIB_ERR_RENAME,
-	WIMLIB_ERR_SPLIT,
+	WIMLIB_ERR_SPLIT_INVALID,
+	WIMLIB_ERR_SPLIT_UNSUPPORTED,
 	WIMLIB_ERR_STAT,
 	WIMLIB_ERR_TIMEOUT,
 	WIMLIB_ERR_UNKNOWN_VERSION,
@@ -640,6 +647,20 @@ extern const char *wimlib_get_image_name(const WIMStruct *wim, int image);
 extern int wimlib_get_num_images(const WIMStruct *wim);
 
 /**
+ * Gets the part number of the wim (in a split WIM).
+ *
+ * @param wim
+ * 	Pointer to the ::WIMStruct for a WIM file.
+ * @param total_parts_ret
+ * 	If non-@c NULL, the total number of parts in the split WIM (1 for
+ * 	non-split WIMs) is written to this location.
+ *
+ * @return 
+ * 	The part number of the WIM (1 for non-split WIMs)
+ */
+extern int wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret);
+
+/**
  * Returns true if the WIM has an integrity table.
  *
  * @param wim
@@ -647,7 +668,7 @@ extern int wimlib_get_num_images(const WIMStruct *wim);
  * @return
  * 	@c true if the WIM has an integrity table; false otherwise.
  */
-bool wimlib_has_integrity_table(const WIMStruct *wim);
+extern bool wimlib_has_integrity_table(const WIMStruct *wim);
 
 
 /**
@@ -663,6 +684,25 @@ bool wimlib_has_integrity_table(const WIMStruct *wim);
  * 	false if there is no image named @a name in @a wim.
  */
 extern bool wimlib_image_name_in_use(const WIMStruct *wim, const char *name);
+
+/**
+ * Joins a set of split WIMs into a one-part WIM.
+ *
+ * @param swms
+ * 	An array of strings that give the filenames of all parts of the split
+ * 	WIM.
+ * @param num_swms
+ * 	Number of filenames in @a swms.
+ * @param output_path
+ * 	The path to write the one-part WIM to.
+ * @param flags
+ * 	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY to check the split WIMs' integrity
+ * 	tables (if present) when opening them, and include an integrity table in
+ * 	the output WIM.
+ * @return 0 on success; nonzero on error.
+ */
+extern int wimlib_join(const char **swms, int num_swms,
+		       const char *output_path, int flags);
 
 /**
  * Mounts an image in a WIM file on a directory read-only or read-write.
@@ -730,6 +770,8 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags);
  * 	digests given in the integrity table.
  * 	If ::WIMLIB_OPEN_FLAG_SHOW_PROGRESS is given, progress information will
  * 	be shown if the integrity of the WIM is checked.
+ * 	If ::WIMLIB_OPEN_FLAG_SPLIT_OK is given, no error will be issued if the
+ * 	WIM is part of a split WIM.
  *
  * @param wim_ret
  * 	On success, a pointer to an opaque ::WIMStruct for the opened WIM file
@@ -773,8 +815,8 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags);
  * 	An unexpected end-of-file or read error occurred when trying to read
  * 	data from @a wim_file.
  * @retval ::WIMLIB_ERR_SPLIT
- * 	@a wim_file is a split WIM. wimlib does not support this kind of
- * 	WIM.
+ * 	@a wim_file is a split WIM, but ::WIMLIB_OPEN_FLAG_SPLIT_OK was not
+ * 	givin in @a flags.
  * @retval ::WIMLIB_ERR_UNKNOWN_VERSION
  * 	A number other than 0x10d00 is written in the version field of the WIM
  * 	header of @a wim_file.

@@ -239,11 +239,12 @@ static int extract_single_image(WIMStruct *w, int image)
  * subdirectories named by their image names. */
 static int extract_all_images(WIMStruct *w)
 {
-	size_t image_name_max_len = xml_get_max_image_name_len(w);
+	size_t image_name_max_len = max(xml_get_max_image_name_len(w), 20);
 	size_t output_path_len = strlen(w->output_dir);
 	char buf[output_path_len + 1 + image_name_max_len + 1];
 	int ret;
 	int image;
+	const char *image_name;
 
 	DEBUG("Attempting to extract all images from `%s'\n", w->filename);
 
@@ -251,8 +252,15 @@ static int extract_all_images(WIMStruct *w)
 	buf[output_path_len] = '/';
 	for (image = 1; image <= w->hdr.image_count; image++) {
 		buf[output_path_len + 1] = '\0';
-		strncat(buf + output_path_len + 1, wimlib_get_image_name(w, image),
+		
+		image_name = wimlib_get_image_name(w, image);
+		if (*image_name) {
+			strncat(buf + output_path_len + 1, image_name, 
 				image_name_max_len);
+		} else {
+			/* Image name is empty. Use image number instead */
+			sprintf(buf + output_path_len + 1, "%d", image);
+		}
 		ret = wimlib_set_output_dir(w, buf);
 		if (ret != 0)
 			goto done;

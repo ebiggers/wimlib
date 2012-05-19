@@ -1040,7 +1040,6 @@ void print_image_info(const struct wim_info *wim_info, int image)
 	time_t ctime;
 	time_t mtime;
 
-	DEBUG("Printing the image info for image %d\n", image);
 
 	if (image == WIM_ALL_IMAGES) {
 		for (i = 1; i <= wim_info->num_images; i++)

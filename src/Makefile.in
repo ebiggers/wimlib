@@ -102,7 +102,7 @@ libwim_la_DEPENDENCIES = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
 am__objects_1 = comp.lo decomp.lo huffman.lo lz.lo lzx-common.lo \
 	lzx-comp.lo lzx-decomp.lo xpress-comp.lo xpress-decomp.lo
-am__objects_2 = dentry.lo extract.lo header.lo integrity.lo \
+am__objects_2 = dentry.lo extract.lo header.lo integrity.lo join.lo \
 	lookup_table.lo modify.lo mount.lo resource.lo sha1.lo util.lo \
 	wim.lo write.lo xml.lo
 am_libwim_la_OBJECTS = $(am__objects_1) $(am__objects_2)
@@ -287,6 +287,7 @@ other_srcs = \
 	header.c \
 	integrity.c \
 	io.h \
+	join.c \
 	lookup_table.c \
 	lookup_table.h \
 	modify.c \
@@ -397,6 +398,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/header.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/huffman.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/integrity.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/join.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lookup_table.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lz.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lzx-common.Plo@am__quote@

@@ -43,7 +43,7 @@
  * Copies @len bytes from @in to @out, at the current position in @out, and at
  * an offset of @in_offset in @in.
  */
-static int copy_between_files(FILE *in, off_t in_offset, FILE *out, size_t len)
+int copy_between_files(FILE *in, off_t in_offset, FILE *out, size_t len)
 {
 	u8 buf[BUFFER_SIZE];
 	size_t n;
@@ -688,7 +688,7 @@ err:
 }
 
 /* Write the metadata resource for the current image. */
-static int write_metadata_resource(WIMStruct *w)
+int write_metadata_resource(WIMStruct *w)
 {
 	FILE *out;
 	u8 *buf;
@@ -775,8 +775,11 @@ static int write_file_resources(WIMStruct *w)
 	return for_dentry_in_tree(wim_root_dentry(w), write_file_resource, w);
 }
 
-/* Write lookup table, xml data, lookup table, and rewrite header */
-static int finish_write(WIMStruct *w, int image, FILE *out, int flags)
+/* Write lookup table, xml data, lookup table, and rewrite header 
+ *
+ * write_lt is zero iff the lookup table is not to be written; i.e. it is
+ * handled elsewhere. */
+int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 {
 	off_t lookup_table_offset;
 	off_t xml_data_offset;
@@ -788,16 +791,19 @@ static int finish_write(WIMStruct *w, int image, FILE *out, int flags)
 	int ret;
 	int i;
 	struct wim_header hdr;
+	FILE *out = w->out_fp;
 
-	lookup_table_offset = ftello(out);
-	if (lookup_table_offset == -1)
-		return WIMLIB_ERR_WRITE;
+	if (write_lt) {
+		lookup_table_offset = ftello(out);
+		if (lookup_table_offset == -1)
+			return WIMLIB_ERR_WRITE;
 
-	DEBUG("Writing lookup table.\n");
-	/* Write the lookup table. */
-	ret = write_lookup_table(w->lookup_table, out);
-	if (ret != 0)
-		return ret;
+		DEBUG("Writing lookup table.\n");
+		/* Write the lookup table. */
+		ret = write_lookup_table(w->lookup_table, out);
+		if (ret != 0)
+			return ret;
+	}
 
 	DEBUG("Writing XML data.\n");
 
@@ -810,10 +816,12 @@ static int finish_write(WIMStruct *w, int image, FILE *out, int flags)
 	 * have changed, including the resource entries, boot index, and image
 	 * count.  */
 	memcpy(&hdr, &w->hdr, sizeof(struct wim_header));
-	lookup_table_size = xml_data_offset - lookup_table_offset;
-	hdr.lookup_table_res_entry.offset        = lookup_table_offset;
-	hdr.lookup_table_res_entry.size          = lookup_table_size;
-	hdr.lookup_table_res_entry.original_size = lookup_table_size;
+	if (write_lt) {
+		lookup_table_size = xml_data_offset - lookup_table_offset;
+		hdr.lookup_table_res_entry.offset        = lookup_table_offset;
+		hdr.lookup_table_res_entry.size          = lookup_table_size;
+	}
+	hdr.lookup_table_res_entry.original_size = hdr.lookup_table_res_entry.size;
 	hdr.lookup_table_res_entry.flags         = WIM_RESHDR_FLAG_METADATA;
 
 	ret = write_xml_data(w->wim_info, image, out);
@@ -887,21 +895,11 @@ static int finish_write(WIMStruct *w, int image, FILE *out, int flags)
 	return write_header(&hdr, out);
 }
 
-/* Writes the WIM to a file.  */
-WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
+/* Open file stream and write dummy header for WIM. */
+int begin_write(WIMStruct *w, const char *path, int flags)
 {
-	int ret;
 	const char *mode;
-	FILE *out;
-
-	if (image != WIM_ALL_IMAGES && 
-			(image < 1 || image > w->hdr.image_count))
-		return WIMLIB_ERR_INVALID_IMAGE;
-
-	if (image == WIM_ALL_IMAGES)
-		DEBUG("Writing all images to `%s'\n", path);
-	else
-		DEBUG("Writing image %d to `%s'\n", image, path);
+	DEBUG("Opening `%s' for new WIM\n", path);
 
 	/* checking the integrity requires going back over the file to read it.
 	 * XXX 
@@ -912,17 +910,31 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
 	else
 		mode = "wb";
 
-	out = fopen(path, mode);
-	if (!out) {
-		ERROR("Failed to open the file `%s' for writing!\n", 
-				path);
+	w->out_fp = fopen(path, mode);
+	if (!w->out_fp) {
+		ERROR("Failed to open the file `%s' for writing!\n", path);
 		return WIMLIB_ERR_OPEN;
 	}
 
-	w->out_fp = out;
-
 	/* Write dummy header. It will be overwritten later. */
-	ret = write_header(&w->hdr, out);
+	return write_header(&w->hdr, w->out_fp);
+}
+
+/* Writes the WIM to a file.  */
+WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
+{
+	int ret;
+
+	if (image != WIM_ALL_IMAGES && 
+			(image < 1 || image > w->hdr.image_count))
+		return WIMLIB_ERR_INVALID_IMAGE;
+
+	if (image == WIM_ALL_IMAGES)
+		DEBUG("Writing all images to `%s'\n", path);
+	else
+		DEBUG("Writing image %d to `%s'\n", image, path);
+
+	ret = begin_write(w, path, flags);
 	if (ret != 0)
 		goto done;
 
@@ -941,14 +953,16 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
 		goto done;
 	}
 
-	ret = finish_write(w, image, out, flags);
+	ret = finish_write(w, image, flags, 1);
 
 done:
 	DEBUG("Closing output file.\n");
-	w->out_fp = NULL;
-	if (fclose(out) != 0) {
-		ERROR("Failed to close the file `%s': %m\n", path);
-		ret = WIMLIB_ERR_WRITE;
+	if (w->out_fp != NULL) {
+		if (fclose(w->out_fp) != 0) {
+			ERROR("Failed to close the file `%s': %m\n", path);
+			ret = WIMLIB_ERR_WRITE;
+		}
+		w->out_fp = NULL;
 	}
 	return ret;
 }
