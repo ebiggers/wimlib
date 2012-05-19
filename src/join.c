@@ -151,7 +151,7 @@ WIMLIBAPI int wimlib_join(const char **swm_names, int num_swms,
 			}
 		}
 		if (w->hdr.total_parts != num_swms) {
-			ERROR("`%s' (part %d) says there are %d total parts,\n"
+			ERROR("`%s' (part %d) says there are %d total parts, "
 					"but %d parts were specified!\n",
 					swm_names[i], w->hdr.part_number,
 					w->hdr.total_parts, num_swms);
@@ -195,8 +195,10 @@ err:
 	for (i = 0; i < num_swms; i++) {
 		/* out_fp is the same in all the swms and joined_wim; only close
 		 * it one time, when freeing joined_wim. */
-		swms[i]->out_fp = NULL;
-		wimlib_free(swms[i]);
+		if (swms[i]) {
+			swms[i]->out_fp = NULL;
+			wimlib_free(swms[i]);
+		}
 	}
 	wimlib_free(joined_wim);
 	return ret;
