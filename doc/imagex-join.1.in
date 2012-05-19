@@ -1,0 +1,33 @@
+.TH IMAGEX "1" "May 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.SH NAME
+imagex join \- Join split WIMs into a standalone one-part WIM
+
+.SH SYNOPSIS
+\fBimagex join\fR [\fIOPTION...] \fIOUT_WIMFILE\fR \fISPLIT_WIM...\fR
+
+.SH DESCRIPTION
+.PP
+Joins the \fISPLIT_WIMs\fR into a standalone one-part WIM \fIOUT_WIMFILE\fR.
+
+All parts of the split WIM  must be specified.  You probably want to do so using
+a shell wildcard.
+
+.SH EXAMPLES
+
+.IP 
+imagex join windows.wim windows*.swm
+.LP
+Join a split WIM, with the parts named `windows*.swm' where the * is anything
+(usually the number of the part, except for the first part which may have no
+number), and write the joined with to the file `windows.wim'.
+
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+When reading each \fISPLIT_WIM\fR, verify its integrity if the integrity table is
+present; additionally, when writing \fIOUT_WIMFILE\fR,
+write an integrity table.  If this option is not specified, no integrity table
+is included in the new WIM file, even if there was one before.
+.TP
+.SH SEE ALSO
+.BR imagex (1)
