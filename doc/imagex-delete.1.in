@@ -29,6 +29,13 @@ When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
 present; additionally, when rewriting \fIWIMFILE\fR after the specified image was
 deleted, write an integrity table.  If this option is not specified, no integrity
 table is included in the new WIM file, even if there was one before.
+
+.SH EXAMPLES
+.IP 
+image delete boot.wim 1
+.LP 
+Delete the first image from 'boot.wim'.
+
 .SH SEE ALSO
 .BR imagex (1)
 

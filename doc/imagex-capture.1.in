@@ -46,6 +46,14 @@ This option is currently unsupported.
 .TP
 \fB--verbose\fR
 Print the names of files and directories as they are captured.
+
+.SH EXAMPLES
+.IP 
+image capture boot boot.wim --compress=maximum --check
+.LP 
+Create a new WIM 'boot.wim' from the directory 'boot', using LZX compression and
+including an integrity table.
+
 .SH SEE ALSO
 .BR imagex (1)
 

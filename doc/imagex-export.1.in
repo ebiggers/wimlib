@@ -54,6 +54,13 @@ Specifies the compression type for \fIDEST_WIMFILE\fR.  This is only valid if
 is specified but \fITYPE\fR is not, the compression type is taken to be
 "maximum", which is LZX compression.  "fast" compression is XPRESS compression.
 
+.SH EXAMPLES
+.IP 
+image export boot.wim 2 image2.wim --compress=maximum
+.LP 
+Export the second image of 'boot.wim' to the new WIM file 'image2.wim', and
+change the compression type to maximum, if it wasn't maximum already.
+
 .SH SEE ALSO
 .BR imagex (1)
 

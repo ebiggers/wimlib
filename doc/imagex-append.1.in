@@ -36,6 +36,15 @@ Specify a string to use in the <FLAGS> element of the XML data for the image.
 .TP
 \fB--verify\fR
 This option is currently unsupported.
+
+.SH EXAMPLES
+.IP 
+image append boot.wim winpe/ "Microsoft Windows PE"
+.LP 
+Add a new image to the existing WIM file boot.wim.  The files in the directory 'winpe' 
+are added recursively to the image.  The image is given the name "Microsoft
+Windows PE" and no description.
+
 .SH SEE ALSO
 .BR imagex (1)
 

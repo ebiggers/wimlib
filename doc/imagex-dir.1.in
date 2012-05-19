@@ -15,6 +15,12 @@ an index of an image in the WIM file, starting at 1.  Alternatively, it may be
 the name of an image in the WIM file.  It also may be the keyword "all", which
 specifies all images.
 
+.SH EXAMPLES
+.IP 
+image dir boot.wim 1
+.LP 
+Show all files in the first image of 'boot.wim'
+
 .SH SEE ALSO
 .BR imagex (1)
 

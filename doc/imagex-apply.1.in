@@ -42,6 +42,14 @@ Print the path to of each file or directory within the WIM image as it is extrac
 .TP
 \fB--verify\fR
 This option is currently unsupported.
+
+.SH EXAMPLES
+.IP 
+image apply boot.wim all boot --hardlink
+.LP 
+Extract all images in the WIM 'boot.wim' to the directory 'boot', and hard link
+all identical files.
+
 .SH SEE ALSO
 .BR imagex (1)
 

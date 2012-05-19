@@ -93,7 +93,7 @@ static const char *usage_strings[] = {
 "        [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
 "        [--xml] [--extract-xml FILE] [--metadata]\n",
 [JOIN] = 
-"    imagex join [--check] --output WIMFILE SPLIT_WIM...\n",
+"    imagex join [--check] WIMFILE SPLIT_WIM...\n",
 [MOUNT] = 
 "    imagex mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
 "        [--check] [--debug]\n",
@@ -1004,15 +1004,12 @@ static int imagex_join(int argc, const char **argv)
 	int flags = WIMLIB_OPEN_FLAG_SPLIT_OK | WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
 	int image;
 	int ret;
-	const char *output_path = NULL;
+	const char *output_path;
 
 	for_opt(c, join_options) {
 		switch (c) {
 		case 'c':
 			flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
-			break;
-		case 'o':
-			output_path = optarg;
 			break;
 		default:
 			goto err;
@@ -1021,16 +1018,13 @@ static int imagex_join(int argc, const char **argv)
 	argc -= optind;
 	argv += optind;
 
-	if (argc < 2) {
+	if (argc < 3) {
 		imagex_error("Must specify at least two split WIM "
 				"(.swm) parts to join!\n");
 		goto err;
 	}
-	if (!output_path) {
-		imagex_error("Must specify output_path!\n");
-		goto err;
-	}
-	return wimlib_join(argv, argc, output_path, flags);
+	output_path = argv[0];
+	return wimlib_join(++argv, --argc, output_path, flags);
 err:
 	usage(JOIN);
 	return -1;

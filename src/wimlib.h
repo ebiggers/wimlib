@@ -140,8 +140,7 @@
  *   WIM without security data, including a boot.wim for Windows PE, but <b>do
  *   not expect to be able to use wimlib to image a Windows installation and
  *   preserve file attributes</b>.
- * - There is no support for split WIMs, which have an image divided up between
- *   multiple WIM files.
+ * - There is no way to create split WIMs.
  * - There is not yet any code to verify that there are no collisions between
  *   different files that happen to have the same SHA1 message digest.
  *   This is extremely unlikely, but could result in something bad such as a
@@ -265,9 +264,7 @@ enum wim_compression_type {
 #define WIMLIB_OPEN_FLAG_SHOW_PROGRESS		0x2
 
 /** If this flag is not given, an error is issued if the WIM is part of a split
- * WIM.  Giving this flag makes the function allows split WIMS to be opened, but
- * beware: wimlib has little support for split WIMs and only certain functions
- * will work on them. */
+ * WIM.  */
 #define WIMLIB_OPEN_FLAG_SPLIT_OK		0x4
 
 /**
@@ -699,7 +696,20 @@ extern bool wimlib_image_name_in_use(const WIMStruct *wim, const char *name);
  * 	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY to check the split WIMs' integrity
  * 	tables (if present) when opening them, and include an integrity table in
  * 	the output WIM.
- * @return 0 on success; nonzero on error.
+ *
+ * @return 0 on success; nonzero on error.  This function may return any value
+ * returned by wimlib_open_wim() except ::WIMLIB_ERR_SPLIT_UNSUPPORTED, as well
+ * as the following error codes:
+ *
+ * @retval ::WIMLIB_ERR_SPLIT_INVALID
+ * 	The split WIMs do not form a valid WIM because they do not include all
+ * 	the parts of the original WIM, there are duplicate parts, or not all the
+ * 	parts have the same GUID and compression type.
+ * @retval ::WIMLIB_ERR_WRITE
+ * 	An error occurred when trying to write data to to the new WIM at @a output_path.
+ *
+ * Note that this function merely copies the resources, so it will not check to
+ * see if the resources, including the metadata resource, are valid or not.
  */
 extern int wimlib_join(const char **swms, int num_swms,
 		       const char *output_path, int flags);
@@ -771,7 +781,10 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags);
  * 	If ::WIMLIB_OPEN_FLAG_SHOW_PROGRESS is given, progress information will
  * 	be shown if the integrity of the WIM is checked.
  * 	If ::WIMLIB_OPEN_FLAG_SPLIT_OK is given, no error will be issued if the
- * 	WIM is part of a split WIM.
+ * 	WIM is part of a split WIM.  However, wimlib does not fully support
+ * 	split WIMs, so not all functions will work correctly after opening a
+ * 	split WIM.  For example, you cannot use wimlib_mount() or
+ * 	wimlib_extract_image() on a split WIM.
  *
  * @param wim_ret
  * 	On success, a pointer to an opaque ::WIMStruct for the opened WIM file
@@ -785,10 +798,10 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags);
  * 	added to wimlib if needed, but it appears to be the case that the lookup
  * 	table is never compressed.
  * @retval ::WIMLIB_ERR_IMAGE_COUNT
- * 	The number of metadata resources found in the WIM did not match the
- * 	image count given in the WIM header, or the number of &lt;IMAGE&gt;
- * 	elements in the XML data for the WIM did not match the image count given
- * 	in the WIM header.
+ * 	The WIM is not the non-first part of a split WIM, and the number of
+ * 	metadata resources found in the WIM did not match the image count given
+ * 	in the WIM header, or the number of &lt;IMAGE&gt; elements in the XML
+ * 	data for the WIM did not match the image count given in the WIM header.
  * @retval ::WIMLIB_ERR_INTEGRITY
  * 	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY was specified in @a flags and @a
  * 	wim_file contains an integrity table, but the SHA1 message digest for a
@@ -814,7 +827,7 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags);
  * @retval ::WIMLIB_ERR_READ
  * 	An unexpected end-of-file or read error occurred when trying to read
  * 	data from @a wim_file.
- * @retval ::WIMLIB_ERR_SPLIT
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
  * 	@a wim_file is a split WIM, but ::WIMLIB_OPEN_FLAG_SPLIT_OK was not
  * 	givin in @a flags.
  * @retval ::WIMLIB_ERR_UNKNOWN_VERSION
@@ -1292,6 +1305,9 @@ extern int wimlib_unmount(const char *dir, int flags);
  * 	with @a wim, or some file resources in @a wim refer to files in the
  * 	outside filesystem, and a read error occurred when reading one of these
  * 	files.
+ * @retval ::WIMLIB_ERR_WRITE
+ * 	An error occurred when trying to write data to the new WIM file at @a
+ * 	path.
  */
 extern int wimlib_write(WIMStruct *wim, const char *path, int image, int flags);
 

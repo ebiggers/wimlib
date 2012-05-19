@@ -69,7 +69,7 @@ Change the name or description of an image in the WIM (\fBimagex info\fR)
 .IP \[bu] 2
 Change which image in a WIM is bootable (\fBimagex info\fR)
 .IP \[bu] 2
-Combining split WIMs into one WIM (\fB image join\fR)
+Combining split WIMs into one WIM (\fBimage join\fR)
 
 .SH UNSUPPORTED FEATURES
 The following features are currently unsupported:
@@ -82,7 +82,8 @@ be applied with the correct file permissions.
 .IP \[bu] 2
 Split WIMs are not fully supported.  These can be used to split up a WIM to fit
 on multiple CDs, if you can't use a DVD for some reason.  You can use
-\fBimagex join\fR to combine split WIMs, but you cannot yet create split WIMs.
+\fBimagex join\fR to combine split WIMs, but you cannot yet create split WIMs or
+mount them directly.
 .IP \[bu] 2
 The \fB--verify\fR option, for all commands that use it.  Without this option,
 there theoretically could be a SHA1 hash collision between two files, although
