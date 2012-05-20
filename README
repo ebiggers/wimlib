@@ -51,7 +51,7 @@ wimlib's `configure' script:
 	unmount WIM files.  wimlib_mount() and wimlib_unmount() will fail with
 	WIMLIB_ERR_UNSUPPORTED.
 
---disable-libcrypto
+--without-libcrypto
 	Build in functions for SHA1 rather than using external SHA1 functions
 	from libcrypto (part of OpenSSL).  The default is to use libcrypto if it
 	is found on the system.
@@ -71,6 +71,12 @@ wimlib's `configure' script:
 	with an error message if the decompressed data does not exactly match
 	the original data.  This is to find bugs.
 
+--disable-security-data
+	Wimlib cannot create or modify WIM security data, but by default it will
+	copy existing security data when modifying a WIM or exporting an image.
+	Passing this flag will disable this support; then wimlib will always
+	write WIMs without security data.
+
 --disable-error-messages
 	Removes all error messages from the library.  If left in, they still
 	have to explicitly turned on with wimlib_set_print_errors() in order to
@@ -85,12 +91,6 @@ wimlib's `configure' script:
 	Remove all assertions.  Without this option, wimlib will abort() the
 	program if an assertion fails.  An assertion failure should only occur
 	if there is a bug in wimlib.
-
---disable-security-data
-	Wimlib cannot create or modify WIM security data, but by default it will
-	copy existing security data when modifying a WIM or exporting an image.
-	Passing this flag will disable this support; then wimlib will always
-	write WIMs without security data.
 
 --enable-debug
 	Include debugging messages.  Only use this option if you have found a
