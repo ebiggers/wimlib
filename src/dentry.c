@@ -32,6 +32,7 @@
 #include "io.h"
 #include "timestamp.h"
 #include "lookup_table.h"
+#include "sha1.h"
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -750,7 +751,11 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	p = put_u64(p, dentry->creation_time);
 	p = put_u64(p, dentry->last_access_time);
 	p = put_u64(p, dentry->last_write_time);
-	p = put_bytes(p, WIM_HASH_SIZE, dentry->hash);
+	if (!is_empty_file_hash(dentry->hash))
+		memcpy(p, dentry->hash, WIM_HASH_SIZE);
+	else
+		printf("zero hash for %s\n", dentry->file_name_utf8);
+	p += WIM_HASH_SIZE;
 	p = put_u32(p, 0); /* reparse_tag */
 	p = put_u64(p, dentry->hard_link);
 	p = put_u16(p, 0); /*streams */

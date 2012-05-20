@@ -264,14 +264,17 @@ int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out)
 
 	out = __out;
 
+	/* do not write lookup table entries for empty files */
+	if (lte->output_resource_entry.original_size == 0)
+		return 0;
+
 	/* Don't write entries that have not had file resources or metadata
 	 * resources written for them. */
 	if (lte->out_refcnt == 0)
 		return 0;
 
-	if (lte->output_resource_entry.flags & WIM_RESHDR_FLAG_METADATA) {
+	if (lte->output_resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
 		DEBUG("Writing metadata entry at %lu\n", ftello(out));
-	}
 
 	p = put_resource_entry(buf, &lte->output_resource_entry);
 	p = put_u16(p, lte->part_number);

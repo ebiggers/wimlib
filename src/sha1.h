@@ -4,6 +4,16 @@
 #include "config.h"
 #include <stdio.h>
 #include <stddef.h>
+#include "string.h"
+
+#define SHA1_HASH_SIZE 20
+
+extern const u8 empty_file_sha1sum[SHA1_HASH_SIZE];
+
+static inline bool is_empty_file_hash(const u8 hash[SHA1_HASH_SIZE])
+{
+	return memcmp(hash, empty_file_sha1sum, SHA1_HASH_SIZE) == 0;
+}
 
 /* Compute SHA1 message digest for bytes read from STREAM.  The
    resulting message digest number will be written into the 20 bytes

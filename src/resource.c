@@ -1112,8 +1112,6 @@ int write_file_resource(struct dentry *dentry, void *wim_p)
 	struct lookup_table_entry *lte;
 	int in_wim_ctype;
 	int out_wim_ctype;
-	int input_res_ctype;
-	struct resource_entry *input_res_entry;
 	struct resource_entry *output_res_entry;
 	u64 len;
 	int ret;
@@ -1137,6 +1135,10 @@ int write_file_resource(struct dentry *dentry, void *wim_p)
 
 	out_wim_ctype = wimlib_get_compression_type(w);
 	output_res_entry = &lte->output_resource_entry;
+
+	/* do not write empty resources */
+	if (lte->resource_entry.original_size == 0)
+		return 0;
 
 	/* Figure out if we can read the resource from the WIM file, or
 	 * if we have to read it from the filesystem outside. */
@@ -1175,15 +1177,14 @@ int write_file_resource(struct dentry *dentry, void *wim_p)
 			in = w->fp;
 			in_wim_ctype = out_wim_ctype;
 		}
-		input_res_entry = &lte->resource_entry;
-		input_res_ctype = resource_compression_type(
+		int input_res_ctype = resource_compression_type(
 					in_wim_ctype, 
-					input_res_entry->flags);
+					lte->resource_entry.flags);
 
 		ret = transfer_file_resource(in, 
-					input_res_entry->size,
-					input_res_entry->original_size, 
-					input_res_entry->offset,
+					lte->resource_entry.size,
+					lte->resource_entry.original_size, 
+					lte->resource_entry.offset,
 					input_res_ctype, 
 					out, 
 					out_wim_ctype,
