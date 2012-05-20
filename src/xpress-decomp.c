@@ -77,7 +77,6 @@
 #define XPRESS_DECOMP
 #include "decomp.h"
 
-#include "huffman.h"
 
 
 

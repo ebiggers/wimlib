@@ -105,4 +105,8 @@ extern void init_output_bitstream(struct output_bitstream *ostream,
 
 extern int flush_output_bitstream(struct output_bitstream *ostream);
 
+extern void make_canonical_huffman_code(uint num_syms, uint max_codeword_len, 
+					const u32 freq_tab[], u8 lens[], 
+					u16 codewords[]);
+
 #endif /* _WIMLIB_COMP_H */

@@ -105,7 +105,6 @@
  */
 
 #include "util.h"
-#include "huffman.h"
 #include "lzx.h"
 
 #include "decomp.h"

@@ -51,7 +51,6 @@
 
 #include "lzx.h"
 #include "comp.h"
-#include "huffman.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>

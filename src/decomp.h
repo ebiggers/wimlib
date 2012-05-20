@@ -168,4 +168,16 @@ extern int bitstream_read_bytes(struct input_bitstream *istream, size_t n,
 extern int align_input_bitstream(struct input_bitstream *istream, 
 				 bool skip_word_if_aligned);
 
+extern int read_huffsym(struct input_bitstream *stream, 
+			const u16 decode_table[],
+			const u8 lengths[],
+			unsigned num_symbols,
+			unsigned table_bits,
+			uint *n,
+			unsigned max_codeword_len);
+
+extern int make_huffman_decode_table(u16 decode_table[], uint num_syms, 
+				     uint num_bits, const u8 lengths[],
+				     uint max_codeword_len);
+
 #endif /* _WIMLIB_DECOMP_H */

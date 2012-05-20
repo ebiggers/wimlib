@@ -11,8 +11,6 @@ compression_srcs = \
 	comp.h \
 	decomp.c \
 	decomp.h \
-	huffman.c \
-	huffman.h \
 	lz.c \
 	lzx.h  \
 	lzx-common.c \
