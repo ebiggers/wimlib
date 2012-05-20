@@ -374,9 +374,6 @@ static int rebuild_wim(WIMStruct *w, bool check_integrity)
 		ERROR("Failed to commit changes\n");
 		return ret;
 	}
-	ret = delete_staging_dir();
-	if (ret != 0)
-		ERROR("Failed to delete the staging directory: %m\n");
 	return ret;
 }
 
@@ -441,11 +438,16 @@ static void wimfs_destroy(void *p)
 	} else {
 		status = 0;
 	}
+	ret = delete_staging_dir();
+	if (ret != 0) {
+		ERROR("Failed to delete the staging directory: %m\n");
+		if (status == 0)
+			status = ret;
+	}
 done:
 	ret = mq_send(daemon_to_unmount_mq, &status, 1, 1);
-	if (ret == -1) {
+	if (ret == -1)
 		ERROR("Failed to send status to unmount process: %m\n");
-	}
 	close_message_queues();
 }
 
