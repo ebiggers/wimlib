@@ -1,5 +1,8 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 0.7.1:
+	Support for joining and splitting WIMs.
+
 Version 0.6.3:
 	Can now build with older gcc and system headers, like on CentOS 5.
 
