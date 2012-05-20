@@ -375,9 +375,8 @@ static int rebuild_wim(WIMStruct *w, bool check_integrity)
 		return ret;
 	}
 	ret = delete_staging_dir();
-	if (ret != 0) {
+	if (ret != 0)
 		ERROR("Failed to delete the staging directory: %m\n");
-	}
 	return ret;
 }
 
@@ -532,6 +531,8 @@ static int create_staging_file(char **name_ret)
 		/* doesn't exist--- ok */
 	}
 
+	DEBUG("Creating staging file '%s'\n", name);
+
 	fd = creat(name, 0600); 
 	if (fd == -1) {
 		errno_save = errno;
@@ -610,19 +611,41 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	if (dentry_is_directory(dentry))
 		return -EISDIR;
 	lte = wim_lookup_resource(w, dentry);
-	if (!lte)
-		return 0;
 
-	if (lte->staging_file_name) {
-
+	if (lte) {
 		/* If this file is in the staging directory and the file is not
 		 * currently open, open it. */
-		if (lte->staging_num_times_opened == 0) {
+		if (lte->staging_file_name && lte->staging_num_times_opened == 0) {
 			lte->staging_fd = open(lte->staging_file_name, O_RDWR);
 			if (lte->staging_fd == -1)
 				return -errno;
 			lte->staging_offset = 0;
-		} 
+		}
+	} else {
+		/* no lookup table entry, so the file must be empty.  Create a
+		 * lookup table entry for the file. */
+		char *tmpfile_name;
+		int err;
+		int fd;
+
+		lte = new_lookup_table_entry();
+		if (!lte)
+			return -ENOMEM;
+
+		fd = create_staging_file(&tmpfile_name);
+
+		if (fd == -1) {
+			err = errno;
+			free(lte);
+			return -errno;
+		}
+		lte->resource_entry.original_size = 0;
+		randomize_byte_array(lte->hash, WIM_HASH_SIZE);
+		memcpy(dentry->hash, lte->hash, WIM_HASH_SIZE);
+		lte->staging_file_name = tmpfile_name;
+		lte->staging_fd = fd;
+		lte->staging_offset = 0;
+		lookup_table_insert(w->lookup_table, lte);
 	}
 	lte->staging_num_times_opened++;
 	return 0;
@@ -905,8 +928,9 @@ static int wimfs_truncate(const char *path, off_t size)
 	if (!dentry)
 		return -EEXIST;
 	lte = wim_lookup_resource(w, dentry);
-	if (!lte)
-		return -EEXIST;
+
+	if (!lte) /* Already a zero-length file */
+		return 0;
 	if (lte->staging_file_name) {
 		/* File on disk.  Call POSIX API */
 		if (lte->staging_num_times_opened != 0)
@@ -963,8 +987,10 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 	if (!dentry)
 		return -EEXIST;
 	lte = wim_lookup_resource(w, dentry);
-	if (!lte)
+
+	if (!lte) /* this should not happen */
 		return -EEXIST;
+
 	if (lte->staging_num_times_opened == 0)
 		return -EBADF;
 	if (lte->staging_file_name) {
