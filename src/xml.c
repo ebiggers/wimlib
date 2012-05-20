@@ -1101,7 +1101,8 @@ int read_xml_data(FILE *fp, const struct resource_entry *res, u8 **xml_data_ret,
 	xmlNode *root;
 	int ret;
 
-	DEBUG("XML data is %"PRIu64" bytes long.\n", (u64)res->size);
+	DEBUG("XML data is %"PRIu64" bytes at offset %"PRIu64"\n", 
+			(u64)res->size, res->offset);
 
 	if (resource_is_compressed(res)) {
 		ERROR("XML data is supposed to be uncompressed!\n");
@@ -1181,14 +1182,18 @@ err0:
 
 /* 
  * Writes XML data to a WIM file.
+ *
+ * If @total_bytes is non-zero, it specifies what to write to the TOTALBYTES
+ * element in the XML data.  If zero, TOTALBYTES is given the default value of
+ * the offset of the XML data.
  */
-int write_xml_data(const struct wim_info *wim_info, int image, FILE *out)
+int write_xml_data(const struct wim_info *wim_info, int image, FILE *out, 
+		   u64 total_bytes)
 {
 	xmlBuffer     *buf;
 	xmlTextWriter *writer;
 	char          *utf16_str;
 	int ret;
-	off_t total_bytes;
 	int num_images;
 	int i;
 	const xmlChar *content;
@@ -1201,13 +1206,15 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out)
 			 image <= wim_info->num_images));
 
 	/* The contents of the <TOTALBYTES> element in the XML data, under the
-	 * <WIM> element not the <IMAGE> element, is the size of the WIM file
-	 * excluding the XML data and integrity table.  Which is the current
-	 * offset, since the XML data goes at the end of the WIM file before the
-	 * integrity table. */
-	total_bytes = ftello(out);
-	if (total_bytes == -1)
-		return WIMLIB_ERR_WRITE;
+	 * <WIM> element not the <IMAGE> element, is (for non-spit WIMs) the
+	 * size of the WIM file excluding the XML data and integrity table,
+	 * which is the current offset, since the XML data goes at the end of
+	 * the WIM file before the integrity table. */
+	if (total_bytes == 0) {
+		total_bytes = ftello(out);
+		if (total_bytes == (u64)-1)
+			return WIMLIB_ERR_WRITE;
+	}
 
 	DEBUG("Creating XML buffer and text writer\n");
 	buf = xmlBufferCreate();

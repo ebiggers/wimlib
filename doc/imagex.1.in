@@ -22,6 +22,8 @@ imagex \- Create, modify, extract, mount, or unmount a WIM (Windows Imaging Form
 .br
 \fBimagex mountrw\fR \fIarguments...\fR
 .br
+\fBimagex split\fR \fIarguments...\fR
+.br
 \fBimagex unmount\fR \fIarguments...\fR
 
 .SH DESCRIPTION
@@ -47,14 +49,6 @@ Mount an image in a WIM read-only (\fBimagex mount\fR)
 .IP \[bu] 2
 Mount an image in a WIM read-write (\fBimagex mountrw\fR)
 .IP \[bu] 2
-LZX decompression and compression
-.IP \[bu] 2
-XPRESS decompression and compression
-.IP \[bu] 2
-Integrity table
-.IP \[bu] 2
-XML data (parsed and written using \fBlibxml\fR(3))
-.IP \[bu] 2
 Create a WIM from a directory (\fBimagex capture\fR)
 .IP \[bu] 2
 Append a directory onto a WIM as a new image (\fBimagex append\fR)
@@ -70,6 +64,15 @@ Change the name or description of an image in the WIM (\fBimagex info\fR)
 Change which image in a WIM is bootable (\fBimagex info\fR)
 .IP \[bu] 2
 Combining split WIMs into one WIM (\fBimage join\fR)
+.IP \[bu] 2
+Splitting a WIM into multiple parts (\fBimage split\fR)
+.IP \[bu] 2
+Support for all WIM compression types, both compression and decompression (LZX,
+XPRESS, and none)
+.IP \[bu] 2
+Integrity table
+.IP \[bu] 2
+XML data (parsed and written using \fBlibxml\fR(3))
 
 .SH UNSUPPORTED FEATURES
 The following features are currently unsupported:
@@ -80,18 +83,18 @@ This does not seem to matter for Windows PE, but this means that you should not
 use this program to image a drive containing Windows Vista/7/8 and expect it to
 be applied with the correct file permissions.
 .IP \[bu] 2
-Split WIMs are not fully supported.  These can be used to split up a WIM to fit
-on multiple CDs, if you can't use a DVD for some reason.  You can use
-\fBimagex join\fR to combine split WIMs, but you cannot yet create split WIMs or
-mount them directly.
+Alternate file streams are unsupported and will be lost when wimlib writes a WIM
+file.  Note that you shouldn't really have these on your Windows system anyway
+because they are unneeded and a security risk.
 .IP \[bu] 2
-The \fB--verify\fR option, for all commands that use it.  Without this option,
-there theoretically could be a SHA1 hash collision between two files, although
-it's very unlikely.
+Directly applying or mounting split WIMs is unsupported.  You have to combine
+them together with \fBimagex join\fR first.
 .IP \[bu] 2
-The \fB--config\fR option, for all commands that use it. 
+The \fB--verify\fR option, for all commands that use it is unsupported.  Without
+this option, there theoretically could be a SHA1 hash collision between two
+files, although it's very unlikely.
 .IP \[bu] 2
-Alternate stream entries
+The \fB--config\fR option, for all commands that use it
 .IP \[bu] 2
 Different versions of the WIM file format (if different versions even exist)
 
@@ -101,15 +104,30 @@ Also see the Doxygen documentation for Wimlib.
 
 See \fBUNSUPPORTED FEATURES\fR.
 
-The \fB/scroll\fR and \fB/log\fR switches from Microsoft's version imagex are
-not planned to be implemented.  Note that to scroll the output in the UNIX shell
-you can just pipe the output into \fBless\fR(1).
+The most important difference is that this version of \fBimagex\fR cannot
+capture and restore Windows images losslessly because file permissions and
+alternate file streams are ignored.  This is because Microsoft designed the WIM
+format to be specific to their NTFS filesystem and the Windows security
+model/API, which is difficult to support in a non-Windows program.  You can
+still create images of Windows PE, however.
+
+See the documentation for each subcommand of \fBimagex\fR; in some cases they do
+not do exactly the same thing as imagex.exe.
 
 Some features, such as the ability to keep files hard-linked when they are
 extracted from a WIM, are not available in Microsoft's version of imagex.
+Also, doesn't seem to be an equivalent of \fBimagex join\fR in Microsoft's
+version; you would have to use \fBimagex.exe /export\fR, but that doesn't let
+you export all images at once.
 
-See the documentation for each command; in some cases they do not do exactly the
-same thing as imagex.exe.
+Microsoft's version has some weird limitations, like it won't let you extract a
+WIM on a shared folder, and it requires some commands to be run only from
+Windows PE and not from regular Windows.  This version does not have these
+unusual limitations, although it won't actually run on Windows anyway.
+
+The \fB/scroll\fR and \fB/log\fR switches from Microsoft's version of imagex
+will not be implemented.  Note that to scroll the output in the UNIX shell you
+can just pipe the output into \fBless\fR(1).
 
 Obviously, this version of imagex is free software but Microsoft's version is
 not.
@@ -117,13 +135,13 @@ not.
 .SH WARNING
 
 Note: \fBwimlib\fR and \fBimagex\fR are experimental.  Use Microsoft's
-imagex.exe if you have to make sure your WIM files are made correctly.  Not all
-features listed under \fBSUPPORTED FEATURES\fR have been thoroughly tested.
+imagex.exe if you have to make sure your WIM files are made "correctly".  Not
+all features listed under \fBSUPPORTED FEATURES\fR have been thoroughly tested.
 Feel free to submit a bug report if you find a bug.
 
 Some parts of the WIM file format are poorly documented or even completely
-undocumented, so these parts had to be reverse engineered for compatibility
-purposes.
+undocumented, so I've just had to do the best I can to read and write WIMs in a
+way that appears to be compatible with Microsoft's software.
 
 .SH REPORTING BUGS
 
@@ -140,5 +158,6 @@ Report bugs to ebiggers3@gmail.com.
 .BR imagex-join (1),
 .BR imagex-mount (1),
 .BR imagex-mountrw (1),
+.BR imagex-split (1),
 .BR imagex-unmount (1),
 

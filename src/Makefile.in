@@ -103,8 +103,8 @@ libwim_la_DEPENDENCIES = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 am__objects_1 = comp.lo decomp.lo huffman.lo lz.lo lzx-common.lo \
 	lzx-comp.lo lzx-decomp.lo xpress-comp.lo xpress-decomp.lo
 am__objects_2 = dentry.lo extract.lo header.lo integrity.lo join.lo \
-	lookup_table.lo modify.lo mount.lo resource.lo sha1.lo util.lo \
-	wim.lo write.lo xml.lo
+	lookup_table.lo modify.lo mount.lo resource.lo sha1.lo \
+	split.lo util.lo wim.lo write.lo xml.lo
 am_libwim_la_OBJECTS = $(am__objects_1) $(am__objects_2)
 libwim_la_OBJECTS = $(am_libwim_la_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
@@ -295,6 +295,7 @@ other_srcs = \
 	resource.c \
 	sha1.c \
 	sha1.h \
+	split.c \
 	timestamp.h \
 	util.c \
 	util.h \
@@ -408,6 +409,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/resource.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sha1.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/split.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/util.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/wim.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/write.Plo@am__quote@

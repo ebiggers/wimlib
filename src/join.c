@@ -3,7 +3,6 @@
  *
  * Join split WIMs (sometimes named as .swm files) together into one WIM.
  *
- * Copyright (C) 2010 Carl Thijssen
  * Copyright (C) 2012 Eric Biggers
  *
  * wimlib - Library for working with WIM files 
@@ -26,32 +25,6 @@
 #include "lookup_table.h"
 #include "xml.h"
 
-static int join_resource(struct lookup_table_entry *lte, void *split_wim)
-{
-	FILE *split_wim_fp = ((WIMStruct*)split_wim)->fp;
-	FILE *joined_wim_fp = ((WIMStruct*)split_wim)->out_fp;
-	int ret;
-
-	u64 size = lte->resource_entry.size;
-	u64 offset = lte->resource_entry.offset;
-	off_t new_offset = ftello(joined_wim_fp);
-
-	if (new_offset == -1)
-		return WIMLIB_ERR_WRITE;
-
-	ret = copy_between_files(split_wim_fp, offset, joined_wim_fp, size);
-	if (ret != 0)
-		return ret;
-
-	memcpy(&lte->output_resource_entry, &lte->resource_entry, 
-			sizeof(struct resource_entry));
-
-	lte->output_resource_entry.offset = new_offset;
-	lte->out_refcnt = lte->refcnt;
-	lte->part_number = 1;
-	return 0;
-}
-
 static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 		     int write_flags)
 {
@@ -60,21 +33,40 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 	FILE *out_fp = joined_wim->out_fp;
 	u64 total_bytes = wim_info_get_total_bytes(swms[0]->wim_info);
 
-	/* The following loop writes both file resources and metadata resources
-	 * because it loops over the lookup table entries rather than the dentry
-	 * tree for the images */
+	swms[0]->write_metadata = false;
 	for (i = 0; i < num_swms; i++) {
 		if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
 			off_t cur_offset = ftello(out_fp);
 			printf("Writing resources from part %u of %u "
-					"(%"PRIu64" of %"PRIu64" bytes, %.2f%% done)\n",
+					"(%"PRIu64" of %"PRIu64" bytes, %.0f%% done)\n",
 					i + 1, num_swms,
 					cur_offset, total_bytes,
 					(double)cur_offset / total_bytes * 100.0);
 		}
+		swms[i]->fp = fopen(swms[i]->filename, "rb");
+		if (!swms[i]->fp) {
+			ERROR("Failed to reopen `%s': %m\n", swms[i]->filename);
+			return WIMLIB_ERR_OPEN;
+		}
 		swms[i]->out_fp = out_fp;
+		swms[i]->hdr.part_number = 1;
 		ret = for_lookup_table_entry(swms[i]->lookup_table, 
-					     join_resource, swms[i]);
+					     copy_resource, swms[i]);
+		if (ret != 0)
+			return ret;
+		if (i != 0) {
+			fclose(swms[i]->fp);
+			swms[i]->fp = NULL;
+		}
+	}
+	swms[0]->write_metadata = true;
+	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
+		printf("Writing %d metadata resources\n", 
+			swms[0]->hdr.image_count);
+
+	for (i = 0; i < swms[0]->hdr.image_count; i++) {
+		ret = copy_resource(swms[0]->image_metadata[i].lookup_table_entry, 
+				    swms[0]);
 		if (ret != 0)
 			return ret;
 	}
@@ -101,11 +93,12 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 	swms[0]->hdr.lookup_table_res_entry.size = 
 					xml_data_offset - lookup_table_offset;
 
-	swms[0]->hdr.flags &= ~WIM_HDR_FLAG_SPANNED;
 
 	/* finish_write is called on the first swm, not the joined_wim, because
 	 * the first swm is the one that has the image metadata and XML data
 	 * attached to it.  */
+	swms[0]->hdr.flags &= ~WIM_HDR_FLAG_SPANNED;
+	swms[0]->hdr.total_parts = 1;
 	return finish_write(swms[0], WIM_ALL_IMAGES, write_flags, 0);
 }
 
@@ -132,6 +125,11 @@ WIMLIBAPI int wimlib_join(const char **swm_names, int num_swms,
 				      flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &w);
 		if (ret != 0)
 			goto err;
+
+		/* don't open all the parts at the same time, in case there are
+		 * a lot af them */
+		fclose(w->fp);
+		w->fp = NULL;
 
 		if (i == 0) {
 			ctype = wimlib_get_compression_type(w);

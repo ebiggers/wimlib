@@ -249,7 +249,7 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 	u32   integrity_table_size;
 	int   ret;
 
-	DEBUG("Writing integrity table.\n");
+	DEBUG("Writing integrity table\n");
 	if (fseeko(out, end_header_offset, SEEK_SET) != 0) {
 		ERROR("Failed to seek to byte %"PRIu64" of WIM "
 				"to calculate integrity data: %m\n",
@@ -301,6 +301,7 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 			fflush(stdout);
 		}
 
+
 		size_t bytes_to_read = min(INTEGRITY_CHUNK_SIZE, bytes_remaining);
 		size_t bytes_read = fread(chunk_buf, 1, bytes_to_read, out);
 		if (bytes_read != bytes_to_read) {
@@ -319,7 +320,9 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 		bytes_remaining -= bytes_read;
 	}
 	if (show_progress)
-		putchar('\n');
+		puts("Calculating integrity checksums for WIM "
+				"(0 bytes remaining, 100% done)"
+				"                       ");
 
 	if (fseeko(out, 0, SEEK_END) != 0) {
 		ERROR("Failed to seek to end of WIM to write integrity "

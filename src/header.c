@@ -165,10 +165,14 @@ int write_header(const struct wim_header *hdr, FILE *out)
 	p = put_u32(p, hdr->flags);
 	p = put_u32(p, (hdr->flags & WIM_HDR_FLAG_COMPRESSION) ? 
 				WIM_CHUNK_SIZE : 0);
-	randomize_byte_array(p, WIM_GID_LEN);
-	p += WIM_GID_LEN;
-	p = put_u16(p, 1); /* part number */
-	p = put_u16(p, 1); /* total parts */
+	/* byte 24 */
+
+	p = put_bytes(p, WIM_GID_LEN, hdr->guid);
+	p = put_u16(p, hdr->part_number);
+
+	/* byte 40 */
+
+	p = put_u16(p, hdr->total_parts);
 	p = put_u32(p, hdr->image_count);
 	p = put_resource_entry(p, &hdr->lookup_table_res_entry);
 	p = put_resource_entry(p, &hdr->xml_res_entry);
@@ -205,6 +209,8 @@ int init_header(struct wim_header *hdr, int ctype)
 		ERROR("Invalid compression type specified (%d)!\n", ctype);
 		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 	}
+	hdr->total_parts = 1;
+	hdr->part_number = 1;
 	randomize_byte_array(hdr->guid, sizeof(hdr->guid));
 	return 0;
 }

@@ -1,0 +1,41 @@
+.TH IMAGEX "1" "May 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.SH NAME
+imagex split \- Split a WIM into multiple parts
+
+.SH SYNOPSIS
+\fBimagex split\fR \fIWIMFILE\fR \fISPLIT_WIMFILE\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
+
+.SH DESCRIPTION
+.PP
+
+Splits \fIWIMFILE\fR into parts with size at most \fIPART_SIZE\fR megabytes,
+with the first part having the name \fISPLIT_WIMFILE\fR and the other parts
+having names numbered in order of the parts.
+
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
+present; additionally, when writing each \fISPLIT_WIMFILE\fR, write an integrity
+table.  If this option is not specified, no integrity tables are included in the
+split WIM files, even if there was one in the original WIM.
+
+.SH EXAMPLES
+.IP 
+imagex split windows.wim windows.swm 100
+.LP
+Splits the WIM 'windows.wim' into 'windows.swm', 'windows2.swm', 'windows3.swm',
+etc. where each part is at most 100 MiB.
+
+.SH NOTE
+
+It it possible for the size of the parts to exceed the \fIPART_SIZE\fR given.
+This is impossible to avoid and Microsoft's program has this problem as well
+because the WIM file format provides no way to divide a single file resource in
+the WIM among multiple split WIM parts.  So if you, for example, have a file
+inside the WIM that is 100 MiB, then an uncompressed split WIM will have at
+least one part that is 100 MiB in size to contain that file.  If the WIM
+resources are compressed then less space would be needed.
+
+.SH SEE ALSO
+.BR imagex (1)

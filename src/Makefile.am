@@ -38,6 +38,7 @@ other_srcs = \
 	resource.c \
 	sha1.c \
 	sha1.h \
+	split.c \
 	timestamp.h \
 	util.c \
 	util.h \

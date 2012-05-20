@@ -48,6 +48,7 @@ enum imagex_op_type {
 	JOIN,
 	MOUNT,
 	MOUNTRW,
+	SPLIT,
 	UNMOUNT,
 };
 
@@ -100,6 +101,8 @@ static const char *usage_strings[] = {
 [MOUNTRW] = 
 "    imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
 "        [--check] [--debug]\n",
+[SPLIT] = 
+"    imagex split WIMFILE SPLIT_WIMFILE PART_SIZE [--check]\n",
 [UNMOUNT] = 
 "    imagex unmount DIRECTORY [--commit] [--check]\n",
 };
@@ -162,13 +165,17 @@ static const struct option info_options[] = {
 
 static const struct option join_options[] = {
 	{"check", no_argument, NULL, 'c'},
-	{"output", required_argument, NULL, 'o'},
 	{NULL, 0, NULL, 0},
 };
 
 static const struct option mount_options[] = {
 	{"check", no_argument, NULL, 'c'},
 	{"debug", no_argument, NULL, 'd'},
+	{NULL, 0, NULL, 0},
+};
+
+static const struct option split_options[] = {
+	{"check", no_argument, NULL, 'c'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1018,8 +1025,8 @@ static int imagex_join(int argc, const char **argv)
 	argc -= optind;
 	argv += optind;
 
-	if (argc < 3) {
-		imagex_error("Must specify at least two split WIM "
+	if (argc < 2) {
+		imagex_error("Must specify at least one split WIM "
 				"(.swm) parts to join!\n");
 		goto err;
 	}
@@ -1103,6 +1110,34 @@ done:
 	return ret;
 }
 
+/* Split a WIM into a spanned set */
+static int imagex_split(int argc, const char **argv)
+{
+	int c;
+	int flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
+	unsigned long part_size;
+
+	for_opt(c, split_options) {
+		switch (c) {
+		case 'c':
+			flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			break;
+		default:
+			usage(SPLIT);
+			return -1;
+		}
+	}
+	argc -= optind;
+	argv += optind;
+
+	if (argc != 3) {
+		usage(SPLIT);
+		return -1;
+	}
+	part_size = strtoul(argv[2], NULL, 10) * (1 << 20);
+	return wimlib_split(argv[0], argv[1], part_size, flags);
+}
+
 /* Unmounts an image. */
 static int imagex_unmount(int argc, const char **argv)
 {
@@ -1153,6 +1188,7 @@ static struct imagex_command imagex_commands[] = {
 	{"join",    imagex_join,	   JOIN},
 	{"mount",   imagex_mount_rw_or_ro, MOUNT},
 	{"mountrw", imagex_mount_rw_or_ro, MOUNTRW},
+	{"split",   imagex_split,          SPLIT},
 	{"unmount", imagex_unmount,	   UNMOUNT},
 };
 

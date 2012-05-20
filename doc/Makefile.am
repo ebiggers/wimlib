@@ -9,6 +9,7 @@ man1_MANS = 	 imagex.1 \
 		 imagex-join.1 \
 		 imagex-mount.1 \
 		 imagex-mountrw.1 \
+		 imagex-split.1 \
 		 imagex-unmount.1 \
 		 mkwinpeimg.1
 

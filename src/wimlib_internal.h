@@ -224,22 +224,18 @@ struct image_metadata {
 
 /* The opaque structure exposed to the wimlib API. */
 typedef struct WIMStruct {
-	/* The name of the WIM file that has been opened. */
-	char                *filename;
 
 	/* A pointer to the file indicated by @filename, opened for reading. */
 	FILE                *fp;
 
-	/* The currently selected image, indexed starting at 1.  If not 0,
-	 * subtract 1 from this to get the index of the current image in the
-	 * image_metadata array. */
-	int                  current_image;
+	/* FILE pointer for the WIM file that is being written. */
+	FILE  *out_fp;
+
+	/* The name of the WIM file that has been opened. */
+	char                *filename;
 
 	/* The lookup table for the WIM file. */ 
 	struct lookup_table *lookup_table;
-
-	/* The header of the WIM file. */
-	struct wim_header    hdr;
 
 	/* Pointer to the XML data read from the WIM file. */
 	u8                  *xml_data;
@@ -252,22 +248,31 @@ typedef struct WIMStruct {
 	 * WIM has a image metadata associated with it. */
 	struct image_metadata     *image_metadata;
 
-	/* True if files names are to be printed when doing extraction. 
-	 * May be used for other things later. */
-	bool   verbose;
+	/* Name of the output directory for extraction. */
+	char  *output_dir;
+
+	/* The header of the WIM file. */
+	struct wim_header    hdr;
 
 	/* The type of links to create when extracting files (hard, symbolic, or
 	 * none.) */
 	int    link_type;
 
-	/* Name of the output directory for extraction. */
-	char  *output_dir;
+	/* The currently selected image, indexed starting at 1.  If not 0,
+	 * subtract 1 from this to get the index of the current image in the
+	 * image_metadata array. */
+	int                  current_image;
 
-	/* Set to true when extracting multiple images */
-	bool   is_multi_image_extraction;
+	/* True if files names are to be printed when doing extraction. 
+	 * May be used for other things later. */
+	bool   verbose;
 
-	/* FILE pointer for the WIM file that is being written. */
-	FILE  *out_fp;
+	union {
+		/* Set to true when extracting multiple images */
+		bool is_multi_image_extraction;
+
+		bool write_metadata;
+	};
 } WIMStruct;
 
 
@@ -369,6 +374,14 @@ static inline int read_full_resource(FILE *fp, u64 resource_size,
 				resource_original_size, 0, contents_ret);
 }
 
+extern int write_file_resource(struct dentry *dentry, void *wim_p);
+extern int copy_resource(struct lookup_table_entry *lte, void *w);
+extern int copy_between_files(FILE *in, off_t in_offset, FILE *out, size_t len);
+extern int write_resource_from_memory(const u8 resource[], int out_ctype,
+				      u64 resource_original_size, FILE *out,
+				      u64 *resource_size_ret);
+extern int write_metadata_resource(WIMStruct *w);
+
 #if 0
 /* security.c */
 bool read_security_data(const u8 metadata_resource[], 
@@ -391,13 +404,8 @@ extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 /* write.c */
 extern int finish_write(WIMStruct *w, int image, int flags, 
 			int write_lookup_table);
-extern int copy_between_files(FILE *in, off_t in_offset, FILE *out, size_t len);
-extern int write_resource_from_memory(const u8 resource[], int out_ctype,
-				      u64 resource_original_size, FILE *out,
-				      u64 *resource_size_ret);
 
 extern int begin_write(WIMStruct *w, const char *path, int flags);
-extern int write_metadata_resource(WIMStruct *w);
 
 
 #include "wimlib.h"

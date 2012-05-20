@@ -140,13 +140,12 @@
  *   WIM without security data, including a boot.wim for Windows PE, but <b>do
  *   not expect to be able to use wimlib to image a Windows installation and
  *   preserve file attributes</b>.
- * - There is no way to create split WIMs.
+ * - There is no way to directly extract or mount split WIMs.
  * - There is not yet any code to verify that there are no collisions between
  *   different files that happen to have the same SHA1 message digest.
  *   This is extremely unlikely, but could result in something bad such as a
  *   file going missing.
- * - Alternate stream entries for directory entries are ignored.  I'm not sure
- *   if these are ever used for anything important.
+ * - Alternate stream entries for directory entries are ignored.
  * - Different versions of the WIM file format, if they even exist, are
  *   unsupported.  Let me know if you notice WIM files with a different version.
  * - Chunk sizes other than 32768 are unsupported (except for uncompressed WIMs,
@@ -174,7 +173,7 @@
  * split up LZX compressed blocks, which is not yet implemented in wimlib.
  *
  * wimlib is experimental and likely contains bugs; use Microsoft's @a
- * imagex.exe if you want to make sure your WIM files are made correctly.
+ * imagex.exe if you want to make sure your WIM files are made "correctly".
  *
  * \section legal License
  *
@@ -706,7 +705,7 @@ extern bool wimlib_image_name_in_use(const WIMStruct *wim, const char *name);
  * 	the parts of the original WIM, there are duplicate parts, or not all the
  * 	parts have the same GUID and compression type.
  * @retval ::WIMLIB_ERR_WRITE
- * 	An error occurred when trying to write data to to the new WIM at @a output_path.
+ * 	An error occurred when trying to write data to the new WIM at @a output_path.
  *
  * Note that this function merely copies the resources, so it will not check to
  * see if the resources, including the metadata resource, are valid or not.
@@ -1204,6 +1203,34 @@ extern void wimlib_set_verbose(WIMStruct *wim, bool verbose);
  * 	Failed to allocate the memory needed to duplicate the @a dir string.
  */
 extern int wimlib_set_output_dir(WIMStruct *wim, const char *dir);
+
+/**
+ * Splits a WIM into multiple parts.
+ *
+ * @param wimfile
+ * 	Name of the WIM file to split.  It must be a standalone, one-part WIM.
+ * @param swm_name
+ * 	Name of the SWM file to create.  This will be the name of the first
+ * 	part.  The other parts will have the same name with 2, 3, 4, ..., etc.
+ * 	appended.
+ * @param part_size
+ * 	The maximum size per part.  It is not guaranteed that this will really
+ * 	be the maximum size per part, because some file resources in the WIM may
+ * 	be larger than this size, and the WIM file format provides no way to
+ * 	split up file resources among multiple WIMs.
+ * @param flags
+ * 	Bitwise OR of ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY and/or
+ * 	::WIMLIB_OPEN_FLAG_SHOW_PROGRESS.
+ *
+ * @return 0 on success; nonzero on error.  This function may return any value
+ * returned by wimlib_open_wim() as well as the following error codes:
+ *
+ * @retval ::WIMLIB_ERR_WRITE
+ * 	An error occurred when trying to write data to one of the split WIMs.
+ *
+ */
+extern int wimlib_split(const char *wimfile, const char *swm_name, 
+			size_t part_size, int flags);
 
 /**
  * Unmounts a WIM image that was mounted using wimlib_mount().

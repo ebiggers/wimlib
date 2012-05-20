@@ -47,6 +47,7 @@ struct lookup_table_entry {
 	union {
 		char *file_on_disk;
 		char *staging_file_name;
+		struct lookup_table_entry *next_lte_in_swm;
 	};
 
 	union {
