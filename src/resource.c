@@ -1038,10 +1038,12 @@ int write_metadata_resource(WIMStruct *w)
 		return WIMLIB_ERR_WRITE;
 
 	#ifdef ENABLE_SECURITY_DATA
-	subdir_offset = wim_security_data(w)->total_length + root->length + 8;
-	#else
-	subdir_offset = 8 + root->length + 8;
+	struct wim_security_data *sd = wim_security_data(w);
+	if (sd)
+		subdir_offset = sd->total_length + root->length + 8;
+	else
 	#endif
+		subdir_offset = 8 + root->length + 8;
 	calculate_subdir_offsets(root, &subdir_offset);
 	metadata_original_size = subdir_offset;
 	buf = MALLOC(metadata_original_size);
@@ -1052,7 +1054,7 @@ int write_metadata_resource(WIMStruct *w)
 	}
 	#ifdef ENABLE_SECURITY_DATA
 	/* Write the security data. */
-	p = write_security_data(wim_security_data(w), buf);
+	p = write_security_data(sd, buf);
 	#else
 	p = put_u32(buf, 8); /* Total length of security data. */
 	p = put_u32(p, 0); /* Number of security data entries. */
