@@ -255,7 +255,6 @@ void print_security_data(const struct wim_security_data *sd)
 	} else {
 		puts("Length            = 8 bytes\n"
 		     "Number of Entries = 0");
-		return;
 	}
 	putchar('\n');
 }
