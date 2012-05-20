@@ -53,7 +53,8 @@ Shows detailed information from the WIM header.
 Prints all the entries in the lookup table of the WIM.
 .TP
 \fB--metadata\fR
-Prints the metadata for the directory tree for the specified image.
+Prints the metadata, including the security data and the directory entry tree,
+for the specified image.
 .TP
 \fB--xml\fR
 Prints the XML data for the WIM.

@@ -777,6 +777,7 @@ enable_error_messages
 enable_custom_memory_allocator
 enable_assertions
 enable_verify_compression
+enable_security_data
 with_fuse
 enable_ssse3_sha1
 with_libcrypto
@@ -1429,6 +1430,8 @@ Optional Features:
   --disable-verify-compression
                           disable checking if blocks we compress can be
                           correctly decompressed
+  --disable-security-data disable the ability to retain the security data of
+                          existing WIMs
   --enable-ssse3-sha1     use assembly language implementation of SHA1 from
                           Intel, accelerated with vector instructions
                           (SSSE3-enabled CPU required)
@@ -13433,6 +13436,24 @@ $as_echo "$ENABLE_VERIFY_COMPRESSION" >&6; }
 if test "x$ENABLE_VERIFY_COMPRESSION" = "xyes"; then
 
 $as_echo "#define ENABLE_VERIFY_COMPRESSION 1" >>confdefs.h
+
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to include support for copying security data" >&5
+$as_echo_n "checking whether to include support for copying security data... " >&6; }
+# Check whether --enable-security_data was given.
+if test "${enable_security_data+set}" = set; then :
+  enableval=$enable_security_data; ENABLE_SECURITY_DATA=$enableval
+else
+  ENABLE_SECURITY_DATA=yes
+
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ENABLE_SECURITY_DATA" >&5
+$as_echo "$ENABLE_SECURITY_DATA" >&6; }
+if test "x$ENABLE_SECURITY_DATA" = "xyes"; then
+
+$as_echo "#define ENABLE_SECURITY_DATA 1" >>confdefs.h
 
 fi
 

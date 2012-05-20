@@ -134,12 +134,13 @@
  *
  * While wimlib supports the main features of WIM files, wimlib currently has
  * the following limitations:
- * - wimlib does not support "security data", which describes the access rights
- *   of the files in the WIM.  This data is very Windows-specific, and it would
- *   be difficult to do anything with it.  Microsoft's software can still read a
- *   WIM without security data, including a boot.wim for Windows PE, but <b>do
- *   not expect to be able to use wimlib to image a Windows installation and
- *   preserve file attributes</b>.
+ * - wimlib does not support modifying or creating "security data", which
+ *   describes the access rights of the files in the WIM.  This data is very
+ *   Windows-specific, and it would be difficult to do anything with it.
+ *   Microsoft's software can still read a WIM without security data, including
+ *   a boot.wim for Windows PE, but <b>do not expect to be able to use wimlib to
+ *   image a Windows installation and preserve file attributes</b>.  However, by
+ *   default, wimlib will preserve security data for existing WIMs.
  * - There is no way to directly extract or mount split WIMs.
  * - There is not yet any code to verify that there are no collisions between
  *   different files that happen to have the same SHA1 message digest.
@@ -291,6 +292,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_INVALID_INTEGRITY_TABLE,
 	WIMLIB_ERR_INVALID_PARAM,
 	WIMLIB_ERR_INVALID_RESOURCE_SIZE,
+	WIMLIB_ERR_INVALID_SECURITY_DATA,
 	WIMLIB_ERR_LINK,
 	WIMLIB_ERR_MKDIR,
 	WIMLIB_ERR_MQUEUE,

@@ -29,7 +29,7 @@
 
 static int print_metadata(WIMStruct *w)
 {
-#if 0
+#ifdef ENABLE_SECURITY_DATA
 	print_security_data(wim_security_data(w));
 #endif
 	return for_dentry_in_tree(wim_root_dentry(w), print_dentry, 
@@ -220,10 +220,11 @@ int wimlib_select_image(WIMStruct *w, int image)
 		DEBUG("Freeing image %u\n", w->current_image);
 		imd = wim_get_current_image_metadata(w);
 		free_dentry_tree(imd->root_dentry, NULL, false);
-#if 0
-		destroy_security_data(&imd->security_data);
-#endif
 		imd->root_dentry = NULL;
+#ifdef ENABLE_SECURITY_DATA
+		free_security_data(imd->security_data);
+		imd->security_data = NULL;
+#endif
 	}
 
 	w->current_image = image;
@@ -239,8 +240,7 @@ int wimlib_select_image(WIMStruct *w, int image)
 		return read_metadata_resource(w->fp, 
 				wim_metadata_resource_entry(w),
 				wimlib_get_compression_type(w), 
-				/*wim_security_data(w), */
-				wim_root_dentry_p(w));
+				wim_get_current_image_metadata(w));
 	}
 }
 
@@ -579,9 +579,13 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 	FREE(w->xml_data);
 	free_wim_info(w->wim_info);
 	if (w->image_metadata) {
-		for (i = 0; i < w->hdr.image_count; i++)
+		for (i = 0; i < w->hdr.image_count; i++) {
 			free_dentry_tree(w->image_metadata[i].root_dentry, 
 					 NULL, false);
+			#ifdef ENABLE_SECURITY_DATA
+			free_security_data(w->image_metadata[i].security_data);
+			#endif
+		}
 		FREE(w->image_metadata);
 	}
 	FREE(w);

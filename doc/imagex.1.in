@@ -77,11 +77,12 @@ XML data (parsed and written using \fBlibxml\fR(3))
 .SH UNSUPPORTED FEATURES
 The following features are currently unsupported:
 .IP \[bu] 2
-File permissions and security descriptors are ignored.  The information
-contained in them in an existing WIM will be lost when wimlib writes a WIM file.
-This does not seem to matter for Windows PE, but this means that you should not
-use this program to image a drive containing Windows Vista/7/8 and expect it to
-be applied with the correct file permissions.
+Wimlib cannot add security data when it captures a WIM file, although it will
+preserve security data for existing WIM files.  New files added to a mounted
+WIM will be added without security data.  This does not seem to matter for
+Windows PE, but this means that you should not use this program to image a drive
+containing Windows Vista/7/8 and expect it to be applied with the correct file
+permissions.
 .IP \[bu] 2
 Alternate file streams are unsupported and will be lost when wimlib writes a WIM
 file.  Note that you shouldn't really have these on your Windows system anyway
@@ -92,11 +93,13 @@ them together with \fBimagex join\fR first.
 .IP \[bu] 2
 The \fB--verify\fR option, for all commands that use it is unsupported.  Without
 this option, there theoretically could be a SHA1 hash collision between two
-files, although it's very unlikely.
+files, although it's very unlikely.  You can still verify a WIM manually by
+capturing it, then applying it to a different location, then running a recursive
+diff on the two directory trees.
 .IP \[bu] 2
-The \fB--config\fR option, for all commands that use it
+The \fB--config\fR option, for all commands that use it.
 .IP \[bu] 2
-Different versions of the WIM file format (if different versions even exist)
+Different versions of the WIM file format (if different versions even exist).
 
 Also see the Doxygen documentation for Wimlib.
 
@@ -106,10 +109,11 @@ See \fBUNSUPPORTED FEATURES\fR.
 
 The most important difference is that this version of \fBimagex\fR cannot
 capture and restore Windows images losslessly because file permissions and
-alternate file streams are ignored.  This is because Microsoft designed the WIM
-format to be specific to their NTFS filesystem and the Windows security
-model/API, which is difficult to support in a non-Windows program.  You can
-still create images of Windows PE, however.
+alternate file streams cannot be captured.  This is because Microsoft designed
+the WIM format to be specific to their NTFS filesystem and the Windows security
+model/API, which is difficult to support in a non-Windows program.  However, you
+can still create images of Windows PE, even from a directory tree on a non-NTFS
+filesystem.
 
 See the documentation for each subcommand of \fBimagex\fR; in some cases they do
 not do exactly the same thing as imagex.exe.

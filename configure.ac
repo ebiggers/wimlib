@@ -132,6 +132,20 @@ if test "x$ENABLE_VERIFY_COMPRESSION" = "xyes"; then
 		   compressed data])
 fi
 
+AC_MSG_CHECKING([whether to include support for copying security data])
+AC_ARG_ENABLE([security_data],
+	      AS_HELP_STRING([--disable-security-data], [disable
+				the ability to retain the security data of
+				existing WIMs]),
+	[ENABLE_SECURITY_DATA=$enableval],
+	[ENABLE_SECURITY_DATA=yes]
+	)
+AC_MSG_RESULT([$ENABLE_SECURITY_DATA])
+if test "x$ENABLE_SECURITY_DATA" = "xyes"; then
+	AC_DEFINE([ENABLE_SECURITY_DATA], [1], [Define to 1 to enable support
+		   for copying security data])
+fi
+
 AC_MSG_CHECKING([whether to include support for mounting WIMs])
 AC_ARG_WITH([fuse],
 		AS_HELP_STRING([--without-fuse], [build without libfuse.  

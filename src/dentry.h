@@ -35,8 +35,10 @@ struct dentry {
 
 	/* The index of the node in the security table that contains this file's
 	 * security information.  If -1, no security information exists for this
-	 * file.  Currently ignoring this field.*/
-	//int32_t security_id;
+	 * file.  */
+#ifdef ENABLE_SECURITY_DATA
+	int32_t security_id;
+#endif
 
 	/* The offset, from the start of the metadata section, of this directory
 	 * entry's child files.  0 if the directory entry has no children. */

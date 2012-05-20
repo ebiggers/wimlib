@@ -916,13 +916,13 @@ static int transfer_file_resource(FILE *in, u64 size, u64 original_size,
  * @return:	True on success, false on failure.
  */
 int read_metadata_resource(FILE *fp, const struct resource_entry *res_entry,
-			   int wim_ctype, struct dentry **root_dentry_p)
+			   int wim_ctype, struct image_metadata *image_metadata)
 {
 	u8 *buf;
 	int ctype;
 	u32 dentry_offset;
 	int ret;
-	struct dentry *dentry;
+	struct dentry *dentry = NULL;
 
 	DEBUG("Reading metadata resource: length = %lu, offset = %lu\n",
 			res_entry->original_size, res_entry->offset);
@@ -955,11 +955,6 @@ int read_metadata_resource(FILE *fp, const struct resource_entry *res_entry,
 
 	DEBUG("Finished reading metadata resource into memory.\n");
 
-#if 0
-	/* Read the security data into a WIMSecurityData structure. */
-	if (!read_security_data(buf, res_entry->original_size, sd))
-		goto err1;
-#endif
 
 	dentry = MALLOC(sizeof(struct dentry));
 	if (!dentry) {
@@ -974,7 +969,17 @@ int read_metadata_resource(FILE *fp, const struct resource_entry *res_entry,
 	 *
 	 * The security data starts with a 4-byte integer giving its total
 	 * length. */
+
+	/* Read the security data into a WIMSecurityData structure. */
+#ifdef ENABLE_SECURITY_DATA
+	ret = read_security_data(buf, res_entry->original_size, 
+				 &image_metadata->security_data);
+	if (ret != 0)
+		goto err1;
+#endif
 	get_u32(buf, &dentry_offset);
+	if (dentry_offset == 0)
+		dentry_offset = 8;
 	dentry_offset += (8 - dentry_offset % 8) % 8;
 		
 	ret = read_dentry(buf, res_entry->original_size, dentry_offset, dentry);
@@ -996,7 +1001,7 @@ int read_metadata_resource(FILE *fp, const struct resource_entry *res_entry,
 	if (ret != 0)
 		goto err2;
 
-	*root_dentry_p = dentry;
+	image_metadata->root_dentry = dentry;
 	FREE(buf);
 	return ret;
 err2:
@@ -1032,7 +1037,11 @@ int write_metadata_resource(WIMStruct *w)
 	if (metadata_offset == -1)
 		return WIMLIB_ERR_WRITE;
 
+	#ifdef ENABLE_SECURITY_DATA
+	subdir_offset = wim_security_data(w)->total_length + root->length + 8;
+	#else
 	subdir_offset = 8 + root->length + 8;
+	#endif
 	calculate_subdir_offsets(root, &subdir_offset);
 	metadata_original_size = subdir_offset;
 	buf = MALLOC(metadata_original_size);
@@ -1041,12 +1050,11 @@ int write_metadata_resource(WIMStruct *w)
 				"metadata resource\n", metadata_original_size);
 		return WIMLIB_ERR_NOMEM;
 	}
-	p = buf;
-	#if 0
+	#ifdef ENABLE_SECURITY_DATA
 	/* Write the security data. */
-	p = write_security_data(wim_security_data(w), p);
+	p = write_security_data(wim_security_data(w), buf);
 	#else
-	p = put_u32(p, 8); /* Total length of security data. */
+	p = put_u32(buf, 8); /* Total length of security data. */
 	p = put_u32(p, 0); /* Number of security data entries. */
 	#endif
 

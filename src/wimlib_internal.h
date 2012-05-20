@@ -181,10 +181,10 @@ struct wim_header {
 #define WIM_HDR_FLAG_COMPRESS_LZX       0x00040000
 
 
-#if 0
+#ifdef ENABLE_SECURITY_DATA
 /* Structure for security data.  Each image in the WIM file has its own security
  * data. */
-typedef struct WIMSecurityData {
+struct wim_security_data {
 	/* The total length of the security data, in bytes.  A typical size is
 	 * 2048 bytes.  If there is no security data, though (as in the WIMs
 	 * that wimlib writes, currently), it will be 8 bytes. */
@@ -198,28 +198,31 @@ typedef struct WIMSecurityData {
 
 	/* Array of descriptors. */
 	u8 **descriptors;
+
+	/* keep track of how many WIMs reference this security data (used when
+	 * exporting images between WIMs) */
+	u32 refcnt;
 } WIMSecurityData;
 #endif
 
 /* Metadata resource for an image. */
 struct image_metadata {
-
-#if 0
-	/* The security data for the image. */
-	WIMSecurityData      security_data;
-#endif
-
-	/* The root dentry for the image. */
+	/* Pointer to the root dentry for the image. */
 	struct dentry    *root_dentry;
+
+#ifdef ENABLE_SECURITY_DATA
+	/* Pointer to the security data for the image. */
+	struct wim_security_data *security_data;
+#endif
+	/* A pointer to the lookup table entry for this image's metadata
+	 * resource. */
+	struct lookup_table_entry *lookup_table_entry;
 
 	/* True if the filesystem of the image has been modified.  If this is
 	 * the case, the memory for the filesystem is not freed when switching
 	 * to a different WIM image. */
 	bool modified;
 
-	/* A pointer to the lookup table entry for this image's metadata
-	 * resource. */
-	struct lookup_table_entry *lookup_table_entry;
 };
 
 /* The opaque structure exposed to the wimlib API. */
@@ -288,10 +291,10 @@ static inline struct dentry **wim_root_dentry_p(WIMStruct *w)
 	return &w->image_metadata[w->current_image - 1].root_dentry;
 }
 
-#if 0
-static inline WIMSecurityData *wim_security_data(WIMStruct *w)
+#ifdef ENABLE_SECURITY_DATA
+static inline struct wim_security_data *wim_security_data(WIMStruct *w)
 {
-	return &w->image_metadata[w->current_image - 1].security_data;
+	return w->image_metadata[w->current_image - 1].security_data;
 }
 #endif
 
@@ -358,9 +361,10 @@ extern int extract_full_resource_to_fd(WIMStruct *w,
 				       const struct resource_entry *entry, 
 				       int fd);
 
-extern int read_metadata_resource(FILE *fp, const struct resource_entry *metadata,
-			      int wim_ctype, /* WIMSecurityData *sd, */
-			      struct dentry **root_dentry_p);
+extern int read_metadata_resource(FILE *fp, 
+				  const struct resource_entry *metadata,
+			          int wim_ctype, 
+				  struct image_metadata *image_metadata);
 
 extern int resource_compression_type(int wim_ctype, int reshdr_flags);
 
@@ -382,15 +386,13 @@ extern int write_resource_from_memory(const u8 resource[], int out_ctype,
 				      u64 *resource_size_ret);
 extern int write_metadata_resource(WIMStruct *w);
 
-#if 0
-/* security.c */
-bool read_security_data(const u8 metadata_resource[], 
-		u64 metadata_resource_len, WIMSecurityData *sd);
+#ifdef ENABLE_SECURITY_DATA
+int read_security_data(const u8 metadata_resource[], 
+		u64 metadata_resource_len, struct wim_security_data **sd_p);
 
-void print_security_data(const WIMSecurityData *sd);
-u8 *write_security_data(const WIMSecurityData *sd, u8 *p);
-void init_security_data(WIMSecurityData *sd);
-void destroy_security_data(WIMSecurityData *sd);
+void print_security_data(const struct wim_security_data *sd);
+u8 *write_security_data(const struct wim_security_data *sd, u8 *p);
+void free_security_data(struct wim_security_data *sd);
 #endif
 
 /* wim.c */

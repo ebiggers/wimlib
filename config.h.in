@@ -18,6 +18,9 @@
 /* Define to 1 if including even more debug messages. */
 #undef ENABLE_MORE_DEBUG
 
+/* Define to 1 to enable support for copying security data */
+#undef ENABLE_SECURITY_DATA
+
 /* Define to 1 if using vectorized implementation of SHA1 */
 #undef ENABLE_SSSE3_SHA1
 

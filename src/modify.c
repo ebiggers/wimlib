@@ -239,10 +239,6 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry)
 	w->hdr.image_count++;
 
 	new_imd = &imd[w->hdr.image_count - 1];
-
-#if 0
-	init_security_data(&new_imd->security_data);
-#endif
 	new_imd->lookup_table_entry = imd_lookup_entry;
 	new_imd->modified           = true;
 	new_imd->root_dentry        = root_dentry;
@@ -343,6 +339,13 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	wims.dest_wim = dest_wim;
 	for_dentry_in_tree(root, add_lookup_table_entry_to_dest_wim, &wims);
 	ret = add_new_dentry_tree(dest_wim, root);
+#ifdef ENABLE_SECURITY_DATA
+	struct wim_security_data *sd = wim_security_data(src_wim);
+	struct image_metadata *new_imd = wim_get_current_image_metadata(dest_wim);
+	new_imd->security_data = sd;
+	if (sd)
+		sd->refcnt++;
+#endif
 	if (ret != 0)
 		return ret;
 
@@ -390,8 +393,8 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 	 * refcnt decremented to 0, and the security data. */
 	imd = wim_get_current_image_metadata(w);
 	free_dentry_tree(imd->root_dentry, w->lookup_table, true);
-#if 0
-	destroy_security_data(&imd->security_data);
+#ifdef ENABLE_SECURITY_DATA
+	free_security_data(imd->security_data);
 #endif
 
 	/* Get rid of the lookup table entry for this image's metadata resource

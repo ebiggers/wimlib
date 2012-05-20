@@ -86,6 +86,12 @@ wimlib's `configure' script:
 	program if an assertion fails.  An assertion failure should only occur
 	if there is a bug in wimlib.
 
+--disable-security-data
+	Wimlib cannot create or modify WIM security data, but by default it will
+	copy existing security data when modifying a WIM or exporting an image.
+	Passing this flag will disable this support; then wimlib will always
+	write WIMs without security data.
+
 --enable-debug
 	Include debugging messages.  Only use this option if you have found a
 	bug in the library.
@@ -93,6 +99,7 @@ wimlib's `configure' script:
 --enable-more-debug
 	Include more debugging messages.  Only use this option if you have found
 	a bug in the library.
+
 
 -------------------------------------------------------------------------------
 

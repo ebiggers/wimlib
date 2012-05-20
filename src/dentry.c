@@ -311,10 +311,12 @@ int print_dentry_full_path(struct dentry *dentry, void *ignore)
 int print_dentry(struct dentry *dentry, void *lookup_table)
 {
 	struct lookup_table_entry *lte;
-
+	printf("[DENTRY]\n");
 	printf("Length            = %"PRIu64"\n", dentry->length);
 	printf("Attributes        = 0x%x\n", dentry->attributes);
-	/*printf("Security ID       = %d\n", dentry->security_id);*/
+#ifdef ENABLE_SECURITY_DATA
+	printf("Security ID       = %d\n", dentry->security_id);
+#endif
 	printf("Subdir offset     = %"PRIu64"\n", dentry->subdir_offset);
 	/*printf("Unused1           = %"PRIu64"\n", dentry->unused1);*/
 	/*printf("Unused2           = %"PRIu64"\n", dentry->unused2);*/
@@ -355,8 +357,9 @@ static inline void dentry_common_init(struct dentry *dentry)
 {
 	memset(dentry, 0, sizeof(struct dentry));
 	dentry->refcnt = 1;
-	/* We are currently ignoring the security data. */
-	/*dentry->security_id = -1;*/
+#ifdef ENABLE_SECURITY_DATA
+	dentry->security_id = -1;
+#endif
 }
 
 /* 
@@ -634,8 +637,11 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	}
 
 	p = get_u32(p, &dentry->attributes);
-	/* Currently ignoring security ID. */
+#ifdef ENABLE_SECURITY_DATA
+	p = get_u32(p, &dentry->security_id);
+#else
 	p += sizeof(u32);
+#endif
 	p = get_u64(p, &dentry->subdir_offset);
 
 	/* 2 unused fields */
@@ -733,7 +739,11 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	memset(p, 0, dentry->length);
 	p = put_u64(p, dentry->length);
 	p = put_u32(p, dentry->attributes);
-	p = put_u32(p, (u32)(-1)); /* security id */
+#ifdef ENABLE_SECURITY_DATA
+	p = put_u32(p, dentry->security_id);
+#else
+	p = put_u32(p, (u32)(-1));
+#endif
 	p = put_u64(p, dentry->subdir_offset);
 	p = put_u64(p, 0); /* unused1 */
 	p = put_u64(p, 0); /* unused2 */

@@ -8,7 +8,7 @@ imagex split \- Split a WIM into multiple parts
 .SH DESCRIPTION
 .PP
 
-Splits \fIWIMFILE\fR into parts with size at most \fIPART_SIZE\fR megabytes,
+Splits \fIWIMFILE\fR into parts with size at most \fIPART_SIZE\fR mebibytes,
 with the first part having the name \fISPLIT_WIMFILE\fR and the other parts
 having names numbered in order of the parts.
 
@@ -34,8 +34,8 @@ This is impossible to avoid and Microsoft's program has this problem as well
 because the WIM file format provides no way to divide a single file resource in
 the WIM among multiple split WIM parts.  So if you, for example, have a file
 inside the WIM that is 100 MiB, then an uncompressed split WIM will have at
-least one part that is 100 MiB in size to contain that file.  If the WIM
-resources are compressed then less space would be needed.
+least one part that is 100 MiB in size to contain that file.  However, if the
+WIM resources are compressed then less space would be needed.
 
 .SH SEE ALSO
 .BR imagex (1)

@@ -36,6 +36,7 @@ other_srcs = \
 	modify.c \
 	mount.c \
 	resource.c \
+	security.c \
 	sha1.c \
 	sha1.h \
 	split.c \
