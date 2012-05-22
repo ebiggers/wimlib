@@ -754,7 +754,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	if (!is_empty_file_hash(dentry->hash))
 		memcpy(p, dentry->hash, WIM_HASH_SIZE);
 	else
-		printf("zero hash for %s\n", dentry->file_name_utf8);
+		DEBUG("zero hash for %s\n", dentry->file_name_utf8);
 	p += WIM_HASH_SIZE;
 	p = put_u32(p, 0); /* reparse_tag */
 	p = put_u64(p, dentry->hard_link);
