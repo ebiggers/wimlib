@@ -427,22 +427,23 @@ static void wimfs_destroy(void *p)
 		DEBUG("Received message: [%d %d]\n", msg[0], msg[1]);
 	}
 
-	if (commit && (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
-		status = chdir(working_directory);
-		if (status != 0) {
-			ERROR("chdir(): %m\n");
-			status = WIMLIB_ERR_NOTDIR;
-			goto done;
+	status = 0;
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+		if (commit) {
+			status = chdir(working_directory);
+			if (status != 0) {
+				ERROR("chdir(): %m\n");
+				status = WIMLIB_ERR_NOTDIR;
+				goto done;
+			}
+			status = rebuild_wim(w, (check_integrity != 0));
 		}
-		status = rebuild_wim(w, (check_integrity != 0));
-	} else {
-		status = 0;
-	}
-	ret = delete_staging_dir();
-	if (ret != 0) {
-		ERROR("Failed to delete the staging directory: %m\n");
-		if (status == 0)
-			status = ret;
+		ret = delete_staging_dir();
+		if (ret != 0) {
+			ERROR("Failed to delete the staging directory: %m\n");
+			if (status == 0)
+				status = ret;
+		}
 	}
 done:
 	ret = mq_send(daemon_to_unmount_mq, &status, 1, 1);
