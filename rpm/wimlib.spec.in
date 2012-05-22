@@ -28,7 +28,7 @@ Development files for wimlib
 %setup -q
 
 %build
-./configure --disable-verify-compression --enable-libcrypto  --prefix=/usr
+./configure --disable-verify-compression --with-libcrypto  --prefix=/usr
 make
 
 %install
