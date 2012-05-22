@@ -21,7 +21,7 @@
  * Temple Place, Suite 330, Boston, MA 02111-1307 USA 
  */
 
-#include "wimlib.h"
+#include "wimlib_internal.h"
 #include "lookup_table.h"
 #include "xml.h"
 
