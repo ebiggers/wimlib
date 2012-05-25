@@ -1,5 +1,7 @@
 # Maintainer:  Eric Biggers <ebiggers3 at gmail dot com>
 
+# Set and $md5sums and delete this line to complete the PKGBUILD
+
 pkgname=wimlib
 pkgver=@VERSION@
 pkgrel=1
