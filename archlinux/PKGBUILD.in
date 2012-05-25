@@ -19,7 +19,7 @@ md5sums=("")
 
 build() {
 	cd "$pkgname-$pkgver"
-	./configure --disable-verify-compression --enable-libcrypto \
+	./configure --disable-verify-compression --with-libcrypto \
 			--prefix=/usr
 	make
 }

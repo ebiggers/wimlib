@@ -1,7 +1,11 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 0.7.2:
+	Fixed segfault when unmounting read-only WIM.
+
 Version 0.7.1:
 	Support for joining and splitting WIMs.
+	Also, security data is now preserved by default.
 
 Version 0.6.3:
 	Can now build with older gcc and system headers, like on CentOS 5.
