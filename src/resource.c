@@ -32,8 +32,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-/* Used for buffering FILE IO */
-#define BUFFER_SIZE 4096
 
 /* 
  * Reads all or part of a compressed resource into an in-memory buffer.

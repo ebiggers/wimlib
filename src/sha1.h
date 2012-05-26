@@ -15,24 +15,17 @@ static inline bool is_empty_file_hash(const u8 hash[SHA1_HASH_SIZE])
 	return memcmp(hash, empty_file_sha1sum, SHA1_HASH_SIZE) == 0;
 }
 
-/* Compute SHA1 message digest for bytes read from STREAM.  The
-   resulting message digest number will be written into the 20 bytes
-   beginning at RESBLOCK.  */
-extern int sha1_stream(FILE * stream, void *resblock);
+
+extern int sha1sum(const char *filename, void *md);
 
 #ifdef WITH_LIBCRYPTO
 #include <openssl/sha.h>
-static inline void *sha1_buffer(const char *buffer, size_t len, void *resblock)
+static inline void sha1_buffer(const void *buffer, size_t len, void *md)
 {
-	return SHA1(buffer, len, resblock);
+	SHA1(buffer, len, md);
 }
 #else
-/* Compute SHA1 message digest for LEN bytes beginning at BUFFER.  The
-   result is always in little endian byte order, so that a byte-wise
-   output yields to the wanted ASCII representation of the message
-   digest.  */
-extern void *sha1_buffer(const char *buffer, size_t len, void *resblock);
+extern void sha1_buffer(const void *buffer, size_t len, void *md);
 #endif
-
 
 #endif /* _WIMLIB_SHA1_H */

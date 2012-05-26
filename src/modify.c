@@ -26,6 +26,7 @@
 
 #include "wimlib_internal.h"
 #include "util.h"
+#include "sha1.h"
 #include "dentry.h"
 #include "xml.h"
 #include "lookup_table.h"

@@ -48,6 +48,9 @@ typedef unsigned uint;
 
 #define ZERO_ARRAY(array) memset(array, 0, sizeof(array))
 
+/* Used for buffering FILE IO in a few places */
+#define BUFFER_SIZE 4096
+
 #ifdef ENABLE_ERROR_MESSAGES
 extern bool __wimlib_print_errors;
 extern void wimlib_error(const char *format, ...);

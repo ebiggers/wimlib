@@ -468,21 +468,3 @@ void print_string(const void *string, size_t len)
 	}
 }
 
-/* Calculates the SHA1 message digest given the name of a file.
- * @buf must point to a buffer of length 20 bytes into which the message digest
- * is written.
- */
-int sha1sum(const char *filename, void *buf)
-{
-	FILE *fp;
-	int ret;
-
-	fp = fopen(filename, "rb");
-	if (!fp) {
-		ERROR("Cannot open the file `%s' for reading: %m\n", filename);
-		return WIMLIB_ERR_OPEN;
-	}
-	ret = sha1_stream(fp, buf);
-	fclose(fp);
-	return ret;
-}

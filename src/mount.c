@@ -27,6 +27,7 @@
 #include "wimlib_internal.h"
 
 #ifdef WITH_FUSE
+#include "sha1.h"
 #include "lookup_table.h"
 #include "xml.h"
 #include <stdlib.h>
