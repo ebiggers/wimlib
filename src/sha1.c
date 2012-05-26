@@ -201,14 +201,6 @@ static void sha1_final(u8 *md, SHA_CTX* context)
 	for (i = 0; i < SHA1_HASH_SIZE; i++) {
 		md[i] = (u8)((context->state[i>>2] >> ((3-(i & 3)) * 8) ) & 255);
 	}
-
-	i = 0;
-	memset(context->buffer, 0, 64);
-	memset(context->state, 0, 20);
-	memset(context->count, 0, 8);
-	memset(finalcount, 0, 8);   /* SWR */
-
-	sha1_transform(context->state, context->buffer);
 }
 
 void sha1_buffer(const void *buffer, size_t len, void *md)
@@ -241,9 +233,8 @@ static int sha1_stream(FILE *fp, void *md)
 
 }
 
-/* Calculates the SHA1 message digest given the name of a file.
- * @buf must point to a buffer of length 20 bytes into which the message digest
- * is written.
+/* Calculates the SHA1 message digest given the name of a file.  @md must point
+ * to a buffer of length 20 bytes into which the message digest is written.
  */
 int sha1sum(const char *filename, void *md)
 {

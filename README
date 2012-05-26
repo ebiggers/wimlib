@@ -161,10 +161,6 @@ originally based on code written by Matthew Russotto (www.russotto.net/chm/).
 
 lz.c, the code to find LZ77 matches, is based on code from zlib.
 
-sha1.c and sha1.h, the code to compute SHA1 message digests of WIM resources or
-of the WIM file itself in the case of integrity checks, are based on code from
-GNU coreutils.
-
 A very limited number of other free programs can handle some parts of the WIM
 file format.  7-zip is able to extract and create WIMs and files in many other
 archive formats.  However, WIMLIB is designed specifically to handle WIM files
