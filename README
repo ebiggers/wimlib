@@ -9,15 +9,16 @@ The main use of this library is to create customized images of Windows PE, the
 Windows Preinstallation Environment, without having to rely on Windows.  Windows
 PE is a lightweight version of Windows that can run entirely from memory and can
 be used to install Windows from local media or a network drive or perform
-maintenance.  Windows PE is the operating systems runs when you boot from the
-Windows DVD.
+maintenance.  Windows PE is the operating system that runs when you boot from
+the Windows DVD.
 
 You can find Windows PE on the ISO filesystem on the installation DVD for both
 Windows 7 and Windows 8.  I don't have a DVD for Vista but it should be on there
-too.  The Windows PE image a WIM file, `sources/boot.wim', on the ISO
+too.  The Windows PE image is a WIM file, `sources/boot.wim', on the ISO
 filesystem.  Windows PE can also be found in the Windows Automated Installation
 Kit (WAIK), which is free to download from Microsoft, inside the `WinPE.cab'
-file, which you can extract if you install the `cabextract' program.
+file, which you can extract if you install either the `cabextract' or `p7zip'
+programs.
 
 wimlib provides a public API for other programs to use, but also comes with two
 programs: `imagex' and `mkwinpeimg'.  
@@ -31,14 +32,14 @@ details.
 image of Windows PE that can be put on a CD or USB drive, or published on a
 server for PXE booting.  See the main page `doc/mkwinpeiso.1' for more details.
 
-Wimlib can also be used to handle larger WIM files such as the `install.wim'
-file that comes on the Windows DVD; however, this has not been well tested.
+wimlib can also be used to handle larger WIM files such as the `install.wim'
+file that comes on the Windows DVD.  You may not, however, losslessly capture
+and apply Windows installations using wimlib because of issues with NTFS and
+Windows-specific information.
 
 An earlier version of Wimlib is being used to deploy Windows 7 from the Ultimate
 Deployment Appliance.  For more information see
 http://www.ultimatedeployment.org/.  
-
--------------------------------------------------------------------------------
 
 				 CONFIGURATION
 
@@ -100,9 +101,6 @@ wimlib's `configure' script:
 	Include more debugging messages.  Only use this option if you have found
 	a bug in the library.
 
-
--------------------------------------------------------------------------------
-
 				  DEPENDENCIES
 
 Wimlib requires libxml2 to build.  This is a commonly used free library to read
@@ -114,8 +112,8 @@ see above).  Most GNU/Linux distributions already include this, but make sure
 you have the libfuse package installed (libfuse-dev if your distribution
 distributes header files separately).  FUSE also requires a kernel module.  If
 the kernel module is available it will automatically be loaded if you try to
-mount a WIM file.  Wimlib has only been tested with the Linux version of FUSE.
-For more information see http://fuse.sourceforge.net/.
+mount a WIM file.  For more information see http://fuse.sourceforge.net/.  FUSE
+is also available for FreeBSD.
 
 The `mkwinpeimg' shell script will look for several other programs depending on
 what options are given to it.  Depending on your GNU/Linux distribution, you may
@@ -125,8 +123,6 @@ repository.  Making an ISO filesystem requires `mkisofs' from `cdrkit'
 (http://www.gnu.org/software/mtools) and `syslinux' (http://www.syslinux.org).
 Retrieving files from the Windows Automated Installation Kit requires
 `cabextract' (http://www.cabextract.org.uk).
-
-------------------------------------------------------------------------------
 
 				  PORTABILITY
 
@@ -140,8 +136,6 @@ wimlib should work on big endian machines but it has not been tested.
 
 There are no plans to port wimlib to Windows since the programming interface on
 Windows is very different and Microsoft's imagex.exe is already available.
-
-------------------------------------------------------------------------------
 
 				   REFERENCES 
 
@@ -159,15 +153,15 @@ using LZX compression, is originally based on code from the cabextract project
 lzx-comp.c, the code to compress WIM file resources using LZX compression, is
 originally based on code written by Matthew Russotto (www.russotto.net/chm/).
 
-lz.c, the code to find LZ77 matches, is based on code from zlib.
+lz.c, the code to find LZ77 matches (used for both XPRESS and LZX compression),
+is based on code from zlib.
 
 A very limited number of other free programs can handle some parts of the WIM
-file format.  7-zip is able to extract and create WIMs and files in many other
-archive formats.  However, WIMLIB is designed specifically to handle WIM files
-and provides features previously only available in Microsoft's imagex.exe, such
-as the ability to mount WIMs read-write.
-
-------------------------------------------------------------------------------
+file format.  7-zip is able to extract and create WIMs (as well as files in many
+other archive formats).  However, wimlib is designed specifically to handle WIM
+files and provides features previously only available in Microsoft's imagex.exe,
+such as the ability to mount WIMs read-write as well as read-only, and the
+ability to create LZX or XPRESS compressed WIMs.
 
 				MORE INFORMATION
 
@@ -179,14 +173,10 @@ build the documentation.  To build the documentation, run `configure', then
 enter the directory `doc' and run `doxygen'.  The HTML documentation will be
 created in a directory named `html'.
 
-------------------------------------------------------------------------------
-
 				    LICENSE
 
 Wimlib is released under the GNU LGPL version 2.1 or later.  The files in the
 `programs' directory are released under the GPL version 3.
-
-------------------------------------------------------------------------------
 
 				   DISCLAIMER 
 
@@ -195,4 +185,5 @@ your WIM files are made correctly.  Please submit a bug report (to
 ebiggers3@gmail.com) if you find a bug.
 
 Some parts of the WIM file format are poorly documented or even completely
-undocumented, so these parts had to be reverse engineered.
+undocumented, so I've just had to do the best I can to read and write WIMs that
+appear to be compatible with Microsoft's software.
