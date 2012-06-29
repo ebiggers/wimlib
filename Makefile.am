@@ -49,7 +49,7 @@ libwim_la_SOURCES =		\
 	src/xpress.h
 
 EXTRA_libwim_la_SOURCES = src/sha1-ssse3.asm
-EXTRA_libwim_la_DEPENDENCIES = $(SSSE3_SHA1_OBJ)
+libwim_la_DEPENDENCIES = $(SSSE3_SHA1_OBJ)
 STRIP_FPIC = sh $(top_srcdir)/build-aux/strip_fPIC.sh
 
 sha1-ssse3.lo:src/sha1-ssse3.asm
