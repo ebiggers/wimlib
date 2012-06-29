@@ -1,16 +1,14 @@
 AC_INIT([wimlib], [0.7.2], [ebiggers3@gmail.com])
 AC_CONFIG_SRCDIR([src/wim.c])
-AM_INIT_AUTOMAKE([-Wall -Werror])
 AC_CONFIG_MACRO_DIR([m4])
+AC_CONFIG_AUX_DIR([build-aux])
+AM_INIT_AUTOMAKE([-Wall -Werror subdir-objects])
 AC_C_BIGENDIAN
 AM_PROG_AR
 LT_INIT
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile 
-		doc/Makefile 
 		doc/Doxyfile
-		src/Makefile 
-		programs/Makefile
 		wimlib.pc
 		doc/imagex.1
 		doc/imagex-append.1
@@ -30,6 +28,7 @@ AC_CONFIG_FILES([Makefile
 		archlinux/PKGBUILD
 		])
 AC_PROG_CC
+AM_PROG_CC_C_O
 
 
 AM_ICONV

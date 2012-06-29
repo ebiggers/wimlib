@@ -1,0 +1,4 @@
+#!/bin/sh
+
+touch build-aux/config.rpath
+autoreconf -i
