@@ -4,24 +4,26 @@
  * This file provides the code to analyze a buffer of uncompressed data for
  * matches, as per the LZ77 algorithm.  It uses a hash table to accelerate the
  * process.  This is based on code from zlib (v. 1.2.5).
- *
+ */
+
+/*
  * Copyright (C) 2012 Eric Biggers
  * Copyright (C) 1995-2010 Jean-loup Gailly and Mark Adler
  *
- * wimlib - Library for working with WIM files 
+ * This file is part of wimlib, a library for working with WIM files.
  *
- * This library is free software; you can redistribute it and/or modify it under
- * the terms of the GNU Lesser General Public License as published by the Free
- * Software Foundation; either version 2.1 of the License, or (at your option) any
- * later version.
+ * wimlib is free software; you can redistribute it and/or modify it under the
+ * terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
  *
- * This library is distributed in the hope that it will be useful, but WITHOUT ANY
- * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
- * PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details.
+ * wimlib is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+ * details.
  *
- * You should have received a copy of the GNU Lesser General Public License along
- * with this library; if not, write to the Free Software Foundation, Inc., 59
- * Temple Place, Suite 330, Boston, MA 02111-1307 USA 
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
 #include "comp.h"

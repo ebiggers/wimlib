@@ -3,7 +3,9 @@
  *
  * Use wimlib to create, modify, extract, mount, unmount, or display information
  * about a WIM file
- *
+ */
+
+/*
  * Copyright (C) 2012 Eric Biggers
  *
  * This program is free software: you can redistribute it and/or modify
