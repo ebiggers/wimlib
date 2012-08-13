@@ -104,7 +104,7 @@ Usage: $script_name [OPTIONS] IMAGE
                               specified.
   -O, --overlay=DIR        Adds all the files in DIR to the Windows PE image.
   -t, --tmp-dir=DIR        Use DIR as the temporary base of the ISO filesystem.  
-                              Defaults to making one using \"mktemp -d\".
+                              Defaults to making one using "mktemp -d".
   -h, --help               Display this information.
   -v, --version            Show version information.
 
@@ -198,7 +198,6 @@ process_command_line() {
 	fi
 }
 
-
 find_windows_dir() {
 	if [ -z "$windows_dir_specified" ]; then
 		for windows_dir in /mnt/windows /mnt/windows7 /mnt/windows8; do
@@ -231,8 +230,8 @@ check_needed_programs() {
 	if [ -z "$waik_dir" -o -n "$modify_wim" ]; then
 		if ! type -P imagex &> /dev/null ; then
 			cat << EOF
-ERROR: To make a customized image of Windows PE, we need the \"imagex\" program
-from WIMLIB so that we can modify the boot.wim file.  However, \"imagex\"
+ERROR: To make a customized image of Windows PE, we need the "imagex" program
+from WIMLIB so that we can modify the boot.wim file.  However, "imagex"
 doesn't seem to be installed.  Please install WIMLIB to continue.
 EOF
 			exit 1
@@ -242,8 +241,8 @@ EOF
 	if [ $make = iso ]; then
 		if ! type -P mkisofs &> /dev/null ; then
 			cat << EOF 
-ERROR: To make a bootable ISO image of Windows PE, we need the \"mkisofs\"
-program, but it doesn't seem to be installed.  Please install the \"cdrkit\"
+ERROR: To make a bootable ISO image of Windows PE, we need the "mkisofs"
+program, but it doesn't seem to be installed.  Please install the "cdrkit"
 package to continue, or try omitting the --iso option to make a disk image
 instead of an ISO image.
 EOF
@@ -252,8 +251,8 @@ EOF
 	elif [ $make = disk ] ; then
 		if ! type -P syslinux &> /dev/null ; then
 			cat << EOF
-ERROR: To make a bootable disk image of Windows PE, we need the \"syslinux\"
-program, but it doesn't seem to be installed.  Please install the \"syslinux\"
+ERROR: To make a bootable disk image of Windows PE, we need the "syslinux"
+program, but it doesn't seem to be installed.  Please install the "syslinux"
 package to continue, or try using the --iso option to make an ISO image instead
 of a disk image.
 EOF
@@ -262,10 +261,10 @@ EOF
 
 		if ! type -P mformat mcopy &> /dev/null; then
 			cat << EOF
-ERROR: To make a bootable disk image of Windows PE, we need the \"mformat\" and
-\"mcopy\" programs from the \"mtools\" package.  These programs allow us to
+ERROR: To make a bootable disk image of Windows PE, we need the "mformat" and
+"mcopy" programs from the "mtools" package.  These programs allow us to
 format a FAT filesystem and copy files to it without needing root privileges.
-Please install \"mtools\" if you want to make a disk image of Windows PE.  Or,
+Please install "mtools" if you want to make a disk image of Windows PE.  Or,
 try using the --iso option to make an ISO image instead of a disk image.
 EOF
 		fi
@@ -275,8 +274,8 @@ EOF
 		if ! type -P cabextract &> /dev/null ; then
 			cat << EOF
 ERROR: The boot files in the Windows Automated Installation Kit (WAIK) are
-inside cabinet archives.  To extract these files, we need the \"cabextract\"
-program, but it doesn't seem to be installed.  Please install \"cabextract\" to
+inside cabinet archives.  To extract these files, we need the "cabextract"
+program, but it doesn't seem to be installed.  Please install "cabextract" to
 continue.
 EOF
 			exit 1
@@ -286,7 +285,6 @@ EOF
 }
 
 get_primary_boot_files() {
-
 	if [ -n "$waik_dir" ]; then
 		# Get boot files from the WAIK.
 
@@ -347,7 +345,6 @@ get_boot_wim() {
 }
 
 modify_boot_wim() {
-
 	boot_wim="$1"
 	mnt_dir="$2"
 
@@ -391,7 +388,6 @@ EOF
 }
 
 make_iso_img() {
-
 	image="$1"
 
 	# Make the ISO using the mkisofs command from cdrkit
@@ -403,11 +399,9 @@ make_iso_img() {
 		-hide boot.cat -quiet -o "$image" "$tmp_dir" || stat_fail
 
 	stat_done
-
 }
 
 make_disk_img() {
-
 	image="$1"
 
 	stat_busy "Making disk image \"$image\""
@@ -443,7 +437,6 @@ EOF
 	rm -f "$mtool_conf"
 	stat_done
 }
-
 
 calc_columns
 tmp_dir="$(mktemp -d)"
