@@ -66,7 +66,7 @@ WIMStruct *new_wim_struct()
  */
 int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
 {
-	int ret;
+	int ret = 0;
 	int i;
 	int image_count;
 

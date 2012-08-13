@@ -261,7 +261,6 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 				  const char *dest_description, 
 				  int flags)
 {
-	int boot_idx;
 	int i;
 	int ret;
 	struct dentry *root;
@@ -272,34 +271,29 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 
 			/* multi-image export. */
 
-			if (flags & WIMLIB_EXPORT_FLAG_BOOT) {
-
+			if ((flags & WIMLIB_EXPORT_FLAG_BOOT) && 
+			    (src_wim->hdr.boot_idx == 0))
+			{
 				/* Specifying the boot flag on a multi-image
 				 * source WIM makes the boot index default to
 				 * the bootable image in the source WIM.  It is
 				 * an error if there is no such bootable image.
 				 * */
-
-				if (src_wim->hdr.boot_idx == 0) {
-					ERROR("Cannot specify `boot' flag "
-							"when exporting multiple "
-							"images from a WIM with no "
-							"bootable images!\n");
-					return WIMLIB_ERR_INVALID_PARAM;
-				} else {
-					boot_idx = src_wim->hdr.boot_idx;
-				}
+				ERROR("Cannot specify `boot' flag when "
+				      "exporting multiple images from a WIM "
+				      "with no bootable images!\n");
+				return WIMLIB_ERR_INVALID_PARAM;
 			}
 			if (dest_name || dest_description) {
-				ERROR("Image name or image description "
-						"was specified, but we are exporting "
-						"multiple images!\n");
+				ERROR("Image name or image description was "
+				      "specified, but we are exporting "
+				      "multiple images!\n");
 				return WIMLIB_ERR_INVALID_PARAM;
 			}
 			for (i = 1; i <= src_wim->hdr.image_count; i++) {
 				int export_flags = flags;
 
-				if (i != boot_idx)
+				if (i != src_wim->hdr.boot_idx)
 					export_flags &= ~WIMLIB_EXPORT_FLAG_BOOT;
 
 				ret = wimlib_export_image(src_wim, i, dest_wim, 

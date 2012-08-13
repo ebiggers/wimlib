@@ -1011,8 +1011,6 @@ static int imagex_join(int argc, const char **argv)
 {
 	int c;
 	int flags = WIMLIB_OPEN_FLAG_SPLIT_OK | WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
-	int image;
-	int ret;
 	const char *output_path;
 
 	for_opt(c, join_options) {
@@ -1042,7 +1040,6 @@ err:
 /* Mounts an image using a FUSE mount. */
 static int imagex_mount_rw_or_ro(int argc, const char **argv)
 {
-	bool ro;
 	int c;
 	int mount_flags = 0;
 	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
@@ -1064,14 +1061,16 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 			mount_flags |= WIMLIB_MOUNT_FLAG_DEBUG;
 			break;
 		default:
-			usage(ro ? MOUNT : MOUNTRW);
+			usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)  
+					? MOUNTRW : MOUNT);
 			return -1;
 		}
 	}
 	argc -= optind;
 	argv += optind;
 	if (argc != 2 && argc != 3) {
-		usage(ro ? MOUNT : MOUNTRW);
+		usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)  
+				? MOUNTRW : MOUNT);
 		return -1;
 	}
 
@@ -1087,7 +1086,8 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 		if (num_images != 1) {
 			imagex_error("The file `%s' contains %d images; Please "
 					"select one.\n", wimfile, num_images);
-			usage(ro ? MOUNT : MOUNTRW);
+			usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)  
+					? MOUNTRW : MOUNT);
 			ret = WIMLIB_ERR_INVALID_IMAGE;
 			goto done;
 		}

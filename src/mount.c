@@ -631,7 +631,6 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 		/* no lookup table entry, so the file must be empty.  Create a
 		 * lookup table entry for the file. */
 		char *tmpfile_name;
-		int err;
 		int fd;
 
 		lte = new_lookup_table_entry();
@@ -641,9 +640,9 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 		fd = create_staging_file(&tmpfile_name);
 
 		if (fd == -1) {
-			err = errno;
+			int err = errno;
 			free(lte);
-			return -errno;
+			return -err;
 		}
 		lte->resource_entry.original_size = 0;
 		randomize_byte_array(lte->hash, WIM_HASH_SIZE);
@@ -873,7 +872,7 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 					   struct lookup_table_entry *lte, 
 					   u64 size)
 {
-	int err, fd;
+	int fd;
 	bool ret;
 	char *staging_file_name;
 	struct lookup_table_entry *new_lte;

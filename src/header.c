@@ -42,8 +42,6 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 	u32 hdr_size;
 	u32 wim_version;
 	u32 chunk_size;
-	u16 part_number;
-	u16 total_parts;
 
 	DEBUG("Reading WIM header.\n");
 	

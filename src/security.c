@@ -74,7 +74,7 @@ int read_security_data(const u8 metadata_resource[],
 
 	u64 size_no_descriptors = 8 + sizes_size;
 	if (size_no_descriptors > sd->total_length) {
-		ERROR("Security data total length of %"PRIu64" is too short because\n"
+		ERROR("Security data total length of %u is too short because\n"
 				"there must be at least %"PRIu64" bytes of security "
 				"data!\n", sd->total_length, 
 				8 + sizes_size);
@@ -110,7 +110,7 @@ int read_security_data(const u8 metadata_resource[],
 	for (uint i = 0; i < sd->num_entries; i++) {
 		total_len += sd->sizes[i];
 		if (total_len > sd->total_length) {
-			ERROR("Security data total length of %"PRIu64" is too "
+			ERROR("Security data total length of %u is too "
 					"short because there are at least %"PRIu64" "
 					"bytes of security data!\n", 
 					sd->total_length, total_len);

@@ -82,7 +82,6 @@ static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 {
 	struct args *args = (struct args*)__args;
 	WIMStruct *w = args->w;
-	FILE *out_fp = w->out_fp;
 	int ret;
 
 	/* metadata resources were already written. */
@@ -244,9 +243,9 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 			ERROR("Failed to open `%s': %m\n", p);
 			return WIMLIB_ERR_OPEN;
 		}
-		char buf[4];
-		put_u16(buf, i);
-		put_u16(buf + 2, total_parts);
+		u8 buf[4];
+		put_u16(&buf[0], i);
+		put_u16(&buf[2], total_parts);
 
 		if (fseek(fp, 40, SEEK_SET) != 0 || 
 				fwrite(buf, 1, sizeof(buf), fp) != sizeof(buf)

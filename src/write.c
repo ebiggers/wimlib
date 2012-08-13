@@ -265,7 +265,6 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 	off_t end_offset;
 	off_t integrity_size;
 	int ret;
-	int i;
 	struct wim_header hdr;
 	FILE *out = w->out_fp;
 

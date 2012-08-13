@@ -84,7 +84,7 @@ void lookup_table_insert(struct lookup_table *table,
 			 struct lookup_table_entry *lte)
 {
 	size_t pos;
-	pos = *(size_t*)lte->hash % table->capacity;
+	pos = lte->hash_short % table->capacity;
 	lte->next = table->array[pos];
 	table->array[pos] = lte;
 	/* XXX Make the table grow when too many entries have been inserted. */
@@ -99,7 +99,7 @@ void lookup_table_unlink(struct lookup_table *table,
 	size_t pos;
 	struct lookup_table_entry *prev, *cur_entry, *next;
 
-	pos = *(size_t*)lte->hash % table->capacity;
+	pos = lte->hash_short % table->capacity;
 	prev = NULL;
 	cur_entry = table->array[pos];
 

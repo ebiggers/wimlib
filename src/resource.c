@@ -1018,7 +1018,7 @@ int write_metadata_resource(WIMStruct *w)
 	u8 *buf;
 	u8 *p;
 	int ret;
-	off_t subdir_offset;
+	u64 subdir_offset;
 	struct dentry *root;
 	struct lookup_table_entry *lte;
 	struct resource_entry *res_entry;

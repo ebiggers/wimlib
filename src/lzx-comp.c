@@ -470,7 +470,7 @@ static int lzx_write_compressed_tree(struct output_bitstream *out,
 				if (delta < 0)
 					delta += 17;
 				pretree_freqs[19]++;
-				pretree_freqs[delta]++;
+				pretree_freqs[(unsigned char)delta]++;
 				output_syms[output_syms_idx++] = 19;
 				output_syms[output_syms_idx++] = additional_bits;
 				output_syms[output_syms_idx++] = delta;
@@ -486,7 +486,7 @@ static int lzx_write_compressed_tree(struct output_bitstream *out,
 			if (delta < 0)
 				delta += 17;
 
-			pretree_freqs[delta]++;
+			pretree_freqs[(unsigned char)delta]++;
 			output_syms[output_syms_idx++] = delta;
 		}
 

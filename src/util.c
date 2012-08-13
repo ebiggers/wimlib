@@ -219,6 +219,7 @@ WIMLIBAPI int wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 
 	xml_set_memory_allocator(wimlib_malloc_func, wimlib_free_func, 
 				 wimlib_realloc_func);
+	return 0;
 #else
 	ERROR("Cannot set custom memory allocator functions:\n");
 	ERROR("wimlib was compiled with the "

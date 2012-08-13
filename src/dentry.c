@@ -642,7 +642,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	p = get_u32(p, &dentry->attributes);
 #ifdef ENABLE_SECURITY_DATA
-	p = get_u32(p, &dentry->security_id);
+	p = get_u32(p, (u32*)&dentry->security_id);
 #else
 	p += sizeof(u32);
 #endif

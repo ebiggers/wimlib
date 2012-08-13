@@ -35,8 +35,17 @@ struct lookup_table_entry {
 	/* Number of times this lookup table entry is referenced by dentries. */
 	u32 refcnt;
 
-	/* SHA1 hash of the file resource pointed to by this lookup table entry */
-	u8  hash[WIM_HASH_SIZE];
+	union {
+		/* SHA1 hash of the file resource pointed to by this lookup
+		 * table entry */
+		u8  hash[WIM_HASH_SIZE];
+
+		/* First 4 or 8 bytes of the SHA1 hash, used for inserting the
+		 * entry into the hash table.  Since the SHA1 hashes can be
+		 * considered random, we don't really need the full 20 byte hash
+		 * just to insert the entry in a hash table. */
+		size_t hash_short;
+	};
 
 	/* If @file_on_disk != NULL, the file resource indicated by this lookup
 	 * table entry is not in the WIM file, but rather a file on disk; this
