@@ -8,6 +8,27 @@
 #include <sys/types.h>
 #include "config.h"
 
+#ifdef __GNUC__
+#	define WIMLIBAPI __attribute__((visibility("default")))
+#	define NOINLINE __attribute__((noinline))
+#	define ALWAYS_INLINE inline __attribute__((always_inline))
+#	define FORMAT(type, format_str, args_start) \
+			__attribute__((format(type, format_str, args_start)))
+#	if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 4)
+#		define COLD     __attribute__((cold))
+#		define HOT      __attribute__((hot))
+#	else
+#		define COLD
+#		define HOT
+#	endif
+#else
+#	define WIMLIBAPI
+#	define NOINLINE
+#	define ALWAYS_INLINE inline
+#	define FORMAT(type, format_str, args_start)
+#	define COLD
+#	define HOT
+#endif /* __GNUC__ */
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -30,34 +51,36 @@ typedef unsigned uint;
 
 #ifdef ENABLE_ERROR_MESSAGES
 extern bool __wimlib_print_errors;
-extern void wimlib_error(const char *format, ...);
-extern void wimlib_warning(const char *format, ...);
-#  define ERROR wimlib_error
-#  define WARNING wimlib_warning
+extern void wimlib_error(const char *format, ...) 
+		FORMAT(printf, 1, 2) COLD;
+extern void wimlib_warning(const char *format, ...)
+		FORMAT(printf, 1, 2) COLD;
+#	define ERROR wimlib_error
+#	define WARNING wimlib_warning
 #else
-#  define ERROR(format, ...)
-#  define WARNING(format, ...)
+#	define ERROR(format, ...)
+#	define WARNING(format, ...)
 #endif /* ENABLE_ERROR_MESSAGES */
 
 #if defined(ENABLE_DEBUG) || defined(ENABLE_MORE_DEBUG)
-#include <errno.h>
-#  define DEBUG(format, ...)  \
-({ \
- 	int __errno_save = errno; \
-	fprintf(stdout, "[%s %d] %s(): " format, \
-		__FILE__, __LINE__, __func__, ## __VA_ARGS__); \
-	fflush(stdout); \
-	errno = __errno_save; \
+#	include <errno.h>
+#	define DEBUG(format, ...)  \
+	({ \
+ 		int __errno_save = errno; \
+		fprintf(stdout, "[%s %d] %s(): " format, \
+			__FILE__, __LINE__, __func__, ## __VA_ARGS__); \
+		fflush(stdout); \
+		errno = __errno_save; \
 	})
 
 #else
-#  define DEBUG(format, ...)
+#	define DEBUG(format, ...)
 #endif /* ENABLE_DEBUG || ENABLE_MORE_DEBUG */
 
 #ifdef ENABLE_MORE_DEBUG
-#  define DEBUG2(format, ...) DEBUG(format, ## __VA_ARGS__)
+#	define DEBUG2(format, ...) DEBUG(format, ## __VA_ARGS__)
 #else
-#  define DEBUG2(format, ...)
+#	define DEBUG2(format, ...)
 #endif /* ENABLE_DEBUG */
 
 #ifdef ENABLE_ASSERTIONS
@@ -67,19 +90,6 @@ extern void wimlib_warning(const char *format, ...);
 #	define wimlib_assert(expr)
 #endif
 
-#ifdef __GNUC__
-#  define WIMLIBAPI __attribute__((visibility("default")))
-#  define NOINLINE __attribute__((noinline))
-#  define ALWAYS_INLINE inline __attribute__((always_inline))
-#  define COLD     __attribute__((cold))
-#  define HOT      __attribute__((hot))
-#else
-#  define WIMLIBAPI
-#  define NOINLINE
-#  define ALWAYS_INLINE inline
-#  define COLD
-#  define HOT
-#endif /* __GNUC__ */
 
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 extern void *(*wimlib_malloc_func)(size_t);
@@ -87,19 +97,19 @@ extern void (*wimlib_free_func)(void *);
 extern void *(*wimlib_realloc)(void *, size_t);
 extern void *wimlib_calloc(size_t nmemb, size_t size);
 extern char *wimlib_strdup(const char *str);
-#  define MALLOC wimlib_malloc_func
-#  define FREE wimlib_free_func
-#  define REALLOC wimlib_realloc_func
-#  define CALLOC wimlib_calloc
-#  define STRDUP wimlib_strdup
+#	define	MALLOC	wimlib_malloc_func
+#	define	FREE	wimlib_free_func
+#	define	REALLOC	wimlib_realloc_func
+#	define	CALLOC	wimlib_calloc
+#	define	STRDUP	wimlib_strdup
 #else
-#include <stdlib.h>
-#include <string.h>
-#  define MALLOC malloc
-#  define FREE free
-#  define REALLOC realloc
-#  define CALLOC calloc
-#  define STRDUP strdup
+#	include <stdlib.h>
+#	include <string.h>
+#	define	MALLOC	malloc
+#	define	FREE	free
+#	define	REALLOC	realloc
+#	define	CALLOC	calloc
+#	define	STRDUP	strdup
 #endif /* ENABLE_CUSTOM_MEMORY_ALLOCATOR */
 
 
@@ -127,7 +137,6 @@ extern void print_string(const void *string, size_t len);
 extern int get_num_path_components(const char *path);
 
 extern ssize_t full_write(int fd, const void *buf, size_t n);
-
 
 static inline void print_byte_field(const u8 field[], size_t len)
 {
