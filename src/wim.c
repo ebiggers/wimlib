@@ -53,8 +53,8 @@ WIMStruct *new_wim_struct()
 	w = CALLOC(1, sizeof(WIMStruct));
 	if (!w)
 		return NULL;
-	w->link_type      = WIM_LINK_TYPE_HARD;
-	w->current_image  = WIM_NO_IMAGE;
+	w->link_type     = WIM_LINK_TYPE_NONE;
+	w->current_image = WIM_NO_IMAGE;
 	return w;
 }
 
