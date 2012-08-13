@@ -639,7 +639,7 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 	uint i;
 	int ret;
 
-	LZX_DEBUG("uncompressed_len = %u\n", uncompressed_len);
+	LZX_DEBUG("uncompressed_len = %u", uncompressed_len);
 
 	if (uncompressed_len < 100)
 		return 1;
@@ -667,8 +667,7 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 				       &queue, freq_tabs.main_freq_table,
 				       &lzx_lz_params);
 
-	LZX_DEBUG("using %u matches\n", num_matches);
-
+	LZX_DEBUG("using %u matches", num_matches);
 
 	lzx_make_huffman_codes(&freq_tabs, &codes);
 
@@ -729,31 +728,31 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 
 	compressed_len = ostream.bit_output - (u8*)compressed_data;
 
-	LZX_DEBUG("Compressed %u => %u bytes\n",
-			uncompressed_len, compressed_len);
+	LZX_DEBUG("Compressed %u => %u bytes",
+		  uncompressed_len, compressed_len);
 
 	*compressed_len_ret = compressed_len;
 
 #ifdef ENABLE_VERIFY_COMPRESSION
 	/* Verify that we really get the same thing back when decompressing. */
+	LZX_DEBUG("Verifying the compressed data.");
 	u8 buf[uncompressed_len];
 	ret = lzx_decompress(compressed_data, compressed_len, buf, 
 			     uncompressed_len);
 	if (ret != 0) {
-		ERROR("ERROR: Failed to decompress data we compressed!\n");
-		exit(0);
+		ERROR("lzx_compress(): Failed to decompress data we compressed");
 		abort();
 	}
 
 	for (i = 0; i < uncompressed_len; i++) {
 		if (buf[i] != *((u8*)__uncompressed_data + i)) {
-			ERROR("Data we compressed didn't decompress to "
-				"the original data (difference at byte %u of "
-				"%u)\n", i + 1, uncompressed_len);
+			ERROR("lzx_compress(): Data we compressed didn't "
+			      "decompress to the original data (difference at "
+			      "byte %u of %u)", i + 1, uncompressed_len);
 			abort();
 		}
 	}
-	LZX_DEBUG("Compression verified to be correct.\n");
+	LZX_DEBUG("Compression verified to be correct.");
 #endif
 
 	return 0;

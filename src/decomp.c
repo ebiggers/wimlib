@@ -46,10 +46,9 @@ int bitstream_read_bytes(struct input_bitstream *stream, size_t n, void *dest)
 	/* Get the rest directly from the pointer to the data.  Of course, it's
 	 * necessary to check there are really n bytes available. */
 	if (n > stream->data_bytes_left) {
-		ERROR("Unexpected end of input when "
-				"reading %zu bytes from bitstream "
-				"(only have %u bytes left)\n", n,
-				stream->data_bytes_left);
+		ERROR("Unexpected end of input when reading %zu bytes from "
+		      "bitstream (only have %u bytes left)",
+		      n, stream->data_bytes_left);
 		return 1;
 	}
 	memcpy(p, stream->data, n);
@@ -88,7 +87,7 @@ int align_input_bitstream(struct input_bitstream *stream,
 			ret = bitstream_ensure_bits(stream, 16);
 			if (ret != 0) {
 				ERROR("Unexpected end of input when "
-						"aligning bitstream!\n");
+				      "aligning bitstream");
 				return ret;
 			}
 		}
@@ -194,9 +193,8 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 			 * tree.  */
 			if (decode_table_pos >= table_num_entries) {
 				ERROR("Huffman decoding table overrun: "
-						"pos = %u, num_entries = %u\n",
-						decode_table_pos, 
-						table_num_entries);
+				      "pos = %u, num_entries = %u",
+				      decode_table_pos, table_num_entries);
 				return 1;
 			}
 
@@ -260,7 +258,7 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 			uint i = current_code >> (code_len - num_bits);
 
 			if (i >= (1 << num_bits)) {
-				ERROR("Invalid canonical Huffman code!\n");
+				ERROR("Invalid canonical Huffman code");
 				return 1;
 			}
 
@@ -318,11 +316,10 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 
 		for (uint i = 0; i < num_syms; i++) {
 			if (lens[i] != 0) {
-				ERROR("Lengths do not form a valid "
-						"canonical Huffman tree "
-						"(only filled %u of %u decode "
-						"table slots)!\n", decode_table_pos, 
-						table_num_entries);
+				ERROR("Lengths do not form a valid canonical "
+				      "Huffman tree (only filled %u of %u "
+				      "decode table slots)",
+				      decode_table_pos, table_num_entries);
 				return 1;
 			}
 		}
@@ -360,7 +357,7 @@ static int read_huffsym_near_end_of_input(struct input_bitstream *istream,
 		bitstream_remove_bits(istream, key_size);
 		do {
 			if (bitsleft == 0) {
-				ERROR("Input stream exhausted!\n");
+				ERROR("Input stream exhausted");
 				return 1;
 			}
 			key_bits = sym + bitstream_peek_bits(istream, 1);

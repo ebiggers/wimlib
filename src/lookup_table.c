@@ -33,7 +33,7 @@ struct lookup_table *new_lookup_table(size_t capacity)
 	struct lookup_table *table;
 	struct lookup_table_entry **array;
 
-	table = CALLOC(1, sizeof(struct lookup_table));
+	table = MALLOC(sizeof(struct lookup_table));
 	if (!table)
 		goto err;
 	array = CALLOC(capacity, sizeof(array[0]));
@@ -46,8 +46,8 @@ struct lookup_table *new_lookup_table(size_t capacity)
 	table->array = array;
 	return table;
 err:
-	ERROR("Failed to allocate memory for lookup table with capacity "
-			"%zu\n", capacity);
+	ERROR("Failed to allocate memory for lookup table with capacity %zu",
+	      capacity);
 	return NULL;
 }
 
@@ -58,14 +58,14 @@ struct lookup_table_entry *new_lookup_table_entry()
 	lte = MALLOC(sizeof(struct lookup_table_entry));
 	if (!lte) {
 		ERROR("Out of memory (tried to allocate %zu bytes for "
-				"lookup table entry)\n", 
-				sizeof(struct lookup_table_entry));
+		      "lookup table entry)",
+		      sizeof(struct lookup_table_entry));
 		return NULL;
 	}
 
+	lte->next         = NULL;
 	lte->file_on_disk = NULL;
 	lte->other_wim_fp = NULL;
-	lte->next         = NULL;
 	lte->part_number  = 1;
 	lte->refcnt       = 1;
 	lte->staging_num_times_opened = 0;
@@ -149,7 +149,7 @@ void lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
  * Looks up an entry in the lookup table.
  */
 struct lookup_table_entry *lookup_resource(const struct lookup_table *lookup_table, 
-				     const u8 hash[])
+				     	   const u8 hash[])
 {
 	size_t pos;
 	struct lookup_table_entry *lte;
@@ -169,7 +169,8 @@ struct lookup_table_entry *lookup_resource(const struct lookup_table *lookup_tab
  * return nonzero if any call to the function returns nonzero.
  */
 int for_lookup_table_entry(struct lookup_table *table, 
-		int (*visitor)(struct lookup_table_entry *, void *), void *arg)
+			   int (*visitor)(struct lookup_table_entry *, void *),
+			   void *arg)
 {
 	struct lookup_table_entry *entry, *next;
 	size_t i;
@@ -209,12 +210,12 @@ int read_lookup_table(FILE *fp, u64 offset, u64 size,
 	const u8 *p;
 	struct lookup_table_entry *cur_entry;
 
-	DEBUG("Reading lookup table: offset %"PRIu64", size %"PRIu64"\n",
-			offset, size);
+	DEBUG("Reading lookup table: offset %"PRIu64", size %"PRIu64"",
+	      offset, size);
 
 	if (fseeko(fp, offset, SEEK_SET) != 0) {
-		ERROR("Failed to seek to byte %"PRIu64" to read lookup table: "
-				"%m\n", offset);
+		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" to read "
+				 "lookup table", offset);
 		return WIMLIB_ERR_READ;
 	}
 
@@ -226,30 +227,30 @@ int read_lookup_table(FILE *fp, u64 offset, u64 size,
 	while (num_entries--) {
 		if (fread(buf, 1, sizeof(buf), fp) != sizeof(buf)) {
 			if (feof(fp)) {
-				ERROR("Unexpected EOF in lookup table!\n");
+				ERROR("Unexpected EOF in WIM lookup table!");
 			} else {
-				ERROR("Stream read error while reading "
-						"lookup table!\n");
+				ERROR_WITH_ERRNO("Error reading WIM lookup "
+						 "table");
 			}
 			ret = WIMLIB_ERR_READ;
-			goto err;
+			goto out;
 		}
 		cur_entry = new_lookup_table_entry();
 		if (!cur_entry) {
 			ret = WIMLIB_ERR_NOMEM;
-			goto err;
+			goto out;
 		}
 			 
 		p = get_resource_entry(buf, &cur_entry->resource_entry);
 		p = get_u16(p, &cur_entry->part_number);
 		p = get_u32(p, &cur_entry->refcnt);
-		p = get_bytes(p, sizeof(cur_entry->hash), cur_entry->hash);
+		p = get_bytes(p, WIM_HASH_SIZE, cur_entry->hash);
 		lookup_table_insert(table, cur_entry);
 	}
-	DEBUG("Done reading lookup table.\n");
+	DEBUG("Done reading lookup table.");
 	*table_ret = table;
 	return 0;
-err:
+out:
 	free_lookup_table(table);
 	return ret;
 }
@@ -276,20 +277,21 @@ int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out)
 		return 0;
 
 	if (lte->output_resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
-		DEBUG("Writing metadata entry at %lu\n", ftello(out));
+		DEBUG("Writing metadata entry at %lu", ftello(out));
 
 	p = put_resource_entry(buf, &lte->output_resource_entry);
 	p = put_u16(p, lte->part_number);
 	p = put_u32(p, lte->out_refcnt);
 	p = put_bytes(p, WIM_HASH_SIZE, lte->hash);
 	if (fwrite(buf, 1, sizeof(buf), out) != sizeof(buf)) {
-		ERROR("Failed to write lookup table entry: %m\n");
+		ERROR_WITH_ERRNO("Failed to write lookup table entry");
 		return WIMLIB_ERR_WRITE;
 	}
 	return 0;
 }
 
-static int do_free_lookup_table_entry(struct lookup_table_entry *entry, void *ignore)
+static int do_free_lookup_table_entry(struct lookup_table_entry *entry,
+				      void *ignore)
 {
 	free_lookup_table_entry(entry);
 	return 0;
@@ -297,15 +299,13 @@ static int do_free_lookup_table_entry(struct lookup_table_entry *entry, void *ig
 
 void free_lookup_table(struct lookup_table *table)
 {
-	if (table) {
-		if (table->array) {
-			for_lookup_table_entry(table, 
-					       do_free_lookup_table_entry, 
-					       NULL);
-			FREE(table->array);
-		}
-		FREE(table);
+	if (!table)
+		return;
+	if (table->array) {
+		for_lookup_table_entry(table, do_free_lookup_table_entry, NULL);
+		FREE(table->array);
 	}
+	FREE(table);
 }
 
 int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore)
@@ -317,11 +317,11 @@ int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore)
 int print_lookup_table_entry(struct lookup_table_entry *entry, void *ignore)
 {
 	printf("Offset            = %"PRIu64" bytes\n", 
-			entry->resource_entry.offset);
+	       entry->resource_entry.offset);
 	printf("Size              = %"PRIu64" bytes\n", 
-			(u64)entry->resource_entry.size);
+	       (u64)entry->resource_entry.size);
 	printf("Original size     = %"PRIu64" bytes\n", 
-			entry->resource_entry.original_size);
+	       entry->resource_entry.original_size);
 	printf("Part Number       = %hu\n", entry->part_number);
 	printf("Reference Count   = %u\n", entry->refcnt);
 	printf("Hash              = ");
@@ -339,7 +339,7 @@ int print_lookup_table_entry(struct lookup_table_entry *entry, void *ignore)
 		fputs("WIM_RESHDR_FLAG_SPANNED, ", stdout);
 	putchar('\n');
 	if (entry->file_on_disk)
-		printf("File on Disk      = \"%s\"\n", entry->file_on_disk);
+		printf("File on Disk      = `%s'\n", entry->file_on_disk);
 	putchar('\n');
 	return 0;
 }

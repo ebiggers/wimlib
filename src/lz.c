@@ -62,8 +62,7 @@ static inline uint update_hash(uint hash, u8 c)
  * indicating the end of the hash chain.
  */
 static inline uint insert_string(u16 hash_tab[], u16 prev_tab[], 
-				const u8 window[], uint str_pos, 
-							uint hash)
+				 const u8 window[], uint str_pos, uint hash)
 {
 	hash = update_hash(hash, window[str_pos + 2]);
 	prev_tab[str_pos] = hash_tab[hash];
@@ -206,10 +205,10 @@ static uint longest_match(const u8 window[], uint bytes_remaining,
  * intermediate representation of a match or literal byte.
  */
 uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
-			u32 match_tab[], lz_record_match_t record_match,
-			lz_record_literal_t record_literal, void *record_match_arg1,
-			void *record_match_arg2, void *record_literal_arg,
-			const struct lz_params *params)
+		      u32 match_tab[], lz_record_match_t record_match,
+		      lz_record_literal_t record_literal, void *record_match_arg1,
+		      void *record_match_arg2, void *record_literal_arg,
+		      const struct lz_params *params)
 {
 	uint cur_match_pos = 0;
 	uint cur_input_pos = 0;

@@ -31,6 +31,7 @@
 #include "xpress.h"
 #include "sha1.h"
 #include "dentry.h"
+#include "config.h"
 #include <unistd.h>
 #include <errno.h>
 
@@ -59,15 +60,13 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 				    u64 len, u64 offset, u8  contents_ret[])
 {
 
-	DEBUG2("comp size = %"PRIu64", "
-			"uncomp size = %"PRIu64", "
-			"res offset = %"PRIu64"\n",
-			resource_compressed_size,
-			resource_uncompressed_size,
-			resource_offset);
-	DEBUG2("resource_ctype = %s, len = %"PRIu64", offset = %"PRIu64"\n",
-				wimlib_get_compression_type_string(resource_ctype), 
-								len, offset);
+	DEBUG2("comp size = %"PRIu64", uncomp size = %"PRIu64", "
+	       "res offset = %"PRIu64"",
+	       resource_compressed_size,
+	       resource_uncompressed_size,
+	       resource_offset);
+	DEBUG2("resource_ctype = %s, len = %"PRIu64", offset = %"PRIu64"",
+	       wimlib_get_compression_type_string(resource_ctype), len, offset);
 	/* Trivial case */
 	if (len == 0)
 		return 0;
@@ -157,10 +156,9 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	u64 file_offset_of_needed_chunk_entries = resource_offset + 
 				start_table_idx * chunk_entry_size;
 	if (fseeko(fp, file_offset_of_needed_chunk_entries, SEEK_SET) != 0) {
-		ERROR("Failed to seek to byte %"PRIu64" "
-				"to read chunk table of compressed "
-				"resource: %m\n", 
-				file_offset_of_needed_chunk_entries);
+		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" to read "
+				 "chunk table of compressed resource",
+				 file_offset_of_needed_chunk_entries);
 		return WIMLIB_ERR_READ;
 	}
 
@@ -195,10 +193,9 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	u64 file_offset_of_first_needed_chunk = resource_offset + 
 				chunk_table_size + chunk_offsets[0];
 	if (fseeko(fp, file_offset_of_first_needed_chunk, SEEK_SET) != 0) {
-		ERROR("Failed to seek to byte %"PRIu64" "
-				"to read first chunk of compressed "
-				"resource: %m\n", 
-				file_offset_of_first_needed_chunk);
+		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" to read "
+				 "first chunk of compressed resource",
+				 file_offset_of_first_needed_chunk);
 		return WIMLIB_ERR_READ;
 	}
 
@@ -218,8 +215,8 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	/* Decompress all the chunks. */
 	for (u64 i = start_chunk; i <= end_chunk; i++) {
 
-		DEBUG2("Chunk %"PRIu64" (start %"PRIu64", end %"PRIu64")\n",
-				i, start_chunk, end_chunk);
+		DEBUG2("Chunk %"PRIu64" (start %"PRIu64", end %"PRIu64").",
+		       i, start_chunk, end_chunk);
 
 		/* Calculate the sizes of the compressed chunk and of the
 		 * uncompressed chunk. */
@@ -254,8 +251,9 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 				uncompressed_chunk_size = WIM_CHUNK_SIZE;
 		}
 
-		DEBUG2("compressed_chunk_size = %u, uncompressed_chunk_size = %u\n",
-				compressed_chunk_size, uncompressed_chunk_size);
+		DEBUG2("compressed_chunk_size = %u, "
+		       "uncompressed_chunk_size = %u",
+		       compressed_chunk_size, uncompressed_chunk_size);
 
 
 		/* Figure out how much of this chunk we actually need to read */
@@ -274,9 +272,9 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 		bool is_partial_chunk = (partial_chunk_size != 
 						uncompressed_chunk_size);
 
-		DEBUG2("start_offset = %u, end_offset = %u\n", start_offset,
+		DEBUG2("start_offset = %u, end_offset = %u", start_offset,
 					end_offset);
-		DEBUG2("partial_chunk_size = %u\n", partial_chunk_size);
+		DEBUG2("partial_chunk_size = %u", partial_chunk_size);
 
 		/* This is undocumented, but chunks can be uncompressed.  This
 		 * appears to always be the case when the compressed chunk size
@@ -286,8 +284,8 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 
 			if (start_offset != 0) {
 				if (fseeko(fp, start_offset, SEEK_CUR) != 0) {
-					ERROR("Uncompressed partial chunk "
-							"fseek() error: %m\n");
+					ERROR_WITH_ERRNO("Uncompressed partial "
+							 "chunk fseek() error");
 					return WIMLIB_ERR_READ;
 				}
 			}
@@ -317,7 +315,6 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 				memcpy(out_p, uncompressed_buf + start_offset,
 						partial_chunk_size);
 			} else {
-				DEBUG2("out_p = %p\n");
 				ret = decompress(compressed_buf,
 						compressed_chunk_size,
 						out_p,
@@ -336,9 +333,9 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 
 err:
 	if (feof(fp))
-		ERROR("Unexpected EOF in compressed file resource\n");
+		ERROR("Unexpected EOF in compressed file resource");
 	else
-		ERROR("Error reading compressed file resource: %m\n");
+		ERROR_WITH_ERRNO("Error reading compressed file resource");
 	return WIMLIB_ERR_READ;
 }
 
@@ -350,17 +347,17 @@ int read_uncompressed_resource(FILE *fp, u64 offset, u64 len,
 {
 	if (fseeko(fp, offset, SEEK_SET) != 0) {
 		ERROR("Failed to seek to byte %"PRIu64" of input file "
-				"to read uncompressed resource "
-				"(len = %"PRIu64")!\n", offset, len);
+		      "to read uncompressed resource (len = %"PRIu64")",
+		      offset, len);
 		return WIMLIB_ERR_READ;
 	}
 	if (fread(contents_ret, 1, len, fp) != len) {
 		if (feof(fp)) {
-			ERROR("Unexpected EOF in uncompressed file resource!\n");
+			ERROR("Unexpected EOF in uncompressed file resource");
 		} else {
 			ERROR("Failed to read %"PRIu64" bytes from "
-					"uncompressed resource at offset "
-					"%"PRIu64"\n", len, offset);
+			      "uncompressed resource at offset %"PRIu64,
+			      len, offset);
 		}
 		return WIMLIB_ERR_READ;
 	}
@@ -402,12 +399,9 @@ int read_resource(FILE *fp, u64 resource_size, u64 resource_original_size,
 {
 	if (resource_ctype == WIM_COMPRESSION_TYPE_NONE) {
 		if (resource_size != resource_original_size) {
-			ERROR("Resource with original size %"PRIu64" "
-					"bytes is marked as uncompressed, \n",
-					resource_original_size);
-			ERROR("    but its actual size is %"PRIu64" "
-								"bytes!\n",
-					resource_size);
+			ERROR("Resource with original size %"PRIu64" bytes is "
+			      "marked as uncompressed, but its actual size is "
+			      "%"PRIu64" bytes", resource_size);
 			return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
 		}
 		return read_uncompressed_resource(fp, 
@@ -542,14 +536,11 @@ u8 *put_resource_entry(u8 *p, const struct resource_entry *entry)
  * a resource entry, returns the compression type for that resource entry. */
 int resource_compression_type(int wim_ctype, int reshdr_flags)
 {
-	if (wim_ctype == WIM_COMPRESSION_TYPE_NONE) {
+	if (wim_ctype != WIM_COMPRESSION_TYPE_NONE &&
+	     (reshdr_flags & WIM_RESHDR_FLAG_COMPRESSED))
+		return wim_ctype;
+	else
 		return WIM_COMPRESSION_TYPE_NONE;
-	} else {
-		if (reshdr_flags & WIM_RESHDR_FLAG_COMPRESSED)
-			return wim_ctype;
-		else
-			return WIM_COMPRESSION_TYPE_NONE;
-	}
 }
 
 
@@ -557,35 +548,36 @@ int resource_compression_type(int wim_ctype, int reshdr_flags)
 /*
  * Copies bytes between two file streams.
  *
- * Copies @len bytes from @in to @out, at the current position in @out, and at
- * an offset of @in_offset in @in.
+ * Copies @len bytes from @in_fp to @out_fp, at the current position in @out_fp,
+ * and at an offset of @in_offset in @in_fp.
  */
-int copy_between_files(FILE *in, off_t in_offset, FILE *out, size_t len)
+int copy_between_files(FILE *in_fp, off_t in_offset, FILE *out_fp, size_t len)
 {
 	u8 buf[BUFFER_SIZE];
 	size_t n;
 
-	if (fseeko(in, in_offset, SEEK_SET) != 0) {
-		ERROR("Failed to seek to byte %"PRIu64" of input file: %m\n",
-				in_offset);
+	if (fseeko(in_fp, in_offset, SEEK_SET) != 0) {
+		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" of "
+				 "input file", in_offset);
 		return WIMLIB_ERR_READ;
 	}
 	/* To reduce memory usage and improve speed, read and write BUFFER_SIZE
 	 * bytes at a time. */
 	while (len != 0) {
 		n = min(len, BUFFER_SIZE);
-		if (fread(buf, 1, n, in) != n) {
-			if (feof(in)) {
+		if (fread(buf, 1, n, in_fp) != n) {
+			if (feof(in_fp)) {
 				ERROR("Unexpected EOF when copying data "
-						"between files\n");
+				      "between files");
 			} else {
-				ERROR("Error copying data between files: %m\n");
+				ERROR_WITH_ERRNO("Error copying data between "
+						 "files");
 			}
 			return WIMLIB_ERR_READ;
 		}
 
-		if (fwrite(buf, 1, n, out) != n) {
-			ERROR("Error copying data between files: %m\n");
+		if (fwrite(buf, 1, n, out_fp) != n) {
+			ERROR_WITH_ERRNO("Error copying data between files");
 			return WIMLIB_ERR_WRITE;
 		}
 		len -= n;
@@ -597,15 +589,15 @@ int copy_between_files(FILE *in, off_t in_offset, FILE *out, size_t len)
 /* 
  * Uncompresses a WIM file resource and writes it uncompressed to a file stream.
  *
- * @in:	            The file stream that contains the file resource.
+ * @in_fp:          The file stream that contains the file resource.
  * @size:           The size of the resource in the input file.
  * @original_size:  The original (uncompressed) size of the resource. 
  * @offset:	    The offset of the start of the resource in @in.
  * @input_ctype:    The compression type of the resource in @in.
- * @out:	    The file stream to write the file resource to.
+ * @out_fp:	    The file stream to write the file resource to.
  */
-static int uncompress_resource(FILE *in, u64 size, u64 original_size,
-			       off_t offset, int input_ctype, FILE *out)
+static int uncompress_resource(FILE *in_fp, u64 size, u64 original_size,
+			       off_t offset, int input_ctype, FILE *out_fp)
 {
 	int ret;
 	u8 buf[WIM_CHUNK_SIZE];
@@ -620,18 +612,19 @@ static int uncompress_resource(FILE *in, u64 size, u64 original_size,
 	for (i = 0; i < num_chunks; i++) {
 
 		uncompressed_offset = i * WIM_CHUNK_SIZE;
-		uncompressed_chunk_size = min(WIM_CHUNK_SIZE, 
-					original_size - uncompressed_offset);
+		uncompressed_chunk_size = min(WIM_CHUNK_SIZE, original_size -
+					      uncompressed_offset);
 
-		ret = read_resource(in, size, original_size, offset, input_ctype, 
-					uncompressed_chunk_size, 
-					uncompressed_offset, buf);
+		ret = read_resource(in_fp, size, original_size, offset,
+				    input_ctype, uncompressed_chunk_size, 
+				    uncompressed_offset, buf);
 		if (ret != 0)
 			return ret;
 
-		if (fwrite(buf, 1, uncompressed_chunk_size, out) != 
-						uncompressed_chunk_size) {
-			ERROR("Failed to write file resource: %m\n");
+		if (fwrite(buf, 1, uncompressed_chunk_size, out_fp) != 
+		      uncompressed_chunk_size) 
+		{
+			ERROR_WITH_ERRNO("Failed to write file resource");
 			return WIMLIB_ERR_WRITE;
 		}
 	}
@@ -644,7 +637,7 @@ static int uncompress_resource(FILE *in, u64 size, u64 original_size,
  * Alternatively, the input resource may be in-memory, but it must be
  * uncompressed.
  *
- * @in:	            The file stream that contains the file resource.  Ignored
+ * @in_fp:	            The file stream that contains the file resource.  Ignored
  * 			if uncompressed_resource != NULL.
  * @uncompressed_resource:	If this pointer is not NULL, it points to an
  * 					array of @original_size bytes that are
@@ -655,16 +648,16 @@ static int uncompress_resource(FILE *in, u64 size, u64 original_size,
  * 			if uncompressed_resource != NULL.
  * @input_ctype:    The compression type of the resource in @in.  Ignored if
  * 			uncompressed_resource != NULL.
- * @out:	    The file stream to write the file resource to.
+ * @out_fp:	    The file stream to write the file resource to.
  * @output_type:    The compression type to use when writing the resource to
  * 			@out.
  * @new_size_ret:   A location into which the new compressed size of the file
  * 			resource in returned.
  */
-static int recompress_resource(FILE *in, const u8 *uncompressed_resource, 
-					u64 size, u64 original_size,
-					off_t offset, int input_ctype, FILE *out,
-					int output_ctype, u64 *new_size_ret)
+static int recompress_resource(FILE *in_fp, const u8 *uncompressed_resource, 
+			       u64 size, u64 original_size,
+			       off_t offset, int input_ctype, FILE *out_fp,
+			       int output_ctype, u64 *new_size_ret)
 {
 	int ret;
 	int (*compress)(const void *, uint, void *, uint *);
@@ -684,20 +677,27 @@ static int recompress_resource(FILE *in, const u8 *uncompressed_resource,
 
 	/* Size of the chunk entries--- 8 bytes for files over 4GB, otherwise 4
 	 * bytes */
-	uint chunk_entry_size = (original_size >= (u64)1 << 32) ?  8 : 4;
+	uint chunk_entry_size = (original_size >= (u64)1 << 32) ? 8 : 4;
 
 	/* Array in which to construct the chunk offset table. */
 	u64 chunk_offsets[num_chunk_entries];
 
 	/* Offset of the start of the chunk table in the output file. */
-	off_t chunk_tab_offset = ftello(out);
+	off_t chunk_tab_offset = ftello(out_fp);
+
+	if (chunk_tab_offset == -1) {
+		ERROR_WITH_ERRNO("Failed to get offset of output file");
+		return WIMLIB_ERR_WRITE;
+	}
 
 	/* Total size of the chunk table (as written to the file) */
 	u64 chunk_tab_size = chunk_entry_size * num_chunk_entries;
 
 	/* Reserve space for the chunk table. */
-	if (fwrite(chunk_offsets, 1, chunk_tab_size, out) != chunk_tab_size) {
-		ERROR("Failed to write chunk offset table: %m\n");
+	if (fwrite(chunk_offsets, 1, chunk_tab_size, out_fp) !=
+	      chunk_tab_size)
+	{
+		ERROR_WITH_ERRNO("Failed to write chunk offset table");
 		return WIMLIB_ERR_WRITE;
 	}
 
@@ -713,14 +713,15 @@ static int recompress_resource(FILE *in, const u8 *uncompressed_resource,
 		const u8 *uncompressed_p;
 		if (uncompressed_resource != NULL) {
 			uncompressed_p = uncompressed_resource + 
-							uncompressed_offset;
+					 uncompressed_offset;
 
 		} else {
 			/* Read chunk i of the file into uncompressed_buf. */
-			ret = read_resource(in, size, original_size, offset, input_ctype, 
-						uncompressed_chunk_size, 
-						uncompressed_offset, 
-						uncompressed_buf);
+			ret = read_resource(in_fp, size, original_size, offset,
+					    input_ctype,
+					    uncompressed_chunk_size, 
+					    uncompressed_offset, 
+					    uncompressed_buf);
 			if (ret != 0)
 				return ret;
 			uncompressed_p = uncompressed_buf;
@@ -748,8 +749,11 @@ static int recompress_resource(FILE *in, const u8 *uncompressed_resource,
 			len_to_write = uncompressed_chunk_size;
 		}
 
-		if (fwrite(buf_to_write, 1, len_to_write, out) != len_to_write) {
-			ERROR("Failed to write compressed file resource: %m\n");
+		if (fwrite(buf_to_write, 1, len_to_write, out_fp) !=
+		      len_to_write)
+		{
+			ERROR_WITH_ERRNO("Failed to write compressed "
+					 "file resource");
 			return WIMLIB_ERR_WRITE;
 		}
 		cur_chunk_offset += len_to_write;
@@ -762,32 +766,25 @@ static int recompress_resource(FILE *in, const u8 *uncompressed_resource,
 	/* Now that all entries of the chunk table are determined, rewind the
 	 * stream to where the chunk table was, and write it back out. */
 
-	if (fseeko(out, chunk_tab_offset, SEEK_SET) != 0) {
-		ERROR("Failed to seek to beginning of chunk table: %m\n");
+	if (fseeko(out_fp, chunk_tab_offset, SEEK_SET) != 0) {
+		ERROR_WITH_ERRNO("Failed to seek to beginning of chunk table");
 		return WIMLIB_ERR_READ;
 	}
 
 	if (chunk_entry_size == 8) {
 		array_to_le64(chunk_offsets, num_chunk_entries);
-
-		if (fwrite(chunk_offsets, 1, chunk_tab_size, out) != 
-				chunk_tab_size) {
-			ERROR("Failed to write chunk table: %m\n");
-			return WIMLIB_ERR_WRITE;
-		}
 	} else {
-		u32 chunk_entries_small[num_chunk_entries];
 		for (u64 i = 0; i < num_chunk_entries; i++)
-			chunk_entries_small[i] = to_le32(chunk_offsets[i]);
-		if (fwrite(chunk_entries_small, 1, chunk_tab_size, out) != 
-				chunk_tab_size) {
-			ERROR("Failed to write chunk table: %m\n");
-			return WIMLIB_ERR_WRITE;
-		}
+			((u32*)chunk_offsets)[i] = to_le32(chunk_offsets[i]);
+	}
+	if (fwrite(chunk_offsets, 1, chunk_tab_size, out_fp) != chunk_tab_size)
+	{
+		ERROR_WITH_ERRNO("Failed to write chunk table");
+		return WIMLIB_ERR_WRITE;
 	}
 
-	if (fseeko(out, 0, SEEK_END) != 0) {
-		ERROR("Failed to seek to end of output file: %m\n");
+	if (fseeko(out_fp, 0, SEEK_END) != 0) {
+		ERROR_WITH_ERRNO("Failed to seek to end of output file");
 		return WIMLIB_ERR_WRITE;
 	}
 
@@ -795,23 +792,24 @@ static int recompress_resource(FILE *in, const u8 *uncompressed_resource,
 }
 
 int write_resource_from_memory(const u8 resource[], int out_ctype,
-			       u64 resource_original_size, FILE *out,
+			       u64 resource_original_size, FILE *out_fp,
 			       u64 *resource_size_ret)
 {
 	if (out_ctype == WIM_COMPRESSION_TYPE_NONE) {
-		if (fwrite(resource, 1, resource_original_size, out) != 
-					resource_original_size) {
-			ERROR("Failed to write resource of length "
-					"%"PRIu64": %m\n", 
-					resource_original_size);
+		if (fwrite(resource, 1, resource_original_size, out_fp) != 
+		      resource_original_size)
+		{
+			ERROR_WITH_ERRNO("Failed to write resource of length "
+					 "%"PRIu64, resource_original_size);
 			return WIMLIB_ERR_WRITE;
 		}
 		*resource_size_ret = resource_original_size;
 		return 0;
 	} else {
-		return recompress_resource(NULL, resource, resource_original_size,
-				resource_original_size, 0, 0, out, out_ctype, 
-							resource_size_ret);
+		return recompress_resource(NULL, resource,
+					   resource_original_size,
+					   resource_original_size, 0, 0, out_fp,
+					   out_ctype, resource_size_ret);
 	}
 }
 
@@ -820,13 +818,13 @@ int write_resource_from_memory(const u8 resource[], int out_ctype,
  * Transfers a file resource from a FILE* opened for reading to a FILE* opened
  * for writing, possibly changing the compression type. 
  *
- * @in:			The FILE* that contains the file resource.
+ * @in_fp:		The FILE* that contains the file resource.
  * @size:		The (compressed) size of the file resource.
  * @original_size:	The uncompressed size of the file resource.
  * @offset:		The offset of the file resource in the input file.
  * @input_ctype:	The compression type of the file resource in the input
  * 				file.
- * @out:		The FILE* for the output file.  The file resource is 
+ * @out_fp:		The FILE* for the output file.  The file resource is 
  * 				written at the current position of @out.
  * @output_ctype:	The compression type to which the file resource will be
  * 				converted.
@@ -836,9 +834,9 @@ int write_resource_from_memory(const u8 resource[], int out_ctype,
  * 				in for the file resource written to the output
  * 				file.
  */
-static int transfer_file_resource(FILE *in, u64 size, u64 original_size, 
-				  off_t offset, int input_ctype, FILE *out, 
-				  int output_ctype, 
+static int transfer_file_resource(FILE *in_fp, u64 size, u64 original_size,
+				  off_t offset, int input_ctype, FILE *out_fp,
+				  int output_ctype,
 				  struct resource_entry *output_res_entry)
 {
 	int ret;
@@ -850,16 +848,17 @@ static int transfer_file_resource(FILE *in, u64 size, u64 original_size,
 	}
 
 	/* Get current offset in the output file. */
-	output_res_entry->offset = ftello(out);
-	if (output_res_entry->offset == -1) {
-		ERROR("Failed to get output position: %m\n");
+	off_t out_offset = ftello(out_fp);
+	if (out_offset == -1) {
+		ERROR_WITH_ERRNO("Failed to get output position");
 		return WIMLIB_ERR_WRITE;
 	}
+	output_res_entry->offset = (u64)out_offset;
 
 	if (output_ctype == input_ctype) {
 		/* The same compression types; simply copy the resource. */
 
-		ret = copy_between_files(in, offset, out, size);
+		ret = copy_between_files(in_fp, offset, out_fp, size);
 		if (ret != 0)
 			return ret;
 		output_res_entry->size = size;
@@ -868,9 +867,9 @@ static int transfer_file_resource(FILE *in, u64 size, u64 original_size,
 
 		if (output_ctype == WIM_COMPRESSION_TYPE_NONE) {
 			/* Uncompress a compressed file resource */
-			ret = uncompress_resource(in, size,
-						original_size, offset, 
-						input_ctype, out);
+			ret = uncompress_resource(in_fp, size,
+						  original_size, offset, 
+						  input_ctype, out_fp);
 			if (ret != 0)
 				return ret;
 			output_res_entry->size = original_size;
@@ -879,9 +878,10 @@ static int transfer_file_resource(FILE *in, u64 size, u64 original_size,
 			/* Compress an uncompressed file resource, or compress a
 			 * compressed file resource using a different
 			 * compression type */
-			ret = recompress_resource(in, NULL, size, original_size,
-						offset, input_ctype, out, 
-						output_ctype, &new_size);
+			ret = recompress_resource(in_fp, NULL, size,
+						  original_size,
+						  offset, input_ctype, out_fp,
+						  output_ctype, &new_size);
 			if (ret != 0)
 				return ret;
 			output_res_entry->size = new_size;
@@ -907,29 +907,34 @@ static int transfer_file_resource(FILE *in, u64 size, u64 original_size,
  * length 8, because that's how long the 'length' field is.
  *
  * @fp:		The FILE* for the input WIM file.
- * @res_entry:	The resource entry for the metadata resource (a.k.a the metadata
- * 			for the metadata)
  * @wim_ctype:	The compression type of the WIM file.
- * @root_dentry_p:	A pointer to a pointer to a struct dentry structure into which the 
- * 		root dentry is allocated and returned.
+ * @imd:	Pointer to the image metadata structure.  Its
+ *		`lookup_table_entry' member specifies the lookup table entry for
+ *		the metadata resource.  The rest of the image metadata entry
+ *		will be filled in by this function.
  *
- * @return:	True on success, false on failure.
+ * @return:	Zero on success, nonzero on failure.
  */
-int read_metadata_resource(FILE *fp, const struct resource_entry *res_entry,
-			   int wim_ctype, struct image_metadata *image_metadata)
+int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 {
 	u8 *buf;
 	int ctype;
 	u32 dentry_offset;
 	int ret;
-	struct dentry *dentry = NULL;
+	const struct resource_entry *res_entry;
+	struct dentry *dentry;
+#ifdef ENABLE_SECURITY_DATA
+	struct wim_security_data *sd;
+#endif
 
-	DEBUG("Reading metadata resource: length = %lu, offset = %lu\n",
-			res_entry->original_size, res_entry->offset);
+	res_entry = &imd->metadata_lte->resource_entry;
+
+	DEBUG("Reading metadata resource: length = %"PRIu64", "
+	      "offset = %"PRIu64"",
+	      res_entry->original_size, res_entry->offset);
 
 	if (res_entry->original_size < 8) {
-		ERROR("Expected at least 8 bytes for the metadata "
-				"resource!\n");
+		ERROR("Expected at least 8 bytes for the metadata resource");
 		return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
 	}
 
@@ -938,8 +943,7 @@ int read_metadata_resource(FILE *fp, const struct resource_entry *res_entry,
 
 	if (!buf) {
 		ERROR("Failed to allocate %"PRIu64" bytes for uncompressed "
-				"metadata resource!\n",
-				res_entry->original_size);
+		      "metadata resource", res_entry->original_size);
 		return WIMLIB_ERR_NOMEM;
 	}
 
@@ -951,62 +955,66 @@ int read_metadata_resource(FILE *fp, const struct resource_entry *res_entry,
 				 res_entry->original_size, res_entry->offset, 
 				 ctype, buf);
 	if (ret != 0)
-		goto err1;
+		goto out_free_buf;
 
-	DEBUG("Finished reading metadata resource into memory.\n");
+	DEBUG("Finished reading metadata resource into memory.");
 
-
-	dentry = MALLOC(sizeof(struct dentry));
-	if (!dentry) {
-		ERROR("Failed to allocate %zu bytes for root dentry!\n",
-				sizeof(struct dentry));
-		ret = WIMLIB_ERR_NOMEM;
-		goto err1;
-	}
-
-	/* Read the root directory entry starts after security data, on an
-	 * 8-byte aligned address. 
+	/* The root directory entry starts after security data, on an 8-byte
+	 * aligned address. 
 	 *
 	 * The security data starts with a 4-byte integer giving its total
 	 * length. */
 
-	/* Read the security data into a WIMSecurityData structure. */
 #ifdef ENABLE_SECURITY_DATA
-	ret = read_security_data(buf, res_entry->original_size, 
-				 &image_metadata->security_data);
+	/* Read the security data into a wim_security_data structure. */
+	ret = read_security_data(buf, res_entry->original_size, &sd);
 	if (ret != 0)
-		goto err1;
+		goto out_free_buf;
 #endif
+
+	dentry = MALLOC(sizeof(struct dentry));
+	if (!dentry) {
+		ERROR("Failed to allocate %zu bytes for root dentry",
+		      sizeof(struct dentry));
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_security_data;
+	}
+
 	get_u32(buf, &dentry_offset);
 	if (dentry_offset == 0)
 		dentry_offset = 8;
-	dentry_offset += (8 - dentry_offset % 8) % 8;
+	dentry_offset = (dentry_offset + 7) & ~7;
 		
 	ret = read_dentry(buf, res_entry->original_size, dentry_offset, dentry);
-	if (ret != 0)
-		goto err1;
-
 	/* This is the root dentry, so set its pointers correctly. */
 	dentry->parent = dentry;
 	dentry->next   = dentry;
 	dentry->prev   = dentry;
+	if (ret != 0)
+		goto out_free_dentry_tree;
 
 	/* Now read the entire directory entry tree. */
 	ret = read_dentry_tree(buf, res_entry->original_size, dentry);
 	if (ret != 0)
-		goto err2;
+		goto out_free_dentry_tree;
 
 	/* Calculate the full paths in the dentry tree. */
 	ret = for_dentry_in_tree(dentry, calculate_dentry_full_path, NULL);
 	if (ret != 0)
-		goto err2;
+		goto out_free_dentry_tree;
 
-	image_metadata->root_dentry = dentry;
-	FREE(buf);
-	return ret;
-err2:
+#ifdef ENABLE_SECURITY_DATA
+	imd->security_data = sd;
+#endif
+	imd->root_dentry = dentry;
+	goto out_free_buf;
+out_free_security_data:
+#ifdef ENABLE_SECURITY_DATA
+	free_security_data(sd);
+#endif
+out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL, false);
-err1:
+out_free_buf:
 	FREE(buf);
 	return ret;
 }
@@ -1028,7 +1036,7 @@ int write_metadata_resource(WIMStruct *w)
 	int metadata_ctype;
 	u8  hash[WIM_HASH_SIZE];
 
-	DEBUG("Writing metadata resource for image %u\n", w->current_image);
+	DEBUG("Writing metadata resource for image %d", w->current_image);
 
 	out = w->out_fp;
 	root = wim_root_dentry(w);
@@ -1049,7 +1057,7 @@ int write_metadata_resource(WIMStruct *w)
 	buf = MALLOC(metadata_original_size);
 	if (!buf) {
 		ERROR("Failed to allocate %"PRIu64" bytes for "
-				"metadata resource\n", metadata_original_size);
+		      "metadata resource", metadata_original_size);
 		return WIMLIB_ERR_NOMEM;
 	}
 	#ifdef ENABLE_SECURITY_DATA
@@ -1060,7 +1068,7 @@ int write_metadata_resource(WIMStruct *w)
 	p = put_u32(p, 0); /* Number of security data entries. */
 	#endif
 
-	DEBUG("Writing dentry tree.\n");
+	DEBUG("Writing dentry tree.");
 	p = write_dentry_tree(root, p);
 
 	/* Like file resources, the lookup table entry for a metadata resource
@@ -1100,15 +1108,17 @@ int write_metadata_resource(WIMStruct *w)
  * Writes a file resource to the output file. 
  *
  * @dentry:  The dentry for the file resource.
- * @wim_p:  A pointer to the WIMStruct.  The fields of interest to this
- * 	function are the input and output file streams and the lookup table. 
+ * @wim_p:   A pointer to the WIMStruct.  The fields of interest to this
+ * 	     function are the input and output file streams and the lookup
+ * 	     table. 
+ *
  * @return zero on success, nonzero on failure. 
  */
 int write_file_resource(struct dentry *dentry, void *wim_p)
 {
 	WIMStruct *w;
-	FILE *out;
-	FILE *in;
+	FILE *out_fp;
+	FILE *in_fp;
 	struct lookup_table_entry *lte;
 	int in_wim_ctype;
 	int out_wim_ctype;
@@ -1117,7 +1127,7 @@ int write_file_resource(struct dentry *dentry, void *wim_p)
 	int ret;
 
 	w = wim_p;
-	out = w->out_fp;
+	out_fp = w->out_fp;
 
 	/* Directories don't need file resources. */
 	if (dentry_is_directory(dentry))
@@ -1148,20 +1158,20 @@ int write_file_resource(struct dentry *dentry, void *wim_p)
 
 		len = lte->resource_entry.original_size;
 
-		in = fopen(lte->file_on_disk, "rb");
-		if (!in) {
-			ERROR("Failed to open the file `%s': %m\n",
-					lte->file_on_disk);
+		in_fp = fopen(lte->file_on_disk, "rb");
+		if (!in_fp) {
+			ERROR_WITH_ERRNO("Failed to open the file `%s'",
+					 lte->file_on_disk);
 			return WIMLIB_ERR_OPEN;
 		}
 
 		if (w->verbose)
 			puts(lte->file_on_disk);
 
-		ret = transfer_file_resource(in, len, len, 0,
-					     WIM_COMPRESSION_TYPE_NONE, out, 
+		ret = transfer_file_resource(in_fp, len, len, 0,
+					     WIM_COMPRESSION_TYPE_NONE, out_fp,
 					     out_wim_ctype, output_res_entry);
-		fclose(in);
+		fclose(in_fp);
 	} else {
 
 		/* Read from input WIM (possibly compressed) */
@@ -1170,25 +1180,25 @@ int write_file_resource(struct dentry *dentry, void *wim_p)
 		 * exporting images from one WIM file to another */
 		if (lte->other_wim_fp) {
 			/* Different WIM file. */
-			in = lte->other_wim_fp;
+			in_fp = lte->other_wim_fp;
 			in_wim_ctype = lte->other_wim_ctype;
 		} else {
 			/* Same WIM file. */
-			in = w->fp;
+			in_fp = w->fp;
 			in_wim_ctype = out_wim_ctype;
 		}
 		int input_res_ctype = resource_compression_type(
-					in_wim_ctype, 
-					lte->resource_entry.flags);
+						in_wim_ctype, 
+						lte->resource_entry.flags);
 
-		ret = transfer_file_resource(in, 
-					lte->resource_entry.size,
-					lte->resource_entry.original_size, 
-					lte->resource_entry.offset,
-					input_res_ctype, 
-					out, 
-					out_wim_ctype,
-					output_res_entry);
+		ret = transfer_file_resource(in_fp,
+					     lte->resource_entry.size,
+					     lte->resource_entry.original_size, 
+					     lte->resource_entry.offset,
+					     input_res_ctype, 
+					     out_fp,
+					     out_wim_ctype,
+					     output_res_entry);
 	}
 	return ret;
 }

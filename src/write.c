@@ -38,11 +38,11 @@ static int reopen_rw(WIMStruct *w)
 	FILE *fp;
 
 	if (fclose(w->fp) != 0)
-		ERROR("Failed to close the file `%s': %m\n", w->filename);
+		ERROR_WITH_ERRNO("Failed to close the file `%s'", w->filename);
 	fp = fopen(w->filename, "r+b");
 	if (!fp) {
-		ERROR("Failed to open `%s' for reading and writing: "
-				"%m\n", w->filename);
+		ERROR_WITH_ERRNO("Failed to open `%s' for reading and writing",
+		      		 w->filename);
 		return WIMLIB_ERR_OPEN;
 	}
 	w->fp = fp;
@@ -62,7 +62,7 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int flags)
 	
 	wimfile_name = w->filename;
 
-	DEBUG("Replacing WIM file `%s'\n", wimfile_name);
+	DEBUG("Replacing WIM file `%s'.", wimfile_name);
 
 	if (!wimfile_name)
 		return WIMLIB_ERR_NO_FILENAME;
@@ -77,29 +77,28 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int flags)
 
 	ret = wimlib_write(w, tmpfile, WIM_ALL_IMAGES, flags);
 	if (ret != 0) {
-		ERROR("Failed to write the WIM file `%s'!\n", tmpfile);
+		ERROR("Failed to write the WIM file `%s'", tmpfile);
 		return ret;
 	}
 
-	DEBUG("Closing original WIM file.\n");
+	DEBUG("Closing original WIM file.");
 	/* Close the original WIM file that was opened for reading. */
 	if (w->fp) {
 		if (fclose(w->fp) != 0) {
-			WARNING("Failed to close the file `%s'\n",
-					wimfile_name);
+			WARNING("Failed to close the file `%s'", wimfile_name);
 		}
 		w->fp = NULL;
 	}
 
-	DEBUG("Renaming `%s' to `%s'\n", tmpfile, wimfile_name);
+	DEBUG("Renaming `%s' to `%s'", tmpfile, wimfile_name);
 
 	/* Rename the new file to the old file .*/
 	if (rename(tmpfile, wimfile_name) != 0) {
-		ERROR("Failed to rename `%s' to `%s': %m\n", tmpfile, 
-								wimfile_name);
+		ERROR_WITH_ERRNO("Failed to rename `%s' to `%s'",
+				 tmpfile, wimfile_name);
 		/* Remove temporary file. */
 		if (unlink(tmpfile) != 0)
-			ERROR("Failed to remove `%s': %m\n", tmpfile);
+			ERROR_WITH_ERRNO("Failed to remove `%s'", tmpfile);
 		return WIMLIB_ERR_RENAME;
 	}
 
@@ -116,8 +115,8 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 	off_t xml_size;
 	size_t bytes_written;
 
-	DEBUG("Overwriting XML and header of `%s', flags = %d\n", 
-				w->filename, flags);
+	DEBUG("Overwriting XML and header of `%s', flags = %d",
+	      w->filename, flags);
 	if (!w->filename)
 		return WIMLIB_ERR_NO_FILENAME;
 
@@ -133,7 +132,7 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 	 * */
 	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY && 
 			w->hdr.integrity.offset != 0) {
-		DEBUG("Reading existing integrity table.\n");
+		DEBUG("Reading existing integrity table.");
 		integrity_table = MALLOC(w->hdr.integrity.size);
 		if (!integrity_table)
 			return WIMLIB_ERR_NOMEM;
@@ -143,14 +142,14 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 						 integrity_table);
 		if (ret != 0)
 			goto err;
-		DEBUG("Done reading existing integrity table.\n");
+		DEBUG("Done reading existing integrity table.");
 	}
 
-	DEBUG("Overwriting XML data.\n");
+	DEBUG("Overwriting XML data.");
 	/* Overwrite the XML data. */
 	if (fseeko(fp, w->hdr.xml_res_entry.offset, SEEK_SET) != 0) {
-		ERROR("Failed to seek to byte %"PRIu64" for XML data: "
-				"%m\n", w->hdr.xml_res_entry.offset);
+		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" "
+				 "for XML data", w->hdr.xml_res_entry.offset);
 		ret = WIMLIB_ERR_WRITE;
 		goto err;
 	}
@@ -158,7 +157,7 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 	if (ret != 0)
 		goto err;
 
-	DEBUG("Updating XML resource entry.\n");
+	DEBUG("Updating XML resource entry.");
 	/* Update the XML resource entry in the WIM header. */
 	xml_end = ftello(fp);
 	if (xml_end == -1) {
@@ -170,14 +169,15 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 	w->hdr.xml_res_entry.original_size = xml_size;
 
 	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
-		DEBUG("Writing integrity table.\n");
+		DEBUG("Writing integrity table.");
 		w->hdr.integrity.offset        = xml_end;
 		if (integrity_table) {
 			/* The existing integrity table was saved. */
 			bytes_written = fwrite(integrity_table, 1, 
 					       w->hdr.integrity.size, fp);
 			if (bytes_written != w->hdr.integrity.size) {
-				ERROR("Failed to write integrity table: %m\n");
+				ERROR_WITH_ERRNO("Failed to write integrity "
+						 "table");
 				ret = WIMLIB_ERR_WRITE;
 				goto err;
 			}
@@ -198,44 +198,43 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 			w->hdr.integrity.flags         = 0;
 		}
 	} else {
-		DEBUG("Truncating file to end of XML data.\n");
+		DEBUG("Truncating file to end of XML data.");
 		/* No integrity table to write.  The file should be truncated
 		 * because it's possible that the old file was longer (due to it
 		 * including an integrity table, or due to its XML data being
 		 * longer) */
 		if (fflush(fp) != 0) {
-			ERROR("Failed to flush stream for file `%s': %m\n",
-					w->filename);
+			ERROR_WITH_ERRNO("Failed to flush stream for file `%s'",
+					 w->filename);
 			return WIMLIB_ERR_WRITE;
 		}
 		if (ftruncate(fileno(fp), xml_end) != 0) {
-			ERROR("Failed to truncate `%s' to %"PRIu64" "
-					"bytes: %m\n", 
-					w->filename, xml_end);
+			ERROR_WITH_ERRNO("Failed to truncate `%s' to %"PRIu64" "
+					 "bytes", w->filename, xml_end);
 			return WIMLIB_ERR_WRITE;
 		}
 		memset(&w->hdr.integrity, 0, sizeof(struct resource_entry));
 	}
 
-	DEBUG("Overwriting header.\n");
+	DEBUG("Overwriting header.");
 	/* Overwrite the header. */
 	if (fseeko(fp, 0, SEEK_SET) != 0) {
-		ERROR("Failed to seek to beginning of `%s': %m\n",
-				w->filename);
+		ERROR_WITH_ERRNO("Failed to seek to beginning of `%s'",
+				 w->filename);
 		return WIMLIB_ERR_WRITE;
 	}
 
 	ret = write_header(&w->hdr, fp);
 	if (ret != 0)
-		return ret;;
+		return ret;
 
-	DEBUG("Closing file.\n");
+	DEBUG("Closing `%s'.", w->filename);
 	if (fclose(fp) != 0) {
-		ERROR("Failed to close `%s': %m\n", w->filename);
+		ERROR_WITH_ERRNO("Failed to close `%s'", w->filename);
 		return WIMLIB_ERR_WRITE;
 	}
 	w->fp = NULL;
-	DEBUG("Done.\n");
+	DEBUG("Done.");
 	return 0;
 err:
 	FREE(integrity_table);
@@ -247,11 +246,12 @@ err:
 static int write_file_resources(WIMStruct *w)
 {
 
-	DEBUG("Writing file resources for image %u\n", w->current_image);
+	DEBUG("Writing file resources for image %u.", w->current_image);
 	return for_dentry_in_tree(wim_root_dentry(w), write_file_resource, w);
 }
 
-/* Write lookup table, xml data, lookup table, and rewrite header 
+/* Write the lookup table, xml data, and integrity table, then overwrite the WIM
+ * header.
  *
  * write_lt is zero iff the lookup table is not to be written; i.e. it is
  * handled elsewhere. */
@@ -273,7 +273,7 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 		if (lookup_table_offset == -1)
 			return WIMLIB_ERR_WRITE;
 
-		DEBUG("Writing lookup table (offset %"PRIu64")\n", lookup_table_offset);
+		DEBUG("Writing lookup table (offset %"PRIu64")", lookup_table_offset);
 		/* Write the lookup table. */
 		ret = write_lookup_table(w->lookup_table, out);
 		if (ret != 0)
@@ -284,7 +284,7 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 	xml_data_offset = ftello(out);
 	if (xml_data_offset == -1)
 		return WIMLIB_ERR_WRITE;
-	DEBUG("Writing XML data (offset %"PRIu64")\n", xml_data_offset);
+	DEBUG("Writing XML data (offset %"PRIu64")", xml_data_offset);
 
 	/* @hdr will be the header for the new WIM.  First copy all the data
 	 * from the header in the WIMStruct; then set all the fields that may
@@ -334,7 +334,7 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 	}
 	hdr.integrity.flags = 0;
 
-	DEBUG("Updating WIM header.\n");
+	DEBUG("Updating WIM header.");
 
 	/* 
 	 * In the WIM header, there is room for the resource entry for a
@@ -349,9 +349,9 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 		       sizeof(struct resource_entry));
 	} else {
 		memcpy(&hdr.boot_metadata_res_entry, 
-		       &w->image_metadata[hdr.boot_idx - 1].lookup_table_entry->
-					output_resource_entry,
-					sizeof(struct resource_entry));
+		       &w->image_metadata[
+			  hdr.boot_idx - 1].metadata_lte->output_resource_entry,
+		       sizeof(struct resource_entry));
 	}
 
 	/* Set image count and boot index correctly for single image writes */
@@ -374,7 +374,7 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 int begin_write(WIMStruct *w, const char *path, int flags)
 {
 	const char *mode;
-	DEBUG("Opening `%s' for new WIM\n", path);
+	DEBUG("Opening `%s' for new WIM", path);
 
 	/* checking the integrity requires going back over the file to read it.
 	 * XXX 
@@ -387,7 +387,8 @@ int begin_write(WIMStruct *w, const char *path, int flags)
 
 	w->out_fp = fopen(path, mode);
 	if (!w->out_fp) {
-		ERROR("Failed to open the file `%s' for writing!\n", path);
+		ERROR_WITH_ERRNO("Failed to open the file `%s' for writing",
+				 path);
 		return WIMLIB_ERR_OPEN;
 	}
 
@@ -401,13 +402,13 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
 	int ret;
 
 	if (image != WIM_ALL_IMAGES && 
-			(image < 1 || image > w->hdr.image_count))
+	     (image < 1 || image > w->hdr.image_count))
 		return WIMLIB_ERR_INVALID_IMAGE;
 
 	if (image == WIM_ALL_IMAGES)
-		DEBUG("Writing all images to `%s'\n", path);
+		DEBUG("Writing all images to `%s'.", path);
 	else
-		DEBUG("Writing image %d to `%s'\n", image, path);
+		DEBUG("Writing image %d to `%s'.", image, path);
 
 	ret = begin_write(w, path, flags);
 	if (ret != 0)
@@ -417,24 +418,24 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
 
 	ret = for_image(w, image, write_file_resources);
 	if (ret != 0) {
-		ERROR("Failed to write file resources!\n");
+		ERROR("Failed to write WIM file resources to `%s'", path);
 		goto done;
 	}
 
 	ret = for_image(w, image, write_metadata_resource);
 
 	if (ret != 0) {
-		ERROR("Failed to write image metadata!\n");
+		ERROR("Failed to write WIM image metadata to `%s'", path);
 		goto done;
 	}
 
 	ret = finish_write(w, image, flags, 1);
 
 done:
-	DEBUG("Closing output file.\n");
+	DEBUG("Closing output file.");
 	if (w->out_fp != NULL) {
 		if (fclose(w->out_fp) != 0) {
-			ERROR("Failed to close the file `%s': %m\n", path);
+			ERROR_WITH_ERRNO("Failed to close the file `%s'", path);
 			ret = WIMLIB_ERR_WRITE;
 		}
 		w->out_fp = NULL;

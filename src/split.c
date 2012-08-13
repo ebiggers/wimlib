@@ -49,7 +49,7 @@ static int finish_swm(WIMStruct *w, struct lookup_table_entry *lte_chain_head,
 	off_t lookup_table_offset = ftello(w->out_fp);
 	int ret;
 
-	DEBUG("Writing lookup table for SWM (offset %"PRIu64")\n", 
+	DEBUG("Writing lookup table for SWM (offset %"PRIu64")", 
 			lookup_table_offset);
 
 	while (lte_chain_head != NULL) {
@@ -107,12 +107,12 @@ static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 
 		if (args->write_flags & WIMLIB_OPEN_FLAG_SHOW_PROGRESS)
 			printf("Writing `%s' (%"PRIu64" of %"PRIu64" bytes, "
-					"%.0f%% done)\n", 
-				args->swm_base_name, 
-				args->total_bytes_written,
-				args->total_bytes,
-				(double)args->total_bytes_written /
-				 	(double)args->total_bytes * 100.0);
+			       "%.0f%% done)\n", 
+			       args->swm_base_name, 
+			       args->total_bytes_written,
+			       args->total_bytes,
+			       (double)args->total_bytes_written /
+			           (double)args->total_bytes * 100.0);
 
 		ret = begin_write(w, args->swm_base_name, args->write_flags);
 		if (ret != 0)
@@ -187,7 +187,7 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 
 		struct lookup_table_entry *metadata_lte;
 
-		metadata_lte = w->image_metadata[i].lookup_table_entry;
+		metadata_lte = w->image_metadata[i].metadata_lte;
 		ret = copy_resource(metadata_lte, w);
 		if (ret != 0)
 			return ret;
@@ -240,7 +240,7 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 
 		FILE *fp = fopen(p, "r+b");
 		if (!fp) {
-			ERROR("Failed to open `%s': %m\n", p);
+			ERROR_WITH_ERRNO("Failed to open `%s'");
 			return WIMLIB_ERR_OPEN;
 		}
 		u8 buf[4];
@@ -250,12 +250,13 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 		if (fseek(fp, 40, SEEK_SET) != 0 || 
 				fwrite(buf, 1, sizeof(buf), fp) != sizeof(buf)
 				|| fclose(fp) != 0) {
-			ERROR("Error overwriting header of `%s': %m\n", name);
+			ERROR_WITH_ERRNO("Error overwriting header of `%s'",
+					 name);
 			return WIMLIB_ERR_WRITE;
 		}
 	}
 	if (write_flags & WIMLIB_OPEN_FLAG_SHOW_PROGRESS)
-		printf("Done!\n");
+		puts("Done!");
 	wimlib_free(w);
 	return 0;
 }

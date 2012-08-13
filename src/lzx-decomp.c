@@ -323,7 +323,7 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 
 	ret = bitstream_ensure_bits(istream, 4);
 	if (ret != 0) {
-		ERROR("Input stream overrun!\n");
+		ERROR("LZX input stream overrun");
 		return ret;
 	}
 
@@ -347,7 +347,6 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 
 	switch (block_type) {
 	case LZX_BLOCKTYPE_ALIGNED:
-
 		/* Read the path lengths for the elements of the aligned tree,
 		 * then build it. */
 
@@ -360,14 +359,15 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 			tables->alignedtree_lens[i] = len;
 		}
 		
-		LZX_DEBUG("Building the aligned tree.\n");
+		LZX_DEBUG("Building the aligned tree.");
 		ret = make_huffman_decode_table(tables->alignedtree_decode_table,
-					LZX_ALIGNEDTREE_NUM_SYMBOLS, 
-					LZX_ALIGNEDTREE_TABLEBITS,
-					tables->alignedtree_lens, 8);
+						LZX_ALIGNEDTREE_NUM_SYMBOLS, 
+						LZX_ALIGNEDTREE_TABLEBITS,
+						tables->alignedtree_lens,
+						8);
 		if (ret != 0) {
-			ERROR("Failed to make the decode table for "
-					"the aligned offset tree!\n");
+			ERROR("lzx_decompress(): Failed to make the decode "
+			      "table for the aligned offset tree");
 			return ret;
 		}
 
@@ -376,36 +376,37 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 
 	case LZX_BLOCKTYPE_VERBATIM:
 		if (block_type == LZX_BLOCKTYPE_VERBATIM)
-			LZX_DEBUG("Found verbatim block\n");
+			LZX_DEBUG("Found verbatim block.");
 
-		LZX_DEBUG("Reading path lengths for main tree.\n");
+		LZX_DEBUG("Reading path lengths for main tree.");
 		/* Read the path lengths for the first 256 elements of the main
 		 * tree. */
 		ret = lzx_read_code_lens(istream, tables->maintree_lens, 
 					 LZX_NUM_CHARS);
 		if (ret != 0) {
-			ERROR("Failed to read the code lengths for "
-					"the first 256 elements of the main "
-					"tree!\n");
+			ERROR("lzx_decompress(): Failed to read the code "
+			      "lengths for the first 256 elements of the "
+			      "main tree");
 			return ret;
 		}
 
 		/* Read the path lengths for the remaining elements of the main
 		 * tree. */
 		LZX_DEBUG("Reading path lengths for remaining elements of "
-				"main tree (%d elements).\n",
-				LZX_MAINTREE_NUM_SYMBOLS - LZX_NUM_CHARS);
+			  "main tree (%d elements).",
+			  LZX_MAINTREE_NUM_SYMBOLS - LZX_NUM_CHARS);
 		ret = lzx_read_code_lens(istream, 
 					 tables->maintree_lens + LZX_NUM_CHARS, 
 					 LZX_MAINTREE_NUM_SYMBOLS - LZX_NUM_CHARS);
 		if (ret != 0) {
-			ERROR("Failed to read the path lengths for "
-					"the remaining elements of the main "
-					"tree!\n");
+			ERROR("lzx_decompress(): Failed to read the path "
+			      "lengths for the remaining elements of the main "
+			      "tree");
 			return ret;
 		}
 
-		LZX_DEBUG("Building the Huffman decoding table for the main tree.\n");
+		LZX_DEBUG("Building the Huffman decoding "
+			  "table for the main tree.");
 
 		ret = make_huffman_decode_table(tables->maintree_decode_table,
 						LZX_MAINTREE_NUM_SYMBOLS,
@@ -413,36 +414,36 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 						tables->maintree_lens, 
 						LZX_MAX_CODEWORD_LEN);
 		if (ret != 0) {
-			ERROR("Failed to make the decode table for "
-					"the main tree!\n");
+			ERROR("lzx_decompress(): Failed to make the decode "
+			      "table for the main tree");
 			return ret;
 		}
 
-		LZX_DEBUG("Reading path lengths for the length tree.\n");
+		LZX_DEBUG("Reading path lengths for the length tree.");
 		ret = lzx_read_code_lens(istream, tables->lentree_lens, 
 					 LZX_LENTREE_NUM_SYMBOLS);
 		if (ret != 0) {
-			ERROR("Failed to read the path lengths "
-					"for the length tree!\n");
+			ERROR("lzx_decompress(): Failed to read the path "
+			      "lengths for the length tree");
 			return ret;
 		}
 
-		LZX_DEBUG("Building the length tree.\n");
+		LZX_DEBUG("Building the length tree.");
 		ret = make_huffman_decode_table(tables->lentree_decode_table,
 						LZX_LENTREE_NUM_SYMBOLS, 
 						LZX_LENTREE_TABLEBITS,
 						tables->lentree_lens, 
 						LZX_MAX_CODEWORD_LEN);
 		if (ret != 0) {
-			ERROR("Failed to build the length Huffman "
-					"tree!\n");
+			ERROR("lzx_decompress(): Failed to build the length "
+			      "Huffman tree");
 			return ret;
 		}
 
 		break;
 
 	case LZX_BLOCKTYPE_UNCOMPRESSED:
-		LZX_DEBUG("Found uncompressed block\n");
+		LZX_DEBUG("Found uncompressed block.");
 		ret = align_input_bitstream(istream, true);
 		if (ret != 0)
 			return ret;
@@ -455,7 +456,7 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 		queue->R2 = R[2];
 		break;
 	default:
-		LZX_DEBUG("Found invalid block\n");
+		LZX_DEBUG("Found invalid block.");
 		return 1;
 	}
 	*block_type_ret = block_type;
@@ -613,16 +614,15 @@ static int lzx_decode_match(int main_element, int block_type,
 	match_src = match_dest - match_offset;
 
 	if (match_len > bytes_remaining) {
-		ERROR("Match of length %d bytes overflows uncompressed "
-				"block size!\n", match_len);
+		ERROR("lzx_decode_match(): Match of length %d bytes overflows "
+		      "uncompressed block size", match_len);
 		return -1;
 	}
 
 	if (match_src < window) {
-		ERROR("Match of length %d bytes references data "
-				"before window (match_offset = %d, "
-				"window_pos = %d)\n", match_len,
-				match_offset, window_pos);
+		ERROR("lzx_decode_match(): Match of length %d bytes references "
+		      "data before window (match_offset = %d, window_pos = %d)",
+		      match_len, match_offset, window_pos);
 		return -1;
 	}
 
@@ -751,9 +751,9 @@ int lzx_decompress(const void *compressed_data, uint compressed_len,
 	int block_type;
 
 	LZX_DEBUG("lzx_decompress (compressed_data = %p, compressed_len = %d, "
-			"uncompressed_data = %p, uncompressed_len = %d)\n",
-			compressed_data, compressed_len, uncompressed_data,
-			uncompressed_len);
+		  "uncompressed_data = %p, uncompressed_len = %d).",
+		  compressed_data, compressed_len,
+		  uncompressed_data, uncompressed_len);
 
 	wimlib_assert(uncompressed_len <= 32768);
 
@@ -773,37 +773,41 @@ int lzx_decompress(const void *compressed_data, uint compressed_len,
 
 	while (bytes_remaining != 0) {
 
-		LZX_DEBUG("Reading block header.\n");
+		LZX_DEBUG("Reading block header.");
 		ret = lzx_read_block_header(&istream, &block_size, &block_type, 
 							&tables, &queue);
 		if (ret != 0)
 			return ret;
 
-		LZX_DEBUG("block_size = %d, bytes_remaining = %d\n",
-				block_size, bytes_remaining);
+		LZX_DEBUG("block_size = %d, bytes_remaining = %d.",
+			  block_size, bytes_remaining);
 
 		if (block_size > bytes_remaining) {
-			ERROR("Expected a block size of at most %d "
-					"bytes (found %d bytes)!\n", 
-					bytes_remaining, block_size);
+			ERROR("lzx_decompress(): Expected a block size of at "
+			      "most %d bytes (found %d bytes)",
+			      bytes_remaining, block_size);
 			return 1;
 		}
 
-		if (block_type == LZX_BLOCKTYPE_VERBATIM || 
-					block_type == LZX_BLOCKTYPE_ALIGNED) {
+		switch (block_type) {
+		case LZX_BLOCKTYPE_VERBATIM:
+		case LZX_BLOCKTYPE_ALIGNED:
 			if (block_type == LZX_BLOCKTYPE_VERBATIM)
-				LZX_DEBUG("LZX_BLOCKTYPE_VERBATIM\n");
+				LZX_DEBUG("LZX_BLOCKTYPE_VERBATIM");
 			else
-				LZX_DEBUG("LZX_BLOCKTYPE_ALIGNED\n");
+				LZX_DEBUG("LZX_BLOCKTYPE_ALIGNED");
 
 			ret = lzx_decompress_block(block_type, 
-					   block_size, uncompressed_data,
-					   uncompressed_len - bytes_remaining, 
-					   &tables, &queue, &istream);
+						   block_size,
+						   uncompressed_data,
+						   uncompressed_len -
+						       bytes_remaining, 
+						   &tables, &queue, &istream);
 			if (ret != 0)
 				return ret;
-		} else if (block_type == LZX_BLOCKTYPE_UNCOMPRESSED) {
-			LZX_DEBUG("LZX_BLOCKTYPE_UNCOMPRESSED\n");
+			break;
+		case LZX_BLOCKTYPE_UNCOMPRESSED:
+			LZX_DEBUG("LZX_BLOCKTYPE_UNCOMPRESSED");
 			ret = bitstream_read_bytes(&istream, block_size, 
 						   uncompressed_data + 
 						   uncompressed_len - 
@@ -812,20 +816,22 @@ int lzx_decompress(const void *compressed_data, uint compressed_len,
 				return ret;
 			if (block_size & 1)
 				align_input_bitstream(&istream, false);
-		} else {
-			ERROR("Unrecognized block type!\n");
-			return 1;
+			break;
+		default:
+			wimlib_assert(0);
+			break;
 		}
 
 		bytes_remaining -= block_size;
 
 		if (bytes_remaining != 0)
-			LZX_DEBUG("%d bytes remaining\n", bytes_remaining);
+			LZX_DEBUG("%d bytes remaining.", bytes_remaining);
 
 	}
 
 	if (uncompressed_len >= 10)
-		undo_call_insn_preprocessing(uncompressed_data, uncompressed_len);
+		undo_call_insn_preprocessing(uncompressed_data,
+					     uncompressed_len);
 
 	return 0;
 }

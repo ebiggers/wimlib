@@ -43,7 +43,7 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 	u32 wim_version;
 	u32 chunk_size;
 
-	DEBUG("Reading WIM header.\n");
+	DEBUG("Reading WIM header.");
 	
 	bytes_read = fread(buf, 1, WIM_MAGIC_LEN, fp);
 
@@ -53,7 +53,7 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 	/* Byte 8 */
 
 	if (memcmp(buf, wim_magic_chars, WIM_MAGIC_LEN) != 0) {
-		ERROR("Invalid magic characters in WIM header\n");
+		ERROR("Invalid magic characters in WIM header");
 		return WIMLIB_ERR_NOT_A_WIM_FILE;
 	}
 
@@ -66,8 +66,8 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 	/* Byte 12 */
 
 	if (hdr_size != WIM_HEADER_DISK_SIZE) {
-		DEBUG("ERROR: Header is size %u (expected %u)\n",
-				hdr_size, WIM_HEADER_DISK_SIZE);
+		DEBUG("ERROR: Header is size %u (expected %u)",
+		      hdr_size, WIM_HEADER_DISK_SIZE);
 		return WIMLIB_ERR_INVALID_HEADER_SIZE;
 	}
 
@@ -83,20 +83,21 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 	p = get_u32(buf + WIM_MAGIC_LEN + sizeof(u32), &wim_version);
 
 	if (wim_version != WIM_VERSION) {
-		ERROR("The WIM header says the WIM version is %u, but Wimlib "
-			"only knows about version %u.\n", wim_version, 
-								WIM_VERSION);
+		ERROR("The WIM header says the WIM version is %u, but wimlib "
+		      "only knows about version %u",
+		      wim_version, WIM_VERSION);
 		return WIMLIB_ERR_UNKNOWN_VERSION;
 	}
 
 	p = get_u32(p, &hdr->flags);
 	p = get_u32(p, &chunk_size);
 	if (chunk_size != WIM_CHUNK_SIZE && 
-			(hdr->flags & WIM_HDR_FLAG_COMPRESSION)) {
+	    (hdr->flags & WIM_HDR_FLAG_COMPRESSION)) {
 		ERROR("Unexpected chunk size of %u! Ask the author to "
-				"implement support for other chunk sizes. "
-				"(Or it might just be that the WIM header is "
-				"invalid.)\n", chunk_size);
+		      "implement support for other chunk sizes.",
+		      chunk_size);
+		ERROR("(Or it might just be that the WIM header is "
+		      "invalid.)", chunk_size);
 		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
 	}
 
@@ -105,15 +106,15 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 	p = get_u16(p, &hdr->total_parts);
 
 	if (!split_ok && (hdr->part_number != 1 || hdr->total_parts != 1)) {
-		ERROR("This WIM is part %u of a %u-part WIM.\n",
-			hdr->part_number, hdr->total_parts);
+		ERROR("This WIM is part %u of a %u-part WIM",
+		      hdr->part_number, hdr->total_parts);
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
 
 	p = get_u32(p, &hdr->image_count);
 
-	DEBUG("part_number = %u, total_parts = %u, image_count = %u\n",
-			hdr->part_number, hdr->total_parts, hdr->image_count);
+	DEBUG("part_number = %u, total_parts = %u, image_count = %u",
+	      hdr->part_number, hdr->total_parts, hdr->image_count);
 
 	/* Byte 48 */
 
@@ -139,9 +140,9 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 
 err:
 	if (feof(fp))
-		ERROR("Unexpected EOF while reading WIM header!\n");
+		ERROR("Unexpected EOF while reading WIM header");
 	else
-		ERROR("Error reading WIM header: %m\n");
+		ERROR_WITH_ERRNO("Error reading WIM header");
 	return WIMLIB_ERR_READ;
 }
 
@@ -151,13 +152,13 @@ err:
  * @hdr: 	A pointer to a struct wim_header structure that describes the header.
  * @out:	The FILE* for the output file, positioned at the appropriate
  * 		place (the beginning of the file).
- * @return:	True on success, false on failure.
+ * @return:	Zero on success, nonzero on failure.
  */
-int write_header(const struct wim_header *hdr, FILE *out)
+int write_header(const struct wim_header *hdr, FILE *out_fp)
 {
 	u8 buf[WIM_HEADER_DISK_SIZE];
 	u8 *p;
-	DEBUG("Writing WIM header.\n");
+	DEBUG("Writing WIM header.");
 
 	p = put_bytes(buf, WIM_MAGIC_LEN, wim_magic_chars);
 	p = put_u32(p, WIM_HEADER_DISK_SIZE);
@@ -180,8 +181,8 @@ int write_header(const struct wim_header *hdr, FILE *out)
 	p = put_u32(p, hdr->boot_idx);
 	p = put_resource_entry(p, &hdr->integrity);
 	memset(p, 0, WIM_UNUSED_LEN);
-	if (fwrite(buf, 1, sizeof(buf), out) != sizeof(buf)) {
-		DEBUG("Failed to write WIM header: %m\n");
+	if (fwrite(buf, 1, sizeof(buf), out_fp) != sizeof(buf)) {
+		ERROR_WITH_ERRNO("Failed to write WIM header");
 		return WIMLIB_ERR_WRITE;
 	}
 	return 0;
@@ -199,14 +200,14 @@ int init_header(struct wim_header *hdr, int ctype)
 		break;
 	case WIM_COMPRESSION_TYPE_LZX:
 		hdr->flags = WIM_HDR_FLAG_COMPRESSION | 
-			WIM_HDR_FLAG_COMPRESS_LZX;
+			     WIM_HDR_FLAG_COMPRESS_LZX;
 		break;
 	case WIM_COMPRESSION_TYPE_XPRESS:
 		hdr->flags = WIM_HDR_FLAG_COMPRESSION | 
-			WIM_HDR_FLAG_COMPRESS_XPRESS;
+			     WIM_HDR_FLAG_COMPRESS_XPRESS;
 		break;
 	default:
-		ERROR("Invalid compression type specified (%d)!\n", ctype);
+		ERROR("Invalid compression type specified (%d)", ctype);
 		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 	}
 	hdr->total_parts = 1;

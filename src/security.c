@@ -35,63 +35,74 @@
  *
  * @metadata_resource:	An array that contains the uncompressed metadata
  * 				resource for the WIM file.
- * @metadata_resource_len:	The length of @metadata_resource.
- * @sd_p:	A pointer to a pointer wim_security_data structure that will be filled
- * 		in with a pointer to a new wim_security_data structure on success.
+ * @metadata_resource_len:	The length of @metadata_resource.  It MUST be at
+ *				least 8 bytes.
+ * @sd_p:	A pointer to a pointer to a wim_security_data structure that
+ * 		will be filled in with a pointer to a new wim_security_data
+ * 		structure on success.
  *
  * Note: There is no `offset' argument because the security data is located at
  * the beginning of the metadata resource.
  */
-int read_security_data(const u8 metadata_resource[], 
-		       u64 metadata_resource_len, struct wim_security_data **sd_p)
+int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
+		       struct wim_security_data **sd_p)
 {
 	struct wim_security_data *sd;
 	const u8 *p;
-	u64 sizes_size;
+	int ret;
+	u64 total_len;
 
-	if (metadata_resource_len < 8) {
-		ERROR("Not enough space in %"PRIu64"-byte file resource for "
-				"security data!\n", metadata_resource_len);
-		return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
-	}
 	sd = MALLOC(sizeof(struct wim_security_data));
-	if (!sd)
+	if (!sd) {
+		ERROR("Out of memory");
 		return WIMLIB_ERR_NOMEM;
-	p = get_u32(metadata_resource, &sd->total_length);
+	}
+	sd->sizes	= NULL;
+	sd->descriptors = NULL;
+	sd->refcnt	= 1;
+
+	p = metadata_resource;
+	p = get_u32(p, &sd->total_length);
 	p = get_u32(p, &sd->num_entries);
 
 	/* Verify the listed total length of the security data is big enough to
 	 * include the sizes array, verify that the file data is big enough to
-	 * include it as well, then allocate the array of sizes. */
-	sizes_size = sd->num_entries * sizeof(u64);
+	 * include it as well, then allocate the array of sizes.
+	 *
+	 * Note: The total length of the security data must fit in a 32-bit
+	 * integer, even though each security descriptor size is a 64-bit
+	 * integer.  This is stupid, and we need to be careful not to actually
+	 * let the security descriptor sizes be over 0xffffffff.  */
+	if ((u64)sd->total_length > metadata_resource_len) {
+		ERROR("Security data total length (%u) is bigger than the "
+		      "metadata resource length (%"PRIu64")",
+		      sd->total_length, metadata_resource_len);
+		ret = WIMLIB_ERR_INVALID_RESOURCE_SIZE;
+		goto out_free_sd;
+	}
 
-	DEBUG("Reading security data with %u entries\n", sd->num_entries);
+	DEBUG("Reading security data: %u entries, length = %u",
+	      sd->num_entries, sd->total_length);
 
 	if (sd->num_entries == 0) {
-		FREE(sd);
-		return 0;
+		/* No security data. */
+		total_len = 8;
+		goto out;
 	}
 
+	u64 sizes_size = (u64)sd->num_entries * sizeof(u64);
 	u64 size_no_descriptors = 8 + sizes_size;
-	if (size_no_descriptors > sd->total_length) {
-		ERROR("Security data total length of %u is too short because\n"
-				"there must be at least %"PRIu64" bytes of security "
-				"data!\n", sd->total_length, 
-				8 + sizes_size);
-		FREE(sd);
-		return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
-	}
-	if (size_no_descriptors > metadata_resource_len) {
-		ERROR("File resource of %"PRIu64" bytes is not big enough\n"
-				"to hold security data of at least %"PRIu64" "
-				"bytes!\n", metadata_resource_len, size_no_descriptors);
-		FREE(sd);
-		return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
+	if (size_no_descriptors > (u64)sd->total_length) {
+		ERROR("Security data total length of %u is too short because "
+		      "there must be at least %"PRIu64" bytes of security data",
+		      sd->total_length, 8 + sizes_size);
+		ret = WIMLIB_ERR_INVALID_RESOURCE_SIZE;
+		goto out_free_sd;
 	}
 	sd->sizes = MALLOC(sizes_size);
 	if (!sd->sizes) {
-		FREE(sd);
-		return WIMLIB_ERR_NOMEM;
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_sd;
 	}
 
 	/* Copy the sizes array in from the file data. */
@@ -101,39 +112,46 @@ int read_security_data(const u8 metadata_resource[],
 	/* Allocate the array of pointers to descriptors, and read them in. */
 	sd->descriptors = CALLOC(sd->num_entries, sizeof(u8*));
 	if (!sd->descriptors) {
-		FREE(sd);
-		FREE(sd->sizes);
-		return WIMLIB_ERR_NOMEM;
+		ERROR("Out of memory while allocating security "
+		      "descriptors");
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_sd;
 	}
-	u64 total_len = size_no_descriptors;
+	total_len = size_no_descriptors;
 
-	for (uint i = 0; i < sd->num_entries; i++) {
-		total_len += sd->sizes[i];
-		if (total_len > sd->total_length) {
-			ERROR("Security data total length of %u is too "
-					"short because there are at least %"PRIu64" "
-					"bytes of security data!\n", 
-					sd->total_length, total_len);
-			free_security_data(sd);
-			return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
+	for (u32 i = 0; i < sd->num_entries; i++) {
+		/* Watch out for huge security descriptor sizes that could
+		 * overflow the total length and wrap it around. */
+		if (total_len + sd->sizes[i] < total_len) {
+			ERROR("Caught overflow in security descriptor lengths "
+			      "(current total length = %"PRIu64", security "
+			      "descriptor size = %"PRIu64")",
+			      total_len, sd->sizes[i]);
 		}
-		if (total_len > metadata_resource_len) {
-			ERROR("File resource of %"PRIu64" bytes is not big enough "
-					"to hold security data of at least %"PRIu64" "
-					"bytes!\n", metadata_resource_len, total_len);
-			free_security_data(sd);
-			return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
+		total_len += sd->sizes[i];
+		if (total_len > (u64)sd->total_length) {
+			ERROR("Security data total length of %u is too short "
+			      "because there are at least %"PRIu64" bytes of "
+			      "security data", sd->total_length, total_len);
+			ret = WIMLIB_ERR_INVALID_RESOURCE_SIZE;
+			goto out_free_sd;
 		}
 		sd->descriptors[i] = MALLOC(sd->sizes[i]);
 		if (!sd->descriptors[i]) {
-			free_security_data(sd);
-			return WIMLIB_ERR_NOMEM;
+			ERROR("Out of memory while allocating security "
+			      "descriptors");
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_sd;
 		}
 		p = get_bytes(p, sd->sizes[i], sd->descriptors[i]);
 	}
-	sd->refcnt = 1;
+out:
+	sd->total_length = (u32)total_len;
 	*sd_p = sd;
 	return 0;
+out_free_sd:
+	free_security_data(sd);
+	return ret;
 }
 
 /* 
@@ -141,31 +159,23 @@ int read_security_data(const u8 metadata_resource[],
  */
 u8 *write_security_data(const struct wim_security_data *sd, u8 *p)
 {
-	if (sd) {
-		DEBUG("Writing security data (total_length = %u, "
-				"num_entries = %u)\n", sd->total_length, 
-				sd->num_entries);
-		u8 *orig_p = p;
-		p = put_u32(p, sd->total_length);
-		p = put_u32(p, sd->num_entries);
+	DEBUG("Writing security data (total_length = %"PRIu32", num_entries "
+	      "= %"PRIu32")", sd->total_length, sd->num_entries);
 
-		for (uint i = 0; i < sd->num_entries; i++)
-			p = put_u64(p, sd->sizes[i]);
+	u8 *orig_p = p;
+	p = put_u32(p, sd->total_length);
+	p = put_u32(p, sd->num_entries);
 
-		for (uint i = 0; i < sd->num_entries; i++)
-			p = put_bytes(p, sd->sizes[i], sd->descriptors[i]);
+	for (u32 i = 0; i < sd->num_entries; i++)
+		p = put_u64(p, sd->sizes[i]);
 
-		wimlib_assert(p - orig_p <= sd->total_length);
+	for (u32 i = 0; i < sd->num_entries; i++)
+		p = put_bytes(p, sd->sizes[i], sd->descriptors[i]);
 
-		DEBUG("Successfully wrote security data.\n");
-		return orig_p + sd->total_length;
-	} else {
-		DEBUG("Writing security data (total_length = 8, "
-				"num_entries = 0)\n");
-		p = put_u32(p, 8);
-		return put_u32(p, 0);
+	wimlib_assert(p - orig_p == sd->total_length);
 
-	}
+	DEBUG("Successfully wrote security data.");
+	return p;
 }
 
 /* XXX We don't actually do anything with the ACL's yet besides being able to
@@ -241,22 +251,14 @@ static void print_security_descriptor(const u8 *p, u64 size)
 void print_security_data(const struct wim_security_data *sd)
 {
 	puts("[SECURITY DATA]");
-	if (sd) {
-		printf("Length            = %u bytes\n", sd->total_length);
-		printf("Number of Entries = %u\n", sd->num_entries);
+	printf("Length            = %"PRIu32" bytes\n", sd->total_length);
+	printf("Number of Entries = %"PRIu32"\n", sd->num_entries);
 
-		u64 num_entries = (u64)sd->num_entries;
-		for (u64 i = 0; i < num_entries; i++) {
-			printf("[SecurityDescriptor %"PRIu64", "
-					"length = %"PRIu64"]\n", 
-					i, sd->sizes[i]);
-			print_security_descriptor(sd->descriptors[i], 
-						  sd->sizes[i]);
-			putchar('\n');
-		}
-	} else {
-		puts("Length            = 8 bytes\n"
-		     "Number of Entries = 0");
+	for (u32 i = 0; i < sd->num_entries; i++) {
+		printf("[SecurityDescriptor %"PRIu32", length = %"PRIu64"]\n", 
+		       i, sd->sizes[i]);
+		print_security_descriptor(sd->descriptors[i], sd->sizes[i]);
+		putchar('\n');
 	}
 	putchar('\n');
 }
@@ -268,8 +270,7 @@ void free_security_data(struct wim_security_data *sd)
 	wimlib_assert(sd->refcnt >= 1);
 	if (sd->refcnt == 1) {
 		u8 **descriptors = sd->descriptors;
-		u32 num_entries = sd->num_entries;
-
+		u32 num_entries  = sd->num_entries;
 		if (descriptors)
 			while (num_entries--)
 				FREE(*descriptors++);

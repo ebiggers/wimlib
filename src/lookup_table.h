@@ -99,7 +99,10 @@ struct lookup_table_entry {
 	 *
 	 * output_resource_entry is the struct resource_entry for the position of the
 	 * file resource when written to the output file. */
-	u32 out_refcnt;
+	union {
+		u32 out_refcnt;
+		bool refcnt_is_incremented;
+	};
 	struct resource_entry output_resource_entry;
 };
 
@@ -165,8 +168,8 @@ static inline void lookup_table_remove(struct lookup_table *table,
 
 static inline struct resource_entry* wim_metadata_resource_entry(WIMStruct *w)
 {
-	return &w->image_metadata[w->current_image - 1].
-			lookup_table_entry->resource_entry;
+	return &w->image_metadata[
+			w->current_image - 1].metadata_lte->resource_entry;
 }
 
 #endif

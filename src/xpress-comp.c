@@ -190,7 +190,7 @@ int xpress_compress(const void *__uncompressed_data, uint uncompressed_len,
 	uint i;
 	int ret;
 
-	XPRESS_DEBUG("uncompressed_len = %u\n", uncompressed_len);
+	XPRESS_DEBUG("uncompressed_len = %u", uncompressed_len);
 
 	if (uncompressed_len < 300)
 		return 1;
@@ -203,7 +203,7 @@ int xpress_compress(const void *__uncompressed_data, uint uncompressed_len,
 					NULL, freq_tab,
 					&xpress_lz_params);
 
-	XPRESS_DEBUG("using %u matches\n", num_matches);
+	XPRESS_DEBUG("using %u matches", num_matches);
 
 	freq_tab[256]++;
 
@@ -240,32 +240,31 @@ int xpress_compress(const void *__uncompressed_data, uint uncompressed_len,
 
 	compressed_len = ostream.output - (u8*)__compressed_data;
 
-	XPRESS_DEBUG("Compressed %u => %u bytes\n",
-			uncompressed_len, compressed_len);
+	XPRESS_DEBUG("Compressed %u => %u bytes",
+		     uncompressed_len, compressed_len);
 
 	*compressed_len_ret = compressed_len;
 
 #ifdef ENABLE_VERIFY_COMPRESSION
 	/* Verify that we really get the same thing back when decompressing. */
-	XPRESS_DEBUG("Verifying the compressed data.\n");
+	XPRESS_DEBUG("Verifying the compressed data.");
 	u8 buf[uncompressed_len];
 	ret = xpress_decompress(__compressed_data, compressed_len, buf, 
 				uncompressed_len);
 	if (ret != 0) {
-		fprintf(stderr, "xpress_compress(): Failed to decompress data "
-				"we compressed!\n");
+		ERROR("xpress_compress(): Failed to decompress data we "
+		      "compressed");
 		abort();
 	}
 	for (i = 0; i < uncompressed_len; i++) {
 		if (buf[i] != uncompressed_data[i]) {
-			fprintf(stderr, "xpress_compress(): Data we compressed "
-					"didn't decompress to the original data "
-					"(difference at byte %u of %u)\n", 
-					i + 1, uncompressed_len);
+			ERROR("xpress_compress(): Data we compressed didn't "
+			      "decompress to the original data (difference at "
+			      "byte %u of %u)", i + 1, uncompressed_len);
 			abort();
 		}
 	}
-	XPRESS_DEBUG("Compression verified to be correct.\n");
+	XPRESS_DEBUG("Compression verified to be correct.");
 #endif
 
 	return 0;

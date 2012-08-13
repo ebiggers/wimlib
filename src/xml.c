@@ -33,8 +33,8 @@
 #include <libxml/tree.h>
 #include <libxml/xmlwriter.h>
 
-/* The following 4 structures are used to form an in-memory representation of
- * the XML data (other than the raw parse tree from libxml). */
+/* Structures used to form an in-memory representation of the XML data (other
+ * than the raw parse tree from libxml). */
 
 struct windows_version {
 	u64 major;
@@ -99,8 +99,8 @@ static const char *get_arch(int arch)
 
 
 /* Iterate through the children of an xmlNode. */
-#define for_node_child(parent, child) for (child = parent->children; \
-				child != NULL; child = child->next)
+#define for_node_child(parent, child)	\
+	for (child = parent->children; child != NULL; child = child->next)
 
 /* Utility functions for xmlNodes */
 static inline bool node_is_element(xmlNode *node)
@@ -154,8 +154,10 @@ static int node_get_string(const xmlNode *string_node, char **str)
 	for_node_child(string_node, child) {
 		if (node_is_text(child) && child->content) {
 			p = STRDUP(child->content);
-			if (!p)
+			if (!p) {
+				ERROR("Out of memory");
 				return WIMLIB_ERR_NOMEM;
+			}
 			break;
 		}
 	}
@@ -276,8 +278,10 @@ static int xml_read_languages(const xmlNode *languages_node,
 			num_languages++;
 
 	languages = CALLOC(num_languages, sizeof(char*));
-	if (!languages)
+	if (!languages) {
+		ERROR("Out of memory");
 		return WIMLIB_ERR_NOMEM;
+	}
 
 	*languages_ret = languages;
 	*num_languages_ret = num_languages;
@@ -294,7 +298,7 @@ static int xml_read_languages(const xmlNode *languages_node,
 		if (ret != 0)
 			return ret;
 	}
-	return 0;
+	return ret;
 }
 
 /* Reads the information from a <WINDOWS> element inside an <IMAGE> element. */
@@ -342,7 +346,7 @@ static int xml_read_windows_info(const xmlNode *windows_node,
 		if (ret != 0)
 			return ret;
 	}
-	return 0;
+	return ret;
 }
 
 /* Reads the information from an <IMAGE> element. */
@@ -355,7 +359,8 @@ static int xml_read_image_info(xmlNode *image_node,
 	
 	index_prop = xmlGetProp(image_node, "INDEX");
 	if (index_prop) {
-		image_info->index = strtoul(index_prop, NULL, 10);
+		char *tmp;
+		image_info->index = strtoul(index_prop, &tmp, 10);
 		FREE(index_prop);
 	} else {
 		image_info->index = 0;
@@ -378,9 +383,9 @@ static int xml_read_image_info(xmlNode *image_node,
 		else if (node_name_is(child, "LASTMODIFICATIONTIME"))
 			image_info->last_modification_time = node_get_timestamp(child);
 		else if (node_name_is(child, "WINDOWS")) {
-			DEBUG("Found <WINDOWS> tag\n");
-			ret = xml_read_windows_info(child, 
-						&image_info->windows_info);
+			DEBUG("Found <WINDOWS> tag");
+			ret = xml_read_windows_info(child,
+						    &image_info->windows_info);
 			image_info->windows_info_exists = true;
 		} else if (node_name_is(child, "NAME")) {
 			ret = node_get_string(child, &image_info->name);
@@ -397,23 +402,22 @@ static int xml_read_image_info(xmlNode *image_node,
 			return ret;
 	}
 	if (!image_info->name) {
-		WARNING("Image with index %"PRIu64" has no name\n", 
-					image_info->index);
+		WARNING("Image with index %"PRIu64" has no name",
+			image_info->index);
 		image_info->name = MALLOC(1);
 		if (!image_info->name) {
-			ERROR("Out of memory!\n");
+			ERROR("Out of memory");
 			return WIMLIB_ERR_NOMEM;
 		}
 		image_info->name[0] = '\0';
-		return 0;
 	}
-	
-	return 0;
+	return ret;
 }
 
 /* Reads the information from a <WIM> element, which should be the root element
  * of the XML tree. */
-static int xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info_ret)
+static int xml_read_wim_info(const xmlNode *wim_node,
+			     struct wim_info **wim_info_ret)
 {
 	struct wim_info *wim_info;
 	xmlNode *child;
@@ -423,7 +427,7 @@ static int xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info
 
 	wim_info = CALLOC(1, sizeof(struct wim_info));
 	if (!wim_info) {
-		ERROR("Out of memory!\n");
+		ERROR("Out of memory");
 		return WIMLIB_ERR_NOMEM;
 	}
 
@@ -440,7 +444,7 @@ static int xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info
 	wim_info->images = CALLOC(num_images, sizeof(wim_info->images[0]));
 	if (!wim_info->images) {
 		ret = WIMLIB_ERR_NOMEM;
-		ERROR("Out of memory!\n");
+		ERROR("Out of memory!");
 		goto err;
 	}
 	wim_info->num_images = num_images;
@@ -449,7 +453,7 @@ static int xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info
 		if (!node_is_element(child))
 			continue;
 		if (node_name_is(child, "IMAGE")) {
-			DEBUG("Found <IMAGE> tag\n");
+			DEBUG("Found <IMAGE> tag");
 			ret = xml_read_image_info(child, cur_image_info++);
 			if (ret != 0)
 				goto err;
@@ -717,7 +721,7 @@ static int xml_write_image_info(xmlTextWriter *writer,
 		if (rc < 0)
 			return rc;
 	} else {
-		DEBUG("<WINDOWS> tag does not exist.\n");
+		DEBUG("<WINDOWS> tag does not exist.");
 	}
 
 	if (image_info->name) {
@@ -765,8 +769,8 @@ static struct image_info *add_image_info_struct(struct wim_info *wim_info)
 	images = CALLOC(wim_info->num_images + 1, sizeof(struct image_info));
 	if (!images)
 		return NULL;
-	memcpy(images, wim_info->images, 
-			wim_info->num_images * sizeof(struct image_info));
+	memcpy(images, wim_info->images,
+	       wim_info->num_images * sizeof(struct image_info));
 	FREE(wim_info->images);
 	wim_info->images = images;
 	wim_info->num_images++;
@@ -868,8 +872,7 @@ int xml_export_image(const struct wim_info *old_wim_info,
 	char *name;
 	char *desc;
 
-	DEBUG("Copying XML data between WIM files for source image %d\n",
-			image);
+	DEBUG("Copying XML data between WIM files for source image %d.", image);
 
 	wimlib_assert(image >= 1 && image <= old_wim_info->num_images);
 
@@ -907,7 +910,7 @@ int xml_export_image(const struct wim_info *old_wim_info,
 	*new_wim_info_p = new_wim_info;
 	return 0;
 err:
-	ERROR("Out of memory!\n");
+	ERROR("Out of memory");
 	free_wim_info(new_wim_info);
 	return WIMLIB_ERR_NOMEM;
 }
@@ -918,7 +921,7 @@ void xml_delete_image(struct wim_info **wim_info_p, int image)
 	struct wim_info *wim_info;
 	int i;
 
-	DEBUG("Deleting image %d from the XML data\n", image);
+	DEBUG("Deleting image %d from the XML data.", image);
 	
 	wim_info = *wim_info_p;
 
@@ -963,7 +966,7 @@ void xml_update_image_info(WIMStruct *w, int image)
 	struct image_info *image_info;
 	struct dentry *root; 
 
-	DEBUG("Updating the image info for image %d\n", image);
+	DEBUG("Updating the image info for image %d", image);
 
 	image_info = &w->wim_info->images[image - 1];
 	root = w->image_metadata[image - 1].root_dentry;
@@ -986,34 +989,34 @@ int xml_add_image(WIMStruct *w, struct dentry *root_dentry, const char *name,
 
 	wimlib_assert(name);
 
-	DEBUG("Adding image: name = %s, description = %s, flags_element = %s\n",
-			name, description, flags_element);
+	DEBUG("Adding image: name = %s, description = %s, flags_element = %s",
+	      name, description, flags_element);
 
 	/* If this is the first image, allocate the struct wim_info.  Otherwise
 	 * use the existing struct wim_info. */
 	if (w->wim_info) {
 		wim_info = w->wim_info;
 	} else {
-		DEBUG("Allocing struct wim_info with 1 image\n");
+		DEBUG("Allocing struct wim_info with 1 image");
 		wim_info = CALLOC(1, sizeof(struct wim_info));
 		if (!wim_info) {
 			ERROR("Could not allocate WIM information struct--- "
-					"out of memory!\n");
+			      "out of memory");
 			return WIMLIB_ERR_NOMEM;
 		}
 	}
 
 	image_info = add_image_info_struct(wim_info);
 	if (!image_info)
-		goto err_nomem1;
+		goto out_free_wim_info;
 
 	if (!(image_info->name = STRDUP(name)))
-		goto err_nomem2;
+		goto out_destroy_image_info;
 
 	if (description && !(image_info->description = STRDUP(description)))
-		goto err_nomem2;
+		goto out_destroy_image_info;
 	if (flags_element && !(image_info->flags = STRDUP(flags_element)))
-		goto err_nomem2;
+		goto out_destroy_image_info;
 		
 	w->wim_info = wim_info;
 	image_info->index = wim_info->num_images;
@@ -1021,14 +1024,14 @@ int xml_add_image(WIMStruct *w, struct dentry *root_dentry, const char *name,
 	xml_update_image_info(w, image_info->index);
 	return 0;
 
-err_nomem2:
+out_destroy_image_info:
 	destroy_image_info(image_info);
-err_nomem1:
+out_free_wim_info:
 	if (w->wim_info)
 		wim_info->num_images--;
 	else
 		FREE(wim_info);
-	ERROR("Out of memory!\n");
+	ERROR("Out of memory");
 	return WIMLIB_ERR_NOMEM;
 }
 
@@ -1103,16 +1106,16 @@ int read_xml_data(FILE *fp, const struct resource_entry *res, u8 **xml_data_ret,
 	xmlNode *root;
 	int ret;
 
-	DEBUG("XML data is %"PRIu64" bytes at offset %"PRIu64"\n", 
-			(u64)res->size, res->offset);
+	DEBUG("XML data is %"PRIu64" bytes at offset %"PRIu64"", 
+	      (u64)res->size, res->offset);
 
 	if (resource_is_compressed(res)) {
-		ERROR("XML data is supposed to be uncompressed!\n");
+		ERROR("XML data is supposed to be uncompressed");
 		ret = WIMLIB_ERR_XML;
 		goto err0;
 	}
 	if (res->size < 2) {
-		ERROR("XML data must be at least 2 bytes!\n");
+		ERROR("XML data must be at least 2 bytes");
 		ret = WIMLIB_ERR_XML;
 		goto err0;
 	}
@@ -1130,29 +1133,29 @@ int read_xml_data(FILE *fp, const struct resource_entry *res, u8 **xml_data_ret,
 	xml_data[res->size] = 0;
 	xml_data[res->size + 1] = 0;
 
-	DEBUG("Parsing XML using libxml2 to create XML tree.\n");
+	DEBUG("Parsing XML using libxml2 to create XML tree.");
 
 	doc = xmlReadMemory(xml_data, res->size, "noname.xml", "UTF-16", 0);
 
 
 	if (!doc) {
-		ERROR("Failed to parse XML data!\n");
+		ERROR("Failed to parse XML data");
 		ret = WIMLIB_ERR_XML;
 		goto err1;
 	}
 
-	DEBUG("Constructing WIM information structure from XML tree.\n");
+	DEBUG("Constructing WIM information structure from XML tree.");
 
 	root = xmlDocGetRootElement(doc);
 	if (!root) {
-		ERROR("Empty XML document!\n");
+		ERROR("Empty XML document");
 		ret = WIMLIB_ERR_XML;
 		goto err2;
 	}
 
 	if (!node_is_element(root) || !node_name_is(root, "WIM")) {
-		ERROR("Expected <WIM> for the root XML element! "
-				"(found <%s>)\n", root->name);
+		ERROR("Expected <WIM> for the root XML element (found <%s>)",
+		      root->name);
 		ret = WIMLIB_ERR_XML;
 		goto err2;
 	}
@@ -1161,7 +1164,7 @@ int read_xml_data(FILE *fp, const struct resource_entry *res, u8 **xml_data_ret,
 	if (ret != 0)
 		goto err2;
 
-	DEBUG("Freeing XML tree.\n");
+	DEBUG("Freeing XML tree.");
 
 	xmlFreeDoc(doc);
 	xmlCleanupParser();
@@ -1177,7 +1180,7 @@ err0:
 }
 
 #define CHECK_RET  ({ 	if (ret < 0)  { \
-				ERROR("Error writing XML data!\n"); \
+				ERROR("Error writing XML data"); \
 				ret = WIMLIB_ERR_WRITE; \
 				goto err2; \
 			} })
@@ -1218,16 +1221,16 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 			return WIMLIB_ERR_WRITE;
 	}
 
-	DEBUG("Creating XML buffer and text writer\n");
+	DEBUG("Creating XML buffer and text writer.");
 	buf = xmlBufferCreate();
 	if (!buf) {
-		ERROR("Failed to allocate XML buffer!\n");
+		ERROR("Failed to allocate XML buffer");
 		ret = WIMLIB_ERR_NOMEM;
 		goto err0;
 	}
 	writer = xmlNewTextWriterMemory(buf, 0);
 	if (!writer) {
-		ERROR("Failed to allocate XML writer!\n");
+		ERROR("Failed to allocate XML writer");
 		ret = WIMLIB_ERR_NOMEM;
 		goto err1;
 	}
@@ -1242,7 +1245,7 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	CHECK_RET;
 #endif
 
-	DEBUG("Writing <WIM> element\n");
+	DEBUG("Writing <WIM> element");
 	ret = xmlTextWriterStartElement(writer, "WIM");
 	CHECK_RET;
 
@@ -1254,12 +1257,12 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 		num_images = wim_info->num_images;
 	else
 		num_images = 0;
-	DEBUG("Writing %u <IMAGE> elements\n", num_images);
+	DEBUG("Writing %u <IMAGE> elements", num_images);
 
 	for (i = 1; i <= num_images; i++) {
 		if (image != WIM_ALL_IMAGES && i != image)
 			continue;
-		DEBUG("Writing <IMAGE> element for image %d\n", i);
+		DEBUG("Writing <IMAGE> element for image %d", i);
 		ret = xml_write_image_info(writer, &wim_info->images[i - 1]);
 		CHECK_RET;
 	}
@@ -1271,7 +1274,7 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	CHECK_RET;
 
 	DEBUG("Done composing XML document. Now converting to UTF-16 and "
-			"writing it to the output file.\n");
+	      "writing it to the output file.");
 
 	content = xmlBufferContent(buf);
 	len = xmlBufferLength(buf);
@@ -1285,12 +1288,12 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	if ((putc(0xff, out)) == EOF || (putc(0xfe, out) == EOF) || 
 		((bytes_written = fwrite(utf16_str, 1, utf16_len, out))
 				!= utf16_len)) {
-		ERROR("Error writing XML data: %m\n");
+		ERROR_WITH_ERRNO("Error writing XML data");
 		ret = WIMLIB_ERR_WRITE;
 		goto err3;
 	}
 
-	DEBUG("Cleaning up.\n");
+	DEBUG("Cleaning up.");
 
 	ret = 0;
 err3:
@@ -1306,7 +1309,7 @@ err0:
 /* Returns the name of the specified image. */
 WIMLIBAPI const char *wimlib_get_image_name(const WIMStruct *w, int image)
 {
-	DEBUG("Getting the name of image %d\n", image);
+	DEBUG("Getting the name of image %d", image);
 	if (image < 1 || image > w->hdr.image_count)
 		return NULL;
 
@@ -1317,7 +1320,7 @@ WIMLIBAPI const char *wimlib_get_image_name(const WIMStruct *w, int image)
 WIMLIBAPI const char *wimlib_get_image_description(const WIMStruct *w, 
 						   int image)
 {
-	DEBUG("Getting the description of image %d\n", image);
+	DEBUG("Getting the description of image %d", image);
 	if (image < 1 || image > w->hdr.image_count)
 		return NULL;
 
@@ -1329,8 +1332,7 @@ WIMLIBAPI bool wimlib_image_name_in_use(const WIMStruct *w, const char *name)
 {
 	int i;
 
-	DEBUG("Checking to see if the image name `%s' is already "
-						"in use\n", name);
+	DEBUG("Checking to see if the image name `%s' is already in use", name);
 	if (!name || !w->wim_info)
 		return false;
 	for (i = 1; i <= w->wim_info->num_images; i++)
@@ -1342,10 +1344,10 @@ WIMLIBAPI bool wimlib_image_name_in_use(const WIMStruct *w, const char *name)
 
 WIMLIBAPI int wimlib_extract_xml_data(WIMStruct *w, FILE *fp)
 {
-	DEBUG("Extracting the XML data.\n");
+	DEBUG("Extracting the XML data.");
 	if (fwrite(w->xml_data, 1, w->hdr.xml_res_entry.size, fp) != 
 			w->hdr.xml_res_entry.size) {
-		ERROR("Failed to extract XML data!\n");
+		ERROR_WITH_ERRNO("Failed to extract XML data");
 		return WIMLIB_ERR_WRITE;
 	}
 	return 0;
@@ -1357,15 +1359,14 @@ WIMLIBAPI int wimlib_set_image_name(WIMStruct *w, int image, const char *name)
 	char *p;
 	int i;
 
-	DEBUG("Setting the name of image %d to %s\n", image, name);
+	DEBUG("Setting the name of image %d to %s", image, name);
 
 	if (!name || !*name) {
-		ERROR("Must specify a non-empty string for the image "
-				"name!\n");
+		ERROR("Must specify a non-empty string for the image name");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 	if (image < 1 || image > w->hdr.image_count) {
-		ERROR("%d is not a valid image!\n", image);
+		ERROR("%d is not a valid image", image);
 		return WIMLIB_ERR_INVALID_IMAGE;
 	}
 
@@ -1373,15 +1374,15 @@ WIMLIBAPI int wimlib_set_image_name(WIMStruct *w, int image, const char *name)
 		if (i == image)
 			continue;
 		if (strcmp(w->wim_info->images[i - 1].name, name) == 0) {
-			ERROR("The name `%s' is already used for image %d!\n",
-					name, i);
+			ERROR("The name `%s' is already used for image %d",
+			      name, i);
 			return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 		}
 	}
 
 	p = STRDUP(name);
 	if (!p) {
-		ERROR("Out of memory!\n");
+		ERROR("Out of memory");
 		return WIMLIB_ERR_NOMEM;
 	}
 	FREE(w->wim_info->images[image - 1].name);
@@ -1395,17 +1396,16 @@ WIMLIBAPI int wimlib_set_image_descripton(WIMStruct *w, int image,
 {
 	char *p;
 
-	DEBUG("Setting the description of image %d to %s\n", image, 
-	      description);
+	DEBUG("Setting the description of image %d to %s", image, description);
 
 	if (image < 1 || image > w->hdr.image_count) {
-		ERROR("%d is not a valid image!\n", image);
+		ERROR("%d is not a valid image", image);
 		return WIMLIB_ERR_INVALID_IMAGE;
 	}
 	if (description) {
 		p = STRDUP(description);
 		if (!p) {
-			ERROR("Out of memory!\n");
+			ERROR("Out of memory");
 			return WIMLIB_ERR_NOMEM;
 		}
 	} else {

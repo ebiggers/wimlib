@@ -53,24 +53,29 @@ typedef unsigned uint;
 extern bool __wimlib_print_errors;
 extern void wimlib_error(const char *format, ...) 
 		FORMAT(printf, 1, 2) COLD;
+extern void wimlib_error_with_errno(const char *format, ...) 
+		FORMAT(printf, 1, 2) COLD;
 extern void wimlib_warning(const char *format, ...)
 		FORMAT(printf, 1, 2) COLD;
-#	define ERROR wimlib_error
-#	define WARNING wimlib_warning
+#	define ERROR		wimlib_error
+#	define ERROR_WITH_ERRNO wimlib_error_with_errno
+#	define WARNING		wimlib_warning
 #else
 #	define ERROR(format, ...)
+#	define ERROR_WITH_ERRNO(format, ...)
 #	define WARNING(format, ...)
 #endif /* ENABLE_ERROR_MESSAGES */
 
 #if defined(ENABLE_DEBUG) || defined(ENABLE_MORE_DEBUG)
 #	include <errno.h>
-#	define DEBUG(format, ...)  \
-	({ \
- 		int __errno_save = errno; \
-		fprintf(stdout, "[%s %d] %s(): " format, \
-			__FILE__, __LINE__, __func__, ## __VA_ARGS__); \
-		fflush(stdout); \
-		errno = __errno_save; \
+#	define DEBUG(format, ...)					\
+	({								\
+ 		int __errno_save = errno;				\
+		fprintf(stdout, "[%s %d] %s(): " format,		\
+			__FILE__, __LINE__, __func__, ## __VA_ARGS__);	\
+	 	putchar('\n');						\
+		fflush(stdout);						\
+		errno = __errno_save;					\
 	})
 
 #else

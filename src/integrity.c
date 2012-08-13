@@ -58,8 +58,8 @@ static int verify_integrity(FILE *fp, u64 num_bytes, u32 chunk_size,
 
 	chunk_buf = MALLOC(chunk_size);
 	if (!chunk_buf) {
-		ERROR("Failed to allocate %u byte buffer for integrity "
-				"chunks\n", chunk_size);
+		ERROR("Failed to allocate %u byte buffer for integrity chunks",
+		      chunk_size);
 		return WIMLIB_ERR_NOMEM;
 	}
 	bytes_remaining = num_bytes;
@@ -76,10 +76,10 @@ static int verify_integrity(FILE *fp, u64 num_bytes, u32 chunk_size,
 		if (fread(chunk_buf, 1, bytes_to_read, fp) != bytes_to_read) {
 			if (feof(fp)) {
 				ERROR("Unexpected EOF while verifying "
-						"integrity of WIM!\n");
+				      "integrity of WIM");
 			} else {
-				ERROR("File stream error while verifying "
-						"integrity of WIM: %m\n");
+				ERROR_WITH_ERRNO("File stream error while "
+						 "verifying integrity of WIM");
 			}
 			ret = WIMLIB_ERR_READ;
 			goto verify_integrity_error;
@@ -131,33 +131,34 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 
 	res_entry = &w->hdr.integrity;
 	if (res_entry->size == 0) {
-		DEBUG("No integrity information.\n");
+		DEBUG("No integrity information.");
 		*status = WIM_INTEGRITY_NONEXISTENT;
 		return 0;
 	}
 	ctype = wim_resource_compression_type(w, res_entry);
 	if (res_entry->original_size < 12) {
-		ERROR("Integrity table resource is too short!\n");
+		ERROR("Integrity table is too short");
 		return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 	}
 
 	/* Read the integrity table into memory. */
 	buf = MALLOC(res_entry->original_size);
 	if (!buf) {
-		ERROR("Out of memory (needed %zu bytes for integrity table)!\n",
-						res_entry->original_size);
+		ERROR("Out of memory (needed %zu bytes for integrity table)",
+		      res_entry->original_size);
 		ret = WIMLIB_ERR_NOMEM;
-		goto check_integrity_error;
+		goto out;
 	}
-	ret = read_full_resource(w->fp, res_entry->size, res_entry->original_size,
+	ret = read_full_resource(w->fp, res_entry->size,
+				 res_entry->original_size,
 				 res_entry->offset, ctype, buf);
 	if (ret != 0) {
 		ERROR("Failed to read integrity table (size = %"PRIu64", "
-				"original_size = %"PRIu64", offset = "
-				"%"PRIu64", ctype = %d\n",
-				(u64)res_entry->size, res_entry->original_size,
-				res_entry->offset, ctype);
-		goto check_integrity_error;
+		      "original_size = %"PRIu64", offset = "
+		      "%"PRIu64", ctype = %d",
+		      (u64)res_entry->size, res_entry->original_size,
+		      res_entry->offset, ctype);
+		goto out;
 	}
 
 	p = get_u32(buf, &integrity_table_size);
@@ -169,27 +170,31 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 	/* Make sure the integrity table is the right size. */
 	if (integrity_table_size != res_entry->original_size) {
 		ERROR("Inconsistent integrity table sizes: header says %u "
-				"bytes but resource entry says "
-				"%"PRIu64" bytes\n", integrity_table_size, 
-				res_entry->original_size);
-
+		      "bytes but resource entry says "
+		      "%"PRIu64" bytes",
+		      integrity_table_size, res_entry->original_size);
 		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-		goto check_integrity_error;
+		goto out;
 	}
 
-	DEBUG("integrity_table_size = %u, num_entries = %u, chunk_size = %u\n",
-			integrity_table_size, num_entries, chunk_size);
+	DEBUG("integrity_table_size = %u, num_entries = %u, chunk_size = %u",
+	      integrity_table_size, num_entries, chunk_size);
 
 
 	expected_size = num_entries * WIM_HASH_SIZE + 12;
 
 	if (integrity_table_size != expected_size) {
 		ERROR("Integrity table is %u bytes, but expected %"PRIu64" "
-				"bytes to hold %u entries!\n", 
-				integrity_table_size,
-				expected_size, num_entries);
+		      "bytes to hold %u entries", 
+		      integrity_table_size, expected_size, num_entries);
 		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-		goto check_integrity_error;
+		goto out;
+	}
+
+	if (chunk_size == 0) {
+		ERROR("Cannot use integrity chunk size of 0");
+		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
+		goto out;
 	}
 
 	end_lookup_table_offset = w->hdr.lookup_table_res_entry.offset +
@@ -197,34 +202,33 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 
 	bytes_to_check = end_lookup_table_offset - WIM_HEADER_DISK_SIZE;
 
-	expected_num_entries = bytes_to_check / chunk_size + 
-			       (bytes_to_check % chunk_size != 0);
+	expected_num_entries = (bytes_to_check + chunk_size - 1) / chunk_size;
 
 	if (num_entries != expected_num_entries) {
-		ERROR("%"PRIu64 " entries would be required to checksum "
-			"the %"PRIu64" bytes from the end of the header to the\n"
-			"end of the lookup table with a chunk size of %u, but "
-			"there were only %u entries!\n", 
-			expected_num_entries, bytes_to_check, chunk_size,
-			num_entries);
+		ERROR("%"PRIu64" entries would be required to checksum "
+		      "the %"PRIu64" bytes from the end of the header to the",
+		      expected_num_entries, bytes_to_check);
+		ERROR("end of the lookup table with a chunk size of %u, but "
+		      "there were only %u entries", expected_num_entries,
+		      bytes_to_check, chunk_size, num_entries);
 		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-		goto check_integrity_error;
+		goto out;
 	}
 
 	/* The integrity checking starts after the header, so seek to the offset
 	 * in the WIM after the header. */
 
 	if (fseeko(w->fp, WIM_HEADER_DISK_SIZE, SEEK_SET) != 0) {
-		ERROR("Failed to seek to byte %u of WIM to check "
-				"integrity: %m\n", WIM_HEADER_DISK_SIZE);
+		ERROR_WITH_ERRNO("Failed to seek to byte %u of WIM to check "
+				 "integrity", WIM_HEADER_DISK_SIZE);
 		ret = WIMLIB_ERR_READ;
-		goto check_integrity_error;
+		goto out;
 	}
 	/* call verify_integrity(), which does the actual checking of the SHA1
 	 * message digests. */
 	ret = verify_integrity(w->fp, bytes_to_check, chunk_size, p, 
 			       show_progress, status);
-check_integrity_error:
+out:
 	FREE(buf);
 	return ret;
 }
@@ -251,11 +255,10 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 	u32   integrity_table_size;
 	int   ret;
 
-	DEBUG("Writing integrity table\n");
+	DEBUG("Writing integrity table");
 	if (fseeko(out, end_header_offset, SEEK_SET) != 0) {
-		ERROR("Failed to seek to byte %"PRIu64" of WIM "
-				"to calculate integrity data: %m\n",
-				end_header_offset);
+		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" of WIM to "
+				 "calculate integrity data", end_header_offset);
 		return WIMLIB_ERR_WRITE;
 	}
 
@@ -264,13 +267,13 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 			(bytes_to_check % INTEGRITY_CHUNK_SIZE != 0);
 	integrity_table_size = num_entries * WIM_HASH_SIZE + 3 * sizeof(u32);
 
-	DEBUG("integrity table size = %u\n", integrity_table_size);
+	DEBUG("integrity table size = %u", integrity_table_size);
 
 
 	buf = MALLOC(integrity_table_size);
 	if (!buf) {
-		ERROR("Failed to allocate %u bytes for integrity table!\n",
-				integrity_table_size);
+		ERROR("Failed to allocate %u bytes for integrity table",
+		      integrity_table_size);
 		return WIMLIB_ERR_NOMEM;
 	}
 
@@ -280,15 +283,15 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 
 	chunk_buf = MALLOC(INTEGRITY_CHUNK_SIZE);
 	if (!chunk_buf) {
-		ERROR("Failed to allocate %u bytes for integrity chunk "
-				"buffer!\n", INTEGRITY_CHUNK_SIZE);
+		ERROR("Failed to allocate %u bytes for integrity chunk buffer",
+		      INTEGRITY_CHUNK_SIZE);
 		ret = WIMLIB_ERR_NOMEM;
 		goto err2;
 	}
 
 	bytes_remaining = bytes_to_check;
 
-	DEBUG("Bytes to check = %"PRIu64"\n", bytes_to_check);
+	DEBUG("Bytes to check = %"PRIu64, bytes_to_check);
 
 	while (bytes_remaining != 0) {
 
@@ -309,10 +312,11 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 		if (bytes_read != bytes_to_read) {
 			if (feof(out)) {
 				ERROR("Unexpected EOF while calculating "
-						"integrity checksums!\n");
+				      "integrity checksums");
 			} else {
-				ERROR("File stream error while calculating "
-						"integrity checksums: %m\n");
+				ERROR_WITH_ERRNO("File stream error while "
+						 "calculating integrity "
+						 "checksums");
 			}
 			ret = WIMLIB_ERR_READ;
 			goto err2;
@@ -327,14 +331,15 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 				"                       ");
 
 	if (fseeko(out, 0, SEEK_END) != 0) {
-		ERROR("Failed to seek to end of WIM to write integrity "
-				"table: %m\n");
+		ERROR_WITH_ERRNO("Failed to seek to end of WIM to write "
+				 "integrity table");
 		ret = WIMLIB_ERR_WRITE;
 		goto err1;
 	}
 
 	if (fwrite(buf, 1, integrity_table_size, out) != integrity_table_size) {
-		ERROR("Failed to write integrity table to end of WIM: %m\n");
+		ERROR_WITH_ERRNO("Failed to write integrity table to end of "
+				 "WIM");
 		ret = WIMLIB_ERR_WRITE;
 		goto err1;
 	}

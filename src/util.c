@@ -35,8 +35,8 @@
 #include <unistd.h>
 #include <errno.h>
 
-/* True if WIMLIB is to print an informational message when an error occurs.
- * This can be turned off by calling wimlib_set_error_messages(false). */
+/* True if wimlib is to print an informational message when an error occurs.
+ * This can be turned off by calling wimlib_set_print_errors(false). */
 #ifdef ENABLE_ERROR_MESSAGES
 #include <stdarg.h>
 bool __wimlib_print_errors = false;
@@ -51,6 +51,23 @@ void wimlib_error(const char *format, ...)
 		errno_save = errno;
 		fputs("ERROR: ", stderr);
 		vfprintf(stderr, format, va);
+		putc('\n', stderr);
+		errno = errno_save;
+		va_end(va);
+	}
+}
+
+void wimlib_error_with_errno(const char *format, ...)
+{
+ 	if (__wimlib_print_errors) {
+		va_list va;
+		int errno_save;
+
+		va_start(va, format);
+		errno_save = errno;
+		fputs("ERROR: ", stderr);
+		vfprintf(stderr, format, va);
+		fprintf(stderr, ": %s\n", strerror(errno_save));
 		errno = errno_save;
 		va_end(va);
 	}
@@ -66,6 +83,7 @@ void wimlib_warning(const char *format, ...)
 		errno_save = errno;
 		fputs("WARNING: ", stderr);
 		vfprintf(stderr, format, va);
+		putc('\n', stderr);
 		errno = errno_save;
 		va_end(va);
 	}
@@ -178,8 +196,8 @@ WIMLIBAPI const char *wimlib_get_error_string(enum wimlib_error_code code)
 
 
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
-void *(*wimlib_malloc_func)(size_t) = malloc;
-void (*wimlib_free_func)(void *) = free;
+void *(*wimlib_malloc_func) (size_t)	     = malloc;
+void  (*wimlib_free_func)   (void *)	     = free;
 void *(*wimlib_realloc_func)(void *, size_t) = realloc;
 
 void *wimlib_calloc(size_t nmemb, size_t size)
@@ -221,9 +239,9 @@ WIMLIBAPI int wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 				 wimlib_realloc_func);
 	return 0;
 #else
-	ERROR("Cannot set custom memory allocator functions:\n");
-	ERROR("wimlib was compiled with the "
-			"--without-custom-memory-allocator flag\n");
+	ERROR("Cannot set custom memory allocator functions:");
+	ERROR("wimlib was compiled with the --without-custom-memory-allocator "
+	      "flag");
 	return WIMLIB_ERR_UNSUPPORTED;
 #endif
 }
@@ -240,8 +258,8 @@ char *utf16_to_utf8(const char *utf16_str, size_t utf16_len,
 	if (cd_utf16_to_utf8 == (iconv_t)(-1)) {
 		cd_utf16_to_utf8 = iconv_open("UTF-8", "UTF-16LE");
 		if (cd_utf16_to_utf8 == (iconv_t)-1) {
-			ERROR("Failed to get conversion descriptor for "
-					"converting UTF-16LE to UTF-8: %m\n");
+			ERROR_WITH_ERRNO("Failed to get conversion descriptor "
+					 "for converting UTF-16LE to UTF-8");
 			return NULL;
 		}
 	}
@@ -258,8 +276,8 @@ char *utf16_to_utf8(const char *utf16_str, size_t utf16_len,
 			&utf16_bytes_left, &utf8_str, &utf8_bytes_left);
 
 	if (num_chars_converted == (size_t)(-1)) {
-		ERROR("Failed to convert UTF-16LE string to UTF-8 string: "
-				"%m\n");
+		ERROR_WITH_ERRNO("Failed to convert UTF-16LE string to UTF-8 "
+				 "string");
 		FREE(orig_utf8_str);
 		return NULL;
 	}
@@ -281,8 +299,8 @@ char *utf8_to_utf16(const char *utf8_str, size_t utf8_len,
 	if (cd_utf8_to_utf16 == (iconv_t)(-1)) {
 		cd_utf8_to_utf16 = iconv_open("UTF-16LE", "UTF-8");
 		if (cd_utf8_to_utf16 == (iconv_t)-1) {
-			ERROR("Failed to get conversion descriptor for "
-					"converting UTF-8 to UTF-16LE: %m\n");
+			ERROR_WITH_ERRNO("Failed to get conversion descriptor "
+					 "for converting UTF-8 to UTF-16LE");
 			return NULL;
 		}
 	}
@@ -301,11 +319,8 @@ char *utf8_to_utf16(const char *utf8_str, size_t utf8_len,
 			&utf8_bytes_left, &utf16_str, &utf16_bytes_left);
 
 	if (num_chars_converted == (size_t)(-1)) {
-		ERROR("Failed to convert UTF-8 string to UTF-16LE string: "
-				"%s\n", 
-				(errno == E2BIG) ? 
-					"Not enough room in output buffer" : 
-					strerror(errno));
+		ERROR_WITH_ERRNO("Failed to convert UTF-8 string to UTF-16LE "
+				 "string");
 		FREE(orig_utf16_str);
 		return NULL;
 	}
@@ -470,4 +485,3 @@ void print_string(const void *string, size_t len)
 		p++;
 	}
 }
-

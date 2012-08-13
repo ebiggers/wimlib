@@ -40,14 +40,14 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 		if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
 			off_t cur_offset = ftello(out_fp);
 			printf("Writing resources from part %u of %u "
-					"(%"PRIu64" of %"PRIu64" bytes, %.0f%% done)\n",
-					i + 1, num_swms,
-					cur_offset, total_bytes,
-					(double)cur_offset / total_bytes * 100.0);
+			       "(%"PRIu64" of %"PRIu64" bytes, %.0f%% done)\n",
+			       i + 1, num_swms, cur_offset, total_bytes,
+			       (double)cur_offset / total_bytes * 100.0);
 		}
 		swms[i]->fp = fopen(swms[i]->filename, "rb");
 		if (!swms[i]->fp) {
-			ERROR("Failed to reopen `%s': %m\n", swms[i]->filename);
+			ERROR_WITH_ERRNO("Failed to reopen `%s'",
+					 swms[i]->filename);
 			return WIMLIB_ERR_OPEN;
 		}
 		swms[i]->out_fp = out_fp;
@@ -67,7 +67,7 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 			swms[0]->hdr.image_count);
 
 	for (i = 0; i < swms[0]->hdr.image_count; i++) {
-		ret = copy_resource(swms[0]->image_metadata[i].lookup_table_entry, 
+		ret = copy_resource(swms[0]->image_metadata[i].metadata_lte, 
 				    swms[0]);
 		if (ret != 0)
 			return ret;
@@ -88,7 +88,7 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 	off_t xml_data_offset = ftello(out_fp);
 
 	if (lookup_table_offset == -1 || xml_data_offset == -1) {
-		ERROR("Failed to get file offset: %m\n");
+		ERROR_WITH_ERRNO("Failed to get file offset");
 		return WIMLIB_ERR_WRITE;
 	}
 	swms[0]->hdr.lookup_table_res_entry.offset = lookup_table_offset;
@@ -139,37 +139,37 @@ WIMLIBAPI int wimlib_join(const char **swm_names, int num_swms,
 		} else {
 			if (wimlib_get_compression_type(w) != ctype) {
 				ERROR("The split WIMs do not all have the same "
-						"compression type!\n");
+				      "compression type");
 				ret = WIMLIB_ERR_SPLIT_INVALID;
 				goto err;
 			}
 			if (memcmp(guid, w->hdr.guid, WIM_GID_LEN) != 0) {
-				ERROR("The split WIMs do not all have the "
-						"same GUID!\n");
+				ERROR("The split WIMs do not all have the same "
+				      "GUID");
 				ret = WIMLIB_ERR_SPLIT_INVALID;
 				goto err;
 			}
 		}
 		if (w->hdr.total_parts != num_swms) {
 			ERROR("`%s' (part %d) says there are %d total parts, "
-					"but %d parts were specified!\n",
-					swm_names[i], w->hdr.part_number,
-					w->hdr.total_parts, num_swms);
+			      "but %d parts were specified",
+			      swm_names[i], w->hdr.part_number,
+			      w->hdr.total_parts, num_swms);
 			ret = WIMLIB_ERR_SPLIT_INVALID;
 			goto err;
 		}
 		if (w->hdr.part_number == 0 || w->hdr.part_number > num_swms) {
-			ERROR("`%s' says it is part %d, but expected a number\n"
-					"between 1 and %d!\n",
-				swm_names[i], w->hdr.part_number, num_swms);
+			ERROR("`%s' says it is part %d, but expected a number "
+			      "between 1 and %d",
+			      swm_names[i], w->hdr.part_number, num_swms);
 			ret = WIMLIB_ERR_SPLIT_INVALID;
 			goto err;
 		}
 		part_idx = w->hdr.part_number - 1;
 		if (swms[part_idx] != NULL) {
-			ERROR("`%s' and `%s' both say they are part %d of %d!\n",
-				swm_names[i], swms[part_idx]->filename,
-				w->hdr.part_number, num_swms);
+			ERROR("`%s' and `%s' both say they are part %d of %d",
+			      swm_names[i], swms[part_idx]->filename,
+			      w->hdr.part_number, num_swms);
 			ret = WIMLIB_ERR_SPLIT_INVALID;
 			goto err;
 		}

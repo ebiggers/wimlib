@@ -84,9 +84,9 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 void dentry_update_all_timestamps(struct dentry *dentry)
 {
 	u64 now = get_timestamp();
-	dentry->creation_time       = now;
-	dentry->last_access_time    = now;
-	dentry->last_write_time     = now;
+	dentry->creation_time    = now;
+	dentry->last_access_time = now;
+	dentry->last_write_time  = now;
 }
 
 /* 
@@ -148,49 +148,48 @@ int for_dentry_in_tree_depth(struct dentry *root,
  */
 int calculate_dentry_full_path(struct dentry *dentry, void *ignore)
 {
-	int parent_len;
-	int len;
-	char *parent_full_path;
 	char *full_path;
-
-	FREE(dentry->full_path_utf8);
-
+	u32 full_path_len;
 	if (dentry_is_root(dentry)) {
-		dentry->full_path_utf8 = MALLOC(2);
-		if (!dentry->full_path_utf8) {
-			ERROR("Out of memory!\n");
-			return WIMLIB_ERR_NOMEM;
+		full_path = MALLOC(2);
+		if (!full_path)
+			goto oom;
+		full_path[0] = '/';
+		full_path[1] = '\0';
+		full_path_len = 1;
+	} else {
+		char *parent_full_path;
+		u32 parent_full_path_len;
+		const struct dentry *parent = dentry->parent;
+
+		if (dentry_is_root(parent)) {
+			parent_full_path = "";
+			parent_full_path_len = 0;
+		} else {
+			parent_full_path = parent->full_path_utf8;
+			parent_full_path_len = parent->full_path_utf8_len;
 		}
 
-		dentry->full_path_utf8[0] = '/';
-		dentry->full_path_utf8[1] = '\0';
-		dentry->full_path_utf8_len = 1;
-		return 0;
-	}
+		full_path_len = parent_full_path_len + 1 +
+				dentry->file_name_utf8_len;
+		full_path = MALLOC(full_path_len + 1);
+		if (!full_path)
+			goto oom;
 
-	if (dentry_is_root(dentry->parent)) {
-		parent_len = 0;
-		parent_full_path = "";
-	} else {
-		parent_len = dentry->parent->full_path_utf8_len;
-		parent_full_path = dentry->parent->full_path_utf8;
+		memcpy(full_path, parent_full_path, parent_full_path_len);
+		full_path[parent_full_path_len] = '/';
+		memcpy(full_path + parent_full_path_len + 1,
+		       dentry->file_name_utf8,
+		       dentry->file_name_utf8_len);
+		full_path[full_path_len] = '\0';
 	}
-
-	len = parent_len + 1 + dentry->file_name_utf8_len;
-	full_path = MALLOC(len + 1);
-	if (!full_path) {
-		ERROR("Out of memory!\n");
-		return WIMLIB_ERR_NOMEM;
-	}
-
-	memcpy(full_path, parent_full_path, parent_len);
-	full_path[parent_len] = '/';
-	memcpy(full_path + parent_len + 1, dentry->file_name_utf8, 
-				dentry->file_name_utf8_len);
-	full_path[len] = '\0';
+	FREE(dentry->full_path_utf8);
 	dentry->full_path_utf8 = full_path;
-	dentry->full_path_utf8_len = len;
+	dentry->full_path_utf8_len = full_path_len;
 	return 0;
+oom:
+	ERROR("Out of memory while calculating dentry full path");
+	return WIMLIB_ERR_NOMEM;
 }
 
 /* 
@@ -361,9 +360,6 @@ static inline void dentry_common_init(struct dentry *dentry)
 {
 	memset(dentry, 0, sizeof(struct dentry));
 	dentry->refcnt = 1;
-#ifdef ENABLE_SECURITY_DATA
-	dentry->security_id = -1;
-#endif
 }
 
 /* 
@@ -406,7 +402,7 @@ void free_dentry(struct dentry *dentry)
 /* Arguments for do_free_dentry(). */
 struct free_dentry_args {
 	struct lookup_table *lookup_table;
-	bool decrement_refcnt;
+	bool lt_decrement_refcnt;
 };
 
 /* 
@@ -417,7 +413,7 @@ static int do_free_dentry(struct dentry *dentry, void *__args)
 {
 	struct free_dentry_args *args = (struct free_dentry_args*)__args;
 
-	if (args->decrement_refcnt && !dentry_is_directory(dentry)) {
+	if (args->lt_decrement_refcnt && !dentry_is_directory(dentry)) {
 		lookup_table_decrement_refcnt(args->lookup_table, 
 					      dentry->hash);
 	}
@@ -437,14 +433,14 @@ static int do_free_dentry(struct dentry *dentry, void *__args)
  * 			reference counts in the lookup table decremented.
  */
 void free_dentry_tree(struct dentry *root, struct lookup_table *lookup_table, 
-		      bool decrement_refcnt)
+		      bool lt_decrement_refcnt)
 {
 	if (!root || !root->parent)
 		return;
 
 	struct free_dentry_args args;
 	args.lookup_table        = lookup_table;
-	args.decrement_refcnt    = decrement_refcnt;
+	args.lt_decrement_refcnt = lt_decrement_refcnt;
 	for_dentry_in_tree_depth(root, do_free_dentry, &args);
 }
 
@@ -589,7 +585,7 @@ void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *tab
  * Reads a directory entry from the metadata resource.
  */
 int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len, 
-					u64 offset, struct dentry *dentry)
+		u64 offset, struct dentry *dentry)
 {
 	const u8 *p;
 	u64 calculated_size;
@@ -605,8 +601,8 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	/*Make sure the dentry really fits into the metadata resource.*/
 	if (offset + 8 > metadata_resource_len) {
 		ERROR("Directory entry starting at %"PRIu64" ends past the "
-			"end of the metadata resource (size %"PRIu64")!\n",
-			offset, metadata_resource_len);
+		      "end of the metadata resource (size %"PRIu64")",
+		      offset, metadata_resource_len);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
@@ -625,9 +621,9 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	if (offset + dentry->length >= metadata_resource_len) {
 		ERROR("Directory entry at offset %"PRIu64" and with size "
-				"%"PRIu64" ends past the end of the metadata resource "
-				"(size %"PRIu64")!\n", offset, dentry->length,
-				metadata_resource_len);
+		      "%"PRIu64" ends past the end of the metadata resource "
+		      "(size %"PRIu64")",
+		      offset, dentry->length, metadata_resource_len);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
@@ -635,8 +631,8 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * Note: The root directory entry has no name, and its length does not
 	 * include the short name length field.  */
 	if (dentry->length < WIM_DENTRY_DISK_SIZE) {
-		ERROR("Directory entry has invalid length of "
-				"%"PRIu64" bytes\n", dentry->length);
+		ERROR("Directory entry has invalid length of %"PRIu64" bytes",
+		      dentry->length);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
@@ -675,18 +671,18 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	if (dentry->length < calculated_size) {
 		ERROR("Unexpected end of directory entry! (Expected "
-				"%"PRIu64" bytes, got %"PRIu64" bytes. "
-				"short_name_len = %hu, file_name_len = %hu)\n", 
-				calculated_size, dentry->length,
-				short_name_len, file_name_len);
+		      "%"PRIu64" bytes, got %"PRIu64" bytes. "
+		      "short_name_len = %hu, file_name_len = %hu)", 
+		      calculated_size, dentry->length,
+		      short_name_len, file_name_len);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
 	/* Read the filename. */
 	file_name = MALLOC(file_name_len);
 	if (!file_name) {
-		ERROR("Failed to allocate %hu bytes for dentry file name!\n",
-				file_name_len);
+		ERROR("Failed to allocate %hu bytes for dentry file name",
+		      file_name_len);
 		return WIMLIB_ERR_NOMEM;
 	}
 	p = get_bytes(p, file_name_len, file_name);
@@ -696,22 +692,21 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 				       &file_name_utf8_len);
 
 	if (!file_name_utf8) {
-		ERROR("Failed to allocate memory to convert UTF16 "
-				"filename (%hu bytes) to UTF8\n",
-				file_name_len);
-		goto err_nomem2;
+		ERROR("Failed to allocate memory to convert UTF-16 "
+		      "filename (%hu bytes) to UTF-8", file_name_len);
+		goto out_free_file_name;
 	}
 
 	/* Undocumented padding between file name and short name.  This probably
-	 * is supposed to be a terminating NULL character. */
+	 * is supposed to be a terminating null character. */
 	p += 2;
 
 	/* Read the short filename. */
 	short_name = MALLOC(short_name_len);
 	if (!short_name) {
-		ERROR("Failed to allocate %hu bytes for short filename\n",
-				short_name_len);
-		goto err_nomem1;
+		ERROR("Failed to allocate %hu bytes for short filename",
+		      short_name_len);
+		goto out_free_file_name_utf8;
 	}
 
 	get_bytes(p, short_name_len, short_name);
@@ -723,9 +718,9 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	dentry->file_name_utf8_len = file_name_utf8_len;
 	dentry->short_name_len     = short_name_len;
 	return 0;
-err_nomem1:
+out_free_file_name_utf8:
 	FREE(dentry->file_name_utf8);
-err_nomem2:
+out_free_file_name:
 	FREE(dentry->file_name);
 	return WIMLIB_ERR_NOMEM;
 }
@@ -814,13 +809,14 @@ u8 *write_dentry_tree(const struct dentry *tree, u8 *p)
  * metadata resource and into the dentry tree.
  *
  * @metadata_resource:	An array that contains the uncompressed metadata
- * 				resource for the WIM file.
+ * 			resource for the WIM file.
  * @metadata_resource_len:	The length of @metadata_resource.
- * @dentry:	A pointer to a struct dentry that is the root of the directory tree
- * 		and has already been read from the metadata resource.  It does not 
- * 		need to be the real root, because this procedure is called 
- * 		recursively.
- * @return:	True on success, false on failure. 
+ * @dentry:	A pointer to a struct dentry that is the root of the directory
+ *		tree and has already been read from the metadata resource.  It
+ *		does not need to be the real root because this procedure is
+ *		called recursively.
+ *
+ * @return:	Zero on success, nonzero on failure.
  */
 int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		     struct dentry *dentry)
@@ -856,8 +852,8 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		 * link it to the parent and previous child. */
 		child = MALLOC(sizeof(struct dentry));
 		if (!child) {
-			ERROR("Failed to allocate %zu bytes for new dentry!\n",
-					sizeof(struct dentry));
+			ERROR("Failed to allocate %zu bytes for new dentry",
+			      sizeof(struct dentry));
 			ret = WIMLIB_ERR_NOMEM;
 			break;
 		}

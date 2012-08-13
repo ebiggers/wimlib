@@ -245,10 +245,15 @@ int sha1sum(const char *filename, void *md)
 
 	fp = fopen(filename, "rb");
 	if (!fp) {
-		ERROR("Cannot open the file `%s' for reading: %m\n", filename);
+		ERROR_WITH_ERRNO("Cannot open the file `%s' for reading",
+				 filename);
 		return WIMLIB_ERR_OPEN;
 	}
 	ret = sha1_stream(fp, md);
+	if (ret != 0) {
+		ERROR_WITH_ERRNO("Error calculating SHA1 message digest of "
+				 "`%s'", filename);
+	}
 	fclose(fp);
 	return ret;
 }

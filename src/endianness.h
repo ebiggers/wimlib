@@ -49,9 +49,9 @@ static inline uint64_t bswap64(uint64_t n)
 #define to_be64(n) (n)
 
 /* In place */
-#define TO_LE16(n) (n = to_le16(n))
-#define TO_LE32(n) (n = to_le32(n))
-#define TO_LE64(n) (n = to_le64(n))
+#define TO_LE16(n) ((n) = to_le16(n))
+#define TO_LE32(n) ((n) = to_le32(n))
+#define TO_LE64(n) ((n) = to_le64(n))
 
 static inline void array_to_le16(uint16_t *p, uint64_t n)
 {

@@ -218,7 +218,7 @@ struct image_metadata {
 #endif
 	/* A pointer to the lookup table entry for this image's metadata
 	 * resource. */
-	struct lookup_table_entry *lookup_table_entry;
+	struct lookup_table_entry *metadata_lte;
 
 	/* True if the filesystem of the image has been modified.  If this is
 	 * the case, the memory for the filesystem is not freed when switching
@@ -303,7 +303,7 @@ static inline struct wim_security_data *wim_security_data(WIMStruct *w)
 static inline struct lookup_table_entry*
 wim_metadata_lookup_table_entry(WIMStruct *w)
 {
-	return w->image_metadata[w->current_image - 1].lookup_table_entry;
+	return w->image_metadata[w->current_image - 1].metadata_lte;
 }
 
 /* Nonzero if a struct resource_entry indicates a compressed resource. */
@@ -315,11 +315,6 @@ static inline int resource_is_compressed(const struct resource_entry *entry)
 static inline struct image_metadata *wim_get_current_image_metadata(WIMStruct *w)
 {
 	return &w->image_metadata[w->current_image - 1];
-}
-
-static inline bool wim_current_image_is_modified(const WIMStruct *w)
-{
-	return w->image_metadata[w->current_image - 1].modified;
 }
 
 /* Prints a hash code field. */
@@ -363,17 +358,15 @@ extern int extract_full_resource_to_fd(WIMStruct *w,
 				       const struct resource_entry *entry, 
 				       int fd);
 
-extern int read_metadata_resource(FILE *fp, 
-				  const struct resource_entry *metadata,
-			          int wim_ctype, 
+extern int read_metadata_resource(FILE *fp, int wim_ctype, 
 				  struct image_metadata *image_metadata);
 
 extern int resource_compression_type(int wim_ctype, int reshdr_flags);
 
 static inline int read_full_resource(FILE *fp, u64 resource_size, 
-				u64 resource_original_size,
-				u64 resource_offset, 
-				int resource_ctype, void *contents_ret)
+				     u64 resource_original_size,
+				     u64 resource_offset, 
+				     int resource_ctype, void *contents_ret)
 {
 	return read_resource(fp, resource_size, resource_original_size, 
 				resource_offset, resource_ctype,

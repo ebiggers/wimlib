@@ -84,7 +84,7 @@ static void make_staging_dir()
 
 	staging_dir_name = MALLOC(staging_dir_name_len + 1);
 	if (!staging_dir_name) {
-		ERROR("Out of memory!\n");
+		ERROR("Out of memory");
 		return;
 	}
 
@@ -96,8 +96,8 @@ static void make_staging_dir()
 	staging_dir_name[staging_dir_name_len] = '\0';
 
 	if (mkdir(staging_dir_name, 0700) != 0) {
-		ERROR("Failed to create temporary directory `%s': %m\n",
-				staging_dir_name);
+		ERROR_WITH_ERRNO("Failed to create temporary directory `%s'",
+				 staging_dir_name);
 		FREE(staging_dir_name);
 		staging_dir_name = NULL;
 	}
@@ -194,13 +194,13 @@ static int open_message_queues(bool daemon)
 	unmount_to_daemon_mq_name = strcat_dup(slash, mount_dir_basename,
 						prefix, u2d_suffix);
 	if (!unmount_to_daemon_mq_name) {
-		ERROR("Out of memory!\n");
+		ERROR("Out of memory");
 		return WIMLIB_ERR_NOMEM;
 	}
 	daemon_to_unmount_mq_name = strcat_dup(slash, mount_dir_basename,
 						prefix, d2u_suffix);
 	if (!daemon_to_unmount_mq_name) {
-		ERROR("Out of memory!\n");
+		ERROR("Out of memory");
 		ret = WIMLIB_ERR_NOMEM;
 		goto err1;
 	}
@@ -219,7 +219,7 @@ static int open_message_queues(bool daemon)
 				       0700, NULL);
 
 	if (unmount_to_daemon_mq == -1) {
-		ERROR("mq_open(): %m\n");
+		ERROR_WITH_ERRNO("mq_open()");
 		ret = WIMLIB_ERR_MQUEUE;
 		goto err2;
 	}
@@ -233,7 +233,7 @@ static int open_message_queues(bool daemon)
 				       0700, NULL);
 
 	if (daemon_to_unmount_mq == -1) {
-		ERROR("mq_open(): %m\n");
+		ERROR_WITH_ERRNO("mq_open()");
 		ret = WIMLIB_ERR_MQUEUE;
 		goto err3;
 	}
@@ -258,19 +258,19 @@ static int mq_get_msgsize(mqd_t mq)
 	if (mq_getattr(unmount_to_daemon_mq, &attr) == 0) {
 		msgsize = attr.mq_msgsize;
 	} else {
-		ERROR("mq_getattr(): %m\n");
-		ERROR("Attempting to read %s\n", msgsize_max_file);
+		ERROR_WITH_ERRNO("mq_getattr()");
+		ERROR("Attempting to read %s", msgsize_max_file);
 		fp = fopen(msgsize_max_file, "rb");
 		if (fp) {
 			if (fscanf(fp, "%d", &msgsize) != 1) {
-				ERROR("Assuming message size of 8192\n");
+				ERROR("Assuming message size of 8192");
 				msgsize = 8192;
 			}
 			fclose(fp);
 		} else {
-			ERROR("Failed to open file %s: %m\n", 
-				msgsize_max_file);
-			ERROR("Assuming message size of 8192\n");
+			ERROR_WITH_ERRNO("Failed to open the file `%s'",
+					 msgsize_max_file);
+			ERROR("Assuming message size of 8192");
 			msgsize = 8192;
 		}
 	}
@@ -298,8 +298,8 @@ static int close_staging_file(struct lookup_table_entry *lte, void *ignore)
 {
 	if (lte->staging_file_name && lte->staging_num_times_opened) {
 		if (close(lte->staging_fd) != 0) {
-			ERROR("Failed close file `%s': %m\n",
-					lte->staging_file_name);
+			ERROR_WITH_ERRNO("Failed close file `%s'",
+					 lte->staging_file_name);
 			return WIMLIB_ERR_WRITE;
 		}
 	}
@@ -323,7 +323,8 @@ static int calculate_sha1sum_for_staging_file(struct dentry *dentry, void *looku
 	
 	if (lte && lte->staging_file_name) {
 
-		DEBUG("Calculating SHA1 hash for file `%s'\n", dentry->file_name_utf8);
+		DEBUG("Calculating SHA1 hash for file `%s'",
+		      dentry->file_name_utf8);
 		ret = sha1sum(lte->staging_file_name, dentry->hash);
 		if (ret != 0)
 			return ret;
@@ -332,8 +333,8 @@ static int calculate_sha1sum_for_staging_file(struct dentry *dentry, void *looku
 		memcpy(lte->hash, dentry->hash, WIM_HASH_SIZE);
 		existing = lookup_resource(table, dentry->hash);
 		if (existing) {
-			DEBUG("Merging duplicate lookup table entries for "
-				"file `%s'\n", dentry->file_name_utf8);
+			DEBUG("Merging duplicate lookup table entries for file "
+			      "`%s'", dentry->file_name_utf8);
 			free_lookup_table_entry(lte);
 			existing->refcnt++;
 		} else {
@@ -351,22 +352,21 @@ static int rebuild_wim(WIMStruct *w, bool check_integrity)
 
 	root = wim_root_dentry(w);
 
-	DEBUG("Closing all staging file descriptors.\n");
+	DEBUG("Closing all staging file descriptors.");
 	/* Close all the staging file descriptors. */
-	ret = for_lookup_table_entry(w->lookup_table, 
-				     close_staging_file, NULL);
+	ret = for_lookup_table_entry(w->lookup_table, close_staging_file, NULL);
 	if (ret != 0) {
-		ERROR("Failed to close all staging files!\n");
+		ERROR("Failed to close all staging files");
 		return ret;
 	}
 
-	DEBUG("Calculating SHA1 checksums for all new staging files.\n");
+	DEBUG("Calculating SHA1 checksums for all new staging files.");
 	/* Calculate SHA1 checksums for all staging files, and merge unnecessary
 	 * lookup table entries. */
 	ret = for_dentry_in_tree(root, calculate_sha1sum_for_staging_file,
 				 w->lookup_table);
 	if (ret != 0) {
-		ERROR("Failed to calculate new SHA1 checksums!\n");
+		ERROR("Failed to calculate new SHA1 checksums");
 		return ret;
 	}
 
@@ -374,7 +374,7 @@ static int rebuild_wim(WIMStruct *w, bool check_integrity)
 
 	ret = wimlib_overwrite(w, check_integrity);
 	if (ret != 0) {
-		ERROR("Failed to commit changes\n");
+		ERROR("Failed to commit changes");
 		return ret;
 	}
 	return ret;
@@ -412,8 +412,8 @@ static void wimfs_destroy(void *p)
 	gettimeofday(&now, NULL);
 	timeout.tv_sec = now.tv_sec + 3;
 	timeout.tv_nsec = now.tv_usec * 1000;
-	DEBUG("Waiting for message telling us whether to commit or not, "
-			"and whether to include integrity checks.\n");
+	DEBUG("Waiting for message telling us whether to commit or not, and "
+	      "whether to include integrity checks.");
 
 	bytes_received = mq_timedreceive(unmount_to_daemon_mq, msg, 
 					 msgsize, NULL, &timeout);
@@ -421,13 +421,13 @@ static void wimfs_destroy(void *p)
 	check_integrity = msg[1];
 	if (bytes_received == -1) {
 		if (errno == ETIMEDOUT) {
-			ERROR("Timed out.\n");
+			ERROR("Timed out.");
 		} else {
-			ERROR("mq_timedreceive(): %m\n");
+			ERROR_WITH_ERRNO("mq_timedreceive()");
 		}
-		ERROR("Not committing.\n");
+		ERROR("Not committing.");
 	} else {
-		DEBUG("Received message: [%d %d]\n", msg[0], msg[1]);
+		DEBUG("Received message: [%d %d]", msg[0], msg[1]);
 	}
 
 	status = 0;
@@ -435,7 +435,7 @@ static void wimfs_destroy(void *p)
 		if (commit) {
 			status = chdir(working_directory);
 			if (status != 0) {
-				ERROR("chdir(): %m\n");
+				ERROR_WITH_ERRNO("chdir()");
 				status = WIMLIB_ERR_NOTDIR;
 				goto done;
 			}
@@ -443,7 +443,8 @@ static void wimfs_destroy(void *p)
 		}
 		ret = delete_staging_dir();
 		if (ret != 0) {
-			ERROR("Failed to delete the staging directory: %m\n");
+			ERROR_WITH_ERRNO("Failed to delete the staging "
+					 "directory");
 			if (status == 0)
 				status = ret;
 		}
@@ -451,7 +452,7 @@ static void wimfs_destroy(void *p)
 done:
 	ret = mq_send(daemon_to_unmount_mq, &status, 1, 1);
 	if (ret == -1)
-		ERROR("Failed to send status to unmount process: %m\n");
+		ERROR_WITH_ERRNO("Failed to send status to unmount process");
 	close_message_queues();
 }
 
@@ -537,7 +538,7 @@ static int create_staging_file(char **name_ret)
 		/* doesn't exist--- ok */
 	}
 
-	DEBUG("Creating staging file '%s'\n", name);
+	DEBUG("Creating staging file '%s'", name);
 
 	fd = creat(name, 0600); 
 	if (fd == -1) {
@@ -1083,7 +1084,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	mount_dir = dir;
 	working_directory = getcwd(NULL, 0);
 	if (!working_directory) {
-		ERROR("Could not determine current directory: %m\n");
+		ERROR_WITH_ERRNO("Could not determine current directory");
 		return WIMLIB_ERR_NOTDIR;
 	}
 
@@ -1162,24 +1163,24 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	mount_dir = dir;
 	pid = fork();
 	if (pid == -1) {
-		ERROR("Failed to fork(): %m\n");
+		ERROR_WITH_ERRNO("Failed to fork()");
 		return WIMLIB_ERR_FORK;
 	}
 	if (pid == 0) {
 		execlp("fusermount", "fusermount", "-u", dir, NULL);
-		ERROR("Failed to execute `fusermount': %m\n");
+		ERROR_WITH_ERRNO("Failed to execute `fusermount'");
 		return WIMLIB_ERR_FUSERMOUNT;
 	}
 
 	ret = waitpid(pid, &status, 0);
 	if (ret == -1) {
-		ERROR("Failed to wait for fusermount process to "
-				"terminate: %m\n");
+		ERROR_WITH_ERRNO("Failed to wait for fusermount process to "
+				 "terminate");
 		return WIMLIB_ERR_FUSERMOUNT;
 	}
 
 	if (status != 0) {
-		ERROR("fusermount exited with status %d!\n", status);
+		ERROR("fusermount exited with status %d", status);
 		return WIMLIB_ERR_FUSERMOUNT;
 	}
 
@@ -1194,13 +1195,13 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	msg[0] = (flags & WIMLIB_UNMOUNT_FLAG_COMMIT) ? 1 : 0;
 	msg[1] = (flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY) ? 1 : 0;
 
-	DEBUG("Sending message: %s, %s\n", 
+	DEBUG("Sending message: %s, %s", 
 			(msg[0] == 0) ? "don't commit" : "commit",
 			(msg[1] == 0) ? "don't check"  : "check");
 	ret = mq_send(unmount_to_daemon_mq, msg, 2, 1);
 	if (ret == -1) {
-		ERROR("Failed to notify filesystem daemon whether "
-				"we want to commit changes or not!\n");
+		ERROR("Failed to notify filesystem daemon whether we want to "
+		      "commit changes or not");
 		close_message_queues();
 		return WIMLIB_ERR_MQUEUE;
 	}
@@ -1225,28 +1226,27 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 
 	mailbox[0] = 0;
 	DEBUG("Waiting for message telling us whether the unmount was "
-			"successful or not.\n");
+			"successful or not.");
 	ret = mq_timedreceive(daemon_to_unmount_mq, mailbox, msgsize,
 			      NULL, &timeout);
 	errno_save = errno;
 	close_message_queues();
 	if (ret == -1) {
 		if (errno_save == ETIMEDOUT) {
-			ERROR("Timed out- probably the filesystem "
-					"daemon crashed and the WIM was not "
-					"written successfully.\n");
+			ERROR("Timed out- probably the filesystem daemon "
+			      "crashed and the WIM was not written "
+			      "successfully.");
 			return WIMLIB_ERR_TIMEOUT;
 		} else {
-			ERROR("mq_receive(): %s\n",
-					strerror(errno_save));
+			ERROR("mq_receive(): %s", strerror(errno_save));
 			return WIMLIB_ERR_MQUEUE;
 		}
 
 	}
-	DEBUG("Received message: %s\n", (mailbox[0] == 0) ? 
-					"Unmount OK" : "Unmount Failed");
+	DEBUG("Received message: %s",
+	      (mailbox[0] == 0) ?  "Unmount OK" : "Unmount Failed");
 	if (mailbox[0] != 0)
-		ERROR("Unmount failed\n");
+		ERROR("Unmount failed");
 	return mailbox[0];
 }
 
@@ -1255,8 +1255,8 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 
 static inline int mount_unsupported_error()
 {
-	ERROR("WIMLIB was compiled with --without-fuse, which "
-			"disables support for mounting WIMs.\n");
+	ERROR("WIMLIB was compiled with --without-fuse, which disables support "
+	      "for mounting WIMs.");
 	return WIMLIB_ERR_UNSUPPORTED;
 }
 

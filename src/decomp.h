@@ -19,16 +19,16 @@ struct input_bitstream {
 	/* A variable of length at least 32 bits that is used to hold bits that
 	 * have been read from the stream.  The bits are ordered from high-order
 	 * to low-order; the next bit is always the high-order bit. */
-	input_bitbuf_t   bitbuf;
+	input_bitbuf_t  bitbuf;
 
 	/* Pointer to the next byte to be retrieved from the input. */
-	const u8  *data;
+	const u8 *data;
 
 	/* Number of bits in @bitbuf that are valid. */
-	uint        bitsleft;
+	uint bitsleft;
 
 	/* Number of words of data that are left. */
-	uint        data_bytes_left;
+	uint data_bytes_left;
 };
 
 /* Initializes a bitstream to receive its input from @data. */
@@ -99,7 +99,7 @@ static inline int bitstream_read_bits(struct input_bitstream *istream,
 	int ret;
 	ret = bitstream_ensure_bits(istream, num_bits);
 	if (ret != 0) {
-		ERROR("bitstream_read_bits(): Input buffer exhausted\n");
+		ERROR("bitstream_read_bits(): Input buffer exhausted");
 		return ret;
 	}
 	*n = bitstream_peek_bits(istream, num_bits);
@@ -120,7 +120,7 @@ static inline int bitstream_read_byte(struct input_bitstream *istream)
 	wimlib_assert(istream->bitsleft < 32);
 
 	if (istream->data_bytes_left == 0) {
-		ERROR("bitstream_read_byte(): Input buffer exhausted\n");
+		ERROR("bitstream_read_byte(): Input buffer exhausted");
 		return -1;
 	}
 	istream->data_bytes_left--;

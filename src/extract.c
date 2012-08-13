@@ -78,8 +78,9 @@ static int extract_regular_file(WIMStruct *w,
 
 		if (link_type == WIM_LINK_TYPE_HARD) {
 			if (link(lte->file_on_disk, output_path) != 0) {
-				ERROR("Failed to hard link `%s' to `%s': %m\n",
-						output_path, lte->file_on_disk);
+				ERROR_WITH_ERRNO("Failed to hard link "
+						 "`%s' to `%s'",
+						 output_path, lte->file_on_disk);
 				return WIMLIB_ERR_LINK;
 			}
 		} else {
@@ -116,8 +117,9 @@ static int extract_regular_file(WIMStruct *w,
 				p2 = path_next_part(p2, NULL);
 			strcpy(p, p2);
 			if (symlink(buf, output_path) != 0) {
-				ERROR("Failed to symlink `%s' to `%s': %m\n",
-						buf, lte->file_on_disk);
+				ERROR_WITH_ERRNO("Failed to symlink `%s' to "
+						 "`%s'",
+						 buf, lte->file_on_disk);
 				return WIMLIB_ERR_LINK;
 			}
 
@@ -129,14 +131,14 @@ static int extract_regular_file(WIMStruct *w,
 
 	out_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (out_fd == -1) {
-		ERROR("Failed to open the file `%s' for writing: "
-				"%m\n", output_path);
+		ERROR_WITH_ERRNO("Failed to open the file `%s' for writing",
+				 output_path);
 		return WIMLIB_ERR_OPEN;
 	}
 
 	/* Extract empty file, with no lookup table entry... */
 	if (!lte) {
-		DEBUG("Empty file `%s'\n", output_path);
+		DEBUG("Empty file `%s'.", output_path);
 		ret = 0;
 		goto done;
 	}
@@ -147,7 +149,7 @@ static int extract_regular_file(WIMStruct *w,
 				     res_entry->original_size);
 
 	if (ret != 0) {
-		ERROR("Failed to extract resource to `%s'!\n", output_path);
+		ERROR("Failed to extract resource to `%s'", output_path);
 		goto done;
 	}
 
@@ -183,8 +185,8 @@ static int extract_directory(struct dentry *dentry, const char *output_path)
 				 itself. */
 			return 0;
 		default:
-			ERROR("Cannot create directory `%s': %m\n",
-					output_path);
+			ERROR_WITH_ERRNO("Cannot create directory `%s'",
+					 output_path);
 			return WIMLIB_ERR_MKDIR;
 		}
 	}
@@ -225,7 +227,7 @@ static int extract_regular_file_or_directory(struct dentry *dentry, void *arg)
 
 static int extract_single_image(WIMStruct *w, int image)
 {
-	DEBUG("Extracting image %d\n", image);
+	DEBUG("Extracting image %d", image);
 
 	int ret;
 	ret = wimlib_select_image(w, image);
@@ -248,17 +250,15 @@ static int extract_all_images(WIMStruct *w)
 	int image;
 	const char *image_name;
 
-	DEBUG("Attempting to extract all images from `%s'\n", w->filename);
+	DEBUG("Attempting to extract all images from `%s'", w->filename);
 
 	memcpy(buf, w->output_dir, output_path_len);
 	buf[output_path_len] = '/';
 	for (image = 1; image <= w->hdr.image_count; image++) {
-		buf[output_path_len + 1] = '\0';
 		
 		image_name = wimlib_get_image_name(w, image);
 		if (*image_name) {
-			strncat(buf + output_path_len + 1, image_name, 
-				image_name_max_len);
+			strcpy(buf + output_path_len + 1, image_name);
 		} else {
 			/* Image name is empty. Use image number instead */
 			sprintf(buf + output_path_len + 1, "%d", image);
@@ -270,18 +270,17 @@ static int extract_all_images(WIMStruct *w)
 		if (ret != 0)
 			goto done;
 	}
-	ret = 0;
 done:
+	/* Restore original output directory */
 	buf[output_path_len + 1] = '\0';
-	wimlib_set_output_dir(w, buf);
-	return ret;
+	return wimlib_set_output_dir(w, buf);
 }
 
 /* Extracts a single image or all images from a WIM file. */
 WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image)
 {
 	if (!w->output_dir) {
-		ERROR("No output directory selected.\n");
+		ERROR("No output directory selected.");
 		return WIMLIB_ERR_NOTDIR;
 	}
 	if (image == WIM_ALL_IMAGES) {
@@ -299,28 +298,28 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image)
 WIMLIBAPI int wimlib_set_output_dir(WIMStruct *w, const char *dir)
 {
 	char *p;
-	DEBUG("Setting output directory to `%s'\n", dir);
+	DEBUG("Setting output directory to `%s'", dir);
 
 	if (!dir) {
-		ERROR("Must specify a directory!\n");
+		ERROR("Must specify a directory!");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 	p = STRDUP(dir);
 	if (!p) {
-		ERROR("Out of memory!\n");
+		ERROR("Out of memory");
 		return WIMLIB_ERR_NOMEM;
 	}
 
 	if (mkdir(dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0) {
 		if (errno == EEXIST) {
-			DEBUG("`%s' already exists\n", dir);
+			DEBUG("`%s' already exists", dir);
 			goto done;
 		}
-		ERROR("Cannot create directory `%s': %m\n", dir);
+		ERROR_WITH_ERRNO("Cannot create directory `%s'", dir);
 		FREE(p);
 		return WIMLIB_ERR_MKDIR;
 	} else {
-		DEBUG("Created directory `%s'\n", dir);
+		DEBUG("Created directory `%s'", dir);
 	}
 done:
 	FREE(w->output_dir);

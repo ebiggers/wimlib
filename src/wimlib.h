@@ -357,7 +357,10 @@ enum wimlib_error_code {
  * 	marked as bootable to the one being added. Otherwise, leave the boot
  * 	index unchanged.
  *
- * @return 0 on success; nonzero on error.
+ * @return 0 on success; nonzero on error.  On error, changes to @a wim are
+ * discarded so that it appears to be in the same state as when this function
+ * was called.
+ *
  * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION 
  * 	There is already an image named @a name in @a w.
  * @retval ::WIMLIB_ERR_INVALID_PARAM 
@@ -413,7 +416,8 @@ extern int wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
  * @param image
  * 	The number of the image to delete, or ::WIM_ALL_IMAGES to delete all
  * 	images.
- * @return 0 on success; nonzero on error.
+ * @return 0 on success; nonzero on error.  On error, @a wim is left in an
+ * indeterminate state and should be freed with wimlib_free().
  * @retval ::WIMLIB_ERR_DECOMPRESSION
  * 	Could not decompress the metadata resource for @a image.
  * @retval ::WIMLIB_ERR_INVALID_DENTRY
@@ -461,7 +465,8 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	currently marked as bootable in @a src_wim; if that is the case, then
  * 	that image is marked as bootable in the destination WIM.
  *
- * @return 0 on success; nonzero on error.
+ * @return 0 on success; nonzero on error.  On error, @dest_wim is left in an
+ * indeterminate state and should be freed with wimlib_free().
  * @retval ::WIMLIB_ERR_DECOMPRESSION
  * 	Could not decompress the metadata resource for @a src_image
  * 	in @a src_wim
@@ -487,8 +492,8 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	Could not read the metadata resource for @a src_image from @a src_wim.
  */
 extern int wimlib_export_image(WIMStruct *src_wim, int src_image, 
-			WIMStruct *dest_wim, const char *dest_name, 
-			const char *dest_description, int flags);
+			       WIMStruct *dest_wim, const char *dest_name, 
+			       const char *dest_description, int flags);
 
 /**
  * Extracts an image, or all images, from a WIM file.

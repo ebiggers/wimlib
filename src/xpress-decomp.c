@@ -69,7 +69,7 @@
  * the end.  Otherwise Microsoft's software will fail to decompress the
  * XPRESS-compressed data.
  *
- * Howeve, WIMLIB's decompressor in xpress-decomp.c currently does not care if
+ * Howeve, wimlib's decompressor in xpress-decomp.c currently does not care if
  * this extra symbol is there or not.
  */
 
@@ -79,8 +79,6 @@
 
 #define XPRESS_DECOMP
 #include "decomp.h"
-
-
 
 
 /* Decodes @huffsym, a value >= XPRESS_NUM_CHARS, that is the header of a match.
@@ -140,15 +138,14 @@ static int xpress_decode_match(int huffsym, uint window_pos, uint window_len,
 
 	if (window_pos + match_len > window_len) {
 		ERROR("XPRESS dedecompression error: match of length %d "
-				"bytes overflows window\n", match_len);
+		      "bytes overflows window", match_len);
 		return -1;
 	}
 
 	if (match_src < window) {
 		ERROR("XPRESS decompression error: match of length %d bytes "
-				"references data before window (match_offset = "
-				"%d, window_pos = %d)\n", match_len,
-				match_offset, window_pos);
+		      "references data before window (match_offset = %d, "
+		      "window_pos = %d)", match_len, match_offset, window_pos);
 		return -1;
 	}
 
@@ -207,8 +204,8 @@ int xpress_decompress(const void *__compressed_data, uint compressed_len,
 	compressed_data = __compressed_data;
 	lens_p = lens;
 
-	DEBUG2("compressed_len = %d, uncompressed_len = %d\n",
-			compressed_len, uncompressed_len);
+	DEBUG2("compressed_len = %d, uncompressed_len = %d",
+	       compressed_len, uncompressed_len);
 
 	/* XPRESS uses only one Huffman tree.  It contains 512 symbols, and the
 	 * code lengths of these symbols are given literally as 4-bit integers
@@ -229,7 +226,7 @@ int xpress_decompress(const void *__compressed_data, uint compressed_len,
 		return ret;
 
 	init_input_bitstream(&istream, compressed_data + XPRESS_NUM_SYMBOLS / 2, 
-					compressed_len - XPRESS_NUM_SYMBOLS / 2);
+			     compressed_len - XPRESS_NUM_SYMBOLS / 2);
 
 	return xpress_decompress_literals(&istream, uncompressed_data, 
 					uncompressed_len, lens, decode_table);

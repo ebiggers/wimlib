@@ -160,9 +160,11 @@ extern void init_dentry(struct dentry *dentry, const char *name);
 extern struct dentry *new_dentry(const char *name);
 
 extern void free_dentry(struct dentry *dentry);
-extern void free_dentry_tree(struct dentry *root, struct lookup_table *lookup_table, 
-					bool decrement_refcnt);
+extern void free_dentry_tree(struct dentry *root,
+			     struct lookup_table *lookup_table, 
+			     bool lt_decrement_refcnt);
 extern int increment_dentry_refcnt(struct dentry *dentry, void *ignore);
+extern int decrement_dentry_refcnt(struct dentry *dentry, void *ignore);
 
 extern void calculate_dir_tree_statistics(struct dentry *root, 
 					  struct lookup_table *table, 
