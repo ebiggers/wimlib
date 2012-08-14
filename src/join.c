@@ -129,7 +129,7 @@ WIMLIBAPI int wimlib_join(const char **swm_names, int num_swms,
 			goto err;
 
 		/* don't open all the parts at the same time, in case there are
-		 * a lot af them */
+		 * a lot of them */
 		fclose(w->fp);
 		w->fp = NULL;
 
