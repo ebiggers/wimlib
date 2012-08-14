@@ -81,14 +81,14 @@ int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
 		i = image;
 		end = image;
 	}
-	do {
+	for (; i <= end; i++) {
 		ret = wimlib_select_image(w, i);
 		if (ret != 0)
 			return ret;
 		ret = visitor(w);
 		if (ret != 0)
 			return ret;
-	} while (i++ != end);
+	}
 	return 0;
 }
 

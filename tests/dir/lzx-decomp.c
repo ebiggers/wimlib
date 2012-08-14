@@ -1,0 +1,1 @@
+../../src/lzx-decomp.c

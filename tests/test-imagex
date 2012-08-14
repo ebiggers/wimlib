@@ -1,0 +1,321 @@
+#!/bin/sh
+
+# This script does some sanity testing of the 'imagex' program.  It by no means
+# tests every aspect of wimlib comprehensively.
+
+# Assume an in-tree build.
+set -e
+cd tests
+
+imagex() {
+	echo "imagex $@"
+	../imagex $@
+}
+#diff() {
+	#echo "diff $@"
+	#/usr/bin/env diff $@
+#}
+
+#dd() {
+	#echo "dd $@"
+	#/usr/bin/env dd $@
+#}
+#stat() {
+	#echo "stat $@" 1>&2
+	#/usr/bin/env stat $@
+#}
+#cmp() {
+	#echo "cmp $@"
+	#/usr/bin/env cmp $@
+#}
+
+
+cleanup() {
+	if [ -d tmp ] && mountpoint tmp; then
+		fusermount -u tmp > /dev/null;
+	fi
+	rm -rf tmp* *.wim *.swm dir3
+}
+trap cleanup exit
+
+# Capturing and applying WIM with None, LZX, and XPRESS compression
+
+echo "Testing capture and application of uncompressed WIM"
+imagex capture dir dir.wim
+imagex apply dir.wim tmp
+test "`imagex info dir.wim | grep Compression | awk '{print $2}'`" = "None";
+diff -q -r dir tmp
+rm -rf dir.wim tmp
+
+echo "Testing capture and application of LZX-compressed WIM"
+imagex capture dir dir.wim --compress=maximum
+imagex apply dir.wim tmp
+test "`imagex info dir.wim | grep Compression | awk '{print $2}'`" = "LZX";
+diff -q -r dir tmp
+rm -rf dir.wim tmp
+
+echo "Testing capture and application of XPRESS-compressed WIM"
+imagex capture dir dir.wim --compress=fast
+imagex apply dir.wim tmp
+test "`imagex info dir.wim | grep Compression | awk '{print $2}'`" = "XPRESS";
+diff -q -r dir tmp
+rm -rf dir.wim tmp
+
+# Capturing and modifying name, description, and bootable flag
+
+echo "Testing capture of WIM with default name and description"
+imagex capture dir dir.wim
+test "`imagex info dir.wim | grep Name | awk '{print $2}'`" = "dir";
+test "`imagex info dir.wim | grep Description | awk '{print $2}'`" = "";
+rm -rf dir.wim tmp
+
+echo "Testing capture of WIM with default boot flag"
+imagex capture dir dir.wim
+test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "0";
+echo "Testing changing image bootable flag"
+imagex info dir.wim 1 --boot
+test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "1";
+echo "Testing changing image bootable flag"
+imagex info dir.wim 0 --boot
+test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "0";
+echo "Testing changing image bootable flag to invalid image (this should generate errors)"
+! imagex info dir.wim 2 --boot 
+test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "0";
+rm -rf dir.wim tmp
+
+echo "Testing capture of WIM with name and description"
+imagex capture dir dir.wim "myname" "mydesc"
+test "`imagex info dir.wim | grep Name | awk '{print $2}'`" = "myname";
+test "`imagex info dir.wim | grep Description | awk '{print $2}'`" = "mydesc";
+echo "Testing printing WIM lookup table"
+imagex info --lookup-table dir.wim
+echo "Testing printing WIM header"
+imagex info --header dir.wim
+echo "Testing printing WIM XML info"
+imagex info --xml dir.wim
+echo "Testing extracting WIM XML info"
+imagex info --extract-xml=dir.xml dir.wim
+echo "Testing printing WIM metadata"
+imagex info --metadata dir.wim
+rm -rf dir.wim tmp dir.xml
+
+echo "Testing capture of bootable WIM"
+imagex capture dir dir.wim --boot
+test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "1";
+rm -rf dir.wim tmp
+
+# Integrity table
+
+echo "Testing capture of WIM with integrity table"
+imagex capture dir dir.wim --check
+test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" = "yes";
+imagex apply --check dir.wim tmp
+diff -q -r dir tmp
+rm -rf dir.wim tmp
+
+# Appending and deleting images
+
+echo "Testing appending WIM image"
+imagex capture dir dir.wim
+imagex append dir2 dir.wim
+test "`imagex info dir.wim | grep 'Image Count' | awk '{print $3}'`" = 2;
+echo "Testing appending WIM image with existing name (this should generate errors)"
+! imagex append dir2 dir.wim
+echo "Testing appending WIM image with new name"
+imagex append dir2 dir.wim "newname"
+echo "Testing appending WIM image with integrity check"
+imagex append dir2 dir.wim "newname2" --check
+test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" = "yes";
+echo "Testing appending WIM image with no integrity check"
+imagex append dir2 dir.wim "newname3"
+test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" = "no";
+test "`imagex info dir.wim | grep 'Image Count' | awk '{print $3}'`" = 5;
+echo "Testing deleting first WIM image"
+imagex delete dir.wim 1
+test "`imagex info dir.wim | grep 'Image Count' | awk '{print $3}'`" = 4;
+echo "Testing deleting last WIM image"
+imagex delete dir.wim 4
+test "`imagex info dir.wim | grep 'Image Count' | awk '{print $3}'`" = 3;
+echo "Testing deleting invalid WIM image (this should generate errors)"
+! imagex delete dir.wim 4
+test "`imagex info dir.wim | grep 'Image Count' | awk '{print $3}'`" = 3;
+echo "Testing deleting all WIM images"
+imagex delete dir.wim all
+test "`imagex info dir.wim | grep 'Image Count' | awk '{print $3}'`" = 0;
+echo "Testing appending directory to empty WIM and making it bootable"
+imagex append dir dir.wim "myname" "mydesc" --check --boot
+test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" = "yes";
+test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "1";
+echo "Testing appending non-directory (should generate errors)"
+! imagex append dir.wim dir.wim
+echo "Testing appending non-existent file (should generate errors)"
+! imagex append SOME_NONEXISTENT_FILE dir.wim
+echo "Testing appending directory containing unreadable file (should generate errors)"
+mkdir -p dir3
+touch dir3/file
+chmod -r dir3/file
+! imagex append dir3 dir.wim
+rm -rf dir3 dir.wim
+
+# Applying multiple images, applying with hardlinks/symlinks
+
+imagex capture dir dir.wim
+imagex append dir dir.wim "myname"
+echo "Testing application of multiple images"
+imagex apply dir.wim all tmp
+diff -q -r tmp/dir tmp/myname
+test `stat -c %h tmp/dir/lz.c` = 1;
+test `stat -c %h tmp/myname/lz.c` = 1;
+test `stat -c %i tmp/myname/lz.c` != `stat -c %i tmp/dir/lz.c`;
+rm -rf tmp
+echo "Testing application of multiple images with hardlinks"
+imagex apply dir.wim all tmp --hardlink
+diff -q -r tmp/dir tmp/myname
+test `stat -c %h tmp/dir/lz.c` = 2;
+test `stat -c %h tmp/myname/lz.c` = 2;
+test `stat -c %i tmp/myname/lz.c` = `stat -c %i tmp/dir/lz.c`;
+rm -rf tmp
+echo "Testing application of single image containing identical files"
+imagex apply dir.wim 1 tmp
+test `stat -c %h tmp/subdir/identical_file1` = 1;
+test `stat -c %h tmp/subdir/identical_file2` = 1;
+test `stat -c %i tmp/subdir/identical_file1` != `stat -c %i tmp/subdir/identical_file2`;
+! readlink tmp/subdir/identical_file1 && ! readlink tmp/subdir/identical_file2
+rm -rf tmp
+
+echo "Testing application of single image containing identical files with hardlinks"
+imagex apply dir.wim 1 tmp --hardlink
+test `stat -c %h tmp/subdir/identical_file1` = 2;
+test `stat -c %h tmp/subdir/identical_file2` = 2;
+test `stat -c %i tmp/subdir/identical_file1` = `stat -c %i tmp/subdir/identical_file2`;
+! readlink tmp/subdir/identical_file1 && ! readlink tmp/subdir/identical_file2
+rm -rf tmp
+
+echo "Testing application of single image containing identical files with symlinks"
+imagex apply dir.wim 1 tmp --symlink
+test `stat -c %h tmp/subdir/identical_file1` = 1;
+test `stat -c %h tmp/subdir/identical_file2` = 1;
+test `stat -c %i tmp/subdir/identical_file1` != `stat -c %i tmp/subdir/identical_file2`;
+readlink tmp/subdir/identical_file1 > /dev/null || \
+		readlink tmp/subdir/identical_file2 > /dev/null
+rm -rf dir.wim tmp
+
+# imagex mount
+
+for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
+	echo "Using flag $flag"
+	echo "Testing mounting WIM read-only"
+	imagex capture dir dir.wim $flag
+	mkdir tmp
+	imagex mount dir.wim dir tmp
+	echo "Testing extracting file from mounted read-only WIM"
+	cp tmp/lz.c lz.c
+	diff -q dir/lz.c lz.c
+	diff -q tmp/lz.c dir/lz.c
+	rm -f lz.c
+	echo "Testing modifying mounted read-only WIM (should fail)"
+	! rm tmp/lz.c
+	! touch tmp/newfile
+	! echo 3 > tmp/newfile
+	echo "Testing diff of mounted read-only WIM with original directory"
+	diff -q -r tmp dir
+	echo "Testing unmount of read-only filesystem"
+	imagex unmount tmp
+	echo "Testing unmount of read-only filesystem with --commit given"
+	imagex mount dir.wim dir tmp
+	imagex unmount tmp --commit
+	rm -rf tmp dir.wim
+done
+
+# imagex mountrw
+for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
+	echo "Using flag $flag"
+	echo "Testing mounting WIM read-write"
+	imagex capture dir dir.wim $flag
+	mkdir tmp
+	imagex mountrw dir.wim dir tmp
+	echo "Testing unmounting WIM unmodified"
+	imagex unmount tmp
+	echo "Testing unmounting WIM unmodified with --commit and --check"
+	imagex mountrw dir.wim dir tmp
+	imagex unmount tmp --commit --check
+	echo "Testing removing file from mounted WIM"
+	imagex mountrw dir.wim dir tmp
+	rm tmp/lz.c
+	test ! -e tmp/lz.c
+	echo "Testing making directory in mounted WIM"
+	mkdir tmp/newdir
+	test -d tmp/newdir
+	echo "Testing making new empty file in mounted WIM"
+	touch tmp/newdir/empty_file
+	test -e tmp/newdir/empty_file
+	test `stat -c %s tmp/newdir/empty_file` = 0;
+	echo "Testing making new non-empty file in mounted WIM"
+	dd if=/dev/zero of=tmp/newdir/zeroes1 bs=1 count=4096
+	dd if=/dev/zero of=tmp/newdir/zeroes2 bs=4096 count=1
+	cmp tmp/newdir/zeroes1 tmp/newdir/zeroes2
+	echo "Unmounting WIM with changes committed and --check"
+	imagex unmount tmp --commit --check
+	test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" = "yes";
+	rm -rf tmp
+	imagex apply dir.wim tmp
+	cmp tmp/newdir/zeroes1 tmp/newdir/zeroes2
+	test `stat -c %s tmp/newdir/empty_file` = 0;
+	test `stat -c %s tmp/newdir/zeroes1` = 4096;
+	rm -rf tmp dir.wim
+done
+
+# imagex split, imagex join
+
+echo "Creating random files to test WIM splitting on"
+mkdir tmp
+for i in `seq 1 100`; do
+	dd if=/dev/urandom of=tmp/file$i bs=4096 count=10 &> /dev/null
+done
+for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
+	echo "Using flag $flag"
+	imagex capture tmp tmp.wim $flag
+	echo "Splitting WIM into 1 MiB chunks"
+	imagex split tmp.wim tmp.swm 1
+	echo "Verifying the split WIMs (some errors expected)"
+	test "`imagex info tmp.swm | grep 'Part Number' | awk '{print $3}'`" = "1/4"
+	imagex dir tmp.swm > /dev/null
+	test -e tmp2.swm && ! imagex dir tmp2.swm
+	! imagex info tmp.swm --boot 0 # Unsupported, should fail
+	echo "Joining the split WIMs and applying the result"
+	imagex join tmp2.wim tmp*.wim
+	imagex apply tmp2.wim tmp2
+	imagex apply tmp.wim tmp3
+	diff -q -r tmp tmp2
+	diff -q -r tmp tmp3
+	rm -f *.wim *.swm
+	rm -rf tmp2 tmp3
+done
+rm -rf tmp
+
+# imagex export
+echo "Testing export of single image to new WIM"
+imagex capture dir dir.wim
+imagex append dir2 dir.wim
+imagex export dir.wim dir new.wim
+test "`imagex info new.wim | grep 'Image Count' | awk '{print $3}'`" = 1;
+echo "Testing export of single image to existing WIM"
+imagex export dir.wim dir2 new.wim
+test "`imagex info new.wim | grep 'Image Count' | awk '{print $3}'`" = 2;
+echo "Testing export of single image to existing WIM using wrong compression type"
+! imagex export dir.wim dir2 new.wim newname --compress=maximum
+rm -f new.wim
+echo "Testing export of multiple images to new WIM"
+imagex export dir.wim all new.wim
+test "`imagex info new.wim | grep 'Image Count' | awk '{print $3}'`" = 2;
+imagex capture dir2 new.wim newname
+echo "Testing export of multiple images to existing WIM"
+imagex export dir.wim all new.wim
+echo "Testing export of multiple images to existing WIM with --boot"
+imagex capture dir2 new.wim newname
+imagex info dir.wim --boot 1
+imagex export dir.wim all new.wim --boot
+echo "Testing export of multiple images to existing WIM with --boot, but no bootable image (errors expected)"
+imagex capture dir2 new.wim newname
+imagex info dir.wim --boot 0
+! imagex export dir.wim all new.wim --boot

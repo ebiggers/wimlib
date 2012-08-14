@@ -32,6 +32,7 @@
 #include "sha1.h"
 #include "lookup_table.h"
 #include "xml.h"
+#include "timestamp.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -118,7 +119,11 @@ static int remove_file_or_directory(const char *fpath, const struct stat *sb,
  */
 static inline int delete_staging_dir()
 {
-	return nftw(staging_dir_name, remove_file_or_directory, 10, FTW_DEPTH);
+	int ret;
+	
+	ret = nftw(staging_dir_name, remove_file_or_directory,10, FTW_DEPTH);
+	staging_dir_name = NULL;
+	return ret;
 }
 
 /* Name and message queue descriptors for message queues between the filesystem
@@ -630,9 +635,13 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 		}
 	} else {
 		/* no lookup table entry, so the file must be empty.  Create a
-		 * lookup table entry for the file. */
+		 * lookup table entry for the file, unless it's a read-only
+		 * filesystem.  */
 		char *tmpfile_name;
 		int fd;
+
+		if (!staging_dir_name) /* Read-only filesystem */
+			return 0;
 
 		lte = new_lookup_table_entry();
 		if (!lte)
@@ -981,6 +990,20 @@ static int wimfs_unlink(const char *path)
 	return 0;
 }
 
+static int wimfs_utimens(const char *path, const struct timespec tv[2])
+{
+	struct dentry *dentry = get_dentry(w, path);
+	if (!dentry)
+		return -ENOENT;
+	time_t last_access_t = (tv[0].tv_nsec == UTIME_NOW) ? 
+				time(NULL) : tv[0].tv_sec;
+	dentry->last_access_time = unix_timestamp_to_ms(last_access_t);
+	time_t last_mod_t = (tv[1].tv_nsec == UTIME_NOW) ?  
+				time(NULL) : tv[1].tv_sec;
+	dentry->last_write_time = unix_timestamp_to_ms(last_mod_t);
+	return 0;
+}
+
 /* Writes to a file in the WIM filesystem. */
 static int wimfs_write(const char *path, const char *buf, size_t size, 
 				off_t offset, struct fuse_file_info *fi)
@@ -1054,6 +1077,7 @@ static struct fuse_operations wimfs_oper = {
 	.rmdir    = wimfs_rmdir,
 	.truncate = wimfs_truncate,
 	.unlink   = wimfs_unlink,
+	.utimens  = wimfs_utimens,
 	.write    = wimfs_write,
 };
 

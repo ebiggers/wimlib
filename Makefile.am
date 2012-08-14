@@ -84,7 +84,9 @@ EXTRA_DIST =			\
 	COPYING.LIB		\
 	build-aux/strip_fPIC.sh	\
 	debian			\
-	programs/install.cmd
+	programs/install.cmd	\
+	tests/dir		\
+	tests/dir2
 
 pkgconfigdir	= @pkgconfigdir@
 pkgconfig_DATA	= wimlib.pc
@@ -108,3 +110,7 @@ man1_MANS =			\
 	doc/mkwinpeimg.1
 
 $(man1_MANS): config.status
+
+dist_check_SCRIPTS = tests/test-imagex
+TESTS = $(dist_check_SCRIPTS)
+

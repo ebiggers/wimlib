@@ -14,13 +14,17 @@
 #define intervals_1601_to_1970 (years_1601_to_1970 * intervals_per_year \
 				+ leap_years_1601_to_1970 * intervals_per_day)
 
+static inline u64 unix_timestamp_to_ms(time_t t)
+{
+	return (u64)intervals_1601_to_1970 + t * intervals_per_second;
+}
 /* 
  * Returns the number of 100-nanosecond intervals that have elapsed since
  * 12:00 A.M., January 1, 1601 UTC.
  */
 static inline u64 get_timestamp()
 {
-	return (u64)intervals_1601_to_1970 + (u64)time(NULL) * intervals_per_second;
+	return unix_timestamp_to_ms(time(NULL));
 }
 
 /* Converts a timestamp as used in the WIM file to a UNIX timestamp as used in
