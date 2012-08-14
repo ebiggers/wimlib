@@ -127,6 +127,8 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 			      "(current total length = %"PRIu64", security "
 			      "descriptor size = %"PRIu64")",
 			      total_len, sd->sizes[i]);
+			ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
+			goto out_free_sd;
 		}
 		total_len += sd->sizes[i];
 		if (total_len > (u64)sd->total_length) {
