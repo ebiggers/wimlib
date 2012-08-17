@@ -309,14 +309,42 @@ int print_dentry_full_path(struct dentry *dentry, void *ignore)
 	return 0;
 }
 
+struct file_attr_flag {
+	u32 flag;
+	const char *name;
+};
+struct file_attr_flag file_attr_flags[] = {
+	{WIM_FILE_ATTRIBUTE_READONLY,		"READONLY"},
+	{WIM_FILE_ATTRIBUTE_HIDDEN,		"HIDDEN"},
+	{WIM_FILE_ATTRIBUTE_SYSTEM,		"SYSTEM"},
+	{WIM_FILE_ATTRIBUTE_DIRECTORY,		"DIRECTORY"},
+	{WIM_FILE_ATTRIBUTE_ARCHIVE,		"ARCHIVE"},
+	{WIM_FILE_ATTRIBUTE_DEVICE,		"DEVICE"},
+	{WIM_FILE_ATTRIBUTE_NORMAL,		"NORMAL"},
+	{WIM_FILE_ATTRIBUTE_TEMPORARY,		"TEMPORARY"},
+	{WIM_FILE_ATTRIBUTE_SPARSE_FILE,	"SPARSE_FILE"},
+	{WIM_FILE_ATTRIBUTE_REPARSE_POINT,	"REPARSE_POINT"},
+	{WIM_FILE_ATTRIBUTE_COMPRESSED,		"COMPRESSED"},
+	{WIM_FILE_ATTRIBUTE_OFFLINE,		"OFFLINE"},
+	{WIM_FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,"NOT_CONTENT_INDEXED"},
+	{WIM_FILE_ATTRIBUTE_ENCRYPTED,		"ENCRYPTED"},
+	{WIM_FILE_ATTRIBUTE_VIRTUAL,		"VIRTUAL"},
+};
+
 /* Prints a directory entry.  @lookup_table is a pointer to the lookup table, or
  * NULL if the resource entry for the dentry is not to be printed. */
 int print_dentry(struct dentry *dentry, void *lookup_table)
 {
 	struct lookup_table_entry *lte;
+	unsigned i;
+
 	printf("[DENTRY]\n");
 	printf("Length            = %"PRIu64"\n", dentry->length);
 	printf("Attributes        = 0x%x\n", dentry->attributes);
+	for (i = 0; i < ARRAY_LEN(file_attr_flags); i++)
+		if (file_attr_flags[i].flag & dentry->attributes)
+			printf("    WIM_FILE_ATTRIBUTE_%s is set\n",
+				file_attr_flags[i].name);
 #ifdef ENABLE_SECURITY_DATA
 	printf("Security ID       = %d\n", dentry->security_id);
 #endif
