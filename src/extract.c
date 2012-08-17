@@ -293,8 +293,8 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image)
 
 }
 
-/* Set the output directory for WIM extraction.  The directory is created using
- * mkdir().  Fails if directory cannot be created or already exists. */
+/* Sets and creates the directory to which files are to be extracted when
+ * extracting files from the WIM. */
 WIMLIBAPI int wimlib_set_output_dir(WIMStruct *w, const char *dir)
 {
 	char *p;
