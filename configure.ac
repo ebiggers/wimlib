@@ -136,15 +136,30 @@ AC_ARG_WITH([ntfs-3g],
 	      AS_HELP_STRING([--without-ntfs-3g], [build without NTFS-3g.
 			      This will disable the ability to use NTFS-specific
 			      information when capturing or applying WIMs to a
-			      NTFS filesystem.])
-	[WITH_NTFS_3G=$enableval],
+			      NTFS filesystem.]),
+	[WITH_NTFS_3G=$withval],
 	[WITH_NTFS_3G=yes]
 	)
 AC_MSG_RESULT([$WITH_NTFS_3G])
 if test "x$WITH_NTFS_3G" = "xyes"; then
 	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 to enable support for
 		   NTFS-specific information])
+
+	AC_CHECK_LIB([ntfs-3g], [ntfs_set_file_security], [],
+			[AC_MSG_ERROR([Cannot find libntfs-3g.
+	Without libntfs-3g, wimlib cannot include support for capturing and 
+	applying WIMs on NTFS filesystems while preserving NTFS-specific data
+	such as security descriptors and alternate data streams.  You should
+	either install libntfs-3g, or configure with --without-ntfs-3g to
+	disable support for these NTFS-specific features.])])
+	LIBNTFS_3G_LDADD="`pkg-config --libs libntfs-3g`"
+	LIBNTFS_3G_CFLAGS="`pkg-config --cflags libntfs-3g`"
+else
+	LIBNTFS_3G_LDADD=
+	LIBNTFS_3G_CFLAGS=
 fi
+AC_SUBST([LIBNTFS_3G_LDADD], [$LIBNTFS_3G_LDADD])
+AC_SUBST([LIBNTFS_3G_CFLAGS], [$LIBNTFS_3G_CFLAGS])
 
 AC_MSG_CHECKING([whether to include support for mounting WIMs])
 AC_ARG_WITH([fuse],
@@ -161,13 +176,13 @@ if test "x$WITH_FUSE" = "xyes"; then
 
 	AC_CHECK_LIB([fuse], [fuse_main_real], [have_fuse=true],
 			[AC_MSG_ERROR([Cannot find libfuse.  
-	Without libfuse, WIMLIB cannot include support for mounting WIMs.  You
+	Without libfuse, wimlib cannot include support for mounting WIMs.  You
 	should either install libfuse, or configure with --without-fuse to
 	disable support for mounting WIMs.])
 	])
 	AC_CHECK_LIB([rt], [mq_open], [have_posix_mq=true],
 		     [AC_MSG_ERROR([Cannot find librt for POSIX message queue
-	functions.  Without these functions, WIMLIB cannot include support for
+	functions.  Without these functions, wimlib cannot include support for
 	mounting WIMs.  You should either update your C library to a recent
 	version of glibc, or configure with --without-fuse to disable support
 	for mounting WIMs.])

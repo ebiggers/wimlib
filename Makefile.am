@@ -60,6 +60,7 @@ sha1-ssse3.lo:src/sha1-ssse3.asm
 libwim_la_LIBADD =		\
 	$(LIBXML2_LDADD)	\
 	$(LIBFUSE_LDADD)	\
+	$(LIBNTFS_3G_LDADD)	\
 	$(LTLIBICONV)		\
 	$(LIBCRYPTO_LDADD)	\
 	$(SSSE3_SHA1_OBJ)
@@ -69,6 +70,7 @@ libwim_la_CFLAGS =		\
 	-fvisibility=hidden	\
 	$(LIBXML2_CFLAGS)	\
 	$(LIBFUSE_CFLAGS)	\
+	$(LIBNTFS_3G_CFLAGS)	\
 	$(LIBCRYPTO_CFLAGS)
 
 
