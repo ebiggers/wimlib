@@ -541,9 +541,7 @@ void unlink_dentry(struct dentry *dentry)
 static inline void recalculate_dentry_size(struct dentry *dentry)
 {
 	dentry->length = WIM_DENTRY_DISK_SIZE + dentry->file_name_len + 
-			 2 + dentry->short_name_len;
-	for (u16 i = 0; i < dentry->num_ads; i++)
-		dentry->length += ads_entry_length(&dentry->ads_entries[i]);
+			 2 + dentry->short_name_len + 2;
 	/* Must be multiple of 8. */
 	dentry->length = (dentry->length + 7) & ~7;
 }
