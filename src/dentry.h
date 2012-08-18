@@ -2,12 +2,49 @@
 #define _WIMLIB_DENTRY_H
 
 #include "util.h"
+#include "config.h"
 #include <string.h>
 
 /* Size of the struct dentry up to and including the file_name_len. */
-#define WIM_DENTRY_DISK_SIZE 102
+#define WIM_DENTRY_DISK_SIZE    102
 
-#define WIM_ADS_ENTRY_DISK_SIZE (2 * sizeof(u64) + WIM_HASH_SIZE + sizeof(u16))
+#define WIM_ADS_ENTRY_DISK_SIZE 38
+
+#ifndef WITH_NTFS_3G
+/* 
+ * Reparse tags documented at 
+ * http://msdn.microsoft.com/en-us/library/dd541667(v=prot.10).aspx
+ *
+ * IO_REPARSE_TAG_SYMLINK is the only one we really care about.
+ */
+#define IO_REPARSE_TAG_RESERVED_ZERO	0x00000000
+#define IO_REPARSE_TAG_RESERVED_ONE	0x00000001
+#define IO_REPARSE_TAG_MOUNT_POINT	0xA0000003
+#define IO_REPARSE_TAG_HSM		0xC0000004
+#define IO_REPARSE_TAG_HSM2		0x80000006
+#define IO_REPARSE_TAG_DRIVER_EXTENDER	0x80000005
+#define IO_REPARSE_TAG_SIS		0x80000007
+#define IO_REPARSE_TAG_DFS		0x8000000A
+#define IO_REPARSE_TAG_DFSR		0x80000012
+#define IO_REPARSE_TAG_FILTER_MANAGER	0x8000000B
+#define IO_REPARSE_TAG_SYMLINK		0xA000000C
+#endif /* !WITH_NTFS_3G */
+
+#define FILE_ATTRIBUTE_READONLY            0x00000001
+#define FILE_ATTRIBUTE_HIDDEN              0x00000002
+#define FILE_ATTRIBUTE_SYSTEM              0x00000004
+#define FILE_ATTRIBUTE_DIRECTORY           0x00000010
+#define FILE_ATTRIBUTE_ARCHIVE             0x00000020
+#define FILE_ATTRIBUTE_DEVICE              0x00000040
+#define FILE_ATTRIBUTE_NORMAL              0x00000080
+#define FILE_ATTRIBUTE_TEMPORARY           0x00000100
+#define FILE_ATTRIBUTE_SPARSE_FILE         0x00000200
+#define FILE_ATTRIBUTE_REPARSE_POINT       0x00000400
+#define FILE_ATTRIBUTE_COMPRESSED          0x00000800
+#define FILE_ATTRIBUTE_OFFLINE             0x00001000
+#define FILE_ATTRIBUTE_NOT_CONTENT_INDEXED 0x00002000
+#define FILE_ATTRIBUTE_ENCRYPTED           0x00004000
+#define FILE_ATTRIBUTE_VIRTUAL             0x00010000
 
 /* Alternate data stream entry */
 struct ads_entry {
@@ -68,8 +105,8 @@ struct dentry {
 	u64 subdir_offset;
 
 	/* Reserved for future disuse.  Currently ignoring these fields. */
-	//u64 unused1;
-	//u64 unused2;
+	u64 unused1;
+	u64 unused2;
 
 	/* Timestamps for the entry.  The timestamps are the number of
 	 * 100-nanosecond intervals that have elapsed since 12:00 A.M., January
@@ -88,7 +125,9 @@ struct dentry {
 
 	/* Although M$'s documentation does not tell you this, it seems that the
 	 * reparse_reserved field does not actually exist.  So the hard_link
-	 * field directly follows the reparse_tag on disk. */
+	 * field directly follows the reparse_tag on disk.  EXCEPT when the
+	 * dentry is actually a reparse point... well, just take a look at the
+	 * read_dentry() function. */
 	//u32 reparse_reserved;
 
 	/* If the reparse_reserved field existed, there would be a 4-byte gap
@@ -135,21 +174,7 @@ struct dentry {
 	int refcnt;
 };
 
-#define WIM_FILE_ATTRIBUTE_READONLY            0x00000001
-#define WIM_FILE_ATTRIBUTE_HIDDEN              0x00000002
-#define WIM_FILE_ATTRIBUTE_SYSTEM              0x00000004
-#define WIM_FILE_ATTRIBUTE_DIRECTORY           0x00000010
-#define WIM_FILE_ATTRIBUTE_ARCHIVE             0x00000020
-#define WIM_FILE_ATTRIBUTE_DEVICE              0x00000040
-#define WIM_FILE_ATTRIBUTE_NORMAL              0x00000080
-#define WIM_FILE_ATTRIBUTE_TEMPORARY           0x00000100
-#define WIM_FILE_ATTRIBUTE_SPARSE_FILE         0x00000200
-#define WIM_FILE_ATTRIBUTE_REPARSE_POINT       0x00000400
-#define WIM_FILE_ATTRIBUTE_COMPRESSED          0x00000800
-#define WIM_FILE_ATTRIBUTE_OFFLINE             0x00001000
-#define WIM_FILE_ATTRIBUTE_NOT_CONTENT_INDEXED 0x00002000
-#define WIM_FILE_ATTRIBUTE_ENCRYPTED           0x00004000
-#define WIM_FILE_ATTRIBUTE_VIRTUAL             0x00010000
+extern u64 dentry_total_length(const struct dentry *dentry);
 
 extern void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry);
 
@@ -235,7 +260,7 @@ static inline bool dentry_is_only_child(const struct dentry *dentry)
 
 static inline bool dentry_is_directory(const struct dentry *dentry)
 {
-	return (dentry->attributes & WIM_FILE_ATTRIBUTE_DIRECTORY) != 0;
+	return (dentry->attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
 static inline bool dentry_is_regular_file(const struct dentry *dentry)

@@ -495,7 +495,7 @@ static int wimfs_mkdir(const char *path, mode_t mode)
 		return -EEXIST;
 
 	newdir = new_dentry(basename);
-	newdir->attributes |= WIM_FILE_ATTRIBUTE_DIRECTORY;
+	newdir->attributes |= FILE_ATTRIBUTE_DIRECTORY;
 	link_dentry(newdir, parent);
 	return 0;
 }

@@ -37,6 +37,7 @@
 
 #ifdef WITH_NTFS_3G
 #include <ntfs-3g/volume.h>
+#include <ntfs-3g/security.h>
 #endif
 
 /* Sets and creates the directory to which files are to be extracted when
@@ -88,7 +89,8 @@ done:
  */
 static int extract_regular_file(WIMStruct *w, 
 				const struct dentry *dentry, 
-				const char *output_path)
+				const char *output_path,
+				int extract_flags)
 {
 	struct lookup_table_entry *lte;
 	int ret;
@@ -100,12 +102,12 @@ static int extract_regular_file(WIMStruct *w,
 	/* If we already extracted the same file or a hard link copy of it, we
 	 * may be able to simply create a link.  The exact action is specified
 	 * by the current @link_type. */
-	if ((w->extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) &&
+	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) &&
 	      lte && lte->out_refcnt != 0)
 	{
 		wimlib_assert(lte->file_on_disk);
 
-		if (w->extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
+		if (extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
 			if (link(lte->file_on_disk, output_path) != 0) {
 				ERROR_WITH_ERRNO("Failed to hard link "
 						 "`%s' to `%s'",
@@ -222,6 +224,13 @@ static int extract_directory(struct dentry *dentry, const char *output_path)
 	return 0;
 }
 
+struct extract_args {
+	WIMStruct *w;
+	int extract_flags;
+#ifdef WITH_NTFS_3G
+	struct SECURITY_API *scapi;
+#endif
+};
 
 /* 
  * Extracts a file or directory from the WIM archive.  For use in
@@ -232,11 +241,13 @@ static int extract_directory(struct dentry *dentry, const char *output_path)
  */
 static int extract_regular_file_or_directory(struct dentry *dentry, void *arg)
 {
-	WIMStruct *w = (WIMStruct*)arg;
+	struct extract_args *args = arg;
+	WIMStruct *w = args->w;
+	int extract_flags = args->extract_flags;
 	size_t len = strlen(w->output_dir);
 	char output_path[len + dentry->full_path_utf8_len + 1];
 
-	if (w->extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
 		puts(dentry->full_path_utf8);
 
 	memcpy(output_path, w->output_dir, len);
@@ -244,7 +255,7 @@ static int extract_regular_file_or_directory(struct dentry *dentry, void *arg)
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
 	if (dentry_is_regular_file(dentry)) {
-		return extract_regular_file(w, dentry, output_path);
+		return extract_regular_file(w, dentry, output_path, extract_flags);
 	} else {
 		if (dentry_is_root(dentry)) /* Root doesn't need to be extracted. */
 			return 0;
@@ -253,7 +264,8 @@ static int extract_regular_file_or_directory(struct dentry *dentry, void *arg)
 	}
 }
 
-static int extract_single_image(WIMStruct *w, int image)
+
+static int extract_single_image(WIMStruct *w, int image, int extract_flags)
 {
 	DEBUG("Extracting image %d", image);
 
@@ -262,14 +274,22 @@ static int extract_single_image(WIMStruct *w, int image)
 	if (ret != 0)
 		return ret;
 
+	struct extract_args args = {
+		.w = w,
+		.extract_flags = extract_flags,
+	#ifdef WITH_NTFS_3G
+		.scapi = NULL
+	#endif
+	};
+
 	return for_dentry_in_tree(wim_root_dentry(w),
-				  extract_regular_file_or_directory, w);
+				  extract_regular_file_or_directory, &args);
 }
 
 
 /* Extracts all images from the WIM to w->output_dir, with the images placed in
  * subdirectories named by their image names. */
-static int extract_all_images(WIMStruct *w)
+static int extract_all_images(WIMStruct *w, int extract_flags)
 {
 	size_t image_name_max_len = max(xml_get_max_image_name_len(w), 20);
 	size_t output_path_len = strlen(w->output_dir);
@@ -294,7 +314,7 @@ static int extract_all_images(WIMStruct *w)
 		ret = set_output_dir(w, buf);
 		if (ret != 0)
 			goto done;
-		ret = extract_single_image(w, image);
+		ret = extract_single_image(w, image, extract_flags);
 		if (ret != 0)
 			goto done;
 	}
@@ -344,13 +364,12 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		return WIMLIB_ERR_UNSUPPORTED;
 	#endif
 	}
-	w->extract_flags = flags;
 	if (image == WIM_ALL_IMAGES) {
 		w->is_multi_image_extraction = true;
-		ret = extract_all_images(w);
+		ret = extract_all_images(w, flags);
 	} else {
 		w->is_multi_image_extraction = false;
-		ret = extract_single_image(w, image);
+		ret = extract_single_image(w, image, flags);
 	}
 	return ret;
 

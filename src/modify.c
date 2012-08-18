@@ -478,7 +478,7 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
-	root_dentry->attributes |= WIM_FILE_ATTRIBUTE_DIRECTORY;
+	root_dentry->attributes |= FILE_ATTRIBUTE_DIRECTORY;
 
 	/* Construct the dentry tree from the outside filesystem. */
 	if (stat(dir, &root_stat) != 0) {

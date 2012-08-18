@@ -39,14 +39,33 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+/* Real length of a dentry, including the alternate data stream entries, which
+ * are not included in the dentry->length field... */
+u64 dentry_total_length(const struct dentry *dentry)
+{
+	u64 length = dentry->length;
+	if (dentry->num_ads) {
+		u16 i = 0;
+		do {
+			length += WIM_ADS_ENTRY_DISK_SIZE + 
+				  dentry->ads_entries[i].stream_name_len;
+		} while (++i != dentry->num_ads);
+		/* If there are Alternate Stream Entries, we apparently need to
+		 * round up to the NEXT 8-byte boundary, even if we are already
+		 * aligned on one... */
+		length++;
+	}
+	/* Round to 8 byte boundary. */
+	return (length + 7) & ~7;
+}
 
 /* Transfers file attributes from a `stat' buffer to a struct dentry. */
 void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 {
 	if (S_ISDIR(stbuf->st_mode))
-		dentry->attributes = WIM_FILE_ATTRIBUTE_DIRECTORY;
+		dentry->attributes = FILE_ATTRIBUTE_DIRECTORY;
 	else
-		dentry->attributes = WIM_FILE_ATTRIBUTE_NORMAL;
+		dentry->attributes = FILE_ATTRIBUTE_NORMAL;
 }
 
 /* Transfers file attributes from a struct dentry to a `stat' buffer. */
@@ -210,7 +229,7 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 		/* Advance the subdir offset by the amount of space the children
 		 * of this dentry take up. */
 		do {
-			*subdir_offset_p += child->length;
+			*subdir_offset_p += dentry_total_length(child);
 			child = child->next;
 		} while (child != dentry->children);
 
@@ -314,21 +333,21 @@ struct file_attr_flag {
 	const char *name;
 };
 struct file_attr_flag file_attr_flags[] = {
-	{WIM_FILE_ATTRIBUTE_READONLY,		"READONLY"},
-	{WIM_FILE_ATTRIBUTE_HIDDEN,		"HIDDEN"},
-	{WIM_FILE_ATTRIBUTE_SYSTEM,		"SYSTEM"},
-	{WIM_FILE_ATTRIBUTE_DIRECTORY,		"DIRECTORY"},
-	{WIM_FILE_ATTRIBUTE_ARCHIVE,		"ARCHIVE"},
-	{WIM_FILE_ATTRIBUTE_DEVICE,		"DEVICE"},
-	{WIM_FILE_ATTRIBUTE_NORMAL,		"NORMAL"},
-	{WIM_FILE_ATTRIBUTE_TEMPORARY,		"TEMPORARY"},
-	{WIM_FILE_ATTRIBUTE_SPARSE_FILE,	"SPARSE_FILE"},
-	{WIM_FILE_ATTRIBUTE_REPARSE_POINT,	"REPARSE_POINT"},
-	{WIM_FILE_ATTRIBUTE_COMPRESSED,		"COMPRESSED"},
-	{WIM_FILE_ATTRIBUTE_OFFLINE,		"OFFLINE"},
-	{WIM_FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,"NOT_CONTENT_INDEXED"},
-	{WIM_FILE_ATTRIBUTE_ENCRYPTED,		"ENCRYPTED"},
-	{WIM_FILE_ATTRIBUTE_VIRTUAL,		"VIRTUAL"},
+	{FILE_ATTRIBUTE_READONLY,		"READONLY"},
+	{FILE_ATTRIBUTE_HIDDEN,		"HIDDEN"},
+	{FILE_ATTRIBUTE_SYSTEM,		"SYSTEM"},
+	{FILE_ATTRIBUTE_DIRECTORY,		"DIRECTORY"},
+	{FILE_ATTRIBUTE_ARCHIVE,		"ARCHIVE"},
+	{FILE_ATTRIBUTE_DEVICE,		"DEVICE"},
+	{FILE_ATTRIBUTE_NORMAL,		"NORMAL"},
+	{FILE_ATTRIBUTE_TEMPORARY,		"TEMPORARY"},
+	{FILE_ATTRIBUTE_SPARSE_FILE,	"SPARSE_FILE"},
+	{FILE_ATTRIBUTE_REPARSE_POINT,	"REPARSE_POINT"},
+	{FILE_ATTRIBUTE_COMPRESSED,		"COMPRESSED"},
+	{FILE_ATTRIBUTE_OFFLINE,		"OFFLINE"},
+	{FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,"NOT_CONTENT_INDEXED"},
+	{FILE_ATTRIBUTE_ENCRYPTED,		"ENCRYPTED"},
+	{FILE_ATTRIBUTE_VIRTUAL,		"VIRTUAL"},
 };
 
 /* Prints a directory entry.  @lookup_table is a pointer to the lookup table, or
@@ -343,11 +362,11 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	printf("Attributes        = 0x%x\n", dentry->attributes);
 	for (i = 0; i < ARRAY_LEN(file_attr_flags); i++)
 		if (file_attr_flags[i].flag & dentry->attributes)
-			printf("    WIM_FILE_ATTRIBUTE_%s is set\n",
+			printf("    FILE_ATTRIBUTE_%s is set\n",
 				file_attr_flags[i].name);
 	printf("Security ID       = %d\n", dentry->security_id);
 	printf("Subdir offset     = %"PRIu64"\n", dentry->subdir_offset);
-	/*printf("Unused1           = %"PRIu64"\n", dentry->unused1);*/
+	/*printf("Unused1           = 0x%"PRIu64"\n", dentry->unused1);*/
 	/*printf("Unused2           = %"PRIu64"\n", dentry->unused2);*/
 	printf("Creation Time     = %"PRIu64"\n", dentry->creation_time);
 	printf("Last Access Time  = %"PRIu64"\n", dentry->last_access_time);
@@ -356,8 +375,8 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	printf("Hash              = "); 
 	print_hash(dentry->hash); 
 	putchar('\n');
-	printf("Reparse Tag       = %u\n", dentry->reparse_tag);
-	printf("Hard Link Group   = %"PRIu64"\n", dentry->hard_link);
+	printf("Reparse Tag       = 0x%"PRIx32"\n", dentry->reparse_tag);
+	printf("Hard Link Group   = 0x%"PRIx64"\n", dentry->hard_link);
 	printf("Number of Alternate Data Streams = %hu\n", dentry->num_ads);
 	printf("Filename          = \"");
 	print_string(dentry->file_name, dentry->file_name_len);
@@ -378,6 +397,15 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 			putchar('\n');
 	} else {
 		putchar('\n');
+	}
+	for (u16 i = 0; i < dentry->num_ads; i++) {
+		printf("[Alternate Stream Entry %u]\n", i);
+		printf("Name = \"%s\"\n", dentry->ads_entries[i].stream_name_utf8);
+		lte = lookup_resource(lookup_table, dentry->ads_entries[i].hash);
+		if (lte)
+			print_lookup_table_entry(lte, NULL);
+		else
+			putchar('\n');
 	}
 	return 0;
 }
@@ -611,40 +639,52 @@ void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *tab
 }
 
 static int read_ads_entries(const u8 *p, struct dentry *dentry,
-			    unsigned remaining_size)
+			    u64 remaining_size)
 {
 	u16 num_ads = dentry->num_ads;
 	struct ads_entry *ads_entries = CALLOC(num_ads, sizeof(struct ads_entry));
 	int ret;
 	if (!ads_entries) {
-		ERROR("Could not allocate memory for %u alternate data stream "
-		      "entries", num_ads);
+		ERROR("Could not allocate memory for %"PRIu16" "
+		      "alternate data stream entries", num_ads);
 		return WIMLIB_ERR_NOMEM;
 	}
+	DEBUG2("Reading %"PRIu16" alternate data streams "
+	       "(remaining size = %"PRIu64")", num_ads, remaining_size);
+
 	for (u16 i = 0; i < num_ads; i++) {
 		struct ads_entry *cur_entry = &ads_entries[i];
 		u64 length;
 		size_t utf8_len;
 		/* Read the base stream entry, excluding the stream name. */
 		if (remaining_size < WIM_ADS_ENTRY_DISK_SIZE) {
-			ERROR("Stream entries go past end of directory entry");
+			ERROR("Stream entries go past end of metadata resource");
 			ret = WIMLIB_ERR_INVALID_DENTRY;
 			goto out_free_ads_entries;
 		}
 		remaining_size -= WIM_ADS_ENTRY_DISK_SIZE;
+		/*print_string(p + 40, 10);*/
+		/*print_byte_field(p, 50);*/
 
 		p = get_u64(p, &length); /* ADS entry length */
+
+		DEBUG2("ADS length = %"PRIu64, length);
+
 		p += 8; /* Unused */
 		p = get_bytes(p, WIM_HASH_SIZE, (u8*)cur_entry->hash);
 		p = get_u16(p, &cur_entry->stream_name_len);
+
+		DEBUG2("Stream name length = %u", cur_entry->stream_name_len);
+
 		cur_entry->stream_name = NULL;
 		cur_entry->stream_name_utf8 = NULL;
 
-		if (remaining_size < cur_entry->stream_name_len) {
-			ERROR("Stream entries go past end of directory entry");
+		if (remaining_size < cur_entry->stream_name_len + 2) {
+			ERROR("Stream entries go past end of metadata resource");
 			ret = WIMLIB_ERR_INVALID_DENTRY;
 			goto out_free_ads_entries;
 		}
+		remaining_size -= cur_entry->stream_name_len + 2;
 
 		cur_entry->stream_name = MALLOC(cur_entry->stream_name_len);
 		if (!cur_entry->stream_name) {
@@ -653,10 +693,12 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 		}
 		p = get_bytes(p, cur_entry->stream_name_len,
 			      (u8*)cur_entry->stream_name);
+		p += 2; /* NULL terminator of stream name */
 		cur_entry->stream_name_utf8 = utf16_to_utf8(cur_entry->stream_name,
 							    cur_entry->stream_name_len,
 							    &utf8_len);
 		cur_entry->stream_name_len_utf8 = utf8_len;
+		print_byte_field(p, 16);
 
 		if (!cur_entry->stream_name_utf8) {
 			ret = WIMLIB_ERR_NOMEM;
@@ -705,6 +747,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * terminates the list of sibling directory entries. */
 
 	p = get_u64(&metadata_resource[offset], &dentry->length);
+	DEBUG("length = %zu, %zu\n", dentry->length, *(u64*)(&metadata_resource[offset]));
 
 	/* A zero length field (really a length of 8, since that's how big the
 	 * directory entry is...) indicates that this is the end of directory
@@ -736,6 +779,8 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	/* 2 unused fields */
 	p += 2 * sizeof(u64);
+	/*p = get_u64(p, &dentry->unused1);*/
+	/*p = get_u64(p, &dentry->unused2);*/
 
 	p = get_u64(p, &dentry->creation_time);
 	p = get_u64(p, &dentry->last_access_time);
@@ -743,11 +788,29 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	p = get_bytes(p, WIM_HASH_SIZE, dentry->hash);
 	
-	p = get_u32(p, &dentry->reparse_tag);
+	/*
+	 * I don't know what's going on here.  It seems like M$ screwed up the
+	 * reparse points, then put the fields in the same place and didn't
+	 * document it.  The WIM_HDR_FLAG_RP_FIX flag in the WIM header might
+	 * have something to do with this, but it's not documented.
+	 */
+	if (dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		/* ??? */
+		u32 u1, u2;
+		p = get_u32(p, &u1);
+		/*p += 4;*/
+		p = get_u32(p, &dentry->reparse_tag);
+		p = get_u32(p, &u2);
+		/*p += 4;*/
+		dentry->hard_link = (u64)(u1) | ((u64)(u2) << 32);
+	} else {
+		p = get_u32(p, &dentry->reparse_tag);
+		p = get_u64(p, &dentry->hard_link);
+	}
 
-	/* The reparse_reserved field does not actually exist. */
+	/* By the way, the reparse_reserved field does not actually exist (at
+	 * least when the file is not a reparse point) */
 
-	p = get_u64(p, &dentry->hard_link);
 	
 	p = get_u16(p, &dentry->num_ads);
 
@@ -799,11 +862,44 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		goto out_free_file_name_utf8;
 	}
 
-	get_bytes(p, short_name_len, short_name);
+	p = get_bytes(p, short_name_len, short_name);
+
+	/* Some directory entries inexplicibly have a little over 70 bytes of
+	 * extra data.  The exact amount of data seems to be 72 bytes, but it is
+	 * aligned on the next 8-byte boundary.  Here's an example of the
+	 * aligned data:
+	 *
+	 * 01000000400000006c786bbac58ede11b0bb00261870892ab6adb76fe63a3
+	 * e468fca86530d2effa16c786bbac58ede11b0bb00261870892a0000000000
+	 * 0000000000000000000000
+	 *
+	 * Here's one interpretation of how the data is laid out.
+	 *
+	 * struct unknown {
+	 * 	u32 field1; (always 0x00000001)
+	 * 	u32 field2; (always 0x40000000)
+	 * 	u16 field3;
+	 * 	u32 field4;
+	 * 	u32 field5;
+	 * 	u32 field6;
+	 * 	u8  data[48]; (???)
+	 * 	u64 reserved1; (always 0)
+	 * 	u64 reserved2; (always 0)
+	 * };*/
+#if 0
+	if (dentry->length - calculated_size >= WIM_ADS_ENTRY_DISK_SIZE) {
+		printf("%s: %lu / %lu (", file_name_utf8, 
+				calculated_size, dentry->length);
+		print_string(p + WIM_ADS_ENTRY_DISK_SIZE, dentry->length - calculated_size - WIM_ADS_ENTRY_DISK_SIZE);
+		puts(")");
+		print_byte_field(p, dentry->length - calculated_size);
+		putchar('\n');
+	}
+#endif
 
 	if (dentry->num_ads != 0) {
 		ret = read_ads_entries(p, dentry,
-				       dentry->length - calculated_size);
+				       metadata_resource_len - offset - calculated_size);
 		if (ret != 0)
 			goto out_free_short_name;
 	}
@@ -845,10 +941,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	p = put_u64(p, dentry->creation_time);
 	p = put_u64(p, dentry->last_access_time);
 	p = put_u64(p, dentry->last_write_time);
-	if (!is_empty_file_hash(dentry->hash))
-		memcpy(p, dentry->hash, WIM_HASH_SIZE);
-	else
-		DEBUG("zero hash for %s\n", dentry->file_name_utf8);
+	memcpy(p, dentry->hash, WIM_HASH_SIZE);
 	p += WIM_HASH_SIZE;
 	p = put_u32(p, dentry->reparse_tag);
 	p = put_u64(p, dentry->hard_link);
@@ -983,7 +1076,7 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		}
 
 		/* Advance to the offset of the next child. */
-		cur_offset += child->length;
+		cur_offset += dentry_total_length(child);
 	}
 
 	/* Link last child to first one, and set parent's
