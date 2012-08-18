@@ -175,6 +175,19 @@ struct dentry {
 	int refcnt;
 };
 
+/* Return hash of the "unnamed" (default) data stream. */
+static inline const u8 *dentry_hash(const struct dentry *dentry)
+{
+	/* If there are alternate data streams, the dentry hash field is zeroed
+	 * out, and we need to find the hash in the un-named data stream (should
+	 * be the first one, but check them in order just in case, and fall back
+	 * to the dentry hash field if we can't find an unnamed data stream). */
+	for (u16 i = 0; i < dentry->num_ads; i++)
+		if (dentry->ads_entries[i].stream_name_len == 0)
+			return dentry->ads_entries[i].hash;
+	return dentry->hash;
+}
+
 extern u64 dentry_total_length(const struct dentry *dentry);
 
 extern void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry);
