@@ -43,12 +43,10 @@
  * are not included in the dentry->length field... */
 u64 dentry_total_length(const struct dentry *dentry)
 {
-	u64 length = dentry->length;
+	u64 length = (dentry->length + 7) & ~7;
 	for (u16 i = 0 ; i < dentry->num_ads; i++)
 		length += ads_entry_length(&dentry->ads_entries[i]);
-
-	/* Round to 8 byte boundary. */
-	return (length + 7) & ~7;
+	return length;
 }
 
 /* Transfers file attributes from a `stat' buffer to a struct dentry. */
@@ -393,6 +391,8 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	for (u16 i = 0; i < dentry->num_ads; i++) {
 		printf("[Alternate Stream Entry %u]\n", i);
 		printf("Name = \"%s\"\n", dentry->ads_entries[i].stream_name_utf8);
+		printf("Name Length (UTF-16) = %u\n",
+				dentry->ads_entries[i].stream_name_len);
 		lte = lookup_resource(lookup_table, dentry->ads_entries[i].hash);
 		if (lte)
 			print_lookup_table_entry(lte, NULL);
@@ -541,7 +541,7 @@ void unlink_dentry(struct dentry *dentry)
 static inline void recalculate_dentry_size(struct dentry *dentry)
 {
 	dentry->length = WIM_DENTRY_DISK_SIZE + dentry->file_name_len + 
-			 2 + dentry->short_name_len + 2;
+			 2 + dentry->short_name_len;
 	/* Must be multiple of 8. */
 	dentry->length = (dentry->length + 7) & ~7;
 }
@@ -655,8 +655,6 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 			goto out_free_ads_entries;
 		}
 		remaining_size -= WIM_ADS_ENTRY_DISK_SIZE;
-		/*print_string(p + 40, 10);*/
-		/*print_byte_field(p, 50);*/
 
 		p = get_u64(p, &length); /* ADS entry length */
 
@@ -891,7 +889,15 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 #endif
 
 	if (dentry->num_ads != 0) {
-		ret = read_ads_entries(p, dentry,
+		calculated_size = (calculated_size + 7) & ~7;
+		if (calculated_size > metadata_resource_len - offset) {
+			ERROR("Not enough space in metadata resource for "
+			      "alternate stream entries");
+			ret = WIMLIB_ERR_INVALID_DENTRY;
+			goto out_free_short_name;
+		}
+		ret = read_ads_entries(&metadata_resource[offset + calculated_size],
+				       dentry,
 				       metadata_resource_len - offset - calculated_size);
 		if (ret != 0)
 			goto out_free_short_name;
