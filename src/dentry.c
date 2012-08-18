@@ -39,6 +39,26 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+/*
+ * Returns true if @dentry has the UTF-8 file name @name that has length
+ * @name_len.
+ */
+static bool dentry_has_name(const struct dentry *dentry, const char *name, 
+			    size_t name_len)
+{
+	if (dentry->file_name_utf8_len != name_len)
+		return false;
+	return memcmp(dentry->file_name_utf8, name, name_len) == 0;
+}
+
+static bool ads_entry_has_name(const struct ads_entry *entry,
+			       const char *name, size_t name_len)
+{
+	if (entry->stream_name_utf8_len != name_len)
+		return false;
+	return memcmp(entry->stream_name_utf8, name, name_len) == 0;
+}
+
 /* Real length of a dentry, including the alternate data stream entries, which
  * are not included in the dentry->length field... */
 u64 dentry_total_length(const struct dentry *dentry)
@@ -76,7 +96,7 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 		stbuf->st_mode = S_IFREG | 0644;
 
 	if (table)
-		lte = lookup_resource(table, dentry->hash);
+		lte = __lookup_resource(table, dentry_hash(dentry));
 	else
 		lte = NULL;
 
@@ -102,6 +122,55 @@ void dentry_update_all_timestamps(struct dentry *dentry)
 	dentry->creation_time    = now;
 	dentry->last_access_time = now;
 	dentry->last_write_time  = now;
+}
+
+struct ads_entry *dentry_get_ads_entry(struct dentry *dentry,
+				       const char *stream_name)
+{
+	size_t stream_name_len = strlen(stream_name);
+	if (!stream_name)
+		return NULL;
+	for (u16 i = 0; i < dentry->num_ads; i++)
+		if (ads_entry_has_name(&dentry->ads_entries[i],
+				       stream_name, stream_name_len))
+			return &dentry->ads_entries[i];
+	return NULL;
+}
+
+/* Add an alternate stream entry to a dentry and return a pointer to it, or NULL
+ * on failure. */
+struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
+{
+	u16 num_ads = dentry->num_ads + 1;
+	struct ads_entry *ads_entries;
+	struct ads_entry *new_entry;
+	if (num_ads == 0xffff)
+		return NULL;
+	ads_entries = MALLOC(num_ads * sizeof(struct ads_entry));
+	if (!ads_entries)
+		return NULL;
+
+	new_entry = &ads_entries[num_ads - 1];
+	if (change_ads_name(new_entry, stream_name) != 0) {
+		FREE(ads_entries);
+		return NULL;
+	}
+
+	memcpy(ads_entries, dentry->ads_entries,
+	       (num_ads - 1) * sizeof(struct ads_entry));
+	FREE(dentry->ads_entries);
+	dentry->ads_entries = ads_entries;
+	dentry->num_ads = num_ads;
+	return memset(new_entry, 0, sizeof(struct ads_entry));
+}
+
+void dentry_remove_ads(struct dentry *dentry, struct ads_entry *sentry)
+{
+	destroy_ads_entry(sentry);
+	memcpy(sentry, sentry + 1,
+	       (dentry->num_ads - (sentry - dentry->ads_entries))
+		 * sizeof(struct ads_entry));
+	dentry->num_ads--;
 }
 
 /* 
@@ -384,15 +453,10 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	puts("\"");
 	printf("Short Name Length = %hu\n", dentry->short_name_len);
 	printf("Full Path (UTF-8) = \"%s\"\n", dentry->full_path_utf8);
-	if (lookup_table) {
-		lte = lookup_resource(lookup_table, dentry->hash);
-		if (lte)
-			print_lookup_table_entry(lte, NULL);
-		else
-			putchar('\n');
-	} else {
+	if (lookup_table && (lte = __lookup_resource(lookup_table, dentry->hash)))
+		print_lookup_table_entry(lte, NULL);
+	else
 		putchar('\n');
-	}
 	for (u16 i = 0; i < dentry->num_ads; i++) {
 		printf("[Alternate Stream Entry %u]\n", i);
 		printf("Name = \"%s\"\n", dentry->ads_entries[i].stream_name_utf8);
@@ -400,12 +464,14 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 				dentry->ads_entries[i].stream_name_len);
 		printf("Hash              = 0x"); 
 		print_hash(dentry->ads_entries[i].hash); 
-		putchar('\n');
-		lte = lookup_resource(lookup_table, dentry->ads_entries[i].hash);
-		if (lte)
+		if (lookup_table &&
+		     (lte = __lookup_resource(lookup_table,
+					      dentry->ads_entries[i].hash)))
+		{
 			print_lookup_table_entry(lte, NULL);
-		else
+		} else {
 			putchar('\n');
+		}
 	}
 	return 0;
 }
@@ -446,10 +512,8 @@ struct dentry *new_dentry(const char *name)
 
 static void dentry_free_ads_entries(struct dentry *dentry)
 {
-	for (u16 i = 0; i < dentry->num_ads; i++) {
-		FREE(dentry->ads_entries[i].stream_name);
-		FREE(dentry->ads_entries[i].stream_name_utf8);
-	}
+	for (u16 i = 0; i < dentry->num_ads; i++)
+		destroy_ads_entry(&dentry->ads_entries[i]);
 	FREE(dentry->ads_entries);
 	dentry->ads_entries = NULL;
 	dentry->num_ads = 0;
@@ -566,36 +630,59 @@ static inline void recalculate_dentry_size(struct dentry *dentry)
 	dentry->length = (dentry->length + 7) & ~7;
 }
 
+static int do_name_change(char **file_name_ret,
+			  char **file_name_utf8_ret,
+			  u16 *file_name_len_ret,
+			  u16 *file_name_utf8_len_ret,
+			  const char *new_name)
+{
+	size_t utf8_len;
+	size_t utf16_len;
+	char *file_name, *file_name_utf8;
+
+	utf8_len = strlen(new_name);
+
+	file_name = utf8_to_utf16(new_name, utf8_len, &utf16_len);
+
+	if (!file_name)
+		return WIMLIB_ERR_NOMEM;
+
+	file_name_utf8 = MALLOC(utf8_len + 1);
+	if (!file_name_utf8) {
+		FREE(file_name);
+		return WIMLIB_ERR_NOMEM;
+	}
+	memcpy(file_name_utf8, new_name, utf8_len + 1);
+
+	FREE(*file_name_ret);
+	FREE(*file_name_utf8_ret);
+	*file_name_ret          = file_name;
+	*file_name_utf8_ret     = file_name_utf8;
+	*file_name_len_ret      = utf16_len;
+	*file_name_utf8_len_ret = utf8_len;
+}
+
 /* Changes the name of a dentry to @new_name.  Only changes the file_name and
  * file_name_utf8 fields; does not change the short_name, short_name_utf8, or
  * full_path_utf8 fields.  Also recalculates its length. */
 int change_dentry_name(struct dentry *dentry, const char *new_name)
 {
-	size_t utf8_len;
-	size_t utf16_len;
+	int ret;
 
-	FREE(dentry->file_name);
+	ret = do_name_change(&dentry->file_name, &dentry->file_name_utf8,
+			     &dentry->file_name_len, &dentry->file_name_utf8_len,
+			     new_name);
+	if (ret == 0)
+		recalculate_dentry_size(dentry);
+	return ret;
+}
 
-	utf8_len = strlen(new_name);
-
-	dentry->file_name = utf8_to_utf16(new_name, utf8_len, &utf16_len);
-
-	if (!dentry->file_name)
-		return WIMLIB_ERR_NOMEM;
-
-	FREE(dentry->file_name_utf8);
-	dentry->file_name_utf8 = MALLOC(utf8_len + 1);
-	if (!dentry->file_name_utf8) {
-		FREE(dentry->file_name);
-		dentry->file_name = NULL;
-		return WIMLIB_ERR_NOMEM;
-	}
-
-	dentry->file_name_len = utf16_len;
-	dentry->file_name_utf8_len = utf8_len;
-	memcpy(dentry->file_name_utf8, new_name, utf8_len + 1);
-	recalculate_dentry_size(dentry);
-	return 0;
+int change_ads_name(struct ads_entry *entry, const char *new_name)
+{
+	return do_name_change(&entry->stream_name, &entry->stream_name_utf8,
+			      &entry->stream_name_len,
+			      &entry->stream_name_utf8_len,
+			      new_name);
 }
 
 /* Parameters for calculate_dentry_statistics(). */
@@ -611,21 +698,31 @@ static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
 {
 	struct image_statistics *stats;
 	struct lookup_table_entry *lte; 
+	u16 i;
 	
 	stats = arg;
-	lte = lookup_resource(stats->lookup_table, dentry->hash);
 
 	if (dentry_is_directory(dentry) && !dentry_is_root(dentry))
 		++*stats->dir_count;
 	else
 		++*stats->file_count;
 
-	if (lte) {
-		u64 size = lte->resource_entry.original_size;
-		*stats->total_bytes += size;
-		if (++lte->out_refcnt == 1)
-			*stats->hard_link_bytes += size;
+	lte = __lookup_resource(stats->lookup_table, dentry->hash);
+	i = 0;
+	while (1) {
+		if (lte) {
+			u64 size = lte->resource_entry.original_size;
+			*stats->total_bytes += size;
+			if (++lte->out_refcnt == 1)
+				*stats->hard_link_bytes += size;
+		}
+		if (i == dentry->num_ads)
+			break;
+		lte = __lookup_resource(stats->lookup_table,
+					dentry->ads_entries[i].hash);
+		i++;
 	}
+
 	return 0;
 }
 
@@ -709,7 +806,7 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 		cur_entry->stream_name_utf8 = utf16_to_utf8(cur_entry->stream_name,
 							    cur_entry->stream_name_len,
 							    &utf8_len);
-		cur_entry->stream_name_len_utf8 = utf8_len;
+		cur_entry->stream_name_utf8_len = utf8_len;
 
 		if (!cur_entry->stream_name_utf8) {
 			ret = WIMLIB_ERR_NOMEM;

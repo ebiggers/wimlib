@@ -118,7 +118,7 @@ void lookup_table_unlink(struct lookup_table *table,
 /* Decrement the reference count for the dentry having hash value @hash in the
  * lookup table.  The lookup table entry is unlinked and freed if there are no
  * references to in remaining.  */
-void lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
+bool lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
 {
 	size_t pos = *(size_t*)hash % table->capacity;
 	struct lookup_table_entry *prev = NULL;
@@ -129,36 +129,21 @@ void lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
 		if (memcmp(hash, entry->hash, WIM_HASH_SIZE) == 0) {
 			wimlib_assert(entry->refcnt != 0);
 			if (--entry->refcnt == 0) {
-				free_lookup_table_entry(entry);
+				if (entry->staging_num_times_opened == 0)
+					free_lookup_table_entry(entry);
 				if (prev)
 					prev->next = next;
 				else
 					table->array[pos] = next;
+				return true;
 			}
 		}
 		prev = entry;
 		entry = next;
 	}
+	return false;
 }
 
-/* 
- * Looks up an entry in the lookup table.
- */
-struct lookup_table_entry *lookup_resource(const struct lookup_table *lookup_table, 
-				     	   const u8 hash[])
-{
-	size_t pos;
-	struct lookup_table_entry *lte;
-
-	pos = *(size_t*)hash % lookup_table->capacity;
-	lte = lookup_table->array[pos];
-	while (lte) {
-		if (memcmp(hash, lte->hash, WIM_HASH_SIZE) == 0)
-			return lte;
-		lte = lte->next;
-	}
-	return NULL;
-}
 
 /* 
  * Calls a function on all the entries in the lookup table.  Stop early and
@@ -349,8 +334,59 @@ WIMLIBAPI void wimlib_print_lookup_table(WIMStruct *w)
 			       print_lookup_table_entry, NULL);
 }
 
-/*struct lookup_table_entry *lookup_resource(const struct lookup_table *table,*/
-					/*const char *path, int lookup_flags)*/
-/*{*/
-	/*return lookup_resource(w->lookup_table, dentry->hash);*/
-/*}*/
+/* 
+ * Looks up an entry in the lookup table.
+ */
+struct lookup_table_entry *
+__lookup_resource(const struct lookup_table *lookup_table, const u8 hash[])
+{
+	size_t pos;
+	struct lookup_table_entry *lte;
+
+	pos = *(size_t*)hash % lookup_table->capacity;
+	lte = lookup_table->array[pos];
+	while (lte) {
+		if (memcmp(hash, lte->hash, WIM_HASH_SIZE) == 0)
+			return lte;
+		lte = lte->next;
+	}
+	return NULL;
+}
+
+int lookup_resource(WIMStruct *w, const char *path,
+		    int lookup_flags,
+		    struct dentry **dentry_ret,
+		    struct lookup_table_entry **lte_ret,
+		    u8 **hash_ret)
+{
+	struct dentry *dentry = get_dentry(w, path);
+	struct lookup_table_entry *lte;
+	const u8 *hash;
+	if (!dentry)
+		return -ENOENT;
+	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
+	      && dentry_is_directory(dentry))
+		return -EISDIR;
+	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
+		const char *stream_name = path_stream_name(path);
+		if (stream_name) {
+			for (u16 i = 0; i < dentry->num_ads; i++) {
+				if (strcmp(stream_name, dentry->ads_entries[i].stream_name) == 0) {
+					hash = dentry->ads_entries[i].hash;
+					goto do_lookup;
+				}
+			}
+			return -ENOENT;
+		}
+	}
+	hash = dentry->hash;
+do_lookup:
+	lte = __lookup_resource(w->lookup_table, hash);
+	if (dentry_ret)
+		*dentry_ret = dentry;
+	if (lte_ret)
+		*lte_ret = lte;
+	if (hash_ret)
+		*hash_ret = hash;
+	return 0;
+}

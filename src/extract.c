@@ -97,7 +97,7 @@ static int extract_regular_file(WIMStruct *w,
 	int out_fd;
 	const struct resource_entry *res_entry;
 
-	lte = lookup_resource(w->lookup_table, dentry_hash(dentry));
+	lte = __lookup_resource(w->lookup_table, dentry_hash(dentry));
 
 	/* If we already extracted the same file or a hard link copy of it, we
 	 * may be able to simply create a link.  The exact action is specified

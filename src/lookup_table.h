@@ -7,7 +7,9 @@
 /* Size of each lookup table entry in the WIM file. */
 #define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
 
-#define LOOKUP_FLAG_ADS_OK
+#define LOOKUP_FLAG_ADS_OK		0x00000001
+#define LOOKUP_FLAG_DIRECTORY_OK	0x00000002
+#define LOOKUP_FLAG_FOLLOW_SYMLINKS	0x00000004
 
 
 /* A lookup table that is used to translate the hash codes of dentries into the
@@ -112,6 +114,7 @@ struct lookup_table_entry {
 		bool refcnt_is_incremented;
 	};
 	struct resource_entry output_resource_entry;
+	struct dentry *hard_link_sets;
 };
 
 extern struct lookup_table *new_lookup_table(size_t capacity);
@@ -122,7 +125,7 @@ extern void lookup_table_insert(struct lookup_table *table,
 extern void lookup_table_unlink(struct lookup_table *table, 
 				struct lookup_table_entry *lte);
 
-extern void lookup_table_decrement_refcnt(struct lookup_table* table, 
+extern bool lookup_table_decrement_refcnt(struct lookup_table* table, 
 					  const u8 hash[]);
 
 
@@ -132,15 +135,13 @@ extern int for_lookup_table_entry(struct lookup_table *table,
 				  int (*visitor)(struct lookup_table_entry *, void *), 
 				  void *arg);
 
-extern struct lookup_table_entry *lookup_resource(const struct lookup_table *table,
-					    const u8 hash[]);
+extern struct lookup_table_entry *
+__lookup_resource(const struct lookup_table *lookup_table, const u8 hash[]);
 
-static inline struct lookup_table_entry *
-wim_lookup_resource(const WIMStruct *w, const struct dentry *dentry)
-{
-	return lookup_resource(w->lookup_table, dentry->hash);
-}
-
+extern int lookup_resource(WIMStruct *w, const char *path,
+			   int lookup_flags, struct dentry **dentry_ret,
+			   struct lookup_table_entry **lte_ret,
+			   u8 **hash_ret);
 
 extern int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore);
 

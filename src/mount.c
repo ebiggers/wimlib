@@ -66,6 +66,14 @@ static int mount_flags;
 static const char *mount_dir;
 
 
+static inline int get_lookup_flags()
+{
+	if (mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
+		return LOOKUP_FLAG_ADS_OK;
+	else
+		return 0;
+}
+
 /* 
  * Creates a randomly named staging directory and returns its name into the
  * static variable staging_dir_name.
@@ -317,35 +325,40 @@ static int close_staging_file(struct lookup_table_entry *lte, void *ignore)
  * file.  Updates the SHA1 sum in the dentry and the lookup table entry.  If
  * there is already a lookup table entry with the same checksum, increment its
  * reference count and destroy the lookup entry with the updated checksum. */
-static int calculate_sha1sum_for_staging_file(struct dentry *dentry, void *lookup_table)
+static int calculate_sha1sum_for_staging_file(struct dentry *dentry,
+					      void *_lookup_table)
 {
-	struct lookup_table *table;
-	struct lookup_table_entry *lte; 
-	struct lookup_table_entry *existing;
-	int ret;
+	struct lookup_table *lookup_table =  _lookup_table;
+	u8 *hash = dentry->hash;
+	u16 i = 0;
+	while (1) {
+		struct lookup_table_entry *lte = __lookup_resource(lookup_table, hash);
+		if (lte && lte->staging_file_name) {
+			struct lookup_table_entry *existing;
+			int ret;
 
-	table = lookup_table;
-	lte = lookup_resource(table, dentry->hash);
-	
-	if (lte && lte->staging_file_name) {
+			DEBUG("Calculating SHA1 hash for file `%s'",
+			      dentry->file_name_utf8);
+			ret = sha1sum(lte->staging_file_name, lte->hash);
+			if (ret != 0)
+				return ret;
 
-		DEBUG("Calculating SHA1 hash for file `%s'",
-		      dentry->file_name_utf8);
-		ret = sha1sum(lte->staging_file_name, dentry->hash);
-		if (ret != 0)
-			return ret;
-
-		lookup_table_unlink(table, lte);
-		memcpy(lte->hash, dentry->hash, WIM_HASH_SIZE);
-		existing = lookup_resource(table, dentry->hash);
-		if (existing) {
-			DEBUG("Merging duplicate lookup table entries for file "
-			      "`%s'", dentry->file_name_utf8);
-			free_lookup_table_entry(lte);
-			existing->refcnt++;
-		} else {
-			lookup_table_insert(table, lte);
+			lookup_table_unlink(lookup_table, lte);
+			memcpy(hash, lte->hash, WIM_HASH_SIZE);
+			existing = __lookup_resource(lookup_table, hash);
+			if (existing) {
+				DEBUG("Merging duplicate lookup table entries for file "
+				      "`%s'", dentry->file_name_utf8);
+				free_lookup_table_entry(lte);
+				existing->refcnt++;
+			} else {
+				lookup_table_insert(lookup_table, lte);
+			}
 		}
+		if (i == dentry->num_ads)
+			break;
+		hash = dentry->ads_entries[i].hash;
+		i++;
 	}
 	return 0;
 }
@@ -509,7 +522,7 @@ static int wimfs_mkdir(const char *path, mode_t mode)
  * @return:  The file descriptor for the new file.  Returns -1 and sets errno on
  * 		error, for any reason possible from the creat() function.
  */
-static int create_staging_file(char **name_ret)
+static int create_staging_file(char **name_ret, int open_flags)
 {
 	size_t name_len;
 	char *name;
@@ -524,29 +537,28 @@ static int create_staging_file(char **name_ret)
 		return -1;
 	}
 
-	memcpy(name, staging_dir_name, staging_dir_name_len);
-	name[staging_dir_name_len] = '/';
-	randomize_char_array_with_alnum(name + staging_dir_name_len + 1,
-					WIM_HASH_SIZE);
-	name[name_len] = '\0';
+	do {
+
+		memcpy(name, staging_dir_name, staging_dir_name_len);
+		name[staging_dir_name_len] = '/';
+		randomize_char_array_with_alnum(name + staging_dir_name_len + 1,
+						WIM_HASH_SIZE);
+		name[name_len] = '\0';
 
 
 	/* Just in case, verify that the randomly generated name doesn't name an
 	 * existing file, and try again if so  */
-	if (stat(name, &stbuf) == 0) {
-		/* stat succeeded-- the file must exist. Try another name. */
-		FREE(name);
-		return create_staging_file(name_ret);
-	} else {
-		if (errno != ENOENT)
-			/* other error! */
-			return -1;
-		/* doesn't exist--- ok */
-	}
+	} while (stat(name, &stbuf) == 0);
 
-	DEBUG("Creating staging file '%s'", name);
+	if (errno != ENOENT)
+		/* other error! */
+		return -1;
 
-	fd = creat(name, 0600); 
+	/* doesn't exist--- ok */
+
+	DEBUG("Creating staging file `%s'", name);
+
+	fd = open(name, mode | O_CREAT | O_TRUNC, 0600); 
 	if (fd == -1) {
 		errno_save = errno;
 		FREE(name);
@@ -557,111 +569,106 @@ static int create_staging_file(char **name_ret)
 	return fd;
 }
 
-/* Creates a regular file.  This is done in the staging directory.  */
+/* Creates a regular file. */
 static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
-	struct dentry *parent, *dentry;
-	const char *basename;
-	struct lookup_table_entry *lte;
-	char *tmpfile_name;
-	int fd;
-	int err;
+	const char *stream_name;
+	if ((mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
+	     && (stream_name = path_stream_name(path))) {
+		struct ads_entry *new_entry;
+		struct dentry *dentry;
 
-	/* Make sure that the parent of @path exists and is a directory, and
-	 * that the dentry named by @path does not already exist.  */
-	parent = get_parent_dentry(w, path);
-	if (!parent)
-		return -ENOENT;
-	if (!dentry_is_directory(parent))
-		return -ENOTDIR;
-	basename = path_basename(path);
-	if (get_dentry_child_with_name(parent, path))
-		return -EEXIST;
+		dentry = get_dentry(w, path);
+		if (!dentry || !dentry_is_regular_file(dentry))
+			return -ENOENT;
+		if (dentry_get_ads_entry(dentry, stream_name))
+			return -EEXIST;
+		new_entry = dentry_add_ads(dentry, stream_name);
+		if (!new_entry)
+			return -ENOENT;
+	} else {
+		struct dentry *dentry, *parent;
+		const char *basename;
 
-	dentry = new_dentry(basename);
+		/* Make sure that the parent of @path exists and is a directory, and
+		 * that the dentry named by @path does not already exist.  */
+		parent = get_parent_dentry(w, path);
+		if (!parent)
+			return -ENOENT;
+		if (!dentry_is_directory(parent))
+			return -ENOTDIR;
+		basename = path_basename(path);
+		if (get_dentry_child_with_name(parent, path))
+			return -EEXIST;
 
-	/* XXX fill in a temporary random hash value- really should check for
-	 * duplicates */
-	randomize_byte_array(dentry->hash, WIM_HASH_SIZE);
-
-	/* Create a lookup table entry having the same hash value */
-	lte = new_lookup_table_entry();
-	memcpy(lte->hash, dentry->hash, WIM_HASH_SIZE);
-
-	fd = create_staging_file(&tmpfile_name);
-
-	if (fd == -1)
-		goto mknod_error;
-
-	if (close(fd) != 0)
-		goto mknod_error;
-
-	lte->staging_file_name = tmpfile_name;
-
-	/* Insert the lookup table entry, and link the new dentry with its
-	 * parent. */
-	lookup_table_insert(w->lookup_table, lte);
-	link_dentry(dentry, parent);
+		dentry = new_dentry(basename);
+		link_dentry(dentry, parent);
+	}
 	return 0;
-mknod_error:
-	err = errno;
-	free_lookup_table_entry(lte);
-	return -err;
 }
+
 
 /* Open a file.  */
 static int wimfs_open(const char *path, struct fuse_file_info *fi)
 {
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
-	
-	dentry = get_dentry(w, path);
+	u8 *dentry_hash;
+	int ret;
 
-	if (!dentry)
-		return -ENOENT;
-	if (dentry_is_directory(dentry))
-		return -EISDIR;
-	lte = wim_lookup_resource(w, dentry);
+	ret = lookup_resource(w, path, get_lookup_flags(), &dentry, &lte,
+			      &dentry_hash);
+	if (ret != 0)
+		return ret;
 
 	if (lte) {
 		/* If this file is in the staging directory and the file is not
 		 * currently open, open it. */
-		if (lte->staging_file_name && lte->staging_num_times_opened == 0) {
-			lte->staging_fd = open(lte->staging_file_name, O_RDWR);
-			if (lte->staging_fd == -1)
-				return -errno;
-			lte->staging_offset = 0;
+		if (lte->staging_file_name) {
+ 			if (lte->staging_num_times_opened == 0) {
+				lte->staging_fd = open(lte->staging_file_name, O_RDWR);
+				if (lte->staging_fd == -1)
+					return -errno;
+				lte->staging_offset = 0;
+			}
+		} else {
+			/* File in the WIM.  We must extract it to the staging directory
+			 * before it can be written to.  */
+			ret = extract_resource_to_staging_dir(dentry_hash, lte,
+							      lte->resource_entry.original_size);
+			if (ret != 0)
+				return ret;
 		}
 	} else {
-		/* no lookup table entry, so the file must be empty.  Create a
-		 * lookup table entry for the file, unless it's a read-only
-		 * filesystem.  */
+		/* Empty file with no lookup-table entry.  This is fine if it's
+		 * a read-only filesystem.  Otherwise we need to move the file
+		 * to the staging directory with a new lookup table entry, even
+		 * if we aren't opening it for writing at the moment, so that we
+		 * will have a lookup table entry for the file in case it's
+		 * changed. */
+		if (!(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
+			fi->fd = 0;
+			return 0;
+		}
 		char *tmpfile_name;
 		int fd;
 
-		if (!staging_dir_name) /* Read-only filesystem */
-			return 0;
+		fd = create_staging_file(&tmpfile_name, O_RDWR);
+		if (fd == -1)
+			return -errno;
 
 		lte = new_lookup_table_entry();
 		if (!lte)
 			return -ENOMEM;
 
-		fd = create_staging_file(&tmpfile_name);
-
-		if (fd == -1) {
-			int err = errno;
-			free(lte);
-			return -err;
-		}
-		lte->resource_entry.original_size = 0;
 		randomize_byte_array(lte->hash, WIM_HASH_SIZE);
-		memcpy(dentry->hash, lte->hash, WIM_HASH_SIZE);
+		memcpy(dentry_hash, lte->hash, WIM_HASH_SIZE);
 		lte->staging_file_name = tmpfile_name;
 		lte->staging_fd = fd;
-		lte->staging_offset = 0;
 		lookup_table_insert(w->lookup_table, lte);
 	}
 	lte->staging_num_times_opened++;
+	fi->fd = (uint64_t)lte;
 	return 0;
 }
 
@@ -673,6 +680,7 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 	dentry = get_dentry(w, path);
 	if (!dentry || !dentry_is_directory(dentry))
 		return -ENOTDIR;
+	fi->fd = (uint64_t)dentry;
 	return 0;
 }
 
@@ -683,19 +691,9 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 static int wimfs_read(const char *path, char *buf, size_t size, 
 		off_t offset, struct fuse_file_info *fi)
 {
-	struct dentry *dentry;
 	struct lookup_table_entry *lte;
-	
-	dentry = get_dentry(w, path);
 
-	if (!dentry)
-		return -EEXIST;
-
-	if (!dentry_is_regular_file(dentry))
-		return -EISDIR;
-
-	lte = wim_lookup_resource(w, dentry);
-
+	lte = (struct lookup_table_entry*)fi->fh;
 	if (!lte)
 		return 0;
 
@@ -752,18 +750,7 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
 				off_t offset, struct fuse_file_info *fi)
 {
-	struct dentry *parent;
-	struct dentry *child;
-	struct stat st;
-
-	parent = get_dentry(w, path);
-
-	if (!parent)
-		return -EEXIST;
-
-	if (!dentry_is_directory(parent))
-		return -ENOTDIR;
-
+	struct dentry *parent = (struct dentry*) fi->fh;
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 
@@ -799,23 +786,18 @@ static int wimfs_readlink(const char *path, char *buf, size_t buf_len)
 /* Close a file. */
 static int wimfs_release(const char *path, struct fuse_file_info *fi)
 {
-	struct dentry *dentry;
 	struct lookup_table_entry *lte;
 	int ret;
-	
-	dentry = get_dentry(w, path);
-	if (!dentry)
-		return -EEXIST;
-	lte = wim_lookup_resource(w, dentry);
 
-	if (!lte)
-		return 0;
+	lte = (struct lookup_table_entry*)fi->fh;
 	
-	if (lte->staging_num_times_opened == 0)
+	if (!lte || lte->staging_num_times_opened == 0)
 		return -EBADF;
 
 	if (--lte->staging_num_times_opened == 0 && lte->staging_file_name) {
 		ret = close(lte->staging_fd);
+		if (lte->refcnt == 0)
+			free_lookup_table_entry(lte);
 		if (ret != 0)
 			return -errno;
 	}
@@ -872,10 +854,10 @@ static int wimfs_rmdir(const char *path)
 	
 	dentry = get_dentry(w, path);
 	if (!dentry)
-		return -EEXIST;
+		return -ENOENT;
 
 	if (!dentry_is_empty_directory(dentry))
-		return -EEXIST;
+		return -ENOTEMPTY;
 
 	unlink_dentry(dentry);
 	free_dentry(dentry);
@@ -892,7 +874,7 @@ static int wimfs_rmdir(const char *path)
  *
  * Returns the negative error code on failure.
  */
-static int extract_resource_to_staging_dir(struct dentry *dentry, 
+static int extract_resource_to_staging_dir(u8 *dentry_hash,
 					   struct lookup_table_entry *lte, 
 					   u64 size)
 {
@@ -925,8 +907,8 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 		new_lte = new_lookup_table_entry();
 		if (!new_lte)
 			return -ENOMEM;
-		randomize_byte_array(dentry->hash, WIM_HASH_SIZE);
-		memcpy(new_lte->hash, dentry->hash, WIM_HASH_SIZE);
+		randomize_byte_array(dentry_hash, WIM_HASH_SIZE);
+		memcpy(new_lte->hash, dentry_hash, WIM_HASH_SIZE);
 
 		new_lte->resource_entry.flags = 0;
 		new_lte->staging_num_times_opened = lte->staging_num_times_opened;
@@ -952,14 +934,17 @@ static int wimfs_truncate(const char *path, off_t size)
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
 	int ret;
+	u8 *dentry_hash;
+	
+	ret = lookup_resource(w, path, get_lookup_flags(), &dentry,
+			      &lte, &dentry_hash);
 
-	dentry = get_dentry(w, path);
-	if (!dentry)
-		return -EEXIST;
-	lte = wim_lookup_resource(w, dentry);
+	if (ret != 0)
+		return ret;
 
 	if (!lte) /* Already a zero-length file */
 		return 0;
+
 	if (lte->staging_file_name) {
 		/* File on disk.  Call POSIX API */
 		if (lte->staging_num_times_opened != 0)
@@ -970,12 +955,12 @@ static int wimfs_truncate(const char *path, off_t size)
 			return -errno;
 		dentry_update_all_timestamps(dentry);
 		lte->resource_entry.original_size = size;
-		return 0;
 	} else {
 		/* File in WIM.  Extract it to the staging directory, but only
 		 * the first @size bytes of it. */
-		return extract_resource_to_staging_dir(dentry, lte, size);
+		ret = extract_resource_to_staging_dir(dentry_hash, lte, size);
 	}
+	return ret;
 }
 
 /* Remove a regular file */
@@ -983,27 +968,52 @@ static int wimfs_unlink(const char *path)
 {
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
+	int ret;
+	u8 *dentry_hash;
 	
-	dentry = get_dentry(w, path);
-	if (!dentry)
-		return -EEXIST;
+	ret = lookup_resource(w, path, get_lookup_flags(), &dentry,
+			      &lte, &dentry_hash);
 
-	if (!dentry_is_regular_file(dentry))
-		return -EEXIST;
+	if (ret != 0)
+		return ret;
 
-	lte = wim_lookup_resource(w, dentry);
-	if (lte) {
-		if (lte->staging_file_name)
-			if (unlink(lte->staging_file_name) != 0)
-				return -errno;
-		lookup_table_decrement_refcnt(w->lookup_table, dentry->hash);
+	if (lte && lte->staging_file_name)
+		if (unlink(lte->staging_file_name) != 0)
+			return -errno;
+
+	if (dentry_hash == dentry->hash) {
+		/* We are removing the full dentry including all alternate data
+		 * streams. */
+		const u8 *hash = dentry->hash;
+		u16 i = 0;
+		while (1) {
+			lookup_table_decrement_refcnt(w->lookup_table, hash);
+			if (i == dentry->num_ads)
+				break;
+			hash = dentry->ads_entries[i].hash;
+			i++;
+		}
+
+		unlink_dentry(dentry);
+		free_dentry(dentry);
+	} else {
+		/* We are removing an alternate data stream. */
+		struct ads_entry *cur_entry = dentry->ads_entries;
+		while (cur_entry->hash != dentry_hash)
+			cur_entry++;
+		lookup_table_decrement_refcnt(w->lookup_table, cur_entry->hash);
+		
+		dentry_remove_ads(dentry, cur_entry);
 	}
-
-	unlink_dentry(dentry);
-	free_dentry(dentry);
+	/* Beware: The lookup table entry(s) may still be referenced by users
+	 * that have opened the corresponding streams.  They are freed later in
+	 * wimfs_release() when the last file user has closed the stream. */
 	return 0;
 }
 
+/* Change the timestamp on a file dentry. 
+ *
+ * There is no distinction between a file and its alternate data streams here.  */
 static int wimfs_utimens(const char *path, const struct timespec tv[2])
 {
 	struct dentry *dentry = get_dentry(w, path);
@@ -1018,61 +1028,44 @@ static int wimfs_utimens(const char *path, const struct timespec tv[2])
 	return 0;
 }
 
-/* Writes to a file in the WIM filesystem. */
+/* Writes to a file in the WIM filesystem. 
+ * It may be an alternate data stream, but here we don't even notice because we
+ * just get a lookup table entry. */
 static int wimfs_write(const char *path, const char *buf, size_t size, 
-				off_t offset, struct fuse_file_info *fi)
+		       off_t offset, struct fuse_file_info *fi)
 {
-	struct dentry *dentry;
+	/* Grab our lookup table entry from the FUSE file info structure. */
 	struct lookup_table_entry *lte;
-	ssize_t ret;
+	lte = (struct lookup_table_entry*)fi->fh;
+	int ret;
 
-	dentry = get_dentry(w, path);
-	if (!dentry)
-		return -EEXIST;
-	lte = wim_lookup_resource(w, dentry);
-
-	if (!lte) /* this should not happen */
-		return -EEXIST;
-
-	if (lte->staging_num_times_opened == 0)
+	if (!lte || !lte->staging_file_name)
 		return -EBADF;
-	if (lte->staging_file_name) {
 
-		/* File in staging directory. We can write to it directly. */
-
-		/* Seek to correct position in file if needed. */
-		if (lte->staging_offset != offset) {
-			if (lseek(lte->staging_fd, offset, SEEK_SET) == -1)
-				return -errno;
-			lte->staging_offset = offset;
-		}
-
-		/* Write the data. */
-		ret = write(lte->staging_fd, buf, size);
-		if (ret == -1)
+	/* Seek to correct position in file if needed. */
+	if (lte->staging_offset != offset) {
+		if (lseek(lte->staging_fd, offset, SEEK_SET) == -1)
 			return -errno;
-
-		/* Adjust the stored offset of staging_fd. */
-		lte->staging_offset = offset + ret;
-
-		/* Increase file size if needed. */
-		if (lte->resource_entry.original_size < lte->staging_offset)
-			lte->resource_entry.original_size = lte->staging_offset;
-
-		/* The file has been modified, so all its timestamps must be
-		 * updated. */
-		dentry_update_all_timestamps(dentry);
-		return ret;
-	} else {
-		/* File in the WIM.  We must extract it to the staging directory
-		 * before it can be written to. */
-		ret = extract_resource_to_staging_dir(dentry, lte, 
-					lte->resource_entry.original_size);
-		if (ret != 0)
-			return ret;
-		else
-			return wimfs_write(path, buf, size, offset, fi);
+		lte->staging_offset = offset;
 	}
+
+	/* Write the data. */
+	ret = write(lte->staging_fd, buf, size);
+	if (ret == -1)
+		return -errno;
+
+	/* Adjust the stored offset of staging_fd. */
+	lte->staging_offset = offset + ret;
+
+	/* Increase file size if needed. */
+	if (lte->resource_entry.original_size < lte->staging_offset)
+		lte->resource_entry.original_size = lte->staging_offset;
+
+	/* The file has been modified, so all its timestamps must be
+	 * updated. */
+	dentry_update_all_timestamps(dentry);
+
+	return ret;
 }
 
 

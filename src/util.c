@@ -428,6 +428,16 @@ const char *path_basename(const char *path)
 	return p + 1;
 }
 
+const char *path_stream_name(const char *path)
+{
+	const char *base = path_basename(path);
+	const char *stream_name = strchr(base, ':');
+	if (!stream_name)
+		return NULL;
+	else
+		return stream_name + 1;
+}
+
 /* 
  * Splits a file path into the part before the first '/', or the entire name if
  * there is no '/', and the part after the first sequence of '/' characters.

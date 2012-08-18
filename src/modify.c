@@ -174,7 +174,7 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 		struct lookup_table_entry *lte;
 		struct lookup_table_entry *existing_lte;
 
-		existing_lte = lookup_resource(lookup_table, symlink_buf_hash);
+		existing_lte = __lookup_resource(lookup_table, symlink_buf_hash);
 		if (existing_lte) {
 			existing_lte->refcnt++;
 		} else {
@@ -192,17 +192,18 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 			lookup_table_insert(lookup_table, lte);
 		}
 	} else {
+		/* Regular file */
 		struct lookup_table_entry *lte;
 
-		/* For each non-directory, we must check to see if the file is
-		 * in the lookup table already; if it is, we increment its
-		 * refcnt; otherwise, we create a new lookup table entry and
-		 * insert it. */
+		/* For each regular file, we must check to see if the file is in
+		 * the lookup table already; if it is, we increment its refcnt;
+		 * otherwise, we create a new lookup table entry and insert it.
+		 * */
 		ret = sha1sum(root_disk_path, root->hash);
 		if (ret != 0)
 			return ret;
 
-		lte = lookup_resource(lookup_table, root->hash);
+		lte = __lookup_resource(lookup_table, root->hash);
 		if (lte) {
 			lte->refcnt++;
 		} else {

@@ -59,7 +59,7 @@ struct ads_entry {
 	u16 stream_name_len;
 
 	/* Length of stream name (UTF-8) */
-	u16 stream_name_len_utf8;
+	u16 stream_name_utf8_len;
 
 	/* Stream name (UTF-16) */
 	char *stream_name;
@@ -73,6 +73,14 @@ static inline u64 ads_entry_length(const struct ads_entry *entry)
 	u64 len = WIM_ADS_ENTRY_DISK_SIZE + entry->stream_name_len + 2;
 	return (len + 7) & ~7;
 }
+
+static inline void destroy_ads_entry(struct ads_entry *entry)
+{
+	FREE(entry->stream_name);
+	FREE(entry->stream_name_utf8);
+	memset(entry, 0, sizeof(entry));
+}
+
 
 /* In-memory structure for a directory entry.  There is a directory tree for
  * each image in the WIM.  */
@@ -177,6 +185,11 @@ struct dentry {
 	/* Number of references to the dentry tree itself, as in multiple
 	 * WIMStructs */
 	int refcnt;
+
+	/* Next dentry in the hard link set */
+	//struct dentry *next_dentry_in_link_set;
+	/* Next hard link that has a lookup table entry */
+	//struct dentry *next_link_set;
 };
 
 /* Return hash of the "unnamed" (default) data stream. */
@@ -191,6 +204,17 @@ static inline const u8 *dentry_hash(const struct dentry *dentry)
 			return dentry->ads_entries[i].hash;
 	return dentry->hash;
 }
+
+
+extern struct ads_entry *dentry_get_ads_entry(struct dentry *dentry,
+					      const char *stream_name);
+
+extern struct ads_entry *dentry_add_ads(struct dentry *dentry,
+					const char *stream_name);
+
+extern void dentry_remove_ads(struct dentry *dentry, struct ads_entry *entry);
+
+extern const char *path_stream_name(const char *path);
 
 extern u64 dentry_total_length(const struct dentry *dentry);
 
@@ -210,6 +234,7 @@ extern int for_dentry_in_tree_depth(struct dentry *root,
 extern int calculate_dentry_full_path(struct dentry *dentry, void *ignore);
 extern void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p);
 extern int change_dentry_name(struct dentry *dentry, const char *new_name);
+extern int change_ads_name(struct ads_entry *entry, const char *new_name);
 
 extern void unlink_dentry(struct dentry *dentry);
 extern void link_dentry(struct dentry *dentry, struct dentry *parent);
@@ -252,17 +277,6 @@ extern int dentry_set_symlink_buf(struct dentry *dentry,
 
 /* Inline utility functions for WIMDentries */
 
-/*
- * Returns true if @dentry has the UTF-8 file name @name that has length
- * @name_len.
- */
-static inline bool dentry_has_name(const struct dentry *dentry, const char *name, 
-				   size_t name_len)
-{
-	if (dentry->file_name_utf8_len != name_len)
-		return false;
-	return memcmp(dentry->file_name_utf8, name, name_len) == 0;
-}
 
 static inline bool dentry_is_root(const struct dentry *dentry)
 {
@@ -281,7 +295,8 @@ static inline bool dentry_is_only_child(const struct dentry *dentry)
 
 static inline bool dentry_is_directory(const struct dentry *dentry)
 {
-	return (dentry->attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+	return (dentry->attributes & FILE_ATTRIBUTE_DIRECTORY)
+		&& !(dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT);
 }
 
 /* For our purposes, we consider "real" symlinks and "junction points" to both
