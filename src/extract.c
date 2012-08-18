@@ -197,6 +197,25 @@ done:
 	return ret;
 }
 
+static int extract_symlink(const struct dentry *dentry, const char *output_path,
+			   const WIMStruct *w)
+{
+	char target[4096];
+	ssize_t ret = dentry_readlink(dentry, target, sizeof(target), w);
+	if (ret <= 0) {
+		ERROR("Could not read the symbolic link from dentry `%s'",
+		      dentry->full_path_utf8);
+		return WIMLIB_ERR_INVALID_DENTRY;
+	}
+	ret = symlink(target, output_path);
+	if (ret != 0) {
+		ERROR_WITH_ERRNO("Failed to symlink `%s' to `%s'",
+				 output_path, target);
+		return WIMLIB_ERR_LINK;
+	}
+	return 0;
+}
+
 /* 
  * Extracts a directory from the WIM archive. 
  *
@@ -239,13 +258,14 @@ struct extract_args {
  * @dentry:	The dentry to extract.
  * @arg:	A pointer to the WIMStruct for the WIM file.
  */
-static int extract_regular_file_or_directory(struct dentry *dentry, void *arg)
+static int extract_dentry(struct dentry *dentry, void *arg)
 {
 	struct extract_args *args = arg;
 	WIMStruct *w = args->w;
 	int extract_flags = args->extract_flags;
 	size_t len = strlen(w->output_dir);
 	char output_path[len + dentry->full_path_utf8_len + 1];
+	int ret = 0;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
 		puts(dentry->full_path_utf8);
@@ -254,13 +274,13 @@ static int extract_regular_file_or_directory(struct dentry *dentry, void *arg)
 	memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
-	if (dentry_is_regular_file(dentry)) {
-		return extract_regular_file(w, dentry, output_path, extract_flags);
+	if (dentry_is_symlink(dentry)) {
+		ret = extract_symlink(dentry, output_path, w);
+	} else if (dentry_is_directory(dentry)) {
+		if (!dentry_is_root(dentry)) /* Root doesn't need to be extracted. */
+			ret = extract_directory(dentry, output_path);
 	} else {
-		if (dentry_is_root(dentry)) /* Root doesn't need to be extracted. */
-			return 0;
-		else
-			return extract_directory(dentry, output_path);
+		ret = extract_regular_file(w, dentry, output_path, extract_flags);
 	}
 }
 
@@ -282,8 +302,7 @@ static int extract_single_image(WIMStruct *w, int image, int extract_flags)
 	#endif
 	};
 
-	return for_dentry_in_tree(wim_root_dentry(w),
-				  extract_regular_file_or_directory, &args);
+	return for_dentry_in_tree(wim_root_dentry(w), extract_dentry, &args);
 }
 
 

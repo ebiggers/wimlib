@@ -247,7 +247,7 @@ static int write_file_resources(WIMStruct *w)
 {
 
 	DEBUG("Writing file resources for image %u.", w->current_image);
-	return for_dentry_in_tree(wim_root_dentry(w), write_file_resource, w);
+	return for_dentry_in_tree(wim_root_dentry(w), write_dentry_resources, w);
 }
 
 /* Write the lookup table, xml data, and integrity table, then overwrite the WIM

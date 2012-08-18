@@ -1090,37 +1090,12 @@ int write_metadata_resource(WIMStruct *w)
 	return 0;
 }
 
-/* 
- * Writes a file resource to the output file. 
- *
- * @dentry:  The dentry for the file resource.
- * @wim_p:   A pointer to the WIMStruct.  The fields of interest to this
- * 	     function are the input and output file streams and the lookup
- * 	     table. 
- *
- * @return zero on success, nonzero on failure. 
- */
-int write_file_resource(struct dentry *dentry, void *wim_p)
+static int write_file_resource(WIMStruct *w, const u8 hash[])
 {
-	WIMStruct *w;
-	FILE *out_fp;
-	FILE *in_fp;
-	struct lookup_table_entry *lte;
-	int in_wim_ctype;
-	int out_wim_ctype;
-	struct resource_entry *output_res_entry;
-	u64 len;
-	int ret;
-
-	w = wim_p;
-	out_fp = w->out_fp;
-
-	/* Directories don't need file resources. */
-	if (dentry_is_directory(dentry))
-		return 0;
-
 	/* Get the lookup entry for the file resource. */
-	lte = wim_lookup_resource(w, dentry);
+	struct lookup_table_entry *lte;
+	
+	lte = lookup_resource(w->lookup_table, hash);
 	if (!lte)
 		return 0;
 
@@ -1129,16 +1104,43 @@ int write_file_resource(struct dentry *dentry, void *wim_p)
 	if (++lte->out_refcnt != 1)
 		return 0;
 
-	out_wim_ctype = wimlib_get_compression_type(w);
-	output_res_entry = &lte->output_resource_entry;
-
 	/* do not write empty resources */
 	if (lte->resource_entry.original_size == 0)
 		return 0;
 
+	int out_wim_ctype = wimlib_get_compression_type(w);
+	struct resource_entry *output_res_entry = &lte->output_resource_entry;
+	u64 len;
+	FILE *in_fp;
+	FILE *out_fp = w->out_fp;
+	int ret = 0;
+
 	/* Figure out if we can read the resource from the WIM file, or
-	 * if we have to read it from the filesystem outside. */
-	if (lte->file_on_disk) {
+	 * if we have to read it from the filesystem outside, or if it's a
+	 * symbolic link with the data already in memory pointed to by a field
+	 * of the lookup table entry. */
+	if (lte->is_symlink) {
+		off_t offset = ftello(w->out_fp);
+		u64 new_size;
+
+		if (offset == -1) {
+			ERROR_WITH_ERRNO("Could not get position in output "
+					 "file");
+			return WIMLIB_ERR_WRITE;
+		}
+
+		wimlib_assert(lte->symlink_buf);
+
+		len = lte->resource_entry.original_size;
+
+		recompress_resource(in_fp, lte->symlink_buf, len, len, 0,
+				    0, out_fp, out_wim_ctype, &new_size);
+		output_res_entry->size = new_size;
+		output_res_entry->original_size = len;
+		output_res_entry->offset = offset;
+		output_res_entry->flags = (out_wim_ctype == WIM_COMPRESSION_TYPE_NONE)
+						? 0 : WIM_RESHDR_FLAG_COMPRESSED;
+	} else if (lte->file_on_disk) {
 
 		/* Read from disk (uncompressed) */
 
@@ -1156,6 +1158,7 @@ int write_file_resource(struct dentry *dentry, void *wim_p)
 					     out_wim_ctype, output_res_entry);
 		fclose(in_fp);
 	} else {
+		int in_wim_ctype;
 
 		/* Read from input WIM (possibly compressed) */
 
@@ -1185,3 +1188,34 @@ int write_file_resource(struct dentry *dentry, void *wim_p)
 	}
 	return ret;
 }
+
+/* 
+ * Writes a dentry's resources to the output file. 
+ *
+ * @dentry:  The dentry for the file resource.
+ * @wim_p:   A pointer to the WIMStruct.  The fields of interest to this
+ * 	     function are the input and output file streams and the lookup
+ * 	     table, and the alternate data streams.
+ *
+ * @return zero on success, nonzero on failure. 
+ */
+int write_dentry_resources(struct dentry *dentry, void *wim_p)
+{
+	WIMStruct *w = wim_p;
+	int ret;
+
+	/* Directories don't need file resources. */
+	if (dentry_is_directory(dentry))
+		return 0;
+
+	ret = write_file_resource(w, dentry->hash);
+	if (ret != 0)
+		return ret;
+	for (u16 i = 0; i < dentry->num_ads; i++) {
+		ret = write_file_resource(w, dentry->ads_entries[i].hash);
+		if (ret != 0)
+			return ret;
+	}
+	return 0;
+}
+

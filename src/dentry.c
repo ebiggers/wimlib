@@ -52,10 +52,14 @@ u64 dentry_total_length(const struct dentry *dentry)
 /* Transfers file attributes from a `stat' buffer to a struct dentry. */
 void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 {
-	if (S_ISDIR(stbuf->st_mode))
+	if (S_ISLNK(stbuf->st_mode)) {
+		dentry->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
+		dentry->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+	} else if (S_ISDIR(stbuf->st_mode)) {
 		dentry->attributes = FILE_ATTRIBUTE_DIRECTORY;
-	else
+	} else {
 		dentry->attributes = FILE_ATTRIBUTE_NORMAL;
+	}
 }
 
 /* Transfers file attributes from a struct dentry to a `stat' buffer. */
@@ -360,11 +364,10 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	printf("Subdir offset     = %"PRIu64"\n", dentry->subdir_offset);
 	/*printf("Unused1           = 0x%"PRIu64"\n", dentry->unused1);*/
 	/*printf("Unused2           = %"PRIu64"\n", dentry->unused2);*/
-	printf("Creation Time     = %"PRIu64"\n", dentry->creation_time);
-	printf("Last Access Time  = %"PRIu64"\n", dentry->last_access_time);
-	printf("Last Write Time   = %"PRIu64"\n", dentry->last_write_time);
 	printf("Creation Time     = 0x%"PRIx64"\n", dentry->creation_time);
-	printf("Hash              = "); 
+	printf("Last Access Time  = 0x%"PRIx64"\n", dentry->last_access_time);
+	printf("Last Write Time   = 0x%"PRIx64"\n", dentry->last_write_time);
+	printf("Hash              = 0x"); 
 	print_hash(dentry->hash); 
 	putchar('\n');
 	printf("Reparse Tag       = 0x%"PRIx32"\n", dentry->reparse_tag);
@@ -395,6 +398,9 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 		printf("Name = \"%s\"\n", dentry->ads_entries[i].stream_name_utf8);
 		printf("Name Length (UTF-16) = %u\n",
 				dentry->ads_entries[i].stream_name_len);
+		printf("Hash              = 0x"); 
+		print_hash(dentry->ads_entries[i].hash); 
+		putchar('\n');
 		lte = lookup_resource(lookup_table, dentry->ads_entries[i].hash);
 		if (lte)
 			print_lookup_table_entry(lte, NULL);
@@ -438,6 +444,17 @@ struct dentry *new_dentry(const char *name)
 	return dentry;
 }
 
+static void dentry_free_ads_entries(struct dentry *dentry)
+{
+	for (u16 i = 0; i < dentry->num_ads; i++) {
+		FREE(dentry->ads_entries[i].stream_name);
+		FREE(dentry->ads_entries[i].stream_name_utf8);
+	}
+	FREE(dentry->ads_entries);
+	dentry->ads_entries = NULL;
+	dentry->num_ads = 0;
+}
+
 
 void free_dentry(struct dentry *dentry)
 {
@@ -445,6 +462,7 @@ void free_dentry(struct dentry *dentry)
 	FREE(dentry->file_name_utf8);
 	FREE(dentry->short_name);
 	FREE(dentry->full_path_utf8);
+	dentry_free_ads_entries(dentry);
 	FREE(dentry);
 }
 
@@ -932,6 +950,7 @@ out_free_file_name:
 static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 {
 	u8 *orig_p = p;
+	unsigned padding;
 	memset(p, 0, dentry->length);
 	p = put_u64(p, dentry->length);
 	p = put_u32(p, dentry->attributes);
@@ -952,6 +971,13 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	p = put_bytes(p, dentry->file_name_len, (u8*)dentry->file_name);
 	p = put_u16(p, 0); /* filename padding, 2 bytes. */
 	p = put_bytes(p, dentry->short_name_len, (u8*)dentry->short_name);
+
+	wimlib_assert(p - orig_p <= dentry->length);
+	if (p - orig_p < dentry->length)
+		p = put_zeroes(p, dentry->length - (p - orig_p));
+
+	p = put_zeroes(p, (8 - (p - orig_p) % 8) % 8);
+
 	for (u16 i = 0; i < dentry->num_ads; i++) {
 		p = put_u64(p, ads_entry_length(&dentry->ads_entries[i]));
 		p = put_u64(p, 0); /* Unused */
@@ -959,8 +985,9 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 		p = put_u16(p, dentry->ads_entries[i].stream_name_len);
 		p = put_bytes(p, dentry->ads_entries[i].stream_name_len,
 				 (u8*)dentry->ads_entries[i].stream_name);
+		p = put_zeroes(p, (8 - (p - orig_p) % 8) % 8);
 	}
-	return orig_p + dentry->length;
+	return p;
 }
 
 /* Recursive function that writes a dentry tree rooted at @tree, not including
@@ -1088,4 +1115,18 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 	}
 	dentry->children = first_child;
 	return ret;
+}
+
+int dentry_set_symlink_buf(struct dentry *dentry, const u8 symlink_buf_hash[])
+{
+	struct ads_entry *ads_entries;
+
+	ads_entries = CALLOC(2, sizeof(struct ads_entry));
+	if (!ads_entries)
+		return WIMLIB_ERR_NOMEM;
+	memcpy(ads_entries[1].hash, symlink_buf_hash, WIM_HASH_SIZE);
+	dentry_free_ads_entries(dentry);
+	dentry->num_ads = 2;
+	dentry->ads_entries = ads_entries;
+	return 0;
 }

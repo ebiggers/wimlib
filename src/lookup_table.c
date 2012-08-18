@@ -348,3 +348,9 @@ WIMLIBAPI void wimlib_print_lookup_table(WIMStruct *w)
 	for_lookup_table_entry(w->lookup_table, 
 			       print_lookup_table_entry, NULL);
 }
+
+/*struct lookup_table_entry *lookup_resource(const struct lookup_table *table,*/
+					/*const char *path, int lookup_flags)*/
+/*{*/
+	/*return lookup_resource(w->lookup_table, dentry->hash);*/
+/*}*/

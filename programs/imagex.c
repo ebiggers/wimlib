@@ -75,14 +75,14 @@ static const char *path_basename(const char *path)
 static const char *usage_strings[] = {
 [APPEND] = 
 "    imagex append DIRECTORY WIMFILE [\"IMAGE_NAME\"] [\"DESCRIPTION\"] [--boot]\n"
-"                  [--check] [--flags EDITIONID]\n",
+"                  [--check] [--flags EDITIONID] [--dereference]\n",
 [APPLY] = 
 "    imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all] DIRECTORY [--check]\n"
 "                 [--hardlink] [--symlink] [--verbose]\n",
 [CAPTURE] = 
 "    imagex capture DIRECTORY WIMFILE [\"IMAGE_NAME\"] [\"DESCRIPTION\"]\n"
 "       l           [--boot] [--check] [--compress[=TYPE]]\n"
-"                   [--flags \"EditionID\"] [--verbose]\n",
+"                   [--flags \"EditionID\"] [--verbose] [--dereference]\n",
 [DELETE] = 
 "    imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n",
 [DIR] = 
@@ -119,6 +119,7 @@ static const struct option append_options[] = {
 	{"boot",   no_argument,       NULL, 'b'},
 	{"check",  no_argument,       NULL, 'c'},
 	{"flags",    required_argument, NULL, 'f'},
+	{"dereference", no_argument, NULL, 'L'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option apply_options[] = {
@@ -136,6 +137,7 @@ static const struct option capture_options[] = {
 	{"flags",    required_argument, NULL, 'f'},
 	{"verbose",  no_argument,       NULL,'v'},
 	{"ntfs",     no_argument,	NULL, 'N'},
+	{"dereference", no_argument, NULL, 'L'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -312,6 +314,9 @@ static int imagex_append(int argc, const char **argv)
 		case 'f':
 			flags_element = optarg;
 			break;
+		case 'L':
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
+			break;
 		default:
 			usage(APPEND);
 			return -1;
@@ -454,6 +459,9 @@ static int imagex_capture(int argc, const char **argv)
 			break;
 		case 'N':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NTFS;
+			break;
+		case 'L':
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
 			break;
 		default:
 			usage(CAPTURE);

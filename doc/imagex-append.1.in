@@ -30,6 +30,10 @@ is included in the new WIM file, even if there was one before.
 .TP
 \fB--flags\fR \fIEDITIONID\fR
 Specify a string to use in the <FLAGS> element of the XML data for the image.
+.TP
+\fB--dereference\fR
+Follow symlinks; archive and dump the files they point to.  (The default is to
+archive the symlinks themselves)
 
 .SH EXAMPLES
 .IP 

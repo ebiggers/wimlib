@@ -36,6 +36,11 @@
 #include <dirent.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
+
+/** Private flag: Used to mark that we currently adding the root directory of
+ * the WIM. */
+#define WIMLIB_ADD_IMAGE_FLAG_ROOT 0x80000000
 
 static void destroy_image_metadata(struct image_metadata *imd,
 				   struct lookup_table *lt)
@@ -68,31 +73,52 @@ static void destroy_image_metadata(struct image_metadata *imd,
  *		to the WIM may still occur later when trying to actually read 
  *		the regular files in the tree into the WIM as file resources.
  */
-static int build_dentry_tree(struct dentry *root, const char *source_path, 
-			     struct stat *root_stat,
-			     struct lookup_table* lookup_table)
+static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
+			     struct lookup_table* lookup_table,
+			     int add_flags)
 {
-	int ret = 0;
+	DEBUG("`%s'", root_disk_path);
+	struct stat root_stbuf;
+	int ret;
+	int (*stat_fn)(const char *restrict, struct stat *restrict);
 
-	stbuf_to_dentry(root_stat, root);
+	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)
+		stat_fn = stat;
+	else
+		stat_fn = lstat;
+
+
+	ret = (*stat_fn)(root_disk_path, &root_stbuf);
+	if (ret != 0) {
+		ERROR_WITH_ERRNO("Failed to stat `%s'", root_disk_path);
+		return WIMLIB_ERR_STAT;
+	}
+
+	if ((add_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) && 
+	      !S_ISDIR(root_stbuf.st_mode)) {
+		ERROR("`%s' is not a directory", root_disk_path);
+		return WIMLIB_ERR_NOTDIR;
+	}
+	stbuf_to_dentry(&root_stbuf, root);
+	add_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
+
 	if (dentry_is_directory(root)) {
 		/* Open the directory on disk */
 		DIR *dir;
 		struct dirent *p;
-		struct stat child_stat;
 		struct dentry *child;
 
-		dir = opendir(source_path);
+		dir = opendir(root_disk_path);
 		if (!dir) {
 			ERROR_WITH_ERRNO("Failed to open the directory `%s'",
-					 source_path);
+					 root_disk_path);
 			return WIMLIB_ERR_OPEN;
 		}
 
 		/* Buffer for names of files in directory. */
-		size_t len = strlen(source_path);
+		size_t len = strlen(root_disk_path);
 		char name[len + 1 + FILENAME_MAX + 1];
-		memcpy(name, source_path, len);
+		memcpy(name, root_disk_path, len);
 		name[len] = '/';
 
 		/* Create a dentry for each entry in the directory on disk, and recurse
@@ -102,23 +128,69 @@ static int build_dentry_tree(struct dentry *root, const char *source_path,
 			      || (p->d_name[1] == '.' && p->d_name[2] == '\0')))
 					continue;
 			strcpy(name + len + 1, p->d_name);
-			if (stat(name, &child_stat) != 0) {
-				ERROR_WITH_ERRNO("Cannot stat `%s'", name);
-				ret = WIMLIB_ERR_STAT;
-				break;
-			}
 			child = new_dentry(p->d_name);
 			if (!child) {
 				ERROR("No memory to allocate new dentry");
 				return WIMLIB_ERR_NOMEM;
 			}
-			ret = build_dentry_tree(child, name, &child_stat, 
-						lookup_table);
+			ret = build_dentry_tree(child, name, lookup_table,
+						add_flags);
 			link_dentry(child, root);
 			if (ret != 0)
 				break;
 		}
 		closedir(dir);
+	} else if (dentry_is_symlink(root)) {
+		/* Archiving a symbolic link */
+		size_t symlink_buf_len;
+		char deref_name_buf[4096];
+		ssize_t ret = readlink(root_disk_path, deref_name_buf,
+				       sizeof(deref_name_buf) - 1);
+		if (ret == -1) {
+			ERROR_WITH_ERRNO("Failed to read target of "
+					 "symbolic link `%s'", root_disk_path);
+			return WIMLIB_ERR_STAT;
+		}
+		deref_name_buf[ret] = '\0';
+		DEBUG("Read symlink `%s'", deref_name_buf);
+		void *symlink_buf = make_symlink_reparse_data_buf(deref_name_buf,
+							          &symlink_buf_len);
+		if (!symlink_buf)
+			return WIMLIB_ERR_NOMEM;
+		DEBUG("Made symlink reparse data buf (len = %zu, name len = %zu)",
+				symlink_buf_len, ret);
+		
+		u8 symlink_buf_hash[WIM_HASH_SIZE];
+		sha1_buffer(symlink_buf, symlink_buf_len, symlink_buf_hash);
+
+		ret = dentry_set_symlink_buf(root, symlink_buf_hash);
+
+		if (ret != 0) {
+			FREE(symlink_buf);
+			return ret;
+		}
+		DEBUG("Created symlink buf");
+
+		struct lookup_table_entry *lte;
+		struct lookup_table_entry *existing_lte;
+
+		existing_lte = lookup_resource(lookup_table, symlink_buf_hash);
+		if (existing_lte) {
+			existing_lte->refcnt++;
+		} else {
+			DEBUG("Creating new lookup table entry");
+			lte = new_lookup_table_entry();
+			if (!lte) {
+				FREE(symlink_buf);
+				return WIMLIB_ERR_NOMEM;
+			}
+			lte->symlink_buf = symlink_buf;
+			lte->resource_entry.original_size = symlink_buf_len;
+			lte->resource_entry.size = symlink_buf_len;
+			lte->is_symlink = true;
+			memcpy(lte->hash, symlink_buf_hash, WIM_HASH_SIZE);
+			lookup_table_insert(lookup_table, lte);
+		}
 	} else {
 		struct lookup_table_entry *lte;
 
@@ -126,7 +198,7 @@ static int build_dentry_tree(struct dentry *root, const char *source_path,
 		 * in the lookup table already; if it is, we increment its
 		 * refcnt; otherwise, we create a new lookup table entry and
 		 * insert it. */
-		ret = sha1sum(source_path, root->hash);
+		ret = sha1sum(root_disk_path, root->hash);
 		if (ret != 0)
 			return ret;
 
@@ -134,7 +206,7 @@ static int build_dentry_tree(struct dentry *root, const char *source_path,
 		if (lte) {
 			lte->refcnt++;
 		} else {
-			char *file_on_disk = STRDUP(source_path);
+			char *file_on_disk = STRDUP(root_disk_path);
 			if (!file_on_disk) {
 				ERROR("Failed to allocate memory for file path");
 				return WIMLIB_ERR_NOMEM;
@@ -145,11 +217,8 @@ static int build_dentry_tree(struct dentry *root, const char *source_path,
 				return WIMLIB_ERR_NOMEM;
 			}
 			lte->file_on_disk = file_on_disk;
-			lte->resource_entry.flags = 0;
-			lte->refcnt       = 1;
-			lte->part_number  = 1;
-			lte->resource_entry.original_size = root_stat->st_size;
-			lte->resource_entry.size = root_stat->st_size;
+			lte->resource_entry.original_size = root_stbuf.st_size;
+			lte->resource_entry.size = root_stbuf.st_size;
 			memcpy(lte->hash, root->hash, WIM_HASH_SIZE);
 			lookup_table_insert(lookup_table, lte);
 		}
@@ -480,19 +549,9 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
 
 	root_dentry->attributes |= FILE_ATTRIBUTE_DIRECTORY;
 
-	/* Construct the dentry tree from the outside filesystem. */
-	if (stat(dir, &root_stat) != 0) {
-		ERROR_WITH_ERRNO("Failed to stat `%s'", dir);
-		ret = WIMLIB_ERR_STAT;
-		goto out_free_dentry_tree;
-	}
-	if (!S_ISDIR(root_stat.st_mode)) {
-		ERROR("`%s' is not a directory", dir);
-		ret = WIMLIB_ERR_NOTDIR;
-		goto out_free_dentry_tree;
-	}
 	DEBUG("Building dentry tree.");
-	ret = build_dentry_tree(root_dentry, dir, &root_stat, w->lookup_table);
+	ret = build_dentry_tree(root_dentry, dir, w->lookup_table,
+				flags | WIMLIB_ADD_IMAGE_FLAG_ROOT);
 
 	if (ret != 0) {
 		ERROR("Failed to build dentry tree for `%s'", dir);

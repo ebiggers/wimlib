@@ -7,6 +7,8 @@
 /* Size of each lookup table entry in the WIM file. */
 #define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
 
+#define LOOKUP_FLAG_ADS_OK
+
 
 /* A lookup table that is used to translate the hash codes of dentries into the
  * offsets and sizes of uncompressed or compressed file resources.  It is
@@ -35,6 +37,11 @@ struct lookup_table_entry {
 	/* Number of times this lookup table entry is referenced by dentries. */
 	u32 refcnt;
 
+	/* If %true, this lookup table entry corresponds to a symbolic link
+	 * reparse buffer.  @symlink_reparse_data_buf will give the target of
+	 * the symbolic link. */
+	bool is_symlink;
+
 	union {
 		/* SHA1 hash of the file resource pointed to by this lookup
 		 * table entry */
@@ -56,6 +63,7 @@ struct lookup_table_entry {
 	union {
 		char *file_on_disk;
 		char *staging_file_name;
+		void *symlink_buf;
 		struct lookup_table_entry *next_lte_in_swm;
 	};
 
@@ -132,6 +140,7 @@ wim_lookup_resource(const WIMStruct *w, const struct dentry *dentry)
 {
 	return lookup_resource(w->lookup_table, dentry->hash);
 }
+
 
 extern int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore);
 

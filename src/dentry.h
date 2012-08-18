@@ -5,16 +5,22 @@
 #include "config.h"
 #include <string.h>
 
+struct stat;
+struct lookup_table;
+typedef struct WIMStruct WIMStruct;
+
 /* Size of the struct dentry up to and including the file_name_len. */
 #define WIM_DENTRY_DISK_SIZE    102
 
 #define WIM_ADS_ENTRY_DISK_SIZE 38
 
+#ifndef WIM_HASH_SIZE
+#define WIM_HASH_SIZE 20
+#endif
+
 /* 
  * Reparse tags documented at 
  * http://msdn.microsoft.com/en-us/library/dd541667(v=prot.10).aspx
- *
- * IO_REPARSE_TAG_SYMLINK is the only one we really care about.
  */
 #define WIM_IO_REPARSE_TAG_RESERVED_ZERO	0x00000000
 #define WIM_IO_REPARSE_TAG_RESERVED_ONE		0x00000001
@@ -241,6 +247,9 @@ extern int read_dentry_tree(const u8 metadata_resource[],
 
 extern u8 *write_dentry_tree(const struct dentry *tree, u8 *p);
 
+extern int dentry_set_symlink_buf(struct dentry *dentry,
+				  const u8 symlink_buf_hash[]);
+
 /* Inline utility functions for WIMDentries */
 
 /*
@@ -275,15 +284,18 @@ static inline bool dentry_is_directory(const struct dentry *dentry)
 	return (dentry->attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
+/* For our purposes, we consider "real" symlinks and "junction points" to both
+ * be symlinks. */
 static inline bool dentry_is_symlink(const struct dentry *dentry)
 {
 	return (dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT)
-		&& (dentry->reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK);
+		&& ((dentry->reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK) ||
+		     dentry->reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
 }
 
 static inline bool dentry_is_regular_file(const struct dentry *dentry)
 {
-	return !dentry_is_directory(dentry);
+	return !dentry_is_directory(dentry) && !dentry_is_symlink(dentry);
 }
 
 static inline bool dentry_is_empty_directory(const struct dentry *dentry)

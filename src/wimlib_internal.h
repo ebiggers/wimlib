@@ -31,7 +31,10 @@
 
 struct stat;
 
+#ifndef WIM_HASH_SIZE
 #define WIM_HASH_SIZE  20
+#endif
+
 #define WIM_MAGIC_LEN  8
 #define WIM_GID_LEN    16
 #define WIM_UNUSED_LEN 60
@@ -44,8 +47,8 @@ struct stat;
  * of this size. */
 #define WIM_CHUNK_SIZE 32768
 
-/* Version of the WIM file.  I don't know if there has ever been a different
- * version or not. */
+/* Version of the WIM file.  There is an older version, but we don't support it
+ * yet.  The differences between the versions are undocumented. */
 #define WIM_VERSION 0x10d00
 
 enum wim_integrity_status {
@@ -367,13 +370,14 @@ static inline int read_full_resource(FILE *fp, u64 resource_size,
 				resource_original_size, 0, contents_ret);
 }
 
-extern int write_file_resource(struct dentry *dentry, void *wim_p);
+extern int write_dentry_resources(struct dentry *dentry, void *wim_p);
 extern int copy_resource(struct lookup_table_entry *lte, void *w);
 extern int copy_between_files(FILE *in, off_t in_offset, FILE *out, size_t len);
 extern int write_resource_from_memory(const u8 resource[], int out_ctype,
 				      u64 resource_original_size, FILE *out,
 				      u64 *resource_size_ret);
 extern int write_metadata_resource(WIMStruct *w);
+
 
 /* security.c */
 int read_security_data(const u8 metadata_resource[], 
@@ -382,6 +386,12 @@ int read_security_data(const u8 metadata_resource[],
 void print_security_data(const struct wim_security_data *sd);
 u8 *write_security_data(const struct wim_security_data *sd, u8 *p);
 void free_security_data(struct wim_security_data *sd);
+
+/* symlink.c */
+ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
+			const WIMStruct *w);
+extern void *make_symlink_reparse_data_buf(const char *symlink_target,
+					   size_t *len_ret);
 
 /* wim.c */
 extern WIMStruct *new_wim_struct();

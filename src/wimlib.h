@@ -276,6 +276,9 @@ enum wim_compression_type {
  * mounted with NTFS-3g, and wimlib was compiled with support for NTFS-3g  */
 #define WIMLIB_ADD_IMAGE_FLAG_NTFS		0x00000004
 
+/** Follow symlinks; archive and dump the files they point to. */
+#define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	0x00000008
+
 /** See documentation for wimlib_export_image(). */
 #define WIMLIB_EXPORT_FLAG_BOOT			0x00000001
 
