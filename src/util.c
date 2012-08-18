@@ -159,6 +159,8 @@ static const char *error_strings[] = {
 			"identify a WIM file",
 	[WIMLIB_ERR_NO_FILENAME] 
 		= "The WIM is not identified with a filename",
+	[WIMLIB_ERR_NTFS_3G]
+		= "NTFS-3g encountered an error (check errno)",
 	[WIMLIB_ERR_OPEN] 
 		= "Failed to open a file",
 	[WIMLIB_ERR_OPENDIR] 

@@ -35,6 +35,39 @@
 #include <string.h>
 #include <errno.h>
 
+#ifdef WITH_NTFS_3G
+#include <ntfs-3g/volume.h>
+#endif
+
+/* Sets and creates the directory to which files are to be extracted when
+ * extracting files from the WIM. */
+static int set_output_dir(WIMStruct *w, const char *dir)
+{
+	char *p;
+	DEBUG("Setting output directory to `%s'", dir);
+
+	p = STRDUP(dir);
+	if (!p) {
+		ERROR("Out of memory");
+		return WIMLIB_ERR_NOMEM;
+	}
+
+	if (mkdir(dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0) {
+		if (errno == EEXIST) {
+			DEBUG("`%s' already exists", dir);
+			goto done;
+		}
+		ERROR_WITH_ERRNO("Cannot create directory `%s'", dir);
+		FREE(p);
+		return WIMLIB_ERR_MKDIR;
+	} else {
+		DEBUG("Created directory `%s'", dir);
+	}
+done:
+	FREE(w->output_dir);
+	w->output_dir = p;
+	return 0;
+}
 
 /* 
  * Extracts a regular file from the WIM archive. 
@@ -57,26 +90,22 @@ static int extract_regular_file(WIMStruct *w,
 				const struct dentry *dentry, 
 				const char *output_path)
 {
-	struct lookup_table *lookup_table;
-	int link_type;
-	bool is_multi_image_extraction;
 	struct lookup_table_entry *lte;
 	int ret;
 	int out_fd;
 	const struct resource_entry *res_entry;
 
-	lookup_table = w->lookup_table;
-	link_type = w->link_type;
-	is_multi_image_extraction = w->is_multi_image_extraction;
-	lte = lookup_resource(lookup_table, dentry->hash);
+	lte = lookup_resource(w->lookup_table, dentry->hash);
 
 	/* If we already extracted the same file or a hard link copy of it, we
 	 * may be able to simply create a link.  The exact action is specified
 	 * by the current @link_type. */
-	if (link_type != WIM_LINK_TYPE_NONE && lte && lte->out_refcnt != 0) {
+	if ((w->extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) &&
+	      lte && lte->out_refcnt != 0)
+	{
 		wimlib_assert(lte->file_on_disk);
 
-		if (link_type == WIM_LINK_TYPE_HARD) {
+		if (w->extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
 			if (link(lte->file_on_disk, output_path) != 0) {
 				ERROR_WITH_ERRNO("Failed to hard link "
 						 "`%s' to `%s'",
@@ -96,7 +125,7 @@ static int extract_regular_file(WIMStruct *w,
 			num_output_dir_path_components =
 				get_num_path_components(w->output_dir);
 
-			if (is_multi_image_extraction) {
+			if (w->is_multi_image_extraction) {
 				num_path_components++;
 				num_output_dir_path_components--;
 			}
@@ -207,13 +236,12 @@ static int extract_regular_file_or_directory(struct dentry *dentry, void *arg)
 	size_t len = strlen(w->output_dir);
 	char output_path[len + dentry->full_path_utf8_len + 1];
 
-	if (w->verbose)
+	if (w->extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
 		puts(dentry->full_path_utf8);
 
 	memcpy(output_path, w->output_dir, len);
 	memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
 	output_path[len + dentry->full_path_utf8_len] = '\0';
-
 
 	if (dentry_is_regular_file(dentry)) {
 		return extract_regular_file(w, dentry, output_path);
@@ -263,7 +291,7 @@ static int extract_all_images(WIMStruct *w)
 			/* Image name is empty. Use image number instead */
 			sprintf(buf + output_path_len + 1, "%d", image);
 		}
-		ret = wimlib_set_output_dir(w, buf);
+		ret = set_output_dir(w, buf);
 		if (ret != 0)
 			goto done;
 		ret = extract_single_image(w, image);
@@ -273,70 +301,57 @@ static int extract_all_images(WIMStruct *w)
 done:
 	/* Restore original output directory */
 	buf[output_path_len + 1] = '\0';
-	return wimlib_set_output_dir(w, buf);
-}
-
-/* Extracts a single image or all images from a WIM file. */
-WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image)
-{
-	if (!w->output_dir) {
-		ERROR("No output directory selected.");
-		return WIMLIB_ERR_NOTDIR;
-	}
-	if (image == WIM_ALL_IMAGES) {
-		w->is_multi_image_extraction = true;
-		return extract_all_images(w);
-	} else {
-		w->is_multi_image_extraction = false;
-		return extract_single_image(w, image);
-	}
-
-}
-
-/* Sets and creates the directory to which files are to be extracted when
- * extracting files from the WIM. */
-WIMLIBAPI int wimlib_set_output_dir(WIMStruct *w, const char *dir)
-{
-	char *p;
-	DEBUG("Setting output directory to `%s'", dir);
-
-	if (!dir) {
-		ERROR("Must specify a directory!");
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-	p = STRDUP(dir);
-	if (!p) {
-		ERROR("Out of memory");
-		return WIMLIB_ERR_NOMEM;
-	}
-
-	if (mkdir(dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0) {
-		if (errno == EEXIST) {
-			DEBUG("`%s' already exists", dir);
-			goto done;
-		}
-		ERROR_WITH_ERRNO("Cannot create directory `%s'", dir);
-		FREE(p);
-		return WIMLIB_ERR_MKDIR;
-	} else {
-		DEBUG("Created directory `%s'", dir);
-	}
-done:
-	FREE(w->output_dir);
-	w->output_dir = p;
 	return 0;
 }
 
-WIMLIBAPI int wimlib_set_link_type(WIMStruct *w, int link_type)
+/* Extracts a single image or all images from a WIM file. */
+WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
+				   const char *output_dir, int flags)
 {
-	switch (link_type) {
-		case WIM_LINK_TYPE_NONE:
-		case WIM_LINK_TYPE_HARD:
-		case WIM_LINK_TYPE_SYMBOLIC:
-			w->link_type = link_type;
-			return 0;
-		default:
-			return WIMLIB_ERR_INVALID_PARAM;
-	}
-}
+	int ret;
+	if (!output_dir)
+		return WIMLIB_ERR_INVALID_PARAM;
+	if ((flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
+			== (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
+		return WIMLIB_ERR_INVALID_PARAM;
+	
+	ret = set_output_dir(w, output_dir);
+	if (ret != 0)
+		return ret;
 
+	if ((flags & WIMLIB_EXTRACT_FLAG_NTFS)) {
+	#ifdef WITH_NTFS_3G
+		unsigned long mnt_flags;
+		ret = ntfs_check_if_mounted(output_dir, &mnt_flags);
+		if (ret != 0) {
+			ERROR_WITH_ERRNO("NTFS-3g: Cannot determine if `%s' "
+					 "is mounted", output_dir);
+			return WIMLIB_ERR_NTFS_3G;
+		}
+		if (!(mnt_flags & NTFS_MF_MOUNTED)) {
+			ERROR("NTFS-3g: Filesystem on `%s' is not mounted ",
+			      output_dir);
+		}
+		if (mnt_flags & NTFS_MF_READONLY) {
+			ERROR("NTFS-3g: Filesystem on `%s' is mounted "
+			      "read-only", output_dir);
+			return WIMLIB_ERR_NTFS_3G;
+		}
+	#else
+		ERROR("wimlib was compiled without support for NTFS-3g, so");
+		ERROR("we cannot extract a WIM image while preserving NTFS-");
+		ERROR("specific information");
+		return WIMLIB_ERR_UNSUPPORTED;
+	#endif
+	}
+	w->extract_flags = flags;
+	if (image == WIM_ALL_IMAGES) {
+		w->is_multi_image_extraction = true;
+		ret = extract_all_images(w);
+	} else {
+		w->is_multi_image_extraction = false;
+		ret = extract_single_image(w, image);
+	}
+	return ret;
+
+}

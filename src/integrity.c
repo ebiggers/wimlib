@@ -209,8 +209,7 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 		      "the %"PRIu64" bytes from the end of the header to the",
 		      expected_num_entries, bytes_to_check);
 		ERROR("end of the lookup table with a chunk size of %u, but "
-		      "there were only %u entries", expected_num_entries,
-		      bytes_to_check, chunk_size, num_entries);
+		      "there were only %u entries", chunk_size, num_entries);
 		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 		goto out;
 	}

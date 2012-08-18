@@ -55,7 +55,7 @@ struct lookup_table_entry *new_lookup_table_entry()
 {
 	struct lookup_table_entry *lte;
 	
-	lte = MALLOC(sizeof(struct lookup_table_entry));
+	lte = CALLOC(1, sizeof(struct lookup_table_entry));
 	if (!lte) {
 		ERROR("Out of memory (tried to allocate %zu bytes for "
 		      "lookup table entry)",
@@ -63,12 +63,8 @@ struct lookup_table_entry *new_lookup_table_entry()
 		return NULL;
 	}
 
-	lte->next         = NULL;
-	lte->file_on_disk = NULL;
-	lte->other_wim_fp = NULL;
 	lte->part_number  = 1;
 	lte->refcnt       = 1;
-	lte->staging_num_times_opened = 0;
 	return lte;
 }
 

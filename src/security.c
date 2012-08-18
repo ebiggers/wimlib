@@ -28,8 +28,6 @@
 #include "io.h"
 #include "security.h"
 
-#ifdef ENABLE_SECURITY_DATA
-
 /* 
  * Reads the security data from the metadata resource.
  *
@@ -283,5 +281,3 @@ void free_security_data(struct wim_security_data *sd)
 		sd->refcnt--;
 	}
 }
-
-#endif

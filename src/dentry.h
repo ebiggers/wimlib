@@ -7,6 +7,31 @@
 /* Size of the struct dentry up to and including the file_name_len. */
 #define WIM_DENTRY_DISK_SIZE 102
 
+#define WIM_ADS_ENTRY_DISK_SIZE (2 * sizeof(u64) + WIM_HASH_SIZE + sizeof(u16))
+
+/* Alternate data stream entry */
+struct ads_entry {
+	/* SHA-1 message digest of stream contents */
+	u8 hash[WIM_HASH_SIZE];
+
+	/* Length of stream name (UTF-16) */
+	u16 stream_name_len;
+
+	/* Length of stream name (UTF-8) */
+	u16 stream_name_len_utf8;
+
+	/* Stream name (UTF-16) */
+	char *stream_name;
+
+	/* Stream name (UTF-8) */
+	char *stream_name_utf8;
+};
+
+static inline u64 ads_entry_length(const struct ads_entry *entry)
+{
+	return WIM_ADS_ENTRY_DISK_SIZE + entry->stream_name_len;
+}
+
 /* In-memory structure for a directory entry.  There is a directory tree for
  * each image in the WIM.  */
 struct dentry {
@@ -36,9 +61,7 @@ struct dentry {
 	/* The index of the node in the security table that contains this file's
 	 * security information.  If -1, no security information exists for this
 	 * file.  */
-#ifdef ENABLE_SECURITY_DATA
 	int32_t security_id;
-#endif
 
 	/* The offset, from the start of the metadata section, of this directory
 	 * entry's child files.  0 if the directory entry has no children. */
@@ -58,9 +81,10 @@ struct dentry {
 	/* A hash of the file's contents. */
 	u8 hash[WIM_HASH_SIZE];
 
-	/* Identity of a reparse point (whatever that is).  Currently ignoring
-	 * this field*/
-	//u32 reparse_tag;
+	/* Identity of a reparse point.  See
+	 * http://msdn.microsoft.com/en-us/library/windows/desktop/aa365503(v=vs.85).aspx
+	 * for what a reparse point is. */
+	u32 reparse_tag;
 
 	/* Although M$'s documentation does not tell you this, it seems that the
 	 * reparse_reserved field does not actually exist.  So the hard_link
@@ -75,9 +99,8 @@ struct dentry {
 	 * the set will share the same value for this field. */
 	u64 hard_link;
 
-	/* Number of WIMStreamEntry structures that follow this struct dentry.
-	 * Currently ignoring this field. */
-	//u16 streams;
+	/* Number of alternate data streams associated with this file. */
+	u16 num_ads;
 
 	/* Length of short filename, in bytes, not including the terminating
 	 * zero wide-character. */
@@ -104,8 +127,8 @@ struct dentry {
 	char *full_path_utf8;
 	u32   full_path_utf8_len;
 
-	/* Stream entries for this dentry. Currently being ignored. */
-	//struct WIMStreamEntry *stream_entries;
+	/* Alternate stream entries for this dentry. */
+	struct ads_entry *ads_entries;
 
 	/* Number of references to the dentry tree itself, as in multiple
 	 * WIMStructs */

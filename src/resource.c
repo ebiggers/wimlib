@@ -401,7 +401,8 @@ int read_resource(FILE *fp, u64 resource_size, u64 resource_original_size,
 		if (resource_size != resource_original_size) {
 			ERROR("Resource with original size %"PRIu64" bytes is "
 			      "marked as uncompressed, but its actual size is "
-			      "%"PRIu64" bytes", resource_size);
+			      "%"PRIu64" bytes", 
+			      resource_original_size, resource_size);
 			return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
 		}
 		return read_uncompressed_resource(fp, 
@@ -923,9 +924,7 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	int ret;
 	const struct resource_entry *res_entry;
 	struct dentry *dentry;
-#ifdef ENABLE_SECURITY_DATA
 	struct wim_security_data *sd;
-#endif
 
 	res_entry = &imd->metadata_lte->resource_entry;
 
@@ -965,12 +964,10 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	 * The security data starts with a 4-byte integer giving its total
 	 * length. */
 
-#ifdef ENABLE_SECURITY_DATA
 	/* Read the security data into a wim_security_data structure. */
 	ret = read_security_data(buf, res_entry->original_size, &sd);
 	if (ret != 0)
 		goto out_free_buf;
-#endif
 
 	dentry = MALLOC(sizeof(struct dentry));
 	if (!dentry) {
@@ -1003,15 +1000,11 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
-#ifdef ENABLE_SECURITY_DATA
 	imd->security_data = sd;
-#endif
 	imd->root_dentry = dentry;
 	goto out_free_buf;
 out_free_security_data:
-#ifdef ENABLE_SECURITY_DATA
 	free_security_data(sd);
-#endif
 out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL, false);
 out_free_buf:
@@ -1045,12 +1038,10 @@ int write_metadata_resource(WIMStruct *w)
 	if (metadata_offset == -1)
 		return WIMLIB_ERR_WRITE;
 
-	#ifdef ENABLE_SECURITY_DATA
 	struct wim_security_data *sd = wim_security_data(w);
 	if (sd)
 		subdir_offset = sd->total_length + root->length + 8;
 	else
-	#endif
 		subdir_offset = 8 + root->length + 8;
 	calculate_subdir_offsets(root, &subdir_offset);
 	metadata_original_size = subdir_offset;
@@ -1060,13 +1051,8 @@ int write_metadata_resource(WIMStruct *w)
 		      "metadata resource", metadata_original_size);
 		return WIMLIB_ERR_NOMEM;
 	}
-	#ifdef ENABLE_SECURITY_DATA
-	/* Write the security data. */
+
 	p = write_security_data(sd, buf);
-	#else
-	p = put_u32(buf, 8); /* Total length of security data. */
-	p = put_u32(p, 0); /* Number of security data entries. */
-	#endif
 
 	DEBUG("Writing dentry tree.");
 	p = write_dentry_tree(root, p);
@@ -1164,9 +1150,6 @@ int write_file_resource(struct dentry *dentry, void *wim_p)
 					 lte->file_on_disk);
 			return WIMLIB_ERR_OPEN;
 		}
-
-		if (w->verbose)
-			puts(lte->file_on_disk);
 
 		ret = transfer_file_resource(in_fp, len, len, 0,
 					     WIM_COMPRESSION_TYPE_NONE, out_fp,

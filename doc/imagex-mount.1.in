@@ -4,7 +4,7 @@ imagex mount \- Mount an image from a WIM archive readonly
 
 .SH SYNOPSIS
 \fBimagex mount\fR \fIWIMFILE\fR (\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR)  \
-\fIDIRECTORY\fR [--check]
+\fIDIRECTORY\fR [--check] [--stream-interface=\fIINTERFACE\fR]
 
 .SH DESCRIPTION
 .PP
@@ -19,7 +19,22 @@ It is permissible to omit the \fIIMAGE_NUM\fR or \fIIMAGE_NAME\fR only if
 .TP 6
 \fB--check\fR
 When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
-present.
+present. 
+.TP
+\fB--stream-interface\fR \fIINTERFACE\fR
+Specify the interface to alternate data streams (ADS) in the WIM that will be
+provided by the mounted filesystem.  These are a NTFS feature that found their
+way into the WIM file format.
+
+If "none", it will be impossible to read or write the ADS.
+
+If "xattr" (default), the ADS will be accessible through extended attributes.
+Each ADS will be an extended attribute named "user.*", where the * is the name
+of the ADS.  See \fBsetfattr\fR (1) and \fBgetfattr\fR (1).
+
+If "windows", the ADS will be accessible by specifing the filename, then a
+colon, then the name of the ADS; for example, "myfile:mystream".
+
 .SH SEE ALSO
 .BR imagex (1)
 

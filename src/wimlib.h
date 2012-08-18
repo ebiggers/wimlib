@@ -234,40 +234,75 @@ enum wim_compression_type {
 };
 
 /** Mount the WIM read-write. */
-#define WIMLIB_MOUNT_FLAG_READWRITE		0x1
+#define WIMLIB_MOUNT_FLAG_READWRITE		0x00000001
 
 /** For debugging only. (This passes the @c -d flag to @c fuse_main()).*/
-#define WIMLIB_MOUNT_FLAG_DEBUG			0x2
+#define WIMLIB_MOUNT_FLAG_DEBUG			0x00000002
+
+/** Do not allow accessing alternate data streams. */
+#define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE		0x00000010
+
+/** Access alternate data streams through extended file attributes.  This is the
+ * default mode. */
+#define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR	0x00000020
+
+/** Access alternate data streams by specifying the file name, a colon, then the
+ * alternate file stream name. */
+#define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS	0x00000040
 
 /** Include an integrity table in the new WIM being written during the unmount. 
  * Ignored for read-only mounts. */
-#define WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY	0x1
+#define WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY	0x00000001
 
 /** Unless this flag is given, changes to a mounted WIM are discarded.  Ignored
  * for read-only mounts. */
-#define WIMLIB_UNMOUNT_FLAG_COMMIT		0x2
+#define WIMLIB_UNMOUNT_FLAG_COMMIT		0x00000002
 
 /** Include an integrity table in the new WIM file. */
-#define WIMLIB_WRITE_FLAG_CHECK_INTEGRITY	0x1
+#define WIMLIB_WRITE_FLAG_CHECK_INTEGRITY	0x00000001
 
 /** Print progress information when writing the integrity table. */
-#define WIMLIB_WRITE_FLAG_SHOW_PROGRESS		0x2
+#define WIMLIB_WRITE_FLAG_SHOW_PROGRESS		0x00000002
 
 /** Mark the image being added as the bootable image of the WIM. */
-#define WIMLIB_ADD_IMAGE_FLAG_BOOT		0x1
+#define WIMLIB_ADD_IMAGE_FLAG_BOOT		0x00000001
+
+/** Print the name of each file or directory as it is scanned to be included in
+ * the WIM image. */
+#define WIMLIB_ADD_IMAGE_FLAG_VERBOSE		0x00000002
+
+/** Apply NTFS-specific information to the captured WIM image.  This flag can
+ * only be specified if the directory being captured is on a NTFS filesystem
+ * mounted with NTFS-3g, and wimlib was compiled with support for NTFS-3g  */
+#define WIMLIB_ADD_IMAGE_FLAG_NTFS		0x00000004
 
 /** See documentation for wimlib_export_image(). */
-#define WIMLIB_EXPORT_FLAG_BOOT			0x1
+#define WIMLIB_EXPORT_FLAG_BOOT			0x00000001
 
 /** Verify the integrity of the WIM if an integrity table is present. */
-#define WIMLIB_OPEN_FLAG_CHECK_INTEGRITY	0x1
+#define WIMLIB_OPEN_FLAG_CHECK_INTEGRITY	0x00000001
 
 /** Print progress information when verifying integrity table. */
-#define WIMLIB_OPEN_FLAG_SHOW_PROGRESS		0x2
+#define WIMLIB_OPEN_FLAG_SHOW_PROGRESS		0x00000002
 
 /** If this flag is not given, an error is issued if the WIM is part of a split
  * WIM.  */
-#define WIMLIB_OPEN_FLAG_SPLIT_OK		0x4
+#define WIMLIB_OPEN_FLAG_SPLIT_OK		0x00000004
+
+
+/** When identical files are extracted from the WIM, hard link them together. */
+#define WIMLIB_EXTRACT_FLAG_HARDLINK		0x00000001
+
+/** When identical files are extracted from the WIM, symlink them together. */
+#define WIMLIB_EXTRACT_FLAG_SYMLINK		0x00000002
+
+/** Apply NTFS-specific information when applying the WIM image.  This flag can
+ * only be specified if the output directory is on a NTFS filesystem mounted
+ * with NTFS-3g, and wimlib was compiled with support for NTFS-3g  */
+#define WIMLIB_EXTRACT_FLAG_NTFS		0x00000004
+
+/** Print the name of each file as it is extracted from the WIM image. */
+#define WIMLIB_EXTRACT_FLAG_VERBOSE		0x00000008
 
 /**
  * Possible values of the error code returned by many functions in wimlib.
@@ -302,6 +337,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_NOTDIR,
 	WIMLIB_ERR_NOT_A_WIM_FILE,
 	WIMLIB_ERR_NO_FILENAME,
+	WIMLIB_ERR_NTFS_3G,
 	WIMLIB_ERR_OPEN,
 	WIMLIB_ERR_OPENDIR,
 	WIMLIB_ERR_READ,
@@ -535,7 +571,8 @@ extern int wimlib_export_image(WIMStruct *src_wim, int src_image,
  * @retval ::WIMLIB_ERR_WRITE
  * 	Failed to write a file being extracted.
  */
-extern int wimlib_extract_image(WIMStruct *wim, int image);
+extern int wimlib_extract_image(WIMStruct *wim, int image,
+				const char *output_dir, int flags);
 
 /**
  * Extracts the XML data for a WIM file to a file stream.  Every WIM file
@@ -1177,41 +1214,6 @@ int wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
  * 	shown.
  */
 extern int wimlib_set_print_errors(bool show_messages);
-
-/**
- * Sets whether wimlib is to be verbose when extracting files from a WIM or when
- * creating an image from a directory (i.e. whether it will print all affected
- * files or not.)  This is a per-WIM parameter.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for the WIM file.
- * @param verbose
- * 	Whether wimlib is to be verbose when extracting files from @a wim using
- * 	wimlib_extract_image() or when adding an image to @a wim using
- * 	wimlib_add_image().
- *
- * @return This function has no return value.
- */
-extern void wimlib_set_verbose(WIMStruct *wim, bool verbose);
-
-/**
- * Sets and creates the directory to which files are to be extracted when
- * extracting files from the WIM.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for the WIM file.
- * @param dir
- * 	The name of the directory to extract files to.
- *
- * @return 0 on success; nonzero on error.
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a dir was @c NULL.
- * @retval ::WIMLIB_ERR_MKDIR
- * 	@a dir does not already exist and it could not created.
- * @retval ::WIMLIB_ERR_NOMEM
- * 	Failed to allocate the memory needed to duplicate the @a dir string.
- */
-extern int wimlib_set_output_dir(WIMStruct *wim, const char *dir);
 
 /**
  * Splits a WIM into multiple parts.

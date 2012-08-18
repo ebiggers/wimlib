@@ -75,14 +75,14 @@ static const char *path_basename(const char *path)
 static const char *usage_strings[] = {
 [APPEND] = 
 "    imagex append DIRECTORY WIMFILE [\"IMAGE_NAME\"] [\"DESCRIPTION\"] [--boot]\n"
-"        [--check] [--config CONFIG_FILE] [--flags EDITIONID] [--verify]\n",
+"                  [--check] [--flags EDITIONID]\n",
 [APPLY] = 
 "    imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all] DIRECTORY [--check]\n"
-"        [--verify] [--hardlink] [--symlink] [--verbose]\n",
+"                 [--hardlink] [--symlink] [--verbose]\n",
 [CAPTURE] = 
 "    imagex capture DIRECTORY WIMFILE [\"IMAGE_NAME\"] [\"DESCRIPTION\"]\n"
-"        [--boot] [--check] [--compress[=TYPE]] [--config CONFIG_FILE]\n"
-"        [--flags \"EditionID\"] [--norpfix] [--verify] [--verbose]\n",
+"       l           [--boot] [--check] [--compress[=TYPE]]\n"
+"                   [--flags \"EditionID\"] [--verbose]\n",
 [DELETE] = 
 "    imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n",
 [DIR] = 
@@ -90,19 +90,19 @@ static const char *usage_strings[] = {
 [EXPORT] = 
 "    imagex export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
 "        DEST_WIMFILE [\"DEST_IMAGE_NAME\"] [\"DEST_IMAGE_DESCRIPTION\"]\n"
-"        [--boot] [--check] [--compress[=TYPE]]\n",
+"                  [--boot] [--check] [--compress[=TYPE]]\n",
 [INFO] = 
 "    imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
-"        [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
-"        [--xml] [--extract-xml FILE] [--metadata]\n",
+"                [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
+"                [--xml] [--extract-xml FILE] [--metadata]\n",
 [JOIN] = 
 "    imagex join [--check] WIMFILE SPLIT_WIM...\n",
 [MOUNT] = 
 "    imagex mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
-"        [--check] [--debug]\n",
+"                 [--check] [--debug] [--stream-interface=INTERFACE]\n",
 [MOUNTRW] = 
 "    imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
-"        [--check] [--debug]\n",
+"                   [--check] [--debug] [--stream-interface=INTERFACE]\n",
 [SPLIT] = 
 "    imagex split WIMFILE SPLIT_WIMFILE PART_SIZE [--check]\n",
 [UNMOUNT] = 
@@ -118,28 +118,24 @@ static const struct option common_options[] = {
 static const struct option append_options[] = {
 	{"boot",   no_argument,       NULL, 'b'},
 	{"check",  no_argument,       NULL, 'c'},
-	{"config", required_argument, NULL, 'C'},
 	{"flags",    required_argument, NULL, 'f'},
-	{"verify", no_argument,       NULL, 'V'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option apply_options[] = {
 	{"check",    no_argument,       NULL, 'c'},
-	{"verify",   no_argument,       NULL, 'V'},
 	{"hardlink", no_argument,       NULL, 'h'},
 	{"symlink",  no_argument,       NULL, 's'},
 	{"verbose",  no_argument,       NULL, 'v'},
+	{"ntfs",     no_argument,	NULL, 'N'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_options[] = {
 	{"boot",     no_argument,       NULL, 'b'},
 	{"check",    no_argument,       NULL, 'c'},
 	{"compress", optional_argument, NULL, 'x'},
-	{"config",   required_argument, NULL, 'C'},
 	{"flags",    required_argument, NULL, 'f'},
-	{"norpfix",  no_argument,       NULL, 'n'},
-	{"verify",   no_argument,       NULL, 'V'},
-	{"verbose",   no_argument,       NULL, 'v'},
+	{"verbose",  no_argument,       NULL,'v'},
+	{"ntfs",     no_argument,	NULL, 'N'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -173,6 +169,7 @@ static const struct option join_options[] = {
 static const struct option mount_options[] = {
 	{"check", no_argument, NULL, 'c'},
 	{"debug", no_argument, NULL, 'd'},
+	{"stream-interface", required_argument, NULL, 's'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -312,14 +309,8 @@ static int imagex_append(int argc, const char **argv)
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
-		case 'C':
-			/*config = optarg;*/
-			break;
 		case 'f':
 			flags_element = optarg;
-			break;
-		case 'V':
-			/* verify */
 			break;
 		default:
 			usage(APPEND);
@@ -355,9 +346,7 @@ done:
 static int imagex_apply(int argc, const char **argv)
 {
 	int c;
-	int link_type = WIM_LINK_TYPE_NONE;
 	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
-	bool verbose = false;
 	int image;
 	int num_images;
 	WIMStruct *w;
@@ -365,23 +354,24 @@ static int imagex_apply(int argc, const char **argv)
 	const char *wimfile;
 	const char *dir;
 	const char *image_num_or_name;
+	int extract_flags = 0;
 
 	for_opt(c, apply_options) {
 		switch (c) {
 		case 'c':
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			break;
-		case 'V':
-			/* verify */
-			break;
 		case 'h':
-			link_type = WIM_LINK_TYPE_HARD;
+			extract_flags |= WIMLIB_EXTRACT_FLAG_HARDLINK;
 			break;
 		case 's':
-			link_type = WIM_LINK_TYPE_SYMBOLIC;
+			extract_flags |= WIMLIB_EXTRACT_FLAG_SYMLINK;
 			break;
 		case 'v':
-			verbose = true;
+			extract_flags |= WIMLIB_EXTRACT_FLAG_VERBOSE;
+			break;
+		case 'N':
+			extract_flags |= WIMLIB_EXTRACT_FLAG_NTFS;
 			break;
 		default:
 			usage(APPLY);
@@ -421,12 +411,7 @@ static int imagex_apply(int argc, const char **argv)
 		ret = -1;
 		goto done;
 	}
-	ret = wimlib_set_output_dir(w, dir);
-	if (ret != 0)
-		goto done;
-	wimlib_set_verbose(w, verbose);
-	wimlib_set_link_type(w, link_type);
-	ret = wimlib_extract_image(w, image);
+	ret = wimlib_extract_image(w, image, dir, extract_flags);
 done:
 	wimlib_free(w);
 	return ret;
@@ -440,8 +425,7 @@ static int imagex_capture(int argc, const char **argv)
 	int add_image_flags = 0;
 	int write_flags = WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
 	int compression_type = WIM_COMPRESSION_TYPE_NONE;
-	const char *flags_element    = NULL;
-	bool verbose         = false;
+	const char *flags_element = NULL;
 	const char *dir;
 	const char *wimfile;
 	const char *name;
@@ -462,20 +446,14 @@ static int imagex_capture(int argc, const char **argv)
 			if (compression_type == WIM_COMPRESSION_TYPE_INVALID)
 				return -1;
 			break;
-		case 'C':
-			/*config = optarg;*/
-			break;
 		case 'f':
 			flags_element = optarg;
 			break;
-		case 'n':
-			/*norpfix = true;*/
-			break;
 		case 'v':
-			verbose = true;
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
 			break;
-		case 'V':
-			/*verify = true;*/
+		case 'N':
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NTFS;
 			break;
 		default:
 			usage(CAPTURE);
@@ -497,8 +475,6 @@ static int imagex_capture(int argc, const char **argv)
 	ret = wimlib_create_new_wim(compression_type, &w);
 	if (ret != 0)
 		return ret;
-
-	wimlib_set_verbose(w, verbose);
 
 	ret = wimlib_add_image(w, dir, name, desc, flags_element, 
 			       add_image_flags);
@@ -1072,19 +1048,26 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 		case 'd':
 			mount_flags |= WIMLIB_MOUNT_FLAG_DEBUG;
 			break;
+		case 's':
+			if (strcasecmp(optarg, "none") == 0)
+				mount_flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE;
+			else if (strcasecmp(optarg, "xattr") == 0)
+				mount_flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR;
+			else if (strcasecmp(optarg, "windows") == 0)
+				mount_flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS;
+			else {
+				imagex_error("Unknown stream interface \"%s\"", optarg);
+				goto mount_usage;
+			}
+			break;
 		default:
-			usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)  
-					? MOUNTRW : MOUNT);
-			return -1;
+			goto mount_usage;
 		}
 	}
 	argc -= optind;
 	argv += optind;
-	if (argc != 2 && argc != 3) {
-		usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)  
-				? MOUNTRW : MOUNT);
-		return -1;
-	}
+	if (argc != 2 && argc != 3)
+		goto mount_usage;
 
 	wimfile = argv[0];
 
@@ -1122,6 +1105,10 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 done:
 	wimlib_free(w);
 	return ret;
+mount_usage:
+	usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)  
+			? MOUNTRW : MOUNT);
+	return -1;
 }
 
 /* Split a WIM into a spanned set */
@@ -1274,3 +1261,10 @@ int main(int argc, const char **argv)
 	usage_all();
 	return 1;
 }
+/*#ifndef WITH_NTFS_3G*/
+		/*ERROR("wimlib was not compiled with support for NTFS-3g, so we cannot extract");*/
+		/*ERROR("a WIM to a NTFS filesystem while preserving NTFS-specific metadata.");*/
+		/*ERROR("Please apply the WIM to a directory rather than a block device, ");*/
+		/*ERROR("and without the NTFS flag; or compile in support for NTFS-3g.");*/
+		/*return WIMLIB_ERR_UNSUPPORTED;*/
+/*#endif*/

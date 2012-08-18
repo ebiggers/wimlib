@@ -39,9 +39,6 @@ WIM to save space.
 .TP
 \fB--verbose\fR
 Print the path to of each file or directory within the WIM image as it is extracted.
-.TP
-\fB--verify\fR
-This option is currently unsupported.
 
 .SH EXAMPLES
 .IP 

@@ -183,7 +183,6 @@ struct wim_header {
 #define WIM_HDR_FLAG_COMPRESS_LZX       0x00040000
 
 
-#ifdef ENABLE_SECURITY_DATA
 /* Structure for security data.  Each image in the WIM file has its own security
  * data. */
 struct wim_security_data {
@@ -205,17 +204,15 @@ struct wim_security_data {
 	 * exporting images between WIMs) */
 	u32 refcnt;
 } WIMSecurityData;
-#endif
 
 /* Metadata resource for an image. */
 struct image_metadata {
 	/* Pointer to the root dentry for the image. */
 	struct dentry    *root_dentry;
 
-#ifdef ENABLE_SECURITY_DATA
 	/* Pointer to the security data for the image. */
 	struct wim_security_data *security_data;
-#endif
+
 	/* A pointer to the lookup table entry for this image's metadata
 	 * resource. */
 	struct lookup_table_entry *metadata_lte;
@@ -259,18 +256,17 @@ typedef struct WIMStruct {
 	/* The header of the WIM file. */
 	struct wim_header    hdr;
 
-	/* The type of links to create when extracting files (hard, symbolic, or
-	 * none.) */
-	int    link_type;
+	/* Temporary flags to use when extracting a WIM image or adding a WIM
+	 * image. */
+	union {
+		int extract_flags;
+		int add_flags;
+	};
 
 	/* The currently selected image, indexed starting at 1.  If not 0,
 	 * subtract 1 from this to get the index of the current image in the
 	 * image_metadata array. */
-	int                  current_image;
-
-	/* True if files names are to be printed when doing extraction. 
-	 * May be used for other things later. */
-	bool   verbose;
+	int current_image;
 
 	union {
 		/* Set to true when extracting multiple images */
@@ -293,12 +289,10 @@ static inline struct dentry **wim_root_dentry_p(WIMStruct *w)
 	return &w->image_metadata[w->current_image - 1].root_dentry;
 }
 
-#ifdef ENABLE_SECURITY_DATA
 static inline struct wim_security_data *wim_security_data(WIMStruct *w)
 {
 	return w->image_metadata[w->current_image - 1].security_data;
 }
-#endif
 
 static inline struct lookup_table_entry*
 wim_metadata_lookup_table_entry(WIMStruct *w)
@@ -381,14 +375,13 @@ extern int write_resource_from_memory(const u8 resource[], int out_ctype,
 				      u64 *resource_size_ret);
 extern int write_metadata_resource(WIMStruct *w);
 
-#ifdef ENABLE_SECURITY_DATA
+/* security.c */
 int read_security_data(const u8 metadata_resource[], 
 		u64 metadata_resource_len, struct wim_security_data **sd_p);
 
 void print_security_data(const struct wim_security_data *sd);
 u8 *write_security_data(const struct wim_security_data *sd, u8 *p);
 void free_security_data(struct wim_security_data *sd);
-#endif
 
 /* wim.c */
 extern WIMStruct *new_wim_struct();

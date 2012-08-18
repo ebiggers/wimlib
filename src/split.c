@@ -240,7 +240,7 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 
 		FILE *fp = fopen(p, "r+b");
 		if (!fp) {
-			ERROR_WITH_ERRNO("Failed to open `%s'");
+			ERROR_WITH_ERRNO("Failed to open `%s'", p);
 			return WIMLIB_ERR_OPEN;
 		}
 		u8 buf[4];

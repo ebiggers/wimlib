@@ -28,14 +28,8 @@ present; additionally, when writing \fIWIMFILE\fR with the new image added,
 write an integrity table.  If this option is not specified, no integrity table
 is included in the new WIM file, even if there was one before.
 .TP
-\fB--config\fR \fICONFIG_FILE\fR
-This option is currently unsupported.
-.TP
 \fB--flags\fR \fIEDITIONID\fR
 Specify a string to use in the <FLAGS> element of the XML data for the image.
-.TP
-\fB--verify\fR
-This option is currently unsupported.
 
 .SH EXAMPLES
 .IP 

@@ -32,17 +32,8 @@ Specifies the compression type for the WIM file.  \fITYPE\fR may be "none",
 is specified but \fITYPE\fR is not, the compression type is taken to be
 "maximum", which is LZX compression.  "fast" compression is XPRESS compression.
 .TP
-\fB--config\fR \fICONFIG_FILE\fR
-This option is currently unsupported.
-.TP
 \fB--flags\fR \fIEDITIONID\fR
 Specify a string to use in the <FLAGS> element of the XML data for the image.
-.TP
-\fB--norpfix
-This option is currently unsupported.
-.TP
-\fB--verify\fR
-This option is currently unsupported.
 .TP
 \fB--verbose\fR
 Print the names of files and directories as they are captured.

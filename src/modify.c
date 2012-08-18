@@ -41,9 +41,7 @@ static void destroy_image_metadata(struct image_metadata *imd,
 				   struct lookup_table *lt)
 {
 	free_dentry_tree(imd->root_dentry, lt, true);
-#ifdef ENABLE_SECURITY_DATA
 	free_security_data(imd->security_data);
-#endif
 
 	/* Get rid of the lookup table entry for this image's metadata resource
 	 * */
@@ -223,9 +221,7 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry)
 	struct lookup_table_entry *metadata_lte;
 	struct image_metadata *imd;
 	struct image_metadata *new_imd;
-#ifdef ENABLE_SECURITY_DATA
 	struct wim_security_data *sd;
-#endif
 
 	DEBUG("Reallocating image metadata array for image_count = %u",
 	      w->hdr.image_count + 1);
@@ -242,13 +238,11 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry)
 	metadata_lte = new_lookup_table_entry();
 	if (!metadata_lte)
 		goto out_free_imd;
-#ifdef ENABLE_SECURITY_DATA
 	sd = CALLOC(1, sizeof(struct wim_security_data));
 	if (!sd)
 		goto out_free_metadata_lte;
 	sd->refcnt = 1;
 	sd->total_length = 8;
-#endif
 
 	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
 	randomize_byte_array(metadata_lte->hash, WIM_HASH_SIZE);
@@ -260,9 +254,7 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry)
 	new_imd->metadata_lte	= metadata_lte;
 	new_imd->modified	= true;
 	new_imd->root_dentry	= root_dentry;
-#ifdef ENABLE_SECURITY_DATA
 	new_imd->security_data  = sd;
-#endif
 	FREE(w->image_metadata);
 	w->image_metadata	= imd;
 
@@ -372,7 +364,6 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	ret = add_new_dentry_tree(dest_wim, root);
 	if (ret != 0)
 		return ret;
-#ifdef ENABLE_SECURITY_DATA
 	/* Bring over old security data */
 	struct wim_security_data *sd = wim_security_data(src_wim);
 	struct image_metadata *new_imd = wim_get_current_image_metadata(dest_wim);
@@ -380,7 +371,6 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	free_security_data(new_imd->security_data);
 	new_imd->security_data = sd;
 	sd->refcnt++;
-#endif
 
 	if (flags & WIMLIB_EXPORT_FLAG_BOOT) {
 		DEBUG("Setting boot_idx to %d", dest_wim->hdr.image_count);
@@ -399,7 +389,6 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 	int num_images;
 	int i;
 	int ret;
-	struct image_metadata *imd;
 
 	if (image == WIM_ALL_IMAGES) {
 		num_images = w->hdr.image_count;

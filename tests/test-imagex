@@ -31,7 +31,7 @@ imagex() {
 
 
 cleanup() {
-	if [ -d tmp ] && mountpoint tmp; then
+	if [ -d tmp ] && mountpoint tmp > /dev/null; then
 		fusermount -u tmp > /dev/null;
 	fi
 	rm -rf tmp* *.wim *.swm dir3

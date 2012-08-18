@@ -32,9 +32,7 @@
 
 static int print_metadata(WIMStruct *w)
 {
-#ifdef ENABLE_SECURITY_DATA
 	print_security_data(wim_security_data(w));
-#endif
 	return for_dentry_in_tree(wim_root_dentry(w), print_dentry, 
 				  w->lookup_table);
 }
@@ -48,14 +46,7 @@ static int print_files(WIMStruct *w)
 
 WIMStruct *new_wim_struct()
 {
-	WIMStruct *w;
-	
-	w = CALLOC(1, sizeof(WIMStruct));
-	if (!w)
-		return NULL;
-	w->link_type     = WIM_LINK_TYPE_NONE;
-	w->current_image = WIM_NO_IMAGE;
-	return w;
+	return CALLOC(1, sizeof(WIMStruct));
 }
 
 /* 
@@ -116,6 +107,7 @@ static int append_metadata_resource_entry(struct lookup_table_entry *lte,
 	WIMStruct *w = wim_p;
 
 	if (lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) {
+		/*fprintf(stderr, "found mlte at %u\n", lte->resource_entry.offset);*/
 		if (w->current_image == w->hdr.image_count) {
 			ERROR("Expected only %u images, but found more",
 			      w->hdr.image_count);
@@ -152,11 +144,6 @@ int wim_resource_compression_type(const WIMStruct *w,
 {
 	int wim_ctype = wimlib_get_compression_type(w);
 	return resource_compression_type(wim_ctype, entry->flags);
-}
-
-WIMLIBAPI void wimlib_set_verbose(WIMStruct *w, bool verbose)
-{
-	w->verbose = verbose;
 }
 
 /*
@@ -222,10 +209,8 @@ int wimlib_select_image(WIMStruct *w, int image)
 			DEBUG("Freeing image %u", w->current_image);
 			free_dentry_tree(imd->root_dentry, NULL, false);
 			imd->root_dentry = NULL;
-#ifdef ENABLE_SECURITY_DATA
 			free_security_data(imd->security_data);
 			imd->security_data = NULL;
-#endif
 		}
 	}
 
@@ -409,7 +394,8 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int flags)
 	w->fp = fopen(in_wim_path, "rb");
 
 	if (!w->fp) {
-		ERROR_WITH_ERRNO("Failed to open the file `%s' for reading");
+		ERROR_WITH_ERRNO("Failed to open the file `%s' for reading",
+				 in_wim_path);
 		return WIMLIB_ERR_OPEN;
 	}
 
@@ -573,9 +559,7 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 		for (i = 0; i < w->hdr.image_count; i++) {
 			free_dentry_tree(w->image_metadata[i].root_dentry, 
 					 NULL, false);
-			#ifdef ENABLE_SECURITY_DATA
 			free_security_data(w->image_metadata[i].security_data);
-			#endif
 		}
 		FREE(w->image_metadata);
 	}

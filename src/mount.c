@@ -585,8 +585,6 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 
 	/* Create a lookup table entry having the same hash value */
 	lte = new_lookup_table_entry();
-	lte->staging_num_times_opened = 0;
-	lte->resource_entry.original_size = 0;
 	memcpy(lte->hash, dentry->hash, WIM_HASH_SIZE);
 
 	fd = create_staging_file(&tmpfile_name);
@@ -1104,6 +1102,11 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		wim_get_current_image_metadata(wim)->modified = true;
+
+	if (!(flags & (WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE |
+		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR |
+		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)))
+		flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR;
 
 	mount_dir = dir;
 	working_directory = getcwd(NULL, 0);

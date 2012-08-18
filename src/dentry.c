@@ -345,9 +345,7 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 		if (file_attr_flags[i].flag & dentry->attributes)
 			printf("    WIM_FILE_ATTRIBUTE_%s is set\n",
 				file_attr_flags[i].name);
-#ifdef ENABLE_SECURITY_DATA
 	printf("Security ID       = %d\n", dentry->security_id);
-#endif
 	printf("Subdir offset     = %"PRIu64"\n", dentry->subdir_offset);
 	/*printf("Unused1           = %"PRIu64"\n", dentry->unused1);*/
 	/*printf("Unused2           = %"PRIu64"\n", dentry->unused2);*/
@@ -358,9 +356,9 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	printf("Hash              = "); 
 	print_hash(dentry->hash); 
 	putchar('\n');
-	/*printf("Reparse Tag       = %u\n", dentry->reparse_tag);*/
+	printf("Reparse Tag       = %u\n", dentry->reparse_tag);
 	printf("Hard Link Group   = %"PRIu64"\n", dentry->hard_link);
-	/*printf("Number of Streams = %hu\n", dentry->streams);*/
+	printf("Number of Alternate Data Streams = %hu\n", dentry->num_ads);
 	printf("Filename          = \"");
 	print_string(dentry->file_name, dentry->file_name_len);
 	puts("\"");
@@ -388,6 +386,7 @@ static inline void dentry_common_init(struct dentry *dentry)
 {
 	memset(dentry, 0, sizeof(struct dentry));
 	dentry->refcnt = 1;
+	dentry->security_id = -1;
 }
 
 /* 
@@ -523,8 +522,10 @@ static inline void recalculate_dentry_size(struct dentry *dentry)
 {
 	dentry->length = WIM_DENTRY_DISK_SIZE + dentry->file_name_len + 
 			 2 + dentry->short_name_len;
+	for (u16 i = 0; i < dentry->num_ads; i++)
+		dentry->length += ads_entry_length(&dentry->ads_entries[i]);
 	/* Must be multiple of 8. */
-	dentry->length += (8 - dentry->length % 8) % 8;
+	dentry->length = (dentry->length + 7) & ~7;
 }
 
 /* Changes the name of a dentry to @new_name.  Only changes the file_name and
@@ -609,6 +610,70 @@ void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *tab
 	for_dentry_in_tree(root, calculate_dentry_statistics, &stats);
 }
 
+static int read_ads_entries(const u8 *p, struct dentry *dentry,
+			    unsigned remaining_size)
+{
+	u16 num_ads = dentry->num_ads;
+	struct ads_entry *ads_entries = CALLOC(num_ads, sizeof(struct ads_entry));
+	int ret;
+	if (!ads_entries) {
+		ERROR("Could not allocate memory for %u alternate data stream "
+		      "entries", num_ads);
+		return WIMLIB_ERR_NOMEM;
+	}
+	for (u16 i = 0; i < num_ads; i++) {
+		struct ads_entry *cur_entry = &ads_entries[i];
+		u64 length;
+		size_t utf8_len;
+		/* Read the base stream entry, excluding the stream name. */
+		if (remaining_size < WIM_ADS_ENTRY_DISK_SIZE) {
+			ERROR("Stream entries go past end of directory entry");
+			ret = WIMLIB_ERR_INVALID_DENTRY;
+			goto out_free_ads_entries;
+		}
+		remaining_size -= WIM_ADS_ENTRY_DISK_SIZE;
+
+		p = get_u64(p, &length); /* ADS entry length */
+		p += 8; /* Unused */
+		p = get_bytes(p, WIM_HASH_SIZE, (u8*)cur_entry->hash);
+		p = get_u16(p, &cur_entry->stream_name_len);
+		cur_entry->stream_name = NULL;
+		cur_entry->stream_name_utf8 = NULL;
+
+		if (remaining_size < cur_entry->stream_name_len) {
+			ERROR("Stream entries go past end of directory entry");
+			ret = WIMLIB_ERR_INVALID_DENTRY;
+			goto out_free_ads_entries;
+		}
+
+		cur_entry->stream_name = MALLOC(cur_entry->stream_name_len);
+		if (!cur_entry->stream_name) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_ads_entries;
+		}
+		p = get_bytes(p, cur_entry->stream_name_len,
+			      (u8*)cur_entry->stream_name);
+		cur_entry->stream_name_utf8 = utf16_to_utf8(cur_entry->stream_name,
+							    cur_entry->stream_name_len,
+							    &utf8_len);
+		cur_entry->stream_name_len_utf8 = utf8_len;
+
+		if (!cur_entry->stream_name_utf8) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_ads_entries;
+		}
+	}
+	dentry->ads_entries = ads_entries;
+	return 0;
+out_free_ads_entries:
+	for (u16 i = 0; i < num_ads; i++) {
+		FREE(ads_entries[i].stream_name);
+		FREE(ads_entries[i].stream_name_utf8);
+	}
+	FREE(ads_entries);
+	return ret;
+}
+
 /* 
  * Reads a directory entry from the metadata resource.
  */
@@ -623,6 +688,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	u16 short_name_len;
 	u16 file_name_len;
 	size_t file_name_utf8_len;
+	int ret;
 
 	dentry_common_init(dentry);
 
@@ -665,11 +731,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	}
 
 	p = get_u32(p, &dentry->attributes);
-#ifdef ENABLE_SECURITY_DATA
 	p = get_u32(p, (u32*)&dentry->security_id);
-#else
-	p += sizeof(u32);
-#endif
 	p = get_u64(p, &dentry->subdir_offset);
 
 	/* 2 unused fields */
@@ -681,15 +743,13 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	p = get_bytes(p, WIM_HASH_SIZE, dentry->hash);
 	
-	/* Currently ignoring reparse_tag. */
-	p += sizeof(u32);
+	p = get_u32(p, &dentry->reparse_tag);
 
 	/* The reparse_reserved field does not actually exist. */
 
 	p = get_u64(p, &dentry->hard_link);
 	
-	/* Currently ignoring streams. */
-	p += sizeof(u16);
+	p = get_u16(p, &dentry->num_ads);
 
 	p = get_u16(p, &short_name_len);
 	p = get_u16(p, &file_name_len);
@@ -722,6 +782,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	if (!file_name_utf8) {
 		ERROR("Failed to allocate memory to convert UTF-16 "
 		      "filename (%hu bytes) to UTF-8", file_name_len);
+		ret = WIMLIB_ERR_NOMEM;
 		goto out_free_file_name;
 	}
 
@@ -734,10 +795,18 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	if (!short_name) {
 		ERROR("Failed to allocate %hu bytes for short filename",
 		      short_name_len);
+		ret = WIMLIB_ERR_NOMEM;
 		goto out_free_file_name_utf8;
 	}
 
 	get_bytes(p, short_name_len, short_name);
+
+	if (dentry->num_ads != 0) {
+		ret = read_ads_entries(p, dentry,
+				       dentry->length - calculated_size);
+		if (ret != 0)
+			goto out_free_short_name;
+	}
 
 	dentry->file_name          = file_name;
 	dentry->file_name_utf8     = file_name_utf8;
@@ -746,11 +815,13 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	dentry->file_name_utf8_len = file_name_utf8_len;
 	dentry->short_name_len     = short_name_len;
 	return 0;
+out_free_short_name:
+	FREE(short_name);
 out_free_file_name_utf8:
-	FREE(dentry->file_name_utf8);
+	FREE(file_name_utf8);
 out_free_file_name:
-	FREE(dentry->file_name);
-	return WIMLIB_ERR_NOMEM;
+	FREE(file_name);
+	return ret;
 }
 
 /* 
@@ -758,7 +829,8 @@ out_free_file_name:
  *
  * @dentry:  The dentry structure.
  * @p:       The memory location to write the data to.
- * @return:  True on success, false on failure.
+ * @return:  Pointer to the byte after the last byte we wrote as part of the
+ * 		dentry.
  */
 static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 {
@@ -766,11 +838,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	memset(p, 0, dentry->length);
 	p = put_u64(p, dentry->length);
 	p = put_u32(p, dentry->attributes);
-#ifdef ENABLE_SECURITY_DATA
 	p = put_u32(p, dentry->security_id);
-#else
-	p = put_u32(p, (u32)(-1));
-#endif
 	p = put_u64(p, dentry->subdir_offset);
 	p = put_u64(p, 0); /* unused1 */
 	p = put_u64(p, 0); /* unused2 */
@@ -782,14 +850,22 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	else
 		DEBUG("zero hash for %s\n", dentry->file_name_utf8);
 	p += WIM_HASH_SIZE;
-	p = put_u32(p, 0); /* reparse_tag */
+	p = put_u32(p, dentry->reparse_tag);
 	p = put_u64(p, dentry->hard_link);
-	p = put_u16(p, 0); /*streams */
+	p = put_u16(p, dentry->num_ads); /*streams */
 	p = put_u16(p, dentry->short_name_len);
 	p = put_u16(p, dentry->file_name_len);
 	p = put_bytes(p, dentry->file_name_len, (u8*)dentry->file_name);
 	p = put_u16(p, 0); /* filename padding, 2 bytes. */
 	p = put_bytes(p, dentry->short_name_len, (u8*)dentry->short_name);
+	for (u16 i = 0; i < dentry->num_ads; i++) {
+		p = put_u64(p, ads_entry_length(&dentry->ads_entries[i]));
+		p = put_u64(p, 0); /* Unused */
+		p = put_bytes(p, WIM_HASH_SIZE, dentry->ads_entries[i].hash);
+		p = put_u16(p, dentry->ads_entries[i].stream_name_len);
+		p = put_bytes(p, dentry->ads_entries[i].stream_name_len,
+				 (u8*)dentry->ads_entries[i].stream_name);
+	}
 	return orig_p + dentry->length;
 }
 

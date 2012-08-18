@@ -96,8 +96,7 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 		ERROR("Unexpected chunk size of %u! Ask the author to "
 		      "implement support for other chunk sizes.",
 		      chunk_size);
-		ERROR("(Or it might just be that the WIM header is "
-		      "invalid.)", chunk_size);
+		ERROR("(Or it might just be that the WIM header is invalid.)");
 		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
 	}
 
