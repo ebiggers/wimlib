@@ -66,7 +66,8 @@ struct ads_entry {
 
 static inline u64 ads_entry_length(const struct ads_entry *entry)
 {
-	return WIM_ADS_ENTRY_DISK_SIZE + entry->stream_name_len;
+	u64 len = WIM_ADS_ENTRY_DISK_SIZE + entry->stream_name_len + 2;
+	return (len + 7) & ~7;
 }
 
 /* In-memory structure for a directory entry.  There is a directory tree for

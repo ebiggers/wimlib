@@ -44,17 +44,9 @@
 u64 dentry_total_length(const struct dentry *dentry)
 {
 	u64 length = dentry->length;
-	if (dentry->num_ads) {
-		u16 i = 0;
-		do {
-			length += WIM_ADS_ENTRY_DISK_SIZE + 
-				  dentry->ads_entries[i].stream_name_len;
-		} while (++i != dentry->num_ads);
-		/* If there are Alternate Stream Entries, we apparently need to
-		 * round up to the NEXT 8-byte boundary, even if we are already
-		 * aligned on one... */
-		length++;
-	}
+	for (u16 i = 0 ; i < dentry->num_ads; i++)
+		length += ads_entry_length(&dentry->ads_entries[i]);
+
 	/* Round to 8 byte boundary. */
 	return (length + 7) & ~7;
 }
@@ -656,9 +648,11 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 		struct ads_entry *cur_entry = &ads_entries[i];
 		u64 length;
 		size_t utf8_len;
+		const char *p_save = p;
 		/* Read the base stream entry, excluding the stream name. */
 		if (remaining_size < WIM_ADS_ENTRY_DISK_SIZE) {
 			ERROR("Stream entries go past end of metadata resource");
+			ERROR("(remaining_size = %"PRIu64")", remaining_size);
 			ret = WIMLIB_ERR_INVALID_DENTRY;
 			goto out_free_ads_entries;
 		}
@@ -681,6 +675,9 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 
 		if (remaining_size < cur_entry->stream_name_len + 2) {
 			ERROR("Stream entries go past end of metadata resource");
+			ERROR("(remaining_size = %"PRIu64" bytes, stream_name_len "
+			      "= %"PRIu16" bytes", remaining_size,
+			      cur_entry->stream_name_len);
 			ret = WIMLIB_ERR_INVALID_DENTRY;
 			goto out_free_ads_entries;
 		}
@@ -691,19 +688,18 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_ads_entries;
 		}
-		p = get_bytes(p, cur_entry->stream_name_len,
-			      (u8*)cur_entry->stream_name);
-		p += 2; /* NULL terminator of stream name */
+		get_bytes(p, cur_entry->stream_name_len,
+		          (u8*)cur_entry->stream_name);
 		cur_entry->stream_name_utf8 = utf16_to_utf8(cur_entry->stream_name,
 							    cur_entry->stream_name_len,
 							    &utf8_len);
 		cur_entry->stream_name_len_utf8 = utf8_len;
-		print_byte_field(p, 16);
 
 		if (!cur_entry->stream_name_utf8) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_ads_entries;
 		}
+		p = p_save + ads_entry_length(cur_entry);
 	}
 	dentry->ads_entries = ads_entries;
 	return 0;
@@ -747,7 +743,6 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * terminates the list of sibling directory entries. */
 
 	p = get_u64(&metadata_resource[offset], &dentry->length);
-	DEBUG("length = %zu, %zu\n", dentry->length, *(u64*)(&metadata_resource[offset]));
 
 	/* A zero length field (really a length of 8, since that's how big the
 	 * directory entry is...) indicates that this is the end of directory
