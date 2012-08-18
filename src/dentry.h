@@ -10,25 +10,23 @@
 
 #define WIM_ADS_ENTRY_DISK_SIZE 38
 
-#ifndef WITH_NTFS_3G
 /* 
  * Reparse tags documented at 
  * http://msdn.microsoft.com/en-us/library/dd541667(v=prot.10).aspx
  *
  * IO_REPARSE_TAG_SYMLINK is the only one we really care about.
  */
-#define IO_REPARSE_TAG_RESERVED_ZERO	0x00000000
-#define IO_REPARSE_TAG_RESERVED_ONE	0x00000001
-#define IO_REPARSE_TAG_MOUNT_POINT	0xA0000003
-#define IO_REPARSE_TAG_HSM		0xC0000004
-#define IO_REPARSE_TAG_HSM2		0x80000006
-#define IO_REPARSE_TAG_DRIVER_EXTENDER	0x80000005
-#define IO_REPARSE_TAG_SIS		0x80000007
-#define IO_REPARSE_TAG_DFS		0x8000000A
-#define IO_REPARSE_TAG_DFSR		0x80000012
-#define IO_REPARSE_TAG_FILTER_MANAGER	0x8000000B
-#define IO_REPARSE_TAG_SYMLINK		0xA000000C
-#endif /* !WITH_NTFS_3G */
+#define WIM_IO_REPARSE_TAG_RESERVED_ZERO	0x00000000
+#define WIM_IO_REPARSE_TAG_RESERVED_ONE		0x00000001
+#define WIM_IO_REPARSE_TAG_MOUNT_POINT		0xA0000003
+#define WIM_IO_REPARSE_TAG_HSM			0xC0000004
+#define WIM_IO_REPARSE_TAG_HSM2			0x80000006
+#define WIM_IO_REPARSE_TAG_DRIVER_EXTENDER	0x80000005
+#define WIM_IO_REPARSE_TAG_SIS			0x80000007
+#define WIM_IO_REPARSE_TAG_DFS			0x8000000A
+#define WIM_IO_REPARSE_TAG_DFSR			0x80000012
+#define WIM_IO_REPARSE_TAG_FILTER_MANAGER	0x8000000B
+#define WIM_IO_REPARSE_TAG_SYMLINK		0xA000000C
 
 #define FILE_ATTRIBUTE_READONLY            0x00000001
 #define FILE_ATTRIBUTE_HIDDEN              0x00000002
@@ -275,6 +273,12 @@ static inline bool dentry_is_only_child(const struct dentry *dentry)
 static inline bool dentry_is_directory(const struct dentry *dentry)
 {
 	return (dentry->attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+static inline bool dentry_is_symlink(const struct dentry *dentry)
+{
+	return (dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+		&& (dentry->reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK);
 }
 
 static inline bool dentry_is_regular_file(const struct dentry *dentry)

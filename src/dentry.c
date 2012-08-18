@@ -64,7 +64,9 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 {
 	struct lookup_table_entry *lte;
 
-	if (dentry_is_directory(dentry))
+	if (dentry_is_symlink(dentry))
+		stbuf->st_mode = S_IFLNK | 0777;
+	else if (dentry_is_directory(dentry))
 		stbuf->st_mode = S_IFDIR | 0755;
 	else
 		stbuf->st_mode = S_IFREG | 0644;

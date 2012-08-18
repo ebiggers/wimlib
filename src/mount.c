@@ -32,6 +32,7 @@
 #include "sha1.h"
 #include "lookup_table.h"
 #include "xml.h"
+#include "io.h"
 #include "timestamp.h"
 #include <stdlib.h>
 #include <unistd.h>
@@ -772,12 +773,94 @@ static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		return 0;
 
 	do {
-		memset(&st, 0, sizeof(st));
-		if (filler(buf, child->file_name_utf8, &st, 0))
+		if (filler(buf, child->file_name_utf8, NULL, 0))
 			return 0;
 		child = child->next;
 	} while (child != parent->children);
 	return 0;
+}
+
+/*
+ * Find the symlink target of a symbolic link dentry in the WIM.
+ *
+ * See http://msdn.microsoft.com/en-us/library/cc232006(v=prot.10).aspx
+ * Except the first 8 bytes aren't included in the resource (presumably because
+ * we already know the reparse tag from the dentry, and we already know the
+ * reparse tag len from the lookup table entry resource length).
+ */
+static int get_symlink_name(const u8 *resource, size_t resource_len,
+			    char *buf, size_t buf_len)
+{
+	const u8 *p = resource;
+	u16 substitute_name_offset;
+	u16 substitute_name_len;
+	u16 print_name_offset;
+	u16 print_name_len;
+	u32 flags;
+	char *link_target;
+	size_t link_target_len;
+	int ret;
+	if (resource_len < 12)
+		return -EIO;
+	p = get_u16(p, &substitute_name_offset);
+	p = get_u16(p, &substitute_name_len);
+	p = get_u16(p, &print_name_offset);
+	p = get_u16(p, &print_name_len);
+	p = get_u32(p, &flags);
+	if (12 + substitute_name_offset + substitute_name_len > resource_len)
+		return -EIO;
+	link_target = utf16_to_utf8(p + substitute_name_offset,
+				    substitute_name_len,
+				    &link_target_len);
+	if (!link_target)
+		return -EIO;
+	if (link_target_len + 1 > buf_len) {
+		ret = -ENAMETOOLONG;
+		goto out;
+	}
+	memcpy(buf, link_target, link_target_len + 1);
+	ret = 0;
+out:
+	free(link_target);
+	return ret;
+}
+
+static int wimfs_readlink(const char *path, char *buf, size_t buf_len)
+{
+	struct dentry *dentry = get_dentry(w, path);
+	struct ads_entry *ads;
+	struct lookup_table_entry *entry;
+	struct resource_entry *res_entry;
+	if (!dentry)
+		return -ENOENT;
+	if (!dentry_is_symlink(dentry))
+		return -EINVAL;
+
+	/* 
+	 * This is of course not actually documented, but what I think is going
+	 * on here is that the symlink dentries have 2 alternate data streams;
+	 * one is the default data stream, which is not used and is empty, and
+	 * one is the symlink buffer data stream, which is confusingly also
+	 * unnamed, but isn't empty as it contains the symlink target within the
+	 * resource.
+	 */
+	if (dentry->num_ads != 2)
+		return -EIO;
+	if ((entry = lookup_resource(w->lookup_table, dentry->ads_entries[0].hash)))
+		goto do_readlink;
+	if ((entry = lookup_resource(w->lookup_table, dentry->ads_entries[1].hash)))
+		goto do_readlink;
+	return -EIO;
+do_readlink:
+	res_entry = &entry->resource_entry;
+	char res_buf[res_entry->original_size];
+	if (read_full_resource(w->fp, res_entry->size, 
+			       res_entry->original_size,
+			       res_entry->offset,
+			       wim_resource_compression_type(w, res_entry),
+			       res_buf) != 0)
+		return -EIO;
+	return get_symlink_name(res_buf, res_entry->original_size, buf, buf_len);
 }
 
 /* Close a file. */
@@ -1070,6 +1153,7 @@ static struct fuse_operations wimfs_oper = {
 	.opendir  = wimfs_opendir,
 	.read     = wimfs_read,
 	.readdir  = wimfs_readdir,
+	.readlink = wimfs_readlink,
 	.release  = wimfs_release,
 	.rename   = wimfs_rename,
 	.rmdir    = wimfs_rmdir,
