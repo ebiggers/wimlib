@@ -550,7 +550,6 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 	free_lookup_table(w->lookup_table);
 
 	FREE(w->filename);
-	FREE(w->output_dir);
 	FREE(w->xml_data);
 	free_wim_info(w->wim_info);
 	if (w->image_metadata) {

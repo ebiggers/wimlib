@@ -259,9 +259,6 @@ typedef struct WIMStruct {
 	 * WIM has a image metadata associated with it. */
 	struct image_metadata     *image_metadata;
 
-	/* Name of the output directory for extraction. */
-	char  *output_dir;
-
 	/* The header of the WIM file. */
 	struct wim_header    hdr;
 
@@ -277,12 +274,7 @@ typedef struct WIMStruct {
 	 * image_metadata array. */
 	int current_image;
 
-	union {
-		/* Set to true when extracting multiple images */
-		bool is_multi_image_extraction;
-
-		bool write_metadata;
-	};
+	bool write_metadata;
 } WIMStruct;
 
 

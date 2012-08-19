@@ -40,124 +40,101 @@
 #include <ntfs-3g/security.h>
 #endif
 
+/* Internal */
+#define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE 0x80000000
+
 /* Sets and creates the directory to which files are to be extracted when
  * extracting files from the WIM. */
-static int set_output_dir(WIMStruct *w, const char *dir)
+static int make_output_dir(const char *dir)
 {
 	char *p;
 	DEBUG("Setting output directory to `%s'", dir);
 
-	p = STRDUP(dir);
-	if (!p) {
-		ERROR("Out of memory");
-		return WIMLIB_ERR_NOMEM;
-	}
-
 	if (mkdir(dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0) {
 		if (errno == EEXIST) {
 			DEBUG("`%s' already exists", dir);
-			goto done;
+			return 0;
 		}
 		ERROR_WITH_ERRNO("Cannot create directory `%s'", dir);
-		FREE(p);
 		return WIMLIB_ERR_MKDIR;
 	} else {
 		DEBUG("Created directory `%s'", dir);
 	}
-done:
-	FREE(w->output_dir);
-	w->output_dir = p;
 	return 0;
 }
 
-/* 
- * Extracts a regular file from the WIM archive. 
- *
- * @dentry:  		The directory entry for the file, which must be a
- *				regular file.
- * @output_path:   	The path to which the file is to be extracted.
- * @lookup_table:	The lookup table for the WIM file.
- * @wim_fp:  		The FILE* for the WIM, opened for reading.
- * @wim_ctype:  	The type of compression used in the WIM.
- * @link_type:		One of WIM_LINK_TYPE_*; specifies what to do with
- * 			files that are hard-linked inside the WIM.
- * @is_multi_image_extraction: 
- * 			True if the image currently being extracted is just one 
- * 			image of a multi-image extraction.  This is needed so
- * 			that cross-image symbolic links can be created
- * 			correctly.
- */
-static int extract_regular_file(WIMStruct *w, 
-				const struct dentry *dentry, 
-				const char *output_path,
-				int extract_flags)
+static int extract_regular_file_linked(const struct dentry *dentry, 
+				       const char *output_dir,
+				       const char *output_path,
+				       int extract_flags,
+				       const struct lookup_table_entry *lte)
 {
-	struct lookup_table_entry *lte;
-	int ret;
+	/* This mode overrides the normal hard-link extraction and
+	 * instead either symlinks or hardlinks *all* identical files in
+	 * the WIM, even if they are in a different image (in the case
+	 * of a multi-image extraction) */
+	wimlib_assert(lte->file_on_disk);
+
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
+		if (link(lte->file_on_disk, output_path) != 0) {
+			ERROR_WITH_ERRNO("Failed to hard link "
+					 "`%s' to `%s'",
+					 output_path, lte->file_on_disk);
+			return WIMLIB_ERR_LINK;
+		}
+	} else {
+		int num_path_components;
+		int num_output_dir_path_components;
+		size_t file_on_disk_len;
+		char *p;
+		const char *p2;
+		size_t i;
+
+		num_path_components = 
+			get_num_path_components(dentry->full_path_utf8) - 1;
+		num_output_dir_path_components =
+			get_num_path_components(output_dir);
+
+		if (extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE) {
+			num_path_components++;
+			num_output_dir_path_components--;
+		}
+		file_on_disk_len = strlen(lte->file_on_disk);
+
+		char buf[file_on_disk_len + 3 * num_path_components + 1];
+		p = &buf[0];
+
+		for (i = 0; i < num_path_components; i++) {
+			*p++ = '.';
+			*p++ = '.';
+			*p++ = '/';
+		}
+		p2 = lte->file_on_disk;
+		while (*p2 == '/')
+			p2++;
+		while (num_output_dir_path_components--)
+			p2 = path_next_part(p2, NULL);
+		strcpy(p, p2);
+		if (symlink(buf, output_path) != 0) {
+			ERROR_WITH_ERRNO("Failed to symlink `%s' to "
+					 "`%s'",
+					 buf, lte->file_on_disk);
+			return WIMLIB_ERR_LINK;
+		}
+
+	}
+	return 0;
+}
+
+static int extract_regular_file_unlinked(WIMStruct *w,
+					 const struct dentry *dentry, 
+				         const char *output_path,
+				         int extract_flags,
+				         struct lookup_table_entry *lte)
+{
 	int out_fd;
 	const struct resource_entry *res_entry;
-
-	lte = __lookup_resource(w->lookup_table, dentry_hash(dentry));
-
-	/* If we already extracted the same file or a hard link copy of it, we
-	 * may be able to simply create a link.  The exact action is specified
-	 * by the current @link_type. */
-	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) &&
-	      lte && lte->out_refcnt != 0)
-	{
-		wimlib_assert(lte->file_on_disk);
-
-		if (extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
-			if (link(lte->file_on_disk, output_path) != 0) {
-				ERROR_WITH_ERRNO("Failed to hard link "
-						 "`%s' to `%s'",
-						 output_path, lte->file_on_disk);
-				return WIMLIB_ERR_LINK;
-			}
-		} else {
-			int num_path_components;
-			int num_output_dir_path_components;
-			size_t file_on_disk_len;
-			char *p;
-			const char *p2;
-			size_t i;
-
-			num_path_components = 
-				get_num_path_components(dentry->full_path_utf8) - 1;
-			num_output_dir_path_components =
-				get_num_path_components(w->output_dir);
-
-			if (w->is_multi_image_extraction) {
-				num_path_components++;
-				num_output_dir_path_components--;
-			}
-			file_on_disk_len = strlen(lte->file_on_disk);
-
-			char buf[file_on_disk_len + 3 * num_path_components + 1];
-			p = &buf[0];
-
-			for (i = 0; i < num_path_components; i++) {
-				*p++ = '.';
-				*p++ = '.';
-				*p++ = '/';
-			}
-			p2 = lte->file_on_disk;
-			while (*p2 == '/')
-				p2++;
-			while (num_output_dir_path_components--)
-				p2 = path_next_part(p2, NULL);
-			strcpy(p, p2);
-			if (symlink(buf, output_path) != 0) {
-				ERROR_WITH_ERRNO("Failed to symlink `%s' to "
-						 "`%s'",
-						 buf, lte->file_on_disk);
-				return WIMLIB_ERR_LINK;
-			}
-
-		}
-		return 0;
-	} 
-
+	int ret;
 	/* Otherwise, we must actually extract the file contents. */
 
 	out_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -188,13 +165,38 @@ static int extract_regular_file(WIMStruct *w,
 	lte->out_refcnt++;
 	FREE(lte->file_on_disk);
 	lte->file_on_disk = STRDUP(output_path);
-	if (lte->file_on_disk)
-		ret = 0;
-	else
+	if (!lte->file_on_disk)
 		ret = WIMLIB_ERR_NOMEM;
 done:
 	close(out_fd);
 	return ret;
+}
+
+/* 
+ * Extracts a regular file from the WIM archive. 
+ */
+static int extract_regular_file(WIMStruct *w, 
+				const struct dentry *dentry, 
+				const char *output_dir,
+				const char *output_path,
+				int extract_flags)
+{
+	struct lookup_table_entry *lte;
+
+	lte = __lookup_resource(w->lookup_table, dentry_hash(dentry));
+
+	/* If we already extracted the same file or a hard link copy of it, we
+	 * may be able to simply create a link.  The exact action is specified
+	 * by the current @link_type. */
+	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) &&
+	      lte && lte->out_refcnt != 0)
+		return extract_regular_file_linked(dentry, output_dir,
+						   output_path, extract_flags,
+						   lte);
+	else
+		return extract_regular_file_unlinked(w, dentry, output_path,
+						     extract_flags, lte);
+
 }
 
 static int extract_symlink(const struct dentry *dentry, const char *output_path,
@@ -246,6 +248,7 @@ static int extract_directory(struct dentry *dentry, const char *output_path)
 struct extract_args {
 	WIMStruct *w;
 	int extract_flags;
+	const char *output_dir;
 #ifdef WITH_NTFS_3G
 	struct SECURITY_API *scapi;
 #endif
@@ -263,14 +266,14 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	struct extract_args *args = arg;
 	WIMStruct *w = args->w;
 	int extract_flags = args->extract_flags;
-	size_t len = strlen(w->output_dir);
+	size_t len = strlen(args->output_dir);
 	char output_path[len + dentry->full_path_utf8_len + 1];
 	int ret = 0;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
 		puts(dentry->full_path_utf8);
 
-	memcpy(output_path, w->output_dir, len);
+	memcpy(output_path, args->output_dir, len);
 	memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
@@ -280,12 +283,15 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 		if (!dentry_is_root(dentry)) /* Root doesn't need to be extracted. */
 			ret = extract_directory(dentry, output_path);
 	} else {
-		ret = extract_regular_file(w, dentry, output_path, extract_flags);
+		ret = extract_regular_file(w, dentry, args->output_dir,
+					   output_path, extract_flags);
 	}
+	return ret;
 }
 
 
-static int extract_single_image(WIMStruct *w, int image, int extract_flags)
+static int extract_single_image(WIMStruct *w, int image,
+				const char *output_dir, int extract_flags)
 {
 	DEBUG("Extracting image %d", image);
 
@@ -297,6 +303,7 @@ static int extract_single_image(WIMStruct *w, int image, int extract_flags)
 	struct extract_args args = {
 		.w = w,
 		.extract_flags = extract_flags,
+		.output_dir = output_dir,
 	#ifdef WITH_NTFS_3G
 		.scapi = NULL
 	#endif
@@ -306,12 +313,13 @@ static int extract_single_image(WIMStruct *w, int image, int extract_flags)
 }
 
 
-/* Extracts all images from the WIM to w->output_dir, with the images placed in
+/* Extracts all images from the WIM to @output_dir, with the images placed in
  * subdirectories named by their image names. */
-static int extract_all_images(WIMStruct *w, int extract_flags)
+static int extract_all_images(WIMStruct *w, const char *output_dir,
+			      int extract_flags)
 {
 	size_t image_name_max_len = max(xml_get_max_image_name_len(w), 20);
-	size_t output_path_len = strlen(w->output_dir);
+	size_t output_path_len = strlen(output_dir);
 	char buf[output_path_len + 1 + image_name_max_len + 1];
 	int ret;
 	int image;
@@ -319,7 +327,7 @@ static int extract_all_images(WIMStruct *w, int extract_flags)
 
 	DEBUG("Attempting to extract all images from `%s'", w->filename);
 
-	memcpy(buf, w->output_dir, output_path_len);
+	memcpy(buf, output_dir, output_path_len);
 	buf[output_path_len] = '/';
 	for (image = 1; image <= w->hdr.image_count; image++) {
 		
@@ -330,10 +338,10 @@ static int extract_all_images(WIMStruct *w, int extract_flags)
 			/* Image name is empty. Use image number instead */
 			sprintf(buf + output_path_len + 1, "%d", image);
 		}
-		ret = set_output_dir(w, buf);
+		ret = make_output_dir(buf);
 		if (ret != 0)
 			goto done;
-		ret = extract_single_image(w, image, extract_flags);
+		ret = extract_single_image(w, image, buf, extract_flags);
 		if (ret != 0)
 			goto done;
 	}
@@ -353,8 +361,13 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 	if ((flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 			== (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (image == WIM_ALL_IMAGES)
+		flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
+	else
+		flags &= ~WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
 	
-	ret = set_output_dir(w, output_dir);
+	ret = make_output_dir(output_dir);
 	if (ret != 0)
 		return ret;
 
@@ -383,13 +396,10 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		return WIMLIB_ERR_UNSUPPORTED;
 	#endif
 	}
-	if (image == WIM_ALL_IMAGES) {
-		w->is_multi_image_extraction = true;
-		ret = extract_all_images(w, flags);
-	} else {
-		w->is_multi_image_extraction = false;
-		ret = extract_single_image(w, image, flags);
-	}
+	if (image == WIM_ALL_IMAGES)
+		ret = extract_all_images(w, output_dir, flags);
+	else
+		ret = extract_single_image(w, image, output_dir, flags);
 	return ret;
 
 }
