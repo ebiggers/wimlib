@@ -115,8 +115,8 @@ extern void lookup_table_insert(struct lookup_table *table,
 extern void lookup_table_unlink(struct lookup_table *table, 
 				struct lookup_table_entry *lte);
 
-extern bool lookup_table_decrement_refcnt(struct lookup_table* table, 
-					  const u8 hash[]);
+extern struct lookup_table_entry *
+lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[]);
 
 
 extern struct lookup_table_entry *new_lookup_table_entry();

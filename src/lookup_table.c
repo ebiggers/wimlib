@@ -118,7 +118,8 @@ void lookup_table_unlink(struct lookup_table *table,
 /* Decrement the reference count for the dentry having hash value @hash in the
  * lookup table.  The lookup table entry is unlinked and freed if there are no
  * references to in remaining.  */
-bool lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
+struct lookup_table_entry *
+lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
 {
 	size_t pos = *(size_t*)hash % table->capacity;
 	struct lookup_table_entry *prev = NULL;
@@ -129,19 +130,21 @@ bool lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
 		if (memcmp(hash, entry->hash, WIM_HASH_SIZE) == 0) {
 			wimlib_assert(entry->refcnt != 0);
 			if (--entry->refcnt == 0) {
-				if (entry->num_opened_fds == 0)
+				if (entry->num_opened_fds == 0) {
 					free_lookup_table_entry(entry);
+					entry = NULL;
+				}
 				if (prev)
 					prev->next = next;
 				else
 					table->array[pos] = next;
-				return true;
+				break;
 			}
 		}
 		prev = entry;
 		entry = next;
 	}
-	return false;
+	return entry;
 }
 
 

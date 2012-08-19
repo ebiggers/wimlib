@@ -192,11 +192,22 @@ struct dentry {
 	/* Alternate stream entries for this dentry. */
 	struct ads_entry *ads_entries;
 
-	/* Number of references to the dentry tree itself, as in multiple
-	 * WIMStructs */
-	int refcnt;
+	union {
+		/* Number of references to the dentry tree itself, as in multiple
+		 * WIMStructs */
+		int refcnt;
+
+		/* Number of times this dentry has been opened (only for
+		 * directories!) */
+		u32 num_times_opened;
+	};
 
 	/* List of dentries in the hard link set */
+	enum {
+		GROUP_INDEPENDENT,
+		GROUP_MASTER,
+		GROUP_SLAVE
+	} link_group_master_status;
 	struct list_head link_group_list;
 };
 
@@ -251,6 +262,9 @@ extern int for_dentry_in_tree_depth(struct dentry *root,
 
 extern int calculate_dentry_full_path(struct dentry *dentry, void *ignore);
 extern void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p);
+extern int get_names(char **name_utf16_ret, char **name_utf8_ret,
+	      	     u16 *name_utf16_len_ret, u16 *name_utf8_len_ret,
+	             const char *name);
 extern int change_dentry_name(struct dentry *dentry, const char *new_name);
 extern int change_ads_name(struct ads_entry *entry, const char *new_name);
 
@@ -270,6 +284,9 @@ extern struct dentry *new_dentry(const char *name);
 
 extern void dentry_free_ads_entries(struct dentry *dentry);
 extern void free_dentry(struct dentry *dentry);
+extern void put_dentry(struct dentry *dentry);
+extern int share_dentry_streams(struct dentry *master,
+			        struct dentry *slave);
 extern struct dentry *clone_dentry(struct dentry *old);
 extern void free_dentry_tree(struct dentry *root,
 			     struct lookup_table *lookup_table, 

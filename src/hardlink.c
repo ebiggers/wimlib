@@ -141,13 +141,35 @@ u64 assign_link_groups(struct link_group_table *table)
 	return id;
 }
 
-#if 0
-/* Load a dentry tree into the link group table */
-int load_link_groups(struct link_group_table *table, struct dentry *root)
+static int link_group_free_duplicate_data(struct link_group *group)
 {
-	int ret = for_dentry_in_tree(dentry, link_group_table_insert, table);
-	if (ret == 0)
-		assign_link_groups(table);
-	return ret;
+	struct list_head *head;
+	struct dentry *master;
+
+	head = group->dentry_list;
+	master = container_of(head, struct dentry, link_group_list);
+	head = head->next;
+	master->link_group_master_status = GROUP_MASTER;
+	while (head != group->dentry_list) {
+		int ret = share_dentry_ads(master,
+					   container_of(head, struct dentry,
+						        link_group_list));
+		if (ret != 0)
+			return ret;
+	}
+	return 0;
 }
-#endif
+
+int link_groups_free_duplicate_data(struct link_group_table *table)
+{
+	for (u64 i = 0; i < table->capacity; i++) {
+		struct link_group *group = table->array[i];
+		while (group) {
+			int ret = link_group_free_duplicate_data(group);
+			if (ret != 0)
+				return ret;
+			group = group->next;
+		}
+	}
+	return 0;
+}

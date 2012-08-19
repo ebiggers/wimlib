@@ -146,6 +146,45 @@ static int close_wimlib_fd(struct wimlib_fd *fd)
 	return 0;
 }
 
+static void remove_dentry(struct dentry *dentry,
+			  struct lookup_table *lookup_table)
+{
+	const u8 *hash = dentry->hash;
+	u16 i = 0;
+	struct lookup_table_entry *lte;
+	while (1) {
+		lte = lookup_table_decrement_refcnt(lookup_table, hash);
+		if (lte && lte->num_opened_fds)
+			for (u16 i = 0; i < lte->num_allocated_fds; i++)
+				if (lte->fds[i] && lte->fds[i]->dentry == dentry)
+					lte->fds[i]->dentry = NULL;
+		if (i == dentry->num_ads)
+			break;
+		hash = dentry->ads_entries[i].hash;
+		i++;
+	}
+
+	unlink_dentry(dentry);
+	put_dentry(dentry);
+}
+
+static void dentry_increment_lookup_table_refcnts(struct dentry *dentry,
+						  struct lookup_table *lookup_table)
+{
+	u16 i = 0;
+	const u8 *hash = dentry->hash;
+	struct lookup_table_entry *lte;
+	while (1) {
+		lte = __lookup_resource(lookup_table, hash);
+		if (lte)
+			lte->refcnt++;
+		if (i == dentry->num_ads)
+			break;
+		hash = dentry->ads_entries[i].hash;
+		i++;
+	}
+}
+
 /* Creates a new staging file and returns its file descriptor opened for
  * writing.
  *
@@ -221,7 +260,7 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 	int fd;
 	struct lookup_table_entry *old_lte, *new_lte;
 	size_t link_group_size;
-	
+
 	old_lte = *lte;
 	fd = create_staging_file(&staging_file_name, O_WRONLY);
 	if (fd == -1)
@@ -238,9 +277,7 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 		else
 			ret = -EIO;
 		close(fd);
-		unlink(staging_file_name);
-		FREE(staging_file_name);
-		return ret;
+		goto out_delete_staging_file;
 	}
 
 	link_group_size = dentry_link_group_size(dentry);
@@ -266,8 +303,10 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 			wimlib_assert(old_lte->refcnt > link_group_size);
 
 			new_lte = new_lookup_table_entry();
-			if (!new_lte)
-				return -ENOMEM;
+			if (!new_lte) {
+				ret = -ENOMEM;
+				goto out_delete_staging_file;
+			}
 
 			u16 num_transferred_fds = 0;
 			for (u16 i = 0; i < old_lte->num_allocated_fds; i++) {
@@ -282,7 +321,8 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 					      sizeof(new_lte->fds[0]));
 			if (!new_lte->fds) {
 				free_lookup_table_entry(new_lte);
-				return -ENOMEM;
+				ret = -ENOMEM;
+				goto out_delete_staging_file;
 			}
 			u16 j = 0;
 			for (u16 i = 0; i < old_lte->num_allocated_fds; i++) {
@@ -302,6 +342,12 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 			new_lte->num_opened_fds = j;
 
 		} 
+	} else {
+		new_lte = new_lookup_table_entry();
+		if (!new_lte) {
+			ret = -ENOMEM;
+			goto out_delete_staging_file;
+		}
 	}
 	new_lte->resource_entry.original_size = size;
 	new_lte->refcnt = link_group_size;
@@ -311,6 +357,10 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 	lookup_table_insert(w->lookup_table, new_lte);
 	*lte = new_lte;
 	return 0;
+out_delete_staging_file:
+	unlink(staging_file_name);
+	FREE(staging_file_name);
+	return ret;
 }
 
 /* 
@@ -777,6 +827,7 @@ static int wimfs_link(const char *to, const char *from)
 	}
 	list_add(&from_dentry->link_group_list, &to_dentry->link_group_list);
 	link_dentry(from_dentry, from_dentry_parent);
+	dentry_increment_lookup_table_refcnts(from_dentry, w->lookup_table);
 	return 0;
 }
 
@@ -836,11 +887,14 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 			return -ENOENT;
 		if (!dentry_is_directory(parent))
 			return -ENOTDIR;
+
 		basename = path_basename(path);
 		if (get_dentry_child_with_name(parent, path))
 			return -EEXIST;
 
 		dentry = new_dentry(basename);
+		if (!dentry)
+			return -ENOMEM;
 		link_dentry(dentry, parent);
 	}
 	return 0;
@@ -872,10 +926,10 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 			return 0;
 		}
 
-		ret = extract_resource_to_staging_dir(dentry, &lte,
-						      lte->resource_entry.original_size);
+		ret = extract_resource_to_staging_dir(dentry, &lte, 0);
 		if (ret != 0)
 			return ret;
+		memcpy(dentry_hash, lte->hash, WIM_HASH_SIZE);
 	}
 
 	ret = alloc_wimlib_fd(lte, &fd);
@@ -896,6 +950,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 						      lte->resource_entry.original_size);
 		if (ret != 0)
 			return ret;
+		memcpy(dentry_hash, lte->hash, WIM_HASH_SIZE);
 	}
 	if (lte->staging_file_name) {
 		fd->staging_fd = open(lte->staging_file_name, fi->flags);
@@ -914,8 +969,11 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 	struct dentry *dentry;
 	
 	dentry = get_dentry(w, path);
-	if (!dentry || !dentry_is_directory(dentry))
+	if (!dentry)
+		return -ENOENT;
+	if (!dentry_is_directory(dentry))
 		return -ENOTDIR;
+	dentry->num_times_opened++;
 	fi->fh = (uint64_t)dentry;
 	return 0;
 }
@@ -942,6 +1000,7 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 		wimlib_assert(fd->staging_fd != -1);
 
 		ssize_t ret;
+		DEBUG("Seek to offset %zu", offset);
 
 		if (lseek(fd->staging_fd, offset, SEEK_SET) == -1)
 			return -errno;
@@ -1026,7 +1085,24 @@ static int wimfs_release(const char *path, struct fuse_file_info *fi)
 		wimlib_assert(!(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE));
 		return 0;
 	}
+
+	if (flags_writable(fi->flags) && fd->dentry) {
+		u64 now = get_timestamp();
+		fd->dentry->last_access_time = now;
+		fd->dentry->last_write_time = now;
+	}
+
 	return close_wimlib_fd(fd);
+}
+
+static int wimfs_releasedir(const char *path, struct fuse_file_info *fi)
+{
+	struct dentry *dentry = (struct dentry *)fi->fh;
+
+	wimlib_assert(dentry->num_times_opened);
+	if (--dentry->num_times_opened == 0)
+		free_dentry(dentry);
+	return 0;
 }
 
 /* Renames a file or directory.  See rename (3) */
@@ -1035,6 +1111,12 @@ static int wimfs_rename(const char *from, const char *to)
 	struct dentry *src;
 	struct dentry *dst;
 	struct dentry *parent_of_dst;
+	char *file_name_utf16 = NULL, *file_name_utf8 = NULL;
+	u16 file_name_utf16_len, file_name_utf8_len;
+	int ret;
+
+	/* This rename() implementation currently only supports actual files
+	 * (not alternate data streams) */
 	
 	src = get_dentry(w, from);
 	if (!src)
@@ -1042,7 +1124,17 @@ static int wimfs_rename(const char *from, const char *to)
 
 	dst = get_dentry(w, to);
 
+
+	ret = get_names(&file_name_utf16, &file_name_utf8,
+			&file_name_utf16_len, &file_name_utf8_len,
+			path_basename(to));
+	if (ret != 0)
+		return -ENOMEM;
+
 	if (dst) {
+		if (src == dst) /* Same file */
+			return 0;
+
 		if (!dentry_is_directory(src)) {
 			/* Cannot rename non-directory to directory. */
 			if (dentry_is_directory(dst))
@@ -1056,19 +1148,22 @@ static int wimfs_rename(const char *from, const char *to)
 				return -ENOTEMPTY;
 		}
 		parent_of_dst = dst->parent;
-		unlink_dentry(dst);
-		lookup_table_decrement_refcnt(w->lookup_table, dst->hash);
-		free_dentry(dst);
+		remove_dentry(dst, w->lookup_table);
 	} else {
 		parent_of_dst = get_parent_dentry(w, to);
 		if (!parent_of_dst)
 			return -ENOENT;
 	}
 
+	FREE(src->file_name);
+	FREE(src->file_name_utf8);
+	src->file_name          = file_name_utf16;
+	src->file_name_utf8     = file_name_utf8;
+	src->file_name_len      = file_name_utf16_len;
+	src->file_name_utf8_len = file_name_utf8_len;
+
 	unlink_dentry(src);
-	change_dentry_name(src, path_basename(to));
 	link_dentry(src, parent_of_dst);
-	/*calculate_dentry_full_path(src);*/
 	return 0;
 }
 
@@ -1085,7 +1180,8 @@ static int wimfs_rmdir(const char *path)
 		return -ENOTEMPTY;
 
 	unlink_dentry(dentry);
-	free_dentry(dentry);
+	if (dentry->num_times_opened == 0)
+		free_dentry(dentry);
 	return 0;
 }
 
@@ -1174,18 +1270,7 @@ static int wimfs_unlink(const char *path)
 	if (dentry_hash == dentry->hash) {
 		/* We are removing the full dentry including all alternate data
 		 * streams. */
-		const u8 *hash = dentry->hash;
-		u16 i = 0;
-		while (1) {
-			lookup_table_decrement_refcnt(w->lookup_table, hash);
-			if (i == dentry->num_ads)
-				break;
-			hash = dentry->ads_entries[i].hash;
-			i++;
-		}
-
-		unlink_dentry(dentry);
-		free_dentry(dentry);
+		remove_dentry(dentry, w->lookup_table);
 	} else {
 		/* We are removing an alternate data stream. */
 		struct ads_entry *cur_entry = dentry->ads_entries;
@@ -1236,36 +1321,33 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 	if (ret == -1)
 		return -errno;
 
-	/* The file has been modified, so all its timestamps must be
-	 * updated. */
-	dentry_update_all_timestamps(fd->dentry);
-
 	return ret;
 }
 
 
 static struct fuse_operations wimfs_operations = {
-	.access    = wimfs_access,
-	.destroy   = wimfs_destroy,
-	.fgetattr  = wimfs_fgetattr,
-	.ftruncate = wimfs_ftruncate,
-	.getattr   = wimfs_getattr,
-	.link      = wimfs_link,
-	.mkdir     = wimfs_mkdir,
-	.mknod     = wimfs_mknod,
-	.open      = wimfs_open,
-	.opendir   = wimfs_opendir,
-	.read      = wimfs_read,
-	.readdir   = wimfs_readdir,
-	.readlink  = wimfs_readlink,
-	.release   = wimfs_release,
-	.rename    = wimfs_rename,
-	.rmdir     = wimfs_rmdir,
-	.symlink   = wimfs_symlink,
-	.truncate  = wimfs_truncate,
-	.unlink    = wimfs_unlink,
-	.utimens   = wimfs_utimens,
-	.write     = wimfs_write,
+	.access     = wimfs_access,
+	.destroy    = wimfs_destroy,
+	.fgetattr   = wimfs_fgetattr,
+	.ftruncate  = wimfs_ftruncate,
+	.getattr    = wimfs_getattr,
+	.link       = wimfs_link,
+	.mkdir      = wimfs_mkdir,
+	.mknod      = wimfs_mknod,
+	.open       = wimfs_open,
+	.opendir    = wimfs_opendir,
+	.read       = wimfs_read,
+	.readdir    = wimfs_readdir,
+	.readlink   = wimfs_readlink,
+	.release    = wimfs_release,
+	.releasedir = wimfs_releasedir,
+	.rename     = wimfs_rename,
+	.rmdir      = wimfs_rmdir,
+	.symlink    = wimfs_symlink,
+	.truncate   = wimfs_truncate,
+	.unlink     = wimfs_unlink,
+	.utimens    = wimfs_utimens,
+	.write      = wimfs_write,
 };
 
 

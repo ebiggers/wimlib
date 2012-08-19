@@ -1008,6 +1008,10 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	if (ret != 0)
 		goto out_free_lgt;
 
+	ret = link_groups_free_duplicate_data(lgt);
+	if (ret != 0)
+		goto out_free_lgt;
+
 	imd->lgt           = lgt;
 	imd->security_data = sd;
 	imd->root_dentry   = dentry;

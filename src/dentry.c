@@ -93,10 +93,17 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 		stbuf->st_mode = S_IFREG | 0644;
 
 	/* Use the size of the unnamed (default) file stream. */
-	if (table && (lte = __lookup_resource(table, dentry_hash(dentry))))
-		stbuf->st_size = lte->resource_entry.original_size;
-	else
+	if (table && (lte = __lookup_resource(table, dentry_hash(dentry)))) {
+		if (lte->staging_file_name) {
+			struct stat native_stat;
+			stat(lte->staging_file_name, &native_stat);
+			stbuf->st_size = native_stat.st_size;
+		} else {
+			stbuf->st_size = lte->resource_entry.original_size;
+		}
+	} else {
 		stbuf->st_size = 0;
+	}
 
 	stbuf->st_nlink   = dentry_link_group_size(dentry);
 	stbuf->st_ino     = dentry->hard_link;
@@ -161,7 +168,7 @@ void dentry_remove_ads(struct dentry *dentry, struct ads_entry *sentry)
 {
 	destroy_ads_entry(sentry);
 	memcpy(sentry, sentry + 1,
-	       (dentry->num_ads - (sentry - dentry->ads_entries))
+	       (dentry->num_ads - (sentry - dentry->ads_entries + 1))
 		 * sizeof(struct ads_entry));
 	dentry->num_ads--;
 }
@@ -474,6 +481,7 @@ static inline void dentry_common_init(struct dentry *dentry)
 	memset(dentry, 0, sizeof(struct dentry));
 	dentry->refcnt = 1;
 	dentry->security_id = -1;
+	dentry->link_group_master_status = GROUP_SLAVE;
 }
 
 /* 
@@ -515,15 +523,88 @@ void dentry_free_ads_entries(struct dentry *dentry)
 	dentry->num_ads = 0;
 }
 
-
-void free_dentry(struct dentry *dentry)
+static void __destroy_dentry(struct dentry *dentry)
 {
 	FREE(dentry->file_name);
 	FREE(dentry->file_name_utf8);
 	FREE(dentry->short_name);
 	FREE(dentry->full_path_utf8);
-	dentry_free_ads_entries(dentry);
+}
+
+void free_dentry(struct dentry *dentry)
+{
+	__destroy_dentry(dentry);
+	if (dentry->link_group_master_status != GROUP_SLAVE)
+		dentry_free_ads_entries(dentry);
 	FREE(dentry);
+}
+
+void put_dentry(struct dentry *dentry)
+{
+	if (dentry->link_group_master_status == GROUP_MASTER) {
+		struct dentry *new_master;
+		list_for_each_entry(new_master, &dentry->link_group_list,
+				    link_group_list)
+		{
+			if (new_master->link_group_master_status == GROUP_SLAVE) {
+				new_master->link_group_master_status = GROUP_MASTER;
+				dentry->link_group_master_status = GROUP_SLAVE;
+				break;
+			}
+		}
+	}
+	list_del(&dentry->link_group_list);
+	free_dentry(dentry);
+}
+
+static bool dentries_have_same_ads(const struct dentry *d1,
+				   const struct dentry *d2)
+{
+	/* Verify stream names and hashes are the same */
+	for (u16 i = 0; i < d1->num_ads; i++) {
+		if (strcmp(d1->ads_entries[i].stream_name_utf8,
+			   d2->ads_entries[i].stream_name_utf8) != 0)
+			return false;
+		if (memcmp(d1->ads_entries[i].hash,
+			   d2->ads_entries[i].hash,
+			   WIM_HASH_SIZE) != 0)
+			return false;
+	}
+	return true;
+}
+
+/* Share the alternate stream entries between hard-linked dentries. */
+int share_dentry_ads(struct dentry *master, struct dentry *slave)
+{
+	const char *mismatch_type;
+	wimlib_assert(master->num_ads == 0 ||
+		      master->ads_entries != slave->ads_entries);
+	if (master->attributes != slave->attributes) {
+		mismatch_type = "attributes";
+		goto mismatch;
+	}
+	if (master->security_id != slave->security_id) {
+		mismatch_type = "security ID";
+		goto mismatch;
+	}
+	if (memcmp(master->hash, slave->hash, WIM_HASH_SIZE) != 0) {
+		mismatch_type = "main file resource";
+		goto mismatch;
+	}
+	if (!dentries_have_same_ads(master, slave)) {
+		mismatch_type = "Alternate Stream Entries";
+		goto mismatch;
+	}
+	dentry_free_ads_entries(slave);
+	slave->ads_entries = master->ads_entries;
+	slave->link_group_master_status = GROUP_SLAVE;
+	return 0;
+mismatch:
+	ERROR("Dentries `%s' and `%s' in the same hard-link group but "
+	      "do not share the same %s",
+	      master->full_path_utf8, slave->full_path_utf8,
+	      mismatch_type);
+	return WIMLIB_ERR_INVALID_DENTRY;
 }
 
 /* clones a dentry.
@@ -622,7 +703,13 @@ void link_dentry(struct dentry *dentry, struct dentry *parent)
 	}
 }
 
-/* Unlink a dentry from the directory tree. */
+
+/* Unlink a dentry from the directory tree. 
+ *
+ * Note: This merely removes it from the in-memory tree structure.  See
+ * remove_dentry() in mount.c for a function implemented on top of this one that
+ * frees the dentry and implements reference counting for the lookup table
+ * entries. */
 void unlink_dentry(struct dentry *dentry)
 {
 	if (dentry_is_root(dentry))
@@ -648,36 +735,33 @@ static inline void recalculate_dentry_size(struct dentry *dentry)
 	dentry->length = (dentry->length + 7) & ~7;
 }
 
-static int do_name_change(char **file_name_ret,
-			  char **file_name_utf8_ret,
-			  u16 *file_name_len_ret,
-			  u16 *file_name_utf8_len_ret,
-			  const char *new_name)
+int get_names(char **name_utf16_ret, char **name_utf8_ret,
+	      u16 *name_utf16_len_ret, u16 *name_utf8_len_ret,
+	      const char *name)
 {
 	size_t utf8_len;
 	size_t utf16_len;
-	char *file_name, *file_name_utf8;
+	char *name_utf16, *name_utf8;
 
-	utf8_len = strlen(new_name);
+	utf8_len = strlen(name);
 
-	file_name = utf8_to_utf16(new_name, utf8_len, &utf16_len);
+	name_utf8 = utf8_to_utf16(name, utf8_len, &utf16_len);
 
-	if (!file_name)
+	if (!name_utf8)
 		return WIMLIB_ERR_NOMEM;
 
-	file_name_utf8 = MALLOC(utf8_len + 1);
-	if (!file_name_utf8) {
-		FREE(file_name);
+	name_utf8 = MALLOC(utf8_len + 1);
+	if (!name_utf8) {
+		FREE(name_utf8);
 		return WIMLIB_ERR_NOMEM;
 	}
-	memcpy(file_name_utf8, new_name, utf8_len + 1);
-
-	FREE(*file_name_ret);
-	FREE(*file_name_utf8_ret);
-	*file_name_ret          = file_name;
-	*file_name_utf8_ret     = file_name_utf8;
-	*file_name_len_ret      = utf16_len;
-	*file_name_utf8_len_ret = utf8_len;
+	memcpy(name_utf8, name, utf8_len + 1);
+	FREE(*name_utf8_ret);
+	FREE(*name_utf16_ret);
+	*name_utf8_ret      = name_utf8;
+	*name_utf16_ret     = name_utf16;
+	*name_utf8_len_ret  = utf8_len;
+	*name_utf16_len_ret = utf16_len;
 	return 0;
 }
 
@@ -688,9 +772,9 @@ int change_dentry_name(struct dentry *dentry, const char *new_name)
 {
 	int ret;
 
-	ret = do_name_change(&dentry->file_name, &dentry->file_name_utf8,
-			     &dentry->file_name_len, &dentry->file_name_utf8_len,
-			     new_name);
+	ret = get_names(&dentry->file_name, &dentry->file_name_utf8,
+			&dentry->file_name_len, &dentry->file_name_utf8_len,
+			 new_name);
 	if (ret == 0)
 		recalculate_dentry_size(dentry);
 	return ret;
@@ -698,10 +782,10 @@ int change_dentry_name(struct dentry *dentry, const char *new_name)
 
 int change_ads_name(struct ads_entry *entry, const char *new_name)
 {
-	return do_name_change(&entry->stream_name, &entry->stream_name_utf8,
-			      &entry->stream_name_len,
-			      &entry->stream_name_utf8_len,
-			      new_name);
+	return get_names(&entry->stream_name, &entry->stream_name_utf8,
+			 &entry->stream_name_len,
+			 &entry->stream_name_utf8_len,
+			  new_name);
 }
 
 /* Parameters for calculate_dentry_statistics(). */
