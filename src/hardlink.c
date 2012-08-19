@@ -63,7 +63,6 @@ int link_group_table_insert(struct dentry *dentry, struct link_group_table *tabl
 		group = MALLOC(sizeof(struct link_group));
 		if (!group)
 			return WIMLIB_ERR_NOMEM;
-		DEBUG("Insert single group `%s'", dentry->full_path_utf8);
 		group->link_group_id = 0;
 		group->next          = table->singles;
 		table->singles       = group;
@@ -155,7 +154,6 @@ u64 assign_link_groups(struct link_group_table *table)
 		dentry = container_of(single->dentry_list, struct dentry,
 				      link_group_list);
 		dentry->hard_link = id;
-		DEBUG("Assign single `%s'", dentry->full_path_utf8);
 
 		pos = id % table->capacity;
 		single->next = table->array[pos];
@@ -164,12 +162,15 @@ u64 assign_link_groups(struct link_group_table *table)
 		single = next_single;
 		id++;
 	}
+	table->singles = NULL;
 	return id;
 }
 
-static int link_group_free_duplicate_data(struct link_group *group)
+static int link_group_free_duplicate_data(struct link_group *group,
+					  struct link_group **bad_links)
 {
 	struct list_head *head;
+	struct list_head *next;
 	struct dentry *master;
 
 	head = group->dentry_list;
@@ -177,12 +178,32 @@ static int link_group_free_duplicate_data(struct link_group *group)
 	head = head->next;
 	master->link_group_master_status = GROUP_MASTER;
 	while (head != group->dentry_list) {
-		int ret = share_dentry_ads(master,
-					   container_of(head, struct dentry,
-						        link_group_list));
-		if (ret != 0)
-			return ret;
-		head = head->next;
+		next = head->next;
+		struct dentry *slave;
+		int ret;
+
+		slave = container_of(head, struct dentry, link_group_list);
+		ret = share_dentry_ads(master, slave);
+
+		/* I would it to be an error if two dentries are the same hard
+		 * link group but have irreconcilable differences such as
+		 * different file permissions, but unfortunately some of M$'s
+		 * WIMs contain many instances of this error.  This problem is
+		 * worked around here by splitting each offending dentry off
+		 * into its own hard link group. */
+		if (ret != 0) {
+			struct link_group *single;
+			single = MALLOC(sizeof(struct link_group));
+			if (!single)
+				return WIMLIB_ERR_NOMEM;
+			single->link_group_id = 0;
+			single->next          = *bad_links;
+			*bad_links            = single;
+			INIT_LIST_HEAD(&slave->link_group_list);
+			single->dentry_list = &slave->link_group_list;
+			slave->link_group_master_status = GROUP_INDEPENDENT;
+		}
+		head = next;
 	}
 	return 0;
 }
@@ -192,7 +213,9 @@ int link_groups_free_duplicate_data(struct link_group_table *table)
 	for (u64 i = 0; i < table->capacity; i++) {
 		struct link_group *group = table->array[i];
 		while (group) {
-			int ret = link_group_free_duplicate_data(group);
+			int ret;
+			ret = link_group_free_duplicate_data(group,
+							     &table->singles);
 			if (ret != 0)
 				return ret;
 			group = group->next;

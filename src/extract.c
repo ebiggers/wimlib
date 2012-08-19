@@ -383,6 +383,7 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		if (!(mnt_flags & NTFS_MF_MOUNTED)) {
 			ERROR("NTFS-3g: Filesystem on `%s' is not mounted ",
 			      output_dir);
+			return WIMLIB_ERR_NTFS_3G;
 		}
 		if (mnt_flags & NTFS_MF_READONLY) {
 			ERROR("NTFS-3g: Filesystem on `%s' is mounted "

@@ -592,8 +592,8 @@ int share_dentry_ads(struct dentry *master, struct dentry *slave)
 		goto mismatch;
 	}
 	if (master->attributes & FILE_ATTRIBUTE_DIRECTORY) {
-		ERROR("`%s' is hard-linked to `%s', which is a directory ",
-		      slave->full_path_utf8, master->full_path_utf8);
+		WARNING("`%s' is hard-linked to `%s', which is a directory ",
+		        slave->full_path_utf8, master->full_path_utf8);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 	if (master->security_id != slave->security_id) {
@@ -613,10 +613,10 @@ int share_dentry_ads(struct dentry *master, struct dentry *slave)
 	slave->link_group_master_status = GROUP_SLAVE;
 	return 0;
 mismatch:
-	ERROR("Dentries `%s' and `%s' in the same hard-link group but "
-	      "do not share the same %s",
-	      master->full_path_utf8, slave->full_path_utf8,
-	      mismatch_type);
+	WARNING("Dentries `%s' and `%s' in the same hard-link group but "
+	        "do not share the same %s",
+	        master->full_path_utf8, slave->full_path_utf8,
+	        mismatch_type);
 	return WIMLIB_ERR_INVALID_DENTRY;
 }
 
