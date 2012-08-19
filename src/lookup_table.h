@@ -82,7 +82,7 @@ struct lookup_table_entry {
 			/* Compression type used in other WIM. */
 			int   other_wim_ctype;
 		};
-		struct wimlib_fd *fds;
+		struct wimlib_fd **fds;
 		u16 num_allocated_fds;
 		u16 num_opened_fds;
 	};

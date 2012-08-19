@@ -1013,7 +1013,7 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	imd->root_dentry   = dentry;
 	goto out_free_buf;
 out_free_lgt:
-	free_link_group_table(sgt);
+	free_link_group_table(lgt);
 out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL, false);
 out_free_security_data:
@@ -1106,7 +1106,7 @@ static int write_file_resource(WIMStruct *w, const u8 hash[])
 	/* Get the lookup entry for the file resource. */
 	struct lookup_table_entry *lte;
 	
-	lte = lookup_resource(w->lookup_table, hash);
+	lte = __lookup_resource(w->lookup_table, hash);
 	if (!lte)
 		return 0;
 

@@ -133,16 +133,16 @@ ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 		 */
 		if (dentry->num_ads != 2)
 			return -EIO;
-		if ((entry = lookup_resource(w->lookup_table, dentry->ads_entries[0].hash)))
+		if ((entry = __lookup_resource(w->lookup_table, dentry->ads_entries[0].hash)))
 			goto do_readlink;
-		if ((entry = lookup_resource(w->lookup_table, dentry->ads_entries[1].hash)))
+		if ((entry = __lookup_resource(w->lookup_table, dentry->ads_entries[1].hash)))
 			goto do_readlink;
 	} else {
 		wimlib_assert(dentry->reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
 
 		is_junction_point = true;
 
-		if ((entry = lookup_resource(w->lookup_table, dentry->hash)))
+		if ((entry = __lookup_resource(w->lookup_table, dentry->hash)))
 			goto do_readlink;
 	}
 	return -EIO;

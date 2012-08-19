@@ -16,6 +16,7 @@ libwim_la_SOURCES =		\
 	src/dentry.h		\
 	src/endianness.h	\
 	src/extract.c		\
+	src/hardlink.c		\
 	src/header.c		\
 	src/integrity.c		\
 	src/io.h		\

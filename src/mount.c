@@ -46,9 +46,11 @@
 #include <mqueue.h>
 
 struct wimlib_fd {
+	u16 idx;
 	int staging_fd;
 	u64 hard_link_group;
 	struct lookup_table_entry *lte;
+	struct dentry *dentry;
 };
 
 /* The WIMStruct for the mounted WIM. */
@@ -85,47 +87,221 @@ static inline int flags_writable(int open_flags)
 	return open_flags & (O_RDWR | O_WRONLY);
 }
 
-static int alloc_fd(struct lookup_table_entry *lte, struct wimlib_fd **fd_ret)
+static int alloc_wimlib_fd(struct lookup_table_entry *lte,
+			   struct wimlib_fd **fd_ret)
 {
-	struct wimlib_fd *fds, *fd;
 	if (lte->num_opened_fds == lte->num_allocated_fds) {
+		struct wimlib_fd **fds;
 		if (lte->num_allocated_fds > 0xffff - 8)
 			return -ENFILE;
 		
-		fds = CALLOC(lte->num_allocated_fds + 8, sizeof(struct wimlib_fd));
+		fds = CALLOC(lte->num_allocated_fds + 8, sizeof(lte->fds[0]));
 		if (!fds)
 			return -ENOMEM;
 		memcpy(fds, lte->fds,
-		       lte->num_allocated_fds * sizeof(struct wimlib_fd));
+		       lte->num_allocated_fds * sizeof(lte->fds[0]));
 		FREE(lte->fds);
 		lte->fds = fds;
 	}
-	fd = lte->fds;
-	while (1) {
-		if (!fd->lte) {
-			fd->hard_link_group = 0;
+	for (u16 i = 0; ; i++) {
+		struct wimlib_fd *fd = lte->fds[i];
+		if (!fd) {
+			fd = CALLOC(1, sizeof(*fd));
+			if (!fd)
+				return -ENOMEM;
 			fd->staging_fd = -1;
-			fd->lte = lte;
-			*fd_ret = fd;
+			fd->idx        = i;
+			fd->lte        = lte;
+			lte->fds[i]    = fd;
+			*fd_ret        = fd;
 			return 0;
 		}
-		fd++;
 	}
 }
 
-static int close_fd(struct wimlib_fd *fd)
+static int close_wimlib_fd(struct wimlib_fd *fd)
 {
 	struct lookup_table_entry *lte = fd->lte;
+
 	wimlib_assert(lte);
 	wimlib_assert(lte->num_opened_fds);
 
-	u16 idx = fd - lte->fds;
-	if (lte->staging_file_name && fd->staging_fd != -1)
+	if (lte->staging_file_name) {
+		wimlib_assert(fd->staging_fd != -1);
 		if (close(fd->staging_fd) != 0)
 			return -errno;
+	}
 	if (--lte->num_opened_fds == 0 && lte->refcnt == 0)
 		free_lookup_table_entry(lte);
-	fd->lte = NULL;
+	lte->fds[fd->idx] = NULL;
+	FREE(fd);
+	return 0;
+}
+
+/* Creates a new staging file and returns its file descriptor opened for
+ * writing.
+ *
+ * @name_ret: A location into which the a pointer to the newly allocated name of
+ * 			the staging file is stored.
+ * @return:  The file descriptor for the new file.  Returns -1 and sets errno on
+ * 		error, for any reason possible from the creat() function.
+ */
+static int create_staging_file(char **name_ret, int open_flags)
+{
+	size_t name_len;
+	char *name;
+	struct stat stbuf;
+	int fd;
+	int errno_save;
+
+	name_len = staging_dir_name_len + 1 + WIM_HASH_SIZE;
+ 	name = MALLOC(name_len + 1);
+	if (!name) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	do {
+
+		memcpy(name, staging_dir_name, staging_dir_name_len);
+		name[staging_dir_name_len] = '/';
+		randomize_char_array_with_alnum(name + staging_dir_name_len + 1,
+						WIM_HASH_SIZE);
+		name[name_len] = '\0';
+
+
+	/* Just in case, verify that the randomly generated name doesn't name an
+	 * existing file, and try again if so  */
+	} while (stat(name, &stbuf) == 0);
+
+	if (errno != ENOENT)
+		/* other error! */
+		return -1;
+
+	/* doesn't exist--- ok */
+
+	DEBUG("Creating staging file `%s'", name);
+
+	fd = open(name, open_flags | O_CREAT | O_TRUNC, 0600); 
+	if (fd == -1) {
+		errno_save = errno;
+		FREE(name);
+		errno = errno_save;
+	} else {
+		*name_ret = name;
+	}
+	return fd;
+}
+
+/* 
+ * Extract a WIM resource to the staging directory.
+ *
+ * We need to:
+ * - Create a staging file for the WIM resource
+ * - Extract the resource to it
+ * - Create a new lte for the file resource
+ * - Transfer fds from the old lte to the new lte, but
+ *   only if they share the same hard link group as this
+ *   dentry
+ */
+static int extract_resource_to_staging_dir(struct dentry *dentry,
+					   struct lookup_table_entry **lte,
+					   off_t size)
+{
+	char *staging_file_name;
+	int ret;
+	int fd;
+	struct lookup_table_entry *old_lte, *new_lte;
+	size_t link_group_size;
+	
+	old_lte = *lte;
+	fd = create_staging_file(&staging_file_name, O_WRONLY);
+	if (fd == -1)
+		return -errno;
+
+	if (old_lte)
+		ret = extract_resource_to_fd(w, &old_lte->resource_entry, fd,
+					     size);
+	else
+		ret = 0;
+	if (ret != 0 || close(fd) != 0) {
+		if (errno != 0)
+			ret = -errno;
+		else
+			ret = -EIO;
+		close(fd);
+		unlink(staging_file_name);
+		FREE(staging_file_name);
+		return ret;
+	}
+
+	link_group_size = dentry_link_group_size(dentry);
+
+	if (old_lte) {
+		if (link_group_size == old_lte->refcnt) {
+			/* This hard link group is the only user of the lookup
+			 * table entry, so we can re-use it. */
+			lookup_table_remove(w->lookup_table, old_lte);
+			new_lte = old_lte;
+		} else {
+			/* Split a hard link group away from the "lookup table
+			 * entry" hard link group (i.e. we had two hard link
+			 * groups that were identical, but now we are changing
+			 * one of them) */
+
+			/* XXX The ADS really complicate things here and not
+			 * everything is going to work correctly yet.  For
+			 * example it could be the same that a file contains two
+			 * file streams that are identical and therefore share
+			 * the same lookup table entry despite the fact that the
+			 * streams themselves are not hardlinked. */
+			wimlib_assert(old_lte->refcnt > link_group_size);
+
+			new_lte = new_lookup_table_entry();
+			if (!new_lte)
+				return -ENOMEM;
+
+			u16 num_transferred_fds = 0;
+			for (u16 i = 0; i < old_lte->num_allocated_fds; i++) {
+				if (old_lte->fds[i] &&
+				    old_lte->fds[i]->dentry->hard_link ==
+				      dentry->hard_link)
+				{
+					num_transferred_fds++;
+				}
+			}
+			new_lte->fds = MALLOC(num_transferred_fds *
+					      sizeof(new_lte->fds[0]));
+			if (!new_lte->fds) {
+				free_lookup_table_entry(new_lte);
+				return -ENOMEM;
+			}
+			u16 j = 0;
+			for (u16 i = 0; i < old_lte->num_allocated_fds; i++) {
+				if (old_lte->fds[i] &&
+				    old_lte->fds[i]->dentry->hard_link ==
+				      dentry->hard_link)
+				{
+					struct wimlib_fd *fd = old_lte->fds[i];
+					old_lte->fds[i] = NULL;
+					fd->lte = new_lte;
+					fd->idx = j;
+					new_lte->fds[j] = fd;
+				}
+			}
+			old_lte->refcnt -= link_group_size;
+			old_lte->num_opened_fds -= j;
+			new_lte->num_opened_fds = j;
+
+		} 
+	}
+	new_lte->resource_entry.original_size = size;
+	new_lte->refcnt = link_group_size;
+	randomize_byte_array(new_lte->hash, WIM_HASH_SIZE);
+	new_lte->staging_file_name = staging_file_name;
+
+	lookup_table_insert(w->lookup_table, new_lte);
+	*lte = new_lte;
 	return 0;
 }
 
@@ -366,8 +542,8 @@ static int wimfs_access(const char *path, int mask)
 static int close_lte_fds(struct lookup_table_entry *lte, void *ignore)
 {
 	for (u16 i = 0; i < lte->num_opened_fds; i++) {
-		if (lte->fds[i].lte && lte->fds[i].staging_fd != -1) {
-			if (close(lte->fds[i].staging_fd) != 0) {
+		if (lte->fds[i] && lte->fds[i]->staging_fd != -1) {
+			if (close(lte->fds[i]->staging_fd) != 0) {
 				ERROR_WITH_ERRNO("Failed close file `%s'",
 						 lte->staging_file_name);
 				return WIMLIB_ERR_WRITE;
@@ -532,6 +708,17 @@ done:
 	close_message_queues();
 }
 
+static int wimfs_ftruncate(const char *path, off_t size,
+			   struct fuse_file_info *fi)
+{
+	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
+	int ret = ftruncate(fd->staging_fd, size);
+	if (ret != 0)
+		return ret;
+	fd->lte->resource_entry.original_size = size;
+	return 0;
+}
+
 /*
  * Fills in a `struct stat' that corresponds to a file or directory in the WIM.
  */
@@ -571,60 +758,6 @@ static int wimfs_mkdir(const char *path, mode_t mode)
 	return 0;
 }
 
-/* Creates a new staging file and returns its file descriptor opened for
- * writing.
- *
- * @name_ret: A location into which the a pointer to the newly allocated name of
- * 			the staging file is stored.
- * @return:  The file descriptor for the new file.  Returns -1 and sets errno on
- * 		error, for any reason possible from the creat() function.
- */
-static int create_staging_file(char **name_ret, int open_flags)
-{
-	size_t name_len;
-	char *name;
-	struct stat stbuf;
-	int fd;
-	int errno_save;
-
-	name_len = staging_dir_name_len + 1 + WIM_HASH_SIZE;
- 	name = MALLOC(name_len + 1);
-	if (!name) {
-		errno = ENOMEM;
-		return -1;
-	}
-
-	do {
-
-		memcpy(name, staging_dir_name, staging_dir_name_len);
-		name[staging_dir_name_len] = '/';
-		randomize_char_array_with_alnum(name + staging_dir_name_len + 1,
-						WIM_HASH_SIZE);
-		name[name_len] = '\0';
-
-
-	/* Just in case, verify that the randomly generated name doesn't name an
-	 * existing file, and try again if so  */
-	} while (stat(name, &stbuf) == 0);
-
-	if (errno != ENOENT)
-		/* other error! */
-		return -1;
-
-	/* doesn't exist--- ok */
-
-	DEBUG("Creating staging file `%s'", name);
-
-	fd = open(name, open_flags | O_CREAT | O_TRUNC, 0600); 
-	if (fd == -1) {
-		errno_save = errno;
-		FREE(name);
-		errno = errno_save;
-	} else {
-		*name_ret = name;
-	}
-	return fd;
-}
 
 /* Creates a regular file. */
 static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
@@ -679,60 +812,50 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	if (ret != 0)
 		return ret;
 
-	if (lte) {
-		/* Common case--- there's a lookup table entry for a file.
-		 * Allocate a new file descriptor for it. */
-
-		ret = alloc_fd(lte, &fd);
-		if (ret != 0)
-			return ret;
-
-		/* The file resource may be in the staging directory (read-write
-		 * mounts only) or in the WIM.  If it's in the staging
-		 * directory, we need to open a native file descriptor for the
-		 * corresponding file.  Otherwise, we can read the file resource
-		 * directly from the WIM file if we are opening it read-only,
-		 * but we need to extract the resource to the staging directory
-		 * if we are opening it writable. */
-		if (lte->staging_file_name) {
-			fd->staging_fd = open(lte->staging_file_name, fi->flags);
-			if (fd->staging_fd == -1) {
-				close_fd(fd);
-				return -errno;
-			}
-		} else if (flags_writable(fi->flags)) {
-
-			ret = extract_resource_to_staging_dir(lte,
-							      lte->resource_entry.original_size);
-		}
-	} else {
+	if (!lte) {
 		/* Empty file with no lookup-table entry.  This is fine if it's
 		 * a read-only filesystem.  Otherwise we need to create a lookup
 		 * table entry so that we can keep track of the file descriptors
 		 * (this is important in case someone opens the file for
 		 * writing) */
 		if (!(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
-			fi->fd = 0;
+			fi->fh = 0;
 			return 0;
 		}
-		char *tmpfile_name;
-		int fd;
 
-		fd = create_staging_file(&tmpfile_name, O_RDWR);
-		if (fd == -1)
-			return -errno;
-
-		lte = new_lookup_table_entry();
-		if (!lte)
-			return -ENOMEM;
-
-		randomize_byte_array(lte->hash, WIM_HASH_SIZE);
-		memcpy(dentry_hash, lte->hash, WIM_HASH_SIZE);
-		lte->staging_file_name = tmpfile_name;
-		lte->staging_fd = fd;
-		lookup_table_insert(w->lookup_table, lte);
+		ret = extract_resource_to_staging_dir(dentry, &lte,
+						      lte->resource_entry.original_size);
+		if (ret != 0)
+			return ret;
 	}
-	fi->fd = (uint64_t)fd;
+
+	ret = alloc_wimlib_fd(lte, &fd);
+	if (ret != 0)
+		return ret;
+
+	fd->dentry = dentry;
+
+	/* The file resource may be in the staging directory (read-write
+	 * mounts only) or in the WIM.  If it's in the staging
+	 * directory, we need to open a native file descriptor for the
+	 * corresponding file.  Otherwise, we can read the file resource
+	 * directly from the WIM file if we are opening it read-only,
+	 * but we need to extract the resource to the staging directory
+	 * if we are opening it writable. */
+	if (flags_writable(fi->flags) && !lte->staging_file_name) {
+		ret = extract_resource_to_staging_dir(dentry, &lte,
+						      lte->resource_entry.original_size);
+		if (ret != 0)
+			return ret;
+	}
+	if (lte->staging_file_name) {
+		fd->staging_fd = open(lte->staging_file_name, fi->flags);
+		if (fd->staging_fd == -1) {
+			close_wimlib_fd(fd);
+			return -errno;
+		}
+	}
+	fi->fh = (uint64_t)fd;
 	return 0;
 }
 
@@ -744,7 +867,7 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 	dentry = get_dentry(w, path);
 	if (!dentry || !dentry_is_directory(dentry))
 		return -ENOTDIR;
-	fi->fd = (uint64_t)dentry;
+	fi->fh = (uint64_t)dentry;
 	return 0;
 }
 
@@ -757,8 +880,12 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 {
 	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
 
-	wimlib_assert(fd->lte);
-	wimlib_assert(fd->lte->staging_dir_name);
+	if (!fd) {
+		/* Empty file with no lookup table entry on read-only mounted
+		 * WIM */
+		wimlib_assert(!(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE));
+		return 0;
+	}
 
 	if (fd->lte->staging_file_name) {
 		/* Read from staging file */
@@ -780,7 +907,7 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 		struct resource_entry *res_entry;
 		int ctype;
 		
-		res_entry = &lte->resource_entry;
+		res_entry = &fd->lte->resource_entry;
 
 		ctype = wim_resource_compression_type(w, res_entry);
 
@@ -803,11 +930,13 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
 				off_t offset, struct fuse_file_info *fi)
 {
-	struct dentry *parent = (struct dentry*) fi->fh;
+	struct dentry *parent, *child;
+	
+	parent = (struct dentry*)fi->fh;
+	child = parent->children;
+
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
-
-	child = parent->children;
 
 	if (!child)
 		return 0;
@@ -841,10 +970,14 @@ static int wimfs_release(const char *path, struct fuse_file_info *fi)
 {
 	int ret;
 	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
-	
-	wimlib_assert(fd->lte);
-	wimlib_assert(fd->num_opened_fds);
-	return close_fd(fd);
+
+	if (!fd) {
+		/* Empty file with no lookup table entry on read-only mounted
+		 * WIM */
+		wimlib_assert(!(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE));
+		return 0;
+	}
+	return close_wimlib_fd(fd);
 }
 
 /* Renames a file or directory.  See rename (3) */
@@ -907,75 +1040,6 @@ static int wimfs_rmdir(const char *path)
 	return 0;
 }
 
-/* 
- * Extract a WIM resource to the staging directory.
- * Only @size bytes are extracted, to support truncating the file. 
- *
- * We need to:
- * - Create a staging file for the WIM resource
- * - Extract the resource to it
- * - Create a new lte for the file resource
- * - Transfer fds from the old lte to the new lte, but
- *   only if they share the same hard link group as this
- *   dentry
- */
-static int extract_resource_to_staging_dir(struct lookup_table_entry *lte,
-					   u64 size)
-{
-	char *staging_file_name;
-	int ret;
-	int fd;
-	struct lookup_table_entry *new_lte;
-	
-	fd = create_staging_file(&staging_file_name);
-	if (fd == -1)
-		return -errno;
-
-	ret = extract_resource_to_fd(w, &lte->resource_entry, fd, size);
-	if (ret != 0) {
-		if (errno != 0)
-			ret = -errno;
-		else
-			ret = -EIO;
-		unlink(staging_file_name);
-		FREE(staging_file_name);
-		return ret;
-	}
-
-	/* XXX
-	 * Need to figure out how to avoid creating orphan lookup table entries.
-	 * XXX
-	 */
-	if (lte->refcnt == 1) {
-		new_lte = lte;
-	} else {
-		/* Need to make a new lookup table entry if we are
-		 * changing only one copy of a hardlinked entry */
-		lte->refcnt--;
-
-		new_lte = new_lookup_table_entry();
-		if (!new_lte)
-			return -ENOMEM;
-		randomize_byte_array(dentry_hash, WIM_HASH_SIZE);
-		memcpy(new_lte->hash, dentry_hash, WIM_HASH_SIZE);
-
-		new_lte->resource_entry.flags = 0;
-		new_lte->staging_num_times_opened = lte->staging_num_times_opened;
-
-		lookup_table_insert(w->lookup_table, new_lte);
-
-		lte = new_lte;
-	} 
-
-	lte->resource_entry.original_size = size;
-	lte->staging_file_name = staging_file_name;
-	
-	if (lte->staging_num_times_opened == 0)
-		close(fd);
-	else
-		lte->staging_fd = fd;
-	return 0;
-}
 
 /* Reduce the size of a file */
 static int wimfs_truncate(const char *path, off_t size)
@@ -995,20 +1059,16 @@ static int wimfs_truncate(const char *path, off_t size)
 		return 0;
 
 	if (lte->staging_file_name) {
-		/* File on disk.  Call POSIX API */
-		if (lte->staging_num_times_opened != 0)
-			ret = ftruncate(lte->staging_fd, size);
-		else
-			ret = truncate(lte->staging_file_name, size);
+		ret = truncate(lte->staging_file_name, size);
 		if (ret != 0)
 			return -errno;
-		dentry_update_all_timestamps(dentry);
 		lte->resource_entry.original_size = size;
 	} else {
 		/* File in WIM.  Extract it to the staging directory, but only
 		 * the first @size bytes of it. */
-		ret = extract_resource_to_staging_dir(dentry_hash, lte, size);
+		ret = extract_resource_to_staging_dir(dentry, &lte, size);
 	}
+	dentry_update_all_timestamps(dentry);
 	return ret;
 }
 
@@ -1087,54 +1147,41 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 	int ret;
 
 	wimlib_assert(fd->lte);
-	wimlib_assert(fd->lte->staging_dir_name);
+	wimlib_assert(fd->lte->staging_file_name);
 	wimlib_assert(fd->staging_fd != -1);
 
-	/* Seek to correct position in file if needed. */
-	if (lte->staging_offset != offset) {
-		if (lseek(lte->staging_fd, offset, SEEK_SET) == -1)
-			return -errno;
-		lte->staging_offset = offset;
-	}
-
 	/* Write the data. */
-	ret = write(lte->staging_fd, buf, size);
+	ret = write(fd->staging_fd, buf, size);
 	if (ret == -1)
 		return -errno;
 
-	/* Adjust the stored offset of staging_fd. */
-	lte->staging_offset = offset + ret;
-
-	/* Increase file size if needed. */
-	if (lte->resource_entry.original_size < lte->staging_offset)
-		lte->resource_entry.original_size = lte->staging_offset;
-
 	/* The file has been modified, so all its timestamps must be
 	 * updated. */
-	dentry_update_all_timestamps(dentry);
+	dentry_update_all_timestamps(fd->dentry);
 
 	return ret;
 }
 
 
 static struct fuse_operations wimfs_oper = {
-	.access   = wimfs_access,
-	.destroy  = wimfs_destroy,
-	.getattr  = wimfs_getattr,
-	.mkdir    = wimfs_mkdir,
-	.mknod    = wimfs_mknod,
-	.open     = wimfs_open,
-	.opendir  = wimfs_opendir,
-	.read     = wimfs_read,
-	.readdir  = wimfs_readdir,
-	.readlink = wimfs_readlink,
-	.release  = wimfs_release,
-	.rename   = wimfs_rename,
-	.rmdir    = wimfs_rmdir,
-	.truncate = wimfs_truncate,
-	.unlink   = wimfs_unlink,
-	.utimens  = wimfs_utimens,
-	.write    = wimfs_write,
+	.access    = wimfs_access,
+	.destroy   = wimfs_destroy,
+	.ftruncate = wimfs_ftruncate,
+	.getattr   = wimfs_getattr,
+	.mkdir     = wimfs_mkdir,
+	.mknod     = wimfs_mknod,
+	.open      = wimfs_open,
+	.opendir   = wimfs_opendir,
+	.read      = wimfs_read,
+	.readdir   = wimfs_readdir,
+	.readlink  = wimfs_readlink,
+	.release   = wimfs_release,
+	.rename    = wimfs_rename,
+	.rmdir     = wimfs_rmdir,
+	.truncate  = wimfs_truncate,
+	.unlink    = wimfs_unlink,
+	.utimens   = wimfs_utimens,
+	.write     = wimfs_write,
 };
 
 

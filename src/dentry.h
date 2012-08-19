@@ -205,6 +205,14 @@ static inline const u8 *dentry_hash(const struct dentry *dentry)
 	return dentry->hash;
 }
 
+static inline size_t dentry_link_group_size(struct dentry *dentry)
+{
+	size_t size = 0;
+	struct list_head *list;
+	list_for_each(list, &dentry->link_group_list)
+		size++;
+	return size;
+}
 
 extern struct ads_entry *dentry_get_ads_entry(struct dentry *dentry,
 					      const char *stream_name);
