@@ -80,6 +80,11 @@ void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 	} else {
 		dentry->attributes = FILE_ATTRIBUTE_NORMAL;
 	}
+	if (sizeof(ino_t) >= 8)
+		dentry->hard_link = (u64)stbuf->st_ino;
+	else
+		dentry->hard_link = (u64)stbuf->st_ino |
+				   ((u64)stbuf->st_dev << (sizeof(ino_t) * 8));
 }
 
 /* Transfers file attributes from a struct dentry to a `stat' buffer. */

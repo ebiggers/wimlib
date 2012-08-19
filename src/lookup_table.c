@@ -129,7 +129,7 @@ bool lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
 		if (memcmp(hash, entry->hash, WIM_HASH_SIZE) == 0) {
 			wimlib_assert(entry->refcnt != 0);
 			if (--entry->refcnt == 0) {
-				if (entry->staging_num_times_opened == 0)
+				if (entry->num_opened_fds == 0)
 					free_lookup_table_entry(entry);
 				if (prev)
 					prev->next = next;
@@ -361,7 +361,7 @@ int lookup_resource(WIMStruct *w, const char *path,
 {
 	struct dentry *dentry = get_dentry(w, path);
 	struct lookup_table_entry *lte;
-	const u8 *hash;
+	u8 *hash;
 	if (!dentry)
 		return -ENOENT;
 	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)

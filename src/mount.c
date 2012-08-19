@@ -45,6 +45,12 @@
 #include <ftw.h>
 #include <mqueue.h>
 
+struct wimlib_fd {
+	int staging_fd;
+	u64 hard_link_group;
+	struct lookup_table_entry *lte;
+};
+
 /* The WIMStruct for the mounted WIM. */
 static WIMStruct *w;
 
@@ -72,6 +78,55 @@ static inline int get_lookup_flags()
 		return LOOKUP_FLAG_ADS_OK;
 	else
 		return 0;
+}
+
+static inline int flags_writable(int open_flags)
+{
+	return open_flags & (O_RDWR | O_WRONLY);
+}
+
+static int alloc_fd(struct lookup_table_entry *lte, struct wimlib_fd **fd_ret)
+{
+	struct wimlib_fd *fds, *fd;
+	if (lte->num_opened_fds == lte->num_allocated_fds) {
+		if (lte->num_allocated_fds > 0xffff - 8)
+			return -ENFILE;
+		
+		fds = CALLOC(lte->num_allocated_fds + 8, sizeof(struct wimlib_fd));
+		if (!fds)
+			return -ENOMEM;
+		memcpy(fds, lte->fds,
+		       lte->num_allocated_fds * sizeof(struct wimlib_fd));
+		FREE(lte->fds);
+		lte->fds = fds;
+	}
+	fd = lte->fds;
+	while (1) {
+		if (!fd->lte) {
+			fd->hard_link_group = 0;
+			fd->staging_fd = -1;
+			fd->lte = lte;
+			*fd_ret = fd;
+			return 0;
+		}
+		fd++;
+	}
+}
+
+static int close_fd(struct wimlib_fd *fd)
+{
+	struct lookup_table_entry *lte = fd->lte;
+	wimlib_assert(lte);
+	wimlib_assert(lte->num_opened_fds);
+
+	u16 idx = fd - lte->fds;
+	if (lte->staging_file_name && fd->staging_fd != -1)
+		if (close(fd->staging_fd) != 0)
+			return -errno;
+	if (--lte->num_opened_fds == 0 && lte->refcnt == 0)
+		free_lookup_table_entry(lte);
+	fd->lte = NULL;
+	return 0;
 }
 
 /* 
@@ -308,13 +363,15 @@ static int wimfs_access(const char *path, int mask)
 
 /* Closes the staging file descriptor associated with the lookup table entry, if
  * it is opened. */
-static int close_staging_file(struct lookup_table_entry *lte, void *ignore)
+static int close_lte_fds(struct lookup_table_entry *lte, void *ignore)
 {
-	if (lte->staging_file_name && lte->staging_num_times_opened) {
-		if (close(lte->staging_fd) != 0) {
-			ERROR_WITH_ERRNO("Failed close file `%s'",
-					 lte->staging_file_name);
-			return WIMLIB_ERR_WRITE;
+	for (u16 i = 0; i < lte->num_opened_fds; i++) {
+		if (lte->fds[i].lte && lte->fds[i].staging_fd != -1) {
+			if (close(lte->fds[i].staging_fd) != 0) {
+				ERROR_WITH_ERRNO("Failed close file `%s'",
+						 lte->staging_file_name);
+				return WIMLIB_ERR_WRITE;
+			}
 		}
 	}
 	return 0;
@@ -373,7 +430,7 @@ static int rebuild_wim(WIMStruct *w, bool check_integrity)
 
 	DEBUG("Closing all staging file descriptors.");
 	/* Close all the staging file descriptors. */
-	ret = for_lookup_table_entry(w->lookup_table, close_staging_file, NULL);
+	ret = for_lookup_table_entry(w->lookup_table, close_lte_fds, NULL);
 	if (ret != 0) {
 		ERROR("Failed to close all staging files");
 		return ret;
@@ -558,7 +615,7 @@ static int create_staging_file(char **name_ret, int open_flags)
 
 	DEBUG("Creating staging file `%s'", name);
 
-	fd = open(name, mode | O_CREAT | O_TRUNC, 0600); 
+	fd = open(name, open_flags | O_CREAT | O_TRUNC, 0600); 
 	if (fd == -1) {
 		errno_save = errno;
 		FREE(name);
@@ -615,6 +672,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	struct lookup_table_entry *lte;
 	u8 *dentry_hash;
 	int ret;
+	struct wimlib_fd *fd;
 
 	ret = lookup_resource(w, path, get_lookup_flags(), &dentry, &lte,
 			      &dentry_hash);
@@ -622,30 +680,37 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 		return ret;
 
 	if (lte) {
-		/* If this file is in the staging directory and the file is not
-		 * currently open, open it. */
+		/* Common case--- there's a lookup table entry for a file.
+		 * Allocate a new file descriptor for it. */
+
+		ret = alloc_fd(lte, &fd);
+		if (ret != 0)
+			return ret;
+
+		/* The file resource may be in the staging directory (read-write
+		 * mounts only) or in the WIM.  If it's in the staging
+		 * directory, we need to open a native file descriptor for the
+		 * corresponding file.  Otherwise, we can read the file resource
+		 * directly from the WIM file if we are opening it read-only,
+		 * but we need to extract the resource to the staging directory
+		 * if we are opening it writable. */
 		if (lte->staging_file_name) {
- 			if (lte->staging_num_times_opened == 0) {
-				lte->staging_fd = open(lte->staging_file_name, O_RDWR);
-				if (lte->staging_fd == -1)
-					return -errno;
-				lte->staging_offset = 0;
+			fd->staging_fd = open(lte->staging_file_name, fi->flags);
+			if (fd->staging_fd == -1) {
+				close_fd(fd);
+				return -errno;
 			}
-		} else {
-			/* File in the WIM.  We must extract it to the staging directory
-			 * before it can be written to.  */
-			ret = extract_resource_to_staging_dir(dentry_hash, lte,
+		} else if (flags_writable(fi->flags)) {
+
+			ret = extract_resource_to_staging_dir(lte,
 							      lte->resource_entry.original_size);
-			if (ret != 0)
-				return ret;
 		}
 	} else {
 		/* Empty file with no lookup-table entry.  This is fine if it's
-		 * a read-only filesystem.  Otherwise we need to move the file
-		 * to the staging directory with a new lookup table entry, even
-		 * if we aren't opening it for writing at the moment, so that we
-		 * will have a lookup table entry for the file in case it's
-		 * changed. */
+		 * a read-only filesystem.  Otherwise we need to create a lookup
+		 * table entry so that we can keep track of the file descriptors
+		 * (this is important in case someone opens the file for
+		 * writing) */
 		if (!(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
 			fi->fd = 0;
 			return 0;
@@ -667,8 +732,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 		lte->staging_fd = fd;
 		lookup_table_insert(w->lookup_table, lte);
 	}
-	lte->staging_num_times_opened++;
-	fi->fd = (uint64_t)lte;
+	fi->fd = (uint64_t)fd;
 	return 0;
 }
 
@@ -689,36 +753,25 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
  * Read data from a file in the WIM or in the staging directory. 
  */
 static int wimfs_read(const char *path, char *buf, size_t size, 
-		off_t offset, struct fuse_file_info *fi)
+		      off_t offset, struct fuse_file_info *fi)
 {
-	struct lookup_table_entry *lte;
+	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
 
-	lte = (struct lookup_table_entry*)fi->fh;
-	if (!lte)
-		return 0;
+	wimlib_assert(fd->lte);
+	wimlib_assert(fd->lte->staging_dir_name);
 
-	if (lte->staging_file_name) {
+	if (fd->lte->staging_file_name) {
+		/* Read from staging file */
 
-		/* Read from staging */
-		int fd;
-		off_t cur_offset;
+		wimlib_assert(fd->staging_fd != -1);
+
 		ssize_t ret;
 
-		if (lte->staging_num_times_opened == 0)
-			return -EBADF;
-
-		fd = lte->staging_fd;
-		cur_offset = lte->staging_offset;
-		if (cur_offset != offset)
-			if (lseek(fd, offset, SEEK_SET) == -1)
-				return -errno;
-		lte->staging_offset = offset;
-
-		ret = read(fd, buf, size);
+		if (lseek(fd->staging_fd, offset, SEEK_SET) == -1)
+			return -errno;
+		ret = read(fd->staging_fd, buf, size);
 		if (ret == -1)
 			return -errno;
-		lte->staging_offset = offset + ret;
-
 		return ret;
 	} else {
 
@@ -786,22 +839,12 @@ static int wimfs_readlink(const char *path, char *buf, size_t buf_len)
 /* Close a file. */
 static int wimfs_release(const char *path, struct fuse_file_info *fi)
 {
-	struct lookup_table_entry *lte;
 	int ret;
-
-	lte = (struct lookup_table_entry*)fi->fh;
+	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
 	
-	if (!lte || lte->staging_num_times_opened == 0)
-		return -EBADF;
-
-	if (--lte->staging_num_times_opened == 0 && lte->staging_file_name) {
-		ret = close(lte->staging_fd);
-		if (lte->refcnt == 0)
-			free_lookup_table_entry(lte);
-		if (ret != 0)
-			return -errno;
-	}
-	return 0;
+	wimlib_assert(fd->lte);
+	wimlib_assert(fd->num_opened_fds);
+	return close_fd(fd);
 }
 
 /* Renames a file or directory.  See rename (3) */
@@ -864,26 +907,26 @@ static int wimfs_rmdir(const char *path)
 	return 0;
 }
 
-/* Extracts the resource corresponding to @dentry and its lookup table entry
- * @lte to a file in the staging directory.  The lookup table entry for @dentry
- * is updated to point to the new file.  If @lte has multiple dentries
- * referencing it, a new lookup table entry is created and the hash of @dentry
- * is changed to point to the new lookup table entry.
- *
+/* 
+ * Extract a WIM resource to the staging directory.
  * Only @size bytes are extracted, to support truncating the file. 
  *
- * Returns the negative error code on failure.
+ * We need to:
+ * - Create a staging file for the WIM resource
+ * - Extract the resource to it
+ * - Create a new lte for the file resource
+ * - Transfer fds from the old lte to the new lte, but
+ *   only if they share the same hard link group as this
+ *   dentry
  */
-static int extract_resource_to_staging_dir(u8 *dentry_hash,
-					   struct lookup_table_entry *lte, 
+static int extract_resource_to_staging_dir(struct lookup_table_entry *lte,
 					   u64 size)
 {
-	int fd;
-	bool ret;
 	char *staging_file_name;
+	int ret;
+	int fd;
 	struct lookup_table_entry *new_lte;
-
-	/* File in WIM.  Copy it to the staging directory. */
+	
 	fd = create_staging_file(&staging_file_name);
 	if (fd == -1)
 		return -errno;
@@ -899,7 +942,13 @@ static int extract_resource_to_staging_dir(u8 *dentry_hash,
 		return ret;
 	}
 
-	if (lte->refcnt != 1) {
+	/* XXX
+	 * Need to figure out how to avoid creating orphan lookup table entries.
+	 * XXX
+	 */
+	if (lte->refcnt == 1) {
+		new_lte = lte;
+	} else {
 		/* Need to make a new lookup table entry if we are
 		 * changing only one copy of a hardlinked entry */
 		lte->refcnt--;
@@ -1034,13 +1083,12 @@ static int wimfs_utimens(const char *path, const struct timespec tv[2])
 static int wimfs_write(const char *path, const char *buf, size_t size, 
 		       off_t offset, struct fuse_file_info *fi)
 {
-	/* Grab our lookup table entry from the FUSE file info structure. */
-	struct lookup_table_entry *lte;
-	lte = (struct lookup_table_entry*)fi->fh;
+	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
 	int ret;
 
-	if (!lte || !lte->staging_file_name)
-		return -EBADF;
+	wimlib_assert(fd->lte);
+	wimlib_assert(fd->lte->staging_dir_name);
+	wimlib_assert(fd->staging_fd != -1);
 
 	/* Seek to correct position in file if needed. */
 	if (lte->staging_offset != offset) {

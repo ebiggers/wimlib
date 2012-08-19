@@ -47,6 +47,7 @@ static void destroy_image_metadata(struct image_metadata *imd,
 {
 	free_dentry_tree(imd->root_dentry, lt, true);
 	free_security_data(imd->security_data);
+	free_link_group_table(imd->lgt);
 
 	/* Get rid of the lookup table entry for this image's metadata resource
 	 * */
@@ -252,11 +253,13 @@ static int add_lookup_table_entry_to_dest_wim(struct dentry *dentry, void *arg)
 	if (dentry_is_directory(dentry))
 		return 0;
 
-	src_table_entry = wim_lookup_resource(src_wim, dentry);
+	/* XXX ADS */
+	src_table_entry = __lookup_resource(src_wim->lookup_table, dentry->hash);
 	if (!src_table_entry)
 		return 0;
 
-	dest_table_entry = wim_lookup_resource(dest_wim, dentry);
+	/* XXX ADS */
+	dest_table_entry = __lookup_resource(dest_wim->lookup_table, dentry->hash);
 	if (dest_table_entry) {
 		dest_table_entry->refcnt++;
 	} else {
@@ -567,6 +570,12 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
 	ret = add_new_dentry_tree(w, root_dentry);
 	if (ret != 0)
 		goto out_free_dentry_tree;
+
+	ret = for_dentry_in_tree(root_dentry, link_group_table_insert, 
+				 &w->image_metadata[w->hdr.image_count - 1].lgt);
+	if (ret != 0)
+		goto out_destroy_imd;
+	assign_link_groups(w->image_metadata[w->hdr.image_count - 1].lgt);
 
 	if (flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wimlib_set_boot_idx(w, w->hdr.image_count);

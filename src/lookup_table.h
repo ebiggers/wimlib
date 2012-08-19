@@ -21,6 +21,8 @@ struct lookup_table {
 	u64 capacity;
 };
 
+struct wimlib_fd;
+
 /* An entry in the lookup table in the WIM file. */
 struct lookup_table_entry {
 
@@ -80,23 +82,9 @@ struct lookup_table_entry {
 			/* Compression type used in other WIM. */
 			int   other_wim_ctype;
 		};
-
-		struct { /* Used for read-write mounts. */
-
-
-			/* Offset of the stream file_on_disk_fd. */
-			off_t staging_offset;
-
-
-			/* If file_on_disk_fd, if it is not -1, is the file
-			 * descriptor, opened for reading, for file_on_disk. */
-			int staging_fd;
-
-			/* Number of times the file has been opened.
-			 * file_on_disk_fd can be closed when num_times_opened
-			 * is decremented to 0.  */
-			int staging_num_times_opened;
-		};
+		struct wimlib_fd *fds;
+		u16 num_allocated_fds;
+		u16 num_opened_fds;
 	};
 
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented

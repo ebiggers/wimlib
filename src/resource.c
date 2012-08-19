@@ -925,6 +925,7 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	const struct resource_entry *res_entry;
 	struct dentry *dentry;
 	struct wim_security_data *sd;
+	struct link_group_table *lgt;
 
 	res_entry = &imd->metadata_lte->resource_entry;
 
@@ -1000,13 +1001,23 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
+	lgt = new_link_group_table(9001);
+	if (!lgt)
+		goto out_free_dentry_tree;
+	ret = for_dentry_in_tree(dentry, link_group_table_insert, lgt);
+	if (ret != 0)
+		goto out_free_lgt;
+
+	imd->lgt           = lgt;
 	imd->security_data = sd;
-	imd->root_dentry = dentry;
+	imd->root_dentry   = dentry;
 	goto out_free_buf;
-out_free_security_data:
-	free_security_data(sd);
+out_free_lgt:
+	free_link_group_table(sgt);
 out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL, false);
+out_free_security_data:
+	free_security_data(sd);
 out_free_buf:
 	FREE(buf);
 	return ret;

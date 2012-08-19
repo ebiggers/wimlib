@@ -3,7 +3,9 @@
 
 #include "util.h"
 #include "config.h"
+#include "list.h"
 #include <string.h>
+
 
 struct stat;
 struct lookup_table;
@@ -186,10 +188,8 @@ struct dentry {
 	 * WIMStructs */
 	int refcnt;
 
-	/* Next dentry in the hard link set */
-	//struct dentry *next_dentry_in_link_set;
-	/* Next hard link that has a lookup table entry */
-	//struct dentry *next_link_set;
+	/* List of dentries in the hard link set */
+	struct list_head link_group_list;
 };
 
 /* Return hash of the "unnamed" (default) data stream. */

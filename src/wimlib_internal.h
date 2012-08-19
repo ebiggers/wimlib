@@ -208,6 +208,9 @@ struct wim_security_data {
 	u32 refcnt;
 } WIMSecurityData;
 
+struct link_group_table;
+
+
 /* Metadata resource for an image. */
 struct image_metadata {
 	/* Pointer to the root dentry for the image. */
@@ -219,6 +222,9 @@ struct image_metadata {
 	/* A pointer to the lookup table entry for this image's metadata
 	 * resource. */
 	struct lookup_table_entry *metadata_lte;
+
+	/* Hard link group table */
+	struct link_group_table *lgt;
 
 	/* True if the filesystem of the image has been modified.  If this is
 	 * the case, the memory for the filesystem is not freed when switching
@@ -319,6 +325,14 @@ static inline void print_hash(const u8 hash[])
 {
 	print_byte_field(hash, WIM_HASH_SIZE);
 }
+
+/* hardlink.c */
+
+struct link_group_table *new_link_group_table(u64 capacity);
+int link_group_table_insert(struct dentry *dentry,
+			    struct link_group_table *table);
+void free_link_group_table(struct link_group_table *table);
+u64 assign_link_groups(struct link_group_table *table);
 
 
 /* header.c */
