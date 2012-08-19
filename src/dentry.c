@@ -85,12 +85,19 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 {
 	struct lookup_table_entry *lte;
 
+
+
 	if (dentry_is_symlink(dentry))
 		stbuf->st_mode = S_IFLNK | 0777;
 	else if (dentry_is_directory(dentry))
 		stbuf->st_mode = S_IFDIR | 0755;
 	else
 		stbuf->st_mode = S_IFREG | 0644;
+
+	stbuf->st_ino   = dentry->hard_link;
+	stbuf->st_nlink = dentry_link_group_size(dentry);
+	stbuf->st_uid   = getuid();
+	stbuf->st_gid   = getgid();
 
 	/* Use the size of the unnamed (default) file stream. */
 	if (table && (lte = __lookup_resource(table, dentry_hash(dentry)))) {
@@ -105,10 +112,6 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 		stbuf->st_size = 0;
 	}
 
-	stbuf->st_nlink   = dentry_link_group_size(dentry);
-	stbuf->st_ino     = dentry->hard_link;
-	stbuf->st_uid     = getuid();
-	stbuf->st_gid     = getgid();
 	stbuf->st_atime   = ms_timestamp_to_unix(dentry->last_access_time);
 	stbuf->st_mtime   = ms_timestamp_to_unix(dentry->last_write_time);
 	stbuf->st_ctime   = ms_timestamp_to_unix(dentry->creation_time);
@@ -583,6 +586,11 @@ int share_dentry_ads(struct dentry *master, struct dentry *slave)
 		mismatch_type = "attributes";
 		goto mismatch;
 	}
+	if (master->attributes & FILE_ATTRIBUTE_DIRECTORY) {
+		ERROR("`%s' is hard-linked to `%s', which is a directory ",
+		      slave->full_path_utf8, master->full_path_utf8);
+		return WIMLIB_ERR_INVALID_DENTRY;
+	}
 	if (master->security_id != slave->security_id) {
 		mismatch_type = "security ID";
 		goto mismatch;
@@ -745,9 +753,9 @@ int get_names(char **name_utf16_ret, char **name_utf8_ret,
 
 	utf8_len = strlen(name);
 
-	name_utf8 = utf8_to_utf16(name, utf8_len, &utf16_len);
+	name_utf16 = utf8_to_utf16(name, utf8_len, &utf16_len);
 
-	if (!name_utf8)
+	if (!name_utf16)
 		return WIMLIB_ERR_NOMEM;
 
 	name_utf8 = MALLOC(utf8_len + 1);

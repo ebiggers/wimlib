@@ -261,6 +261,8 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 	struct lookup_table_entry *old_lte, *new_lte;
 	size_t link_group_size;
 
+	DEBUG("Extracting resource `%s' to staging directory", dentry->full_path_utf8);
+
 	old_lte = *lte;
 	fd = create_staging_file(&staging_file_name, O_WRONLY);
 	if (fd == -1)
@@ -286,9 +288,13 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 		if (link_group_size == old_lte->refcnt) {
 			/* This hard link group is the only user of the lookup
 			 * table entry, so we can re-use it. */
+			DEBUG("Re-using lookup table entry");
 			lookup_table_remove(w->lookup_table, old_lte);
 			new_lte = old_lte;
 		} else {
+			DEBUG("Splitting lookup table entry "
+			      "(link_group_size = %u, lte refcnt = %u)",
+			      link_group_size, old_lte->refcnt);
 			/* Split a hard link group away from the "lookup table
 			 * entry" hard link group (i.e. we had two hard link
 			 * groups that were identical, but now we are changing
@@ -317,15 +323,16 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 					num_transferred_fds++;
 				}
 			}
+			DEBUG("Transferring %u file descriptors",
+			      num_transferred_fds);
 			new_lte->fds = MALLOC(num_transferred_fds *
 					      sizeof(new_lte->fds[0]));
 			if (!new_lte->fds) {
-				free_lookup_table_entry(new_lte);
+				FREE(new_lte);
 				ret = -ENOMEM;
 				goto out_delete_staging_file;
 			}
-			u16 j = 0;
-			for (u16 i = 0; i < old_lte->num_allocated_fds; i++) {
+			for (u16 i = 0, j = 0; ; i++) {
 				if (old_lte->fds[i] &&
 				    old_lte->fds[i]->dentry->hard_link ==
 				      dentry->hard_link)
@@ -335,12 +342,14 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 					fd->lte = new_lte;
 					fd->idx = j;
 					new_lte->fds[j] = fd;
+					if (++j == num_transferred_fds)
+						break;
 				}
 			}
 			old_lte->refcnt -= link_group_size;
-			old_lte->num_opened_fds -= j;
-			new_lte->num_opened_fds = j;
-
+			old_lte->num_opened_fds -= num_transferred_fds;
+			new_lte->num_opened_fds = num_transferred_fds;
+			new_lte->num_allocated_fds = num_transferred_fds;
 		} 
 	} else {
 		new_lte = new_lookup_table_entry();
@@ -828,6 +837,7 @@ static int wimfs_link(const char *to, const char *from)
 	list_add(&from_dentry->link_group_list, &to_dentry->link_group_list);
 	link_dentry(from_dentry, from_dentry_parent);
 	dentry_increment_lookup_table_refcnts(from_dentry, w->lookup_table);
+	from_dentry->link_group_master_status = GROUP_SLAVE;
 	return 0;
 }
 
@@ -1356,7 +1366,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 			   int flags)
 {
 	int argc = 0;
-	char *argv[6];
+	char *argv[16];
 	int ret;
 	char *p;
 
@@ -1397,16 +1407,19 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	if (flags & WIMLIB_MOUNT_FLAG_DEBUG) {
 		argv[argc++] = "-d";
 	}
-	if (!(flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
-		argv[argc++] = "-o";
-		argv[argc++] = "ro";
-	} else {
+	char optstring[256] = "use_ino";
+	argv[argc++] = "-o";
+	argv[argc++] = optstring;
+	if ((flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
 		make_staging_dir();
 		if (!staging_dir_name) {
 			FREE(p);
 			return WIMLIB_ERR_MKDIR;
 		}
+	} else {
+		strcat(optstring, ",ro");
 	}
+	argv[argc] = NULL;
 
 #ifdef ENABLE_DEBUG
 	{

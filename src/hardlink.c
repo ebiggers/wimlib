@@ -156,6 +156,7 @@ static int link_group_free_duplicate_data(struct link_group *group)
 						        link_group_list));
 		if (ret != 0)
 			return ret;
+		head = head->next;
 	}
 	return 0;
 }

@@ -991,16 +991,19 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
+	DEBUG("Reading dentry tree");
 	/* Now read the entire directory entry tree. */
 	ret = read_dentry_tree(buf, res_entry->original_size, dentry);
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
+	DEBUG("Calculating dentry full paths");
 	/* Calculate the full paths in the dentry tree. */
 	ret = for_dentry_in_tree(dentry, calculate_dentry_full_path, NULL);
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
+	DEBUG("Building link group table");
 	lgt = new_link_group_table(9001);
 	if (!lgt)
 		goto out_free_dentry_tree;
@@ -1008,6 +1011,7 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	if (ret != 0)
 		goto out_free_lgt;
 
+	DEBUG("Freeing duplicate ADS entries in link group table");
 	ret = link_groups_free_duplicate_data(lgt);
 	if (ret != 0)
 		goto out_free_lgt;
