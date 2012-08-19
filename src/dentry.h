@@ -83,6 +83,14 @@ static inline void destroy_ads_entry(struct ads_entry *entry)
 	memset(entry, 0, sizeof(entry));
 }
 
+static inline bool ads_entry_has_name(const struct ads_entry *entry,
+				      const char *name, size_t name_len)
+{
+	if (entry->stream_name_utf8_len != name_len)
+		return false;
+	return memcmp(entry->stream_name_utf8, name, name_len) == 0;
+}
+
 
 /* In-memory structure for a directory entry.  There is a directory tree for
  * each image in the WIM.  */

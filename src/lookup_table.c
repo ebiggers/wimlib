@@ -370,8 +370,12 @@ int lookup_resource(WIMStruct *w, const char *path,
 	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
 		const char *stream_name = path_stream_name(path);
 		if (stream_name) {
+			size_t stream_name_len = strlen(stream_name);
 			for (u16 i = 0; i < dentry->num_ads; i++) {
-				if (strcmp(stream_name, dentry->ads_entries[i].stream_name) == 0) {
+				if (ads_entry_has_name(&dentry->ads_entries[i],
+						       stream_name,
+						       stream_name_len))
+				{
 					hash = dentry->ads_entries[i].hash;
 					goto do_lookup;
 				}

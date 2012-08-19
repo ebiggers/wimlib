@@ -90,29 +90,37 @@ static inline int flags_writable(int open_flags)
 static int alloc_wimlib_fd(struct lookup_table_entry *lte,
 			   struct wimlib_fd **fd_ret)
 {
+	static const u16 fds_per_alloc = 8;
+	static const u16 max_fds = 0xffff;
+
 	if (lte->num_opened_fds == lte->num_allocated_fds) {
 		struct wimlib_fd **fds;
-		if (lte->num_allocated_fds > 0xffff - 8)
+		u16 num_new_fds;
+
+		if (lte->num_allocated_fds == max_fds)
 			return -ENFILE;
+		num_new_fds = min(fds_per_alloc, max_fds - lte->num_allocated_fds);
 		
-		fds = CALLOC(lte->num_allocated_fds + 8, sizeof(lte->fds[0]));
+		fds = CALLOC(lte->num_allocated_fds + num_new_fds,
+			     sizeof(lte->fds[0]));
 		if (!fds)
 			return -ENOMEM;
 		memcpy(fds, lte->fds,
 		       lte->num_allocated_fds * sizeof(lte->fds[0]));
 		FREE(lte->fds);
 		lte->fds = fds;
+		lte->num_allocated_fds += num_new_fds;
 	}
 	for (u16 i = 0; ; i++) {
-		struct wimlib_fd *fd = lte->fds[i];
-		if (!fd) {
-			fd = CALLOC(1, sizeof(*fd));
+		if (!lte->fds[i]) {
+			struct wimlib_fd *fd = CALLOC(1, sizeof(*fd));
 			if (!fd)
 				return -ENOMEM;
 			fd->staging_fd = -1;
 			fd->idx        = i;
 			fd->lte        = lte;
 			lte->fds[i]    = fd;
+			lte->num_opened_fds++;
 			*fd_ret        = fd;
 			return 0;
 		}

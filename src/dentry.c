@@ -51,14 +51,6 @@ static bool dentry_has_name(const struct dentry *dentry, const char *name,
 	return memcmp(dentry->file_name_utf8, name, name_len) == 0;
 }
 
-static bool ads_entry_has_name(const struct ads_entry *entry,
-			       const char *name, size_t name_len)
-{
-	if (entry->stream_name_utf8_len != name_len)
-		return false;
-	return memcmp(entry->stream_name_utf8, name, name_len) == 0;
-}
-
 /* Real length of a dentry, including the alternate data stream entries, which
  * are not included in the dentry->length field... */
 u64 dentry_total_length(const struct dentry *dentry)
