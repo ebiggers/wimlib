@@ -36,8 +36,10 @@ int link_group_table_insert(struct dentry *dentry, struct link_group_table *tabl
 	size_t pos;
 	struct link_group *group;
 
-	if (dentry->hard_link == 0)
+	if (dentry->hard_link == 0) {
+		INIT_LIST_HEAD(&dentry->link_group_list);
 		return 0;
+	}
 
 	/* Try adding to existing hard link group */
 	pos = dentry->hard_link % table->capacity;

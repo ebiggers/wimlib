@@ -92,18 +92,13 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 	else
 		stbuf->st_mode = S_IFREG | 0644;
 
-	if (table)
-		lte = __lookup_resource(table, dentry_hash(dentry));
-	else
-		lte = NULL;
-
-	if (lte) {
-		stbuf->st_nlink = lte->refcnt;
+	/* Use the size of the unnamed (default) file stream. */
+	if (table && (lte = __lookup_resource(table, dentry_hash(dentry))))
 		stbuf->st_size = lte->resource_entry.original_size;
-	} else {
-		stbuf->st_nlink = 1;
+	else
 		stbuf->st_size = 0;
-	}
+
+	stbuf->st_nlink   = dentry_link_group_size(dentry);
 	stbuf->st_uid     = getuid();
 	stbuf->st_gid     = getgid();
 	stbuf->st_atime   = ms_timestamp_to_unix(dentry->last_access_time);

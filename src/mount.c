@@ -98,7 +98,7 @@ static int alloc_wimlib_fd(struct lookup_table_entry *lte,
 		u16 num_new_fds;
 
 		if (lte->num_allocated_fds == max_fds)
-			return -ENFILE;
+			return -EMFILE;
 		num_new_fds = min(fds_per_alloc, max_fds - lte->num_allocated_fds);
 		
 		fds = CALLOC(lte->num_allocated_fds + num_new_fds,
