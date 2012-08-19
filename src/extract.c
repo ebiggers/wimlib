@@ -43,26 +43,6 @@
 /* Internal */
 #define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE 0x80000000
 
-/* Sets and creates the directory to which files are to be extracted when
- * extracting files from the WIM. */
-static int make_output_dir(const char *dir)
-{
-	char *p;
-	DEBUG("Setting output directory to `%s'", dir);
-
-	if (mkdir(dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0) {
-		if (errno == EEXIST) {
-			DEBUG("`%s' already exists", dir);
-			return 0;
-		}
-		ERROR_WITH_ERRNO("Cannot create directory `%s'", dir);
-		return WIMLIB_ERR_MKDIR;
-	} else {
-		DEBUG("Created directory `%s'", dir);
-	}
-	return 0;
-}
-
 static int extract_regular_file_linked(const struct dentry *dentry, 
 				       const char *output_dir,
 				       const char *output_path,
@@ -280,8 +260,7 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	if (dentry_is_symlink(dentry)) {
 		ret = extract_symlink(dentry, output_path, w);
 	} else if (dentry_is_directory(dentry)) {
-		if (!dentry_is_root(dentry)) /* Root doesn't need to be extracted. */
-			ret = extract_directory(dentry, output_path);
+		ret = extract_directory(dentry, output_path);
 	} else {
 		ret = extract_regular_file(w, dentry, args->output_dir,
 					   output_path, extract_flags);
@@ -338,9 +317,6 @@ static int extract_all_images(WIMStruct *w, const char *output_dir,
 			/* Image name is empty. Use image number instead */
 			sprintf(buf + output_path_len + 1, "%d", image);
 		}
-		ret = make_output_dir(buf);
-		if (ret != 0)
-			goto done;
 		ret = extract_single_image(w, image, buf, extract_flags);
 		if (ret != 0)
 			goto done;
@@ -367,10 +343,6 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 	else
 		flags &= ~WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
 	
-	ret = make_output_dir(output_dir);
-	if (ret != 0)
-		return ret;
-
 	if ((flags & WIMLIB_EXTRACT_FLAG_NTFS)) {
 	#ifdef WITH_NTFS_3G
 		unsigned long mnt_flags;
