@@ -80,12 +80,10 @@ void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 }
 
 /* Transfers file attributes from a struct dentry to a `stat' buffer. */
-void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf, 
-		     const struct lookup_table *table)
+int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf, 
+		    const struct lookup_table *table)
 {
 	struct lookup_table_entry *lte;
-
-
 
 	if (dentry_is_symlink(dentry))
 		stbuf->st_mode = S_IFLNK | 0777;
@@ -94,7 +92,8 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 	else
 		stbuf->st_mode = S_IFREG | 0644;
 
-	stbuf->st_ino   = dentry->hard_link;
+	stbuf->st_ino = (ino_t)dentry->hard_link;
+
 	stbuf->st_nlink = dentry_link_group_size(dentry);
 	stbuf->st_uid   = getuid();
 	stbuf->st_gid   = getgid();
@@ -103,7 +102,8 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 	if (table && (lte = __lookup_resource(table, dentry_hash(dentry)))) {
 		if (lte->staging_file_name) {
 			struct stat native_stat;
-			stat(lte->staging_file_name, &native_stat);
+			if (stat(lte->staging_file_name, &native_stat) != 0)
+				return -errno;
 			stbuf->st_size = native_stat.st_size;
 		} else {
 			stbuf->st_size = lte->resource_entry.original_size;
@@ -116,6 +116,7 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 	stbuf->st_mtime   = ms_timestamp_to_unix(dentry->last_write_time);
 	stbuf->st_ctime   = ms_timestamp_to_unix(dentry->creation_time);
 	stbuf->st_blocks  = (stbuf->st_size + 511) / 512;
+	return 0;
 }
 
 /* Makes all timestamp fields for the dentry be the current time. */
@@ -556,7 +557,11 @@ void put_dentry(struct dentry *dentry)
 			}
 		}
 	}
+	struct list_head *next;
+	next = dentry->link_group_list.next;
 	list_del(&dentry->link_group_list);
+	/*if (next->next == next)*/
+		/*container_of(next, struct dentry, link_group_list)->hard_link = 0;*/
 	free_dentry(dentry);
 }
 
@@ -1171,8 +1176,13 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 		p = put_u32(p, dentry->reparse_tag);
 		p = put_zeroes(p, 4);
 	} else {
+		u64 hard_link;
 		p = put_u32(p, dentry->reparse_tag);
-		p = put_u64(p, dentry->hard_link);
+		if (dentry->link_group_list.next == &dentry->link_group_list)
+			hard_link = 0;
+		else
+			hard_link = dentry->hard_link;
+		p = put_u64(p, hard_link);
 	}
 	p = put_u16(p, dentry->num_ads);
 	p = put_u16(p, dentry->short_name_len);

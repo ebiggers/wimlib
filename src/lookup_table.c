@@ -261,7 +261,8 @@ int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out)
 		return 0;
 
 	if (lte->output_resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
-		DEBUG("Writing metadata entry at %lu", ftello(out));
+		DEBUG("Writing metadata entry at %lu (orig size = %zu)",
+		      ftello(out), lte->output_resource_entry.original_size);
 
 	p = put_resource_entry(buf, &lte->output_resource_entry);
 	p = put_u16(p, lte->part_number);

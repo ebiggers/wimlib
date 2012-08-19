@@ -73,6 +73,10 @@ static int mount_flags;
 /* Name of the directory on which the WIM file is mounted. */
 static const char *mount_dir;
 
+/* Next hard link group ID to be assigned.  These are also used as the inode
+ * numbers. */
+static u64 next_link_group_id;
+
 
 static inline int get_lookup_flags()
 {
@@ -139,8 +143,11 @@ static int close_wimlib_fd(struct wimlib_fd *fd)
 		if (close(fd->staging_fd) != 0)
 			return -errno;
 	}
-	if (--lte->num_opened_fds == 0 && lte->refcnt == 0)
+	if (--lte->num_opened_fds == 0 && lte->refcnt == 0) {
+		if (lte->staging_file_name)
+			unlink(lte->staging_file_name);
 		free_lookup_table_entry(lte);
+	}
 	lte->fds[fd->idx] = NULL;
 	FREE(fd);
 	return 0;
@@ -779,8 +786,7 @@ static int wimfs_fgetattr(const char *path, struct stat *stbuf,
 			  struct fuse_file_info *fi)
 {
 	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
-	dentry_to_stbuf(fd->dentry, stbuf, w->lookup_table);
-	return 0;
+	return dentry_to_stbuf(fd->dentry, stbuf, w->lookup_table);
 }
 
 static int wimfs_ftruncate(const char *path, off_t size,
@@ -802,8 +808,7 @@ static int wimfs_getattr(const char *path, struct stat *stbuf)
 	struct dentry *dentry = get_dentry(w, path);
 	if (!dentry)
 		return -ENOENT;
-	dentry_to_stbuf(dentry, stbuf, w->lookup_table);
-	return 0;
+	return dentry_to_stbuf(dentry, stbuf, w->lookup_table);
 }
 
 /* Create a hard link */
@@ -905,6 +910,7 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		dentry = new_dentry(basename);
 		if (!dentry)
 			return -ENOMEM;
+		dentry->hard_link = next_link_group_id++;
 		link_dentry(dentry, parent);
 	}
 	return 0;
@@ -1273,10 +1279,6 @@ static int wimfs_unlink(const char *path)
 	if (ret != 0)
 		return ret;
 
-	if (lte && lte->staging_file_name)
-		if (unlink(lte->staging_file_name) != 0)
-			return -errno;
-
 	if (dentry_hash == dentry->hash) {
 		/* We are removing the full dentry including all alternate data
 		 * streams. */
@@ -1325,6 +1327,10 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 	wimlib_assert(fd->lte);
 	wimlib_assert(fd->lte->staging_file_name);
 	wimlib_assert(fd->staging_fd != -1);
+
+	/* Seek to the requested position */
+	if (lseek(fd->staging_fd, offset, SEEK_SET) == -1)
+		return -errno;
 
 	/* Write the data. */
 	ret = write(fd->staging_fd, buf, size);
@@ -1380,6 +1386,10 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	if (ret != 0)
 		return ret;
+
+	DEBUG("Selected image %d", image);
+
+	next_link_group_id = assign_link_groups(wim->image_metadata[image - 1].lgt);
 
 	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		wim_get_current_image_metadata(wim)->modified = true;

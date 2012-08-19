@@ -13,13 +13,33 @@ struct link_group_table {
 	struct link_group **array;
 	u64 num_entries;
 	u64 capacity;
+	struct link_group *singles;
 };
 
 #include <sys/mman.h>
 
 struct link_group_table *new_link_group_table(u64 capacity)
 {
-	return (struct link_group_table*)new_lookup_table(capacity);
+	struct link_group_table *table;
+	struct link_group **array;
+
+	table = MALLOC(sizeof(struct link_group_table));
+	if (!table)
+		goto err;
+	array = CALLOC(capacity, sizeof(array[0]));
+	if (!array) {
+		FREE(table);
+		goto err;
+	}
+	table->num_entries = 0;
+	table->capacity = capacity;
+	table->array = array;
+	table->singles = NULL;
+	return table;
+err:
+	ERROR("Failed to allocate memory for link group table with capacity %zu",
+	      capacity);
+	return NULL;
 }
 
 /* Insert a dentry into the hard link group table based on its hard link group
@@ -37,7 +57,18 @@ int link_group_table_insert(struct dentry *dentry, struct link_group_table *tabl
 	struct link_group *group;
 
 	if (dentry->hard_link == 0) {
+		/* Single group--- Add to the singles list (we can't put it in
+		 * the table itself because all the singles have a link group ID
+		 * of 0) */
+		group = MALLOC(sizeof(struct link_group));
+		if (!group)
+			return WIMLIB_ERR_NOMEM;
+		DEBUG("Insert single group `%s'", dentry->full_path_utf8);
+		group->link_group_id = 0;
+		group->next          = table->singles;
+		table->singles       = group;
 		INIT_LIST_HEAD(&dentry->link_group_list);
+		group->dentry_list = &dentry->link_group_list;
 		return 0;
 	}
 
@@ -92,51 +123,46 @@ void free_link_group_table(struct link_group_table *table)
  * next available link group ID. */
 u64 assign_link_groups(struct link_group_table *table)
 {
-	struct link_group *remaining_groups = NULL;
+	DEBUG("Assigning link groups");
 	u64 id = 1;
 	for (u64 i = 0; i < table->capacity; i++) {
 		struct link_group *group = table->array[i];
 		struct link_group *next_group;
 		struct dentry *dentry;
+		struct list_head *cur;
 		while (group) {
-			next_group = group->next;
-			u64 cur_id;
-			struct list_head *dentry_list = group->dentry_list;
-			if (dentry_list->next == dentry_list) {
-				/* Hard link group of size 1.  Change the hard
-				 * link ID to 0 and discard the link_group */
-				cur_id = 0;
-				FREE(group);
-			} else {
-				/* Hard link group of size > 1.  Assign the
-				 * dentries in the group the next available hard
-				 * link IDs and queue the group to be
-				 * re-inserted into the table. */
-				cur_id = id++;
-				group->next = remaining_groups;
-				remaining_groups = group;
-			}
-			struct list_head *cur = dentry_list;
+			cur = group->dentry_list;
 			do {
 				dentry = container_of(cur,
 						      struct dentry,
 						      link_group_list);
-				dentry->hard_link = cur_id;
+				dentry->hard_link = id;
 				cur = cur->next;
-			} while (cur != dentry_list);
-			group = next_group;
+			} while (cur != group->dentry_list);
+			id++;
+			group = group->next;
 		}
 	}
-	memset(table->array, 0, table->capacity * sizeof(table->array[0]));
-	table->num_entries = 0;
-	while (remaining_groups) {
-		struct link_group *group = remaining_groups;
-		size_t pos = group->link_group_id % table->capacity;
+	/* Singles */
+	struct link_group *single = table->singles;
+	while (single) {
+		struct dentry *dentry;
+		struct link_group *next_single;
+		size_t pos;
 
-		table->num_entries++;
-		group->next = table->array[pos];
-		table->array[pos] = group;
-		remaining_groups = remaining_groups->next;
+		next_single = single->next;
+
+		dentry = container_of(single->dentry_list, struct dentry,
+				      link_group_list);
+		dentry->hard_link = id;
+		DEBUG("Assign single `%s'", dentry->full_path_utf8);
+
+		pos = id % table->capacity;
+		single->next = table->array[pos];
+		table->array[pos] = single;
+
+		single = next_single;
+		id++;
 	}
 	return id;
 }

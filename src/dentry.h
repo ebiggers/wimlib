@@ -249,8 +249,8 @@ extern u64 dentry_total_length(const struct dentry *dentry);
 
 extern void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry);
 
-extern void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf, 
-			    const struct lookup_table *table);
+extern int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf, 
+			   const struct lookup_table *table);
 
 extern int for_dentry_in_tree(struct dentry *root, 
 			      int (*visitor)(struct dentry*, void*), 
@@ -285,8 +285,8 @@ extern struct dentry *new_dentry(const char *name);
 extern void dentry_free_ads_entries(struct dentry *dentry);
 extern void free_dentry(struct dentry *dentry);
 extern void put_dentry(struct dentry *dentry);
-extern int share_dentry_streams(struct dentry *master,
-			        struct dentry *slave);
+extern int share_dentry_ads(struct dentry *master,
+			    struct dentry *slave);
 extern struct dentry *clone_dentry(struct dentry *old);
 extern void free_dentry_tree(struct dentry *root,
 			     struct lookup_table *lookup_table, 

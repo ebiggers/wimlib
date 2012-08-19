@@ -1015,6 +1015,7 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	ret = link_groups_free_duplicate_data(lgt);
 	if (ret != 0)
 		goto out_free_lgt;
+	DEBUG("Done reading image metadata");
 
 	imd->lgt           = lgt;
 	imd->security_data = sd;
@@ -1089,6 +1090,9 @@ int write_metadata_resource(WIMStruct *w)
 	FREE(buf);
 	if (ret != 0)
 		return ret;
+
+	DEBUG("Updating metadata lookup table entry (size %zu)",
+	      metadata_original_size);
 
 	/* Update the lookup table entry, including the hash and output resource
 	 * entry fields, for this image's metadata resource.  */
