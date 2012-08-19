@@ -709,7 +709,6 @@ static int rebuild_wim(WIMStruct *w, bool check_integrity)
 /* Called when the filesystem is unmounted. */
 static void wimfs_destroy(void *p)
 {
-
 	/* For read-write mounts, the `imagex unmount' command, which is
 	 * running in a separate process and is executing the
 	 * wimlib_unmount() function, will send this process a byte
@@ -782,6 +781,14 @@ done:
 	close_message_queues();
 }
 
+static int wimfs_fallocate(const char *path, int mode,
+			   off_t offset, off_t len, struct fuse_file_info *fi)
+{
+	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
+	wimlib_assert(fd->staging_fd != -1);
+	return fallocate(fd->staging_fd, mode, offset, len);
+}
+
 static int wimfs_fgetattr(const char *path, struct stat *stbuf,
 			  struct fuse_file_info *fi)
 {
@@ -809,6 +816,13 @@ static int wimfs_getattr(const char *path, struct stat *stbuf)
 	if (!dentry)
 		return -ENOENT;
 	return dentry_to_stbuf(dentry, stbuf, w->lookup_table);
+}
+
+static int wimfs_getxattr(const char *path, const char *name, char *value,
+			  size_t size)
+{
+	/* XXX */
+	return -ENOTSUP;
 }
 
 /* Create a hard link */
@@ -844,6 +858,12 @@ static int wimfs_link(const char *to, const char *from)
 	dentry_increment_lookup_table_refcnts(from_dentry, w->lookup_table);
 	from_dentry->link_group_master_status = GROUP_SLAVE;
 	return 0;
+}
+
+static int wimfs_listxattr(const char *path, char *list, size_t size)
+{
+	/* XXX */
+	return -ENOTSUP;
 }
 
 /* 
@@ -1121,6 +1141,12 @@ static int wimfs_releasedir(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
+static int wimfs_removexattr(const char *path, const char *name)
+{
+	/* XXX */
+	return -ENOTSUP;
+}
+
 /* Renames a file or directory.  See rename (3) */
 static int wimfs_rename(const char *from, const char *to)
 {
@@ -1199,6 +1225,13 @@ static int wimfs_rmdir(const char *path)
 	if (dentry->num_times_opened == 0)
 		free_dentry(dentry);
 	return 0;
+}
+
+static int wimfs_setxattr(const char *path, const char *name,
+			  const char *value, size_t size, int flags)
+{
+	/* XXX */
+	return -ENOTSUP;
 }
 
 static int wimfs_symlink(const char *to, const char *from)
@@ -1342,28 +1375,33 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 
 
 static struct fuse_operations wimfs_operations = {
-	.access     = wimfs_access,
-	.destroy    = wimfs_destroy,
-	.fgetattr   = wimfs_fgetattr,
-	.ftruncate  = wimfs_ftruncate,
-	.getattr    = wimfs_getattr,
-	.link       = wimfs_link,
-	.mkdir      = wimfs_mkdir,
-	.mknod      = wimfs_mknod,
-	.open       = wimfs_open,
-	.opendir    = wimfs_opendir,
-	.read       = wimfs_read,
-	.readdir    = wimfs_readdir,
-	.readlink   = wimfs_readlink,
-	.release    = wimfs_release,
-	.releasedir = wimfs_releasedir,
-	.rename     = wimfs_rename,
-	.rmdir      = wimfs_rmdir,
-	.symlink    = wimfs_symlink,
-	.truncate   = wimfs_truncate,
-	.unlink     = wimfs_unlink,
-	.utimens    = wimfs_utimens,
-	.write      = wimfs_write,
+	.access      = wimfs_access,
+	.destroy     = wimfs_destroy,
+	.fallocate   = wimfs_fallocate,
+	.fgetattr    = wimfs_fgetattr,
+	.ftruncate   = wimfs_ftruncate,
+	.getattr     = wimfs_getattr,
+	.getxattr    = wimfs_getxattr,
+	.link        = wimfs_link,
+	.listxattr   = wimfs_listxattr,
+	.mkdir       = wimfs_mkdir,
+	.mknod       = wimfs_mknod,
+	.open        = wimfs_open,
+	.opendir     = wimfs_opendir,
+	.read        = wimfs_read,
+	.readdir     = wimfs_readdir,
+	.readlink    = wimfs_readlink,
+	.release     = wimfs_release,
+	.releasedir  = wimfs_releasedir,
+	.removexattr = wimfs_removexattr,
+	.rename      = wimfs_rename,
+	.rmdir       = wimfs_rmdir,
+	.setxattr    = wimfs_setxattr,
+	.symlink     = wimfs_symlink,
+	.truncate    = wimfs_truncate,
+	.unlink      = wimfs_unlink,
+	.utimens     = wimfs_utimens,
+	.write       = wimfs_write,
 };
 
 
