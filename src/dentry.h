@@ -268,7 +268,9 @@ extern void dentry_update_all_timestamps(struct dentry *dentry);
 extern void init_dentry(struct dentry *dentry, const char *name);
 extern struct dentry *new_dentry(const char *name);
 
+extern void dentry_free_ads_entries(struct dentry *dentry);
 extern void free_dentry(struct dentry *dentry);
+extern struct dentry *clone_dentry(struct dentry *old);
 extern void free_dentry_tree(struct dentry *root,
 			     struct lookup_table *lookup_table, 
 			     bool lt_decrement_refcnt);
@@ -290,8 +292,6 @@ extern int read_dentry_tree(const u8 metadata_resource[],
 
 extern u8 *write_dentry_tree(const struct dentry *tree, u8 *p);
 
-extern int dentry_set_symlink_buf(struct dentry *dentry,
-				  const u8 symlink_buf_hash[]);
 
 /* Inline utility functions for WIMDentries */
 

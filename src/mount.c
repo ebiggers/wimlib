@@ -716,6 +716,14 @@ done:
 	close_message_queues();
 }
 
+static int wimfs_fgetattr(const char *path, struct stat *stbuf,
+			  struct fuse_file_info *fi)
+{
+	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
+	dentry_to_stbuf(fd->dentry, stbuf, w->lookup_table);
+	return 0;
+}
+
 static int wimfs_ftruncate(const char *path, off_t size,
 			   struct fuse_file_info *fi)
 {
@@ -736,6 +744,45 @@ static int wimfs_getattr(const char *path, struct stat *stbuf)
 	if (!dentry)
 		return -ENOENT;
 	dentry_to_stbuf(dentry, stbuf, w->lookup_table);
+	return 0;
+}
+
+/* Create a hard link */
+static int wimfs_link(const char *to, const char *from)
+{
+	struct dentry *to_dentry, *from_dentry, *from_dentry_parent;
+	const char *link_name;
+
+	to_dentry = get_dentry(w, to);
+	if (!to_dentry)
+		return -ENOENT;
+	if (!dentry_is_regular_file(to_dentry))
+		return -EPERM;
+
+	from_dentry_parent = get_parent_dentry(w, from);
+	if (!from_dentry_parent)
+		return -ENOENT;
+	if (!dentry_is_directory(from_dentry_parent))
+		return -ENOTDIR;
+
+	link_name = path_basename(from);
+	if (get_dentry_child_with_name(from_dentry_parent, link_name))
+		return -EEXIST;
+	from_dentry = clone_dentry(to_dentry);
+	if (!from_dentry)
+		return -ENOMEM;
+	if (change_dentry_name(from_dentry, link_name) != 0) {
+		FREE(from_dentry);
+		return -ENOMEM;
+	}
+	if (calculate_dentry_full_path(from_dentry, to_dentry) != 0) {
+		FREE(from_dentry->file_name);
+		FREE(from_dentry->file_name_utf8);
+		FREE(from_dentry);
+		return -ENOMEM;
+	}
+	list_add(&from_dentry->link_group_list, &to_dentry->link_group_list);
+	link_dentry(from_dentry, from_dentry_parent);
 	return 0;
 }
 
@@ -1048,6 +1095,46 @@ static int wimfs_rmdir(const char *path)
 	return 0;
 }
 
+static int wimfs_symlink(const char *to, const char *from)
+{
+	struct dentry *dentry_parent, *dentry;
+	const char *link_name;
+	
+	dentry_parent = get_parent_dentry(w, from);
+	if (!dentry_parent)
+		return -ENOENT;
+	if (!dentry_is_directory(dentry_parent))
+		return -ENOTDIR;
+
+	link_name = path_basename(from);
+
+	if (get_dentry_child_with_name(dentry_parent, link_name))
+		return -EEXIST;
+	dentry = new_dentry(link_name);
+	if (!dentry)
+		return -ENOMEM;
+
+	if (!change_dentry_name(dentry, link_name)) {
+		FREE(dentry);
+		return -ENOMEM;
+	}
+
+	if (calculate_dentry_full_path(dentry, NULL) != 0)
+		goto out_free_dentry;
+
+	dentry->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
+	dentry->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+
+	if (dentry_set_symlink(dentry, to, w->lookup_table) != 0)
+		goto out_free_dentry;
+
+	link_dentry(dentry, dentry_parent);
+	return 0;
+out_free_dentry:
+	free_dentry(dentry);
+	return -ENOMEM;
+}
+
 
 /* Reduce the size of a file */
 static int wimfs_truncate(const char *path, off_t size)
@@ -1171,11 +1258,13 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 }
 
 
-static struct fuse_operations wimfs_oper = {
+static struct fuse_operations wimfs_operations = {
 	.access    = wimfs_access,
 	.destroy   = wimfs_destroy,
+	.fgetattr  = wimfs_fgetattr,
 	.ftruncate = wimfs_ftruncate,
 	.getattr   = wimfs_getattr,
+	.link      = wimfs_link,
 	.mkdir     = wimfs_mkdir,
 	.mknod     = wimfs_mknod,
 	.open      = wimfs_open,
@@ -1186,6 +1275,7 @@ static struct fuse_operations wimfs_oper = {
 	.release   = wimfs_release,
 	.rename    = wimfs_rename,
 	.rmdir     = wimfs_rmdir,
+	.symlink   = wimfs_symlink,
 	.truncate  = wimfs_truncate,
 	.unlink    = wimfs_unlink,
 	.utimens   = wimfs_utimens,
@@ -1267,7 +1357,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	w = wim;
 	mount_flags = flags;
 
-	ret = fuse_main(argc, argv, &wimfs_oper, NULL);
+	ret = fuse_main(argc, argv, &wimfs_operations, NULL);
 
 	return (ret == 0) ? 0 : WIMLIB_ERR_FUSE;
 }

@@ -99,6 +99,7 @@ void dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf,
 		stbuf->st_size = 0;
 
 	stbuf->st_nlink   = dentry_link_group_size(dentry);
+	stbuf->st_ino     = dentry->hard_link;
 	stbuf->st_uid     = getuid();
 	stbuf->st_gid     = getgid();
 	stbuf->st_atime   = ms_timestamp_to_unix(dentry->last_access_time);
@@ -504,7 +505,7 @@ err:
 	return NULL;
 }
 
-static void dentry_free_ads_entries(struct dentry *dentry)
+void dentry_free_ads_entries(struct dentry *dentry)
 {
 	for (u16 i = 0; i < dentry->num_ads; i++)
 		destroy_ads_entry(&dentry->ads_entries[i]);
@@ -522,6 +523,21 @@ void free_dentry(struct dentry *dentry)
 	FREE(dentry->full_path_utf8);
 	dentry_free_ads_entries(dentry);
 	FREE(dentry);
+}
+
+/* clones a dentry.
+ *
+ * Beware:
+ * 	- memory for file names is not cloned
+ * 	- next, prev, and children pointers and not touched
+ * 	- stream entries are not cloned.
+ */
+struct dentry *clone_dentry(struct dentry *old)
+{
+	struct dentry *new = MALLOC(sizeof(struct dentry));
+	if (!new)
+		return NULL;
+	return memcpy(new, old, sizeof(struct dentry));
 }
 
 /* Arguments for do_free_dentry(). */
@@ -899,13 +915,9 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 */
 	if (dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* ??? */
-		u32 u1, u2;
-		p = get_u32(p, &u1);
-		/*p += 4;*/
+		p += 4;
 		p = get_u32(p, &dentry->reparse_tag);
-		p = get_u32(p, &u2);
-		/*p += 4;*/
-		dentry->hard_link = (u64)(u1) | ((u64)(u2) << 32);
+		p += 4;
 	} else {
 		p = get_u32(p, &dentry->reparse_tag);
 		p = get_u64(p, &dentry->hard_link);
@@ -1043,7 +1055,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 {
 	u8 *orig_p = p;
 	unsigned padding;
-	memset(p, 0, dentry->length);
+
 	p = put_u64(p, dentry->length);
 	p = put_u32(p, dentry->attributes);
 	p = put_u32(p, dentry->security_id);
@@ -1053,11 +1065,16 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	p = put_u64(p, dentry->creation_time);
 	p = put_u64(p, dentry->last_access_time);
 	p = put_u64(p, dentry->last_write_time);
-	memcpy(p, dentry->hash, WIM_HASH_SIZE);
-	p += WIM_HASH_SIZE;
-	p = put_u32(p, dentry->reparse_tag);
-	p = put_u64(p, dentry->hard_link);
-	p = put_u16(p, dentry->num_ads); /*streams */
+	p = put_bytes(p, WIM_HASH_SIZE, dentry->hash);
+	if (dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		p = put_zeroes(p, 4);
+		p = put_u32(p, dentry->reparse_tag);
+		p = put_zeroes(p, 4);
+	} else {
+		p = put_u32(p, dentry->reparse_tag);
+		p = put_u64(p, dentry->hard_link);
+	}
+	p = put_u16(p, dentry->num_ads);
 	p = put_u16(p, dentry->short_name_len);
 	p = put_u16(p, dentry->file_name_len);
 	p = put_bytes(p, dentry->file_name_len, (u8*)dentry->file_name);
@@ -1095,8 +1112,8 @@ u8 *write_dentry_tree(const struct dentry *tree, u8 *p)
 		/* write end of directory entry */
 		p = put_u64(p, 0);
 	} else {
-		/* Nothing to do for a regular file. */
-		if (dentry_is_regular_file(tree))
+		/* Nothing to do for non-directories */
+		if (!dentry_is_directory(tree))
 			return p;
 	}
 
@@ -1207,18 +1224,4 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 	}
 	dentry->children = first_child;
 	return ret;
-}
-
-int dentry_set_symlink_buf(struct dentry *dentry, const u8 symlink_buf_hash[])
-{
-	struct ads_entry *ads_entries;
-
-	ads_entries = CALLOC(2, sizeof(struct ads_entry));
-	if (!ads_entries)
-		return WIMLIB_ERR_NOMEM;
-	memcpy(ads_entries[1].hash, symlink_buf_hash, WIM_HASH_SIZE);
-	dentry_free_ads_entries(dentry);
-	dentry->num_ads = 2;
-	dentry->ads_entries = ads_entries;
-	return 0;
 }

@@ -1110,8 +1110,7 @@ static int write_file_resource(WIMStruct *w, const u8 hash[])
 	if (!lte)
 		return 0;
 
-	/* No need to write file resources twice.  (This indicates file
-	 * resources that are part of a hard link set.) */
+	/* No need to write file resources twice. */
 	if (++lte->out_refcnt != 1)
 		return 0;
 
@@ -1144,8 +1143,8 @@ static int write_file_resource(WIMStruct *w, const u8 hash[])
 
 		len = lte->resource_entry.original_size;
 
-		recompress_resource(in_fp, lte->symlink_buf, len, len, 0,
-				    0, out_fp, out_wim_ctype, &new_size);
+		ret = recompress_resource(NULL, lte->symlink_buf, len, len, 0,
+					  0, out_fp, out_wim_ctype, &new_size);
 		output_res_entry->size = new_size;
 		output_res_entry->original_size = len;
 		output_res_entry->offset = offset;

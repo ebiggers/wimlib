@@ -153,44 +153,7 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 		}
 		deref_name_buf[ret] = '\0';
 		DEBUG("Read symlink `%s'", deref_name_buf);
-		void *symlink_buf = make_symlink_reparse_data_buf(deref_name_buf,
-							          &symlink_buf_len);
-		if (!symlink_buf)
-			return WIMLIB_ERR_NOMEM;
-		DEBUG("Made symlink reparse data buf (len = %zu, name len = %zu)",
-				symlink_buf_len, ret);
-		
-		u8 symlink_buf_hash[WIM_HASH_SIZE];
-		sha1_buffer(symlink_buf, symlink_buf_len, symlink_buf_hash);
-
-		ret = dentry_set_symlink_buf(root, symlink_buf_hash);
-
-		if (ret != 0) {
-			FREE(symlink_buf);
-			return ret;
-		}
-		DEBUG("Created symlink buf");
-
-		struct lookup_table_entry *lte;
-		struct lookup_table_entry *existing_lte;
-
-		existing_lte = __lookup_resource(lookup_table, symlink_buf_hash);
-		if (existing_lte) {
-			existing_lte->refcnt++;
-		} else {
-			DEBUG("Creating new lookup table entry");
-			lte = new_lookup_table_entry();
-			if (!lte) {
-				FREE(symlink_buf);
-				return WIMLIB_ERR_NOMEM;
-			}
-			lte->symlink_buf = symlink_buf;
-			lte->resource_entry.original_size = symlink_buf_len;
-			lte->resource_entry.size = symlink_buf_len;
-			lte->is_symlink = true;
-			memcpy(lte->hash, symlink_buf_hash, WIM_HASH_SIZE);
-			lookup_table_insert(lookup_table, lte);
-		}
+		ret = dentry_set_symlink(root, deref_name_buf, lookup_table);
 	} else {
 		/* Regular file */
 		struct lookup_table_entry *lte;

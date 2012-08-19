@@ -1,6 +1,7 @@
 #include "dentry.h"
 #include "io.h"
 #include "lookup_table.h"
+#include "sha1.h"
 
 /*
  * Find the symlink target of a symbolic link or junction point in the WIM.
@@ -12,7 +13,7 @@
  */
 static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 			        char *buf, size_t buf_len,
-			        bool is_junction_point)
+			        u32 reparse_tag)
 {
 	const u8 *p = resource;
 	u16 substitute_name_offset;
@@ -25,6 +26,7 @@ static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 	unsigned header_size;
 	char *translated_target;
 	bool is_absolute;
+	u32 flags;
 
 	if (resource_len < 12)
 		return -EIO;
@@ -32,13 +34,23 @@ static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 	p = get_u16(p, &substitute_name_len);
 	p = get_u16(p, &print_name_offset);
 	p = get_u16(p, &print_name_len);
-	if (is_junction_point) {
+	get_u32(p, &flags);
+
+	wimlib_assert(reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
+		      reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
+
+	/* I think that some junction points incorrectly get marked as symbolic
+	 * links.  So, parse the link buffer as a symlink if the flags seem
+	 * plausible. */
+	if (flags <= 1)
+		reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+
+	if (reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT) {
 		header_size = 8;
 	} else {
-		u32 flags;
-		p = get_u32(p, &flags);
 		is_absolute = (flags & 1) ? false : true;
 		header_size = 12;
+		p += 4;
 	}
 	if (header_size + substitute_name_offset + substitute_name_len > resource_len)
 		return -EIO;
@@ -55,7 +67,7 @@ static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 	}
 
 	translated_target = link_target;
-	if (is_junction_point || is_absolute) {
+	if (reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT || is_absolute) {
 		if (link_target_len < 7
 		      || memcmp(translated_target, "\\??\\", 4) != 0
 		      || translated_target[4] == '\0'
@@ -66,10 +78,13 @@ static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 		}
 		translated_target += 4;
 		link_target_len -= 4;
+		/* There's a drive letter, so just leave the backslashes since
+		 * it won't go anyhwere on UNIX anyway... */
+	} else {
+		for (size_t i = 0; i < link_target_len; i++)
+			if (translated_target[i] == '\\')
+				translated_target[i] = '/';
 	}
-	for (size_t i = 0; i < link_target_len; i++)
-		if (translated_target[i] == '\\')
-			translated_target[i] = '/';
 
 	memcpy(buf, translated_target, link_target_len + 1);
 	ret = link_target_len;
@@ -114,42 +129,25 @@ out:
 ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 			const WIMStruct *w)
 {
-	struct ads_entry *ads;
-	struct lookup_table_entry *entry;
 	struct resource_entry *res_entry;
-	bool is_junction_point;
+	struct lookup_table_entry *lte;
+	u16 i = 0;
+	const u8 *hash = dentry->hash;
 
 	wimlib_assert(dentry_is_symlink(dentry));
 
-	if (dentry->reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK) {
-		is_junction_point = false;
-		/* 
-		 * This is of course not actually documented, but what I think is going
-		 * on here is that the symlink dentries have 2 alternate data streams;
-		 * one is the default data stream, which is not used and is empty, and
-		 * one is the symlink buffer data stream, which is confusingly also
-		 * unnamed, but isn't empty as it contains the symlink target within the
-		 * resource.
-		 */
-		if (dentry->num_ads != 2)
+	while (1) {
+		if ((lte = __lookup_resource(w->lookup_table, hash)))
+			break;
+		if (i == dentry->num_ads)
 			return -EIO;
-		if ((entry = __lookup_resource(w->lookup_table, dentry->ads_entries[0].hash)))
-			goto do_readlink;
-		if ((entry = __lookup_resource(w->lookup_table, dentry->ads_entries[1].hash)))
-			goto do_readlink;
-	} else {
-		wimlib_assert(dentry->reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
-
-		is_junction_point = true;
-
-		if ((entry = __lookup_resource(w->lookup_table, dentry->hash)))
-			goto do_readlink;
+		hash = dentry->ads_entries[i].hash;
+		i++;
 	}
-	return -EIO;
-do_readlink:
-	res_entry = &entry->resource_entry;
+	res_entry = &lte->resource_entry;
 	if (res_entry->original_size > 10000)
 		return -EIO;
+
 	char res_buf[res_entry->original_size];
 	if (read_full_resource(w->fp, res_entry->size, 
 			       res_entry->original_size,
@@ -158,5 +156,74 @@ do_readlink:
 			       res_buf) != 0)
 		return -EIO;
 	return get_symlink_name(res_buf, res_entry->original_size, buf,
-				buf_len, is_junction_point);
+				buf_len, dentry->reparse_tag);
+}
+
+static int dentry_set_symlink_buf(struct dentry *dentry,
+				  const u8 symlink_buf_hash[])
+{
+	struct ads_entry *ads_entries;
+
+	ads_entries = CALLOC(2, sizeof(struct ads_entry));
+	if (!ads_entries)
+		return WIMLIB_ERR_NOMEM;
+	memcpy(ads_entries[1].hash, symlink_buf_hash, WIM_HASH_SIZE);
+	dentry_free_ads_entries(dentry);
+	dentry->num_ads = 2;
+	dentry->ads_entries = ads_entries;
+	return 0;
+}
+
+int dentry_set_symlink(struct dentry *dentry, const char *target,
+		       struct lookup_table *lookup_table)
+
+{
+	int ret;
+	size_t symlink_buf_len;
+	struct lookup_table_entry *lte = NULL, *existing_lte;
+	u8 symlink_buf_hash[WIM_HASH_SIZE];
+	void *symlink_buf;
+	
+	symlink_buf = make_symlink_reparse_data_buf(target, &symlink_buf_len);
+	if (!symlink_buf)
+		return WIMLIB_ERR_NOMEM;
+
+	DEBUG("Made symlink reparse data buf (len = %zu, name len = %zu)",
+			symlink_buf_len, ret);
+	
+	sha1_buffer(symlink_buf, symlink_buf_len, symlink_buf_hash);
+
+	existing_lte = __lookup_resource(lookup_table, symlink_buf_hash);
+
+	if (existing_lte) {
+		existing_lte->refcnt++;
+	} else {
+		DEBUG("Creating new lookup table entry for symlink buf");
+		lte = new_lookup_table_entry();
+		if (!lte) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_symlink_buf;
+		}
+		lte->is_symlink = true;
+		lte->symlink_buf = symlink_buf;
+		lte->resource_entry.original_size = symlink_buf_len;
+		lte->resource_entry.size = symlink_buf_len;
+		memcpy(lte->hash, symlink_buf_hash, WIM_HASH_SIZE);
+	}
+
+	ret = dentry_set_symlink_buf(dentry, symlink_buf_hash);
+
+	if (ret != 0)
+		goto out_free_lte;
+
+	DEBUG("Loaded symlink buf");
+
+	if (!existing_lte)
+		lookup_table_insert(lookup_table, lte);
+	return 0;
+out_free_lte:
+	FREE(lte);
+out_free_symlink_buf:
+	FREE(symlink_buf);
+	return ret;
 }

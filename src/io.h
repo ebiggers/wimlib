@@ -110,13 +110,11 @@ static inline const u8 *get_bytes(const u8 *p, size_t num_bytes, void *res)
 
 static inline u8 *put_zeroes(u8 *p, size_t num_bytes)
 {
-	memset(p, 0, num_bytes);
-	return p + num_bytes;
+	return (u8*)memset(p, 0, num_bytes) + num_bytes;
 }
 
 static inline u8 *put_bytes(u8 *p, size_t num_bytes, const u8 *input)
 {
-	memcpy(p, input, num_bytes);
-	return p + num_bytes;
+	return (u8*)memcpy(p, input, num_bytes) + num_bytes;
 }
 #endif /* _WIMLIB_IO_H */

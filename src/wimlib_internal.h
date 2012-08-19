@@ -409,6 +409,9 @@ ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 			const WIMStruct *w);
 extern void *make_symlink_reparse_data_buf(const char *symlink_target,
 					   size_t *len_ret);
+extern int dentry_set_symlink(struct dentry *dentry,
+			      const char *target,
+			      struct lookup_table *lookup_table);
 
 /* wim.c */
 extern WIMStruct *new_wim_struct();
