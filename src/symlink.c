@@ -108,13 +108,14 @@ void *make_symlink_reparse_data_buf(const char *symlink_target, size_t *len_ret)
 	void *buf = MALLOC(len);
 	if (!buf)
 		goto out;
+	/* XXX Fix absolute paths */
 
 	u8 *p = buf;
 	p = put_u16(p, 0); /* Substitute name offset */
 	p = put_u16(p, utf16_len); /* Substitute name length */
 	p = put_u16(p, utf16_len); /* Print name offset */
 	p = put_u16(p, utf16_len); /* Print name length */
-	p = put_u32(p, (symlink_target[0] == '/') ?  0 : 1);
+	p = put_u32(p, 1);
 	p = put_bytes(p, utf16_len, name_utf16);
 	p = put_bytes(p, utf16_len, name_utf16);
 	/*DEBUG("utf16_len = %zu, len = %zu", utf16_len, len);*/
@@ -148,13 +149,20 @@ ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 	if (res_entry->original_size > 10000)
 		return -EIO;
 
-	char res_buf[res_entry->original_size];
-	if (read_full_resource(w->fp, res_entry->size, 
-			       res_entry->original_size,
-			       res_entry->offset,
-			       wim_resource_compression_type(w, res_entry),
-			       res_buf) != 0)
-		return -EIO;
+	char __res_buf[res_entry->original_size];
+	const char *res_buf;
+	if (lte->is_symlink && lte->symlink_buf) {
+		res_buf = lte->symlink_buf;
+	} else {
+		res_buf = __res_buf;
+		if (read_full_resource(w->fp, res_entry->size, 
+				       res_entry->original_size,
+				       res_entry->offset,
+				       wim_resource_compression_type(w, res_entry),
+				       __res_buf) != 0)
+			return -EIO;
+		res_buf = __res_buf;
+	}
 	return get_symlink_name(res_buf, res_entry->original_size, buf,
 				buf_len, dentry->reparse_tag);
 }

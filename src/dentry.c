@@ -498,6 +498,7 @@ struct dentry *new_dentry(const char *name)
 	dentry->next   = dentry;
 	dentry->prev   = dentry;
 	dentry->parent = dentry;
+	INIT_LIST_HEAD(&dentry->link_group_list);
 	return dentry;
 err:
 	FREE(dentry);

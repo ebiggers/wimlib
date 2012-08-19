@@ -775,12 +775,6 @@ static int wimfs_link(const char *to, const char *from)
 		FREE(from_dentry);
 		return -ENOMEM;
 	}
-	if (calculate_dentry_full_path(from_dentry, to_dentry) != 0) {
-		FREE(from_dentry->file_name);
-		FREE(from_dentry->file_name_utf8);
-		FREE(from_dentry);
-		return -ENOMEM;
-	}
 	list_add(&from_dentry->link_group_list, &to_dentry->link_group_list);
 	link_dentry(from_dentry, from_dentry_parent);
 	return 0;
@@ -1113,14 +1107,6 @@ static int wimfs_symlink(const char *to, const char *from)
 	dentry = new_dentry(link_name);
 	if (!dentry)
 		return -ENOMEM;
-
-	if (!change_dentry_name(dentry, link_name)) {
-		FREE(dentry);
-		return -ENOMEM;
-	}
-
-	if (calculate_dentry_full_path(dentry, NULL) != 0)
-		goto out_free_dentry;
 
 	dentry->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
 	dentry->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
