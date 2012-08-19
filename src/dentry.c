@@ -500,19 +500,21 @@ struct dentry *new_dentry(const char *name)
 	
 	dentry = MALLOC(sizeof(struct dentry));
 	if (!dentry)
-		return NULL;
+		goto err;
 
 	dentry_common_init(dentry);
-	if (change_dentry_name(dentry, name) != 0) {
-		FREE(dentry);
-		return NULL;
-	}
+	if (change_dentry_name(dentry, name) != 0)
+		goto err;
 
 	dentry_update_all_timestamps(dentry);
 	dentry->next   = dentry;
 	dentry->prev   = dentry;
 	dentry->parent = dentry;
 	return dentry;
+err:
+	FREE(dentry);
+	ERROR("Failed to allocate new dentry");
+	return NULL;
 }
 
 static void dentry_free_ads_entries(struct dentry *dentry)
@@ -665,6 +667,7 @@ static int do_name_change(char **file_name_ret,
 	*file_name_utf8_ret     = file_name_utf8;
 	*file_name_len_ret      = utf16_len;
 	*file_name_utf8_len_ret = utf8_len;
+	return 0;
 }
 
 /* Changes the name of a dentry to @new_name.  Only changes the file_name and

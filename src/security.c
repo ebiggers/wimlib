@@ -268,7 +268,7 @@ void free_security_data(struct wim_security_data *sd)
 	if (!sd)
 		return;
 	wimlib_assert(sd->refcnt >= 1);
-	if (sd->refcnt == 1) {
+	if (--sd->refcnt == 0) {
 		u8 **descriptors = sd->descriptors;
 		u32 num_entries  = sd->num_entries;
 		if (descriptors)
@@ -277,7 +277,5 @@ void free_security_data(struct wim_security_data *sd)
 		FREE(sd->sizes);
 		FREE(sd->descriptors);
 		FREE(sd);
-	} else {
-		sd->refcnt--;
 	}
 }

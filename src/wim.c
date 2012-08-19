@@ -207,10 +207,8 @@ int wimlib_select_image(WIMStruct *w, int image)
 		imd = wim_get_current_image_metadata(w);
 		if (!imd->modified) {
 			DEBUG("Freeing image %u", w->current_image);
-			free_dentry_tree(imd->root_dentry, NULL, false);
-			imd->root_dentry = NULL;
-			free_security_data(imd->security_data);
-			imd->security_data = NULL;
+			destroy_image_metadata(imd, NULL);
+			memset(imd, 0, sizeof(*imd));
 		}
 	}
 
@@ -556,11 +554,8 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 	FREE(w->xml_data);
 	free_wim_info(w->wim_info);
 	if (w->image_metadata) {
-		for (i = 0; i < w->hdr.image_count; i++) {
-			free_dentry_tree(w->image_metadata[i].root_dentry, 
-					 NULL, false);
-			free_security_data(w->image_metadata[i].security_data);
-		}
+		for (i = 0; i < w->hdr.image_count; i++)
+			destroy_image_metadata(&w->image_metadata[i], NULL);
 		FREE(w->image_metadata);
 	}
 	FREE(w);

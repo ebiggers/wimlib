@@ -42,16 +42,19 @@
  * the WIM. */
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT 0x80000000
 
-static void destroy_image_metadata(struct image_metadata *imd,
-				   struct lookup_table *lt)
+void destroy_image_metadata(struct image_metadata *imd,struct lookup_table *lt)
 {
-	free_dentry_tree(imd->root_dentry, lt, true);
+	if (lt)
+		free_dentry_tree(imd->root_dentry, lt, true);
+	else
+		free_dentry_tree(imd->root_dentry, NULL, false);
 	free_security_data(imd->security_data);
 	free_link_group_table(imd->lgt);
 
 	/* Get rid of the lookup table entry for this image's metadata resource
 	 * */
-	lookup_table_remove(lt, imd->metadata_lte);
+	if (lt)
+		lookup_table_remove(lt, imd->metadata_lte);
 }
 
 /* 
@@ -60,9 +63,7 @@ static void destroy_image_metadata(struct image_metadata *imd,
  *
  * @root:  A dentry that has already been created for the root of the dentry
  * 	   tree.
- * @source_path:  The path to the root of the tree on disk. 
- * @root_stat:   A pointer to a `struct stat' that contains the metadata for the
- * 			root of the tree on disk. 
+ * @root_disk_path:  The path to the root of the tree on disk. 
  * @lookup_table: The lookup table for the WIM file.  For each file added to the
  * 		dentry tree being built, an entry is added to the lookup table, 
  * 		unless an identical file is already in the lookup table.  These
@@ -78,7 +79,7 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 			     struct lookup_table* lookup_table,
 			     int add_flags)
 {
-	DEBUG("`%s'", root_disk_path);
+	DEBUG("%s", root_disk_path);
 	struct stat root_stbuf;
 	int ret;
 	int (*stat_fn)(const char *restrict, struct stat *restrict);
@@ -130,10 +131,8 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 					continue;
 			strcpy(name + len + 1, p->d_name);
 			child = new_dentry(p->d_name);
-			if (!child) {
-				ERROR("No memory to allocate new dentry");
+			if (!child)
 				return WIMLIB_ERR_NOMEM;
-			}
 			ret = build_dentry_tree(child, name, lookup_table,
 						add_flags);
 			link_dentry(child, root);
@@ -295,6 +294,7 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry)
 	struct image_metadata *imd;
 	struct image_metadata *new_imd;
 	struct wim_security_data *sd;
+	struct link_group_table *lgt;
 
 	DEBUG("Reallocating image metadata array for image_count = %u",
 	      w->hdr.image_count + 1);
@@ -317,22 +317,30 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry)
 	sd->refcnt = 1;
 	sd->total_length = 8;
 
+	lgt = new_link_group_table(9001);
+	if (!lgt)
+		goto out_free_security_data;
+
 	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
 	randomize_byte_array(metadata_lte->hash, WIM_HASH_SIZE);
 	lookup_table_insert(w->lookup_table, metadata_lte);
 
-	w->hdr.image_count++;
+	new_imd = &imd[w->hdr.image_count];
 
-	new_imd			= &imd[w->hdr.image_count - 1];
-	new_imd->metadata_lte	= metadata_lte;
-	new_imd->modified	= true;
 	new_imd->root_dentry	= root_dentry;
+	new_imd->metadata_lte	= metadata_lte;
 	new_imd->security_data  = sd;
+	new_imd->lgt		= lgt;
+	new_imd->modified	= true;
+
 	FREE(w->image_metadata);
 	w->image_metadata	= imd;
+	w->hdr.image_count++;
 
 	/* Change the current image to the new one. */
 	return wimlib_select_image(w, w->hdr.image_count);
+out_free_security_data:
+	FREE(sd);
 out_free_metadata_lte:
 	FREE(metadata_lte);
 out_free_imd:
@@ -520,7 +528,6 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
 			       const char *flags_element, int flags)
 {
 	struct dentry *root_dentry;
-	struct stat root_stat;
 	struct image_metadata *imd;
 	int ret;
 
@@ -571,10 +578,12 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
+	DEBUG("Inserting dentries into hard link group table");
 	ret = for_dentry_in_tree(root_dentry, link_group_table_insert, 
-				 &w->image_metadata[w->hdr.image_count - 1].lgt);
+				 w->image_metadata[w->hdr.image_count - 1].lgt);
 	if (ret != 0)
 		goto out_destroy_imd;
+	DEBUG("Assigning hard link groups");
 	assign_link_groups(w->image_metadata[w->hdr.image_count - 1].lgt);
 
 	if (flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
@@ -588,6 +597,7 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
 out_destroy_imd:
 	destroy_image_metadata(&w->image_metadata[w->hdr.image_count - 1],
 			       w->lookup_table);
+	w->hdr.image_count--;
 	return ret;
 out_free_dentry_tree:
 	free_dentry_tree(root_dentry, w->lookup_table, true);

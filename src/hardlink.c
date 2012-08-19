@@ -6,7 +6,7 @@
 struct link_group {
 	u64 link_group_id;
 	struct link_group *next;
-	struct list_head *link_group_head;
+	struct list_head dentry_list;
 };
 
 struct link_group_table {
@@ -15,6 +15,7 @@ struct link_group_table {
 	u64 capacity;
 };
 
+#include <sys/mman.h>
 
 struct link_group_table *new_link_group_table(u64 capacity)
 {
@@ -43,7 +44,7 @@ int link_group_table_insert(struct dentry *dentry, struct link_group_table *tabl
 	group = table->array[pos];
 	while (group) {
 		if (group->link_group_id == dentry->hard_link) {
-			list_add(&dentry->link_group_list, group->link_group_head);
+			list_add(&dentry->link_group_list, &group->dentry_list);
 			return 0;
 		}
 		group = group->next;
@@ -54,11 +55,11 @@ int link_group_table_insert(struct dentry *dentry, struct link_group_table *tabl
 	group = MALLOC(sizeof(struct link_group));
 	if (!group)
 		return WIMLIB_ERR_NOMEM;
-	INIT_LIST_HEAD(&dentry->link_group_list);
-	group->link_group_id = dentry->hard_link;
-	group->next = table->array[pos];
-	group->link_group_head = &dentry->link_group_list;
-	table->array[pos] = group;
+	group->link_group_id   = dentry->hard_link;
+	group->next            = table->array[pos];
+	INIT_LIST_HEAD(&group->dentry_list);
+	list_add(&dentry->link_group_list, &group->dentry_list);
+	table->array[pos]      = group;
 
 	/* XXX Make the table grow when too many entries have been inserted. */
 	table->num_entries++;
@@ -97,10 +98,10 @@ u64 assign_link_groups(struct link_group_table *table)
 		struct dentry *dentry;
 		while (group) {
 			next_group = group->next;
-			if (list_empty(group->link_group_head)) {
+			if (list_is_singular(&group->dentry_list)) {
 				/* Hard link group of size 1.  Change the hard
 				 * link ID to 0 and discard the link_group */
-				dentry = container_of(group->link_group_head,
+				dentry = container_of(group->dentry_list.next,
 						      struct dentry,
 						      link_group_list);
 				dentry->hard_link = 0;
@@ -110,7 +111,7 @@ u64 assign_link_groups(struct link_group_table *table)
 				 * dentries in the group the next available hard
 				 * link IDs and queue the group to be
 				 * re-inserted into the table. */
-				list_for_each_entry(dentry, group->link_group_head,
+				list_for_each_entry(dentry, &group->dentry_list,
 						    link_group_list)
 					dentry->hard_link = id;
 				group->next = remaining_groups;
