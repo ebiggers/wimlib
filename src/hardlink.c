@@ -6,7 +6,7 @@
 struct link_group {
 	u64 link_group_id;
 	struct link_group *next;
-	struct list_head dentry_list;
+	struct list_head *dentry_list;
 };
 
 struct link_group_table {
@@ -46,7 +46,7 @@ int link_group_table_insert(struct dentry *dentry, struct link_group_table *tabl
 	group = table->array[pos];
 	while (group) {
 		if (group->link_group_id == dentry->hard_link) {
-			list_add(&dentry->link_group_list, &group->dentry_list);
+			list_add(&dentry->link_group_list, group->dentry_list);
 			return 0;
 		}
 		group = group->next;
@@ -59,8 +59,8 @@ int link_group_table_insert(struct dentry *dentry, struct link_group_table *tabl
 		return WIMLIB_ERR_NOMEM;
 	group->link_group_id   = dentry->hard_link;
 	group->next            = table->array[pos];
-	INIT_LIST_HEAD(&group->dentry_list);
-	list_add(&dentry->link_group_list, &group->dentry_list);
+	INIT_LIST_HEAD(&dentry->link_group_list);
+	group->dentry_list = &dentry->link_group_list;
 	table->array[pos]      = group;
 
 	/* XXX Make the table grow when too many entries have been inserted. */
@@ -100,26 +100,30 @@ u64 assign_link_groups(struct link_group_table *table)
 		struct dentry *dentry;
 		while (group) {
 			next_group = group->next;
-			if (list_is_singular(&group->dentry_list)) {
+			u64 cur_id;
+			struct list_head *dentry_list = group->dentry_list;
+			if (dentry_list->next == dentry_list) {
 				/* Hard link group of size 1.  Change the hard
 				 * link ID to 0 and discard the link_group */
-				dentry = container_of(group->dentry_list.next,
-						      struct dentry,
-						      link_group_list);
-				dentry->hard_link = 0;
+				cur_id = 0;
 				FREE(group);
 			} else {
 				/* Hard link group of size > 1.  Assign the
 				 * dentries in the group the next available hard
 				 * link IDs and queue the group to be
 				 * re-inserted into the table. */
-				list_for_each_entry(dentry, &group->dentry_list,
-						    link_group_list)
-					dentry->hard_link = id;
+				cur_id = id++;
 				group->next = remaining_groups;
 				remaining_groups = group;
-				id++;
 			}
+			struct list_head *cur = dentry_list;
+			do {
+				dentry = container_of(cur,
+						      struct dentry,
+						      link_group_list);
+				dentry->hard_link = cur_id;
+				cur = cur->next;
+			} while (cur != dentry_list);
 			group = next_group;
 		}
 	}

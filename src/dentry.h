@@ -215,12 +215,12 @@ static inline const u8 *dentry_hash(const struct dentry *dentry)
 
 static inline size_t dentry_link_group_size(const struct dentry *dentry)
 {
+	const struct list_head *cur = &dentry->link_group_list;
 	size_t size = 0;
-	struct list_head *list;
-	list_for_each(list, &dentry->link_group_list)
+	do {
 		size++;
-	if (size == 0)
-		size = 1;
+		cur = cur->next;
+	} while (cur != &dentry->link_group_list);
 	return size;
 }
 
