@@ -537,7 +537,14 @@ struct dentry *clone_dentry(struct dentry *old)
 	struct dentry *new = MALLOC(sizeof(struct dentry));
 	if (!new)
 		return NULL;
-	return memcpy(new, old, sizeof(struct dentry));
+	memcpy(new, old, sizeof(struct dentry));
+	new->file_name          = NULL;
+	new->file_name_len      = 0;
+	new->file_name_utf8     = NULL;
+	new->file_name_utf8_len = 0;
+	new->short_name         = NULL;
+	new->short_name_len     = 0;
+	return new;
 }
 
 /* Arguments for do_free_dentry(). */
