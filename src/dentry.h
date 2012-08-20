@@ -136,16 +136,16 @@ struct dentry {
 	 * entry's child files.  0 if the directory entry has no children. */
 	u64 subdir_offset;
 
-	/* Reserved for future disuse.  Currently ignoring these fields. */
-	u64 unused1;
-	u64 unused2;
-
 	/* Timestamps for the entry.  The timestamps are the number of
 	 * 100-nanosecond intervals that have elapsed since 12:00 A.M., January
 	 * 1st, 1601, UTC. */
 	u64 creation_time;
 	u64 last_access_time;
 	u64 last_write_time;
+
+	/* true if the dentry's lookup table entry has been resolved (i.e. the
+	 * @lte field is invalid, but the @hash field is not valid) */
+	bool resolved;
 
 	/* A hash of the file's contents, or a pointer to the lookup table entry
 	 * for this dentry if the lookup table entries have been resolved.
@@ -243,6 +243,7 @@ struct dentry {
 /* Return hash of the "unnamed" (default) data stream. */
 static inline const u8 *dentry_hash(const struct dentry *dentry)
 {
+	wimlib_assert(!dentry->resolved);
 	/* If there are alternate data streams, the dentry hash field is zeroed
 	 * out, and we need to find the hash in the un-named data stream (should
 	 * be the first one, but check them in order just in case, and fall back
@@ -258,6 +259,7 @@ static inline const u8 *dentry_hash(const struct dentry *dentry)
 static inline struct lookup_table_entry *
 dentry_lte(const struct dentry *dentry)
 {
+	wimlib_assert(dentry->resolved);
 	for (u16 i = 0; i < dentry->num_ads; i++)
 		if (dentry->ads_entries[i].stream_name_len == 0)
 			return dentry->ads_entries[i].lte;

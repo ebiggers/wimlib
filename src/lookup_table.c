@@ -66,6 +66,7 @@ struct lookup_table_entry *new_lookup_table_entry()
 
 	lte->part_number  = 1;
 	lte->refcnt       = 1;
+	INIT_LIST_HEAD(&lte->lte_group_list);
 	return lte;
 }
 
@@ -172,7 +173,6 @@ lte_decrement_refcnt(struct lookup_table_entry *lte, struct lookup_table *table)
 	}
 	return lte;
 }
-
 
 /* 
  * Calls a function on all the entries in the lookup table.  Stop early and
@@ -390,15 +390,20 @@ int lookup_resource(WIMStruct *w, const char *path,
 		    struct lookup_table_entry **lte_ret,
 		    unsigned *stream_idx_ret)
 {
-	struct dentry *dentry = get_dentry(w, path);
+	struct dentry *dentry;
 	struct lookup_table_entry *lte;
-	unsigned stream_idx = 0;
-	lte = dentry->lte;
+	unsigned stream_idx;
+	dentry = get_dentry(w, path);
 	if (!dentry)
 		return -ENOENT;
+
+	wimlib_assert(dentry->resolved);
+
+	lte = dentry->lte;
 	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
 	      && dentry_is_directory(dentry))
 		return -EISDIR;
+	stream_idx = 0;
 	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
 		const char *stream_name = path_stream_name(path);
 		if (stream_name) {
@@ -426,12 +431,6 @@ out:
 	return 0;
 }
 
-static int lte_init_lte_group_list(struct lookup_table_entry *lte, void *ignore)
-{
-	INIT_LIST_HEAD(&lte->lte_group_list);
-	return 0;
-}
-
 /* Resolve  a dentry's lookup table entries */
 static int dentry_resolve_ltes(struct dentry *dentry, void *__table)
 {
@@ -444,8 +443,9 @@ static int dentry_resolve_ltes(struct dentry *dentry, void *__table)
 		list_add(&dentry->lte_group_list.list, &lte->lte_group_list);
 	else
 		INIT_LIST_HEAD(&dentry->lte_group_list.list);
-	dentry->lte_group_list.type = STREAM_TYPE_NORMAL;
 	dentry->lte = lte;
+	dentry->lte_group_list.type = STREAM_TYPE_NORMAL;
+	dentry->resolved = true;
 
 	/* Alternate data streams */
 	if (dentry->link_group_master_status != GROUP_SLAVE) {
@@ -468,6 +468,5 @@ static int dentry_resolve_ltes(struct dentry *dentry, void *__table)
 /* Resolve all the lookup table entries of a dentry tree */
 void resolve_lookup_table_entries(struct dentry *root, struct lookup_table *table)
 {
-	for_lookup_table_entry(table, lte_init_lte_group_list, NULL);
 	for_dentry_in_tree(root, dentry_resolve_ltes, table);
 }

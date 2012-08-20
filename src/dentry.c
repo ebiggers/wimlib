@@ -103,6 +103,13 @@ struct ads_entry *dentry_get_ads_entry(struct dentry *dentry,
 	return NULL;
 }
 
+static void ads_entry_init(struct ads_entry *ads_entry)
+{
+	memset(ads_entry, 0, sizeof(struct ads_entry));
+	INIT_LIST_HEAD(&ads_entry->lte_group_list.list);
+	ads_entry->lte_group_list.type = STREAM_TYPE_ADS;
+}
+
 /* Add an alternate stream entry to a dentry and return a pointer to it, or NULL
  * on failure. */
 struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
@@ -116,18 +123,20 @@ struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
 	if (!ads_entries)
 		return NULL;
 
+	memcpy(ads_entries, dentry->ads_entries,
+	       (num_ads - 1) * sizeof(struct ads_entry));
+
 	new_entry = &ads_entries[num_ads - 1];
 	if (change_ads_name(new_entry, stream_name) != 0) {
 		FREE(ads_entries);
 		return NULL;
 	}
+	ads_entry_init(new_entry);
 
-	memcpy(ads_entries, dentry->ads_entries,
-	       (num_ads - 1) * sizeof(struct ads_entry));
 	FREE(dentry->ads_entries);
 	dentry->ads_entries = ads_entries;
 	dentry->num_ads = num_ads;
-	return memset(new_entry, 0, sizeof(struct ads_entry));
+	return new_entry;
 }
 
 void dentry_remove_ads(struct dentry *dentry, struct ads_entry *ads_entry)
@@ -456,7 +465,8 @@ static inline void dentry_common_init(struct dentry *dentry)
 	memset(dentry, 0, sizeof(struct dentry));
 	dentry->refcnt = 1;
 	dentry->security_id = -1;
-	dentry->link_group_master_status = GROUP_SLAVE;
+	dentry->link_group_master_status = GROUP_INDEPENDENT;
+	dentry->lte_group_list.type = STREAM_TYPE_NORMAL;
 }
 
 /* 
@@ -795,7 +805,10 @@ static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
 	else
 		++*stats->file_count;
 
-	lte = __lookup_resource(stats->lookup_table, dentry->hash);
+	if (dentry->resolved)
+		lte = dentry->lte;
+	else
+		lte = __lookup_resource(stats->lookup_table, dentry->hash);
 	i = 0;
 	while (1) {
 		if (lte) {
@@ -1132,6 +1145,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 {
 	u8 *orig_p = p;
 	unsigned padding;
+	const u8 *hash;
 
 	p = put_u64(p, dentry->length);
 	p = put_u32(p, dentry->attributes);
@@ -1142,7 +1156,11 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	p = put_u64(p, dentry->creation_time);
 	p = put_u64(p, dentry->last_access_time);
 	p = put_u64(p, dentry->last_write_time);
-	p = put_bytes(p, WIM_HASH_SIZE, dentry->hash);
+	if (dentry->resolved && dentry->lte)
+		hash = dentry->lte->hash;
+	else
+		hash = dentry->hash;
+	p = put_bytes(p, WIM_HASH_SIZE, hash);
 	if (dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		p = put_zeroes(p, 4);
 		p = put_u32(p, dentry->reparse_tag);

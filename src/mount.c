@@ -177,23 +177,6 @@ static void remove_dentry(struct dentry *dentry,
 	put_dentry(dentry);
 }
 
-static void dentry_increment_lookup_table_refcnts(struct dentry *dentry,
-						  struct lookup_table *lookup_table)
-{
-	u16 i = 0;
-	const u8 *hash = dentry->hash;
-	struct lookup_table_entry *lte;
-	while (1) {
-		lte = __lookup_resource(lookup_table, hash);
-		if (lte)
-			lte->refcnt++;
-		if (i == dentry->num_ads)
-			break;
-		hash = dentry->ads_entries[i].hash;
-		i++;
-	}
-}
-
 /* Transfers file attributes from a struct dentry to a `stat' buffer. */
 int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf)
 {
@@ -232,34 +215,6 @@ int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf)
 	stbuf->st_blocks  = (stbuf->st_size + 511) / 512;
 	return 0;
 }
-
-#if 0
-/* Change the hash value of the main or alternate file stream in a hard link
- * group.  This needs to be done if the hash of the corresponding lookup table
- * entry was changed. */
-static void link_group_set_stream_hash(struct dentry *dentry,
-				       unsigned stream_idx,
-				       const u8 new_hash[])
-{
-	struct list_head *head, *cur;
-
-	if (stream_idx == 0) {
-		head = &dentry->link_group_list;
-		cur = head;
-		do {
-			dentry = container_of(cur, struct dentry, link_group_list);
-			memcpy(dentry->hash, new_hash, WIM_HASH_SIZE);
-			cur = cur->next;
-		} while (cur != head);
-	} else {
-		/* Dentries in the link group share their alternate stream
-		 * entries. */
-		wimlib_assert(stream_idx <= dentry->num_ads);
-		memcpy(dentry->ads_entries[stream_idx - 1].hash, new_hash,
-		       WIM_HASH_SIZE);
-	}
-}
-#endif
 
 /* Creates a new staging file and returns its file descriptor opened for
  * writing.
@@ -387,7 +342,7 @@ static void lte_transfer_stream_entries(struct lookup_table_entry *new_lte,
 				        struct dentry *dentry,
 					unsigned stream_idx)
 {
-	INIT_LIST_HEAD(&new_lte->lte_group_list);
+	/*INIT_LIST_HEAD(&new_lte->lte_group_list);*/
 	if (stream_idx == 0) {
 		struct list_head *pos;
 		do {
@@ -404,64 +359,6 @@ static void lte_transfer_stream_entries(struct lookup_table_entry *new_lte,
 	}
 }
 
-#if 0
-/*
- * Transfers streams part of a hard-link group from @old_lte to @new_lte.
- *
- * @dentry is one of the dentries in the hard link group
- * @stream_idx is the index of the stream that we're transferring.
- */
-static void lte_transfer_stream_entries(struct lookup_table_entry *old_lte,
-				        struct lookup_table_entry *new_lte,
-				        struct dentry *dentry, unsigned stream_idx)
-{
-	INIT_LIST_HEAD(&new_lte->lte_group_list);
-
-	if (stream_idx == 0) {
-		struct list_head *pos;
-		struct stream_list_head *head;
-		struct dentry *other_dentry;
-		list_for_each(pos, &old_lte->lte_group_list) {
-			head = container_of(pos, struct stream_list_head, head);
-			if (head->type != STREAM_TYPE_NORMAL) {
-				continue;
-			other_dentry = container_of(head, struct dentry,
-						    lte_group_list);
-			if (other_dentry->hard_link != dentry->link_group)
-				continue;
-
-			list_del(&other_dentry->lte_group_list.list);
-			list_add(&other_dentry->lte_group_list.list,
-				 &new_lte->lte_group_list);
-			other_dentry->lte = new_lte;
-		}
-	} else {
-		/* ADS entries are shared within a hard link group. */
-		lte_load_ads_entry(new_lte, &dentry->ads_entries[stream_idx - 1]);
-	}
-}
-static void lte__stream_entries(struct lookup_table_entry *new_lte,
-				    struct dentry *dentry, unsigned stream_idx)
-{
-	INIT_LIST_HEAD(new_lte->lte_group_list);
-	if (stream_idx == 0) {
-		struct list_head *cur;
-		do {
-			struct dentry *d;
-
-			d = container_of(cur, struct dentry, link_group_list);
-			list_del(&d->lte_group_list);
-			list_add(&d->lte_group_list, &new_lte->lte_group_list);
-			d->lte = new_lte;
-			cur = cur->next;
-		} while (cur != &dentry->link_group_list);
-	} else {
-		lte_load_ads_entry(new_lte, &dentry->ads_entries[stream_idx - 1]);
-	}
-}
-#endif
-
-
 /* 
  * Extract a WIM resource to the staging directory.
  *
@@ -472,6 +369,10 @@ static void lte__stream_entries(struct lookup_table_entry *new_lte,
  * - Transfer fds from the old lte to the new lte, but
  *   only if they share the same hard link group as this
  *   dentry
+ * - Transfer stream entries from the old lte's list to the new lte's list.
+ *
+ *   *lte is permitted to be NULL, in which case there is no old lookup table
+ *   entry.
  */
 static int extract_resource_to_staging_dir(struct dentry *dentry,
 					   unsigned stream_idx,
@@ -512,7 +413,7 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 			/* This hard link group is the only user of the lookup
 			 * table entry, so we can re-use it. */
 			DEBUG("Re-using lookup table entry");
-			lookup_table_remove(w->lookup_table, old_lte);
+			lookup_table_unlink(w->lookup_table, old_lte);
 			new_lte = old_lte;
 		} else {
 			DEBUG("Splitting lookup table entry "
@@ -814,46 +715,59 @@ static int close_lte_fds(struct lookup_table_entry *lte)
 	return 0;
 }
 
-
-/* Calculates the SHA1 sum for @dentry if its file resource is in a staging
- * file.  Updates the SHA1 sum in the dentry and the lookup table entry.  If
- * there is already a lookup table entry with the same checksum, increment its
- * reference count and destroy the lookup entry with the updated checksum. */
-static int calculate_sha1sum_of_staging_file(struct dentry *dentry,
-					     void *__lookup_table)
+static void lte_list_change_lte_ptr(struct lookup_table_entry *lte,
+				    struct lookup_table_entry *newptr)
 {
-	struct lookup_table *lookup_table =  __lookup_table;
-	u8 *hash = dentry->hash;
-	u16 i = 0;
-	while (1) {
-		struct lookup_table_entry *lte = __lookup_resource(lookup_table, hash);
-		if (lte && lte->staging_file_name) {
-			struct lookup_table_entry *existing;
-			int ret;
+	struct list_head *pos;
+	struct stream_list_head *head;
+	list_for_each(pos, &lte->lte_group_list) {
+		head = container_of(pos, struct stream_list_head, list);
+		if (head->type == STREAM_TYPE_ADS) {
+			struct ads_entry *ads_entry;
+			ads_entry = container_of(head, struct ads_entry, lte_group_list);
 
-			DEBUG("Calculating SHA1 hash for file `%s'",
-			      dentry->file_name_utf8);
-			ret = sha1sum(lte->staging_file_name, lte->hash);
-			if (ret != 0)
-				return ret;
+			ads_entry->lte = newptr;
+		} else {
+			wimlib_assert(head->type == STREAM_TYPE_NORMAL);
 
-			lookup_table_unlink(lookup_table, lte);
-			memcpy(hash, lte->hash, WIM_HASH_SIZE);
-			existing = __lookup_resource(lookup_table, hash);
-			if (existing) {
-				DEBUG("Merging duplicate lookup table entries for file "
-				      "`%s'", dentry->file_name_utf8);
-				free_lookup_table_entry(lte);
-				existing->refcnt++;
-			} else {
-				lookup_table_insert(lookup_table, lte);
-			}
+			struct dentry *dentry;
+			dentry = container_of(head, struct dentry, lte_group_list);
+
+			dentry->lte = newptr;
 		}
-		if (i == dentry->num_ads)
-			break;
-		hash = dentry->ads_entries[i].hash;
-		i++;
 	}
+}
+
+
+static int calculate_sha1sum_of_staging_file(struct lookup_table_entry *lte,
+					     struct lookup_table *table)
+{
+	struct lookup_table_entry *duplicate_lte;
+	int ret;
+	u8 hash[WIM_HASH_SIZE];
+
+	ret = sha1sum(lte->staging_file_name, hash);
+	if (ret != 0)
+		return ret;
+
+	lookup_table_unlink(table, lte);
+	memcpy(lte->hash, hash, WIM_HASH_SIZE);
+
+	duplicate_lte = __lookup_resource(table, hash);
+
+	if (duplicate_lte) {
+		/* Merge duplicate lookup table entries */
+
+		lte_list_change_lte_ptr(lte, duplicate_lte);
+		duplicate_lte->refcnt += lte->refcnt;
+		list_splice(&duplicate_lte->lte_group_list,
+			    &lte->lte_group_list);
+
+		free_lookup_table_entry(lte);
+	} else {
+		lookup_table_insert(table, lte);
+	}
+
 	return 0;
 }
 
@@ -861,7 +775,7 @@ static int calculate_sha1sum_of_staging_file(struct dentry *dentry,
 static int rebuild_wim(WIMStruct *w, bool check_integrity)
 {
 	int ret;
-	struct lookup_table_entry *lte;
+	struct lookup_table_entry *lte, *tmp;
 
 	/* Close all the staging file descriptors. */
 	DEBUG("Closing all staging file descriptors.");
@@ -874,8 +788,11 @@ static int rebuild_wim(WIMStruct *w, bool check_integrity)
 	/* Calculate SHA1 checksums for all staging files, and merge unnecessary
 	 * lookup table entries. */
 	DEBUG("Calculating SHA1 checksums for all new staging files.");
-	ret = for_dentry_in_tree(wim_root_dentry(w),
-				 calculate_sha1sum_of_staging_file, w->lookup_table);
+	list_for_each_entry_safe(lte, tmp, &staging_list, staging_list) {
+		ret = calculate_sha1sum_of_staging_file(lte, w->lookup_table);
+		if (ret != 0)
+			return ret;
+	}
 	if (ret != 0)
 		return ret;
 
@@ -1036,10 +953,27 @@ static int wimfs_link(const char *to, const char *from)
 		FREE(from_dentry);
 		return -ENOMEM;
 	}
+
+	/* Add the new dentry to the dentry list for the link group */
 	list_add(&from_dentry->link_group_list, &to_dentry->link_group_list);
-	link_dentry(from_dentry, from_dentry_parent);
-	dentry_increment_lookup_table_refcnts(from_dentry, w->lookup_table);
+
+	/* Increment reference counts for the unnamed file stream and all
+	 * alternate data streams. */
+	if (from_dentry->lte) {
+		list_add(&from_dentry->lte_group_list.list,
+			 &to_dentry->lte_group_list.list);
+		from_dentry->lte->refcnt++;
+	}
+	for (u16 i = 0; i < from_dentry->num_ads; i++) {
+		struct ads_entry *ads_entry = &from_dentry->ads_entries[i];
+		if (ads_entry->lte)
+			ads_entry->lte->refcnt++;
+	}
+
+	/* The ADS entries are owned by another dentry. */
 	from_dentry->link_group_master_status = GROUP_SLAVE;
+
+	link_dentry(from_dentry, from_dentry_parent);
 	return 0;
 }
 
@@ -1083,6 +1017,7 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	const char *stream_name;
 	if ((mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 	     && (stream_name = path_stream_name(path))) {
+		/* Make an alternate data stream */
 		struct ads_entry *new_entry;
 		struct dentry *dentry;
 
@@ -1097,6 +1032,8 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	} else {
 		struct dentry *dentry, *parent;
 		const char *basename;
+
+		/* Make a normal file (not an alternate data stream) */
 
 		/* Make sure that the parent of @path exists and is a directory, and
 		 * that the dentry named by @path does not already exist.  */
@@ -1113,6 +1050,7 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		dentry = new_dentry(basename);
 		if (!dentry)
 			return -ENOMEM;
+		dentry->resolved = true;
 		dentry->hard_link = next_link_group_id++;
 		link_dentry(dentry, parent);
 	}
@@ -1548,6 +1486,7 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
 	int ret;
 
+	wimlib_assert(fd);
 	wimlib_assert(fd->lte);
 	wimlib_assert(fd->lte->staging_file_name);
 	wimlib_assert(fd->staging_fd != -1);
