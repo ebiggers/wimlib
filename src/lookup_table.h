@@ -23,6 +23,7 @@ struct lookup_table {
 
 struct wimlib_fd;
 
+
 /* An entry in the lookup table in the WIM file. */
 struct lookup_table_entry {
 
@@ -102,9 +103,11 @@ struct lookup_table_entry {
 	u32 out_refcnt;
 	union {
 		struct resource_entry output_resource_entry;
-		struct list_head staging_list;
+		struct {
+			struct list_head staging_list;
+			struct list_head lte_group_list;
+		};
 	};
-	struct dentry *hard_link_sets;
 };
 
 extern struct lookup_table *new_lookup_table(size_t capacity);
@@ -117,6 +120,10 @@ extern void lookup_table_unlink(struct lookup_table *table,
 
 extern struct lookup_table_entry *
 lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[]);
+
+extern struct lookup_table_entry *
+lte_decrement_refcnt(struct lookup_table_entry *lte,
+		     struct lookup_table *table);
 
 
 extern struct lookup_table_entry *new_lookup_table_entry();
@@ -145,6 +152,9 @@ extern void free_lookup_table(struct lookup_table *table);
 extern int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out);
 
 extern void free_lookup_table_entry(struct lookup_table_entry *lte);
+
+extern void resolve_lookup_table_entries(struct dentry *root,
+					 struct lookup_table *table);
 
 /* Writes the lookup table to the output file. */
 static inline int write_lookup_table(struct lookup_table *table, FILE *out)

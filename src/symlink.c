@@ -184,7 +184,8 @@ static int dentry_set_symlink_buf(struct dentry *dentry,
 }
 
 int dentry_set_symlink(struct dentry *dentry, const char *target,
-		       struct lookup_table *lookup_table)
+		       struct lookup_table *lookup_table,
+		       struct lookup_table_entry **lte_ret)
 
 {
 	int ret;
@@ -229,6 +230,8 @@ int dentry_set_symlink(struct dentry *dentry, const char *target,
 
 	if (!existing_lte)
 		lookup_table_insert(lookup_table, lte);
+	if (lte_ret)
+		*lte_ret = lte;
 	return 0;
 out_free_lte:
 	FREE(lte);

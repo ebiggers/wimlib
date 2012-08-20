@@ -157,6 +157,22 @@ lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
 	return entry;
 }
 
+/* Like lookup_table_decrement_refcnt(), but for when we already know the lookup
+ * table entry. */
+struct lookup_table_entry *
+lte_decrement_refcnt(struct lookup_table_entry *lte, struct lookup_table *table)
+{
+	wimlib_assert(lte->refcnt);
+	if (lte && --lte->refcnt == 0) {
+		lookup_table_unlink(table, lte);
+		if (lte->num_opened_fds == 0) {
+			free_lookup_table_entry(lte);
+			lte = NULL;
+		}
+	}
+	return lte;
+}
+
 
 /* 
  * Calls a function on all the entries in the lookup table.  Stop early and
@@ -367,6 +383,7 @@ __lookup_resource(const struct lookup_table *lookup_table, const u8 hash[])
 	return NULL;
 }
 
+/* Only for resolved lte's */
 int lookup_resource(WIMStruct *w, const char *path,
 		    int lookup_flags,
 		    struct dentry **dentry_ret,
@@ -376,7 +393,7 @@ int lookup_resource(WIMStruct *w, const char *path,
 	struct dentry *dentry = get_dentry(w, path);
 	struct lookup_table_entry *lte;
 	unsigned stream_idx = 0;
-	const u8 *hash = dentry->hash;
+	lte = dentry->lte;
 	if (!dentry)
 		return -ENOENT;
 	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
@@ -392,15 +409,14 @@ int lookup_resource(WIMStruct *w, const char *path,
 						       stream_name_len))
 				{
 					stream_idx = i + 1;
-					hash = dentry->ads_entries[i].hash;
-					goto do_lookup;
+					lte = dentry->ads_entries[i].lte;
+					goto out;
 				}
 			}
 			return -ENOENT;
 		}
 	}
-do_lookup:
-	lte = __lookup_resource(w->lookup_table, hash);
+out:
 	if (dentry_ret)
 		*dentry_ret = dentry;
 	if (lte_ret)
@@ -408,4 +424,50 @@ do_lookup:
 	if (stream_idx_ret)
 		*stream_idx_ret = stream_idx;
 	return 0;
+}
+
+static int lte_init_lte_group_list(struct lookup_table_entry *lte, void *ignore)
+{
+	INIT_LIST_HEAD(&lte->lte_group_list);
+	return 0;
+}
+
+/* Resolve  a dentry's lookup table entries */
+static int dentry_resolve_ltes(struct dentry *dentry, void *__table)
+{
+	struct lookup_table *table = __table;
+	struct lookup_table_entry *lte;
+
+	/* Default file stream */
+	lte = __lookup_resource(table, dentry->hash);
+	if (lte)
+		list_add(&dentry->lte_group_list.list, &lte->lte_group_list);
+	else
+		INIT_LIST_HEAD(&dentry->lte_group_list.list);
+	dentry->lte_group_list.type = STREAM_TYPE_NORMAL;
+	dentry->lte = lte;
+
+	/* Alternate data streams */
+	if (dentry->link_group_master_status != GROUP_SLAVE) {
+		for (u16 i = 0; i < dentry->num_ads; i++) {
+			struct ads_entry *cur_entry = &dentry->ads_entries[i];
+
+			lte = __lookup_resource(table, cur_entry->hash);
+			if (lte)
+				list_add(&cur_entry->lte_group_list.list,
+					 &lte->lte_group_list);
+			else
+				INIT_LIST_HEAD(&cur_entry->lte_group_list.list);
+			cur_entry->lte = lte;
+			cur_entry->lte_group_list.type = STREAM_TYPE_ADS;
+		}
+	}
+	return 0;
+}
+
+/* Resolve all the lookup table entries of a dentry tree */
+void resolve_lookup_table_entries(struct dentry *root, struct lookup_table *table)
+{
+	for_lookup_table_entry(table, lte_init_lte_group_list, NULL);
+	for_dentry_in_tree(root, dentry_resolve_ltes, table);
 }

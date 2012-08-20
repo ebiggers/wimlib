@@ -153,7 +153,8 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 		}
 		deref_name_buf[ret] = '\0';
 		DEBUG("Read symlink `%s'", deref_name_buf);
-		ret = dentry_set_symlink(root, deref_name_buf, lookup_table);
+		ret = dentry_set_symlink(root, deref_name_buf,
+					 lookup_table, NULL);
 	} else {
 		/* Regular file */
 		struct lookup_table_entry *lte;

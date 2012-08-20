@@ -404,7 +404,8 @@ extern void *make_symlink_reparse_data_buf(const char *symlink_target,
 					   size_t *len_ret);
 extern int dentry_set_symlink(struct dentry *dentry,
 			      const char *target,
-			      struct lookup_table *lookup_table);
+			      struct lookup_table *lookup_table,
+			      struct lookup_table_entry **lte_ret);
 
 /* wim.c */
 extern WIMStruct *new_wim_struct();

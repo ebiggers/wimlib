@@ -52,10 +52,18 @@ typedef struct WIMStruct WIMStruct;
 #define FILE_ATTRIBUTE_ENCRYPTED           0x00004000
 #define FILE_ATTRIBUTE_VIRTUAL             0x00010000
 
+struct lookup_table_entry;
+
 /* Alternate data stream entry */
 struct ads_entry {
-	/* SHA-1 message digest of stream contents */
-	u8 hash[WIM_HASH_SIZE];
+	union {
+		/* SHA-1 message digest of stream contents */
+		u8 hash[WIM_HASH_SIZE];
+
+		/* The corresponding lookup table entry (only for resolved
+		 * streams) */
+		struct lookup_table_entry *lte;
+	};
 
 	/* Length of stream name (UTF-16) */
 	u16 stream_name_len;
@@ -68,6 +76,8 @@ struct ads_entry {
 
 	/* Stream name (UTF-8) */
 	char *stream_name_utf8;
+
+	struct stream_list_head lte_group_list;
 };
 
 static inline u64 ads_entry_length(const struct ads_entry *entry)
@@ -137,8 +147,16 @@ struct dentry {
 	u64 last_access_time;
 	u64 last_write_time;
 
-	/* A hash of the file's contents. */
-	u8 hash[WIM_HASH_SIZE];
+	/* A hash of the file's contents, or a pointer to the lookup table entry
+	 * for this dentry if the lookup table entries have been resolved.
+	 *
+	 * More specifically, this is for the un-named default file stream, as
+	 * opposed to the alternate file streams, which may have their own
+	 * lookup table entries.  */
+	union {
+		u8 hash[WIM_HASH_SIZE];
+		struct lookup_table_entry *lte;
+	};
 
 	/* Identity of a reparse point.  See
 	 * http://msdn.microsoft.com/en-us/library/windows/desktop/aa365503(v=vs.85).aspx
@@ -200,7 +218,7 @@ struct dentry {
 	enum {
 		/* This dentry is the owner of its ads_entries, although it may
 		 * be in a hard link set */
-		GROUP_INDEPENDENT,
+		GROUP_INDEPENDENT = 0,
 
 		/* This dentry is the owner of the ads_entries in the hard link
 		 * set */
@@ -214,6 +232,9 @@ struct dentry {
 
 	/* List of dentries in the hard link set */
 	struct list_head link_group_list;
+
+	/* List of dentries sharing the same lookup table entry */
+	struct stream_list_head lte_group_list;
 
 	/* Path to extracted file on disk (used during extraction only) */
 	char *extracted_file;
@@ -230,6 +251,17 @@ static inline const u8 *dentry_hash(const struct dentry *dentry)
 		if (dentry->ads_entries[i].stream_name_len == 0)
 			return dentry->ads_entries[i].hash;
 	return dentry->hash;
+}
+
+/* Return lte for the "unnamed" (default) data stream.  Only for resolved
+ * dentries */
+static inline struct lookup_table_entry *
+dentry_lte(const struct dentry *dentry)
+{
+	for (u16 i = 0; i < dentry->num_ads; i++)
+		if (dentry->ads_entries[i].stream_name_len == 0)
+			return dentry->ads_entries[i].lte;
+	return dentry->lte;
 }
 
 static inline size_t dentry_link_group_size(const struct dentry *dentry)
@@ -256,9 +288,6 @@ extern const char *path_stream_name(const char *path);
 extern u64 dentry_total_length(const struct dentry *dentry);
 
 extern void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry);
-
-extern int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf, 
-			   const struct lookup_table *table);
 
 extern int for_dentry_in_tree(struct dentry *root, 
 			      int (*visitor)(struct dentry*, void*), 

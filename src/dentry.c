@@ -80,45 +80,6 @@ void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 				   ((u64)stbuf->st_dev << (sizeof(ino_t) * 8));
 }
 
-/* Transfers file attributes from a struct dentry to a `stat' buffer. */
-int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf, 
-		    const struct lookup_table *table)
-{
-	struct lookup_table_entry *lte;
-
-	if (dentry_is_symlink(dentry))
-		stbuf->st_mode = S_IFLNK | 0777;
-	else if (dentry_is_directory(dentry))
-		stbuf->st_mode = S_IFDIR | 0755;
-	else
-		stbuf->st_mode = S_IFREG | 0644;
-
-	stbuf->st_ino = (ino_t)dentry->hard_link;
-
-	stbuf->st_nlink = dentry_link_group_size(dentry);
-	stbuf->st_uid   = getuid();
-	stbuf->st_gid   = getgid();
-
-	/* Use the size of the unnamed (default) file stream. */
-	if (table && (lte = __lookup_resource(table, dentry_hash(dentry)))) {
-		if (lte->staging_file_name) {
-			struct stat native_stat;
-			if (stat(lte->staging_file_name, &native_stat) != 0)
-				return -errno;
-			stbuf->st_size = native_stat.st_size;
-		} else {
-			stbuf->st_size = lte->resource_entry.original_size;
-		}
-	} else {
-		stbuf->st_size = 0;
-	}
-
-	stbuf->st_atime   = ms_timestamp_to_unix(dentry->last_access_time);
-	stbuf->st_mtime   = ms_timestamp_to_unix(dentry->last_write_time);
-	stbuf->st_ctime   = ms_timestamp_to_unix(dentry->creation_time);
-	stbuf->st_blocks  = (stbuf->st_size + 511) / 512;
-	return 0;
-}
 
 /* Makes all timestamp fields for the dentry be the current time. */
 void dentry_update_all_timestamps(struct dentry *dentry)
@@ -169,12 +130,21 @@ struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
 	return memset(new_entry, 0, sizeof(struct ads_entry));
 }
 
-void dentry_remove_ads(struct dentry *dentry, struct ads_entry *sentry)
+void dentry_remove_ads(struct dentry *dentry, struct ads_entry *ads_entry)
 {
-	destroy_ads_entry(sentry);
-	memcpy(sentry, sentry + 1,
-	       (dentry->num_ads - (sentry - dentry->ads_entries + 1))
-		 * sizeof(struct ads_entry));
+	u16 idx = ads_entry - dentry->ads_entries;
+	u16 following = dentry->num_ads - idx - 1;
+
+	destroy_ads_entry(ads_entry);
+	memcpy(ads_entry, ads_entry + 1, following * sizeof(struct ads_entry));
+
+	/* We moved the ADS entries.  Adjust the stream lists. */
+	for (u16 i = 0; i < following; i++) {
+		struct list_head *cur = &ads_entry[i].lte_group_list.list;
+		cur->prev->next = cur;
+		cur->next->prev = cur;
+	}
+
 	dentry->num_ads--;
 }
 
