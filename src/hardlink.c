@@ -169,41 +169,34 @@ u64 assign_link_groups(struct link_group_table *table)
 static int link_group_free_duplicate_data(struct link_group *group,
 					  struct link_group **bad_links)
 {
-	struct list_head *head;
-	struct list_head *next;
-	struct dentry *master;
+	struct dentry *master, *slave, *tmp;
 
-	head = group->dentry_list;
-	master = container_of(head, struct dentry, link_group_list);
-	head = head->next;
+	master = container_of(group->dentry_list, struct dentry,
+			      link_group_list);
 	master->link_group_master_status = GROUP_MASTER;
-	while (head != group->dentry_list) {
-		next = head->next;
-		struct dentry *slave;
-		int ret;
 
-		slave = container_of(head, struct dentry, link_group_list);
-		ret = share_dentry_ads(master, slave);
-
+	list_for_each_entry_safe(slave, tmp, group->dentry_list,
+				 link_group_list)
+	{
 		/* I would it to be an error if two dentries are the same hard
 		 * link group but have irreconcilable differences such as
 		 * different file permissions, but unfortunately some of M$'s
 		 * WIMs contain many instances of this error.  This problem is
 		 * worked around here by splitting each offending dentry off
 		 * into its own hard link group. */
-		if (ret != 0) {
+		if (share_dentry_ads(master, slave) != 0) {
 			struct link_group *single;
 			single = MALLOC(sizeof(struct link_group));
 			if (!single)
 				return WIMLIB_ERR_NOMEM;
+			list_del(&slave->link_group_list);
+			INIT_LIST_HEAD(&slave->link_group_list);
 			single->link_group_id = 0;
 			single->next          = *bad_links;
+			single->dentry_list   = &slave->link_group_list;
 			*bad_links            = single;
-			INIT_LIST_HEAD(&slave->link_group_list);
-			single->dentry_list = &slave->link_group_list;
 			slave->link_group_master_status = GROUP_INDEPENDENT;
 		}
-		head = next;
 	}
 	return 0;
 }

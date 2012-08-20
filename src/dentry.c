@@ -533,6 +533,7 @@ static void __destroy_dentry(struct dentry *dentry)
 	FREE(dentry->file_name_utf8);
 	FREE(dentry->short_name);
 	FREE(dentry->full_path_utf8);
+	FREE(dentry->extracted_file);
 }
 
 void free_dentry(struct dentry *dentry)

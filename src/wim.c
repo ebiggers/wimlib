@@ -208,7 +208,9 @@ int wimlib_select_image(WIMStruct *w, int image)
 		if (!imd->modified) {
 			DEBUG("Freeing image %u", w->current_image);
 			destroy_image_metadata(imd, NULL);
-			memset(imd, 0, sizeof(*imd));
+			imd->root_dentry = NULL;
+			imd->security_data = NULL;
+			imd->lgt = NULL;
 		}
 	}
 
@@ -526,7 +528,7 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int flags,
 
 	ret = begin_read(w, wim_file, flags);
 	if (ret != 0) {
-		ERROR("Could not begin reading the WIM file `%s'", wim_file);
+		DEBUG("Could not begin reading the WIM file `%s'", wim_file);
 		wimlib_free(w);
 		return ret;
 	}

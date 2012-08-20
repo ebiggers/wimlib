@@ -219,12 +219,12 @@ struct image_metadata {
 	/* Pointer to the security data for the image. */
 	struct wim_security_data *security_data;
 
+	/* Hard link group table */
+	struct link_group_table *lgt;
+
 	/* A pointer to the lookup table entry for this image's metadata
 	 * resource. */
 	struct lookup_table_entry *metadata_lte;
-
-	/* Hard link group table */
-	struct link_group_table *lgt;
 
 	/* True if the filesystem of the image has been modified.  If this is
 	 * the case, the memory for the filesystem is not freed when switching

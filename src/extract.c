@@ -53,6 +53,7 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 	 * instead either symlinks or hardlinks *all* identical files in
 	 * the WIM, even if they are in a different image (in the case
 	 * of a multi-image extraction) */
+
 	wimlib_assert(lte->file_on_disk);
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
@@ -107,15 +108,50 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 }
 
 static int extract_regular_file_unlinked(WIMStruct *w,
-					 const struct dentry *dentry, 
+					 struct dentry *dentry, 
 				         const char *output_path,
 				         int extract_flags,
 				         struct lookup_table_entry *lte)
 {
+	/* Normal mode of extraction.  Regular files and hard links are
+	 * extracted in the way that they appear in the WIM. */
+
 	int out_fd;
 	const struct resource_entry *res_entry;
 	int ret;
-	/* Otherwise, we must actually extract the file contents. */
+	const struct list_head *head = &dentry->link_group_list;
+
+	if (head->next != head) {
+		/* This dentry is one of a hard link set of at least 2 dentries.
+		 * If one of the other dentries has already been extracted, make
+		 * a hard link to the file corresponding to this
+		 * already-extracted directory.  Otherwise, extract the
+		 * file, and set the dentry->extracted_file field so that other
+		 * dentries in the hard link group can link to it. */
+		struct dentry *other;
+		list_for_each_entry(other, head, link_group_list) {
+			if (other->extracted_file) {
+				DEBUG("Extracting hard link `%s' => `%s'",
+				      output_path, other->extracted_file);
+				if (link(other->extracted_file, output_path) != 0) {
+					ERROR_WITH_ERRNO("Failed to hard link "
+							 "`%s' to `%s'",
+							 output_path,
+							 other->extracted_file);
+					return WIMLIB_ERR_LINK;
+				}
+				return 0;
+			}
+		}
+		FREE(dentry->extracted_file);
+		dentry->extracted_file = STRDUP(output_path);
+		if (!dentry->extracted_file) {
+			ERROR("Failed to allocate memory for filename");
+			return WIMLIB_ERR_NOMEM;
+		}
+	}
+
+	/* Extract the contents of the file to @output_path. */
 
 	out_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (out_fd == -1) {
@@ -124,12 +160,13 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 		return WIMLIB_ERR_OPEN;
 	}
 
-	/* Extract empty file, with no lookup table entry... */
 	if (!lte) {
+		/* Empty file with no lookup table entry */
 		DEBUG("Empty file `%s'.", output_path);
 		ret = 0;
 		goto done;
 	}
+
 
 	res_entry = &lte->resource_entry;
 
@@ -141,14 +178,20 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 		goto done;
 	}
 
-	/* Mark the lookup table entry to indicate this file has been extracted. */
-	lte->out_refcnt++;
-	FREE(lte->file_on_disk);
-	lte->file_on_disk = STRDUP(output_path);
-	if (!lte->file_on_disk)
-		ret = WIMLIB_ERR_NOMEM;
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE) {
+		/* Mark the lookup table entry to indicate this file has been
+		 * extracted. */
+		lte->out_refcnt++;
+		FREE(lte->file_on_disk);
+		lte->file_on_disk = STRDUP(output_path);
+		if (!lte->file_on_disk)
+			ret = WIMLIB_ERR_NOMEM;
+	}
 done:
-	close(out_fd);
+	if (close(out_fd) != 0) {
+		ERROR_WITH_ERRNO("Failed to close file `%s'", output_path);
+		ret = WIMLIB_ERR_WRITE;
+	}
 	return ret;
 }
 
@@ -156,7 +199,7 @@ done:
  * Extracts a regular file from the WIM archive. 
  */
 static int extract_regular_file(WIMStruct *w, 
-				const struct dentry *dentry, 
+				struct dentry *dentry, 
 				const char *output_dir,
 				const char *output_path,
 				int extract_flags)
@@ -165,9 +208,6 @@ static int extract_regular_file(WIMStruct *w,
 
 	lte = __lookup_resource(w->lookup_table, dentry_hash(dentry));
 
-	/* If we already extracted the same file or a hard link copy of it, we
-	 * may be able to simply create a link.  The exact action is specified
-	 * by the current @link_type. */
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) &&
 	      lte && lte->out_refcnt != 0)
 		return extract_regular_file_linked(dentry, output_dir,
@@ -205,7 +245,7 @@ static int extract_symlink(const struct dentry *dentry, const char *output_path,
  * @output_path:   	The path to which the directory is to be extracted to.
  * @return: 		True on success, false on failure. 
  */
-static int extract_directory(struct dentry *dentry, const char *output_path)
+static int extract_directory(const char *output_path)
 {
 	/* Compute the output path directory to the directory. */
 	if (mkdir(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0) 
@@ -260,7 +300,7 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	if (dentry_is_symlink(dentry)) {
 		ret = extract_symlink(dentry, output_path, w);
 	} else if (dentry_is_directory(dentry)) {
-		ret = extract_directory(dentry, output_path);
+		ret = extract_directory(output_path);
 	} else {
 		ret = extract_regular_file(w, dentry, args->output_dir,
 					   output_path, extract_flags);
@@ -306,6 +346,10 @@ static int extract_all_images(WIMStruct *w, const char *output_dir,
 
 	DEBUG("Attempting to extract all images from `%s'", w->filename);
 
+	ret = extract_directory(output_dir);
+	if (ret != 0)
+		return ret;
+
 	memcpy(buf, output_dir, output_path_len);
 	buf[output_path_len] = '/';
 	for (image = 1; image <= w->hdr.image_count; image++) {
@@ -338,10 +382,12 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 			== (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (image == WIM_ALL_IMAGES)
+	if (image == WIM_ALL_IMAGES) {
 		flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
-	else
+		for_lookup_table_entry(w->lookup_table, zero_out_refcnts, NULL);
+	} else {
 		flags &= ~WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
+	}
 	
 	if ((flags & WIMLIB_EXTRACT_FLAG_NTFS)) {
 	#ifdef WITH_NTFS_3G

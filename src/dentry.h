@@ -114,7 +114,6 @@ struct dentry {
 	 * included only the length field, but that takes up 8 bytes. */
 	u64 length;
 
-
 	/* The file attributes associated with this file. */
 	u32 attributes;
 
@@ -152,14 +151,6 @@ struct dentry {
 	 * dentry is actually a reparse point... well, just take a look at the
 	 * read_dentry() function. */
 	//u32 reparse_reserved;
-
-	/* If the reparse_reserved field existed, there would be a 4-byte gap
-	 * here to align hard_link on an 8-byte field.  However,
-	 * reparse_reserved does not actually exist, so there is no gap here. */
-
-	/* If the file is part of a hard link set, all the directory entries in
-	 * the set will share the same value for this field. */
-	u64 hard_link;
 
 	/* Number of alternate data streams associated with this file. */
 	u16 num_ads;
@@ -202,13 +193,30 @@ struct dentry {
 		u32 num_times_opened;
 	};
 
-	/* List of dentries in the hard link set */
+	/* If the file is part of a hard link set, all the directory entries in
+	 * the set will share the same value for this field. */
+	u64 hard_link;
+
 	enum {
+		/* This dentry is the owner of its ads_entries, although it may
+		 * be in a hard link set */
 		GROUP_INDEPENDENT,
+
+		/* This dentry is the owner of the ads_entries in the hard link
+		 * set */
 		GROUP_MASTER,
+
+		/* This dentry shares its ads_entries with a dentry in the hard
+		 * link set that has GROUP_MASTER set. */
 		GROUP_SLAVE
 	} link_group_master_status;
+
+
+	/* List of dentries in the hard link set */
 	struct list_head link_group_list;
+
+	/* Path to extracted file on disk (used during extraction only) */
+	char *extracted_file;
 };
 
 /* Return hash of the "unnamed" (default) data stream. */
