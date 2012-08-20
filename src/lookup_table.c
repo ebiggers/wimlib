@@ -70,6 +70,15 @@ struct lookup_table_entry *new_lookup_table_entry()
 }
 
 
+void free_lookup_table_entry(struct lookup_table_entry *lte)
+{
+	if (lte) {
+		if (lte->staging_list.next)
+			list_del(&lte->staging_list);
+		FREE(lte->file_on_disk);
+		FREE(lte);
+	}
+}
 
 /*
  * Inserts an entry into the lookup table.
@@ -362,11 +371,12 @@ int lookup_resource(WIMStruct *w, const char *path,
 		    int lookup_flags,
 		    struct dentry **dentry_ret,
 		    struct lookup_table_entry **lte_ret,
-		    u8 **hash_ret)
+		    unsigned *stream_idx_ret)
 {
 	struct dentry *dentry = get_dentry(w, path);
 	struct lookup_table_entry *lte;
-	u8 *hash;
+	unsigned stream_idx = 0;
+	const u8 *hash = dentry->hash;
 	if (!dentry)
 		return -ENOENT;
 	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
@@ -381,6 +391,7 @@ int lookup_resource(WIMStruct *w, const char *path,
 						       stream_name,
 						       stream_name_len))
 				{
+					stream_idx = i + 1;
 					hash = dentry->ads_entries[i].hash;
 					goto do_lookup;
 				}
@@ -388,14 +399,13 @@ int lookup_resource(WIMStruct *w, const char *path,
 			return -ENOENT;
 		}
 	}
-	hash = dentry->hash;
 do_lookup:
 	lte = __lookup_resource(w->lookup_table, hash);
 	if (dentry_ret)
 		*dentry_ret = dentry;
 	if (lte_ret)
 		*lte_ret = lte;
-	if (hash_ret)
-		*hash_ret = hash;
+	if (stream_idx_ret)
+		*stream_idx_ret = stream_idx;
 	return 0;
 }

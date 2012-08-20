@@ -184,6 +184,7 @@ int write_header(const struct wim_header *hdr, FILE *out_fp)
 		ERROR_WITH_ERRNO("Failed to write WIM header");
 		return WIMLIB_ERR_WRITE;
 	}
+	DEBUG("Done writing WIM header");
 	return 0;
 }
 

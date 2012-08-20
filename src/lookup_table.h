@@ -38,13 +38,13 @@ struct lookup_table_entry {
 	/* Currently ignored; set to 1 in new lookup table entries. */
 	u16 part_number;
 
-	/* Number of times this lookup table entry is referenced by dentries. */
-	u32 refcnt;
-
 	/* If %true, this lookup table entry corresponds to a symbolic link
 	 * reparse buffer.  @symlink_reparse_data_buf will give the target of
 	 * the symbolic link. */
 	bool is_symlink;
+
+	/* Number of times this lookup table entry is referenced by dentries. */
+	u32 refcnt;
 
 	union {
 		/* SHA1 hash of the file resource pointed to by this lookup
@@ -99,11 +99,11 @@ struct lookup_table_entry {
 	 *
 	 * output_resource_entry is the struct resource_entry for the position of the
 	 * file resource when written to the output file. */
+	u32 out_refcnt;
 	union {
-		u32 out_refcnt;
-		bool refcnt_is_incremented;
+		struct resource_entry output_resource_entry;
+		struct list_head staging_list;
 	};
-	struct resource_entry output_resource_entry;
 	struct dentry *hard_link_sets;
 };
 
@@ -131,7 +131,7 @@ __lookup_resource(const struct lookup_table *lookup_table, const u8 hash[]);
 extern int lookup_resource(WIMStruct *w, const char *path,
 			   int lookup_flags, struct dentry **dentry_ret,
 			   struct lookup_table_entry **lte_ret,
-			   u8 **hash_ret);
+			   unsigned *stream_idx_ret);
 
 extern int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore);
 
@@ -144,13 +144,7 @@ extern void free_lookup_table(struct lookup_table *table);
 
 extern int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out);
 
-static inline void free_lookup_table_entry(struct lookup_table_entry *lte)
-{
-	if (lte) {
-		FREE(lte->file_on_disk);
-		FREE(lte);
-	}
-}
+extern void free_lookup_table_entry(struct lookup_table_entry *lte);
 
 /* Writes the lookup table to the output file. */
 static inline int write_lookup_table(struct lookup_table *table, FILE *out)

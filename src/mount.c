@@ -77,6 +77,8 @@ static const char *mount_dir;
  * numbers. */
 static u64 next_link_group_id;
 
+/* List of lookup table entries in the staging directory */
+static LIST_HEAD(staging_list);
 
 static inline int get_lookup_flags()
 {
@@ -189,6 +191,32 @@ static void dentry_increment_lookup_table_refcnts(struct dentry *dentry,
 			break;
 		hash = dentry->ads_entries[i].hash;
 		i++;
+	}
+}
+
+/* Change the hash value of the main or alternate file stream in a hard link
+ * group.  This needs to be done if the hash of the corresponding lookup table
+ * entry was changed. */
+static void link_group_set_stream_hash(struct dentry *dentry,
+				       unsigned stream_idx,
+				       const u8 new_hash[])
+{
+	struct list_head *head, *cur;
+
+	if (stream_idx == 0) {
+		head = &dentry->link_group_list;
+		cur = head;
+		do {
+			dentry = container_of(cur, struct dentry, link_group_list);
+			memcpy(dentry->hash, new_hash, WIM_HASH_SIZE);
+			cur = cur->next;
+		} while (cur != head);
+	} else {
+		/* Dentries in the link group share their alternate stream
+		 * entries. */
+		wimlib_assert(stream_idx <= dentry->num_ads);
+		memcpy(dentry->ads_entries[stream_idx - 1].hash, new_hash,
+		       WIM_HASH_SIZE);
 	}
 }
 
@@ -359,6 +387,8 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 			new_lte->num_allocated_fds = num_transferred_fds;
 		} 
 	} else {
+		/* No old_lte was supplied, so the resource had no lookup table
+		 * entry before (it must be an empty resource) */
 		new_lte = new_lookup_table_entry();
 		if (!new_lte) {
 			ret = -ENOMEM;
@@ -371,6 +401,7 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 	new_lte->staging_file_name = staging_file_name;
 
 	lookup_table_insert(w->lookup_table, new_lte);
+	list_add(&new_lte->staging_list, &staging_list);
 	*lte = new_lte;
 	return 0;
 out_delete_staging_file:
@@ -613,15 +644,16 @@ static int wimfs_access(const char *path, int mask)
 
 /* Closes the staging file descriptor associated with the lookup table entry, if
  * it is opened. */
-static int close_lte_fds(struct lookup_table_entry *lte, void *ignore)
+static int close_lte_fds(struct lookup_table_entry *lte)
 {
-	for (u16 i = 0; i < lte->num_opened_fds; i++) {
+	for (u16 i = 0, j = 0; j < lte->num_opened_fds; i++) {
 		if (lte->fds[i] && lte->fds[i]->staging_fd != -1) {
 			if (close(lte->fds[i]->staging_fd) != 0) {
 				ERROR_WITH_ERRNO("Failed close file `%s'",
 						 lte->staging_file_name);
 				return WIMLIB_ERR_WRITE;
 			}
+			j++;
 		}
 	}
 	return 0;
@@ -632,10 +664,10 @@ static int close_lte_fds(struct lookup_table_entry *lte, void *ignore)
  * file.  Updates the SHA1 sum in the dentry and the lookup table entry.  If
  * there is already a lookup table entry with the same checksum, increment its
  * reference count and destroy the lookup entry with the updated checksum. */
-static int calculate_sha1sum_for_staging_file(struct dentry *dentry,
-					      void *_lookup_table)
+static int calculate_sha1sum_of_staging_file(struct dentry *dentry,
+					     void *__lookup_table)
 {
-	struct lookup_table *lookup_table =  _lookup_table;
+	struct lookup_table *lookup_table =  __lookup_table;
 	u8 *hash = dentry->hash;
 	u16 i = 0;
 	while (1) {
@@ -674,27 +706,23 @@ static int calculate_sha1sum_for_staging_file(struct dentry *dentry,
 static int rebuild_wim(WIMStruct *w, bool check_integrity)
 {
 	int ret;
-	struct dentry *root;
+	struct lookup_table_entry *lte;
 
-	root = wim_root_dentry(w);
-
-	DEBUG("Closing all staging file descriptors.");
 	/* Close all the staging file descriptors. */
-	ret = for_lookup_table_entry(w->lookup_table, close_lte_fds, NULL);
-	if (ret != 0) {
-		ERROR("Failed to close all staging files");
-		return ret;
+	DEBUG("Closing all staging file descriptors.");
+	list_for_each_entry(lte, &staging_list, staging_list) {
+		ret = close_lte_fds(lte);
+		if (ret != 0)
+			return ret;
 	}
 
-	DEBUG("Calculating SHA1 checksums for all new staging files.");
 	/* Calculate SHA1 checksums for all staging files, and merge unnecessary
 	 * lookup table entries. */
-	ret = for_dentry_in_tree(root, calculate_sha1sum_for_staging_file,
-				 w->lookup_table);
-	if (ret != 0) {
-		ERROR("Failed to calculate new SHA1 checksums");
+	DEBUG("Calculating SHA1 checksums for all new staging files.");
+	ret = for_dentry_in_tree(wim_root_dentry(w),
+				 calculate_sha1sum_of_staging_file, w->lookup_table);
+	if (ret != 0)
 		return ret;
-	}
 
 	xml_update_image_info(w, w->current_image);
 
@@ -945,9 +973,10 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	u8 *dentry_hash;
 	int ret;
 	struct wimlib_fd *fd;
+	unsigned stream_idx;
 
 	ret = lookup_resource(w, path, get_lookup_flags(), &dentry, &lte,
-			      &dentry_hash);
+			      &stream_idx);
 	if (ret != 0)
 		return ret;
 
@@ -965,7 +994,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 		ret = extract_resource_to_staging_dir(dentry, &lte, 0);
 		if (ret != 0)
 			return ret;
-		memcpy(dentry_hash, lte->hash, WIM_HASH_SIZE);
+		link_group_set_stream_hash(dentry, stream_idx, lte->hash);
 	}
 
 	ret = alloc_wimlib_fd(lte, &fd);
@@ -986,7 +1015,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 						      lte->resource_entry.original_size);
 		if (ret != 0)
 			return ret;
-		memcpy(dentry_hash, lte->hash, WIM_HASH_SIZE);
+		link_group_set_stream_hash(dentry, stream_idx, lte->hash);
 	}
 	if (lte->staging_file_name) {
 		fd->staging_fd = open(lte->staging_file_name, fi->flags);
@@ -1273,10 +1302,9 @@ static int wimfs_truncate(const char *path, off_t size)
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
 	int ret;
-	u8 *dentry_hash;
 	
 	ret = lookup_resource(w, path, get_lookup_flags(), &dentry,
-			      &lte, &dentry_hash);
+			      &lte, NULL);
 
 	if (ret != 0)
 		return ret;
@@ -1305,25 +1333,27 @@ static int wimfs_unlink(const char *path)
 	struct lookup_table_entry *lte;
 	int ret;
 	u8 *dentry_hash;
+	unsigned stream_idx;
 	
 	ret = lookup_resource(w, path, get_lookup_flags(), &dentry,
-			      &lte, &dentry_hash);
+			      &lte, &stream_idx);
 
 	if (ret != 0)
 		return ret;
 
-	if (dentry_hash == dentry->hash) {
+	if (stream_idx == 0) {
 		/* We are removing the full dentry including all alternate data
 		 * streams. */
 		remove_dentry(dentry, w->lookup_table);
 	} else {
 		/* We are removing an alternate data stream. */
-		struct ads_entry *cur_entry = dentry->ads_entries;
-		while (cur_entry->hash != dentry_hash)
-			cur_entry++;
-		lookup_table_decrement_refcnt(w->lookup_table, cur_entry->hash);
+		struct ads_entry *ads_entry;
 		
-		dentry_remove_ads(dentry, cur_entry);
+		ads_entry = &dentry->ads_entries[stream_idx - 1];
+
+		lookup_table_decrement_refcnt(w->lookup_table, ads_entry->hash);
+		
+		dentry_remove_ads(dentry, ads_entry);
 	}
 	/* Beware: The lookup table entry(s) may still be referenced by users
 	 * that have opened the corresponding streams.  They are freed later in
