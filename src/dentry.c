@@ -579,24 +579,20 @@ struct dentry *clone_dentry(struct dentry *old)
 	return new;
 }
 
-/* Arguments for do_free_dentry(). */
-struct free_dentry_args {
-	struct lookup_table *lookup_table;
-	bool lt_decrement_refcnt;
-};
-
 /* 
  * This function is passed as an argument to for_dentry_in_tree_depth() in order
  * to free a directory tree.  __args is a pointer to a `struct free_dentry_args'.
  */
-static int do_free_dentry(struct dentry *dentry, void *__args)
+static int do_free_dentry(struct dentry *dentry, void *__lookup_table)
 {
-	struct free_dentry_args *args = (struct free_dentry_args*)__args;
-
-	if (args->lt_decrement_refcnt && !dentry_is_directory(dentry)) {
-		wimlib_assert(!dentry->resolved);
-		lookup_table_decrement_refcnt(args->lookup_table, 
-					      dentry->hash);
+	struct lookup_table *lookup_table = __lookup_table;
+	if (lookup_table) {
+		struct lookup_table_entry *lte;
+		if (dentry->resolved)
+			lte = dentry->lte;
+		else
+			lte = __lookup_resource(lookup_table, dentry->hash);
+		lte_decrement_refcnt(lte, lookup_table);
 	}
 
 	wimlib_assert(dentry->refcnt != 0);
@@ -609,20 +605,16 @@ static int do_free_dentry(struct dentry *dentry, void *__args)
  * Unlinks and frees a dentry tree.
  *
  * @root: 		The root of the tree.
- * @lookup_table:  	The lookup table for dentries.
- * @decrement_refcnt:  	True if the dentries in the tree are to have their 
- * 			reference counts in the lookup table decremented.
+ * @lookup_table:  	The lookup table for dentries.  If non-NULL, the
+ * 			reference counts in the lookup table for the lookup
+ * 			table entries corresponding to the dentries will be
+ * 			decremented.
  */
-void free_dentry_tree(struct dentry *root, struct lookup_table *lookup_table, 
-		      bool lt_decrement_refcnt)
+void free_dentry_tree(struct dentry *root, struct lookup_table *lookup_table)
 {
 	if (!root || !root->parent)
 		return;
-
-	struct free_dentry_args args;
-	args.lookup_table        = lookup_table;
-	args.lt_decrement_refcnt = lt_decrement_refcnt;
-	for_dentry_in_tree_depth(root, do_free_dentry, &args);
+	for_dentry_in_tree_depth(root, do_free_dentry, lookup_table);
 }
 
 int increment_dentry_refcnt(struct dentry *dentry, void *ignore)

@@ -44,10 +44,7 @@
 
 void destroy_image_metadata(struct image_metadata *imd,struct lookup_table *lt)
 {
-	if (lt)
-		free_dentry_tree(imd->root_dentry, lt, true);
-	else
-		free_dentry_tree(imd->root_dentry, NULL, false);
+	free_dentry_tree(imd->root_dentry, lt);
 	free_security_data(imd->security_data);
 	free_link_group_table(imd->lgt);
 
@@ -564,6 +561,6 @@ out_destroy_imd:
 	w->hdr.image_count--;
 	return ret;
 out_free_dentry_tree:
-	free_dentry_tree(root_dentry, w->lookup_table, true);
+	free_dentry_tree(root_dentry, w->lookup_table);
 	return ret;
 }

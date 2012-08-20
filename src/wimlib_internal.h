@@ -322,7 +322,7 @@ static inline void print_hash(const u8 hash[])
 
 struct link_group_table *new_link_group_table(u64 capacity);
 int link_group_table_insert(struct dentry *dentry,
-			    struct link_group_table *table);
+			    void *__table);
 void free_link_group_table(struct link_group_table *table);
 u64 assign_link_groups(struct link_group_table *table);
 int link_groups_free_duplicate_data(struct link_group_table *table);

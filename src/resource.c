@@ -1025,7 +1025,7 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 out_free_lgt:
 	free_link_group_table(lgt);
 out_free_dentry_tree:
-	free_dentry_tree(dentry, NULL, false);
+	free_dentry_tree(dentry, NULL);
 out_free_security_data:
 	free_security_data(sd);
 out_free_buf:

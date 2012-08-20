@@ -1422,6 +1422,7 @@ static int wimfs_symlink(const char *to, const char *from)
 
 	dentry->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
 	dentry->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+	dentry->hard_link = next_link_group_id++;
 
 	if (dentry_set_symlink(dentry, to, w->lookup_table, &lte) != 0)
 		goto out_free_dentry;
@@ -1583,6 +1584,24 @@ static struct fuse_operations wimfs_operations = {
 };
 
 
+static int check_lte_refcnt(struct lookup_table_entry *lte, void *ignore)
+{
+	size_t lte_group_size = 0;
+	struct list_head *cur;
+	list_for_each(cur, &lte->lte_group_list)
+		lte_group_size++;
+	if (lte_group_size > lte->refcnt) {
+#ifdef ENABLE_ERROR_MESSAGES
+		ERROR("The following lookup table entry has a reference count "
+		      "of %u, but", lte->refcnt);
+		ERROR("We found %u references to it", lte_group_size);
+		print_lookup_table_entry(lte, NULL);
+#endif
+		return WIMLIB_ERR_INVALID_DENTRY;
+	}
+	return 0;
+}
+
 /* Mounts a WIM file. */
 WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir, 
 			   int flags)
@@ -1610,6 +1629,10 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	/* Resolve all the lookup table entries of the dentry tree */
 	for_dentry_in_tree(wim_root_dentry(wim), dentry_resolve_ltes,
 			   wim->lookup_table);
+
+	ret = for_lookup_table_entry(wim->lookup_table, check_lte_refcnt, NULL);
+	if (ret != 0)
+		return ret;
 
 	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		wim_get_current_image_metadata(wim)->modified = true;
@@ -1765,7 +1788,10 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	 * filesystem daemon has crashed or failed for some reason.
 	 *
 	 * XXX come up with some method to determine if the filesystem
-	 * daemon has really crashed or not. */
+	 * daemon has really crashed or not. 
+	 *
+	 * XXX Idea: have mount daemon write its PID into the WIM file header?
+	 * */
 
 	gettimeofday(&now, NULL);
 	timeout.tv_sec = now.tv_sec + 600;

@@ -329,8 +329,7 @@ extern void free_dentry(struct dentry *dentry);
 extern void put_dentry(struct dentry *dentry);
 extern struct dentry *clone_dentry(struct dentry *old);
 extern void free_dentry_tree(struct dentry *root,
-			     struct lookup_table *lookup_table, 
-			     bool lt_decrement_refcnt);
+			     struct lookup_table *lookup_table);
 extern int increment_dentry_refcnt(struct dentry *dentry, void *ignore);
 extern int decrement_dentry_refcnt(struct dentry *dentry, void *ignore);
 

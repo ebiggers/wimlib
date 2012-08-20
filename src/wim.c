@@ -540,7 +540,7 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int flags,
  * closes all files associated with the WIMStruct.  */
 WIMLIBAPI void wimlib_free(WIMStruct *w)
 {
-	uint i;
+	DEBUG("Freeing WIMStruct");
 
 	if (!w)
 		return;
@@ -555,7 +555,7 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 	FREE(w->xml_data);
 	free_wim_info(w->wim_info);
 	if (w->image_metadata) {
-		for (i = 0; i < w->hdr.image_count; i++)
+		for (uint i = 0; i < w->hdr.image_count; i++)
 			destroy_image_metadata(&w->image_metadata[i], NULL);
 		FREE(w->image_metadata);
 	}

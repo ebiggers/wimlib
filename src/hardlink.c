@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) 2012 Eric Biggers
+ *
+ * This file is part of wimlib, a library for working with WIM files.
+ *
+ * wimlib is free software; you can redistribute it and/or modify it under the
+ * terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * wimlib is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with wimlib; if not, see http://www.gnu.org/licenses/.
+ */
+
 #include "wimlib_internal.h"
 #include "dentry.h"
 #include "list.h"
@@ -59,8 +78,9 @@ err:
  * we keep a linked list of the single dentries, and assign them hard link group
  * IDs later.
  */
-int link_group_table_insert(struct dentry *dentry, struct link_group_table *table)
+int link_group_table_insert(struct dentry *dentry, void *__table)
 {
+	struct link_group_table *table = __table;
 	size_t pos;
 	struct link_group *group;
 

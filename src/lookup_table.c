@@ -32,7 +32,7 @@
 struct lookup_table *new_lookup_table(size_t capacity)
 {
 	struct lookup_table *table;
-	struct lookup_table_entry **array;
+	struct hlist_head *array;
 
 	table = MALLOC(sizeof(struct lookup_table));
 	if (!table)
@@ -70,7 +70,6 @@ struct lookup_table_entry *new_lookup_table_entry()
 	return lte;
 }
 
-
 void free_lookup_table_entry(struct lookup_table_entry *lte)
 {
 	if (lte) {
@@ -81,85 +80,50 @@ void free_lookup_table_entry(struct lookup_table_entry *lte)
 	}
 }
 
+static int do_free_lookup_table_entry(struct lookup_table_entry *entry,
+				      void *ignore)
+{
+	free_lookup_table_entry(entry);
+	return 0;
+}
+
+
+void free_lookup_table(struct lookup_table *table)
+{
+	DEBUG("Freeing lookup table");
+	if (table) {
+		if (table->array) {
+			for_lookup_table_entry(table,
+					       do_free_lookup_table_entry,
+					       NULL);
+			FREE(table->array);
+		}
+		FREE(table);
+	}
+}
+
 /*
  * Inserts an entry into the lookup table.
  *
- * @lookup_table:	A pointer to the lookup table.
- * @entry:		A pointer to the entry to insert.
+ * @table:	A pointer to the lookup table.
+ * @entry:	A pointer to the entry to insert.
  */
 void lookup_table_insert(struct lookup_table *table, 
 			 struct lookup_table_entry *lte)
 {
-	size_t pos;
-	pos = lte->hash_short % table->capacity;
-	lte->next = table->array[pos];
-	table->array[pos] = lte;
+	size_t i = lte->hash_short % table->capacity;
+	hlist_add_head(&lte->hash_list, &table->array[i]);
+
 	/* XXX Make the table grow when too many entries have been inserted. */
 	table->num_entries++;
 }
 
 
-/* Unlinks a lookup table entry from the table; does not free it. */
-void lookup_table_unlink(struct lookup_table *table, 
-			 struct lookup_table_entry *lte)
-{
-	size_t pos;
-	struct lookup_table_entry *prev, *cur_entry, *next;
 
-	pos = lte->hash_short % table->capacity;
-	prev = NULL;
-	cur_entry = table->array[pos];
-
-	while (cur_entry) {
-		next = cur_entry->next;
-		if (cur_entry == lte) {
-			if (prev)
-				prev->next = next;
-			else
-				table->array[pos] = next;
-			table->num_entries--;
-			return;
-		}
-		prev = cur_entry;
-		cur_entry = next;
-	}
-}
-
-
-/* Decrement the reference count for the dentry having hash value @hash in the
- * lookup table.  The lookup table entry is unlinked and freed if there are no
- * references to in remaining.  */
-struct lookup_table_entry *
-lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
-{
-	size_t pos = *(size_t*)hash % table->capacity;
-	struct lookup_table_entry *prev = NULL;
-	struct lookup_table_entry *entry = table->array[pos];
-	struct lookup_table_entry *next;
-	while (entry) {
-		next = entry->next;
-		if (memcmp(hash, entry->hash, WIM_HASH_SIZE) == 0) {
-			wimlib_assert(entry->refcnt != 0);
-			if (--entry->refcnt == 0) {
-				if (entry->num_opened_fds == 0) {
-					free_lookup_table_entry(entry);
-					entry = NULL;
-				}
-				if (prev)
-					prev->next = next;
-				else
-					table->array[pos] = next;
-				break;
-			}
-		}
-		prev = entry;
-		entry = next;
-	}
-	return entry;
-}
-
-/* Like lookup_table_decrement_refcnt(), but for when we already know the lookup
- * table entry. */
+/* Decrements the reference count for the lookup table entry @lte.  If its
+ * reference count reaches 0, it is unlinked from the lookup table.  If,
+ * furthermore, the entry has no opened file descriptors associated with it, the
+ * entry is freed.  */
 struct lookup_table_entry *
 lte_decrement_refcnt(struct lookup_table_entry *lte, struct lookup_table *table)
 {
@@ -184,18 +148,17 @@ int for_lookup_table_entry(struct lookup_table *table,
 			   int (*visitor)(struct lookup_table_entry *, void *),
 			   void *arg)
 {
-	struct lookup_table_entry *entry, *next;
-	size_t i;
+	struct lookup_table_entry *lte;
+	struct hlist_node *pos, *tmp;
 	int ret;
 
-	for (i = 0; i < table->capacity; i++) {
-		entry = table->array[i];
-		while (entry) {
-			next = entry->next;
-			ret = visitor(entry, arg);
+	for (size_t i = 0; i < table->capacity; i++) {
+		hlist_for_each_entry_safe(lte, pos, tmp, &table->array[i],
+					  hash_list)
+		{
+			ret = visitor(lte, arg);
 			if (ret != 0)
 				return ret;
-			entry = next;
 		}
 	}
 	return 0;
@@ -303,23 +266,7 @@ int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out)
 	return 0;
 }
 
-static int do_free_lookup_table_entry(struct lookup_table_entry *entry,
-				      void *ignore)
-{
-	free_lookup_table_entry(entry);
-	return 0;
-}
 
-void free_lookup_table(struct lookup_table *table)
-{
-	if (!table)
-		return;
-	if (table->array) {
-		for_lookup_table_entry(table, do_free_lookup_table_entry, NULL);
-		FREE(table->array);
-	}
-	FREE(table);
-}
 
 int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore)
 {
@@ -327,21 +274,21 @@ int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore)
 	return 0;
 }
 
-int print_lookup_table_entry(struct lookup_table_entry *entry, void *ignore)
+int print_lookup_table_entry(struct lookup_table_entry *lte, void *ignore)
 {
 	printf("Offset            = %"PRIu64" bytes\n", 
-	       entry->resource_entry.offset);
+	       lte->resource_entry.offset);
 	printf("Size              = %"PRIu64" bytes\n", 
-	       (u64)entry->resource_entry.size);
+	       (u64)lte->resource_entry.size);
 	printf("Original size     = %"PRIu64" bytes\n", 
-	       entry->resource_entry.original_size);
-	printf("Part Number       = %hu\n", entry->part_number);
-	printf("Reference Count   = %u\n", entry->refcnt);
+	       lte->resource_entry.original_size);
+	printf("Part Number       = %hu\n", lte->part_number);
+	printf("Reference Count   = %u\n", lte->refcnt);
 	printf("Hash              = ");
-	print_hash(entry->hash);
+	print_hash(lte->hash);
 	putchar('\n');
 	printf("Flags             = ");
-	u8 flags = entry->resource_entry.flags;
+	u8 flags = lte->resource_entry.flags;
 	if (flags & WIM_RESHDR_FLAG_COMPRESSED)
 		fputs("WIM_RESHDR_FLAG_COMPRESSED, ", stdout);
 	if (flags & WIM_RESHDR_FLAG_FREE)
@@ -351,8 +298,8 @@ int print_lookup_table_entry(struct lookup_table_entry *entry, void *ignore)
 	if (flags & WIM_RESHDR_FLAG_SPANNED)
 		fputs("WIM_RESHDR_FLAG_SPANNED, ", stdout);
 	putchar('\n');
-	if (entry->file_on_disk)
-		printf("File on Disk      = `%s'\n", entry->file_on_disk);
+	if (lte->file_on_disk && !lte->is_symlink)
+		printf("File on Disk      = `%s'\n", lte->file_on_disk);
 	putchar('\n');
 	return 0;
 }
@@ -363,25 +310,24 @@ int print_lookup_table_entry(struct lookup_table_entry *entry, void *ignore)
 WIMLIBAPI void wimlib_print_lookup_table(WIMStruct *w)
 {
 	for_lookup_table_entry(w->lookup_table, 
-			       print_lookup_table_entry, NULL);
+			       print_lookup_table_entry,
+			       NULL);
 }
 
 /* 
  * Looks up an entry in the lookup table.
  */
 struct lookup_table_entry *
-__lookup_resource(const struct lookup_table *lookup_table, const u8 hash[])
+__lookup_resource(const struct lookup_table *table, const u8 hash[])
 {
-	size_t pos;
+	size_t i;
 	struct lookup_table_entry *lte;
+	struct hlist_node *pos;
 
-	pos = *(size_t*)hash % lookup_table->capacity;
-	lte = lookup_table->array[pos];
-	while (lte) {
+	i = *(size_t*)hash % table->capacity;
+	hlist_for_each_entry(lte, pos, &table->array[i], hash_list)
 		if (memcmp(hash, lte->hash, WIM_HASH_SIZE) == 0)
 			return lte;
-		lte = lte->next;
-	}
 	return NULL;
 }
 

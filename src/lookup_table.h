@@ -16,7 +16,7 @@
  * offsets and sizes of uncompressed or compressed file resources.  It is
  * implemented as a hash table. */
 struct lookup_table {
-	struct lookup_table_entry **array;
+	struct hlist_head *array;
 	u64 num_entries;
 	u64 capacity;
 };
@@ -34,9 +34,8 @@ struct wimlib_fd;
  */
 struct lookup_table_entry {
 
-	/* The next struct lookup_table_entry in the hash bucket.  NULL if this is the
-	 * last one. */
-	struct lookup_table_entry *next;
+	/* List of lookup table entries in this hash bucket */
+	struct hlist_node hash_list;
 
 	/* @resource_entry is read from the lookup table in the WIM
 	 * file; it says where to find the file resource in the WIM
@@ -131,8 +130,13 @@ extern struct lookup_table *new_lookup_table(size_t capacity);
 extern void lookup_table_insert(struct lookup_table *table, 
 				struct lookup_table_entry *lte);
 
-extern void lookup_table_unlink(struct lookup_table *table, 
-				struct lookup_table_entry *lte);
+/* Unlinks a lookup table entry from the table; does not free it. */
+static inline void lookup_table_unlink(struct lookup_table *table, 
+			 	       struct lookup_table_entry *lte)
+{
+	hlist_del(&lte->hash_list);
+	table->num_entries--;
+}
 
 extern struct lookup_table_entry *
 lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[]);
@@ -149,7 +153,7 @@ extern int for_lookup_table_entry(struct lookup_table *table,
 				  void *arg);
 
 extern struct lookup_table_entry *
-__lookup_resource(const struct lookup_table *lookup_table, const u8 hash[]);
+__lookup_resource(const struct lookup_table *table, const u8 hash[]);
 
 extern int lookup_resource(WIMStruct *w, const char *path,
 			   int lookup_flags, struct dentry **dentry_ret,
