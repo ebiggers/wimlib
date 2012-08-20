@@ -1043,12 +1043,11 @@ int write_metadata_resource(WIMStruct *w)
 	u64 subdir_offset;
 	struct dentry *root;
 	struct lookup_table_entry *lte;
-	struct resource_entry *res_entry;
 	off_t metadata_offset;
 	u64 metadata_original_size;
 	u64 metadata_compressed_size;
 	int metadata_ctype;
-	u8  hash[WIM_HASH_SIZE];
+	u8  hash[SHA1_HASH_SIZE];
 
 	DEBUG("Writing metadata resource for image %d", w->current_image);
 
@@ -1098,28 +1097,23 @@ int write_metadata_resource(WIMStruct *w)
 	/* Update the lookup table entry, including the hash and output resource
 	 * entry fields, for this image's metadata resource.  */
 	lte = wim_metadata_lookup_table_entry(w);
-	res_entry = &lte->output_resource_entry;
 	lte->out_refcnt++;
-	if (memcmp(hash, lte->hash, WIM_HASH_SIZE) != 0) {
+	if (!hashes_equal(hash, lte->hash)) {
 		lookup_table_unlink(w->lookup_table, lte);
-		memcpy(lte->hash, hash, WIM_HASH_SIZE);
+		copy_hash(lte->hash, hash);
 		lookup_table_insert(w->lookup_table, lte);
 	}
-	res_entry->original_size = metadata_original_size;
-	res_entry->offset        = metadata_offset;
-	res_entry->size          = metadata_compressed_size;
-	res_entry->flags         = WIM_RESHDR_FLAG_METADATA;
+	lte->output_resource_entry.original_size = metadata_original_size;
+	lte->output_resource_entry.offset        = metadata_offset;
+	lte->output_resource_entry.size          = metadata_compressed_size;
+	lte->output_resource_entry.flags         = WIM_RESHDR_FLAG_METADATA;
 	if (metadata_ctype != WIM_COMPRESSION_TYPE_NONE)
-		res_entry->flags |= WIM_RESHDR_FLAG_COMPRESSED;
+		lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_COMPRESSED;
 	return 0;
 }
 
-static int write_file_resource(WIMStruct *w, const u8 hash[])
+static int write_file_resource(WIMStruct *w, struct lookup_table_entry *lte)
 {
-	/* Get the lookup entry for the file resource. */
-	struct lookup_table_entry *lte;
-	
-	lte = __lookup_resource(w->lookup_table, hash);
 	if (!lte)
 		return 0;
 
@@ -1213,12 +1207,13 @@ static int write_file_resource(WIMStruct *w, const u8 hash[])
 }
 
 /* 
- * Writes a dentry's resources to the output file. 
+ * Writes a dentry's resources, including the main file resource as well as all
+ * alternate data streams, to the output file. 
  *
- * @dentry:  The dentry for the file resource.
+ * @dentry:  The dentry for the file.
  * @wim_p:   A pointer to the WIMStruct.  The fields of interest to this
  * 	     function are the input and output file streams and the lookup
- * 	     table, and the alternate data streams.
+ * 	     table.
  *
  * @return zero on success, nonzero on failure. 
  */
@@ -1226,16 +1221,11 @@ int write_dentry_resources(struct dentry *dentry, void *wim_p)
 {
 	WIMStruct *w = wim_p;
 	int ret;
+	struct lookup_table_entry *lte;
 
-	/* Directories don't need file resources. */
-	if (dentry_is_directory(dentry))
-		return 0;
-
-	ret = write_file_resource(w, dentry->hash);
-	if (ret != 0)
-		return ret;
-	for (u16 i = 0; i < dentry->num_ads; i++) {
-		ret = write_file_resource(w, dentry->ads_entries[i].hash);
+	for (unsigned i = 0; i <= dentry->num_ads; i++) {
+		lte = dentry_stream_lte(dentry, i, w->lookup_table);
+		ret = write_file_resource(w, lte);
 		if (ret != 0)
 			return ret;
 	}

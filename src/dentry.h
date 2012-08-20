@@ -4,6 +4,7 @@
 #include "util.h"
 #include "config.h"
 #include "list.h"
+#include "sha1.h"
 #include <string.h>
 
 
@@ -15,10 +16,6 @@ typedef struct WIMStruct WIMStruct;
 #define WIM_DENTRY_DISK_SIZE    102
 
 #define WIM_ADS_ENTRY_DISK_SIZE 38
-
-#ifndef WIM_HASH_SIZE
-#define WIM_HASH_SIZE 20
-#endif
 
 /* 
  * Reparse tags documented at 
@@ -58,7 +55,7 @@ struct lookup_table_entry;
 struct ads_entry {
 	union {
 		/* SHA-1 message digest of stream contents */
-		u8 hash[WIM_HASH_SIZE];
+		u8 hash[SHA1_HASH_SIZE];
 
 		/* The corresponding lookup table entry (only for resolved
 		 * streams) */
@@ -155,7 +152,7 @@ struct dentry {
 	 * opposed to the alternate file streams, which may have their own
 	 * lookup table entries.  */
 	union {
-		u8 hash[WIM_HASH_SIZE];
+		u8 hash[SHA1_HASH_SIZE];
 		struct lookup_table_entry *lte;
 	};
 
@@ -241,31 +238,6 @@ struct dentry {
 	char *extracted_file;
 };
 
-/* Return hash of the "unnamed" (default) data stream. */
-static inline const u8 *dentry_hash(const struct dentry *dentry)
-{
-	wimlib_assert(!dentry->resolved);
-	/* If there are alternate data streams, the dentry hash field is zeroed
-	 * out, and we need to find the hash in the un-named data stream (should
-	 * be the first one, but check them in order just in case, and fall back
-	 * to the dentry hash field if we can't find an unnamed data stream). */
-	for (u16 i = 0; i < dentry->num_ads; i++)
-		if (dentry->ads_entries[i].stream_name_len == 0)
-			return dentry->ads_entries[i].hash;
-	return dentry->hash;
-}
-
-/* Return lte for the "unnamed" (default) data stream.  Only for resolved
- * dentries */
-static inline struct lookup_table_entry *
-dentry_lte(const struct dentry *dentry)
-{
-	wimlib_assert(dentry->resolved);
-	for (u16 i = 0; i < dentry->num_ads; i++)
-		if (dentry->ads_entries[i].stream_name_len == 0)
-			return dentry->ads_entries[i].lte;
-	return dentry->lte;
-}
 
 /* Return the number of dentries in the hard link group */
 static inline size_t dentry_link_group_size(const struct dentry *dentry)

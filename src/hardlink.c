@@ -220,9 +220,8 @@ static bool dentries_have_same_ads(const struct dentry *d1,
 		if (strcmp(d1->ads_entries[i].stream_name_utf8,
 			   d2->ads_entries[i].stream_name_utf8) != 0)
 			return false;
-		if (memcmp(d1->ads_entries[i].hash,
-			   d2->ads_entries[i].hash,
-			   WIM_HASH_SIZE) != 0)
+		if (!hashes_equal(d1->ads_entries[i].hash,
+				  d2->ads_entries[i].hash))
 			return false;
 	}
 	return true;
@@ -247,7 +246,7 @@ static int share_dentry_ads(struct dentry *owner, struct dentry *user)
 		mismatch_type = "security ID";
 		goto mismatch;
 	}
-	if (memcmp(owner->hash, user->hash, WIM_HASH_SIZE) != 0) {
+	if (!hashes_equal(owner->hash, user->hash)) {
 		mismatch_type = "main file resource";
 		goto mismatch;
 	}

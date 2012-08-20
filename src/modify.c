@@ -78,7 +78,7 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 {
 	DEBUG("%s", root_disk_path);
 	struct stat root_stbuf;
-	int ret;
+	int ret = 0;
 	int (*stat_fn)(const char *restrict, struct stat *restrict);
 
 	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)
@@ -98,8 +98,14 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 		ERROR("`%s' is not a directory", root_disk_path);
 		return WIMLIB_ERR_NOTDIR;
 	}
+	if (!S_ISREG(root_stbuf.st_mode) && !S_ISDIR(root_stbuf.st_mode)
+	    && !S_ISLNK(root_stbuf.st_mode)) {
+		ERROR("`%s' is not a regular file, directory, or symbolic link.");
+		return WIMLIB_ERR_SPECIAL_FILE;
+	}
 	stbuf_to_dentry(&root_stbuf, root);
 	add_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
+	root->resolved = true;
 
 	if (dentry_is_directory(root)) {
 		/* Open the directory on disk */
@@ -141,32 +147,37 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 		/* Archiving a symbolic link */
 		size_t symlink_buf_len;
 		char deref_name_buf[4096];
-		ssize_t ret = readlink(root_disk_path, deref_name_buf,
-				       sizeof(deref_name_buf) - 1);
-		if (ret == -1) {
+		ssize_t deref_name_len;
+		
+		deref_name_len = readlink(root_disk_path, deref_name_buf,
+					  sizeof(deref_name_buf) - 1);
+		if (deref_name_len == -1) {
 			ERROR_WITH_ERRNO("Failed to read target of "
 					 "symbolic link `%s'", root_disk_path);
-			return WIMLIB_ERR_STAT;
+			return WIMLIB_ERR_READLINK;
 		}
-		deref_name_buf[ret] = '\0';
+		deref_name_buf[deref_name_len] = '\0';
 		DEBUG("Read symlink `%s'", deref_name_buf);
 		ret = dentry_set_symlink(root, deref_name_buf,
 					 lookup_table, NULL);
 	} else {
 		/* Regular file */
 		struct lookup_table_entry *lte;
+		u8 hash[SHA1_HASH_SIZE];
 
 		/* For each regular file, we must check to see if the file is in
 		 * the lookup table already; if it is, we increment its refcnt;
 		 * otherwise, we create a new lookup table entry and insert it.
 		 * */
-		ret = sha1sum(root_disk_path, root->hash);
+		ret = sha1sum(root_disk_path, hash);
 		if (ret != 0)
 			return ret;
 
-		lte = __lookup_resource(lookup_table, root->hash);
+		lte = __lookup_resource(lookup_table, hash);
 		if (lte) {
 			lte->refcnt++;
+			DEBUG("Add lte reference %u for `%s'", lte->refcnt,
+			      root_disk_path);
 		} else {
 			char *file_on_disk = STRDUP(root_disk_path);
 			if (!file_on_disk) {
@@ -181,9 +192,10 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 			lte->file_on_disk = file_on_disk;
 			lte->resource_entry.original_size = root_stbuf.st_size;
 			lte->resource_entry.size = root_stbuf.st_size;
-			memcpy(lte->hash, root->hash, WIM_HASH_SIZE);
+			copy_hash(lte->hash, hash);
 			lookup_table_insert(lookup_table, lte);
 		}
+		root->lte = lte;
 	}
 	return ret;
 }
@@ -201,40 +213,39 @@ struct wim_pair {
  * entry is created that references the location of the file resource in the
  * source WIM file through the other_wim_fp field of the lookup table entry.
  */
-static int add_lookup_table_entry_to_dest_wim(struct dentry *dentry, void *arg)
+static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 {
 	WIMStruct *src_wim, *dest_wim;
-	struct lookup_table_entry *src_table_entry;
-	struct lookup_table_entry *dest_table_entry;
 
 	src_wim = ((struct wim_pair*)arg)->src_wim;
 	dest_wim = ((struct wim_pair*)arg)->dest_wim;
 
-	if (dentry_is_directory(dentry))
-		return 0;
+	wimlib_assert(!dentry->resolved);
 
-	/* XXX ADS */
-	src_table_entry = __lookup_resource(src_wim->lookup_table, dentry->hash);
-	if (!src_table_entry)
-		return 0;
-
-	/* XXX ADS */
-	dest_table_entry = __lookup_resource(dest_wim->lookup_table, dentry->hash);
-	if (dest_table_entry) {
-		dest_table_entry->refcnt++;
-	} else {
-		dest_table_entry = new_lookup_table_entry();
-		if (!dest_table_entry)
-			return WIMLIB_ERR_NOMEM;
-		dest_table_entry->other_wim_fp = src_wim->fp;
-		dest_table_entry->other_wim_ctype = 
-				wimlib_get_compression_type(src_wim);
-		dest_table_entry->refcnt = 1;
-		memcpy(&dest_table_entry->resource_entry, 
-		       &src_table_entry->resource_entry, 
-		       sizeof(struct resource_entry));
-		memcpy(dest_table_entry->hash, dentry->hash, WIM_HASH_SIZE);
-		lookup_table_insert(dest_wim->lookup_table, dest_table_entry);
+	for (unsigned i = 0; i < (unsigned)dentry->num_ads + 1; i++) {
+		struct lookup_table_entry *src_lte, *dest_lte;
+		src_lte = dentry_stream_lte_unresolved(dentry, i,
+						       src_wim->lookup_table);
+		if (!src_lte)
+			continue;
+		dest_lte = dentry_stream_lte_unresolved(dentry, i,
+							dest_wim->lookup_table);
+		if (dest_lte) {
+			dest_lte->refcnt++;
+		} else {
+			dest_lte = new_lookup_table_entry();
+			if (!dest_lte)
+				return WIMLIB_ERR_NOMEM;
+			dest_lte->other_wim_fp = src_wim->fp;
+			dest_lte->other_wim_ctype = 
+					wimlib_get_compression_type(src_wim);
+			memcpy(&dest_lte->resource_entry, 
+			       &src_lte->resource_entry, 
+			       sizeof(struct resource_entry));
+			copy_hash(dest_lte->hash,
+				  dentry_stream_hash_unresolved(dentry, i));
+			lookup_table_insert(dest_wim->lookup_table, dest_lte);
+		}
 	}
 	return 0;
 }
@@ -283,7 +294,7 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry)
 		goto out_free_security_data;
 
 	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
-	randomize_byte_array(metadata_lte->hash, WIM_HASH_SIZE);
+	random_hash(metadata_lte->hash);
 	lookup_table_insert(w->lookup_table, metadata_lte);
 
 	new_imd = &imd[w->hdr.image_count];
@@ -391,7 +402,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 
 
 	/* Cleaning up here on failure would be hard.  For example, we could
-	 * fail to allocate memory in add_lookup_table_entry_to_dest_wim(),
+	 * fail to allocate memory in add_lte_to_dest_wim(),
 	 * leaving the lookup table entries in the destination WIM in an
 	 * inconsistent state.  Until these issues can be resolved,
 	 * wimlib_export_image() is documented as leaving dest_wim is an
@@ -400,7 +411,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	for_dentry_in_tree(root, increment_dentry_refcnt, NULL);
 	wims.src_wim = src_wim;
 	wims.dest_wim = dest_wim;
-	ret = for_dentry_in_tree(root, add_lookup_table_entry_to_dest_wim, &wims);
+	ret = for_dentry_in_tree(root, add_lte_to_dest_wim, &wims);
 	if (ret != 0)
 		return ret;
 	ret = add_new_dentry_tree(dest_wim, root);
@@ -514,12 +525,6 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
 	root_dentry = new_dentry("");
 	if (!root_dentry)
 		return WIMLIB_ERR_NOMEM;
-	ret = calculate_dentry_full_path(root_dentry, NULL);
-
-	if (ret != 0)
-		goto out_free_dentry_tree;
-
-	root_dentry->attributes |= FILE_ATTRIBUTE_DIRECTORY;
 
 	DEBUG("Building dentry tree.");
 	ret = build_dentry_tree(root_dentry, dir, w->lookup_table,
@@ -530,7 +535,7 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
 		goto out_free_dentry_tree;
 	}
 
-	DEBUG("Recalculating full paths of dentries.");
+	DEBUG("Calculating full paths of dentries.");
 	ret = for_dentry_in_tree(root_dentry, calculate_dentry_full_path, NULL);
 	if (ret != 0)
 		goto out_free_dentry_tree;

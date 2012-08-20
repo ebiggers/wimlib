@@ -50,7 +50,7 @@ static int verify_integrity(FILE *fp, u64 num_bytes, u32 chunk_size,
 			    int *status)
 {
 	char  *chunk_buf;
-	u8     resblock[WIM_HASH_SIZE];
+	u8     resblock[SHA1_HASH_SIZE];
 	u64    bytes_remaining;
 	size_t bytes_to_read;
 	uint   percent_done;
@@ -85,11 +85,11 @@ static int verify_integrity(FILE *fp, u64 num_bytes, u32 chunk_size,
 			goto verify_integrity_error;
 		}
 		sha1_buffer(chunk_buf, bytes_to_read, resblock);
-		if (memcmp(resblock, sha1sums, WIM_HASH_SIZE) != 0) {
+		if (!hashes_equal(resblock, sha1sums)) {
 			*status = WIM_INTEGRITY_NOT_OK;
 			goto verify_integrity_done;
 		}
-		sha1sums += WIM_HASH_SIZE;
+		sha1sums += SHA1_HASH_SIZE;
 		bytes_remaining -= bytes_to_read;
 	}
 	*status = WIM_INTEGRITY_OK;
@@ -181,7 +181,7 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 	      integrity_table_size, num_entries, chunk_size);
 
 
-	expected_size = num_entries * WIM_HASH_SIZE + 12;
+	expected_size = num_entries * SHA1_HASH_SIZE + 12;
 
 	if (integrity_table_size != expected_size) {
 		ERROR("Integrity table is %u bytes, but expected %"PRIu64" "
@@ -264,7 +264,7 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 	bytes_to_check = end_lookup_table_offset - end_header_offset;
 	num_entries = bytes_to_check / INTEGRITY_CHUNK_SIZE +
 			(bytes_to_check % INTEGRITY_CHUNK_SIZE != 0);
-	integrity_table_size = num_entries * WIM_HASH_SIZE + 3 * sizeof(u32);
+	integrity_table_size = num_entries * SHA1_HASH_SIZE + 3 * sizeof(u32);
 
 	DEBUG("integrity table size = %u", integrity_table_size);
 
@@ -321,7 +321,7 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 			goto err2;
 		}
 		sha1_buffer(chunk_buf, bytes_read, p);
-		p += WIM_HASH_SIZE;
+		p += SHA1_HASH_SIZE;
 		bytes_remaining -= bytes_read;
 	}
 	if (show_progress)

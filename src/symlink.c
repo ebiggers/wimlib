@@ -145,31 +145,6 @@ out:
 	return buf;
 }
 
-static const struct lookup_table_entry *
-dentry_first_lte(const struct dentry *dentry, const struct lookup_table *table)
-{
-	const struct lookup_table_entry *lte;
-	if (dentry->resolved) {
-		if (dentry->lte)
-			return dentry->lte;
-		for (u16 i = 0; i < dentry->num_ads; i++)
-			if (dentry->ads_entries[i].lte)
-				return dentry->ads_entries[i].lte;
-	} else {
-		const u8 *hash = dentry->hash;
-		u16 i = 0;
-		while (1) {
-			if ((lte = __lookup_resource(table, hash)))
-				break;
-			if (i == dentry->num_ads)
-				return NULL;
-			hash = dentry->ads_entries[i].hash;
-			i++;
-		}
-	}
-	return NULL;
-}
-
 /* Get the symlink target from a dentry that's already checked to be either a
  * "real" symlink or a junction point. */
 ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
@@ -193,7 +168,6 @@ ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 	if (lte->is_symlink && lte->symlink_buf) {
 		res_buf = lte->symlink_buf;
 	} else {
-		res_buf = __res_buf;
 		if (read_full_resource(w->fp, res_entry->size, 
 				       res_entry->original_size,
 				       res_entry->offset,
@@ -207,22 +181,36 @@ ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 }
 
 static int dentry_set_symlink_buf(struct dentry *dentry,
-				  const u8 symlink_buf_hash[])
+				  struct lookup_table_entry *lte)
 {
 	struct ads_entry *ads_entries;
 
 	ads_entries = CALLOC(2, sizeof(struct ads_entry));
 	if (!ads_entries)
 		return WIMLIB_ERR_NOMEM;
-	memcpy(ads_entries[1].hash, symlink_buf_hash, WIM_HASH_SIZE);
+
 	wimlib_assert(dentry->num_ads == 0);
-	wimlib_assert(!dentry->ads_entries);
+	wimlib_assert(dentry->ads_entries == NULL);
+
+	ads_entries[1].lte = lte;
+
 	/*dentry_free_ads_entries(dentry);*/
 	dentry->num_ads = 2;
 	dentry->ads_entries = ads_entries;
 	return 0;
 }
 
+/* 
+ * Sets @dentry to be a symbolic link pointing to @target.
+ *
+ * A lookup table entry for the symbolic link data buffer is created and
+ * inserted into @lookup_table, unless there is an existing lookup table entry
+ * for the exact same data, in which its reference count is incremented.
+ *
+ * The lookup table entry is returned in @lte_ret.
+ *
+ * On failure @dentry and @lookup_table are not modified.
+ */
 int dentry_set_symlink(struct dentry *dentry, const char *target,
 		       struct lookup_table *lookup_table,
 		       struct lookup_table_entry **lte_ret)
@@ -231,7 +219,7 @@ int dentry_set_symlink(struct dentry *dentry, const char *target,
 	int ret;
 	size_t symlink_buf_len;
 	struct lookup_table_entry *lte = NULL, *existing_lte;
-	u8 symlink_buf_hash[WIM_HASH_SIZE];
+	u8 symlink_buf_hash[SHA1_HASH_SIZE];
 	void *symlink_buf;
 	
 	symlink_buf = make_symlink_reparse_data_buf(target, &symlink_buf_len);
@@ -239,14 +227,13 @@ int dentry_set_symlink(struct dentry *dentry, const char *target,
 		return WIMLIB_ERR_NOMEM;
 
 	DEBUG("Made symlink reparse data buf (len = %zu, name len = %zu)",
-			symlink_buf_len, ret);
+			symlink_buf_len, symlink_buf_len);
 	
 	sha1_buffer(symlink_buf, symlink_buf_len, symlink_buf_hash);
 
 	existing_lte = __lookup_resource(lookup_table, symlink_buf_hash);
 
 	if (existing_lte) {
-		existing_lte->refcnt++;
 		lte = existing_lte;
 	} else {
 		DEBUG("Creating new lookup table entry for symlink buf");
@@ -259,17 +246,21 @@ int dentry_set_symlink(struct dentry *dentry, const char *target,
 		lte->symlink_buf = symlink_buf;
 		lte->resource_entry.original_size = symlink_buf_len;
 		lte->resource_entry.size = symlink_buf_len;
-		memcpy(lte->hash, symlink_buf_hash, WIM_HASH_SIZE);
+		copy_hash(lte->hash, symlink_buf_hash);
 	}
 
-	ret = dentry_set_symlink_buf(dentry, symlink_buf_hash);
+	ret = dentry_set_symlink_buf(dentry, lte);
 
 	if (ret != 0)
 		goto out_free_lte;
 
+	dentry->resolved = true;
+
 	DEBUG("Loaded symlink buf");
 
-	if (!existing_lte)
+	if (existing_lte)
+		lte->refcnt++;
+	else
 		lookup_table_insert(lookup_table, lte);
 	if (lte_ret)
 		*lte_ret = lte;

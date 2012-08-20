@@ -412,13 +412,12 @@ struct file_attr_flag file_attr_flags[] = {
  * NULL if the resource entry for the dentry is not to be printed. */
 int print_dentry(struct dentry *dentry, void *lookup_table)
 {
-	struct lookup_table_entry *lte;
-	unsigned i;
+	const u8 *hash;
 
 	printf("[DENTRY]\n");
 	printf("Length            = %"PRIu64"\n", dentry->length);
 	printf("Attributes        = 0x%x\n", dentry->attributes);
-	for (i = 0; i < ARRAY_LEN(file_attr_flags); i++)
+	for (unsigned i = 0; i < ARRAY_LEN(file_attr_flags); i++)
 		if (file_attr_flags[i].flag & dentry->attributes)
 			printf("    FILE_ATTRIBUTE_%s is set\n",
 				file_attr_flags[i].name);
@@ -429,9 +428,12 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	printf("Creation Time     = 0x%"PRIx64"\n", dentry->creation_time);
 	printf("Last Access Time  = 0x%"PRIx64"\n", dentry->last_access_time);
 	printf("Last Write Time   = 0x%"PRIx64"\n", dentry->last_write_time);
-	printf("Hash              = 0x"); 
-	print_hash(dentry->hash); 
-	putchar('\n');
+	hash = dentry_stream_hash(dentry, 0);
+	if (hash) {
+		printf("Hash              = 0x"); 
+		print_hash(hash);
+		putchar('\n');
+	}
 	printf("Reparse Tag       = 0x%"PRIx32"\n", dentry->reparse_tag);
 	printf("Hard Link Group   = 0x%"PRIx64"\n", dentry->hard_link);
 	printf("Number of Alternate Data Streams = %hu\n", dentry->num_ads);
@@ -446,25 +448,20 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	puts("\"");
 	printf("Short Name Length = %hu\n", dentry->short_name_len);
 	printf("Full Path (UTF-8) = \"%s\"\n", dentry->full_path_utf8);
-	if (lookup_table && (lte = __lookup_resource(lookup_table, dentry->hash)))
-		print_lookup_table_entry(lte, NULL);
-	else
-		putchar('\n');
+	print_lookup_table_entry(dentry_stream_lte(dentry, 0, lookup_table));
 	for (u16 i = 0; i < dentry->num_ads; i++) {
 		printf("[Alternate Stream Entry %u]\n", i);
 		printf("Name = \"%s\"\n", dentry->ads_entries[i].stream_name_utf8);
 		printf("Name Length (UTF-16) = %u\n",
 				dentry->ads_entries[i].stream_name_len);
-		printf("Hash              = 0x"); 
-		print_hash(dentry->ads_entries[i].hash); 
-		if (lookup_table &&
-		     (lte = __lookup_resource(lookup_table,
-					      dentry->ads_entries[i].hash)))
-		{
-			print_lookup_table_entry(lte, NULL);
-		} else {
+		hash = dentry_stream_hash(dentry, i + 1);
+		if (hash) {
+			printf("Hash              = 0x"); 
+			print_hash(hash);
 			putchar('\n');
 		}
+		print_lookup_table_entry(dentry_stream_lte(dentry, i + 1,
+							   lookup_table));
 	}
 	return 0;
 }
@@ -830,7 +827,7 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 		DEBUG2("ADS length = %"PRIu64, length);
 
 		p += 8; /* Unused */
-		p = get_bytes(p, WIM_HASH_SIZE, (u8*)cur_entry->hash);
+		p = get_bytes(p, SHA1_HASH_SIZE, (u8*)cur_entry->hash);
 		p = get_u16(p, &cur_entry->stream_name_len);
 
 		DEBUG2("Stream name length = %u", cur_entry->stream_name_len);
@@ -946,7 +943,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	p = get_u64(p, &dentry->last_access_time);
 	p = get_u64(p, &dentry->last_write_time);
 
-	p = get_bytes(p, WIM_HASH_SIZE, dentry->hash);
+	p = get_bytes(p, SHA1_HASH_SIZE, dentry->hash);
 	
 	/*
 	 * I don't know what's going on here.  It seems like M$ screwed up the
@@ -1111,7 +1108,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 		hash = dentry->lte->hash;
 	else
 		hash = dentry->hash;
-	p = put_bytes(p, WIM_HASH_SIZE, hash);
+	p = put_bytes(p, SHA1_HASH_SIZE, hash);
 	if (dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		p = put_zeroes(p, 4);
 		p = put_u32(p, dentry->reparse_tag);
@@ -1141,7 +1138,11 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	for (u16 i = 0; i < dentry->num_ads; i++) {
 		p = put_u64(p, ads_entry_length(&dentry->ads_entries[i]));
 		p = put_u64(p, 0); /* Unused */
-		p = put_bytes(p, WIM_HASH_SIZE, dentry->ads_entries[i].hash);
+		if (dentry->resolved && dentry->ads_entries[i].lte)
+			hash = dentry->ads_entries[i].lte->hash;
+		else
+			hash = dentry->ads_entries[i].hash;
+		p = put_bytes(p, SHA1_HASH_SIZE, hash);
 		p = put_u16(p, dentry->ads_entries[i].stream_name_len);
 		p = put_bytes(p, dentry->ads_entries[i].stream_name_len,
 				 (u8*)dentry->ads_entries[i].stream_name);

@@ -219,7 +219,7 @@ int read_lookup_table(FILE *fp, u64 offset, u64 size,
 		p = get_resource_entry(buf, &cur_entry->resource_entry);
 		p = get_u16(p, &cur_entry->part_number);
 		p = get_u32(p, &cur_entry->refcnt);
-		p = get_bytes(p, WIM_HASH_SIZE, cur_entry->hash);
+		p = get_bytes(p, SHA1_HASH_SIZE, cur_entry->hash);
 		lookup_table_insert(table, cur_entry);
 	}
 	DEBUG("Done reading lookup table.");
@@ -258,7 +258,7 @@ int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out)
 	p = put_resource_entry(buf, &lte->output_resource_entry);
 	p = put_u16(p, lte->part_number);
 	p = put_u32(p, lte->out_refcnt);
-	p = put_bytes(p, WIM_HASH_SIZE, lte->hash);
+	p = put_bytes(p, SHA1_HASH_SIZE, lte->hash);
 	if (fwrite(buf, 1, sizeof(buf), out) != sizeof(buf)) {
 		ERROR_WITH_ERRNO("Failed to write lookup table entry");
 		return WIMLIB_ERR_WRITE;
@@ -274,8 +274,12 @@ int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore)
 	return 0;
 }
 
-int print_lookup_table_entry(struct lookup_table_entry *lte, void *ignore)
+void print_lookup_table_entry(struct lookup_table_entry *lte)
 {
+	if (!lte) {
+		putchar('\n');
+		return;
+	}
 	printf("Offset            = %"PRIu64" bytes\n", 
 	       lte->resource_entry.offset);
 	printf("Size              = %"PRIu64" bytes\n", 
@@ -301,6 +305,12 @@ int print_lookup_table_entry(struct lookup_table_entry *lte, void *ignore)
 	if (lte->file_on_disk && !lte->is_symlink)
 		printf("File on Disk      = `%s'\n", lte->file_on_disk);
 	putchar('\n');
+}
+
+static int do_print_lookup_table_entry(struct lookup_table_entry *lte,
+				       void *ignore)
+{
+	print_lookup_table_entry(lte);
 	return 0;
 }
 
@@ -310,7 +320,7 @@ int print_lookup_table_entry(struct lookup_table_entry *lte, void *ignore)
 WIMLIBAPI void wimlib_print_lookup_table(WIMStruct *w)
 {
 	for_lookup_table_entry(w->lookup_table, 
-			       print_lookup_table_entry,
+			       do_print_lookup_table_entry,
 			       NULL);
 }
 
@@ -326,7 +336,7 @@ __lookup_resource(const struct lookup_table *table, const u8 hash[])
 
 	i = *(size_t*)hash % table->capacity;
 	hlist_for_each_entry(lte, pos, &table->array[i], hash_list)
-		if (memcmp(hash, lte->hash, WIM_HASH_SIZE) == 0)
+		if (hashes_equal(hash, lte->hash))
 			return lte;
 	return NULL;
 }
@@ -398,7 +408,8 @@ int dentry_resolve_ltes(struct dentry *dentry, void *__table)
 	struct lookup_table *table = __table;
 	struct lookup_table_entry *lte;
 
-	wimlib_assert(!dentry->resolved);
+	if (dentry->resolved)
+		return 0;
 
 	/* Resolve the default file stream */
 	lte = __lookup_resource(table, dentry->hash);
@@ -427,3 +438,13 @@ int dentry_resolve_ltes(struct dentry *dentry, void *__table)
 	}
 	return 0;
 }
+
+struct lookup_table_entry *
+dentry_first_lte(const struct dentry *dentry, const struct lookup_table *table)
+{
+	if (dentry->resolved)
+		return dentry_first_lte_resolved(dentry);
+	else
+		return dentry_first_lte_unresolved(dentry, table);
+}
+

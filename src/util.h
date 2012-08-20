@@ -124,7 +124,7 @@ extern char *utf16_to_utf8(const char *utf16_str, size_t utf16_len,
 extern char *utf8_to_utf16(const char *utf8_str, size_t utf8_len, 
 			   size_t *utf16_len_ret);
 
-extern void randomize_byte_array(void *p, size_t n);
+extern void randomize_byte_array(u8 *p, size_t n);
 
 extern void randomize_char_array_with_alnum(char p[], size_t n);
 

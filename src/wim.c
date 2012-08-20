@@ -223,7 +223,7 @@ int wimlib_select_image(WIMStruct *w, int image)
 		#ifdef ENABLE_DEBUG
 		DEBUG("Reading metadata resource specified by the following "
 		      "lookup table entry:");
-		print_lookup_table_entry(imd->metadata_lte, NULL);
+		print_lookup_table_entry(imd->metadata_lte);
 		#endif
 		return read_metadata_resource(w->fp, 
 					      wimlib_get_compression_type(w), 

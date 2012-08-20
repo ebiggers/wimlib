@@ -167,8 +167,12 @@ static const char *error_strings[] = {
 		= "Failed to open a directory",
 	[WIMLIB_ERR_READ] 
 		= "Could not read data from a file",
+	[WIMLIB_ERR_READLINK]
+		= "Could not read the target of a symbolic link",
 	[WIMLIB_ERR_RENAME] 
 		= "Could not rename a file",
+	[WIMLIB_ERR_SPECIAL_FILE]
+		= "Encountered a special file that cannot be archived",
 	[WIMLIB_ERR_SPLIT_INVALID] 
 		= "The WIM is part of an invalid split WIM",
 	[WIMLIB_ERR_SPLIT_UNSUPPORTED] 
@@ -383,10 +387,8 @@ void randomize_char_array_with_alnum(char p[], size_t n)
 }
 
 /* Fills @n bytes pointer to by @p with random numbers. */
-void randomize_byte_array(void *__p, size_t n)
+void randomize_byte_array(u8 *p, size_t n)
 {
-	u8 *p = __p;
-
 	if (!seeded) {
 		srand(time(NULL));
 		seeded = true;

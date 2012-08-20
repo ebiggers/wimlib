@@ -2,6 +2,7 @@
 #define _WIMLIB_LOOKUP_TABLE_H
 #include "wimlib_internal.h"
 #include "dentry.h"
+#include "sha1.h"
 #include <sys/types.h>
 
 /* Size of each lookup table entry in the WIM file. */
@@ -22,7 +23,6 @@ struct lookup_table {
 };
 
 struct wimlib_fd;
-
 
 /* 
  * An entry in the lookup table in the WIM file. 
@@ -56,7 +56,7 @@ struct lookup_table_entry {
 	union {
 		/* SHA1 hash of the file resource pointed to by this lookup
 		 * table entry */
-		u8  hash[WIM_HASH_SIZE];
+		u8  hash[SHA1_HASH_SIZE];
 
 		/* First 4 or 8 bytes of the SHA1 hash, used for inserting the
 		 * entry into the hash table.  Since the SHA1 hashes can be
@@ -125,6 +125,7 @@ struct lookup_table_entry {
 	struct list_head staging_list;
 };
 
+
 extern struct lookup_table *new_lookup_table(size_t capacity);
 
 extern void lookup_table_insert(struct lookup_table *table, 
@@ -137,6 +138,7 @@ static inline void lookup_table_unlink(struct lookup_table *table,
 	hlist_del(&lte->hash_list);
 	table->num_entries--;
 }
+
 
 extern struct lookup_table_entry *
 lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[]);
@@ -162,7 +164,7 @@ extern int lookup_resource(WIMStruct *w, const char *path,
 
 extern int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore);
 
-extern int print_lookup_table_entry(struct lookup_table_entry *entry, void *ignore);
+extern void print_lookup_table_entry(struct lookup_table_entry *entry);
 
 extern int read_lookup_table(FILE *fp, u64 offset, u64 size, 
 			     struct lookup_table **table_ret);
@@ -194,5 +196,119 @@ static inline struct resource_entry* wim_metadata_resource_entry(WIMStruct *w)
 	return &w->image_metadata[
 			w->current_image - 1].metadata_lte->resource_entry;
 }
+
+static inline struct lookup_table_entry *
+dentry_stream_lte_resolved(const struct dentry *dentry, unsigned stream_idx)
+{
+	wimlib_assert(dentry->resolved);
+	wimlib_assert(stream_idx <= dentry->num_ads);
+	if (stream_idx == 0)
+		return dentry->lte;
+	else
+		return dentry->ads_entries[stream_idx - 1].lte;
+}
+
+static inline struct lookup_table_entry *
+dentry_stream_lte_unresolved(const struct dentry *dentry, unsigned stream_idx,
+			     const struct lookup_table *table)
+{
+	wimlib_assert(!dentry->resolved);
+	wimlib_assert(stream_idx <= dentry->num_ads);
+	if (!table)
+		return NULL;
+	if (stream_idx == 0)
+		return __lookup_resource(table, dentry->hash);
+	else
+		return __lookup_resource(table,
+					 dentry->ads_entries[
+						stream_idx - 1].hash);
+}
+/* 
+ * Returns the lookup table entry for stream @stream_idx of the dentry, where
+ * stream_idx = 0 means the default un-named file stream, and stream_idx >= 1
+ * corresponds to an alternate data stream.
+ *
+ * This works for both resolved and un-resolved dentries.
+ */
+static inline struct lookup_table_entry *
+dentry_stream_lte(const struct dentry *dentry, unsigned stream_idx,
+		  const struct lookup_table *table)
+{
+	if (dentry->resolved)
+		return dentry_stream_lte_resolved(dentry, stream_idx);
+	else
+		return dentry_stream_lte_unresolved(dentry, stream_idx, table);
+}
+
+
+static inline const u8 *dentry_stream_hash_unresolved(const struct dentry *dentry,
+						      unsigned stream_idx)
+{
+	wimlib_assert(!dentry->resolved);
+	wimlib_assert(stream_idx <= dentry->num_ads);
+	if (stream_idx == 0)
+		return dentry->hash;
+	else
+		return dentry->ads_entries[stream_idx - 1].hash;
+}
+
+static inline const u8 *dentry_stream_hash_resolved(const struct dentry *dentry,
+						    unsigned stream_idx)
+{
+	struct lookup_table_entry *lte;
+	lte = dentry_stream_lte_resolved(dentry, stream_idx);
+	if (lte)
+		return lte->hash;
+	else
+		return NULL;
+}
+
+/* 
+ * Returns the hash for stream @stream_idx of the dentry, where stream_idx = 0
+ * means the default un-named file stream, and stream_idx >= 1 corresponds to an
+ * alternate data stream.
+ *
+ * This works for both resolved and un-resolved dentries.
+ */
+static inline const u8 *dentry_stream_hash(const struct dentry *dentry,
+					   unsigned stream_idx)
+{
+	if (dentry->resolved)
+		return dentry_stream_hash_resolved(dentry, stream_idx);
+	else
+		return dentry_stream_hash_unresolved(dentry, stream_idx);
+}
+
+static inline struct lookup_table_entry *
+dentry_first_lte_resolved(const struct dentry *dentry)
+{
+	struct lookup_table_entry *lte;
+	wimlib_assert(dentry->resolved);
+
+	for (unsigned i = 0; i <= dentry->num_ads; i++) {
+		lte = dentry_stream_lte_resolved(dentry, i);
+		if (lte)
+			return lte;
+	}
+	return NULL;
+}
+
+static inline struct lookup_table_entry *
+dentry_first_lte_unresolved(const struct dentry *dentry,
+			    const struct lookup_table *table)
+{
+	struct lookup_table_entry *lte;
+	wimlib_assert(!dentry->resolved);
+
+	for (unsigned i = 0; i <= dentry->num_ads; i++) {
+		lte = dentry_stream_lte_unresolved(dentry, i, table);
+		if (lte)
+			return lte;
+	}
+	return NULL;
+}
+
+extern struct lookup_table_entry *
+dentry_first_lte(const struct dentry *dentry, const struct lookup_table *table);
 
 #endif

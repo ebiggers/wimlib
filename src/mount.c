@@ -203,11 +203,15 @@ int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf)
 	stbuf->st_gid   = getgid();
 
 	/* Use the size of the unnamed (default) file stream. */
-	if ((lte = dentry_lte(dentry))) {
+	lte = dentry_first_lte_resolved(dentry);
+	if (lte) {
 		if (lte->staging_file_name) {
 			struct stat native_stat;
-			if (stat(lte->staging_file_name, &native_stat) != 0)
+			if (stat(lte->staging_file_name, &native_stat) != 0) {
+				DEBUG("Failed to stat `%s': %m",
+				      lte->staging_file_name);
 				return -errno;
+			}
 			stbuf->st_size = native_stat.st_size;
 		} else {
 			stbuf->st_size = lte->resource_entry.original_size;
@@ -239,7 +243,7 @@ static int create_staging_file(char **name_ret, int open_flags)
 	int fd;
 	int errno_save;
 
-	name_len = staging_dir_name_len + 1 + WIM_HASH_SIZE;
+	name_len = staging_dir_name_len + 1 + SHA1_HASH_SIZE;
  	name = MALLOC(name_len + 1);
 	if (!name) {
 		errno = ENOMEM;
@@ -251,7 +255,7 @@ static int create_staging_file(char **name_ret, int open_flags)
 		memcpy(name, staging_dir_name, staging_dir_name_len);
 		name[staging_dir_name_len] = '/';
 		randomize_char_array_with_alnum(name + staging_dir_name_len + 1,
-						WIM_HASH_SIZE);
+						SHA1_HASH_SIZE);
 		name[name_len] = '\0';
 
 
@@ -482,7 +486,7 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 	}
 	new_lte->resource_entry.original_size = size;
 	new_lte->refcnt = link_group_size;
-	randomize_byte_array(new_lte->hash, WIM_HASH_SIZE);
+	random_hash(new_lte->hash);
 	new_lte->staging_file_name = staging_file_name;
 
 	lookup_table_insert(w->lookup_table, new_lte);
@@ -773,14 +777,14 @@ static int calculate_sha1sum_of_staging_file(struct lookup_table_entry *lte,
 {
 	struct lookup_table_entry *duplicate_lte;
 	int ret;
-	u8 hash[WIM_HASH_SIZE];
+	u8 hash[SHA1_HASH_SIZE];
 
 	ret = sha1sum(lte->staging_file_name, hash);
 	if (ret != 0)
 		return ret;
 
 	lookup_table_unlink(table, lte);
-	memcpy(lte->hash, hash, WIM_HASH_SIZE);
+	copy_hash(lte->hash, hash);
 
 	duplicate_lte = __lookup_resource(table, hash);
 
@@ -1432,8 +1436,7 @@ static int wimfs_symlink(const char *to, const char *from)
 	dentry->ads_entries[1].lte_group_list.type = STREAM_TYPE_ADS;
 	list_add(&dentry->ads_entries[1].lte_group_list.list,
 		 &lte->lte_group_list);
-	dentry->ads_entries[1].lte = lte;
-	dentry->resolved = true;
+	wimlib_assert(dentry->resolved);
 
 	link_dentry(dentry, dentry_parent);
 	return 0;
@@ -1595,7 +1598,7 @@ static int check_lte_refcnt(struct lookup_table_entry *lte, void *ignore)
 		ERROR("The following lookup table entry has a reference count "
 		      "of %u, but", lte->refcnt);
 		ERROR("We found %u references to it", lte_group_size);
-		print_lookup_table_entry(lte, NULL);
+		print_lookup_table_entry(lte);
 #endif
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}

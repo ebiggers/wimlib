@@ -31,10 +31,6 @@
 
 struct stat;
 
-#ifndef WIM_HASH_SIZE
-#define WIM_HASH_SIZE  20
-#endif
-
 #define WIM_MAGIC_LEN  8
 #define WIM_GID_LEN    16
 #define WIM_UNUSED_LEN 60
@@ -310,12 +306,6 @@ static inline int resource_is_compressed(const struct resource_entry *entry)
 static inline struct image_metadata *wim_get_current_image_metadata(WIMStruct *w)
 {
 	return &w->image_metadata[w->current_image - 1];
-}
-
-/* Prints a hash code field. */
-static inline void print_hash(const u8 hash[])
-{
-	print_byte_field(hash, WIM_HASH_SIZE);
 }
 
 /* hardlink.c */
