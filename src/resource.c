@@ -1004,6 +1004,7 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 		goto out_free_dentry_tree;
 
 	DEBUG("Building link group table");
+	/* Build hash table that maps hard link group IDs to dentry sets */
 	lgt = new_link_group_table(9001);
 	if (!lgt)
 		goto out_free_dentry_tree;

@@ -88,11 +88,15 @@ static inline int get_lookup_flags()
 		return 0;
 }
 
+/* Returns nonzero if write permission is requested on the file open flags */
 static inline int flags_writable(int open_flags)
 {
 	return open_flags & (O_RDWR | O_WRONLY);
 }
 
+/* 
+ * Allocate a file descriptor for a lookup table entry
+ */
 static int alloc_wimlib_fd(struct lookup_table_entry *lte,
 			   struct wimlib_fd **fd_ret)
 {
@@ -107,13 +111,12 @@ static int alloc_wimlib_fd(struct lookup_table_entry *lte,
 			return -EMFILE;
 		num_new_fds = min(fds_per_alloc, max_fds - lte->num_allocated_fds);
 		
-		fds = CALLOC(lte->num_allocated_fds + num_new_fds,
-			     sizeof(lte->fds[0]));
+		fds = REALLOC(lte->fds, (lte->num_allocated_fds + num_new_fds) *
+			       sizeof(lte->fds[0]));
 		if (!fds)
 			return -ENOMEM;
-		memcpy(fds, lte->fds,
-		       lte->num_allocated_fds * sizeof(lte->fds[0]));
-		FREE(lte->fds);
+		memset(&fds[lte->num_allocated_fds], 0,
+		       num_new_fds * sizeof(fds[0]));
 		lte->fds = fds;
 		lte->num_allocated_fds += num_new_fds;
 	}
@@ -150,26 +153,30 @@ static int close_wimlib_fd(struct wimlib_fd *fd)
 			unlink(lte->staging_file_name);
 		free_lookup_table_entry(lte);
 	}
+	wimlib_assert(lte->fds[fd->idx] == fd);
 	lte->fds[fd->idx] = NULL;
 	FREE(fd);
 	return 0;
 }
 
+/* Remove a dentry and all its alternate file streams */
 static void remove_dentry(struct dentry *dentry,
 			  struct lookup_table *lookup_table)
 {
-	const u8 *hash = dentry->hash;
+	wimlib_assert(dentry);
+	wimlib_assert(dentry->resolved);
+
+	struct lookup_table_entry *lte = dentry->lte;
 	u16 i = 0;
-	struct lookup_table_entry *lte;
 	while (1) {
-		lte = lookup_table_decrement_refcnt(lookup_table, hash);
+		lte = lte_decrement_refcnt(lte, lookup_table);
 		if (lte && lte->num_opened_fds)
 			for (u16 i = 0; i < lte->num_allocated_fds; i++)
 				if (lte->fds[i] && lte->fds[i]->dentry == dentry)
 					lte->fds[i]->dentry = NULL;
 		if (i == dentry->num_ads)
 			break;
-		hash = dentry->ads_entries[i].hash;
+		lte = dentry->ads_entries[i].lte;
 		i++;
 	}
 
@@ -271,10 +278,12 @@ static int create_staging_file(char **name_ret, int open_flags)
 	return fd;
 }
 
-/* Removes open file descriptors from a lookup table entry @old_lte where the
+/* 
+ * Removes open file descriptors from a lookup table entry @old_lte where the
  * file descriptors have opened the corresponding file resource in the context
  * of the hard link group @link_group; these file descriptors are extracted and
- * placed in a new lookup table entry, which is returned. */
+ * placed in a new lookup table entry, which is returned.
+ */
 static struct lookup_table_entry *
 lte_extract_fds(struct lookup_table_entry *old_lte, u64 link_group)
 {
@@ -288,7 +297,7 @@ lte_extract_fds(struct lookup_table_entry *old_lte, u64 link_group)
 
 	num_transferred_fds = 0;
 	for (u16 i = 0; i < old_lte->num_allocated_fds; i++)
-		if (old_lte->fds[i] &&
+		if (old_lte->fds[i] && old_lte->fds[i]->dentry &&
 		    old_lte->fds[i]->dentry->hard_link == link_group)
 			num_transferred_fds++;
 	DEBUG("Transferring %u file descriptors",
@@ -299,7 +308,7 @@ lte_extract_fds(struct lookup_table_entry *old_lte, u64 link_group)
 		return NULL;
 	}
 	for (u16 i = 0, j = 0; ; i++) {
-		if (old_lte->fds[i] &&
+		if (old_lte->fds[i] && old_lte->fds[i]->dentry &&
 		    old_lte->fds[i]->dentry->hard_link == link_group) {
 			struct wimlib_fd *fd = old_lte->fds[i];
 			old_lte->fds[i] = NULL;
@@ -335,6 +344,8 @@ static void lte_transfer_ads_entry(struct lookup_table_entry *new_lte,
 static void lte_transfer_dentry(struct lookup_table_entry *new_lte,
 				struct dentry *dentry)
 {
+	wimlib_assert(dentry->lte_group_list.list.next);
+	wimlib_assert(new_lte->lte_group_list.next);
 	list_del(&dentry->lte_group_list.list);
 	list_add(&dentry->lte_group_list.list, &new_lte->lte_group_list);
 	dentry->lte = new_lte;
@@ -344,18 +355,19 @@ static void lte_transfer_stream_entries(struct lookup_table_entry *new_lte,
 				        struct dentry *dentry,
 					unsigned stream_idx)
 {
-	/*INIT_LIST_HEAD(&new_lte->lte_group_list);*/
+	INIT_LIST_HEAD(&new_lte->lte_group_list);
 	if (stream_idx == 0) {
 		struct list_head *pos = &dentry->link_group_list;
 		do {
 			struct dentry *d;
 			d = container_of(pos, struct dentry, link_group_list);
+			wimlib_assert(d->hard_link == dentry->hard_link);
 			lte_transfer_dentry(new_lte, d);
-
 			pos = pos->next;
 		} while (pos != &dentry->link_group_list);
 	} else {
 		struct ads_entry *ads_entry;
+		wimlib_assert(stream_idx <= dentry->num_ads);
 		ads_entry = &dentry->ads_entries[stream_idx - 1];
 		lte_transfer_ads_entry(new_lte, ads_entry);
 	}
@@ -364,17 +376,15 @@ static void lte_transfer_stream_entries(struct lookup_table_entry *new_lte,
 /* 
  * Extract a WIM resource to the staging directory.
  *
- * We need to:
- * - Create a staging file for the WIM resource
- * - Extract the resource to it
- * - Create a new lte for the file resource
- * - Transfer fds from the old lte to the new lte, but
- *   only if they share the same hard link group as this
- *   dentry
- * - Transfer stream entries from the old lte's list to the new lte's list.
+ * @dentry, @stream_idx:  The stream on whose behalf we are modifying the lookup
+ * table entry (these may be more streams than this that reference the lookup
+ * table entry)
  *
- *   *lte is permitted to be NULL, in which case there is no old lookup table
- *   entry.
+ * @lte: Pointer to pointer to the lookup table entry for the stream we need to
+ * extract, or NULL if there was no lookup table entry present for the stream
+ *
+ * @size:  Number of bytes of the stream we want to extract (this supports the
+ * wimfs_truncate() function).
  */
 static int extract_resource_to_staging_dir(struct dentry *dentry,
 					   unsigned stream_idx,
@@ -386,6 +396,21 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 	int fd;
 	struct lookup_table_entry *old_lte, *new_lte;
 	size_t link_group_size;
+
+	/*
+	 * We need to:
+	 * - Create a staging file for the WIM resource
+	 * - Extract the resource to it
+	 * - Create a new lte for the file resource
+	 * - Transfer fds from the old lte to the new lte, but only if they share the
+	 *   same hard link group as this dentry.  If there is no old lte, then this
+	 *   step does not need to be done
+	 * - Transfer stream entries from the old lte's list to the new lte's list.  If
+	 *   there is no old lte, we instead transfer entries for the hard link group.
+	 *
+	 *   Note: *lte is permitted to be NULL, in which case there is no old
+	 *   lookup table entry.
+	 */
 
 	DEBUG("Extracting resource `%s' to staging directory", dentry->full_path_utf8);
 
@@ -426,12 +451,14 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 			 * groups that were identical, but now we are changing
 			 * one of them) */
 
-			/* XXX The ADS really complicate things here and not
+			/* XXX 
+			 * The ADS really complicate things here and not
 			 * everything is going to work correctly yet.  For
 			 * example it could be the same that a file contains two
 			 * file streams that are identical and therefore share
 			 * the same lookup table entry despite the fact that the
-			 * streams themselves are not hardlinked. */
+			 * streams themselves are not hardlinked. 
+			 * XXX*/
 			wimlib_assert(old_lte->refcnt > link_group_size);
 
 			new_lte = lte_extract_fds(old_lte, dentry->hard_link);
@@ -976,7 +1003,7 @@ static int wimfs_link(const char *to, const char *from)
 	}
 
 	/* The ADS entries are owned by another dentry. */
-	from_dentry->link_group_master_status = GROUP_SLAVE;
+	from_dentry->ads_entries_status = ADS_ENTRIES_USER;
 
 	link_dentry(from_dentry, from_dentry_parent);
 	return 0;
@@ -1159,6 +1186,8 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 		return 0;
 	}
 
+	wimlib_assert(fd->lte);
+
 	if (fd->lte->staging_file_name) {
 		/* Read from staging file */
 
@@ -1174,7 +1203,6 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 			return -errno;
 		return ret;
 	} else {
-
 		/* Read from WIM */
 
 		struct resource_entry *res_entry;
@@ -1201,11 +1229,12 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 /* Fills in the entries of the directory specified by @path using the
  * FUSE-provided function @filler.  */
 static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
-				off_t offset, struct fuse_file_info *fi)
+			 off_t offset, struct fuse_file_info *fi)
 {
 	struct dentry *parent, *child;
 	
 	parent = (struct dentry*)fi->fh;
+	wimlib_assert(parent);
 	child = parent->children;
 
 	filler(buf, ".", NULL, 0);
@@ -1264,6 +1293,7 @@ static int wimfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
 	struct dentry *dentry = (struct dentry *)fi->fh;
 
+	wimlib_assert(dentry);
 	wimlib_assert(dentry->num_times_opened);
 	if (--dentry->num_times_opened == 0)
 		free_dentry(dentry);
@@ -1303,6 +1333,8 @@ static int wimfs_rename(const char *from, const char *to)
 		return -ENOMEM;
 
 	if (dst) {
+		/* Destination file exists */
+
 		if (src == dst) /* Same file */
 			return 0;
 
@@ -1321,9 +1353,13 @@ static int wimfs_rename(const char *from, const char *to)
 		parent_of_dst = dst->parent;
 		remove_dentry(dst, w->lookup_table);
 	} else {
+		/* Destination does not exist */
 		parent_of_dst = get_parent_dentry(w, to);
 		if (!parent_of_dst)
 			return -ENOENT;
+
+		if (!dentry_is_directory(parent_of_dst))
+			return -ENOTDIR;
 	}
 
 	FREE(src->file_name);
@@ -1459,8 +1495,9 @@ static int wimfs_unlink(const char *path)
 		struct ads_entry *ads_entry;
 		
 		ads_entry = &dentry->ads_entries[stream_idx - 1];
-		lte_decrement_refcnt(lte, w->lookup_table);
-		list_del(&ads_entry->lte_group_list.list);
+		lte = lte_decrement_refcnt(lte, w->lookup_table);
+		if (lte)
+			list_del(&ads_entry->lte_group_list.list);
 		dentry_remove_ads(dentry, ads_entry);
 	}
 	/* Beware: The lookup table entry(s) may still be referenced by users
@@ -1511,7 +1548,6 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 
 	return ret;
 }
-
 
 static struct fuse_operations wimfs_operations = {
 	.access      = wimfs_access,
@@ -1568,7 +1604,9 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	next_link_group_id = assign_link_groups(wim->image_metadata[image - 1].lgt);
 
-	resolve_lookup_table_entries(wim_root_dentry(wim), wim->lookup_table);
+	/* Resolve all the lookup table entries of the dentry tree */
+	for_dentry_in_tree(wim_root_dentry(wim), dentry_resolve_ltes,
+			   wim->lookup_table);
 
 	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		wim_get_current_image_metadata(wim)->modified = true;
@@ -1593,19 +1631,28 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	argv[argc++] = p;
 	argv[argc++] = "-s"; /* disable multi-threaded operation */
 
-	if (flags & WIMLIB_MOUNT_FLAG_DEBUG) {
+	if (flags & WIMLIB_MOUNT_FLAG_DEBUG)
 		argv[argc++] = "-d";
-	}
+
+	/* 
+	 * We provide the use_ino option because we are going to assign inode
+	 * numbers oursides.  We've already numbered the hard link groups with
+	 * unique numbers with the assign_link_groups() function, and the static
+	 * variable next_link_group_id is set to the next available link group
+	 * ID that we will assign to new dentries.
+	 */
 	char optstring[256] = "use_ino";
 	argv[argc++] = "-o";
 	argv[argc++] = optstring;
 	if ((flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
+		/* Read-write mount.  Make the staging directory */
 		make_staging_dir();
 		if (!staging_dir_name) {
 			FREE(p);
 			return WIMLIB_ERR_MKDIR;
 		}
 	} else {
+		/* Read-only mount */
 		strcat(optstring, ",ro");
 	}
 	argv[argc] = NULL;

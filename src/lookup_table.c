@@ -383,7 +383,12 @@ __lookup_resource(const struct lookup_table *lookup_table, const u8 hash[])
 	return NULL;
 }
 
-/* Only for resolved lte's */
+/* 
+ * Finds the dentry, lookup table entry, and stream index for a WIM file stream,
+ * given a path name.
+ *
+ * This is only for pre-resolved dentries.
+ */
 int lookup_resource(WIMStruct *w, const char *path,
 		    int lookup_flags,
 		    struct dentry **dentry_ret,
@@ -431,13 +436,23 @@ out:
 	return 0;
 }
 
-/* Resolve  a dentry's lookup table entries */
-static int dentry_resolve_ltes(struct dentry *dentry, void *__table)
+/* Resolve a dentry's lookup table entries 
+ *
+ * This replaces the SHA1 hash fields (which are used to lookup an entry in the
+ * lookup table) with pointers directly to the lookup table entries.  A circular
+ * linked list of streams sharing the same lookup table entry is created.
+ *
+ * This function always succeeds; unresolved lookup table entries are given a
+ * NULL pointer.
+ */
+int dentry_resolve_ltes(struct dentry *dentry, void *__table)
 {
 	struct lookup_table *table = __table;
 	struct lookup_table_entry *lte;
 
-	/* Default file stream */
+	wimlib_assert(!dentry->resolved);
+
+	/* Resolve the default file stream */
 	lte = __lookup_resource(table, dentry->hash);
 	if (lte)
 		list_add(&dentry->lte_group_list.list, &lte->lte_group_list);
@@ -447,8 +462,8 @@ static int dentry_resolve_ltes(struct dentry *dentry, void *__table)
 	dentry->lte_group_list.type = STREAM_TYPE_NORMAL;
 	dentry->resolved = true;
 
-	/* Alternate data streams */
-	if (dentry->link_group_master_status != GROUP_SLAVE) {
+	/* Resolve the alternate data streams */
+	if (dentry->ads_entries_status != ADS_ENTRIES_USER) {
 		for (u16 i = 0; i < dentry->num_ads; i++) {
 			struct ads_entry *cur_entry = &dentry->ads_entries[i];
 
@@ -463,10 +478,4 @@ static int dentry_resolve_ltes(struct dentry *dentry, void *__table)
 		}
 	}
 	return 0;
-}
-
-/* Resolve all the lookup table entries of a dentry tree */
-void resolve_lookup_table_entries(struct dentry *root, struct lookup_table *table)
-{
-	for_dentry_in_tree(root, dentry_resolve_ltes, table);
 }

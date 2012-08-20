@@ -206,7 +206,7 @@ struct wim_security_data {
 	/* keep track of how many WIMs reference this security data (used when
 	 * exporting images between WIMs) */
 	u32 refcnt;
-} WIMSecurityData;
+};
 
 struct link_group_table;
 

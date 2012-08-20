@@ -428,6 +428,10 @@ const char *path_basename(const char *path)
 	return p + 1;
 }
 
+/* 
+ * Returns a pointer to the part of @path following the first colon in the last
+ * path component, or NULL if the last path component does not contain a colon.
+ */
 const char *path_stream_name(const char *path)
 {
 	const char *base = path_basename(path);

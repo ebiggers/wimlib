@@ -24,7 +24,14 @@ struct lookup_table {
 struct wimlib_fd;
 
 
-/* An entry in the lookup table in the WIM file. */
+/* 
+ * An entry in the lookup table in the WIM file. 
+ *
+ * It is used to find data streams for files in the WIM. 
+ *
+ * The lookup_table_entry for a given dentry in the WIM is found using the SHA1
+ * message digest field. 
+ */
 struct lookup_table_entry {
 
 	/* The next struct lookup_table_entry in the hash bucket.  NULL if this is the
@@ -83,7 +90,10 @@ struct lookup_table_entry {
 			/* Compression type used in other WIM. */
 			int   other_wim_ctype;
 		};
-		struct {
+
+		struct { /* Used for wimlib_mount */
+
+			/* File descriptors table for this data stream */
 			struct wimlib_fd **fds;
 			u16 num_allocated_fds;
 			u16 num_opened_fds;
@@ -102,7 +112,17 @@ struct lookup_table_entry {
 	 * file resource when written to the output file. */
 	u32 out_refcnt;
 	struct resource_entry output_resource_entry;
+
+	/* Circular linked list of streams that share the same lookup table
+	 * entry
+	 * 
+	 * This list of streams may include streams from different hard link
+	 * sets that happen to be the same.  */
 	struct list_head lte_group_list;
+
+	/* List of lookup table entries that correspond to streams that have
+	 * been extracted to the staging directory when modifying a read-write
+	 * mounted WIM. */
 	struct list_head staging_list;
 };
 
@@ -149,8 +169,7 @@ extern int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out)
 
 extern void free_lookup_table_entry(struct lookup_table_entry *lte);
 
-extern void resolve_lookup_table_entries(struct dentry *root,
-					 struct lookup_table *table);
+extern int dentry_resolve_ltes(struct dentry *dentry, void *__table);
 
 /* Writes the lookup table to the output file. */
 static inline int write_lookup_table(struct lookup_table *table, FILE *out)

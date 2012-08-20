@@ -114,35 +114,44 @@ static void ads_entry_init(struct ads_entry *ads_entry)
  * on failure. */
 struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
 {
-	u16 num_ads = dentry->num_ads + 1;
+	u16 num_ads;
 	struct ads_entry *ads_entries;
 	struct ads_entry *new_entry;
-	if (num_ads == 0xffff)
+
+	if (dentry->num_ads == 0xffff)
 		return NULL;
-	ads_entries = MALLOC(num_ads * sizeof(struct ads_entry));
+ 	num_ads = dentry->num_ads + 1;
+	ads_entries = REALLOC(dentry->ads_entries,
+			      num_ads * sizeof(struct ads_entry));
 	if (!ads_entries)
 		return NULL;
-
-	memcpy(ads_entries, dentry->ads_entries,
-	       (num_ads - 1) * sizeof(struct ads_entry));
+	if (ads_entries != dentry->ads_entries) {
+		/* We moved the ADS entries.  Adjust the stream lists. */
+		for (u16 i = 0; i < dentry->num_ads; i++) {
+			struct list_head *cur = &ads_entries[i].lte_group_list.list;
+			cur->prev->next = cur;
+			cur->next->prev = cur;
+		}
+	}
+	dentry->ads_entries = ads_entries;
 
 	new_entry = &ads_entries[num_ads - 1];
-	if (change_ads_name(new_entry, stream_name) != 0) {
-		FREE(ads_entries);
+	if (change_ads_name(new_entry, stream_name) != 0)
 		return NULL;
-	}
-	ads_entry_init(new_entry);
-
-	FREE(dentry->ads_entries);
-	dentry->ads_entries = ads_entries;
 	dentry->num_ads = num_ads;
+	ads_entry_init(new_entry);
 	return new_entry;
 }
 
 void dentry_remove_ads(struct dentry *dentry, struct ads_entry *ads_entry)
 {
-	u16 idx = ads_entry - dentry->ads_entries;
-	u16 following = dentry->num_ads - idx - 1;
+	u16 idx;
+	u16 following;
+
+	wimlib_assert(dentry->num_ads);
+	idx = ads_entry - dentry->ads_entries;
+	wimlib_assert(idx < dentry->num_ads);
+ 	following = dentry->num_ads - idx - 1;
 
 	destroy_ads_entry(ads_entry);
 	memcpy(ads_entry, ads_entry + 1, following * sizeof(struct ads_entry));
@@ -465,7 +474,7 @@ static inline void dentry_common_init(struct dentry *dentry)
 	memset(dentry, 0, sizeof(struct dentry));
 	dentry->refcnt = 1;
 	dentry->security_id = -1;
-	dentry->link_group_master_status = GROUP_INDEPENDENT;
+	dentry->ads_entries_status = ADS_ENTRIES_DEFAULT;
 	dentry->lte_group_list.type = STREAM_TYPE_NORMAL;
 }
 
@@ -519,88 +528,34 @@ static void __destroy_dentry(struct dentry *dentry)
 
 void free_dentry(struct dentry *dentry)
 {
+	wimlib_assert(dentry);
 	__destroy_dentry(dentry);
-	if (dentry->link_group_master_status != GROUP_SLAVE)
+	if (dentry->ads_entries_status != ADS_ENTRIES_USER)
 		dentry_free_ads_entries(dentry);
 	FREE(dentry);
 }
 
+/* Like free_dentry(), but assigns a new ADS entries owner if this dentry was
+ * the previous owner, and also deletes the dentry from its link_group_list */
 void put_dentry(struct dentry *dentry)
 {
-	if (dentry->link_group_master_status == GROUP_MASTER) {
-		struct dentry *new_master;
-		list_for_each_entry(new_master, &dentry->link_group_list,
+	if (dentry->ads_entries_status == ADS_ENTRIES_OWNER) {
+		struct dentry *new_owner;
+		list_for_each_entry(new_owner, &dentry->link_group_list,
 				    link_group_list)
 		{
-			if (new_master->link_group_master_status == GROUP_SLAVE) {
-				new_master->link_group_master_status = GROUP_MASTER;
-				dentry->link_group_master_status = GROUP_SLAVE;
+			if (new_owner->ads_entries_status == ADS_ENTRIES_USER) {
+				new_owner->ads_entries_status = ADS_ENTRIES_OWNER;
 				break;
 			}
 		}
+		dentry->ads_entries_status = ADS_ENTRIES_USER;
 	}
 	struct list_head *next;
-	next = dentry->link_group_list.next;
 	list_del(&dentry->link_group_list);
-	/*if (next->next == next)*/
-		/*container_of(next, struct dentry, link_group_list)->hard_link = 0;*/
 	free_dentry(dentry);
 }
 
-static bool dentries_have_same_ads(const struct dentry *d1,
-				   const struct dentry *d2)
-{
-	/* Verify stream names and hashes are the same */
-	for (u16 i = 0; i < d1->num_ads; i++) {
-		if (strcmp(d1->ads_entries[i].stream_name_utf8,
-			   d2->ads_entries[i].stream_name_utf8) != 0)
-			return false;
-		if (memcmp(d1->ads_entries[i].hash,
-			   d2->ads_entries[i].hash,
-			   WIM_HASH_SIZE) != 0)
-			return false;
-	}
-	return true;
-}
-
-/* Share the alternate stream entries between hard-linked dentries. */
-int share_dentry_ads(struct dentry *master, struct dentry *slave)
-{
-	const char *mismatch_type;
-	wimlib_assert(master->num_ads == 0 ||
-		      master->ads_entries != slave->ads_entries);
-	if (master->attributes != slave->attributes) {
-		mismatch_type = "attributes";
-		goto mismatch;
-	}
-	if (master->attributes & FILE_ATTRIBUTE_DIRECTORY) {
-		WARNING("`%s' is hard-linked to `%s', which is a directory ",
-		        slave->full_path_utf8, master->full_path_utf8);
-		return WIMLIB_ERR_INVALID_DENTRY;
-	}
-	if (master->security_id != slave->security_id) {
-		mismatch_type = "security ID";
-		goto mismatch;
-	}
-	if (memcmp(master->hash, slave->hash, WIM_HASH_SIZE) != 0) {
-		mismatch_type = "main file resource";
-		goto mismatch;
-	}
-	if (!dentries_have_same_ads(master, slave)) {
-		mismatch_type = "Alternate Stream Entries";
-		goto mismatch;
-	}
-	dentry_free_ads_entries(slave);
-	slave->ads_entries = master->ads_entries;
-	slave->link_group_master_status = GROUP_SLAVE;
-	return 0;
-mismatch:
-	WARNING("Dentries `%s' and `%s' in the same hard-link group but "
-	        "do not share the same %s",
-	        master->full_path_utf8, slave->full_path_utf8,
-	        mismatch_type);
-	return WIMLIB_ERR_INVALID_DENTRY;
-}
 
 /* clones a dentry.
  *
@@ -639,11 +594,12 @@ static int do_free_dentry(struct dentry *dentry, void *__args)
 	struct free_dentry_args *args = (struct free_dentry_args*)__args;
 
 	if (args->lt_decrement_refcnt && !dentry_is_directory(dentry)) {
+		wimlib_assert(!dentry->resolved);
 		lookup_table_decrement_refcnt(args->lookup_table, 
 					      dentry->hash);
 	}
 
-	wimlib_assert(dentry->refcnt >= 1);
+	wimlib_assert(dentry->refcnt != 0);
 	if (--dentry->refcnt == 0)
 		free_dentry(dentry);
 	return 0;
@@ -683,6 +639,7 @@ int increment_dentry_refcnt(struct dentry *dentry, void *ignore)
  */
 void link_dentry(struct dentry *dentry, struct dentry *parent)
 {
+	wimlib_assert(dentry_is_directory(parent));
 	dentry->parent = parent;
 	if (parent->children) {
 		/* Not an only child; link to siblings. */
@@ -730,6 +687,8 @@ static inline void recalculate_dentry_size(struct dentry *dentry)
 	dentry->length = (dentry->length + 7) & ~7;
 }
 
+/* Duplicates a UTF-8 name into UTF-8 and UTF-16 strings and returns the strings
+ * and their lengths in the pointer arguments */
 int get_names(char **name_utf16_ret, char **name_utf8_ret,
 	      u16 *name_utf16_len_ret, u16 *name_utf8_len_ret,
 	      const char *name)

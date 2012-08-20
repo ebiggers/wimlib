@@ -77,6 +77,7 @@ struct ads_entry {
 	/* Stream name (UTF-8) */
 	char *stream_name_utf8;
 
+	/* Doubly linked list of streams that share the same lookup table entry */
 	struct stream_list_head lte_group_list;
 };
 
@@ -204,7 +205,7 @@ struct dentry {
 	union {
 		/* Number of references to the dentry tree itself, as in multiple
 		 * WIMStructs */
-		int refcnt;
+		u32 refcnt;
 
 		/* Number of times this dentry has been opened (only for
 		 * directories!) */
@@ -218,16 +219,16 @@ struct dentry {
 	enum {
 		/* This dentry is the owner of its ads_entries, although it may
 		 * be in a hard link set */
-		GROUP_INDEPENDENT = 0,
+		ADS_ENTRIES_DEFAULT = 0,
 
 		/* This dentry is the owner of the ads_entries in the hard link
 		 * set */
-		GROUP_MASTER,
+		ADS_ENTRIES_OWNER,
 
 		/* This dentry shares its ads_entries with a dentry in the hard
-		 * link set that has GROUP_MASTER set. */
-		GROUP_SLAVE
-	} link_group_master_status;
+		 * link set that has ADS_ENTRIES_OWNER set. */
+		ADS_ENTRIES_USER
+	} ads_entries_status;
 
 
 	/* List of dentries in the hard link set */
@@ -266,10 +267,12 @@ dentry_lte(const struct dentry *dentry)
 	return dentry->lte;
 }
 
+/* Return the number of dentries in the hard link group */
 static inline size_t dentry_link_group_size(const struct dentry *dentry)
 {
 	const struct list_head *cur = &dentry->link_group_list;
 	size_t size = 0;
+	wimlib_assert(cur != NULL);
 	do {
 		size++;
 		cur = cur->next;
@@ -324,8 +327,6 @@ extern struct dentry *new_dentry(const char *name);
 extern void dentry_free_ads_entries(struct dentry *dentry);
 extern void free_dentry(struct dentry *dentry);
 extern void put_dentry(struct dentry *dentry);
-extern int share_dentry_ads(struct dentry *master,
-			    struct dentry *slave);
 extern struct dentry *clone_dentry(struct dentry *old);
 extern void free_dentry_tree(struct dentry *root,
 			     struct lookup_table *lookup_table, 
@@ -349,8 +350,7 @@ extern int read_dentry_tree(const u8 metadata_resource[],
 extern u8 *write_dentry_tree(const struct dentry *tree, u8 *p);
 
 
-/* Inline utility functions for WIMDentries */
-
+/* Inline utility functions for dentries */
 
 static inline bool dentry_is_root(const struct dentry *dentry)
 {

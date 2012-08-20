@@ -99,7 +99,7 @@ extern void wimlib_warning(const char *format, ...)
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 extern void *(*wimlib_malloc_func)(size_t);
 extern void (*wimlib_free_func)(void *);
-extern void *(*wimlib_realloc)(void *, size_t);
+extern void *(*wimlib_realloc_func)(void *, size_t);
 extern void *wimlib_calloc(size_t nmemb, size_t size);
 extern char *wimlib_strdup(const char *str);
 #	define	MALLOC	wimlib_malloc_func
