@@ -2,6 +2,7 @@
 #include "io.h"
 #include "lookup_table.h"
 #include "sha1.h"
+#include <errno.h>
 
 /*
  * Find the symlink target of a symbolic link or junction point in the WIM.

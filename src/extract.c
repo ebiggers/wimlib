@@ -47,7 +47,7 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 				       const char *output_dir,
 				       const char *output_path,
 				       int extract_flags,
-				       const struct lookup_table_entry *lte)
+				       struct lookup_table_entry *lte)
 {
 	/* This mode overrides the normal hard-link extraction and
 	 * instead either symlinks or hardlinks *all* identical files in
@@ -55,6 +55,7 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 	 * of a multi-image extraction) */
 
 	wimlib_assert(lte->file_on_disk);
+
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
 		if (link(lte->file_on_disk, output_path) != 0) {
@@ -70,6 +71,8 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 		char *p;
 		const char *p2;
 		size_t i;
+
+		wimlib_assert(extract_flags & WIMLIB_EXTRACT_FLAG_SYMLINK);
 
 		num_path_components = 
 			get_num_path_components(dentry->full_path_utf8) - 1;
@@ -208,14 +211,19 @@ static int extract_regular_file(WIMStruct *w,
 
 	lte = __lookup_resource(w->lookup_table, dentry_hash(dentry));
 
-	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) &&
-	      lte && lte->out_refcnt != 0)
-		return extract_regular_file_linked(dentry, output_dir,
-						   output_path, extract_flags,
-						   lte);
-	else
-		return extract_regular_file_unlinked(w, dentry, output_path,
-						     extract_flags, lte);
+	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
+			      WIMLIB_EXTRACT_FLAG_HARDLINK)) && lte) {
+		if (lte->out_refcnt++ != 0)
+			return extract_regular_file_linked(dentry, output_dir,
+							   output_path,
+							   extract_flags, lte);
+		lte->file_on_disk = STRDUP(output_path);
+		if (!lte->file_on_disk)
+			return WIMLIB_ERR_NOMEM;
+	}
+
+	return extract_regular_file_unlinked(w, dentry, output_path,
+					     extract_flags, lte);
 
 }
 

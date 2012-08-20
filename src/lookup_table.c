@@ -27,6 +27,7 @@
 #include "wimlib_internal.h"
 #include "lookup_table.h"
 #include "io.h"
+#include <errno.h>
 
 struct lookup_table *new_lookup_table(size_t capacity)
 {

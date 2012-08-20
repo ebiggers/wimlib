@@ -36,6 +36,7 @@
 #include "timestamp.h"
 #include "lookup_table.h"
 #include "sha1.h"
+#include <errno.h>
 #include <unistd.h>
 #include <sys/stat.h>
 

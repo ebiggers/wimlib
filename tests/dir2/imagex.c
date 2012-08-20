@@ -1,1 +1,0 @@
-../../programs/imagex.c
