@@ -101,13 +101,9 @@ struct lookup_table_entry {
 	 * output_resource_entry is the struct resource_entry for the position of the
 	 * file resource when written to the output file. */
 	u32 out_refcnt;
-	union {
-		struct resource_entry output_resource_entry;
-		struct {
-			struct list_head staging_list;
-			struct list_head lte_group_list;
-		};
-	};
+	struct resource_entry output_resource_entry;
+	struct list_head lte_group_list;
+	struct list_head staging_list;
 };
 
 extern struct lookup_table *new_lookup_table(size_t capacity);

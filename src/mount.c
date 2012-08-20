@@ -310,6 +310,8 @@ lte_extract_fds(struct lookup_table_entry *old_lte, u64 link_group)
 				break;
 		}
 	}
+	DEBUG("old_lte: %u fds open; new_lte: %u fds open",
+	      old_lte->num_opened_fds, new_lte->num_opened_fds);
 	old_lte->num_opened_fds -= num_transferred_fds;
 	new_lte->num_opened_fds = num_transferred_fds;
 	new_lte->num_allocated_fds = num_transferred_fds;
@@ -344,7 +346,7 @@ static void lte_transfer_stream_entries(struct lookup_table_entry *new_lte,
 {
 	/*INIT_LIST_HEAD(&new_lte->lte_group_list);*/
 	if (stream_idx == 0) {
-		struct list_head *pos;
+		struct list_head *pos = &dentry->link_group_list;
 		do {
 			struct dentry *d;
 			d = container_of(pos, struct dentry, link_group_list);
@@ -873,8 +875,11 @@ static void wimfs_destroy(void *p)
 			if (status == 0)
 				status = ret;
 		}
+	} else {
+		DEBUG("Read-only mount");
 	}
 done:
+	DEBUG("Sending status %u", status);
 	ret = mq_send(daemon_to_unmount_mq, &status, 1, 1);
 	if (ret == -1)
 		ERROR_WITH_ERRNO("Failed to send status to unmount process");
@@ -1006,6 +1011,7 @@ static int wimfs_mkdir(const char *path, mode_t mode)
 
 	newdir = new_dentry(basename);
 	newdir->attributes |= FILE_ATTRIBUTE_DIRECTORY;
+	newdir->resolved = true;
 	link_dentry(newdir, parent);
 	return 0;
 }
@@ -1052,6 +1058,8 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 			return -ENOMEM;
 		dentry->resolved = true;
 		dentry->hard_link = next_link_group_id++;
+		dentry->lte_group_list.type = STREAM_TYPE_NORMAL;
+		INIT_LIST_HEAD(&dentry->lte_group_list.list);
 		link_dentry(dentry, parent);
 	}
 	return 0;
@@ -1385,6 +1393,7 @@ static int wimfs_symlink(const char *to, const char *from)
 	list_add(&dentry->ads_entries[1].lte_group_list.list,
 		 &lte->lte_group_list);
 	dentry->ads_entries[1].lte = lte;
+	dentry->resolved = true;
 
 	link_dentry(dentry, dentry_parent);
 	return 0;
@@ -1559,7 +1568,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	next_link_group_id = assign_link_groups(wim->image_metadata[image - 1].lgt);
 
-	resolve_lookup_table_entries(wim_root_dentry(wim), w->lookup_table);
+	resolve_lookup_table_entries(wim_root_dentry(wim), wim->lookup_table);
 
 	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		wim_get_current_image_metadata(wim)->modified = true;

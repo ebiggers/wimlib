@@ -126,26 +126,45 @@ out:
 	return buf;
 }
 
+static const struct lookup_table_entry *
+dentry_first_lte(const struct dentry *dentry, const struct lookup_table *table)
+{
+	const struct lookup_table_entry *lte;
+	if (dentry->resolved) {
+		if (dentry->lte)
+			return dentry->lte;
+		for (u16 i = 0; i < dentry->num_ads; i++)
+			if (dentry->ads_entries[i].lte)
+				return dentry->ads_entries[i].lte;
+	} else {
+		const u8 *hash = dentry->hash;
+		u16 i = 0;
+		while (1) {
+			if ((lte = __lookup_resource(table, hash)))
+				break;
+			if (i == dentry->num_ads)
+				return NULL;
+			hash = dentry->ads_entries[i].hash;
+			i++;
+		}
+	}
+	return NULL;
+}
+
 /* Get the symlink target from a dentry that's already checked to be either a
  * "real" symlink or a junction point. */
 ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 			const WIMStruct *w)
 {
-	struct resource_entry *res_entry;
-	struct lookup_table_entry *lte;
-	u16 i = 0;
-	const u8 *hash = dentry->hash;
+	const struct resource_entry *res_entry;
+	const struct lookup_table_entry *lte;
 
 	wimlib_assert(dentry_is_symlink(dentry));
 
-	while (1) {
-		if ((lte = __lookup_resource(w->lookup_table, hash)))
-			break;
-		if (i == dentry->num_ads)
-			return -EIO;
-		hash = dentry->ads_entries[i].hash;
-		i++;
-	}
+	lte = dentry_first_lte(dentry, w->lookup_table);
+	if (!lte)
+		return -EIO;
+
 	res_entry = &lte->resource_entry;
 	if (res_entry->original_size > 10000)
 		return -EIO;
