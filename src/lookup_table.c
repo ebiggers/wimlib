@@ -163,12 +163,14 @@ lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[])
 struct lookup_table_entry *
 lte_decrement_refcnt(struct lookup_table_entry *lte, struct lookup_table *table)
 {
-	wimlib_assert(lte->refcnt);
-	if (lte && --lte->refcnt == 0) {
-		lookup_table_unlink(table, lte);
-		if (lte->num_opened_fds == 0) {
-			free_lookup_table_entry(lte);
-			lte = NULL;
+	if (lte) {
+		wimlib_assert(lte->refcnt);
+		if (--lte->refcnt == 0) {
+			lookup_table_unlink(table, lte);
+			if (lte->num_opened_fds == 0) {
+				free_lookup_table_entry(lte);
+				lte = NULL;
+			}
 		}
 	}
 	return lte;

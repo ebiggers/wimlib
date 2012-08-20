@@ -1039,6 +1039,7 @@ static int wimfs_mkdir(const char *path, mode_t mode)
 	newdir = new_dentry(basename);
 	newdir->attributes |= FILE_ATTRIBUTE_DIRECTORY;
 	newdir->resolved = true;
+	newdir->hard_link = next_link_group_id++;
 	link_dentry(newdir, parent);
 	return 0;
 }
