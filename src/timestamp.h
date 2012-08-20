@@ -36,12 +36,20 @@ static inline u64 timeval_to_wim_timestamp(const struct timeval *tv)
 	       + (u64)tv->tv_usec * intervals_per_microsecond;
 }
 
+static inline void wim_timestamp_to_timeval(u64 timestamp, struct timeval *tv)
+{
+	tv->tv_sec = (timestamp - intervals_1601_to_1970) / intervals_per_second;
+	tv->tv_usec = ((timestamp - intervals_1601_to_1970) /
+			intervals_per_microsecond) % 1000000;
+}
+
 static inline u64 timespec_to_wim_timestamp(const struct timespec *ts)
 {
 	return intervals_1601_to_1970
 	       + (u64)ts->tv_sec * intervals_per_second
 	       + (u64)ts->tv_nsec / nanoseconds_per_interval;
 }
+
 
 extern u64 get_wim_timestamp();
 

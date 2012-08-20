@@ -30,15 +30,17 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+#include <errno.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
+
 #include "wimlib_internal.h"
 #include "dentry.h"
 #include "io.h"
 #include "timestamp.h"
 #include "lookup_table.h"
 #include "sha1.h"
-#include <errno.h>
-#include <unistd.h>
-#include <sys/stat.h>
 
 /*
  * Returns true if @dentry has the UTF-8 file name @name that has length
@@ -78,6 +80,10 @@ void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 	else
 		dentry->hard_link = (u64)stbuf->st_ino |
 				   ((u64)stbuf->st_dev << (sizeof(ino_t) * 8));
+	/* Set timestamps */
+	dentry->creation_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
+	dentry->last_write_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
+	dentry->last_access_time = timespec_to_wim_timestamp(&stbuf->st_atim);
 }
 
 
@@ -423,11 +429,23 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 				file_attr_flags[i].name);
 	printf("Security ID       = %d\n", dentry->security_id);
 	printf("Subdir offset     = %"PRIu64"\n", dentry->subdir_offset);
-	/*printf("Unused1           = 0x%"PRIu64"\n", dentry->unused1);*/
-	/*printf("Unused2           = %"PRIu64"\n", dentry->unused2);*/
-	printf("Creation Time     = 0x%"PRIx64"\n", dentry->creation_time);
-	printf("Last Access Time  = 0x%"PRIx64"\n", dentry->last_access_time);
-	printf("Last Write Time   = 0x%"PRIx64"\n", dentry->last_write_time);
+#if 0
+	printf("Unused1           = 0x%"PRIu64"\n", dentry->unused1);
+	printf("Unused2           = %"PRIu64"\n", dentry->unused2);
+#endif
+#if 0
+	printf("Creation Time     = 0x%"PRIx64"\n");
+	printf("Last Access Time  = 0x%"PRIx64"\n");
+	printf("Last Write Time   = 0x%"PRIx64"\n");
+#endif
+
+	time_t creat_time = wim_timestamp_to_unix(dentry->creation_time);
+	time_t access_time = wim_timestamp_to_unix(dentry->last_access_time);
+	time_t mod_time = wim_timestamp_to_unix(dentry->last_write_time);
+	printf("Creation Time     = %s", asctime(localtime(&creat_time)));
+	printf("Last Access Time  = %s", asctime(localtime(&access_time)));
+	printf("Last Write Time   = %s", asctime(localtime(&mod_time)));
+
 	hash = dentry_stream_hash(dentry, 0);
 	if (hash) {
 		printf("Hash              = 0x"); 

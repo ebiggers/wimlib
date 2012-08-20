@@ -27,6 +27,7 @@
 #include "wimlib_internal.h"
 #include "dentry.h"
 #include "lookup_table.h"
+#include "timestamp.h"
 #include "xml.h"
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -293,6 +294,7 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	int extract_flags = args->extract_flags;
 	size_t len = strlen(args->output_dir);
 	char output_path[len + dentry->full_path_utf8_len + 1];
+	int ret;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) {
 		wimlib_assert(dentry->full_path_utf8);
@@ -304,12 +306,23 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
 	if (dentry_is_symlink(dentry))
-		return extract_symlink(dentry, output_path, w);
+		ret = extract_symlink(dentry, output_path, w);
 	else if (dentry_is_directory(dentry))
-		return extract_directory(output_path);
+		ret = extract_directory(output_path);
 	else
-		return extract_regular_file(w, dentry, args->output_dir,
+		ret = extract_regular_file(w, dentry, args->output_dir,
 					    output_path, extract_flags);
+	if (ret != 0)
+		return ret;
+
+	struct timeval tv[2];
+	wim_timestamp_to_timeval(dentry->last_access_time, &tv[0]);
+	wim_timestamp_to_timeval(dentry->last_write_time, &tv[1]);
+	if (lutimes(output_path, tv) != 0) {
+		WARNING("Failed to set timestamp on file `%s': %s",
+		        output_path, strerror(errno));
+	}
+	return 0;
 }
 
 
