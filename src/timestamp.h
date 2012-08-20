@@ -2,9 +2,11 @@
 #define _WIMLIB_TIMESTAMP_H
 
 #include "util.h"
-#include <time.h>
+#include <sys/types.h>
 
 #define intervals_per_second (1000000000ULL / 100ULL)
+#define intervals_per_microsecond (10)
+#define nanoseconds_per_interval (100)
 #define days_per_year (365ULL)
 #define seconds_per_day (3600ULL * 24ULL)
 #define intervals_per_day (seconds_per_day * intervals_per_second)
@@ -14,24 +16,33 @@
 #define intervals_1601_to_1970 (years_1601_to_1970 * intervals_per_year \
 				+ leap_years_1601_to_1970 * intervals_per_day)
 
-static inline u64 unix_timestamp_to_ms(time_t t)
+static inline u64 unix_timestamp_to_wim(time_t t)
 {
 	return (u64)intervals_1601_to_1970 + t * intervals_per_second;
 }
-/* 
- * Returns the number of 100-nanosecond intervals that have elapsed since
- * 12:00 A.M., January 1, 1601 UTC.
- */
-static inline u64 get_timestamp()
-{
-	return unix_timestamp_to_ms(time(NULL));
-}
+
 
 /* Converts a timestamp as used in the WIM file to a UNIX timestamp as used in
  * the time() function. */
-static inline time_t ms_timestamp_to_unix(u64 timestamp)
+static inline time_t wim_timestamp_to_unix(u64 timestamp)
 {
 	return (timestamp - intervals_1601_to_1970) / intervals_per_second;
 }
+
+static inline u64 timeval_to_wim_timestamp(const struct timeval *tv)
+{
+	return intervals_1601_to_1970
+	       + (u64)tv->tv_sec * intervals_per_second
+	       + (u64)tv->tv_usec * intervals_per_microsecond;
+}
+
+static inline u64 timespec_to_wim_timestamp(const struct timespec *ts)
+{
+	return intervals_1601_to_1970
+	       + (u64)ts->tv_sec * intervals_per_second
+	       + (u64)ts->tv_nsec / nanoseconds_per_interval;
+}
+
+extern u64 get_wim_timestamp();
 
 #endif

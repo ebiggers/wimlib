@@ -283,11 +283,8 @@ struct extract_args {
 };
 
 /* 
- * Extracts a file or directory from the WIM archive.  For use in
- * for_dentry_in_tree().
- *
- * @dentry:	The dentry to extract.
- * @arg:	A pointer to the WIMStruct for the WIM file.
+ * Extracts a file, directory, or symbolic link from the WIM archive.  For use
+ * in for_dentry_in_tree().
  */
 static int extract_dentry(struct dentry *dentry, void *arg)
 {
@@ -296,24 +293,23 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	int extract_flags = args->extract_flags;
 	size_t len = strlen(args->output_dir);
 	char output_path[len + dentry->full_path_utf8_len + 1];
-	int ret = 0;
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) {
+		wimlib_assert(dentry->full_path_utf8);
 		puts(dentry->full_path_utf8);
+	}
 
 	memcpy(output_path, args->output_dir, len);
 	memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
-	if (dentry_is_symlink(dentry)) {
-		ret = extract_symlink(dentry, output_path, w);
-	} else if (dentry_is_directory(dentry)) {
-		ret = extract_directory(output_path);
-	} else {
-		ret = extract_regular_file(w, dentry, args->output_dir,
-					   output_path, extract_flags);
-	}
-	return ret;
+	if (dentry_is_symlink(dentry))
+		return extract_symlink(dentry, output_path, w);
+	else if (dentry_is_directory(dentry))
+		return extract_directory(output_path);
+	else
+		return extract_regular_file(w, dentry, args->output_dir,
+					    output_path, extract_flags);
 }
 
 
@@ -383,24 +379,18 @@ done:
 WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 				   const char *output_dir, int flags)
 {
-	int ret;
+
 	if (!output_dir)
 		return WIMLIB_ERR_INVALID_PARAM;
+
 	if ((flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 			== (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (image == WIM_ALL_IMAGES) {
-		flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
-		for_lookup_table_entry(w->lookup_table, zero_out_refcnts, NULL);
-	} else {
-		flags &= ~WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
-	}
-	
 	if ((flags & WIMLIB_EXTRACT_FLAG_NTFS)) {
 	#ifdef WITH_NTFS_3G
 		unsigned long mnt_flags;
-		ret = ntfs_check_if_mounted(output_dir, &mnt_flags);
+		int ret = ntfs_check_if_mounted(output_dir, &mnt_flags);
 		if (ret != 0) {
 			ERROR_WITH_ERRNO("NTFS-3g: Cannot determine if `%s' "
 					 "is mounted", output_dir);
@@ -423,10 +413,15 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		return WIMLIB_ERR_UNSUPPORTED;
 	#endif
 	}
-	if (image == WIM_ALL_IMAGES)
-		ret = extract_all_images(w, output_dir, flags);
-	else
-		ret = extract_single_image(w, image, output_dir, flags);
-	return ret;
+
+	for_lookup_table_entry(w->lookup_table, zero_out_refcnts, NULL);
+
+	if (image == WIM_ALL_IMAGES) {
+		flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
+		return extract_all_images(w, output_dir, flags);
+	} else {
+		flags &= ~WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
+		return extract_single_image(w, image, output_dir, flags);
+	}
 
 }

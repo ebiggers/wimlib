@@ -220,9 +220,9 @@ int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf)
 		stbuf->st_size = 0;
 	}
 
-	stbuf->st_atime   = ms_timestamp_to_unix(dentry->last_access_time);
-	stbuf->st_mtime   = ms_timestamp_to_unix(dentry->last_write_time);
-	stbuf->st_ctime   = ms_timestamp_to_unix(dentry->creation_time);
+	stbuf->st_atime   = wim_timestamp_to_unix(dentry->last_access_time);
+	stbuf->st_mtime   = wim_timestamp_to_unix(dentry->last_write_time);
+	stbuf->st_ctime   = wim_timestamp_to_unix(dentry->creation_time);
 	stbuf->st_blocks  = (stbuf->st_size + 511) / 512;
 	return 0;
 }
@@ -1286,7 +1286,7 @@ static int wimfs_release(const char *path, struct fuse_file_info *fi)
 	}
 
 	if (flags_writable(fi->flags) && fd->dentry) {
-		u64 now = get_timestamp();
+		u64 now = get_wim_timestamp();
 		fd->dentry->last_access_time = now;
 		fd->dentry->last_write_time = now;
 	}
@@ -1513,20 +1513,28 @@ static int wimfs_unlink(const char *path)
 	return 0;
 }
 
-/* Change the timestamp on a file dentry. 
+/* 
+ * Change the timestamp on a file dentry. 
  *
- * There is no distinction between a file and its alternate data streams here.  */
+ * Note that alternate data streams do not have their own timestamps.
+ */
 static int wimfs_utimens(const char *path, const struct timespec tv[2])
 {
 	struct dentry *dentry = get_dentry(w, path);
 	if (!dentry)
 		return -ENOENT;
-	time_t last_access_t = (tv[0].tv_nsec == UTIME_NOW) ? 
-				time(NULL) : tv[0].tv_sec;
-	dentry->last_access_time = unix_timestamp_to_ms(last_access_t);
-	time_t last_mod_t = (tv[1].tv_nsec == UTIME_NOW) ?  
-				time(NULL) : tv[1].tv_sec;
-	dentry->last_write_time = unix_timestamp_to_ms(last_mod_t);
+	if (tv[0].tv_nsec != UTIME_OMIT) {
+		if (tv[0].tv_nsec == UTIME_NOW)
+			dentry->last_access_time = get_wim_timestamp();
+		else
+			dentry->last_access_time = timespec_to_wim_timestamp(&tv[0]);
+	}
+	if (tv[1].tv_nsec != UTIME_OMIT) {
+		if (tv[1].tv_nsec == UTIME_NOW)
+			dentry->last_write_time = get_wim_timestamp();
+		else
+			dentry->last_write_time = timespec_to_wim_timestamp(&tv[1]);
+	}
 	return 0;
 }
 

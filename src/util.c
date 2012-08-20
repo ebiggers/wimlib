@@ -25,6 +25,8 @@
 #include "wimlib_internal.h"
 #include "endianness.h"
 #include "sha1.h"
+#include "timestamp.h"
+#include <sys/time.h>
 
 
 #include <iconv.h>
@@ -503,3 +505,12 @@ void print_string(const void *string, size_t len)
 		p++;
 	}
 }
+
+u64 get_wim_timestamp()
+{
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return timeval_to_wim_timestamp(&tv);
+}
+
+

@@ -84,7 +84,7 @@ void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 /* Makes all timestamp fields for the dentry be the current time. */
 void dentry_update_all_timestamps(struct dentry *dentry)
 {
-	u64 now = get_timestamp();
+	u64 now = get_wim_timestamp();
 	dentry->creation_time    = now;
 	dentry->last_access_time = now;
 	dentry->last_write_time  = now;

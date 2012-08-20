@@ -145,8 +145,10 @@ out:
 	return buf;
 }
 
-/* Get the symlink target from a dentry that's already checked to be either a
- * "real" symlink or a junction point. */
+/* Get the symlink target from a dentry.
+ *
+ * The dentry may be either "real" symlink or a junction point.
+ */
 ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 			const WIMStruct *w)
 {

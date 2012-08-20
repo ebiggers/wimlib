@@ -28,7 +28,7 @@
 #include "xml.h"
 #include "timestamp.h"
 #include <string.h>
-
+#include <time.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 #include <libxml/xmlwriter.h>
@@ -977,7 +977,7 @@ void xml_update_image_info(WIMStruct *w, int image)
 				      &image_info->total_bytes,
 				      &image_info->hard_link_bytes);
 
-	image_info->last_modification_time = get_timestamp();
+	image_info->last_modification_time = get_wim_timestamp();
 }
 
 /* Adds an image to the XML information. */
@@ -1020,7 +1020,7 @@ int xml_add_image(WIMStruct *w, struct dentry *root_dentry, const char *name,
 		
 	w->wim_info = wim_info;
 	image_info->index = wim_info->num_images;
-	image_info->creation_time = get_timestamp();
+	image_info->creation_time = get_wim_timestamp();
 	xml_update_image_info(w, image_info->index);
 	return 0;
 
@@ -1082,8 +1082,8 @@ void print_image_info(const struct wim_info *wim_info, int image)
 		printf("Hard Link Bytes:        %"PRIu64"\n", 
 				image_info->hard_link_bytes);
 
-		ctime = ms_timestamp_to_unix(image_info->creation_time);
-		mtime = ms_timestamp_to_unix(image_info->last_modification_time);
+		ctime = wim_timestamp_to_unix(image_info->creation_time);
+		mtime = wim_timestamp_to_unix(image_info->last_modification_time);
 
 		printf("Creation Time:          %s", asctime(localtime(&ctime)));
 		printf("Last Modification Time: %s", asctime(localtime(&mtime)));
