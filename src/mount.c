@@ -1426,6 +1426,8 @@ static int wimfs_symlink(const char *to, const char *from)
 	if (dentry_set_symlink(dentry, to, w->lookup_table, &lte) != 0)
 		goto out_free_dentry;
 
+	wimlib_assert(lte);
+
 	dentry->ads_entries[1].lte_group_list.type = STREAM_TYPE_ADS;
 	list_add(&dentry->ads_entries[1].lte_group_list.list,
 		 &lte->lte_group_list);

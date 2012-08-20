@@ -196,7 +196,9 @@ static int dentry_set_symlink_buf(struct dentry *dentry,
 	if (!ads_entries)
 		return WIMLIB_ERR_NOMEM;
 	memcpy(ads_entries[1].hash, symlink_buf_hash, WIM_HASH_SIZE);
-	dentry_free_ads_entries(dentry);
+	wimlib_assert(dentry->num_ads == 0);
+	wimlib_assert(!dentry->ads_entries);
+	/*dentry_free_ads_entries(dentry);*/
 	dentry->num_ads = 2;
 	dentry->ads_entries = ads_entries;
 	return 0;
@@ -226,6 +228,7 @@ int dentry_set_symlink(struct dentry *dentry, const char *target,
 
 	if (existing_lte) {
 		existing_lte->refcnt++;
+		lte = existing_lte;
 	} else {
 		DEBUG("Creating new lookup table entry for symlink buf");
 		lte = new_lookup_table_entry();
@@ -253,7 +256,8 @@ int dentry_set_symlink(struct dentry *dentry, const char *target,
 		*lte_ret = lte;
 	return 0;
 out_free_lte:
-	FREE(lte);
+	if (lte != existing_lte)
+		FREE(lte);
 out_free_symlink_buf:
 	FREE(symlink_buf);
 	return ret;
