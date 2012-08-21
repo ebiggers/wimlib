@@ -40,12 +40,6 @@
 #include "wimlib_internal.h"
 #include "xml.h"
 
-#ifdef WITH_NTFS_3G
-#include <ntfs-3g/volume.h>
-#include <ntfs-3g/security.h>
-#endif
-
-
 /* Internal */
 #define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE 0x80000000
 
@@ -442,41 +436,4 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		return extract_single_image(w, image, output_dir, flags);
 	}
 
-}
-
-WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
-					 	const char *device, int flags)
-{
-#ifdef WITH_NTFS_3G
-	int ret;
-
-	if (!device)
-		return WIMLIB_ERR_INVALID_PARAM;
-	if (image == WIM_ALL_IMAGES) {
-		ERROR("Can only apply a single image when applying "
-		      "directly to a NTFS volume");
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-	if (flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) {
-		ERROR("Cannot specifcy symlink or hardlink flags when applying ");
-		ERROR("directly to a NTFS volume");
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-	ret = wimlib_select_image(w, image);
-	if (ret != 0)
-		return ret;
-
-	if (getuid() != 0) {
-		ERROR("We are not root, but NTFS-3g requires root privileges to set arbitrary");
-		ERROR("security data on the NTFS filesystem.  Please run this program as root");
-		ERROR("if you want to extract a WIM image while preserving NTFS-specific");
-		ERROR("information.");
-
-		return WIMLIB_ERR_NOT_ROOT;
-	}
-#else /* WITH_NTFS_3G */
-	ERROR("wimlib was compiled without support for NTFS-3g, so");
-	ERROR("we cannot apply a WIM image directly to a NTFS volume");
-	return WIMLIB_ERR_UNSUPPORTED;
-#endif /* !WITH_NTFS_3G */
 }

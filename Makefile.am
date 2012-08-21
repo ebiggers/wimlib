@@ -31,6 +31,7 @@ libwim_la_SOURCES =		\
 	src/lzx.h		\
 	src/modify.c		\
 	src/mount.c		\
+	src/ntfs.c		\
 	src/resource.c		\
 	src/security.c		\
 	src/security.h		\
