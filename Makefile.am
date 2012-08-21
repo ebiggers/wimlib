@@ -31,8 +31,7 @@ libwim_la_SOURCES =		\
 	src/lzx.h		\
 	src/modify.c		\
 	src/mount.c		\
-	src/ntfs.c		\
-	src/ntfs-3g_security.c  \
+	src/ntfs-apply.c	\
 	src/resource.c		\
 	src/security.c		\
 	src/security.h		\
@@ -52,6 +51,11 @@ libwim_la_SOURCES =		\
 	src/xpress-comp.c	\
 	src/xpress-decomp.c	\
 	src/xpress.h
+
+if WITH_NTFS_3G
+libwim_la_SOURCES += src/ntfs-3g_security.c
+endif
+
 
 EXTRA_libwim_la_SOURCES = src/sha1-ssse3.asm
 libwim_la_DEPENDENCIES = $(SSSE3_SHA1_OBJ)

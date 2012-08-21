@@ -1045,19 +1045,15 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * aligned on the next 8-byte boundary.  Here's an example of the
 	 * aligned data:
 	 *
-	 * 01000000400000006c786bbac58ede11b0bb00261870892ab6adb76fe63a3
-	 * e468fca86530d2effa16c786bbac58ede11b0bb00261870892a0000000000
-	 * 0000000000000000000000
+	 * 01000000 40000000 6c786bba c58ede11 b0bb0026 1870892a b6adb76f
+	 * e63a3e46 8fca8653 0d2effa1 6c786bba c58ede11 b0bb0026 1870892a
+	 * 00000000 00000000 00000000 00000000
 	 *
 	 * Here's one interpretation of how the data is laid out.
 	 *
 	 * struct unknown {
 	 * 	u32 field1; (always 0x00000001)
 	 * 	u32 field2; (always 0x40000000)
-	 * 	u16 field3;
-	 * 	u32 field4;
-	 * 	u32 field5;
-	 * 	u32 field6;
 	 * 	u8  data[48]; (???)
 	 * 	u64 reserved1; (always 0)
 	 * 	u64 reserved2; (always 0)

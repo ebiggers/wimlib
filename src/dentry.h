@@ -100,7 +100,7 @@ static inline bool ads_entry_has_name(const struct ads_entry *entry,
 }
 
 
-/* In-memory structure for a directory entry.  There is a directory tree for
+/* In-memory structure for a WIM directory entry.  There is a directory tree for
  * each image in the WIM.  */
 struct dentry {
 	/* The parent of this directory entry. */

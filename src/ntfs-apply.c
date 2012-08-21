@@ -35,7 +35,7 @@
 #include <unistd.h>
 
 struct ntfs_apply_args {
-	struct SECURITY_API *scapi;
+	ntfs_volume *vol;
 	int extract_flags;
 	WIMStruct *w;
 };
@@ -43,80 +43,6 @@ struct ntfs_apply_args {
 extern int _ntfs_set_file_security(ntfs_volume *vol, ntfs_inode *ni,
 				   u32 selection, const char *attr);
 extern int _ntfs_set_file_attributes(ntfs_inode *ni, s32 attrib);
-
-/*
- *		Initializations before calling ntfs_get_file_security()
- *	ntfs_set_file_security() and ntfs_read_directory()
- *
- *	Returns an (obscured) struct SECURITY_API* needed for further calls
- *		NULL if device is mounted (EBUSY)
- */
-
-static struct SECURITY_API *_ntfs_initialize_file_security(const char *device,
-							   unsigned long flags)
-{
-	ntfs_volume *vol;
-	unsigned long mntflag;
-	int mnt;
-	struct SECURITY_API *scapi;
-	struct SECURITY_CONTEXT *scx;
-
-	scapi = (struct SECURITY_API*)NULL;
-	mnt = ntfs_check_if_mounted(device, &mntflag);
-	if (!mnt && !(mntflag & NTFS_MF_MOUNTED)) {
-		vol = ntfs_mount(device, flags);
-		if (vol) {
-			scapi = (struct SECURITY_API*)
-				ntfs_malloc(sizeof(struct SECURITY_API));
-			if (!ntfs_volume_get_free_space(vol)
-			    && scapi) {
-				scapi->magic = MAGIC_API;
-				scapi->seccache = (struct PERMISSIONS_CACHE*)NULL;
-				scx = &scapi->security;
-				scx->vol = vol;
-				scx->uid = 0;
-				scx->gid = 0;
-				scx->pseccache = &scapi->seccache;
-				scx->vol->secure_flags = (1 << SECURITY_DEFAULT) |
-							(1 << SECURITY_RAW);
-				ntfs_open_secure(vol);
-				ntfs_build_mapping(scx,(const char*)NULL,TRUE);
-			} else {
-				if (scapi)
-					free(scapi);
-				else
-					errno = ENOMEM;
-				mnt = ntfs_umount(vol,FALSE);
-				scapi = (struct SECURITY_API*)NULL;
-			}
-		}
-	} else
-		errno = EBUSY;
-	return (scapi);
-}
-
-/*
- *	JPA NTFS constants or structs
- *	should be moved to layout.h
- */
-
-#define ALIGN_SDS_BLOCK 0x40000 /* Alignment for a $SDS block */
-#define ALIGN_SDS_ENTRY 16 /* Alignment for a $SDS entry */
-#define STUFFSZ 0x4000 /* unitary stuffing size for $SDS */
-#define FIRST_SECURITY_ID 0x100 /* Lowest security id */
-	/* Mask for attributes which can be forced */
-#define FILE_ATTR_SETTABLE ( FILE_ATTR_READONLY		\
-				| FILE_ATTR_HIDDEN	\
-				| FILE_ATTR_SYSTEM	\
-				| FILE_ATTR_ARCHIVE	\
-				| FILE_ATTR_TEMPORARY	\
-				| FILE_ATTR_OFFLINE	\
-				| FILE_ATTR_NOT_CONTENT_INDEXED )
-
-
-
-#if 0
-#endif
 
 static int extract_resource_to_ntfs_attr(WIMStruct *w, const struct resource_entry *entry, 
 					 ntfs_attr *na)
@@ -181,6 +107,15 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 	return 0;
 }
 
+/* 
+ * Applies a WIM dentry to a NTFS filesystem.
+ *
+ * @dentry:  The WIM dentry to apply
+ * @dir_ni:  The NTFS inode for the parent directory
+ * @w:	     The WIMStruct for the WIM containing the image we are applying.
+ *
+ * @return:  0 on success; nonzero on failure.
+ */
 static int __ntfs_apply_dentry(struct dentry *dentry, ntfs_inode *dir_ni,
 			       WIMStruct *w)
 {
@@ -272,8 +207,7 @@ out:
 static int ntfs_apply_dentry(struct dentry *dentry, void *arg)
 {
 	struct ntfs_apply_args *args = arg;
-	struct SECURITY_API *scapi   = args->scapi;
-	ntfs_volume *vol             = scapi->security.vol;
+	ntfs_volume *vol             = args->vol;
 	int extract_flags            = args->extract_flags;
 	WIMStruct *w                 = args->w;
 	ntfs_inode *dir_ni;
@@ -320,24 +254,25 @@ static int ntfs_apply_dentry(struct dentry *dentry, void *arg)
 
 static int do_ntfs_apply(WIMStruct *w, const char *device, int extract_flags)
 {
-	struct SECURITY_API *scapi;
+	ntfs_volume *vol;
 	int ret;
 	
-	scapi = _ntfs_initialize_file_security(device, 0);
-	if (!scapi) {
+	vol = ntfs_mount(device, 0);
+	if (!vol) {
 		ERROR_WITH_ERRNO("Failed to mount NTFS volume `%s'", device);
 		return WIMLIB_ERR_NTFS_3G;
 	}
 	struct ntfs_apply_args args = {
-		.scapi         = scapi,
+		.vol           = vol,
 		.extract_flags = extract_flags,
 		.w             = w,
 	};
 	ret = for_dentry_in_tree(wim_root_dentry(w), ntfs_apply_dentry,
 				 &args);
-	if (!ntfs_leave_file_security(scapi)) {
+	if (ntfs_umount(vol, FALSE) != 0) {
 		ERROR_WITH_ERRNO("Failed to unmount NTFS volume");
-		ret = WIMLIB_ERR_NTFS_3G;
+		if (ret == 0)
+			ret = WIMLIB_ERR_NTFS_3G;
 	}
 	return ret;
 }
@@ -363,14 +298,16 @@ WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
 	if (ret != 0)
 		return ret;
 
-	/*if (getuid() != 0) {*/
-		/*ERROR("We are not root, but NTFS-3g requires root privileges to set arbitrary");*/
-		/*ERROR("security data on the NTFS filesystem.  Please run this program as root");*/
-		/*ERROR("if you want to extract a WIM image while preserving NTFS-specific");*/
-		/*ERROR("information.");*/
+#if 0
+	if (getuid() != 0) {
+		ERROR("We are not root, but NTFS-3g requires root privileges to set arbitrary");
+		ERROR("security data on the NTFS filesystem.  Please run this program as root");
+		ERROR("if you want to extract a WIM image while preserving NTFS-specific");
+		ERROR("information.");
 
-		/*return WIMLIB_ERR_NOT_ROOT;*/
-	/*}*/
+		return WIMLIB_ERR_NOT_ROOT;
+	}
+#endif
 	return do_ntfs_apply(w, device, flags);
 }
 
