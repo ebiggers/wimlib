@@ -44,6 +44,9 @@ extern int _ntfs_set_file_security(ntfs_volume *vol, ntfs_inode *ni,
 				   u32 selection, const char *attr);
 extern int _ntfs_set_file_attributes(ntfs_inode *ni, s32 attrib);
 
+/* 
+ * Extracts a WIM resource to a NTFS attribute.
+ */
 static int extract_resource_to_ntfs_attr(WIMStruct *w, const struct resource_entry *entry, 
 					 ntfs_attr *na)
 {
@@ -76,6 +79,14 @@ static int extract_resource_to_ntfs_attr(WIMStruct *w, const struct resource_ent
 	return 0;
 }
 
+/* Writes the data streams to a NTFS file
+ *
+ * @ni:	     The NTFS inode for the file.
+ * @dentry:  The directory entry in the WIM file.
+ * @w:	     The WIMStruct for the WIM containing the image we are applying.
+ *
+ * Returns 0 on success, nonzero on failure.
+ */
 static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 				   WIMStruct *w)
 {
@@ -107,6 +118,49 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 	return 0;
 }
 
+/*
+ * Makes a NTFS hard link
+ *
+ * It is named @from_dentry->file_name and is located under the directory
+ * specified by @dir_ni, and it is made to point to the previously extracted
+ * file located at @to_dentry->extracted_file.
+ *
+ * Return 0 on success, nonzero on failure.
+ */
+static int wim_apply_hardlink_ntfs(const struct dentry *from_dentry,
+				   const struct dentry *to_dentry,
+				   ntfs_inode *dir_ni)
+{
+	int ret;
+	ntfs_inode *to_ni;
+
+	DEBUG("Extracting NTFS hard link `%s' => `%s'",
+	      from_dentry->full_path_utf8, to_dentry->extracted_file);
+
+	to_ni = ntfs_pathname_to_inode(dir_ni->vol, NULL,
+				       to_dentry->extracted_file);
+	if (!to_ni) {
+		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
+				 to_dentry->extracted_file);
+		return WIMLIB_ERR_NTFS_3G;
+	}
+	ret = ntfs_link(to_ni, dir_ni,
+			(ntfschar*)from_dentry->file_name,
+			from_dentry->file_name_len / 2);
+	if (ret != 0) {
+		ERROR_WITH_ERRNO("Could not create hard link `%s' => `%s'",
+				 from_dentry->full_path_utf8,
+				 to_dentry->extracted_file);
+		ret = WIMLIB_ERR_NTFS_3G;
+	}
+	if (ntfs_inode_close(to_ni) != 0) {
+		ERROR_WITH_ERRNO("Failed to close NTFS inode for `%s'",
+				 to_dentry->extracted_file);
+		ret = WIMLIB_ERR_NTFS_3G;
+	}
+	return ret;
+}
+
 /* 
  * Applies a WIM dentry to a NTFS filesystem.
  *
@@ -116,20 +170,48 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
  *
  * @return:  0 on success; nonzero on failure.
  */
-static int __ntfs_apply_dentry(struct dentry *dentry, ntfs_inode *dir_ni,
-			       WIMStruct *w)
+static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
+			            WIMStruct *w)
 {
 	ntfs_inode *ni;
 	int ret;
 	mode_t type;
 
-	print_dentry(dentry, w->lookup_table);
-
-	if (dentry_is_directory(dentry))
+	if (dentry_is_directory(dentry)) {
 		type = S_IFDIR;
-	else
+	} else {
 		type = S_IFREG;
+		const struct list_head *head = &dentry->link_group_list;
+		if (head->next != head) {
+			/* This dentry is one of a hard link set of at least 2
+			 * dentries.  If one of the other dentries has already
+			 * been extracted, make a hard link to the file
+			 * corresponding to this already-extracted directory.
+			 * Otherwise, extract the file, and set the
+			 * dentry->extracted_file field so that other dentries
+			 * in the hard link group can link to it. */
+			struct dentry *other;
+			list_for_each_entry(other, head, link_group_list) {
+				if (other->extracted_file) {
+					return wim_apply_hardlink_ntfs(
+							dentry, other, dir_ni);
+				}
+			}
+		}
+		FREE(dentry->extracted_file);
+		dentry->extracted_file = STRDUP(dentry->full_path_utf8);
+		if (!dentry->extracted_file) {
+			ERROR("Failed to allocate memory for filename");
+			return WIMLIB_ERR_NOMEM;
+		}
+	}
 
+	/* 
+	 * Create a directory or file.
+	 *
+	 * Note: if it's a reparse point (such as a symbolic link), we still
+	 * pass S_IFREG here, since we manually set the reparse data later.
+	 */
 	ni = ntfs_create(dir_ni, 0, (ntfschar*)dentry->file_name,
 			 dentry->file_name_len / 2, type);
 
@@ -140,6 +222,8 @@ static int __ntfs_apply_dentry(struct dentry *dentry, ntfs_inode *dir_ni,
 		goto out;
 	}
 
+	/* Write the data streams, unless this is a directory or reparse point
+	 * */
 	if (!dentry_is_directory(dentry) &&
 	     !(dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
 		ret = write_ntfs_data_streams(ni, dentry, w);
@@ -147,9 +231,8 @@ static int __ntfs_apply_dentry(struct dentry *dentry, ntfs_inode *dir_ni,
 			goto out;
 	}
 
-	DEBUG("Setting file attributes 0x%x on `%s'",
-	      dentry->attributes,
-	      dentry->full_path_utf8);
+	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
+	      dentry->full_path_utf8, dentry->attributes);
 
 	if (!_ntfs_set_file_attributes(ni, dentry->attributes)) {
 		ERROR("Failed to set NTFS file attributes on `%s'",
@@ -204,7 +287,7 @@ out:
 	return ret;
 }
 
-static int ntfs_apply_dentry(struct dentry *dentry, void *arg)
+static int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 {
 	struct ntfs_apply_args *args = arg;
 	ntfs_volume *vol             = args->vol;
@@ -212,25 +295,28 @@ static int ntfs_apply_dentry(struct dentry *dentry, void *arg)
 	WIMStruct *w                 = args->w;
 	ntfs_inode *dir_ni;
 	int ret;
+	char *p;
+	char orig;
+	const char *dir_name;
 
-	DEBUG("Applying `%s'", dentry->full_path_utf8);
+	wimlib_assert(dentry->full_path_utf8);
+
+	DEBUG("Applying dentry `%s' to NTFS", dentry->full_path_utf8);
 
 	if (dentry_is_root(dentry))
 		return 0;
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) {
-		wimlib_assert(dentry->full_path_utf8);
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
 		puts(dentry->full_path_utf8);
-	}
 
-	char *p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
+	p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
 	do {
 		p--;
 	} while (*p != '/');
 
-	char orig = *p;
+	orig = *p;
 	*p = '\0';
-	const char *dir_name = dentry->full_path_utf8;
+	dir_name = dentry->full_path_utf8;
 
 	dir_ni = ntfs_pathname_to_inode(vol, NULL, dir_name);
 	*p = orig;
@@ -241,7 +327,7 @@ static int ntfs_apply_dentry(struct dentry *dentry, void *arg)
 	}
 	DEBUG("Found NTFS inode for `%s'", dir_name);
 
-	ret = __ntfs_apply_dentry(dentry, dir_ni, w);
+	ret = do_wim_apply_dentry_ntfs(dentry, dir_ni, w);
 
 	if (ntfs_inode_close(dir_ni) != 0) {
 		if (ret == 0)
@@ -252,7 +338,7 @@ static int ntfs_apply_dentry(struct dentry *dentry, void *arg)
 
 }
 
-static int do_ntfs_apply(WIMStruct *w, const char *device, int extract_flags)
+static int do_wim_apply_image_ntfs(WIMStruct *w, const char *device, int extract_flags)
 {
 	ntfs_volume *vol;
 	int ret;
@@ -267,7 +353,7 @@ static int do_ntfs_apply(WIMStruct *w, const char *device, int extract_flags)
 		.extract_flags = extract_flags,
 		.w             = w,
 	};
-	ret = for_dentry_in_tree(wim_root_dentry(w), ntfs_apply_dentry,
+	ret = for_dentry_in_tree(wim_root_dentry(w), wim_apply_dentry_ntfs,
 				 &args);
 	if (ntfs_umount(vol, FALSE) != 0) {
 		ERROR_WITH_ERRNO("Failed to unmount NTFS volume");
@@ -308,7 +394,7 @@ WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
 		return WIMLIB_ERR_NOT_ROOT;
 	}
 #endif
-	return do_ntfs_apply(w, device, flags);
+	return do_wim_apply_image_ntfs(w, device, flags);
 }
 
 #else /* WITH_NTFS_3G */
