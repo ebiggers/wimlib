@@ -425,16 +425,12 @@ done:
 WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 				   const char *output_dir, int flags)
 {
-
 	if (!output_dir)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if ((flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 			== (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 		return WIMLIB_ERR_INVALID_PARAM;
-
-
-	/*ntfs_initialize_file_security(*/
 
 	for_lookup_table_entry(w->lookup_table, zero_out_refcnts, NULL);
 
@@ -451,21 +447,36 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
 					 	const char *device, int flags)
 {
-	if ((flags & WIMLIB_EXTRACT_FLAG_NTFS)) {
-	#ifndef WITH_NTFS_3G
-		ERROR("wimlib was compiled without support for NTFS-3g, so");
-		ERROR("we cannot extract a WIM image while preserving NTFS-");
-		ERROR("specific information");
-	#endif
-		if (flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
-			return WIMLIB_ERR_INVALID_PARAM;
-		if (getuid() != 0) {
-			ERROR("We are not root, but NTFS-3g requires root privileges to set arbitrary");
-			ERROR("security data on the NTFS filesystem.  Please run this program as root");
-			ERROR("if you want to extract a WIM image while preserving NTFS-specific");
-			ERROR("information.");
+#ifdef WITH_NTFS_3G
+	int ret;
 
-			return WIMLIB_ERR_NOT_ROOT;
-		}
+	if (!device)
+		return WIMLIB_ERR_INVALID_PARAM;
+	if (image == WIM_ALL_IMAGES) {
+		ERROR("Can only apply a single image when applying "
+		      "directly to a NTFS volume");
+		return WIMLIB_ERR_INVALID_PARAM;
 	}
+	if (flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) {
+		ERROR("Cannot specifcy symlink or hardlink flags when applying ");
+		ERROR("directly to a NTFS volume");
+		return WIMLIB_ERR_INVALID_PARAM;
+	}
+	ret = wimlib_select_image(w, image);
+	if (ret != 0)
+		return ret;
+
+	if (getuid() != 0) {
+		ERROR("We are not root, but NTFS-3g requires root privileges to set arbitrary");
+		ERROR("security data on the NTFS filesystem.  Please run this program as root");
+		ERROR("if you want to extract a WIM image while preserving NTFS-specific");
+		ERROR("information.");
+
+		return WIMLIB_ERR_NOT_ROOT;
+	}
+#else /* WITH_NTFS_3G */
+	ERROR("wimlib was compiled without support for NTFS-3g, so");
+	ERROR("we cannot apply a WIM image directly to a NTFS volume");
+	return WIMLIB_ERR_UNSUPPORTED;
+#endif /* !WITH_NTFS_3G */
 }

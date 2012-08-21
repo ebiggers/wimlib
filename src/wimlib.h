@@ -299,11 +299,6 @@ enum wim_compression_type {
 /** When identical files are extracted from the WIM, symlink them together. */
 #define WIMLIB_EXTRACT_FLAG_SYMLINK		0x00000002
 
-/** Apply NTFS-specific information when applying the WIM image.  This flag can
- * only be specified if the output directory is on a NTFS filesystem mounted
- * with NTFS-3g, and wimlib was compiled with support for NTFS-3g  */
-#define WIMLIB_EXTRACT_FLAG_NTFS		0x00000004
-
 /** Print the name of each file as it is extracted from the WIM image. */
 #define WIMLIB_EXTRACT_FLAG_VERBOSE		0x00000008
 

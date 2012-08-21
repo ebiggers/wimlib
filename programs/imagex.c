@@ -133,7 +133,6 @@ static const struct option apply_options[] = {
 	{"hardlink", no_argument,       NULL, 'h'},
 	{"symlink",  no_argument,       NULL, 's'},
 	{"verbose",  no_argument,       NULL, 'v'},
-	{"mkntfs-args", required_argument, NULL, 'm'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_options[] = {
@@ -364,9 +363,7 @@ static int imagex_apply(int argc, const char **argv)
 	const char *wimfile;
 	const char *dir;
 	const char *image_num_or_name;
-	const char *mkntfs_args = "";
 	int extract_flags = 0;
-
 
 	for_opt(c, apply_options) {
 		switch (c) {
@@ -381,9 +378,6 @@ static int imagex_apply(int argc, const char **argv)
 			break;
 		case 'v':
 			extract_flags |= WIMLIB_EXTRACT_FLAG_VERBOSE;
-			break;
-		case 'm':
-			mkntfs_args = optarg;
 			break;
 		default:
 			usage(APPLY);
@@ -406,11 +400,6 @@ static int imagex_apply(int argc, const char **argv)
 		dir = argv[2];
 	}
 
-#ifdef WITH_NTFS_3G
-	char tmpdir[strlen(dir) + 50];
-	tmpdir[0] = '\0';
-#endif
-
 	ret = wimlib_open_wim(wimfile, open_flags, &w);
 	if (ret != 0)
 		goto out;
@@ -430,102 +419,28 @@ static int imagex_apply(int argc, const char **argv)
 	}
 
 #ifdef WITH_NTFS_3G
-	/* Check to see if a block device file or regular file was specified.
-	 * If so, try to create a NTFS filesystem on it, mount it on a temporary
-	 * directory, and replace @dir with the name of the temporary directory
-	 * so that we extract the files to the NTFS filesystem. */
 	struct stat stbuf;
 
 	ret = stat(dir, &stbuf);
-	if (ret != 0)
-		imagex_error_with_errno("Failed to stat `%s'", dir);
-	if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
-		extract_flags |= WIMLIB_EXTRACT_FLAG_NTFS;
-
-		const char *dev = dir;
-		printf("Making NTFS filesystem on `%s'\n", dev);
-
-		char mkntfs_cmdline[sizeof("mkntfs ") + strlen(mkntfs_args) +
-				    sizeof(" ") + strlen(dev)];
-		sprintf(mkntfs_cmdline, "mkntfs %s %s", mkntfs_args, dev);
-		puts(mkntfs_cmdline);
-		ret = system(mkntfs_cmdline);
-		if (ret == -1) {
-			imagex_error_with_errno("Failed to execute the "
-						"`mkntfs' program");
-			return -1;
-		} else if (ret > 0) {
-			imagex_error("`mkntfs' exited with failure status");
-			imagex_error("Note: You can pass additional arguments "
-				     "to `mkntfs' using the --mkntfs-args "
-				     "argument");
-			return -1;
-		}
-		sprintf(tmpdir, "/tmp/imagex-%d-ntfsmount-%s-XXXXXX",
-				getpid(), dev);
-		dir = mkdtemp(tmpdir);
-		if (!dir) {
-			imagex_error_with_errno("Failed to create "
-						"temporary directory "
-						"`%s'", tmpdir);
-		}
-		char ntfs_3g_cmdline[sizeof("ntfs-3g ") + strlen(dev) +
-				     sizeof(" ") + strlen(dir)];
-		sprintf(ntfs_3g_cmdline, "ntfs-3g %s %s", dev, dir);
-		puts(ntfs_3g_cmdline);
-		ret = system(ntfs_3g_cmdline);
-		if (ret == -1) {
-			imagex_error_with_errno("Failed to execute the "
-						"`ntfs-3g' program");
-			ret = -1;
-			goto out;
-		} else if (ret > 0) {
-			imagex_error("`ntfs-3g' exited with failure status");
-			ret = -1;
+	if (ret == 0) {
+		if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
+			const char *ntfs_device = dir;
+			printf("Applying image %d of `%s' to NTFS filesystem on `%s'\n",
+			       image, wimfile, ntfs_device);
+			ret = wimlib_apply_image_to_ntfs_volume(w, image,
+								ntfs_device,
+								extract_flags);
 			goto out;
 		}
-		printf("Applying image %d of `%s' to NTFS filesystem on `%s'\n",
-		       image, wimfile, dev);
+	} else {
+		if (errno != -ENOENT)
+			imagex_error_with_errno("Failed to stat `%s'", dir);
 	}
 #endif
 
 	ret = wimlib_extract_image(w, image, dir, extract_flags);
 out:
 	wimlib_free(w);
-#ifdef WITH_NTFS_3G
-	if (tmpdir[0] != '\0') {
-		/* Unmount and remove the NTFS-3g mounted directory */
-
-		int pid = fork();
-		int status;
-		if (pid == -1) {
-			imagex_error_with_errno("Failed to fork()");
-			return -1;
-		}
-		if (pid == 0) {
-			execlp("fusermount", "fusermount", "-u", dir, NULL);
-			imagex_error_with_errno("Failed to execute `fusermount'");
-			return -1;
-		}
-
-		if (waitpid(pid, &status, 0) == -1) {
-			imagex_error_with_errno("Failed to wait for "
-						"fusermount process to "
-						"terminate");
-			return -1;
-		}
-
-		if (status != 0) {
-			imagex_error("fusermount exited with status %d",
-				     status);
-			return -1;
-		}
-		if (rmdir(tmpdir) != 0) {
-			imagex_error_with_errno("Failed to remove temporary "
-						"directory `%s'", tmpdir);
-		}
-	}
-#endif
 	return ret;
 }
 
