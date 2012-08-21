@@ -259,14 +259,15 @@ static int extract_symlink(const struct dentry *dentry, const char *output_path,
  * @output_path:   	The path to which the directory is to be extracted to.
  * @return: 		True on success, false on failure. 
  */
-static int extract_directory(const char *output_path)
+static int extract_directory(const char *output_path, bool is_root)
 {
 	int ret;
 	struct stat stbuf;
 	ret = stat(output_path, &stbuf);
 	if (ret == 0) {
 		if (S_ISDIR(stbuf.st_mode)) {
-			WARNING("`%s' already exists", output_path);
+			if (!is_root)
+				WARNING("`%s' already exists", output_path);
 			return 0;
 		} else {
 			ERROR("`%s' is not a directory", output_path);
@@ -322,7 +323,7 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	if (dentry_is_symlink(dentry))
 		ret = extract_symlink(dentry, output_path, w);
 	else if (dentry_is_directory(dentry))
-		ret = extract_directory(output_path);
+		ret = extract_directory(output_path, dentry_is_root(dentry));
 	else
 		ret = extract_regular_file(w, dentry, args->output_dir,
 					    output_path, extract_flags);
@@ -395,7 +396,7 @@ static int extract_all_images(WIMStruct *w, const char *output_dir,
 
 	DEBUG("Attempting to extract all images from `%s'", w->filename);
 
-	ret = extract_directory(output_dir);
+	ret = extract_directory(output_dir, true);
 	if (ret != 0)
 		return ret;
 
@@ -432,35 +433,8 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 			== (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if ((flags & WIMLIB_EXTRACT_FLAG_NTFS)) {
-		if (flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
-			return WIMLIB_ERR_INVALID_PARAM;
-	#ifdef WITH_NTFS_3G
-		unsigned long mnt_flags;
-		int ret = ntfs_check_if_mounted(output_dir, &mnt_flags);
-		if (ret != 0) {
-			ERROR_WITH_ERRNO("NTFS-3g: Cannot determine if a NTFS "
-					 "filesystem is mounted on `%s'",
-					 output_dir);
-			return WIMLIB_ERR_NTFS_3G;
-		}
-		if (!(mnt_flags & NTFS_MF_MOUNTED)) {
-			ERROR("NTFS-3g: No NTFS filesystem is mounted on `%s'",
-			      output_dir);
-			return WIMLIB_ERR_NTFS_3G;
-		}
-		if (mnt_flags & NTFS_MF_READONLY) {
-			ERROR("NTFS-3g: NTFS filesystem on `%s' is mounted "
-			      "read-only", output_dir);
-			return WIMLIB_ERR_NTFS_3G;
-		}
-	#else
-		ERROR("wimlib was compiled without support for NTFS-3g, so");
-		ERROR("we cannot extract a WIM image while preserving NTFS-");
-		ERROR("specific information");
-		return WIMLIB_ERR_UNSUPPORTED;
-	#endif
-	}
+
+	/*ntfs_initialize_file_security(*/
 
 	for_lookup_table_entry(w->lookup_table, zero_out_refcnts, NULL);
 
@@ -472,4 +446,26 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		return extract_single_image(w, image, output_dir, flags);
 	}
 
+}
+
+WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
+					 	const char *device, int flags)
+{
+	if ((flags & WIMLIB_EXTRACT_FLAG_NTFS)) {
+	#ifndef WITH_NTFS_3G
+		ERROR("wimlib was compiled without support for NTFS-3g, so");
+		ERROR("we cannot extract a WIM image while preserving NTFS-");
+		ERROR("specific information");
+	#endif
+		if (flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
+			return WIMLIB_ERR_INVALID_PARAM;
+		if (getuid() != 0) {
+			ERROR("We are not root, but NTFS-3g requires root privileges to set arbitrary");
+			ERROR("security data on the NTFS filesystem.  Please run this program as root");
+			ERROR("if you want to extract a WIM image while preserving NTFS-specific");
+			ERROR("information.");
+
+			return WIMLIB_ERR_NOT_ROOT;
+		}
+	}
 }

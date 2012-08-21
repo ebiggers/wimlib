@@ -51,7 +51,7 @@ void wimlib_error(const char *format, ...)
 
 		va_start(va, format);
 		errno_save = errno;
-		fputs("ERROR: ", stderr);
+		fputs("[ERROR] ", stderr);
 		vfprintf(stderr, format, va);
 		putc('\n', stderr);
 		errno = errno_save;
@@ -67,7 +67,7 @@ void wimlib_error_with_errno(const char *format, ...)
 
 		va_start(va, format);
 		errno_save = errno;
-		fputs("ERROR: ", stderr);
+		fputs("[ERROR] ", stderr);
 		vfprintf(stderr, format, va);
 		fprintf(stderr, ": %s\n", strerror(errno_save));
 		errno = errno_save;
@@ -83,7 +83,7 @@ void wimlib_warning(const char *format, ...)
 
 		va_start(va, format);
 		errno_save = errno;
-		fputs("WARNING: ", stderr);
+		fputs("[WARNING] ", stderr);
 		vfprintf(stderr, format, va);
 		putc('\n', stderr);
 		errno = errno_save;
@@ -161,6 +161,8 @@ static const char *error_strings[] = {
 			"identify a WIM file",
 	[WIMLIB_ERR_NO_FILENAME] 
 		= "The WIM is not identified with a filename",
+	[WIMLIB_ERR_NOT_ROOT]
+		= "Root privileges are required for this operation",
 	[WIMLIB_ERR_NTFS_3G]
 		= "NTFS-3g encountered an error (check errno)",
 	[WIMLIB_ERR_OPEN] 

@@ -339,6 +339,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_NOMEM,
 	WIMLIB_ERR_NOTDIR,
 	WIMLIB_ERR_NOT_A_WIM_FILE,
+	WIMLIB_ERR_NOT_ROOT,
 	WIMLIB_ERR_NO_FILENAME,
 	WIMLIB_ERR_NTFS_3G,
 	WIMLIB_ERR_OPEN,
@@ -423,6 +424,9 @@ enum wimlib_error_code {
 extern int wimlib_add_image(WIMStruct *wim, const char *dir, 
 			    const char *name, const char *description, 
 			    const char *flags_element, int flags);
+
+extern int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
+				 	     const char *device, int flags);
 
 /** 
  * Creates a WIMStruct for a new WIM file.

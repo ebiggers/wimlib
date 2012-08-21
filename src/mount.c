@@ -1673,7 +1673,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	if (!p)
 		return WIMLIB_ERR_NOMEM;
 
-	argv[argc++] = "mount";
+	argv[argc++] = "imagex";
 	argv[argc++] = p;
 	argv[argc++] = "-s"; /* disable multi-threaded operation */
 

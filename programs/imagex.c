@@ -133,7 +133,6 @@ static const struct option apply_options[] = {
 	{"hardlink", no_argument,       NULL, 'h'},
 	{"symlink",  no_argument,       NULL, 's'},
 	{"verbose",  no_argument,       NULL, 'v'},
-	{"ntfs",     no_argument,	NULL, 'N'},
 	{"mkntfs-args", required_argument, NULL, 'm'},
 	{NULL, 0, NULL, 0},
 };
@@ -143,7 +142,6 @@ static const struct option capture_options[] = {
 	{"compress", optional_argument, NULL, 'x'},
 	{"flags",    required_argument, NULL, 'f'},
 	{"verbose",  no_argument,       NULL,'v'},
-	{"ntfs",     no_argument,	NULL, 'N'},
 	{"dereference", no_argument, NULL, 'L'},
 	{NULL, 0, NULL, 0},
 };
@@ -369,6 +367,7 @@ static int imagex_apply(int argc, const char **argv)
 	const char *mkntfs_args = "";
 	int extract_flags = 0;
 
+
 	for_opt(c, apply_options) {
 		switch (c) {
 		case 'c':
@@ -382,9 +381,6 @@ static int imagex_apply(int argc, const char **argv)
 			break;
 		case 'v':
 			extract_flags |= WIMLIB_EXTRACT_FLAG_VERBOSE;
-			break;
-		case 'N':
-			extract_flags |= WIMLIB_EXTRACT_FLAG_NTFS;
 			break;
 		case 'm':
 			mkntfs_args = optarg;
@@ -413,9 +409,31 @@ static int imagex_apply(int argc, const char **argv)
 #ifdef WITH_NTFS_3G
 	char tmpdir[strlen(dir) + 50];
 	tmpdir[0] = '\0';
+#endif
 
-	/* Check to see if a block device file was specified.  If so, 
-	 * create a NTFS filesystem on it. */
+	ret = wimlib_open_wim(wimfile, open_flags, &w);
+	if (ret != 0)
+		goto out;
+
+	image = wimlib_resolve_image(w, image_num_or_name);
+	ret = verify_image_exists(image);
+	if (ret != 0)
+		goto out;
+
+	num_images = wimlib_get_num_images(w);
+	if (argc == 2 && num_images != 1) {
+		imagex_error("`%s' contains %d images; Please select one "
+			     "(or all)", wimfile, num_images);
+		usage(APPLY);
+		ret = -1;
+		goto out;
+	}
+
+#ifdef WITH_NTFS_3G
+	/* Check to see if a block device file or regular file was specified.
+	 * If so, try to create a NTFS filesystem on it, mount it on a temporary
+	 * directory, and replace @dir with the name of the temporary directory
+	 * so that we extract the files to the NTFS filesystem. */
 	struct stat stbuf;
 
 	ret = stat(dir, &stbuf);
@@ -460,37 +478,21 @@ static int imagex_apply(int argc, const char **argv)
 			imagex_error_with_errno("Failed to execute the "
 						"`ntfs-3g' program");
 			ret = -1;
-			goto out_rm_tmpdir;
+			goto out;
 		} else if (ret > 0) {
 			imagex_error("`ntfs-3g' exited with failure status");
 			ret = -1;
-			goto out_rm_tmpdir;
+			goto out;
 		}
+		printf("Applying image %d of `%s' to NTFS filesystem on `%s'\n",
+		       image, wimfile, dev);
 	}
 #endif
 
-	ret = wimlib_open_wim(wimfile, open_flags, &w);
-	if (ret != 0)
-		goto done;
-
-	image = wimlib_resolve_image(w, image_num_or_name);
-	ret = verify_image_exists(image);
-	if (ret != 0)
-		goto done;
-
-	num_images = wimlib_get_num_images(w);
-	if (argc == 2 && num_images != 1) {
-		imagex_error("`%s' contains %d images; Please select one "
-			     "(or all)", wimfile, num_images);
-		usage(APPLY);
-		ret = -1;
-		goto done;
-	}
 	ret = wimlib_extract_image(w, image, dir, extract_flags);
-done:
+out:
 	wimlib_free(w);
 #ifdef WITH_NTFS_3G
-out_rm_tmpdir:
 	if (tmpdir[0] != '\0') {
 		/* Unmount and remove the NTFS-3g mounted directory */
 
