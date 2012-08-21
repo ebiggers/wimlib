@@ -24,22 +24,27 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
+
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <unistd.h>
+
+#include "config.h"
 #include "dentry.h"
 #include "lookup_table.h"
 #include "timestamp.h"
+#include "wimlib_internal.h"
 #include "xml.h"
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <dirent.h>
-#include <string.h>
-#include <errno.h>
 
 #ifdef WITH_NTFS_3G
 #include <ntfs-3g/volume.h>
 #include <ntfs-3g/security.h>
 #endif
+
 
 /* Internal */
 #define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE 0x80000000
@@ -315,6 +320,19 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	if (ret != 0)
 		return ret;
 
+	return 0;
+}
+
+static int apply_dentry_timestamps(struct dentry *dentry, void *arg)
+{
+	struct extract_args *args = arg;
+	size_t len = strlen(args->output_dir);
+	char output_path[len + dentry->full_path_utf8_len + 1];
+
+	memcpy(output_path, args->output_dir, len);
+	memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
+	output_path[len + dentry->full_path_utf8_len] = '\0';
+
 	struct timeval tv[2];
 	wim_timestamp_to_timeval(dentry->last_access_time, &tv[0]);
 	wim_timestamp_to_timeval(dentry->last_write_time, &tv[1]);
@@ -345,7 +363,12 @@ static int extract_single_image(WIMStruct *w, int image,
 	#endif
 	};
 
-	return for_dentry_in_tree(wim_root_dentry(w), extract_dentry, &args);
+	ret = for_dentry_in_tree(wim_root_dentry(w), extract_dentry, &args);
+	if (ret != 0)
+		return ret;
+	return for_dentry_in_tree_depth(wim_root_dentry(w),
+					apply_dentry_timestamps, &args);
+
 }
 
 
