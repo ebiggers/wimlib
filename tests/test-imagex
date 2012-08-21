@@ -11,23 +11,6 @@ imagex() {
 	echo "imagex $@"
 	../imagex $@
 }
-#diff() {
-	#echo "diff $@"
-	#/usr/bin/env diff $@
-#}
-
-#dd() {
-	#echo "dd $@"
-	#/usr/bin/env dd $@
-#}
-#stat() {
-	#echo "stat $@" 1>&2
-	#/usr/bin/env stat $@
-#}
-#cmp() {
-	#echo "cmp $@"
-	#/usr/bin/env cmp $@
-#}
 
 cleanup() {
 	if [ -d tmp ] && mountpoint tmp > /dev/null; then
@@ -565,27 +548,65 @@ rm -rf tmp
 
 # imagex export
 echo "Testing export of single image to new WIM"
-imagex capture dir dir.wim
-imagex append dir2 dir.wim
-imagex export dir.wim dir new.wim
-test "`imagex info new.wim | grep 'Image Count' | awk '{print $3}'`" = 1;
+if ! imagex capture dir dir.wim; then
+	error "Failed to capture test WIM"
+fi
+if ! imagex append dir2 dir.wim; then
+	error "Failed to append image to test WIM"
+fi
+if ! imagex export dir.wim dir new.wim; then
+	error "Failed to export single image to new WIM"
+fi
+if test "`imagex info new.wim | grep 'Image Count' | awk '{print $3}'`" != 1; then
+	error "Exporting single image to new WIM wasn't done correctly"
+fi
 echo "Testing export of single image to existing WIM"
-imagex export dir.wim dir2 new.wim
-test "`imagex info new.wim | grep 'Image Count' | awk '{print $3}'`" = 2;
+if ! imagex export dir.wim dir2 new.wim; then
+	error "Failed to export single image to existing WIM"
+fi
+if test "`imagex info new.wim | grep 'Image Count' | awk '{print $3}'`" != 2; then
+	error "Exporting single image to existing WIM wasn't done correctly"
+fi
 echo "Testing export of single image to existing WIM using wrong compression type"
-! imagex export dir.wim dir2 new.wim newname --compress=maximum
+if imagex export dir.wim dir2 new.wim newname --compress=maximum; then
+	error "Successfully exported image using wrong compression type"
+fi
 rm -f new.wim
 echo "Testing export of multiple images to new WIM"
-imagex export dir.wim all new.wim
-test "`imagex info new.wim | grep 'Image Count' | awk '{print $3}'`" = 2;
-imagex capture dir2 new.wim newname
+if ! imagex export dir.wim all new.wim; then
+	error "Failed to export multiple images to new WIM"
+fi
+if test "`imagex info new.wim | grep 'Image Count' | awk '{print $3}'`" != 2; then
+	error "Exporting multiple images to new WIM wasn't done correctly"
+fi
+if ! imagex capture dir2 new.wim newname; then
+	error "Failed to capture test WIM"
+fi
 echo "Testing export of multiple images to existing WIM"
-imagex export dir.wim all new.wim
+if ! imagex export dir.wim all new.wim; then
+	error "Failed to export multiple images to existing WIM"
+fi
 echo "Testing export of multiple images to existing WIM with --boot"
-imagex capture dir2 new.wim newname
-imagex info dir.wim --boot 1
-imagex export dir.wim all new.wim --boot
+if ! imagex capture dir2 new.wim newname; then
+	error "Failed to capture test WIM"
+fi
+if ! imagex info dir.wim --boot 1; then
+	error "Failed to set boot index on test WIM"
+fi
+if ! imagex export dir.wim all new.wim --boot; then
+	error "Failed to export multiple images to existing WIM with bootable image"
+fi
 echo "Testing export of multiple images to existing WIM with --boot, but no bootable image (errors expected)"
-imagex capture dir2 new.wim newname
-imagex info dir.wim --boot 0
-! imagex export dir.wim all new.wim --boot
+if ! imagex capture dir2 new.wim newname; then
+	error "Failed to capture test WIM"
+fi
+if ! imagex info dir.wim --boot 0; then
+	error "Failed to clear boot index on test WIM"
+fi
+if imagex export dir.wim all new.wim --boot; then
+	error "Successfully exported multiple images with --boot but with no bootable images"
+fi
+
+echo "**********************************************************"
+echo "                     All tests passed                     "
+echo "**********************************************************"

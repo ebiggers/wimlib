@@ -772,19 +772,22 @@ static void lte_list_change_lte_ptr(struct lookup_table_entry *lte,
 }
 
 
-static int calculate_sha1sum_of_staging_file(struct lookup_table_entry *lte,
-					     struct lookup_table *table)
+static int update_lte_of_staging_file(struct lookup_table_entry *lte,
+				      struct lookup_table *table)
 {
 	struct lookup_table_entry *duplicate_lte;
 	int ret;
 	u8 hash[SHA1_HASH_SIZE];
+	struct stat stbuf;
+
+	wimlib_assert(lte->staging_file_name);
 
 	ret = sha1sum(lte->staging_file_name, hash);
 	if (ret != 0)
 		return ret;
 
+
 	lookup_table_unlink(table, lte);
-	copy_hash(lte->hash, hash);
 
 	duplicate_lte = __lookup_resource(table, hash);
 
@@ -793,11 +796,17 @@ static int calculate_sha1sum_of_staging_file(struct lookup_table_entry *lte,
 
 		lte_list_change_lte_ptr(lte, duplicate_lte);
 		duplicate_lte->refcnt += lte->refcnt;
-		list_splice(&duplicate_lte->lte_group_list,
-			    &lte->lte_group_list);
+		list_splice(&lte->lte_group_list,
+			    &duplicate_lte->lte_group_list);
 
 		free_lookup_table_entry(lte);
 	} else {
+		if (stat(lte->staging_file_name, &stbuf) != 0) {
+			ERROR_WITH_ERRNO("Failed to stat `%s'", lte->staging_file_name);
+			return WIMLIB_ERR_STAT;
+		}
+		copy_hash(lte->hash, hash);
+		lte->resource_entry.original_size = stbuf.st_size;
 		lookup_table_insert(table, lte);
 	}
 
@@ -822,7 +831,7 @@ static int rebuild_wim(WIMStruct *w, bool check_integrity)
 	 * lookup table entries. */
 	DEBUG("Calculating SHA1 checksums for all new staging files.");
 	list_for_each_entry_safe(lte, tmp, &staging_list, staging_list) {
-		ret = calculate_sha1sum_of_staging_file(lte, w->lookup_table);
+		ret = update_lte_of_staging_file(lte, w->lookup_table);
 		if (ret != 0)
 			return ret;
 	}

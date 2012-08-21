@@ -699,6 +699,7 @@ static int imagex_export(int argc, const char **argv)
 			imagex_error("Cannot specify a compression type that is "
 				     "not the same as that used in the "
 				     "destination WIM");
+			ret = -1;
 			goto done;
 		}
 		compression_type = wimlib_get_compression_type(dest_w);

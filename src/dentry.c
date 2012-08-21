@@ -419,6 +419,7 @@ struct file_attr_flag file_attr_flags[] = {
 int print_dentry(struct dentry *dentry, void *lookup_table)
 {
 	const u8 *hash;
+	struct lookup_table_entry *lte;
 
 	printf("[DENTRY]\n");
 	printf("Length            = %"PRIu64"\n", dentry->length);
@@ -446,12 +447,6 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	printf("Last Access Time  = %s", asctime(localtime(&access_time)));
 	printf("Last Write Time   = %s", asctime(localtime(&mod_time)));
 
-	hash = dentry_stream_hash(dentry, 0);
-	if (hash) {
-		printf("Hash              = 0x"); 
-		print_hash(hash);
-		putchar('\n');
-	}
 	printf("Reparse Tag       = 0x%"PRIx32"\n", dentry->reparse_tag);
 	printf("Hard Link Group   = 0x%"PRIx64"\n", dentry->hard_link);
 	printf("Number of Alternate Data Streams = %hu\n", dentry->num_ads);
@@ -466,7 +461,17 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	puts("\"");
 	printf("Short Name Length = %hu\n", dentry->short_name_len);
 	printf("Full Path (UTF-8) = \"%s\"\n", dentry->full_path_utf8);
-	print_lookup_table_entry(dentry_stream_lte(dentry, 0, lookup_table));
+	lte = dentry_stream_lte(dentry, 0, lookup_table);
+	if (lte) {
+		print_lookup_table_entry(lte);
+	} else {
+		hash = dentry_stream_hash(dentry, 0);
+		if (hash) {
+			printf("Hash              = 0x"); 
+			print_hash(hash);
+			putchar('\n');
+		}
+	}
 	for (u16 i = 0; i < dentry->num_ads; i++) {
 		printf("[Alternate Stream Entry %u]\n", i);
 		printf("Name = \"%s\"\n", dentry->ads_entries[i].stream_name_utf8);

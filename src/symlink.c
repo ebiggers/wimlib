@@ -131,9 +131,9 @@ void *make_symlink_reparse_data_buf(const char *symlink_target, size_t *len_ret)
 	/* XXX Fix absolute paths */
 
 	u8 *p = buf;
-	p = put_u16(p, 0); /* Substitute name offset */
+	p = put_u16(p, utf16_len); /* Substitute name offset */
 	p = put_u16(p, utf16_len); /* Substitute name length */
-	p = put_u16(p, utf16_len); /* Print name offset */
+	p = put_u16(p, 0); /* Print name offset */
 	p = put_u16(p, utf16_len); /* Print name length */
 	p = put_u32(p, 1);
 	p = put_bytes(p, utf16_len, name_utf16);
@@ -194,7 +194,7 @@ static int dentry_set_symlink_buf(struct dentry *dentry,
 	wimlib_assert(dentry->num_ads == 0);
 	wimlib_assert(dentry->ads_entries == NULL);
 
-	ads_entries[1].lte = lte;
+	ads_entries[0].lte = lte;
 
 	/*dentry_free_ads_entries(dentry);*/
 	dentry->num_ads = 2;

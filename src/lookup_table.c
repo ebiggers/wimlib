@@ -288,7 +288,7 @@ void print_lookup_table_entry(struct lookup_table_entry *lte)
 	       lte->resource_entry.original_size);
 	printf("Part Number       = %hu\n", lte->part_number);
 	printf("Reference Count   = %u\n", lte->refcnt);
-	printf("Hash              = ");
+	printf("Hash              = 0x");
 	print_hash(lte->hash);
 	putchar('\n');
 	printf("Flags             = ");
