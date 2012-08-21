@@ -31,6 +31,11 @@
 #include <errno.h>
 #include <sys/stat.h>
 
+#ifdef WITH_NTFS_3G
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
+
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
 
 #define swap(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \
@@ -38,6 +43,7 @@
 
 #define for_opt(c, opts) while ((c = getopt_long_only(argc, (char**)argv, "", \
 				opts, NULL)) != -1)
+
 
 enum imagex_op_type {
 	APPEND,
@@ -128,6 +134,7 @@ static const struct option apply_options[] = {
 	{"symlink",  no_argument,       NULL, 's'},
 	{"verbose",  no_argument,       NULL, 'v'},
 	{"ntfs",     no_argument,	NULL, 'N'},
+	{"mkntfs-args", required_argument, NULL, 'm'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_options[] = {
@@ -359,6 +366,7 @@ static int imagex_apply(int argc, const char **argv)
 	const char *wimfile;
 	const char *dir;
 	const char *image_num_or_name;
+	const char *mkntfs_args = "";
 	int extract_flags = 0;
 
 	for_opt(c, apply_options) {
@@ -377,6 +385,9 @@ static int imagex_apply(int argc, const char **argv)
 			break;
 		case 'N':
 			extract_flags |= WIMLIB_EXTRACT_FLAG_NTFS;
+			break;
+		case 'm':
+			mkntfs_args = optarg;
 			break;
 		default:
 			usage(APPLY);
@@ -399,9 +410,68 @@ static int imagex_apply(int argc, const char **argv)
 		dir = argv[2];
 	}
 
+#ifdef WITH_NTFS_3G
+	char tmpdir[strlen(dir) + 50];
+	tmpdir[0] = '\0';
+
+	/* Check to see if a block device file was specified.  If so, 
+	 * create a NTFS filesystem on it. */
+	struct stat stbuf;
+
+	ret = stat(dir, &stbuf);
+	if (ret != 0)
+		imagex_error_with_errno("Failed to stat `%s'", dir);
+	if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
+		extract_flags |= WIMLIB_EXTRACT_FLAG_NTFS;
+
+		const char *dev = dir;
+		printf("Making NTFS filesystem on `%s'\n", dev);
+
+		char mkntfs_cmdline[sizeof("mkntfs ") + strlen(mkntfs_args) +
+				    sizeof(" ") + strlen(dev)];
+		sprintf(mkntfs_cmdline, "mkntfs %s %s", mkntfs_args, dev);
+		puts(mkntfs_cmdline);
+		ret = system(mkntfs_cmdline);
+		if (ret == -1) {
+			imagex_error_with_errno("Failed to execute the "
+						"`mkntfs' program");
+			return -1;
+		} else if (ret > 0) {
+			imagex_error("`mkntfs' exited with failure status");
+			imagex_error("Note: You can pass additional arguments "
+				     "to `mkntfs' using the --mkntfs-args "
+				     "argument");
+			return -1;
+		}
+		sprintf(tmpdir, "/tmp/imagex-%d-ntfsmount-%s-XXXXXX",
+				getpid(), dev);
+		dir = mkdtemp(tmpdir);
+		if (!dir) {
+			imagex_error_with_errno("Failed to create "
+						"temporary directory "
+						"`%s'", tmpdir);
+		}
+		char ntfs_3g_cmdline[sizeof("ntfs-3g ") + strlen(dev) +
+				     sizeof(" ") + strlen(dir)];
+		sprintf(ntfs_3g_cmdline, "ntfs-3g %s %s", dev, dir);
+		puts(ntfs_3g_cmdline);
+		ret = system(ntfs_3g_cmdline);
+		if (ret == -1) {
+			imagex_error_with_errno("Failed to execute the "
+						"`ntfs-3g' program");
+			ret = -1;
+			goto out_rm_tmpdir;
+		} else if (ret > 0) {
+			imagex_error("`ntfs-3g' exited with failure status");
+			ret = -1;
+			goto out_rm_tmpdir;
+		}
+	}
+#endif
+
 	ret = wimlib_open_wim(wimfile, open_flags, &w);
 	if (ret != 0)
-		return ret;
+		goto done;
 
 	image = wimlib_resolve_image(w, image_num_or_name);
 	ret = verify_image_exists(image);
@@ -419,6 +489,41 @@ static int imagex_apply(int argc, const char **argv)
 	ret = wimlib_extract_image(w, image, dir, extract_flags);
 done:
 	wimlib_free(w);
+#ifdef WITH_NTFS_3G
+out_rm_tmpdir:
+	if (tmpdir[0] != '\0') {
+		/* Unmount and remove the NTFS-3g mounted directory */
+
+		int pid = fork();
+		int status;
+		if (pid == -1) {
+			imagex_error_with_errno("Failed to fork()");
+			return -1;
+		}
+		if (pid == 0) {
+			execlp("fusermount", "fusermount", "-u", dir, NULL);
+			imagex_error_with_errno("Failed to execute `fusermount'");
+			return -1;
+		}
+
+		if (waitpid(pid, &status, 0) == -1) {
+			imagex_error_with_errno("Failed to wait for "
+						"fusermount process to "
+						"terminate");
+			return -1;
+		}
+
+		if (status != 0) {
+			imagex_error("fusermount exited with status %d",
+				     status);
+			return -1;
+		}
+		if (rmdir(tmpdir) != 0) {
+			imagex_error_with_errno("Failed to remove temporary "
+						"directory `%s'", tmpdir);
+		}
+	}
+#endif
 	return ret;
 }
 
@@ -1261,6 +1366,8 @@ int main(int argc, const char **argv)
 				imagex_error("Exiting with error code %d:\n"
 					     "       %s.", ret,
 					     wimlib_get_error_string(ret));
+				if (ret == WIMLIB_ERR_NTFS_3G)
+					imagex_error_with_errno("errno");
 			}
 			return ret;
 		}

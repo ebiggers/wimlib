@@ -261,20 +261,29 @@ static int extract_symlink(const struct dentry *dentry, const char *output_path,
  */
 static int extract_directory(const char *output_path)
 {
-	/* Compute the output path directory to the directory. */
-	if (mkdir(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0) 
-	{
-		switch (errno) {
-		case EEXIST: /* Already existing directory is OK */
-		case EACCES: /* We may have permissions to extract files inside
-				 the directory, but not for the directory
-				 itself. */
+	int ret;
+	struct stat stbuf;
+	ret = stat(output_path, &stbuf);
+	if (ret == 0) {
+		if (S_ISDIR(stbuf.st_mode)) {
+			WARNING("`%s' already exists", output_path);
 			return 0;
-		default:
-			ERROR_WITH_ERRNO("Cannot create directory `%s'",
-					 output_path);
+		} else {
+			ERROR("`%s' is not a directory", output_path);
 			return WIMLIB_ERR_MKDIR;
 		}
+	} else {
+		if (errno != ENOENT) {
+			ERROR_WITH_ERRNO("Failed to stat `%s'", output_path);
+			return WIMLIB_ERR_STAT;
+		}
+	}
+	/* Compute the output path directory to the directory. */
+	if (mkdir(output_path, S_IRWXU | S_IRGRP | S_IXGRP |
+			       S_IROTH | S_IXOTH) != 0) {
+		ERROR_WITH_ERRNO("Cannot create directory `%s'",
+				 output_path);
+		return WIMLIB_ERR_MKDIR;
 	}
 	return 0;
 }
@@ -424,21 +433,24 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if ((flags & WIMLIB_EXTRACT_FLAG_NTFS)) {
+		if (flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
+			return WIMLIB_ERR_INVALID_PARAM;
 	#ifdef WITH_NTFS_3G
 		unsigned long mnt_flags;
 		int ret = ntfs_check_if_mounted(output_dir, &mnt_flags);
 		if (ret != 0) {
-			ERROR_WITH_ERRNO("NTFS-3g: Cannot determine if `%s' "
-					 "is mounted", output_dir);
+			ERROR_WITH_ERRNO("NTFS-3g: Cannot determine if a NTFS "
+					 "filesystem is mounted on `%s'",
+					 output_dir);
 			return WIMLIB_ERR_NTFS_3G;
 		}
 		if (!(mnt_flags & NTFS_MF_MOUNTED)) {
-			ERROR("NTFS-3g: Filesystem on `%s' is not mounted ",
+			ERROR("NTFS-3g: No NTFS filesystem is mounted on `%s'",
 			      output_dir);
 			return WIMLIB_ERR_NTFS_3G;
 		}
 		if (mnt_flags & NTFS_MF_READONLY) {
-			ERROR("NTFS-3g: Filesystem on `%s' is mounted "
+			ERROR("NTFS-3g: NTFS filesystem on `%s' is mounted "
 			      "read-only", output_dir);
 			return WIMLIB_ERR_NTFS_3G;
 		}
