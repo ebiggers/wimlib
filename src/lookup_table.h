@@ -123,11 +123,15 @@ static inline u64 wim_resource_size(const struct lookup_table_entry *lte)
 	return lte->resource_entry.original_size;
 }
 
+/*
+ * XXX Probably should store the compression type directly in the lookup table
+ * entry
+ */
 static inline int
 wim_resource_compression_type(const struct lookup_table_entry *lte)
 {
 	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
-	    || !lte->wim)
+	    || lte->resource_location != RESOURCE_IN_WIM)
 		return WIM_COMPRESSION_TYPE_NONE;
 	return wimlib_get_compression_type(lte->wim);
 }
@@ -171,7 +175,7 @@ extern int lookup_resource(WIMStruct *w, const char *path,
 
 extern int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore);
 
-extern void print_lookup_table_entry(struct lookup_table_entry *entry);
+extern void print_lookup_table_entry(const struct lookup_table_entry *entry);
 
 extern int read_lookup_table(WIMStruct *w);
 

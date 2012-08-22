@@ -76,7 +76,9 @@ void free_lookup_table_entry(struct lookup_table_entry *lte)
 	if (lte) {
 		if (lte->staging_list.next)
 			list_del(&lte->staging_list);
-		FREE(lte->file_on_disk);
+		if (lte->resource_location != RESOURCE_IN_WIM &&
+		    lte->resource_location != RESOURCE_NONEXISTENT)
+			FREE(lte->file_on_disk);
 		FREE(lte);
 	}
 }
@@ -273,7 +275,7 @@ int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore)
 	return 0;
 }
 
-void print_lookup_table_entry(struct lookup_table_entry *lte)
+void print_lookup_table_entry(const struct lookup_table_entry *lte)
 {
 	if (!lte) {
 		putchar('\n');

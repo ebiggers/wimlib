@@ -346,6 +346,8 @@ err:
 int read_uncompressed_resource(FILE *fp, u64 offset, u64 len,
 			       u8 contents_ret[])
 {
+	DEBUG("fp = %p, offset = %lu, len = %lu, contents_ret = %p",
+			fp, offset, len, contents_ret);
 	if (fseeko(fp, offset, SEEK_SET) != 0) {
 		ERROR("Failed to seek to byte %"PRIu64" of input file "
 		      "to read uncompressed resource (len = %"PRIu64")",
@@ -397,18 +399,38 @@ u8 *put_resource_entry(u8 *p, const struct resource_entry *entry)
 	return p;
 }
 
+/*
+ * Reads some data from a WIM resource.
+ *
+ * If %raw is true, compressed data is read literally rather than being
+ * decompressed first.
+ *
+ * Returns zero on success, nonzero on failure.
+ */
 static int __read_wim_resource(const struct lookup_table_entry *lte,
 		      	       u8 buf[], size_t size, u64 offset, bool raw)
 {
+	/* We shouldn't be allowing read over-runs in any part of the library.
+	 * */
 	wimlib_assert(offset + size <= wim_resource_size(lte));
+
+	DEBUG("lte = %p, buf = %p, size = %zu, offset = %lu, raw = %d",
+			lte, buf, size, offset, raw);
+	print_lookup_table_entry(lte);
+
 	int ctype;
 	int ret;
 	FILE *fp;
 	switch (lte->resource_location) {
 	case RESOURCE_IN_WIM:
+		/* The resource is in a WIM file, and its WIMStruct is given by
+		 * the lte->wim member.  The resource may be either compressed
+		 * or uncompressed. */
 		wimlib_assert(lte->wim);
 		wimlib_assert(lte->wim->fp);
 		ctype = wim_resource_compression_type(lte);
+
+		/* XXX This check should be moved elsewhere */
 		if (ctype == WIM_COMPRESSION_TYPE_NONE &&
 		     lte->resource_entry.original_size !=
 		      lte->resource_entry.size) {
@@ -420,9 +442,11 @@ static int __read_wim_resource(const struct lookup_table_entry *lte,
 			      lte->resource_entry.original_size);
 			return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
 		}
+
 		if (raw || ctype == WIM_COMPRESSION_TYPE_NONE)
 			return read_uncompressed_resource(lte->wim->fp,
-							  offset, size, buf);
+							  lte->resource_entry.offset,
+							  size, buf);
 		else
 			return read_compressed_resource(lte->wim->fp,
 							lte->resource_entry.size,
@@ -431,11 +455,18 @@ static int __read_wim_resource(const struct lookup_table_entry *lte,
 							ctype, size, offset, buf);
 		break;
 	case RESOURCE_IN_STAGING_FILE:
+		/* The WIM FUSE implementation needs to handle multiple open
+		 * file descriptors per lookup table entry so it does not
+		 * currently work with this function. */
 		wimlib_assert(lte->staging_file_name);
 		wimlib_assert(0);
 		break;
 	case RESOURCE_IN_FILE_ON_DISK:
+		/* The resource is in some file on the external filesystem and
+		 * needs to be read uncompressed */
 		wimlib_assert(lte->file_on_disk);
+		/* Use existing file pointer if available; otherwise open one
+		 * temporarily */
 		if (lte->file_on_disk_fp) {
 			fp = lte->file_on_disk_fp;
 		} else {
@@ -445,13 +476,14 @@ static int __read_wim_resource(const struct lookup_table_entry *lte,
 						 "`%s'", lte->file_on_disk);
 			}
 		}
-		ret = read_uncompressed_resource(lte->file_on_disk_fp,
-						 offset, size, buf);
+		ret = read_uncompressed_resource(fp, offset, size, buf);
 		if (fp != lte->file_on_disk_fp)
 			fclose(fp);
 		return ret;
 		break;
 	case RESOURCE_IN_ATTACHED_BUFFER:
+		/* The resource is directly attached uncompressed in an
+		 * in-memory buffer. */
 		wimlib_assert(lte->attached_buffer);
 		memcpy(buf, lte->attached_buffer + offset, size);
 		return 0;
@@ -461,12 +493,32 @@ static int __read_wim_resource(const struct lookup_table_entry *lte,
 	}
 }
 
+/* 
+ * Reads some data from the resource corresponding to a WIM lookup table entry.
+ *
+ * @lte:	The WIM lookup table entry for the resource.
+ * @buf:	Buffer into which to write the data.
+ * @size:	Number of bytes to read.
+ * @offset:	Offset at which to start reading the resource.
+ *
+ * Returns 0 on success; nonzero on failure.
+ */
 int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 		      size_t size, u64 offset)
 {
 	return __read_wim_resource(lte, buf, size, offset, false);
 }
 
+/* 
+ * Reads all the data from the resource corresponding to a WIM lookup table
+ * entry.
+ *
+ * @lte:	The WIM lookup table entry for the resource.
+ * @buf:	Buffer into which to write the data.  It must be at least
+ * 		wim_resource_size(lte) bytes long.
+ *
+ * Returns 0 on success; nonzero on failure.
+ */
 int read_full_wim_resource(const struct lookup_table_entry *lte, u8 buf[])
 {
 	return __read_wim_resource(lte, buf, lte->resource_entry.original_size,
@@ -487,6 +539,7 @@ struct chunk_table {
 static int
 begin_wim_resource_chunk_tab(const struct lookup_table_entry *lte,
 			     FILE *out_fp,
+			     off_t file_offset,
 			     struct chunk_table **chunk_tab_ret)
 {
 	u64 size = wim_resource_size(lte);
@@ -501,12 +554,7 @@ begin_wim_resource_chunk_tab(const struct lookup_table_entry *lte,
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;
 	}
-	chunk_tab->file_offset = ftello(out_fp);
-	if (chunk_tab->file_offset == -1) {
-		ERROR_WITH_ERRNO("Failed to get file offset in output WIM");
-		ret = WIMLIB_ERR_WRITE;
-		goto out;
-	}
+	chunk_tab->file_offset = file_offset;
 	chunk_tab->num_chunks = num_chunks;
 	chunk_tab->cur_offset_p = chunk_tab->offsets;
 	chunk_tab->original_resource_size = lte->resource_entry.original_size;
@@ -584,8 +632,8 @@ static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 }
 
 static int
-finish_wim_resource_chunk_tab(const struct chunk_table *chunk_tab,
-			      FILE *out_fp)
+finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
+			      FILE *out_fp, u64 *compressed_size_p)
 {
 	if (fseeko(out_fp, chunk_tab->file_offset, SEEK_SET) != 0) {
 		ERROR_WITH_ERRNO("Failed to seet to byte "PRIu64" of output "
@@ -612,48 +660,102 @@ finish_wim_resource_chunk_tab(const struct chunk_table *chunk_tab,
 				 "WIM file", chunk_tab->file_offset);
 		return WIMLIB_ERR_WRITE;
 	}
+	*compressed_size_p = chunk_tab->cur_offset;
 	return 0;
 }
 
-static int write_wim_resource(const struct lookup_table_entry *lte,
-			      FILE *out_fp, int out_ctype)
+/*
+ * Writes a WIM resource to a FILE * opened for writing.  The resource may be
+ * written uncompressed or compressed depending on the @out_ctype parameter.
+ *
+ * @lte:	The lookup table entry for the WIM resource.
+ * @out_fp:	The FILE * to write the resource to.
+ * @out_ctype:  The compression type of the resource to write.  Note: if this is
+ * 			the same as the compression type of the WIM resource we
+ * 			need to read, we simply copy the data (i.e. we do not
+ * 			uncompress it, then compress it again).
+ * @out_res_entry:  If non-NULL, a resource entry that is filled in with the 
+ * 		    offset, original size, compressed size, and compression flag
+ * 		    of the output resource.
+ *
+ * Returns 0 on success; nonzero on failure.
+ */
+static int __write_wim_resource(const struct lookup_table_entry *lte,
+			        FILE *out_fp, int out_ctype,
+			        struct resource_entry *out_res_entry)
 {
-	u64 bytes_remaining = wim_resource_size(lte);
+	u64 size = wim_resource_size(lte);
+	u64 bytes_remaining = size;
 	char buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
 	u64 offset = 0;
+	u64 compressed_size = bytes_remaining;
 	int ret = 0;
-	bool raw = wim_resource_compression_type(lte) == out_ctype;
 	struct chunk_table *chunk_tab = NULL;
+	bool raw;
+	off_t file_offset;
 
+	if (out_res_entry) {
+		file_offset = ftello(out_fp);
+		if (file_offset == -1) {
+			ERROR_WITH_ERRNO("Failed to get offset in output "
+					 "stream");
+			return WIMLIB_ERR_WRITE;
+		}
+	}
+	
+	raw = (wim_resource_compression_type(lte) == out_ctype);
 	if (raw)
 		out_ctype = WIM_COMPRESSION_TYPE_NONE;
 
 	if (out_ctype != WIM_COMPRESSION_TYPE_NONE) {
-		ret = begin_wim_resource_chunk_tab(lte, out_fp,
+		ret = begin_wim_resource_chunk_tab(lte, out_fp, file_offset,
 						   &chunk_tab);
 		if (ret != 0)
-			return 0;
+			goto out;
 	}
 
 	while (bytes_remaining) {
 		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
 		ret = __read_wim_resource(lte, buf, to_read, offset, raw);
 		if (ret != 0)
-			break;
+			goto out;
 		ret = write_wim_resource_chunk(buf, to_read, out_fp,
 					       out_ctype, chunk_tab);
 		if (ret != 0)
-			break;
+			goto out;
 		bytes_remaining -= to_read;
 		offset += to_read;
 	}
-	if (out_ctype != WIM_COMPRESSION_TYPE_NONE)
-		ret = finish_wim_resource_chunk_tab(chunk_tab, out_fp);
+	if (out_ctype != WIM_COMPRESSION_TYPE_NONE) {
+		ret = finish_wim_resource_chunk_tab(chunk_tab, out_fp,
+						    &compressed_size);
+		if (ret != 0)
+			goto out;
+	}
+	if (out_res_entry) {
+		out_res_entry->size          = compressed_size;
+		out_res_entry->original_size = size;
+		out_res_entry->offset	    = file_offset;
+		if (out_ctype == WIM_COMPRESSION_TYPE_NONE)
+			out_res_entry->flags = 0;
+		else
+			out_res_entry->flags = WIM_RESHDR_FLAG_COMPRESSED;
+	}
+out:
+	FREE(chunk_tab);
 	return ret;
 }
 
+static int write_wim_resource(struct lookup_table_entry *lte,
+			      FILE *out_fp, int out_ctype)
+{
+	return __write_wim_resource(lte, out_fp, out_ctype,
+				    &lte->output_resource_entry);
+}
+
 static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
-					  FILE *out_fp, int out_ctype)
+					  FILE *out_fp, int out_ctype,
+					  struct resource_entry *out_res_entry)
 {
 	struct lookup_table_entry lte;
 	lte.resource_entry.flags = 0;
@@ -662,7 +764,7 @@ static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 	lte.resource_entry.offset = 0;
 	lte.resource_location = RESOURCE_IN_ATTACHED_BUFFER;
 	lte.attached_buffer = (u8*)buf;
-	return write_wim_resource(&lte, out_fp, out_ctype);
+	return __write_wim_resource(&lte, out_fp, out_ctype, out_res_entry);
 }
 
 /* 
@@ -713,28 +815,14 @@ int copy_resource(struct lookup_table_entry *lte, void *wim)
 {
 	WIMStruct *w = wim;
 	int ret;
-	off_t new_offset;
 
 	if ((lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) &&
 	    !w->write_metadata)
 		return 0;
 
-	new_offset = ftello(w->out_fp);
-	if (new_offset == -1) {
-		ERROR_WITH_ERRNO("Could not get offset in output WIM");
-		return WIMLIB_ERR_WRITE;
-	}
-
-
-	ret = write_wim_resource(lte, w->out_fp,
-				 wimlib_get_compression_type((WIMStruct*)w));
+	ret = write_wim_resource(lte, w->out_fp, wimlib_get_compression_type(w));
 	if (ret != 0)
 		return ret;
-
-	memcpy(&lte->output_resource_entry, &lte->resource_entry, 
-	       sizeof(struct resource_entry));
-
-	lte->output_resource_entry.offset = new_offset;
 	lte->out_refcnt = lte->refcnt;
 	lte->part_number = w->hdr.part_number;
 	return 0;
@@ -953,29 +1041,19 @@ int write_metadata_resource(WIMStruct *w)
 	sha1_buffer(buf, metadata_original_size, hash);
 
 
+	lte = wim_metadata_lookup_table_entry(w);
+
 	ret = write_wim_resource_from_buffer(buf, metadata_original_size,
-					     out, metadata_ctype);
+					     out, metadata_ctype,
+					     &lte->output_resource_entry);
 	FREE(buf);
 	if (ret != 0)
 		return ret;
 
-	DEBUG("Updating metadata lookup table entry (size %zu)",
-	      metadata_original_size);
-
-	/* Update the lookup table entry, including the hash and output resource
-	 * entry fields, for this image's metadata resource.  */
-	lte = wim_metadata_lookup_table_entry(w);
 	lte->out_refcnt++;
-	if (!hashes_equal(hash, lte->hash)) {
-		lookup_table_unlink(w->lookup_table, lte);
-		copy_hash(lte->hash, hash);
-		lookup_table_insert(w->lookup_table, lte);
-	}
-	lte->output_resource_entry.original_size = metadata_original_size;
-	lte->output_resource_entry.offset        = metadata_offset;
-	lte->output_resource_entry.size          = metadata_compressed_size;
-	lte->output_resource_entry.flags         = WIM_RESHDR_FLAG_METADATA;
-	if (metadata_ctype != WIM_COMPRESSION_TYPE_NONE)
-		lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_COMPRESSED;
+	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
+	lookup_table_unlink(w->lookup_table, lte);
+	copy_hash(lte->hash, hash);
+	lookup_table_insert(w->lookup_table, lte);
 	return 0;
 }
