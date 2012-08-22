@@ -135,9 +135,12 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 		*status = WIM_INTEGRITY_NONEXISTENT;
 		return 0;
 	}
-	ctype = wim_resource_compression_type(w, res_entry);
 	if (res_entry->original_size < 12) {
 		ERROR("Integrity table is too short");
+		return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
+	}
+	if (res_entry->flags & WIM_RESHDR_FLAG_COMPRESSED) {
+		ERROR("Didn't expect a compressed integrity table");
 		return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 	}
 
@@ -149,15 +152,14 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;
 	}
-	ret = read_full_resource(w->fp, res_entry->size,
-				 res_entry->original_size,
-				 res_entry->offset, ctype, buf);
+	ret = read_uncompressed_resource(w->fp, res_entry->offset,
+					 res_entry->original_size, buf);
 	if (ret != 0) {
 		ERROR("Failed to read integrity table (size = %"PRIu64", "
 		      "original_size = %"PRIu64", offset = "
-		      "%"PRIu64", ctype = %d",
+		      "%"PRIu64")",
 		      (u64)res_entry->size, res_entry->original_size,
-		      res_entry->offset, ctype);
+		      res_entry->offset);
 		goto out;
 	}
 

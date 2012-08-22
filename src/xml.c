@@ -1112,23 +1112,22 @@ int read_xml_data(FILE *fp, const struct resource_entry *res, u8 **xml_data_ret,
 	if (resource_is_compressed(res)) {
 		ERROR("XML data is supposed to be uncompressed");
 		ret = WIMLIB_ERR_XML;
-		goto err0;
+		goto out_cleanup_parser;
 	}
 	if (res->size < 2) {
 		ERROR("XML data must be at least 2 bytes");
 		ret = WIMLIB_ERR_XML;
-		goto err0;
+		goto out_cleanup_parser;
 	}
 
 	xml_data = MALLOC(res->size + 2);
 	if (!xml_data) {
 		ret = WIMLIB_ERR_NOMEM;
-		goto err0;
+		goto out_cleanup_parser;
 	}
-	ret = read_full_resource(fp, res->size, res->size, res->offset, 
-				 WIM_COMPRESSION_TYPE_NONE, xml_data);
+	ret = read_uncompressed_resource(fp, res->offset, res->size, xml_data);
 	if (ret != 0)
-		goto err1;
+		goto out_free_xml_data;
 
 	xml_data[res->size] = 0;
 	xml_data[res->size + 1] = 0;
@@ -1141,7 +1140,7 @@ int read_xml_data(FILE *fp, const struct resource_entry *res, u8 **xml_data_ret,
 	if (!doc) {
 		ERROR("Failed to parse XML data");
 		ret = WIMLIB_ERR_XML;
-		goto err1;
+		goto out_free_xml_data;
 	}
 
 	DEBUG("Constructing WIM information structure from XML tree.");
@@ -1150,19 +1149,19 @@ int read_xml_data(FILE *fp, const struct resource_entry *res, u8 **xml_data_ret,
 	if (!root) {
 		ERROR("Empty XML document");
 		ret = WIMLIB_ERR_XML;
-		goto err2;
+		goto out_free_doc;
 	}
 
 	if (!node_is_element(root) || !node_name_is(root, "WIM")) {
 		ERROR("Expected <WIM> for the root XML element (found <%s>)",
 		      root->name);
 		ret = WIMLIB_ERR_XML;
-		goto err2;
+		goto out_free_doc;
 	}
 
 	ret = xml_read_wim_info(root, info_ret);
 	if (ret != 0)
-		goto err2;
+		goto out_free_doc;
 
 	DEBUG("Freeing XML tree.");
 
@@ -1170,11 +1169,11 @@ int read_xml_data(FILE *fp, const struct resource_entry *res, u8 **xml_data_ret,
 	xmlCleanupParser();
 	*xml_data_ret = xml_data;
 	return 0;
-err2:
+out_free_doc:
 	xmlFreeDoc(doc);
-err1:
+out_free_xml_data:
 	FREE(xml_data);
-err0:
+out_cleanup_parser:
 	xmlCleanupParser();
 	return ret;
 }

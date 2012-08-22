@@ -424,8 +424,7 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 		return -errno;
 
 	if (old_lte)
-		ret = extract_resource_to_fd(w, &old_lte->resource_entry, fd,
-					     size);
+		ret = extract_wim_resource_to_fd(old_lte, fd, size);
 	else
 		ret = 0;
 	if (ret != 0 || close(fd) != 0) {
@@ -488,6 +487,7 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 	new_lte->refcnt = link_group_size;
 	random_hash(new_lte->hash);
 	new_lte->staging_file_name = staging_file_name;
+	new_lte->resource_location = RESOURCE_IN_STAGING_FILE;
 
 	lookup_table_insert(w->lookup_table, new_lte);
 	list_add(&new_lte->staging_list, &staging_list);
@@ -1219,22 +1219,16 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 	} else {
 		/* Read from WIM */
 
-		struct resource_entry *res_entry;
-		int ctype;
+		const struct resource_entry *res_entry;
 		
 		res_entry = &fd->lte->resource_entry;
-
-		ctype = wim_resource_compression_type(w, res_entry);
 
 		if (offset > res_entry->original_size)
 			return -EOVERFLOW;
 
 		size = min(size, res_entry->original_size - offset);
 
-		if (read_resource(w->fp, res_entry->size, 
-				  res_entry->original_size,
-				  res_entry->offset, ctype, size, 
-				  offset, buf) != 0)
+		if (read_wim_resource(fd->lte, buf, size, offset) != 0)
 			return -EIO;
 		return size;
 	}

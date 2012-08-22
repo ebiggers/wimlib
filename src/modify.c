@@ -190,6 +190,7 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 				return WIMLIB_ERR_NOMEM;
 			}
 			lte->file_on_disk = file_on_disk;
+			lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
 			lte->resource_entry.original_size = root_stbuf.st_size;
 			lte->resource_entry.size = root_stbuf.st_size;
 			copy_hash(lte->hash, hash);
@@ -236,9 +237,7 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 			dest_lte = new_lookup_table_entry();
 			if (!dest_lte)
 				return WIMLIB_ERR_NOMEM;
-			dest_lte->other_wim_fp = src_wim->fp;
-			dest_lte->other_wim_ctype = 
-					wimlib_get_compression_type(src_wim);
+			dest_lte->wim = src_wim;
 			memcpy(&dest_lte->resource_entry, 
 			       &src_lte->resource_entry, 
 			       sizeof(struct resource_entry));

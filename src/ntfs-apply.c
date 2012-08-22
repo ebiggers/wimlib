@@ -50,6 +50,8 @@ extern int _ntfs_set_file_attributes(ntfs_inode *ni, s32 attrib);
 static int extract_resource_to_ntfs_attr(WIMStruct *w, const struct resource_entry *entry, 
 					 ntfs_attr *na)
 {
+	return 0;
+#if 0
 	u8 buf[min(entry->original_size, WIM_CHUNK_SIZE)];
 	u64 num_chunks = (entry->original_size + WIM_CHUNK_SIZE - 1) / WIM_CHUNK_SIZE;
 	u64 n = WIM_CHUNK_SIZE;
@@ -77,6 +79,7 @@ static int extract_resource_to_ntfs_attr(WIMStruct *w, const struct resource_ent
 		offset += n;
 	}
 	return 0;
+#endif
 }
 
 /* Writes the data streams to a NTFS file
@@ -266,10 +269,15 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 			ret = WIMLIB_ERR_INVALID_DENTRY;
 			goto out;
 		}
+
+		char symlink_buf[wim_resource_size(lte)];
+
+		ret = read_full_wim_resource(lte, symlink_buf);
+		if (ret != 0)
+			goto out;
 		
-		ret = ntfs_set_ntfs_reparse_data(ni, lte->symlink_buf,
-						 lte->resource_entry.original_size,
-						 0);
+		ret = ntfs_set_ntfs_reparse_data(ni, symlink_buf,
+						 wim_resource_size(lte), 0);
 		if (ret != 0) {
 			ERROR_WITH_ERRNO("Failed to set NTFS reparse data on "
 					 "`%s'", dentry->full_path_utf8);

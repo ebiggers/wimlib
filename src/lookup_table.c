@@ -52,7 +52,7 @@ err:
 	return NULL;
 }
 
-struct lookup_table_entry *new_lookup_table_entry()
+struct lookup_table_entry *new_lookup_table_entry(WIMStruct *wim)
 {
 	struct lookup_table_entry *lte;
 	
@@ -66,6 +66,7 @@ struct lookup_table_entry *new_lookup_table_entry()
 
 	lte->part_number  = 1;
 	lte->refcnt       = 1;
+	lte->wim	  = wim;
 	INIT_LIST_HEAD(&lte->lte_group_list);
 	return lte;
 }
@@ -167,41 +168,37 @@ int for_lookup_table_entry(struct lookup_table *table,
 
 /*
  * Reads the lookup table from a WIM file.
- *
- * @fp:  		The FILE* for the WIM file.
- * @offset:  		The offset of the lookup table resource.
- * @size:  		The size of the lookup table resource.
- * @lookup_table_ret:  	A pointer to a struct lookup_table structure into which the
- * 				lookup table will be returned.
- * @return:		True on success, false on failure.
  */
-int read_lookup_table(FILE *fp, u64 offset, u64 size, 
-		      struct lookup_table **table_ret)
+int read_lookup_table(WIMStruct *w)
 {
-	size_t num_entries;
+	u64    num_entries;
 	u8     buf[WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
 	int    ret;
 	struct lookup_table *table;
-	const u8 *p;
-	struct lookup_table_entry *cur_entry;
 
 	DEBUG("Reading lookup table: offset %"PRIu64", size %"PRIu64"",
-	      offset, size);
+	      w->hdr.lookup_table_res_entry.offset,
+	      w->hdr.lookup_table_res_entry.original_size);
 
-	if (fseeko(fp, offset, SEEK_SET) != 0) {
+	if (fseeko(w->fp, w->hdr.lookup_table_res_entry.offset, SEEK_SET) != 0) {
 		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" to read "
-				 "lookup table", offset);
+				 "lookup table",
+				 w->hdr.lookup_table_res_entry.offset);
 		return WIMLIB_ERR_READ;
 	}
 
-	num_entries = size / WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE;
+	num_entries = w->hdr.lookup_table_res_entry.original_size /
+		      WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE;
 	table = new_lookup_table(num_entries * 2 + 1);
 	if (!table)
 		return WIMLIB_ERR_NOMEM;
 
 	while (num_entries--) {
-		if (fread(buf, 1, sizeof(buf), fp) != sizeof(buf)) {
-			if (feof(fp)) {
+		const u8 *p;
+		struct lookup_table_entry *cur_entry;
+
+		if (fread(buf, 1, sizeof(buf), w->fp) != sizeof(buf)) {
+			if (feof(w->fp)) {
 				ERROR("Unexpected EOF in WIM lookup table!");
 			} else {
 				ERROR_WITH_ERRNO("Error reading WIM lookup "
@@ -210,11 +207,13 @@ int read_lookup_table(FILE *fp, u64 offset, u64 size,
 			ret = WIMLIB_ERR_READ;
 			goto out;
 		}
-		cur_entry = new_lookup_table_entry();
+		cur_entry = new_lookup_table_entry(w);
 		if (!cur_entry) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
 		}
+		cur_entry->wim = w;
+		cur_entry->resource_location = RESOURCE_IN_WIM;
 			 
 		p = get_resource_entry(buf, &cur_entry->resource_entry);
 		p = get_u16(p, &cur_entry->part_number);
@@ -223,7 +222,7 @@ int read_lookup_table(FILE *fp, u64 offset, u64 size,
 		lookup_table_insert(table, cur_entry);
 	}
 	DEBUG("Done reading lookup table.");
-	*table_ret = table;
+	w->lookup_table = table;
 	return 0;
 out:
 	free_lookup_table(table);
@@ -302,8 +301,20 @@ void print_lookup_table_entry(struct lookup_table_entry *lte)
 	if (flags & WIM_RESHDR_FLAG_SPANNED)
 		fputs("WIM_RESHDR_FLAG_SPANNED, ", stdout);
 	putchar('\n');
-	if (lte->file_on_disk && !lte->is_symlink)
+	switch (lte->resource_location) {
+	case RESOURCE_IN_WIM:
+		if (lte->wim->filename) {
+			printf("WIM file          = `%s'\n",
+			       lte->wim->filename);
+		}
+		break;
+	case RESOURCE_IN_FILE_ON_DISK:
 		printf("File on Disk      = `%s'\n", lte->file_on_disk);
+		break;
+	case RESOURCE_IN_STAGING_FILE:
+		printf("Staging File      = `%s'\n", lte->staging_file_name);
+		break;
+	}
 	putchar('\n');
 }
 

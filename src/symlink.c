@@ -152,8 +152,8 @@ out:
 ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 			const WIMStruct *w)
 {
-	const struct resource_entry *res_entry;
 	const struct lookup_table_entry *lte;
+	int ret;
 
 	wimlib_assert(dentry_is_symlink(dentry));
 
@@ -161,24 +161,14 @@ ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 	if (!lte)
 		return -EIO;
 
-	res_entry = &lte->resource_entry;
-	if (res_entry->original_size > 10000)
+	if (wim_resource_size(lte) > 10000)
 		return -EIO;
 
-	char __res_buf[res_entry->original_size];
-	const char *res_buf;
-	if (lte->is_symlink && lte->symlink_buf) {
-		res_buf = lte->symlink_buf;
-	} else {
-		if (read_full_resource(w->fp, res_entry->size, 
-				       res_entry->original_size,
-				       res_entry->offset,
-				       wim_resource_compression_type(w, res_entry),
-				       __res_buf) != 0)
-			return -EIO;
-		res_buf = __res_buf;
-	}
-	return get_symlink_name(res_buf, res_entry->original_size, buf,
+	char res_buf[wim_resource_size(lte)];
+	ret = read_full_wim_resource(lte, res_buf);
+	if (ret != 0)
+		return -EIO;
+	return get_symlink_name(res_buf, wim_resource_size(lte), buf,
 				buf_len, dentry->reparse_tag);
 }
 
@@ -237,6 +227,8 @@ int dentry_set_symlink(struct dentry *dentry, const char *target,
 
 	if (existing_lte) {
 		lte = existing_lte;
+		FREE(symlink_buf);
+		symlink_buf = NULL;
 	} else {
 		DEBUG("Creating new lookup table entry for symlink buf");
 		lte = new_lookup_table_entry();
@@ -244,10 +236,11 @@ int dentry_set_symlink(struct dentry *dentry, const char *target,
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_symlink_buf;
 		}
-		lte->is_symlink = true;
-		lte->symlink_buf = symlink_buf;
+		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
+		lte->attached_buffer              = symlink_buf;
 		lte->resource_entry.original_size = symlink_buf_len;
-		lte->resource_entry.size = symlink_buf_len;
+		lte->resource_entry.size          = symlink_buf_len;
+		lte->resource_entry.flags         = 0;
 		copy_hash(lte->hash, symlink_buf_hash);
 	}
 

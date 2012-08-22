@@ -337,45 +337,26 @@ extern void destroy_image_metadata(struct image_metadata *imd,
 extern const u8 *get_resource_entry(const u8 *p, struct resource_entry *entry);
 extern u8 *put_resource_entry(u8 *p, const struct resource_entry *entry);
 
-extern int read_resource(FILE *fp, u64 resource_size, 
-			 u64 resource_original_size,
-			 u64 resource_offset, int resource_ctype, u64 len, 
-			 u64 offset, void *contents_ret);
+extern int read_uncompressed_resource(FILE *fp, u64 offset, u64 size, u8 buf[]);
 
-extern int read_uncompressed_resource(FILE *fp, u64 offset, u64 len, 
-					u8 contents_ret[]);
+extern int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
+		      size_t size, u64 offset);
+
+extern int read_full_wim_resource(const struct lookup_table_entry *lte, u8 buf[]);
+
+extern int extract_wim_resource_to_fd(const struct lookup_table_entry *lte,
+				      int fd, u64 size);
 
 
-extern int extract_resource_to_fd(WIMStruct *w, 
-				  const struct resource_entry *entry, 
-				  int fd, 
-				  u64 size);
-
-extern int extract_full_resource_to_fd(WIMStruct *w, 
-				       const struct resource_entry *entry, 
-				       int fd);
+extern int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte,
+					   int fd);
 
 extern int read_metadata_resource(FILE *fp, int wim_ctype, 
 				  struct image_metadata *image_metadata);
 
-extern int resource_compression_type(int wim_ctype, int reshdr_flags);
-
-static inline int read_full_resource(FILE *fp, u64 resource_size, 
-				     u64 resource_original_size,
-				     u64 resource_offset, 
-				     int resource_ctype, void *contents_ret)
-{
-	return read_resource(fp, resource_size, resource_original_size, 
-				resource_offset, resource_ctype,
-				resource_original_size, 0, contents_ret);
-}
 
 extern int write_dentry_resources(struct dentry *dentry, void *wim_p);
 extern int copy_resource(struct lookup_table_entry *lte, void *w);
-extern int copy_between_files(FILE *in, off_t in_offset, FILE *out, size_t len);
-extern int write_resource_from_memory(const u8 resource[], int out_ctype,
-				      u64 resource_original_size, FILE *out,
-				      u64 *resource_size_ret);
 extern int write_metadata_resource(WIMStruct *w);
 
 
@@ -401,8 +382,6 @@ extern int dentry_set_symlink(struct dentry *dentry,
 extern WIMStruct *new_wim_struct();
 extern int wimlib_select_image(WIMStruct *w, int image);
 extern int wim_hdr_flags_compression_type(int wim_hdr_flags);
-extern int wim_resource_compression_type(const WIMStruct *w, 
-					 const struct resource_entry *entry);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 
 /* write.c */

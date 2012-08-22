@@ -139,13 +139,6 @@ int wim_hdr_flags_compression_type(int wim_hdr_flags)
 	}
 }
 
-int wim_resource_compression_type(const WIMStruct *w, 
-				  const struct resource_entry *entry)
-{
-	int wim_ctype = wimlib_get_compression_type(w);
-	return resource_compression_type(wim_ctype, entry->flags);
-}
-
 /*
  * Creates a WIMStruct for a new WIM file.
  */
@@ -444,9 +437,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int flags)
 		return WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE;
 	}
 
-	ret = read_lookup_table(w->fp, w->hdr.lookup_table_res_entry.offset,
-				w->hdr.lookup_table_res_entry.size, 
-				&w->lookup_table);
+	ret = read_lookup_table(w);
 	if (ret != 0)
 		return ret;
 

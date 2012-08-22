@@ -170,12 +170,7 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 		goto done;
 	}
 
-
-	res_entry = &lte->resource_entry;
-
-	ret = extract_resource_to_fd(w, res_entry, out_fd, 
-				     res_entry->original_size);
-
+	ret = extract_full_wim_resource_to_fd(lte, out_fd);
 	if (ret != 0) {
 		ERROR("Failed to extract resource to `%s'", output_path);
 		goto done;

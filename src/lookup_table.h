@@ -48,7 +48,13 @@ struct lookup_table_entry {
 	/* If %true, this lookup table entry corresponds to a symbolic link
 	 * reparse buffer.  @symlink_reparse_data_buf will give the target of
 	 * the symbolic link. */
-	bool is_symlink;
+	enum {
+		RESOURCE_NONEXISTENT = 0,
+		RESOURCE_IN_WIM,
+		RESOURCE_IN_FILE_ON_DISK,
+		RESOURCE_IN_STAGING_FILE,
+		RESOURCE_IN_ATTACHED_BUFFER,
+	} resource_location;
 
 	/* Number of times this lookup table entry is referenced by dentries. */
 	u32 refcnt;
@@ -72,32 +78,19 @@ struct lookup_table_entry {
 	 * It will not be compressed, and its size will be given by
 	 * resource_entry.size and resource_entry.original_size. */
 	union {
+		WIMStruct *wim;
 		char *file_on_disk;
 		char *staging_file_name;
-		void *symlink_buf;
+		u8 *attached_buffer;
 		struct lookup_table_entry *next_lte_in_swm;
 	};
-
-	union {
-		struct { /* Used for wimlib_export. */
-
-			/* If (other_wim_fp != NULL), the file resource indicated
-			 * by this lookup table entry is in a different WIM
-			 * file, and other_wim_fp is the FILE* for it. */
-			FILE *other_wim_fp;
-
-			/* Compression type used in other WIM. */
-			int   other_wim_ctype;
-		};
-
-		struct { /* Used for wimlib_mount */
-
-			/* File descriptors table for this data stream */
-			struct wimlib_fd **fds;
-			u16 num_allocated_fds;
-			u16 num_opened_fds;
-		};
-	};
+	FILE *file_on_disk_fp;
+#ifdef WITH_FUSE
+	/* File descriptors table for this data stream */
+	u16 num_opened_fds;
+	u16 num_allocated_fds;
+	struct wimlib_fd **fds;
+#endif
 
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
 	 * whenever the file resource pointed to by this lookup table entry
@@ -124,6 +117,20 @@ struct lookup_table_entry {
 	 * mounted WIM. */
 	struct list_head staging_list;
 };
+
+static inline u64 wim_resource_size(const struct lookup_table_entry *lte)
+{
+	return lte->resource_entry.original_size;
+}
+
+static inline int
+wim_resource_compression_type(const struct lookup_table_entry *lte)
+{
+	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
+	    || !lte->wim)
+		return WIM_COMPRESSION_TYPE_NONE;
+	return wimlib_get_compression_type(lte->wim);
+}
 
 
 extern struct lookup_table *new_lookup_table(size_t capacity);
@@ -166,8 +173,7 @@ extern int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore);
 
 extern void print_lookup_table_entry(struct lookup_table_entry *entry);
 
-extern int read_lookup_table(FILE *fp, u64 offset, u64 size, 
-			     struct lookup_table **table_ret);
+extern int read_lookup_table(WIMStruct *w);
 
 extern void free_lookup_table(struct lookup_table *table);
 
