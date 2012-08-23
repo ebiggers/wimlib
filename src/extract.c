@@ -313,6 +313,7 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	return 0;
 }
 
+/* Apply timestamp to extracted file */
 static int apply_dentry_timestamps(struct dentry *dentry, void *arg)
 {
 	struct extract_args *args = arg;

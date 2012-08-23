@@ -340,7 +340,7 @@ extern u8 *put_resource_entry(u8 *p, const struct resource_entry *entry);
 extern int read_uncompressed_resource(FILE *fp, u64 offset, u64 size, u8 buf[]);
 
 extern int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
-		      size_t size, u64 offset);
+			     size_t size, u64 offset, bool raw);
 
 extern int read_full_wim_resource(const struct lookup_table_entry *lte, u8 buf[]);
 

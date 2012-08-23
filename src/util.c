@@ -143,6 +143,8 @@ static const char *error_strings[] = {
 		= "The WIM's integrity table is invalid",
 	[WIMLIB_ERR_INVALID_PARAM] 
 		= "An invalid parameter was given",
+	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
+		= "The SHA1 message digest of a WIM resource did not match the expected value",
 	[WIMLIB_ERR_INVALID_RESOURCE_SIZE] 
 		= "A resource entry in the WIM is invalid",
 	[WIMLIB_ERR_LINK] 

@@ -1238,7 +1238,7 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 
 		size = min(size, res_entry->original_size - offset);
 
-		if (read_wim_resource(fd->lte, buf, size, offset) != 0)
+		if (read_wim_resource(fd->lte, buf, size, offset, false) != 0)
 			return -EIO;
 		return size;
 	}

@@ -398,15 +398,19 @@ u8 *put_resource_entry(u8 *p, const struct resource_entry *entry)
 }
 
 /*
- * Reads some data from a WIM resource.
+ * Reads some data from the resource corresponding to a WIM lookup table entry.
  *
- * If %raw is true, compressed data is read literally rather than being
- * decompressed first.
+ * @lte:	The WIM lookup table entry for the resource.
+ * @buf:	Buffer into which to write the data.
+ * @size:	Number of bytes to read.
+ * @offset:	Offset at which to start reading the resource.
+ * @raw:	If %true, compressed data is read literally rather than being
+ * 			decompressed first.
  *
  * Returns zero on success, nonzero on failure.
  */
-static int __read_wim_resource(const struct lookup_table_entry *lte,
-		      	       u8 buf[], size_t size, u64 offset, bool raw)
+int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
+		      size_t size, u64 offset, bool raw)
 {
 	/* We shouldn't be allowing read over-runs in any part of the library.
 	 * */
@@ -491,22 +495,6 @@ static int __read_wim_resource(const struct lookup_table_entry *lte,
 }
 
 /* 
- * Reads some data from the resource corresponding to a WIM lookup table entry.
- *
- * @lte:	The WIM lookup table entry for the resource.
- * @buf:	Buffer into which to write the data.
- * @size:	Number of bytes to read.
- * @offset:	Offset at which to start reading the resource.
- *
- * Returns 0 on success; nonzero on failure.
- */
-int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
-		      size_t size, u64 offset)
-{
-	return __read_wim_resource(lte, buf, size, offset, false);
-}
-
-/* 
  * Reads all the data from the resource corresponding to a WIM lookup table
  * entry.
  *
@@ -518,9 +506,12 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
  */
 int read_full_wim_resource(const struct lookup_table_entry *lte, u8 buf[])
 {
-	return __read_wim_resource(lte, buf, wim_resource_size(lte), 0, false);
+	return read_wim_resource(lte, buf, wim_resource_size(lte), 0, false);
 }
 
+/* Chunk table that's located at the beginning of each compressed resource in
+ * the WIM.  (This is not the on-disk format; the on-disk format just has an
+ * array of offsets.) */
 struct chunk_table {
 	off_t file_offset;
 	u64 num_chunks;
@@ -532,6 +523,10 @@ struct chunk_table {
 	u64 offsets[0];
 };
 
+/* 
+ * Allocates and initializes a chunk table, and reserves space for it in the
+ * output file.
+ */
 static int
 begin_wim_resource_chunk_tab(const struct lookup_table_entry *lte,
 			     FILE *out_fp,
@@ -574,6 +569,23 @@ out:
 	return ret;
 }
 
+/* 
+ * Compresses a chunk of a WIM resource.
+ *
+ * @chunk:		Uncompressed data of the chunk.
+ * @chunk_size:		Size of the uncompressed chunk in bytes.
+ * @compressed_chunk:	Pointer to output buffer of size at least
+ * 				(@chunk_size - 1) bytes.
+ * @compressed_chunk_len_ret:	Pointer to an unsigned int into which the size
+ * 					of the compressed chunk will be
+ * 					returned.
+ * @ctype:	Type of compression to use.  Must be WIM_COMPRESSION_TYPE_LZX
+ * 		or WIM_COMPRESSION_TYPE_XPRESS.
+ *
+ * Returns zero if compressed succeeded, and nonzero if the chunk could not be
+ * compressed to any smaller than @chunk_size.  This function cannot fail for
+ * any other reasons.
+ */
 static int compress_chunk(const u8 chunk[], unsigned chunk_size,
 			  u8 compressed_chunk[],
 			  unsigned *compressed_chunk_len_ret,
@@ -596,12 +608,27 @@ static int compress_chunk(const u8 chunk[], unsigned chunk_size,
 			   compressed_chunk_len_ret);
 }
 
+/*
+ * Writes a chunk of a WIM resource to an output file.
+ *
+ * @chunk:	  Uncompressed data of the chunk.
+ * @chunk_size:	  Size of the chunk (<= WIM_CHUNK_SIZE)
+ * @out_fp:	  FILE * to write tho chunk to.
+ * @out_ctype:	  Compression type to use when writing the chunk (ignored if no 
+ * 			chunk table provided)
+ * @chunk_tab:	  Pointer to chunk table being created.  It is updated with the
+ * 			offset of the chunk we write.
+ *
+ * Returns 0 on success; nonzero on failure.
+ */
 static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 				    FILE *out_fp, int out_ctype,
 				    struct chunk_table *chunk_tab)
 {
 	const u8 *out_chunk;
 	unsigned out_chunk_size;
+
+	wimlib_assert(chunk_size <= WIM_CHUNK_SIZE);
 
 	if (!chunk_tab) {
 		out_chunk = chunk;
@@ -630,6 +657,13 @@ static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 	return 0;
 }
 
+/* 
+ * Finishes a WIM chunk tale and writes it to the output file at the correct
+ * offset.
+ *
+ * The final size of the full compressed resource is returned in the
+ * @compressed_size_p.
+ */
 static int
 finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 			      FILE *out_fp, u64 *compressed_size_p)
@@ -722,9 +756,12 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		if (ret != 0)
 			goto out;
 	}
+
 	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
 	     && !lte->file_on_disk_fp)
 	{
+		/* The WIM resource is in an external file; open a FILE * to it
+		 * so we don't have to open a temporary one on every read. */
 		wimlib_assert(lte->file_on_disk);
 		lte->file_on_disk_fp = fopen(lte->file_on_disk, "rb");
 		if (!lte->file_on_disk_fp) {
@@ -740,7 +777,7 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 
 	do {
 		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
-		ret = __read_wim_resource(lte, buf, to_read, offset, raw);
+		ret = read_wim_resource(lte, buf, to_read, offset, raw);
 		if (ret != 0)
 			goto out_fclose;
 		if (!raw)
@@ -762,6 +799,9 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 	}
 
 	if (!raw) {
+		/* Verify SHA1 message digest of the resource, unless we are
+		 * doing a raw write (in which case we may have never even seen
+		 * the uncompressed data)  */
 		u8 md[SHA1_HASH_SIZE];
 		sha1_final(md, &ctx);
 		if (!hashes_equal(md, lte->hash)) {
@@ -771,7 +811,7 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 				      "while we were reading it.",
 				      lte->file_on_disk);
 			}
-			ret = WIMLIB_ERR_INTEGRITY;
+			ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
 			goto out_fclose;
 		}
 	}
@@ -804,13 +844,11 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 	if (out_res_entry) {
 		out_res_entry->size          = new_compressed_size;
 		out_res_entry->original_size = original_size;
-		out_res_entry->offset	     = file_offset;
-		if (out_ctype == WIM_COMPRESSION_TYPE_NONE)
-			out_res_entry->flags = 0;
-		else
-			out_res_entry->flags = WIM_RESHDR_FLAG_COMPRESSED;
-		if (lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
-			out_res_entry->flags |= WIM_RESHDR_FLAG_METADATA;
+		out_res_entry->offset        = file_offset;
+		out_res_entry->flags         = lte->resource_entry.flags
+						& ~WIM_RESHDR_FLAG_COMPRESSED;
+		if (out_ctype != WIM_COMPRESSION_TYPE_NONE)
+			out_res_entry->flags |= WIM_RESHDR_FLAG_COMPRESSED;
 	}
 out_fclose:
 	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
@@ -840,8 +878,10 @@ static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 }
 
 /* 
- * Extracts the first @size bytes of the resource specified by @lte to the open
- * file @fd.  Returns nonzero on error.
+ * Extracts the first @size bytes of the WIM resource specified by @lte to the
+ * open file descriptor @fd.
+ * 
+ * Returns 0 on success; nonzero on failure.
  */
 int extract_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd,
 			       u64 size)
@@ -850,12 +890,17 @@ int extract_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd,
 	char buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
 	u64 offset = 0;
 	int ret = 0;
+	u8 hash[SHA1_HASH_SIZE];
+
+	SHA_CTX ctx;
+	sha1_init(&ctx);
 
 	while (bytes_remaining) {
 		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
-		ret = read_wim_resource(lte, buf, to_read, offset);
+		ret = read_wim_resource(lte, buf, to_read, offset, false);
 		if (ret != 0)
 			break;
+		sha1_update(&ctx, buf, to_read);
 		if (full_write(fd, buf, to_read) < 0) {
 			ERROR_WITH_ERRNO("Error extracting WIM resource");
 			return WIMLIB_ERR_WRITE;
@@ -863,9 +908,22 @@ int extract_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd,
 		bytes_remaining -= to_read;
 		offset += to_read;
 	}
+	sha1_final(hash, &ctx);
+	if (!hashes_equal(hash, lte->hash)) {
+		ERROR("Invalid checksum on a WIM resource "
+		      "(detected when extracting to external file)");
+		ERROR("The following WIM resource is invalid:");
+		print_lookup_table_entry(lte);
+		return WIMLIB_ERR_INVALID_RESOURCE_HASH;
+	}
 	return 0;
 }
 
+/* 
+ * Extracts the WIM resource specified by @lte to the open file descriptor @fd.
+ * 
+ * Returns 0 on success; nonzero on failure.
+ */
 int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd)
 {
 	return extract_wim_resource_to_fd(lte, fd, wim_resource_size(lte));
@@ -873,8 +931,7 @@ int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd
 
 /* 
  * Copies the file resource specified by the lookup table entry @lte from the
- * input WIM, pointed to by the fp field of the WIMStruct, to the output WIM,
- * pointed to by the out_fp field of the WIMStruct.
+ * input WIM the output WIM.
  *
  * The output_resource_entry, out_refcnt, and part_number fields of @lte are
  * updated.
@@ -906,9 +963,7 @@ int copy_resource(struct lookup_table_entry *lte, void *wim)
  * alternate data streams, to the output file. 
  *
  * @dentry:  The dentry for the file.
- * @wim_p:   A pointer to the WIMStruct.  The fields of interest to this
- * 	     function are the input and output file streams and the lookup
- * 	     table.
+ * @wim_p:   A pointer to the WIMStruct containing @dentry.
  *
  * @return zero on success, nonzero on failure. 
  */
@@ -947,10 +1002,10 @@ int write_dentry_resources(struct dentry *dentry, void *wim_p)
  *
  * @fp:		The FILE* for the input WIM file.
  * @wim_ctype:	The compression type of the WIM file.
- * @imd:	Pointer to the image metadata structure.  Its
- *		`lookup_table_entry' member specifies the lookup table entry for
- *		the metadata resource.  The rest of the image metadata entry
- *		will be filled in by this function.
+ * @imd:	Pointer to the image metadata structure.  Its `metadata_lte'
+ * 		member specifies the lookup table entry for the metadata
+ * 		resource.  The rest of the image metadata entry will be filled
+ * 		in by this function.
  *
  * @return:	Zero on success, nonzero on failure.
  */
