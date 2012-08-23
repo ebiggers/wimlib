@@ -123,6 +123,12 @@ static inline u64 wim_resource_size(const struct lookup_table_entry *lte)
 	return lte->resource_entry.original_size;
 }
 
+static inline u64
+wim_resource_compressed_size(const struct lookup_table_entry *lte)
+{
+	return lte->resource_entry.size;
+}
+
 /*
  * XXX Probably should store the compression type directly in the lookup table
  * entry

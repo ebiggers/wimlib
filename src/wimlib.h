@@ -264,6 +264,9 @@ enum wim_compression_type {
 /** Print progress information when writing the integrity table. */
 #define WIMLIB_WRITE_FLAG_SHOW_PROGRESS		0x00000002
 
+/** Print file paths as we write then */
+#define WIMLIB_WRITE_FLAG_VERBOSE		0x00000004
+
 /** Mark the image being added as the bootable image of the WIM. */
 #define WIMLIB_ADD_IMAGE_FLAG_BOOT		0x00000001
 

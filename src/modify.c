@@ -86,6 +86,9 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 	else
 		stat_fn = lstat;
 
+	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+		printf("Scanning `%s'\n", root_disk_path);
+
 
 	ret = (*stat_fn)(root_disk_path, &root_stbuf);
 	if (ret != 0) {

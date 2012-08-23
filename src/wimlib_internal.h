@@ -233,19 +233,19 @@ struct image_metadata {
 typedef struct WIMStruct {
 
 	/* A pointer to the file indicated by @filename, opened for reading. */
-	FILE                *fp;
+	FILE  *fp;
 
 	/* FILE pointer for the WIM file that is being written. */
 	FILE  *out_fp;
 
 	/* The name of the WIM file that has been opened. */
-	char                *filename;
+	char  *filename;
 
 	/* The lookup table for the WIM file. */ 
 	struct lookup_table *lookup_table;
 
 	/* Pointer to the XML data read from the WIM file. */
-	u8                  *xml_data;
+	u8    *xml_data;
 
 	/* Information retrieved from the XML data, arranged
 	 * in an orderly manner. */
@@ -263,6 +263,7 @@ typedef struct WIMStruct {
 	union {
 		int extract_flags;
 		int add_flags;
+		int write_flags;
 	};
 
 	/* The currently selected image, indexed starting at 1.  If not 0,

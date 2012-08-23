@@ -416,6 +416,8 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
 
 	for_lookup_table_entry(w->lookup_table, zero_out_refcnts, NULL);
 
+	w->write_flags = flags;
+
 	ret = for_image(w, image, write_file_resources);
 	if (ret != 0) {
 		ERROR("Failed to write WIM file resources to `%s'", path);

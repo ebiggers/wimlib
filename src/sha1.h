@@ -9,13 +9,6 @@
 
 #define SHA1_HASH_SIZE 20
 
-extern const u8 empty_file_sha1sum[SHA1_HASH_SIZE];
-
-static inline bool is_empty_file_hash(const u8 hash[SHA1_HASH_SIZE])
-{
-	return memcmp(hash, empty_file_sha1sum, SHA1_HASH_SIZE) == 0;
-}
-
 static inline void copy_hash(u8 dest[SHA1_HASH_SIZE],
 			     const u8 src[SHA1_HASH_SIZE])
 {

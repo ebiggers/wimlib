@@ -346,8 +346,6 @@ err:
 int read_uncompressed_resource(FILE *fp, u64 offset, u64 len,
 			       u8 contents_ret[])
 {
-	DEBUG("fp = %p, offset = %lu, len = %lu, contents_ret = %p",
-			fp, offset, len, contents_ret);
 	if (fseeko(fp, offset, SEEK_SET) != 0) {
 		ERROR("Failed to seek to byte %"PRIu64" of input file "
 		      "to read uncompressed resource (len = %"PRIu64")",
@@ -412,11 +410,10 @@ static int __read_wim_resource(const struct lookup_table_entry *lte,
 {
 	/* We shouldn't be allowing read over-runs in any part of the library.
 	 * */
-	wimlib_assert(offset + size <= wim_resource_size(lte));
-
-	DEBUG("lte = %p, buf = %p, size = %zu, offset = %lu, raw = %d",
-			lte, buf, size, offset, raw);
-	print_lookup_table_entry(lte);
+	if (raw)
+		wimlib_assert(offset + size <= lte->resource_entry.size);
+	else
+		wimlib_assert(offset + size <= lte->resource_entry.original_size);
 
 	int ctype;
 	int ret;
@@ -445,7 +442,7 @@ static int __read_wim_resource(const struct lookup_table_entry *lte,
 
 		if (raw || ctype == WIM_COMPRESSION_TYPE_NONE)
 			return read_uncompressed_resource(lte->wim->fp,
-							  lte->resource_entry.offset,
+							  lte->resource_entry.offset + offset,
 							  size, buf);
 		else
 			return read_compressed_resource(lte->wim->fp,
@@ -521,8 +518,7 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
  */
 int read_full_wim_resource(const struct lookup_table_entry *lte, u8 buf[])
 {
-	return __read_wim_resource(lte, buf, lte->resource_entry.original_size,
-				   0, false);
+	return __read_wim_resource(lte, buf, wim_resource_size(lte), 0, false);
 }
 
 struct chunk_table {
@@ -548,6 +544,8 @@ begin_wim_resource_chunk_tab(const struct lookup_table_entry *lte,
 					       num_chunks * sizeof(u64));
 	int ret = 0;
 
+	wimlib_assert(size != 0);
+
 	if (!chunk_tab) {
 		ERROR("Failed to allocate chunk table for %"PRIu64" byte "
 		      "resource", size);
@@ -556,17 +554,15 @@ begin_wim_resource_chunk_tab(const struct lookup_table_entry *lte,
 	}
 	chunk_tab->file_offset = file_offset;
 	chunk_tab->num_chunks = num_chunks;
-	chunk_tab->cur_offset_p = chunk_tab->offsets;
-	chunk_tab->original_resource_size = lte->resource_entry.original_size;
-	chunk_tab->bytes_per_chunk_entry =
-			(lte->resource_entry.original_size >= (1ULL << 32))
-				 ? 8 : 4;
+	chunk_tab->original_resource_size = size;
+	chunk_tab->bytes_per_chunk_entry = (size >= (1ULL << 32)) ? 8 : 4;
 	chunk_tab->table_disk_size = chunk_tab->bytes_per_chunk_entry *
 				     (num_chunks - 1);
+	chunk_tab->cur_offset = 0;
+	chunk_tab->cur_offset_p = chunk_tab->offsets;
 
 	if (fwrite(chunk_tab, 1, chunk_tab->table_disk_size, out_fp) !=
-		   chunk_tab->table_disk_size)
-	{
+		   chunk_tab->table_disk_size) {
 		ERROR_WITH_ERRNO("Failed to write chunk table in compressed "
 				 "file resource");
 		ret = WIMLIB_ERR_WRITE;
@@ -578,18 +574,25 @@ out:
 	return ret;
 }
 
-static int compress_chunk(const u8 chunk[], unsigned chunk_sz,
+static int compress_chunk(const u8 chunk[], unsigned chunk_size,
 			  u8 compressed_chunk[],
 			  unsigned *compressed_chunk_len_ret,
 			  int ctype)
 {
 	unsigned compressed_chunk_sz;
 	int (*compress)(const void *, unsigned, void *, unsigned *);
-	if (ctype == WIM_COMPRESSION_TYPE_LZX)
+	switch (ctype) {
+	case WIM_COMPRESSION_TYPE_LZX:
 		compress = lzx_compress;
-	else
+		break;
+	case WIM_COMPRESSION_TYPE_XPRESS:
 		compress = xpress_compress;
-	return (*compress)(chunk, chunk_sz, compressed_chunk,
+		break;
+	default:
+		wimlib_assert(0);
+		break;
+	}
+	return (*compress)(chunk, chunk_size, compressed_chunk,
 			   compressed_chunk_len_ret);
 }
 
@@ -601,6 +604,7 @@ static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 	unsigned out_chunk_size;
 
 	if (out_ctype == WIM_COMPRESSION_TYPE_NONE) {
+		wimlib_assert(chunk_tab == NULL);
 		out_chunk = chunk;
 		out_chunk_size = chunk_size;
 	} else {
@@ -612,13 +616,11 @@ static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 
 		ret = compress_chunk(chunk, chunk_size, compressed_chunk,
 				     &out_chunk_size, out_ctype);
-		if (ret > 0)
-			return ret;
-		else if (ret < 0) {
+		if (ret == 0) {
+			out_chunk = compressed_chunk;
+		} else {
 			out_chunk = chunk;
 			out_chunk_size = chunk_size;
-		} else {
-			out_chunk = compressed_chunk;
 		}
 		*chunk_tab->cur_offset_p++ = chunk_tab->cur_offset;
 		chunk_tab->cur_offset += out_chunk_size;
@@ -635,32 +637,33 @@ static int
 finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 			      FILE *out_fp, u64 *compressed_size_p)
 {
+	size_t bytes_written;
 	if (fseeko(out_fp, chunk_tab->file_offset, SEEK_SET) != 0) {
-		ERROR_WITH_ERRNO("Failed to seet to byte "PRIu64" of output "
+		ERROR_WITH_ERRNO("Failed to seek to byte "PRIu64" of output "
 				 "WIM file", chunk_tab->file_offset);
 		return WIMLIB_ERR_WRITE;
 	}
 
 	if (chunk_tab->bytes_per_chunk_entry == 8) {
-		array_to_le64(chunk_tab->offsets, chunk_tab->num_chunks - 1);
+		array_to_le64(chunk_tab->offsets, chunk_tab->num_chunks);
 	} else {
-		for (u64 i = 0; i < chunk_tab->num_chunks - 1; i++)
+		for (u64 i = 0; i < chunk_tab->num_chunks; i++)
 			((u32*)chunk_tab->offsets)[i] =
 				to_le32(chunk_tab->offsets[i]);
 	}
-	if (fwrite(chunk_tab->offsets, 1, chunk_tab->table_disk_size, out_fp) !=
-		   chunk_tab->table_disk_size)
-	{
+	bytes_written = fwrite((u8*)chunk_tab->offsets +
+					chunk_tab->bytes_per_chunk_entry,
+			       1, chunk_tab->table_disk_size, out_fp);
+	if (bytes_written != chunk_tab->table_disk_size) {
 		ERROR_WITH_ERRNO("Failed to write chunk table in compressed "
 				 "file resource");
 		return WIMLIB_ERR_WRITE;
 	}
-	if (fseeko(out_fp, chunk_tab->file_offset, SEEK_SET) != 0) {
-		ERROR_WITH_ERRNO("Failed to seet to byte "PRIu64" of output "
-				 "WIM file", chunk_tab->file_offset);
+	if (fseeko(out_fp, 0, SEEK_END) != 0) {
+		ERROR_WITH_ERRNO("Failed to seek to end of output WIM file");
 		return WIMLIB_ERR_WRITE;
 	}
-	*compressed_size_p = chunk_tab->cur_offset;
+	*compressed_size_p = chunk_tab->cur_offset + chunk_tab->table_disk_size;
 	return 0;
 }
 
@@ -680,77 +683,124 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
  *
  * Returns 0 on success; nonzero on failure.
  */
-static int __write_wim_resource(const struct lookup_table_entry *lte,
-			        FILE *out_fp, int out_ctype,
-			        struct resource_entry *out_res_entry)
+static int write_wim_resource(struct lookup_table_entry *lte,
+			      FILE *out_fp, int out_ctype,
+			      struct resource_entry *out_res_entry)
 {
-	u64 size = wim_resource_size(lte);
-	u64 bytes_remaining = size;
-	char buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
+	u64 bytes_remaining;
+	u64 original_size;
+	u64 old_compressed_size;
+	u64 new_compressed_size;
 	u64 offset = 0;
-	u64 compressed_size = bytes_remaining;
 	int ret = 0;
 	struct chunk_table *chunk_tab = NULL;
 	bool raw;
 	off_t file_offset;
 
-	if (out_res_entry) {
-		file_offset = ftello(out_fp);
-		if (file_offset == -1) {
-			ERROR_WITH_ERRNO("Failed to get offset in output "
-					 "stream");
-			return WIMLIB_ERR_WRITE;
-		}
+ 	original_size = wim_resource_size(lte);
+	old_compressed_size = wim_resource_compressed_size(lte);
+
+	file_offset = ftello(out_fp);
+	if (file_offset == -1) {
+		ERROR_WITH_ERRNO("Failed to get offset in output "
+				 "stream");
+		return WIMLIB_ERR_WRITE;
 	}
 	
 	raw = (wim_resource_compression_type(lte) == out_ctype);
 	if (raw)
-		out_ctype = WIM_COMPRESSION_TYPE_NONE;
+		bytes_remaining = old_compressed_size;
+	else
+		bytes_remaining = original_size;
 
-	if (out_ctype != WIM_COMPRESSION_TYPE_NONE) {
+	if (bytes_remaining == 0)
+		return 0;
+
+	char buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
+
+	if (out_ctype != WIM_COMPRESSION_TYPE_NONE && !raw) {
 		ret = begin_wim_resource_chunk_tab(lte, out_fp, file_offset,
 						   &chunk_tab);
 		if (ret != 0)
 			goto out;
 	}
+	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
+	     && !lte->file_on_disk_fp)
+	{
+		wimlib_assert(lte->file_on_disk);
+		lte->file_on_disk_fp = fopen(lte->file_on_disk, "rb");
+		if (!lte->file_on_disk_fp) {
+			ERROR_WITH_ERRNO("Failed to open the file `%s' for "
+					 "reading", lte->file_on_disk);
+			ret = WIMLIB_ERR_OPEN;
+			goto out;
+		}
+	}
 
-	while (bytes_remaining) {
+	do {
 		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
 		ret = __read_wim_resource(lte, buf, to_read, offset, raw);
 		if (ret != 0)
-			goto out;
+			goto out_fclose;
 		ret = write_wim_resource_chunk(buf, to_read, out_fp,
 					       out_ctype, chunk_tab);
 		if (ret != 0)
-			goto out;
+			goto out_fclose;
 		bytes_remaining -= to_read;
 		offset += to_read;
-	}
-	if (out_ctype != WIM_COMPRESSION_TYPE_NONE) {
+	} while (bytes_remaining);
+	if (out_ctype != WIM_COMPRESSION_TYPE_NONE && !raw) {
 		ret = finish_wim_resource_chunk_tab(chunk_tab, out_fp,
-						    &compressed_size);
+						    &new_compressed_size);
 		if (ret != 0)
-			goto out;
+			goto out_fclose;
+	} else {
+		new_compressed_size = old_compressed_size;
 	}
+
+	if (new_compressed_size > original_size) {
+		/* Oops!  We compressed the resource to larger than the original
+		 * size.  Write the resource uncompressed instead. */
+		if (fseeko(out_fp, file_offset, SEEK_SET) != 0) {
+			ERROR_WITH_ERRNO("Failed to seek to byte "PRIu64" "
+					 "of output WIM file", file_offset);
+			ret = WIMLIB_ERR_WRITE;
+			goto out_fclose;
+		}
+		ret = write_wim_resource(lte, out_fp, WIM_COMPRESSION_TYPE_NONE,
+					 out_res_entry);
+		if (ret != 0)
+			goto out_fclose;
+		if (fflush(out_fp) != 0) {
+			ERROR_WITH_ERRNO("Failed to flush output WIM file");
+			ret = WIMLIB_ERR_WRITE;
+			goto out_fclose;
+		}
+		if (ftruncate(fileno(out_fp), file_offset + out_res_entry->size) != 0) {
+			ERROR_WITH_ERRNO("Failed to truncate output WIM file");
+			ret = WIMLIB_ERR_WRITE;
+		}
+		goto out_fclose;
+	}
+	wimlib_assert(new_compressed_size <= original_size);
 	if (out_res_entry) {
-		out_res_entry->size          = compressed_size;
-		out_res_entry->original_size = size;
-		out_res_entry->offset	    = file_offset;
+		out_res_entry->size          = new_compressed_size;
+		out_res_entry->original_size = original_size;
+		out_res_entry->offset	     = file_offset;
 		if (out_ctype == WIM_COMPRESSION_TYPE_NONE)
 			out_res_entry->flags = 0;
 		else
 			out_res_entry->flags = WIM_RESHDR_FLAG_COMPRESSED;
 	}
+out_fclose:
+	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
+	     && lte->file_on_disk_fp) {
+		fclose(lte->file_on_disk_fp);
+		lte->file_on_disk_fp = NULL;
+	}
 out:
 	FREE(chunk_tab);
 	return ret;
-}
-
-static int write_wim_resource(struct lookup_table_entry *lte,
-			      FILE *out_fp, int out_ctype)
-{
-	return __write_wim_resource(lte, out_fp, out_ctype,
-				    &lte->output_resource_entry);
 }
 
 static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
@@ -764,7 +814,7 @@ static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 	lte.resource_entry.offset = 0;
 	lte.resource_location = RESOURCE_IN_ATTACHED_BUFFER;
 	lte.attached_buffer = (u8*)buf;
-	return __write_wim_resource(&lte, out_fp, out_ctype, out_res_entry);
+	return write_wim_resource(&lte, out_fp, out_ctype, out_res_entry);
 }
 
 /* 
@@ -796,8 +846,7 @@ int extract_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd,
 
 int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd)
 {
-	return extract_wim_resource_to_fd(lte, fd,
-					  lte->resource_entry.original_size);
+	return extract_wim_resource_to_fd(lte, fd, wim_resource_size(lte));
 }
 
 /* 
@@ -820,7 +869,8 @@ int copy_resource(struct lookup_table_entry *lte, void *wim)
 	    !w->write_metadata)
 		return 0;
 
-	ret = write_wim_resource(lte, w->out_fp, wimlib_get_compression_type(w));
+	ret = write_wim_resource(lte, w->out_fp, wimlib_get_compression_type(w), 
+				 &lte->output_resource_entry);
 	if (ret != 0)
 		return ret;
 	lte->out_refcnt = lte->refcnt;
@@ -846,10 +896,16 @@ int write_dentry_resources(struct dentry *dentry, void *wim_p)
 	struct lookup_table_entry *lte;
 	int ctype = wimlib_get_compression_type(w);
 
+	if (w->write_flags & WIMLIB_WRITE_FLAG_VERBOSE) {
+		wimlib_assert(dentry->full_path_utf8);
+		printf("Writing streams for `%s'\n", dentry->full_path_utf8);
+	}
+
 	for (unsigned i = 0; i <= dentry->num_ads; i++) {
 		lte = dentry_stream_lte(dentry, i, w->lookup_table);
 		if (lte && ++lte->out_refcnt == 1) {
-			ret = write_wim_resource(lte, w->out_fp, ctype);
+			ret = write_wim_resource(lte, w->out_fp, ctype,
+						 &lte->output_resource_entry);
 			if (ret != 0)
 				break;
 		}

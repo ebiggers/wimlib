@@ -478,6 +478,7 @@ static int imagex_capture(int argc, const char **argv)
 			break;
 		case 'v':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
+			write_flags |= WIMLIB_WRITE_FLAG_VERBOSE;
 			break;
 		case 'N':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NTFS;
