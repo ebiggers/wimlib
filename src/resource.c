@@ -702,6 +702,11 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
  * Writes a WIM resource to a FILE * opened for writing.  The resource may be
  * written uncompressed or compressed depending on the @out_ctype parameter.
  *
+ * If by chance the resource compresses to more than the original size (this may
+ * happen with random data or files than are pre-compressed), the resource is
+ * instead written uncompressed (and this is reflected in the @out_res_entry by
+ * removing the WIM_RESHDR_FLAG_COMPRESSED flag).
+ *
  * @lte:	The lookup table entry for the WIM resource.
  * @out_fp:	The FILE * to write the resource to.
  * @out_ctype:  The compression type of the resource to write.  Note: if this is
@@ -728,9 +733,13 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 	bool raw;
 	off_t file_offset;
 
+	/* Original size of the resource */
  	original_size = wim_resource_size(lte);
+
+	/* Compressed size of the resource (as it exists now) */
 	old_compressed_size = wim_resource_compressed_size(lte);
 
+	/* Current offset in output file */
 	file_offset = ftello(out_fp);
 	if (file_offset == -1) {
 		ERROR_WITH_ERRNO("Failed to get offset in output "
@@ -738,6 +747,8 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		return WIMLIB_ERR_WRITE;
 	}
 	
+	/* Are the compression types the same?  If so, do a raw copy (copy
+	 * without decompressing and recompressing the data). */
 	raw = (wim_resource_compression_type(lte) == out_ctype
 	       && out_ctype != WIM_COMPRESSION_TYPE_NONE);
 	if (raw)
@@ -745,11 +756,15 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 	else
 		bytes_remaining = original_size;
 
+	/* Empty resource; nothing needs to be done, so just return success. */
 	if (bytes_remaining == 0)
 		return 0;
 
+	/* Buffer for reading chunks for the resource */
 	char buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
 
+	/* If we are writing a compressed resource and not doing a raw copy, we
+	 * need to initialize the chunk table */
 	if (out_ctype != WIM_COMPRESSION_TYPE_NONE && !raw) {
 		ret = begin_wim_resource_chunk_tab(lte, out_fp, file_offset,
 						   &chunk_tab);
@@ -757,11 +772,12 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 			goto out;
 	}
 
+	/* If the WIM resource is in an external file, open a FILE * to it so we
+	 * don't have to open a temporary one in read_wim_resource() for each
+	 * chunk. */
 	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
 	     && !lte->file_on_disk_fp)
 	{
-		/* The WIM resource is in an external file; open a FILE * to it
-		 * so we don't have to open a temporary one on every read. */
 		wimlib_assert(lte->file_on_disk);
 		lte->file_on_disk_fp = fopen(lte->file_on_disk, "rb");
 		if (!lte->file_on_disk_fp) {
@@ -771,10 +787,18 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 			goto out;
 		}
 	}
+
+	/* If we aren't doing a raw copy, we will compute the SHA1 message
+	 * digest of the resource as we read it, and verify it's the same as the
+	 * hash given in the lookup table entry once we've finished reading the
+	 * resource. */
 	SHA_CTX ctx;
 	if (!raw)
 		sha1_init(&ctx);
 
+	/* While there are still bytes remaining in the WIM resource, read a
+	 * chunk of the resource, update SHA1, then write that chunk using the
+	 * desired compression type. */
 	do {
 		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
 		ret = read_wim_resource(lte, buf, to_read, offset, raw);
@@ -789,6 +813,12 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		bytes_remaining -= to_read;
 		offset += to_read;
 	} while (bytes_remaining);
+
+	/* If writing a compressed resource and not doing a raw copy, write the
+	 * chunk table, and finish_wim_resource_chunk_tab() will provide the
+	 * compressed size of the resource we wrote.  Otherwise, the compressed
+	 * size of the written resource is the same as the compressed size of
+	 * the existing resource. */
 	if (out_ctype != WIM_COMPRESSION_TYPE_NONE && !raw) {
 		ret = finish_wim_resource_chunk_tab(chunk_tab, out_fp,
 						    &new_compressed_size);
@@ -798,13 +828,16 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		new_compressed_size = old_compressed_size;
 	}
 
+	/* Verify SHA1 message digest of the resource, unless we are doing a raw
+	 * write (in which case we never even saw the uncompressed data).  Or,
+	 * if the hash we had before is all 0's, just re-set it to be the new
+	 * hash. */
 	if (!raw) {
-		/* Verify SHA1 message digest of the resource, unless we are
-		 * doing a raw write (in which case we may have never even seen
-		 * the uncompressed data)  */
 		u8 md[SHA1_HASH_SIZE];
 		sha1_final(md, &ctx);
-		if (!hashes_equal(md, lte->hash)) {
+		if (is_zero_hash(lte->hash)) {
+			copy_hash(lte->hash, md);
+		} else if (!hashes_equal(md, lte->hash)) {
 			ERROR("WIM resource has incorrect hash!");
 			if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK) {
 				ERROR("We were reading it from `%s'; maybe it changed "
@@ -861,20 +894,31 @@ out:
 	return ret;
 }
 
+/* Like write_wim_resource(), but the resource is specified by a buffer of
+ * uncompressed data rather a lookup table entry; also writes the SHA1 hash of
+ * the buffer to @hash.  */
 static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
-					  u8 buf_hash[SHA1_HASH_SIZE],
 					  FILE *out_fp, int out_ctype,
-					  struct resource_entry *out_res_entry)
+					  struct resource_entry *out_res_entry,
+					  u8 hash[SHA1_HASH_SIZE])
 {
+	/* Set up a temporary lookup table entry that we provide to
+	 * write_wim_resource(). */
 	struct lookup_table_entry lte;
+	int ret;
 	lte.resource_entry.flags         = 0;
 	lte.resource_entry.original_size = buf_size;
 	lte.resource_entry.size          = buf_size;
 	lte.resource_entry.offset        = 0;
 	lte.resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
 	lte.attached_buffer              = (u8*)buf;
-	copy_hash(lte.hash, buf_hash);
-	return write_wim_resource(&lte, out_fp, out_ctype, out_res_entry);
+
+	zero_hash(lte.hash);
+	ret = write_wim_resource(&lte, out_fp, out_ctype, out_res_entry);
+	if (ret != 0)
+		return ret;
+	copy_hash(hash, lte.hash);
+	return 0;
 }
 
 /* 
@@ -931,7 +975,8 @@ int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd
 
 /* 
  * Copies the file resource specified by the lookup table entry @lte from the
- * input WIM the output WIM.
+ * input WIM to the output WIM that has its FILE * given by
+ * ((WIMStruct*)wim)->out_fp.
  *
  * The output_resource_entry, out_refcnt, and part_number fields of @lte are
  * updated.
@@ -1125,30 +1170,20 @@ out_free_buf:
 	return ret;
 }
 
-/* Write the metadata resource for the current image. */
+/* Write the metadata resource for the current WIM image. */
 int write_metadata_resource(WIMStruct *w)
 {
-	FILE *out;
 	u8 *buf;
 	u8 *p;
 	int ret;
 	u64 subdir_offset;
 	struct dentry *root;
 	struct lookup_table_entry *lte;
-	off_t metadata_offset;
 	u64 metadata_original_size;
-	u64 metadata_compressed_size;
-	int metadata_ctype;
-	u8  hash[SHA1_HASH_SIZE];
 
 	DEBUG("Writing metadata resource for image %d", w->current_image);
 
-	out = w->out_fp;
 	root = wim_root_dentry(w);
-	metadata_ctype = wimlib_get_compression_type(w);
-	metadata_offset = ftello(out);
-	if (metadata_offset == -1)
-		return WIMLIB_ERR_WRITE;
 
 	struct wim_security_data *sd = wim_security_data(w);
 	if (sd)
@@ -1168,27 +1203,20 @@ int write_metadata_resource(WIMStruct *w)
 
 	DEBUG("Writing dentry tree.");
 	p = write_dentry_tree(root, p);
-
-	/* Like file resources, the lookup table entry for a metadata resource
-	 * uses for the hash code a SHA1 message digest of its uncompressed
-	 * contents. */
-	sha1_buffer(buf, metadata_original_size, hash);
-
+	wimlib_assert(p - buf == metadata_original_size);
 
 	lte = wim_metadata_lookup_table_entry(w);
 
 	ret = write_wim_resource_from_buffer(buf, metadata_original_size,
-					     hash, out, metadata_ctype,
-					     &lte->output_resource_entry);
+					     w->out_fp,
+					     wimlib_get_compression_type(w),
+					     &lte->output_resource_entry,
+					     lte->hash);
 
 	lookup_table_unlink(w->lookup_table, lte);
-	copy_hash(lte->hash, hash);
 	lookup_table_insert(w->lookup_table, lte);
 	lte->out_refcnt++;
 	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
 	FREE(buf);
-	if (ret != 0)
-		return ret;
-
-	return 0;
+	return ret;
 }

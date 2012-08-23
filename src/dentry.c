@@ -59,7 +59,7 @@ static bool dentry_has_name(const struct dentry *dentry, const char *name,
 u64 dentry_total_length(const struct dentry *dentry)
 {
 	u64 length = (dentry->length + 7) & ~7;
-	for (u16 i = 0 ; i < dentry->num_ads; i++)
+	for (u16 i = 0; i < dentry->num_ads; i++)
 		length += ads_entry_length(&dentry->ads_entries[i]);
 	return length;
 }

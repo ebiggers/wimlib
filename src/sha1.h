@@ -27,9 +27,22 @@ static inline bool hashes_equal(const u8 h1[SHA1_HASH_SIZE],
 }
 
 /* Prints a hash code field. */
-static inline void print_hash(const u8 hash[])
+static inline void print_hash(const u8 hash[SHA1_HASH_SIZE])
 {
 	print_byte_field(hash, SHA1_HASH_SIZE);
+}
+
+static inline bool is_zero_hash(const u8 hash[SHA1_HASH_SIZE])
+{
+	for (u8 i = 0; i < SHA1_HASH_SIZE / 4; i++)
+		if (((u32*)hash)[i])
+			return false;
+	return true;
+}
+
+static void zero_hash(u8 hash[SHA1_HASH_SIZE])
+{
+	memset(hash, 0, SHA1_HASH_SIZE);
 }
 
 

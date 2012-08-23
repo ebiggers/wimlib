@@ -179,7 +179,7 @@ void sha1_final(u8 md[SHA1_HASH_SIZE], SHA_CTX* context)
 	while ((context->count[0] & 504) != 448) {
 		sha1_update(context, (u8 *)"\0", 1);
 	}
-	sha1_update(context, finalcount, 8);  /* Should cause a SHA1_Transform() */
+	sha1_update(context, finalcount, 8);  /* Should cause a sha1_transform() */
 	for (i = 0; i < SHA1_HASH_SIZE; i++) {
 		md[i] = (u8)((context->state[i>>2] >> ((3-(i & 3)) * 8) ) & 255);
 	}
