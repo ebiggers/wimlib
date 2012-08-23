@@ -240,6 +240,7 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 			dest_lte = new_lookup_table_entry();
 			if (!dest_lte)
 				return WIMLIB_ERR_NOMEM;
+			dest_lte->resource_location = RESOURCE_IN_WIM;
 			dest_lte->wim = src_wim;
 			memcpy(&dest_lte->resource_entry, 
 			       &src_lte->resource_entry, 

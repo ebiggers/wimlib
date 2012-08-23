@@ -53,11 +53,13 @@ static int finish_swm(WIMStruct *w, struct lookup_table_entry *lte_chain_head,
 			lookup_table_offset);
 
 	while (lte_chain_head != NULL) {
+		print_lookup_table_entry(lte_chain_head);
+
 		ret = write_lookup_table_entry(lte_chain_head, w->out_fp);
 		if (ret != 0)
 			return ret;
 		struct lookup_table_entry *prev = lte_chain_head;
-		lte_chain_head = prev->next_lte_in_swm;
+		lte_chain_head = lte_chain_head->next_lte_in_swm;
 		prev->next_lte_in_swm = NULL;
 	}
 	off_t xml_data_offset = ftello(w->out_fp);
@@ -184,8 +186,9 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 
 	w->write_metadata = true;
 	for (int i = 0; i < w->hdr.image_count; i++) {
-
 		struct lookup_table_entry *metadata_lte;
+
+		DEBUG("Writing metadata resource %d", i);
 
 		metadata_lte = w->image_metadata[i].metadata_lte;
 		ret = copy_resource(metadata_lte, w);

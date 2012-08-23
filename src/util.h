@@ -128,8 +128,6 @@ extern void randomize_byte_array(u8 *p, size_t n);
 
 extern void randomize_char_array_with_alnum(char p[], size_t n);
 
-extern int sha1sum(const char *filename, void *buf);
-
 extern const char *path_next_part(const char *path, 
 				  size_t *first_part_len_ret);
 

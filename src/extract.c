@@ -53,21 +53,19 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 	 * instead either symlinks or hardlinks *all* identical files in
 	 * the WIM, even if they are in a different image (in the case
 	 * of a multi-image extraction) */
-
-	wimlib_assert(lte->file_on_disk);
-
+	wimlib_assert(lte->extracted_file);
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
-		if (link(lte->file_on_disk, output_path) != 0) {
+		if (link(lte->extracted_file, output_path) != 0) {
 			ERROR_WITH_ERRNO("Failed to hard link "
 					 "`%s' to `%s'",
-					 output_path, lte->file_on_disk);
+					 output_path, lte->extracted_file);
 			return WIMLIB_ERR_LINK;
 		}
 	} else {
 		int num_path_components;
 		int num_output_dir_path_components;
-		size_t file_on_disk_len;
+		size_t extracted_file_len;
 		char *p;
 		const char *p2;
 		size_t i;
@@ -83,9 +81,9 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 			num_path_components++;
 			num_output_dir_path_components--;
 		}
-		file_on_disk_len = strlen(lte->file_on_disk);
+		extracted_file_len = strlen(lte->extracted_file);
 
-		char buf[file_on_disk_len + 3 * num_path_components + 1];
+		char buf[extracted_file_len + 3 * num_path_components + 1];
 		p = &buf[0];
 
 		for (i = 0; i < num_path_components; i++) {
@@ -93,7 +91,7 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 			*p++ = '.';
 			*p++ = '/';
 		}
-		p2 = lte->file_on_disk;
+		p2 = lte->extracted_file;
 		while (*p2 == '/')
 			p2++;
 		while (num_output_dir_path_components--)
@@ -102,7 +100,7 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 		if (symlink(buf, output_path) != 0) {
 			ERROR_WITH_ERRNO("Failed to symlink `%s' to "
 					 "`%s'",
-					 buf, lte->file_on_disk);
+					 buf, lte->extracted_file);
 			return WIMLIB_ERR_LINK;
 		}
 
@@ -124,7 +122,9 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 	int ret;
 	const struct list_head *head = &dentry->link_group_list;
 
-	if (head->next != head) {
+	if (head->next != head &&
+	     !(extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE))
+	{
 		/* This dentry is one of a hard link set of at least 2 dentries.
 		 * If one of the other dentries has already been extracted, make
 		 * a hard link to the file corresponding to this
@@ -176,15 +176,6 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 		goto done;
 	}
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE) {
-		/* Mark the lookup table entry to indicate this file has been
-		 * extracted. */
-		lte->out_refcnt++;
-		FREE(lte->file_on_disk);
-		lte->file_on_disk = STRDUP(output_path);
-		if (!lte->file_on_disk)
-			ret = WIMLIB_ERR_NOMEM;
-	}
 done:
 	if (close(out_fd) != 0) {
 		ERROR_WITH_ERRNO("Failed to close file `%s'", output_path);
@@ -208,12 +199,12 @@ static int extract_regular_file(WIMStruct *w,
 
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
 			      WIMLIB_EXTRACT_FLAG_HARDLINK)) && lte) {
-		if (lte->out_refcnt++ != 0)
+		if (++lte->out_refcnt != 1)
 			return extract_regular_file_linked(dentry, output_dir,
 							   output_path,
 							   extract_flags, lte);
-		lte->file_on_disk = STRDUP(output_path);
-		if (!lte->file_on_disk)
+		lte->extracted_file = STRDUP(output_path);
+		if (!lte->extracted_file)
 			return WIMLIB_ERR_NOMEM;
 	}
 

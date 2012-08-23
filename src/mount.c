@@ -143,14 +143,17 @@ static int close_wimlib_fd(struct wimlib_fd *fd)
 	wimlib_assert(lte);
 	wimlib_assert(lte->num_opened_fds);
 
-	if (lte->staging_file_name) {
+	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
+		wimlib_assert(lte->staging_file_name);
 		wimlib_assert(fd->staging_fd != -1);
 		if (close(fd->staging_fd) != 0)
 			return -errno;
 	}
 	if (--lte->num_opened_fds == 0 && lte->refcnt == 0) {
-		if (lte->staging_file_name)
+		if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
+			wimlib_assert(lte->staging_file_name);
 			unlink(lte->staging_file_name);
+		}
 		free_lookup_table_entry(lte);
 	}
 	wimlib_assert(lte->fds[fd->idx] == fd);
@@ -205,7 +208,8 @@ int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf)
 	/* Use the size of the unnamed (default) file stream. */
 	lte = dentry_first_lte_resolved(dentry);
 	if (lte) {
-		if (lte->staging_file_name) {
+		if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
+			wimlib_assert(lte->staging_file_name);
 			struct stat native_stat;
 			if (stat(lte->staging_file_name, &native_stat) != 0) {
 				DEBUG("Failed to stat `%s': %m",
@@ -737,6 +741,8 @@ static int close_lte_fds(struct lookup_table_entry *lte)
 {
 	for (u16 i = 0, j = 0; j < lte->num_opened_fds; i++) {
 		if (lte->fds[i] && lte->fds[i]->staging_fd != -1) {
+			wimlib_assert(lte->resource_location == RESOURCE_IN_STAGING_FILE);
+			wimlib_assert(lte->staging_file_name);
 			if (close(lte->fds[i]->staging_fd) != 0) {
 				ERROR_WITH_ERRNO("Failed close file `%s'",
 						 lte->staging_file_name);
@@ -780,12 +786,12 @@ static int update_lte_of_staging_file(struct lookup_table_entry *lte,
 	u8 hash[SHA1_HASH_SIZE];
 	struct stat stbuf;
 
+	wimlib_assert(lte->resource_location == RESOURCE_IN_STAGING_FILE);
 	wimlib_assert(lte->staging_file_name);
 
 	ret = sha1sum(lte->staging_file_name, hash);
 	if (ret != 0)
 		return ret;
-
 
 	lookup_table_unlink(table, lte);
 
@@ -805,8 +811,11 @@ static int update_lte_of_staging_file(struct lookup_table_entry *lte,
 			ERROR_WITH_ERRNO("Failed to stat `%s'", lte->staging_file_name);
 			return WIMLIB_ERR_STAT;
 		}
+		wimlib_assert(&lte->file_on_disk == &lte->staging_file_name);
+		lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
 		copy_hash(lte->hash, hash);
 		lte->resource_entry.original_size = stbuf.st_size;
+		lte->resource_entry.size = stbuf.st_size;
 		lookup_table_insert(table, lte);
 	}
 
@@ -1158,7 +1167,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 		if (ret != 0)
 			return ret;
 	}
-	if (lte->staging_file_name) {
+	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		fd->staging_fd = open(lte->staging_file_name, fi->flags);
 		if (fd->staging_fd == -1) {
 			close_wimlib_fd(fd);
@@ -1202,9 +1211,10 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 
 	wimlib_assert(fd->lte);
 
-	if (fd->lte->staging_file_name) {
+	if (fd->lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		/* Read from staging file */
 
+		wimlib_assert(fd->lte->staging_file_name);
 		wimlib_assert(fd->staging_fd != -1);
 
 		ssize_t ret;

@@ -82,9 +82,11 @@ struct lookup_table_entry {
 		char *file_on_disk;
 		char *staging_file_name;
 		u8 *attached_buffer;
-		struct lookup_table_entry *next_lte_in_swm;
 	};
-	FILE *file_on_disk_fp;
+	union {
+		struct lookup_table_entry *next_lte_in_swm;
+		FILE *file_on_disk_fp;
+	};
 #ifdef WITH_FUSE
 	/* File descriptors table for this data stream */
 	u16 num_opened_fds;
@@ -103,7 +105,10 @@ struct lookup_table_entry {
 	 * output_resource_entry is the struct resource_entry for the position of the
 	 * file resource when written to the output file. */
 	u32 out_refcnt;
-	struct resource_entry output_resource_entry;
+	union {
+		struct resource_entry output_resource_entry;
+		char *extracted_file;
+	};
 
 	/* Circular linked list of streams that share the same lookup table
 	 * entry

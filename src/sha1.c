@@ -34,44 +34,11 @@
  * Steve Reid's public domain code, or based on Intel's SSSE3 SHA1 code.
  */
 
-#ifdef WITH_LIBCRYPTO
+#ifndef WITH_LIBCRYPTO
 
-#define sha1_init     SHA1_Init
-#define sha1_update   SHA1_Update
-#define sha1_final    SHA1_Final
-
-#else /* WITH_LIBCRYPTO */
-
-typedef struct {
-    u32 state[5];
-    u32 count[2];
-    u8  buffer[64];
-} SHA_CTX;
-
-#ifdef ENABLE_SSSE3_SHA1
-extern void sha1_update_intel(int *hash, const char* input, size_t num_blocks);
-
-static inline void sha1_update(SHA_CTX *context, const void *data, size_t len)
-{
-	sha1_update_intel((int*)&context->state, data, len / 64);
-	size_t j = (context->count[0] >> 3) & 63;
-	if ((context->count[0] += len << 3) < (len << 3)) context->count[1]++;
-	context->count[1] += (len >> 29);
-}
-
-#include <stdlib.h>
-void ssse3_not_found()
-{
-	fprintf(stderr, 
-"Cannot calculate SHA1 message digest: CPU does not support SSSE3\n"
-"instructions!  Recompile wimlib without the --enable-ssse3-sha1 flag\n"
-"to use wimlib on this CPU.\n");
-	abort();
-}
-#endif
 
 /*  Initialize new context */
-static void sha1_init(SHA_CTX* context)
+void sha1_init(SHA_CTX* context)
 {
 	/* SHA1 initialization constants */
 	context->state[0] = 0x67452301;
@@ -82,7 +49,26 @@ static void sha1_init(SHA_CTX* context)
 	context->count[0] = context->count[1] = 0;
 }
 
-#ifndef ENABLE_SSSE3_SHA1
+#ifdef ENABLE_SSSE3_SHA1
+extern void sha1_update_intel(int *hash, const char* input, size_t num_blocks);
+
+void sha1_update(SHA_CTX *context, const u8 data[], size_t len)
+{
+	sha1_update_intel((int*)&context->state, data, len / 64);
+	size_t j = (context->count[0] >> 3) & 63;
+	if ((context->count[0] += len << 3) < (len << 3)) context->count[1]++;
+	context->count[1] += (len >> 29);
+}
+#include <stdlib.h>
+void ssse3_not_found()
+{
+	fprintf(stderr, 
+"Cannot calculate SHA1 message digest: CPU does not support SSSE3\n"
+"instructions!  Recompile wimlib without the --enable-ssse3-sha1 flag\n"
+"to use wimlib on this CPU.\n");
+	abort();
+}
+#else /* ENABLE_SSSE3_SHA1 */
 
 #define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
 
@@ -156,8 +142,7 @@ static void sha1_transform(u32 state[5], const u8 buffer[64])
 	state[4] += e;
 }
 
-/* Run your data through this. */
-static void sha1_update(SHA_CTX* context, const u8* data, const size_t len)
+void sha1_update(SHA_CTX* context, const u8 data[], const size_t len)
 {
 	size_t i, j;
 
@@ -177,10 +162,11 @@ static void sha1_update(SHA_CTX* context, const u8* data, const size_t len)
 	}
 	memcpy(&context->buffer[j], &data[i], len - i);
 }
-#endif
+
+#endif /* !ENABLE_SSSE3_SHA1 */
 
 /* Add padding and return the message digest. */
-static void sha1_final(u8 *md, SHA_CTX* context)
+void sha1_final(u8 md[SHA1_HASH_SIZE], SHA_CTX* context)
 {
 	u32 i;
 	u8  finalcount[8];
@@ -199,7 +185,7 @@ static void sha1_final(u8 *md, SHA_CTX* context)
 	}
 }
 
-void sha1_buffer(const void *buffer, size_t len, void *md)
+void sha1_buffer(const u8 buffer[], size_t len, u8 md[SHA1_HASH_SIZE])
 {
 	SHA_CTX ctx;
 	sha1_init(&ctx);
@@ -207,9 +193,9 @@ void sha1_buffer(const void *buffer, size_t len, void *md)
 	sha1_final(md, &ctx);
 }
 
-#endif /* WITH_LIBCRYPTO */
+#endif /* !WITH_LIBCRYPTO */
 
-static int sha1_stream(FILE *fp, void *md)
+static int sha1_stream(FILE *fp, u8 md[SHA1_HASH_SIZE])
 {
 	char buf[BUFFER_SIZE];
 	size_t bytes_read;
@@ -232,7 +218,7 @@ static int sha1_stream(FILE *fp, void *md)
 /* Calculates the SHA1 message digest given the name of a file.  @md must point
  * to a buffer of length 20 bytes into which the message digest is written.
  */
-int sha1sum(const char *filename, void *md)
+int sha1sum(const char *filename, u8 md[SHA1_HASH_SIZE])
 {
 	FILE *fp;
 	int ret;

@@ -264,14 +264,13 @@ typedef struct WIMStruct {
 		int extract_flags;
 		int add_flags;
 		int write_flags;
+		bool write_metadata;
 	};
 
 	/* The currently selected image, indexed starting at 1.  If not 0,
 	 * subtract 1 from this to get the index of the current image in the
 	 * image_metadata array. */
 	int current_image;
-
-	bool write_metadata;
 } WIMStruct;
 
 

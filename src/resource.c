@@ -603,16 +603,13 @@ static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 	const u8 *out_chunk;
 	unsigned out_chunk_size;
 
-	if (out_ctype == WIM_COMPRESSION_TYPE_NONE) {
-		wimlib_assert(chunk_tab == NULL);
+	if (!chunk_tab) {
 		out_chunk = chunk;
 		out_chunk_size = chunk_size;
 	} else {
 		u8 *compressed_chunk = alloca(chunk_size);
 		int ret;
 		unsigned compressed_chunk_len;
-
-		wimlib_assert(chunk_tab != NULL);
 
 		ret = compress_chunk(chunk, chunk_size, compressed_chunk,
 				     &out_chunk_size, out_ctype);
@@ -707,7 +704,8 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		return WIMLIB_ERR_WRITE;
 	}
 	
-	raw = (wim_resource_compression_type(lte) == out_ctype);
+	raw = (wim_resource_compression_type(lte) == out_ctype
+	       && out_ctype != WIM_COMPRESSION_TYPE_NONE);
 	if (raw)
 		bytes_remaining = old_compressed_size;
 	else
@@ -736,12 +734,17 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 			goto out;
 		}
 	}
+	SHA_CTX ctx;
+	if (!raw)
+		sha1_init(&ctx);
 
 	do {
 		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
 		ret = __read_wim_resource(lte, buf, to_read, offset, raw);
 		if (ret != 0)
 			goto out_fclose;
+		if (!raw)
+			sha1_update(&ctx, buf, to_read);
 		ret = write_wim_resource_chunk(buf, to_read, out_fp,
 					       out_ctype, chunk_tab);
 		if (ret != 0)
@@ -756,6 +759,21 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 			goto out_fclose;
 	} else {
 		new_compressed_size = old_compressed_size;
+	}
+
+	if (!raw) {
+		u8 md[SHA1_HASH_SIZE];
+		sha1_final(md, &ctx);
+		if (!hashes_equal(md, lte->hash)) {
+			ERROR("WIM resource has incorrect hash!");
+			if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK) {
+				ERROR("We were reading it from `%s'; maybe it changed "
+				      "while we were reading it.",
+				      lte->file_on_disk);
+			}
+			ret = WIMLIB_ERR_INTEGRITY;
+			goto out_fclose;
+		}
 	}
 
 	if (new_compressed_size > original_size) {
@@ -791,6 +809,8 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 			out_res_entry->flags = 0;
 		else
 			out_res_entry->flags = WIM_RESHDR_FLAG_COMPRESSED;
+		if (lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
+			out_res_entry->flags |= WIM_RESHDR_FLAG_METADATA;
 	}
 out_fclose:
 	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
@@ -804,16 +824,18 @@ out:
 }
 
 static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
+					  u8 buf_hash[SHA1_HASH_SIZE],
 					  FILE *out_fp, int out_ctype,
 					  struct resource_entry *out_res_entry)
 {
 	struct lookup_table_entry lte;
-	lte.resource_entry.flags = 0;
+	lte.resource_entry.flags         = 0;
 	lte.resource_entry.original_size = buf_size;
-	lte.resource_entry.size = buf_size;
-	lte.resource_entry.offset = 0;
-	lte.resource_location = RESOURCE_IN_ATTACHED_BUFFER;
-	lte.attached_buffer = (u8*)buf;
+	lte.resource_entry.size          = buf_size;
+	lte.resource_entry.offset        = 0;
+	lte.resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
+	lte.attached_buffer              = (u8*)buf;
+	copy_hash(lte.hash, buf_hash);
 	return write_wim_resource(&lte, out_fp, out_ctype, out_res_entry);
 }
 
@@ -869,7 +891,8 @@ int copy_resource(struct lookup_table_entry *lte, void *wim)
 	    !w->write_metadata)
 		return 0;
 
-	ret = write_wim_resource(lte, w->out_fp, wimlib_get_compression_type(w), 
+	ret = write_wim_resource(lte, w->out_fp,
+				 wim_resource_compression_type(lte), 
 				 &lte->output_resource_entry);
 	if (ret != 0)
 		return ret;
@@ -1100,16 +1123,17 @@ int write_metadata_resource(WIMStruct *w)
 	lte = wim_metadata_lookup_table_entry(w);
 
 	ret = write_wim_resource_from_buffer(buf, metadata_original_size,
-					     out, metadata_ctype,
+					     hash, out, metadata_ctype,
 					     &lte->output_resource_entry);
+
+	lookup_table_unlink(w->lookup_table, lte);
+	copy_hash(lte->hash, hash);
+	lookup_table_insert(w->lookup_table, lte);
+	lte->out_refcnt++;
+	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
 	FREE(buf);
 	if (ret != 0)
 		return ret;
 
-	lte->out_refcnt++;
-	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
-	lookup_table_unlink(w->lookup_table, lte);
-	copy_hash(lte->hash, hash);
-	lookup_table_insert(w->lookup_table, lte);
 	return 0;
 }
