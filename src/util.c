@@ -141,6 +141,8 @@ static const char *error_strings[] = {
 		= "Tried to select an image that does not exist in the WIM",
 	[WIMLIB_ERR_INVALID_INTEGRITY_TABLE] 
 		= "The WIM's integrity table is invalid",
+	[WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY]
+		= "An entry in the WIM's lookup table is invalid",
 	[WIMLIB_ERR_INVALID_PARAM] 
 		= "An invalid parameter was given",
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]

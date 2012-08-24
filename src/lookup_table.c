@@ -197,7 +197,7 @@ int read_lookup_table(WIMStruct *w)
 
 	while (num_entries--) {
 		const u8 *p;
-		struct lookup_table_entry *cur_entry;
+		struct lookup_table_entry *cur_entry, *duplicate_entry;
 
 		if (fread(buf, 1, sizeof(buf), w->fp) != sizeof(buf)) {
 			if (feof(w->fp)) {
@@ -221,7 +221,31 @@ int read_lookup_table(WIMStruct *w)
 		p = get_u16(p, &cur_entry->part_number);
 		p = get_u32(p, &cur_entry->refcnt);
 		p = get_bytes(p, SHA1_HASH_SIZE, cur_entry->hash);
+
+		duplicate_entry = __lookup_resource(table, cur_entry->hash);
+		if (duplicate_entry) {
+			ERROR("The WIM lookup table contains two entries with the "
+			      "same SHA1 message digest!");
+			ERROR("The first entry is:");
+			print_lookup_table_entry(duplicate_entry);
+			ERROR("The second entry is:");
+			print_lookup_table_entry(cur_entry);
+			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+			goto out;
+		}
 		lookup_table_insert(table, cur_entry);
+
+		if (!(cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
+		    && (cur_entry->resource_entry.size !=
+		      cur_entry->resource_entry.original_size))
+		{
+			ERROR("Found uncompressed resource with original size "
+			      "not the same as compressed size");
+			ERROR("The lookup table entry for the resource is as follows:");
+			print_lookup_table_entry(cur_entry);
+			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+			goto out;
+		}
 	}
 	DEBUG("Done reading lookup table.");
 	w->lookup_table = table;

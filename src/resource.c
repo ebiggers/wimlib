@@ -431,18 +431,9 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 		wimlib_assert(lte->wim->fp);
 		ctype = wim_resource_compression_type(lte);
 
-		/* XXX This check should be moved elsewhere */
-		if (ctype == WIM_COMPRESSION_TYPE_NONE &&
-		     lte->resource_entry.original_size !=
-		      lte->resource_entry.size) {
-			ERROR("WIM resource at offset %"PRIu64", size %"PRIu64
-			      "has an original size of %"PRIu64", but is "
-			      "uncompressed",
-			      lte->resource_entry.offset,
-			      lte->resource_entry.size,
-			      lte->resource_entry.original_size);
-			return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
-		}
+		wimlib_assert(ctype != WIM_COMPRESSION_TYPE_NONE ||
+			      (lte->resource_entry.original_size ==
+			       lte->resource_entry.size));
 
 		if (raw || ctype == WIM_COMPRESSION_TYPE_NONE)
 			return read_uncompressed_resource(lte->wim->fp,
@@ -1178,8 +1169,17 @@ int write_metadata_resource(WIMStruct *w)
 	int ret;
 	u64 subdir_offset;
 	struct dentry *root;
-	struct lookup_table_entry *lte;
+	struct lookup_table_entry *lte, *duplicate_lte;
 	u64 metadata_original_size;
+
+	/* 
+	 * We append 20 random bytes to the metadata resource so that we don't
+	 * have identical metadata resources if we happen to append exactly the
+	 * same image twice without any changes in timestamps.  If this were to
+	 * happen, it would cause confusion about the number and order of images
+	 * in the WIM.
+	 */
+	const unsigned random_tail_len = 20;
 
 	DEBUG("Writing metadata resource for image %d", w->current_image);
 
@@ -1191,7 +1191,7 @@ int write_metadata_resource(WIMStruct *w)
 	else
 		subdir_offset = 8 + root->length + 8;
 	calculate_subdir_offsets(root, &subdir_offset);
-	metadata_original_size = subdir_offset;
+	metadata_original_size = subdir_offset + random_tail_len;
 	buf = MALLOC(metadata_original_size);
 	if (!buf) {
 		ERROR("Failed to allocate %"PRIu64" bytes for "
@@ -1203,7 +1203,8 @@ int write_metadata_resource(WIMStruct *w)
 
 	DEBUG("Writing dentry tree.");
 	p = write_dentry_tree(root, p);
-	wimlib_assert(p - buf == metadata_original_size);
+	randomize_byte_array(p, random_tail_len);
+	wimlib_assert(p - buf + random_tail_len == metadata_original_size);
 
 	lte = wim_metadata_lookup_table_entry(w);
 
@@ -1212,11 +1213,12 @@ int write_metadata_resource(WIMStruct *w)
 					     wimlib_get_compression_type(w),
 					     &lte->output_resource_entry,
 					     lte->hash);
-
 	lookup_table_unlink(w->lookup_table, lte);
 	lookup_table_insert(w->lookup_table, lte);
+	wimlib_assert(lte->out_refcnt == 0);
 	lte->out_refcnt++;
 	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
+out:
 	FREE(buf);
 	return ret;
 }
