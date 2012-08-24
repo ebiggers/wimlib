@@ -201,7 +201,12 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 		wimlib_assert(dentry->security_id < sd->num_entries);
 		DEBUG("Applying security descriptor %d to `%s'",
 		      dentry->security_id, dentry->full_path_utf8);
-		if (!_ntfs_set_file_security(ni->vol, ni, ~0,
+		u32 selection = OWNER_SECURITY_INFORMATION |
+				GROUP_SECURITY_INFORMATION |
+				DACL_SECURITY_INFORMATION  |
+				SACL_SECURITY_INFORMATION;
+				
+		if (!_ntfs_set_file_security(ni->vol, ni, selection,
 					     sd->descriptors[dentry->security_id]))
 		{
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",

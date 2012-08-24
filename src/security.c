@@ -178,17 +178,12 @@ u8 *write_security_data(const struct wim_security_data *sd, u8 *p)
 	return p;
 }
 
-/* XXX We don't actually do anything with the ACL's yet besides being able to
- * print a few things.  It seems it would be a lot of work to have comprehensive
- * support for all the weird flags and stuff, and Windows PE seems to be okay
- * running from a WIM file that doesn't have any security data at all...  */
-
-static void print_acl(const u8 *p)
+static void print_acl(const u8 *p, const char *type)
 {
 	ACL *acl = (ACL*)p;
 	TO_LE16(acl->acl_size);
 	TO_LE16(acl->acl_count);
-	printf("    [ACL]\n");
+	printf("    [%s ACL]\n", type);
 	printf("    Revision = %u\n", acl->revision);
 	printf("    ACL Size = %u\n", acl->acl_size);
 	printf("    ACE Count = %u\n", acl->ace_count);
@@ -205,12 +200,13 @@ static void print_acl(const u8 *p)
 		printf("        SID start = %u\n", to_le32(aaa->sid_start));
 		p += hdr->size;
 	}
+	putchar('\n');
 }
 
-static void print_sid(const u8 *p)
+static void print_sid(const u8 *p, const char *type)
 {
 	SID *sid = (SID*)p;
-	printf("    [SID]\n");
+	printf("    [%s SID]\n", type);
 	printf("    Revision = %u\n", sid->revision);
 	printf("    Subauthority count = %u\n", sid->sub_authority_count);
 	printf("    Identifier authority = ");
@@ -218,6 +214,7 @@ static void print_sid(const u8 *p)
 	putchar('\n');
 	for (uint i = 0; i < sid->sub_authority_count; i++)
 		printf("    Subauthority %u = %u\n", i, to_le32(sid->sub_authority[i]));
+	putchar('\n');
 }
 
 static void print_security_descriptor(const u8 *p, u64 size)
@@ -229,20 +226,20 @@ static void print_security_descriptor(const u8 *p, u64 size)
 	TO_LE32(sd->sacl_offset);
 	TO_LE32(sd->dacl_offset);
 	printf("Revision = %u\n", sd->revision);
-	printf("Security Descriptor Control = %u\n", sd->security_descriptor_control);
+	printf("Security Descriptor Control = %#x\n", sd->security_descriptor_control);
 	printf("Owner offset = %u\n", sd->owner_offset);
 	printf("Group offset = %u\n", sd->group_offset);
 	printf("System ACL offset = %u\n", sd->sacl_offset);
 	printf("Discretionary ACL offset = %u\n", sd->dacl_offset);
 
 	if (sd->owner_offset != 0)
-		print_sid(p + sd->owner_offset);
+		print_sid(p + sd->owner_offset, "Owner");
 	if (sd->group_offset != 0)
-		print_sid(p + sd->group_offset);
+		print_sid(p + sd->group_offset, "Group");
 	if (sd->sacl_offset != 0)
-		print_acl(p + sd->sacl_offset);
+		print_acl(p + sd->sacl_offset, "System");
 	if (sd->dacl_offset != 0)
-		print_acl(p + sd->dacl_offset);
+		print_acl(p + sd->dacl_offset, "Discretionary");
 }
 
 /* 

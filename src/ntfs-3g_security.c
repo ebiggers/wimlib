@@ -22,7 +22,7 @@
  * Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-
+#include "util.h"
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -4681,6 +4681,125 @@ int ntfs_set_file_security(struct SECURITY_API *scapi,
 	return (res);
 }
 #endif
+/*
+ *		Check the validity of the ACEs in a DACL or SACL
+ */
+
+static BOOL valid_acl(const ACL *pacl, unsigned int end)
+{
+	const ACCESS_ALLOWED_ACE *pace;
+	unsigned int offace;
+	unsigned int acecnt;
+	unsigned int acesz;
+	unsigned int nace;
+	BOOL ok;
+
+	ok = TRUE;
+	acecnt = le16_to_cpu(pacl->ace_count);
+	offace = sizeof(ACL);
+	for (nace = 0; (nace < acecnt) && ok; nace++) {
+		/* be sure the beginning is within range */
+		if ((offace + sizeof(ACCESS_ALLOWED_ACE)) > end)
+			ok = FALSE;
+		else {
+			pace = (const ACCESS_ALLOWED_ACE*)
+				&((const char*)pacl)[offace];
+			acesz = le16_to_cpu(pace->size);
+			if (((offace + acesz) > end)
+			   || !ntfs_valid_sid(&pace->sid)
+			   || ((ntfs_sid_size(&pace->sid) + 8) != (int)acesz))
+				 ok = FALSE;
+			offace += acesz;
+		}
+	}
+	return (ok);
+}
+
+/*
+ *		Do sanity checks on security descriptors read from storage
+ *	basically, we make sure that every field holds within
+ *	allocated storage
+ *	Should not be called with a NULL argument
+ *	returns TRUE if considered safe
+ *		if not, error should be logged by caller
+ */
+static BOOL _ntfs_valid_descr(const char *securattr, unsigned int attrsz)
+{
+	const SECURITY_DESCRIPTOR_RELATIVE *phead;
+	const ACL *pdacl;
+	const ACL *psacl;
+	unsigned int offdacl;
+	unsigned int offsacl;
+	unsigned int offowner;
+	unsigned int offgroup;
+	BOOL ok;
+
+	ok = TRUE;
+
+	/*
+	 * first check overall size if within allocation range
+	 * and a DACL is present
+	 * and owner and group SID are valid
+	 */
+
+	phead = (const SECURITY_DESCRIPTOR_RELATIVE*)securattr;
+	offdacl = le32_to_cpu(phead->dacl);
+	offsacl = le32_to_cpu(phead->sacl);
+	offowner = le32_to_cpu(phead->owner);
+	offgroup = le32_to_cpu(phead->group);
+	pdacl = (const ACL*)&securattr[offdacl];
+	psacl = (const ACL*)&securattr[offsacl];
+
+		/*
+		 * size check occurs before the above pointers are used
+		 *
+		 * "DR Watson" standard directory on WinXP has an
+		 * old revision and no DACL though SE_DACL_PRESENT is set
+		 */
+	if ((attrsz >= sizeof(SECURITY_DESCRIPTOR_RELATIVE))
+		&& (phead->revision == SECURITY_DESCRIPTOR_REVISION)
+		&& (offowner >= sizeof(SECURITY_DESCRIPTOR_RELATIVE))
+		&& ((offowner + 2) < attrsz)
+		&& (offgroup >= sizeof(SECURITY_DESCRIPTOR_RELATIVE))
+		&& ((offgroup + 2) < attrsz)
+		&& (!offdacl
+			|| ((offdacl >= sizeof(SECURITY_DESCRIPTOR_RELATIVE))
+			    && (offdacl+sizeof(ACL) <= attrsz)))
+		&& (!offsacl
+			|| ((offsacl >= sizeof(SECURITY_DESCRIPTOR_RELATIVE))
+			    && (offsacl+sizeof(ACL) <= attrsz)))
+		&& !(phead->owner & const_cpu_to_le32(3))
+		&& !(phead->group & const_cpu_to_le32(3))
+		&& !(phead->dacl & const_cpu_to_le32(3))
+		&& !(phead->sacl & const_cpu_to_le32(3))
+		&& (ntfs_attr_size(securattr) <= attrsz)
+		&& ntfs_valid_sid((const SID*)&securattr[offowner])
+		&& ntfs_valid_sid((const SID*)&securattr[offgroup])
+			/*
+			 * if there is an ACL, as indicated by offdacl,
+			 * require SE_DACL_PRESENT
+			 * but "Dr Watson" has SE_DACL_PRESENT though no DACL
+			 */
+		&& (!offdacl
+		    || ((phead->control & SE_DACL_PRESENT)
+			&& ((pdacl->revision == ACL_REVISION)
+			   || (pdacl->revision == ACL_REVISION_DS))))
+			/* same for SACL */
+		&& (!offsacl
+		    || ((phead->control & SE_SACL_PRESENT)
+			&& ((psacl->revision == ACL_REVISION)
+			    || (psacl->revision == ACL_REVISION_DS))))) {
+			/*
+			 *  Check the DACL and SACL if present
+			 */
+		if ((offdacl && !valid_acl(pdacl,attrsz - offdacl))
+		   || (offsacl && !valid_acl(psacl,attrsz - offsacl)))
+			ok = FALSE;
+	} else {
+		ok = FALSE;
+	}
+	return (ok);
+}
 
 /* 
  * Set security data on a NTFS file given an inode
@@ -4708,7 +4827,7 @@ int _ntfs_set_file_security(ntfs_volume *vol, ntfs_inode *ni,
 			&& !(phead->control & SE_GROUP_DEFAULTED));
 	if (!missing
 	    && (phead->control & SE_SELF_RELATIVE)
-	    && ntfs_valid_descr(attr, attrsz)) {
+	    && _ntfs_valid_descr(attr, attrsz)) {
 		oldattr = getsecurityattr(vol, ni);
 		if (oldattr) {
 			if (mergesecurityattr(
