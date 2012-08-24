@@ -281,12 +281,13 @@ static inline struct dentry *wim_root_dentry(WIMStruct *w)
 	return w->image_metadata[w->current_image - 1].root_dentry;
 }
 
-static inline struct dentry **wim_root_dentry_p(WIMStruct *w)
+static inline struct wim_security_data *
+wim_security_data(WIMStruct *w)
 {
-	return &w->image_metadata[w->current_image - 1].root_dentry;
+	return w->image_metadata[w->current_image - 1].security_data;
 }
-
-static inline struct wim_security_data *wim_security_data(WIMStruct *w)
+static inline const struct wim_security_data *
+wim_const_security_data(const WIMStruct *w)
 {
 	return w->image_metadata[w->current_image - 1].security_data;
 }
@@ -303,7 +304,8 @@ static inline int resource_is_compressed(const struct resource_entry *entry)
 	return (entry->flags & WIM_RESHDR_FLAG_COMPRESSED);
 }
 
-static inline struct image_metadata *wim_get_current_image_metadata(WIMStruct *w)
+static inline struct image_metadata *
+wim_get_current_image_metadata(WIMStruct *w)
 {
 	return &w->image_metadata[w->current_image - 1];
 }

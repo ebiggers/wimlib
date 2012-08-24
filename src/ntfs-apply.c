@@ -32,6 +32,7 @@
 #ifdef WITH_NTFS_3G
 #include "dentry.h"
 #include "lookup_table.h"
+#include "io.h"
 #include <ntfs-3g/layout.h>
 #include <ntfs-3g/acls.h>
 #include <ntfs-3g/attrib.h>
@@ -55,39 +56,41 @@ extern int _ntfs_set_file_attributes(ntfs_inode *ni, s32 attrib);
 /* 
  * Extracts a WIM resource to a NTFS attribute.
  */
-static int extract_resource_to_ntfs_attr(WIMStruct *w, const struct resource_entry *entry, 
-					 ntfs_attr *na)
+static int
+extract_wim_resource_to_ntfs_attr(const struct lookup_table_entry *lte,
+			          ntfs_attr *na)
 {
-	return 0;
-#if 0
-	u8 buf[min(entry->original_size, WIM_CHUNK_SIZE)];
-	u64 num_chunks = (entry->original_size + WIM_CHUNK_SIZE - 1) / WIM_CHUNK_SIZE;
-	u64 n = WIM_CHUNK_SIZE;
-	int res_ctype = wim_resource_compression_type(w, entry);
+	u64 bytes_remaining = wim_resource_size(lte);
+	char buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
 	u64 offset = 0;
-	for (u64 i = 0; i < num_chunks; i++) {
-		DEBUG("Write chunk %u of %u", i + 1, num_chunks);
-		int ret;
-		if (i == num_chunks - 1) {
-			n = entry->original_size % WIM_CHUNK_SIZE;
-			if (n == 0) {
-				n = WIM_CHUNK_SIZE;
-			}
-		}
+	int ret = 0;
+	u8 hash[SHA1_HASH_SIZE];
 
-		ret = read_resource(w->fp, entry->size, entry->original_size,
-				    entry->offset, res_ctype, n, offset, buf);
+	SHA_CTX ctx;
+	sha1_init(&ctx);
+
+	while (bytes_remaining) {
+		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
+		ret = read_wim_resource(lte, buf, to_read, offset, false);
 		if (ret != 0)
-			return ret;
-
-		if (ntfs_attr_pwrite(na, offset, n, buf) != n) {
-			ERROR("Failed to write to NTFS data stream");
+			break;
+		sha1_update(&ctx, buf, to_read);
+		if (ntfs_attr_pwrite(na, offset, to_read, buf) != to_read) {
+			ERROR_WITH_ERRNO("Error extracting WIM resource");
 			return WIMLIB_ERR_WRITE;
 		}
-		offset += n;
+		bytes_remaining -= to_read;
+		offset += to_read;
+	}
+	sha1_final(hash, &ctx);
+	if (!hashes_equal(hash, lte->hash)) {
+		ERROR("Invalid checksum on a WIM resource "
+		      "(detected when extracting to NTFS stream file)");
+		ERROR("The following WIM resource is invalid:");
+		print_lookup_table_entry(lte);
+		return WIMLIB_ERR_INVALID_RESOURCE_HASH;
 	}
 	return 0;
-#endif
 }
 
 /* Writes the data streams to a NTFS file
@@ -101,32 +104,38 @@ static int extract_resource_to_ntfs_attr(WIMStruct *w, const struct resource_ent
 static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 				   WIMStruct *w)
 {
-	ntfs_attr *na;
-	struct lookup_table_entry *lte;
-	int ret;
-
+	int ret = 0;
+	unsigned stream_idx = 0;
+	ntfschar *stream_name = AT_UNNAMED;
+	u32 stream_name_len = 0;
 
 	DEBUG("Writing NTFS data streams for `%s'", dentry->full_path_utf8);
 
-	wimlib_assert(dentry->num_ads == 0);
+	while (1) {
+		struct lookup_table_entry *lte;
+		ntfs_attr *na;
 
-	lte = dentry_stream_lte(dentry, 0, w->lookup_table);
-	if (lte && lte->resource_entry.original_size != 0) {
-
-		na = ntfs_attr_open(ni, AT_DATA, AT_UNNAMED, 0);
+		lte = dentry_stream_lte(dentry, 0, w->lookup_table);
+		na = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_len);
 		if (!na) {
-			ERROR_WITH_ERRNO("Failed to open unnamed data stream of "
+			ERROR_WITH_ERRNO("Failed to open a data stream of "
 					 "extracted file `%s'",
 					 dentry->full_path_utf8);
-			return WIMLIB_ERR_NTFS_3G;
+			ret = WIMLIB_ERR_NTFS_3G;
+			break;
 		}
-		ret = extract_resource_to_ntfs_attr(w, &lte->resource_entry, na);
-		if (ret != 0)
-			return ret;
+		if (lte && wim_resource_size(lte) != 0)
+			ret = extract_wim_resource_to_ntfs_attr(lte, na);
 		ntfs_attr_close(na);
+		if (ret != 0)
+			break;
+		if (stream_idx == dentry->num_ads)
+			break;
+		stream_name = (ntfschar*)dentry->ads_entries[stream_idx].stream_name;
+		stream_name_len = dentry->ads_entries[stream_idx].stream_name_len / 2;
+		stream_idx++;
 	}
-
-	return 0;
+	return ret;
 }
 
 /*
@@ -172,6 +181,79 @@ static int wim_apply_hardlink_ntfs(const struct dentry *from_dentry,
 	return ret;
 }
 
+static int
+apply_file_attributes_and_security_data(ntfs_inode *ni,
+					const struct dentry *dentry,
+					const WIMStruct *w)
+{
+	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
+	      dentry->full_path_utf8, dentry->attributes);
+	if (!_ntfs_set_file_attributes(ni, dentry->attributes)) {
+		ERROR("Failed to set NTFS file attributes on `%s'",
+		       dentry->full_path_utf8);
+		return WIMLIB_ERR_NTFS_3G;
+	}
+
+	if (dentry->security_id != -1) {
+		const struct wim_security_data *sd;
+		
+		sd = wim_const_security_data(w);
+		wimlib_assert(dentry->security_id < sd->num_entries);
+		DEBUG("Applying security descriptor %d to `%s'",
+		      dentry->security_id, dentry->full_path_utf8);
+		if (!_ntfs_set_file_security(ni->vol, ni, ~0,
+					     sd->descriptors[dentry->security_id]))
+		{
+			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
+					dentry->full_path_utf8);
+			return WIMLIB_ERR_NTFS_3G;
+		}
+	}
+	return 0;
+}
+
+static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
+			      const WIMStruct *w)
+{
+	struct lookup_table_entry *lte;
+	int ret = 0;
+
+	wimlib_assert(dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT);
+
+	lte = dentry_first_lte(dentry, w->lookup_table);
+
+	if (!lte) {
+		ERROR("Could not find reparse data for `%s'",
+		      dentry->full_path_utf8);
+		return WIMLIB_ERR_INVALID_DENTRY;
+	}
+
+	if (wim_resource_size(lte) >= 0xffff) {
+		ERROR("Reparse data of `%s' is too long (%lu bytes)",
+		      dentry->full_path_utf8, wim_resource_size(lte));
+		return WIMLIB_ERR_INVALID_DENTRY;
+	}
+
+	char reparse_data_buf[8 + wim_resource_size(lte)];
+	char *p = reparse_data_buf;
+	p = put_u32(p, dentry->reparse_tag); /* ReparseTag */
+	p = put_u16(p, wim_resource_size(lte)); /* ReparseDataLength */
+	p = put_u16(p, 0); /* Reserved */
+
+	ret = read_full_wim_resource(lte, p);
+	if (ret != 0)
+		return ret;
+
+	ret = ntfs_set_ntfs_reparse_data(ni, reparse_data_buf,
+					 wim_resource_size(lte) + 8, 0);
+	if (ret != 0) {
+		ERROR_WITH_ERRNO("Failed to set NTFS reparse data on `%s'",
+				 dentry->full_path_utf8);
+		return WIMLIB_ERR_NTFS_3G;
+	}
+	return 0;
+}
+
 /* 
  * Applies a WIM dentry to a NTFS filesystem.
  *
@@ -185,7 +267,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 			            WIMStruct *w)
 {
 	ntfs_inode *ni;
-	int ret;
+	int ret = 0;
 	mode_t type;
 
 	if (dentry_is_directory(dentry)) {
@@ -242,56 +324,15 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 			goto out;
 	}
 
-	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
-	      dentry->full_path_utf8, dentry->attributes);
 
-	if (!_ntfs_set_file_attributes(ni, dentry->attributes)) {
-		ERROR("Failed to set NTFS file attributes on `%s'",
-		       dentry->full_path_utf8);
-		ret = WIMLIB_ERR_NTFS_3G;
+	ret = apply_file_attributes_and_security_data(ni, dentry, w);
+	if (ret != 0)
 		goto out;
-	}
-
-	if (dentry->security_id != -1) {
-		const struct wim_security_data *sd = wim_security_data(w);
-		wimlib_assert(dentry->security_id < sd->num_entries);
-		DEBUG("Applying security descriptor %d to `%s'",
-		      dentry->security_id, dentry->full_path_utf8);
-		if (!_ntfs_set_file_security(ni->vol, ni, ~0,
-					     sd->descriptors[dentry->security_id]))
-		{
-			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
-					dentry->full_path_utf8);
-			ret = WIMLIB_ERR_NTFS_3G;
-			goto out;
-		}
-	}
 
 	if (dentry->attributes & FILE_ATTR_REPARSE_POINT) {
-		struct lookup_table_entry *lte;
-		ntfs_inode *ni;
-		lte = dentry_first_lte(dentry, w->lookup_table);
-		if (!lte) {
-			ERROR("Could not find reparse data for `%s'",
-			      dentry->full_path_utf8);
-			ret = WIMLIB_ERR_INVALID_DENTRY;
-			goto out;
-		}
-
-		char symlink_buf[wim_resource_size(lte)];
-
-		ret = read_full_wim_resource(lte, symlink_buf);
+		ret = apply_reparse_data(ni, dentry, w);
 		if (ret != 0)
 			goto out;
-		
-		ret = ntfs_set_ntfs_reparse_data(ni, symlink_buf,
-						 wim_resource_size(lte), 0);
-		if (ret != 0) {
-			ERROR_WITH_ERRNO("Failed to set NTFS reparse data on "
-					 "`%s'", dentry->full_path_utf8);
-			ret = WIMLIB_ERR_NTFS_3G;
-			goto out;
-		}
 	}
 
 	if (ntfs_inode_close_in_dir(ni, dir_ni) != 0) {
@@ -303,6 +344,29 @@ out:
 	return ret;
 }
 
+static int wim_apply_root_dentry_ntfs(const struct dentry *dentry,
+				      ntfs_volume *vol,
+				      const WIMStruct *w)
+{
+	ntfs_inode *ni;
+	int ret = 0;
+
+	wimlib_assert(dentry_is_directory(dentry));
+	ni = ntfs_pathname_to_inode(vol, NULL, "/");
+	if (!ni) {
+		ERROR_WITH_ERRNO("Could not find root NTFS inode");
+		return WIMLIB_ERR_NTFS_3G;
+	}
+	ret = apply_file_attributes_and_security_data(ni, dentry, w);
+	if (ntfs_inode_close(ni) != 0) {
+		ERROR_WITH_ERRNO("Failed to close NTFS inode for root "
+				 "directory");
+		ret = WIMLIB_ERR_NTFS_3G;
+	}
+	return ret;
+}
+
+/* Applies a WIM dentry to the NTFS volume */
 static int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 {
 	struct ntfs_apply_args *args = arg;
@@ -319,11 +383,11 @@ static int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 
 	DEBUG("Applying dentry `%s' to NTFS", dentry->full_path_utf8);
 
-	if (dentry_is_root(dentry))
-		return 0;
-
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
 		puts(dentry->full_path_utf8);
+
+	if (dentry_is_root(dentry))
+		return wim_apply_root_dentry_ntfs(dentry, vol, w);
 
 	p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
 	do {
@@ -372,7 +436,7 @@ static int do_wim_apply_image_ntfs(WIMStruct *w, const char *device, int extract
 	ret = for_dentry_in_tree(wim_root_dentry(w), wim_apply_dentry_ntfs,
 				 &args);
 	if (ntfs_umount(vol, FALSE) != 0) {
-		ERROR_WITH_ERRNO("Failed to unmount NTFS volume");
+		ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'", device);
 		if (ret == 0)
 			ret = WIMLIB_ERR_NTFS_3G;
 	}
