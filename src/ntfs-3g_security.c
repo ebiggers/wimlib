@@ -4806,8 +4806,8 @@ static BOOL _ntfs_valid_descr(const char *securattr, unsigned int attrsz)
  *
  * Returns nonzero on success
  */
-int _ntfs_set_file_security(ntfs_volume *vol, ntfs_inode *ni,
-			    u32 selection, const char *attr)
+int _ntfs_set_file_security(ntfs_inode *ni, u32 selection,
+			    const char *attr)
 {
 	const SECURITY_DESCRIPTOR_RELATIVE *phead;
 	int attrsz;
@@ -4828,10 +4828,10 @@ int _ntfs_set_file_security(ntfs_volume *vol, ntfs_inode *ni,
 	if (!missing
 	    && (phead->control & SE_SELF_RELATIVE)
 	    && _ntfs_valid_descr(attr, attrsz)) {
-		oldattr = getsecurityattr(vol, ni);
+		oldattr = getsecurityattr(ni->vol, ni);
 		if (oldattr) {
 			if (mergesecurityattr(
-				vol,
+				ni->vol,
 				oldattr, attr,
 				selection, ni)) {
 				if (test_nino_flag(ni,

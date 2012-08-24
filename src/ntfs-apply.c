@@ -49,8 +49,8 @@ struct ntfs_apply_args {
 	WIMStruct *w;
 };
 
-extern int _ntfs_set_file_security(ntfs_volume *vol, ntfs_inode *ni,
-				   u32 selection, const char *attr);
+extern int _ntfs_set_file_security(ntfs_inode *ni, u32 selection,
+				   const char *attr);
 extern int _ntfs_set_file_attributes(ntfs_inode *ni, s32 attrib);
 
 /* 
@@ -109,13 +109,16 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 	ntfschar *stream_name = AT_UNNAMED;
 	u32 stream_name_len = 0;
 
-	DEBUG("Writing NTFS data streams for `%s'", dentry->full_path_utf8);
+	DEBUG("Writing %u NTFS data stream%s for `%s'",
+	      dentry->num_ads + 1,
+	      (dentry->num_ads == 0 ? "" : "s"),
+	      dentry->full_path_utf8);
 
 	while (1) {
 		struct lookup_table_entry *lte;
 		ntfs_attr *na;
 
-		lte = dentry_stream_lte(dentry, 0, w->lookup_table);
+		lte = dentry_stream_lte(dentry, stream_idx, w->lookup_table);
 		na = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_len);
 		if (!na) {
 			ERROR_WITH_ERRNO("Failed to open a data stream of "
@@ -124,7 +127,7 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 			ret = WIMLIB_ERR_NTFS_3G;
 			break;
 		}
-		if (lte && wim_resource_size(lte) != 0)
+		if (lte)
 			ret = extract_wim_resource_to_ntfs_attr(lte, na);
 		ntfs_attr_close(na);
 		if (ret != 0)
@@ -206,7 +209,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 				DACL_SECURITY_INFORMATION  |
 				SACL_SECURITY_INFORMATION;
 				
-		if (!_ntfs_set_file_security(ni->vol, ni, selection,
+		if (!_ntfs_set_file_security(ni, selection,
 					     sd->descriptors[dentry->security_id]))
 		{
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
@@ -279,6 +282,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 		type = S_IFDIR;
 	} else {
 		type = S_IFREG;
+#if 0
 		const struct list_head *head = &dentry->link_group_list;
 		if (head->next != head) {
 			/* This dentry is one of a hard link set of at least 2
@@ -302,13 +306,14 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 			ERROR("Failed to allocate memory for filename");
 			return WIMLIB_ERR_NOMEM;
 		}
+#endif
 	}
 
 	/* 
 	 * Create a directory or file.
 	 *
-	 * Note: if it's a reparse point (such as a symbolic link), we still
-	 * pass S_IFREG here, since we manually set the reparse data later.
+	 * Note: For symbolic links that are not directory junctions, pass
+	 * S_IFREG here, since we manually set the reparse data later.
 	 */
 	ni = ntfs_create(dir_ni, 0, (ntfschar*)dentry->file_name,
 			 dentry->file_name_len / 2, type);
