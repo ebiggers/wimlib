@@ -270,7 +270,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	int ret = 0;
 	mode_t type;
 
-	if (dentry_is_directory(dentry)) {
+	if (dentry->attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		type = S_IFDIR;
 	} else {
 		type = S_IFREG;
