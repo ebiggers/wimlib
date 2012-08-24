@@ -278,7 +278,7 @@ static int verify_image_exists_and_is_single(int image)
 static int get_compression_type(const char *optarg)
 {
 	if (!optarg)
-		return WIM_COMPRESSION_TYPE_LZX;
+		return WIM_COMPRESSION_TYPE_XPRESS;
 	if (strcasecmp(optarg, "maximum") == 0 || strcasecmp(optarg, "lzx") == 0)
 		return WIM_COMPRESSION_TYPE_LZX;
 	else if (strcasecmp(optarg, "fast") == 0 || strcasecmp(optarg, "xpress") == 0)
@@ -451,7 +451,7 @@ static int imagex_capture(int argc, const char **argv)
 	int c;
 	int add_image_flags = 0;
 	int write_flags = WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
-	int compression_type = WIM_COMPRESSION_TYPE_NONE;
+	int compression_type = WIM_COMPRESSION_TYPE_XPRESS;
 	const char *flags_element = NULL;
 	const char *dir;
 	const char *wimfile;
@@ -653,7 +653,7 @@ static int imagex_export(int argc, const char **argv)
 	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
 	int export_flags = 0;
 	int write_flags = WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
-	int compression_type = WIM_COMPRESSION_TYPE_NONE;
+	int compression_type = WIM_COMPRESSION_TYPE_XPRESS;
 	bool compression_type_specified = false;
 	const char *src_wimfile;
 	const char *src_image_num_or_name;
@@ -708,7 +708,7 @@ static int imagex_export(int argc, const char **argv)
 	if (stat(dest_wimfile, &stbuf) == 0) {
 		wim_is_new = false;
 		/* Destination file exists. */
-		if (!S_ISREG(stbuf.st_mode)) {
+		if (!S_ISREG(stbuf.st_mode) && !S_ISLNK(stbuf.st_mode)) {
 			imagex_error("`%s' is not a regular file",
 					dest_wimfile);
 			goto done;
