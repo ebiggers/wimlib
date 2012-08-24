@@ -2,6 +2,11 @@
  * extract.c
  *
  * Support for extracting WIM files.
+ *
+ * This code does NOT contain any filesystem-specific features.  In particular,
+ * security information (i.e. file permissions) and alternate data streams are
+ * ignored, except possibly to read an alternate data stream that contains
+ * symbolic link data.
  */
 
 /*

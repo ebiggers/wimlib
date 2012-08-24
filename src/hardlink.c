@@ -1,4 +1,12 @@
 /*
+ * hardlink.c
+ *
+ * Code to deal with hard links in WIMs.  Essentially, the WIM dentries are put
+ * into a hash table indexed by the hard link group ID field, then for each hard
+ * link group, a linked list is made to connect the dentries.
+ */
+
+/*
  * Copyright (C) 2012 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.

@@ -1,4 +1,10 @@
 /*
+ * symlink.c
+ *
+ * Code to read and set symbolic links in WIM files.
+ */
+
+/*
  * Copyright (C) 2012 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
@@ -99,7 +105,12 @@ static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 		translated_target += 4;
 		link_target_len -= 4;
 		/* There's a drive letter, so just leave the backslashes since
-		 * it won't go anyhwere on UNIX anyway... */
+		 * it won't go anyhwere on UNIX anyway... 
+		 *
+		 * XXX
+		 * NTFS-3g tries to re-map these links to actually point to
+		 * something, so maybe we could do something like that here
+		 * XXX*/
 	} else {
 		for (size_t i = 0; i < link_target_len; i++)
 			if (translated_target[i] == '\\')

@@ -1,4 +1,12 @@
 /*
+ * ntfs-apply.c
+ *
+ * Apply a WIM image to a NTFS volume, restoring everything we can, including
+ * security data and alternate data streams.  There should be no loss of
+ * information.
+ */
+
+/*
  * Copyright (C) 2012 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
@@ -371,6 +379,14 @@ static int do_wim_apply_image_ntfs(WIMStruct *w, const char *device, int extract
 	return ret;
 }
 
+
+/* 
+ * API entry point for applying a WIM image to a NTFS volume.
+ *
+ * Please note that this is a NTFS *volume* and not a directory.  The intention
+ * is that the volume contain an empty filesystem, and the WIM image contain a
+ * full filesystem to be applied to the volume.
+ */
 WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
 					 	const char *device, int flags)
 {
@@ -384,7 +400,7 @@ WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 	if (flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) {
-		ERROR("Cannot specifcy symlink or hardlink flags when applying ");
+		ERROR("Cannot specify symlink or hardlink flags when applying ");
 		ERROR("directly to a NTFS volume");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
