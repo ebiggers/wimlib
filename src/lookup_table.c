@@ -393,7 +393,20 @@ int lookup_resource(WIMStruct *w, const char *path,
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
 	unsigned stream_idx;
+	const char *stream_name;
+	char *p = NULL;
+
+	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
+		stream_name = path_stream_name(path);
+		if (stream_name) {
+			p = (char*)stream_name - 1;
+			*p = '\0';
+		}
+	}
+
 	dentry = get_dentry(w, path);
+	if (p)
+		*p = ':';
 	if (!dentry)
 		return -ENOENT;
 
@@ -404,22 +417,19 @@ int lookup_resource(WIMStruct *w, const char *path,
 	      && dentry_is_directory(dentry))
 		return -EISDIR;
 	stream_idx = 0;
-	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
-		const char *stream_name = path_stream_name(path);
-		if (stream_name) {
-			size_t stream_name_len = strlen(stream_name);
-			for (u16 i = 0; i < dentry->num_ads; i++) {
-				if (ads_entry_has_name(&dentry->ads_entries[i],
-						       stream_name,
-						       stream_name_len))
-				{
-					stream_idx = i + 1;
-					lte = dentry->ads_entries[i].lte;
-					goto out;
-				}
+	if (stream_name) {
+		size_t stream_name_len = strlen(stream_name);
+		for (u16 i = 0; i < dentry->num_ads; i++) {
+			if (ads_entry_has_name(&dentry->ads_entries[i],
+					       stream_name,
+					       stream_name_len))
+			{
+				stream_idx = i + 1;
+				lte = dentry->ads_entries[i].lte;
+				goto out;
 			}
-			return -ENOENT;
 		}
+		return -ENOENT;
 	}
 out:
 	if (dentry_ret)

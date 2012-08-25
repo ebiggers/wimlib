@@ -1185,11 +1185,9 @@ int write_metadata_resource(WIMStruct *w)
 
 	root = wim_root_dentry(w);
 
-	struct wim_security_data *sd = wim_security_data(w);
-	if (sd)
-		subdir_offset = sd->total_length + root->length + 8;
-	else
-		subdir_offset = 8 + root->length + 8;
+	const struct wim_security_data *sd = wim_security_data(w);
+	wimlib_assert(sd);
+	subdir_offset = sd->total_length + root->length + 8;
 	calculate_subdir_offsets(root, &subdir_offset);
 	metadata_original_size = subdir_offset + random_tail_len;
 	buf = MALLOC(metadata_original_size);
@@ -1216,7 +1214,7 @@ int write_metadata_resource(WIMStruct *w)
 	lookup_table_unlink(w->lookup_table, lte);
 	lookup_table_insert(w->lookup_table, lte);
 	wimlib_assert(lte->out_refcnt == 0);
-	lte->out_refcnt++;
+	lte->out_refcnt = 1;
 	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
 out:
 	FREE(buf);

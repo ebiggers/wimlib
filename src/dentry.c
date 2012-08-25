@@ -124,6 +124,9 @@ struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
 	struct ads_entry *ads_entries;
 	struct ads_entry *new_entry;
 
+	DEBUG("Add alternate data stream %s:%s",
+	       dentry->file_name_utf8, stream_name);
+
 	if (dentry->num_ads == 0xffff)
 		return NULL;
  	num_ads = dentry->num_ads + 1;
@@ -139,13 +142,13 @@ struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
 			cur->next->prev = cur;
 		}
 	}
-	dentry->ads_entries = ads_entries;
 
 	new_entry = &ads_entries[num_ads - 1];
+	ads_entry_init(new_entry);
 	if (change_ads_name(new_entry, stream_name) != 0)
 		return NULL;
+	dentry->ads_entries = ads_entries;
 	dentry->num_ads = num_ads;
-	ads_entry_init(new_entry);
 	return new_entry;
 }
 
@@ -751,7 +754,7 @@ int change_ads_name(struct ads_entry *entry, const char *new_name)
 	return get_names(&entry->stream_name, &entry->stream_name_utf8,
 			 &entry->stream_name_len,
 			 &entry->stream_name_utf8_len,
-			  new_name);
+			 new_name);
 }
 
 /* Parameters for calculate_dentry_statistics(). */
@@ -1152,7 +1155,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	if (p - orig_p < dentry->length)
 		p = put_zeroes(p, dentry->length - (p - orig_p));
 
-	p = put_zeroes(p, (8 - (p - orig_p) % 8) % 8);
+	p = put_zeroes(p, (8 - dentry->length % 8) % 8);
 
 	for (u16 i = 0; i < dentry->num_ads; i++) {
 		p = put_u64(p, ads_entry_length(&dentry->ads_entries[i]));
@@ -1165,6 +1168,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 		p = put_u16(p, dentry->ads_entries[i].stream_name_len);
 		p = put_bytes(p, dentry->ads_entries[i].stream_name_len,
 				 (u8*)dentry->ads_entries[i].stream_name);
+		p = put_u16(p, 0);
 		p = put_zeroes(p, (8 - (p - orig_p) % 8) % 8);
 	}
 	return p;

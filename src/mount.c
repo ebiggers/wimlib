@@ -966,9 +966,14 @@ static int wimfs_ftruncate(const char *path, off_t size,
  */
 static int wimfs_getattr(const char *path, struct stat *stbuf)
 {
-	struct dentry *dentry = get_dentry(w, path);
-	if (!dentry)
-		return -ENOENT;
+	const char *stream_name;
+	char *p = NULL;
+	struct dentry *dentry;
+	int ret;
+
+	ret = lookup_resource(w, path, get_lookup_flags(), &dentry, NULL, NULL);
+	if (ret != 0)
+		return ret;
 	return dentry_to_stbuf(dentry, stbuf);
 }
 
@@ -1071,11 +1076,16 @@ static int wimfs_mkdir(const char *path, mode_t mode)
 static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
 	const char *stream_name;
+	const char *file_name;
 	if ((mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 	     && (stream_name = path_stream_name(path))) {
 		/* Make an alternate data stream */
 		struct ads_entry *new_entry;
 		struct dentry *dentry;
+
+		char *p = (char*)stream_name - 1;
+		wimlib_assert(*p == ':');
+		*p = '\0';
 
 		dentry = get_dentry(w, path);
 		if (!dentry || !dentry_is_regular_file(dentry))
