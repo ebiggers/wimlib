@@ -10,7 +10,9 @@
 
 #define LOOKUP_FLAG_ADS_OK		0x00000001
 #define LOOKUP_FLAG_DIRECTORY_OK	0x00000002
-#define LOOKUP_FLAG_FOLLOW_SYMLINKS	0x00000004
+
+/* Not yet used */
+//#define LOOKUP_FLAG_FOLLOW_SYMLINKS	0x00000004
 
 
 /* A lookup table that is used to translate the hash codes of dentries into the

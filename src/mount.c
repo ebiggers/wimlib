@@ -988,7 +988,9 @@ static int wimfs_getattr(const char *path, struct stat *stbuf)
 	struct dentry *dentry;
 	int ret;
 
-	ret = lookup_resource(w, path, get_lookup_flags(), &dentry, NULL, NULL);
+	ret = lookup_resource(w, path,
+			      get_lookup_flags() | LOOKUP_FLAG_DIRECTORY_OK,
+			      &dentry, NULL, NULL);
 	if (ret != 0)
 		return ret;
 	return dentry_to_stbuf(dentry, stbuf);
