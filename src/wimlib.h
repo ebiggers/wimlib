@@ -201,20 +201,6 @@
 typedef struct WIMStruct WIMStruct;
 #endif
 
-/** 
- * Specifies the way in which identical files are linked when extracting
- * image(s) from the WIM. 
- */
-enum wim_link_type {
-/** Hard link identical files when extracting files from the WIM. */
-	WIM_LINK_TYPE_HARD = 0,
-/** Symbolic link identical files when extracting files from the WIM. */
-	WIM_LINK_TYPE_SYMBOLIC = 1,
-/** Do not create links when extracting identical files from the WIM (default).
- * */
-	WIM_LINK_TYPE_NONE = 2,
-};
-
 /**
  * Specifies the compression type of a WIM file.
  */
@@ -274,13 +260,8 @@ enum wim_compression_type {
  * the WIM image. */
 #define WIMLIB_ADD_IMAGE_FLAG_VERBOSE		0x00000002
 
-/** Apply NTFS-specific information to the captured WIM image.  This flag can
- * only be specified if the directory being captured is on a NTFS filesystem
- * mounted with NTFS-3g, and wimlib was compiled with support for NTFS-3g  */
-#define WIMLIB_ADD_IMAGE_FLAG_NTFS		0x00000004
-
 /** Follow symlinks; archive and dump the files they point to. */
-#define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	0x00000008
+#define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	0x00000004
 
 /** See documentation for wimlib_export_image(). */
 #define WIMLIB_EXPORT_FLAG_BOOT			0x00000001
@@ -296,10 +277,12 @@ enum wim_compression_type {
 #define WIMLIB_OPEN_FLAG_SPLIT_OK		0x00000004
 
 
-/** When identical files are extracted from the WIM, hard link them together. */
+/** When identical files are extracted from the WIM, always hard link them
+ * together. */
 #define WIMLIB_EXTRACT_FLAG_HARDLINK		0x00000001
 
-/** When identical files are extracted from the WIM, symlink them together. */
+/** When identical files are extracted from the WIM, always symlink them
+ * together. */
 #define WIMLIB_EXTRACT_FLAG_SYMLINK		0x00000002
 
 /** Print the name of each file as it is extracted from the WIM image. */
@@ -1154,25 +1137,6 @@ extern int wimlib_set_image_descripton(WIMStruct *wim, int image,
  * 	Failed to allocate the memory needed to duplicate the @a name string.
  */
 extern int wimlib_set_image_name(WIMStruct *wim, int image, const char *name);
-
-/**
- * Sets the link type to use when extracting files from a WIM.  This applies
- * when extracting one image as well as when extracting all images.  Cross-image
- * links may save a lot of space because it is common for files to be referenced
- * multiple times in WIM files.  By default, the link type used for extraction
- * is ::WIM_LINK_TYPE_NONE, meaning that links are not created.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file
- * @param link_type
- * 	::WIM_LINK_TYPE_NONE, ::WIM_LINK_TYPE_SYMBOLIC, or ::WIM_LINK_TYPE_HARD.
- *
- * @return 0 on success; nonzero on error.
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a link_type was not ::WIM_LINK_TYPE_NONE, ::WIM_LINK_TYPE_SYMBOLIC,
- * 	or ::WIM_LINK_TYPE_HARD.
- */
-extern int wimlib_set_link_type(WIMStruct *wim, int link_type);
 
 /**
  * Set the functions that wimlib uses to allocate and free memory.

@@ -267,7 +267,7 @@ static iconv_t cd_utf16_to_utf8 = (iconv_t)(-1);
 /* Converts a string in the UTF-16 encoding to a newly allocated string in the
  * UTF-8 encoding.  */
 char *utf16_to_utf8(const char *utf16_str, size_t utf16_len,
-				size_t *utf8_len_ret)
+		    size_t *utf8_len_ret)
 {
 	if (cd_utf16_to_utf8 == (iconv_t)(-1)) {
 		cd_utf16_to_utf8 = iconv_open("UTF-8", "UTF-16LE");
