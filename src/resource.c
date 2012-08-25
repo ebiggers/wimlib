@@ -447,16 +447,11 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 							ctype, size, offset, buf);
 		break;
 	case RESOURCE_IN_STAGING_FILE:
-		/* The WIM FUSE implementation needs to handle multiple open
-		 * file descriptors per lookup table entry so it does not
-		 * currently work with this function. */
-		wimlib_assert(lte->staging_file_name);
-		wimlib_assert(0);
-		break;
 	case RESOURCE_IN_FILE_ON_DISK:
 		/* The resource is in some file on the external filesystem and
 		 * needs to be read uncompressed */
 		wimlib_assert(lte->file_on_disk);
+		wimlib_assert(&lte->file_on_disk == &lte->staging_file_name);
 		/* Use existing file pointer if available; otherwise open one
 		 * temporarily */
 		if (lte->file_on_disk_fp) {

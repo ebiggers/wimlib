@@ -44,6 +44,7 @@
 #include <fuse.h>
 #include <ftw.h>
 #include <mqueue.h>
+#include <attr/xattr.h>
 
 struct wimlib_fd {
 	u16 idx;
@@ -185,6 +186,20 @@ static void remove_dentry(struct dentry *dentry,
 
 	unlink_dentry(dentry);
 	put_dentry(dentry);
+}
+
+static void remove_ads(struct dentry *dentry,
+		       struct ads_entry *ads_entry,
+		       struct lookup_table *lookup_table)
+{
+	struct lookup_table_entry *lte;
+
+	wimlib_assert(dentry->resolved);
+
+	lte = lte_decrement_refcnt(lte, lookup_table);
+	if (lte)
+		list_del(&ads_entry->lte_group_list.list);
+	dentry_remove_ads(dentry, ads_entry);
 }
 
 /* Transfers file attributes from a struct dentry to a `stat' buffer. */
@@ -490,6 +505,8 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 	new_lte->resource_entry.original_size = size;
 	new_lte->refcnt = link_group_size;
 	random_hash(new_lte->hash);
+	if (new_lte->staging_file_name)
+		FREE(new_lte->staging_file_name);
 	new_lte->staging_file_name = staging_file_name;
 	new_lte->resource_location = RESOURCE_IN_STAGING_FILE;
 
@@ -977,11 +994,41 @@ static int wimfs_getattr(const char *path, struct stat *stbuf)
 	return dentry_to_stbuf(dentry, stbuf);
 }
 
+/* Read an alternate data stream through the XATTR interface, or get its size */
 static int wimfs_getxattr(const char *path, const char *name, char *value,
 			  size_t size)
 {
-	/* XXX */
-	return -ENOTSUP;
+	int ret;
+	struct dentry *dentry;
+	struct ads_entry *ads_entry;
+	size_t res_size;
+	struct lookup_table_entry *lte;
+
+	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
+		return -ENOTSUP;
+
+	if (memcmp(name, "user.", 5) != 0)
+		return -ENOATTR;
+	name += 5;
+
+	dentry = get_dentry(w, path);
+	if (!dentry)
+		return -ENOENT;
+	ads_entry = dentry_get_ads_entry(dentry, name);
+	if (!ads_entry)
+		return -ENOATTR;
+
+	lte = ads_entry->lte;
+	res_size = wim_resource_size(lte);
+
+	if (size == 0)
+		return res_size;
+	if (res_size > size)
+		return -ERANGE;
+	ret = read_full_wim_resource(lte, value);
+	if (ret != 0)
+		return -EIO;
+	return res_size;
 }
 
 /* Create a hard link */
@@ -1038,8 +1085,35 @@ static int wimfs_link(const char *to, const char *from)
 
 static int wimfs_listxattr(const char *path, char *list, size_t size)
 {
-	/* XXX */
-	return -ENOTSUP;
+	struct dentry *dentry;
+	int ret;
+	char *p = list;
+	size_t needed_size;
+	unsigned i;
+	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
+		return -ENOTSUP;
+
+	/* List alternate data streams, or get the list size */
+
+	ret = lookup_resource(w, path, get_lookup_flags(), &dentry, NULL, NULL);
+	if (ret != 0)
+		return ret;
+	if (size == 0) {
+		needed_size = 0;
+		for (i = 0; i < dentry->num_ads; i++)
+			needed_size += dentry->ads_entries[i].stream_name_utf8_len + 6;
+		return needed_size;
+	} else {
+		for (i = 0; i < dentry->num_ads; i++) {
+			needed_size = dentry->ads_entries[i].stream_name_utf8_len + 6;
+			if (needed_size > size)
+				return -ERANGE;
+			p += sprintf(p, "user.%s",
+				     dentry->ads_entries[i].stream_name_utf8) + 1;
+			size -= needed_size;
+		}
+		return p - list;
+	}
 }
 
 /* 
@@ -1171,7 +1245,8 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	 * directly from the WIM file if we are opening it read-only,
 	 * but we need to extract the resource to the staging directory
 	 * if we are opening it writable. */
-	if (flags_writable(fi->flags) && !lte->staging_file_name) {
+	if (flags_writable(fi->flags) &&
+	      lte->resource_location != RESOURCE_IN_STAGING_FILE) {
 		ret = extract_resource_to_staging_dir(dentry, stream_idx, &lte,
 						      lte->resource_entry.original_size);
 		if (ret != 0)
@@ -1328,10 +1403,28 @@ static int wimfs_releasedir(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
+/* Remove an alternate data stream through the XATTR interface */
 static int wimfs_removexattr(const char *path, const char *name)
 {
-	/* XXX */
-	return -ENOTSUP;
+	struct dentry *dentry;
+	struct ads_entry *ads_entry;
+	int ret;
+	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
+		return -ENOTSUP;
+
+	if (memcmp(name, "user.", 5) != 0)
+		return -ENOATTR;
+	name += 5;
+
+	dentry = get_dentry(w, path);
+	if (!dentry)
+		return -ENOENT;
+
+	ads_entry = dentry_get_ads_entry(dentry, name);
+	if (!ads_entry)
+		return -ENOATTR;
+	remove_ads(dentry, ads_entry, w->lookup_table);
+	return 0;
 }
 
 /* Renames a file or directory.  See rename (3) */
@@ -1420,11 +1513,65 @@ static int wimfs_rmdir(const char *path)
 	return 0;
 }
 
+/* Write an alternate data stream through the XATTR interface */
 static int wimfs_setxattr(const char *path, const char *name,
 			  const char *value, size_t size, int flags)
 {
-	/* XXX */
-	return -ENOTSUP;
+	struct dentry *dentry;
+	struct ads_entry *existing_ads_entry;
+	struct ads_entry *new_ads_entry;
+	struct lookup_table_entry *existing_lte;
+	struct lookup_table_entry *lte;
+	u8 value_hash[SHA1_HASH_SIZE];
+	int ret;
+	int fd;
+
+	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
+		return -ENOTSUP;
+
+	dentry = get_dentry(w, path);
+	if (!dentry)
+		return -ENOENT;
+	existing_ads_entry = dentry_get_ads_entry(dentry, name);
+	if (existing_ads_entry) {
+		if (flags & XATTR_CREATE)
+			return -EEXIST;
+		remove_ads(dentry, existing_ads_entry, w->lookup_table);
+	} else {
+		if (flags & XATTR_REPLACE)
+			return -ENOATTR;
+	}
+	new_ads_entry = dentry_add_ads(dentry, name);
+	if (!new_ads_entry)
+		return -ENOMEM;
+
+	sha1_buffer(value, size, value_hash);
+
+	existing_lte = __lookup_resource(w->lookup_table, value_hash);
+
+	if (existing_lte) {
+		lte = existing_lte;
+		lte->refcnt++;
+	} else {
+		char *value_copy;
+		lte = new_lookup_table_entry();
+		if (!lte)
+			return -ENOMEM;
+		value_copy = MALLOC(size);
+		if (!value_copy) {
+			FREE(lte);
+			return -ENOMEM;
+		}
+		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
+		lte->attached_buffer              = value_copy;
+		lte->resource_entry.original_size = size;
+		lte->resource_entry.size          = size;
+		lte->resource_entry.flags         = 0;
+		copy_hash(lte->hash, value_hash);
+		lookup_table_insert(w->lookup_table, lte);
+	}
+	new_ads_entry->lte = lte;
+	return 0;
 }
 
 static int wimfs_symlink(const char *to, const char *from)
@@ -1522,13 +1669,8 @@ static int wimfs_unlink(const char *path)
 		remove_dentry(dentry, w->lookup_table);
 	} else {
 		/* We are removing an alternate data stream. */
-		struct ads_entry *ads_entry;
-		
-		ads_entry = &dentry->ads_entries[stream_idx - 1];
-		lte = lte_decrement_refcnt(lte, w->lookup_table);
-		if (lte)
-			list_del(&ads_entry->lte_group_list.list);
-		dentry_remove_ads(dentry, ads_entry);
+		remove_ads(dentry, &dentry->ads_entries[stream_idx - 1],
+			   w->lookup_table);
 	}
 	/* Beware: The lookup table entry(s) may still be referenced by users
 	 * that have opened the corresponding streams.  They are freed later in

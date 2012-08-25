@@ -99,13 +99,18 @@ void dentry_update_all_timestamps(struct dentry *dentry)
 struct ads_entry *dentry_get_ads_entry(struct dentry *dentry,
 				       const char *stream_name)
 {
-	size_t stream_name_len = strlen(stream_name);
+	size_t stream_name_len;
 	if (!stream_name)
 		return NULL;
-	for (u16 i = 0; i < dentry->num_ads; i++)
-		if (ads_entry_has_name(&dentry->ads_entries[i],
-				       stream_name, stream_name_len))
-			return &dentry->ads_entries[i];
+	if (dentry->num_ads) {
+		u16 i = 0;
+		stream_name_len = strlen(stream_name);
+		do {
+			if (ads_entry_has_name(&dentry->ads_entries[i],
+					       stream_name, stream_name_len))
+				return &dentry->ads_entries[i];
+		} while (++i != dentry->num_ads);
+	}
 	return NULL;
 }
 
