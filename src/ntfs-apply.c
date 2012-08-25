@@ -272,37 +272,39 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
  * @return:  0 on success; nonzero on failure.
  */
 static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
-			            WIMStruct *w)
+				    WIMStruct *w)
 {
 	int ret = 0;
 	mode_t type;
 	ntfs_inode *ni = NULL;
-	ntfs_inode *hardlink_target_ni = NULL;
+	bool is_hardlink = false;
+	ntfs_volume *vol = dir_ni->vol;
 
 	if (dentry->attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		type = S_IFDIR;
 	} else {
+		struct dentry *other;
+
 		type = S_IFREG;
-		const struct list_head *head = &dentry->link_group_list;
-		if (head->next != head) {
-			/* This dentry is one of a hard link set of at least 2
-			 * dentries.  If one of the other dentries has already
-			 * been extracted, make a hard link to it.  Otherwise,
-			 * extract the file, and set the dentry->extracted_file
-			 * field so that other dentries in the hard link group
-			 * can link to it. */
-			struct dentry *other;
-			list_for_each_entry(other, head, link_group_list) {
-				if (other->extracted_file) {
-					ret = wim_apply_hardlink_ntfs(dentry,
-								      other,
-								      dir_ni,
-								      &hardlink_target_ni);
-					if (ret != 0)
-						goto out_close_dir;
-					else
-						goto out_set_dos_name;
-				}
+		/* If this dentry is one of a hard link set of at least 2
+		 * dentries.  If one of the other dentries has already
+		 * been extracted, make a hard link to it.  Otherwise,
+		 * extract the file, and set the dentry->extracted_file
+		 * field so that other dentries in the hard link group
+		 * can link to it. */
+		list_for_each_entry(other, &dentry->link_group_list,
+				    link_group_list)
+		{
+			if (other->extracted_file) {
+				is_hardlink = true;
+				ret = wim_apply_hardlink_ntfs(dentry,
+							      other,
+							      dir_ni,
+							      &ni);
+				if (ret != 0)
+					goto out_close_dir_ni;
+				else
+					goto out_set_dos_name;
 			}
 		}
 		FREE(dentry->extracted_file);
@@ -326,7 +328,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 		ERROR_WITH_ERRNO("Could not create NTFS object for `%s'",
 				 dentry->full_path_utf8);
 		ret = WIMLIB_ERR_NTFS_3G;
-		goto out_close_new;
+		goto out_close_dir_ni;
 	}
 
 	/* Write the data streams, unless this is a directory or reparse point
@@ -335,24 +337,24 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	     !(dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
 		ret = write_ntfs_data_streams(ni, dentry, w);
 		if (ret != 0)
-			goto out_close_new;
+			goto out_close_dir_ni;
 	}
 
 
 	ret = apply_file_attributes_and_security_data(ni, dentry, w);
 	if (ret != 0)
-		goto out_close_new;
+		goto out_close_dir_ni;
 
 	if (dentry->attributes & FILE_ATTR_REPARSE_POINT) {
 		ret = apply_reparse_data(ni, dentry, w);
 		if (ret != 0)
-			goto out_close_new;
+			goto out_close_dir_ni;
 	}
 
 out_set_dos_name:
-#if 0
 	/* Set DOS (short) name if given */
 	if (dentry->short_name_len != 0) {
+
 		char *short_name_utf8;
 		size_t short_name_utf8_len;
 		short_name_utf8 = utf16_to_utf8(dentry->short_name,
@@ -361,16 +363,49 @@ out_set_dos_name:
 		if (!short_name_utf8) {
 			ERROR("Out of memory");
 			ret = WIMLIB_ERR_NOMEM;
-			goto out_close_new;
+			goto out_close_dir_ni;
 		}
 
-		if (!ni) {
-			ni = ntfs_pathname_to_inode(dir_ni->vol, NULL,
-						    dentry->full_path_utf8);
+		if (is_hardlink) {
+			char *p;
+			char orig;
+			const char *dir_name;
+
+			/* ntfs_set_ntfs_dos_name() closes the inodes in the
+			 * wrong order if we have applied a hard link.   Close
+			 * them ourselves, then re-open then. */
+			if (ntfs_inode_close(dir_ni) != 0) {
+				if (ret == 0)
+					ret = WIMLIB_ERR_NTFS_3G;
+				ERROR_WITH_ERRNO("Failed to close directory inode");
+			}
+			if (ntfs_inode_close(ni) != 0) {
+				if (ret == 0)
+					ret = WIMLIB_ERR_NTFS_3G;
+				ERROR_WITH_ERRNO("Failed to close hard link target inode");
+			}
+			p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
+			do {
+				p--;
+			} while (*p != '/');
+
+			orig = *p;
+			*p = '\0';
+			dir_name = dentry->full_path_utf8;
+
+			dir_ni = ntfs_pathname_to_inode(vol, NULL, dir_name);
+			*p = orig;
+			if (!dir_ni) {
+				ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
+						 dir_name);
+				return WIMLIB_ERR_NTFS_3G;
+			}
+			ni = ntfs_pathname_to_inode(vol, dir_ni,
+						    dentry->file_name_utf8);
 			if (!ni) {
-				ERROR_WITH_ERRNO("Failed to find inode for `%s'",
-						 dentry->full_path_utf8);
-				goto out_close_dir;
+				ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
+						 dir_name);
+				return WIMLIB_ERR_NTFS_3G;
 			}
 		}
 
@@ -385,28 +420,21 @@ out_set_dos_name:
 					 dentry->full_path_utf8);
 			ret = WIMLIB_ERR_NTFS_3G;
 		}
-		goto out_close_hardlink_target;
+		/* inodes have been closed by ntfs_set_ntfs_dos_name(). */
+		return ret;
 	}
-#endif
 
-out_close_new:
-	if (ni && ntfs_inode_close_in_dir(ni, dir_ni) != 0) {
-		ERROR_WITH_ERRNO("Failed to close new inode");
-		ret = WIMLIB_ERR_NTFS_3G;
-	}
-out_close_dir:
+out_close_dir_ni:
 	if (ntfs_inode_close(dir_ni) != 0) {
 		if (ret == 0)
 			ret = WIMLIB_ERR_NTFS_3G;
 		ERROR_WITH_ERRNO("Failed to close directory inode");
 	}
-out_close_hardlink_target:
-	if (hardlink_target_ni) {
-		if (ntfs_inode_close(hardlink_target_ni) != 0) {
-			if (ret == 0)
-				ret = WIMLIB_ERR_NTFS_3G;
-			ERROR_WITH_ERRNO("Failed to close hardlink target inode");
-		}
+out_close_ni:
+	if (ni && ntfs_inode_close(ni) != 0) {
+		if (ret == 0)
+			ret = WIMLIB_ERR_NTFS_3G;
+		ERROR_WITH_ERRNO("Failed to close inode");
 	}
 	return ret;
 }
