@@ -408,6 +408,12 @@ extern int wimlib_add_image(WIMStruct *wim, const char *dir,
 			    const char *name, const char *description, 
 			    const char *flags_element, int flags);
 
+extern int wimlib_add_image_from_ntfs_volume(WIMStruct *w, const char *device,
+					     const char *name,
+					     const char *description,
+					     const char *flags_element,
+					     int flags);
+
 extern int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
 				 	     const char *device, int flags);
 

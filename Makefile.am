@@ -32,6 +32,7 @@ libwim_la_SOURCES =		\
 	src/modify.c		\
 	src/mount.c		\
 	src/ntfs-apply.c	\
+	src/ntfs-capture.c	\
 	src/resource.c		\
 	src/security.c		\
 	src/security.h		\
