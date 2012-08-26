@@ -4681,6 +4681,28 @@ int ntfs_set_file_security(struct SECURITY_API *scapi,
 	return (res);
 }
 #endif
+
+int ntfs_inode_get_security(ntfs_inode *ni, u32 selection, char *buf,
+			    u32 buflen, u32 *psize)
+{
+	char *attr;
+	int res = 0;
+
+	attr = getsecurityattr(ni->vol, ni);
+	if (attr) {
+		if (feedsecurityattr(attr,selection,
+				buf,buflen,psize)) {
+			if (test_nino_flag(ni, v3_Extensions)
+			    && ni->security_id)
+				res = le32_to_cpu(
+					ni->security_id);
+			else
+				res = -1;
+		}
+		free(attr);
+	}
+	return (res);
+}
 /*
  *		Check the validity of the ACEs in a DACL or SACL
  */
@@ -4954,6 +4976,20 @@ BOOL ntfs_set_file_attributes(struct SECURITY_API *scapi,
 	return (res);
 }
 #endif
+
+int ntfs_inode_get_attributes(ntfs_inode *ni)
+{
+	s32 attrib;
+
+	attrib = le32_to_cpu(ni->flags);
+	if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY)
+		attrib |= const_le32_to_cpu(FILE_ATTR_DIRECTORY);
+	else
+		attrib &= ~const_le32_to_cpu(FILE_ATTR_DIRECTORY);
+	if (!attrib)
+		attrib |= const_le32_to_cpu(FILE_ATTR_NORMAL);
+	return (attrib);
+}
 
 /* 
  * Set attributes of a NTFS file given an inode

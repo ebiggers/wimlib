@@ -495,12 +495,11 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 	return 0;
 }
 
-/*
- * Adds an image to a WIM file from a directory tree on disk.
- */
-WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir, 
-			       const char *name, const char *description, 
-			       const char *flags_element, int flags)
+int do_add_image(WIMStruct *w, const char *dir, const char *name,
+		 const char *description, const char *flags_element,
+		 int flags,
+		 int (*capture_tree)(struct dentry *, const char *,
+			 	     struct lookup_table *, int))
 {
 	struct dentry *root_dentry;
 	struct image_metadata *imd;
@@ -530,8 +529,8 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
 		return WIMLIB_ERR_NOMEM;
 
 	DEBUG("Building dentry tree.");
-	ret = build_dentry_tree(root_dentry, dir, w->lookup_table,
-				flags | WIMLIB_ADD_IMAGE_FLAG_ROOT);
+	ret = (*capture_tree)(root_dentry, dir, w->lookup_table,
+			      flags | WIMLIB_ADD_IMAGE_FLAG_ROOT);
 
 	if (ret != 0) {
 		ERROR("Failed to build dentry tree for `%s'", dir);
@@ -571,4 +570,15 @@ out_destroy_imd:
 out_free_dentry_tree:
 	free_dentry_tree(root_dentry, w->lookup_table);
 	return ret;
+}
+
+/*
+ * Adds an image to a WIM file from a directory tree on disk.
+ */
+WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir, 
+			       const char *name, const char *description, 
+			       const char *flags_element, int flags)
+{
+	return do_add_image(w, dir, name, description, flags_element, flags,
+			    build_dentry_tree);
 }

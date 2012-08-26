@@ -25,6 +25,11 @@ static inline bool hashes_equal(const u8 h1[SHA1_HASH_SIZE],
 {
 	return memcmp(h1, h2, SHA1_HASH_SIZE) == 0;
 }
+static inline int hashes_cmp(const u8 h1[SHA1_HASH_SIZE],
+			     const u8 h2[SHA1_HASH_SIZE])
+{
+	return memcmp(h1, h2, SHA1_HASH_SIZE);
+}
 
 /* Prints a hash code field. */
 static inline void print_hash(const u8 hash[SHA1_HASH_SIZE])

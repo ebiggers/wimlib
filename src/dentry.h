@@ -134,7 +134,7 @@ struct dentry {
 	 * entry's child files.  0 if the directory entry has no children. */
 	u64 subdir_offset;
 
-	/* Timestamps for the entry.  The timestamps are the number of
+	/* Timestamps for the dentry.  The timestamps are the number of
 	 * 100-nanosecond intervals that have elapsed since 12:00 A.M., January
 	 * 1st, 1601, UTC. */
 	u64 creation_time;

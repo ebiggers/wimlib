@@ -334,6 +334,11 @@ extern int check_wim_integrity(WIMStruct *w, int show_progress, int *status);
 /* modify.c */
 extern void destroy_image_metadata(struct image_metadata *imd,
 				   struct lookup_table *lt);
+extern int do_add_image(WIMStruct *w, const char *dir, const char *name,
+			const char *description, const char *flags_element,
+			int flags,
+			int (*capture_tree)(struct dentry *, const char *,
+			 	     struct lookup_table *, int));
 
 /* resource.c */
 extern const u8 *get_resource_entry(const u8 *p, struct resource_entry *entry);
