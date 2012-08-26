@@ -262,6 +262,74 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 	return 0;
 }
 
+static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
+				    WIMStruct *w);
+
+/* 
+ * If @dentry is part of a hard link group, search for hard-linked dentries in
+ * the same directory that have a nonempty DOS (short) filename.  There should
+ * be exactly 0 or 1 such dentries.  If there is 1, extract that dentry first,
+ * so that the DOS name is correctly associated with the corresponding long name
+ * in the Win32 namespace, and not any of the additional names in the POSIX
+ * namespace created from hard links.
+ */
+static int preapply_dentry_with_dos_name(struct dentry *dentry,
+				    	 ntfs_inode **dir_ni_p,
+					 WIMStruct *w)
+{
+	int ret;
+	struct dentry *other;
+	struct dentry *dentry_with_dos_name;
+
+	if (dentry->link_group_list.next == &dentry->link_group_list)
+		return 0;
+
+	dentry_with_dos_name = NULL;
+	list_for_each_entry(other, &dentry->link_group_list,
+			    link_group_list)
+	{
+		if (dentry->parent == other->parent && other->short_name_len) {
+			if (dentry_with_dos_name) {
+				ERROR("Found multiple DOS names for file `%s' "
+				      "in the same directory",
+				      dentry_with_dos_name->full_path_utf8);
+				return WIMLIB_ERR_INVALID_DENTRY;
+			}
+			dentry_with_dos_name = other;
+		}
+	}
+	/* If there's a dentry with a DOS name, extract it first */
+	if (dentry_with_dos_name && !dentry_with_dos_name->extracted_file) {
+		char *p;
+		const char *dir_name;
+		char orig;
+		ntfs_volume *vol = (*dir_ni_p)->vol;
+
+		DEBUG("pre-applying DOS name `%s'", dentry_with_dos_name);
+		ret = do_wim_apply_dentry_ntfs(dentry_with_dos_name,
+					       *dir_ni_p, w);
+		if (ret != 0)
+			return ret;
+		p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
+		do {
+			p--;
+		} while (*p != '/');
+
+		orig = *p;
+		*p = '\0';
+		dir_name = dentry->full_path_utf8;
+
+		*dir_ni_p = ntfs_pathname_to_inode(vol, NULL, dir_name);
+		*p = orig;
+		if (!*dir_ni_p) {
+			ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
+					 dir_name);
+			return WIMLIB_ERR_NTFS_3G;
+		}
+	}
+	return 0;
+}
+
 /* 
  * Applies a WIM dentry to a NTFS filesystem.
  *
@@ -285,28 +353,22 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	} else {
 		struct dentry *other;
 
+		ret = preapply_dentry_with_dos_name(dentry, &dir_ni, w);
+		if (ret != 0)
+			return ret;
+
 		type = S_IFREG;
-		/* If this dentry is one of a hard link set of at least 2
-		 * dentries.  If one of the other dentries has already
-		 * been extracted, make a hard link to it.  Otherwise,
-		 * extract the file, and set the dentry->extracted_file
-		 * field so that other dentries in the hard link group
-		 * can link to it. */
+		/* See if we can make a hard link */
 		list_for_each_entry(other, &dentry->link_group_list,
-				    link_group_list)
-		{
+				    link_group_list) {
 			if (other->extracted_file) {
-				is_hardlink = true;
-				ret = wim_apply_hardlink_ntfs(dentry,
-							      other,
-							      dir_ni,
-							      &ni);
+				ret = wim_apply_hardlink_ntfs(dentry, other,
+							      dir_ni, &ni);
 				if (ret != 0)
-					goto out_close_dir_ni;
-				else
-					goto out_set_dos_name;
+					return ret;
 			}
 		}
+		/* Can't make a hard link */
 		FREE(dentry->extracted_file);
 		dentry->extracted_file = STRDUP(dentry->full_path_utf8);
 		if (!dentry->extracted_file) {
@@ -475,6 +537,9 @@ static int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 	ntfs_inode *close_after_dir;
 	const char *dir_name;
 
+	if (dentry->extracted_file)
+		return 0;
+
 	wimlib_assert(dentry->full_path_utf8);
 
 	DEBUG("Applying dentry `%s' to NTFS", dentry->full_path_utf8);
@@ -495,13 +560,14 @@ static int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 	dir_name = dentry->full_path_utf8;
 
 	dir_ni = ntfs_pathname_to_inode(vol, NULL, dir_name);
+	if (dir_ni)
+		DEBUG("Found NTFS inode for `%s'", dir_name);
 	*p = orig;
 	if (!dir_ni) {
 		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
 				 dir_name);
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	DEBUG("Found NTFS inode for `%s'", dir_name);
 	return do_wim_apply_dentry_ntfs(dentry, dir_ni, w);
 }
 

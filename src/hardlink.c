@@ -235,10 +235,32 @@ static bool dentries_have_same_ads(const struct dentry *d1,
 	return true;
 }
 
-/* Share the alternate stream entries between hard-linked dentries. */
+/* 
+ * Share the alternate stream entries between hard-linked dentries.
+ *
+ * Notes:
+ * - If you use 'imagex.exe' (version 6.1.7600.16385) to create a WIM containing
+ *   hard-linked files, only one dentry in the hard link set will refer to data
+ *   streams, including all alternate data streams.  The rest of the dentries in
+ *   the hard link set will be marked as having 0 alternate data streams and
+ *   will not refer to any main file stream (the SHA1 message digest will be all
+ *   0's).
+ *
+ * - However, if you look at the WIM's that Microsoft actually distributes (e.g.
+ *   Windows 7/8 boot.wim, install.wim), it's not the same as above.  The
+ *   dentries in hard link sets will have stream information duplicated.  I
+ *   can't say anything about the alternate data streams because these WIMs do
+ *   not contain alternate data streams.
+ *
+ * - Windows 7 'install.wim' contains hard link sets containing dentries with
+ *   inconsistent streams and other inconsistent information such as security
+ *   ID.  The only way I can think to handle these is to treat the hard link
+ *   grouping as erroneous and split up the hard link group.
+ */
 static int share_dentry_ads(struct dentry *owner, struct dentry *user)
 {
 	const char *mismatch_type;
+	bool data_streams_shared = true;
 	wimlib_assert(owner->num_ads == 0 ||
 		      owner->ads_entries != user->ads_entries);
 	if (owner->attributes != user->attributes) {
@@ -255,12 +277,19 @@ static int share_dentry_ads(struct dentry *owner, struct dentry *user)
 		goto mismatch;
 	}
 	if (!hashes_equal(owner->hash, user->hash)) {
-		mismatch_type = "main file resource";
-		goto mismatch;
+		if (is_zero_hash(user->hash)) {
+			data_streams_shared = false;
+			copy_hash(user->hash, owner->hash);
+		} else {
+			mismatch_type = "main file resource";
+			goto mismatch;
+		}
 	}
-	if (!dentries_have_same_ads(owner, user)) {
-		mismatch_type = "Alternate Stream Entries";
-		goto mismatch;
+	if (data_streams_shared) {
+		if (!dentries_have_same_ads(owner, user)) {
+			mismatch_type = "Alternate Stream Entries";
+			goto mismatch;
+		}
 	}
 	dentry_free_ads_entries(user);
 	user->ads_entries = owner->ads_entries;
@@ -279,11 +308,27 @@ static int link_group_free_duplicate_data(struct link_group *group,
 {
 	struct dentry *owner, *user, *tmp;
 
+	/* Find a dentry with non-zero hash to use as a possible link group
+	 * owner (see comments above the share_dentry_ads() function */
 	owner = container_of(group->dentry_list, struct dentry,
 			      link_group_list);
-	owner->ads_entries_status = ADS_ENTRIES_OWNER;
+	do {
+		/* imagex.exe may move the un-named data stream from the dentry
+		 * itself to the first alternate data stream, if there are
+		 * other alternate data streams */
+		if (!is_zero_hash(owner->hash) ||
+		    (owner->num_ads && !is_zero_hash(owner->ads_entries[0].hash)))
+			goto found_owner;
+		owner = container_of(owner->link_group_list.next,
+				     struct dentry,
+				     link_group_list);
+	} while (&owner->link_group_list != group->dentry_list);
 
-	list_for_each_entry_safe(user, tmp, group->dentry_list,
+	ERROR("Could not find owner of data streams in hard link group");
+	return WIMLIB_ERR_INVALID_DENTRY;
+found_owner:
+	owner->ads_entries_status = ADS_ENTRIES_OWNER;
+	list_for_each_entry_safe(user, tmp, &owner->link_group_list,
 				 link_group_list)
 	{
 		/* I would like it to be an error if two dentries are in the

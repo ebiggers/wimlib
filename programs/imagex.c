@@ -80,14 +80,16 @@ static const char *path_basename(const char *path)
 
 static const char *usage_strings[] = {
 [APPEND] = 
-"    imagex append DIRECTORY WIMFILE [\"IMAGE_NAME\"] [\"DESCRIPTION\"] [--boot]\n"
-"                  [--check] [--flags EDITIONID] [--dereference]\n",
+"    imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [\"IMAGE_NAME\"]\n"
+"                  [\"DESCRIPTION\"] [--boot] [--check] [--flags EDITIONID]\n"
+"                  [--dereference]\n",
 [APPLY] = 
-"    imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all] DIRECTORY [--check]\n"
-"                 [--hardlink] [--symlink] [--verbose]\n",
+"    imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
+"                 (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
+"                 [--symlink] [--verbose]\n",
 [CAPTURE] = 
-"    imagex capture DIRECTORY WIMFILE [\"IMAGE_NAME\"] [\"DESCRIPTION\"]\n"
-"       l           [--boot] [--check] [--compress[=TYPE]]\n"
+"    imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [\"IMAGE_NAME\"]\n"
+"                   [\"DESCRIPTION\"] [--boot] [--check] [--compress[=TYPE]]\n"
 "                   [--flags \"EditionID\"] [--verbose] [--dereference]\n",
 [DELETE] = 
 "    imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n",
@@ -341,12 +343,34 @@ static int imagex_append(int argc, const char **argv)
 	if (ret != 0)
 		return ret;
 
+#ifdef WITH_NTFS_3G
+	struct stat stbuf;
+
+	ret = stat(dir, &stbuf);
+	if (ret == 0) {
+		if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
+			const char *ntfs_device = dir;
+			printf("Capturing WIM image NTFS filesystem on `%s'\n",
+			       ntfs_device);
+			ret = wimlib_add_image_from_ntfs_volume(w, ntfs_device,
+								name, desc,
+								flags_element,
+								add_image_flags);
+			goto out_write;
+		}
+	} else {
+		if (errno != -ENOENT)
+			imagex_error_with_errno("Failed to stat `%s'", dir);
+	}
+#endif
 	ret = wimlib_add_image(w, dir, name, desc, 
 			       flags_element, add_image_flags);
+
+out_write:
 	if (ret != 0)
-		goto done;
+		goto out;
 	ret = wimlib_overwrite(w, write_flags);
-done:
+out:
 	wimlib_free(w);
 	return ret;
 }
@@ -504,17 +528,39 @@ static int imagex_capture(int argc, const char **argv)
 	if (ret != 0)
 		return ret;
 
+#ifdef WITH_NTFS_3G
+	struct stat stbuf;
+
+	ret = stat(dir, &stbuf);
+	if (ret == 0) {
+		if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
+			const char *ntfs_device = dir;
+			printf("Capturing WIM image NTFS filesystem on `%s'\n",
+			       ntfs_device);
+			ret = wimlib_add_image_from_ntfs_volume(w, ntfs_device,
+								name, desc,
+								flags_element,
+								add_image_flags);
+			goto out_write;
+		}
+	} else {
+		if (errno != -ENOENT)
+			imagex_error_with_errno("Failed to stat `%s'", dir);
+	}
+#endif
 	ret = wimlib_add_image(w, dir, name, desc, flags_element, 
 			       add_image_flags);
+
+out_write:
 	if (ret != 0) {
 		imagex_error("Failed to add the image `%s'", dir);
-		goto done;
+		goto out;
 	}
 
 	ret = wimlib_write(w, wimfile, WIM_ALL_IMAGES, write_flags);
 	if (ret != 0)
 		imagex_error("Failed to write the WIM file `%s'", wimfile);
-done:
+out:
 	wimlib_free(w);
 	return ret;
 }

@@ -48,12 +48,14 @@ extern int ntfs_inode_get_security(ntfs_inode *ni, u32 selection, char *buf,
 
 extern int ntfs_inode_get_attributes(ntfs_inode *ni);
 
-struct sd_tree {
-	u32 num_sds;
+/* Structure that allows searching the security descriptors by SHA1 message
+ * digest. */
+struct sd_set {
 	struct wim_security_data *sd;
 	struct sd_node *root;
 };
 
+/* Binary tree node of security descriptors, indexed by the @hash field. */
 struct sd_node {
 	int security_id;
 	u8 hash[SHA1_HASH_SIZE];
@@ -61,18 +63,20 @@ struct sd_node {
 	struct sd_node *right;
 };
 
-static void free_sd_tree(struct sd_node *root)
+/* Frees a security descriptor index tree. */
+static void free_sd_set(struct sd_node *root)
 {
 	if (root) {
-		free_sd_tree(root->left);
-		free_sd_tree(root->right);
+		free_sd_set(root->left);
+		free_sd_set(root->right);
 		FREE(root);
 	}
 }
 
+/* Inserts a a new node into the security descriptor index tree. */
 static void insert_sd_node(struct sd_node *new, struct sd_node *root)
 {
-	int cmp = hashes_cmp(root->hash, new->hash);
+	int cmp = hashes_cmp(new->hash, root->hash);
 	if (cmp < 0) {
 		if (root->left)
 			insert_sd_node(new, root->left);
@@ -88,22 +92,33 @@ static void insert_sd_node(struct sd_node *new, struct sd_node *root)
 	}
 }
 
-static int lookup_sd(const u8 hash[SHA1_HASH_SIZE], struct sd_node *node)
+/* Returns the security ID of the security data having a SHA1 message digest of
+ * @hash in the security descriptor index tree rooted at @root. 
+ *
+ * If not found, return -1. */
+static int lookup_sd(const u8 hash[SHA1_HASH_SIZE], struct sd_node *root)
 {
 	int cmp;
-	if (!node)
+	if (!root)
 		return -1;
-	cmp = hashes_cmp(hash, node->hash);
+	cmp = hashes_cmp(hash, root->hash);
 	if (cmp < 0)
-		return lookup_sd(hash, node->left);
+		return lookup_sd(hash, root->left);
 	else if (cmp > 0)
-		return lookup_sd(hash, node->right);
+		return lookup_sd(hash, root->right);
 	else
-		return node->security_id;
+		return root->security_id;
 }
 
-static int tree_add_sd(struct sd_tree *tree, const u8 *descriptor,
-		       size_t size)
+/*
+ * Adds a security descriptor to the indexed security descriptor set as well as
+ * the corresponding `struct wim_security_data', and returns the new security
+ * ID; or, if there is an existing security descriptor that is the same, return
+ * the security ID for it.  If a new security descriptor cannot be allocated,
+ * return -1.
+ */
+static int sd_set_add_sd(struct sd_set *sd_set, const u8 *descriptor,
+		         size_t size)
 {
 	u8 hash[SHA1_HASH_SIZE];
 	int security_id;
@@ -111,24 +126,28 @@ static int tree_add_sd(struct sd_tree *tree, const u8 *descriptor,
 	u8 **descriptors;
 	u64 *sizes;
 	u8 *descr_copy;
-	struct wim_security_data *sd = tree->sd;
+	struct wim_security_data *sd;
 	sha1_buffer(descriptor, size, hash);
 
-	security_id = lookup_sd(hash, tree->root);
+	security_id = lookup_sd(hash, sd_set->root);
 	if (security_id >= 0)
 		return security_id;
 
-	new = MALLOC(sizeof(struct sd_node));
+	new = MALLOC(sizeof(*new));
 	if (!new)
-		return -1;
+		goto out;
 	descr_copy = MALLOC(size);
 	if (!descr_copy)
 		goto out_free_node;
+
+	sd = sd_set->sd;
+
 	memcpy(descr_copy, descriptor, size);
-	new->security_id = tree->num_sds++;
+	new->security_id = sd->num_entries;
 	new->left = NULL;
 	new->right = NULL;
 	copy_hash(new->hash, hash);
+
 
 	descriptors = REALLOC(sd->descriptors,
 			      (sd->num_entries + 1) * sizeof(sd->descriptors[0]));
@@ -143,45 +162,34 @@ static int tree_add_sd(struct sd_tree *tree, const u8 *descriptor,
 	sd->descriptors[sd->num_entries] = descr_copy;
 	sd->sizes[sd->num_entries] = size;
 	sd->num_entries++;
-	sd->total_length += size + 8;
+	sd->total_length += size + sizeof(sd->sizes[0]);
 
-	if (tree->root)
-		insert_sd_node(tree->root, new);
+	if (sd_set->root)
+		insert_sd_node(sd_set->root, new);
 	else
-		tree->root = new;
+		sd_set->root = new;
 	return new->security_id;
 out_free_descr:
 	FREE(descr_copy);
 out_free_node:
 	FREE(new);
+out:
 	return -1;
 }
 
-#if 0
-static int build_sd_tree(struct wim_security_data *sd, struct sd_tree *tree)
+static inline ntfschar *attr_record_name(ATTR_RECORD *ar)
 {
-	int ret;
-	u32 orig_num_entries = sd->num_entries;
-	u32 orig_total_length = sd->total_length;
-
-	tree->num_sds = 0;
-	tree->sd = sd;
-	tree->root = NULL;
-
-	for (u32 i = 0; i < sd->num_entries; i++) {
-		ret = tree_add_sd(tree, sd->descriptors[i], sd->sizes[i]);
-		if (ret < 0)
-			goto out_revert;
-	}
-	return 0;
-out_revert:
-	sd->num_entries = orig_num_entries;
-	sd->total_length = orig_total_length;
-	free_sd_tree(tree->root);
-	return ret;
+	return (ntfschar*)((u8*)ar + le16_to_cpu(ar->name_offset));
 }
-#endif
 
+/* Calculates the SHA1 message digest of a NTFS attribute. 
+ *
+ * @ni:  The NTFS inode containing the attribute.
+ * @ar:	 The ATTR_RECORD describing the attribute.
+ * @md:  If successful, the returned SHA1 message digest.
+ *
+ * Return 0 on success or nonzero on error.
+ */
 static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 			     u8 md[SHA1_HASH_SIZE])
 {
@@ -191,8 +199,7 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 	ntfs_attr *na;
 	SHA_CTX ctx;
 
-	na = ntfs_attr_open(ni, ar->type,
-			    (ntfschar*)((u8*)ar + le16_to_cpu(ar->name_offset)),
+	na = ntfs_attr_open(ni, ar->type, attr_record_name(ar),
 			    ar->name_length);
 	if (!na) {
 		ERROR_WITH_ERRNO("Failed to open NTFS attribute");
@@ -263,20 +270,18 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 
 
 			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
-			if (!ntfs_loc) {
+			if (!ntfs_loc)
 				goto out_put_actx;
-			}
 			ntfs_loc->ntfs_vol_p = ntfs_vol_p;
 			ntfs_loc->path_utf8 = MALLOC(path_len + 1);
 			if (!ntfs_loc->path_utf8)
-				goto out_put_actx;
+				goto out_free_ntfs_loc;
 			memcpy(ntfs_loc->path_utf8, path, path_len + 1);
 			ntfs_loc->stream_name_utf16 = MALLOC(actx->attr->name_length * 2);
 			if (!ntfs_loc->stream_name_utf16)
 				goto out_free_ntfs_loc;
 			memcpy(ntfs_loc->stream_name_utf16,
-			       (u8*)actx->attr +
-					le16_to_cpu(actx->attr->name_offset),
+			       attr_record_name(actx->attr),
 			       actx->attr->name_length * 2);
 
 			ntfs_loc->stream_name_utf16_num_chars = actx->attr->name_length;
@@ -295,8 +300,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			dentry->lte = lte;
 		} else {
 			struct ads_entry *new_ads_entry;
-			stream_name_utf8 = utf16_to_utf8((u8*)actx->attr +
-							 le16_to_cpu(actx->attr->name_offset),
+			stream_name_utf8 = utf16_to_utf8((const u8*)attr_record_name(actx->attr),
 							 actx->attr->name_length,
 							 &stream_name_utf16_len);
 			if (!stream_name_utf8)
@@ -330,14 +334,14 @@ struct readdir_ctx {
 	char		    *path;
 	size_t		     path_len;
 	struct lookup_table *lookup_table;
-	struct sd_tree	    *tree;
+	struct sd_set	    *sd_set;
 	ntfs_volume	   **ntfs_vol_p;
 };
 
 static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 				    char path[], size_t path_len,
 				    struct lookup_table *lookup_table,
-				    struct sd_tree *tree,
+				    struct sd_set *sd_set,
 				    ntfs_volume **ntfs_vol_p);
 
 
@@ -373,7 +377,7 @@ static int filldir(void *dirent, const ntfschar *name,
 	memcpy(ctx->path + ctx->path_len, utf8_name, utf8_name_len + 1);
 	path_len = ctx->path_len + utf8_name_len;
 	ret = __build_dentry_tree_ntfs(child, ni, ctx->path, path_len,
-				       ctx->lookup_table, ctx->tree,
+				       ctx->lookup_table, ctx->sd_set,
 				       ctx->ntfs_vol_p);
 	link_dentry(child, ctx->dentry);
 out_close_ni:
@@ -391,7 +395,7 @@ out:
 static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 				    char path[], size_t path_len,
 				    struct lookup_table *lookup_table,
-				    struct sd_tree *tree,
+				    struct sd_set *sd_set,
 				    ntfs_volume **ntfs_vol_p)
 {
 	u32 attributes = ntfs_inode_get_attributes(ni);
@@ -421,7 +425,7 @@ static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 			.path         = path,
 			.path_len     = path_len,
 			.lookup_table = lookup_table,
-			.tree         = tree,
+			.sd_set       = sd_set,
 			.ntfs_vol_p   = ntfs_vol_p,
 		};
 		ret = ntfs_readdir(ni, &pos, &ctx, filldir);
@@ -448,8 +452,12 @@ static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 				      DACL_SECURITY_INFORMATION  |
 				      SACL_SECURITY_INFORMATION,
 				      sd, sd_size, &sd_size);
-	dentry->security_id = tree_add_sd(tree, sd, sd_size);
-	return 0;
+	dentry->security_id = sd_set_add_sd(sd_set, sd, sd_size);
+	if (dentry->security_id == -1) {
+		ERROR("Could not allocate security ID");
+		ret = WIMLIB_ERR_NOMEM;
+	}
+	return ret;
 }
 
 static int build_dentry_tree_ntfs(struct dentry *root_dentry,
@@ -462,7 +470,7 @@ static int build_dentry_tree_ntfs(struct dentry *root_dentry,
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
 	int ret = 0;
-	struct sd_tree tree;
+	struct sd_set tree;
 	tree.sd = sd;
 	tree.root = NULL;
 	ntfs_volume **ntfs_vol_p = extra_arg;
