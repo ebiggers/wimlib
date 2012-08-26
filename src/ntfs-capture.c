@@ -127,8 +127,8 @@ static int sd_set_add_sd(struct sd_set *sd_set, const u8 *descriptor,
 	u64 *sizes;
 	u8 *descr_copy;
 	struct wim_security_data *sd;
-	sha1_buffer(descriptor, size, hash);
 
+	sha1_buffer(descriptor, size, hash);
 	security_id = lookup_sd(hash, sd_set->root);
 	if (security_id >= 0)
 		return security_id;
@@ -268,7 +268,6 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 		} else {
 			struct ntfs_location *ntfs_loc;
 
-
 			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
 			if (!ntfs_loc)
 				goto out_put_actx;
@@ -285,6 +284,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			       actx->attr->name_length * 2);
 
 			ntfs_loc->stream_name_utf16_num_chars = actx->attr->name_length;
+			ntfs_loc->is_reparse_point = (type == AT_REPARSE_POINT);
 			lte = new_lookup_table_entry();
 			if (!lte)
 				goto out_free_ntfs_loc;
@@ -296,7 +296,12 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			lookup_table_insert(lookup_table, lte);
 		}
 		if (actx->attr->name_length == 0) {
-			wimlib_assert(!dentry->lte);
+			if (dentry->lte) {
+				ERROR("Found two un-named data streams for "
+				      "`%s'", path);
+				ret = WIMLIB_ERR_NTFS_3G;
+				goto out_free_lte;
+			}
 			dentry->lte = lte;
 		} else {
 			struct ads_entry *new_ads_entry;
@@ -305,8 +310,8 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 							 &stream_name_utf16_len);
 			if (!stream_name_utf8)
 				goto out_free_lte;
-			FREE(stream_name_utf8);
 			new_ads_entry = dentry_add_ads(dentry, stream_name_utf8);
+			FREE(stream_name_utf8);
 			if (!new_ads_entry)
 				goto out_free_lte;
 				

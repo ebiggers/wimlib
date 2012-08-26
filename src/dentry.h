@@ -114,24 +114,33 @@ struct dentry {
 	/* Pointer to a child of this directory entry. */
 	struct dentry *children;
 
-	/* Size of directory entry, in bytes.  Typical size is around 104 to 120
-	 * bytes. */
-	/* It is possible for the length field to be 0.  This situation, which
+	/* Size of directory entry on disk, in bytes.  Typical size is around
+	 * 104 to 120 bytes.
+	 *
+	 * It is possible for the length field to be 0.  This situation, which
 	 * is undocumented, indicates the end of a list of sibling nodes in a
 	 * directory.  It also means the real length is 8, because the dentry
-	 * included only the length field, but that takes up 8 bytes. */
+	 * included only the length field, but that takes up 8 bytes.
+	 *
+	 * The length here includes the base directory entry on disk as well as
+	 * the long and short filenames.  It does NOT include any alternate
+	 * stream entries that may follow the directory entry, even though the
+	 * size of those needs to be considered.
+	 */
 	u64 length;
 
 	/* The file attributes associated with this file. */
 	u32 attributes;
 
-	/* The index of the node in the security table that contains this file's
-	 * security information.  If -1, no security information exists for this
-	 * file.  */
+	/* The index of the security descriptor in the WIM image's table of
+	 * security descriptors that contains this file's security information.
+	 * If -1, no security information exists for this file.  */
 	int32_t security_id;
 
-	/* The offset, from the start of the metadata section, of this directory
-	 * entry's child files.  0 if the directory entry has no children. */
+	/* The offset, from the start of the WIM metadata resource for this
+	 * image, of this directory entry's child files.  0 if the directory
+	 * entry has no children (as in the case of regular files or reparse
+	 * points). */
 	u64 subdir_offset;
 
 	/* Timestamps for the dentry.  The timestamps are the number of
@@ -142,15 +151,15 @@ struct dentry {
 	u64 last_write_time;
 
 	/* true if the dentry's lookup table entry has been resolved (i.e. the
-	 * @lte field is invalid, but the @hash field is not valid) */
+	 * @lte field is valid, but the @hash field is not valid) */
 	bool resolved;
 
 	/* A hash of the file's contents, or a pointer to the lookup table entry
 	 * for this dentry if the lookup table entries have been resolved.
 	 *
 	 * More specifically, this is for the un-named default file stream, as
-	 * opposed to the alternate file streams, which may have their own
-	 * lookup table entries.  */
+	 * opposed to the alternate (named) file streams, which may have their
+	 * own lookup table entries.  */
 	union {
 		u8 hash[SHA1_HASH_SIZE];
 		struct lookup_table_entry *lte;
@@ -210,7 +219,11 @@ struct dentry {
 	};
 
 	/* If the file is part of a hard link set, all the directory entries in
-	 * the set will share the same value for this field. */
+	 * the set will share the same value for this field. 
+	 *
+	 * Unfortunately, in some WIMs it is NOT the case that all dentries that
+	 * share this field are actually in the same hard link set, although the
+	 * WIMs that wimlib writes maintain this restriction. */
 	u64 hard_link;
 
 	enum {

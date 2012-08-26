@@ -33,6 +33,7 @@ struct ntfs_location {
 	char *stream_name_utf16;
 	u16 stream_name_utf16_num_chars;
 	ntfs_volume **ntfs_vol_p;
+	bool is_reparse_point;
 };
 
 /* 

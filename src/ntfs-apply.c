@@ -141,6 +141,15 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 	return ret;
 }
 
+static bool in_same_dir(const char *path1, const char *path2)
+{
+	const char *p1 = strrchr(path1, '/');
+	const char *p2 = strrchr(path2, '/');
+	if (p1 - path1 != p2 - path2)
+		return false;
+	return memcmp(path1, path2,  p1 - path1) == 0;
+}
+
 /*
  * Makes a NTFS hard link
  *
@@ -156,21 +165,52 @@ static int wim_apply_hardlink_ntfs(const struct dentry *from_dentry,
 				   ntfs_inode **to_ni_ret)
 {
 	int ret;
+	char *p;
+	char orig;
+	const char *dir_name;
+
 	ntfs_inode *to_ni;
+	ntfs_volume *vol;
 
 	wimlib_assert(dentry_is_regular_file(from_dentry)
 			&& dentry_is_regular_file(to_dentry));
 
+	if (ntfs_inode_close(dir_ni) != 0) {
+		ERROR_WITH_ERRNO("Error closing directory");
+		return WIMLIB_ERR_NTFS_3G;
+	}
+
+	vol = dir_ni->vol;
+
 	DEBUG("Extracting NTFS hard link `%s' => `%s'",
 	      from_dentry->full_path_utf8, to_dentry->extracted_file);
 
-	to_ni = ntfs_pathname_to_inode(dir_ni->vol, NULL,
+	to_ni = ntfs_pathname_to_inode(vol, NULL,
 				       to_dentry->extracted_file);
 	if (!to_ni) {
 		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
 				 to_dentry->extracted_file);
 		return WIMLIB_ERR_NTFS_3G;
 	}
+	p = from_dentry->full_path_utf8 + from_dentry->full_path_utf8_len;
+	do {
+		p--;
+	} while (*p != '/');
+
+	orig = *p;
+	*p = '\0';
+	dir_name = from_dentry->full_path_utf8;
+
+	dir_ni = ntfs_pathname_to_inode(vol, NULL,
+				        from_dentry->full_path_utf8);
+	if (!dir_ni) {
+		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
+				 from_dentry->full_path_utf8);
+		*p = orig;
+		return WIMLIB_ERR_NTFS_3G;
+	}
+	*p = orig;
+
 	ret = ntfs_link(to_ni, dir_ni,
 			(ntfschar*)from_dentry->file_name,
 			from_dentry->file_name_len / 2);
@@ -687,16 +727,6 @@ WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
 	if (ret != 0)
 		return ret;
 
-#if 0
-	if (getuid() != 0) {
-		ERROR("We are not root, but NTFS-3g requires root privileges to set arbitrary");
-		ERROR("security data on the NTFS filesystem.  Please run this program as root");
-		ERROR("if you want to extract a WIM image while preserving NTFS-specific");
-		ERROR("information.");
-
-		return WIMLIB_ERR_NOT_ROOT;
-	}
-#endif
 	return do_wim_apply_image_ntfs(w, device, flags);
 }
 
