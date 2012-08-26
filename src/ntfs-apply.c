@@ -230,6 +230,8 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 
 	lte = dentry_first_lte(dentry, w->lookup_table);
 
+	DEBUG("Applying reparse data to `%s'", dentry->full_path_utf8);
+
 	if (!lte) {
 		ERROR("Could not find reparse data for `%s'",
 		      dentry->full_path_utf8);
@@ -621,6 +623,7 @@ static int do_wim_apply_image_ntfs(WIMStruct *w, const char *device, int extract
 	ntfs_volume *vol;
 	int ret;
 	
+	DEBUG("Mounting NTFS volume `%s'", device);
 	vol = ntfs_mount(device, 0);
 	if (!vol) {
 		ERROR_WITH_ERRNO("Failed to mount NTFS volume `%s'", device);
@@ -641,6 +644,7 @@ static int do_wim_apply_image_ntfs(WIMStruct *w, const char *device, int extract
 				       wim_apply_dentry_timestamps,
 				       &args);
 out:
+	DEBUG("Unmounting NTFS volume `%s'", device);
 	if (ntfs_umount(vol, FALSE) != 0) {
 		ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'", device);
 		if (ret == 0)
