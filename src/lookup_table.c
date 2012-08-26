@@ -52,7 +52,7 @@ err:
 	return NULL;
 }
 
-struct lookup_table_entry *new_lookup_table_entry(WIMStruct *wim)
+struct lookup_table_entry *new_lookup_table_entry()
 {
 	struct lookup_table_entry *lte;
 	
@@ -66,7 +66,6 @@ struct lookup_table_entry *new_lookup_table_entry(WIMStruct *wim)
 
 	lte->part_number  = 1;
 	lte->refcnt       = 1;
-	lte->wim	  = wim;
 	INIT_LIST_HEAD(&lte->lte_group_list);
 	return lte;
 }
@@ -209,7 +208,7 @@ int read_lookup_table(WIMStruct *w)
 			ret = WIMLIB_ERR_READ;
 			goto out;
 		}
-		cur_entry = new_lookup_table_entry(w);
+		cur_entry = new_lookup_table_entry();
 		if (!cur_entry) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
