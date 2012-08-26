@@ -4828,8 +4828,7 @@ static BOOL _ntfs_valid_descr(const char *securattr, unsigned int attrsz)
  *
  * Returns nonzero on success
  */
-int _ntfs_set_file_security(ntfs_inode *ni, u32 selection,
-			    const char *attr)
+int ntfs_inode_set_security(ntfs_inode *ni, u32 selection, const char *attr)
 {
 	const SECURITY_DESCRIPTOR_RELATIVE *phead;
 	int attrsz;
@@ -4996,7 +4995,7 @@ int ntfs_inode_get_attributes(ntfs_inode *ni)
  *
  * Returns nonzero on success
  */
-int _ntfs_set_file_attributes(ntfs_inode *ni, s32 attrib)
+int ntfs_inode_set_attributes(ntfs_inode *ni, s32 attrib)
 {
 	le32 settable = FILE_ATTR_SETTABLE;
 	ATTR_FLAGS dirflags;

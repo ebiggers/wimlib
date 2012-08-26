@@ -49,9 +49,9 @@ struct ntfs_apply_args {
 	WIMStruct *w;
 };
 
-extern int _ntfs_set_file_security(ntfs_inode *ni, u32 selection,
+extern int ntfs_inode_set_security(ntfs_inode *ni, u32 selection,
 				   const char *attr);
-extern int _ntfs_set_file_attributes(ntfs_inode *ni, s32 attrib);
+extern int ntfs_inode_set_attributes(ntfs_inode *ni, s32 attrib);
 
 /* 
  * Extracts a WIM resource to a NTFS attribute.
@@ -85,7 +85,7 @@ extract_wim_resource_to_ntfs_attr(const struct lookup_table_entry *lte,
 	sha1_final(hash, &ctx);
 	if (!hashes_equal(hash, lte->hash)) {
 		ERROR("Invalid checksum on a WIM resource "
-		      "(detected when extracting to NTFS stream file)");
+		      "(detected when extracting to NTFS stream)");
 		ERROR("The following WIM resource is invalid:");
 		print_lookup_table_entry(lte);
 		return WIMLIB_ERR_INVALID_RESOURCE_HASH;
@@ -191,7 +191,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 {
 	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
 	      dentry->full_path_utf8, dentry->attributes);
-	if (!_ntfs_set_file_attributes(ni, dentry->attributes)) {
+	if (!ntfs_inode_set_attributes(ni, dentry->attributes)) {
 		ERROR("Failed to set NTFS file attributes on `%s'",
 		       dentry->full_path_utf8);
 		return WIMLIB_ERR_NTFS_3G;
@@ -209,7 +209,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 				DACL_SECURITY_INFORMATION  |
 				SACL_SECURITY_INFORMATION;
 				
-		if (!_ntfs_set_file_security(ni, selection,
+		if (!ntfs_inode_set_security(ni, selection,
 					     sd->descriptors[dentry->security_id]))
 		{
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
@@ -356,6 +356,8 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	} else {
 		struct dentry *other;
 
+		/* Apply hard-linked directory in same directory with DOS name
+		 * (if there is one) before this dentry */
 		ret = preapply_dentry_with_dos_name(dentry, &dir_ni, w);
 		if (ret != 0)
 			return ret;
@@ -365,6 +367,9 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 		list_for_each_entry(other, &dentry->link_group_list,
 				    link_group_list) {
 			if (other->extracted_file) {
+				/* Already extracted another dentry in the hard
+				 * link group.  We can make a hard link instead
+				 * of extracting the file data. */
 				ret = wim_apply_hardlink_ntfs(dentry, other,
 							      dir_ni, &ni);
 				is_hardlink = true;
@@ -374,7 +379,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 					goto out_set_dos_name;
 			}
 		}
-		/* Can't make a hard link */
+		/* Can't make a hard link; extract the file itself */
 		FREE(dentry->extracted_file);
 		dentry->extracted_file = STRDUP(dentry->full_path_utf8);
 		if (!dentry->extracted_file) {
