@@ -1770,12 +1770,34 @@ static int check_lte_refcnt(struct lookup_table_entry *lte, void *ignore)
 		lte_group_size++;
 	if (lte_group_size > lte->refcnt) {
 #ifdef ENABLE_ERROR_MESSAGES
-		ERROR("The following lookup table entry has a reference count "
+		struct dentry *example_dentry;
+		struct list_head *next;
+		struct stream_list_head *head;
+		WARNING("The following lookup table entry has a reference count "
 		      "of %u, but", lte->refcnt);
-		ERROR("We found %u references to it", lte_group_size);
+		WARNING("We found %u references to it", lte_group_size);
+		next = lte->lte_group_list.next;
+		head = container_of(next, struct stream_list_head, list);
+		if (head->type == STREAM_TYPE_NORMAL) {
+			example_dentry = container_of(head, struct dentry,
+						      lte_group_list);
+			WARNING("(One dentry referencing it is at `%s')",
+				example_dentry->full_path_utf8);
+		}
 		print_lookup_table_entry(lte);
 #endif
+		/* Guess what!  install.wim for Windows 8 contains a stream with
+		 * 2 dentries referencing it, but the lookup table entry has
+		 * reference count of 1.  So we will need to handle this case
+		 * and not just make it be an error...  I'm just setting the
+		 * reference count to the number of references we found. */
+
+		#if 1
+		lte->refcnt = lte_group_size;
+		WARNING("Fixing reference count");
+		#else
 		return WIMLIB_ERR_INVALID_DENTRY;
+		#endif
 	}
 	return 0;
 }

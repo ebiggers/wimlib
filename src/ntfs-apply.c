@@ -305,7 +305,8 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
 		char orig;
 		ntfs_volume *vol = (*dir_ni_p)->vol;
 
-		DEBUG("pre-applying DOS name `%s'", dentry_with_dos_name);
+		DEBUG("pre-applying DOS name `%s'",
+		      dentry_with_dos_name->full_path_utf8);
 		ret = do_wim_apply_dentry_ntfs(dentry_with_dos_name,
 					       *dir_ni_p, w);
 		if (ret != 0)
@@ -364,8 +365,11 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 			if (other->extracted_file) {
 				ret = wim_apply_hardlink_ntfs(dentry, other,
 							      dir_ni, &ni);
+				is_hardlink = true;
 				if (ret != 0)
-					return ret;
+					goto out_close_dir_ni;
+				else
+					goto out_set_dos_name;
 			}
 		}
 		/* Can't make a hard link */

@@ -478,6 +478,7 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 			printf("Hash              = 0x"); 
 			print_hash(hash);
 			putchar('\n');
+			putchar('\n');
 		}
 	}
 	for (u16 i = 0; i < dentry->num_ads; i++) {
