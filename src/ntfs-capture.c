@@ -217,11 +217,13 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 	return 0;
 }
 
-/* Load a normal file in the NTFS volume into the WIM lookup table */
-static int capture_normal_ntfs_file(struct dentry *dentry, ntfs_inode *ni,
-				    char path[], size_t path_len,
-				    struct lookup_table *lookup_table,
-				    ntfs_volume **ntfs_vol_p)
+/* Load the streams from a WIM file or reparse point in the NTFS volume into the
+ * WIM lookup table */
+static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
+				char path[], size_t path_len,
+				struct lookup_table *lookup_table,
+				ntfs_volume **ntfs_vol_p,
+				ATTR_TYPES type)
 {
 
 	ntfs_attr_search_ctx *actx;
@@ -230,37 +232,48 @@ static int capture_normal_ntfs_file(struct dentry *dentry, ntfs_inode *ni,
 	struct lookup_table_entry *lte;
 	int ret = 0;
 
+	/* Get context to search the streams of the NTFS file. */
 	actx = ntfs_attr_get_search_ctx(ni, NULL);
 	if (!actx) {
 		ERROR_WITH_ERRNO("Cannot get attribute search "
 				 "context");
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	while (!ntfs_attr_lookup(AT_DATA, NULL, 0,
+
+	/* Capture each data stream or reparse data stream. */
+	while (!ntfs_attr_lookup(type, NULL, 0,
 				 CASE_SENSITIVE, 0, NULL, 0, actx))
 	{
+		char *stream_name_utf8;
+		size_t stream_name_utf16_len;
+
+		/* Checksum the stream. */
 		ret = ntfs_attr_sha1sum(ni, actx->attr, attr_hash);
 		if (ret != 0)
 			goto out_put_actx;
+
+		/* Make a lookup table entry for the stream, or use an existing
+		 * one if there's already an identical stream. */
 		lte = __lookup_resource(lookup_table, attr_hash);
+		ret = WIMLIB_ERR_NOMEM;
 		if (lte) {
 			lte->refcnt++;
 		} else {
 			struct ntfs_location *ntfs_loc;
 
-			ret = WIMLIB_ERR_NOMEM;
 
 			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
 			if (!ntfs_loc) {
 				goto out_put_actx;
 			}
+			ntfs_loc->ntfs_vol_p = ntfs_vol_p;
 			ntfs_loc->path_utf8 = MALLOC(path_len + 1);
 			if (!ntfs_loc->path_utf8)
 				goto out_put_actx;
 			memcpy(ntfs_loc->path_utf8, path, path_len + 1);
 			ntfs_loc->stream_name_utf16 = MALLOC(actx->attr->name_length * 2);
 			if (!ntfs_loc->stream_name_utf16)
-				goto out_put_actx;
+				goto out_free_ntfs_loc;
 			memcpy(ntfs_loc->stream_name_utf16,
 			       (u8*)actx->attr +
 					le16_to_cpu(actx->attr->name_offset),
@@ -269,7 +282,7 @@ static int capture_normal_ntfs_file(struct dentry *dentry, ntfs_inode *ni,
 			ntfs_loc->stream_name_utf16_num_chars = actx->attr->name_length;
 			lte = new_lookup_table_entry();
 			if (!lte)
-				goto out_put_actx;
+				goto out_free_ntfs_loc;
 			lte->ntfs_loc = ntfs_loc;
 			lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
 			lte->resource_entry.original_size = actx->attr->data_size;
@@ -277,9 +290,29 @@ static int capture_normal_ntfs_file(struct dentry *dentry, ntfs_inode *ni,
 			copy_hash(lte->hash, attr_hash);
 			lookup_table_insert(lookup_table, lte);
 		}
-		dentry->lte = lte;
+		if (actx->attr->name_length == 0) {
+			wimlib_assert(!dentry->lte);
+			dentry->lte = lte;
+		} else {
+			struct ads_entry *new_ads_entry;
+			stream_name_utf8 = utf16_to_utf8((u8*)actx->attr +
+							 le16_to_cpu(actx->attr->name_offset),
+							 actx->attr->name_length,
+							 &stream_name_utf16_len);
+			if (!stream_name_utf8)
+				goto out_free_lte;
+			FREE(stream_name_utf8);
+			new_ads_entry = dentry_add_ads(dentry, stream_name_utf8);
+			if (!new_ads_entry)
+				goto out_free_lte;
+				
+			new_ads_entry->lte = lte;
+		}
 	}
+	ret = 0;
 	goto out_put_actx;
+out_free_lte:
+	free_lookup_table_entry(lte);
 out_free_ntfs_loc:
 	if (ntfs_loc) {
 		FREE(ntfs_loc->path_utf8);
@@ -291,6 +324,70 @@ out_put_actx:
 	return ret;
 }
 
+struct readdir_ctx {
+	struct dentry	    *dentry;
+	ntfs_inode	    *dir_ni;
+	char		    *path;
+	size_t		     path_len;
+	struct lookup_table *lookup_table;
+	struct sd_tree	    *tree;
+	ntfs_volume	   **ntfs_vol_p;
+};
+
+static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
+				    char path[], size_t path_len,
+				    struct lookup_table *lookup_table,
+				    struct sd_tree *tree,
+				    ntfs_volume **ntfs_vol_p);
+
+
+static int filldir(void *dirent, const ntfschar *name,
+		   const int name_len, const int name_type, const s64 pos,
+		   const MFT_REF mref, const unsigned dt_type)
+{
+	struct readdir_ctx *ctx;
+	size_t utf8_name_len;
+	char *utf8_name;
+	struct dentry *child;
+	int ret;
+	size_t path_len;
+
+	ret = -1;
+
+ 	utf8_name = utf16_to_utf8((const u8*)name, name_len * 2,
+				  &utf8_name_len);
+	if (!utf8_name)
+		goto out;
+
+	ctx = dirent;
+
+	ntfs_inode *ni = ntfs_inode_open(ctx->dir_ni->vol, mref);
+	if (!ni) {
+		ERROR_WITH_ERRNO("Failed to open NTFS inode");
+		ret = 1;
+	}
+	child = new_dentry(utf8_name);
+	if (!child)
+		goto out_close_ni;
+
+	memcpy(ctx->path + ctx->path_len, utf8_name, utf8_name_len + 1);
+	path_len = ctx->path_len + utf8_name_len;
+	ret = __build_dentry_tree_ntfs(child, ni, ctx->path, path_len,
+				       ctx->lookup_table, ctx->tree,
+				       ctx->ntfs_vol_p);
+	link_dentry(child, ctx->dentry);
+out_close_ni:
+	ntfs_inode_close(ni);
+out_free_utf8_name:
+	FREE(utf8_name);
+out:
+	return ret;
+}
+
+/* Recursively build a WIM dentry tree corresponding to a NTFS volume.
+ * At the same time, update the WIM lookup table with lookup table entries for
+ * the NTFS streams, and build an array of security descriptors.
+ */
 static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 				    char path[], size_t path_len,
 				    struct lookup_table *lookup_table,
@@ -307,16 +404,34 @@ static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 	dentry->last_access_time = le64_to_cpu(ni->last_access_time);
 	dentry->security_id      = le32_to_cpu(ni->security_id);
 	dentry->attributes       = le32_to_cpu(attributes);
+	dentry->hard_link	 = ni->mft_no;
 	dentry->resolved = true;
 
 	if (attributes & FILE_ATTR_REPARSE_POINT) {
 		/* Junction point, symbolic link, or other reparse point */
+		ret = capture_ntfs_streams(dentry, ni, path, path_len,
+					   lookup_table, ntfs_vol_p,
+					   AT_REPARSE_POINT);
 	} else if (mrec_flags & MFT_RECORD_IS_DIRECTORY) {
 		/* Normal directory */
+		s64 pos = 0;
+		struct readdir_ctx ctx = {
+			.dentry       = dentry,
+			.dir_ni       = ni,
+			.path         = path,
+			.path_len     = path_len,
+			.lookup_table = lookup_table,
+			.tree         = tree,
+			.ntfs_vol_p   = ntfs_vol_p,
+		};
+		ret = ntfs_readdir(ni, &pos, &ctx, filldir);
+		if (ret != 0)
+			ret = WIMLIB_ERR_NTFS_3G;
 	} else {
 		/* Normal file */
-		ret = capture_normal_ntfs_file(dentry, ni, path, path_len,
-					       lookup_table, ntfs_vol_p);
+		ret = capture_ntfs_streams(dentry, ni, path, path_len,
+					   lookup_table, ntfs_vol_p,
+					   AT_DATA);
 	}
 	if (ret != 0)
 		return ret;

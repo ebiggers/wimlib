@@ -29,10 +29,10 @@ struct wimlib_fd;
 typedef struct _ntfs_attr ntfs_attr;
 typedef struct _ntfs_volume ntfs_volume;
 struct ntfs_location {
-	ntfs_volume *vol;
 	char *path_utf8;
 	char *stream_name_utf16;
 	u16 stream_name_utf16_num_chars;
+	ntfs_volume **ntfs_vol_p;
 };
 
 /* 
