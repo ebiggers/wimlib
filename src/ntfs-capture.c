@@ -217,10 +217,85 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 	return 0;
 }
 
+/* Load a normal file in the NTFS volume into the WIM lookup table */
+static int capture_normal_ntfs_file(struct dentry *dentry, ntfs_inode *ni,
+				    char path[], size_t path_len,
+				    struct lookup_table *lookup_table,
+				    ntfs_volume **ntfs_vol_p)
+{
+
+	ntfs_attr_search_ctx *actx;
+	u8 attr_hash[SHA1_HASH_SIZE];
+	struct ntfs_location *ntfs_loc;
+	struct lookup_table_entry *lte;
+	int ret = 0;
+
+	actx = ntfs_attr_get_search_ctx(ni, NULL);
+	if (!actx) {
+		ERROR_WITH_ERRNO("Cannot get attribute search "
+				 "context");
+		return WIMLIB_ERR_NTFS_3G;
+	}
+	while (!ntfs_attr_lookup(AT_DATA, NULL, 0,
+				 CASE_SENSITIVE, 0, NULL, 0, actx))
+	{
+		ret = ntfs_attr_sha1sum(ni, actx->attr, attr_hash);
+		if (ret != 0)
+			goto out_put_actx;
+		lte = __lookup_resource(lookup_table, attr_hash);
+		if (lte) {
+			lte->refcnt++;
+		} else {
+			struct ntfs_location *ntfs_loc;
+
+			ret = WIMLIB_ERR_NOMEM;
+
+			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
+			if (!ntfs_loc) {
+				goto out_put_actx;
+			}
+			ntfs_loc->path_utf8 = MALLOC(path_len + 1);
+			if (!ntfs_loc->path_utf8)
+				goto out_put_actx;
+			memcpy(ntfs_loc->path_utf8, path, path_len + 1);
+			ntfs_loc->stream_name_utf16 = MALLOC(actx->attr->name_length * 2);
+			if (!ntfs_loc->stream_name_utf16)
+				goto out_put_actx;
+			memcpy(ntfs_loc->stream_name_utf16,
+			       (u8*)actx->attr +
+					le16_to_cpu(actx->attr->name_offset),
+			       actx->attr->name_length * 2);
+
+			ntfs_loc->stream_name_utf16_num_chars = actx->attr->name_length;
+			lte = new_lookup_table_entry();
+			if (!lte)
+				goto out_put_actx;
+			lte->ntfs_loc = ntfs_loc;
+			lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
+			lte->resource_entry.original_size = actx->attr->data_size;
+			lte->resource_entry.size = actx->attr->data_size;
+			copy_hash(lte->hash, attr_hash);
+			lookup_table_insert(lookup_table, lte);
+		}
+		dentry->lte = lte;
+	}
+	goto out_put_actx;
+out_free_ntfs_loc:
+	if (ntfs_loc) {
+		FREE(ntfs_loc->path_utf8);
+		FREE(ntfs_loc->stream_name_utf16);
+		FREE(ntfs_loc);
+	}
+out_put_actx:
+	ntfs_attr_put_search_ctx(actx);
+	return ret;
+}
+
 static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 				    char path[], size_t path_len,
 				    struct lookup_table *lookup_table,
-				    struct sd_tree *tree)
+				    struct sd_tree *tree,
+				    ntfs_volume **ntfs_vol_p)
 {
 	u32 attributes = ntfs_inode_get_attributes(ni);
 	int mrec_flags = ni->mrec->flags;
@@ -234,58 +309,17 @@ static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 	dentry->attributes       = le32_to_cpu(attributes);
 	dentry->resolved = true;
 
-	if (mrec_flags & MFT_RECORD_IS_DIRECTORY) {
-		if (attributes & FILE_ATTR_REPARSE_POINT) {
-			/* Junction point */
-		} else {
-			/* Normal directory */
-		}
+	if (attributes & FILE_ATTR_REPARSE_POINT) {
+		/* Junction point, symbolic link, or other reparse point */
+	} else if (mrec_flags & MFT_RECORD_IS_DIRECTORY) {
+		/* Normal directory */
 	} else {
-		if (attributes & FILE_ATTR_REPARSE_POINT) {
-			/* Symbolic link or other reparse point */
-		} else {
-			/* Normal file */
-			ntfs_attr_search_ctx *actx;
-			u8 attr_hash[SHA1_HASH_SIZE];
-			struct lookup_table_entry *lte;
-
-			actx = ntfs_attr_get_search_ctx(ni, NULL);
-			if (!actx) {
-				ERROR_WITH_ERRNO("Cannot get attribute search "
-						 "context");
-				return WIMLIB_ERR_NTFS_3G;
-			}
-			while (!ntfs_attr_lookup(AT_DATA, NULL, 0,
-						 CASE_SENSITIVE, 0, NULL, 0, actx))
-			{
-				ret = ntfs_attr_sha1sum(ni, actx->attr, attr_hash);
-				if (ret != 0)
-					return ret;
-				lte = __lookup_resource(lookup_table, attr_hash);
-				if (lte) {
-					lte->refcnt++;
-				} else {
-					/*char *file_on_disk = STRDUP(root_disk_path);*/
-					/*if (!file_on_disk) {*/
-						/*ERROR("Failed to allocate memory for file path");*/
-						/*return WIMLIB_ERR_NOMEM;*/
-					/*}*/
-					/*lte = new_lookup_table_entry();*/
-					/*if (!lte) {*/
-						/*FREE(file_on_disk);*/
-						/*return WIMLIB_ERR_NOMEM;*/
-					/*}*/
-					/*lte->file_on_disk = file_on_disk;*/
-					/*lte->resource_location = RESOURCE_IN_FILE_ON_DISK;*/
-					/*lte->resource_entry.original_size = root_stbuf.st_size;*/
-					/*lte->resource_entry.size = root_stbuf.st_size;*/
-					/*copy_hash(lte->hash, hash);*/
-					/*lookup_table_insert(lookup_table, lte);*/
-				}
-				dentry->lte = lte;
-			}
-		}
+		/* Normal file */
+		ret = capture_normal_ntfs_file(dentry, ni, path, path_len,
+					       lookup_table, ntfs_vol_p);
 	}
+	if (ret != 0)
+		return ret;
 	ret = ntfs_inode_get_security(ni,
 				      OWNER_SECURITY_INFORMATION |
 				      GROUP_SECURITY_INFORMATION |
@@ -335,7 +369,8 @@ static int build_dentry_tree_ntfs(struct dentry *root_dentry,
 	path[0] = '/';
 	path[1] = '\0';
 	ret = __build_dentry_tree_ntfs(root_dentry, root_ni, path, 1,
-				       lookup_table, &tree);
+				       lookup_table, &tree, ntfs_vol_p);
+	ntfs_inode_close(root_ni);
 
 out:
 	if (ntfs_umount(vol, FALSE) != 0) {

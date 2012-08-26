@@ -30,8 +30,9 @@ typedef struct _ntfs_attr ntfs_attr;
 typedef struct _ntfs_volume ntfs_volume;
 struct ntfs_location {
 	ntfs_volume *vol;
-	const char *path;
-	const char *ads_name;
+	char *path_utf8;
+	char *stream_name_utf16;
+	u16 stream_name_utf16_num_chars;
 };
 
 /* 
@@ -93,7 +94,7 @@ struct lookup_table_entry {
 		char *file_on_disk;
 		char *staging_file_name;
 		u8 *attached_buffer;
-		struct ntfs_location *ntfs_location;
+		struct ntfs_location *ntfs_loc;
 	};
 	union {
 		struct lookup_table_entry *next_lte_in_swm;
