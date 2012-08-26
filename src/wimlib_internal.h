@@ -181,6 +181,7 @@ struct wim_header {
  * a LZ77-based algorithm. */
 #define WIM_HDR_FLAG_COMPRESS_LZX       0x00040000
 
+typedef struct _ntfs_volume ntfs_volume;
 
 /* Structure for security data.  Each image in the WIM file has its own security
  * data. */
@@ -265,6 +266,7 @@ typedef struct WIMStruct {
 		int add_flags;
 		int write_flags;
 		bool write_metadata;
+		ntfs_volume *ntfs_vol;
 	};
 
 	/* The currently selected image, indexed starting at 1.  If not 0,
@@ -338,7 +340,9 @@ extern int do_add_image(WIMStruct *w, const char *dir, const char *name,
 			const char *description, const char *flags_element,
 			int flags,
 			int (*capture_tree)(struct dentry *, const char *,
-			 	     struct lookup_table *, int));
+			 	     struct lookup_table *, 
+				     struct wim_security_data *, int, void *),
+			void *extra_arg);
 
 /* resource.c */
 extern const u8 *get_resource_entry(const u8 *p, struct resource_entry *entry);

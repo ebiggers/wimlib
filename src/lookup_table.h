@@ -26,6 +26,14 @@ struct lookup_table {
 
 struct wimlib_fd;
 
+typedef struct _ntfs_attr ntfs_attr;
+typedef struct _ntfs_volume ntfs_volume;
+struct ntfs_location {
+	ntfs_volume *vol;
+	const char *path;
+	const char *ads_name;
+};
+
 /* 
  * An entry in the lookup table in the WIM file. 
  *
@@ -56,6 +64,7 @@ struct lookup_table_entry {
 		RESOURCE_IN_FILE_ON_DISK,
 		RESOURCE_IN_STAGING_FILE,
 		RESOURCE_IN_ATTACHED_BUFFER,
+		RESOURCE_IN_NTFS_VOLUME,
 	} resource_location;
 
 	/* Number of times this lookup table entry is referenced by dentries. */
@@ -84,10 +93,12 @@ struct lookup_table_entry {
 		char *file_on_disk;
 		char *staging_file_name;
 		u8 *attached_buffer;
+		struct ntfs_location *ntfs_location;
 	};
 	union {
 		struct lookup_table_entry *next_lte_in_swm;
 		FILE *file_on_disk_fp;
+		ntfs_attr *attr;
 	};
 #ifdef WITH_FUSE
 	/* File descriptors table for this data stream */

@@ -182,20 +182,57 @@ out_revert:
 }
 #endif
 
+static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
+			     u8 md[SHA1_HASH_SIZE])
+{
+	s64 pos = 0;
+	s64 bytes_remaining;
+	char buf[4096];
+	ntfs_attr *na;
+	SHA_CTX ctx;
+
+	na = ntfs_attr_open(ni, ar->type,
+			    (ntfschar*)((u8*)ar + le16_to_cpu(ar->name_offset)),
+			    ar->name_length);
+	if (!na) {
+		ERROR_WITH_ERRNO("Failed to open NTFS attribute");
+		return WIMLIB_ERR_NTFS_3G;
+	}
+
+	bytes_remaining = na->data_size;
+	sha1_init(&ctx);
+
+	while (bytes_remaining) {
+		s64 to_read = min(bytes_remaining, sizeof(buf));
+		if (ntfs_attr_pread(na, pos, to_read, buf) != to_read) {
+			ERROR_WITH_ERRNO("Error reading NTFS attribute");
+			return WIMLIB_ERR_NTFS_3G;
+		}
+		sha1_update(&ctx, buf, to_read);
+		pos += to_read;
+		bytes_remaining -= to_read;
+	}
+	sha1_final(md, &ctx);
+	ntfs_attr_close(na);
+	return 0;
+}
+
 static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
+				    char path[], size_t path_len,
 				    struct lookup_table *lookup_table,
 				    struct sd_tree *tree)
 {
 	u32 attributes = ntfs_inode_get_attributes(ni);
 	int mrec_flags = ni->mrec->flags;
 	u32 sd_size;
-	int ret;
+	int ret = 0;
 
 	dentry->creation_time    = le64_to_cpu(ni->creation_time);
 	dentry->last_write_time  = le64_to_cpu(ni->last_data_change_time);
 	dentry->last_access_time = le64_to_cpu(ni->last_access_time);
 	dentry->security_id      = le32_to_cpu(ni->security_id);
 	dentry->attributes       = le32_to_cpu(attributes);
+	dentry->resolved = true;
 
 	if (mrec_flags & MFT_RECORD_IS_DIRECTORY) {
 		if (attributes & FILE_ATTR_REPARSE_POINT) {
@@ -208,6 +245,45 @@ static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 			/* Symbolic link or other reparse point */
 		} else {
 			/* Normal file */
+			ntfs_attr_search_ctx *actx;
+			u8 attr_hash[SHA1_HASH_SIZE];
+			struct lookup_table_entry *lte;
+
+			actx = ntfs_attr_get_search_ctx(ni, NULL);
+			if (!actx) {
+				ERROR_WITH_ERRNO("Cannot get attribute search "
+						 "context");
+				return WIMLIB_ERR_NTFS_3G;
+			}
+			while (!ntfs_attr_lookup(AT_DATA, NULL, 0,
+						 CASE_SENSITIVE, 0, NULL, 0, actx))
+			{
+				ret = ntfs_attr_sha1sum(ni, actx->attr, attr_hash);
+				if (ret != 0)
+					return ret;
+				lte = __lookup_resource(lookup_table, attr_hash);
+				if (lte) {
+					lte->refcnt++;
+				} else {
+					/*char *file_on_disk = STRDUP(root_disk_path);*/
+					/*if (!file_on_disk) {*/
+						/*ERROR("Failed to allocate memory for file path");*/
+						/*return WIMLIB_ERR_NOMEM;*/
+					/*}*/
+					/*lte = new_lookup_table_entry();*/
+					/*if (!lte) {*/
+						/*FREE(file_on_disk);*/
+						/*return WIMLIB_ERR_NOMEM;*/
+					/*}*/
+					/*lte->file_on_disk = file_on_disk;*/
+					/*lte->resource_location = RESOURCE_IN_FILE_ON_DISK;*/
+					/*lte->resource_entry.original_size = root_stbuf.st_size;*/
+					/*lte->resource_entry.size = root_stbuf.st_size;*/
+					/*copy_hash(lte->hash, hash);*/
+					/*lookup_table_insert(lookup_table, lte);*/
+				}
+				dentry->lte = lte;
+			}
 		}
 	}
 	ret = ntfs_inode_get_security(ni,
@@ -224,24 +300,23 @@ static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 				      SACL_SECURITY_INFORMATION,
 				      sd, sd_size, &sd_size);
 	dentry->security_id = tree_add_sd(tree, sd, sd_size);
-
 	return 0;
 }
 
 static int build_dentry_tree_ntfs(struct dentry *root_dentry,
 				  const char *device,
 				  struct lookup_table *lookup_table,
-				  int flags)
+				  struct wim_security_data *sd,
+				  int flags,
+				  void *extra_arg)
 {
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
 	int ret = 0;
 	struct sd_tree tree;
-	tree.sd = CALLOC(1, sizeof(struct wim_security_data));
-	if (!tree.sd)
-		return WIMLIB_ERR_NOMEM;
-	tree.sd->total_length = 8;
+	tree.sd = sd;
 	tree.root = NULL;
+	ntfs_volume **ntfs_vol_p = extra_arg;
 	
 	vol = ntfs_mount(device, MS_RDONLY);
 	if (!vol) {
@@ -256,7 +331,11 @@ static int build_dentry_tree_ntfs(struct dentry *root_dentry,
 		ret = WIMLIB_ERR_NTFS_3G;
 		goto out;
 	}
-	ret = __build_dentry_tree_ntfs(root_dentry, root_ni, lookup_table, &tree);
+	char path[4096];
+	path[0] = '/';
+	path[1] = '\0';
+	ret = __build_dentry_tree_ntfs(root_dentry, root_ni, path, 1,
+				       lookup_table, &tree);
 
 out:
 	if (ntfs_umount(vol, FALSE) != 0) {
@@ -279,7 +358,8 @@ WIMLIBAPI int wimlib_add_image_from_ntfs_volume(WIMStruct *w,
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 	return do_add_image(w, device, name, description, flags_element, flags,
-			    build_dentry_tree_ntfs);
+			    build_dentry_tree_ntfs,
+			    &w->ntfs_vol);
 }
 
 #else /* WITH_NTFS_3G */
