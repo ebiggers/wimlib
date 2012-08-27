@@ -82,14 +82,14 @@ static const char *usage_strings[] = {
 [APPEND] = 
 "    imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [\"IMAGE_NAME\"]\n"
 "                  [\"DESCRIPTION\"] [--boot] [--check] [--flags EDITIONID]\n"
-"                  [--dereference] [--config=FILE]\n",
+"                  [--verbose] [--dereference] [--config=FILE]\n",
 [APPLY] = 
 "    imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                 (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                 [--symlink] [--verbose]\n",
 [CAPTURE] = 
 "    imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [\"IMAGE_NAME\"]\n"
-"                   [\"DESCRIPTION\"] [--boot] [--check] [--compress[=TYPE]]\n"
+"                   [\"DESCRIPTION\"] [--boot] [--check] [--compress=TYPE]\n"
 "                   [--flags \"EditionID\"] [--verbose] [--dereference]\n"
 "                   [--config=FILE]\n",
 [DELETE] = 
@@ -98,8 +98,9 @@ static const char *usage_strings[] = {
 "    imagex dir WIMFILE (IMAGE_NUM | IMAGE_NAME | \"all\")\n",
 [EXPORT] = 
 "    imagex export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
-"        DEST_WIMFILE [\"DEST_IMAGE_NAME\"] [\"DEST_IMAGE_DESCRIPTION\"]\n"
-"                  [--boot] [--check] [--compress[=TYPE]]\n",
+"                  DEST_WIMFILE [\"DEST_IMAGE_NAME\"]\n"
+"                  [\"DEST_IMAGE_DESCRIPTION\"] [--boot] [--check]\n"
+"                  [--compress=TYPE]\n",
 [INFO] = 
 "    imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
 "                [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
@@ -108,12 +109,12 @@ static const char *usage_strings[] = {
 "    imagex join [--check] WIMFILE SPLIT_WIM...\n",
 [MOUNT] = 
 "    imagex mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
-"                 [--check] [--debug] [--stream-interface=INTERFACE]\n",
+"                 [--check] [--debug] [--streams-interface=INTERFACE]\n",
 [MOUNTRW] = 
 "    imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
-"                   [--check] [--debug] [--stream-interface=INTERFACE]\n",
+"                   [--check] [--debug] [--streams-interface=INTERFACE]\n",
 [SPLIT] = 
-"    imagex split WIMFILE SPLIT_WIMFILE PART_SIZE [--check]\n",
+"    imagex split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
 [UNMOUNT] = 
 "    imagex unmount DIRECTORY [--commit] [--check]\n",
 };
@@ -127,10 +128,10 @@ static const struct option common_options[] = {
 static const struct option append_options[] = {
 	{"boot",	no_argument,       NULL, 'b'},
 	{"check",	no_argument,       NULL, 'c'},
+	{"config",	required_argument, NULL, 'C'},
+	{"dereference", no_argument,	   NULL, 'L'},
 	{"flags",	required_argument, NULL, 'f'},
 	{"verbose",	no_argument,       NULL, 'v'},
-	{"dereference", no_argument,	   NULL, 'L'},
-	{"config",	required_argument, NULL, 'C'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option apply_options[] = {
@@ -143,11 +144,11 @@ static const struct option apply_options[] = {
 static const struct option capture_options[] = {
 	{"boot",	no_argument,       NULL, 'b'},
 	{"check",	no_argument,       NULL, 'c'},
-	{"compress",	optional_argument, NULL, 'x'},
+	{"compress",	required_argument, NULL, 'x'},
+	{"config",	required_argument, NULL, 'C'},
+	{"dereference", no_argument,	   NULL, 'L'},
 	{"flags",	required_argument, NULL, 'f'},
 	{"verbose",	no_argument,       NULL, 'v'},
-	{"dereference", no_argument,	   NULL, 'L'},
-	{"config",	required_argument, NULL, 'C'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -156,20 +157,20 @@ static const struct option delete_options[] = {
 };
 
 static const struct option export_options[] = {
-	{"boot",       no_argument, NULL, 'b'},
-	{"check",      no_argument , NULL, 'c'},
-	{"compress",   optional_argument, NULL, 'x'},
+	{"boot",       no_argument,	  NULL, 'b'},
+	{"check",      no_argument,	  NULL, 'c'},
+	{"compress",   required_argument, NULL, 'x'},
 	{NULL, 0, NULL, 0},
 };
 
 static const struct option info_options[] = {
 	{"boot",         no_argument, NULL, 'b'},
 	{"check",        no_argument, NULL, 'c'},
+	{"extract-xml",  required_argument, NULL, 'X'},
 	{"header",       no_argument, NULL, 'h'},
 	{"lookup-table", no_argument, NULL, 'l'},
-	{"xml",          no_argument, NULL, 'x'},
-	{"extract-xml",  required_argument, NULL, 'X'},
 	{"metadata",     no_argument, NULL, 'm'},
+	{"xml",          no_argument, NULL, 'x'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -181,7 +182,7 @@ static const struct option join_options[] = {
 static const struct option mount_options[] = {
 	{"check", no_argument, NULL, 'c'},
 	{"debug", no_argument, NULL, 'd'},
-	{"stream-interface", required_argument, NULL, 's'},
+	{"streams-interface", required_argument, NULL, 's'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -283,8 +284,6 @@ static int verify_image_exists_and_is_single(int image)
 
 static int get_compression_type(const char *optarg)
 {
-	if (!optarg)
-		return WIM_COMPRESSION_TYPE_XPRESS;
 	if (strcasecmp(optarg, "maximum") == 0 || strcasecmp(optarg, "lzx") == 0)
 		return WIM_COMPRESSION_TYPE_LZX;
 	else if (strcasecmp(optarg, "fast") == 0 || strcasecmp(optarg, "xpress") == 0)
