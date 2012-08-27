@@ -435,7 +435,7 @@ static int __build_dentry_tree_ntfs(struct dentry **root_p, ntfs_inode *ni,
 	int ret = 0;
 	struct dentry *root;
 
-	if (exclude_path(path, config)) {
+	if (exclude_path(path, config, false)) {
 		DEBUG("Excluding `%s' from capture", path);
 		return 0;
 	}

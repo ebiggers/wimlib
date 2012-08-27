@@ -85,12 +85,11 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 	int (*stat_fn)(const char *restrict, struct stat *restrict);
 	struct dentry *root;
 
-	DEBUG("%s", root_disk_path);
-
-	if (exclude_path(root_disk_path, config)) {
+	if (exclude_path(root_disk_path, config, true)) {
 		if (add_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
 			printf("Excluding file `%s' from capture\n",
 			       root_disk_path);
+		*root_ret = NULL;
 		return 0;
 	}
 
@@ -158,9 +157,10 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 			ret = build_dentry_tree(&child, name, lookup_table,
 						sd, config,
 						add_flags, extra_arg);
-			link_dentry(child, root);
 			if (ret != 0)
 				break;
+			if (child)
+				link_dentry(child, root);
 		}
 		closedir(dir);
 	} else if (dentry_is_symlink(root)) {
@@ -539,6 +539,7 @@ static void destroy_capture_config(struct capture_config *config)
 	destroy_pattern_list(&config->compression_exclusion_list);
 	destroy_pattern_list(&config->alignment_list);
 	FREE(config->config_str);
+	FREE(config->prefix);
 	memset(config, 0, sizeof(*config));
 }
 
@@ -559,9 +560,10 @@ static int pattern_list_add_pattern(struct pattern_list *list,
 }
 
 static int init_capture_config(const char *_config_str, size_t config_len,
-			       struct capture_config *config)
+			       const char *_prefix, struct capture_config *config)
 {
 	char *config_str;
+	char *prefix;
 	char *p;
 	char *eol;
 	char *next_p;
@@ -579,9 +581,17 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 		ERROR("Could not duplicate capture config string");
 		return WIMLIB_ERR_NOMEM;
 	}
+	prefix = STRDUP(_prefix);
+	if (!prefix) {
+		FREE(config_str);
+		return WIMLIB_ERR_NOMEM;
+	}
+	
 	memcpy(config_str, _config_str, config_len);
 	next_p = config_str;
 	config->config_str = config_str;
+	config->prefix = prefix;
+	config->prefix_len = strlen(prefix);
 	while (bytes_remaining) {
 		line_no++;
 		p = next_p;
@@ -682,9 +692,16 @@ static void print_capture_config(const struct capture_config *config)
 	}
 }
 
-bool exclude_path(const char *path, const struct capture_config *config)
+bool exclude_path(const char *path, const struct capture_config *config,
+		  bool exclude_prefix)
 {
 	const char *basename = path_basename(path);
+	if (exclude_prefix) {
+		wimlib_assert(strlen(path) >= config->prefix_len);
+		if (memcmp(config->prefix, path, config->prefix_len) == 0
+		     && path[config->prefix_len] == '/')
+			path += config->prefix_len;
+	}
 	return match_pattern(path, basename, &config->exclusion_list) && 
 		!match_pattern(path, basename, &config->exclusion_exception);
 
@@ -732,7 +749,7 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 		config_str = default_config;
 		config_len = strlen(default_config);
 	}
-	ret = init_capture_config(config_str, config_len, &config);
+	ret = init_capture_config(config_str, config_len, dir, &config);
 	if (ret != 0)
 		return ret;
 	print_capture_config(&config);

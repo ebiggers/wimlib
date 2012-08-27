@@ -324,6 +324,8 @@ struct capture_config {
 	struct pattern_list compression_exclusion_list;
 	struct pattern_list alignment_list;
 	char *config_str;
+	char *prefix;
+	size_t prefix_len;
 };
 
 /* hardlink.c */
@@ -351,7 +353,8 @@ extern int check_wim_integrity(WIMStruct *w, int show_progress, int *status);
 extern void destroy_image_metadata(struct image_metadata *imd,
 				   struct lookup_table *lt);
 extern bool exclude_path(const char *path,
-			 const struct capture_config *config);
+			 const struct capture_config *config,
+			 bool exclude_prefix);
 extern int do_add_image(WIMStruct *w, const char *dir, const char *name,
 			const char *description, const char *flags_element,
 			const char *config_str, size_t config_len,
