@@ -36,6 +36,11 @@
 #include <errno.h>
 #include <alloca.h>
 
+#ifdef WITH_NTFS_3G
+#include <ntfs-3g/attrib.h>
+#include <ntfs-3g/inode.h>
+#include <ntfs-3g/dir.h>
+#endif
 
 /* 
  * Reads all or part of a compressed resource into an in-memory buffer.
@@ -475,6 +480,22 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 		memcpy(buf, lte->attached_buffer + offset, size);
 		return 0;
 		break;
+#ifdef WITH_NTFS_3G
+	case RESOURCE_IN_NTFS_VOLUME:
+		if (lte->attr) {
+			if (ntfs_attr_pread(lte->attr, offset, size, buf) == size) {
+				return 0;
+			} else {
+				ERROR_WITH_ERRNO("Error reading NTFS attribute "
+						 "at `%s'",
+						 lte->ntfs_loc->path_utf8);
+				return WIMLIB_ERR_NTFS_3G;
+			}
+		} else {
+			wimlib_assert(0);
+		}
+		break;
+#endif
 	default:
 		assert(0);
 	}
@@ -718,6 +739,9 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 	struct chunk_table *chunk_tab = NULL;
 	bool raw;
 	off_t file_offset;
+#ifdef WITH_NTFS_3G
+	ntfs_inode *ni;
+#endif
 
 	/* Original size of the resource */
  	original_size = wim_resource_size(lte);
@@ -773,6 +797,28 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 			goto out;
 		}
 	}
+#ifdef WITH_NTFS_3G
+	else if (lte->resource_location == RESOURCE_IN_NTFS_VOLUME
+		   && !lte->attr)
+	{
+		struct ntfs_location *loc = lte->ntfs_loc;
+		wimlib_assert(loc);
+		ni = ntfs_pathname_to_inode(*loc->ntfs_vol_p, NULL, loc->path_utf8);
+		if (!ni) {
+			ERROR_WITH_ERRNO("Failed to open inode `%s' in NTFS "
+					 "volume", loc->path_utf8);
+		}
+		lte->attr = ntfs_attr_open(ni,
+					   loc->is_reparse_point ? AT_REPARSE_POINT : AT_DATA,
+					   (ntfschar*)loc->stream_name_utf16,
+					   loc->stream_name_utf16_num_chars);
+		if (!lte->attr) {
+			ntfs_inode_close(ni);
+			ERROR_WITH_ERRNO("Failed to open attribute of `%s' in "
+					 "NTFS volume", loc->path_utf8);
+		}
+	}
+#endif
 
 	/* If we aren't doing a raw copy, we will compute the SHA1 message
 	 * digest of the resource as we read it, and verify it's the same as the
@@ -875,6 +921,13 @@ out_fclose:
 		fclose(lte->file_on_disk_fp);
 		lte->file_on_disk_fp = NULL;
 	}
+#ifdef WITH_NTFS_3G
+	else if (lte->resource_location == RESOURCE_IN_NTFS_VOLUME
+		 && lte->attr) {
+		ntfs_attr_close(lte->attr);
+		ntfs_inode_close(ni);
+	}
+#endif
 out:
 	FREE(chunk_tab);
 	return ret;

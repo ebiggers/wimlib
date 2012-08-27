@@ -26,6 +26,7 @@ struct lookup_table {
 
 struct wimlib_fd;
 
+#ifdef WITH_NTFS_3G
 typedef struct _ntfs_attr ntfs_attr;
 typedef struct _ntfs_volume ntfs_volume;
 struct ntfs_location {
@@ -35,6 +36,7 @@ struct ntfs_location {
 	ntfs_volume **ntfs_vol_p;
 	bool is_reparse_point;
 };
+#endif
 
 /* 
  * An entry in the lookup table in the WIM file. 
@@ -95,12 +97,16 @@ struct lookup_table_entry {
 		char *file_on_disk;
 		char *staging_file_name;
 		u8 *attached_buffer;
+	#ifdef WITH_NTFS_3G
 		struct ntfs_location *ntfs_loc;
+	#endif
 	};
 	union {
 		struct lookup_table_entry *next_lte_in_swm;
 		FILE *file_on_disk_fp;
+	#ifdef WITH_NTFS_3G
 		ntfs_attr *attr;
+	#endif
 	};
 #ifdef WITH_FUSE
 	/* File descriptors table for this data stream */

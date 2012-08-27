@@ -429,8 +429,13 @@ const char *path_basename(const char *path)
 	p--;
 
 	/* Trailing slashes. */
-	while ((p != path - 1) && *p == '/')
+	while (1) {
+		if (p == path - 1)
+			return "";
+		if (*p != '/')
+			break;
 		p--;
+	}
 
 	while ((p != path - 1) && *p != '/')
 		p--;

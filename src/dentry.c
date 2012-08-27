@@ -1143,7 +1143,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 		p = put_zeroes(p, 4);
 	} else {
 		u64 hard_link;
-		p = put_u32(p, dentry->reparse_tag);
+		p = put_u32(p, 0);
 		if (dentry->link_group_list.next == &dentry->link_group_list)
 			hard_link = 0;
 		else

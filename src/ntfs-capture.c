@@ -297,6 +297,9 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
 			lte->resource_entry.original_size = actx->attr->data_size;
 			lte->resource_entry.size = actx->attr->data_size;
+			DEBUG("Add resource for `%s' (size = %zu)",
+				dentry->file_name_utf8,
+				lte->resource_entry.original_size);
 			copy_hash(lte->hash, attr_hash);
 			lookup_table_insert(lookup_table, lte);
 		}
@@ -369,9 +372,12 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	struct readdir_ctx *ctx;
 	size_t utf8_name_len;
 	char *utf8_name;
-	struct dentry *child;
+	struct dentry *child = NULL;
 	int ret;
 	size_t path_len;
+
+	if (name_type == FILE_NAME_DOS)
+		return 0;
 
 	ret = -1;
 
@@ -405,11 +411,12 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	ret = __build_dentry_tree_ntfs(&child, ni, ctx->path, path_len,
 				       ctx->lookup_table, ctx->sd_set,
 				       ctx->config, ctx->ntfs_vol_p);
-	DEBUG("Linking dentry `%s' with parent `%s'",
-	      child->file_name_utf8, ctx->parent->file_name_utf8);
 
-	link_dentry(child, ctx->parent);
-	DEBUG("Return %d", ret);
+	if (child) {
+		DEBUG("Linking dentry `%s' with parent `%s'",
+		      child->file_name_utf8, ctx->parent->file_name_utf8);
+		link_dentry(child, ctx->parent);
+	}
 out_close_ni:
 	ntfs_inode_close(ni);
 out_free_utf8_name:
@@ -478,8 +485,10 @@ static int __build_dentry_tree_ntfs(struct dentry **root_p, ntfs_inode *ni,
 			.ntfs_vol_p   = ntfs_vol_p,
 		};
 		ret = ntfs_readdir(ni, &pos, &ctx, wim_ntfs_capture_filldir);
-		if (ret != 0)
+		if (ret != 0) {
+			ERROR_WITH_ERRNO("ntfs_readdir()");
 			ret = WIMLIB_ERR_NTFS_3G;
+		}
 	} else {
 		DEBUG("Normal file `%s'", path);
 		/* Normal file */
@@ -490,7 +499,6 @@ static int __build_dentry_tree_ntfs(struct dentry **root_p, ntfs_inode *ni,
 	if (ret != 0)
 		return ret;
 
-	DEBUG("Getting security information from `%s'", path);
 	ret = ntfs_inode_get_security(ni,
 				      OWNER_SECURITY_INFORMATION |
 				      GROUP_SECURITY_INFORMATION |
@@ -568,10 +576,15 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 	ntfs_inode_close(root_ni);
 
 out:
-	if (ntfs_umount(vol, FALSE) != 0) {
-		ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'", device);
-		if (ret == 0)
-			ret = WIMLIB_ERR_NTFS_3G;
+	if (ret) {
+		if (ntfs_umount(vol, FALSE) != 0) {
+			ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'",
+					 device);
+			if (ret == 0)
+				ret = WIMLIB_ERR_NTFS_3G;
+		}
+	} else {
+		*ntfs_vol_p = vol;
 	}
 	return ret;
 }

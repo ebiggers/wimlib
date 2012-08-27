@@ -80,26 +80,26 @@ static const char *path_basename(const char *path)
 
 static const char *usage_strings[] = {
 [APPEND] = 
-"    imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [\"IMAGE_NAME\"]\n"
-"                  [\"DESCRIPTION\"] [--boot] [--check] [--flags EDITIONID]\n"
+"    imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
+"                  [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
 "                  [--verbose] [--dereference] [--config=FILE]\n",
 [APPLY] = 
 "    imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                 (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                 [--symlink] [--verbose]\n",
 [CAPTURE] = 
-"    imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [\"IMAGE_NAME\"]\n"
-"                   [\"DESCRIPTION\"] [--boot] [--check] [--compress=TYPE]\n"
-"                   [--flags \"EditionID\"] [--verbose] [--dereference]\n"
+"    imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
+"                   [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
+"                   [--flags EDITION_ID] [--verbose] [--dereference]\n"
 "                   [--config=FILE]\n",
 [DELETE] = 
 "    imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n",
 [DIR] = 
-"    imagex dir WIMFILE (IMAGE_NUM | IMAGE_NAME | \"all\")\n",
+"    imagex dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n",
 [EXPORT] = 
 "    imagex export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
-"                  DEST_WIMFILE [\"DEST_IMAGE_NAME\"]\n"
-"                  [\"DEST_IMAGE_DESCRIPTION\"] [--boot] [--check]\n"
+"                  DEST_WIMFILE [DEST_IMAGE_NAME]\n"
+"                  [DEST_IMAGE_DESCRIPTION] [--boot] [--check]\n"
 "                  [--compress=TYPE]\n",
 [INFO] = 
 "    imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"

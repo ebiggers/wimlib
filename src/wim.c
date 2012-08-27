@@ -30,6 +30,10 @@
 #include "xml.h"
 #include <stdlib.h>
 
+#ifdef WITH_NTFS_3G
+#include <ntfs-3g/volume.h>
+#endif
+
 static int print_metadata(WIMStruct *w)
 {
 	print_security_data(wim_security_data(w));
@@ -550,6 +554,12 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 			destroy_image_metadata(&w->image_metadata[i], NULL);
 		FREE(w->image_metadata);
 	}
+#ifdef WITH_NTFS_3G
+	if (w->ntfs_vol) {
+		DEBUG("Unmounting NTFS volume");
+		ntfs_umount(w->ntfs_vol, FALSE);
+	}
+#endif
 	FREE(w);
 }
 

@@ -266,8 +266,10 @@ typedef struct WIMStruct {
 		int add_flags;
 		int write_flags;
 		bool write_metadata;
-		ntfs_volume *ntfs_vol;
 	};
+#ifdef WITH_NTFS_3G
+	ntfs_volume *ntfs_vol;
+#endif
 
 	/* The currently selected image, indexed starting at 1.  If not 0,
 	 * subtract 1 from this to get the index of the current image in the
