@@ -680,7 +680,12 @@ static bool match_pattern(const char *path, const char *path_basename,
 				/* A file name pattern */
 				string = path_basename;
 		}
-		if (fnmatch(pat, string, FNM_PATHNAME) == 0) {
+		if (fnmatch(pat, string, FNM_PATHNAME
+			#ifdef FNM_CASEFOLD
+					| FNM_CASEFOLD
+			#endif
+			) == 0)
+		{
 			DEBUG("`%s' matches the pattern \"%s\"",
 			      string, pat);
 			return true;
