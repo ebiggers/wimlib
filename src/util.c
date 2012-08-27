@@ -127,6 +127,8 @@ static const char *error_strings[] = {
 		= "Tried to add an image with a name that is already in use",
 	[WIMLIB_ERR_INTEGRITY] 
 		= "The WIM failed an integrity check",
+	[WIMLIB_ERR_INVALID_CAPTURE_CONFIG]
+		= "The capture configuration string was invalid",
 	[WIMLIB_ERR_INVALID_CHUNK_SIZE] 
 		= "The WIM is compressed but does not have a chunk "
 			"size of 32768",

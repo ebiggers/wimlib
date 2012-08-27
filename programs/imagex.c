@@ -82,7 +82,7 @@ static const char *usage_strings[] = {
 [APPEND] = 
 "    imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [\"IMAGE_NAME\"]\n"
 "                  [\"DESCRIPTION\"] [--boot] [--check] [--flags EDITIONID]\n"
-"                  [--dereference]\n",
+"                  [--dereference] [--config=FILE]\n",
 [APPLY] = 
 "    imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                 (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
@@ -90,7 +90,8 @@ static const char *usage_strings[] = {
 [CAPTURE] = 
 "    imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [\"IMAGE_NAME\"]\n"
 "                   [\"DESCRIPTION\"] [--boot] [--check] [--compress[=TYPE]]\n"
-"                   [--flags \"EditionID\"] [--verbose] [--dereference]\n",
+"                   [--flags \"EditionID\"] [--verbose] [--dereference]\n"
+"                   [--config=FILE]\n",
 [DELETE] = 
 "    imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n",
 [DIR] = 
@@ -128,6 +129,7 @@ static const struct option append_options[] = {
 	{"check",  no_argument,       NULL, 'c'},
 	{"flags",    required_argument, NULL, 'f'},
 	{"dereference", no_argument, NULL, 'L'},
+	{"config", required_argument, NULL, 'C'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option apply_options[] = {
@@ -144,6 +146,7 @@ static const struct option capture_options[] = {
 	{"flags",    required_argument, NULL, 'f'},
 	{"verbose",  no_argument,       NULL,'v'},
 	{"dereference", no_argument, NULL, 'L'},
+	{"config", required_argument, NULL, 'C'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -294,6 +297,45 @@ static int get_compression_type(const char *optarg)
 	}
 }
 
+static const char *file_get_contents(const char *filename, size_t *len_ret)
+{
+	struct stat stbuf;
+	char *buf;
+	size_t len;
+	FILE *fp;
+
+	if (stat(filename, &stbuf) != 0) {
+		imagex_error_with_errno("Failed to stat the file `%s'", filename);
+		return NULL;
+	}
+	len = stbuf.st_size;
+
+	fp = fopen(filename, "rb");
+	if (!fp) {
+		imagex_error_with_errno("Failed to open the file `%s'", filename);
+		return NULL;
+	}
+
+	buf = malloc(len);
+	if (!buf) {
+		imagex_error("Failed to allocate buffer of %zu bytes to hold "
+			     "contents of file `%s'", len, filename);
+		goto out_fclose;
+	}
+	if (fread(buf, 1, len, fp) != len) {
+		imagex_error_with_errno("Failed to read %lu bytes from the "
+					"file `%s'", len, filename);
+		goto out_free_buf;
+	}
+	*len_ret = len;
+	return buf;
+out_free_buf:
+	free(buf);
+out_fclose:
+	fclose(fp);
+	return NULL;
+}
+
 static int imagex_append(int argc, const char **argv)
 {
 	int c;
@@ -305,6 +347,9 @@ static int imagex_append(int argc, const char **argv)
 	const char *wimfile;
 	const char *name;
 	const char *desc;
+	const char *config_file = NULL;
+	const char *config_str = NULL;
+	size_t config_len = 0;
 	WIMStruct *w;
 	int ret;
 
@@ -316,6 +361,9 @@ static int imagex_append(int argc, const char **argv)
 		case 'c':
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+			break;
+		case 'C':
+			config_file = optarg;
 			break;
 		case 'f':
 			flags_element = optarg;
@@ -339,6 +387,12 @@ static int imagex_append(int argc, const char **argv)
 	name    = (argc >= 3) ? argv[2] : path_basename(dir);
 	desc    = (argc >= 4) ? argv[3] : NULL;
 
+	if (config_file) {
+		config_str = file_get_contents(config_file, &config_len);
+		if (!config_str)
+			return -1;
+	}
+
 	ret = wimlib_open_wim(wimfile, open_flags, &w);
 	if (ret != 0)
 		return ret;
@@ -355,6 +409,8 @@ static int imagex_append(int argc, const char **argv)
 			ret = wimlib_add_image_from_ntfs_volume(w, ntfs_device,
 								name, desc,
 								flags_element,
+								config_str,
+								config_len,
 								add_image_flags);
 			goto out_write;
 		}
@@ -364,7 +420,8 @@ static int imagex_append(int argc, const char **argv)
 	}
 #endif
 	ret = wimlib_add_image(w, dir, name, desc, 
-			       flags_element, add_image_flags);
+			       flags_element, config_str, config_len,
+			       add_image_flags);
 
 out_write:
 	if (ret != 0)
@@ -481,6 +538,9 @@ static int imagex_capture(int argc, const char **argv)
 	const char *wimfile;
 	const char *name;
 	const char *desc;
+	const char *config_file = NULL;
+	const char *config_str = NULL;
+	size_t config_len = 0;
 	WIMStruct *w;
 	int ret;
 
@@ -491,6 +551,9 @@ static int imagex_capture(int argc, const char **argv)
 			break;
 		case 'c':
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+			break;
+		case 'C':
+			config_file = optarg;
 			break;
 		case 'x':
 			compression_type = get_compression_type(optarg);
@@ -524,6 +587,12 @@ static int imagex_capture(int argc, const char **argv)
 	name    = (argc >= 3) ? argv[2] : dir;
 	desc    = (argc >= 4) ? argv[3] : NULL;
 
+	if (config_file) {
+		config_str = file_get_contents(config_file, &config_len);
+		if (!config_str)
+			return -1;
+	}
+
 	ret = wimlib_create_new_wim(compression_type, &w);
 	if (ret != 0)
 		return ret;
@@ -540,6 +609,8 @@ static int imagex_capture(int argc, const char **argv)
 			ret = wimlib_add_image_from_ntfs_volume(w, ntfs_device,
 								name, desc,
 								flags_element,
+								config_str,
+								config_len,
 								add_image_flags);
 			goto out_write;
 		}
@@ -548,8 +619,8 @@ static int imagex_capture(int argc, const char **argv)
 			imagex_error_with_errno("Failed to stat `%s'", dir);
 	}
 #endif
-	ret = wimlib_add_image(w, dir, name, desc, flags_element, 
-			       add_image_flags);
+	ret = wimlib_add_image(w, dir, name, desc, flags_element, config_str,
+			       config_len, add_image_flags);
 
 out_write:
 	if (ret != 0) {

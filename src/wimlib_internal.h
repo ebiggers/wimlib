@@ -312,6 +312,20 @@ wim_get_current_image_metadata(WIMStruct *w)
 	return &w->image_metadata[w->current_image - 1];
 }
 
+struct pattern_list {
+	const char **pats;
+	size_t num_pats;
+	size_t num_allocated_pats;
+};
+
+struct capture_config {
+	struct pattern_list exclusion_list;
+	struct pattern_list exclusion_exception;
+	struct pattern_list compression_exclusion_list;
+	struct pattern_list alignment_list;
+	char *config_str;
+};
+
 /* hardlink.c */
 
 struct link_group_table *new_link_group_table(u64 capacity);
@@ -336,12 +350,17 @@ extern int check_wim_integrity(WIMStruct *w, int show_progress, int *status);
 /* modify.c */
 extern void destroy_image_metadata(struct image_metadata *imd,
 				   struct lookup_table *lt);
+extern bool exclude_path(const char *path,
+			 const struct capture_config *config);
 extern int do_add_image(WIMStruct *w, const char *dir, const char *name,
 			const char *description, const char *flags_element,
+			const char *config_str, size_t config_len,
 			int flags,
-			int (*capture_tree)(struct dentry *, const char *,
+			int (*capture_tree)(struct dentry **, const char *,
 			 	     struct lookup_table *, 
-				     struct wim_security_data *, int, void *),
+				     struct wim_security_data *, 
+				     const struct capture_config *,
+				     int, void *),
 			void *extra_arg);
 
 /* resource.c */

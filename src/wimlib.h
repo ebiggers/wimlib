@@ -305,6 +305,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_IMAGE_COUNT,
 	WIMLIB_ERR_IMAGE_NAME_COLLISION,
 	WIMLIB_ERR_INTEGRITY,
+	WIMLIB_ERR_INVALID_CAPTURE_CONFIG,
 	WIMLIB_ERR_INVALID_CHUNK_SIZE,
 	WIMLIB_ERR_INVALID_COMPRESSION_TYPE,
 	WIMLIB_ERR_INVALID_DENTRY,
@@ -405,12 +406,16 @@ enum wimlib_error_code {
  */
 extern int wimlib_add_image(WIMStruct *wim, const char *dir, 
 			    const char *name, const char *description, 
-			    const char *flags_element, int flags);
+			    const char *flags_element,
+			    const char *config, size_t config_len,
+			    int flags);
 
 extern int wimlib_add_image_from_ntfs_volume(WIMStruct *w, const char *device,
 					     const char *name,
 					     const char *description,
 					     const char *flags_element,
+					     const char *config,
+					     size_t config_len,
 					     int flags);
 
 extern int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,

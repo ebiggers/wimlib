@@ -36,6 +36,7 @@
 #include <dirent.h>
 #include <string.h>
 #include <errno.h>
+#include <fnmatch.h>
 #include <unistd.h>
 
 /** Private flag: Used to mark that we currently adding the root directory of
@@ -72,16 +73,27 @@ void destroy_image_metadata(struct image_metadata *imd,struct lookup_table *lt)
  *		to the WIM may still occur later when trying to actually read 
  *		the regular files in the tree into the WIM as file resources.
  */
-static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
+static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_path,
 			     struct lookup_table *lookup_table,
 			     struct wim_security_data *sd,
+			     const struct capture_config *config,
 			     int add_flags,
 			     void *extra_arg)
 {
-	DEBUG("%s", root_disk_path);
 	struct stat root_stbuf;
 	int ret = 0;
 	int (*stat_fn)(const char *restrict, struct stat *restrict);
+	struct dentry *root;
+
+	DEBUG("%s", root_disk_path);
+
+	if (exclude_path(root_disk_path, config)) {
+		if (add_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+			printf("Excluding file `%s' from capture\n",
+			       root_disk_path);
+		return 0;
+	}
+
 
 	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)
 		stat_fn = stat;
@@ -108,6 +120,11 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 		ERROR("`%s' is not a regular file, directory, or symbolic link.");
 		return WIMLIB_ERR_SPECIAL_FILE;
 	}
+
+	root = new_dentry(path_basename(root_disk_path));
+	if (!root)
+		return WIMLIB_ERR_NOMEM;
+
 	stbuf_to_dentry(&root_stbuf, root);
 	add_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
 	root->resolved = true;
@@ -138,11 +155,9 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 			      || (p->d_name[1] == '.' && p->d_name[2] == '\0')))
 					continue;
 			strcpy(name + len + 1, p->d_name);
-			child = new_dentry(p->d_name);
-			if (!child)
-				return WIMLIB_ERR_NOMEM;
-			ret = build_dentry_tree(child, name, lookup_table,
-						sd, add_flags, extra_arg);
+			ret = build_dentry_tree(&child, name, lookup_table,
+						sd, config,
+						add_flags, extra_arg);
 			link_dentry(child, root);
 			if (ret != 0)
 				break;
@@ -203,6 +218,7 @@ static int build_dentry_tree(struct dentry *root, const char *root_disk_path,
 		}
 		root->lte = lte;
 	}
+	*root_ret = root;
 	return ret;
 }
 
@@ -488,17 +504,209 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 	return 0;
 }
 
+enum pattern_type {
+	NONE = 0,
+	EXCLUSION_LIST,
+	EXCLUSION_EXCEPTION,
+	COMPRESSION_EXCLUSION_LIST,
+	ALIGNMENT_LIST,
+};
+
+static const char *default_config =
+"[ExclusionList]\n"
+"\\$ntfs.log\n"
+"\\hiberfil.sys\n"
+"\\pagefile.sys\n"
+"\"\\System Volume Information\"\n"
+"\\RECYCLER\n"
+"\\Windows\\CSC\n"
+"\n"
+"[CompressionExclusionList]\n"
+"*.mp3\n"
+"*.zip\n"
+"*.cab\n"
+"\\WINDOWS\\inf\\*.pnf\n";
+
+static void destroy_pattern_list(struct pattern_list *list)
+{
+	FREE(list->pats);
+}
+
+static void destroy_capture_config(struct capture_config *config)
+{
+	destroy_pattern_list(&config->exclusion_list);
+	destroy_pattern_list(&config->exclusion_exception);
+	destroy_pattern_list(&config->compression_exclusion_list);
+	destroy_pattern_list(&config->alignment_list);
+	FREE(config->config_str);
+	memset(config, 0, sizeof(*config));
+}
+
+static int pattern_list_add_pattern(struct pattern_list *list,
+				    const char *pattern)
+{
+	const char **pats;
+	if (list->num_pats >= list->num_allocated_pats) {
+		pats = REALLOC(list->pats,
+			       sizeof(list->pats[0]) * (list->num_allocated_pats + 8));
+		if (!pats)
+			return WIMLIB_ERR_NOMEM;
+		list->num_allocated_pats += 8;
+		list->pats = pats;
+	}
+	list->pats[list->num_pats++] = pattern;
+	return 0;
+}
+
+static int init_capture_config(const char *_config_str, size_t config_len,
+			       struct capture_config *config)
+{
+	char *config_str;
+	char *p;
+	char *eol;
+	char *next_p;
+	size_t next_bytes_remaining;
+	size_t bytes_remaining;
+	enum pattern_type type = NONE;
+	int ret;
+	unsigned long line_no = 0;
+
+	DEBUG("config_len = %zu", config_len);
+	bytes_remaining = config_len;
+	memset(config, 0, sizeof(*config));
+	config_str = MALLOC(config_len);
+	if (!config_str) {
+		ERROR("Could not duplicate capture config string");
+		return WIMLIB_ERR_NOMEM;
+	}
+	memcpy(config_str, _config_str, config_len);
+	next_p = config_str;
+	config->config_str = config_str;
+	while (bytes_remaining) {
+		line_no++;
+		p = next_p;
+		eol = memchr(p, '\n', bytes_remaining);
+		if (!eol) {
+			ERROR("Expected end-of-line in capture config file on "
+			      "line %lu", line_no);
+			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+			goto out_destroy;
+		}
+		
+		next_p = eol + 1;
+		bytes_remaining -= (eol - p) + 1;
+		if (eol == p)
+			continue;
+
+		if (*(eol - 1) == '\r')
+			eol--;
+		*eol = '\0';
+
+		/* Translate backslash to forward slash */
+		for (char *pp = p; pp != eol; pp++)
+			if (*pp == '\\')
+				*pp = '/';
+
+		if (strcmp(p, "[ExclusionList]") == 0)
+			type = EXCLUSION_LIST;
+		else if (strcmp(p, "[ExclusionException]") == 0)
+			type = EXCLUSION_EXCEPTION;
+		else if (strcmp(p, "[CompressionExclusionList]") == 0)
+			type = COMPRESSION_EXCLUSION_LIST;
+		else if (strcmp(p, "[AlignmentList]") == 0)
+			type = ALIGNMENT_LIST;
+		else switch (type) {
+		case EXCLUSION_LIST:
+			DEBUG("Adding pattern \"%s\" to exclusion list", p);
+			ret = pattern_list_add_pattern(&config->exclusion_list, p);
+			break;
+		case EXCLUSION_EXCEPTION:
+			DEBUG("Adding pattern \"%s\" to exclusion exception list", p);
+			ret = pattern_list_add_pattern(&config->exclusion_exception, p);
+			break;
+		case COMPRESSION_EXCLUSION_LIST:
+			DEBUG("Adding pattern \"%s\" to compression exclusion list", p);
+			ret = pattern_list_add_pattern(&config->compression_exclusion_list, p);
+			break;
+		case ALIGNMENT_LIST:
+			DEBUG("Adding pattern \"%s\" to alignment list", p);
+			ret = pattern_list_add_pattern(&config->alignment_list, p);
+			break;
+		default:
+			ERROR("Line %lu of capture configuration is not "
+			      "in a block (such as [ExclusionList])",
+			      line_no);
+			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+			goto out_destroy;
+		}
+		if (ret != 0)
+			goto out_destroy;
+	}
+	return 0;
+out_destroy:
+	destroy_capture_config(config);
+	return ret;
+}
+
+static bool match_pattern(const char *path, const char *path_basename,
+			  const struct pattern_list *list)
+{
+	for (size_t i = 0; i < list->num_pats; i++) {
+		const char *pat = list->pats[i];
+		const char *string;
+		if (pat[0] == '/')
+			string = path;
+		else
+			string = path_basename;
+		if (fnmatch(pat, string, FNM_PATHNAME) == 0) {
+			DEBUG("`%s' matches the pattern \"%s\"",
+			      string, pat);
+			return true;
+		}
+	}
+	return false;
+}
+
+static void print_pattern_list(const struct pattern_list *list)
+{
+	for (size_t i = 0; i < list->num_pats; i++)
+		printf("    %s\n", list->pats[i]);
+}
+
+static void print_capture_config(const struct capture_config *config)
+{
+	if (config->exclusion_list.num_pats) {
+		puts("Files or folders excluded from image capture:");
+		print_pattern_list(&config->exclusion_list);
+		putchar('\n');
+	}
+}
+
+bool exclude_path(const char *path, const struct capture_config *config)
+{
+	const char *basename = path_basename(path);
+	return match_pattern(path, basename, &config->exclusion_list) && 
+		!match_pattern(path, basename, &config->exclusion_exception);
+
+}
+
+
+
 int do_add_image(WIMStruct *w, const char *dir, const char *name,
 		 const char *description, const char *flags_element,
+		 const char *config_str, size_t config_len,
 		 int flags,
-		 int (*capture_tree)(struct dentry *, const char *,
+		 int (*capture_tree)(struct dentry **, const char *,
 			 	     struct lookup_table *, 
-				     struct wim_security_data *, int, void *),
+				     struct wim_security_data *,
+				     const struct capture_config *,
+				     int, void *),
 		 void *extra_arg)
 {
-	struct dentry *root_dentry;
+	struct dentry *root_dentry = NULL;
 	struct image_metadata *imd;
 	struct wim_security_data *sd;
+	struct capture_config config;
 	int ret;
 
 	DEBUG("Adding dentry tree from dir `%s'.", dir);
@@ -518,37 +726,44 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 	}
 
-	DEBUG("Creating root dentry.");
+	DEBUG("Initializing capture configuration");
+	if (!config_str) {
+		DEBUG("Using default capture configuration");
+		config_str = default_config;
+		config_len = strlen(default_config);
+	}
+	ret = init_capture_config(config_str, config_len, &config);
+	if (ret != 0)
+		return ret;
+	print_capture_config(&config);
 
-	root_dentry = new_dentry("");
-	if (!root_dentry)
-		return WIMLIB_ERR_NOMEM;
-
+	DEBUG("Allocating security data");
 
 	sd = CALLOC(1, sizeof(struct wim_security_data));
 	if (!sd)
-		goto out_free_dentry_tree;
+		goto out_destroy_config;
 	sd->total_length = 8;
 	sd->refcnt = 1;
 
 	DEBUG("Building dentry tree.");
-	ret = (*capture_tree)(root_dentry, dir, w->lookup_table, sd,
-			      flags | WIMLIB_ADD_IMAGE_FLAG_ROOT,
+	ret = (*capture_tree)(&root_dentry, dir, w->lookup_table, sd,
+			      &config, flags | WIMLIB_ADD_IMAGE_FLAG_ROOT,
 			      extra_arg);
+	destroy_capture_config(&config);
 
 	if (ret != 0) {
 		ERROR("Failed to build dentry tree for `%s'", dir);
-		goto out_free_sd;
+		goto out_free_dentry_tree;
 	}
 
 	DEBUG("Calculating full paths of dentries.");
 	ret = for_dentry_in_tree(root_dentry, calculate_dentry_full_path, NULL);
 	if (ret != 0)
-		goto out_free_sd;
+		goto out_free_dentry_tree;
 
 	ret = add_new_dentry_tree(w, root_dentry, sd);
 	if (ret != 0)
-		goto out_free_sd;
+		goto out_free_dentry_tree;
 
 	DEBUG("Inserting dentries into hard link group table");
 	ret = for_dentry_in_tree(root_dentry, link_group_table_insert, 
@@ -571,10 +786,12 @@ out_destroy_imd:
 			       w->lookup_table);
 	w->hdr.image_count--;
 	return ret;
-out_free_sd:
-	free_security_data(sd);
 out_free_dentry_tree:
 	free_dentry_tree(root_dentry, w->lookup_table);
+out_free_sd:
+	free_security_data(sd);
+out_destroy_config:
+	destroy_capture_config(&config);
 	return ret;
 }
 
@@ -583,8 +800,11 @@ out_free_dentry_tree:
  */
 WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir, 
 			       const char *name, const char *description, 
-			       const char *flags_element, int flags)
+			       const char *flags_element,
+			       const char *config_str,
+			       size_t config_len, int flags)
 {
-	return do_add_image(w, dir, name, description, flags_element, flags,
+	return do_add_image(w, dir, name, description, flags_element,
+			    config_str, config_len, flags,
 			    build_dentry_tree, NULL);
 }

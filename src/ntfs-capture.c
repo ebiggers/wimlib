@@ -209,6 +209,9 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 	bytes_remaining = na->data_size;
 	sha1_init(&ctx);
 
+	DEBUG("Calculating SHA1 message digest (%"PRIu64" bytes)",
+			bytes_remaining);
+
 	while (bytes_remaining) {
 		s64 to_read = min(bytes_remaining, sizeof(buf));
 		if (ntfs_attr_pread(na, pos, to_read, buf) != to_read) {
@@ -238,6 +241,8 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 	struct ntfs_location *ntfs_loc;
 	struct lookup_table_entry *lte;
 	int ret = 0;
+
+	DEBUG("Capturing NTFS data streams from `%s'", path);
 
 	/* Get context to search the streams of the NTFS file. */
 	actx = ntfs_attr_get_search_ctx(ni, NULL);
@@ -330,29 +335,36 @@ out_free_ntfs_loc:
 	}
 out_put_actx:
 	ntfs_attr_put_search_ctx(actx);
+	if (ret == 0)
+		DEBUG("Successfully captured NTFS streams from `%s'", path);
+	else
+		DEBUG("Failed to capture NTFS streams from `%s", path);
 	return ret;
 }
 
 struct readdir_ctx {
-	struct dentry	    *dentry;
+	struct dentry	    *parent;
 	ntfs_inode	    *dir_ni;
 	char		    *path;
 	size_t		     path_len;
 	struct lookup_table *lookup_table;
 	struct sd_set	    *sd_set;
+	const struct capture_config *config;
 	ntfs_volume	   **ntfs_vol_p;
 };
 
-static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
+static int __build_dentry_tree_ntfs(struct dentry **root_p, ntfs_inode *ni,
 				    char path[], size_t path_len,
 				    struct lookup_table *lookup_table,
 				    struct sd_set *sd_set,
+				    const struct capture_config *config,
 				    ntfs_volume **ntfs_vol_p);
 
 
-static int filldir(void *dirent, const ntfschar *name,
-		   const int name_len, const int name_type, const s64 pos,
-		   const MFT_REF mref, const unsigned dt_type)
+static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
+				    const int name_len, const int name_type,
+				    const s64 pos, const MFT_REF mref,
+				    const unsigned dt_type)
 {
 	struct readdir_ctx *ctx;
 	size_t utf8_name_len;
@@ -368,6 +380,16 @@ static int filldir(void *dirent, const ntfschar *name,
 	if (!utf8_name)
 		goto out;
 
+	if (utf8_name[0] == '.' &&
+	     (utf8_name[1] == '\0' ||
+	      (utf8_name[1] == '.' && utf8_name[2] == '\0'))) {
+		DEBUG("Skipping dentry `%s'", utf8_name);
+		ret = 0;
+		goto out_free_utf8_name;
+	}
+
+	DEBUG("Opening inode for `%s'", utf8_name);
+
 	ctx = dirent;
 
 	ntfs_inode *ni = ntfs_inode_open(ctx->dir_ni->vol, mref);
@@ -375,16 +397,19 @@ static int filldir(void *dirent, const ntfschar *name,
 		ERROR_WITH_ERRNO("Failed to open NTFS inode");
 		ret = 1;
 	}
-	child = new_dentry(utf8_name);
-	if (!child)
-		goto out_close_ni;
-
-	memcpy(ctx->path + ctx->path_len, utf8_name, utf8_name_len + 1);
-	path_len = ctx->path_len + utf8_name_len;
-	ret = __build_dentry_tree_ntfs(child, ni, ctx->path, path_len,
+	path_len = ctx->path_len;
+	if (path_len != 1)
+		ctx->path[path_len++] = '/';
+	memcpy(ctx->path + path_len, utf8_name, utf8_name_len + 1);
+	path_len += utf8_name_len;
+	ret = __build_dentry_tree_ntfs(&child, ni, ctx->path, path_len,
 				       ctx->lookup_table, ctx->sd_set,
-				       ctx->ntfs_vol_p);
-	link_dentry(child, ctx->dentry);
+				       ctx->config, ctx->ntfs_vol_p);
+	DEBUG("Linking dentry `%s' with parent `%s'",
+	      child->file_name_utf8, ctx->parent->file_name_utf8);
+
+	link_dentry(child, ctx->parent);
+	DEBUG("Return %d", ret);
 out_close_ni:
 	ntfs_inode_close(ni);
 out_free_utf8_name:
@@ -397,53 +422,75 @@ out:
  * At the same time, update the WIM lookup table with lookup table entries for
  * the NTFS streams, and build an array of security descriptors.
  */
-static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
+static int __build_dentry_tree_ntfs(struct dentry **root_p, ntfs_inode *ni,
 				    char path[], size_t path_len,
 				    struct lookup_table *lookup_table,
 				    struct sd_set *sd_set,
+				    const struct capture_config *config,
 				    ntfs_volume **ntfs_vol_p)
 {
-	u32 attributes = ntfs_inode_get_attributes(ni);
-	int mrec_flags = ni->mrec->flags;
+	u32 attributes;
+	int mrec_flags;
 	u32 sd_size;
 	int ret = 0;
+	struct dentry *root;
 
-	dentry->creation_time    = le64_to_cpu(ni->creation_time);
-	dentry->last_write_time  = le64_to_cpu(ni->last_data_change_time);
-	dentry->last_access_time = le64_to_cpu(ni->last_access_time);
-	dentry->security_id      = le32_to_cpu(ni->security_id);
-	dentry->attributes       = le32_to_cpu(attributes);
-	dentry->hard_link	 = ni->mft_no;
-	dentry->resolved = true;
+	if (exclude_path(path, config)) {
+		DEBUG("Excluding `%s' from capture", path);
+		return 0;
+	}
+
+	DEBUG("Starting recursive capture at path = `%s'", path);
+	mrec_flags = ni->mrec->flags;
+ 	attributes = ntfs_inode_get_attributes(ni);
+
+	root = new_dentry(path_basename(path));
+	if (!root)
+		return WIMLIB_ERR_NOMEM;
+
+	root->creation_time    = le64_to_cpu(ni->creation_time);
+	root->last_write_time  = le64_to_cpu(ni->last_data_change_time);
+	root->last_access_time = le64_to_cpu(ni->last_access_time);
+	root->security_id      = le32_to_cpu(ni->security_id);
+	root->attributes       = le32_to_cpu(attributes);
+	root->hard_link	 = ni->mft_no;
+	root->resolved = true;
 
 	if (attributes & FILE_ATTR_REPARSE_POINT) {
+		DEBUG("Reparse point `%s'", path);
 		/* Junction point, symbolic link, or other reparse point */
-		ret = capture_ntfs_streams(dentry, ni, path, path_len,
+		ret = capture_ntfs_streams(root, ni, path, path_len,
 					   lookup_table, ntfs_vol_p,
 					   AT_REPARSE_POINT);
 	} else if (mrec_flags & MFT_RECORD_IS_DIRECTORY) {
+		DEBUG("Directory `%s'", path);
+
 		/* Normal directory */
 		s64 pos = 0;
 		struct readdir_ctx ctx = {
-			.dentry       = dentry,
+			.parent       = root,
 			.dir_ni       = ni,
 			.path         = path,
 			.path_len     = path_len,
 			.lookup_table = lookup_table,
 			.sd_set       = sd_set,
+			.config       = config,
 			.ntfs_vol_p   = ntfs_vol_p,
 		};
-		ret = ntfs_readdir(ni, &pos, &ctx, filldir);
+		ret = ntfs_readdir(ni, &pos, &ctx, wim_ntfs_capture_filldir);
 		if (ret != 0)
 			ret = WIMLIB_ERR_NTFS_3G;
 	} else {
+		DEBUG("Normal file `%s'", path);
 		/* Normal file */
-		ret = capture_ntfs_streams(dentry, ni, path, path_len,
+		ret = capture_ntfs_streams(root, ni, path, path_len,
 					   lookup_table, ntfs_vol_p,
 					   AT_DATA);
 	}
 	if (ret != 0)
 		return ret;
+
+	DEBUG("Getting security information from `%s'", path);
 	ret = ntfs_inode_get_security(ni,
 				      OWNER_SECURITY_INFORMATION |
 				      GROUP_SECURITY_INFORMATION |
@@ -457,18 +504,31 @@ static int __build_dentry_tree_ntfs(struct dentry *dentry, ntfs_inode *ni,
 				      DACL_SECURITY_INFORMATION  |
 				      SACL_SECURITY_INFORMATION,
 				      sd, sd_size, &sd_size);
-	dentry->security_id = sd_set_add_sd(sd_set, sd, sd_size);
-	if (dentry->security_id == -1) {
-		ERROR("Could not allocate security ID");
-		ret = WIMLIB_ERR_NOMEM;
+	if (ret == 0) {
+		ERROR_WITH_ERRNO("Failed to get security information from "
+				 "`%s'", path);
+		ret = WIMLIB_ERR_NTFS_3G;
+	} else {
+		if (ret > 0) {
+			/*print_security_descriptor(sd, sd_size);*/
+			root->security_id = sd_set_add_sd(sd_set, sd, sd_size);
+			DEBUG("Added security ID = %u for `%s'",
+			      root->security_id, path);
+		} else { 
+			root->security_id = -1;
+			DEBUG("No security ID for `%s'", path);
+		}
+		ret = 0;
 	}
+	*root_p = root;
 	return ret;
 }
 
-static int build_dentry_tree_ntfs(struct dentry *root_dentry,
+static int build_dentry_tree_ntfs(struct dentry **root_p,
 				  const char *device,
 				  struct lookup_table *lookup_table,
 				  struct wim_security_data *sd,
+				  const struct capture_config *config,
 				  int flags,
 				  void *extra_arg)
 {
@@ -479,6 +539,8 @@ static int build_dentry_tree_ntfs(struct dentry *root_dentry,
 	tree.sd = sd;
 	tree.root = NULL;
 	ntfs_volume **ntfs_vol_p = extra_arg;
+
+	DEBUG("Mounting NTFS volume `%s' read-only", device);
 	
 	vol = ntfs_mount(device, MS_RDONLY);
 	if (!vol) {
@@ -486,6 +548,10 @@ static int build_dentry_tree_ntfs(struct dentry *root_dentry,
 				 device);
 		return WIMLIB_ERR_NTFS_3G;
 	}
+
+	NVolClearShowSysFiles(vol);
+
+	DEBUG("Opening root NTFS dentry");
 	root_ni = ntfs_inode_open(vol, FILE_root);
 	if (!root_ni) {
 		ERROR_WITH_ERRNO("Failed to open root inode of NTFS volume "
@@ -496,8 +562,9 @@ static int build_dentry_tree_ntfs(struct dentry *root_dentry,
 	char path[4096];
 	path[0] = '/';
 	path[1] = '\0';
-	ret = __build_dentry_tree_ntfs(root_dentry, root_ni, path, 1,
-				       lookup_table, &tree, ntfs_vol_p);
+	ret = __build_dentry_tree_ntfs(root_p, root_ni, path, 1,
+				       lookup_table, &tree, config,
+				       ntfs_vol_p);
 	ntfs_inode_close(root_ni);
 
 out:
@@ -509,19 +576,23 @@ out:
 	return ret;
 }
 
+
+
 WIMLIBAPI int wimlib_add_image_from_ntfs_volume(WIMStruct *w,
 						const char *device,
 						const char *name,
 						const char *description,
 						const char *flags_element,
+						const char *config_str,
+						size_t config_len,
 						int flags)
 {
 	if (flags & (WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)) {
 		ERROR("Cannot dereference files when capturing directly from NTFS");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
-	return do_add_image(w, device, name, description, flags_element, flags,
-			    build_dentry_tree_ntfs,
+	return do_add_image(w, device, name, description, flags_element,
+			    config_str, config_len, flags, build_dentry_tree_ntfs,
 			    &w->ntfs_vol);
 }
 
@@ -531,7 +602,9 @@ WIMLIBAPI int wimlib_add_image_from_ntfs_volume(WIMStruct *w,
 						const char *name,
 						const char *description,
 						const char *flags_element,
-						int flags)
+						int flags,
+						const char *config_str,
+						size_t config_len)
 {
 	ERROR("wimlib was compiled without support for NTFS-3g, so");
 	ERROR("we cannot capture a WIM image directly from a NTFS volume");
