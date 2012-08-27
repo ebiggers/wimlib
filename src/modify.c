@@ -37,6 +37,7 @@
 #include <string.h>
 #include <errno.h>
 #include <fnmatch.h>
+#include <ctype.h>
 #include <unistd.h>
 
 /** Private flag: Used to mark that we currently adding the root directory of
@@ -617,6 +618,10 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 			if (*pp == '\\')
 				*pp = '/';
 
+		/* Remove drive letter */
+		if (eol - p > 2 && isalpha(*p) && *(p + 1) == ':')
+			p += 2;
+
 		if (strcmp(p, "[ExclusionList]") == 0)
 			type = EXCLUSION_LIST;
 		else if (strcmp(p, "[ExclusionException]") == 0)
@@ -665,9 +670,16 @@ static bool match_pattern(const char *path, const char *path_basename,
 		const char *pat = list->pats[i];
 		const char *string;
 		if (pat[0] == '/')
+			/* Absolute path from root of capture */
 			string = path;
-		else
-			string = path_basename;
+		else {
+			if (strchr(pat, '/'))
+				/* Relative path from root of capture */
+				string = path + 1;
+			else
+				/* A file name pattern */
+				string = path_basename;
+		}
 		if (fnmatch(pat, string, FNM_PATHNAME) == 0) {
 			DEBUG("`%s' matches the pattern \"%s\"",
 			      string, pat);
