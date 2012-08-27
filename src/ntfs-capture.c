@@ -581,8 +581,6 @@ out:
 WIMLIBAPI int wimlib_add_image_from_ntfs_volume(WIMStruct *w,
 						const char *device,
 						const char *name,
-						const char *description,
-						const char *flags_element,
 						const char *config_str,
 						size_t config_len,
 						int flags)
@@ -591,9 +589,8 @@ WIMLIBAPI int wimlib_add_image_from_ntfs_volume(WIMStruct *w,
 		ERROR("Cannot dereference files when capturing directly from NTFS");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
-	return do_add_image(w, device, name, description, flags_element,
-			    config_str, config_len, flags, build_dentry_tree_ntfs,
-			    &w->ntfs_vol);
+	return do_add_image(w, device, name, config_str, config_len, flags,
+			    build_dentry_tree_ntfs, &w->ntfs_vol);
 }
 
 #else /* WITH_NTFS_3G */

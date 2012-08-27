@@ -981,16 +981,14 @@ void xml_update_image_info(WIMStruct *w, int image)
 }
 
 /* Adds an image to the XML information. */
-int xml_add_image(WIMStruct *w, struct dentry *root_dentry, const char *name, 
-		  const char *description, const char *flags_element)
+int xml_add_image(WIMStruct *w, struct dentry *root_dentry, const char *name)
 {
 	struct wim_info *wim_info;
 	struct image_info *image_info;
 
 	wimlib_assert(name);
 
-	DEBUG("Adding image: name = %s, description = %s, flags_element = %s",
-	      name, description, flags_element);
+	DEBUG("Adding image: name = %s", name);
 
 	/* If this is the first image, allocate the struct wim_info.  Otherwise
 	 * use the existing struct wim_info. */
@@ -1013,11 +1011,6 @@ int xml_add_image(WIMStruct *w, struct dentry *root_dentry, const char *name,
 	if (!(image_info->name = STRDUP(name)))
 		goto out_destroy_image_info;
 
-	if (description && !(image_info->description = STRDUP(description)))
-		goto out_destroy_image_info;
-	if (flags_element && !(image_info->flags = STRDUP(flags_element)))
-		goto out_destroy_image_info;
-		
 	w->wim_info = wim_info;
 	image_info->index = wim_info->num_images;
 	image_info->creation_time = get_wim_timestamp();
@@ -1412,5 +1405,30 @@ WIMLIBAPI int wimlib_set_image_descripton(WIMStruct *w, int image,
 	}
 	FREE(w->wim_info->images[image - 1].description);
 	w->wim_info->images[image - 1].description = p;
+	return 0;
+}
+
+WIMLIBAPI int wimlib_set_image_flags(WIMStruct *w, int image,
+				     const char *flags)
+{
+	char *p;
+
+	DEBUG("Setting the flags of image %d to %s", image, flags);
+
+	if (image < 1 || image > w->hdr.image_count) {
+		ERROR("%d is not a valid image", image);
+		return WIMLIB_ERR_INVALID_IMAGE;
+	}
+	if (flags) {
+		p = STRDUP(flags);
+		if (!p) {
+			ERROR("Out of memory");
+			return WIMLIB_ERR_NOMEM;
+		}
+	} else {
+		p = NULL;
+	}
+	FREE(w->wim_info->images[image - 1].flags);
+	w->wim_info->images[image - 1].flags = p;
 	return 0;
 }

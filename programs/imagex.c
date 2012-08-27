@@ -125,11 +125,12 @@ static const struct option common_options[] = {
 };
 
 static const struct option append_options[] = {
-	{"boot",   no_argument,       NULL, 'b'},
-	{"check",  no_argument,       NULL, 'c'},
-	{"flags",    required_argument, NULL, 'f'},
-	{"dereference", no_argument, NULL, 'L'},
-	{"config", required_argument, NULL, 'C'},
+	{"boot",	no_argument,       NULL, 'b'},
+	{"check",	no_argument,       NULL, 'c'},
+	{"flags",	required_argument, NULL, 'f'},
+	{"verbose",	no_argument,       NULL, 'v'},
+	{"dereference", no_argument,	   NULL, 'L'},
+	{"config",	required_argument, NULL, 'C'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option apply_options[] = {
@@ -140,13 +141,13 @@ static const struct option apply_options[] = {
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_options[] = {
-	{"boot",     no_argument,       NULL, 'b'},
-	{"check",    no_argument,       NULL, 'c'},
-	{"compress", optional_argument, NULL, 'x'},
-	{"flags",    required_argument, NULL, 'f'},
-	{"verbose",  no_argument,       NULL,'v'},
-	{"dereference", no_argument, NULL, 'L'},
-	{"config", required_argument, NULL, 'C'},
+	{"boot",	no_argument,       NULL, 'b'},
+	{"check",	no_argument,       NULL, 'c'},
+	{"compress",	optional_argument, NULL, 'x'},
+	{"flags",	required_argument, NULL, 'f'},
+	{"verbose",	no_argument,       NULL, 'v'},
+	{"dereference", no_argument,	   NULL, 'L'},
+	{"config",	required_argument, NULL, 'C'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -352,6 +353,7 @@ static int imagex_append(int argc, const char **argv)
 	size_t config_len = 0;
 	WIMStruct *w;
 	int ret;
+	int cur_image;
 
 	for_opt(c, append_options) {
 		switch (c) {
@@ -370,6 +372,9 @@ static int imagex_append(int argc, const char **argv)
 			break;
 		case 'L':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
+			break;
+		case 'v':
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
 			break;
 		default:
 			usage(APPEND);
@@ -407,8 +412,7 @@ static int imagex_append(int argc, const char **argv)
 			printf("Capturing WIM image NTFS filesystem on `%s'\n",
 			       ntfs_device);
 			ret = wimlib_add_image_from_ntfs_volume(w, ntfs_device,
-								name, desc,
-								flags_element,
+								name,
 								config_str,
 								config_len,
 								add_image_flags);
@@ -419,13 +423,23 @@ static int imagex_append(int argc, const char **argv)
 			imagex_error_with_errno("Failed to stat `%s'", dir);
 	}
 #endif
-	ret = wimlib_add_image(w, dir, name, desc, 
-			       flags_element, config_str, config_len,
+	ret = wimlib_add_image(w, dir, name, config_str, config_len,
 			       add_image_flags);
 
 out_write:
 	if (ret != 0)
 		goto out;
+	cur_image = wimlib_get_num_images(w);
+	if (desc) {
+		ret = wimlib_set_image_descripton(w, cur_image, desc);
+		if (ret != 0)
+			goto out;
+	}
+	if (flags_element) {
+		ret = wimlib_set_image_flags(w, cur_image, flags_element);
+		if (ret != 0)
+			goto out;
+	}
 	ret = wimlib_overwrite(w, write_flags);
 out:
 	wimlib_free(w);
@@ -542,6 +556,7 @@ static int imagex_capture(int argc, const char **argv)
 	const char *config_str = NULL;
 	size_t config_len = 0;
 	WIMStruct *w;
+	int cur_image;
 	int ret;
 
 	for_opt(c, capture_options) {
@@ -607,8 +622,7 @@ static int imagex_capture(int argc, const char **argv)
 			printf("Capturing WIM image NTFS filesystem on `%s'\n",
 			       ntfs_device);
 			ret = wimlib_add_image_from_ntfs_volume(w, ntfs_device,
-								name, desc,
-								flags_element,
+								name,
 								config_str,
 								config_len,
 								add_image_flags);
@@ -619,13 +633,24 @@ static int imagex_capture(int argc, const char **argv)
 			imagex_error_with_errno("Failed to stat `%s'", dir);
 	}
 #endif
-	ret = wimlib_add_image(w, dir, name, desc, flags_element, config_str,
+	ret = wimlib_add_image(w, dir, name, config_str,
 			       config_len, add_image_flags);
 
 out_write:
 	if (ret != 0) {
 		imagex_error("Failed to add the image `%s'", dir);
 		goto out;
+	}
+	cur_image = wimlib_get_num_images(w);
+	if (desc) {
+		ret = wimlib_set_image_descripton(w, cur_image, desc);
+		if (ret != 0)
+			goto out;
+	}
+	if (flags_element) {
+		ret = wimlib_set_image_flags(w, cur_image, flags_element);
+		if (ret != 0)
+			goto out;
 	}
 
 	ret = wimlib_write(w, wimfile, WIM_ALL_IMAGES, write_flags);

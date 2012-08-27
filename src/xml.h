@@ -25,8 +25,7 @@ extern void xml_update_image_info(WIMStruct *w, int image);
 extern void xml_delete_image(struct wim_info **wim_info_p, int image);
 
 extern int xml_add_image(WIMStruct *w, struct dentry *root_dentry, 
-		   	 const char *name, const char *description, 
-			 const char *flags);
+		   	 const char *name);
 
 extern void free_wim_info(struct wim_info *info);
 

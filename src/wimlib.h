@@ -405,15 +405,11 @@ enum wimlib_error_code {
  *
  */
 extern int wimlib_add_image(WIMStruct *wim, const char *dir, 
-			    const char *name, const char *description, 
-			    const char *flags_element,
-			    const char *config, size_t config_len,
-			    int flags);
+			    const char *name, const char *config,
+			    size_t config_len, int flags);
 
 extern int wimlib_add_image_from_ntfs_volume(WIMStruct *w, const char *device,
 					     const char *name,
-					     const char *description,
-					     const char *flags_element,
 					     const char *config,
 					     size_t config_len,
 					     int flags);
@@ -1125,6 +1121,9 @@ extern int wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
  */
 extern int wimlib_set_image_descripton(WIMStruct *wim, int image, 
 				       const char *description);
+
+extern int wimlib_set_image_flags(WIMStruct *w, int image,
+				  const char *flags);
 
 /**
  * Changes the name of an image in the WIM.

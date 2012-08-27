@@ -727,7 +727,6 @@ bool exclude_path(const char *path, const struct capture_config *config,
 
 
 int do_add_image(WIMStruct *w, const char *dir, const char *name,
-		 const char *description, const char *flags_element,
 		 const char *config_str, size_t config_len,
 		 int flags,
 		 int (*capture_tree)(struct dentry **, const char *,
@@ -810,7 +809,7 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	if (flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wimlib_set_boot_idx(w, w->hdr.image_count);
 
-	ret = xml_add_image(w, root_dentry, name, description, flags_element);
+	ret = xml_add_image(w, root_dentry, name);
 	if (ret != 0)
 		goto out_destroy_imd;
 
@@ -833,12 +832,9 @@ out_destroy_config:
  * Adds an image to a WIM file from a directory tree on disk.
  */
 WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir, 
-			       const char *name, const char *description, 
-			       const char *flags_element,
-			       const char *config_str,
+			       const char *name, const char *config_str,
 			       size_t config_len, int flags)
 {
-	return do_add_image(w, dir, name, description, flags_element,
-			    config_str, config_len, flags,
+	return do_add_image(w, dir, name, config_str, config_len, flags,
 			    build_dentry_tree, NULL);
 }

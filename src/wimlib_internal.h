@@ -356,7 +356,6 @@ extern bool exclude_path(const char *path,
 			 const struct capture_config *config,
 			 bool exclude_prefix);
 extern int do_add_image(WIMStruct *w, const char *dir, const char *name,
-			const char *description, const char *flags_element,
 			const char *config_str, size_t config_len,
 			int flags,
 			int (*capture_tree)(struct dentry **, const char *,
