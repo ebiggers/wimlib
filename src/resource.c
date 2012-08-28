@@ -1256,7 +1256,8 @@ int write_metadata_resource(WIMStruct *w)
 	 * - plus 8 bytes for an end-of-directory entry following the root
 	 *   dentry (shouldn't really be needed, but just in case...)
 	 */
-	subdir_offset = ((sd->total_length + 7) & ~7) + dentry_total_length(root) + 8;
+	subdir_offset = ((sd->total_length + 7) & ~7) +
+			dentry_correct_total_length(root) + 8;
 
 	/* Calculate the subdirectory offsets for the entire dentry tree. */
 	calculate_subdir_offsets(root, &subdir_offset);

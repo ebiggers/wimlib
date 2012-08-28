@@ -303,6 +303,7 @@ extern void dentry_remove_ads(struct dentry *dentry, struct ads_entry *entry);
 extern const char *path_stream_name(const char *path);
 
 extern u64 dentry_total_length(const struct dentry *dentry);
+extern u64 dentry_correct_total_length(const struct dentry *dentry);
 
 extern void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry);
 

@@ -85,6 +85,12 @@ static u64 __dentry_total_length(const struct dentry *dentry, u64 length)
 	return (length + 7) & ~7;
 }
 
+u64 dentry_correct_total_length(const struct dentry *dentry)
+{
+	return __dentry_total_length(dentry,
+				     dentry_correct_length_unaligned(dentry));
+}
+
 /* Real length of a dentry, including the alternate data stream entries, which
  * are not included in the dentry->length field... */
 u64 dentry_total_length(const struct dentry *dentry)
@@ -341,8 +347,7 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 		/* Advance the subdir offset by the amount of space the children
 		 * of this dentry take up. */
 		do {
-			*subdir_offset_p += __dentry_total_length(child,
-								  dentry_correct_length(child));
+			*subdir_offset_p += dentry_correct_total_length(child);
 			child = child->next;
 		} while (child != dentry->children);
 

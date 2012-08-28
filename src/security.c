@@ -168,8 +168,10 @@ u8 *write_security_data(const struct wim_security_data *sd, u8 *p)
 	DEBUG("Writing security data (total_length = %"PRIu32", num_entries "
 	      "= %"PRIu32")", sd->total_length, sd->num_entries);
 
+	u32 aligned_length = (sd->total_length + 7) & ~7;
+
 	u8 *orig_p = p;
-	p = put_u32(p, sd->total_length);
+	p = put_u32(p, aligned_length);
 	p = put_u32(p, sd->num_entries);
 
 	for (u32 i = 0; i < sd->num_entries; i++)
@@ -179,6 +181,7 @@ u8 *write_security_data(const struct wim_security_data *sd, u8 *p)
 		p = put_bytes(p, sd->sizes[i], sd->descriptors[i]);
 
 	wimlib_assert(p - orig_p == sd->total_length);
+	p = put_zeroes(p, aligned_length - sd->total_length);
 
 	DEBUG("Successfully wrote security data.");
 	return p;
