@@ -296,8 +296,8 @@ static int share_dentry_ads(struct dentry *owner, struct dentry *user)
 	user->ads_entries_status = ADS_ENTRIES_USER;
 	return 0;
 mismatch:
-	WARNING("Dentries `%s' and `%s' in the same hard-link group but "
-	        "do not share the same %s",
+	WARNING("Dentries `%s' and `%s' are supposedly in the same hard-link "
+		"group but do not share the same %s",
 	        owner->full_path_utf8, user->full_path_utf8,
 	        mismatch_type);
 	return WIMLIB_ERR_INVALID_DENTRY;

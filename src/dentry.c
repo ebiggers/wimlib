@@ -54,14 +54,42 @@ static bool dentry_has_name(const struct dentry *dentry, const char *name,
 	return memcmp(dentry->file_name_utf8, name, name_len) == 0;
 }
 
+static u64 __dentry_correct_length_unaligned(u16 file_name_len,
+					     u16 short_name_len)
+{
+	u64 length = WIM_DENTRY_DISK_SIZE;
+	if (file_name_len)
+		length += file_name_len + 2;
+	if (short_name_len)
+		length += short_name_len + 2;
+	return length;
+}
+
+static u64 dentry_correct_length_unaligned(const struct dentry *dentry)
+{
+	return __dentry_correct_length_unaligned(dentry->file_name_len,
+						 dentry->short_name_len);
+}
+
+/* Return the "correct" value to write in the length field of the dentry, based
+ * on the file name length and short name length */
+static u64 dentry_correct_length(const struct dentry *dentry)
+{
+	return (dentry_correct_length_unaligned(dentry) + 7) & ~7;
+}
+
+static u64 __dentry_total_length(const struct dentry *dentry, u64 length)
+{
+	for (u16 i = 0; i < dentry->num_ads; i++)
+		length += ads_entry_total_length(&dentry->ads_entries[i]);
+	return (length + 7) & ~7;
+}
+
 /* Real length of a dentry, including the alternate data stream entries, which
  * are not included in the dentry->length field... */
 u64 dentry_total_length(const struct dentry *dentry)
 {
-	u64 length = (dentry->length + 7) & ~7;
-	for (u16 i = 0; i < dentry->num_ads; i++)
-		length += ads_entry_total_length(&dentry->ads_entries[i]);
-	return length;
+	return __dentry_total_length(dentry, dentry->length);
 }
 
 /* Transfers file attributes from a `stat' buffer to a struct dentry. */
@@ -313,7 +341,8 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 		/* Advance the subdir offset by the amount of space the children
 		 * of this dentry take up. */
 		do {
-			*subdir_offset_p += dentry_total_length(child);
+			*subdir_offset_p += __dentry_total_length(child,
+								  dentry_correct_length(child));
 			child = child->next;
 		} while (child != dentry->children);
 
@@ -722,17 +751,6 @@ void unlink_dentry(struct dentry *dentry)
 	}
 }
 
-
-/* Recalculates the length of @dentry based on its file name length and short
- * name length.  */
-static inline void recalculate_dentry_size(struct dentry *dentry)
-{
-	dentry->length = WIM_DENTRY_DISK_SIZE + dentry->file_name_len + 
-			 2 + dentry->short_name_len;
-	/* Must be multiple of 8. */
-	dentry->length = (dentry->length + 7) & ~7;
-}
-
 /* Duplicates a UTF-8 name into UTF-8 and UTF-16 strings and returns the strings
  * and their lengths in the pointer arguments */
 int get_names(char **name_utf16_ret, char **name_utf8_ret,
@@ -776,7 +794,7 @@ int change_dentry_name(struct dentry *dentry, const char *new_name)
 			&dentry->file_name_len, &dentry->file_name_utf8_len,
 			 new_name);
 	if (ret == 0)
-		recalculate_dentry_size(dentry);
+		dentry->length = dentry_correct_length(dentry);
 	return ret;
 }
 
@@ -859,15 +877,21 @@ void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *tab
  *
  * struct ads_entry_on_disk {
  * 	u64  length;          // Length of the entry, in bytes.  This includes
- *				    all fields (including the stream name, the
- *				    null terminator, AND the padding!).
+ *				    all fields (including the stream name and 
+ *				    null terminator if present, AND the padding!).
  * 	u64  reserved;        // Seems to be unused
  * 	u8   hash[20];        // SHA1 message digest of the uncompressed stream
  * 	u16  stream_name_len; // Length of the stream name, in bytes
  * 	char stream_name[];   // Stream name in UTF-16LE, @stream_name_len bytes long,
  *                                  not including null terminator
  * 	u16  zero;            // UTF-16 null terminator for the stream name, NOT
- * 	                            included in @stream_name_len
+ * 	                            included in @stream_name_len.  Based on what
+ * 	                            I've observed from filenames in dentries,
+ * 	                            this field should not exist when
+ * 	                            (@stream_name_len == 0), but you can't
+ * 	                            actually tell because of the padding anyway
+ * 	                            (provided that the padding is zeroed, which
+ * 	                            it always seems to be).
  *	char padding[];       // Padding to make the size a multiple of 8 bytes.
  * };
  *
@@ -909,7 +933,7 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 		}
 
 		p = get_u64(p, &length);
-		p += 8;
+		p += 8; /* Skip the reserved field */
 		p = get_bytes(p, SHA1_HASH_SIZE, (u8*)cur_entry->hash);
 		p = get_u16(p, &cur_entry->stream_name_len);
 
@@ -929,7 +953,7 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 		if (remaining_size < length_no_padding) {
 			ERROR("Stream entries go past end of metadata resource");
 			ERROR("(remaining_size = %"PRIu64" bytes, "
-			      "length_no_padding = %"PRIu16" bytes",
+			      "length_no_padding = %"PRIu16" bytes)",
 			      remaining_size, length_no_padding);
 			ret = WIMLIB_ERR_INVALID_DENTRY;
 			goto out_free_ads_entries;
@@ -951,21 +975,23 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 			goto out_free_ads_entries;
 		}
 
-		cur_entry->stream_name = MALLOC(cur_entry->stream_name_len);
-		if (!cur_entry->stream_name) {
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_ads_entries;
-		}
-		get_bytes(p, cur_entry->stream_name_len,
-		          (u8*)cur_entry->stream_name);
-		cur_entry->stream_name_utf8 = utf16_to_utf8(cur_entry->stream_name,
-							    cur_entry->stream_name_len,
-							    &utf8_len);
-		cur_entry->stream_name_utf8_len = utf8_len;
+		if (cur_entry->stream_name_len) {
+			cur_entry->stream_name = MALLOC(cur_entry->stream_name_len);
+			if (!cur_entry->stream_name) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_free_ads_entries;
+			}
+			get_bytes(p, cur_entry->stream_name_len,
+				  (u8*)cur_entry->stream_name);
+			cur_entry->stream_name_utf8 = utf16_to_utf8(cur_entry->stream_name,
+								    cur_entry->stream_name_len,
+								    &utf8_len);
+			cur_entry->stream_name_utf8_len = utf8_len;
 
-		if (!cur_entry->stream_name_utf8) {
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_ads_entries;
+			if (!cur_entry->stream_name_utf8) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_free_ads_entries;
+			}
 		}
 		/* It's expected that the size of every ADS entry is a multiple
 		 * of 8.  However, to be safe, I'm allowing the possibility of
@@ -1012,9 +1038,9 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 {
 	const u8 *p;
 	u64 calculated_size;
-	char *file_name;
-	char *file_name_utf8;
-	char *short_name;
+	char *file_name = NULL;
+	char *file_name_utf8 = NULL;
+	char *short_name = NULL;
 	u16 short_name_len;
 	u16 file_name_len;
 	size_t file_name_utf8_len;
@@ -1100,92 +1126,100 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	p = get_u16(p, &short_name_len);
 	p = get_u16(p, &file_name_len);
 
-	/* We now know the length of the file name and short name.  These should
-	 * be included in the dentry length, but make sure the numbers are
-	 * consistent. */
-	calculated_size = WIM_DENTRY_DISK_SIZE + file_name_len + 2 +
-			  short_name_len;
+	/* We now know the length of the file name and short name.  Make sure
+	 * the length of the dentry is large enough to actually hold them. 
+	 *
+	 * The calculated length here is unaligned to allow for the possibility
+	 * that the dentry->length names an unaligned length, although this
+	 * would be unexpected. */
+	calculated_size = __dentry_correct_length_unaligned(file_name_len,
+							    short_name_len);
 
 	if (dentry->length < calculated_size) {
 		ERROR("Unexpected end of directory entry! (Expected "
-		      "%"PRIu64" bytes, got %"PRIu64" bytes. "
+		      "at least %"PRIu64" bytes, got %"PRIu64" bytes. "
 		      "short_name_len = %hu, file_name_len = %hu)", 
 		      calculated_size, dentry->length,
 		      short_name_len, file_name_len);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
-	/* Read the filename. */
-	file_name = MALLOC(file_name_len);
-	if (!file_name) {
-		ERROR("Failed to allocate %hu bytes for dentry file name",
-		      file_name_len);
-		return WIMLIB_ERR_NOMEM;
-	}
-	p = get_bytes(p, file_name_len, file_name);
+	/* Read the filename if present.  Note: if the filename is empty, there
+	 * is no null terminator following it. */
+	if (file_name_len) {
+		file_name = MALLOC(file_name_len);
+		if (!file_name) {
+			ERROR("Failed to allocate %hu bytes for dentry file name",
+			      file_name_len);
+			return WIMLIB_ERR_NOMEM;
+		}
+		p = get_bytes(p, file_name_len, file_name);
 
-	/* Convert filename to UTF-8. */
-	file_name_utf8 = utf16_to_utf8(file_name, file_name_len, 
-				       &file_name_utf8_len);
+		/* Convert filename to UTF-8. */
+		file_name_utf8 = utf16_to_utf8(file_name, file_name_len, 
+					       &file_name_utf8_len);
 
-	if (!file_name_utf8) {
-		ERROR("Failed to allocate memory to convert UTF-16 "
-		      "filename (%hu bytes) to UTF-8", file_name_len);
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_file_name;
-	}
-
-	/* Before the short name begins, there is a null terminator of two zero
-	 * bytes that follow the long filename, even if the long file name is of
-	 * zero length. */
-
-	/* XXX There seems to be no null terminator following the short name;
-	 * verify this. */
-	if (*(u16*)p)
-		WARNING("Expected two zero bytes following the file name "
-		        "`%s', but found non-zero bytes", file_name_utf8);
-	p += 2;
-
-	/* Read the short filename. */
-	short_name = MALLOC(short_name_len);
-	if (!short_name) {
-		ERROR("Failed to allocate %hu bytes for short filename",
-		      short_name_len);
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_file_name_utf8;
+		if (!file_name_utf8) {
+			ERROR("Failed to allocate memory to convert UTF-16 "
+			      "filename (%hu bytes) to UTF-8", file_name_len);
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_file_name;
+		}
+		if (*(u16*)p)
+			WARNING("Expected two zero bytes following the file name "
+				"`%s', but found non-zero bytes", file_name_utf8);
+		p += 2;
 	}
 
-	p = get_bytes(p, short_name_len, short_name);
+	/* Align the calculated size */
+	calculated_size = (calculated_size + 7) & ~7;
 
-	/* Some directory entries inexplicably have a little over 70 bytes of
-	 * extra data.  The exact amount of data seems to be 72 bytes, but it is
-	 * aligned on the next 8-byte boundary.  It does NOT seem to be
-	 * alternate data stream entries.  Here's an example of the aligned
-	 * data:
-	 *
-	 * 01000000 40000000 6c786bba c58ede11 b0bb0026 1870892a b6adb76f
-	 * e63a3e46 8fca8653 0d2effa1 6c786bba c58ede11 b0bb0026 1870892a
-	 * 00000000 00000000 00000000 00000000
-	 *
-	 * Here's one interpretation of how the data is laid out.
-	 *
-	 * struct unknown {
-	 * 	u32 field1; (always 0x00000001)
-	 * 	u32 field2; (always 0x40000000)
-	 * 	u8  data[48]; (???)
-	 * 	u64 reserved1; (always 0)
-	 * 	u64 reserved2; (always 0)
-	 * };*/
-#if 0
-	if (dentry->length - calculated_size >= WIM_ADS_ENTRY_DISK_SIZE) {
-		printf("%s: %lu / %lu (", file_name_utf8, 
-				calculated_size, dentry->length);
-		print_string(p + WIM_ADS_ENTRY_DISK_SIZE, dentry->length - calculated_size - WIM_ADS_ENTRY_DISK_SIZE);
-		puts(")");
-		print_byte_field(p, dentry->length - calculated_size);
-		putchar('\n');
+	if (dentry->length > calculated_size) {
+		/* Weird; the dentry says it's longer than it should be.  Note
+		 * that the length field does NOT include the size of the
+		 * alternate stream entries. */
+
+		/* Strangely, some directory entries inexplicably have a little
+		 * over 70 bytes of extra data.  The exact amount of data seems
+		 * to be 72 bytes, but it is aligned on the next 8-byte
+		 * boundary.  It does NOT seem to be alternate data stream
+		 * entries.  Here's an example of the aligned data:
+		 *
+		 * 01000000 40000000 6c786bba c58ede11 b0bb0026 1870892a b6adb76f
+		 * e63a3e46 8fca8653 0d2effa1 6c786bba c58ede11 b0bb0026 1870892a
+		 * 00000000 00000000 00000000 00000000
+		 *
+		 * Here's one interpretation of how the data is laid out.
+		 *
+		 * struct unknown {
+		 * 	u32 field1; (always 0x00000001)
+		 * 	u32 field2; (always 0x40000000)
+		 * 	u8  data[48]; (???)
+		 * 	u64 reserved1; (always 0)
+		 * 	u64 reserved2; (always 0)
+		 * };*/
+		WARNING("Dentry for file or directory `%s' has %zu extra "
+			"bytes of data",
+			file_name_utf8, dentry->length - calculated_size);
 	}
-#endif
+
+	/* Read the short filename if present.  Note: if there is no short
+	 * filename, there is no null terminator following it. */
+	if (short_name_len) {
+		short_name = MALLOC(short_name_len);
+		if (!short_name) {
+			ERROR("Failed to allocate %hu bytes for short filename",
+			      short_name_len);
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_file_name_utf8;
+		}
+
+		p = get_bytes(p, short_name_len, short_name);
+		if (*(u16*)p)
+			WARNING("Expected two zero bytes following the file name "
+				"`%s', but found non-zero bytes", file_name_utf8);
+		p += 2;
+	}
 
 	/* 
 	 * Read the alternate data streams, if present.  dentry->num_ads tells
@@ -1197,7 +1231,6 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * included in the dentry->length field for some reason.
 	 */
 	if (dentry->num_ads != 0) {
-		calculated_size = (calculated_size + 7) & ~7;
 		if (calculated_size > metadata_resource_len - offset) {
 			ERROR("Not enough space in metadata resource for "
 			      "alternate stream entries");
@@ -1243,7 +1276,13 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	unsigned padding;
 	const u8 *hash;
 
-	p = put_u64(p, dentry->length);
+	/* We calculate the correct length of the dentry ourselves because the
+	 * dentry->length field may been set to an unexpected value from when we
+	 * read the dentry in (for example, there may have been unknown data
+	 * appended to the end of the dentry...) */
+	u64 length = dentry_correct_length(dentry);
+
+	p = put_u64(p, length);
 	p = put_u32(p, dentry->attributes);
 	p = put_u32(p, dentry->security_id);
 	p = put_u64(p, dentry->subdir_offset);
@@ -1273,16 +1312,19 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	p = put_u16(p, dentry->num_ads);
 	p = put_u16(p, dentry->short_name_len);
 	p = put_u16(p, dentry->file_name_len);
-	p = put_bytes(p, dentry->file_name_len, (u8*)dentry->file_name);
-	p = put_u16(p, 0); /* filename padding, 2 bytes. */
-	p = put_bytes(p, dentry->short_name_len, (u8*)dentry->short_name);
-
-	wimlib_assert(p - orig_p <= dentry->length);
-	if (p - orig_p < dentry->length)
-		p = put_zeroes(p, dentry->length - (p - orig_p));
+	if (dentry->file_name_len) {
+		p = put_bytes(p, dentry->file_name_len, (u8*)dentry->file_name);
+		p = put_u16(p, 0); /* filename padding, 2 bytes. */
+	}
+	if (dentry->short_name) {
+		p = put_bytes(p, dentry->short_name_len, (u8*)dentry->short_name);
+		p = put_u16(p, 0); /* short name padding, 2 bytes */
+	}
 
 	/* Align to 8-byte boundary */
-	p = put_zeroes(p, (8 - dentry->length % 8) % 8);
+	wimlib_assert(length >= (p - orig_p)
+			&& length - (p - orig_p) <= 7);
+	p = put_zeroes(p, length - (p - orig_p));
 
 	/* Write the alternate data streams, if there are any.  Please see
 	 * read_ads_entries() for comments about the format of the on-disk
@@ -1296,11 +1338,16 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 			hash = dentry->ads_entries[i].hash;
 		p = put_bytes(p, SHA1_HASH_SIZE, hash);
 		p = put_u16(p, dentry->ads_entries[i].stream_name_len);
-		p = put_bytes(p, dentry->ads_entries[i].stream_name_len,
-				 (u8*)dentry->ads_entries[i].stream_name);
-		p = put_u16(p, 0);
+		if (dentry->ads_entries[i].stream_name_len) {
+			p = put_bytes(p, dentry->ads_entries[i].stream_name_len,
+					 (u8*)dentry->ads_entries[i].stream_name);
+			p = put_u16(p, 0);
+		}
 		p = put_zeroes(p, (8 - (p - orig_p) % 8) % 8);
 	}
+#ifdef ENABLE_ASSERTIONS
+	wimlib_assert(p - orig_p == __dentry_total_length(dentry, length));
+#endif
 	return p;
 }
 
@@ -1442,7 +1489,11 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 				break;
 		}
 
-		/* Advance to the offset of the next child. */
+		/* Advance to the offset of the next child.  Note: We need to
+		 * advance by the TOTAL length of the dentry, not by the length
+		 * child->length, which although it does take into account the
+		 * padding, it DOES NOT take into account alternate stream
+		 * entries. */
 		cur_offset += dentry_total_length(child);
 	}
 

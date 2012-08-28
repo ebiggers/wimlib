@@ -89,7 +89,9 @@ struct ads_entry {
  * entry to align the next one (or the next dentry) on an 8-byte boundary. */
 static inline u64 ads_entry_total_length(const struct ads_entry *entry)
 {
-	u64 len = WIM_ADS_ENTRY_DISK_SIZE + entry->stream_name_len + 2;
+	u64 len = WIM_ADS_ENTRY_DISK_SIZE;
+	if (entry->stream_name_len)
+		len += entry->stream_name_len + 2;
 	return (len + 7) & ~7;
 }
 
@@ -155,7 +157,11 @@ struct dentry {
 	 * The length here includes the base directory entry on disk as well as
 	 * the long and short filenames.  It does NOT include any alternate
 	 * stream entries that may follow the directory entry, even though the
-	 * size of those needs to be considered.
+	 * size of those needs to be considered.  The length SHOULD be 8-byte
+	 * aligned, although we don't require it to be.  We do require the
+	 * length to be large enough to hold the file name(s) of the dentry;
+	 * additionally, a warning is issued if this field is larger than the
+	 * aligned size.
 	 */
 	u64 length;
 
