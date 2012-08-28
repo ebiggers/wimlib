@@ -1035,14 +1035,15 @@ void print_image_info(const struct wim_info *wim_info, int image)
 	uint i;
 	const struct image_info *image_info;
 	const char *desc;
-	time_t ctime;
-	time_t mtime;
 
 
 	if (image == WIM_ALL_IMAGES) {
 		for (i = 1; i <= wim_info->num_images; i++)
 			print_image_info(wim_info, i);
 	} else {
+		time_t time;
+		char *p;
+
 		image_info = &wim_info->images[image - 1];
 
 		printf("Index:                  %"PRIu64"\n", 
@@ -1075,11 +1076,17 @@ void print_image_info(const struct wim_info *wim_info, int image)
 		printf("Hard Link Bytes:        %"PRIu64"\n", 
 				image_info->hard_link_bytes);
 
-		ctime = wim_timestamp_to_unix(image_info->creation_time);
-		mtime = wim_timestamp_to_unix(image_info->last_modification_time);
+		time = wim_timestamp_to_unix(image_info->creation_time);
+		p = asctime(gmtime(&time));
+		*(strrchr(p, '\n')) = '\0';
 
-		printf("Creation Time:          %s", asctime(localtime(&ctime)));
-		printf("Last Modification Time: %s", asctime(localtime(&mtime)));
+		printf("Creation Time:          %s UTC\n", p);
+
+		time = wim_timestamp_to_unix(image_info->last_modification_time);
+		p = asctime(gmtime(&time));
+		*(strrchr(p, '\n')) = '\0';
+
+		printf("Last Modification Time: %s UTC\n", p);
 		if (image_info->windows_info_exists)
 			print_windows_info(&image_info->windows_info);
 		if (image_info->flags)

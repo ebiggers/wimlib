@@ -479,6 +479,8 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 {
 	const u8 *hash;
 	struct lookup_table_entry *lte;
+	time_t time;
+	char *p;
 
 	printf("[DENTRY]\n");
 	printf("Length            = %"PRIu64"\n", dentry->length);
@@ -503,9 +505,21 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	time_t creat_time = wim_timestamp_to_unix(dentry->creation_time);
 	time_t access_time = wim_timestamp_to_unix(dentry->last_access_time);
 	time_t mod_time = wim_timestamp_to_unix(dentry->last_write_time);
-	printf("Creation Time     = %s", asctime(gmtime(&creat_time)));
-	printf("Last Access Time  = %s", asctime(gmtime(&access_time)));
-	printf("Last Write Time   = %s", asctime(gmtime(&mod_time)));
+
+	time = wim_timestamp_to_unix(dentry->creation_time);
+	p = asctime(gmtime(&time));
+	*(strrchr(p, '\n')) = '\0';
+	printf("Creation Time     = %s UTC\n", p);
+
+	time = wim_timestamp_to_unix(dentry->last_access_time);
+	p = asctime(gmtime(&time));
+	*(strrchr(p, '\n')) = '\0';
+	printf("Last Access Time  = %s UTC\n", p);
+
+	time = wim_timestamp_to_unix(dentry->last_write_time);
+	p = asctime(gmtime(&time));
+	*(strrchr(p, '\n')) = '\0';
+	printf("Last Write Time   = %s UTC\n", p);
 
 	printf("Reparse Tag       = 0x%"PRIx32"\n", dentry->reparse_tag);
 	printf("Hard Link Group   = 0x%"PRIx64"\n", dentry->hard_link);
