@@ -168,7 +168,7 @@ ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 
 	wimlib_assert(dentry_is_symlink(dentry));
 
-	lte = dentry_first_lte(dentry, w->lookup_table);
+	lte = dentry_unnamed_lte(dentry, w->lookup_table);
 	if (!lte)
 		return -EIO;
 

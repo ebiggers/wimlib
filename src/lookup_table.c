@@ -221,6 +221,14 @@ int read_lookup_table(WIMStruct *w)
 		p = get_u32(p, &cur_entry->refcnt);
 		p = get_bytes(p, SHA1_HASH_SIZE, cur_entry->hash);
 
+		if (is_zero_hash(cur_entry->hash)) {
+			ERROR("The WIM lookup table contains an entry with a "
+			      "SHA1 message digest of all 0's");
+			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+			FREE(cur_entry);
+			goto out;
+		}
+
 		duplicate_entry = __lookup_resource(table, cur_entry->hash);
 		if (duplicate_entry) {
 			ERROR("The WIM lookup table contains two entries with the "
@@ -230,6 +238,7 @@ int read_lookup_table(WIMStruct *w)
 			ERROR("The second entry is:");
 			print_lookup_table_entry(cur_entry);
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+			FREE(cur_entry);
 			goto out;
 		}
 		lookup_table_insert(table, cur_entry);
@@ -481,12 +490,29 @@ int dentry_resolve_ltes(struct dentry *dentry, void *__table)
 	return 0;
 }
 
+/* Return the lookup table entry for the unnamed data stream of a dentry, or
+ * NULL if there is none.
+ *
+ * You'd think this would be easier than it actually is, since the unnamed data
+ * stream should be the one referenced from the dentry itself.  Alas, if there
+ * are named data streams, Microsoft's "imagex.exe" program will put the unnamed
+ * data stream in one of the alternate data streams instead of inside the
+ * dentry.  So we need to check the alternate data streams too.
+ *
+ * Also, note that a dentry may appear to have than one unnamed stream, but if
+ * the SHA1 message digest is all 0's then the corresponding stream does not
+ * really "count" (this is the case for the dentry's own file stream when the
+ * file stream that should be there is actually in one of the alternate stream
+ * entries.).  This is despite the fact that we may need to extract such a
+ * missing entry as an empty file or empty named data stream.
+ */
 struct lookup_table_entry *
-dentry_first_lte(const struct dentry *dentry, const struct lookup_table *table)
+dentry_unnamed_lte(const struct dentry *dentry,
+		   const struct lookup_table *table)
 {
 	if (dentry->resolved)
-		return dentry_first_lte_resolved(dentry);
+		return dentry_unnamed_lte_resolved(dentry);
 	else
-		return dentry_first_lte_unresolved(dentry, table);
+		return dentry_unnamed_lte_unresolved(dentry, table);
 }
 

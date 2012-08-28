@@ -299,7 +299,7 @@ static inline u16 dentry_stream_name_len(const struct dentry *dentry,
 {
 	wimlib_assert(stream_idx <= dentry->num_ads);
 	if (stream_idx == 0)
-		return dentry->file_name_len;
+		return 0;
 	else
 		return dentry->ads_entries[stream_idx - 1].stream_name_len;
 }
@@ -332,35 +332,34 @@ static inline const u8 *dentry_stream_hash(const struct dentry *dentry,
 }
 
 static inline struct lookup_table_entry *
-dentry_first_lte_resolved(const struct dentry *dentry)
+dentry_unnamed_lte_resolved(const struct dentry *dentry)
 {
 	struct lookup_table_entry *lte;
 	wimlib_assert(dentry->resolved);
 
-	for (unsigned i = 0; i <= dentry->num_ads; i++) {
-		lte = dentry_stream_lte_resolved(dentry, i);
-		if (lte)
-			return lte;
-	}
+	for (unsigned i = 0; i <= dentry->num_ads; i++)
+		if (dentry_stream_name_len(dentry, i) == 0 &&
+		     !is_zero_hash(dentry_stream_hash_resolved(dentry, i)))
+			return dentry_stream_lte_resolved(dentry, i);
 	return NULL;
 }
 
 static inline struct lookup_table_entry *
-dentry_first_lte_unresolved(const struct dentry *dentry,
-			    const struct lookup_table *table)
+dentry_unnamed_lte_unresolved(const struct dentry *dentry,
+			      const struct lookup_table *table)
 {
 	struct lookup_table_entry *lte;
 	wimlib_assert(!dentry->resolved);
 
-	for (unsigned i = 0; i <= dentry->num_ads; i++) {
-		lte = dentry_stream_lte_unresolved(dentry, i, table);
-		if (lte)
-			return lte;
-	}
+	for (unsigned i = 0; i <= dentry->num_ads; i++)
+		if (dentry_stream_name_len(dentry, i) == 0 &&
+		     !is_zero_hash(dentry_stream_hash_unresolved(dentry, i)))
+			return dentry_stream_lte_unresolved(dentry, i, table);
 	return NULL;
 }
 
 extern struct lookup_table_entry *
-dentry_first_lte(const struct dentry *dentry, const struct lookup_table *table);
+dentry_unnamed_lte(const struct dentry *dentry,
+		   const struct lookup_table *table);
 
 #endif

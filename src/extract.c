@@ -200,7 +200,7 @@ static int extract_regular_file(WIMStruct *w,
 {
 	struct lookup_table_entry *lte;
 
-	lte = dentry_first_lte(dentry, w->lookup_table);
+	lte = dentry_unnamed_lte(dentry, w->lookup_table);
 
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
 			      WIMLIB_EXTRACT_FLAG_HARDLINK)) && lte) {

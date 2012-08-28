@@ -882,7 +882,9 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		}
 	}
 
-	if (new_compressed_size > original_size) {
+	if (new_compressed_size >= original_size &&
+	    out_ctype != WIM_COMPRESSION_TYPE_NONE && !raw)
+	{
 		/* Oops!  We compressed the resource to larger than the original
 		 * size.  Write the resource uncompressed instead. */
 		if (fseeko(out_fp, file_offset, SEEK_SET) != 0) {

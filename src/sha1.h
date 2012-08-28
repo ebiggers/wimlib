@@ -39,9 +39,10 @@ static inline void print_hash(const u8 hash[SHA1_HASH_SIZE])
 
 static inline bool is_zero_hash(const u8 hash[SHA1_HASH_SIZE])
 {
-	for (u8 i = 0; i < SHA1_HASH_SIZE / 4; i++)
-		if (((u32*)hash)[i])
-			return false;
+	if (hash)
+		for (u8 i = 0; i < SHA1_HASH_SIZE / 4; i++)
+			if (((u32*)hash)[i])
+				return false;
 	return true;
 }
 

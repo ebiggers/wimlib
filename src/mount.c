@@ -221,7 +221,7 @@ int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf)
 	stbuf->st_gid   = getgid();
 
 	/* Use the size of the unnamed (default) file stream. */
-	lte = dentry_first_lte_resolved(dentry);
+	lte = dentry_unnamed_lte_resolved(dentry);
 	if (lte) {
 		if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 			wimlib_assert(lte->staging_file_name);

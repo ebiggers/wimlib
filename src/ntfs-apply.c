@@ -268,7 +268,7 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 
 	wimlib_assert(dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT);
 
-	lte = dentry_first_lte(dentry, w->lookup_table);
+	lte = dentry_unnamed_lte(dentry, w->lookup_table);
 
 	DEBUG("Applying reparse data to `%s'", dentry->full_path_utf8);
 
