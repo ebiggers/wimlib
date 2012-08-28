@@ -110,6 +110,15 @@ static inline bool ads_entry_has_name(const struct ads_entry *entry,
 	return memcmp(entry->stream_name_utf8, name, name_len) == 0;
 }
 
+static inline bool ads_entries_have_same_name(const struct ads_entry *entry_1,
+					      const struct ads_entry *entry_2)
+{
+	if (entry_1->stream_name_len != entry_2->stream_name_len)
+		return false;
+	return memcmp(entry_1->stream_name, entry_2->stream_name,
+		      entry_1->stream_name_len) == 0;
+}
+
 
 /* 
  * In-memory structure for a WIM directory entry (dentry).  There is a directory
@@ -283,8 +292,11 @@ struct dentry {
 	/* List of dentries in the hard link set */
 	struct list_head link_group_list;
 
+	union {
 	/* List of dentries sharing the same lookup table entry */
-	struct stream_list_head lte_group_list;
+		struct stream_list_head lte_group_list;
+		struct list_head tmp_list;
+	};
 
 	/* Path to extracted file on disk (used during extraction only)
 	 * (malloc()ed buffer) */

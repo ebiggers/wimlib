@@ -1200,8 +1200,8 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	if (ret != 0)
 		goto out_free_lgt;
 
-	DEBUG("Freeing duplicate ADS entries in link group table");
-	ret = link_groups_free_duplicate_data(lgt);
+	DEBUG("Fixing inconsistencies in the link groups");
+	ret = fix_link_groups(lgt);
 	if (ret != 0)
 		goto out_free_lgt;
 

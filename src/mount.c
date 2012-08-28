@@ -1829,7 +1829,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	DEBUG("Selected image %d", image);
 
-	next_link_group_id = assign_link_groups(wim->image_metadata[image - 1].lgt);
+	next_link_group_id = assign_link_group_ids(wim->image_metadata[image - 1].lgt);
 
 	/* Resolve all the lookup table entries of the dentry tree */
 	for_dentry_in_tree(wim_root_dentry(wim), dentry_resolve_ltes,

@@ -360,13 +360,13 @@ struct readdir_ctx {
 	ntfs_volume	   **ntfs_vol_p;
 };
 
-static int __build_dentry_tree_ntfs(struct dentry **root_p, ntfs_inode *ni,
-				    char path[], size_t path_len,
-				    struct lookup_table *lookup_table,
-				    struct sd_set *sd_set,
-				    const struct capture_config *config,
-				    ntfs_volume **ntfs_vol_p);
-
+static int
+build_dentry_tree_ntfs_recursive(struct dentry **root_p, ntfs_inode *ni,
+				 char path[], size_t path_len,
+				 struct lookup_table *lookup_table,
+				 struct sd_set *sd_set,
+				 const struct capture_config *config,
+				 ntfs_volume **ntfs_vol_p);
 
 static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 				    const int name_len, const int name_type,
@@ -412,9 +412,9 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 		ctx->path[path_len++] = '/';
 	memcpy(ctx->path + path_len, utf8_name, utf8_name_len + 1);
 	path_len += utf8_name_len;
-	ret = __build_dentry_tree_ntfs(&child, ni, ctx->path, path_len,
-				       ctx->lookup_table, ctx->sd_set,
-				       ctx->config, ctx->ntfs_vol_p);
+	ret = build_dentry_tree_ntfs_recursive(&child, ni, ctx->path, path_len,
+					       ctx->lookup_table, ctx->sd_set,
+					       ctx->config, ctx->ntfs_vol_p);
 
 	if (child) {
 		DEBUG("Linking dentry `%s' with parent `%s'",
@@ -433,12 +433,13 @@ out:
  * At the same time, update the WIM lookup table with lookup table entries for
  * the NTFS streams, and build an array of security descriptors.
  */
-static int __build_dentry_tree_ntfs(struct dentry **root_p, ntfs_inode *ni,
-				    char path[], size_t path_len,
-				    struct lookup_table *lookup_table,
-				    struct sd_set *sd_set,
-				    const struct capture_config *config,
-				    ntfs_volume **ntfs_vol_p)
+static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
+					    ntfs_inode *ni,
+				    	    char path[], size_t path_len,
+				    	    struct lookup_table *lookup_table,
+				    	    struct sd_set *sd_set,
+				    	    const struct capture_config *config,
+				    	    ntfs_volume **ntfs_vol_p)
 {
 	u32 attributes;
 	int mrec_flags;
@@ -465,8 +466,8 @@ static int __build_dentry_tree_ntfs(struct dentry **root_p, ntfs_inode *ni,
 	root->last_access_time = le64_to_cpu(ni->last_access_time);
 	root->security_id      = le32_to_cpu(ni->security_id);
 	root->attributes       = le32_to_cpu(attributes);
-	root->hard_link	 = ni->mft_no;
-	root->resolved = true;
+	root->hard_link        = ni->mft_no;
+	root->resolved         = true;
 
 	if (attributes & FILE_ATTR_REPARSE_POINT) {
 		DEBUG("Reparse point `%s'", path);
@@ -571,12 +572,18 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 		ret = WIMLIB_ERR_NTFS_3G;
 		goto out;
 	}
-	char path[4096];
+	char *path = MALLOC(32769);
+	if (!path) {
+		ERROR("Could not allocate memory for NTFS pathname");
+		goto out_cleanup;
+	}
 	path[0] = '/';
 	path[1] = '\0';
-	ret = __build_dentry_tree_ntfs(root_p, root_ni, path, 1,
-				       lookup_table, &sd_set, config,
-				       ntfs_vol_p);
+	ret = build_dentry_tree_ntfs_recursive(root_p, root_ni, path, 1,
+					       lookup_table, &sd_set,
+					       config, ntfs_vol_p);
+out_cleanup:
+	FREE(path);
 	ntfs_inode_close(root_ni);
 	destroy_sd_set(&sd_set);
 

@@ -745,6 +745,7 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	struct image_metadata *imd;
 	struct wim_security_data *sd;
 	struct capture_config config;
+	struct link_group_table *lgt;
 	int ret;
 
 	DEBUG("Adding dentry tree from dir `%s'.", dir);
@@ -803,13 +804,20 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
+	lgt = w->image_metadata[w->hdr.image_count - 1].lgt;
 	DEBUG("Inserting dentries into hard link group table");
-	ret = for_dentry_in_tree(root_dentry, link_group_table_insert, 
-				 w->image_metadata[w->hdr.image_count - 1].lgt);
+	ret = for_dentry_in_tree(root_dentry, link_group_table_insert, lgt);
+				 
 	if (ret != 0)
 		goto out_destroy_imd;
-	DEBUG("Assigning hard link groups");
-	assign_link_groups(w->image_metadata[w->hdr.image_count - 1].lgt);
+
+	DEBUG("Cleanup up the hard link groups");
+	ret = fix_link_groups(lgt);
+	if (ret != 0)
+		goto out_destroy_imd;
+
+	DEBUG("Assigning hard link group IDs");
+	assign_link_group_ids(w->image_metadata[w->hdr.image_count - 1].lgt);
 
 	if (flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wimlib_set_boot_idx(w, w->hdr.image_count);

@@ -41,14 +41,27 @@ struct link_group {
 /* Hash table to find hard link groups, identified by their hard link group ID.
  * */
 struct link_group_table {
+	/* Fields for the hash table */
 	struct link_group **array;
 	u64 num_entries;
 	u64 capacity;
-	struct link_group *singles;
+
+	/* 
+	 * Linked list of "extra" groups.  These may be:
+	 *
+	 * - Hard link groups of size 1, which are all allowed to have 0 for
+	 *   their hard link group ID, meaning we cannot insert them into the
+	 *   hash table
+	 * - Groups we create ourselves by splitting a nominal hard link group
+	 *   due to inconsistencies in the dentries.  These groups will have a
+	 *   hard link group ID duplicated with some other group until
+	 *   assign_link_group_ids() is called.
+	 */
+	struct link_group *extra_groups;
 };
 
 /* Returns pointer to a new link group table having the specified capacity */
-struct link_group_table *new_link_group_table(u64 capacity)
+struct link_group_table *new_link_group_table(size_t capacity)
 {
 	struct link_group_table *table;
 	struct link_group **array;
@@ -61,10 +74,10 @@ struct link_group_table *new_link_group_table(u64 capacity)
 		FREE(table);
 		goto err;
 	}
-	table->num_entries = 0;
-	table->capacity = capacity;
-	table->array = array;
-	table->singles = NULL;
+	table->num_entries  = 0;
+	table->capacity     = capacity;
+	table->array        = array;
+	table->extra_groups = NULL;
 	return table;
 err:
 	ERROR("Failed to allocate memory for link group table with capacity %zu",
@@ -93,15 +106,15 @@ int link_group_table_insert(struct dentry *dentry, void *__table)
 	struct link_group *group;
 
 	if (dentry->hard_link == 0) {
-		/* Single group--- Add to the singles list (we can't put it in
-		 * the table itself because all the singles have a link group ID
-		 * of 0) */
+		/* Single group--- Add to the list of extra groups (we can't put
+		 * it in the table itself because all the singles have a link
+		 * group ID of 0) */
 		group = MALLOC(sizeof(struct link_group));
 		if (!group)
 			return WIMLIB_ERR_NOMEM;
 		group->link_group_id = 0;
-		group->next          = table->singles;
-		table->singles       = group;
+		group->next          = table->extra_groups;
+		table->extra_groups  = group;
 		INIT_LIST_HEAD(&dentry->link_group_list);
 		group->dentry_list = &dentry->link_group_list;
 	} else {
@@ -139,6 +152,16 @@ int link_group_table_insert(struct dentry *dentry, void *__table)
 	return 0;
 }
 
+static void free_link_group_list(struct link_group *group)
+{
+	struct link_group *next_group;
+	while (group) {
+		next_group = group->next;
+		FREE(group);
+		group = next_group;
+	}
+}
+
 /* Frees a link group table. */
 void free_link_group_table(struct link_group_table *table)
 {
@@ -146,83 +169,334 @@ void free_link_group_table(struct link_group_table *table)
 
 	if (!table)
 		return;
-	if (table->array) {
-		for (u64 i = 0; i < table->capacity; i++) {
-			struct link_group *group = table->array[i];
-			struct link_group *next;
-			while (group) {
-				next = group->next;
-				FREE(group);
-				group = next;
-			}
-		}
-		FREE(table->array);
-	}
-	single = table->singles;
-	while (single) {
-		next = single->next;
-		FREE(single);
-		single = next;
-	}
+	if (table->array)
+		for (size_t i = 0; i < table->capacity; i++)
+			free_link_group_list(table->array[i]);
+	free_link_group_list(table->extra_groups);
 
 	FREE(table);
 }
 
+u64 assign_link_group_ids_to_list(struct link_group *group, u64 id)
+{
+	struct dentry *dentry;
+	struct list_head *cur;
+	while (group) {
+		cur = group->dentry_list;
+		do {
+			dentry = container_of(cur,
+					      struct dentry,
+					      link_group_list);
+			dentry->hard_link = id;
+			cur = cur->next;
+		} while (cur != group->dentry_list);
+		group->link_group_id = id;
+		id++;
+		group = group->next;
+	}
+	return id;
+}
+
+/* Insert the link groups in the `extra_groups' list into the hash table */
+static void insert_extra_groups(struct link_group_table *table)
+{
+	struct link_group *group, *next_group;
+	size_t pos;
+
+	group = table->extra_groups;
+	while (group) {
+		next_group = group->next;
+		pos = group->link_group_id % table->capacity;
+		group->next = table->array[pos];
+		table->array[pos] = group;
+		group = next_group;
+	}
+	table->extra_groups = NULL;
+}
+
 /* Assign the link group IDs to dentries in a link group table, and return the
  * next available link group ID. */
-u64 assign_link_groups(struct link_group_table *table)
+u64 assign_link_group_ids(struct link_group_table *table)
 {
 	DEBUG("Assigning link groups");
 
 	/* Assign consecutive link group IDs to each link group in the hash
 	 * table */
 	u64 id = 1;
-	for (u64 i = 0; i < table->capacity; i++) {
-		struct link_group *group = table->array[i];
-		struct link_group *next_group;
-		struct dentry *dentry;
-		struct list_head *cur;
-		while (group) {
-			cur = group->dentry_list;
-			do {
-				dentry = container_of(cur,
-						      struct dentry,
-						      link_group_list);
-				dentry->hard_link = id;
-				cur = cur->next;
-			} while (cur != group->dentry_list);
-			id++;
-			group = group->next;
-		}
-	}
-	/* Assign link group IDs to the link groups that previously had link
-	 * group IDs of 0, and insert them into the hash table */
-	struct link_group *single = table->singles;
-	while (single) {
-		struct dentry *dentry;
-		struct link_group *next_single;
-		size_t pos;
+	for (size_t i = 0; i < table->capacity; i++)
+		id = assign_link_group_ids_to_list(table->array[i], id);
 
-		next_single = single->next;
-
-		dentry = container_of(single->dentry_list, struct dentry,
-				      link_group_list);
-		dentry->hard_link = id;
-
-		pos = id % table->capacity;
-		single->next = table->array[pos];
-		table->array[pos] = single;
-
-		single = next_single;
-		id++;
-	}
-	table->singles = NULL;
+	/* Assign link group IDs to the "extra" link groups and insert them into
+	 * the hash table */
+	id = assign_link_group_ids_to_list(table->extra_groups, id);
+	insert_extra_groups(table);
 	return id;
 }
 
+
+
+static void inconsistent_link_group(const struct dentry *first_dentry)
+{
+	const struct dentry *dentry = first_dentry;
+
+	ERROR("An inconsistent hard link group that we cannot correct has been "
+	      "detected");
+	ERROR("The dentries are located at the following paths:");
+	do {
+		ERROR("`%s'", dentry->full_path_utf8);
+	} while ((dentry = container_of(dentry->link_group_list.next,
+				        struct dentry,
+					link_group_list)) != first_dentry);
+}
+
+static bool ref_dentries_consistent(const struct dentry * restrict ref_dentry_1,
+				    const struct dentry * restrict ref_dentry_2)
+{
+	wimlib_assert(ref_dentry_1 != ref_dentry_2);
+
+	if (ref_dentry_1->num_ads != ref_dentry_2->num_ads)
+		return false;
+	if (ref_dentry_1->security_id != ref_dentry_2->security_id
+	    || ref_dentry_1->attributes != ref_dentry_2->attributes)
+		return false;
+	for (unsigned i = 0; i <= ref_dentry_1->num_ads; i++) {
+		const u8 *ref_1_hash, *ref_2_hash;
+		ref_1_hash = dentry_stream_hash_unresolved(ref_dentry_1, i);
+		ref_2_hash = dentry_stream_hash_unresolved(ref_dentry_2, i);
+		if (!hashes_equal(ref_1_hash, ref_2_hash))
+			return false;
+		if (i && !ads_entries_have_same_name(&ref_dentry_1->ads_entries[i - 1],
+						     &ref_dentry_2->ads_entries[i - 1]))
+			return false;
+
+	}
+	return true;
+}
+
+static bool dentries_consistent(const struct dentry * restrict ref_dentry,
+				const struct dentry * restrict dentry)
+{
+	wimlib_assert(ref_dentry != dentry);
+
+	if (ref_dentry->num_ads != dentry->num_ads && dentry->num_ads != 0)
+		return false;
+	if (ref_dentry->security_id != dentry->security_id
+	    || ref_dentry->attributes != dentry->attributes)
+		return false;
+	for (unsigned i = 0; i <= min(ref_dentry->num_ads, dentry->num_ads); i++) {
+		const u8 *ref_hash, *hash;
+		ref_hash = dentry_stream_hash_unresolved(ref_dentry, i);
+		hash = dentry_stream_hash_unresolved(dentry, i);
+		if (!hashes_equal(ref_hash, hash) && !is_zero_hash(hash))
+			return false;
+		if (i && !ads_entries_have_same_name(&ref_dentry->ads_entries[i - 1],
+						     &dentry->ads_entries[i - 1]))
+			return false;
+	}
+	return true;
+}
+
+static int
+fix_true_link_group(struct dentry *first_dentry)
+{
+	struct dentry *dentry;
+	struct dentry *ref_dentry = NULL;
+	u64 last_ctime = 0;
+	u64 last_mtime = 0;
+	u64 last_atime = 0;
+
+	dentry = first_dentry;
+	do {
+		if (!ref_dentry || ref_dentry->num_ads == 0)
+			ref_dentry = dentry;
+		if (dentry->creation_time > last_ctime)
+			last_ctime = dentry->creation_time;
+		if (dentry->last_write_time > last_mtime)
+			last_mtime = dentry->last_write_time;
+		if (dentry->last_access_time > last_atime)
+			last_atime = dentry->last_access_time;
+	} while ((dentry = container_of(dentry->link_group_list.next,
+					struct dentry,
+					link_group_list)) != first_dentry);
+
+
+	ref_dentry->ads_entries_status = ADS_ENTRIES_OWNER;
+	dentry = first_dentry;
+	do {
+		if (dentry != ref_dentry) {
+			if (!dentries_consistent(ref_dentry, dentry)) {
+				inconsistent_link_group(first_dentry);
+				return WIMLIB_ERR_INVALID_DENTRY;
+			}
+			copy_hash(dentry->hash, ref_dentry->hash);
+			dentry_free_ads_entries(dentry);
+			dentry->num_ads            = ref_dentry->num_ads;
+			dentry->ads_entries        = ref_dentry->ads_entries;
+			dentry->ads_entries_status = ADS_ENTRIES_USER;
+		}
+		dentry->creation_time    = last_ctime;
+		dentry->last_write_time  = last_mtime;
+		dentry->last_access_time = last_atime;
+	} while ((dentry = container_of(dentry->link_group_list.next,
+					struct dentry,
+					link_group_list)) != first_dentry);
+	return 0;
+}
+
+static int
+fix_nominal_link_group(struct link_group *group,
+		       struct link_group **new_groups)
+{
+	struct dentry *tmp, *dentry, *ref_dentry;
+	int ret;
+	size_t num_true_link_groups;
+	struct list_head *head;
+	u64 link_group_id;
+
+	LIST_HEAD(dentries_with_data_streams);
+	LIST_HEAD(dentries_with_no_data_streams);
+	LIST_HEAD(true_link_groups);
+
+	/* Create the lists @dentries_with_data_streams and
+	 * @dentries_with_no_data_streams. */
+	dentry = container_of(group->dentry_list, struct dentry,
+			      link_group_list);
+	do {
+		for (unsigned i = 0; i <= dentry->num_ads; i++) {
+			const u8 *hash;
+			hash = dentry_stream_hash_unresolved(dentry, i);
+			if (!is_zero_hash(hash)) {
+				list_add(&dentry->tmp_list,
+					 &dentries_with_data_streams);
+				goto next_dentry;
+			}
+		}
+		list_add(&dentry->tmp_list,
+			 &dentries_with_no_data_streams);
+	next_dentry:
+		dentry = container_of(dentry->link_group_list.next,
+				      struct dentry,
+				      link_group_list);
+	} while (&dentry->link_group_list != group->dentry_list);
+
+	/* If there are no dentries with data streams, we require the nominal
+	 * link group to be a true link group */
+	if (list_empty(&dentries_with_data_streams))
+		return fix_true_link_group(container_of(group->dentry_list,
+							struct dentry,
+							link_group_list));
+
+	/* One or more dentries had data streams.  We check each of these
+	 * dentries for consistency with the others to form a set of true link
+	 * groups. */
+	num_true_link_groups = 0;
+	list_for_each_entry_safe(dentry, tmp, &dentries_with_data_streams,
+				 tmp_list)
+	{
+		list_del(&dentry->tmp_list);
+
+		/* Look for a true link group that is consistent with
+		 * this dentry and add this dentry to it.  Or, if none
+		 * of the true link groups are consistent with this
+		 * dentry, make a new one. */
+		list_for_each_entry(ref_dentry, &true_link_groups, tmp_list) {
+			if (ref_dentries_consistent(ref_dentry, dentry)) {
+				list_add(&dentry->link_group_list,
+					 &ref_dentry->link_group_list);
+				goto next_dentry_2;
+			}
+		}
+		num_true_link_groups++;
+		list_add(&dentry->tmp_list, &true_link_groups);
+		INIT_LIST_HEAD(&dentry->link_group_list);
+next_dentry_2:
+		;
+	}
+
+	wimlib_assert(num_true_link_groups != 0);
+
+	/* If there were dentries with no data streams, we require there to only
+	 * be one true link group so that we know which link group to assign the
+	 *
+	 * streamless dentries to. */
+	if (!list_empty(&dentries_with_no_data_streams)) {
+		if (num_true_link_groups != 1) {
+			ERROR("Hard link group ambiguity detected!");
+			ERROR("We split up hard link group 0x%"PRIx64" due to "
+			      "inconsistencies,");
+			ERROR("but dentries with no stream information remained. "
+			      "We don't know which true hard link");
+			ERROR("group to assign them to.");
+			return WIMLIB_ERR_INVALID_DENTRY;
+		}
+		ref_dentry = container_of(true_link_groups.next,
+					  struct dentry,
+					  tmp_list);
+		list_for_each_entry(dentry, &dentries_with_no_data_streams,
+				    tmp_list)
+		{
+			list_add(&dentry->link_group_list,
+				 &ref_dentry->link_group_list);
+		}
+	}
+
+	list_for_each_entry(dentry, &true_link_groups, tmp_list) {
+		ret = fix_true_link_group(dentry);
+		if (ret != 0)
+			return ret;
+	}
+
+	/* Make new `struct link_group's for the new link groups */
+	for (head = true_link_groups.next->next;
+	     head != &true_link_groups;
+	     head = head->next)
+	{
+		dentry = container_of(head, struct dentry, tmp_list);
+		group = MALLOC(sizeof(*group));
+		if (!group) {
+			ERROR("Out of memory");
+			return WIMLIB_ERR_NOMEM;
+		}
+		group->link_group_id = link_group_id;
+		group->dentry_list = &dentry->link_group_list;
+		group->next = *new_groups;
+		*new_groups = group;
+	} while ((head = head->next) != &true_link_groups);
+	return 0;
+}
+
+/*
+ * Goes through each link group and shares the ads_entries (Alternate Data
+ * Stream entries) field of each dentry between members of a hard link group.
+ *
+ * In the process, the dentries in each link group are checked for consistency.
+ * If they contain data features that indicate they cannot really be in the same
+ * hard link group, this should be an error, but in reality this case needs to
+ * be handled, so we split the dentries into different hard link groups.
+ *
+ * One of the dentries in the group is arbitrarily assigned the role of "owner"
+ * (ADS_ENTRIES_OWNER), while the others are "users" (ADS_ENTRIES_USER).
+ */
+int fix_link_groups(struct link_group_table *table)
+{
+	for (u64 i = 0; i < table->capacity; i++) {
+		struct link_group *group = table->array[i];
+		while (group) {
+			int ret;
+			ret = fix_nominal_link_group(group, &table->extra_groups);
+			if (ret != 0)
+				return ret;
+			group = group->next;
+		}
+	}
+	return 0;
+}
+
+#if 0
 static bool dentries_have_same_ads(const struct dentry *d1,
 				   const struct dentry *d2)
 {
+	wimlib_assert(d1->num_ads == d2->num_ads);
 	/* Verify stream names and hashes are the same */
 	for (u16 i = 0; i < d1->num_ads; i++) {
 		if (strcmp(d1->ads_entries[i].stream_name_utf8,
@@ -291,6 +565,10 @@ static int share_dentry_ads(struct dentry *owner, struct dentry *user)
 			goto mismatch;
 		}
 	}
+	if (owner->last_access_time != user->last_access_time
+	    || owner->last_write_time != user->last_write_time
+	    || owner->creation_time != user->creation_time) {
+	}
 	dentry_free_ads_entries(user);
 	user->ads_entries = owner->ads_entries;
 	user->ads_entries_status = ADS_ENTRIES_USER;
@@ -302,82 +580,4 @@ mismatch:
 	        mismatch_type);
 	return WIMLIB_ERR_INVALID_DENTRY;
 }
-
-static int link_group_free_duplicate_data(struct link_group *group,
-					  struct link_group **bad_links)
-{
-	struct dentry *owner, *user, *tmp;
-
-	/* Find a dentry with non-zero hash to use as a possible link group
-	 * owner (see comments above the share_dentry_ads() function */
-	owner = container_of(group->dentry_list, struct dentry,
-			      link_group_list);
-	do {
-		/* imagex.exe may move the un-named data stream from the dentry
-		 * itself to the first alternate data stream, if there are
-		 * other alternate data streams */
-		if (!is_zero_hash(owner->hash) ||
-		    (owner->num_ads && !is_zero_hash(owner->ads_entries[0].hash)))
-			goto found_owner;
-		owner = container_of(owner->link_group_list.next,
-				     struct dentry,
-				     link_group_list);
-	} while (&owner->link_group_list != group->dentry_list);
-
-	ERROR("Could not find owner of data streams in hard link group");
-	return WIMLIB_ERR_INVALID_DENTRY;
-found_owner:
-	owner->ads_entries_status = ADS_ENTRIES_OWNER;
-	list_for_each_entry_safe(user, tmp, &owner->link_group_list,
-				 link_group_list)
-	{
-		/* I would like it to be an error if two dentries are in the
-		 * same hard link group but have irreconcilable differences such
-		 * as different file permissions, but unfortunately some of M$'s
-		 * WIMs contain many instances of this error.  This problem is
-		 * worked around here by splitting each offending dentry off
-		 * into its own hard link group. */
-		if (share_dentry_ads(owner, user) != 0) {
-			struct link_group *single;
-			single = MALLOC(sizeof(struct link_group));
-			if (!single)
-				return WIMLIB_ERR_NOMEM;
-			list_del(&user->link_group_list);
-			INIT_LIST_HEAD(&user->link_group_list);
-			single->link_group_id = 0;
-			single->next          = *bad_links;
-			single->dentry_list   = &user->link_group_list;
-			*bad_links            = single;
-			user->ads_entries_status = ADS_ENTRIES_OWNER;
-		}
-	}
-	return 0;
-}
-
-/*
- * Goes through each link group and shares the ads_entries (Alternate Data
- * Stream entries) field of each dentry between members of a hard link group.
- *
- * In the process, the dentries in each link group are checked for consistency.
- * If they contain data features that indicate they cannot really be in the same
- * hard link group, this should be an error, but in reality this case needs to
- * be handled, so we split the dentries into different hard link groups.
- *
- * One of the dentries in the group is arbitrarily assigned the role of "owner"
- * (ADS_ENTRIES_OWNER), while the others are "users" (ADS_ENTRIES_USER).
- */
-int link_groups_free_duplicate_data(struct link_group_table *table)
-{
-	for (u64 i = 0; i < table->capacity; i++) {
-		struct link_group *group = table->array[i];
-		while (group) {
-			int ret;
-			ret = link_group_free_duplicate_data(group,
-							     &table->singles);
-			if (ret != 0)
-				return ret;
-			group = group->next;
-		}
-	}
-	return 0;
-}
+#endif
