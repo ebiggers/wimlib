@@ -186,6 +186,10 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 		struct lookup_table_entry *lte;
 		u8 hash[SHA1_HASH_SIZE];
 
+		/* Empty files do not have to have a lookup table entry. */
+		if (root_stbuf.st_size == 0)
+			goto out;
+
 		/* For each regular file, we must check to see if the file is in
 		 * the lookup table already; if it is, we increment its refcnt;
 		 * otherwise, we create a new lookup table entry and insert it.
@@ -219,6 +223,7 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 		}
 		root->lte = lte;
 	}
+out:
 	*root_ret = root;
 	return ret;
 }
