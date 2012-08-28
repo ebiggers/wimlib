@@ -850,7 +850,7 @@ void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *tab
  *
  * @dentry:	Dentry to load the alternate data streams into.
  * 			@dentry->num_ads must have been set to the number of
- * 			data streams that are expected.
+ * 			alternate data streams that are expected.
  *
  * @remaining_size:	Number of bytes of data remaining in the buffer pointed
  * 				to by @p.
@@ -858,14 +858,17 @@ void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *tab
  * The format of the on-disk alternate stream entries is as follows:
  *
  * struct ads_entry_on_disk {
- * 	u64  length;          // Length of the entry, in bytes
+ * 	u64  length;          // Length of the entry, in bytes.  This includes
+ *				    all fields (including the stream name, the
+ *				    null terminator, AND the padding!).
  * 	u64  reserved;        // Seems to be unused
  * 	u8   hash[20];        // SHA1 message digest of the uncompressed stream
  * 	u16  stream_name_len; // Length of the stream name, in bytes
  * 	char stream_name[];   // Stream name in UTF-16LE, @stream_name_len bytes long,
- *                            //    not including null terminator
+ *                                  not including null terminator
  * 	u16  zero;            // UTF-16 null terminator for the stream name, NOT
- * 	                      //    included in @stream_name_len
+ * 	                            included in @stream_name_len
+ *	char padding[];       // Padding to make the size a multiple of 8 bytes.
  * };
  *
  * In addition, the entries are 8-byte aligned.
@@ -892,6 +895,8 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 	for (u16 i = 0; i < num_ads; i++) {
 		struct ads_entry *cur_entry = &ads_entries[i];
 		u64 length;
+		u64 length_no_padding;
+		u64 total_length;
 		size_t utf8_len;
 		const char *p_save = p;
 
@@ -902,25 +907,47 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 			ret = WIMLIB_ERR_INVALID_DENTRY;
 			goto out_free_ads_entries;
 		}
-		remaining_size -= WIM_ADS_ENTRY_DISK_SIZE;
 
-		p = get_u64(p, &length); /* ADS entry length */
-		p += 8; /* Unused */
+		p = get_u64(p, &length);
+		p += 8;
 		p = get_bytes(p, SHA1_HASH_SIZE, (u8*)cur_entry->hash);
 		p = get_u16(p, &cur_entry->stream_name_len);
 
 		cur_entry->stream_name = NULL;
 		cur_entry->stream_name_utf8 = NULL;
 
-		if (remaining_size < cur_entry->stream_name_len + 2) {
+		/* Length including neither the null terminator nor the padding
+		 * */
+		length_no_padding = WIM_ADS_ENTRY_DISK_SIZE +
+				    cur_entry->stream_name_len;
+		total_length = ((length_no_padding + 2) + 7) & ~7;
+
+		wimlib_assert(total_length == ads_entry_total_length(cur_entry));
+
+		if (remaining_size < length_no_padding) {
 			ERROR("Stream entries go past end of metadata resource");
-			ERROR("(remaining_size = %"PRIu64" bytes, stream_name_len "
-			      "= %"PRIu16" bytes", remaining_size,
-			      cur_entry->stream_name_len);
+			ERROR("(remaining_size = %"PRIu64" bytes, "
+			      "length_no_padding = %"PRIu16" bytes",
+			      remaining_size, length_no_padding);
 			ret = WIMLIB_ERR_INVALID_DENTRY;
 			goto out_free_ads_entries;
 		}
-		remaining_size -= cur_entry->stream_name_len + 2;
+
+		/* The @length field in the on-disk ADS entry is expected to be
+		 * equal to @total_length, which includes all of the entry and
+		 * the padding that follows it to align the next ADS entry to an
+		 * 8-byte boundary.  However, to be safe, we'll accept the
+		 * length field as long as it's not less than the un-padded
+		 * total length and not more than the padded total length. */
+		if (length < length_no_padding || length > total_length) {
+			ERROR("Stream entry has unexpected length "
+			      "field (length field = %"PRIu64", "
+			      "unpadded total length = %"PRIu64", "
+			      "padded total length = %"PRIu64")",
+			      length, length_no_padding, total_length);
+			ret = WIMLIB_ERR_INVALID_DENTRY;
+			goto out_free_ads_entries;
+		}
 
 		cur_entry->stream_name = MALLOC(cur_entry->stream_name_len);
 		if (!cur_entry->stream_name) {
@@ -938,7 +965,19 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_ads_entries;
 		}
-		p = p_save + ads_entry_total_length(cur_entry);
+		/* It's expected that the size of every ADS entry is a multiple
+		 * of 8.  However, to be safe, I'm allowing the possibility of
+		 * an ADS entry at the very end of the metadata resource ending
+		 * un-aligned.  So although we still need to increment the input
+		 * pointer by @total_length to reach the next ADS entry, it's
+		 * possible that less than @total_length is actually remaining
+		 * in the metadata resource. We should set the remaining size to
+		 * 0 bytes if this happens. */
+		p = p_save + total_length;
+		if (remaining_size < total_length)
+			remaining_size = 0;
+		else
+			remaining_size -= total_length;
 	}
 	dentry->ads_entries = ads_entries;
 	return 0;
