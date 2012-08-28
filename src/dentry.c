@@ -920,6 +920,8 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 		 * */
 		length_no_padding = WIM_ADS_ENTRY_DISK_SIZE +
 				    cur_entry->stream_name_len;
+
+		/* Length including the null terminator and the padding */
 		total_length = ((length_no_padding + 2) + 7) & ~7;
 
 		wimlib_assert(total_length == ads_entry_total_length(cur_entry));
@@ -1133,8 +1135,15 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		goto out_free_file_name;
 	}
 
-	/* Undocumented padding between file name and short name.  This probably
-	 * is supposed to be a terminating null character. */
+	/* Before the short name begins, there is a null terminator of two zero
+	 * bytes that follow the long filename, even if the long file name is of
+	 * zero length. */
+
+	/* XXX There seems to be no null terminator following the short name;
+	 * verify this. */
+	if (*(u16*)p)
+		WARNING("Expected two zero bytes following the file name "
+		        "`%s', but found non-zero bytes", file_name_utf8);
 	p += 2;
 
 	/* Read the short filename. */
