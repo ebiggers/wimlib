@@ -15,7 +15,10 @@ typedef struct WIMStruct WIMStruct;
 /* Size of the struct dentry up to and including the file_name_len. */
 #define WIM_DENTRY_DISK_SIZE    102
 
+/* Size of on-disk WIM alternate data stream entry, in bytes, up to and
+ * including the stream length field (see below). */
 #define WIM_ADS_ENTRY_DISK_SIZE 38
+
 
 /* 
  * Reparse tags documented at 
@@ -51,7 +54,10 @@ typedef struct WIMStruct WIMStruct;
 
 struct lookup_table_entry;
 
-/* Alternate data stream entry */
+/* Alternate data stream entry.
+ *
+ * We read this from disk in the read_ads_entries() function; see that function
+ * for more explanation. */
 struct ads_entry {
 	union {
 		/* SHA-1 message digest of stream contents */
@@ -78,7 +84,10 @@ struct ads_entry {
 	struct stream_list_head lte_group_list;
 };
 
-static inline u64 ads_entry_length(const struct ads_entry *entry)
+/* Returns the total length of a WIM alternate data stream entry on-disk,
+ * including the stream name, the null terminator, AND the padding after the
+ * entry to align the next one (or the next dentry) on an 8-byte boundary. */
+static inline u64 ads_entry_total_length(const struct ads_entry *entry)
 {
 	u64 len = WIM_ADS_ENTRY_DISK_SIZE + entry->stream_name_len + 2;
 	return (len + 7) & ~7;
@@ -100,21 +109,42 @@ static inline bool ads_entry_has_name(const struct ads_entry *entry,
 }
 
 
-/* In-memory structure for a WIM directory entry.  There is a directory tree for
- * each image in the WIM.  */
+/* 
+ * In-memory structure for a WIM directory entry (dentry).  There is a directory
+ * tree for each image in the WIM. 
+ *
+ * Please note that this is a directory entry and not an inode.  Since NTFS
+ * allows hard links, it's possible for a NTFS inode to correspond to multiple
+ * WIM dentries.  The @hard_link field tells you the number of the NTFS inode
+ * that the dentry corresponds to.
+ *
+ * Unfortunately, WIM files do not have an analogue to an inode; instead certain
+ * information, such as file attributes, the security descriptor, and file
+ * streams is replicated in each hard-linked dentry, even though this
+ * information really is associated with an inode.
+ *
+ * Confusingly, it's also possible for stream information to be missing from a
+ * dentry in a hard link set, in which case the stream information needs to be
+ * gotten from one of the other dentries in the hard link set.  In addition, it
+ * is possible for dentries to have inconsistent security IDs, file attributes,
+ * or file streams when they share the same hard link ID (don't even ask.  I
+ * hope that Microsoft may have fixed this problem, since I've only noticed it
+ * in the 'install.wim' for Windows 7).  For those dentries, we have to use the
+ * conflicting fields to split up the hard link groups.
+ */
 struct dentry {
 	/* The parent of this directory entry. */
 	struct dentry *parent;
 
 	/* Linked list of sibling directory entries. */
 	struct dentry *next;
-
 	struct dentry *prev;
 
 	/* Pointer to a child of this directory entry. */
 	struct dentry *children;
 
-	/* Size of directory entry on disk, in bytes.  Typical size is around
+	/* 
+	 * Size of directory entry on disk, in bytes.  Typical size is around
 	 * 104 to 120 bytes.
 	 *
 	 * It is possible for the length field to be 0.  This situation, which
@@ -129,7 +159,8 @@ struct dentry {
 	 */
 	u64 length;
 
-	/* The file attributes associated with this file. */
+	/* The file attributes associated with this file.  This is a bitwise OR
+	 * of the FILE_ATTRIBUTE_* flags. */
 	u32 attributes;
 
 	/* The index of the security descriptor in the WIM image's table of
@@ -137,21 +168,23 @@ struct dentry {
 	 * If -1, no security information exists for this file.  */
 	int32_t security_id;
 
-	/* The offset, from the start of the WIM metadata resource for this
-	 * image, of this directory entry's child files.  0 if the directory
-	 * entry has no children (as in the case of regular files or reparse
-	 * points). */
+	/* The offset, from the start of the uncompressed WIM metadata resource
+	 * for this image, of this dentry's child dentries.  0 if the directory
+	 * entry has no children, which is the case for regular files or reparse
+	 * points. */
 	u64 subdir_offset;
 
 	/* Timestamps for the dentry.  The timestamps are the number of
 	 * 100-nanosecond intervals that have elapsed since 12:00 A.M., January
-	 * 1st, 1601, UTC. */
+	 * 1st, 1601, UTC.  This is the same format used in NTFS inodes. */
 	u64 creation_time;
 	u64 last_access_time;
 	u64 last_write_time;
 
-	/* true if the dentry's lookup table entry has been resolved (i.e. the
-	 * @lte field is valid, but the @hash field is not valid) */
+	/* %true iff the dentry's lookup table entry has been resolved (i.e. the
+	 * @lte field is valid, but the @hash field is not valid) 
+	 *
+	 * (This is not an on-disk field.) */
 	bool resolved;
 
 	/* A hash of the file's contents, or a pointer to the lookup table entry
@@ -177,6 +210,14 @@ struct dentry {
 	 * read_dentry() function. */
 	//u32 reparse_reserved;
 
+	/* If the file is part of a hard link set, all the directory entries in
+	 * the set will share the same value for this field. 
+	 *
+	 * Unfortunately, in some WIMs it is NOT the case that all dentries that
+	 * share this field are actually in the same hard link set, although the
+	 * WIMs that wimlib writes maintain this restriction. */
+	u64 hard_link;
+
 	/* Number of alternate data streams associated with this file. */
 	u16 num_ads;
 
@@ -192,20 +233,20 @@ struct dentry {
 	 * the terminating zero byte. */
 	u16 file_name_utf8_len;
 
-	/* Pointer to the short filename */
+	/* Pointer to the short filename (malloc()ed buffer) */
 	char *short_name;
 
-	/* Pointer to the filename. */
+	/* Pointer to the filename (malloc()ed buffer). */
 	char *file_name;
 
-	/* Pointer to the filename converted to UTF-8. */
+	/* Pointer to the filename converted to UTF-8 (malloc()ed buffer). */
 	char *file_name_utf8;
 
-	/* Full path to this dentry. */
+	/* Full path to this dentry (malloc()ed buffer). */
 	char *full_path_utf8;
 	u32   full_path_utf8_len;
 
-	/* Alternate stream entries for this dentry. */
+	/* Alternate stream entries for this dentry (malloc()ed buffer). */
 	struct ads_entry *ads_entries;
 
 	union {
@@ -217,14 +258,6 @@ struct dentry {
 		 * directories!) */
 		u32 num_times_opened;
 	};
-
-	/* If the file is part of a hard link set, all the directory entries in
-	 * the set will share the same value for this field. 
-	 *
-	 * Unfortunately, in some WIMs it is NOT the case that all dentries that
-	 * share this field are actually in the same hard link set, although the
-	 * WIMs that wimlib writes maintain this restriction. */
-	u64 hard_link;
 
 	enum {
 		/* This dentry is the owner of its ads_entries, although it may
@@ -247,23 +280,11 @@ struct dentry {
 	/* List of dentries sharing the same lookup table entry */
 	struct stream_list_head lte_group_list;
 
-	/* Path to extracted file on disk (used during extraction only) */
+	/* Path to extracted file on disk (used during extraction only)
+	 * (malloc()ed buffer) */
 	char *extracted_file;
 };
 
-
-/* Return the number of dentries in the hard link group */
-static inline size_t dentry_link_group_size(const struct dentry *dentry)
-{
-	const struct list_head *cur = &dentry->link_group_list;
-	size_t size = 0;
-	wimlib_assert(cur != NULL);
-	do {
-		size++;
-		cur = cur->next;
-	} while (cur != &dentry->link_group_list);
-	return size;
-}
 
 extern struct ads_entry *dentry_get_ads_entry(struct dentry *dentry,
 					      const char *stream_name);
@@ -334,7 +355,18 @@ extern int read_dentry_tree(const u8 metadata_resource[],
 extern u8 *write_dentry_tree(const struct dentry *tree, u8 *p);
 
 
-/* Inline utility functions for dentries */
+/* Return the number of dentries in the hard link group */
+static inline size_t dentry_link_group_size(const struct dentry *dentry)
+{
+	const struct list_head *cur = &dentry->link_group_list;
+	size_t size = 0;
+	wimlib_assert(cur != NULL);
+	do {
+		size++;
+		cur = cur->next;
+	} while (cur != &dentry->link_group_list);
+	return size;
+}
 
 static inline bool dentry_is_root(const struct dentry *dentry)
 {

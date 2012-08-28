@@ -63,14 +63,18 @@ struct sd_node {
 	struct sd_node *right;
 };
 
-/* Frees a security descriptor index tree. */
-static void free_sd_set(struct sd_node *root)
+static void free_sd_tree(struct sd_node *root)
 {
 	if (root) {
-		free_sd_set(root->left);
-		free_sd_set(root->right);
+		free_sd_tree(root->left);
+		free_sd_tree(root->right);
 		FREE(root);
 	}
+}
+/* Frees a security descriptor index set. */
+static void destroy_sd_set(struct sd_set *sd_set)
+{
+	free_sd_tree(sd_set->root);
 }
 
 /* Inserts a a new node into the security descriptor index tree. */
@@ -455,6 +459,7 @@ static int __build_dentry_tree_ntfs(struct dentry **root_p, ntfs_inode *ni,
 	if (!root)
 		return WIMLIB_ERR_NOMEM;
 
+	*root_p = root;
 	root->creation_time    = le64_to_cpu(ni->creation_time);
 	root->last_write_time  = le64_to_cpu(ni->last_data_change_time);
 	root->last_access_time = le64_to_cpu(ni->last_access_time);
@@ -528,7 +533,6 @@ static int __build_dentry_tree_ntfs(struct dentry **root_p, ntfs_inode *ni,
 		}
 		ret = 0;
 	}
-	*root_p = root;
 	return ret;
 }
 
@@ -543,9 +547,9 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
 	int ret = 0;
-	struct sd_set tree;
-	tree.sd = sd;
-	tree.root = NULL;
+	struct sd_set sd_set;
+	sd_set.sd = sd;
+	sd_set.root = NULL;
 	ntfs_volume **ntfs_vol_p = extra_arg;
 
 	DEBUG("Mounting NTFS volume `%s' read-only", device);
@@ -571,9 +575,10 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 	path[0] = '/';
 	path[1] = '\0';
 	ret = __build_dentry_tree_ntfs(root_p, root_ni, path, 1,
-				       lookup_table, &tree, config,
+				       lookup_table, &sd_set, config,
 				       ntfs_vol_p);
 	ntfs_inode_close(root_ni);
+	destroy_sd_set(&sd_set);
 
 out:
 	if (ret) {

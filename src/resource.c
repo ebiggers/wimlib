@@ -1103,30 +1103,34 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	struct wim_security_data *sd;
 	struct link_group_table *lgt;
 	const struct lookup_table_entry *metadata_lte;
-	const struct resource_entry *res_entry;
+	u64 metadata_len;
+	u64 metadata_offset;
 
 	metadata_lte = imd->metadata_lte;
-	res_entry = &metadata_lte->resource_entry;
+	metadata_len = wim_resource_size(metadata_lte);
+	metadata_offset = metadata_lte->resource_entry.offset;
 
 	DEBUG("Reading metadata resource: length = %"PRIu64", "
-	      "offset = %"PRIu64"",
-	      res_entry->original_size, res_entry->offset);
+	      "offset = %"PRIu64"", metadata_len, metadata_offset);
 
-	if (res_entry->original_size < 8) {
-		ERROR("Expected at least 8 bytes for the metadata resource");
+	/* There is no way the metadata resource could possibly be less than (8
+	 * + WIM_DENTRY_DISK_SIZE) bytes, where the 8 is for security data (with
+	 * no security descriptors) and WIM_DENTRY_DISK_SIZE is for the root
+	 * dentry. */
+	if (metadata_len < 8 + WIM_DENTRY_DISK_SIZE) {
+		ERROR("Expected at least %zu bytes for the metadata resource",
+		      8 + WIM_DENTRY_DISK_SIZE);
 		return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
 	}
 
 	/* Allocate memory for the uncompressed metadata resource. */
-	buf = MALLOC(res_entry->original_size);
+	buf = MALLOC(metadata_len);
 
 	if (!buf) {
 		ERROR("Failed to allocate %"PRIu64" bytes for uncompressed "
-		      "metadata resource", res_entry->original_size);
+		      "metadata resource", metadata_len);
 		return WIMLIB_ERR_NOMEM;
 	}
-
-	/* Determine the compression type of the metadata resource. */
 
 	/* Read the metadata resource into memory.  (It may be compressed.) */
 	ret = read_full_wim_resource(metadata_lte, buf);
@@ -1135,17 +1139,27 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 
 	DEBUG("Finished reading metadata resource into memory.");
 
-	/* The root directory entry starts after security data, on an 8-byte
-	 * aligned address. 
+	/* The root directory entry starts after security data, aligned on an
+	 * 8-byte boundary within the metadata resource.
 	 *
 	 * The security data starts with a 4-byte integer giving its total
-	 * length. */
+	 * length, so if we round that up to an 8-byte boundary that gives us
+	 * the offset of the root dentry.
+	 *
+	 * Here we read the security data into a wim_security_data structure,
+	 * and if successful, go ahead and calculate the offset in the metadata
+	 * resource of the root dentry. */
 
-	/* Read the security data into a wim_security_data structure. */
-	ret = read_security_data(buf, res_entry->original_size, &sd);
+	ret = read_security_data(buf, metadata_len, &sd);
 	if (ret != 0)
 		goto out_free_buf;
 
+	get_u32(buf, &dentry_offset);
+	if (dentry_offset == 0)
+		dentry_offset = 8;
+	dentry_offset = (dentry_offset + 7) & ~7;
+
+	/* Allocate memory for the root dentry and read it into memory */
 	dentry = MALLOC(sizeof(struct dentry));
 	if (!dentry) {
 		ERROR("Failed to allocate %zu bytes for root dentry",
@@ -1153,13 +1167,9 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_free_security_data;
 	}
-
-	get_u32(buf, &dentry_offset);
-	if (dentry_offset == 0)
-		dentry_offset = 8;
-	dentry_offset = (dentry_offset + 7) & ~7;
 		
-	ret = read_dentry(buf, res_entry->original_size, dentry_offset, dentry);
+	ret = read_dentry(buf, metadata_len, dentry_offset, dentry);
+
 	/* This is the root dentry, so set its pointers correctly. */
 	dentry->parent = dentry;
 	dentry->next   = dentry;
@@ -1167,20 +1177,20 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
+	/* Now read the entire directory entry tree into memory. */
 	DEBUG("Reading dentry tree");
-	/* Now read the entire directory entry tree. */
-	ret = read_dentry_tree(buf, res_entry->original_size, dentry);
+	ret = read_dentry_tree(buf, metadata_len, dentry);
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
-	DEBUG("Calculating dentry full paths");
 	/* Calculate the full paths in the dentry tree. */
+	DEBUG("Calculating dentry full paths");
 	ret = for_dentry_in_tree(dentry, calculate_dentry_full_path, NULL);
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
-	DEBUG("Building link group table");
 	/* Build hash table that maps hard link group IDs to dentry sets */
+	DEBUG("Building link group table");
 	lgt = new_link_group_table(9001);
 	if (!lgt)
 		goto out_free_dentry_tree;
@@ -1219,25 +1229,34 @@ int write_metadata_resource(WIMStruct *w)
 	struct dentry *root;
 	struct lookup_table_entry *lte, *duplicate_lte;
 	u64 metadata_original_size;
-
-	/* 
-	 * We append 20 random bytes to the metadata resource so that we don't
-	 * have identical metadata resources if we happen to append exactly the
-	 * same image twice without any changes in timestamps.  If this were to
-	 * happen, it would cause confusion about the number and order of images
-	 * in the WIM.
-	 */
+	const struct wim_security_data *sd;
 	const unsigned random_tail_len = 20;
 
 	DEBUG("Writing metadata resource for image %d", w->current_image);
 
 	root = wim_root_dentry(w);
+	sd = wim_security_data(w);
 
-	const struct wim_security_data *sd = wim_security_data(w);
+	/* We do not allow the security data pointer to be NULL, although it may
+	 * point to an empty security data with no entries. */
 	wimlib_assert(sd);
-	subdir_offset = sd->total_length + root->length + 8;
+
+	/* Offset of first child of the root dentry.  It's equal to:
+	 * - The total length of the security data, rounded to the next 8-byte
+	 *   boundary,
+	 * - plus the total length of the root dentry,
+	 * - plus 8 bytes for an end-of-directory entry following the root
+	 *   dentry (shouldn't really be needed, but just in case...)
+	 */
+	subdir_offset = ((sd->total_length + 7) & ~7) + dentry_total_length(root) + 8;
+
+	/* Calculate the subdirectory offsets for the entire dentry tree. */
 	calculate_subdir_offsets(root, &subdir_offset);
+
+	/* Total length of the metadata resource (uncompressed) */
 	metadata_original_size = subdir_offset + random_tail_len;
+
+	/* Allocate a buffer to contain the uncompressed metadata resource */
 	buf = MALLOC(metadata_original_size);
 	if (!buf) {
 		ERROR("Failed to allocate %"PRIu64" bytes for "
@@ -1245,26 +1264,59 @@ int write_metadata_resource(WIMStruct *w)
 		return WIMLIB_ERR_NOMEM;
 	}
 
+	/* Write the security data into the resource buffer */
 	p = write_security_data(sd, buf);
 
+	/* Write the dentry tree into the resource buffer */
 	DEBUG("Writing dentry tree.");
 	p = write_dentry_tree(root, p);
+
+	/* 
+	 * Append 20 random bytes to the metadata resource so that we don't have
+	 * identical metadata resources if we happen to append exactly the same
+	 * image twice without any changes in timestamps.  If this were to
+	 * happen, it would cause confusion about the number and order of images
+	 * in the WIM.
+	 */
 	randomize_byte_array(p, random_tail_len);
+
+	/* We MUST have exactly filled the buffer; otherwise we calculated its
+	 * size incorrectly or wrote the data incorrectly. */
 	wimlib_assert(p - buf + random_tail_len == metadata_original_size);
 
+	/* Get the lookup table entry for the metadata resource so we can update
+	 * it. */
 	lte = wim_metadata_lookup_table_entry(w);
 
+	/* Write the metadata resource to the output WIM using the proper
+	 * compression type.  The lookup table entry for the metadata resource
+	 * is updated. */
 	ret = write_wim_resource_from_buffer(buf, metadata_original_size,
 					     w->out_fp,
 					     wimlib_get_compression_type(w),
 					     &lte->output_resource_entry,
 					     lte->hash);
+	if (ret != 0)
+		goto out;
+
+	/* It's very likely the SHA1 message digest of the metadata resource, so
+	 * re-insert the lookup table entry into the lookup table. */
 	lookup_table_unlink(w->lookup_table, lte);
 	lookup_table_insert(w->lookup_table, lte);
+
+	/* We do not allow a metadata resource to be referenced multiple times,
+	 * and the 20 random bytes appended to it should make it extremely
+	 * likely for each metadata resource to be unique, even if the exact
+	 * same image is captured. */
 	wimlib_assert(lte->out_refcnt == 0);
 	lte->out_refcnt = 1;
+
+	/* Make sure that the resource entry is written marked with the metadata
+	 * flag. */
 	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
 out:
+	/* All the data has been written to the new WIM; no need for the buffer
+	 * anymore */
 	FREE(buf);
 	return ret;
 }
