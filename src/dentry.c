@@ -1309,7 +1309,7 @@ int verify_dentry(struct dentry *dentry, void *wim)
 	for (unsigned i = 0; i <= dentry->num_ads; i++) {
 		const u8 *hash;
 		hash = dentry_stream_hash_unresolved(dentry, i);
-		if (dentry_stream_name_len(dentry, i) && !is_zero_hash(hash)) {
+		if (!dentry_stream_name_len(dentry, i) && !is_zero_hash(hash)) {
 			num_unnamed_streams++;
 			unnamed_stream_idx = i;
 		}

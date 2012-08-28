@@ -1009,7 +1009,7 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
-	if (memcmp(name, "user.", 5) != 0)
+	if (strlen(name) < 5 || memcmp(name, "user.", 5) != 0)
 		return -ENOATTR;
 	name += 5;
 
@@ -1414,7 +1414,7 @@ static int wimfs_removexattr(const char *path, const char *name)
 	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
-	if (memcmp(name, "user.", 5) != 0)
+	if (strlen(name) < 5 || memcmp(name, "user.", 5) != 0)
 		return -ENOATTR;
 	name += 5;
 
@@ -1531,6 +1531,10 @@ static int wimfs_setxattr(const char *path, const char *name,
 	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
+	if (strlen(name) < 5 || memcmp(name, "user.", 5) != 0)
+		return -ENOATTR;
+	name += 5;
+
 	dentry = get_dentry(w, path);
 	if (!dentry)
 		return -ENOENT;
@@ -1564,6 +1568,7 @@ static int wimfs_setxattr(const char *path, const char *name,
 			FREE(lte);
 			return -ENOMEM;
 		}
+		memcpy(value_copy, value, size);
 		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
 		lte->attached_buffer              = value_copy;
 		lte->resource_entry.original_size = size;
