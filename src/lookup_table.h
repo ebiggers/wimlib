@@ -294,6 +294,16 @@ static inline const u8 *dentry_stream_hash_unresolved(const struct dentry *dentr
 		return dentry->ads_entries[stream_idx - 1].hash;
 }
 
+static inline unsigned dentry_stream_name_len(const struct dentry *dentry,
+					      unsigned stream_idx)
+{
+	wimlib_assert(stream_idx <= dentry->num_ads);
+	if (stream_idx == 0)
+		return dentry->file_name_len;
+	else
+		return dentry->ads_entries[stream_idx - 1].stream_name_len;
+}
+
 static inline const u8 *dentry_stream_hash_resolved(const struct dentry *dentry,
 						    unsigned stream_idx)
 {

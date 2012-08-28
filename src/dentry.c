@@ -1049,7 +1049,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	dentry_common_init(dentry);
 
 	/*Make sure the dentry really fits into the metadata resource.*/
-	if (offset + 8 > metadata_resource_len) {
+	if (offset + 8 > metadata_resource_len || offset + 8 < offset) {
 		ERROR("Directory entry starting at %"PRIu64" ends past the "
 		      "end of the metadata resource (size %"PRIu64")",
 		      offset, metadata_resource_len);
@@ -1073,7 +1073,9 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * not too short, read the rest of it (excluding the alternate data
 	 * streams, but including the file name and short name variable-length
 	 * fields) into memory. */
-	if (offset + dentry->length >= metadata_resource_len) {
+	if (offset + dentry->length >= metadata_resource_len
+	    || offset + dentry->length < offset)
+	{
 		ERROR("Directory entry at offset %"PRIu64" and with size "
 		      "%"PRIu64" ends past the end of the metadata resource "
 		      "(size %"PRIu64")",
@@ -1259,6 +1261,76 @@ out_free_file_name_utf8:
 	FREE(file_name_utf8);
 out_free_file_name:
 	FREE(file_name);
+	return ret;
+}
+
+/* Run some miscellaneous verifications on a WIM dentry */
+int verify_dentry(struct dentry *dentry, void *wim)
+{
+	const WIMStruct *w = wim;
+	const struct lookup_table *table = w->lookup_table;
+	const struct wim_security_data *sd = wim_const_security_data(w);
+	int ret = WIMLIB_ERR_INVALID_DENTRY;
+
+	/* Check the security ID */
+	if (dentry->security_id < -1) {
+		ERROR("Dentry `%s' has an invalid security ID (%d)",
+			dentry->full_path_utf8, dentry->security_id);
+		goto out;
+	}
+	if (dentry->security_id >= sd->num_entries) {
+		ERROR("Dentry `%s' has an invalid security ID (%d) "
+		      "(there are only %u entries in the security table)",
+			dentry->full_path_utf8, dentry->security_id,
+			sd->num_entries);
+		goto out;
+	}
+
+	/* Check that lookup table entries for all the resources exist, except
+	 * if the SHA1 message digest is all 0's, which indicates there is
+	 * intentionally no resource there.  */
+	if (w->hdr.total_parts == 1) {
+		for (unsigned i = 0; i <= dentry->num_ads; i++) {
+			struct lookup_table_entry *lte;
+			const u8 *hash;
+			hash = dentry_stream_hash_unresolved(dentry, i);
+			lte = __lookup_resource(table, hash);
+			if (!lte && !is_zero_hash(hash)) {
+				ERROR("Could not find lookup table entry for stream "
+				      "%u of dentry `%s'", i, dentry->full_path_utf8);
+				goto out;
+			}
+		}
+	}
+
+	/* Make sure there is only one un-named stream. */
+	unsigned num_unnamed_streams = 0;
+	unsigned unnamed_stream_idx;
+	for (unsigned i = 0; i <= dentry->num_ads; i++) {
+		const u8 *hash;
+		hash = dentry_stream_hash_unresolved(dentry, i);
+		if (dentry_stream_name_len(dentry, i) && !is_zero_hash(hash)) {
+			num_unnamed_streams++;
+			unnamed_stream_idx = i;
+		}
+	}
+	if (num_unnamed_streams > 1) {
+		ERROR("Dentry `%s' has multiple (%u) un-named streams", 
+		      dentry->full_path_utf8, num_unnamed_streams);
+		goto out;
+	}
+
+#if 0
+	/* Check timestamps */
+	if (dentry->last_access_time < dentry->creation_time ||
+	    dentry->last_write_time < dentry->creation_time) {
+		WARNING("Dentry `%s' was created after it was last accessed or "
+		      "written to", dentry->full_path_utf8);
+	}
+#endif
+
+	ret = 0;
+out:
 	return ret;
 }
 

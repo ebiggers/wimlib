@@ -63,6 +63,12 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 	p = get_u32(p, &sd->total_length);
 	p = get_u32(p, &sd->num_entries);
 
+	if (sd->num_entries > 0x7fffffff) {
+		ERROR("Security data has too many entries!");
+		ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
+		goto out_free_sd;
+	}
+
 	/* Verify the listed total length of the security data is big enough to
 	 * include the sizes array, verify that the file data is big enough to
 	 * include it as well, then allocate the array of sizes.
@@ -75,7 +81,7 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 		ERROR("Security data total length (%u) is bigger than the "
 		      "metadata resource length (%"PRIu64")",
 		      sd->total_length, metadata_resource_len);
-		ret = WIMLIB_ERR_INVALID_RESOURCE_SIZE;
+		ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
 		goto out_free_sd;
 	}
 
@@ -94,7 +100,7 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 		ERROR("Security data total length of %u is too short because "
 		      "there must be at least %"PRIu64" bytes of security data",
 		      sd->total_length, 8 + sizes_size);
-		ret = WIMLIB_ERR_INVALID_RESOURCE_SIZE;
+		ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
 		goto out_free_sd;
 	}
 	sd->sizes = MALLOC(sizes_size);
@@ -133,7 +139,7 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 			ERROR("Security data total length of %u is too short "
 			      "because there are at least %"PRIu64" bytes of "
 			      "security data", sd->total_length, total_len);
-			ret = WIMLIB_ERR_INVALID_RESOURCE_SIZE;
+			ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
 			goto out_free_sd;
 		}
 		sd->descriptors[i] = MALLOC(sd->sizes[i]);

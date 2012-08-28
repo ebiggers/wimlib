@@ -260,7 +260,7 @@ if imagex append SOME_NONEXISTENT_FILE dir.wim; then
 fi
 echo "Testing appending directory containing unreadable file (should generate errors)"
 mkdir -p dir3
-touch dir3/file
+echo 1 > dir3/file
 chmod -r dir3/file
 if imagex append dir3 dir.wim; then
 	error "Incorrectly succeeded in capturing directory with unreadable file"

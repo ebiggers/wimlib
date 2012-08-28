@@ -191,8 +191,11 @@ struct wim_security_data {
 	 * that wimlib writes, currently), it will be 8 bytes. */
 	u32 total_length;
 
-	/* The number of security descriptors in the array @descriptors, below. */
-	u32 num_entries;
+	/* The number of security descriptors in the array @descriptors, below.  
+	 * It is really an unsigned int, but it must fit into an int because the
+	 * security ID's are signed.  (Not like you would ever have more than a
+	 * few hundred security descriptors anyway). */
+	int32_t num_entries;
 
 	/* Array of sizes of the descriptors in the array @descriptors. */
 	u64 *sizes;
@@ -385,7 +388,7 @@ extern int extract_wim_resource_to_fd(const struct lookup_table_entry *lte,
 extern int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte,
 					   int fd);
 
-extern int read_metadata_resource(FILE *fp, int wim_ctype, 
+extern int read_metadata_resource(WIMStruct *w,
 				  struct image_metadata *image_metadata);
 
 

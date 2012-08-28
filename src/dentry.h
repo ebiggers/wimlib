@@ -355,6 +355,8 @@ extern void calculate_dir_tree_statistics(struct dentry *root,
 extern int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len, 
 		       u64 offset, struct dentry *dentry);
 
+extern int verify_dentry(struct dentry *dentry, void *wim);
+
 extern int read_dentry_tree(const u8 metadata_resource[], 
 			    u64 metadata_resource_len, struct dentry *dentry);
 

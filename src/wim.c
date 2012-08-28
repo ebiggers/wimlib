@@ -222,9 +222,7 @@ int wimlib_select_image(WIMStruct *w, int image)
 		      "lookup table entry:");
 		print_lookup_table_entry(imd->metadata_lte);
 		#endif
-		return read_metadata_resource(w->fp, 
-					      wimlib_get_compression_type(w), 
-					      imd);
+		return read_metadata_resource(w, imd);
 	}
 }
 

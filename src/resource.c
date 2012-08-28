@@ -466,6 +466,7 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 			if (!fp) {
 				ERROR_WITH_ERRNO("Failed to open the file "
 						 "`%s'", lte->file_on_disk);
+				return WIMLIB_ERR_OPEN;
 			}
 		}
 		ret = read_uncompressed_resource(fp, offset, size, buf);
@@ -1093,14 +1094,13 @@ int write_dentry_resources(struct dentry *dentry, void *wim_p)
  *
  * @return:	Zero on success, nonzero on failure.
  */
-int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
+int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 {
 	u8 *buf;
 	int ctype;
 	u32 dentry_offset;
 	int ret;
 	struct dentry *dentry;
-	struct wim_security_data *sd;
 	struct link_group_table *lgt;
 	const struct lookup_table_entry *metadata_lte;
 	u64 metadata_len;
@@ -1150,7 +1150,7 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	 * and if successful, go ahead and calculate the offset in the metadata
 	 * resource of the root dentry. */
 
-	ret = read_security_data(buf, metadata_len, &sd);
+	ret = read_security_data(buf, metadata_len, &imd->security_data);
 	if (ret != 0)
 		goto out_free_buf;
 
@@ -1202,10 +1202,15 @@ int read_metadata_resource(FILE *fp, int wim_ctype, struct image_metadata *imd)
 	ret = link_groups_free_duplicate_data(lgt);
 	if (ret != 0)
 		goto out_free_lgt;
+
+	DEBUG("Running miscellaneous verifications on the dentry tree");
+	ret = for_dentry_in_tree(dentry, verify_dentry, w);
+	if (ret != 0)
+		goto out_free_lgt;
+
 	DEBUG("Done reading image metadata");
 
 	imd->lgt           = lgt;
-	imd->security_data = sd;
 	imd->root_dentry   = dentry;
 	goto out_free_buf;
 out_free_lgt:
@@ -1213,7 +1218,8 @@ out_free_lgt:
 out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL);
 out_free_security_data:
-	free_security_data(sd);
+	free_security_data(imd->security_data);
+	imd->security_data = NULL;
 out_free_buf:
 	FREE(buf);
 	return ret;
