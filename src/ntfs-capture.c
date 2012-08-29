@@ -619,11 +619,9 @@ WIMLIBAPI int wimlib_add_image_from_ntfs_volume(WIMStruct *w,
 WIMLIBAPI int wimlib_add_image_from_ntfs_volume(WIMStruct *w,
 						const char *device,
 						const char *name,
-						const char *description,
-						const char *flags_element,
-						int flags,
 						const char *config_str,
-						size_t config_len)
+						size_t config_len,
+						int flags)
 {
 	ERROR("wimlib was compiled without support for NTFS-3g, so");
 	ERROR("we cannot capture a WIM image directly from a NTFS volume");

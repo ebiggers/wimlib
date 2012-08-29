@@ -133,7 +133,10 @@ lte_decrement_refcnt(struct lookup_table_entry *lte, struct lookup_table *table)
 		wimlib_assert(lte->refcnt);
 		if (--lte->refcnt == 0) {
 			lookup_table_unlink(table, lte);
-			if (lte->num_opened_fds == 0) {
+		#ifdef WITH_FUSE
+			if (lte->num_opened_fds == 0)
+		#endif
+			{
 				free_lookup_table_entry(lte);
 				lte = NULL;
 			}

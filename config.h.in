@@ -24,6 +24,9 @@
 /* Define to 1 to verify compressed data */
 #undef ENABLE_VERIFY_COMPRESSION
 
+/* Define to 1 if using the xattr interface to WIM alternate data streams */
+#undef ENABLE_XATTR
+
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #undef HAVE_DLFCN_H
 

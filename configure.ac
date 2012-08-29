@@ -198,6 +198,26 @@ fi
 AC_SUBST([LIBFUSE_LDADD], [$LIBFUSE_LDADD])
 AC_SUBST([LIBFUSE_CFLAGS], [$LIBFUSE_CFLAGS])
 
+ENABLE_XATTR=no
+AC_ARG_ENABLE([xattr],
+	[AS_HELP_STRING([--enable-xattr], [Enable the xattr interface to access WIM
+			alternate data streams (default: autodetect)])],
+	[ENABLE_XATTR=$enableval],
+	[AC_CHECK_FUNC([setxattr],
+		[AC_CHECK_HEADER([attr/xattr.h],
+			[ENABLE_XATTR=yes],
+			[AC_MSG_WARN([Cannot find the "attr/xattr.h" header.  You will not be
+			 able to use the xattr interface to access WIM alternate data
+			 streams.])])],
+		[AC_MSG_WARN([Cannot find the setxattr() function.  You will not be
+		 able to use the xattr interface to access WIM alternate data
+		 streams.])])])
+
+if test "x$ENABLE_XATTR" = "xyes"; then
+	AC_DEFINE([ENABLE_XATTR], [1], [Define to 1 if using the xattr
+			interface to WIM alternate data streams])
+fi
+
 AC_MSG_CHECKING([whether to use SSSE3-accelerated SHA1 ])
 AC_ARG_ENABLE([ssse3-sha1],
 	    AS_HELP_STRING([--enable-ssse3-sha1], [use assembly language implementation

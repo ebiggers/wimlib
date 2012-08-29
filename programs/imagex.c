@@ -31,11 +31,6 @@
 #include <errno.h>
 #include <sys/stat.h>
 
-#ifdef WITH_NTFS_3G
-#include <unistd.h>
-#include <sys/wait.h>
-#endif
-
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
 
 #define swap(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \

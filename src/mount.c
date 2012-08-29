@@ -44,7 +44,10 @@
 #include <fuse.h>
 #include <ftw.h>
 #include <mqueue.h>
+
+#ifdef ENABLE_XATTR
 #include <attr/xattr.h>
+#endif
 
 struct wimlib_fd {
 	u16 idx;
@@ -950,10 +953,11 @@ done:
 	close_message_queues();
 }
 
+#if 0
 static int wimfs_fallocate(const char *path, int mode,
 			   off_t offset, off_t len, struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
+	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
 	wimlib_assert(fd->staging_fd != -1);
 	return fallocate(fd->staging_fd, mode, offset, len);
 }
@@ -961,14 +965,15 @@ static int wimfs_fallocate(const char *path, int mode,
 static int wimfs_fgetattr(const char *path, struct stat *stbuf,
 			  struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
+	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
 	return dentry_to_stbuf(fd->dentry, stbuf);
 }
+#endif
 
 static int wimfs_ftruncate(const char *path, off_t size,
 			   struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
+	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
 	int ret = ftruncate(fd->staging_fd, size);
 	if (ret != 0)
 		return ret;
@@ -992,6 +997,7 @@ static int wimfs_getattr(const char *path, struct stat *stbuf)
 	return dentry_to_stbuf(dentry, stbuf);
 }
 
+#ifdef ENABLE_XATTR
 /* Read an alternate data stream through the XATTR interface, or get its size */
 static int wimfs_getxattr(const char *path, const char *name, char *value,
 			  size_t size)
@@ -1028,6 +1034,7 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 		return -EIO;
 	return res_size;
 }
+#endif
 
 /* Create a hard link */
 static int wimfs_link(const char *to, const char *from)
@@ -1081,6 +1088,7 @@ static int wimfs_link(const char *to, const char *from)
 	return 0;
 }
 
+#ifdef ENABLE_XATTR
 static int wimfs_listxattr(const char *path, char *list, size_t size)
 {
 	struct dentry *dentry;
@@ -1113,6 +1121,7 @@ static int wimfs_listxattr(const char *path, char *list, size_t size)
 		return p - list;
 	}
 }
+#endif
 
 /* 
  * Create a directory in the WIM.  
@@ -1255,7 +1264,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 			return -errno;
 		}
 	}
-	fi->fh = (uint64_t)fd;
+	fi->fh = (uintptr_t)fd;
 	return 0;
 }
 
@@ -1270,7 +1279,7 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 	if (!dentry_is_directory(dentry))
 		return -ENOTDIR;
 	dentry->num_times_opened++;
-	fi->fh = (uint64_t)dentry;
+	fi->fh = (uintptr_t)dentry;
 	return 0;
 }
 
@@ -1281,7 +1290,7 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 static int wimfs_read(const char *path, char *buf, size_t size, 
 		      off_t offset, struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
+	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
 
 	if (!fd) {
 		/* Empty file with no lookup table entry on read-only mounted
@@ -1333,7 +1342,7 @@ static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 {
 	struct dentry *parent, *child;
 	
-	parent = (struct dentry*)fi->fh;
+	parent = (struct dentry*)(uintptr_t)fi->fh;
 	wimlib_assert(parent);
 	child = parent->children;
 
@@ -1370,7 +1379,7 @@ static int wimfs_readlink(const char *path, char *buf, size_t buf_len)
 /* Close a file. */
 static int wimfs_release(const char *path, struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
+	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
 
 	if (!fd) {
 		/* Empty file with no lookup table entry on read-only mounted
@@ -1390,7 +1399,7 @@ static int wimfs_release(const char *path, struct fuse_file_info *fi)
 
 static int wimfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
-	struct dentry *dentry = (struct dentry *)fi->fh;
+	struct dentry *dentry = (struct dentry *)(uintptr_t)fi->fh;
 
 	wimlib_assert(dentry);
 	wimlib_assert(dentry->num_times_opened);
@@ -1399,6 +1408,7 @@ static int wimfs_releasedir(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
+#ifdef ENABLE_XATTR
 /* Remove an alternate data stream through the XATTR interface */
 static int wimfs_removexattr(const char *path, const char *name)
 {
@@ -1421,6 +1431,7 @@ static int wimfs_removexattr(const char *path, const char *name)
 	remove_ads(dentry, ads_entry, w->lookup_table);
 	return 0;
 }
+#endif
 
 /* Renames a file or directory.  See rename (3) */
 static int wimfs_rename(const char *from, const char *to)
@@ -1508,6 +1519,7 @@ static int wimfs_rmdir(const char *path)
 	return 0;
 }
 
+#ifdef ENABLE_XATTR
 /* Write an alternate data stream through the XATTR interface */
 static int wimfs_setxattr(const char *path, const char *name,
 			  const char *value, size_t size, int flags)
@@ -1571,6 +1583,7 @@ static int wimfs_setxattr(const char *path, const char *name,
 	new_ads_entry->lte = lte;
 	return 0;
 }
+#endif
 
 static int wimfs_symlink(const char *to, const char *from)
 {
@@ -1706,7 +1719,7 @@ static int wimfs_utimens(const char *path, const struct timespec tv[2])
 static int wimfs_write(const char *path, const char *buf, size_t size, 
 		       off_t offset, struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
+	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
 	int ret;
 
 	wimlib_assert(fd);
@@ -1729,13 +1742,19 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 static struct fuse_operations wimfs_operations = {
 	.access      = wimfs_access,
 	.destroy     = wimfs_destroy,
+#if 0
 	.fallocate   = wimfs_fallocate,
 	.fgetattr    = wimfs_fgetattr,
+#endif
 	.ftruncate   = wimfs_ftruncate,
 	.getattr     = wimfs_getattr,
+#ifdef ENABLE_XATTR
 	.getxattr    = wimfs_getxattr,
+#endif
 	.link        = wimfs_link,
+#ifdef ENABLE_XATTR
 	.listxattr   = wimfs_listxattr,
+#endif
 	.mkdir       = wimfs_mkdir,
 	.mknod       = wimfs_mknod,
 	.open        = wimfs_open,
@@ -1745,10 +1764,14 @@ static struct fuse_operations wimfs_operations = {
 	.readlink    = wimfs_readlink,
 	.release     = wimfs_release,
 	.releasedir  = wimfs_releasedir,
+#ifdef ENABLE_XATTR
 	.removexattr = wimfs_removexattr,
+#endif
 	.rename      = wimfs_rename,
 	.rmdir       = wimfs_rmdir,
+#ifdef ENABLE_XATTR
 	.setxattr    = wimfs_setxattr,
+#endif
 	.symlink     = wimfs_symlink,
 	.truncate    = wimfs_truncate,
 	.unlink      = wimfs_unlink,
