@@ -1,9 +1,8 @@
 /*
  * ntfs-apply.c
  *
- * Apply a WIM image to a NTFS volume, restoring everything we can, including
- * security data and alternate data streams.  There should be no loss of
- * information.
+ * Apply a WIM image to a NTFS volume.  We restore everything we can, including
+ * security data and alternate data streams.
  */
 
 /*
@@ -119,19 +118,38 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 		ntfs_attr *na;
 
 		lte = dentry_stream_lte(dentry, stream_idx, w->lookup_table);
-		na = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_len);
-		if (!na) {
-			ERROR_WITH_ERRNO("Failed to open a data stream of "
-					 "extracted file `%s'",
-					 dentry->full_path_utf8);
-			ret = WIMLIB_ERR_NTFS_3G;
-			break;
+
+		if (stream_name_len) {
+			/* Create an empty named stream. */
+			ret = ntfs_attr_add(ni, AT_DATA, stream_name,
+					    stream_name_len, NULL, 0);
+			if (ret != 0) {
+				ERROR_WITH_ERRNO("Failed to create name data "
+						 "stream for extracted file "
+						 "`%s'",
+						 dentry->full_path_utf8);
+				ret = WIMLIB_ERR_NTFS_3G;
+				break;
+
+			}
 		}
-		if (lte)
+		/* If there's no lookup table entry, it's an empty stream.
+		 * Otherwise, we must open the attribute and extract the data.
+		 * */
+		if (lte) {
+			na = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_len);
+			if (!na) {
+				ERROR_WITH_ERRNO("Failed to open a data stream of "
+						 "extracted file `%s'",
+						 dentry->full_path_utf8);
+				ret = WIMLIB_ERR_NTFS_3G;
+				break;
+			}
 			ret = extract_wim_resource_to_ntfs_attr(lte, na);
-		ntfs_attr_close(na);
-		if (ret != 0)
-			break;
+			if (ret != 0)
+				break;
+			ntfs_attr_close(na);
+		}
 		if (stream_idx == dentry->num_ads)
 			break;
 		stream_name = (ntfschar*)dentry->ads_entries[stream_idx].stream_name;
@@ -669,10 +687,18 @@ static int do_wim_apply_image_ntfs(WIMStruct *w, const char *device, int extract
 
 	if (ret != 0)
 		goto out;
-	DEBUG("Setting NTFS timestamps");
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
+		printf("Setting timestamps of extracted files on NTFS "
+		       "volume `%s'\n", device);
 	ret = for_dentry_in_tree_depth(wim_root_dentry(w),
 				       wim_apply_dentry_timestamps,
 				       &args);
+	if (ret == 0 && (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE))
+		printf("Finished applying image %d of %s to NTFS "
+		       "volume `%s'\n",
+		       w->current_image,
+		       w->filename ? w->filename : "WIM",
+		       device);
 out:
 	DEBUG("Unmounting NTFS volume `%s'", device);
 	if (ntfs_umount(vol, FALSE) != 0) {

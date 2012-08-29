@@ -2,8 +2,7 @@
  * ntfs-capture.c
  *
  * Capture a WIM image from a NTFS volume.  We capture everything we can,
- * including security data and alternate data streams.  There should be no loss
- * of information.
+ * including security data and alternate data streams.
  */
 
 /*
@@ -272,6 +271,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 		size_t stream_name_utf16_len;
 		u32 reparse_tag;
 		u64 data_size = ntfs_get_attribute_value_length(actx->attr);
+		u64 name_length = actx->attr->name_length;
 
 		if (data_size == 0) { 
 			if (errno != 0) {
@@ -308,14 +308,16 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 				if (!ntfs_loc->path_utf8)
 					goto out_free_ntfs_loc;
 				memcpy(ntfs_loc->path_utf8, path, path_len + 1);
-				ntfs_loc->stream_name_utf16 = MALLOC(actx->attr->name_length * 2);
-				if (!ntfs_loc->stream_name_utf16)
-					goto out_free_ntfs_loc;
-				memcpy(ntfs_loc->stream_name_utf16,
-				       attr_record_name(actx->attr),
-				       actx->attr->name_length * 2);
+				if (name_length) {
+					ntfs_loc->stream_name_utf16 = MALLOC(name_length * 2);
+					if (!ntfs_loc->stream_name_utf16)
+						goto out_free_ntfs_loc;
+					memcpy(ntfs_loc->stream_name_utf16,
+					       attr_record_name(actx->attr),
+					       actx->attr->name_length * 2);
+					ntfs_loc->stream_name_utf16_num_chars = name_length;
+				}
 
-				ntfs_loc->stream_name_utf16_num_chars = actx->attr->name_length;
 				lte = new_lookup_table_entry();
 				if (!lte)
 					goto out_free_ntfs_loc;
@@ -333,13 +335,13 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 				}
 				ntfs_loc = NULL;
 				DEBUG("Add resource for `%s' (size = %zu)",
-					dentry->file_name_utf8,
-					lte->resource_entry.original_size);
+				      dentry->file_name_utf8,
+				      lte->resource_entry.original_size);
 				copy_hash(lte->hash, attr_hash);
 				lookup_table_insert(lookup_table, lte);
 			}
 		}
-		if (actx->attr->name_length == 0) {
+		if (name_length == 0) {
 			/* Unnamed data stream.  Put the reference to it in the
 			 * dentry. */
 			if (dentry->lte) {
@@ -355,7 +357,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			struct ads_entry *new_ads_entry;
 			size_t stream_name_utf8_len;
 			stream_name_utf8 = utf16_to_utf8((const char*)attr_record_name(actx->attr),
-							 actx->attr->name_length,
+							 name_length * 2,
 							 &stream_name_utf8_len);
 			if (!stream_name_utf8)
 				goto out_free_lte;
@@ -363,6 +365,8 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			FREE(stream_name_utf8);
 			if (!new_ads_entry)
 				goto out_free_lte;
+
+			wimlib_assert(new_ads_entry->stream_name_len == name_length * 2);
 				
 			new_ads_entry->lte = lte;
 		}

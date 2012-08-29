@@ -748,6 +748,8 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 	ntfs_inode *ni = NULL;
 #endif
 
+	wimlib_assert(lte);
+
 	/* Original size of the resource */
  	original_size = wim_resource_size(lte);
 
