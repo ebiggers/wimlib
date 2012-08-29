@@ -196,7 +196,7 @@ static void remove_ads(struct dentry *dentry,
 
 	wimlib_assert(dentry->resolved);
 
-	lte = lte_decrement_refcnt(lte, lookup_table);
+	lte = lte_decrement_refcnt(ads_entry->lte, lookup_table);
 	if (lte)
 		list_del(&ads_entry->lte_group_list.list);
 	dentry_remove_ads(dentry, ads_entry);
@@ -224,6 +224,7 @@ int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf)
 	lte = dentry_unnamed_lte_resolved(dentry);
 	if (lte) {
 		if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
+			wimlib_assert(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE);
 			wimlib_assert(lte->staging_file_name);
 			struct stat native_stat;
 			if (stat(lte->staging_file_name, &native_stat) != 0) {
@@ -310,7 +311,6 @@ static int create_staging_file(char **name_ret, int open_flags)
 static struct lookup_table_entry *
 lte_extract_fds(struct lookup_table_entry *old_lte, u64 link_group)
 {
-	int ret;
 	u16 num_transferred_fds;
 	struct lookup_table_entry *new_lte;
 
@@ -466,7 +466,7 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 			new_lte = old_lte;
 		} else {
 			DEBUG("Splitting lookup table entry "
-			      "(link_group_size = %u, lte refcnt = %u)",
+			      "(link_group_size = %zu, lte refcnt = %u)",
 			      link_group_size, old_lte->refcnt);
 			/* Split a hard link group away from the "lookup table
 			 * entry" hard link group (i.e. we had two hard link
@@ -861,8 +861,6 @@ static int rebuild_wim(WIMStruct *w, bool check_integrity)
 		if (ret != 0)
 			return ret;
 	}
-	if (ret != 0)
-		return ret;
 
 	xml_update_image_info(w, w->current_image);
 
@@ -983,8 +981,6 @@ static int wimfs_ftruncate(const char *path, off_t size,
  */
 static int wimfs_getattr(const char *path, struct stat *stbuf)
 {
-	const char *stream_name;
-	char *p = NULL;
 	struct dentry *dentry;
 	int ret;
 
@@ -1027,7 +1023,7 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 		return res_size;
 	if (res_size > size)
 		return -ERANGE;
-	ret = read_full_wim_resource(lte, value);
+	ret = read_full_wim_resource(lte, (u8*)value);
 	if (ret != 0)
 		return -EIO;
 	return res_size;
@@ -1152,7 +1148,6 @@ static int wimfs_mkdir(const char *path, mode_t mode)
 static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
 	const char *stream_name;
-	const char *file_name;
 	if ((mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 	     && (stream_name = path_stream_name(path))) {
 		/* Make an alternate data stream */
@@ -1207,7 +1202,6 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 {
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
-	u8 *dentry_hash;
 	int ret;
 	struct wimlib_fd *fd;
 	unsigned stream_idx;
@@ -1325,7 +1319,8 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 
 		size = min(size, res_entry->original_size - offset);
 
-		if (read_wim_resource(fd->lte, buf, size, offset, false) != 0)
+		if (read_wim_resource(fd->lte, (u8*)buf,
+				      size, offset, false) != 0)
 			return -EIO;
 		return size;
 	}
@@ -1375,7 +1370,6 @@ static int wimfs_readlink(const char *path, char *buf, size_t buf_len)
 /* Close a file. */
 static int wimfs_release(const char *path, struct fuse_file_info *fi)
 {
-	int ret;
 	struct wimlib_fd *fd = (struct wimlib_fd*)fi->fh;
 
 	if (!fd) {
@@ -1410,7 +1404,6 @@ static int wimfs_removexattr(const char *path, const char *name)
 {
 	struct dentry *dentry;
 	struct ads_entry *ads_entry;
-	int ret;
 	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
@@ -1525,8 +1518,6 @@ static int wimfs_setxattr(const char *path, const char *name,
 	struct lookup_table_entry *existing_lte;
 	struct lookup_table_entry *lte;
 	u8 value_hash[SHA1_HASH_SIZE];
-	int ret;
-	int fd;
 
 	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
@@ -1551,7 +1542,7 @@ static int wimfs_setxattr(const char *path, const char *name,
 	if (!new_ads_entry)
 		return -ENOMEM;
 
-	sha1_buffer(value, size, value_hash);
+	sha1_buffer((const u8*)value, size, value_hash);
 
 	existing_lte = __lookup_resource(w->lookup_table, value_hash);
 
@@ -1559,7 +1550,7 @@ static int wimfs_setxattr(const char *path, const char *name,
 		lte = existing_lte;
 		lte->refcnt++;
 	} else {
-		char *value_copy;
+		u8 *value_copy;
 		lte = new_lookup_table_entry();
 		if (!lte)
 			return -ENOMEM;
@@ -1661,7 +1652,6 @@ static int wimfs_unlink(const char *path)
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
 	int ret;
-	u8 *dentry_hash;
 	unsigned stream_idx;
 	
 	ret = lookup_resource(w, path, get_lookup_flags(), &dentry,
@@ -1780,7 +1770,7 @@ static int check_lte_refcnt(struct lookup_table_entry *lte, void *ignore)
 		struct stream_list_head *head;
 		WARNING("The following lookup table entry has a reference count "
 		      "of %u, but", lte->refcnt);
-		WARNING("We found %u references to it", lte_group_size);
+		WARNING("We found %zu references to it", lte_group_size);
 		next = lte->lte_group_list.next;
 		head = container_of(next, struct stream_list_head, list);
 		if (head->type == STREAM_TYPE_NORMAL) {

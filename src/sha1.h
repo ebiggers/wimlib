@@ -46,7 +46,7 @@ static inline bool is_zero_hash(const u8 hash[SHA1_HASH_SIZE])
 	return true;
 }
 
-static void zero_hash(u8 hash[SHA1_HASH_SIZE])
+static inline void zero_hash(u8 hash[SHA1_HASH_SIZE])
 {
 	memset(hash, 0, SHA1_HASH_SIZE);
 }

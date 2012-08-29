@@ -334,9 +334,7 @@ static inline const u8 *dentry_stream_hash(const struct dentry *dentry,
 static inline struct lookup_table_entry *
 dentry_unnamed_lte_resolved(const struct dentry *dentry)
 {
-	struct lookup_table_entry *lte;
 	wimlib_assert(dentry->resolved);
-
 	for (unsigned i = 0; i <= dentry->num_ads; i++)
 		if (dentry_stream_name_len(dentry, i) == 0 &&
 		     !is_zero_hash(dentry_stream_hash_resolved(dentry, i)))
@@ -348,9 +346,7 @@ static inline struct lookup_table_entry *
 dentry_unnamed_lte_unresolved(const struct dentry *dentry,
 			      const struct lookup_table *table)
 {
-	struct lookup_table_entry *lte;
 	wimlib_assert(!dentry->resolved);
-
 	for (unsigned i = 0; i <= dentry->num_ads; i++)
 		if (dentry_stream_name_len(dentry, i) == 0 &&
 		     !is_zero_hash(dentry_stream_hash_unresolved(dentry, i)))

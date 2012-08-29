@@ -49,7 +49,7 @@ static int verify_integrity(FILE *fp, u64 num_bytes, u32 chunk_size,
 			    const u8 *sha1sums, int show_progress,
 			    int *status)
 {
-	char  *chunk_buf;
+	u8    *chunk_buf;
 	u8     resblock[SHA1_HASH_SIZE];
 	u64    bytes_remaining;
 	size_t bytes_to_read;
@@ -117,7 +117,6 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 {
 
 	struct resource_entry *res_entry;
-	int ctype;
 	u8 *buf = NULL;
 	int ret;
 	u32 integrity_table_size;
@@ -251,7 +250,7 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 	u64   bytes_remaining;
 	u8   *buf;
 	u8   *p;
-	char *chunk_buf;
+	u8   *chunk_buf;
 	u32   num_entries;
 	u32   integrity_table_size;
 	int   ret;

@@ -61,7 +61,7 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	p = metadata_resource;
 	p = get_u32(p, &sd->total_length);
-	p = get_u32(p, &sd->num_entries);
+	p = get_u32(p, (u32*)&sd->num_entries);
 
 	if (sd->num_entries > 0x7fffffff) {
 		ERROR("Security data has too many entries!");

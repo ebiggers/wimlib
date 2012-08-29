@@ -599,7 +599,6 @@ static int compress_chunk(const u8 chunk[], unsigned chunk_size,
 			  unsigned *compressed_chunk_len_ret,
 			  int ctype)
 {
-	unsigned compressed_chunk_sz;
 	int (*compress)(const void *, unsigned, void *, unsigned *);
 	switch (ctype) {
 	case WIM_COMPRESSION_TYPE_LZX:
@@ -644,7 +643,6 @@ static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 	} else {
 		u8 *compressed_chunk = alloca(chunk_size);
 		int ret;
-		unsigned compressed_chunk_len;
 
 		ret = compress_chunk(chunk, chunk_size, compressed_chunk,
 				     &out_chunk_size, out_ctype);
@@ -678,7 +676,7 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 {
 	size_t bytes_written;
 	if (fseeko(out_fp, chunk_tab->file_offset, SEEK_SET) != 0) {
-		ERROR_WITH_ERRNO("Failed to seek to byte "PRIu64" of output "
+		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" of output "
 				 "WIM file", chunk_tab->file_offset);
 		return WIMLIB_ERR_WRITE;
 	}
@@ -772,7 +770,7 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		return 0;
 
 	/* Buffer for reading chunks for the resource */
-	char buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
+	u8 buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
 
 	/* If we are writing a compressed resource and not doing a raw copy, we
 	 * need to initialize the chunk table */
@@ -888,7 +886,7 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		/* Oops!  We compressed the resource to larger than the original
 		 * size.  Write the resource uncompressed instead. */
 		if (fseeko(out_fp, file_offset, SEEK_SET) != 0) {
-			ERROR_WITH_ERRNO("Failed to seek to byte "PRIu64" "
+			ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" "
 					 "of output WIM file", file_offset);
 			ret = WIMLIB_ERR_WRITE;
 			goto out_fclose;
@@ -973,7 +971,7 @@ int extract_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd,
 			       u64 size)
 {
 	u64 bytes_remaining = size;
-	char buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
+	u8 buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
 	u64 offset = 0;
 	int ret = 0;
 	u8 hash[SHA1_HASH_SIZE];
@@ -1099,7 +1097,6 @@ int write_dentry_resources(struct dentry *dentry, void *wim_p)
 int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 {
 	u8 *buf;
-	int ctype;
 	u32 dentry_offset;
 	int ret;
 	struct dentry *dentry;
@@ -1120,7 +1117,7 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	 * no security descriptors) and WIM_DENTRY_DISK_SIZE is for the root
 	 * dentry. */
 	if (metadata_len < 8 + WIM_DENTRY_DISK_SIZE) {
-		ERROR("Expected at least %zu bytes for the metadata resource",
+		ERROR("Expected at least %u bytes for the metadata resource",
 		      8 + WIM_DENTRY_DISK_SIZE);
 		return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
 	}
@@ -1235,7 +1232,7 @@ int write_metadata_resource(WIMStruct *w)
 	int ret;
 	u64 subdir_offset;
 	struct dentry *root;
-	struct lookup_table_entry *lte, *duplicate_lte;
+	struct lookup_table_entry *lte;
 	u64 metadata_original_size;
 	const struct wim_security_data *sd;
 	const unsigned random_tail_len = 20;

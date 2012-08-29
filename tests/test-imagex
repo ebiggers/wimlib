@@ -19,6 +19,8 @@ cleanup() {
 	rm -rf dir* tmp* *.wim *.swm
 }
 trap cleanup exit
+fusermount -u tmp || true
+rm -rf tmp || true
 
 # Make test directory
 mkdir dir

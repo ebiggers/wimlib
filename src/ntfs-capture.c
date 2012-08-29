@@ -121,7 +121,7 @@ static int lookup_sd(const u8 hash[SHA1_HASH_SIZE], struct sd_node *root)
  * the security ID for it.  If a new security descriptor cannot be allocated,
  * return -1.
  */
-static int sd_set_add_sd(struct sd_set *sd_set, const u8 *descriptor,
+static int sd_set_add_sd(struct sd_set *sd_set, const char descriptor[],
 		         size_t size)
 {
 	u8 hash[SHA1_HASH_SIZE];
@@ -132,7 +132,7 @@ static int sd_set_add_sd(struct sd_set *sd_set, const u8 *descriptor,
 	u8 *descr_copy;
 	struct wim_security_data *sd;
 
-	sha1_buffer(descriptor, size, hash);
+	sha1_buffer((const u8*)descriptor, size, hash);
 	security_id = lookup_sd(hash, sd_set->root);
 	if (security_id >= 0)
 		return security_id;
@@ -242,7 +242,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 
 	ntfs_attr_search_ctx *actx;
 	u8 attr_hash[SHA1_HASH_SIZE];
-	struct ntfs_location *ntfs_loc;
+	struct ntfs_location *ntfs_loc = NULL;
 	struct lookup_table_entry *lte;
 	int ret = 0;
 
@@ -275,8 +275,6 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 		if (lte) {
 			lte->refcnt++;
 		} else {
-			struct ntfs_location *ntfs_loc;
-
 			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
 			if (!ntfs_loc)
 				goto out_put_actx;
@@ -317,7 +315,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			dentry->lte = lte;
 		} else {
 			struct ads_entry *new_ads_entry;
-			stream_name_utf8 = utf16_to_utf8((const u8*)attr_record_name(actx->attr),
+			stream_name_utf8 = utf16_to_utf8((const char*)attr_record_name(actx->attr),
 							 actx->attr->name_length,
 							 &stream_name_utf16_len);
 			if (!stream_name_utf8)
@@ -385,7 +383,7 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 
 	ret = -1;
 
- 	utf8_name = utf16_to_utf8((const u8*)name, name_len * 2,
+ 	utf8_name = utf16_to_utf8((const char*)name, name_len * 2,
 				  &utf8_name_len);
 	if (!utf8_name)
 		goto out;
@@ -421,7 +419,6 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 		      child->file_name_utf8, ctx->parent->file_name_utf8);
 		link_dentry(child, ctx->parent);
 	}
-out_close_ni:
 	ntfs_inode_close(ni);
 out_free_utf8_name:
 	FREE(utf8_name);
@@ -511,7 +508,7 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 				      DACL_SECURITY_INFORMATION  |
 				      SACL_SECURITY_INFORMATION,
 				      NULL, 0, &sd_size);
-	u8 sd[sd_size];
+	char sd[sd_size];
 	ret = ntfs_inode_get_security(ni,
 				      OWNER_SECURITY_INFORMATION |
 				      GROUP_SECURITY_INFORMATION |

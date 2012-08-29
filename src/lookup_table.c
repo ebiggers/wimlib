@@ -344,6 +344,8 @@ void print_lookup_table_entry(const struct lookup_table_entry *lte)
 	case RESOURCE_IN_STAGING_FILE:
 		printf("Staging File      = `%s'\n", lte->staging_file_name);
 		break;
+	default:
+		break;
 	}
 	putchar('\n');
 }
@@ -397,7 +399,7 @@ int lookup_resource(WIMStruct *w, const char *path,
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
 	unsigned stream_idx;
-	const char *stream_name;
+	const char *stream_name = NULL;
 	char *p = NULL;
 
 	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {

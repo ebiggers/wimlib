@@ -194,8 +194,6 @@ static void free_link_group_list(struct link_group *group)
 /* Frees a link group table. */
 void free_link_group_table(struct link_group_table *table)
 {
-	struct link_group *single, *next;
-
 	if (table) {
                 if (table->array)
                         for (size_t i = 0; i < table->capacity; i++)
@@ -205,8 +203,9 @@ void free_link_group_table(struct link_group_table *table)
         }
 }
 
-u64 assign_link_group_ids_to_list(struct link_group *group, u64 id,
-                                  struct link_group **extra_groups)
+static u64
+assign_link_group_ids_to_list(struct link_group *group, u64 id,
+                              struct link_group **extra_groups)
 {
 	struct dentry *dentry;
 	struct list_head *cur_head;
@@ -439,7 +438,6 @@ fix_nominal_link_group(struct link_group *group,
 	int ret;
 	size_t num_true_link_groups;
 	struct list_head *head;
-	u64 link_group_id;
 
 	LIST_HEAD(dentries_with_data_streams);
 	LIST_HEAD(dentries_with_no_data_streams);
@@ -472,11 +470,17 @@ fix_nominal_link_group(struct link_group *group,
 	 * link group to be a true link group */
 	if (list_empty(&dentries_with_data_streams)) {
 	#ifdef ENABLE_DEBUG
-		DEBUG("Found link group of size %zu without any data streams:",
-		      dentry_link_group_size(dentry));
-		print_dentry_list(dentry);
-		DEBUG("We are going to interpret it as true link group, provided "
-		      "that the dentries are consistent.");
+		{
+			size_t size = dentry_link_group_size(dentry);
+			if (size > 1) {
+				DEBUG("Found link group of size %zu without "
+				      "any data streams:", size);
+				print_dentry_list(dentry);
+				DEBUG("We are going to interpret it as true "
+				      "link group, provided that the dentries "
+				      "are consistent.");
+			}
+		}
 	#endif
 		return fix_true_link_group(container_of(group->dentry_list,
 							struct dentry,
@@ -568,7 +572,7 @@ next_dentry_2:
 			ERROR("Out of memory");
 			return WIMLIB_ERR_NOMEM;
 		}
-		group->link_group_id = link_group_id;
+		group->link_group_id = dentry->link_group_id;
 		group->dentry_list = &dentry->link_group_list;
 		group->next = *new_groups;
 		*new_groups = group;

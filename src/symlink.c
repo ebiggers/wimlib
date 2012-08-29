@@ -80,7 +80,7 @@ static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 	}
 	if (header_size + substitute_name_offset + substitute_name_len > resource_len)
 		return -EIO;
-	link_target = utf16_to_utf8(p + substitute_name_offset,
+	link_target = utf16_to_utf8((const char *)p + substitute_name_offset,
 				    substitute_name_len,
 				    &link_target_len);
 
@@ -135,20 +135,22 @@ void *make_symlink_reparse_data_buf(const char *symlink_target, size_t *len_ret)
 	for (size_t i = 0; i < utf16_len / 2; i++)
 		if (((u16*)name_utf16)[i] == to_le16('/'))
 			((u16*)name_utf16)[i] = to_le16('\\');
-	size_t len = 12 + utf16_len * 2;
+	size_t len = 12 + utf16_len * 2 + 4;
 	void *buf = MALLOC(len);
 	if (!buf)
 		goto out;
 	/* XXX Fix absolute paths */
 
 	u8 *p = buf;
-	p = put_u16(p, utf16_len); /* Substitute name offset */
+	p = put_u16(p, utf16_len + 2); /* Substitute name offset */
 	p = put_u16(p, utf16_len); /* Substitute name length */
 	p = put_u16(p, 0); /* Print name offset */
 	p = put_u16(p, utf16_len); /* Print name length */
 	p = put_u32(p, 1);
-	p = put_bytes(p, utf16_len, name_utf16);
-	p = put_bytes(p, utf16_len, name_utf16);
+	p = put_bytes(p, utf16_len, (const u8*)name_utf16);
+	p = put_u16(p, 0);
+	p = put_bytes(p, utf16_len, (const u8*)name_utf16);
+	p = put_u16(p, 0);
 	/*DEBUG("utf16_len = %zu, len = %zu", utf16_len, len);*/
 	*len_ret = len;
 out:
@@ -175,7 +177,7 @@ ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 	if (wim_resource_size(lte) > 10000)
 		return -EIO;
 
-	char res_buf[wim_resource_size(lte)];
+	u8 res_buf[wim_resource_size(lte)];
 	ret = read_full_wim_resource(lte, res_buf);
 	if (ret != 0)
 		return -EIO;

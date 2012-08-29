@@ -123,7 +123,6 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 	 * extracted in the way that they appear in the WIM. */
 
 	int out_fd;
-	const struct resource_entry *res_entry;
 	int ret;
 	const struct list_head *head = &dentry->link_group_list;
 

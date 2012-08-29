@@ -819,8 +819,6 @@ static int clone_windows_info(const struct windows_info *old,
 
 static int clone_image_info(const struct image_info *old, struct image_info *new)
 {
-	int ret;
-
 	new->dir_count              = old->dir_count;
 	new->file_count             = old->file_count;
 	new->total_bytes            = old->total_bytes;
@@ -869,8 +867,6 @@ int xml_export_image(const struct wim_info *old_wim_info,
 	struct wim_info *new_wim_info;
 	struct image_info *image_info;
 	int ret;
-	char *name;
-	char *desc;
 
 	DEBUG("Copying XML data between WIM files for source image %d.", image);
 

@@ -502,10 +502,6 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 #endif
 
 	/* Translate the timestamps into something readable */
-	time_t creat_time = wim_timestamp_to_unix(dentry->creation_time);
-	time_t access_time = wim_timestamp_to_unix(dentry->last_access_time);
-	time_t mod_time = wim_timestamp_to_unix(dentry->last_write_time);
-
 	time = wim_timestamp_to_unix(dentry->creation_time);
 	p = asctime(gmtime(&time));
 	*(strrchr(p, '\n')) = '\0';
@@ -651,7 +647,6 @@ void put_dentry(struct dentry *dentry)
 		}
 		dentry->ads_entries_status = ADS_ENTRIES_USER;
 	}
-	struct list_head *next;
 	list_del(&dentry->link_group_list);
 	free_dentry(dentry);
 }
@@ -812,6 +807,8 @@ int change_dentry_name(struct dentry *dentry, const char *new_name)
 	ret = get_names(&dentry->file_name, &dentry->file_name_utf8,
 			&dentry->file_name_len, &dentry->file_name_utf8_len,
 			 new_name);
+	FREE(dentry->short_name);
+	dentry->short_name_len = 0;
 	if (ret == 0)
 		dentry->length = dentry_correct_length(dentry);
 	return ret;
@@ -941,7 +938,7 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 		u64 length_no_padding;
 		u64 total_length;
 		size_t utf8_len;
-		const char *p_save = p;
+		const u8 *p_save = p;
 
 		/* Read the base stream entry, excluding the stream name. */
 		if (remaining_size < WIM_ADS_ENTRY_DISK_SIZE) {
@@ -972,7 +969,7 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 		if (remaining_size < length_no_padding) {
 			ERROR("Stream entries go past end of metadata resource");
 			ERROR("(remaining_size = %"PRIu64" bytes, "
-			      "length_no_padding = %"PRIu16" bytes)",
+			      "length_no_padding = %"PRIu64" bytes)",
 			      remaining_size, length_no_padding);
 			ret = WIMLIB_ERR_INVALID_DENTRY;
 			goto out_free_ads_entries;
@@ -1062,7 +1059,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	char *short_name = NULL;
 	u16 short_name_len;
 	u16 file_name_len;
-	size_t file_name_utf8_len;
+	size_t file_name_utf8_len = 0;
 	int ret;
 
 	dentry_common_init(dentry);
@@ -1324,19 +1321,32 @@ int verify_dentry(struct dentry *dentry, void *wim)
 
 	/* Make sure there is only one un-named stream. */
 	unsigned num_unnamed_streams = 0;
-	unsigned unnamed_stream_idx;
 	for (unsigned i = 0; i <= dentry->num_ads; i++) {
 		const u8 *hash;
 		hash = dentry_stream_hash_unresolved(dentry, i);
-		if (!dentry_stream_name_len(dentry, i) && !is_zero_hash(hash)) {
+		if (!dentry_stream_name_len(dentry, i) && !is_zero_hash(hash))
 			num_unnamed_streams++;
-			unnamed_stream_idx = i;
-		}
 	}
 	if (num_unnamed_streams > 1) {
 		ERROR("Dentry `%s' has multiple (%u) un-named streams", 
 		      dentry->full_path_utf8, num_unnamed_streams);
 		goto out;
+	}
+
+	/* Cannot have a short name but no long name */
+	if (dentry->short_name_len && !dentry->file_name_len) {
+		ERROR("Dentry `%s' has a short name but no long name",
+		      dentry->full_path_utf8);
+		goto out;
+	}
+
+	/* Make sure root dentry is unnamed */
+	if (dentry_is_root(dentry)) {
+		if (dentry->file_name_len) {
+			ERROR("The root dentry is named `%s', but it must "
+			      "be unnamed", dentry->file_name_utf8);
+			goto out;
+		}
 	}
 
 #if 0
@@ -1364,7 +1374,6 @@ out:
 static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 {
 	u8 *orig_p = p;
-	unsigned padding;
 	const u8 *hash;
 
 	/* We calculate the correct length of the dentry ourselves because the

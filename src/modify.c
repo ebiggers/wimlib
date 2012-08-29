@@ -85,6 +85,7 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 	int ret = 0;
 	int (*stat_fn)(const char *restrict, struct stat *restrict);
 	struct dentry *root;
+	const char *filename;
 
 	if (exclude_path(root_disk_path, config, true)) {
 		if (add_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
@@ -117,11 +118,17 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 	}
 	if (!S_ISREG(root_stbuf.st_mode) && !S_ISDIR(root_stbuf.st_mode)
 	    && !S_ISLNK(root_stbuf.st_mode)) {
-		ERROR("`%s' is not a regular file, directory, or symbolic link.");
+		ERROR("`%s' is not a regular file, directory, or symbolic link.",
+		      root_disk_path);
 		return WIMLIB_ERR_SPECIAL_FILE;
 	}
 
-	root = new_dentry(path_basename(root_disk_path));
+	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT)
+		filename = "";
+	else
+		filename = path_basename(root_disk_path);
+
+	root = new_dentry(filename);
 	if (!root)
 		return WIMLIB_ERR_NOMEM;
 
@@ -166,7 +173,6 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 		closedir(dir);
 	} else if (dentry_is_symlink(root)) {
 		/* Archiving a symbolic link */
-		size_t symlink_buf_len;
 		char deref_name_buf[4096];
 		ssize_t deref_name_len;
 		
@@ -286,6 +292,7 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
  *
  * @w:		  The WIMStruct for the WIM file.
  * @root_dentry:  The root of the directory tree for the image.
+ * @sd:		  The security data for the image.
  */
 static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 			       struct wim_security_data *sd)
@@ -313,7 +320,7 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 
 	lgt = new_link_group_table(9001);
 	if (!lgt)
-		goto out_free_security_data;
+		goto out_free_metadata_lte;
 
 	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
 	random_hash(metadata_lte->hash);
@@ -333,8 +340,6 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 
 	/* Change the current image to the new one. */
 	return wimlib_select_image(w, w->hdr.image_count);
-out_free_security_data:
-	FREE(sd);
 out_free_metadata_lte:
 	FREE(metadata_lte);
 out_free_imd:
@@ -573,7 +578,6 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 	char *p;
 	char *eol;
 	char *next_p;
-	size_t next_bytes_remaining;
 	size_t bytes_remaining;
 	enum pattern_type type = NONE;
 	int ret;
@@ -627,6 +631,7 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 		if (eol - p > 2 && isalpha(*p) && *(p + 1) == ':')
 			p += 2;
 
+		ret = 0;
 		if (strcmp(p, "[ExclusionList]") == 0)
 			type = EXCLUSION_LIST;
 		else if (strcmp(p, "[ExclusionException]") == 0)
@@ -635,7 +640,11 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 			type = COMPRESSION_EXCLUSION_LIST;
 		else if (strcmp(p, "[AlignmentList]") == 0)
 			type = ALIGNMENT_LIST;
-		else switch (type) {
+		else if (p[0] == '[' && strrchr(p, ']')) {
+			ERROR("Unknown capture configuration section `%s'", p);
+			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+			goto out_destroy;
+		} else switch (type) {
 		case EXCLUSION_LIST:
 			DEBUG("Adding pattern \"%s\" to exclusion list", p);
 			ret = pattern_list_add_pattern(&config->exclusion_list, p);
@@ -742,7 +751,6 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 		 void *extra_arg)
 {
 	struct dentry *root_dentry = NULL;
-	struct image_metadata *imd;
 	struct wim_security_data *sd;
 	struct capture_config config;
 	struct link_group_table *lgt;
@@ -834,7 +842,6 @@ out_destroy_imd:
 	return ret;
 out_free_dentry_tree:
 	free_dentry_tree(root_dentry, w->lookup_table);
-out_free_sd:
 	free_security_data(sd);
 out_destroy_config:
 	destroy_capture_config(&config);

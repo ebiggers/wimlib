@@ -61,7 +61,7 @@ extract_wim_resource_to_ntfs_attr(const struct lookup_table_entry *lte,
 			          ntfs_attr *na)
 {
 	u64 bytes_remaining = wim_resource_size(lte);
-	char buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
+	u8 buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
 	u64 offset = 0;
 	int ret = 0;
 	u8 hash[SHA1_HASH_SIZE];
@@ -141,15 +141,6 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 	return ret;
 }
 
-static bool in_same_dir(const char *path1, const char *path2)
-{
-	const char *p1 = strrchr(path1, '/');
-	const char *p2 = strrchr(path2, '/');
-	if (p1 - path1 != p2 - path2)
-		return false;
-	return memcmp(path1, path2,  p1 - path1) == 0;
-}
-
 /*
  * Makes a NTFS hard link
  *
@@ -201,8 +192,7 @@ static int wim_apply_hardlink_ntfs(const struct dentry *from_dentry,
 	*p = '\0';
 	dir_name = from_dentry->full_path_utf8;
 
-	dir_ni = ntfs_pathname_to_inode(vol, NULL,
-				        from_dentry->full_path_utf8);
+	dir_ni = ntfs_pathname_to_inode(vol, NULL, dir_name);
 	if (!dir_ni) {
 		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
 				 from_dentry->full_path_utf8);
@@ -250,7 +240,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 				SACL_SECURITY_INFORMATION;
 				
 		if (!ntfs_inode_set_security(ni, selection,
-					     sd->descriptors[dentry->security_id]))
+					     (const char*)sd->descriptors[dentry->security_id]))
 		{
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
 					dentry->full_path_utf8);
@@ -284,8 +274,8 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
-	char reparse_data_buf[8 + wim_resource_size(lte)];
-	char *p = reparse_data_buf;
+	u8 reparse_data_buf[8 + wim_resource_size(lte)];
+	u8 *p = reparse_data_buf;
 	p = put_u32(p, dentry->reparse_tag); /* ReparseTag */
 	p = put_u16(p, wim_resource_size(lte)); /* ReparseDataLength */
 	p = put_u16(p, 0); /* Reserved */
@@ -294,7 +284,7 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 	if (ret != 0)
 		return ret;
 
-	ret = ntfs_set_ntfs_reparse_data(ni, reparse_data_buf,
+	ret = ntfs_set_ntfs_reparse_data(ni, (char*)reparse_data_buf,
 					 wim_resource_size(lte) + 8, 0);
 	if (ret != 0) {
 		ERROR_WITH_ERRNO("Failed to set NTFS reparse data on `%s'",
@@ -543,7 +533,6 @@ out_close_dir_ni:
 			ret = WIMLIB_ERR_NTFS_3G;
 		ERROR_WITH_ERRNO("Failed to close directory inode");
 	}
-out_close_ni:
 	if (ni && ntfs_inode_close(ni) != 0) {
 		if (ret == 0)
 			ret = WIMLIB_ERR_NTFS_3G;
@@ -582,10 +571,8 @@ static int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 	int extract_flags            = args->extract_flags;
 	WIMStruct *w                 = args->w;
 	ntfs_inode *dir_ni;
-	int ret;
 	char *p;
 	char orig;
-	ntfs_inode *close_after_dir;
 	const char *dir_name;
 
 	if (dentry->extracted_file)
@@ -626,10 +613,8 @@ static int wim_apply_dentry_timestamps(struct dentry *dentry, void *arg)
 {
 	struct ntfs_apply_args *args = arg;
 	ntfs_volume *vol             = args->vol;
-	int extract_flags            = args->extract_flags;
-	WIMStruct *w                 = args->w;
-	char *p;
-	char buf[24];
+	u8 *p;
+	u8 buf[24];
 	ntfs_inode *ni;
 	int ret = 0;
 
@@ -647,7 +632,7 @@ static int wim_apply_dentry_timestamps(struct dentry *dentry, void *arg)
 	p = put_u64(p, dentry->creation_time);
 	p = put_u64(p, dentry->last_write_time);
 	p = put_u64(p, dentry->last_access_time);
-	ret = ntfs_inode_set_times(ni, buf, 3 * sizeof(u64), 0);
+	ret = ntfs_inode_set_times(ni, (const char*)buf, 3 * sizeof(u64), 0);
 	if (ret != 0) {
 		ERROR_WITH_ERRNO("Failed to set NTFS timestamps on `%s'",
 				 dentry->full_path_utf8);
