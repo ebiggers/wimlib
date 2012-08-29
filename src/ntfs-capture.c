@@ -166,6 +166,7 @@ static int sd_set_add_sd(struct sd_set *sd_set, const char descriptor[],
 	sd->descriptors[sd->num_entries] = descr_copy;
 	sd->sizes[sd->num_entries] = size;
 	sd->num_entries++;
+	DEBUG("There are now %d security descriptors", sd->num_entries);
 	sd->total_length += size + sizeof(sd->sizes[0]);
 
 	if (sd_set->root)
@@ -251,7 +252,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 	/* Get context to search the streams of the NTFS file. */
 	actx = ntfs_attr_get_search_ctx(ni, NULL);
 	if (!actx) {
-		ERROR_WITH_ERRNO("Cannot get attribute search "
+		ERROR_WITH_ERRNO("Cannot get NTFS attribute search "
 				 "context");
 		return WIMLIB_ERR_NTFS_3G;
 	}
@@ -315,9 +316,10 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			dentry->lte = lte;
 		} else {
 			struct ads_entry *new_ads_entry;
+			size_t stream_name_utf8_len;
 			stream_name_utf8 = utf16_to_utf8((const char*)attr_record_name(actx->attr),
 							 actx->attr->name_length,
-							 &stream_name_utf16_len);
+							 &stream_name_utf8_len);
 			if (!stream_name_utf8)
 				goto out_free_lte;
 			new_ads_entry = dentry_add_ads(dentry, stream_name_utf8);
@@ -432,7 +434,8 @@ out:
  */
 static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 					    ntfs_inode *ni,
-				    	    char path[], size_t path_len,
+				    	    char path[],
+					    size_t path_len,
 				    	    struct lookup_table *lookup_table,
 				    	    struct sd_set *sd_set,
 				    	    const struct capture_config *config,
@@ -440,7 +443,7 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 {
 	u32 attributes;
 	int mrec_flags;
-	u32 sd_size;
+	u32 sd_size = 0;
 	int ret = 0;
 	struct dentry *root;
 
@@ -461,7 +464,6 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	root->creation_time    = le64_to_cpu(ni->creation_time);
 	root->last_write_time  = le64_to_cpu(ni->last_data_change_time);
 	root->last_access_time = le64_to_cpu(ni->last_access_time);
-	root->security_id      = le32_to_cpu(ni->security_id);
 	root->attributes       = le32_to_cpu(attributes);
 	root->link_group_id    = ni->mft_no;
 	root->resolved         = true;
@@ -523,6 +525,10 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 		if (ret > 0) {
 			/*print_security_descriptor(sd, sd_size);*/
 			root->security_id = sd_set_add_sd(sd_set, sd, sd_size);
+			if (root->security_id == -1) {
+				ERROR("Out of memory");
+				return WIMLIB_ERR_NOMEM;
+			}
 			DEBUG("Added security ID = %u for `%s'",
 			      root->security_id, path);
 		} else { 
@@ -545,9 +551,10 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
 	int ret = 0;
-	struct sd_set sd_set;
-	sd_set.sd = sd;
-	sd_set.root = NULL;
+	struct sd_set sd_set = {
+		.sd = sd,
+		.root = NULL,
+	};
 	ntfs_volume **ntfs_vol_p = extra_arg;
 
 	DEBUG("Mounting NTFS volume `%s' read-only", device);
@@ -559,6 +566,9 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
+	/* We don't want to capture the special NTFS files such as $Bitmap.  Not
+	 * to be confused with "hidden" or "system" files which are real files
+	 * that we do need to capture.  */
 	NVolClearShowSysFiles(vol);
 
 	DEBUG("Opening root NTFS dentry");
@@ -569,11 +579,15 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 		ret = WIMLIB_ERR_NTFS_3G;
 		goto out;
 	}
-	char *path = MALLOC(32769);
+
+	/* Currently we assume that all the UTF-8 paths fit into this length and
+	 * there is no check for overflow. */
+	char *path = MALLOC(32768);
 	if (!path) {
 		ERROR("Could not allocate memory for NTFS pathname");
 		goto out_cleanup;
 	}
+
 	path[0] = '/';
 	path[1] = '\0';
 	ret = build_dentry_tree_ntfs_recursive(root_p, root_ni, path, 1,
@@ -593,6 +607,8 @@ out:
 				ret = WIMLIB_ERR_NTFS_3G;
 		}
 	} else {
+		/* We need to leave the NTFS volume mounted so that we can read
+		 * the NTFS files again when we are actually writing the WIM */
 		*ntfs_vol_p = vol;
 	}
 	return ret;

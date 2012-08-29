@@ -73,11 +73,31 @@ struct lookup_table_entry *new_lookup_table_entry()
 void free_lookup_table_entry(struct lookup_table_entry *lte)
 {
 	if (lte) {
+#ifdef WITH_FUSE
 		if (lte->staging_list.next)
 			list_del(&lte->staging_list);
-		if (lte->resource_location != RESOURCE_IN_WIM &&
-		    lte->resource_location != RESOURCE_NONEXISTENT)
+#endif
+		switch (lte->resource_location) {
+		case RESOURCE_IN_STAGING_FILE:
+		case RESOURCE_IN_ATTACHED_BUFFER:
+		case RESOURCE_IN_FILE_ON_DISK:
+			wimlib_assert(&lte->file_on_disk ==
+				      &lte->staging_file_name ==
+				      &lte->attached_buffer);
 			FREE(lte->file_on_disk);
+			break;
+#ifdef WITH_NTFS_3G
+		case RESOURCE_IN_NTFS_VOLUME:
+			if (lte->ntfs_loc) {
+				FREE(lte->ntfs_loc->path_utf8);
+				FREE(lte->ntfs_loc->stream_name_utf16);
+				FREE(lte->ntfs_loc);
+			}
+			break;
+#endif
+		default:
+			break;
+		}
 		FREE(lte);
 	}
 }

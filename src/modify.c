@@ -41,7 +41,7 @@
 #include <unistd.h>
 
 /** Private flag: Used to mark that we currently adding the root directory of
- * the WIM. */
+ * the WIM image. */
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT 0x80000000
 
 void destroy_image_metadata(struct image_metadata *imd,struct lookup_table *lt)
@@ -523,6 +523,7 @@ enum pattern_type {
 	ALIGNMENT_LIST,
 };
 
+/* Default capture configuration file when none is specified. */
 static const char *default_config =
 "[ExclusionList]\n"
 "\\$ntfs.log\n"
@@ -570,6 +571,8 @@ static int pattern_list_add_pattern(struct pattern_list *list,
 	return 0;
 }
 
+/* Parses the contents of the image capture configuration file and fills in a
+ * `struct capture_config'. */
 static int init_capture_config(const char *_config_str, size_t config_len,
 			       const char *_prefix, struct capture_config *config)
 {
@@ -723,6 +726,15 @@ static void print_capture_config(const struct capture_config *config)
 	}
 }
 
+/* Return true if the image capture configuration file indicates we should
+ * exclude the filename @path from capture.
+ *
+ * If @exclude_prefix is %true, the part of the path up and including the name
+ * of the directory being captured is not included in the path for matching
+ * purposes.  This allows, for example, a pattern like /hiberfil.sys to match a
+ * file /mnt/windows7/hiberfil.sys if we are capturing the /mnt/windows7
+ * directory.
+ */
 bool exclude_path(const char *path, const struct capture_config *config,
 		  bool exclude_prefix)
 {
@@ -740,6 +752,18 @@ bool exclude_path(const char *path, const struct capture_config *config,
 
 
 
+/*
+ * Adds an image to the WIM, delegating the capture of the dentry tree and
+ * security data to the function @capture_tree passed as a parameter.
+ * Currently, @capture_tree may be build_dentry_tree() for capturing a "regular"
+ * directory tree on disk, or build_dentry_tree_ntfs() for capturing a WIM image
+ * directory from a NTFS volume using libntfs-3g.
+ *
+ * The @capture_tree function is also expected to create lookup table entries
+ * for all the file streams it captures and insert them into @lookup_table,
+ * being careful to look for identical entries that already exist and simply
+ * increment the reference count for them rather than duplicating the entry.
+ */
 int do_add_image(WIMStruct *w, const char *dir, const char *name,
 		 const char *config_str, size_t config_len,
 		 int flags,
@@ -756,14 +780,14 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	struct link_group_table *lgt;
 	int ret;
 
-	DEBUG("Adding dentry tree from dir `%s'.", dir);
+	DEBUG("Adding dentry tree from directory or NTFS volume `%s'.", dir);
 
 	if (!name || !*name) {
 		ERROR("Must specify a non-empty string for the image name");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 	if (!dir) {
-		ERROR("Must specify the name of a directory");
+		ERROR("Must specify the name of a directory or NTFS volume");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
