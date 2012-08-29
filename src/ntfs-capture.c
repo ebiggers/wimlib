@@ -133,6 +133,7 @@ static int sd_set_add_sd(struct sd_set *sd_set, const char descriptor[],
 	struct wim_security_data *sd;
 
 	sha1_buffer((const u8*)descriptor, size, hash);
+
 	security_id = lookup_sd(hash, sd_set->root);
 	if (security_id >= 0)
 		return security_id;
@@ -170,7 +171,7 @@ static int sd_set_add_sd(struct sd_set *sd_set, const char descriptor[],
 	sd->total_length += size + sizeof(sd->sizes[0]);
 
 	if (sd_set->root)
-		insert_sd_node(sd_set->root, new);
+		insert_sd_node(new, sd_set->root);
 	else
 		sd_set->root = new;
 	return new->security_id;
@@ -192,11 +193,15 @@ static inline ntfschar *attr_record_name(ATTR_RECORD *ar)
  * @ni:  The NTFS inode containing the attribute.
  * @ar:	 The ATTR_RECORD describing the attribute.
  * @md:  If successful, the returned SHA1 message digest.
+ * @reparse_tag_ret:	Optional pointer into which the first 4 bytes of the
+ * 				attribute will be written (to get the reparse
+ * 				point ID)
  *
  * Return 0 on success or nonzero on error.
  */
 static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
-			     u8 md[SHA1_HASH_SIZE])
+			     u8 md[SHA1_HASH_SIZE],
+			     u32 *reparse_tag_ret)
 {
 	s64 pos = 0;
 	s64 bytes_remaining;
@@ -214,8 +219,8 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 	bytes_remaining = na->data_size;
 	sha1_init(&ctx);
 
-	DEBUG("Calculating SHA1 message digest (%"PRIu64" bytes)",
-			bytes_remaining);
+	DEBUG2("Calculating SHA1 message digest (%"PRIu64" bytes)",
+	       bytes_remaining);
 
 	while (bytes_remaining) {
 		s64 to_read = min(bytes_remaining, sizeof(buf));
@@ -223,6 +228,8 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 			ERROR_WITH_ERRNO("Error reading NTFS attribute");
 			return WIMLIB_ERR_NTFS_3G;
 		}
+		if (bytes_remaining == na->data_size && reparse_tag_ret)
+			*reparse_tag_ret = le32_to_cpu(*(u32*)buf);
 		sha1_update(&ctx, buf, to_read);
 		pos += to_read;
 		bytes_remaining -= to_read;
@@ -244,10 +251,10 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 	ntfs_attr_search_ctx *actx;
 	u8 attr_hash[SHA1_HASH_SIZE];
 	struct ntfs_location *ntfs_loc = NULL;
-	struct lookup_table_entry *lte;
 	int ret = 0;
+	struct lookup_table_entry *lte;
 
-	DEBUG("Capturing NTFS data streams from `%s'", path);
+	DEBUG2("Capturing NTFS data streams from `%s'", path);
 
 	/* Get context to search the streams of the NTFS file. */
 	actx = ntfs_attr_get_search_ctx(ni, NULL);
@@ -263,50 +270,78 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 	{
 		char *stream_name_utf8;
 		size_t stream_name_utf16_len;
+		u32 reparse_tag;
+		u64 data_size = ntfs_get_attribute_value_length(actx->attr);
 
-		/* Checksum the stream. */
-		ret = ntfs_attr_sha1sum(ni, actx->attr, attr_hash);
-		if (ret != 0)
-			goto out_put_actx;
-
-		/* Make a lookup table entry for the stream, or use an existing
-		 * one if there's already an identical stream. */
-		lte = __lookup_resource(lookup_table, attr_hash);
-		ret = WIMLIB_ERR_NOMEM;
-		if (lte) {
-			lte->refcnt++;
-		} else {
-			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
-			if (!ntfs_loc)
+		if (data_size == 0) { 
+			if (errno != 0) {
+				ERROR_WITH_ERRNO("Failed to get size of attribute of "
+						 "`%s'", path);
+				ret = WIMLIB_ERR_NTFS_3G;
 				goto out_put_actx;
-			ntfs_loc->ntfs_vol_p = ntfs_vol_p;
-			ntfs_loc->path_utf8 = MALLOC(path_len + 1);
-			if (!ntfs_loc->path_utf8)
-				goto out_free_ntfs_loc;
-			memcpy(ntfs_loc->path_utf8, path, path_len + 1);
-			ntfs_loc->stream_name_utf16 = MALLOC(actx->attr->name_length * 2);
-			if (!ntfs_loc->stream_name_utf16)
-				goto out_free_ntfs_loc;
-			memcpy(ntfs_loc->stream_name_utf16,
-			       attr_record_name(actx->attr),
-			       actx->attr->name_length * 2);
+			}
+			/* Empty stream.  No lookup table entry is needed. */
+			lte = NULL;
+		} else {
+			if (type == AT_REPARSE_POINT && data_size < 8) {
+				ERROR("`%s': reparse point buffer too small");
+				ret = WIMLIB_ERR_NTFS_3G;
+				goto out_put_actx;
+			}
+			/* Checksum the stream. */
+			ret = ntfs_attr_sha1sum(ni, actx->attr, attr_hash, &reparse_tag);
+			if (ret != 0)
+				goto out_put_actx;
 
-			ntfs_loc->stream_name_utf16_num_chars = actx->attr->name_length;
-			ntfs_loc->is_reparse_point = (type == AT_REPARSE_POINT);
-			lte = new_lookup_table_entry();
-			if (!lte)
-				goto out_free_ntfs_loc;
-			lte->ntfs_loc = ntfs_loc;
-			lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
-			lte->resource_entry.original_size = actx->attr->data_size;
-			lte->resource_entry.size = actx->attr->data_size;
-			DEBUG("Add resource for `%s' (size = %zu)",
-				dentry->file_name_utf8,
-				lte->resource_entry.original_size);
-			copy_hash(lte->hash, attr_hash);
-			lookup_table_insert(lookup_table, lte);
+			/* Make a lookup table entry for the stream, or use an existing
+			 * one if there's already an identical stream. */
+			lte = __lookup_resource(lookup_table, attr_hash);
+			ret = WIMLIB_ERR_NOMEM;
+			if (lte) {
+				lte->refcnt++;
+			} else {
+				ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
+				if (!ntfs_loc)
+					goto out_put_actx;
+				ntfs_loc->ntfs_vol_p = ntfs_vol_p;
+				ntfs_loc->path_utf8 = MALLOC(path_len + 1);
+				if (!ntfs_loc->path_utf8)
+					goto out_free_ntfs_loc;
+				memcpy(ntfs_loc->path_utf8, path, path_len + 1);
+				ntfs_loc->stream_name_utf16 = MALLOC(actx->attr->name_length * 2);
+				if (!ntfs_loc->stream_name_utf16)
+					goto out_free_ntfs_loc;
+				memcpy(ntfs_loc->stream_name_utf16,
+				       attr_record_name(actx->attr),
+				       actx->attr->name_length * 2);
+
+				ntfs_loc->stream_name_utf16_num_chars = actx->attr->name_length;
+				lte = new_lookup_table_entry();
+				if (!lte)
+					goto out_free_ntfs_loc;
+				lte->ntfs_loc = ntfs_loc;
+				lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
+				if (type == AT_REPARSE_POINT) {
+					dentry->reparse_tag = reparse_tag;
+					ntfs_loc->is_reparse_point = true;
+					lte->resource_entry.original_size = data_size - 8;
+					lte->resource_entry.size = data_size - 8;
+				} else {
+					ntfs_loc->is_reparse_point = false;
+					lte->resource_entry.original_size = data_size;
+					lte->resource_entry.size = data_size;
+				}
+				ntfs_loc = NULL;
+				DEBUG("Add resource for `%s' (size = %zu)",
+					dentry->file_name_utf8,
+					lte->resource_entry.original_size);
+				copy_hash(lte->hash, attr_hash);
+				lookup_table_insert(lookup_table, lte);
+			}
 		}
 		if (actx->attr->name_length == 0) {
+			/* Unnamed data stream.  Put the reference to it in the
+			 * dentry. */
 			if (dentry->lte) {
 				ERROR("Found two un-named data streams for "
 				      "`%s'", path);
@@ -315,6 +350,8 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			}
 			dentry->lte = lte;
 		} else {
+			/* Named data stream.  Put the reference to it in the
+			 * alternate data stream entries */
 			struct ads_entry *new_ads_entry;
 			size_t stream_name_utf8_len;
 			stream_name_utf8 = utf16_to_utf8((const char*)attr_record_name(actx->attr),
@@ -343,9 +380,9 @@ out_free_ntfs_loc:
 out_put_actx:
 	ntfs_attr_put_search_ctx(actx);
 	if (ret == 0)
-		DEBUG("Successfully captured NTFS streams from `%s'", path);
+		DEBUG2("Successfully captured NTFS streams from `%s'", path);
 	else
-		DEBUG("Failed to capture NTFS streams from `%s", path);
+		ERROR("Failed to capture NTFS streams from `%s", path);
 	return ret;
 }
 
@@ -358,6 +395,7 @@ struct readdir_ctx {
 	struct sd_set	    *sd_set;
 	const struct capture_config *config;
 	ntfs_volume	   **ntfs_vol_p;
+	int		     flags;
 };
 
 static int
@@ -366,7 +404,8 @@ build_dentry_tree_ntfs_recursive(struct dentry **root_p, ntfs_inode *ni,
 				 struct lookup_table *lookup_table,
 				 struct sd_set *sd_set,
 				 const struct capture_config *config,
-				 ntfs_volume **ntfs_vol_p);
+				 ntfs_volume **ntfs_vol_p,
+				 int flags);
 
 static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 				    const int name_len, const int name_type,
@@ -393,12 +432,9 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	if (utf8_name[0] == '.' &&
 	     (utf8_name[1] == '\0' ||
 	      (utf8_name[1] == '.' && utf8_name[2] == '\0'))) {
-		DEBUG("Skipping dentry `%s'", utf8_name);
 		ret = 0;
 		goto out_free_utf8_name;
 	}
-
-	DEBUG("Opening inode for `%s'", utf8_name);
 
 	ctx = dirent;
 
@@ -414,13 +450,12 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	path_len += utf8_name_len;
 	ret = build_dentry_tree_ntfs_recursive(&child, ni, ctx->path, path_len,
 					       ctx->lookup_table, ctx->sd_set,
-					       ctx->config, ctx->ntfs_vol_p);
+					       ctx->config, ctx->ntfs_vol_p,
+					       ctx->flags);
 
-	if (child) {
-		DEBUG("Linking dentry `%s' with parent `%s'",
-		      child->file_name_utf8, ctx->parent->file_name_utf8);
+	if (child)
 		link_dentry(child, ctx->parent);
-	}
+
 	ntfs_inode_close(ni);
 out_free_utf8_name:
 	FREE(utf8_name);
@@ -439,7 +474,8 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 				    	    struct lookup_table *lookup_table,
 				    	    struct sd_set *sd_set,
 				    	    const struct capture_config *config,
-				    	    ntfs_volume **ntfs_vol_p)
+				    	    ntfs_volume **ntfs_vol_p,
+					    int flags)
 {
 	u32 attributes;
 	int mrec_flags;
@@ -447,14 +483,25 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	int ret = 0;
 	struct dentry *root;
 
+	mrec_flags = ni->mrec->flags;
+ 	attributes = ntfs_inode_get_attributes(ni);
+
 	if (exclude_path(path, config, false)) {
-		DEBUG("Excluding `%s' from capture", path);
+		if (flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE) {
+			const char *file_type;
+			if (attributes & MFT_RECORD_IS_DIRECTORY)
+				file_type = "directory";
+			else
+				file_type = "file";
+			printf("Excluding %s `%s' from capture\n",
+			       file_type, path);
+		}
+		*root_p = NULL;
 		return 0;
 	}
 
-	DEBUG("Starting recursive capture at path = `%s'", path);
-	mrec_flags = ni->mrec->flags;
- 	attributes = ntfs_inode_get_attributes(ni);
+	if (flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+		printf("Scanning `%s'\n", path);
 
 	root = new_dentry(path_basename(path));
 	if (!root)
@@ -469,13 +516,11 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	root->resolved         = true;
 
 	if (attributes & FILE_ATTR_REPARSE_POINT) {
-		DEBUG("Reparse point `%s'", path);
 		/* Junction point, symbolic link, or other reparse point */
 		ret = capture_ntfs_streams(root, ni, path, path_len,
 					   lookup_table, ntfs_vol_p,
 					   AT_REPARSE_POINT);
 	} else if (mrec_flags & MFT_RECORD_IS_DIRECTORY) {
-		DEBUG("Directory `%s'", path);
 
 		/* Normal directory */
 		s64 pos = 0;
@@ -488,6 +533,7 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 			.sd_set       = sd_set,
 			.config       = config,
 			.ntfs_vol_p   = ntfs_vol_p,
+			.flags	      = flags,
 		};
 		ret = ntfs_readdir(ni, &pos, &ctx, wim_ntfs_capture_filldir);
 		if (ret != 0) {
@@ -495,7 +541,6 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 			ret = WIMLIB_ERR_NTFS_3G;
 		}
 	} else {
-		DEBUG("Normal file `%s'", path);
 		/* Normal file */
 		ret = capture_ntfs_streams(root, ni, path, path_len,
 					   lookup_table, ntfs_vol_p,
@@ -565,6 +610,7 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 				 device);
 		return WIMLIB_ERR_NTFS_3G;
 	}
+	ntfs_open_secure(vol);
 
 	/* We don't want to capture the special NTFS files such as $Bitmap.  Not
 	 * to be confused with "hidden" or "system" files which are real files
@@ -592,7 +638,7 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 	path[1] = '\0';
 	ret = build_dentry_tree_ntfs_recursive(root_p, root_ni, path, 1,
 					       lookup_table, &sd_set,
-					       config, ntfs_vol_p);
+					       config, ntfs_vol_p, flags);
 out_cleanup:
 	FREE(path);
 	ntfs_inode_close(root_ni);

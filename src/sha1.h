@@ -9,6 +9,8 @@
 
 #define SHA1_HASH_SIZE 20
 
+extern const u8 zero_hash[SHA1_HASH_SIZE];
+
 static inline void copy_hash(u8 dest[SHA1_HASH_SIZE],
 			     const u8 src[SHA1_HASH_SIZE])
 {
@@ -46,7 +48,7 @@ static inline bool is_zero_hash(const u8 hash[SHA1_HASH_SIZE])
 	return true;
 }
 
-static inline void zero_hash(u8 hash[SHA1_HASH_SIZE])
+static inline void zero_out_hash(u8 hash[SHA1_HASH_SIZE])
 {
 	memset(hash, 0, SHA1_HASH_SIZE);
 }

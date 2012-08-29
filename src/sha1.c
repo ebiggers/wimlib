@@ -34,8 +34,15 @@
  * Steve Reid's public domain code, or based on Intel's SSSE3 SHA1 code.
  */
 
-#ifndef WITH_LIBCRYPTO
+const u8 zero_hash[SHA1_HASH_SIZE] = {
+	0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0,
+};
 
+
+#ifndef WITH_LIBCRYPTO
 
 /*  Initialize new context */
 void sha1_init(SHA_CTX* context)

@@ -483,7 +483,13 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 		break;
 #ifdef WITH_NTFS_3G
 	case RESOURCE_IN_NTFS_VOLUME:
+		wimlib_assert(lte->ntfs_loc);
 		if (lte->attr) {
+			u64 adjusted_offset;
+			if (lte->ntfs_loc->is_reparse_point)
+				adjusted_offset = offset + 8;
+			else
+				adjusted_offset = offset;
 			if (ntfs_attr_pread(lte->attr, offset, size, buf) == size) {
 				return 0;
 			} else {
@@ -739,7 +745,7 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 	bool raw;
 	off_t file_offset;
 #ifdef WITH_NTFS_3G
-	ntfs_inode *ni;
+	ntfs_inode *ni = NULL;
 #endif
 
 	/* Original size of the resource */
@@ -798,7 +804,7 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 	}
 #ifdef WITH_NTFS_3G
 	else if (lte->resource_location == RESOURCE_IN_NTFS_VOLUME
-		   && !lte->attr)
+		  && !lte->attr)
 	{
 		struct ntfs_location *loc = lte->ntfs_loc;
 		wimlib_assert(loc);
@@ -806,15 +812,18 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		if (!ni) {
 			ERROR_WITH_ERRNO("Failed to open inode `%s' in NTFS "
 					 "volume", loc->path_utf8);
+			ret = WIMLIB_ERR_NTFS_3G;
+			goto out;
 		}
 		lte->attr = ntfs_attr_open(ni,
 					   loc->is_reparse_point ? AT_REPARSE_POINT : AT_DATA,
 					   (ntfschar*)loc->stream_name_utf16,
 					   loc->stream_name_utf16_num_chars);
 		if (!lte->attr) {
-			ntfs_inode_close(ni);
 			ERROR_WITH_ERRNO("Failed to open attribute of `%s' in "
 					 "NTFS volume", loc->path_utf8);
+			ret = WIMLIB_ERR_NTFS_3G;
+			goto out_fclose;
 		}
 	}
 #endif
@@ -923,10 +932,13 @@ out_fclose:
 		lte->file_on_disk_fp = NULL;
 	}
 #ifdef WITH_NTFS_3G
-	else if (lte->resource_location == RESOURCE_IN_NTFS_VOLUME
-		 && lte->attr) {
-		ntfs_attr_close(lte->attr);
-		ntfs_inode_close(ni);
+	else if (lte->resource_location == RESOURCE_IN_NTFS_VOLUME) {
+		if (lte->attr) {
+			ntfs_attr_close(lte->attr);
+			lte->attr = NULL;
+		} if (ni) {
+			ntfs_inode_close(ni);
+		}
 	}
 #endif
 out:
@@ -953,7 +965,7 @@ static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 	lte.resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
 	lte.attached_buffer              = (u8*)buf;
 
-	zero_hash(lte.hash);
+	zero_out_hash(lte.hash);
 	ret = write_wim_resource(&lte, out_fp, out_ctype, out_res_entry);
 	if (ret != 0)
 		return ret;

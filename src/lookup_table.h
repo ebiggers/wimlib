@@ -310,7 +310,7 @@ static inline const u8 *dentry_stream_hash_resolved(const struct dentry *dentry,
 	if (lte)
 		return lte->hash;
 	else
-		return NULL;
+		return zero_hash;
 }
 
 /* 

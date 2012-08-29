@@ -81,9 +81,10 @@ void free_lookup_table_entry(struct lookup_table_entry *lte)
 		case RESOURCE_IN_STAGING_FILE:
 		case RESOURCE_IN_ATTACHED_BUFFER:
 		case RESOURCE_IN_FILE_ON_DISK:
-			wimlib_assert(&lte->file_on_disk ==
-				      &lte->staging_file_name ==
-				      &lte->attached_buffer);
+			wimlib_assert((&lte->file_on_disk ==
+				      &lte->staging_file_name)
+				      && (&lte->file_on_disk ==
+				      &lte->attached_buffer));
 			FREE(lte->file_on_disk);
 			break;
 #ifdef WITH_NTFS_3G

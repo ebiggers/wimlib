@@ -170,13 +170,17 @@ struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
 	DEBUG("Add alternate data stream %s:%s",
 	       dentry->file_name_utf8, stream_name);
 
-	if (dentry->num_ads == 0xffff)
+	if (dentry->num_ads == 0xffff) {
+		ERROR("Too many alternate data streams in one dentry!");
 		return NULL;
+	}
  	num_ads = dentry->num_ads + 1;
 	ads_entries = REALLOC(dentry->ads_entries,
 			      num_ads * sizeof(struct ads_entry));
-	if (!ads_entries)
+	if (!ads_entries) {
+		ERROR("Failed to allocate memory for new alternate data stream");
 		return NULL;
+	}
 	if (ads_entries != dentry->ads_entries) {
 		/* We moved the ADS entries.  Adjust the stream lists. */
 		for (u16 i = 0; i < dentry->num_ads; i++) {
@@ -1391,10 +1395,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	p = put_u64(p, dentry->creation_time);
 	p = put_u64(p, dentry->last_access_time);
 	p = put_u64(p, dentry->last_write_time);
-	if (dentry->resolved && dentry->lte)
-		hash = dentry->lte->hash;
-	else
-		hash = dentry->hash;
+	hash = dentry_stream_hash(dentry, 0);
 	p = put_bytes(p, SHA1_HASH_SIZE, hash);
 	if (dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		p = put_zeroes(p, 4);
@@ -1432,10 +1433,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	for (u16 i = 0; i < dentry->num_ads; i++) {
 		p = put_u64(p, ads_entry_total_length(&dentry->ads_entries[i]));
 		p = put_u64(p, 0); /* Unused */
-		if (dentry->resolved && dentry->ads_entries[i].lte)
-			hash = dentry->ads_entries[i].lte->hash;
-		else
-			hash = dentry->ads_entries[i].hash;
+		hash = dentry_stream_hash(dentry, i + 1);
 		p = put_bytes(p, SHA1_HASH_SIZE, hash);
 		p = put_u16(p, dentry->ads_entries[i].stream_name_len);
 		if (dentry->ads_entries[i].stream_name_len) {
