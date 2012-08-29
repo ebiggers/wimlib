@@ -214,7 +214,7 @@ int dentry_to_stbuf(const struct dentry *dentry, struct stat *stbuf)
 	else
 		stbuf->st_mode = S_IFREG | 0644;
 
-	stbuf->st_ino = (ino_t)dentry->hard_link;
+	stbuf->st_ino = (ino_t)dentry->link_group_id;
 
 	stbuf->st_nlink = dentry_link_group_size(dentry);
 	stbuf->st_uid   = getuid();
@@ -321,7 +321,7 @@ lte_extract_fds(struct lookup_table_entry *old_lte, u64 link_group)
 	num_transferred_fds = 0;
 	for (u16 i = 0; i < old_lte->num_allocated_fds; i++)
 		if (old_lte->fds[i] && old_lte->fds[i]->dentry &&
-		    old_lte->fds[i]->dentry->hard_link == link_group)
+		    old_lte->fds[i]->dentry->link_group_id == link_group)
 			num_transferred_fds++;
 	DEBUG("Transferring %u file descriptors",
 	      num_transferred_fds);
@@ -332,7 +332,7 @@ lte_extract_fds(struct lookup_table_entry *old_lte, u64 link_group)
 	}
 	for (u16 i = 0, j = 0; ; i++) {
 		if (old_lte->fds[i] && old_lte->fds[i]->dentry &&
-		    old_lte->fds[i]->dentry->hard_link == link_group) {
+		    old_lte->fds[i]->dentry->link_group_id == link_group) {
 			struct wimlib_fd *fd = old_lte->fds[i];
 			old_lte->fds[i] = NULL;
 			fd->lte = new_lte;
@@ -384,7 +384,7 @@ static void lte_transfer_stream_entries(struct lookup_table_entry *new_lte,
 		do {
 			struct dentry *d;
 			d = container_of(pos, struct dentry, link_group_list);
-			wimlib_assert(d->hard_link == dentry->hard_link);
+			wimlib_assert(d->link_group_id == dentry->link_group_id);
 			lte_transfer_dentry(new_lte, d);
 			pos = pos->next;
 		} while (pos != &dentry->link_group_list);
@@ -483,7 +483,7 @@ static int extract_resource_to_staging_dir(struct dentry *dentry,
 			 * XXX*/
 			wimlib_assert(old_lte->refcnt > link_group_size);
 
-			new_lte = lte_extract_fds(old_lte, dentry->hard_link);
+			new_lte = lte_extract_fds(old_lte, dentry->link_group_id);
 			if (!new_lte) {
 				ret = -ENOMEM;
 				goto out_delete_staging_file;
@@ -1142,7 +1142,7 @@ static int wimfs_mkdir(const char *path, mode_t mode)
 	newdir = new_dentry(basename);
 	newdir->attributes |= FILE_ATTRIBUTE_DIRECTORY;
 	newdir->resolved = true;
-	newdir->hard_link = next_link_group_id++;
+	newdir->link_group_id = next_link_group_id++;
 	link_dentry(newdir, parent);
 	return 0;
 }
@@ -1193,7 +1193,7 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		if (!dentry)
 			return -ENOMEM;
 		dentry->resolved = true;
-		dentry->hard_link = next_link_group_id++;
+		dentry->link_group_id = next_link_group_id++;
 		dentry->lte_group_list.type = STREAM_TYPE_NORMAL;
 		INIT_LIST_HEAD(&dentry->lte_group_list.list);
 		link_dentry(dentry, parent);
@@ -1603,7 +1603,7 @@ static int wimfs_symlink(const char *to, const char *from)
 
 	dentry->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
 	dentry->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
-	dentry->hard_link = next_link_group_id++;
+	dentry->link_group_id = next_link_group_id++;
 
 	if (dentry_set_symlink(dentry, to, w->lookup_table, &lte) != 0)
 		goto out_free_dentry;

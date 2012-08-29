@@ -231,7 +231,7 @@ struct dentry {
 	 * Unfortunately, in some WIMs it is NOT the case that all dentries that
 	 * share this field are actually in the same hard link set, although the
 	 * WIMs that wimlib writes maintain this restriction. */
-	u64 hard_link;
+	u64 link_group_id;
 
 	/* Number of alternate data streams associated with this file. */
 	u16 num_ads;

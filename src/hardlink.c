@@ -134,7 +134,7 @@ int link_group_table_insert(struct dentry *dentry, void *__table)
 	size_t pos;
 	struct link_group *group;
 
-	if (dentry->hard_link == 0) {
+	if (dentry->link_group_id == 0) {
 		/* Single group--- Add to the list of extra groups (we can't put
 		 * it in the table itself because all the singles have a link
 		 * group ID of 0) */
@@ -152,10 +152,10 @@ int link_group_table_insert(struct dentry *dentry, void *__table)
                  * though) */
 
 		/* Try adding to existing hard link group */
-		pos = dentry->hard_link % table->capacity;
+		pos = dentry->link_group_id % table->capacity;
 		group = table->array[pos];
 		while (group) {
-			if (group->link_group_id == dentry->hard_link) {
+			if (group->link_group_id == dentry->link_group_id) {
 				list_add(&dentry->link_group_list,
 					 group->dentry_list);
 				return 0;
@@ -168,7 +168,7 @@ int link_group_table_insert(struct dentry *dentry, void *__table)
 		group = MALLOC(sizeof(struct link_group));
 		if (!group)
 			return WIMLIB_ERR_NOMEM;
-		group->link_group_id   = dentry->hard_link;
+		group->link_group_id   = dentry->link_group_id;
 		group->next            = table->array[pos];
 		INIT_LIST_HEAD(&dentry->link_group_list);
 		group->dentry_list = &dentry->link_group_list;
@@ -218,7 +218,7 @@ u64 assign_link_group_ids_to_list(struct link_group *group, u64 id,
 			dentry = container_of(cur_head,
 					      struct dentry,
 					      link_group_list);
-			dentry->hard_link = id;
+			dentry->link_group_id = id;
 			cur_head = cur_head->next;
 		} while (cur_head != cur_group->dentry_list);
 		cur_group->link_group_id = id;
@@ -336,6 +336,19 @@ static bool dentries_consistent(const struct dentry * restrict ref_dentry,
 	return true;
 }
 
+#ifdef ENABLE_DEBUG
+static void
+print_dentry_list(const struct dentry *first_dentry)
+{
+	const struct dentry *dentry;
+	do {
+		printf("`%s'\n", dentry->full_path_utf8);
+	} while ((dentry = container_of(dentry->link_group_list.next,
+					struct dentry,
+					link_group_list)) != first_dentry);
+}
+#endif
+
 /* Fix up a "true" link group and check for inconsistencies */
 static int
 fix_true_link_group(struct dentry *first_dentry)
@@ -399,19 +412,19 @@ fix_true_link_group(struct dentry *first_dentry)
  *
  *      - Assign all the dentries in the link group the most recent timestamp
  *      among all the corresponding timestamps in the link group, for each of
- *      the three categories of time stamps
+ *      the three categories of time stamps.
  *
  *      - Make sure the dentry->hash field is valid in all the dentries, if
  *      possible (this field may be all zeroes, and in the context of a hard
- *      link group must be interpreted as implicitly refering to the same stream
- *      as another dentry is the hard link group that does *not* have all zeroes
- *      for the stream hash).
+ *      link group this must be interpreted as implicitly refering to the same
+ *      stream as another dentry in the hard link group that does NOT have all
+ *      zeroes for this field).
  *
  *      - Make sure dentry->num_ads is the same in all the dentries in the link
- *      group.  In some cases, it's possible for it to be set to 0 when it must
- *      be interpreted as being the same as the number of alternate data streams
- *      in another dentry in the hard link group that has a nonzero number of
- *      alternate data streams.
+ *      group.  In some cases, it's possible for it to be set to 0 when it
+ *      actually must be interpreted as being the same as the number of
+ *      alternate data streams in another dentry in the hard link group that has
+ *      a nonzero number of alternate data streams.
  *
  *      - Make sure only the dentry->ads_entries array is only allocated for one
  *      dentry in the hard link group.  This dentry will have
@@ -457,10 +470,14 @@ fix_nominal_link_group(struct link_group *group,
 
 	/* If there are no dentries with data streams, we require the nominal
 	 * link group to be a true link group */
-	if (list_empty(&dentries_with_data_streams))
+	if (list_empty(&dentries_with_data_streams)) {
+	#ifdef ENABLE_DEBUG
+
+	#endif
 		return fix_true_link_group(container_of(group->dentry_list,
 							struct dentry,
 							link_group_list));
+	}
 
         /* One or more dentries had data streams specified.  We check each of
          * these dentries for consistency with the others to form a set of true

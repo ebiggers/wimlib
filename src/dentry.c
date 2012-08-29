@@ -110,9 +110,9 @@ void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 		dentry->attributes = FILE_ATTRIBUTE_NORMAL;
 	}
 	if (sizeof(ino_t) >= 8)
-		dentry->hard_link = (u64)stbuf->st_ino;
+		dentry->link_group_id = (u64)stbuf->st_ino;
 	else
-		dentry->hard_link = (u64)stbuf->st_ino |
+		dentry->link_group_id = (u64)stbuf->st_ino |
 				   ((u64)stbuf->st_dev << (sizeof(ino_t) * 8));
 	/* Set timestamps */
 	dentry->creation_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
@@ -522,7 +522,7 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	printf("Last Write Time   = %s UTC\n", p);
 
 	printf("Reparse Tag       = 0x%"PRIx32"\n", dentry->reparse_tag);
-	printf("Hard Link Group   = 0x%"PRIx64"\n", dentry->hard_link);
+	printf("Hard Link Group   = 0x%"PRIx64"\n", dentry->link_group_id);
 	printf("Number of Alternate Data Streams = %hu\n", dentry->num_ads);
 	printf("Filename          = \"");
 	print_string(dentry->file_name, dentry->file_name_len);
@@ -1136,7 +1136,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		p += 4;
 	} else {
 		p = get_u32(p, &dentry->reparse_tag);
-		p = get_u64(p, &dentry->hard_link);
+		p = get_u64(p, &dentry->link_group_id);
 	}
 
 	/* By the way, the reparse_reserved field does not actually exist (at
@@ -1392,13 +1392,13 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 		p = put_u32(p, dentry->reparse_tag);
 		p = put_zeroes(p, 4);
 	} else {
-		u64 hard_link;
+		u64 link_group_id;
 		p = put_u32(p, 0);
 		if (dentry->link_group_list.next == &dentry->link_group_list)
-			hard_link = 0;
+			link_group_id = 0;
 		else
-			hard_link = dentry->hard_link;
-		p = put_u64(p, hard_link);
+			link_group_id = dentry->link_group_id;
+		p = put_u64(p, link_group_id);
 	}
 	p = put_u16(p, dentry->num_ads);
 	p = put_u16(p, dentry->short_name_len);

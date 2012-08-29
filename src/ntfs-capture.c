@@ -466,7 +466,7 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	root->last_access_time = le64_to_cpu(ni->last_access_time);
 	root->security_id      = le32_to_cpu(ni->security_id);
 	root->attributes       = le32_to_cpu(attributes);
-	root->hard_link        = ni->mft_no;
+	root->link_group_id    = ni->mft_no;
 	root->resolved         = true;
 
 	if (attributes & FILE_ATTR_REPARSE_POINT) {
