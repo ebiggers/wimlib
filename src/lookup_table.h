@@ -27,13 +27,11 @@ struct lookup_table {
 struct wimlib_fd;
 
 #ifdef WITH_NTFS_3G
-typedef struct _ntfs_attr ntfs_attr;
-typedef struct _ntfs_volume ntfs_volume;
 struct ntfs_location {
 	char *path_utf8;
 	char *stream_name_utf16;
 	u16 stream_name_utf16_num_chars;
-	ntfs_volume **ntfs_vol_p;
+	struct _ntfs_volume **ntfs_vol_p;
 	bool is_reparse_point;
 };
 #endif
@@ -105,7 +103,7 @@ struct lookup_table_entry {
 		struct lookup_table_entry *next_lte_in_swm;
 		FILE *file_on_disk_fp;
 	#ifdef WITH_NTFS_3G
-		ntfs_attr *attr;
+		struct _ntfs_attr *attr;
 	#endif
 	};
 #ifdef WITH_FUSE
