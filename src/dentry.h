@@ -10,7 +10,7 @@
 
 struct stat;
 struct lookup_table;
-typedef struct WIMStruct WIMStruct;
+struct WIMStruct;
 
 /* Size of the struct dentry up to and including the file_name_len. */
 #define WIM_DENTRY_DISK_SIZE    102
@@ -341,8 +341,8 @@ extern void link_dentry(struct dentry *dentry, struct dentry *parent);
 extern int print_dentry(struct dentry *dentry, void *lookup_table);
 extern int print_dentry_full_path(struct dentry *entry, void *ignore);
 
-extern struct dentry *get_dentry(WIMStruct *w, const char *path);
-extern struct dentry *get_parent_dentry(WIMStruct *w, const char *path);
+extern struct dentry *get_dentry(struct WIMStruct *w, const char *path);
+extern struct dentry *get_parent_dentry(struct WIMStruct *w, const char *path);
 extern struct dentry *get_dentry_child_with_name(const struct dentry *dentry, 
 							const char *name);
 extern void dentry_update_all_timestamps(struct dentry *dentry);
