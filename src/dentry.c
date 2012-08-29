@@ -1219,9 +1219,9 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		 * 	u64 reserved1; (always 0)
 		 * 	u64 reserved2; (always 0)
 		 * };*/
-		WARNING("Dentry for file or directory `%s' has %zu extra "
-			"bytes of data",
-			file_name_utf8, dentry->length - calculated_size);
+		DEBUG("Dentry for file or directory `%s' has %zu extra "
+		      "bytes of data",
+		      file_name_utf8, dentry->length - calculated_size);
 	}
 
 	/* Read the short filename if present.  Note: if there is no short

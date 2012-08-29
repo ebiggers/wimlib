@@ -340,7 +340,7 @@ static bool dentries_consistent(const struct dentry * restrict ref_dentry,
 static void
 print_dentry_list(const struct dentry *first_dentry)
 {
-	const struct dentry *dentry;
+	const struct dentry *dentry = first_dentry;
 	do {
 		printf("`%s'\n", dentry->full_path_utf8);
 	} while ((dentry = container_of(dentry->link_group_list.next,
@@ -404,8 +404,8 @@ fix_true_link_group(struct dentry *first_dentry)
  * the same hard link group ID.
  *
  * If dentries in the group are found to be inconsistent, we may split the group
- * into several groups.  @new_groups points to a linked list of these "extra"
- * groups, and if we create any, they will be added to this list.
+ * into several "true" hard link groups.  @new_groups points to a linked list of
+ * these split groups, and if we create any, they will be added to this list.
  *
  * After splitting up each nominal link group into the "true" link groups we
  * will canonicalize the link groups.  To do this, we:
@@ -472,7 +472,11 @@ fix_nominal_link_group(struct link_group *group,
 	 * link group to be a true link group */
 	if (list_empty(&dentries_with_data_streams)) {
 	#ifdef ENABLE_DEBUG
-
+		DEBUG("Found link group of size %zu without any data streams:",
+		      dentry_link_group_size(dentry));
+		print_dentry_list(dentry);
+		DEBUG("We are going to interpret it as true link group, provided "
+		      "that the dentries are consistent.");
 	#endif
 		return fix_true_link_group(container_of(group->dentry_list,
 							struct dentry,
@@ -521,16 +525,30 @@ next_dentry_2:
 			ERROR("group to assign them to.");
 			return WIMLIB_ERR_INVALID_DENTRY;
 		}
+		/* Assign the streamless dentries to the one and only true link
+		 * group. */
 		ref_dentry = container_of(true_link_groups.next,
 					  struct dentry,
 					  tmp_list);
-                list_splice(&dentries_with_no_data_streams,
-                            &ref_dentry->link_group_list);
+		list_for_each_entry(dentry, &dentries_with_no_data_streams, tmp_list)
+			list_add(&dentry->link_group_list, &ref_dentry->link_group_list);
 	}
         if (num_true_link_groups != 1) {
-                WARNING("Split nominal link group 0x%"PRIx64" into %zu "
-                        "link groups",
-                        group->link_group_id, num_true_link_groups);
+		#ifdef ENABLE_DEBUG
+		{
+			printf("Split nominal link group 0x%"PRIx64" into %zu "
+			       "link groups:\n",
+			       group->link_group_id, num_true_link_groups);
+			puts("------------------------------------------------------------------------------");
+			size_t i = 1;
+			list_for_each_entry(dentry, &true_link_groups, tmp_list) {
+				printf("[Split link group %zu]\n", i++);
+				print_dentry_list(dentry);
+				putchar('\n');
+			}
+			puts("------------------------------------------------------------------------------");
+		}
+		#endif
         }
 
 	list_for_each_entry(dentry, &true_link_groups, tmp_list) {
@@ -560,15 +578,17 @@ next_dentry_2:
 
 /*
  * Goes through each link group and shares the ads_entries (Alternate Data
- * Stream entries) field of each dentry between members of a hard link group.
+ * Stream entries) field of each dentry among members of a hard link group.
  *
  * In the process, the dentries in each link group are checked for consistency.
  * If they contain data features that indicate they cannot really be in the same
  * hard link group, this should be an error, but in reality this case needs to
  * be handled, so we split the dentries into different hard link groups.
  *
- * One of the dentries in the group is arbitrarily assigned the role of "owner"
- * (ADS_ENTRIES_OWNER), while the others are "users" (ADS_ENTRIES_USER).
+ * One of the dentries in each hard link group group is arbitrarily assigned the
+ * role of "owner" of the memory pointed to by the @ads_entries field,
+ * (ADS_ENTRIES_OWNER), while the others are "users" (ADS_ENTRIES_USER) who are
+ * not allowed to free the memory.
  */
 int fix_link_groups(struct link_group_table *table)
 {

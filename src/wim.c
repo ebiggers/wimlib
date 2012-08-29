@@ -65,8 +65,6 @@ int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
 	int i;
 	int end;
 
-	DEBUG("for_image(w = %p, image = %d, visitor = %p)", w, image, visitor);
-
 	if (image == WIM_ALL_IMAGES) {
 		i = 1;
 		end = w->hdr.image_count;
@@ -330,6 +328,10 @@ WIMLIBAPI void wimlib_print_available_images(const WIMStruct *w, int image)
  * not WIM_NO_IMAGE. */
 WIMLIBAPI int wimlib_print_metadata(WIMStruct *w, int image)
 {
+	if (image == WIM_ALL_IMAGES)
+		DEBUG("Printing metadata for all images");
+	else
+		DEBUG("Printing metadata for image %d", image);
 	return for_image(w, image, print_metadata);
 }
 
