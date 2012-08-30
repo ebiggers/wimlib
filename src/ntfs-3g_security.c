@@ -26,23 +26,17 @@
 #include "config.h"
 #endif
 
+#ifdef ENABLE_XATTR
+#define HAVE_SETXATTR
+#endif
+
 #include <stdarg.h>
 
-/*#ifdef HAVE_STDIO_H*/
 #include <stdio.h>
-/*#endif*/
-#ifdef HAVE_STDLIB_H
 #include <stdlib.h>
-#endif
-#ifdef HAVE_STRING_H
 #include <string.h>
-#endif
-/*#ifdef HAVE_ERRNO_H*/
 #include <errno.h>
-/*#endif*/
-/*#ifdef HAVE_FCNTL_H*/
 #include <fcntl.h>
-/*#endif*/
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
 #endif
