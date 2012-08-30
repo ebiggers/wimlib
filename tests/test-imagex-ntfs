@@ -1,0 +1,126 @@
+#!/bin/bash
+
+# This script does some sanity testing of the 'imagex' program, specifically
+# checking the NTFS capture and apply features.
+#
+# This test will fail if wimlib was compiled with --without-ntfs-3g.
+
+# Assume an in-tree build.
+set -e
+cd tests
+
+imagex() {
+	echo "imagex $@"
+	../imagex $@ > /dev/null
+}
+
+do_unmount() {
+	if mountpoint $1 &> /dev/null; then
+		if !  fusermount -u $1; then
+			error "Failed to unmount \"$1\""
+		fi
+	fi
+}
+
+do_mkntfs() {
+	if ! mkntfs --force $1 &> /dev/null; then
+		error "Could not create NTFS volume on \"$1\".  Make sure ntfs-3g / ntfsprogs are installed"
+	fi
+}
+
+init() {
+	echo "Creating NTFS volumes and empty directories to use as mountpoints"
+	dd if=/dev/zero of=in.ntfs bs=4096 count=1000 &> /dev/null
+	dd if=/dev/zero of=out.ntfs bs=4096 count=1000 &> /dev/null
+	mkdir in.mnt out.mnt
+	do_mkntfs in.ntfs
+	do_mkntfs out.ntfs
+}
+
+cleanup() {
+	do_unmount in.mnt
+	do_unmount out.mnt
+	rm -rf in.ntfs out.ntfs in.mnt out.mnt in.xattr out.xattr
+}
+#trap cleanup exit
+
+
+error() {
+	echo "****************************************************************"
+	echo "                         Test failure                           "
+	echo $*
+	echo "****************************************************************"
+	exit 1
+}
+
+do_capture() {
+	if ! imagex capture in.ntfs ntfs.wim; then
+		error "Failed to capture NTFS volume into a WIM"
+	fi
+}
+
+do_apply() {
+	do_unmount out.ntfs
+	do_mkntfs out.ntfs
+	if ! imagex apply ntfs.wim 1 out.ntfs; then
+		error "Failed to apply WIM to NTFS volume"
+	fi
+	echo "do_apply"
+}
+
+cmp_xattrs() {
+	infile=$1
+	outfile=$2
+	xattr=$3
+	#echo "Comparing xattr $xattr of $infile and $outfile"
+	if test "$xattr" = "system.ntfs_times"; then
+		headnum=24
+	else
+		headnum=1000000000
+	fi
+	if eval getfattr --only-values -d -n $xattr $infile 2>/dev/null\
+					| head -c $headnum > in.xattr; then
+		if eval getfattr --only-values -d -n $xattr $outfile 2>/dev/null\
+					| head -c $headnum > out.xattr; then
+			if ! cmp in.xattr out.xattr; then
+				error "Extended attribute $xattr of $infile and $outfile differs"
+			fi
+		else
+			error "$infile has extended attribute $xattr, but $outfile doesn't"
+		fi
+	else
+		if eval getfattr --only-values -d -n $xattr $outfile 2>/dev/null\
+					| head -c $headnum > out.xattr; then
+			error "$outfile has extended attribute $xattr, but $infile doesn't"
+		fi
+	fi
+}
+
+do_capture_and_apply() {
+	do_unmount in.mnt
+	do_unmount out.mnt
+	do_capture
+	if ! ntfs-3g -o ro in.ntfs in.mnt || ! ntfs-3g -o ro out.ntfs out.mnt; then
+		error "Could not mount NTFS volume.  Make sure ntfs-3g is installed"
+	fi
+	if ! diff -r in.mnt out.mnt; then
+		error "Recursive diff of original NTFS volume with applied NTFS volume failed"
+	fi
+	for infile in `find in.mnt`; do
+		outfile=out.mnt${infile##in.mnt}
+		echo "Comparing xattrs of $infile and $outfile"
+		cmp_xattrs $infile $outfile system.ntfs_attrib
+		cmp_xattrs $infile $outfile system.ntfs_reparse_data
+		cmp_xattrs $infile $outfile system.ntfs_acl
+		cmp_xattrs $infile $outfile system.ntfs_dos_name
+		cmp_xattrs $infile $outfile system.ntfs_times
+	done
+}
+
+cleanup
+init
+
+echo "Testing capture and apply of empty NTFS volume"
+do_capture_and_apply
+
+

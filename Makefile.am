@@ -122,6 +122,6 @@ man1_MANS =			\
 
 $(man1_MANS): config.status
 
-dist_check_SCRIPTS = tests/test-imagex
+dist_check_SCRIPTS = tests/test-imagex tests/test-imagex-ntfs
 TESTS = $(dist_check_SCRIPTS)
 
