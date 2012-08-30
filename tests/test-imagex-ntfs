@@ -10,7 +10,7 @@ set -e
 cd tests
 
 imagex() {
-	echo "imagex $@"
+	#echo "imagex $@"
 	../imagex $@ > /dev/null
 }
 
@@ -22,8 +22,16 @@ do_unmount() {
 	fi
 }
 
+do_mount() {
+	do_unmount $2
+	options="$3"
+	if ! ntfs-3g ${options:+-o $options} $1 $2; then
+		error "Could not mount NTFS volume \"$1\" on \"$2\".  Make sure ntfs-3g is installed."
+	fi
+}
+
 do_mkntfs() {
-	if ! mkntfs --force $1 &> /dev/null; then
+	if ! mkntfs --force --fast $1 &> /dev/null; then
 		error "Could not create NTFS volume on \"$1\".  Make sure ntfs-3g / ntfsprogs are installed"
 	fi
 }
@@ -54,18 +62,18 @@ error() {
 }
 
 do_capture() {
+	do_unmount in.mnt
 	if ! imagex capture in.ntfs ntfs.wim; then
 		error "Failed to capture NTFS volume into a WIM"
 	fi
 }
 
 do_apply() {
-	do_unmount out.ntfs
+	do_unmount out.mnt
 	do_mkntfs out.ntfs
 	if ! imagex apply ntfs.wim 1 out.ntfs; then
 		error "Failed to apply WIM to NTFS volume"
 	fi
-	echo "do_apply"
 }
 
 cmp_xattrs() {
@@ -78,9 +86,9 @@ cmp_xattrs() {
 	else
 		headnum=1000000000
 	fi
-	if eval getfattr --only-values -d -n $xattr $infile 2>/dev/null\
+	if eval getfattr --only-values -h -d -n $xattr $infile 2>/dev/null\
 					| head -c $headnum > in.xattr; then
-		if eval getfattr --only-values -d -n $xattr $outfile 2>/dev/null\
+		if eval getfattr --only-values -h -d -n $xattr $outfile 2>/dev/null\
 					| head -c $headnum > out.xattr; then
 			if ! cmp in.xattr out.xattr; then
 				error "Extended attribute $xattr of $infile and $outfile differs"
@@ -89,26 +97,31 @@ cmp_xattrs() {
 			error "$infile has extended attribute $xattr, but $outfile doesn't"
 		fi
 	else
-		if eval getfattr --only-values -d -n $xattr $outfile 2>/dev/null\
+		if eval getfattr --only-values -h -d -n $xattr $outfile 2>/dev/null\
 					| head -c $headnum > out.xattr; then
 			error "$outfile has extended attribute $xattr, but $infile doesn't"
 		fi
 	fi
 }
 
+# Captures in.ntfs, applies it to out.ntfs, and diffs the result including
+# extended attributes
 do_capture_and_apply() {
-	do_unmount in.mnt
-	do_unmount out.mnt
 	do_capture
-	if ! ntfs-3g -o ro in.ntfs in.mnt || ! ntfs-3g -o ro out.ntfs out.mnt; then
-		error "Could not mount NTFS volume.  Make sure ntfs-3g is installed"
-	fi
-	if ! diff -r in.mnt out.mnt; then
-		error "Recursive diff of original NTFS volume with applied NTFS volume failed"
-	fi
+	do_apply
+	do_mount in.ntfs in.mnt ro
+	do_mount out.ntfs out.mnt ro
+	#if ! diff -r in.mnt out.mnt; then
+		#error "Recursive diff of original NTFS volume with applied NTFS volume failed"
+	#fi
 	for infile in `find in.mnt`; do
 		outfile=out.mnt${infile##in.mnt}
-		echo "Comparing xattrs of $infile and $outfile"
+		#echo "Comparing xattrs of $infile and $outfile"
+		if [ ! -L $infile -a ! -d $infile ]; then
+			if ! cmp $infile $outfile; then
+				error "Contents of $infile and $outfile differed"
+			fi
+		fi
 		cmp_xattrs $infile $outfile system.ntfs_attrib
 		cmp_xattrs $infile $outfile system.ntfs_reparse_data
 		cmp_xattrs $infile $outfile system.ntfs_acl
@@ -117,10 +130,60 @@ do_capture_and_apply() {
 	done
 }
 
+build_ntfs() {
+	do_unmount in.mnt
+	do_mkntfs in.ntfs
+	do_mount in.ntfs in.mnt
+	( cd in.mnt; eval "$1" )
+}
+
+do_test() {
+	build_ntfs "$1"
+	do_capture_and_apply
+}
+msg() {
+	echo "Testing image capture and application of $1"
+}
+
 cleanup
 init
 
-echo "Testing capture and apply of empty NTFS volume"
+msg "Empty NTFS volume"
 do_capture_and_apply
 
+msg "NTFS volume containing a single file"
+do_test "echo 1 > file"
+
+msg "NTFS volume containing a single directory"
+do_test "mkdir dir"
+
+msg "NTFS volume containing subdirectory with file"
+do_test "mkdir dir; echo 1 > dir/file"
+
+msg "NTFS volume containing empty file"
+do_test "echo -n > empty_file"
+
+msg "NTFS volume containing two empty files"
+do_test "echo -n > empty_file_1; echo -n > empty_file_2"
+
+msg "NTFS volume containing hard link in same directory"
+do_test "echo 1 > file; ln file link"
+
+msg "NTFS volume containing hard link between empty files"
+do_test "echo -n > empty_file; ln empty_file link"
+
+msg "NTFS volume containing relative symbolic link"
+do_test "echo 1 > file; ln -s file symlink"
+
+msg "NTFS volume containing absolute symbolic link"
+do_test "echo 1 > file; ln -s /some/absolute/target symlink"
+
+msg "NTFS volume containing large file"
+do_test "dd if=/dev/zero of=file bs=4096 count=10 &> /dev/null"
+
+msg "NTFS volume containing file with DOS name"
+do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file"
+
+msg "NTFS volume containing file with DOS name with hardlink in same directory"
+do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file; ln file link"
 
