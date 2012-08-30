@@ -43,10 +43,12 @@
 #include <unistd.h>
 #include <errno.h>
 
-extern int ntfs_inode_get_security(ntfs_inode *ni, u32 selection, char *buf,
+#ifndef WITH_NEW_NTFS_3G
+extern int ntfs_get_inode_security(ntfs_inode *ni, u32 selection, char *buf,
 				   u32 buflen, u32 *psize);
 
-extern int ntfs_inode_get_attributes(ntfs_inode *ni);
+extern u32 ntfs_get_inode_attributes(ntfs_inode *ni);
+#endif
 
 /* Structure that allows searching the security descriptors by SHA1 message
  * digest. */
@@ -489,7 +491,7 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	struct dentry *root;
 
 	mrec_flags = ni->mrec->flags;
- 	attributes = ntfs_inode_get_attributes(ni);
+ 	attributes = ntfs_get_inode_attributes(ni);
 
 	if (exclude_path(path, config, false)) {
 		if (flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE) {
@@ -554,14 +556,14 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	if (ret != 0)
 		return ret;
 
-	ret = ntfs_inode_get_security(ni,
+	ret = ntfs_get_inode_security(ni,
 				      OWNER_SECURITY_INFORMATION |
 				      GROUP_SECURITY_INFORMATION |
 				      DACL_SECURITY_INFORMATION  |
 				      SACL_SECURITY_INFORMATION,
 				      NULL, 0, &sd_size);
 	char sd[sd_size];
-	ret = ntfs_inode_get_security(ni,
+	ret = ntfs_get_inode_security(ni,
 				      OWNER_SECURITY_INFORMATION |
 				      GROUP_SECURITY_INFORMATION |
 				      DACL_SECURITY_INFORMATION  |

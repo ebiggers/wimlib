@@ -22,29 +22,33 @@
  * Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#include "util.h"
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
+#include <stdarg.h>
+
+/*#ifdef HAVE_STDIO_H*/
 #include <stdio.h>
+/*#endif*/
 #ifdef HAVE_STDLIB_H
 #include <stdlib.h>
 #endif
 #ifdef HAVE_STRING_H
 #include <string.h>
 #endif
+/*#ifdef HAVE_ERRNO_H*/
 #include <errno.h>
+/*#endif*/
+/*#ifdef HAVE_FCNTL_H*/
 #include <fcntl.h>
+/*#endif*/
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
 #endif
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
-
-#include <stdarg.h>
 
 #include <unistd.h>
 #include <pwd.h>
@@ -4126,6 +4130,77 @@ int ntfs_get_ntfs_attrib(ntfs_inode *ni, char *value, size_t size)
 }
 
 /*
+ *		Get the ntfs attributes from an inode
+ *	The attributes are returned according to cpu endianness
+ *
+ *	Returns the attributes if successful (cannot be zero)
+ *		0 if failed (errno to tell why)
+ */
+
+u32 ntfs_get_inode_attributes(ntfs_inode *ni)
+{
+	u32 attrib = -1;
+
+	if (ni) {
+		attrib = le32_to_cpu(ni->flags);
+		if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY)
+			attrib |= const_le32_to_cpu(FILE_ATTR_DIRECTORY);
+		else
+			attrib &= ~const_le32_to_cpu(FILE_ATTR_DIRECTORY);
+		if (!attrib)
+			attrib |= const_le32_to_cpu(FILE_ATTR_NORMAL);
+	} else
+		errno = EINVAL;
+	return (attrib);
+}
+
+/*
+ *		Set the ntfs attributes on an inode
+ *	The attribute is expected according to cpu endianness
+ *
+ *	Returns 0 if successful
+ *		-1 if failed (errno to tell why)
+ */
+
+int ntfs_set_inode_attributes(ntfs_inode *ni, u32 attrib)
+{
+	le32 settable;
+	ATTR_FLAGS dirflags;
+	int res;
+
+	res = -1;
+	if (ni) {
+		settable = FILE_ATTR_SETTABLE;
+		res = 0;
+		if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY) {
+			/*
+			 * Accept changing compression for a directory
+			 * and set index root accordingly
+			 */
+			settable |= FILE_ATTR_COMPRESSED;
+			if ((ni->flags ^ cpu_to_le32(attrib))
+			             & FILE_ATTR_COMPRESSED) {
+				if (ni->flags & FILE_ATTR_COMPRESSED)
+					dirflags = const_cpu_to_le16(0);
+				else
+					dirflags = ATTR_IS_COMPRESSED;
+				res = ntfs_attr_set_flags(ni, AT_INDEX_ROOT,
+				        NTFS_INDEX_I30, 4, dirflags,
+					ATTR_COMPRESSION_MASK);
+			}
+		}
+		if (!res) {
+			ni->flags = (ni->flags & ~settable)
+				 | (cpu_to_le32(attrib) & settable);
+			NInoFileNameSetDirty(ni);
+			NInoSetDirty(ni);
+		}
+	} else
+		errno = EINVAL;
+	return (res);
+}
+
+/*
  *		Return the ntfs attribute into an extended attribute
  *	The attribute is expected according to cpu endianness
  *
@@ -4136,8 +4211,6 @@ int ntfs_set_ntfs_attrib(ntfs_inode *ni,
 			const char *value, size_t size,	int flags)
 {
 	u32 attrib;
-	le32 settable;
-	ATTR_FLAGS dirflags;
 	int res;
 
 	res = -1;
@@ -4145,33 +4218,7 @@ int ntfs_set_ntfs_attrib(ntfs_inode *ni,
 		if (!(flags & XATTR_CREATE)) {
 			/* copy to avoid alignment problems */
 			memcpy(&attrib,value,sizeof(FILE_ATTR_FLAGS));
-			settable = FILE_ATTR_SETTABLE;
-			res = 0;
-			if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY) {
-				/*
-				 * Accept changing compression for a directory
-				 * and set index root accordingly
-				 */
-				settable |= FILE_ATTR_COMPRESSED;
-				if ((ni->flags ^ cpu_to_le32(attrib))
-				             & FILE_ATTR_COMPRESSED) {
-					if (ni->flags & FILE_ATTR_COMPRESSED)
-						dirflags = const_cpu_to_le16(0);
-					else
-						dirflags = ATTR_IS_COMPRESSED;
-					res = ntfs_attr_set_flags(ni,
-						AT_INDEX_ROOT,
-					        NTFS_INDEX_I30, 4,
-						dirflags,
-						ATTR_COMPRESSION_MASK);
-				}
-			}
-			if (!res) {
-				ni->flags = (ni->flags & ~settable)
-					 | (cpu_to_le32(attrib) & settable);
-				NInoFileNameSetDirty(ni);
-				NInoSetDirty(ni);
-			}
+			res = ntfs_set_inode_attributes(ni, attrib);
 		} else
 			errno = EEXIST;
 	} else
@@ -4554,7 +4601,69 @@ static BOOL mergesecurityattr(ntfs_volume *vol, const char *oldattr,
 	return (ok);
 }
 
-#if 0
+int ntfs_get_inode_security(ntfs_inode *ni, u32 selection,
+			    char *buf, u32 buflen, u32 *psize)
+{
+	int res;
+	char *attr;
+
+	res = 0;
+	if (ni) {
+		attr = getsecurityattr(ni->vol, ni);
+		if (attr) {
+			if (feedsecurityattr(attr, selection,
+					buf, buflen, psize)) {
+				if (test_nino_flag(ni, v3_Extensions)
+				    && ni->security_id)
+					res = le32_to_cpu(
+						ni->security_id);
+				else
+					res = -1;
+			}
+			free(attr);
+		}
+	} else
+		errno = EINVAL;
+	return (res);
+}
+
+int ntfs_set_inode_security(ntfs_inode *ni, u32 selection, const char *attr)
+{
+	const SECURITY_DESCRIPTOR_RELATIVE *phead;
+	int attrsz;
+	BOOL missing;
+	char *oldattr;
+	int res;
+
+	res = -1; /* default return */
+	if (ni) {
+		phead = (const SECURITY_DESCRIPTOR_RELATIVE*)attr;
+		attrsz = ntfs_attr_size(attr);
+		/* if selected, owner and group must be present or defaulted */
+		missing = ((selection & OWNER_SECURITY_INFORMATION)
+				&& !phead->owner
+				&& !(phead->control & SE_OWNER_DEFAULTED))
+			|| ((selection & GROUP_SECURITY_INFORMATION)
+				&& !phead->group
+				&& !(phead->control & SE_GROUP_DEFAULTED));
+		if (!missing
+		    && (phead->control & SE_SELF_RELATIVE)
+		    && ntfs_valid_descr(attr, attrsz)) {
+			oldattr = getsecurityattr(ni->vol, ni);
+			if (oldattr) {
+				if (mergesecurityattr(ni->vol, oldattr, attr,
+							selection, ni)) {
+					res = 0;
+				}
+				free(oldattr);
+			}
+		} else
+			errno = EINVAL;
+	} else
+		errno = EINVAL;
+	return (res);
+}
+
 /*
  *		Return the security descriptor of a file
  *	This is intended to be similar to GetFileSecurity() from Win32
@@ -4680,197 +4789,8 @@ int ntfs_set_file_security(struct SECURITY_API *scapi,
 		errno = EINVAL;
 	return (res);
 }
-#endif
-
-int ntfs_inode_get_security(ntfs_inode *ni, u32 selection, char *buf,
-			    u32 buflen, u32 *psize)
-{
-	char *attr;
-	int res = 0;
-
-	attr = getsecurityattr(ni->vol, ni);
-	if (attr) {
-		if (feedsecurityattr(attr,selection,
-				buf,buflen,psize)) {
-			if (test_nino_flag(ni, v3_Extensions)
-			    && ni->security_id)
-				res = le32_to_cpu(
-					ni->security_id);
-			else
-				res = -1;
-		}
-		free(attr);
-	}
-	return (res);
-}
-/*
- *		Check the validity of the ACEs in a DACL or SACL
- */
-
-static BOOL valid_acl(const ACL *pacl, unsigned int end)
-{
-	const ACCESS_ALLOWED_ACE *pace;
-	unsigned int offace;
-	unsigned int acecnt;
-	unsigned int acesz;
-	unsigned int nace;
-	BOOL ok;
-
-	ok = TRUE;
-	acecnt = le16_to_cpu(pacl->ace_count);
-	offace = sizeof(ACL);
-	for (nace = 0; (nace < acecnt) && ok; nace++) {
-		/* be sure the beginning is within range */
-		if ((offace + sizeof(ACCESS_ALLOWED_ACE)) > end)
-			ok = FALSE;
-		else {
-			pace = (const ACCESS_ALLOWED_ACE*)
-				&((const char*)pacl)[offace];
-			acesz = le16_to_cpu(pace->size);
-			if (((offace + acesz) > end)
-			   || !ntfs_valid_sid(&pace->sid)
-			   || ((ntfs_sid_size(&pace->sid) + 8) != (int)acesz))
-				 ok = FALSE;
-			offace += acesz;
-		}
-	}
-	return (ok);
-}
-
-/*
- *		Do sanity checks on security descriptors read from storage
- *	basically, we make sure that every field holds within
- *	allocated storage
- *	Should not be called with a NULL argument
- *	returns TRUE if considered safe
- *		if not, error should be logged by caller
- */
-static BOOL _ntfs_valid_descr(const char *securattr, unsigned int attrsz)
-{
-	const SECURITY_DESCRIPTOR_RELATIVE *phead;
-	const ACL *pdacl;
-	const ACL *psacl;
-	unsigned int offdacl;
-	unsigned int offsacl;
-	unsigned int offowner;
-	unsigned int offgroup;
-	BOOL ok;
-
-	ok = TRUE;
-
-	/*
-	 * first check overall size if within allocation range
-	 * and a DACL is present
-	 * and owner and group SID are valid
-	 */
-
-	phead = (const SECURITY_DESCRIPTOR_RELATIVE*)securattr;
-	offdacl = le32_to_cpu(phead->dacl);
-	offsacl = le32_to_cpu(phead->sacl);
-	offowner = le32_to_cpu(phead->owner);
-	offgroup = le32_to_cpu(phead->group);
-	pdacl = (const ACL*)&securattr[offdacl];
-	psacl = (const ACL*)&securattr[offsacl];
-
-		/*
-		 * size check occurs before the above pointers are used
-		 *
-		 * "DR Watson" standard directory on WinXP has an
-		 * old revision and no DACL though SE_DACL_PRESENT is set
-		 */
-	if ((attrsz >= sizeof(SECURITY_DESCRIPTOR_RELATIVE))
-		&& (phead->revision == SECURITY_DESCRIPTOR_REVISION)
-		&& (offowner >= sizeof(SECURITY_DESCRIPTOR_RELATIVE))
-		&& ((offowner + 2) < attrsz)
-		&& (offgroup >= sizeof(SECURITY_DESCRIPTOR_RELATIVE))
-		&& ((offgroup + 2) < attrsz)
-		&& (!offdacl
-			|| ((offdacl >= sizeof(SECURITY_DESCRIPTOR_RELATIVE))
-			    && (offdacl+sizeof(ACL) <= attrsz)))
-		&& (!offsacl
-			|| ((offsacl >= sizeof(SECURITY_DESCRIPTOR_RELATIVE))
-			    && (offsacl+sizeof(ACL) <= attrsz)))
-		&& !(phead->owner & const_cpu_to_le32(3))
-		&& !(phead->group & const_cpu_to_le32(3))
-		&& !(phead->dacl & const_cpu_to_le32(3))
-		&& !(phead->sacl & const_cpu_to_le32(3))
-		&& (ntfs_attr_size(securattr) <= attrsz)
-		&& ntfs_valid_sid((const SID*)&securattr[offowner])
-		&& ntfs_valid_sid((const SID*)&securattr[offgroup])
-			/*
-			 * if there is an ACL, as indicated by offdacl,
-			 * require SE_DACL_PRESENT
-			 * but "Dr Watson" has SE_DACL_PRESENT though no DACL
-			 */
-		&& (!offdacl
-		    || ((phead->control & SE_DACL_PRESENT)
-			&& ((pdacl->revision == ACL_REVISION)
-			   || (pdacl->revision == ACL_REVISION_DS))))
-			/* same for SACL */
-		&& (!offsacl
-		    || ((phead->control & SE_SACL_PRESENT)
-			&& ((psacl->revision == ACL_REVISION)
-			    || (psacl->revision == ACL_REVISION_DS))))) {
-			/*
-			 *  Check the DACL and SACL if present
-			 */
-		if ((offdacl && !valid_acl(pdacl,attrsz - offdacl))
-		   || (offsacl && !valid_acl(psacl,attrsz - offsacl)))
-			ok = FALSE;
-	} else {
-		ok = FALSE;
-	}
-	return (ok);
-}
-
-/* 
- * Set security data on a NTFS file given an inode
- *
- * Returns nonzero on success
- */
-int ntfs_inode_set_security(ntfs_inode *ni, u32 selection, const char *attr)
-{
-	const SECURITY_DESCRIPTOR_RELATIVE *phead;
-	int attrsz;
-	BOOL missing;
-	char *oldattr;
-	int res;
-
-	res = 0; /* default return */
-	phead = (const SECURITY_DESCRIPTOR_RELATIVE*)attr;
-	attrsz = ntfs_attr_size(attr);
-	/* if selected, owner and group must be present or defaulted */
-	missing = ((selection & OWNER_SECURITY_INFORMATION)
-			&& !phead->owner
-			&& !(phead->control & SE_OWNER_DEFAULTED))
-		|| ((selection & GROUP_SECURITY_INFORMATION)
-			&& !phead->group
-			&& !(phead->control & SE_GROUP_DEFAULTED));
-	if (!missing
-	    && (phead->control & SE_SELF_RELATIVE)
-	    && _ntfs_valid_descr(attr, attrsz)) {
-		oldattr = getsecurityattr(ni->vol, ni);
-		if (oldattr) {
-			if (mergesecurityattr(
-				ni->vol,
-				oldattr, attr,
-				selection, ni)) {
-				if (test_nino_flag(ni,
-					    v3_Extensions))
-					res = le32_to_cpu(
-					    ni->security_id);
-				else
-					res = -1;
-			}
-			free(oldattr);
-		}
-	} else
-		errno = EINVAL;
-	return (res);
-}
 
 
-#if 0
 /*
  *		Return the attributes of a file
  *	This is intended to be similar to GetFileAttributes() from Win32
@@ -4894,14 +4814,7 @@ int ntfs_get_file_attributes(struct SECURITY_API *scapi, const char *path)
 	if (scapi && (scapi->magic == MAGIC_API) && path) {
 		ni = ntfs_pathname_to_inode(scapi->security.vol, NULL, path);
 		if (ni) {
-			attrib = le32_to_cpu(ni->flags);
-			if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY)
-				attrib |= const_le32_to_cpu(FILE_ATTR_DIRECTORY);
-			else
-				attrib &= ~const_le32_to_cpu(FILE_ATTR_DIRECTORY);
-			if (!attrib)
-				attrib |= const_le32_to_cpu(FILE_ATTR_NORMAL);
-
+			attrib = ntfs_get_inode_attributes(ni);
 			ntfs_inode_close(ni);
 		} else
 			errno = ENOENT;
@@ -4933,105 +4846,24 @@ BOOL ntfs_set_file_attributes(struct SECURITY_API *scapi,
 		const char *path, s32 attrib)
 {
 	ntfs_inode *ni;
-	le32 settable;
-	ATTR_FLAGS dirflags;
 	int res;
 
 	res = 0; /* default return */
 	if (scapi && (scapi->magic == MAGIC_API) && path) {
 		ni = ntfs_pathname_to_inode(scapi->security.vol, NULL, path);
 		if (ni) {
-			settable = FILE_ATTR_SETTABLE;
-			if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY) {
-				/*
-				 * Accept changing compression for a directory
-				 * and set index root accordingly
-				 */
-				settable |= FILE_ATTR_COMPRESSED;
-				if ((ni->flags ^ cpu_to_le32(attrib))
-				             & FILE_ATTR_COMPRESSED) {
-					if (ni->flags & FILE_ATTR_COMPRESSED)
-						dirflags = const_cpu_to_le16(0);
-					else
-						dirflags = ATTR_IS_COMPRESSED;
-					res = ntfs_attr_set_flags(ni,
-						AT_INDEX_ROOT,
-					        NTFS_INDEX_I30, 4,
-						dirflags,
-						ATTR_COMPRESSION_MASK);
-				}
-			}
-			if (!res) {
-				ni->flags = (ni->flags & ~settable)
-					 | (cpu_to_le32(attrib) & settable);
-				NInoSetDirty(ni);
-				NInoFileNameSetDirty(ni);
-			}
-			if (!ntfs_inode_close(ni))
+			/* Win32 convention here : -1 means successful */
+			if (!ntfs_set_inode_attributes(ni, attrib))
 				res = -1;
+			if (ntfs_inode_close(ni))
+				res = 0;
 		} else
 			errno = ENOENT;
 	}
 	return (res);
 }
-#endif
-
-int ntfs_inode_get_attributes(ntfs_inode *ni)
-{
-	s32 attrib;
-
-	attrib = le32_to_cpu(ni->flags);
-	if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY)
-		attrib |= const_le32_to_cpu(FILE_ATTR_DIRECTORY);
-	else
-		attrib &= ~const_le32_to_cpu(FILE_ATTR_DIRECTORY);
-	if (!attrib)
-		attrib |= const_le32_to_cpu(FILE_ATTR_NORMAL);
-	return (attrib);
-}
-
-/* 
- * Set attributes of a NTFS file given an inode
- *
- * Returns nonzero on success
- */
-int ntfs_inode_set_attributes(ntfs_inode *ni, s32 attrib)
-{
-	le32 settable = FILE_ATTR_SETTABLE;
-	ATTR_FLAGS dirflags;
-	int ret = 0;
-
-	if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY) {
-		/*
-		 * Accept changing compression for a directory
-		 * and set index root accordingly
-		 */
-		settable |= FILE_ATTR_COMPRESSED;
-		if ((ni->flags ^ cpu_to_le32(attrib))
-			     & FILE_ATTR_COMPRESSED) {
-			if (ni->flags & FILE_ATTR_COMPRESSED)
-				dirflags = const_cpu_to_le16(0);
-			else
-				dirflags = ATTR_IS_COMPRESSED;
-			ret = ntfs_attr_set_flags(ni,
-				AT_INDEX_ROOT,
-				NTFS_INDEX_I30, 4,
-				dirflags,
-				ATTR_COMPRESSION_MASK);
-		}
-	}
-	if (ret == 0) {
-		ni->flags = (ni->flags & ~settable)
-			 | (cpu_to_le32(attrib) & settable);
-		NInoSetDirty(ni);
-		NInoFileNameSetDirty(ni);
-		ret = -1;
-	}
-	return ret;
-}
 
 
-#if 0
 BOOL ntfs_read_directory(struct SECURITY_API *scapi,
 		const char *path, ntfs_filldir_t callback, void *context)
 {
@@ -5335,4 +5167,3 @@ BOOL ntfs_leave_file_security(struct SECURITY_API *scapi)
 	return (ok);
 }
 
-#endif

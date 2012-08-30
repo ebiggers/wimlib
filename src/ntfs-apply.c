@@ -48,9 +48,12 @@ struct ntfs_apply_args {
 	WIMStruct *w;
 };
 
-extern int ntfs_inode_set_security(ntfs_inode *ni, u32 selection,
+
+#ifndef WITH_NEW_NTFS_3G
+extern int ntfs_set_inode_security(ntfs_inode *ni, u32 selection,
 				   const char *attr);
-extern int ntfs_inode_set_attributes(ntfs_inode *ni, s32 attrib);
+extern int ntfs_set_inode_attributes(ntfs_inode *ni, u32 attrib);
+#endif
 
 /* 
  * Extracts a WIM resource to a NTFS attribute.
@@ -239,7 +242,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 {
 	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
 	      dentry->full_path_utf8, dentry->attributes);
-	if (!ntfs_inode_set_attributes(ni, dentry->attributes)) {
+	if (ntfs_set_inode_attributes(ni, dentry->attributes)) {
 		ERROR("Failed to set NTFS file attributes on `%s'",
 		       dentry->full_path_utf8);
 		return WIMLIB_ERR_NTFS_3G;
@@ -257,8 +260,8 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 				DACL_SECURITY_INFORMATION  |
 				SACL_SECURITY_INFORMATION;
 				
-		if (!ntfs_inode_set_security(ni, selection,
-					     (const char*)sd->descriptors[dentry->security_id]))
+		if (ntfs_set_inode_security(ni, selection,
+					    (const char*)sd->descriptors[dentry->security_id]))
 		{
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
 					dentry->full_path_utf8);

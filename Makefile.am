@@ -54,7 +54,9 @@ libwim_la_SOURCES =		\
 	src/xpress.h
 
 if WITH_NTFS_3G
+if !WITH_NEW_NTFS_3G
 libwim_la_SOURCES += src/ntfs-3g_security.c
+endif
 endif
 
 
