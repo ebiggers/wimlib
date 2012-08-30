@@ -1,24 +1,46 @@
 				   WIMLIB                                    
 
-This is wimlib version 0.7.2 (May 2012).  wimlib can be used to read, write,
-and mount files in the Windows Imaging Format (WIM files).  These files are
-normally created by using the `imagex.exe' utility on Windows, but this library
-provides a free implementetion of imagex for UNIX-based systems.
+This is wimlib version 1.0.0 (September 2012).  wimlib can be used to read,
+write, and mount files in the Windows Imaging Format (WIM files).  These
+files are normally created by using the `imagex.exe' utility on Windows,
+but this library provides a free implementetion of imagex for UNIX-based
+systems.
 
-The main use of this library is to create customized images of Windows PE, the
+				   WINDOWS PE
+
+A major use for this library is to create customized images of Windows PE, the
 Windows Preinstallation Environment, without having to rely on Windows.  Windows
 PE is a lightweight version of Windows that can run entirely from memory and can
 be used to install Windows from local media or a network drive or perform
 maintenance.  Windows PE is the operating system that runs when you boot from
-the Windows DVD.
+the Windows installation media.
 
-You can find Windows PE on the ISO filesystem on the installation DVD for both
-Windows 7 and Windows 8.  I don't have a DVD for Vista but it should be on there
-too.  The Windows PE image is a WIM file, `sources/boot.wim', on the ISO
-filesystem.  Windows PE can also be found in the Windows Automated Installation
-Kit (WAIK), which is free to download from Microsoft, inside the `WinPE.cab'
-file, which you can extract if you install either the `cabextract' or `p7zip'
-programs.
+You can find Windows PE on the installation DVD for Windows Vista, Windows 7, or
+Windows 8, in the file `sources/boot.wim'.  Windows PE can also be found in the
+Windows Automated Installation Kit (WAIK), which is free to download from
+Microsoft, inside the `WinPE.cab' file, which you can extract if you install
+either the `cabextract' or `p7zip' programs.
+
+In addition, Windows installations and recovery partitions frequently contain a
+WIM containing an image of the Windows Recovery Environment, which is similar to
+Windows PE.
+
+				  NTFS SUPPORT
+
+As of version 1.0.0, wimlib supports capturing and applying images directly to
+NTFS volumes.  This was made possible with the help of libntfs-3g from the
+NTFS-3g project.  This feature supports capturing and restoring NTFS-specific
+data such as security descriptors, alternate data streams, and reparse point
+data.
+
+The code for NTFS image capture and image application is complete enough that it
+is possible to apply an image from the "install.wim" contained in recent Windows
+installation media (Vista, Windows 7, or Windows 8) directly to a NTFS volume,
+and then boot Windows from it after preparing the Boot Configuration Data.  In
+addition, a Windows installation can be captured (or backed up) into a WIM file,
+and then re-applied later.
+
+				    PROGRAMS
 
 wimlib provides a public API for other programs to use, but also comes with two
 programs: `imagex' and `mkwinpeimg'.  
@@ -32,19 +54,52 @@ details.
 image of Windows PE that can be put on a CD or USB drive, or published on a
 server for PXE booting.  See the main page `doc/mkwinpeiso.1' for more details.
 
-wimlib can also be used to handle larger WIM files such as the `install.wim'
-file that comes on the Windows DVD.  You may not, however, losslessly capture
-and apply Windows installations using wimlib because of issues with NTFS and
-Windows-specific information.
+				  DEPENDENCIES
 
-An earlier version of Wimlib is being used to deploy Windows 7 from the Ultimate
-Deployment Appliance.  For more information see
-http://www.ultimatedeployment.org/.  
+* libxml2
+	This is a commonly used free library to read and write XML files.  You
+	likely already have it installed as a dependency for some other program.
+	For more information see http://xmlsoft.org/.
+
+* libfuse
+	Unless configured with --without-fuse, wimlib requires a non-ancient
+	version of libfuse to be installed.  see above).  Most GNU/Linux
+	distributions already include this, but make sure you have the libfuse
+	package installed (libfuse-dev if your distribution distributes header
+	files separately).  FUSE also requires a kernel module.
+	If the kernel module is available it will automatically be loaded if you
+	try to mount a WIM file.  For more information see
+	http://fuse.sourceforge.net/.  FUSE is also available for FreeBSD.
+
+* libntfs-3g
+	Unless configured with --without-ntfs-3g, wimlib requires the library
+	and headers for libntfs-3g to be installed.  Currently, the version
+	dated 2012-1-15 is required because I've cloned some of the code from
+	the library.
+
+* cdrkit (optional)
+* mtools (optional)
+* syslinux (optional)
+* cabextract (optional)
+	The `mkwinpeimg' shell script will look for several other programs
+	depending on what options are given to it.  Depending on your GNU/Linux
+	distribution, you may already have these programs installed, or they may
+	be in the software repository.  Making an ISO filesystem requires
+	`mkisofs' from `cdrkit' (http://www.cdrkit.org).  Making a disk image
+	requires `mtools' (http://www.gnu.org/software/mtools) and `syslinux'
+	(http://www.syslinux.org).  Retrieving files from the Windows Automated
+	Installation Kit requires `cabextract' (http://www.cabextract.org.uk).
+
 
 				 CONFIGURATION
 
 Besides the various well-known options, the following options can be passed to
 wimlib's `configure' script:
+
+--without-ntfs-3g
+	If libntfs-3g is not available or is not the correct version, we can
+	build without it.  wimlib will then not be able to apply or capture
+	images directly to NTFS volumes.
 
 --without-fuse
 	If libfuse or the FUSE kernel module is not available, wimlib can be
@@ -56,6 +111,12 @@ wimlib's `configure' script:
 	Build in functions for SHA1 rather than using external SHA1 functions
 	from libcrypto (part of OpenSSL).  The default is to use libcrypto if it
 	is found on the system.
+
+--enable-xattr, --disable-xattr
+	Enable or disable support for the extended-attributes interface to NTFS
+	alternate data streams in mounted WIMs.  To support these, we require
+	the setxattr() function and the attr/xattr.h header be available.  The
+	default is to autodetect whether support is possible.
 
 --enable-ssse3-sha1
 	Use a very fast assembly language implementation of SHA1 from Intel.
@@ -71,12 +132,6 @@ wimlib's `configure' script:
 	it will decompress it into a temporary buffer and abort() the program
 	with an error message if the decompressed data does not exactly match
 	the original data.  This is to find bugs.
-
---disable-security-data
-	Wimlib cannot create or modify WIM security data, but by default it will
-	copy existing security data when modifying a WIM or exporting an image.
-	Passing this flag will disable this support; then wimlib will always
-	write WIMs without security data.
 
 --disable-error-messages
 	Removes all error messages from the library.  If left in, they still
@@ -101,36 +156,14 @@ wimlib's `configure' script:
 	Include more debugging messages.  Only use this option if you have found
 	a bug in the library.
 
-				  DEPENDENCIES
-
-Wimlib requires libxml2 to build.  This is a commonly used free library to read
-and write XML files.  You likely already have it installed as a dependency for
-some other program.  For more information see http://xmlsoft.org/.
-
-Wimlib also requires libfuse to build (unless configured with --without-fuse;
-see above).  Most GNU/Linux distributions already include this, but make sure
-you have the libfuse package installed (libfuse-dev if your distribution
-distributes header files separately).  FUSE also requires a kernel module.  If
-the kernel module is available it will automatically be loaded if you try to
-mount a WIM file.  For more information see http://fuse.sourceforge.net/.  FUSE
-is also available for FreeBSD.
-
-The `mkwinpeimg' shell script will look for several other programs depending on
-what options are given to it.  Depending on your GNU/Linux distribution, you may
-already have these programs installed, or they may be in the software
-repository.  Making an ISO filesystem requires `mkisofs' from `cdrkit'
-(http://www.cdrkit.org).  Making a disk image requires `mtools'
-(http://www.gnu.org/software/mtools) and `syslinux' (http://www.syslinux.org).
-Retrieving files from the Windows Automated Installation Kit requires
-`cabextract' (http://www.cabextract.org.uk).
-
 				  PORTABILITY
 
 wimlib has mostly been developed and tested on x86_64 (64-bit) GNU/Linux.
 
 It has been tested on x86 (32-bit) GNU/Linux occasionally.
 
-It can also be compiled and run on FreeBSD.
+I have tested a previous version of wimlib on FreeBSD and it worked, but this is
+not well tested, especially with the more recent versions of this software.
 
 wimlib should work on big endian machines but it has not been tested.
 
@@ -142,9 +175,18 @@ Windows is very different and Microsoft's imagex.exe is already available.
 The WIM file format is specified in a document that can be found in the
 Microsoft Download Center.  There is a similar document that specifies the LZX
 compression format, and a document that specifies the XPRESS compression format.
-However, some aspects of these formats are poorly documented.  Some particularly
-poorly documented parts of the formats have had comments added in various places
-in the library.
+However, many parts of these formats are poorly documented, and some parts have
+no documentation whatsoever.  Some particularly poorly documented parts of the
+formats have had comments added in various places in the library.  Please see
+the code and/or ask me if you have any questions about the WIM file format as it
+exists in reality and not as it exists in Microsoft's poorly written
+documentation.
+
+The code in ntfs-apply.c and ntfs-capture.c uses the NTFS-3g library, which is a
+library for reading and writing to NTFS filesystems (the filesystem used by
+recent versions of Windows).  Additionally, the code in ntfs-3g-security.c is
+mostly copied from NTFS-3g, but I'm hoping to get rid of this file eventually.
+See http://www.tuxera.com/community/ntfs-3g-download/ for more information.
 
 lzx-decomp.c, the code to decompress WIM file resources that are compressed
 using LZX compression, is originally based on code from the cabextract project
@@ -163,26 +205,36 @@ files and provides features previously only available in Microsoft's imagex.exe,
 such as the ability to mount WIMs read-write as well as read-only, and the
 ability to create LZX or XPRESS compressed WIMs.
 
+An earlier version of wimlib is being used to deploy Windows 7 from the Ultimate
+Deployment Appliance.  For more information see
+http://www.ultimatedeployment.org/.  
+
+You can see the documentation about Microsoft's version of the imagex program at 
+http://technet.microsoft.com/en-us/library/cc749447(v=ws.10).aspx, so you can
+see how it compares.
+
 				MORE INFORMATION
 
 See the manual pages for `imagex', the manual pages for the subcommands of
 `imagex', and the manual page for `mkwinpeimg'.
 
-As of version 0.5.0, Wimlib's public API is documented.  Doxygen is required to
+As of version 0.5.0, wimlib's public API is documented.  Doxygen is required to
 build the documentation.  To build the documentation, run `configure', then
 enter the directory `doc' and run `doxygen'.  The HTML documentation will be
 created in a directory named `html'.
 
 				    LICENSE
 
-Wimlib is released under the GNU LGPL version 2.1 or later.  The files in the
-`programs' directory are released under the GPL version 3.
+As of version 1.0.0, wimlib is released under the GNU GPL version 3.0 or later.
+This includes the files in the `programs' directory.
 
 				   DISCLAIMER 
 
-Wimlib is experimental.  Use Microsoft's `imagex.exe' if you want to make sure
-your WIM files are made correctly.  Please submit a bug report (to
-ebiggers3@gmail.com) if you find a bug.
+wimlib is experimental.  Use Microsoft's `imagex.exe' if you want to make sure
+your WIM files are made correctly (but beware: Microsoft's version contains some
+bugs).  
+
+Please submit a bug report (to ebiggers3@gmail.com) if you find a bug in wimlib.
 
 Some parts of the WIM file format are poorly documented or even completely
 undocumented, so I've just had to do the best I can to read and write WIMs that

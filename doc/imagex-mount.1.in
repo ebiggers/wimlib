@@ -1,39 +1,105 @@
-.TH IMAGEX "1" "May 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "September 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
-imagex mount \- Mount an image from a WIM archive readonly
+imagex mount, mountrw, unmount \- Mount and unmount an image from a WIM archive
 
 .SH SYNOPSIS
-\fBimagex mount\fR \fIWIMFILE\fR (\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR)  \
-\fIDIRECTORY\fR [--check] [--stream-interface=\fIINTERFACE\fR]
+\fBimagex mount\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [--check]
+[--streams-interface=\fIINTERFACE\fR]
+.br
+\fBimagex mountrw\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [--check]
+[--streams-interface=\fIINTERFACE\fR]
+.br
+\fBimagex unmount\fR \fIDIRECTORY\fR [--commit] [--check]
 
 .SH DESCRIPTION
 .PP
-\fBimagex mount\fR mounts the image specified by \fIIMAGE_NUM\fR or
-\fIIMAGE_NAME\fR on the directory \fIDIRECTORY\fR using FUSE (Filesystem in
-UserSpace).  It is mounted read-only.
+The \fBimagex mount\fR and \fBimagex mountrw\fR commands will mount the image in
+the Windows Imaging (WIM) file \fIWIMFILE\fR specified by \fIIMAGE\fR on the
+directory \fIDIRECTORY\fR using FUSE (Filesystem in Userspace).  \fBimagex
+mount\fR will mount the image read-only, while \fBimagex mountrw\fR will mount
+the image read-write.
 
-It is permissible to omit the \fIIMAGE_NUM\fR or \fIIMAGE_NAME\fR only if
-\fIWIMFILE\fR contains only one image.
+\fIIMAGE\fR may be a 1-based index of the image in the WIM to mount, or it may
+be the name of an image in the WIM.  Use the \fBimagex info\fR (1) command to
+see the available images in the WIM.  It is possible to omit \fIIMAGE\fR, but
+only if the WIM contains only one image.
 
-.SH OPTIONS
-.TP 6
+The WIM image can be unmounted using the \fBimagex unmount\fR command.  Changes
+made to a WIM mounted read-write will be discarded unless the \fB--commit\fR
+flag is provided to \fBimagex unmount\fR.
+
+.SH NOTES
+
+If wimlib was configured using the --without-fuse flag, then the \fBimagex
+mount\fR, \fBimagex mountrw\fR, and \fBimagex unmount\fR commands will not work.
+
+All files in the mounted WIM will be accessible regardless of whether there is a
+security descriptor in the WIM associated with the file or not.  New files or
+directories created in a read-write mounted WIM will be created with no security
+descriptor.
+
+.SH MOUNT OPTIONS
+.TP
 \fB--check\fR
-When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
-present. 
+When reading the WIM, verify its integrity if it contains an integrity table.
 .TP
 \fB--stream-interface\fR \fIINTERFACE\fR
-Specify the interface to alternate data streams (ADS) in the WIM that will be
-provided by the mounted filesystem.  These are a NTFS feature that found their
-way into the WIM file format.
 
-If "none", it will be impossible to read or write the ADS.
+This option is inspired by the ntfs-3g filesystem driver (see \fBntfs-3g\fR
+(8)).  It controls how alternate data streams, or named data streams, in WIM
+files are made available.
 
-If "xattr" (default), the ADS will be accessible through extended attributes.
-Each ADS will be an extended attribute named "user.*", where the * is the name
-of the ADS.  See \fBsetfattr\fR (1) and \fBgetfattr\fR (1).
+If "none", it will be impossible to read or write the named data streams.
 
-If "windows", the ADS will be accessible by specifing the filename, then a
-colon, then the name of the ADS; for example, "myfile:mystream".
+If "xattr" (default), named data streams will be accessible through extended
+file attributes, unless this support was disabled when compiling wimlib.  The
+named data streams may be accessed through extended attributes named "user.*",
+where the * is the name of the named data stream.  See \fBsetfattr\fR (1) and
+\fBgetfattr\fR (1).
+
+If "windows", the named data streams will be accessible by specifying the
+filename, then a colon, then the name of the named data stream; for example,
+"myfile:mystream".
+
+Please note that named data streams are a somewhat obscure NTFS feature that
+aren't actually used much, even though they complicate the WIM file format
+considerably.  Normally, all you care about is the default or "unnamed" data
+stream.
+
+.TP
+\fB--debug\fR
+Turn on debugging information printed by the FUSE library, and do not fork into
+the background.
+
+.SH UNMOUNT OPTIONS
+.TP
+\fB--commit\fR
+Recreate the WIM file with the changes that have been made.  Has no effect if
+the mount is read-only.
+.TP 6
+\fB--check\fR
+When writing \fIWIMFILE\fR, include an integrity table.  Has no effect if the
+mount is read-only or if --commit was not specified.
+
+.SH IMPLEMENTATION DETAILS
+
+Since a WIM is an archive and not a filesystem, \fBimagex mountrw\fR creates a
+temporary staging directory to contain files that are created or modified.  When
+the filesystem is unmounted with \fB--commit\fR, the WIM is rebuilt, merging in
+the staging files as needed.  Then, the temporary staging directory is deleted.
+
+\fBimagex unmount\fR executes the \fBfusermount\fR (1) program, which should be
+installed as part of libfuse, to unmount the filesystem.  It then uses a POSIX
+message queue (see \fBmq_overview\fR (7)) to communicate with the filesystem
+daemon (the instance of \fBimagex\fR that has mounted the WIM image) so that it
+can know whether whether changes are to be committed and whether an integrity
+table is to be included.  A message is then sent from the filesystem daemon to
+unmounting process when the unmounting has been completed, and this message
+indicates whether the unmounting was successful or not.
+
+If the filesystem daemon has crashed or been killed, is possible for \fBimagex
+unmount\fR to wait a very long time before timing out.  A solution to this
+problem may be implemented in the future.
 
 .SH SEE ALSO
 .BR imagex (1)
