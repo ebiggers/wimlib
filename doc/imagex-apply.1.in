@@ -11,7 +11,7 @@ imagex apply \- Extract one image, or all images, from a WIM archive
 \fBimagex apply\fR extracts an image, or all images, from the Windows Imaging
 (WIM) file \fIWIMFILE\fR.
 
-\fIIMAGE\fR specifies the image to extract.  It may be a 1-based index of an
+\fIIMAGE\fR specifies the WIM image to extract.  It may be a 1-based index of an
 image in the WIM, the name of an image in the WIM, or the keyword "all" to
 indicate that all images are to be extracted.  Use the \fBimagex info\fR (1)
 command to show what images a WIM file contains.
@@ -171,6 +171,10 @@ instead.  This option is not available in the NTFS extraction mode.
 \fB--verbose\fR
 Print the path to of each file or directory within the WIM image as it is
 extracted, and some additional informational messages.
+
+.SH NOTES
+
+\fBimagex apply\fR does not yet support split WIMs.
 
 .SH EXAMPLES
 .SS Normal extraction mode

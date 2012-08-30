@@ -32,7 +32,8 @@ image being exported to \fIDEST_WIMFILE\fR.  The default is its description in
 .SH OPTIONS
 .TP 6
 \fB--boot\fR
-Specifies that the exported image is to be the bootable image of the WIM archive.
+Specifies that the exported image is to be the bootable image of the destination
+WIM archive.
 
 If multiple images are being exported, this flag indicates that the image in the
 \fISRC_WIMFILE\fR that is currently marked as bootable is to be made bootable in
@@ -45,26 +46,28 @@ present; additionally, when writing \fIDEST_WIMFILE\fR with the new image added,
 write an integrity table.  If this option is not specified, no integrity table
 is included in \fIDEST_WIMFILE\fR, even if there was one before.
 .TP
-\fB--compress\fR[=\fITYPE\fR]
+\fB--compress\fR=\fITYPE\fR
 Specifies the compression type for \fIDEST_WIMFILE\fR.  This is only valid if
-\fIDEST_WIMFILE\fR does not yet exist.
+\fIDEST_WIMFILE\fR does not yet exist, since if \fIDEST_WIMFILE\fR exists, the
+compression type must be the same as that of \fIDEST_WIMFILE\fR.
 
-\fITYPE\fR may be "none",
-"maximum", or "fast".  By default, the compression type is "none".  If \fB--compress\fR
-is specified but \fITYPE\fR is not, the compression type is taken to be
-"maximum", which is LZX compression.  "fast" compression is XPRESS compression.
+\fITYPE\fR may be "none", "maximum", or "fast".  By default, it is "fast".
+
+You may also specify the actual names of the compression algorithms, "XPRESS"
+and "LZX", instead of "fast" and "maximum", respectively.
 
 .SH NOTES
 
-\fBimagex export\fR does not support split WIMs.
+\fBimagex export\fR does not yet support split WIMs.
 
 .SH EXAMPLES
-.IP 
-image export boot.wim 2 image2.wim --compress=maximum
-.LP 
 Export the second image of 'boot.wim' to the new WIM file 'image2.wim', and
-change the compression type to maximum, if it wasn't maximum already.
-
+change the compression type to maximum, if it wasn't maximum already:
+.RS
+.PP
+image export boot.wim 2 image2.wim --compress=maximum
+.RE
+.PP
 
 .SH SEE ALSO
 .BR imagex (1)

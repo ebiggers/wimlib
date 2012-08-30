@@ -3,23 +3,30 @@
 imagex dir \- Show the files contained in a WIM archive
 
 .SH SYNOPSIS
-\fBimagex dir\fR \fIWIMFILE\fR (\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR | all),
+\fBimagex dir\fR \fIWIMFILE\fR \fIIMAGE\fR
 
 .SH DESCRIPTION
 .PP
-Lists all the files and directories contained in the specified image of
-\fIWIMFILE\fR.
+Lists all the files and directories contained in the specified image of the
+Windows Imaging (WIM) file \fIWIMFILE\fR.
 
-The image may be specified by \fIIMAGE_NUM\fR, which must be an integer that is
-an index of an image in the WIM file, starting at 1.  Alternatively, it may be
-the name of an image in the WIM file.  It also may be the keyword "all", which
-specifies all images.
+\fIIMAGE\fR specifies the WIM image to show the files of.  It may be a 1-based
+index of an image in the WIM, the name of an image in the WIM, or the keyword
+"all" to indicate that files from all images are to be shown.  Use the \fBimagex
+info\fR (1) command to show what images a WIM file contains.
+
+.SH NOTES
+
+\fBimagex dir\fR supports split WIMs, but it will only work on the first part of
+the split WIM.
 
 .SH EXAMPLES
-.IP 
+Show all files in the first image of 'boot.wim':
+.RS
+.PP
 image dir boot.wim 1
-.LP 
-Show all files in the first image of 'boot.wim'
+.RE
+.PP
 
 .SH SEE ALSO
 .BR imagex (1)

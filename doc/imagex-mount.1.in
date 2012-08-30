@@ -38,6 +38,8 @@ security descriptor in the WIM associated with the file or not.  New files or
 directories created in a read-write mounted WIM will be created with no security
 descriptor.
 
+Mounting split WIMs is not yet supported.
+
 .SH MOUNT OPTIONS
 .TP
 \fB--check\fR

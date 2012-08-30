@@ -3,24 +3,29 @@
 imagex delete \- Delete an image from a WIM archive
 
 .SH SYNOPSIS
-\fBimagex delete\fR \fIWIMFILE\fR (\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR | all ) [--check]
+\fBimagex delete\fR \fIWIMFILE\fR \fIIMAGE\fR [--check]
 
 .SH DESCRIPTION
 .PP
 
-\fBimagex delete\fR deletes the specified image from \fIWIMFILE\fR.
+\fBimagex delete\fR deletes the specified image from the Windows Imaging (WIM)
+file \fIWIMFILE\fR.
 
-The image to delete may be specified by \fIIMAGE_NUM\fR, which must be an
-integer that is an index of an image in the WIM file, starting at 1.
-Alternatively, it may be the name of an image in the WIM file, or the keyword
-"all", which specifies that all images are to be deleted.
+\fIIMAGE\fR specifies the WIM image to deleted.  It may be a 1-based index of an
+image in the WIM, the name of an image in the WIM, or the keyword "all" to
+indicate that all images are to be deleted.  Use the \fBimagex info\fR (1)
+command to show what images a WIM file contains.
 
-The WIM file is recreated with all unnecessary file resources removed.  This is
-different from imagex.exe, which only will delete the metadata and XML entries
-for this operation.
+.SH NOTES
+
+The WIM file is rebuild with all unnecessary file data removed.  This is
+different from imagex.exe, which only will delete the directory tree metadata
+and XML data for this operation.
 
 Also, unlike imagex.exe, it is legal to delete all the images from a WIM and
 have a WIM with 0 images, although such a file wouldn't be very useful.
+
+\fBimagex delete\fR does not yet support split WIMs.
 
 .SH OPTIONS
 .TP 6
@@ -31,10 +36,12 @@ deleted, write an integrity table.  If this option is not specified, no integrit
 table is included in the new WIM file, even if there was one before.
 
 .SH EXAMPLES
-.IP 
+Delete the first image from 'boot.wim':
+.RS
+.PP
 image delete boot.wim 1
-.LP 
-Delete the first image from 'boot.wim'.
+.RE
+.PP
 
 .SH SEE ALSO
 .BR imagex (1)
