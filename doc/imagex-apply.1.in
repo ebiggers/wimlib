@@ -3,21 +3,151 @@
 imagex apply \- Extract one image, or all images, from a WIM archive
 
 .SH SYNOPSIS
-\fBimagex apply\fR \fIWIMFILE\fR [\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR | all] \
-\fIDIRECTORY\fR [\fIOPTION\fR]...
+\fBimagex apply\fR \fIWIMFILE\fR \fIIMAGE\fR \fITARGET\fR [\fIOPTION\fR]...
 
 .SH DESCRIPTION
 .PP
 
-\fBimagex apply\fR extracts the specified image from \fIWIMFILE\fR to
-\fIDIRECTORY\fR.
+\fBimagex apply\fR extracts an image, or all images, from the Windows Imaging
+(WIM) file \fIWIMFILE\fR.
 
-The image to extract may be specified by \fIIMAGE_NUM\fR, which must be an
-integer that is an index of an image in the WIM file, starting at 1.
-Alternatively, it may be the name of an image in the WIM file.  It also may be
-the keyword \fBall\fR, which indicates that all images in the WIM are to be
-extracted. If the keyword \fBall\fR is given, the images are extracted into
-subdirectories of \fIDIRECTORY\fR that will be named after the image names.
+\fIIMAGE\fR specifies the image to extract.  It may be a 1-based index of an
+image in the WIM, the name of an image in the WIM, or the keyword "all" to
+indicate that all images are to be extracted.  Use the \fBimagex info\fR (1)
+command to show what images a WIM file contains.
+
+\fBTARGET\fR specifies where to extract the WIM image(s) to.  If \fBTARGET\fR
+specifies a directory, the WIM image(s) are extracted to that directory.  If
+\fBTARGET\fR specifies a non-existent file, a directory is created in that
+location and the WIM image(s) are extracted to that directory.  If \fBTARGET\fR
+specifies a regular file or block device, it is interpreted as a NTFS volume to
+which the WIM image is to be extracted.
+
+.SH NORMAL MODE
+
+The normal extraction mode is entered when \fBTARGET\fR is a directory or
+non-existent file.  If a single WIM image is being extracted, it will be
+extracted with the root of the image corresponding to the directory named by
+\fBTARGET\fR; or, if the keyword \fBall\fR is given, the images are extracted
+into subdirectories of \fITARGET\fR that will be named after the image names,
+falling back to the image indices if there is an image with no name.
+
+In the normal mode of extraction, the following information will be extracted
+from the WIM image(s):
+
+.IP \[bu] 4
+The default (unnamed) data streams of each file
+.IP \[bu]
+Hard links, if supported by the underlying filesystem
+.IP \[bu]
+File and directory creation, access, and modification timestamps to the nearest
+microsecond, if supported by the underlying filesystem
+.IP \[bu]
+Symbolic links and junction points, although they will not necessarily point to
+the desired location (for example, the target of the link may contain a Windows
+drive letter).
+
+.PP
+In the normal mode of extraction, the following information will \fInot\fR be
+extracted from the WIM image(s):
+
+.IP \[bu] 4
+Security descriptors (file permissions)
+.IP \[bu]
+The alternate (named) data streams for each file
+.IP \[bu]
+Reparse points other than symbolic links and junction points
+.IP \[bu]
+Certain file attributes such as compression, encryption, and sparseness.
+.IP \[bu]
+Short (DOS) names for files
+
+.SH NTFS MODE
+
+A special extraction mode is entered when \fBTARGET\fR is a regular file or
+block device.  \fBTARGET\fR is interpreted as an NTFS volume and opened using
+libntfs-3g.  If successful, the WIM image is extracted to the root of the NTFS
+volume in a special mode that preserves all, or almost all, information
+contained in the WIM.  \fBIMAGE\fR may not be "all" for this action.
+
+The NTFS volume does not need to be empty, although it's expected that it be
+empty for the intended use cases.  A new NTFS filesystem can be created using
+the \fBmkntfs\fR (8) command.
+
+The NTFS extraction mode is not available if wimlib was compiled using the
+--without-ntfs-3g option.
+
+In the NTFS extraction mode, the following information will be extracted from
+the WIM image:
+
+.IP \[bu] 4
+The data streams of all files, including the un-named data stream as well as all
+named data streams.
+.IP \[bu]
+Reparse points, including symbolic links, junction points, and other reparse
+points.
+.IP \[bu]
+Hard links.
+.IP \[bu]
+File and directory creation, access, and modification timestamps are set to the
+100-nanosecond resolution values specified in the WIM file.
+.IP \[bu] 4
+The security descriptor for each file is applied if there is one specified in
+the WIM.
+.IP \[bu]
+File attribute flags are applied.
+.IP \[bu]
+Short (DOS) names for files are extracted.  The corresponding long name for each
+DOS name is made to be a Win32 name.  Any additional names for the file in the
+same directory are made to be names in the POSIX namespace.
+
+.PP
+
+In the NTFS extraction mode, we restore enough information from the WIM that it
+is possible, in most cases, to restore or install an image of an actual Windows
+installation. In the examples at the end of this manual page, we show an example
+of applying an image from the "install.wim" file contained in the installation
+media for Windows Vista, Windows 7, and Windows 8 in the "sources" directory.
+
+In order to actually boot Windows from an applied image, you must understand the
+boot process of Windows versions Vista and later.  Basically, it is the
+following:
+
+.nr step 1 1
+.IP \n[step]. 3
+The Master Boot Record loads the Volume Boot Record (also called the Boot
+Sector) of the active partition, which is on an NTFS filesystem.  This partition
+is called the "system partition".
+.IP \n+[step].
+The "bootmgr" program on the "system partition" is loaded (\\BOOTMGR).
+.IP \n+[step].
+bootmgr loads the Boot Configuration Data (\\Boot\\BCD) from the "system
+partition".
+.IP \n+[step].
+Based on the information contained in the Boot Configuration Data, a loader for
+the Windows kernel is executed from the "Boot" partition, which is where Windows
+is installed.
+
+.PP
+
+So let's say you applied an image from an existing "install.wim" as in the
+example, or you've applied a custom Windows image that you've created using the
+\fBimagex capture\fR (1) command.  You've just applied the "Boot" partition, or
+the main Windows partition, but there is no "System" partition yet (i.e.  no
+\\BOOTMGR and no \\Boot\\BCD).
+
+A "System" partition can be created created by running the "bcdboot.exe" program
+from within Windows or Windows PE.  Alternatively, you can capture a separate
+WIM image containing the "System" partition.  Or, the "System" partition may the
+same as the "Boot" partition, so the two "partitions" may be combined in one WIM
+image.  However, as the \\Boot\\BCD file contains the Windows bootloader
+configuration, a WIM containing it can only be used on systems where you are
+setting up the same bootloader configuration, including the same partition
+layout.
+
+Besides setting up the files on the "System" partition, don't forget to set the
+bootable flag on it, and have a master boot record that loads the bootable
+partition (Windows' MBR does, and SYSLINUX provides an equivalent MBR).
 
 .SH OPTIONS
 .TP 6
@@ -26,26 +156,53 @@ When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
 present.
 .TP
 \fB--hardlink\fR
-When extracting a file from the WIM that is identical to a file that is already
+When extracting a file from the WIM that is identical to a file that has already
 extracted, create a hard link using \fBlink\fR (3) rather than creating a
-separate file.  Files of this type are already hard linked together inside the
-WIM to save space.
+separate file.  This option causes all identical files to be hard-linked,
+overriding the hard link groups that are specified in the WIM image(s).  In the
+case of extracting all images from the WIM, files may be hard-linked even if
+they are in different WIM images.  This option is not available in the NTFS
+extraction mode.
 .TP
 \fB--symlink\fR
-When extracting a file from the WIM that is identical to a file that is already
-extracted, create a symbolic link using \fBsymlink\fR (3) rather than creating a
-separate file.  Files of this type are already hard linked together inside the
-WIM to save space.
+This option is similar to \fB--hardlink\fR, except symbolic links are created
+instead.  This option is not available in the NTFS extraction mode.
 .TP
 \fB--verbose\fR
-Print the path to of each file or directory within the WIM image as it is extracted.
+Print the path to of each file or directory within the WIM image as it is
+extracted, and some additional informational messages.
 
 .SH EXAMPLES
-.IP 
-image apply boot.wim all boot --hardlink
-.LP 
-Extract all images in the WIM 'boot.wim' to the directory 'boot', and hard link
-all identical files.
+.SS Normal extraction mode
+Extract the first image from the Windows PE image from the Windows Vista/7/8
+installation media to the directory "boot":
+.RS
+.PP
+image apply /media/windows/sources/boot.wim 1 boot
+.RE
+.PP
+Extract all images from the Windows PE image from the Windows Vista/7/8
+installation media to the directory "boot", and hard link all identical files:
+.RS
+.PP
+image apply /media/windows8/sources/boot.wim all boot --hardlink
+.RE
+.PP
+.SS NTFS extraction mode
+Verbosely apply a WIM image to a NTFS filesystem image:
+.RS
+.PP
+imagex apply mywim.wim 1 fsimage.ntfs --verbose
+.RE
+.PP
+Create a new NTFS filesystem on the partition /dev/sda2 and apply the first
+image in the Windows Vista/7/8 installation WIM to it.  (Obviously, only do this
+if you want to erase everything on that partition.)
+.RS
+.PP
+mkntfs /dev/sda2 && imagex apply /media/windows/sources/install.wim 1 /dev/sda2
+.RE
+.PP
 
 .SH SEE ALSO
 .BR imagex (1)
