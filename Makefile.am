@@ -93,7 +93,6 @@ dist_bin_SCRIPTS = programs/mkwinpeimg
 include_HEADERS = src/wimlib.h
 
 EXTRA_DIST =			\
-	COPYING.LIB		\
 	build-aux/strip_fPIC.sh	\
 	debian			\
 	programs/install.cmd
