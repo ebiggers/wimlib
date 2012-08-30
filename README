@@ -82,19 +82,21 @@ server for PXE booting.  See the main page `doc/mkwinpeiso.1' for more details.
 
 * libfuse
 	Unless configured with --without-fuse, wimlib requires a non-ancient
-	version of libfuse to be installed.  see above).  Most GNU/Linux
-	distributions already include this, but make sure you have the libfuse
-	package installed (libfuse-dev if your distribution distributes header
-	files separately).  FUSE also requires a kernel module.
-	If the kernel module is available it will automatically be loaded if you
-	try to mount a WIM file.  For more information see
-	http://fuse.sourceforge.net/.  FUSE is also available for FreeBSD.
+	version of libfuse to be installed.  Most GNU/Linux distributions
+	already include this, but make sure you have the libfuse package
+	installed, and also libfuse-dev if your distribution distributes header
+	files separately.  FUSE also requires a kernel module.  If the kernel
+	module is available it will automatically be loaded if you try to mount
+	a WIM file.  For more information see http://fuse.sourceforge.net/.
+	FUSE is also available for FreeBSD.
 
 * libntfs-3g
 	Unless configured with --without-ntfs-3g, wimlib requires the library
-	and headers for libntfs-3g to be installed.  Currently, the version
-	dated 2012-1-15 is required because I've cloned some of the code from
-	the library.
+	and headers for libntfs-3g to be installed.  Currently, the libntfs-3g
+	version dated 2012-1-15 is required because I've cloned some of the code
+	from the library, and it needs to compiled against the same version.
+	I'm hoping to be able to use future version of libntfs-3g without code
+	cloning after submitting some patches, however.
 
 * cdrkit (optional)
 * mtools (optional)

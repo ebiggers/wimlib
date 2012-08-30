@@ -1,5 +1,26 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.0.0:
+	Enough changes to call it version 1.0.0!
+
+	Capturing a WIM directly from a NTFS volume, and applying a WIM directly
+	to a NTFS volume, is now supported.
+
+	Hard links and symbolic links have much improved support.  They are
+	supported for WIM capture, WIM application, and mounted WIMs (you can
+	even make them on read-write mounted WIMs).
+
+	Alternate data streams are now supported on mounted WIMs through an
+	xattr or a Windows-style stream interface.  Also they are supported when
+	capturing a WIM from NTFS or applying a WIM to NTFS.
+
+	Using a capture configuration file is now supported (but not fully yet).
+
+	SHA1 message digests are checked in more places, so we can make sure
+	applied and captured data is correct.
+
+	Man pages have been updated and consolidated.
+
 Version 0.7.2:
 	Fixed segfault when unmounting read-only WIM.
 

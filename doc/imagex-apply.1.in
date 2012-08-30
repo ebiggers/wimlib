@@ -16,19 +16,19 @@ image in the WIM, the name of an image in the WIM, or the keyword "all" to
 indicate that all images are to be extracted.  Use the \fBimagex info\fR (1)
 command to show what images a WIM file contains.
 
-\fBTARGET\fR specifies where to extract the WIM image(s) to.  If \fBTARGET\fR
+\fITARGET\fR specifies where to extract the WIM image(s) to.  If \fITARGET\fR
 specifies a directory, the WIM image(s) are extracted to that directory.  If
-\fBTARGET\fR specifies a non-existent file, a directory is created in that
-location and the WIM image(s) are extracted to that directory.  If \fBTARGET\fR
+\fITARGET\fR specifies a non-existent file, a directory is created in that
+location and the WIM image(s) are extracted to that directory.  If \fITARGET\fR
 specifies a regular file or block device, it is interpreted as a NTFS volume to
 which the WIM image is to be extracted.
 
 .SH NORMAL MODE
 
-The normal extraction mode is entered when \fBTARGET\fR is a directory or
+The normal extraction mode is entered when \fITARGET\fR is a directory or
 non-existent file.  If a single WIM image is being extracted, it will be
 extracted with the root of the image corresponding to the directory named by
-\fBTARGET\fR; or, if the keyword \fBall\fR is given, the images are extracted
+\fITARGET\fR; or, if the keyword \fBall\fR is given, the images are extracted
 into subdirectories of \fITARGET\fR that will be named after the image names,
 falling back to the image indices if there is an image with no name.
 \fITARGET\fR can specify a directory on any type of filesystem.
@@ -65,11 +65,11 @@ Short (DOS) names for files
 
 .SH NTFS MODE
 
-A special extraction mode is entered when \fBTARGET\fR is a regular file or
-block device.  \fBTARGET\fR is interpreted as an NTFS volume and opened using
+A special extraction mode is entered when \fITARGET\fR is a regular file or
+block device.  \fITARGET\fR is interpreted as an NTFS volume and opened using
 libntfs-3g.  If successful, the WIM image is extracted to the root of the NTFS
 volume in a special mode that preserves all, or almost all, information
-contained in the WIM.  \fBIMAGE\fR may not be "all" for this action.
+contained in the WIM.  \fIIMAGE\fR may not be "all" for this action.
 
 The NTFS volume does not need to be empty, although it's expected that it be
 empty for the intended use cases.  A new NTFS filesystem can be created using
