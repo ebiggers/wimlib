@@ -6,6 +6,25 @@ files are normally created by using the `imagex.exe' utility on Windows,
 but this library provides a free implementetion of imagex for UNIX-based
 systems.
 
+				   WIM FILES
+
+A Windows Imaging (WIM) file is an archive.  Like some other archive formats
+such as ZIP, files in WIM archives may be compressed.  WIM archives support two
+Microsoft-specific compression formats:  LZX and XPRESS.  Both are based on LZ77
+and Huffman encoding, and both are supported by wimlib.
+
+Unlike ZIP files, WIM files can contain multiple independent toplevel directory
+trees known as images.  While each image has its own metadata describing a
+directory tree and file access modes, files are not duplicated for each image;
+instead, each file is included only once in the entire WIM.  Microsoft did this
+so that in one WIM file, they could do things like have 5 different versions of
+Windows that are almost exactly the same.
+
+Microsoft provides documentation for the WIM file format, XPRESS compression
+format, and LZX compression format.  The XPRESS documentation is acceptable, but
+the LZX documentation is not entirely correct, and the WIM documentation itself
+is very incomplete and is of unacceptable quality.
+
 				   WINDOWS PE
 
 A major use for this library is to create customized images of Windows PE, the

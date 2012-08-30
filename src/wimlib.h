@@ -33,19 +33,6 @@
  * implementetion of @c imagex for UNIX-based systems and an API to allow other
  * programs to read, write, and mount WIM files.  wimlib is comparable to
  * Microsoft's WIMGAPI, but was designed independently and is not a clone of it.
- * 
- * The main intended use of wimlib is to create customized images of Windows PE,
- * the Windows Preinstallation Environment, without having to rely on Windows.
- * Windows PE, which is the operating system that runs when you boot from the
- * Windows Vista or Windows 7 DVD, is a lightweight version of Windows that can
- * run entirely from memory. It can be used to install Windows from local media
- * or a network drive or perform maintenance. 
- * 
- * You can find Windows PE on the installation media for Windows Vista, Windows
- * 7, and Windows 8.  The Windows PE image itself is a WIM file, @c
- * sources/boot.wim, on the ISO filesystem.  Windows PE can also be found in the
- * Windows Automated Installation Kit (WAIK) inside the @c WinPE.cab file, which
- * you can extract if you install the @c cabextract program.
  *
  * \section format WIM files
  *
@@ -62,20 +49,51 @@
  * could do things like have 5 different versions of Windows that are almost
  * exactly the same.
  *
- * WIM files may contain a integrity table.  The integrity table, if it exists,
- * is located at the end of the WIM file and contains SHA1 message digests of
- * 10MB chunks of the WIM.
- *
  * Microsoft provides documentation for the WIM file format, XPRESS compression
- * format, and LZX compression format.  However, there are errors and omissions
- * in some places in their documentation.
+ * format, and LZX compression format.  The XPRESS documentation is acceptable,
+ * but the LZX documentation is not entirely correct, and the WIM documentation
+ * itself is very incomplete and is of unacceptable quality.
+ *
+ * \section winpe Windows PE
+ * 
+ * A major use for this library is to create customized images of Windows PE, the
+ * Windows Preinstallation Environment, without having to rely on Windows.  Windows
+ * PE is a lightweight version of Windows that can run entirely from memory and can
+ * be used to install Windows from local media or a network drive or perform
+ * maintenance.  Windows PE is the operating system that runs when you boot from
+ * the Windows installation media.
+ *
+ * You can find Windows PE on the installation DVD for Windows Vista, Windows 7,
+ * or Windows 8, in the file @c sources/boot.wim.  Windows PE can also be found
+ * in the Windows Automated Installation Kit (WAIK), which is free to download
+ * from Microsoft, inside the @c WinPE.cab file, which you can extract if you
+ * install either the @c cabextract or @c p7zip programs.
+ *
+ * In addition, Windows installations and recovery partitions frequently contain a
+ * WIM containing an image of the Windows Recovery Environment, which is similar to
+ * Windows PE.
+ *
+ * \section ntfs NTFS support
+ *
+ * As of version 1.0.0, wimlib supports capturing and applying images directly
+ * to NTFS volumes.  This was made possible with the help of libntfs-3g from the
+ * NTFS-3g project.  This feature supports capturing and restoring NTFS-specific
+ * data such as security descriptors, alternate data streams, and reparse point
+ * data.
+
+ * The code for NTFS image capture and image application is complete enough that
+ * it is possible to apply an image from the "install.wim" contained in recent
+ * Windows installation media (Vista, Windows 7, or Windows 8) directly to a
+ * NTFS volume, and then boot Windows from it after preparing the Boot
+ * Configuration Data.  In addition, a Windows installation can be captured (or
+ * backed up) into a WIM file, and then re-applied later.
  *
  * \section starting Getting Started
  *
  * wimlib uses the GNU autotools, so it should be easy to install with
- * <code>configure && make && sudo make install</code>, provided that you have
- * @c libxml2 and @c libfuse installed.  To use wimlib in a program after
- * installing it, include @c wimlib.h and link your program with @c -lwim.
+ * <code>configure && make && sudo make install</code>; however, please see the
+ * README for more information about installing it.  To use wimlib in a program
+ * after installing it, include @c wimlib.h and link your program with @c -lwim.
  *
  * wimlib wraps up a WIM file in an opaque ::WIMStruct structure.
  *
@@ -97,10 +115,18 @@
  *
  * To add an image to a WIM file from a directory tree on your filesystem, call
  * wimlib_add_image().  This can be done with a ::WIMStruct gotten from
- * wimlib_open_wim() or from wimlib_create_new_wim().
+ * wimlib_open_wim() or from wimlib_create_new_wim().  Alternatively, if you
+ * want to capture a WIM image directly from a NTFS volume while preserving
+ * NTFS-specific data such as security descriptors, call
+ * wimlib_add_image_from_ntfs_volume() instead.
  *
- * To extract an image from a WIM file, call wimlib_set_output_dir() to set the
- * output directory, then call wimlib_extract_image().
+ * To extract an image from a WIM file, call wimlib_extract_image().
+ * Alternatively, if you want to apply a WIM image directly to a NTFS volume
+ * while setting NTFS-specific data such as security descriptors, call
+ * wimlib_apply_image_to_ntfs_volume().
+ *
+ * The NTFS functions will fail if wimlib was compiled with the
+ * <code>--without-ntfs-3g</code> flag.
  *
  * wimlib supports mounting WIM files either read-only or read-write.  Mounting
  * is done using wimlib_mount() and unmounting is done using wimlib_unmount().
@@ -121,7 +147,8 @@
  * @c programs/imagex.c in wimlib's source tree.
  *
  * wimlib supports custom memory allocators; use wimlib_set_memory_allocator()
- * for this.
+ * for this.  However, if wimlib calls into @c libntfs-3g, the custom memory
+ * allocator may not be used.
  *
  * \section imagex imagex
  *
@@ -136,25 +163,14 @@
  *
  * While wimlib supports the main features of WIM files, wimlib currently has
  * the following limitations:
- * - wimlib does not support modifying or creating "security data", which
- *   describes the access rights of the files in the WIM.  This data is very
- *   Windows-specific, and it would be difficult to do anything with it.
- *   Microsoft's software can still read a WIM without security data, including
- *   a boot.wim for Windows PE, but <b>do not expect to be able to use wimlib to
- *   image a Windows installation and preserve file attributes</b>.  However, by
- *   default, wimlib will preserve security data for existing WIMs.
  * - There is no way to directly extract or mount split WIMs.
- * - There is not yet any code to verify that there are no collisions between
- *   different files that happen to have the same SHA1 message digest.
- *   This is extremely unlikely, but could result in something bad such as a
- *   file going missing.
- * - Alternate stream entries for directory entries are ignored.
- * - Different versions of the WIM file format, if they even exist, are
- *   unsupported.  Let me know if you notice WIM files with a different version.
- * - Chunk sizes other than 32768 are unsupported (except for uncompressed WIMs,
- *   for which the chunk size field is ignored).  As far as I can tell, other
- *   chunk sizes are not used in compressed WIMs.  Let me know if you find a WIM
- *   file with a different chunk size.
+ * - Different versions of the WIM file format are unsupported.  There is one
+ *   different version of the format from development versions of Windows Vista,
+ *   but I'm not planning to support it.
+ * - Compressed resource chunk sizes other than 32768 are unsupported (except for
+ *   uncompressed WIMs, for which the chunk size field is ignored).  As far as I
+ *   can tell, other chunk sizes are not used in compressed WIMs.  Let me know
+ *   if you find a WIM file with a different chunk size.
  * - wimlib does not provide a clone of the @b PEImg tool that allows you to
  *   make certain Windows-specific modifications to a Windows PE image, such as
  *   adding a driver or Windows component.  Such a tool could conceivably be
@@ -170,21 +186,17 @@
  *   can implement this if requested, but I intend the FUSE mount feature to be
  *   used for this purpose, as it is easy to do these things in whatever way you
  *   want after the image is mounted.
- *
- * Currently, Microsoft's @a image.exe can create slightly smaller WIM files
- * than wimlib when using maximum (LZX) compression because it knows how to
- * split up LZX compressed blocks, which is not yet implemented in wimlib.
- *
- * wimlib is experimental and likely contains bugs; use Microsoft's @a
- * imagex.exe if you want to make sure your WIM files are made "correctly".
+ * - Currently, Microsoft's @a image.exe can create slightly smaller WIM files
+ *   than wimlib when using maximum (LZX) compression because it knows how to
+ *   split up LZX compressed blocks, which is not yet implemented in wimlib.
+ * - wimlib is experimental and likely contains bugs; use Microsoft's @a
+ *   imagex.exe if you want to make sure your WIM files are made "correctly".
  *
  * \section legal License
  *
- * The wimlib library is licensed under the GNU General Public License
- * version 3 or later.
- *
- * @b imagex and @b mkwinpeiso are licensed under the GNU General Public License
- * version 3 or later.
+ * The wimlib library, as well as the programs and scripts distributed with it
+ * (@b imagex and @b mkwinpeimg), is licensed under the GNU General Public
+ * License version 3 or later.
  */
 
 #ifndef _WIMLIB_H
@@ -356,11 +368,8 @@ enum wimlib_error_code {
  * directory entry tree in-memory.  Also, all files are read to calculate their
  * SHA1 message digests.  However, because the directory tree may contain a very
  * large amount of data, the files themselves are not read into memory
- * permanently, and instead references to their paths saved.  This means that
- * the directory tree must not be modified, other than by adding entirely new
- * files or directories, before executing a call to wimlib_write() or
- * wimlib_overwrite(). Otherwise, wimlib_write() may fail or incorrect files may
- * be included in the WIM written by wimlib_write().
+ * permanently, and instead references to their paths saved.  The files are then
+ * read on-demand if wimlib_write() or wimlib_overwrite() is called.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for a WIM file to which the image will be
@@ -370,17 +379,22 @@ enum wimlib_error_code {
  * 	root directory for the WIM image.
  * @param name
  * 	The name to give the image.  This must be non-@c NULL.
- * @param description
- * 	The description to give the image.  This parameter may be left @c
- * 	NULL, in which case no description is given to the image.
- * @param flags_element
- * 	What to put in the &lt;FLAGS&gt; element for the image's XML data.  This
- * 	parameter may be left @c NULL, in which case no &lt;FLAGS&gt; element is
- * 	given to the image.
+ * @param config
+ * 	Pointer to the contents of an image capture configuration file.  If @c
+ * 	NULL, a default string is used.  Please see the manual page for
+ * 	<b>imagex capture</b> for more information.
+ * @param config_size
+ * 	Length of the string @a config in bytes.
+ * 	
  * @param flags
- * 	If set to ::WIMLIB_ADD_IMAGE_FLAG_BOOT, change the image in @a wim
- * 	marked as bootable to the one being added. Otherwise, leave the boot
- * 	index unchanged.
+ * 	Bitwise OR of flags prefixed with WIMLIB_ADD_IMAGE_FLAG.  If
+ * 	::WIMLIB_ADD_IMAGE_FLAG_BOOT is specified, the image in @a wim that is
+ * 	marked as bootable is changed to the one being added.  If
+ * 	::WIMLIB_ADD_IMAGE_FLAG_VERBOSE is specified, the name of each file is
+ * 	printed as it is scanned or captured.  If
+ * 	::WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE is specified, the files or
+ * 	directories pointed to by symbolic links are archived rather than the
+ * 	symbolic links themselves.
  *
  * @return 0 on success; nonzero on error.  On error, changes to @a wim are
  * discarded so that it appears to be in the same state as when this function
@@ -402,18 +416,33 @@ enum wimlib_error_code {
  * @retval ::WIMLIB_ERR_STAT
  * 	Failed obtain the metadata for a file or directory in the directory tree
  * 	rooted at @a dir.
- *
  */
 extern int wimlib_add_image(WIMStruct *wim, const char *dir, 
 			    const char *name, const char *config,
 			    size_t config_len, int flags);
 
+/**
+ * This function is similar to wimlib_add_image(), except instead of capturing
+ * the WIM image from a directory, it is captured from a NTFS volume specified
+ * by @a device.  NTFS-3g errors are reported as ::WIMLIB_ERR_NTFS_3G.
+ * ::WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE may not be specified because we capture
+ * the reparse points exactly as they are.
+ */
 extern int wimlib_add_image_from_ntfs_volume(WIMStruct *w, const char *device,
 					     const char *name,
 					     const char *config,
 					     size_t config_len,
 					     int flags);
 
+/**
+ * This function is similar to wimlib_extract_image(), except that @a image may
+ * not be ::WIM_ALL_IMAGES, and @a device specifies the name of a file or block
+ * device containing a NTFS volume to apply the image to.  NTFS-3g errors are
+ * reported as ::WIMLIB_ERR_NTFS_3G, and ::WIMLIB_EXTRACT_FLAG_HARDLINK or
+ * ::WIMLIB_EXTRACT_FLAG_SYMLINK may not be specified because in the NTFS
+ * apply mode we apply the reparse points and hard links exactly as they are in
+ * the WIM.
+ */
 extern int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
 				 	     const char *device, int flags);
 
@@ -461,6 +490,8 @@ extern int wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
  * 	@a image does not exist in the WIM and is not ::WIM_ALL_IMAGES.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in the WIM is invalid.	
+ * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
+ *	The security data for @a image in the WIM is invalid.	
  * @retval ::WIMLIB_ERR_NOMEM Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_READ
  * 	Could not read the metadata resource for @a image from the WIM.
@@ -520,6 +551,8 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	::WIM_ALL_IMAGES, and @a src_wim contains multiple images.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a src_image in @a src_wim is invalid.	
+ * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
+ *	The security data for @a src_image in @a src_wim is invalid.	
  * @retval ::WIMLIB_ERR_NOMEM 
  * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_READ
@@ -551,16 +584,19 @@ extern int wimlib_export_image(WIMStruct *src_wim, int src_image,
  * @retval ::WIMLIB_ERR_INVALID_DENTRY 
  * 	A directory entry in the metadata resource for @a image in @a wim is
  * 	invalid.
+ * @retval ::WIMLIB_ERR_INVALID_RESOURCE_HASH
+ * 	The SHA1 message digest of an extracted stream did not match the SHA1
+ * 	message digest given in the WIM file.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	A resource (file or metadata) for @a image in @a wim is invalid.	
+ * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
+ *	The security data for @a image in @a wim is invalid.	
  * @retval ::WIMLIB_ERR_LINK
  * 	Failed to create a symbolic link or a hard link.
  * @retval ::WIMLIB_ERR_MKDIR
  * 	Failed create a needed directory.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate needed memory.
- * @retval ::WIMLIB_ERR_NOTDIR
- * 	wimlib_set_output_dir() has not been successfully called on @a wim.
  * @retval ::WIMLIB_ERR_OPEN
  * 	Could not open one of the files being extracted for writing.
  * @retval ::WIMLIB_ERR_READ
@@ -778,9 +814,13 @@ extern int wimlib_join(const char **swms, int num_swms,
  * @param dir
  * 	The path to an existing directory to mount the image on.
  * @param flags
- * 	Bitwise OR of the flags ::WIMLIB_MOUNT_FLAG_READWRITE or
- * 	::WIMLIB_MOUNT_FLAG_DEBUG.  If ::WIMLIB_MOUNT_FLAG_READWRITE is not
- * 	given, the WIM is mounted read-only.
+ * 	Bitwise OR of the flags prefixed with WIMLIB_MOUNT_FLAG.  If
+ * 	::WIMLIB_MOUNT_FLAG_READWRITE is not given, the WIM is mounted
+ * 	read-only.  The interface to the WIM named data streams is specified by
+ * 	exactly one of ::WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE,
+ * 	::WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR, or
+ * 	::WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS.  The default interface is
+ * 	the XATTR interface.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -794,6 +834,8 @@ extern int wimlib_join(const char **swms, int num_swms,
  * 	@a image does not specify an existing, single image in @a wim.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in @a wim is invalid.	
+ * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
+ *	The security data for @a image in @a wim is invalid.	
  * @retval ::WIMLIB_ERR_MKDIR
  * 	::WIMLIB_MOUNT_FLAG_READWRITE was specified in @a flags, but the staging
  * 	directory could not be created.
@@ -861,6 +903,9 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags);
  * 	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY was specified in @a flags and @a
  * 	wim_file contains an integrity table, but the integrity table is
  * 	invalid.
+ * @retval ::WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY
+ * 	The lookup table for the WIM contained duplicate entries, or it
+ * 	contained an entry with a SHA1 message digest of all 0's.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocated needed memory.
  * @retval ::WIMLIB_ERR_NOT_A_WIM_FILE
@@ -988,6 +1033,8 @@ extern void wimlib_print_available_images(const WIMStruct *wim, int image);
  * 	::WIM_ALL_IMAGES.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  * 	The metadata resource for one of the specified images is invalid.
+ * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
+ *	The security data for one of the specified images is invalid.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_READ
@@ -1044,6 +1091,8 @@ extern void wimlib_print_lookup_table(WIMStruct *wim);
  * 	::WIM_ALL_IMAGES.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  * 	The metadata resource for one of the specified images is invalid.
+ * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
+ *	The security data for one of the specified images is invalid.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_READ
@@ -1312,8 +1361,14 @@ extern int wimlib_unmount(const char *dir, int flags);
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a single existing image in @a wim, and is not
  * 	::WIM_ALL_IMAGES.
+ * @retval ::WIMLIB_ERR_INVALID_RESOURCE_HASH
+ * 	A file that had previously been scanned for inclusion in the WIM by the
+ * 	wimlib_add_image() or wimlib_add_image_from_ntfs_volume() functions was
+ * 	concurrently modified, so it failed the SHA1 message digest check.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in @a wim is invalid.	
+ * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
+ *	The security data for @a image in @wim is invalid.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_OPEN
