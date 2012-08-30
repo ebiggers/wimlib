@@ -357,11 +357,22 @@ fix_true_link_group(struct dentry *first_dentry)
 	u64 last_ctime = 0;
 	u64 last_mtime = 0;
 	u64 last_atime = 0;
+	bool found_short_name = false;
 
 	dentry = first_dentry;
 	do {
 		if (!ref_dentry || ref_dentry->num_ads == 0)
 			ref_dentry = dentry;
+		if (dentry->short_name_len) {
+			if (found_short_name) {
+				ERROR("Multiple short names in hard link "
+				      "group!");
+				inconsistent_link_group(first_dentry);
+				return WIMLIB_ERR_INVALID_DENTRY;
+			} else {
+				found_short_name = true;
+			}
+		}
 		if (dentry->creation_time > last_ctime)
 			last_ctime = dentry->creation_time;
 		if (dentry->last_write_time > last_mtime)

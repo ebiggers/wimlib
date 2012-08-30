@@ -11,7 +11,7 @@ cd tests
 
 imagex() {
 	#echo "imagex $@"
-	../imagex $@ > /dev/null
+	../imagex $@ #> /dev/null
 }
 
 do_unmount() {
@@ -184,6 +184,30 @@ do_test "dd if=/dev/zero of=file bs=4096 count=10 &> /dev/null"
 msg "NTFS volume containing file with DOS name"
 do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file"
 
-msg "NTFS volume containing file with DOS name with hardlink in same directory"
-do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file; ln file link"
+msg "NTFS volume containing file with DOS name with alphabetically smaller hardlink in same directory"
+do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file; ln file aaa_link"
+
+msg "NTFS volume containing file with DOS name with alphabetically larger hardlink in same directory"
+do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file; ln file zzz_link"
+
+msg "NTFS volume containing file with long name and with DOS name with alphabetically smaller hardlink in same directory"
+do_test 'echo 1 > file_with_a_long_name;
+	 setfattr -v "file~1" -n system.ntfs_dos_name file_with_a_long_name;
+	 ln file_with_a_long_name aaa_link'
+
+msg "NTFS volume containing many nested directories"
+do_test 'mkdir dir; mkdir dir/subdir; mkdir dir/subdir/subdir2; mkdir dir/subdir/subdir3'
+
+msg "NTFS volume containing identical files and symlinks in subdirectory"
+do_test 'mkdir dir;
+	 echo 888 > dir/file;
+	 echo 888 > dir/idfile2;
+	 ln -s dir dir/circle; ln -s file dir/filelink'
+
+msg "NTFS volume containing hard link group and identical files not hard linked"
+do_test 'echo 888 > file;
+	 echo 888 > file2;
+	 ln file link;
+	 ln file link2;
+	 echo 888 > file3'
 

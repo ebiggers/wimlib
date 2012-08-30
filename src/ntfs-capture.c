@@ -406,8 +406,9 @@ struct readdir_ctx {
 };
 
 static int
-build_dentry_tree_ntfs_recursive(struct dentry **root_p, ntfs_inode *ni,
-				 char path[], size_t path_len,
+build_dentry_tree_ntfs_recursive(struct dentry **root_p, ntfs_inode *dir_ni,
+				 ntfs_inode *ni, char path[], size_t path_len,
+				 int name_type,
 				 struct lookup_table *lookup_table,
 				 struct sd_set *sd_set,
 				 const struct capture_config *config,
@@ -455,7 +456,8 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 		ctx->path[path_len++] = '/';
 	memcpy(ctx->path + path_len, utf8_name, utf8_name_len + 1);
 	path_len += utf8_name_len;
-	ret = build_dentry_tree_ntfs_recursive(&child, ni, ctx->path, path_len,
+	ret = build_dentry_tree_ntfs_recursive(&child, ctx->dir_ni,
+					       ni, ctx->path, path_len, name_type,
 					       ctx->lookup_table, ctx->sd_set,
 					       ctx->config, ctx->ntfs_vol_p,
 					       ctx->flags);
@@ -470,14 +472,33 @@ out:
 	return ret;
 }
 
+static int change_dentry_short_name(struct dentry *dentry,
+				    const char short_name_utf8[],
+				    int short_name_utf8_len)
+{
+	size_t short_name_utf16_len;
+	char *short_name_utf16;
+	short_name_utf16 = utf8_to_utf16(short_name_utf8, short_name_utf8_len,
+					 &short_name_utf16_len);
+	if (!short_name_utf16) {
+		ERROR_WITH_ERRNO("Failed to convert short name to UTF-16");
+		return WIMLIB_ERR_NOMEM;
+	}
+	dentry->short_name = short_name_utf16;
+	dentry->short_name_len = short_name_utf16_len;
+	return 0;
+}
+
 /* Recursively build a WIM dentry tree corresponding to a NTFS volume.
  * At the same time, update the WIM lookup table with lookup table entries for
  * the NTFS streams, and build an array of security descriptors.
  */
 static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
+					    ntfs_inode *dir_ni,
 					    ntfs_inode *ni,
 				    	    char path[],
 					    size_t path_len,
+					    int name_type,
 				    	    struct lookup_table *lookup_table,
 				    	    struct sd_set *sd_set,
 				    	    const struct capture_config *config,
@@ -487,7 +508,8 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	u32 attributes;
 	int mrec_flags;
 	u32 sd_size = 0;
-	int ret = 0;
+	int ret;
+	char dos_name_utf8[64];
 	struct dentry *root;
 
 	mrec_flags = ni->mrec->flags;
@@ -513,8 +535,28 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	root = new_dentry(path_basename(path));
 	if (!root)
 		return WIMLIB_ERR_NOMEM;
-
 	*root_p = root;
+
+	if (dir_ni && (name_type == FILE_NAME_WIN32_AND_DOS
+		       || name_type == FILE_NAME_WIN32))
+	{
+		ret = ntfs_get_ntfs_dos_name(ni, dir_ni, dos_name_utf8,
+					     sizeof(dos_name_utf8));
+		if (ret > 0) {
+			DEBUG("Changing short name of `%s'", path);
+			ret = change_dentry_short_name(root, dos_name_utf8,
+						       ret);
+			if (ret != 0)
+				return ret;
+		} else {
+			if (errno != ENODATA) {
+				ERROR_WITH_ERRNO("Error getting DOS name "
+						 "of `%s'", path);
+				return WIMLIB_ERR_NTFS_3G;
+			}
+		}
+	}
+
 	root->creation_time    = le64_to_cpu(ni->creation_time);
 	root->last_write_time  = le64_to_cpu(ni->last_data_change_time);
 	root->last_access_time = le64_to_cpu(ni->last_access_time);
@@ -643,9 +685,10 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 
 	path[0] = '/';
 	path[1] = '\0';
-	ret = build_dentry_tree_ntfs_recursive(root_p, root_ni, path, 1,
-					       lookup_table, &sd_set,
-					       config, ntfs_vol_p, flags);
+	ret = build_dentry_tree_ntfs_recursive(root_p, NULL, root_ni, path, 1,
+					       FILE_NAME_POSIX, lookup_table,
+					       &sd_set, config, ntfs_vol_p,
+					       flags);
 out_cleanup:
 	FREE(path);
 	ntfs_inode_close(root_ni);
