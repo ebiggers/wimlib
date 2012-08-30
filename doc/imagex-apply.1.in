@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "May 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "September 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
 imagex apply \- Extract one image, or all images, from a WIM archive
 
@@ -31,12 +31,13 @@ extracted with the root of the image corresponding to the directory named by
 \fBTARGET\fR; or, if the keyword \fBall\fR is given, the images are extracted
 into subdirectories of \fITARGET\fR that will be named after the image names,
 falling back to the image indices if there is an image with no name.
+\fITARGET\fR can specify a directory on any type of filesystem.
 
 In the normal mode of extraction, the following information will be extracted
 from the WIM image(s):
 
 .IP \[bu] 4
-The default (unnamed) data streams of each file
+The default (unnamed) data stream of each file
 .IP \[bu]
 Hard links, if supported by the underlying filesystem
 .IP \[bu]
@@ -76,6 +77,11 @@ the \fBmkntfs\fR (8) command.
 
 The NTFS extraction mode is not available if wimlib was compiled using the
 --without-ntfs-3g option.
+
+Please note that the NTFS extraction mode is \fInot\fR entered if \fITARGET\fR
+is a directory, even if a NTFS filesystem is mounted on \fITARGET\fR.  You must
+specify the NTFS volume itself (and it must be unmounted, and you must have
+permission to write to it).
 
 In the NTFS extraction mode, the following information will be extracted from
 the WIM image:
@@ -175,6 +181,16 @@ extracted, and some additional informational messages.
 .SH NOTES
 
 \fBimagex apply\fR does not yet support split WIMs.
+
+\fBimagex apply\fR calculates the SHA1 message digest of every file stream it
+extracts and verifies that it is the same as the SHA1 message digest provided in
+the WIM file.  It is an error if the message digests don't match.  It's also
+considered to be an error if any WIM resources cannot be found in the stream
+lookup table.  So you can be sure that the files are extracted correctly, even
+though we don't provide a \fB/verify\fR option like Microsoft's version of
+imagex does.  Please note that this is separate from the integrity table of the
+WIM, which provides SHA1 message digests over raw chunks of the entire WIM file
+and is checked separately if the \fB--check\fR option is specified.
 
 .SH EXAMPLES
 .SS Normal extraction mode

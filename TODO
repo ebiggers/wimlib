@@ -1,4 +1,4 @@
-See the LIMITATIONS section on the main page of the Doxygen documentation for
-wimlib.
-
-There should be some test cases to test the library.
+- Fix bugs
+- Add more test cases
+- Better support for split WIMs
+- Implement LZX block splitting to improve compression ratio

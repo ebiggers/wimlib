@@ -45,7 +45,7 @@ Mounting split WIMs is not yet supported.
 \fB--check\fR
 When reading the WIM, verify its integrity if it contains an integrity table.
 .TP
-\fB--stream-interface\fR \fIINTERFACE\fR
+\fB--streams-interface\fR=\fIINTERFACE\fR
 
 This option is inspired by the ntfs-3g filesystem driver (see \fBntfs-3g\fR
 (8)).  It controls how alternate data streams, or named data streams, in WIM
