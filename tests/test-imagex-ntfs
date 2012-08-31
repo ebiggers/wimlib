@@ -11,7 +11,7 @@ cd tests
 
 imagex() {
 	#echo "imagex $@"
-	../imagex $@ > /dev/null
+	../imagex $@
 }
 
 __do_unmount() {
@@ -46,8 +46,8 @@ do_mkntfs() {
 
 init() {
 	echo "Creating NTFS volumes and empty directories to use as mountpoints"
-	dd if=/dev/zero of=in.ntfs bs=4096 count=260 &> /dev/null
-	dd if=/dev/zero of=out.ntfs bs=4096 count=260 &> /dev/null
+	dd if=/dev/zero of=in.ntfs bs=4096 count=500 &> /dev/null
+	dd if=/dev/zero of=out.ntfs bs=4096 count=500 &> /dev/null
 	mkdir in.mnt out.mnt
 	do_mkntfs in.ntfs
 	do_mkntfs out.ntfs
@@ -208,3 +208,62 @@ do_test 'echo 999 > file;
 	 setfattr -n user.ads -v "888" file;
 	 ln file link;
 	 setfattr -v DOSNAME -n system.ntfs_dos_name file;'
+
+msg "NTFS volume containing C source code of wimlib"
+do_test 'cp ../../src/*.c ../../src/*.h .'
+
+msg "NTFS volume containing file with security descriptor"
+do_test 'touch file;
+	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` file'
+
+msg "NTFS volume containing files with different security descriptors"
+do_test 'touch file;
+	 touch file2;
+	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` file
+	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_2.base64` file'
+	
+msg "NTFS volume containing files with different security descriptors and some with the same security descriptor"
+do_test 'touch file;
+	 touch file2;
+	 touch file3;
+	 mkdir dir;
+	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` file
+	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_2.base64` file
+	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` dir
+	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` file3'
+
+msg "NTFS volume containing tons of random stuff"
+do_test 'echo -n 8 > file;
+	 ln file hardlink;
+	 ln -s hardlink symlink;
+	 echo -n 8 > identical file;
+	 dd if=/dev/urandom of=randomfile bs=4096 count=10;
+	 mkdir dir;
+	 setfattr -n system.ntfs_dos_name -v DOSNAME dir;
+	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` dir
+	 mkdir anotherdir;
+	 cp file anotherdir;
+	 ln file anotherdir/anotherhardlink;
+	 ln -s .. anotherdir/anothersymlink;
+	 ln -s anothersymlink anotherdir/symlinktosymlink;
+	 echo -n 33 > anotherfile;
+	 setfattr -n user.ads anotherfile -v 33;
+	 setfattr -n user.ads2 anotherfile -v 8;
+	 setfattr -n user.ads3 anotherfile -v 33;
+	 echo -n > emptyfile;
+	 setfattr -n user.ads emptyfile -v 8;
+	 setfattr -n user.ads5 emptyfile -v"`cat ../../src/hardlink.c`"
+	 mkdir dir/subdir;
+	 ln file dir/subdir/file;
+	 echo -n 8 > dir/subdir/file2;
+	 ln dir/subdir/file dir/subdir/link;
+	 setfattr -n system.ntfs_dos_name -v 123 dir/subdir/link;
+	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` dir/subdir/link;
+	 setfattr -n user.yet_another_ads -v "" dir/subdir/link;
+	 setfattr -n user.yet_another_ads2 -v "" dir/subdir/link;
+	 setfattr -n user.yet_another_ads3 -v "abc" dir/subdir/link;
+	 setfattr -n user.yet_another_ads4 -v "" dir/subdir/link;'
+
+echo "**********************************************************"
+echo "           NTFS capture/apply tests passed                "
+echo "**********************************************************"

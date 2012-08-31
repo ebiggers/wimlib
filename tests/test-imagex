@@ -612,5 +612,5 @@ if imagex export dir.wim all new.wim --boot; then
 fi
 
 echo "**********************************************************"
-echo "                     All tests passed                     "
+echo "                 Basic imagex tests passed                "
 echo "**********************************************************"

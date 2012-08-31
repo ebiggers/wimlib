@@ -299,7 +299,7 @@ struct dentry {
 	};
 
 	/* Path to extracted file on disk (used during extraction only)
-	 * (malloc()ed buffer) */
+	 * (malloc()ed buffer, or set the same as full_path_utf8) */
 	char *extracted_file;
 };
 

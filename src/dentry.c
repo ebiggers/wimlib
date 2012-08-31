@@ -617,7 +617,8 @@ static void __destroy_dentry(struct dentry *dentry)
 	FREE(dentry->file_name_utf8);
 	FREE(dentry->short_name);
 	FREE(dentry->full_path_utf8);
-	FREE(dentry->extracted_file);
+	if (dentry->extracted_file != dentry->full_path_utf8)
+		FREE(dentry->extracted_file);
 }
 
 /* Frees a WIM dentry. */
