@@ -413,7 +413,7 @@ static int imagex_append(int argc, const char **argv)
 			goto out_write;
 		}
 	} else {
-		if (errno != -ENOENT)
+		if (errno != ENOENT)
 			imagex_error_with_errno("Failed to stat `%s'", dir);
 	}
 #endif
@@ -522,7 +522,7 @@ static int imagex_apply(int argc, const char **argv)
 			goto out;
 		}
 	} else {
-		if (errno != -ENOENT)
+		if (errno != ENOENT)
 			imagex_error_with_errno("Failed to stat `%s'", dir);
 	}
 #endif

@@ -277,9 +277,6 @@ struct extract_args {
 	WIMStruct *w;
 	int extract_flags;
 	const char *output_dir;
-#ifdef WITH_NTFS_3G
-	struct SECURITY_API *scapi;
-#endif
 };
 
 /* 
@@ -293,7 +290,6 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	int extract_flags = args->extract_flags;
 	size_t len = strlen(args->output_dir);
 	char output_path[len + dentry->full_path_utf8_len + 1];
-	int ret;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) {
 		wimlib_assert(dentry->full_path_utf8);
@@ -305,16 +301,12 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
 	if (dentry_is_symlink(dentry))
-		ret = extract_symlink(dentry, output_path, w);
+		return extract_symlink(dentry, output_path, w);
 	else if (dentry_is_directory(dentry))
-		ret = extract_directory(output_path, dentry_is_root(dentry));
+		return extract_directory(output_path, dentry_is_root(dentry));
 	else
-		ret = extract_regular_file(w, dentry, args->output_dir,
+		return extract_regular_file(w, dentry, args->output_dir,
 					    output_path, extract_flags);
-	if (ret != 0)
-		return ret;
-
-	return 0;
 }
 
 /* Apply timestamp to extracted file */
@@ -353,9 +345,6 @@ static int extract_single_image(WIMStruct *w, int image,
 		.w = w,
 		.extract_flags = extract_flags,
 		.output_dir = output_dir,
-	#ifdef WITH_NTFS_3G
-		.scapi = NULL
-	#endif
 	};
 
 	ret = for_dentry_in_tree(wim_root_dentry(w), extract_dentry, &args);
@@ -379,7 +368,8 @@ static int extract_all_images(WIMStruct *w, const char *output_dir,
 	int image;
 	const char *image_name;
 
-	DEBUG("Attempting to extract all images from `%s'", w->filename);
+	DEBUG("Attempting to extract all images from `%s' to `%s'",
+	      w->filename, output_dir);
 
 	ret = extract_directory(output_dir, true);
 	if (ret != 0)
@@ -398,11 +388,8 @@ static int extract_all_images(WIMStruct *w, const char *output_dir,
 		}
 		ret = extract_single_image(w, image, buf, extract_flags);
 		if (ret != 0)
-			goto done;
+			return ret;
 	}
-done:
-	/* Restore original output directory */
-	buf[output_path_len + 1] = '\0';
 	return 0;
 }
 

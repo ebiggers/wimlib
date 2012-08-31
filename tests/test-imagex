@@ -9,7 +9,7 @@ cd tests
 
 imagex() {
 	echo "imagex $@"
-	../imagex $@
+	../imagex $@ 
 }
 
 cleanup() {
