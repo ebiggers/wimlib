@@ -1,4 +1,6 @@
-/* Compares two mounted NTFS filesystems. */
+/* 
+ * A program to compare two mounted NTFS filesystems.
+ */
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -56,6 +58,9 @@ static void error(const char *format, ...)
 	exit(2);
 }
 
+/* This is just a binary tree that maps inode numbers in one NTFS tree to inode
+ * numbers in the other NTFS tree.  This is so we can tell if the hard link
+ * groups are the same between the two NTFS trees.  */
 struct node {
 	u64 ino_from;
 	u64 ino_to;
@@ -116,6 +121,7 @@ static void insert_ino(u64 ino_from, u64 ino_to)
 }
 
 
+/* Compares the "normal" contents of two files of size @size. */
 static void cmp(const char *file1, const char *file2, size_t size)
 {
 	int fd1, fd2;
@@ -142,6 +148,7 @@ static void cmp(const char *file1, const char *file2, size_t size)
 	close(fd2);
 }
 
+/* Compares an extended attribute of the files. */
 static void cmp_xattr(const char *file1, const char *file2,
 		      const char *xattr_name, ssize_t max_size,
 		      bool missingok)
@@ -158,7 +165,7 @@ static void cmp_xattr(const char *file1, const char *file2,
 				if (errno == ENOATTR)
 					return;
 				else
-					error("xattr `%s' exists on file `%s' "
+					difference("xattr `%s' exists on file `%s' "
 					      "but not on file `%s'",
 					      xattr_name, file1, file2);
 			} else {
@@ -199,6 +206,7 @@ static void cmp_xattr(const char *file1, const char *file2,
 	free(buf2);
 }
 
+/* Compares all alternate data streams of the files */
 static void cmp_ads(const char *file1, const char *file2)
 {
 	char _list1[256], _list2[sizeof(_list1)];
@@ -237,7 +245,7 @@ static void cmp_ads(const char *file1, const char *file2)
 	pe = list1 + len1 - 1;
 	while (p < pe) {
 		cmp_xattr(file1, file2, p, 0, false);
-		p += strlen(p);
+		p += strlen(p) + 1;
 	}
 	if (list1 != _list1) {
 		free(list1);
@@ -245,6 +253,8 @@ static void cmp_ads(const char *file1, const char *file2)
 	}
 }
 
+/* Compares special NTFS data of the files, as accessed through extended
+ * attributes. */
 static void special_cmp(const char *file1, const char *file2)
 {
 	cmp_xattr(file1, file2, "system.ntfs_acl", 0, false);
@@ -256,6 +266,7 @@ static void special_cmp(const char *file1, const char *file2)
 }
 
 
+/* Compares file1 on one NTFS volume to file2 on another NTFS volume. */
 static void ntfs_cmp(char file1[], int file1_len, char file2[], int file2_len)
 {
 	struct stat st1, st2;

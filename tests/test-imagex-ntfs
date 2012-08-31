@@ -81,9 +81,19 @@ do_test() {
 	if ! imagex apply ntfs.wim 1 out.ntfs; then
 		error "Failed to apply WIM to NTFS volume"
 	fi
-	__do_mount in.ntfs in.mnt
-	__do_mount out.ntfs out.mnt
-	./ntfs-cmp in.mnt out.mnt
+	__do_mount in.ntfs in.mnt noatime
+	__do_mount out.ntfs out.mnt noatime
+	if [ -x /usr/bin/tree ]; then
+		tree in.mnt --inodes -F -s --noreport
+	fi
+	if ! ./ntfs-cmp in.mnt out.mnt; then
+		if [ -x /usr/bin/tree ]; then
+			echo "Dumping tree of applied image"
+			tree out.mnt --inodes -F -s --noreport
+			error 'Information was lost or corrupted while capturing
+				and then applying a NTFS volume'
+		fi
+	fi
 	rm -rf out.mnt/* in.mnt/*
 	__do_unmount out.mnt
 }
@@ -148,7 +158,7 @@ msg "NTFS volume containing identical files and symlinks in subdirectory"
 do_test 'mkdir dir;
 	 echo 888 > dir/file;
 	 echo 888 > dir/idfile2;
-	 ln -s dir dir/circle; ln -s file dir/filelink'
+	 ln -s ../dir dir/circle; ln -s file dir/filelink'
 
 msg "NTFS volume containing hard link group and identical files not hard linked"
 do_test 'echo 888 > file;
@@ -161,5 +171,40 @@ msg "NTFS volume containing file with named data stream"
 do_test 'echo 1 > file;
 	 setfattr -n user.ads -v 2 file'
 
-	
+msg "NTFS volume containing file with multiple named data streams"
+do_test 'echo 1 > file;
+	 setfattr -n user.a -v 1 file;
+	 setfattr -n user.aa -v 11 file;
+	 setfattr -n user.aaa -v 111 file;
+	 setfattr -n user.aaaa -v 1111 file'
 
+msg "NTFS volume containing file with multiple named data streams with same contents"
+do_test 'echo 1 > file;
+	 setfattr -n user.a -v 1111 file;
+	 setfattr -n user.aa -v 1111 file;
+	 setfattr -n user.aaa -v 1111 file;
+	 setfattr -n user.aaaa -v 1111 file;'
+	
+msg "NTFS volume containing file with named data streams with same contents as other file"
+do_test 'echo -n > file;
+	 setfattr -n user.a -v 1111 file;
+	 echo -n 1111 > otherfile;'
+
+msg "NTFS volume containing file with empty named data stream and non-empty unnamed data stream"
+do_test 'echo 1 > file;
+	 setfattr -n user.ads -v "" file;'
+
+msg "NTFS volume containing file with empty named data stream and empty unnamed data stream"
+do_test 'echo -n > file;
+	 setfattr -n user.ads -v "" file;'
+
+msg "NTFS volume containing file with named data stream with hardlink"
+do_test 'echo 999 > file;
+	 setfattr -n user.ads -v "888" file;
+	 ln file link;'
+
+msg "NTFS volume containing file with named data stream with hardlink and DOS name"
+do_test 'echo 999 > file;
+	 setfattr -n user.ads -v "888" file;
+	 ln file link;
+	 setfattr -v DOSNAME -n system.ntfs_dos_name file;'
