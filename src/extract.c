@@ -393,25 +393,54 @@ static int extract_all_images(WIMStruct *w, const char *output_dir,
 	return 0;
 }
 
+
 /* Extracts a single image or all images from a WIM file. */
 WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
-				   const char *output_dir, int flags)
+				   const char *output_dir, int flags,
+				   WIMStruct **additional_swms,
+				   unsigned num_additional_swms)
 {
-	if (!output_dir)
+	struct lookup_table *joined_tab, *w_tab_save;
+	int ret;
+
+	DEBUG("w->filename = %s, image = %d, output_dir = %s, flags = 0x%x, "
+	      "num_additional_swms = %u",
+	      w->filename, image, output_dir, flags, num_additional_swms);
+
+	if (!w || !output_dir)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if ((flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 			== (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 		return WIMLIB_ERR_INVALID_PARAM;
 
+	ret = verify_swm_set(w, additional_swms, num_additional_swms);
+	if (ret != 0)
+		return ret;
+
+	if (num_additional_swms) {
+		ret = new_joined_lookup_table(w, additional_swms,
+					      num_additional_swms, &joined_tab);
+		if (ret != 0)
+			return ret;
+		w_tab_save = w->lookup_table;
+		w->lookup_table = joined_tab;
+	}
+
+
 	for_lookup_table_entry(w->lookup_table, zero_out_refcnts, NULL);
 
 	if (image == WIM_ALL_IMAGES) {
 		flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
-		return extract_all_images(w, output_dir, flags);
+		ret = extract_all_images(w, output_dir, flags);
 	} else {
 		flags &= ~WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
-		return extract_single_image(w, image, output_dir, flags);
+		ret = extract_single_image(w, image, output_dir, flags);
 	}
+	if (num_additional_swms) {
+		free_lookup_table(w->lookup_table);
+		w->lookup_table = w_tab_save;
+	}
+	return ret;
 
 }

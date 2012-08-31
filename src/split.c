@@ -53,8 +53,6 @@ static int finish_swm(WIMStruct *w, struct lookup_table_entry *lte_chain_head,
 			lookup_table_offset);
 
 	while (lte_chain_head != NULL) {
-		print_lookup_table_entry(lte_chain_head);
-
 		ret = write_lookup_table_entry(lte_chain_head, w->out_fp);
 		if (ret != 0)
 			return ret;

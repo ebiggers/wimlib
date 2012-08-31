@@ -27,6 +27,7 @@
 #include <getopt.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <glob.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -134,6 +135,7 @@ static const struct option apply_options[] = {
 	{"hardlink", no_argument,       NULL, 'h'},
 	{"symlink",  no_argument,       NULL, 's'},
 	{"verbose",  no_argument,       NULL, 'v'},
+	{"ref",      required_argument, NULL, 'r'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_options[] = {
@@ -444,7 +446,8 @@ out:
 static int imagex_apply(int argc, const char **argv)
 {
 	int c;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
+	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS |
+			 WIMLIB_OPEN_FLAG_SPLIT_OK;
 	int image;
 	int num_images;
 	WIMStruct *w;
@@ -453,6 +456,11 @@ static int imagex_apply(int argc, const char **argv)
 	const char *dir;
 	const char *image_num_or_name;
 	int extract_flags = 0;
+
+	const char *swm_glob = NULL;
+	WIMStruct **additional_swms = NULL;
+	size_t num_additional_swms = 0;
+	glob_t globbuf;
 
 	for_opt(c, apply_options) {
 		switch (c) {
@@ -467,6 +475,9 @@ static int imagex_apply(int argc, const char **argv)
 			break;
 		case 'v':
 			extract_flags |= WIMLIB_EXTRACT_FLAG_VERBOSE;
+			break;
+		case 'r':
+			swm_glob = optarg;
 			break;
 		default:
 			usage(APPLY);
@@ -491,7 +502,7 @@ static int imagex_apply(int argc, const char **argv)
 
 	ret = wimlib_open_wim(wimfile, open_flags, &w);
 	if (ret != 0)
-		goto out;
+		return ret;
 
 	image = wimlib_resolve_image(w, image_num_or_name);
 	ret = verify_image_exists(image);
@@ -507,6 +518,36 @@ static int imagex_apply(int argc, const char **argv)
 		goto out;
 	}
 
+	if (swm_glob) {
+		ret = glob(swm_glob, GLOB_ERR | GLOB_NOSORT, NULL, &globbuf);
+		if (ret != 0) {
+			imagex_error_with_errno("Failed to process glob "
+						"\"%s\"", swm_glob);
+			ret = -1;
+			goto out;
+		}
+		num_additional_swms = globbuf.gl_pathc;
+		additional_swms = calloc(num_additional_swms, sizeof(additional_swms[0]));
+		if (!additional_swms) {
+			imagex_error("Out of memory");
+			ret = -1;
+			goto out;
+		}
+		size_t offset = 0;
+		for (size_t i = 0; i < num_additional_swms; i++) {
+			if (strcmp(globbuf.gl_pathv[i], wimfile) == 0) {
+				offset++;
+				continue;
+			}
+			ret = wimlib_open_wim(globbuf.gl_pathv[i],
+					      open_flags | WIMLIB_OPEN_FLAG_SPLIT_OK,
+					      &additional_swms[i - offset]);
+			if (ret != 0)
+				goto out;
+		}
+		num_additional_swms -= offset;
+	}
+
 #ifdef WITH_NTFS_3G
 	struct stat stbuf;
 
@@ -518,7 +559,9 @@ static int imagex_apply(int argc, const char **argv)
 			       image, wimfile, ntfs_device);
 			ret = wimlib_apply_image_to_ntfs_volume(w, image,
 								ntfs_device,
-								extract_flags);
+								extract_flags,
+								additional_swms,
+								num_additional_swms);
 			goto out;
 		}
 	} else {
@@ -527,9 +570,13 @@ static int imagex_apply(int argc, const char **argv)
 	}
 #endif
 
-	ret = wimlib_extract_image(w, image, dir, extract_flags);
+	ret = wimlib_extract_image(w, image, dir, extract_flags,
+				   additional_swms, num_additional_swms);
 out:
 	wimlib_free(w);
+	if (additional_swms)
+		for (size_t i = 0; i < num_additional_swms; i++)
+			wimlib_free(additional_swms[i]);
 	return ret;
 }
 

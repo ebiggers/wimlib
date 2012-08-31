@@ -364,6 +364,15 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	struct wim_pair wims;
 	struct wim_security_data *sd;
 
+	if (!src_wim || !dest_wim)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (src_wim->hdr.total_parts != 1 || src_wim->hdr.total_parts != 1) {
+		ERROR("Exporting an image to or from a split WIM is "
+		      "unsupported");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
+
 	if (src_image == WIM_ALL_IMAGES) {
 		if (src_wim->hdr.image_count > 1) {
 
@@ -465,6 +474,11 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 	int num_images;
 	int i;
 	int ret;
+
+	if (w->hdr.total_parts != 1) {
+		ERROR("Deleting an image from a split WIM is not supported.");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
 
 	if (image == WIM_ALL_IMAGES) {
 		num_images = w->hdr.image_count;
@@ -789,6 +803,11 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	if (!dir) {
 		ERROR("Must specify the name of a directory or NTFS volume");
 		return WIMLIB_ERR_INVALID_PARAM;
+	}
+
+	if (w->hdr.total_parts != 1) {
+		ERROR("Cannot add an image to a split WIM");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
 
 	if (wimlib_image_name_in_use(w, name)) {

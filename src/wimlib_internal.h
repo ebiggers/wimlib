@@ -354,6 +354,16 @@ extern int write_integrity_table(FILE *out, u64 end_header_offset,
 				 int show_progress);
 extern int check_wim_integrity(WIMStruct *w, int show_progress, int *status);
 
+/* join.c */
+
+extern int new_joined_lookup_table(WIMStruct *w,
+				   WIMStruct **additional_swms,
+			    	   unsigned num_additional_swms,
+				   struct lookup_table **table_ret);
+
+extern int verify_swm_set(WIMStruct *w,
+			  WIMStruct **additional_swms,
+			  unsigned num_additional_swms);
 /* modify.c */
 extern void destroy_image_metadata(struct image_metadata *imd,
 				   struct lookup_table *lt);

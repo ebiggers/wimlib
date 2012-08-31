@@ -95,13 +95,16 @@
  * README for more information about installing it.  To use wimlib in a program
  * after installing it, include @c wimlib.h and link your program with @c -lwim.
  *
- * wimlib wraps up a WIM file in an opaque ::WIMStruct structure.
+ * wimlib wraps up a WIM file in an opaque ::WIMStruct structure.  A ::WIMStruct
+ * may represent either a stand-alone WIM or one part of a split WIM.
  *
  * All functions in wimlib's public API are prefixed with @c wimlib.  Most
  * return an integer error code on failure.  Use wimlib_get_error_string() to
  * get a string that describes an error code.  wimlib also can print error
  * messages itself when an error happens, and these may be more informative than
- * the error code; to enable this, call wimlib_set_print_errors().
+ * the error code; to enable this, call wimlib_set_print_errors().  Please note
+ * that this is for convenience only, and some errors can occur without a
+ * message being printed.
  *
  * wimlib is thread-safe as long as different ::WIMStruct's are used, with the
  * following exceptions:  wimlib_set_print_errors() and
@@ -163,7 +166,6 @@
  *
  * While wimlib supports the main features of WIM files, wimlib currently has
  * the following limitations:
- * - There is no way to directly extract or mount split WIMs.
  * - Different versions of the WIM file format are unsupported.  There is one
  *   different version of the format from development versions of Windows Vista,
  *   but I'm not planning to support it.
@@ -416,6 +418,9 @@ enum wimlib_error_code {
  * @retval ::WIMLIB_ERR_STAT
  * 	Failed obtain the metadata for a file or directory in the directory tree
  * 	rooted at @a dir.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a wim is part of a split WIM.  Adding an image to a split WIM is
+ * 	unsupported.
  */
 extern int wimlib_add_image(WIMStruct *wim, const char *dir, 
 			    const char *name, const char *config,
@@ -444,7 +449,9 @@ extern int wimlib_add_image_from_ntfs_volume(WIMStruct *w, const char *device,
  * the WIM.
  */
 extern int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
-				 	     const char *device, int flags);
+				 	     const char *device, int flags,
+					     WIMStruct **additional_swms,
+					     unsigned num_additional_swms);
 
 /** 
  * Creates a WIMStruct for a new WIM file.
@@ -495,6 +502,9 @@ extern int wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
  * @retval ::WIMLIB_ERR_NOMEM Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_READ
  * 	Could not read the metadata resource for @a image from the WIM.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a wim is part of a split WIM.  Deleting an image from a split WIM is
+ * 	unsupported.
  */
 extern int wimlib_delete_image(WIMStruct *wim, int image);
 
@@ -548,7 +558,8 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	::WIM_ALL_IMAGES, @a src_wim contains multiple images, and no images in
  * 	@a src_wim are marked as bootable; or @a dest_name and/or @a
  * 	dest_description were non-<code>NULL</code>, @a src_image was
- * 	::WIM_ALL_IMAGES, and @a src_wim contains multiple images.
+ * 	::WIM_ALL_IMAGES, and @a src_wim contains multiple images; or @a src_wim
+ * 	or @a dest_wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a src_image in @a src_wim is invalid.	
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
@@ -557,25 +568,51 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_READ
  * 	Could not read the metadata resource for @a src_image from @a src_wim.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a src_wim or @a dest_wim is part of a split WIM.  Exporting an image
+ * 	from or to a split WIM is unsupported.
  */
 extern int wimlib_export_image(WIMStruct *src_wim, int src_image, 
 			       WIMStruct *dest_wim, const char *dest_name, 
 			       const char *dest_description, int flags);
 
 /**
- * Extracts an image, or all images, from a WIM file.
- *
- * The output directory must have been previously set with
- * wimlib_set_output_dir().
- *
- * The link type used for extracted files is that specified by a previous call
- * to wimlib_set_link_type(), or ::WIM_LINK_TYPE_NONE by default.
+ * Extracts an image, or all images, from a standalone or split WIM file.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
+ * 	Pointer to the ::WIMStruct for a standalone WIM file, or part 1 of a
+ * 	split WIM.
  * @param image
  * 	The image to extract.  Can be the number of an image, or ::WIM_ALL_IMAGES
  * 	to specify that all images are to be extracted.
+ * @param output_dir
+ * 	Directory to extract the WIM image(s) to.  It is created if it does not
+ * 	already exist.
+ * @param flags
+ * 	Bitwise or of the flags prefixed with WIMLIB_EXTRACT_FLAG.
+ *
+ * 	One or none of ::WIMLIB_EXTRACT_FLAG_HARDLINK or
+ * 	::WIMLIB_EXTRACT_FLAG_SYMLINK may be specified.  These flags cause
+ * 	extracted files that are identical to be hardlinked or symlinked
+ * 	together, depending on the flag.  These flags override the hard link
+ * 	groups that are specified in the WIM file itself.  If ::WIM_ALL_IMAGES
+ * 	is provided as the @a image parameter, files may be hardlinked or
+ * 	symlinked across images if a file is found to occur in more than one
+ * 	image.
+ *
+ * 	You may also specify the flag ::WIMLIB_EXTRACT_FLAG_VERBOSE to cause
+ * 	informational messages to be printed during the extraction, including
+ * 	the name of each extracted file or directory.
+ * @param additional_swms
+ * 	Array of pointers to the ::WIMStruct for each additional part in the
+ * 	split WIM.  Ignored if @a num_additional_swms is 0.  The pointers do not
+ * 	need to be in any particular order, but they must include all parts of
+ * 	the split WIM other than the first part, which must be provided in the
+ * 	@a wim parameter.
+ * @param num_additional_swms
+ * 	Number of additional WIM parts provided in the @a additional_swms array.
+ * 	This number should be one less than the total number of parts in the
+ * 	split WIM.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -602,15 +639,23 @@ extern int wimlib_export_image(WIMStruct *src_wim, int src_image,
  * @retval ::WIMLIB_ERR_READ
  * 	A unexpected end-of-file or read error occurred when trying to read data
  * 	from the WIM file associated with @a wim.
+ * @retval ::WIMLIB_ERR_SPLIT_INVALID
+ * 	The WIM is a split WIM, but the parts specified do not form a complete
+ * 	split WIM because they do not include all the parts of the original WIM,
+ * 	there are duplicate parts, or not all the parts have the same GUID and
+ * 	compression type.
  * @retval ::WIMLIB_ERR_WRITE
  * 	Failed to write a file being extracted.
  */
 extern int wimlib_extract_image(WIMStruct *wim, int image,
-				const char *output_dir, int flags);
+				const char *output_dir, int flags,
+				WIMStruct **additional_swms,
+				unsigned num_additional_swms);
 
 /**
  * Extracts the XML data for a WIM file to a file stream.  Every WIM file
  * includes a string of XML that describes the images contained in the WIM.
+ * This function works on standalone WIMs as well as split WIM parts.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for a WIM file.
@@ -687,7 +732,8 @@ extern const char *wimlib_get_error_string(enum wimlib_error_code code);
  * Returns the description of the specified image.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
+ * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
+ * 	standalone WIM or a split WIM part.
  * @param image
  * 	The number of the image, numbered starting at 1.
  *
@@ -701,7 +747,8 @@ extern const char *wimlib_get_image_description(const WIMStruct *wim, int image)
  * Returns the name of the specified image.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
+ * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
+ * 	standalone WIM or a split WIM part.
  * @param image
  * 	The number of the image, numbered starting at 1.
  *
@@ -715,7 +762,8 @@ extern const char *wimlib_get_image_name(const WIMStruct *wim, int image);
  * Gets the number of images contained in the WIM.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
+ * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
+ * 	standalone WIM or a split WIM part.
  * 
  * @return
  * 	The number of images contained in the WIM file.
@@ -723,7 +771,7 @@ extern const char *wimlib_get_image_name(const WIMStruct *wim, int image);
 extern int wimlib_get_num_images(const WIMStruct *wim);
 
 /**
- * Gets the part number of the wim (in a split WIM).
+ * Gets the part number of part of a split WIM.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for a WIM file.
@@ -742,7 +790,7 @@ extern int wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret);
  * @param wim
  * 	Pointer to the ::WIMStruct for a WIM file.
  * @return
- * 	@c true if the WIM has an integrity table; false otherwise.
+ * 	@c true if the WIM has an integrity table; @c false otherwise.
  */
 extern bool wimlib_has_integrity_table(const WIMStruct *wim);
 
@@ -790,7 +838,7 @@ extern bool wimlib_image_name_in_use(const WIMStruct *wim, const char *name);
  * Note that this function merely copies the resources, so it will not check to
  * see if the resources, including the metadata resource, are valid or not.
  */
-extern int wimlib_join(const char **swms, int num_swms,
+extern int wimlib_join(const char **swms, unsigned num_swms,
 		       const char *output_path, int flags);
 
 /**
@@ -846,7 +894,6 @@ extern int wimlib_join(const char **swms, int num_swms,
  * @retval ::WIMLIB_ERR_READ
  * 	An unexpected end-of-file or read error occurred when trying to read
  * 	data from the WIM file associated with @a wim.
- *
  */
 extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags);
 
@@ -1031,6 +1078,8 @@ extern void wimlib_print_available_images(const WIMStruct *wim, int image);
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a valid image in @a wim, and is not
  * 	::WIM_ALL_IMAGES.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  * 	The metadata resource for one of the specified images is invalid.
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
@@ -1040,6 +1089,9 @@ extern void wimlib_print_available_images(const WIMStruct *wim, int image);
  * @retval ::WIMLIB_ERR_READ
  * 	An unexpected read error or end-of-file occurred when reading the
  * 	metadata resource for one of the specified images.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a wim was not a standalone WIM and was not the first part of a split
+ * 	WIM.
  */
 extern int wimlib_print_files(WIMStruct *wim, int image);
 
@@ -1047,7 +1099,8 @@ extern int wimlib_print_files(WIMStruct *wim, int image);
  * Prints detailed information from the header of a WIM file.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
+ * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
+ * 	standalone WIM or part of a split WIM.
  *
  * @return This function has no return value.
  *
@@ -1089,6 +1142,8 @@ extern void wimlib_print_lookup_table(WIMStruct *wim);
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a valid image in @a wim, and is not
  * 	::WIM_ALL_IMAGES.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  * 	The metadata resource for one of the specified images is invalid.
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
@@ -1098,6 +1153,9 @@ extern void wimlib_print_lookup_table(WIMStruct *wim);
  * @retval ::WIMLIB_ERR_READ
  * 	An unexpected read error or end-of-file occurred when reading the
  * 	metadata resource for one of the specified images.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a wim was not a standalone WIM and was not the first part of a split
+ * 	WIM.
  */
 extern int wimlib_print_metadata(WIMStruct *wim, int image);
 
@@ -1144,9 +1202,14 @@ extern int wimlib_resolve_image(WIMStruct *wim, const char *image_name_or_num);
  * 	The number of the image to mark as bootable, or 0 to mark no image as
  * 	bootable.
  * @return 0 on success; nonzero on error.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE 
  * 	@a boot_idx does not specify an existing image in @a wim, and it was not
  * 	0.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a wim is part of a split WIM.  We do not support changing the boot
+ * 	index of a split WIM.
  */
 extern int wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
 
@@ -1154,7 +1217,9 @@ extern int wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
  * Changes the description of an image in the WIM.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
+ * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
+ * 	standalone WIM or part of a split WIM; however, you should set the same
+ * 	description on all parts of a split WIM.
  * @param image
  * 	The number of the image for which to change the description.
  * @param description
@@ -1164,6 +1229,8 @@ extern int wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a single existing image in @a wim.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @a description
  * 	string.
@@ -1171,6 +1238,28 @@ extern int wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
 extern int wimlib_set_image_descripton(WIMStruct *wim, int image, 
 				       const char *description);
 
+/**
+ * Changes what is written in the <FLAGS> element in the WIM XML data (something
+ * like "Core" or "Ultimate")
+ *
+ * @param wim
+ * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
+ * 	standalone WIM or part of a split WIM; however, you should set the same
+ * 	<FLAGS> element on all parts of a split WIM.
+ * @param image
+ * 	The number of the image for which to change the description.
+ * @param flags
+ * 	The new <FLAGS> element to give the image.  It may be @c NULL, which
+ * 	indicates that the image is to be given no <FLAGS> element.
+ *
+ * @return 0 on success; nonzero on error.
+ * @retval ::WIMLIB_ERR_INVALID_IMAGE
+ * 	@a image does not specify a single existing image in @a wim.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ * 	@a wim was @c NULL.
+ * @retval ::WIMLIB_ERR_NOMEM
+ * 	Failed to allocate the memory needed to duplicate the @a flags string.
+ */
 extern int wimlib_set_image_flags(WIMStruct *w, int image,
 				  const char *flags);
 
@@ -1178,17 +1267,19 @@ extern int wimlib_set_image_flags(WIMStruct *w, int image,
  * Changes the name of an image in the WIM.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
+ * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
+ * 	standalone WIM or part of a split WIM; however, you should set the same
+ * 	name on all parts of a split WIM.
  * @param image
  * 	The number of the image for which to change the name.
  * @param name
- * 	The new name to give the image.  It must not be @c NULL.
+ * 	The new name to give the image.  It must not a nonempty string.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
  * 	There is already an image named @a name in @a wim.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a name was @c NULL or the empty string.
+ * 	@a name was @c NULL or the empty string, or @a wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a single existing image in @a wim.
  * @retval ::WIMLIB_ERR_NOMEM
@@ -1203,6 +1294,9 @@ extern int wimlib_set_image_name(WIMStruct *wim, int image, const char *name);
  *
  * The default is to use the default @c malloc() and @c free() from the C
  * library.
+ *
+ * Please note that some external functions we call still may use the standard
+ * memory allocation functions.
  *
  * @param malloc_func
  * 	A function equivalent to @c malloc() that wimlib will use to allocate
@@ -1227,8 +1321,9 @@ int wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 
 /**
  * Sets whether wimlib is to print error messages to @c stderr when a function
- * fails or not.  These error messages may provide information that cannot be
- * determined only from the error code that is returned.
+ * fails.  These error messages may provide information that cannot be
+ * determined only from the error code that is returned.  Not every error will
+ * result in an error message being printed.
  *
  * This setting is global and not per-WIM.
  *
@@ -1365,6 +1460,8 @@ extern int wimlib_unmount(const char *dir, int flags);
  * 	A file that had previously been scanned for inclusion in the WIM by the
  * 	wimlib_add_image() or wimlib_add_image_from_ntfs_volume() functions was
  * 	concurrently modified, so it failed the SHA1 message digest check.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ * 	@a wim or @a path was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in @a wim is invalid.	
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
@@ -1380,6 +1477,9 @@ extern int wimlib_unmount(const char *dir, int flags);
  * 	with @a wim, or some file resources in @a wim refer to files in the
  * 	outside filesystem, and a read error occurred when reading one of these
  * 	files.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a wim is part of a split WIM.  You may not call this function on a
+ * 	split WIM.
  * @retval ::WIMLIB_ERR_WRITE
  * 	An error occurred when trying to write data to the new WIM file at @a
  * 	path.

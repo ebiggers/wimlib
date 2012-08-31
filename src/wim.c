@@ -328,6 +328,14 @@ WIMLIBAPI void wimlib_print_available_images(const WIMStruct *w, int image)
  * not WIM_NO_IMAGE. */
 WIMLIBAPI int wimlib_print_metadata(WIMStruct *w, int image)
 {
+	if (!w)
+		return WIMLIB_ERR_INVALID_PARAM;
+	if (w->hdr.part_number != 1) {
+		ERROR("We cannot show the metadata from part %hu of a %hu-part split WIM",
+		       w->hdr.part_number, w->hdr.total_parts);
+		ERROR("Select the first part of the split WIM to see the metadata.");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
 	if (image == WIM_ALL_IMAGES)
 		DEBUG("Printing metadata for all images");
 	else
@@ -337,12 +345,26 @@ WIMLIBAPI int wimlib_print_metadata(WIMStruct *w, int image)
 
 WIMLIBAPI int wimlib_print_files(WIMStruct *w, int image)
 {
+	if (!w)
+		return WIMLIB_ERR_INVALID_PARAM;
+	if (w->hdr.part_number != 1) {
+		ERROR("We cannot list the files from part %hu of a %hu-part split WIM",
+		       w->hdr.part_number, w->hdr.total_parts);
+		ERROR("Select the first part of the split WIM if you'd like to list the files.");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
 	return for_image(w, image, print_files);
 }
 
 /* Sets the index of the bootable image. */
 WIMLIBAPI int wimlib_set_boot_idx(WIMStruct *w, int boot_idx)
 {
+	if (!w)
+		return WIMLIB_ERR_INVALID_PARAM;
+	if (w->hdr.total_parts != 1) {
+		ERROR("We cannot modify the boot index of a split WIM");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
 	if (boot_idx < 0 || boot_idx > w->hdr.image_count)
 		return WIMLIB_ERR_INVALID_IMAGE;
 	w->hdr.boot_idx = boot_idx;
@@ -535,7 +557,7 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int flags,
  * closes all files associated with the WIMStruct.  */
 WIMLIBAPI void wimlib_free(WIMStruct *w)
 {
-	DEBUG("Freeing WIMStruct");
+	DEBUG2("Freeing WIMStruct");
 
 	if (!w)
 		return;

@@ -1356,6 +1356,9 @@ WIMLIBAPI int wimlib_set_image_name(WIMStruct *w, int image, const char *name)
 
 	DEBUG("Setting the name of image %d to %s", image, name);
 
+	if (!w)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if (!name || !*name) {
 		ERROR("Must specify a non-empty string for the image name");
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -1392,6 +1395,9 @@ WIMLIBAPI int wimlib_set_image_descripton(WIMStruct *w, int image,
 	char *p;
 
 	DEBUG("Setting the description of image %d to %s", image, description);
+
+	if (!w)
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (image < 1 || image > w->hdr.image_count) {
 		ERROR("%d is not a valid image", image);

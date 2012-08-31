@@ -26,6 +26,145 @@
 #include "wimlib_internal.h"
 #include "lookup_table.h"
 #include "xml.h"
+#include <stdlib.h>
+
+static int copy_lte_to_table(struct lookup_table_entry *lte, void *table)
+{
+	struct lookup_table_entry *copy;
+	copy = new_lookup_table_entry();
+	if (!copy)
+		return WIMLIB_ERR_NOMEM;
+	memcpy(copy, lte, sizeof(struct lookup_table_entry));
+	lookup_table_insert(table, copy);
+	return 0;
+}
+
+static int lookup_table_join(struct lookup_table *table,
+			     struct lookup_table *new)
+{
+	return for_lookup_table_entry(new, copy_lte_to_table, table);
+}
+
+
+static int cmp_swms_by_part_number(const void *swm1, const void *swm2)
+{
+	u16 partno_1 = (*(WIMStruct**)swm1)->hdr.part_number;
+	u16 partno_2 = (*(WIMStruct**)swm2)->hdr.part_number;
+	return (int)partno_1 - (int)partno_2;
+}
+
+int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
+		   unsigned num_additional_swms)
+{
+	unsigned total_parts = w->hdr.total_parts;
+	int ctype;
+	const u8 *guid;
+
+	if (total_parts != num_additional_swms + 1) {
+		ERROR("`%s' says there are %u parts in the spanned set, "
+		      "but %s%u part%s provided",
+		      w->filename, w->hdr.total_parts,
+		      (num_additional_swms + 1 < w->hdr.total_parts) ? "only " : "",
+		      num_additional_swms + 1,
+		      (num_additional_swms) ? "s were" : " was");
+		return WIMLIB_ERR_SPLIT_INVALID;
+	}
+	if (w->hdr.part_number != 1) {
+		ERROR("WIM `%s' is not the first part of the split WIM.",
+		      w->filename);
+		return WIMLIB_ERR_SPLIT_INVALID;
+	}
+	for (unsigned i = 0; i < num_additional_swms; i++) {
+		if (additional_swms[i]->hdr.total_parts != total_parts) {
+			ERROR("WIM `%s' says there are %u parts in the spanned set, "
+			      "but %u parts were provided", 
+			      additional_swms[i]->filename,
+			      additional_swms[i]->hdr.total_parts,
+			      total_parts);
+			return WIMLIB_ERR_SPLIT_INVALID;
+		}
+	}
+
+	/* keep track of ctype and guid just to make sure they are the same for
+	 * all the WIMs. */
+	ctype = wimlib_get_compression_type(w);
+	guid = w->hdr.guid;
+
+	WIMStruct *parts_to_swms[num_additional_swms];
+	ZERO_ARRAY(parts_to_swms);
+	for (unsigned i = 0; i < num_additional_swms; i++) {
+
+		WIMStruct *swm = additional_swms[i];
+
+		if (wimlib_get_compression_type(swm) != ctype) {
+			ERROR("The split WIMs do not all have the same "
+			      "compression type");
+			return WIMLIB_ERR_SPLIT_INVALID;
+		}
+		if (memcmp(guid, swm->hdr.guid, WIM_GID_LEN) != 0) {
+			ERROR("The split WIMs do not all have the same "
+			      "GUID");
+			return WIMLIB_ERR_SPLIT_INVALID;
+		}
+		if (swm->hdr.part_number == 1) {
+			ERROR("WIMs `%s' and `%s' both are marked as the "
+			      "first WIM in the spanned set", 
+			      w->filename, swm->filename);
+			return WIMLIB_ERR_SPLIT_INVALID;
+		}
+		if (swm->hdr.part_number == 0 ||
+		    swm->hdr.part_number > total_parts)
+		{
+			ERROR("WIM `%s' says it is part %u in the spanned set, "
+			      "but the part number must be in the range "
+			      "[1, %u]",
+			      swm->filename, swm->hdr.part_number, total_parts);
+			return WIMLIB_ERR_SPLIT_INVALID;
+		}
+		if (parts_to_swms[swm->hdr.part_number - 2])
+		{
+			ERROR("`%s' and `%s' are both marked as part %u of %u "
+			      "in the spanned set",
+			      parts_to_swms[swm->hdr.part_number - 2]->filename,
+			      swm->filename,
+			      swm->hdr.part_number,
+			      total_parts);
+			return WIMLIB_ERR_SPLIT_INVALID;
+		} else {
+			parts_to_swms[swm->hdr.part_number - 2] = swm;
+		}
+	}
+	return 0;
+}
+
+int new_joined_lookup_table(WIMStruct *w,
+			    WIMStruct **additional_swms,
+			    unsigned num_additional_swms,
+			    struct lookup_table **table_ret)
+{
+	struct lookup_table *table;
+	int ret;
+	unsigned i;
+
+
+	table = new_lookup_table(9001);
+	if (!table)
+		return WIMLIB_ERR_NOMEM;
+	ret = lookup_table_join(table, w->lookup_table);
+	if (ret != 0)
+		goto out_free_table;
+	for (i = 0; i < num_additional_swms; i++) {
+		ret = lookup_table_join(table, additional_swms[i]->lookup_table);
+		if (ret != 0)
+			goto out_free_table;
+	}
+	*table_ret = table;
+	return 0;
+out_free_table:
+	free_lookup_table(table);
+	return ret;
+}
+
 
 static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 		     int write_flags)
@@ -105,81 +244,46 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 }
 
 
-WIMLIBAPI int wimlib_join(const char **swm_names, int num_swms, 
+WIMLIBAPI int wimlib_join(const char **swm_names, unsigned num_swms, 
 			  const char *output_path, int flags)
 {
 	int i;
 	int ret;
 	int part_idx;
 	int write_flags = 0;
-	WIMStruct *w;
 	WIMStruct *joined_wim = NULL;
 	WIMStruct *swms[num_swms];
 
-	/* keep track of ctype and guid just to make sure they are the same for
-	 * all the WIMs. */
 	int ctype;
 	u8 *guid;
 
+	if (num_swms < 1)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	ZERO_ARRAY(swms);
+
 	for (i = 0; i < num_swms; i++) {
 		ret = wimlib_open_wim(swm_names[i], 
-				      flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &w);
+				      flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &swms[i]);
 		if (ret != 0)
-			goto err;
+			goto out;
 
 		/* don't open all the parts at the same time, in case there are
 		 * a lot of them */
-		fclose(w->fp);
-		w->fp = NULL;
-
-		if (i == 0) {
-			ctype = wimlib_get_compression_type(w);
-			guid = w->hdr.guid;
-		} else {
-			if (wimlib_get_compression_type(w) != ctype) {
-				ERROR("The split WIMs do not all have the same "
-				      "compression type");
-				ret = WIMLIB_ERR_SPLIT_INVALID;
-				goto err;
-			}
-			if (memcmp(guid, w->hdr.guid, WIM_GID_LEN) != 0) {
-				ERROR("The split WIMs do not all have the same "
-				      "GUID");
-				ret = WIMLIB_ERR_SPLIT_INVALID;
-				goto err;
-			}
-		}
-		if (w->hdr.total_parts != num_swms) {
-			ERROR("`%s' (part %d) says there are %d total parts, "
-			      "but %d parts were specified",
-			      swm_names[i], w->hdr.part_number,
-			      w->hdr.total_parts, num_swms);
-			ret = WIMLIB_ERR_SPLIT_INVALID;
-			goto err;
-		}
-		if (w->hdr.part_number == 0 || w->hdr.part_number > num_swms) {
-			ERROR("`%s' says it is part %d, but expected a number "
-			      "between 1 and %d",
-			      swm_names[i], w->hdr.part_number, num_swms);
-			ret = WIMLIB_ERR_SPLIT_INVALID;
-			goto err;
-		}
-		part_idx = w->hdr.part_number - 1;
-		if (swms[part_idx] != NULL) {
-			ERROR("`%s' and `%s' both say they are part %d of %d",
-			      swm_names[i], swms[part_idx]->filename,
-			      w->hdr.part_number, num_swms);
-			ret = WIMLIB_ERR_SPLIT_INVALID;
-			goto err;
-		}
-		swms[part_idx] = w;
-
+		fclose(swms[i]->fp);
+		swms[i]->fp = NULL;
 	}
+
+	qsort(swms, num_swms, sizeof(swms[0]), cmp_swms_by_part_number);
+
+	ret = verify_swm_set(swms[0], &swms[1], num_swms - 1);
+	if (ret != 0)
+		goto out;
+
 	joined_wim = new_wim_struct();
 	if (!joined_wim) {
 		ret = WIMLIB_ERR_NOMEM;
-		goto err;
+		goto out;
 	}
 
 	if (flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY)
@@ -189,9 +293,9 @@ WIMLIBAPI int wimlib_join(const char **swm_names, int num_swms,
 
 	ret = begin_write(joined_wim, output_path, write_flags);
 	if (ret != 0)
-		goto err;
+		goto out;
 	ret = join_wims(swms, num_swms, joined_wim, write_flags);
-err:
+out:
 	for (i = 0; i < num_swms; i++) {
 		/* out_fp is the same in all the swms and joined_wim; only close
 		 * it one time, when freeing joined_wim. */

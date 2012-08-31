@@ -113,7 +113,7 @@ static int do_free_lookup_table_entry(struct lookup_table_entry *entry,
 
 void free_lookup_table(struct lookup_table *table)
 {
-	DEBUG("Freeing lookup table");
+	DEBUG2("Freeing lookup table");
 	if (table) {
 		if (table->array) {
 			for_lookup_table_entry(table,
@@ -200,6 +200,7 @@ int read_lookup_table(WIMStruct *w)
 	u8     buf[WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
 	int    ret;
 	struct lookup_table *table;
+	struct lookup_table_entry *cur_entry = NULL, *duplicate_entry;
 
 	DEBUG("Reading lookup table: offset %"PRIu64", size %"PRIu64"",
 	      w->hdr.lookup_table_res_entry.offset,
@@ -220,7 +221,6 @@ int read_lookup_table(WIMStruct *w)
 
 	while (num_entries--) {
 		const u8 *p;
-		struct lookup_table_entry *cur_entry, *duplicate_entry;
 
 		if (fread(buf, 1, sizeof(buf), w->fp) != sizeof(buf)) {
 			if (feof(w->fp)) {
@@ -245,12 +245,20 @@ int read_lookup_table(WIMStruct *w)
 		p = get_u32(p, &cur_entry->refcnt);
 		p = get_bytes(p, SHA1_HASH_SIZE, cur_entry->hash);
 
+		if (cur_entry->part_number != w->hdr.part_number) {
+			ERROR("A lookup table entry in part %hu of the WIM "
+			      "points to part %hu",
+			      w->hdr.part_number, cur_entry->part_number);
+			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+			goto out_free_cur_entry;
+			
+		}
+
 		if (is_zero_hash(cur_entry->hash)) {
 			ERROR("The WIM lookup table contains an entry with a "
 			      "SHA1 message digest of all 0's");
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-			FREE(cur_entry);
-			goto out;
+			goto out_free_cur_entry;
 		}
 
 		duplicate_entry = __lookup_resource(table, cur_entry->hash);
@@ -262,10 +270,8 @@ int read_lookup_table(WIMStruct *w)
 			ERROR("The second entry is:");
 			print_lookup_table_entry(cur_entry);
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-			FREE(cur_entry);
-			goto out;
+			goto out_free_cur_entry;
 		}
-		lookup_table_insert(table, cur_entry);
 
 		if (!(cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
 		    && (cur_entry->resource_entry.size !=
@@ -276,12 +282,16 @@ int read_lookup_table(WIMStruct *w)
 			ERROR("The lookup table entry for the resource is as follows:");
 			print_lookup_table_entry(cur_entry);
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-			goto out;
+			goto out_free_cur_entry;
 		}
+		lookup_table_insert(table, cur_entry);
+
 	}
 	DEBUG("Done reading lookup table.");
 	w->lookup_table = table;
 	return 0;
+out_free_cur_entry:
+	FREE(cur_entry);
 out:
 	free_lookup_table(table);
 	return ret;

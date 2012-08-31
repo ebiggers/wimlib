@@ -60,6 +60,9 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int flags)
 	size_t wim_name_len;
 	int ret;
 	
+	if (!w)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	wimfile_name = w->filename;
 
 	DEBUG("Replacing WIM file `%s'.", wimfile_name);
@@ -401,9 +404,18 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
 {
 	int ret;
 
+	if (!w || !path)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if (image != WIM_ALL_IMAGES && 
 	     (image < 1 || image > w->hdr.image_count))
 		return WIMLIB_ERR_INVALID_IMAGE;
+
+
+	if (w->hdr.total_parts != 1) {
+		ERROR("Cannot call wimlib_write() on part of a split WIM");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
 
 	if (image == WIM_ALL_IMAGES)
 		DEBUG("Writing all images to `%s'.", path);

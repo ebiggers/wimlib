@@ -729,11 +729,18 @@ out:
  * full filesystem to be applied to the volume.
  */
 WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
-					 	const char *device, int flags)
+					 	const char *device, int flags,
+						WIMStruct **additional_swms,
+						unsigned num_additional_swms)
 {
+	struct lookup_table *joined_tab, *w_tab_save;
 	int ret;
 
-	if (!device)
+	DEBUG("w->filename = %s, image = %d, device = %s, flags = 0x%x, "
+	      "num_additional_swms = %u",
+	      w->filename, image, device, flags, num_additional_swms);
+
+	if (!w || !device)
 		return WIMLIB_ERR_INVALID_PARAM;
 	if (image == WIM_ALL_IMAGES) {
 		ERROR("Can only apply a single image when applying "
@@ -745,16 +752,39 @@ WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
 		ERROR("directly to a NTFS volume");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
-	ret = wimlib_select_image(w, image);
+
+	ret = verify_swm_set(w, additional_swms, num_additional_swms);
 	if (ret != 0)
 		return ret;
 
-	return do_wim_apply_image_ntfs(w, device, flags);
+	if (num_additional_swms) {
+		ret = new_joined_lookup_table(w, additional_swms,
+					      num_additional_swms, &joined_tab);
+		if (ret != 0)
+			return ret;
+		w_tab_save = w->lookup_table;
+		w->lookup_table = joined_tab;
+	}
+
+	ret = wimlib_select_image(w, image);
+	if (ret != 0)
+		goto out;
+
+	ret = do_wim_apply_image_ntfs(w, device, flags);
+
+out:
+	if (num_additional_swms) {
+		free_lookup_table(w->lookup_table);
+		w->lookup_table = w_tab_save;
+	}
+	return ret;
 }
 
 #else /* WITH_NTFS_3G */
 WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
-					 	const char *device, int flags)
+					 	const char *device, int flags,
+						WIMStruct **additional_swms,
+						unsigned num_additional_swms)
 {
 	ERROR("wimlib was compiled without support for NTFS-3g, so");
 	ERROR("we cannot apply a WIM image directly to a NTFS volume");
