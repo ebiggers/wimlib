@@ -10,8 +10,7 @@ set -e
 cd tests
 
 imagex() {
-	#echo "imagex $@"
-	../imagex $@
+	../imagex $@ > /dev/null
 }
 
 __do_unmount() {
@@ -237,7 +236,7 @@ do_test 'echo -n 8 > file;
 	 ln file hardlink;
 	 ln -s hardlink symlink;
 	 echo -n 8 > identical file;
-	 dd if=/dev/urandom of=randomfile bs=4096 count=10;
+	 dd if=/dev/urandom of=randomfile bs=4096 count=10 &>/dev/null;
 	 mkdir dir;
 	 setfattr -n system.ntfs_dos_name -v DOSNAME dir;
 	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` dir

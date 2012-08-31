@@ -253,8 +253,8 @@ WIMLIBAPI void wimlib_print_header(const WIMStruct *w)
 	fputs ("GUID                        = ", stdout);
 	print_byte_field(hdr->guid, WIM_GID_LEN);
 	putchar('\n');
-	printf("Part Number                 = %hu\n", 1);
-	printf("Total Parts                 = %hu\n", 1);
+	printf("Part Number                 = %hu\n", w->hdr.part_number);
+	printf("Total Parts                 = %hu\n", w->hdr.total_parts);
 	printf("Image Count                 = %u\n", hdr->image_count);
 	printf("Lookup Table Size           = %"PRIu64"\n", 
 				(u64)hdr->lookup_table_res_entry.size);
