@@ -122,6 +122,8 @@ man1_MANS =			\
 
 $(man1_MANS): config.status
 
+check_PROGRAMS = tests/ntfs-cmp
+tests_ntfs_cmp_SOURCES = tests/ntfs-cmp.c
 dist_check_SCRIPTS = tests/test-imagex tests/test-imagex-ntfs
 TESTS = $(dist_check_SCRIPTS)
 

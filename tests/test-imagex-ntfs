@@ -11,23 +11,31 @@ cd tests
 
 imagex() {
 	#echo "imagex $@"
-	../imagex $@ #> /dev/null
+	../imagex $@ > /dev/null
 }
 
+__do_unmount() {
+	if !  fusermount -u $1; then
+		error "Failed to unmount \"$1\""
+	fi
+
+}
 do_unmount() {
 	if mountpoint $1 &> /dev/null; then
-		if !  fusermount -u $1; then
-			error "Failed to unmount \"$1\""
-		fi
+		__do_unmount $1
+	fi
+}
+
+__do_mount() {
+	options="$3"
+	if ! ntfs-3g ${options:+-o $options} $1 $2; then
+		error "Could not mount NTFS volume \"$1\" on \"$2\".  Make sure ntfs-3g is installed."
 	fi
 }
 
 do_mount() {
 	do_unmount $2
-	options="$3"
-	if ! ntfs-3g ${options:+-o $options} $1 $2; then
-		error "Could not mount NTFS volume \"$1\" on \"$2\".  Make sure ntfs-3g is installed."
-	fi
+	__do_mount $1 $2 $3
 }
 
 do_mkntfs() {
@@ -38,11 +46,12 @@ do_mkntfs() {
 
 init() {
 	echo "Creating NTFS volumes and empty directories to use as mountpoints"
-	dd if=/dev/zero of=in.ntfs bs=4096 count=1000 &> /dev/null
-	dd if=/dev/zero of=out.ntfs bs=4096 count=1000 &> /dev/null
+	dd if=/dev/zero of=in.ntfs bs=4096 count=260 &> /dev/null
+	dd if=/dev/zero of=out.ntfs bs=4096 count=260 &> /dev/null
 	mkdir in.mnt out.mnt
 	do_mkntfs in.ntfs
 	do_mkntfs out.ntfs
+	do_mount in.ntfs in.mnt
 }
 
 cleanup() {
@@ -61,85 +70,22 @@ error() {
 	exit 1
 }
 
-do_capture() {
-	do_unmount in.mnt
+do_test() {
+	cd in.mnt
+	eval "$1"
+	cd ..
+	__do_unmount in.mnt
 	if ! imagex capture in.ntfs ntfs.wim; then
 		error "Failed to capture NTFS volume into a WIM"
 	fi
-}
-
-do_apply() {
-	do_unmount out.mnt
-	do_mkntfs out.ntfs
 	if ! imagex apply ntfs.wim 1 out.ntfs; then
 		error "Failed to apply WIM to NTFS volume"
 	fi
-}
-
-cmp_xattrs() {
-	infile=$1
-	outfile=$2
-	xattr=$3
-	#echo "Comparing xattr $xattr of $infile and $outfile"
-	if test "$xattr" = "system.ntfs_times"; then
-		headnum=24
-	else
-		headnum=1000000000
-	fi
-	if eval getfattr --only-values -h -d -n $xattr $infile 2>/dev/null\
-					| head -c $headnum > in.xattr; then
-		if eval getfattr --only-values -h -d -n $xattr $outfile 2>/dev/null\
-					| head -c $headnum > out.xattr; then
-			if ! cmp in.xattr out.xattr; then
-				error "Extended attribute $xattr of $infile and $outfile differs"
-			fi
-		else
-			error "$infile has extended attribute $xattr, but $outfile doesn't"
-		fi
-	else
-		if eval getfattr --only-values -h -d -n $xattr $outfile 2>/dev/null\
-					| head -c $headnum > out.xattr; then
-			error "$outfile has extended attribute $xattr, but $infile doesn't"
-		fi
-	fi
-}
-
-# Captures in.ntfs, applies it to out.ntfs, and diffs the result including
-# extended attributes
-do_capture_and_apply() {
-	do_capture
-	do_apply
-	do_mount in.ntfs in.mnt ro
-	do_mount out.ntfs out.mnt ro
-	#if ! diff -r in.mnt out.mnt; then
-		#error "Recursive diff of original NTFS volume with applied NTFS volume failed"
-	#fi
-	for infile in `find in.mnt`; do
-		outfile=out.mnt${infile##in.mnt}
-		#echo "Comparing xattrs of $infile and $outfile"
-		if [ ! -L $infile -a ! -d $infile ]; then
-			if ! cmp $infile $outfile; then
-				error "Contents of $infile and $outfile differed"
-			fi
-		fi
-		cmp_xattrs $infile $outfile system.ntfs_attrib
-		cmp_xattrs $infile $outfile system.ntfs_reparse_data
-		cmp_xattrs $infile $outfile system.ntfs_acl
-		cmp_xattrs $infile $outfile system.ntfs_dos_name
-		cmp_xattrs $infile $outfile system.ntfs_times
-	done
-}
-
-build_ntfs() {
-	do_unmount in.mnt
-	do_mkntfs in.ntfs
-	do_mount in.ntfs in.mnt
-	( cd in.mnt; eval "$1" )
-}
-
-do_test() {
-	build_ntfs "$1"
-	do_capture_and_apply
+	__do_mount in.ntfs in.mnt
+	__do_mount out.ntfs out.mnt
+	./ntfs-cmp in.mnt out.mnt
+	rm -rf out.mnt/* in.mnt/*
+	__do_unmount out.mnt
 }
 msg() {
 	echo "Testing image capture and application of $1"
@@ -149,7 +95,7 @@ cleanup
 init
 
 msg "Empty NTFS volume"
-do_capture_and_apply
+do_test ""
 
 msg "NTFS volume containing a single file"
 do_test "echo 1 > file"
@@ -210,4 +156,10 @@ do_test 'echo 888 > file;
 	 ln file link;
 	 ln file link2;
 	 echo 888 > file3'
+
+msg "NTFS volume containing file with named data stream"
+do_test 'echo 1 > file;
+	 setfattr -n user.ads -v 2 file'
+
+	
 
