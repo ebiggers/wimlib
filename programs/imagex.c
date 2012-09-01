@@ -735,7 +735,7 @@ static int imagex_export(int argc, const char **argv)
 	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
 	int export_flags = 0;
 	int write_flags = WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
-	int compression_type = WIM_COMPRESSION_TYPE_XPRESS;
+	int compression_type;
 	bool compression_type_specified = false;
 	const char *src_wimfile;
 	const char *src_image_num_or_name;
@@ -818,6 +818,8 @@ static int imagex_export(int argc, const char **argv)
 	} else {
 		wim_is_new = true;
 		/* dest_wimfile is not an existing file, so create a new WIM. */
+		if (!compression_type_specified)
+			compression_type = wimlib_get_compression_type(src_w);
 		if (errno == ENOENT) {
 			ret = wimlib_create_new_wim(compression_type, &dest_w);
 			if (ret != 0)

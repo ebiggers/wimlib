@@ -55,7 +55,8 @@ Specifies the compression type for \fIDEST_WIMFILE\fR.  This is only valid if
 \fIDEST_WIMFILE\fR does not yet exist, since if \fIDEST_WIMFILE\fR exists, the
 compression type must be the same as that of \fIDEST_WIMFILE\fR.
 
-\fITYPE\fR may be "none", "maximum", or "fast".  By default, it is "fast".
+\fITYPE\fR may be "none", "maximum", or "fast".  By default, it is the same as
+that of the input WIM file.
 
 You may also specify the actual names of the compression algorithms, "XPRESS"
 and "LZX", instead of "fast" and "maximum", respectively.

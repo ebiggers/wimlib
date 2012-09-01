@@ -333,7 +333,7 @@ get_boot_wim() {
 			wim="$windows_dir/sources/boot.wim"
 			stat_busy "Exporting image from \"$wim\""
 			imagex export "$windows_dir"/sources/boot.wim 2 \
-						--compress --boot "$boot_wim" || stat_fail
+						--boot "$boot_wim" || stat_fail
 			stat_done
 		fi
 	else
