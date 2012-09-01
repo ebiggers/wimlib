@@ -4,9 +4,12 @@
 # checking the NTFS capture and apply features.
 #
 # This test will fail if wimlib was compiled with --without-ntfs-3g.
+#
+# Please note that cleanup is not done if a test fails, and NTFS volumes may
+# remain mounted.
 
-# Assume an in-tree build.
 set -e
+srcdir=`realpath $srcdir`
 cd tests
 
 imagex() {
@@ -56,7 +59,7 @@ init() {
 cleanup() {
 	do_unmount in.mnt
 	do_unmount out.mnt
-	rm -rf in.ntfs out.ntfs in.mnt out.mnt in.xattr out.xattr
+	rm -rf in.ntfs out.ntfs in.mnt out.mnt in.xattr out.xattr ntfs.wim
 }
 #trap cleanup exit
 
@@ -209,27 +212,27 @@ do_test 'echo 999 > file;
 	 setfattr -v DOSNAME -n system.ntfs_dos_name file;'
 
 msg "NTFS volume containing C source code of wimlib"
-do_test 'cp ../../src/*.c ../../src/*.h .'
+do_test 'cp $srcdir/src/*.{c,h} .'
 
 msg "NTFS volume containing file with security descriptor"
 do_test 'touch file;
-	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` file'
+	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` file'
 
 msg "NTFS volume containing files with different security descriptors"
 do_test 'touch file;
 	 touch file2;
-	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` file
-	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_2.base64` file'
+	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` file
+	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_2.base64` file'
 	
 msg "NTFS volume containing files with different security descriptors and some with the same security descriptor"
 do_test 'touch file;
 	 touch file2;
 	 touch file3;
 	 mkdir dir;
-	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` file
-	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_2.base64` file
-	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` dir
-	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` file3'
+	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` file
+	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_2.base64` file
+	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` dir
+	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` file3'
 
 msg "NTFS volume containing tons of random stuff"
 do_test 'echo -n 8 > file;
@@ -239,7 +242,7 @@ do_test 'echo -n 8 > file;
 	 dd if=/dev/urandom of=randomfile bs=4096 count=10 &>/dev/null;
 	 mkdir dir;
 	 setfattr -n system.ntfs_dos_name -v DOSNAME dir;
-	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` dir
+	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` dir
 	 mkdir anotherdir;
 	 cp file anotherdir;
 	 ln file anotherdir/anotherhardlink;
@@ -251,17 +254,19 @@ do_test 'echo -n 8 > file;
 	 setfattr -n user.ads3 anotherfile -v 33;
 	 echo -n > emptyfile;
 	 setfattr -n user.ads emptyfile -v 8;
-	 setfattr -n user.ads5 emptyfile -v"`cat ../../src/hardlink.c`"
+	 setfattr -n user.ads5 emptyfile -v"`cat $srcdir/src/hardlink.c`"
 	 mkdir dir/subdir;
 	 ln file dir/subdir/file;
 	 echo -n 8 > dir/subdir/file2;
 	 ln dir/subdir/file dir/subdir/link;
 	 setfattr -n system.ntfs_dos_name -v 123 dir/subdir/link;
-	 setfattr -n system.ntfs_acl -v 0s`cat ../security_descriptor_1.base64` dir/subdir/link;
+	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` dir/subdir/link;
 	 setfattr -n user.yet_another_ads -v "" dir/subdir/link;
 	 setfattr -n user.yet_another_ads2 -v "" dir/subdir/link;
 	 setfattr -n user.yet_another_ads3 -v "abc" dir/subdir/link;
 	 setfattr -n user.yet_another_ads4 -v "" dir/subdir/link;'
+
+cleanup
 
 echo "**********************************************************"
 echo "           NTFS capture/apply tests passed                "

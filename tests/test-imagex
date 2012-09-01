@@ -3,8 +3,8 @@
 # This script does some sanity testing of the 'imagex' program.  It by no means
 # tests every aspect of wimlib comprehensively.
 
-# Assume an in-tree build.
 set -e
+srcdir=`realpath $srcdir`
 cd tests
 
 imagex() {
@@ -24,7 +24,7 @@ rm -rf tmp || true
 
 # Make test directory
 mkdir dir
-cp ../src/*.c ../src/*.h dir
+cp $srcdir/src/*.c $srcdir/src/*.h dir
 mkdir dir/subdir
 echo 'hello' > dir/subdir/hello
 echo 'hello' > dir/subdir/hello2
