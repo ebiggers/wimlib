@@ -37,13 +37,14 @@
 #include <ntfs-3g/attrib.h>
 #include <ntfs-3g/misc.h>
 #include <ntfs-3g/reparse.h>
-#include <ntfs-3g/security.h>
+#include <ntfs-3g/security.h> /* security.h before xattrs.h */
+#include <ntfs-3g/xattrs.h>
 #include <ntfs-3g/volume.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 
-#ifndef WITH_NEW_NTFS_3G
+#if 0
 extern int ntfs_get_inode_security(ntfs_inode *ni, u32 selection, char *buf,
 				   u32 buflen, u32 *psize);
 
@@ -489,6 +490,8 @@ static int change_dentry_short_name(struct dentry *dentry,
 	return 0;
 }
 
+/*#define HAVE_NTFS_INODE_FUNCTIONS*/
+
 /* Recursively build a WIM dentry tree corresponding to a NTFS volume.
  * At the same time, update the WIM lookup table with lookup table entries for
  * the NTFS streams, and build an array of security descriptors.
@@ -513,7 +516,21 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	struct dentry *root;
 
 	mrec_flags = ni->mrec->flags;
+#ifdef HAVE_NTFS_INODE_FUNCTIONS
  	attributes = ntfs_get_inode_attributes(ni);
+#else
+	struct SECURITY_CONTEXT ctx;
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.vol = ni->vol;
+	ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ATTRIB,
+					 ni, dir_ni, (char *)&attributes,
+					 sizeof(u32));
+	if (ret != 4) {
+		ERROR_WITH_ERRNO("Failed to get NTFS attributes from `%s'",
+				 path);
+		return WIMLIB_ERR_NTFS_3G;
+	}
+#endif
 
 	if (exclude_path(path, config, false)) {
 		if (flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE) {
@@ -598,6 +615,7 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	if (ret != 0)
 		return ret;
 
+#ifdef HAVE_NTFS_INODE_FUNCTIONS
 	ret = ntfs_get_inode_security(ni,
 				      OWNER_SECURITY_INFORMATION |
 				      GROUP_SECURITY_INFORMATION |
@@ -618,7 +636,7 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	} else {
 		if (ret > 0) {
 			/*print_security_descriptor(sd, sd_size);*/
-			root->security_id = sd_set_add_sd(sd_set, sd, sd_size);
+			root->security_id = sd_set_add_sd(sd_set, sd, ret);
 			if (root->security_id == -1) {
 				ERROR("Out of memory");
 				return WIMLIB_ERR_NOMEM;
@@ -631,6 +649,36 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 		}
 		ret = 0;
 	}
+#else
+	char _sd[1];
+	char *sd = _sd;
+	errno = 0;
+	ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ACL,
+					 ni, dir_ni, sd,
+					 sizeof(sd));
+	if (ret > sizeof(sd)) {
+		sd = alloca(ret);
+		ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ACL,
+						 ni, dir_ni, sd, ret);
+	}
+	if (ret > 0) {
+		root->security_id = sd_set_add_sd(sd_set, sd, ret);
+		if (root->security_id == -1) {
+			ERROR("Out of memory");
+			return WIMLIB_ERR_NOMEM;
+		}
+		DEBUG("Added security ID = %u for `%s'",
+		      root->security_id, path);
+		ret = 0;
+	} else if (ret < 0) {
+		ERROR_WITH_ERRNO("Failed to get security information from "
+				 "`%s'", path);
+		ret = WIMLIB_ERR_NTFS_3G;
+	} else {
+		root->security_id = -1;
+		DEBUG("No security ID for `%s'", path);
+	}
+#endif
 	return ret;
 }
 
