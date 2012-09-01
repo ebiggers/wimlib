@@ -29,6 +29,10 @@ If given, \fIDEST_IMAGE_DESCRIPTION\fR specifies the description to give the
 image being exported to \fIDEST_WIMFILE\fR.  The default is its description in
 \fISRC_WIMFILE\fR.
 
+\fBimagex export\fR supports exporting images from stand-alone WIMs as well as
+from split WIMs.  However, you cannot export an image to a split WIM.  See
+\fBSPLIT WIMS\fR.
+
 .SH OPTIONS
 .TP 6
 \fB--boot\fR
@@ -56,16 +60,50 @@ compression type must be the same as that of \fIDEST_WIMFILE\fR.
 You may also specify the actual names of the compression algorithms, "XPRESS"
 and "LZX", instead of "fast" and "maximum", respectively.
 
-.SH NOTES
+.TP
+\fB--ref\fR="\fIGLOB\fR"
+File glob of additional split WIM parts that are part of the split WIM being
+exported.  See \fBSPLIT_WIMS\fR.
 
-\fBimagex export\fR does not yet support split WIMs.
+.SH SPLIT WIMS
+
+You may use \fBimagex export\fR to export images from a split WIM.  The
+\fISRC_WIMFILE\fR argument is used to specify the first part of the split WIM, and
+the \fB--refs\fR="\fIGLOB\fR" option is used to provide a shell-style file glob
+that specifies the additional parts of the split WIM.  \fIGLOB\fR is expected to
+be a single string on the command line, so \fIGLOB\fR must be quoted so that it
+is protected against shell expansion.  \fIGLOB\fR must expand to all parts of
+the split WIM, except optionally the first part which may either omitted or
+included in the glob (but the first part MUST be specified as \fISRC_WIMFILE\fR as
+well).
+
+Here's an example.  The names for the split WIMs usually go something like:
+	
+.RS
+.PP
+.nf
+mywim.swm
+mywim2.swm
+mywim3.swm
+mywim4.swm
+mywim5.swm
+\. ... etc.
+.RE
+
+To export the first image of this split WIM to a new or existing WIM file
+"other.wim", run:
+.PP
+.RS
+imagex export mywim.swm 1 other.wim --ref="mywim*.swm"
+.RE
+.PP
 
 .SH EXAMPLES
-Export the second image of 'boot.wim' to the new WIM file 'image2.wim', and
+Export the second image of 'boot.wim' to the new WIM file 'new.wim', and
 change the compression type to maximum, if it wasn't maximum already:
 .RS
 .PP
-image export boot.wim 2 image2.wim --compress=maximum
+image export boot.wim 2 new.wim --compress=maximum
 .RE
 .PP
 

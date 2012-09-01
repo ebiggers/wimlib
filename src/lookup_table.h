@@ -41,55 +41,97 @@ struct ntfs_location {
  *
  * It is used to find data streams for files in the WIM. 
  *
- * The lookup_table_entry for a given dentry in the WIM is found using the SHA1
- * message digest field. 
+ * Metadata resources and reparse point data buffers will also have lookup table
+ * entries associated with the data.
+ *
+ * The lookup_table_entry for a given dentry or alternate stream entry in the
+ * WIM is found using the SHA1 message digest field. 
  */
 struct lookup_table_entry {
 
 	/* List of lookup table entries in this hash bucket */
 	struct hlist_node hash_list;
 
-	/* @resource_entry is read from the lookup table in the WIM
-	 * file; it says where to find the file resource in the WIM
-	 * file, and whether it is compressed or not. */
+	/* Location and size of the stream in the WIM, whether it is compressed
+	 * or not, and whether it's a metadata resource or not.  This is an
+	 * on-disk field. */
 	struct resource_entry resource_entry;
 
-	/* Currently ignored; set to 1 in new lookup table entries. */
+	/* Specifies which part of the split WIM the resource is located in.
+	 * This is on on-disk field.
+	 *
+	 * In stand-alone WIMs, this must be 1.
+	 *
+	 * In split WIMs, every split WIM part has its own lookup table, and in
+	 * read_lookup_table() it's currently expected that the part number of
+	 * each lookup table entry in a split WIM part's lookup table is the
+	 * same as the part number of that split WIM part.  So this makes this
+	 * field redundant since we store a pointer to the corresponding
+	 * WIMStruct in the lookup table entry anyway.
+	 */
 	u16 part_number;
 
-	/* If %true, this lookup table entry corresponds to a symbolic link
-	 * reparse buffer.  @symlink_reparse_data_buf will give the target of
-	 * the symbolic link. */
+	/* An enumerated type that identifies where the stream corresponding to
+	 * this lookup table entry is actually located.
+	 *
+	 * Obviously if we open a WIM and read its lookup table, the location is
+	 * set to RESOURCE_IN_WIM since all the streams will initially be
+	 * located in the WIM.  However, to deal with problems such as image
+	 * capture and image mount, we allow the actual location of the stream
+	 * to be somewhere else, such as an external file.
+	 */
 	enum {
+		/* The lookup table entry does not correspond to a stream (this
+		 * state should exist only temporarily) */
 		RESOURCE_NONEXISTENT = 0,
+
+		/* The stream resource is located in a WIM file.  The WIMStruct
+		 * for the WIM file will be pointed to by the @wim member. */
 		RESOURCE_IN_WIM,
+
+		/* The stream resource is located in an external file.  The
+		 * name of the file will be provided by @file_on_disk member.
+		 * In addition, if @file_on_disk_fp is not NULL, it will be an
+		 * open FILE * to the file. */
 		RESOURCE_IN_FILE_ON_DISK,
+
+		/* The stream resource is located in an external file in the
+		 * staging directory for a read-write mount.  */
 		RESOURCE_IN_STAGING_FILE,
+
+		/* The stream resource is directly attached in an in-memory
+		 * buffer pointed to by @attached_buffer. */
 		RESOURCE_IN_ATTACHED_BUFFER,
+
+		/* The stream resource is located in an NTFS volume.  It is
+		 * identified by volume, filename, data stream name, and by
+		 * whether it is a reparse point or not. @ntfs_loc points to a
+		 * structure containing this information. */
 		RESOURCE_IN_NTFS_VOLUME,
 	} resource_location;
 
-	/* Number of times this lookup table entry is referenced by dentries. */
+	/* (On-disk field)
+	 * Number of times this lookup table entry is referenced by dentries.
+	 * Unfortunately, this field is not always set correctly in Microsoft's
+	 * WIMs, so we have no choice but to fix it if more references to the
+	 * lookup table entry are found than stated here. */
 	u32 refcnt;
 
 	union {
-		/* SHA1 hash of the file resource pointed to by this lookup
-		 * table entry */
+		/* (On-disk field) SHA1 message digest of the stream referenced
+		 * by this lookup table entry */
 		u8  hash[SHA1_HASH_SIZE];
 
-		/* First 4 or 8 bytes of the SHA1 hash, used for inserting the
-		 * entry into the hash table.  Since the SHA1 hashes can be
-		 * considered random, we don't really need the full 20 byte hash
-		 * just to insert the entry in a hash table. */
+		/* First 4 or 8 bytes of the SHA1 message digest, used for
+		 * inserting the entry into the hash table.  Since the SHA1
+		 * message digest can be considered random, we don't really need
+		 * the full 20 byte hash just to insert the entry in a hash
+		 * table. */
 		size_t hash_short;
 	};
 
-	/* If @file_on_disk != NULL, the file resource indicated by this lookup
-	 * table entry is not in the WIM file, but rather a file on disk; this
-	 * occurs for files that are added to the WIM.  In that case,
-	 * file_on_disk is the name of the file in the outside filesystem.  
-	 * It will not be compressed, and its size will be given by
-	 * resource_entry.size and resource_entry.original_size. */
+	/* Pointers to somewhere where the stream is actually located.  See the
+	 * comments for the @resource_location field above. */
 	union {
 		WIMStruct *wim;
 		char *file_on_disk;
@@ -100,14 +142,25 @@ struct lookup_table_entry {
 	#endif
 	};
 	union {
+		/* Temporary field for creating a singly linked list.  Shouldn't
+		 * really be here */
 		struct lookup_table_entry *next_lte_in_swm;
+
+		/* @file_on_disk_fp and @attr are both used to cache file/stream
+		 * handles so we don't have re-open them on every read */
 		FILE *file_on_disk_fp;
 	#ifdef WITH_NTFS_3G
 		struct _ntfs_attr *attr;
 	#endif
 	};
 #ifdef WITH_FUSE
-	/* File descriptors table for this data stream */
+	/* File descriptors table for this data stream.  This is used if the WIM
+	 * is mounted.  Basically, each time a file is open()ed, a new file
+	 * descriptor is added here, and each time a file is close()ed, the file
+	 * descriptor is gotten rid of.  If the stream is opened for writing, it
+	 * will be extracted to the staging directory and there will be an
+	 * actual native file descriptor associated with each "wimlib file
+	 * descriptor". */
 	u16 num_opened_fds;
 	u16 num_allocated_fds;
 	struct wimlib_fd **fds;
@@ -115,22 +168,31 @@ struct lookup_table_entry {
 
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
 	 * whenever the file resource pointed to by this lookup table entry
-	 * needs to be written.  Naturally, the file resource only need to be
-	 * written when out_refcnt is 0.  Incrementing it further is needed to
-	 * find the correct reference count to write to the lookup table in the
-	 * output file, which may be less than the regular refcnt if not all
-	 * images in the WIM file are written. 
-	 *
-	 * output_resource_entry is the struct resource_entry for the position of the
-	 * file resource when written to the output file. */
+	 * needs to be written.  The file resource only need to be written when
+	 * out_refcnt is nonzero, since otherwise it is not referenced by any
+	 * dentries. */
 	u32 out_refcnt;
+
 	union {
+		/* When a WIM file is written, @output_resource_entry is filled
+		 * in with the resource entry for the output WIM.  This will not
+		 * necessarily be the same as the @resource_entry since:
+		 * 	- The stream may have a different offset in the new WIM
+		 * 	- The stream may have a different compressed size in the
+		 * 	new WIM if the compression type changed
+		 */
 		struct resource_entry output_resource_entry;
+
+		/* This field is used for the special hardlink or symlink image
+		 * application mode.   In these mode, all identical files are
+		 * linked together, and @extracted_file will be set to the
+		 * filename of the first extracted file containing this stream.
+		 * */
 		char *extracted_file;
 	};
 
 	/* Circular linked list of streams that share the same lookup table
-	 * entry
+	 * entry.
 	 * 
 	 * This list of streams may include streams from different hard link
 	 * sets that happen to be the same.  */

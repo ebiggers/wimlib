@@ -138,6 +138,21 @@ int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 	return 0;
 }
 
+/* 
+ * Joins lookup tables from the parts of a split WIM.
+ *
+ * @w specifies the first part, while @additional_swms and @num_additional_swms
+ * specify an array of points to the WIMStruct's for additional split WIM parts.
+ *
+ * On success, 0 is returned on a pointer to the joined lookup table is returned
+ * in @table_ret.
+ *
+ * The reason we join the lookup tables is so:
+ * 	- We only have to search one lookup table to find the location of a
+ * 	resource in the entire split WIM.
+ * 	- Each lookup table entry will have a pointer to its split WIM part (and
+ * 	a part number field, although we don't really use it).
+ */
 int new_joined_lookup_table(WIMStruct *w,
 			    WIMStruct **additional_swms,
 			    unsigned num_additional_swms,

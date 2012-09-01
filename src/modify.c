@@ -267,16 +267,12 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 		if (dest_lte) {
 			dest_lte->refcnt++;
 		} else {
-			dest_lte = new_lookup_table_entry();
+			dest_lte = MALLOC(sizeof(struct lookup_table_entry));
 			if (!dest_lte)
 				return WIMLIB_ERR_NOMEM;
-			dest_lte->resource_location = RESOURCE_IN_WIM;
-			dest_lte->wim = src_wim;
-			memcpy(&dest_lte->resource_entry, 
-			       &src_lte->resource_entry, 
-			       sizeof(struct resource_entry));
-			copy_hash(dest_lte->hash,
-				  dentry_stream_hash_unresolved(dentry, i));
+			memcpy(dest_lte, src_lte, sizeof(struct lookup_table_entry));
+			dest_lte->part_number = 1;
+			dest_lte->refcnt = 1;
 			lookup_table_insert(dest_wim->lookup_table, dest_lte);
 		}
 	}
@@ -356,19 +352,22 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 				  WIMStruct *dest_wim, 
 				  const char *dest_name, 
 				  const char *dest_description, 
-				  int flags)
+				  int flags,
+				  WIMStruct **additional_swms,
+				  unsigned num_additional_swms)
 {
 	int i;
 	int ret;
 	struct dentry *root;
 	struct wim_pair wims;
 	struct wim_security_data *sd;
+	struct lookup_table *joined_tab, *src_wim_tab_save;
 
 	if (!src_wim || !dest_wim)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (src_wim->hdr.total_parts != 1 || src_wim->hdr.total_parts != 1) {
-		ERROR("Exporting an image to or from a split WIM is "
+	if (dest_wim->hdr.total_parts != 1) {
+		ERROR("Exporting an image to a split WIM is "
 		      "unsupported");
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
@@ -406,7 +405,9 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 				ret = wimlib_export_image(src_wim, i, dest_wim, 
 							  NULL,
 							  dest_description,
-							  export_flags);
+							  export_flags,
+							  additional_swms,
+							  num_additional_swms);
 				if (ret != 0)
 					return ret;
 			}
@@ -414,13 +415,6 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 		} else {
 			src_image = 1; 
 		}
-	}
-
-	ret = wimlib_select_image(src_wim, src_image);
-	if (ret != 0) {
-		ERROR("Could not select image %d from the WIM `%s' "
-		      "to export it", src_image, src_wim->filename);
-		return ret;
 	}
 
 	if (!dest_name) {
@@ -437,12 +431,32 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 	}
 
+	ret = verify_swm_set(src_wim, additional_swms, num_additional_swms);
+	if (ret != 0)
+		return ret;
+
+	if (num_additional_swms) {
+		ret = new_joined_lookup_table(src_wim, additional_swms,
+					      num_additional_swms,
+					      &joined_tab);
+		if (ret != 0)
+			return ret;
+		src_wim_tab_save = src_wim->lookup_table;
+		src_wim->lookup_table = joined_tab;
+	}
+
+	ret = wimlib_select_image(src_wim, src_image);
+	if (ret != 0) {
+		ERROR("Could not select image %d from the WIM `%s' "
+		      "to export it", src_image, src_wim->filename);
+		goto out;
+	}
 
 	/* Cleaning up here on failure would be hard.  For example, we could
 	 * fail to allocate memory in add_lte_to_dest_wim(),
 	 * leaving the lookup table entries in the destination WIM in an
 	 * inconsistent state.  Until these issues can be resolved,
-	 * wimlib_export_image() is documented as leaving dest_wim is an
+	 * wimlib_export_image() is documented as leaving dest_wim in an
 	 * indeterminate state.  */
 	root = wim_root_dentry(src_wim);
 	sd = wim_security_data(src_wim);
@@ -451,10 +465,10 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	wims.dest_wim = dest_wim;
 	ret = for_dentry_in_tree(root, add_lte_to_dest_wim, &wims);
 	if (ret != 0)
-		return ret;
+		goto out;
 	ret = add_new_dentry_tree(dest_wim, root, sd);
 	if (ret != 0)
-		return ret;
+		goto out;
 	sd->refcnt++;
 
 	if (flags & WIMLIB_EXPORT_FLAG_BOOT) {
@@ -462,8 +476,14 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 		dest_wim->hdr.boot_idx = dest_wim->hdr.image_count;
 	}
 
-	return xml_export_image(src_wim->wim_info, src_image, &dest_wim->wim_info,
-				dest_name, dest_description);
+	ret = xml_export_image(src_wim->wim_info, src_image, &dest_wim->wim_info,
+			       dest_name, dest_description);
+out:
+	if (num_additional_swms) {
+		free_lookup_table(src_wim->lookup_table);
+		src_wim->lookup_table = src_wim_tab_save;
+	}
+	return ret;
 }
 
 /* 

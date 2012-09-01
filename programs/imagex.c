@@ -81,7 +81,7 @@ static const char *usage_strings[] = {
 "    imagex export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
 "                  DEST_WIMFILE [DEST_IMAGE_NAME]\n"
 "                  [DEST_IMAGE_DESCRIPTION] [--boot] [--check]\n"
-"                  [--compress=TYPE]\n",
+"                  [--compress=TYPE] [--ref=\"GLOB\"]\n",
 [INFO] = 
 "    imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
 "                [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
@@ -143,6 +143,7 @@ static const struct option export_options[] = {
 	{"boot",       no_argument,	  NULL, 'b'},
 	{"check",      no_argument,	  NULL, 'c'},
 	{"compress",   required_argument, NULL, 'x'},
+	{"ref",        required_argument, NULL, 'r'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -851,6 +852,9 @@ static int imagex_export(int argc, const char **argv)
 	int image;
 	struct stat stbuf;
 	bool wim_is_new;
+	const char *swm_glob = NULL;
+	WIMStruct **additional_swms = NULL;
+	unsigned num_additional_swms = 0;
 
 	for_opt(c, export_options) {
 		switch (c) {
@@ -866,6 +870,9 @@ static int imagex_export(int argc, const char **argv)
 			if (compression_type == WIM_COMPRESSION_TYPE_INVALID)
 				return -1;
 			compression_type_specified = true;
+			break;
+		case 'r':
+			swm_glob = optarg;
 			break;
 		default:
 			usage(EXPORT);
@@ -883,7 +890,8 @@ static int imagex_export(int argc, const char **argv)
 	dest_wimfile          = argv[2];
 	dest_name             = (argc >= 4) ? argv[3] : NULL;
 	dest_desc             = (argc >= 5) ? argv[4] : NULL;
-	ret = wimlib_open_wim(src_wimfile, open_flags, &src_w);
+	ret = wimlib_open_wim(src_wimfile,
+			      open_flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &src_w);
 	if (ret != 0)
 		return ret;
 
@@ -896,11 +904,11 @@ static int imagex_export(int argc, const char **argv)
 		if (!S_ISREG(stbuf.st_mode) && !S_ISLNK(stbuf.st_mode)) {
 			imagex_error("`%s' is not a regular file",
 					dest_wimfile);
-			goto done;
+			goto out;
 		}
 		ret = wimlib_open_wim(dest_wimfile, open_flags, &dest_w);
 		if (ret != 0)
-			goto done;
+			goto out;
 
 		if (compression_type_specified && compression_type != 
 				wimlib_get_compression_type(dest_w)) {
@@ -908,7 +916,7 @@ static int imagex_export(int argc, const char **argv)
 				     "not the same as that used in the "
 				     "destination WIM");
 			ret = -1;
-			goto done;
+			goto out;
 		}
 		compression_type = wimlib_get_compression_type(dest_w);
 	} else {
@@ -917,23 +925,32 @@ static int imagex_export(int argc, const char **argv)
 		if (errno == ENOENT) {
 			ret = wimlib_create_new_wim(compression_type, &dest_w);
 			if (ret != 0)
-				goto done;
+				goto out;
 		} else {
 			imagex_error_with_errno("Cannot stat file `%s'",
 						dest_wimfile);
-			goto done;
+			goto out;
 		}
 	}
 
 	image = wimlib_resolve_image(src_w, src_image_num_or_name);
 	ret = verify_image_exists(image);
 	if (ret != 0)
-		goto done;
+		goto out;
+
+	if (swm_glob) {
+		ret = open_swms_from_glob(swm_glob, src_wimfile, open_flags,
+					  &additional_swms,
+					  &num_additional_swms);
+		if (ret != 0)
+			goto out;
+	}
 
 	ret = wimlib_export_image(src_w, image, dest_w, dest_name, dest_desc, 
-				  export_flags);
+				  export_flags, additional_swms,
+				  num_additional_swms);
 	if (ret != 0)
-		goto done;
+		goto out;
 
 
 	if (wim_is_new)
@@ -941,9 +958,12 @@ static int imagex_export(int argc, const char **argv)
 				   write_flags);
 	else
 		ret = wimlib_overwrite(dest_w, write_flags);
-done:
+out:
 	wimlib_free(src_w);
 	wimlib_free(dest_w);
+	if (additional_swms)
+		for (unsigned i = 0; i < num_additional_swms; i++)
+			wimlib_free(additional_swms[i]);
 	return ret;
 }
 

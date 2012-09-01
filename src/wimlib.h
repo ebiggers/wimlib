@@ -514,8 +514,8 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * Copies an image, or all the images, from a WIM file, into another WIM file.
  *
  * @param src_wim
- * 	Pointer to the ::WIMStruct for a WIM file that contains the image(s)
- * 	being exported.
+ * 	Pointer to the ::WIMStruct for a stand-alone WIM or part 1 of a split
+ * 	WIM that contains the image(s) being exported.
  * @param src_image
  * 	The image to export from @a src_wim.  Can be the number of an image, or
  * 	::WIM_ALL_IMAGES to export all images.
@@ -541,6 +541,16 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	::WIMLIB_EXPORT_FLAG_BOOT is valid only if one of the exported images is
  * 	currently marked as bootable in @a src_wim; if that is the case, then
  * 	that image is marked as bootable in the destination WIM.
+ * @param additional_swms
+ * 	Array of pointers to the ::WIMStruct for each additional part in the
+ * 	split WIM.  Ignored if @a num_additional_swms is 0.  The pointers do not
+ * 	need to be in any particular order, but they must include all parts of
+ * 	the split WIM other than the first part, which must be provided in the
+ * 	@a wim parameter.
+ * @param num_additional_swms
+ * 	Number of additional WIM parts provided in the @a additional_swms array.
+ * 	This number should be one less than the total number of parts in the
+ * 	split WIM.  Set to 0 if the WIM is a standalone WIM.
  *
  * @return 0 on success; nonzero on error.  On error, @dest_wim is left in an
  * indeterminate state and should be freed with wimlib_free().
@@ -570,13 +580,20 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_READ
  * 	Could not read the metadata resource for @a src_image from @a src_wim.
+ * @retval ::WIMLIB_ERR_SPLIT_INVALID
+ * 	The source WIM is a split WIM, but the parts specified do not form a
+ * 	complete split WIM because they do not include all the parts of the
+ * 	original WIM, there are duplicate parts, or not all the parts have the
+ * 	same GUID and compression type.
  * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a src_wim or @a dest_wim is part of a split WIM.  Exporting an image
- * 	from or to a split WIM is unsupported.
+ * 	@a dest_wim is part of a split WIM.  Exporting an image to a split WIM
+ * 	is unsupported.
  */
 extern int wimlib_export_image(WIMStruct *src_wim, int src_image, 
 			       WIMStruct *dest_wim, const char *dest_name, 
-			       const char *dest_description, int flags);
+			       const char *dest_description, int flags,
+			       WIMStruct **additional_swms,
+			       unsigned num_additional_swms);
 
 /**
  * Extracts an image, or all images, from a standalone or split WIM file.
