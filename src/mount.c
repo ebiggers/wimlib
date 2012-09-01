@@ -1822,35 +1822,54 @@ static int check_lte_refcnt(struct lookup_table_entry *lte, void *ignore)
 
 /* Mounts a WIM file. */
 WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir, 
-			   int flags)
+			   int flags, WIMStruct **additional_swms,
+			   unsigned num_additional_swms)
 {
 	int argc = 0;
 	char *argv[16];
 	int ret;
 	char *p;
+	struct lookup_table *joined_tab, *wim_tab_save;
 
 	DEBUG("Mount: wim = %p, image = %d, dir = %s, flags = %d, ",
 			wim, image, dir, flags);
 
-	if (!dir)
+	if (!wim || !dir)
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	ret = verify_swm_set(wim, additional_swms, num_additional_swms);
+	if (ret != 0)
+		return ret;
+
+	if (num_additional_swms) {
+		ret = new_joined_lookup_table(wim, additional_swms,
+					      num_additional_swms,
+					      &joined_tab);
+		if (ret != 0)
+			return ret;
+		wim_tab_save = wim->lookup_table;
+		wim->lookup_table = joined_tab;
+	}
 
 	ret = wimlib_select_image(wim, image);
 
 	if (ret != 0)
-		return ret;
+		goto out;
 
 	DEBUG("Selected image %d", image);
 
 	next_link_group_id = assign_link_group_ids(wim->image_metadata[image - 1].lgt);
 
+	DEBUG("Resolving lookup table entries");
 	/* Resolve all the lookup table entries of the dentry tree */
 	for_dentry_in_tree(wim_root_dentry(wim), dentry_resolve_ltes,
 			   wim->lookup_table);
 
+	DEBUG("Checking lookup table entry reference counts");
+
 	ret = for_lookup_table_entry(wim->lookup_table, check_lte_refcnt, NULL);
 	if (ret != 0)
-		return ret;
+		goto out;
 
 	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		wim_get_current_image_metadata(wim)->modified = true;
@@ -1860,16 +1879,33 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)))
 		flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR;
 
+	DEBUG("Getting current directory");
+
 	mount_dir = dir;
 	working_directory = getcwd(NULL, 0);
 	if (!working_directory) {
 		ERROR_WITH_ERRNO("Could not determine current directory");
-		return WIMLIB_ERR_NOTDIR;
+		ret = WIMLIB_ERR_NOTDIR;
+		goto out;
 	}
 
+	DEBUG("Closing POSIX message queues");
+	/* XXX hack to get rid of the message queues if they already exist for
+	 * some reason (maybe left over from a previous mount that wasn't
+	 * unmounted correctly) */
+	ret = open_message_queues(true);
+	if (ret != 0)
+		goto out;
+	close_message_queues();
+
+	DEBUG("Preparing arguments to fuse_main()");
+
+
 	p = STRDUP(dir);
-	if (!p)
-		return WIMLIB_ERR_NOMEM;
+	if (!p) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out;
+	}
 
 	argv[argc++] = "imagex";
 	argv[argc++] = p;
@@ -1893,7 +1929,8 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 		make_staging_dir();
 		if (!staging_dir_name) {
 			FREE(p);
-			return WIMLIB_ERR_MKDIR;
+			ret = WIMLIB_ERR_MKDIR;
+			goto out;
 		}
 	} else {
 		/* Read-only mount */
@@ -1919,8 +1956,14 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	mount_flags = flags;
 
 	ret = fuse_main(argc, argv, &wimfs_operations, NULL);
-
-	return (ret == 0) ? 0 : WIMLIB_ERR_FUSE;
+	if (ret)
+		ret = WIMLIB_ERR_FUSE;
+out:
+	if (num_additional_swms) {
+		free_lookup_table(wim->lookup_table);
+		wim->lookup_table = wim_tab_save;
+	}
+	return ret;
 }
 
 
@@ -2060,7 +2103,8 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 }
 
 WIMLIBAPI int wimlib_mount(WIMStruct *wim_p, int image, const char *dir, 
-			   int flags)
+			   int flags, WIMStruct **additional_swms,
+			   unsigned num_additional_swms)
 {
 	return mount_unsupported_error();
 }

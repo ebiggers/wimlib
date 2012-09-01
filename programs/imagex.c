@@ -56,23 +56,8 @@ enum imagex_op_type {
 	UNMOUNT,
 };
 
-static const char *path_basename(const char *path)
-{
-	const char *p = path;
-	while (*p)
-		p++;
-	p--;
-
-	/* Trailing slashes. */
-	while ((p != path - 1) && *p == '/')
-		p--;
-
-	while ((p != path - 1) && *p != '/')
-		p--;
-
-	return p + 1;
-}
-
+static void usage(int cmd_type);
+static void usage_all();
 
 static const char *usage_strings[] = {
 [APPEND] = 
@@ -82,7 +67,7 @@ static const char *usage_strings[] = {
 [APPLY] = 
 "    imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                 (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
-"                 [--symlink] [--verbose]\n",
+"                 [--symlink] [--verbose] [--ref=\"GLOB\"]\n",
 [CAPTURE] = 
 "    imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                   [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
@@ -105,7 +90,8 @@ static const char *usage_strings[] = {
 "    imagex join [--check] WIMFILE SPLIT_WIM...\n",
 [MOUNT] = 
 "    imagex mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
-"                 [--check] [--debug] [--streams-interface=INTERFACE]\n",
+"                 [--check] [--debug] [--streams-interface=INTERFACE]\n"
+"                 [--ref=\"GLOB\"]\n",
 [MOUNTRW] = 
 "    imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
 "                   [--check] [--debug] [--streams-interface=INTERFACE]\n",
@@ -180,6 +166,7 @@ static const struct option mount_options[] = {
 	{"check", no_argument, NULL, 'c'},
 	{"debug", no_argument, NULL, 'd'},
 	{"streams-interface", required_argument, NULL, 's'},
+	{"ref",      required_argument, NULL, 'r'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -193,6 +180,7 @@ static const struct option unmount_options[] = {
 	{"check", no_argument, NULL, 'C'},
 	{NULL, 0, NULL, 0},
 };
+
 
 
 /* Print formatted error message to stderr. */
@@ -218,39 +206,23 @@ static void imagex_error_with_errno(const char *format, ...)
 	va_end(va);
 }
 
-
-static inline void version()
+static const char *path_basename(const char *path)
 {
-	static const char *s = 
-	"imagex (" PACKAGE ") " PACKAGE_VERSION "\n"
-	"Copyright (C) 2012 Eric Biggers\n"
-	"License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
-	"This is free software: you are free to change and redistribute it.\n"
-	"There is NO WARRANTY, to the extent permitted by law.\n"
-	"\n"
-	"Report bugs to "PACKAGE_BUGREPORT".\n";
-	fputs(s, stdout);
+	const char *p = path;
+	while (*p)
+		p++;
+	p--;
+
+	/* Trailing slashes. */
+	while ((p != path - 1) && *p == '/')
+		p--;
+
+	while ((p != path - 1) && *p != '/')
+		p--;
+
+	return p + 1;
 }
 
-static inline void usage(int cmd)
-{
-	puts("IMAGEX: Usage:");
-	fputs(usage_strings[cmd], stdout);
-}
-
-static void usage_all()
-{
-	puts("IMAGEX: Usage:");
-	for (int i = 0; i < ARRAY_LEN(usage_strings); i++)
-		fputs(usage_strings[i], stdout);
-	static const char *extra = 
-"    imagex --help\n"
-"    imagex --version\n"
-"\n"
-"    The compression TYPE may be \"maximum\", \"fast\", or \"none\".\n"
-	;
-	fputs(extra, stdout);
-}
 
 static int verify_image_exists(int image)
 {
@@ -331,6 +303,62 @@ out_free_buf:
 out_fclose:
 	fclose(fp);
 	return NULL;
+}
+
+static int open_swms_from_glob(const char *swm_glob,
+			       const char *first_part,
+			       int open_flags,
+			       WIMStruct ***additional_swms_ret,
+			       unsigned *num_additional_swms_ret)
+{
+	unsigned num_additional_swms = 0;
+	WIMStruct **additional_swms = NULL;
+	glob_t globbuf;
+	int ret;
+
+	ret = glob(swm_glob, GLOB_ERR | GLOB_NOSORT, NULL, &globbuf);
+	if (ret != 0) {
+		if (ret == GLOB_NOMATCH) {
+			imagex_error("Found no files for glob \"%s\"",
+				     swm_glob);
+		} else {
+			imagex_error_with_errno("Failed to process glob "
+						"\"%s\"", swm_glob);
+		}
+		ret = -1;
+		goto out;
+	}
+	num_additional_swms = globbuf.gl_pathc;
+	additional_swms = calloc(num_additional_swms, sizeof(additional_swms[0]));
+	if (!additional_swms) {
+		imagex_error("Out of memory");
+		ret = -1;
+		goto out_globfree;
+	}
+	size_t offset = 0;
+	for (size_t i = 0; i < num_additional_swms; i++) {
+		if (strcmp(globbuf.gl_pathv[i], first_part) == 0) {
+			offset++;
+			continue;
+		}
+		ret = wimlib_open_wim(globbuf.gl_pathv[i],
+				      open_flags | WIMLIB_OPEN_FLAG_SPLIT_OK,
+				      &additional_swms[i - offset]);
+		if (ret != 0)
+			goto out_close_swms;
+	}
+	*additional_swms_ret = additional_swms;
+	*num_additional_swms_ret = num_additional_swms - offset;
+	ret = 0;
+	goto out_globfree;
+out_close_swms:
+	for (unsigned i = 0; i < num_additional_swms; i++)
+		wimlib_free(additional_swms[i]);
+	free(additional_swms);
+out_globfree:
+	globfree(&globbuf);
+out:
+	return ret;
 }
 
 static int imagex_append(int argc, const char **argv)
@@ -459,8 +487,7 @@ static int imagex_apply(int argc, const char **argv)
 
 	const char *swm_glob = NULL;
 	WIMStruct **additional_swms = NULL;
-	size_t num_additional_swms = 0;
-	glob_t globbuf;
+	unsigned num_additional_swms = 0;
 
 	for_opt(c, apply_options) {
 		switch (c) {
@@ -519,33 +546,11 @@ static int imagex_apply(int argc, const char **argv)
 	}
 
 	if (swm_glob) {
-		ret = glob(swm_glob, GLOB_ERR | GLOB_NOSORT, NULL, &globbuf);
-		if (ret != 0) {
-			imagex_error_with_errno("Failed to process glob "
-						"\"%s\"", swm_glob);
-			ret = -1;
+		ret = open_swms_from_glob(swm_glob, wimfile, open_flags,
+					  &additional_swms,
+					  &num_additional_swms);
+		if (ret != 0)
 			goto out;
-		}
-		num_additional_swms = globbuf.gl_pathc;
-		additional_swms = calloc(num_additional_swms, sizeof(additional_swms[0]));
-		if (!additional_swms) {
-			imagex_error("Out of memory");
-			ret = -1;
-			goto out;
-		}
-		size_t offset = 0;
-		for (size_t i = 0; i < num_additional_swms; i++) {
-			if (strcmp(globbuf.gl_pathv[i], wimfile) == 0) {
-				offset++;
-				continue;
-			}
-			ret = wimlib_open_wim(globbuf.gl_pathv[i],
-					      open_flags | WIMLIB_OPEN_FLAG_SPLIT_OK,
-					      &additional_swms[i - offset]);
-			if (ret != 0)
-				goto out;
-		}
-		num_additional_swms -= offset;
 	}
 
 #ifdef WITH_NTFS_3G
@@ -1242,13 +1247,17 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 {
 	int c;
 	int mount_flags = 0;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
+	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS |
+			 WIMLIB_OPEN_FLAG_SPLIT_OK;
 	const char *wimfile;
 	const char *dir;
 	WIMStruct *w;
 	int image;
 	int num_images;
 	int ret;
+	const char *swm_glob = NULL;
+	WIMStruct **additional_swms = NULL;
+	unsigned num_additional_swms = 0;
 
 	if (strcmp(argv[0], "mountrw") == 0)
 		mount_flags |= WIMLIB_MOUNT_FLAG_READWRITE;
@@ -1272,6 +1281,9 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 				goto mount_usage;
 			}
 			break;
+		case 'r':
+			swm_glob = optarg;
+			break;
 		default:
 			goto mount_usage;
 		}
@@ -1287,6 +1299,14 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 	if (ret != 0)
 		return ret;
 
+	if (swm_glob) {
+		ret = open_swms_from_glob(swm_glob, wimfile, open_flags,
+					  &additional_swms,
+					  &num_additional_swms);
+		if (ret != 0)
+			goto out;
+	}
+
 	if (argc == 2) {
 		image = 1;
 		num_images = wimlib_get_num_images(w);
@@ -1296,7 +1316,7 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 			usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)  
 					? MOUNTRW : MOUNT);
 			ret = WIMLIB_ERR_INVALID_IMAGE;
-			goto done;
+			goto out;
 		}
 		dir = argv[1];
 	} else {
@@ -1306,16 +1326,20 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 
 	ret = verify_image_exists_and_is_single(image);
 	if (ret != 0)
-		goto done;
+		goto out;
 
-	ret = wimlib_mount(w, image, dir, mount_flags);
+	ret = wimlib_mount(w, image, dir, mount_flags, additional_swms,
+			   num_additional_swms);
 	if (ret != 0) {
 		imagex_error("Failed to mount image %d from `%s' on `%s'",
 			     image, wimfile, dir);
 
 	}
-done:
+out:
 	wimlib_free(w);
+	if (additional_swms)
+		for (unsigned i = 0; i < num_additional_swms; i++)
+			wimlib_free(additional_swms[i]);
 	return ret;
 mount_usage:
 	usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)  
@@ -1390,6 +1414,10 @@ struct imagex_command {
 	int cmd;
 };
 
+
+#define for_imagex_command(p) for (p = &imagex_commands[0]; \
+		p != &imagex_commands[ARRAY_LEN(imagex_commands)]; p++)
+
 static struct imagex_command imagex_commands[] = {
 	{"append",  imagex_append,	   APPEND},
 	{"apply",   imagex_apply,   	   APPLY},
@@ -1405,8 +1433,19 @@ static struct imagex_command imagex_commands[] = {
 	{"unmount", imagex_unmount,	   UNMOUNT},
 };
 
-#define for_imagex_command(p) for (p = &imagex_commands[0]; \
-		p != &imagex_commands[ARRAY_LEN(imagex_commands)]; p++)
+static void version()
+{
+	static const char *s = 
+	"imagex (" PACKAGE ") " PACKAGE_VERSION "\n"
+	"Copyright (C) 2012 Eric Biggers\n"
+	"License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
+	"This is free software: you are free to change and redistribute it.\n"
+	"There is NO WARRANTY, to the extent permitted by law.\n"
+	"\n"
+	"Report bugs to "PACKAGE_BUGREPORT".\n";
+	fputs(s, stdout);
+}
+
 
 static void help_or_version(int argc, const char **argv)
 {
@@ -1437,6 +1476,34 @@ static void help_or_version(int argc, const char **argv)
 			exit(0);
 		}
 	}
+}
+
+
+static void usage(int cmd_type)
+{
+	struct imagex_command *cmd;
+	puts("IMAGEX: Usage:");
+	fputs(usage_strings[cmd_type], stdout);
+	for_imagex_command(cmd)
+		if (cmd->cmd == cmd_type)
+			printf("\nTry `man imagex-%s' for more details.\n",
+			       cmd->name);
+}
+
+static void usage_all()
+{
+	puts("IMAGEX: Usage:");
+	for (int i = 0; i < ARRAY_LEN(usage_strings); i++)
+		fputs(usage_strings[i], stdout);
+	static const char *extra = 
+"    imagex --help\n"
+"    imagex --version\n"
+"\n"
+"    The compression TYPE may be \"maximum\", \"fast\", or \"none\".\n"
+"\n"
+"    Try `man imagex' for more information.\n"
+	;
+	fputs(extra, stdout);
 }
 
 

@@ -54,6 +54,8 @@
  * but the LZX documentation is not entirely correct, and the WIM documentation
  * itself is very incomplete and is of unacceptable quality.
  *
+ * A WIM file may be either stand-alone or split into multiple parts.
+ *
  * \section winpe Windows PE
  * 
  * A major use for this library is to create customized images of Windows PE, the
@@ -612,7 +614,7 @@ extern int wimlib_export_image(WIMStruct *src_wim, int src_image,
  * @param num_additional_swms
  * 	Number of additional WIM parts provided in the @a additional_swms array.
  * 	This number should be one less than the total number of parts in the
- * 	split WIM.
+ * 	split WIM.  Set to 0 if the WIM is a standalone WIM.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -869,6 +871,16 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * 	::WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR, or
  * 	::WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS.  The default interface is
  * 	the XATTR interface.
+ * @param additional_swms
+ * 	Array of pointers to the ::WIMStruct for each additional part in the
+ * 	split WIM.  Ignored if @a num_additional_swms is 0.  The pointers do not
+ * 	need to be in any particular order, but they must include all parts of
+ * 	the split WIM other than the first part, which must be provided in the
+ * 	@a wim parameter.
+ * @param num_additional_swms
+ * 	Number of additional WIM parts provided in the @a additional_swms array.
+ * 	This number should be one less than the total number of parts in the
+ * 	split WIM.  Set to 0 if the WIM is a standalone WIM.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -894,8 +906,18 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * @retval ::WIMLIB_ERR_READ
  * 	An unexpected end-of-file or read error occurred when trying to read
  * 	data from the WIM file associated with @a wim.
+ * @retval ::WIMLIB_ERR_SPLIT_INVALID
+ * 	The WIM is a split WIM, but the parts specified do not form a complete
+ * 	split WIM because they do not include all the parts of the original WIM,
+ * 	there are duplicate parts, or not all the parts have the same GUID and
+ * 	compression type.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	The WIM is a split WIM and a read-write mount was requested.  We only
+ * 	support mounting a split WIM read-only.
  */
-extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags);
+extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags,
+			WIMStruct **additional_swms,
+			unsigned num_additional_swms);
 
 /**
  * Opens a WIM file and creates a ::WIMStruct for it.

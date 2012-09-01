@@ -44,46 +44,52 @@ There is a separate manual page for each \fBimagex\fR command.
 
 The following features are currently supported:
 
-.IP \[bu] 2
-Mount an image in a WIM read-only (\fBimagex mount\fR)
-.IP \[bu] 2
-Mount an image in a WIM read-write (\fBimagex mountrw\fR)
-.IP \[bu] 2
-Create a WIM from a directory or NTFS volume (\fBimagex capture\fR)
-.IP \[bu] 2
-Append a directory or NTFS volume onto a WIM as a new image (\fBimagex
+.IP \[bu] 3
+Create a stand-alone WIM from a directory or NTFS volume (\fBimagex capture\fR)
+.IP \[bu]
+Append a directory or NTFS volume onto a stand-alone WIM as a new image (\fBimagex
 append\fR)
-.IP \[bu] 2
-Delete image(s) from a WIM (\fBimagex delete\fR)
-.IP \[bu] 2
-Export image(s) from a WIM (\fBimagex export\fR)
-.IP \[bu] 2
+.IP \[bu]
+Apply an image from a stand-alone or split WIM to a directory or NTFS volume
+(\fBimagex apply\fR)
+.IP \[bu]
+Mount an image from a stand-alone or split WIM read-only (\fBimagex mount\fR)
+.IP \[bu]
+Mount an image from a stand-alone WIM read-write (\fBimagex mountrw\fR)
+.IP \[bu]
+Delete image(s) from a stand-alone WIM (\fBimagex delete\fR)
+.IP \[bu]
+Export image(s) from a stand-alone WIM (\fBimagex export\fR)
+.IP \[bu]
 Display information about a WIM file (\fBimagex info\fR, \fBimagex dir\fR)
-.IP \[bu] 2
+.IP \[bu]
 Change the name or description of an image in the WIM (\fBimagex info\fR)
-.IP \[bu] 2
+.IP \[bu]
 Change which image in a WIM is bootable (\fBimagex info\fR)
-.IP \[bu] 2
-Combine split WIMs into one WIM (\fBimage join\fR)
-.IP \[bu] 2
-Split a WIM into multiple parts (\fBimage split\fR)
-.IP \[bu] 2
+.IP \[bu]
+Combine split WIMs into one stand-alone WIM (\fBimage join\fR)
+.IP \[bu]
+Split a stand-alone WIM into multiple parts (\fBimage split\fR)
+.IP \[bu]
 Support for all WIM compression types, both compression and decompression (LZX,
 XPRESS, and none)
-.IP \[bu] 2
-Integrity table
-.IP \[bu] 2
-XML data (parsed and written using \fBlibxml\fR(3))
+.IP \[bu]
+WIM integrity table is supported (\fB--check\fR option to many commands)
+.IP \[bu]
+WIM XML data (parsed and written using \fBlibxml\fR(3))
 
 .SH UNSUPPORTED FEATURES
 
 As of version 1.0.0, wimlib supports capturing and applying WIMs directly from
-NTFS and has much improved support for hard links and symbolic links.  I don't
-think there are many other features that would be worth it to implement; the
-only significant thing missing (in my opinion) is that split WIMs need to be
-handled better (e.g. it should be possible to apply a split WIM using \fBimagex
-apply\fR).  And if Microsoft updates the WIM format, I'd need to support it, but
-it looks like the format for Windows 8 is the same as that of Windows 7.
+NTFS and has much improved support for hard links and symbolic links.  In
+addition, you may now apply split WIMs and mount them read-only.  I don't think
+there are many other features that would be worth it to implement.  Besides
+porting the library to Windows (which I'm not really interested in), the main
+thing that could use improvement (in my opinion) is that the LZX compression
+ratio still isn't quite as good as Microsoft's version.  Also, exporting an
+image from a split WIM could be supported.  Furthermore, if Microsoft updates
+the WIM format, I'd need to support it, but it looks like the format for Windows
+8 is the same as that of Windows 7.
 
 .SH DIFFERENCES FROM MICROSOFT IMAGEX
 
@@ -101,7 +107,9 @@ Some features, such as the ability to keep files hard-linked across WIM images
 when they are extracted from a WIM, are not available in Microsoft's version of
 imagex.  Also, doesn't seem to be an equivalent of \fBimagex join\fR in
 Microsoft's version; you would have to use \fBimagex.exe /export\fR, but that
-doesn't let you export all images at once.
+doesn't let you export all images at once.  Furthermore, this version of
+\fBimagex\fR lets you mount an image from a split WIM read-only, while
+Microsoft's version does not.
 
 Microsoft's version has some weird limitations, like it won't let you extract a
 WIM on a shared folder, and it requires some commands to be run only from

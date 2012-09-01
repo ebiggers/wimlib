@@ -4,7 +4,7 @@ imagex mount, mountrw, unmount \- Mount and unmount an image from a WIM archive
 
 .SH SYNOPSIS
 \fBimagex mount\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [--check]
-[--streams-interface=\fIINTERFACE\fR]
+[--streams-interface=\fIINTERFACE\fR] [--ref="\fIGLOB\fR"]
 .br
 \fBimagex mountrw\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [--check]
 [--streams-interface=\fIINTERFACE\fR]
@@ -28,6 +28,40 @@ The WIM image can be unmounted using the \fBimagex unmount\fR command.  Changes
 made to a WIM mounted read-write will be discarded unless the \fB--commit\fR
 flag is provided to \fBimagex unmount\fR.
 
+.SH SPLIT WIMS
+
+You may use \fBimagex mount\fR to mount an image from a split WIM read-only.
+However, you may not mount an image from a split WIM read-write.
+
+The \fIWIMFILE\fR argument is used to specify the first part of the split WIM, and
+the \fB--refs\fR="\fIGLOB\fR" option is used to provide a shell-style file glob
+that specifies the additional parts of the split WIM.  \fIGLOB\fR is expected to
+be a single string on the command line, so \fIGLOB\fR must be quoted so that it
+is protected against shell expansion.  \fIGLOB\fR must expand to all parts of
+the split WIM, except optionally the first part which may either omitted or
+included in the glob (but the first part MUST be specified as \fIWIMFILE\fR as
+well).
+
+Here's an example.  The names for the split WIMs usually go something like:
+	
+.RS
+.PP
+.nf
+mywim.swm
+mywim2.swm
+mywim3.swm
+mywim4.swm
+mywim5.swm
+\. ... etc.
+.RE
+
+To mount the first image of this split WIM to the directory "dir", we would do:
+.PP
+.RS
+imagex mount mywim.swm 1 dir --ref="mywim*.swm"
+.RE
+.PP
+
 .SH NOTES
 
 If wimlib was configured using the --without-fuse flag, then the \fBimagex
@@ -36,9 +70,10 @@ mount\fR, \fBimagex mountrw\fR, and \fBimagex unmount\fR commands will not work.
 All files in the mounted WIM will be accessible regardless of whether there is a
 security descriptor in the WIM associated with the file or not.  New files or
 directories created in a read-write mounted WIM will be created with no security
-descriptor.
-
-Mounting split WIMs is not yet supported.
+descriptor.  Although there is support for accessing named data streams (see the
+\fB--streams-interface\fR option), it is currently not possible
+to set or get DOS names, file attributes, or security
+descriptors in a mounted WIM.
 
 .SH MOUNT OPTIONS
 .TP
@@ -72,6 +107,12 @@ stream.
 \fB--debug\fR
 Turn on debugging information printed by the FUSE library, and do not fork into
 the background.
+
+.TP
+\fB--ref\fR="\fIGLOB\fR"
+File glob of additional split WIM parts that are part of the split WIM being
+mounted.  This option is valid for \fBimagex mount\fR but not \fBimagex
+mountrw\fR.  See \fBSPLIT_WIMS\fR.
 
 .SH UNMOUNT OPTIONS
 .TP

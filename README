@@ -25,6 +25,8 @@ format, and LZX compression format.  The XPRESS documentation is acceptable, but
 the LZX documentation is not entirely correct, and the WIM documentation itself
 is very incomplete and is of unacceptable quality.
 
+A WIM file may be either stand-alone or split into multiple parts.
+
 				   WINDOWS PE
 
 A major use for this library is to create customized images of Windows PE, the

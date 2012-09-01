@@ -23,6 +23,9 @@ location and the WIM image(s) are extracted to that directory.  If \fITARGET\fR
 specifies a regular file or block device, it is interpreted as a NTFS volume to
 which the WIM image is to be extracted.
 
+\fBimagex apply\fR supports applying images from stand-alone WIMs as well as
+split WIM.  See \fBSPLIT WIMS\fR.
+
 .SH NORMAL MODE
 
 The normal extraction mode is entered when \fITARGET\fR is a directory or
@@ -155,6 +158,38 @@ Besides setting up the files on the "System" partition, don't forget to set the
 bootable flag on it, and have a master boot record that loads the bootable
 partition (Windows' MBR does, and SYSLINUX provides an equivalent MBR).
 
+.SH SPLIT WIMS
+
+You may use \fBimagex apply\fR to apply images from a split WIM.  The
+\fIWIMFILE\fR argument is used to specify the first part of the split WIM, and
+the \fB--refs\fR="\fIGLOB\fR" option is used to provide a shell-style file glob
+that specifies the additional parts of the split WIM.  \fIGLOB\fR is expected to
+be a single string on the command line, so \fIGLOB\fR must be quoted so that it
+is protected against shell expansion.  \fIGLOB\fR must expand to all parts of
+the split WIM, except optionally the first part which may either omitted or
+included in the glob (but the first part MUST be specified as \fIWIMFILE\fR as
+well).
+
+Here's an example.  The names for the split WIMs usually go something like:
+	
+.RS
+.PP
+.nf
+mywim.swm
+mywim2.swm
+mywim3.swm
+mywim4.swm
+mywim5.swm
+\. ... etc.
+.RE
+
+To apply the first image of this split WIM to the directory "dir", we would do:
+.PP
+.RS
+imagex apply mywim.swm 1 dir --ref="mywim*.swm"
+.RE
+.PP
+
 .SH OPTIONS
 .TP 6
 \fB--check\fR
@@ -177,10 +212,12 @@ instead.  This option is not available in the NTFS extraction mode.
 \fB--verbose\fR
 Print the path to of each file or directory within the WIM image as it is
 extracted, and some additional informational messages.
+.TP
+\fB--ref\fR="\fIGLOB\fR"
+File glob of additional split WIM parts that are part of the split WIM being
+applied.  See \fBSPLIT_WIMS\fR.
 
 .SH NOTES
-
-\fBimagex apply\fR does not yet support split WIMs.
 
 \fBimagex apply\fR calculates the SHA1 message digest of every file stream it
 extracts and verifies that it is the same as the SHA1 message digest provided in
