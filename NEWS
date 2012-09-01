@@ -14,6 +14,10 @@ Version 1.0.0:
 	xattr or a Windows-style stream interface.  Also they are supported when
 	capturing a WIM from NTFS or applying a WIM to NTFS.
 
+	Split WIMs are better supported.  You may now apply an image directly
+	from a split WIM, mount an image from a split WIM read-only, or export
+	an image from a split WIM.
+
 	Using a capture configuration file is now supported (but not fully yet).
 
 	SHA1 message digests are checked in more places, so we can make sure
