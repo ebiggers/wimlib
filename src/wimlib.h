@@ -387,7 +387,7 @@ enum wimlib_error_code {
  * 	Pointer to the contents of an image capture configuration file.  If @c
  * 	NULL, a default string is used.  Please see the manual page for
  * 	<b>imagex capture</b> for more information.
- * @param config_size
+ * @param config_len
  * 	Length of the string @a config in bytes.
  * 	
  * @param flags
@@ -435,7 +435,7 @@ extern int wimlib_add_image(WIMStruct *wim, const char *dir,
  * ::WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE may not be specified because we capture
  * the reparse points exactly as they are.
  */
-extern int wimlib_add_image_from_ntfs_volume(WIMStruct *w, const char *device,
+extern int wimlib_add_image_from_ntfs_volume(WIMStruct *wim, const char *device,
 					     const char *name,
 					     const char *config,
 					     size_t config_len,
@@ -450,7 +450,7 @@ extern int wimlib_add_image_from_ntfs_volume(WIMStruct *w, const char *device,
  * apply mode we apply the reparse points and hard links exactly as they are in
  * the WIM.
  */
-extern int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
+extern int wimlib_apply_image_to_ntfs_volume(WIMStruct *wim, int image,
 				 	     const char *device, int flags,
 					     WIMStruct **additional_swms,
 					     unsigned num_additional_swms);
@@ -520,8 +520,8 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	The image to export from @a src_wim.  Can be the number of an image, or
  * 	::WIM_ALL_IMAGES to export all images.
  * @param dest_wim
- * 	Pointer to the ::WIMStruct for a WIM filethat will receive the images being
- * 	exported.
+ * 	Pointer to the ::WIMStruct for a WIM file that will receive the images
+ * 	being exported.
  * @param dest_name
  * 	The name to give the exported image in the new WIM file.  If left @c NULL,
  * 	the name from @a src_wim is used.  This parameter must be left @c NULL
@@ -552,7 +552,7 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	This number should be one less than the total number of parts in the
  * 	split WIM.  Set to 0 if the WIM is a standalone WIM.
  *
- * @return 0 on success; nonzero on error.  On error, @dest_wim is left in an
+ * @return 0 on success; nonzero on error.  On error, @a dest_wim is left in an
  * indeterminate state and should be freed with wimlib_free().
  * @retval ::WIMLIB_ERR_DECOMPRESSION
  * 	Could not decompress the metadata resource for @a src_image
@@ -952,10 +952,9 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags,
  * 	If ::WIMLIB_OPEN_FLAG_SHOW_PROGRESS is given, progress information will
  * 	be shown if the integrity of the WIM is checked.
  * 	If ::WIMLIB_OPEN_FLAG_SPLIT_OK is given, no error will be issued if the
- * 	WIM is part of a split WIM.  However, wimlib does not fully support
- * 	split WIMs, so not all functions will work correctly after opening a
- * 	split WIM.  For example, you cannot use wimlib_mount() or
- * 	wimlib_extract_image() on a split WIM.
+ * 	WIM is part of a split WIM; otherwise WIMLIB_ERR_SPLIT_UNSUPPORTED is
+ * 	returned.  (This flag may be removed in the future, in which case no
+ * 	error will be issued when opening a split WIM.)
  *
  * @param wim_ret
  * 	On success, a pointer to an opaque ::WIMStruct for the opened WIM file
@@ -1019,10 +1018,6 @@ extern int wimlib_open_wim(const char *wim_file, int flags,
  * The new WIM is written to a temporary file and then renamed to the original
  * file after it is has been completely written.  The temporary file currently
  * is made in the same directory as the original WIM file.
- *
- * Note that it is not possible for this function to delete the original file
- * before having written the new file because it is very likely that file
- * resources in the new WIM file need to be retrieved from the old WIM file.
  *
  * After this function returns, @a wim must be freed using wimlib_free().  Any
  * further actions on @a wim before doing this are undefined.
@@ -1278,18 +1273,18 @@ extern int wimlib_set_image_descripton(WIMStruct *wim, int image,
 				       const char *description);
 
 /**
- * Changes what is written in the <FLAGS> element in the WIM XML data (something
- * like "Core" or "Ultimate")
+ * Changes what is written in the \<FLAGS\> element in the WIM XML data
+ * (something like "Core" or "Ultimate")
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
  * 	standalone WIM or part of a split WIM; however, you should set the same
- * 	<FLAGS> element on all parts of a split WIM.
+ * 	\<FLAGS\> element on all parts of a split WIM.
  * @param image
  * 	The number of the image for which to change the description.
  * @param flags
- * 	The new <FLAGS> element to give the image.  It may be @c NULL, which
- * 	indicates that the image is to be given no <FLAGS> element.
+ * 	The new \<FLAGS\> element to give the image.  It may be @c NULL, which
+ * 	indicates that the image is to be given no \<FLAGS\> element.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
@@ -1299,8 +1294,7 @@ extern int wimlib_set_image_descripton(WIMStruct *wim, int image,
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @a flags string.
  */
-extern int wimlib_set_image_flags(WIMStruct *w, int image,
-				  const char *flags);
+extern int wimlib_set_image_flags(WIMStruct *wim, int image, const char *flags);
 
 /**
  * Changes the name of an image in the WIM.
@@ -1390,10 +1384,10 @@ extern int wimlib_set_print_errors(bool show_messages);
  * 	part.  The other parts will have the same name with 2, 3, 4, ..., etc.
  * 	appended.
  * @param part_size
- * 	The maximum size per part.  It is not guaranteed that this will really
- * 	be the maximum size per part, because some file resources in the WIM may
- * 	be larger than this size, and the WIM file format provides no way to
- * 	split up file resources among multiple WIMs.
+ * 	The maximum size per part, in bytes.  It is not guaranteed that this
+ * 	will really be the maximum size per part, because some file resources in
+ * 	the WIM may be larger than this size, and the WIM file format provides
+ * 	no way to split up file resources among multiple WIMs.
  * @param flags
  * 	Bitwise OR of ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY and/or
  * 	::WIMLIB_OPEN_FLAG_SHOW_PROGRESS.
@@ -1504,7 +1498,7 @@ extern int wimlib_unmount(const char *dir, int flags);
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in @a wim is invalid.	
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
- *	The security data for @a image in @wim is invalid.
+ *	The security data for @a image in @a wim is invalid.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_OPEN
