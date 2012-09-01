@@ -1452,10 +1452,3 @@ int main(int argc, const char **argv)
 	usage_all();
 	return 1;
 }
-/*#ifndef WITH_NTFS_3G*/
-		/*ERROR("wimlib was not compiled with support for NTFS-3g, so we cannot extract");*/
-		/*ERROR("a WIM to a NTFS filesystem while preserving NTFS-specific metadata.");*/
-		/*ERROR("Please apply the WIM to a directory rather than a block device, ");*/
-		/*ERROR("and without the NTFS flag; or compile in support for NTFS-3g.");*/
-		/*return WIMLIB_ERR_UNSUPPORTED;*/
-/*#endif*/
