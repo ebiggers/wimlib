@@ -30,6 +30,7 @@
 #include <glob.h>
 #include <string.h>
 #include <errno.h>
+#include <libgen.h>
 #include <sys/stat.h>
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
@@ -379,6 +380,7 @@ static int imagex_append(int argc, const char **argv)
 	WIMStruct *w;
 	int ret;
 	int cur_image;
+	char *default_name;
 
 	for_opt(c, append_options) {
 		switch (c) {
@@ -414,7 +416,12 @@ static int imagex_append(int argc, const char **argv)
 	}
 	dir     = argv[0];
 	wimfile = argv[1];
-	name    = (argc >= 3) ? argv[2] : path_basename(dir);
+
+	char dir_copy[strlen(dir) + 1];
+	memcpy(dir_copy, dir, strlen(dir) + 1);
+	default_name = basename(dir_copy);
+
+	name    = (argc >= 3) ? argv[2] : default_name;
 	desc    = (argc >= 4) ? argv[3] : NULL;
 
 	if (config_file) {
@@ -604,6 +611,7 @@ static int imagex_capture(int argc, const char **argv)
 	size_t config_len = 0;
 	WIMStruct *w;
 	int cur_image;
+	char *default_name;
 	int ret;
 
 	for_opt(c, capture_options) {
@@ -646,7 +654,12 @@ static int imagex_capture(int argc, const char **argv)
 	}
 	dir     = argv[0];
 	wimfile = argv[1];
-	name    = (argc >= 3) ? argv[2] : dir;
+
+	char dir_copy[strlen(dir) + 1];
+	memcpy(dir_copy, dir, strlen(dir) + 1);
+	default_name = basename(dir_copy);
+
+	name    = (argc >= 3) ? argv[2] : default_name;
 	desc    = (argc >= 4) ? argv[3] : NULL;
 
 	if (config_file) {
