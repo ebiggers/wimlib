@@ -35,10 +35,9 @@
 #include <ntfs-3g/layout.h>
 #include <ntfs-3g/acls.h>
 #include <ntfs-3g/attrib.h>
-#include <ntfs-3g/misc.h>
+#include <ntfs-3g/security.h> /* security.h before xattrs.h */
+#include <ntfs-3g/xattrs.h>
 #include <ntfs-3g/reparse.h>
-#include <ntfs-3g/security.h>
-#include <ntfs-3g/volume.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -235,34 +234,58 @@ static int wim_apply_hardlink_ntfs(const struct dentry *from_dentry,
 	return ret;
 }
 
+/*#define HAVE_NTFS_INODE_FUNCTIONS*/
+
 static int
 apply_file_attributes_and_security_data(ntfs_inode *ni,
+					ntfs_inode *dir_ni,
 					const struct dentry *dentry,
 					const WIMStruct *w)
 {
 	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
 	      dentry->full_path_utf8, dentry->attributes);
-	if (ntfs_set_inode_attributes(ni, dentry->attributes)) {
+	int ret;
+#ifdef HAVE_NTFS_INODE_FUNCTIONS
+	ret = ntfs_set_inode_attributes(ni, dentry->attributes);
+#else
+	struct SECURITY_CONTEXT ctx;
+	u32 attributes_le32;
+ 	attributes_le32 = cpu_to_le32(dentry->attributes);
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.vol = ni->vol;
+	ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ATTRIB,
+					 ni, dir_ni,
+					 (const char*)&attributes_le32,
+					 sizeof(u32), 0);
+#endif
+	if (ret != 0) {
 		ERROR("Failed to set NTFS file attributes on `%s'",
 		       dentry->full_path_utf8);
 		return WIMLIB_ERR_NTFS_3G;
 	}
-
 	if (dentry->security_id != -1) {
 		const struct wim_security_data *sd;
+		const char *descriptor;
 		
 		sd = wim_const_security_data(w);
 		wimlib_assert(dentry->security_id < sd->num_entries);
+		descriptor = sd->descriptors[dentry->security_id];
 		DEBUG("Applying security descriptor %d to `%s'",
 		      dentry->security_id, dentry->full_path_utf8);
+
+	#ifdef HAVE_NTFS_INODE_FUNCTIONS
 		u32 selection = OWNER_SECURITY_INFORMATION |
 				GROUP_SECURITY_INFORMATION |
 				DACL_SECURITY_INFORMATION  |
 				SACL_SECURITY_INFORMATION;
+		ret = ntfs_set_inode_security(ni, selection, descriptor);
+	#else
+		ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ACL,
+					   ni, dir_ni, descriptor,
+					   sd->sizes[dentry->security_id], 0);
+	#endif
 				
-		if (ntfs_set_inode_security(ni, selection,
-					    (const char*)sd->descriptors[dentry->security_id]))
-		{
+		if (ret != 0) {
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
 					dentry->full_path_utf8);
 			return WIMLIB_ERR_NTFS_3G;
@@ -464,7 +487,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	}
 
 
-	ret = apply_file_attributes_and_security_data(ni, dentry, w);
+	ret = apply_file_attributes_and_security_data(ni, dir_ni, dentry, w);
 	if (ret != 0)
 		goto out_close_dir_ni;
 
@@ -574,7 +597,7 @@ static int wim_apply_root_dentry_ntfs(const struct dentry *dentry,
 		ERROR_WITH_ERRNO("Could not find root NTFS inode");
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	ret = apply_file_attributes_and_security_data(ni, dentry, w);
+	ret = apply_file_attributes_and_security_data(ni, ni, dentry, w);
 	if (ntfs_inode_close(ni) != 0) {
 		ERROR_WITH_ERRNO("Failed to close NTFS inode for root "
 				 "directory");
