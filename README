@@ -3,7 +3,7 @@
 This is wimlib version 1.0.0 (September 2012).  wimlib can be used to read,
 write, and mount files in the Windows Imaging Format (WIM files).  These
 files are normally created by using the `imagex.exe' utility on Windows,
-but this library provides a free implementetion of imagex for UNIX-based
+but this library provides a free implementation of imagex for UNIX-based
 systems.
 
 				   WIM FILES
@@ -248,7 +248,11 @@ created in a directory named `html'.
 				    LICENSE
 
 As of version 1.0.0, wimlib is released under the GNU GPL version 3.0 or later.
-This includes the files in the `programs' directory.
+This includes the files in the `programs' directory as well as the files in the
+`src' directory.
+
+wimlib is independently developed and does not contain any code, data, or files
+copyrighted by Microsoft.  It is not known to be affected by any patents.
 
 				   DISCLAIMER 
 
