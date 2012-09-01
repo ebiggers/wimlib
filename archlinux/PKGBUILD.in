@@ -1,6 +1,6 @@
 # Maintainer:  Eric Biggers <ebiggers3 at gmail dot com>
 
-# Set and $md5sums and delete this line to complete the PKGBUILD
+# Add md5sum and delete this line to complete the PKGBUILD
 
 pkgname=wimlib
 pkgver=@VERSION@
@@ -9,22 +9,28 @@ pkgdesc="A library to extract, create, and modify WIM files"
 arch=("i686" "x86_64")
 url="http://sourceforge.net/projects/wimlib"
 license=("LGPL")
-depends=("openssl" "fuse" "libxml2")
+depends=("openssl" "fuse" "libxml2" "ntfs-3g" "attr")
 optdepends=("cdrkit: for making ISO image of Windows PE"
 	"mtools: for making disk image of Windows PE"	
 	"syslinux: for making disk image of Windows PE"	
-	"cabextract: for extracting Windows PE from the WAIK")
+	"cabextract: for extracting Windows PE from the WAIK"
+	"ntfsprogs: for making NTFS filesystems")
+checkdepends=("ntfsprogs")
 source=("http://downloads.sourceforge.net/$pkgname/$pkgname-$pkgver.tar.gz")
-md5sums=("")
 
 build() {
 	cd "$pkgname-$pkgver"
-	./configure --disable-verify-compression --with-libcrypto \
-			--prefix=/usr
+	./configure --disable-verify-compression --with-libcrypto --with-fuse
+		    --with-ntfs-3g --enable-xattr --prefix=/usr
 	make
+}
+
+check() {
+	make check
 }
 
 package() {
 	cd "$pkgname-$pkgver"  
 	make DESTDIR="$pkgdir" install
 }
+
