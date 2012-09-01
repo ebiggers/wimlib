@@ -163,25 +163,6 @@ AM_CONDITIONAL([WITH_NTFS_3G], [test "x$WITH_NTFS_3G" = "xyes"])
 AC_SUBST([LIBNTFS_3G_LDADD], [$LIBNTFS_3G_LDADD])
 AC_SUBST([LIBNTFS_3G_CFLAGS], [$LIBNTFS_3G_CFLAGS])
 
-AC_MSG_CHECKING([whether to use patched upstream libntfs-3g])
-AC_ARG_WITH([new-ntfs-3g],
-	[AS_HELP_STRING([--with-new-ntfs-3g], [build using patched upstream
-			      NTFS-3g instead of version 2012-1-15])],
-	[WITH_NEW_NTFS_3G=$withval],
-	[WITH_NEW_NTFS_3G=no]
-	)
-
-AC_MSG_RESULT([$WITH_NEW_NTFS_3G])
-if test "x$WITH_NEW_NTFS_3G" = "xyes"; then
-	if test "x$WITH_NTFS_3G" != "xyes"; then
-		AC_MSG_ERROR([Cannot use new NTFS-3g if configuring
-			      --without-ntfs-3g])
-	fi
-	AC_DEFINE([WITH_NEW_NTFS_3G], [1], [Define to 1 to use patched upstream
-		   NTFS-3g instead of version 2012-1-15])
-fi
-AM_CONDITIONAL([WITH_NEW_NTFS_3G], [test "x$WITH_NEW_NTFS_3G" = "xyes"])
-
 AC_MSG_CHECKING([whether to include support for mounting WIMs])
 AC_ARG_WITH([fuse],
 		AS_HELP_STRING([--without-fuse], [build without libfuse.  

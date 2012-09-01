@@ -106,9 +106,6 @@
 /* Define to 1 if using libcrypto SHA1 */
 #undef WITH_LIBCRYPTO
 
-/* Define to 1 to use patched upstream NTFS-3g instead of version 2012-1-15 */
-#undef WITH_NEW_NTFS_3G
-
 /* Define to 1 to enable support for NTFS-specific information */
 #undef WITH_NTFS_3G
 

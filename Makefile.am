@@ -53,13 +53,6 @@ libwim_la_SOURCES =		\
 	src/xpress-decomp.c	\
 	src/xpress.h
 
-if WITH_NTFS_3G
-if !WITH_NEW_NTFS_3G
-libwim_la_SOURCES += src/ntfs-3g_security.c
-endif
-endif
-
-
 EXTRA_libwim_la_SOURCES = src/sha1-ssse3.asm
 libwim_la_DEPENDENCIES = $(SSSE3_SHA1_OBJ)
 STRIP_FPIC = sh $(top_srcdir)/build-aux/strip_fPIC.sh
