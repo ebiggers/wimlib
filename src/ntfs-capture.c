@@ -288,7 +288,8 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			lte = NULL;
 		} else {
 			if (type == AT_REPARSE_POINT && data_size < 8) {
-				ERROR("`%s': reparse point buffer too small");
+				ERROR("`%s': reparse point buffer too small",
+				      path);
 				ret = WIMLIB_ERR_NTFS_3G;
 				goto out_put_actx;
 			}

@@ -99,7 +99,6 @@ static inline void destroy_ads_entry(struct ads_entry *entry)
 {
 	FREE(entry->stream_name);
 	FREE(entry->stream_name_utf8);
-	memset(entry, 0, sizeof(entry));
 }
 
 static inline bool ads_entry_has_name(const struct ads_entry *entry,
