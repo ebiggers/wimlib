@@ -18,14 +18,14 @@ command to show what images a WIM file contains.
 
 .SH NOTES
 
-The WIM file is rebuild with all unnecessary file data removed.  This is
-different from imagex.exe, which only will delete the directory tree metadata
-and XML data for this operation.
+The WIM file is rebuilt with all unnecessary file data removed.  This is
+different from Microsoft's imagex.exe, which only will delete the directory tree
+metadata and XML data for this operation.
 
 Also, unlike imagex.exe, it is legal to delete all the images from a WIM and
 have a WIM with 0 images, although such a file wouldn't be very useful.
 
-\fBimagex delete\fR does not yet support split WIMs.
+\fBimagex delete\fR does not support split WIMs.
 
 .SH OPTIONS
 .TP 6
