@@ -8,13 +8,14 @@ mkwinpeimg \- Make a customized bootable image of Windows PE
 .SH DESCRIPTION
 
 \fBmkwinpeimg\fR is able to make a bootable image of Windows PE by taking files
-from a mounted Windows DVD (Windows 7 or Windows 8) or the mounted ISO image for
-the Windows Automated Installation Kit (WAIK).  The \fB--windows-dir\fR and
-\fB--waik-dir\fR options are used to specify the locations of these mounted
-ISOs.  You only need one or the other.  The files that \fBmkwinpeimg\fR will
-retrieve are \fIboot.wim\fR, \fIbootmgr\fR, \fIboot.sdi\fR, and \fIbcd\fR.  If
-making an ISO image, the file \fIetfsboot.com\fR is also retrieved.  Microsoft
-owns the rights to these files and they are not distributed with WIMLIB.
+from a mounted Windows DVD (Windows Vista, Windows 7 or Windows 8) or the
+mounted ISO image for the Windows Automated Installation Kit (WAIK).  The
+\fB--windows-dir\fR and \fB--waik-dir\fR options are used to specify the
+locations of these mounted ISOs.  You only need one or the other.  The files
+that \fBmkwinpeimg\fR will retrieve are \fIboot.wim\fR, \fIbootmgr\fR,
+\fIboot.sdi\fR, and \fIbcd\fR.  If making an ISO image, the file
+\fIetfsboot.com\fR is also retrieved.  Microsoft owns the rights to these files
+and they are not distributed with wimlib.
 
 \fBmkwinpeimg\fR can currently make two types of bootable images.  The default
 is to make a bootable disk image.  The image is not partitioned and is formatted
@@ -75,8 +76,7 @@ directory, or F1_WINPE.WIM from the WAIK if \fB\-\-waik\-dir\fR is specified.
 Adds all the files in DIR to the Windows PE image.
 .TP
 \fB\-t\fR, \fB\-\-tmp\-dir\fR=\fIDIR\fR
-Use DIR for temporary files.  Defaults to a directory made using \e"mktemp
-\fB\-d\fR\e".
+Use DIR for temporary files.  Defaults to a directory made using "mktemp -d".
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Display help.
@@ -85,26 +85,35 @@ Display help.
 Show version information.
 .SH EXAMPLES
 
-.IP 
+Create a bootable disk image of Windows PE from the Windows Vista, 7, or 8
+installation media mounted on /media/windows:
+
+.RS
+.PP
 mkwinpeimg --windows-dir=/media/windows winpe.img
-.LP
-Create a bootable disk image of Windows PE from the Windows DVD mounted on
-/media/windows.
+.RE
+.PP
 
-.IP
-mkwinpeimg --iso --waik-dir=/media/waik --overlay=winpe_overlay winpe.iso
-.LP
 Create a bootable ISO of Windows PE from the WAIK mounted on /media/waik, and
-add all the files in "winpe_overlay" to Windows PE's filesystem.
+add all the files in "winpe_overlay" to Windows PE's filesystem:
 
-.IP
+.RS
+.PP
+mkwinpeimg --iso --waik-dir=/media/waik --overlay=winpe_overlay winpe.iso
+.RE
+.PP
+
+Create a bootable image of Windows PE from the Windows installation media
+mounted on /media/windows, add and make it execute "install.cmd" when it starts
+up.  In this example the image is created in the root directory of the TFTP
+server for network booting.
+
+.RS
+.PP
 mkwinpeimg --start-script=install.cmd --windows-dir=/media/windows /var/tftpboot/winpe.img
-.LP
+.RE
+.PP
 
-Create a bootable image of Windows PE from the Windows DVD mounted on
-/media/windows, add and make it execute "install.cmd" when it starts up.  In
-this example the image is created in the root directory of the TFTP server for
-network booting.
 
 .SH NOTES
 
