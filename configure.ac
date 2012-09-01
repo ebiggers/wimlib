@@ -145,7 +145,7 @@ if test "x$WITH_NTFS_3G" = "xyes"; then
 	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 to enable support for
 		   NTFS-specific information])
 
-	AC_CHECK_LIB([ntfs-3g], [ntfs_set_file_security], [],
+	AC_CHECK_LIB([ntfs-3g], [ntfs_mount], [],
 			[AC_MSG_ERROR([Cannot find libntfs-3g.
 	Without libntfs-3g, wimlib cannot include support for capturing and 
 	applying WIMs on NTFS filesystems while preserving NTFS-specific data

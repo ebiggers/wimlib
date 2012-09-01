@@ -94,7 +94,10 @@ server for PXE booting.  See the main page `doc/mkwinpeiso.1' for more details.
 
 * libntfs-3g
 	Unless configured with --without-ntfs-3g, wimlib requires the library
-	and headers for libntfs-3g to be installed.
+	and headers for libntfs-3g version 2011-4-12 or later to be installed.
+	Versions dated 2010-3-6 and earlier do not work because they are missing
+	the header xattrs.h (and the file xattrs.c, which contains functions we
+	need).
 
 * cdrkit (optional)
 * mtools (optional)
