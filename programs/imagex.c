@@ -108,15 +108,6 @@ static const struct option common_options[] = {
 	{NULL, 0, NULL, 0},
 };
 
-static const struct option append_options[] = {
-	{"boot",	no_argument,       NULL, 'b'},
-	{"check",	no_argument,       NULL, 'c'},
-	{"config",	required_argument, NULL, 'C'},
-	{"dereference", no_argument,	   NULL, 'L'},
-	{"flags",	required_argument, NULL, 'f'},
-	{"verbose",	no_argument,       NULL, 'v'},
-	{NULL, 0, NULL, 0},
-};
 static const struct option apply_options[] = {
 	{"check",    no_argument,       NULL, 'c'},
 	{"hardlink", no_argument,       NULL, 'h'},
@@ -125,7 +116,7 @@ static const struct option apply_options[] = {
 	{"ref",      required_argument, NULL, 'r'},
 	{NULL, 0, NULL, 0},
 };
-static const struct option capture_options[] = {
+static const struct option capture_or_append_options[] = {
 	{"boot",	no_argument,       NULL, 'b'},
 	{"check",	no_argument,       NULL, 'c'},
 	{"compress",	required_argument, NULL, 'x'},
@@ -268,7 +259,7 @@ static int get_compression_type(const char *optarg)
 	}
 }
 
-static const char *file_get_contents(const char *filename, size_t *len_ret)
+static char *file_get_contents(const char *filename, size_t *len_ret)
 {
 	struct stat stbuf;
 	char *buf;
@@ -363,120 +354,6 @@ out:
 	return ret;
 }
 
-static int imagex_append(int argc, const char **argv)
-{
-	int c;
-	const char *flags_element = NULL;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
-	int add_image_flags = 0;
-	int write_flags = WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
-	const char *dir;
-	const char *wimfile;
-	const char *name;
-	const char *desc;
-	const char *config_file = NULL;
-	const char *config_str = NULL;
-	size_t config_len = 0;
-	WIMStruct *w;
-	int ret;
-	int cur_image;
-	char *default_name;
-
-	for_opt(c, append_options) {
-		switch (c) {
-		case 'b':
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_BOOT;
-			break;
-		case 'c':
-			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
-			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-			break;
-		case 'C':
-			config_file = optarg;
-			break;
-		case 'f':
-			flags_element = optarg;
-			break;
-		case 'L':
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
-			break;
-		case 'v':
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
-			break;
-		default:
-			usage(APPEND);
-			return -1;
-		}
-	}
-	argc -= optind;
-	argv += optind;
-	if (argc < 2 || argc > 4) {
-		usage(APPEND);
-		return -1;
-	}
-	dir     = argv[0];
-	wimfile = argv[1];
-
-	char dir_copy[strlen(dir) + 1];
-	memcpy(dir_copy, dir, strlen(dir) + 1);
-	default_name = basename(dir_copy);
-
-	name    = (argc >= 3) ? argv[2] : default_name;
-	desc    = (argc >= 4) ? argv[3] : NULL;
-
-	if (config_file) {
-		config_str = file_get_contents(config_file, &config_len);
-		if (!config_str)
-			return -1;
-	}
-
-	ret = wimlib_open_wim(wimfile, open_flags, &w);
-	if (ret != 0)
-		return ret;
-
-#ifdef WITH_NTFS_3G
-	struct stat stbuf;
-
-	ret = stat(dir, &stbuf);
-	if (ret == 0) {
-		if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
-			const char *ntfs_device = dir;
-			printf("Capturing WIM image NTFS filesystem on `%s'\n",
-			       ntfs_device);
-			ret = wimlib_add_image_from_ntfs_volume(w, ntfs_device,
-								name,
-								config_str,
-								config_len,
-								add_image_flags);
-			goto out_write;
-		}
-	} else {
-		if (errno != ENOENT)
-			imagex_error_with_errno("Failed to stat `%s'", dir);
-	}
-#endif
-	ret = wimlib_add_image(w, dir, name, config_str, config_len,
-			       add_image_flags);
-
-out_write:
-	if (ret != 0)
-		goto out;
-	cur_image = wimlib_get_num_images(w);
-	if (desc) {
-		ret = wimlib_set_image_descripton(w, cur_image, desc);
-		if (ret != 0)
-			goto out;
-	}
-	if (flags_element) {
-		ret = wimlib_set_image_flags(w, cur_image, flags_element);
-		if (ret != 0)
-			goto out;
-	}
-	ret = wimlib_overwrite(w, write_flags);
-out:
-	wimlib_free(w);
-	return ret;
-}
 
 /* Extract one image, or all images, from a WIM file into a directory. */
 static int imagex_apply(int argc, const char **argv)
@@ -593,33 +470,34 @@ out:
 	return ret;
 }
 
-
-/* Create a WIM file from a directory. */
-static int imagex_capture(int argc, const char **argv)
+static int imagex_capture_or_append(int argc, const char **argv)
 {
 	int c;
+	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
 	int add_image_flags = 0;
 	int write_flags = WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
 	int compression_type = WIM_COMPRESSION_TYPE_XPRESS;
-	const char *flags_element = NULL;
 	const char *dir;
 	const char *wimfile;
 	const char *name;
 	const char *desc;
+	const char *flags_element = NULL;
 	const char *config_file = NULL;
-	const char *config_str = NULL;
+	char *config_str = NULL;
 	size_t config_len = 0;
-	WIMStruct *w;
+	WIMStruct *w = NULL;
+	int ret;
 	int cur_image;
 	char *default_name;
-	int ret;
+	int cmd = strcmp(argv[0], "append") ? CAPTURE : APPEND;
 
-	for_opt(c, capture_options) {
+	for_opt(c, capture_or_append_options) {
 		switch (c) {
 		case 'b':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_BOOT;
 			break;
 		case 'c':
+			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		case 'C':
@@ -633,23 +511,21 @@ static int imagex_capture(int argc, const char **argv)
 		case 'f':
 			flags_element = optarg;
 			break;
-		case 'v':
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
-			write_flags |= WIMLIB_WRITE_FLAG_VERBOSE;
-			break;
 		case 'L':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
 			break;
+		case 'v':
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
+			break;
 		default:
-			usage(CAPTURE);
+			usage(cmd);
 			return -1;
 		}
 	}
-
 	argc -= optind;
 	argv += optind;
 	if (argc < 2 || argc > 4) {
-		usage(CAPTURE);
+		usage(cmd);
 		return -1;
 	}
 	dir     = argv[0];
@@ -668,9 +544,12 @@ static int imagex_capture(int argc, const char **argv)
 			return -1;
 	}
 
-	ret = wimlib_create_new_wim(compression_type, &w);
+	if (cmd == APPEND)
+		ret = wimlib_open_wim(wimfile, open_flags, &w);
+	else
+		ret = wimlib_create_new_wim(compression_type, &w);
 	if (ret != 0)
-		return ret;
+		goto out;
 
 #ifdef WITH_NTFS_3G
 	struct stat stbuf;
@@ -689,18 +568,19 @@ static int imagex_capture(int argc, const char **argv)
 			goto out_write;
 		}
 	} else {
-		if (errno != ENOENT)
+		if (errno != ENOENT) {
 			imagex_error_with_errno("Failed to stat `%s'", dir);
+			ret = -1;
+			goto out;
+		}
 	}
 #endif
-	ret = wimlib_add_image(w, dir, name, config_str,
-			       config_len, add_image_flags);
+	ret = wimlib_add_image(w, dir, name, config_str, config_len,
+			       add_image_flags);
 
 out_write:
-	if (ret != 0) {
-		imagex_error("Failed to add the image `%s'", dir);
+	if (ret != 0)
 		goto out;
-	}
 	cur_image = wimlib_get_num_images(w);
 	if (desc) {
 		ret = wimlib_set_image_descripton(w, cur_image, desc);
@@ -712,12 +592,15 @@ out_write:
 		if (ret != 0)
 			goto out;
 	}
-
-	ret = wimlib_write(w, wimfile, WIM_ALL_IMAGES, write_flags);
+	if (cmd == APPEND)
+		ret = wimlib_overwrite(w, write_flags);
+	else
+		ret = wimlib_write(w, wimfile, WIM_ALL_IMAGES, write_flags);
 	if (ret != 0)
 		imagex_error("Failed to write the WIM file `%s'", wimfile);
 out:
 	wimlib_free(w);
+	free(config_str);
 	return ret;
 }
 
@@ -1158,12 +1041,6 @@ static int imagex_info(int argc, const char **argv)
 			wimlib_print_available_images(w, image);
 
 		if (metadata) {
-			if (total_parts != 1 && part_number != 1) {
-				imagex_error("Select part 1 of this %d-part WIM "
-					     "to see the image metadata",
-					     total_parts);
-				return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-			}
 			ret = wimlib_print_metadata(w, image);
 			if (ret != 0)
 				goto done;
@@ -1452,9 +1329,9 @@ struct imagex_command {
 		p != &imagex_commands[ARRAY_LEN(imagex_commands)]; p++)
 
 static struct imagex_command imagex_commands[] = {
-	{"append",  imagex_append,	   APPEND},
+	{"append",  imagex_capture_or_append, APPEND},
 	{"apply",   imagex_apply,   	   APPLY},
-	{"capture", imagex_capture,	   CAPTURE},
+	{"capture", imagex_capture_or_append, CAPTURE},
 	{"delete",  imagex_delete,	   DELETE},
 	{"dir",     imagex_dir,		   DIR},
 	{"export",  imagex_export,	   EXPORT},

@@ -331,7 +331,7 @@ WIMLIBAPI int wimlib_print_metadata(WIMStruct *w, int image)
 	if (!w)
 		return WIMLIB_ERR_INVALID_PARAM;
 	if (w->hdr.part_number != 1) {
-		ERROR("We cannot show the metadata from part %hu of a %hu-part split WIM",
+		ERROR("We cannot show the metadata from part %hu of a %hu-part split WIM.",
 		       w->hdr.part_number, w->hdr.total_parts);
 		ERROR("Select the first part of the split WIM to see the metadata.");
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
