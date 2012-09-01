@@ -1,8 +1,9 @@
 /*
  * security.c
  *
- * Read the security data from the WIM.  Doing anything with the security data
- * is not yet implemented other than printing some information about it.
+ * Read and write the WIM security data.  The security data is a table of
+ * security descriptors. Each WIM image has its own security data, but it's
+ * possible that an image's security data have no security descriptors.
  */
 
 /*
@@ -27,6 +28,29 @@
 #include "wimlib_internal.h"
 #include "io.h"
 #include "security.h"
+
+/* 
+ * This is a hack to work around a problem in libntfs-3g.  libntfs-3g validates
+ * security descriptors with a function named ntfs_valid_descr().
+ * ntfs_valid_descr() considers a security descriptor that ends in a SACL
+ * (Sysetm Access Control List) with no ACE's (Access Control Entries) to be
+ * invalid.  However, a security descriptor like this exists in the Windows 7
+ * install.wim.  Here, security descriptors matching this pattern are modified
+ * to have no SACL.  This should make no difference since the SACL had no
+ * entries anyway; however  his ensures that that the security descriptors pass
+ * the validation in libntfs-3g.
+ */
+static void empty_sacl_fixup(char *descr, u64 *size_p)
+{
+	if (*size_p >= sizeof(SecurityDescriptor)) {
+		SecurityDescriptor *sd = (SecurityDescriptor*)descr;
+		u32 sacl_offset = le32_to_cpu(sd->sacl_offset);
+		if (sacl_offset == *size_p - sizeof(ACL)) {
+			sd->sacl_offset = to_le32(0);
+			*size_p -= sizeof(ACL);
+		}
+	}
+}
 
 /* 
  * Reads the security data from the metadata resource.
@@ -150,6 +174,7 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 			goto out_free_sd;
 		}
 		p = get_bytes(p, sd->sizes[i], sd->descriptors[i]);
+		empty_sacl_fixup(sd->descriptors[i], &sd->sizes[i]);
 	}
 out:
 	sd->total_length = (u32)total_len;

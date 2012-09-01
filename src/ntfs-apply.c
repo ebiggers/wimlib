@@ -280,9 +280,9 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 				SACL_SECURITY_INFORMATION;
 		ret = ntfs_set_inode_security(ni, selection, descriptor);
 	#else
-		ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ACL,
-					   ni, dir_ni, descriptor,
-					   sd->sizes[dentry->security_id], 0);
+		ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ACL,
+						 ni, dir_ni, descriptor,
+					   	 sd->sizes[dentry->security_id], 0);
 	#endif
 				
 		if (ret != 0) {
