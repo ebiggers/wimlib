@@ -20,6 +20,8 @@ info\fR (1) command to show what images a WIM file contains.
 \fBimagex dir\fR supports split WIMs, but it will only work on the first part of
 the split WIM.
 
+The DOS names of files are not displayed.
+
 .SH EXAMPLES
 Show all files in the first image of 'boot.wim':
 .RS
