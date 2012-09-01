@@ -259,7 +259,8 @@ WIMLIBAPI int wimlib_resolve_image(WIMStruct *w, const char *image_name_or_num)
 	if (!image_name_or_num)
 		return WIM_NO_IMAGE;
 
-	if (strcmp(image_name_or_num, "all") == 0)
+	if (strcmp(image_name_or_num, "all") == 0
+	    || strcmp(image_name_or_num, "*") == 0)
 		return WIM_ALL_IMAGES;
 	image = strtol(image_name_or_num, &p, 10);
 	if (p != image_name_or_num && *p == '\0') {

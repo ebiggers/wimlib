@@ -1216,8 +1216,8 @@ extern void wimlib_print_wim_information(const WIMStruct *wim);
  * 	A string specifying which image.  If it begins with a number, it is
  * 	taken to be a string specifying the image number.  Otherwise, it is
  * 	taken to be the name of an image, as specified in the XML data for the
- * 	WIM file.  It also may be the keyword "all", which will resolve to
- * 	::WIM_ALL_IMAGES.
+ * 	WIM file.  It also may be the keyword "all" or the string "*", both of
+ * 	which will resolve to ::WIM_ALL_IMAGES.
  *
  * @return 
  * 	If the string resolved to a single existing image, the number of that

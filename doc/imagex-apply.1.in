@@ -24,20 +24,20 @@ specifies a regular file or block device, it is interpreted as a NTFS volume to
 which the WIM image is to be extracted.
 
 \fBimagex apply\fR supports applying images from stand-alone WIMs as well as
-split WIM.  See \fBSPLIT WIMS\fR.
+split WIMs.  See \fBSPLIT WIMS\fR.
 
 .SH NORMAL MODE
 
 The normal extraction mode is entered when \fITARGET\fR is a directory or
-non-existent file.  If a single WIM image is being extracted, it will be
-extracted with the root of the image corresponding to the directory named by
+non-existent file.  If a single WIM image is being extracted, it is extracted
+with the root directory of the image corresponding to the directory named by
 \fITARGET\fR; or, if the keyword \fBall\fR is given, the images are extracted
-into subdirectories of \fITARGET\fR that will be named after the image names,
-falling back to the image indices if there is an image with no name.
-\fITARGET\fR can specify a directory on any type of filesystem.
+into subdirectories of \fITARGET\fR that are be named after the image names,
+falling back to the image index for an image with no name.  \fITARGET\fR can
+specify a directory on any type of filesystem.
 
-In the normal mode of extraction, the following information will be extracted
-from the WIM image(s):
+In the normal mode of extraction, the following information is extracted from
+the WIM image(s):
 
 .IP \[bu] 4
 The default (unnamed) data stream of each file
@@ -69,10 +69,11 @@ Short (DOS) names for files
 .SH NTFS MODE
 
 A special extraction mode is entered when \fITARGET\fR is a regular file or
-block device.  \fITARGET\fR is interpreted as an NTFS volume and opened using
-libntfs-3g.  If successful, the WIM image is extracted to the root of the NTFS
-volume in a special mode that preserves all, or almost all, information
-contained in the WIM.  \fIIMAGE\fR may not be "all" for this action.
+block device.  If this is the case, \fITARGET\fR is interpreted as an NTFS
+volume and opened using libntfs-3g.  If successful, the WIM image is extracted
+to the root of the NTFS volume in a special mode that preserves all, or almost
+all, information contained in the WIM.  \fIIMAGE\fR may not be "all" for this
+action.
 
 The NTFS volume does not need to be empty, although it's expected that it be
 empty for the intended use cases.  A new NTFS filesystem can be created using
@@ -223,11 +224,12 @@ applied.  See \fBSPLIT_WIMS\fR.
 extracts and verifies that it is the same as the SHA1 message digest provided in
 the WIM file.  It is an error if the message digests don't match.  It's also
 considered to be an error if any WIM resources cannot be found in the stream
-lookup table.  So you can be sure that the files are extracted correctly, even
-though we don't provide a \fB/verify\fR option like Microsoft's version of
-imagex does.  Please note that this is separate from the integrity table of the
-WIM, which provides SHA1 message digests over raw chunks of the entire WIM file
-and is checked separately if the \fB--check\fR option is specified.
+lookup table.  So you can be fairly certain that the file streams are extracted
+correctly, even though we don't provide a \fB/verify\fR option like Microsoft's
+version of imagex does.  Please note that this is separate from the integrity
+table of the WIM, which provides SHA1 message digests over raw chunks of the
+entire WIM file and is checked separately if the \fB--check\fR option is
+specified.
 
 .SH EXAMPLES
 .SS Normal extraction mode

@@ -21,11 +21,12 @@ table.  If this option is not specified, no integrity tables are included in the
 split WIM files, even if there was one in the original WIM.
 
 .SH EXAMPLES
-.IP 
-imagex split windows.wim windows.swm 100
-.LP
 Splits the WIM 'windows.wim' into 'windows.swm', 'windows2.swm', 'windows3.swm',
-etc. where each part is at most 100 MiB.
+etc. where each part is at most 100 MiB:
+.RS
+.PP
+imagex split windows.wim windows.swm 100
+.RE
 
 .SH NOTE
 

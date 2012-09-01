@@ -12,7 +12,6 @@ Joins the \fISPLIT_WIMs\fR into a standalone one-part WIM \fIOUT_WIMFILE\fR.
 All parts of the split WIM  must be specified.  You probably want to do so using
 a shell wildcard.
 
-
 .SH OPTIONS
 .TP 6
 \fB--check\fR
@@ -22,12 +21,21 @@ write an integrity table.  If this option is not specified, no integrity table
 is included in the new WIM file, even if there was one before.
 
 .SH EXAMPLES
-.IP 
-imagex join windows.wim windows*.swm
-.LP
 Join a split WIM, with the parts named `windows*.swm' where the * is anything
 (usually the number of the part, except for the first part which may have no
-number), and write the joined with to the file `windows.wim'.
+number), and write the joined WIM to the file `windows.wim'.
+.RS
+.PP
+imagex join windows.wim windows*.swm
+.RE
+
+.SH NOTES
+You can also use \fBimagex export\fR to export all images from a split WIM.
+This would be nearly the same as \fBimagex join\fR, although some information in
+the XML data could be discarded.
+
+Perhaps for this reason, Microsoft's implementation of imagex does not provide a
+\fB/join\fR option.
 
 .SH SEE ALSO
 .BR imagex (1)
