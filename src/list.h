@@ -1,3 +1,8 @@
+
+/*
+ * This file is based on include/linux/list.h in the Linux kernel source code.
+ */
+
 #ifndef _LINUX_LIST_H
 #define _LINUX_LIST_H
 
