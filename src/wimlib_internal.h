@@ -71,16 +71,23 @@ struct resource_entry {
 
 /* Flags for the `flags' field of the struct resource_entry structure. */
 
-/* ??? */
+/* I haven't seen this flag used in any of the WIMs I have examined.  I assume
+ * it means that there are no references to the stream, so the space is free.
+ * However, even after deleting files from a WIM mounted with `imagex.exe
+ * /mountrw', I could not see this flag being used.  Either way, we don't
+ * actually use this flag for anything. */
 #define WIM_RESHDR_FLAG_FREE            0x01
 
-/* Indicates that a file resource is a metadata resource. */
+/* Indicates that the stream is a metadata resource for a WIM image. */
 #define WIM_RESHDR_FLAG_METADATA        0x02
 
-/* Indicates that a file resource is compressed. */
+/* Indicates that the stream is compressed. */
 #define WIM_RESHDR_FLAG_COMPRESSED	0x04
 
-/* ??? */
+/* I haven't seen this flag used in any of the WIMs I have examined.  Perhaps it
+ * means that a stream could possibly be split among multiple split WIM parts.
+ * However, `imagex.exe /split' does not seem to create any WIMs like this.
+ * Either way, we don't actually use this flag for anything.  */
 #define WIM_RESHDR_FLAG_SPANNED         0x08
 
 
@@ -142,8 +149,7 @@ struct wim_header {
 	//u8 unused[WIM_UNUSED_LEN];
 };
 
-/* Flags for the `flags' field of the struct wim_header. */
-
+/* Flags for the `flags' field of the struct wim_header: */
 
 /* Reserved for future use by M$ */
 #define WIM_HDR_FLAG_RESERVED           0x00000001
@@ -151,26 +157,31 @@ struct wim_header {
 /* Files and metadata in the WIM are compressed. */
 #define WIM_HDR_FLAG_COMPRESSION        0x00000002
 
-/* WIM is read-only. */
+/* WIM is read-only (we ignore this). */
 #define WIM_HDR_FLAG_READONLY           0x00000004
 
 /* Resource data specified by images in this WIM may be contained in a different
- * WIM */
+ * WIM.  Or in other words, this WIM is part of a split WIM.  */
 #define WIM_HDR_FLAG_SPANNED            0x00000008
 
-/* The WIM contains resources only; no filesystem metadata. */
+/* The WIM contains resources only; no filesystem metadata.  We ignore this
+ * flag, as we look for file resources in all the WIMs anyway. */
 #define WIM_HDR_FLAG_RESOURCE_ONLY      0x00000010
 
-/* The WIM contains metadata only. */
+/* The WIM contains metadata only.  We ignore this flag.  Note that all the
+ * metadata resources for a split WIM should be in the first part. */
 #define WIM_HDR_FLAG_METADATA_ONLY      0x00000020
 
-/* Lock field to prevent multiple writers from writing the WIM concurrently. */
+/* Lock field to prevent multiple writers from writing the WIM concurrently.  We
+ * ignore this flag. */
 #define WIM_HDR_FLAG_WRITE_IN_PROGRESS  0x00000040 
 
-/* Reparse point fixup ??? */
+/* Reparse point fixup ???
+ * This has something to do with absolute targets of reparse points / symbolic
+ * links but I don't know what.  We ignore this flag.  */
 #define WIM_HDR_FLAG_RP_FIX             0x00000080
 
-/* Unknown compression type */
+/* Unused, reserved flag for another compression type */
 #define WIM_HDR_FLAG_COMPRESS_RESERVED  0x00010000
 
 /* Resources within the WIM are compressed using "XPRESS" compression, which is
@@ -181,7 +192,9 @@ struct wim_header {
  * a LZ77-based algorithm. */
 #define WIM_HDR_FLAG_COMPRESS_LZX       0x00040000
 
+#ifdef WITH_NTFS_3G
 typedef struct _ntfs_volume ntfs_volume;
+#endif
 
 /* Structure for security data.  Each image in the WIM file has its own security
  * data. */
