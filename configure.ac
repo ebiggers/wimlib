@@ -1,4 +1,4 @@
-AC_INIT([wimlib], [1.0.0], [ebiggers3@gmail.com])
+AC_INIT([wimlib], [1.0.1], [ebiggers3@gmail.com])
 AC_CONFIG_SRCDIR([src/wim.c])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
@@ -30,6 +30,11 @@ AC_CONFIG_FILES([Makefile
 AC_PROG_CC
 AM_PROG_CC_C_O
 
+AC_CHECK_FUNCS([utimensat])
+AC_CHECK_HEADERS([endian.h byteswap.h sys/byteorder.h sys/endian.h \
+		  sys/param.h machine/endian.h alloca.h stdlib.h stdarg.h \
+		  errno.h])
+
 
 AM_ICONV
 if test "x$am_cv_func_iconv" != "xyes"; then
@@ -39,6 +44,7 @@ if test "x$am_cv_func_iconv" != "xyes"; then
 	is available in the latest version of glibc and sometimes in other
 	libraries.])
 fi
+
 
 AC_ARG_WITH(pkgconfigdir,
             [  --with-pkgconfigdir=DIR      pkgconfig file in DIR @<:@LIBDIR/pkgconfig@:>@],

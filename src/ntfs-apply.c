@@ -24,7 +24,14 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+
 #include "config.h"
+
+#ifdef WITH_NTFS_3G
+#include <ntfs-3g/endians.h>
+#include <ntfs-3g/types.h>
+#endif
+
 #include "wimlib_internal.h"
 
 

@@ -1,5 +1,9 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.0.1:
+	Fixed problem when exporting images from XPRESS to LZX compressed WIM or
+	vice versa
+
 Version 1.0.0:
 	Enough changes to call it version 1.0.0!
 

@@ -44,6 +44,7 @@
 #include <fuse.h>
 #include <ftw.h>
 #include <mqueue.h>
+#include <utime.h>
 
 #ifdef ENABLE_XATTR
 #include <attr/xattr.h>
@@ -592,8 +593,8 @@ static inline int delete_staging_dir()
  * commands */
 static char *unmount_to_daemon_mq_name;
 static char *daemon_to_unmount_mq_name;
-static int unmount_to_daemon_mq;
-static int daemon_to_unmount_mq;
+static mqd_t unmount_to_daemon_mq;
+static mqd_t daemon_to_unmount_mq;
 
 /* Simple function that returns the concatenation of 4 strings. */
 static char *strcat_dup(const char *s1, const char *s2, const char *s3, 
@@ -681,7 +682,7 @@ static int open_message_queues(bool daemon)
 	unmount_to_daemon_mq = mq_open(unmount_to_daemon_mq_name, flags, 
 				       0700, NULL);
 
-	if (unmount_to_daemon_mq == -1) {
+	if (unmount_to_daemon_mq == (mqd_t)-1) {
 		ERROR_WITH_ERRNO("mq_open()");
 		ret = WIMLIB_ERR_MQUEUE;
 		goto err2;
@@ -695,7 +696,7 @@ static int open_message_queues(bool daemon)
 	daemon_to_unmount_mq = mq_open(daemon_to_unmount_mq_name, flags, 
 				       0700, NULL);
 
-	if (daemon_to_unmount_mq == -1) {
+	if (daemon_to_unmount_mq == (mqd_t)-1) {
 		ERROR_WITH_ERRNO("mq_open()");
 		ret = WIMLIB_ERR_MQUEUE;
 		goto err3;
@@ -1383,11 +1384,11 @@ dentry_link_group_set_times(struct dentry *dentry, u64 times[3])
 	struct dentry *cur = dentry;
 	do {
 		if (times[0])
-			dentry->creation_time = times[0];
+			cur->creation_time = times[0];
 		if (times[1])
-			dentry->last_write_time = times[1];
+			cur->last_write_time = times[1];
 		if (times[2])
-			dentry->last_access_time = times[2];
+			cur->last_access_time = times[2];
 	} while ((cur = container_of(dentry->link_group_list.next,
 				     struct dentry,
 				     link_group_list)) != dentry);
@@ -1707,6 +1708,7 @@ static int wimfs_unlink(const char *path)
 	return 0;
 }
 
+#ifdef HAVE_UTIMENSAT
 /* 
  * Change the timestamp on a file dentry. 
  *
@@ -1733,6 +1735,20 @@ static int wimfs_utimens(const char *path, const struct timespec tv[2])
 	dentry_link_group_set_times(dentry, times);
 	return 0;
 }
+#else
+static int wimfs_utime(const char *path, struct utimbuf *times)
+{
+	struct dentry *dentry = get_dentry(w, path);
+	if (!dentry)
+		return -ENOENT;
+	u64 wim_times[3];
+	wim_times[0] = 0;
+	wim_times[1] = unix_timestamp_to_wim(times->modtime);
+	wim_times[2] = unix_timestamp_to_wim(times->actime);
+	dentry_link_group_set_times(dentry, wim_times);
+	return 0;
+}
+#endif
 
 /* Writes to a file in the WIM filesystem. 
  * It may be an alternate data stream, but here we don't even notice because we
@@ -1802,7 +1818,11 @@ static struct fuse_operations wimfs_operations = {
 	.symlink     = wimfs_symlink,
 	.truncate    = wimfs_truncate,
 	.unlink      = wimfs_unlink,
+#ifdef HAVE_UTIMENSAT
 	.utimens     = wimfs_utimens,
+#else
+	.utime       = wimfs_utime,
+#endif
 	.write       = wimfs_write,
 };
 
@@ -2023,6 +2043,7 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	 */
 
 	mount_dir = dir;
+
 	pid = fork();
 	if (pid == -1) {
 		ERROR_WITH_ERRNO("Failed to fork()");

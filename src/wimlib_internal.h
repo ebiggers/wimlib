@@ -193,7 +193,7 @@ struct wim_header {
 #define WIM_HDR_FLAG_COMPRESS_LZX       0x00040000
 
 #ifdef WITH_NTFS_3G
-typedef struct _ntfs_volume ntfs_volume;
+struct _ntfs_volume;
 #endif
 
 /* Structure for security data.  Each image in the WIM file has its own security
@@ -284,7 +284,7 @@ typedef struct WIMStruct {
 		bool write_metadata;
 	};
 #ifdef WITH_NTFS_3G
-	ntfs_volume *ntfs_vol;
+	struct _ntfs_volume *ntfs_vol;
 #endif
 
 	/* The currently selected image, indexed starting at 1.  If not 0,

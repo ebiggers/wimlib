@@ -24,7 +24,14 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+
 #include "config.h"
+
+#ifdef WITH_NTFS_3G
+#include <ntfs-3g/endians.h>
+#include <ntfs-3g/types.h>
+#endif
+
 #include "wimlib_internal.h"
 
 
@@ -567,11 +574,13 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 			if (ret != 0)
 				return ret;
 		} else {
+		#ifdef ENODATA
 			if (errno != ENODATA) {
 				ERROR_WITH_ERRNO("Error getting DOS name "
 						 "of `%s'", path);
 				return WIMLIB_ERR_NTFS_3G;
 			}
+		#endif
 		}
 	}
 

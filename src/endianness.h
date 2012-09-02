@@ -5,7 +5,16 @@
 #include "config.h"
 #include <inttypes.h>
 
-/* Changes the endianness of a 32-bit value. */
+#ifdef WORDS_BIGENDIAN
+
+#ifndef bswap16
+static inline uint16_t bswap16(uint16_t n)
+{
+	return (n << 8) | (n >> 8);
+}
+#endif
+
+#ifndef bswap32
 static inline uint32_t bswap32(uint32_t n)
 {
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3)
@@ -15,19 +24,10 @@ static inline uint32_t bswap32(uint32_t n)
 							(n >> 24);
 #endif
 }
-
-#ifdef WORDS_BIGENDIAN
-
-/* Big endian. */
-
-/* Changes the endianness of a 16-bit value. */
-static inline uint16_t bswap16(uint16_t n)
-{
-	return (n << 8) | (n >> 8);
-}
+#endif
 
 
-/* Changes the endianness of a 64-bit value. */
+#ifndef bswap64
 static inline uint64_t bswap64(uint64_t n)
 {
 #ifdef __GNUC__
@@ -39,18 +39,18 @@ static inline uint64_t bswap64(uint64_t n)
 			((n & 0xff000000000000) >> 40) | (n >> 56);
 #endif
 }
+#endif
 
 /* Not in place */
 #define to_le16(n) bswap16(n)
 #define to_le32(n) bswap32(n)
 #define to_le64(n) bswap64(n)
-#define to_be16(n) (n)
-#define to_be32(n) (n)
-#define to_be64(n) (n)
 
+#ifndef _NTFS_ENDIANS_H
 #define le16_to_cpu(n) bswap16(n)
 #define le32_to_cpu(n) bswap32(n)
 #define le64_to_cpu(n) bswap64(n)
+#endif
 
 /* In place */
 #define TO_LE16(n) ((n) = to_le16(n))
@@ -82,13 +82,11 @@ static inline void array_to_le64(uint64_t *p, uint64_t n)
 #define to_le32(n) (n)
 #define to_le64(n) (n)
 
+#ifndef _NTFS_ENDIANS_H
 #define le16_to_cpu(n) (n)
 #define le32_to_cpu(n) (n)
 #define le64_to_cpu(n) (n)
-
-#define to_be16(n) (bswap16(n))
-#define to_be32(n) (bswap32(n))
-#define to_be64(n) (bswap64(n))
+#endif
 
 /* In place */
 #define TO_LE16(n)

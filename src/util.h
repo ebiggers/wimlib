@@ -30,17 +30,27 @@
 #	define HOT
 #endif /* __GNUC__ */
 
+#ifndef _NTFS_TYPES_H
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+#endif
 typedef unsigned uint;
 
+#ifndef min
 #define min(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \
 					(__a < __b) ? __a : __b; })
+#endif
+
+#ifndef max
 #define max(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \
 					(__a > __b) ? __a : __b; })
+#endif
+
+#ifndef swap
 #define swap(a, b) ({typeof(a) _a = a; (a) = (b); (b) = _a;})
+#endif
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof((array)[0]))
 

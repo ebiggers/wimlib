@@ -22,6 +22,17 @@
  * wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+#include "config.h"
+
+#include <stdlib.h>
+#include <stdarg.h>
+
+#ifdef WITH_NTFS_3G
+#include <ntfs-3g/attrib.h>
+#include <ntfs-3g/inode.h>
+#include <ntfs-3g/dir.h>
+#endif
+
 #include "wimlib_internal.h"
 #include "lookup_table.h"
 #include "io.h"
@@ -29,16 +40,12 @@
 #include "xpress.h"
 #include "sha1.h"
 #include "dentry.h"
-#include "config.h"
 #include <unistd.h>
 #include <errno.h>
+#ifdef HAVE_ALLOCA_H
 #include <alloca.h>
-
-#ifdef WITH_NTFS_3G
-#include <ntfs-3g/attrib.h>
-#include <ntfs-3g/inode.h>
-#include <ntfs-3g/dir.h>
 #endif
+
 
 /* 
  * Reads all or part of a compressed resource into an in-memory buffer.

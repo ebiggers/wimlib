@@ -1,6 +1,6 @@
 				   WIMLIB                                    
 
-This is wimlib version 1.0.0 (September 2012).  wimlib can be used to read,
+This is wimlib version 1.0.1 (September 2012).  wimlib can be used to read,
 write, and mount files in the Windows Imaging Format (WIM files).  These
 files are normally created by using the `imagex.exe' utility on Windows,
 but this library provides a free implementation of imagex for UNIX-based
@@ -184,8 +184,13 @@ wimlib has mostly been developed and tested on x86_64 (64-bit) GNU/Linux.
 
 It has been tested on x86 (32-bit) GNU/Linux occasionally.
 
-I have tested a previous version of wimlib on FreeBSD and it worked, but this is
-not well tested, especially with the more recent versions of this software.
+wimlib may work on FreeBSD.  However, this not well tested.  If you do not have
+libntfs-3g 2011-4-12 or later available, you may have to configure with
+--without-ntfs-3g.  Also, GNU coreutils is needed to run the test suite.  Before
+mounting a WIM you need to load the POSIX message queue module (run `kldload
+mqueuefs').  There is no `fusermount' command on FreeBSD, so you must use
+`umount' rather than `imagex unmount' to unmount a mounted WIM, but this won't
+allow you to commit changes to a read-write mounted WIM...
 
 wimlib should work on big endian machines but it has not been tested.
 
