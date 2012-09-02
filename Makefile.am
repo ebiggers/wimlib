@@ -87,11 +87,15 @@ dist_bin_SCRIPTS = programs/mkwinpeimg
 
 include_HEADERS = src/wimlib.h
 
-EXTRA_DIST =			\
-	build-aux/strip_fPIC.sh	\
-	debian			\
-	programs/install.cmd
-	tests/common_tests.sh
+EXTRA_DIST =					\
+	build-aux/strip_fPIC.sh			\
+	debian					\
+	programs/install.cmd			\
+	tests/common_tests.sh			\
+	tests/security_descriptor_1.base64	\
+	tests/security_descriptor_1.bin		\
+	tests/security_descriptor_2.base64	\
+	tests/security_descriptor_2.bin
 
 pkgconfigdir	= @pkgconfigdir@
 pkgconfig_DATA	= wimlib.pc

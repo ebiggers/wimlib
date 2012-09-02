@@ -266,7 +266,7 @@ do_test() {
 	rm -rf tmp.orig/* tmp.apply/*
 }
 
-. common_tests.sh
+. $srcdir/tests/common_tests.sh
 
 cleanup
 

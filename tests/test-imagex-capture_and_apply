@@ -123,7 +123,7 @@ msg() {
 cleanup
 init
 
-. common_tests.sh
+. $srcdir/tests/common_tests.sh
 
 # Make sure exclusion list works
 msg "Testing default capture configuration file"
