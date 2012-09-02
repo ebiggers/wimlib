@@ -91,6 +91,7 @@ EXTRA_DIST =			\
 	build-aux/strip_fPIC.sh	\
 	debian			\
 	programs/install.cmd
+	tests/common_tests.sh
 
 pkgconfigdir	= @pkgconfigdir@
 pkgconfig_DATA	= wimlib.pc
@@ -115,8 +116,13 @@ man1_MANS =			\
 
 $(man1_MANS): config.status
 
-check_PROGRAMS = tests/ntfs-cmp
-tests_ntfs_cmp_SOURCES = tests/ntfs-cmp.c
-dist_check_SCRIPTS = tests/test-imagex tests/test-imagex-ntfs
+check_PROGRAMS = tests/tree-cmp
+tests_tree_cmp_SOURCES = tests/tree-cmp.c
+
+dist_check_SCRIPTS = tests/test-imagex				\
+		     tests/test-imagex-mount			\
+		     tests/test-imagex-capture_and_apply	\
+		     tests/test-imagex-ntfs
+
 TESTS = $(dist_check_SCRIPTS)
 

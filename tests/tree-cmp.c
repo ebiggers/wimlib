@@ -1,5 +1,16 @@
 /* 
- * A program to compare two mounted NTFS filesystems.
+ * A program to compare directory trees
+ *
+ * There are two modes:
+ * 	- Normal mode for any filesystems.  We compare file names, contents,
+ * 	sizes, modes, access times, and hard links.
+ * 	- NTFS mode for NTFS-3g mounted volumes.  In this mode we need to
+ * 	  compare various NTFS-specific attributes such as named data streams
+ * 	  and DOS names.
+ *
+ * Both modes compare hard link groups between the two directory trees.  If two
+ * files are hard linked together in one directory tree, exactly the same two
+ * files are expected to be hard linked together in the other directory tree.
  */
 
 #include <stdarg.h>
@@ -31,13 +42,14 @@ typedef uint64_t u64;
 #else
 #define DEBUG(format, ...)
 #endif
+static bool ntfs_mode = false;
 
 static void difference(const char *format, ...)
 {
 	va_list va;
 	va_start(va, format);
 	fflush(stdout);
-	fputs("ntfs-cmp: ", stderr);
+	fputs("tree-cmp: ", stderr);
 	vfprintf(stderr, format, va);
 	putc('\n', stderr);
 	fflush(stderr);
@@ -51,7 +63,7 @@ static void error(const char *format, ...)
 	int err = errno;
 	va_start(va, format);
 	fflush(stdout);
-	fputs("ntfs-cmp: ", stderr);
+	fputs("tree-cmp: ", stderr);
 	vfprintf(stderr, format, va);
 	fprintf(stderr, ": %s\n", strerror(err));
 	va_end(va);
@@ -266,8 +278,8 @@ static void special_cmp(const char *file1, const char *file2)
 }
 
 
-/* Compares file1 on one NTFS volume to file2 on another NTFS volume. */
-static void ntfs_cmp(char file1[], int file1_len, char file2[], int file2_len)
+/* Recursively compares directory tree rooted at file1 to directory tree rooted at file2 */
+static void tree_cmp(char file1[], int file1_len, char file2[], int file2_len)
 {
 	struct stat st1, st2;
 	u64 ino_from, ino_to;
@@ -283,27 +295,30 @@ static void ntfs_cmp(char file1[], int file1_len, char file2[], int file2_len)
 		insert_ino(ino_from, st2.st_ino);
 	else if (ino_to != st2.st_ino)
 		difference("Inode number on `%s' is wrong", file2);
-	if (st1.st_size != st2.st_size)
-		difference("Sizes of `%s' and `%s' are not the same",
-			   file1, file2);
-	if (st1.st_mode != st2.st_mode)
+	if ((st1.st_mode & ~(S_IRWXU | S_IRWXG | S_IRWXO)) !=
+	    (st2.st_mode & ~(S_IRWXU | S_IRWXG | S_IRWXO)))
 		difference("Modes of `%s' and `%s' are not the same",
 			   file1, file2);
-	if (st1.st_atime != st2.st_atime)
+	if (S_ISREG(st1.st_mode) && st1.st_size != st2.st_size)
+		difference("Sizes of `%s' and `%s' are not the same",
+			   file1, file2);
+	if (ntfs_mode && st1.st_atime != st2.st_atime)
 		difference("Access times of `%s' and `%s' are not the same",
 			   file1, file2);
 	if (st1.st_mtime != st2.st_mtime)
-		difference("Modification times times of `%s' and `%s' are not the same",
-			   file1, file2);
+		difference("Modification times of `%s' (%x) and `%s' (%x) are "
+		           "not the same",
+			   file1, st1.st_mtime, file2, st2.st_mtime);
 #if 0
 	if (st1.st_ctime != st2.st_ctime)
 		difference("Status change times of `%s' and `%s' are not the same",
 			   file1, file2);
 #endif
-	if (st1.st_nlink != st2.st_nlink)
-		difference("Link count of `%s' and `%s' are not the same",
-			   file1, file2);
-	if (strcmp(file1, root1))
+	if ((ntfs_mode || S_ISREG(st1.st_mode)) && st1.st_nlink != st2.st_nlink)
+		difference("Link count of `%s' (%u) and `%s' (%u) "
+			   "are not the same",
+			   file1, st1.st_nlink, file2, st2.st_nlink);
+	if (ntfs_mode && strcmp(file1, root1) != 0)
 		special_cmp(file1, file2);
 	if (S_ISREG(st1.st_mode))
 		cmp(file1, file2, st1.st_size);
@@ -343,7 +358,7 @@ static void ntfs_cmp(char file1[], int file1_len, char file2[], int file2_len)
 			{
 				memcpy(file1 + file1_len + 1, name, name_len + 1);
 				memcpy(file2 + file2_len + 1, name, name_len + 1);
-				ntfs_cmp(file1, file1_len + 1 + name_len,
+				tree_cmp(file1, file1_len + 1 + name_len,
 					 file2, file2_len + 1 + name_len);
 			}
 
@@ -354,21 +369,36 @@ static void ntfs_cmp(char file1[], int file1_len, char file2[], int file2_len)
 		free(namelist2);
 		file1[file1_len] = '\0';
 		file2[file2_len] = '\0';
+	} else if (!ntfs_mode && S_ISLNK(st1.st_mode)) {
+		char buf1[4096], buf2[sizeof(buf1)];
+		ssize_t ret1, ret2;
+		ret1 = readlink(file1, buf1, sizeof(buf1));
+		if (ret1 == -1)
+			error("Failed to get symlink target of `%s'", file1);
+		ret2 = readlink(file2, buf2, sizeof(buf2));
+		if (ret2 == -1)
+			error("Failed to get symlink target of `%s'", file2);
+		if (ret1 != ret2 || memcmp(buf1, buf2, ret1))
+			error("Symlink targets of `%s' and `%s' differ",
+			      file1, file2);
 	}
 }
 
 int main(int argc, char **argv)
 {
-	if (argc != 3) {
-		fprintf(stderr, "Usage: %s DIR1 DIR2", argv[0]);
+	if (argc != 3 && argc != 4) {
+		fprintf(stderr, "Usage: %s DIR1 DIR2 [NTFS]", argv[0]);
 		return 2;
 	}
+	if (argc > 3 && strcmp(argv[3], "NTFS") == 0)
+		ntfs_mode = true;
+
 	char dir1[4096];
 	char dir2[4096];
 	strcpy(dir1, argv[1]);
 	strcpy(dir2, argv[2]);
 	root1 = argv[1];
 	root2 = argv[2];
-	ntfs_cmp(dir1, strlen(dir1), dir2, strlen(dir2));
+	tree_cmp(dir1, strlen(dir1), dir2, strlen(dir2));
 	return 0;
 }

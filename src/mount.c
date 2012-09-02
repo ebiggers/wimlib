@@ -1376,6 +1376,31 @@ static int wimfs_readlink(const char *path, char *buf, size_t buf_len)
 	return ret;
 }
 
+/* Creation time, write time, access time */
+static void
+dentry_link_group_set_times(struct dentry *dentry, u64 times[3])
+{
+	struct dentry *cur = dentry;
+	do {
+		if (times[0])
+			dentry->creation_time = times[0];
+		if (times[1])
+			dentry->last_write_time = times[1];
+		if (times[2])
+			dentry->last_access_time = times[2];
+	} while ((cur = container_of(dentry->link_group_list.next,
+				     struct dentry,
+				     link_group_list)) != dentry);
+}
+
+static void
+dentry_link_group_update_times(struct dentry *dentry)
+{
+	u64 now = get_wim_timestamp();
+	u64 times[3] = {now, now, now};
+	dentry_link_group_set_times(dentry, times);
+}
+
 /* Close a file. */
 static int wimfs_release(const char *path, struct fuse_file_info *fi)
 {
@@ -1386,12 +1411,6 @@ static int wimfs_release(const char *path, struct fuse_file_info *fi)
 		 * WIM */
 		wimlib_assert(!(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE));
 		return 0;
-	}
-
-	if (flags_writable(fi->flags) && fd->dentry) {
-		u64 now = get_wim_timestamp();
-		fd->dentry->last_access_time = now;
-		fd->dentry->last_write_time = now;
 	}
 
 	return close_wimlib_fd(fd);
@@ -1655,7 +1674,7 @@ static int wimfs_truncate(const char *path, off_t size)
 		ret = extract_resource_to_staging_dir(dentry, stream_idx,
 						      &lte, size);
 	}
-	dentry_update_all_timestamps(dentry);
+	dentry_link_group_update_times(dentry);
 	return ret;
 }
 
@@ -1698,18 +1717,20 @@ static int wimfs_utimens(const char *path, const struct timespec tv[2])
 	struct dentry *dentry = get_dentry(w, path);
 	if (!dentry)
 		return -ENOENT;
+	u64 times[3] = {0, 0, 0};
 	if (tv[0].tv_nsec != UTIME_OMIT) {
 		if (tv[0].tv_nsec == UTIME_NOW)
-			dentry->last_access_time = get_wim_timestamp();
+			times[2] = get_wim_timestamp();
 		else
-			dentry->last_access_time = timespec_to_wim_timestamp(&tv[0]);
+			times[2] = timespec_to_wim_timestamp(&tv[0]);
 	}
 	if (tv[1].tv_nsec != UTIME_OMIT) {
 		if (tv[1].tv_nsec == UTIME_NOW)
-			dentry->last_write_time = get_wim_timestamp();
+			times[1] = get_wim_timestamp();
 		else
-			dentry->last_write_time = timespec_to_wim_timestamp(&tv[1]);
+			times[1] = timespec_to_wim_timestamp(&tv[1]);
 	}
+	dentry_link_group_set_times(dentry, times);
 	return 0;
 }
 
@@ -1735,6 +1756,12 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 	ret = write(fd->staging_fd, buf, size);
 	if (ret == -1)
 		return -errno;
+
+	if (fd->dentry) {
+		u64 now = get_wim_timestamp();
+		u64 times[3] = {0, now, now};
+		dentry_link_group_set_times(fd->dentry, times);
+	}
 
 	return ret;
 }
@@ -1936,6 +1963,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 		/* Read-only mount */
 		strcat(optstring, ",ro");
 	}
+	strcat(optstring, ",subtype=wimfs,attr_timeout=0");
 	argv[argc] = NULL;
 
 #ifdef ENABLE_DEBUG

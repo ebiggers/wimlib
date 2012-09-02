@@ -9,6 +9,7 @@
 # remain mounted.
 
 set -e
+srcdir=${srcdir:-.}
 srcdir=`realpath $srcdir`
 cd tests
 
@@ -88,7 +89,7 @@ do_test() {
 	if [ -x /usr/bin/tree ]; then
 		tree in.mnt --inodes -F -s --noreport
 	fi
-	if ! ./ntfs-cmp in.mnt out.mnt; then
+	if ! ./tree-cmp in.mnt out.mnt NTFS; then
 		if [ -x /usr/bin/tree ]; then
 			echo "Dumping tree of applied image"
 			tree out.mnt --inodes -F -s --noreport
@@ -100,7 +101,9 @@ do_test() {
 	__do_unmount out.mnt
 }
 msg() {
-	echo "Testing image capture and application of $1"
+	echo "--------------------------------------------------------------------"
+	echo "Testing image capture and application of NTFS volume containing $1"
+	echo "--------------------------------------------------------------------"
 }
 
 cleanup

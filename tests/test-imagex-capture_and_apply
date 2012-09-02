@@ -1,0 +1,143 @@
+#!/bin/bash
+
+# Test capturing and applying a WIM image in the normal (non-NTFS) capture mode
+#
+# Add in some tests with WIM splitting, joining, and exporting as well.
+#
+# Test all three compression modes (None, XPRESS, and LZX).
+#
+# Also, test if the capture configuration file works correctly.
+
+set -e
+srcdir=${srcdir:-.}
+srcdir=`realpath $srcdir`
+cd tests
+
+imagex() {
+	echo "imagex $@"
+	../imagex "$@" > /dev/null
+}
+
+imagex_info() {
+	echo "imagex info $@"
+	../imagex info "$@"
+}
+
+init() {
+	mkdir in.dir out.dir
+}
+
+cleanup() {
+	rm -rf in.dir out.dir test*.wim test*.swm
+}
+
+error() {
+	echo "****************************************************************"
+	echo "                         Test failure                           "
+	echo $*
+	echo "****************************************************************"
+	exit 1
+}
+
+wim_ctype() {
+	../imagex info $1 | grep Compression | awk '{print $2}'
+}
+
+do_tree_cmp() {
+	if ! ./tree-cmp in.dir out.dir; then
+		if [ -x /usr/bin/tree ]; then
+			echo "Dumping tree of applied image"
+			echo "(Note: compression type was $ctype)"
+			tree out.dir --inodes -F -s --noreport
+			error 'Information was lost or corrupted while capturing
+				and then applying a directory tree'
+		fi
+	fi
+}
+
+image_name=0
+do_test() {
+	for ctype in None LZX XPRESS; do
+
+		# Can we capture the WIM, apply it, and get the same result?
+		cd in.dir
+		eval "$1"
+		cd ..
+		if [ -x /usr/bin/tree -a "$ctype" = "None" ]; then
+			tree in.dir --inodes -F -s --noreport
+		fi
+		if ! imagex capture in.dir test.wim --compress=$ctype; then
+			error "Failed to capture directory tree into a WIM"
+		fi
+		if ! imagex apply test.wim 1 out.dir; then
+			error "Failed to apply WIM to directory"
+		fi
+		if [ `wim_ctype test.wim` != $ctype ]; then
+			error "'imagex info' didn't report the compression type on the captured WIM correctly"
+		fi
+		do_tree_cmp
+		rm -rf out.dir/*
+
+		# Can we split the WIM, apply the split WIM, join the split WIM,
+		# and apply the joined WIM, and get the same results every time?
+		if ! imagex split test.wim test.swm 0.01M; then
+			error "Failed to split WIM"
+		fi
+		if ! imagex apply test.swm 1 out.dir --ref "test*.swm" ; then
+			error "Failed to apply split WIM"
+		fi
+		do_tree_cmp
+		rm -rf out.dir/* test.wim
+		if ! imagex join test.wim test*.swm; then
+			error "Failed to join split WIM"
+		fi
+		if ! imagex apply test.wim out.dir; then
+			error "Failed to apply joined WIM"
+		fi
+		do_tree_cmp
+		rm -rf out.dir/*
+
+		# Can we export the image to another WIM, apply it, and get the
+		# same results?
+		(( image_name++ )) || true
+		if ! imagex export test.wim 1 test2.wim "$image_name"; then
+			error "Failed to export WIM image"
+		fi
+
+		if ! imagex apply test2.wim "$image_name" out.dir; then
+			error "Failed to apply exported WIM image"
+		fi
+		do_tree_cmp
+
+		rm -rf out.dir/* in.dir/* test.wim test*.swm
+
+	done
+}
+
+msg() {
+	echo "--------------------------------------------------------------------"
+	echo "Testing image capture and application of directory containing $1"
+	echo "--------------------------------------------------------------------"
+}
+
+cleanup
+init
+
+. common_tests.sh
+
+# Make sure exclusion list works
+msg "Testing default capture configuration file"
+touch in.dir/hiberfil.sys
+mkdir -p "in.dir/System Volume Information/subdir"
+imagex capture in.dir test.wim
+imagex apply test.wim out.dir
+if [ -e out.dir/hiberfil.sys -o -e "out.dir/System Volume Information" ]; then
+	error "Files were not excluded from capture as expected"
+fi
+rm -rf out.dir/* in.dir/*
+
+cleanup
+
+echo "**********************************************************"
+echo "          imagex capture/apply tests passed               "
+echo "**********************************************************"
