@@ -854,18 +854,27 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		offset += to_read;
 	} while (bytes_remaining);
 
-	/* If writing a compressed resource and not doing a raw copy, write the
-	 * chunk table, and finish_wim_resource_chunk_tab() will provide the
-	 * compressed size of the resource we wrote.  Otherwise, the compressed
-	 * size of the written resource is the same as the compressed size of
-	 * the existing resource. */
-	if (out_ctype != WIM_COMPRESSION_TYPE_NONE && !raw) {
-		ret = finish_wim_resource_chunk_tab(chunk_tab, out_fp,
-						    &new_compressed_size);
-		if (ret != 0)
-			goto out_fclose;
-	} else {
+	/* Raw copy:  The new compressed size is the same as the old compressed
+	 * size
+	 * 
+	 * Using WIM_COMPRESSION_TYPE_NONE:  The new compressed size is the
+	 * original size
+	 *
+	 * Using a different compression type:  Call
+	 * finish_wim_resource_chunk_tab() and it will provide the new
+	 * compressed size.
+	 */
+	if (raw) {
 		new_compressed_size = old_compressed_size;
+	} else {
+		if (out_ctype == WIM_COMPRESSION_TYPE_NONE)
+			new_compressed_size = original_size;
+		else {
+			ret = finish_wim_resource_chunk_tab(chunk_tab, out_fp,
+							    &new_compressed_size);
+			if (ret != 0)
+				goto out_fclose;
+		}
 	}
 
 	/* Verify SHA1 message digest of the resource, unless we are doing a raw
@@ -889,8 +898,8 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		}
 	}
 
-	if (new_compressed_size >= original_size &&
-	    out_ctype != WIM_COMPRESSION_TYPE_NONE && !raw)
+	if (!raw && new_compressed_size >= original_size &&
+	    out_ctype != WIM_COMPRESSION_TYPE_NONE)
 	{
 		/* Oops!  We compressed the resource to larger than the original
 		 * size.  Write the resource uncompressed instead. */
@@ -915,7 +924,7 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		}
 		goto out_fclose;
 	}
-	wimlib_assert(new_compressed_size <= original_size);
+	wimlib_assert(new_compressed_size <= original_size || raw);
 	if (out_res_entry) {
 		out_res_entry->size          = new_compressed_size;
 		out_res_entry->original_size = original_size;

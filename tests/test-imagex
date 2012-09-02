@@ -4,6 +4,7 @@
 # tests every aspect of wimlib comprehensively.
 
 set -e
+srcdir=${srcdir:-.}
 srcdir=`realpath $srcdir`
 cd tests
 
@@ -610,6 +611,46 @@ fi
 if imagex export dir.wim all new.wim --boot; then
 	error "Successfully exported multiple images with --boot but with no bootable images"
 fi
+
+# Test exporting an image to another WIM, then applying it.
+# We try with 5 different combinations of compression types to make sure we go
+# through all paths in the resource-handling code.
+for i in `seq 1 3`; do
+	case $i in 
+	1)
+		cflag1="--compress=none";
+		cflag2="--compress=none";
+		;;
+	2)
+		cflag1="--compress=xpress";
+		cflag2="--compress=xpress";
+		;;
+	3)
+		cflag1="--compress=xpress"
+		cflag2="--compress=lzx"
+		;;
+	4)
+		cflag1="--compress=none"
+		cflag2="--compress=xpress"
+		;;
+	5)
+		cflag1="--compress=xpress"
+		cflag2="--compress=none"
+		;;
+	esac
+	echo "Testing exporting then applying an image (\"$cflag1\" => \"$cflag2\")"
+	rm -rf dir.wim new.wim tmp tmp2
+	imagex capture dir dir.wim $cflag1
+	imagex capture dir2 dir2.wim $cflag2
+	imagex export dir.wim dir dir2.wim
+	imagex apply dir.wim dir tmp
+	if ! imagex apply dir2.wim dir tmp2; then
+		error "Failed to apply image that was exported to a WIM"
+	fi
+	if ! diff -r tmp tmp2; then
+		error "Image that was exported to a WIM was not applied correctly"
+	fi
+done
 
 echo "**********************************************************"
 echo "                 Basic imagex tests passed                "
