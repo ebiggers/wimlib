@@ -66,6 +66,10 @@ struct stream_list_head {
 
 #define LIST_HEAD_INIT(name) { &(name), &(name) }
 
+#ifdef LIST_HEAD /* BSD sys/queue.h defines this... */
+#undef LIST_HEAD
+#endif
+
 #define LIST_HEAD(name) \
 	struct list_head name = LIST_HEAD_INIT(name)
 

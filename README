@@ -184,13 +184,11 @@ wimlib has mostly been developed and tested on x86_64 (64-bit) GNU/Linux.
 
 It has been tested on x86 (32-bit) GNU/Linux occasionally.
 
-wimlib may work on FreeBSD.  However, this not well tested.  If you do not have
-libntfs-3g 2011-4-12 or later available, you may have to configure with
+wimlib may work on FreeBSD.  However, this is not well tested.  If you do not
+have libntfs-3g 2011-4-12 or later available, you must configure with
 --without-ntfs-3g.  Also, GNU coreutils is needed to run the test suite.  Before
 mounting a WIM you need to load the POSIX message queue module (run `kldload
-mqueuefs').  There is no `fusermount' command on FreeBSD, so you must use
-`umount' rather than `imagex unmount' to unmount a mounted WIM, but this won't
-allow you to commit changes to a read-write mounted WIM...
+mqueuefs').  
 
 wimlib should work on big endian machines but it has not been tested.
 

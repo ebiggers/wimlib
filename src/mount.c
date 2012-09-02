@@ -29,6 +29,7 @@
 #include "wimlib_internal.h"
 
 #ifdef WITH_FUSE
+
 #include "sha1.h"
 #include "lookup_table.h"
 #include "xml.h"
@@ -2030,42 +2031,7 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	int msgsize;
 	int errno_save;
 
-	/* Execute `fusermount -u', which is installed setuid root, to unmount
-	 * the WIM.
-	 *
-	 * FUSE does not yet implement synchronous unmounts.  This means that
-	 * fusermount -u will return before the filesystem daemon returns from
-	 * wimfs_destroy().  This is partly what we want, because we need to
-	 * send a message from this process to the filesystem daemon telling
-	 * whether --commit was specified or not.  However, after that, the
-	 * unmount process must wait for the filesystem daemon to finish writing
-	 * the WIM file. 
-	 */
-
 	mount_dir = dir;
-
-	pid = fork();
-	if (pid == -1) {
-		ERROR_WITH_ERRNO("Failed to fork()");
-		return WIMLIB_ERR_FORK;
-	}
-	if (pid == 0) {
-		execlp("fusermount", "fusermount", "-u", dir, NULL);
-		ERROR_WITH_ERRNO("Failed to execute `fusermount'");
-		return WIMLIB_ERR_FUSERMOUNT;
-	}
-
-	ret = waitpid(pid, &status, 0);
-	if (ret == -1) {
-		ERROR_WITH_ERRNO("Failed to wait for fusermount process to "
-				 "terminate");
-		return WIMLIB_ERR_FUSERMOUNT;
-	}
-
-	if (status != 0) {
-		ERROR("fusermount exited with status %d", status);
-		return WIMLIB_ERR_FUSERMOUNT;
-	}
 
 	/* Open message queues between the unmount process and the
 	 * filesystem daemon. */
@@ -2088,6 +2054,68 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 		close_message_queues();
 		return WIMLIB_ERR_MQUEUE;
 	}
+
+	/* Execute `fusermount -u', which is installed setuid root, to unmount
+	 * the WIM.
+	 *
+	 * FUSE does not yet implement synchronous unmounts.  This means that
+	 * fusermount -u will return before the filesystem daemon returns from
+	 * wimfs_destroy().  This is partly what we want, because we need to
+	 * send a message from this process to the filesystem daemon telling
+	 * whether --commit was specified or not.  However, after that, the
+	 * unmount process must wait for the filesystem daemon to finish writing
+	 * the WIM file. 
+	 */
+
+
+	pid = fork();
+	if (pid == -1) {
+		ERROR_WITH_ERRNO("Failed to fork()");
+		return WIMLIB_ERR_FORK;
+	}
+	if (pid == 0) {
+		execlp("fusermount", "fusermount", "-u", dir, NULL);
+		ERROR_WITH_ERRNO("Failed to execute `fusermount'");
+		exit(WIMLIB_ERR_FUSERMOUNT);
+	}
+
+	ret = wait(&status);
+	if (ret == -1) {
+		ERROR_WITH_ERRNO("Failed to wait for fusermount process to "
+				 "terminate");
+		return WIMLIB_ERR_FUSERMOUNT;
+	}
+
+	if (status != 0) {
+		ERROR("fusermount exited with status %d", status);
+
+		/* Try again, but with the `umount' program.  This is required
+		 * on other FUSE implementations such as FreeBSD's that do not
+		 * have a `fusermount' program. */
+
+		pid = fork();
+		if (pid == -1) {
+			ERROR_WITH_ERRNO("Failed to fork()");
+			return WIMLIB_ERR_FORK;
+		}
+		if (pid == 0) {
+			execlp("umount", "umount", dir, NULL);
+			ERROR_WITH_ERRNO("Failed to execute `umount'");
+			exit(WIMLIB_ERR_FUSERMOUNT);
+		}
+
+		ret = wait(&status);
+		if (ret == -1) {
+			ERROR_WITH_ERRNO("Failed to wait for `umount' process to "
+					 "terminate");
+			return WIMLIB_ERR_FUSERMOUNT;
+		}
+		if (status != 0) {
+			ERROR("`umount' exited with failure status");
+			return WIMLIB_ERR_FUSERMOUNT;
+		}
+	}
+
 
 	/* Wait for a message from the filesytem daemon indicating whether  the
 	 * filesystem was unmounted successfully (0) or an error occurred (1).
