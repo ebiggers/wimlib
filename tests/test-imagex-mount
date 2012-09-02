@@ -34,7 +34,7 @@ cleanup() {
 		fusermount -u tmp.mnt > /dev/null;
 	fi
 	rm -rf dir* tmp* *.wim *.swm empty.wim tmp.orig tmp.mnt \
-			tmp.apply mount.log
+			tmp.apply mount.log test.tar wimlib-staging*
 }
 init() {
 	mkdir dir
