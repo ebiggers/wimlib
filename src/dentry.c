@@ -186,7 +186,7 @@ struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
 		for (u16 i = 0; i < dentry->num_ads; i++) {
 			struct list_head *cur = &ads_entries[i].lte_group_list.list;
 			struct list_head *prev = cur->prev;
-			struct list_head *next = cur->next;
+			struct list_head *next;
 			if ((u8*)prev >= (u8*)dentry->ads_entries
 			    && (u8*)prev < (u8*)(dentry->ads_entries + dentry->num_ads)) {
 				/* Previous entry was located in the same ads_entries
@@ -248,8 +248,21 @@ void dentry_remove_ads(struct dentry *dentry, struct ads_entry *ads_entry)
 	/* We moved the ADS entries.  Adjust the stream lists. */
 	for (u16 i = 0; i < following; i++) {
 		struct list_head *cur = &ads_entry[i].lte_group_list.list;
-		cur->prev->next = cur;
-		cur->next->prev = cur;
+		struct list_head *prev = cur->prev;
+		struct list_head *next;
+		if ((u8*)prev >= (u8*)(ads_entry + 1)
+		    && (u8*)prev < (u8*)(ads_entry + following + 1)) {
+			cur->prev = (struct list_head*)((u8*)prev - sizeof(struct ads_entry));
+		} else {
+			prev->next = cur;
+		}
+		next = cur->next;
+		if ((u8*)next >= (u8*)(ads_entry + 1)
+		    && (u8*)next < (u8*)(ads_entry + following + 1)) {
+			cur->next = (struct list_head*)((u8*)next - sizeof(struct ads_entry));
+		} else {
+			next->prev = cur;
+		}
 	}
 
 	dentry->num_ads--;
