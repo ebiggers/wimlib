@@ -173,17 +173,45 @@ struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
 	}
  	num_ads = dentry->num_ads + 1;
 	ads_entries = REALLOC(dentry->ads_entries,
-			      num_ads * sizeof(struct ads_entry));
+			      num_ads * sizeof(dentry->ads_entries[0]));
 	if (!ads_entries) {
 		ERROR("Failed to allocate memory for new alternate data stream");
 		return NULL;
 	}
+	wimlib_assert(ads_entries == dentry->ads_entries ||
+			ads_entries < dentry->ads_entries ||
+			ads_entries > dentry->ads_entries + dentry->num_ads);
 	if (ads_entries != dentry->ads_entries) {
 		/* We moved the ADS entries.  Adjust the stream lists. */
 		for (u16 i = 0; i < dentry->num_ads; i++) {
 			struct list_head *cur = &ads_entries[i].lte_group_list.list;
-			cur->prev->next = cur;
-			cur->next->prev = cur;
+			struct list_head *prev = cur->prev;
+			struct list_head *next = cur->next;
+			if ((u8*)prev >= (u8*)dentry->ads_entries
+			    && (u8*)prev < (u8*)(dentry->ads_entries + dentry->num_ads)) {
+				/* Previous entry was located in the same ads_entries
+				 * array!  Adjust our own prev pointer. */
+				u16 idx = (struct ads_entry*)prev -
+					    (struct ads_entry*)&dentry->ads_entries[0].lte_group_list.list;
+				cur->prev = &ads_entries[idx].lte_group_list.list;
+			} else {
+				/* Previous entry is located in a different ads_entries
+				 * array.  Adjust its next pointer. */
+				prev->next = cur;
+			}
+			next = cur->next;
+			if ((u8*)next >= (u8*)dentry->ads_entries
+			    && (u8*)next < (u8*)(dentry->ads_entries + dentry->num_ads)) {
+				/* Next entry was located in the same ads_entries array!
+				 * Adjust our own next pointer. */
+				u16 idx = (struct ads_entry*)next -
+					    (struct ads_entry*)&dentry->ads_entries[0].lte_group_list.list;
+				cur->next = &ads_entries[idx].lte_group_list.list;
+			} else {
+				/* Next entry is located in a different ads_entries
+				 * array.  Adjust its prev pointer. */
+				next->prev = cur;
+			}
 		}
 	}
 
@@ -595,6 +623,7 @@ struct dentry *new_dentry(const char *name)
 	dentry->prev   = dentry;
 	dentry->parent = dentry;
 	INIT_LIST_HEAD(&dentry->link_group_list);
+	INIT_LIST_HEAD(&dentry->lte_group_list.list);
 	return dentry;
 err:
 	FREE(dentry);

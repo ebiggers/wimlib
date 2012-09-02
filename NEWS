@@ -1,5 +1,8 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.0.2:
+	Fixed bug when capturing NTFS file with multiple named data streams
+
 Version 1.0.1:
 	Fixed problem when exporting images from XPRESS to LZX compressed WIM or
 	vice versa
