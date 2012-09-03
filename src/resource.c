@@ -1092,8 +1092,8 @@ int write_dentry_resources(struct dentry *dentry, void *wim_p)
 		printf("Writing streams for `%s'\n", dentry->full_path_utf8);
 	}
 
-	for (unsigned i = 0; i <= dentry->num_ads; i++) {
-		lte = dentry_stream_lte(dentry, i, w->lookup_table);
+	for (unsigned i = 0; i <= dentry->inode->num_ads; i++) {
+		lte = inode_stream_lte(dentry->inode, i, w->lookup_table);
 		if (lte && ++lte->out_refcnt == 1) {
 			ret = write_wim_resource(lte, w->out_fp, ctype,
 						 &lte->output_resource_entry);
@@ -1128,10 +1128,11 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	u32 dentry_offset;
 	int ret;
 	struct dentry *dentry;
-	struct link_group_table *lgt;
+	struct inode_table *inode_tab;
 	const struct lookup_table_entry *metadata_lte;
 	u64 metadata_len;
 	u64 metadata_offset;
+	struct hlist_head inode_list;
 
 	metadata_lte = imd->metadata_lte;
 	metadata_len = wim_resource_size(metadata_lte);
@@ -1218,30 +1219,26 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 
 	/* Build hash table that maps hard link group IDs to dentry sets */
 	DEBUG("Building link group table");
-	lgt = new_link_group_table(9001);
-	if (!lgt)
+	inode_tab = new_inode_table(9001);
+	if (!inode_tab)
 		goto out_free_dentry_tree;
-	ret = for_dentry_in_tree(dentry, link_group_table_insert, lgt);
-	if (ret != 0)
-		goto out_free_lgt;
+	for_dentry_in_tree(dentry, inode_table_insert, inode_tab);
 
 	DEBUG("Fixing inconsistencies in the link groups");
-	ret = fix_link_groups(lgt);
+	ret = fix_inodes(inode_tab, &inode_list);
+	free_inode_table(inode_tab);
 	if (ret != 0)
-		goto out_free_lgt;
+		goto out_free_dentry_tree;
 
 	DEBUG("Running miscellaneous verifications on the dentry tree");
 	ret = for_dentry_in_tree(dentry, verify_dentry, w);
 	if (ret != 0)
-		goto out_free_lgt;
+		goto out_free_dentry_tree;
 
 	DEBUG("Done reading image metadata");
 
-	imd->lgt           = lgt;
 	imd->root_dentry   = dentry;
 	goto out_free_buf;
-out_free_lgt:
-	free_link_group_table(lgt);
 out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL);
 out_free_security_data:

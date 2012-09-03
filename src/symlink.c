@@ -162,15 +162,15 @@ out:
  *
  * The dentry may be either "real" symlink or a junction point.
  */
-ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
-			const WIMStruct *w)
+ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
+		       const WIMStruct *w)
 {
 	const struct lookup_table_entry *lte;
 	int ret;
 
-	wimlib_assert(dentry_is_symlink(dentry));
+	wimlib_assert(inode_is_symlink(inode));
 
-	lte = dentry_unnamed_lte(dentry, w->lookup_table);
+	lte = inode_unnamed_lte(inode, w->lookup_table);
 	if (!lte)
 		return -EIO;
 
@@ -182,17 +182,20 @@ ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
 	if (ret != 0)
 		return -EIO;
 	return get_symlink_name(res_buf, wim_resource_size(lte), buf,
-				buf_len, dentry->reparse_tag);
+				buf_len, inode->reparse_tag);
 }
 
-static int dentry_set_symlink_buf(struct dentry *dentry,
-				  struct lookup_table_entry *lte)
+static int inode_set_symlink_buf(struct inode *inode,
+				 struct lookup_table_entry *lte)
 {
+#if 0
 	struct ads_entry *ads_entries;
 
-	ads_entries = CALLOC(2, sizeof(struct ads_entry));
+	ads_entries = MALLOC(2, sizeof(struct ads_entry));
 	if (!ads_entries)
 		return WIMLIB_ERR_NOMEM;
+	ads_entry_init(&ads_entries[0]);
+	ads_entry_init(&ads_entries[1]);
 
 	wimlib_assert(dentry->num_ads == 0);
 	wimlib_assert(dentry->ads_entries == NULL);
@@ -202,6 +205,9 @@ static int dentry_set_symlink_buf(struct dentry *dentry,
 	/*dentry_free_ads_entries(dentry);*/
 	dentry->num_ads = 2;
 	dentry->ads_entries = ads_entries;
+#endif
+	wimlib_assert(inode->resolved);
+	inode->lte = lte;
 	return 0;
 }
 
@@ -216,9 +222,9 @@ static int dentry_set_symlink_buf(struct dentry *dentry,
  *
  * On failure @dentry and @lookup_table are not modified.
  */
-int dentry_set_symlink(struct dentry *dentry, const char *target,
-		       struct lookup_table *lookup_table,
-		       struct lookup_table_entry **lte_ret)
+int inode_set_symlink(struct inode *inode, const char *target,
+		      struct lookup_table *lookup_table,
+		      struct lookup_table_entry **lte_ret)
 
 {
 	int ret;
@@ -257,12 +263,12 @@ int dentry_set_symlink(struct dentry *dentry, const char *target,
 		copy_hash(lte->hash, symlink_buf_hash);
 	}
 
-	ret = dentry_set_symlink_buf(dentry, lte);
+	ret = inode_set_symlink_buf(inode, lte);
 
 	if (ret != 0)
 		goto out_free_lte;
 
-	dentry->resolved = true;
+	inode->resolved = true;
 
 	DEBUG("Loaded symlink buf");
 

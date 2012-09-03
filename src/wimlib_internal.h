@@ -30,6 +30,8 @@
 #include "util.h"
 
 struct stat;
+struct hlist_head;
+struct inode;
 
 #define WIM_MAGIC_LEN  8
 #define WIM_GID_LEN    16
@@ -221,7 +223,7 @@ struct wim_security_data {
 	u32 refcnt;
 };
 
-struct link_group_table;
+struct inode_table;
 
 
 /* Metadata resource for an image. */
@@ -231,9 +233,6 @@ struct image_metadata {
 
 	/* Pointer to the security data for the image. */
 	struct wim_security_data *security_data;
-
-	/* Hard link group table */
-	struct link_group_table *lgt;
 
 	/* A pointer to the lookup table entry for this image's metadata
 	 * resource. */
@@ -348,12 +347,11 @@ struct capture_config {
 
 /* hardlink.c */
 
-struct link_group_table *new_link_group_table(size_t capacity);
-int link_group_table_insert(struct dentry *dentry,
-			    void *__table);
-void free_link_group_table(struct link_group_table *table);
-u64 assign_link_group_ids(struct link_group_table *table);
-int fix_link_groups(struct link_group_table *table);
+struct inode_table *new_inode_table(size_t capacity);
+int inode_table_insert(struct dentry *dentry, void *__table);
+void free_inode_table(struct inode_table *table);
+u64 assign_inode_numbers(struct hlist_head *inode_list);
+int fix_inodes(struct inode_table *table, struct hlist_head *inode_list);
 
 
 /* header.c */
@@ -429,14 +427,14 @@ u8 *write_security_data(const struct wim_security_data *sd, u8 *p);
 void free_security_data(struct wim_security_data *sd);
 
 /* symlink.c */
-ssize_t dentry_readlink(const struct dentry *dentry, char *buf, size_t buf_len,
+ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
 			const WIMStruct *w);
 extern void *make_symlink_reparse_data_buf(const char *symlink_target,
 					   size_t *len_ret);
-extern int dentry_set_symlink(struct dentry *dentry,
-			      const char *target,
-			      struct lookup_table *lookup_table,
-			      struct lookup_table_entry **lte_ret);
+extern int inode_set_symlink(struct inode *inode,
+			     const char *target,
+			     struct lookup_table *lookup_table,
+			     struct lookup_table_entry **lte_ret);
 
 /* wim.c */
 extern WIMStruct *new_wim_struct();

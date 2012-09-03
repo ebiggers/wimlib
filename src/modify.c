@@ -48,7 +48,6 @@ void destroy_image_metadata(struct image_metadata *imd,struct lookup_table *lt)
 {
 	free_dentry_tree(imd->root_dentry, lt);
 	free_security_data(imd->security_data);
-	free_link_group_table(imd->lgt);
 
 	/* Get rid of the lookup table entry for this image's metadata resource
 	 * */
@@ -128,13 +127,13 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 	else
 		filename = path_basename(root_disk_path);
 
-	root = new_dentry(filename);
+	root = new_dentry_with_inode(filename);
 	if (!root)
 		return WIMLIB_ERR_NOMEM;
 
 	stbuf_to_dentry(&root_stbuf, root);
 	add_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
-	root->resolved = true;
+	root->inode->resolved = true;
 
 	if (dentry_is_directory(root)) {
 		/* Open the directory on disk */
@@ -185,8 +184,8 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 		}
 		deref_name_buf[deref_name_len] = '\0';
 		DEBUG("Read symlink `%s'", deref_name_buf);
-		ret = dentry_set_symlink(root, deref_name_buf,
-					 lookup_table, NULL);
+		ret = inode_set_symlink(root->inode, deref_name_buf,
+					lookup_table, NULL);
 	} else {
 		/* Regular file */
 		struct lookup_table_entry *lte;
@@ -227,7 +226,7 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 			copy_hash(lte->hash, hash);
 			lookup_table_insert(lookup_table, lte);
 		}
-		root->lte = lte;
+		root->inode->lte = lte;
 	}
 out:
 	*root_ret = root;
@@ -254,16 +253,16 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 	src_wim = ((struct wim_pair*)arg)->src_wim;
 	dest_wim = ((struct wim_pair*)arg)->dest_wim;
 
-	wimlib_assert(!dentry->resolved);
+	wimlib_assert(!dentry->inode->resolved);
 
-	for (unsigned i = 0; i < (unsigned)dentry->num_ads + 1; i++) {
+	for (unsigned i = 0; i < (unsigned)dentry->inode->num_ads + 1; i++) {
 		struct lookup_table_entry *src_lte, *dest_lte;
-		src_lte = dentry_stream_lte_unresolved(dentry, i,
-						       src_wim->lookup_table);
+		src_lte = inode_stream_lte_unresolved(dentry->inode, i,
+						      src_wim->lookup_table);
 		if (!src_lte)
 			continue;
-		dest_lte = dentry_stream_lte_unresolved(dentry, i,
-							dest_wim->lookup_table);
+		dest_lte = inode_stream_lte_unresolved(dentry->inode, i,
+						       dest_wim->lookup_table);
 		if (dest_lte) {
 			dest_lte->refcnt++;
 		} else {
@@ -314,10 +313,6 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 	if (!metadata_lte)
 		goto out_free_imd;
 
-	lgt = new_link_group_table(9001);
-	if (!lgt)
-		goto out_free_metadata_lte;
-
 	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
 	random_hash(metadata_lte->hash);
 	lookup_table_insert(w->lookup_table, metadata_lte);
@@ -327,7 +322,6 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 	new_imd->root_dentry	= root_dentry;
 	new_imd->metadata_lte	= metadata_lte;
 	new_imd->security_data  = sd;
-	new_imd->lgt		= lgt;
 	new_imd->modified	= true;
 
 	FREE(w->image_metadata);
@@ -811,7 +805,8 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	struct dentry *root_dentry = NULL;
 	struct wim_security_data *sd;
 	struct capture_config config;
-	struct link_group_table *lgt;
+	struct inode_table *inode_tab;
+	struct hlist_head inode_list;
 	int ret;
 
 	DEBUG("Adding dentry tree from directory or NTFS volume `%s'.", dir);
@@ -875,20 +870,17 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
-	lgt = w->image_metadata[w->hdr.image_count - 1].lgt;
-	DEBUG("Inserting dentries into hard link group table");
-	ret = for_dentry_in_tree(root_dentry, link_group_table_insert, lgt);
-				 
-	if (ret != 0)
-		goto out_destroy_imd;
+	DEBUG("Inserting dentries into inode table");
+	for_dentry_in_tree(root_dentry, inode_table_insert, inode_tab);
 
 	DEBUG("Cleanup up the hard link groups");
-	ret = fix_link_groups(lgt);
+	ret = fix_inodes(inode_tab, &inode_list);
+	free_inode_table(inode_tab);
 	if (ret != 0)
 		goto out_destroy_imd;
 
 	DEBUG("Assigning hard link group IDs");
-	assign_link_group_ids(w->image_metadata[w->hdr.image_count - 1].lgt);
+	assign_inode_numbers(&inode_list);
 
 	if (flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wimlib_set_boot_idx(w, w->hdr.image_count);

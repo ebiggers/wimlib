@@ -124,11 +124,9 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 
 	int out_fd;
 	int ret;
-	const struct list_head *head = &dentry->link_group_list;
+	struct inode *inode = dentry->inode;
 
-	if (head->next != head &&
-	     !(extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE))
-	{
+	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE)) {
 		/* This dentry is one of a hard link set of at least 2 dentries.
 		 * If one of the other dentries has already been extracted, make
 		 * a hard link to the file corresponding to this
@@ -136,25 +134,25 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 		 * file, and set the dentry->extracted_file field so that other
 		 * dentries in the hard link group can link to it. */
 		struct dentry *other;
-		list_for_each_entry(other, head, link_group_list) {
-			if (other->extracted_file) {
-				DEBUG("Extracting hard link `%s' => `%s'",
-				      output_path, other->extracted_file);
-				if (link(other->extracted_file, output_path) != 0) {
-					ERROR_WITH_ERRNO("Failed to hard link "
-							 "`%s' to `%s'",
-							 output_path,
-							 other->extracted_file);
-					return WIMLIB_ERR_LINK;
-				}
-				return 0;
+		if (inode->extracted_file) {
+			DEBUG("Extracting hard link `%s' => `%s'",
+			      output_path, inode->extracted_file);
+			if (link(inode->extracted_file, output_path) != 0) {
+				ERROR_WITH_ERRNO("Failed to hard link "
+						 "`%s' to `%s'",
+						 output_path,
+						 inode->extracted_file);
+				return WIMLIB_ERR_LINK;
 			}
+			return 0;
 		}
-		FREE(dentry->extracted_file);
-		dentry->extracted_file = STRDUP(output_path);
-		if (!dentry->extracted_file) {
-			ERROR("Failed to allocate memory for filename");
-			return WIMLIB_ERR_NOMEM;
+		if (inode->link_count > 1) {
+			FREE(inode->extracted_file);
+			inode->extracted_file = STRDUP(output_path);
+			if (!inode->extracted_file) {
+				ERROR("Failed to allocate memory for filename");
+				return WIMLIB_ERR_NOMEM;
+			}
 		}
 	}
 
@@ -198,8 +196,9 @@ static int extract_regular_file(WIMStruct *w,
 				int extract_flags)
 {
 	struct lookup_table_entry *lte;
+	const struct inode *inode = dentry->inode;
 
-	lte = dentry_unnamed_lte(dentry, w->lookup_table);
+	lte = inode_unnamed_lte(inode, w->lookup_table);
 
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
 			      WIMLIB_EXTRACT_FLAG_HARDLINK)) && lte) {
@@ -221,7 +220,7 @@ static int extract_symlink(const struct dentry *dentry, const char *output_path,
 			   const WIMStruct *w)
 {
 	char target[4096];
-	ssize_t ret = dentry_readlink(dentry, target, sizeof(target), w);
+	ssize_t ret = inode_readlink(dentry->inode, target, sizeof(target), w);
 	if (ret <= 0) {
 		ERROR("Could not read the symbolic link from dentry `%s'",
 		      dentry->full_path_utf8);
@@ -321,8 +320,8 @@ static int apply_dentry_timestamps(struct dentry *dentry, void *arg)
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
 	struct timeval tv[2];
-	wim_timestamp_to_timeval(dentry->last_access_time, &tv[0]);
-	wim_timestamp_to_timeval(dentry->last_write_time, &tv[1]);
+	wim_timestamp_to_timeval(dentry->inode->last_access_time, &tv[0]);
+	wim_timestamp_to_timeval(dentry->inode->last_write_time, &tv[1]);
 	if (lutimes(output_path, tv) != 0) {
 		WARNING("Failed to set timestamp on file `%s': %s",
 		        output_path, strerror(errno));

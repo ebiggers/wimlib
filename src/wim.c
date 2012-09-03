@@ -209,7 +209,6 @@ int wimlib_select_image(WIMStruct *w, int image)
 			destroy_image_metadata(imd, NULL);
 			imd->root_dentry = NULL;
 			imd->security_data = NULL;
-			imd->lgt = NULL;
 		}
 	}
 

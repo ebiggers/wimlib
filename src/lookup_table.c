@@ -422,7 +422,7 @@ __lookup_resource(const struct lookup_table *table, const u8 hash[])
  * Finds the dentry, lookup table entry, and stream index for a WIM file stream,
  * given a path name.
  *
- * This is only for pre-resolved dentries.
+ * This is only for pre-resolved inodes.
  */
 int lookup_resource(WIMStruct *w, const char *path,
 		    int lookup_flags,
@@ -434,6 +434,7 @@ int lookup_resource(WIMStruct *w, const char *path,
 	struct lookup_table_entry *lte;
 	unsigned stream_idx;
 	const char *stream_name = NULL;
+	struct inode *inode;
 	char *p = NULL;
 
 	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
@@ -450,22 +451,25 @@ int lookup_resource(WIMStruct *w, const char *path,
 	if (!dentry)
 		return -ENOENT;
 
-	wimlib_assert(dentry->resolved);
+	inode = dentry->inode;
 
-	lte = dentry->lte;
+	wimlib_assert(inode->resolved);
+
 	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
-	      && dentry_is_directory(dentry))
+	      && inode_is_directory(inode))
 		return -EISDIR;
+
+	lte = inode->lte;
 	stream_idx = 0;
 	if (stream_name) {
 		size_t stream_name_len = strlen(stream_name);
-		for (u16 i = 0; i < dentry->num_ads; i++) {
-			if (ads_entry_has_name(&dentry->ads_entries[i],
+		for (u16 i = 0; i < inode->num_ads; i++) {
+			if (ads_entry_has_name(inode->ads_entries[i],
 					       stream_name,
 					       stream_name_len))
 			{
 				stream_idx = i + 1;
-				lte = dentry->ads_entries[i].lte;
+				lte = inode->ads_entries[i]->lte;
 				goto out;
 			}
 		}
@@ -481,6 +485,36 @@ out:
 	return 0;
 }
 
+static int inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
+{
+	struct lookup_table_entry *lte;
+
+	/* Resolve the default file stream */
+	lte = __lookup_resource(table, inode->hash);
+	if (lte)
+		list_add(&inode->lte_group_list.list, &lte->lte_group_list);
+	else
+		INIT_LIST_HEAD(&inode->lte_group_list.list);
+	inode->lte = lte;
+	inode->lte_group_list.type = STREAM_TYPE_NORMAL;
+	inode->resolved = true;
+
+	/* Resolve the alternate data streams */
+	for (u16 i = 0; i < inode->num_ads; i++) {
+		struct ads_entry *cur_entry = inode->ads_entries[i];
+
+		lte = __lookup_resource(table, cur_entry->hash);
+		if (lte)
+			list_add(&cur_entry->lte_group_list.list,
+				 &lte->lte_group_list);
+		else
+			INIT_LIST_HEAD(&cur_entry->lte_group_list.list);
+		cur_entry->lte = lte;
+		cur_entry->lte_group_list.type = STREAM_TYPE_ADS;
+	}
+	return 0;
+}
+
 /* Resolve a dentry's lookup table entries 
  *
  * This replaces the SHA1 hash fields (which are used to lookup an entry in the
@@ -490,65 +524,40 @@ out:
  * This function always succeeds; unresolved lookup table entries are given a
  * NULL pointer.
  */
-int dentry_resolve_ltes(struct dentry *dentry, void *__table)
+int dentry_resolve_ltes(struct dentry *dentry, void *table)
 {
-	struct lookup_table *table = __table;
-	struct lookup_table_entry *lte;
-
-	if (dentry->resolved)
+	if (dentry->inode->resolved)
 		return 0;
-
-	/* Resolve the default file stream */
-	lte = __lookup_resource(table, dentry->hash);
-	if (lte)
-		list_add(&dentry->lte_group_list.list, &lte->lte_group_list);
 	else
-		INIT_LIST_HEAD(&dentry->lte_group_list.list);
-	dentry->lte = lte;
-	dentry->lte_group_list.type = STREAM_TYPE_NORMAL;
-	dentry->resolved = true;
-
-	/* Resolve the alternate data streams */
-	if (dentry->ads_entries_status != ADS_ENTRIES_USER) {
-		for (u16 i = 0; i < dentry->num_ads; i++) {
-			struct ads_entry *cur_entry = &dentry->ads_entries[i];
-
-			lte = __lookup_resource(table, cur_entry->hash);
-			if (lte)
-				list_add(&cur_entry->lte_group_list.list,
-					 &lte->lte_group_list);
-			else
-				INIT_LIST_HEAD(&cur_entry->lte_group_list.list);
-			cur_entry->lte = lte;
-			cur_entry->lte_group_list.type = STREAM_TYPE_ADS;
-		}
-	}
-	return 0;
+		return inode_resolve_ltes(dentry->inode, table);
 }
 
-/* Return the lookup table entry for the unnamed data stream of a dentry, or
+
+
+
+/* Return the lookup table entry for the unnamed data stream of a inode, or
  * NULL if there is none.
  *
  * You'd think this would be easier than it actually is, since the unnamed data
- * stream should be the one referenced from the dentry itself.  Alas, if there
+ * stream should be the one referenced from the inode itself.  Alas, if there
  * are named data streams, Microsoft's "imagex.exe" program will put the unnamed
  * data stream in one of the alternate data streams instead of inside the
- * dentry.  So we need to check the alternate data streams too.
+ * inode.  So we need to check the alternate data streams too.
  *
- * Also, note that a dentry may appear to have than one unnamed stream, but if
+ * Also, note that a inode may appear to have than one unnamed stream, but if
  * the SHA1 message digest is all 0's then the corresponding stream does not
- * really "count" (this is the case for the dentry's own file stream when the
+ * really "count" (this is the case for the inode's own file stream when the
  * file stream that should be there is actually in one of the alternate stream
  * entries.).  This is despite the fact that we may need to extract such a
  * missing entry as an empty file or empty named data stream.
  */
 struct lookup_table_entry *
-dentry_unnamed_lte(const struct dentry *dentry,
+inode_unnamed_lte(const struct inode *inode,
 		   const struct lookup_table *table)
 {
-	if (dentry->resolved)
-		return dentry_unnamed_lte_resolved(dentry);
+	if (inode->resolved)
+		return inode_unnamed_lte_resolved(inode);
 	else
-		return dentry_unnamed_lte_unresolved(dentry, table);
+		return inode_unnamed_lte_unresolved(inode, table);
 }
 

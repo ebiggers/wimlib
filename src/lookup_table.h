@@ -300,75 +300,66 @@ static inline struct resource_entry* wim_metadata_resource_entry(WIMStruct *w)
 }
 
 static inline struct lookup_table_entry *
-dentry_stream_lte_resolved(const struct dentry *dentry, unsigned stream_idx)
+inode_stream_lte_resolved(const struct inode *inode, unsigned stream_idx)
 {
-	wimlib_assert(dentry->resolved);
-	wimlib_assert(stream_idx <= dentry->num_ads);
+	wimlib_assert(inode->resolved);
+	wimlib_assert(stream_idx <= inode->num_ads);
 	if (stream_idx == 0)
-		return dentry->lte;
+		return inode->lte;
 	else
-		return dentry->ads_entries[stream_idx - 1].lte;
+		return inode->ads_entries[stream_idx - 1]->lte;
 }
 
 static inline struct lookup_table_entry *
-dentry_stream_lte_unresolved(const struct dentry *dentry, unsigned stream_idx,
+inode_stream_lte_unresolved(const struct inode *inode, unsigned stream_idx,
 			     const struct lookup_table *table)
 {
-	wimlib_assert(!dentry->resolved);
-	wimlib_assert(stream_idx <= dentry->num_ads);
+	wimlib_assert(!inode->resolved);
+	wimlib_assert(stream_idx <= inode->num_ads);
 	if (!table)
 		return NULL;
 	if (stream_idx == 0)
-		return __lookup_resource(table, dentry->hash);
+		return __lookup_resource(table, inode->hash);
 	else
 		return __lookup_resource(table,
-					 dentry->ads_entries[
-						stream_idx - 1].hash);
+					 inode->ads_entries[
+						stream_idx - 1]->hash);
 }
 /* 
- * Returns the lookup table entry for stream @stream_idx of the dentry, where
+ * Returns the lookup table entry for stream @stream_idx of the inode, where
  * stream_idx = 0 means the default un-named file stream, and stream_idx >= 1
  * corresponds to an alternate data stream.
  *
  * This works for both resolved and un-resolved dentries.
  */
 static inline struct lookup_table_entry *
-dentry_stream_lte(const struct dentry *dentry, unsigned stream_idx,
-		  const struct lookup_table *table)
+inode_stream_lte(const struct inode *inode, unsigned stream_idx,
+		 const struct lookup_table *table)
 {
-	if (dentry->resolved)
-		return dentry_stream_lte_resolved(dentry, stream_idx);
+	if (inode->resolved)
+		return inode_stream_lte_resolved(inode, stream_idx);
 	else
-		return dentry_stream_lte_unresolved(dentry, stream_idx, table);
+		return inode_stream_lte_unresolved(inode, stream_idx, table);
 }
 
 
-static inline const u8 *dentry_stream_hash_unresolved(const struct dentry *dentry,
-						      unsigned stream_idx)
+static inline const u8 *inode_stream_hash_unresolved(const struct inode *inode,
+						     unsigned stream_idx)
 {
-	wimlib_assert(!dentry->resolved);
-	wimlib_assert(stream_idx <= dentry->num_ads);
+	wimlib_assert(!inode->resolved);
+	wimlib_assert(stream_idx <= inode->num_ads);
 	if (stream_idx == 0)
-		return dentry->hash;
+		return inode->hash;
 	else
-		return dentry->ads_entries[stream_idx - 1].hash;
+		return inode->ads_entries[stream_idx - 1]->hash;
 }
 
-static inline u16 dentry_stream_name_len(const struct dentry *dentry,
-					 unsigned stream_idx)
-{
-	wimlib_assert(stream_idx <= dentry->num_ads);
-	if (stream_idx == 0)
-		return 0;
-	else
-		return dentry->ads_entries[stream_idx - 1].stream_name_len;
-}
 
-static inline const u8 *dentry_stream_hash_resolved(const struct dentry *dentry,
-						    unsigned stream_idx)
+static inline const u8 *inode_stream_hash_resolved(const struct inode *inode,
+						   unsigned stream_idx)
 {
 	struct lookup_table_entry *lte;
-	lte = dentry_stream_lte_resolved(dentry, stream_idx);
+	lte = inode_stream_lte_resolved(inode, stream_idx);
 	if (lte)
 		return lte->hash;
 	else
@@ -376,46 +367,57 @@ static inline const u8 *dentry_stream_hash_resolved(const struct dentry *dentry,
 }
 
 /* 
- * Returns the hash for stream @stream_idx of the dentry, where stream_idx = 0
+ * Returns the hash for stream @stream_idx of the inode, where stream_idx = 0
  * means the default un-named file stream, and stream_idx >= 1 corresponds to an
  * alternate data stream.
  *
  * This works for both resolved and un-resolved dentries.
  */
-static inline const u8 *dentry_stream_hash(const struct dentry *dentry,
-					   unsigned stream_idx)
+static inline const u8 *inode_stream_hash(const struct inode *inode,
+					  unsigned stream_idx)
 {
-	if (dentry->resolved)
-		return dentry_stream_hash_resolved(dentry, stream_idx);
+	if (inode->resolved)
+		return inode_stream_hash_resolved(inode, stream_idx);
 	else
-		return dentry_stream_hash_unresolved(dentry, stream_idx);
+		return inode_stream_hash_unresolved(inode, stream_idx);
+}
+
+static inline u16 inode_stream_name_len(const struct inode *inode,
+					unsigned stream_idx)
+{
+	wimlib_assert(stream_idx <= inode->num_ads);
+	if (stream_idx == 0)
+		return 0;
+	else
+		return inode->ads_entries[stream_idx - 1]->stream_name_len;
 }
 
 static inline struct lookup_table_entry *
-dentry_unnamed_lte_resolved(const struct dentry *dentry)
+inode_unnamed_lte_resolved(const struct inode *inode)
 {
-	wimlib_assert(dentry->resolved);
-	for (unsigned i = 0; i <= dentry->num_ads; i++)
-		if (dentry_stream_name_len(dentry, i) == 0 &&
-		     !is_zero_hash(dentry_stream_hash_resolved(dentry, i)))
-			return dentry_stream_lte_resolved(dentry, i);
+	wimlib_assert(inode->resolved);
+	for (unsigned i = 0; i <= inode->num_ads; i++)
+		if (inode_stream_name_len(inode, i) == 0 &&
+		     !is_zero_hash(inode_stream_hash_resolved(inode, i)))
+			return inode_stream_lte_resolved(inode, i);
 	return NULL;
 }
 
 static inline struct lookup_table_entry *
-dentry_unnamed_lte_unresolved(const struct dentry *dentry,
-			      const struct lookup_table *table)
+inode_unnamed_lte_unresolved(const struct inode *inode,
+			     const struct lookup_table *table)
 {
-	wimlib_assert(!dentry->resolved);
-	for (unsigned i = 0; i <= dentry->num_ads; i++)
-		if (dentry_stream_name_len(dentry, i) == 0 &&
-		     !is_zero_hash(dentry_stream_hash_unresolved(dentry, i)))
-			return dentry_stream_lte_unresolved(dentry, i, table);
+	wimlib_assert(!inode->resolved);
+	for (unsigned i = 0; i <= inode->num_ads; i++)
+		if (inode_stream_name_len(inode, i) == 0 &&
+		     !is_zero_hash(inode_stream_hash_unresolved(inode, i)))
+			return inode_stream_lte_unresolved(inode, i, table);
 	return NULL;
 }
 
 extern struct lookup_table_entry *
-dentry_unnamed_lte(const struct dentry *dentry,
-		   const struct lookup_table *table);
+inode_unnamed_lte(const struct inode *inode,
+		  const struct lookup_table *table);
+
 
 #endif

@@ -77,8 +77,9 @@ static u64 dentry_correct_length(const struct dentry *dentry)
 
 static u64 __dentry_total_length(const struct dentry *dentry, u64 length)
 {
-	for (u16 i = 0; i < dentry->num_ads; i++)
-		length += ads_entry_total_length(&dentry->ads_entries[i]);
+	const struct inode *inode = dentry->inode;
+	for (u16 i = 0; i < inode->num_ads; i++)
+		length += ads_entry_total_length(inode->ads_entries[i]);
 	return (length + 7) & ~7;
 }
 
@@ -98,13 +99,14 @@ u64 dentry_total_length(const struct dentry *dentry)
 /* Transfers file attributes from a `stat' buffer to a struct dentry. */
 void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 {
+	struct inode *inode = dentry->inode;
 	if (S_ISLNK(stbuf->st_mode)) {
-		dentry->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
-		dentry->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+		inode->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
+		inode->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
 	} else if (S_ISDIR(stbuf->st_mode)) {
-		dentry->attributes = FILE_ATTRIBUTE_DIRECTORY;
+		inode->attributes = FILE_ATTRIBUTE_DIRECTORY;
 	} else {
-		dentry->attributes = FILE_ATTRIBUTE_NORMAL;
+		inode->attributes = FILE_ATTRIBUTE_NORMAL;
 	}
 	if (sizeof(ino_t) >= 8)
 		dentry->link_group_id = (u64)stbuf->st_ino;
@@ -112,161 +114,89 @@ void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 		dentry->link_group_id = (u64)stbuf->st_ino |
 				   ((u64)stbuf->st_dev << (sizeof(ino_t) * 8));
 	/* Set timestamps */
-	dentry->creation_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
-	dentry->last_write_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
-	dentry->last_access_time = timespec_to_wim_timestamp(&stbuf->st_atim);
+	inode->creation_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
+	inode->last_write_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
+	inode->last_access_time = timespec_to_wim_timestamp(&stbuf->st_atim);
 }
 
 
 /* Sets all the timestamp fields of the dentry to the current time. */
-void dentry_update_all_timestamps(struct dentry *dentry)
+void inode_update_all_timestamps(struct inode *inode)
 {
 	u64 now = get_wim_timestamp();
-	dentry->creation_time    = now;
-	dentry->last_access_time = now;
-	dentry->last_write_time  = now;
+	inode->creation_time    = now;
+	inode->last_access_time = now;
+	inode->last_write_time  = now;
 }
 
-/* Returns the alternate data stream entry belonging to @dentry that has the
+/* Returns the alternate data stream entry belonging to @inode that has the
  * stream name @stream_name. */
-struct ads_entry *dentry_get_ads_entry(struct dentry *dentry,
-				       const char *stream_name)
+struct ads_entry *inode_get_ads_entry(struct inode *inode,
+				      const char *stream_name)
 {
 	size_t stream_name_len;
 	if (!stream_name)
 		return NULL;
-	if (dentry->num_ads) {
+	if (inode->num_ads) {
 		u16 i = 0;
 		stream_name_len = strlen(stream_name);
 		do {
-			if (ads_entry_has_name(&dentry->ads_entries[i],
+			if (ads_entry_has_name(inode->ads_entries[i],
 					       stream_name, stream_name_len))
-				return &dentry->ads_entries[i];
-		} while (++i != dentry->num_ads);
+				return inode->ads_entries[i];
+		} while (++i != inode->num_ads);
 	}
 	return NULL;
 }
 
-static void ads_entry_init(struct ads_entry *ads_entry)
+
+static struct ads_entry *new_ads_entry(const char *name)
 {
-	memset(ads_entry, 0, sizeof(struct ads_entry));
+	struct ads_entry *ads_entry = CALLOC(1, sizeof(struct ads_entry));
+	if (!ads_entry)
+		return NULL;
 	INIT_LIST_HEAD(&ads_entry->lte_group_list.list);
 	ads_entry->lte_group_list.type = STREAM_TYPE_ADS;
+	if (name && *name) {
+		if (change_ads_name(ads_entry, name)) {
+			FREE(ads_entry);
+			return NULL;
+		}
+	}
+	return ads_entry;
 }
 
 /* 
- * Add an alternate stream entry to a dentry and return a pointer to it, or NULL
+ * Add an alternate stream entry to an inode and return a pointer to it, or NULL
  * if memory could not be allocated.
  */
-struct ads_entry *dentry_add_ads(struct dentry *dentry, const char *stream_name)
+struct ads_entry *inode_add_ads(struct inode *inode, const char *stream_name)
 {
 	u16 num_ads;
-	struct ads_entry *ads_entries;
+	struct ads_entry **ads_entries;
 	struct ads_entry *new_entry;
 
-	DEBUG("Add alternate data stream %s:%s",
-	       dentry->file_name_utf8, stream_name);
-
-	if (dentry->num_ads == 0xffff) {
-		ERROR("Too many alternate data streams in one dentry!");
+	if (inode->num_ads == 0xffff) {
+		ERROR("Too many alternate data streams in one inode!");
 		return NULL;
 	}
- 	num_ads = dentry->num_ads + 1;
-	ads_entries = REALLOC(dentry->ads_entries,
-			      num_ads * sizeof(dentry->ads_entries[0]));
+ 	num_ads = inode->num_ads + 1;
+	ads_entries = REALLOC(inode->ads_entries,
+			      num_ads * sizeof(inode->ads_entries[0]));
 	if (!ads_entries) {
 		ERROR("Failed to allocate memory for new alternate data stream");
 		return NULL;
 	}
-	wimlib_assert(ads_entries == dentry->ads_entries ||
-			ads_entries < dentry->ads_entries ||
-			ads_entries > dentry->ads_entries + dentry->num_ads);
-	if (ads_entries != dentry->ads_entries) {
-		/* We moved the ADS entries.  Adjust the stream lists. */
-		for (u16 i = 0; i < dentry->num_ads; i++) {
-			struct list_head *cur = &ads_entries[i].lte_group_list.list;
-			struct list_head *prev = cur->prev;
-			struct list_head *next;
-			if ((u8*)prev >= (u8*)dentry->ads_entries
-			    && (u8*)prev < (u8*)(dentry->ads_entries + dentry->num_ads)) {
-				/* Previous entry was located in the same ads_entries
-				 * array!  Adjust our own prev pointer. */
-				u16 idx = (struct ads_entry*)prev -
-					    (struct ads_entry*)&dentry->ads_entries[0].lte_group_list.list;
-				cur->prev = &ads_entries[idx].lte_group_list.list;
-			} else {
-				/* Previous entry is located in a different ads_entries
-				 * array.  Adjust its next pointer. */
-				prev->next = cur;
-			}
-			next = cur->next;
-			if ((u8*)next >= (u8*)dentry->ads_entries
-			    && (u8*)next < (u8*)(dentry->ads_entries + dentry->num_ads)) {
-				/* Next entry was located in the same ads_entries array!
-				 * Adjust our own next pointer. */
-				u16 idx = (struct ads_entry*)next -
-					    (struct ads_entry*)&dentry->ads_entries[0].lte_group_list.list;
-				cur->next = &ads_entries[idx].lte_group_list.list;
-			} else {
-				/* Next entry is located in a different ads_entries
-				 * array.  Adjust its prev pointer. */
-				next->prev = cur;
-			}
-		}
-	}
+	inode->ads_entries = ads_entries;
 
-	new_entry = &ads_entries[num_ads - 1];
-	ads_entry_init(new_entry);
-	if (change_ads_name(new_entry, stream_name) != 0)
+	new_entry = new_ads_entry(stream_name);
+	if (new_entry)
 		return NULL;
-	dentry->ads_entries = ads_entries;
-	dentry->num_ads = num_ads;
+	inode->num_ads = num_ads;
+	ads_entries[num_ads - 1] = new_entry;
 	return new_entry;
 }
 
-/* Remove an alternate data stream from a dentry.
- *
- * The corresponding lookup table entry for the stream is NOT changed.
- *
- * @dentry:	The dentry
- * @ads_entry:	The alternate data stream entry (it MUST be one of the
- * 		   ads_entry's in the array dentry->ads_entries).
- */
-void dentry_remove_ads(struct dentry *dentry, struct ads_entry *ads_entry)
-{
-	u16 idx;
-	u16 following;
-
-	wimlib_assert(dentry->num_ads);
-	idx = ads_entry - dentry->ads_entries;
-	wimlib_assert(idx < dentry->num_ads);
- 	following = dentry->num_ads - idx - 1;
-
-	destroy_ads_entry(ads_entry);
-	memcpy(ads_entry, ads_entry + 1, following * sizeof(struct ads_entry));
-
-	/* We moved the ADS entries.  Adjust the stream lists. */
-	for (u16 i = 0; i < following; i++) {
-		struct list_head *cur = &ads_entry[i].lte_group_list.list;
-		struct list_head *prev = cur->prev;
-		struct list_head *next;
-		if ((u8*)prev >= (u8*)(ads_entry + 1)
-		    && (u8*)prev < (u8*)(ads_entry + following + 1)) {
-			cur->prev = (struct list_head*)((u8*)prev - sizeof(struct ads_entry));
-		} else {
-			prev->next = cur;
-		}
-		next = cur->next;
-		if ((u8*)next >= (u8*)(ads_entry + 1)
-		    && (u8*)next < (u8*)(ads_entry + following + 1)) {
-			cur->next = (struct list_head*)((u8*)next - sizeof(struct ads_entry));
-		} else {
-			next->prev = cur;
-		}
-	}
-
-	dentry->num_ads--;
-}
 
 /* 
  * Calls a function on all directory entries in a directory tree.  It is called
@@ -521,17 +451,18 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 {
 	const u8 *hash;
 	struct lookup_table_entry *lte;
+	const struct inode *inode = dentry->inode;
 	time_t time;
 	char *p;
 
 	printf("[DENTRY]\n");
 	printf("Length            = %"PRIu64"\n", dentry->length);
-	printf("Attributes        = 0x%x\n", dentry->attributes);
+	printf("Attributes        = 0x%x\n", inode->attributes);
 	for (unsigned i = 0; i < ARRAY_LEN(file_attr_flags); i++)
-		if (file_attr_flags[i].flag & dentry->attributes)
+		if (file_attr_flags[i].flag & inode->attributes)
 			printf("    FILE_ATTRIBUTE_%s is set\n",
 				file_attr_flags[i].name);
-	printf("Security ID       = %d\n", dentry->security_id);
+	printf("Security ID       = %d\n", inode->security_id);
 	printf("Subdir offset     = %"PRIu64"\n", dentry->subdir_offset);
 #if 0
 	printf("Unused1           = 0x%"PRIu64"\n", dentry->unused1);
@@ -544,24 +475,24 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 #endif
 
 	/* Translate the timestamps into something readable */
-	time = wim_timestamp_to_unix(dentry->creation_time);
+	time = wim_timestamp_to_unix(inode->creation_time);
 	p = asctime(gmtime(&time));
 	*(strrchr(p, '\n')) = '\0';
 	printf("Creation Time     = %s UTC\n", p);
 
-	time = wim_timestamp_to_unix(dentry->last_access_time);
+	time = wim_timestamp_to_unix(inode->last_access_time);
 	p = asctime(gmtime(&time));
 	*(strrchr(p, '\n')) = '\0';
 	printf("Last Access Time  = %s UTC\n", p);
 
-	time = wim_timestamp_to_unix(dentry->last_write_time);
+	time = wim_timestamp_to_unix(inode->last_write_time);
 	p = asctime(gmtime(&time));
 	*(strrchr(p, '\n')) = '\0';
 	printf("Last Write Time   = %s UTC\n", p);
 
-	printf("Reparse Tag       = 0x%"PRIx32"\n", dentry->reparse_tag);
+	printf("Reparse Tag       = 0x%"PRIx32"\n", inode->reparse_tag);
 	printf("Hard Link Group   = 0x%"PRIx64"\n", dentry->link_group_id);
-	printf("Number of Alternate Data Streams = %hu\n", dentry->num_ads);
+	printf("Number of Alternate Data Streams = %hu\n", inode->num_ads);
 	printf("Filename          = \"");
 	print_string(dentry->file_name, dentry->file_name_len);
 	puts("\"");
@@ -573,11 +504,11 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	puts("\"");
 	printf("Short Name Length = %hu\n", dentry->short_name_len);
 	printf("Full Path (UTF-8) = \"%s\"\n", dentry->full_path_utf8);
-	lte = dentry_stream_lte(dentry, 0, lookup_table);
+	lte = inode_stream_lte(dentry->inode, 0, lookup_table);
 	if (lte) {
 		print_lookup_table_entry(lte);
 	} else {
-		hash = dentry_stream_hash(dentry, 0);
+		hash = inode_stream_hash(inode, 0);
 		if (hash) {
 			printf("Hash              = 0x"); 
 			print_hash(hash);
@@ -585,19 +516,19 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 			putchar('\n');
 		}
 	}
-	for (u16 i = 0; i < dentry->num_ads; i++) {
+	for (u16 i = 0; i < inode->num_ads; i++) {
 		printf("[Alternate Stream Entry %u]\n", i);
-		printf("Name = \"%s\"\n", dentry->ads_entries[i].stream_name_utf8);
+		printf("Name = \"%s\"\n", inode->ads_entries[i]->stream_name_utf8);
 		printf("Name Length (UTF-16) = %u\n",
-				dentry->ads_entries[i].stream_name_len);
-		hash = dentry_stream_hash(dentry, i + 1);
+			inode->ads_entries[i]->stream_name_len);
+		hash = inode_stream_hash(inode, i + 1);
 		if (hash) {
 			printf("Hash              = 0x"); 
 			print_hash(hash);
 			putchar('\n');
 		}
-		print_lookup_table_entry(dentry_stream_lte(dentry, i + 1,
-							   lookup_table));
+		print_lookup_table_entry(inode_stream_lte(inode, i + 1,
+							  lookup_table));
 	}
 	return 0;
 }
@@ -607,9 +538,21 @@ static void dentry_common_init(struct dentry *dentry)
 {
 	memset(dentry, 0, sizeof(struct dentry));
 	dentry->refcnt = 1;
-	dentry->security_id = -1;
-	dentry->ads_entries_status = ADS_ENTRIES_DEFAULT;
-	dentry->lte_group_list.type = STREAM_TYPE_NORMAL;
+}
+
+struct inode *new_inode()
+{
+	struct inode *inode = CALLOC(1, sizeof(struct inode));
+	u64 now = get_wim_timestamp();
+	if (!inode)
+		return NULL;
+	inode->security_id = -1;
+	inode->link_count = 1;
+	inode->creation_time = now;
+	inode->last_access_time = now;
+	inode->last_write_time = now;
+	INIT_LIST_HEAD(&inode->dentry_list);
+	return inode;
 }
 
 /* 
@@ -631,12 +574,10 @@ struct dentry *new_dentry(const char *name)
 	if (change_dentry_name(dentry, name) != 0)
 		goto err;
 
-	dentry_update_all_timestamps(dentry);
 	dentry->next   = dentry;
 	dentry->prev   = dentry;
 	dentry->parent = dentry;
-	INIT_LIST_HEAD(&dentry->link_group_list);
-	INIT_LIST_HEAD(&dentry->lte_group_list.list);
+
 	return dentry;
 err:
 	FREE(dentry);
@@ -644,57 +585,114 @@ err:
 	return NULL;
 }
 
-void dentry_free_ads_entries(struct dentry *dentry)
+struct dentry *new_dentry_with_inode(const char *name)
 {
-	for (u16 i = 0; i < dentry->num_ads; i++)
-		destroy_ads_entry(&dentry->ads_entries[i]);
-	FREE(dentry->ads_entries);
-	dentry->ads_entries = NULL;
-	dentry->num_ads = 0;
+	struct dentry *dentry;
+	dentry = new_dentry(name);
+	if (dentry) {
+		dentry->inode = new_inode();
+		if (dentry->inode) {
+			list_add(&dentry->inode_dentry_list,
+				 &dentry->inode->dentry_list);
+		} else {
+			free_dentry(dentry);
+			dentry = NULL;
+		}
+	}
+	return dentry;
 }
 
-static void __destroy_dentry(struct dentry *dentry)
+static void free_ads_entry(struct ads_entry *entry)
 {
-	FREE(dentry->file_name);
-	FREE(dentry->file_name_utf8);
-	FREE(dentry->short_name);
-	FREE(dentry->full_path_utf8);
-	if (dentry->extracted_file != dentry->full_path_utf8)
-		FREE(dentry->extracted_file);
+	if (entry) {
+		FREE(entry->stream_name);
+		FREE(entry->stream_name_utf8);
+		FREE(entry);
+	}
+}
+
+
+#ifdef WITH_FUSE
+/* Remove an alternate data stream from a dentry.
+ *
+ * The corresponding lookup table entry for the stream is NOT changed.
+ *
+ * @dentry:	The dentry
+ * @ads_entry:	The alternate data stream entry (it MUST be one of the
+ * 		   ads_entry's in the array dentry->ads_entries).
+ */
+void dentry_remove_ads(struct dentry *dentry, struct ads_entry *ads_entry)
+{
+	u16 idx;
+	u16 following;
+
+	wimlib_assert(dentry->num_ads);
+	idx = ads_entry - dentry->ads_entries;
+	wimlib_assert(idx < dentry->num_ads);
+ 	following = dentry->num_ads - idx - 1;
+
+	destroy_ads_entry(ads_entry);
+	memcpy(ads_entry, ads_entry + 1, following * sizeof(struct ads_entry));
+
+	/* We moved the ADS entries.  Adjust the stream lists. */
+	for (u16 i = 0; i < following; i++) {
+		struct list_head *cur = &ads_entry[i].lte_group_list.list;
+		struct list_head *prev = cur->prev;
+		struct list_head *next;
+		if ((u8*)prev >= (u8*)(ads_entry + 1)
+		    && (u8*)prev < (u8*)(ads_entry + following + 1)) {
+			cur->prev = (struct list_head*)((u8*)prev - sizeof(struct ads_entry));
+		} else {
+			prev->next = cur;
+		}
+		next = cur->next;
+		if ((u8*)next >= (u8*)(ads_entry + 1)
+		    && (u8*)next < (u8*)(ads_entry + following + 1)) {
+			cur->next = (struct list_head*)((u8*)next - sizeof(struct ads_entry));
+		} else {
+			next->prev = cur;
+		}
+	}
+	dentry->num_ads--;
+}
+#endif
+
+static void inode_free_ads_entries(struct inode *inode)
+{
+	if (inode->ads_entries) {
+		for (u16 i = 0; i < inode->num_ads; i++)
+			free_ads_entry(inode->ads_entries[i]);
+		FREE(inode->ads_entries);
+	}
+}
+
+void free_inode(struct inode *inode)
+{
+	wimlib_assert(inode);
+	inode_free_ads_entries(inode);
+	FREE(inode);
+}
+
+void put_inode(struct inode *inode)
+{
+	if (inode) {
+		wimlib_assert(inode->link_count);
+		if (--inode->link_count)
+			free_inode(inode);
+	}
 }
 
 /* Frees a WIM dentry. */
 void free_dentry(struct dentry *dentry)
 {
 	wimlib_assert(dentry);
-	__destroy_dentry(dentry);
-	/* Don't destroy the ADS entries if they "belong" to a different dentry
-	 * */
-	if (dentry->ads_entries_status != ADS_ENTRIES_USER)
-		dentry_free_ads_entries(dentry);
+	FREE(dentry->file_name);
+	FREE(dentry->file_name_utf8);
+	FREE(dentry->short_name);
+	FREE(dentry->full_path_utf8);
+	put_inode(dentry->inode);
 	FREE(dentry);
 }
-
-/* Like free_dentry(), but assigns a new ADS entries owner if this dentry was
- * the previous owner, and also deletes the dentry from its link_group_list */
-void put_dentry(struct dentry *dentry)
-{
-	if (dentry->ads_entries_status == ADS_ENTRIES_OWNER) {
-		struct dentry *new_owner;
-		list_for_each_entry(new_owner, &dentry->link_group_list,
-				    link_group_list)
-		{
-			if (new_owner->ads_entries_status == ADS_ENTRIES_USER) {
-				new_owner->ads_entries_status = ADS_ENTRIES_OWNER;
-				break;
-			}
-		}
-		dentry->ads_entries_status = ADS_ENTRIES_USER;
-	}
-	list_del(&dentry->link_group_list);
-	free_dentry(dentry);
-}
-
 
 /* Partically clones a dentry.
  *
@@ -702,7 +700,6 @@ void put_dentry(struct dentry *dentry)
  * 	- memory for file names is not cloned (the pointers are all set to NULL
  * 	  and the lengths are set to zero)
  * 	- next, prev, and children pointers and not touched
- * 	- stream entries are not cloned (pointer left untouched).
  */
 struct dentry *clone_dentry(struct dentry *old)
 {
@@ -727,11 +724,12 @@ static int do_free_dentry(struct dentry *dentry, void *__lookup_table)
 {
 	struct lookup_table *lookup_table = __lookup_table;
 	struct lookup_table_entry *lte;
+	struct inode *inode = dentry->inode;
 	unsigned i;
 
 	if (lookup_table) {
-		for (i = 0; i <= dentry->num_ads; i++) {
-			lte = dentry_stream_lte(dentry, i, lookup_table);
+		for (i = 0; i <= inode->num_ads; i++) {
+			lte = inode_stream_lte(inode, i, lookup_table);
 			lte_decrement_refcnt(lte, lookup_table);
 		}
 	}
@@ -889,8 +887,8 @@ static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
 	else
 		++*stats->file_count;
 
-	for (unsigned i = 0; i <= dentry->num_ads; i++) {
-		lte = dentry_stream_lte(dentry, i, stats->lookup_table);
+	for (unsigned i = 0; i <= dentry->inode->num_ads; i++) {
+		lte = inode_stream_lte(dentry->inode, i, stats->lookup_table);
 		if (lte) {
 			*stats->total_bytes += wim_resource_size(lte);
 			if (++lte->out_refcnt == 1)
@@ -926,8 +924,8 @@ void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *tab
  *
  * @p:	Pointer to buffer that starts with the first alternate stream entry.
  *
- * @dentry:	Dentry to load the alternate data streams into.
- * 			@dentry->num_ads must have been set to the number of
+ * @inode:	Inode to load the alternate data streams into.
+ * 			@inode->num_ads must have been set to the number of
  * 			alternate data streams that are expected.
  *
  * @remaining_size:	Number of bytes of data remaining in the buffer pointed
@@ -957,19 +955,19 @@ void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *tab
  *
  * In addition, the entries are 8-byte aligned.
  *
- * Return 0 on success or nonzero on failure.  On success, dentry->ads_entries
- * is set to an array of `struct ads_entry's of length dentry->num_ads.  On
- * failure, @dentry is not modified.
+ * Return 0 on success or nonzero on failure.  On success, inode->ads_entries
+ * is set to an array of `struct ads_entry's of length inode->num_ads.  On
+ * failure, @inode is not modified.
  */
-static int read_ads_entries(const u8 *p, struct dentry *dentry,
+static int read_ads_entries(const u8 *p, struct inode *inode,
 			    u64 remaining_size)
 {
 	u16 num_ads;
-	struct ads_entry *ads_entries;
+	struct ads_entry **ads_entries;
 	int ret;
 
- 	num_ads = dentry->num_ads;
- 	ads_entries = CALLOC(num_ads, sizeof(struct ads_entry));
+ 	num_ads = inode->num_ads;
+ 	ads_entries = CALLOC(num_ads, sizeof(inode->ads_entries[0]));
 	if (!ads_entries) {
 		ERROR("Could not allocate memory for %"PRIu16" "
 		      "alternate data stream entries", num_ads);
@@ -977,12 +975,20 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 	}
 
 	for (u16 i = 0; i < num_ads; i++) {
-		struct ads_entry *cur_entry = &ads_entries[i];
+		struct ads_entry *cur_entry;
 		u64 length;
 		u64 length_no_padding;
 		u64 total_length;
 		size_t utf8_len;
 		const u8 *p_save = p;
+
+		cur_entry = new_ads_entry(NULL);
+		if (!cur_entry) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_ads_entries;
+		}
+
+		ads_entries[i] = cur_entry;
 
 		/* Read the base stream entry, excluding the stream name. */
 		if (remaining_size < WIM_ADS_ENTRY_DISK_SIZE) {
@@ -1067,13 +1073,11 @@ static int read_ads_entries(const u8 *p, struct dentry *dentry,
 		else
 			remaining_size -= total_length;
 	}
-	dentry->ads_entries = ads_entries;
+	inode->ads_entries = ads_entries;
 	return 0;
 out_free_ads_entries:
-	for (u16 i = 0; i < num_ads; i++) {
-		FREE(ads_entries[i].stream_name);
-		FREE(ads_entries[i].stream_name_utf8);
-	}
+	for (u16 i = 0; i < num_ads; i++)
+		free_ads_entry(ads_entries[i]);
 	FREE(ads_entries);
 	return ret;
 }
@@ -1105,6 +1109,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	u16 file_name_len;
 	size_t file_name_utf8_len = 0;
 	int ret;
+	struct inode *inode = NULL;
 
 	dentry_common_init(dentry);
 
@@ -1149,8 +1154,12 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
-	p = get_u32(p, &dentry->attributes);
-	p = get_u32(p, (u32*)&dentry->security_id);
+	inode = new_inode();
+	if (!inode)
+		return WIMLIB_ERR_NOMEM;
+
+	p = get_u32(p, &inode->attributes);
+	p = get_u32(p, (u32*)&inode->security_id);
 	p = get_u64(p, &dentry->subdir_offset);
 
 	/* 2 unused fields */
@@ -1158,11 +1167,11 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	/*p = get_u64(p, &dentry->unused1);*/
 	/*p = get_u64(p, &dentry->unused2);*/
 
-	p = get_u64(p, &dentry->creation_time);
-	p = get_u64(p, &dentry->last_access_time);
-	p = get_u64(p, &dentry->last_write_time);
+	p = get_u64(p, &inode->creation_time);
+	p = get_u64(p, &inode->last_access_time);
+	p = get_u64(p, &inode->last_write_time);
 
-	p = get_bytes(p, SHA1_HASH_SIZE, dentry->hash);
+	p = get_bytes(p, SHA1_HASH_SIZE, inode->hash);
 	
 	/*
 	 * I don't know what's going on here.  It seems like M$ screwed up the
@@ -1170,20 +1179,20 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * document it.  The WIM_HDR_FLAG_RP_FIX flag in the WIM header might
 	 * have something to do with this, but it's not documented.
 	 */
-	if (dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+	if (inode->attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* ??? */
 		p += 4;
-		p = get_u32(p, &dentry->reparse_tag);
+		p = get_u32(p, &inode->reparse_tag);
 		p += 4;
 	} else {
-		p = get_u32(p, &dentry->reparse_tag);
+		p = get_u32(p, &inode->reparse_tag);
 		p = get_u64(p, &dentry->link_group_id);
 	}
 
 	/* By the way, the reparse_reserved field does not actually exist (at
 	 * least when the file is not a reparse point) */
 	
-	p = get_u16(p, &dentry->num_ads);
+	p = get_u16(p, &inode->num_ads);
 
 	p = get_u16(p, &short_name_len);
 	p = get_u16(p, &file_name_len);
@@ -1292,7 +1301,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * aligned boundary, and the alternate data stream entries are NOT
 	 * included in the dentry->length field for some reason.
 	 */
-	if (dentry->num_ads != 0) {
+	if (inode->num_ads != 0) {
 		if (calculated_size > metadata_resource_len - offset) {
 			ERROR("Not enough space in metadata resource for "
 			      "alternate stream entries");
@@ -1300,7 +1309,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 			goto out_free_short_name;
 		}
 		ret = read_ads_entries(&metadata_resource[offset + calculated_size],
-				       dentry,
+				       inode,
 				       metadata_resource_len - offset - calculated_size);
 		if (ret != 0)
 			goto out_free_short_name;
@@ -1321,6 +1330,8 @@ out_free_file_name_utf8:
 	FREE(file_name_utf8);
 out_free_file_name:
 	FREE(file_name);
+out_free_inode:
+	free_inode(inode);
 	return ret;
 }
 
@@ -1330,18 +1341,19 @@ int verify_dentry(struct dentry *dentry, void *wim)
 	const WIMStruct *w = wim;
 	const struct lookup_table *table = w->lookup_table;
 	const struct wim_security_data *sd = wim_const_security_data(w);
+	const struct inode *inode = dentry->inode;
 	int ret = WIMLIB_ERR_INVALID_DENTRY;
 
 	/* Check the security ID */
-	if (dentry->security_id < -1) {
+	if (inode->security_id < -1) {
 		ERROR("Dentry `%s' has an invalid security ID (%d)",
-			dentry->full_path_utf8, dentry->security_id);
+			dentry->full_path_utf8, inode->security_id);
 		goto out;
 	}
-	if (dentry->security_id >= sd->num_entries) {
+	if (inode->security_id >= sd->num_entries) {
 		ERROR("Dentry `%s' has an invalid security ID (%d) "
 		      "(there are only %u entries in the security table)",
-			dentry->full_path_utf8, dentry->security_id,
+			dentry->full_path_utf8, inode->security_id,
 			sd->num_entries);
 		goto out;
 	}
@@ -1350,10 +1362,10 @@ int verify_dentry(struct dentry *dentry, void *wim)
 	 * if the SHA1 message digest is all 0's, which indicates there is
 	 * intentionally no resource there.  */
 	if (w->hdr.total_parts == 1) {
-		for (unsigned i = 0; i <= dentry->num_ads; i++) {
+		for (unsigned i = 0; i <= inode->num_ads; i++) {
 			struct lookup_table_entry *lte;
 			const u8 *hash;
-			hash = dentry_stream_hash_unresolved(dentry, i);
+			hash = inode_stream_hash_unresolved(inode, i);
 			lte = __lookup_resource(table, hash);
 			if (!lte && !is_zero_hash(hash)) {
 				ERROR("Could not find lookup table entry for stream "
@@ -1365,10 +1377,10 @@ int verify_dentry(struct dentry *dentry, void *wim)
 
 	/* Make sure there is only one un-named stream. */
 	unsigned num_unnamed_streams = 0;
-	for (unsigned i = 0; i <= dentry->num_ads; i++) {
+	for (unsigned i = 0; i <= inode->num_ads; i++) {
 		const u8 *hash;
-		hash = dentry_stream_hash_unresolved(dentry, i);
-		if (!dentry_stream_name_len(dentry, i) && !is_zero_hash(hash))
+		hash = inode_stream_hash_unresolved(inode, i);
+		if (!inode_stream_name_len(inode, i) && !is_zero_hash(hash))
 			num_unnamed_streams++;
 	}
 	if (num_unnamed_streams > 1) {
@@ -1395,8 +1407,8 @@ int verify_dentry(struct dentry *dentry, void *wim)
 
 #if 0
 	/* Check timestamps */
-	if (dentry->last_access_time < dentry->creation_time ||
-	    dentry->last_write_time < dentry->creation_time) {
+	if (inode->last_access_time < inode->creation_time ||
+	    inode->last_write_time < inode->creation_time) {
 		WARNING("Dentry `%s' was created after it was last accessed or "
 		      "written to", dentry->full_path_utf8);
 	}
@@ -1419,6 +1431,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 {
 	u8 *orig_p = p;
 	const u8 *hash;
+	const struct inode *inode = dentry->inode;
 
 	/* We calculate the correct length of the dentry ourselves because the
 	 * dentry->length field may been set to an unexpected value from when we
@@ -1427,30 +1440,30 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	u64 length = dentry_correct_length(dentry);
 
 	p = put_u64(p, length);
-	p = put_u32(p, dentry->attributes);
-	p = put_u32(p, dentry->security_id);
+	p = put_u32(p, inode->attributes);
+	p = put_u32(p, inode->security_id);
 	p = put_u64(p, dentry->subdir_offset);
 	p = put_u64(p, 0); /* unused1 */
 	p = put_u64(p, 0); /* unused2 */
-	p = put_u64(p, dentry->creation_time);
-	p = put_u64(p, dentry->last_access_time);
-	p = put_u64(p, dentry->last_write_time);
-	hash = dentry_stream_hash(dentry, 0);
+	p = put_u64(p, inode->creation_time);
+	p = put_u64(p, inode->last_access_time);
+	p = put_u64(p, inode->last_write_time);
+	hash = inode_stream_hash(inode, 0);
 	p = put_bytes(p, SHA1_HASH_SIZE, hash);
-	if (dentry->attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+	if (inode->attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		p = put_zeroes(p, 4);
-		p = put_u32(p, dentry->reparse_tag);
+		p = put_u32(p, inode->reparse_tag);
 		p = put_zeroes(p, 4);
 	} else {
 		u64 link_group_id;
 		p = put_u32(p, 0);
-		if (dentry->link_group_list.next == &dentry->link_group_list)
+		if (dentry->inode->link_count == 1)
 			link_group_id = 0;
 		else
-			link_group_id = dentry->link_group_id;
+			link_group_id = dentry->inode->ino;
 		p = put_u64(p, link_group_id);
 	}
-	p = put_u16(p, dentry->num_ads);
+	p = put_u16(p, inode->num_ads);
 	p = put_u16(p, dentry->short_name_len);
 	p = put_u16(p, dentry->file_name_len);
 	if (dentry->file_name_len) {
@@ -1470,15 +1483,15 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	/* Write the alternate data streams, if there are any.  Please see
 	 * read_ads_entries() for comments about the format of the on-disk
 	 * alternate data stream entries. */
-	for (u16 i = 0; i < dentry->num_ads; i++) {
-		p = put_u64(p, ads_entry_total_length(&dentry->ads_entries[i]));
+	for (u16 i = 0; i < inode->num_ads; i++) {
+		p = put_u64(p, ads_entry_total_length(inode->ads_entries[i]));
 		p = put_u64(p, 0); /* Unused */
-		hash = dentry_stream_hash(dentry, i + 1);
+		hash = inode_stream_hash(inode, i + 1);
 		p = put_bytes(p, SHA1_HASH_SIZE, hash);
-		p = put_u16(p, dentry->ads_entries[i].stream_name_len);
-		if (dentry->ads_entries[i].stream_name_len) {
-			p = put_bytes(p, dentry->ads_entries[i].stream_name_len,
-					 (u8*)dentry->ads_entries[i].stream_name);
+		p = put_u16(p, inode->ads_entries[i]->stream_name_len);
+		if (inode->ads_entries[i]->stream_name_len) {
+			p = put_bytes(p, inode->ads_entries[i]->stream_name_len,
+					 (u8*)inode->ads_entries[i]->stream_name);
 			p = put_u16(p, 0);
 		}
 		p = put_zeroes(p, (8 - (p - orig_p) % 8) % 8);

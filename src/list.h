@@ -41,7 +41,7 @@ struct hlist_node {
 
 /* 
  * Structure used to create a linked list of streams that share the same lookup
- * table entry.  This structure may be embedded in either a dentry (for the
+ * table entry.  This structure may be embedded in either a inode (for the
  * un-named data stream) or an ads_entry (for an alternate data stream).  The
  * @type field indicates which of these structures the stream_list_head is
  * embedded in.
