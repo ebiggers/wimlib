@@ -68,7 +68,8 @@ struct ads_entry {
 		struct lookup_table_entry *lte;
 	};
 
-	/* Length of stream name (UTF-16) */
+	/* Length of stream name (UTF-16).  This is in bytes, not characters,
+	 * and does not include the terminating null character   */
 	u16 stream_name_len;
 
 	/* Length of stream name (UTF-8) */
@@ -136,7 +137,9 @@ struct inode {
 	 * the @lte field is valid, but the @hash field is not valid) 
 	 *
 	 * (This is not an on-disk field.) */
-	bool resolved;
+	u8 resolved : 1;
+
+	u8 verified : 1;
 
 	u16 num_ads;
 
@@ -289,8 +292,16 @@ struct dentry {
 
 	/* List of dentries in the hard link set */
 	struct list_head inode_dentry_list;
-	struct list_head tmp_list;
+	union {
+		struct list_head tmp_list;
+		bool is_extracted;
+	};
 };
+
+static inline bool dentry_is_extracted(const struct dentry *dentry)
+{
+	return dentry->is_extracted;
+}
 
 
 extern struct ads_entry *inode_get_ads_entry(struct inode *inode,
@@ -330,7 +341,8 @@ extern int print_dentry(struct dentry *dentry, void *lookup_table);
 extern int print_dentry_full_path(struct dentry *entry, void *ignore);
 
 extern struct dentry *get_dentry(struct WIMStruct *w, const char *path);
-extern struct inode *wim_pathname_to_inode(WIMStruct *w, const char *path);
+extern struct inode *wim_pathname_to_inode(struct WIMStruct *w,
+					   const char *path);
 extern struct dentry *get_parent_dentry(struct WIMStruct *w, const char *path);
 extern struct dentry *get_dentry_child_with_name(const struct dentry *dentry, 
 							const char *name);
@@ -373,10 +385,10 @@ extern u8 *write_dentry_tree(const struct dentry *tree, u8 *p);
 
 static inline struct dentry *inode_first_dentry(struct inode *inode)
 {
+	wimlib_assert(inode->dentry_list.next != &inode->dentry_list);
 	return container_of(inode->dentry_list.next, struct dentry,
 		 	    inode_dentry_list);
 }
-
 
 static inline bool dentry_is_root(const struct dentry *dentry)
 {

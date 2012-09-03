@@ -1204,7 +1204,7 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	dentry->prev   = dentry;
 	if (ret != 0)
 		goto out_free_dentry_tree;
-	list_add(&dentry->inode_dentry_list, &dentry->inode->dentry_list);
+	inode_add_dentry(dentry, dentry->inode);
 
 	/* Now read the entire directory entry tree into memory. */
 	DEBUG("Reading dentry tree");
@@ -1226,13 +1226,14 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 
 	for_dentry_in_tree(dentry, inode_table_insert, &inode_tab);
 
-	DEBUG("Fixing inconsistencies in the link groups");
+	DEBUG("Fixing inconsistencies in the hard link groups");
 	ret = fix_inodes(&inode_tab, &inode_list);
 	destroy_inode_table(&inode_tab);
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
 	DEBUG("Running miscellaneous verifications on the dentry tree");
+	for_lookup_table_entry(w->lookup_table, lte_zero_real_refcnt, NULL);
 	ret = for_dentry_in_tree(dentry, verify_dentry, w);
 	if (ret != 0)
 		goto out_free_dentry_tree;
@@ -1240,6 +1241,7 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	DEBUG("Done reading image metadata");
 
 	imd->root_dentry   = dentry;
+	imd->inode_list = inode_list;
 	goto out_free_buf;
 out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL);

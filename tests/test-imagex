@@ -19,11 +19,10 @@ imagex_info() {
 }
 
 cleanup() {
+	fusermount -u tmp &> /dev/null || true
 	rm -rf dir* tmp* *.wim *.swm
 }
-trap cleanup exit
-fusermount -u tmp || true
-rm -rf tmp || true
+cleanup
 
 # Make test directory
 mkdir dir
@@ -528,3 +527,4 @@ done
 echo "**********************************************************"
 echo "                 Basic imagex tests passed                "
 echo "**********************************************************"
+cleanup

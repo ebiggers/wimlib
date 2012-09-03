@@ -249,19 +249,21 @@ struct wim_pair {
 static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 {
 	WIMStruct *src_wim, *dest_wim;
+	struct inode *inode;
 
 	src_wim = ((struct wim_pair*)arg)->src_wim;
 	dest_wim = ((struct wim_pair*)arg)->dest_wim;
+	inode = dentry->inode;
 
-	wimlib_assert(!dentry->inode->resolved);
+	wimlib_assert(!inode->resolved);
 
-	for (unsigned i = 0; i < (unsigned)dentry->inode->num_ads + 1; i++) {
+	for (unsigned i = 0; i <= inode->num_ads; i++) {
 		struct lookup_table_entry *src_lte, *dest_lte;
-		src_lte = inode_stream_lte_unresolved(dentry->inode, i,
+		src_lte = inode_stream_lte_unresolved(inode, i,
 						      src_wim->lookup_table);
 		if (!src_lte)
 			continue;
-		dest_lte = inode_stream_lte_unresolved(dentry->inode, i,
+		dest_lte = inode_stream_lte_unresolved(inode, i,
 						       dest_wim->lookup_table);
 		if (dest_lte) {
 			dest_lte->refcnt++;

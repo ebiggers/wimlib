@@ -358,10 +358,22 @@ int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out)
 }
 
 
-
-int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore)
+int lte_zero_real_refcnt(struct lookup_table_entry *lte, void *ignore)
 {
-	entry->out_refcnt = 0;
+	lte->real_refcnt = 0;
+	return 0;
+}
+
+int lte_zero_out_refcnt(struct lookup_table_entry *lte, void *ignore)
+{
+	lte->out_refcnt = 0;
+	return 0;
+}
+
+int lte_free_extracted_file(struct lookup_table_entry *lte, void *ignone)
+{
+	FREE(lte->extracted_file);
+	lte->extracted_file = NULL;
 	return 0;
 }
 
@@ -513,7 +525,7 @@ out:
 	return 0;
 }
 
-static int inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
+static void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 {
 	struct lookup_table_entry *lte;
 
@@ -529,7 +541,6 @@ static int inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 		lte = __lookup_resource(table, cur_entry->hash);
 		cur_entry->lte = lte;
 	}
-	return 0;
 }
 
 /* Resolve a dentry's lookup table entries 
@@ -543,25 +554,21 @@ static int inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
  */
 int dentry_resolve_ltes(struct dentry *dentry, void *table)
 {
-	if (dentry->inode->resolved)
-		return 0;
-	else
-		return inode_resolve_ltes(dentry->inode, table);
+	if (!dentry->inode->resolved)
+		inode_resolve_ltes(dentry->inode, table);
+	return 0;
 }
 
-
-
-
-/* Return the lookup table entry for the unnamed data stream of a inode, or
+/* Return the lookup table entry for the unnamed data stream of an inode, or
  * NULL if there is none.
  *
  * You'd think this would be easier than it actually is, since the unnamed data
  * stream should be the one referenced from the inode itself.  Alas, if there
  * are named data streams, Microsoft's "imagex.exe" program will put the unnamed
- * data stream in one of the alternate data streams instead of inside the
- * inode.  So we need to check the alternate data streams too.
+ * data stream in one of the alternate data streams instead of inside the WIM
+ * dentry itself.  So we need to check the alternate data streams too.
  *
- * Also, note that a inode may appear to have than one unnamed stream, but if
+ * Also, note that a dentry may appear to have than one unnamed stream, but if
  * the SHA1 message digest is all 0's then the corresponding stream does not
  * really "count" (this is the case for the inode's own file stream when the
  * file stream that should be there is actually in one of the alternate stream

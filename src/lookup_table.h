@@ -164,6 +164,8 @@ struct lookup_table_entry {
 	 * dentries. */
 	u32 out_refcnt;
 
+	u32 real_refcnt;
+
 	/* When a WIM file is written, @output_resource_entry is filled
 	 * in with the resource entry for the output WIM.  This will not
 	 * necessarily be the same as the @resource_entry since:
@@ -253,7 +255,9 @@ extern int lookup_resource(WIMStruct *w, const char *path,
 			   struct lookup_table_entry **lte_ret,
 			   u16 *stream_idx_ret);
 
-extern int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore);
+extern int lte_zero_out_refcnt(struct lookup_table_entry *entry, void *ignore);
+extern int lte_zero_real_refcnt(struct lookup_table_entry *entry, void *ignore);
+extern int lte_free_extracted_file(struct lookup_table_entry *lte, void *ignone);
 
 extern void print_lookup_table_entry(const struct lookup_table_entry *entry);
 

@@ -196,6 +196,9 @@ struct ads_entry *inode_add_ads(struct inode *inode, const char *stream_name)
 		return NULL;
 	inode->num_ads = num_ads;
 	ads_entries[num_ads - 1] = new_entry;
+#ifdef WITH_FUSE
+	new_entry->stream_id = inode->next_stream_id++;
+#endif
 	return new_entry;
 }
 
@@ -912,7 +915,7 @@ void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *tab
 	stats.file_count      = file_count_ret;
 	stats.total_bytes     = total_bytes_ret;
 	stats.hard_link_bytes = hard_link_bytes_ret;
-	for_lookup_table_entry(table, zero_out_refcnts, NULL);
+	for_lookup_table_entry(table, lte_zero_out_refcnt, NULL);
 	for_dentry_in_tree(root, calculate_dentry_statistics, &stats);
 }
 
@@ -987,6 +990,10 @@ static int read_ads_entries(const u8 *p, struct inode *inode,
 		}
 
 		ads_entries[i] = cur_entry;
+
+	#ifdef WITH_FUSE
+		ads_entries[i]->stream_id = i + 1;
+	#endif
 
 		/* Read the base stream entry, excluding the stream name. */
 		if (remaining_size < WIM_ADS_ENTRY_DISK_SIZE) {
@@ -1072,6 +1079,9 @@ static int read_ads_entries(const u8 *p, struct inode *inode,
 			remaining_size -= total_length;
 	}
 	inode->ads_entries = ads_entries;
+#ifdef WITH_FUSE
+	inode->next_stream_id = inode->num_ads + 1;
+#endif
 	return 0;
 out_free_ads_entries:
 	for (u16 i = 0; i < num_ads; i++)
@@ -1334,25 +1344,23 @@ out_free_inode:
 	return ret;
 }
 
-/* Run some miscellaneous verifications on a WIM dentry */
-int verify_dentry(struct dentry *dentry, void *wim)
+int verify_inode(struct inode *inode, const WIMStruct *w)
 {
-	const WIMStruct *w = wim;
 	const struct lookup_table *table = w->lookup_table;
 	const struct wim_security_data *sd = wim_const_security_data(w);
-	const struct inode *inode = dentry->inode;
+	const struct dentry *first_dentry = inode_first_dentry(inode);
 	int ret = WIMLIB_ERR_INVALID_DENTRY;
 
 	/* Check the security ID */
 	if (inode->security_id < -1) {
 		ERROR("Dentry `%s' has an invalid security ID (%d)",
-			dentry->full_path_utf8, inode->security_id);
+			first_dentry->full_path_utf8, inode->security_id);
 		goto out;
 	}
 	if (inode->security_id >= sd->num_entries) {
 		ERROR("Dentry `%s' has an invalid security ID (%d) "
 		      "(there are only %u entries in the security table)",
-			dentry->full_path_utf8, inode->security_id,
+			first_dentry->full_path_utf8, inode->security_id,
 			sd->num_entries);
 		goto out;
 	}
@@ -1368,8 +1376,39 @@ int verify_dentry(struct dentry *dentry, void *wim)
 			lte = __lookup_resource(table, hash);
 			if (!lte && !is_zero_hash(hash)) {
 				ERROR("Could not find lookup table entry for stream "
-				      "%u of dentry `%s'", i, dentry->full_path_utf8);
+				      "%u of dentry `%s'", i, first_dentry->full_path_utf8);
 				goto out;
+			}
+			if (lte && (lte->real_refcnt += inode->link_count) > lte->refcnt)
+			{
+			#ifdef ENABLE_ERROR_MESSAGES
+				WARNING("The following lookup table entry "
+					"has a reference count of %u, but",
+					lte->refcnt);
+				WARNING("We found %zu references to it",
+					lte->real_refcnt);
+				WARNING("(One dentry referencing it is at `%s')",
+					 first_dentry->full_path_utf8);
+
+				print_lookup_table_entry(lte);
+			#endif
+				/* Guess what!  install.wim for Windows 8
+				 * contains a stream with 2 dentries referencing
+				 * it, but the lookup table entry has reference
+				 * count of 1.  So we will need to handle this
+				 * case and not just make it be an error...  I'm
+				 * just setting the reference count to the
+				 * number of references we found.
+				 * (Unfortunately, even after doing this, the
+				 * reference count could be too low if it's also
+				 * referenced in other WIM images) */
+
+			#if 1
+				lte->refcnt = lte->real_refcnt;
+				WARNING("Fixing reference count");
+			#else
+				goto out;
+			#endif
 			}
 		}
 	}
@@ -1384,8 +1423,27 @@ int verify_dentry(struct dentry *dentry, void *wim)
 	}
 	if (num_unnamed_streams > 1) {
 		ERROR("Dentry `%s' has multiple (%u) un-named streams", 
-		      dentry->full_path_utf8, num_unnamed_streams);
+		      first_dentry->full_path_utf8, num_unnamed_streams);
 		goto out;
+	}
+	inode->verified = true;
+	ret = 0;
+out:
+	return ret;
+}
+
+
+/* Run some miscellaneous verifications on a WIM dentry */
+int verify_dentry(struct dentry *dentry, void *wim)
+{
+	const WIMStruct *w = wim;
+	const struct inode *inode = dentry->inode;
+	int ret = WIMLIB_ERR_INVALID_DENTRY;
+
+	if (!dentry->inode->verified) {
+		ret = verify_inode(dentry->inode, w);
+		if (ret != 0)
+			goto out;
 	}
 
 	/* Cannot have a short name but no long name */

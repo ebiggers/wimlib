@@ -108,6 +108,8 @@ static int alloc_wimlib_fd(struct inode *inode,
 	static const u16 fds_per_alloc = 8;
 	static const u16 max_fds = 0xffff;
 
+	DEBUG("Allocate wimlib fd");
+
 	if (inode->num_opened_fds == inode->num_allocated_fds) {
 		struct wimlib_fd **fds;
 		u16 num_new_fds;
@@ -138,7 +140,9 @@ static int alloc_wimlib_fd(struct inode *inode,
 			*fd_ret        = fd;
 			inode->fds[i]  = fd;
 			inode->num_opened_fds++;
-			lte->num_opened_fds++;
+			if (lte)
+				lte->num_opened_fds++;
+			DEBUG("Allocated fd");
 			return 0;
 		}
 	}
@@ -207,7 +211,7 @@ static void remove_dentry(struct dentry *dentry,
 	struct lookup_table_entry *lte;
 	unsigned i;
 
-	for (i = 0; <= inode->num_ads; i++) {
+	for (i = 0; i <= inode->num_ads; i++) {
 		lte = inode_stream_lte_resolved(inode, i);
 		if (lte)
 			lte_decrement_refcnt(lte, lookup_table);
@@ -432,6 +436,13 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 	random_hash(new_lte->hash);
 	new_lte->staging_file_name = staging_file_name;
 	new_lte->resource_location = RESOURCE_IN_STAGING_FILE;
+
+	if (stream_id == 0)
+		inode->lte = new_lte;
+	else
+		for (u16 i = 0; i < inode->num_ads; i++)
+			if (inode->ads_entries[i]->stream_id == stream_id)
+				inode->ads_entries[i]->lte = new_lte;
 
 	lookup_table_insert(w->lookup_table, new_lte);
 	list_add(&new_lte->staging_list, &staging_list);
@@ -1144,12 +1155,18 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	if (ret != 0)
 		return ret;
 
+	DEBUG("dentry = %p", dentry);
+
 	inode = dentry->inode;
+
+	DEBUG("stream_idx = %u", stream_idx);
 
 	if (stream_idx == 0)
 		stream_id = 0;
 	else
 		stream_id = inode->ads_entries[stream_idx - 1]->stream_id;
+
+	DEBUG("stream_id = %u", stream_id);
 
 	/* The file resource may be in the staging directory (read-write mounts
 	 * only) or in the WIM.  If it's in the staging directory, we need to
@@ -1184,17 +1201,13 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 /* Opens a directory. */
 static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 {
-	struct dentry *dentry;
 	struct inode *inode;
 	int ret;
 	struct wimlib_fd *fd = NULL;
 	
-	dentry = get_dentry(w, path);
-	if (!dentry)
+	inode = wim_pathname_to_inode(w, path);
+	if (!inode)
 		return -ENOENT;
-
-	inode = dentry->inode;
-
 	if (!inode_is_directory(inode))
 		return -ENOTDIR;
 	ret = alloc_wimlib_fd(inode, 0, NULL, &fd);
@@ -1425,7 +1438,6 @@ static int wimfs_rmdir(const char *path)
 static int wimfs_setxattr(const char *path, const char *name,
 			  const char *value, size_t size, int flags)
 {
-	struct dentry *dentry;
 	struct ads_entry *existing_ads_entry;
 	struct ads_entry *new_ads_entry;
 	struct lookup_table_entry *existing_lte;
@@ -1441,21 +1453,20 @@ static int wimfs_setxattr(const char *path, const char *name,
 		return -ENOATTR;
 	name += 5;
 
-	dentry = get_dentry(w, path);
-	if (!dentry)
+	inode = wim_pathname_to_inode(w, path);
+	if (!inode)
 		return -ENOENT;
-	inode = dentry->inode;
 
 	existing_ads_entry = inode_get_ads_entry(inode, name, &ads_idx);
 	if (existing_ads_entry) {
 		if (flags & XATTR_CREATE)
 			return -EEXIST;
-		inode_remove_ads(dentry->inode, ads_idx, w->lookup_table);
+		inode_remove_ads(inode, ads_idx, w->lookup_table);
 	} else {
 		if (flags & XATTR_REPLACE)
 			return -ENOATTR;
 	}
-	new_ads_entry = inode_add_ads(dentry, name);
+	new_ads_entry = inode_add_ads(inode, name);
 	if (!new_ads_entry)
 		return -ENOMEM;
 
@@ -1494,7 +1505,7 @@ static int wimfs_symlink(const char *to, const char *from)
 {
 	struct dentry *dentry_parent, *dentry;
 	const char *link_name;
-	struct lookup_table_entry *lte;
+	struct inode *inode;
 	
 	dentry_parent = get_parent_dentry(w, from);
 	if (!dentry_parent)
@@ -1506,23 +1517,17 @@ static int wimfs_symlink(const char *to, const char *from)
 
 	if (get_dentry_child_with_name(dentry_parent, link_name))
 		return -EEXIST;
-	dentry = new_dentry(link_name);
+	dentry = new_dentry_with_inode(link_name);
 	if (!dentry)
 		return -ENOMEM;
+	inode = dentry->inode;
 
-	dentry->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
-	dentry->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
-	dentry->link_group_id = next_link_group_id++;
+	inode->attributes  = FILE_ATTRIBUTE_REPARSE_POINT;
+	inode->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+	inode->ino         = next_ino++;
 
-	if (dentry_set_symlink(dentry, to, w->lookup_table, &lte) != 0)
+	if (inode_set_symlink(inode, to, w->lookup_table, NULL) != 0)
 		goto out_free_dentry;
-
-	wimlib_assert(lte);
-
-	dentry->ads_entries[1].lte_group_list.type = STREAM_TYPE_ADS;
-	list_add(&dentry->ads_entries[1].lte_group_list.list,
-		 &lte->lte_group_list);
-	wimlib_assert(dentry->resolved);
 
 	link_dentry(dentry, dentry_parent);
 	return 0;
@@ -1538,7 +1543,9 @@ static int wimfs_truncate(const char *path, off_t size)
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
 	int ret;
-	unsigned stream_idx;
+	u16 stream_idx;
+	u32 stream_id;
+	struct inode *inode;
 	
 	ret = lookup_resource(w, path, get_lookup_flags(), &dentry,
 			      &lte, &stream_idx);
@@ -1548,6 +1555,13 @@ static int wimfs_truncate(const char *path, off_t size)
 
 	if (!lte) /* Already a zero-length file */
 		return 0;
+
+	inode = dentry->inode;
+
+	if (stream_idx == 0)
+		stream_id = 0;
+	else
+		stream_id = inode->ads_entries[stream_idx - 1]->stream_id;
 
 	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		wimlib_assert(lte->staging_file_name);
@@ -1559,7 +1573,7 @@ static int wimfs_truncate(const char *path, off_t size)
 		wimlib_assert(lte->resource_location == RESOURCE_IN_WIM);
 		/* File in WIM.  Extract it to the staging directory, but only
 		 * the first @size bytes of it. */
-		ret = extract_resource_to_staging_dir(dentry, stream_idx,
+		ret = extract_resource_to_staging_dir(inode, stream_id,
 						      &lte, size);
 	}
 	return ret;
@@ -1572,7 +1586,7 @@ static int wimfs_unlink(const char *path)
 	struct lookup_table_entry *lte;
 	struct inode *inode;
 	int ret;
-	unsigned stream_idx;
+	u16 stream_idx;
 	unsigned i;
 	
 	ret = lookup_resource(w, path, get_lookup_flags(), &dentry,
@@ -1711,46 +1725,6 @@ static struct fuse_operations wimfs_operations = {
 };
 
 
-static int check_lte_refcnt(struct lookup_table_entry *lte, void *ignore)
-{
-	size_t lte_group_size = 0;
-	struct list_head *cur;
-	list_for_each(cur, &lte->lte_group_list)
-		lte_group_size++;
-	if (lte_group_size > lte->refcnt) {
-#ifdef ENABLE_ERROR_MESSAGES
-		struct dentry *example_dentry;
-		struct list_head *next;
-		struct stream_list_head *head;
-		WARNING("The following lookup table entry has a reference count "
-		      "of %u, but", lte->refcnt);
-		WARNING("We found %zu references to it", lte_group_size);
-		next = lte->lte_group_list.next;
-		head = container_of(next, struct stream_list_head, list);
-		if (head->type == STREAM_TYPE_NORMAL) {
-			example_dentry = container_of(head, struct dentry,
-						      lte_group_list);
-			WARNING("(One dentry referencing it is at `%s')",
-				example_dentry->full_path_utf8);
-		}
-		print_lookup_table_entry(lte);
-#endif
-		/* Guess what!  install.wim for Windows 8 contains a stream with
-		 * 2 dentries referencing it, but the lookup table entry has
-		 * reference count of 1.  So we will need to handle this case
-		 * and not just make it be an error...  I'm just setting the
-		 * reference count to the number of references we found. */
-
-		#if 1
-		lte->refcnt = lte_group_size;
-		WARNING("Fixing reference count");
-		#else
-		return WIMLIB_ERR_INVALID_DENTRY;
-		#endif
-	}
-	return 0;
-}
-
 /* Mounts a WIM file. */
 WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir, 
 			   int flags, WIMStruct **additional_swms,
@@ -1761,6 +1735,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	int ret;
 	char *p;
 	struct lookup_table *joined_tab, *wim_tab_save;
+	struct image_metadata *imd;
 
 	DEBUG("Mount: wim = %p, image = %d, dir = %s, flags = %d, ",
 			wim, image, dir, flags);
@@ -1787,23 +1762,21 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	if (ret != 0)
 		goto out;
 
+	imd = &wim->image_metadata[image - 1];
+
 	DEBUG("Selected image %d", image);
 
-	next_link_group_id = assign_link_group_ids(wim->image_metadata[image - 1].lgt);
+	next_ino = assign_inode_numbers(&imd->inode_list);
 
-	DEBUG("Resolving lookup table entries");
+	DEBUG("(next_ino = %"PRIu64")", next_ino);
+
 	/* Resolve all the lookup table entries of the dentry tree */
-	for_dentry_in_tree(wim_root_dentry(wim), dentry_resolve_ltes,
+	DEBUG("Resolving lookup table entries");
+	for_dentry_in_tree(imd->root_dentry, dentry_resolve_ltes,
 			   wim->lookup_table);
 
-	DEBUG("Checking lookup table entry reference counts");
-
-	ret = for_lookup_table_entry(wim->lookup_table, check_lte_refcnt, NULL);
-	if (ret != 0)
-		goto out;
-
 	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
-		wim_get_current_image_metadata(wim)->modified = true;
+		imd->modified = true;
 
 	if (!(flags & (WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE |
 		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR |

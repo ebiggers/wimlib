@@ -204,14 +204,15 @@ static int extract_regular_file(WIMStruct *w,
 
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
 			      WIMLIB_EXTRACT_FLAG_HARDLINK)) && lte) {
-		if (++lte->out_refcnt != 1)
+		if (lte->extracted_file) {
 			return extract_regular_file_linked(dentry, output_dir,
 							   output_path,
 							   extract_flags, lte);
-		FREE(lte->extracted_file);
-		lte->extracted_file = STRDUP(output_path);
-		if (!lte->extracted_file)
-			return WIMLIB_ERR_NOMEM;
+		} else {
+			lte->extracted_file = STRDUP(output_path);
+			if (!lte->extracted_file)
+				return WIMLIB_ERR_NOMEM;
+		}
 	}
 
 	return extract_regular_file_unlinked(w, dentry, output_path,
@@ -429,8 +430,7 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		w->lookup_table = joined_tab;
 	}
 
-
-	for_lookup_table_entry(w->lookup_table, zero_out_refcnts, NULL);
+	for_lookup_table_entry(w->lookup_table, lte_free_extracted_file, NULL);
 
 	if (image == WIM_ALL_IMAGES) {
 		flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;

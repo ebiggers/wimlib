@@ -239,6 +239,8 @@ struct image_metadata {
 	 * resource. */
 	struct lookup_table_entry *metadata_lte;
 
+	struct hlist_head inode_list;
+
 	/* True if the filesystem of the image has been modified.  If this is
 	 * the case, the memory for the filesystem is not freed when switching
 	 * to a different WIM image. */

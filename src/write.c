@@ -426,7 +426,7 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
 	if (ret != 0)
 		goto done;
 
-	for_lookup_table_entry(w->lookup_table, zero_out_refcnts, NULL);
+	for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt, NULL);
 
 	w->write_flags = flags;
 

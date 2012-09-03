@@ -142,6 +142,7 @@ int inode_table_insert(struct dentry *dentry, void *__table)
  * next available inode ID. */
 u64 assign_inode_numbers(struct hlist_head *inode_list)
 {
+	DEBUG("Assigning inode numbers");
 	struct inode *inode;
 	struct hlist_node *cur;
 	u64 cur_ino = 1;
@@ -153,8 +154,7 @@ u64 assign_inode_numbers(struct hlist_head *inode_list)
 }
 
 
-static void
-print_inode_dentries(const struct inode *inode)
+static void print_inode_dentries(const struct inode *inode)
 {
 	struct dentry *dentry;
 	list_for_each_entry(dentry, &inode->dentry_list, inode_dentry_list)
@@ -433,13 +433,14 @@ next_dentry_2:
 }
 
 /*
- * Goes through each inode and shares the inodes among members of a hard
- * inode.
+ * Goes through each hard link group (dentries sharing the same hard link group
+ * ID field) that's been inserted into the inode table and shars the `struct
+ * inode's among members of each hard link group.
  *
- * In the process, the dentries in each inode are checked for consistency.
- * If they contain data features that indicate they cannot really be in the same
- * inode, this should be an error, but in reality this case needs to
- * be handled, so we split the dentries into different inodes.
+ * In the process, the dentries belonging to each inode are checked for
+ * consistency.  If they contain data features that indicate they cannot really
+ * correspond to the same inode, this should be an error, but in reality this
+ * case needs to be handled, so we split the dentries into different inodes.
  */
 int fix_inodes(struct inode_table *table, struct hlist_head *inode_list)
 {
