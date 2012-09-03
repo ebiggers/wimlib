@@ -154,16 +154,7 @@ struct lookup_table_entry {
 	#endif
 	};
 #ifdef WITH_FUSE
-	/* File descriptors table for this data stream.  This is used if the WIM
-	 * is mounted.  Basically, each time a file is open()ed, a new file
-	 * descriptor is added here, and each time a file is close()ed, the file
-	 * descriptor is gotten rid of.  If the stream is opened for writing, it
-	 * will be extracted to the staging directory and there will be an
-	 * actual native file descriptor associated with each "wimlib file
-	 * descriptor". */
 	u16 num_opened_fds;
-	u16 num_allocated_fds;
-	struct wimlib_fd **fds;
 #endif
 
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
@@ -188,13 +179,6 @@ struct lookup_table_entry {
 	 * filename of the first extracted file containing this stream.
 	 * */
 	char *extracted_file;
-
-	/* Circular linked list of streams that share the same lookup table
-	 * entry.
-	 * 
-	 * This list of streams may include streams from different hard link
-	 * sets that happen to be the same.  */
-	struct list_head lte_group_list;
 
 	/* List of lookup table entries that correspond to streams that have
 	 * been extracted to the staging directory when modifying a read-write
@@ -244,6 +228,12 @@ static inline void lookup_table_unlink(struct lookup_table *table,
 extern struct lookup_table_entry *
 lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[]);
 
+#ifdef WITH_FUSE
+extern struct lookup_table_entry *
+lte_decrement_num_opened_fds(struct lookup_table_entry *lte,
+			     struct lookup_table *table);
+#endif
+
 extern struct lookup_table_entry *
 lte_decrement_refcnt(struct lookup_table_entry *lte,
 		     struct lookup_table *table);
@@ -261,7 +251,7 @@ __lookup_resource(const struct lookup_table *table, const u8 hash[]);
 extern int lookup_resource(WIMStruct *w, const char *path,
 			   int lookup_flags, struct dentry **dentry_ret,
 			   struct lookup_table_entry **lte_ret,
-			   unsigned *stream_idx_ret);
+			   u16 *stream_idx_ret);
 
 extern int zero_out_refcnts(struct lookup_table_entry *entry, void *ignore);
 

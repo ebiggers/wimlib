@@ -39,21 +39,6 @@ struct hlist_node {
 	struct hlist_node *next, **pprev;
 };
 
-/* 
- * Structure used to create a linked list of streams that share the same lookup
- * table entry.  This structure may be embedded in either a inode (for the
- * un-named data stream) or an ads_entry (for an alternate data stream).  The
- * @type field indicates which of these structures the stream_list_head is
- * embedded in.
- */
-struct stream_list_head {
-	struct list_head list;
-	enum {
-		STREAM_TYPE_NORMAL = 0,
-		STREAM_TYPE_ADS,
-	} type;
-};
-
 /*
  * Simple doubly linked list implementation.
  *

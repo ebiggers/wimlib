@@ -75,12 +75,6 @@ static size_t inode_link_count(const struct inode *inode)
 	return size;
 }
 
-static struct dentry *inode_first_dentry(struct inode *inode)
-{
-	return container_of(inode->dentry_list.next, struct dentry,
-		 	    inode_dentry_list);
-}
-
 /* 
  * Insert a dentry into the inode table based on its inode
  * ID.

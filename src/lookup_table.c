@@ -29,6 +29,10 @@
 #include "io.h"
 #include <errno.h>
 
+#ifdef WITH_FUSE
+#include <unistd.h>
+#endif
+
 struct lookup_table *new_lookup_table(size_t capacity)
 {
 	struct lookup_table *table;
@@ -66,7 +70,6 @@ struct lookup_table_entry *new_lookup_table_entry()
 
 	lte->part_number  = 1;
 	lte->refcnt       = 1;
-	INIT_LIST_HEAD(&lte->lte_group_list);
 	return lte;
 }
 
@@ -142,7 +145,14 @@ void lookup_table_insert(struct lookup_table *table,
 	table->num_entries++;
 }
 
-
+static void finalize_lte(struct lookup_table_entry *lte)
+{
+	#ifdef WITH_FUSE
+	if (lte->resource_location == RESOURCE_IN_STAGING_FILE)
+		unlink(lte->staging_file_name);
+	#endif
+	free_lookup_table_entry(lte);
+}
 
 /* Decrements the reference count for the lookup table entry @lte.  If its
  * reference count reaches 0, it is unlinked from the lookup table.  If,
@@ -159,13 +169,30 @@ lte_decrement_refcnt(struct lookup_table_entry *lte, struct lookup_table *table)
 			if (lte->num_opened_fds == 0)
 		#endif
 			{
-				free_lookup_table_entry(lte);
+				finalize_lte(lte);
 				lte = NULL;
 			}
 		}
 	}
 	return lte;
 }
+
+#ifdef WITH_FUSE
+struct lookup_table_entry *
+lte_decrement_num_opened_fds(struct lookup_table_entry *lte,
+			     struct lookup_table *table)
+{
+	if (lte) {
+		wimlib_assert(lte->num_opened_fds);
+		if (--lte->num_opened_fds == 0 && lte->refcnt == 0) {
+			lookup_table_unlink(table, lte);
+			finalize_lte(lte);
+			lte = NULL;
+		}
+	}
+	return lte;
+}
+#endif
 
 /* 
  * Calls a function on all the entries in the lookup table.  Stop early and
@@ -429,11 +456,11 @@ int lookup_resource(WIMStruct *w, const char *path,
 		    int lookup_flags,
 		    struct dentry **dentry_ret,
 		    struct lookup_table_entry **lte_ret,
-		    unsigned *stream_idx_ret)
+		    u16 *stream_idx_ret)
 {
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
-	unsigned stream_idx;
+	u16 stream_idx;
 	const char *stream_name = NULL;
 	struct inode *inode;
 	char *p = NULL;
@@ -460,21 +487,21 @@ int lookup_resource(WIMStruct *w, const char *path,
 	      && inode_is_directory(inode))
 		return -EISDIR;
 
-	lte = inode->lte;
-	stream_idx = 0;
 	if (stream_name) {
-		size_t stream_name_len = strlen(stream_name);
-		for (u16 i = 0; i < inode->num_ads; i++) {
-			if (ads_entry_has_name(inode->ads_entries[i],
-					       stream_name,
-					       stream_name_len))
-			{
-				stream_idx = i + 1;
-				lte = inode->ads_entries[i]->lte;
-				goto out;
-			}
+		struct ads_entry *ads_entry;
+		u16 ads_idx;
+		ads_entry = inode_get_ads_entry(inode, stream_name,
+						&ads_idx);
+		if (ads_entry) {
+			stream_idx = ads_idx + 1;
+			lte = ads_entry->lte;
+			goto out;
+		} else {
+			return -ENOENT;
 		}
-		return -ENOENT;
+	} else {
+		lte = inode->lte;
+		stream_idx = 0;
 	}
 out:
 	if (dentry_ret)
@@ -492,12 +519,7 @@ static int inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 
 	/* Resolve the default file stream */
 	lte = __lookup_resource(table, inode->hash);
-	if (lte)
-		list_add(&inode->lte_group_list.list, &lte->lte_group_list);
-	else
-		INIT_LIST_HEAD(&inode->lte_group_list.list);
 	inode->lte = lte;
-	inode->lte_group_list.type = STREAM_TYPE_NORMAL;
 	inode->resolved = true;
 
 	/* Resolve the alternate data streams */
@@ -505,13 +527,7 @@ static int inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 		struct ads_entry *cur_entry = inode->ads_entries[i];
 
 		lte = __lookup_resource(table, cur_entry->hash);
-		if (lte)
-			list_add(&cur_entry->lte_group_list.list,
-				 &lte->lte_group_list);
-		else
-			INIT_LIST_HEAD(&cur_entry->lte_group_list.list);
 		cur_entry->lte = lte;
-		cur_entry->lte_group_list.type = STREAM_TYPE_ADS;
 	}
 	return 0;
 }

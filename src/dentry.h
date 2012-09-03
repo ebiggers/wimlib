@@ -80,11 +80,9 @@ struct ads_entry {
 	/* Stream name (UTF-8) */
 	char *stream_name_utf8;
 
-	/* Doubly linked list of streams that share the same lookup table entry */
-	struct stream_list_head lte_group_list;
-
-	/* Containing inode */
-	struct inode *inode;
+#ifdef WITH_FUSE
+	u32 stream_id;
+#endif
 };
 
 /* Returns the total length of a WIM alternate data stream entry on-disk,
@@ -114,6 +112,8 @@ static inline bool ads_entries_have_same_name(const struct ads_entry *entry_1,
 	return memcmp(entry_1->stream_name, entry_2->stream_name,
 		      entry_1->stream_name_len) == 0;
 }
+
+struct wimlib_fd;
 
 struct inode {
 	/* Timestamps for the inode.  The timestamps are the number of
@@ -169,15 +169,24 @@ struct inode {
 	u64 ino;
 
 	struct list_head dentry_list;
-	union {
-		struct stream_list_head lte_group_list;
-		struct hlist_node hlist;
-	};
+	struct hlist_node hlist;
 	char *extracted_file;
+
+	struct dentry *children;
+
+#ifdef WITH_FUSE
+	u16 num_opened_fds;
+	u16 num_allocated_fds;
+	struct wimlib_fd **fds;
+	u32 next_stream_id;
+#endif
 };
 
 #define inode_for_each_dentry(dentry, inode) \
-		list_for_each_entry(dentry, &inode->dentry_list, inode_dentry_list)
+		list_for_each_entry((dentry), &(inode)->dentry_list, inode_dentry_list)
+
+#define inode_add_dentry(dentry, inode) \
+		list_add(&(dentry)->inode_dentry_list, &(inode)->dentry_list)
 
 /* 
  * In-memory structure for a WIM directory entry (dentry).  There is a directory
@@ -203,17 +212,15 @@ struct inode {
  * conflicting fields to split up the hard link groups.
  */
 struct dentry {
+	/* The inode for this dentry */
+	struct inode *inode;
+
 	/* The parent of this directory entry. */
 	struct dentry *parent;
 
 	/* Linked list of sibling directory entries. */
 	struct dentry *next;
 	struct dentry *prev;
-
-	/* Pointer to a child of this directory entry. */
-	struct dentry *children;
-
-	struct inode *inode;
 
 	/* 
 	 * Size of directory entry on disk, in bytes.  Typical size is around
@@ -276,15 +283,9 @@ struct dentry {
 	char *full_path_utf8;
 	u32   full_path_utf8_len;
 
-	union {
-		/* Number of references to the dentry tree itself, as in multiple
-		 * WIMStructs */
-		u32 refcnt;
-
-		/* Number of times this dentry has been opened (only for
-		 * directories!) */
-		u32 num_times_opened;
-	};
+	/* Number of references to the dentry tree itself, as in multiple
+	 * WIMStructs */
+	u32 refcnt;
 
 	/* List of dentries in the hard link set */
 	struct list_head inode_dentry_list;
@@ -292,13 +293,12 @@ struct dentry {
 };
 
 
-extern struct ads_entry *dentry_get_ads_entry(struct dentry *dentry,
-					      const char *stream_name);
+extern struct ads_entry *inode_get_ads_entry(struct inode *inode,
+					     const char *stream_name,
+					     u16 *idx_ret);
 
-extern struct ads_entry *dentry_add_ads(struct dentry *dentry,
-					const char *stream_name);
-
-extern void dentry_remove_ads(struct dentry *dentry, struct ads_entry *entry);
+extern struct ads_entry *inode_add_ads(struct inode *dentry,
+				       const char *stream_name);
 
 extern const char *path_stream_name(const char *path);
 
@@ -330,6 +330,7 @@ extern int print_dentry(struct dentry *dentry, void *lookup_table);
 extern int print_dentry_full_path(struct dentry *entry, void *ignore);
 
 extern struct dentry *get_dentry(struct WIMStruct *w, const char *path);
+extern struct inode *wim_pathname_to_inode(WIMStruct *w, const char *path);
 extern struct dentry *get_parent_dentry(struct WIMStruct *w, const char *path);
 extern struct dentry *get_dentry_child_with_name(const struct dentry *dentry, 
 							const char *name);
@@ -340,12 +341,13 @@ extern struct inode *new_inode();
 extern struct inode *new_timeless_inode();
 extern struct dentry *new_dentry_with_inode(const char *name);
 
-extern void dentry_free_ads_entries(struct dentry *dentry);
-extern void free_dentry(struct dentry *dentry);
+extern void free_ads_entry(struct ads_entry *entry);
+extern void inode_free_ads_entries(struct inode *inode);
+extern struct inode *free_dentry(struct dentry *dentry);
 extern void free_inode(struct inode *inode);
-extern void put_inode(struct inode *inode);
-extern void put_dentry(struct dentry *dentry);
+extern struct inode *put_inode(struct inode *inode);
 extern struct dentry *clone_dentry(struct dentry *old);
+extern void put_dentry(struct dentry *dentry);
 extern void free_dentry_tree(struct dentry *root,
 			     struct lookup_table *lookup_table);
 extern int increment_dentry_refcnt(struct dentry *dentry, void *ignore);
@@ -369,15 +371,12 @@ extern int read_dentry_tree(const u8 metadata_resource[],
 extern u8 *write_dentry_tree(const struct dentry *tree, u8 *p);
 
 
-/* Return the number of dentries in the hard link group */
-static inline size_t dentry_link_group_size(const struct dentry *dentry)
+static inline struct dentry *inode_first_dentry(struct inode *inode)
 {
-	const struct list_head *cur;
-	size_t size = 0;
-	list_for_each(cur, &dentry->inode_dentry_list)
-		size++;
-	return size;
+	return container_of(inode->dentry_list.next, struct dentry,
+		 	    inode_dentry_list);
 }
+
 
 static inline bool dentry_is_root(const struct dentry *dentry)
 {
@@ -386,7 +385,7 @@ static inline bool dentry_is_root(const struct dentry *dentry)
 
 static inline bool dentry_is_first_sibling(const struct dentry *dentry)
 {
-	return dentry_is_root(dentry) || dentry->parent->children == dentry;
+	return dentry_is_root(dentry) || dentry->parent->inode->children == dentry;
 }
 
 static inline bool dentry_is_only_child(const struct dentry *dentry)
@@ -419,14 +418,19 @@ static inline bool dentry_is_symlink(const struct dentry *dentry)
 	return inode_is_symlink(dentry->inode);
 }
 
+static inline bool inode_is_regular_file(const struct inode *inode)
+{
+	return !inode_is_directory(inode) && !inode_is_symlink(inode);
+}
+
 static inline bool dentry_is_regular_file(const struct dentry *dentry)
 {
-	return !dentry_is_directory(dentry) && !dentry_is_symlink(dentry);
+	return inode_is_regular_file(dentry->inode);
 }
 
 static inline bool dentry_is_empty_directory(const struct dentry *dentry)
 {
-	return dentry_is_directory(dentry) && dentry->children == NULL;
+	return dentry_is_directory(dentry) && dentry->inode->children == NULL;
 }
 
 #endif

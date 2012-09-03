@@ -35,7 +35,6 @@ static int copy_lte_to_table(struct lookup_table_entry *lte, void *table)
 	if (!copy)
 		return WIMLIB_ERR_NOMEM;
 	memcpy(copy, lte, sizeof(struct lookup_table_entry));
-	INIT_LIST_HEAD(&copy->lte_group_list);
 	lookup_table_insert(table, copy);
 	return 0;
 }
