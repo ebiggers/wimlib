@@ -131,7 +131,7 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 	if (!root)
 		return WIMLIB_ERR_NOMEM;
 
-	stbuf_to_dentry(&root_stbuf, root);
+	stbuf_to_inode(&root_stbuf, root->inode);
 	add_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
 	root->inode->resolved = true;
 
@@ -805,7 +805,7 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	struct dentry *root_dentry = NULL;
 	struct wim_security_data *sd;
 	struct capture_config config;
-	struct inode_table *inode_tab;
+	struct inode_table inode_tab;
 	struct hlist_head inode_list;
 	int ret;
 
@@ -871,11 +871,15 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 		goto out_free_dentry_tree;
 
 	DEBUG("Inserting dentries into inode table");
-	for_dentry_in_tree(root_dentry, inode_table_insert, inode_tab);
+	ret = init_inode_table(&inode_tab, 9001);
+	if (ret != 0)
+		goto out_destroy_imd;
 
-	DEBUG("Cleanup up the hard link groups");
-	ret = fix_inodes(inode_tab, &inode_list);
-	free_inode_table(inode_tab);
+	for_dentry_in_tree(root_dentry, inode_table_insert, &inode_tab);
+
+	DEBUG("Cleaning up the hard link groups");
+	ret = fix_inodes(&inode_tab, &inode_list);
+	destroy_inode_table(&inode_tab);
 	if (ret != 0)
 		goto out_destroy_imd;
 

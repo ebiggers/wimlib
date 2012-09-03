@@ -28,9 +28,10 @@
 #define _WIMLIB_INTERNAL_H
 
 #include "util.h"
+#include "list.h"
 
 struct stat;
-struct hlist_head;
+struct dentry;
 struct inode;
 
 #define WIM_MAGIC_LEN  8
@@ -347,9 +348,34 @@ struct capture_config {
 
 /* hardlink.c */
 
-struct inode_table *new_inode_table(size_t capacity);
+/* Hash table to find inodes, identified by their inode ID.
+ * */
+struct inode_table {
+	/* Fields for the hash table */
+	struct hlist_head *array;
+	u64 num_entries;
+	u64 capacity;
+
+	/* 
+	 * Linked list of "extra" inodes.  These may be:
+	 *
+	 * - inodes with link count 1, which are all allowed to have 0 for their
+	 *   inode number, meaning we cannot insert them into the hash table
+	 *   before calling assign_inode_numbers().
+         *
+	 * - Groups we create ourselves by splitting a nominal inode due to
+	 *   inconsistencies in the dentries.  These inodes will share a inode
+	 *   ID with some other inode until assign_inode_numbers() is called.
+	 */
+	struct hlist_head extra_inodes;
+};
+
+int init_inode_table(struct inode_table *table, size_t capacity);
+static inline void destroy_inode_table(struct inode_table *table)
+{
+	FREE(table->array);
+}
 int inode_table_insert(struct dentry *dentry, void *__table);
-void free_inode_table(struct inode_table *table);
 u64 assign_inode_numbers(struct hlist_head *inode_list);
 int fix_inodes(struct inode_table *table, struct hlist_head *inode_list);
 

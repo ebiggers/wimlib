@@ -160,6 +160,12 @@ struct inode {
 
 	struct ads_entry **ads_entries;
 
+	/* If the file is part of a hard link set, all the directory entries in
+	 * the set will share the same value for this field. 
+	 *
+	 * Unfortunately, in some WIMs it is NOT the case that all dentries that
+	 * share this field are actually in the same hard link set, although the
+	 * WIMs that wimlib writes maintain this restriction. */
 	u64 ino;
 
 	struct list_head dentry_list;
@@ -241,13 +247,6 @@ struct dentry {
 	 * read_dentry() function. */
 	//u32 reparse_reserved;
 
-	/* If the file is part of a hard link set, all the directory entries in
-	 * the set will share the same value for this field. 
-	 *
-	 * Unfortunately, in some WIMs it is NOT the case that all dentries that
-	 * share this field are actually in the same hard link set, although the
-	 * WIMs that wimlib writes maintain this restriction. */
-	u64 link_group_id;
 
 	/* Length of short filename, in bytes, not including the terminating
 	 * zero wide-character. */
@@ -303,7 +302,7 @@ extern const char *path_stream_name(const char *path);
 extern u64 dentry_total_length(const struct dentry *dentry);
 extern u64 dentry_correct_total_length(const struct dentry *dentry);
 
-extern void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry);
+extern void stbuf_to_inode(const struct stat *stbuf, struct inode *inode);
 
 extern int for_dentry_in_tree(struct dentry *root, 
 			      int (*visitor)(struct dentry*, void*), 
@@ -334,6 +333,8 @@ extern struct dentry *get_dentry_child_with_name(const struct dentry *dentry,
 extern void dentry_update_all_timestamps(struct dentry *dentry);
 extern void init_dentry(struct dentry *dentry, const char *name);
 extern struct dentry *new_dentry(const char *name);
+extern struct inode *new_inode();
+extern struct inode *new_timeless_inode();
 extern struct dentry *new_dentry_with_inode(const char *name);
 
 extern void dentry_free_ads_entries(struct dentry *dentry);

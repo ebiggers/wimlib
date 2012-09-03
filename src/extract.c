@@ -126,27 +126,29 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 	int ret;
 	struct inode *inode = dentry->inode;
 
-	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE)) {
-		/* This dentry is one of a hard link set of at least 2 dentries.
-		 * If one of the other dentries has already been extracted, make
-		 * a hard link to the file corresponding to this
-		 * already-extracted directory.  Otherwise, extract the
-		 * file, and set the dentry->extracted_file field so that other
+	if (!((extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE)
+		&& (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
+				     WIMLIB_EXTRACT_FLAG_HARDLINK))))
+	{
+		/* If the dentry is one of a hard link set of at least 2
+		 * dentries and one of the other dentries has already been
+		 * extracted, make a hard link to the file corresponding to this
+		 * already-extracted directory.  Otherwise, extract the file,
+		 * and set the inode->extracted_file field so that other
 		 * dentries in the hard link group can link to it. */
-		struct dentry *other;
-		if (inode->extracted_file) {
-			DEBUG("Extracting hard link `%s' => `%s'",
-			      output_path, inode->extracted_file);
-			if (link(inode->extracted_file, output_path) != 0) {
-				ERROR_WITH_ERRNO("Failed to hard link "
-						 "`%s' to `%s'",
-						 output_path,
-						 inode->extracted_file);
-				return WIMLIB_ERR_LINK;
-			}
-			return 0;
-		}
 		if (inode->link_count > 1) {
+			if (inode->extracted_file) {
+				DEBUG("Extracting hard link `%s' => `%s'",
+				      output_path, inode->extracted_file);
+				if (link(inode->extracted_file, output_path) != 0) {
+					ERROR_WITH_ERRNO("Failed to hard link "
+							 "`%s' to `%s'",
+							 output_path,
+							 inode->extracted_file);
+					return WIMLIB_ERR_LINK;
+				}
+				return 0;
+			}
 			FREE(inode->extracted_file);
 			inode->extracted_file = STRDUP(output_path);
 			if (!inode->extracted_file) {
@@ -169,16 +171,16 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 		/* Empty file with no lookup table entry */
 		DEBUG("Empty file `%s'.", output_path);
 		ret = 0;
-		goto done;
+		goto out;
 	}
 
 	ret = extract_full_wim_resource_to_fd(lte, out_fd);
 	if (ret != 0) {
 		ERROR("Failed to extract resource to `%s'", output_path);
-		goto done;
+		goto out;
 	}
 
-done:
+out:
 	if (close(out_fd) != 0) {
 		ERROR_WITH_ERRNO("Failed to close file `%s'", output_path);
 		ret = WIMLIB_ERR_WRITE;

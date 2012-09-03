@@ -96,10 +96,9 @@ u64 dentry_total_length(const struct dentry *dentry)
 	return __dentry_total_length(dentry, dentry->length);
 }
 
-/* Transfers file attributes from a `stat' buffer to a struct dentry. */
-void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
+/* Transfers file attributes from a `stat' buffer to an inode. */
+void stbuf_to_inode(const struct stat *stbuf, struct inode *inode)
 {
-	struct inode *inode = dentry->inode;
 	if (S_ISLNK(stbuf->st_mode)) {
 		inode->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
 		inode->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
@@ -109,9 +108,9 @@ void stbuf_to_dentry(const struct stat *stbuf, struct dentry *dentry)
 		inode->attributes = FILE_ATTRIBUTE_NORMAL;
 	}
 	if (sizeof(ino_t) >= 8)
-		dentry->link_group_id = (u64)stbuf->st_ino;
+		inode->ino = (u64)stbuf->st_ino;
 	else
-		dentry->link_group_id = (u64)stbuf->st_ino |
+		inode->ino = (u64)stbuf->st_ino |
 				   ((u64)stbuf->st_dev << (sizeof(ino_t) * 8));
 	/* Set timestamps */
 	inode->creation_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
@@ -464,15 +463,6 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 				file_attr_flags[i].name);
 	printf("Security ID       = %d\n", inode->security_id);
 	printf("Subdir offset     = %"PRIu64"\n", dentry->subdir_offset);
-#if 0
-	printf("Unused1           = 0x%"PRIu64"\n", dentry->unused1);
-	printf("Unused2           = %"PRIu64"\n", dentry->unused2);
-#endif
-#if 0
-	printf("Creation Time     = 0x%"PRIx64"\n");
-	printf("Last Access Time  = 0x%"PRIx64"\n");
-	printf("Last Write Time   = 0x%"PRIx64"\n");
-#endif
 
 	/* Translate the timestamps into something readable */
 	time = wim_timestamp_to_unix(inode->creation_time);
@@ -491,7 +481,8 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	printf("Last Write Time   = %s UTC\n", p);
 
 	printf("Reparse Tag       = 0x%"PRIx32"\n", inode->reparse_tag);
-	printf("Hard Link Group   = 0x%"PRIx64"\n", dentry->link_group_id);
+	printf("Hard Link Group   = 0x%"PRIx64"\n", inode->ino);
+	printf("Hard Link Group Size = %"PRIu32"\n", inode->link_count);
 	printf("Number of Alternate Data Streams = %hu\n", inode->num_ads);
 	printf("Filename          = \"");
 	print_string(dentry->file_name, dentry->file_name_len);
@@ -540,18 +531,26 @@ static void dentry_common_init(struct dentry *dentry)
 	dentry->refcnt = 1;
 }
 
-struct inode *new_inode()
+struct inode *new_timeless_inode()
 {
 	struct inode *inode = CALLOC(1, sizeof(struct inode));
-	u64 now = get_wim_timestamp();
 	if (!inode)
 		return NULL;
 	inode->security_id = -1;
 	inode->link_count = 1;
+	INIT_LIST_HEAD(&inode->dentry_list);
+	return inode;
+}
+
+struct inode *new_inode()
+{
+	struct inode *inode = new_timeless_inode();
+	if (!inode)
+		return NULL;
+	u64 now = get_wim_timestamp();
 	inode->creation_time = now;
 	inode->last_access_time = now;
 	inode->last_write_time = now;
-	INIT_LIST_HEAD(&inode->dentry_list);
 	return inode;
 }
 
@@ -668,9 +667,10 @@ static void inode_free_ads_entries(struct inode *inode)
 
 void free_inode(struct inode *inode)
 {
-	wimlib_assert(inode);
-	inode_free_ads_entries(inode);
-	FREE(inode);
+	if (inode) {
+		inode_free_ads_entries(inode);
+		FREE(inode);
+	}
 }
 
 void put_inode(struct inode *inode)
@@ -686,6 +686,7 @@ void put_inode(struct inode *inode)
 void free_dentry(struct dentry *dentry)
 {
 	wimlib_assert(dentry);
+
 	FREE(dentry->file_name);
 	FREE(dentry->file_name_utf8);
 	FREE(dentry->short_name);
@@ -1154,7 +1155,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
-	inode = new_inode();
+	inode = new_timeless_inode();
 	if (!inode)
 		return WIMLIB_ERR_NOMEM;
 
@@ -1186,7 +1187,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		p += 4;
 	} else {
 		p = get_u32(p, &inode->reparse_tag);
-		p = get_u64(p, &dentry->link_group_id);
+		p = get_u64(p, &inode->ino);
 	}
 
 	/* By the way, the reparse_reserved field does not actually exist (at
@@ -1317,6 +1318,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	/* We've read all the data for this dentry.  Set the names and their
 	 * lengths, and we've done. */
+	dentry->inode              = inode;
 	dentry->file_name          = file_name;
 	dentry->file_name_utf8     = file_name_utf8;
 	dentry->short_name         = short_name;
@@ -1457,10 +1459,10 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	} else {
 		u64 link_group_id;
 		p = put_u32(p, 0);
-		if (dentry->inode->link_count == 1)
+		if (inode->link_count == 1)
 			link_group_id = 0;
 		else
-			link_group_id = dentry->inode->ino;
+			link_group_id = inode->ino;
 		p = put_u64(p, link_group_id);
 	}
 	p = put_u16(p, inode->num_ads);
@@ -1630,6 +1632,7 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 
 		child->parent = dentry;
 		prev_child = child;
+		list_add(&child->inode_dentry_list, &child->inode->dentry_list);
 
 		/* If there are children of this child, call this procedure
 		 * recursively. */
