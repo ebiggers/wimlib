@@ -99,6 +99,7 @@ void free_lookup_table_entry(struct lookup_table_entry *lte)
 		default:
 			break;
 		}
+		FREE(lte->extracted_file);
 		FREE(lte);
 	}
 }

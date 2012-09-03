@@ -173,23 +173,21 @@ struct lookup_table_entry {
 	 * dentries. */
 	u32 out_refcnt;
 
-	union {
-		/* When a WIM file is written, @output_resource_entry is filled
-		 * in with the resource entry for the output WIM.  This will not
-		 * necessarily be the same as the @resource_entry since:
-		 * 	- The stream may have a different offset in the new WIM
-		 * 	- The stream may have a different compressed size in the
-		 * 	new WIM if the compression type changed
-		 */
-		struct resource_entry output_resource_entry;
+	/* When a WIM file is written, @output_resource_entry is filled
+	 * in with the resource entry for the output WIM.  This will not
+	 * necessarily be the same as the @resource_entry since:
+	 * 	- The stream may have a different offset in the new WIM
+	 * 	- The stream may have a different compressed size in the
+	 * 	new WIM if the compression type changed
+	 */
+	struct resource_entry output_resource_entry;
 
-		/* This field is used for the special hardlink or symlink image
-		 * application mode.   In these mode, all identical files are
-		 * linked together, and @extracted_file will be set to the
-		 * filename of the first extracted file containing this stream.
-		 * */
-		char *extracted_file;
-	};
+	/* This field is used for the special hardlink or symlink image
+	 * application mode.   In these mode, all identical files are
+	 * linked together, and @extracted_file will be set to the
+	 * filename of the first extracted file containing this stream.
+	 * */
+	char *extracted_file;
 
 	/* Circular linked list of streams that share the same lookup table
 	 * entry.

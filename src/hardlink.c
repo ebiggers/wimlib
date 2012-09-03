@@ -151,7 +151,6 @@ u64 assign_inode_numbers(struct hlist_head *inode_list)
 	struct inode *inode;
 	struct hlist_node *cur;
 	u64 cur_ino = 1;
-	struct dentry *dentry;
 	hlist_for_each_entry(inode, cur, inode_list, hlist) {
 		inode->ino = cur_ino;
 		cur_ino++;
@@ -250,7 +249,7 @@ static int fix_true_inode(struct inode *inode)
 	u64 last_atime = 0;
 	bool found_short_name = false;
 
-	list_for_each_entry(dentry, &inode->dentry_list, inode_dentry_list) {
+	inode_for_each_dentry(dentry, inode) {
 		if (!ref_dentry || ref_dentry->inode->num_ads == 0)
 			ref_dentry = dentry;
 		if (dentry->short_name_len) {
@@ -274,7 +273,7 @@ static int fix_true_inode(struct inode *inode)
 	ref_inode = ref_dentry->inode;
 	ref_inode->link_count = 1;
 
-	list_for_each_entry(dentry, &inode->dentry_list, inode_dentry_list) {
+	inode_for_each_dentry(dentry, inode) {
 		if (dentry != ref_dentry) {
 			if (!inodes_consistent(ref_inode, dentry->inode)) {
 				inconsistent_inode(dentry->inode);
@@ -325,7 +324,7 @@ fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
         /* Create a list of dentries in the nominal inode that have at
          * least one data stream with a non-zero hash, and another list that
          * contains the dentries that have a zero hash for all data streams. */
-	list_for_each_entry(dentry, &inode->dentry_list, inode_dentry_list) {
+	inode_for_each_dentry(dentry, inode) {
 		for (unsigned i = 0; i <= dentry->inode->num_ads; i++) {
 			const u8 *hash;
 			hash = inode_stream_hash(dentry->inode, i);
@@ -365,8 +364,7 @@ fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
          * these dentries for consistency with the others to form a set of true
          * inodes. */
 	num_true_inodes = 0;
-	list_for_each_entry(dentry, &dentries_with_data_streams, tmp_list)
-	{
+	list_for_each_entry(dentry, &dentries_with_data_streams, tmp_list) {
 		/* Look for a true inode that is consistent with
 		 * this dentry and add this dentry to it.  Or, if none
 		 * of the true inodes are consistent with this
@@ -404,7 +402,7 @@ next_dentry_2:
 		inode = container_of(true_inodes.first,
 				     struct inode,
 				     hlist);
-		/* Assign the streamless dentries to the one and only true link
+		/* Assign the streamless dentries to the one and only true
 		 * inode. */
 		list_for_each_entry(dentry, &dentries_with_no_data_streams, tmp_list)
 			list_add(&dentry->inode_dentry_list, &inode->dentry_list);
@@ -412,6 +410,10 @@ next_dentry_2:
         if (num_true_inodes != 1) {
 		#ifdef ENABLE_DEBUG
 		{
+			inode = container_of(true_inodes.first,
+					     struct inode,
+					     hlist);
+
 			printf("Split nominal inode 0x%"PRIx64" into %zu "
 			       "inodes:\n",
 			       inode->ino, num_true_inodes);

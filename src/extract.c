@@ -208,6 +208,7 @@ static int extract_regular_file(WIMStruct *w,
 			return extract_regular_file_linked(dentry, output_dir,
 							   output_path,
 							   extract_flags, lte);
+		FREE(lte->extracted_file);
 		lte->extracted_file = STRDUP(output_path);
 		if (!lte->extracted_file)
 			return WIMLIB_ERR_NOMEM;

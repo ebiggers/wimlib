@@ -176,6 +176,9 @@ struct inode {
 	char *extracted_file;
 };
 
+#define inode_for_each_dentry(dentry, inode) \
+		list_for_each_entry(dentry, &inode->dentry_list, inode_dentry_list)
+
 /* 
  * In-memory structure for a WIM directory entry (dentry).  There is a directory
  * tree for each image in the WIM. 

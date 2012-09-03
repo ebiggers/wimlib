@@ -677,7 +677,7 @@ void put_inode(struct inode *inode)
 {
 	if (inode) {
 		wimlib_assert(inode->link_count);
-		if (--inode->link_count)
+		if (--inode->link_count == 0)
 			free_inode(inode);
 	}
 }
@@ -729,6 +729,7 @@ static int do_free_dentry(struct dentry *dentry, void *__lookup_table)
 	unsigned i;
 
 	if (lookup_table) {
+		wimlib_assert(inode->link_count);
 		for (i = 0; i <= inode->num_ads; i++) {
 			lte = inode_stream_lte(inode, i, lookup_table);
 			lte_decrement_refcnt(lte, lookup_table);
