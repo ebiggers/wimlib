@@ -35,19 +35,19 @@
  *         dentry               |           |                
  *        /     \          -----------  -----------           
  *        |      dentry<---|  struct  | |  struct  |---> dentry
- *        \     /          |inode| |inode|       
+ *        \     /          |  inode   | |  inode   |       
  *         dentry          ------------ ------------
  *                              ^           ^
  *                              |           |
  *                              |           |                   dentry
  *                         -----------  -----------            /      \
  *               dentry<---|  struct  | |  struct  |---> dentry        dentry
- *              /          |inode| |inode|           \      /
+ *              /          |  inode   | |  inode   |           \      /
  *         dentry          ------------ ------------            dentry
  *                              ^           ^
  *                              |           |
  *                            -----------------
- *    inode_table->array | idx 0 | idx 1 | 
+ *        inode_table->array  | idx 0 | idx 1 | 
  *                            -----------------
  */
 

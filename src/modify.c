@@ -44,7 +44,7 @@
  * the WIM image. */
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT 0x80000000
 
-void destroy_image_metadata(struct image_metadata *imd,struct lookup_table *lt)
+void destroy_image_metadata(struct image_metadata *imd, struct lookup_table *lt)
 {
 	free_dentry_tree(imd->root_dentry, lt);
 	free_security_data(imd->security_data);

@@ -248,7 +248,6 @@ err:
 /* Write the file resources for the current image. */
 static int write_file_resources(WIMStruct *w)
 {
-
 	DEBUG("Writing file resources for image %u.", w->current_image);
 	return for_dentry_in_tree(wim_root_dentry(w), write_dentry_resources, w);
 }

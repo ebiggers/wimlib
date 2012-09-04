@@ -1334,8 +1334,9 @@ int write_metadata_resource(WIMStruct *w)
 	if (ret != 0)
 		goto out;
 
-	/* It's very likely the SHA1 message digest of the metadata resource, so
-	 * re-insert the lookup table entry into the lookup table. */
+	/* It's very likely the SHA1 message digest of the metadata resource
+	 * changed, so re-insert the lookup table entry into the lookup table.
+	 * */
 	lookup_table_unlink(w->lookup_table, lte);
 	lookup_table_insert(w->lookup_table, lte);
 
