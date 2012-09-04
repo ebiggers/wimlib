@@ -1092,8 +1092,8 @@ int write_dentry_resources(struct dentry *dentry, void *wim_p)
 		printf("Writing streams for `%s'\n", dentry->full_path_utf8);
 	}
 
-	for (unsigned i = 0; i <= dentry->inode->num_ads; i++) {
-		lte = inode_stream_lte(dentry->inode, i, w->lookup_table);
+	for (unsigned i = 0; i <= dentry->d_inode->num_ads; i++) {
+		lte = inode_stream_lte(dentry->d_inode, i, w->lookup_table);
 		if (lte && ++lte->out_refcnt == 1) {
 			ret = write_wim_resource(lte, w->out_fp, ctype,
 						 &lte->output_resource_entry);
@@ -1204,7 +1204,7 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	dentry->prev   = dentry;
 	if (ret != 0)
 		goto out_free_dentry_tree;
-	inode_add_dentry(dentry, dentry->inode);
+	inode_add_dentry(dentry, dentry->d_inode);
 
 	/* Now read the entire directory entry tree into memory. */
 	DEBUG("Reading dentry tree");
@@ -1240,8 +1240,8 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 
 	DEBUG("Done reading image metadata");
 
-	imd->root_dentry   = dentry;
-	imd->inode_list = inode_list;
+	imd->root_dentry = dentry;
+	imd->inode_list  = inode_list;
 	goto out_free_buf;
 out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL);

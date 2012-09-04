@@ -328,7 +328,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 				lte->ntfs_loc = ntfs_loc;
 				lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
 				if (type == AT_REPARSE_POINT) {
-					dentry->inode->reparse_tag = reparse_tag;
+					dentry->d_inode->reparse_tag = reparse_tag;
 					ntfs_loc->is_reparse_point = true;
 					lte->resource_entry.original_size = data_size - 8;
 					lte->resource_entry.size = data_size - 8;
@@ -348,13 +348,13 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 		if (name_length == 0) {
 			/* Unnamed data stream.  Put the reference to it in the
 			 * dentry's inode. */
-			if (dentry->inode->lte) {
+			if (dentry->d_inode->lte) {
 				ERROR("Found two un-named data streams for "
 				      "`%s'", path);
 				ret = WIMLIB_ERR_NTFS_3G;
 				goto out_free_lte;
 			}
-			dentry->inode->lte = lte;
+			dentry->d_inode->lte = lte;
 		} else {
 			/* Named data stream.  Put the reference to it in the
 			 * alternate data stream entries */
@@ -365,7 +365,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 							 &stream_name_utf8_len);
 			if (!stream_name_utf8)
 				goto out_free_lte;
-			new_ads_entry = inode_add_ads(dentry->inode, stream_name_utf8);
+			new_ads_entry = inode_add_ads(dentry->d_inode, stream_name_utf8);
 			FREE(stream_name_utf8);
 			if (!new_ads_entry)
 				goto out_free_lte;
@@ -570,12 +570,12 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 		}
 	}
 
-	root->inode->creation_time    = le64_to_cpu(ni->creation_time);
-	root->inode->last_write_time  = le64_to_cpu(ni->last_data_change_time);
-	root->inode->last_access_time = le64_to_cpu(ni->last_access_time);
-	root->inode->attributes       = le32_to_cpu(attributes);
-	root->inode->ino              = ni->mft_no;
-	root->inode->resolved         = true;
+	root->d_inode->creation_time    = le64_to_cpu(ni->creation_time);
+	root->d_inode->last_write_time  = le64_to_cpu(ni->last_data_change_time);
+	root->d_inode->last_access_time = le64_to_cpu(ni->last_access_time);
+	root->d_inode->attributes       = le32_to_cpu(attributes);
+	root->d_inode->ino              = ni->mft_no;
+	root->d_inode->resolved         = true;
 
 	if (attributes & FILE_ATTR_REPARSE_POINT) {
 		/* Junction point, symbolic link, or other reparse point */
@@ -623,20 +623,20 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 						 ni, dir_ni, sd, ret);
 	}
 	if (ret > 0) {
-		root->inode->security_id = sd_set_add_sd(sd_set, sd, ret);
-		if (root->inode->security_id == -1) {
+		root->d_inode->security_id = sd_set_add_sd(sd_set, sd, ret);
+		if (root->d_inode->security_id == -1) {
 			ERROR("Out of memory");
 			return WIMLIB_ERR_NOMEM;
 		}
 		DEBUG("Added security ID = %u for `%s'",
-		      root->inode->security_id, path);
+		      root->d_inode->security_id, path);
 		ret = 0;
 	} else if (ret < 0) {
 		ERROR_WITH_ERRNO("Failed to get security information from "
 				 "`%s'", path);
 		ret = WIMLIB_ERR_NTFS_3G;
 	} else {
-		root->inode->security_id = -1;
+		root->d_inode->security_id = -1;
 		DEBUG("No security ID for `%s'", path);
 	}
 	return ret;

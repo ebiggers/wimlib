@@ -126,7 +126,7 @@ static inline bool ads_entries_have_same_name(const struct ads_entry *entry_1,
  */
 struct dentry {
 	/* The inode for this dentry */
-	struct inode *inode;
+	struct inode *d_inode;
 
 	/* The parent of this directory entry. */
 	struct dentry *parent;
@@ -353,8 +353,6 @@ extern int verify_dentry(struct dentry *dentry, void *wim);
 extern struct ads_entry *inode_get_ads_entry(struct inode *inode,
 					     const char *stream_name,
 					     u16 *idx_ret);
-extern void inode_free_ads_entries(struct inode *inode);
-
 extern struct ads_entry *inode_add_ads(struct inode *dentry,
 				       const char *stream_name);
 
@@ -377,7 +375,7 @@ static inline bool dentry_is_root(const struct dentry *dentry)
 
 static inline bool dentry_is_first_sibling(const struct dentry *dentry)
 {
-	return dentry_is_root(dentry) || dentry->parent->inode->children == dentry;
+	return dentry_is_root(dentry) || dentry->parent->d_inode->children == dentry;
 }
 
 static inline bool dentry_is_only_child(const struct dentry *dentry)
@@ -393,7 +391,7 @@ static inline bool inode_is_directory(const struct inode *inode)
 
 static inline bool dentry_is_directory(const struct dentry *dentry)
 {
-	return inode_is_directory(dentry->inode);
+	return inode_is_directory(dentry->d_inode);
 }
 
 /* For our purposes, we consider "real" symlinks and "junction points" to both
@@ -407,7 +405,7 @@ static inline bool inode_is_symlink(const struct inode *inode)
 
 static inline bool dentry_is_symlink(const struct dentry *dentry)
 {
-	return inode_is_symlink(dentry->inode);
+	return inode_is_symlink(dentry->d_inode);
 }
 
 static inline bool inode_is_regular_file(const struct inode *inode)
@@ -417,12 +415,12 @@ static inline bool inode_is_regular_file(const struct inode *inode)
 
 static inline bool dentry_is_regular_file(const struct dentry *dentry)
 {
-	return inode_is_regular_file(dentry->inode);
+	return inode_is_regular_file(dentry->d_inode);
 }
 
 static inline bool dentry_is_empty_directory(const struct dentry *dentry)
 {
-	return dentry_is_directory(dentry) && dentry->inode->children == NULL;
+	return dentry_is_directory(dentry) && dentry->d_inode->children == NULL;
 }
 
 #endif

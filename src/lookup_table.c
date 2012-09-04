@@ -147,6 +147,7 @@ static void finalize_lte(struct lookup_table_entry *lte)
 	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		unlink(lte->staging_file_name);
 		wimlib_assert(lte->staging_list.next);
+		wimlib_assert(lte->staging_list.prev);
 		list_del(&lte->staging_list);
 	}
 	#endif
@@ -160,17 +161,16 @@ static void finalize_lte(struct lookup_table_entry *lte)
 struct lookup_table_entry *
 lte_decrement_refcnt(struct lookup_table_entry *lte, struct lookup_table *table)
 {
-	if (lte) {
-		wimlib_assert(lte->refcnt);
-		if (--lte->refcnt == 0) {
-			lookup_table_unlink(table, lte);
-		#ifdef WITH_FUSE
-			if (lte->num_opened_fds == 0)
-		#endif
-			{
-				finalize_lte(lte);
-				lte = NULL;
-			}
+	wimlib_assert(lte);
+	wimlib_assert(lte->refcnt);
+	if (--lte->refcnt == 0) {
+		lookup_table_unlink(table, lte);
+	#ifdef WITH_FUSE
+		if (lte->num_opened_fds == 0)
+	#endif
+		{
+			finalize_lte(lte);
+			lte = NULL;
 		}
 	}
 	return lte;
@@ -450,6 +450,8 @@ __lookup_resource(const struct lookup_table *table, const u8 hash[])
 	struct lookup_table_entry *lte;
 	struct hlist_node *pos;
 
+	wimlib_assert(table);
+
 	i = *(size_t*)hash % table->capacity;
 	hlist_for_each_entry(lte, pos, &table->array[i], hash_list)
 		if (hashes_equal(hash, lte->hash))
@@ -491,7 +493,7 @@ int lookup_resource(WIMStruct *w, const char *path,
 	if (!dentry)
 		return -ENOENT;
 
-	inode = dentry->inode;
+	inode = dentry->d_inode;
 
 	wimlib_assert(inode->resolved);
 
@@ -554,8 +556,8 @@ static void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
  */
 int dentry_resolve_ltes(struct dentry *dentry, void *table)
 {
-	if (!dentry->inode->resolved)
-		inode_resolve_ltes(dentry->inode, table);
+	if (!dentry->d_inode->resolved)
+		inode_resolve_ltes(dentry->d_inode, table);
 	return 0;
 }
 

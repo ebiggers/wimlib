@@ -155,7 +155,7 @@ struct lookup_table_entry {
 		/* Pointer to inode that contains the opened file descriptors to
 		 * this stream (valid iff resource_location ==
 		 * RESOURCE_IN_STAGING_FILE) */
-		struct inode *inode;
+		struct inode *lte_inode;
 	};
 #ifdef WITH_FUSE
 	u16 num_opened_fds;

@@ -116,7 +116,7 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 	unsigned stream_idx = 0;
 	ntfschar *stream_name = AT_UNNAMED;
 	u32 stream_name_len = 0;
-	const struct inode *inode = dentry->inode;
+	const struct inode *inode = dentry->d_inode;
 
 	DEBUG("Writing %u NTFS data stream%s for `%s'",
 	      inode->num_ads + 1,
@@ -248,11 +248,11 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 					const WIMStruct *w)
 {
 	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
-	      dentry->full_path_utf8, dentry->inode->attributes);
+	      dentry->full_path_utf8, dentry->d_inode->attributes);
 	int ret;
 	struct SECURITY_CONTEXT ctx;
 	u32 attributes_le32;
- 	attributes_le32 = cpu_to_le32(dentry->inode->attributes);
+ 	attributes_le32 = cpu_to_le32(dentry->d_inode->attributes);
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.vol = ni->vol;
 	ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ATTRIB,
@@ -264,19 +264,19 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 		       dentry->full_path_utf8);
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	if (dentry->inode->security_id != -1) {
+	if (dentry->d_inode->security_id != -1) {
 		const struct wim_security_data *sd;
 		const char *descriptor;
 		
 		sd = wim_const_security_data(w);
-		wimlib_assert(dentry->inode->security_id < sd->num_entries);
-		descriptor = sd->descriptors[dentry->inode->security_id];
+		wimlib_assert(dentry->d_inode->security_id < sd->num_entries);
+		descriptor = sd->descriptors[dentry->d_inode->security_id];
 		DEBUG("Applying security descriptor %d to `%s'",
-		      dentry->inode->security_id, dentry->full_path_utf8);
+		      dentry->d_inode->security_id, dentry->full_path_utf8);
 
 		ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ACL,
 						 ni, dir_ni, descriptor,
-					   	 sd->sizes[dentry->inode->security_id], 0);
+					   	 sd->sizes[dentry->d_inode->security_id], 0);
 				
 		if (ret != 0) {
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
@@ -293,9 +293,9 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 	struct lookup_table_entry *lte;
 	int ret = 0;
 
-	wimlib_assert(dentry->inode->attributes & FILE_ATTRIBUTE_REPARSE_POINT);
+	wimlib_assert(dentry->d_inode->attributes & FILE_ATTRIBUTE_REPARSE_POINT);
 
-	lte = inode_unnamed_lte(dentry->inode, w->lookup_table);
+	lte = inode_unnamed_lte(dentry->d_inode, w->lookup_table);
 
 	DEBUG("Applying reparse data to `%s'", dentry->full_path_utf8);
 
@@ -313,7 +313,7 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 
 	u8 reparse_data_buf[8 + wim_resource_size(lte)];
 	u8 *p = reparse_data_buf;
-	p = put_u32(p, dentry->inode->reparse_tag); /* ReparseTag */
+	p = put_u32(p, dentry->d_inode->reparse_tag); /* ReparseTag */
 	p = put_u16(p, wim_resource_size(lte)); /* ReparseDataLength */
 	p = put_u16(p, 0); /* Reserved */
 
@@ -350,7 +350,7 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
 	struct dentry *dentry_with_dos_name;
 
 	dentry_with_dos_name = NULL;
-	inode_for_each_dentry(other, dentry->inode) {
+	inode_for_each_dentry(other, dentry->d_inode) {
 		if (other != dentry && (dentry->parent == other->parent)
 		    && other->short_name_len)
 		{
@@ -414,7 +414,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	ntfs_inode *ni = NULL;
 	bool is_hardlink = false;
 	ntfs_volume *vol = dir_ni->vol;
-	struct inode *inode = dentry->inode;
+	struct inode *inode = dentry->d_inode;
 	dentry->is_extracted = true;
 
 	if (inode->attributes & FILE_ATTRIBUTE_DIRECTORY) {
@@ -663,9 +663,9 @@ static int wim_apply_dentry_timestamps(struct dentry *dentry, void *arg)
 	}
 
 	p = buf;
-	p = put_u64(p, dentry->inode->creation_time);
-	p = put_u64(p, dentry->inode->last_write_time);
-	p = put_u64(p, dentry->inode->last_access_time);
+	p = put_u64(p, dentry->d_inode->creation_time);
+	p = put_u64(p, dentry->d_inode->last_write_time);
+	p = put_u64(p, dentry->d_inode->last_access_time);
 	ret = ntfs_inode_set_times(ni, (const char*)buf, 3 * sizeof(u64), 0);
 	if (ret != 0) {
 		ERROR_WITH_ERRNO("Failed to set NTFS timestamps on `%s'",

@@ -131,9 +131,9 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 	if (!root)
 		return WIMLIB_ERR_NOMEM;
 
-	stbuf_to_inode(&root_stbuf, root->inode);
+	stbuf_to_inode(&root_stbuf, root->d_inode);
 	add_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
-	root->inode->resolved = true;
+	root->d_inode->resolved = true;
 
 	if (dentry_is_directory(root)) {
 		/* Open the directory on disk */
@@ -184,7 +184,7 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 		}
 		deref_name_buf[deref_name_len] = '\0';
 		DEBUG("Read symlink `%s'", deref_name_buf);
-		ret = inode_set_symlink(root->inode, deref_name_buf,
+		ret = inode_set_symlink(root->d_inode, deref_name_buf,
 					lookup_table, NULL);
 	} else {
 		/* Regular file */
@@ -226,7 +226,7 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 			copy_hash(lte->hash, hash);
 			lookup_table_insert(lookup_table, lte);
 		}
-		root->inode->lte = lte;
+		root->d_inode->lte = lte;
 	}
 out:
 	*root_ret = root;
@@ -253,7 +253,7 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 
 	src_wim = ((struct wim_pair*)arg)->src_wim;
 	dest_wim = ((struct wim_pair*)arg)->dest_wim;
-	inode = dentry->inode;
+	inode = dentry->d_inode;
 
 	wimlib_assert(!inode->resolved);
 

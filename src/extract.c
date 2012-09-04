@@ -124,7 +124,7 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 
 	int out_fd;
 	int ret;
-	struct inode *inode = dentry->inode;
+	struct inode *inode = dentry->d_inode;
 
 	if (!((extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE)
 		&& (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
@@ -198,7 +198,7 @@ static int extract_regular_file(WIMStruct *w,
 				int extract_flags)
 {
 	struct lookup_table_entry *lte;
-	const struct inode *inode = dentry->inode;
+	const struct inode *inode = dentry->d_inode;
 
 	lte = inode_unnamed_lte(inode, w->lookup_table);
 
@@ -224,7 +224,7 @@ static int extract_symlink(const struct dentry *dentry, const char *output_path,
 			   const WIMStruct *w)
 {
 	char target[4096];
-	ssize_t ret = inode_readlink(dentry->inode, target, sizeof(target), w);
+	ssize_t ret = inode_readlink(dentry->d_inode, target, sizeof(target), w);
 	if (ret <= 0) {
 		ERROR("Could not read the symbolic link from dentry `%s'",
 		      dentry->full_path_utf8);
@@ -324,8 +324,8 @@ static int apply_dentry_timestamps(struct dentry *dentry, void *arg)
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
 	struct timeval tv[2];
-	wim_timestamp_to_timeval(dentry->inode->last_access_time, &tv[0]);
-	wim_timestamp_to_timeval(dentry->inode->last_write_time, &tv[1]);
+	wim_timestamp_to_timeval(dentry->d_inode->last_access_time, &tv[0]);
+	wim_timestamp_to_timeval(dentry->d_inode->last_write_time, &tv[1]);
 	if (lutimes(output_path, tv) != 0) {
 		WARNING("Failed to set timestamp on file `%s': %s",
 		        output_path, strerror(errno));

@@ -93,7 +93,7 @@ static size_t inode_link_count(const struct inode *inode)
 int inode_table_insert(struct dentry *dentry, void *__table)
 {
 	struct inode_table *table = __table;
-	struct inode *d_inode = dentry->inode;
+	struct inode *d_inode = dentry->d_inode;
 
 	if (d_inode->ino == 0) {
 		/* Single inode--- Add to the list of extra inodes (we can't put
@@ -227,17 +227,17 @@ static int fix_true_inode(struct inode *inode)
 	u64 last_atime = 0;
 
 	inode_for_each_dentry(dentry, inode) {
-		if (!ref_dentry || dentry->inode->num_ads > ref_dentry->inode->num_ads)
+		if (!ref_dentry || dentry->d_inode->num_ads > ref_dentry->d_inode->num_ads)
 			ref_dentry = dentry;
-		if (dentry->inode->creation_time > last_ctime)
-			last_ctime = dentry->inode->creation_time;
-		if (dentry->inode->last_write_time > last_mtime)
-			last_mtime = dentry->inode->last_write_time;
-		if (dentry->inode->last_access_time > last_atime)
-			last_atime = dentry->inode->last_access_time;
+		if (dentry->d_inode->creation_time > last_ctime)
+			last_ctime = dentry->d_inode->creation_time;
+		if (dentry->d_inode->last_write_time > last_mtime)
+			last_mtime = dentry->d_inode->last_write_time;
+		if (dentry->d_inode->last_access_time > last_atime)
+			last_atime = dentry->d_inode->last_access_time;
 	}
 
-	ref_inode = ref_dentry->inode;
+	ref_inode = ref_dentry->d_inode;
 	ref_inode->link_count = 1;
 
 	list_del(&inode->dentry_list);
@@ -245,13 +245,13 @@ static int fix_true_inode(struct inode *inode)
 
 	inode_for_each_dentry(dentry, ref_inode) {
 		if (dentry != ref_dentry) {
-			if (!inodes_consistent(ref_inode, dentry->inode)) {
+			if (!inodes_consistent(ref_inode, dentry->d_inode)) {
 				inconsistent_inode(ref_inode);
 				return WIMLIB_ERR_INVALID_DENTRY;
 			}
 			/* Free the unneeded `struct inode'. */
-			free_inode(dentry->inode);
-			dentry->inode = ref_inode;
+			free_inode(dentry->d_inode);
+			dentry->d_inode = ref_inode;
 			ref_inode->link_count++;
 		}
 	}
@@ -294,9 +294,9 @@ fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
          * least one data stream with a non-zero hash, and another list that
          * contains the dentries that have a zero hash for all data streams. */
 	inode_for_each_dentry(dentry, inode) {
-		for (unsigned i = 0; i <= dentry->inode->num_ads; i++) {
+		for (unsigned i = 0; i <= dentry->d_inode->num_ads; i++) {
 			const u8 *hash;
-			hash = inode_stream_hash(dentry->inode, i);
+			hash = inode_stream_hash(dentry->d_inode, i);
 			if (!is_zero_hash(hash)) {
 				list_add(&dentry->tmp_list,
 					 &dentries_with_data_streams);
@@ -336,15 +336,15 @@ fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
 		 * consistent with this dentry, add a new one (if that happens,
 		 * we have split the hard link group). */
 		hlist_for_each_entry(inode, cur, &true_inodes, hlist) {
-			if (ref_inodes_consistent(inode, dentry->inode)) {
+			if (ref_inodes_consistent(inode, dentry->d_inode)) {
 				inode_add_dentry(dentry, inode);
 				goto next_dentry_2;
 			}
 		}
 		num_true_inodes++;
-		INIT_LIST_HEAD(&dentry->inode->dentry_list);
-		inode_add_dentry(dentry, dentry->inode);
-		hlist_add_head(&dentry->inode->hlist, &true_inodes);
+		INIT_LIST_HEAD(&dentry->d_inode->dentry_list);
+		inode_add_dentry(dentry, dentry->d_inode);
+		hlist_add_head(&dentry->d_inode->hlist, &true_inodes);
 next_dentry_2:
 		;
 	}

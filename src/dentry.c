@@ -157,7 +157,7 @@ static u64 ads_entry_total_length(const struct ads_entry *entry)
 
 static u64 __dentry_total_length(const struct dentry *dentry, u64 length)
 {
-	const struct inode *inode = dentry->inode;
+	const struct inode *inode = dentry->d_inode;
 	for (u16 i = 0; i < inode->num_ads; i++)
 		length += ads_entry_total_length(&inode->ads_entries[i]);
 	return (length + 7) & ~7;
@@ -259,7 +259,7 @@ int for_dentry_in_tree(struct dentry *root,
 	if (ret != 0)
 		return ret;
 
-	child = root->inode->children;
+	child = root->d_inode->children;
 
 	if (!child)
 		return 0;
@@ -269,7 +269,7 @@ int for_dentry_in_tree(struct dentry *root,
 		if (ret != 0)
 			return ret;
 		child = child->next;
-	} while (child != root->inode->children);
+	} while (child != root->d_inode->children);
 	return 0;
 }
 
@@ -284,7 +284,7 @@ int for_dentry_in_tree_depth(struct dentry *root,
 	struct dentry *child;
 	struct dentry *next;
 
-	child = root->inode->children;
+	child = root->d_inode->children;
 	if (child) {
 		do {
 			next = child->next;
@@ -292,7 +292,7 @@ int for_dentry_in_tree_depth(struct dentry *root,
 			if (ret != 0)
 				return ret;
 			child = next;
-		} while (child != root->inode->children);
+		} while (child != root->d_inode->children);
 	}
 	return visitor(root, arg);
 }
@@ -358,7 +358,7 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 {
 	struct dentry *child;
 
-	child = dentry->inode->children;
+	child = dentry->d_inode->children;
 	dentry->subdir_offset = *subdir_offset_p;
 
 	if (child) {
@@ -367,7 +367,7 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 		do {
 			*subdir_offset_p += dentry_correct_total_length(child);
 			child = child->next;
-		} while (child != dentry->inode->children);
+		} while (child != dentry->d_inode->children);
 
 		/* End-of-directory dentry on disk. */
 		*subdir_offset_p += 8;
@@ -377,7 +377,7 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 		do {
 			calculate_subdir_offsets(child, subdir_offset_p);
 			child = child->next;
-		} while (child != dentry->inode->children);
+		} while (child != dentry->d_inode->children);
 	} else {
 		/* On disk, childless directories have a valid subdir_offset
 		 * that points to an 8-byte end-of-directory dentry.  Regular
@@ -397,14 +397,14 @@ struct dentry *get_dentry_child_with_name(const struct dentry *dentry,
 	struct dentry *child;
 	size_t name_len;
 	
-	child = dentry->inode->children;
+	child = dentry->d_inode->children;
 	if (child) {
 		name_len = strlen(name);
 		do {
 			if (dentry_has_name(child, name, name_len))
 				return child;
 			child = child->next;
-		} while (child != dentry->inode->children);
+		} while (child != dentry->d_inode->children);
 	}
 	return NULL;
 }
@@ -421,14 +421,14 @@ static struct dentry *get_dentry_relative_path(struct dentry *cur_dir,
 	if (*path == '\0')
 		return cur_dir;
 
-	child = cur_dir->inode->children;
+	child = cur_dir->d_inode->children;
 	if (child) {
 		new_path = path_next_part(path, &base_len);
 		do {
 			if (dentry_has_name(child, path, base_len))
 				return get_dentry_relative_path(child, new_path);
 			child = child->next;
-		} while (child != cur_dir->inode->children);
+		} while (child != cur_dir->d_inode->children);
 	}
 	return NULL;
 }
@@ -450,7 +450,7 @@ struct inode *wim_pathname_to_inode(WIMStruct *w, const char *path)
 	if (!dentry)
 		return NULL;
 	else
-		return dentry->inode;
+		return dentry->d_inode;
 }
 
 /* Returns the dentry that corresponds to the parent directory of @path, or NULL
@@ -506,7 +506,7 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 {
 	const u8 *hash;
 	struct lookup_table_entry *lte;
-	const struct inode *inode = dentry->inode;
+	const struct inode *inode = dentry->d_inode;
 	time_t time;
 	char *p;
 
@@ -551,7 +551,7 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	puts("\"");
 	printf("Short Name Length = %hu\n", dentry->short_name_len);
 	printf("Full Path (UTF-8) = \"%s\"\n", dentry->full_path_utf8);
-	lte = inode_stream_lte(dentry->inode, 0, lookup_table);
+	lte = inode_stream_lte(dentry->d_inode, 0, lookup_table);
 	if (lte) {
 		print_lookup_table_entry(lte);
 	} else {
@@ -647,11 +647,11 @@ static struct dentry *__new_dentry_with_inode(const char *name, bool timeless)
 	dentry = new_dentry(name);
 	if (dentry) {
 		if (timeless)
-			dentry->inode = new_timeless_inode();
+			dentry->d_inode = new_timeless_inode();
 		else
-			dentry->inode = new_inode();
-		if (dentry->inode) {
-			inode_add_dentry(dentry, dentry->inode);
+			dentry->d_inode = new_inode();
+		if (dentry->d_inode) {
+			inode_add_dentry(dentry, dentry->d_inode);
 		} else {
 			free_dentry(dentry);
 			dentry = NULL;
@@ -671,11 +671,31 @@ struct dentry *new_dentry_with_inode(const char *name)
 }
 
 
+static int init_ads_entry(struct ads_entry *ads_entry, const char *name)
+{
+	int ret = 0;
+	memset(ads_entry, 0, sizeof(*ads_entry));
+	if (name && *name)
+		ret = change_ads_name(ads_entry, name);
+	return ret;
+}
+
+static void destroy_ads_entry(struct ads_entry *ads_entry)
+{
+	FREE(ads_entry->stream_name);
+	FREE(ads_entry->stream_name_utf8);
+}
+
+
 /* Frees an inode. */
 void free_inode(struct inode *inode)
 {
 	if (inode) {
-		inode_free_ads_entries(inode);
+		if (inode->ads_entries) {
+			for (u16 i = 0; i < inode->num_ads; i++)
+				destroy_ads_entry(&inode->ads_entries[i]);
+			FREE(inode->ads_entries);
+		}
 	#ifdef WITH_FUSE
 		wimlib_assert(inode->num_opened_fds == 0);
 		FREE(inode->fds);
@@ -714,7 +734,7 @@ void free_dentry(struct dentry *dentry)
 	FREE(dentry->file_name_utf8);
 	FREE(dentry->short_name);
 	FREE(dentry->full_path_utf8);
-	put_inode(dentry->inode);
+	put_inode(dentry->d_inode);
 	FREE(dentry);
 }
 
@@ -734,21 +754,20 @@ void put_dentry(struct dentry *dentry)
 static int do_free_dentry(struct dentry *dentry, void *__lookup_table)
 {
 	struct lookup_table *lookup_table = __lookup_table;
-	struct lookup_table_entry *lte;
-	struct inode *inode = dentry->inode;
 	unsigned i;
 
 	if (lookup_table) {
+		struct lookup_table_entry *lte;
+		struct inode *inode = dentry->d_inode;
 		wimlib_assert(inode->link_count);
 		for (i = 0; i <= inode->num_ads; i++) {
 			lte = inode_stream_lte(inode, i, lookup_table);
-			lte_decrement_refcnt(lte, lookup_table);
+			if (lte)
+				lte_decrement_refcnt(lte, lookup_table);
 		}
 	}
 
-	wimlib_assert(dentry->refcnt != 0);
-	if (--dentry->refcnt == 0)
-		free_dentry(dentry);
+	put_dentry(dentry);
 	return 0;
 }
 
@@ -784,21 +803,22 @@ void link_dentry(struct dentry *dentry, struct dentry *parent)
 {
 	wimlib_assert(dentry_is_directory(parent));
 	dentry->parent = parent;
-	if (parent->inode->children) {
+	if (parent->d_inode->children) {
 		/* Not an only child; link to siblings. */
-		dentry->next = parent->inode->children;
-		dentry->prev = parent->inode->children->prev;
+		dentry->next = parent->d_inode->children;
+		dentry->prev = parent->d_inode->children->prev;
 		dentry->next->prev = dentry;
 		dentry->prev->next = dentry;
 	} else {
 		/* Only child; link to parent. */
-		parent->inode->children = dentry;
+		parent->d_inode->children = dentry;
 		dentry->next = dentry;
 		dentry->prev = dentry;
 	}
 }
 
 
+#ifdef WITH_FUSE
 /* 
  * Unlink a dentry from the directory tree. 
  *
@@ -809,15 +829,15 @@ void unlink_dentry(struct dentry *dentry)
 	if (dentry_is_root(dentry))
 		return;
 	if (dentry_is_only_child(dentry)) {
-		dentry->parent->inode->children = NULL;
+		dentry->parent->d_inode->children = NULL;
 	} else {
 		if (dentry_is_first_sibling(dentry))
-			dentry->parent->inode->children = dentry->next;
+			dentry->parent->d_inode->children = dentry->next;
 		dentry->next->prev = dentry->prev;
 		dentry->prev->next = dentry->next;
 	}
 }
-
+#endif
 
 /* Parameters for calculate_dentry_statistics(). */
 struct image_statistics {
@@ -840,8 +860,8 @@ static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
 	else
 		++*stats->file_count;
 
-	for (unsigned i = 0; i <= dentry->inode->num_ads; i++) {
-		lte = inode_stream_lte(dentry->inode, i, stats->lookup_table);
+	for (unsigned i = 0; i <= dentry->d_inode->num_ads; i++) {
+		lte = inode_stream_lte(dentry->d_inode, i, stats->lookup_table);
 		if (lte) {
 			*stats->total_bytes += wim_resource_size(lte);
 			if (++lte->out_refcnt == 1)
@@ -970,11 +990,11 @@ out:
 int verify_dentry(struct dentry *dentry, void *wim)
 {
 	const WIMStruct *w = wim;
-	const struct inode *inode = dentry->inode;
+	const struct inode *inode = dentry->d_inode;
 	int ret = WIMLIB_ERR_INVALID_DENTRY;
 
-	if (!dentry->inode->verified) {
-		ret = verify_inode(dentry->inode, w);
+	if (!dentry->d_inode->verified) {
+		ret = verify_inode(dentry->d_inode, w);
 		if (ret != 0)
 			goto out;
 	}
@@ -1036,32 +1056,6 @@ struct ads_entry *inode_get_ads_entry(struct inode *inode,
 	return NULL;
 }
 #endif
-
-
-static int init_ads_entry(struct ads_entry *ads_entry, const char *name)
-{
-	int ret = 0;
-	memset(ads_entry, 0, sizeof(*ads_entry));
-	if (name && *name)
-		ret = change_ads_name(ads_entry, name);
-	return ret;
-}
-
-static void destroy_ads_entry(struct ads_entry *ads_entry)
-{
-	FREE(ads_entry->stream_name);
-	FREE(ads_entry->stream_name_utf8);
-}
-
-
-void inode_free_ads_entries(struct inode *inode)
-{
-	if (inode->ads_entries) {
-		for (u16 i = 0; i < inode->num_ads; i++)
-			destroy_ads_entry(&inode->ads_entries[i]);
-		FREE(inode->ads_entries);
-	}
-}
 
 #if defined(WITH_FUSE) || defined(WITH_NTFS_3G)
 /* 
@@ -1526,7 +1520,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	/* We've read all the data for this dentry.  Set the names and their
 	 * lengths, and we've done. */
-	dentry->inode              = inode;
+	dentry->d_inode              = inode;
 	dentry->file_name          = file_name;
 	dentry->file_name_utf8     = file_name_utf8;
 	dentry->short_name         = short_name;
@@ -1613,7 +1607,7 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 
 		child->parent = dentry;
 		prev_child = child;
-		inode_add_dentry(child, child->inode);
+		inode_add_dentry(child, child->d_inode);
 
 		/* If there are children of this child, call this procedure
 		 * recursively. */
@@ -1638,7 +1632,7 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		prev_child->next = first_child;
 		first_child->prev = prev_child;
 	}
-	dentry->inode->children = first_child;
+	dentry->d_inode->children = first_child;
 	return ret;
 }
 
@@ -1654,7 +1648,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 {
 	u8 *orig_p = p;
 	const u8 *hash;
-	const struct inode *inode = dentry->inode;
+	const struct inode *inode = dentry->d_inode;
 
 	/* We calculate the correct length of the dentry ourselves because the
 	 * dentry->length field may been set to an unexpected value from when we
@@ -1741,12 +1735,12 @@ static u8 *write_dentry_tree_recursive(const struct dentry *parent, u8 *p)
 	 * recursively writing the directory trees rooted at each of the child
 	 * dentries, since the on-disk dentries for a dentry's children are
 	 * always located at consecutive positions in the metadata resource! */
-	child = parent->inode->children;
+	child = parent->d_inode->children;
 	if (child) {
 		do {
 			p = write_dentry(child, p);
 			child = child->next;
-		} while (child != parent->inode->children);
+		} while (child != parent->d_inode->children);
 	}
 
 	/* write end of directory entry */
@@ -1757,7 +1751,7 @@ static u8 *write_dentry_tree_recursive(const struct dentry *parent, u8 *p)
 		do {
 			p = write_dentry_tree_recursive(child, p);
 			child = child->next;
-		} while (child != parent->inode->children);
+		} while (child != parent->d_inode->children);
 	}
 	return p;
 }
