@@ -54,13 +54,6 @@ struct ntfs_apply_args {
 	WIMStruct *w;
 };
 
-
-#if 0
-extern int ntfs_set_inode_security(ntfs_inode *ni, u32 selection,
-				   const char *attr);
-extern int ntfs_set_inode_attributes(ntfs_inode *ni, u32 attrib);
-#endif
-
 /* 
  * Extracts a WIM resource to a NTFS attribute.
  */

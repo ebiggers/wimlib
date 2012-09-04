@@ -560,8 +560,8 @@ int dentry_resolve_ltes(struct dentry *dentry, void *table)
  * data stream in one of the alternate data streams instead of inside the WIM
  * dentry itself.  So we need to check the alternate data streams too.
  *
- * Also, note that a dentry may appear to have than one unnamed stream, but if
- * the SHA1 message digest is all 0's then the corresponding stream does not
+ * Also, note that a dentry may appear to have more than one unnamed stream, but
+ * if the SHA1 message digest is all 0's then the corresponding stream does not
  * really "count" (this is the case for the inode's own file stream when the
  * file stream that should be there is actually in one of the alternate stream
  * entries.).  This is despite the fact that we may need to extract such a

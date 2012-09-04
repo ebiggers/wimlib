@@ -185,32 +185,6 @@ ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
 				buf_len, inode->reparse_tag);
 }
 
-static int inode_set_symlink_buf(struct inode *inode,
-				 struct lookup_table_entry *lte)
-{
-#if 0
-	struct ads_entry *ads_entries;
-
-	ads_entries = MALLOC(2, sizeof(struct ads_entry));
-	if (!ads_entries)
-		return WIMLIB_ERR_NOMEM;
-	ads_entry_init(&ads_entries[0]);
-	ads_entry_init(&ads_entries[1]);
-
-	wimlib_assert(dentry->num_ads == 0);
-	wimlib_assert(dentry->ads_entries == NULL);
-
-	ads_entries[0].lte = lte;
-
-	/*dentry_free_ads_entries(dentry);*/
-	dentry->num_ads = 2;
-	dentry->ads_entries = ads_entries;
-#endif
-	wimlib_assert(inode->resolved);
-	inode->lte = lte;
-	return 0;
-}
-
 /* 
  * Sets @dentry to be a symbolic link pointing to @target.
  *
@@ -262,11 +236,7 @@ int inode_set_symlink(struct inode *inode, const char *target,
 		copy_hash(lte->hash, symlink_buf_hash);
 	}
 
-	ret = inode_set_symlink_buf(inode, lte);
-
-	if (ret != 0)
-		goto out_free_lte;
-
+	inode->lte = lte;
 	inode->resolved = true;
 
 	DEBUG("Loaded symlink buf");
