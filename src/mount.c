@@ -54,7 +54,7 @@
 /* File descriptor to a file open on the WIM filesystem. */
 struct wimlib_fd {
 	struct inode *f_inode;
-	struct lookup_table_entry *lte;
+	struct lookup_table_entry *f_lte;
 	int staging_fd;
 	u16 idx;
 	u32 stream_id;
@@ -147,7 +147,7 @@ static int alloc_wimlib_fd(struct inode *inode,
 			if (!fd)
 				return -ENOMEM;
 			fd->f_inode    = inode;
-			fd->lte        = lte;
+			fd->f_lte      = lte;
 			fd->staging_fd = -1;
 			fd->idx        = i;
 			fd->stream_id  = stream_id;
@@ -180,7 +180,7 @@ static void inode_put_fd(struct inode *inode, struct wimlib_fd *fd)
 static int lte_put_fd(struct lookup_table_entry *lte, struct wimlib_fd *fd)
 {
 	wimlib_assert(fd);
-	wimlib_assert(fd->lte == lte);
+	wimlib_assert(fd->f_lte == lte);
 
 	if (!lte) /* Empty stream with no lookup table entry */
 		return 0;
@@ -208,7 +208,7 @@ static int close_wimlib_fd(struct wimlib_fd *fd)
 	DEBUG("Closing fd (inode = %lu, opened = %u, allocated = %u)",
 	      fd->f_inode->ino, fd->f_inode->num_opened_fds,
 	      fd->f_inode->num_allocated_fds);
-	ret = lte_put_fd(fd->lte, fd);
+	ret = lte_put_fd(fd->f_lte, fd);
 	if (ret != 0)
 		return ret;
 
@@ -385,8 +385,8 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 			struct wimlib_fd *fd = inode->fds[i];
 			if (fd) {
 				if (fd->stream_id == stream_id) {
-					wimlib_assert(fd->lte == old_lte);
-					fd->lte = new_lte;
+					wimlib_assert(fd->f_lte == old_lte);
+					fd->f_lte = new_lte;
 					new_lte->num_opened_fds++;
 					fd->staging_fd = open(staging_file_name, O_RDONLY);
 					if (fd->staging_fd == -1) {
@@ -426,8 +426,8 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 out_revert_fd_changes:
 	for (u16 i = 0, j = 0; j < new_lte->num_opened_fds; i++) {
 		struct wimlib_fd *fd = inode->fds[i];
-		if (fd && fd->stream_id == stream_id && fd->lte == new_lte) {
-			fd->lte = old_lte;
+		if (fd && fd->stream_id == stream_id && fd->f_lte == new_lte) {
+			fd->f_lte = old_lte;
 			if (fd->staging_fd != -1) {
 				close(fd->staging_fd);
 				fd->staging_fd = -1;
@@ -861,7 +861,7 @@ static int wimfs_fgetattr(const char *path, struct stat *stbuf,
 			  struct fuse_file_info *fi)
 {
 	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
-	return inode_to_stbuf(fd->f_inode, fd->lte, stbuf);
+	return inode_to_stbuf(fd->f_inode, fd->f_lte, stbuf);
 }
 
 static int wimfs_ftruncate(const char *path, off_t size,
@@ -871,8 +871,8 @@ static int wimfs_ftruncate(const char *path, off_t size,
 	int ret = ftruncate(fd->staging_fd, size);
 	if (ret != 0)
 		return ret;
-	if (fd->lte && size < fd->lte->resource_entry.original_size)
-		fd->lte->resource_entry.original_size = size;
+	if (fd->f_lte && size < fd->f_lte->resource_entry.original_size)
+		fd->f_lte->resource_entry.original_size = size;
 	return 0;
 }
 
@@ -1042,7 +1042,6 @@ static int wimfs_mkdir(const char *path, mode_t mode)
 	return 0;
 }
 
-
 /* Creates a regular file. */
 static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
@@ -1177,13 +1176,13 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 	if (!fd)
 		return -EBADF;
 
-	if (!fd->lte) /* Empty stream with no lookup table entry */
+	if (!fd->f_lte) /* Empty stream with no lookup table entry */
 		return 0;
 
-	if (fd->lte->resource_location == RESOURCE_IN_STAGING_FILE) {
+	if (fd->f_lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		/* Read from staging file */
 
-		wimlib_assert(fd->lte->staging_file_name);
+		wimlib_assert(fd->f_lte->staging_file_name);
 		wimlib_assert(fd->staging_fd != -1);
 
 		ssize_t ret;
@@ -1198,14 +1197,14 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 	} else {
 		/* Read from WIM */
 
-		u64 res_size = wim_resource_size(fd->lte);
+		u64 res_size = wim_resource_size(fd->f_lte);
 		
 		if (offset > res_size)
 			return -EOVERFLOW;
 
 		size = min(size, res_size - offset);
 
-		if (read_wim_resource(fd->lte, (u8*)buf,
+		if (read_wim_resource(fd->f_lte, (u8*)buf,
 				      size, offset, false) != 0)
 			return -EIO;
 		return size;
@@ -1610,8 +1609,8 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 	if (!fd)
 		return -EBADF;
 
-	wimlib_assert(fd->lte);
-	wimlib_assert(fd->lte->staging_file_name);
+	wimlib_assert(fd->f_lte);
+	wimlib_assert(fd->f_lte->staging_file_name);
 	wimlib_assert(fd->staging_fd != -1);
 	wimlib_assert(fd->f_inode);
 

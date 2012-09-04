@@ -83,6 +83,8 @@ struct ads_entry {
 	char *stream_name_utf8;
 
 #ifdef WITH_FUSE
+	/* Number to identify an alternate data stream even after it's possibly
+	 * been moved. */
 	u32 stream_id;
 #endif
 };

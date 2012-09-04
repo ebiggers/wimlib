@@ -1068,6 +1068,8 @@ struct ads_entry *inode_add_ads(struct inode *inode, const char *stream_name)
 	struct ads_entry *ads_entries;
 	struct ads_entry *new_entry;
 
+	DEBUG("Add alternate data stream `%s'", stream_name);
+
 	if (inode->num_ads >= 0xfffe) {
 		ERROR("Too many alternate data streams in one inode!");
 		return NULL;
@@ -1087,6 +1089,7 @@ struct ads_entry *inode_add_ads(struct inode *inode, const char *stream_name)
 #ifdef WITH_FUSE
 	new_entry->stream_id = inode->next_stream_id++;
 #endif
+	inode->num_ads = num_ads;
 	return new_entry;
 }
 #endif
@@ -1693,8 +1696,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	}
 
 	/* Align to 8-byte boundary */
-	wimlib_assert(length >= (p - orig_p)
-			&& length - (p - orig_p) <= 7);
+	wimlib_assert(length >= (p - orig_p) && length - (p - orig_p) <= 7);
 	p = put_zeroes(p, length - (p - orig_p));
 
 	/* Write the alternate data streams, if there are any.  Please see
@@ -1713,9 +1715,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 		}
 		p = put_zeroes(p, (8 - (p - orig_p) % 8) % 8);
 	}
-#ifdef ENABLE_ASSERTIONS
 	wimlib_assert(p - orig_p == __dentry_total_length(dentry, length));
-#endif
 	return p;
 }
 
