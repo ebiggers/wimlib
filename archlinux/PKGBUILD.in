@@ -8,7 +8,7 @@ pkgrel=1
 pkgdesc="A library to extract, create, and modify WIM files"
 arch=("i686" "x86_64")
 url="http://sourceforge.net/projects/wimlib"
-license=("LGPL")
+license=("GPL3")
 depends=("openssl" "fuse" "libxml2" "ntfs-3g" "attr")
 optdepends=("cdrkit: for making ISO image of Windows PE"
 	"mtools: for making disk image of Windows PE"	
@@ -20,12 +20,13 @@ source=("http://downloads.sourceforge.net/$pkgname/$pkgname-$pkgver.tar.gz")
 
 build() {
 	cd "$pkgname-$pkgver"
-	./configure --disable-verify-compression --with-libcrypto --with-fuse
+	./configure --disable-verify-compression --with-libcrypto --with-fuse \
 		    --with-ntfs-3g --enable-xattr --prefix=/usr
 	make
 }
 
 check() {
+	cd "$pkgname-$pkgver"  
 	make check
 }
 
