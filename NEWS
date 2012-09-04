@@ -1,7 +1,12 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
 Version 1.0.2:
-	Fixed bug when capturing NTFS file with multiple named data streams
+	Fixed bug when capturing NTFS file with multiple named data streams.
+
+	Internally, we are now using inode structures, even though these don't
+	appear literally in the WIM file.  This simplifies some of the code
+	(mainly for WIM mounting) and likely fixed a few problems, although it
+	needs more testing.
 
 Version 1.0.1:
 	Fixed problem when exporting images from XPRESS to LZX compressed WIM or
