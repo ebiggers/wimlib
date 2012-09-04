@@ -143,6 +143,8 @@ extern const char *path_next_part(const char *path,
 
 extern const char *path_basename(const char *path);
 
+extern const char *path_stream_name(const char *path);
+
 extern void to_parent_name(char buf[], size_t len);
 
 extern void print_string(const void *string, size_t len);

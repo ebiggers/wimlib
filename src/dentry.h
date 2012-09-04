@@ -22,7 +22,6 @@ struct dentry;
  * including the stream length field (see below). */
 #define WIM_ADS_ENTRY_DISK_SIZE 38
 
-
 /* 
  * Reparse tags documented at 
  * http://msdn.microsoft.com/en-us/library/dd541667(v=prot.10).aspx
@@ -88,24 +87,6 @@ struct ads_entry {
 #endif
 };
 
-/* Returns the total length of a WIM alternate data stream entry on-disk,
- * including the stream name, the null terminator, AND the padding after the
- * entry to align the next one (or the next dentry) on an 8-byte boundary. */
-static inline u64 ads_entry_total_length(const struct ads_entry *entry)
-{
-	u64 len = WIM_ADS_ENTRY_DISK_SIZE;
-	if (entry->stream_name_len)
-		len += entry->stream_name_len + 2;
-	return (len + 7) & ~7;
-}
-
-static inline bool ads_entry_has_name(const struct ads_entry *entry,
-				      const char *name, size_t name_len)
-{
-	if (entry->stream_name_utf8_len != name_len)
-		return false;
-	return memcmp(entry->stream_name_utf8, name, name_len) == 0;
-}
 
 static inline bool ads_entries_have_same_name(const struct ads_entry *entry_1,
 					      const struct ads_entry *entry_2)
@@ -313,19 +294,7 @@ static inline bool dentry_is_extracted(const struct dentry *dentry)
 	return dentry->is_extracted;
 }
 
-extern struct ads_entry *inode_get_ads_entry(struct inode *inode,
-					     const char *stream_name,
-					     u16 *idx_ret);
 
-extern struct ads_entry *inode_add_ads(struct inode *dentry,
-				       const char *stream_name);
-
-extern void inode_remove_ads(struct inode *inode, u16 idx,
-			     struct lookup_table *lookup_table);
-
-extern const char *path_stream_name(const char *path);
-
-extern u64 dentry_total_length(const struct dentry *dentry);
 extern u64 dentry_correct_total_length(const struct dentry *dentry);
 
 extern void stbuf_to_inode(const struct stat *stbuf, struct inode *inode);
@@ -345,39 +314,31 @@ extern void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p
 extern int get_names(char **name_utf16_ret, char **name_utf8_ret,
 	      	     u16 *name_utf16_len_ret, u16 *name_utf8_len_ret,
 	             const char *name);
-extern int change_dentry_name(struct dentry *dentry, const char *new_name);
-extern int change_ads_name(struct ads_entry *entry, const char *new_name);
-
-extern void unlink_dentry(struct dentry *dentry);
-extern void link_dentry(struct dentry *dentry, struct dentry *parent);
-
-extern int print_dentry(struct dentry *dentry, void *lookup_table);
-extern int print_dentry_full_path(struct dentry *entry, void *ignore);
 
 extern struct dentry *get_dentry(struct WIMStruct *w, const char *path);
 extern struct inode *wim_pathname_to_inode(struct WIMStruct *w,
 					   const char *path);
-extern struct dentry *get_parent_dentry(struct WIMStruct *w, const char *path);
 extern struct dentry *get_dentry_child_with_name(const struct dentry *dentry, 
-							const char *name);
-extern void dentry_update_all_timestamps(struct dentry *dentry);
-extern void init_dentry(struct dentry *dentry, const char *name);
+						 const char *name);
+extern struct dentry *get_parent_dentry(struct WIMStruct *w, const char *path);
+
+extern int print_dentry(struct dentry *dentry, void *lookup_table);
+extern int print_dentry_full_path(struct dentry *entry, void *ignore);
+
 extern struct dentry *new_dentry(const char *name);
-extern struct inode *new_inode();
-extern struct inode *new_timeless_inode();
 extern struct dentry *new_dentry_with_inode(const char *name);
 extern struct dentry *new_dentry_with_timeless_inode(const char *name);
 
-extern void inode_free_ads_entries(struct inode *inode);
-extern struct inode *free_dentry(struct dentry *dentry);
 extern void free_inode(struct inode *inode);
-extern struct inode *put_inode(struct inode *inode);
-extern struct dentry *clone_dentry(struct dentry *old);
+extern void free_dentry(struct dentry *dentry);
 extern void put_dentry(struct dentry *dentry);
+
 extern void free_dentry_tree(struct dentry *root,
 			     struct lookup_table *lookup_table);
 extern int increment_dentry_refcnt(struct dentry *dentry, void *ignore);
-extern int decrement_dentry_refcnt(struct dentry *dentry, void *ignore);
+
+extern void unlink_dentry(struct dentry *dentry);
+extern void link_dentry(struct dentry *dentry, struct dentry *parent);
 
 extern void calculate_dir_tree_statistics(struct dentry *root, 
 					  struct lookup_table *table, 
@@ -386,23 +347,28 @@ extern void calculate_dir_tree_statistics(struct dentry *root,
 					  u64 *total_bytes_ret, 
 					  u64 *hard_link_bytes_ret);
 
+extern int verify_dentry(struct dentry *dentry, void *wim);
+
+
+extern struct ads_entry *inode_get_ads_entry(struct inode *inode,
+					     const char *stream_name,
+					     u16 *idx_ret);
+extern void inode_free_ads_entries(struct inode *inode);
+
+extern struct ads_entry *inode_add_ads(struct inode *dentry,
+				       const char *stream_name);
+
+extern void inode_remove_ads(struct inode *inode, u16 idx,
+			     struct lookup_table *lookup_table);
+
 extern int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len, 
 		       u64 offset, struct dentry *dentry);
 
-extern int verify_dentry(struct dentry *dentry, void *wim);
 
 extern int read_dentry_tree(const u8 metadata_resource[], 
 			    u64 metadata_resource_len, struct dentry *dentry);
 
 extern u8 *write_dentry_tree(const struct dentry *tree, u8 *p);
-
-
-static inline struct dentry *inode_first_dentry(struct inode *inode)
-{
-	wimlib_assert(inode->dentry_list.next != &inode->dentry_list);
-	return container_of(inode->dentry_list.next, struct dentry,
-		 	    inode_dentry_list);
-}
 
 static inline bool dentry_is_root(const struct dentry *dentry)
 {

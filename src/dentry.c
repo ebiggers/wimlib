@@ -39,17 +39,6 @@
 #include "timestamp.h"
 #include "wimlib_internal.h"
 
-/*
- * Returns true if @dentry has the UTF-8 file name @name that has length
- * @name_len.
- */
-static bool dentry_has_name(const struct dentry *dentry, const char *name, 
-			    size_t name_len)
-{
-	if (dentry->file_name_utf8_len != name_len)
-		return false;
-	return memcmp(dentry->file_name_utf8, name, name_len) == 0;
-}
 
 static u64 __dentry_correct_length_unaligned(u16 file_name_len,
 					     u16 short_name_len)
@@ -75,6 +64,97 @@ static u64 dentry_correct_length(const struct dentry *dentry)
 	return (dentry_correct_length_unaligned(dentry) + 7) & ~7;
 }
 
+/*
+ * Returns true if @dentry has the UTF-8 file name @name that has length
+ * @name_len.
+ */
+static bool dentry_has_name(const struct dentry *dentry, const char *name, 
+			    size_t name_len)
+{
+	if (dentry->file_name_utf8_len != name_len)
+		return false;
+	return memcmp(dentry->file_name_utf8, name, name_len) == 0;
+}
+
+static inline bool ads_entry_has_name(const struct ads_entry *entry,
+				      const char *name, size_t name_len)
+{
+	if (entry->stream_name_utf8_len != name_len)
+		return false;
+	return memcmp(entry->stream_name_utf8, name, name_len) == 0;
+}
+
+/* Duplicates a UTF-8 name into UTF-8 and UTF-16 strings and returns the strings
+ * and their lengths in the pointer arguments */
+int get_names(char **name_utf16_ret, char **name_utf8_ret,
+	      u16 *name_utf16_len_ret, u16 *name_utf8_len_ret,
+	      const char *name)
+{
+	size_t utf8_len;
+	size_t utf16_len;
+	char *name_utf16, *name_utf8;
+
+	utf8_len = strlen(name);
+
+	name_utf16 = utf8_to_utf16(name, utf8_len, &utf16_len);
+
+	if (!name_utf16)
+		return WIMLIB_ERR_NOMEM;
+
+	name_utf8 = MALLOC(utf8_len + 1);
+	if (!name_utf8) {
+		FREE(name_utf8);
+		return WIMLIB_ERR_NOMEM;
+	}
+	memcpy(name_utf8, name, utf8_len + 1);
+	FREE(*name_utf8_ret);
+	FREE(*name_utf16_ret);
+	*name_utf8_ret      = name_utf8;
+	*name_utf16_ret     = name_utf16;
+	*name_utf8_len_ret  = utf8_len;
+	*name_utf16_len_ret = utf16_len;
+	return 0;
+}
+
+/* Changes the name of a dentry to @new_name.  Only changes the file_name and
+ * file_name_utf8 fields; does not change the short_name, short_name_utf8, or
+ * full_path_utf8 fields.  Also recalculates its length. */
+static int change_dentry_name(struct dentry *dentry, const char *new_name)
+{
+	int ret;
+
+	ret = get_names(&dentry->file_name, &dentry->file_name_utf8,
+			&dentry->file_name_len, &dentry->file_name_utf8_len,
+			 new_name);
+	FREE(dentry->short_name);
+	dentry->short_name_len = 0;
+	if (ret == 0)
+		dentry->length = dentry_correct_length(dentry);
+	return ret;
+}
+
+/*
+ * Changes the name of an alternate data stream */
+static int change_ads_name(struct ads_entry *entry, const char *new_name)
+{
+	return get_names(&entry->stream_name, &entry->stream_name_utf8,
+			 &entry->stream_name_len,
+			 &entry->stream_name_utf8_len,
+			 new_name);
+}
+
+/* Returns the total length of a WIM alternate data stream entry on-disk,
+ * including the stream name, the null terminator, AND the padding after the
+ * entry to align the next one (or the next dentry) on an 8-byte boundary. */
+static u64 ads_entry_total_length(const struct ads_entry *entry)
+{
+	u64 len = WIM_ADS_ENTRY_DISK_SIZE;
+	if (entry->stream_name_len)
+		len += entry->stream_name_len + 2;
+	return (len + 7) & ~7;
+}
+
+
 static u64 __dentry_total_length(const struct dentry *dentry, u64 length)
 {
 	const struct inode *inode = dentry->inode;
@@ -91,7 +171,7 @@ u64 dentry_correct_total_length(const struct dentry *dentry)
 
 /* Real length of a dentry, including the alternate data stream entries, which
  * are not included in the dentry->length field... */
-u64 dentry_total_length(const struct dentry *dentry)
+static u64 dentry_total_length(const struct dentry *dentry)
 {
 	return __dentry_total_length(dentry, dentry->length);
 }
@@ -161,121 +241,6 @@ int inode_to_stbuf(const struct inode *inode, struct lookup_table_entry *lte,
 	stbuf->st_ctime   = wim_timestamp_to_unix(inode->creation_time);
 	stbuf->st_blocks  = (stbuf->st_size + 511) / 512;
 	return 0;
-}
-#endif
-
-#ifdef WITH_FUSE
-/* Returns the alternate data stream entry belonging to @inode that has the
- * stream name @stream_name. */
-struct ads_entry *inode_get_ads_entry(struct inode *inode,
-				      const char *stream_name,
-				      u16 *idx_ret)
-{
-	size_t stream_name_len;
-	if (!stream_name)
-		return NULL;
-	if (inode->num_ads) {
-		u16 i = 0;
-		stream_name_len = strlen(stream_name);
-		do {
-			if (ads_entry_has_name(&inode->ads_entries[i],
-					       stream_name, stream_name_len))
-			{
-				if (idx_ret)
-					*idx_ret = i;
-				return &inode->ads_entries[i];
-			}
-		} while (++i != inode->num_ads);
-	}
-	return NULL;
-}
-#endif
-
-
-static int init_ads_entry(struct ads_entry *ads_entry, const char *name)
-{
-	int ret = 0;
-	memset(ads_entry, 0, sizeof(*ads_entry));
-	if (name && *name)
-		ret = change_ads_name(ads_entry, name);
-	return ret;
-}
-
-static void destroy_ads_entry(struct ads_entry *ads_entry)
-{
-	FREE(ads_entry->stream_name);
-	FREE(ads_entry->stream_name_utf8);
-}
-
-
-void inode_free_ads_entries(struct inode *inode)
-{
-	if (inode->ads_entries) {
-		for (u16 i = 0; i < inode->num_ads; i++)
-			destroy_ads_entry(&inode->ads_entries[i]);
-		FREE(inode->ads_entries);
-	}
-}
-
-#if defined(WITH_FUSE) || defined(WITH_NTFS_3G)
-/* 
- * Add an alternate stream entry to an inode and return a pointer to it, or NULL
- * if memory could not be allocated.
- */
-struct ads_entry *inode_add_ads(struct inode *inode, const char *stream_name)
-{
-	u16 num_ads;
-	struct ads_entry *ads_entries;
-	struct ads_entry *new_entry;
-
-	if (inode->num_ads >= 0xfffe) {
-		ERROR("Too many alternate data streams in one inode!");
-		return NULL;
-	}
- 	num_ads = inode->num_ads + 1;
-	ads_entries = REALLOC(inode->ads_entries,
-			      num_ads * sizeof(inode->ads_entries[0]));
-	if (!ads_entries) {
-		ERROR("Failed to allocate memory for new alternate data stream");
-		return NULL;
-	}
-	inode->ads_entries = ads_entries;
-
-	new_entry = &inode->ads_entries[num_ads - 1];
-	if (init_ads_entry(new_entry, stream_name) != 0)
-		return NULL;
-#ifdef WITH_FUSE
-	new_entry->stream_id = inode->next_stream_id++;
-#endif
-	return new_entry;
-}
-#endif
-
-#ifdef WITH_FUSE
-/* Remove an alternate data stream from the inode  */
-void inode_remove_ads(struct inode *inode, u16 idx,
-		      struct lookup_table *lookup_table)
-{
-	struct ads_entry *ads_entry;
-	struct lookup_table_entry *lte;
-
-	ads_entry = &inode->ads_entries[idx];
-
-	wimlib_assert(ads_entry);
-	wimlib_assert(inode->resolved);
-
-	lte = ads_entry->lte;
-
-	if (lte)
-		lte_decrement_refcnt(lte, lookup_table);
-
-	destroy_ads_entry(ads_entry);
-
-	wimlib_assert(inode->num_ads);
-	memcpy(&inode->ads_entries[idx],
-	       &inode->ads_entries[idx + 1],
-	       (inode->num_ads - idx - 1) * sizeof(inode->ads_entries[0]));
-	inode->num_ads--;
 }
 #endif
 
@@ -423,7 +388,6 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 			dentry->subdir_offset = 0;
 	}
 }
-
 
 /* Returns the child of @dentry that has the file name @name.  
  * Returns NULL if no child has the name. */
@@ -623,7 +587,7 @@ static void dentry_common_init(struct dentry *dentry)
 	dentry->refcnt = 1;
 }
 
-struct inode *new_timeless_inode()
+static struct inode *new_timeless_inode()
 {
 	struct inode *inode = CALLOC(1, sizeof(struct inode));
 	if (!inode)
@@ -634,7 +598,7 @@ struct inode *new_timeless_inode()
 	return inode;
 }
 
-struct inode *new_inode()
+static struct inode *new_inode()
 {
 	struct inode *inode = new_timeless_inode();
 	if (!inode)
@@ -722,28 +686,26 @@ void free_inode(struct inode *inode)
 
 /* Decrements link count on an inode and frees it if the link count reaches 0.
  * */
-struct inode *put_inode(struct inode *inode)
+static void put_inode(struct inode *inode)
 {
-	if (inode) {
-		wimlib_assert(inode->link_count);
-		if (--inode->link_count == 0) {
-		#ifdef WITH_FUSE
-			if (inode->num_opened_fds == 0)
-		#endif
-			{
-				free_inode(inode);
-				inode = NULL;
-			}
+	wimlib_assert(inode);
+	wimlib_assert(inode->link_count);
+	if (--inode->link_count == 0) {
+	#ifdef WITH_FUSE
+		if (inode->num_opened_fds == 0)
+	#endif
+		{
+			free_inode(inode);
+			inode = NULL;
 		}
 	}
-	return inode;
 }
 
 /* Frees a WIM dentry. 
  *
  * The inode is freed only if its link count is decremented to 0.
  */
-struct inode *free_dentry(struct dentry *dentry)
+void free_dentry(struct dentry *dentry)
 {
 	wimlib_assert(dentry);
 	struct inode *inode;
@@ -752,9 +714,8 @@ struct inode *free_dentry(struct dentry *dentry)
 	FREE(dentry->file_name_utf8);
 	FREE(dentry->short_name);
 	FREE(dentry->full_path_utf8);
-	inode = put_inode(dentry->inode);
+	put_inode(dentry->inode);
 	FREE(dentry);
-	return inode;
 }
 
 void put_dentry(struct dentry *dentry)
@@ -857,64 +818,6 @@ void unlink_dentry(struct dentry *dentry)
 	}
 }
 
-/* Duplicates a UTF-8 name into UTF-8 and UTF-16 strings and returns the strings
- * and their lengths in the pointer arguments */
-int get_names(char **name_utf16_ret, char **name_utf8_ret,
-	      u16 *name_utf16_len_ret, u16 *name_utf8_len_ret,
-	      const char *name)
-{
-	size_t utf8_len;
-	size_t utf16_len;
-	char *name_utf16, *name_utf8;
-
-	utf8_len = strlen(name);
-
-	name_utf16 = utf8_to_utf16(name, utf8_len, &utf16_len);
-
-	if (!name_utf16)
-		return WIMLIB_ERR_NOMEM;
-
-	name_utf8 = MALLOC(utf8_len + 1);
-	if (!name_utf8) {
-		FREE(name_utf8);
-		return WIMLIB_ERR_NOMEM;
-	}
-	memcpy(name_utf8, name, utf8_len + 1);
-	FREE(*name_utf8_ret);
-	FREE(*name_utf16_ret);
-	*name_utf8_ret      = name_utf8;
-	*name_utf16_ret     = name_utf16;
-	*name_utf8_len_ret  = utf8_len;
-	*name_utf16_len_ret = utf16_len;
-	return 0;
-}
-
-/* Changes the name of a dentry to @new_name.  Only changes the file_name and
- * file_name_utf8 fields; does not change the short_name, short_name_utf8, or
- * full_path_utf8 fields.  Also recalculates its length. */
-int change_dentry_name(struct dentry *dentry, const char *new_name)
-{
-	int ret;
-
-	ret = get_names(&dentry->file_name, &dentry->file_name_utf8,
-			&dentry->file_name_len, &dentry->file_name_utf8_len,
-			 new_name);
-	FREE(dentry->short_name);
-	dentry->short_name_len = 0;
-	if (ret == 0)
-		dentry->length = dentry_correct_length(dentry);
-	return ret;
-}
-
-/*
- * Changes the name of an alternate data stream */
-int change_ads_name(struct ads_entry *entry, const char *new_name)
-{
-	return get_names(&entry->stream_name, &entry->stream_name_utf8,
-			 &entry->stream_name_len,
-			 &entry->stream_name_utf8_len,
-			 new_name);
-}
 
 /* Parameters for calculate_dentry_statistics(). */
 struct image_statistics {
@@ -967,6 +870,261 @@ void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *tab
 	for_lookup_table_entry(table, lte_zero_out_refcnt, NULL);
 	for_dentry_in_tree(root, calculate_dentry_statistics, &stats);
 }
+
+static inline struct dentry *inode_first_dentry(struct inode *inode)
+{
+	wimlib_assert(inode->dentry_list.next != &inode->dentry_list);
+	return container_of(inode->dentry_list.next, struct dentry,
+		 	    inode_dentry_list);
+}
+
+static int verify_inode(struct inode *inode, const WIMStruct *w)
+{
+	const struct lookup_table *table = w->lookup_table;
+	const struct wim_security_data *sd = wim_const_security_data(w);
+	const struct dentry *first_dentry = inode_first_dentry(inode);
+	int ret = WIMLIB_ERR_INVALID_DENTRY;
+
+	/* Check the security ID */
+	if (inode->security_id < -1) {
+		ERROR("Dentry `%s' has an invalid security ID (%d)",
+			first_dentry->full_path_utf8, inode->security_id);
+		goto out;
+	}
+	if (inode->security_id >= sd->num_entries) {
+		ERROR("Dentry `%s' has an invalid security ID (%d) "
+		      "(there are only %u entries in the security table)",
+			first_dentry->full_path_utf8, inode->security_id,
+			sd->num_entries);
+		goto out;
+	}
+
+	/* Check that lookup table entries for all the resources exist, except
+	 * if the SHA1 message digest is all 0's, which indicates there is
+	 * intentionally no resource there.  */
+	if (w->hdr.total_parts == 1) {
+		for (unsigned i = 0; i <= inode->num_ads; i++) {
+			struct lookup_table_entry *lte;
+			const u8 *hash;
+			hash = inode_stream_hash_unresolved(inode, i);
+			lte = __lookup_resource(table, hash);
+			if (!lte && !is_zero_hash(hash)) {
+				ERROR("Could not find lookup table entry for stream "
+				      "%u of dentry `%s'", i, first_dentry->full_path_utf8);
+				goto out;
+			}
+			if (lte && (lte->real_refcnt += inode->link_count) > lte->refcnt)
+			{
+			#ifdef ENABLE_ERROR_MESSAGES
+				WARNING("The following lookup table entry "
+					"has a reference count of %u, but",
+					lte->refcnt);
+				WARNING("We found %zu references to it",
+					lte->real_refcnt);
+				WARNING("(One dentry referencing it is at `%s')",
+					 first_dentry->full_path_utf8);
+
+				print_lookup_table_entry(lte);
+			#endif
+				/* Guess what!  install.wim for Windows 8
+				 * contains a stream with 2 dentries referencing
+				 * it, but the lookup table entry has reference
+				 * count of 1.  So we will need to handle this
+				 * case and not just make it be an error...  I'm
+				 * just setting the reference count to the
+				 * number of references we found.
+				 * (Unfortunately, even after doing this, the
+				 * reference count could be too low if it's also
+				 * referenced in other WIM images) */
+
+			#if 1
+				lte->refcnt = lte->real_refcnt;
+				WARNING("Fixing reference count");
+			#else
+				goto out;
+			#endif
+			}
+		}
+	}
+
+	/* Make sure there is only one un-named stream. */
+	unsigned num_unnamed_streams = 0;
+	for (unsigned i = 0; i <= inode->num_ads; i++) {
+		const u8 *hash;
+		hash = inode_stream_hash_unresolved(inode, i);
+		if (!inode_stream_name_len(inode, i) && !is_zero_hash(hash))
+			num_unnamed_streams++;
+	}
+	if (num_unnamed_streams > 1) {
+		ERROR("Dentry `%s' has multiple (%u) un-named streams", 
+		      first_dentry->full_path_utf8, num_unnamed_streams);
+		goto out;
+	}
+	inode->verified = true;
+	ret = 0;
+out:
+	return ret;
+}
+
+/* Run some miscellaneous verifications on a WIM dentry */
+int verify_dentry(struct dentry *dentry, void *wim)
+{
+	const WIMStruct *w = wim;
+	const struct inode *inode = dentry->inode;
+	int ret = WIMLIB_ERR_INVALID_DENTRY;
+
+	if (!dentry->inode->verified) {
+		ret = verify_inode(dentry->inode, w);
+		if (ret != 0)
+			goto out;
+	}
+
+	/* Cannot have a short name but no long name */
+	if (dentry->short_name_len && !dentry->file_name_len) {
+		ERROR("Dentry `%s' has a short name but no long name",
+		      dentry->full_path_utf8);
+		goto out;
+	}
+
+	/* Make sure root dentry is unnamed */
+	if (dentry_is_root(dentry)) {
+		if (dentry->file_name_len) {
+			ERROR("The root dentry is named `%s', but it must "
+			      "be unnamed", dentry->file_name_utf8);
+			goto out;
+		}
+	}
+
+#if 0
+	/* Check timestamps */
+	if (inode->last_access_time < inode->creation_time ||
+	    inode->last_write_time < inode->creation_time) {
+		WARNING("Dentry `%s' was created after it was last accessed or "
+		      "written to", dentry->full_path_utf8);
+	}
+#endif
+
+	ret = 0;
+out:
+	return ret;
+}
+
+
+#ifdef WITH_FUSE
+/* Returns the alternate data stream entry belonging to @inode that has the
+ * stream name @stream_name. */
+struct ads_entry *inode_get_ads_entry(struct inode *inode,
+				      const char *stream_name,
+				      u16 *idx_ret)
+{
+	size_t stream_name_len;
+	if (!stream_name)
+		return NULL;
+	if (inode->num_ads) {
+		u16 i = 0;
+		stream_name_len = strlen(stream_name);
+		do {
+			if (ads_entry_has_name(&inode->ads_entries[i],
+					       stream_name, stream_name_len))
+			{
+				if (idx_ret)
+					*idx_ret = i;
+				return &inode->ads_entries[i];
+			}
+		} while (++i != inode->num_ads);
+	}
+	return NULL;
+}
+#endif
+
+
+static int init_ads_entry(struct ads_entry *ads_entry, const char *name)
+{
+	int ret = 0;
+	memset(ads_entry, 0, sizeof(*ads_entry));
+	if (name && *name)
+		ret = change_ads_name(ads_entry, name);
+	return ret;
+}
+
+static void destroy_ads_entry(struct ads_entry *ads_entry)
+{
+	FREE(ads_entry->stream_name);
+	FREE(ads_entry->stream_name_utf8);
+}
+
+
+void inode_free_ads_entries(struct inode *inode)
+{
+	if (inode->ads_entries) {
+		for (u16 i = 0; i < inode->num_ads; i++)
+			destroy_ads_entry(&inode->ads_entries[i]);
+		FREE(inode->ads_entries);
+	}
+}
+
+#if defined(WITH_FUSE) || defined(WITH_NTFS_3G)
+/* 
+ * Add an alternate stream entry to an inode and return a pointer to it, or NULL
+ * if memory could not be allocated.
+ */
+struct ads_entry *inode_add_ads(struct inode *inode, const char *stream_name)
+{
+	u16 num_ads;
+	struct ads_entry *ads_entries;
+	struct ads_entry *new_entry;
+
+	if (inode->num_ads >= 0xfffe) {
+		ERROR("Too many alternate data streams in one inode!");
+		return NULL;
+	}
+ 	num_ads = inode->num_ads + 1;
+	ads_entries = REALLOC(inode->ads_entries,
+			      num_ads * sizeof(inode->ads_entries[0]));
+	if (!ads_entries) {
+		ERROR("Failed to allocate memory for new alternate data stream");
+		return NULL;
+	}
+	inode->ads_entries = ads_entries;
+
+	new_entry = &inode->ads_entries[num_ads - 1];
+	if (init_ads_entry(new_entry, stream_name) != 0)
+		return NULL;
+#ifdef WITH_FUSE
+	new_entry->stream_id = inode->next_stream_id++;
+#endif
+	return new_entry;
+}
+#endif
+
+#ifdef WITH_FUSE
+/* Remove an alternate data stream from the inode  */
+void inode_remove_ads(struct inode *inode, u16 idx,
+		      struct lookup_table *lookup_table)
+{
+	struct ads_entry *ads_entry;
+	struct lookup_table_entry *lte;
+
+	ads_entry = &inode->ads_entries[idx];
+
+	wimlib_assert(ads_entry);
+	wimlib_assert(inode->resolved);
+
+	lte = ads_entry->lte;
+
+	if (lte)
+		lte_decrement_refcnt(lte, lookup_table);
+
+	destroy_ads_entry(ads_entry);
+
+	wimlib_assert(inode->num_ads);
+	memcpy(&inode->ads_entries[idx],
+	       &inode->ads_entries[idx + 1],
+	       (inode->num_ads - idx - 1) * sizeof(inode->ads_entries[0]));
+	inode->num_ads--;
+}
+#endif
+
 
 
 /* 
@@ -1387,135 +1545,100 @@ out_free_inode:
 	return ret;
 }
 
-int verify_inode(struct inode *inode, const WIMStruct *w)
+/* Reads the children of a dentry, and all their children, ..., etc. from the
+ * metadata resource and into the dentry tree.
+ *
+ * @metadata_resource:	An array that contains the uncompressed metadata
+ * 			resource for the WIM file.
+ *
+ * @metadata_resource_len:  The length of the uncompressed metadata resource, in
+ * 			    bytes.
+ *
+ * @dentry:	A pointer to a `struct dentry' that is the root of the directory
+ *		tree and has already been read from the metadata resource.  It
+ *		does not need to be the real root because this procedure is
+ *		called recursively.
+ *
+ * @return:	Zero on success, nonzero on failure.
+ */
+int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
+		     struct dentry *dentry)
 {
-	const struct lookup_table *table = w->lookup_table;
-	const struct wim_security_data *sd = wim_const_security_data(w);
-	const struct dentry *first_dentry = inode_first_dentry(inode);
-	int ret = WIMLIB_ERR_INVALID_DENTRY;
+	u64 cur_offset = dentry->subdir_offset;
+	struct dentry *prev_child = NULL;
+	struct dentry *first_child = NULL;
+	struct dentry *child;
+	struct dentry cur_child;
+	int ret;
 
-	/* Check the security ID */
-	if (inode->security_id < -1) {
-		ERROR("Dentry `%s' has an invalid security ID (%d)",
-			first_dentry->full_path_utf8, inode->security_id);
-		goto out;
-	}
-	if (inode->security_id >= sd->num_entries) {
-		ERROR("Dentry `%s' has an invalid security ID (%d) "
-		      "(there are only %u entries in the security table)",
-			first_dentry->full_path_utf8, inode->security_id,
-			sd->num_entries);
-		goto out;
-	}
+	/* 
+	 * If @dentry has no child dentries, nothing more needs to be done for
+	 * this branch.  This is the case for regular files, symbolic links, and
+	 * *possibly* empty directories (although an empty directory may also
+	 * have one child dentry that is the special end-of-directory dentry)
+	 */
+	if (cur_offset == 0)
+		return 0;
 
-	/* Check that lookup table entries for all the resources exist, except
-	 * if the SHA1 message digest is all 0's, which indicates there is
-	 * intentionally no resource there.  */
-	if (w->hdr.total_parts == 1) {
-		for (unsigned i = 0; i <= inode->num_ads; i++) {
-			struct lookup_table_entry *lte;
-			const u8 *hash;
-			hash = inode_stream_hash_unresolved(inode, i);
-			lte = __lookup_resource(table, hash);
-			if (!lte && !is_zero_hash(hash)) {
-				ERROR("Could not find lookup table entry for stream "
-				      "%u of dentry `%s'", i, first_dentry->full_path_utf8);
-				goto out;
-			}
-			if (lte && (lte->real_refcnt += inode->link_count) > lte->refcnt)
-			{
-			#ifdef ENABLE_ERROR_MESSAGES
-				WARNING("The following lookup table entry "
-					"has a reference count of %u, but",
-					lte->refcnt);
-				WARNING("We found %zu references to it",
-					lte->real_refcnt);
-				WARNING("(One dentry referencing it is at `%s')",
-					 first_dentry->full_path_utf8);
+	/* Find and read all the children of @dentry. */
+	while (1) {
 
-				print_lookup_table_entry(lte);
-			#endif
-				/* Guess what!  install.wim for Windows 8
-				 * contains a stream with 2 dentries referencing
-				 * it, but the lookup table entry has reference
-				 * count of 1.  So we will need to handle this
-				 * case and not just make it be an error...  I'm
-				 * just setting the reference count to the
-				 * number of references we found.
-				 * (Unfortunately, even after doing this, the
-				 * reference count could be too low if it's also
-				 * referenced in other WIM images) */
-
-			#if 1
-				lte->refcnt = lte->real_refcnt;
-				WARNING("Fixing reference count");
-			#else
-				goto out;
-			#endif
-			}
-		}
-	}
-
-	/* Make sure there is only one un-named stream. */
-	unsigned num_unnamed_streams = 0;
-	for (unsigned i = 0; i <= inode->num_ads; i++) {
-		const u8 *hash;
-		hash = inode_stream_hash_unresolved(inode, i);
-		if (!inode_stream_name_len(inode, i) && !is_zero_hash(hash))
-			num_unnamed_streams++;
-	}
-	if (num_unnamed_streams > 1) {
-		ERROR("Dentry `%s' has multiple (%u) un-named streams", 
-		      first_dentry->full_path_utf8, num_unnamed_streams);
-		goto out;
-	}
-	inode->verified = true;
-	ret = 0;
-out:
-	return ret;
-}
-
-
-/* Run some miscellaneous verifications on a WIM dentry */
-int verify_dentry(struct dentry *dentry, void *wim)
-{
-	const WIMStruct *w = wim;
-	const struct inode *inode = dentry->inode;
-	int ret = WIMLIB_ERR_INVALID_DENTRY;
-
-	if (!dentry->inode->verified) {
-		ret = verify_inode(dentry->inode, w);
+		/* Read next child of @dentry into @cur_child. */
+		ret = read_dentry(metadata_resource, metadata_resource_len, 
+				  cur_offset, &cur_child);
 		if (ret != 0)
-			goto out;
-	}
+			break;
 
-	/* Cannot have a short name but no long name */
-	if (dentry->short_name_len && !dentry->file_name_len) {
-		ERROR("Dentry `%s' has a short name but no long name",
-		      dentry->full_path_utf8);
-		goto out;
-	}
+		/* Check for end of directory. */
+		if (cur_child.length == 0)
+			break;
 
-	/* Make sure root dentry is unnamed */
-	if (dentry_is_root(dentry)) {
-		if (dentry->file_name_len) {
-			ERROR("The root dentry is named `%s', but it must "
-			      "be unnamed", dentry->file_name_utf8);
-			goto out;
+		/* Not end of directory.  Allocate this child permanently and
+		 * link it to the parent and previous child. */
+		child = MALLOC(sizeof(struct dentry));
+		if (!child) {
+			ERROR("Failed to allocate %zu bytes for new dentry",
+			      sizeof(struct dentry));
+			ret = WIMLIB_ERR_NOMEM;
+			break;
 		}
+		memcpy(child, &cur_child, sizeof(struct dentry));
+
+		if (prev_child) {
+			prev_child->next = child;
+			child->prev = prev_child;
+		} else {
+			first_child = child;
+		}
+
+		child->parent = dentry;
+		prev_child = child;
+		inode_add_dentry(child, child->inode);
+
+		/* If there are children of this child, call this procedure
+		 * recursively. */
+		if (child->subdir_offset != 0) {
+			ret = read_dentry_tree(metadata_resource, 
+					       metadata_resource_len, child);
+			if (ret != 0)
+				break;
+		}
+
+		/* Advance to the offset of the next child.  Note: We need to
+		 * advance by the TOTAL length of the dentry, not by the length
+		 * child->length, which although it does take into account the
+		 * padding, it DOES NOT take into account alternate stream
+		 * entries. */
+		cur_offset += dentry_total_length(child);
 	}
 
-#if 0
-	/* Check timestamps */
-	if (inode->last_access_time < inode->creation_time ||
-	    inode->last_write_time < inode->creation_time) {
-		WARNING("Dentry `%s' was created after it was last accessed or "
-		      "written to", dentry->full_path_utf8);
+	/* Link last child to first one, and set parent's children pointer to
+	 * the first child.  */
+	if (prev_child) {
+		prev_child->next = first_child;
+		first_child->prev = prev_child;
 	}
-#endif
-
-	ret = 0;
-out:
+	dentry->inode->children = first_child;
 	return ret;
 }
 
@@ -1662,99 +1785,3 @@ u8 *write_dentry_tree(const struct dentry *root, u8 *p)
 	return write_dentry_tree_recursive(root, p);
 }
 
-/* Reads the children of a dentry, and all their children, ..., etc. from the
- * metadata resource and into the dentry tree.
- *
- * @metadata_resource:	An array that contains the uncompressed metadata
- * 			resource for the WIM file.
- *
- * @metadata_resource_len:  The length of the uncompressed metadata resource, in
- * 			    bytes.
- *
- * @dentry:	A pointer to a `struct dentry' that is the root of the directory
- *		tree and has already been read from the metadata resource.  It
- *		does not need to be the real root because this procedure is
- *		called recursively.
- *
- * @return:	Zero on success, nonzero on failure.
- */
-int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
-		     struct dentry *dentry)
-{
-	u64 cur_offset = dentry->subdir_offset;
-	struct dentry *prev_child = NULL;
-	struct dentry *first_child = NULL;
-	struct dentry *child;
-	struct dentry cur_child;
-	int ret;
-
-	/* 
-	 * If @dentry has no child dentries, nothing more needs to be done for
-	 * this branch.  This is the case for regular files, symbolic links, and
-	 * *possibly* empty directories (although an empty directory may also
-	 * have one child dentry that is the special end-of-directory dentry)
-	 */
-	if (cur_offset == 0)
-		return 0;
-
-	/* Find and read all the children of @dentry. */
-	while (1) {
-
-		/* Read next child of @dentry into @cur_child. */
-		ret = read_dentry(metadata_resource, metadata_resource_len, 
-				  cur_offset, &cur_child);
-		if (ret != 0)
-			break;
-
-		/* Check for end of directory. */
-		if (cur_child.length == 0)
-			break;
-
-		/* Not end of directory.  Allocate this child permanently and
-		 * link it to the parent and previous child. */
-		child = MALLOC(sizeof(struct dentry));
-		if (!child) {
-			ERROR("Failed to allocate %zu bytes for new dentry",
-			      sizeof(struct dentry));
-			ret = WIMLIB_ERR_NOMEM;
-			break;
-		}
-		memcpy(child, &cur_child, sizeof(struct dentry));
-
-		if (prev_child) {
-			prev_child->next = child;
-			child->prev = prev_child;
-		} else {
-			first_child = child;
-		}
-
-		child->parent = dentry;
-		prev_child = child;
-		inode_add_dentry(child, child->inode);
-
-		/* If there are children of this child, call this procedure
-		 * recursively. */
-		if (child->subdir_offset != 0) {
-			ret = read_dentry_tree(metadata_resource, 
-					       metadata_resource_len, child);
-			if (ret != 0)
-				break;
-		}
-
-		/* Advance to the offset of the next child.  Note: We need to
-		 * advance by the TOTAL length of the dentry, not by the length
-		 * child->length, which although it does take into account the
-		 * padding, it DOES NOT take into account alternate stream
-		 * entries. */
-		cur_offset += dentry_total_length(child);
-	}
-
-	/* Link last child to first one, and set parent's children pointer to
-	 * the first child.  */
-	if (prev_child) {
-		prev_child->next = first_child;
-		first_child->prev = prev_child;
-	}
-	dentry->inode->children = first_child;
-	return ret;
-}
