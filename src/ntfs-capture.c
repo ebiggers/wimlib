@@ -257,7 +257,6 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 				ntfs_volume **ntfs_vol_p,
 				ATTR_TYPES type)
 {
-
 	ntfs_attr_search_ctx *actx;
 	u8 attr_hash[SHA1_HASH_SIZE];
 	struct ntfs_location *ntfs_loc = NULL;
@@ -458,7 +457,7 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	ntfs_inode *ni = ntfs_inode_open(ctx->dir_ni->vol, mref);
 	if (!ni) {
 		ERROR_WITH_ERRNO("Failed to open NTFS inode");
-		ret = 1;
+		goto out_free_utf8_name;
 	}
 	path_len = ctx->path_len;
 	if (path_len != 1)
@@ -497,8 +496,6 @@ static int change_dentry_short_name(struct dentry *dentry,
 	dentry->short_name_len = short_name_utf16_len;
 	return 0;
 }
-
-/*#define HAVE_NTFS_INODE_FUNCTIONS*/
 
 /* Recursively build a WIM dentry tree corresponding to a NTFS volume.
  * At the same time, update the WIM lookup table with lookup table entries for
@@ -557,7 +554,7 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	if (flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
 		printf("Scanning `%s'\n", path);
 
-	root = new_dentry_with_inode(path_basename(path));
+	root = new_dentry_with_timeless_inode(path_basename(path));
 	if (!root)
 		return WIMLIB_ERR_NOMEM;
 	*root_p = root;

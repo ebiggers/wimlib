@@ -117,8 +117,7 @@ int inode_table_insert(struct dentry *dentry, void *__table)
 		pos = d_inode->ino % table->capacity;
 		hlist_for_each_entry(inode, cur, &table->array[pos], hlist) {
 			if (inode->ino == d_inode->ino) {
-				list_add(&dentry->inode_dentry_list,
-					 &inode->dentry_list);
+				inode_add_dentry(dentry, inode);
 				inode->link_count++;
 				return 0;
 			}
@@ -157,7 +156,7 @@ u64 assign_inode_numbers(struct hlist_head *inode_list)
 static void print_inode_dentries(const struct inode *inode)
 {
 	struct dentry *dentry;
-	list_for_each_entry(dentry, &inode->dentry_list, inode_dentry_list)
+	inode_for_each_dentry(dentry, inode)
 		printf("`%s'\n", dentry->full_path_utf8);
 }
 
@@ -217,21 +216,6 @@ static bool inodes_consistent(const struct inode * restrict ref_inode,
 	return true;
 }
 
-#ifdef ENABLE_DEBUG
-static void
-print_dentry_list(const struct dentry *first_dentry)
-{
-	const struct dentry *dentry = first_dentry;
-	do {
-		printf("`%s'\n", dentry->full_path_utf8);
-	} while ((dentry = container_of(dentry->inode_dentry_list.next,
-					struct dentry,
-					inode_dentry_list)) != first_dentry);
-}
-
-#endif
-
-
 /* Fix up a "true" inode and check for inconsistencies */
 static int fix_true_inode(struct inode *inode)
 {
@@ -241,21 +225,10 @@ static int fix_true_inode(struct inode *inode)
 	u64 last_ctime = 0;
 	u64 last_mtime = 0;
 	u64 last_atime = 0;
-	bool found_short_name = false;
 
 	inode_for_each_dentry(dentry, inode) {
-		if (!ref_dentry || ref_dentry->inode->num_ads == 0)
+		if (!ref_dentry || dentry->inode->num_ads > ref_dentry->inode->num_ads)
 			ref_dentry = dentry;
-		if (dentry->short_name_len) {
-			if (found_short_name) {
-				ERROR("Multiple short names in hard link "
-				      "group!");
-				inconsistent_inode(inode);
-				return WIMLIB_ERR_INVALID_DENTRY;
-			} else {
-				found_short_name = true;
-			}
-		}
 		if (dentry->inode->creation_time > last_ctime)
 			last_ctime = dentry->inode->creation_time;
 		if (dentry->inode->last_write_time > last_mtime)
@@ -267,10 +240,13 @@ static int fix_true_inode(struct inode *inode)
 	ref_inode = ref_dentry->inode;
 	ref_inode->link_count = 1;
 
-	inode_for_each_dentry(dentry, inode) {
+	list_del(&inode->dentry_list);
+	list_add(&ref_inode->dentry_list, &ref_dentry->inode_dentry_list);
+
+	inode_for_each_dentry(dentry, ref_inode) {
 		if (dentry != ref_dentry) {
 			if (!inodes_consistent(ref_inode, dentry->inode)) {
-				inconsistent_inode(dentry->inode);
+				inconsistent_inode(ref_inode);
 				return WIMLIB_ERR_INVALID_DENTRY;
 			}
 			/* Free the unneeded `struct inode'. */
@@ -293,13 +269,12 @@ static int fix_true_inode(struct inode *inode)
  * the same hard link group ID.
  *
  * If dentries in the inode are found to be inconsistent, we may split the inode
- * into several "true" inodes.  @new_inodes points to a linked list of
- * these split inodes, and if we create any, they will be added to this list.
+ * into several "true" inodes.
  *
- * After splitting up each nominal inode into the "true" inodes we
- * will canonicalize the link group by getting rid of all the superfluous
- * `struct inodes'.  There will be just one `struct inode' for each hard link
- * group remaining.
+ * After splitting up each nominal inode into the "true" inodes we will
+ * canonicalize the link group by getting rid of all the unnecessary `struct
+ * inodes'.  There will be just one `struct inode' for each hard link group
+ * remaining.
  */
 static int
 fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
@@ -337,17 +312,14 @@ fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
 	/* If there are no dentries with data streams, we require the nominal
 	 * inode to be a true inode */
 	if (list_empty(&dentries_with_data_streams)) {
-		DEBUG("No data streams");
 	#ifdef ENABLE_DEBUG
-		{
-			if (inode->link_count > 1) {
-				DEBUG("Found link group of size %zu without "
-				      "any data streams:", inode->link_count);
-				print_inode_dentries(inode);
-				DEBUG("We are going to interpret it as true "
-				      "link group, provided that the dentries "
-				      "are consistent.");
-			}
+		if (inode->link_count > 1) {
+			DEBUG("Found link group of size %zu without "
+			      "any data streams:", inode->link_count);
+			print_inode_dentries(inode);
+			DEBUG("We are going to interpret it as true "
+			      "link group, provided that the dentries "
+			      "are consistent.");
 		}
 	#endif
 		hlist_add_head(&inode->hlist, inode_list);
@@ -359,20 +331,19 @@ fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
          * inodes. */
 	num_true_inodes = 0;
 	list_for_each_entry(dentry, &dentries_with_data_streams, tmp_list) {
-		/* Look for a true inode that is consistent with
-		 * this dentry and add this dentry to it.  Or, if none
-		 * of the true inodes are consistent with this
-		 * dentry, make a new one. */
+		/* Look for a true inode that is consistent with this dentry and
+		 * add this dentry to it.  Or, if none of the true inodes are
+		 * consistent with this dentry, add a new one (if that happens,
+		 * we have split the hard link group). */
 		hlist_for_each_entry(inode, cur, &true_inodes, hlist) {
 			if (ref_inodes_consistent(inode, dentry->inode)) {
-				list_add(&dentry->inode_dentry_list,
-					 &inode->dentry_list);
+				inode_add_dentry(dentry, inode);
 				goto next_dentry_2;
 			}
 		}
 		num_true_inodes++;
 		INIT_LIST_HEAD(&dentry->inode->dentry_list);
-		list_add(&dentry->inode_dentry_list, &dentry->inode->dentry_list);
+		inode_add_dentry(dentry, dentry->inode);
 		hlist_add_head(&dentry->inode->hlist, &true_inodes);
 next_dentry_2:
 		;
@@ -389,39 +360,33 @@ next_dentry_2:
 			ERROR("We split up inode 0x%"PRIx64" due to "
 			      "inconsistencies,", inode->ino);
 			ERROR("but dentries with no stream information remained. "
-			      "We don't know which true hard link");
-			ERROR("inode to assign them to.");
+			      "We don't know which inode");
+			ERROR("to assign them to.");
 			return WIMLIB_ERR_INVALID_DENTRY;
 		}
-		inode = container_of(true_inodes.first,
-				     struct inode,
-				     hlist);
+		inode = container_of(true_inodes.first, struct inode, hlist);
 		/* Assign the streamless dentries to the one and only true
 		 * inode. */
 		list_for_each_entry(dentry, &dentries_with_no_data_streams, tmp_list)
-			list_add(&dentry->inode_dentry_list, &inode->dentry_list);
+			inode_add_dentry(dentry, inode);
 	}
+	#ifdef ENABLE_DEBUG
         if (num_true_inodes != 1) {
-		#ifdef ENABLE_DEBUG
-		{
-			inode = container_of(true_inodes.first,
-					     struct inode,
-					     hlist);
+		inode = container_of(true_inodes.first, struct inode, hlist);
 
-			printf("Split nominal inode 0x%"PRIx64" into %zu "
-			       "inodes:\n",
-			       inode->ino, num_true_inodes);
-			puts("------------------------------------------------------------------------------");
-			size_t i = 1;
-			hlist_for_each_entry(inode, cur, &true_inodes, hlist) {
-				printf("[Split inode %zu]\n", i++);
-				print_inode_dentries(inode);
-				putchar('\n');
-			}
-			puts("------------------------------------------------------------------------------");
+		printf("Split nominal inode 0x%"PRIx64" into %zu "
+		       "inodes:\n",
+		       inode->ino, num_true_inodes);
+		puts("------------------------------------------------------------------------------");
+		size_t i = 1;
+		hlist_for_each_entry(inode, cur, &true_inodes, hlist) {
+			printf("[Split inode %zu]\n", i++);
+			print_inode_dentries(inode);
+			putchar('\n');
 		}
-		#endif
+		puts("------------------------------------------------------------------------------");
         }
+	#endif
 
 	hlist_for_each_entry_safe(inode, cur, tmp, &true_inodes, hlist) {
 		hlist_add_head(&inode->hlist, inode_list);
@@ -434,13 +399,18 @@ next_dentry_2:
 
 /*
  * Goes through each hard link group (dentries sharing the same hard link group
- * ID field) that's been inserted into the inode table and shars the `struct
+ * ID field) that's been inserted into the inode table and shares the `struct
  * inode's among members of each hard link group.
  *
  * In the process, the dentries belonging to each inode are checked for
  * consistency.  If they contain data features that indicate they cannot really
  * correspond to the same inode, this should be an error, but in reality this
  * case needs to be handled, so we split the dentries into different inodes.
+ *
+ * After this function returns, the inodes are no longer in the inode table, and
+ * the inode table should be destroyed.  A list of the inodes, including all
+ * split inodes as well as the inodes that were good before, is returned in the
+ * list @inode_list.
  */
 int fix_inodes(struct inode_table *table, struct hlist_head *inode_list)
 {

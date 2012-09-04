@@ -378,9 +378,7 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
 		}
 	}
 	/* If there's a dentry with a DOS name, extract it first */
-	if (dentry_with_dos_name
-	    && !dentry_with_dos_name->inode->extracted_file)
-	{
+	if (dentry_with_dos_name && !dentry_is_extracted(dentry)) {
 		char *p;
 		const char *dir_name;
 		char orig;
@@ -431,6 +429,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	bool is_hardlink = false;
 	ntfs_volume *vol = dir_ni->vol;
 	struct inode *inode = dentry->inode;
+	dentry->is_extracted = true;
 
 	if (inode->attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		type = S_IFDIR;

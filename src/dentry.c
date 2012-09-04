@@ -192,7 +192,7 @@ struct ads_entry *inode_add_ads(struct inode *inode, const char *stream_name)
 	inode->ads_entries = ads_entries;
 
 	new_entry = new_ads_entry(stream_name);
-	if (new_entry)
+	if (!new_entry)
 		return NULL;
 	inode->num_ads = num_ads;
 	ads_entries[num_ads - 1] = new_entry;
@@ -600,12 +600,16 @@ err:
 	return NULL;
 }
 
-struct dentry *new_dentry_with_inode(const char *name)
+
+static struct dentry *__new_dentry_with_inode(const char *name, bool timeless)
 {
 	struct dentry *dentry;
 	dentry = new_dentry(name);
 	if (dentry) {
-		dentry->inode = new_inode();
+		if (timeless)
+			dentry->inode = new_timeless_inode();
+		else
+			dentry->inode = new_inode();
 		if (dentry->inode) {
 			inode_add_dentry(dentry, dentry->inode);
 		} else {
@@ -614,6 +618,16 @@ struct dentry *new_dentry_with_inode(const char *name)
 		}
 	}
 	return dentry;
+}
+
+struct dentry *new_dentry_with_timeless_inode(const char *name)
+{
+	return __new_dentry_with_inode(name, true);
+}
+
+struct dentry *new_dentry_with_inode(const char *name)
+{
+	return __new_dentry_with_inode(name, false);
 }
 
 void free_ads_entry(struct ads_entry *entry)
@@ -1687,7 +1701,7 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 
 		child->parent = dentry;
 		prev_child = child;
-		list_add(&child->inode_dentry_list, &child->inode->dentry_list);
+		inode_add_dentry(child, child->inode);
 
 		/* If there are children of this child, call this procedure
 		 * recursively. */

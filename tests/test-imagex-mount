@@ -27,12 +27,8 @@ imagex_mountrw() {
 }
 
 cleanup() {
-	if mountpoint tmp &> /dev/null; then
-		fusermount -u tmp > /dev/null;
-	fi
-	if mountpoint tmp.mnt &> /dev/null; then
-		fusermount -u tmp.mnt > /dev/null;
-	fi
+	fusermount -u tmp &> /dev/null || true
+	fusermount -u tmp.mnt &> /dev/null || true
 	rm -rf dir* tmp* *.wim *.swm empty.wim tmp.orig tmp.mnt \
 			tmp.apply mount.log test.tar wimlib-staging*
 }

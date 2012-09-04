@@ -189,7 +189,10 @@ struct inode {
 		list_for_each_entry((dentry), &(inode)->dentry_list, inode_dentry_list)
 
 #define inode_add_dentry(dentry, inode) \
-		list_add(&(dentry)->inode_dentry_list, &(inode)->dentry_list)
+	({								\
+	 	wimlib_assert((inode)->dentry_list.next != NULL);		\
+		list_add(&(dentry)->inode_dentry_list, &(inode)->dentry_list);	\
+	})
 
 /* 
  * In-memory structure for a WIM directory entry (dentry).  There is a directory
@@ -352,6 +355,7 @@ extern struct dentry *new_dentry(const char *name);
 extern struct inode *new_inode();
 extern struct inode *new_timeless_inode();
 extern struct dentry *new_dentry_with_inode(const char *name);
+extern struct dentry *new_dentry_with_timeless_inode(const char *name);
 
 extern void free_ads_entry(struct ads_entry *entry);
 extern void inode_free_ads_entries(struct inode *inode);
