@@ -76,10 +76,6 @@ struct lookup_table_entry *new_lookup_table_entry()
 void free_lookup_table_entry(struct lookup_table_entry *lte)
 {
 	if (lte) {
-#ifdef WITH_FUSE
-		if (lte->staging_list.next)
-			list_del(&lte->staging_list);
-#endif
 		switch (lte->resource_location) {
 		case RESOURCE_IN_STAGING_FILE:
 		case RESOURCE_IN_ATTACHED_BUFFER:
@@ -148,8 +144,11 @@ void lookup_table_insert(struct lookup_table *table,
 static void finalize_lte(struct lookup_table_entry *lte)
 {
 	#ifdef WITH_FUSE
-	if (lte->resource_location == RESOURCE_IN_STAGING_FILE)
+	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		unlink(lte->staging_file_name);
+		wimlib_assert(lte->staging_list.next);
+		list_del(&lte->staging_list);
+	}
 	#endif
 	free_lookup_table_entry(lte);
 }

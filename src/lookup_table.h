@@ -142,16 +142,20 @@ struct lookup_table_entry {
 	#endif
 	};
 	union {
-		/* Temporary field for creating a singly linked list.  Shouldn't
-		 * really be here */
-		struct lookup_table_entry *next_lte_in_swm;
-
 		/* @file_on_disk_fp and @attr are both used to cache file/stream
 		 * handles so we don't have re-open them on every read */
+
+		/* Valid iff resource_location == RESOURCE_IN_FILE_ON_DISK */
 		FILE *file_on_disk_fp;
 	#ifdef WITH_NTFS_3G
+		/* Valid iff resource_location == RESOURCE_IN_NTFS_VOLUME */
 		struct _ntfs_attr *attr;
 	#endif
+
+		/* Pointer to inode that contains the opened file descriptors to
+		 * this stream (valid iff resource_location ==
+		 * RESOURCE_IN_STAGING_FILE) */
+		struct inode *inode;
 	};
 #ifdef WITH_FUSE
 	u16 num_opened_fds;
@@ -176,16 +180,20 @@ struct lookup_table_entry {
 	struct resource_entry output_resource_entry;
 
 	/* This field is used for the special hardlink or symlink image
-	 * application mode.   In these mode, all identical files are
-	 * linked together, and @extracted_file will be set to the
-	 * filename of the first extracted file containing this stream.
-	 * */
+	 * extraction mode.   In these mode, all identical files are linked
+	 * together, and @extracted_file will be set to the filename of the
+	 * first extracted file containing this stream.  */
 	char *extracted_file;
 
-	/* List of lookup table entries that correspond to streams that have
-	 * been extracted to the staging directory when modifying a read-write
-	 * mounted WIM. */
-	struct list_head staging_list;
+	union {
+		/* List of lookup table entries that correspond to streams that have
+		 * been extracted to the staging directory when modifying a read-write
+		 * mounted WIM. */
+		struct list_head staging_list;
+
+		/* Temporary field for creating a singly linked list. */
+		struct lookup_table_entry *next_lte_in_swm;
+	};
 };
 
 static inline u64 wim_resource_size(const struct lookup_table_entry *lte)
