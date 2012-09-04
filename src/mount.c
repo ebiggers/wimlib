@@ -108,7 +108,9 @@ static int alloc_wimlib_fd(struct inode *inode,
 	static const u16 fds_per_alloc = 8;
 	static const u16 max_fds = 0xffff;
 
-	DEBUG("Allocate wimlib fd");
+	DEBUG("Allocating fd for stream ID %u from inode %lx (open = %u, allocated = %u)",
+	      stream_id, inode->ino, inode->num_opened_fds,
+	      inode->num_allocated_fds);
 
 	if (inode->num_opened_fds == inode->num_allocated_fds) {
 		struct wimlib_fd **fds;
@@ -186,6 +188,9 @@ static int lte_put_fd(struct lookup_table_entry *lte, struct wimlib_fd *fd)
 static int close_wimlib_fd(struct wimlib_fd *fd)
 {
 	int ret;
+	DEBUG("Closing fd (inode = %lu, opened = %u, allocated = %u)",
+	      fd->inode->ino, fd->inode->num_opened_fds,
+	      fd->inode->num_allocated_fds);
 	ret = lte_put_fd(fd->lte, fd);
 	if (ret != 0)
 		return ret;
@@ -350,6 +355,9 @@ static int create_staging_file(char **name_ret, int open_flags)
  *
  * @inode:  Inode that contains the stream we are extracting
  *
+ * @stream_id: Identifier for the stream (it stays constant even if the indices
+ * of the stream entries are changed)
+ *
  * @lte: Pointer to pointer to the lookup table entry for the stream we need to
  * extract, or NULL if there was no lookup table entry present for the stream
  *
@@ -384,53 +392,71 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 		goto out_delete_staging_file;
 	}
 
-	if (old_lte) {
-		wimlib_assert(old_lte->resource_location == RESOURCE_IN_WIM);
-		if (inode->link_count == old_lte->refcnt) {
-			/* The reference count of the existing lookup table
-			 * entry is the same as the size of the hard link group
-			 * associated with the dentry; therefore, ALL the
-			 * references to the lookup table entry correspond to
-			 * the stream we're trying to extract.  So the lookup
-			 * table entry can be re-used.
-			 */
-			DEBUG("Re-using lookup table entry");
-			lookup_table_unlink(w->lookup_table, old_lte);
-			new_lte = old_lte;
-		} else {
+	if (old_lte && inode->link_count == old_lte->refcnt) {
+		/* The reference count of the existing lookup table
+		 * entry is the same as the link count of the inode that
+		 * contains the stream we're opening.  Therefore, ALL
+		 * the references to the lookup table entry correspond
+		 * to the stream we're trying to extract, so the lookup
+		 * table entry can be re-used.  */
+		DEBUG("Re-using lookup table entry");
+		lookup_table_unlink(w->lookup_table, old_lte);
+		new_lte = old_lte;
+	} else {
+		if (old_lte) {
+			/* There's an existing lookup table entry, but its
+			 * reference count is creater than the link count for
+			 * the inode containing a stream we're opening.
+			 * Therefore, we need to split the lookup table entry.
+			 * */
+			wimlib_assert(old_lte->refcnt > inode->link_count);
 			DEBUG("Splitting lookup table entry "
-			      "(inode->link_count = %zu, lte refcnt = %u)",
+			      "(inode->link_count = %zu, old_lte->refcnt = %u)",
 			      inode->link_count, old_lte->refcnt);
 
-			wimlib_assert(old_lte->refcnt > inode->link_count);
-
-			new_lte = new_lookup_table_entry();
-			if (!new_lte) {
-				ret = -ENOMEM;
-				goto out_delete_staging_file;
-			}
-			old_lte->refcnt -= inode->link_count;
-
-			for (u16 i = 0, j = 0; j < inode->num_opened_fds; i++) {
-				if (inode->fds[i]) {
-					if (inode->fds[i]->stream_id == stream_id) {
-						wimlib_assert(inode->fds[i]->lte == old_lte);
-						inode->fds[i]->lte = new_lte;
-					}
-					j++;
-				}
-			}
 		}
-	} else {
-		/* No old_lte was supplied, so the resource had no lookup table
-		 * entry before (it must be an empty resource) */
-		wimlib_assert(inode->num_opened_fds == 0);
+
 		new_lte = new_lookup_table_entry();
 		if (!new_lte) {
 			ret = -ENOMEM;
 			goto out_delete_staging_file;
 		}
+
+		/* There may already be open file descriptors to this stream if
+		 * it's previously been opened read-only, but just now we're
+		 * opening it read-write.  Identify those file descriptors and
+		 * change their lookup table entry pointers to point to the new
+		 * lookup table entry, and open staging file descriptors for
+		 * them. 
+		 *
+		 * At the same time, we need to count the number of these opened
+		 * file descriptors to the new lookup table entry.  If there's
+		 * an old lookup table entry, this number needs to be subtracted
+		 * from the fd's opened to the old entry. */
+		for (u16 i = 0, j = 0; j < inode->num_opened_fds; i++) {
+			struct wimlib_fd *fd = inode->fds[i];
+			if (fd) {
+				if (fd->stream_id == stream_id) {
+					wimlib_assert(fd->lte == old_lte);
+					fd->lte = new_lte;
+					new_lte->num_opened_fds++;
+					fd->staging_fd = open(staging_file_name, O_RDONLY);
+					if (fd->staging_fd == -1) {
+						ret = -errno;
+						goto out_revert_fd_changes;
+					}
+				}
+				j++;
+			}
+		}
+		DEBUG("%zu fd's were already opened to the file we extracted",
+		      new_lte->num_opened_fds);
+		if (old_lte) {
+			old_lte->num_opened_fds -= new_lte->num_opened_fds;
+			old_lte->refcnt -= inode->link_count;
+		}
 	}
+
 	new_lte->resource_entry.original_size = size;
 	new_lte->refcnt = inode->link_count;
 	random_hash(new_lte->hash);
@@ -448,6 +474,20 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 	list_add(&new_lte->staging_list, &staging_list);
 	*lte = new_lte;
 	return 0;
+out_revert_fd_changes:
+	for (u16 i = 0, j = 0; j < new_lte->num_opened_fds; i++) {
+		struct wimlib_fd *fd = inode->fds[i];
+		if (fd && fd->stream_id == stream_id && fd->lte == new_lte) {
+			fd->lte = old_lte;
+			if (fd->staging_fd != -1) {
+				close(fd->staging_fd);
+				fd->staging_fd = -1;
+			}
+			j++;
+		}
+	}
+out_free_new_lte:
+	free_lookup_table_entry(new_lte);
 out_delete_staging_file:
 	unlink(staging_file_name);
 	FREE(staging_file_name);
@@ -1155,18 +1195,12 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	if (ret != 0)
 		return ret;
 
-	DEBUG("dentry = %p", dentry);
-
 	inode = dentry->inode;
-
-	DEBUG("stream_idx = %u", stream_idx);
 
 	if (stream_idx == 0)
 		stream_id = 0;
 	else
 		stream_id = inode->ads_entries[stream_idx - 1]->stream_id;
-
-	DEBUG("stream_id = %u", stream_id);
 
 	/* The file resource may be in the staging directory (read-write mounts
 	 * only) or in the WIM.  If it's in the staging directory, we need to
@@ -1175,10 +1209,10 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	 * opening it read-only, but we need to extract the resource to the
 	 * staging directory if we are opening it writable. */
 	if (flags_writable(fi->flags) &&
-	      lte->resource_location != RESOURCE_IN_STAGING_FILE) {
+            (!lte || lte->resource_location != RESOURCE_IN_STAGING_FILE)) {
+		u64 size = (lte) ? wim_resource_size(lte) : 0;
 		ret = extract_resource_to_staging_dir(inode, stream_id,
-						      &lte,
-						      wim_resource_size(lte));
+						      &lte, size);
 		if (ret != 0)
 			return ret;
 	}
@@ -1187,7 +1221,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	if (ret != 0)
 		return ret;
 
-	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
+	if (lte && lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		fd->staging_fd = open(lte->staging_file_name, fi->flags);
 		if (fd->staging_fd == -1) {
 			close_wimlib_fd(fd);
