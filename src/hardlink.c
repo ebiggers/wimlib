@@ -184,8 +184,8 @@ static bool ref_inodes_consistent(const struct inode * restrict ref_inode_1,
 		ref_2_hash = inode_stream_hash(ref_inode_2, i);
 		if (!hashes_equal(ref_1_hash, ref_2_hash))
 			return false;
-		if (i && !ads_entries_have_same_name(ref_inode_1->ads_entries[i - 1],
-						     ref_inode_2->ads_entries[i - 1]))
+		if (i && !ads_entries_have_same_name(&ref_inode_1->ads_entries[i - 1],
+						     &ref_inode_2->ads_entries[i - 1]))
 			return false;
 
 	}
@@ -209,8 +209,8 @@ static bool inodes_consistent(const struct inode * restrict ref_inode,
 		hash = inode_stream_hash(inode, i);
 		if (!hashes_equal(ref_hash, hash) && !is_zero_hash(hash))
 			return false;
-		if (i && !ads_entries_have_same_name(ref_inode->ads_entries[i - 1],
-						     inode->ads_entries[i - 1]))
+		if (i && !ads_entries_have_same_name(&ref_inode->ads_entries[i - 1],
+						     &inode->ads_entries[i - 1]))
 			return false;
 	}
 	return true;

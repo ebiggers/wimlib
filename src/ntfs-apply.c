@@ -162,8 +162,8 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 		}
 		if (stream_idx == inode->num_ads)
 			break;
-		stream_name = (ntfschar*)inode->ads_entries[stream_idx]->stream_name;
-		stream_name_len = inode->ads_entries[stream_idx]->stream_name_len / 2;
+		stream_name = (ntfschar*)inode->ads_entries[stream_idx].stream_name;
+		stream_name_len = inode->ads_entries[stream_idx].stream_name_len / 2;
 		stream_idx++;
 	}
 	return ret;
@@ -241,8 +241,6 @@ static int wim_apply_hardlink_ntfs(const struct dentry *from_dentry,
 	return ret;
 }
 
-/*#define HAVE_NTFS_INODE_FUNCTIONS*/
-
 static int
 apply_file_attributes_and_security_data(ntfs_inode *ni,
 					ntfs_inode *dir_ni,
@@ -252,9 +250,6 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
 	      dentry->full_path_utf8, dentry->inode->attributes);
 	int ret;
-#ifdef HAVE_NTFS_INODE_FUNCTIONS
-	ret = ntfs_set_inode_attributes(ni, dentry->inode->attributes);
-#else
 	struct SECURITY_CONTEXT ctx;
 	u32 attributes_le32;
  	attributes_le32 = cpu_to_le32(dentry->inode->attributes);
@@ -264,7 +259,6 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 					 ni, dir_ni,
 					 (const char*)&attributes_le32,
 					 sizeof(u32), 0);
-#endif
 	if (ret != 0) {
 		ERROR("Failed to set NTFS file attributes on `%s'",
 		       dentry->full_path_utf8);
@@ -280,17 +274,9 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 		DEBUG("Applying security descriptor %d to `%s'",
 		      dentry->inode->security_id, dentry->full_path_utf8);
 
-	#ifdef HAVE_NTFS_INODE_FUNCTIONS
-		u32 selection = OWNER_SECURITY_INFORMATION |
-				GROUP_SECURITY_INFORMATION |
-				DACL_SECURITY_INFORMATION  |
-				SACL_SECURITY_INFORMATION;
-		ret = ntfs_set_inode_security(ni, selection, descriptor);
-	#else
 		ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ACL,
 						 ni, dir_ni, descriptor,
 					   	 sd->sizes[dentry->inode->security_id], 0);
-	#endif
 				
 		if (ret != 0) {
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",

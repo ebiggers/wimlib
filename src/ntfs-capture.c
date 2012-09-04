@@ -51,13 +51,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-#if 0
-extern int ntfs_get_inode_security(ntfs_inode *ni, u32 selection, char *buf,
-				   u32 buflen, u32 *psize);
-
-extern u32 ntfs_get_inode_attributes(ntfs_inode *ni);
-#endif
-
 /* Structure that allows searching the security descriptors by SHA1 message
  * digest. */
 struct sd_set {
@@ -521,9 +514,6 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	struct dentry *root;
 
 	mrec_flags = ni->mrec->flags;
-#ifdef HAVE_NTFS_INODE_FUNCTIONS
- 	attributes = ntfs_get_inode_attributes(ni);
-#else
 	struct SECURITY_CONTEXT ctx;
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.vol = ni->vol;
@@ -535,7 +525,6 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 				 path);
 		return WIMLIB_ERR_NTFS_3G;
 	}
-#endif
 
 	if (exclude_path(path, config, false)) {
 		if (flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE) {
@@ -622,41 +611,6 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	if (ret != 0)
 		return ret;
 
-#ifdef HAVE_NTFS_INODE_FUNCTIONS
-	ret = ntfs_get_inode_security(ni,
-				      OWNER_SECURITY_INFORMATION |
-				      GROUP_SECURITY_INFORMATION |
-				      DACL_SECURITY_INFORMATION  |
-				      SACL_SECURITY_INFORMATION,
-				      NULL, 0, &sd_size);
-	char sd[sd_size];
-	ret = ntfs_get_inode_security(ni,
-				      OWNER_SECURITY_INFORMATION |
-				      GROUP_SECURITY_INFORMATION |
-				      DACL_SECURITY_INFORMATION  |
-				      SACL_SECURITY_INFORMATION,
-				      sd, sd_size, &sd_size);
-	if (ret == 0) {
-		ERROR_WITH_ERRNO("Failed to get security information from "
-				 "`%s'", path);
-		ret = WIMLIB_ERR_NTFS_3G;
-	} else {
-		if (ret > 0) {
-			/*print_security_descriptor(sd, sd_size);*/
-			root->security_id = sd_set_add_sd(sd_set, sd, ret);
-			if (root->security_id == -1) {
-				ERROR("Out of memory");
-				return WIMLIB_ERR_NOMEM;
-			}
-			DEBUG("Added security ID = %u for `%s'",
-			      root->security_id, path);
-		} else { 
-			root->security_id = -1;
-			DEBUG("No security ID for `%s'", path);
-		}
-		ret = 0;
-	}
-#else
 	char _sd[1];
 	char *sd = _sd;
 	errno = 0;
@@ -685,7 +639,6 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 		root->inode->security_id = -1;
 		DEBUG("No security ID for `%s'", path);
 	}
-#endif
 	return ret;
 }
 

@@ -457,6 +457,7 @@ __lookup_resource(const struct lookup_table *table, const u8 hash[])
 	return NULL;
 }
 
+#ifdef WITH_FUSE
 /* 
  * Finds the dentry, lookup table entry, and stream index for a WIM file stream,
  * given a path name.
@@ -523,6 +524,7 @@ out:
 		*stream_idx_ret = stream_idx;
 	return 0;
 }
+#endif
 
 static void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 {
@@ -535,8 +537,7 @@ static void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 
 	/* Resolve the alternate data streams */
 	for (u16 i = 0; i < inode->num_ads; i++) {
-		struct ads_entry *cur_entry = inode->ads_entries[i];
-
+		struct ads_entry *cur_entry = &inode->ads_entries[i];
 		lte = __lookup_resource(table, cur_entry->hash);
 		cur_entry->lte = lte;
 	}

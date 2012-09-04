@@ -79,7 +79,7 @@ static u64 __dentry_total_length(const struct dentry *dentry, u64 length)
 {
 	const struct inode *inode = dentry->inode;
 	for (u16 i = 0; i < inode->num_ads; i++)
-		length += ads_entry_total_length(inode->ads_entries[i]);
+		length += ads_entry_total_length(&inode->ads_entries[i]);
 	return (length + 7) & ~7;
 }
 
@@ -118,16 +118,53 @@ void stbuf_to_inode(const struct stat *stbuf, struct inode *inode)
 	inode->last_access_time = timespec_to_wim_timestamp(&stbuf->st_atim);
 }
 
-
-/* Sets all the timestamp fields of the dentry to the current time. */
-void inode_update_all_timestamps(struct inode *inode)
+#ifdef WITH_FUSE
+/* Transfers file attributes from a struct inode to a `stat' buffer. 
+ *
+ * The lookup table entry tells us which stream in the inode we are statting.
+ * For a named data stream, everything returned is the same as the unnamed data
+ * stream except possibly the size and block count. */
+int inode_to_stbuf(const struct inode *inode, struct lookup_table_entry *lte,
+		   struct stat *stbuf)
 {
-	u64 now = get_wim_timestamp();
-	inode->creation_time    = now;
-	inode->last_access_time = now;
-	inode->last_write_time  = now;
-}
+	if (inode_is_symlink(inode))
+		stbuf->st_mode = S_IFLNK | 0777;
+	else if (inode_is_directory(inode))
+		stbuf->st_mode = S_IFDIR | 0755;
+	else
+		stbuf->st_mode = S_IFREG | 0644;
 
+	stbuf->st_ino   = (ino_t)inode->ino;
+	stbuf->st_nlink = inode->link_count;
+	stbuf->st_uid   = getuid();
+	stbuf->st_gid   = getgid();
+
+	if (lte) {
+		if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
+			wimlib_assert(lte->staging_file_name);
+			struct stat native_stat;
+			if (stat(lte->staging_file_name, &native_stat) != 0) {
+				DEBUG("Failed to stat `%s': %m",
+				      lte->staging_file_name);
+				return -errno;
+			}
+			stbuf->st_size = native_stat.st_size;
+		} else {
+			stbuf->st_size = wim_resource_size(lte);
+		}
+	} else {
+		stbuf->st_size = 0;
+	}
+
+	stbuf->st_atime   = wim_timestamp_to_unix(inode->last_access_time);
+	stbuf->st_mtime   = wim_timestamp_to_unix(inode->last_write_time);
+	stbuf->st_ctime   = wim_timestamp_to_unix(inode->creation_time);
+	stbuf->st_blocks  = (stbuf->st_size + 511) / 512;
+	return 0;
+}
+#endif
+
+#ifdef WITH_FUSE
 /* Returns the alternate data stream entry belonging to @inode that has the
  * stream name @stream_name. */
 struct ads_entry *inode_get_ads_entry(struct inode *inode,
@@ -141,33 +178,46 @@ struct ads_entry *inode_get_ads_entry(struct inode *inode,
 		u16 i = 0;
 		stream_name_len = strlen(stream_name);
 		do {
-			if (ads_entry_has_name(inode->ads_entries[i],
+			if (ads_entry_has_name(&inode->ads_entries[i],
 					       stream_name, stream_name_len))
 			{
 				if (idx_ret)
 					*idx_ret = i;
-				return inode->ads_entries[i];
+				return &inode->ads_entries[i];
 			}
 		} while (++i != inode->num_ads);
 	}
 	return NULL;
 }
+#endif
 
 
-static struct ads_entry *new_ads_entry(const char *name)
+static int init_ads_entry(struct ads_entry *ads_entry, const char *name)
 {
-	struct ads_entry *ads_entry = CALLOC(1, sizeof(struct ads_entry));
-	if (!ads_entry)
-		return NULL;
-	if (name && *name) {
-		if (change_ads_name(ads_entry, name)) {
-			FREE(ads_entry);
-			return NULL;
-		}
-	}
-	return ads_entry;
+	int ret = 0;
+	memset(ads_entry, 0, sizeof(*ads_entry));
+	if (name && *name)
+		ret = change_ads_name(ads_entry, name);
+	return ret;
 }
 
+static void destroy_ads_entry(struct ads_entry *ads_entry)
+{
+	FREE(ads_entry->stream_name);
+	FREE(ads_entry->stream_name_utf8);
+}
+
+
+void inode_free_ads_entries(struct inode *inode)
+{
+	if (inode->ads_entries) {
+		for (u16 i = 0; i < inode->num_ads; i++)
+			destroy_ads_entry(&inode->ads_entries[i]);
+		FREE(inode->ads_entries);
+	}
+}
+
+#if defined(WITH_FUSE) || defined(WITH_NTFS_3G)
 /* 
  * Add an alternate stream entry to an inode and return a pointer to it, or NULL
  * if memory could not be allocated.
@@ -175,7 +225,7 @@ static struct ads_entry *new_ads_entry(const char *name)
 struct ads_entry *inode_add_ads(struct inode *inode, const char *stream_name)
 {
 	u16 num_ads;
-	struct ads_entry **ads_entries;
+	struct ads_entry *ads_entries;
 	struct ads_entry *new_entry;
 
 	if (inode->num_ads >= 0xfffe) {
@@ -191,17 +241,43 @@ struct ads_entry *inode_add_ads(struct inode *inode, const char *stream_name)
 	}
 	inode->ads_entries = ads_entries;
 
-	new_entry = new_ads_entry(stream_name);
-	if (!new_entry)
+	new_entry = &inode->ads_entries[num_ads - 1];
+	if (init_ads_entry(new_entry, stream_name) != 0)
 		return NULL;
-	inode->num_ads = num_ads;
-	ads_entries[num_ads - 1] = new_entry;
 #ifdef WITH_FUSE
 	new_entry->stream_id = inode->next_stream_id++;
 #endif
 	return new_entry;
 }
+#endif
 
+#ifdef WITH_FUSE
+/* Remove an alternate data stream from the inode  */
+void inode_remove_ads(struct inode *inode, u16 idx,
+		      struct lookup_table *lookup_table)
+{
+	struct ads_entry *ads_entry;
+	struct lookup_table_entry *lte;
+
+	ads_entry = &inode->ads_entries[idx];
+
+	wimlib_assert(ads_entry);
+	wimlib_assert(inode->resolved);
+
+	lte = ads_entry->lte;
+
+	if (lte)
+		lte_decrement_refcnt(lte, lookup_table);
+
+	destroy_ads_entry(ads_entry);
+
+	wimlib_assert(inode->num_ads);
+	memcpy(&inode->ads_entries[idx],
+	       &inode->ads_entries[idx + 1],
+	       (inode->num_ads - idx - 1) * sizeof(inode->ads_entries[0]));
+	inode->num_ads--;
+}
+#endif
 
 /* 
  * Calls a function on all directory entries in a directory tree.  It is called
@@ -525,9 +601,9 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	}
 	for (u16 i = 0; i < inode->num_ads; i++) {
 		printf("[Alternate Stream Entry %u]\n", i);
-		printf("Name = \"%s\"\n", inode->ads_entries[i]->stream_name_utf8);
+		printf("Name = \"%s\"\n", inode->ads_entries[i].stream_name_utf8);
 		printf("Name Length (UTF-16) = %u\n",
-			inode->ads_entries[i]->stream_name_len);
+			inode->ads_entries[i].stream_name_len);
 		hash = inode_stream_hash(inode, i + 1);
 		if (hash) {
 			printf("Hash              = 0x"); 
@@ -630,23 +706,6 @@ struct dentry *new_dentry_with_inode(const char *name)
 	return __new_dentry_with_inode(name, false);
 }
 
-void free_ads_entry(struct ads_entry *entry)
-{
-	if (entry) {
-		FREE(entry->stream_name);
-		FREE(entry->stream_name_utf8);
-		FREE(entry);
-	}
-}
-
-void inode_free_ads_entries(struct inode *inode)
-{
-	if (inode->ads_entries) {
-		for (u16 i = 0; i < inode->num_ads; i++)
-			free_ads_entry(inode->ads_entries[i]);
-		FREE(inode->ads_entries);
-	}
-}
 
 /* Frees an inode. */
 void free_inode(struct inode *inode)
@@ -706,30 +765,6 @@ void put_dentry(struct dentry *dentry)
 	if (--dentry->refcnt == 0)
 		free_dentry(dentry);
 }
-
-#if 0
-/* Partically clones a dentry.
- *
- * Beware:
- * 	- memory for file names is not cloned (the pointers are all set to NULL
- * 	  and the lengths are set to zero)
- * 	- next, prev, and children pointers and not touched
- */
-struct dentry *clone_dentry(struct dentry *old)
-{
-	struct dentry *new = MALLOC(sizeof(struct dentry));
-	if (!new)
-		return NULL;
-	memcpy(new, old, sizeof(struct dentry));
-	new->file_name          = NULL;
-	new->file_name_len      = 0;
-	new->file_name_utf8     = NULL;
-	new->file_name_utf8_len = 0;
-	new->short_name         = NULL;
-	new->short_name_len     = 0;
-	return new;
-}
-#endif
 
 /* 
  * This function is passed as an argument to for_dentry_in_tree_depth() in order
@@ -978,7 +1013,7 @@ static int read_ads_entries(const u8 *p, struct inode *inode,
 			    u64 remaining_size)
 {
 	u16 num_ads;
-	struct ads_entry **ads_entries;
+	struct ads_entry *ads_entries;
 	int ret;
 
  	num_ads = inode->num_ads;
@@ -997,16 +1032,10 @@ static int read_ads_entries(const u8 *p, struct inode *inode,
 		size_t utf8_len;
 		const u8 *p_save = p;
 
-		cur_entry = new_ads_entry(NULL);
-		if (!cur_entry) {
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_ads_entries;
-		}
-
-		ads_entries[i] = cur_entry;
+		cur_entry = &ads_entries[i];
 
 	#ifdef WITH_FUSE
-		ads_entries[i]->stream_id = i + 1;
+		ads_entries[i].stream_id = i + 1;
 	#endif
 
 		/* Read the base stream entry, excluding the stream name. */
@@ -1099,7 +1128,7 @@ static int read_ads_entries(const u8 *p, struct inode *inode,
 	return 0;
 out_free_ads_entries:
 	for (u16 i = 0; i < num_ads; i++)
-		free_ads_entry(ads_entries[i]);
+		destroy_ads_entry(&ads_entries[i]);
 	FREE(ads_entries);
 	return ret;
 }
@@ -1555,14 +1584,14 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	 * read_ads_entries() for comments about the format of the on-disk
 	 * alternate data stream entries. */
 	for (u16 i = 0; i < inode->num_ads; i++) {
-		p = put_u64(p, ads_entry_total_length(inode->ads_entries[i]));
+		p = put_u64(p, ads_entry_total_length(&inode->ads_entries[i]));
 		p = put_u64(p, 0); /* Unused */
 		hash = inode_stream_hash(inode, i + 1);
 		p = put_bytes(p, SHA1_HASH_SIZE, hash);
-		p = put_u16(p, inode->ads_entries[i]->stream_name_len);
-		if (inode->ads_entries[i]->stream_name_len) {
-			p = put_bytes(p, inode->ads_entries[i]->stream_name_len,
-					 (u8*)inode->ads_entries[i]->stream_name);
+		p = put_u16(p, inode->ads_entries[i].stream_name_len);
+		if (inode->ads_entries[i].stream_name_len) {
+			p = put_bytes(p, inode->ads_entries[i].stream_name_len,
+					 (u8*)inode->ads_entries[i].stream_name);
 			p = put_u16(p, 0);
 		}
 		p = put_zeroes(p, (8 - (p - orig_p) % 8) % 8);

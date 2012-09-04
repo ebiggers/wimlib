@@ -307,7 +307,7 @@ inode_stream_lte_resolved(const struct inode *inode, unsigned stream_idx)
 	if (stream_idx == 0)
 		return inode->lte;
 	else
-		return inode->ads_entries[stream_idx - 1]->lte;
+		return inode->ads_entries[stream_idx - 1].lte;
 }
 
 static inline struct lookup_table_entry *
@@ -323,7 +323,7 @@ inode_stream_lte_unresolved(const struct inode *inode, unsigned stream_idx,
 	else
 		return __lookup_resource(table,
 					 inode->ads_entries[
-						stream_idx - 1]->hash);
+						stream_idx - 1].hash);
 }
 /* 
  * Returns the lookup table entry for stream @stream_idx of the inode, where
@@ -351,7 +351,7 @@ static inline const u8 *inode_stream_hash_unresolved(const struct inode *inode,
 	if (stream_idx == 0)
 		return inode->hash;
 	else
-		return inode->ads_entries[stream_idx - 1]->hash;
+		return inode->ads_entries[stream_idx - 1].hash;
 }
 
 
@@ -389,7 +389,7 @@ static inline u16 inode_stream_name_len(const struct inode *inode,
 	if (stream_idx == 0)
 		return 0;
 	else
-		return inode->ads_entries[stream_idx - 1]->stream_name_len;
+		return inode->ads_entries[stream_idx - 1].stream_name_len;
 }
 
 static inline struct lookup_table_entry *

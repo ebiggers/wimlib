@@ -7,10 +7,13 @@
 #include "sha1.h"
 #include <string.h>
 
-
 struct stat;
 struct lookup_table;
 struct WIMStruct;
+struct lookup_table_entry;
+struct wimlib_fd;
+struct inode;
+struct dentry;
 
 /* Size of the struct dentry up to and including the file_name_len. */
 #define WIM_DENTRY_DISK_SIZE    102
@@ -52,7 +55,6 @@ struct WIMStruct;
 #define FILE_ATTRIBUTE_ENCRYPTED           0x00004000
 #define FILE_ATTRIBUTE_VIRTUAL             0x00010000
 
-struct lookup_table_entry;
 
 /* Alternate data stream entry.
  *
@@ -114,108 +116,32 @@ static inline bool ads_entries_have_same_name(const struct ads_entry *entry_1,
 		      entry_1->stream_name_len) == 0;
 }
 
-struct wimlib_fd;
-
-struct inode {
-	/* Timestamps for the inode.  The timestamps are the number of
-	 * 100-nanosecond intervals that have elapsed since 12:00 A.M., January
-	 * 1st, 1601, UTC.  This is the same format used in NTFS inodes. */
-	u64 creation_time;
-	u64 last_access_time;
-	u64 last_write_time;
-
-	/* The file attributes associated with this inode.  This is a bitwise OR
-	 * of the FILE_ATTRIBUTE_* flags. */
-	u32 attributes;
-
-	/* The index of the security descriptor in the WIM image's table of
-	 * security descriptors that contains this file's security information.
-	 * If -1, no security information exists for this file.  */
-	int32_t security_id;
-
-	/* %true iff the inode's lookup table entries has been resolved (i.e.
-	 * the @lte field is valid, but the @hash field is not valid) 
-	 *
-	 * (This is not an on-disk field.) */
-	u8 resolved : 1;
-
-	u8 verified : 1;
-
-	u16 num_ads;
-
-	/* A hash of the file's contents, or a pointer to the lookup table entry
-	 * for this dentry if the lookup table entries have been resolved.
-	 *
-	 * More specifically, this is for the un-named default file stream, as
-	 * opposed to the alternate (named) file streams, which may have their
-	 * own lookup table entries.  */
-	union {
-		u8 hash[SHA1_HASH_SIZE];
-		struct lookup_table_entry *lte;
-	};
-
-	/* Identity of a reparse point.  See
-	 * http://msdn.microsoft.com/en-us/library/windows/desktop/aa365503(v=vs.85).aspx
-	 * for what a reparse point is. */
-	u32 reparse_tag;
-
-	u32 link_count;
-
-	struct ads_entry **ads_entries;
-
-	/* If the file is part of a hard link set, all the directory entries in
-	 * the set will share the same value for this field. 
-	 *
-	 * Unfortunately, in some WIMs it is NOT the case that all dentries that
-	 * share this field are actually in the same hard link set, although the
-	 * WIMs that wimlib writes maintain this restriction. */
-	u64 ino;
-
-	struct list_head dentry_list;
-	struct hlist_node hlist;
-	char *extracted_file;
-
-	struct dentry *children;
-
-#ifdef WITH_FUSE
-	u16 num_opened_fds;
-	u16 num_allocated_fds;
-	struct wimlib_fd **fds;
-	u32 next_stream_id;
-#endif
-};
-
-#define inode_for_each_dentry(dentry, inode) \
-		list_for_each_entry((dentry), &(inode)->dentry_list, inode_dentry_list)
-
-#define inode_add_dentry(dentry, inode) \
-	({								\
-	 	wimlib_assert((inode)->dentry_list.next != NULL);		\
-		list_add(&(dentry)->inode_dentry_list, &(inode)->dentry_list);	\
-	})
-
 /* 
  * In-memory structure for a WIM directory entry (dentry).  There is a directory
  * tree for each image in the WIM. 
  *
- * Please note that this is a directory entry and not an inode.  Since NTFS
- * allows hard links, it's possible for a NTFS inode to correspond to multiple
- * WIM dentries.  The @hard_link field tells you the number of the NTFS inode
- * that the dentry corresponds to.
+ * Note that this is a directory entry and not an inode.  Since NTFS allows hard
+ * links, it's possible for a NTFS inode to correspond to multiple WIM dentries.
+ * The hard_link field on the on-disk WIM dentry tells us the number of the NTFS
+ * inode that the dentry corresponds to.
  *
  * Unfortunately, WIM files do not have an analogue to an inode; instead certain
  * information, such as file attributes, the security descriptor, and file
  * streams is replicated in each hard-linked dentry, even though this
- * information really is associated with an inode.
+ * information really is associated with an inode.  In-memory, we fix up this
+ * flaw by allocating a `struct inode' for each dentry that contains some of
+ * this duplicated information, then combining the inodes for each hard link
+ * group together.
  *
- * Confusingly, it's also possible for stream information to be missing from a
- * dentry in a hard link set, in which case the stream information needs to be
- * gotten from one of the other dentries in the hard link set.  In addition, it
- * is possible for dentries to have inconsistent security IDs, file attributes,
- * or file streams when they share the same hard link ID (don't even ask.  I
- * hope that Microsoft may have fixed this problem, since I've only noticed it
- * in the 'install.wim' for Windows 7).  For those dentries, we have to use the
- * conflicting fields to split up the hard link groups.
+ * Confusingly, it's possible for stream information to be missing from a dentry
+ * in a hard link set, in which case the stream information needs to be gotten
+ * from one of the other dentries in the hard link set.  In addition, it is
+ * possible for dentries to have inconsistent security IDs, file attributes, or
+ * file streams when they share the same hard link ID (don't even ask.  I hope
+ * that Microsoft may have fixed this problem, since I've only noticed it in the
+ * 'install.wim' for Windows 7).  For those dentries, we have to use the
+ * conflicting fields to split up the hard link groups.  (See fix_inodes() in
+ * hardlink.c).
  */
 struct dentry {
 	/* The inode for this dentry */
@@ -248,21 +174,11 @@ struct dentry {
 	 */
 	u64 length;
 
-
 	/* The offset, from the start of the uncompressed WIM metadata resource
 	 * for this image, of this dentry's child dentries.  0 if the directory
 	 * entry has no children, which is the case for regular files or reparse
 	 * points. */
 	u64 subdir_offset;
-
-
-	/* Although M$'s documentation does not tell you this, it seems that the
-	 * reparse_reserved field does not actually exist.  So the hard_link
-	 * field directly follows the reparse_tag on disk.  EXCEPT when the
-	 * dentry is actually a reparse point... well, just take a look at the
-	 * read_dentry() function. */
-	//u32 reparse_reserved;
-
 
 	/* Length of short filename, in bytes, not including the terminating
 	 * zero wide-character. */
@@ -293,19 +209,109 @@ struct dentry {
 	 * WIMStructs */
 	u32 refcnt;
 
-	/* List of dentries in the hard link set */
+	/* List of dentries in the inode (hard link set)  */
 	struct list_head inode_dentry_list;
+
 	union {
 		struct list_head tmp_list;
 		bool is_extracted;
 	};
 };
 
+/*
+ * WIM inode.
+ *
+ * As mentioned above, in the WIM file that is no on-disk analogue of a real
+ * inode, as most of these fields are duplicated in the dentries.
+ */
+struct inode {
+	/* Timestamps for the inode.  The timestamps are the number of
+	 * 100-nanosecond intervals that have elapsed since 12:00 A.M., January
+	 * 1st, 1601, UTC.  This is the same format used in NTFS inodes. */
+	u64 creation_time;
+	u64 last_access_time;
+	u64 last_write_time;
+
+	/* The file attributes associated with this inode.  This is a bitwise OR
+	 * of the FILE_ATTRIBUTE_* flags. */
+	u32 attributes;
+
+	/* The index of the security descriptor in the WIM image's table of
+	 * security descriptors that contains this file's security information.
+	 * If -1, no security information exists for this file.  */
+	int32_t security_id;
+
+	/* %true iff the inode's lookup table entries has been resolved (i.e.
+	 * the @lte field is valid, but the @hash field is not valid) 
+	 *
+	 * (This is not an on-disk field.) */
+	u8 resolved : 1;
+
+	/* %true iff verify_inode() has run on this dentry. */
+	u8 verified : 1;
+
+	/* Number of alternate data streams associated with this inode */
+	u16 num_ads;
+
+	/* A hash of the file's contents, or a pointer to the lookup table entry
+	 * for this dentry if the lookup table entries have been resolved.
+	 *
+	 * More specifically, this is for the un-named default file stream, as
+	 * opposed to the alternate (named) file streams, which may have their
+	 * own lookup table entries.  */
+	union {
+		u8 hash[SHA1_HASH_SIZE];
+		struct lookup_table_entry *lte;
+	};
+
+	/* Identity of a reparse point.  See
+	 * http://msdn.microsoft.com/en-us/library/windows/desktop/aa365503(v=vs.85).aspx
+	 * for what a reparse point is. */
+	u32 reparse_tag;
+
+	/* Number of dentries that reference this inode */
+	u32 link_count;
+
+	/* Alternate data stream entries. */
+	struct ads_entry *ads_entries;
+
+	/* Inode number */
+	u64 ino;
+
+	/* List of dentries that reference this inode (there should be
+	 * link_count of them) */
+	struct list_head dentry_list;
+	struct hlist_node hlist;
+	char *extracted_file;
+
+	/* If non-NULL, the children of this inode (implies the inode is a
+	 * directory) */
+	struct dentry *children;
+
+#ifdef WITH_FUSE
+	/* wimfs file descriptors table for the inode */
+	u16 num_opened_fds;
+	u16 num_allocated_fds;
+	struct wimlib_fd **fds;
+
+	/* Next alternate data stream ID to be assigned */
+	u32 next_stream_id;
+#endif
+};
+
+#define inode_for_each_dentry(dentry, inode) \
+		list_for_each_entry((dentry), &(inode)->dentry_list, inode_dentry_list)
+
+#define inode_add_dentry(dentry, inode) \
+	({								\
+	 	wimlib_assert((inode)->dentry_list.next != NULL);		\
+		list_add(&(dentry)->inode_dentry_list, &(inode)->dentry_list);	\
+	})
+
 static inline bool dentry_is_extracted(const struct dentry *dentry)
 {
 	return dentry->is_extracted;
 }
-
 
 extern struct ads_entry *inode_get_ads_entry(struct inode *inode,
 					     const char *stream_name,
@@ -314,12 +320,17 @@ extern struct ads_entry *inode_get_ads_entry(struct inode *inode,
 extern struct ads_entry *inode_add_ads(struct inode *dentry,
 				       const char *stream_name);
 
+extern void inode_remove_ads(struct inode *inode, u16 idx,
+			     struct lookup_table *lookup_table);
+
 extern const char *path_stream_name(const char *path);
 
 extern u64 dentry_total_length(const struct dentry *dentry);
 extern u64 dentry_correct_total_length(const struct dentry *dentry);
 
 extern void stbuf_to_inode(const struct stat *stbuf, struct inode *inode);
+extern int inode_to_stbuf(const struct inode *inode,
+			  struct lookup_table_entry *lte, struct stat *stbuf);
 
 extern int for_dentry_in_tree(struct dentry *root, 
 			      int (*visitor)(struct dentry*, void*), 
@@ -357,7 +368,6 @@ extern struct inode *new_timeless_inode();
 extern struct dentry *new_dentry_with_inode(const char *name);
 extern struct dentry *new_dentry_with_timeless_inode(const char *name);
 
-extern void free_ads_entry(struct ads_entry *entry);
 extern void inode_free_ads_entries(struct inode *inode);
 extern struct inode *free_dentry(struct dentry *dentry);
 extern void free_inode(struct inode *inode);

@@ -227,76 +227,6 @@ static void remove_dentry(struct dentry *dentry,
 	put_dentry(dentry);
 }
 
-/* Remove an alternate data stream from the inode  */
-static void inode_remove_ads(struct inode *inode, u16 idx,
-			     struct lookup_table *lookup_table)
-{
-	struct ads_entry *ads_entry;
-	struct lookup_table_entry *lte;
-
-	ads_entry = inode->ads_entries[idx];
-
-	wimlib_assert(ads_entry);
-
-	lte = ads_entry->lte;
-
-	if (lte)
-		lte_decrement_refcnt(lte, lookup_table);
-
-	free_ads_entry(ads_entry);
-
-	wimlib_assert(inode->num_ads);
-	memcpy(&inode->ads_entries[idx],
-	       &inode->ads_entries[idx + 1],
-	       (inode->num_ads - idx - 1) * sizeof(inode->ads_entries[0]));
-	inode->num_ads--;
-}
-
-/* Transfers file attributes from a struct inode to a `stat' buffer. 
- *
- * The lookup table entry tells us which stream in the inode we are statting.
- * For a named data stream, everything returned is the same as the unnamed data
- * stream except possibly the size and block count. */
-int inode_to_stbuf(const struct inode *inode, struct lookup_table_entry *lte,
-		   struct stat *stbuf)
-{
-	if (inode_is_symlink(inode))
-		stbuf->st_mode = S_IFLNK | 0777;
-	else if (inode_is_directory(inode))
-		stbuf->st_mode = S_IFDIR | 0755;
-	else
-		stbuf->st_mode = S_IFREG | 0644;
-
-	stbuf->st_ino   = (ino_t)inode->ino;
-	stbuf->st_nlink = inode->link_count;
-	stbuf->st_uid   = getuid();
-	stbuf->st_gid   = getgid();
-
-	if (lte) {
-		if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
-			wimlib_assert(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE);
-			wimlib_assert(lte->staging_file_name);
-			struct stat native_stat;
-			if (stat(lte->staging_file_name, &native_stat) != 0) {
-				DEBUG("Failed to stat `%s': %m",
-				      lte->staging_file_name);
-				return -errno;
-			}
-			stbuf->st_size = native_stat.st_size;
-		} else {
-			stbuf->st_size = wim_resource_size(lte);
-		}
-	} else {
-		stbuf->st_size = 0;
-	}
-
-	stbuf->st_atime   = wim_timestamp_to_unix(inode->last_access_time);
-	stbuf->st_mtime   = wim_timestamp_to_unix(inode->last_write_time);
-	stbuf->st_ctime   = wim_timestamp_to_unix(inode->creation_time);
-	stbuf->st_blocks  = (stbuf->st_size + 511) / 512;
-	return 0;
-}
-
 /* Creates a new staging file and returns its file descriptor opened for
  * writing.
  *
@@ -470,8 +400,8 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 		inode->lte = new_lte;
 	else
 		for (u16 i = 0; i < inode->num_ads; i++)
-			if (inode->ads_entries[i]->stream_id == stream_id)
-				inode->ads_entries[i]->lte = new_lte;
+			if (inode->ads_entries[i].stream_id == stream_id)
+				inode->ads_entries[i].lte = new_lte;
 
 	lookup_table_insert(w->lookup_table, new_lte);
 	list_add(&new_lte->staging_list, &staging_list);
@@ -1054,15 +984,15 @@ static int wimfs_listxattr(const char *path, char *list, size_t size)
 	if (size == 0) {
 		needed_size = 0;
 		for (i = 0; i < inode->num_ads; i++)
-			needed_size += inode->ads_entries[i]->stream_name_utf8_len + 6;
+			needed_size += inode->ads_entries[i].stream_name_utf8_len + 6;
 		return needed_size;
 	} else {
 		for (i = 0; i < inode->num_ads; i++) {
-			needed_size = inode->ads_entries[i]->stream_name_utf8_len + 6;
+			needed_size = inode->ads_entries[i].stream_name_utf8_len + 6;
 			if (needed_size > size)
 				return -ERANGE;
 			p += sprintf(p, "user.%s",
-				     inode->ads_entries[i]->stream_name_utf8) + 1;
+				     inode->ads_entries[i].stream_name_utf8) + 1;
 			size -= needed_size;
 		}
 		return p - list;
@@ -1172,7 +1102,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	if (stream_idx == 0)
 		stream_id = 0;
 	else
-		stream_id = inode->ads_entries[stream_idx - 1]->stream_id;
+		stream_id = inode->ads_entries[stream_idx - 1].stream_id;
 
 	/* The file resource may be in the staging directory (read-write mounts
 	 * only) or in the WIM.  If it's in the staging directory, we need to
@@ -1568,7 +1498,7 @@ static int wimfs_truncate(const char *path, off_t size)
 	if (stream_idx == 0)
 		stream_id = 0;
 	else
-		stream_id = inode->ads_entries[stream_idx - 1]->stream_id;
+		stream_id = inode->ads_entries[stream_idx - 1].stream_id;
 
 	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		wimlib_assert(lte->staging_file_name);
