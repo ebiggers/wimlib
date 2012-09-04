@@ -188,9 +188,9 @@ static int lte_put_fd(struct lookup_table_entry *lte, struct wimlib_fd *fd)
 	/* Close staging file descriptor if needed. */
 	wimlib_assert(lte->num_opened_fds);
 
-	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
-		wimlib_assert(lte->staging_file_name);
-		wimlib_assert(fd->staging_fd != -1);
+	if (lte->resource_location == RESOURCE_IN_STAGING_FILE
+	     && fd->staging_fd != -1)
+	{
 		if (close(fd->staging_fd) != 0) {
 			ERROR_WITH_ERRNO("Failed to close staging file");
 			return -errno;
@@ -386,6 +386,7 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 			if (fd) {
 				if (fd->stream_id == stream_id) {
 					wimlib_assert(fd->f_lte == old_lte);
+					wimlib_assert(fd->staging_fd == -1);
 					fd->f_lte = new_lte;
 					new_lte->num_opened_fds++;
 					fd->staging_fd = open(staging_file_name, O_RDONLY);
@@ -407,9 +408,9 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 
 	new_lte->resource_entry.original_size = size;
 	new_lte->refcnt                       = inode->link_count;
-	new_lte->staging_file_name            = staging_file_name;
 	new_lte->resource_location            = RESOURCE_IN_STAGING_FILE;
-	new_lte->lte_inode                        = inode;
+	new_lte->staging_file_name            = staging_file_name;
+	new_lte->lte_inode                    = inode;
 	random_hash(new_lte->hash);
 
 	if (stream_id == 0)
@@ -673,6 +674,22 @@ static int wimfs_access(const char *path, int mask)
 	return 0;
 }
 
+static void inode_update_lte_ptr(struct inode *inode,
+				 struct lookup_table_entry *old_lte,
+				 struct lookup_table_entry *new_lte)
+{
+	if (inode->lte == old_lte) {
+		inode->lte = new_lte;
+	} else {
+		for (unsigned i = 0; i < inode->num_ads; i++) {
+			if (inode->ads_entries[i].lte == old_lte) {
+				inode->ads_entries[i].lte = new_lte;
+				break;
+			}
+		}
+	}
+}
+
 static int update_lte_of_staging_file(struct lookup_table_entry *lte,
 				      struct lookup_table *table)
 {
@@ -696,27 +713,34 @@ static int update_lte_of_staging_file(struct lookup_table_entry *lte,
 		/* Merge duplicate lookup table entries */
 		duplicate_lte->refcnt += lte->refcnt;
 		list_del(&lte->staging_list);
+		inode_update_lte_ptr(lte->lte_inode, lte, duplicate_lte);
 		free_lookup_table_entry(lte);
 	} else {
 		if (stat(lte->staging_file_name, &stbuf) != 0) {
 			ERROR_WITH_ERRNO("Failed to stat `%s'", lte->staging_file_name);
 			return WIMLIB_ERR_STAT;
 		}
-		wimlib_assert(&lte->file_on_disk == &lte->staging_file_name);
-		lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
-		copy_hash(lte->hash, hash);
-		lte->resource_entry.original_size = stbuf.st_size;
-		lte->resource_entry.size = stbuf.st_size;
-		lte->lte_inode = NULL;
-		lookup_table_insert(table, lte);
+		if (stbuf.st_size == 0) {
+			/* Zero-length stream.  No lookup table entry needed. */
+			inode_update_lte_ptr(lte->lte_inode, lte, NULL);
+			free_lookup_table_entry(lte);
+		} else {
+			wimlib_assert(&lte->file_on_disk == &lte->staging_file_name);
+			lte->resource_entry.original_size = stbuf.st_size;
+			lte->resource_entry.size = stbuf.st_size;
+			lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
+			lte->lte_inode = NULL;
+			copy_hash(lte->hash, hash);
+			lookup_table_insert(table, lte);
+		}
 	}
-
 	return 0;
 }
 
 static int inode_close_fds(struct inode *inode)
 {
-	for (u16 i = 0, j = 0; j < inode->num_opened_fds; i++) {
+	u16 num_opened_fds = inode->num_opened_fds;
+	for (u16 i = 0, j = 0; j < num_opened_fds; i++) {
 		struct wimlib_fd *fd = inode->fds[i];
 		if (fd) {
 			wimlib_assert(fd->f_inode == inode);
@@ -728,11 +752,6 @@ static int inode_close_fds(struct inode *inode)
 	}
 	return 0;
 }
-
-/*static int dentry_close_fds(struct dentry *dentry, void *ignore)*/
-/*{*/
-	/*return inode_close_fds(dentry->d_inode);*/
-/*}*/
 
 /* Overwrites the WIM file, with changes saved. */
 static int rebuild_wim(WIMStruct *w, bool check_integrity)
@@ -747,9 +766,6 @@ static int rebuild_wim(WIMStruct *w, bool check_integrity)
 		if (ret != 0)
 			return ret;
 	}
-	/*ret = for_dentry_in_tree(wim_root_dentry(w), dentry_close_fds, NULL);*/
-	/*if (ret != 0)*/
-		/*return ret;*/
 
 	DEBUG("Calculating SHA1 checksums for all new staging files.");
 	list_for_each_entry_safe(lte, tmp, &staging_list, staging_list) {
