@@ -259,7 +259,6 @@ int inode_set_symlink(struct inode *inode, const char *target,
 		lte->attached_buffer              = symlink_buf;
 		lte->resource_entry.original_size = symlink_buf_len;
 		lte->resource_entry.size          = symlink_buf_len;
-		lte->resource_entry.flags         = 0;
 		copy_hash(lte->hash, symlink_buf_hash);
 	}
 

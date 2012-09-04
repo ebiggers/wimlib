@@ -186,7 +186,6 @@ static int lte_put_fd(struct lookup_table_entry *lte, struct wimlib_fd *fd)
 		return 0;
 
 	/* Close staging file descriptor if needed. */
-	wimlib_assert(lte->num_opened_fds);
 
 	if (lte->resource_location == RESOURCE_IN_STAGING_FILE
 	     && fd->staging_fd != -1)
@@ -321,6 +320,9 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 	int ret;
 	int fd;
 	struct lookup_table_entry *old_lte, *new_lte;
+
+	DEBUG("Extracting resource to staging dir: inode %"PRIu64", "
+	      "stream id %"PRIu32, inode->ino, stream_id);
 
 	old_lte = *lte;
 	fd = create_staging_file(&staging_file_name, O_WRONLY);
@@ -915,7 +917,7 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 			  size_t size)
 {
 	int ret;
-	struct dentry *dentry;
+	struct inode *inode;
 	struct ads_entry *ads_entry;
 	size_t res_size;
 	struct lookup_table_entry *lte;
@@ -927,10 +929,11 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 		return -ENOATTR;
 	name += 5;
 
-	dentry = get_dentry(w, path);
-	if (!dentry)
+	inode = wim_pathname_to_inode(w, path);
+	if (!inode)
 		return -ENOENT;
-	ads_entry = inode_get_ads_entry(dentry->d_inode, name, NULL);
+
+	ads_entry = inode_get_ads_entry(inode, name, NULL);
 	if (!ads_entry)
 		return -ENOATTR;
 
@@ -939,11 +942,14 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 
 	if (size == 0)
 		return res_size;
+
 	if (res_size > size)
 		return -ERANGE;
+
 	ret = read_full_wim_resource(lte, (u8*)value);
 	if (ret != 0)
 		return -EIO;
+
 	return res_size;
 }
 #endif
@@ -994,21 +1000,19 @@ static int wimfs_link(const char *to, const char *from)
 #ifdef ENABLE_XATTR
 static int wimfs_listxattr(const char *path, char *list, size_t size)
 {
-	struct dentry *dentry;
 	int ret;
-	char *p = list;
 	size_t needed_size;
 	unsigned i;
 	struct inode *inode;
+
 	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
 	/* List alternate data streams, or get the list size */
 
-	ret = lookup_resource(w, path, get_lookup_flags(), &dentry, NULL, NULL);
-	if (ret != 0)
-		return ret;
-	inode = dentry->d_inode;
+	inode = wim_pathname_to_inode(w, path);
+	if (!inode)
+		return -ENOENT;
 
 	if (size == 0) {
 		needed_size = 0;
@@ -1016,6 +1020,7 @@ static int wimfs_listxattr(const char *path, char *list, size_t size)
 			needed_size += inode->ads_entries[i].stream_name_utf8_len + 6;
 		return needed_size;
 	} else {
+		char *p = list;
 		for (i = 0; i < inode->num_ads; i++) {
 			needed_size = inode->ads_entries[i].stream_name_utf8_len + 6;
 			if (needed_size > size)
@@ -1066,20 +1071,22 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	     && (stream_name = path_stream_name(path))) {
 		/* Make an alternate data stream */
 		struct ads_entry *new_entry;
-		struct dentry *dentry;
+		struct inode *inode;
 
 		char *p = (char*)stream_name - 1;
 		wimlib_assert(*p == ':');
 		*p = '\0';
 
-		dentry = get_dentry(w, path);
-		if (!dentry || !dentry_is_regular_file(dentry))
+		inode = wim_pathname_to_inode(w, path);
+		if (!inode)
 			return -ENOENT;
-		if (inode_get_ads_entry(dentry->d_inode, stream_name, NULL))
+		if (!inode_is_regular_file(inode))
+			return -ENOENT;
+		if (inode_get_ads_entry(inode, stream_name, NULL))
 			return -EEXIST;
-		new_entry = inode_add_ads(dentry->d_inode, stream_name);
+		new_entry = inode_add_ads(inode, stream_name);
 		if (!new_entry)
-			return -ENOENT;
+			return -ENOMEM;
 	} else {
 		struct dentry *dentry, *parent;
 		const char *basename;
@@ -1291,7 +1298,7 @@ static int wimfs_releasedir(const char *path, struct fuse_file_info *fi)
 /* Remove an alternate data stream through the XATTR interface */
 static int wimfs_removexattr(const char *path, const char *name)
 {
-	struct dentry *dentry;
+	struct inode *inode;
 	struct ads_entry *ads_entry;
 	u16 ads_idx;
 	if (!(mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
@@ -1301,14 +1308,14 @@ static int wimfs_removexattr(const char *path, const char *name)
 		return -ENOATTR;
 	name += 5;
 
-	dentry = get_dentry(w, path);
-	if (!dentry)
+	inode = wim_pathname_to_inode(w, path);
+	if (!inode)
 		return -ENOENT;
 
-	ads_entry = inode_get_ads_entry(dentry->d_inode, name, &ads_idx);
+	ads_entry = inode_get_ads_entry(inode, name, &ads_idx);
 	if (!ads_entry)
 		return -ENOATTR;
-	inode_remove_ads(dentry->d_inode, ads_idx, w->lookup_table);
+	inode_remove_ads(inode, ads_idx, w->lookup_table);
 	return 0;
 }
 #endif

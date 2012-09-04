@@ -158,8 +158,8 @@ static void finalize_lte(struct lookup_table_entry *lte)
  * reference count reaches 0, it is unlinked from the lookup table.  If,
  * furthermore, the entry has no opened file descriptors associated with it, the
  * entry is freed.  */
-struct lookup_table_entry *
-lte_decrement_refcnt(struct lookup_table_entry *lte, struct lookup_table *table)
+void lte_decrement_refcnt(struct lookup_table_entry *lte,
+			  struct lookup_table *table)
 {
 	wimlib_assert(lte);
 	wimlib_assert(lte->refcnt);
@@ -168,28 +168,18 @@ lte_decrement_refcnt(struct lookup_table_entry *lte, struct lookup_table *table)
 	#ifdef WITH_FUSE
 		if (lte->num_opened_fds == 0)
 	#endif
-		{
 			finalize_lte(lte);
-			lte = NULL;
-		}
 	}
-	return lte;
 }
 
 #ifdef WITH_FUSE
-struct lookup_table_entry *
-lte_decrement_num_opened_fds(struct lookup_table_entry *lte,
-			     struct lookup_table *table)
+void lte_decrement_num_opened_fds(struct lookup_table_entry *lte,
+			          struct lookup_table *table)
 {
-	if (lte) {
-		wimlib_assert(lte->num_opened_fds);
-		if (--lte->num_opened_fds == 0 && lte->refcnt == 0) {
-			lookup_table_unlink(table, lte);
-			finalize_lte(lte);
-			lte = NULL;
-		}
-	}
-	return lte;
+	wimlib_assert(lte);
+	wimlib_assert(lte->num_opened_fds);
+	if (--lte->num_opened_fds == 0 && lte->refcnt == 0)
+		finalize_lte(lte);
 }
 #endif
 

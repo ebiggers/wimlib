@@ -594,6 +594,9 @@ static struct inode *new_timeless_inode()
 		return NULL;
 	inode->security_id = -1;
 	inode->link_count = 1;
+#ifdef WITH_FUSE
+	inode->next_stream_id = 1;
+#endif
 	INIT_LIST_HEAD(&inode->dentry_list);
 	return inode;
 }
@@ -1068,7 +1071,7 @@ struct ads_entry *inode_add_ads(struct inode *inode, const char *stream_name)
 	struct ads_entry *ads_entries;
 	struct ads_entry *new_entry;
 
-	DEBUG("Add alternate data stream `%s'", stream_name);
+	DEBUG("Add alternate data stream \"%s\"", stream_name);
 
 	if (inode->num_ads >= 0xfffe) {
 		ERROR("Too many alternate data streams in one inode!");
@@ -1102,19 +1105,19 @@ void inode_remove_ads(struct inode *inode, u16 idx,
 	struct ads_entry *ads_entry;
 	struct lookup_table_entry *lte;
 
-	ads_entry = &inode->ads_entries[idx];
-
-	wimlib_assert(ads_entry);
+	wimlib_assert(idx < inode->num_ads);
 	wimlib_assert(inode->resolved);
 
-	lte = ads_entry->lte;
+	ads_entry = &inode->ads_entries[idx];
 
+	DEBUG("Remove alternate data stream \"%s\"", ads_entry->stream_name_utf8);
+
+	lte = ads_entry->lte;
 	if (lte)
 		lte_decrement_refcnt(lte, lookup_table);
 
 	destroy_ads_entry(ads_entry);
 
-	wimlib_assert(inode->num_ads);
 	memcpy(&inode->ads_entries[idx],
 	       &inode->ads_entries[idx + 1],
 	       (inode->num_ads - idx - 1) * sizeof(inode->ads_entries[0]));

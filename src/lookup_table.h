@@ -234,21 +234,6 @@ static inline void lookup_table_unlink(struct lookup_table *table,
 	table->num_entries--;
 }
 
-
-extern struct lookup_table_entry *
-lookup_table_decrement_refcnt(struct lookup_table* table, const u8 hash[]);
-
-#ifdef WITH_FUSE
-extern struct lookup_table_entry *
-lte_decrement_num_opened_fds(struct lookup_table_entry *lte,
-			     struct lookup_table *table);
-#endif
-
-extern struct lookup_table_entry *
-lte_decrement_refcnt(struct lookup_table_entry *lte,
-		     struct lookup_table *table);
-
-
 extern struct lookup_table_entry *new_lookup_table_entry();
 
 extern int for_lookup_table_entry(struct lookup_table *table, 
@@ -262,6 +247,11 @@ extern int lookup_resource(WIMStruct *w, const char *path,
 			   int lookup_flags, struct dentry **dentry_ret,
 			   struct lookup_table_entry **lte_ret,
 			   u16 *stream_idx_ret);
+
+extern void lte_decrement_refcnt(struct lookup_table_entry *lte,
+			         struct lookup_table *table);
+extern void lte_decrement_num_opened_fds(struct lookup_table_entry *lte,
+					 struct lookup_table *table);
 
 extern int lte_zero_out_refcnt(struct lookup_table_entry *entry, void *ignore);
 extern int lte_zero_real_refcnt(struct lookup_table_entry *entry, void *ignore);
