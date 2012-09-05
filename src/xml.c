@@ -27,6 +27,7 @@
 #include "dentry.h"
 #include "xml.h"
 #include "timestamp.h"
+#include "lookup_table.h"
 #include <string.h>
 #include <time.h>
 #include <libxml/parser.h>
@@ -74,7 +75,10 @@ struct image_info {
 	char *description;
 	char  *display_name;
 	char  *display_description;
-	char  *flags;
+	union {
+		char  *flags;
+		struct lookup_table *lookup_table;
+	};
 };
 
 
@@ -957,27 +961,115 @@ void xml_set_memory_allocator(void *(*malloc_func)(size_t),
 }
 #endif
 
+/* Parameters for calculate_dentry_statistics(). */
+struct image_statistics {
+	struct lookup_table *lookup_table;
+	u64 *dir_count;
+	u64 *file_count;
+	u64 *total_bytes;
+	u64 *hard_link_bytes;
+};
+
+static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
+{
+	struct image_info *info = arg; 
+	struct lookup_table *lookup_table = info->lookup_table;
+	const struct inode *inode = dentry->d_inode;
+	struct lookup_table_entry *lte;
+
+	/* Update directory count and file count.
+	 *
+	 * Each dentry counts as either a file or a directory, but not both.
+	 * The root directory is an exception: it is not counted.
+	 *
+	 * Symbolic links and junction points (and presumably other reparse
+	 * points) count as regular files.  This is despite the fact that
+	 * junction points have FILE_ATTRIBUTE_DIRECTORY set.
+	 */
+	if (dentry_is_root(dentry))
+		return 0;
+
+	if (inode_is_directory(inode))
+		info->dir_count++;
+	else
+		info->file_count++;
+
+	/* 
+	 * Update total bytes and hard link bytes.
+	 *
+	 * Unfortunately there are some inconsistencies/bugs in the way this is
+	 * done.
+	 *
+	 * If there are no alternate data streams in the image, the "total
+	 * bytes" is the sum of the size of the un-named data stream of each
+	 * inode times the link count of that inode.  In other words, it would
+	 * be the total number of bytes of regular files you would have if you
+	 * extracted the full image without any hard-links.  The "hard link
+	 * bytes" is equal to the "total bytes" minus the size of the un-named
+	 * data stream of each inode.  In other words, the "hard link bytes"
+	 * counts the size of the un-named data stream for all the links to each
+	 * inode except the first one.
+	 *
+	 * Reparse points and directories don't seem to be counted in either the
+	 * total bytes or the hard link bytes.
+	 *
+	 * And now we get to the most confusing part, the alternate data
+	 * streams.  They are not counted in the "total bytes".  However, if the
+	 * link count of an inode with alternate data streams is 2 or greater,
+	 * the size of all the alternate data streams is included in the "hard
+	 * link bytes", and this size is multiplied by the link count (NOT one
+	 * less than the link count).
+	 */
+	lte = inode_unnamed_lte(inode, info->lookup_table);
+	if (lte) {
+		info->total_bytes += wim_resource_size(lte);
+		if (!dentry_is_first_in_inode(dentry))
+			info->hard_link_bytes += wim_resource_size(lte);
+	}
+
+	if (inode->link_count >= 2 && dentry_is_first_in_inode(dentry)) {
+		for (unsigned i = 0; i < inode->num_ads; i++) {
+			if (inode->ads_entries[i].stream_name_len) {
+				lte = inode_stream_lte(inode, i + 1, lookup_table);
+				if (lte) {
+					info->hard_link_bytes += inode->link_count *
+								 wim_resource_size(lte);
+				}
+			}
+		}
+	}
+	return 0;
+}
+
 void xml_update_image_info(WIMStruct *w, int image)
 {
 	struct image_info *image_info;
 	struct dentry *root; 
+	char *flags_save;
 
 	DEBUG("Updating the image info for image %d", image);
 
 	image_info = &w->wim_info->images[image - 1];
-	root = w->image_metadata[image - 1].root_dentry;
 
-	calculate_dir_tree_statistics(root, w->lookup_table, 
-				      &image_info->dir_count,
-				      &image_info->file_count, 
-				      &image_info->total_bytes,
-				      &image_info->hard_link_bytes);
+	image_info->file_count      = 0;
+	image_info->dir_count       = 0;
+	image_info->total_bytes     = 0;
+	image_info->hard_link_bytes = 0;
 
+	flags_save = image_info->flags;
+	image_info->lookup_table = w->lookup_table;
+
+	for_dentry_in_tree(w->image_metadata[image - 1].root_dentry,
+			   calculate_dentry_statistics,
+			   image_info);
+			   
+	image_info->lookup_table = NULL;
+	image_info->flags = flags_save;
 	image_info->last_modification_time = get_wim_timestamp();
 }
 
 /* Adds an image to the XML information. */
-int xml_add_image(WIMStruct *w, struct dentry *root_dentry, const char *name)
+int xml_add_image(WIMStruct *w, const char *name)
 {
 	struct wim_info *wim_info;
 	struct image_info *image_info;

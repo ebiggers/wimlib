@@ -842,58 +842,6 @@ void unlink_dentry(struct dentry *dentry)
 }
 #endif
 
-/* Parameters for calculate_dentry_statistics(). */
-struct image_statistics {
-	struct lookup_table *lookup_table;
-	u64 *dir_count;
-	u64 *file_count;
-	u64 *total_bytes;
-	u64 *hard_link_bytes;
-};
-
-static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
-{
-	struct image_statistics *stats;
-	struct lookup_table_entry *lte; 
-	
-	stats = arg;
-
-	if (dentry_is_directory(dentry) && !dentry_is_root(dentry))
-		++*stats->dir_count;
-	else
-		++*stats->file_count;
-
-	for (unsigned i = 0; i <= dentry->d_inode->num_ads; i++) {
-		lte = inode_stream_lte(dentry->d_inode, i, stats->lookup_table);
-		if (lte) {
-			*stats->total_bytes += wim_resource_size(lte);
-			if (++lte->out_refcnt == 1)
-				*stats->hard_link_bytes += wim_resource_size(lte);
-		}
-	}
-	return 0;
-}
-
-/* Calculates some statistics about a dentry tree. */
-void calculate_dir_tree_statistics(struct dentry *root, struct lookup_table *table, 
-				   u64 *dir_count_ret, u64 *file_count_ret, 
-				   u64 *total_bytes_ret, 
-				   u64 *hard_link_bytes_ret)
-{
-	struct image_statistics stats;
-	*dir_count_ret         = 0;
-	*file_count_ret        = 0;
-	*total_bytes_ret       = 0;
-	*hard_link_bytes_ret   = 0;
-	stats.lookup_table     = table;
-	stats.dir_count       = dir_count_ret;
-	stats.file_count      = file_count_ret;
-	stats.total_bytes     = total_bytes_ret;
-	stats.hard_link_bytes = hard_link_bytes_ret;
-	for_lookup_table_entry(table, lte_zero_out_refcnt, NULL);
-	for_dentry_in_tree(root, calculate_dentry_statistics, &stats);
-}
-
 static inline struct dentry *inode_first_dentry(struct inode *inode)
 {
 	wimlib_assert(inode->dentry_list.next != &inode->dentry_list);

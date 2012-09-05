@@ -442,8 +442,10 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 			/* Can't make a hard link; extract the file itself */
 			FREE(inode->extracted_file);
 			inode->extracted_file = STRDUP(dentry->full_path_utf8);
-			if (!inode->extracted_file)
-				return WIMLIB_ERR_NOMEM;
+			if (!inode->extracted_file) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_close_dir_ni;
+			}
 		}
 	}
 

@@ -296,6 +296,12 @@ static inline bool dentry_is_extracted(const struct dentry *dentry)
 	return dentry->is_extracted;
 }
 
+static inline bool dentry_is_first_in_inode(const struct dentry *dentry)
+{
+	return container_of(dentry->d_inode->dentry_list.next,
+			    struct dentry,
+			    inode_dentry_list) == dentry;
+}
 
 extern u64 dentry_correct_total_length(const struct dentry *dentry);
 
@@ -341,13 +347,6 @@ extern int increment_dentry_refcnt(struct dentry *dentry, void *ignore);
 
 extern void unlink_dentry(struct dentry *dentry);
 extern void link_dentry(struct dentry *dentry, struct dentry *parent);
-
-extern void calculate_dir_tree_statistics(struct dentry *root, 
-					  struct lookup_table *table, 
-					  u64 *dir_count_ret, 
-					  u64 *file_count_ret, 
-					  u64 *total_bytes_ret, 
-					  u64 *hard_link_bytes_ret);
 
 extern int verify_dentry(struct dentry *dentry, void *wim);
 

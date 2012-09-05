@@ -7,7 +7,7 @@
 struct wim_info {
 	u64 total_bytes;
 	u64 num_images;
-	/* Array of WIMImageInfos, one for each image in the WIM that is
+	/* Array of `struct image_info's, one for each image in the WIM that is
 	 * mentioned in the XML data. */
 	struct image_info *images;
 };
@@ -24,8 +24,7 @@ extern void xml_update_image_info(WIMStruct *w, int image);
 
 extern void xml_delete_image(struct wim_info **wim_info_p, int image);
 
-extern int xml_add_image(WIMStruct *w, struct dentry *root_dentry, 
-		   	 const char *name);
+extern int xml_add_image(WIMStruct *w, const char *name);
 
 extern void free_wim_info(struct wim_info *info);
 
