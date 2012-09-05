@@ -961,15 +961,6 @@ void xml_set_memory_allocator(void *(*malloc_func)(size_t),
 }
 #endif
 
-/* Parameters for calculate_dentry_statistics(). */
-struct image_statistics {
-	struct lookup_table *lookup_table;
-	u64 *dir_count;
-	u64 *file_count;
-	u64 *total_bytes;
-	u64 *hard_link_bytes;
-};
-
 static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
 {
 	struct image_info *info = arg; 
