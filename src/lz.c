@@ -248,7 +248,7 @@ uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
 		prev_start = match_start;
 		match_len = params->min_match - 1;
 
-		if (hash_head != 0 && prev_len < params->min_match) {
+		if (hash_head != 0 && prev_len < params->max_lazy_match) {
 			/* To simplify the code, we prevent matches with the
 			 * string of window index 0 (in particular we have to
 			 * avoid a match of the string with itself at the start
