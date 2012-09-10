@@ -450,7 +450,7 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 		ret = bitstream_read_bytes(istream, sizeof(R), R);
 		if (ret != 0)
 			return ret;
-		array_to_le32(R, ARRAY_LEN(3));
+		array_to_le32(R, ARRAY_LEN(R));
 		queue->R0 = R[0];
 		queue->R1 = R[1];
 		queue->R2 = R[2];
