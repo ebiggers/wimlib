@@ -638,6 +638,7 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 	uint compressed_len;
 	uint i;
 	int ret;
+	int block_type = LZX_BLOCKTYPE_ALIGNED;
 
 	LZX_DEBUG("uncompressed_len = %u", uncompressed_len);
 
@@ -676,7 +677,7 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 
 	/* The first three bits tell us what kind of block it is, and are one
 	 * of the LZX_BLOCKTYPE_* values.  */
-	bitstream_put_bits(&ostream, LZX_BLOCKTYPE_ALIGNED, 3);
+	bitstream_put_bits(&ostream, block_type, 3);
 
 	/* The next bit indicates whether the block size is the default (32768),
 	 * indicated by a 1 bit, or whether the block size is given by the next
@@ -691,9 +692,10 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 	/* Write out the aligned offset tree. Note that M$ lies and says that
 	 * the aligned offset tree comes after the length tree, but that is
 	 * wrong; it actually is before the main tree.  */
-	for (i = 0; i < LZX_ALIGNEDTREE_NUM_SYMBOLS; i++)
-		bitstream_put_bits(&ostream, codes.aligned_lens[i], 
-				   LZX_ALIGNEDTREE_ELEMENT_SIZE);
+	if (block_type == LZX_BLOCKTYPE_ALIGNED)
+		for (i = 0; i < LZX_ALIGNEDTREE_NUM_SYMBOLS; i++)
+			bitstream_put_bits(&ostream, codes.aligned_lens[i],
+					   LZX_ALIGNEDTREE_ELEMENT_SIZE);
 
 	/* Write the pre-tree and lengths for the first LZX_NUM_CHARS symbols in the
 	 * main tree. */
@@ -717,7 +719,7 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 		return ret;
 
 	/* Write the compressed literals. */
-	ret = lzx_write_compressed_literals(&ostream, LZX_BLOCKTYPE_ALIGNED,
+	ret = lzx_write_compressed_literals(&ostream, block_type,
 					    match_tab, num_matches, &codes);
 	if (ret != 0)
 		return ret;
