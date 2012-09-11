@@ -29,10 +29,19 @@
 #include "comp.h"
 #include <string.h>
 
+#define LZ_MIN_MATCH 3
+
 #define HASH_BITS	15
 #define HASH_SIZE	(1 << HASH_BITS)
 #define HASH_MASK	(HASH_SIZE - 1)
-#define HASH_SHIFT	((HASH_BITS + 2) /  3)
+
+#if LZ_MIN_MATCH == 2
+#	define HASH_SHIFT	8
+#elif LZ_MIN_MATCH == 3
+#	define HASH_SHIFT	5
+#else
+#error "Invalid LZ_MIN_MATCH"
+#endif
 
 /* Hash function, based on code from zlib.  This function will update and return
  * the hash value @hash for the string ending on the additional input character
@@ -64,7 +73,7 @@ static inline uint update_hash(uint hash, u8 c)
 static inline uint insert_string(u16 hash_tab[], u16 prev_tab[], 
 				 const u8 window[], uint str_pos, uint hash)
 {
-	hash = update_hash(hash, window[str_pos + 2]);
+	hash = update_hash(hash, window[str_pos + LZ_MIN_MATCH - 1]);
 	prev_tab[str_pos] = hash_tab[hash];
 	hash_tab[hash] = str_pos;
 	return hash;
@@ -108,7 +117,7 @@ static uint longest_match(const u8 window[], uint bytes_remaining,
 
 	uint nice_match = min(params->nice_match, bytes_remaining);
 
-	const u8 *strend = scan + params->max_match;
+	const u8 *strend = scan + min(params->max_match, bytes_remaining);
 
 	u8 scan_end1 = scan[best_len - 1];
 	u8 scan_end = scan[best_len];
@@ -121,42 +130,39 @@ static uint longest_match(const u8 window[], uint bytes_remaining,
 	do {
 		match = &window[cur_match];
 
-
-		/* Skip to next match if the match length cannot increase
-		 * or if the match length is less than 2.  Note that the checks below
-		 * for insufficient lookahead only occur occasionally for performance
-		 * reasons.  Therefore uninitialized memory will be accessed, and
-		 * conditional jumps will be made that depend on those values.
-		 * However the length of the match is limited to the lookahead, so
-		 * the output of deflate is not affected by the uninitialized values.
+		/* Skip to next match if the match length cannot increase or if
+		 * the match length is less than 2.  Note that the checks below
+		 * for insufficient lookahead only occur occasionally for
+		 * performance reasons.  Therefore uninitialized memory will be
+		 * accessed, and conditional jumps will be made that depend on
+		 * those values.  However the length of the match is limited to
+		 * the lookahead, so the output of deflate is not affected by
+		 * the uninitialized values.
 		 */
 
-		if (match[best_len]   != scan_end  ||
-			match[best_len-1] != scan_end1 ||
-			*match			!= *scan	 ||
-			*++match		  != scan[1])	  continue;
+		if (match[best_len] != scan_end
+		    || match[best_len - 1] != scan_end1
+		    || *match != *scan
+		    || *++match != scan[1])
+			continue;
+		scan++;
 
-		/* The check at best_len-1 can be removed because it will be made
-		 * again later. (This heuristic is not always a win.)
-		 * It is not necessary to compare scan[2] and match[2] since they
-		 * are always equal when the other bytes match, given that
-		 * the hash keys are equal and that HASH_BITS >= 8.
-		 */
-		scan += 2, match++;
-
-		wimlib_assert(*scan == *match);
-
-		/* We check for insufficient lookahead only every 8th comparison;
-		 * the 256th check will be made at strstart+258.  */
+	#if 0
 		do {
-		} while (*++scan == *++match && *++scan == *++match &&
-				 *++scan == *++match && *++scan == *++match &&
-				 *++scan == *++match && *++scan == *++match &&
-				 *++scan == *++match && *++scan == *++match &&
-				 scan < strend);
+		} while (scan < strend && *++match == *++scan);
+	#else
 
-		len = params->max_match - (int)(strend - scan);
-		scan = strend - params->max_match;
+		do {
+		} while (
+			 *++match == *++scan && *++match == *++scan &&
+			 *++match == *++scan && *++match == *++scan &&
+			 *++match == *++scan && *++match == *++scan &&
+			 *++match == *++scan && *++match == *++scan &&
+			 scan < strend);
+	#endif
+		len = match - &window[cur_match];
+
+		scan = &window[strstart];
 
 		if (len > best_len) {
 			match_start = cur_match;
@@ -166,8 +172,7 @@ static uint longest_match(const u8 window[], uint bytes_remaining,
 			scan_end1  = scan[best_len - 1];
 			scan_end   = scan[best_len];
 		}
-		cur_match = prev_tab[cur_match];
-	} while (--chain_len != 0 && cur_match != 0);
+	} while (--chain_len != 0 && (cur_match = prev_tab[cur_match]) != 0);
 	*match_start_ret = match_start;
 	return min(min(best_len, bytes_remaining), params->max_match);
 }
@@ -235,8 +240,8 @@ uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
 		 * hash bucket, or 0 if there is no such string */
 		if (uncompressed_len - cur_input_pos >= params->min_match) {
 			hash = insert_string(hash_tab, prev_tab, 
-						uncompressed_data, 
-						cur_input_pos, hash);
+					     uncompressed_data, 
+					     cur_input_pos, hash);
 			hash_head = prev_tab[cur_input_pos];
 		} else {
 			hash_head = 0;
@@ -254,16 +259,14 @@ uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
 			 * avoid a match of the string with itself at the start
 			 * of the input file).  */
 			match_len = longest_match(uncompressed_data, 
-						uncompressed_len - cur_input_pos,
-						cur_input_pos, prev_tab, 
-						hash_head, prev_len,
-						&match_start, params);
+						  uncompressed_len - cur_input_pos,
+						  cur_input_pos, prev_tab, 
+						  hash_head, prev_len,
+						  &match_start, params);
 
-			if (match_len == params->min_match && 
-				cur_input_pos - match_start > params->too_far) 
-			{
+			if (match_len == params->min_match &&
+			     cur_input_pos - match_start > params->too_far)
 				match_len = params->min_match - 1;
-			}
 		}
 
 		/* If there was a match at the previous step and the current
@@ -280,9 +283,9 @@ uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
 					/*prev_len);*/
 
 			match = (*record_match)(cur_input_pos - 1 - prev_start, 
-							prev_len, 
-							record_match_arg1,
-							record_match_arg2);
+						prev_len, 
+						record_match_arg1,
+						record_match_arg2);
 
 			match_tab[cur_match_pos++] = match;
 
@@ -291,17 +294,21 @@ uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
 			 * enough lookahead, the last two strings are not inserted in
 			 * the hash table.
 			 */
-			prev_len -= 2;
+#if LZ_MIN_MATCH == 2
+			if (prev_len >= 3)
+#endif
+			{
+				prev_len -= 2;
 
-			do {
-				if (++cur_input_pos <= max_insert) {
-					hash = insert_string(hash_tab, prev_tab,
-								uncompressed_data,
-								cur_input_pos,
-								hash);
-				}
-			} while (--prev_len != 0);
-
+				do {
+					if (++cur_input_pos <= max_insert) {
+						hash = insert_string(hash_tab, prev_tab,
+								     uncompressed_data,
+								     cur_input_pos,
+								     hash);
+					}
+				} while (--prev_len != 0);
+			}
 			match_available = false;
 			match_len = params->min_match - 1;
 		} else if (match_available) {

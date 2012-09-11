@@ -626,8 +626,21 @@ static int lzx_decode_match(int main_element, int block_type,
 		return -1;
 	}
 
+#if 0
+	printf("Match: src %u, dst %u, len %u\n", match_src - window,
+						match_dest - window,
+						match_len);
+	putchar('|');
+	for (i = 0; i < match_len; i++) {
+		match_dest[i] = match_src[i];
+		putchar(match_src[i]);
+	}
+	putchar('|');
+	putchar('\n');
+#else
 	for (i = 0; i < match_len; i++)
 		match_dest[i] = match_src[i];
+#endif
 
 	return match_len;
 }

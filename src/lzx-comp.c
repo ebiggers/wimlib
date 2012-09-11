@@ -599,7 +599,11 @@ static void do_call_insn_preprocessing(u8 uncompressed_data[],
 
 
 static const struct lz_params lzx_lz_params = {
+
+	 /* LZX_MIN_MATCH == 2, but 2-character matches are rarely useful; the
+	  * minimum match for compression is set to 3 instead. */
 	.min_match      = 3,
+
 	.max_match      = LZX_MAX_MATCH,
 	.good_match	= LZX_MAX_MATCH,
 	.nice_match     = LZX_MAX_MATCH,

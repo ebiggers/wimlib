@@ -1,5 +1,11 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.0.3:
+	LZX and XPRESS compression improvements.
+
+	Fixed calculation of Directory Count, File Count, Total Bytes, and Hard
+	Link Bytes of the WIM.
+
 Version 1.0.2:
 	Fixed bug when capturing NTFS file with multiple named data streams.
 

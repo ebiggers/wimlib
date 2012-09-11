@@ -1,6 +1,6 @@
 				   WIMLIB                                    
 
-This is wimlib version 1.0.2 (September 2012).  wimlib can be used to read,
+This is wimlib version 1.0.3 (September 2012).  wimlib can be used to read,
 write, and mount files in the Windows Imaging Format (WIM files).  These
 files are normally created by using the `imagex.exe' utility on Windows,
 but this library provides a free implementation of imagex for UNIX-based
@@ -74,6 +74,33 @@ details.
 `mkwinpeimg' is shell script that makes it easy to create a customized bootable
 image of Windows PE that can be put on a CD or USB drive, or published on a
 server for PXE booting.  See the main page `doc/mkwinpeiso.1' for more details.
+
+			       COMPRESSION RATIO
+
+wimlib can create XPRESS or LZX compressed WIM archives.  As of wimlib v1.0.3,
+the XPRESS compression ratio is slightly better than that provided by
+Microsoft's software, while the LZX compression ratio is approaching that of
+Microsoft's software but is not quite there yet.  Running time is as good as or
+better than Microsoft's software.
+
+The following tables compare the compression ratio and performance for creating
+a compressed Windows PE image (disk usage of about 524 MB, uncompressed WIM size
+361 MB):
+
+	Table 1. WIM size
+
+					XPRESS Compression	LZX Compression
+	wimlib imagex (v1.0.2):		145,283,871 bytes	139,288,293 bytes
+	wimlib imagex (v1.0.3):		139,288,293 bytes	131,379,869 bytes
+	Microsoft imagex.exe:		140,406,981 bytes	127,249,176 bytes
+
+	Table 2. Time to create WIM
+
+					XPRESS Compression	LZX Compression
+	wimlib imagex (v1.0.2):		18 sec			49 sec
+	wimlib imagex (v1.0.3):		19 sec			30 sec
+	Microsoft imagex.exe:		25 sec			89 sec
+
 
 				  DEPENDENCIES
 
