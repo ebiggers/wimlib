@@ -191,7 +191,7 @@ void stbuf_to_inode(const struct stat *stbuf, struct inode *inode)
 		inode->ino = (u64)stbuf->st_ino;
 	else
 		inode->ino = (u64)stbuf->st_ino |
-				   ((u64)stbuf->st_dev << (sizeof(ino_t) * 8));
+				   ((u64)stbuf->st_dev << ((sizeof(ino_t) * 8) & 63));
 	/* Set timestamps */
 	inode->creation_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
 	inode->last_write_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
