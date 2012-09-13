@@ -112,122 +112,122 @@ init
 msg "Empty NTFS volume"
 do_test ""
 
-msg "NTFS volume containing a single file"
+msg "a single file"
 do_test "echo 1 > file"
 
-msg "NTFS volume containing a single directory"
+msg "a single directory"
 do_test "mkdir dir"
 
-msg "NTFS volume containing subdirectory with file"
+msg "subdirectory with file"
 do_test "mkdir dir; echo 1 > dir/file"
 
-msg "NTFS volume containing empty file"
+msg "empty file"
 do_test "echo -n > empty_file"
 
-msg "NTFS volume containing two empty files"
+msg "two empty files"
 do_test "echo -n > empty_file_1; echo -n > empty_file_2"
 
-msg "NTFS volume containing hard link in same directory"
+msg "hard link in same directory"
 do_test "echo 1 > file; ln file link"
 
-msg "NTFS volume containing hard link between empty files"
+msg "hard link between empty files"
 do_test "echo -n > empty_file; ln empty_file link"
 
-msg "NTFS volume containing relative symbolic link"
+msg "relative symbolic link"
 do_test "echo 1 > file; ln -s file symlink"
 
-msg "NTFS volume containing absolute symbolic link"
+msg "absolute symbolic link"
 do_test "echo 1 > file; ln -s /some/absolute/target symlink"
 
-msg "NTFS volume containing large file"
+msg "large file"
 do_test "dd if=/dev/zero of=file bs=4096 count=10 &> /dev/null"
 
-msg "NTFS volume containing file with DOS name"
+msg "file with DOS name"
 do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file"
 
-msg "NTFS volume containing file with DOS name with alphabetically smaller hardlink in same directory"
+msg "file with DOS name with alphabetically smaller hardlink in same directory"
 do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file; ln file aaa_link"
 
-msg "NTFS volume containing file with DOS name with alphabetically larger hardlink in same directory"
+msg "file with DOS name with alphabetically larger hardlink in same directory"
 do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file; ln file zzz_link"
 
-msg "NTFS volume containing file with long name and with DOS name with alphabetically smaller hardlink in same directory"
+msg "file with long name and with DOS name with alphabetically smaller hardlink in same directory"
 do_test 'echo 1 > file_with_a_long_name;
 	 setfattr -v "file~1" -n system.ntfs_dos_name file_with_a_long_name;
 	 ln file_with_a_long_name aaa_link'
 
-msg "NTFS volume containing many nested directories"
+msg "many nested directories"
 do_test 'mkdir dir; mkdir dir/subdir; mkdir dir/subdir/subdir2; mkdir dir/subdir/subdir3'
 
-msg "NTFS volume containing identical files and symlinks in subdirectory"
+msg "identical files and symlinks in subdirectory"
 do_test 'mkdir dir;
 	 echo 888 > dir/file;
 	 echo 888 > dir/idfile2;
 	 ln -s ../dir dir/circle; ln -s file dir/filelink'
 
-msg "NTFS volume containing hard link group and identical files not hard linked"
+msg "hard link group and identical files not hard linked"
 do_test 'echo 888 > file;
 	 echo 888 > file2;
 	 ln file link;
 	 ln file link2;
 	 echo 888 > file3'
 
-msg "NTFS volume containing file with named data stream"
+msg "file with named data stream"
 do_test 'echo 1 > file;
 	 setfattr -n user.ads -v 2 file'
 
-msg "NTFS volume containing file with multiple named data streams"
+msg "file with multiple named data streams"
 do_test 'echo 1 > file;
 	 setfattr -n user.a -v 1 file;
 	 setfattr -n user.aa -v 11 file;
 	 setfattr -n user.aaa -v 111 file;
 	 setfattr -n user.aaaa -v 1111 file'
 
-msg "NTFS volume containing file with multiple named data streams with same contents"
+msg "file with multiple named data streams with same contents"
 do_test 'echo 1 > file;
 	 setfattr -n user.a -v 1111 file;
 	 setfattr -n user.aa -v 1111 file;
 	 setfattr -n user.aaa -v 1111 file;
 	 setfattr -n user.aaaa -v 1111 file;'
 	
-msg "NTFS volume containing file with named data streams with same contents as other file"
+msg "file with named data streams with same contents as other file"
 do_test 'echo -n > file;
 	 setfattr -n user.a -v 1111 file;
 	 echo -n 1111 > otherfile;'
 
-msg "NTFS volume containing file with empty named data stream and non-empty unnamed data stream"
+msg "file with empty named data stream and non-empty unnamed data stream"
 do_test 'echo 1 > file;
 	 setfattr -n user.ads -v "" file;'
 
-msg "NTFS volume containing file with empty named data stream and empty unnamed data stream"
+msg "file with empty named data stream and empty unnamed data stream"
 do_test 'echo -n > file;
 	 setfattr -n user.ads -v "" file;'
 
-msg "NTFS volume containing file with named data stream with hardlink"
+msg "file with named data stream with hardlink"
 do_test 'echo 999 > file;
 	 setfattr -n user.ads -v "888" file;
 	 ln file link;'
 
-msg "NTFS volume containing file with named data stream with hardlink and DOS name"
+msg "file with named data stream with hardlink and DOS name"
 do_test 'echo 999 > file;
 	 setfattr -n user.ads -v "888" file;
 	 ln file link;
 	 setfattr -v DOSNAME -n system.ntfs_dos_name file;'
 
-msg "NTFS volume containing C source code of wimlib"
+msg "C source code of wimlib"
 do_test 'cp $srcdir/src/*.{c,h} .'
 
-msg "NTFS volume containing file with security descriptor"
+msg "file with security descriptor"
 do_test 'touch file;
 	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` file'
 
-msg "NTFS volume containing files with different security descriptors"
+msg "files with different security descriptors"
 do_test 'touch file;
 	 touch file2;
 	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` file
 	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_2.base64` file'
 	
-msg "NTFS volume containing files with different security descriptors and some with the same security descriptor"
+msg "files with different security descriptors and some with the same security descriptor"
 do_test 'touch file;
 	 touch file2;
 	 touch file3;
@@ -237,7 +237,7 @@ do_test 'touch file;
 	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` dir
 	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` file3'
 
-msg "NTFS volume containing tons of random stuff"
+msg "tons of random stuff"
 do_test 'echo -n 8 > file;
 	 ln file hardlink;
 	 ln -s hardlink symlink;
