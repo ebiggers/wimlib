@@ -1267,14 +1267,14 @@ static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 static int wimfs_readlink(const char *path, char *buf, size_t buf_len)
 {
-	struct dentry *dentry = get_dentry(w, path);
+	struct inode *inode = wim_pathname_to_inode(w, path);
 	int ret;
-	if (!dentry)
+	if (!inode)
 		return -ENOENT;
-	if (!dentry_is_symlink(dentry))
+	if (!inode_is_symlink(inode))
 		return -EINVAL;
 
-	ret = inode_readlink(dentry->d_inode, buf, buf_len, w);
+	ret = inode_readlink(inode, buf, buf_len, w);
 	if (ret > 0)
 		ret = 0;
 	return ret;
