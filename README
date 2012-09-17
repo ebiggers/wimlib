@@ -236,9 +236,8 @@ documentation.
 
 The code in ntfs-apply.c and ntfs-capture.c uses the NTFS-3g library, which is a
 library for reading and writing to NTFS filesystems (the filesystem used by
-recent versions of Windows).  Additionally, the code in ntfs-3g-security.c is
-mostly copied from NTFS-3g, but I'm hoping to get rid of this file eventually.
-See http://www.tuxera.com/community/ntfs-3g-download/ for more information.
+recent versions of Windows).  See
+http://www.tuxera.com/community/ntfs-3g-download/ for more information.
 
 lzx-decomp.c, the code to decompress WIM file resources that are compressed
 using LZX compression, is originally based on code from the cabextract project
