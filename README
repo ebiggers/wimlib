@@ -264,6 +264,40 @@ You can see the documentation about Microsoft's version of the imagex program at
 http://technet.microsoft.com/en-us/library/cc749447(v=ws.10).aspx, so you can
 see how it compares.
 
+		      GNU/Linux equivalents of WIM format
+
+What's the equivalent way to capture the filesystem of a GNU/Linux operating
+system into an archive file?  You have a few options:
+
+SquashFS:
+	SquashFS (http://squashfs.sourceforge.net/) provides a compressed,
+	read-only filesystem for Linux, and it's probably the closest equivalent
+	of the WIM format and better designed.  Although you can't mount
+	SquashFS read-write, when wimlib does this for WIM files it's really an
+	illusion since the WIM isn't actually modified until the image is
+	unmounted.  Multiple top-level images in SquashFS files are not
+	supported, although nothing stops you from just putting each image in a
+	separate directory.
+
+FSArchiver:
+	FSArchiver (http://www.fsarchiver.org/Main_Page) is not widely used, but
+	it appears to have some features quite similar to the WIM format.
+
+Tar:
+	The well-known tar format can usually capture a UNIX filesystem just
+	fine, and compressing the tar file produces a good compression ratio
+	(better than WIM, especially if using XZ compression), but there is no
+	support for random access, file deduplication, multiple images per
+	archive, or extended attributes.
+
+Zip:
+	Zip shares some features with WIM but is not designed to store entire
+	filesystems.
+
+7z:
+	The 7z format has some nice features but is unfortunately not designed
+	with UNIX in mind.
+
 				MORE INFORMATION
 
 See the manual pages for `imagex', the manual pages for the subcommands of
