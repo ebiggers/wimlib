@@ -31,7 +31,12 @@ do_unmount() {
 
 __do_mount() {
 	options="$3"
-	if ! ntfs-3g ${options:+-o $options} $1 $2; then
+	if [ -z "$options" ]; then
+		options="no_def_opts,silent"
+	else
+		options="$options,no_def_opts,silent"
+	fi
+	if ! ntfs-3g -o $options $1 $2; then
 		error "Could not mount NTFS volume \"$1\" on \"$2\".  Make sure ntfs-3g is installed."
 	fi
 }

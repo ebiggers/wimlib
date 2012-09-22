@@ -114,10 +114,14 @@ do_test() {
 	done
 }
 
+__msg() {
+	echo "--------------------------------------------------------------------"
+	echo $1
+	echo "--------------------------------------------------------------------"
+}
+
 msg() {
-	echo "--------------------------------------------------------------------"
-	echo "Testing image capture and application of directory containing $1"
-	echo "--------------------------------------------------------------------"
+	__msg "Testing image capture and application of directory containing $1"
 }
 
 cleanup
@@ -126,7 +130,7 @@ init
 . $srcdir/tests/common_tests.sh
 
 # Make sure exclusion list works
-msg "Testing default capture configuration file"
+__msg "Testing default capture configuration file"
 touch in.dir/hiberfil.sys
 mkdir -p "in.dir/System Volume Information/subdir"
 imagex capture in.dir test.wim
