@@ -1013,7 +1013,7 @@ int extract_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd,
 		if (ret != 0)
 			break;
 		sha1_update(&ctx, buf, to_read);
-		if (full_write(fd, buf, to_read) < 0) {
+		if (full_write(fd, buf, to_read) < to_read) {
 			ERROR_WITH_ERRNO("Error extracting WIM resource");
 			return WIMLIB_ERR_WRITE;
 		}
