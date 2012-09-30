@@ -44,7 +44,7 @@ directory tree:
 The "normal" name and contents of each file and directory
 .IP \[bu]
 File and directory creation, access, and modification timestamps to the nearest
-nanosecond, if supported by the underlying filesystem
+100 nanoseconds, if supported by the underlying filesystem
 .IP \[bu]
 Hard links and symbolic links
 
