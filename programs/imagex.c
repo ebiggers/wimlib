@@ -516,6 +516,7 @@ static int imagex_capture_or_append(int argc, const char **argv)
 			break;
 		case 'v':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
+			write_flags |= WIMLIB_WRITE_FLAG_VERBOSE;
 			break;
 		default:
 			usage(cmd);
