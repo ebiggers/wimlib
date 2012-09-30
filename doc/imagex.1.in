@@ -59,7 +59,7 @@ Mount an image from a stand-alone WIM read-write (\fBimagex mountrw\fR)
 .IP \[bu]
 Delete image(s) from a stand-alone WIM (\fBimagex delete\fR)
 .IP \[bu]
-Export image(s) from a stand-alone WIM (\fBimagex export\fR)
+Export image(s) from a stand-alone or split WIM (\fBimagex export\fR)
 .IP \[bu]
 Display information about a WIM file (\fBimagex info\fR, \fBimagex dir\fR)
 .IP \[bu]
@@ -86,10 +86,9 @@ addition, you may now apply split WIMs and mount them read-only.  I don't think
 there are many other features that would be worth it to implement.  Besides
 porting the library to Windows (which I'm not really interested in), the main
 thing that could use improvement (in my opinion) is that the LZX compression
-ratio still isn't quite as good as Microsoft's version.  Also, exporting an
-image from a split WIM could be supported.  Furthermore, if Microsoft updates
-the WIM format, I'd need to support it, but it looks like the format for Windows
-8 is the same as that of Windows 7.
+ratio still isn't quite as good as Microsoft's version.  Furthermore, if
+Microsoft updates the WIM format, I'd need to support it, but it looks like the
+format for Windows 8 is the same as that of Windows 7.
 
 .SH DIFFERENCES FROM MICROSOFT IMAGEX
 
@@ -105,11 +104,8 @@ the capture or application of an image specifically from/to an NTFS volume.
 
 Some features, such as the ability to keep files hard-linked across WIM images
 when they are extracted from a WIM, are not available in Microsoft's version of
-imagex.  Also, doesn't seem to be an equivalent of \fBimagex join\fR in
-Microsoft's version; you would have to use \fBimagex.exe /export\fR, but that
-doesn't let you export all images at once.  Furthermore, this version of
-\fBimagex\fR lets you mount an image from a split WIM read-only, while
-Microsoft's version does not.
+imagex.  Also, this version of \fBimagex\fR lets you mount an image from a split
+WIM read-only, while Microsoft's version does not.
 
 Microsoft's version has some weird limitations, like it won't let you extract a
 WIM on a shared folder, and it requires some commands to be run only from
