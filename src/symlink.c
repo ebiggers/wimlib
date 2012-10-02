@@ -133,8 +133,8 @@ void *make_symlink_reparse_data_buf(const char *symlink_target, size_t *len_ret)
 		return NULL;
 	/*DEBUG("utf16_len = %zu", utf16_len);*/
 	for (size_t i = 0; i < utf16_len / 2; i++)
-		if (((u16*)name_utf16)[i] == to_le16('/'))
-			((u16*)name_utf16)[i] = to_le16('\\');
+		if (((u16*)name_utf16)[i] == cpu_to_le16('/'))
+			((u16*)name_utf16)[i] = cpu_to_le16('\\');
 	size_t len = 12 + utf16_len * 2 + 4;
 	void *buf = MALLOC(len);
 	if (!buf)

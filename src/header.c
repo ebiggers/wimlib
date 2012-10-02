@@ -61,7 +61,7 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 	if (bytes_read != sizeof(u32))
 		goto err;
 
-	TO_LE32(hdr_size);
+	hdr_size = le32_to_cpu(hdr_size);
 
 	/* Byte 12 */
 

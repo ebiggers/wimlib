@@ -191,11 +191,11 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	if (chunk_entry_size == 4) {
 		u32 *entries = (u32*)chunk_tab_buf;
 		while (num_needed_chunk_entries--)
-			*chunk_tab_p++ = to_le32(*entries++);
+			*chunk_tab_p++ = le32_to_cpu(*entries++);
 	} else {
 		u64 *entries = (u64*)chunk_tab_buf;
 		while (num_needed_chunk_entries--)
-			*chunk_tab_p++ = to_le64(*entries++);
+			*chunk_tab_p++ = le64_to_cpu(*entries++);
 	}
 
 	/* Done with the chunk table now.  We must now seek to the first chunk
@@ -693,11 +693,11 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 	}
 
 	if (chunk_tab->bytes_per_chunk_entry == 8) {
-		array_to_le64(chunk_tab->offsets, chunk_tab->num_chunks);
+		array_cpu_to_le64(chunk_tab->offsets, chunk_tab->num_chunks);
 	} else {
 		for (u64 i = 0; i < chunk_tab->num_chunks; i++)
 			((u32*)chunk_tab->offsets)[i] =
-				to_le32(chunk_tab->offsets[i]);
+				cpu_to_le32(chunk_tab->offsets[i]);
 	}
 	bytes_written = fwrite((u8*)chunk_tab->offsets +
 					chunk_tab->bytes_per_chunk_entry,

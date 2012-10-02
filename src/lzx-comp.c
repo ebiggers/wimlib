@@ -581,7 +581,7 @@ static void do_call_insn_preprocessing(u8 uncompressed_data[],
 			i++;
 			continue;
 		}
-		rel_offset = to_le32(*(int32_t*)(uncompressed_data + i + 1));
+		rel_offset = le32_to_cpu(*(int32_t*)(uncompressed_data + i + 1));
 
 		if (rel_offset >= -i && rel_offset < file_size) {
 			if (rel_offset < file_size - i) {
@@ -591,7 +591,7 @@ static void do_call_insn_preprocessing(u8 uncompressed_data[],
 				/* "compensating translation" */
 				abs_offset = rel_offset - file_size;
 			}
-			*(int32_t*)(uncompressed_data + i + 1) = to_le32(abs_offset);
+			*(int32_t*)(uncompressed_data + i + 1) = cpu_to_le32(abs_offset);
 		}
 		i += 5;
 	}

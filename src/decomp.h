@@ -64,7 +64,7 @@ static inline int bitstream_ensure_bits(struct input_bitstream *istream,
 
 		uint shift = sizeof(input_bitbuf_t) * 8 - 16 - 
 			     istream->bitsleft;
-		istream->bitbuf |= (input_bitbuf_t)to_le16(
+		istream->bitbuf |= (input_bitbuf_t)le16_to_cpu(
 					*(u16*)istream->data) << shift;
 		istream->data += 2;
 		istream->bitsleft += 16;

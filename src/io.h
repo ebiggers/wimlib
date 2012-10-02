@@ -29,7 +29,7 @@ static inline const u8 *get_u8(const u8 *p, u8 *res)
 
 static inline const u8 *get_u16(const u8 *p, u16 *res)
 {
-	*res = to_le16(*(u16*)p);
+	*res = le16_to_cpu(*(u16*)p);
 	return p + 2;
 }
 
@@ -37,21 +37,21 @@ static inline const u8 *get_u16(const u8 *p, u16 *res)
 
 static inline const u8 *get_u32(const u8 *p, u32 *res)
 {
-	*res = to_le32(*(u32*)p);
+	*res = le32_to_cpu(*(u32*)p);
 	return p + 4;
 }
 
 
 static inline const u8 *get_u56(const u8 *p, u64 *res)
 {
-	*res = to_le64(*(u64*)p) & 0x00ffffffffffffff;
+	*res = le64_to_cpu(*(u64*)p) & 0x00ffffffffffffff;
 	return p + 7;
 }
 
 
 static inline const u8 *get_u64(const u8 *p, u64 *res)
 {
-	*res = to_le64(*(u64*)p);
+	*res = le64_to_cpu(*(u64*)p);
 	return p + 8;
 }
 
@@ -69,13 +69,13 @@ static inline u8 *put_u8(u8 *res, u8 val)
 
 static inline u8 *put_u16(u8 *res, u16 val)
 {
-	*(uint16_t*)res = to_le16(val);
+	*(uint16_t*)res = cpu_to_le16(val);
 	return res + 2;
 }
 
 static inline u8 *put_u32(u8 *res, u32 val)
 {
-	*(uint32_t*)res = to_le32(val);
+	*(uint32_t*)res = cpu_to_le32(val);
 	return res + 4;
 }
 
@@ -98,7 +98,7 @@ static inline u8 *put_u56(u8 *res, u64 val)
 
 static inline u8 *put_u64(u8 *res, u64 val)
 {
-	*(u64*)res = to_le64(val);
+	*(u64*)res = cpu_to_le64(val);
 	return res + 8;
 }
 

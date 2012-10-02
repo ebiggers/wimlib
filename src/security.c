@@ -46,7 +46,7 @@ static void empty_sacl_fixup(char *descr, u64 *size_p)
 		SecurityDescriptor *sd = (SecurityDescriptor*)descr;
 		u32 sacl_offset = le32_to_cpu(sd->sacl_offset);
 		if (sacl_offset == *size_p - sizeof(ACL)) {
-			sd->sacl_offset = to_le32(0);
+			sd->sacl_offset = cpu_to_le32(0);
 			*size_p -= sizeof(ACL);
 		}
 	}
@@ -135,7 +135,7 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	/* Copy the sizes array in from the file data. */
 	p = get_bytes(p, sizes_size, sd->sizes);
-	array_to_le64(sd->sizes, sd->num_entries);
+	array_le64_to_cpu(sd->sizes, sd->num_entries);
 
 	/* Allocate the array of pointers to descriptors, and read them in. */
 	sd->descriptors = CALLOC(sd->num_entries, sizeof(u8*));
@@ -216,8 +216,8 @@ static void print_acl(const u8 *p, const char *type)
 {
 	const ACL *acl = (const ACL*)p;
 	u8 revision = acl->revision;
-	u16 acl_size = to_le16(acl->acl_size);
-	u16 ace_count = to_le16(acl->ace_count);
+	u16 acl_size = le16_to_cpu(acl->acl_size);
+	u16 ace_count = le16_to_cpu(acl->ace_count);
 	printf("    [%s ACL]\n", type);
 	printf("    Revision = %u\n", revision);
 	printf("    ACL Size = %u\n", acl_size);
@@ -231,8 +231,8 @@ static void print_acl(const u8 *p, const char *type)
 		printf("        ACE flags = 0x%x\n", hdr->flags);
 		printf("        ACE size  = %u\n", hdr->size);
 		const AccessAllowedACE *aaa = (const AccessAllowedACE*)hdr;
-		printf("        ACE mask = %x\n", to_le32(aaa->mask));
-		printf("        SID start = %u\n", to_le32(aaa->sid_start));
+		printf("        ACE mask = %x\n", le32_to_cpu(aaa->mask));
+		printf("        SID start = %u\n", le32_to_cpu(aaa->sid_start));
 		p += hdr->size;
 	}
 	putchar('\n');
@@ -245,10 +245,12 @@ static void print_sid(const u8 *p, const char *type)
 	printf("    Revision = %u\n", sid->revision);
 	printf("    Subauthority count = %u\n", sid->sub_authority_count);
 	printf("    Identifier authority = ");
-	print_byte_field(sid->identifier_authority, sizeof(sid->identifier_authority));
+	print_byte_field(sid->identifier_authority,
+			 sizeof(sid->identifier_authority));
 	putchar('\n');
 	for (uint i = 0; i < sid->sub_authority_count; i++)
-		printf("    Subauthority %u = %u\n", i, to_le32(sid->sub_authority[i]));
+		printf("    Subauthority %u = %u\n",
+		       i, le32_to_cpu(sid->sub_authority[i]));
 	putchar('\n');
 }
 
@@ -256,11 +258,11 @@ static void print_security_descriptor(const u8 *p, u64 size)
 {
 	const SecurityDescriptor *sd = (const SecurityDescriptor*)p;
 	u8 revision      = sd->revision;
-	u16 control      = to_le16(sd->security_descriptor_control);
-	u32 owner_offset = to_le32(sd->owner_offset);
-	u32 group_offset = to_le32(sd->group_offset);
-	u32 sacl_offset  = to_le32(sd->sacl_offset);
-	u32 dacl_offset  = to_le32(sd->dacl_offset);
+	u16 control      = le16_to_cpu(sd->security_descriptor_control);
+	u32 owner_offset = le32_to_cpu(sd->owner_offset);
+	u32 group_offset = le32_to_cpu(sd->group_offset);
+	u32 sacl_offset  = le32_to_cpu(sd->sacl_offset);
+	u32 dacl_offset  = le32_to_cpu(sd->dacl_offset);
 	printf("Revision = %u\n", revision);
 	printf("Security Descriptor Control = %#x\n", control);
 	printf("Owner offset = %u\n", owner_offset);

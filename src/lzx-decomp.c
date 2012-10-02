@@ -342,7 +342,7 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 		ret = bitstream_read_bits(istream, 16, &block_size);
 		if (ret != 0)
 			return ret;
-		block_size = to_le16(block_size);
+		block_size = le16_to_cpu(block_size);
 	}
 
 	switch (block_type) {
@@ -450,10 +450,9 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 		ret = bitstream_read_bytes(istream, sizeof(R), R);
 		if (ret != 0)
 			return ret;
-		array_to_le32(R, ARRAY_LEN(R));
-		queue->R0 = R[0];
-		queue->R1 = R[1];
-		queue->R2 = R[2];
+		queue->R0 = le32_to_cpu(R[0]);
+		queue->R1 = le32_to_cpu(R[1]);
+		queue->R2 = le32_to_cpu(R[2]);
 		break;
 	default:
 		LZX_DEBUG("Found invalid block.");
@@ -669,7 +668,7 @@ static void undo_call_insn_preprocessing(u8 uncompressed_data[],
 			i++;
 			continue;
 		}
-		abs_offset = to_le32(*(int32_t*)(uncompressed_data + i + 1));
+		abs_offset = le32_to_cpu(*(int32_t*)(uncompressed_data + i + 1));
 
 		if (abs_offset >= -i && abs_offset < file_size) {
 			if (abs_offset >= 0) {
@@ -680,7 +679,7 @@ static void undo_call_insn_preprocessing(u8 uncompressed_data[],
 				rel_offset = abs_offset + file_size;
 			}
 			*(int32_t*)(uncompressed_data + i + 1) = 
-						to_le32(rel_offset);
+						cpu_to_le32(rel_offset);
 		}
 		i += 5;
 	}

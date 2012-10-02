@@ -46,11 +46,11 @@ static inline int bitstream_put_byte(struct output_bitstream *ostream,
 }
 
 static inline int bitstream_put_two_bytes(struct output_bitstream *ostream,
-					   u16 n)
+					  u16 n)
 {
 	if (ostream->num_bytes_remaining < 2)
 		return 1;
-	*(u16*)ostream->output = to_le16(n);
+	*(u16*)ostream->output = cpu_to_le16(n);
 	ostream->output += 2;
 	ostream->num_bytes_remaining -= 2;
 	return 0;
