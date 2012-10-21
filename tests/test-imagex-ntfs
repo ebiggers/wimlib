@@ -37,7 +37,9 @@ __do_mount() {
 		options="$options,no_def_opts,silent"
 	fi
 	if ! ntfs-3g -o $options $1 $2; then
-		error "Could not mount NTFS volume \"$1\" on \"$2\".  Make sure ntfs-3g is installed."
+		error "Could not mount NTFS volume \"$1\" on \"$2\"!  Make sure ntfs-3g is "\
+		      "installed, and that you are either running the tests as root or have ntfs-3g "\
+		      "installed setuid root, so that we can mount a NTFS volume."
 	fi
 }
 
@@ -48,7 +50,7 @@ do_mount() {
 
 do_mkntfs() {
 	if ! mkntfs --force --fast $1 &> /dev/null; then
-		error "Could not create NTFS volume on \"$1\".  Make sure ntfs-3g / ntfsprogs are installed"
+		error "Could not create NTFS volume \"$1\"!  Make sure ntfsprogs are installed."
 	fi
 }
 
@@ -73,7 +75,10 @@ cleanup() {
 error() {
 	echo "****************************************************************"
 	echo "                         Test failure                           "
-	echo $*
+	while [ $# -gt 0 ]; do
+		echo $1
+		shift
+	done
 	echo "****************************************************************"
 	exit 1
 }
