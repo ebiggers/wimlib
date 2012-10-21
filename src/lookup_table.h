@@ -50,7 +50,10 @@ struct ntfs_location {
 struct lookup_table_entry {
 
 	/* List of lookup table entries in this hash bucket */
-	struct hlist_node hash_list;
+	union {
+		struct hlist_node hash_list;
+		struct list_head list;
+	};
 
 	/* Location and size of the stream in the WIM, whether it is compressed
 	 * or not, and whether it's a metadata resource or not.  This is an
@@ -236,6 +239,9 @@ static inline void lookup_table_unlink(struct lookup_table *table,
 
 extern struct lookup_table_entry *new_lookup_table_entry();
 
+extern struct lookup_table_entry *
+clone_lookup_table_entry(const struct lookup_table_entry *lte);
+
 extern int for_lookup_table_entry(struct lookup_table *table, 
 				  int (*visitor)(struct lookup_table_entry *, void *), 
 				  void *arg);
@@ -268,6 +274,7 @@ extern int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out)
 extern void free_lookup_table_entry(struct lookup_table_entry *lte);
 
 extern int dentry_resolve_ltes(struct dentry *dentry, void *__table);
+extern int dentry_unresolve_ltes(struct dentry *dentry, void *ignore);
 
 /* Writes the lookup table to the output file. */
 static inline int write_lookup_table(struct lookup_table *table, FILE *out)

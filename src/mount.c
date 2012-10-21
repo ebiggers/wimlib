@@ -1738,6 +1738,12 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	DEBUG("Selected image %d", image);
 
+	if (imd->root_dentry->refcnt != 1) {
+		ERROR("Cannot mount image that was just exported with "
+		      "wimlib_export()");
+		return WIMLIB_ERR_INVALID_PARAM;
+	}
+
 	next_ino = assign_inode_numbers(&imd->inode_list);
 
 	DEBUG("(next_ino = %"PRIu64")", next_ino);

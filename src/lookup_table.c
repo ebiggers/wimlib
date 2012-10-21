@@ -73,6 +73,61 @@ struct lookup_table_entry *new_lookup_table_entry()
 	return lte;
 }
 
+struct lookup_table_entry *
+clone_lookup_table_entry(const struct lookup_table_entry *old)
+{
+	struct lookup_table_entry *new;
+
+	new = MALLOC(sizeof(*new));
+	if (!new)
+		return NULL;
+
+	memcpy(new, old, sizeof(*old));
+	new->extracted_file = NULL;
+	switch (new->resource_location) {
+	case RESOURCE_IN_STAGING_FILE:
+	case RESOURCE_IN_FILE_ON_DISK:
+		wimlib_assert((void*)&old->file_on_disk ==
+			      (void*)&old->staging_file_name);
+		new->staging_file_name = STRDUP(old->staging_file_name);
+		if (!new->staging_file_name)
+			goto out_free;
+		break;
+	case RESOURCE_IN_ATTACHED_BUFFER:
+		new->attached_buffer = MALLOC(wim_resource_size(old));
+		if (!new->attached_buffer)
+			goto out_free;
+		memcpy(new->attached_buffer, old->attached_buffer,
+		       wim_resource_size(old));
+		break;
+	case RESOURCE_IN_NTFS_VOLUME:
+		if (old->ntfs_loc) {
+			struct ntfs_location *loc;
+			loc = MALLOC(sizeof(*loc));
+			if (!loc)
+				goto out_free;
+			memcpy(loc, old->ntfs_loc, sizeof(*loc));
+			loc->path_utf8 = NULL;
+			loc->stream_name_utf16 = NULL;
+			new->ntfs_loc = loc;
+			loc->path_utf8 = STRDUP(old->ntfs_loc->path_utf8);
+			if (!loc->path_utf8)
+				goto out_free;
+			loc->stream_name_utf16 = MALLOC(loc->stream_name_utf16_num_chars * 2);
+			if (!loc->stream_name_utf16)
+				goto out_free;
+			memcpy(loc->stream_name_utf16,
+			       old->ntfs_loc->stream_name_utf16,
+			       loc->stream_name_utf16_num_chars * 2);
+		}
+		break;
+	}
+	return new;
+out_free:
+	free_lookup_table_entry(new);
+	return NULL;
+}
+
 void free_lookup_table_entry(struct lookup_table_entry *lte)
 {
 	if (lte) {
@@ -522,6 +577,8 @@ static void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 {
 	struct lookup_table_entry *lte;
 
+	wimlib_assert(!inode->resolved);
+
 	/* Resolve the default file stream */
 	lte = __lookup_resource(table, inode->hash);
 	inode->lte = lte;
@@ -533,6 +590,24 @@ static void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 		lte = __lookup_resource(table, cur_entry->hash);
 		cur_entry->lte = lte;
 	}
+}
+
+static void inode_unresolve_ltes(struct inode *inode)
+{
+	wimlib_assert(inode->resolved);
+	if (inode->lte)
+		copy_hash(inode->hash, inode->lte->hash);
+	else
+		zero_out_hash(inode->hash);
+
+	for (u16 i = 0; i < inode->num_ads; i++) {
+		if (inode->ads_entries[i].lte)
+			copy_hash(inode->ads_entries[i].hash,
+				  inode->ads_entries[i].lte->hash);
+		else
+			zero_out_hash(inode->ads_entries[i].hash);
+	}
+	inode->resolved = false;
 }
 
 /* Resolve a dentry's lookup table entries 
@@ -548,6 +623,13 @@ int dentry_resolve_ltes(struct dentry *dentry, void *table)
 {
 	if (!dentry->d_inode->resolved)
 		inode_resolve_ltes(dentry->d_inode, table);
+	return 0;
+}
+
+int dentry_unresolve_ltes(struct dentry *dentry, void *ignore)
+{
+	if (dentry->d_inode->resolved)
+		inode_unresolve_ltes(dentry->d_inode);
 	return 0;
 }
 

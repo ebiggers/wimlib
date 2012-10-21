@@ -388,7 +388,8 @@ enum wimlib_error_code {
  * 	NULL, a default string is used.  Please see the manual page for
  * 	<b>imagex capture</b> for more information.
  * @param config_len
- * 	Length of the string @a config in bytes.
+ * 	Length of the string @a config in bytes.  Ignored if @a config is @c
+ * 	NULL.
  * 	
  * @param flags
  * 	Bitwise OR of flags prefixed with WIMLIB_ADD_IMAGE_FLAG.  If
@@ -511,7 +512,28 @@ extern int wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
 extern int wimlib_delete_image(WIMStruct *wim, int image);
 
 /**
- * Copies an image, or all the images, from a WIM file, into another WIM file.
+ * Exports an image, or all the images, from a WIM file, into another WIM file.
+ *
+ * The destination image is made to share the same dentry tree and security data
+ * structure as the source image.  This places some restrictions on additional
+ * functions that may be called.  wimlib_mount() may not be called on either the
+ * source image or the destination image without an intervening call to a
+ * function that un-shares the images, such as wimlib_free() on @a dest_wim, or
+ * wimlib_delete_image() on either the source or destination image.
+ * Furthermore, you may not call wimlib_free() or wimlib_overwrite() on @a
+ * src_wim before any calls to functions such as wimlib_write() on @a dest_wim
+ * because @a dest_wim will have references back to @a src_wim.
+ *
+ * Previous versions of this function left @a dest_wim in an indeterminate state
+ * on failure.  This is no longer the case; all changes to @a dest_wim made by
+ * this function are rolled back on failure.
+ *
+ * Previous versions of this function did not allow exporting an image that had
+ * been added by wimlib_add_image().  This is no longer the case; you may now
+ * export an image regardless of how it was added.
+ *
+ * Regardless of whether this function succeeds or fails, no user-visible
+ * changes are made to @a src_wim.
  *
  * @param src_wim
  * 	Pointer to the ::WIMStruct for a stand-alone WIM or part 1 of a split
@@ -552,8 +574,7 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	This number should be one less than the total number of parts in the
  * 	split WIM.  Set to 0 if the WIM is a standalone WIM.
  *
- * @return 0 on success; nonzero on error.  On error, @a dest_wim is left in an
- * indeterminate state and should be freed with wimlib_free().
+ * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
  * 	Could not decompress the metadata resource for @a src_image
  * 	in @a src_wim
@@ -869,9 +890,10 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * directory.
  *
  * wimlib_mount() currently cannot be used with multiple ::WIMStruct's without
- * intervening wimlib_unmount()s.  If there was a way to have libfuse pass a
- * pointer to user data to each FUSE callback, then this would be possible, but
- * there doesn't seem to be a way to do this currently.
+ * intervening wimlib_unmount()s.
+ *
+ * wimlib_mount() cannot be used on an image that was exported with
+ * wimlib_export() while the dentry trees for both images are still in memory.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for the WIM file to be mounted.
@@ -909,6 +931,9 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * 	invalid.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify an existing, single image in @a wim.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ * 	@a image is shared among multiple ::WIMStruct's as a result of a call to
+ * 	wimlib_export().
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in @a wim is invalid.	
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA

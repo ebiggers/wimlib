@@ -236,7 +236,41 @@ out:
 struct wim_pair {
 	WIMStruct *src_wim;
 	WIMStruct *dest_wim;
+	struct list_head lte_list_head;
 };
+
+static int allocate_lte_if_needed(struct dentry *dentry, void *arg)
+{
+	const WIMStruct *src_wim, *dest_wim;
+	struct list_head *lte_list_head;
+	struct inode *inode;
+
+	src_wim = ((struct wim_pair*)arg)->src_wim;
+	dest_wim = ((struct wim_pair*)arg)->dest_wim;
+	lte_list_head = &((struct wim_pair*)arg)->lte_list_head;
+	inode = dentry->d_inode;
+
+	wimlib_assert(!inode->resolved);
+
+	for (unsigned i = 0; i <= inode->num_ads; i++) {
+		struct lookup_table_entry *src_lte, *dest_lte;
+		src_lte = inode_stream_lte_unresolved(inode, i,
+						      src_wim->lookup_table);
+
+		if (src_lte && ++src_lte->out_refcnt == 1) {
+			dest_lte = inode_stream_lte_unresolved(inode, i,
+							       dest_wim->lookup_table);
+
+			if (!dest_lte) {
+				dest_lte = clone_lookup_table_entry(src_lte);
+				if (!dest_lte)
+					return WIMLIB_ERR_NOMEM;
+				list_add_tail(&dest_lte->list, lte_list_head);
+			}
+		}
+	}
+	return 0;
+}
 
 /* 
  * This function takes in a dentry that was previously located only in image(s)
@@ -271,12 +305,19 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 		if (dest_lte) {
 			dest_lte->refcnt++;
 		} else {
-			dest_lte = MALLOC(sizeof(struct lookup_table_entry));
-			if (!dest_lte)
-				return WIMLIB_ERR_NOMEM;
-			memcpy(dest_lte, src_lte, sizeof(struct lookup_table_entry));
+			struct list_head *lte_list_head;
+			struct list_head *next;
+
+			lte_list_head = &((struct wim_pair*)arg)->lte_list_head;
+			wimlib_assert(!list_empty(lte_list_head));
+
+			next = lte_list_head->next;
+			list_del(next);
+			dest_lte = container_of(next, struct lookup_table_entry, list);
 			dest_lte->part_number = 1;
 			dest_lte->refcnt = 1;
+			wimlib_assert(hashes_equal(dest_lte->hash, src_lte->hash));
+
 			lookup_table_insert(dest_wim->lookup_table, dest_lte);
 		}
 	}
@@ -289,6 +330,9 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
  * image count in the header, and selects the new image. 
  *
  * Does not update the XML data.
+ *
+ * On failure, WIMLIB_ERR_NOMEM is returned and no changes are made.  Otherwise,
+ * 0 is returned and the image metadata array of @w is modified.
  *
  * @w:		  The WIMStruct for the WIM file.
  * @root_dentry:  The root of the directory tree for the image.
@@ -463,32 +507,56 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 		goto out;
 	}
 
-	/* Cleaning up here on failure would be hard.  For example, we could
-	 * fail to allocate memory in add_lte_to_dest_wim(), leaving the lookup
-	 * table entries in the destination WIM in an inconsistent state.  Until
-	 * these issues can be resolved, wimlib_export_image() is documented as
-	 * leaving @dest_wim in an indeterminate state with the only permitted
-	 * operation being wimlib_free().  */
-	root = wim_root_dentry(src_wim);
-	sd = wim_security_data(src_wim);
-	for_dentry_in_tree(root, increment_dentry_refcnt, NULL);
+	/* Pre-allocate the new lookup table entries that will be needed.  This
+	 * way, it's not possible to run out of memory part-way through
+	 * modifying the lookup table of the destination WIM. */
 	wims.src_wim = src_wim;
 	wims.dest_wim = dest_wim;
-	ret = for_dentry_in_tree(root, add_lte_to_dest_wim, &wims);
+	INIT_LIST_HEAD(&wims.lte_list_head);
+	for_lookup_table_entry(src_wim->lookup_table, lte_zero_out_refcnt, NULL);
+	root = wim_root_dentry(src_wim);
+	for_dentry_in_tree(root, dentry_unresolve_ltes, NULL);
+	ret = for_dentry_in_tree(root, allocate_lte_if_needed, &wims);
 	if (ret != 0)
-		goto out;
+		goto out_free_ltes;
+
+	ret = xml_export_image(src_wim->wim_info, src_image,
+			       &dest_wim->wim_info, dest_name, dest_description);
+	if (ret != 0)
+		goto out_free_ltes;
+
+	sd = wim_security_data(src_wim);
 	ret = add_new_dentry_tree(dest_wim, root, sd);
 	if (ret != 0)
-		goto out;
+		goto out_xml_delete_image;
+
+
+	/* All memory allocations have been taken care of, so it's no longer
+	 * possible for this function to fail.  Go ahead and increment the
+	 * reference counts of the dentry tree and security data, then update
+	 * the lookup table of the destination WIM and the boot index, if
+	 * needed. */
+	for_dentry_in_tree(root, increment_dentry_refcnt, NULL);
 	sd->refcnt++;
+	for_dentry_in_tree(root, add_lte_to_dest_wim, &wims);
+	wimlib_assert(list_empty(&wims.lte_list_head));
 
 	if (flags & WIMLIB_EXPORT_FLAG_BOOT) {
 		DEBUG("Setting boot_idx to %d", dest_wim->hdr.image_count);
 		dest_wim->hdr.boot_idx = dest_wim->hdr.image_count;
 	}
+	ret = 0;
+	goto out;
 
-	ret = xml_export_image(src_wim->wim_info, src_image, &dest_wim->wim_info,
-			       dest_name, dest_description);
+out_xml_delete_image:
+	xml_delete_image(&dest_wim->wim_info, dest_wim->hdr.image_count);
+out_free_ltes:
+	{
+		struct lookup_table_entry *lte, *tmp;
+		list_for_each_entry_safe(lte, tmp, &wims.lte_list_head, list)
+			free_lookup_table_entry(lte);
+	}
+
 out:
 	if (num_additional_swms) {
 		free_lookup_table(src_wim->lookup_table);

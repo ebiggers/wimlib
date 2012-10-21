@@ -866,7 +866,11 @@ static int clone_image_info(const struct image_info *old, struct image_info *new
  *
  * @dest_image_name and @dest_image_description are ignored if they are NULL;
  * otherwise, they are used to override the image name and/or image description
- * from the XML data in the source WIM file. */
+ * from the XML data in the source WIM file.
+ *
+ * On failure, WIMLIB_ERR_NOMEM is returned and no changes are made.  Otherwise,
+ * 0 is returned and the WIM information at *new_wim_info_p is modified.
+ */
 int xml_export_image(const struct wim_info *old_wim_info, 
 		     int image, 
 		     struct wim_info **new_wim_info_p, 
