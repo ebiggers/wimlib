@@ -1,15 +1,18 @@
-Summary:  Library to extract, create, and modify WIM files
-Name: wimlib
-Version: @VERSION@
-Release: 1
-License: LGPL
-Group: System Environment/Libraries
-Packager: Eric Biggers (ebiggers3@gmail.com)
-URL:  http://wimlib.sourceforge.net
-Source: http://downloads.sourceforge.net/wimlib/wimlib-%{version}.tar.gz
-BuildRoot: %{_tmppath}/%{name}/wimlib-root
-BuildRequires:  libxml2-devel fuse-devel openssl-devel
-Requires:  libxml2 fuse-libs openssl
+Summary:   Library to extract, create, and modify WIM files
+Name:      wimlib
+Version:   @VERSION@
+Release:   1
+License:   GPLv3+
+Group:     System Environment/Libraries
+URL:       http://wimlib.sourceforge.net
+Packager:  Eric Biggers <ebiggers3@gmail.com>
+Source:    http://downloads.sourceforge.net/wimlib/wimlib-%{version}.tar.gz
+BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
+
+Requires: libxml2, fuse-libs, openssl
+Requires: fuse-ntfs-3g >= 2:2011.4.12
+BuildRequires: libxml2-devel fuse-devel openssl-devel
+BuildRequires: ntfsprogs-devel >= 2:2011.4.12, libattr-devel
 %description
 wimlib is a library that can be used to create, extract, and modify files in the
 Windows Imaging Format. These files are normally created by the 'imagex.exe'
@@ -18,8 +21,8 @@ for UNIX-based systems. wimlib supports mounting WIM files, just like
 imagex.exe.
 
 %package devel
-Summary: Development files for wimlib
-Group: Development/Libraries
+Summary:  Development files for wimlib
+Group:    Development/Libraries
 Requires: %{name} = %{version}-%{release}
 %description devel
 Development files for wimlib
@@ -28,21 +31,30 @@ Development files for wimlib
 %setup -q
 
 %build
-./configure --disable-verify-compression --with-libcrypto  --prefix=/usr
+./configure --prefix=/usr                 \
+            --disable-rpath               \
+	    --with-libcrypto              \
+	    --with-ntfs-3g                \
+	    --enable-xattr                \
+            --disable-verify-compression
 make
+
+%check
+make check
 
 %install
 rm -rf $RPM_BUILD_ROOT
 %makeinstall
 
-%post -p /sbin/ldconfig
-%postun -p /sbin/ldconfig
-
 %clean
 rm -rf $RPM_BUILD_ROOT
 
+%post -p /sbin/ldconfig
+%postun -p /sbin/ldconfig
+
 %files
 %defattr(-, root, root)
+%doc README COPYING
 %{_bindir}/imagex
 %{_bindir}/mkwinpeimg
 %{_libdir}/libwim.so*
