@@ -53,6 +53,23 @@ static int cmp_swms_by_part_number(const void *swm1, const void *swm2)
 	return (int)partno_1 - (int)partno_2;
 }
 
+/*
+ * Sanity checks to make sure a set of WIMs correctly correspond to a spanned
+ * set.
+ *
+ * @w:
+ * 	Part 1 of the set.
+ *
+ * @additional_swms:
+ * 	All parts of the set other than part 1.
+ *
+ * @num_additional_swms:
+ * 	Number of WIMStructs in @additional_swms.  Or, the total number of parts
+ * 	in the set minus 1.
+ *
+ * @return:
+ * 	0 on success; WIMLIB_ERR_SPLIT_INVALID if the set is not valid.
+ */
 int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 		   unsigned num_additional_swms)
 {
@@ -63,8 +80,8 @@ int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 	if (total_parts != num_additional_swms + 1) {
 		ERROR("`%s' says there are %u parts in the spanned set, "
 		      "but %s%u part%s provided",
-		      w->filename, w->hdr.total_parts,
-		      (num_additional_swms + 1 < w->hdr.total_parts) ? "only " : "",
+		      w->filename, total_parts,
+		      (num_additional_swms + 1 < total_parts) ? "only " : "",
 		      num_additional_swms + 1,
 		      (num_additional_swms) ? "s were" : " was");
 		return WIMLIB_ERR_SPLIT_INVALID;

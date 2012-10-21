@@ -240,11 +240,12 @@ struct wim_pair {
 
 /* 
  * This function takes in a dentry that was previously located only in image(s)
- * in @src_wim, but now is being added to @dest_wim. If there is in fact already a
- * lookup table entry for this file in the lookup table of the destination WIM
- * file, we simply increment its reference count.  Otherwise, a new lookup table
- * entry is created that references the location of the file resource in the
- * source WIM file through the other_wim_fp field of the lookup table entry.
+ * in @src_wim, but now is being added to @dest_wim.  For each stream associated
+ * with the dentry, if there is already a lookup table entry for that stream in
+ * the lookup table of the destination WIM file, its reference count is
+ * incrementej.  Otherwise, a new lookup table entry is created that points back
+ * to the stream in the source WIM file (through the @hash field combined with
+ * the @wim field of the lookup table entry.)
  */
 static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 {
@@ -261,8 +262,10 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 		struct lookup_table_entry *src_lte, *dest_lte;
 		src_lte = inode_stream_lte_unresolved(inode, i,
 						      src_wim->lookup_table);
-		if (!src_lte)
+
+		if (!src_lte) /* Empty or nonexistent stream. */
 			continue;
+
 		dest_lte = inode_stream_lte_unresolved(inode, i,
 						       dest_wim->lookup_table);
 		if (dest_lte) {
@@ -297,7 +300,9 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 	struct lookup_table_entry *metadata_lte;
 	struct image_metadata *imd;
 	struct image_metadata *new_imd;
-	struct link_group_table *lgt;
+	int ret;
+
+	wimlib_assert(root_dentry != NULL);
 
 	DEBUG("Reallocating image metadata array for image_count = %u",
 	      w->hdr.image_count + 1);
@@ -330,8 +335,12 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 	w->image_metadata	= imd;
 	w->hdr.image_count++;
 
-	/* Change the current image to the new one. */
-	return wimlib_select_image(w, w->hdr.image_count);
+	/* Change the current image to the new one.  There should not be any
+	 * ways for this to fail, since the image is valid and the dentry tree
+	 * is already in memory. */
+	ret = wimlib_select_image(w, w->hdr.image_count);
+	wimlib_assert(ret == 0);
+	return ret;
 out_free_metadata_lte:
 	FREE(metadata_lte);
 out_free_imd:
@@ -399,8 +408,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 					export_flags &= ~WIMLIB_EXPORT_FLAG_BOOT;
 
 				ret = wimlib_export_image(src_wim, i, dest_wim, 
-							  NULL,
-							  dest_description,
+							  NULL, NULL,
 							  export_flags,
 							  additional_swms,
 							  num_additional_swms);
@@ -417,6 +425,13 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 		dest_name = wimlib_get_image_name(src_wim, src_image);
 		DEBUG("Using name `%s' for source image %d",
 		      dest_name, src_image);
+	}
+
+	if (!dest_description) {
+		dest_description = wimlib_get_image_description(src_wim,
+								src_image);
+		DEBUG("Using description `%s' for source image %d",
+		      dest_description, src_image);
 	}
 
 	DEBUG("Exporting image %d from `%s'", src_image, src_wim->filename);
@@ -449,11 +464,11 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	}
 
 	/* Cleaning up here on failure would be hard.  For example, we could
-	 * fail to allocate memory in add_lte_to_dest_wim(),
-	 * leaving the lookup table entries in the destination WIM in an
-	 * inconsistent state.  Until these issues can be resolved,
-	 * wimlib_export_image() is documented as leaving dest_wim in an
-	 * indeterminate state.  */
+	 * fail to allocate memory in add_lte_to_dest_wim(), leaving the lookup
+	 * table entries in the destination WIM in an inconsistent state.  Until
+	 * these issues can be resolved, wimlib_export_image() is documented as
+	 * leaving @dest_wim in an indeterminate state with the only permitted
+	 * operation being wimlib_free().  */
 	root = wim_root_dentry(src_wim);
 	sd = wim_security_data(src_wim);
 	for_dentry_in_tree(root, increment_dentry_refcnt, NULL);

@@ -302,7 +302,7 @@ inode_stream_lte_resolved(const struct inode *inode, unsigned stream_idx)
 
 static inline struct lookup_table_entry *
 inode_stream_lte_unresolved(const struct inode *inode, unsigned stream_idx,
-			     const struct lookup_table *table)
+			    const struct lookup_table *table)
 {
 	wimlib_assert(!inode->resolved);
 	wimlib_assert(stream_idx <= inode->num_ads);

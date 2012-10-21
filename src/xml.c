@@ -818,6 +818,11 @@ static int clone_windows_info(const struct windows_info *old,
 		return WIMLIB_ERR_NOMEM;
 	if (old->system_root && !(new->system_root = STRDUP(old->system_root)))
 		return WIMLIB_ERR_NOMEM;
+	if (old->windows_version_exists) {
+		new->windows_version_exists = true;
+		memcpy(&new->windows_version, &old->windows_version,
+		       sizeof(old->windows_version));
+	}
 	return 0;
 }
 
@@ -875,7 +880,6 @@ int xml_export_image(const struct wim_info *old_wim_info,
 	DEBUG("Copying XML data between WIM files for source image %d.", image);
 
 	wimlib_assert(image >= 1 && image <= old_wim_info->num_images);
-
 
 	if (*new_wim_info_p) {
 		new_wim_info = *new_wim_info_p;
