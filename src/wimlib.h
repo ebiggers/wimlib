@@ -778,8 +778,11 @@ extern const char *wimlib_get_error_string(enum wimlib_error_code code);
  * 	The number of the image, numbered starting at 1.
  *
  * @return
- * 	The description of the image, or @c NULL if there is no such image, or @c NULL
- * 	if the specified image has no description.
+ * 	The description of the image, or @c NULL if there is no such image, or
+ * 	@c NULL if the specified image has no description.  The description
+ * 	string is in library-internal memory and may not be modified or freed;
+ * 	in addition, the string will become invalid if the description of the
+ * 	image is changed, the image is deleted, or the ::WIMStruct is destroyed.
  */
 extern const char *wimlib_get_image_description(const WIMStruct *wim, int image);
 
@@ -793,7 +796,10 @@ extern const char *wimlib_get_image_description(const WIMStruct *wim, int image)
  * 	The number of the image, numbered starting at 1.
  *
  * @return
- * 	The name of the image, or @c NULL if there is no such image.
+ * 	The name of the image, or @c NULL if there is no such image.  The name
+ * 	string is in library-internal memory and may not be modified or freed;
+ * 	in addition, the string will become invalid if the name of the image is
+ * 	changed, the image is deleted, or the ::WIMStruct is destroyed.
  */
 extern const char *wimlib_get_image_name(const WIMStruct *wim, int image);
 
@@ -844,8 +850,9 @@ extern bool wimlib_has_integrity_table(const WIMStruct *wim);
  * 	The name to check.
  *
  * @return
- * 	@c true if there is already an image in @a wim named @a name; @c
- * 	false if there is no image named @a name in @a wim.
+ * 	@c true if there is already an image in @a wim named @a name; @c false
+ * 	if there is no image named @a name in @a wim.  (If @a name is @c NULL,
+ * 	@c false is returned.)
  */
 extern bool wimlib_image_name_in_use(const WIMStruct *wim, const char *name);
 
