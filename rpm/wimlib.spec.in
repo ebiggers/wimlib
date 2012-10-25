@@ -3,16 +3,16 @@ Name:      wimlib
 Version:   @VERSION@
 Release:   1
 License:   GPLv3+
-Group:     System Environment/Libraries
+Group:     System/Libraries
 URL:       http://wimlib.sourceforge.net
 Packager:  Eric Biggers <ebiggers3@gmail.com>
 Source:    http://downloads.sourceforge.net/wimlib/wimlib-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
-Requires: libxml2, fuse-libs, openssl
-Requires: fuse-ntfs-3g >= 2:2011.4.12
-BuildRequires: libxml2-devel fuse-devel openssl-devel
-BuildRequires: ntfsprogs-devel >= 2:2011.4.12, libattr-devel
+Requires: libxml2, fuse-libs, fuse, openssl
+Requires: ntfs-3g >= 2:2011.4.12
+BuildRequires: libxml2-devel, fuse-devel, openssl-devel, libattr-devel
+BuildRequires: ntfs-3g-devel >= 2:2011.4.12, ntfsprogs
 %description
 wimlib is a library that can be used to create, extract, and modify files in the
 Windows Imaging Format. These files are normally created by the 'imagex.exe'
@@ -28,41 +28,43 @@ Requires: %{name} = %{version}-%{release}
 Development files for wimlib
 
 %prep
-%setup -q
+%setup -q -n %{name}-${version}
 
 %build
-./configure --prefix=/usr                 \
-            --disable-rpath               \
-	    --with-libcrypto              \
-	    --with-ntfs-3g                \
-	    --enable-xattr                \
-            --disable-verify-compression
-make
+%configure --prefix=/usr                 \
+           --disable-rpath               \
+	   --with-libcrypto              \
+	   --with-ntfs-3g                \
+	   --enable-xattr                \
+           --disable-verify-compression
+%__make %{?_smp_mflags}
 
 %check
 make check
 
 %install
-rm -rf $RPM_BUILD_ROOT
-%makeinstall
+%__rm -rf ${buildroot}
+%__make DESTDIR=${buildroot} install
 
 %clean
-rm -rf $RPM_BUILD_ROOT
+%__rm -rf ${buildroot}
 
 %post -p /sbin/ldconfig
 %postun -p /sbin/ldconfig
 
 %files
 %defattr(-, root, root)
-%doc README COPYING
+%doc AUTHORS COPYING README TODO
 %{_bindir}/imagex
 %{_bindir}/mkwinpeimg
-%{_libdir}/libwim.so*
+%{_libdir}/libwim.so
+%{_libdir}/libwim.so.0
+%{_libdir}/libwim.so.0.0.0
 %doc %{_mandir}/man1/*.1.gz
 
 %files devel
 %defattr(-, root, root)
-%{_libdir}/*.a
-%{_libdir}/*.la
-%{_includedir}/*.h
+%{_libdir}/libwim.a
+%{_libdir}/libwim.la
+%{_includedir}/wimlib.h
 %{_libdir}/pkgconfig/wimlib.pc
