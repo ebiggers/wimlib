@@ -209,10 +209,13 @@ static void destroy_windows_info(struct windows_info *windows_info)
 	FREE(windows_info->product_name);
 	FREE(windows_info->edition_id);
 	FREE(windows_info->installation_type);
+	FREE(windows_info->hal);
 	FREE(windows_info->product_type);
+	FREE(windows_info->product_suite);
 	for (i = 0; i < windows_info->num_languages; i++)
 		FREE(windows_info->languages[i]);
 	FREE(windows_info->languages);
+	FREE(windows_info->default_language);
 	FREE(windows_info->system_root);
 }
 

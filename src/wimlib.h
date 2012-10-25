@@ -489,8 +489,12 @@ extern int wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
  * @param image
  * 	The number of the image to delete, or ::WIM_ALL_IMAGES to delete all
  * 	images.
- * @return 0 on success; nonzero on error.  On error, @a wim is left in an
- * indeterminate state and should be freed with wimlib_free().
+ * @return 0 on success; nonzero on failure.  On failure, @a wim is guaranteed
+ * to be left unmodified only if @a image specified a single image.  If instead
+ * @a image was ::WIM_ALL_IMAGES and @a wim contained more than one image, it's
+ * possible for some but not all of the images to have been deleted when a
+ * failure status is returned.
+ *
  * @retval ::WIMLIB_ERR_DECOMPRESSION
  * 	Could not decompress the metadata resource for @a image.
  * @retval ::WIMLIB_ERR_INVALID_DENTRY

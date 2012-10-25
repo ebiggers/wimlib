@@ -2,7 +2,7 @@
  * modify.c
  *
  * Support for modifying WIM files with image-level operations (delete an image,
- * add an image, export an imagex from one WIM to another.)  There is nothing
+ * add an image, export an image from one WIM to another.)  There is nothing
  * here that lets you change individual files in the WIM; for that you will need
  * to look at the filesystem implementation in mount.c.
  */
@@ -570,7 +570,6 @@ out:
  */
 WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 {
-	int num_images;
 	int i;
 	int ret;
 
@@ -580,11 +579,8 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 	}
 
 	if (image == WIM_ALL_IMAGES) {
-		num_images = w->hdr.image_count;
-		for (i = 1; i <= num_images; i++) {
-			/* Always delete the first image, since by the end
-			 * there won't be any more than that!  */
-			ret = wimlib_delete_image(w, 1);
+		for (i = w->hdr.image_count; i >= 1; i--) {
+			ret = wimlib_delete_image(w, i);
 			if (ret != 0)
 				return ret;
 		}
@@ -602,8 +598,7 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 
 	/* Free the dentry tree, any lookup table entries that have their
 	 * refcnt decremented to 0, and the security data. */
-	destroy_image_metadata(wim_get_current_image_metadata(w),
-			       w->lookup_table);
+	destroy_image_metadata(&w->image_metadata[image - 1], w->lookup_table);
 
 	/* Get rid of the empty slot in the image metadata array. */
 	memmove(&w->image_metadata[image - 1], &w->image_metadata[image],
