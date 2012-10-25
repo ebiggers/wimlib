@@ -725,7 +725,7 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 		}
 		
 		next_p = eol + 1;
-		bytes_remaining -= (eol - p) + 1;
+		bytes_remaining -= (next_p - p);
 		if (eol == p)
 			continue;
 
@@ -754,7 +754,6 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 		else if (p[0] == '[' && strrchr(p, ']')) {
 			ERROR("Unknown capture configuration section `%s'", p);
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
-			goto out_destroy;
 		} else switch (type) {
 		case EXCLUSION_LIST:
 			DEBUG("Adding pattern \"%s\" to exclusion list", p);
@@ -777,7 +776,7 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 			      "in a block (such as [ExclusionList])",
 			      line_no);
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
-			goto out_destroy;
+			break;
 		}
 		if (ret != 0)
 			goto out_destroy;
@@ -966,12 +965,12 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	DEBUG("Assigning hard link group IDs");
 	assign_inode_numbers(&inode_list);
 
-	if (flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
-		wimlib_set_boot_idx(w, w->hdr.image_count);
-
 	ret = xml_add_image(w, name);
 	if (ret != 0)
 		goto out_destroy_imd;
+
+	if (flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
+		wimlib_set_boot_idx(w, w->hdr.image_count);
 
 	return 0;
 out_destroy_imd:

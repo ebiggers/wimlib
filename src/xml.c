@@ -982,7 +982,7 @@ static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
 	/* Update directory count and file count.
 	 *
 	 * Each dentry counts as either a file or a directory, but not both.
-	 * The root directory is an exception: it is not counted.
+	 * The root directory is an exception: it is not counted at all.
 	 *
 	 * Symbolic links and junction points (and presumably other reparse
 	 * points) count as regular files.  This is despite the fact that
@@ -1109,10 +1109,9 @@ int xml_add_image(WIMStruct *w, const char *name)
 
 out_destroy_image_info:
 	destroy_image_info(image_info);
+	wim_info->num_images--;
 out_free_wim_info:
-	if (w->wim_info)
-		wim_info->num_images--;
-	else
+	if (wim_info != w->wim_info)
 		FREE(wim_info);
 	ERROR("Out of memory");
 	return WIMLIB_ERR_NOMEM;

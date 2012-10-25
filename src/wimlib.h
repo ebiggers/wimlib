@@ -480,8 +480,9 @@ extern int wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
 /**
  * Deletes an image, or all images, from a WIM file.
  *
- * All file resources referenced by the image(s) being deleted are removed from
- * the WIM if they are not referenced by any other images in the WIM.
+ * All streams referenced by the image(s) being deleted are removed from the
+ * lookup table of the WIM if they are not referenced by any other images in the
+ * WIM.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for the WIM file that contains the image(s)
@@ -506,7 +507,8 @@ extern int wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
  *	The metadata resource for @a image in the WIM is invalid.	
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
  *	The security data for @a image in the WIM is invalid.	
- * @retval ::WIMLIB_ERR_NOMEM Failed to allocate needed memory.
+ * @retval ::WIMLIB_ERR_NOMEM
+ * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_READ
  * 	Could not read the metadata resource for @a image from the WIM.
  * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
