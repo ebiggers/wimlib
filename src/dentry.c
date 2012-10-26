@@ -703,6 +703,7 @@ void free_inode(struct inode *inode)
 		wimlib_assert(inode->num_opened_fds == 0);
 		FREE(inode->fds);
 	#endif
+		FREE(inode->extracted_file);
 		FREE(inode);
 	}
 }

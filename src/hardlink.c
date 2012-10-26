@@ -217,7 +217,7 @@ static bool inodes_consistent(const struct inode * restrict ref_inode,
 }
 
 /* Fix up a "true" inode and check for inconsistencies */
-static int fix_true_inode(struct inode *inode)
+static int fix_true_inode(struct inode *inode, struct hlist_head *inode_list)
 {
 	struct dentry *dentry;
 	struct dentry *ref_dentry = NULL;
@@ -239,6 +239,7 @@ static int fix_true_inode(struct inode *inode)
 
 	ref_inode = ref_dentry->d_inode;
 	ref_inode->link_count = 1;
+	hlist_add_head(&ref_inode->hlist, inode_list);
 
 	list_del(&inode->dentry_list);
 	list_add(&ref_inode->dentry_list, &ref_dentry->inode_dentry_list);
@@ -322,8 +323,7 @@ fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
 			      "are consistent.");
 		}
 	#endif
-		hlist_add_head(&inode->hlist, inode_list);
-		return fix_true_inode(inode);
+		return fix_true_inode(inode, inode_list);
 	}
 
         /* One or more dentries had data streams specified.  We check each of
@@ -389,8 +389,7 @@ next_dentry_2:
 	#endif
 
 	hlist_for_each_entry_safe(inode, cur, tmp, &true_inodes, hlist) {
-		hlist_add_head(&inode->hlist, inode_list);
-		ret = fix_true_inode(inode);
+		ret = fix_true_inode(inode, inode_list);
 		if (ret != 0)
 			return ret;
 	}
