@@ -83,7 +83,7 @@
 
 /* Decodes @huffsym, a value >= XPRESS_NUM_CHARS, that is the header of a match.
  * */
-static int xpress_decode_match(int huffsym, uint window_pos, uint window_len, 
+static int xpress_decode_match(int huffsym, uint window_pos, uint window_len,
 				u8 window[], struct input_bitstream *istream)
 {
 	uint match_len;
@@ -157,41 +157,45 @@ static int xpress_decode_match(int huffsym, uint window_pos, uint window_len,
 
 /* Decodes the Huffman-encoded matches and literal bytes in a block of
  * XPRESS-encoded data. */
-static int xpress_decompress_literals(struct input_bitstream *istream, 
-				      u8 uncompressed_data[], 
-				      uint uncompressed_len, 
-				      const u8 lens[], 
+static int xpress_decompress_literals(struct input_bitstream *istream,
+				      u8 uncompressed_data[],
+				      uint uncompressed_len,
+				      const u8 lens[],
 				      const u16 decode_table[])
 {
 	uint curpos = 0;
 	uint huffsym;
 	int match_len;
-	int ret;
+	int ret = 0;
 
 	while (curpos < uncompressed_len) {
-		ret = read_huffsym(istream, decode_table, lens, 
-				XPRESS_NUM_SYMBOLS, XPRESS_TABLEBITS, &huffsym,
-				XPRESS_MAX_CODEWORD_LEN);
+		ret = read_huffsym(istream, decode_table, lens,
+				   XPRESS_NUM_SYMBOLS, XPRESS_TABLEBITS,
+				   &huffsym, XPRESS_MAX_CODEWORD_LEN);
 		if (ret != 0)
-			return ret;
+			break;
 
 		if (huffsym < XPRESS_NUM_CHARS) {
 			uncompressed_data[curpos++] = huffsym;
 		} else {
-			match_len = xpress_decode_match(huffsym, curpos, 
-						uncompressed_len, 
-						uncompressed_data, istream);
-			if (match_len == -1)
-				return 1;
+			match_len = xpress_decode_match(huffsym,
+							curpos,
+							uncompressed_len,
+							uncompressed_data,
+							istream);
+			if (match_len == -1) {
+				ret = 1;
+				break;
+			}
 			curpos += match_len;
 		}
 	}
-	return 0;
+	return ret;
 }
 
 
-int xpress_decompress(const void *__compressed_data, uint compressed_len, 
-			void *uncompressed_data, uint uncompressed_len)
+int xpress_decompress(const void *__compressed_data, uint compressed_len,
+		      void *uncompressed_data, uint uncompressed_len)
 {
 	u8 lens[XPRESS_NUM_SYMBOLS];
 	u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS];
@@ -225,9 +229,10 @@ int xpress_decompress(const void *__compressed_data, uint compressed_len,
 	if (ret != 0)
 		return ret;
 
-	init_input_bitstream(&istream, compressed_data + XPRESS_NUM_SYMBOLS / 2, 
+	init_input_bitstream(&istream, compressed_data + XPRESS_NUM_SYMBOLS / 2,
 			     compressed_len - XPRESS_NUM_SYMBOLS / 2);
 
-	return xpress_decompress_literals(&istream, uncompressed_data, 
-					uncompressed_len, lens, decode_table);
+	return xpress_decompress_literals(&istream, uncompressed_data,
+					  uncompressed_len, lens,
+					  decode_table);
 }

@@ -61,7 +61,7 @@ int bitstream_read_bytes(struct input_bitstream *stream, size_t n, void *dest)
 	if ((n & 1) && stream->data_bytes_left != 0) {
 		stream->bitsleft = 8;
 		stream->data_bytes_left--;
-		stream->bitbuf |= (input_bitbuf_t)(*stream->data) << 
+		stream->bitbuf |= (input_bitbuf_t)(*stream->data) <<
 					(sizeof(input_bitbuf_t) * 8 - 8);
 		stream->data++;
 	}
@@ -76,7 +76,7 @@ int bitstream_read_bytes(struct input_bitstream *stream, size_t n, void *dest)
  * and length fields of an uncompressed block, however; it does not apply when
  * realigning the stream after the end of the uncompressed block.
  */
-int align_input_bitstream(struct input_bitstream *stream, 
+int align_input_bitstream(struct input_bitstream *stream,
 			  bool skip_word_if_aligned)
 {
 	int ret;
@@ -96,7 +96,7 @@ int align_input_bitstream(struct input_bitstream *stream,
 	return 0;
 }
 
-/* 
+/*
  * Builds a fast huffman decoding table from a canonical huffman code lengths
  * table.  Based on code written by David Tritscher.
  *
@@ -109,7 +109,7 @@ int align_input_bitstream(struct input_bitstream *stream,
  *
  * @num_bits:	Any symbols with a code length of num_bits or less can be
  * 			decoded in one lookup of the table.  2**num_bits
- * 			must be greater than or equal to @num_syms if there are 
+ * 			must be greater than or equal to @num_syms if there are
  * 			any Huffman codes longer than @num_bits.
  *
  * @lens:	An array of length @num_syms, indexable by symbol, that
@@ -124,7 +124,7 @@ int align_input_bitstream(struct input_bitstream *stream,
  * valid Huffman tree, or if there are codes of length greater than @num_bits
  * but 2**num_bits < num_syms.
  *
- * What exactly is the format of the fast Huffman decoding table?  The first 
+ * What exactly is the format of the fast Huffman decoding table?  The first
  * (1 << num_bits) entries of the table are indexed by chunks of the input of
  * size @num_bits.  If the next Huffman code in the input happens to have a
  * length of exactly @num_bits, the symbol is simply read directly from the
@@ -154,8 +154,8 @@ int align_input_bitstream(struct input_bitstream *stream,
  * entries from pointers by the fact that values less than @num_syms must be
  * symbol values.
  */
-int make_huffman_decode_table(u16 decode_table[],  uint num_syms, 
-			      uint num_bits, const u8 lens[], 
+int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
+			      uint num_bits, const u8 lens[],
 			      uint max_code_len)
 {
 	/* Number of entries in the decode table. */
@@ -244,8 +244,8 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 	/* Go through every codeword of length greater than @num_bits.  Note:
 	 * the LZX format guarantees that the codeword length can be at most 16
 	 * bits. */
-	for (uint code_len = num_bits + 1; code_len <= max_code_len; 
-							code_len++) 
+	for (uint code_len = num_bits + 1; code_len <= max_code_len;
+							code_len++)
 	{
 		current_code <<= 1;
 		for (uint sym = 0; sym < num_syms; sym++) {
@@ -283,7 +283,7 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 				 * otherwise, go right (by incrementing i by 1) */
 				int bit_pos = code_len - bit_num;
 
-				int bit = (current_code & (1 << bit_pos)) >> 
+				int bit = (current_code & (1 << bit_pos)) >>
 								bit_pos;
 				i += bit;
 			}
@@ -294,7 +294,7 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 
 			/* Increment decode_table_pos only if the prefix of the
 			 * Huffman code changes. */
-			if (current_code >> (code_len - num_bits) != 
+			if (current_code >> (code_len - num_bits) !=
 					(current_code + 1) >> (code_len - num_bits))
 				decode_table_pos++;
 
@@ -329,11 +329,11 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 
 /* Reads a Huffman-encoded symbol when it is known there are less than
  * MAX_CODE_LEN bits remaining in the bitstream. */
-static int read_huffsym_near_end_of_input(struct input_bitstream *istream, 
-					  const u16 decode_table[], 
-					  const u8 lens[], 
-					  uint num_syms, 
-					  uint table_bits, 
+static int read_huffsym_near_end_of_input(struct input_bitstream *istream,
+					  const u16 decode_table[],
+					  const u8 lens[],
+					  uint num_syms,
+					  uint table_bits,
 					  uint *n)
 {
 	uint bitsleft = istream->bitsleft;
@@ -344,7 +344,7 @@ static int read_huffsym_near_end_of_input(struct input_bitstream *istream,
 	if (table_bits > bitsleft) {
 		key_size = bitsleft;
 		bitsleft = 0;
-		key_bits = bitstream_peek_bits(istream, key_size) << 
+		key_bits = bitstream_peek_bits(istream, key_size) <<
 						(table_bits - key_size);
 	} else {
 		key_size = table_bits;
@@ -371,7 +371,7 @@ static int read_huffsym_near_end_of_input(struct input_bitstream *istream,
 	return 0;
 }
 
-/* 
+/*
  * Reads a Huffman-encoded symbol from a bitstream.
  *
  * This function may be called hundreds of millions of times when extracting a
@@ -385,17 +385,17 @@ static int read_huffsym_near_end_of_input(struct input_bitstream *istream,
  * @lengths:		The table that gives the length of the code for each
  * 				symbol.
  * @num_symbols:	The number of symbols in the Huffman code.
- * @table_bits:		Huffman codes this length or less can be looked up 
+ * @table_bits:		Huffman codes this length or less can be looked up
  * 				directory in the decode_table, as the
  * 				decode_table contains 2**table_bits entries.
  */
-int read_huffsym(struct input_bitstream *stream, 
-	     const u16 decode_table[], 
-	     const u8 lengths[], 
-	     unsigned num_symbols, 
-	     unsigned table_bits, 
-	     uint *n, 
-	     unsigned max_codeword_len)
+int read_huffsym(struct input_bitstream *stream,
+		 const u16 decode_table[],
+		 const u8 lengths[],
+		 unsigned num_symbols,
+		 unsigned table_bits,
+		 uint *n,
+		 unsigned max_codeword_len)
 {
 	/* In the most common case, there are at least max_codeword_len bits
 	 * remaining in the stream. */
@@ -415,7 +415,7 @@ int read_huffsym(struct input_bitstream *stream,
 				key_bits = sym + bitstream_peek_bits(stream, 1);
 				bitstream_remove_bits(stream, 1);
 
-				wimlib_assert(key_bits < num_symbols * 2 + 
+				wimlib_assert(key_bits < num_symbols * 2 +
 							(1 << table_bits));
 			} while ((sym = decode_table[key_bits]) >= num_symbols);
 		} else {
@@ -426,9 +426,9 @@ int read_huffsym(struct input_bitstream *stream,
 		return 0;
 	} else {
 		/* Otherwise, we must be careful to use only the bits that are
-		 * actually remaining.  Don't inline this part since it is very
-		 * rarely used. */
-		return read_huffsym_near_end_of_input(stream, decode_table, lengths,
-					num_symbols, table_bits, n);
+		 * actually remaining.  */
+		return read_huffsym_near_end_of_input(stream, decode_table,
+						      lengths, num_symbols,
+						      table_bits, n);
 	}
 }

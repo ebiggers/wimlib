@@ -35,9 +35,9 @@ struct output_bitstream {
 
 
 static inline int bitstream_put_byte(struct output_bitstream *ostream,
-				      u8 n)
+				     u8 n)
 {
-	if (ostream->num_bytes_remaining == 0)
+	if (ostream->num_bytes_remaining < 1)
 		return 1;
 	*ostream->output = n;
 	ostream->output++;
@@ -66,30 +66,30 @@ struct lz_params {
 	uint max_lazy_match;
 	uint too_far;
 };
-						
+
 typedef uint (*lz_record_match_t)(uint, uint, void *, void *);
 typedef uint (*lz_record_literal_t)(u8, void *);
 
-extern uint lz_analyze_block(const u8 uncompressed_data[], 
+extern uint lz_analyze_block(const u8 uncompressed_data[],
 			     uint uncompressed_len,
-			     u32 match_tab[], 
+			     u32 match_tab[],
 			     lz_record_match_t record_match,
-			     lz_record_literal_t record_literal, 
+			     lz_record_literal_t record_literal,
 			     void *record_match_arg1,
-			     void *record_match_arg2, 
+			     void *record_match_arg2,
 			     void *record_literal_arg,
 			     const struct lz_params *params);
 
-extern int bitstream_put_bits(struct output_bitstream *ostream, 
+extern int bitstream_put_bits(struct output_bitstream *ostream,
 			      output_bitbuf_t bits, unsigned num_bits);
 
 extern void init_output_bitstream(struct output_bitstream *ostream,
-						void *data, unsigned num_bytes);
+				  void *data, unsigned num_bytes);
 
 extern int flush_output_bitstream(struct output_bitstream *ostream);
 
-extern void make_canonical_huffman_code(uint num_syms, uint max_codeword_len, 
-					const u32 freq_tab[], u8 lens[], 
+extern void make_canonical_huffman_code(uint num_syms, uint max_codeword_len,
+					const u32 freq_tab[], u8 lens[],
 					u16 codewords[]);
 
 #endif /* _WIMLIB_COMP_H */

@@ -554,11 +554,10 @@ begin_wim_resource_chunk_tab(const struct lookup_table_entry *lte,
 {
 	u64 size = wim_resource_size(lte);
 	u64 num_chunks = (size + WIM_CHUNK_SIZE - 1) / WIM_CHUNK_SIZE;
-	struct chunk_table *chunk_tab = MALLOC(sizeof(struct chunk_table) +
-					       num_chunks * sizeof(u64));
-	int ret = 0;
+	size_t alloc_size = sizeof(struct chunk_table) + num_chunks * sizeof(u64);
+	struct chunk_table *chunk_tab = CALLOC(1, alloc_size);
+	int ret;
 
-	wimlib_assert(size != 0);
 
 	if (!chunk_tab) {
 		ERROR("Failed to allocate chunk table for %"PRIu64" byte "
@@ -583,8 +582,9 @@ begin_wim_resource_chunk_tab(const struct lookup_table_entry *lte,
 		goto out;
 	}
 
-	*chunk_tab_ret = chunk_tab;
+	ret = 0;
 out:
+	*chunk_tab_ret = chunk_tab;
 	return ret;
 }
 

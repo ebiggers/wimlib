@@ -38,7 +38,7 @@ static inline void flush_bits(struct output_bitstream *ostream)
 
 /* Writes @num_bits bits, given by the @num_bits least significant bits of
  * @bits, to the output @ostream. */
-int bitstream_put_bits(struct output_bitstream *ostream, output_bitbuf_t bits, 
+int bitstream_put_bits(struct output_bitstream *ostream, output_bitbuf_t bits,
 		       uint num_bits)
 {
 	uint rem_bits;
@@ -49,7 +49,7 @@ int bitstream_put_bits(struct output_bitstream *ostream, output_bitbuf_t bits,
 		ostream->free_bits -= num_bits;
 	} else {
 
-		if (ostream->num_bytes_remaining + (ostream->output - 
+		if (ostream->num_bytes_remaining + (ostream->output -
 						ostream->bit_output) < 2)
 			return 1;
 
@@ -75,7 +75,7 @@ int bitstream_put_bits(struct output_bitstream *ostream, output_bitbuf_t bits,
 /* Flushes any remaining bits in the output buffer to the output byte stream. */
 int flush_output_bitstream(struct output_bitstream *ostream)
 {
-	if (ostream->num_bytes_remaining + (ostream->output - 
+	if (ostream->num_bytes_remaining + (ostream->output -
 					ostream->bit_output) < 2)
 		return 1;
 	if (ostream->free_bits != 16) {
@@ -87,9 +87,11 @@ int flush_output_bitstream(struct output_bitstream *ostream)
 
 /* Initializes an output bit buffer to write its output to the memory location
  * pointer to by @data. */
-void init_output_bitstream(struct output_bitstream *ostream, void *data, 
+void init_output_bitstream(struct output_bitstream *ostream, void *data,
 			   uint num_bytes)
 {
+	wimlib_assert(num_bytes >= 4);
+
 	ostream->bitbuf              = 0;
 	ostream->free_bits           = 16;
 	ostream->bit_output          = (u8*)data;
@@ -166,7 +168,7 @@ static void huffman_tree_compute_path_lengths(HuffmanNode *node, u16 cur_len)
 	}
 }
 
-/* Creates a canonical Huffman code from an array of symbol frequencies. 
+/* Creates a canonical Huffman code from an array of symbol frequencies.
  *
  * The algorithm used is similar to the well-known algorithm that builds a
  * Huffman tree using a minheap.  In that algorithm, the leaf nodes are
@@ -217,12 +219,12 @@ static void huffman_tree_compute_path_lengths(HuffmanNode *node, u16 cur_len)
  * 			codewords for each symbol will be written.
  *
  * @codewords:	   An array of @num_syms short integers into which the
- * 			codewords for each symbol will be written.  The first 
- * 			lens[i] bits of codewords[i] will contain the codeword 
+ * 			codewords for each symbol will be written.  The first
+ * 			lens[i] bits of codewords[i] will contain the codeword
  * 			for symbol i.
  */
-void make_canonical_huffman_code(uint num_syms, uint max_codeword_len, 
-				 const u32 freq_tab[], u8 lens[], 
+void make_canonical_huffman_code(uint num_syms, uint max_codeword_len,
+				 const u32 freq_tab[], u8 lens[],
 				 u16 codewords[])
 {
 	/* We require at least 2 possible symbols in the alphabet to produce a
@@ -301,7 +303,7 @@ void make_canonical_huffman_code(uint num_syms, uint max_codeword_len,
 	 * most num_used_symbols - 1 intermediate nodes when creating a Huffman
 	 * code.  This is because if there were at least num_used_symbols nodes,
 	 * the code would be suboptimal because there would be at least one
-	 * unnecessary intermediate node.  
+	 * unnecessary intermediate node.
 	 *
 	 * The worst case (greatest number of intermediate nodes) would be if
 	 * all the intermediate nodes were chained together.  This results in
@@ -348,7 +350,7 @@ try_building_tree_again:
 	while (1) {
 
 		/* Lowest frequency node. */
-		HuffmanNode *f1 = NULL; 
+		HuffmanNode *f1 = NULL;
 
 		/* Second lowest frequency node. */
 		HuffmanNode *f2 = NULL;
@@ -357,14 +359,14 @@ try_building_tree_again:
 		 * the remaining leaves or from the intermediate nodes.
 		 * */
 
-		if (cur_leaf != end_leaf && (cur_inode == next_inode || 
+		if (cur_leaf != end_leaf && (cur_inode == next_inode ||
 					cur_leaf->freq <= cur_inode->freq)) {
 			f1 = (HuffmanNode*)cur_leaf++;
 		} else if (cur_inode != next_inode) {
 			f1 = cur_inode++;
 		}
 
-		if (cur_leaf != end_leaf && (cur_inode == next_inode || 
+		if (cur_leaf != end_leaf && (cur_inode == next_inode ||
 					cur_leaf->freq <= cur_inode->freq)) {
 			f2 = (HuffmanNode*)cur_leaf++;
 		} else if (cur_inode != next_inode) {
@@ -403,7 +405,7 @@ try_building_tree_again:
 				if (leaves[i].freq > 1)
 					leaves[i].freq >>= 1;
 			goto try_building_tree_again;
-		} 
+		}
 		next_inode++;
 	}
 
