@@ -186,7 +186,7 @@ ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
 }
 
 /* 
- * Sets @dentry to be a symbolic link pointing to @target.
+ * Sets @inode to be a symbolic link pointing to @target.
  *
  * A lookup table entry for the symbolic link data buffer is created and
  * inserted into @lookup_table, unless there is an existing lookup table entry

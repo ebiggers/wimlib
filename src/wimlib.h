@@ -418,6 +418,9 @@ enum wimlib_error_code {
  * 	dir.
  * @retval ::WIMLIB_ERR_READ
  * 	Failed to read a file in the directory tree rooted at @a dir.
+ * @retval ::WIMLIB_ERR_SPECIAL_FILE
+ * 	The directory tree rooted at @dir contains a special file that is not a
+ * 	directory, regular file, or symbolic link.
  * @retval ::WIMLIB_ERR_STAT
  * 	Failed obtain the metadata for a file or directory in the directory tree
  * 	rooted at @a dir.

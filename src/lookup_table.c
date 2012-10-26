@@ -495,7 +495,8 @@ __lookup_resource(const struct lookup_table *table, const u8 hash[])
 	struct lookup_table_entry *lte;
 	struct hlist_node *pos;
 
-	wimlib_assert(table);
+	wimlib_assert(table != NULL);
+	wimlib_assert(hash != NULL);
 
 	i = *(size_t*)hash % table->capacity;
 	hlist_for_each_entry(lte, pos, &table->array[i], hash_list)

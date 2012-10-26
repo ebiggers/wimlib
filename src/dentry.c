@@ -176,7 +176,7 @@ static u64 dentry_total_length(const struct dentry *dentry)
 	return __dentry_total_length(dentry, dentry->length);
 }
 
-/* Transfers file attributes from a `stat' buffer to an inode. */
+/* Transfers file attributes from a `stat' buffer to a WIM "inode". */
 void stbuf_to_inode(const struct stat *stbuf, struct inode *inode)
 {
 	if (S_ISLNK(stbuf->st_mode)) {
@@ -590,26 +590,26 @@ static void dentry_common_init(struct dentry *dentry)
 static struct inode *new_timeless_inode()
 {
 	struct inode *inode = CALLOC(1, sizeof(struct inode));
-	if (!inode)
-		return NULL;
-	inode->security_id = -1;
-	inode->link_count = 1;
-#ifdef WITH_FUSE
-	inode->next_stream_id = 1;
-#endif
-	INIT_LIST_HEAD(&inode->dentry_list);
+	if (inode) {
+		inode->security_id = -1;
+		inode->link_count = 1;
+	#ifdef WITH_FUSE
+		inode->next_stream_id = 1;
+	#endif
+		INIT_LIST_HEAD(&inode->dentry_list);
+	}
 	return inode;
 }
 
 static struct inode *new_inode()
 {
 	struct inode *inode = new_timeless_inode();
-	if (!inode)
-		return NULL;
-	u64 now = get_wim_timestamp();
-	inode->creation_time = now;
-	inode->last_access_time = now;
-	inode->last_write_time = now;
+	if (inode) {
+		u64 now = get_wim_timestamp();
+		inode->creation_time = now;
+		inode->last_access_time = now;
+		inode->last_write_time = now;
+	}
 	return inode;
 }
 
@@ -719,7 +719,6 @@ static void put_inode(struct inode *inode)
 	#endif
 		{
 			free_inode(inode);
-			inode = NULL;
 		}
 	}
 }
@@ -737,7 +736,8 @@ void free_dentry(struct dentry *dentry)
 	FREE(dentry->file_name_utf8);
 	FREE(dentry->short_name);
 	FREE(dentry->full_path_utf8);
-	put_inode(dentry->d_inode);
+	if (dentry->d_inode)
+		put_inode(dentry->d_inode);
 	FREE(dentry);
 }
 

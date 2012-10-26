@@ -59,21 +59,36 @@ void destroy_image_metadata(struct image_metadata *imd, struct lookup_table *lt)
  * Recursively builds a dentry tree from a directory tree on disk, outside the
  * WIM file.
  *
- * @root:  A dentry that has already been created for the root of the dentry
- * 	   tree.
- * @root_disk_path:  The path to the root of the tree on disk. 
+ * @root_ret:   Place to return a pointer to the root of the dentry tree.  Only
+ *		modified if successful.  NULL if the file or directory was
+ *		excluded from capture.
+ *
+ * @root_disk_path:  The path to the root of the directory tree on disk. 
+ *
  * @lookup_table: The lookup table for the WIM file.  For each file added to the
  * 		dentry tree being built, an entry is added to the lookup table, 
- * 		unless an identical file is already in the lookup table.  These
- * 		lookup table entries that are added point to the file on disk.
+ * 		unless an identical stream is already in the lookup table.
+ * 		These lookup table entries that are added point to the path of
+ * 		the file on disk.
+ *
+ * @sd:		Ignored.  (Security data only captured in NTFS mode.)
+ *
+ * @capture_config:
+ * 		Configuration for files to be excluded from capture.
+ *
+ * @add_flags:  Bitwise or of WIMLIB_ADD_IMAGE_FLAG_*
+ *
+ * @extra_arg:	Ignored. (Only used in NTFS mode.)
  *
  * @return:	0 on success, nonzero on failure.  It is a failure if any of
  *		the files cannot be `stat'ed, or if any of the needed
  *		directories cannot be opened or read.  Failure to add the files
- *		to the WIM may still occur later when trying to actually read 
- *		the regular files in the tree into the WIM as file resources.
+ *		to the WIM may still occur later when trying to actually read
+ *		the on-disk files during a call to wimlib_write() or
+ *		wimlib_overwrite().
  */
-static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_path,
+static int build_dentry_tree(struct dentry **root_ret,
+			     const char *root_disk_path,
 			     struct lookup_table *lookup_table,
 			     struct wim_security_data *sd,
 			     const struct capture_config *config,
@@ -87,6 +102,10 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 	const char *filename;
 
 	if (exclude_path(root_disk_path, config, true)) {
+		if (add_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
+			ERROR("Cannot exclude the root directory from capture");
+			return WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+		}
 		if (add_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
 			printf("Excluding file `%s' from capture\n",
 			       root_disk_path);
@@ -102,7 +121,6 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 
 	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
 		printf("Scanning `%s'\n", root_disk_path);
-
 
 	ret = (*stat_fn)(root_disk_path, &root_stbuf);
 	if (ret != 0) {
@@ -127,7 +145,7 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 	else
 		filename = path_basename(root_disk_path);
 
-	root = new_dentry_with_inode(filename);
+	root = new_dentry_with_timeless_inode(filename);
 	if (!root)
 		return WIMLIB_ERR_NOMEM;
 
@@ -135,8 +153,7 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 	add_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
 	root->d_inode->resolved = true;
 
-	if (dentry_is_directory(root)) {
-		/* Open the directory on disk */
+	if (dentry_is_directory(root)) { /* Archiving a directory */
 		DIR *dir;
 		struct dirent *p;
 		struct dentry *child;
@@ -145,7 +162,8 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 		if (!dir) {
 			ERROR_WITH_ERRNO("Failed to open the directory `%s'",
 					 root_disk_path);
-			return WIMLIB_ERR_OPEN;
+			ret = WIMLIB_ERR_OPEN;
+			goto out;
 		}
 
 		/* Buffer for names of files in directory. */
@@ -156,38 +174,49 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 
 		/* Create a dentry for each entry in the directory on disk, and recurse
 		 * to any subdirectories. */
-		while ((p = readdir(dir)) != NULL) {
+		while (1) {
+			errno = 0;
+			p = readdir(dir);
+			if (p == NULL) {
+				if (errno) {
+					ret = WIMLIB_ERR_READ;
+					ERROR_WITH_ERRNO("Error reading the "
+							 "directory `%s'",
+							 root_disk_path);
+				}
+				break;
+			}
 			if (p->d_name[0] == '.' && (p->d_name[1] == '\0'
 			      || (p->d_name[1] == '.' && p->d_name[2] == '\0')))
 					continue;
 			strcpy(name + len + 1, p->d_name);
 			ret = build_dentry_tree(&child, name, lookup_table,
-						sd, config,
-						add_flags, extra_arg);
+						NULL, config,
+						add_flags, NULL);
 			if (ret != 0)
 				break;
 			if (child)
 				link_dentry(child, root);
 		}
 		closedir(dir);
-	} else if (dentry_is_symlink(root)) {
-		/* Archiving a symbolic link */
+	} else if (dentry_is_symlink(root)) { /* Archiving a symbolic link */
 		char deref_name_buf[4096];
 		ssize_t deref_name_len;
 		
 		deref_name_len = readlink(root_disk_path, deref_name_buf,
 					  sizeof(deref_name_buf) - 1);
-		if (deref_name_len == -1) {
+		if (deref_name_len >= 0) {
+			deref_name_buf[deref_name_len] = '\0';
+			DEBUG("Read symlink `%s'", deref_name_buf);
+			ret = inode_set_symlink(root->d_inode, deref_name_buf,
+						lookup_table, NULL);
+		} else {
 			ERROR_WITH_ERRNO("Failed to read target of "
 					 "symbolic link `%s'", root_disk_path);
-			return WIMLIB_ERR_READLINK;
+			ret = WIMLIB_ERR_READLINK;
 		}
-		deref_name_buf[deref_name_len] = '\0';
-		DEBUG("Read symlink `%s'", deref_name_buf);
-		ret = inode_set_symlink(root->d_inode, deref_name_buf,
-					lookup_table, NULL);
-	} else {
-		/* Regular file */
+	} else { /* Archiving a regular file */
+
 		struct lookup_table_entry *lte;
 		u8 hash[SHA1_HASH_SIZE];
 
@@ -199,9 +228,10 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 		 * the lookup table already; if it is, we increment its refcnt;
 		 * otherwise, we create a new lookup table entry and insert it.
 		 * */
+
 		ret = sha1sum(root_disk_path, hash);
 		if (ret != 0)
-			return ret;
+			goto out;
 
 		lte = __lookup_resource(lookup_table, hash);
 		if (lte) {
@@ -212,12 +242,14 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 			char *file_on_disk = STRDUP(root_disk_path);
 			if (!file_on_disk) {
 				ERROR("Failed to allocate memory for file path");
-				return WIMLIB_ERR_NOMEM;
+				ret = WIMLIB_ERR_NOMEM;
+				goto out;
 			}
 			lte = new_lookup_table_entry();
 			if (!lte) {
 				FREE(file_on_disk);
-				return WIMLIB_ERR_NOMEM;
+				ret = WIMLIB_ERR_NOMEM;
+				goto out;
 			}
 			lte->file_on_disk = file_on_disk;
 			lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
@@ -229,7 +261,10 @@ static int build_dentry_tree(struct dentry **root_ret, const char *root_disk_pat
 		root->d_inode->lte = lte;
 	}
 out:
-	*root_ret = root;
+	if (ret == 0)
+		*root_ret = root;
+	else
+		free_dentry_tree(root, lookup_table);
 	return ret;
 }
 
@@ -937,7 +972,7 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 
 	if (ret != 0) {
 		ERROR("Failed to build dentry tree for `%s'", dir);
-		goto out_free_dentry_tree;
+		goto out_free_security_data;
 	}
 
 	DEBUG("Calculating full paths of dentries.");
@@ -980,6 +1015,7 @@ out_destroy_imd:
 	return ret;
 out_free_dentry_tree:
 	free_dentry_tree(root_dentry, w->lookup_table);
+out_free_security_data:
 	free_security_data(sd);
 out_destroy_config:
 	destroy_capture_config(&config);
