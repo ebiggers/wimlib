@@ -1129,7 +1129,9 @@ extern int wimlib_overwrite_xml_and_header(WIMStruct *wim, int flags);
  * 	image, or ::WIM_ALL_IMAGES to print information about all images in the
  * 	WIM.
  * 
- * @return This function has no return value.
+ * @return This function has no return value.  No error checking is done when
+ * printing the information.  If @a image is invalid, an error message is
+ * printed.
  */
 extern void wimlib_print_available_images(const WIMStruct *wim, int image);
 

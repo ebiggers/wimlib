@@ -61,15 +61,14 @@ struct lookup_table_entry *new_lookup_table_entry()
 	struct lookup_table_entry *lte;
 	
 	lte = CALLOC(1, sizeof(struct lookup_table_entry));
-	if (!lte) {
+	if (lte) {
+		lte->part_number  = 1;
+		lte->refcnt       = 1;
+	} else {
 		ERROR("Out of memory (tried to allocate %zu bytes for "
 		      "lookup table entry)",
 		      sizeof(struct lookup_table_entry));
-		return NULL;
 	}
-
-	lte->part_number  = 1;
-	lte->refcnt       = 1;
 	return lte;
 }
 
@@ -278,7 +277,8 @@ int read_lookup_table(WIMStruct *w)
 	      w->hdr.lookup_table_res_entry.offset,
 	      w->hdr.lookup_table_res_entry.original_size);
 
-	if (fseeko(w->fp, w->hdr.lookup_table_res_entry.offset, SEEK_SET) != 0) {
+	if (fseeko(w->fp, w->hdr.lookup_table_res_entry.offset, SEEK_SET) != 0)
+	{
 		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" to read "
 				 "lookup table",
 				 w->hdr.lookup_table_res_entry.offset);
@@ -323,7 +323,6 @@ int read_lookup_table(WIMStruct *w)
 			      w->hdr.part_number, cur_entry->part_number);
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 			goto out_free_cur_entry;
-			
 		}
 
 		if (is_zero_hash(cur_entry->hash)) {
@@ -347,7 +346,7 @@ int read_lookup_table(WIMStruct *w)
 
 		if (!(cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
 		    && (cur_entry->resource_entry.size !=
-		      cur_entry->resource_entry.original_size))
+		        cur_entry->resource_entry.original_size))
 		{
 			ERROR("Found uncompressed resource with original size "
 			      "not the same as compressed size");

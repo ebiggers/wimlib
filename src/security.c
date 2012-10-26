@@ -285,6 +285,8 @@ static void print_security_descriptor(const u8 *p, u64 size)
  */
 void print_security_data(const struct wim_security_data *sd)
 {
+	wimlib_assert(sd != NULL);
+
 	puts("[SECURITY DATA]");
 	printf("Length            = %"PRIu32" bytes\n", sd->total_length);
 	printf("Number of Entries = %"PRIu32"\n", sd->num_entries);

@@ -106,97 +106,97 @@ WIMLIBAPI int wimlib_set_print_errors(bool show_error_messages)
 }
 
 static const char *error_strings[] = {
-	[WIMLIB_ERR_SUCCESS] 
+	[WIMLIB_ERR_SUCCESS]
 		= "Success",
-	[WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE] 
+	[WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE]
 		= "Lookup table is compressed",
-	[WIMLIB_ERR_DECOMPRESSION] 
+	[WIMLIB_ERR_DECOMPRESSION]
 		= "Failed to decompress compressed data",
-	[WIMLIB_ERR_DELETE_STAGING_DIR] 
+	[WIMLIB_ERR_DELETE_STAGING_DIR]
 		= "Failed to delete staging directory",
-	[WIMLIB_ERR_FORK] 
+	[WIMLIB_ERR_FORK]
 		= "Failed to fork another process",
-	[WIMLIB_ERR_FUSE] 
+	[WIMLIB_ERR_FUSE]
 		= "An error was returned by fuse_main()",
-	[WIMLIB_ERR_FUSERMOUNT] 
+	[WIMLIB_ERR_FUSERMOUNT]
 		= "Could not execute the `fusermount' program, or it exited "
 			"with a failure status",
-	[WIMLIB_ERR_IMAGE_COUNT] 
+	[WIMLIB_ERR_IMAGE_COUNT]
 		= "Inconsistent image count among the metadata "
 			"resources, the WIM header, and/or the XML data",
-	[WIMLIB_ERR_IMAGE_NAME_COLLISION] 
+	[WIMLIB_ERR_IMAGE_NAME_COLLISION]
 		= "Tried to add an image with a name that is already in use",
-	[WIMLIB_ERR_INTEGRITY] 
+	[WIMLIB_ERR_INTEGRITY]
 		= "The WIM failed an integrity check",
 	[WIMLIB_ERR_INVALID_CAPTURE_CONFIG]
 		= "The capture configuration string was invalid",
-	[WIMLIB_ERR_INVALID_CHUNK_SIZE] 
+	[WIMLIB_ERR_INVALID_CHUNK_SIZE]
 		= "The WIM is compressed but does not have a chunk "
 			"size of 32768",
-	[WIMLIB_ERR_INVALID_COMPRESSION_TYPE] 
+	[WIMLIB_ERR_INVALID_COMPRESSION_TYPE]
 		= "The WIM is compressed, but is not marked as having LZX or "
 			"XPRESS compression",
-	[WIMLIB_ERR_INVALID_DENTRY] 
+	[WIMLIB_ERR_INVALID_DENTRY]
 		= "A directory entry in the WIM was invalid",
-	[WIMLIB_ERR_INVALID_HEADER_SIZE] 
+	[WIMLIB_ERR_INVALID_HEADER_SIZE]
 		= "The WIM header was not 208 bytes",
-	[WIMLIB_ERR_INVALID_IMAGE] 
+	[WIMLIB_ERR_INVALID_IMAGE]
 		= "Tried to select an image that does not exist in the WIM",
-	[WIMLIB_ERR_INVALID_INTEGRITY_TABLE] 
+	[WIMLIB_ERR_INVALID_INTEGRITY_TABLE]
 		= "The WIM's integrity table is invalid",
 	[WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY]
 		= "An entry in the WIM's lookup table is invalid",
-	[WIMLIB_ERR_INVALID_PARAM] 
+	[WIMLIB_ERR_INVALID_PARAM]
 		= "An invalid parameter was given",
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
 		= "The SHA1 message digest of a WIM resource did not match the expected value",
-	[WIMLIB_ERR_INVALID_RESOURCE_SIZE] 
-		= "A resource entry in the WIM is invalid",
-	[WIMLIB_ERR_LINK] 
+	[WIMLIB_ERR_INVALID_RESOURCE_SIZE]
+		= "A resource entry in the WIM has an invalid size",
+	[WIMLIB_ERR_LINK]
 		= "Failed to create a hard or symbolic link when extracting "
 			"a file from the WIM",
-	[WIMLIB_ERR_MKDIR] 
+	[WIMLIB_ERR_MKDIR]
 		= "Failed to create a directory",
-	[WIMLIB_ERR_MQUEUE] 
+	[WIMLIB_ERR_MQUEUE]
 		= "Failed to create or use a POSIX message queue",
-	[WIMLIB_ERR_NOMEM] 
+	[WIMLIB_ERR_NOMEM]
 		= "Ran out of memory",
-	[WIMLIB_ERR_NOTDIR] 
+	[WIMLIB_ERR_NOTDIR]
 		= "Expected a directory",
-	[WIMLIB_ERR_NOT_A_WIM_FILE] 
+	[WIMLIB_ERR_NOT_A_WIM_FILE]
 		= "The file did not begin with the magic characters that "
 			"identify a WIM file",
-	[WIMLIB_ERR_NO_FILENAME] 
+	[WIMLIB_ERR_NO_FILENAME]
 		= "The WIM is not identified with a filename",
 	[WIMLIB_ERR_NTFS_3G]
 		= "NTFS-3g encountered an error (check errno)",
-	[WIMLIB_ERR_OPEN] 
+	[WIMLIB_ERR_OPEN]
 		= "Failed to open a file",
-	[WIMLIB_ERR_OPENDIR] 
+	[WIMLIB_ERR_OPENDIR]
 		= "Failed to open a directory",
-	[WIMLIB_ERR_READ] 
+	[WIMLIB_ERR_READ]
 		= "Could not read data from a file",
 	[WIMLIB_ERR_READLINK]
 		= "Could not read the target of a symbolic link",
-	[WIMLIB_ERR_RENAME] 
+	[WIMLIB_ERR_RENAME]
 		= "Could not rename a file",
 	[WIMLIB_ERR_SPECIAL_FILE]
 		= "Encountered a special file that cannot be archived",
-	[WIMLIB_ERR_SPLIT_INVALID] 
+	[WIMLIB_ERR_SPLIT_INVALID]
 		= "The WIM is part of an invalid split WIM",
-	[WIMLIB_ERR_SPLIT_UNSUPPORTED] 
+	[WIMLIB_ERR_SPLIT_UNSUPPORTED]
 		= "The WIM is part of a split WIM, which is not supported for this operation",
-	[WIMLIB_ERR_STAT] 
+	[WIMLIB_ERR_STAT]
 		= "Could not read the metadata for a file or directory",
-	[WIMLIB_ERR_TIMEOUT] 
+	[WIMLIB_ERR_TIMEOUT]
 		= "Timed out",
-	[WIMLIB_ERR_UNKNOWN_VERSION] 
+	[WIMLIB_ERR_UNKNOWN_VERSION]
 		= "The WIM file is marked with an unknown version number",
-	[WIMLIB_ERR_UNSUPPORTED] 
+	[WIMLIB_ERR_UNSUPPORTED]
 		= "The requested operation is unsupported",
-	[WIMLIB_ERR_WRITE] 
+	[WIMLIB_ERR_WRITE]
 		= "Failed to write data to a file",
-	[WIMLIB_ERR_XML] 
+	[WIMLIB_ERR_XML]
 		= "The XML data of the WIM is invalid",
 };
 
@@ -228,8 +228,8 @@ char *wimlib_strdup(const char *str)
 {
 	size_t size;
 	char *p;
-	
-	size = strlen(str); 
+
+	size = strlen(str);
 	p = MALLOC(size + 1);
 	if (p)
 		memcpy(p, str, size + 1);
@@ -250,7 +250,7 @@ WIMLIBAPI int wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 	wimlib_free_func    = free_func    ? free_func    : free;
 	wimlib_realloc_func = realloc_func ? realloc_func : realloc;
 
-	xml_set_memory_allocator(wimlib_malloc_func, wimlib_free_func, 
+	xml_set_memory_allocator(wimlib_malloc_func, wimlib_free_func,
 				 wimlib_realloc_func);
 	return 0;
 #else
@@ -287,7 +287,7 @@ char *utf16_to_utf8(const char *utf16_str, size_t utf16_len,
 
 	char *orig_utf8_str = utf8_str;
 
-	size_t num_chars_converted = iconv(cd_utf16_to_utf8, (char**)&utf16_str, 
+	size_t num_chars_converted = iconv(cd_utf16_to_utf8, (char**)&utf16_str,
 			&utf16_bytes_left, &utf8_str, &utf8_bytes_left);
 
 	if (num_chars_converted == (size_t)(-1)) {
@@ -330,7 +330,7 @@ char *utf8_to_utf16(const char *utf8_str, size_t utf8_len,
 
 	char *orig_utf16_str = utf16_str;
 
-	size_t num_chars_converted = iconv(cd_utf8_to_utf16, (char**)&utf8_str, 
+	size_t num_chars_converted = iconv(cd_utf8_to_utf16, (char**)&utf8_str,
 			&utf8_bytes_left, &utf16_str, &utf16_bytes_left);
 
 	if (num_chars_converted == (size_t)(-1)) {
@@ -444,7 +444,7 @@ const char *path_basename(const char *path)
 	return p + 1;
 }
 
-/* 
+/*
  * Returns a pointer to the part of @path following the first colon in the last
  * path component, or NULL if the last path component does not contain a colon.
  */
@@ -458,7 +458,7 @@ const char *path_stream_name(const char *path)
 		return stream_name + 1;
 }
 
-/* 
+/*
  * Splits a file path into the part before the first '/', or the entire name if
  * there is no '/', and the part after the first sequence of '/' characters.
  *
@@ -466,7 +466,7 @@ const char *path_stream_name(const char *path)
  * @first_part_len_ret: A pointer to a `size_t' into which the length of the
  * 				first part of the path will be returned.
  * @return:  		A pointer to the next part of the path, after the first
- * 				sequence of '/', or a pointer to the terminating 
+ * 				sequence of '/', or a pointer to the terminating
  * 				null byte in the case of a path without any '/'.
  */
 const char *path_next_part(const char *path, size_t *first_part_len_ret)
@@ -501,9 +501,9 @@ int get_num_path_components(const char *path)
 }
 
 
-/* 
+/*
  * Prints a string.  Printable characters are printed as-is, while unprintable
- * characters are printed as their octal escape codes. 
+ * characters are printed as their octal escape codes.
  */
 void print_string(const void *string, size_t len)
 {

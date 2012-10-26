@@ -32,7 +32,7 @@ static const u8 wim_magic_chars[WIM_MAGIC_LEN] = {
 			'M', 'S', 'W', 'I', 'M', '\0', '\0', '\0' };
 
 /* Reads the header for a WIM file.  */
-int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
+int read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 {
 	size_t bytes_read;
 	u8 buf[WIM_HEADER_DISK_SIZE];
@@ -66,7 +66,7 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 	/* Byte 12 */
 
 	if (hdr_size != WIM_HEADER_DISK_SIZE) {
-		DEBUG("ERROR: Header is size %u (expected %u)",
+		ERROR("Header is %u bytes (expected %u bytes)",
 		      hdr_size, WIM_HEADER_DISK_SIZE);
 		return WIMLIB_ERR_INVALID_HEADER_SIZE;
 	}
@@ -104,7 +104,9 @@ int read_header(FILE *fp, struct wim_header *hdr, int split_ok)
 	p = get_u16(p, &hdr->part_number);
 	p = get_u16(p, &hdr->total_parts);
 
-	if (!split_ok && (hdr->part_number != 1 || hdr->total_parts != 1)) {
+	if (!(open_flags & WIMLIB_OPEN_FLAG_SPLIT_OK)
+	    && (hdr->part_number != 1 || hdr->total_parts != 1))
+	{
 		ERROR("This WIM is part %u of a %u-part WIM",
 		      hdr->part_number, hdr->total_parts);
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;

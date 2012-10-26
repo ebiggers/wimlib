@@ -55,7 +55,7 @@ void destroy_image_metadata(struct image_metadata *imd, struct lookup_table *lt)
 		lookup_table_remove(lt, imd->metadata_lte);
 }
 
-/* 
+/*
  * Recursively builds a dentry tree from a directory tree on disk, outside the
  * WIM file.
  *
@@ -63,10 +63,10 @@ void destroy_image_metadata(struct image_metadata *imd, struct lookup_table *lt)
  *		modified if successful.  NULL if the file or directory was
  *		excluded from capture.
  *
- * @root_disk_path:  The path to the root of the directory tree on disk. 
+ * @root_disk_path:  The path to the root of the directory tree on disk.
  *
  * @lookup_table: The lookup table for the WIM file.  For each file added to the
- * 		dentry tree being built, an entry is added to the lookup table, 
+ * 		dentry tree being built, an entry is added to the lookup table,
  * 		unless an identical stream is already in the lookup table.
  * 		These lookup table entries that are added point to the path of
  * 		the file on disk.
@@ -128,7 +128,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 		return WIMLIB_ERR_STAT;
 	}
 
-	if ((add_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) && 
+	if ((add_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) &&
 	      !S_ISDIR(root_stbuf.st_mode)) {
 		ERROR("`%s' is not a directory", root_disk_path);
 		return WIMLIB_ERR_NOTDIR;
@@ -202,7 +202,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 	} else if (dentry_is_symlink(root)) { /* Archiving a symbolic link */
 		char deref_name_buf[4096];
 		ssize_t deref_name_len;
-		
+	
 		deref_name_len = readlink(root_disk_path, deref_name_buf,
 					  sizeof(deref_name_buf) - 1);
 		if (deref_name_len >= 0) {
@@ -307,7 +307,7 @@ static int allocate_lte_if_needed(struct dentry *dentry, void *arg)
 	return 0;
 }
 
-/* 
+/*
  * This function takes in a dentry that was previously located only in image(s)
  * in @src_wim, but now is being added to @dest_wim.  For each stream associated
  * with the dentry, if there is already a lookup table entry for that stream in
@@ -362,7 +362,7 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 /*
  * Adds an image (given by its dentry tree) to the image metadata array of a WIM
  * file, adds an entry to the lookup table for the image metadata, updates the
- * image count in the header, and selects the new image. 
+ * image count in the header, and selects the new image.
  *
  * Does not update the XML data.
  *
@@ -392,9 +392,9 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 		return WIMLIB_ERR_NOMEM;
 	}
 
-	memcpy(imd, w->image_metadata, 
+	memcpy(imd, w->image_metadata,
 	       w->hdr.image_count * sizeof(struct image_metadata));
-	
+
 	metadata_lte = new_lookup_table_entry();
 	if (!metadata_lte)
 		goto out_free_imd;
@@ -431,11 +431,11 @@ out_free_imd:
 /*
  * Copies an image, or all the images, from a WIM file, into another WIM file.
  */
-WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim, 
-				  int src_image, 
-				  WIMStruct *dest_wim, 
-				  const char *dest_name, 
-				  const char *dest_description, 
+WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
+				  int src_image,
+				  WIMStruct *dest_wim,
+				  const char *dest_name,
+				  const char *dest_description,
 				  int flags,
 				  WIMStruct **additional_swms,
 				  unsigned num_additional_swms)
@@ -461,7 +461,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 
 			/* multi-image export. */
 
-			if ((flags & WIMLIB_EXPORT_FLAG_BOOT) && 
+			if ((flags & WIMLIB_EXPORT_FLAG_BOOT) &&
 			      (src_wim->hdr.boot_idx == 0))
 			{
 				/* Specifying the boot flag on a multi-image
@@ -486,7 +486,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 				if (i != src_wim->hdr.boot_idx)
 					export_flags &= ~WIMLIB_EXPORT_FLAG_BOOT;
 
-				ret = wimlib_export_image(src_wim, i, dest_wim, 
+				ret = wimlib_export_image(src_wim, i, dest_wim,
 							  NULL, NULL,
 							  export_flags,
 							  additional_swms,
@@ -495,8 +495,10 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 					return ret;
 			}
 			return 0;
+		} else if (src_wim->hdr.image_count == 1) {
+			src_image = 1;
 		} else {
-			src_image = 1; 
+			return 0;
 		}
 	}
 
@@ -600,8 +602,8 @@ out:
 	return ret;
 }
 
-/* 
- * Deletes an image from the WIM. 
+/*
+ * Deletes an image from the WIM.
  */
 WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 {
@@ -742,7 +744,7 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 		FREE(config_str);
 		return WIMLIB_ERR_NOMEM;
 	}
-	
+
 	memcpy(config_str, _config_str, config_len);
 	next_p = config_str;
 	config->config_str = config_str;
@@ -758,7 +760,7 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 			goto out_destroy;
 		}
-		
+	
 		next_p = eol + 1;
 		bytes_remaining -= (next_p - p);
 		if (eol == p)
@@ -887,7 +889,7 @@ bool exclude_path(const char *path, const struct capture_config *config,
 		     && path[config->prefix_len] == '/')
 			path += config->prefix_len;
 	}
-	return match_pattern(path, basename, &config->exclusion_list) && 
+	return match_pattern(path, basename, &config->exclusion_list) &&
 		!match_pattern(path, basename, &config->exclusion_exception);
 
 }
@@ -910,7 +912,7 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 		 const char *config_str, size_t config_len,
 		 int flags,
 		 int (*capture_tree)(struct dentry **, const char *,
-			 	     struct lookup_table *, 
+			 	     struct lookup_table *,
 				     struct wim_security_data *,
 				     const struct capture_config *,
 				     int, void *),
@@ -1027,7 +1029,7 @@ out_destroy_config:
 /*
  * Adds an image to a WIM file from a directory tree on disk.
  */
-WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir, 
+WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
 			       const char *name, const char *config_str,
 			       size_t config_len, int flags)
 {

@@ -201,6 +201,12 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 	end_lookup_table_offset = w->hdr.lookup_table_res_entry.offset +
 				  w->hdr.lookup_table_res_entry.size;
 
+	if (end_lookup_table_offset < WIM_HEADER_DISK_SIZE) {
+		ERROR("WIM lookup table ends before WIM header ends???");
+		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
+		goto out;
+	}
+
 	bytes_to_check = end_lookup_table_offset - WIM_HEADER_DISK_SIZE;
 
 	expected_num_entries = (bytes_to_check + chunk_size - 1) / chunk_size;

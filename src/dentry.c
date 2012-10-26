@@ -68,7 +68,7 @@ static u64 dentry_correct_length(const struct dentry *dentry)
  * Returns true if @dentry has the UTF-8 file name @name that has length
  * @name_len.
  */
-static bool dentry_has_name(const struct dentry *dentry, const char *name, 
+static bool dentry_has_name(const struct dentry *dentry, const char *name,
 			    size_t name_len)
 {
 	if (dentry->file_name_utf8_len != name_len)
@@ -199,7 +199,7 @@ void stbuf_to_inode(const struct stat *stbuf, struct inode *inode)
 }
 
 #ifdef WITH_FUSE
-/* Transfers file attributes from a struct inode to a `stat' buffer. 
+/* Transfers file attributes from a struct inode to a `stat' buffer.
  *
  * The lookup table entry tells us which stream in the inode we are statting.
  * For a named data stream, everything returned is the same as the unnamed data
@@ -244,11 +244,11 @@ int inode_to_stbuf(const struct inode *inode, struct lookup_table_entry *lte,
 }
 #endif
 
-/* 
+/*
  * Calls a function on all directory entries in a directory tree.  It is called
  * on a parent before its children.
  */
-int for_dentry_in_tree(struct dentry *root, 
+int for_dentry_in_tree(struct dentry *root,
 		       int (*visitor)(struct dentry*, void*), void *arg)
 {
 	int ret;
@@ -273,11 +273,11 @@ int for_dentry_in_tree(struct dentry *root,
 	return 0;
 }
 
-/* 
+/*
  * Like for_dentry_in_tree(), but the visitor function is always called on a
  * dentry's children before on itself.
  */
-int for_dentry_in_tree_depth(struct dentry *root, 
+int for_dentry_in_tree_depth(struct dentry *root,
 			     int (*visitor)(struct dentry*, void*), void *arg)
 {
 	int ret;
@@ -297,9 +297,9 @@ int for_dentry_in_tree_depth(struct dentry *root,
 	return visitor(root, arg);
 }
 
-/* 
+/*
  * Calculate the full path of @dentry, based on its parent's full path and on
- * its UTF-8 file name. 
+ * its UTF-8 file name.
  */
 int calculate_dentry_full_path(struct dentry *dentry, void *ignore)
 {
@@ -347,12 +347,12 @@ oom:
 	return WIMLIB_ERR_NOMEM;
 }
 
-/* 
- * Recursively calculates the subdir offsets for a directory tree. 
+/*
+ * Recursively calculates the subdir offsets for a directory tree.
  *
  * @dentry:  The root of the directory tree.
  * @subdir_offset_p:  The current subdirectory offset; i.e., the subdirectory
- * 	offset for @dentry. 
+ * 	offset for @dentry.
  */
 void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 {
@@ -389,14 +389,14 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 	}
 }
 
-/* Returns the child of @dentry that has the file name @name.  
+/* Returns the child of @dentry that has the file name @name.
  * Returns NULL if no child has the name. */
-struct dentry *get_dentry_child_with_name(const struct dentry *dentry, 
+struct dentry *get_dentry_child_with_name(const struct dentry *dentry,
 					  const char *name)
 {
 	struct dentry *child;
 	size_t name_len;
-	
+
 	child = dentry->d_inode->children;
 	if (child) {
 		name_len = strlen(name);
@@ -557,7 +557,7 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	} else {
 		hash = inode_stream_hash(inode, 0);
 		if (hash) {
-			printf("Hash              = 0x"); 
+			printf("Hash              = 0x");
 			print_hash(hash);
 			putchar('\n');
 			putchar('\n');
@@ -570,7 +570,7 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 			inode->ads_entries[i].stream_name_len);
 		hash = inode_stream_hash(inode, i + 1);
 		if (hash) {
-			printf("Hash              = 0x"); 
+			printf("Hash              = 0x");
 			print_hash(hash);
 			putchar('\n');
 		}
@@ -613,7 +613,7 @@ static struct inode *new_inode()
 	return inode;
 }
 
-/* 
+/*
  * Creates an unlinked directory entry.
  *
  * @name:  The UTF-8 filename of the new dentry.
@@ -623,7 +623,7 @@ static struct inode *new_inode()
 struct dentry *new_dentry(const char *name)
 {
 	struct dentry *dentry;
-	
+
 	dentry = MALLOC(sizeof(struct dentry));
 	if (!dentry)
 		goto err;
@@ -724,7 +724,7 @@ static void put_inode(struct inode *inode)
 	}
 }
 
-/* Frees a WIM dentry. 
+/* Frees a WIM dentry.
  *
  * The inode is freed only if its link count is decremented to 0.
  */
@@ -751,7 +751,7 @@ void put_dentry(struct dentry *dentry)
 		free_dentry(dentry);
 }
 
-/* 
+/*
  * This function is passed as an argument to for_dentry_in_tree_depth() in order
  * to free a directory tree.  __args is a pointer to a `struct free_dentry_args'.
  */
@@ -775,7 +775,7 @@ static int do_free_dentry(struct dentry *dentry, void *__lookup_table)
 	return 0;
 }
 
-/* 
+/*
  * Unlinks and frees a dentry tree.
  *
  * @root: 		The root of the tree.
@@ -797,7 +797,7 @@ int increment_dentry_refcnt(struct dentry *dentry, void *ignore)
 	return 0;
 }
 
-/* 
+/*
  * Links a dentry into the directory tree.
  *
  * @dentry: The dentry to link.
@@ -823,8 +823,8 @@ void link_dentry(struct dentry *dentry, struct dentry *parent)
 
 
 #ifdef WITH_FUSE
-/* 
- * Unlink a dentry from the directory tree. 
+/*
+ * Unlink a dentry from the directory tree.
  *
  * Note: This merely removes it from the in-memory tree structure.
  */
@@ -928,7 +928,7 @@ static int verify_inode(struct inode *inode, const WIMStruct *w)
 			num_unnamed_streams++;
 	}
 	if (num_unnamed_streams > 1) {
-		ERROR("Dentry `%s' has multiple (%u) un-named streams", 
+		ERROR("Dentry `%s' has multiple (%u) un-named streams",
 		      first_dentry->full_path_utf8, num_unnamed_streams);
 		goto out;
 	}
@@ -1010,7 +1010,7 @@ struct ads_entry *inode_get_ads_entry(struct inode *inode,
 #endif
 
 #if defined(WITH_FUSE) || defined(WITH_NTFS_3G)
-/* 
+/*
  * Add an alternate stream entry to an inode and return a pointer to it, or NULL
  * if memory could not be allocated.
  */
@@ -1076,7 +1076,7 @@ void inode_remove_ads(struct inode *inode, u16 idx,
 
 
 
-/* 
+/*
  * Reads the alternate data stream entries for a dentry.
  *
  * @p:	Pointer to buffer that starts with the first alternate stream entry.
@@ -1092,7 +1092,7 @@ void inode_remove_ads(struct inode *inode, u16 idx,
  *
  * struct ads_entry_on_disk {
  * 	u64  length;          // Length of the entry, in bytes.  This includes
- *				    all fields (including the stream name and 
+ *				    all fields (including the stream name and
  *				    null terminator if present, AND the padding!).
  * 	u64  reserved;        // Seems to be unused
  * 	u8   hash[20];        // SHA1 message digest of the uncompressed stream
@@ -1240,7 +1240,7 @@ out_free_ads_entries:
 	return ret;
 }
 
-/* 
+/*
  * Reads a directory entry, including all alternate data stream entries that
  * follow it, from the WIM image's metadata resource.
  *
@@ -1255,7 +1255,7 @@ out_free_ads_entries:
  * special "end of directory" dentry and not a real dentry.  If nonzero, this
  * was a real dentry.
  */
-int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len, 
+int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		u64 offset, struct dentry *dentry)
 {
 	const u8 *p;
@@ -1330,7 +1330,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	p = get_u64(p, &inode->last_write_time);
 
 	p = get_bytes(p, SHA1_HASH_SIZE, inode->hash);
-	
+
 	/*
 	 * I don't know what's going on here.  It seems like M$ screwed up the
 	 * reparse points, then put the fields in the same place and didn't
@@ -1349,14 +1349,14 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	/* By the way, the reparse_reserved field does not actually exist (at
 	 * least when the file is not a reparse point) */
-	
+
 	p = get_u16(p, &inode->num_ads);
 
 	p = get_u16(p, &short_name_len);
 	p = get_u16(p, &file_name_len);
 
 	/* We now know the length of the file name and short name.  Make sure
-	 * the length of the dentry is large enough to actually hold them. 
+	 * the length of the dentry is large enough to actually hold them.
 	 *
 	 * The calculated length here is unaligned to allow for the possibility
 	 * that the dentry->length names an unaligned length, although this
@@ -1367,7 +1367,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	if (dentry->length < calculated_size) {
 		ERROR("Unexpected end of directory entry! (Expected "
 		      "at least %"PRIu64" bytes, got %"PRIu64" bytes. "
-		      "short_name_len = %hu, file_name_len = %hu)", 
+		      "short_name_len = %hu, file_name_len = %hu)",
 		      calculated_size, dentry->length,
 		      short_name_len, file_name_len);
 		return WIMLIB_ERR_INVALID_DENTRY;
@@ -1385,7 +1385,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		p = get_bytes(p, file_name_len, file_name);
 
 		/* Convert filename to UTF-8. */
-		file_name_utf8 = utf16_to_utf8(file_name, file_name_len, 
+		file_name_utf8 = utf16_to_utf8(file_name, file_name_len,
 					       &file_name_utf8_len);
 
 		if (!file_name_utf8) {
@@ -1450,7 +1450,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		p += 2;
 	}
 
-	/* 
+	/*
 	 * Read the alternate data streams, if present.  dentry->num_ads tells
 	 * us how many they are, and they will directly follow the dentry
 	 * on-disk.
@@ -1520,7 +1520,7 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 	struct dentry cur_child;
 	int ret;
 
-	/* 
+	/*
 	 * If @dentry has no child dentries, nothing more needs to be done for
 	 * this branch.  This is the case for regular files, symbolic links, and
 	 * *possibly* empty directories (although an empty directory may also
@@ -1533,7 +1533,7 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 	while (1) {
 
 		/* Read next child of @dentry into @cur_child. */
-		ret = read_dentry(metadata_resource, metadata_resource_len, 
+		ret = read_dentry(metadata_resource, metadata_resource_len,
 				  cur_offset, &cur_child);
 		if (ret != 0)
 			break;
@@ -1567,7 +1567,7 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		/* If there are children of this child, call this procedure
 		 * recursively. */
 		if (child->subdir_offset != 0) {
-			ret = read_dentry_tree(metadata_resource, 
+			ret = read_dentry_tree(metadata_resource,
 					       metadata_resource_len, child);
 			if (ret != 0)
 				break;
@@ -1591,7 +1591,7 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 	return ret;
 }
 
-/* 
+/*
  * Writes a WIM dentry to an output buffer.
  *
  * @dentry:  The dentry structure.
@@ -1681,7 +1681,7 @@ static u8 *write_dentry_tree_recursive(const struct dentry *parent, u8 *p)
 	if (parent->subdir_offset == 0)
 		return p;
 
-	/* Write child dentries and end-of-directory entry. 
+	/* Write child dentries and end-of-directory entry.
 	 *
 	 * Note: we need to write all of this dentry's children before
 	 * recursively writing the directory trees rooted at each of the child

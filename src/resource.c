@@ -390,8 +390,21 @@ const u8 *get_resource_entry(const u8 *p, struct resource_entry *entry)
 	p = get_u8(p, &flags);
 	entry->size = size;
 	entry->flags = flags;
+
+	/* offset and original_size are truncated to 62 bits to avoid possible
+	 * overflows, when converting to a signed 64-bit integer (off_t) or when
+	 * adding size or original_size.  This is okay since no one would ever
+	 * actually have a WIM bigger than 4611686018427387903 bytes... */
 	p = get_u64(p, &entry->offset);
+	if (entry->offset & 0xc000000000000000ULL) {
+		WARNING("Truncating offset in resource entry");
+		entry->offset &= 0x3fffffffffffffffULL;
+	}
 	p = get_u64(p, &entry->original_size);
+	if (entry->original_size & 0xc000000000000000ULL) {
+		WARNING("Truncating original_size in resource entry");
+		entry->original_size &= 0x3fffffffffffffffULL;
+	}
 	return p;
 }
 
