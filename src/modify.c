@@ -1007,7 +1007,7 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 		goto out_destroy_imd;
 
 	if (flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
-		wimlib_set_boot_idx(w, w->hdr.image_count);
+		w->hdr.boot_idx = w->hdr.image_count;
 
 	return 0;
 out_destroy_imd:
