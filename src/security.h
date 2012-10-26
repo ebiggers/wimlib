@@ -135,7 +135,7 @@ enum ace_type {
 /* At the start of each type of access control entry.  */
 typedef struct {
 	/* enum ace_type, specifies what type of ACE this is.  */
-	u8 type; 
+	u8 type;
 
 	/* bitwise OR of the inherit ACE flags #defined above */
 	u8 flags;

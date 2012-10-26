@@ -47,15 +47,15 @@
 #endif
 
 
-/* 
+/*
  * Reads all or part of a compressed resource into an in-memory buffer.
  *
  * @fp:      		The FILE* for the WIM file.
- * @resource_compressed_size:  	 The compressed size of the resource.  
+ * @resource_compressed_size:  	 The compressed size of the resource.
  * @resource_uncompressed_size:  The uncompressed size of the resource.
  * @resource_offset:		 The offset of the start of the resource from
  * 					the start of the stream @fp.
- * @resource_ctype:	The compression type of the resource. 
+ * @resource_ctype:	The compression type of the resource.
  * @len:		The number of bytes of uncompressed data to read from
  * 				the resource.
  * @offset:		The offset of the bytes to read within the uncompressed
@@ -65,9 +65,9 @@
  *
  * Returns zero on success, nonzero on failure.
  */
-static int read_compressed_resource(FILE *fp, u64 resource_compressed_size, 
-				    u64 resource_uncompressed_size, 
-				    u64 resource_offset, int resource_ctype, 
+static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
+				    u64 resource_uncompressed_size,
+				    u64 resource_offset, int resource_ctype,
 				    u64 len, u64 offset, u8  contents_ret[])
 {
 
@@ -98,7 +98,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	 * The chunk offsets are measured relative to the end of the chunk
 	 * table.  The first chunk is omitted from the table in the WIM file
 	 * because its offset is implicitly given by the fact that it directly
-	 * follows the chunk table and therefore must have an offset of 0. 
+	 * follows the chunk table and therefore must have an offset of 0.
 	 */
 
 	/* Calculate how many chunks the resource conists of in its entirety. */
@@ -146,7 +146,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	/* According to M$'s documentation, if the uncompressed size of
 	 * the file is greater than 4 GB, the chunk entries are 8-byte
 	 * integers.  Otherwise, they are 4-byte integers. */
-	u64 chunk_entry_size = (resource_uncompressed_size >= (u64)1 << 32) ? 
+	u64 chunk_entry_size = (resource_uncompressed_size >= (u64)1 << 32) ?
 									8 : 4;
 
 	/* Size of the full chunk table in the WIM file. */
@@ -160,11 +160,11 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 
 	/* Number of entries we need to actually read from the chunk
 	 * table (excludes the implicit first chunk). */
-	u64 num_needed_chunk_entries = (start_chunk == 0) ? 
+	u64 num_needed_chunk_entries = (start_chunk == 0) ?
 				num_needed_chunks - 1 : num_needed_chunks;
 
 	/* Skip over unneeded chunk table entries. */
-	u64 file_offset_of_needed_chunk_entries = resource_offset + 
+	u64 file_offset_of_needed_chunk_entries = resource_offset +
 				start_table_idx * chunk_entry_size;
 	if (fseeko(fp, file_offset_of_needed_chunk_entries, SEEK_SET) != 0) {
 		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" to read "
@@ -201,7 +201,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	/* Done with the chunk table now.  We must now seek to the first chunk
 	 * that is needed for the read. */
 
-	u64 file_offset_of_first_needed_chunk = resource_offset + 
+	u64 file_offset_of_first_needed_chunk = resource_offset +
 				chunk_table_size + chunk_offsets[0];
 	if (fseeko(fp, file_offset_of_first_needed_chunk, SEEK_SET) != 0) {
 		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" to read "
@@ -237,7 +237,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 			 * expand to WIM_CHUNK_SIZE uncompressed, and the amount
 			 * of compressed data for the chunk is given by the
 			 * difference of offsets in the chunk offset table. */
-			compressed_chunk_size = chunk_offsets[i + 1 - start_chunk] - 
+			compressed_chunk_size = chunk_offsets[i + 1 - start_chunk] -
 						chunk_offsets[i - start_chunk];
 			uncompressed_chunk_size = WIM_CHUNK_SIZE;
 		} else {
@@ -245,15 +245,15 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 			 * bytes in the file resource, and the last uncompressed
 			 * chunk has size equal to however many bytes are left-
 			 * that is, the remainder of the uncompressed size when
-			 * divided by WIM_CHUNK_SIZE. 
+			 * divided by WIM_CHUNK_SIZE.
 			 *
 			 * Note that the resource_compressed_size includes the
 			 * chunk table, so the size of it must be subtracted. */
-			compressed_chunk_size = resource_compressed_size - 
+			compressed_chunk_size = resource_compressed_size -
 						chunk_table_size -
 						chunk_offsets[i - start_chunk];
 
-			uncompressed_chunk_size = resource_uncompressed_size % 
+			uncompressed_chunk_size = resource_uncompressed_size %
 								WIM_CHUNK_SIZE;
 
 			/* If the remainder is 0, the last chunk actually
@@ -280,7 +280,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 			end_offset = WIM_CHUNK_SIZE - 1;
 
 		u64 partial_chunk_size = end_offset + 1 - start_offset;
-		bool is_partial_chunk = (partial_chunk_size != 
+		bool is_partial_chunk = (partial_chunk_size !=
 						uncompressed_chunk_size);
 
 		DEBUG2("start_offset = %u, end_offset = %u", start_offset,
@@ -300,7 +300,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 					return WIMLIB_ERR_READ;
 				}
 			}
-			if (fread(out_p, 1, partial_chunk_size, fp) != 
+			if (fread(out_p, 1, partial_chunk_size, fp) !=
 					partial_chunk_size)
 				goto err;
 		} else {
@@ -308,7 +308,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 			int ret;
 
 			/* Read the compressed data into compressed_buf. */
-			if (fread(compressed_buf, 1, compressed_chunk_size, 
+			if (fread(compressed_buf, 1, compressed_chunk_size,
 						fp) != compressed_chunk_size)
 				goto err;
 
@@ -319,7 +319,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 
 				ret = decompress(compressed_buf,
 						compressed_chunk_size,
-						uncompressed_buf, 
+						uncompressed_buf,
 						uncompressed_chunk_size);
 				if (ret != 0)
 					return WIMLIB_ERR_DECOMPRESSION;
@@ -350,7 +350,7 @@ err:
 	return WIMLIB_ERR_READ;
 }
 
-/* 
+/*
  * Reads uncompressed data from an open file stream.
  */
 int read_uncompressed_resource(FILE *fp, u64 offset, u64 len,
@@ -526,7 +526,7 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 	}
 }
 
-/* 
+/*
  * Reads all the data from the resource corresponding to a WIM lookup table
  * entry.
  *
@@ -555,7 +555,7 @@ struct chunk_table {
 	u64 offsets[0];
 };
 
-/* 
+/*
  * Allocates and initializes a chunk table, and reserves space for it in the
  * output file.
  */
@@ -601,7 +601,7 @@ out:
 	return ret;
 }
 
-/* 
+/*
  * Compresses a chunk of a WIM resource.
  *
  * @chunk:		Uncompressed data of the chunk.
@@ -645,7 +645,7 @@ static int compress_chunk(const u8 chunk[], unsigned chunk_size,
  * @chunk:	  Uncompressed data of the chunk.
  * @chunk_size:	  Size of the chunk (<= WIM_CHUNK_SIZE)
  * @out_fp:	  FILE * to write tho chunk to.
- * @out_ctype:	  Compression type to use when writing the chunk (ignored if no 
+ * @out_ctype:	  Compression type to use when writing the chunk (ignored if no
  * 			chunk table provided)
  * @chunk_tab:	  Pointer to chunk table being created.  It is updated with the
  * 			offset of the chunk we write.
@@ -679,7 +679,7 @@ static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 		*chunk_tab->cur_offset_p++ = chunk_tab->cur_offset;
 		chunk_tab->cur_offset += out_chunk_size;
 	}
-	
+
 	if (fwrite(out_chunk, 1, out_chunk_size, out_fp) != out_chunk_size) {
 		ERROR_WITH_ERRNO("Failed to write WIM resource chunk");
 		return WIMLIB_ERR_WRITE;
@@ -687,7 +687,7 @@ static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 	return 0;
 }
 
-/* 
+/*
  * Finishes a WIM chunk tale and writes it to the output file at the correct
  * offset.
  *
@@ -743,7 +743,7 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
  * 			the same as the compression type of the WIM resource we
  * 			need to read, we simply copy the data (i.e. we do not
  * 			uncompress it, then compress it again).
- * @out_res_entry:  If non-NULL, a resource entry that is filled in with the 
+ * @out_res_entry:  If non-NULL, a resource entry that is filled in with the
  * 		    offset, original size, compressed size, and compression flag
  * 		    of the output resource.
  *
@@ -781,7 +781,7 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 				 "stream");
 		return WIMLIB_ERR_WRITE;
 	}
-	
+
 	/* Are the compression types the same?  If so, do a raw copy (copy
 	 * without decompressing and recompressing the data). */
 	raw = (wim_resource_compression_type(lte) == out_ctype
@@ -876,7 +876,7 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 
 	/* Raw copy:  The new compressed size is the same as the old compressed
 	 * size
-	 * 
+	 *
 	 * Using WIM_COMPRESSION_TYPE_NONE:  The new compressed size is the
 	 * original size
 	 *
@@ -1002,10 +1002,10 @@ static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 	return 0;
 }
 
-/* 
+/*
  * Extracts the first @size bytes of the WIM resource specified by @lte to the
  * open file descriptor @fd.
- * 
+ *
  * Returns 0 on success; nonzero on failure.
  */
 int extract_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd,
@@ -1044,9 +1044,9 @@ int extract_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd,
 	return 0;
 }
 
-/* 
+/*
  * Extracts the WIM resource specified by @lte to the open file descriptor @fd.
- * 
+ *
  * Returns 0 on success; nonzero on failure.
  */
 int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd)
@@ -1054,7 +1054,7 @@ int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd
 	return extract_wim_resource_to_fd(lte, fd, wim_resource_size(lte));
 }
 
-/* 
+/*
  * Copies the file resource specified by the lookup table entry @lte from the
  * input WIM to the output WIM that has its FILE * given by
  * ((WIMStruct*)wim)->out_fp.
@@ -1075,7 +1075,7 @@ int copy_resource(struct lookup_table_entry *lte, void *wim)
 		return 0;
 
 	ret = write_wim_resource(lte, w->out_fp,
-				 wim_resource_compression_type(lte), 
+				 wim_resource_compression_type(lte),
 				 &lte->output_resource_entry);
 	if (ret != 0)
 		return ret;
@@ -1084,14 +1084,14 @@ int copy_resource(struct lookup_table_entry *lte, void *wim)
 	return 0;
 }
 
-/* 
+/*
  * Writes a dentry's resources, including the main file resource as well as all
- * alternate data streams, to the output file. 
+ * alternate data streams, to the output file.
  *
  * @dentry:  The dentry for the file.
  * @wim_p:   A pointer to the WIMStruct containing @dentry.
  *
- * @return zero on success, nonzero on failure. 
+ * @return zero on success, nonzero on failure.
  */
 int write_dentry_resources(struct dentry *dentry, void *wim_p)
 {
@@ -1117,7 +1117,7 @@ int write_dentry_resources(struct dentry *dentry, void *wim_p)
 	return ret;
 }
 
-/* 
+/*
  * Reads the metadata metadata resource from the WIM file.  The metadata
  * resource consists of the security data, followed by the directory entry for
  * the root directory, followed by all the other directory entries in the
@@ -1208,7 +1208,7 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_free_security_data;
 	}
-		
+
 	ret = read_dentry(buf, metadata_len, dentry_offset, dentry);
 
 	/* This is the root dentry, so set its pointers correctly. */
@@ -1319,7 +1319,7 @@ int write_metadata_resource(WIMStruct *w)
 	DEBUG("Writing dentry tree.");
 	p = write_dentry_tree(root, p);
 
-	/* 
+	/*
 	 * Append 20 random bytes to the metadata resource so that we don't have
 	 * identical metadata resources if we happen to append exactly the same
 	 * image twice without any changes in timestamps.  If this were to

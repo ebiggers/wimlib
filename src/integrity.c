@@ -34,18 +34,18 @@
 #define INTEGRITY_CHUNK_SIZE 10485760
 
 /*
- * Verifies the integrity of a WIM. 
+ * Verifies the integrity of a WIM.
  *
- * @fp:		   FILE* of the WIM, currently positioned at the end of the header. 
+ * @fp:		   FILE* of the WIM, currently positioned at the end of the header.
  * @num_bytes:	   Number of bytes to verify the integrity of.
  * @chunk_size:	   Chunk size per SHA1 message digest.
  * @sha1sums:	   Array of SHA1 message digests; 20 bytes each, one per chunk.
  * @show_progress: Nonzero if the percent complete is to be printed after every
  * 			chunk.
- * @status:	   On success, set to WIM_INTEGRITY_OK or WIM_INTEGRITY_NOT_OK 
+ * @status:	   On success, set to WIM_INTEGRITY_OK or WIM_INTEGRITY_NOT_OK
  * 			based on whether the WIM is intact or not.
  */
-static int verify_integrity(FILE *fp, u64 num_bytes, u32 chunk_size, 
+static int verify_integrity(FILE *fp, u64 num_bytes, u32 chunk_size,
 			    const u8 *sha1sums, int show_progress,
 			    int *status)
 {
@@ -65,10 +65,10 @@ static int verify_integrity(FILE *fp, u64 num_bytes, u32 chunk_size,
 	bytes_remaining = num_bytes;
 	while (bytes_remaining != 0) {
 		if (show_progress) {
-			percent_done = (num_bytes - bytes_remaining) * 100 / 
+			percent_done = (num_bytes - bytes_remaining) * 100 /
 					num_bytes;
 			printf("Verifying integrity of WIM (%"PRIu64" bytes "
-					"remaining, %u%% done)       \r", 
+					"remaining, %u%% done)       \r",
 					bytes_remaining, percent_done);
 			fflush(stdout);
 		}
@@ -103,7 +103,7 @@ verify_integrity_error:
 }
 
 /*
- * Verifies the integrity of the WIM. 
+ * Verifies the integrity of the WIM.
  *
  * @show_progress: Nonzero if the percent complete is to be printed after every
  * 			chunk.
@@ -186,7 +186,7 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 
 	if (integrity_table_size != expected_size) {
 		ERROR("Integrity table is %u bytes, but expected %"PRIu64" "
-		      "bytes to hold %u entries", 
+		      "bytes to hold %u entries",
 		      integrity_table_size, expected_size, num_entries);
 		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 		goto out;
@@ -232,24 +232,24 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 	}
 	/* call verify_integrity(), which does the actual checking of the SHA1
 	 * message digests. */
-	ret = verify_integrity(w->fp, bytes_to_check, chunk_size, p, 
+	ret = verify_integrity(w->fp, bytes_to_check, chunk_size, p,
 			       show_progress, status);
 out:
 	FREE(buf);
 	return ret;
 }
 
-/* 
+/*
  * Writes integrity information to the output stream for a WIM file being
- * written. 
+ * written.
  *
  * @end_header_offset is the offset of the byte after the header, which is the
  * 	beginning of the region that is checksummed.
  *
  * @end_lookup_table_offset is the offset of the byte after the lookup table,
- * 	which is the end of the region that is checksummed. 
+ * 	which is the end of the region that is checksummed.
  */
-int write_integrity_table(FILE *out, u64 end_header_offset, 
+int write_integrity_table(FILE *out, u64 end_header_offset,
 			  u64 end_lookup_table_offset, int show_progress)
 {
 	u64   bytes_to_check;
@@ -301,13 +301,13 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 
 	while (bytes_remaining != 0) {
 
-		uint percent_done = (bytes_to_check - bytes_remaining) * 
+		uint percent_done = (bytes_to_check - bytes_remaining) *
 				    100 / bytes_to_check;
 
 		if (show_progress) {
 			printf("Calculating integrity checksums for WIM "
 					"(%"PRIu64" bytes remaining, %u%% "
-					"done)      \r", 
+					"done)      \r",
 					bytes_remaining, percent_done);
 			fflush(stdout);
 		}

@@ -199,7 +199,7 @@ do_test 'echo 1 > file;
 	 setfattr -n user.aa -v 1111 file;
 	 setfattr -n user.aaa -v 1111 file;
 	 setfattr -n user.aaaa -v 1111 file;'
-	
+
 msg "file with named data streams with same contents as other file"
 do_test 'echo -n > file;
 	 setfattr -n user.a -v 1111 file;
@@ -236,7 +236,7 @@ do_test 'touch file;
 	 touch file2;
 	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` file
 	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_2.base64` file'
-	
+
 msg "files with different security descriptors and some with the same security descriptor"
 do_test 'touch file;
 	 touch file2;

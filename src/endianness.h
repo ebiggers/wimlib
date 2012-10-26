@@ -20,7 +20,7 @@ static inline uint32_t bswap32(uint32_t n)
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3)
 	return __builtin_bswap32(n);
 #else
-	return (n << 24) | ((n & 0xff00) << 8) | ((n & 0xff0000) >> 8) | 
+	return (n << 24) | ((n & 0xff00) << 8) | ((n & 0xff0000) >> 8) |
 							(n >> 24);
 #endif
 }
@@ -32,9 +32,9 @@ static inline uint64_t bswap64(uint64_t n)
 #ifdef __GNUC__
 	return __builtin_bswap64(n);
 #else
-	return (n << 56) | ((n & 0xff00) << 40) | ((n & 0xff0000) << 24) | 
-			((n & 0xff000000) << 8) | ((n & 0xff00000000) >> 8) | 
-			((n & 0xff0000000000) >> 24) | 
+	return (n << 56) | ((n & 0xff00) << 40) | ((n & 0xff0000) << 24) |
+			((n & 0xff000000) << 8) | ((n & 0xff00000000) >> 8) |
+			((n & 0xff0000000000) >> 24) |
 			((n & 0xff000000000000) >> 40) | (n >> 56);
 #endif
 }

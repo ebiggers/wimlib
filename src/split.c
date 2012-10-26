@@ -49,7 +49,7 @@ static int finish_swm(WIMStruct *w, struct lookup_table_entry *lte_chain_head,
 	off_t lookup_table_offset = ftello(w->out_fp);
 	int ret;
 
-	DEBUG("Writing lookup table for SWM (offset %"PRIu64")", 
+	DEBUG("Writing lookup table for SWM (offset %"PRIu64")",
 			lookup_table_offset);
 
 	while (lte_chain_head != NULL) {
@@ -65,7 +65,7 @@ static int finish_swm(WIMStruct *w, struct lookup_table_entry *lte_chain_head,
 	if (lookup_table_offset == -1 || xml_data_offset == -1)
 		return WIMLIB_ERR_WRITE;
 	w->hdr.lookup_table_res_entry.offset = lookup_table_offset;
-	w->hdr.lookup_table_res_entry.size = 
+	w->hdr.lookup_table_res_entry.size =
 				xml_data_offset - lookup_table_offset;
 	ret = finish_write(w, WIM_ALL_IMAGES, write_flags, 0);
 	if (ret != 0)
@@ -88,7 +88,7 @@ static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 	if (lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
 		return 0;
 
-	if (args->size_remaining < 0 || 
+	if (args->size_remaining < 0 ||
 			(u64)args->size_remaining < lte->resource_entry.size) {
 
 		/* No space for this resource.  Finish the previous swm and
@@ -99,7 +99,7 @@ static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 		args->lte_chain_tail = NULL;
 		args->lte_chain_head = NULL;
 
-		sprintf(args->swm_base_name + args->swm_base_name_len, "%d", 
+		sprintf(args->swm_base_name + args->swm_base_name_len, "%d",
 			++args->part_number);
 		strcat(args->swm_base_name, args->swm_suffix);
 
@@ -107,8 +107,8 @@ static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 
 		if (args->write_flags & WIMLIB_OPEN_FLAG_SHOW_PROGRESS)
 			printf("Writing `%s' (%"PRIu64" of %"PRIu64" bytes, "
-			       "%.0f%% done)\n", 
-			       args->swm_base_name, 
+			       "%.0f%% done)\n",
+			       args->swm_base_name,
 			       args->total_bytes_written,
 			       args->total_bytes,
 			       (double)args->total_bytes_written /
@@ -131,7 +131,7 @@ static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 
 /* Splits the WIM file @wimfile into multiple parts prefixed by @swm_name with
  * size at most @part_size. */
-WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name, 
+WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 			   size_t part_size, int flags)
 {
 	int ret;
@@ -177,8 +177,8 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 	}
 
 	if (write_flags & WIMLIB_OPEN_FLAG_SHOW_PROGRESS)
-		printf("Writing `%s' (%.2f %% done)\n", 
-			swm_name, 
+		printf("Writing `%s' (%.2f %% done)\n",
+			swm_name,
 			(double)total_bytes_written /
 				(double)total_bytes * 100.0);
 
@@ -248,7 +248,7 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 		put_u16(&buf[0], i);
 		put_u16(&buf[2], total_parts);
 
-		if (fseek(fp, 40, SEEK_SET) != 0 || 
+		if (fseek(fp, 40, SEEK_SET) != 0 ||
 				fwrite(buf, 1, sizeof(buf), fp) != sizeof(buf)
 				|| fclose(fp) != 0) {
 			ERROR_WITH_ERRNO("Error overwriting header of `%s'",

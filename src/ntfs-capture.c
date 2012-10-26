@@ -87,12 +87,12 @@ static void insert_sd_node(struct sd_node *new, struct sd_node *root)
 	if (cmp < 0) {
 		if (root->left)
 			insert_sd_node(new, root->left);
-		else 
+		else
 			root->left = new;
 	} else if (cmp > 0) {
 		if (root->right)
 			insert_sd_node(new, root->right);
-		else 
+		else
 			root->right = new;
 	} else {
 		wimlib_assert(0);
@@ -100,7 +100,7 @@ static void insert_sd_node(struct sd_node *new, struct sd_node *root)
 }
 
 /* Returns the security ID of the security data having a SHA1 message digest of
- * @hash in the security descriptor index tree rooted at @root. 
+ * @hash in the security descriptor index tree rooted at @root.
  *
  * If not found, return -1. */
 static int lookup_sd(const u8 hash[SHA1_HASH_SIZE], struct sd_node *root)
@@ -191,7 +191,7 @@ static inline ntfschar *attr_record_name(ATTR_RECORD *ar)
 	return (ntfschar*)((u8*)ar + le16_to_cpu(ar->name_offset));
 }
 
-/* Calculates the SHA1 message digest of a NTFS attribute. 
+/* Calculates the SHA1 message digest of a NTFS attribute.
  *
  * @ni:  The NTFS inode containing the attribute.
  * @ar:	 The ATTR_RECORD describing the attribute.
@@ -276,7 +276,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 		u64 data_size = ntfs_get_attribute_value_length(actx->attr);
 		u64 name_length = actx->attr->name_length;
 
-		if (data_size == 0) { 
+		if (data_size == 0) {
 			if (errno != 0) {
 				ERROR_WITH_ERRNO("Failed to get size of attribute of "
 						 "`%s'", path);
@@ -371,7 +371,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 				goto out_free_lte;
 
 			wimlib_assert(new_ads_entry->stream_name_len == name_length * 2);
-				
+
 			new_ads_entry->lte = lte;
 		}
 	}
@@ -660,7 +660,7 @@ static int build_dentry_tree_ntfs(struct dentry **root_p,
 	ntfs_volume **ntfs_vol_p = extra_arg;
 
 	DEBUG("Mounting NTFS volume `%s' read-only", device);
-	
+
 	vol = ntfs_mount(device, MS_RDONLY);
 	if (!vol) {
 		ERROR_WITH_ERRNO("Failed to mount NTFS volume `%s' read-only",

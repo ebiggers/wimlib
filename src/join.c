@@ -94,7 +94,7 @@ int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 	for (unsigned i = 0; i < num_additional_swms; i++) {
 		if (additional_swms[i]->hdr.total_parts != total_parts) {
 			ERROR("WIM `%s' says there are %u parts in the spanned set, "
-			      "but %u parts were provided", 
+			      "but %u parts were provided",
 			      additional_swms[i]->filename,
 			      additional_swms[i]->hdr.total_parts,
 			      total_parts);
@@ -125,7 +125,7 @@ int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 		}
 		if (swm->hdr.part_number == 1) {
 			ERROR("WIMs `%s' and `%s' both are marked as the "
-			      "first WIM in the spanned set", 
+			      "first WIM in the spanned set",
 			      w->filename, swm->filename);
 			return WIMLIB_ERR_SPLIT_INVALID;
 		}
@@ -154,7 +154,7 @@ int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 	return 0;
 }
 
-/* 
+/*
  * Joins lookup tables from the parts of a split WIM.
  *
  * @w specifies the first part, while @additional_swms and @num_additional_swms
@@ -223,7 +223,7 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 		}
 		swms[i]->out_fp = out_fp;
 		swms[i]->hdr.part_number = 1;
-		ret = for_lookup_table_entry(swms[i]->lookup_table, 
+		ret = for_lookup_table_entry(swms[i]->lookup_table,
 					     copy_resource, swms[i]);
 		if (ret != 0)
 			return ret;
@@ -234,11 +234,11 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 	}
 	swms[0]->write_metadata = true;
 	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
-		printf("Writing %d metadata resources\n", 
+		printf("Writing %d metadata resources\n",
 			swms[0]->hdr.image_count);
 
 	for (i = 0; i < swms[0]->hdr.image_count; i++) {
-		ret = copy_resource(swms[0]->image_metadata[i].metadata_lte, 
+		ret = copy_resource(swms[0]->image_metadata[i].metadata_lte,
 				    swms[0]);
 		if (ret != 0)
 			return ret;
@@ -263,7 +263,7 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 		return WIMLIB_ERR_WRITE;
 	}
 	swms[0]->hdr.lookup_table_res_entry.offset = lookup_table_offset;
-	swms[0]->hdr.lookup_table_res_entry.size = 
+	swms[0]->hdr.lookup_table_res_entry.size =
 					xml_data_offset - lookup_table_offset;
 
 
@@ -276,7 +276,7 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 }
 
 
-WIMLIBAPI int wimlib_join(const char **swm_names, unsigned num_swms, 
+WIMLIBAPI int wimlib_join(const char **swm_names, unsigned num_swms,
 			  const char *output_path, int flags)
 {
 	int i;
@@ -295,7 +295,7 @@ WIMLIBAPI int wimlib_join(const char **swm_names, unsigned num_swms,
 	ZERO_ARRAY(swms);
 
 	for (i = 0; i < num_swms; i++) {
-		ret = wimlib_open_wim(swm_names[i], 
+		ret = wimlib_open_wim(swm_names[i],
 				      flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &swms[i]);
 		if (ret != 0)
 			goto out;

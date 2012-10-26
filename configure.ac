@@ -7,7 +7,7 @@ AC_C_BIGENDIAN
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 LT_INIT
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([Makefile 
+AC_CONFIG_FILES([Makefile
 		doc/Doxyfile
 		wimlib.pc
 		doc/imagex.1
@@ -60,46 +60,46 @@ AC_SUBST([LIBXML2_LDADD], [$LIBXML2_LDADD])
 AC_SUBST([LIBXML2_CFLAGS], [$LIBXML2_CFLAGS])
 
 AC_MSG_CHECKING([whether to include debugging messages])
-AC_ARG_ENABLE([debug], 
+AC_ARG_ENABLE([debug],
 	AS_HELP_STRING([--enable-debug], [include lots of debugging messages]),
 	[ENABLE_DEBUG=$enableval],
 	[ENABLE_DEBUG=no]
 	)
 AC_MSG_RESULT([$ENABLE_DEBUG])
 if test "x$ENABLE_DEBUG" = "xyes"; then
-	AC_DEFINE([ENABLE_DEBUG], [1], 
+	AC_DEFINE([ENABLE_DEBUG], [1],
 		  	[Define to 1 if including lots of debug messages.])
 fi
 
 AC_MSG_CHECKING([whether to include more debugging messages])
-AC_ARG_ENABLE([more_debug], 
-	AS_HELP_STRING([--enable-more-debug], 
+AC_ARG_ENABLE([more_debug],
+	AS_HELP_STRING([--enable-more-debug],
 		       	[include even more debugging messages]),
 	[ENABLE_MORE_DEBUG=$enableval],
 	[ENABLE_MORE_DEBUG=no]
 	)
 AC_MSG_RESULT([$ENABLE_MORE_DEBUG])
 if test "x$ENABLE_MORE_DEBUG" = "xyes"; then
-	AC_DEFINE([ENABLE_MORE_DEBUG], [1], 
+	AC_DEFINE([ENABLE_MORE_DEBUG], [1],
 		  	[Define to 1 if including even more debug messages.])
 fi
 
 AC_MSG_CHECKING([whether to include error messages])
-AC_ARG_ENABLE([error_messages], 
-	AS_HELP_STRING([--disable-error-messages], 
+AC_ARG_ENABLE([error_messages],
+	AS_HELP_STRING([--disable-error-messages],
 		       	[do not compile in error messsages]),
 	[ENABLE_ERROR_MESSAGES=$enableval],
 	[ENABLE_ERROR_MESSAGES=yes]
 	)
 AC_MSG_RESULT([$ENABLE_ERROR_MESSAGES])
 if test "x$ENABLE_ERROR_MESSAGES" = "xyes"; then
-	AC_DEFINE([ENABLE_ERROR_MESSAGES], [1], 
+	AC_DEFINE([ENABLE_ERROR_MESSAGES], [1],
 		  	[Define to 1 if including error messages])
 fi
 
 AC_MSG_CHECKING([whether to support custom memory allocation functions])
-AC_ARG_ENABLE([custom_memory_allocator], 
-	AS_HELP_STRING([--disable-custom-memory-allocator], 
+AC_ARG_ENABLE([custom_memory_allocator],
+	AS_HELP_STRING([--disable-custom-memory-allocator],
 		       [do not support the use of custom memory allocation
 			functions]),
 	[ENABLE_CUSTOM_MEMORY_ALLOCATOR=$enableval],
@@ -107,7 +107,7 @@ AC_ARG_ENABLE([custom_memory_allocator],
 	)
 AC_MSG_RESULT([$ENABLE_CUSTOM_MEMORY_ALLOCATOR])
 if test "x$ENABLE_CUSTOM_MEMORY_ALLOCATOR" = "xyes"; then
-	AC_DEFINE([ENABLE_CUSTOM_MEMORY_ALLOCATOR], [1], 
+	AC_DEFINE([ENABLE_CUSTOM_MEMORY_ALLOCATOR], [1],
 		[Define to 1 if supporting custom memory allocation functions])
 fi
 
@@ -153,7 +153,7 @@ if test "x$WITH_NTFS_3G" = "xyes"; then
 
 	AC_CHECK_LIB([ntfs-3g], [ntfs_mount], [],
 			[AC_MSG_ERROR([Cannot find libntfs-3g.
-	Without libntfs-3g, wimlib cannot include support for capturing and 
+	Without libntfs-3g, wimlib cannot include support for capturing and
 	applying WIMs on NTFS filesystems while preserving NTFS-specific data
 	such as security descriptors and alternate data streams.  You should
 	either install libntfs-3g, or configure with --without-ntfs-3g to
@@ -171,8 +171,8 @@ AC_SUBST([LIBNTFS_3G_CFLAGS], [$LIBNTFS_3G_CFLAGS])
 
 AC_MSG_CHECKING([whether to include support for mounting WIMs])
 AC_ARG_WITH([fuse],
-		AS_HELP_STRING([--without-fuse], [build without libfuse.  
-					This will disable the ability to mount 
+		AS_HELP_STRING([--without-fuse], [build without libfuse.
+					This will disable the ability to mount
 					WIM files.]),
 	[WITH_FUSE=$withval],
 	[WITH_FUSE=yes]
@@ -183,7 +183,7 @@ if test "x$WITH_FUSE" = "xyes"; then
 
 
 	AC_CHECK_LIB([fuse], [fuse_main_real], [have_fuse=true],
-			[AC_MSG_ERROR([Cannot find libfuse.  
+			[AC_MSG_ERROR([Cannot find libfuse.
 	Without libfuse, wimlib cannot include support for mounting WIMs.  You
 	should either install libfuse, or configure with --without-fuse to
 	disable support for mounting WIMs.])
@@ -232,10 +232,10 @@ AC_ARG_ENABLE([ssse3-sha1],
 	[ENABLE_SSSE3_SHA1=$enableval],
 	[ENABLE_SSSE3_SHA1=no]
 	)
-	
+
 AC_MSG_RESULT([$ENABLE_SSSE3_SHA1])
 if test "x$ENABLE_SSSE3_SHA1" = "xyes"; then
-	AC_DEFINE([ENABLE_SSSE3_SHA1], [1], 
+	AC_DEFINE([ENABLE_SSSE3_SHA1], [1],
 		  	[Define to 1 if using vectorized implementation of SHA1])
 	SSSE3_SHA1_OBJ=sha1-ssse3.lo
 	AX_PROG_NASM
@@ -253,7 +253,7 @@ else
 			    		rather than use external libcrypto from
 					OpenSSL (default is autodetect)]),
 	[WITH_LIBCRYPTO=$withval],
-	[AC_CHECK_LIB([crypto], [SHA1], 
+	[AC_CHECK_LIB([crypto], [SHA1],
 		     [WITH_LIBCRYPTO=yes],
 		     [AC_MSG_WARN([Cannot find libcrypto: using stand-alone SHA1 code instead of OpenSSL])
 		     WITH_LIBCRYPTO=no

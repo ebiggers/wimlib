@@ -28,7 +28,7 @@
 #include "io.h"
 
 /* First 8 bytes in every WIM file. */
-static const u8 wim_magic_chars[WIM_MAGIC_LEN] = { 
+static const u8 wim_magic_chars[WIM_MAGIC_LEN] = {
 			'M', 'S', 'W', 'I', 'M', '\0', '\0', '\0' };
 
 /* Reads the header for a WIM file.  */
@@ -44,7 +44,7 @@ int read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 	u32 chunk_size;
 
 	DEBUG("Reading WIM header.");
-	
+
 	bytes_read = fread(buf, 1, WIM_MAGIC_LEN, fp);
 
 	if (bytes_read != WIM_MAGIC_LEN)
@@ -75,7 +75,7 @@ int read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 
 	hdr_rem_size = WIM_HEADER_DISK_SIZE - WIM_MAGIC_LEN - sizeof(u32);
 
-	bytes_read = fread(buf + WIM_MAGIC_LEN + sizeof(u32), 1, 
+	bytes_read = fread(buf + WIM_MAGIC_LEN + sizeof(u32), 1,
 			   hdr_rem_size, fp);
 	if (bytes_read != hdr_rem_size)
 		goto err;
@@ -91,7 +91,7 @@ int read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 
 	p = get_u32(p, &hdr->flags);
 	p = get_u32(p, &chunk_size);
-	if (chunk_size != WIM_CHUNK_SIZE && 
+	if (chunk_size != WIM_CHUNK_SIZE &&
 	    (hdr->flags & WIM_HDR_FLAG_COMPRESSION)) {
 		ERROR("Unexpected chunk size of %u! Ask the author to "
 		      "implement support for other chunk sizes.",
@@ -147,7 +147,7 @@ err:
 	return WIMLIB_ERR_READ;
 }
 
-/* 
+/*
  * Writes the header for a WIM file.
  *
  * @hdr: 	A pointer to a struct wim_header structure that describes the header.
@@ -165,7 +165,7 @@ int write_header(const struct wim_header *hdr, FILE *out_fp)
 	p = put_u32(p, WIM_HEADER_DISK_SIZE);
 	p = put_u32(p, WIM_VERSION);
 	p = put_u32(p, hdr->flags);
-	p = put_u32(p, (hdr->flags & WIM_HDR_FLAG_COMPRESSION) ? 
+	p = put_u32(p, (hdr->flags & WIM_HDR_FLAG_COMPRESSION) ?
 				WIM_CHUNK_SIZE : 0);
 	/* byte 24 */
 
@@ -201,11 +201,11 @@ int init_header(struct wim_header *hdr, int ctype)
 		hdr->flags = 0;
 		break;
 	case WIM_COMPRESSION_TYPE_LZX:
-		hdr->flags = WIM_HDR_FLAG_COMPRESSION | 
+		hdr->flags = WIM_HDR_FLAG_COMPRESSION |
 			     WIM_HDR_FLAG_COMPRESS_LZX;
 		break;
 	case WIM_COMPRESSION_TYPE_XPRESS:
-		hdr->flags = WIM_HDR_FLAG_COMPRESSION | 
+		hdr->flags = WIM_HDR_FLAG_COMPRESSION |
 			     WIM_HDR_FLAG_COMPRESS_XPRESS;
 		break;
 	default:
@@ -258,37 +258,37 @@ WIMLIBAPI void wimlib_print_header(const WIMStruct *w)
 	printf("Part Number                 = %hu\n", w->hdr.part_number);
 	printf("Total Parts                 = %hu\n", w->hdr.total_parts);
 	printf("Image Count                 = %u\n", hdr->image_count);
-	printf("Lookup Table Size           = %"PRIu64"\n", 
+	printf("Lookup Table Size           = %"PRIu64"\n",
 				(u64)hdr->lookup_table_res_entry.size);
-	printf("Lookup Table Flags          = 0x%hhx\n", 
+	printf("Lookup Table Flags          = 0x%hhx\n",
 				hdr->lookup_table_res_entry.flags);
 	printf("Lookup Table Offset         = %"PRIu64"\n",
 				hdr->lookup_table_res_entry.offset);
-	printf("Lookup Table Original_size  = %"PRIu64"\n", 
+	printf("Lookup Table Original_size  = %"PRIu64"\n",
 				hdr->lookup_table_res_entry.original_size);
-	printf("XML Data Size               = %"PRIu64"\n", 
+	printf("XML Data Size               = %"PRIu64"\n",
 				(u64)hdr->xml_res_entry.size);
-	printf("XML Data Flags              = 0x%hhx\n", 
+	printf("XML Data Flags              = 0x%hhx\n",
 				hdr->xml_res_entry.flags);
-	printf("XML Data Offset             = %"PRIu64"\n", 
+	printf("XML Data Offset             = %"PRIu64"\n",
 				hdr->xml_res_entry.offset);
-	printf("XML Data Original Size      = %"PRIu64"\n", 
+	printf("XML Data Original Size      = %"PRIu64"\n",
 				hdr->xml_res_entry.original_size);
-	printf("Boot Metadata Size          = %"PRIu64"\n", 
+	printf("Boot Metadata Size          = %"PRIu64"\n",
 				(u64)hdr->boot_metadata_res_entry.size);
-	printf("Boot Metadata Flags         = 0x%hhx\n", 
+	printf("Boot Metadata Flags         = 0x%hhx\n",
 				hdr->boot_metadata_res_entry.flags);
-	printf("Boot Metadata Offset        = %"PRIu64"\n", 
+	printf("Boot Metadata Offset        = %"PRIu64"\n",
 				hdr->boot_metadata_res_entry.offset);
-	printf("Boot Metadata Original Size = %"PRIu64"\n", 
+	printf("Boot Metadata Original Size = %"PRIu64"\n",
 				hdr->boot_metadata_res_entry.original_size);
 	printf("Boot Index                  = %u\n", hdr->boot_idx);
-	printf("Integrity Size              = %"PRIu64"\n", 
+	printf("Integrity Size              = %"PRIu64"\n",
 					(u64)hdr->integrity.size);
-	printf("Integrity Flags             = 0x%hhx\n", 
+	printf("Integrity Flags             = 0x%hhx\n",
 					hdr->integrity.flags);
-	printf("Integrity Offset            = %"PRIu64"\n", 
+	printf("Integrity Offset            = %"PRIu64"\n",
 					hdr->integrity.offset);
-	printf("Integrity Original_size     = %"PRIu64"\n", 
+	printf("Integrity Original_size     = %"PRIu64"\n",
 					hdr->integrity.original_size);
 }

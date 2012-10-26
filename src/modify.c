@@ -202,7 +202,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 	} else if (dentry_is_symlink(root)) { /* Archiving a symbolic link */
 		char deref_name_buf[4096];
 		ssize_t deref_name_len;
-	
+
 		deref_name_len = readlink(root_disk_path, deref_name_buf,
 					  sizeof(deref_name_buf) - 1);
 		if (deref_name_len >= 0) {
@@ -760,7 +760,7 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 			goto out_destroy;
 		}
-	
+
 		next_p = eol + 1;
 		bytes_remaining -= (next_p - p);
 		if (eol == p)

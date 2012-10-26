@@ -1,7 +1,7 @@
 /*
  * lzx-comp.c
  *
- * LZX compression routines.  
+ * LZX compression routines.
  *
  * This code was originally based on code written by Matthew T. Russotto
  * 	(liblzxcomp).
@@ -29,7 +29,7 @@
 
 
 
-/* 
+/*
  * This file provides lzx_compress(), a function to compress an in-memory buffer
  * of data using LZX compression, as used in the WIM file format.
  *
@@ -41,7 +41,7 @@
  * tricky to understand.  Basically it is the following:
  *
  * - Preprocess the input data (LZX-specific)
- * - Go through the input data and determine matches.  This part is based on 
+ * - Go through the input data and determine matches.  This part is based on
  *       code from zlib, and a hash table of 3-character strings is used to
  *       accelerate the process of finding matches.
  * - Build the Huffman trees based on the frequencies of symbols determined
@@ -72,7 +72,7 @@ struct lzx_codes {
 };
 
 struct lzx_freq_tables {
-	u32 main_freq_table[LZX_MAINTREE_NUM_SYMBOLS]; 
+	u32 main_freq_table[LZX_MAINTREE_NUM_SYMBOLS];
 	u32 len_freq_table[LZX_LENTREE_NUM_SYMBOLS];
 	u32 aligned_freq_table[LZX_ALIGNEDTREE_NUM_SYMBOLS];
 };
@@ -92,13 +92,13 @@ static uint lzx_get_position_slot(uint formatted_offset)
 	int mid;
 
 	/* Calculate position base using binary search of table; if log2 can be
-	 * done in hardware, approximation might work; 
+	 * done in hardware, approximation might work;
 	 * trunc(log2(formatted_offset*formatted_offset)) gets either the proper
 	 * position slot or the next one, except for slots 0, 1, and 39-49
 	 *
 	 * Slots 0-1 are handled by the R0-R1 procedures
 	 *
-	 * Slots 36-49 (formatted_offset >= 262144) can be found by 
+	 * Slots 36-49 (formatted_offset >= 262144) can be found by
 	 * (formatted_offset/131072) + 34 == (formatted_offset >> 17) + 34;
 	 */
 	if (formatted_offset >= 262144) {
@@ -133,7 +133,7 @@ static u32 lzx_record_literal(u8 literal, void *__main_freq_tab)
  * alphabets.  The return value is a 32-bit integer that, if the high bit is
  * set, contains the match length, the position slot, and the position footer
  * for the match.  */
-static u32 lzx_record_match(uint match_offset, uint match_len, 
+static u32 lzx_record_match(uint match_offset, uint match_len,
 			    void *__freq_tabs, void *__queue)
 {
 	struct lzx_freq_tables *freq_tabs = __freq_tabs;
@@ -209,7 +209,7 @@ static u32 lzx_record_match(uint match_offset, uint match_len,
 	return match;
 }
 
-/* 
+/*
  * Writes a compressed literal match to the output.
  *
  * @out:         The output bitstream.
@@ -266,7 +266,7 @@ static int lzx_write_match(struct output_bitstream *out, int block_type,
 	main_symbol = len_pos_header + LZX_NUM_CHARS;
 
 	/* Output main symbol. */
-	ret = bitstream_put_bits(out, codes->main_codewords[main_symbol], 
+	ret = bitstream_put_bits(out, codes->main_codewords[main_symbol],
 				 codes->main_lens[main_symbol]);
 	if (ret != 0)
 		return ret;
@@ -289,15 +289,15 @@ static int lzx_write_match(struct output_bitstream *out, int block_type,
 	 * aligned offset tree.  Otherwise, only the verbatim bits need to be
 	 * output. */
 	if ((block_type == LZX_BLOCKTYPE_ALIGNED) && (num_extra_bits >= 3)) {
-		
+
 		verbatim_bits = position_footer >> 3;
-		ret = bitstream_put_bits(out, verbatim_bits, 
+		ret = bitstream_put_bits(out, verbatim_bits,
 					 num_extra_bits - 3);
 		if (ret != 0)
 			return ret;
 
 		aligned_bits = (position_footer & 7);
-		ret = bitstream_put_bits(out, 
+		ret = bitstream_put_bits(out,
 					 codes->aligned_codewords[aligned_bits],
 					 codes->aligned_lens[aligned_bits]);
 		if (ret != 0)
@@ -312,7 +312,7 @@ static int lzx_write_match(struct output_bitstream *out, int block_type,
 	return 0;
 }
 
-/* 
+/*
  * Writes all compressed literals in a block, both matches and literal bytes, to
  * the output bitstream.
  *
@@ -324,9 +324,9 @@ static int lzx_write_match(struct output_bitstream *out, int block_type,
  * @codes:	Pointer to a structure that contains the codewords for the
  * 			main, length, and aligned offset Huffman codes.
  */
-static int lzx_write_compressed_literals(struct output_bitstream *ostream, 
+static int lzx_write_compressed_literals(struct output_bitstream *ostream,
 					 int block_type,
-			 		 const u32 match_tab[], 
+			 		 const u32 match_tab[],
 					 uint  num_compressed_literals,
 					 const struct lzx_codes *codes)
 {
@@ -341,14 +341,14 @@ static int lzx_write_compressed_literals(struct output_bitstream *ostream,
 		 * actual match (1) or a literal uncompressed byte (0) */
 		if (match & 0x80000000) {
 			/* match */
-			ret = lzx_write_match(ostream, block_type, match, 
+			ret = lzx_write_match(ostream, block_type, match,
 					      codes);
 			if (ret != 0)
 				return ret;
 		} else {
 			/* literal byte */
 			wimlib_assert(match < LZX_NUM_CHARS);
-			ret = bitstream_put_bits(ostream, 
+			ret = bitstream_put_bits(ostream,
 						 codes->main_codewords[match],
 						 codes->main_lens[match]);
 			if (ret != 0)
@@ -358,7 +358,7 @@ static int lzx_write_compressed_literals(struct output_bitstream *ostream,
 	return 0;
 }
 
-/* 
+/*
  * Writes a compressed Huffman tree to the output, preceded by the pretree for
  * it.
  *
@@ -374,8 +374,8 @@ static int lzx_write_compressed_literals(struct output_bitstream *ostream,
  * @lens:	The code lengths for the Huffman tree, indexed by symbol.
  * @num_symbols:	The number of symbols in the code.
  */
-static int lzx_write_compressed_tree(struct output_bitstream *out, 
-				const u8 lens[], 
+static int lzx_write_compressed_tree(struct output_bitstream *out,
+				const u8 lens[],
 				uint num_symbols)
 {
 	/* Frequencies of the length symbols, including the RLE symbols (NOT the
@@ -497,14 +497,14 @@ static int lzx_write_compressed_tree(struct output_bitstream *out,
 
 	/* Build the pretree from the frequencies of the length symbols. */
 
-	make_canonical_huffman_code(LZX_PRETREE_NUM_SYMBOLS, 
-				    LZX_MAX_CODEWORD_LEN, 
-				    pretree_freqs, pretree_lens, 
+	make_canonical_huffman_code(LZX_PRETREE_NUM_SYMBOLS,
+				    LZX_MAX_CODEWORD_LEN,
+				    pretree_freqs, pretree_lens,
 				    pretree_codewords);
 
 	/* Write the lengths of the pretree codes to the output. */
 	for (i = 0; i < LZX_PRETREE_NUM_SYMBOLS; i++)
-		bitstream_put_bits(out, pretree_lens[i], 
+		bitstream_put_bits(out, pretree_lens[i],
 				   LZX_PRETREE_ELEMENT_SIZE);
 
 	/* Write the length symbols, encoded with the pretree, to the output. */
@@ -513,7 +513,7 @@ static int lzx_write_compressed_tree(struct output_bitstream *out,
 	while (i < output_syms_idx) {
 		pretree_sym = output_syms[i++];
 
-		bitstream_put_bits(out, pretree_codewords[pretree_sym], 
+		bitstream_put_bits(out, pretree_codewords[pretree_sym],
 				   pretree_lens[pretree_sym]);
 		switch (pretree_sym) {
 		case 17:
@@ -524,7 +524,7 @@ static int lzx_write_compressed_tree(struct output_bitstream *out,
 			break;
 		case 19:
 			bitstream_put_bits(out, output_syms[i++], 1);
-			bitstream_put_bits(out, 
+			bitstream_put_bits(out,
 					   pretree_codewords[output_syms[i]],
 					   pretree_lens[output_syms[i]]);
 			i++;
@@ -541,20 +541,20 @@ static int lzx_write_compressed_tree(struct output_bitstream *out,
 static void lzx_make_huffman_codes(const struct lzx_freq_tables *freq_tabs,
 				struct lzx_codes *codes)
 {
-	make_canonical_huffman_code(LZX_MAINTREE_NUM_SYMBOLS, 
+	make_canonical_huffman_code(LZX_MAINTREE_NUM_SYMBOLS,
 					LZX_MAX_CODEWORD_LEN,
-					freq_tabs->main_freq_table, 
+					freq_tabs->main_freq_table,
 					codes->main_lens,
 					codes->main_codewords);
 
-	make_canonical_huffman_code(LZX_LENTREE_NUM_SYMBOLS, 
+	make_canonical_huffman_code(LZX_LENTREE_NUM_SYMBOLS,
 					LZX_MAX_CODEWORD_LEN,
-					freq_tabs->len_freq_table, 
+					freq_tabs->len_freq_table,
 					codes->len_lens,
 					codes->len_codewords);
 
 	make_canonical_huffman_code(LZX_ALIGNEDTREE_NUM_SYMBOLS, 8,
-					freq_tabs->aligned_freq_table, 
+					freq_tabs->aligned_freq_table,
 					codes->aligned_lens,
 					codes->aligned_codewords);
 }
@@ -566,7 +566,7 @@ static void lzx_make_huffman_codes(const struct lzx_freq_tables *freq_tabs,
  * no bit to indicate that it actually is used, unlike in the LZX compressed
  * format as used in other file formats such as the cabinet format, where a bit
  * is reserved for that purpose. */
-static void do_call_insn_preprocessing(u8 uncompressed_data[], 
+static void do_call_insn_preprocessing(u8 uncompressed_data[],
 						uint uncompressed_data_len)
 {
 	int i = 0;
@@ -576,7 +576,7 @@ static void do_call_insn_preprocessing(u8 uncompressed_data[],
 
 	/* Not enabled in the last 6 bytes, which means the 5-byte call
 	 * instruction cannot start in the last *10* bytes. */
-	while (i < uncompressed_data_len - 10) { 
+	while (i < uncompressed_data_len - 10) {
 		if (uncompressed_data[i] != 0xe8) {
 			i++;
 			continue;
@@ -612,7 +612,7 @@ static const struct lz_params lzx_lz_params = {
 	.too_far        = 4096,
 };
 
-/* 
+/*
  * Performs LZX compression on a block of data.
  *
  * @__uncompressed_data:  Pointer to the data to be compressed.
@@ -627,7 +627,7 @@ static const struct lz_params lzx_lz_params = {
  * @compressed_data and @compressed_len_ret will contain the compressed data and
  * its length.  A return value of nonzero means that compressing the data did
  * not reduce its size, and @compressed_data will not contain the full
- * compressed data. 
+ * compressed data.
  */
 int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 		 void *compressed_data, uint *compressed_len_ret)
@@ -703,21 +703,21 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 
 	/* Write the pre-tree and lengths for the first LZX_NUM_CHARS symbols in the
 	 * main tree. */
-	ret = lzx_write_compressed_tree(&ostream, codes.main_lens, 
+	ret = lzx_write_compressed_tree(&ostream, codes.main_lens,
 				        LZX_NUM_CHARS);
 	if (ret != 0)
 		return ret;
 
 	/* Write the pre-tree and symbols for the rest of the main tree. */
-	ret = lzx_write_compressed_tree(&ostream, codes.main_lens + 
-					LZX_NUM_CHARS, 
-					LZX_MAINTREE_NUM_SYMBOLS - 
+	ret = lzx_write_compressed_tree(&ostream, codes.main_lens +
+					LZX_NUM_CHARS,
+					LZX_MAINTREE_NUM_SYMBOLS -
 						LZX_NUM_CHARS);
 	if (ret != 0)
 		return ret;
 
 	/* Write the pre-tree and symbols for the length tree. */
-	ret = lzx_write_compressed_tree(&ostream, codes.len_lens, 
+	ret = lzx_write_compressed_tree(&ostream, codes.len_lens,
 					LZX_LENTREE_NUM_SYMBOLS);
 	if (ret != 0)
 		return ret;
@@ -743,7 +743,7 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 	/* Verify that we really get the same thing back when decompressing. */
 	LZX_DEBUG("Verifying the compressed data.");
 	u8 buf[uncompressed_len];
-	ret = lzx_decompress(compressed_data, compressed_len, buf, 
+	ret = lzx_decompress(compressed_data, compressed_len, buf,
 			     uncompressed_len);
 	if (ret != 0) {
 		ERROR("lzx_compress(): Failed to decompress data we compressed");

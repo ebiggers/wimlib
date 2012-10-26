@@ -54,7 +54,7 @@ struct ntfs_apply_args {
 	WIMStruct *w;
 };
 
-/* 
+/*
  * Extracts a WIM resource to a NTFS attribute.
  */
 static int
@@ -260,7 +260,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 	if (dentry->d_inode->security_id != -1) {
 		const struct wim_security_data *sd;
 		const char *descriptor;
-		
+
 		sd = wim_const_security_data(w);
 		wimlib_assert(dentry->d_inode->security_id < sd->num_entries);
 		descriptor = sd->descriptors[dentry->d_inode->security_id];
@@ -270,7 +270,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 		ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ACL,
 						 ni, dir_ni, descriptor,
 					   	 sd->sizes[dentry->d_inode->security_id], 0);
-				
+
 		if (ret != 0) {
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
 					dentry->full_path_utf8);
@@ -327,7 +327,7 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 				    WIMStruct *w);
 
-/* 
+/*
  * If @dentry is part of a hard link group, search for hard-linked dentries in
  * the same directory that have a nonempty DOS (short) filename.  There should
  * be exactly 0 or 1 such dentries.  If there is 1, extract that dentry first,
@@ -390,7 +390,7 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
 	return 0;
 }
 
-/* 
+/*
  * Applies a WIM dentry to a NTFS filesystem.
  *
  * @dentry:  The WIM dentry to apply
@@ -449,7 +449,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 		}
 	}
 
-	/* 
+	/*
 	 * Create a directory or file.
 	 *
 	 * Note: For symbolic links that are not directory junctions, pass
@@ -689,7 +689,7 @@ static int do_wim_apply_image_ntfs(WIMStruct *w, const char *device, int extract
 	int ret;
 	struct dentry *root;
 	struct ntfs_apply_args args;
-	
+
 	DEBUG("Mounting NTFS volume `%s'", device);
 	vol = ntfs_mount(device, 0);
 	if (!vol) {
@@ -729,7 +729,7 @@ out:
 }
 
 
-/* 
+/*
  * API entry point for applying a WIM image to a NTFS volume.
  *
  * Please note that this is a NTFS *volume* and not a directory.  The intention

@@ -22,8 +22,8 @@ struct dentry;
  * including the stream length field (see below). */
 #define WIM_ADS_ENTRY_DISK_SIZE 38
 
-/* 
- * Reparse tags documented at 
+/*
+ * Reparse tags documented at
  * http://msdn.microsoft.com/en-us/library/dd541667(v=prot.10).aspx
  */
 #define WIM_IO_REPARSE_TAG_RESERVED_ZERO	0x00000000
@@ -99,9 +99,9 @@ static inline bool ads_entries_have_same_name(const struct ads_entry *entry_1,
 		      entry_1->stream_name_len) == 0;
 }
 
-/* 
+/*
  * In-memory structure for a WIM directory entry (dentry).  There is a directory
- * tree for each image in the WIM. 
+ * tree for each image in the WIM.
  *
  * Note that this is a directory entry and not an inode.  Since NTFS allows hard
  * links, it's possible for a NTFS inode to correspond to multiple WIM dentries.
@@ -137,7 +137,7 @@ struct dentry {
 	struct dentry *next;
 	struct dentry *prev;
 
-	/* 
+	/*
 	 * Size of directory entry on disk, in bytes.  Typical size is around
 	 * 104 to 120 bytes.
 	 *
@@ -225,7 +225,7 @@ struct inode {
 	int32_t security_id;
 
 	/* %true iff the inode's lookup table entries has been resolved (i.e.
-	 * the @lte field is valid, but the @hash field is not valid) 
+	 * the @lte field is valid, but the @hash field is not valid)
 	 *
 	 * (This is not an on-disk field.) */
 	u8 resolved : 1;
@@ -309,12 +309,12 @@ extern void stbuf_to_inode(const struct stat *stbuf, struct inode *inode);
 extern int inode_to_stbuf(const struct inode *inode,
 			  struct lookup_table_entry *lte, struct stat *stbuf);
 
-extern int for_dentry_in_tree(struct dentry *root, 
-			      int (*visitor)(struct dentry*, void*), 
+extern int for_dentry_in_tree(struct dentry *root,
+			      int (*visitor)(struct dentry*, void*),
 			      void *args);
 
-extern int for_dentry_in_tree_depth(struct dentry *root, 
-				    int (*visitor)(struct dentry*, void*), 
+extern int for_dentry_in_tree_depth(struct dentry *root,
+				    int (*visitor)(struct dentry*, void*),
 				    void *args);
 
 extern int calculate_dentry_full_path(struct dentry *dentry, void *ignore);
@@ -326,7 +326,7 @@ extern int get_names(char **name_utf16_ret, char **name_utf8_ret,
 extern struct dentry *get_dentry(struct WIMStruct *w, const char *path);
 extern struct inode *wim_pathname_to_inode(struct WIMStruct *w,
 					   const char *path);
-extern struct dentry *get_dentry_child_with_name(const struct dentry *dentry, 
+extern struct dentry *get_dentry_child_with_name(const struct dentry *dentry,
 						 const char *name);
 extern struct dentry *get_parent_dentry(struct WIMStruct *w, const char *path);
 
@@ -360,11 +360,11 @@ extern struct ads_entry *inode_add_ads(struct inode *dentry,
 extern void inode_remove_ads(struct inode *inode, u16 idx,
 			     struct lookup_table *lookup_table);
 
-extern int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len, 
+extern int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		       u64 offset, struct dentry *dentry);
 
 
-extern int read_dentry_tree(const u8 metadata_resource[], 
+extern int read_dentry_tree(const u8 metadata_resource[],
 			    u64 metadata_resource_len, struct dentry *dentry);
 
 extern u8 *write_dentry_tree(const struct dentry *tree, u8 *p);

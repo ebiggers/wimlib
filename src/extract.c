@@ -48,7 +48,7 @@
 /* Internal */
 #define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE 0x80000000
 
-static int extract_regular_file_linked(const struct dentry *dentry, 
+static int extract_regular_file_linked(const struct dentry *dentry,
 				       const char *output_dir,
 				       const char *output_path,
 				       int extract_flags,
@@ -77,7 +77,7 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 
 		wimlib_assert(extract_flags & WIMLIB_EXTRACT_FLAG_SYMLINK);
 
-		num_path_components = 
+		num_path_components =
 			get_num_path_components(dentry->full_path_utf8) - 1;
 		num_output_dir_path_components =
 			get_num_path_components(output_dir);
@@ -114,7 +114,7 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 }
 
 static int extract_regular_file_unlinked(WIMStruct *w,
-					 struct dentry *dentry, 
+					 struct dentry *dentry,
 				         const char *output_path,
 				         int extract_flags,
 				         struct lookup_table_entry *lte)
@@ -188,11 +188,11 @@ out:
 	return ret;
 }
 
-/* 
- * Extracts a regular file from the WIM archive. 
+/*
+ * Extracts a regular file from the WIM archive.
  */
-static int extract_regular_file(WIMStruct *w, 
-				struct dentry *dentry, 
+static int extract_regular_file(WIMStruct *w,
+				struct dentry *dentry,
 				const char *output_dir,
 				const char *output_path,
 				int extract_flags)
@@ -239,12 +239,12 @@ static int extract_symlink(const struct dentry *dentry, const char *output_path,
 	return 0;
 }
 
-/* 
- * Extracts a directory from the WIM archive. 
+/*
+ * Extracts a directory from the WIM archive.
  *
  * @dentry:		The directory entry for the directory.
  * @output_path:   	The path to which the directory is to be extracted to.
- * @return: 		True on success, false on failure. 
+ * @return: 		True on success, false on failure.
  */
 static int extract_directory(const char *output_path, bool is_root)
 {
@@ -282,7 +282,7 @@ struct extract_args {
 	const char *output_dir;
 };
 
-/* 
+/*
  * Extracts a file, directory, or symbolic link from the WIM archive.  For use
  * in for_dentry_in_tree().
  */
@@ -381,7 +381,7 @@ static int extract_all_images(WIMStruct *w, const char *output_dir,
 	memcpy(buf, output_dir, output_path_len);
 	buf[output_path_len] = '/';
 	for (image = 1; image <= w->hdr.image_count; image++) {
-		
+
 		image_name = wimlib_get_image_name(w, image);
 		if (*image_name) {
 			strcpy(buf + output_path_len + 1, image_name);

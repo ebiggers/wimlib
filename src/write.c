@@ -51,7 +51,7 @@ static int reopen_rw(WIMStruct *w)
 
 
 
-/* 
+/*
  * Writes a WIM file to the original file that it was read from, overwriting it.
  */
 WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int flags)
@@ -59,7 +59,7 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int flags)
 	const char *wimfile_name;
 	size_t wim_name_len;
 	int ret;
-	
+
 	if (!w)
 		return WIMLIB_ERR_INVALID_PARAM;
 
@@ -133,7 +133,7 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 	 * the integrity table include neither the header nor the XML data.
 	 * Save it for later if it exists and an integrity table was required.
 	 * */
-	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY && 
+	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY &&
 			w->hdr.integrity.offset != 0) {
 		DEBUG("Reading existing integrity table.");
 		integrity_table = MALLOC(w->hdr.integrity.size);
@@ -176,7 +176,7 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 		w->hdr.integrity.offset        = xml_end;
 		if (integrity_table) {
 			/* The existing integrity table was saved. */
-			bytes_written = fwrite(integrity_table, 1, 
+			bytes_written = fwrite(integrity_table, 1,
 					       w->hdr.integrity.size, fp);
 			if (bytes_written != w->hdr.integrity.size) {
 				ERROR_WITH_ERRNO("Failed to write integrity "
@@ -189,7 +189,7 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 			/* There was no existing integrity table, so a new one
 			 * must be calculated. */
 			ret = write_integrity_table(fp, WIM_HEADER_DISK_SIZE,
-					w->hdr.lookup_table_res_entry.offset + 
+					w->hdr.lookup_table_res_entry.offset +
 					w->hdr.lookup_table_res_entry.size,
 					flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS);
 			if (ret != 0)
@@ -301,7 +301,7 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 	hdr.lookup_table_res_entry.original_size = hdr.lookup_table_res_entry.size;
 	hdr.lookup_table_res_entry.flags         = WIM_RESHDR_FLAG_METADATA;
 
-	ret = write_xml_data(w->wim_info, image, out, 
+	ret = write_xml_data(w->wim_info, image, out,
 			     write_lt ? 0 : wim_info_get_total_bytes(w->wim_info));
 	if (ret != 0)
 		return ret;
@@ -317,8 +317,8 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 	hdr.xml_res_entry.flags                  = 0;
 
 	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
-		ret = write_integrity_table(out, WIM_HEADER_DISK_SIZE, 
-					    xml_data_offset, 
+		ret = write_integrity_table(out, WIM_HEADER_DISK_SIZE,
+					    xml_data_offset,
 					    flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS);
 		if (ret != 0)
 			return ret;
@@ -338,7 +338,7 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 
 	DEBUG("Updating WIM header.");
 
-	/* 
+	/*
 	 * In the WIM header, there is room for the resource entry for a
 	 * metadata resource labeled as the "boot metadata".  This entry should
 	 * be zeroed out if there is no bootable image (boot_idx 0).  Otherwise,
@@ -347,10 +347,10 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 	 */
 	if (hdr.boot_idx == 0 || !w->image_metadata
 			|| (image != WIM_ALL_IMAGES && image != hdr.boot_idx)) {
-		memset(&hdr.boot_metadata_res_entry, 0, 
+		memset(&hdr.boot_metadata_res_entry, 0,
 		       sizeof(struct resource_entry));
 	} else {
-		memcpy(&hdr.boot_metadata_res_entry, 
+		memcpy(&hdr.boot_metadata_res_entry,
 		       &w->image_metadata[
 			  hdr.boot_idx - 1].metadata_lte->output_resource_entry,
 		       sizeof(struct resource_entry));
@@ -379,10 +379,10 @@ int begin_write(WIMStruct *w, const char *path, int flags)
 	DEBUG("Opening `%s' for new WIM", path);
 
 	/* checking the integrity requires going back over the file to read it.
-	 * XXX 
+	 * XXX
 	 * (It also would be possible to keep a running sha1sum as the file
 	 * as written-- this would be faster, but a bit more complicated) */
-	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) 
+	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
 		mode = "w+b";
 	else
 		mode = "wb";
@@ -406,7 +406,7 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
 	if (!w || !path)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (image != WIM_ALL_IMAGES && 
+	if (image != WIM_ALL_IMAGES &&
 	     (image < 1 || image > w->hdr.image_count))
 		return WIMLIB_ERR_INVALID_IMAGE;
 

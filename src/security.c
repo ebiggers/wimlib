@@ -29,7 +29,7 @@
 #include "io.h"
 #include "security.h"
 
-/* 
+/*
  * This is a hack to work around a problem in libntfs-3g.  libntfs-3g validates
  * security descriptors with a function named ntfs_valid_descr().
  * ntfs_valid_descr() considers a security descriptor that ends in a SACL
@@ -52,7 +52,7 @@ static void empty_sacl_fixup(char *descr, u64 *size_p)
 	}
 }
 
-/* 
+/*
  * Reads the security data from the metadata resource.
  *
  * @metadata_resource:	An array that contains the uncompressed metadata
@@ -185,7 +185,7 @@ out_free_sd:
 	return ret;
 }
 
-/* 
+/*
  * Writes security data to an in-memory buffer.
  */
 u8 *write_security_data(const struct wim_security_data *sd, u8 *p)
@@ -280,7 +280,7 @@ static void print_security_descriptor(const u8 *p, u64 size)
 		print_acl(p + dacl_offset, "Discretionary");
 }
 
-/* 
+/*
  * Prints the security data for a WIM file.
  */
 void print_security_data(const struct wim_security_data *sd)
@@ -292,7 +292,7 @@ void print_security_data(const struct wim_security_data *sd)
 	printf("Number of Entries = %"PRIu32"\n", sd->num_entries);
 
 	for (u32 i = 0; i < sd->num_entries; i++) {
-		printf("[SecurityDescriptor %"PRIu32", length = %"PRIu64"]\n", 
+		printf("[SecurityDescriptor %"PRIu32", length = %"PRIu64"]\n",
 		       i, sd->sizes[i]);
 		print_security_descriptor(sd->descriptors[i], sd->sizes[i]);
 		putchar('\n');

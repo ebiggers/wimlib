@@ -40,7 +40,7 @@
  * read_code_lens() function and built using the make_decode_table() function.
  * The decode table is not a real tree but rather a table that we can index by
  * some number of bits (*_TABLEBITS) of the input to quickly look up the symbol
- * corresponding to a Huffman code. 
+ * corresponding to a Huffman code.
  *
  * The ALIGNED tree is only present on ALIGNED blocks.
  *
@@ -83,7 +83,7 @@ struct lru_queue {
 	int R2;
 };
 
-extern int lzx_decompress(const void *compressed_data, uint compressed_len, 
+extern int lzx_decompress(const void *compressed_data, uint compressed_len,
 			  void *uncompressed_data, uint uncompressed_len);
 
 extern int lzx_compress(const void *uncompressed_data, uint uncompressed_len,

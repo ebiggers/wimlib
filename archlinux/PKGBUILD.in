@@ -11,8 +11,8 @@ url="http://sourceforge.net/projects/wimlib"
 license=("GPL3")
 depends=("openssl" "fuse" "libxml2" "ntfs-3g" "attr")
 optdepends=("cdrkit: for making ISO image of Windows PE"
-	"mtools: for making disk image of Windows PE"	
-	"syslinux: for making disk image of Windows PE"	
+	"mtools: for making disk image of Windows PE"
+	"syslinux: for making disk image of Windows PE"
 	"cabextract: for extracting Windows PE from the WAIK"
 	"ntfsprogs: for making NTFS filesystems")
 checkdepends=("ntfsprogs")
@@ -26,12 +26,12 @@ build() {
 }
 
 check() {
-	cd "$pkgname-$pkgver"  
+	cd "$pkgname-$pkgver"
 	make check
 }
 
 package() {
-	cd "$pkgname-$pkgver"  
+	cd "$pkgname-$pkgver"
 	make DESTDIR="$pkgdir" install
 }
 

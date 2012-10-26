@@ -13,7 +13,7 @@ struct wim_info {
 };
 
 /* xml.c */
-extern int xml_export_image(const struct wim_info *old_wim_info, int image, 
+extern int xml_export_image(const struct wim_info *old_wim_info, int image,
 			    struct wim_info **new_wim_info_p,
 			    const char *dest_image_name,
 			    const char *dest_image_description);
@@ -30,7 +30,7 @@ extern void free_wim_info(struct wim_info *info);
 
 extern void print_image_info(const struct wim_info *wim_info, int image);
 
-extern int read_xml_data(FILE *fp, const struct resource_entry *res, 
+extern int read_xml_data(FILE *fp, const struct resource_entry *res,
 			 u8 **xml_data_ret, struct wim_info **info_ret);
 
 extern int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,

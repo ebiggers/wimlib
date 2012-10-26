@@ -1,4 +1,4 @@
-/* 
+/*
  * A program to compare directory trees
  *
  * There are two modes:

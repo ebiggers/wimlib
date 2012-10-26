@@ -130,7 +130,7 @@ static int alloc_wimlib_fd(struct inode *inode,
 			return -EMFILE;
 		num_new_fds = min(fds_per_alloc,
 				  max_fds - inode->num_allocated_fds);
-		
+
 		fds = REALLOC(inode->fds,
 			      (inode->num_allocated_fds + num_new_fds) *
 			        sizeof(inode->fds[0]));
@@ -286,7 +286,7 @@ static int create_staging_file(char **name_ret, int open_flags)
 
 	DEBUG("Creating staging file `%s'", name);
 
-	fd = open(name, open_flags | O_CREAT | O_TRUNC, 0600); 
+	fd = open(name, open_flags | O_CREAT | O_TRUNC, 0600);
 	if (fd == -1) {
 		errno_save = errno;
 		FREE(name);
@@ -297,7 +297,7 @@ static int create_staging_file(char **name_ret, int open_flags)
 	return fd;
 }
 
-/* 
+/*
  * Extract a WIM resource to the staging directory.
  *
  * @inode:  Inode that contains the stream we are extracting
@@ -377,7 +377,7 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 		 * opening it read-write.  Identify those file descriptors and
 		 * change their lookup table entry pointers to point to the new
 		 * lookup table entry, and open staging file descriptors for
-		 * them. 
+		 * them.
 		 *
 		 * At the same time, we need to count the number of these opened
 		 * file descriptors to the new lookup table entry.  If there's
@@ -446,7 +446,7 @@ out_delete_staging_file:
 	return ret;
 }
 
-/* 
+/*
  * Creates a randomly named staging directory and returns its name into the
  * static variable staging_dir_name.
  *
@@ -495,13 +495,13 @@ static int remove_file_or_directory(const char *fpath, const struct stat *sb,
 }
 
 
-/* 
- * Deletes the staging directory and all the files contained in it. 
+/*
+ * Deletes the staging directory and all the files contained in it.
  */
 static int delete_staging_dir()
 {
 	int ret;
-	
+
 	ret = nftw(staging_dir_name, remove_file_or_directory,10, FTW_DEPTH);
 	staging_dir_name = NULL;
 	return ret;
@@ -519,7 +519,7 @@ static mqd_t unmount_to_daemon_mq;
 static mqd_t daemon_to_unmount_mq;
 
 /* Simple function that returns the concatenation of 4 strings. */
-static char *strcat_dup(const char *s1, const char *s2, const char *s3, 
+static char *strcat_dup(const char *s1, const char *s2, const char *s3,
 			const char *s4)
 {
 	size_t len = strlen(s1) + strlen(s2) + strlen(s3) + strlen(s4) + 1;
@@ -554,7 +554,7 @@ static void s_slashes_underscores_g(char *s)
 	}
 }
 
-/* 
+/*
  * Opens two POSIX message queue: one for sending messages from the unmount
  * process to the daemon process, and one to go the other way.  The names of the
  * message queues, which must be system-wide unique, are be based on the mount
@@ -599,7 +599,7 @@ static int open_message_queues(bool daemon)
 	else
 		flags = O_WRONLY | O_CREAT;
 
-	unmount_to_daemon_mq = mq_open(unmount_to_daemon_mq_name, flags, 
+	unmount_to_daemon_mq = mq_open(unmount_to_daemon_mq_name, flags,
 				       0700, NULL);
 
 	if (unmount_to_daemon_mq == (mqd_t)-1) {
@@ -613,7 +613,7 @@ static int open_message_queues(bool daemon)
 	else
 		flags = O_RDONLY | O_CREAT;
 
-	daemon_to_unmount_mq = mq_open(daemon_to_unmount_mq_name, flags, 
+	daemon_to_unmount_mq = mq_open(daemon_to_unmount_mq_name, flags,
 				       0700, NULL);
 
 	if (daemon_to_unmount_mq == (mqd_t)-1) {
@@ -820,7 +820,7 @@ static void wimfs_destroy(void *p)
 	DEBUG("Waiting for message telling us whether to commit or not, and "
 	      "whether to include integrity checks.");
 
-	bytes_received = mq_timedreceive(unmount_to_daemon_mq, msg, 
+	bytes_received = mq_timedreceive(unmount_to_daemon_mq, msg,
 					 msgsize, NULL, &timeout);
 	commit = msg[0];
 	check_integrity = msg[1];
@@ -1034,8 +1034,8 @@ static int wimfs_listxattr(const char *path, char *list, size_t size)
 }
 #endif
 
-/* 
- * Create a directory in the WIM.  
+/*
+ * Create a directory in the WIM.
  * @mode is currently ignored.
  */
 static int wimfs_mkdir(const char *path, mode_t mode)
@@ -1043,7 +1043,7 @@ static int wimfs_mkdir(const char *path, mode_t mode)
 	struct dentry *parent;
 	struct dentry *newdir;
 	const char *basename;
-	
+
 	parent = get_parent_dentry(w, path);
 	if (!parent)
 		return -ENOENT;
@@ -1176,7 +1176,7 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 	struct inode *inode;
 	int ret;
 	struct wimlib_fd *fd = NULL;
-	
+
 	inode = wim_pathname_to_inode(w, path);
 	if (!inode)
 		return -ENOENT;
@@ -1189,9 +1189,9 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 
 
 /*
- * Read data from a file in the WIM or in the staging directory. 
+ * Read data from a file in the WIM or in the staging directory.
  */
-static int wimfs_read(const char *path, char *buf, size_t size, 
+static int wimfs_read(const char *path, char *buf, size_t size,
 		      off_t offset, struct fuse_file_info *fi)
 {
 	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
@@ -1221,7 +1221,7 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 		/* Read from WIM */
 
 		u64 res_size = wim_resource_size(fd->f_lte);
-		
+
 		if (offset > res_size)
 			return -EOVERFLOW;
 
@@ -1236,7 +1236,7 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 
 /* Fills in the entries of the directory specified by @path using the
  * FUSE-provided function @filler.  */
-static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
+static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi)
 {
 	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
@@ -1332,7 +1332,7 @@ static int wimfs_rename(const char *from, const char *to)
 
 	/* This rename() implementation currently only supports actual files
 	 * (not alternate data streams) */
-	
+
 	src = get_dentry(w, from);
 	if (!src)
 		return -ENOENT;
@@ -1392,7 +1392,7 @@ static int wimfs_rename(const char *from, const char *to)
 static int wimfs_rmdir(const char *path)
 {
 	struct dentry *dentry;
-	
+
 	dentry = get_dentry(w, path);
 	if (!dentry)
 		return -ENOENT;
@@ -1477,7 +1477,7 @@ static int wimfs_symlink(const char *to, const char *from)
 	struct dentry *dentry_parent, *dentry;
 	const char *link_name;
 	struct inode *inode;
-	
+
 	dentry_parent = get_parent_dentry(w, from);
 	if (!dentry_parent)
 		return -ENOENT;
@@ -1518,7 +1518,7 @@ static int wimfs_truncate(const char *path, off_t size)
 	u16 stream_idx;
 	u32 stream_id;
 	struct inode *inode;
-	
+
 	ret = lookup_resource(w, path, get_lookup_flags(), &dentry,
 			      &lte, &stream_idx);
 
@@ -1560,7 +1560,7 @@ static int wimfs_unlink(const char *path)
 	int ret;
 	u16 stream_idx;
 	unsigned i;
-	
+
 	ret = lookup_resource(w, path, get_lookup_flags(), &dentry,
 			      &lte, &stream_idx);
 
@@ -1575,8 +1575,8 @@ static int wimfs_unlink(const char *path)
 }
 
 #ifdef HAVE_UTIMENSAT
-/* 
- * Change the timestamp on a file dentry. 
+/*
+ * Change the timestamp on a file dentry.
  *
  * Note that alternate data streams do not have their own timestamps.
  */
@@ -1619,10 +1619,10 @@ static int wimfs_utime(const char *path, struct utimbuf *times)
 }
 #endif
 
-/* Writes to a file in the WIM filesystem. 
+/* Writes to a file in the WIM filesystem.
  * It may be an alternate data stream, but here we don't even notice because we
  * just get a lookup table entry. */
-static int wimfs_write(const char *path, const char *buf, size_t size, 
+static int wimfs_write(const char *path, const char *buf, size_t size,
 		       off_t offset, struct fuse_file_info *fi)
 {
 	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
@@ -1698,7 +1698,7 @@ static struct fuse_operations wimfs_operations = {
 
 
 /* Mounts a WIM file. */
-WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir, 
+WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 			   int flags, WIMStruct **additional_swms,
 			   unsigned num_additional_swms)
 {
@@ -1796,7 +1796,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	if (flags & WIMLIB_MOUNT_FLAG_DEBUG)
 		argv[argc++] = "-d";
 
-	/* 
+	/*
 	 * We provide the use_ino option because we are going to assign inode
 	 * numbers oursides.  We've already numbered the inodes with unique
 	 * numbers in the assign_inode_numbers() function, and the static
@@ -1848,7 +1848,7 @@ out:
 }
 
 
-/* 
+/*
  * Unmounts the WIM file that was previously mounted on @dir by using
  * wimlib_mount().
  */
@@ -1876,7 +1876,7 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	msg[0] = (flags & WIMLIB_UNMOUNT_FLAG_COMMIT) ? 1 : 0;
 	msg[1] = (flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY) ? 1 : 0;
 
-	DEBUG("Sending message: %s, %s", 
+	DEBUG("Sending message: %s, %s",
 			(msg[0] == 0) ? "don't commit" : "commit",
 			(msg[1] == 0) ? "don't check"  : "check");
 	ret = mq_send(unmount_to_daemon_mq, msg, 2, 1);
@@ -1896,7 +1896,7 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	 * send a message from this process to the filesystem daemon telling
 	 * whether --commit was specified or not.  However, after that, the
 	 * unmount process must wait for the filesystem daemon to finish writing
-	 * the WIM file. 
+	 * the WIM file.
 	 */
 
 
@@ -1958,7 +1958,7 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	 * filesystem daemon has crashed or failed for some reason.
 	 *
 	 * XXX come up with some method to determine if the filesystem
-	 * daemon has really crashed or not. 
+	 * daemon has really crashed or not.
 	 *
 	 * XXX Idea: have mount daemon write its PID into the WIM file header?
 	 * */
@@ -2011,7 +2011,7 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	return mount_unsupported_error();
 }
 
-WIMLIBAPI int wimlib_mount(WIMStruct *wim_p, int image, const char *dir, 
+WIMLIBAPI int wimlib_mount(WIMStruct *wim_p, int image, const char *dir,
 			   int flags, WIMStruct **additional_swms,
 			   unsigned num_additional_swms)
 {

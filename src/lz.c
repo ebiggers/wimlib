@@ -70,7 +70,7 @@ static inline uint update_hash(uint hash, u8 c)
  * to walk through the hash chain, until the special index `0' is reached,
  * indicating the end of the hash chain.
  */
-static inline uint insert_string(u16 hash_tab[], u16 prev_tab[], 
+static inline uint insert_string(u16 hash_tab[], u16 prev_tab[],
 				 const u8 window[], uint str_pos, uint hash)
 {
 	hash = update_hash(hash, window[str_pos + LZ_MIN_MATCH - 1]);
@@ -88,10 +88,10 @@ static inline uint insert_string(u16 hash_tab[], u16 prev_tab[],
  * @strstart:		The index of the start of the string in the window that
  * 				we are trying to find a match for.
  * @prev_tab:		The array of prev pointers for the hash table.
- * @cur_match:		The index of the head of the hash chain for matches 
- * 				having the hash value of the string beginning 
+ * @cur_match:		The index of the head of the hash chain for matches
+ * 				having the hash value of the string beginning
  * 				at index @strstart.
- * @prev_len:		The length of the match that was found for the string 
+ * @prev_len:		The length of the match that was found for the string
  * 				beginning at (@strstart - 1).
  * @match_start_ret:	A location into which the index of the start of the
  * 				match will be returned.
@@ -102,9 +102,9 @@ static inline uint insert_string(u16 hash_tab[], u16 prev_tab[],
  * Returns the length of the match that was found.
  */
 static uint longest_match(const u8 window[], uint bytes_remaining,
-			  uint strstart, const u16 prev_tab[], 
-			  uint cur_match, uint prev_len, 
-			  uint *match_start_ret, 
+			  uint strstart, const u16 prev_tab[],
+			  uint cur_match, uint prev_len,
+			  uint *match_start_ret,
 			  const struct lz_params *params)
 {
 	uint chain_len = params->max_chain_len;
@@ -167,7 +167,7 @@ static uint longest_match(const u8 window[], uint bytes_remaining,
 		if (len > best_len) {
 			match_start = cur_match;
 			best_len = len;
-			if (len >= nice_match) 
+			if (len >= nice_match)
 				break;
 			scan_end1  = scan[best_len - 1];
 			scan_end   = scan[best_len];
@@ -179,7 +179,7 @@ static uint longest_match(const u8 window[], uint bytes_remaining,
 
 
 
-/* 
+/*
  * Determines the sequence of matches and literals that a block of data will be
  * compressed to.
  *
@@ -195,8 +195,8 @@ static uint longest_match(const u8 window[], uint bytes_remaining,
  * @record_literal:	A function that will be called to produce the
  * 				intermediate representation of a literal, given
  * 				the character of the literal.  This function
- * 				should also update the appropriate symbol 
- * 				frequency counts so that any needed Huffman 
+ * 				should also update the appropriate symbol
+ * 				frequency counts so that any needed Huffman
  * 				codes can be made later.
  * @record_match_arg_1:
  * @record_match_arg_2:	Extra arguments to be passed to @record_match.
@@ -239,8 +239,8 @@ uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
 		 * hash_head is set to the index of the previous string in the
 		 * hash bucket, or 0 if there is no such string */
 		if (uncompressed_len - cur_input_pos >= params->min_match) {
-			hash = insert_string(hash_tab, prev_tab, 
-					     uncompressed_data, 
+			hash = insert_string(hash_tab, prev_tab,
+					     uncompressed_data,
 					     cur_input_pos, hash);
 			hash_head = prev_tab[cur_input_pos];
 		} else {
@@ -258,9 +258,9 @@ uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
 			 * string of window index 0 (in particular we have to
 			 * avoid a match of the string with itself at the start
 			 * of the input file).  */
-			match_len = longest_match(uncompressed_data, 
+			match_len = longest_match(uncompressed_data,
 						  uncompressed_len - cur_input_pos,
-						  cur_input_pos, prev_tab, 
+						  cur_input_pos, prev_tab,
 						  hash_head, prev_len,
 						  &match_start, params);
 
@@ -282,8 +282,8 @@ uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
 					/*cur_input_pos - 1 - prev_start,*/
 					/*prev_len);*/
 
-			match = (*record_match)(cur_input_pos - 1 - prev_start, 
-						prev_len, 
+			match = (*record_match)(cur_input_pos - 1 - prev_start,
+						prev_len,
 						record_match_arg1,
 						record_match_arg2);
 

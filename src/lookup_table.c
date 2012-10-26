@@ -59,7 +59,7 @@ err:
 struct lookup_table_entry *new_lookup_table_entry()
 {
 	struct lookup_table_entry *lte;
-	
+
 	lte = CALLOC(1, sizeof(struct lookup_table_entry));
 	if (lte) {
 		lte->part_number  = 1;
@@ -185,7 +185,7 @@ void free_lookup_table(struct lookup_table *table)
  * @table:	A pointer to the lookup table.
  * @entry:	A pointer to the entry to insert.
  */
-void lookup_table_insert(struct lookup_table *table, 
+void lookup_table_insert(struct lookup_table *table,
 			 struct lookup_table_entry *lte)
 {
 	size_t i = lte->hash_short % table->capacity;
@@ -237,11 +237,11 @@ void lte_decrement_num_opened_fds(struct lookup_table_entry *lte,
 }
 #endif
 
-/* 
+/*
  * Calls a function on all the entries in the lookup table.  Stop early and
  * return nonzero if any call to the function returns nonzero.
  */
-int for_lookup_table_entry(struct lookup_table *table, 
+int for_lookup_table_entry(struct lookup_table *table,
 			   int (*visitor)(struct lookup_table_entry *, void *),
 			   void *arg)
 {
@@ -311,7 +311,7 @@ int read_lookup_table(WIMStruct *w)
 		}
 		cur_entry->wim = w;
 		cur_entry->resource_location = RESOURCE_IN_WIM;
-			 
+
 		p = get_resource_entry(buf, &cur_entry->resource_entry);
 		p = get_u16(p, &cur_entry->part_number);
 		p = get_u32(p, &cur_entry->refcnt);
@@ -369,7 +369,7 @@ out:
 }
 
 
-/* 
+/*
  * Writes a lookup table entry to the output file.
  */
 int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out)
@@ -426,11 +426,11 @@ void print_lookup_table_entry(const struct lookup_table_entry *lte)
 		putchar('\n');
 		return;
 	}
-	printf("Offset            = %"PRIu64" bytes\n", 
+	printf("Offset            = %"PRIu64" bytes\n",
 	       lte->resource_entry.offset);
-	printf("Size              = %"PRIu64" bytes\n", 
+	printf("Size              = %"PRIu64" bytes\n",
 	       (u64)lte->resource_entry.size);
-	printf("Original size     = %"PRIu64" bytes\n", 
+	printf("Original size     = %"PRIu64" bytes\n",
 	       lte->resource_entry.original_size);
 	printf("Part Number       = %hu\n", lte->part_number);
 	printf("Reference Count   = %u\n", lte->refcnt);
@@ -475,16 +475,16 @@ static int do_print_lookup_table_entry(struct lookup_table_entry *lte,
 }
 
 /*
- * Prints the lookup table of a WIM file. 
+ * Prints the lookup table of a WIM file.
  */
 WIMLIBAPI void wimlib_print_lookup_table(WIMStruct *w)
 {
-	for_lookup_table_entry(w->lookup_table, 
+	for_lookup_table_entry(w->lookup_table,
 			       do_print_lookup_table_entry,
 			       NULL);
 }
 
-/* 
+/*
  * Looks up an entry in the lookup table.
  */
 struct lookup_table_entry *
@@ -505,7 +505,7 @@ __lookup_resource(const struct lookup_table *table, const u8 hash[])
 }
 
 #ifdef WITH_FUSE
-/* 
+/*
  * Finds the dentry, lookup table entry, and stream index for a WIM file stream,
  * given a path name.
  *
@@ -610,7 +610,7 @@ static void inode_unresolve_ltes(struct inode *inode)
 	inode->resolved = false;
 }
 
-/* Resolve a dentry's lookup table entries 
+/* Resolve a dentry's lookup table entries
  *
  * This replaces the SHA1 hash fields (which are used to lookup an entry in the
  * lookup table) with pointers directly to the lookup table entries.  A circular

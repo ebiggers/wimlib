@@ -36,16 +36,16 @@ struct ntfs_location {
 };
 #endif
 
-/* 
- * An entry in the lookup table in the WIM file. 
+/*
+ * An entry in the lookup table in the WIM file.
  *
- * It is used to find data streams for files in the WIM. 
+ * It is used to find data streams for files in the WIM.
  *
  * Metadata resources and reparse point data buffers will also have lookup table
  * entries associated with the data.
  *
  * The lookup_table_entry for a given dentry or alternate stream entry in the
- * WIM is found using the SHA1 message digest field. 
+ * WIM is found using the SHA1 message digest field.
  */
 struct lookup_table_entry {
 
@@ -226,11 +226,11 @@ wim_resource_compression_type(const struct lookup_table_entry *lte)
 
 extern struct lookup_table *new_lookup_table(size_t capacity);
 
-extern void lookup_table_insert(struct lookup_table *table, 
+extern void lookup_table_insert(struct lookup_table *table,
 				struct lookup_table_entry *lte);
 
 /* Unlinks a lookup table entry from the table; does not free it. */
-static inline void lookup_table_unlink(struct lookup_table *table, 
+static inline void lookup_table_unlink(struct lookup_table *table,
 			 	       struct lookup_table_entry *lte)
 {
 	hlist_del(&lte->hash_list);
@@ -242,8 +242,8 @@ extern struct lookup_table_entry *new_lookup_table_entry();
 extern struct lookup_table_entry *
 clone_lookup_table_entry(const struct lookup_table_entry *lte);
 
-extern int for_lookup_table_entry(struct lookup_table *table, 
-				  int (*visitor)(struct lookup_table_entry *, void *), 
+extern int for_lookup_table_entry(struct lookup_table *table,
+				  int (*visitor)(struct lookup_table_entry *, void *),
 				  void *arg);
 
 extern struct lookup_table_entry *
@@ -283,7 +283,7 @@ static inline int write_lookup_table(struct lookup_table *table, FILE *out)
 }
 
 /* Unlinks and frees an entry from a lookup table. */
-static inline void lookup_table_remove(struct lookup_table *table, 
+static inline void lookup_table_remove(struct lookup_table *table,
 				       struct lookup_table_entry *lte)
 {
 	lookup_table_unlink(table, lte);
@@ -322,7 +322,7 @@ inode_stream_lte_unresolved(const struct inode *inode, unsigned stream_idx,
 					 inode->ads_entries[
 						stream_idx - 1].hash);
 }
-/* 
+/*
  * Returns the lookup table entry for stream @stream_idx of the inode, where
  * stream_idx = 0 means the default un-named file stream, and stream_idx >= 1
  * corresponds to an alternate data stream.
@@ -363,7 +363,7 @@ static inline const u8 *inode_stream_hash_resolved(const struct inode *inode,
 		return zero_hash;
 }
 
-/* 
+/*
  * Returns the hash for stream @stream_idx of the inode, where stream_idx = 0
  * means the default un-named file stream, and stream_idx >= 1 corresponds to an
  * alternate data stream.

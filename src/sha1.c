@@ -4,7 +4,7 @@
  * Parts of this file are based on public domain code written by Steve Reid.
  */
 
-/* 
+/*
  * Copyright (C) 2012 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
@@ -69,7 +69,7 @@ void sha1_update(SHA_CTX *context, const u8 data[], size_t len)
 #include <stdlib.h>
 void ssse3_not_found()
 {
-	fprintf(stderr, 
+	fprintf(stderr,
 "Cannot calculate SHA1 message digest: CPU does not support SSSE3\n"
 "instructions!  Recompile wimlib without the --enable-ssse3-sha1 flag\n"
 "to use wimlib on this CPU.\n");

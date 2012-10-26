@@ -105,7 +105,7 @@ static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 		translated_target += 4;
 		link_target_len -= 4;
 		/* There's a drive letter, so just leave the backslashes since
-		 * it won't go anyhwere on UNIX anyway... 
+		 * it won't go anyhwere on UNIX anyway...
 		 *
 		 * XXX
 		 * NTFS-3g tries to re-map these links to actually point to
@@ -185,7 +185,7 @@ ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
 				buf_len, inode->reparse_tag);
 }
 
-/* 
+/*
  * Sets @inode to be a symbolic link pointing to @target.
  *
  * A lookup table entry for the symbolic link data buffer is created and
@@ -206,14 +206,14 @@ int inode_set_symlink(struct inode *inode, const char *target,
 	struct lookup_table_entry *lte = NULL, *existing_lte;
 	u8 symlink_buf_hash[SHA1_HASH_SIZE];
 	void *symlink_buf;
-	
+
 	symlink_buf = make_symlink_reparse_data_buf(target, &symlink_buf_len);
 	if (!symlink_buf)
 		return WIMLIB_ERR_NOMEM;
 
 	DEBUG("Made symlink reparse data buf (len = %zu, name len = %zu)",
 			symlink_buf_len, symlink_buf_len);
-	
+
 	sha1_buffer(symlink_buf, symlink_buf_len, symlink_buf_hash);
 
 	existing_lte = __lookup_resource(lookup_table, symlink_buf_hash);

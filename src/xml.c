@@ -1083,7 +1083,7 @@ void xml_update_image_info(WIMStruct *w, int image)
 	for_dentry_in_tree(w->image_metadata[image - 1].root_dentry,
 			   calculate_dentry_statistics,
 			   image_info);
-			 
+
 	image_info->lookup_table = NULL;
 	image_info->flags = flags_save;
 	image_info->last_modification_time = get_wim_timestamp();

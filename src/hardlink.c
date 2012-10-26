@@ -32,10 +32,10 @@
 
 /*                             NULL        NULL
  *                              ^           ^
- *         dentry               |           |                
- *        /     \          -----------  -----------           
+ *         dentry               |           |
+ *        /     \          -----------  -----------
  *        |      dentry<---|  struct  | |  struct  |---> dentry
- *        \     /          |  inode   | |  inode   |       
+ *        \     /          |  inode   | |  inode   |
  *         dentry          ------------ ------------
  *                              ^           ^
  *                              |           |
@@ -47,7 +47,7 @@
  *                              ^           ^
  *                              |           |
  *                            -----------------
- *        inode_table->array  | idx 0 | idx 1 | 
+ *        inode_table->array  | idx 0 | idx 1 |
  *                            -----------------
  */
 
@@ -75,7 +75,7 @@ static size_t inode_link_count(const struct inode *inode)
 	return size;
 }
 
-/* 
+/*
  * Insert a dentry into the inode table based on its inode
  * ID.
  *
@@ -263,7 +263,7 @@ static int fix_true_inode(struct inode *inode, struct hlist_head *inode_list)
 	return 0;
 }
 
-/* 
+/*
  * Fixes up a nominal inode.
  *
  * By a nominal inode we mean a group of two or more dentries that share

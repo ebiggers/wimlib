@@ -61,44 +61,44 @@ static void usage(int cmd_type);
 static void usage_all();
 
 static const char *usage_strings[] = {
-[APPEND] = 
+[APPEND] =
 "    imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                  [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
 "                  [--verbose] [--dereference] [--config=FILE]\n",
-[APPLY] = 
+[APPLY] =
 "    imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                 (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                 [--symlink] [--verbose] [--ref=\"GLOB\"]\n",
-[CAPTURE] = 
+[CAPTURE] =
 "    imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                   [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
 "                   [--flags EDITION_ID] [--verbose] [--dereference]\n"
 "                   [--config=FILE]\n",
-[DELETE] = 
+[DELETE] =
 "    imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n",
-[DIR] = 
+[DIR] =
 "    imagex dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n",
-[EXPORT] = 
+[EXPORT] =
 "    imagex export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
 "                  DEST_WIMFILE [DEST_IMAGE_NAME]\n"
 "                  [DEST_IMAGE_DESCRIPTION] [--boot] [--check]\n"
 "                  [--compress=TYPE] [--ref=\"GLOB\"]\n",
-[INFO] = 
+[INFO] =
 "    imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
 "                [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
 "                [--xml] [--extract-xml FILE] [--metadata]\n",
-[JOIN] = 
+[JOIN] =
 "    imagex join [--check] WIMFILE SPLIT_WIM...\n",
-[MOUNT] = 
+[MOUNT] =
 "    imagex mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
 "                 [--check] [--debug] [--streams-interface=INTERFACE]\n"
 "                 [--ref=\"GLOB\"]\n",
-[MOUNTRW] = 
+[MOUNTRW] =
 "    imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
 "                   [--check] [--debug] [--streams-interface=INTERFACE]\n",
-[SPLIT] = 
+[SPLIT] =
 "    imagex split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
-[UNMOUNT] = 
+[UNMOUNT] =
 "    imagex unmount DIRECTORY [--commit] [--check]\n",
 };
 
@@ -792,7 +792,7 @@ static int imagex_export(int argc, const char **argv)
 	if (ret != 0)
 		return ret;
 
-	/* Determine if the destination is an existing file or not.  
+	/* Determine if the destination is an existing file or not.
 	 * If so, we try to append the exported image(s) to it; otherwise, we
 	 * create a new WIM containing the exported image(s). */
 	if (stat(dest_wimfile, &stbuf) == 0) {
@@ -807,7 +807,7 @@ static int imagex_export(int argc, const char **argv)
 		if (ret != 0)
 			goto out;
 
-		if (compression_type_specified && compression_type != 
+		if (compression_type_specified && compression_type !=
 				wimlib_get_compression_type(dest_w)) {
 			imagex_error("Cannot specify a compression type that is "
 				     "not the same as that used in the "
@@ -845,7 +845,7 @@ static int imagex_export(int argc, const char **argv)
 			goto out;
 	}
 
-	ret = wimlib_export_image(src_w, image, dest_w, dest_name, dest_desc, 
+	ret = wimlib_export_image(src_w, image, dest_w, dest_name, dest_desc,
 				  export_flags, additional_swms,
 				  num_additional_swms);
 	if (ret != 0)
@@ -853,7 +853,7 @@ static int imagex_export(int argc, const char **argv)
 
 
 	if (wim_is_new)
-		ret = wimlib_write(dest_w, dest_wimfile, WIM_ALL_IMAGES, 
+		ret = wimlib_write(dest_w, dest_wimfile, WIM_ALL_IMAGES,
 				   write_flags);
 	else
 		ret = wimlib_overwrite(dest_w, write_flags);
@@ -887,7 +887,7 @@ static int imagex_info(int argc, const char **argv)
 	FILE *fp;
 	int image;
 	int ret;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS | 
+	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS |
 			 WIMLIB_OPEN_FLAG_SPLIT_OK;
 	int part_number;
 	int total_parts;
@@ -939,7 +939,7 @@ static int imagex_info(int argc, const char **argv)
 			new_name = argv[2];
 			if (argc > 3) {
 				new_desc = argv[3];
-			} 
+			}
 		}
 	}
 
@@ -961,7 +961,7 @@ static int imagex_info(int argc, const char **argv)
 
 	image = wimlib_resolve_image(w, image_num_or_name);
 	if (image == WIM_NO_IMAGE && strcmp(image_num_or_name, "0") != 0) {
-		imagex_error("The image `%s' does not exist", 
+		imagex_error("The image `%s' does not exist",
 						image_num_or_name);
 		if (boot)
 			imagex_error("If you would like to set the boot "
@@ -1074,7 +1074,7 @@ static int imagex_info(int argc, const char **argv)
 			}
 		}
 		if (new_name) {
-			if (strcmp(wimlib_get_image_name(w, image), 
+			if (strcmp(wimlib_get_image_name(w, image),
 						new_name) == 0) {
 				printf("Image %d is already named \"%s\".\n",
 				       image, new_name);
@@ -1097,7 +1097,7 @@ static int imagex_info(int argc, const char **argv)
 			} else {
 				printf("Changing the description of image %d "
 				       "to \"%s\".\n", image, new_desc);
-				ret = wimlib_set_image_descripton(w, image, 
+				ret = wimlib_set_image_descripton(w, image,
 								  new_desc);
 				if (ret != 0)
 					goto done;
@@ -1106,11 +1106,11 @@ static int imagex_info(int argc, const char **argv)
 
 		/* Only call wimlib_overwrite_xml_and_header() if something
 		 * actually needs to be changed. */
-		if (boot || new_name || new_desc || 
+		if (boot || new_name || new_desc ||
 				check != wimlib_has_integrity_table(w)) {
 
-			ret = wimlib_overwrite_xml_and_header(w, check ? 
-					WIMLIB_WRITE_FLAG_CHECK_INTEGRITY | 
+			ret = wimlib_overwrite_xml_and_header(w, check ?
+					WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
 					WIMLIB_WRITE_FLAG_SHOW_PROGRESS : 0);
 		} else {
 			printf("The file `%s' was not modified because nothing "
@@ -1226,7 +1226,7 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 		if (num_images != 1) {
 			imagex_error("The file `%s' contains %d images; Please "
 				     "select one", wimfile, num_images);
-			usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)  
+			usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 					? MOUNTRW : MOUNT);
 			ret = WIMLIB_ERR_INVALID_IMAGE;
 			goto out;
@@ -1255,7 +1255,7 @@ out:
 			wimlib_free(additional_swms[i]);
 	return ret;
 mount_usage:
-	usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)  
+	usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 			? MOUNTRW : MOUNT);
 	return -1;
 }
@@ -1348,7 +1348,7 @@ static struct imagex_command imagex_commands[] = {
 
 static void version()
 {
-	static const char *s = 
+	static const char *s =
 	"imagex (" PACKAGE ") " PACKAGE_VERSION "\n"
 	"Copyright (C) 2012 Eric Biggers\n"
 	"License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
@@ -1408,7 +1408,7 @@ static void usage_all()
 	puts("IMAGEX: Usage:");
 	for (int i = 0; i < ARRAY_LEN(usage_strings); i++)
 		fputs(usage_strings[i], stdout);
-	static const char *extra = 
+	static const char *extra =
 "    imagex --help\n"
 "    imagex --version\n"
 "\n"

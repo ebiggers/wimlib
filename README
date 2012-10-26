@@ -1,4 +1,4 @@
-				   WIMLIB                                    
+				   WIMLIB
 
 This is wimlib version 1.0.4 (October 2012).  wimlib can be used to read,
 write, and mount files in the Windows Imaging Format (WIM files).  These
@@ -64,7 +64,7 @@ and then re-applied later.
 				    PROGRAMS
 
 wimlib provides a public API for other programs to use, but also comes with two
-programs: `imagex' and `mkwinpeimg'.  
+programs: `imagex' and `mkwinpeimg'.
 
 `imagex' is intended to be like the imagex.exe program from Windows.  `imagex'
 can be used to create, extract, and mount WIM files.  Both read-only and
@@ -186,7 +186,7 @@ wimlib's `configure' script:
 	Removes all error messages from the library.  If left in, they still
 	have to explicitly turned on with wimlib_set_print_errors() in order to
 	see them.  Also, error codes will still be returned regardless of
-	whether error messages are printed or not.  
+	whether error messages are printed or not.
 
 	If --disable-error-messages is given, wimlib_set_print_errors() will
 	fail with WIMLIB_ERR_UNSUPPORTED if the action is to turn error messages
@@ -215,14 +215,14 @@ wimlib may work on FreeBSD.  However, this is not well tested.  If you do not
 have libntfs-3g 2011-4-12 or later available, you must configure with
 --without-ntfs-3g.  Also, GNU coreutils is needed to run the test suite.  Before
 mounting a WIM you need to load the POSIX message queue module (run `kldload
-mqueuefs').  
+mqueuefs').
 
 wimlib should work on big endian machines but it has not been tested.
 
 There are no plans to port wimlib to Windows since the programming interface on
 Windows is very different and Microsoft's imagex.exe is already available.
 
-				   REFERENCES 
+				   REFERENCES
 
 The WIM file format is specified in a document that can be found in the
 Microsoft Download Center.  There is a similar document that specifies the LZX
@@ -241,7 +241,7 @@ http://www.tuxera.com/community/ntfs-3g-download/ for more information.
 
 lzx-decomp.c, the code to decompress WIM file resources that are compressed
 using LZX compression, is originally based on code from the cabextract project
-(http://www.cabextract.org.uk).  
+(http://www.cabextract.org.uk).
 
 lzx-comp.c, the code to compress WIM file resources using LZX compression, is
 originally based on code written by Matthew Russotto (www.russotto.net/chm/).
@@ -258,9 +258,9 @@ ability to create LZX or XPRESS compressed WIMs.
 
 An earlier version of wimlib is being used to deploy Windows 7 from the Ultimate
 Deployment Appliance.  For more information see
-http://www.ultimatedeployment.org/.  
+http://www.ultimatedeployment.org/.
 
-You can see the documentation about Microsoft's version of the imagex program at 
+You can see the documentation about Microsoft's version of the imagex program at
 http://technet.microsoft.com/en-us/library/cc749447(v=ws.10).aspx, so you can
 see how it compares.
 
@@ -317,11 +317,11 @@ This includes the files in the `programs' directory as well as the files in the
 wimlib is independently developed and does not contain any code, data, or files
 copyrighted by Microsoft.  It is not known to be affected by any patents.
 
-				   DISCLAIMER 
+				   DISCLAIMER
 
 wimlib is experimental.  Use Microsoft's `imagex.exe' if you want to make sure
 your WIM files are made correctly (but beware: Microsoft's version contains some
-bugs).  
+bugs).
 
 Please submit a bug report (to ebiggers3@gmail.com) if you find a bug in wimlib.
 

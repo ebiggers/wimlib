@@ -95,10 +95,10 @@ struct resource_entry {
 
 
 /* Header at the very beginning of the WIM file. */
-struct wim_header { 
+struct wim_header {
 	/* Identifies the file as WIM file. Must be exactly
 	 * {'M', 'S', 'W', 'I', 'M', 0, 0, 0}  */
-	//u8  magic[WIM_MAGIC_LEN]; 	
+	//u8  magic[WIM_MAGIC_LEN];
 
 	/* size of WIM header in bytes. */
 	//u32 hdr_size;
@@ -116,7 +116,7 @@ struct wim_header {
 	 * WIM_CHUNK_SIZE.  M$ incorrectly documents this as "the size of the
 	 * compressed .wim file in bytes".*/
 	//u32 chunk_size;
-	
+
 	/* A unique identifier for the WIM file. */
 	u8  guid[WIM_GID_LEN];
 
@@ -142,7 +142,7 @@ struct wim_header {
 
 	/* The index of the bootable image in the WIM file. If 0, there are no
 	 * bootable images available. */
-	u32 boot_idx; 
+	u32 boot_idx;
 
 	/* The location of the optional integrity table used to verify the
 	 * integrity WIM.  Zeroed out if there is no integrity table.*/
@@ -177,7 +177,7 @@ struct wim_header {
 
 /* Lock field to prevent multiple writers from writing the WIM concurrently.  We
  * ignore this flag. */
-#define WIM_HDR_FLAG_WRITE_IN_PROGRESS  0x00000040 
+#define WIM_HDR_FLAG_WRITE_IN_PROGRESS  0x00000040
 
 /* Reparse point fixup ???
  * This has something to do with absolute targets of reparse points / symbolic
@@ -207,7 +207,7 @@ struct wim_security_data {
 	 * that wimlib writes, currently), it will be 8 bytes. */
 	u32 total_length;
 
-	/* The number of security descriptors in the array @descriptors, below.  
+	/* The number of security descriptors in the array @descriptors, below.
 	 * It is really an unsigned int, but it must fit into an int because the
 	 * security ID's are signed.  (Not like you would ever have more than a
 	 * few hundred security descriptors anyway). */
@@ -260,7 +260,7 @@ typedef struct WIMStruct {
 	/* The name of the WIM file that has been opened. */
 	char  *filename;
 
-	/* The lookup table for the WIM file. */ 
+	/* The lookup table for the WIM file. */
 	struct lookup_table *lookup_table;
 
 	/* Pointer to the XML data read from the WIM file. */
@@ -358,7 +358,7 @@ struct inode_table {
 	u64 num_entries;
 	u64 capacity;
 
-	/* 
+	/*
 	 * Linked list of "extra" inodes.  These may be:
 	 *
 	 * - inodes with link count 1, which are all allowed to have 0 for their
@@ -388,7 +388,7 @@ extern int write_header(const struct wim_header *hdr, FILE *out);
 extern int init_header(struct wim_header *hdr, int ctype);
 
 /* integrity.c */
-extern int write_integrity_table(FILE *out, u64 end_header_offset, 
+extern int write_integrity_table(FILE *out, u64 end_header_offset,
 				 u64 end_lookup_table_offset,
 				 int show_progress);
 extern int check_wim_integrity(WIMStruct *w, int show_progress, int *status);
@@ -413,8 +413,8 @@ extern int do_add_image(WIMStruct *w, const char *dir, const char *name,
 			const char *config_str, size_t config_len,
 			int flags,
 			int (*capture_tree)(struct dentry **, const char *,
-			 	     struct lookup_table *, 
-				     struct wim_security_data *, 
+			 	     struct lookup_table *,
+				     struct wim_security_data *,
 				     const struct capture_config *,
 				     int, void *),
 			void *extra_arg);
@@ -447,7 +447,7 @@ extern int write_metadata_resource(WIMStruct *w);
 
 
 /* security.c */
-int read_security_data(const u8 metadata_resource[], 
+int read_security_data(const u8 metadata_resource[],
 		u64 metadata_resource_len, struct wim_security_data **sd_p);
 
 void print_security_data(const struct wim_security_data *sd);
@@ -471,7 +471,7 @@ extern int wim_hdr_flags_compression_type(int wim_hdr_flags);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 
 /* write.c */
-extern int finish_write(WIMStruct *w, int image, int flags, 
+extern int finish_write(WIMStruct *w, int image, int flags,
 			int write_lookup_table);
 
 extern int begin_write(WIMStruct *w, const char *path, int flags);
