@@ -417,7 +417,7 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 	/* Change the current image to the new one.  There should not be any
 	 * ways for this to fail, since the image is valid and the dentry tree
 	 * is already in memory. */
-	ret = wimlib_select_image(w, w->hdr.image_count);
+	ret = select_wim_image(w, w->hdr.image_count);
 	wimlib_assert(ret == 0);
 	return ret;
 out_free_metadata_lte:
@@ -535,7 +535,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 		src_wim->lookup_table = joined_tab;
 	}
 
-	ret = wimlib_select_image(src_wim, src_image);
+	ret = select_wim_image(src_wim, src_image);
 	if (ret != 0) {
 		ERROR("Could not select image %d from the WIM `%s' "
 		      "to export it", src_image, src_wim->filename);
@@ -627,7 +627,7 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 	/* Even if the dentry tree is not allocated, we must select it (and
 	 * therefore allocate it) so that we can decrement the reference counts
 	 * in the lookup table.  */
-	ret = wimlib_select_image(w, image);
+	ret = select_wim_image(w, image);
 	if (ret != 0)
 		return ret;
 

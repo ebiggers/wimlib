@@ -79,7 +79,7 @@ int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
 		end = image;
 	}
 	for (; i <= end; i++) {
-		ret = wimlib_select_image(w, i);
+		ret = select_wim_image(w, i);
 		if (ret != 0)
 			return ret;
 		ret = visitor(w);
@@ -184,7 +184,7 @@ WIMLIBAPI int wimlib_get_num_images(const WIMStruct *w)
 	return w->hdr.image_count;
 }
 
-int wimlib_select_image(WIMStruct *w, int image)
+int select_wim_image(WIMStruct *w, int image)
 {
 	struct image_metadata *imd;
 

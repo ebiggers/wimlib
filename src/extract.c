@@ -340,7 +340,7 @@ static int extract_single_image(WIMStruct *w, int image,
 	DEBUG("Extracting image %d", image);
 
 	int ret;
-	ret = wimlib_select_image(w, image);
+	ret = select_wim_image(w, image);
 	if (ret != 0)
 		return ret;
 

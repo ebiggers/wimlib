@@ -466,7 +466,7 @@ extern int inode_set_symlink(struct inode *inode,
 
 /* wim.c */
 extern WIMStruct *new_wim_struct();
-extern int wimlib_select_image(WIMStruct *w, int image);
+extern int select_wim_image(WIMStruct *w, int image);
 extern int wim_hdr_flags_compression_type(int wim_hdr_flags);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 

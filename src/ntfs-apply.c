@@ -774,7 +774,7 @@ WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
 		w->lookup_table = joined_tab;
 	}
 
-	ret = wimlib_select_image(w, image);
+	ret = select_wim_image(w, image);
 	if (ret != 0)
 		goto out;
 

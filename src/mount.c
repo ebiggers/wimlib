@@ -1729,7 +1729,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 		wim->lookup_table = joined_tab;
 	}
 
-	ret = wimlib_select_image(wim, image);
+	ret = select_wim_image(wim, image);
 
 	if (ret != 0)
 		goto out;
