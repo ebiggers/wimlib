@@ -959,8 +959,10 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	DEBUG("Allocating security data");
 
 	sd = CALLOC(1, sizeof(struct wim_security_data));
-	if (!sd)
+	if (!sd) {
+		ret = WIMLIB_ERR_NOMEM;
 		goto out_destroy_config;
+	}
 	sd->total_length = 8;
 	sd->refcnt = 1;
 
