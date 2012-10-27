@@ -328,8 +328,8 @@ static int open_swms_from_glob(const char *swm_glob,
 		ret = -1;
 		goto out_globfree;
 	}
-	size_t offset = 0;
-	for (size_t i = 0; i < num_additional_swms; i++) {
+	unsigned offset = 0;
+	for (unsigned i = 0; i < num_additional_swms; i++) {
 		if (strcmp(globbuf.gl_pathv[i], first_part) == 0) {
 			offset++;
 			continue;
@@ -405,7 +405,7 @@ static int imagex_apply(int argc, const char **argv)
 
 	wimfile = argv[0];
 	if (argc == 2) {
-		image_num_or_name =  "1";
+		image_num_or_name = "1";
 		dir = argv[1];
 	} else {
 		image_num_or_name = argv[1];
@@ -455,8 +455,11 @@ static int imagex_apply(int argc, const char **argv)
 			goto out;
 		}
 	} else {
-		if (errno != ENOENT)
+		if (errno != ENOENT) {
 			imagex_error_with_errno("Failed to stat `%s'", dir);
+			ret = -1;
+			goto out;
+		}
 	}
 #endif
 
@@ -465,7 +468,7 @@ static int imagex_apply(int argc, const char **argv)
 out:
 	wimlib_free(w);
 	if (additional_swms)
-		for (size_t i = 0; i < num_additional_swms; i++)
+		for (unsigned i = 0; i < num_additional_swms; i++)
 			wimlib_free(additional_swms[i]);
 	return ret;
 }
@@ -529,15 +532,15 @@ static int imagex_capture_or_append(int argc, const char **argv)
 		usage(cmd);
 		return -1;
 	}
-	dir     = argv[0];
+	dir = argv[0];
 	wimfile = argv[1];
 
 	char dir_copy[strlen(dir) + 1];
 	memcpy(dir_copy, dir, strlen(dir) + 1);
 	default_name = basename(dir_copy);
 
-	name    = (argc >= 3) ? argv[2] : default_name;
-	desc    = (argc >= 4) ? argv[3] : NULL;
+	name = (argc >= 3) ? argv[2] : default_name;
+	desc = (argc >= 4) ? argv[3] : NULL;
 
 	if (config_file) {
 		config_str = file_get_contents(config_file, &config_len);
@@ -650,12 +653,12 @@ static int imagex_delete(int argc, const char **argv)
 
 	ret = verify_image_exists(image);
 	if (ret != 0)
-		goto done;
+		goto out;
 
 	ret = wimlib_delete_image(w, image);
 	if (ret != 0) {
 		imagex_error("Failed to delete image from `%s'", wimfile);
-		goto done;
+		goto out;
 	}
 
 	ret = wimlib_overwrite(w, write_flags);
@@ -663,7 +666,7 @@ static int imagex_delete(int argc, const char **argv)
 		imagex_error("Failed to write the file `%s' with image "
 			     "deleted", wimfile);
 	}
-done:
+out:
 	wimlib_free(w);
 	return ret;
 }
@@ -676,7 +679,6 @@ static int imagex_dir(int argc, const char **argv)
 	int image;
 	int ret;
 	int num_images;
-	int part_number;
 
 	if (argc < 2) {
 		imagex_error("Must specify a WIM file");
@@ -694,20 +696,11 @@ static int imagex_dir(int argc, const char **argv)
 	if (ret != 0)
 		return ret;
 
-	part_number = wimlib_get_part_number(w, NULL);
-	if (part_number != 1) {
-		imagex_error("`%s' is part %d of a split WIM!  Specify the "
-			     "first part to see the files",
-			     wimfile, part_number);
-		ret = WIMLIB_ERR_SPLIT_UNSUPPORTED;
-		goto done;
-	}
-
 	if (argc == 3) {
 		image = wimlib_resolve_image(w, argv[2]);
 		ret = verify_image_exists(image);
 		if (ret != 0)
-			goto done;
+			goto out;
 	} else {
 		/* Image was not specified.  If the WIM only contains one image,
 		 * choose that one; otherwise, print an error. */
@@ -717,13 +710,13 @@ static int imagex_dir(int argc, const char **argv)
 				     "select one.", wimfile, num_images);
 			usage(DIR);
 			ret = -1;
-			goto done;
+			goto out;
 		}
 		image = 1;
 	}
 
 	ret = wimlib_print_files(w, image);
-done:
+out:
 	wimlib_free(w);
 	return ret;
 }
@@ -796,26 +789,31 @@ static int imagex_export(int argc, const char **argv)
 	 * If so, we try to append the exported image(s) to it; otherwise, we
 	 * create a new WIM containing the exported image(s). */
 	if (stat(dest_wimfile, &stbuf) == 0) {
+		int dest_ctype;
+
 		wim_is_new = false;
 		/* Destination file exists. */
 		if (!S_ISREG(stbuf.st_mode) && !S_ISLNK(stbuf.st_mode)) {
 			imagex_error("`%s' is not a regular file",
 					dest_wimfile);
+			ret = -1;
 			goto out;
 		}
 		ret = wimlib_open_wim(dest_wimfile, open_flags, &dest_w);
 		if (ret != 0)
 			goto out;
 
-		if (compression_type_specified && compression_type !=
-				wimlib_get_compression_type(dest_w)) {
+		dest_ctype = wimlib_get_compression_type(dest_w);
+		if (compression_type_specified
+		    && compression_type != dest_ctype)
+		{
 			imagex_error("Cannot specify a compression type that is "
 				     "not the same as that used in the "
 				     "destination WIM");
 			ret = -1;
 			goto out;
 		}
-		compression_type = wimlib_get_compression_type(dest_w);
+		compression_type = dest_ctype;
 	} else {
 		wim_is_new = true;
 		/* dest_wimfile is not an existing file, so create a new WIM. */
@@ -828,6 +826,7 @@ static int imagex_export(int argc, const char **argv)
 		} else {
 			imagex_error_with_errno("Cannot stat file `%s'",
 						dest_wimfile);
+			ret = -1;
 			goto out;
 		}
 	}
@@ -952,13 +951,6 @@ static int imagex_info(int argc, const char **argv)
 
 	part_number = wimlib_get_part_number(w, &total_parts);
 
-	/*if (total_parts > 1 && part_number > 1) {*/
-		/*printf("Warning: this is part %d of a %d-part split WIM.\n"*/
-		       /*"         Select the first part if you want to see information\n"*/
-		       /*"         about images in the WIM.\n", */
-		       /*part_number, total_parts);*/
-	/*}*/
-
 	image = wimlib_resolve_image(w, image_num_or_name);
 	if (image == WIM_NO_IMAGE && strcmp(image_num_or_name, "0") != 0) {
 		imagex_error("The image `%s' does not exist",
@@ -968,7 +960,7 @@ static int imagex_info(int argc, const char **argv)
 				     "index to 0, specify image \"0\" with "
 				     "the --boot flag.");
 		ret = WIMLIB_ERR_INVALID_IMAGE;
-		goto done;
+		goto out;
 	}
 
 	if (image == WIM_ALL_IMAGES && wimlib_get_num_images(w) > 1) {
@@ -977,14 +969,14 @@ static int imagex_info(int argc, const char **argv)
 				     "without specifying a specific "
 				     "image in a multi-image WIM");
 			ret = WIMLIB_ERR_INVALID_IMAGE;
-			goto done;
+			goto out;
 		}
 		if (new_name) {
 			imagex_error("Cannot specify the NEW_NAME "
 				     "without specifying a specific "
 				     "image in a multi-image WIM");
 			ret = WIMLIB_ERR_INVALID_IMAGE;
-			goto done;
+			goto out;
 		}
 	}
 
@@ -992,11 +984,13 @@ static int imagex_info(int argc, const char **argv)
 	 * recreate the WIM file. */
 	if (!new_name && !boot) {
 
+		/* Read-only operations */
+
 		if (image == WIM_NO_IMAGE) {
 			imagex_error("`%s' is not a valid image",
 				     image_num_or_name);
 			ret = WIMLIB_ERR_INVALID_IMAGE;
-			goto done;
+			goto out;
 		}
 
 		if (image == WIM_ALL_IMAGES && short_header)
@@ -1017,7 +1011,7 @@ static int imagex_info(int argc, const char **argv)
 		if (xml) {
 			ret = wimlib_extract_xml_data(w, stdout);
 			if (ret != 0)
-				goto done;
+				goto out;
 		}
 
 		if (xml_out_file) {
@@ -1027,17 +1021,17 @@ static int imagex_info(int argc, const char **argv)
 							"file `%s' for "
 							"writing ",
 							xml_out_file);
-				goto done;
+				goto out;
 			}
 			ret = wimlib_extract_xml_data(w, fp);
 			if (fclose(fp) != 0) {
 				imagex_error("Failed to close the file `%s'",
 					     xml_out_file);
-				goto done;
+				goto out;
 			}
 
 			if (ret != 0)
-				goto done;
+				goto out;
 		}
 
 		if (short_header)
@@ -1046,9 +1040,12 @@ static int imagex_info(int argc, const char **argv)
 		if (metadata) {
 			ret = wimlib_print_metadata(w, image);
 			if (ret != 0)
-				goto done;
+				goto out;
 		}
 	} else {
+
+		/* Modification operations */
+
 		if (total_parts != 1) {
 			imagex_error("Modifying a split WIM is not supported.");
 			return -1;
@@ -1084,7 +1081,7 @@ static int imagex_info(int argc, const char **argv)
 				       "\"%s\".\n", image, new_name);
 				ret = wimlib_set_image_name(w, image, new_name);
 				if (ret != 0)
-					goto done;
+					goto out;
 			}
 		}
 		if (new_desc) {
@@ -1100,7 +1097,7 @@ static int imagex_info(int argc, const char **argv)
 				ret = wimlib_set_image_descripton(w, image,
 								  new_desc);
 				if (ret != 0)
-					goto done;
+					goto out;
 			}
 		}
 
@@ -1118,8 +1115,7 @@ static int imagex_info(int argc, const char **argv)
 			ret = 0;
 		}
 	}
-
-done:
+out:
 	wimlib_free(w);
 	return ret;
 }
@@ -1174,6 +1170,7 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 
 	if (strcmp(argv[0], "mountrw") == 0)
 		mount_flags |= WIMLIB_MOUNT_FLAG_READWRITE;
+
 	for_opt(c, mount_options) {
 		switch (c) {
 		case 'c':
@@ -1266,6 +1263,7 @@ static int imagex_split(int argc, const char **argv)
 	int c;
 	int flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
 	unsigned long part_size;
+	char *tmp;
 
 	for_opt(c, split_options) {
 		switch (c) {
@@ -1284,7 +1282,12 @@ static int imagex_split(int argc, const char **argv)
 		usage(SPLIT);
 		return -1;
 	}
-	part_size = strtoul(argv[2], NULL, 10) * (1 << 20);
+	part_size = strtod(argv[2], &tmp) * (1 << 20);
+	if (tmp == argv[2] || *tmp) {
+		imagex_error("Invalid part size \"%s\"", argv[2]);
+		imagex_error("The part size must be an integer or floating-point number of megabytes.");
+		return -1;
+	}
 	return wimlib_split(argv[0], argv[1], part_size, flags);
 }
 
@@ -1331,19 +1334,19 @@ struct imagex_command {
 #define for_imagex_command(p) for (p = &imagex_commands[0]; \
 		p != &imagex_commands[ARRAY_LEN(imagex_commands)]; p++)
 
-static struct imagex_command imagex_commands[] = {
+static const struct imagex_command imagex_commands[] = {
 	{"append",  imagex_capture_or_append, APPEND},
-	{"apply",   imagex_apply,   	   APPLY},
+	{"apply",   imagex_apply,	      APPLY},
 	{"capture", imagex_capture_or_append, CAPTURE},
-	{"delete",  imagex_delete,	   DELETE},
-	{"dir",     imagex_dir,		   DIR},
-	{"export",  imagex_export,	   EXPORT},
-	{"info",    imagex_info,	   INFO},
-	{"join",    imagex_join,	   JOIN},
-	{"mount",   imagex_mount_rw_or_ro, MOUNT},
-	{"mountrw", imagex_mount_rw_or_ro, MOUNTRW},
-	{"split",   imagex_split,          SPLIT},
-	{"unmount", imagex_unmount,	   UNMOUNT},
+	{"delete",  imagex_delete,	      DELETE},
+	{"dir",     imagex_dir,		      DIR},
+	{"export",  imagex_export,	      EXPORT},
+	{"info",    imagex_info,	      INFO},
+	{"join",    imagex_join,	      JOIN},
+	{"mount",   imagex_mount_rw_or_ro,    MOUNT},
+	{"mountrw", imagex_mount_rw_or_ro,    MOUNTRW},
+	{"split",   imagex_split,	      SPLIT},
+	{"unmount", imagex_unmount,	      UNMOUNT},
 };
 
 static void version()
@@ -1364,7 +1367,7 @@ static void help_or_version(int argc, const char **argv)
 {
 	int i;
 	const char *p;
-	struct imagex_command *cmd;
+	const struct imagex_command *cmd;
 
 	for (i = 1; i < argc; i++) {
 		p = argv[i];
@@ -1374,7 +1377,7 @@ static void help_or_version(int argc, const char **argv)
 			continue;
 		if (*p == '-')
 			p++;
-		if (strcmp(p, "help") == 0 || (*p == '?' && *(p + 1) == '\0')) {
+		if (strcmp(p, "help") == 0) {
 			for_imagex_command(cmd) {
 				if (strcmp(cmd->name, argv[1]) == 0) {
 					usage(cmd->cmd);
@@ -1394,7 +1397,7 @@ static void help_or_version(int argc, const char **argv)
 
 static void usage(int cmd_type)
 {
-	struct imagex_command *cmd;
+	const struct imagex_command *cmd;
 	puts("IMAGEX: Usage:");
 	fputs(usage_strings[cmd_type], stdout);
 	for_imagex_command(cmd)
@@ -1422,7 +1425,7 @@ static void usage_all()
 
 int main(int argc, const char **argv)
 {
-	struct imagex_command *cmd;
+	const struct imagex_command *cmd;
 	int ret;
 
 	if (argc < 2) {

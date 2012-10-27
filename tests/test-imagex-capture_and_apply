@@ -80,7 +80,7 @@ do_test() {
 
 		# Can we split the WIM, apply the split WIM, join the split WIM,
 		# and apply the joined WIM, and get the same results every time?
-		if ! imagex split test.wim test.swm 0.01M; then
+		if ! imagex split test.wim test.swm 0.01; then
 			error "Failed to split WIM"
 		fi
 		if ! imagex apply test.swm 1 out.dir --ref "test*.swm" ; then
