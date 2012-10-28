@@ -1280,7 +1280,7 @@ out_cleanup_parser:
 #define CHECK_RET  ({ 	if (ret < 0)  { \
 				ERROR("Error writing XML data"); \
 				ret = WIMLIB_ERR_WRITE; \
-				goto err2; \
+				goto out_free_text_writer; \
 			} })
 
 /*
@@ -1297,8 +1297,6 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	xmlTextWriter *writer;
 	char          *utf16_str;
 	int ret;
-	int num_images;
-	int i;
 	const xmlChar *content;
 	size_t len;
 	size_t utf16_len;
@@ -1324,13 +1322,13 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	if (!buf) {
 		ERROR("Failed to allocate XML buffer");
 		ret = WIMLIB_ERR_NOMEM;
-		goto err0;
+		goto out;
 	}
 	writer = xmlNewTextWriterMemory(buf, 0);
 	if (!writer) {
 		ERROR("Failed to allocate XML writer");
 		ret = WIMLIB_ERR_NOMEM;
-		goto err1;
+		goto out_buffer_free;
 	}
 
 	/* XXX */
@@ -1351,18 +1349,15 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 					      total_bytes);
 	CHECK_RET;
 
-	if (wim_info)
-		num_images = wim_info->num_images;
-	else
-		num_images = 0;
-	DEBUG("Writing %u <IMAGE> elements", num_images);
-
-	for (i = 1; i <= num_images; i++) {
-		if (image != WIM_ALL_IMAGES && i != image)
-			continue;
-		DEBUG("Writing <IMAGE> element for image %d", i);
-		ret = xml_write_image_info(writer, &wim_info->images[i - 1]);
-		CHECK_RET;
+	if (wim_info != NULL) {
+		DEBUG("Writing %d <IMAGE> elements", (int)wim_info->num_images);
+		for (int i = 1; i <= (int)wim_info->num_images; i++) {
+			if (image != WIM_ALL_IMAGES && i != image)
+				continue;
+			DEBUG("Writing <IMAGE> element for image %d", i);
+			ret = xml_write_image_info(writer, &wim_info->images[i - 1]);
+			CHECK_RET;
+		}
 	}
 
 	ret = xmlTextWriterEndElement(writer);
@@ -1371,36 +1366,42 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	ret = xmlTextWriterEndDocument(writer);
 	CHECK_RET;
 
+	xmlFreeTextWriter(writer);
+	writer = NULL;
 	DEBUG("Done composing XML document. Now converting to UTF-16 and "
 	      "writing it to the output file.");
 
 	content = xmlBufferContent(buf);
 	len = xmlBufferLength(buf);
 
+	DEBUG("XML UTF-8 length = %zu", len);
+
 	utf16_str = utf8_to_utf16(content, len, &utf16_len);
 	if (!utf16_str) {
 		ret = WIMLIB_ERR_NOMEM;
-		goto err2;
+		goto out_free_text_writer;
 	}
+
+	DEBUG("XML UTF-16 length = %zu", utf16_len);
 
 	if ((putc(0xff, out)) == EOF || (putc(0xfe, out) == EOF) ||
 		((bytes_written = fwrite(utf16_str, 1, utf16_len, out))
 				!= utf16_len)) {
 		ERROR_WITH_ERRNO("Error writing XML data");
 		ret = WIMLIB_ERR_WRITE;
-		goto err3;
+		goto out_free_utf16_str;
 	}
 
 	DEBUG("Cleaning up.");
 
 	ret = 0;
-err3:
+out_free_utf16_str:
 	FREE(utf16_str);
-err2:
+out_free_text_writer:
 	xmlFreeTextWriter(writer);
-err1:
+out_buffer_free:
 	xmlBufferFree(buf);
-err0:
+out:
 	return ret;
 }
 
