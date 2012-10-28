@@ -37,7 +37,7 @@
  * invalid.  However, a security descriptor like this exists in the Windows 7
  * install.wim.  Here, security descriptors matching this pattern are modified
  * to have no SACL.  This should make no difference since the SACL had no
- * entries anyway; however  his ensures that that the security descriptors pass
+ * entries anyway; however this ensures that that the security descriptors pass
  * the validation in libntfs-3g.
  */
 static void empty_sacl_fixup(char *descr, u64 *size_p)
@@ -74,6 +74,11 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 	int ret;
 	u64 total_len;
 
+	/*
+	 * Sorry this function is excessively complicated--- I'm just being
+	 * extremely careful about integer overflows.
+	 */
+
 	sd = MALLOC(sizeof(struct wim_security_data));
 	if (!sd) {
 		ERROR("Out of memory");
@@ -87,10 +92,14 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 	p = get_u32(p, &sd->total_length);
 	p = get_u32(p, (u32*)&sd->num_entries);
 
-	if (sd->num_entries > 0x7fffffff) {
+	/* The security_id field of each dentry is a signed 32-bit integer, so
+	 * the possible indices into the security descriptors table are 0
+	 * through 0x7fffffff.  Which means 0x80000000 security descriptors
+	 * maximum.  Not like you should ever have anywhere close to that many
+	 * security descriptors! */
+	if (sd->num_entries > 0x80000000) {
 		ERROR("Security data has too many entries!");
-		ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
-		goto out_free_sd;
+		goto out_invalid_sd;
 	}
 
 	/* Verify the listed total length of the security data is big enough to
@@ -105,17 +114,21 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 		ERROR("Security data total length (%u) is bigger than the "
 		      "metadata resource length (%"PRIu64")",
 		      sd->total_length, metadata_resource_len);
-		ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
-		goto out_free_sd;
+		goto out_invalid_sd;
 	}
 
 	DEBUG("Reading security data: %u entries, length = %u",
 	      sd->num_entries, sd->total_length);
 
 	if (sd->num_entries == 0) {
-		/* No security data. */
-		total_len = 8;
-		goto out;
+		/* No security descriptors. */
+		if (sd->total_length != 0 && sd->total_length != 8) {
+			ERROR("Invalid security data length (%u): expected 0 or 8",
+			      sd->total_length);
+			goto out_invalid_sd;
+		}
+		sd->total_length = 8;
+		goto out_return_sd;
 	}
 
 	u64 sizes_size = (u64)sd->num_entries * sizeof(u64);
@@ -124,8 +137,11 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 		ERROR("Security data total length of %u is too short because "
 		      "there must be at least %"PRIu64" bytes of security data",
 		      sd->total_length, 8 + sizes_size);
-		ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
-		goto out_free_sd;
+		goto out_invalid_sd;
+	}
+	if (sizeof(size_t) < 8 && sizes_size > 0xffffffff) {
+		ERROR("Too many security descriptors!");
+		goto out_invalid_sd;
 	}
 	sd->sizes = MALLOC(sizes_size);
 	if (!sd->sizes) {
@@ -155,16 +171,18 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 			      "(current total length = %"PRIu64", security "
 			      "descriptor size = %"PRIu64")",
 			      total_len, sd->sizes[i]);
-			ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
-			goto out_free_sd;
+			goto out_invalid_sd;
 		}
 		total_len += sd->sizes[i];
+		/* This check assures that the descriptor size fits in a 32 bit
+		 * integer.  Because if it didn't, the total length would come
+		 * out bigger than sd->total_length, which is a 32 bit integer.
+		 * */
 		if (total_len > (u64)sd->total_length) {
 			ERROR("Security data total length of %u is too short "
 			      "because there are at least %"PRIu64" bytes of "
 			      "security data", sd->total_length, total_len);
-			ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
-			goto out_free_sd;
+			goto out_invalid_sd;
 		}
 		sd->descriptors[i] = MALLOC(sd->sizes[i]);
 		if (!sd->descriptors[i]) {
@@ -176,10 +194,18 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 		p = get_bytes(p, sd->sizes[i], sd->descriptors[i]);
 		empty_sacl_fixup(sd->descriptors[i], &sd->sizes[i]);
 	}
-out:
-	sd->total_length = (u32)total_len;
+	wimlib_assert(total_len <= 0xffffffff);
+	if ((total_len + 7 & ~7) != ((sd->total_length + 7) & ~7)) {
+		ERROR("Expected security data total length = %u, but "
+		      "calculated %u", sd->total_length, total_len);
+		goto out_invalid_sd;
+	}
+	sd->total_length = total_len;
+out_return_sd:
 	*sd_p = sd;
 	return 0;
+out_invalid_sd:
+	ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
 out_free_sd:
 	free_security_data(sd);
 	return ret;

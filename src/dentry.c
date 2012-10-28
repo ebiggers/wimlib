@@ -1455,7 +1455,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 		p = get_bytes(p, short_name_len, short_name);
 		if (*(u16*)p)
-			WARNING("Expected two zero bytes following the file name "
+			WARNING("Expected two zero bytes following the short name of "
 				"`%s', but found non-zero bytes", file_name_utf8);
 		p += 2;
 	}
@@ -1470,18 +1470,35 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * included in the dentry->length field for some reason.
 	 */
 	if (inode->num_ads != 0) {
-		if (calculated_size > metadata_resource_len - offset) {
-			ERROR("Not enough space in metadata resource for "
-			      "alternate stream entries");
-			ret = WIMLIB_ERR_INVALID_DENTRY;
-			goto out_free_short_name;
+
+		/* Trying different lengths is just a hack to make sure we have
+		 * a chance of reading the ADS entries correctly despite the
+		 * poor documentation. */
+
+		if (calculated_size != dentry->length) {
+			WARNING("Trying calculated dentry length (%"PRIu64") "
+				"instead of dentry->length field (%"PRIu64") "
+				"to read ADS entries",
+				calculated_size, dentry->length);
 		}
-		ret = read_ads_entries(&metadata_resource[offset + calculated_size],
-				       inode,
-				       metadata_resource_len - offset - calculated_size);
-		if (ret != 0)
-			goto out_free_short_name;
+		u64 lengths_to_try[3] = {calculated_size,
+					 dentry->length + 7 & ~7,
+					 dentry->length};
+		ret = WIMLIB_ERR_INVALID_DENTRY;
+		for (size_t i = 0; i < ARRAY_LEN(lengths_to_try); i++) {
+			if (lengths_to_try[i] > metadata_resource_len - offset)
+				continue;
+			ret = read_ads_entries(&metadata_resource[offset + lengths_to_try[i]],
+					       inode,
+					       metadata_resource_len - offset - lengths_to_try[i]);
+			if (ret == 0)
+				goto out;
+		}
+		ERROR("Failed to read alternate data stream "
+		      "entries of `%s'", dentry->file_name_utf8);
+		goto out_free_short_name;
 	}
+out:
 
 	/* We've read all the data for this dentry.  Set the names and their
 	 * lengths, and we've done. */

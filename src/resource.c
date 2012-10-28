@@ -1165,6 +1165,12 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 		return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
 	}
 
+	if (sizeof(size_t) < 8 && metadata_len > 0xffffffff) {
+		ERROR("Metadata resource is too large (%"PRIu64" bytes",
+		      metadata_len);
+		return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
+	}
+
 	/* Allocate memory for the uncompressed metadata resource. */
 	buf = MALLOC(metadata_len);
 
@@ -1192,14 +1198,18 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	 * and if successful, go ahead and calculate the offset in the metadata
 	 * resource of the root dentry. */
 
+	wimlib_assert(imd->security_data == NULL);
 	ret = read_security_data(buf, metadata_len, &imd->security_data);
 	if (ret != 0)
 		goto out_free_buf;
 
-	get_u32(buf, &dentry_offset);
-	if (dentry_offset == 0)
-		dentry_offset = 8;
-	dentry_offset = (dentry_offset + 7) & ~7;
+	dentry_offset = imd->security_data->total_length + 7 & ~7;
+
+	if (dentry_offset == 0) {
+		ERROR("Integer overflow while reading metadata resource");
+		ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
+		goto out_free_security_data;
+	}
 
 	/* Allocate memory for the root dentry and read it into memory */
 	dentry = MALLOC(sizeof(struct dentry));
