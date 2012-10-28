@@ -329,14 +329,13 @@ WIMLIBAPI int wimlib_join(const char **swm_names, unsigned num_swms,
 		goto out;
 	ret = join_wims(swms, num_swms, joined_wim, write_flags);
 out:
+	/* out_fp is the same in all the swms and joined_wim.  And it was
+	 * already closed in the call to finish_write(). */
 	for (i = 0; i < num_swms; i++) {
-		/* out_fp is the same in all the swms and joined_wim; only close
-		 * it one time, when freeing joined_wim. */
-		if (swms[i]) {
-			swms[i]->out_fp = NULL;
-			wimlib_free(swms[i]);
-		}
+		swms[i]->out_fp = NULL;
+		wimlib_free(swms[i]);
 	}
+	joined_wim->out_fp = NULL;
 	wimlib_free(joined_wim);
 	return ret;
 }

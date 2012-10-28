@@ -415,7 +415,18 @@ int finish_write(WIMStruct *w, int image, int write_flags)
 	if (fseeko(out, 0, SEEK_SET) != 0)
 		return WIMLIB_ERR_WRITE;
 
-	return write_header(&hdr, out);
+	ret = write_header(&hdr, out);
+	if (ret != 0)
+		return ret;
+
+	DEBUG("Closing output file.");
+	wimlib_assert(w->out_fp != NULL);
+	if (fclose(w->out_fp) != 0) {
+		ERROR_WITH_ERRNO("Failed to close the WIM file");
+		ret = WIMLIB_ERR_WRITE;
+	}
+	w->out_fp = NULL;
+	return ret;
 }
 
 /* Open file stream and write dummy header for WIM. */
@@ -432,6 +443,9 @@ int begin_write(WIMStruct *w, const char *path, int write_flags)
 		mode = "w+b";
 	else
 		mode = "wb";
+
+	if (w->out_fp)
+		fclose(w->out_fp);
 
 	w->out_fp = fopen(path, mode);
 	if (!w->out_fp) {
@@ -472,7 +486,7 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 
 	ret = begin_write(w, path, write_flags);
 	if (ret != 0)
-		goto out;
+		return ret;
 
 	for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt, NULL);
 
@@ -481,27 +495,15 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 	ret = for_image(w, image, write_file_resources);
 	if (ret != 0) {
 		ERROR("Failed to write WIM file resources to `%s'", path);
-		goto out;
+		return ret;
 	}
 
 	ret = for_image(w, image, write_metadata_resource);
 
 	if (ret != 0) {
 		/*ERROR("Failed to write WIM image metadata to `%s'", path);*/
-		goto out;
+		return ret;
 	}
 
-
-	ret = finish_write(w, image, write_flags);
-
-out:
-	DEBUG("Closing output file.");
-	if (w->out_fp != NULL) {
-		if (fclose(w->out_fp) != 0) {
-			ERROR_WITH_ERRNO("Failed to close the file `%s'", path);
-			ret = WIMLIB_ERR_WRITE;
-		}
-		w->out_fp = NULL;
-	}
-	return ret;
+	return finish_write(w, image, write_flags);
 }

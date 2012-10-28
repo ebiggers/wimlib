@@ -67,16 +67,8 @@ static int finish_swm(WIMStruct *w, struct lookup_table_entry *lte_chain_head,
 	w->hdr.lookup_table_res_entry.offset = lookup_table_offset;
 	w->hdr.lookup_table_res_entry.size =
 				xml_data_offset - lookup_table_offset;
-	ret = finish_write(w, WIM_ALL_IMAGES,
-			   write_flags | WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE);
-	if (ret != 0)
-		return ret;
-
-	ret = fclose(w->out_fp);
-	if (ret != 0)
-		ret = WIMLIB_ERR_WRITE;
-	w->out_fp = NULL;
-	return ret;
+	return finish_write(w, WIM_ALL_IMAGES,
+			    write_flags | WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE);
 }
 
 static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
