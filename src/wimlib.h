@@ -108,10 +108,9 @@
  * that this is for convenience only, and some errors can occur without a
  * message being printed.
  *
- * wimlib is thread-safe as long as different ::WIMStruct's are used, with the
- * following exceptions:  wimlib_set_print_errors() and
- * wimlib_set_memory_allocator() apply globally, and wimlib_mount() can only be
- * used by one ::WIMStruct at a time.
+ * wimlib is thread-safe as long as different ::WIMStruct's are used, except for
+ * the fact that wimlib_set_print_errors() and wimlib_set_memory_allocator()
+ * both apply globally.
  *
  * To open an existing WIM, use wimlib_open_wim().
  *
@@ -909,8 +908,9 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * If the mount is read-write, modifications to the WIM are staged in a staging
  * directory.
  *
- * wimlib_mount() currently cannot be used with multiple ::WIMStruct's without
- * intervening wimlib_unmount()s.
+ * wimlib_mount() may be called from multiple threads without intervening calls
+ * to wimlib_unmount(), provided that different ::WIMStruct's are used.  (This
+ * was not the case for versions of this library 1.0.3 and earlier.)
  *
  * wimlib_mount() cannot be used on an image that was exported with
  * wimlib_export() while the dentry trees for both images are still in memory.
