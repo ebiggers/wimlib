@@ -64,7 +64,7 @@ struct wimlib_fd {
 static WIMStruct *w;
 
 /* Working directory when `imagex mount' is run. */
-static const char *working_directory;
+static char *working_directory;
 
 /* Name of the staging directory for a read-write mount.  Whenever a new file is
  * created, it is done so in the staging directory.  Furthermore, whenever a
@@ -76,9 +76,6 @@ static size_t staging_dir_name_len;
 
 /* Flags passed to wimlib_mount(). */
 static int mount_flags;
-
-/* Name of the directory on which the WIM file is mounted. */
-static const char *mount_dir;
 
 /* Next inode number to be assigned. */
 static u64 next_ino;
@@ -554,6 +551,45 @@ static void s_slashes_underscores_g(char *s)
 	}
 }
 
+static int set_message_queue_names(const char *mount_dir)
+{
+	static const char *slash = "/";
+	static const char *prefix = "wimlib-";
+	static const char *u2d_suffix = "unmount-to-daemon-mq";
+	static const char *d2u_suffix = "daemon-to-unmount-mq";
+
+	const char *mount_dir_basename = path_basename(mount_dir);
+
+	unmount_to_daemon_mq_name = strcat_dup(slash, mount_dir_basename,
+						prefix, u2d_suffix);
+	if (!unmount_to_daemon_mq_name) {
+		ERROR("Out of memory");
+		return WIMLIB_ERR_NOMEM;
+	}
+	daemon_to_unmount_mq_name = strcat_dup(slash, mount_dir_basename,
+						prefix, d2u_suffix);
+	if (!daemon_to_unmount_mq_name) {
+		ERROR("Out of memory");
+		FREE(unmount_to_daemon_mq_name);
+		unmount_to_daemon_mq_name = NULL;
+		return WIMLIB_ERR_NOMEM;
+	}
+
+	remove_trailing_slashes(unmount_to_daemon_mq_name);
+	remove_trailing_slashes(daemon_to_unmount_mq_name);
+	s_slashes_underscores_g(unmount_to_daemon_mq_name + 1);
+	s_slashes_underscores_g(daemon_to_unmount_mq_name + 1);
+	return 0;
+}
+
+static void free_message_queue_names()
+{
+	FREE(unmount_to_daemon_mq_name);
+	FREE(daemon_to_unmount_mq_name);
+	unmount_to_daemon_mq_name = NULL;
+	daemon_to_unmount_mq_name = NULL;
+}
+
 /*
  * Opens two POSIX message queue: one for sending messages from the unmount
  * process to the daemon process, and one to go the other way.  The names of the
@@ -566,33 +602,11 @@ static void s_slashes_underscores_g(char *s)
  */
 static int open_message_queues(bool daemon)
 {
-	static const char *slash = "/";
-	static const char *prefix = "wimlib-";
-	static const char *u2d_suffix = "unmount-to-daemon-mq";
-	static const char *d2u_suffix = "daemon-to-unmount-mq";
-
-	const char *mount_dir_basename = path_basename(mount_dir);
 	int flags;
 	int ret;
 
-	unmount_to_daemon_mq_name = strcat_dup(slash, mount_dir_basename,
-						prefix, u2d_suffix);
-	if (!unmount_to_daemon_mq_name) {
-		ERROR("Out of memory");
-		return WIMLIB_ERR_NOMEM;
-	}
-	daemon_to_unmount_mq_name = strcat_dup(slash, mount_dir_basename,
-						prefix, d2u_suffix);
-	if (!daemon_to_unmount_mq_name) {
-		ERROR("Out of memory");
-		ret = WIMLIB_ERR_NOMEM;
-		goto err1;
-	}
-
-	remove_trailing_slashes(unmount_to_daemon_mq_name);
-	remove_trailing_slashes(daemon_to_unmount_mq_name);
-	s_slashes_underscores_g(unmount_to_daemon_mq_name + 1);
-	s_slashes_underscores_g(daemon_to_unmount_mq_name + 1);
+	wimlib_assert(unmount_to_daemon_mq_name != NULL &&
+		      daemon_to_unmount_mq_name != NULL);
 
 	if (daemon)
 		flags = O_RDONLY | O_CREAT;
@@ -605,7 +619,7 @@ static int open_message_queues(bool daemon)
 	if (unmount_to_daemon_mq == (mqd_t)-1) {
 		ERROR_WITH_ERRNO("mq_open()");
 		ret = WIMLIB_ERR_MQUEUE;
-		goto err2;
+		goto out;
 	}
 
 	if (daemon)
@@ -619,16 +633,15 @@ static int open_message_queues(bool daemon)
 	if (daemon_to_unmount_mq == (mqd_t)-1) {
 		ERROR_WITH_ERRNO("mq_open()");
 		ret = WIMLIB_ERR_MQUEUE;
-		goto err3;
+		goto out_close_unmount_to_daemon_mq;
 	}
-	return 0;
-err3:
+	ret = 0;
+	goto out;
+out_close_unmount_to_daemon_mq:
 	mq_close(unmount_to_daemon_mq);
 	mq_unlink(unmount_to_daemon_mq_name);
-err2:
-	FREE(daemon_to_unmount_mq_name);
-err1:
-	FREE(unmount_to_daemon_mq_name);
+	unmount_to_daemon_mq = (mqd_t)-1;
+out:
 	return ret;
 }
 
@@ -661,13 +674,20 @@ static int mq_get_msgsize(mqd_t mq)
 	return msgsize;
 }
 
+static void unlink_message_queues()
+{
+	mq_unlink(unmount_to_daemon_mq_name);
+	mq_unlink(daemon_to_unmount_mq_name);
+}
+
 /* Closes the message queues, which are allocated in static variables */
 static void close_message_queues()
 {
 	mq_close(unmount_to_daemon_mq);
+	unmount_to_daemon_mq = (mqd_t)(-1);
 	mq_close(daemon_to_unmount_mq);
-	mq_unlink(unmount_to_daemon_mq_name);
-	mq_unlink(daemon_to_unmount_mq_name);
+	daemon_to_unmount_mq = (mqd_t)(-1);
+	unlink_message_queues();
 }
 
 static int wimfs_access(const char *path, int mask)
@@ -806,7 +826,7 @@ static void wimfs_destroy(void *p)
 
 	ret = open_message_queues(true);
 	if (ret != 0)
-		exit(1);
+		return;
 
 	msgsize = mq_get_msgsize(unmount_to_daemon_mq);
 	char msg[msgsize];
@@ -822,17 +842,18 @@ static void wimfs_destroy(void *p)
 
 	bytes_received = mq_timedreceive(unmount_to_daemon_mq, msg,
 					 msgsize, NULL, &timeout);
-	commit = msg[0];
-	check_integrity = msg[1];
 	if (bytes_received == -1) {
-		if (errno == ETIMEDOUT) {
+		if (errno == ETIMEDOUT)
 			ERROR("Timed out.");
-		} else {
+		else
 			ERROR_WITH_ERRNO("mq_timedreceive()");
-		}
 		ERROR("Not committing.");
+		commit = 0;
+		check_integrity = 0;
 	} else {
 		DEBUG("Received message: [%d %d]", msg[0], msg[1]);
+		commit = msg[0];
+		check_integrity = msg[1];
 	}
 
 	status = 0;
@@ -842,7 +863,7 @@ static void wimfs_destroy(void *p)
 			if (status != 0) {
 				ERROR_WITH_ERRNO("chdir()");
 				status = WIMLIB_ERR_NOTDIR;
-				goto done;
+				goto out;
 			}
 			status = rebuild_wim(w, (check_integrity != 0));
 		}
@@ -856,8 +877,8 @@ static void wimfs_destroy(void *p)
 	} else {
 		DEBUG("Read-only mount");
 	}
-done:
-	DEBUG("Sending status %u", status);
+out:
+	DEBUG("Sending status %hhd", status);
 	ret = mq_send(daemon_to_unmount_mq, &status, 1, 1);
 	if (ret == -1)
 		ERROR_WITH_ERRNO("Failed to send status to unmount process");
@@ -1705,7 +1726,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	int argc = 0;
 	char *argv[16];
 	int ret;
-	char *p;
+	char *dir_copy;
 	struct lookup_table *joined_tab, *wim_tab_save;
 	struct image_metadata *imd;
 
@@ -1741,20 +1762,9 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	if (imd->root_dentry->refcnt != 1) {
 		ERROR("Cannot mount image that was just exported with "
 		      "wimlib_export()");
-		return WIMLIB_ERR_INVALID_PARAM;
+		ret = WIMLIB_ERR_INVALID_PARAM;
+		goto out;
 	}
-
-	next_ino = assign_inode_numbers(&imd->inode_list);
-
-	DEBUG("(next_ino = %"PRIu64")", next_ino);
-
-	/* Resolve all the lookup table entries of the dentry tree */
-	DEBUG("Resolving lookup table entries");
-	for_dentry_in_tree(imd->root_dentry, dentry_resolve_ltes,
-			   wim->lookup_table);
-
-	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
-		imd->modified = true;
 
 	if (!(flags & (WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE |
 		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR |
@@ -1763,7 +1773,6 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	DEBUG("Getting current directory");
 
-	mount_dir = dir;
 	working_directory = getcwd(NULL, 0);
 	if (!working_directory) {
 		ERROR_WITH_ERRNO("Could not determine current directory");
@@ -1771,26 +1780,20 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 		goto out;
 	}
 
-	DEBUG("Closing POSIX message queues");
-	/* XXX hack to get rid of the message queues if they already exist for
-	 * some reason (maybe left over from a previous mount that wasn't
-	 * unmounted correctly) */
-	ret = open_message_queues(true);
+	DEBUG("Unlinking message queues in case they already exist");
+	ret = set_message_queue_names(dir);
 	if (ret != 0)
-		goto out;
-	close_message_queues();
+		goto out_free_working_directory;
+	unlink_message_queues();
 
 	DEBUG("Preparing arguments to fuse_main()");
 
-
-	p = STRDUP(dir);
-	if (!p) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out;
-	}
+	dir_copy = STRDUP(dir);
+	if (!dir_copy)
+		goto out_free_message_queue_names;
 
 	argv[argc++] = "imagex";
-	argv[argc++] = p;
+	argv[argc++] = dir_copy;
 	argv[argc++] = "-s"; /* disable multi-threaded operation */
 
 	if (flags & WIMLIB_MOUNT_FLAG_DEBUG)
@@ -1798,9 +1801,9 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	/*
 	 * We provide the use_ino option because we are going to assign inode
-	 * numbers oursides.  We've already numbered the inodes with unique
-	 * numbers in the assign_inode_numbers() function, and the static
-	 * variable next_ino is set to the next available inode number.
+	 * numbers oursides.  The inodes will be given unique numbers in the
+	 * assign_inode_numbers() function, and the static variable @next_ino is
+	 * set to the next available inode number.
 	 */
 	char optstring[256] = "use_ino,subtype=wimfs,attr_timeout=0";
 	argv[argc++] = "-o";
@@ -1809,9 +1812,8 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 		/* Read-write mount.  Make the staging directory */
 		make_staging_dir();
 		if (!staging_dir_name) {
-			FREE(p);
 			ret = WIMLIB_ERR_MKDIR;
-			goto out;
+			goto out_free_dir_copy;
 		}
 	} else {
 		/* Read-only mount */
@@ -1832,6 +1834,20 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	}
 #endif
 
+
+	/* Mark dentry tree as modified if read-write mount. */
+	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
+		imd->modified = true;
+
+	next_ino = assign_inode_numbers(&imd->inode_list);
+
+	DEBUG("(next_ino = %"PRIu64")", next_ino);
+
+	/* Resolve all the lookup table entries of the dentry tree */
+	DEBUG("Resolving lookup table entries");
+	for_dentry_in_tree(imd->root_dentry, dentry_resolve_ltes,
+			   wim->lookup_table);
+
 	/* Set static variables. */
 	w = wim;
 	mount_flags = flags;
@@ -1839,6 +1855,13 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	ret = fuse_main(argc, argv, &wimfs_operations, NULL);
 	if (ret)
 		ret = WIMLIB_ERR_FUSE;
+out_free_dir_copy:
+	FREE(dir_copy);
+out_free_message_queue_names:
+	free_message_queue_names();
+out_free_working_directory:
+	FREE(working_directory);
+	working_directory = NULL;
 out:
 	if (num_additional_swms) {
 		free_lookup_table(wim->lookup_table);
@@ -1863,10 +1886,12 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	int msgsize;
 	int errno_save;
 
-	mount_dir = dir;
-
 	/* Open message queues between the unmount process and the
 	 * filesystem daemon. */
+	ret = set_message_queue_names(dir);
+	if (ret != 0)
+		return ret;
+
 	ret = open_message_queues(false);
 	if (ret != 0)
 		return ret;
