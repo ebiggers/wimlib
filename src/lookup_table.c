@@ -99,6 +99,7 @@ clone_lookup_table_entry(const struct lookup_table_entry *old)
 		memcpy(new->attached_buffer, old->attached_buffer,
 		       wim_resource_size(old));
 		break;
+#ifdef WITH_NTFS_3G
 	case RESOURCE_IN_NTFS_VOLUME:
 		if (old->ntfs_loc) {
 			struct ntfs_location *loc;
@@ -120,6 +121,7 @@ clone_lookup_table_entry(const struct lookup_table_entry *old)
 			       loc->stream_name_utf16_num_chars * 2);
 		}
 		break;
+#endif
 	}
 	return new;
 out_free:
