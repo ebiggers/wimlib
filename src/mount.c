@@ -35,6 +35,7 @@
 #include "xml.h"
 #include "io.h"
 #include "timestamp.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -541,72 +542,65 @@ static int delete_staging_dir(struct wimfs_context *ctx)
 }
 
 
-/* Simple function that returns the concatenation of 4 strings. */
-static char *strcat_dup(const char *s1, const char *s2, const char *s3,
-			const char *s4)
+/* Simple function that returns the concatenation of 2 strings. */
+static char *strcat_dup(const char *s1, const char *s2, size_t max_len)
 {
-	size_t len = strlen(s1) + strlen(s2) + strlen(s3) + strlen(s4) + 1;
-	char *p = MALLOC(len);
+	size_t len = strlen(s1) + strlen(s2);
+	if (len > max_len)
+		len = max_len;
+	char *p = MALLOC(len + 1);
 	if (!p)
 		return NULL;
-	p = strcpy(p, s1);
-	p = strcat(p, s2);
-	p = strcat(p, s3);
-	return strcat(p, s4);
-}
-
-/* Removes trailing forward slashes in a string. */
-static void remove_trailing_slashes(char *s)
-{
-	long len = strlen(s);
-	for (long i = len - 1; i >= 1; i--) {
-		if (s[i] == '/')
-			s[i] = '\0';
-		else
-			break;
-	}
-}
-
-/* Changes forward slashes to underscores in a string. */
-static void s_slashes_underscores_g(char *s)
-{
-	while (*s) {
-		if (*s == '/')
-			*s = '_';
-		s++;
-	}
+	snprintf(p, len + 1, "%s%s", s1, s2);
+	return p;
 }
 
 static int set_message_queue_names(struct wimfs_context *ctx,
 				   const char *mount_dir)
 {
-	static const char *slash = "/";
-	static const char *prefix = "wimlib-";
-	static const char *u2d_suffix = "unmount-to-daemon-mq";
-	static const char *d2u_suffix = "daemon-to-unmount-mq";
+	static const char *u2d_prefix = "/wimlib-unmount-to-daemon-mq";
+	static const char *d2u_prefix = "/wimlib-daemon-to-unmount-mq";
+	char *dir_path;
+	char *p;
+	int ret;
 
-	const char *mount_dir_basename = path_basename(mount_dir);
+ 	dir_path = realpath(mount_dir, NULL);
+	if (!dir_path) {
+		ERROR_WITH_ERRNO("Failed to resolve path \"%s\"", mount_dir);
+		return WIMLIB_ERR_NOTDIR;
+	}
 
-	ctx->unmount_to_daemon_mq_name = strcat_dup(slash, mount_dir_basename,
-						    prefix, u2d_suffix);
+	DEBUG("Using absolute dir_path = `%s'", dir_path);
+
+
+	p = dir_path;
+	while (*p) {
+		if (*p == '/')
+			*p = 0xff;
+		p++;
+	}
+
+	ctx->unmount_to_daemon_mq_name = strcat_dup(u2d_prefix, dir_path,
+						    NAME_MAX);
 	if (!ctx->unmount_to_daemon_mq_name) {
-		ERROR("Out of memory");
-		return WIMLIB_ERR_NOMEM;
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_dir_path;
 	}
-	ctx->daemon_to_unmount_mq_name = strcat_dup(slash, mount_dir_basename,
-						    prefix, d2u_suffix);
+	ctx->daemon_to_unmount_mq_name = strcat_dup(d2u_prefix, dir_path,
+						    NAME_MAX);
 	if (!ctx->daemon_to_unmount_mq_name) {
-		ERROR("Out of memory");
-		FREE(ctx->unmount_to_daemon_mq_name);
-		ctx->unmount_to_daemon_mq_name = NULL;
-		return WIMLIB_ERR_NOMEM;
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_unmount_to_daemon_mq_name;
 	}
 
-	remove_trailing_slashes(ctx->unmount_to_daemon_mq_name);
-	remove_trailing_slashes(ctx->daemon_to_unmount_mq_name);
-	s_slashes_underscores_g(ctx->unmount_to_daemon_mq_name + 1);
-	s_slashes_underscores_g(ctx->daemon_to_unmount_mq_name + 1);
-	return 0;
+	ret = 0;
+	goto out_free_dir_path;
+out_free_unmount_to_daemon_mq_name:
+	FREE(ctx->unmount_to_daemon_mq_name);
+	ctx->unmount_to_daemon_mq_name = NULL;
+out_free_dir_path:
+	FREE(dir_path);
+	return ret;
 }
 
 static void free_message_queue_names(struct wimfs_context *ctx)
@@ -640,6 +634,7 @@ static int open_message_queues(struct wimfs_context *ctx, bool daemon)
 	else
 		flags = O_WRONLY | O_CREAT;
 
+	DEBUG("Opening message queue \"%s\"", ctx->unmount_to_daemon_mq_name);
 	ctx->unmount_to_daemon_mq = mq_open(ctx->unmount_to_daemon_mq_name,
 					    flags, 0700, NULL);
 
@@ -654,6 +649,7 @@ static int open_message_queues(struct wimfs_context *ctx, bool daemon)
 	else
 		flags = O_RDONLY | O_CREAT;
 
+	DEBUG("Opening message queue \"%s\"", ctx->daemon_to_unmount_mq_name);
 	ctx->daemon_to_unmount_mq = mq_open(ctx->daemon_to_unmount_mq_name,
 					    flags, 0700, NULL);
 
@@ -1919,7 +1915,11 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	ctx.wim = wim;
 	ctx.mount_flags = flags;
 
+	DEBUG("Calling fuse_main()");
+
 	ret = fuse_main(argc, argv, &wimfs_operations, &ctx);
+
+	DEBUG("Returned from fuse_main() (ret = %d)", ret);
 	if (ret)
 		ret = WIMLIB_ERR_FUSE;
 out_free_dir_copy:
