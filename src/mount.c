@@ -391,7 +391,7 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 			 * */
 			wimlib_assert(old_lte->refcnt > inode->link_count);
 			DEBUG("Splitting lookup table entry "
-			      "(inode->link_count = %zu, old_lte->refcnt = %u)",
+			      "(inode->link_count = %u, old_lte->refcnt = %u)",
 			      inode->link_count, old_lte->refcnt);
 
 		}
@@ -430,7 +430,7 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 				j++;
 			}
 		}
-		DEBUG("%zu fd's were already opened to the file we extracted",
+		DEBUG("%hu fd's were already opened to the file we extracted",
 		      new_lte->num_opened_fds);
 		if (old_lte) {
 			old_lte->num_opened_fds -= new_lte->num_opened_fds;
@@ -468,7 +468,6 @@ out_revert_fd_changes:
 			j++;
 		}
 	}
-out_free_new_lte:
 	free_lookup_table_entry(new_lte);
 out_delete_staging_file:
 	unlink(staging_file_name);
@@ -911,12 +910,13 @@ static void wimfs_destroy(void *p)
 	status = 0;
 	if (ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		if (commit) {
-			if (chdir(ctx->working_directory)) {
+			ret = chdir(ctx->working_directory);
+			if (ret == 0) {
+				status = rebuild_wim(ctx, (check_integrity != 0));
+			} else {
 				ERROR_WITH_ERRNO("chdir()");
 				status = WIMLIB_ERR_NOTDIR;
-				goto out;
 			}
-			status = rebuild_wim(ctx, (check_integrity != 0));
 		}
 		ret = delete_staging_dir(ctx);
 		if (ret != 0) {
@@ -927,12 +927,10 @@ static void wimfs_destroy(void *p)
 	} else {
 		DEBUG("Read-only mount");
 	}
-out:
 	DEBUG("Sending status %hhd", status);
 	ret = mq_send(ctx->daemon_to_unmount_mq, &status, 1, 1);
 	if (ret == -1)
 		ERROR_WITH_ERRNO("Failed to send status to unmount process");
-out_free_mailbox:
 	FREE(mailbox);
 out_close_message_queues:
 	close_message_queues(ctx);
@@ -1077,9 +1075,7 @@ static int wimfs_link(const char *to, const char *from)
 #ifdef ENABLE_XATTR
 static int wimfs_listxattr(const char *path, char *list, size_t size)
 {
-	int ret;
 	size_t needed_size;
-	unsigned i;
 	struct inode *inode;
 	struct wimfs_context *ctx = wimfs_get_context();
 
@@ -1094,12 +1090,12 @@ static int wimfs_listxattr(const char *path, char *list, size_t size)
 
 	if (size == 0) {
 		needed_size = 0;
-		for (i = 0; i < inode->num_ads; i++)
+		for (u16 i = 0; i < inode->num_ads; i++)
 			needed_size += inode->ads_entries[i].stream_name_utf8_len + 6;
 		return needed_size;
 	} else {
 		char *p = list;
-		for (i = 0; i < inode->num_ads; i++) {
+		for (u16 i = 0; i < inode->num_ads; i++) {
 			needed_size = inode->ads_entries[i].stream_name_utf8_len + 6;
 			if (needed_size > size)
 				return -ERANGE;
@@ -1646,10 +1642,8 @@ static int wimfs_unlink(const char *path)
 {
 	struct dentry *dentry;
 	struct lookup_table_entry *lte;
-	struct inode *inode;
 	int ret;
 	u16 stream_idx;
-	unsigned i;
 	struct wimfs_context *ctx = wimfs_get_context();
 
 	ret = lookup_resource(ctx->w, path, get_lookup_flags(ctx),

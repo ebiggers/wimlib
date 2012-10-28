@@ -122,6 +122,8 @@ clone_lookup_table_entry(const struct lookup_table_entry *old)
 		}
 		break;
 #endif
+	default:
+		break;
 	}
 	return new;
 out_free:

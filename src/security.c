@@ -40,7 +40,7 @@
  * entries anyway; however this ensures that that the security descriptors pass
  * the validation in libntfs-3g.
  */
-static void empty_sacl_fixup(char *descr, u64 *size_p)
+static void empty_sacl_fixup(u8 *descr, u64 *size_p)
 {
 	if (*size_p >= sizeof(SecurityDescriptor)) {
 		SecurityDescriptor *sd = (SecurityDescriptor*)descr;
@@ -195,9 +195,9 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 		empty_sacl_fixup(sd->descriptors[i], &sd->sizes[i]);
 	}
 	wimlib_assert(total_len <= 0xffffffff);
-	if ((total_len + 7 & ~7) != ((sd->total_length + 7) & ~7)) {
+	if (((total_len + 7) & ~7) != ((sd->total_length + 7) & ~7)) {
 		ERROR("Expected security data total length = %u, but "
-		      "calculated %u", sd->total_length, total_len);
+		      "calculated %u", sd->total_length, (unsigned)total_len);
 		goto out_invalid_sd;
 	}
 	sd->total_length = total_len;

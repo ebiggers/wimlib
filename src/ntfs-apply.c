@@ -263,7 +263,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 
 		sd = wim_const_security_data(w);
 		wimlib_assert(dentry->d_inode->security_id < sd->num_entries);
-		descriptor = sd->descriptors[dentry->d_inode->security_id];
+		descriptor = (const char *)sd->descriptors[dentry->d_inode->security_id];
 		DEBUG("Applying security descriptor %d to `%s'",
 		      dentry->d_inode->security_id, dentry->full_path_utf8);
 
@@ -413,8 +413,6 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	if (inode->attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		type = S_IFDIR;
 	} else {
-		struct dentry *other;
-
 		/* Apply hard-linked directory in same directory with DOS name
 		 * (if there is one) before this dentry */
 		if (dentry->short_name_len == 0) {

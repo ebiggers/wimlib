@@ -504,11 +504,8 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 		wimlib_assert(lte->ntfs_loc != NULL);
 		wimlib_assert(lte->attr != NULL);
 		{
-			u64 adjusted_offset;
 			if (lte->ntfs_loc->is_reparse_point)
-				adjusted_offset = offset + 8;
-			else
-				adjusted_offset = offset;
+				offset += 8;
 			if (ntfs_attr_pread(lte->attr, offset, size, buf) != size) {
 				ERROR_WITH_ERRNO("Error reading NTFS attribute "
 						 "at `%s'",
@@ -1203,7 +1200,7 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	if (ret != 0)
 		goto out_free_buf;
 
-	dentry_offset = imd->security_data->total_length + 7 & ~7;
+	dentry_offset = (imd->security_data->total_length + 7) & ~7;
 
 	if (dentry_offset == 0) {
 		ERROR("Integer overflow while reading metadata resource");

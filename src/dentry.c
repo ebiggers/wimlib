@@ -740,9 +740,7 @@ static void put_inode(struct inode *inode)
  */
 void free_dentry(struct dentry *dentry)
 {
-	wimlib_assert(dentry);
-	struct inode *inode;
-
+	wimlib_assert(dentry != NULL);
 	FREE(dentry->file_name);
 	FREE(dentry->file_name_utf8);
 	FREE(dentry->short_name);
@@ -754,8 +752,8 @@ void free_dentry(struct dentry *dentry)
 
 void put_dentry(struct dentry *dentry)
 {
-	wimlib_assert(dentry);
-	wimlib_assert(dentry->refcnt);
+	wimlib_assert(dentry != NULL);
+	wimlib_assert(dentry->refcnt != 0);
 
 	if (--dentry->refcnt == 0)
 		free_dentry(dentry);
@@ -901,7 +899,7 @@ static int verify_inode(struct inode *inode, const WIMStruct *w)
 				WARNING("The following lookup table entry "
 					"has a reference count of %u, but",
 					lte->refcnt);
-				WARNING("We found %zu references to it",
+				WARNING("We found %u references to it",
 					lte->real_refcnt);
 				WARNING("(One dentry referencing it is at `%s')",
 					 first_dentry->full_path_utf8);
@@ -951,12 +949,10 @@ out:
 /* Run some miscellaneous verifications on a WIM dentry */
 int verify_dentry(struct dentry *dentry, void *wim)
 {
-	const WIMStruct *w = wim;
-	const struct inode *inode = dentry->d_inode;
 	int ret;
 
 	if (!dentry->d_inode->verified) {
-		ret = verify_inode(dentry->d_inode, w);
+		ret = verify_inode(dentry->d_inode, wim);
 		if (ret != 0)
 			return ret;
 	}
@@ -1378,7 +1374,8 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		      "short_name_len = %hu, file_name_len = %hu)",
 		      calculated_size, dentry->length,
 		      short_name_len, file_name_len);
-		return WIMLIB_ERR_INVALID_DENTRY;
+		ret = WIMLIB_ERR_INVALID_DENTRY;
+		goto out_free_inode;
 	}
 
 	/* Read the filename if present.  Note: if the filename is empty, there
@@ -1388,7 +1385,8 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		if (!file_name) {
 			ERROR("Failed to allocate %hu bytes for dentry file name",
 			      file_name_len);
-			return WIMLIB_ERR_NOMEM;
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_inode;
 		}
 		p = get_bytes(p, file_name_len, file_name);
 
@@ -1480,7 +1478,7 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 				calculated_size, dentry->length);
 		}
 		u64 lengths_to_try[3] = {calculated_size,
-					 dentry->length + 7 & ~7,
+					 (dentry->length + 7) & ~7,
 					 dentry->length};
 		ret = WIMLIB_ERR_INVALID_DENTRY;
 		for (size_t i = 0; i < ARRAY_LEN(lengths_to_try); i++) {

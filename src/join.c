@@ -280,22 +280,17 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 WIMLIBAPI int wimlib_join(const char **swm_names, unsigned num_swms,
 			  const char *output_path, int flags)
 {
-	int i;
 	int ret;
-	int part_idx;
 	int write_flags = 0;
 	WIMStruct *joined_wim = NULL;
 	WIMStruct *swms[num_swms];
-
-	int ctype;
-	u8 *guid;
 
 	if (num_swms < 1)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	ZERO_ARRAY(swms);
 
-	for (i = 0; i < num_swms; i++) {
+	for (unsigned i = 0; i < num_swms; i++) {
 		ret = wimlib_open_wim(swm_names[i],
 				      flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &swms[i]);
 		if (ret != 0)
@@ -331,7 +326,7 @@ WIMLIBAPI int wimlib_join(const char **swm_names, unsigned num_swms,
 out:
 	/* out_fp is the same in all the swms and joined_wim.  And it was
 	 * already closed in the call to finish_write(). */
-	for (i = 0; i < num_swms; i++) {
+	for (unsigned i = 0; i < num_swms; i++) {
 		swms[i]->out_fp = NULL;
 		wimlib_free(swms[i]);
 	}

@@ -280,7 +280,7 @@ static int fix_true_inode(struct inode *inode, struct hlist_head *inode_list)
 static int
 fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
 {
-	struct dentry *dentry, *ref_dentry;
+	struct dentry *dentry;
 	struct hlist_node *cur, *tmp;
 	int ret;
 	size_t num_true_inodes;
@@ -315,7 +315,7 @@ fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
 	if (list_empty(&dentries_with_data_streams)) {
 	#ifdef ENABLE_DEBUG
 		if (inode->link_count > 1) {
-			DEBUG("Found link group of size %zu without "
+			DEBUG("Found link group of size %u without "
 			      "any data streams:", inode->link_count);
 			print_inode_dentries(inode);
 			DEBUG("We are going to interpret it as true "

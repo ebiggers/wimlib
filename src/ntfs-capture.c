@@ -271,7 +271,6 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 				 CASE_SENSITIVE, 0, NULL, 0, actx))
 	{
 		char *stream_name_utf8;
-		size_t stream_name_utf16_len;
 		u32 reparse_tag;
 		u64 data_size = ntfs_get_attribute_value_length(actx->attr);
 		u64 name_length = actx->attr->name_length;
@@ -508,7 +507,6 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 {
 	u32 attributes;
 	int mrec_flags;
-	u32 sd_size = 0;
 	int ret;
 	char dos_name_utf8[64];
 	struct dentry *root;

@@ -199,24 +199,6 @@ static void imagex_error_with_errno(const char *format, ...)
 	va_end(va);
 }
 
-static const char *path_basename(const char *path)
-{
-	const char *p = path;
-	while (*p)
-		p++;
-	p--;
-
-	/* Trailing slashes. */
-	while ((p != path - 1) && *p == '/')
-		p--;
-
-	while ((p != path - 1) && *p != '/')
-		p--;
-
-	return p + 1;
-}
-
-
 static int verify_image_exists(int image)
 {
 	if (image == WIM_NO_IMAGE) {

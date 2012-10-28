@@ -389,7 +389,7 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 
 	if (!imd) {
 		ERROR("Failed to allocate memory for new image metadata array");
-		return WIMLIB_ERR_NOMEM;
+		goto err;
 	}
 
 	memcpy(imd, w->image_metadata,
@@ -397,7 +397,7 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 
 	metadata_lte = new_lookup_table_entry();
 	if (!metadata_lte)
-		goto out_free_imd;
+		goto err_free_imd;
 
 	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
 	random_hash(metadata_lte->hash);
@@ -420,10 +420,9 @@ static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 	ret = select_wim_image(w, w->hdr.image_count);
 	wimlib_assert(ret == 0);
 	return ret;
-out_free_metadata_lte:
-	FREE(metadata_lte);
-out_free_imd:
+err_free_imd:
 	FREE(imd);
+err:
 	return WIMLIB_ERR_NOMEM;
 
 }

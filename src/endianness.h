@@ -59,28 +59,29 @@ static inline uint64_t bswap64(uint64_t n)
 #	endif
 #endif
 
-static inline void array_cpu_to_le32(uint32_t *p, uint64_t n)
+static inline void array_cpu_to_le32(uint32_t *p, size_t n)
 {
-	while (n--)
-		*p++ = cpu_to_le32(*p);
+	for (size_t i = 0; i < n; i++)
+		p[i] = cpu_to_le32(p[i]);
 }
 
-static inline void array_le32_to_cpu(uint32_t *p, uint64_t n)
+static inline void array_le32_to_cpu(uint32_t *p, size_t n)
 {
-	while (n--)
-		*p++ = le32_to_cpu(*p);
+	for (size_t i = 0; i < n; i++)
+		p[i] = le32_to_cpu(p[i]);
 }
 
-static inline void array_cpu_to_le64(uint64_t *p, uint64_t n)
+static inline void array_cpu_to_le64(uint64_t *p, size_t n)
 {
-	while (n--)
-		*p++ = cpu_to_le64(*p);
+	for (size_t i = 0; i < n; i++)
+		p[i] = cpu_to_le64(p[i]);
 }
 
-static inline void array_le64_to_cpu(uint64_t *p, uint64_t n)
+static inline void array_le64_to_cpu(uint64_t *p, size_t n)
 {
-	while (n--)
-		*p++ = le64_to_cpu(*p);
+	for (size_t i = 0; i < n; i++)
+		p[i] = le64_to_cpu(p[i]);
 }
+
 
 #endif /* _WIMLIB_ENDIANNESS_H */

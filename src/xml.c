@@ -1065,7 +1065,6 @@ static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
 void xml_update_image_info(WIMStruct *w, int image)
 {
 	struct image_info *image_info;
-	struct dentry *root;
 	char *flags_save;
 
 	DEBUG("Updating the image info for image %d", image);
@@ -1140,11 +1139,8 @@ out_free_wim_info:
  * */
 void print_image_info(const struct wim_info *wim_info, int image)
 {
-	uint i;
 	const struct image_info *image_info;
 	const char *desc;
-	int start;
-	int end;
 	time_t time;
 	char *p;
 
