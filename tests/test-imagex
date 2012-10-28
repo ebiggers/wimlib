@@ -19,7 +19,6 @@ imagex_info() {
 }
 
 cleanup() {
-	fusermount -u tmp &> /dev/null || true
 	rm -rf dir* tmp* *.wim *.swm
 }
 cleanup

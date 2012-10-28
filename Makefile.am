@@ -125,8 +125,11 @@ tests_tree_cmp_SOURCES = tests/tree-cmp.c
 
 dist_check_SCRIPTS = tests/test-imagex				\
 		     tests/test-imagex-mount			\
-		     tests/test-imagex-capture_and_apply	\
-		     tests/test-imagex-ntfs
+		     tests/test-imagex-capture_and_apply
+
+if WITH_NTFS_3G
+dist_check_SCRIPTS += tests/test-imagex-ntfs
+endif
 
 TESTS = $(dist_check_SCRIPTS)
 

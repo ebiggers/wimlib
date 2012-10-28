@@ -956,7 +956,7 @@ static int wimfs_ftruncate(const char *path, off_t size,
 	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
 	int ret = ftruncate(fd->staging_fd, size);
 	if (ret != 0)
-		return ret;
+		return -errno;
 	if (fd->f_lte && size < fd->f_lte->resource_entry.original_size)
 		fd->f_lte->resource_entry.original_size = size;
 	return 0;
@@ -1249,9 +1249,9 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 	struct inode *inode;
 	int ret;
 	struct wimlib_fd *fd = NULL;
-	struct wimfs_context *ctx = wimfs_get_context();
+	WIMStruct *w = wimfs_get_WIMStruct();
 
-	inode = wim_pathname_to_inode(ctx->wim, path);
+	inode = wim_pathname_to_inode(w, path);
 	if (!inode)
 		return -ENOENT;
 	if (!inode_is_directory(inode))

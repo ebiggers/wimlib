@@ -424,21 +424,22 @@ struct dentry *get_dentry_child_with_name(const struct dentry *dentry,
 static struct dentry *get_dentry_relative_path(struct dentry *cur_dir,
 					       const char *path)
 {
-	struct dentry *child;
+	struct dentry *child, *children;
 	size_t base_len;
 	const char *new_path;
 
 	if (*path == '\0')
 		return cur_dir;
 
-	child = cur_dir->d_inode->children;
-	if (child) {
+	children = cur_dir->d_inode->children;
+	if (children) {
 		new_path = path_next_part(path, &base_len);
+		child = children;
 		do {
 			if (dentry_has_name(child, path, base_len))
 				return get_dentry_relative_path(child, new_path);
 			child = child->next;
-		} while (child != cur_dir->d_inode->children);
+		} while (child != children);
 	}
 	return NULL;
 }
