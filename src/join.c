@@ -272,7 +272,8 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 	 * attached to it.  */
 	swms[0]->hdr.flags &= ~WIM_HDR_FLAG_SPANNED;
 	swms[0]->hdr.total_parts = 1;
-	return finish_write(swms[0], WIM_ALL_IMAGES, write_flags, 0);
+	return finish_write(swms[0], WIM_ALL_IMAGES,
+			    write_flags | WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE);
 }
 
 

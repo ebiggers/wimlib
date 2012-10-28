@@ -346,6 +346,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_READLINK,
 	WIMLIB_ERR_READ,
 	WIMLIB_ERR_RENAME,
+	WIMLIB_ERR_RESOURCE_ORDER,
 	WIMLIB_ERR_SPECIAL_FILE,
 	WIMLIB_ERR_SPLIT_INVALID,
 	WIMLIB_ERR_SPLIT_UNSUPPORTED,
@@ -1113,6 +1114,11 @@ extern int wimlib_overwrite(WIMStruct *wim, int flags);
  * 	from the WIM file associated with @a wim could not be read to compute
  * 	the SHA1 message digests, or the old integrity table (if it existed)
  * 	could not be read.
+ * @retval ::WIMLIB_ERR_RESOURCE_ORDER
+ * 	Stream resources appeared in the WIM after the XML data or integrity
+ * 	table, so we could not safely overwrite the XML data and integrity
+ * 	table.  Note: this error should never be received from WIMs that were
+ * 	written by this library.
  * @retval ::WIMLIB_ERR_WRITE
  * 	Failed to write the WIM header, the XML data, or the integrity table to
  * 	the WIM file associated with @a wim.

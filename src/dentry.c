@@ -40,6 +40,9 @@
 #include "wimlib_internal.h"
 
 
+/* Calculates the unaligned length, in bytes, of an on-disk WIM dentry that has
+ * a file name and short name that take the specified numbers of bytes.  This
+ * excludes any alternate data stream entries that may follow the dentry. */
 static u64 __dentry_correct_length_unaligned(u16 file_name_len,
 					     u16 short_name_len)
 {
@@ -51,23 +54,25 @@ static u64 __dentry_correct_length_unaligned(u16 file_name_len,
 	return length;
 }
 
+/* Calculates the unaligned length, in bytes, of an on-disk WIM dentry, based on
+ * the file name length and short name length.  Note that dentry->length is
+ * ignored; also, this excludes any alternate data stream entries that may
+ * follow the dentry. */
 static u64 dentry_correct_length_unaligned(const struct dentry *dentry)
 {
 	return __dentry_correct_length_unaligned(dentry->file_name_len,
 						 dentry->short_name_len);
 }
 
-/* Return the "correct" value to write in the length field of the dentry, based
- * on the file name length and short name length */
+/* Return the "correct" value to write in the length field of a WIM dentry,
+ * based on the file name length and short name length. */
 static u64 dentry_correct_length(const struct dentry *dentry)
 {
 	return (dentry_correct_length_unaligned(dentry) + 7) & ~7;
 }
 
-/*
- * Returns true if @dentry has the UTF-8 file name @name that has length
- * @name_len.
- */
+/* Return %true iff @dentry has the UTF-8 file name @name that has length
+ * @name_len bytes. */
 static bool dentry_has_name(const struct dentry *dentry, const char *name,
 			    size_t name_len)
 {
@@ -76,6 +81,8 @@ static bool dentry_has_name(const struct dentry *dentry, const char *name,
 	return memcmp(dentry->file_name_utf8, name, name_len) == 0;
 }
 
+/* Return %true iff the alternate data stream entry @entry has the UTF-8 stream
+ * name @name that has length @name_len bytes. */
 static inline bool ads_entry_has_name(const struct ads_entry *entry,
 				      const char *name, size_t name_len)
 {
@@ -163,14 +170,16 @@ static u64 __dentry_total_length(const struct dentry *dentry, u64 length)
 	return (length + 7) & ~7;
 }
 
+/* Calculate the aligned *total* length of an on-disk WIM dentry.  This includes
+ * all alternate data streams. */
 u64 dentry_correct_total_length(const struct dentry *dentry)
 {
 	return __dentry_total_length(dentry,
 				     dentry_correct_length_unaligned(dentry));
 }
 
-/* Real length of a dentry, including the alternate data stream entries, which
- * are not included in the dentry->length field... */
+/* Like dentry_correct_total_length(), but use the existing dentry->length field
+ * instead of calculating its "correct" value. */
 static u64 dentry_total_length(const struct dentry *dentry)
 {
 	return __dentry_total_length(dentry, dentry->length);
@@ -352,13 +361,14 @@ oom:
  *
  * @dentry:  The root of the directory tree.
  * @subdir_offset_p:  The current subdirectory offset; i.e., the subdirectory
- * 	offset for @dentry.
+ *		      offset for @dentry.
  */
 void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 {
-	struct dentry *child;
+	struct dentry *child, *children;
 
-	child = dentry->d_inode->children;
+	children = dentry->d_inode->children;
+	child = children;
 	dentry->subdir_offset = *subdir_offset_p;
 
 	if (child) {
@@ -367,7 +377,7 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 		do {
 			*subdir_offset_p += dentry_correct_total_length(child);
 			child = child->next;
-		} while (child != dentry->d_inode->children);
+		} while (child != children);
 
 		/* End-of-directory dentry on disk. */
 		*subdir_offset_p += 8;
@@ -377,7 +387,7 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 		do {
 			calculate_subdir_offsets(child, subdir_offset_p);
 			child = child->next;
-		} while (child != dentry->d_inode->children);
+		} while (child != children);
 	} else {
 		/* On disk, childless directories have a valid subdir_offset
 		 * that points to an 8-byte end-of-directory dentry.  Regular
@@ -1675,7 +1685,7 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
  * @parent itself, which has already been written. */
 static u8 *write_dentry_tree_recursive(const struct dentry *parent, u8 *p)
 {
-	const struct dentry *child;
+	const struct dentry *child, *children;
 
 	/* Nothing to do if this dentry has no children. */
 	if (parent->subdir_offset == 0)
@@ -1687,12 +1697,13 @@ static u8 *write_dentry_tree_recursive(const struct dentry *parent, u8 *p)
 	 * recursively writing the directory trees rooted at each of the child
 	 * dentries, since the on-disk dentries for a dentry's children are
 	 * always located at consecutive positions in the metadata resource! */
-	child = parent->d_inode->children;
+	children = parent->d_inode->children;
+	child = children;
 	if (child) {
 		do {
 			p = write_dentry(child, p);
 			child = child->next;
-		} while (child != parent->d_inode->children);
+		} while (child != children);
 	}
 
 	/* write end of directory entry */
@@ -1703,7 +1714,7 @@ static u8 *write_dentry_tree_recursive(const struct dentry *parent, u8 *p)
 		do {
 			p = write_dentry_tree_recursive(child, p);
 			child = child->next;
-		} while (child != parent->d_inode->children);
+		} while (child != children);
 	}
 	return p;
 }
@@ -1717,6 +1728,7 @@ static u8 *write_dentry_tree_recursive(const struct dentry *parent, u8 *p)
  */
 u8 *write_dentry_tree(const struct dentry *root, u8 *p)
 {
+	DEBUG("Writing dentry tree.");
 	wimlib_assert(dentry_is_root(root));
 
 	/* If we're the root dentry, we have no parent that already

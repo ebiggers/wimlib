@@ -252,16 +252,16 @@ out:
 int write_integrity_table(FILE *out, u64 end_header_offset,
 			  u64 end_lookup_table_offset, int show_progress)
 {
-	u64   bytes_to_check;
-	u64   bytes_remaining;
-	u8   *buf;
-	u8   *p;
-	u8   *chunk_buf;
-	u32   num_entries;
-	u32   integrity_table_size;
-	int   ret;
+	u64  bytes_to_check;
+	u64  bytes_remaining;
+	u8  *buf;
+	u8  *p;
+	u8  *chunk_buf;
+	u32  num_entries;
+	u32  integrity_table_size;
+	int  ret;
 
-	DEBUG("Writing integrity table");
+	DEBUG("Calculating integrity table");
 	if (fseeko(out, end_header_offset, SEEK_SET) != 0) {
 		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" of WIM to "
 				 "calculate integrity data", end_header_offset);
@@ -269,12 +269,11 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 	}
 
 	bytes_to_check = end_lookup_table_offset - end_header_offset;
-	num_entries = bytes_to_check / INTEGRITY_CHUNK_SIZE +
-			(bytes_to_check % INTEGRITY_CHUNK_SIZE != 0);
+	num_entries = (bytes_to_check + INTEGRITY_CHUNK_SIZE - 1) /
+			INTEGRITY_CHUNK_SIZE;
 	integrity_table_size = num_entries * SHA1_HASH_SIZE + 3 * sizeof(u32);
 
-	DEBUG("integrity table size = %u", integrity_table_size);
-
+	DEBUG("integrity_table_size = %u", integrity_table_size);
 
 	buf = MALLOC(integrity_table_size);
 	if (!buf) {
@@ -292,7 +291,7 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 		ERROR("Failed to allocate %u bytes for integrity chunk buffer",
 		      INTEGRITY_CHUNK_SIZE);
 		ret = WIMLIB_ERR_NOMEM;
-		goto err2;
+		goto out_free_buf;
 	}
 
 	bytes_remaining = bytes_to_check;
@@ -325,7 +324,7 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 						 "checksums");
 			}
 			ret = WIMLIB_ERR_READ;
-			goto err2;
+			goto out_free_chunk_buf;
 		}
 		sha1_buffer(chunk_buf, bytes_read, p);
 		p += SHA1_HASH_SIZE;
@@ -340,19 +339,19 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 		ERROR_WITH_ERRNO("Failed to seek to end of WIM to write "
 				 "integrity table");
 		ret = WIMLIB_ERR_WRITE;
-		goto err1;
+		goto out_free_chunk_buf;
 	}
 
 	if (fwrite(buf, 1, integrity_table_size, out) != integrity_table_size) {
 		ERROR_WITH_ERRNO("Failed to write integrity table to end of "
 				 "WIM");
 		ret = WIMLIB_ERR_WRITE;
-		goto err1;
+		goto out_free_chunk_buf;
 	}
 	ret = 0;
-err1:
+out_free_chunk_buf:
 	FREE(chunk_buf);
-err2:
+out_free_buf:
 	FREE(buf);
 	return ret;
 }

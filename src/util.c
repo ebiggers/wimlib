@@ -180,6 +180,8 @@ static const char *error_strings[] = {
 		= "Could not read the target of a symbolic link",
 	[WIMLIB_ERR_RENAME]
 		= "Could not rename a file",
+	[WIMLIB_ERR_RESOURCE_ORDER]
+		= "The components of the WIM were arranged in an unexpected order",
 	[WIMLIB_ERR_SPECIAL_FILE]
 		= "Encountered a special file that cannot be archived",
 	[WIMLIB_ERR_SPLIT_INVALID]

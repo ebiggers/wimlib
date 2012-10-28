@@ -32,6 +32,7 @@
 #include "xml.h"
 #include <unistd.h>
 
+
 /* Reopens the FILE* for a WIM read-write. */
 static int reopen_rw(WIMStruct *w)
 {
@@ -39,6 +40,7 @@ static int reopen_rw(WIMStruct *w)
 
 	if (fclose(w->fp) != 0)
 		ERROR_WITH_ERRNO("Failed to close the file `%s'", w->filename);
+	w->fp = NULL;
 	fp = fopen(w->filename, "r+b");
 	if (!fp) {
 		ERROR_WITH_ERRNO("Failed to open `%s' for reading and writing",
@@ -54,7 +56,7 @@ static int reopen_rw(WIMStruct *w)
 /*
  * Writes a WIM file to the original file that it was read from, overwriting it.
  */
-WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int flags)
+WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags)
 {
 	const char *wimfile_name;
 	size_t wim_name_len;
@@ -62,6 +64,8 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int flags)
 
 	if (!w)
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	write_flags &= ~WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE;
 
 	wimfile_name = w->filename;
 
@@ -78,7 +82,7 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int flags)
 	randomize_char_array_with_alnum(tmpfile + wim_name_len, 9);
 	tmpfile[wim_name_len + 9] = '\0';
 
-	ret = wimlib_write(w, tmpfile, WIM_ALL_IMAGES, flags);
+	ret = wimlib_write(w, tmpfile, WIM_ALL_IMAGES, write_flags);
 	if (ret != 0) {
 		ERROR("Failed to write the WIM file `%s'", tmpfile);
 		return ret;
@@ -108,8 +112,18 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int flags)
 	return 0;
 }
 
+static int check_resource_offset(struct lookup_table_entry *lte, void *arg)
+{
+	u64 xml_data_offset = *(u64*)arg;
+	if (lte->resource_entry.offset > xml_data_offset) {
+		ERROR("The following resource is *after* the XML data:");
+		print_lookup_table_entry(lte);
+		return WIMLIB_ERR_RESOURCE_ORDER;
+	}
+	return 0;
+}
 
-WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
+WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int write_flags)
 {
 	int ret;
 	FILE *fp;
@@ -118,10 +132,34 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 	off_t xml_size;
 	size_t bytes_written;
 
-	DEBUG("Overwriting XML and header of `%s', flags = %d",
-	      w->filename, flags);
+	DEBUG("Overwriting XML and header of `%s', write_flags = %#x",
+	      w->filename, write_flags);
+
 	if (!w->filename)
 		return WIMLIB_ERR_NO_FILENAME;
+
+	write_flags &= ~WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE;
+
+	/* Make sure that the integrity table (if present) is after the XML
+	 * data, and that there are no stream resources, metadata resources, or
+	 * lookup tables after the XML data.  Otherwise, these data would be
+	 * destroyed by this function. */
+	if (w->hdr.integrity.offset != 0 &&
+	    w->hdr.integrity.offset < w->hdr.xml_res_entry.offset) {
+		ERROR("Didn't expect the integrity table to be before the XML data");
+		return WIMLIB_ERR_RESOURCE_ORDER;
+	}
+
+	if (w->hdr.lookup_table_res_entry.offset >
+	    w->hdr.xml_res_entry.offset) {
+		ERROR("Didn't expect the lookup table to be after the XML data");
+		return WIMLIB_ERR_RESOURCE_ORDER;
+	}
+
+	ret = for_lookup_table_entry(w->lookup_table, check_resource_offset,
+				     &w->hdr.xml_res_entry.offset);
+	if (ret != 0)
+		return ret;
 
 	ret = reopen_rw(w);
 	if (ret != 0)
@@ -133,8 +171,9 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 	 * the integrity table include neither the header nor the XML data.
 	 * Save it for later if it exists and an integrity table was required.
 	 * */
-	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY &&
-			w->hdr.integrity.offset != 0) {
+	if ((write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
+	     && w->hdr.integrity.offset != 0)
+	{
 		DEBUG("Reading existing integrity table.");
 		integrity_table = MALLOC(w->hdr.integrity.size);
 		if (!integrity_table)
@@ -170,10 +209,11 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 	xml_size = xml_end - w->hdr.xml_res_entry.offset;
 	w->hdr.xml_res_entry.size = xml_size;
 	w->hdr.xml_res_entry.original_size = xml_size;
+	/* XML data offset is unchanged. */
 
-	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
+	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
 		DEBUG("Writing integrity table.");
-		w->hdr.integrity.offset        = xml_end;
+		w->hdr.integrity.offset = xml_end;
 		if (integrity_table) {
 			/* The existing integrity table was saved. */
 			bytes_written = fwrite(integrity_table, 1,
@@ -191,11 +231,15 @@ WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int flags)
 			ret = write_integrity_table(fp, WIM_HEADER_DISK_SIZE,
 					w->hdr.lookup_table_res_entry.offset +
 					w->hdr.lookup_table_res_entry.size,
-					flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS);
+					write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS);
 			if (ret != 0)
-				goto err;
+				return ret;
 
-			off_t integrity_size           = ftello(fp) - xml_end;
+			off_t end_integrity = ftello(fp);
+			if (end_integrity == -1)
+				return WIMLIB_ERR_WRITE;
+
+			off_t integrity_size           = end_integrity - xml_end;
 			w->hdr.integrity.size          = integrity_size;
 			w->hdr.integrity.original_size = integrity_size;
 			w->hdr.integrity.flags         = 0;
@@ -252,12 +296,11 @@ static int write_file_resources(WIMStruct *w)
 	return for_dentry_in_tree(wim_root_dentry(w), write_dentry_resources, w);
 }
 
-/* Write the lookup table, xml data, and integrity table, then overwrite the WIM
+/*
+ * Write the lookup table, xml data, and integrity table, then overwrite the WIM
  * header.
- *
- * write_lt is zero iff the lookup table is not to be written; i.e. it is
- * handled elsewhere. */
-int finish_write(WIMStruct *w, int image, int flags, int write_lt)
+ */
+int finish_write(WIMStruct *w, int image, int write_flags)
 {
 	off_t lookup_table_offset;
 	off_t xml_data_offset;
@@ -270,39 +313,40 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 	struct wim_header hdr;
 	FILE *out = w->out_fp;
 
-	if (write_lt) {
+	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
+		/* Write the lookup table. */
 		lookup_table_offset = ftello(out);
 		if (lookup_table_offset == -1)
 			return WIMLIB_ERR_WRITE;
 
-		DEBUG("Writing lookup table (offset %"PRIu64")", lookup_table_offset);
-		/* Write the lookup table. */
+		DEBUG("Writing lookup table (offset %"PRIu64")",
+		      lookup_table_offset);
 		ret = write_lookup_table(w->lookup_table, out);
 		if (ret != 0)
 			return ret;
 	}
 
-
 	xml_data_offset = ftello(out);
 	if (xml_data_offset == -1)
 		return WIMLIB_ERR_WRITE;
-	DEBUG("Writing XML data (offset %"PRIu64")", xml_data_offset);
 
 	/* @hdr will be the header for the new WIM.  First copy all the data
 	 * from the header in the WIMStruct; then set all the fields that may
 	 * have changed, including the resource entries, boot index, and image
 	 * count.  */
 	memcpy(&hdr, &w->hdr, sizeof(struct wim_header));
-	if (write_lt) {
+	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
 		lookup_table_size = xml_data_offset - lookup_table_offset;
-		hdr.lookup_table_res_entry.offset        = lookup_table_offset;
-		hdr.lookup_table_res_entry.size          = lookup_table_size;
+		hdr.lookup_table_res_entry.offset = lookup_table_offset;
+		hdr.lookup_table_res_entry.size = lookup_table_size;
 	}
 	hdr.lookup_table_res_entry.original_size = hdr.lookup_table_res_entry.size;
-	hdr.lookup_table_res_entry.flags         = WIM_RESHDR_FLAG_METADATA;
+	hdr.lookup_table_res_entry.flags = WIM_RESHDR_FLAG_METADATA;
 
+	DEBUG("Writing XML data (offset %"PRIu64")", xml_data_offset);
 	ret = write_xml_data(w->wim_info, image, out,
-			     write_lt ? 0 : wim_info_get_total_bytes(w->wim_info));
+			     (write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE) ?
+			     	wim_info_get_total_bytes(w->wim_info) : 0);
 	if (ret != 0)
 		return ret;
 
@@ -316,18 +360,18 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 	hdr.xml_res_entry.original_size          = xml_data_size;
 	hdr.xml_res_entry.flags                  = 0;
 
-	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
+	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
 		ret = write_integrity_table(out, WIM_HEADER_DISK_SIZE,
 					    xml_data_offset,
-					    flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS);
+					    write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS);
 		if (ret != 0)
 			return ret;
 		end_offset = ftello(out);
 		if (end_offset == -1)
 			return WIMLIB_ERR_WRITE;
-		integrity_size = end_offset - integrity_offset;
-		hdr.integrity.offset = integrity_offset;
-		hdr.integrity.size   = integrity_size;
+		integrity_size              = end_offset - integrity_offset;
+		hdr.integrity.offset        = integrity_offset;
+		hdr.integrity.size          = integrity_size;
 		hdr.integrity.original_size = integrity_size;
 	} else {
 		hdr.integrity.offset        = 0;
@@ -373,16 +417,16 @@ int finish_write(WIMStruct *w, int image, int flags, int write_lt)
 }
 
 /* Open file stream and write dummy header for WIM. */
-int begin_write(WIMStruct *w, const char *path, int flags)
+int begin_write(WIMStruct *w, const char *path, int write_flags)
 {
 	const char *mode;
 	DEBUG("Opening `%s' for new WIM", path);
 
 	/* checking the integrity requires going back over the file to read it.
 	 * XXX
-	 * (It also would be possible to keep a running sha1sum as the file
-	 * as written-- this would be faster, but a bit more complicated) */
-	if (flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
+	 * (It also would be possible to keep a running sha1sum as the file is
+	 * written-- this would be faster, but a bit more complicated) */
+	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
 		mode = "w+b";
 	else
 		mode = "wb";
@@ -398,13 +442,16 @@ int begin_write(WIMStruct *w, const char *path, int flags)
 	return write_header(&w->hdr, w->out_fp);
 }
 
-/* Writes the WIM to a file.  */
-WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
+/* Writes a stand-alone WIM to a file.  */
+WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
+			   int image, int write_flags)
 {
 	int ret;
 
 	if (!w || !path)
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	write_flags &= ~WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE;
 
 	if (image != WIM_ALL_IMAGES &&
 	     (image < 1 || image > w->hdr.image_count))
@@ -421,30 +468,30 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path, int image, int flags)
 	else
 		DEBUG("Writing image %d to `%s'.", image, path);
 
-	ret = begin_write(w, path, flags);
+	ret = begin_write(w, path, write_flags);
 	if (ret != 0)
-		goto done;
+		goto out;
 
 	for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt, NULL);
 
-	w->write_flags = flags;
+	w->write_flags = write_flags;
 
 	ret = for_image(w, image, write_file_resources);
 	if (ret != 0) {
 		ERROR("Failed to write WIM file resources to `%s'", path);
-		goto done;
+		goto out;
 	}
 
 	ret = for_image(w, image, write_metadata_resource);
 
 	if (ret != 0) {
 		ERROR("Failed to write WIM image metadata to `%s'", path);
-		goto done;
+		goto out;
 	}
 
-	ret = finish_write(w, image, flags, 1);
+	ret = finish_write(w, image, write_flags);
 
-done:
+out:
 	DEBUG("Closing output file.");
 	if (w->out_fp != NULL) {
 		if (fclose(w->out_fp) != 0) {

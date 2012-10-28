@@ -435,6 +435,10 @@ u8 *put_resource_entry(u8 *p, const struct resource_entry *entry)
 int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 		      size_t size, u64 offset, bool raw)
 {
+	int ctype;
+	int ret = 0;
+	FILE *fp;
+
 	/* We shouldn't be allowing read over-runs in any part of the library.
 	 * */
 	if (raw)
@@ -442,16 +446,13 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 	else
 		wimlib_assert(offset + size <= lte->resource_entry.original_size);
 
-	int ctype;
-	int ret;
-	FILE *fp;
 	switch (lte->resource_location) {
 	case RESOURCE_IN_WIM:
 		/* The resource is in a WIM file, and its WIMStruct is given by
 		 * the lte->wim member.  The resource may be either compressed
 		 * or uncompressed. */
-		wimlib_assert(lte->wim);
-		wimlib_assert(lte->wim->fp);
+		wimlib_assert(lte->wim != NULL);
+		wimlib_assert(lte->wim->fp != NULL);
 		ctype = wim_resource_compression_type(lte);
 
 		wimlib_assert(ctype != WIM_COMPRESSION_TYPE_NONE ||
@@ -459,15 +460,15 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 			       lte->resource_entry.size));
 
 		if (raw || ctype == WIM_COMPRESSION_TYPE_NONE)
-			return read_uncompressed_resource(lte->wim->fp,
-							  lte->resource_entry.offset + offset,
-							  size, buf);
+			ret = read_uncompressed_resource(lte->wim->fp,
+							 lte->resource_entry.offset + offset,
+							 size, buf);
 		else
-			return read_compressed_resource(lte->wim->fp,
-							lte->resource_entry.size,
-							lte->resource_entry.original_size,
-							lte->resource_entry.offset,
-							ctype, size, offset, buf);
+			ret = read_compressed_resource(lte->wim->fp,
+						       lte->resource_entry.size,
+						       lte->resource_entry.original_size,
+						       lte->resource_entry.offset,
+						       ctype, size, offset, buf);
 		break;
 	case RESOURCE_IN_STAGING_FILE:
 	case RESOURCE_IN_FILE_ON_DISK:
@@ -484,46 +485,45 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 			if (!fp) {
 				ERROR_WITH_ERRNO("Failed to open the file "
 						 "`%s'", lte->file_on_disk);
-				return WIMLIB_ERR_OPEN;
+				ret = WIMLIB_ERR_OPEN;
+				break;
 			}
 		}
 		ret = read_uncompressed_resource(fp, offset, size, buf);
 		if (fp != lte->file_on_disk_fp)
 			fclose(fp);
-		return ret;
 		break;
 	case RESOURCE_IN_ATTACHED_BUFFER:
 		/* The resource is directly attached uncompressed in an
 		 * in-memory buffer. */
-		wimlib_assert(lte->attached_buffer);
+		wimlib_assert(lte->attached_buffer != NULL);
 		memcpy(buf, lte->attached_buffer + offset, size);
-		return 0;
 		break;
 #ifdef WITH_NTFS_3G
 	case RESOURCE_IN_NTFS_VOLUME:
-		wimlib_assert(lte->ntfs_loc);
-		if (lte->attr) {
+		wimlib_assert(lte->ntfs_loc != NULL);
+		wimlib_assert(lte->attr != NULL);
+		{
 			u64 adjusted_offset;
 			if (lte->ntfs_loc->is_reparse_point)
 				adjusted_offset = offset + 8;
 			else
 				adjusted_offset = offset;
-			if (ntfs_attr_pread(lte->attr, offset, size, buf) == size) {
-				return 0;
-			} else {
+			if (ntfs_attr_pread(lte->attr, offset, size, buf) != size) {
 				ERROR_WITH_ERRNO("Error reading NTFS attribute "
 						 "at `%s'",
 						 lte->ntfs_loc->path_utf8);
-				return WIMLIB_ERR_NTFS_3G;
+				ret = WIMLIB_ERR_NTFS_3G;
 			}
-		} else {
-			wimlib_assert(0);
+			break;
 		}
-		break;
 #endif
 	default:
-		assert(0);
+		wimlib_assert(0);
+		ret = -1;
+		break;
 	}
+	return ret;
 }
 
 /*
@@ -570,7 +570,6 @@ begin_wim_resource_chunk_tab(const struct lookup_table_entry *lte,
 	size_t alloc_size = sizeof(struct chunk_table) + num_chunks * sizeof(u64);
 	struct chunk_table *chunk_tab = CALLOC(1, alloc_size);
 	int ret;
-
 
 	if (!chunk_tab) {
 		ERROR("Failed to allocate chunk table for %"PRIu64" byte "
@@ -757,8 +756,8 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 	u64 original_size;
 	u64 old_compressed_size;
 	u64 new_compressed_size;
-	u64 offset = 0;
-	int ret = 0;
+	u64 offset;
+	int ret;
 	struct chunk_table *chunk_tab = NULL;
 	bool raw;
 	off_t file_offset;
@@ -859,6 +858,7 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 	/* While there are still bytes remaining in the WIM resource, read a
 	 * chunk of the resource, update SHA1, then write that chunk using the
 	 * desired compression type. */
+	offset = 0;
 	do {
 		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
 		ret = read_wim_resource(lte, buf, to_read, offset, raw);
@@ -941,22 +941,23 @@ static int write_wim_resource(struct lookup_table_entry *lte,
 		if (ftruncate(fileno(out_fp), file_offset + out_res_entry->size) != 0) {
 			ERROR_WITH_ERRNO("Failed to truncate output WIM file");
 			ret = WIMLIB_ERR_WRITE;
+			goto out_fclose;
 		}
-		goto out_fclose;
+	} else {
+		if (out_res_entry) {
+			out_res_entry->size          = new_compressed_size;
+			out_res_entry->original_size = original_size;
+			out_res_entry->offset        = file_offset;
+			out_res_entry->flags         = lte->resource_entry.flags
+							& ~WIM_RESHDR_FLAG_COMPRESSED;
+			if (out_ctype != WIM_COMPRESSION_TYPE_NONE)
+				out_res_entry->flags |= WIM_RESHDR_FLAG_COMPRESSED;
+		}
 	}
-	wimlib_assert(new_compressed_size <= original_size || raw);
-	if (out_res_entry) {
-		out_res_entry->size          = new_compressed_size;
-		out_res_entry->original_size = original_size;
-		out_res_entry->offset        = file_offset;
-		out_res_entry->flags         = lte->resource_entry.flags
-						& ~WIM_RESHDR_FLAG_COMPRESSED;
-		if (out_ctype != WIM_COMPRESSION_TYPE_NONE)
-			out_res_entry->flags |= WIM_RESHDR_FLAG_COMPRESSED;
-	}
+	ret = 0;
 out_fclose:
 	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
-	     && lte->file_on_disk_fp) {
+	    && lte->file_on_disk_fp) {
 		fclose(lte->file_on_disk_fp);
 		lte->file_on_disk_fp = NULL;
 	}
@@ -965,9 +966,9 @@ out_fclose:
 		if (lte->attr) {
 			ntfs_attr_close(lte->attr);
 			lte->attr = NULL;
-		} if (ni) {
-			ntfs_inode_close(ni);
 		}
+		if (ni)
+			ntfs_inode_close(ni);
 	}
 #endif
 out:
@@ -983,7 +984,7 @@ static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 					  struct resource_entry *out_res_entry,
 					  u8 hash[SHA1_HASH_SIZE])
 {
-	/* Set up a temporary lookup table entry that we provide to
+	/* Set up a temporary lookup table entry to provide to
 	 * write_wim_resource(). */
 	struct lookup_table_entry lte;
 	int ret;
@@ -1286,7 +1287,8 @@ int write_metadata_resource(WIMStruct *w)
 
 	/* We do not allow the security data pointer to be NULL, although it may
 	 * point to an empty security data with no entries. */
-	wimlib_assert(sd);
+	wimlib_assert(root != NULL);
+	wimlib_assert(sd != NULL);
 
 	/* Offset of first child of the root dentry.  It's equal to:
 	 * - The total length of the security data, rounded to the next 8-byte
@@ -1316,7 +1318,6 @@ int write_metadata_resource(WIMStruct *w)
 	p = write_security_data(sd, buf);
 
 	/* Write the dentry tree into the resource buffer */
-	DEBUG("Writing dentry tree.");
 	p = write_dentry_tree(root, p);
 
 	/*
@@ -1335,6 +1336,8 @@ int write_metadata_resource(WIMStruct *w)
 	/* Get the lookup table entry for the metadata resource so we can update
 	 * it. */
 	lte = wim_metadata_lookup_table_entry(w);
+
+	wimlib_assert(lte != NULL);
 
 	/* Write the metadata resource to the output WIM using the proper
 	 * compression type.  The lookup table entry for the metadata resource

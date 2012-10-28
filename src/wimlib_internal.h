@@ -470,11 +470,12 @@ extern int select_wim_image(WIMStruct *w, int image);
 extern int wim_hdr_flags_compression_type(int wim_hdr_flags);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 
-/* write.c */
-extern int finish_write(WIMStruct *w, int image, int flags,
-			int write_lookup_table);
+/* Internal use only */
+#define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE 0x80000000
 
-extern int begin_write(WIMStruct *w, const char *path, int flags);
+/* write.c */
+extern int begin_write(WIMStruct *w, const char *path, int write_flags);
+extern int finish_write(WIMStruct *w, int image, int write_flags);
 
 
 #include "wimlib.h"
