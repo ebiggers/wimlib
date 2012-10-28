@@ -893,7 +893,10 @@ extern bool wimlib_image_name_in_use(const WIMStruct *wim, const char *name);
  * 	An error occurred when trying to write data to the new WIM at @a output_path.
  *
  * Note that this function merely copies the resources, so it will not check to
- * see if the resources, including the metadata resource, are valid or not.
+ * see if the resources, including the metadata resources, are valid or not.
+ *
+ * Also, after this function is called, the only function that may be called on
+ * the ::WIMStruct's in the @a swms array is wimlib_free().
  */
 extern int wimlib_join(const char **swms, unsigned num_swms,
 		       const char *output_path, int flags);
