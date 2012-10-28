@@ -229,8 +229,7 @@ void lte_decrement_refcnt(struct lookup_table_entry *lte,
 }
 
 #ifdef WITH_FUSE
-void lte_decrement_num_opened_fds(struct lookup_table_entry *lte,
-			          struct lookup_table *table)
+void lte_decrement_num_opened_fds(struct lookup_table_entry *lte)
 {
 	wimlib_assert(lte);
 	wimlib_assert(lte->num_opened_fds);

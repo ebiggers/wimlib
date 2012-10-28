@@ -256,8 +256,9 @@ extern int lookup_resource(WIMStruct *w, const char *path,
 
 extern void lte_decrement_refcnt(struct lookup_table_entry *lte,
 			         struct lookup_table *table);
-extern void lte_decrement_num_opened_fds(struct lookup_table_entry *lte,
-					 struct lookup_table *table);
+#ifdef WITH_FUSE
+extern void lte_decrement_num_opened_fds(struct lookup_table_entry *lte);
+#endif
 
 extern int lte_zero_out_refcnt(struct lookup_table_entry *entry, void *ignore);
 extern int lte_zero_real_refcnt(struct lookup_table_entry *entry, void *ignore);

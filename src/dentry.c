@@ -457,10 +457,10 @@ struct inode *wim_pathname_to_inode(WIMStruct *w, const char *path)
 {
 	struct dentry *dentry;
 	dentry = get_dentry(w, path);
-	if (!dentry)
-		return NULL;
-	else
+	if (dentry)
 		return dentry->d_inode;
+	else
+		return NULL;
 }
 
 /* Returns the dentry that corresponds to the parent directory of @path, or NULL
