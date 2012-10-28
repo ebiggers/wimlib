@@ -910,13 +910,14 @@ static void wimfs_destroy(void *p)
 
 	status = 0;
 	if (ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		if (chdir(ctx->working_directory)) {
-			ERROR_WITH_ERRNO("chdir()");
-			status = WIMLIB_ERR_NOTDIR;
-			goto out;
-		}
-		if (commit)
+		if (commit) {
+			if (chdir(ctx->working_directory)) {
+				ERROR_WITH_ERRNO("chdir()");
+				status = WIMLIB_ERR_NOTDIR;
+				goto out;
+			}
 			status = rebuild_wim(ctx, (check_integrity != 0));
+		}
 		ret = delete_staging_dir(ctx);
 		if (ret != 0) {
 			ERROR("Failed to delete the staging directory");
@@ -1959,8 +1960,7 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	char msg[2];
 	struct timeval now;
 	struct timespec timeout;
-	int msgsize;
-	int errno_save;
+	long msgsize;
 	struct wimfs_context ctx;
 	char *mailbox;
 
@@ -1976,14 +1976,14 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	if (ret != 0)
 		goto out_free_message_queue_names;
 
-	/* Send a message to the filesystem saying whether to commit or
+	/* Send a message to the filesystem daemon saying whether to commit or
 	 * not. */
 	msg[0] = (flags & WIMLIB_UNMOUNT_FLAG_COMMIT) ? 1 : 0;
 	msg[1] = (flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY) ? 1 : 0;
 
-	DEBUG("Sending message: %s, %s",
-			(msg[0] == 0) ? "don't commit" : "commit",
-			(msg[1] == 0) ? "don't check"  : "check");
+	DEBUG("Sending message: %scommit, %scheck",
+			(msg[0] ? "" : "don't "),
+			(msg[1] ? "" : "don't "));
 	ret = mq_send(ctx.unmount_to_daemon_mq, msg, 2, 1);
 	if (ret == -1) {
 		ERROR_WITH_ERRNO("Failed to notify filesystem daemon whether "
@@ -2083,21 +2083,9 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 	timeout.tv_sec = now.tv_sec + 600;
 	timeout.tv_nsec = now.tv_usec * 1000;
 
-	msgsize = mq_get_msgsize(ctx.daemon_to_unmount_mq);
-
-	if (msgsize < 2) {
-		ERROR("Message queue max size must be at least 2!");
-		ret = WIMLIB_ERR_MQUEUE;
+	ret = get_mailbox(ctx.daemon_to_unmount_mq, 2, &msgsize, &mailbox);
+	if (ret != 0)
 		goto out_close_message_queues;
-	}
-
-	mailbox = MALLOC(msgsize);
-	if (!mailbox) {
-		ERROR("Failed to allocate %ld bytes for mailbox", msgsize);
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_close_message_queues;
-	}
-
 
 	mailbox[0] = 0;
 	DEBUG("Waiting for message telling us whether the unmount was "
@@ -2117,11 +2105,10 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 		goto out_free_mailbox;
 
 	}
-	DEBUG("Received message: %s",
-	      (mailbox[0] == 0) ?  "Unmount OK" : "Unmount Failed");
-	if (mailbox[0] != 0)
-		ERROR("Unmount failed");
+	DEBUG("Received message: Unmount %s", (mailbox[0] ? "Failed" : "Ok"));
 	ret = mailbox[0];
+	if (ret)
+		ERROR("Unmount failed");
 out_free_mailbox:
 	FREE(mailbox);
 out_close_message_queues:
@@ -2137,7 +2124,7 @@ out:
 
 static inline int mount_unsupported_error()
 {
-	ERROR("WIMLIB was compiled with --without-fuse, which disables support "
+	ERROR("wimlib was compiled with --without-fuse, which disables support "
 	      "for mounting WIMs.");
 	return WIMLIB_ERR_UNSUPPORTED;
 }
