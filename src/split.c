@@ -100,9 +100,8 @@ static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 		args->lte_chain_tail = NULL;
 		args->lte_chain_head = NULL;
 
-		sprintf(args->swm_base_name + args->swm_base_name_len, "%d",
-			++args->part_number);
-		strcat(args->swm_base_name, args->swm_suffix);
+		sprintf(args->swm_base_name + args->swm_base_name_len, "%d%s",
+			++args->part_number, args->swm_suffix);
 
 		w->hdr.part_number = args->part_number;
 
