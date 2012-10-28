@@ -28,7 +28,7 @@
 #include "xml.h"
 #include "io.h"
 
-struct args {
+struct split_args {
 	WIMStruct *w;
 	char *swm_base_name;
 	size_t swm_base_name_len;
@@ -81,7 +81,7 @@ static int finish_swm(WIMStruct *w, struct lookup_table_entry *lte_chain_head,
 
 static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 {
-	struct args *args = (struct args*)__args;
+	struct split_args *args = (struct split_args*)__args;
 	WIMStruct *w = args->w;
 	int ret;
 
@@ -203,7 +203,7 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 	}
 	w->write_metadata = false;
 
-	struct args args = {
+	struct split_args args = {
 		.w                 = w,
 		.swm_base_name     = name,
 		.swm_base_name_len = swm_base_name_len,
