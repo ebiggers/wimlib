@@ -953,19 +953,19 @@ int verify_dentry(struct dentry *dentry, void *wim)
 {
 	const WIMStruct *w = wim;
 	const struct inode *inode = dentry->d_inode;
-	int ret = WIMLIB_ERR_INVALID_DENTRY;
+	int ret;
 
 	if (!dentry->d_inode->verified) {
 		ret = verify_inode(dentry->d_inode, w);
 		if (ret != 0)
-			goto out;
+			return ret;
 	}
 
 	/* Cannot have a short name but no long name */
 	if (dentry->short_name_len && !dentry->file_name_len) {
 		ERROR("Dentry `%s' has a short name but no long name",
 		      dentry->full_path_utf8);
-		goto out;
+		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
 	/* Make sure root dentry is unnamed */
@@ -973,7 +973,7 @@ int verify_dentry(struct dentry *dentry, void *wim)
 		if (dentry->file_name_len) {
 			ERROR("The root dentry is named `%s', but it must "
 			      "be unnamed", dentry->file_name_utf8);
-			goto out;
+			return WIMLIB_ERR_INVALID_DENTRY;
 		}
 	}
 
@@ -986,9 +986,7 @@ int verify_dentry(struct dentry *dentry, void *wim)
 	}
 #endif
 
-	ret = 0;
-out:
-	return ret;
+	return 0;
 }
 
 
