@@ -1288,7 +1288,6 @@ int write_metadata_resource(WIMStruct *w)
 	struct lookup_table_entry *lte;
 	u64 metadata_original_size;
 	const struct wim_security_data *sd;
-	const unsigned random_tail_len = 20;
 
 	DEBUG("Writing metadata resource for image %d", w->current_image);
 
@@ -1314,7 +1313,7 @@ int write_metadata_resource(WIMStruct *w)
 	calculate_subdir_offsets(root, &subdir_offset);
 
 	/* Total length of the metadata resource (uncompressed) */
-	metadata_original_size = subdir_offset + random_tail_len;
+	metadata_original_size = subdir_offset;
 
 	/* Allocate a buffer to contain the uncompressed metadata resource */
 	buf = MALLOC(metadata_original_size);
@@ -1330,18 +1329,9 @@ int write_metadata_resource(WIMStruct *w)
 	/* Write the dentry tree into the resource buffer */
 	p = write_dentry_tree(root, p);
 
-	/*
-	 * Append 20 random bytes to the metadata resource so that we don't have
-	 * identical metadata resources if we happen to append exactly the same
-	 * image twice without any changes in timestamps.  If this were to
-	 * happen, it would cause confusion about the number and order of images
-	 * in the WIM.
-	 */
-	randomize_byte_array(p, random_tail_len);
-
 	/* We MUST have exactly filled the buffer; otherwise we calculated its
 	 * size incorrectly or wrote the data incorrectly. */
-	wimlib_assert(p - buf + random_tail_len == metadata_original_size);
+	wimlib_assert(p - buf == metadata_original_size);
 
 	/* Get the lookup table entry for the metadata resource so we can update
 	 * it. */
@@ -1362,14 +1352,17 @@ int write_metadata_resource(WIMStruct *w)
 
 	/* It's very likely the SHA1 message digest of the metadata resource
 	 * changed, so re-insert the lookup table entry into the lookup table.
+	 *
+	 * We do not check for other lookup table entries having the same SHA1
+	 * message digest.  It's possible for 2 absolutely identical images to
+	 * be added, therefore causing 2 identical metadata resources to be in
+	 * the WIM.  However, in this case, it's expected for 2 separate lookup
+	 * table entries to be created, even though this doesn't make a whole
+	 * lot of sense since they will share the same SHA1 message digest.
 	 * */
 	lookup_table_unlink(w->lookup_table, lte);
 	lookup_table_insert(w->lookup_table, lte);
 
-	/* We do not allow a metadata resource to be referenced multiple times,
-	 * and the 20 random bytes appended to it should make it extremely
-	 * likely for each metadata resource to be unique, even if the exact
-	 * same image is captured. */
 	wimlib_assert(lte->out_refcnt == 0);
 	lte->out_refcnt = 1;
 

@@ -332,8 +332,15 @@ int read_lookup_table(WIMStruct *w)
 			goto out_free_cur_entry;
 		}
 
+		/* Ordinarily, no two streams should share the same SHA1 message
+		 * digest.  However, this constraint can be broken for metadata
+		 * resources--- two identical images will have the same metadata
+		 * resource, but their lookup table entries are not shared. */
 		duplicate_entry = __lookup_resource(table, cur_entry->hash);
-		if (duplicate_entry) {
+		if (duplicate_entry
+		    && !((duplicate_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
+			  && cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA))
+		{
 			ERROR("The WIM lookup table contains two entries with the "
 			      "same SHA1 message digest!");
 			ERROR("The first entry is:");

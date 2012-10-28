@@ -85,6 +85,8 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags)
 	ret = wimlib_write(w, tmpfile, WIM_ALL_IMAGES, write_flags);
 	if (ret != 0) {
 		ERROR("Failed to write the WIM file `%s'", tmpfile);
+		if (unlink(tmpfile) != 0)
+			WARNING("Failed to remove `%s'", tmpfile);
 		return ret;
 	}
 
@@ -485,9 +487,10 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 	ret = for_image(w, image, write_metadata_resource);
 
 	if (ret != 0) {
-		ERROR("Failed to write WIM image metadata to `%s'", path);
+		/*ERROR("Failed to write WIM image metadata to `%s'", path);*/
 		goto out;
 	}
+
 
 	ret = finish_write(w, image, write_flags);
 
