@@ -49,7 +49,7 @@ do_test 'echo 888 > file;
 	 echo 888 > file3'
 
 msg "C source code of wimlib"
-do_test 'cp ../$srcdir/src/*.{c,h} .'
+do_test 'cp $srcdir/src/*.{c,h} .'
 
 msg "tons of random stuff"
 do_test 'echo -n 8 > file;
