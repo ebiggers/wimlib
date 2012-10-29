@@ -89,7 +89,9 @@ include_HEADERS = src/wimlib.h
 
 EXTRA_DIST =					\
 	build-aux/strip_fPIC.sh			\
+	archlinux				\
 	debian					\
+	rpm					\
 	programs/install.cmd			\
 	tests/common_tests.sh			\
 	tests/security_descriptor_1.base64	\
