@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "September 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "October 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
 imagex split \- Split a WIM into multiple parts
 

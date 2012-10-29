@@ -1,4 +1,4 @@
-.TH IMAGEX 1 "September 2012" "imagex (wimlib @VERSION@)" "User Commands"
+.TH IMAGEX 1 "October 2012" "imagex (wimlib @VERSION@)" "User Commands"
 .SH NAME
 imagex \- Create, modify, extract, mount, or unmount a WIM (Windows Imaging Format) archive
 .SH SYNOPSIS
