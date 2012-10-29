@@ -27,40 +27,6 @@ is very incomplete and is of unacceptable quality.
 
 A WIM file may be either stand-alone or split into multiple parts.
 
-				   WINDOWS PE
-
-A major use for this library is to create customized images of Windows PE, the
-Windows Preinstallation Environment, without having to rely on Windows.  Windows
-PE is a lightweight version of Windows that can run entirely from memory and can
-be used to install Windows from local media or a network drive or perform
-maintenance.  Windows PE is the operating system that runs when you boot from
-the Windows installation media.
-
-You can find Windows PE on the installation DVD for Windows Vista, Windows 7, or
-Windows 8, in the file `sources/boot.wim'.  Windows PE can also be found in the
-Windows Automated Installation Kit (WAIK), which is free to download from
-Microsoft, inside the `WinPE.cab' file, which you can extract if you install
-either the `cabextract' or `p7zip' programs.
-
-In addition, Windows installations and recovery partitions frequently contain a
-WIM containing an image of the Windows Recovery Environment, which is similar to
-Windows PE.
-
-				  NTFS SUPPORT
-
-As of version 1.0.0, wimlib supports capturing and applying images directly to
-NTFS volumes.  This was made possible with the help of libntfs-3g from the
-NTFS-3g project.  This feature supports capturing and restoring NTFS-specific
-data such as security descriptors, alternate data streams, and reparse point
-data.
-
-The code for NTFS image capture and image application is complete enough that it
-is possible to apply an image from the "install.wim" contained in recent Windows
-installation media (Vista, Windows 7, or Windows 8) directly to a NTFS volume,
-and then boot Windows from it after preparing the Boot Configuration Data.  In
-addition, a Windows installation can be captured (or backed up) into a WIM file,
-and then re-applied later.
-
 				    PROGRAMS
 
 wimlib provides a public API for other programs to use, but also comes with two
@@ -101,15 +67,48 @@ a compressed Windows PE image (disk usage of about 524 MB, uncompressed WIM size
 	wimlib imagex (v1.0.3):		19 sec			30 sec
 	Microsoft imagex.exe:		25 sec			89 sec
 
+				  NTFS SUPPORT
+
+As of version 1.0.0, wimlib supports capturing and applying images directly to
+NTFS volumes.  This was made possible with the help of libntfs-3g from the
+NTFS-3g project.  This feature supports capturing and restoring NTFS-specific
+data such as security descriptors, alternate data streams, and reparse point
+data.
+
+The code for NTFS image capture and image application is complete enough that it
+is possible to apply an image from the "install.wim" contained in recent Windows
+installation media (Vista, Windows 7, or Windows 8) directly to a NTFS volume,
+and then boot Windows from it after preparing the Boot Configuration Data.  In
+addition, a Windows installation can be captured (or backed up) into a WIM file,
+and then re-applied later.
+
+				   WINDOWS PE
+
+A major use for this library is to create customized images of Windows PE, the
+Windows Preinstallation Environment, without having to rely on Windows.  Windows
+PE is a lightweight version of Windows that can run entirely from memory and can
+be used to install Windows from local media or a network drive or perform
+maintenance.  Windows PE is the operating system that runs when you boot from
+the Windows installation media.
+
+You can find Windows PE on the installation DVD for Windows Vista, Windows 7, or
+Windows 8, in the file `sources/boot.wim'.  Windows PE can also be found in the
+Windows Automated Installation Kit (WAIK), which is free to download from
+Microsoft, inside the `WinPE.cab' file, which you can extract if you install
+either the `cabextract' or `p7zip' programs.
+
+In addition, Windows installations and recovery partitions frequently contain a
+WIM containing an image of the Windows Recovery Environment, which is similar to
+Windows PE.
 
 				  DEPENDENCIES
 
-* libxml2
+* libxml2 (required)
 	This is a commonly used free library to read and write XML files.  You
 	likely already have it installed as a dependency for some other program.
 	For more information see http://xmlsoft.org/.
 
-* libfuse
+* libfuse (optional but highly recommended)
 	Unless configured with --without-fuse, wimlib requires a non-ancient
 	version of libfuse to be installed.  Most GNU/Linux distributions
 	already include this, but make sure you have the libfuse package
@@ -119,12 +118,16 @@ a compressed Windows PE image (disk usage of about 524 MB, uncompressed WIM size
 	a WIM file.  For more information see http://fuse.sourceforge.net/.
 	FUSE is also available for FreeBSD.
 
-* libntfs-3g
+* libntfs-3g (optional but highly recommended)
 	Unless configured with --without-ntfs-3g, wimlib requires the library
 	and headers for libntfs-3g version 2011-4-12 or later to be installed.
 	Versions dated 2010-3-6 and earlier do not work because they are missing
 	the header xattrs.h (and the file xattrs.c, which contains functions we
 	need).
+
+* OpenSSL / libcrypto (optional)
+	wimlib can use the SHA1 message digest code from OpenSSL instead of
+	compiling in yet another SHA1 implementation.	(See LICENSE section.)
 
 * cdrkit (optional)
 * mtools (optional)
@@ -138,7 +141,6 @@ a compressed Windows PE image (disk usage of about 524 MB, uncompressed WIM size
 	requires `mtools' (http://www.gnu.org/software/mtools) and `syslinux'
 	(http://www.syslinux.org).  Retrieving files from the Windows Automated
 	Installation Kit requires `cabextract' (http://www.cabextract.org.uk).
-
 
 				 CONFIGURATION
 
@@ -195,7 +197,7 @@ wimlib's `configure' script:
 --disable-assertions
 	Remove all assertions.  Without this option, wimlib will abort() the
 	program if an assertion fails.  An assertion failure should only occur
-	if there is a bug in wimlib.
+	if there is a bug in the library.
 
 --enable-debug
 	Include debugging messages.  Only use this option if you have found a
@@ -316,6 +318,15 @@ This includes the files in the `programs' directory as well as the files in the
 
 wimlib is independently developed and does not contain any code, data, or files
 copyrighted by Microsoft.  It is not known to be affected by any patents.
+
+By default, wimlib will be linked to the system library "libcrypto", which
+probably will be OpenSSL.  Some people believe that GPL code cannot be linked to
+OpenSSL without a linking exception.  As far as I know, I cannot officially
+include a linking exception with the license of this library because several
+files could be considered derived works of LGPL code copyrighted by others.  If
+you believe this to be a problem, configure with --without-libcrypto to avoid
+linking with OpenSSL.  There is no difference in functionality--- there will
+just be stand-alone SHA1 message digest code built into the library.
 
 				   DISCLAIMER
 
