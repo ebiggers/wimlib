@@ -449,9 +449,11 @@ static int imagex_apply(int argc, const char **argv)
 				   additional_swms, num_additional_swms);
 out:
 	wimlib_free(w);
-	if (additional_swms)
+	if (additional_swms) {
 		for (unsigned i = 0; i < num_additional_swms; i++)
 			wimlib_free(additional_swms[i]);
+		free(additional_swms);
+	}
 	return ret;
 }
 
@@ -841,9 +843,11 @@ static int imagex_export(int argc, const char **argv)
 out:
 	wimlib_free(src_w);
 	wimlib_free(dest_w);
-	if (additional_swms)
+	if (additional_swms) {
 		for (unsigned i = 0; i < num_additional_swms; i++)
 			wimlib_free(additional_swms[i]);
+		free(additional_swms);
+	}
 	return ret;
 }
 
@@ -1098,7 +1102,7 @@ static int imagex_info(int argc, const char **argv)
 		}
 	}
 out:
-	wimlib_free(w);
+	/*wimlib_free(w);*/
 	return ret;
 }
 
