@@ -9,9 +9,8 @@
 # remain mounted.
 
 set -e
-srcdir=${srcdir:-.}
-srcdir=`realpath $srcdir`
 cd tests
+srcdir=..
 
 imagex() {
 	../imagex $@ > /dev/null

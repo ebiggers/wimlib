@@ -13,6 +13,9 @@
  * files are expected to be hard linked together in the other directory tree.
  */
 
+#include "config.h"
+
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,7 +27,9 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <sys/stat.h>
+#ifdef HAVE_ATTR_XATTR_H
 #include <attr/xattr.h>
+#endif
 #include <assert.h>
 
 typedef uint64_t u64;
@@ -160,6 +165,7 @@ static void cmp(const char *file1, const char *file2, size_t size)
 	close(fd2);
 }
 
+#ifdef HAVE_ATTR_XATTR_H
 /* Compares an extended attribute of the files. */
 static void cmp_xattr(const char *file1, const char *file2,
 		      const char *xattr_name, ssize_t max_size,
@@ -216,6 +222,9 @@ static void cmp_xattr(const char *file1, const char *file2,
 	}
 	free(buf1);
 	free(buf2);
+	fprintf(stderr, "tree-cmp: Warning: cannot compare xattrs of `%s' and `%s'\n",
+			file1, file2);
+	fprintf(stderr, "          You need to install the attr development files for this.\n");
 }
 
 /* Compares all alternate data streams of the files */
@@ -264,17 +273,24 @@ static void cmp_ads(const char *file1, const char *file2)
 		free(list2);
 	}
 }
+#endif
 
 /* Compares special NTFS data of the files, as accessed through extended
  * attributes. */
 static void special_cmp(const char *file1, const char *file2)
 {
+#ifdef HAVE_ATTR_XATTR_H
 	cmp_xattr(file1, file2, "system.ntfs_acl", 0, false);
 	cmp_xattr(file1, file2, "system.ntfs_attrib", 0, false);
 	cmp_xattr(file1, file2, "system.ntfs_dos_name", 0, true);
 	cmp_xattr(file1, file2, "system.ntfs_reparse_data", 0, true);
 	cmp_xattr(file1, file2, "system.ntfs_times", 16, false);
 	cmp_ads(file1, file2);
+#else
+	fprintf(stderr, "tree-cmp: Warning: cannot compare xattrs of `%s' and `%s'\n",
+			file1, file2);
+	fprintf(stderr, "          You need to install the attr development files for this.\n");
+#endif
 }
 
 
@@ -302,6 +318,7 @@ static void tree_cmp(char file1[], int file1_len, char file2[], int file2_len)
 	if (S_ISREG(st1.st_mode) && st1.st_size != st2.st_size)
 		difference("Sizes of `%s' and `%s' are not the same",
 			   file1, file2);
+#if 0
 	if (ntfs_mode && st1.st_atime != st2.st_atime)
 		difference("Access times of `%s' and `%s' are not the same",
 			   file1, file2);
@@ -309,7 +326,6 @@ static void tree_cmp(char file1[], int file1_len, char file2[], int file2_len)
 		difference("Modification times of `%s' (%x) and `%s' (%x) are "
 		           "not the same",
 			   file1, st1.st_mtime, file2, st2.st_mtime);
-#if 0
 	if (st1.st_ctime != st2.st_ctime)
 		difference("Status change times of `%s' and `%s' are not the same",
 			   file1, file2);

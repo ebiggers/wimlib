@@ -33,7 +33,7 @@ AM_PROG_CC_C_O
 AC_CHECK_FUNCS([utimensat])
 AC_CHECK_HEADERS([endian.h byteswap.h sys/byteorder.h sys/endian.h \
 		  sys/param.h machine/endian.h alloca.h stdlib.h stdarg.h \
-		  errno.h])
+		  errno.h attr/xattr.h])
 
 
 AM_ICONV

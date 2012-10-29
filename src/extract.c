@@ -280,6 +280,7 @@ struct extract_args {
 	WIMStruct *w;
 	int extract_flags;
 	const char *output_dir;
+	unsigned num_lutimes_warnings;
 };
 
 /*
@@ -327,8 +328,11 @@ static int apply_dentry_timestamps(struct dentry *dentry, void *arg)
 	wim_timestamp_to_timeval(dentry->d_inode->last_access_time, &tv[0]);
 	wim_timestamp_to_timeval(dentry->d_inode->last_write_time, &tv[1]);
 	if (lutimes(output_path, tv) != 0) {
-		WARNING("Failed to set timestamp on file `%s': %s",
-		        output_path, strerror(errno));
+		if (errno != ENOSYS || args->num_lutimes_warnings < 10) {
+			WARNING("Failed to set timestamp on file `%s': %s",
+				output_path, strerror(errno));
+			args->num_lutimes_warnings++;
+		}
 	}
 	return 0;
 }
@@ -345,9 +349,10 @@ static int extract_single_image(WIMStruct *w, int image,
 		return ret;
 
 	struct extract_args args = {
-		.w = w,
-		.extract_flags = extract_flags,
-		.output_dir = output_dir,
+		.w                    = w,
+		.extract_flags        = extract_flags,
+		.output_dir           = output_dir,
+		.num_lutimes_warnings = 0,
 	};
 
 	ret = for_dentry_in_tree(wim_root_dentry(w), extract_dentry, &args);

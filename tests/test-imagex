@@ -4,9 +4,8 @@
 # tests every aspect of wimlib comprehensively.
 
 set -e
-srcdir=${srcdir:-.}
-srcdir=`realpath $srcdir`
 cd tests
+srcdir=..
 
 imagex() {
 	echo "imagex $@"

@@ -3,9 +3,8 @@
 # Test WIM mounting
 
 set -e
-srcdir=${srcdir:-.}
-srcdir=`realpath $srcdir`
 cd tests
+srcdir=..
 
 imagex() {
 	echo "imagex $@"

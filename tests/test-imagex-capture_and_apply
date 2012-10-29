@@ -9,9 +9,8 @@
 # Also, test if the capture configuration file works correctly.
 
 set -e
-srcdir=${srcdir:-.}
-srcdir=`realpath $srcdir`
 cd tests
+srcdir=..
 
 imagex() {
 	echo "imagex $@"
