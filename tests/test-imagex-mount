@@ -3,8 +3,8 @@
 # Test WIM mounting
 
 set -e
+srcdir=`pwd`
 cd tests
-srcdir=..
 
 imagex() {
 	echo "imagex $@"

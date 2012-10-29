@@ -9,8 +9,8 @@
 # Also, test if the capture configuration file works correctly.
 
 set -e
+srcdir=`pwd`
 cd tests
-srcdir=..
 
 imagex() {
 	echo "imagex $@"

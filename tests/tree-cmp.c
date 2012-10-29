@@ -222,9 +222,6 @@ static void cmp_xattr(const char *file1, const char *file2,
 	}
 	free(buf1);
 	free(buf2);
-	fprintf(stderr, "tree-cmp: Warning: cannot compare xattrs of `%s' and `%s'\n",
-			file1, file2);
-	fprintf(stderr, "          You need to install the attr development files for this.\n");
 }
 
 /* Compares all alternate data streams of the files */

@@ -9,8 +9,8 @@
 # remain mounted.
 
 set -e
+srcdir=`pwd`
 cd tests
-srcdir=..
 
 imagex() {
 	../imagex $@ > /dev/null
