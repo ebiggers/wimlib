@@ -1692,6 +1692,8 @@ static int wimfs_utime(const char *path, struct utimbuf *times)
 {
 	struct dentry *dentry;
 	struct inode *inode;
+	WIMStruct *w = wimfs_get_WIMStruct();
+
  	dentry = get_dentry(w, path);
 	if (!dentry)
 		return -ENOENT;

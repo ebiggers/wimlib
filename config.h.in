@@ -54,6 +54,9 @@
 /* Define to 1 if you have the `ntfs-3g' library (-lntfs-3g). */
 #undef HAVE_LIBNTFS_3G
 
+/* Define to 1 if you have the `lutimes' function. */
+#undef HAVE_LUTIMES
+
 /* Define to 1 if you have the <machine/endian.h> header file. */
 #undef HAVE_MACHINE_ENDIAN_H
 
@@ -93,8 +96,14 @@
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
 
+/* Define to 1 if you have the `utime' function. */
+#undef HAVE_UTIME
+
 /* Define to 1 if you have the `utimensat' function. */
 #undef HAVE_UTIMENSAT
+
+/* Define to 1 if you have the <utime.h> header file. */
+#undef HAVE_UTIME_H
 
 /* Define as const if the declaration of iconv() needs const. */
 #undef ICONV_CONST

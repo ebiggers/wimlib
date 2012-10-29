@@ -6,6 +6,12 @@ set -e
 srcdir=`pwd`
 cd tests
 
+if [ ! -r /dev/fuse ]; then
+	echo "WARNING: /dev/fuse is not readable."
+	echo "Skipping WIM mounting checks"
+	exit 0
+fi
+
 imagex() {
 	echo "imagex $@"
 	../imagex $@  > /dev/null
@@ -49,10 +55,13 @@ init() {
 }
 
 error() {
-	echo "**********************************************"
-	echo "                  Test failure                "
-	echo $*
-	echo "**********************************************"
+	echo "****************************************************************"
+	echo "                         Test failure                           "
+	while [ $# -gt 0 ]; do
+		echo $1
+		shift
+	done
+	echo "****************************************************************"
 	exit 1
 }
 
@@ -69,7 +78,10 @@ for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
 	fi
 	mkdir tmp
 	if ! imagex mount dir.wim dir tmp; then
-		error "Failde to mount test WIM read-only"
+		error "Failed to mount test WIM read-only" \
+		      "Please read any error messages above before reporting this test failure."\
+		      "Perhaps you don't have FUSE installed, or the FUSE kernel module isn't" \
+		      "loaded, or you aren't a member of the FUSE group?"
 	fi
 	echo "Testing extracting file from mounted read-only WIM"
 	if ! cp tmp/lz.c lz.c; then

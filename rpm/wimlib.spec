@@ -1,6 +1,6 @@
 Summary:   Library to extract, create, and modify WIM files
 Name:      wimlib
-Version:   @VERSION@
+Version:   1.0.4
 Release:   1
 License:   GPLv3+
 Group:     System/Libraries
@@ -11,7 +11,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 Requires: libxml2, fuse-libs, fuse, openssl
 Requires: ntfs-3g >= 2:2011.4.12
-BuildRequires: libxml2-devel, fuse-devel, openssl-devel, libattr-devel
+BuildRequires: libxml2-devel, fuse, fuse-devel, openssl-devel, libattr-devel
 BuildRequires: ntfs-3g-devel >= 2:2011.4.12, ntfsprogs
 %description
 wimlib is a library that can be used to create, extract, and modify files in the
@@ -28,7 +28,7 @@ Requires: %{name} = %{version}-%{release}
 Development files for wimlib
 
 %prep
-%setup -q -n %{name}-${version}
+%setup -q -n %{name}-%{version}
 
 %build
 %configure --prefix=/usr                 \
@@ -43,11 +43,11 @@ Development files for wimlib
 make check
 
 %install
-%__rm -rf ${buildroot}
-%__make DESTDIR=${buildroot} install
+%__rm -rf %{buildroot}
+%__make DESTDIR=%{buildroot} install
 
 %clean
-%__rm -rf ${buildroot}
+%__rm -rf %{buildroot}
 
 %post -p /sbin/ldconfig
 %postun -p /sbin/ldconfig

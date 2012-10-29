@@ -3,7 +3,7 @@
 # Add md5sum and delete this line to complete the PKGBUILD
 
 pkgname=wimlib
-pkgver=@VERSION@
+pkgver=1.0.4
 pkgrel=1
 pkgdesc="A library to extract, create, and modify WIM files"
 arch=("i686" "x86_64")

@@ -30,15 +30,21 @@
  */
 
 
+#include "config.h"
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+
+#ifdef HAVE_UTIME_H
+#include <utime.h>
+#endif
+
 #include <unistd.h>
 
-#include "config.h"
 #include "dentry.h"
 #include "lookup_table.h"
 #include "timestamp.h"
@@ -319,15 +325,32 @@ static int apply_dentry_timestamps(struct dentry *dentry, void *arg)
 	struct extract_args *args = arg;
 	size_t len = strlen(args->output_dir);
 	char output_path[len + dentry->full_path_utf8_len + 1];
+	const struct inode *inode = dentry->d_inode;
+	int ret;
 
 	memcpy(output_path, args->output_dir, len);
 	memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
 	struct timeval tv[2];
-	wim_timestamp_to_timeval(dentry->d_inode->last_access_time, &tv[0]);
-	wim_timestamp_to_timeval(dentry->d_inode->last_write_time, &tv[1]);
-	if (lutimes(output_path, tv) != 0) {
+	wim_timestamp_to_timeval(inode->last_access_time, &tv[0]);
+	wim_timestamp_to_timeval(inode->last_write_time, &tv[1]);
+	#ifdef HAVE_LUTIMES
+	ret = lutimes(output_path, tv);
+	#else
+	ret = -1;
+	errno = ENOSYS;
+	#endif
+	if (ret != 0) {
+		#ifdef HAVE_UTIME
+		if (errno == ENOSYS) {
+			struct utimbuf buf;
+			buf.actime = wim_timestamp_to_unix(inode->last_access_time);
+			buf.modtime = wim_timestamp_to_unix(inode->last_write_time);
+			if (utime(output_path, &buf) == 0)
+				return 0;
+		}
+		#endif
 		if (errno != ENOSYS || args->num_lutimes_warnings < 10) {
 			WARNING("Failed to set timestamp on file `%s': %s",
 				output_path, strerror(errno));

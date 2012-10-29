@@ -248,9 +248,6 @@ int inode_set_symlink(struct inode *inode, const char *target,
 	if (lte_ret)
 		*lte_ret = lte;
 	return 0;
-out_free_lte:
-	if (lte != existing_lte)
-		FREE(lte);
 out_free_symlink_buf:
 	FREE(symlink_buf);
 	return ret;
