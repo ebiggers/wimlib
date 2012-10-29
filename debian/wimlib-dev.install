@@ -1,3 +1,4 @@
-usr/include/*
-usr/lib/lib*.a
-usr/lib/pkgconfig/*
+usr/include/wimlib.h
+usr/lib/libwim.a
+usr/lib/libwim.so
+usr/lib/pkgconfig/wimlib.pc

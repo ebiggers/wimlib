@@ -1,3 +1,3 @@
-usr/lib/lib*.so*
+usr/lib/libwim.so.*
 usr/bin/*
 usr/share/man/man1/*

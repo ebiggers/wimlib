@@ -1,6 +1,6 @@
 .TH IMAGEX "1" "October 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
-imagex join \- Join split WIMs into a standalone one-part WIM
+imagex-join \- Join split WIMs into a standalone one-part WIM
 
 .SH SYNOPSIS
 \fBimagex join\fR [\fIOPTION...] \fIOUT_WIMFILE\fR \fISPLIT_WIM...\fR

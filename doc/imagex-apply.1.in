@@ -1,6 +1,6 @@
 .TH IMAGEX "1" "October 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
-imagex apply \- Extract one image, or all images, from a WIM archive
+imagex-apply \- Extract one image, or all images, from a WIM archive
 
 .SH SYNOPSIS
 \fBimagex apply\fR \fIWIMFILE\fR \fIIMAGE\fR \fITARGET\fR [\fIOPTION\fR]...
@@ -181,7 +181,6 @@ mywim2.swm
 mywim3.swm
 mywim4.swm
 mywim5.swm
-\. ... etc.
 .RE
 
 To apply the first image of this split WIM to the directory "dir", we would do:

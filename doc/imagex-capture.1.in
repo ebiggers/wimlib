@@ -1,6 +1,6 @@
 .TH IMAGEX "1" "October 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
-imagex capture, append \- Capture a WIM image from a directory tree
+imagex-capture, imagex-append \- Capture a WIM image from a directory tree
 
 .SH SYNOPSIS
 \fBimagex capture\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \

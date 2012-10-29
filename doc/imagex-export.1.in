@@ -1,6 +1,6 @@
 .TH IMAGEX "1" "October 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
-imagex export \- Exports an image from a WIM archive to an existing or new WIM archive
+imagex-export \- Exports an image from a WIM archive to an existing or new WIM archive
 
 .SH SYNOPSIS
 \fBimagex export\fR \fISRC_WIMFILE\fR (\fISRC_IMAGE_NUM\fR | \
@@ -88,7 +88,6 @@ mywim2.swm
 mywim3.swm
 mywim4.swm
 mywim5.swm
-\. ... etc.
 .RE
 
 To export the first image of this split WIM to a new or existing WIM file

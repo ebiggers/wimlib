@@ -1,6 +1,6 @@
 .TH IMAGEX "1" "October 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
-imagex mount, mountrw, unmount \- Mount and unmount an image from a WIM archive
+imagex-mount, imagex-mountrw, imagex-unmount \- Mount and unmount an image from a WIM archive
 
 .SH SYNOPSIS
 \fBimagex mount\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [--check]
@@ -52,7 +52,6 @@ mywim2.swm
 mywim3.swm
 mywim4.swm
 mywim5.swm
-\. ... etc.
 .RE
 
 To mount the first image of this split WIM to the directory "dir", we would do:

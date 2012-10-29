@@ -1,3 +1,9 @@
+wimlib (1.0.4-1) unstable; urgency=low
+
+  * Update to v1.0.4
+
+ -- Eric Biggers <ebiggers3@gmail.com>  Mon, 29 Oct 2012 03:57:13 +0000
+
 wimlib (0.6.3-1) unstable; urgency=low
 
   * Initial release of Debian package

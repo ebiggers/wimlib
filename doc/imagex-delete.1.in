@@ -1,6 +1,6 @@
 .TH IMAGEX "1" "October 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
-imagex delete \- Delete an image from a WIM archive
+imagex-delete \- Delete an image from a WIM archive
 
 .SH SYNOPSIS
 \fBimagex delete\fR \fIWIMFILE\fR \fIIMAGE\fR [--check]

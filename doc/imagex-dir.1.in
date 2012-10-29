@@ -1,6 +1,6 @@
 .TH IMAGEX "1" "October 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
-imagex dir \- Show the files contained in a WIM archive
+imagex-dir \- Show the files contained in a WIM archive
 
 .SH SYNOPSIS
 \fBimagex dir\fR \fIWIMFILE\fR \fIIMAGE\fR

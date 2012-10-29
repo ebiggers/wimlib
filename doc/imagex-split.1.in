@@ -1,6 +1,6 @@
 .TH IMAGEX "1" "October 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
-imagex split \- Split a WIM into multiple parts
+imagex-split \- Split a WIM into multiple parts
 
 .SH SYNOPSIS
 \fBimagex split\fR \fIWIMFILE\fR \fISPLIT_WIMFILE\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
