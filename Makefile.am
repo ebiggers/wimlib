@@ -123,9 +123,12 @@ $(man1_MANS): config.status
 check_PROGRAMS = tests/tree-cmp
 tests_tree_cmp_SOURCES = tests/tree-cmp.c
 
-dist_check_SCRIPTS = tests/test-imagex				\
-		     tests/test-imagex-mount			\
+dist_check_SCRIPTS = tests/test-imagex \
 		     tests/test-imagex-capture_and_apply
+
+if WITH_FUSE
+dist_check_SCRIPTS += tests/test-imagex-mount
+endif
 
 if WITH_NTFS_3G
 dist_check_SCRIPTS += tests/test-imagex-ntfs
