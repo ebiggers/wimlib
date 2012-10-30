@@ -142,6 +142,6 @@
 	- Rewrote lzx.c and moved it to lzx-decomp.c
 	- Added lzx-comp.c for LZX compression
 
-12-31-2012	Carl Thijssen
+12-31-2010	Carl Thijssen
 	version 0.2
 	Wrote the original library.
