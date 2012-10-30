@@ -148,8 +148,8 @@ Besides the various well-known options, the following options can be passed to
 wimlib's `configure' script:
 
 --without-ntfs-3g
-	If libntfs-3g is not available or is not the correct version, we can
-	build without it.  wimlib will then not be able to apply or capture
+	If libntfs-3g is not available or is not version 2011-4-12 or later, we
+	can build without it.  wimlib will then not be able to apply or capture
 	images directly to NTFS volumes.
 
 --without-fuse
