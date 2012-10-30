@@ -35,9 +35,6 @@
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
 
-#define swap(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \
-				a = __b; b = __a; })
-
 #define for_opt(c, opts) while ((c = getopt_long_only(argc, (char**)argv, "", \
 				opts, NULL)) != -1)
 
