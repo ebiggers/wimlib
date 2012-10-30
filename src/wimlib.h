@@ -913,7 +913,8 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * was not the case for versions of this library 1.0.3 and earlier.)
  *
  * wimlib_mount() cannot be used on an image that was exported with
- * wimlib_export() while the dentry trees for both images are still in memory.
+ * wimlib_export_image() while the dentry trees for both images are still in
+ * memory.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for the WIM file to be mounted.
@@ -953,7 +954,7 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * 	@a image does not specify an existing, single image in @a wim.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	@a image is shared among multiple ::WIMStruct's as a result of a call to
- * 	wimlib_export().
+ * 	wimlib_export_image().
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in @a wim is invalid.
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
@@ -997,7 +998,7 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags,
  * 	If ::WIMLIB_OPEN_FLAG_SHOW_PROGRESS is given, progress information will
  * 	be shown if the integrity of the WIM is checked.
  * 	If ::WIMLIB_OPEN_FLAG_SPLIT_OK is given, no error will be issued if the
- * 	WIM is part of a split WIM; otherwise WIMLIB_ERR_SPLIT_UNSUPPORTED is
+ * 	WIM is part of a split WIM; otherwise ::WIMLIB_ERR_SPLIT_UNSUPPORTED is
  * 	returned.  (This flag may be removed in the future, in which case no
  * 	error will be issued when opening a split WIM.)
  *
