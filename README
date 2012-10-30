@@ -39,7 +39,7 @@ details.
 
 `mkwinpeimg' is shell script that makes it easy to create a customized bootable
 image of Windows PE that can be put on a CD or USB drive, or published on a
-server for PXE booting.  See the main page `doc/mkwinpeiso.1' for more details.
+server for PXE booting.  See the main page `doc/mkwinpeimg.1' for more details.
 
 			       COMPRESSION RATIO
 
