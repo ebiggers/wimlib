@@ -17,7 +17,7 @@ imagex() {
 }
 
 __do_unmount() {
-	if !  fusermount -u $1; then
+	if !  fusermount -z -u $1; then
 		error "Failed to unmount \"$1\""
 	fi
 
