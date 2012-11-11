@@ -128,13 +128,54 @@ static inline bool ads_entries_have_same_name(const struct ads_entry *entry_1,
  * hardlink.c).
  */
 struct dentry {
+	/* Byte 0 */
+
 	/* The inode for this dentry */
 	struct inode *d_inode;
 
+	/* Byte 8 */
+
+	/* Red-black tree of sibling dentries */
+	struct rb_node rb_node;
+
+	/* Byte 32 */
+
+	/* Length of short filename, in bytes, not including the terminating
+	 * zero wide-character. */
+	u16 short_name_len;
+
+	/* Length of file name, in bytes, not including the terminating zero
+	 * wide-character. */
+	u16 file_name_len;
+
+	/* Length of the filename converted into UTF-8, in bytes, not including
+	 * the terminating zero byte. */
+	u16 file_name_utf8_len;
+
+	u8 is_extracted : 1;
+
+	/* Byte 40 */
+
+	/* Pointer to the filename converted to UTF-8 (malloc()ed buffer). */
+	char *file_name_utf8;
+
+	/* Byte 48 */
+
+	union {
+		struct list_head tmp_list;
+		struct {
+			void *tmp_ptr_1;
+			void *tmp_ptr_2;
+		};
+	};
+
+	/* Byte 64 */
+
+	/* List of dentries in the inode (hard link set)  */
+	struct list_head inode_dentry_list;
+
 	/* The parent of this directory entry. */
 	struct dentry *parent;
-
-	struct rb_node rb_node;
 
 	/*
 	 * Size of directory entry on disk, in bytes.  Typical size is around
@@ -156,48 +197,26 @@ struct dentry {
 	 */
 	u64 length;
 
+
 	/* The offset, from the start of the uncompressed WIM metadata resource
 	 * for this image, of this dentry's child dentries.  0 if the directory
 	 * entry has no children, which is the case for regular files or reparse
 	 * points. */
 	u64 subdir_offset;
 
-	/* Length of short filename, in bytes, not including the terminating
-	 * zero wide-character. */
-	u16 short_name_len;
-
-	/* Length of file name, in bytes, not including the terminating zero
-	 * wide-character. */
-	u16 file_name_len;
-
-	/* Length of the filename converted into UTF-8, in bytes, not including
-	 * the terminating zero byte. */
-	u16 file_name_utf8_len;
-
-	/* Pointer to the short filename (malloc()ed buffer) */
-	char *short_name;
-
-	/* Pointer to the filename (malloc()ed buffer). */
-	char *file_name;
-
-	/* Pointer to the filename converted to UTF-8 (malloc()ed buffer). */
-	char *file_name_utf8;
-
-	/* Full path to this dentry (malloc()ed buffer). */
-	char *full_path_utf8;
-	u32   full_path_utf8_len;
-
 	/* Number of references to the dentry tree itself, as in multiple
 	 * WIMStructs */
 	u32 refcnt;
 
-	/* List of dentries in the inode (hard link set)  */
-	struct list_head inode_dentry_list;
+	/* Pointer to the UTF-16 short filename (malloc()ed buffer) */
+	char *short_name;
 
-	union {
-		struct list_head tmp_list;
-		bool is_extracted;
-	};
+	/* Pointer to the UTF-16 filename (malloc()ed buffer). */
+	char *file_name;
+
+	/* Full path (UTF-8) to this dentry (malloc()ed buffer). */
+	char *full_path_utf8;
+	u32   full_path_utf8_len;
 };
 
 #define rbnode_dentry(node) container_of(node, struct dentry, rb_node)

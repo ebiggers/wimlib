@@ -253,42 +253,60 @@ int inode_to_stbuf(const struct inode *inode, struct lookup_table_entry *lte,
 }
 #endif
 
-int for_dentry_in_rbtree(struct rb_node *node,
+int for_dentry_in_rbtree(struct rb_node *root,
 			 int (*visitor)(struct dentry *, void *),
 			 void *arg)
 {
 	int ret;
-	if (node) {
-		ret = for_dentry_in_rbtree(node->rb_left, visitor, arg);
-		if (ret != 0)
-			return ret;
-		ret = visitor(rbnode_dentry(node), arg);
-		if (ret != 0)
-			return ret;
-		ret = for_dentry_in_rbtree(node->rb_right, visitor, arg);
-		if (ret != 0)
-			return ret;
+	struct rb_node *node = root;
+	LIST_HEAD(stack);
+	while (true) {
+		if (node) {
+			list_add(&rbnode_dentry(node)->tmp_list, &stack);
+			node = node->rb_left;
+		} else {
+			struct list_head *next;
+			struct dentry *dentry;
+
+			next = stack.next;
+			if (next == &stack)
+				return 0;
+			dentry = container_of(next, struct dentry, tmp_list);
+			list_del(next);
+			ret = visitor(dentry, arg);
+			if (ret != 0)
+				return ret;
+			node = dentry->rb_node.rb_right;
+		}
 	}
-	return 0;
 }
 
-int for_dentry_tree_in_rbtree(struct rb_node *node,
+int for_dentry_tree_in_rbtree(struct rb_node *root,
 			      int (*visitor)(struct dentry*, void*),
 			      void *arg)
 {
 	int ret;
-	if (node) {
-		ret = for_dentry_tree_in_rbtree(node->rb_left, visitor, arg);
-		if (ret != 0)
-			return ret;
-		ret = for_dentry_in_tree(rbnode_dentry(node), visitor, arg);
-		if (ret != 0)
-			return ret;
-		ret = for_dentry_tree_in_rbtree(node->rb_right, visitor, arg);
-		if (ret != 0)
-			return ret;
+	struct rb_node *node = root;
+	LIST_HEAD(stack);
+	while (true) {
+		if (node) {
+			list_add(&rbnode_dentry(node)->tmp_list, &stack);
+			node = node->rb_left;
+		} else {
+			struct list_head *next;
+			struct dentry *dentry;
+
+			next = stack.next;
+			if (next == &stack)
+				return 0;
+			dentry = container_of(next, struct dentry, tmp_list);
+			list_del(next);
+			ret = for_dentry_in_tree(dentry, visitor, arg);
+			if (ret != 0)
+				return ret;
+			node = dentry->rb_node.rb_right;
+		}
 	}
-	return 0;
 }
 
 static int for_dentry_tree_in_rbtree_depth(struct rb_node *node,
