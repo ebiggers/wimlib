@@ -34,6 +34,9 @@ libwim_la_SOURCES =		\
 	src/ntfs-apply.c	\
 	src/ntfs-capture.c	\
 	src/resource.c		\
+	src/rbtree.c		\
+	src/rbtree.h		\
+	src/rbtree_augmented.h	\
 	src/security.c		\
 	src/security.h		\
 	src/sha1.c		\
