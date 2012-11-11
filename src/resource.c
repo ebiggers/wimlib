@@ -1219,10 +1219,9 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 
 	ret = read_dentry(buf, metadata_len, dentry_offset, dentry);
 
-	/* This is the root dentry, so set its pointers correctly. */
+	/* This is the root dentry, so set its parent to itself. */
 	dentry->parent = dentry;
-	dentry->next   = dentry;
-	dentry->prev   = dentry;
+
 	if (ret != 0)
 		goto out_free_dentry_tree;
 	inode_add_dentry(dentry, dentry->d_inode);

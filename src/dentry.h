@@ -5,6 +5,7 @@
 #include "config.h"
 #include "list.h"
 #include "sha1.h"
+#include "rbtree.h"
 #include <string.h>
 
 struct stat;
@@ -133,9 +134,7 @@ struct dentry {
 	/* The parent of this directory entry. */
 	struct dentry *parent;
 
-	/* Linked list of sibling directory entries. */
-	struct dentry *next;
-	struct dentry *prev;
+	struct rb_node rb_node;
 
 	/*
 	 * Size of directory entry on disk, in bytes.  Typical size is around
@@ -200,6 +199,8 @@ struct dentry {
 		bool is_extracted;
 	};
 };
+
+#define rbnode_dentry(node) container_of(node, struct dentry, rb_node)
 
 /*
  * WIM inode.
@@ -267,9 +268,10 @@ struct inode {
 	struct hlist_node hlist;
 	char *extracted_file;
 
-	/* If non-NULL, the children of this inode (implies the inode is a
-	 * directory) */
-	struct dentry *children;
+	/* Root of a red-black tree storing the children of this inode (if
+	 * non-empty, implies the inode is a directory, although that is also
+	 * noted in the @attributes field.) */
+	struct rb_root children;
 
 #ifdef WITH_FUSE
 	/* wimfs file descriptors table for the inode */
@@ -313,6 +315,10 @@ extern int for_dentry_in_tree(struct dentry *root,
 			      int (*visitor)(struct dentry*, void*),
 			      void *args);
 
+extern int for_dentry_in_rbtree(struct rb_node *node,
+				int (*visitor)(struct dentry *, void *),
+				void *arg);
+
 extern int for_dentry_in_tree_depth(struct dentry *root,
 				    int (*visitor)(struct dentry*, void*),
 				    void *args);
@@ -346,7 +352,11 @@ extern void free_dentry_tree(struct dentry *root,
 extern int increment_dentry_refcnt(struct dentry *dentry, void *ignore);
 
 extern void unlink_dentry(struct dentry *dentry);
-extern void link_dentry(struct dentry *dentry, struct dentry *parent);
+extern bool dentry_add_child(struct dentry * restrict parent,
+			     struct dentry * restrict child);
+
+// XXX
+#define link_dentry(child, parent) dentry_add_child(parent, child)
 
 extern int verify_dentry(struct dentry *dentry, void *wim);
 
@@ -372,16 +382,6 @@ extern u8 *write_dentry_tree(const struct dentry *tree, u8 *p);
 static inline bool dentry_is_root(const struct dentry *dentry)
 {
 	return dentry->parent == dentry;
-}
-
-static inline bool dentry_is_first_sibling(const struct dentry *dentry)
-{
-	return dentry_is_root(dentry) || dentry->parent->d_inode->children == dentry;
-}
-
-static inline bool dentry_is_only_child(const struct dentry *dentry)
-{
-	return dentry->next == dentry;
 }
 
 static inline bool inode_is_directory(const struct inode *inode)
@@ -419,9 +419,15 @@ static inline bool dentry_is_regular_file(const struct dentry *dentry)
 	return inode_is_regular_file(dentry->d_inode);
 }
 
+static inline bool inode_has_children(const struct inode *inode)
+{
+	return inode->children.rb_node != NULL;
+}
+
 static inline bool dentry_is_empty_directory(const struct dentry *dentry)
 {
-	return dentry_is_directory(dentry) && dentry->d_inode->children == NULL;
+	const struct inode *inode = dentry->d_inode;
+	return inode_is_directory(inode) && !inode_has_children(inode);
 }
 
 #endif

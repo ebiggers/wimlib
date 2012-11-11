@@ -1308,6 +1308,18 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 	}
 }
 
+struct fill_params {
+	void *buf;
+	fuse_fill_dir_t filler;
+};
+
+static int dentry_fuse_fill(struct dentry *dentry, void *arg)
+{
+	struct fill_params *fill_params = arg;
+	return fill_params->filler(fill_params->buf, dentry->file_name_utf8,
+				   NULL, 0);
+}
+
 /* Fills in the entries of the directory specified by @path using the
  * FUSE-provided function @filler.  */
 static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
@@ -1315,27 +1327,22 @@ static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 {
 	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
 	struct inode *inode;
-	struct dentry *child;
 
 	if (!fd)
 		return -EBADF;
 
 	inode = fd->f_inode;
 
+	struct fill_params fill_params = {
+		.buf = buf,
+		.filler = filler,
+	};
+
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 
-	child = inode->children;
-
-	if (!child)
-		return 0;
-
-	do {
-		if (filler(buf, child->file_name_utf8, NULL, 0))
-			return 0;
-		child = child->next;
-	} while (child != inode->children);
-	return 0;
+	return for_dentry_in_rbtree(inode->children.rb_node,
+				    dentry_fuse_fill, &fill_params);
 }
 
 
@@ -1439,7 +1446,7 @@ static int wimfs_rename(const char *from, const char *to)
 			 * directory */
 			if (!dentry_is_directory(dst))
 				return -ENOTDIR;
-			if (dst->d_inode->children != NULL)
+			if (inode_has_children(dst->d_inode))
 				return -ENOTEMPTY;
 		}
 		parent_of_dst = dst->parent;

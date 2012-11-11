@@ -253,6 +253,65 @@ int inode_to_stbuf(const struct inode *inode, struct lookup_table_entry *lte,
 }
 #endif
 
+int for_dentry_in_rbtree(struct rb_node *node,
+			 int (*visitor)(struct dentry *, void *),
+			 void *arg)
+{
+	int ret;
+	if (node) {
+		ret = for_dentry_in_rbtree(node->rb_left, visitor, arg);
+		if (ret != 0)
+			return ret;
+		ret = visitor(rbnode_dentry(node), arg);
+		if (ret != 0)
+			return ret;
+		ret = for_dentry_in_rbtree(node->rb_right, visitor, arg);
+		if (ret != 0)
+			return ret;
+	}
+	return 0;
+}
+
+int for_dentry_tree_in_rbtree(struct rb_node *node,
+			      int (*visitor)(struct dentry*, void*),
+			      void *arg)
+{
+	int ret;
+	if (node) {
+		ret = for_dentry_tree_in_rbtree(node->rb_left, visitor, arg);
+		if (ret != 0)
+			return ret;
+		ret = for_dentry_in_tree(rbnode_dentry(node), visitor, arg);
+		if (ret != 0)
+			return ret;
+		ret = for_dentry_tree_in_rbtree(node->rb_right, visitor, arg);
+		if (ret != 0)
+			return ret;
+	}
+	return 0;
+}
+
+static int for_dentry_tree_in_rbtree_depth(struct rb_node *node,
+					   int (*visitor)(struct dentry*, void*),
+					   void *arg)
+{
+	int ret;
+	if (node) {
+		ret = for_dentry_tree_in_rbtree_depth(node->rb_left,
+						      visitor, arg);
+		if (ret != 0)
+			return ret;
+		ret = for_dentry_tree_in_rbtree_depth(node->rb_right,
+						      visitor, arg);
+		if (ret != 0)
+			return ret;
+		ret = for_dentry_in_tree_depth(rbnode_dentry(node), visitor, arg);
+		if (ret != 0)
+			return ret;
+	}
+	return 0;
+}
+
 /*
  * Calls a function on all directory entries in a directory tree.  It is called
  * on a parent before its children.
@@ -260,26 +319,12 @@ int inode_to_stbuf(const struct inode *inode, struct lookup_table_entry *lte,
 int for_dentry_in_tree(struct dentry *root,
 		       int (*visitor)(struct dentry*, void*), void *arg)
 {
-	int ret;
-	struct dentry *child;
-
-	ret = visitor(root, arg);
-
+	int ret = visitor(root, arg);
 	if (ret != 0)
 		return ret;
 
-	child = root->d_inode->children;
-
-	if (!child)
-		return 0;
-
-	do {
-		ret = for_dentry_in_tree(child, visitor, arg);
-		if (ret != 0)
-			return ret;
-		child = child->next;
-	} while (child != root->d_inode->children);
-	return 0;
+	return for_dentry_tree_in_rbtree(root->d_inode->children.rb_node,
+					 visitor, arg);
 }
 
 /*
@@ -289,20 +334,11 @@ int for_dentry_in_tree(struct dentry *root,
 int for_dentry_in_tree_depth(struct dentry *root,
 			     int (*visitor)(struct dentry*, void*), void *arg)
 {
-	int ret;
-	struct dentry *child;
-	struct dentry *next;
 
-	child = root->d_inode->children;
-	if (child) {
-		do {
-			next = child->next;
-			ret = for_dentry_in_tree_depth(child, visitor, arg);
-			if (ret != 0)
-				return ret;
-			child = next;
-		} while (child != root->d_inode->children);
-	}
+	int ret = for_dentry_tree_in_rbtree_depth(root->d_inode->children.rb_node,
+						  visitor, arg);
+	if (ret != 0)
+		return ret;
 	return visitor(root, arg);
 }
 
@@ -356,6 +392,19 @@ oom:
 	return WIMLIB_ERR_NOMEM;
 }
 
+static int increment_subdir_offset(struct dentry *dentry, void *subdir_offset_p)
+{
+	*(u64*)subdir_offset_p += dentry_correct_total_length(dentry);
+	return 0;
+}
+
+static int call_calculate_subdir_offsets(struct dentry *dentry,
+					 void *subdir_offset_p)
+{
+	calculate_subdir_offsets(dentry, subdir_offset_p);
+	return 0;
+}
+
 /*
  * Recursively calculates the subdir offsets for a directory tree.
  *
@@ -365,29 +414,21 @@ oom:
  */
 void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 {
-	struct dentry *child, *children;
+	struct rb_node *node;
 
-	children = dentry->d_inode->children;
-	child = children;
 	dentry->subdir_offset = *subdir_offset_p;
-
-	if (child) {
+	node = dentry->d_inode->children.rb_node;
+	if (node) {
 		/* Advance the subdir offset by the amount of space the children
 		 * of this dentry take up. */
-		do {
-			*subdir_offset_p += dentry_correct_total_length(child);
-			child = child->next;
-		} while (child != children);
+		for_dentry_in_rbtree(node, increment_subdir_offset, subdir_offset_p);
 
 		/* End-of-directory dentry on disk. */
 		*subdir_offset_p += 8;
 
 		/* Recursively call calculate_subdir_offsets() on all the
 		 * children. */
-		do {
-			calculate_subdir_offsets(child, subdir_offset_p);
-			child = child->next;
-		} while (child != children);
+		for_dentry_in_rbtree(node, call_calculate_subdir_offsets, subdir_offset_p);
 	} else {
 		/* On disk, childless directories have a valid subdir_offset
 		 * that points to an 8-byte end-of-directory dentry.  Regular
@@ -399,47 +440,74 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 	}
 }
 
+static int compare_names(const char *name_1, size_t len_1,
+			 const char *name_2, size_t len_2)
+{
+	if (len_1 < len_2)
+		return -1;
+	else if (len_1 > len_2)
+		return 1;
+	else
+		return memcmp(name_1, name_2, len_1);
+}
+
+static int dentry_compare_names(const struct dentry *d1, const struct dentry *d2)
+{
+	return compare_names(d1->file_name_utf8, d1->file_name_utf8_len,
+			     d2->file_name_utf8, d2->file_name_utf8_len);
+}
+
+
+static struct dentry *
+get_rbtree_child_with_name(const struct rb_node *node,
+			   const char *name, size_t name_len)
+{
+	do {
+		struct dentry *child = rbnode_dentry(node);
+		int result = compare_names(name, name_len,
+					   child->file_name_utf8,
+					   child->file_name_utf8_len);
+		if (result < 0)
+			node = node->rb_left;
+		else if (result > 0)
+			node = node->rb_right;
+		else
+			return child;
+	} while (node);
+	return NULL;
+}
+
 /* Returns the child of @dentry that has the file name @name.
  * Returns NULL if no child has the name. */
 struct dentry *get_dentry_child_with_name(const struct dentry *dentry,
 					  const char *name)
 {
-	struct dentry *child;
-	size_t name_len;
-
-	child = dentry->d_inode->children;
-	if (child) {
-		name_len = strlen(name);
-		do {
-			if (dentry_has_name(child, name, name_len))
-				return child;
-			child = child->next;
-		} while (child != dentry->d_inode->children);
-	}
-	return NULL;
+	struct rb_node *node = dentry->d_inode->children.rb_node;
+	if (node)
+		return get_rbtree_child_with_name(node, name, strlen(name));
+	else
+		return NULL;
 }
 
 /* Retrieves the dentry that has the UTF-8 @path relative to the dentry
- * @cur_dir.  Returns NULL if no dentry having the path is found. */
-static struct dentry *get_dentry_relative_path(struct dentry *cur_dir,
+ * @cur_dentry.  Returns NULL if no dentry having the path is found. */
+static struct dentry *get_dentry_relative_path(struct dentry *cur_dentry,
 					       const char *path)
 {
-	struct dentry *child, *children;
-	size_t base_len;
-	const char *new_path;
-
 	if (*path == '\0')
-		return cur_dir;
+		return cur_dentry;
 
-	children = cur_dir->d_inode->children;
-	if (children) {
+	struct rb_node *node = cur_dentry->d_inode->children.rb_node;
+	if (node) {
+		struct dentry *child;
+		size_t base_len;
+		const char *new_path;
+
 		new_path = path_next_part(path, &base_len);
-		child = children;
-		do {
-			if (dentry_has_name(child, path, base_len))
-				return get_dentry_relative_path(child, new_path);
-			child = child->next;
-		} while (child != children);
+
+		child = get_rbtree_child_with_name(node, path, base_len);
+		if (child)
+			return get_dentry_relative_path(child, new_path);
 	}
 	return NULL;
 }
@@ -643,8 +711,6 @@ struct dentry *new_dentry(const char *name)
 	if (change_dentry_name(dentry, name) != 0)
 		goto err;
 
-	dentry->next   = dentry;
-	dentry->prev   = dentry;
 	dentry->parent = dentry;
 
 	return dentry;
@@ -812,24 +878,33 @@ int increment_dentry_refcnt(struct dentry *dentry, void *ignore)
  * @dentry: The dentry to link.
  * @parent: The dentry that will be the parent of @dentry.
  */
-void link_dentry(struct dentry *dentry, struct dentry *parent)
+bool dentry_add_child(struct dentry * restrict parent,
+		      struct dentry * restrict child)
 {
 	wimlib_assert(dentry_is_directory(parent));
-	dentry->parent = parent;
-	if (parent->d_inode->children) {
-		/* Not an only child; link to siblings. */
-		dentry->next = parent->d_inode->children;
-		dentry->prev = parent->d_inode->children->prev;
-		dentry->next->prev = dentry;
-		dentry->prev->next = dentry;
-	} else {
-		/* Only child; link to parent. */
-		parent->d_inode->children = dentry;
-		dentry->next = dentry;
-		dentry->prev = dentry;
-	}
-}
 
+	struct rb_root *root = &parent->d_inode->children;
+	struct rb_node **new = &(root->rb_node);
+	struct rb_node *rb_parent = NULL;
+
+	while (*new) {
+		struct dentry *this = rbnode_dentry(*new);
+		int result = dentry_compare_names(child, this);
+
+		rb_parent = *new;
+
+		if (result < 0)
+			new = &((*new)->rb_left);
+		else if (result > 0)
+			new = &((*new)->rb_right);
+		else
+			return false;
+	}
+	child->parent = parent;
+	rb_link_node(&child->rb_node, rb_parent, new);
+	rb_insert_color(&child->rb_node, root);
+	return true;
+}
 
 #ifdef WITH_FUSE
 /*
@@ -839,16 +914,10 @@ void link_dentry(struct dentry *dentry, struct dentry *parent)
  */
 void unlink_dentry(struct dentry *dentry)
 {
-	if (dentry_is_root(dentry))
+	struct dentry *parent = dentry->parent;
+	if (parent == dentry)
 		return;
-	if (dentry_is_only_child(dentry)) {
-		dentry->parent->d_inode->children = NULL;
-	} else {
-		if (dentry_is_first_sibling(dentry))
-			dentry->parent->d_inode->children = dentry->next;
-		dentry->next->prev = dentry->prev;
-		dentry->prev->next = dentry->next;
-	}
+	rb_erase(&dentry->rb_node, &parent->d_inode->children);
 }
 #endif
 
@@ -1499,7 +1568,7 @@ out:
 
 	/* We've read all the data for this dentry.  Set the names and their
 	 * lengths, and we've done. */
-	dentry->d_inode              = inode;
+	dentry->d_inode            = inode;
 	dentry->file_name          = file_name;
 	dentry->file_name_utf8     = file_name_utf8;
 	dentry->short_name         = short_name;
@@ -1577,15 +1646,8 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		}
 		memcpy(child, &cur_child, sizeof(struct dentry));
 
-		if (prev_child) {
-			prev_child->next = child;
-			child->prev = prev_child;
-		} else {
-			first_child = child;
-		}
+		dentry_add_child(dentry, child);
 
-		child->parent = dentry;
-		prev_child = child;
 		inode_add_dentry(child, child->d_inode);
 
 		/* If there are children of this child, call this procedure
@@ -1604,14 +1666,6 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		 * entries. */
 		cur_offset += dentry_total_length(child);
 	}
-
-	/* Link last child to first one, and set parent's children pointer to
-	 * the first child.  */
-	if (prev_child) {
-		prev_child->next = first_child;
-		first_child->prev = prev_child;
-	}
-	dentry->d_inode->children = first_child;
 	return ret;
 }
 
@@ -1695,12 +1749,26 @@ static u8 *write_dentry(const struct dentry *dentry, u8 *p)
 	return p;
 }
 
+static int write_dentry_cb(struct dentry *dentry, void *_p)
+{
+	u8 **p = _p;
+	*p = write_dentry(dentry, *p);
+	return 0;
+}
+
+static u8 *write_dentry_tree_recursive(const struct dentry *parent, u8 *p);
+
+static int write_dentry_tree_recursive_cb(struct dentry *dentry, void *_p)
+{
+	u8 **p = _p;
+	*p = write_dentry_tree_recursive(dentry, *p);
+	return 0;
+}
+
 /* Recursive function that writes a dentry tree rooted at @parent, not including
  * @parent itself, which has already been written. */
 static u8 *write_dentry_tree_recursive(const struct dentry *parent, u8 *p)
 {
-	const struct dentry *child, *children;
-
 	/* Nothing to do if this dentry has no children. */
 	if (parent->subdir_offset == 0)
 		return p;
@@ -1711,25 +1779,14 @@ static u8 *write_dentry_tree_recursive(const struct dentry *parent, u8 *p)
 	 * recursively writing the directory trees rooted at each of the child
 	 * dentries, since the on-disk dentries for a dentry's children are
 	 * always located at consecutive positions in the metadata resource! */
-	children = parent->d_inode->children;
-	child = children;
-	if (child) {
-		do {
-			p = write_dentry(child, p);
-			child = child->next;
-		} while (child != children);
-	}
+	for_dentry_in_rbtree(parent->d_inode->children.rb_node, write_dentry_cb, &p);
 
 	/* write end of directory entry */
 	p = put_u64(p, 0);
 
 	/* Recurse on children. */
-	if (child) {
-		do {
-			p = write_dentry_tree_recursive(child, p);
-			child = child->next;
-		} while (child != children);
-	}
+	for_dentry_in_rbtree(parent->d_inode->children.rb_node,
+			     write_dentry_tree_recursive_cb, &p);
 	return p;
 }
 
