@@ -161,13 +161,7 @@ struct dentry {
 
 	/* Byte 48 */
 
-	union {
-		struct list_head tmp_list;
-		struct {
-			void *tmp_ptr_1;
-			void *tmp_ptr_2;
-		};
-	};
+	struct list_head tmp_list;
 
 	/* Byte 64 */
 
@@ -208,6 +202,8 @@ struct dentry {
 	 * WIMStructs */
 	u32 refcnt;
 
+	u32   full_path_utf8_len;
+
 	/* Pointer to the UTF-16 short filename (malloc()ed buffer) */
 	char *short_name;
 
@@ -216,7 +212,6 @@ struct dentry {
 
 	/* Full path (UTF-8) to this dentry (malloc()ed buffer). */
 	char *full_path_utf8;
-	u32   full_path_utf8_len;
 };
 
 #define rbnode_dentry(node) container_of(node, struct dentry, rb_node)
