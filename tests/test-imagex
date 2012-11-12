@@ -4,8 +4,9 @@
 # tests every aspect of wimlib comprehensively.
 
 set -e
-srcdir=`pwd`
 cd tests
+srcdir="${srcdir:-.}/.."
+srcdir="$(cd $srcdir; pwd)"
 
 imagex() {
 	echo "imagex $@"

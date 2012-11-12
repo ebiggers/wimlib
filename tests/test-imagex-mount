@@ -3,8 +3,9 @@
 # Test WIM mounting
 
 set -e
-srcdir=`pwd`
 cd tests
+srcdir="${srcdir:-.}/.."
+srcdir="$(cd $srcdir; pwd)"
 
 if [ ! -r /dev/fuse ]; then
 	echo "WARNING: /dev/fuse is not readable."
