@@ -185,7 +185,7 @@ static int alloc_wimlib_fd(struct inode *inode,
 			inode->num_opened_fds++;
 			if (lte)
 				lte->num_opened_fds++;
-			DEBUG("Allocated fd");
+			DEBUG("Allocated fd (idx = %u)", fd->idx);
 			return 0;
 		}
 	}
@@ -193,11 +193,11 @@ static int alloc_wimlib_fd(struct inode *inode,
 
 static void inode_put_fd(struct inode *inode, struct wimlib_fd *fd)
 {
-	wimlib_assert(fd);
-	wimlib_assert(inode);
+	wimlib_assert(fd != NULL);
+	wimlib_assert(inode != NULL);
 	wimlib_assert(fd->f_inode == inode);
-	wimlib_assert(inode->num_opened_fds);
-	wimlib_assert(fd->idx < inode->num_opened_fds);
+	wimlib_assert(inode->num_opened_fds != 0);
+	wimlib_assert(fd->idx < inode->num_allocated_fds);
 	wimlib_assert(inode->fds[fd->idx] == fd);
 
 	inode->fds[fd->idx] = NULL;
