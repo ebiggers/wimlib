@@ -32,6 +32,7 @@
 #include <errno.h>
 #include <libgen.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
 
@@ -59,44 +60,44 @@ static void usage_all();
 
 static const char *usage_strings[] = {
 [APPEND] =
-"    imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
-"                  [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
-"                  [--verbose] [--dereference] [--config=FILE]\n",
+"imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
+"                     [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
+"                     [--verbose] [--dereference] [--config=FILE]\n",
 [APPLY] =
-"    imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
-"                 (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
-"                 [--symlink] [--verbose] [--ref=\"GLOB\"]\n",
+"imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
+"                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
+"                    [--symlink] [--verbose] [--ref=\"GLOB\"]\n",
 [CAPTURE] =
-"    imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
-"                   [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
-"                   [--flags EDITION_ID] [--verbose] [--dereference]\n"
+"imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
+"                      [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
+"                      [--flags EDITION_ID] [--verbose] [--dereference]\n"
 "                   [--config=FILE]\n",
 [DELETE] =
-"    imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n",
+"imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n",
 [DIR] =
-"    imagex dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n",
+"imagex dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n",
 [EXPORT] =
-"    imagex export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
-"                  DEST_WIMFILE [DEST_IMAGE_NAME]\n"
-"                  [DEST_IMAGE_DESCRIPTION] [--boot] [--check]\n"
-"                  [--compress=TYPE] [--ref=\"GLOB\"]\n",
+"imagex export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
+"                     DEST_WIMFILE [DEST_IMAGE_NAME]\n"
+"                     [DEST_IMAGE_DESCRIPTION] [--boot] [--check]\n"
+"                     [--compress=TYPE] [--ref=\"GLOB\"]\n",
 [INFO] =
-"    imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
-"                [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
-"                [--xml] [--extract-xml FILE] [--metadata]\n",
+"imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
+"                   [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
+"                   [--xml] [--extract-xml FILE] [--metadata]\n",
 [JOIN] =
-"    imagex join [--check] WIMFILE SPLIT_WIM...\n",
+"imagex join [--check] WIMFILE SPLIT_WIM...\n",
 [MOUNT] =
-"    imagex mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
-"                 [--check] [--debug] [--streams-interface=INTERFACE]\n"
-"                 [--ref=\"GLOB\"]\n",
+"imagex mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
+"                    [--check] [--debug] [--streams-interface=INTERFACE]\n"
+"                    [--ref=\"GLOB\"]\n",
 [MOUNTRW] =
-"    imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
-"                   [--check] [--debug] [--streams-interface=INTERFACE]\n",
+"imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
+"                      [--check] [--debug] [--streams-interface=INTERFACE]\n",
 [SPLIT] =
-"    imagex split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
+"imagex split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
 [UNMOUNT] =
-"    imagex unmount DIRECTORY [--commit] [--check]\n",
+"imagex unmount DIRECTORY [--commit] [--check]\n",
 };
 
 static const struct option common_options[] = {
@@ -196,11 +197,17 @@ static void imagex_error_with_errno(const char *format, ...)
 	va_end(va);
 }
 
-static int verify_image_exists(int image)
+static int verify_image_exists(int image, const char *image_name,
+			       const char *wim_name)
 {
 	if (image == WIM_NO_IMAGE) {
-		imagex_error("Not a valid image");
-		return WIMLIB_ERR_INVALID_IMAGE;
+		imagex_error("\"%s\" is not a valid image in `%s'!\n"
+			     "       Please specify a 1-based imagex index or "
+			     "image name.\n"
+			     "       You may use `imagex info' to list the images "
+			     "contained in a WIM.",
+			     image_name, wim_name);
+		return -1;
 	}
 	return 0;
 }
@@ -208,16 +215,17 @@ static int verify_image_exists(int image)
 static int verify_image_is_single(int image)
 {
 	if (image == WIM_ALL_IMAGES) {
-		imagex_error("Cannot specify all images for this action");
-		return WIMLIB_ERR_INVALID_IMAGE;
+		imagex_error("Cannot specify all images for this action!");
+		return -1;
 	}
 	return 0;
 }
 
-static int verify_image_exists_and_is_single(int image)
+static int verify_image_exists_and_is_single(int image, const char *image_name,
+					     const char *wim_name)
 {
 	int ret;
-	ret = verify_image_exists(image);
+	ret = verify_image_exists(image, image_name, wim_name);
 	if (ret == 0)
 		ret = verify_image_is_single(image);
 	return ret;
@@ -275,6 +283,16 @@ out_free_buf:
 out_fclose:
 	fclose(fp);
 	return NULL;
+}
+
+static int file_writable(const char *path)
+{
+	struct stat stbuf;
+	int ret;
+	ret = access(path, F_OK | W_OK);
+	if (ret != 0)
+		imagex_error_with_errno("Can't modify `%s'", path);
+	return ret;
 }
 
 static int open_swms_from_glob(const char *swm_glob,
@@ -396,7 +414,7 @@ static int imagex_apply(int argc, const char **argv)
 		return ret;
 
 	image = wimlib_resolve_image(w, image_num_or_name);
-	ret = verify_image_exists(image);
+	ret = verify_image_exists(image, image_num_or_name, wimfile);
 	if (ret != 0)
 		goto out;
 
@@ -626,13 +644,17 @@ static int imagex_delete(int argc, const char **argv)
 	wimfile = argv[0];
 	image_num_or_name = argv[1];
 
+	ret = file_writable(wimfile);
+	if (ret != 0)
+		return ret;
+
 	ret = wimlib_open_wim(wimfile, open_flags, &w);
 	if (ret != 0)
 		return ret;
 
 	image = wimlib_resolve_image(w, image_num_or_name);
 
-	ret = verify_image_exists(image);
+	ret = verify_image_exists(image, image_num_or_name, wimfile);
 	if (ret != 0)
 		goto out;
 
@@ -679,7 +701,7 @@ static int imagex_dir(int argc, const char **argv)
 
 	if (argc == 3) {
 		image = wimlib_resolve_image(w, argv[2]);
-		ret = verify_image_exists(image);
+		ret = verify_image_exists(image, argv[2], wimfile);
 		if (ret != 0)
 			goto out;
 	} else {
@@ -784,6 +806,10 @@ static int imagex_export(int argc, const char **argv)
 		if (ret != 0)
 			goto out;
 
+		ret = file_writable(dest_wimfile);
+		if (ret != 0)
+			return ret;
+
 		dest_ctype = wimlib_get_compression_type(dest_w);
 		if (compression_type_specified
 		    && compression_type != dest_ctype)
@@ -813,7 +839,7 @@ static int imagex_export(int argc, const char **argv)
 	}
 
 	image = wimlib_resolve_image(src_w, src_image_num_or_name);
-	ret = verify_image_exists(image);
+	ret = verify_image_exists(image, src_image_num_or_name, src_wimfile);
 	if (ret != 0)
 		goto out;
 
@@ -1028,7 +1054,6 @@ static int imagex_info(int argc, const char **argv)
 	} else {
 
 		/* Modification operations */
-
 		if (total_parts != 1) {
 			imagex_error("Modifying a split WIM is not supported.");
 			return -1;
@@ -1088,6 +1113,10 @@ static int imagex_info(int argc, const char **argv)
 		 * actually needs to be changed. */
 		if (boot || new_name || new_desc ||
 				check != wimlib_has_integrity_table(w)) {
+
+			ret = file_writable(wimfile);
+			if (ret != 0)
+				return ret;
 
 			ret = wimlib_overwrite_xml_and_header(w, check ?
 					WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
@@ -1205,21 +1234,26 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 		num_images = wimlib_get_num_images(w);
 		if (num_images != 1) {
 			imagex_error("The file `%s' contains %d images; Please "
-				     "select one", wimfile, num_images);
+				     "select one.", wimfile, num_images);
 			usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 					? MOUNTRW : MOUNT);
-			ret = WIMLIB_ERR_INVALID_IMAGE;
+			ret = -1;
 			goto out;
 		}
 		dir = argv[1];
 	} else {
 		image = wimlib_resolve_image(w, argv[1]);
 		dir = argv[2];
+		ret = verify_image_exists_and_is_single(image, argv[1], wimfile);
+		if (ret != 0)
+			goto out;
 	}
 
-	ret = verify_image_exists_and_is_single(image);
-	if (ret != 0)
-		goto out;
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+		ret = file_writable(wimfile);
+		if (ret != 0)
+			return ret;
+	}
 
 	ret = wimlib_mount(w, image, dir, mount_flags, additional_swms,
 			   num_additional_swms);
@@ -1381,12 +1415,12 @@ static void help_or_version(int argc, const char **argv)
 static void usage(int cmd_type)
 {
 	const struct imagex_command *cmd;
-	puts("IMAGEX: Usage:");
-	fputs(usage_strings[cmd_type], stdout);
-	for_imagex_command(cmd)
+	printf("Usage: %s", usage_strings[cmd_type]);
+	for_imagex_command(cmd) {
 		if (cmd->cmd == cmd_type)
 			printf("\nTry `man imagex-%s' for more details.\n",
 			       cmd->name);
+	}
 }
 
 static void usage_all()
