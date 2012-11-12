@@ -302,6 +302,31 @@ static int for_dentry_tree_in_rbtree_depth(struct rb_node *node,
 	return 0;
 }
 
+/*#define RECURSIVE_FOR_DENTRY_IN_TREE*/
+
+#ifdef RECURSIVE_FOR_DENTRY_IN_TREE
+static int for_dentry_tree_in_rbtree(struct rb_node *node,
+					   int (*visitor)(struct dentry*, void*),
+					   void *arg)
+{
+	int ret;
+	if (node) {
+		ret = for_dentry_tree_in_rbtree(node->rb_left,
+						      visitor, arg);
+		if (ret != 0)
+			return ret;
+		ret = for_dentry_in_tree(rbnode_dentry(node), visitor, arg);
+		if (ret != 0)
+			return ret;
+		ret = for_dentry_tree_in_rbtree(node->rb_right,
+						      visitor, arg);
+		if (ret != 0)
+			return ret;
+	}
+	return 0;
+}
+#endif
+
 /*
  * Calls a function on all directory entries in a WIM dentry tree.  Logically,
  * this is a pre-order traversal (the function is called on a parent dentry
@@ -314,6 +339,12 @@ static int for_dentry_tree_in_rbtree_depth(struct rb_node *node,
 int for_dentry_in_tree(struct dentry *root,
 		       int (*visitor)(struct dentry*, void*), void *arg)
 {
+#ifdef RECURSIVE_FOR_DENTRY_IN_TREE
+	int ret = visitor(root, arg);
+	if (ret != 0)
+		return ret;
+	return for_dentry_tree_in_rbtree(root->d_inode->children.rb_node, visitor, arg);
+#else
 	int ret;
 	struct list_head main_stack;
 	struct list_head sibling_stack;
@@ -383,7 +414,6 @@ int for_dentry_in_tree(struct dentry *root,
 			if (ret != 0) {
 				// Failed.  Restore parent pointers for the
 				// dentries in the main stack
-				list_del(&root->tmp_list);
 				list_for_each_entry(dentry, &main_stack, tmp_list) {
 					dentry->parent = container_of(dentry->tmp_list.next,
 								      struct dentry,
@@ -406,7 +436,7 @@ int for_dentry_in_tree(struct dentry *root,
 
 				main_dentry = dentry;
 				node = main_dentry->d_inode->children.rb_node;
-			} else  {
+			} else {
 				node = dentry->rb_node.rb_right;
 			}
 		}
@@ -414,6 +444,7 @@ int for_dentry_in_tree(struct dentry *root,
 out:
 	root->parent = root;
 	return ret;
+#endif
 }
 
 /*
@@ -613,15 +644,15 @@ void calculate_subdir_offsets(struct dentry *dentry, u64 *subdir_offset_p)
 	}
 }
 
-static int compare_names(const char *name_1, size_t len_1,
-			 const char *name_2, size_t len_2)
+static int compare_names(const char *name_1, u16 len_1,
+			 const char *name_2, u16 len_2)
 {
-	if (len_1 < len_2)
-		return -1;
-	else if (len_1 > len_2)
-		return 1;
-	else
-		return memcmp(name_1, name_2, len_1);
+	int result = strncasecmp(name_1, name_2, min(len_1, len_2));
+	if (result) {
+		return result;
+	} else {
+		return (int)len_1 - (int)len_2;
+	}
 }
 
 static int dentry_compare_names(const struct dentry *d1, const struct dentry *d2)
