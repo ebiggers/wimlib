@@ -914,7 +914,10 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  *
  * wimlib_mount() cannot be used on an image that was exported with
  * wimlib_export_image() while the dentry trees for both images are still in
- * memory.
+ * memory.  In addition, wimlib_mount() may not be used to mount an image that
+ * has just been added with wimlib_add_image() or
+ * wimlib_add_image_from_ntfs_volume(), unless the WIM has been written and read
+ * into a new ::WIMStruct.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for the WIM file to be mounted.
@@ -954,7 +957,8 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * 	@a image does not specify an existing, single image in @a wim.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	@a image is shared among multiple ::WIMStruct's as a result of a call to
- * 	wimlib_export_image().
+ * 	wimlib_export_image(), or @a image has been added with
+ * 	wimlib_add_image() or wimlib_add_image_from_ntfs_volume().
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in @a wim is invalid.
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA

@@ -1880,7 +1880,14 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	if (imd->root_dentry->refcnt != 1) {
 		ERROR("Cannot mount image that was just exported with "
-		      "wimlib_export()");
+		      "wimlib_export_image()");
+		ret = WIMLIB_ERR_INVALID_PARAM;
+		goto out;
+	}
+
+	if (imd->modified) {
+		ERROR("Cannot mount image that was added "
+		      "with wimlib_add_image()");
 		ret = WIMLIB_ERR_INVALID_PARAM;
 		goto out;
 	}
