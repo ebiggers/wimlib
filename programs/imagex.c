@@ -1264,9 +1264,11 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 	}
 out:
 	wimlib_free(w);
-	if (additional_swms)
+	if (additional_swms) {
 		for (unsigned i = 0; i < num_additional_swms; i++)
 			wimlib_free(additional_swms[i]);
+		free(additional_swms);
+	}
 	return ret;
 mount_usage:
 	usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
