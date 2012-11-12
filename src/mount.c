@@ -1854,6 +1854,11 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	if (ret != 0)
 		return ret;
 
+	if ((flags & WIMLIB_MOUNT_FLAG_READWRITE) && (wim->hdr.total_parts != 1)) {
+		ERROR("Cannot mount a split WIM read-write");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
+
 	if (num_additional_swms) {
 		ret = new_joined_lookup_table(wim, additional_swms,
 					      num_additional_swms,
