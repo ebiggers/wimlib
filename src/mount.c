@@ -876,7 +876,7 @@ static int rebuild_wim(struct wimfs_context *ctx, bool check_integrity)
 
 
 	DEBUG("Closing all staging file descriptors.");
-	list_for_each_entry(lte, &ctx->staging_list, staging_list) {
+	list_for_each_entry_safe(lte, tmp, &ctx->staging_list, staging_list) {
 		ret = inode_close_fds(lte->lte_inode);
 		if (ret != 0)
 			return ret;
