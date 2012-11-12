@@ -463,7 +463,7 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 					       ctx->flags);
 
 	if (child)
-		link_dentry(child, ctx->parent);
+		dentry_add_child(ctx->parent, child);
 
 	ntfs_inode_close(ni);
 out_free_utf8_name:

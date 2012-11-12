@@ -1086,7 +1086,7 @@ static int wimfs_link(const char *to, const char *from)
 			lte->refcnt++;
 	}
 
-	link_dentry(from_dentry, from_dentry_parent);
+	dentry_add_child(from_dentry_parent, from_dentry);
 	return 0;
 }
 
@@ -1152,7 +1152,7 @@ static int wimfs_mkdir(const char *path, mode_t mode)
 	newdir->d_inode->attributes |= FILE_ATTRIBUTE_DIRECTORY;
 	newdir->d_inode->resolved = true;
 	newdir->d_inode->ino = ctx->next_ino++;
-	link_dentry(newdir, parent);
+	dentry_add_child(parent, newdir);
 	return 0;
 }
 
@@ -1204,7 +1204,7 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 			return -ENOMEM;
 		dentry->d_inode->resolved = true;
 		dentry->d_inode->ino = ctx->next_ino++;
-		link_dentry(dentry, parent);
+		dentry_add_child(parent, dentry);
 	}
 	return 0;
 }
@@ -1491,7 +1491,7 @@ static int wimfs_rename(const char *from, const char *to)
 	src->file_name_utf8_len = file_name_utf8_len;
 
 	unlink_dentry(src);
-	link_dentry(src, parent_of_dst);
+	dentry_add_child(parent_of_dst, src);
 	return 0;
 }
 
@@ -1611,7 +1611,7 @@ static int wimfs_symlink(const char *to, const char *from)
 	if (inode_set_symlink(inode, to, ctx->wim->lookup_table, NULL) != 0)
 		goto out_free_dentry;
 
-	link_dentry(dentry, dentry_parent);
+	dentry_add_child(dentry_parent, dentry);
 	return 0;
 out_free_dentry:
 	free_dentry(dentry);

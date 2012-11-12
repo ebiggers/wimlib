@@ -374,9 +374,6 @@ extern void unlink_dentry(struct dentry *dentry);
 extern bool dentry_add_child(struct dentry * restrict parent,
 			     struct dentry * restrict child);
 
-// XXX
-#define link_dentry(child, parent) dentry_add_child(parent, child)
-
 extern int verify_dentry(struct dentry *dentry, void *wim);
 
 

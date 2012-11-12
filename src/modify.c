@@ -196,7 +196,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 			if (ret != 0)
 				break;
 			if (child)
-				link_dentry(child, root);
+				dentry_add_child(root, child);
 		}
 		closedir(dir);
 	} else if (dentry_is_symlink(root)) { /* Archiving a symbolic link */
