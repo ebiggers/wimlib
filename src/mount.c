@@ -146,6 +146,9 @@ static int alloc_wimlib_fd(struct inode *inode,
 {
 	static const u16 fds_per_alloc = 8;
 	static const u16 max_fds = 0xffff;
+	int ret;
+
+	pthread_mutex_lock(&inode->i_mutex);
 
 	DEBUG("Allocating fd for stream ID %u from inode %lx (open = %u, allocated = %u)",
 	      stream_id, inode->ino, inode->num_opened_fds,
@@ -155,16 +158,20 @@ static int alloc_wimlib_fd(struct inode *inode,
 		struct wimlib_fd **fds;
 		u16 num_new_fds;
 
-		if (inode->num_allocated_fds == max_fds)
-			return -EMFILE;
+		if (inode->num_allocated_fds == max_fds) {
+			ret = -EMFILE;
+			goto out;
+		}
 		num_new_fds = min(fds_per_alloc,
 				  max_fds - inode->num_allocated_fds);
 
 		fds = REALLOC(inode->fds,
 			      (inode->num_allocated_fds + num_new_fds) *
 			        sizeof(inode->fds[0]));
-		if (!fds)
-			return -ENOMEM;
+		if (!fds) {
+			ret = -ENOMEM;
+			goto out;
+		}
 		memset(&fds[inode->num_allocated_fds], 0,
 		       num_new_fds * sizeof(fds[0]));
 		inode->fds = fds;
@@ -173,8 +180,10 @@ static int alloc_wimlib_fd(struct inode *inode,
 	for (u16 i = 0; ; i++) {
 		if (!inode->fds[i]) {
 			struct wimlib_fd *fd = CALLOC(1, sizeof(*fd));
-			if (!fd)
-				return -ENOMEM;
+			if (!fd) {
+				ret = -ENOMEM;
+				break;
+			}
 			fd->f_inode    = inode;
 			fd->f_lte      = lte;
 			fd->staging_fd = -1;
@@ -184,17 +193,24 @@ static int alloc_wimlib_fd(struct inode *inode,
 			inode->fds[i]  = fd;
 			inode->num_opened_fds++;
 			if (lte)
-				lte->num_opened_fds++;
+				atomic_inc(&lte->num_opened_fds);
 			DEBUG("Allocated fd (idx = %u)", fd->idx);
-			return 0;
+			ret = 0;
+			break;
 		}
 	}
+out:
+	pthread_mutex_unlock(&inode->i_mutex);
+	return ret;
 }
 
 static void inode_put_fd(struct inode *inode, struct wimlib_fd *fd)
 {
 	wimlib_assert(fd != NULL);
 	wimlib_assert(inode != NULL);
+
+	pthread_mutex_lock(&inode->i_mutex);
+
 	wimlib_assert(fd->f_inode == inode);
 	wimlib_assert(inode->num_opened_fds != 0);
 	wimlib_assert(fd->idx < inode->num_allocated_fds);
@@ -202,13 +218,17 @@ static void inode_put_fd(struct inode *inode, struct wimlib_fd *fd)
 
 	inode->fds[fd->idx] = NULL;
 	FREE(fd);
-	if (--inode->num_opened_fds == 0 && inode->link_count == 0)
+	if (--inode->num_opened_fds == 0 && inode->link_count == 0) {
+		pthread_mutex_unlock(&inode->i_mutex);
 		free_inode(inode);
+	} else {
+		pthread_mutex_unlock(&inode->i_mutex);
+	}
 }
 
 static int lte_put_fd(struct lookup_table_entry *lte, struct wimlib_fd *fd)
 {
-	wimlib_assert(fd);
+	wimlib_assert(fd != NULL);
 	wimlib_assert(fd->f_lte == lte);
 
 	if (!lte) /* Empty stream with no lookup table entry */
@@ -232,7 +252,7 @@ static int lte_put_fd(struct lookup_table_entry *lte, struct wimlib_fd *fd)
 static int close_wimlib_fd(struct wimlib_fd *fd)
 {
 	int ret;
-	wimlib_assert(fd);
+	wimlib_assert(fd != NULL);
 	DEBUG("Closing fd (inode = %lu, opened = %u, allocated = %u)",
 	      fd->f_inode->ino, fd->f_inode->num_opened_fds,
 	      fd->f_inode->num_allocated_fds);
@@ -1893,7 +1913,10 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	argv[argc++] = "imagex";
 	argv[argc++] = dir_copy;
-	argv[argc++] = "-s"; /* disable multi-threaded operation */
+
+ 	/* disable multi-threaded operation for read-write mounts */
+	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
+		argv[argc++] = "-s";
 
 	if (flags & WIMLIB_MOUNT_FLAG_DEBUG)
 		argv[argc++] = "-d";

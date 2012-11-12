@@ -878,6 +878,11 @@ static struct inode *new_timeless_inode()
 		inode->link_count = 1;
 	#ifdef WITH_FUSE
 		inode->next_stream_id = 1;
+		if (pthread_mutex_init(&inode->i_mutex, NULL) != 0) {
+			ERROR_WITH_ERRNO("Error initializing mutex");
+			FREE(inode);
+			return NULL;
+		}
 	#endif
 		INIT_LIST_HEAD(&inode->dentry_list);
 	}
@@ -983,6 +988,7 @@ void free_inode(struct inode *inode)
 	#ifdef WITH_FUSE
 		wimlib_assert(inode->num_opened_fds == 0);
 		FREE(inode->fds);
+		pthread_mutex_destroy(&inode->i_mutex);
 	#endif
 		FREE(inode->extracted_file);
 		FREE(inode);

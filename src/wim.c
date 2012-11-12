@@ -28,6 +28,8 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+#include "dentry.h"
+
 #ifdef WITH_NTFS_3G
 #include <ntfs-3g/volume.h>
 #endif

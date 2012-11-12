@@ -8,6 +8,10 @@
 #include "rbtree.h"
 #include <string.h>
 
+#ifdef WITH_FUSE
+#include <pthread.h>
+#endif
+
 struct stat;
 struct lookup_table;
 struct WIMStruct;
@@ -295,6 +299,11 @@ struct inode {
 
 	/* Next alternate data stream ID to be assigned */
 	u32 next_stream_id;
+
+	/* This mutex protects the inode's file descriptors table during
+	 * read-only mounts.  Read-write mounts are still restricted to 1
+	 * thread. */
+	pthread_mutex_t i_mutex;
 #endif
 };
 

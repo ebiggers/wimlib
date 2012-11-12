@@ -27,6 +27,8 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+#include "dentry.h"
+
 #ifdef WITH_NTFS_3G
 #include <ntfs-3g/attrib.h>
 #include <ntfs-3g/inode.h>
@@ -39,7 +41,6 @@
 #include "lzx.h"
 #include "xpress.h"
 #include "sha1.h"
-#include "dentry.h"
 #include <unistd.h>
 #include <errno.h>
 #ifdef HAVE_ALLOCA_H

@@ -30,6 +30,29 @@
 #	define HOT
 #endif /* __GNUC__ */
 
+#ifdef WITH_FUSE
+/* 
+ * Compare-and-swap.  Equivalent to the folliwng, but executed
+ * atomically:
+ *
+ * Q tmp = *ptr;
+ * if (tmp == oval)
+ * 	*ptr = nval;
+ * return tmp;
+ */
+#define atomic_inc(ptr) \
+	__sync_fetch_and_add(ptr, 1)
+
+#define atomic_dec(ptr) \
+	__sync_sub_and_fetch(ptr, 1)
+
+#define cas(ptr, oval, nval) \
+	__sync_val_compare_and_swap(ptr, oval, nval);
+
+#define cas_bool(ptr, oval, nval) \
+	__sync_bool_compare_and_swap(ptr, oval, nval);
+#endif
+
 #ifndef _NTFS_TYPES_H
 typedef uint8_t  u8;
 typedef uint16_t u16;
