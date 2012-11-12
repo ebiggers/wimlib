@@ -2,4 +2,3 @@
 - Add more test cases
 - Implement LZX block splitting to improve compression ratio
 - Implement multi-threaded compression
-- Improve performance of large directories in mounted WIMs.
