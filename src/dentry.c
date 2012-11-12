@@ -332,23 +332,19 @@ int for_dentry_in_tree(struct dentry *root,
 	INIT_LIST_HEAD(&main_stack);
 	INIT_LIST_HEAD(&sibling_stack);
 
-	list_add(&main_dentry->tmp_list, &main_stack);
+	list_add(&root->tmp_list, &main_stack);
+	node = root->d_inode->children.rb_node;
 
 	while (1) {
 		// Prepare for non-recursive in-order traversal of the red-black
 		// tree of this dentry's children
-		node = main_dentry->d_inode->children.rb_node;
 
 		while (node) {
 			// Push this node to the sibling stack and examine the
 			// left neighbor, if any
 			list_add(&rbnode_dentry(node)->tmp_list, &sibling_stack);
-		push_left_siblings:
 			node = node->rb_left;
 		}
-
-
-		pop_sibling:
 
 		next_sibling = sibling_stack.next;
 		if (next_sibling == sibling_stack_bottom) {
@@ -359,10 +355,8 @@ int for_dentry_in_tree(struct dentry *root,
 						   tmp_list);
 			list_del(&main_dentry->tmp_list);
 
-			if (main_dentry == root) {
-				ret = 0;
+			if (main_dentry == root)
 				goto out;
-			}
 
 			// Restore sibling stack bottom from the previous level
 			sibling_stack_bottom = (void*)main_dentry->parent;
@@ -376,13 +370,6 @@ int for_dentry_in_tree(struct dentry *root,
 			// in the in-order traversal of the red-black tree, is
 			// the one to the right.
 			node = main_dentry->rb_node.rb_right;
-			if (node)  {
-				list_add(&rbnode_dentry(node)->tmp_list,
-					 &sibling_stack);
-				goto push_left_siblings;
-			} else {
-				goto pop_sibling;
-			}
 		} else {
 			// The sibling stack is not empty, so there are more to
 			// go!
@@ -412,11 +399,16 @@ int for_dentry_in_tree(struct dentry *root,
 			// sibling stack to be its current height, and set
 			// main_dentry to the sibling so it becomes the parent
 			// dentry in the next iteration through the outer loop.
-			list_add(&dentry->tmp_list, &main_stack);
-			dentry->parent = (void*)sibling_stack_bottom;
-			sibling_stack_bottom = sibling_stack.next;
+			if (inode_has_children(dentry->d_inode)) {
+				list_add(&dentry->tmp_list, &main_stack);
+				dentry->parent = (void*)sibling_stack_bottom;
+				sibling_stack_bottom = sibling_stack.next;
 
-			main_dentry = dentry;
+				main_dentry = dentry;
+				node = main_dentry->d_inode->children.rb_node;
+			} else  {
+				node = dentry->rb_node.rb_right;
+			}
 		}
 	}
 out:
