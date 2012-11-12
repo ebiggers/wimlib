@@ -497,11 +497,9 @@ out_delete_staging_file:
 }
 
 /*
- * Creates a randomly named staging directory and returns its name into the
- * static variable staging_dir_name.
- *
- * If the staging directory cannot be created, staging_dir_name is set to NULL.
- * */
+ * Creates a randomly named staging directory and saves its name in the
+ * filesystem context structure.
+ */
 static int make_staging_dir(struct wimfs_context *ctx)
 {
 	/* XXX Give the user an option of where to stage files */
