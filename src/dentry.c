@@ -306,20 +306,18 @@ static int for_dentry_tree_in_rbtree_depth(struct rb_node *node,
 
 #ifdef RECURSIVE_FOR_DENTRY_IN_TREE
 static int for_dentry_tree_in_rbtree(struct rb_node *node,
-					   int (*visitor)(struct dentry*, void*),
-					   void *arg)
+				     int (*visitor)(struct dentry*, void*),
+				     void *arg)
 {
 	int ret;
 	if (node) {
-		ret = for_dentry_tree_in_rbtree(node->rb_left,
-						      visitor, arg);
+		ret = for_dentry_tree_in_rbtree(node->rb_left, visitor, arg);
 		if (ret != 0)
 			return ret;
 		ret = for_dentry_in_tree(rbnode_dentry(node), visitor, arg);
 		if (ret != 0)
 			return ret;
-		ret = for_dentry_tree_in_rbtree(node->rb_right,
-						      visitor, arg);
+		ret = for_dentry_tree_in_rbtree(node->rb_right, visitor, arg);
 		if (ret != 0)
 			return ret;
 	}
