@@ -746,6 +746,28 @@ static int wimfs_access(const char *path, int mask)
 	return 0;
 }
 
+static int wimfs_chmod(const char *path, mode_t mask)
+{
+	struct dentry *dentry;
+	struct wimfs_context *ctx = wimfs_get_context();
+	struct inode *inode;
+	struct stat stbuf;
+	int ret;
+
+	ret = lookup_resource(ctx->wim, path,
+			      get_lookup_flags(ctx) | LOOKUP_FLAG_DIRECTORY_OK,
+			      &dentry, NULL, NULL);
+	if (ret != 0)
+		return ret;
+	inode = dentry->d_inode;
+	inode_to_stbuf(inode, NULL, &stbuf);
+	if (mask == stbuf.st_mode)
+		return 0;
+	else
+		return -EPERM;
+
+}
+
 static void inode_update_lte_ptr(struct inode *inode,
 				 struct lookup_table_entry *old_lte,
 				 struct lookup_table_entry *new_lte)
@@ -1747,6 +1769,7 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 
 static struct fuse_operations wimfs_operations = {
 	.access      = wimfs_access,
+	.chmod       = wimfs_chmod,
 	.destroy     = wimfs_destroy,
 #if 0
 	.fallocate   = wimfs_fallocate,

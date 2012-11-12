@@ -221,7 +221,7 @@ int inode_to_stbuf(const struct inode *inode, struct lookup_table_entry *lte,
 	else if (inode_is_directory(inode))
 		stbuf->st_mode = S_IFDIR | 0755;
 	else
-		stbuf->st_mode = S_IFREG | 0644;
+		stbuf->st_mode = S_IFREG | 0755;
 
 	stbuf->st_ino   = (ino_t)inode->ino;
 	stbuf->st_nlink = inode->link_count;
