@@ -1833,6 +1833,10 @@ static struct fuse_operations wimfs_operations = {
 	.utime       = wimfs_utime,
 #endif
 	.write       = wimfs_write,
+
+	.flag_nullpath_ok = 1,
+	.flag_nopath = 1,
+	.flag_utime_omit_ok = 1,
 };
 
 
