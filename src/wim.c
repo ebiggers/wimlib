@@ -25,6 +25,7 @@
  */
 
 #include "config.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <stdarg.h>
 
@@ -57,7 +58,14 @@ static int print_files(WIMStruct *w)
 
 WIMStruct *new_wim_struct()
 {
-	return CALLOC(1, sizeof(WIMStruct));
+	WIMStruct *w = CALLOC(1, sizeof(WIMStruct));
+	if (pthread_mutex_init(&w->fp_tab_mutex, NULL) != 0) {
+		ERROR_WITH_ERRNO("Failed to initialize mutex");
+		FREE(w);
+		w = NULL;
+	}
+	return w;
+
 }
 
 /*
@@ -407,7 +415,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 
 	DEBUG("Reading the WIM file `%s'", in_wim_path);
 
-	w->filename = STRDUP(in_wim_path);
+	w->filename = realpath(in_wim_path, NULL);
 	if (!w->filename) {
 		ERROR("Failed to allocate memory for WIM filename");
 		return WIMLIB_ERR_NOMEM;
@@ -568,6 +576,14 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 		fclose(w->fp);
 	if (w->out_fp)
 		fclose(w->out_fp);
+
+	if (w->fp_tab) {
+		for (size_t i = 0; i < w->num_allocated_fps; i++)
+			if (w->fp_tab[i])
+				fclose(w->fp_tab[i]);
+		FREE(w->fp_tab);
+	}
+	pthread_mutex_destroy(&w->fp_tab_mutex);
 
 	free_lookup_table(w->lookup_table);
 

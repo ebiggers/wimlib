@@ -1056,7 +1056,8 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 	if (res_size > size)
 		return -ERANGE;
 
-	ret = read_full_wim_resource(lte, (u8*)value);
+	ret = read_full_wim_resource(lte, (u8*)value,
+				     WIMLIB_RESOURCE_FLAG_MULTITHREADED);
 	if (ret != 0)
 		return -EIO;
 
@@ -1334,6 +1335,8 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 	} else {
 		/* Read from WIM */
 
+		wimlib_assert(fd->f_lte->resource_location == RESOURCE_IN_WIM);
+
 		u64 res_size = wim_resource_size(fd->f_lte);
 
 		if (offset > res_size)
@@ -1342,7 +1345,8 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 		size = min(size, res_size - offset);
 
 		if (read_wim_resource(fd->f_lte, (u8*)buf,
-				      size, offset, false) != 0)
+				      size, offset,
+				      WIMLIB_RESOURCE_FLAG_MULTITHREADED) != 0)
 			return -EIO;
 		return size;
 	}
@@ -1396,7 +1400,8 @@ static int wimfs_readlink(const char *path, char *buf, size_t buf_len)
 	if (!inode_is_symlink(inode))
 		return -EINVAL;
 
-	ret = inode_readlink(inode, buf, buf_len, ctx->wim);
+	ret = inode_readlink(inode, buf, buf_len, ctx->wim,
+			     WIMLIB_RESOURCE_FLAG_MULTITHREADED);
 	if (ret > 0)
 		ret = 0;
 	return ret;

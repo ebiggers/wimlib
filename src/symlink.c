@@ -163,7 +163,7 @@ out:
  * The dentry may be either "real" symlink or a junction point.
  */
 ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
-		       const WIMStruct *w)
+		       const WIMStruct *w, int read_resource_flags)
 {
 	const struct lookup_table_entry *lte;
 	int ret;
@@ -178,7 +178,7 @@ ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
 		return -EIO;
 
 	u8 res_buf[wim_resource_size(lte)];
-	ret = read_full_wim_resource(lte, res_buf);
+	ret = read_full_wim_resource(lte, res_buf, read_resource_flags);
 	if (ret != 0)
 		return -EIO;
 	return get_symlink_name(res_buf, wim_resource_size(lte), buf,

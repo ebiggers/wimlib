@@ -72,7 +72,7 @@ extract_wim_resource_to_ntfs_attr(const struct lookup_table_entry *lte,
 
 	while (bytes_remaining) {
 		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
-		ret = read_wim_resource(lte, buf, to_read, offset, false);
+		ret = read_wim_resource(lte, buf, to_read, offset, 0);
 		if (ret != 0)
 			break;
 		sha1_update(&ctx, buf, to_read);
@@ -310,7 +310,7 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 	p = put_u16(p, wim_resource_size(lte)); /* ReparseDataLength */
 	p = put_u16(p, 0); /* Reserved */
 
-	ret = read_full_wim_resource(lte, p);
+	ret = read_full_wim_resource(lte, p, 0);
 	if (ret != 0)
 		return ret;
 

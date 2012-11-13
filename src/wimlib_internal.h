@@ -30,6 +30,8 @@
 #include "util.h"
 #include "list.h"
 
+#include <pthread.h>
+
 struct stat;
 struct dentry;
 struct inode;
@@ -248,11 +250,18 @@ struct image_metadata {
 
 };
 
+#define WIMLIB_RESOURCE_FLAG_RAW		0x1
+#define WIMLIB_RESOURCE_FLAG_MULTITHREADED	0x2
+
 /* The opaque structure exposed to the wimlib API. */
 typedef struct WIMStruct {
 
 	/* A pointer to the file indicated by @filename, opened for reading. */
 	FILE  *fp;
+
+	FILE **fp_tab;
+	size_t num_allocated_fps;
+	pthread_mutex_t fp_tab_mutex;
 
 	/* FILE pointer for the WIM file that is being written. */
 	FILE  *out_fp;
@@ -426,9 +435,10 @@ extern u8 *put_resource_entry(u8 *p, const struct resource_entry *entry);
 extern int read_uncompressed_resource(FILE *fp, u64 offset, u64 size, u8 buf[]);
 
 extern int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
-			     size_t size, u64 offset, bool raw);
+			     size_t size, u64 offset, int flags);
 
-extern int read_full_wim_resource(const struct lookup_table_entry *lte, u8 buf[]);
+extern int read_full_wim_resource(const struct lookup_table_entry *lte,
+				  u8 buf[], int flags);
 
 extern int extract_wim_resource_to_fd(const struct lookup_table_entry *lte,
 				      int fd, u64 size);
@@ -456,7 +466,7 @@ void free_security_data(struct wim_security_data *sd);
 
 /* symlink.c */
 ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
-			const WIMStruct *w);
+			const WIMStruct *w, int read_resource_flags);
 extern void *make_symlink_reparse_data_buf(const char *symlink_target,
 					   size_t *len_ret);
 extern int inode_set_symlink(struct inode *inode,

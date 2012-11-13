@@ -230,7 +230,8 @@ static int extract_symlink(const struct dentry *dentry, const char *output_path,
 			   const WIMStruct *w)
 {
 	char target[4096];
-	ssize_t ret = inode_readlink(dentry->d_inode, target, sizeof(target), w);
+	ssize_t ret = inode_readlink(dentry->d_inode, target,
+				     sizeof(target), w, 0);
 	if (ret <= 0) {
 		ERROR("Could not read the symbolic link from dentry `%s'",
 		      dentry->full_path_utf8);
