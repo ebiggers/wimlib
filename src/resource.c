@@ -30,6 +30,7 @@
 #include "dentry.h"
 
 #ifdef WITH_NTFS_3G
+#include <time.h>
 #include <ntfs-3g/attrib.h>
 #include <ntfs-3g/inode.h>
 #include <ntfs-3g/dir.h>
