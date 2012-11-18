@@ -330,7 +330,6 @@ static inline bool dentry_is_first_in_inode(const struct dentry *dentry)
 
 extern u64 dentry_correct_total_length(const struct dentry *dentry);
 
-extern void stbuf_to_inode(const struct stat *stbuf, struct inode *inode);
 extern int inode_to_stbuf(const struct inode *inode,
 			  struct lookup_table_entry *lte, struct stat *stbuf);
 

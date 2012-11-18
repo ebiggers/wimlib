@@ -175,28 +175,6 @@ static u64 dentry_total_length(const struct dentry *dentry)
 	return __dentry_total_length(dentry, dentry->length);
 }
 
-/* Transfers file attributes from a `stat' buffer to a WIM "inode". */
-void stbuf_to_inode(const struct stat *stbuf, struct inode *inode)
-{
-	if (S_ISLNK(stbuf->st_mode)) {
-		inode->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
-		inode->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
-	} else if (S_ISDIR(stbuf->st_mode)) {
-		inode->attributes = FILE_ATTRIBUTE_DIRECTORY;
-	} else {
-		inode->attributes = FILE_ATTRIBUTE_NORMAL;
-	}
-	if (sizeof(ino_t) >= 8)
-		inode->ino = (u64)stbuf->st_ino;
-	else
-		inode->ino = (u64)stbuf->st_ino |
-				   ((u64)stbuf->st_dev << ((sizeof(ino_t) * 8) & 63));
-	/* Set timestamps */
-	inode->creation_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
-	inode->last_write_time = timespec_to_wim_timestamp(&stbuf->st_mtim);
-	inode->last_access_time = timespec_to_wim_timestamp(&stbuf->st_atim);
-}
-
 #ifdef WITH_FUSE
 /* Transfers file attributes from a struct inode to a `stat' buffer.
  *

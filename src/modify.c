@@ -32,6 +32,7 @@
 #include "dentry.h"
 #include "xml.h"
 #include "lookup_table.h"
+#include "timestamp.h"
 #include <sys/stat.h>
 #include <dirent.h>
 #include <string.h>
@@ -100,6 +101,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 	int (*stat_fn)(const char *restrict, struct stat *restrict);
 	struct dentry *root;
 	const char *filename;
+	struct inode *inode;
 
 	if (exclude_path(root_disk_path, config, true)) {
 		if (add_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
@@ -149,11 +151,70 @@ static int build_dentry_tree(struct dentry **root_ret,
 	if (!root)
 		return WIMLIB_ERR_NOMEM;
 
-	stbuf_to_inode(&root_stbuf, root->d_inode);
-	add_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
-	root->d_inode->resolved = true;
+	inode = root->d_inode;
 
-	if (dentry_is_directory(root)) { /* Archiving a directory */
+	inode->creation_time = timespec_to_wim_timestamp(&root_stbuf.st_mtim);
+	inode->last_write_time = timespec_to_wim_timestamp(&root_stbuf.st_mtim);
+	inode->last_access_time = timespec_to_wim_timestamp(&root_stbuf.st_atim);
+	if (sizeof(ino_t) >= 8)
+		inode->ino = (u64)root_stbuf.st_ino;
+	else
+		inode->ino = (u64)root_stbuf.st_ino |
+				   ((u64)root_stbuf.st_dev << ((sizeof(ino_t) * 8) & 63));
+
+	add_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
+	inode->resolved = true;
+
+	if (S_ISREG(root_stbuf.st_mode)) { /* Archiving a regular file */
+
+		struct lookup_table_entry *lte;
+		u8 hash[SHA1_HASH_SIZE];
+
+		inode->attributes = FILE_ATTRIBUTE_NORMAL;
+
+		/* Empty files do not have to have a lookup table entry. */
+		if (root_stbuf.st_size == 0)
+			goto out;
+
+		/* For each regular file, we must check to see if the file is in
+		 * the lookup table already; if it is, we increment its refcnt;
+		 * otherwise, we create a new lookup table entry and insert it.
+		 * */
+
+		ret = sha1sum(root_disk_path, hash);
+		if (ret != 0)
+			goto out;
+
+		lte = __lookup_resource(lookup_table, hash);
+		if (lte) {
+			lte->refcnt++;
+			DEBUG("Add lte reference %u for `%s'", lte->refcnt,
+			      root_disk_path);
+		} else {
+			char *file_on_disk = STRDUP(root_disk_path);
+			if (!file_on_disk) {
+				ERROR("Failed to allocate memory for file path");
+				ret = WIMLIB_ERR_NOMEM;
+				goto out;
+			}
+			lte = new_lookup_table_entry();
+			if (!lte) {
+				FREE(file_on_disk);
+				ret = WIMLIB_ERR_NOMEM;
+				goto out;
+			}
+			lte->file_on_disk = file_on_disk;
+			lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
+			lte->resource_entry.original_size = root_stbuf.st_size;
+			lte->resource_entry.size = root_stbuf.st_size;
+			copy_hash(lte->hash, hash);
+			lookup_table_insert(lookup_table, lte);
+		}
+		root->d_inode->lte = lte;
+	} else if (S_ISDIR(root_stbuf.st_mode)) { /* Archiving a directory */
+
+		inode->attributes = FILE_ATTRIBUTE_DIRECTORY;
+
 		DIR *dir;
 		struct dirent *p;
 		struct dentry *child;
@@ -199,7 +260,17 @@ static int build_dentry_tree(struct dentry **root_ret,
 				dentry_add_child(root, child);
 		}
 		closedir(dir);
-	} else if (dentry_is_symlink(root)) { /* Archiving a symbolic link */
+	} else { /* Archiving a symbolic link */
+		inode->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
+		inode->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+
+		/* The idea here is to call readlink() to get the UNIX target of
+		 * the symbolic link, then turn the target into a reparse point
+		 * data buffer that contains a relative or absolute symbolic
+		 * link (NOT a junction point or *full* path symbolic link with
+		 * drive letter).
+		 */
+
 		char deref_name_buf[4096];
 		ssize_t deref_name_len;
 
@@ -210,55 +281,27 @@ static int build_dentry_tree(struct dentry **root_ret,
 			DEBUG("Read symlink `%s'", deref_name_buf);
 			ret = inode_set_symlink(root->d_inode, deref_name_buf,
 						lookup_table, NULL);
+			if (ret == 0) {
+				/*
+				 * Unfortunately, Windows seems to have the
+				 * concept of "file" symbolic links as being
+				 * different from "directory" symbolic links...
+				 * so FILE_ATTRIBUTE_DIRECTORY needs to be set
+				 * on the symbolic link if the *target* of the
+				 * symbolic link is a directory.
+				 */
+				struct stat stbuf;
+				if (stat(root_disk_path, &stbuf) == 0 &&
+				    S_ISDIR(stbuf.st_mode))
+				{
+					inode->attributes |= FILE_ATTRIBUTE_DIRECTORY;
+				}
+			}
 		} else {
 			ERROR_WITH_ERRNO("Failed to read target of "
 					 "symbolic link `%s'", root_disk_path);
 			ret = WIMLIB_ERR_READLINK;
 		}
-	} else { /* Archiving a regular file */
-
-		struct lookup_table_entry *lte;
-		u8 hash[SHA1_HASH_SIZE];
-
-		/* Empty files do not have to have a lookup table entry. */
-		if (root_stbuf.st_size == 0)
-			goto out;
-
-		/* For each regular file, we must check to see if the file is in
-		 * the lookup table already; if it is, we increment its refcnt;
-		 * otherwise, we create a new lookup table entry and insert it.
-		 * */
-
-		ret = sha1sum(root_disk_path, hash);
-		if (ret != 0)
-			goto out;
-
-		lte = __lookup_resource(lookup_table, hash);
-		if (lte) {
-			lte->refcnt++;
-			DEBUG("Add lte reference %u for `%s'", lte->refcnt,
-			      root_disk_path);
-		} else {
-			char *file_on_disk = STRDUP(root_disk_path);
-			if (!file_on_disk) {
-				ERROR("Failed to allocate memory for file path");
-				ret = WIMLIB_ERR_NOMEM;
-				goto out;
-			}
-			lte = new_lookup_table_entry();
-			if (!lte) {
-				FREE(file_on_disk);
-				ret = WIMLIB_ERR_NOMEM;
-				goto out;
-			}
-			lte->file_on_disk = file_on_disk;
-			lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
-			lte->resource_entry.original_size = root_stbuf.st_size;
-			lte->resource_entry.size = root_stbuf.st_size;
-			copy_hash(lte->hash, hash);
-			lookup_table_insert(lookup_table, lte);
-		}
-		root->d_inode->lte = lte;
 	}
 out:
 	if (ret == 0)
