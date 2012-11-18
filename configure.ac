@@ -147,7 +147,11 @@ if test "x$ENABLE_MULTITHREADED_COMPRESSION" = "xyes"; then
 	AC_DEFINE([ENABLE_MULTITHREADED_COMPRESSION], [1],
 		  	[Define to 1 if including support for multithreaded
 			 compression])
+	PTHREAD_LDADD="-lpthread"
+else
+	PTHREAD_LDADD=""
 fi
+AC_SUBST([PTHREAD_LDADD], [$PTHREAD_LDADD])
 
 AC_MSG_CHECKING([whether to include support for ntfs-3g])
 AC_ARG_WITH([ntfs-3g],

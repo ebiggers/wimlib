@@ -71,7 +71,8 @@ libwim_la_LIBADD =		\
 	$(LIBNTFS_3G_LDADD)	\
 	$(LTLIBICONV)		\
 	$(LIBCRYPTO_LDADD)	\
-	$(SSSE3_SHA1_OBJ)
+	$(SSSE3_SHA1_OBJ)	\
+	$(PTHREAD_LDADD)
 
 libwim_la_CFLAGS =		\
 	$(AM_CFLAGS)		\

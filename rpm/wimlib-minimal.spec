@@ -36,6 +36,7 @@ Development files for wimlib
 	   --without-fuse		 \
 	   --disable-xattr               \
            --disable-verify-compression  \
+	   --disable-multithreaded-compression \
 	   --disable-custom-memory-allocator \
 	   --disable-assertions
 %__make %{?_smp_mflags}
