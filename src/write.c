@@ -33,9 +33,12 @@
 #include "lzx.h"
 #include "xpress.h"
 #include <unistd.h>
+
+#ifdef ENABLE_MULTITHREADED_COMPRESSION
 #include <semaphore.h>
 #include <pthread.h>
 #include <errno.h>
+#endif
 
 #ifdef WITH_NTFS_3G
 #include <time.h>
@@ -130,7 +133,7 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
 		return WIMLIB_ERR_RENAME;
 	}
 
-	if (write_flags & WIMLIB_WRITE_FLAG_VERBOSE)
+	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
 		printf("Successfully renamed `%s' to `%s'\n", tmpfile, wimfile_name);
 
 	return 0;
@@ -784,6 +787,7 @@ out:
 }
 
 
+#ifdef ENABLE_MULTITHREADED_COMPRESSION
 struct shared_queue {
 	sem_t filled_slots;
 	sem_t empty_slots;
@@ -903,6 +907,7 @@ static void *compressor_thread_proc(void *arg)
 	}
 	DEBUG("Compressor thread terminating");
 }
+#endif
 
 static void show_stream_write_progress(u64 *cur_size, u64 *next_size,
 				       u64 total_size, u64 one_percent,
@@ -957,6 +962,7 @@ static int write_stream_list_serial(struct list_head *stream_list,
 	return 0;
 }
 
+#ifdef ENABLE_MULTITHREADED_COMPRESSION
 static int write_wim_chunks(struct message *msg, FILE *out_fp,
 			    struct chunk_table *chunk_tab)
 {
@@ -978,7 +984,6 @@ static int write_wim_chunks(struct message *msg, FILE *out_fp,
 	}
 	return 0;
 }
-
 
 /*
  * This function is executed by the main thread when the resources are being
@@ -1430,6 +1435,7 @@ static int write_stream_list_parallel(struct list_head *stream_list,
 	int ret;
 	struct shared_queue res_to_compress_queue;
 	struct shared_queue compressed_res_queue;
+	pthread_t *compressor_threads = NULL;
 
 	if (num_threads == 0) {
 		long nthreads = sysconf(_SC_NPROCESSORS_ONLN);
@@ -1443,64 +1449,65 @@ static int write_stream_list_parallel(struct list_head *stream_list,
 
 	wimlib_assert(stream_list->next != stream_list);
 
-	{
-		pthread_t compressor_threads[num_threads];
 
-		static const double MESSAGES_PER_THREAD = 2.0;
-		size_t queue_size = (size_t)(num_threads * MESSAGES_PER_THREAD);
+	static const double MESSAGES_PER_THREAD = 2.0;
+	size_t queue_size = (size_t)(num_threads * MESSAGES_PER_THREAD);
 
-		DEBUG("Initializing shared queues (queue_size=%zu)", queue_size);
+	DEBUG("Initializing shared queues (queue_size=%zu)", queue_size);
 
-		ret = shared_queue_init(&res_to_compress_queue, queue_size);
-		if (ret != 0)
-			goto out_serial;
+	ret = shared_queue_init(&res_to_compress_queue, queue_size);
+	if (ret != 0)
+		goto out_serial;
 
-		ret = shared_queue_init(&compressed_res_queue, queue_size);
-		if (ret != 0)
-			goto out_destroy_res_to_compress_queue;
+	ret = shared_queue_init(&compressed_res_queue, queue_size);
+	if (ret != 0)
+		goto out_destroy_res_to_compress_queue;
 
-		struct compressor_thread_params params;
-		params.res_to_compress_queue = &res_to_compress_queue;
-		params.compressed_res_queue = &compressed_res_queue;
-		params.compress = get_compress_func(out_ctype);
+	struct compressor_thread_params params;
+	params.res_to_compress_queue = &res_to_compress_queue;
+	params.compressed_res_queue = &compressed_res_queue;
+	params.compress = get_compress_func(out_ctype);
 
-		for (unsigned i = 0; i < num_threads; i++) {
-			DEBUG("pthread_create thread %u", i);
-			ret = pthread_create(&compressor_threads[i], NULL,
-					     compressor_thread_proc, &params);
-			if (ret != 0) {
-				ERROR_WITH_ERRNO("Failed to create compressor "
-						 "thread %u", i);
-				num_threads = i;
-				goto out_join;
-			}
-		}
+	compressor_threads = MALLOC(num_threads * sizeof(pthread_t));
 
-		if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
-			printf("Writing compressed data using %u threads...\n",
-			       num_threads);
-		}
-
-		ret = main_writer_thread_proc(stream_list,
-					      out_fp,
-					      out_ctype,
-					      &res_to_compress_queue,
-					      &compressed_res_queue,
-					      queue_size,
-					      write_flags,
-					      total_size);
-
-	out_join:
-		for (unsigned i = 0; i < num_threads; i++)
-			shared_queue_put(&res_to_compress_queue, NULL);
-
-		for (unsigned i = 0; i < num_threads; i++) {
-			if (pthread_join(compressor_threads[i], NULL)) {
-				WARNING("Failed to join compressor thread %u: %s",
-					i, strerror(errno));
-			}
+	for (unsigned i = 0; i < num_threads; i++) {
+		DEBUG("pthread_create thread %u", i);
+		ret = pthread_create(&compressor_threads[i], NULL,
+				     compressor_thread_proc, &params);
+		if (ret != 0) {
+			ret = -1;
+			ERROR_WITH_ERRNO("Failed to create compressor "
+					 "thread %u", i);
+			num_threads = i;
+			goto out_join;
 		}
 	}
+
+	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
+		printf("Writing compressed data using %u threads...\n",
+		       num_threads);
+	}
+
+	ret = main_writer_thread_proc(stream_list,
+				      out_fp,
+				      out_ctype,
+				      &res_to_compress_queue,
+				      &compressed_res_queue,
+				      queue_size,
+				      write_flags,
+				      total_size);
+
+out_join:
+	for (unsigned i = 0; i < num_threads; i++)
+		shared_queue_put(&res_to_compress_queue, NULL);
+
+	for (unsigned i = 0; i < num_threads; i++) {
+		if (pthread_join(compressor_threads[i], NULL)) {
+			WARNING("Failed to join compressor thread %u: %s",
+				i, strerror(errno));
+		}
+	}
+	FREE(compressor_threads);
 	shared_queue_destroy(&compressed_res_queue);
 out_destroy_res_to_compress_queue:
 	shared_queue_destroy(&res_to_compress_queue);
@@ -1511,6 +1518,7 @@ out_serial:
 	return write_stream_list_serial(stream_list, out_fp,
 					out_ctype, write_flags, total_size);
 }
+#endif
 
 static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 			     int out_ctype, int write_flags,
@@ -1540,14 +1548,18 @@ static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 		       wimlib_get_compression_type_string(out_ctype));
 	}
 
+#ifdef ENABLE_MULTITHREADED_COMPRESSION
 	if (compression_needed && total_size >= 1000000 && num_threads != 1) {
 		return write_stream_list_parallel(stream_list, out_fp,
 						  out_ctype, write_flags,
 						  total_size, num_threads);
-	} else {
+	}
+	else
+#endif
+	{
 		if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
 			const char *reason = "";
-			if (num_threads != 1)
+			if (!compression_needed)
 				reason = " (no compression needed)";
 			printf("Writing data using 1 thread%s\n", reason);
 		}
@@ -1791,6 +1803,9 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 		return ret;
 	}
 
+	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
+		printf("Writing image metadata...\n");
+
 	ret = for_image(w, image, write_metadata_resource);
 
 	if (ret != 0) {
@@ -1802,7 +1817,7 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 	if (ret != 0)
 		return ret;
 
-	if (write_flags & WIMLIB_WRITE_FLAG_VERBOSE)
+	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
 		printf("Successfully wrote `%s'\n", path);
 	return 0;
 }

@@ -280,7 +280,7 @@ enum wim_compression_type {
 #define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	0x00000004
 
 /** Show progress information when scanning a directory tree */
-#define WIMLIB_ADD_IMAGE_FLAG_SHOW_PROGRESS	0x00000004
+#define WIMLIB_ADD_IMAGE_FLAG_SHOW_PROGRESS	0x00000008
 
 /** See documentation for wimlib_export_image(). */
 #define WIMLIB_EXPORT_FLAG_BOOT			0x00000001

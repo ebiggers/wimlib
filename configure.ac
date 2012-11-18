@@ -135,6 +135,20 @@ if test "x$ENABLE_VERIFY_COMPRESSION" = "xyes"; then
 		   compressed data])
 fi
 
+AC_MSG_CHECKING([whether to include support for multi-threaded compression])
+AC_ARG_ENABLE([multithreaded-compression],
+	AS_HELP_STRING([--disable-multithreaded-compression],
+		       	[do not compile in the code for multi-threaded compression]),
+	[ENABLE_MULTITHREADED_COMPRESSION=$enableval],
+	[ENABLE_MULTITHREADED_COMPRESSION=yes]
+	)
+AC_MSG_RESULT([$ENABLE_MULTITHREADED_COMPRESSION])
+if test "x$ENABLE_MULTITHREADED_COMPRESSION" = "xyes"; then
+	AC_DEFINE([MULTITHREADED_COMPRESSION], [1],
+		  	[Define to 1 if including support for multithreaded
+			 compression])
+fi
+
 AC_MSG_CHECKING([whether to include support for ntfs-3g])
 AC_ARG_WITH([ntfs-3g],
 	      AS_HELP_STRING([--without-ntfs-3g], [build without NTFS-3g.

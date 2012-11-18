@@ -169,6 +169,11 @@ wimlib's `configure' script:
 	the setxattr() function and the attr/xattr.h header be available.  The
 	default is to autodetect whether support is possible.
 
+--disable-multithreaded-compression
+	By default, data will be compressed using multiple threads when writing
+	a WIM, unless only 1 processor is detected.  Specify this option to
+	disable support for this.
+
 --enable-ssse3-sha1
 	Use a very fast assembly language implementation of SHA1 from Intel.
 	Only use this if the build target supports the SSSE3 instructions.
