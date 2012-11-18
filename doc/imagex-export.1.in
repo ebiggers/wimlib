@@ -60,7 +60,13 @@ that of the input WIM file.
 
 You may also specify the actual names of the compression algorithms, "XPRESS"
 and "LZX", instead of "fast" and "maximum", respectively.
-
+.TP
+\fB--threads\fR=\fINUM_THREADS\fR
+Number of threads to use for compressing data.  Default: autodetect (number of
+processors).  Note: if exporting to an uncompressed WIM, or exporting to a WIM
+with the same compression type as the source WIM, additional threads will not
+be used, regardless of this parameter, since no data compression needs to be
+done in these cases.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional split WIM parts that are part of the split WIM being

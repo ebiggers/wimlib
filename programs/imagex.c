@@ -31,6 +31,7 @@
 #include <string.h>
 #include <errno.h>
 #include <libgen.h>
+#include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -62,7 +63,8 @@ static const char *usage_strings[] = {
 [APPEND] =
 "imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                     [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
-"                     [--verbose] [--dereference] [--config=FILE]\n",
+"                     [--verbose] [--dereference] [--config=FILE]\n"
+"                     [--threads=NUM_THREADS]\n",
 [APPLY] =
 "imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
@@ -71,16 +73,16 @@ static const char *usage_strings[] = {
 "imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                      [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
 "                      [--flags EDITION_ID] [--verbose] [--dereference]\n"
-"                   [--config=FILE]\n",
+"                      [--config=FILE] [--threads=NUM_THREADS]\n",
 [DELETE] =
 "imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n",
 [DIR] =
 "imagex dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n",
 [EXPORT] =
 "imagex export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
-"                     DEST_WIMFILE [DEST_IMAGE_NAME]\n"
-"                     [DEST_IMAGE_DESCRIPTION] [--boot] [--check]\n"
-"                     [--compress=TYPE] [--ref=\"GLOB\"]\n",
+"              DEST_WIMFILE [DEST_IMAGE_NAME] [DEST_IMAGE_DESCRIPTION]\n"
+"              [--boot] [--check] [--compress=TYPE] [--ref=\"GLOB\"]\n"
+"              [--threads=NUM_THREADS]\n",
 [INFO] =
 "imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
 "                   [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
@@ -122,6 +124,7 @@ static const struct option capture_or_append_options[] = {
 	{"dereference", no_argument,	   NULL, 'L'},
 	{"flags",	required_argument, NULL, 'f'},
 	{"verbose",	no_argument,       NULL, 'v'},
+	{"threads",     required_argument, NULL, 't'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -134,6 +137,7 @@ static const struct option export_options[] = {
 	{"check",      no_argument,	  NULL, 'c'},
 	{"compress",   required_argument, NULL, 'x'},
 	{"ref",        required_argument, NULL, 'r'},
+	{"threads",    required_argument, NULL, 't'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -351,6 +355,19 @@ out:
 }
 
 
+static unsigned parse_num_threads(const char *optarg)
+{
+	char *tmp;
+	unsigned nthreads = strtoul(optarg, &tmp, 10);
+	if (nthreads == UINT_MAX || *tmp || tmp == optarg) {
+		imagex_error("Number of threads must be a non-negative integer!");
+		return UINT_MAX;
+	} else {
+		return nthreads;
+	}
+}
+
+
 /* Extract one image, or all images, from a WIM file into a directory. */
 static int imagex_apply(int argc, const char **argv)
 {
@@ -475,7 +492,7 @@ static int imagex_capture_or_append(int argc, const char **argv)
 {
 	int c;
 	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
-	int add_image_flags = 0;
+	int add_image_flags = WIMLIB_ADD_IMAGE_FLAG_SHOW_PROGRESS;
 	int write_flags = WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
 	int compression_type = WIM_COMPRESSION_TYPE_XPRESS;
 	const char *dir;
@@ -491,6 +508,7 @@ static int imagex_capture_or_append(int argc, const char **argv)
 	int cur_image;
 	char *default_name;
 	int cmd = strcmp(argv[0], "append") ? CAPTURE : APPEND;
+	unsigned num_threads = 0;
 
 	for_opt(c, capture_or_append_options) {
 		switch (c) {
@@ -518,6 +536,11 @@ static int imagex_capture_or_append(int argc, const char **argv)
 		case 'v':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
 			write_flags |= WIMLIB_WRITE_FLAG_VERBOSE;
+			break;
+		case 't':
+			num_threads = parse_num_threads(optarg);
+			if (num_threads == UINT_MAX)
+				return -1;
 			break;
 		default:
 			usage(cmd);
@@ -594,10 +617,12 @@ out_write:
 		if (ret != 0)
 			goto out;
 	}
-	if (cmd == APPEND)
-		ret = wimlib_overwrite(w, write_flags);
-	else
-		ret = wimlib_write(w, wimfile, WIM_ALL_IMAGES, write_flags);
+	if (cmd == APPEND) {
+		ret = wimlib_overwrite(w, write_flags, num_threads);
+	} else {
+		ret = wimlib_write(w, wimfile, WIM_ALL_IMAGES, write_flags,
+				   num_threads);
+	}
 	if (ret != 0)
 		imagex_error("Failed to write the WIM file `%s'", wimfile);
 out:
@@ -663,7 +688,7 @@ static int imagex_delete(int argc, const char **argv)
 		goto out;
 	}
 
-	ret = wimlib_overwrite(w, write_flags);
+	ret = wimlib_overwrite(w, write_flags, 0);
 	if (ret != 0) {
 		imagex_error("Failed to write the file `%s' with image "
 			     "deleted", wimfile);
@@ -747,6 +772,7 @@ static int imagex_export(int argc, const char **argv)
 	const char *swm_glob = NULL;
 	WIMStruct **additional_swms = NULL;
 	unsigned num_additional_swms = 0;
+	unsigned num_threads = 0;
 
 	for_opt(c, export_options) {
 		switch (c) {
@@ -765,6 +791,11 @@ static int imagex_export(int argc, const char **argv)
 			break;
 		case 'r':
 			swm_glob = optarg;
+			break;
+		case 't':
+			num_threads = parse_num_threads(optarg);
+			if (num_threads == UINT_MAX)
+				return -1;
 			break;
 		default:
 			usage(EXPORT);
@@ -859,9 +890,9 @@ static int imagex_export(int argc, const char **argv)
 
 	if (wim_is_new)
 		ret = wimlib_write(dest_w, dest_wimfile, WIM_ALL_IMAGES,
-				   write_flags);
+				   write_flags, num_threads);
 	else
-		ret = wimlib_overwrite(dest_w, write_flags);
+		ret = wimlib_overwrite(dest_w, write_flags, num_threads);
 out:
 	wimlib_free(src_w);
 	wimlib_free(dest_w);

@@ -113,6 +113,12 @@ must be the same as that of the existing WIM.  \fITYPE\fR may be "none",
 You may also specify the actual names of the compression algorithms, "XPRESS"
 and "LZX", instead of "fast" and "maximum", respectively.
 .TP
+\fB--threads\fR=\fINUM_THREADS\fR
+Number of threads to use for compressing data.  Default: autodetect (number of
+processors).  Note: if creating or appending to an uncompressed WIM, additional
+threads will not be used, regardless of this parameter, since no compression
+needs to be done in this case.
+.TP
 \fB--flags\fR=\fIEDITIONID\fR
 Specify a string to use in the <FLAGS> element of the XML data for the new
 image.

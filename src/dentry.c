@@ -71,16 +71,6 @@ static u64 dentry_correct_length(const struct dentry *dentry)
 	return (dentry_correct_length_unaligned(dentry) + 7) & ~7;
 }
 
-/* Return %true iff @dentry has the UTF-8 file name @name that has length
- * @name_len bytes. */
-static bool dentry_has_name(const struct dentry *dentry, const char *name,
-			    size_t name_len)
-{
-	if (dentry->file_name_utf8_len != name_len)
-		return false;
-	return memcmp(dentry->file_name_utf8, name, name_len) == 0;
-}
-
 /* Return %true iff the alternate data stream entry @entry has the UTF-8 stream
  * name @name that has length @name_len bytes. */
 static inline bool ads_entry_has_name(const struct ads_entry *entry,

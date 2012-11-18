@@ -968,6 +968,9 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	sd->refcnt = 1;
 
 	DEBUG("Building dentry tree.");
+	if (flags & WIMLIB_ADD_IMAGE_FLAG_SHOW_PROGRESS) {
+		printf("Scanning `%s'...\n", dir);
+	}
 	ret = (*capture_tree)(&root_dentry, dir, w->lookup_table, sd,
 			      &config, flags | WIMLIB_ADD_IMAGE_FLAG_ROOT,
 			      extra_arg);

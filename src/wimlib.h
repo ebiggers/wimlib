@@ -262,7 +262,8 @@ enum wim_compression_type {
 /** Include an integrity table in the new WIM file. */
 #define WIMLIB_WRITE_FLAG_CHECK_INTEGRITY	0x00000001
 
-/** Print progress information when writing the integrity table. */
+/** Print progress information when writing streams and when writing the
+ * integrity table. */
 #define WIMLIB_WRITE_FLAG_SHOW_PROGRESS		0x00000002
 
 /** Print file paths as we write then */
@@ -277,6 +278,9 @@ enum wim_compression_type {
 
 /** Follow symlinks; archive and dump the files they point to. */
 #define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	0x00000004
+
+/** Show progress information when scanning a directory tree */
+#define WIMLIB_ADD_IMAGE_FLAG_SHOW_PROGRESS	0x00000004
 
 /** See documentation for wimlib_export_image(). */
 #define WIMLIB_EXPORT_FLAG_BOOT			0x00000001
@@ -399,7 +403,9 @@ enum wimlib_error_code {
  * 	printed as it is scanned or captured.  If
  * 	::WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE is specified, the files or
  * 	directories pointed to by symbolic links are archived rather than the
- * 	symbolic links themselves.
+ * 	symbolic links themselves.  If ::WIMLIB_ADD_IMAGE_FLAG_SHOW_PROGRESS is
+ * 	specified, progress information will be printed (distinct from the
+ * 	verbose information).
  *
  * @return 0 on success; nonzero on error.  On error, changes to @a wim are
  * discarded so that it appears to be in the same state as when this function
@@ -1076,9 +1082,11 @@ extern int wimlib_open_wim(const char *wim_file, int flags,
  * 	Pointer to the ::WIMStruct for the WIM file to write.  There may have
  * 	been in-memory changes made to it, which are then reflected in the
  * 	output file.
- * @param flags
+ * @param write_flags
  * 	Bitwise OR of ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY and/or
  * 	::WIMLIB_WRITE_FLAG_SHOW_PROGRESS.
+ * @param num_threads
+ * 	Number of threads to use for compression (see wimlib_write()).
  *
  * @return 0 on success; nonzero on error.  This function may return any value
  * returned by wimlib_write() as well as the following error codes:
@@ -1089,7 +1097,8 @@ extern int wimlib_open_wim(const char *wim_file, int flags,
  * 	The temporary file that the WIM was written to could not be renamed to
  * 	the original filename of @a wim.
  */
-extern int wimlib_overwrite(WIMStruct *wim, int flags);
+extern int wimlib_overwrite(WIMStruct *wim, int write_flags,
+			    unsigned num_threads);
 
 /**
  * Updates the header and XML data of the WIM file, without the need to write
@@ -1104,7 +1113,7 @@ extern int wimlib_overwrite(WIMStruct *wim, int flags);
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for the WIM file to overwrite.
- * @param flags
+ * @param write_flags
  * 	Bitwise OR of ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY and/or
  * 	::WIMLIB_WRITE_FLAG_SHOW_PROGRESS.
  *
@@ -1131,7 +1140,7 @@ extern int wimlib_overwrite(WIMStruct *wim, int flags);
  * 	Failed to write the WIM header, the XML data, or the integrity table to
  * 	the WIM file associated with @a wim.
  */
-extern int wimlib_overwrite_xml_and_header(WIMStruct *wim, int flags);
+extern int wimlib_overwrite_xml_and_header(WIMStruct *wim, int write_flags);
 
 /**
  * Prints information about one image, or all images, contained in a WIM.
@@ -1536,6 +1545,12 @@ extern int wimlib_unmount(const char *dir, int flags);
  * 	included in the WIM being written.  If ::WIMLIB_WRITE_FLAG_SHOW_PROGRESS
  * 	is given, the progress of the calculation of the integrity table is
  * 	shown.
+ * @param num_threads
+ * 	Number of threads to use for compressing data.  Autodetected if set to
+ * 	0.  Note: if no data compression needs to be done, no threads will be
+ * 	created regardless of this parameter (e.g. if writing an uncompressed
+ * 	WIM, or exporting an image from a compressed WIM to another WIM of the
+ * 	same compression type).
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -1574,7 +1589,8 @@ extern int wimlib_unmount(const char *dir, int flags);
  * 	An error occurred when trying to write data to the new WIM file at @a
  * 	path.
  */
-extern int wimlib_write(WIMStruct *wim, const char *path, int image, int flags);
+extern int wimlib_write(WIMStruct *wim, const char *path, int image,
+			int write_flags, unsigned num_threads);
 
 
 

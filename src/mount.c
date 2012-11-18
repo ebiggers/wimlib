@@ -889,7 +889,7 @@ static int rebuild_wim(struct wimfs_context *ctx, bool check_integrity)
 
 	xml_update_image_info(w, w->current_image);
 
-	ret = wimlib_overwrite(w, check_integrity);
+	ret = wimlib_overwrite(w, check_integrity, 0);
 	if (ret != 0) {
 		ERROR("Failed to commit changes");
 		return ret;
