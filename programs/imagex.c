@@ -1459,7 +1459,7 @@ static void usage_all()
 {
 	puts("IMAGEX: Usage:");
 	for (int i = 0; i < ARRAY_LEN(usage_strings); i++)
-		fputs(usage_strings[i], stdout);
+		printf("    %s", usage_strings[i]);
 	static const char *extra =
 "    imagex --help\n"
 "    imagex --version\n"
