@@ -459,7 +459,7 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		w->lookup_table = joined_tab;
 	}
 
-	for_lookup_table_entry(w->lookup_table, lte_free_extracted_file, NULL);
+	for_lookup_table_entry(w->lookup_table, lte_zero_extracted_file, NULL);
 
 	if (image == WIM_ALL_IMAGES) {
 		flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
@@ -472,6 +472,7 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		free_lookup_table(w->lookup_table);
 		w->lookup_table = w_tab_save;
 	}
+	for_lookup_table_entry(w->lookup_table, lte_free_extracted_file, NULL);
 	return ret;
 
 }

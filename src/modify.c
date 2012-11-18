@@ -300,7 +300,7 @@ static int allocate_lte_if_needed(struct dentry *dentry, void *arg)
 				dest_lte = clone_lookup_table_entry(src_lte);
 				if (!dest_lte)
 					return WIMLIB_ERR_NOMEM;
-				list_add_tail(&dest_lte->list, lte_list_head);
+				list_add_tail(&dest_lte->staging_list, lte_list_head);
 			}
 		}
 	}
@@ -348,7 +348,8 @@ static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
 
 			next = lte_list_head->next;
 			list_del(next);
-			dest_lte = container_of(next, struct lookup_table_entry, list);
+			dest_lte = container_of(next, struct lookup_table_entry,
+						staging_list);
 			dest_lte->part_number = 1;
 			dest_lte->refcnt = 1;
 			wimlib_assert(hashes_equal(dest_lte->hash, src_lte->hash));
@@ -589,7 +590,7 @@ out_xml_delete_image:
 out_free_ltes:
 	{
 		struct lookup_table_entry *lte, *tmp;
-		list_for_each_entry_safe(lte, tmp, &wims.lte_list_head, list)
+		list_for_each_entry_safe(lte, tmp, &wims.lte_list_head, staging_list)
 			free_lookup_table_entry(lte);
 	}
 

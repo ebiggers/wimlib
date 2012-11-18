@@ -156,7 +156,6 @@ void free_lookup_table_entry(struct lookup_table_entry *lte)
 		default:
 			break;
 		}
-		FREE(lte->extracted_file);
 		FREE(lte);
 	}
 }
@@ -423,10 +422,18 @@ int lte_zero_out_refcnt(struct lookup_table_entry *lte, void *ignore)
 	return 0;
 }
 
-int lte_free_extracted_file(struct lookup_table_entry *lte, void *ignone)
+int lte_zero_extracted_file(struct lookup_table_entry *lte, void *ignore)
 {
-	FREE(lte->extracted_file);
 	lte->extracted_file = NULL;
+	return 0;
+}
+
+int lte_free_extracted_file(struct lookup_table_entry *lte, void *ignore)
+{
+	if (lte->extracted_file != NULL) {
+		FREE(lte->extracted_file);
+		lte->extracted_file = NULL;
+	}
 	return 0;
 }
 

@@ -36,6 +36,45 @@ struct ntfs_location {
 };
 #endif
 
+/* An enumerated type that identifies where the stream corresponding to this
+ * lookup table entry is actually located.
+ *
+ * If we open a WIM and read its lookup table, the location is set to
+ * RESOURCE_IN_WIM since all the streams will initially be located in the WIM.
+ * However, to deal with problems such as image capture and image mount, we
+ * allow the actual location of the stream to be somewhere else, such as an
+ * external file.
+ */
+enum resource_location {
+	/* The lookup table entry does not correspond to a stream (this state
+	 * should exist only temporarily) */
+	RESOURCE_NONEXISTENT = 0,
+
+	/* The stream resource is located in a WIM file.  The WIMStruct for the
+	 * WIM file will be pointed to by the @wim member. */
+	RESOURCE_IN_WIM,
+
+	/* The stream resource is located in an external file.  The name of the
+	 * file will be provided by @file_on_disk member.  In addition, if
+	 * @file_on_disk_fp is not NULL, it will be an open FILE * to the file.
+	 * */
+	RESOURCE_IN_FILE_ON_DISK,
+
+	/* The stream resource is located in an external file in the staging
+	 * directory for a read-write mount.  */
+	RESOURCE_IN_STAGING_FILE,
+
+	/* The stream resource is directly attached in an in-memory buffer
+	 * pointed to by @attached_buffer. */
+	RESOURCE_IN_ATTACHED_BUFFER,
+
+	/* The stream resource is located in an NTFS volume.  It is identified
+	 * by volume, filename, data stream name, and by whether it is a reparse
+	 * point or not. @ntfs_loc points to a structure containing this
+	 * information. */
+	RESOURCE_IN_NTFS_VOLUME,
+};
+
 /*
  * An entry in the lookup table in the WIM file.
  *
@@ -50,10 +89,7 @@ struct ntfs_location {
 struct lookup_table_entry {
 
 	/* List of lookup table entries in this hash bucket */
-	union {
-		struct hlist_node hash_list;
-		struct list_head list;
-	};
+	struct hlist_node hash_list;
 
 	/* Location and size of the stream in the WIM, whether it is compressed
 	 * or not, and whether it's a metadata resource or not.  This is an
@@ -74,44 +110,8 @@ struct lookup_table_entry {
 	 */
 	u16 part_number;
 
-	/* An enumerated type that identifies where the stream corresponding to
-	 * this lookup table entry is actually located.
-	 *
-	 * Obviously if we open a WIM and read its lookup table, the location is
-	 * set to RESOURCE_IN_WIM since all the streams will initially be
-	 * located in the WIM.  However, to deal with problems such as image
-	 * capture and image mount, we allow the actual location of the stream
-	 * to be somewhere else, such as an external file.
-	 */
-	enum {
-		/* The lookup table entry does not correspond to a stream (this
-		 * state should exist only temporarily) */
-		RESOURCE_NONEXISTENT = 0,
-
-		/* The stream resource is located in a WIM file.  The WIMStruct
-		 * for the WIM file will be pointed to by the @wim member. */
-		RESOURCE_IN_WIM,
-
-		/* The stream resource is located in an external file.  The
-		 * name of the file will be provided by @file_on_disk member.
-		 * In addition, if @file_on_disk_fp is not NULL, it will be an
-		 * open FILE * to the file. */
-		RESOURCE_IN_FILE_ON_DISK,
-
-		/* The stream resource is located in an external file in the
-		 * staging directory for a read-write mount.  */
-		RESOURCE_IN_STAGING_FILE,
-
-		/* The stream resource is directly attached in an in-memory
-		 * buffer pointed to by @attached_buffer. */
-		RESOURCE_IN_ATTACHED_BUFFER,
-
-		/* The stream resource is located in an NTFS volume.  It is
-		 * identified by volume, filename, data stream name, and by
-		 * whether it is a reparse point or not. @ntfs_loc points to a
-		 * structure containing this information. */
-		RESOURCE_IN_NTFS_VOLUME,
-	} resource_location;
+	/* See enum resource_location above */
+	u16 resource_location;
 
 	/* (On-disk field)
 	 * Number of times this lookup table entry is referenced by dentries.
@@ -132,6 +132,10 @@ struct lookup_table_entry {
 		 * table. */
 		size_t hash_short;
 	};
+
+	#ifdef WITH_FUSE
+	u16 num_opened_fds;
+	#endif
 
 	/* Pointers to somewhere where the stream is actually located.  See the
 	 * comments for the @resource_location field above. */
@@ -160,9 +164,6 @@ struct lookup_table_entry {
 		 * RESOURCE_IN_STAGING_FILE) */
 		struct inode *lte_inode;
 	};
-#ifdef WITH_FUSE
-	u16 num_opened_fds;
-#endif
 
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
 	 * whenever the file resource pointed to by this lookup table entry
@@ -173,25 +174,26 @@ struct lookup_table_entry {
 
 	u32 real_refcnt;
 
-	/* When a WIM file is written, @output_resource_entry is filled
-	 * in with the resource entry for the output WIM.  This will not
-	 * necessarily be the same as the @resource_entry since:
-	 * 	- The stream may have a different offset in the new WIM
-	 * 	- The stream may have a different compressed size in the
-	 * 	new WIM if the compression type changed
-	 */
 	union {
+		/* When a WIM file is written, @output_resource_entry is filled
+		 * in with the resource entry for the output WIM.  This will not
+		 * necessarily be the same as the @resource_entry since: - The
+		 * stream may have a different offset in the new WIM - The
+		 * stream may have a different compressed size in the new WIM if
+		 * the compression type changed
+		 */
 		struct resource_entry output_resource_entry;
+
 		struct list_head msg_list;
 	};
 
-	/* This field is used for the special hardlink or symlink image
-	 * extraction mode.   In these mode, all identical files are linked
-	 * together, and @extracted_file will be set to the filename of the
-	 * first extracted file containing this stream.  */
-	char *extracted_file;
-
 	union {
+		/* This field is used for the special hardlink or symlink image
+		 * extraction mode.   In these mode, all identical files are linked
+		 * together, and @extracted_file will be set to the filename of the
+		 * first extracted file containing this stream.  */
+		char *extracted_file;
+
 		/* List of lookup table entries that correspond to streams that have
 		 * been extracted to the staging directory when modifying a read-write
 		 * mounted WIM. */
@@ -270,7 +272,8 @@ extern void lte_decrement_num_opened_fds(struct lookup_table_entry *lte);
 
 extern int lte_zero_out_refcnt(struct lookup_table_entry *entry, void *ignore);
 extern int lte_zero_real_refcnt(struct lookup_table_entry *entry, void *ignore);
-extern int lte_free_extracted_file(struct lookup_table_entry *lte, void *ignone);
+extern int lte_zero_extracted_file(struct lookup_table_entry *lte, void *ignore);
+extern int lte_free_extracted_file(struct lookup_table_entry *lte, void *ignore);
 
 extern void print_lookup_table_entry(const struct lookup_table_entry *entry);
 
