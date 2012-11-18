@@ -204,6 +204,7 @@ static inline ntfschar *attr_record_name(ATTR_RECORD *ar)
  */
 static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 			     u8 md[SHA1_HASH_SIZE],
+			     bool is_reparse_point,
 			     u32 *reparse_tag_ret)
 {
 	s64 pos = 0;
@@ -220,19 +221,20 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 	}
 
 	bytes_remaining = na->data_size;
+
+	if (is_reparse_point) {
+		if (ntfs_attr_pread(na, 0, 8, buf) != 8)
+			goto out_error;
+		*reparse_tag_ret = le32_to_cpu(*(u32*)buf);
+		pos = 8;
+		bytes_remaining -= 8;
+	}
+
 	sha1_init(&ctx);
-
-	DEBUG2("Calculating SHA1 message digest (%"PRIu64" bytes)",
-	       bytes_remaining);
-
 	while (bytes_remaining) {
 		s64 to_read = min(bytes_remaining, sizeof(buf));
-		if (ntfs_attr_pread(na, pos, to_read, buf) != to_read) {
-			ERROR_WITH_ERRNO("Error reading NTFS attribute");
-			return WIMLIB_ERR_NTFS_3G;
-		}
-		if (bytes_remaining == na->data_size && reparse_tag_ret)
-			*reparse_tag_ret = le32_to_cpu(*(u32*)buf);
+		if (ntfs_attr_pread(na, pos, to_read, buf) != to_read)
+			goto out_error;
 		sha1_update(&ctx, buf, to_read);
 		pos += to_read;
 		bytes_remaining -= to_read;
@@ -240,6 +242,9 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 	sha1_final(md, &ctx);
 	ntfs_attr_close(na);
 	return 0;
+out_error:
+	ERROR_WITH_ERRNO("Error reading NTFS attribute");
+	return WIMLIB_ERR_NTFS_3G;
 }
 
 /* Load the streams from a file or reparse point in the NTFS volume into the WIM
@@ -292,7 +297,8 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 				goto out_put_actx;
 			}
 			/* Checksum the stream. */
-			ret = ntfs_attr_sha1sum(ni, actx->attr, attr_hash, &reparse_tag);
+			ret = ntfs_attr_sha1sum(ni, actx->attr, attr_hash,
+						type == AT_REPARSE_POINT, &reparse_tag);
 			if (ret != 0)
 				goto out_put_actx;
 

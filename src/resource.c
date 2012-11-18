@@ -574,17 +574,15 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 	case RESOURCE_IN_NTFS_VOLUME:
 		wimlib_assert(lte->ntfs_loc != NULL);
 		wimlib_assert(lte->attr != NULL);
-		{
-			if (lte->ntfs_loc->is_reparse_point)
-				offset += 8;
-			if (ntfs_attr_pread(lte->attr, offset, size, buf) != size) {
-				ERROR_WITH_ERRNO("Error reading NTFS attribute "
-						 "at `%s'",
-						 lte->ntfs_loc->path_utf8);
-				ret = WIMLIB_ERR_NTFS_3G;
-			}
-			break;
+		if (lte->ntfs_loc->is_reparse_point)
+			offset += 8;
+		if (ntfs_attr_pread(lte->attr, offset, size, buf) != size) {
+			ERROR_WITH_ERRNO("Error reading NTFS attribute "
+					 "at `%s'",
+					 lte->ntfs_loc->path_utf8);
+			ret = WIMLIB_ERR_NTFS_3G;
 		}
+		break;
 #endif
 	default:
 		wimlib_assert(0);
