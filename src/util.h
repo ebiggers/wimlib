@@ -30,12 +30,15 @@
 #	define HOT
 #endif /* __GNUC__ */
 
+
+#if 0
 #ifdef WITH_FUSE
 #define atomic_inc(ptr) \
 	__sync_fetch_and_add(ptr, 1)
 
 #define atomic_dec(ptr) \
 	__sync_sub_and_fetch(ptr, 1)
+#endif
 #endif
 
 #ifndef _NTFS_TYPES_H

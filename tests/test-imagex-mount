@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Test WIM mounting
 
@@ -239,7 +239,7 @@ do_test() {
 	fi
 
 	cd tmp.mnt
-	if ! tar xf ../test.tar; then
+	if ! tar xf ../test.tar --no-same-owner; then
 		error "Failed to untar archive on read-write mounted WIM"
 	fi
 	cd ..
@@ -254,7 +254,7 @@ do_test() {
 	fi
 
 	cd tmp.mnt
-	if ! tar xf ../test.tar; then
+	if ! tar xf ../test.tar --no-same-owner; then
 		error "Failed to untar archive on read-write mounted WIM"
 	fi
 	cd ..

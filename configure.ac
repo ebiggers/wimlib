@@ -144,7 +144,7 @@ AC_ARG_ENABLE([multithreaded-compression],
 	)
 AC_MSG_RESULT([$ENABLE_MULTITHREADED_COMPRESSION])
 if test "x$ENABLE_MULTITHREADED_COMPRESSION" = "xyes"; then
-	AC_DEFINE([MULTITHREADED_COMPRESSION], [1],
+	AC_DEFINE([ENABLE_MULTITHREADED_COMPRESSION], [1],
 		  	[Define to 1 if including support for multithreaded
 			 compression])
 fi

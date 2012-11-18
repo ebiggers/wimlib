@@ -3,7 +3,7 @@ Priority: optional
 Maintainer: Eric Biggers <ebiggers3@gmail.com>
 Build-Depends: debhelper (>= 7.0.0), autotools-dev, pkg-config,
                libfuse-dev, libxml2-dev, libssl-dev,
-               ntfs-3g-dev (>= 2011.4.12), attr-dev, bash
+               ntfs-3g-dev (>= 2011.4.12), attr-dev, bash, attr
 Standards-Version: 3.9.2
 Section: libs
 Homepage: http://sourceforge.net/projects/wimlib

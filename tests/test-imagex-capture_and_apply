@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Test capturing and applying a WIM image in the normal (non-NTFS) capture mode
 #

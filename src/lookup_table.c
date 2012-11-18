@@ -233,9 +233,10 @@ void lte_decrement_refcnt(struct lookup_table_entry *lte,
 void lte_decrement_num_opened_fds(struct lookup_table_entry *lte)
 {
 	wimlib_assert(lte != NULL);
-	wimlib_assert(lte->num_opened_fds != 0);
-	if (atomic_dec(&lte->num_opened_fds) == 0 && lte->refcnt == 0)
-		finalize_lte(lte);
+	if (lte->num_opened_fds != 0) {
+		if (--lte->num_opened_fds == 0 && lte->refcnt == 0)
+			finalize_lte(lte);
+	}
 }
 #endif
 

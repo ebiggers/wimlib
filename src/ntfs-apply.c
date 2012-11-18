@@ -299,7 +299,7 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 	}
 
 	if (wim_resource_size(lte) >= 0xffff) {
-		ERROR("Reparse data of `%s' is too long (%lu bytes)",
+		ERROR("Reparse data of `%s' is too long (%"PRIu64" bytes)",
 		      dentry->full_path_utf8, wim_resource_size(lte));
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}

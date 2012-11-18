@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # This script does some sanity testing of the 'imagex' program, specifically
 # checking the NTFS capture and apply features.

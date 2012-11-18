@@ -144,10 +144,12 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 	}
 
 	/* Read the integrity table into memory. */
-	buf = MALLOC(res_entry->original_size);
-	if (!buf) {
+	if ((sizeof(size_t) < sizeof(u64)
+	    && res_entry->original_size > ~(size_t)0)
+	    || ((buf = MALLOC(res_entry->original_size)) == NULL))
+	{
 		ERROR("Out of memory (needed %zu bytes for integrity table)",
-		      res_entry->original_size);
+		      (size_t)res_entry->original_size);
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;
 	}

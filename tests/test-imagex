@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # This script does some sanity testing of the 'imagex' program.  It by no means
 # tests every aspect of wimlib comprehensively.

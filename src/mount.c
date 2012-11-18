@@ -115,6 +115,11 @@ static inline WIMStruct *wimfs_get_WIMStruct()
 	return wimfs_get_context()->wim;
 }
 
+static inline bool wimfs_ctx_readonly(const struct wimfs_context *ctx)
+{
+	return (ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) == 0;
+}
+
 static inline int get_lookup_flags(const struct wimfs_context *ctx)
 {
 	if (ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
@@ -136,13 +141,15 @@ static inline int flags_writable(int open_flags)
  * @stream_id:	ID of the stream we're opening
  * @lte:	Lookup table entry for the stream (may be NULL)
  * @fd_ret:	Return the allocated file descriptor if successful.
+ * @readonly:	True if this is a read-only mount.
  *
  * Return 0 iff successful or error code if unsuccessful.
  */
 static int alloc_wimlib_fd(struct inode *inode,
 			   u32 stream_id,
 			   struct lookup_table_entry *lte,
-			   struct wimlib_fd **fd_ret)
+			   struct wimlib_fd **fd_ret,
+			   bool readonly)
 {
 	static const u16 fds_per_alloc = 8;
 	static const u16 max_fds = 0xffff;
@@ -192,8 +199,8 @@ static int alloc_wimlib_fd(struct inode *inode,
 			*fd_ret        = fd;
 			inode->fds[i]  = fd;
 			inode->num_opened_fds++;
-			if (lte)
-				atomic_inc(&lte->num_opened_fds);
+			if (lte && !readonly)
+				lte->num_opened_fds++;
 			DEBUG("Allocated fd (idx = %u)", fd->idx);
 			ret = 0;
 			break;
@@ -1269,7 +1276,8 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 			return ret;
 	}
 
-	ret = alloc_wimlib_fd(inode, stream_id, lte, &fd);
+	ret = alloc_wimlib_fd(inode, stream_id, lte, &fd,
+			      wimfs_ctx_readonly(ctx));
 	if (ret != 0)
 		return ret;
 
@@ -1290,14 +1298,15 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 	struct inode *inode;
 	int ret;
 	struct wimlib_fd *fd = NULL;
-	WIMStruct *w = wimfs_get_WIMStruct();
+	struct wimfs_context *ctx = wimfs_get_context();
+	WIMStruct *w = ctx->wim;
 
 	inode = wim_pathname_to_inode(w, path);
 	if (!inode)
 		return -ENOENT;
 	if (!inode_is_directory(inode))
 		return -ENOTDIR;
-	ret = alloc_wimlib_fd(inode, 0, NULL, &fd);
+	ret = alloc_wimlib_fd(inode, 0, NULL, &fd, wimfs_ctx_readonly(ctx));
 	fi->fh = (uintptr_t)fd;
 	return ret;
 }
@@ -1834,9 +1843,13 @@ static struct fuse_operations wimfs_operations = {
 #endif
 	.write       = wimfs_write,
 
+#if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 8)
 	.flag_nullpath_ok = 1,
+#endif
+#if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 9)
 	.flag_nopath = 1,
 	.flag_utime_omit_ok = 1,
+#endif
 };
 
 

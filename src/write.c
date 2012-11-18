@@ -50,8 +50,9 @@
 
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
+#else
+#include <stdlib.h>
 #endif
-
 
 /* Reopens the FILE* for a WIM read-write. */
 static int reopen_rw(WIMStruct *w)
@@ -1427,6 +1428,19 @@ out:
 	return ret;
 }
 
+
+static const char *get_data_type(int ctype)
+{
+	switch (ctype) {
+	case WIM_COMPRESSION_TYPE_NONE:
+		return "uncompressed";
+	case WIM_COMPRESSION_TYPE_LZX:
+		return "LZX-compressed";
+	case WIM_COMPRESSION_TYPE_XPRESS:
+		return "XPRESS-compressed";
+	}
+}
+
 static int write_stream_list_parallel(struct list_head *stream_list,
 				      FILE *out_fp, int out_ctype,
 				      int write_flags, u64 total_size,
@@ -1484,8 +1498,8 @@ static int write_stream_list_parallel(struct list_head *stream_list,
 	}
 
 	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
-		printf("Writing compressed data using %u threads...\n",
-		       num_threads);
+		printf("Writing %s compressed data using %u threads...\n",
+		       get_data_type(out_ctype), num_threads);
 	}
 
 	ret = main_writer_thread_proc(stream_list,
@@ -1561,7 +1575,8 @@ static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 			const char *reason = "";
 			if (!compression_needed)
 				reason = " (no compression needed)";
-			printf("Writing data using 1 thread%s\n", reason);
+			printf("Writing %s data using 1 thread%s\n",
+			       get_data_type(out_ctype), reason);
 		}
 
 		return write_stream_list_serial(stream_list, out_fp,
