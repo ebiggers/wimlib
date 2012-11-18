@@ -1,10 +1,9 @@
 				   WIMLIB
 
-This is wimlib version 1.0.4 (October 2012).  wimlib can be used to read,
-write, and mount files in the Windows Imaging Format (WIM files).  These
-files are normally created by using the `imagex.exe' utility on Windows,
-but this library provides a free implementation of imagex for UNIX-based
-systems.
+This is wimlib version 1.1.0 (November 2012).  wimlib can be used to read,
+write, and mount files in the Windows Imaging Format (WIM files).  These files
+are normally created by using the `imagex.exe' utility on Windows, but this
+library provides a free implementation of imagex for UNIX-based systems.
 
 				   WIM FILES
 
@@ -47,7 +46,8 @@ wimlib can create XPRESS or LZX compressed WIM archives.  As of wimlib v1.0.3,
 the XPRESS compression ratio is slightly better than that provided by
 Microsoft's software, while the LZX compression ratio is approaching that of
 Microsoft's software but is not quite there yet.  Running time is as good as or
-better than Microsoft's software.
+better than Microsoft's software, especially with multithreaded compression,
+available in v1.1.0 and later.
 
 The following tables compare the compression ratio and performance for creating
 a compressed Windows PE image (disk usage of about 524 MB, uncompressed WIM size
@@ -62,10 +62,11 @@ a compressed Windows PE image (disk usage of about 524 MB, uncompressed WIM size
 
 	Table 2. Time to create WIM
 
-					XPRESS Compression	LZX Compression
-	wimlib imagex (v1.0.2):		18 sec			49 sec
-	wimlib imagex (v1.0.3):		19 sec			30 sec
-	Microsoft imagex.exe:		25 sec			89 sec
+					   XPRESS Compression	LZX Compression
+	wimlib imagex (v1.0.2):		   18 sec		49 sec
+	wimlib imagex (v1.0.3):		   19 sec		30 sec
+	wimlib imagex (v1.1.0, 2 threads): 11 sec		17 sec
+	Microsoft imagex.exe:		   25 sec		89 sec
 
 				  NTFS SUPPORT
 
