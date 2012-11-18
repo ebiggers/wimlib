@@ -27,10 +27,13 @@
 #ifndef _WIMLIB_INTERNAL_H
 #define _WIMLIB_INTERNAL_H
 
+#include "config.h"
 #include "util.h"
 #include "list.h"
 
+#ifdef WITH_FUSE
 #include <pthread.h>
+#endif
 
 struct stat;
 struct dentry;
@@ -259,9 +262,11 @@ typedef struct WIMStruct {
 	/* A pointer to the file indicated by @filename, opened for reading. */
 	FILE  *fp;
 
+#ifdef WITH_FUSE
 	FILE **fp_tab;
 	size_t num_allocated_fps;
 	pthread_mutex_t fp_tab_mutex;
+#endif
 
 	/* FILE pointer for the WIM file that is being written. */
 	FILE  *out_fp;

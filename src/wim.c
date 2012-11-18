@@ -60,11 +60,13 @@ static int print_files(WIMStruct *w)
 WIMStruct *new_wim_struct()
 {
 	WIMStruct *w = CALLOC(1, sizeof(WIMStruct));
+#ifdef WITH_FUSE
 	if (pthread_mutex_init(&w->fp_tab_mutex, NULL) != 0) {
 		ERROR_WITH_ERRNO("Failed to initialize mutex");
 		FREE(w);
 		w = NULL;
 	}
+#endif
 	return w;
 
 }
@@ -578,6 +580,7 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 	if (w->out_fp)
 		fclose(w->out_fp);
 
+#ifdef WITH_FUSE
 	if (w->fp_tab) {
 		for (size_t i = 0; i < w->num_allocated_fps; i++)
 			if (w->fp_tab[i])
@@ -585,6 +588,7 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 		FREE(w->fp_tab);
 	}
 	pthread_mutex_destroy(&w->fp_tab_mutex);
+#endif
 
 	free_lookup_table(w->lookup_table);
 

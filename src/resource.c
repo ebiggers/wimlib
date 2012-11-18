@@ -419,6 +419,7 @@ u8 *put_resource_entry(u8 *p, const struct resource_entry *entry)
 	return p;
 }
 
+#ifdef WITH_FUSE
 static FILE *wim_get_fp(WIMStruct *w)
 {
 	pthread_mutex_lock(&w->fp_tab_mutex);
@@ -469,6 +470,7 @@ out:
 	pthread_mutex_unlock(&w->fp_tab_mutex);
 	return ret;
 }
+#endif
 
 /*
  * Reads some data from the resource corresponding to a WIM lookup table entry.
@@ -501,11 +503,15 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 		 * or uncompressed. */
 		wimlib_assert(lte->wim != NULL);
 
+		#ifdef WITH_FUSE
 		if (flags & WIMLIB_RESOURCE_FLAG_MULTITHREADED) {
 			fp = wim_get_fp(lte->wim);
 			if (!fp)
 				return WIMLIB_ERR_OPEN;
-		} else {
+		} else
+		#endif
+		{
+			wimlib_assert(!(flags & WIMLIB_RESOURCE_FLAG_MULTITHREADED));
 			wimlib_assert(lte->wim->fp != NULL);
 			fp = lte->wim->fp;
 		}
@@ -527,11 +533,13 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 						       lte->resource_entry.original_size,
 						       lte->resource_entry.offset,
 						       ctype, size, offset, buf);
+	#ifdef WITH_FUSE
 		if (flags & WIMLIB_RESOURCE_FLAG_MULTITHREADED) {
 			int ret2 = wim_release_fp(lte->wim, fp);
 			if (ret == 0)
 				ret = ret2;
 		}
+	#endif
 		break;
 	case RESOURCE_IN_STAGING_FILE:
 	case RESOURCE_IN_FILE_ON_DISK:
