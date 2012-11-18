@@ -1072,6 +1072,8 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 #else
 	ret = prepare_resource_for_read(next_lte);
 #endif
+	if (ret != 0)
+		goto out;
 
 	DEBUG("Initializing buffers for uncompressed "
 	      "and compressed data (%zu bytes needed)",
@@ -1094,6 +1096,9 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 		}
 	}
 
+	// This loop is executed until all resources have been written, except
+	// possibly a few that have been added to the @my_resources list for
+	// writing later.
 	while (1) {
 		// Send chunks to the compressor threads until either (a) there
 		// are no more messages available since they were all sent off,
@@ -1259,9 +1264,6 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 			DEBUG2("Complete msg (begin_chunk=%"PRIu64")", msg->begin_chunk);
 			if (msg->begin_chunk == 0) {
 				DEBUG2("Begin chunk tab");
-
-
-
 				if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
 					show_stream_write_progress(&cur_size,
 								   &next_size,
@@ -1383,12 +1385,6 @@ out:
 #endif
 	if (ret == 0) {
 		list_for_each_entry(lte, &my_resources, staging_list) {
-			ret = write_wim_resource(lte, out_fp,
-						 out_ctype,
-						 &lte->output_resource_entry,
-						 0);
-			if (ret != 0)
-				break;
 			if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
 				show_stream_write_progress(&cur_size,
 							   &next_size,
@@ -1397,6 +1393,12 @@ out:
 							   &cur_percent,
 							   lte);
 			}
+			ret = write_wim_resource(lte, out_fp,
+						 out_ctype,
+						 &lte->output_resource_entry,
+						 0);
+			if (ret != 0)
+				break;
 		}
 		if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
 			finish_stream_write_progress(total_size);
