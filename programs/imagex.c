@@ -287,7 +287,6 @@ out_fclose:
 
 static int file_writable(const char *path)
 {
-	struct stat stbuf;
 	int ret;
 	ret = access(path, F_OK | W_OK);
 	if (ret != 0)

@@ -293,6 +293,7 @@ typedef struct WIMStruct {
 		int add_flags;
 		int write_flags;
 		bool write_metadata;
+		void *private;
 	};
 #ifdef WITH_NTFS_3G
 	struct _ntfs_volume *ntfs_vol;
@@ -439,6 +440,11 @@ extern int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 
 extern int read_full_wim_resource(const struct lookup_table_entry *lte,
 				  u8 buf[], int flags);
+
+extern int write_wim_resource(struct lookup_table_entry *lte,
+			      FILE *out_fp, int out_ctype,
+			      struct resource_entry *out_res_entry,
+			      int flags);
 
 extern int extract_wim_resource_to_fd(const struct lookup_table_entry *lte,
 				      int fd, u64 size);

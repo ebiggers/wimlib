@@ -1,4 +1,3 @@
 - Fix bugs
 - Add more test cases
 - Implement LZX block splitting to improve compression ratio
-- Implement multi-threaded compression

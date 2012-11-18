@@ -180,7 +180,10 @@ struct lookup_table_entry {
 	 * 	- The stream may have a different compressed size in the
 	 * 	new WIM if the compression type changed
 	 */
-	struct resource_entry output_resource_entry;
+	union {
+		struct resource_entry output_resource_entry;
+		struct list_head msg_list;
+	};
 
 	/* This field is used for the special hardlink or symlink image
 	 * extraction mode.   In these mode, all identical files are linked
@@ -202,6 +205,11 @@ struct lookup_table_entry {
 static inline u64 wim_resource_size(const struct lookup_table_entry *lte)
 {
 	return lte->resource_entry.original_size;
+}
+
+static inline u64 wim_resource_chunks(const struct lookup_table_entry *lte)
+{
+	return (wim_resource_size(lte) + WIM_CHUNK_SIZE - 1) / WIM_CHUNK_SIZE;
 }
 
 static inline u64

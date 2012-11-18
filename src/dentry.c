@@ -1815,8 +1815,6 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		     struct dentry *dentry)
 {
 	u64 cur_offset = dentry->subdir_offset;
-	struct dentry *prev_child = NULL;
-	struct dentry *first_child = NULL;
 	struct dentry *child;
 	struct dentry cur_child;
 	int ret;
