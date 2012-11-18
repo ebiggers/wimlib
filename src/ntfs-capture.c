@@ -242,8 +242,8 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 	return 0;
 }
 
-/* Load the streams from a WIM file or reparse point in the NTFS volume into the
- * WIM lookup table */
+/* Load the streams from a file or reparse point in the NTFS volume into the WIM
+ * lookup table */
 static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 				char path[], size_t path_len,
 				struct lookup_table *lookup_table,

@@ -131,27 +131,23 @@ void *make_symlink_reparse_data_buf(const char *symlink_target, size_t *len_ret)
 	char *name_utf16 = utf8_to_utf16(symlink_target, utf8_len, &utf16_len);
 	if (!name_utf16)
 		return NULL;
-	/*DEBUG("utf16_len = %zu", utf16_len);*/
+
 	for (size_t i = 0; i < utf16_len / 2; i++)
 		if (((u16*)name_utf16)[i] == cpu_to_le16('/'))
 			((u16*)name_utf16)[i] = cpu_to_le16('\\');
-	size_t len = 12 + utf16_len * 2 + 4;
+	size_t len = 12 + utf16_len * 2;
 	void *buf = MALLOC(len);
 	if (!buf)
 		goto out;
-	/* XXX Fix absolute paths */
 
 	u8 *p = buf;
-	p = put_u16(p, utf16_len + 2); /* Substitute name offset */
+	p = put_u16(p, utf16_len); /* Substitute name offset */
 	p = put_u16(p, utf16_len); /* Substitute name length */
 	p = put_u16(p, 0); /* Print name offset */
 	p = put_u16(p, utf16_len); /* Print name length */
-	p = put_u32(p, 1);
+	p = put_u32(p, 1); /* flags: 0 iff *full* target, including drive letter??? */
 	p = put_bytes(p, utf16_len, (const u8*)name_utf16);
-	p = put_u16(p, 0);
 	p = put_bytes(p, utf16_len, (const u8*)name_utf16);
-	p = put_u16(p, 0);
-	/*DEBUG("utf16_len = %zu, len = %zu", utf16_len, len);*/
 	*len_ret = len;
 out:
 	FREE(name_utf16);
