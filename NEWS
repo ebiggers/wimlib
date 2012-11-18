@@ -1,5 +1,14 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.1.0:
+	Resources will now be compressed using multiple threads by default.
+	(This applies to `imagex capture', `imagex append', and `imagex
+	export').
+
+	Some performance improvements in mounted WIMs.
+
+	More progress information is shown when capturing a WIM.
+
 Version 1.0.4:
 	Lots of minor fixes, code cleanups, and some documentation updates.
 	Nothing in particular is really noteworthy.

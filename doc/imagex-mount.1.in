@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "October 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "November 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
 imagex-mount, imagex-mountrw, imagex-unmount \- Mount and unmount an image from a WIM archive
 
