@@ -391,6 +391,17 @@ WIMLIBAPI int wimlib_set_boot_idx(WIMStruct *w, int boot_idx)
 	if (boot_idx < 0 || boot_idx > w->hdr.image_count)
 		return WIMLIB_ERR_INVALID_IMAGE;
 	w->hdr.boot_idx = boot_idx;
+
+	if (boot_idx == 0) {
+		memset(&w->hdr.boot_metadata_res_entry, 0,
+		       sizeof(struct resource_entry));
+	} else {
+		memcpy(&w->hdr.boot_metadata_res_entry,
+		       &w->image_metadata[
+			  boot_idx - 1].metadata_lte->resource_entry,
+		       sizeof(struct resource_entry));
+	}
+
 	return 0;
 }
 
