@@ -1680,10 +1680,10 @@ int finish_write(WIMStruct *w, int image, int write_flags)
 		return WIMLIB_ERR_WRITE;
 	xml_data_size = integrity_offset - xml_data_offset;
 
-	hdr.xml_res_entry.offset                 = xml_data_offset;
-	hdr.xml_res_entry.size                   = xml_data_size;
-	hdr.xml_res_entry.original_size          = xml_data_size;
-	hdr.xml_res_entry.flags                  = 0;
+	hdr.xml_res_entry.offset        = xml_data_offset;
+	hdr.xml_res_entry.size          = xml_data_size;
+	hdr.xml_res_entry.original_size = xml_data_size;
+	hdr.xml_res_entry.flags         = WIM_RESHDR_FLAG_METADATA;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
 		ret = write_integrity_table(out, WIM_HEADER_DISK_SIZE,
