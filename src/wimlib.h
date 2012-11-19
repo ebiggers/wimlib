@@ -1538,7 +1538,7 @@ extern int wimlib_unmount(const char *dir, int flags);
  * @param image
  * 	The image inside the WIM to write.  Use ::WIM_ALL_IMAGES to include all
  * 	images.
- * @param flags
+ * @param write_flags
  * 	Bitwise OR of ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY and/or
  * 	::WIMLIB_WRITE_FLAG_SHOW_PROGRESS.  If
  * 	::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY is given, an integrity table is
