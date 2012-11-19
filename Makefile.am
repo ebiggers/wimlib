@@ -7,6 +7,8 @@ AM_CFLAGS	= -std=gnu99 -D_LARGEFILE_SOURCE \
 
 lib_LTLIBRARIES = libwim.la
 
+libwim_la_LDFLAGS = -version-info 1:0:0
+
 libwim_la_SOURCES =		\
 	src/comp.c		\
 	src/comp.h		\

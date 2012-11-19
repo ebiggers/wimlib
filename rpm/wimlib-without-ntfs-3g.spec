@@ -55,9 +55,7 @@ make check
 %doc AUTHORS COPYING README TODO
 %{_bindir}/imagex
 %{_bindir}/mkwinpeimg
-%{_libdir}/libwim.so
-%{_libdir}/libwim.so.0
-%{_libdir}/libwim.so.0.0.0
+%{_libdir}/libwim.so*
 %doc %{_mandir}/man1/*.1.gz
 
 %files devel
