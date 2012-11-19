@@ -42,12 +42,9 @@
  * @sha1sums:	   Array of SHA1 message digests; 20 bytes each, one per chunk.
  * @show_progress: Nonzero if the percent complete is to be printed after every
  * 			chunk.
- * @status:	   On success, set to WIM_INTEGRITY_OK or WIM_INTEGRITY_NOT_OK
- * 			based on whether the WIM is intact or not.
  */
 static int verify_integrity(FILE *fp, u64 num_bytes, u32 chunk_size,
-			    const u8 *sha1sums, int show_progress,
-			    int *status)
+			    const u8 *sha1sums, int show_progress)
 {
 	u8    *chunk_buf;
 	u8     resblock[SHA1_HASH_SIZE];
@@ -82,20 +79,18 @@ static int verify_integrity(FILE *fp, u64 num_bytes, u32 chunk_size,
 						 "verifying integrity of WIM");
 			}
 			ret = WIMLIB_ERR_READ;
-			goto verify_integrity_error;
+			goto out;
 		}
 		sha1_buffer(chunk_buf, bytes_to_read, resblock);
 		if (!hashes_equal(resblock, sha1sums)) {
-			*status = WIM_INTEGRITY_NOT_OK;
-			goto verify_integrity_done;
+			ret = WIM_INTEGRITY_NOT_OK;
+			goto out;
 		}
 		sha1sums += SHA1_HASH_SIZE;
 		bytes_remaining -= bytes_to_read;
 	}
-	*status = WIM_INTEGRITY_OK;
-verify_integrity_done:
-	ret = 0;
-verify_integrity_error:
+	ret = WIM_INTEGRITY_OK;
+out:
 	FREE(chunk_buf);
 	if (show_progress)
 		putchar('\n');
@@ -104,16 +99,8 @@ verify_integrity_error:
 
 /*
  * Verifies the integrity of the WIM.
- *
- * @show_progress: Nonzero if the percent complete is to be printed after every
- * 			chunk.
- * @status:	   On success, set to WIM_INTEGRITY_OK, WIM_INTEGRITY_NOT_OK,
- * 			or WIM_INTEGRITY_NONEXISTENT.
- *
- * Returns: 0, WIMLIB_ERR_INVALID_INTEGRITY_TABLE, WIMLIB_ERR_NOMEM, or
- * WIMLIB_ERR_READ.  If nonzero, the boolean pointed to by @ok is not changed.
  */
-int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
+int check_wim_integrity(WIMStruct *w, int show_progress)
 {
 
 	struct resource_entry *res_entry;
@@ -131,8 +118,7 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 	res_entry = &w->hdr.integrity;
 	if (res_entry->size == 0) {
 		DEBUG("No integrity information.");
-		*status = WIM_INTEGRITY_NONEXISTENT;
-		return 0;
+		return WIM_INTEGRITY_NONEXISTENT;
 	}
 	if (res_entry->original_size < 12) {
 		ERROR("Integrity table is too short");
@@ -235,7 +221,7 @@ int check_wim_integrity(WIMStruct *w, int show_progress, int *status)
 	/* call verify_integrity(), which does the actual checking of the SHA1
 	 * message digests. */
 	ret = verify_integrity(w->fp, bytes_to_check, chunk_size, p,
-			       show_progress, status);
+			       show_progress);
 out:
 	FREE(buf);
 	return ret;
@@ -252,7 +238,8 @@ out:
  * 	which is the end of the region that is checksummed.
  */
 int write_integrity_table(FILE *out, u64 end_header_offset,
-			  u64 end_lookup_table_offset, int show_progress)
+			  u64 end_lookup_table_offset, int show_progress,
+			  struct resource_entry *out_res_entry)
 {
 	u64  bytes_to_check;
 	u64  bytes_remaining;
@@ -262,6 +249,11 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 	u32  num_entries;
 	u32  integrity_table_size;
 	int  ret;
+	off_t start_offset;
+
+	start_offset = ftello(out);
+	if (start_offset == -1)
+		return WIMLIB_ERR_WRITE;
 
 	DEBUG("Calculating integrity table");
 	if (fseeko(out, end_header_offset, SEEK_SET) != 0) {
@@ -337,9 +329,8 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 				"(0 bytes remaining, 100% done)"
 				"                       ");
 
-	if (fseeko(out, 0, SEEK_END) != 0) {
-		ERROR_WITH_ERRNO("Failed to seek to end of WIM to write "
-				 "integrity table");
+	if (fseeko(out, start_offset, SEEK_SET) != 0) {
+		ERROR_WITH_ERRNO("Failed to seek to end of WIM");
 		ret = WIMLIB_ERR_WRITE;
 		goto out_free_chunk_buf;
 	}
@@ -350,6 +341,11 @@ int write_integrity_table(FILE *out, u64 end_header_offset,
 		ret = WIMLIB_ERR_WRITE;
 		goto out_free_chunk_buf;
 	}
+
+	out_res_entry->offset        = start_offset;
+	out_res_entry->size          = integrity_table_size;
+	out_res_entry->original_size = integrity_table_size;
+	out_res_entry->flags         = 0;
 	ret = 0;
 out_free_chunk_buf:
 	FREE(chunk_buf);

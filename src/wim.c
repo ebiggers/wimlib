@@ -418,6 +418,35 @@ WIMLIBAPI int wimlib_get_boot_idx(const WIMStruct *w)
 	return w->hdr.boot_idx;
 }
 
+/* Opens a WIM readable */
+int open_wim_readable(WIMStruct *w, const char *path)
+{
+	if (w->fp != NULL)
+		fclose(w->fp);
+	wimlib_assert(path != NULL);
+	w->fp = fopen(path, "rb");
+	if (!w->fp) {
+		ERROR_WITH_ERRNO("Failed to open `%s' for reading",
+				 path);
+		return WIMLIB_ERR_OPEN;
+	}
+	return 0;
+}
+
+/* Opens a WIM writable */
+int open_wim_writable(WIMStruct *w, const char *path)
+{
+	wimlib_assert(w->out_fp == NULL);
+	wimlib_assert(path != NULL);
+	w->out_fp = fopen(path, "w+b");
+	if (!w->out_fp) {
+		ERROR_WITH_ERRNO("Failed to open `%s' for writing",
+				 path);
+		return WIMLIB_ERR_OPEN;
+	}
+	return 0;
+}
+
 /*
  * Begins the reading of a WIM file; opens the file and reads its header and
  * lookup table, and optionally checks the integrity.
@@ -429,23 +458,20 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 
 	DEBUG("Reading the WIM file `%s'", in_wim_path);
 
-	w->fp = fopen(in_wim_path, "rb");
-
-	if (!w->fp) {
-		ERROR_WITH_ERRNO("Failed to open the file `%s' for reading",
-				 in_wim_path);
-		return WIMLIB_ERR_OPEN;
-	}
+	ret = open_wim_readable(w, in_wim_path);
+	if (ret != 0)
+		goto out;
 
 	w->filename = realpath(in_wim_path, NULL);
 	if (!w->filename) {
 		ERROR_WITH_ERRNO("Failed to resolve WIM filename");
-		return WIMLIB_ERR_NOMEM;
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_close;
 	}
 
 	ret = read_header(w->fp, &w->hdr, open_flags);
 	if (ret != 0)
-		return ret;
+		goto out_close;
 
 	DEBUG("Wim file contains %u images", w->hdr.image_count);
 
@@ -460,35 +486,35 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 	if (wimlib_get_compression_type(w) == WIM_COMPRESSION_TYPE_INVALID) {
 		ERROR("Invalid compression type (WIM header flags = %x)",
 		      w->hdr.flags);
-		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+		ret = WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+		goto out_close;
 	}
 
-
 	if (open_flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY) {
-		int integrity_status;
 		ret = check_wim_integrity(w,
-					  open_flags & WIMLIB_OPEN_FLAG_SHOW_PROGRESS,
-					  &integrity_status);
-		if (ret != 0)
-			return ret;
-		if (integrity_status == WIM_INTEGRITY_NONEXISTENT) {
+					  open_flags & WIMLIB_OPEN_FLAG_SHOW_PROGRESS);
+		if (ret == WIM_INTEGRITY_NONEXISTENT) {
 			WARNING("No integrity information for `%s'; skipping "
 				"integrity check.", w->filename);
-		} else if (integrity_status == WIM_INTEGRITY_NOT_OK) {
+		} else if (ret == WIM_INTEGRITY_NOT_OK) {
 			ERROR("WIM is not intact! (Failed integrity check)");
-			return WIMLIB_ERR_INTEGRITY;
+			ret = WIMLIB_ERR_INTEGRITY;
+			goto out_close;
+		} else if (ret != 0) {
+			goto out_close;
 		}
 	}
 
 	if (resource_is_compressed(&w->hdr.lookup_table_res_entry)) {
 		ERROR("Didn't expect a compressed lookup table!");
 		ERROR("Ask the author to implement support for this.");
-		return WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE;
+		ret = WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE;
+		goto out_close;
 	}
 
 	ret = read_lookup_table(w);
 	if (ret != 0)
-		return ret;
+		goto out_close;
 
 	w->image_metadata = CALLOC(w->hdr.image_count,
 				   sizeof(struct image_metadata));
@@ -496,7 +522,8 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 	if (!w->image_metadata) {
 		ERROR("Failed to allocate memory for %u metadata structures",
 		      w->hdr.image_count);
-		return WIMLIB_ERR_NOMEM;
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_lookup_table;
 	}
 	w->current_image = 0;
 
@@ -507,7 +534,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 	  			     append_metadata_resource_entry, w);
 
 	if (ret != 0)
-		return ret;
+		goto out_free_image_metadata;
 
 	/* Make sure all the expected images were found.  (We already have
 	 * returned false if *extra* images were found) */
@@ -516,9 +543,9 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 	{
 		ERROR("Only found %u images in WIM, but expected %u",
 		      w->current_image, w->hdr.image_count);
-		return WIMLIB_ERR_IMAGE_COUNT;
+		ret = WIMLIB_ERR_IMAGE_COUNT;
+		goto out_free_image_metadata;
 	}
-
 
 	/* Sort images by the position of their metadata resources.  I'm
 	 * assuming that is what determines the other of the images in the WIM
@@ -533,10 +560,8 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 	ret = read_xml_data(w->fp, &w->hdr.xml_res_entry,
 			    &w->xml_data, &w->wim_info);
 
-	if (ret != 0) {
-		ERROR("Missing or invalid XML data");
-		return ret;
-	}
+	if (ret != 0)
+		goto out_free_image_metadata;
 
 	xml_num_images = wim_info_get_num_images(w->wim_info);
 	if (xml_num_images != w->hdr.image_count) {
@@ -544,11 +569,34 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 		      "in the XML data,", in_wim_path, xml_num_images);
 		ERROR("but %u images in the WIM!  There must be exactly one "
 		      "<IMAGE> element per image.", w->hdr.image_count);
-		return WIMLIB_ERR_IMAGE_COUNT;
+		ret = WIMLIB_ERR_IMAGE_COUNT;
+		goto out_free_xml_data;
 	}
 
 	DEBUG("Done beginning read of WIM file `%s'.", in_wim_path);
 	return 0;
+
+	//
+	// Everything is freed in wimlib_free() anyway, so no need to roll back
+	// changes here.
+	//
+out_free_xml_data:
+	/*FREE(w->xml_data);*/
+	/*w->xml_data = NULL;*/
+	/*free_wim_info(w->wim_info);*/
+	/*w->wim_info = NULL;*/
+out_free_image_metadata:
+	/*FREE(w->image_metadata);*/
+	/*w->image_metadata = NULL;*/
+	/*w->current_image = WIM_NO_IMAGE;*/
+out_free_lookup_table:
+	/*free_lookup_table(w->lookup_table);*/
+	/*w->lookup_table = NULL;*/
+out_close:
+	/*fclose(w->fp);*/
+	/*w->fp = NULL;*/
+out:
+	return ret;
 }
 
 
@@ -619,4 +667,3 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 #endif
 	FREE(w);
 }
-

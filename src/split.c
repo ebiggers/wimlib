@@ -33,8 +33,7 @@ struct split_args {
 	char *swm_base_name;
 	size_t swm_base_name_len;
 	const char *swm_suffix;
-	struct lookup_table_entry *lte_chain_head;
-	struct lookup_table_entry *lte_chain_tail;
+	struct list_head *lte_list;
 	int    part_number;
 	int    write_flags;
 	long   size_remaining;
@@ -43,23 +42,22 @@ struct split_args {
 	u64    total_bytes_written;
 };
 
-static int finish_swm(WIMStruct *w, struct lookup_table_entry *lte_chain_head,
+static int finish_swm(WIMStruct *w, struct list_head *lte_list,
 		      int write_flags)
 {
 	off_t lookup_table_offset = ftello(w->out_fp);
 	int ret;
+	struct lookup_table_entry *lte;
 
 	DEBUG("Writing lookup table for SWM (offset %"PRIu64")",
 			lookup_table_offset);
 
-	while (lte_chain_head != NULL) {
-		ret = write_lookup_table_entry(lte_chain_head, w->out_fp);
+	list_for_each_entry(lte, lte_list, staging_list) {
+		ret = write_lookup_table_entry(lte, w->out_fp);
 		if (ret != 0)
 			return ret;
-		struct lookup_table_entry *prev = lte_chain_head;
-		lte_chain_head = lte_chain_head->next_lte_in_swm;
-		prev->next_lte_in_swm = NULL;
 	}
+
 	off_t xml_data_offset = ftello(w->out_fp);
 
 	if (lookup_table_offset == -1 || xml_data_offset == -1)
@@ -67,6 +65,9 @@ static int finish_swm(WIMStruct *w, struct lookup_table_entry *lte_chain_head,
 	w->hdr.lookup_table_res_entry.offset = lookup_table_offset;
 	w->hdr.lookup_table_res_entry.size =
 				xml_data_offset - lookup_table_offset;
+	w->hdr.lookup_table_res_entry.original_size =
+				xml_data_offset - lookup_table_offset;
+	w->hdr.lookup_table_res_entry.flags = WIM_RESHDR_FLAG_METADATA;
 	return finish_write(w, WIM_ALL_IMAGES,
 			    write_flags | WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE);
 }
@@ -87,10 +88,10 @@ static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 		/* No space for this resource.  Finish the previous swm and
 		 * start a new one. */
 
-		ret = finish_swm(w, args->lte_chain_head, args->write_flags);
-
-		args->lte_chain_tail = NULL;
-		args->lte_chain_head = NULL;
+		ret = finish_swm(w, args->lte_list, args->write_flags);
+		if (ret != 0)
+			return ret;
+		INIT_LIST_HEAD(args->lte_list);
 
 		sprintf(args->swm_base_name + args->swm_base_name_len, "%d%s",
 			++args->part_number, args->swm_suffix);
@@ -113,11 +114,7 @@ static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 	}
 	args->size_remaining -= lte->resource_entry.size;
 	args->total_bytes_written += lte->resource_entry.size;
-	if (args->lte_chain_tail)
-		args->lte_chain_tail->next_lte_in_swm = lte;
-	else
-		args->lte_chain_head = lte;
-	args->lte_chain_tail = lte;
+	list_add(&lte->staging_list, args->lte_list);
 	return copy_resource(lte, w);
 }
 
@@ -134,8 +131,6 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 	char name[swm_name_len + 20];
 	char *swm_suffix;
 
-	struct lookup_table_entry *lte_chain_head = NULL;
-	struct lookup_table_entry *lte_chain_tail = NULL;
 	long size_remaining = part_size;
 	u64 total_bytes_written = 0;
 	u64 total_bytes;
@@ -175,6 +170,7 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 				(double)total_bytes * 100.0);
 
 	w->write_metadata = true;
+	LIST_HEAD(lte_list);
 	for (int i = 0; i < w->hdr.image_count; i++) {
 		struct lookup_table_entry *metadata_lte;
 
@@ -186,11 +182,7 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 			return ret;
 		size_remaining -= metadata_lte->resource_entry.size;
 		total_bytes_written += metadata_lte->resource_entry.size;
-		if (lte_chain_tail)
-			lte_chain_tail->next_lte_in_swm = metadata_lte;
-		else
-			lte_chain_head = metadata_lte;
-		lte_chain_tail = metadata_lte;
+		list_add(&metadata_lte->staging_list, &lte_list);
 	}
 	w->write_metadata = false;
 
@@ -199,8 +191,7 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 		.swm_base_name     = name,
 		.swm_base_name_len = swm_base_name_len,
 		.swm_suffix        = swm_suffix,
-		.lte_chain_head    = lte_chain_head,
-		.lte_chain_tail    = lte_chain_tail,
+		.lte_list          = &lte_list,
 		.part_number       = 1,
 		.write_flags       = write_flags,
 		.size_remaining    = size_remaining,
@@ -213,7 +204,7 @@ WIMLIBAPI int wimlib_split(const char *wimfile, const char *swm_name,
 	if (ret != 0)
 		return ret;
 
-	ret = finish_swm(w, args.lte_chain_head, write_flags);
+	ret = finish_swm(w, &lte_list, write_flags);
 	if (ret != 0)
 		return ret;
 

@@ -141,14 +141,18 @@
  *
  * After creating or modifying a WIM file, you can write it to a file using
  * wimlib_write().  Alternatively,  if the WIM was originally read from a file,
- * you can use wimlib_overwrite() to overwrite the original file.  In some
- * cases, wimlib_overwrite_xml_and_header() can be used instead.
+ * you can use wimlib_overwrite() to overwrite the original file.
+ *
+ * Please not: merely by calling wimlib_add_image() or many of the other
+ * functions in this library that operate on ::WIMStruct's, you are @b not
+ * modifing the WIM file on disk.  Changes are not saved until you explicitly
+ * call wimlib_write() or wimlib_overwrite().
  *
  * After you are done with the WIM file, use wimlib_free() to free all memory
  * associated with a ::WIMStruct and close all files associated with it.
  *
- * To see an example of how to use wimlib, see the file
- * @c programs/imagex.c in wimlib's source tree.
+ * To see an example of how to use wimlib, see the file @c programs/imagex.c in
+ * wimlib's source tree.
  *
  * wimlib supports custom memory allocators; use wimlib_set_memory_allocator()
  * for this.  However, if wimlib calls into @c libntfs-3g, the custom memory
@@ -272,6 +276,10 @@ enum wim_compression_type {
 /** Call fsync() when the WIM file is closed */
 #define WIMLIB_WRITE_FLAG_FSYNC			0x00000008
 
+/** Re-build the entire WIM file rather than appending data to it, if possible.
+ * (Applies to wimlib_overwrite(), not wimlib_write()). */
+#define WIMLIB_WRITE_FLAG_REBUILD		0x00000010
+
 /** Mark the image being added as the bootable image of the WIM. */
 #define WIMLIB_ADD_IMAGE_FLAG_BOOT		0x00000001
 
@@ -352,6 +360,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_READLINK,
 	WIMLIB_ERR_READ,
 	WIMLIB_ERR_RENAME,
+	WIMLIB_ERR_REOPEN,
 	WIMLIB_ERR_RESOURCE_ORDER,
 	WIMLIB_ERR_SPECIAL_FILE,
 	WIMLIB_ERR_SPLIT_INVALID,
@@ -1074,12 +1083,33 @@ extern int wimlib_open_wim(const char *wim_file, int flags,
 /**
  * Overwrites the file that the WIM was originally read from, with changes made.
  *
- * The new WIM is written to a temporary file and then renamed to the original
- * file after it is has been completely written.  The temporary file currently
- * is made in the same directory as the original WIM file.
+ * There are two ways that a WIM may be overwritten.  The first is to do a full
+ * rebuild: the new WIM is written to a temporary file and then renamed to the
+ * original file after it is has been completely written.  The temporary file
+ * currently is made in the same directory as the original WIM file.  A full
+ * rebuild may take a while, but can be used even if images have been modified
+ * or deleted, will produce a WIM with no holes, and has little chance of
+ * unintentional data loss because the temporary WIM is fsync()ed before being
+ * renamed to the original WIM.
  *
- * After this function returns, @a wim must be freed using wimlib_free().  Any
- * further actions on @a wim before doing this are undefined.
+ * The second way to overwrite a WIM is by appending to the end of it.  This can
+ * be much faster than a full rebuild, but it only works if the only operations
+ * on the WIM have been to change the header or XML data, or to add new images.
+ * Writing a WIM in this mode begins with writing any new file resources *after*
+ * everything in the old WIM, even though this will leave a hole where the old
+ * lookup table, XML data, and integrity were.  This is done so that the WIM
+ * remains valid even if the operation is aborted mid-write.
+ *
+ * By default, the overwrite mode is chosen based on the past operations
+ * performed on the WIM.  Use the flag ::WIMLIB_WRITE_FLAG_REBUILD to explicitly
+ * request a full rebuild.
+ *
+ * In the temporary-file overwrite mode, no changes are made to the WIM on
+ * failure, and the temporary file is deleted (if possible).  Abnormal
+ * termination of the program will result in the temporary file being orphaned.
+ * In the direct append mode, the WIM is truncated to the original length on
+ * failure, while abnormal termination of the program will result in extra data
+ * appended to the original WIM, but it will still be a valid WIM.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for the WIM file to write.  There may have
@@ -1099,49 +1129,18 @@ extern int wimlib_open_wim(const char *wim_file, int flags,
  * @retval ::WIMLIB_ERR_RENAME
  * 	The temporary file that the WIM was written to could not be renamed to
  * 	the original filename of @a wim.
+ * @retval ::WIMLIB_ERR_REOPEN
+ * 	The WIM was overwritten successfully, but it could not be re-opened
+ * 	read-only.  Therefore, the resources in the WIM can no longer be
+ * 	accessed, so this limits the functions that can be called on @a wim
+ * 	before calling wimlib_free().
  */
 extern int wimlib_overwrite(WIMStruct *wim, int write_flags,
 			    unsigned num_threads);
 
 /**
- * Updates the header and XML data of the WIM file, without the need to write
- * out the entire WIM to a temporary file as in wimlib_write().
- *
- * This function must only be used if no files, directories, or images have been
- * added, removed, or changed in the WIM.  It must be used when only the boot
- * index or the name or description of image(s) has been changed.
- *
- * After this function returns, @a wim must be freed using wimlib_free().  Any
- * further actions on @a wim before doing this are undefined.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for the WIM file to overwrite.
- * @param write_flags
- * 	Bitwise OR of ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY and/or
- * 	::WIMLIB_WRITE_FLAG_SHOW_PROGRESS.
- *
- * @return 0 on success; nonzero on error.
- *
- * @retval ::WIMLIB_ERR_NO_FILENAME
- * 	@a wim corresponds to a WIM created with wimlib_create_new_wim() rather
- * 	than a WIM read with wimlib_open_wim().
- * @retval ::WIMLIB_ERR_NOMEM
- * 	Failed to allocate needed memory.
- * @retval ::WIMLIB_ERR_OPEN
- * 	The WIM file associated with @a wim could not be re-opened read-write.
- * @retval ::WIMLIB_ERR_READ
- * 	::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY was specified in @a flags, but data
- * 	from the WIM file associated with @a wim could not be read to compute
- * 	the SHA1 message digests, or the old integrity table (if it existed)
- * 	could not be read.
- * @retval ::WIMLIB_ERR_RESOURCE_ORDER
- * 	Stream resources appeared in the WIM after the XML data or integrity
- * 	table, so we could not safely overwrite the XML data and integrity
- * 	table.  Note: this error should never be received from WIMs that were
- * 	written by this library.
- * @retval ::WIMLIB_ERR_WRITE
- * 	Failed to write the WIM header, the XML data, or the integrity table to
- * 	the WIM file associated with @a wim.
+ * This function is deprecated; call wimlib_overwrite() without the
+ * WIMLIB_WRITE_FLAG_REBUILD flag instead.
  */
 extern int wimlib_overwrite_xml_and_header(WIMStruct *wim, int write_flags);
 

@@ -1987,8 +1987,10 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 #endif
 
 	/* Mark dentry tree as modified if read-write mount. */
-	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
+	if (flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		imd->modified = true;
+		imd->has_been_mounted_rw = true;
+	}
 
 	/* Resolve all the lookup table entries of the dentry tree */
 	DEBUG("Resolving lookup table entries");

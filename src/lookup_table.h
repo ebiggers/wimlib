@@ -198,9 +198,6 @@ struct lookup_table_entry {
 		 * been extracted to the staging directory when modifying a read-write
 		 * mounted WIM. */
 		struct list_head staging_list;
-
-		/* Temporary field for creating a singly linked list. */
-		struct lookup_table_entry *next_lte_in_swm;
 	};
 };
 
@@ -288,11 +285,8 @@ extern void free_lookup_table_entry(struct lookup_table_entry *lte);
 extern int dentry_resolve_ltes(struct dentry *dentry, void *__table);
 extern int dentry_unresolve_ltes(struct dentry *dentry, void *ignore);
 
-/* Writes the lookup table to the output file. */
-static inline int write_lookup_table(struct lookup_table *table, FILE *out)
-{
-	return for_lookup_table_entry(table, write_lookup_table_entry, out);
-}
+int write_lookup_table(struct lookup_table *table, FILE *out,
+		       struct resource_entry *out_res_entry);
 
 /* Unlinks and frees an entry from a lookup table. */
 static inline void lookup_table_remove(struct lookup_table *table,

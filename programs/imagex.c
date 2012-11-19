@@ -623,6 +623,8 @@ out_write:
 		ret = wimlib_write(w, wimfile, WIM_ALL_IMAGES, write_flags,
 				   num_threads);
 	}
+	if (ret == WIMLIB_ERR_REOPEN)
+		ret = 0;
 	if (ret != 0)
 		imagex_error("Failed to write the WIM file `%s'", wimfile);
 out:
@@ -689,6 +691,8 @@ static int imagex_delete(int argc, const char **argv)
 	}
 
 	ret = wimlib_overwrite(w, write_flags, 0);
+	if (ret == WIMLIB_ERR_REOPEN)
+		ret = 0;
 	if (ret != 0) {
 		imagex_error("Failed to write the file `%s' with image "
 			     "deleted", wimfile);
@@ -894,6 +898,8 @@ static int imagex_export(int argc, const char **argv)
 	else
 		ret = wimlib_overwrite(dest_w, write_flags, num_threads);
 out:
+	if (ret == WIMLIB_ERR_REOPEN)
+		ret = 0;
 	wimlib_free(src_w);
 	wimlib_free(dest_w);
 	if (additional_swms) {
@@ -1139,8 +1145,8 @@ static int imagex_info(int argc, const char **argv)
 			}
 		}
 
-		/* Only call wimlib_overwrite_xml_and_header() if something
-		 * actually needs to be changed. */
+		/* Only call wimlib_overwrite() if something actually needs to
+		 * be changed. */
 		if (boot || new_name || new_desc ||
 				check != wimlib_has_integrity_table(w)) {
 
@@ -1148,9 +1154,17 @@ static int imagex_info(int argc, const char **argv)
 			if (ret != 0)
 				return ret;
 
-			ret = wimlib_overwrite_xml_and_header(w, check ?
-					WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
-					WIMLIB_WRITE_FLAG_SHOW_PROGRESS : 0);
+			int write_flags;
+			if (check) {
+				write_flags = WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
+					      WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
+			} else {
+				write_flags = 0;
+			}
+
+			ret = wimlib_overwrite(w, write_flags, 1);
+			if (ret == WIMLIB_ERR_REOPEN)
+				ret = 0;
 		} else {
 			printf("The file `%s' was not modified because nothing "
 					"needed to be done.\n", wimfile);
@@ -1158,7 +1172,7 @@ static int imagex_info(int argc, const char **argv)
 		}
 	}
 out:
-	/*wimlib_free(w);*/
+	wimlib_free(w);
 	return ret;
 }
 

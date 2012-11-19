@@ -54,268 +54,31 @@
 #include <stdlib.h>
 #endif
 
-/* Reopens the FILE* for a WIM read-write. */
-static int reopen_rw(WIMStruct *w)
+static int do_fflush(FILE *fp)
 {
-	FILE *fp;
-
-	if (fclose(w->fp) != 0)
-		ERROR_WITH_ERRNO("Failed to close the file `%s'", w->filename);
-	w->fp = NULL;
-	fp = fopen(w->filename, "r+b");
-	if (!fp) {
-		ERROR_WITH_ERRNO("Failed to open `%s' for reading and writing",
-		      		 w->filename);
-		return WIMLIB_ERR_OPEN;
-	}
-	w->fp = fp;
-	return 0;
-}
-
-
-
-/*
- * Writes a WIM file to the original file that it was read from, overwriting it.
- */
-WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
-			       unsigned num_threads)
-{
-	size_t wim_name_len;
-	int ret;
-
-	if (!w)
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	write_flags &= ~WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE;
-	if (!w->filename)
-		return WIMLIB_ERR_NO_FILENAME;
-
-	DEBUG("Replacing WIM file `%s'.", w->filename);
-
-	/* Write the WIM to a temporary file. */
-	/* XXX should the temporary file be somewhere else? */
-	wim_name_len = strlen(w->filename);
-	char tmpfile[wim_name_len + 10];
-	memcpy(tmpfile, w->filename, wim_name_len);
-	randomize_char_array_with_alnum(tmpfile + wim_name_len, 9);
-	tmpfile[wim_name_len + 9] = '\0';
-
-	ret = wimlib_write(w, tmpfile, WIM_ALL_IMAGES,
-			   write_flags | WIMLIB_WRITE_FLAG_FSYNC,
-			   num_threads);
+	int ret = fflush(fp);
 	if (ret != 0) {
-		ERROR("Failed to write the WIM file `%s'", tmpfile);
-		if (unlink(tmpfile) != 0)
-			WARNING("Failed to remove `%s'", tmpfile);
-		return ret;
-	}
-
-	DEBUG("Closing original WIM file.");
-	/* Close the original WIM file that was opened for reading. */
-	if (w->fp) {
-		if (fclose(w->fp) != 0) {
-			WARNING("Failed to close the file `%s'", w->filename);
-		}
-		w->fp = NULL;
-	}
-
-	DEBUG("Renaming `%s' to `%s'", tmpfile, w->filename);
-
-	/* Rename the new file to the old file .*/
-	if (rename(tmpfile, w->filename) != 0) {
-		ERROR_WITH_ERRNO("Failed to rename `%s' to `%s'",
-				 tmpfile, w->filename);
-		ret = WIMLIB_ERR_RENAME;
-		goto err;
-	}
-
-	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
-		printf("Successfully renamed `%s' to `%s'\n", tmpfile, w->filename);
-
-	return 0;
-err:
-	/* Remove temporary file. */
-	if (unlink(tmpfile) != 0)
-		ERROR_WITH_ERRNO("Failed to remove `%s'", tmpfile);
-	return ret;
-}
-
-static int check_resource_offset(struct lookup_table_entry *lte, void *arg)
-{
-	u64 xml_data_offset = *(u64*)arg;
-	if (lte->resource_entry.offset > xml_data_offset) {
-		ERROR("The following resource is *after* the XML data:");
-		print_lookup_table_entry(lte);
-		return WIMLIB_ERR_RESOURCE_ORDER;
+		ERROR_WITH_ERRNO("Failed to flush data to output WIM file");
+		return WIMLIB_ERR_WRITE;
 	}
 	return 0;
 }
 
-WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *w, int write_flags)
+static int fflush_and_ftruncate(FILE *fp, off_t size)
 {
 	int ret;
-	FILE *fp;
-	u8 *integrity_table = NULL;
-	off_t xml_end;
-	off_t xml_size;
-	size_t bytes_written;
 
-	DEBUG("Overwriting XML and header of `%s', write_flags = %#x",
-	      w->filename, write_flags);
-
-	if (!w->filename)
-		return WIMLIB_ERR_NO_FILENAME;
-
-	write_flags &= ~WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE;
-
-	/* Make sure that the integrity table (if present) is after the XML
-	 * data, and that there are no stream resources, metadata resources, or
-	 * lookup tables after the XML data.  Otherwise, these data would be
-	 * destroyed by this function. */
-	if (w->hdr.integrity.offset != 0 &&
-	    w->hdr.integrity.offset < w->hdr.xml_res_entry.offset) {
-		ERROR("Didn't expect the integrity table to be before the XML data");
-		return WIMLIB_ERR_RESOURCE_ORDER;
-	}
-
-	if (w->hdr.lookup_table_res_entry.offset >
-	    w->hdr.xml_res_entry.offset) {
-		ERROR("Didn't expect the lookup table to be after the XML data");
-		return WIMLIB_ERR_RESOURCE_ORDER;
-	}
-
-	ret = for_lookup_table_entry(w->lookup_table, check_resource_offset,
-				     &w->hdr.xml_res_entry.offset);
+	ret = do_fflush(fp);
 	if (ret != 0)
 		return ret;
-
-	ret = reopen_rw(w);
-	if (ret != 0)
-		return ret;
-
-	fp = w->fp;
-
-	/* The old integrity table is still OK, as the SHA1 message digests in
-	 * the integrity table include neither the header nor the XML data.
-	 * Save it for later if it exists and an integrity table was required.
-	 * */
-	if ((write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
-	     && w->hdr.integrity.offset != 0)
-	{
-		DEBUG("Reading existing integrity table.");
-		integrity_table = MALLOC(w->hdr.integrity.size);
-		if (!integrity_table)
-			return WIMLIB_ERR_NOMEM;
-
-		ret = read_uncompressed_resource(fp, w->hdr.integrity.offset,
-						 w->hdr.integrity.original_size,
-						 integrity_table);
-		if (ret != 0)
-			goto err;
-		DEBUG("Done reading existing integrity table.");
-	}
-
-	DEBUG("Overwriting XML data.");
-	/* Overwrite the XML data. */
-	if (fseeko(fp, w->hdr.xml_res_entry.offset, SEEK_SET) != 0) {
-		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" "
-				 "for XML data", w->hdr.xml_res_entry.offset);
-		ret = WIMLIB_ERR_WRITE;
-		goto err;
-	}
-	ret = write_xml_data(w->wim_info, WIM_ALL_IMAGES, fp, 0);
-	if (ret != 0)
-		goto err;
-
-	DEBUG("Updating XML resource entry.");
-	/* Update the XML resource entry in the WIM header. */
-	xml_end = ftello(fp);
-	if (xml_end == -1) {
-		ret = WIMLIB_ERR_WRITE;
-		goto err;
-	}
-	xml_size = xml_end - w->hdr.xml_res_entry.offset;
-	w->hdr.xml_res_entry.size = xml_size;
-	w->hdr.xml_res_entry.original_size = xml_size;
-	/* XML data offset is unchanged. */
-
-	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
-		DEBUG("Writing integrity table.");
-		w->hdr.integrity.offset = xml_end;
-		if (integrity_table) {
-			/* The existing integrity table was saved. */
-			bytes_written = fwrite(integrity_table, 1,
-					       w->hdr.integrity.size, fp);
-			if (bytes_written != w->hdr.integrity.size) {
-				ERROR_WITH_ERRNO("Failed to write integrity "
-						 "table");
-				ret = WIMLIB_ERR_WRITE;
-				goto err;
-			}
-			FREE(integrity_table);
-		} else {
-			/* There was no existing integrity table, so a new one
-			 * must be calculated. */
-			ret = write_integrity_table(fp, WIM_HEADER_DISK_SIZE,
-					w->hdr.lookup_table_res_entry.offset +
-					w->hdr.lookup_table_res_entry.size,
-					write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS);
-			if (ret != 0)
-				return ret;
-
-			off_t end_integrity = ftello(fp);
-			if (end_integrity == -1)
-				return WIMLIB_ERR_WRITE;
-
-			off_t integrity_size           = end_integrity - xml_end;
-			w->hdr.integrity.size          = integrity_size;
-			w->hdr.integrity.original_size = integrity_size;
-			w->hdr.integrity.flags         = 0;
-		}
-	} else {
-		DEBUG("Truncating file to end of XML data.");
-		/* No integrity table to write.  The file should be truncated
-		 * because it's possible that the old file was longer (due to it
-		 * including an integrity table, or due to its XML data being
-		 * longer) */
-		if (fflush(fp) != 0) {
-			ERROR_WITH_ERRNO("Failed to flush stream for file `%s'",
-					 w->filename);
-			return WIMLIB_ERR_WRITE;
-		}
-		if (ftruncate(fileno(fp), xml_end) != 0) {
-			ERROR_WITH_ERRNO("Failed to truncate `%s' to %"PRIu64" "
-					 "bytes", w->filename, xml_end);
-			return WIMLIB_ERR_WRITE;
-		}
-		memset(&w->hdr.integrity, 0, sizeof(struct resource_entry));
-	}
-
-	DEBUG("Overwriting header.");
-	/* Overwrite the header. */
-	if (fseeko(fp, 0, SEEK_SET) != 0) {
-		ERROR_WITH_ERRNO("Failed to seek to beginning of `%s'",
-				 w->filename);
+	ret = ftruncate(fileno(fp), size);
+	if (ret != 0) {
+		ERROR_WITH_ERRNO("Failed to truncate output WIM file to "
+				 "%"PRIu64" bytes", size);
 		return WIMLIB_ERR_WRITE;
 	}
-
-	ret = write_header(&w->hdr, fp);
-	if (ret != 0)
-		return ret;
-
-	DEBUG("Closing `%s'.", w->filename);
-	if (fclose(fp) != 0) {
-		ERROR_WITH_ERRNO("Failed to close `%s'", w->filename);
-		return WIMLIB_ERR_WRITE;
-	}
-	w->fp = NULL;
-	DEBUG("Done.");
 	return 0;
-err:
-	FREE(integrity_table);
-	return ret;
 }
-
 
 /* Chunk table that's located at the beginning of each compressed resource in
  * the WIM.  (This is not the on-disk format; the on-disk format just has an
@@ -376,19 +139,8 @@ out:
 	return ret;
 }
 
-typedef int (*compress_func_t)(const void *, unsigned, void *, unsigned *);
-
-compress_func_t get_compress_func(int out_ctype)
-{
-	if (out_ctype == WIM_COMPRESSION_TYPE_LZX)
-		return lzx_compress;
-	else
-		return xpress_compress;
-}
-
-
 /*
- * Compresses a chunk of a WIM resource.
+ * Pointer to function to compresses a chunk of a WIM resource.
  *
  * @chunk:		Uncompressed data of the chunk.
  * @chunk_size:		Size of the uncompressed chunk in bytes.
@@ -397,21 +149,19 @@ compress_func_t get_compress_func(int out_ctype)
  * @compressed_chunk_len_ret:	Pointer to an unsigned int into which the size
  * 					of the compressed chunk will be
  * 					returned.
- * @ctype:	Type of compression to use.  Must be WIM_COMPRESSION_TYPE_LZX
- * 		or WIM_COMPRESSION_TYPE_XPRESS.
  *
  * Returns zero if compressed succeeded, and nonzero if the chunk could not be
  * compressed to any smaller than @chunk_size.  This function cannot fail for
  * any other reasons.
  */
-static int compress_chunk(const u8 chunk[], unsigned chunk_size,
-			  u8 compressed_chunk[],
-			  unsigned *compressed_chunk_len_ret,
-			  int ctype)
+typedef int (*compress_func_t)(const void *, unsigned, void *, unsigned *);
+
+compress_func_t get_compress_func(int out_ctype)
 {
-	compress_func_t compress = get_compress_func(ctype);
-	return (*compress)(chunk, chunk_size, compressed_chunk,
-			   compressed_chunk_len_ret);
+	if (out_ctype == WIM_COMPRESSION_TYPE_LZX)
+		return lzx_compress;
+	else
+		return xpress_compress;
 }
 
 /*
@@ -428,23 +178,17 @@ static int compress_chunk(const u8 chunk[], unsigned chunk_size,
  * Returns 0 on success; nonzero on failure.
  */
 static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
-				    FILE *out_fp, int out_ctype,
+				    FILE *out_fp, compress_func_t compress,
 				    struct chunk_table *chunk_tab)
 {
 	const u8 *out_chunk;
 	unsigned out_chunk_size;
-
-	wimlib_assert(chunk_size <= WIM_CHUNK_SIZE);
-
-	if (!chunk_tab) {
-		out_chunk = chunk;
-		out_chunk_size = chunk_size;
-	} else {
+	if (chunk_tab) {
 		u8 *compressed_chunk = alloca(chunk_size);
 		int ret;
 
-		ret = compress_chunk(chunk, chunk_size, compressed_chunk,
-				     &out_chunk_size, out_ctype);
+		ret = compress(chunk, chunk_size, compressed_chunk,
+			       &out_chunk_size);
 		if (ret == 0) {
 			out_chunk = compressed_chunk;
 		} else {
@@ -453,8 +197,10 @@ static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 		}
 		*chunk_tab->cur_offset_p++ = chunk_tab->cur_offset;
 		chunk_tab->cur_offset += out_chunk_size;
+	} else {
+		out_chunk = chunk;
+		out_chunk_size = chunk_size;
 	}
-
 	if (fwrite(out_chunk, 1, out_chunk_size, out_fp) != out_chunk_size) {
 		ERROR_WITH_ERRNO("Failed to write WIM resource chunk");
 		return WIMLIB_ERR_WRITE;
@@ -503,6 +249,8 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 	return 0;
 }
 
+/* Prepare for multiple reads to a resource by caching a FILE * or NTFS
+ * attribute pointer in the lookup table entry. */
 static int prepare_resource_for_read(struct lookup_table_entry *lte
 
 					#ifdef WITH_NTFS_3G
@@ -550,6 +298,8 @@ static int prepare_resource_for_read(struct lookup_table_entry *lte
 	return 0;
 }
 
+/* Undo prepare_resource_for_read() by closing the cached FILE * or NTFS
+ * attribute. */
 static void end_wim_resource_read(struct lookup_table_entry *lte
 				#ifdef WITH_NTFS_3G
 					, ntfs_inode *ni
@@ -608,6 +358,7 @@ int write_wim_resource(struct lookup_table_entry *lte,
 	struct chunk_table *chunk_tab = NULL;
 	bool raw;
 	off_t file_offset;
+	compress_func_t compress;
 #ifdef WITH_NTFS_3G
 	ntfs_inode *ni = NULL;
 #endif
@@ -673,13 +424,15 @@ int write_wim_resource(struct lookup_table_entry *lte,
 	 * hash given in the lookup table entry once we've finished reading the
 	 * resource. */
 	SHA_CTX ctx;
-	if (!raw)
+	if (!raw) {
 		sha1_init(&ctx);
+		compress = get_compress_func(out_ctype);
+	}
+	offset = 0;
 
 	/* While there are still bytes remaining in the WIM resource, read a
 	 * chunk of the resource, update SHA1, then write that chunk using the
 	 * desired compression type. */
-	offset = 0;
 	do {
 		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
 		ret = read_wim_resource(lte, buf, to_read, offset, flags);
@@ -688,7 +441,7 @@ int write_wim_resource(struct lookup_table_entry *lte,
 		if (!raw)
 			sha1_update(&ctx, buf, to_read);
 		ret = write_wim_resource_chunk(buf, to_read, out_fp,
-					       out_ctype, chunk_tab);
+					       compress, chunk_tab);
 		if (ret != 0)
 			goto out_fclose;
 		bytes_remaining -= to_read;
@@ -754,16 +507,10 @@ int write_wim_resource(struct lookup_table_entry *lte,
 					 out_res_entry, flags);
 		if (ret != 0)
 			goto out_fclose;
-		if (fflush(out_fp) != 0) {
-			ERROR_WITH_ERRNO("Failed to flush output WIM file");
-			ret = WIMLIB_ERR_WRITE;
+
+		ret = fflush_and_ftruncate(out_fp, file_offset + out_res_entry->size);
+		if (ret != 0)
 			goto out_fclose;
-		}
-		if (ftruncate(fileno(out_fp), file_offset + out_res_entry->size) != 0) {
-			ERROR_WITH_ERRNO("Failed to truncate output WIM file");
-			ret = WIMLIB_ERR_WRITE;
-			goto out_fclose;
-		}
 	} else {
 		if (out_res_entry) {
 			out_res_entry->size          = new_compressed_size;
@@ -786,7 +533,6 @@ out:
 	FREE(chunk_tab);
 	return ret;
 }
-
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 struct shared_queue {
@@ -846,13 +592,6 @@ static void *shared_queue_get(struct shared_queue *q)
 	sem_post(&q->empty_slots);
 	pthread_mutex_unlock(&q->lock);
 	return obj;
-}
-
-static inline int shared_queue_get_filled(struct shared_queue *q)
-{
-	int sval;
-	sem_getvalue(&q->filled_slots, &sval);
-	return sval;
 }
 
 struct compressor_thread_params {
@@ -976,7 +715,7 @@ static int write_wim_chunks(struct message *msg, FILE *out_fp,
 		if (fwrite(msg->out_compressed_chunks[i], 1, chunk_csize, out_fp)
 		    != chunk_csize)
 		{
-			ERROR_WITH_ERRNO("Failed to write WIM");
+			ERROR_WITH_ERRNO("Failed to write WIM chunk");
 			return WIMLIB_ERR_WRITE;
 		}
 
@@ -1465,7 +1204,6 @@ static int write_stream_list_parallel(struct list_head *stream_list,
 
 	wimlib_assert(stream_list->next != stream_list);
 
-
 	static const double MESSAGES_PER_THREAD = 2.0;
 	size_t queue_size = (size_t)(num_threads * MESSAGES_PER_THREAD);
 
@@ -1536,6 +1274,10 @@ out_serial:
 }
 #endif
 
+/*
+ * Write a list of streams to a WIM (@out_fp) using the compression type
+ * @out_ctype and up to @num_threads compressor threads.
+ */
 static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 			     int out_ctype, int write_flags,
 			     unsigned num_threads)
@@ -1597,7 +1339,7 @@ static int dentry_find_streams_to_write(struct dentry *dentry,
 	for (unsigned i = 0; i <= dentry->d_inode->num_ads; i++) {
 		lte = inode_stream_lte(dentry->d_inode, i, w->lookup_table);
 		if (lte && ++lte->out_refcnt == 1)
-			list_add(&lte->staging_list, stream_list);
+			list_add_tail(&lte->staging_list, stream_list);
 	}
 	return 0;
 }
@@ -1612,8 +1354,8 @@ static int write_wim_streams(WIMStruct *w, int image, int write_flags,
 			     unsigned num_threads)
 {
 
+	for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt, NULL);
 	LIST_HEAD(stream_list);
-
 	w->private = &stream_list;
 	for_image(w, image, find_streams_to_write);
 	return write_stream_list(&stream_list, w->out_fp,
@@ -1638,74 +1380,36 @@ int finish_write(WIMStruct *w, int image, int write_flags)
 	struct wim_header hdr;
 	FILE *out = w->out_fp;
 
-	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
-		/* Write the lookup table. */
-		lookup_table_offset = ftello(out);
-		if (lookup_table_offset == -1)
-			return WIMLIB_ERR_WRITE;
-
-		DEBUG("Writing lookup table (offset %"PRIu64")",
-		      lookup_table_offset);
-		ret = write_lookup_table(w->lookup_table, out);
-		if (ret != 0)
-			return ret;
-	}
-
-	xml_data_offset = ftello(out);
-	if (xml_data_offset == -1)
-		return WIMLIB_ERR_WRITE;
-
 	/* @hdr will be the header for the new WIM.  First copy all the data
 	 * from the header in the WIMStruct; then set all the fields that may
 	 * have changed, including the resource entries, boot index, and image
 	 * count.  */
 	memcpy(&hdr, &w->hdr, sizeof(struct wim_header));
-	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
-		lookup_table_size = xml_data_offset - lookup_table_offset;
-		hdr.lookup_table_res_entry.offset = lookup_table_offset;
-		hdr.lookup_table_res_entry.size = lookup_table_size;
-	}
-	hdr.lookup_table_res_entry.original_size = hdr.lookup_table_res_entry.size;
-	hdr.lookup_table_res_entry.flags = WIM_RESHDR_FLAG_METADATA;
 
-	DEBUG("Writing XML data (offset %"PRIu64")", xml_data_offset);
+	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
+		ret = write_lookup_table(w->lookup_table, out, &hdr.lookup_table_res_entry);
+		if (ret != 0)
+			goto out;
+	}
+
 	ret = write_xml_data(w->wim_info, image, out,
 			     (write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE) ?
-			     	wim_info_get_total_bytes(w->wim_info) : 0);
+			      wim_info_get_total_bytes(w->wim_info) : 0,
+			     &hdr.xml_res_entry);
 	if (ret != 0)
-		return ret;
-
-	integrity_offset = ftello(out);
-	if (integrity_offset == -1)
-		return WIMLIB_ERR_WRITE;
-	xml_data_size = integrity_offset - xml_data_offset;
-
-	hdr.xml_res_entry.offset        = xml_data_offset;
-	hdr.xml_res_entry.size          = xml_data_size;
-	hdr.xml_res_entry.original_size = xml_data_size;
-	hdr.xml_res_entry.flags         = WIM_RESHDR_FLAG_METADATA;
+		goto out;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
-		ret = write_integrity_table(out, WIM_HEADER_DISK_SIZE,
-					    xml_data_offset,
-					    write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS);
+		ret = write_integrity_table(out,
+					    WIM_HEADER_DISK_SIZE,
+					    hdr.xml_res_entry.offset,
+					    write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS,
+					    &hdr.integrity);
 		if (ret != 0)
-			return ret;
-		end_offset = ftello(out);
-		if (end_offset == -1)
-			return WIMLIB_ERR_WRITE;
-		integrity_size              = end_offset - integrity_offset;
-		hdr.integrity.offset        = integrity_offset;
-		hdr.integrity.size          = integrity_size;
-		hdr.integrity.original_size = integrity_size;
+			goto out;
 	} else {
-		hdr.integrity.offset        = 0;
-		hdr.integrity.size          = 0;
-		hdr.integrity.original_size = 0;
+		memset(&hdr.integrity, 0, sizeof(struct resource_entry));
 	}
-	hdr.integrity.flags = 0;
-
-	DEBUG("Updating WIM header.");
 
 	/*
 	 * In the WIM header, there is room for the resource entry for a
@@ -1734,59 +1438,55 @@ int finish_write(WIMStruct *w, int image, int write_flags)
 			hdr.boot_idx = 0;
 	}
 
-
-	if (fseeko(out, 0, SEEK_SET) != 0)
-		return WIMLIB_ERR_WRITE;
+	if (fseeko(out, 0, SEEK_SET) != 0) {
+		ret = WIMLIB_ERR_WRITE;
+		ERROR_WITH_ERRNO("Failed to seek to beginning of WIM "
+				 "to overwrite header");
+		goto out;
+	}
 
 	ret = write_header(&hdr, out);
 	if (ret != 0)
-		return ret;
+		goto out;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
-		DEBUG("fsync output WIM file");
 		if (fflush(out) != 0
 		    || fsync(fileno(out)) != 0)
 		{
 			ERROR_WITH_ERRNO("Error flushing data to WIM file");
 			ret = WIMLIB_ERR_WRITE;
+			goto out;
 		}
 	}
 
-	DEBUG("Closing output WIM file.");
-
+out:
 	if (fclose(out) != 0) {
 		ERROR_WITH_ERRNO("Failed to close the WIM file");
-		ret = WIMLIB_ERR_WRITE;
+		if (ret == 0)
+			ret = WIMLIB_ERR_WRITE;
 	}
 	w->out_fp = NULL;
 	return ret;
 }
 
+static void close_wim_writable(WIMStruct *w)
+{
+	if (w->out_fp) {
+		if (fclose(w->out_fp) != 0) {
+			WARNING("Failed to close output WIM: %s",
+				strerror(errno));
+		}
+		w->out_fp = NULL;
+	}
+}
+
 /* Open file stream and write dummy header for WIM. */
 int begin_write(WIMStruct *w, const char *path, int write_flags)
 {
-	const char *mode;
-	DEBUG("Opening `%s' for new WIM", path);
-
-	/* checking the integrity requires going back over the file to read it.
-	 * XXX
-	 * (It also would be possible to keep a running sha1sum as the file is
-	 * written-- this would be faster, but a bit more complicated) */
-	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
-		mode = "w+b";
-	else
-		mode = "wb";
-
-	if (w->out_fp)
-		fclose(w->out_fp);
-
-	w->out_fp = fopen(path, mode);
-	if (!w->out_fp) {
-		ERROR_WITH_ERRNO("Failed to open the file `%s' for writing",
-				 path);
-		return WIMLIB_ERR_OPEN;
-	}
-
+	int ret;
+	ret = open_wim_writable(w, path);
+	if (ret != 0)
+		return ret;
 	/* Write dummy header. It will be overwritten later. */
 	return write_header(&w->hdr, w->out_fp);
 }
@@ -1806,8 +1506,6 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 	     (image < 1 || image > w->hdr.image_count))
 		return WIMLIB_ERR_INVALID_IMAGE;
 
-
-
 	if (w->hdr.total_parts != 1) {
 		ERROR("Cannot call wimlib_write() on part of a split WIM");
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
@@ -1820,32 +1518,253 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 
 	ret = begin_write(w, path, write_flags);
 	if (ret != 0)
-		return ret;
-
-	for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt, NULL);
+		goto out;
 
 	ret = write_wim_streams(w, image, write_flags, num_threads);
-
-	if (ret != 0) {
-		/*ERROR("Failed to write WIM file resources to `%s'", path);*/
-		return ret;
-	}
+	if (ret != 0)
+		goto out;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
 		printf("Writing image metadata...\n");
 
 	ret = for_image(w, image, write_metadata_resource);
-
-	if (ret != 0) {
-		/*ERROR("Failed to write WIM image metadata to `%s'", path);*/
-		return ret;
-	}
+	if (ret != 0)
+		goto out;
 
 	ret = finish_write(w, image, write_flags);
+	if (ret == 0 && (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS))
+		printf("Successfully wrote `%s'\n", path);
+out:
+	close_wim_writable(w);
+	return ret;
+}
+
+static int lte_overwrite_prepare(struct lookup_table_entry *lte,
+				 void *ignore)
+{
+	memcpy(&lte->output_resource_entry, &lte->resource_entry,
+	       sizeof(struct resource_entry));
+	lte->out_refcnt = 0;
+	return 0;
+}
+
+static int check_resource_offset(struct lookup_table_entry *lte, void *arg)
+{
+	u64 xml_data_offset = *(u64*)arg;
+
+	wimlib_assert(lte->out_refcnt <= lte->refcnt);
+	if (lte->out_refcnt < lte->refcnt) {
+		if (lte->resource_entry.offset > xml_data_offset) {
+			ERROR("The following resource is after the XML data:");
+			print_lookup_table_entry(lte);
+			return WIMLIB_ERR_RESOURCE_ORDER;
+		}
+	}
+	return 0;
+}
+
+static int find_new_streams(struct lookup_table_entry *lte, void *arg)
+{
+	wimlib_assert(lte->out_refcnt <= lte->refcnt);
+	if (lte->out_refcnt == lte->refcnt)
+		list_add(&lte->staging_list, (struct list_head*)arg);
+	else
+		lte->out_refcnt = lte->refcnt;
+	return 0;
+}
+
+static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
+				 unsigned num_threads,
+				 int modified_image_idx)
+{
+	int ret;
+	struct list_head stream_list;
+	off_t old_wim_end;
+
+	DEBUG("Overwriting `%s' in-place", w->filename);
+
+	/* Make sure that the integrity table (if present) is after the XML
+	 * data, and that there are no stream resources, metadata resources, or
+	 * lookup tables after the XML data.  Otherwise, these data would be
+	 * overwritten. */
+	if (w->hdr.integrity.offset != 0 &&
+	    w->hdr.integrity.offset < w->hdr.xml_res_entry.offset) {
+		ERROR("Didn't expect the integrity table to be before the XML data");
+		return WIMLIB_ERR_RESOURCE_ORDER;
+	}
+
+	if (w->hdr.lookup_table_res_entry.offset > w->hdr.xml_res_entry.offset) {
+		ERROR("Didn't expect the lookup table to be after the XML data");
+		return WIMLIB_ERR_RESOURCE_ORDER;
+	}
+
+	DEBUG("Identifying newly added streams");
+	for_lookup_table_entry(w->lookup_table, lte_overwrite_prepare, NULL);
+	INIT_LIST_HEAD(&stream_list);
+	for (int i = modified_image_idx; i < w->hdr.image_count; i++) {
+		DEBUG("Identifiying streams in image %d", i + 1);
+		wimlib_assert(w->image_metadata[i].modified);
+		wimlib_assert(!w->image_metadata[i].has_been_mounted_rw);
+		wimlib_assert(w->image_metadata[i].root_dentry != NULL);
+		w->private = &stream_list;
+		for_dentry_in_tree(w->image_metadata[i].root_dentry,
+				   dentry_find_streams_to_write, w);
+	}
+
+	ret = for_lookup_table_entry(w->lookup_table, check_resource_offset,
+				     &w->hdr.xml_res_entry.offset);
 	if (ret != 0)
 		return ret;
 
+	INIT_LIST_HEAD(&stream_list);
+	for_lookup_table_entry(w->lookup_table, find_new_streams,
+			       &stream_list);
+
+	if (w->hdr.integrity.offset)
+		old_wim_end = w->hdr.integrity.offset + w->hdr.integrity.size;
+	else
+		old_wim_end = w->hdr.xml_res_entry.offset + w->hdr.xml_res_entry.size;
+
+	ret = open_wim_writable(w, w->filename);
+	if (ret != 0)
+		return ret;
+
+	if (fseeko(w->out_fp, old_wim_end, SEEK_SET) != 0) {
+		ERROR_WITH_ERRNO("Can't seek to end of WIM");
+		return WIMLIB_ERR_WRITE;
+	}
+
+	if (!list_empty(&stream_list)) {
+		DEBUG("Writing newly added streams (offset = %"PRIu64")",
+		      old_wim_end);
+		ret = write_stream_list(&stream_list, w->out_fp,
+					wimlib_get_compression_type(w),
+					write_flags, num_threads);
+		if (ret != 0)
+			goto out_ftruncate;
+	} else {
+		DEBUG("No new streams were added");
+	}
+
+	for (int i = modified_image_idx; i < w->hdr.image_count; i++) {
+		wimlib_assert(w->image_metadata[i].modified);
+		wimlib_assert(!w->image_metadata[i].has_been_mounted_rw);
+		wimlib_assert(w->image_metadata[i].root_dentry != NULL);
+		wimlib_assert(w->image_metadata[i].metadata_lte != NULL);
+		ret = select_wim_image(w, i + 1);
+		wimlib_assert(ret == 0);
+		ret = write_metadata_resource(w);
+		if (ret != 0)
+			goto out_ftruncate;
+	}
+	ret = finish_write(w, WIM_ALL_IMAGES, write_flags);
+out_ftruncate:
+	close_wim_writable(w);
+	if (ret != 0) {
+		WARNING("Truncating `%s' to its original size (%"PRIu64" bytes)",
+			w->filename, old_wim_end);
+		truncate(w->filename, old_wim_end);
+	}
+	return ret;
+}
+
+static int overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
+				     unsigned num_threads)
+{
+	size_t wim_name_len;
+	int ret;
+
+	DEBUG("Overwrining `%s' via a temporary file", w->filename);
+
+	/* Write the WIM to a temporary file in the same directory as the
+	 * original WIM. */
+	wim_name_len = strlen(w->filename);
+	char tmpfile[wim_name_len + 10];
+	memcpy(tmpfile, w->filename, wim_name_len);
+	randomize_char_array_with_alnum(tmpfile + wim_name_len, 9);
+	tmpfile[wim_name_len + 9] = '\0';
+
+	ret = wimlib_write(w, tmpfile, WIM_ALL_IMAGES,
+			   write_flags | WIMLIB_WRITE_FLAG_FSYNC,
+			   num_threads);
+	if (ret != 0) {
+		ERROR("Failed to write the WIM file `%s'", tmpfile);
+		goto err;
+	}
+
+	/* Close the original WIM file that was opened for reading. */
+	if (w->fp != NULL) {
+		fclose(w->fp);
+		w->fp = NULL;
+	}
+
+	DEBUG("Renaming `%s' to `%s'", tmpfile, w->filename);
+
+	/* Rename the new file to the old file .*/
+	if (rename(tmpfile, w->filename) != 0) {
+		ERROR_WITH_ERRNO("Failed to rename `%s' to `%s'",
+				 tmpfile, w->filename);
+		ret = WIMLIB_ERR_RENAME;
+		goto err;
+	}
+
 	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
-		printf("Successfully wrote `%s'\n", path);
-	return 0;
+		printf("Successfully renamed `%s' to `%s'\n", tmpfile, w->filename);
+
+	/* Re-open the WIM read-only. */
+	w->fp = fopen(w->filename, "rb");
+	if (w->fp == NULL) {
+		ret = WIMLIB_ERR_REOPEN;
+		WARNING("Failed to re-open `%s' read-only: %s",
+			w->filename, strerror(errno));
+	}
+	return ret;
+err:
+	/* Remove temporary file. */
+	if (unlink(tmpfile) != 0)
+		WARNING("Failed to remove `%s': %s", tmpfile, strerror(errno));
+	return ret;
+}
+
+/*
+ * Writes a WIM file to the original file that it was read from, overwriting it.
+ */
+WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
+			       unsigned num_threads)
+{
+	int ret;
+
+	if (!w)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	write_flags &= ~WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE;
+	if (!w->filename)
+		return WIMLIB_ERR_NO_FILENAME;
+
+	if (w->hdr.total_parts != 1) {
+		ERROR("Cannot modify a split WIM");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
+
+	if (!w->deletion_occurred && !(write_flags & WIMLIB_WRITE_FLAG_REBUILD)) {
+		int i, modified_image_idx;
+		for (i = 0; i < w->hdr.image_count && !w->image_metadata[i].modified; i++)
+			;
+		modified_image_idx = i;
+		for (; i < w->hdr.image_count && w->image_metadata[i].modified &&
+			!w->image_metadata[i].has_been_mounted_rw; i++)
+			;
+		// XXX
+		/*if (i == w->hdr.image_count) {*/
+			/*return overwrite_wim_inplace(w, write_flags, num_threads,*/
+						     /*modified_image_idx);*/
+		/*}*/
+	}
+	return overwrite_wim_via_tmpfile(w, write_flags, num_threads);
+}
+
+/* Deprecated */
+WIMLIBAPI int wimlib_overwrite_xml_and_header(WIMStruct *wim, int write_flags)
+{
+	return wimlib_overwrite(wim, write_flags, 1);
 }

@@ -55,11 +55,9 @@ struct inode;
  * yet.  The differences between the versions are undocumented. */
 #define WIM_VERSION 0x10d00
 
-enum wim_integrity_status {
-	WIM_INTEGRITY_OK,
-	WIM_INTEGRITY_NOT_OK,
-	WIM_INTEGRITY_NONEXISTENT,
-};
+#define WIM_INTEGRITY_OK 0
+#define WIM_INTEGRITY_NOT_OK -1
+#define WIM_INTEGRITY_NONEXISTENT -2
 
 /* Metadata for a resource in a WIM file. */
 struct resource_entry {
@@ -249,8 +247,9 @@ struct image_metadata {
 	/* True if the filesystem of the image has been modified.  If this is
 	 * the case, the memory for the filesystem is not freed when switching
 	 * to a different WIM image. */
-	bool modified;
+	u8 modified : 1;
 
+	u8 has_been_mounted_rw : 1;
 };
 
 #define WIMLIB_RESOURCE_FLAG_RAW		0x1
@@ -260,43 +259,40 @@ struct image_metadata {
 typedef struct WIMStruct {
 
 	/* A pointer to the file indicated by @filename, opened for reading. */
-	FILE  *fp;
+	FILE *fp;
 
 #ifdef WITH_FUSE
+	/* Extra file pointers to be used by concurrent readers */
 	FILE **fp_tab;
 	size_t num_allocated_fps;
 	pthread_mutex_t fp_tab_mutex;
 #endif
 
 	/* FILE pointer for the WIM file that is being written. */
-	FILE  *out_fp;
+	FILE *out_fp;
 
 	/* The name of the WIM file that has been opened. */
-	char  *filename;
+	char *filename;
 
 	/* The lookup table for the WIM file. */
 	struct lookup_table *lookup_table;
 
 	/* Pointer to the XML data read from the WIM file. */
-	u8    *xml_data;
+	u8 *xml_data;
 
 	/* Information retrieved from the XML data, arranged
 	 * in an orderly manner. */
-	struct wim_info      *wim_info;
+	struct wim_info *wim_info;
 
 	/* Array of the image metadata of length image_count.  Each image in the
 	 * WIM has a image metadata associated with it. */
-	struct image_metadata     *image_metadata;
+	struct image_metadata *image_metadata;
 
 	/* The header of the WIM file. */
-	struct wim_header    hdr;
+	struct wim_header hdr;
 
-	/* Temporary flags to use when extracting a WIM image or adding a WIM
-	 * image. */
+	/* Temporary fields */
 	union {
-		int extract_flags;
-		int add_flags;
-		int write_flags;
 		bool write_metadata;
 		void *private;
 	};
@@ -309,6 +305,7 @@ typedef struct WIMStruct {
 	 * image_metadata array. */
 	int current_image;
 
+	/* %true iff any images have been deleted from this WIM. */
 	bool deletion_occurred;
 } WIMStruct;
 
@@ -407,8 +404,10 @@ extern int init_header(struct wim_header *hdr, int ctype);
 /* integrity.c */
 extern int write_integrity_table(FILE *out, u64 end_header_offset,
 				 u64 end_lookup_table_offset,
-				 int show_progress);
-extern int check_wim_integrity(WIMStruct *w, int show_progress, int *status);
+				 int show_progress,
+				 struct resource_entry *out_res_entry);
+
+extern int check_wim_integrity(WIMStruct *w, int show_progress);
 
 /* join.c */
 
@@ -492,6 +491,8 @@ extern WIMStruct *new_wim_struct();
 extern int select_wim_image(WIMStruct *w, int image);
 extern int wim_hdr_flags_compression_type(int wim_hdr_flags);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
+extern int open_wim_readable(WIMStruct *w, const char *path);
+extern int open_wim_writable(WIMStruct *w, const char *path);
 
 /* Internal use only */
 #define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE 0x80000000

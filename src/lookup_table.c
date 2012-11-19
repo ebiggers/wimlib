@@ -365,6 +365,14 @@ int read_lookup_table(WIMStruct *w)
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 			goto out_free_cur_entry;
 		}
+		if ((cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
+		    && cur_entry->refcnt != 1)
+		{
+			ERROR("Found metadata resource with refcnt != 1:");
+			print_lookup_table_entry(cur_entry);
+			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+			goto out_free_cur_entry;
+		}
 		lookup_table_insert(table, cur_entry);
 
 	}
@@ -407,6 +415,33 @@ int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out)
 		ERROR_WITH_ERRNO("Failed to write lookup table entry");
 		return WIMLIB_ERR_WRITE;
 	}
+	return 0;
+}
+
+/* Writes the lookup table to the output file. */
+int write_lookup_table(struct lookup_table *table, FILE *out,
+		       struct resource_entry *out_res_entry)
+{
+	off_t start_offset, end_offset;
+	int ret;
+
+	start_offset = ftello(out);
+	if (start_offset == -1)
+		return WIMLIB_ERR_WRITE;
+
+	ret = for_lookup_table_entry(table, write_lookup_table_entry, out);
+	if (ret != 0)
+		return ret;
+
+	end_offset = ftello(out);
+	if (end_offset == -1)
+		return WIMLIB_ERR_WRITE;
+
+	out_res_entry->offset        = start_offset;
+	out_res_entry->size          = end_offset - start_offset;
+	out_res_entry->original_size = end_offset - start_offset;
+	out_res_entry->flags         = WIM_RESHDR_FLAG_METADATA;
+
 	return 0;
 }
 

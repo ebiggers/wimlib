@@ -252,7 +252,9 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 	 * table has no header, we can just concatenate the lookup tables of all
 	 * the SWM parts. */
 	for (i = 0; i < num_swms; i++) {
-		ret = write_lookup_table(swms[i]->lookup_table, out_fp);
+		ret = for_lookup_table_entry(swms[i]->lookup_table,
+					     write_lookup_table_entry,
+					     out_fp);
 		if (ret != 0)
 			return ret;
 	}
@@ -265,6 +267,10 @@ static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
 	swms[0]->hdr.lookup_table_res_entry.offset = lookup_table_offset;
 	swms[0]->hdr.lookup_table_res_entry.size =
 					xml_data_offset - lookup_table_offset;
+	swms[0]->hdr.lookup_table_res_entry.original_size =
+					xml_data_offset - lookup_table_offset;
+	swms[0]->hdr.lookup_table_res_entry.flags =
+					WIM_RESHDR_FLAG_METADATA;
 
 
 	/* finish_write is called on the first swm, not the joined_wim, because

@@ -1287,7 +1287,7 @@ out_cleanup_parser:
  * the offset of the XML data.
  */
 int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
-		   u64 total_bytes)
+		   u64 total_bytes, struct resource_entry *out_res_entry)
 {
 	xmlBuffer     *buf;
 	xmlTextWriter *writer;
@@ -1297,10 +1297,15 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	size_t len;
 	size_t utf16_len;
 	size_t bytes_written;
+	off_t start_offset, end_offset;
 
 	wimlib_assert(image == WIM_ALL_IMAGES ||
 			(wim_info != NULL && image >= 1 &&
 			 image <= wim_info->num_images));
+
+	start_offset = ftello(out);
+	if (start_offset == -1)
+		return WIMLIB_ERR_WRITE;
 
 	/* The contents of the <TOTALBYTES> element in the XML data, under the
 	 * <WIM> element not the <IMAGE> element, is (for non-spit WIMs) the
@@ -1390,6 +1395,16 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 
 	DEBUG("Cleaning up.");
 
+	end_offset = ftello(out);
+	if (end_offset == -1) {
+		ret = WIMLIB_ERR_WRITE;
+		goto out_free_utf16_str;
+	}
+
+	out_res_entry->offset        = start_offset;
+	out_res_entry->size          = end_offset - start_offset;
+	out_res_entry->original_size = end_offset - start_offset;
+	out_res_entry->flags         = WIM_RESHDR_FLAG_METADATA;
 	ret = 0;
 out_free_utf16_str:
 	FREE(utf16_str);

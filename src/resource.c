@@ -810,6 +810,8 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 		goto out_free_security_data;
 	}
 
+	DEBUG("Reading root dentry");
+
 	/* Allocate memory for the root dentry and read it into memory */
 	dentry = MALLOC(sizeof(struct dentry));
 	if (!dentry) {
@@ -821,11 +823,18 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 
 	ret = read_dentry(buf, metadata_len, dentry_offset, dentry);
 
-	/* This is the root dentry, so set its parent to itself. */
-	dentry->parent = dentry;
+
+	if (dentry->length == 0) {
+		ERROR("Metadata resource cannot begin with end-of-directory entry!");
+		ret = WIMLIB_ERR_INVALID_DENTRY;
+	}
 
 	if (ret != 0)
 		goto out_free_dentry_tree;
+
+	/* This is the root dentry, so set its parent to itself. */
+	dentry->parent = dentry;
+
 	inode_add_dentry(dentry, dentry->d_inode);
 
 	/* Now read the entire directory entry tree into memory. */
@@ -892,11 +901,6 @@ int write_metadata_resource(WIMStruct *w)
 	root = wim_root_dentry(w);
 	sd = wim_security_data(w);
 
-	/* We do not allow the security data pointer to be NULL, although it may
-	 * point to an empty security data with no entries. */
-	wimlib_assert(root != NULL);
-	wimlib_assert(sd != NULL);
-
 	/* Offset of first child of the root dentry.  It's equal to:
 	 * - The total length of the security data, rounded to the next 8-byte
 	 *   boundary,
@@ -904,7 +908,7 @@ int write_metadata_resource(WIMStruct *w)
 	 * - plus 8 bytes for an end-of-directory entry following the root
 	 *   dentry (shouldn't really be needed, but just in case...)
 	 */
-	subdir_offset = ((sd->total_length + 7) & ~7) +
+	subdir_offset = (((u64)sd->total_length + 7) & ~7) +
 			dentry_correct_total_length(root) + 8;
 
 	/* Calculate the subdirectory offsets for the entire dentry tree. */
@@ -935,8 +939,6 @@ int write_metadata_resource(WIMStruct *w)
 	 * it. */
 	lte = wim_metadata_lookup_table_entry(w);
 
-	wimlib_assert(lte != NULL);
-
 	/* Write the metadata resource to the output WIM using the proper
 	 * compression type.  The lookup table entry for the metadata resource
 	 * is updated. */
@@ -960,12 +962,10 @@ int write_metadata_resource(WIMStruct *w)
 	 * */
 	lookup_table_unlink(w->lookup_table, lte);
 	lookup_table_insert(w->lookup_table, lte);
-
-	wimlib_assert(lte->out_refcnt == 0);
 	lte->out_refcnt = 1;
 
-	/* Make sure that the resource entry is written marked with the metadata
-	 * flag. */
+	/* Make sure that the lookup table entry for this metadata resource is
+	 * marked with the metadata flag. */
 	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
 out:
 	/* All the data has been written to the new WIM; no need for the buffer

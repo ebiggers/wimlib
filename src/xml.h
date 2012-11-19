@@ -34,7 +34,7 @@ extern int read_xml_data(FILE *fp, const struct resource_entry *res,
 			 u8 **xml_data_ret, struct wim_info **info_ret);
 
 extern int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
-			  u64 total_bytes);
+			  u64 total_bytes, struct resource_entry *out_res_entry);
 
 static inline u64 wim_info_get_total_bytes(const struct wim_info *info)
 {
