@@ -269,6 +269,9 @@ enum wim_compression_type {
 /** Print file paths as we write then */
 #define WIMLIB_WRITE_FLAG_VERBOSE		0x00000004
 
+/** Call fsync() when the WIM file is closed */
+#define WIMLIB_WRITE_FLAG_FSYNC			0x00000008
+
 /** Mark the image being added as the bootable image of the WIM. */
 #define WIMLIB_ADD_IMAGE_FLAG_BOOT		0x00000001
 

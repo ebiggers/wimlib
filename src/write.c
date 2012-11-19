@@ -80,7 +80,6 @@ static int reopen_rw(WIMStruct *w)
 WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
 			       unsigned num_threads)
 {
-	const char *wimfile_name;
 	size_t wim_name_len;
 	int ret;
 
@@ -88,23 +87,21 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	write_flags &= ~WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE;
-
-	wimfile_name = w->filename;
-
-	DEBUG("Replacing WIM file `%s'.", wimfile_name);
-
-	if (!wimfile_name)
+	if (!w->filename)
 		return WIMLIB_ERR_NO_FILENAME;
+
+	DEBUG("Replacing WIM file `%s'.", w->filename);
 
 	/* Write the WIM to a temporary file. */
 	/* XXX should the temporary file be somewhere else? */
-	wim_name_len = strlen(wimfile_name);
+	wim_name_len = strlen(w->filename);
 	char tmpfile[wim_name_len + 10];
-	memcpy(tmpfile, wimfile_name, wim_name_len);
+	memcpy(tmpfile, w->filename, wim_name_len);
 	randomize_char_array_with_alnum(tmpfile + wim_name_len, 9);
 	tmpfile[wim_name_len + 9] = '\0';
 
-	ret = wimlib_write(w, tmpfile, WIM_ALL_IMAGES, write_flags,
+	ret = wimlib_write(w, tmpfile, WIM_ALL_IMAGES,
+			   write_flags | WIMLIB_WRITE_FLAG_FSYNC,
 			   num_threads);
 	if (ret != 0) {
 		ERROR("Failed to write the WIM file `%s'", tmpfile);
@@ -117,27 +114,30 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
 	/* Close the original WIM file that was opened for reading. */
 	if (w->fp) {
 		if (fclose(w->fp) != 0) {
-			WARNING("Failed to close the file `%s'", wimfile_name);
+			WARNING("Failed to close the file `%s'", w->filename);
 		}
 		w->fp = NULL;
 	}
 
-	DEBUG("Renaming `%s' to `%s'", tmpfile, wimfile_name);
+	DEBUG("Renaming `%s' to `%s'", tmpfile, w->filename);
 
 	/* Rename the new file to the old file .*/
-	if (rename(tmpfile, wimfile_name) != 0) {
+	if (rename(tmpfile, w->filename) != 0) {
 		ERROR_WITH_ERRNO("Failed to rename `%s' to `%s'",
-				 tmpfile, wimfile_name);
-		/* Remove temporary file. */
-		if (unlink(tmpfile) != 0)
-			ERROR_WITH_ERRNO("Failed to remove `%s'", tmpfile);
-		return WIMLIB_ERR_RENAME;
+				 tmpfile, w->filename);
+		ret = WIMLIB_ERR_RENAME;
+		goto err;
 	}
 
 	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
-		printf("Successfully renamed `%s' to `%s'\n", tmpfile, wimfile_name);
+		printf("Successfully renamed `%s' to `%s'\n", tmpfile, w->filename);
 
 	return 0;
+err:
+	/* Remove temporary file. */
+	if (unlink(tmpfile) != 0)
+		ERROR_WITH_ERRNO("Failed to remove `%s'", tmpfile);
+	return ret;
 }
 
 static int check_resource_offset(struct lookup_table_entry *lte, void *arg)
@@ -1742,9 +1742,19 @@ int finish_write(WIMStruct *w, int image, int write_flags)
 	if (ret != 0)
 		return ret;
 
-	DEBUG("Closing output file.");
-	wimlib_assert(w->out_fp != NULL);
-	if (fclose(w->out_fp) != 0) {
+	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
+		DEBUG("fsync output WIM file");
+		if (fflush(out) != 0
+		    || fsync(fileno(out)) != 0)
+		{
+			ERROR_WITH_ERRNO("Error flushing data to WIM file");
+			ret = WIMLIB_ERR_WRITE;
+		}
+	}
+
+	DEBUG("Closing output WIM file.");
+
+	if (fclose(out) != 0) {
 		ERROR_WITH_ERRNO("Failed to close the WIM file");
 		ret = WIMLIB_ERR_WRITE;
 	}
@@ -1795,6 +1805,7 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 	if (image != WIM_ALL_IMAGES &&
 	     (image < 1 || image > w->hdr.image_count))
 		return WIMLIB_ERR_INVALID_IMAGE;
+
 
 
 	if (w->hdr.total_parts != 1) {

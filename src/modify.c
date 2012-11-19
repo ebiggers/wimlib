@@ -700,6 +700,8 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 
 	/* Remove the image from the XML information. */
 	xml_delete_image(&w->wim_info, image);
+
+	w->deletion_occurred = true;
 	return 0;
 }
 

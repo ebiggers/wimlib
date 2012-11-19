@@ -428,7 +428,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 
 	w->filename = realpath(in_wim_path, NULL);
 	if (!w->filename) {
-		ERROR("Failed to allocate memory for WIM filename");
+		ERROR_WITH_ERRNO("Failed to resolve WIM filename");
 		return WIMLIB_ERR_NOMEM;
 	}
 

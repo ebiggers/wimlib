@@ -308,6 +308,8 @@ typedef struct WIMStruct {
 	 * subtract 1 from this to get the index of the current image in the
 	 * image_metadata array. */
 	int current_image;
+
+	bool deletion_occurred;
 } WIMStruct;
 
 
