@@ -209,7 +209,7 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 {
 	s64 pos = 0;
 	s64 bytes_remaining;
-	char buf[4096];
+	char buf[BUFFER_SIZE];
 	ntfs_attr *na;
 	SHA_CTX ctx;
 

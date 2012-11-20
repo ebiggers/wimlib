@@ -288,14 +288,6 @@ extern int dentry_unresolve_ltes(struct dentry *dentry, void *ignore);
 int write_lookup_table(struct lookup_table *table, FILE *out,
 		       struct resource_entry *out_res_entry);
 
-/* Unlinks and frees an entry from a lookup table. */
-static inline void lookup_table_remove(struct lookup_table *table,
-				       struct lookup_table_entry *lte)
-{
-	lookup_table_unlink(table, lte);
-	free_lookup_table_entry(lte);
-}
-
 static inline struct resource_entry* wim_metadata_resource_entry(WIMStruct *w)
 {
 	return &w->image_metadata[

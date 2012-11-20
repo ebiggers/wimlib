@@ -823,17 +823,18 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 
 	ret = read_dentry(buf, metadata_len, dentry_offset, dentry);
 
+	/* This is the root dentry, so set its parent to itself. */
+	dentry->parent = dentry;
 
-	if (dentry->length == 0) {
+	if (ret == 0 && dentry->length == 0) {
 		ERROR("Metadata resource cannot begin with end-of-directory entry!");
 		ret = WIMLIB_ERR_INVALID_DENTRY;
 	}
 
-	if (ret != 0)
-		goto out_free_dentry_tree;
-
-	/* This is the root dentry, so set its parent to itself. */
-	dentry->parent = dentry;
+	if (ret != 0) {
+		FREE(dentry);
+		goto out_free_security_data;
+	}
 
 	inode_add_dentry(dentry, dentry->d_inode);
 
@@ -896,7 +897,8 @@ int write_metadata_resource(WIMStruct *w)
 	u64 metadata_original_size;
 	const struct wim_security_data *sd;
 
-	DEBUG("Writing metadata resource for image %d", w->current_image);
+	DEBUG("Writing metadata resource for image %d (offset = %"PRIu64")",
+	      w->current_image, ftello(w->out_fp));
 
 	root = wim_root_dentry(w);
 	sd = wim_security_data(w);

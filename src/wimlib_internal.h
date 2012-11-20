@@ -402,12 +402,12 @@ extern int write_header(const struct wim_header *hdr, FILE *out);
 extern int init_header(struct wim_header *hdr, int ctype);
 
 /* integrity.c */
-extern int write_integrity_table(FILE *out, u64 end_header_offset,
-				 u64 end_lookup_table_offset,
-				 int show_progress,
-				 struct resource_entry *out_res_entry);
-
-extern int check_wim_integrity(WIMStruct *w, int show_progress);
+extern int write_integrity_table(FILE *out,
+				 struct resource_entry *integrity_res_entry,
+				 off_t new_lookup_table_end,
+				 off_t old_lookup_table_end,
+				 bool show_progress);
+extern int check_wim_integrity(WIMStruct *w, bool show_progress);
 
 /* join.c */
 
@@ -492,10 +492,14 @@ extern int select_wim_image(WIMStruct *w, int image);
 extern int wim_hdr_flags_compression_type(int wim_hdr_flags);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 extern int open_wim_readable(WIMStruct *w, const char *path);
-extern int open_wim_writable(WIMStruct *w, const char *path);
+extern int open_wim_writable(WIMStruct *w, const char *path,
+			     bool trunc, bool readable);
 
 /* Internal use only */
-#define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE 0x80000000
+#define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE	0x80000000
+#define WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE 0x40000000
+
+#define WIMLIB_WRITE_MASK_PUBLIC		0x3fffffff
 
 /* write.c */
 extern int begin_write(WIMStruct *w, const char *path, int write_flags);

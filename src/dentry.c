@@ -1037,9 +1037,8 @@ static int do_free_dentry(struct dentry *dentry, void *__lookup_table)
  */
 void free_dentry_tree(struct dentry *root, struct lookup_table *lookup_table)
 {
-	if (!root || !root->parent)
-		return;
-	for_dentry_in_tree_depth(root, do_free_dentry, lookup_table);
+	if (root)
+		for_dentry_in_tree_depth(root, do_free_dentry, lookup_table);
 }
 
 int increment_dentry_refcnt(struct dentry *dentry, void *ignore)
@@ -1819,9 +1818,7 @@ int read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 			break;
 		}
 		memcpy(child, &cur_child, sizeof(struct dentry));
-
 		dentry_add_child(dentry, child);
-
 		inode_add_dentry(child, child->d_inode);
 
 		/* If there are children of this child, call this procedure

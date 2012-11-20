@@ -328,17 +328,17 @@ void print_security_data(const struct wim_security_data *sd)
 
 void free_security_data(struct wim_security_data *sd)
 {
-	if (!sd)
-		return;
-	wimlib_assert(sd->refcnt != 0);
-	if (--sd->refcnt == 0) {
-		u8 **descriptors = sd->descriptors;
-		u32 num_entries  = sd->num_entries;
-		if (descriptors)
-			while (num_entries--)
-				FREE(*descriptors++);
-		FREE(sd->sizes);
-		FREE(sd->descriptors);
-		FREE(sd);
+	if (sd) {
+		wimlib_assert(sd->refcnt != 0);
+		if (--sd->refcnt == 0) {
+			u8 **descriptors = sd->descriptors;
+			u32 num_entries  = sd->num_entries;
+			if (descriptors)
+				while (num_entries--)
+					FREE(*descriptors++);
+			FREE(sd->sizes);
+			FREE(sd->descriptors);
+			FREE(sd);
+		}
 	}
 }

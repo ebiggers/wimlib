@@ -45,15 +45,18 @@
  * the WIM image. */
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT 0x80000000
 
-void destroy_image_metadata(struct image_metadata *imd, struct lookup_table *lt)
+void destroy_image_metadata(struct image_metadata *imd,
+			    struct lookup_table *table)
 {
-	free_dentry_tree(imd->root_dentry, lt);
+	free_dentry_tree(imd->root_dentry, table);
 	free_security_data(imd->security_data);
 
 	/* Get rid of the lookup table entry for this image's metadata resource
 	 * */
-	if (lt)
-		lookup_table_remove(lt, imd->metadata_lte);
+	if (table) {
+		lookup_table_unlink(table, imd->metadata_lte);
+		free_lookup_table_entry(imd->metadata_lte);
+	}
 }
 
 /*

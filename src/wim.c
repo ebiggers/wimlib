@@ -30,6 +30,8 @@
 #include <stdarg.h>
 
 #include "dentry.h"
+#include <unistd.h>
+#include <fcntl.h>
 
 #ifdef WITH_NTFS_3G
 #include <time.h>
@@ -213,7 +215,6 @@ int select_wim_image(WIMStruct *w, int image)
 		      image, w->hdr.image_count);
 		return WIMLIB_ERR_INVALID_IMAGE;
 	}
-
 
 	/* If a valid image is currently selected, it can be freed if it is not
 	 * modified.  */
@@ -434,14 +435,24 @@ int open_wim_readable(WIMStruct *w, const char *path)
 }
 
 /* Opens a WIM writable */
-int open_wim_writable(WIMStruct *w, const char *path)
+int open_wim_writable(WIMStruct *w, const char *path,
+		      bool trunc, bool readable)
 {
+	const char *mode;
+	if (trunc)
+		if (readable)
+			mode = "w+b";
+		else
+			mode = "wb";
+	else
+		mode = "r+b";
+
+	DEBUG("Opening `%s' read-write", path);
 	wimlib_assert(w->out_fp == NULL);
 	wimlib_assert(path != NULL);
-	w->out_fp = fopen(path, "w+b");
+	w->out_fp = fopen(path, mode);
 	if (!w->out_fp) {
-		ERROR_WITH_ERRNO("Failed to open `%s' for writing",
-				 path);
+		ERROR_WITH_ERRNO("Failed to open `%s' for writing", path);
 		return WIMLIB_ERR_OPEN;
 	}
 	return 0;
@@ -492,7 +503,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 
 	if (open_flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY) {
 		ret = check_wim_integrity(w,
-					  open_flags & WIMLIB_OPEN_FLAG_SHOW_PROGRESS);
+					  (open_flags & WIMLIB_OPEN_FLAG_SHOW_PROGRESS) != 0);
 		if (ret == WIM_INTEGRITY_NONEXISTENT) {
 			WARNING("No integrity information for `%s'; skipping "
 				"integrity check.", w->filename);

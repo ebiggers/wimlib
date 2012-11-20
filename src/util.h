@@ -76,6 +76,12 @@ typedef unsigned uint;
 	(type *)( (char *)__mptr - offsetof(type,member) );})
 #endif
 
+#define DIV_ROUND_UP(numerator, denominator) \
+	(((numerator) + (denominator) - 1) / (denominator))
+
+#define MODULO_NONZERO(numerator, denominator) \
+	(((numerator) % (denominator)) ? ((numerator) % (denominator)) : (denominator))
+
 #define ARRAY_LEN(array) (sizeof(array) / sizeof((array)[0]))
 
 #define ZERO_ARRAY(array) memset(array, 0, sizeof(array))
