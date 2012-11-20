@@ -254,6 +254,7 @@ struct image_metadata {
 
 #define WIMLIB_RESOURCE_FLAG_RAW		0x1
 #define WIMLIB_RESOURCE_FLAG_MULTITHREADED	0x2
+#define WIMLIB_RESOURCE_FLAG_RECOMPRESS		0x4
 
 /* The opaque structure exposed to the wimlib API. */
 typedef struct WIMStruct {

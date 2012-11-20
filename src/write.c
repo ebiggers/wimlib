@@ -382,7 +382,8 @@ int write_wim_resource(struct lookup_table_entry *lte,
 	/* Are the compression types the same?  If so, do a raw copy (copy
 	 * without decompressing and recompressing the data). */
 	raw = (wim_resource_compression_type(lte) == out_ctype
-	       && out_ctype != WIM_COMPRESSION_TYPE_NONE);
+	       && out_ctype != WIM_COMPRESSION_TYPE_NONE
+	       && !(flags & WIMLIB_RESOURCE_FLAG_RECOMPRESS));
 
 	if (raw) {
 		flags |= WIMLIB_RESOURCE_FLAG_RAW;
@@ -685,6 +686,10 @@ static int write_stream_list_serial(struct list_head *stream_list,
 	u64 cur_size = 0;
 	u64 next_size = 0;
 	unsigned cur_percent = 0;
+	int write_resource_flags = 0;
+
+	if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
+		write_resource_flags |= WIMLIB_RESOURCE_FLAG_RECOMPRESS;
 
 	list_for_each_entry(lte, stream_list, staging_list) {
 		if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
@@ -693,7 +698,8 @@ static int write_stream_list_serial(struct list_head *stream_list,
 						   &cur_percent, lte);
 		}
 		ret = write_wim_resource(lte, out_fp, out_ctype,
-					 &lte->output_resource_entry, 0);
+					 &lte->output_resource_entry,
+					 write_resource_flags);
 		if (ret != 0)
 			return ret;
 	}
@@ -747,7 +753,6 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 				   u64 total_size)
 {
 	int ret;
-
 
 	struct message msgs[queue_size];
 	ZERO_ARRAY(msgs);
@@ -942,8 +947,9 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 							struct lookup_table_entry,
 							staging_list);
 				next_resource = next_resource->next;
-				if ((next_lte->resource_location == RESOURCE_IN_WIM
-				    && wimlib_get_compression_type(next_lte->wim) == out_ctype)
+				if ((!(write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
+				      && next_lte->resource_location == RESOURCE_IN_WIM
+				      && wimlib_get_compression_type(next_lte->wim) == out_ctype)
 				    || wim_resource_size(next_lte) == 0)
 				{
 					list_add_tail(&next_lte->staging_list,
@@ -1238,7 +1244,7 @@ static int write_stream_list_parallel(struct list_head *stream_list,
 	}
 
 	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
-		printf("Writing %s compressed data using %u threads...\n",
+		printf("Writing %s data using %u threads...\n",
 		       get_data_type(out_ctype), num_threads);
 	}
 
@@ -1291,9 +1297,11 @@ static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 		num_streams++;
 		total_size += wim_resource_size(lte);
 		if (!compression_needed
-		    && out_ctype != WIM_COMPRESSION_TYPE_NONE
-		    && (lte->resource_location != RESOURCE_IN_WIM
-		        || wimlib_get_compression_type(lte->wim) != out_ctype)
+		    &&
+		    (out_ctype != WIM_COMPRESSION_TYPE_NONE
+		       && (lte->resource_location != RESOURCE_IN_WIM
+		           || wimlib_get_compression_type(lte->wim) != out_ctype
+			   || (write_flags & WIMLIB_WRITE_FLAG_REBUILD)))
 		    && wim_resource_size(lte) != 0)
 			compression_needed = true;
 	}
@@ -1561,8 +1569,6 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 
 	if (!w || !path)
 		return WIMLIB_ERR_INVALID_PARAM;
-
-	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 
 	if (image != WIM_ALL_IMAGES &&
 	     (image < 1 || image > w->hdr.image_count))

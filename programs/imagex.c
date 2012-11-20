@@ -99,7 +99,7 @@ static const char *usage_strings[] = {
 "imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
 "                      [--check] [--debug] [--streams-interface=INTERFACE]\n",
 [OPTIMIZE] =
-"imagex optimize WIMFILE [--check]\n",
+"imagex optimize WIMFILE [--check] [--recompress]\n",
 [SPLIT] =
 "imagex split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
 [UNMOUNT] =
@@ -172,7 +172,8 @@ static const struct option mount_options[] = {
 };
 
 static const struct option optimize_options[] = {
-	{"check", no_argument, NULL, 'c'},
+	{"check",      no_argument, NULL, 'c'},
+	{"recompress", no_argument, NULL, 'r'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1363,6 +1364,9 @@ static int imagex_optimize(int argc, const char **argv)
 		case 'c':
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+			break;
+		case 'r':
+			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
 		default:
 			usage(OPTIMIZE);

@@ -3,7 +3,7 @@
 imagex-optimize \- Optimize a WIM archive
 
 .SH SYNOPSIS
-\fBimagex optimize\fR \fIWIMFILE\fR [--check]
+\fBimagex optimize\fR \fIWIMFILE\fR [--check] [--recompress]
 
 .SH DESCRIPTION
 .PP
@@ -16,10 +16,19 @@ In addition, some errors in the original WIM may be fixed by re-writing it
 
 .SH OPTIONS
 .TP 6
+\fB--check\fR
 When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
 present; include an integrity table in the optimized WIM.  If this option is not
 specified and \fIWIMFILE\fR, no integrity table is included in the optimized
 WIM, even if there was one before.
+.TP 6
+\fB--recompress\fR
+Recompress all compressed streams in \fIWIMFILE\fR when rebuilding it.  This
+will increase the time needed to rebuild the WIM,unless the WIM is uncompressed,
+but it may result in a better compression ratio if wimlib can do a better job
+than the program that wrote the original file.  A side effect of this is that
+every stream in the original WIM will be checksummed, so this can help verify
+that the WIM is intact (equivalent to applying all the images from it).
 
 .SH NOTES
 

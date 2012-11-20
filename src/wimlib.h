@@ -280,6 +280,10 @@ enum wim_compression_type {
  * (Applies to wimlib_overwrite(), not wimlib_write()). */
 #define WIMLIB_WRITE_FLAG_REBUILD		0x00000010
 
+/** Do not copy compressed resources between WIMs if the compression type is the
+ * same.  Instead, recompress them. */
+#define WIMLIB_WRITE_FLAG_RECOMPRESS		0x00000020
+
 /** Mark the image being added as the bootable image of the WIM. */
 #define WIMLIB_ADD_IMAGE_FLAG_BOOT		0x00000001
 
