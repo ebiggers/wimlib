@@ -500,8 +500,15 @@ extern int open_wim_writable(WIMStruct *w, const char *path,
 #define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE	0x80000000
 #define WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE 0x40000000
 #define WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML  0x20000000
-
 #define WIMLIB_WRITE_MASK_PUBLIC		0x1fffffff
+
+/* Internal use only */
+#define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE		0x80000000
+#define WIMLIB_EXTRACT_FLAG_DIRS_ONLY		0x40000000
+#define WIMLIB_EXTRACT_FLAG_SKIP_DIRS		0x20000000
+#define WIMLIB_EXTRACT_FLAG_EMPTY_ONLY		0x10000000
+#define WIMLIB_EXTRACT_MASK_PUBLIC		0x0fffffff
+
 
 /* write.c */
 extern int begin_write(WIMStruct *w, const char *path, int write_flags);

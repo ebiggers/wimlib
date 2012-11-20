@@ -331,6 +331,9 @@ enum wim_compression_type {
 /** Print the name of each file as it is extracted from the WIM image. */
 #define WIMLIB_EXTRACT_FLAG_VERBOSE		0x00000008
 
+/** Read the WIM file sequentially while extracting the image. */
+#define WIMLIB_EXTRACT_FLAG_SEQUENTIAL		0x00000010
+
 /**
  * Possible values of the error code returned by many functions in wimlib.
  *

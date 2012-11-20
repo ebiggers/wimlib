@@ -185,6 +185,7 @@ struct lookup_table_entry {
 		struct resource_entry output_resource_entry;
 
 		struct list_head msg_list;
+		struct list_head dentry_list;
 	};
 
 	union {

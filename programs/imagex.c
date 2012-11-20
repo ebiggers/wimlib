@@ -403,7 +403,7 @@ static int imagex_apply(int argc, const char **argv)
 	const char *wimfile;
 	const char *dir;
 	const char *image_num_or_name;
-	int extract_flags = 0;
+	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
 
 	const char *swm_glob = NULL;
 	WIMStruct **additional_swms = NULL;
