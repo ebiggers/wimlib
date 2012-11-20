@@ -25,13 +25,16 @@ Changes to the WIM are made if \fINEW_NAME\fR and/or \fB--boot\fR are specified.
 \fIIMAGE_NUM\fR or \fIIMAGE_NAME\fR, while \fINEW_DESC\fR is taken to be its new
 description. \fINEW_DESC\fR defaults to the old description if it is not given.
 
-Since none of these changes require changing the WIM's file resources, metadata
-resources, or stream lookup table, they can be done very quickly by only
-re-writing the header and XML data.  It will only take significant time if
-\fB--check\fR is specified for a WIM that had no integrity checks before.
-
 \fBimagex info\fR does not support modifying a split WIM, although you may
 display information about one.
+
+.SH NOTES
+
+Aborting an \fBimagex info\fR command that modifies \fIWIMFILE\fR is unlikely to
+result in corruption of \fIWIMFILE\fR.  If \fBimagex info\fR is aborted while
+the integrity table is being calculated (with --check), the WIM should be in a
+consistent state with any previous changes to the bootable index, new, or
+description of the specified index committed.
 
 .SH OPTIONS
 .TP 6

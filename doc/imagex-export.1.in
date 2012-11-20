@@ -70,9 +70,9 @@ done in these cases.
 .TP
 \fB--rebuild\fR
 When exporting image(s) to an existing WIM: rebuild the entire WIM rather than
-appending an image to the end of it.  Rebuilding the WIM is slower, but will
-save a little bit of space that would otherwise be left as a hole in the WIM.
-Also see \fBimagex optimize\fR.
+appending data to the end of it.  Rebuilding the WIM is slower, but will save a
+little bit of space that would otherwise be left as a hole in the WIM.  Also see
+\fBimagex optimize\fR.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional split WIM parts that are part of the split WIM being
@@ -109,6 +109,15 @@ To export the first image of this split WIM to a new or existing WIM file
 imagex export mywim.swm 1 other.wim --ref="mywim*.swm"
 .RE
 .PP
+
+.SH NOTES
+
+Unless --rebuild is specified, aborting an \fBimagex export\fR command mid-way
+through has a small chance of corrupting the destination WIM file.  However, a
+precaution is taken against this, so it should be very unlikely.  In the event
+of an aborted \fBimagex export\fR, \fBimagex optimize\fR can be run to remove
+extra data that may have been partially appended to the physical destination WIM
+file but not yet incorporated into the structure of the WIM.
 
 .SH EXAMPLES
 Export the second image of 'boot.wim' to the new WIM file 'new.wim', and

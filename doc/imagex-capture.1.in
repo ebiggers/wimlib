@@ -120,9 +120,9 @@ threads will not be used, regardless of this parameter, since no compression
 needs to be done in this case.
 .TP
 \fB--rebuild\fR
-For \fBimagex append\fR: rebuild the entire WIM rather than appending an image
-to the end of it.  Rebuilding the WIM is slower, but will save a little bit of
-space that would otherwise be left as a hole in the WIM.  Also see \fBimagex
+For \fBimagex append\fR: rebuild the entire WIM rather than appending the new
+data to the end of it.  Rebuilding the WIM is slower, but will save a little bit
+of space that would otherwise be left as a hole in the WIM.  Also see \fBimagex
 optimize\fR.
 .TP
 \fB--flags\fR=\fIEDITIONID\fR
@@ -199,6 +199,13 @@ type, and \fBimagex\fR always enforces this.
 \fBimagex\fR writes WIMs having the version number 0x10d00 and a compressed
 stream chunk size of 32768.  The only WIMs I've seen that are different from
 this are some pre-Vista WIMs that had a different version number.
+
+Unless --rebuild is specified, aborting an \fBimagex append\fR command mid-way
+through has a small chance of corrupting the WIM file.  However, a precaution is
+taken against this, so it should be very unlikely.  In the event of an aborted
+\fBimagex append\fR, \fBimagex optimize\fR may be run to remove extra data that
+may have been partially appended to the physical WIM file but not yet
+incorporated into the structure of the WIM.
 
 .SH EXAMPLES
 Create a new WIM 'mywim.wim' from the directory 'somedir', using LZX compression and
