@@ -122,6 +122,7 @@ man1_MANS =			\
 	doc/imagex-join.1	\
 	doc/imagex-mount.1	\
 	doc/imagex-mountrw.1	\
+	doc/imagex-optimize.1	\
 	doc/imagex-split.1	\
 	doc/imagex-unmount.1	\
 	doc/mkwinpeimg.1

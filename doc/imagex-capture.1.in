@@ -119,6 +119,12 @@ processors).  Note: if creating or appending to an uncompressed WIM, additional
 threads will not be used, regardless of this parameter, since no compression
 needs to be done in this case.
 .TP
+\fB--rebuild\fR
+For \fBimagex append\fR: rebuild the entire WIM rather than appending an image
+to the end of it.  Rebuilding the WIM is slower, but will save a little bit of
+space that would otherwise be left as a hole in the WIM.  Also see \fBimagex
+optimize\fR.
+.TP
 \fB--flags\fR=\fIEDITIONID\fR
 Specify a string to use in the <FLAGS> element of the XML data for the new
 image.

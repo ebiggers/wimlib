@@ -34,6 +34,7 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <inttypes.h>
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
 
@@ -52,6 +53,7 @@ enum imagex_op_type {
 	JOIN,
 	MOUNT,
 	MOUNTRW,
+	OPTIMIZE,
 	SPLIT,
 	UNMOUNT,
 };
@@ -64,7 +66,7 @@ static const char *usage_strings[] = {
 "imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                     [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
 "                     [--verbose] [--dereference] [--config=FILE]\n"
-"                     [--threads=NUM_THREADS]\n",
+"                     [--threads=NUM_THREADS] [--rebuild]\n",
 [APPLY] =
 "imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
@@ -82,7 +84,7 @@ static const char *usage_strings[] = {
 "imagex export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
 "              DEST_WIMFILE [DEST_IMAGE_NAME] [DEST_IMAGE_DESCRIPTION]\n"
 "              [--boot] [--check] [--compress=TYPE] [--ref=\"GLOB\"]\n"
-"              [--threads=NUM_THREADS]\n",
+"              [--threads=NUM_THREADS] [--rebuild]\n",
 [INFO] =
 "imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
 "                   [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
@@ -96,6 +98,8 @@ static const char *usage_strings[] = {
 [MOUNTRW] =
 "imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
 "                      [--check] [--debug] [--streams-interface=INTERFACE]\n",
+[OPTIMIZE] =
+"imagex optimize WIMFILE [--check]\n",
 [SPLIT] =
 "imagex split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
 [UNMOUNT] =
@@ -125,6 +129,7 @@ static const struct option capture_or_append_options[] = {
 	{"flags",	required_argument, NULL, 'f'},
 	{"verbose",	no_argument,       NULL, 'v'},
 	{"threads",     required_argument, NULL, 't'},
+	{"rebuild",     no_argument,       NULL, 'R'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -138,6 +143,7 @@ static const struct option export_options[] = {
 	{"compress",   required_argument, NULL, 'x'},
 	{"ref",        required_argument, NULL, 'r'},
 	{"threads",    required_argument, NULL, 't'},
+	{"rebuild",    no_argument,       NULL, 'R'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -162,6 +168,11 @@ static const struct option mount_options[] = {
 	{"debug", no_argument, NULL, 'd'},
 	{"streams-interface", required_argument, NULL, 's'},
 	{"ref",      required_argument, NULL, 'r'},
+	{NULL, 0, NULL, 0},
+};
+
+static const struct option optimize_options[] = {
+	{"check", no_argument, NULL, 'c'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -248,6 +259,15 @@ static int get_compression_type(const char *optarg)
 			     "\"maximum\", \"fast\", or \"none\".", optarg);
 		return WIM_COMPRESSION_TYPE_INVALID;
 	}
+}
+
+static off_t file_get_size(const char *filename)
+{
+	struct stat st;
+	if (stat(filename, &st) == 0)
+		return st.st_size;
+	else
+		return (off_t)-1;
 }
 
 static char *file_get_contents(const char *filename, size_t *len_ret)
@@ -542,6 +562,9 @@ static int imagex_capture_or_append(int argc, const char **argv)
 			if (num_threads == UINT_MAX)
 				return -1;
 			break;
+		case 'R':
+			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
+			break;
 		default:
 			usage(cmd);
 			return -1;
@@ -800,6 +823,9 @@ static int imagex_export(int argc, const char **argv)
 			num_threads = parse_num_threads(optarg);
 			if (num_threads == UINT_MAX)
 				return -1;
+			break;
+		case 'R':
+			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
 			break;
 		default:
 			usage(EXPORT);
@@ -1320,6 +1346,71 @@ mount_usage:
 	return -1;
 }
 
+static int imagex_optimize(int argc, const char **argv)
+{
+	int c;
+	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
+	int write_flags = WIMLIB_WRITE_FLAG_REBUILD |
+			  WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
+	int ret;
+	WIMStruct *w;
+	const char *wimfile;
+	off_t old_size;
+	off_t new_size;
+
+	for_opt(c, optimize_options) {
+		switch (c) {
+		case 'c':
+			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+			break;
+		default:
+			usage(OPTIMIZE);
+			return -1;
+		}
+	}
+	argc -= optind;
+	argv += optind;
+
+	if (argc != 1) {
+		usage(OPTIMIZE);
+		return -1;
+	}
+
+	wimfile = argv[0];
+
+	ret = wimlib_open_wim(wimfile, open_flags, &w);
+	if (ret != 0)
+		return ret;
+
+	old_size = file_get_size(argv[0]);
+	printf("`%s' original size: ", wimfile);
+	if (old_size == -1)
+		puts("Unknown");
+	else
+		printf("%"PRIu64" KiB\n", old_size >> 10);
+
+	ret = wimlib_overwrite(w, write_flags, 0);
+
+	new_size = file_get_size(argv[0]);
+	printf("`%s' optimized size: ", wimfile);
+	if (new_size == -1)
+		puts("Unknown");
+	else
+		printf("%"PRIu64" KiB\n", new_size >> 10);
+
+	fputs("Space saved: ", stdout);
+	if (new_size != -1 && old_size != -1) {
+		printf("%lld KiB\n",
+		       ((long long)old_size - (long long)new_size) >> 10);
+	} else {
+		puts("Unknown");
+	}
+
+	wimlib_free(w);
+	return ret;
+}
+
 /* Split a WIM into a spanned set */
 static int imagex_split(int argc, const char **argv)
 {
@@ -1408,6 +1499,7 @@ static const struct imagex_command imagex_commands[] = {
 	{"join",    imagex_join,	      JOIN},
 	{"mount",   imagex_mount_rw_or_ro,    MOUNT},
 	{"mountrw", imagex_mount_rw_or_ro,    MOUNTRW},
+	{"optimize",imagex_optimize,          OPTIMIZE},
 	{"split",   imagex_split,	      SPLIT},
 	{"unmount", imagex_unmount,	      UNMOUNT},
 };

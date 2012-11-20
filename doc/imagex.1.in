@@ -22,6 +22,8 @@ imagex \- Create, modify, extract, mount, or unmount a WIM (Windows Imaging Form
 .br
 \fBimagex mountrw\fR \fIarguments...\fR
 .br
+\fBimagex optimize\fR \fIarguments...\fR
+.br
 \fBimagex split\fR \fIarguments...\fR
 .br
 \fBimagex unmount\fR \fIarguments...\fR
@@ -145,6 +147,7 @@ Report bugs to ebiggers3@gmail.com.
 .BR imagex-join (1),
 .BR imagex-mount (1),
 .BR imagex-mountrw (1),
+.BR imagex-optimize (1),
 .BR imagex-split (1),
 .BR imagex-unmount (1),
 

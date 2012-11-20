@@ -1,5 +1,19 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.1.1:
+	Appending images to a WIM is now be done by default without re-building
+	the whole WIM.  Use the --rebuild flag to get the old behavior (which
+	was to re-build the entire WIM when a new image is appended).
+
+	A new command `imagex optimize' is now available to manually re-build a
+	WIM that has wasted space due to repeated appends.
+
+	Previously, the soname of libwim.so has been 0.0.0, despite many
+	interface changes.  The soname is now updated to 1.0.0 and will now be
+	updated each release.
+
+	A possible bug with changing the bootable image of a WIM was fixed.
+
 Version 1.1.0:
 	Resources will now be compressed using multiple threads by default.
 	(This applies to `imagex capture', `imagex append', and `imagex

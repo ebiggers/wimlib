@@ -498,8 +498,9 @@ extern int open_wim_writable(WIMStruct *w, const char *path,
 /* Internal use only */
 #define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE	0x80000000
 #define WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE 0x40000000
+#define WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML  0x20000000
 
-#define WIMLIB_WRITE_MASK_PUBLIC		0x3fffffff
+#define WIMLIB_WRITE_MASK_PUBLIC		0x1fffffff
 
 /* write.c */
 extern int begin_write(WIMStruct *w, const char *path, int write_flags);

@@ -1370,8 +1370,33 @@ static int write_wim_streams(WIMStruct *w, int image, int write_flags,
 }
 
 /*
- * Write the lookup table, xml data, and integrity table, then overwrite the WIM
- * header.
+ * Finish writing a WIM file: write the lookup table, xml data, and integrity
+ * table (optional), then overwrite the WIM header.
+ *
+ * write_flags is a bitwise OR of the following:
+ *
+ * 	(public)  WIMLIB_WRITE_FLAG_CHECK_INTEGRITY:
+ * 		Include an integrity table.
+ *
+ * 	(public)  WIMLIB_WRITE_FLAG_SHOW_PROGRESS:
+ * 		Show progress information when (if) writing the integrity table.
+ *
+ * 	(private) WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE:
+ * 		Don't write the lookup table.
+ *
+ * 	(private) WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE:
+ * 		When (if) writing the integrity table, re-use entries from the
+ * 		existing integrity table, if possible.
+ *
+ * 	(private) WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML:
+ * 		After writing the XML data but before writing the integrity
+ * 		table, write a temporary WIM header and flush the stream so that
+ * 		the WIM is less likely to become corrupted upon abrupt program
+ * 		termination.
+ *
+ * 	(private) WIMLIB_WRITE_FLAG_FSYNC:
+ * 		fsync() the output file before closing it.
+ *
  */
 int finish_write(WIMStruct *w, int image, int write_flags)
 {
@@ -1399,6 +1424,30 @@ int finish_write(WIMStruct *w, int image, int write_flags)
 		goto out;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
+		if (write_flags & WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML) {
+			struct wim_header checkpoint_hdr;
+			memcpy(&checkpoint_hdr, &hdr, sizeof(struct wim_header));
+			memset(&checkpoint_hdr.integrity, 0, sizeof(struct resource_entry));
+			if (fseeko(out, 0, SEEK_SET) != 0) {
+				ret = WIMLIB_ERR_WRITE;
+				goto out;
+			}
+			ret = write_header(&checkpoint_hdr, out);
+			if (ret != 0)
+				goto out;
+
+			if (fflush(out) != 0) {
+				ERROR_WITH_ERRNO("Can't write data to WIM");
+				ret = WIMLIB_ERR_WRITE;
+				goto out;
+			}
+
+			if (fseeko(out, 0, SEEK_END) != 0) {
+				ret = WIMLIB_ERR_WRITE;
+				goto out;
+			}
+		}
+
 		off_t old_lookup_table_end;
 		off_t new_lookup_table_end;
 		bool show_progress;
@@ -1452,8 +1501,6 @@ int finish_write(WIMStruct *w, int image, int write_flags)
 
 	if (fseeko(out, 0, SEEK_SET) != 0) {
 		ret = WIMLIB_ERR_WRITE;
-		ERROR_WITH_ERRNO("Failed to seek to beginning of WIM "
-				 "to overwrite header");
 		goto out;
 	}
 
@@ -1587,6 +1634,63 @@ static int find_new_streams(struct lookup_table_entry *lte, void *arg)
 	return 0;
 }
 
+/*
+ * Overwrite a WIM, possibly appending streams to it.
+ *
+ * A WIM looks like (or is supposed to look like) the following:
+ *
+ *                   Header (212 bytes)
+ *                   Streams and metadata resources (variable size)
+ *                   Lookup table (variable size)
+ *                   XML data (variable size)
+ *                   Integrity table (optional) (variable size)
+ *
+ * If we are not adding any streams or metadata resources, the lookup table is
+ * unchanged--- so we only need to overwrite the XML data, integrity table, and
+ * header.  This operation is potentially unsafe if the program is abruptly
+ * terminated while the XML data or integrity table are being overwritten, but
+ * before the new header has been written.  To partially alleviate this problem,
+ * a special flag (WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML) is passed to
+ * finish_write() to cause a temporary WIM header to be written after the XML
+ * data has been written.  This may prevent the WIM from becoming corrupted if
+ * the program is terminated while the integrity table is being calculated (but
+ * no guarantees, due to write re-ordering...).
+ *
+ * If we are adding new streams or images (metadata resources), the lookup table
+ * needs to be changed, and those streams need to be written.  In this case, we
+ * try to perform a safe update of the WIM file by writing the streams *after*
+ * the end of the previous WIM, then writing the new lookup table, XML data, and
+ * (optionally) integrity table following the new streams.  This will produce a
+ * layout like the following:
+ *
+ *                   Header (212 bytes)
+ *                   (OLD) Streams and metadata resources (variable size)
+ *                   (OLD) Lookup table (variable size)
+ *                   (OLD) XML data (variable size)
+ *                   (OLD) Integrity table (optional) (variable size)
+ *                   (NEW) Streams and metadata resources (variable size)
+ *                   (NEW) Lookup table (variable size)
+ *                   (NEW) XML data (variable size)
+ *                   (NEW) Integrity table (optional) (variable size)
+ *
+ * At all points, the WIM is valid as nothing points to the new data yet.  Then,
+ * the header is overwritten to point to the new lookup table, XML data, and
+ * integrity table, to produce the following layout:
+ *
+ *                   Header (212 bytes)
+ *                   Streams and metadata resources (variable size)
+ *                   Nothing (variable size)
+ *                   More Streams and metadata resources (variable size)
+ *                   Lookup table (variable size)
+ *                   XML data (variable size)
+ *                   Integrity table (optional) (variable size)
+ *
+ * This method allows an image to be appended to a large WIM very quickly, and
+ * is is crash-safe except in the case of write re-ordering, but the
+ * disadvantage is that a small hole is left in the WIM where the old lookup
+ * table, xml data, and integrity table were.  (These usually only take up a
+ * small amount of space compared to the streams, however.
+ */
 static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 				 unsigned num_threads,
 				 int modified_image_idx)
@@ -1636,29 +1740,24 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	if (ret != 0)
 		return ret;
 
-	DEBUG("old_wim_end = %"PRIu64, old_wim_end);
+	if (modified_image_idx == w->hdr.image_count) {
+		/* If no images are modified, a new lookup table does not need
+		 * to be written. */
+		wimlib_assert(list_empty(&stream_list));
+		old_wim_end = w->hdr.lookup_table_res_entry.offset +
+			      w->hdr.lookup_table_res_entry.size;
+		write_flags |= WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE |
+			       WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML;
+	}
 
 	INIT_LIST_HEAD(&stream_list);
 	for_lookup_table_entry(w->lookup_table, find_new_streams,
 			       &stream_list);
 
-	{
-		u64 num_new_streams = 0;
-		struct list_head *cur;
-		list_for_each(cur, &stream_list)
-			num_new_streams++;
-		DEBUG("%"PRIu64" new streams to write", num_new_streams);
-	}
-
-	{
-		bool trunc = false;
-		bool need_readable = false;
-		if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
-			need_readable = true;
-		ret = open_wim_writable(w, w->filename, trunc, need_readable);
-		if (ret != 0)
-			return ret;
-	}
+	ret = open_wim_writable(w, w->filename, false,
+				(write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) != 0);
+	if (ret != 0)
+		return ret;
 
 	if (fseeko(w->out_fp, old_wim_end, SEEK_SET) != 0) {
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");

@@ -68,6 +68,12 @@ with the same compression type as the source WIM, additional threads will not
 be used, regardless of this parameter, since no data compression needs to be
 done in these cases.
 .TP
+\fB--rebuild\fR
+When exporting image(s) to an existing WIM: rebuild the entire WIM rather than
+appending an image to the end of it.  Rebuilding the WIM is slower, but will
+save a little bit of space that would otherwise be left as a hole in the WIM.
+Also see \fBimagex optimize\fR.
+.TP
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional split WIM parts that are part of the split WIM being
 exported.  See \fBSPLIT_WIMS\fR.

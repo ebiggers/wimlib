@@ -1,0 +1,30 @@
+.TH IMAGEX "1" "November 2012" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.SH NAME
+imagex-optimize \- Optimize a WIM archive
+
+.SH SYNOPSIS
+\fBimagex optimize\fR \fIWIMFILE\fR [--check]
+
+.SH DESCRIPTION
+.PP
+\fBimagex optimize\fR will rebuild the stand-alone WIM \fIWIMFILE\fR.  The new
+WIM is written to a temporary file, and it is renamed to the original file when
+it's ready.  This action will remove any holes that have been left as a result
+of appending images, so the new WIM may be slightly smaller than the old WIM.
+In addition, some errors in the original WIM may be fixed by re-writing it
+(although most cannot).
+
+.SH OPTIONS
+.TP 6
+When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
+present; include an integrity table in the optimized WIM.  If this option is not
+specified and \fIWIMFILE\fR, no integrity table is included in the optimized
+WIM, even if there was one before.
+
+.SH NOTES
+
+\fBimagex optimize\fR does not support split WIMs.
+
+.SH SEE ALSO
+.BR imagex (1)
+

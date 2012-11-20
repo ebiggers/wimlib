@@ -372,6 +372,8 @@ int write_integrity_table(FILE *fp,
 	off_t cur_offset;
 	u32 new_table_size;
 
+	wimlib_assert(old_lookup_table_end <= new_lookup_table_end);
+
 	cur_offset = ftello(fp);
 	if (cur_offset == -1) {
 		ERROR_WITH_ERRNO("Failed to get offset in WIM");
