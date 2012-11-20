@@ -132,7 +132,8 @@ static int append_metadata_resource_entry(struct lookup_table_entry *lte,
 
 	if (lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) {
 		if (w->current_image == w->hdr.image_count) {
-			ERROR("Expected only %u images, but found more",
+			ERROR("The WIM header says there are %u images in the WIM,\n"
+			      "        but we found more metadata resources than this",
 			      w->hdr.image_count);
 			ret = WIMLIB_ERR_IMAGE_COUNT;
 		} else {

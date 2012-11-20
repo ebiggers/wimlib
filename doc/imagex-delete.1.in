@@ -18,9 +18,10 @@ command to show what images a WIM file contains.
 
 .SH NOTES
 
-The WIM file is rebuilt with all unnecessary file data removed.  This is
-different from Microsoft's imagex.exe, which only will delete the directory tree
-metadata and XML data for this operation.
+By default, the WIM file is rebuilt with all unnecessary file data removed.
+This is different from Microsoft's imagex.exe, which only will delete the
+directory tree metadata and XML data for this operation.  (See the \fB--soft\fR
+option for the other kind of delete).
 
 Also, unlike imagex.exe, it is legal to delete all the images from a WIM and
 have a WIM with 0 images, although such a file wouldn't be very useful.
@@ -34,6 +35,17 @@ When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
 present; additionally, when rewriting \fIWIMFILE\fR after the specified image was
 deleted, write an integrity table.  If this option is not specified, no integrity
 table is included in the new WIM file, even if there was one before.
+.TP 6
+\fB--soft\fR
+Perform a "soft delete".  Specifying this flag overrides the default behavior of
+rebuilding the entire WIM after deleting an image.  Instead, only minimal
+changes to correctly remove the image from the WIM will be taken.  In
+particular, all streams will be left alone, even if they are no longer
+referenced.  This is probably not what you want, because almost no space will be
+saved by deleting an image in this way.
+
+You may use \fBimagex optimize\fR to delete unreferenced streams from a WIM that
+has had images soft-deleted from it.
 
 .SH EXAMPLES
 Delete the first image from 'boot.wim':

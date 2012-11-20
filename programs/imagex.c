@@ -77,7 +77,7 @@ static const char *usage_strings[] = {
 "                      [--flags EDITION_ID] [--verbose] [--dereference]\n"
 "                      [--config=FILE] [--threads=NUM_THREADS]\n",
 [DELETE] =
-"imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n",
+"imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check] [--soft]\n",
 [DIR] =
 "imagex dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n",
 [EXPORT] =
@@ -134,6 +134,7 @@ static const struct option capture_or_append_options[] = {
 };
 static const struct option delete_options[] = {
 	{"check", no_argument, NULL, 'c'},
+	{"soft",  no_argument, NULL, 's'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -674,6 +675,9 @@ static int imagex_delete(int argc, const char **argv)
 		case 'c':
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+			break;
+		case 's':
+			write_flags |= WIMLIB_WRITE_FLAG_SOFT_DELETE;
 			break;
 		default:
 			usage(DELETE);

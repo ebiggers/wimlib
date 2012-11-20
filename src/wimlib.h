@@ -284,6 +284,15 @@ enum wim_compression_type {
  * same.  Instead, recompress them. */
 #define WIMLIB_WRITE_FLAG_RECOMPRESS		0x00000020
 
+/** Specifying this flag overrides the default behavior of wimlib_overwrite()
+ * after one or more calls to wimlib_delete_image(), which is to rebuild the
+ * entire WIM.  If you specifiy this flag to wimlib_overwrite() instead, only
+ * minimal changes to correctly remove the image from the WIM will be taken.  In
+ * particular, all streams will be left alone, even if they are no longer
+ * references.  This is probably not what you want, because almost no space will
+ * be spaced by deleting an image in this way. */
+#define WIMLIB_WRITE_FLAG_SOFT_DELETE		0x00000040
+
 /** Mark the image being added as the bootable image of the WIM. */
 #define WIMLIB_ADD_IMAGE_FLAG_BOOT		0x00000001
 
@@ -1143,8 +1152,9 @@ extern int wimlib_overwrite(WIMStruct *wim, int write_flags,
 			    unsigned num_threads);
 
 /**
- * This function is deprecated; call wimlib_overwrite() without the
- * WIMLIB_WRITE_FLAG_REBUILD flag instead.
+ * This function is deprecated; call wimlib_overwrite() instead.
+ * (wimlib_overwrite() no longer rebuilds the full WIM unless it has to or is
+ * specified explicitly with ::WIMLIB_WRITE_FLAG_REBUILD)
  */
 extern int wimlib_overwrite_xml_and_header(WIMStruct *wim, int write_flags);
 

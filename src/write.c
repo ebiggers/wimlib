@@ -1570,6 +1570,8 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 	if (!w || !path)
 		return WIMLIB_ERR_INVALID_PARAM;
 
+	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
+
 	if (image != WIM_ALL_IMAGES &&
 	     (image < 1 || image > w->hdr.image_count))
 		return WIMLIB_ERR_INVALID_IMAGE;
@@ -1746,9 +1748,9 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	if (ret != 0)
 		return ret;
 
-	if (modified_image_idx == w->hdr.image_count) {
-		/* If no images are modified, a new lookup table does not need
-		 * to be written. */
+	if (modified_image_idx == w->hdr.image_count && !w->deletion_occurred) {
+		/* If no images have been modified and no images have been
+		 * deleted, a new lookup table does not need to be written. */
 		wimlib_assert(list_empty(&stream_list));
 		old_wim_end = w->hdr.lookup_table_res_entry.offset +
 			      w->hdr.lookup_table_res_entry.size;
@@ -1877,7 +1879,9 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
 
-	if (!w->deletion_occurred && !(write_flags & WIMLIB_WRITE_FLAG_REBUILD)) {
+	if ((!w->deletion_occurred || (write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE))
+	    && !(write_flags & WIMLIB_WRITE_FLAG_REBUILD))
+	{
 		int i, modified_image_idx;
 		for (i = 0; i < w->hdr.image_count && !w->image_metadata[i].modified; i++)
 			;
