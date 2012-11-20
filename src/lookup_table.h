@@ -193,7 +193,10 @@ struct lookup_table_entry {
 		 * extraction mode.   In these mode, all identical files are linked
 		 * together, and @extracted_file will be set to the filename of the
 		 * first extracted file containing this stream.  */
-		char *extracted_file;
+		struct {
+			char *extracted_file;
+			bool extracted;
+		};
 
 		/* List of lookup table entries that correspond to streams that have
 		 * been extracted to the staging directory when modifying a read-write

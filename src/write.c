@@ -650,16 +650,17 @@ static void *compressor_thread_proc(void *arg)
 }
 #endif
 
-static void show_stream_write_progress(u64 *cur_size, u64 *next_size,
-				       u64 total_size, u64 one_percent,
-				       unsigned *cur_percent,
-				       const struct lookup_table_entry *cur_lte)
+void show_stream_op_progress(u64 *cur_size, u64 *next_size,
+			     u64 total_size, u64 one_percent,
+			     unsigned *cur_percent,
+			     const struct lookup_table_entry *cur_lte,
+			     const char *op)
 {
 	if (*cur_size >= *next_size) {
 		printf("\r%"PRIu64" MiB of %"PRIu64" MiB "
-		       "(uncompressed) written (%u%% done)",
+		       "(uncompressed) %s (%u%% done)",
 		       *cur_size >> 20,
-		       total_size >> 20, *cur_percent);
+		       total_size >> 20, op, *cur_percent);
 		fflush(stdout);
 		*next_size += one_percent;
 		(*cur_percent)++;
@@ -667,11 +668,11 @@ static void show_stream_write_progress(u64 *cur_size, u64 *next_size,
 	*cur_size += wim_resource_size(cur_lte);
 }
 
-static void finish_stream_write_progress(u64 total_size)
+void finish_stream_op_progress(u64 total_size, const char *op)
 {
 	printf("\r%"PRIu64" MiB of %"PRIu64" MiB "
-	       "(uncompressed) written (100%% done)\n",
-	       total_size >> 20, total_size >> 20);
+	       "(uncompressed) %s (100%% done)\n",
+	       total_size >> 20, total_size >> 20, op);
 	fflush(stdout);
 }
 
@@ -693,9 +694,9 @@ static int write_stream_list_serial(struct list_head *stream_list,
 
 	list_for_each_entry(lte, stream_list, staging_list) {
 		if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
-			show_stream_write_progress(&cur_size, &next_size,
-						   total_size, one_percent,
-						   &cur_percent, lte);
+			show_stream_op_progress(&cur_size, &next_size,
+						total_size, one_percent,
+						&cur_percent, lte, "written");
 		}
 		ret = write_wim_resource(lte, out_fp, out_ctype,
 					 &lte->output_resource_entry,
@@ -704,7 +705,7 @@ static int write_stream_list_serial(struct list_head *stream_list,
 			return ret;
 	}
 	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
-		finish_stream_write_progress(total_size);
+		finish_stream_op_progress(total_size, "written");
 	return 0;
 }
 
@@ -1010,12 +1011,13 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 			if (msg->begin_chunk == 0) {
 				DEBUG2("Begin chunk tab");
 				if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
-					show_stream_write_progress(&cur_size,
-								   &next_size,
-								   total_size,
-								   one_percent,
-								   &cur_percent,
-								   cur_lte);
+					show_stream_op_progress(&cur_size,
+								&next_size,
+								total_size,
+								one_percent,
+								&cur_percent,
+								cur_lte,
+								"written");
 				}
 
 				// This is the first set of chunks.  Leave space
@@ -1101,12 +1103,13 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 							 staging_list)
 				{
 					if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
-						show_stream_write_progress(&cur_size,
-									   &next_size,
-									   total_size,
-									   one_percent,
-									   &cur_percent,
-									   lte);
+						show_stream_op_progress(&cur_size,
+									&next_size,
+									total_size,
+									one_percent,
+									&cur_percent,
+									lte,
+									"written");
 					}
 
 					ret = write_wim_resource(lte,
@@ -1131,12 +1134,13 @@ out:
 	if (ret == 0) {
 		list_for_each_entry(lte, &my_resources, staging_list) {
 			if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
-				show_stream_write_progress(&cur_size,
-							   &next_size,
-							   total_size,
-							   one_percent,
-							   &cur_percent,
-							   lte);
+				show_stream_op_progress(&cur_size,
+							&next_size,
+							total_size,
+							one_percent,
+							&cur_percent,
+							lte,
+							"written");
 			}
 			ret = write_wim_resource(lte, out_fp,
 						 out_ctype,
@@ -1146,7 +1150,7 @@ out:
 				break;
 		}
 		if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
-			finish_stream_write_progress(total_size);
+			finish_stream_op_progress(total_size, "written");
 	} else {
 		size_t num_available_msgs = 0;
 		struct list_head *cur;

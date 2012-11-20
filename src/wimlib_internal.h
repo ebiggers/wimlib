@@ -487,6 +487,14 @@ extern int inode_set_symlink(struct inode *inode,
 			     struct lookup_table *lookup_table,
 			     struct lookup_table_entry **lte_ret);
 
+extern void show_stream_op_progress(u64 *cur_size, u64 *next_size,
+				    u64 total_size, u64 one_percent,
+				    unsigned *cur_percent,
+				    const struct lookup_table_entry *cur_lte,
+				    const char *op);
+
+extern void finish_stream_op_progress(u64 total_size, const char *op);
+
 /* wim.c */
 extern WIMStruct *new_wim_struct();
 extern int select_wim_image(WIMStruct *w, int image);
@@ -504,10 +512,8 @@ extern int open_wim_writable(WIMStruct *w, const char *path,
 
 /* Internal use only */
 #define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE		0x80000000
-#define WIMLIB_EXTRACT_FLAG_DIRS_ONLY		0x40000000
-#define WIMLIB_EXTRACT_FLAG_SKIP_DIRS		0x20000000
-#define WIMLIB_EXTRACT_FLAG_EMPTY_ONLY		0x10000000
-#define WIMLIB_EXTRACT_MASK_PUBLIC		0x0fffffff
+#define WIMLIB_EXTRACT_FLAG_NO_STREAMS		0x40000000
+#define WIMLIB_EXTRACT_MASK_PUBLIC		0x2fffffff
 
 
 /* write.c */

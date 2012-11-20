@@ -63,7 +63,7 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 	 * instead either symlinks or hardlinks *all* identical files in
 	 * the WIM, even if they are in a different image (in the case
 	 * of a multi-image extraction) */
-	wimlib_assert(lte->extracted_file);
+	wimlib_assert(lte->extracted_file != NULL);
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
 		if (link(lte->extracted_file, output_path) != 0) {
@@ -301,18 +301,9 @@ static int extract_dentry(struct dentry *dentry, void *arg)
 	size_t len = strlen(args->output_dir);
 	char output_path[len + dentry->full_path_utf8_len + 1];
 
-	if (dentry_is_directory(dentry)) {
-		if (extract_flags & WIMLIB_EXTRACT_FLAG_SKIP_DIRS)
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
+		if (inode_unnamed_lte(dentry->d_inode, w->lookup_table) != NULL)
 			return 0;
-	} else {
-		if (extract_flags & WIMLIB_EXTRACT_FLAG_DIRS_ONLY)
-			return 0;
-	}
-
-	if ((extract_flags & WIMLIB_EXTRACT_FLAG_EMPTY_ONLY)
-	    && (!dentry_is_regular_file(dentry) ||
-		 inode_unnamed_lte(dentry->d_inode, w->lookup_table) != NULL))
-		return 0;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) {
 		wimlib_assert(dentry->full_path_utf8);
@@ -440,9 +431,40 @@ static int sort_stream_list_by_wim_position(struct list_head *stream_list)
 
 	INIT_LIST_HEAD(stream_list);
 	for (i = 0; i < num_streams; i++)
-		list_add(&array[i]->staging_list, stream_list);
+		list_add_tail(&array[i]->staging_list, stream_list);
 	FREE(array);
 	return 0;
+}
+
+static u64 calculate_bytes_to_extract(struct list_head *stream_list,
+				      int extract_flags)
+{
+	struct lookup_table_entry *lte;
+	struct dentry *dentry;
+	u64 total_size = 0;
+	list_for_each_entry(lte, stream_list, staging_list) {
+		u64 size = wim_resource_size(lte);
+		if (extract_flags &
+		    (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
+		{
+			total_size += size;
+		} else {
+			list_for_each_entry(dentry, &lte->dentry_list,
+					    tmp_list)
+			{
+				dentry->d_inode->found = false;
+			}
+			list_for_each_entry(dentry, &lte->dentry_list,
+					    tmp_list)
+			{
+				if (!dentry->d_inode->found) {
+					dentry->d_inode->found = true;
+					total_size += size;
+				}
+			}
+		}
+	}
+	return total_size;
 }
 
 static int extract_single_image(WIMStruct *w, int image,
@@ -466,8 +488,13 @@ static int extract_single_image(WIMStruct *w, int image,
 		.num_lutimes_warnings = 0,
 	};
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL)
-		args.extract_flags |= WIMLIB_EXTRACT_FLAG_DIRS_ONLY;
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL) {
+		for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt,
+				       NULL);
+		args.extract_flags |= WIMLIB_EXTRACT_FLAG_NO_STREAMS;
+		if (args.extract_flags & WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS)
+			puts("Creating directory structure...");
+	}
 
 	ret = for_dentry_in_tree(root, extract_dentry, &args);
 	if (ret != 0)
@@ -479,28 +506,40 @@ static int extract_single_image(WIMStruct *w, int image,
 		w->private = &stream_list;
 		for_dentry_in_tree(root, dentry_add_streams_for_extraction, w);
 		ret = sort_stream_list_by_wim_position(&stream_list);
-		args.extract_flags &= ~WIMLIB_EXTRACT_FLAG_DIRS_ONLY;
+		args.extract_flags &= ~WIMLIB_EXTRACT_FLAG_NO_STREAMS;
 		if (ret == 0) {
-			args.extract_flags |= WIMLIB_EXTRACT_FLAG_SKIP_DIRS;
 			struct lookup_table_entry *lte;
 			struct lookup_table_entry *tmp;
 			struct dentry *dentry;
+			u64 total_size;
+			u64 cur_size;
+			u64 next_size;
+			u64 one_percent;
+			unsigned cur_percent;
+
+			total_size = calculate_bytes_to_extract(&stream_list, args.extract_flags);
+			one_percent = total_size / 100;
+			cur_size = 0;
+			next_size = 0;
+			cur_percent = 0;
+			puts("Extracting files...");
 			list_for_each_entry_safe(lte, tmp, &stream_list, staging_list) {
 				list_del(&lte->staging_list);
-				lte->extracted_file = NULL;
 				list_for_each_entry(dentry, &lte->dentry_list, tmp_list) {
+					if ((!dentry->d_inode->extracted_file) && 
+					     (args.extract_flags & WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS))
+					{
+						show_stream_op_progress(&cur_size, &next_size,
+									total_size, one_percent,
+									&cur_percent, lte,
+									"extracted");
+					}
 					ret = extract_dentry(dentry, &args);
 					if (ret != 0)
 						return ret;
 				}
-				FREE(lte->extracted_file);
 			}
-			args.extract_flags |= WIMLIB_EXTRACT_FLAG_EMPTY_ONLY;
-			ret = for_dentry_in_tree(root, extract_dentry, &args);
-			if (ret != 0)
-				return ret;
-			args.extract_flags &= ~(WIMLIB_EXTRACT_FLAG_SKIP_DIRS |
-						WIMLIB_EXTRACT_FLAG_EMPTY_ONLY);
+			finish_stream_op_progress(total_size, "extracted");
 		} else {
 			WARNING("Falling back to non-sequential image extraction");
 			ret = for_dentry_in_tree(root, extract_dentry, &args);
@@ -587,12 +626,13 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		w->lookup_table = joined_tab;
 	}
 
-	for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt, NULL);
-
-	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL)) {
+	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
+			     WIMLIB_EXTRACT_FLAG_HARDLINK))
+	{
 		for_lookup_table_entry(w->lookup_table,
 				       lte_zero_extracted_file,
 				       NULL);
+		extract_flags &= ~WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
 	}
 
 	if (image == WIM_ALL_IMAGES) {
@@ -606,7 +646,10 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		free_lookup_table(w->lookup_table);
 		w->lookup_table = w_tab_save;
 	}
-	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL)) {
+
+	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
+			     WIMLIB_EXTRACT_FLAG_HARDLINK))
+	{
 		for_lookup_table_entry(w->lookup_table,
 				       lte_free_extracted_file,
 				       NULL);

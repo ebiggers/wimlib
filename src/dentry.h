@@ -252,6 +252,9 @@ struct inode {
 	/* %true iff verify_inode() has run on this dentry. */
 	u8 verified : 1;
 
+	/* temporary flag */
+	u8 found    : 1;
+
 	/* Number of alternate data streams associated with this inode */
 	u16 num_ads;
 
