@@ -472,6 +472,7 @@ static int extract_single_image(WIMStruct *w, int image,
 {
 	int ret;
 	struct dentry *root;
+	const char *image_name;
 
 	DEBUG("Extracting image %d", image);
 
@@ -488,12 +489,23 @@ static int extract_single_image(WIMStruct *w, int image,
 		.num_lutimes_warnings = 0,
 	};
 
+	image_name = wimlib_get_image_name(w, image);
+	if (!image_name)
+		image_name = "unnamed";
+
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL) {
 		for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt,
 				       NULL);
 		args.extract_flags |= WIMLIB_EXTRACT_FLAG_NO_STREAMS;
-		if (args.extract_flags & WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS)
-			puts("Creating directory structure...");
+		if (args.extract_flags & WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS) {
+			printf("Creating directory structure for image %d (%s)...\n",
+			       image, image_name);
+		}
+	} else {
+		if (args.extract_flags & WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS) {
+			printf("Extracting image %d (%s)...\n",
+			       image, image_name);
+		}
 	}
 
 	ret = for_dentry_in_tree(root, extract_dentry, &args);
@@ -502,54 +514,54 @@ static int extract_single_image(WIMStruct *w, int image,
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL) {
 		struct list_head stream_list;
+		struct lookup_table_entry *lte;
+		struct lookup_table_entry *tmp;
+		struct dentry *dentry;
+		u64 total_size;
+		u64 cur_size;
+		u64 next_size;
+		u64 one_percent;
+		unsigned cur_percent;
+
 		INIT_LIST_HEAD(&stream_list);
 		w->private = &stream_list;
 		for_dentry_in_tree(root, dentry_add_streams_for_extraction, w);
 		ret = sort_stream_list_by_wim_position(&stream_list);
 		args.extract_flags &= ~WIMLIB_EXTRACT_FLAG_NO_STREAMS;
-		if (ret == 0) {
-			struct lookup_table_entry *lte;
-			struct lookup_table_entry *tmp;
-			struct dentry *dentry;
-			u64 total_size;
-			u64 cur_size;
-			u64 next_size;
-			u64 one_percent;
-			unsigned cur_percent;
-
-			total_size = calculate_bytes_to_extract(&stream_list, args.extract_flags);
-			one_percent = total_size / 100;
-			cur_size = 0;
-			next_size = 0;
-			cur_percent = 0;
-			puts("Extracting files...");
-			list_for_each_entry_safe(lte, tmp, &stream_list, staging_list) {
-				list_del(&lte->staging_list);
-				list_for_each_entry(dentry, &lte->dentry_list, tmp_list) {
-					if ((!dentry->d_inode->extracted_file) && 
-					     (args.extract_flags & WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS))
-					{
-						show_stream_op_progress(&cur_size, &next_size,
-									total_size, one_percent,
-									&cur_percent, lte,
-									"extracted");
-					}
-					ret = extract_dentry(dentry, &args);
-					if (ret != 0)
-						return ret;
-				}
-			}
-			finish_stream_op_progress(total_size, "extracted");
-		} else {
+		if (ret != 0) {
 			WARNING("Falling back to non-sequential image extraction");
 			ret = for_dentry_in_tree(root, extract_dentry, &args);
 			if (ret != 0)
 				return ret;
+			goto out;
 		}
+
+		total_size = calculate_bytes_to_extract(&stream_list, args.extract_flags);
+		one_percent = total_size / 100;
+		cur_size = 0;
+		next_size = 0;
+		cur_percent = 0;
+		puts("Extracting files...");
+		list_for_each_entry_safe(lte, tmp, &stream_list, staging_list) {
+			list_del(&lte->staging_list);
+			list_for_each_entry(dentry, &lte->dentry_list, tmp_list) {
+				if ((!dentry->d_inode->extracted_file) &&
+				     (args.extract_flags & WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS))
+				{
+					show_stream_op_progress(&cur_size, &next_size,
+								total_size, one_percent,
+								&cur_percent, lte,
+								"extracted");
+				}
+				ret = extract_dentry(dentry, &args);
+				if (ret != 0)
+					return ret;
+			}
+		}
+		finish_stream_op_progress(total_size, "extracted");
 	}
-
+out:
 	return for_dentry_in_tree_depth(root, apply_dentry_timestamps, &args);
-
 }
 
 
