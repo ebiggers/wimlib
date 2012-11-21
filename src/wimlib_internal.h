@@ -39,6 +39,8 @@ struct stat;
 struct dentry;
 struct inode;
 
+#include "wimlib.h"
+
 #define WIM_MAGIC_LEN  8
 #define WIM_GID_LEN    16
 #define WIM_UNUSED_LEN 60
@@ -387,14 +389,14 @@ struct inode_table {
 	struct hlist_head extra_inodes;
 };
 
-int init_inode_table(struct inode_table *table, size_t capacity);
+extern int init_inode_table(struct inode_table *table, size_t capacity);
 static inline void destroy_inode_table(struct inode_table *table)
 {
 	FREE(table->array);
 }
-int inode_table_insert(struct dentry *dentry, void *__table);
-u64 assign_inode_numbers(struct hlist_head *inode_list);
-int fix_inodes(struct inode_table *table, struct hlist_head *inode_list);
+extern int inode_table_insert(struct dentry *dentry, void *__table);
+extern u64 assign_inode_numbers(struct hlist_head *inode_list);
+extern int fix_inodes(struct inode_table *table, struct hlist_head *inode_list);
 
 
 /* header.c */
@@ -407,8 +409,10 @@ extern int write_integrity_table(FILE *out,
 				 struct resource_entry *integrity_res_entry,
 				 off_t new_lookup_table_end,
 				 off_t old_lookup_table_end,
-				 bool show_progress);
-extern int check_wim_integrity(WIMStruct *w, bool show_progress);
+				 wimlib_progress_func_t progress_func);
+
+extern int check_wim_integrity(WIMStruct *w,
+			       wimlib_progress_func_t progress_func);
 
 /* join.c */
 
@@ -434,7 +438,35 @@ extern int do_add_image(WIMStruct *w, const char *dir, const char *name,
 				     struct wim_security_data *,
 				     const struct capture_config *,
 				     int, void *),
-			void *extra_arg);
+			void *extra_arg,
+			wimlib_progress_func_t progress_func);
+
+/* ntfs-apply.c */
+
+struct apply_args {
+	WIMStruct *w;
+	const char *target;
+	int extract_flags;
+	unsigned num_lutimes_warnings;
+	struct list_head *stream_list;
+	union wimlib_progress_info progress;
+#ifdef WITH_NTFS_3G
+	struct _ntfs_volume *vol;
+#endif
+	struct list_head empty_files;
+};
+
+extern int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg);
+extern int wim_apply_dentry_timestamps(struct dentry *dentry, void *arg);
+
+/* ntfs-capture.c */
+int build_dentry_tree_ntfs(struct dentry **root_p,
+			   const char *device,
+			   struct lookup_table *lookup_table,
+			   struct wim_security_data *sd,
+			   const struct capture_config *config,
+			   int flags,
+			   void *extra_arg);
 
 /* resource.c */
 extern const u8 *get_resource_entry(const u8 *p, struct resource_entry *entry);
@@ -487,14 +519,6 @@ extern int inode_set_symlink(struct inode *inode,
 			     struct lookup_table *lookup_table,
 			     struct lookup_table_entry **lte_ret);
 
-extern void show_stream_op_progress(u64 *cur_size, u64 *next_size,
-				    u64 total_size, u64 one_percent,
-				    unsigned *cur_percent,
-				    const struct lookup_table_entry *cur_lte,
-				    const char *op);
-
-extern void finish_stream_op_progress(u64 total_size, const char *op);
-
 /* wim.c */
 extern WIMStruct *new_wim_struct();
 extern int select_wim_image(WIMStruct *w, int image);
@@ -513,15 +537,14 @@ extern int open_wim_writable(WIMStruct *w, const char *path,
 /* Internal use only */
 #define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE		0x80000000
 #define WIMLIB_EXTRACT_FLAG_NO_STREAMS		0x40000000
-#define WIMLIB_EXTRACT_MASK_PUBLIC		0x2fffffff
+#define WIMLIB_EXTRACT_MASK_PUBLIC		0x3fffffff
 
 
 /* write.c */
 extern int begin_write(WIMStruct *w, const char *path, int write_flags);
-extern int finish_write(WIMStruct *w, int image, int write_flags);
 
-
-#include "wimlib.h"
+extern int finish_write(WIMStruct *w, int image, int write_flags,
+			wimlib_progress_func_t progress_func);
 
 #endif /* _WIMLIB_INTERNAL_H */
 

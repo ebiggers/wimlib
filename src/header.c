@@ -197,14 +197,14 @@ int init_header(struct wim_header *hdr, int ctype)
 {
 	memset(hdr, 0, sizeof(struct wim_header));
 	switch (ctype) {
-	case WIM_COMPRESSION_TYPE_NONE:
+	case WIMLIB_COMPRESSION_TYPE_NONE:
 		hdr->flags = 0;
 		break;
-	case WIM_COMPRESSION_TYPE_LZX:
+	case WIMLIB_COMPRESSION_TYPE_LZX:
 		hdr->flags = WIM_HDR_FLAG_COMPRESSION |
 			     WIM_HDR_FLAG_COMPRESS_LZX;
 		break;
-	case WIM_COMPRESSION_TYPE_XPRESS:
+	case WIMLIB_COMPRESSION_TYPE_XPRESS:
 		hdr->flags = WIM_HDR_FLAG_COMPRESSION |
 			     WIM_HDR_FLAG_COMPRESS_XPRESS;
 		break;

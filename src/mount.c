@@ -896,7 +896,7 @@ static int rebuild_wim(struct wimfs_context *ctx, bool check_integrity)
 
 	xml_update_image_info(w, w->current_image);
 
-	ret = wimlib_overwrite(w, check_integrity, 0);
+	ret = wimlib_overwrite(w, check_integrity, 0, NULL);
 	if (ret != 0) {
 		ERROR("Failed to commit changes");
 		return ret;
@@ -1853,10 +1853,10 @@ static struct fuse_operations wimfs_operations = {
 };
 
 
-/* Mounts a WIM file. */
-WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
-			   int flags, WIMStruct **additional_swms,
-			   unsigned num_additional_swms)
+/* Mounts an image from a WIM file. */
+WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
+				 int mount_flags, WIMStruct **additional_swms,
+				 unsigned num_additional_swms)
 {
 	int argc = 0;
 	char *argv[16];
@@ -1867,7 +1867,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	struct wimfs_context ctx;
 
 	DEBUG("Mount: wim = %p, image = %d, dir = %s, flags = %d, ",
-	      wim, image, dir, flags);
+	      wim, image, dir, mount_flags);
 
 	if (!wim || !dir)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -1876,7 +1876,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	if (ret != 0)
 		return ret;
 
-	if ((flags & WIMLIB_MOUNT_FLAG_READWRITE) && (wim->hdr.total_parts != 1)) {
+	if ((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) && (wim->hdr.total_parts != 1)) {
 		ERROR("Cannot mount a split WIM read-write");
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
@@ -1914,10 +1914,10 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 		goto out;
 	}
 
-	if (!(flags & (WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE |
+	if (!(mount_flags & (WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE |
 		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR |
 		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)))
-		flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR;
+		mount_flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR;
 
 
 	DEBUG("Initializing struct wimfs_context");
@@ -1947,10 +1947,10 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	argv[argc++] = dir_copy;
 
  	/* disable multi-threaded operation for read-write mounts */
-	if (flags & WIMLIB_MOUNT_FLAG_READWRITE)
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		argv[argc++] = "-s";
 
-	if (flags & WIMLIB_MOUNT_FLAG_DEBUG)
+	if (mount_flags & WIMLIB_MOUNT_FLAG_DEBUG)
 		argv[argc++] = "-d";
 
 	/*
@@ -1962,7 +1962,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 	char optstring[256] = "use_ino,subtype=wimfs,attr_timeout=0";
 	argv[argc++] = "-o";
 	argv[argc++] = optstring;
-	if ((flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
+	if ((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
 		/* Read-write mount.  Make the staging directory */
 		ret = make_staging_dir(&ctx);
 		if (ret != 0)
@@ -1987,7 +1987,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 #endif
 
 	/* Mark dentry tree as modified if read-write mount. */
-	if (flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		imd->modified = true;
 		imd->has_been_mounted_rw = true;
 	}
@@ -2002,7 +2002,7 @@ WIMLIBAPI int wimlib_mount(WIMStruct *wim, int image, const char *dir,
 
 	/* Finish initializing the filesystem context. */
 	ctx.wim = wim;
-	ctx.mount_flags = flags;
+	ctx.mount_flags = mount_flags;
 
 	DEBUG("Calling fuse_main()");
 
@@ -2029,9 +2029,9 @@ out:
 
 /*
  * Unmounts the WIM file that was previously mounted on @dir by using
- * wimlib_mount().
+ * wimlib_mount_image().
  */
-WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
+WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags)
 {
 	pid_t pid;
 	int status;
@@ -2057,8 +2057,8 @@ WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
 
 	/* Send a message to the filesystem daemon saying whether to commit or
 	 * not. */
-	msg[0] = (flags & WIMLIB_UNMOUNT_FLAG_COMMIT) ? 1 : 0;
-	msg[1] = (flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY) ? 1 : 0;
+	msg[0] = (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT) ? 1 : 0;
+	msg[1] = (unmount_flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY) ? 1 : 0;
 
 	DEBUG("Sending message: %scommit, %scheck",
 			(msg[0] ? "" : "don't "),
@@ -2208,14 +2208,14 @@ static inline int mount_unsupported_error()
 	return WIMLIB_ERR_UNSUPPORTED;
 }
 
-WIMLIBAPI int wimlib_unmount(const char *dir, int flags)
+WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags)
 {
 	return mount_unsupported_error();
 }
 
-WIMLIBAPI int wimlib_mount(WIMStruct *wim_p, int image, const char *dir,
-			   int flags, WIMStruct **additional_swms,
-			   unsigned num_additional_swms)
+WIMLIBAPI int wimlib_mount_image(WIMStruct *wim_p, int image, const char *dir,
+				 int mount_flags, WIMStruct **additional_swms,
+				 unsigned num_additional_swms)
 {
 	return mount_unsupported_error();
 }

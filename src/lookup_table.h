@@ -185,24 +185,22 @@ struct lookup_table_entry {
 		struct resource_entry output_resource_entry;
 
 		struct list_head msg_list;
-		struct list_head dentry_list;
+		struct list_head inode_list;
 	};
 
-	union {
-		/* This field is used for the special hardlink or symlink image
-		 * extraction mode.   In these mode, all identical files are linked
-		 * together, and @extracted_file will be set to the filename of the
-		 * first extracted file containing this stream.  */
-		struct {
-			char *extracted_file;
-			bool extracted;
-		};
+	/* List of lookup table entries that correspond to streams that have
+	 * been extracted to the staging directory when modifying a read-write
+	 * mounted WIM.
+	 *
+	 * This field is also used to make other lists of lookup table entries.
+	 * */
+	struct list_head staging_list;
 
-		/* List of lookup table entries that correspond to streams that have
-		 * been extracted to the staging directory when modifying a read-write
-		 * mounted WIM. */
-		struct list_head staging_list;
-	};
+	/* This field is used for the special hardlink or symlink image
+	 * extraction mode.   In these mode, all identical files are linked
+	 * together, and @extracted_file will be set to the filename of the
+	 * first extracted file containing this stream.  */
+	char *extracted_file;
 };
 
 static inline u64 wim_resource_size(const struct lookup_table_entry *lte)
@@ -230,7 +228,7 @@ wim_resource_compression_type(const struct lookup_table_entry *lte)
 {
 	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
 	    || lte->resource_location != RESOURCE_IN_WIM)
-		return WIM_COMPRESSION_TYPE_NONE;
+		return WIMLIB_COMPRESSION_TYPE_NONE;
 	return wimlib_get_compression_type(lte->wim);
 }
 
@@ -285,6 +283,9 @@ extern void free_lookup_table(struct lookup_table *table);
 extern int write_lookup_table_entry(struct lookup_table_entry *lte, void *__out);
 
 extern void free_lookup_table_entry(struct lookup_table_entry *lte);
+
+extern void inode_resolve_ltes(struct inode *inode,
+			       struct lookup_table *table);
 
 extern int dentry_resolve_ltes(struct dentry *dentry, void *__table);
 extern int dentry_unresolve_ltes(struct dentry *dentry, void *ignore);
@@ -417,6 +418,8 @@ inode_unnamed_lte_unresolved(const struct inode *inode,
 extern struct lookup_table_entry *
 inode_unnamed_lte(const struct inode *inode,
 		  const struct lookup_table *table);
+
+extern u64 lookup_table_total_stream_size(struct lookup_table *table);
 
 
 #endif

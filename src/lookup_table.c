@@ -626,7 +626,7 @@ out:
 }
 #endif
 
-static void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
+void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 {
 	struct lookup_table_entry *lte;
 
@@ -704,7 +704,7 @@ int dentry_unresolve_ltes(struct dentry *dentry, void *ignore)
  */
 struct lookup_table_entry *
 inode_unnamed_lte(const struct inode *inode,
-		   const struct lookup_table *table)
+		  const struct lookup_table *table)
 {
 	if (inode->resolved)
 		return inode_unnamed_lte_resolved(inode);
@@ -712,3 +712,16 @@ inode_unnamed_lte(const struct inode *inode,
 		return inode_unnamed_lte_unresolved(inode, table);
 }
 
+static int lte_add_stream_size(struct lookup_table_entry *lte,
+			       void *total_bytes_p)
+{
+	*(u64*)total_bytes_p += lte->resource_entry.size;
+	return 0;
+}
+
+u64 lookup_table_total_stream_size(struct lookup_table *table)
+{
+	u64 total_size = 0;
+	for_lookup_table_entry(table, lte_add_stream_size, &total_size);
+	return total_size;
+}

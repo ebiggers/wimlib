@@ -217,7 +217,7 @@ static void imagex_error_with_errno(const char *format, ...)
 static int verify_image_exists(int image, const char *image_name,
 			       const char *wim_name)
 {
-	if (image == WIM_NO_IMAGE) {
+	if (image == WIMLIB_NO_IMAGE) {
 		imagex_error("\"%s\" is not a valid image in `%s'!\n"
 			     "       Please specify a 1-based imagex index or "
 			     "image name.\n"
@@ -231,7 +231,7 @@ static int verify_image_exists(int image, const char *image_name,
 
 static int verify_image_is_single(int image)
 {
-	if (image == WIM_ALL_IMAGES) {
+	if (image == WIMLIB_ALL_IMAGES) {
 		imagex_error("Cannot specify all images for this action!");
 		return -1;
 	}
@@ -251,15 +251,15 @@ static int verify_image_exists_and_is_single(int image, const char *image_name,
 static int get_compression_type(const char *optarg)
 {
 	if (strcasecmp(optarg, "maximum") == 0 || strcasecmp(optarg, "lzx") == 0)
-		return WIM_COMPRESSION_TYPE_LZX;
+		return WIMLIB_COMPRESSION_TYPE_LZX;
 	else if (strcasecmp(optarg, "fast") == 0 || strcasecmp(optarg, "xpress") == 0)
-		return WIM_COMPRESSION_TYPE_XPRESS;
+		return WIMLIB_COMPRESSION_TYPE_XPRESS;
 	else if (strcasecmp(optarg, "none") == 0)
-		return WIM_COMPRESSION_TYPE_NONE;
+		return WIMLIB_COMPRESSION_TYPE_NONE;
 	else {
 		imagex_error("Invalid compression type `%s'! Must be "
 			     "\"maximum\", \"fast\", or \"none\".", optarg);
-		return WIM_COMPRESSION_TYPE_INVALID;
+		return WIMLIB_COMPRESSION_TYPE_INVALID;
 	}
 }
 
@@ -320,6 +320,134 @@ static int file_writable(const char *path)
 	return ret;
 }
 
+#define TO_PERCENT(numerator, denominator) \
+	(((denominator) == 0) ? 0 : ((numerator) * 100 / (denominator)))
+
+static const char *get_data_type(int ctype)
+{
+	switch (ctype) {
+	case WIMLIB_COMPRESSION_TYPE_NONE:
+		return "uncompressed";
+	case WIMLIB_COMPRESSION_TYPE_LZX:
+		return "LZX-compressed";
+	case WIMLIB_COMPRESSION_TYPE_XPRESS:
+		return "XPRESS-compressed";
+	}
+	return NULL;
+}
+
+static int imagex_progress_func(enum wimlib_progress_msg msg,
+				const union wimlib_progress_info *info)
+{
+	unsigned percent_done;
+	switch (msg) {
+	case WIMLIB_PROGRESS_MSG_WRITE_STREAMS:
+		percent_done = TO_PERCENT(info->write_streams.completed_bytes,
+					  info->write_streams.total_bytes);
+		if (info->write_streams.completed_streams == 0) {
+			const char *data_type;
+
+			data_type = get_data_type(info->write_streams.compression_type);
+			printf("Writing %s data using %u thread%s\n",
+			       data_type, info->write_streams.num_threads,
+			       (info->write_streams.num_threads == 1) ? "" : "s");
+		}
+		printf("\r%"PRIu64" MiB of %"PRIu64" MiB (uncompressed) "
+		       "written (%u%% done)",
+		       info->write_streams.completed_bytes >> 20,
+		       info->write_streams.total_bytes >> 20,
+		       percent_done);
+		if (info->write_streams.completed_bytes == info->write_streams.total_bytes)
+			putchar('\n');
+		break;
+	case WIMLIB_PROGRESS_MSG_SCAN_BEGIN:
+		printf("Scanning `%s'...\n", info->scan.source);
+		break;
+	/*case WIMLIB_PROGRESS_MSG_SCAN_END:*/
+		/*break;*/
+	case WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY:
+		percent_done = TO_PERCENT(info->integrity.completed_bytes,
+					  info->integrity.total_bytes);
+		printf("\rVerifying integrity of `%s': %"PRIu64" MiB "
+		       "of %"PRIu64" MiB (%u%%) done",
+		       info->integrity.filename,
+		       info->integrity.completed_bytes >> 20,
+		       info->integrity.total_bytes >> 20,
+		       percent_done);
+		if (info->integrity.completed_bytes == info->integrity.total_bytes)
+			putchar('\n');
+		break;
+	case WIMLIB_PROGRESS_MSG_CALC_INTEGRITY:
+		percent_done = TO_PERCENT(info->integrity.completed_bytes,
+					  info->integrity.total_bytes);
+		printf("\rCalculating integrity table for WIM: %"PRIu64" MiB "
+		       "of %"PRIu64" MiB (%u%%) done",
+		       info->integrity.completed_bytes >> 20,
+		       info->integrity.total_bytes >> 20,
+		       percent_done);
+		if (info->integrity.completed_bytes == info->integrity.total_bytes)
+			putchar('\n');
+		break;
+	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN:
+		/*printf("Applying image %d (%s) to `%s'\n",*/
+		       /*info->extract.image,*/
+		       /*info->extract.image_name,*/
+		       /*info->extract.target);*/
+		break;
+	/*case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:*/
+		/*printf("Done applying image %d!\n",*/
+		       /*info->extract.image);*/
+		/*break;*/
+	/*case WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN:*/
+		/*printf("Applying directory structure to %s\n",*/
+		       /*info->extract.target);*/
+		/*break;*/
+	case WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS:
+		percent_done = TO_PERCENT(info->extract.completed_bytes,
+					  info->extract.total_bytes);
+		printf("\rExtracting files: "
+		       "%"PRIu64" MiB of %"PRIu64" MiB (%u%%) done",
+		       info->extract.completed_bytes >> 20,
+		       info->extract.total_bytes >> 20,
+		       percent_done);
+		if (info->extract.completed_bytes == info->extract.total_bytes)
+			putchar('\n');
+		break;
+	case WIMLIB_PROGRESS_MSG_JOIN_STREAMS:
+		percent_done = TO_PERCENT(info->join.completed_bytes,
+					  info->join.total_bytes);
+		printf("Writing resources from part %u of %u: "
+		       "%"PRIu64 " MiB of %"PRIu64" MiB (%u%%) written\n",
+		       (info->join.completed_parts == info->join.total_parts) ?
+				info->join.completed_parts : info->join.completed_parts + 1,
+		       info->join.total_parts,
+		       info->join.completed_bytes >> 20,
+		       info->join.total_bytes >> 20,
+		       percent_done);
+		break;
+	case WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART:
+		percent_done = TO_PERCENT(info->split.completed_bytes,
+					  info->split.total_bytes);
+		printf("Writing `%s': %"PRIu64" MiB of %"PRIu64" MiB (%u%%) written\n",
+		       info->split.part_name,
+		       info->split.completed_bytes >> 20,
+		       info->split.total_bytes >> 20,
+		       percent_done);
+		break;
+	case WIMLIB_PROGRESS_MSG_SPLIT_END_PART:
+		if (info->split.completed_bytes == info->split.total_bytes) {
+			printf("Finished writing %u split WIM parts\n",
+			       info->split.cur_part_number);
+		}
+		break;
+	default:
+		break;
+	}
+	fflush(stdout);
+	return 0;
+}
+
+
 static int open_swms_from_glob(const char *swm_glob,
 			       const char *first_part,
 			       int open_flags,
@@ -358,7 +486,8 @@ static int open_swms_from_glob(const char *swm_glob,
 		}
 		ret = wimlib_open_wim(globbuf.gl_pathv[i],
 				      open_flags | WIMLIB_OPEN_FLAG_SPLIT_OK,
-				      &additional_swms[i - offset]);
+				      &additional_swms[i - offset],
+				      imagex_progress_func);
 		if (ret != 0)
 			goto out_close_swms;
 	}
@@ -394,17 +523,15 @@ static unsigned parse_num_threads(const char *optarg)
 static int imagex_apply(int argc, const char **argv)
 {
 	int c;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS |
-			 WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
 	int image;
 	int num_images;
 	WIMStruct *w;
 	int ret;
 	const char *wimfile;
-	const char *dir;
+	const char *target;
 	const char *image_num_or_name;
-	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL |
-			    WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS;
+	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
 
 	const char *swm_glob = NULL;
 	WIMStruct **additional_swms = NULL;
@@ -442,13 +569,13 @@ static int imagex_apply(int argc, const char **argv)
 	wimfile = argv[0];
 	if (argc == 2) {
 		image_num_or_name = "1";
-		dir = argv[1];
+		target = argv[1];
 	} else {
 		image_num_or_name = argv[1];
-		dir = argv[2];
+		target = argv[2];
 	}
 
-	ret = wimlib_open_wim(wimfile, open_flags, &w);
+	ret = wimlib_open_wim(wimfile, open_flags, &w, imagex_progress_func);
 	if (ret != 0)
 		return ret;
 
@@ -477,30 +604,25 @@ static int imagex_apply(int argc, const char **argv)
 #ifdef WITH_NTFS_3G
 	struct stat stbuf;
 
-	ret = stat(dir, &stbuf);
+	ret = stat(target, &stbuf);
 	if (ret == 0) {
 		if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
-			const char *ntfs_device = dir;
-			printf("Applying image %d of `%s' to NTFS filesystem on `%s'\n",
-			       image, wimfile, ntfs_device);
-			ret = wimlib_apply_image_to_ntfs_volume(w, image,
-								ntfs_device,
-								extract_flags,
-								additional_swms,
-								num_additional_swms);
-			goto out;
+			extract_flags |= WIMLIB_EXTRACT_FLAG_NTFS;
+			printf("Applying `%s' image %d to NTFS volume `%s'\n",
+			       wimfile, image, target);
 		}
 	} else {
 		if (errno != ENOENT) {
-			imagex_error_with_errno("Failed to stat `%s'", dir);
+			imagex_error_with_errno("Failed to stat `%s'", target);
 			ret = -1;
 			goto out;
 		}
 	}
 #endif
 
-	ret = wimlib_extract_image(w, image, dir, extract_flags,
-				   additional_swms, num_additional_swms);
+	ret = wimlib_extract_image(w, image, target, extract_flags,
+				   additional_swms, num_additional_swms,
+				   imagex_progress_func);
 out:
 	wimlib_free(w);
 	if (additional_swms) {
@@ -514,11 +636,11 @@ out:
 static int imagex_capture_or_append(int argc, const char **argv)
 {
 	int c;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
-	int add_image_flags = WIMLIB_ADD_IMAGE_FLAG_SHOW_PROGRESS;
-	int write_flags = WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
-	int compression_type = WIM_COMPRESSION_TYPE_XPRESS;
-	const char *dir;
+	int open_flags = 0;
+	int add_image_flags = 0;
+	int write_flags = 0;
+	int compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
+	const char *source;
 	const char *wimfile;
 	const char *name;
 	const char *desc;
@@ -547,7 +669,7 @@ static int imagex_capture_or_append(int argc, const char **argv)
 			break;
 		case 'x':
 			compression_type = get_compression_type(optarg);
-			if (compression_type == WIM_COMPRESSION_TYPE_INVALID)
+			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				return -1;
 			break;
 		case 'f':
@@ -558,7 +680,6 @@ static int imagex_capture_or_append(int argc, const char **argv)
 			break;
 		case 'v':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
-			write_flags |= WIMLIB_WRITE_FLAG_VERBOSE;
 			break;
 		case 't':
 			num_threads = parse_num_threads(optarg);
@@ -579,12 +700,12 @@ static int imagex_capture_or_append(int argc, const char **argv)
 		usage(cmd);
 		return -1;
 	}
-	dir = argv[0];
+	source = argv[0];
 	wimfile = argv[1];
 
-	char dir_copy[strlen(dir) + 1];
-	memcpy(dir_copy, dir, strlen(dir) + 1);
-	default_name = basename(dir_copy);
+	char source_copy[strlen(source) + 1];
+	memcpy(source_copy, source, strlen(source) + 1);
+	default_name = basename(source_copy);
 
 	name = (argc >= 3) ? argv[2] : default_name;
 	desc = (argc >= 4) ? argv[3] : NULL;
@@ -596,7 +717,8 @@ static int imagex_capture_or_append(int argc, const char **argv)
 	}
 
 	if (cmd == APPEND)
-		ret = wimlib_open_wim(wimfile, open_flags, &w);
+		ret = wimlib_open_wim(wimfile, open_flags, &w,
+				      imagex_progress_func);
 	else
 		ret = wimlib_create_new_wim(compression_type, &w);
 	if (ret != 0)
@@ -605,31 +727,24 @@ static int imagex_capture_or_append(int argc, const char **argv)
 #ifdef WITH_NTFS_3G
 	struct stat stbuf;
 
-	ret = stat(dir, &stbuf);
+	ret = stat(source, &stbuf);
 	if (ret == 0) {
 		if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
-			const char *ntfs_device = dir;
-			printf("Capturing WIM image NTFS filesystem on `%s'\n",
-			       ntfs_device);
-			ret = wimlib_add_image_from_ntfs_volume(w, ntfs_device,
-								name,
-								config_str,
-								config_len,
-								add_image_flags);
-			goto out_write;
+			printf("Capturing WIM image from NTFS filesystem on `%s'\n",
+			       source);
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NTFS;
 		}
 	} else {
 		if (errno != ENOENT) {
-			imagex_error_with_errno("Failed to stat `%s'", dir);
+			imagex_error_with_errno("Failed to stat `%s'", source);
 			ret = -1;
 			goto out;
 		}
 	}
 #endif
-	ret = wimlib_add_image(w, dir, name, config_str, config_len,
-			       add_image_flags);
+	ret = wimlib_add_image(w, source, name, config_str, config_len,
+			       add_image_flags, imagex_progress_func);
 
-out_write:
 	if (ret != 0)
 		goto out;
 	cur_image = wimlib_get_num_images(w);
@@ -644,10 +759,11 @@ out_write:
 			goto out;
 	}
 	if (cmd == APPEND) {
-		ret = wimlib_overwrite(w, write_flags, num_threads);
+		ret = wimlib_overwrite(w, write_flags, num_threads,
+				       imagex_progress_func);
 	} else {
-		ret = wimlib_write(w, wimfile, WIM_ALL_IMAGES, write_flags,
-				   num_threads);
+		ret = wimlib_write(w, wimfile, WIMLIB_ALL_IMAGES, write_flags,
+				   num_threads, imagex_progress_func);
 	}
 	if (ret == WIMLIB_ERR_REOPEN)
 		ret = 0;
@@ -663,8 +779,8 @@ out:
 static int imagex_delete(int argc, const char **argv)
 {
 	int c;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
-	int write_flags = WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
+	int open_flags = 0;
+	int write_flags = 0;
 	const char *wimfile;
 	const char *image_num_or_name;
 	WIMStruct *w;
@@ -703,7 +819,8 @@ static int imagex_delete(int argc, const char **argv)
 	if (ret != 0)
 		return ret;
 
-	ret = wimlib_open_wim(wimfile, open_flags, &w);
+	ret = wimlib_open_wim(wimfile, open_flags, &w,
+			      imagex_progress_func);
 	if (ret != 0)
 		return ret;
 
@@ -719,7 +836,7 @@ static int imagex_delete(int argc, const char **argv)
 		goto out;
 	}
 
-	ret = wimlib_overwrite(w, write_flags, 0);
+	ret = wimlib_overwrite(w, write_flags, 0, imagex_progress_func);
 	if (ret == WIMLIB_ERR_REOPEN)
 		ret = 0;
 	if (ret != 0) {
@@ -752,7 +869,8 @@ static int imagex_dir(int argc, const char **argv)
 	}
 
 	wimfile = argv[1];
-	ret = wimlib_open_wim(wimfile, WIMLIB_OPEN_FLAG_SPLIT_OK, &w);
+	ret = wimlib_open_wim(wimfile, WIMLIB_OPEN_FLAG_SPLIT_OK, &w,
+			      imagex_progress_func);
 	if (ret != 0)
 		return ret;
 
@@ -786,10 +904,10 @@ out:
 static int imagex_export(int argc, const char **argv)
 {
 	int c;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
+	int open_flags = 0;
 	int export_flags = 0;
-	int write_flags = WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
-	int compression_type;
+	int write_flags = 0;
+	int compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
 	bool compression_type_specified = false;
 	const char *src_wimfile;
 	const char *src_image_num_or_name;
@@ -818,7 +936,7 @@ static int imagex_export(int argc, const char **argv)
 			break;
 		case 'x':
 			compression_type = get_compression_type(optarg);
-			if (compression_type == WIM_COMPRESSION_TYPE_INVALID)
+			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				return -1;
 			compression_type_specified = true;
 			break;
@@ -850,7 +968,8 @@ static int imagex_export(int argc, const char **argv)
 	dest_name             = (argc >= 4) ? argv[3] : NULL;
 	dest_desc             = (argc >= 5) ? argv[4] : NULL;
 	ret = wimlib_open_wim(src_wimfile,
-			      open_flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &src_w);
+			      open_flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &src_w,
+			      imagex_progress_func);
 	if (ret != 0)
 		return ret;
 
@@ -868,7 +987,8 @@ static int imagex_export(int argc, const char **argv)
 			ret = -1;
 			goto out;
 		}
-		ret = wimlib_open_wim(dest_wimfile, open_flags, &dest_w);
+		ret = wimlib_open_wim(dest_wimfile, open_flags, &dest_w,
+				      imagex_progress_func);
 		if (ret != 0)
 			goto out;
 
@@ -919,16 +1039,18 @@ static int imagex_export(int argc, const char **argv)
 
 	ret = wimlib_export_image(src_w, image, dest_w, dest_name, dest_desc,
 				  export_flags, additional_swms,
-				  num_additional_swms);
+				  num_additional_swms, imagex_progress_func);
 	if (ret != 0)
 		goto out;
 
 
 	if (wim_is_new)
-		ret = wimlib_write(dest_w, dest_wimfile, WIM_ALL_IMAGES,
-				   write_flags, num_threads);
+		ret = wimlib_write(dest_w, dest_wimfile, WIMLIB_ALL_IMAGES,
+				   write_flags, num_threads,
+				   imagex_progress_func);
 	else
-		ret = wimlib_overwrite(dest_w, write_flags, num_threads);
+		ret = wimlib_overwrite(dest_w, write_flags, num_threads,
+				       imagex_progress_func);
 out:
 	if (ret == WIMLIB_ERR_REOPEN)
 		ret = 0;
@@ -963,8 +1085,7 @@ static int imagex_info(int argc, const char **argv)
 	FILE *fp;
 	int image;
 	int ret;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS |
-			 WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
 	int part_number;
 	int total_parts;
 
@@ -1022,14 +1143,15 @@ static int imagex_info(int argc, const char **argv)
 	if (check)
 		open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 
-	ret = wimlib_open_wim(wimfile, open_flags, &w);
+	ret = wimlib_open_wim(wimfile, open_flags, &w,
+			      imagex_progress_func);
 	if (ret != 0)
 		return ret;
 
 	part_number = wimlib_get_part_number(w, &total_parts);
 
 	image = wimlib_resolve_image(w, image_num_or_name);
-	if (image == WIM_NO_IMAGE && strcmp(image_num_or_name, "0") != 0) {
+	if (image == WIMLIB_NO_IMAGE && strcmp(image_num_or_name, "0") != 0) {
 		imagex_error("The image `%s' does not exist",
 						image_num_or_name);
 		if (boot)
@@ -1040,7 +1162,7 @@ static int imagex_info(int argc, const char **argv)
 		goto out;
 	}
 
-	if (image == WIM_ALL_IMAGES && wimlib_get_num_images(w) > 1) {
+	if (image == WIMLIB_ALL_IMAGES && wimlib_get_num_images(w) > 1) {
 		if (boot) {
 			imagex_error("Cannot specify the --boot flag "
 				     "without specifying a specific "
@@ -1063,14 +1185,14 @@ static int imagex_info(int argc, const char **argv)
 
 		/* Read-only operations */
 
-		if (image == WIM_NO_IMAGE) {
+		if (image == WIMLIB_NO_IMAGE) {
 			imagex_error("`%s' is not a valid image",
 				     image_num_or_name);
 			ret = WIMLIB_ERR_INVALID_IMAGE;
 			goto out;
 		}
 
-		if (image == WIM_ALL_IMAGES && short_header)
+		if (image == WIMLIB_ALL_IMAGES && short_header)
 			wimlib_print_wim_information(w);
 
 		if (header)
@@ -1126,10 +1248,10 @@ static int imagex_info(int argc, const char **argv)
 			imagex_error("Modifying a split WIM is not supported.");
 			return -1;
 		}
-		if (image == WIM_ALL_IMAGES)
+		if (image == WIMLIB_ALL_IMAGES)
 			image = 1;
 
-		if (image == WIM_NO_IMAGE && new_name) {
+		if (image == WIMLIB_NO_IMAGE && new_name) {
 			imagex_error("Cannot specify new_name (`%s') when "
 				     "using image 0", new_name);
 			return -1;
@@ -1188,13 +1310,13 @@ static int imagex_info(int argc, const char **argv)
 
 			int write_flags;
 			if (check) {
-				write_flags = WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
-					      WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
+				write_flags = WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			} else {
 				write_flags = 0;
 			}
 
-			ret = wimlib_overwrite(w, write_flags, 1);
+			ret = wimlib_overwrite(w, write_flags, 1,
+					       imagex_progress_func);
 			if (ret == WIMLIB_ERR_REOPEN)
 				ret = 0;
 		} else {
@@ -1212,13 +1334,15 @@ out:
 static int imagex_join(int argc, const char **argv)
 {
 	int c;
-	int flags = WIMLIB_OPEN_FLAG_SPLIT_OK | WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
+	int swm_open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int wim_write_flags = 0;
 	const char *output_path;
 
 	for_opt(c, join_options) {
 		switch (c) {
 		case 'c':
-			flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			swm_open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			wim_write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		default:
 			goto err;
@@ -1228,12 +1352,13 @@ static int imagex_join(int argc, const char **argv)
 	argv += optind;
 
 	if (argc < 2) {
-		imagex_error("Must specify at least one split WIM (.swm) parts "
+		imagex_error("Must specify one or more split WIM (.swm) parts "
 			     "to join");
 		goto err;
 	}
 	output_path = argv[0];
-	return wimlib_join(++argv, --argc, output_path, flags);
+	return wimlib_join(++argv, --argc, output_path, swm_open_flags,
+			   wim_write_flags, imagex_progress_func);
 err:
 	usage(JOIN);
 	return -1;
@@ -1244,8 +1369,7 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 {
 	int c;
 	int mount_flags = 0;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS |
-			 WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
 	const char *wimfile;
 	const char *dir;
 	WIMStruct *w;
@@ -1293,7 +1417,8 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 
 	wimfile = argv[0];
 
-	ret = wimlib_open_wim(wimfile, open_flags, &w);
+	ret = wimlib_open_wim(wimfile, open_flags, &w,
+			      imagex_progress_func);
 	if (ret != 0)
 		return ret;
 
@@ -1331,8 +1456,8 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 			return ret;
 	}
 
-	ret = wimlib_mount(w, image, dir, mount_flags, additional_swms,
-			   num_additional_swms);
+	ret = wimlib_mount_image(w, image, dir, mount_flags, additional_swms,
+				 num_additional_swms);
 	if (ret != 0) {
 		imagex_error("Failed to mount image %d from `%s' on `%s'",
 			     image, wimfile, dir);
@@ -1355,9 +1480,8 @@ mount_usage:
 static int imagex_optimize(int argc, const char **argv)
 {
 	int c;
-	int open_flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
-	int write_flags = WIMLIB_WRITE_FLAG_REBUILD |
-			  WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
+	int open_flags = 0;
+	int write_flags = WIMLIB_WRITE_FLAG_REBUILD;
 	int ret;
 	WIMStruct *w;
 	const char *wimfile;
@@ -1388,7 +1512,8 @@ static int imagex_optimize(int argc, const char **argv)
 
 	wimfile = argv[0];
 
-	ret = wimlib_open_wim(wimfile, open_flags, &w);
+	ret = wimlib_open_wim(wimfile, open_flags, &w,
+			      imagex_progress_func);
 	if (ret != 0)
 		return ret;
 
@@ -1399,7 +1524,7 @@ static int imagex_optimize(int argc, const char **argv)
 	else
 		printf("%"PRIu64" KiB\n", old_size >> 10);
 
-	ret = wimlib_overwrite(w, write_flags, 0);
+	ret = wimlib_overwrite(w, write_flags, 0, imagex_progress_func);
 
 	new_size = file_get_size(argv[0]);
 	printf("`%s' optimized size: ", wimfile);
@@ -1424,14 +1549,18 @@ static int imagex_optimize(int argc, const char **argv)
 static int imagex_split(int argc, const char **argv)
 {
 	int c;
-	int flags = WIMLIB_OPEN_FLAG_SHOW_PROGRESS;
+	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int write_flags = 0;
 	unsigned long part_size;
 	char *tmp;
+	int ret;
+	WIMStruct *w;
 
 	for_opt(c, split_options) {
 		switch (c) {
 		case 'c':
-			flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		default:
 			usage(SPLIT);
@@ -1451,7 +1580,12 @@ static int imagex_split(int argc, const char **argv)
 		imagex_error("The part size must be an integer or floating-point number of megabytes.");
 		return -1;
 	}
-	return wimlib_split(argv[0], argv[1], part_size, flags);
+	ret = wimlib_open_wim(argv[0], open_flags, &w, imagex_progress_func);
+	if (ret != 0)
+		return ret;
+	ret = wimlib_split(w, argv[1], part_size, write_flags, imagex_progress_func);
+	wimlib_free(w);
+	return ret;
 }
 
 /* Unmounts an image. */
@@ -1481,7 +1615,7 @@ static int imagex_unmount(int argc, const char **argv)
 		return -1;
 	}
 
-	ret = wimlib_unmount(argv[0], unmount_flags);
+	ret = wimlib_unmount_image(argv[0], unmount_flags);
 	if (ret != 0)
 		imagex_error("Failed to unmount `%s'", argv[0]);
 	return ret;

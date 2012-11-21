@@ -157,6 +157,8 @@ struct dentry {
 	u16 file_name_utf8_len;
 
 	u8 is_extracted : 1;
+	u8 visited : 1;
+	u8 canonical : 1;
 
 	/* Byte 40 */
 
@@ -253,7 +255,7 @@ struct inode {
 	u8 verified : 1;
 
 	/* temporary flag */
-	u8 found    : 1;
+	u8 visited    : 1;
 
 	/* Number of alternate data streams associated with this inode */
 	u16 num_ads;
@@ -286,7 +288,13 @@ struct inode {
 	/* List of dentries that reference this inode (there should be
 	 * link_count of them) */
 	struct list_head dentry_list;
+
 	struct hlist_node hlist;
+
+	struct list_head tmp_list;
+
+	struct list_head lte_inode_list;
+
 	char *extracted_file;
 
 	/* Root of a red-black tree storing the children of this inode (if
@@ -318,11 +326,6 @@ struct inode {
 	 	wimlib_assert((inode)->dentry_list.next != NULL);		\
 		list_add(&(dentry)->inode_dentry_list, &(inode)->dentry_list);	\
 	})
-
-static inline bool dentry_is_extracted(const struct dentry *dentry)
-{
-	return dentry->is_extracted;
-}
 
 static inline bool dentry_is_first_in_inode(const struct dentry *dentry)
 {

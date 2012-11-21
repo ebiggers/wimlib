@@ -222,9 +222,9 @@ out:
  * 	If @old_table is non-NULL, the byte after the last byte that was checked
  * 	in the old table.  Must be less than or equal to new_check_end.
  *
- * @show_progress:
- * 	True if progress information is to be shown while calculating the
- * 	integrity data.
+ * @progress_func:
+ * 	If non-NULL, a progress function that will be called after every
+ * 	calculated chunk.
  *
  * @integrity_table_ret:
  * 	On success, a pointer to the calculated integrity table is written into
@@ -236,7 +236,7 @@ static int calculate_integrity_table(FILE *fp,
 				     off_t new_check_end,
 				     const struct integrity_table *old_table,
 				     off_t old_check_end,
-				     bool show_progress,
+				     wimlib_progress_func_t progress_func,
 				     struct integrity_table **integrity_table_ret)
 {
 	int ret = 0;
@@ -272,6 +272,18 @@ static int calculate_integrity_table(FILE *fp,
 	new_table->chunk_size = chunk_size;
 
 	u64 offset = WIM_HEADER_DISK_SIZE;
+	union wimlib_progress_info progress;
+
+	if (progress_func) {
+		progress.integrity.total_bytes      = new_check_bytes;
+		progress.integrity.total_chunks     = new_num_chunks;
+		progress.integrity.completed_chunks = 0;
+		progress.integrity.completed_bytes  = 0;
+		progress.integrity.chunk_size       = chunk_size;
+		progress.integrity.filename         = NULL;
+		progress_func(WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
+			      &progress);
+	}
 
 	for (u32 i = 0; i < new_num_chunks; i++) {
 		size_t this_chunk_size;
@@ -279,18 +291,6 @@ static int calculate_integrity_table(FILE *fp,
 			this_chunk_size = new_last_chunk_size;
 		else
 			this_chunk_size = chunk_size;
-		if (show_progress) {
-			unsigned percent_done;
-			u64 checked_bytes = offset - WIM_HEADER_DISK_SIZE;
-			percent_done = checked_bytes * 100 / new_check_bytes;
-			printf("\rCalculating integrity checksums for WIM: "
-			       "%"PRIu64" MiB of %"PRIu64" MiB (%u%%) done",
-			       checked_bytes >> 20,
-			       new_check_bytes >> 20,
-			       percent_done);
-			fflush(stdout);
-		}
-
 		if (old_table &&
 		    ((this_chunk_size == chunk_size && i < old_num_chunks - 1) ||
 		      (i == old_num_chunks - 1 && this_chunk_size == old_last_chunk_size)))
@@ -306,17 +306,17 @@ static int calculate_integrity_table(FILE *fp,
 				break;
 		}
 		offset += this_chunk_size;
+		if (progress_func) {
+			progress.integrity.completed_chunks++;
+			progress.integrity.completed_bytes += this_chunk_size;
+			progress_func(WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
+				      &progress);
+		}
 	}
-	if (ret != 0) {
-		FREE(new_table);
-	} else {
-		printf("\rCalculating integrity checksums for WIM: "
-		       "%"PRIu64" MiB of %"PRIu64" MiB (100%%) done\n",
-		       new_check_bytes >> 20,
-		       new_check_bytes >> 20);
-		fflush(stdout);
+	if (ret == 0)
 		*integrity_table_ret = new_table;
-	}
+	else
+		FREE(new_table);
 	return ret;
 }
 
@@ -350,9 +350,9 @@ static int calculate_integrity_table(FILE *fp,
  * 	If nonzero, the offset of the byte directly following the old lookup
  * 	table in the WIM.
  *
- * @show_progress:
- * 	True if progress information is to be shown while writing the integrity
- * 	table.
+ * @progress_func
+ * 	If non-NULL, a progress function that will be called after every
+ * 	calculated chunk.
  *
  * Returns:
  * 	0 on success, nonzero on failure.  The possible error codes are:
@@ -364,7 +364,7 @@ int write_integrity_table(FILE *fp,
 			  struct resource_entry *integrity_res_entry,
 			  off_t new_lookup_table_end,
 			  off_t old_lookup_table_end,
-			  bool show_progress)
+			  wimlib_progress_func_t progress_func)
 {
 	struct integrity_table *old_table;
 	struct integrity_table *new_table;
@@ -397,7 +397,7 @@ int write_integrity_table(FILE *fp,
 
 	ret = calculate_integrity_table(fp, new_lookup_table_end,
 					old_table, old_lookup_table_end,
-					show_progress, &new_table);
+					progress_func, &new_table);
 	if (ret != 0)
 		goto out_free_old_table;
 
@@ -444,9 +444,9 @@ out_free_old_table:
  * 	Number of bytes in the WIM that need to be checked (offset of end of the
  * 	lookup table minus offset of end of the header).
  *
- * @show_progress:
- * 	True if progress information is to be shown while checking the
- * 	integrity.
+ * @progress_func
+ * 	If non-NULL, a progress function that will be called after every
+ * 	verified chunk.
  *
  * Returns:
  * 	> 0 (WIMLIB_ERR_*) on error
@@ -454,12 +454,26 @@ out_free_old_table:
  * 	were no inconsistencies.
  * 	-1 (WIM_INTEGRITY_NOT_OK) if the WIM failed the integrity check.
  */
-static int verify_integrity(FILE *fp, const struct integrity_table *table,
-			    u64 bytes_to_check, bool show_progress)
+static int verify_integrity(FILE *fp, const char *filename,
+			    const struct integrity_table *table,
+			    u64 bytes_to_check,
+			    wimlib_progress_func_t progress_func)
 {
 	int ret;
 	u64 offset = WIM_HEADER_DISK_SIZE;
 	u8 sha1_md[SHA1_HASH_SIZE];
+	union wimlib_progress_info progress;
+
+	if (progress_func) {
+		progress.integrity.total_bytes      = bytes_to_check;
+		progress.integrity.total_chunks     = table->num_entries;
+		progress.integrity.completed_chunks = 0;
+		progress.integrity.completed_bytes  = 0;
+		progress.integrity.chunk_size       = table->chunk_size;
+		progress.integrity.filename         = filename;
+		progress_func(WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY,
+			      &progress);
+	}
 	for (u32 i = 0; i < table->num_entries; i++) {
 		size_t this_chunk_size;
 		if (i == table->num_entries - 1)
@@ -475,23 +489,14 @@ static int verify_integrity(FILE *fp, const struct integrity_table *table,
 		if (!hashes_equal(sha1_md, table->sha1sums[i]))
 			return WIM_INTEGRITY_NOT_OK;
 
-		if (show_progress) {
-			u64 checked_bytes = offset - WIM_HEADER_DISK_SIZE;
-			unsigned percent_done = checked_bytes * 100 / bytes_to_check;
-			printf("\rVerifying integrity of WIM: "
-			       "%"PRIu64" MiB of %"PRIu64" MiB (%u%%) done",
-			       checked_bytes >> 20,
-			       bytes_to_check >> 20,
-			       percent_done);
-			fflush(stdout);
-		}
 		offset += this_chunk_size;
+		if (progress_func) {
+			progress.integrity.completed_chunks++;
+			progress.integrity.completed_bytes += this_chunk_size;
+			progress_func(WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY,
+				      &progress);
+		}
 	}
-	printf("\rVerifying integrity of WIM: "
-	       "%"PRIu64" MiB of %"PRIu64" MiB (100%%) done\n",
-	       bytes_to_check >> 20,
-	       bytes_to_check >> 20);
-	fflush(stdout);
 	return WIM_INTEGRITY_OK;
 }
 
@@ -504,9 +509,9 @@ static int verify_integrity(FILE *fp, const struct integrity_table *table,
  * @w:
  * 	The WIM, opened for reading, and with the header already read.
  *
- * @show_progress:
- * 	True if progress information is to be shown while checking the
- * 	integrity.
+ * @progress_func
+ * 	If non-NULL, a progress function that will be called after every
+ * 	verified chunk.
  *
  * Returns:
  * 	> 0 (WIMLIB_ERR_*) on error
@@ -516,7 +521,7 @@ static int verify_integrity(FILE *fp, const struct integrity_table *table,
  * 	-2 (WIM_INTEGRITY_NONEXISTENT) if the WIM contains no integrity
  * 	information.
  */
-int check_wim_integrity(WIMStruct *w, bool show_progress)
+int check_wim_integrity(WIMStruct *w, wimlib_progress_func_t progress_func)
 {
 	int ret;
 	u64 bytes_to_check;
@@ -542,7 +547,8 @@ int check_wim_integrity(WIMStruct *w, bool show_progress)
 				   bytes_to_check, &table);
 	if (ret != 0)
 		return ret;
-	ret = verify_integrity(w->fp, table, bytes_to_check, show_progress);
+	ret = verify_integrity(w->fp, w->filename, table,
+			       bytes_to_check, progress_func);
 	FREE(table);
 	return ret;
 }

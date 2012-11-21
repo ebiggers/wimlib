@@ -27,15 +27,11 @@
 
 #include "config.h"
 
-#ifdef WITH_NTFS_3G
+
 #include <ntfs-3g/endians.h>
 #include <ntfs-3g/types.h>
-#endif
 
 #include "wimlib_internal.h"
-
-
-#ifdef WITH_NTFS_3G
 #include "dentry.h"
 #include "lookup_table.h"
 #include "io.h"
@@ -47,12 +43,6 @@
 #include <ntfs-3g/reparse.h>
 #include <stdlib.h>
 #include <unistd.h>
-
-struct ntfs_apply_args {
-	ntfs_volume *vol;
-	int extract_flags;
-	WIMStruct *w;
-};
 
 /*
  * Extracts a WIM resource to a NTFS attribute.
@@ -98,12 +88,11 @@ extract_wim_resource_to_ntfs_attr(const struct lookup_table_entry *lte,
  *
  * @ni:	     The NTFS inode for the file.
  * @inode:   The WIM dentry that has an inode containing the streams.
- * @w:	     The WIMStruct for the WIM containing the image we are applying.
  *
  * Returns 0 on success, nonzero on failure.
  */
 static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
-				   WIMStruct *w)
+				   struct apply_args *args)
 {
 	int ret = 0;
 	unsigned stream_idx = 0;
@@ -120,7 +109,7 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 		struct lookup_table_entry *lte;
 		ntfs_attr *na;
 
-		lte = inode_stream_lte(inode, stream_idx, w->lookup_table);
+		lte = inode_stream_lte_resolved(inode, stream_idx);
 
 		if (stream_name_len) {
 			/* Create an empty named stream. */
@@ -151,6 +140,7 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 			ret = extract_wim_resource_to_ntfs_attr(lte, na);
 			if (ret != 0)
 				break;
+			args->progress.extract.completed_bytes += wim_resource_size(lte);
 			ntfs_attr_close(na);
 		}
 		if (stream_idx == inode->num_ads)
@@ -281,14 +271,12 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 }
 
 static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
-			      const WIMStruct *w)
+			      struct apply_args *args)
 {
 	struct lookup_table_entry *lte;
 	int ret = 0;
 
-	wimlib_assert(dentry->d_inode->attributes & FILE_ATTRIBUTE_REPARSE_POINT);
-
-	lte = inode_unnamed_lte(dentry->d_inode, w->lookup_table);
+	lte = inode_unnamed_lte_resolved(dentry->d_inode);
 
 	DEBUG("Applying reparse data to `%s'", dentry->full_path_utf8);
 
@@ -321,11 +309,12 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 				 dentry->full_path_utf8);
 		return WIMLIB_ERR_NTFS_3G;
 	}
+	args->progress.extract.completed_bytes += wim_resource_size(lte);
 	return 0;
 }
 
 static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
-				    WIMStruct *w);
+				    struct apply_args *args);
 
 /*
  * If @dentry is part of a hard link group, search for hard-linked dentries in
@@ -337,7 +326,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
  */
 static int preapply_dentry_with_dos_name(struct dentry *dentry,
 				    	 ntfs_inode **dir_ni_p,
-					 WIMStruct *w)
+					 struct apply_args *args)
 {
 	struct dentry *other;
 	struct dentry *dentry_with_dos_name;
@@ -357,7 +346,7 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
 		}
 	}
 	/* If there's a dentry with a DOS name, extract it first */
-	if (dentry_with_dos_name && !dentry_is_extracted(dentry)) {
+	if (dentry_with_dos_name && !dentry_with_dos_name->is_extracted) {
 		char *p;
 		const char *dir_name;
 		char orig;
@@ -367,7 +356,7 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
 		DEBUG("pre-applying DOS name `%s'",
 		      dentry_with_dos_name->full_path_utf8);
 		ret = do_wim_apply_dentry_ntfs(dentry_with_dos_name,
-					       *dir_ni_p, w);
+					       *dir_ni_p, args);
 		if (ret != 0)
 			return ret;
 		p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
@@ -395,12 +384,11 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
  *
  * @dentry:  The WIM dentry to apply
  * @dir_ni:  The NTFS inode for the parent directory
- * @w:	     The WIMStruct for the WIM containing the image we are applying.
  *
  * @return:  0 on success; nonzero on failure.
  */
 static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
-				    WIMStruct *w)
+				    struct apply_args *args)
 {
 	int ret = 0;
 	mode_t type;
@@ -417,7 +405,7 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 		 * (if there is one) before this dentry */
 		if (dentry->short_name_len == 0) {
 			ret = preapply_dentry_with_dos_name(dentry,
-							    &dir_ni, w);
+							    &dir_ni, args);
 			if (ret != 0)
 				return ret;
 		}
@@ -467,18 +455,19 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	 * */
 	if (!(inode->attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
 				   FILE_ATTRIBUTE_DIRECTORY))) {
-		ret = write_ntfs_data_streams(ni, dentry, w);
+		ret = write_ntfs_data_streams(ni, dentry, args);
 		if (ret != 0)
 			goto out_close_dir_ni;
 	}
 
 
-	ret = apply_file_attributes_and_security_data(ni, dir_ni, dentry, w);
+	ret = apply_file_attributes_and_security_data(ni, dir_ni,
+						      dentry, args->w);
 	if (ret != 0)
 		goto out_close_dir_ni;
 
 	if (inode->attributes & FILE_ATTR_REPARSE_POINT) {
-		ret = apply_reparse_data(ni, dentry, w);
+		ret = apply_reparse_data(ni, dentry, args);
 		if (ret != 0)
 			goto out_close_dir_ni;
 	}
@@ -593,9 +582,9 @@ static int wim_apply_root_dentry_ntfs(const struct dentry *dentry,
 }
 
 /* Applies a WIM dentry to the NTFS volume */
-static int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
+int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 {
-	struct ntfs_apply_args *args = arg;
+	struct apply_args *args = arg;
 	ntfs_volume *vol             = args->vol;
 	int extract_flags            = args->extract_flags;
 	WIMStruct *w                 = args->w;
@@ -604,10 +593,12 @@ static int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 	char orig;
 	const char *dir_name;
 
-	if (dentry_is_extracted(dentry))
+	if (dentry->is_extracted)
 		return 0;
 
-	wimlib_assert(dentry->full_path_utf8);
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
+		if (inode_unnamed_lte_resolved(dentry->d_inode))
+			return 0;
 
 	DEBUG("Applying dentry `%s' to NTFS", dentry->full_path_utf8);
 
@@ -633,18 +624,17 @@ static int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 				 dir_name);
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	return do_wim_apply_dentry_ntfs(dentry, dir_ni, w);
+	return do_wim_apply_dentry_ntfs(dentry, dir_ni, arg);
 }
 
-static int wim_apply_dentry_timestamps(struct dentry *dentry, void *arg)
+int wim_apply_dentry_timestamps(struct dentry *dentry, void *arg)
 {
-	struct ntfs_apply_args *args = arg;
-	ntfs_volume *vol             = args->vol;
+	struct apply_args *args = arg;
+	ntfs_volume *vol = args->vol;
 	u8 *p;
 	u8 buf[24];
 	ntfs_inode *ni;
 	int ret = 0;
-
 
 	DEBUG("Setting timestamps on `%s'", dentry->full_path_utf8);
 
@@ -674,126 +664,3 @@ static int wim_apply_dentry_timestamps(struct dentry *dentry, void *arg)
 	}
 	return ret;
 }
-
-static int dentry_set_unextracted(struct dentry *dentry, void *ignore)
-{
-	dentry->is_extracted = false;
-	return 0;
-}
-
-static int do_wim_apply_image_ntfs(WIMStruct *w, const char *device, int extract_flags)
-{
-	ntfs_volume *vol;
-	int ret;
-	struct dentry *root;
-	struct ntfs_apply_args args;
-
-	DEBUG("Mounting NTFS volume `%s'", device);
-	vol = ntfs_mount(device, 0);
-	if (!vol) {
-		ERROR_WITH_ERRNO("Failed to mount NTFS volume `%s'", device);
-		return WIMLIB_ERR_NTFS_3G;
-	}
-	args.vol = vol;
-	args.extract_flags = extract_flags;
-	args.w = w;
-	root = wim_root_dentry(w);
-
-	for_dentry_in_tree(root, dentry_set_unextracted, NULL);
-	ret = for_dentry_in_tree(root, wim_apply_dentry_ntfs, &args);
-	if (ret != 0)
-		goto out;
-
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
-		printf("Setting timestamps of extracted files on NTFS "
-		       "volume `%s'\n", device);
-	ret = for_dentry_in_tree_depth(root, wim_apply_dentry_timestamps,
-				       &args);
-
-	if (ret == 0 && (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE))
-		printf("Finished applying image %d of %s to NTFS "
-		       "volume `%s'\n",
-		       w->current_image,
-		       w->filename ? w->filename : "WIM",
-		       device);
-out:
-	DEBUG("Unmounting NTFS volume `%s'", device);
-	if (ntfs_umount(vol, FALSE) != 0) {
-		ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'", device);
-		if (ret == 0)
-			ret = WIMLIB_ERR_NTFS_3G;
-	}
-	return ret;
-}
-
-
-/*
- * API entry point for applying a WIM image to a NTFS volume.
- *
- * Please note that this is a NTFS *volume* and not a directory.  The intention
- * is that the volume contain an empty filesystem, and the WIM image contain a
- * full filesystem to be applied to the volume.
- */
-WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
-					 	const char *device, int flags,
-						WIMStruct **additional_swms,
-						unsigned num_additional_swms)
-{
-	struct lookup_table *joined_tab, *w_tab_save;
-	int ret;
-
-	DEBUG("w->filename = %s, image = %d, device = %s, flags = 0x%x, "
-	      "num_additional_swms = %u",
-	      w->filename, image, device, flags, num_additional_swms);
-
-	if (!w || !device)
-		return WIMLIB_ERR_INVALID_PARAM;
-	if (image == WIM_ALL_IMAGES) {
-		ERROR("Can only apply a single image when applying "
-		      "directly to a NTFS volume");
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-	if (flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) {
-		ERROR("Cannot specify symlink or hardlink flags when applying ");
-		ERROR("directly to a NTFS volume");
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-
-	ret = verify_swm_set(w, additional_swms, num_additional_swms);
-	if (ret != 0)
-		return ret;
-
-	if (num_additional_swms) {
-		ret = new_joined_lookup_table(w, additional_swms,
-					      num_additional_swms, &joined_tab);
-		if (ret != 0)
-			return ret;
-		w_tab_save = w->lookup_table;
-		w->lookup_table = joined_tab;
-	}
-
-	ret = select_wim_image(w, image);
-	if (ret != 0)
-		goto out;
-
-	ret = do_wim_apply_image_ntfs(w, device, flags);
-
-out:
-	if (num_additional_swms) {
-		free_lookup_table(w->lookup_table);
-		w->lookup_table = w_tab_save;
-	}
-	return ret;
-}
-
-#else /* WITH_NTFS_3G */
-WIMLIBAPI int wimlib_apply_image_to_ntfs_volume(WIMStruct *w, int image,
-					 	const char *device, int flags,
-						WIMStruct **additional_swms,
-						unsigned num_additional_swms)
-{
-	ERROR("wimlib was compiled without support for NTFS-3g, so");
-	ERROR("we cannot apply a WIM image directly to a NTFS volume");
-	return WIMLIB_ERR_UNSUPPORTED;
-}
-#endif /* WITH_NTFS_3G */

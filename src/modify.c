@@ -482,9 +482,10 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 				  WIMStruct *dest_wim,
 				  const char *dest_name,
 				  const char *dest_description,
-				  int flags,
+				  int export_flags,
 				  WIMStruct **additional_swms,
-				  unsigned num_additional_swms)
+				  unsigned num_additional_swms,
+				  wimlib_progress_func_t progress_func)
 {
 	int i;
 	int ret;
@@ -502,12 +503,12 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
 
-	if (src_image == WIM_ALL_IMAGES) {
+	if (src_image == WIMLIB_ALL_IMAGES) {
 		if (src_wim->hdr.image_count > 1) {
 
 			/* multi-image export. */
 
-			if ((flags & WIMLIB_EXPORT_FLAG_BOOT) &&
+			if ((export_flags & WIMLIB_EXPORT_FLAG_BOOT) &&
 			      (src_wim->hdr.boot_idx == 0))
 			{
 				/* Specifying the boot flag on a multi-image
@@ -527,16 +528,17 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 				return WIMLIB_ERR_INVALID_PARAM;
 			}
 			for (i = 1; i <= src_wim->hdr.image_count; i++) {
-				int export_flags = flags;
+				int new_flags = export_flags;
 
 				if (i != src_wim->hdr.boot_idx)
-					export_flags &= ~WIMLIB_EXPORT_FLAG_BOOT;
+					new_flags &= ~WIMLIB_EXPORT_FLAG_BOOT;
 
 				ret = wimlib_export_image(src_wim, i, dest_wim,
 							  NULL, NULL,
-							  export_flags,
+							  new_flags,
 							  additional_swms,
-							  num_additional_swms);
+							  num_additional_swms,
+							  progress_func);
 				if (ret != 0)
 					return ret;
 			}
@@ -624,9 +626,9 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	for_dentry_in_tree(root, add_lte_to_dest_wim, &wims);
 	wimlib_assert(list_empty(&wims.lte_list_head));
 
-	if (flags & WIMLIB_EXPORT_FLAG_BOOT) {
+	if (export_flags & WIMLIB_EXPORT_FLAG_BOOT) {
 		DEBUG("Setting boot_idx to %d", dest_wim->hdr.image_count);
-		dest_wim->hdr.boot_idx = dest_wim->hdr.image_count;
+		wimlib_set_boot_idx(dest_wim, dest_wim->hdr.image_count);
 	}
 	ret = 0;
 	goto out;
@@ -661,7 +663,7 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
 
-	if (image == WIM_ALL_IMAGES) {
+	if (image == WIMLIB_ALL_IMAGES) {
 		for (i = w->hdr.image_count; i >= 1; i--) {
 			ret = wimlib_delete_image(w, i);
 			if (ret != 0)
@@ -699,7 +701,7 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 	else if (w->hdr.boot_idx > image)
 		w->hdr.boot_idx--;
 
-	w->current_image = WIM_NO_IMAGE;
+	w->current_image = WIMLIB_NO_IMAGE;
 
 	/* Remove the image from the XML information. */
 	xml_delete_image(&w->wim_info, image);
@@ -942,30 +944,18 @@ bool exclude_path(const char *path, const struct capture_config *config,
 
 }
 
-
-
-/*
- * Adds an image to the WIM, delegating the capture of the dentry tree and
- * security data to the function @capture_tree passed as a parameter.
- * Currently, @capture_tree may be build_dentry_tree() for capturing a "regular"
- * directory tree on disk, or build_dentry_tree_ntfs() for capturing a WIM image
- * directory from a NTFS volume using libntfs-3g.
- *
- * The @capture_tree function is also expected to create lookup table entries
- * for all the file streams it captures and insert them into @lookup_table,
- * being careful to look for identical entries that already exist and simply
- * increment the reference count for them rather than duplicating the entry.
- */
-int do_add_image(WIMStruct *w, const char *dir, const char *name,
-		 const char *config_str, size_t config_len,
-		 int flags,
-		 int (*capture_tree)(struct dentry **, const char *,
-			 	     struct lookup_table *,
-				     struct wim_security_data *,
-				     const struct capture_config *,
-				     int, void *),
-		 void *extra_arg)
+WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
+			       const char *name, const char *config_str,
+			       size_t config_len, int add_image_flags,
+			       wimlib_progress_func_t progress_func)
 {
+	int (*capture_tree)(struct dentry **, const char *,
+			    struct lookup_table *,
+			    struct wim_security_data *,
+			    const struct capture_config *,
+			    int, void *);
+	void *extra_arg;
+
 	struct dentry *root_dentry = NULL;
 	struct wim_security_data *sd;
 	struct capture_config config;
@@ -973,13 +963,31 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	struct hlist_head inode_list;
 	int ret;
 
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
+#ifdef WITH_NTFS_3G
+		if (add_image_flags & (WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)) {
+			ERROR("Cannot dereference files when capturing directly from NTFS");
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+		capture_tree = build_dentry_tree_ntfs;
+		extra_arg = &w->ntfs_vol;
+#else
+		ERROR("wimlib was compiled without support for NTFS-3g, so");
+		ERROR("we cannot capture a WIM image directly from a NTFS volume");
+		return WIMLIB_ERR_UNSUPPORTED;
+#endif
+	} else {
+		capture_tree = build_dentry_tree;
+		extra_arg = NULL;
+	}
+
 	DEBUG("Adding dentry tree from directory or NTFS volume `%s'.", dir);
 
 	if (!name || !*name) {
 		ERROR("Must specify a non-empty string for the image name");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
-	if (!dir) {
+	if (!source) {
 		ERROR("Must specify the name of a directory or NTFS volume");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
@@ -1001,7 +1009,7 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 		config_str = default_config;
 		config_len = strlen(default_config);
 	}
-	ret = init_capture_config(config_str, config_len, dir, &config);
+	ret = init_capture_config(config_str, config_len, source, &config);
 	if (ret != 0)
 		return ret;
 	print_capture_config(&config);
@@ -1016,18 +1024,27 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	sd->total_length = 8;
 	sd->refcnt = 1;
 
-	DEBUG("Building dentry tree.");
-	if (flags & WIMLIB_ADD_IMAGE_FLAG_SHOW_PROGRESS) {
-		printf("Scanning `%s'...\n", dir);
+	if (progress_func) {
+		union wimlib_progress_info progress;
+		progress.scan.source = source;
+		progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &progress);
 	}
-	ret = (*capture_tree)(&root_dentry, dir, w->lookup_table, sd,
-			      &config, flags | WIMLIB_ADD_IMAGE_FLAG_ROOT,
+
+	DEBUG("Building dentry tree.");
+	ret = (*capture_tree)(&root_dentry, source, w->lookup_table, sd,
+			      &config, add_image_flags | WIMLIB_ADD_IMAGE_FLAG_ROOT,
 			      extra_arg);
 	destroy_capture_config(&config);
 
 	if (ret != 0) {
-		ERROR("Failed to build dentry tree for `%s'", dir);
+		ERROR("Failed to build dentry tree for `%s'", source);
 		goto out_free_security_data;
+	}
+
+	if (progress_func) {
+		union wimlib_progress_info progress;
+		progress.scan.source = source;
+		progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &progress);
 	}
 
 	DEBUG("Calculating full paths of dentries.");
@@ -1059,9 +1076,8 @@ int do_add_image(WIMStruct *w, const char *dir, const char *name,
 	if (ret != 0)
 		goto out_destroy_imd;
 
-	if (flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
-		w->hdr.boot_idx = w->hdr.image_count;
-
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
+		wimlib_set_boot_idx(w, w->hdr.image_count);
 	return 0;
 out_destroy_imd:
 	destroy_image_metadata(&w->image_metadata[w->hdr.image_count - 1],
@@ -1075,15 +1091,4 @@ out_free_security_data:
 out_destroy_config:
 	destroy_capture_config(&config);
 	return ret;
-}
-
-/*
- * Adds an image to a WIM file from a directory tree on disk.
- */
-WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *dir,
-			       const char *name, const char *config_str,
-			       size_t config_len, int flags)
-{
-	return do_add_image(w, dir, name, config_str, config_len, flags,
-			    build_dentry_tree, NULL);
 }

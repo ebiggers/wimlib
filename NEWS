@@ -12,6 +12,9 @@ Version 1.1.1:
 	interface changes.  The soname is now updated to 1.0.0 and will now be
 	updated each release.
 
+	Progress information has been improved, and now arbitrary callback
+	functions can be used to show the progress of a WIM operation.
+
 	A possible bug with changing the bootable image of a WIM was fixed.
 
 Version 1.1.0:

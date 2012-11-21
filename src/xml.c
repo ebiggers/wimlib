@@ -1299,7 +1299,7 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	size_t bytes_written;
 	off_t start_offset, end_offset;
 
-	wimlib_assert(image == WIM_ALL_IMAGES ||
+	wimlib_assert(image == WIMLIB_ALL_IMAGES ||
 			(wim_info != NULL && image >= 1 &&
 			 image <= wim_info->num_images));
 
@@ -1353,7 +1353,7 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	if (wim_info != NULL) {
 		DEBUG("Writing %d <IMAGE> elements", (int)wim_info->num_images);
 		for (int i = 1; i <= (int)wim_info->num_images; i++) {
-			if (image != WIM_ALL_IMAGES && i != image)
+			if (image != WIMLIB_ALL_IMAGES && i != image)
 				continue;
 			DEBUG("Writing <IMAGE> element for image %d", i);
 			ret = xml_write_image_info(writer, &wim_info->images[i - 1]);

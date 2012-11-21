@@ -83,7 +83,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 
 	int (*decompress)(const void *, uint, void *, uint);
 	/* Set the appropriate decompress function. */
-	if (resource_ctype == WIM_COMPRESSION_TYPE_LZX)
+	if (resource_ctype == WIMLIB_COMPRESSION_TYPE_LZX)
 		decompress = lzx_decompress;
 	else
 		decompress = xpress_decompress;
@@ -518,12 +518,12 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 
 		ctype = wim_resource_compression_type(lte);
 
-		wimlib_assert(ctype != WIM_COMPRESSION_TYPE_NONE ||
+		wimlib_assert(ctype != WIMLIB_COMPRESSION_TYPE_NONE ||
 			      (lte->resource_entry.original_size ==
 			       lte->resource_entry.size));
 
 		if ((flags & WIMLIB_RESOURCE_FLAG_RAW)
-		    || ctype == WIM_COMPRESSION_TYPE_NONE)
+		    || ctype == WIMLIB_COMPRESSION_TYPE_NONE)
 			ret = read_uncompressed_resource(fp,
 							 lte->resource_entry.offset + offset,
 							 size, buf);
@@ -694,9 +694,6 @@ int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd
  *
  * The output_resource_entry, out_refcnt, and part_number fields of @lte are
  * updated.
- *
- * Metadata resources are not copied (they are handled elsewhere for joining and
- * splitting).
  */
 int copy_resource(struct lookup_table_entry *lte, void *wim)
 {
@@ -744,15 +741,14 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	struct inode_table inode_tab;
 	const struct lookup_table_entry *metadata_lte;
 	u64 metadata_len;
-	u64 metadata_offset;
 	struct hlist_head inode_list;
 
 	metadata_lte = imd->metadata_lte;
 	metadata_len = wim_resource_size(metadata_lte);
-	metadata_offset = metadata_lte->resource_entry.offset;
 
 	DEBUG("Reading metadata resource: length = %"PRIu64", "
-	      "offset = %"PRIu64"", metadata_len, metadata_offset);
+	      "offset = %"PRIu64"", metadata_len,
+	      metadata_lte->resource_entry.offset);
 
 	/* There is no way the metadata resource could possibly be less than (8
 	 * + WIM_DENTRY_DISK_SIZE) bytes, where the 8 is for security data (with

@@ -74,7 +74,7 @@ WIMStruct *new_wim_struct()
 }
 
 /*
- * Calls a function on images in the WIM.  If @image is WIM_ALL_IMAGES, @visitor
+ * Calls a function on images in the WIM.  If @image is WIMLIB_ALL_IMAGES, @visitor
  * is called on the WIM once for each image, with each image selected as the
  * current image in turn.  If @image is a certain image, @visitor is called on
  * the WIM only once, with that image selected.
@@ -86,7 +86,7 @@ int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
 	int end;
 	int i;
 
-	if (image == WIM_ALL_IMAGES) {
+	if (image == WIMLIB_ALL_IMAGES) {
 		start = 1;
 		end = w->hdr.image_count;
 	} else if (image >= 1 && image <= w->hdr.image_count) {
@@ -153,13 +153,13 @@ int wim_hdr_flags_compression_type(int wim_hdr_flags)
 {
 	if (wim_hdr_flags & WIM_HDR_FLAG_COMPRESSION) {
 		if (wim_hdr_flags & WIM_HDR_FLAG_COMPRESS_LZX)
-			return WIM_COMPRESSION_TYPE_LZX;
+			return WIMLIB_COMPRESSION_TYPE_LZX;
 		else if (wim_hdr_flags & WIM_HDR_FLAG_COMPRESS_XPRESS)
-			return WIM_COMPRESSION_TYPE_XPRESS;
+			return WIMLIB_COMPRESSION_TYPE_XPRESS;
 		else
-			return WIM_COMPRESSION_TYPE_INVALID;
+			return WIMLIB_COMPRESSION_TYPE_INVALID;
 	} else {
-		return WIM_COMPRESSION_TYPE_NONE;
+		return WIMLIB_COMPRESSION_TYPE_NONE;
 	}
 }
 
@@ -219,7 +219,7 @@ int select_wim_image(WIMStruct *w, int image)
 
 	/* If a valid image is currently selected, it can be freed if it is not
 	 * modified.  */
-	if (w->current_image != WIM_NO_IMAGE) {
+	if (w->current_image != WIMLIB_NO_IMAGE) {
 		imd = wim_get_current_image_metadata(w);
 		if (!imd->modified) {
 			DEBUG("Freeing image %u", w->current_image);
@@ -254,11 +254,11 @@ WIMLIBAPI int wimlib_get_compression_type(const WIMStruct *w)
 WIMLIBAPI const char *wimlib_get_compression_type_string(int ctype)
 {
 	switch (ctype) {
-		case WIM_COMPRESSION_TYPE_NONE:
+		case WIMLIB_COMPRESSION_TYPE_NONE:
 			return "None";
-		case WIM_COMPRESSION_TYPE_LZX:
+		case WIMLIB_COMPRESSION_TYPE_LZX:
 			return "LZX";
-		case WIM_COMPRESSION_TYPE_XPRESS:
+		case WIMLIB_COMPRESSION_TYPE_XPRESS:
 			return "XPRESS";
 		default:
 			return "Invalid";
@@ -277,15 +277,15 @@ WIMLIBAPI int wimlib_resolve_image(WIMStruct *w, const char *image_name_or_num)
 	int i;
 
 	if (!image_name_or_num)
-		return WIM_NO_IMAGE;
+		return WIMLIB_NO_IMAGE;
 
 	if (strcmp(image_name_or_num, "all") == 0
 	    || strcmp(image_name_or_num, "*") == 0)
-		return WIM_ALL_IMAGES;
+		return WIMLIB_ALL_IMAGES;
 	image = strtol(image_name_or_num, &p, 10);
 	if (p != image_name_or_num && *p == '\0') {
 		if (image < 1 || image > w->hdr.image_count)
-			return WIM_NO_IMAGE;
+			return WIMLIB_NO_IMAGE;
 		return image;
 	} else {
 		for (i = 1; i <= w->hdr.image_count; i++) {
@@ -293,7 +293,7 @@ WIMLIBAPI int wimlib_resolve_image(WIMStruct *w, const char *image_name_or_num)
 				   wimlib_get_image_name(w, i)) == 0)
 				return i;
 		}
-		return WIM_NO_IMAGE;
+		return WIMLIB_NO_IMAGE;
 	}
 }
 
@@ -332,7 +332,7 @@ WIMLIBAPI void wimlib_print_available_images(const WIMStruct *w, int image)
 	int last;
 	int i;
 	int n;
-	if (image == WIM_ALL_IMAGES) {
+	if (image == WIMLIB_ALL_IMAGES) {
 		n = printf("Available Images:\n");
 		first = 1;
 		last = w->hdr.image_count;
@@ -353,8 +353,8 @@ WIMLIBAPI void wimlib_print_available_images(const WIMStruct *w, int image)
 }
 
 
-/* Prints the metadata for the specified image, which may be WIM_ALL_IMAGES, but
- * not WIM_NO_IMAGE. */
+/* Prints the metadata for the specified image, which may be WIMLIB_ALL_IMAGES, but
+ * not WIMLIB_NO_IMAGE. */
 WIMLIBAPI int wimlib_print_metadata(WIMStruct *w, int image)
 {
 	if (!w)
@@ -463,7 +463,8 @@ int open_wim_writable(WIMStruct *w, const char *path,
  * Begins the reading of a WIM file; opens the file and reads its header and
  * lookup table, and optionally checks the integrity.
  */
-static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
+static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
+		      wimlib_progress_func_t progress_func)
 {
 	int ret;
 	uint xml_num_images;
@@ -495,7 +496,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 		w->hdr.boot_idx = 0;
 	}
 
-	if (wimlib_get_compression_type(w) == WIM_COMPRESSION_TYPE_INVALID) {
+	if (wimlib_get_compression_type(w) == WIMLIB_COMPRESSION_TYPE_INVALID) {
 		ERROR("Invalid compression type (WIM header flags = %x)",
 		      w->hdr.flags);
 		ret = WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
@@ -503,8 +504,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 	}
 
 	if (open_flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY) {
-		ret = check_wim_integrity(w,
-					  (open_flags & WIMLIB_OPEN_FLAG_SHOW_PROGRESS) != 0);
+		ret = check_wim_integrity(w, progress_func);
 		if (ret == WIM_INTEGRITY_NONEXISTENT) {
 			WARNING("No integrity information for `%s'; skipping "
 				"integrity check.", w->filename);
@@ -566,7 +566,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags)
 	qsort(w->image_metadata, w->current_image,
 	      sizeof(struct image_metadata), sort_image_metadata_by_position);
 
-	w->current_image = WIM_NO_IMAGE;
+	w->current_image = WIMLIB_NO_IMAGE;
 
 	/* Read the XML data. */
 	ret = read_xml_data(w->fp, &w->hdr.xml_res_entry,
@@ -600,7 +600,7 @@ out_free_xml_data:
 out_free_image_metadata:
 	/*FREE(w->image_metadata);*/
 	/*w->image_metadata = NULL;*/
-	/*w->current_image = WIM_NO_IMAGE;*/
+	/*w->current_image = WIMLIB_NO_IMAGE;*/
 out_free_lookup_table:
 	/*free_lookup_table(w->lookup_table);*/
 	/*w->lookup_table = NULL;*/
@@ -616,7 +616,8 @@ out:
  * Opens a WIM file and creates a WIMStruct for it.
  */
 WIMLIBAPI int wimlib_open_wim(const char *wim_file, int open_flags,
-			      WIMStruct **w_ret)
+			      WIMStruct **w_ret,
+			      wimlib_progress_func_t progress_func)
 {
 	WIMStruct *w;
 	int ret;
@@ -628,7 +629,7 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int open_flags,
 		return WIMLIB_ERR_NOMEM;
 	}
 
-	ret = begin_read(w, wim_file, open_flags);
+	ret = begin_read(w, wim_file, open_flags, progress_func);
 	if (ret == 0) {
 		*w_ret = w;
 	} else {

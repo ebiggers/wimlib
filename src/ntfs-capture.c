@@ -27,15 +27,12 @@
 
 #include "config.h"
 
-#ifdef WITH_NTFS_3G
 #include <ntfs-3g/endians.h>
 #include <ntfs-3g/types.h>
-#endif
 
 #include "wimlib_internal.h"
 
 
-#ifdef WITH_NTFS_3G
 #include "dentry.h"
 #include "lookup_table.h"
 #include "io.h"
@@ -646,13 +643,13 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	return ret;
 }
 
-static int build_dentry_tree_ntfs(struct dentry **root_p,
-				  const char *device,
-				  struct lookup_table *lookup_table,
-				  struct wim_security_data *sd,
-				  const struct capture_config *config,
-				  int flags,
-				  void *extra_arg)
+int build_dentry_tree_ntfs(struct dentry **root_p,
+			   const char *device,
+			   struct lookup_table *lookup_table,
+			   struct wim_security_data *sd,
+			   const struct capture_config *config,
+			   int flags,
+			   void *extra_arg)
 {
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
@@ -721,34 +718,3 @@ out:
 	}
 	return ret;
 }
-
-
-
-WIMLIBAPI int wimlib_add_image_from_ntfs_volume(WIMStruct *w,
-						const char *device,
-						const char *name,
-						const char *config_str,
-						size_t config_len,
-						int flags)
-{
-	if (flags & (WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)) {
-		ERROR("Cannot dereference files when capturing directly from NTFS");
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-	return do_add_image(w, device, name, config_str, config_len, flags,
-			    build_dentry_tree_ntfs, &w->ntfs_vol);
-}
-
-#else /* WITH_NTFS_3G */
-WIMLIBAPI int wimlib_add_image_from_ntfs_volume(WIMStruct *w,
-						const char *device,
-						const char *name,
-						const char *config_str,
-						size_t config_len,
-						int flags)
-{
-	ERROR("wimlib was compiled without support for NTFS-3g, so");
-	ERROR("we cannot capture a WIM image directly from a NTFS volume");
-	return WIMLIB_ERR_UNSUPPORTED;
-}
-#endif /* WITH_NTFS_3G */

@@ -28,29 +28,18 @@
 #include "xml.h"
 #include <stdlib.h>
 
-static int copy_lte_to_table(struct lookup_table_entry *lte, void *table)
+static int move_lte_to_table(struct lookup_table_entry *lte,
+			     void *other_tab)
 {
-	struct lookup_table_entry *copy;
-	copy = MALLOC(sizeof(struct lookup_table_entry));
-	if (!copy)
-		return WIMLIB_ERR_NOMEM;
-	memcpy(copy, lte, sizeof(struct lookup_table_entry));
-	lookup_table_insert(table, copy);
+	hlist_del(&lte->hash_list);
+	lookup_table_insert((struct lookup_table*)other_tab, lte);
 	return 0;
 }
 
 static int lookup_table_join(struct lookup_table *table,
 			     struct lookup_table *new)
 {
-	return for_lookup_table_entry(new, copy_lte_to_table, table);
-}
-
-
-static int cmp_swms_by_part_number(const void *swm1, const void *swm2)
-{
-	u16 partno_1 = (*(WIMStruct**)swm1)->hdr.part_number;
-	u16 partno_2 = (*(WIMStruct**)swm2)->hdr.part_number;
-	return (int)partno_1 - (int)partno_2;
+	return for_lookup_table_entry(new, move_lte_to_table, table);
 }
 
 /*
@@ -158,7 +147,9 @@ int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
  * Joins lookup tables from the parts of a split WIM.
  *
  * @w specifies the first part, while @additional_swms and @num_additional_swms
- * specify an array of points to the WIMStruct's for additional split WIM parts.
+ * specify an array of pointers to the WIMStruct's for additional split WIM parts.
+ *
+ * The lookup table entries are *moved* to the new table.
  *
  * On success, 0 is returned on a pointer to the joined lookup table is returned
  * in @table_ret.
@@ -178,13 +169,13 @@ int new_joined_lookup_table(WIMStruct *w,
 	int ret;
 	unsigned i;
 
-
 	table = new_lookup_table(9001);
 	if (!table)
 		return WIMLIB_ERR_NOMEM;
-	ret = lookup_table_join(table, w->lookup_table);
-	if (ret != 0)
-		goto out_free_table;
+
+	if (w)
+		lookup_table_join(table, w->lookup_table);
+
 	for (i = 0; i < num_additional_swms; i++) {
 		ret = lookup_table_join(table, additional_swms[i]->lookup_table);
 		if (ret != 0)
@@ -198,111 +189,106 @@ out_free_table:
 }
 
 
-static int join_wims(WIMStruct **swms, uint num_swms, WIMStruct *joined_wim,
-		     int write_flags)
+static int join_wims(WIMStruct **swms, unsigned num_swms,
+		     WIMStruct *joined_wim, int write_flags,
+		     wimlib_progress_func_t progress_func)
 {
-	uint i;
 	int ret;
-	FILE *out_fp = joined_wim->out_fp;
-	u64 total_bytes = wim_info_get_total_bytes(swms[0]->wim_info);
+	unsigned i;
+	union wimlib_progress_info progress;
+	u64 total_bytes = 0;
+	u64 part_bytes;
+	u64 swm_part_sizes[num_swms];
 
-	swms[0]->write_metadata = false;
+	/* Calculate total size of the streams in the split WIM parts. */
 	for (i = 0; i < num_swms; i++) {
-		if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS) {
-			off_t cur_offset = ftello(out_fp);
-			printf("Writing resources from part %u of %u "
-			       "(%"PRIu64" of %"PRIu64" bytes, %.0f%% done)\n",
-			       i + 1, num_swms, cur_offset, total_bytes,
-			       (double)cur_offset / total_bytes * 100.0);
-		}
+		part_bytes = lookup_table_total_stream_size(swms[i]->lookup_table);
+		swm_part_sizes[i] = part_bytes;
+		total_bytes += part_bytes;
+	}
+
+	if (progress_func) {
+		progress.join.total_bytes        = total_bytes;
+		progress.join.total_parts        = swms[0]->hdr.total_parts;
+		progress.join.completed_bytes    = 0;
+		progress.join.completed_parts    = 0;
+		progress_func(WIMLIB_PROGRESS_MSG_JOIN_STREAMS, &progress);
+	}
+
+	/* Write the resources (streams and metadata resources) from each SWM
+	 * part */
+	swms[0]->write_metadata = true;
+	for (i = 0; i < num_swms; i++) {
 		swms[i]->fp = fopen(swms[i]->filename, "rb");
 		if (!swms[i]->fp) {
 			ERROR_WITH_ERRNO("Failed to reopen `%s'",
 					 swms[i]->filename);
 			return WIMLIB_ERR_OPEN;
 		}
-		swms[i]->out_fp = out_fp;
+		swms[i]->out_fp = joined_wim->out_fp;
 		swms[i]->hdr.part_number = 1;
 		ret = for_lookup_table_entry(swms[i]->lookup_table,
 					     copy_resource, swms[i]);
+		swms[i]->out_fp = NULL;
+		fclose(swms[i]->fp);
+		swms[i]->fp = NULL;
+
 		if (ret != 0)
 			return ret;
-		if (i != 0) {
-			fclose(swms[i]->fp);
-			swms[i]->fp = NULL;
+
+		if (progress_func) {
+			progress.join.completed_bytes += swm_part_sizes[i];
+			progress.join.completed_parts++;
+			progress_func(WIMLIB_PROGRESS_MSG_JOIN_STREAMS, &progress);
 		}
 	}
-	swms[0]->write_metadata = true;
-	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
-		printf("Writing %d metadata resources\n",
-			swms[0]->hdr.image_count);
 
-	for (i = 0; i < swms[0]->hdr.image_count; i++) {
-		ret = copy_resource(swms[0]->image_metadata[i].metadata_lte,
-				    swms[0]);
-		if (ret != 0)
-			return ret;
-	}
+	joined_wim->hdr.image_count = swms[0]->hdr.image_count;
+	for (i = 0; i < num_swms; i++)
+		lookup_table_join(joined_wim->lookup_table, swms[i]->lookup_table);
 
-	off_t lookup_table_offset = ftello(out_fp);
-
-	if (write_flags & WIMLIB_WRITE_FLAG_SHOW_PROGRESS)
-		printf("Writing lookup tables, XML data, and header\n");
-	/* Now write the lookup table for the joined wim.  Since the lookup
-	 * table has no header, we can just concatenate the lookup tables of all
-	 * the SWM parts. */
-	for (i = 0; i < num_swms; i++) {
-		ret = for_lookup_table_entry(swms[i]->lookup_table,
-					     write_lookup_table_entry,
-					     out_fp);
-		if (ret != 0)
-			return ret;
-	}
-	off_t xml_data_offset = ftello(out_fp);
-
-	if (lookup_table_offset == -1 || xml_data_offset == -1) {
-		ERROR_WITH_ERRNO("Failed to get file offset");
-		return WIMLIB_ERR_WRITE;
-	}
-	swms[0]->hdr.lookup_table_res_entry.offset = lookup_table_offset;
-	swms[0]->hdr.lookup_table_res_entry.size =
-					xml_data_offset - lookup_table_offset;
-	swms[0]->hdr.lookup_table_res_entry.original_size =
-					xml_data_offset - lookup_table_offset;
-	swms[0]->hdr.lookup_table_res_entry.flags =
-					WIM_RESHDR_FLAG_METADATA;
-
-
-	/* finish_write is called on the first swm, not the joined_wim, because
-	 * the first swm is the one that has the image metadata and XML data
-	 * attached to it.  */
-	swms[0]->hdr.flags &= ~WIM_HDR_FLAG_SPANNED;
-	swms[0]->hdr.total_parts = 1;
-	return finish_write(swms[0], WIM_ALL_IMAGES,
-			    write_flags | WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE);
+	free_wim_info(joined_wim->wim_info);
+	joined_wim->wim_info = swms[0]->wim_info;
+	ret = finish_write(joined_wim, WIMLIB_ALL_IMAGES, write_flags, progress_func);
+	joined_wim->wim_info = NULL;
+	return ret;
 }
 
+static int cmp_swms_by_part_number(const void *swm1, const void *swm2)
+{
+	u16 partno_1 = (*(const WIMStruct**)swm1)->hdr.part_number;
+	u16 partno_2 = (*(const WIMStruct**)swm2)->hdr.part_number;
+	return (int)partno_1 - (int)partno_2;
+}
 
+/*
+ * Join a set of split WIMs into a stand-alone WIM.
+ */
 WIMLIBAPI int wimlib_join(const char **swm_names, unsigned num_swms,
-			  const char *output_path, int flags)
+			  const char *output_path, int swm_open_flags,
+			  int wim_write_flags,
+			  wimlib_progress_func_t progress_func)
 {
 	int ret;
-	int write_flags = 0;
 	WIMStruct *joined_wim = NULL;
-	WIMStruct *swms[num_swms];
+	unsigned i;
 
-	if (num_swms < 1)
+	swm_open_flags |= WIMLIB_OPEN_FLAG_SPLIT_OK;
+	wim_write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
+
+	if (num_swms < 1 || num_swms > 0xffff)
 		return WIMLIB_ERR_INVALID_PARAM;
 
+	WIMStruct *swms[num_swms];
 	ZERO_ARRAY(swms);
 
-	for (unsigned i = 0; i < num_swms; i++) {
-		ret = wimlib_open_wim(swm_names[i],
-				      flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &swms[i]);
+	for (i = 0; i < num_swms; i++) {
+		ret = wimlib_open_wim(swm_names[i], swm_open_flags, &swms[i],
+				      progress_func);
 		if (ret != 0)
 			goto out;
 
-		/* don't open all the parts at the same time, in case there are
+		/* Don't open all the parts at the same time, in case there are
 		 * a lot of them */
 		fclose(swms[i]->fp);
 		swms[i]->fp = NULL;
@@ -314,29 +300,19 @@ WIMLIBAPI int wimlib_join(const char **swm_names, unsigned num_swms,
 	if (ret != 0)
 		goto out;
 
-	joined_wim = new_wim_struct();
-	if (!joined_wim) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out;
-	}
-
-	if (flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY)
-		write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-	if (flags & WIMLIB_OPEN_FLAG_SHOW_PROGRESS)
-		write_flags |= WIMLIB_WRITE_FLAG_SHOW_PROGRESS;
-
-	ret = begin_write(joined_wim, output_path, write_flags);
+	ret = wimlib_create_new_wim(wimlib_get_compression_type(swms[0]),
+				    &joined_wim);
 	if (ret != 0)
 		goto out;
-	ret = join_wims(swms, num_swms, joined_wim, write_flags);
+
+	ret = begin_write(joined_wim, output_path, wim_write_flags);
+	if (ret != 0)
+		goto out;
+	ret = join_wims(swms, num_swms, joined_wim, wim_write_flags,
+			progress_func);
 out:
-	/* out_fp is the same in all the swms and joined_wim.  And it was
-	 * already closed in the call to finish_write(). */
-	for (unsigned i = 0; i < num_swms; i++) {
-		swms[i]->out_fp = NULL;
+	for (i = 0; i < num_swms; i++)
 		wimlib_free(swms[i]);
-	}
-	joined_wim->out_fp = NULL;
 	wimlib_free(joined_wim);
 	return ret;
 }

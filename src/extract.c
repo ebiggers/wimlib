@@ -44,6 +44,7 @@
 #include <utime.h>
 #endif
 
+
 #include <unistd.h>
 
 #include "dentry.h"
@@ -52,20 +53,21 @@
 #include "wimlib_internal.h"
 #include "xml.h"
 
+#ifdef WITH_NTFS_3G
+#include <ntfs-3g/volume.h>
+#endif
 
-static int extract_regular_file_linked(const struct dentry *dentry,
-				       const char *output_dir,
+static int extract_regular_file_linked(struct dentry *dentry,
 				       const char *output_path,
-				       int extract_flags,
+				       struct apply_args *args,
 				       struct lookup_table_entry *lte)
 {
 	/* This mode overrides the normal hard-link extraction and
 	 * instead either symlinks or hardlinks *all* identical files in
 	 * the WIM, even if they are in a different image (in the case
 	 * of a multi-image extraction) */
-	wimlib_assert(lte->extracted_file != NULL);
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
+	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
 		if (link(lte->extracted_file, output_path) != 0) {
 			ERROR_WITH_ERRNO("Failed to hard link "
 					 "`%s' to `%s'",
@@ -80,14 +82,12 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 		const char *p2;
 		size_t i;
 
-		wimlib_assert(extract_flags & WIMLIB_EXTRACT_FLAG_SYMLINK);
-
 		num_path_components =
 			get_num_path_components(dentry->full_path_utf8) - 1;
 		num_output_dir_path_components =
-			get_num_path_components(output_dir);
+			get_num_path_components(args->target);
 
-		if (extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE) {
+		if (args->extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE) {
 			num_path_components++;
 			num_output_dir_path_components--;
 		}
@@ -113,15 +113,13 @@ static int extract_regular_file_linked(const struct dentry *dentry,
 					 buf, lte->extracted_file);
 			return WIMLIB_ERR_LINK;
 		}
-
 	}
 	return 0;
 }
 
-static int extract_regular_file_unlinked(WIMStruct *w,
-					 struct dentry *dentry,
+static int extract_regular_file_unlinked(struct dentry *dentry,
+				         struct apply_args *args,
 				         const char *output_path,
-				         int extract_flags,
 				         struct lookup_table_entry *lte)
 {
 	/* Normal mode of extraction.  Regular files and hard links are
@@ -131,8 +129,8 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 	int ret;
 	struct inode *inode = dentry->d_inode;
 
-	if (!((extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE)
-		&& (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
+	if (!((args->extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE)
+		&& (args->extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
 				     WIMLIB_EXTRACT_FLAG_HARDLINK))))
 	{
 		/* If the dentry is one of a hard link set of at least 2
@@ -184,7 +182,7 @@ static int extract_regular_file_unlinked(WIMStruct *w,
 		ERROR("Failed to extract resource to `%s'", output_path);
 		goto out;
 	}
-
+	args->progress.extract.completed_bytes += wim_resource_size(lte);
 out:
 	if (close(out_fd) != 0) {
 		ERROR_WITH_ERRNO("Failed to close file `%s'", output_path);
@@ -196,41 +194,38 @@ out:
 /*
  * Extracts a regular file from the WIM archive.
  */
-static int extract_regular_file(WIMStruct *w,
-				struct dentry *dentry,
-				const char *output_dir,
-				const char *output_path,
-				int extract_flags)
+static int extract_regular_file(struct dentry *dentry,
+				struct apply_args *args,
+				const char *output_path)
 {
 	struct lookup_table_entry *lte;
 	const struct inode *inode = dentry->d_inode;
 
-	lte = inode_unnamed_lte(inode, w->lookup_table);
+	lte = inode_unnamed_lte_resolved(inode);
 
-	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
-			      WIMLIB_EXTRACT_FLAG_HARDLINK)) && lte) {
+	if (lte && (args->extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
+					   WIMLIB_EXTRACT_FLAG_HARDLINK)))
+	{
 		if (lte->extracted_file) {
-			return extract_regular_file_linked(dentry, output_dir,
-							   output_path,
-							   extract_flags, lte);
+			return extract_regular_file_linked(dentry, output_path, args, lte);
 		} else {
 			lte->extracted_file = STRDUP(output_path);
 			if (!lte->extracted_file)
 				return WIMLIB_ERR_NOMEM;
 		}
 	}
-
-	return extract_regular_file_unlinked(w, dentry, output_path,
-					     extract_flags, lte);
-
+	return extract_regular_file_unlinked(dentry, args, output_path, lte);
 }
 
-static int extract_symlink(const struct dentry *dentry, const char *output_path,
-			   const WIMStruct *w)
+static int extract_symlink(struct dentry *dentry,
+			   struct apply_args *args,
+			   const char *output_path)
 {
 	char target[4096];
 	ssize_t ret = inode_readlink(dentry->d_inode, target,
-				     sizeof(target), w, 0);
+				     sizeof(target), args->w, 0);
+	struct lookup_table_entry *lte;
+
 	if (ret <= 0) {
 		ERROR("Could not read the symbolic link from dentry `%s'",
 		      dentry->full_path_utf8);
@@ -242,6 +237,8 @@ static int extract_symlink(const struct dentry *dentry, const char *output_path,
 				 output_path, target);
 		return WIMLIB_ERR_LINK;
 	}
+	lte = inode_unnamed_lte_resolved(dentry->d_inode);
+	args->progress.extract.completed_bytes += wim_resource_size(lte);
 	return 0;
 }
 
@@ -282,58 +279,55 @@ static int extract_directory(const char *output_path, bool is_root)
 	return 0;
 }
 
-struct extract_args {
-	WIMStruct *w;
-	int extract_flags;
-	const char *output_dir;
-	unsigned num_lutimes_warnings;
-};
-
 /*
  * Extracts a file, directory, or symbolic link from the WIM archive.  For use
  * in for_dentry_in_tree().
  */
-static int extract_dentry(struct dentry *dentry, void *arg)
+static int apply_dentry_normal(struct dentry *dentry, void *arg)
 {
-	struct extract_args *args = arg;
-	WIMStruct *w = args->w;
+	struct apply_args *args = arg;
 	int extract_flags = args->extract_flags;
-	size_t len = strlen(args->output_dir);
-	char output_path[len + dentry->full_path_utf8_len + 1];
+	struct inode *inode = dentry->d_inode;
+	size_t len;
+	int ret;
+
+	if (dentry->is_extracted)
+		return 0;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
-		if (inode_unnamed_lte(dentry->d_inode, w->lookup_table) != NULL)
+		if (inode_unnamed_lte_resolved(inode))
 			return 0;
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) {
-		wimlib_assert(dentry->full_path_utf8);
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
 		puts(dentry->full_path_utf8);
-	}
 
-	memcpy(output_path, args->output_dir, len);
+	len = strlen(args->target);
+	char output_path[len + dentry->full_path_utf8_len + 1];
+	memcpy(output_path, args->target, len);
 	memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
-
-	if (dentry_is_symlink(dentry))
-		return extract_symlink(dentry, output_path, w);
-	else if (dentry_is_directory(dentry))
-		return extract_directory(output_path, dentry_is_root(dentry));
+	if (inode_is_symlink(inode))
+		ret = extract_symlink(dentry, args, output_path);
+	else if (inode_is_directory(inode))
+		ret = extract_directory(output_path, false);
 	else
-		return extract_regular_file(w, dentry, args->output_dir,
-					    output_path, extract_flags);
+		ret = extract_regular_file(dentry, args, output_path);
+	if (ret == 0)
+		dentry->is_extracted = 1;
+	return ret;
 }
 
 /* Apply timestamp to extracted file */
-static int apply_dentry_timestamps(struct dentry *dentry, void *arg)
+static int apply_dentry_timestamps_normal(struct dentry *dentry, void *arg)
 {
-	struct extract_args *args = arg;
-	size_t len = strlen(args->output_dir);
+	struct apply_args *args = arg;
+	size_t len = strlen(args->target);
 	char output_path[len + dentry->full_path_utf8_len + 1];
 	const struct inode *inode = dentry->d_inode;
 	int ret;
 
-	memcpy(output_path, args->output_dir, len);
+	memcpy(output_path, args->target, len);
 	memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
@@ -365,26 +359,6 @@ static int apply_dentry_timestamps(struct dentry *dentry, void *arg)
 	return 0;
 }
 
-
-static int dentry_add_streams_for_extraction(struct dentry *dentry,
-					     void *wim)
-{
-	WIMStruct *w = wim;
-	struct list_head *stream_list;
-	struct lookup_table_entry *lte;
-
-	lte = inode_unnamed_lte(dentry->d_inode, w->lookup_table);
-	if (lte) {
-		if (++lte->out_refcnt == 1) {
-			INIT_LIST_HEAD(&lte->dentry_list);
-			stream_list = w->private;
-			list_add_tail(&lte->staging_list, stream_list);
-		}
-		list_add_tail(&dentry->tmp_list, &lte->dentry_list);
-	}
-	return 0;
-}
-
 static int cmp_streams_by_wim_position(const void *p1, const void *p2)
 {
 	const struct lookup_table_entry *lte1, *lte2;
@@ -406,15 +380,10 @@ static int sort_stream_list_by_wim_position(struct list_head *stream_list)
 	size_t i;
 	size_t array_size;
 
-	DEBUG("Sorting stream list by wim position");
-
 	num_streams = 0;
 	list_for_each(cur, stream_list)
 		num_streams++;
 	array_size = num_streams * sizeof(array[0]);
-
-	DEBUG("num_streams = %zu", num_streams);
-
 	array = MALLOC(array_size);
 	if (!array) {
 		ERROR("Failed to allocate %zu bytes to sort stream entries",
@@ -436,166 +405,296 @@ static int sort_stream_list_by_wim_position(struct list_head *stream_list)
 	return 0;
 }
 
-static u64 calculate_bytes_to_extract(struct list_head *stream_list,
-				      int extract_flags)
+static void calculate_bytes_to_extract(struct list_head *stream_list,
+				       int extract_flags,
+				       union wimlib_progress_info *progress)
 {
 	struct lookup_table_entry *lte;
-	struct dentry *dentry;
-	u64 total_size = 0;
+	struct inode *inode;
+	u64 total_bytes = 0;
+	u64 num_streams = 0;
+
+	/* For each stream to be extracted... */
 	list_for_each_entry(lte, stream_list, staging_list) {
-		u64 size = wim_resource_size(lte);
 		if (extract_flags &
 		    (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 		{
-			total_size += size;
-		} else {
-			list_for_each_entry(dentry, &lte->dentry_list,
-					    tmp_list)
-			{
-				dentry->d_inode->found = false;
+			/* In the symlink or hard link extraction mode, each
+			 * stream will be extracted one time regardless of how
+			 * many dentries share the stream. */
+			wimlib_assert(!(extract_flags & WIMLIB_EXTRACT_FLAG_NTFS));
+			if (!lte->extracted_file) {
+				num_streams++;
+				total_bytes += wim_resource_size(lte);
 			}
-			list_for_each_entry(dentry, &lte->dentry_list,
-					    tmp_list)
+		} else {
+			list_for_each_entry(inode, &lte->inode_list,
+					    lte_inode_list)
 			{
-				if (!dentry->d_inode->found) {
-					dentry->d_inode->found = true;
-					total_size += size;
+				num_streams++;
+				total_bytes += wim_resource_size(lte);
+			}
+		}
+	}
+	progress->extract.num_streams = num_streams;
+	progress->extract.total_bytes = total_bytes;
+	progress->extract.completed_bytes = 0;
+}
+
+static void maybe_add_stream_for_extraction(struct lookup_table_entry *lte,
+					    struct list_head *stream_list)
+{
+	if (lte->out_refcnt == 0) {
+		lte->out_refcnt = 1;
+		INIT_LIST_HEAD(&lte->inode_list);
+		list_add_tail(&lte->staging_list, stream_list);
+	}
+}
+
+static void inode_find_streams_for_extraction(struct inode *inode,
+					      struct list_head *stream_list,
+					      int extract_flags)
+{
+	struct lookup_table_entry *lte;
+	bool inode_added = false;
+
+	lte = inode_unnamed_lte_resolved(inode);
+
+	if (lte) {
+		maybe_add_stream_for_extraction(lte, stream_list);
+		list_add_tail(&inode->lte_inode_list, &lte->inode_list);
+		inode_added = true;
+	}
+#ifdef WITH_NTFS_3G
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
+		for (unsigned i = 0; i < inode->num_ads; i++) {
+			if (inode->ads_entries[i].stream_name_len != 0) {
+				lte = inode_stream_lte_resolved(inode, i + 1);
+				if (lte) {
+					maybe_add_stream_for_extraction(lte,
+									stream_list);
+					if (!inode_added) {
+						list_add_tail(&inode->lte_inode_list,
+							      &lte->inode_list);
+						inode_added = true;
+					}
 				}
 			}
 		}
 	}
-	return total_size;
+#endif
+}
+
+static void find_streams_for_extraction(struct hlist_head *inode_list,
+					struct list_head *stream_list,
+					struct lookup_table *lookup_table,
+					int extract_flags)
+{
+	struct inode *inode;
+	struct hlist_node *cur;
+	struct dentry *dentry;
+
+	for_lookup_table_entry(lookup_table, lte_zero_out_refcnt, NULL);
+	INIT_LIST_HEAD(stream_list);
+	hlist_for_each_entry(inode, cur, inode_list, hlist) {
+		if (!inode->resolved)
+			inode_resolve_ltes(inode, lookup_table);
+		inode_for_each_dentry(dentry, inode)
+			dentry->is_extracted = 0;
+		inode_find_streams_for_extraction(inode, stream_list,
+						  extract_flags);
+	}
+}
+
+struct apply_operations {
+	int (*apply_dentry)(struct dentry *dentry, void *arg);
+	int (*apply_dentry_timestamps)(struct dentry *dentry, void *arg);
+};
+
+static const struct apply_operations normal_apply_operations = {
+	.apply_dentry = apply_dentry_normal,
+	.apply_dentry_timestamps = apply_dentry_timestamps_normal,
+};
+
+#ifdef WITH_NTFS_3G
+static const struct apply_operations ntfs_apply_operations = {
+	.apply_dentry = wim_apply_dentry_ntfs,
+	.apply_dentry_timestamps = wim_apply_dentry_timestamps,
+};
+#endif
+
+static int apply_stream_list(struct list_head *stream_list,
+			     struct apply_args *args,
+			     const struct apply_operations *ops,
+			     wimlib_progress_func_t progress_func)
+{
+	uint64_t bytes_per_progress = args->progress.extract.total_bytes / 100;
+	uint64_t next_progress = bytes_per_progress;
+	struct lookup_table_entry *lte;
+	struct inode *inode;
+	struct dentry *dentry;
+	int ret = 0;
+	list_for_each_entry(lte, stream_list, staging_list) {
+		list_for_each_entry(inode, &lte->inode_list, lte_inode_list) {
+			inode_for_each_dentry(dentry, inode) {
+				ret = ops->apply_dentry(dentry, args);
+				if (ret != 0)
+					goto out;
+				if (args->progress.extract.completed_bytes >= next_progress) {
+					progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
+						      &args->progress);
+					next_progress += bytes_per_progress;
+				}
+			}
+		}
+	}
+out:
+	return ret;
 }
 
 static int extract_single_image(WIMStruct *w, int image,
-				const char *output_dir, int extract_flags)
+				const char *target, int extract_flags,
+				wimlib_progress_func_t progress_func)
 {
 	int ret;
-	struct dentry *root;
-	const char *image_name;
+	struct list_head stream_list;
+	struct hlist_head *inode_list;
 
-	DEBUG("Extracting image %d", image);
+	struct apply_args args;
+	const struct apply_operations *ops;
+
+	args.w                    = w;
+	args.target               = target;
+	args.extract_flags        = extract_flags;
+	args.num_lutimes_warnings = 0;
+	args.target               = target;
+	args.stream_list          = &stream_list;
+
+	if (progress_func) {
+		args.progress.extract.image      = image;
+		args.progress.extract.image_name = wimlib_get_image_name(w, image);
+		args.progress.extract.target     = target;
+	}
+
+#ifdef WITH_NTFS_3G
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
+		args.vol = ntfs_mount(target, 0);
+		if (!args.vol) {
+			ERROR_WITH_ERRNO("Failed to mount NTFS volume `%s'", target);
+			return WIMLIB_ERR_NTFS_3G;
+		}
+	}
+#endif
+
+#ifdef WITH_NTFS_3G
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS)
+		ops = &ntfs_apply_operations;
+	else
+#endif
+		ops = &normal_apply_operations;
 
 	ret = select_wim_image(w, image);
 	if (ret != 0)
-		return ret;
+		goto out;
 
-	root = wim_root_dentry(w);
+	inode_list = &w->image_metadata[image - 1].inode_list;
+	find_streams_for_extraction(inode_list,
+				    &stream_list,
+				    w->lookup_table,
+				    extract_flags);
 
-	struct extract_args args = {
-		.w                    = w,
-		.extract_flags        = extract_flags,
-		.output_dir           = output_dir,
-		.num_lutimes_warnings = 0,
-	};
+	calculate_bytes_to_extract(&stream_list, extract_flags,
+				   &args.progress);
 
-	image_name = wimlib_get_image_name(w, image);
-	if (!image_name)
-		image_name = "unnamed";
+	if (progress_func) {
+		progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
+			      &args.progress);
+	}
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL) {
-		for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt,
-				       NULL);
-		args.extract_flags |= WIMLIB_EXTRACT_FLAG_NO_STREAMS;
-		if (args.extract_flags & WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS) {
-			printf("Creating directory structure for image %d (%s)...\n",
-			       image, image_name);
-		}
-	} else {
-		if (args.extract_flags & WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS) {
-			printf("Extracting image %d (%s)...\n",
-			       image, image_name);
+		ret = sort_stream_list_by_wim_position(&stream_list);
+		if (ret != 0) {
+			WARNING("Falling back to non-sequential extraction");
+			extract_flags &= ~WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
 		}
 	}
 
-	ret = for_dentry_in_tree(root, extract_dentry, &args);
+	if (progress_func) {
+		progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
+			      &args.progress);
+	}
+
+
+	args.extract_flags |= WIMLIB_EXTRACT_FLAG_NO_STREAMS;
+	ret = for_dentry_in_tree(wim_root_dentry(w), ops->apply_dentry, &args);
+	args.extract_flags &= ~WIMLIB_EXTRACT_FLAG_NO_STREAMS;
 	if (ret != 0)
-		return ret;
+		goto out;
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL) {
-		struct list_head stream_list;
-		struct lookup_table_entry *lte;
-		struct lookup_table_entry *tmp;
-		struct dentry *dentry;
-		u64 total_size;
-		u64 cur_size;
-		u64 next_size;
-		u64 one_percent;
-		unsigned cur_percent;
+	if (progress_func) {
+		progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END,
+			      &args.progress);
+	}
 
-		INIT_LIST_HEAD(&stream_list);
-		w->private = &stream_list;
-		for_dentry_in_tree(root, dentry_add_streams_for_extraction, w);
-		ret = sort_stream_list_by_wim_position(&stream_list);
-		args.extract_flags &= ~WIMLIB_EXTRACT_FLAG_NO_STREAMS;
-		if (ret != 0) {
-			WARNING("Falling back to non-sequential image extraction");
-			ret = for_dentry_in_tree(root, extract_dentry, &args);
-			if (ret != 0)
-				return ret;
-			goto out;
-		}
+	ret = apply_stream_list(&stream_list, &args, ops, progress_func);
+	if (ret != 0)
+		goto out;
 
-		total_size = calculate_bytes_to_extract(&stream_list, args.extract_flags);
-		one_percent = total_size / 100;
-		cur_size = 0;
-		next_size = 0;
-		cur_percent = 0;
-		puts("Extracting files...");
-		list_for_each_entry_safe(lte, tmp, &stream_list, staging_list) {
-			list_del(&lte->staging_list);
-			list_for_each_entry(dentry, &lte->dentry_list, tmp_list) {
-				if ((!dentry->d_inode->extracted_file) &&
-				     (args.extract_flags & WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS))
-				{
-					show_stream_op_progress(&cur_size, &next_size,
-								total_size, one_percent,
-								&cur_percent, lte,
-								"extracted");
-				}
-				ret = extract_dentry(dentry, &args);
-				if (ret != 0)
-					return ret;
-			}
-		}
-		finish_stream_op_progress(total_size, "extracted");
+	if (progress_func)
+		progress_func(WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS, NULL);
+
+	ret = for_dentry_in_tree_depth(wim_root_dentry(w),
+				       ops->apply_dentry_timestamps, &args);
+	if (ret != 0)
+		goto out;
+
+	if (progress_func) {
+		progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END,
+			      &args.progress);
 	}
 out:
-	return for_dentry_in_tree_depth(root, apply_dentry_timestamps, &args);
+#ifdef WITH_NTFS_3G
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
+		if (ntfs_umount(args.vol, FALSE) != 0) {
+			ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'", args.target);
+			if (ret == 0)
+				ret = WIMLIB_ERR_NTFS_3G;
+		}
+	}
+#endif
+	return ret;
 }
 
 
 /* Extracts all images from the WIM to @output_dir, with the images placed in
  * subdirectories named by their image names. */
-static int extract_all_images(WIMStruct *w, const char *output_dir,
-			      int extract_flags)
+static int extract_all_images(WIMStruct *w, const char *target,
+			      int extract_flags,
+			      wimlib_progress_func_t progress_func)
 {
 	size_t image_name_max_len = max(xml_get_max_image_name_len(w), 20);
-	size_t output_path_len = strlen(output_dir);
+	size_t output_path_len = strlen(target);
 	char buf[output_path_len + 1 + image_name_max_len + 1];
 	int ret;
 	int image;
 	const char *image_name;
 
-	DEBUG("Attempting to extract all images from `%s' to `%s'",
-	      w->filename, output_dir);
-
-	ret = extract_directory(output_dir, true);
+	ret = extract_directory(target, true);
 	if (ret != 0)
 		return ret;
 
-	memcpy(buf, output_dir, output_path_len);
+	memcpy(buf, target, output_path_len);
 	buf[output_path_len] = '/';
 	for (image = 1; image <= w->hdr.image_count; image++) {
-
 		image_name = wimlib_get_image_name(w, image);
-		if (*image_name) {
+		if (image_name && *image_name) {
 			strcpy(buf + output_path_len + 1, image_name);
 		} else {
 			/* Image name is empty. Use image number instead */
 			sprintf(buf + output_path_len + 1, "%d", image);
 		}
-		ret = extract_single_image(w, image, buf, extract_flags);
+		ret = extract_single_image(w, image, buf, extract_flags,
+					   progress_func);
 		if (ret != 0)
 			return ret;
 	}
@@ -604,19 +703,16 @@ static int extract_all_images(WIMStruct *w, const char *output_dir,
 
 /* Extracts a single image or all images from a WIM file. */
 WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
-				   const char *output_dir,
+				   const char *target,
 				   int extract_flags,
 				   WIMStruct **additional_swms,
-				   unsigned num_additional_swms)
+				   unsigned num_additional_swms,
+				   wimlib_progress_func_t progress_func)
 {
 	struct lookup_table *joined_tab, *w_tab_save;
 	int ret;
 
-	DEBUG("w->filename = %s, image = %d, output_dir = %s, flags = 0x%x, "
-	      "num_additional_swms = %u",
-	      w->filename, image, output_dir, extract_flags, num_additional_swms);
-
-	if (!w || !output_dir)
+	if (!w || !target)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
@@ -624,6 +720,25 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 			== (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
+#ifdef WITH_NTFS_3G
+		if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))) {
+			ERROR("Cannot specify symlink or hardlink flags when applying ");
+			ERROR("directly to a NTFS volume");
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+		if (image == WIMLIB_ALL_IMAGES) {
+			ERROR("Can only apply a single image when applying "
+			      "directly to a NTFS volume");
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+#else
+		ERROR("wimlib was compiled without support for NTFS-3g, so");
+		ERROR("we cannot apply a WIM image directly to a NTFS volume");
+		return WIMLIB_ERR_UNSUPPORTED;
+#endif
+	}
 
 	ret = verify_swm_set(w, additional_swms, num_additional_swms);
 	if (ret != 0)
@@ -638,25 +753,14 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 		w->lookup_table = joined_tab;
 	}
 
-	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
-			     WIMLIB_EXTRACT_FLAG_HARDLINK))
-	{
-		for_lookup_table_entry(w->lookup_table,
-				       lte_zero_extracted_file,
-				       NULL);
-		extract_flags &= ~WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
-	}
-
-	if (image == WIM_ALL_IMAGES) {
+	if (image == WIMLIB_ALL_IMAGES) {
 		extract_flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
-		ret = extract_all_images(w, output_dir, extract_flags);
+		ret = extract_all_images(w, target, extract_flags,
+					 progress_func);
 	} else {
 		extract_flags &= ~WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
-		ret = extract_single_image(w, image, output_dir, extract_flags);
-	}
-	if (num_additional_swms) {
-		free_lookup_table(w->lookup_table);
-		w->lookup_table = w_tab_save;
+		ret = extract_single_image(w, image, target, extract_flags,
+					   progress_func);
 	}
 
 	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
@@ -666,6 +770,10 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 				       lte_free_extracted_file,
 				       NULL);
 	}
-	return ret;
 
+	if (num_additional_swms) {
+		free_lookup_table(w->lookup_table);
+		w->lookup_table = w_tab_save;
+	}
+	return ret;
 }

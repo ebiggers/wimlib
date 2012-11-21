@@ -119,25 +119,21 @@
  *
  * To add an image to a WIM file from a directory tree on your filesystem, call
  * wimlib_add_image().  This can be done with a ::WIMStruct gotten from
- * wimlib_open_wim() or from wimlib_create_new_wim().  Alternatively, if you
- * want to capture a WIM image directly from a NTFS volume while preserving
- * NTFS-specific data such as security descriptors, call
- * wimlib_add_image_from_ntfs_volume() instead.
+ * wimlib_open_wim() or from wimlib_create_new_wim().  Alternatively, you can
+ * capture a WIM directory from a NTFS volume if you provide the
+ * ::WIMLIB_ADD_IMAGE_FLAG_NTFS flag, provided that wimlib was not compiled with
+ * the <code>--without-ntfs-3g</code> flag.
  *
- * To extract an image from a WIM file, call wimlib_extract_image().
- * Alternatively, if you want to apply a WIM image directly to a NTFS volume
- * while setting NTFS-specific data such as security descriptors, call
- * wimlib_apply_image_to_ntfs_volume().
- *
- * The NTFS functions will fail if wimlib was compiled with the
- * <code>--without-ntfs-3g</code> flag.
+ * To extract an image from a WIM file, call wimlib_extract_image().  You may
+ * extract an image to a directory or directly to a NTFS volume, the latter of
+ * which will preserve NTFS-specific data such as security descriptors.
  *
  * wimlib supports mounting WIM files either read-only or read-write.  Mounting
- * is done using wimlib_mount() and unmounting is done using wimlib_unmount().
- * Mounting can be done without root privileges because it is implemented using
- * FUSE (Filesystem in Userspace).  If wimlib is compiled with the
- * <code>--without-fuse</code> flag, these functions will be available but will
- * fail.
+ * is done using wimlib_mount_image() and unmounting is done using
+ * wimlib_unmount_image().  Mounting can be done without root privileges because
+ * it is implemented using FUSE (Filesystem in Userspace).  If wimlib is
+ * compiled with the <code>--without-fuse</code> flag, these functions will be
+ * available but will fail.
  *
  * After creating or modifying a WIM file, you can write it to a file using
  * wimlib_write().  Alternatively,  if the WIM was originally read from a file,
@@ -145,18 +141,19 @@
  *
  * Please not: merely by calling wimlib_add_image() or many of the other
  * functions in this library that operate on ::WIMStruct's, you are @b not
- * modifing the WIM file on disk.  Changes are not saved until you explicitly
+ * modifying the WIM file on disk.  Changes are not saved until you explicitly
  * call wimlib_write() or wimlib_overwrite().
  *
  * After you are done with the WIM file, use wimlib_free() to free all memory
  * associated with a ::WIMStruct and close all files associated with it.
  *
+ * A number of functions take a pointer to a progress function of type
+ * ::wimlib_progress_func_t.  This function will be called periodically during
+ * the WIM operation(s) to report on the progress of the operation (e.g. how
+ * many bytes have been written so far).
+ *
  * To see an example of how to use wimlib, see the file @c programs/imagex.c in
  * wimlib's source tree.
- *
- * wimlib supports custom memory allocators; use wimlib_set_memory_allocator()
- * for this.  However, if wimlib calls into @c libntfs-3g, the custom memory
- * allocator may not be used.
  *
  * \section imagex imagex
  *
@@ -212,77 +209,222 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <inttypes.h>
 
-#ifndef _WIMLIB_INTERNAL_H
 /**
  * Opaque structure that represents a WIM file.
  */
 typedef struct WIMStruct WIMStruct;
-#endif
 
 /**
  * Specifies the compression type of a WIM file.
  */
-
-enum wim_compression_type {
+enum wimlib_compression_type {
 	/** An invalid compression type. */
-	WIM_COMPRESSION_TYPE_INVALID = -1,
+	WIMLIB_COMPRESSION_TYPE_INVALID = -1,
 
 	/** The WIM does not include any compressed resources. */
-	WIM_COMPRESSION_TYPE_NONE = 0,
+	WIMLIB_COMPRESSION_TYPE_NONE = 0,
 
 	/** Compressed resources in the WIM use LZX compression. */
-	WIM_COMPRESSION_TYPE_LZX = 1,
+	WIMLIB_COMPRESSION_TYPE_LZX = 1,
 
 	/** Compressed resources in the WIM use XPRESS compression. */
-	WIM_COMPRESSION_TYPE_XPRESS = 2,
+	WIMLIB_COMPRESSION_TYPE_XPRESS = 2,
 };
 
+enum wimlib_progress_msg {
+	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
+	WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
+	WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END,
+	WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
+	WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS,
+	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END,
+
+	WIMLIB_PROGRESS_MSG_SCAN_BEGIN,
+	WIMLIB_PROGRESS_MSG_SCAN_END,
+
+	WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
+	WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN,
+	WIMLIB_PROGRESS_MSG_WRITE_METADATA_END,
+	WIMLIB_PROGRESS_MSG_RENAME,
+
+	WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY,
+
+	WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
+
+	WIMLIB_PROGRESS_MSG_JOIN_STREAMS,
+
+	WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART,
+	WIMLIB_PROGRESS_MSG_SPLIT_END_PART,
+};
+
+union wimlib_progress_info {
+	struct {
+		uint64_t total_bytes;
+		uint64_t total_streams;
+		uint64_t completed_bytes;
+		uint64_t completed_streams;
+		unsigned num_threads;
+		int	 compression_type;
+	} write_streams;
+	struct {
+		const char *source;
+	} scan;
+	struct {
+		int image;
+		const char *image_name;
+		const char *target;
+		uint64_t total_bytes;
+		uint64_t completed_bytes;
+		uint64_t num_streams;
+	} extract;
+	struct {
+		const char *from;
+		const char *to;
+	} rename;
+	struct {
+		uint64_t total_bytes;
+		uint64_t completed_bytes;
+		uint32_t completed_chunks;
+		uint32_t total_chunks;
+		uint32_t chunk_size;
+		const char *filename;
+	} integrity;
+	struct {
+		uint64_t total_bytes;
+		uint64_t completed_bytes;
+		unsigned completed_parts;
+		unsigned total_parts;
+		const char *filename;
+	} join;
+	struct {
+		uint64_t completed_bytes;
+		unsigned cur_part_number;
+		const char *part_name;
+		uint64_t total_bytes;
+	} split;
+};
+
+/** A user-supplied function that will be called periodically during certain WIM
+ * operations.  The first argument specifies the type of operation that is being
+ * performed or is about to be started or has been completed.  The second
+ * argument is a pointer to one of a number of structures depending on the first
+ * argument.  It may be @c NULL for some message types.
+ *
+ * The return value
+ * is currently ignored, but it may do something in the future.  (Set it to 0
+ * for now.)
+ */
+typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
+				      const union wimlib_progress_info *info);
+
+/*****************************
+ * WIMLIB_ADD_IMAGE_FLAG_*   *
+ *****************************/
+
+/** Directly capture a NTFS volume, not a generic directory. */
+#define WIMLIB_ADD_IMAGE_FLAG_NTFS			0x00000001
+
+/** Follow symlinks; archive and dump the files they point to.  Cannot be used
+ * with ::WIMLIB_ADD_IMAGE_FLAG_NTFS. */
+#define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE		0x00000002
+
+/** Print the name of each file or directory as it is scanned to be included in
+ * the WIM image. */
+#define WIMLIB_ADD_IMAGE_FLAG_VERBOSE			0x00000004
+
+/** Mark the image being added as the bootable image of the WIM. */
+#define WIMLIB_ADD_IMAGE_FLAG_BOOT			0x00000008
+
+/******************************
+ * WIMLIB_EXPORT_FLAG_* *
+ ******************************/
+
+/** See documentation for wimlib_export_image(). */
+#define WIMLIB_EXPORT_FLAG_BOOT				0x00000001
+
+/******************************
+ * WIMLIB_EXTRACT_FLAG_*      *
+ ******************************/
+
+/** Apply the image directly to a NTFS volume, not a generic directory. */
+#define WIMLIB_EXTRACT_FLAG_NTFS			0x00000001
+
+/** When identical files are extracted from the WIM, always hard link them
+ * together.  Not valid with ::WIMLIB_EXTRACT_FLAG_NTFS. */
+#define WIMLIB_EXTRACT_FLAG_HARDLINK			0x00000002
+
+/** When identical files are extracted from the WIM, always symlink them
+ * together.  Not valid with ::WIMLIB_EXTRACT_FLAG_NTFS. */
+#define WIMLIB_EXTRACT_FLAG_SYMLINK			0x00000004
+
+/** Print the name of each file as it is extracted from the WIM image. */
+#define WIMLIB_EXTRACT_FLAG_VERBOSE			0x00000008
+
+/** Read the WIM file sequentially while extracting the image. */
+#define WIMLIB_EXTRACT_FLAG_SEQUENTIAL			0x00000010
+
+/******************************
+ * WIMLIB_MOUNT_FLAG_*        *
+ ******************************/
+
 /** Mount the WIM read-write. */
-#define WIMLIB_MOUNT_FLAG_READWRITE		0x00000001
+#define WIMLIB_MOUNT_FLAG_READWRITE			0x00000001
 
 /** For debugging only. (This passes the @c -d flag to @c fuse_main()).*/
-#define WIMLIB_MOUNT_FLAG_DEBUG			0x00000002
+#define WIMLIB_MOUNT_FLAG_DEBUG				0x00000002
 
 /** Do not allow accessing alternate data streams. */
-#define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE		0x00000010
+#define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE		0x00000004
 
 /** Access alternate data streams through extended file attributes.  This is the
  * default mode. */
-#define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR	0x00000020
+#define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR	0x00000008
 
 /** Access alternate data streams by specifying the file name, a colon, then the
  * alternate file stream name. */
-#define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS	0x00000040
+#define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS	0x00000010
+
+/******************************
+ * WIMLIB_OPEN_FLAG_*         *
+ ******************************/
+
+/** See documentation for wimlib_open_wim(). */
+#define WIMLIB_OPEN_FLAG_CHECK_INTEGRITY		0x00000001
+
+/** See documentation for wimlib_open_wim(). */
+#define WIMLIB_OPEN_FLAG_SPLIT_OK			0x00000002
+
+/******************************
+ * WIMLIB_UNMOUNT_FLAG_*      *
+ ******************************/
 
 /** Include an integrity table in the new WIM being written during the unmount.
  * Ignored for read-only mounts. */
-#define WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY	0x00000001
+#define WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY		0x00000001
 
 /** Unless this flag is given, changes to a mounted WIM are discarded.  Ignored
  * for read-only mounts. */
-#define WIMLIB_UNMOUNT_FLAG_COMMIT		0x00000002
+#define WIMLIB_UNMOUNT_FLAG_COMMIT			0x00000002
+
+/******************************
+ * WIMLIB_WRITE_FLAG_*        *
+ ******************************/
 
 /** Include an integrity table in the new WIM file. */
-#define WIMLIB_WRITE_FLAG_CHECK_INTEGRITY	0x00000001
-
-/** Print progress information when writing streams and when writing the
- * integrity table. */
-#define WIMLIB_WRITE_FLAG_SHOW_PROGRESS		0x00000002
-
-/** Print file paths as we write then */
-#define WIMLIB_WRITE_FLAG_VERBOSE		0x00000004
-
-/** Call fsync() when the WIM file is closed */
-#define WIMLIB_WRITE_FLAG_FSYNC			0x00000008
+#define WIMLIB_WRITE_FLAG_CHECK_INTEGRITY		0x00000001
 
 /** Re-build the entire WIM file rather than appending data to it, if possible.
  * (Applies to wimlib_overwrite(), not wimlib_write()). */
-#define WIMLIB_WRITE_FLAG_REBUILD		0x00000010
+#define WIMLIB_WRITE_FLAG_REBUILD			0x00000002
 
 /** Do not copy compressed resources between WIMs if the compression type is the
  * same.  Instead, recompress them. */
-#define WIMLIB_WRITE_FLAG_RECOMPRESS		0x00000020
+#define WIMLIB_WRITE_FLAG_RECOMPRESS			0x00000004
+
+/** Call fsync() when the WIM file is closed */
+#define WIMLIB_WRITE_FLAG_FSYNC				0x00000008
 
 /** Specifying this flag overrides the default behavior of wimlib_overwrite()
  * after one or more calls to wimlib_delete_image(), which is to rebuild the
@@ -291,51 +433,7 @@ enum wim_compression_type {
  * particular, all streams will be left alone, even if they are no longer
  * references.  This is probably not what you want, because almost no space will
  * be spaced by deleting an image in this way. */
-#define WIMLIB_WRITE_FLAG_SOFT_DELETE		0x00000040
-
-/** Mark the image being added as the bootable image of the WIM. */
-#define WIMLIB_ADD_IMAGE_FLAG_BOOT		0x00000001
-
-/** Print the name of each file or directory as it is scanned to be included in
- * the WIM image. */
-#define WIMLIB_ADD_IMAGE_FLAG_VERBOSE		0x00000002
-
-/** Follow symlinks; archive and dump the files they point to. */
-#define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	0x00000004
-
-/** Show progress information when scanning a directory tree */
-#define WIMLIB_ADD_IMAGE_FLAG_SHOW_PROGRESS	0x00000008
-
-/** See documentation for wimlib_export_image(). */
-#define WIMLIB_EXPORT_FLAG_BOOT			0x00000001
-
-/** Verify the integrity of the WIM if an integrity table is present. */
-#define WIMLIB_OPEN_FLAG_CHECK_INTEGRITY	0x00000001
-
-/** Print progress information when verifying integrity table. */
-#define WIMLIB_OPEN_FLAG_SHOW_PROGRESS		0x00000002
-
-/** If this flag is not given, an error is issued if the WIM is part of a split
- * WIM.  */
-#define WIMLIB_OPEN_FLAG_SPLIT_OK		0x00000004
-
-
-/** When identical files are extracted from the WIM, always hard link them
- * together. */
-#define WIMLIB_EXTRACT_FLAG_HARDLINK		0x00000001
-
-/** When identical files are extracted from the WIM, always symlink them
- * together. */
-#define WIMLIB_EXTRACT_FLAG_SYMLINK		0x00000002
-
-/** Print the name of each file as it is extracted from the WIM image. */
-#define WIMLIB_EXTRACT_FLAG_VERBOSE		0x00000008
-
-/** Read the WIM file sequentially while extracting the image. */
-#define WIMLIB_EXTRACT_FLAG_SEQUENTIAL		0x00000010
-
-/** Print progress information while extracting the image. */
-#define WIMLIB_EXTRACT_FLAG_SHOW_PROGRESS	0x00000020
+#define WIMLIB_WRITE_FLAG_SOFT_DELETE			0x00000010
 
 /**
  * Possible values of the error code returned by many functions in wimlib.
@@ -394,11 +492,10 @@ enum wimlib_error_code {
 
 
 /** Used to indicate that no WIM image is currently selected. */
-#define WIM_NO_IMAGE	0
+#define WIMLIB_NO_IMAGE		0
 
 /** Used to specify all images in the WIM. */
-#define WIM_ALL_IMAGES	(-1)
-
+#define WIMLIB_ALL_IMAGES	(-1)
 
 /**
  * Adds an image to a WIM file from a directory tree on disk.
@@ -409,6 +506,9 @@ enum wimlib_error_code {
  * large amount of data, the files themselves are not read into memory
  * permanently, and instead references to their paths saved.  The files are then
  * read on-demand if wimlib_write() or wimlib_overwrite() is called.
+ *
+ * Please note that @b no changes are committed to the underlying WIM file (if
+ * any) until wimlib_write() or wimlib_overwrite() is called.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for a WIM file to which the image will be
@@ -426,7 +526,7 @@ enum wimlib_error_code {
  * 	Length of the string @a config in bytes.  Ignored if @a config is @c
  * 	NULL.
  *
- * @param flags
+ * @param add_image_flags
  * 	Bitwise OR of flags prefixed with WIMLIB_ADD_IMAGE_FLAG.  If
  * 	::WIMLIB_ADD_IMAGE_FLAG_BOOT is specified, the image in @a wim that is
  * 	marked as bootable is changed to the one being added.  If
@@ -434,9 +534,11 @@ enum wimlib_error_code {
  * 	printed as it is scanned or captured.  If
  * 	::WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE is specified, the files or
  * 	directories pointed to by symbolic links are archived rather than the
- * 	symbolic links themselves.  If ::WIMLIB_ADD_IMAGE_FLAG_SHOW_PROGRESS is
- * 	specified, progress information will be printed (distinct from the
- * 	verbose information).
+ * 	symbolic links themselves.
+ *
+ * @param progress_func
+ * 	If non-NULL, a function that will be called periodically with the
+ * 	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.  On error, changes to @a wim are
  * discarded so that it appears to be in the same state as when this function
@@ -456,8 +558,8 @@ enum wimlib_error_code {
  * @retval ::WIMLIB_ERR_READ
  * 	Failed to read a file in the directory tree rooted at @a dir.
  * @retval ::WIMLIB_ERR_SPECIAL_FILE
- * 	The directory tree rooted at @dir contains a special file that is not a
- * 	directory, regular file, or symbolic link.
+ * 	The directory tree rooted at @a dir contains a special file that is not
+ * 	a directory, regular file, or symbolic link.
  * @retval ::WIMLIB_ERR_STAT
  * 	Failed obtain the metadata for a file or directory in the directory tree
  * 	rooted at @a dir.
@@ -467,42 +569,16 @@ enum wimlib_error_code {
  */
 extern int wimlib_add_image(WIMStruct *wim, const char *dir,
 			    const char *name, const char *config,
-			    size_t config_len, int flags);
-
-/**
- * This function is similar to wimlib_add_image(), except instead of capturing
- * the WIM image from a directory, it is captured from a NTFS volume specified
- * by @a device.  NTFS-3g errors are reported as ::WIMLIB_ERR_NTFS_3G.
- * ::WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE may not be specified because we capture
- * the reparse points exactly as they are.
- */
-extern int wimlib_add_image_from_ntfs_volume(WIMStruct *wim, const char *device,
-					     const char *name,
-					     const char *config,
-					     size_t config_len,
-					     int flags);
-
-/**
- * This function is similar to wimlib_extract_image(), except that @a image may
- * not be ::WIM_ALL_IMAGES, and @a device specifies the name of a file or block
- * device containing a NTFS volume to apply the image to.  NTFS-3g errors are
- * reported as ::WIMLIB_ERR_NTFS_3G, and ::WIMLIB_EXTRACT_FLAG_HARDLINK or
- * ::WIMLIB_EXTRACT_FLAG_SYMLINK may not be specified because in the NTFS
- * apply mode we apply the reparse points and hard links exactly as they are in
- * the WIM.
- */
-extern int wimlib_apply_image_to_ntfs_volume(WIMStruct *wim, int image,
-				 	     const char *device, int flags,
-					     WIMStruct **additional_swms,
-					     unsigned num_additional_swms);
+			    size_t config_len, int add_image_flags,
+			    wimlib_progress_func_t progress_func);
 
 /**
  * Creates a WIMStruct for a new WIM file.
  *
  * @param ctype
  * 	The type of compression to be used in the new WIM file.  Must be
- * 	::WIM_COMPRESSION_TYPE_NONE, ::WIM_COMPRESSION_TYPE_LZX, or
- * 	::WIM_COMPRESSION_TYPE_XPRESS.
+ * 	::WIMLIB_COMPRESSION_TYPE_NONE, ::WIMLIB_COMPRESSION_TYPE_LZX, or
+ * 	::WIMLIB_COMPRESSION_TYPE_XPRESS.
  * @param wim_ret
  * 	On success, a pointer to an opaque ::WIMStruct for the new WIM file is
  * 	written to the memory location pointed to by this paramater.  The
@@ -510,8 +586,8 @@ extern int wimlib_apply_image_to_ntfs_volume(WIMStruct *wim, int image,
  * 	it.
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
- * 	@a ctype was not ::WIM_COMPRESSION_TYPE_NONE,
- * 	::WIM_COMPRESSION_TYPE_LZX, or ::WIM_COMPRESSION_TYPE_XPRESS.
+ * 	@a ctype was not ::WIMLIB_COMPRESSION_TYPE_NONE,
+ * 	::WIMLIB_COMPRESSION_TYPE_LZX, or ::WIMLIB_COMPRESSION_TYPE_XPRESS.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate needed memory.
  */
@@ -524,15 +600,18 @@ extern int wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
  * lookup table of the WIM if they are not referenced by any other images in the
  * WIM.
  *
+ * Please note that @b no changes are committed to the underlying WIM file (if
+ * any) until wimlib_write() or wimlib_overwrite() is called.
+ *
  * @param wim
  * 	Pointer to the ::WIMStruct for the WIM file that contains the image(s)
  * 	being deleted.
  * @param image
- * 	The number of the image to delete, or ::WIM_ALL_IMAGES to delete all
+ * 	The number of the image to delete, or ::WIMLIB_ALL_IMAGES to delete all
  * 	images.
  * @return 0 on success; nonzero on failure.  On failure, @a wim is guaranteed
  * to be left unmodified only if @a image specified a single image.  If instead
- * @a image was ::WIM_ALL_IMAGES and @a wim contained more than one image, it's
+ * @a image was ::WIMLIB_ALL_IMAGES and @a wim contained more than one image, it's
  * possible for some but not all of the images to have been deleted when a
  * failure status is returned.
  *
@@ -542,7 +621,7 @@ extern int wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
  * 	A directory entry in the metadata resource for @a image in the WIM is
  * 	invalid.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
- * 	@a image does not exist in the WIM and is not ::WIM_ALL_IMAGES.
+ * 	@a image does not exist in the WIM and is not ::WIMLIB_ALL_IMAGES.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in the WIM is invalid.
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
@@ -562,10 +641,10 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  *
  * The destination image is made to share the same dentry tree and security data
  * structure as the source image.  This places some restrictions on additional
- * functions that may be called.  wimlib_mount() may not be called on either the
- * source image or the destination image without an intervening call to a
- * function that un-shares the images, such as wimlib_free() on @a dest_wim, or
- * wimlib_delete_image() on either the source or destination image.
+ * functions that may be called.  wimlib_mount_image() may not be called on
+ * either the source image or the destination image without an intervening call
+ * to a function that un-shares the images, such as wimlib_free() on @a
+ * dest_wim, or wimlib_delete_image() on either the source or destination image.
  * Furthermore, you may not call wimlib_free() or wimlib_overwrite() on @a
  * src_wim before any calls to functions such as wimlib_write() on @a dest_wim
  * because @a dest_wim will have references back to @a src_wim.
@@ -581,30 +660,33 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * Regardless of whether this function succeeds or fails, no user-visible
  * changes are made to @a src_wim.
  *
+ * Please note that @b no changes are committed to the underlying WIM file (if
+ * any) until wimlib_write() or wimlib_overwrite() is called.
+ *
  * @param src_wim
  * 	Pointer to the ::WIMStruct for a stand-alone WIM or part 1 of a split
  * 	WIM that contains the image(s) being exported.
  * @param src_image
  * 	The image to export from @a src_wim.  Can be the number of an image, or
- * 	::WIM_ALL_IMAGES to export all images.
+ * 	::WIMLIB_ALL_IMAGES to export all images.
  * @param dest_wim
  * 	Pointer to the ::WIMStruct for a WIM file that will receive the images
  * 	being exported.
  * @param dest_name
  * 	The name to give the exported image in the new WIM file.  If left @c NULL,
  * 	the name from @a src_wim is used.  This parameter must be left @c NULL
- * 	if @a src_image is ::WIM_ALL_IMAGES and @a src_wim contains more than one
+ * 	if @a src_image is ::WIMLIB_ALL_IMAGES and @a src_wim contains more than one
  * 	image; in that case, the names are all taken from the @a src_wim.
  * @param dest_description
  * 	The description to give the exported image in the new WIM file.  If left
  * 	@c NULL, the description from the @a src_wim is used.  This parameter must
- * 	be left @c NULL if @a src_image is ::WIM_ALL_IMAGES and @a src_wim contains
+ * 	be left @c NULL if @a src_image is ::WIMLIB_ALL_IMAGES and @a src_wim contains
  * 	more than one image; in that case, the descriptions are all taken from
  * 	@a src_wim.
- * @param flags
+ * @param export_flags
  * 	::WIMLIB_EXPORT_FLAG_BOOT if the image being exported is to be made
  * 	bootable, or 0 if which image is marked as bootable in the destination
- * 	WIM is to be left unchanged.  If @a src_image is ::WIM_ALL_IMAGES and
+ * 	WIM is to be left unchanged.  If @a src_image is ::WIMLIB_ALL_IMAGES and
  * 	there are multiple images in @a src_wim, specifying
  * 	::WIMLIB_EXPORT_FLAG_BOOT is valid only if one of the exported images is
  * 	currently marked as bootable in @a src_wim; if that is the case, then
@@ -619,6 +701,9 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	Number of additional WIM parts provided in the @a additional_swms array.
  * 	This number should be one less than the total number of parts in the
  * 	split WIM.  Set to 0 if the WIM is a standalone WIM.
+ * @param progress_func
+ * 	If non-NULL, a function that will be called periodically with the
+ * 	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -634,10 +719,10 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	@a src_image does not exist in @a src_wim.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	::WIMLIB_EXPORT_FLAG_BOOT was specified in @a flags, @a src_image was
- * 	::WIM_ALL_IMAGES, @a src_wim contains multiple images, and no images in
+ * 	::WIMLIB_ALL_IMAGES, @a src_wim contains multiple images, and no images in
  * 	@a src_wim are marked as bootable; or @a dest_name and/or @a
  * 	dest_description were non-<code>NULL</code>, @a src_image was
- * 	::WIM_ALL_IMAGES, and @a src_wim contains multiple images; or @a src_wim
+ * 	::WIMLIB_ALL_IMAGES, and @a src_wim contains multiple images; or @a src_wim
  * 	or @a dest_wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a src_image in @a src_wim is invalid.
@@ -658,9 +743,10 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  */
 extern int wimlib_export_image(WIMStruct *src_wim, int src_image,
 			       WIMStruct *dest_wim, const char *dest_name,
-			       const char *dest_description, int flags,
+			       const char *dest_description, int export_flags,
 			       WIMStruct **additional_swms,
-			       unsigned num_additional_swms);
+			       unsigned num_additional_swms,
+			       wimlib_progress_func_t progress_func);
 
 /**
  * Extracts an image, or all images, from a standalone or split WIM file.
@@ -669,26 +755,41 @@ extern int wimlib_export_image(WIMStruct *src_wim, int src_image,
  * 	Pointer to the ::WIMStruct for a standalone WIM file, or part 1 of a
  * 	split WIM.
  * @param image
- * 	The image to extract.  Can be the number of an image, or ::WIM_ALL_IMAGES
- * 	to specify that all images are to be extracted.
- * @param output_dir
- * 	Directory to extract the WIM image(s) to.  It is created if it does not
- * 	already exist.
- * @param flags
- * 	Bitwise or of the flags prefixed with WIMLIB_EXTRACT_FLAG.
+ * 	The image to extract.  Can be the number of an image, or ::WIMLIB_ALL_IMAGES
+ * 	to specify that all images are to be extracted.  ::WIMLIB_ALL_IMAGES cannot
+ * 	be used if ::WIMLIB_EXTRACT_FLAG_NTFS is specified in @a extract_flags.
+ * @param target
+ * 	Directory to extract the WIM image(s) to (created if it does not already
+ * 	exist); or, with ::WIMLIB_EXTRACT_FLAG_NTFS in @a extract_flags, the
+ * 	name of the NTFS volume to extract the image to.
+ * @param extract_flags
+ * 	Bitwise OR of the flags prefixed with WIMLIB_EXTRACT_FLAG.
  *
- * 	One or none of ::WIMLIB_EXTRACT_FLAG_HARDLINK or
- * 	::WIMLIB_EXTRACT_FLAG_SYMLINK may be specified.  These flags cause
- * 	extracted files that are identical to be hardlinked or symlinked
- * 	together, depending on the flag.  These flags override the hard link
- * 	groups that are specified in the WIM file itself.  If ::WIM_ALL_IMAGES
- * 	is provided as the @a image parameter, files may be hardlinked or
- * 	symlinked across images if a file is found to occur in more than one
- * 	image.
+ * 	If ::WIMLIB_EXTRACT_FLAG_NTFS is specified, @a target is interpreted as
+ * 	a NTFS volume to extract the image to.  The volume will be opened using
+ * 	NTFS-3g and the image will be extracted to the root of the NTFS volume.
+ * 	Otherwise, @a target is interpreted as a directory to extract the
+ * 	image(s) to.
+ *
+ * 	If ::WIMLIB_EXTRACT_FLAG_NTFS is not specified, one or none of
+ * 	::WIMLIB_EXTRACT_FLAG_HARDLINK or ::WIMLIB_EXTRACT_FLAG_SYMLINK may be
+ * 	specified.  These flags cause extracted files that are identical to be
+ * 	hardlinked or symlinked together, depending on the flag.  These flags
+ * 	override the hard link groups that are specified in the WIM file itself.
+ * 	If ::WIMLIB_ALL_IMAGES is provided as the @a image parameter, files may be
+ * 	hardlinked or symlinked across images if a file is found to occur in
+ * 	more than one image.
  *
  * 	You may also specify the flag ::WIMLIB_EXTRACT_FLAG_VERBOSE to cause
  * 	informational messages to be printed during the extraction, including
  * 	the name of each extracted file or directory.
+ * 	
+ * 	If ::WIMLIB_EXTRACT_FLAG_SEQUENTIAL is specified, streams are read from
+ * 	the WIM sequentially, if possible.  If ::WIMLIB_ALL_IMAGES is specified,
+ * 	each image is considered separately with regards to the sequential
+ * 	order.  It is also possible for alternate data streams to break the
+ * 	sequential order (this only applies if ::WIMLIB_EXTRACT_FLAG_NTFS is
+ * 	specified).
  * @param additional_swms
  * 	Array of pointers to the ::WIMStruct for each additional part in the
  * 	split WIM.  Ignored if @a num_additional_swms is 0.  The pointers do not
@@ -699,6 +800,10 @@ extern int wimlib_export_image(WIMStruct *src_wim, int src_image,
  * 	Number of additional WIM parts provided in the @a additional_swms array.
  * 	This number should be one less than the total number of parts in the
  * 	split WIM.  Set to 0 if the WIM is a standalone WIM.
+ *
+ * @param progress_func
+ * 	If non-NULL, a function that will be called periodically with the
+ * 	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -734,9 +839,10 @@ extern int wimlib_export_image(WIMStruct *src_wim, int src_image,
  * 	Failed to write a file being extracted.
  */
 extern int wimlib_extract_image(WIMStruct *wim, int image,
-				const char *output_dir, int flags,
+				const char *target, int extract_flags,
 				WIMStruct **additional_swms,
-				unsigned num_additional_swms);
+				unsigned num_additional_swms,
+				wimlib_progress_func_t progress_func);
 
 /**
  * Extracts the XML data for a WIM file to a file stream.  Every WIM file
@@ -784,8 +890,8 @@ extern int wimlib_get_boot_idx(const WIMStruct *wim);
  * 	Pointer to the ::WIMStruct for a WIM file
  *
  * @return
- * 	::WIM_COMPRESSION_TYPE_NONE, ::WIM_COMPRESSION_TYPE_LZX, or
- * 	::WIM_COMPRESSION_TYPE_XPRESS.
+ * 	::WIMLIB_COMPRESSION_TYPE_NONE, ::WIMLIB_COMPRESSION_TYPE_LZX, or
+ * 	::WIMLIB_COMPRESSION_TYPE_XPRESS.
  */
 extern int wimlib_get_compression_type(const WIMStruct *wim);
 
@@ -793,8 +899,8 @@ extern int wimlib_get_compression_type(const WIMStruct *wim);
  * Converts a compression type enumeration value into a string.
  *
  * @param ctype
- * 	::WIM_COMPRESSION_TYPE_NONE, ::WIM_COMPRESSION_TYPE_LZX,
- * 	::WIM_COMPRESSION_TYPE_XPRESS, or another value.
+ * 	::WIMLIB_COMPRESSION_TYPE_NONE, ::WIMLIB_COMPRESSION_TYPE_LZX,
+ * 	::WIMLIB_COMPRESSION_TYPE_XPRESS, or another value.
  *
  * @return
  * 	A statically allocated string: "None", "LZX", "XPRESS", or "Invalid",
@@ -903,55 +1009,57 @@ extern bool wimlib_has_integrity_table(const WIMStruct *wim);
 extern bool wimlib_image_name_in_use(const WIMStruct *wim, const char *name);
 
 /**
- * Joins a set of split WIMs into a one-part WIM.
+ * Joins a set of split WIMs into a stand-alone one-part WIM.
  *
  * @param swms
  * 	An array of strings that give the filenames of all parts of the split
  * 	WIM.
  * @param num_swms
  * 	Number of filenames in @a swms.
+ * @param swm_open_flags
+ * 	Open flags to use when opening the split WIM pats.
+ * @param wim_write_flags
+ * 	Write flags to use when writing the joined WIM.
  * @param output_path
  * 	The path to write the one-part WIM to.
- * @param flags
- * 	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY to check the split WIMs' integrity
- * 	tables (if present) when opening them, and include an integrity table in
- * 	the output WIM.
+ * @param progress_func
+ * 	If non-NULL, a function that will be called periodically with the
+ * 	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.  This function may return any value
- * returned by wimlib_open_wim() except ::WIMLIB_ERR_SPLIT_UNSUPPORTED, as well
- * as the following error codes:
+ * returned by wimlib_open_wim() and wimlib_write() except
+ * ::WIMLIB_ERR_SPLIT_UNSUPPORTED, as well as the following error code:
  *
  * @retval ::WIMLIB_ERR_SPLIT_INVALID
  * 	The split WIMs do not form a valid WIM because they do not include all
  * 	the parts of the original WIM, there are duplicate parts, or not all the
  * 	parts have the same GUID and compression type.
- * @retval ::WIMLIB_ERR_WRITE
- * 	An error occurred when trying to write data to the new WIM at @a output_path.
  *
  * Note that this function merely copies the resources, so it will not check to
- * see if the resources, including the metadata resources, are valid or not.
- *
- * Also, after this function is called, the only function that may be called on
- * the ::WIMStruct's in the @a swms array is wimlib_free().
+ * see if the resources, including the metadata resources, are valid or not
+ * (unless ::WIMLIB_WRITE_FLAG_RECOMPRESS is specified).
  */
 extern int wimlib_join(const char **swms, unsigned num_swms,
-		       const char *output_path, int flags);
+		       const char *output_path, int swm_open_flags,
+		       int wim_write_flags,
+		       wimlib_progress_func_t progress_func);
 
 /**
  * Mounts an image in a WIM file on a directory read-only or read-write.
  *
- * A daemon will be forked to service the filesystem.
+ * A daemon will be forked to service the filesystem.  In other words, this
+ * function returns @b before the image is unmounted.
  *
  * If the mount is read-write, modifications to the WIM are staged in a staging
  * directory.
  *
- * wimlib_mount() may be called from multiple threads without intervening calls
- * to wimlib_unmount(), provided that different ::WIMStruct's are used.  (This
+ * wimlib_mount_image() may be called from multiple threads without intervening calls
+ * to wimlib_unmount_image(), provided that different ::WIMStruct's are used.  (This
  * was not the case for versions of this library 1.0.3 and earlier.)
  *
- * wimlib_mount() cannot be used on an image that was exported with
+ * wimlib_mount_image() cannot be used on an image that was exported with
  * wimlib_export_image() while the dentry trees for both images are still in
- * memory.  In addition, wimlib_mount() may not be used to mount an image that
+ * memory.  In addition, wimlib_mount_image() may not be used to mount an image that
  * has just been added with wimlib_add_image() or
  * wimlib_add_image_from_ntfs_volume(), unless the WIM has been written and read
  * into a new ::WIMStruct.
@@ -963,11 +1071,12 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * 	existing, single image.
  * @param dir
  * 	The path to an existing directory to mount the image on.
- * @param flags
+ * @param mount_flags
  * 	Bitwise OR of the flags prefixed with WIMLIB_MOUNT_FLAG.  If
- * 	::WIMLIB_MOUNT_FLAG_READWRITE is not given, the WIM is mounted
- * 	read-only.  The interface to the WIM named data streams is specified by
- * 	exactly one of ::WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE,
+ * 	::WIMLIB_MOUNT_FLAG_READWRITE is given, the WIM is mounted read-write
+ * 	rather than the default of read-only.  The interface to the WIM named
+ * 	data streams is specified by exactly one of
+ * 	::WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE,
  * 	::WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR, or
  * 	::WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS.  The default interface is
  * 	the XATTR interface.
@@ -1001,8 +1110,8 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
  *	The security data for @a image in @a wim is invalid.
  * @retval ::WIMLIB_ERR_MKDIR
- * 	::WIMLIB_MOUNT_FLAG_READWRITE was specified in @a flags, but the staging
- * 	directory could not be created.
+ * 	::WIMLIB_MOUNT_FLAG_READWRITE was specified in @a mount_flags, but the
+ * 	staging directory could not be created.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_NOTDIR
@@ -1019,29 +1128,33 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * 	The WIM is a split WIM and a read-write mount was requested.  We only
  * 	support mounting a split WIM read-only.
  */
-extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags,
-			WIMStruct **additional_swms,
-			unsigned num_additional_swms);
+extern int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
+			      int mount_flags, WIMStruct **additional_swms,
+			      unsigned num_additional_swms);
 
 /**
  * Opens a WIM file and creates a ::WIMStruct for it.
  *
  * @param wim_file
  * 	The path to the WIM file to open.
- * @param flags
- * 	Bitwise OR of ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY and/or
- * 	::WIMLIB_OPEN_FLAG_SHOW_PROGRESS.
- * 	If ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY is given, the integrity table
- * 	of the WIM, if it exists, is checked, and the function will fail with an
+ * @param open_flags
+ * 	Bitwise OR of flags ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY and/or
+ * 	::WIMLIB_OPEN_FLAG_SPLIT_OK.
+ *
+ * 	If ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY is given, the integrity table of
+ * 	the WIM, if it exists, is checked, and this function will fail with an
  * 	::WIMLIB_ERR_INTEGRITY status if any of the computed SHA1 message
  * 	digests of the WIM do not exactly match the corresponding message
  * 	digests given in the integrity table.
- * 	If ::WIMLIB_OPEN_FLAG_SHOW_PROGRESS is given, progress information will
- * 	be shown if the integrity of the WIM is checked.
+ *
  * 	If ::WIMLIB_OPEN_FLAG_SPLIT_OK is given, no error will be issued if the
  * 	WIM is part of a split WIM; otherwise ::WIMLIB_ERR_SPLIT_UNSUPPORTED is
  * 	returned.  (This flag may be removed in the future, in which case no
  * 	error will be issued when opening a split WIM.)
+ *
+ * @param progress_func
+ * 	If non-NULL, a function that will be called periodically with the
+ * 	progress of the current operation.
  *
  * @param wim_ret
  * 	On success, a pointer to an opaque ::WIMStruct for the opened WIM file
@@ -1060,7 +1173,7 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags,
  * 	in the WIM header, or the number of &lt;IMAGE&gt; elements in the XML
  * 	data for the WIM did not match the image count given in the WIM header.
  * @retval ::WIMLIB_ERR_INTEGRITY
- * 	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY was specified in @a flags and @a
+ * 	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY was specified in @a open_flags and @a
  * 	wim_file contains an integrity table, but the SHA1 message digest for a
  * 	chunk of the WIM does not match the corresponding message digest given
  * 	in the integrity table.
@@ -1072,7 +1185,7 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags,
  * @retval ::WIMLIB_ERR_INVALID_HEADER_SIZE
  * 	The length field of the WIM header is not 208.
  * @retval ::WIMLIB_ERR_INVALID_INTEGRITY_TABLE
- * 	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY was specified in @a flags and @a
+ * 	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY was specified in @a open_flags and @a
  * 	wim_file contains an integrity table, but the integrity table is
  * 	invalid.
  * @retval ::WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY
@@ -1089,15 +1202,16 @@ extern int wimlib_mount(WIMStruct *wim, int image, const char *dir, int flags,
  * 	data from @a wim_file.
  * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
  * 	@a wim_file is a split WIM, but ::WIMLIB_OPEN_FLAG_SPLIT_OK was not
- * 	givin in @a flags.
+ * 	givin in @a open_flags.
  * @retval ::WIMLIB_ERR_UNKNOWN_VERSION
  * 	A number other than 0x10d00 is written in the version field of the WIM
  * 	header of @a wim_file.
  * @retval ::WIMLIB_ERR_XML
  * 	The XML data for @a wim_file is invalid.
  */
-extern int wimlib_open_wim(const char *wim_file, int flags,
-			   WIMStruct **wim_ret);
+extern int wimlib_open_wim(const char *wim_file, int open_flags,
+			   WIMStruct **wim_ret,
+			   wimlib_progress_func_t progress_func);
 
 /**
  * Overwrites the file that the WIM was originally read from, with changes made.
@@ -1128,17 +1242,21 @@ extern int wimlib_open_wim(const char *wim_file, int flags,
  * termination of the program will result in the temporary file being orphaned.
  * In the direct append mode, the WIM is truncated to the original length on
  * failure, while abnormal termination of the program will result in extra data
- * appended to the original WIM, but it will still be a valid WIM.
+ * appended to the original WIM, but it should still be a valid WIM.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for the WIM file to write.  There may have
  * 	been in-memory changes made to it, which are then reflected in the
  * 	output file.
  * @param write_flags
- * 	Bitwise OR of ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY and/or
- * 	::WIMLIB_WRITE_FLAG_SHOW_PROGRESS.
+ * 	Bitwise OR of the flags ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY,
+ * 	::WIMLIB_WRITE_FLAG_REBUILD, ::WIMLIB_WRITE_FLAG_RECOMPRESS, and/or
+ * 	::WIMLIB_WRITE_FLAG_SOFT_DELETE.
  * @param num_threads
  * 	Number of threads to use for compression (see wimlib_write()).
+ * @param progress_func
+ * 	If non-NULL, a function that will be called periodically with the
+ * 	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.  This function may return any value
  * returned by wimlib_write() as well as the following error codes:
@@ -1155,14 +1273,8 @@ extern int wimlib_open_wim(const char *wim_file, int flags,
  * 	before calling wimlib_free().
  */
 extern int wimlib_overwrite(WIMStruct *wim, int write_flags,
-			    unsigned num_threads);
-
-/**
- * This function is deprecated; call wimlib_overwrite() instead.
- * (wimlib_overwrite() no longer rebuilds the full WIM unless it has to or is
- * specified explicitly with ::WIMLIB_WRITE_FLAG_REBUILD)
- */
-extern int wimlib_overwrite_xml_and_header(WIMStruct *wim, int write_flags);
+			    unsigned num_threads,
+			    wimlib_progress_func_t progress_func);
 
 /**
  * Prints information about one image, or all images, contained in a WIM.
@@ -1171,7 +1283,7 @@ extern int wimlib_overwrite_xml_and_header(WIMStruct *wim, int write_flags);
  * 	Pointer to the ::WIMStruct for a WIM file.
  * @param image
  * 	The image about which to print information.  Can be the number of an
- * 	image, or ::WIM_ALL_IMAGES to print information about all images in the
+ * 	image, or ::WIMLIB_ALL_IMAGES to print information about all images in the
  * 	WIM.
  *
  * @return This function has no return value.  No error checking is done when
@@ -1188,7 +1300,7 @@ extern void wimlib_print_available_images(const WIMStruct *wim, int image);
  * 	Pointer to the ::WIMStruct for a WIM file.
  * @param image
  * 	Which image to print files for.  Can be the number of an image, or
- * 	::WIM_ALL_IMAGES to print the files contained in all images.
+ * 	::WIMLIB_ALL_IMAGES to print the files contained in all images.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -1199,7 +1311,7 @@ extern void wimlib_print_available_images(const WIMStruct *wim, int image);
  * 	images is invaled.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a valid image in @a wim, and is not
- * 	::WIM_ALL_IMAGES.
+ * 	::WIMLIB_ALL_IMAGES.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
@@ -1252,7 +1364,7 @@ extern void wimlib_print_lookup_table(WIMStruct *wim);
  * 	Pointer to the ::WIMStruct for a WIM file.
  * @param image
  * 	Which image to print the metadata for.  Can be the number of an image,
- * 	or ::WIM_ALL_IMAGES to print the metadata for all images in the WIM.
+ * 	or ::WIMLIB_ALL_IMAGES to print the metadata for all images in the WIM.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -1263,7 +1375,7 @@ extern void wimlib_print_lookup_table(WIMStruct *wim);
  * 	images is invaled.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a valid image in @a wim, and is not
- * 	::WIM_ALL_IMAGES.
+ * 	::WIMLIB_ALL_IMAGES.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
@@ -1305,12 +1417,12 @@ extern void wimlib_print_wim_information(const WIMStruct *wim);
  * 	taken to be a string specifying the image number.  Otherwise, it is
  * 	taken to be the name of an image, as specified in the XML data for the
  * 	WIM file.  It also may be the keyword "all" or the string "*", both of
- * 	which will resolve to ::WIM_ALL_IMAGES.
+ * 	which will resolve to ::WIMLIB_ALL_IMAGES.
  *
  * @return
  * 	If the string resolved to a single existing image, the number of that
  * 	image, counting starting at 1, is returned.  If the keyword "all" was
- * 	specified, ::WIM_ALL_IMAGES is returned.  Otherwise, ::WIM_NO_IMAGE is
+ * 	specified, ::WIMLIB_ALL_IMAGES is returned.  Otherwise, ::WIMLIB_NO_IMAGE is
  * 	returned.
  */
 extern int wimlib_resolve_image(WIMStruct *wim, const char *image_name_or_num);
@@ -1465,38 +1577,44 @@ extern int wimlib_set_print_errors(bool show_messages);
 /**
  * Splits a WIM into multiple parts.
  *
- * @param wimfile
- * 	Name of the WIM file to split.  It must be a standalone, one-part WIM.
+ * @param wim
+ * 	The ::WIMStruct for the WIM to split.  It must be a standalone, one-part
+ * 	WIM.
  * @param swm_name
  * 	Name of the SWM file to create.  This will be the name of the first
  * 	part.  The other parts will have the same name with 2, 3, 4, ..., etc.
- * 	appended.
+ * 	appended before the suffix.
  * @param part_size
  * 	The maximum size per part, in bytes.  It is not guaranteed that this
  * 	will really be the maximum size per part, because some file resources in
  * 	the WIM may be larger than this size, and the WIM file format provides
  * 	no way to split up file resources among multiple WIMs.
- * @param flags
- * 	Bitwise OR of ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY and/or
- * 	::WIMLIB_OPEN_FLAG_SHOW_PROGRESS.
+ * @param write_flags
+ * 	Bitwise OR of the flags ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY and/or
+ * 	::WIMLIB_WRITE_FLAG_RECOMPRESS.
+ * @param progress_func
+ * 	If non-NULL, a function that will be called periodically with the
+ * 	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.  This function may return any value
- * returned by wimlib_open_wim() as well as the following error codes:
+ * returned by wimlib_write() as well as the following error codes:
  *
- * @retval ::WIMLIB_ERR_WRITE
- * 	An error occurred when trying to write data to one of the split WIMs.
- *
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED:
+ * 	@a wim is not part 1 of a stand-alone WIM.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ * 	@a w was @c NULL, @a swm_name was @c NULL, or @a part_size was 0.
  */
-extern int wimlib_split(const char *wimfile, const char *swm_name,
-			size_t part_size, int flags);
+extern int wimlib_split(WIMStruct *wim, const char *swm_name,
+			size_t part_size, int write_flags,
+			wimlib_progress_func_t progress_func);
 
 /**
- * Unmounts a WIM image that was mounted using wimlib_mount().
+ * Unmounts a WIM image that was mounted using wimlib_mount_image().
  *
  * Blocks until it is known whether the mount succeeded or failed.
  *
- * To perform this operation, the process calling wimlib_unmount() communicates
- * with the process that had called wimlib_mount().
+ * To perform this operation, the process calling wimlib_unmount_image()
+ * communicates with the process that had called wimlib_mount_image().
  *
  * There is currently a design problem with this function because it is hard to
  * know whether the filesystem daemon is still working or whether it has
@@ -1508,8 +1626,8 @@ extern int wimlib_split(const char *wimfile, const char *swm_name,
  *
  * @param dir
  * 	The directory that the WIM image was mounted on.
- * @param flags
- * 	Bitwise OR of the flags ::WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY or
+ * @param unmount_flags
+ * 	Bitwise OR of the flags ::WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY and/or
  * 	::WIMLIB_UNMOUNT_FLAG_COMMIT.  Neither of these flags affect read-only
  * 	mounts.
  *
@@ -1546,33 +1664,33 @@ extern int wimlib_split(const char *wimfile, const char *swm_name,
  * 	WIM file, or the filesystem daemon was unable to flush changes that had
  * 	been made to files in the staging directory.
  */
-extern int wimlib_unmount(const char *dir, int flags);
+extern int wimlib_unmount_image(const char *dir, int unmount_flags);
 
 /**
- * Writes the WIM to a file.
+ * Writes a standalone WIM to a file.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.  There may have been
- * 	in-memory changes made to it, which are then reflected in the output
- * 	file.
+ * 	Pointer to the ::WIMStruct for a WIM.  There may have been in-memory
+ * 	changes made to it, which are then reflected in the output file.
  * @param path
  * 	The path to the file to write the WIM to.
  * @param image
- * 	The image inside the WIM to write.  Use ::WIM_ALL_IMAGES to include all
+ * 	The image inside the WIM to write.  Use ::WIMLIB_ALL_IMAGES to include all
  * 	images.
  * @param write_flags
- * 	Bitwise OR of ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY and/or
- * 	::WIMLIB_WRITE_FLAG_SHOW_PROGRESS.  If
- * 	::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY is given, an integrity table is
- * 	included in the WIM being written.  If ::WIMLIB_WRITE_FLAG_SHOW_PROGRESS
- * 	is given, the progress of the calculation of the integrity table is
- * 	shown.
+ * 	Bitwise OR of the flags ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY,
+ * 	::WIMLIB_WRITE_FLAG_RECOMPRESS, ::WIMLIB_WRITE_FLAG_FSYNC, and/or
+ * 	::WIMLIB_WRITE_FLAG_SOFT_DELETE.
  * @param num_threads
  * 	Number of threads to use for compressing data.  Autodetected if set to
- * 	0.  Note: if no data compression needs to be done, no threads will be
- * 	created regardless of this parameter (e.g. if writing an uncompressed
- * 	WIM, or exporting an image from a compressed WIM to another WIM of the
- * 	same compression type).
+ * 	0.  Note: if no data compression needs to be done, no additional threads
+ * 	will be created regardless of this parameter (e.g. if writing an
+ * 	uncompressed WIM, or exporting an image from a compressed WIM to another
+ * 	WIM of the same compression type without ::WIMLIB_WRITE_FLAG_RECOMPRESS
+ * 	specified in @a write_flags).
+ * @param progress_func
+ * 	If non-NULL, a function that will be called periodically with the
+ * 	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -1582,7 +1700,7 @@ extern int wimlib_unmount(const char *dir, int flags);
  * 	invalid.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a single existing image in @a wim, and is not
- * 	::WIM_ALL_IMAGES.
+ * 	::WIMLIB_ALL_IMAGES.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_HASH
  * 	A file that had previously been scanned for inclusion in the WIM by the
  * 	wimlib_add_image() or wimlib_add_image_from_ntfs_volume() functions was
@@ -1612,9 +1730,7 @@ extern int wimlib_unmount(const char *dir, int flags);
  * 	path.
  */
 extern int wimlib_write(WIMStruct *wim, const char *path, int image,
-			int write_flags, unsigned num_threads);
-
-
+			int write_flags, unsigned num_threads,
+			wimlib_progress_func_t progress_func);
 
 #endif /* _WIMLIB_H */
-
