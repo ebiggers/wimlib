@@ -1395,8 +1395,10 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * 	This number should be one less than the total number of parts in the
  * 	split WIM.  Set to 0 if the WIM is a standalone WIM.
  * @param staging_dir
- * 	Currently ignored, but may provide a way to specify the staging
- * 	directory in the future.  Set to @c NULL.
+ * 	If non-NULL, the name of a directory in which the staging directory will
+ * 	be created.  Ignored if ::WIMLIB_MOUNT_FLAG_READWRITE is not specified
+ * 	in @a mount_flags.  If left @c NULL, the staging directory is created in
+ * 	the same directory as the WIM file that @a wim was originally read from.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_ALREADY_LOCKED

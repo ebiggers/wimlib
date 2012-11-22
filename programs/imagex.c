@@ -98,7 +98,8 @@ static const char *usage_strings[] = {
 "                    [--ref=\"GLOB\"]\n",
 [MOUNTRW] =
 "imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
-"                      [--check] [--debug] [--streams-interface=INTERFACE]\n",
+"                      [--check] [--debug] [--streams-interface=INTERFACE]\n"
+"                      [--staging-dir=DIR]\n",
 [OPTIMIZE] =
 "imagex optimize WIMFILE [--check] [--recompress]\n",
 [SPLIT] =
@@ -166,10 +167,11 @@ static const struct option join_options[] = {
 };
 
 static const struct option mount_options[] = {
-	{"check", no_argument, NULL, 'c'},
-	{"debug", no_argument, NULL, 'd'},
+	{"check",	      no_argument,	 NULL, 'c'},
+	{"debug",	      no_argument,	 NULL, 'd'},
 	{"streams-interface", required_argument, NULL, 's'},
-	{"ref",      required_argument, NULL, 'r'},
+	{"ref",               required_argument, NULL, 'r'},
+	{"staging-dir",       required_argument, NULL, 'D'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1386,6 +1388,7 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 	const char *swm_glob = NULL;
 	WIMStruct **additional_swms = NULL;
 	unsigned num_additional_swms = 0;
+	const char *staging_dir = NULL;
 
 	if (strcmp(argv[0], "mountrw") == 0)
 		mount_flags |= WIMLIB_MOUNT_FLAG_READWRITE;
@@ -1412,6 +1415,9 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 			break;
 		case 'r':
 			swm_glob = optarg;
+			break;
+		case 'D':
+			staging_dir = optarg;
 			break;
 		default:
 			goto mount_usage;
@@ -1464,7 +1470,7 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 	}
 
 	ret = wimlib_mount_image(w, image, dir, mount_flags, additional_swms,
-				 num_additional_swms, NULL);
+				 num_additional_swms, staging_dir);
 	if (ret != 0) {
 		imagex_error("Failed to mount image %d from `%s' on `%s'",
 			     image, wimfile, dir);

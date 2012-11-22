@@ -65,9 +65,6 @@ struct wimfs_context {
 	/* The WIMStruct for the mounted WIM. */
 	WIMStruct *wim;
 
-	/* Working directory when `imagex mount' is run. */
-	char *working_directory;
-
 	/* Name of the staging directory for a read-write mount.  Whenever a new file is
 	 * created, it is done so in the staging directory.  Furthermore, whenever a
 	 * file in the WIM is modified, it is extracted to the staging directory.  If
@@ -507,37 +504,70 @@ out_delete_staging_file:
  * Creates a randomly named staging directory and saves its name in the
  * filesystem context structure.
  */
-static int make_staging_dir(struct wimfs_context *ctx)
+static int make_staging_dir(struct wimfs_context *ctx,
+			    const char *user_prefix)
 {
-	/* XXX Give the user an option of where to stage files */
-
-	static const char prefix[] = "wimlib-staging-";
-	static const size_t prefix_len = sizeof(prefix) - 1;
 	static const size_t random_suffix_len = 10;
+	static const char *common_suffix = ".staging";
+	static const size_t common_suffix_len = 8;
 
-	size_t pwd_len = strlen(ctx->working_directory);
+	char *staging_dir_name = NULL;
+	size_t staging_dir_name_len;
+	size_t prefix_len;
+	const char *wim_basename;
+	char *real_user_prefix = NULL;
+	int ret;
 
-	ctx->staging_dir_name_len = pwd_len + 1 + prefix_len + random_suffix_len;
-
-	ctx->staging_dir_name = MALLOC(ctx->staging_dir_name_len + 1);
-	if (!ctx->staging_dir_name)
-		return WIMLIB_ERR_NOMEM;
-
-	memcpy(ctx->staging_dir_name, ctx->working_directory, pwd_len);
-	ctx->staging_dir_name[pwd_len] = '/';
-	memcpy(ctx->staging_dir_name + pwd_len + 1, prefix, prefix_len);
-	randomize_char_array_with_alnum(ctx->staging_dir_name + pwd_len +
-					1 + prefix_len, random_suffix_len);
-	ctx->staging_dir_name[ctx->staging_dir_name_len] = '\0';
-
-	if (mkdir(ctx->staging_dir_name, 0700) != 0) {
-		ERROR_WITH_ERRNO("Failed to create temporary directory `%s'",
-				 ctx->staging_dir_name);
-		FREE(ctx->staging_dir_name);
-		ctx->staging_dir_name = NULL;
-		return WIMLIB_ERR_MKDIR;
+	if (user_prefix) {
+		real_user_prefix = realpath(user_prefix, NULL);
+		if (!real_user_prefix) {
+			ERROR_WITH_ERRNO("Could not resolve `%s'",
+					 real_user_prefix);
+			ret = WIMLIB_ERR_NOTDIR;
+			goto out;
+		}
+		wim_basename = path_basename(ctx->wim->filename);
+		prefix_len = strlen(real_user_prefix) + 1 + strlen(wim_basename);
+	} else {
+		prefix_len = strlen(ctx->wim->filename);
 	}
-	return 0;
+
+	staging_dir_name_len = prefix_len + common_suffix_len + random_suffix_len;
+
+	staging_dir_name = MALLOC(staging_dir_name_len + 1);
+	if (!staging_dir_name) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out;
+	}
+
+	if (real_user_prefix)
+		sprintf(staging_dir_name, "%s/%s", real_user_prefix, wim_basename);
+	else
+		strcpy(staging_dir_name, ctx->wim->filename);
+
+	strcat(staging_dir_name, common_suffix);
+
+	randomize_char_array_with_alnum(staging_dir_name + prefix_len + common_suffix_len,
+					random_suffix_len);
+
+	staging_dir_name[staging_dir_name_len] = '\0';
+
+	if (mkdir(staging_dir_name, 0700) != 0) {
+		ERROR_WITH_ERRNO("Failed to create temporary directory `%s'",
+				 staging_dir_name);
+		ret = WIMLIB_ERR_MKDIR;
+	} else {
+		ret = 0;
+	}
+out:
+	FREE(real_user_prefix);
+	if (ret == 0) {
+		ctx->staging_dir_name = staging_dir_name;
+		ctx->staging_dir_name_len = staging_dir_name_len;
+	} else {
+		FREE(staging_dir_name);
+	}
+	return ret;
 }
 
 static int remove_file_or_directory(const char *fpath, const struct stat *sb,
@@ -873,7 +903,7 @@ static int inode_close_fds(struct inode *inode)
 }
 
 /* Overwrites the WIM file, with changes saved. */
-static int rebuild_wim(struct wimfs_context *ctx, bool check_integrity)
+static int rebuild_wim(struct wimfs_context *ctx, int write_flags)
 {
 	int ret;
 	struct lookup_table_entry *lte, *tmp;
@@ -896,7 +926,7 @@ static int rebuild_wim(struct wimfs_context *ctx, bool check_integrity)
 
 	xml_update_image_info(w, w->current_image);
 
-	ret = wimlib_overwrite(w, check_integrity, 0, NULL);
+	ret = wimlib_overwrite(w, write_flags, 0, NULL);
 	if (ret != 0) {
 		ERROR("Failed to commit changes");
 		return ret;
@@ -923,6 +953,7 @@ static void wimfs_destroy(void *p)
 	char status;
 	char *mailbox;
 	struct wimfs_context *ctx = wimfs_get_context();
+	int write_flags;
 
 	if (open_message_queues(ctx, true))
 		return;
@@ -953,13 +984,11 @@ static void wimfs_destroy(void *p)
 	status = 0;
 	if (ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		if (commit) {
-			ret = chdir(ctx->working_directory);
-			if (ret == 0) {
-				status = rebuild_wim(ctx, (check_integrity != 0));
-			} else {
-				ERROR_WITH_ERRNO("chdir()");
-				status = WIMLIB_ERR_NOTDIR;
-			}
+			if (check_integrity)
+				write_flags = WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+			else
+				write_flags = 0;
+			status = rebuild_wim(ctx, write_flags);
 		}
 		ret = delete_staging_dir(ctx);
 		if (ret != 0) {
@@ -1929,19 +1958,13 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	DEBUG("Initializing struct wimfs_context");
 	init_wimfs_context(&ctx);
-
-	DEBUG("Getting current directory");
-	ctx.working_directory = getcwd(NULL, 0);
-	if (!ctx.working_directory) {
-		ERROR_WITH_ERRNO("Could not determine current directory");
-		ret = WIMLIB_ERR_NOTDIR;
-		goto out;
-	}
+	ctx.wim = wim;
+	ctx.mount_flags = mount_flags;
 
 	DEBUG("Unlinking message queues in case they already exist");
 	ret = set_message_queue_names(&ctx, dir);
 	if (ret != 0)
-		goto out_free_working_directory;
+		goto out;
 	unlink_message_queues(&ctx);
 
 	DEBUG("Preparing arguments to fuse_main()");
@@ -1971,7 +1994,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	argv[argc++] = optstring;
 	if ((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
 		/* Read-write mount.  Make the staging directory */
-		ret = make_staging_dir(&ctx);
+		ret = make_staging_dir(&ctx, staging_dir);
 		if (ret != 0)
 			goto out_free_dir_copy;
 	} else {
@@ -2007,9 +2030,6 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	ctx.next_ino = assign_inode_numbers(&imd->inode_list);
 	DEBUG("(next_ino = %"PRIu64")", ctx.next_ino);
 
-	/* Finish initializing the filesystem context. */
-	ctx.wim = wim;
-	ctx.mount_flags = mount_flags;
 
 	DEBUG("Calling fuse_main()");
 
@@ -2022,9 +2042,6 @@ out_free_dir_copy:
 	FREE(dir_copy);
 out_free_message_queue_names:
 	free_message_queue_names(&ctx);
-out_free_working_directory:
-	FREE(ctx.working_directory);
-	ctx.working_directory = NULL;
 out:
 	if (num_additional_swms) {
 		free_lookup_table(wim->lookup_table);
