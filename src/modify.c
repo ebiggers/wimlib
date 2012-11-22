@@ -983,8 +983,8 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 		capture_tree = build_dentry_tree_ntfs;
 		extra_arg = &w->ntfs_vol;
 #else
-		ERROR("wimlib was compiled without support for NTFS-3g, so");
-		ERROR("we cannot capture a WIM image directly from a NTFS volume");
+		ERROR("wimlib was compiled without support for NTFS-3g, so\n"
+		      "        cannot capture a WIM image directly from a NTFS volume!");
 		return WIMLIB_ERR_UNSUPPORTED;
 #endif
 	} else {

@@ -530,6 +530,7 @@ union wimlib_progress_info {
 typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
 				      const union wimlib_progress_info *info);
 
+
 /*****************************
  * WIMLIB_ADD_IMAGE_FLAG_*   *
  *****************************/

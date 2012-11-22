@@ -37,8 +37,9 @@
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 #include <semaphore.h>
 #include <pthread.h>
-#include <errno.h>
 #endif
+
+#include <errno.h>
 
 #ifdef WITH_NTFS_3G
 #include <time.h>

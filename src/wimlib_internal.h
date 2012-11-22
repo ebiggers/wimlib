@@ -31,6 +31,8 @@
 #include "util.h"
 #include "list.h"
 
+#include "wimlib.h"
+
 #ifdef WITH_FUSE
 #include <pthread.h>
 #endif
@@ -38,8 +40,6 @@
 struct stat;
 struct dentry;
 struct inode;
-
-#include "wimlib.h"
 
 #define WIM_MAGIC_LEN  8
 #define WIM_GID_LEN    16
@@ -259,7 +259,7 @@ struct image_metadata {
 #define WIMLIB_RESOURCE_FLAG_RECOMPRESS		0x4
 
 /* The opaque structure exposed to the wimlib API. */
-typedef struct WIMStruct {
+struct WIMStruct {
 
 	/* A pointer to the file indicated by @filename, opened for reading. */
 	FILE *fp;
@@ -310,7 +310,7 @@ typedef struct WIMStruct {
 
 	/* %true iff any images have been deleted from this WIM. */
 	bool deletion_occurred;
-} WIMStruct;
+};
 
 
 /* Inline utility functions for WIMStructs. */

@@ -22,25 +22,26 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "wimlib.h"
 #include "config.h"
-#include <getopt.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <glob.h>
-#include <string.h>
+
+#include "wimlib.h"
+
 #include <errno.h>
+#include <getopt.h>
+#include <glob.h>
+#include <inttypes.h>
 #include <libgen.h>
 #include <limits.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <inttypes.h>
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
 
 #define for_opt(c, opts) while ((c = getopt_long_only(argc, (char**)argv, "", \
 				opts, NULL)) != -1)
-
 
 enum imagex_op_type {
 	APPEND,
@@ -610,7 +611,6 @@ static int imagex_apply(int argc, const char **argv)
 			goto out;
 	}
 
-#ifdef WITH_NTFS_3G
 	struct stat stbuf;
 
 	ret = stat(target, &stbuf);
@@ -627,7 +627,6 @@ static int imagex_apply(int argc, const char **argv)
 			goto out;
 		}
 	}
-#endif
 
 	ret = wimlib_extract_image(w, image, target, extract_flags,
 				   additional_swms, num_additional_swms,
@@ -733,7 +732,6 @@ static int imagex_capture_or_append(int argc, const char **argv)
 	if (ret != 0)
 		goto out;
 
-#ifdef WITH_NTFS_3G
 	struct stat stbuf;
 
 	ret = stat(source, &stbuf);
@@ -750,7 +748,7 @@ static int imagex_capture_or_append(int argc, const char **argv)
 			goto out;
 		}
 	}
-#endif
+
 	ret = wimlib_add_image(w, source, name, config_str, config_len,
 			       add_image_flags, imagex_progress_func);
 
