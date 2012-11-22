@@ -1,6 +1,6 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
-Version 1.1.1:
+Version 1.2.0:
 	Appending images to a WIM is now be done by default without re-building
 	the whole WIM.  Use the --rebuild flag to get the old behavior (which
 	was to re-build the entire WIM when a new image is appended).

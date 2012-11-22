@@ -211,6 +211,10 @@
 #include <stdbool.h>
 #include <inttypes.h>
 
+#define WIMLIB_MAJOR_VERSION 1
+#define WIMLIB_MINOR_VERSION 2
+#define WIMLIB_PATCH_VERSION 0
+
 /**
  * Opaque structure that represents a WIM file.  This is an in-memory structure
  * and need not correspond to a specific on-disk file.  However, a ::WIMStruct
