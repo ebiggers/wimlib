@@ -433,12 +433,8 @@ static void calculate_bytes_to_extract(struct list_head *stream_list,
 				total_bytes += wim_resource_size(lte);
 			}
 		} else {
-			list_for_each_entry(inode, &lte->inode_list,
-					    lte_inode_list)
-			{
-				num_streams++;
-				total_bytes += wim_resource_size(lte);
-			}
+			num_streams += lte->out_refcnt;
+			total_bytes += lte->out_refcnt * wim_resource_size(lte);
 		}
 	}
 	progress->extract.num_streams = num_streams;
@@ -449,8 +445,7 @@ static void calculate_bytes_to_extract(struct list_head *stream_list,
 static void maybe_add_stream_for_extraction(struct lookup_table_entry *lte,
 					    struct list_head *stream_list)
 {
-	if (lte->out_refcnt == 0) {
-		lte->out_refcnt = 1;
+	if (++lte->out_refcnt == 1) {
 		INIT_LIST_HEAD(&lte->inode_list);
 		list_add_tail(&lte->staging_list, stream_list);
 	}
@@ -474,7 +469,7 @@ static void inode_find_streams_for_extraction(struct inode *inode,
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 		for (unsigned i = 0; i < inode->num_ads; i++) {
 			if (inode->ads_entries[i].stream_name_len != 0) {
-				lte = inode_stream_lte_resolved(inode, i + 1);
+				lte = inode->ads_entries[i].lte;
 				if (lte) {
 					maybe_add_stream_for_extraction(lte,
 									stream_list);
@@ -523,8 +518,8 @@ static const struct apply_operations normal_apply_operations = {
 
 #ifdef WITH_NTFS_3G
 static const struct apply_operations ntfs_apply_operations = {
-	.apply_dentry = wim_apply_dentry_ntfs,
-	.apply_dentry_timestamps = wim_apply_dentry_timestamps,
+	.apply_dentry = apply_dentry_ntfs,
+	.apply_dentry_timestamps = apply_dentry_timestamps_ntfs,
 };
 #endif
 
@@ -539,8 +534,17 @@ static int apply_stream_list(struct list_head *stream_list,
 	struct inode *inode;
 	struct dentry *dentry;
 	int ret = 0;
+
+	/* This complicated loop is actually just looping through the dentries
+	 * (as for_dentry_in_tree() does), but the outer loop is actually over
+	 * the distinct streams to be extracted so that sequential reading of
+	 * the WIM can be implemented. */
+
+	/* For each distinct stream to be extracted */
 	list_for_each_entry(lte, stream_list, staging_list) {
+		/* For each inode that contains the stream */
 		list_for_each_entry(inode, &lte->inode_list, lte_inode_list) {
+			/* For each dentry that points to the inode */
 			inode_for_each_dentry(dentry, inode) {
 				ret = ops->apply_dentry(dentry, args);
 				if (ret != 0)
@@ -589,13 +593,8 @@ static int extract_single_image(WIMStruct *w, int image,
 			ERROR_WITH_ERRNO("Failed to mount NTFS volume `%s'", target);
 			return WIMLIB_ERR_NTFS_3G;
 		}
-	}
-#endif
-
-#ifdef WITH_NTFS_3G
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS)
 		ops = &ntfs_apply_operations;
-	else
+	} else
 #endif
 		ops = &normal_apply_operations;
 
@@ -604,10 +603,9 @@ static int extract_single_image(WIMStruct *w, int image,
 		goto out;
 
 	inode_list = &w->image_metadata[image - 1].inode_list;
-	find_streams_for_extraction(inode_list,
-				    &stream_list,
-				    w->lookup_table,
-				    extract_flags);
+
+	find_streams_for_extraction(inode_list, &stream_list,
+				    w->lookup_table, extract_flags);
 
 	calculate_bytes_to_extract(&stream_list, extract_flags,
 				   &args.progress);
@@ -629,7 +627,6 @@ static int extract_single_image(WIMStruct *w, int image,
 		progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
 			      &args.progress);
 	}
-
 
 	args.extract_flags |= WIMLIB_EXTRACT_FLAG_NO_STREAMS;
 	ret = for_dentry_in_tree(wim_root_dentry(w), ops->apply_dentry, &args);
@@ -730,8 +727,8 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 #ifdef WITH_NTFS_3G
 		if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))) {
-			ERROR("Cannot specify symlink or hardlink flags when applying ");
-			ERROR("directly to a NTFS volume");
+			ERROR("Cannot specify symlink or hardlink flags when applying\n"
+			      "        directly to a NTFS volume");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 		if (image == WIMLIB_ALL_IMAGES) {

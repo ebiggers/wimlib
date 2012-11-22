@@ -245,6 +245,7 @@ WIMLIBAPI int wimlib_split(WIMStruct *w, const char *swm_name,
 		}
 	}
 out:
+	close_wim_writable(w);
 	memcpy(&w->hdr, &hdr_save, sizeof(struct wim_header));
 	return ret;
 }

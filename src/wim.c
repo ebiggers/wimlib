@@ -225,6 +225,7 @@ int select_wim_image(WIMStruct *w, int image)
 			destroy_image_metadata(imd, NULL);
 			imd->root_dentry = NULL;
 			imd->security_data = NULL;
+			INIT_HLIST_HEAD(&imd->inode_list);
 		}
 	}
 
@@ -419,21 +420,6 @@ WIMLIBAPI int wimlib_get_boot_idx(const WIMStruct *w)
 	return w->hdr.boot_idx;
 }
 
-/* Opens a WIM readable */
-static int open_wim_readable(WIMStruct *w, const char *path)
-{
-	if (w->fp != NULL)
-		fclose(w->fp);
-	wimlib_assert(path != NULL);
-	w->fp = fopen(path, "rb");
-	if (!w->fp) {
-		ERROR_WITH_ERRNO("Failed to open `%s' for reading",
-				 path);
-		return WIMLIB_ERR_OPEN;
-	}
-	return 0;
-}
-
 /*
  * Begins the reading of a WIM file; opens the file and reads its header and
  * lookup table, and optionally checks the integrity.
@@ -446,10 +432,22 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
 
 	DEBUG("Reading the WIM file `%s'", in_wim_path);
 
-	ret = open_wim_readable(w, in_wim_path);
-	if (ret != 0)
-		goto out;
+	w->fp = fopen(in_wim_path, "rb");
+	if (!w->fp) {
+		ERROR_WITH_ERRNO("Failed to open `%s' for reading",
+				 in_wim_path);
+		return WIMLIB_ERR_OPEN;
+	}
 
+	/* The absolute path to the WIM is requested so that wimlib_overwrite()
+	 * still works even if the process changes its working directory.  This
+	 * actually happens if a WIM is mounted read-write, since the FUSE
+	 * thread changes directory to "/", and it needs to be able to find the
+	 * WIM file again.
+	 *
+	 * This will break if the full path to the WIM changes in the
+	 * intervening time...
+	 */
 	w->filename = realpath(in_wim_path, NULL);
 	if (!w->filename) {
 		ERROR_WITH_ERRNO("Failed to resolve WIM filename");
@@ -597,7 +595,8 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int open_flags,
 	WIMStruct *w;
 	int ret;
 
-	DEBUG("wim_file = `%s', open_flags = %#x", wim_file, open_flags);
+	if (!wim_file || !w_ret)
+		return WIMLIB_ERR_INVALID_PARAM;
 	w = new_wim_struct();
 	if (!w) {
 		ERROR("Failed to allocate memory for WIMStruct");

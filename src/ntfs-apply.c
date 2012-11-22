@@ -161,10 +161,10 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
  *
  * Return 0 on success, nonzero on failure.
  */
-static int wim_apply_hardlink_ntfs(const struct dentry *from_dentry,
-				   const struct inode *inode,
-				   ntfs_inode *dir_ni,
-				   ntfs_inode **to_ni_ret)
+static int apply_hardlink_ntfs(const struct dentry *from_dentry,
+			       const struct inode *inode,
+			       ntfs_inode *dir_ni,
+			       ntfs_inode **to_ni_ret)
 {
 	int ret;
 	char *p;
@@ -313,8 +313,8 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 	return 0;
 }
 
-static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
-				    struct apply_args *args);
+static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
+				struct apply_args *args);
 
 /*
  * If @dentry is part of a hard link group, search for hard-linked dentries in
@@ -355,8 +355,8 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
 
 		DEBUG("pre-applying DOS name `%s'",
 		      dentry_with_dos_name->full_path_utf8);
-		ret = do_wim_apply_dentry_ntfs(dentry_with_dos_name,
-					       *dir_ni_p, args);
+		ret = do_apply_dentry_ntfs(dentry_with_dos_name,
+					   *dir_ni_p, args);
 		if (ret != 0)
 			return ret;
 		p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
@@ -387,8 +387,8 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
  *
  * @return:  0 on success; nonzero on failure.
  */
-static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
-				    struct apply_args *args)
+static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
+				struct apply_args *args)
 {
 	int ret = 0;
 	mode_t type;
@@ -417,8 +417,8 @@ static int do_wim_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 			 * group.  We can make a hard link instead of extracting
 			 * the file data. */
 			if (inode->extracted_file) {
-				ret = wim_apply_hardlink_ntfs(dentry, inode,
-							      dir_ni, &ni);
+				ret = apply_hardlink_ntfs(dentry, inode,
+							  dir_ni, &ni);
 				is_hardlink = true;
 				if (ret)
 					goto out_close_dir_ni;
@@ -559,9 +559,8 @@ out_close_dir_ni:
 	return ret;
 }
 
-static int wim_apply_root_dentry_ntfs(const struct dentry *dentry,
-				      ntfs_volume *vol,
-				      const WIMStruct *w)
+static int apply_root_dentry_ntfs(const struct dentry *dentry,
+				  ntfs_volume *vol, const WIMStruct *w)
 {
 	ntfs_inode *ni;
 	int ret = 0;
@@ -582,7 +581,7 @@ static int wim_apply_root_dentry_ntfs(const struct dentry *dentry,
 }
 
 /* Applies a WIM dentry to the NTFS volume */
-int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
+int apply_dentry_ntfs(struct dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
 	ntfs_volume *vol             = args->vol;
@@ -600,7 +599,6 @@ int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 		if (inode_unnamed_lte_resolved(dentry->d_inode))
 			return 0;
 
-
 	DEBUG("Applying dentry `%s' to NTFS", dentry->full_path_utf8);
 
 	if ((extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
@@ -612,7 +610,7 @@ int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 	}
 
 	if (dentry_is_root(dentry))
-		return wim_apply_root_dentry_ntfs(dentry, vol, w);
+		return apply_root_dentry_ntfs(dentry, vol, w);
 
 	p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
 	do {
@@ -630,10 +628,10 @@ int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 				 dir_name);
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	return do_wim_apply_dentry_ntfs(dentry, dir_ni, arg);
+	return do_apply_dentry_ntfs(dentry, dir_ni, arg);
 }
 
-int wim_apply_dentry_timestamps(struct dentry *dentry, void *arg)
+int apply_dentry_timestamps_ntfs(struct dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
 	ntfs_volume *vol = args->vol;

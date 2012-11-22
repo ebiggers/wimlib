@@ -2018,8 +2018,8 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	/* Mark dentry tree as modified if read-write mount. */
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		imd->modified = true;
-		imd->has_been_mounted_rw = true;
+		imd->modified = 1;
+		imd->has_been_mounted_rw = 1;
 	}
 
 	/* Resolve all the lookup table entries of the dentry tree */

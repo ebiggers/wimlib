@@ -1529,7 +1529,6 @@ static int open_wim_writable(WIMStruct *w, const char *path,
 			     bool trunc, bool readable)
 {
 	const char *mode;
-	int ret = 0;
 	if (trunc)
 		if (readable)
 			mode = "w+b";
@@ -1538,26 +1537,18 @@ static int open_wim_writable(WIMStruct *w, const char *path,
 	else
 		mode = "r+b";
 
-	DEBUG("Opening `%s' read-write", path);
 	wimlib_assert(w->out_fp == NULL);
-	wimlib_assert(path != NULL);
 	w->out_fp = fopen(path, mode);
-	if (!w->out_fp) {
+	if (w->out_fp) {
+		return 0;
+	} else {
 		ERROR_WITH_ERRNO("Failed to open `%s' for writing", path);
 		return WIMLIB_ERR_OPEN;
 	}
-	if (trunc) {
-		ret = lock_wim(w->out_fp, path);
-		if (ret != 0) {
-			fclose(w->out_fp);
-			w->out_fp = NULL;
-		}
-	}
-	return ret;
 }
 
 
-static void close_wim_writable(WIMStruct *w)
+void close_wim_writable(WIMStruct *w)
 {
 	if (w->out_fp) {
 		if (fclose(w->out_fp) != 0) {
@@ -1572,12 +1563,8 @@ static void close_wim_writable(WIMStruct *w)
 int begin_write(WIMStruct *w, const char *path, int write_flags)
 {
 	int ret;
-	bool need_readable = false;
-	bool trunc = true;
-	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
-		need_readable = true;
-
-	ret = open_wim_writable(w, path, trunc, need_readable);
+	ret = open_wim_writable(w, path, true,
+				(write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) != 0);
 	if (ret != 0)
 		return ret;
 	/* Write dummy header. It will be overwritten later. */
@@ -1751,10 +1738,6 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	INIT_LIST_HEAD(&stream_list);
 	for (int i = modified_image_idx; i < w->hdr.image_count; i++) {
 		DEBUG("Identifiying streams in image %d", i + 1);
-		wimlib_assert(w->image_metadata[i].modified);
-		wimlib_assert(!w->image_metadata[i].has_been_mounted_rw);
-		wimlib_assert(w->image_metadata[i].root_dentry != NULL);
-		wimlib_assert(w->image_metadata[i].metadata_lte != NULL);
 		w->private = &stream_list;
 		for_dentry_in_tree(w->image_metadata[i].root_dentry,
 				   dentry_find_streams_to_write, w);
@@ -1773,7 +1756,6 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	if (modified_image_idx == w->hdr.image_count && !w->deletion_occurred) {
 		/* If no images have been modified and no images have been
 		 * deleted, a new lookup table does not need to be written. */
-		wimlib_assert(list_empty(&stream_list));
 		old_wim_end = w->hdr.lookup_table_res_entry.offset +
 			      w->hdr.lookup_table_res_entry.size;
 		write_flags |= WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE |
@@ -1789,9 +1771,17 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	if (ret != 0)
 		return ret;
 
+	ret = lock_wim(w->out_fp, w->filename);
+	if (ret != 0) {
+		fclose(w->out_fp);
+		w->out_fp = NULL;
+		return ret;
+	}
+
 	if (fseeko(w->out_fp, old_wim_end, SEEK_SET) != 0) {
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");
-		return WIMLIB_ERR_WRITE;
+		ret = WIMLIB_ERR_WRITE;
+		goto out_ftruncate;
 	}
 
 	if (!list_empty(&stream_list)) {
@@ -1851,12 +1841,6 @@ static int overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 		goto err;
 	}
 
-	/* Close the original WIM file that was opened for reading. */
-	if (w->fp != NULL) {
-		fclose(w->fp);
-		w->fp = NULL;
-	}
-
 	DEBUG("Renaming `%s' to `%s'", tmpfile, w->filename);
 
 	/* Rename the new file to the old file .*/
@@ -1874,12 +1858,20 @@ static int overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 		progress_func(WIMLIB_PROGRESS_MSG_RENAME, &progress);
 	}
 
+	/* Close the original WIM file that was opened for reading. */
+	if (w->fp != NULL) {
+		fclose(w->fp);
+		w->fp = NULL;
+	}
+
 	/* Re-open the WIM read-only. */
 	w->fp = fopen(w->filename, "rb");
 	if (w->fp == NULL) {
 		ret = WIMLIB_ERR_REOPEN;
 		WARNING("Failed to re-open `%s' read-only: %s",
 			w->filename, strerror(errno));
+		FREE(w->filename);
+		w->filename = NULL;
 	}
 	return ret;
 err:

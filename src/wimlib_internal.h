@@ -250,7 +250,6 @@ struct image_metadata {
 	 * the case, the memory for the filesystem is not freed when switching
 	 * to a different WIM image. */
 	u8 modified : 1;
-
 	u8 has_been_mounted_rw : 1;
 };
 
@@ -457,8 +456,8 @@ struct apply_args {
 	wimlib_progress_func_t progress_func;
 };
 
-extern int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg);
-extern int wim_apply_dentry_timestamps(struct dentry *dentry, void *arg);
+extern int apply_dentry_ntfs(struct dentry *dentry, void *arg);
+extern int apply_dentry_timestamps_ntfs(struct dentry *dentry, void *arg);
 
 /* ntfs-capture.c */
 extern int build_dentry_tree_ntfs(struct dentry **root_p,
@@ -541,6 +540,7 @@ extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 
 /* write.c */
 extern int begin_write(WIMStruct *w, const char *path, int write_flags);
+extern void close_wim_writable(WIMStruct *w);
 
 extern int finish_write(WIMStruct *w, int image, int write_flags,
 			wimlib_progress_func_t progress_func);
