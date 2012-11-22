@@ -236,7 +236,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 		inode->attributes = FILE_ATTRIBUTE_DIRECTORY;
 
 		DIR *dir;
-		struct dirent *p;
+		struct dirent entry, *result;
 		struct dentry *child;
 
 		dir = opendir(root_disk_path);
@@ -257,20 +257,20 @@ static int build_dentry_tree(struct dentry **root_ret,
 		 * to any subdirectories. */
 		while (1) {
 			errno = 0;
-			p = readdir(dir);
-			if (p == NULL) {
-				if (errno) {
-					ret = WIMLIB_ERR_READ;
-					ERROR_WITH_ERRNO("Error reading the "
-							 "directory `%s'",
-							 root_disk_path);
-				}
+			ret = readdir_r(dir, &entry, &result);
+			if (ret != 0) {
+				ret = WIMLIB_ERR_READ;
+				ERROR_WITH_ERRNO("Error reading the "
+						 "directory `%s'",
+						 root_disk_path);
 				break;
 			}
-			if (p->d_name[0] == '.' && (p->d_name[1] == '\0'
-			      || (p->d_name[1] == '.' && p->d_name[2] == '\0')))
+			if (result == NULL)
+				break;
+			if (result->d_name[0] == '.' && (result->d_name[1] == '\0'
+			      || (result->d_name[1] == '.' && result->d_name[2] == '\0')))
 					continue;
-			strcpy(name + len + 1, p->d_name);
+			strcpy(name + len + 1, result->d_name);
 			ret = build_dentry_tree(&child, name, lookup_table,
 						NULL, config, add_image_flags,
 						progress_func, NULL);
