@@ -3,6 +3,7 @@
 
 #include "util.h"
 #include <sys/types.h>
+#include <sys/time.h>
 
 #define intervals_per_second (1000000000ULL / 100ULL)
 #define intervals_per_microsecond (10)
