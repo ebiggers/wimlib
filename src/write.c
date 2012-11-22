@@ -62,24 +62,15 @@
 #include <stdlib.h>
 #endif
 
-
-static int do_fflush(FILE *fp)
-{
-	int ret = fflush(fp);
-	if (ret != 0) {
-		ERROR_WITH_ERRNO("Failed to flush data to output WIM file");
-		return WIMLIB_ERR_WRITE;
-	}
-	return 0;
-}
-
 static int fflush_and_ftruncate(FILE *fp, off_t size)
 {
 	int ret;
 
-	ret = do_fflush(fp);
-	if (ret != 0)
-		return ret;
+	ret = fflush(fp);
+	if (ret != 0) {
+		ERROR_WITH_ERRNO("Failed to flush data to output WIM file");
+		return WIMLIB_ERR_WRITE;
+	}
 	ret = ftruncate(fileno(fp), size);
 	if (ret != 0) {
 		ERROR_WITH_ERRNO("Failed to truncate output WIM file to "
@@ -833,7 +824,12 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 	for (size_t i = 0; i < ARRAY_LEN(msgs); i++) {
 		for (size_t j = 0; j < MAX_CHUNKS_PER_MSG; j++) {
 			msgs[i].compressed_chunks[j] = MALLOC(WIM_CHUNK_SIZE);
-			msgs[i].uncompressed_chunks[j] = MALLOC(WIM_CHUNK_SIZE);
+
+			// The extra 8 bytes is because longest_match() in lz.c
+			// may read a little bit off the end of the uncompressed
+			// data.  It doesn't need to be initialized--- we really
+			// just need to avoid accessing an unmapped page.
+			msgs[i].uncompressed_chunks[j] = MALLOC(WIM_CHUNK_SIZE + 8);
 			if (msgs[i].compressed_chunks[j] == NULL ||
 			    msgs[i].uncompressed_chunks[j] == NULL)
 			{
