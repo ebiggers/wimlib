@@ -96,7 +96,8 @@ static int build_dentry_tree(struct dentry **root_ret,
 			     struct lookup_table *lookup_table,
 			     struct wim_security_data *sd,
 			     const struct capture_config *config,
-			     int add_flags,
+			     int add_image_flags,
+			     wimlib_progress_func_t progress_func,
 			     void *extra_arg)
 {
 	struct stat root_stbuf;
@@ -107,25 +108,35 @@ static int build_dentry_tree(struct dentry **root_ret,
 	struct inode *inode;
 
 	if (exclude_path(root_disk_path, config, true)) {
-		if (add_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
+		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
 			ERROR("Cannot exclude the root directory from capture");
 			return WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 		}
-		if (add_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
-			printf("Excluding file `%s' from capture\n",
-			       root_disk_path);
+		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+		    && progress_func)
+		{
+			union wimlib_progress_info info;
+			info.scan.cur_path = root_disk_path;
+			info.scan.excluded = true;
+			progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+		}
 		*root_ret = NULL;
 		return 0;
 	}
 
+	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+	    && progress_func)
+	{
+		union wimlib_progress_info info;
+		info.scan.cur_path = root_disk_path;
+		info.scan.excluded = false;
+		progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+	}
 
-	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)
 		stat_fn = stat;
 	else
 		stat_fn = lstat;
-
-	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
-		printf("Scanning `%s'\n", root_disk_path);
 
 	ret = (*stat_fn)(root_disk_path, &root_stbuf);
 	if (ret != 0) {
@@ -133,7 +144,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 		return WIMLIB_ERR_STAT;
 	}
 
-	if ((add_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) &&
+	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) &&
 	      !S_ISDIR(root_stbuf.st_mode)) {
 		ERROR("`%s' is not a directory", root_disk_path);
 		return WIMLIB_ERR_NOTDIR;
@@ -145,7 +156,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 		return WIMLIB_ERR_SPECIAL_FILE;
 	}
 
-	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT)
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT)
 		filename = "";
 	else
 		filename = path_basename(root_disk_path);
@@ -165,7 +176,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 		inode->ino = (u64)root_stbuf.st_ino |
 				   ((u64)root_stbuf.st_dev << ((sizeof(ino_t) * 8) & 63));
 
-	add_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
+	add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
 	inode->resolved = true;
 
 	if (S_ISREG(root_stbuf.st_mode)) { /* Archiving a regular file */
@@ -255,8 +266,8 @@ static int build_dentry_tree(struct dentry **root_ret,
 					continue;
 			strcpy(name + len + 1, p->d_name);
 			ret = build_dentry_tree(&child, name, lookup_table,
-						NULL, config,
-						add_flags, NULL);
+						NULL, config, add_image_flags,
+						progress_func, NULL);
 			if (ret != 0)
 				break;
 			if (child)
@@ -953,7 +964,7 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 			    struct lookup_table *,
 			    struct wim_security_data *,
 			    const struct capture_config *,
-			    int, void *);
+			    int, wimlib_progress_func_t, void *);
 	void *extra_arg;
 
 	struct dentry *root_dentry = NULL;
@@ -1033,7 +1044,7 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 	DEBUG("Building dentry tree.");
 	ret = (*capture_tree)(&root_dentry, source, w->lookup_table, sd,
 			      &config, add_image_flags | WIMLIB_ADD_IMAGE_FLAG_ROOT,
-			      extra_arg);
+			      progress_func, extra_arg);
 	destroy_capture_config(&config);
 
 	if (ret != 0) {

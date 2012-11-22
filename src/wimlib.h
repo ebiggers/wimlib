@@ -263,6 +263,11 @@ enum wimlib_progress_msg {
 	 * info will point to ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
 
+	/** A file or directory is being extracted.  @a info will point to
+	 * ::wimlib_progress_info.extract, and the @a cur_path member will be
+	 * valid. */
+	WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY,
+
 	/** All the WIM files and directories have been extracted, and
 	 * timestamps are about to be applied.  @a info will point to
 	 * ::wimlib_progress_info.extract. */
@@ -276,6 +281,12 @@ enum wimlib_progress_msg {
 	 * of WIM dentries in-memory.  @a info will point to
 	 * ::wimlib_progress_info.scan. */
 	WIMLIB_PROGRESS_MSG_SCAN_BEGIN,
+
+	/** A directory or file is being scanned.  @a info will point to
+	 * ::wimlib_progress_info.scan, and its @a cur_path member will be
+	 * valid.  This message is only sent if ::WIMLIB_ADD_IMAGE_FLAG_VERBOSE
+	 * is passed to wimlib_add_image(). */
+	WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
 
 	/** The directory or NTFS volume has been successfully scanned, and a
 	 * tree of WIM dentries has been built in-memory. @a info will point to
@@ -375,6 +386,15 @@ union wimlib_progress_info {
 	struct wimlib_progress_info_scan {
 		/** Directory or NTFS volume that is being scanned. */
 		const char *source;
+
+		/** Path to the file or directory that is about to be scanned,
+		 * relative to the root of the image capture or the NTFS volume.
+		 * */
+		const char *cur_path;
+
+		/** True iff @a cur_path is being excluded from the image
+		 * capture due to the capture configuration file. */
+		bool excluded;
 	} scan;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
@@ -392,6 +412,10 @@ union wimlib_progress_info {
 		/** Directory or NTFS volume to which the image is being
 		 * extracted. */
 		const char *target;
+
+		/** Current dentry being extracted.  (Valid only if message is
+		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY.) */
+		const char *cur_path;
 
 		/** Number of bytes of uncompressed data that will be extracted.
 		 * Takes into account hard links (they are not counted for each
@@ -517,8 +541,9 @@ typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
  * with ::WIMLIB_ADD_IMAGE_FLAG_NTFS. */
 #define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE		0x00000002
 
-/** Print the name of each file or directory as it is scanned to be included in
- * the WIM image. */
+/** Call the progress function with the message
+ * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY when each directory or file is starting to
+ * be scanned. */
 #define WIMLIB_ADD_IMAGE_FLAG_VERBOSE			0x00000004
 
 /** Mark the image being added as the bootable image of the WIM. */
@@ -547,8 +572,10 @@ typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
  * together.  Cannot be used with ::WIMLIB_EXTRACT_FLAG_NTFS. */
 #define WIMLIB_EXTRACT_FLAG_SYMLINK			0x00000004
 
-/** Print the name of each file or directory as it is extracted from the WIM
- * image. */
+/** Call the progress function with the argument
+ * ::WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY each time a file or directory is
+ * extracted.  Note: these calls will be interspersed with calls for the message
+ * ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS. */
 #define WIMLIB_EXTRACT_FLAG_VERBOSE			0x00000008
 
 /** Read the WIM file sequentially while extracting the image. */

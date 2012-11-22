@@ -363,6 +363,12 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 	case WIMLIB_PROGRESS_MSG_SCAN_BEGIN:
 		printf("Scanning `%s'...\n", info->scan.source);
 		break;
+	case WIMLIB_PROGRESS_MSG_SCAN_DENTRY:
+		if (info->scan.excluded)
+			printf("Excluding `%s' from capture\n", info->scan.cur_path);
+		else
+			printf("Scanning `%s'\n", info->scan.cur_path);
+		break;
 	/*case WIMLIB_PROGRESS_MSG_SCAN_END:*/
 		/*break;*/
 	case WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY:
@@ -412,6 +418,9 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 		       percent_done);
 		if (info->extract.completed_bytes == info->extract.total_bytes)
 			putchar('\n');
+		break;
+	case WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY:
+		puts(info->extract.cur_path);
 		break;
 	case WIMLIB_PROGRESS_MSG_JOIN_STREAMS:
 		percent_done = TO_PERCENT(info->join.completed_bytes,

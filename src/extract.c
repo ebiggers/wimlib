@@ -298,8 +298,13 @@ static int apply_dentry_normal(struct dentry *dentry, void *arg)
 		if (inode_unnamed_lte_resolved(inode))
 			return 0;
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
-		puts(dentry->full_path_utf8);
+	if ((extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
+	     args->progress_func)
+	{
+		args->progress.extract.cur_path = dentry->full_path_utf8;
+		args->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY,
+				    &args->progress);
+	}
 
 	len = strlen(args->target);
 	char output_path[len + dentry->full_path_utf8_len + 1];
@@ -569,6 +574,7 @@ static int extract_single_image(WIMStruct *w, int image,
 	args.num_lutimes_warnings = 0;
 	args.target               = target;
 	args.stream_list          = &stream_list;
+	args.progress_func	  = progress_func;
 
 	if (progress_func) {
 		args.progress.extract.image      = image;

@@ -454,19 +454,21 @@ struct apply_args {
 	struct _ntfs_volume *vol;
 #endif
 	struct list_head empty_files;
+	wimlib_progress_func_t progress_func;
 };
 
 extern int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg);
 extern int wim_apply_dentry_timestamps(struct dentry *dentry, void *arg);
 
 /* ntfs-capture.c */
-int build_dentry_tree_ntfs(struct dentry **root_p,
-			   const char *device,
-			   struct lookup_table *lookup_table,
-			   struct wim_security_data *sd,
-			   const struct capture_config *config,
-			   int flags,
-			   void *extra_arg);
+extern int build_dentry_tree_ntfs(struct dentry **root_p,
+				  const char *device,
+				  struct lookup_table *lookup_table,
+				  struct wim_security_data *sd,
+				  const struct capture_config *config,
+				  int add_image_flags,
+				  wimlib_progress_func_t progress_func,
+				  void *extra_arg);
 
 /* resource.c */
 extern const u8 *get_resource_entry(const u8 *p, struct resource_entry *entry);

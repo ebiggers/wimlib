@@ -600,10 +600,16 @@ int wim_apply_dentry_ntfs(struct dentry *dentry, void *arg)
 		if (inode_unnamed_lte_resolved(dentry->d_inode))
 			return 0;
 
+
 	DEBUG("Applying dentry `%s' to NTFS", dentry->full_path_utf8);
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE)
-		puts(dentry->full_path_utf8);
+	if ((extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
+	     args->progress_func)
+	{
+		args->progress.extract.cur_path = dentry->full_path_utf8;
+		args->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY,
+				    &args->progress);
+	}
 
 	if (dentry_is_root(dentry))
 		return wim_apply_root_dentry_ntfs(dentry, vol, w);

@@ -405,7 +405,8 @@ struct readdir_ctx {
 	struct sd_set	    *sd_set;
 	const struct capture_config *config;
 	ntfs_volume	   **ntfs_vol_p;
-	int		     flags;
+	int		     add_image_flags;
+	wimlib_progress_func_t progress_func;
 };
 
 static int
@@ -416,7 +417,8 @@ build_dentry_tree_ntfs_recursive(struct dentry **root_p, ntfs_inode *dir_ni,
 				 struct sd_set *sd_set,
 				 const struct capture_config *config,
 				 ntfs_volume **ntfs_vol_p,
-				 int flags);
+				 int add_image_flags,
+				 wimlib_progress_func_t progress_func);
 
 static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 				    const int name_len, const int name_type,
@@ -463,7 +465,8 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 					       ni, ctx->path, path_len, name_type,
 					       ctx->lookup_table, ctx->sd_set,
 					       ctx->config, ctx->ntfs_vol_p,
-					       ctx->flags);
+					       ctx->add_image_flags,
+					       ctx->progress_func);
 
 	if (child)
 		dentry_add_child(ctx->parent, child);
@@ -506,13 +509,27 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 				    	    struct sd_set *sd_set,
 				    	    const struct capture_config *config,
 				    	    ntfs_volume **ntfs_vol_p,
-					    int flags)
+					    int add_image_flags,
+					    wimlib_progress_func_t progress_func)
 {
 	u32 attributes;
 	int mrec_flags;
 	int ret;
 	char dos_name_utf8[64];
 	struct dentry *root;
+
+	if (exclude_path(path, config, false)) {
+		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+		    && progress_func)
+		{
+			union wimlib_progress_info info;
+			info.scan.cur_path = path;
+			info.scan.excluded = true;
+			progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+		}
+		*root_p = NULL;
+		return 0;
+	}
 
 	mrec_flags = ni->mrec->flags;
 	struct SECURITY_CONTEXT ctx;
@@ -527,22 +544,14 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
-	if (exclude_path(path, config, false)) {
-		if (flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE) {
-			const char *file_type;
-			if (attributes & MFT_RECORD_IS_DIRECTORY)
-				file_type = "directory";
-			else
-				file_type = "file";
-			printf("Excluding %s `%s' from capture\n",
-			       file_type, path);
-		}
-		*root_p = NULL;
-		return 0;
+	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+	    && progress_func)
+	{
+		union wimlib_progress_info info;
+		info.scan.cur_path = path;
+		info.scan.excluded = false;
+		progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 	}
-
-	if (flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
-		printf("Scanning `%s'\n", path);
 
 	root = new_dentry_with_timeless_inode(path_basename(path));
 	if (!root)
@@ -596,7 +605,8 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 			.sd_set       = sd_set,
 			.config       = config,
 			.ntfs_vol_p   = ntfs_vol_p,
-			.flags	      = flags,
+			.add_image_flags = add_image_flags,
+			.progress_func = progress_func,
 		};
 		ret = ntfs_readdir(ni, &pos, &ctx, wim_ntfs_capture_filldir);
 		if (ret != 0) {
@@ -648,7 +658,8 @@ int build_dentry_tree_ntfs(struct dentry **root_p,
 			   struct lookup_table *lookup_table,
 			   struct wim_security_data *sd,
 			   const struct capture_config *config,
-			   int flags,
+			   int add_image_flags,
+			   wimlib_progress_func_t progress_func,
 			   void *extra_arg)
 {
 	ntfs_volume *vol;
@@ -697,7 +708,8 @@ int build_dentry_tree_ntfs(struct dentry **root_p,
 	ret = build_dentry_tree_ntfs_recursive(root_p, NULL, root_ni, path, 1,
 					       FILE_NAME_POSIX, lookup_table,
 					       &sd_set, config, ntfs_vol_p,
-					       flags);
+					       add_image_flags,
+					       progress_func);
 out_cleanup:
 	FREE(path);
 	ntfs_inode_close(root_ni);
