@@ -123,7 +123,7 @@ __rb_change_child(struct rb_node *old, struct rb_node *new,
 extern void __rb_erase_color(struct rb_node *parent, struct rb_root *root,
 	void (*augment_rotate)(struct rb_node *old, struct rb_node *new));
 
-static __always_inline void
+static ALWAYS_INLINE void
 rb_erase_augmented(struct rb_node *node, struct rb_root *root,
 		   const struct rb_augment_callbacks *augment)
 {
