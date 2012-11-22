@@ -291,8 +291,6 @@ struct inode {
 
 	struct hlist_node hlist;
 
-	struct list_head tmp_list;
-
 	struct list_head lte_inode_list;
 
 	char *extracted_file;
