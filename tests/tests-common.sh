@@ -1,6 +1,3 @@
-srcdir="${srcdir:-.}/.."
-srcdir="$(cd $srcdir; pwd)"
-
 if stat -c %i . &> /dev/null ; then
 	BSD_STAT=0
 else
