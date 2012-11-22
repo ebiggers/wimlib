@@ -31,6 +31,10 @@
  *
  * \section intro Introduction
  *
+ * This is the documentation for the library interface of wimlib 1.2.0.  If you
+ * have installed wimlib and want to know how to use the @c imagex program,
+ * please see the man pages instead.
+ *
  * wimlib is a C library to read, write, and mount archive files in the Windows
  * Imaging Format (WIM files).  These files are normally created using the @c
  * imagex.exe utility on Windows, but this library provides a free
@@ -297,17 +301,17 @@ enum wimlib_progress_msg {
 	 * ::wimlib_progress_info.scan. */
 	WIMLIB_PROGRESS_MSG_SCAN_END,
 
-	/** 
+	/**
 	 * File resources are currently being written to the WIM.
 	 * @a info will point to ::wimlib_progress_info.write_streams. */
 	WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
 
-	/** 
+	/**
 	 * The metadata resource for each image is about to be written to the
 	 * WIM. @a info will not be valid. */
 	WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN,
 
-	/** 
+	/**
 	 * The metadata resource for each image has successfully been writen to
 	 * the WIM.  @a info will not be valid. */
 	WIMLIB_PROGRESS_MSG_WRITE_METADATA_END,

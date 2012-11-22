@@ -198,12 +198,11 @@ present.
 .TP
 \fB--hardlink\fR
 When extracting a file from the WIM that is identical to a file that has already
-extracted, create a hard link using \fBlink\fR (3) rather than creating a
-separate file.  This option causes all identical files to be hard-linked,
-overriding the hard link groups that are specified in the WIM image(s).  In the
-case of extracting all images from the WIM, files may be hard-linked even if
-they are in different WIM images.  This option is not available in the NTFS
-extraction mode.
+extracted, create a hard link rather than creating a separate file.  This option
+causes all identical files to be hard-linked, overriding the hard link groups
+that are specified in the WIM image(s).  In the case of extracting all images
+from the WIM, files may be hard-linked even if they are in different WIM images.
+This option is not available in the NTFS extraction mode.
 .TP
 \fB--symlink\fR
 This option is similar to \fB--hardlink\fR, except symbolic links are created

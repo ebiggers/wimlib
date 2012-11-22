@@ -14,8 +14,8 @@ Version 1.2.0:
 	A possible bug with changing the bootable image of a WIM was fixed.
 
 	Some advisory locking is now done to prevent two processes from
-	modifying a WIM at the same time (but only in some cases).  e.g. You
-	cannot mount two images from a WIM read-write at the same time.
+	modifying a WIM at the same time (but only in some cases).  For example,
+	you cannot mount two images from a WIM read-write at the same time.
 
 	Some functions have been reorganized:
 		* wimlib_mount() renamed to wimlib_mount_image().

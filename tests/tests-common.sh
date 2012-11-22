@@ -7,7 +7,7 @@ else
 	BSD_STAT=1
 fi
 
-get_inode_number() 
+get_inode_number()
 {
 	if [ "$BSD_STAT" -eq 1 ]; then
 		stat -f %i "$1"
