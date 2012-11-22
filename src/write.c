@@ -55,6 +55,11 @@
 #include <stdlib.h>
 #endif
 
+#if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
+#include <sys/file.h>
+#endif
+
+
 static int do_fflush(FILE *fp)
 {
 	int ret = fflush(fp);
@@ -1486,6 +1491,49 @@ out:
 	w->out_fp = NULL;
 	return ret;
 }
+
+static int open_wim_writable(WIMStruct *w, const char *path,
+			     bool trunc, bool readable)
+{
+	const char *mode;
+	int ret = 0;
+	if (trunc)
+		if (readable)
+			mode = "w+b";
+		else
+			mode = "wb";
+	else
+		mode = "r+b";
+
+	DEBUG("Opening `%s' read-write", path);
+	wimlib_assert(w->out_fp == NULL);
+	wimlib_assert(path != NULL);
+	w->out_fp = fopen(path, mode);
+	if (!w->out_fp) {
+		ERROR_WITH_ERRNO("Failed to open `%s' for writing", path);
+		return WIMLIB_ERR_OPEN;
+	}
+#if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
+	if (!trunc) {
+		ret = flock(fileno(w->out_fp), LOCK_EX | LOCK_NB);
+		if (ret != 0) {
+			if (errno == EWOULDBLOCK) {
+				ERROR("`%s' is already being modified "
+				      "by another process", path);
+				ret = WIMLIB_ERR_ALREADY_LOCKED;
+				fclose(w->out_fp);
+				w->out_fp = NULL;
+			} else {
+				WARNING("Failed to lock `%s': %s",
+					path, strerror(errno));
+				ret = 0;
+			}
+		}
+	}
+#endif
+	return ret;
+}
+
 
 static void close_wim_writable(WIMStruct *w)
 {

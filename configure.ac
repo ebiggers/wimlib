@@ -29,10 +29,10 @@ AC_CONFIG_FILES([Makefile
 AC_PROG_CC
 AM_PROG_CC_C_O
 
-AC_CHECK_FUNCS([utimensat lutimes utime])
+AC_CHECK_FUNCS([utimensat lutimes utime flock])
 AC_CHECK_HEADERS([endian.h byteswap.h sys/byteorder.h sys/endian.h \
 		  sys/param.h machine/endian.h alloca.h stdlib.h stdarg.h \
-		  errno.h attr/xattr.h utime.h])
+		  errno.h attr/xattr.h utime.h sys/file.h])
 
 
 AM_ICONV

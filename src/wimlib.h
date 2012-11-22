@@ -667,6 +667,7 @@ typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
  */
 enum wimlib_error_code {
 	WIMLIB_ERR_SUCCESS = 0,
+	WIMLIB_ERR_ALREADY_LOCKED,
 	WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE,
 	WIMLIB_ERR_DECOMPRESSION,
 	WIMLIB_ERR_DELETE_STAGING_DIR,
@@ -1575,6 +1576,11 @@ extern int wimlib_open_wim(const char *wim_file, int open_flags,
  *
  * @return 0 on success; nonzero on error.  This function may return any value
  * returned by wimlib_write() as well as the following error codes:
+ * @retval ::WIMLIB_ERR_ALREADY_LOCKED
+ * 	The append-only overwrite mode was going to be used, but an exclusive
+ * 	advisory lock on the on-disk WIM file could not be acquired, probably
+ * 	because another thread or process was calling wimlib_overwrite() on the
+ * 	same underlying on-disk file at the same time.
  * @retval ::WIMLIB_ERR_NO_FILENAME
  * 	@a wim corresponds to a WIM created with wimlib_create_new_wim() rather
  * 	than a WIM read with wimlib_open_wim().
@@ -1744,8 +1750,8 @@ extern void wimlib_print_wim_information(const WIMStruct *wim);
  * 	image, indexed starting at 1, is returned.  If the keyword "all" or "*"
  * 	was specified, ::WIMLIB_ALL_IMAGES is returned.  Otherwise,
  * 	::WIMLIB_NO_IMAGE is returned.  If @a image_name_or_num was @c NULL or
- * 	the empty string, ::WIM_NO_IMAGE is returned, even if one or more images
- * 	in @a wim has no name.
+ * 	the empty string, ::WIMLIB_NO_IMAGE is returned, even if one or more
+ * 	images in @a wim has no name.
  */
 extern int wimlib_resolve_image(WIMStruct *wim, const char *image_name_or_num);
 

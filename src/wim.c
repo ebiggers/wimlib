@@ -43,7 +43,6 @@
 #include "lookup_table.h"
 #include "xml.h"
 
-
 static int print_metadata(WIMStruct *w)
 {
 	DEBUG("Printing metadata for image %d", w->current_image);
@@ -421,7 +420,7 @@ WIMLIBAPI int wimlib_get_boot_idx(const WIMStruct *w)
 }
 
 /* Opens a WIM readable */
-int open_wim_readable(WIMStruct *w, const char *path)
+static int open_wim_readable(WIMStruct *w, const char *path)
 {
 	if (w->fp != NULL)
 		fclose(w->fp);
@@ -430,30 +429,6 @@ int open_wim_readable(WIMStruct *w, const char *path)
 	if (!w->fp) {
 		ERROR_WITH_ERRNO("Failed to open `%s' for reading",
 				 path);
-		return WIMLIB_ERR_OPEN;
-	}
-	return 0;
-}
-
-/* Opens a WIM writable */
-int open_wim_writable(WIMStruct *w, const char *path,
-		      bool trunc, bool readable)
-{
-	const char *mode;
-	if (trunc)
-		if (readable)
-			mode = "w+b";
-		else
-			mode = "wb";
-	else
-		mode = "r+b";
-
-	DEBUG("Opening `%s' read-write", path);
-	wimlib_assert(w->out_fp == NULL);
-	wimlib_assert(path != NULL);
-	w->out_fp = fopen(path, mode);
-	if (!w->out_fp) {
-		ERROR_WITH_ERRNO("Failed to open `%s' for writing", path);
 		return WIMLIB_ERR_OPEN;
 	}
 	return 0;

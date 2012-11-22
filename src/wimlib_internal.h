@@ -526,9 +526,6 @@ extern WIMStruct *new_wim_struct();
 extern int select_wim_image(WIMStruct *w, int image);
 extern int wim_hdr_flags_compression_type(int wim_hdr_flags);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
-extern int open_wim_readable(WIMStruct *w, const char *path);
-extern int open_wim_writable(WIMStruct *w, const char *path,
-			     bool trunc, bool readable);
 
 /* Internal use only */
 #define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE	0x80000000

@@ -108,6 +108,8 @@ WIMLIBAPI int wimlib_set_print_errors(bool show_error_messages)
 static const char *error_strings[] = {
 	[WIMLIB_ERR_SUCCESS]
 		= "Success",
+	[WIMLIB_ERR_ALREADY_LOCKED]
+		= "The WIM is already locked for writing",
 	[WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE]
 		= "Lookup table is compressed",
 	[WIMLIB_ERR_DECOMPRESSION]
@@ -379,17 +381,19 @@ ssize_t full_write(int fd, const void *buf, size_t n)
 
 static bool seeded = false;
 
+static void seed_random()
+{
+	srand(time(NULL) * getpid());
+	seeded = true;
+}
+
 /* Fills @n bytes pointed to by @p with random alphanumeric characters. */
 void randomize_char_array_with_alnum(char p[], size_t n)
 {
-	int r;
-
-	if (!seeded) {
-		srand(time(NULL));
-		seeded = true;
-	}
+	if (!seeded)
+		seed_random();
 	while (n--) {
-		r = rand() % 62;
+		int r = rand() % 62;
 		if (r < 26)
 			*p++ = r + 'a';
 		else if (r < 52)
@@ -402,10 +406,8 @@ void randomize_char_array_with_alnum(char p[], size_t n)
 /* Fills @n bytes pointer to by @p with random numbers. */
 void randomize_byte_array(u8 *p, size_t n)
 {
-	if (!seeded) {
-		srand(time(NULL));
-		seeded = true;
-	}
+	if (!seeded)
+		seed_random();
 	while (n--)
 		*p++ = rand();
 }
