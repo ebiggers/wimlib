@@ -25,6 +25,15 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+#include "config.h"
+
+#if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
+/* On BSD, this should be included before "list.h" so that "list.h" can
+ * overwrite the LIST_HEAD macro. */
+#include <sys/file.h>
+#endif
+
+#include "list.h"
 #include "wimlib_internal.h"
 #include "io.h"
 #include "dentry.h"
@@ -32,13 +41,13 @@
 #include "xml.h"
 #include "lzx.h"
 #include "xpress.h"
-#include <unistd.h>
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 #include <semaphore.h>
 #include <pthread.h>
 #endif
 
+#include <unistd.h>
 #include <errno.h>
 
 #ifdef WITH_NTFS_3G
@@ -48,15 +57,10 @@
 #include <ntfs-3g/dir.h>
 #endif
 
-
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
 #else
 #include <stdlib.h>
-#endif
-
-#if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
-#include <sys/file.h>
 #endif
 
 
