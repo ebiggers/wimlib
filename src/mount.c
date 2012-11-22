@@ -1856,7 +1856,8 @@ static struct fuse_operations wimfs_operations = {
 /* Mounts an image from a WIM file. */
 WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 				 int mount_flags, WIMStruct **additional_swms,
-				 unsigned num_additional_swms)
+				 unsigned num_additional_swms,
+				 const char *staging_dir)
 {
 	int argc = 0;
 	char *argv[16];
@@ -2031,7 +2032,8 @@ out:
  * Unmounts the WIM file that was previously mounted on @dir by using
  * wimlib_mount_image().
  */
-WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags)
+WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags,
+				   wimlib_progress_func_t progress_func)
 {
 	pid_t pid;
 	int status;
@@ -2208,14 +2210,16 @@ static inline int mount_unsupported_error()
 	return WIMLIB_ERR_UNSUPPORTED;
 }
 
-WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags)
+WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags,
+				   wimlib_progress_func_t progress_func)
 {
 	return mount_unsupported_error();
 }
 
 WIMLIBAPI int wimlib_mount_image(WIMStruct *wim_p, int image, const char *dir,
 				 int mount_flags, WIMStruct **additional_swms,
-				 unsigned num_additional_swms)
+				 unsigned num_additional_swms,
+				 const char *staging_dir)
 {
 	return mount_unsupported_error();
 }

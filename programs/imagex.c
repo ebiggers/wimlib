@@ -1457,7 +1457,7 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 	}
 
 	ret = wimlib_mount_image(w, image, dir, mount_flags, additional_swms,
-				 num_additional_swms);
+				 num_additional_swms, NULL);
 	if (ret != 0) {
 		imagex_error("Failed to mount image %d from `%s' on `%s'",
 			     image, wimfile, dir);
@@ -1615,7 +1615,8 @@ static int imagex_unmount(int argc, const char **argv)
 		return -1;
 	}
 
-	ret = wimlib_unmount_image(argv[0], unmount_flags);
+	ret = wimlib_unmount_image(argv[0], unmount_flags,
+				   imagex_progress_func);
 	if (ret != 0)
 		imagex_error("Failed to unmount `%s'", argv[0]);
 	return ret;

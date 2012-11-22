@@ -276,15 +276,15 @@ WIMLIBAPI int wimlib_resolve_image(WIMStruct *w, const char *image_name_or_num)
 	int image;
 	int i;
 
-	if (!image_name_or_num)
+	if (!image_name_or_num || !*image_name_or_num)
 		return WIMLIB_NO_IMAGE;
 
 	if (strcmp(image_name_or_num, "all") == 0
 	    || strcmp(image_name_or_num, "*") == 0)
 		return WIMLIB_ALL_IMAGES;
 	image = strtol(image_name_or_num, &p, 10);
-	if (p != image_name_or_num && *p == '\0') {
-		if (image < 1 || image > w->hdr.image_count)
+	if (p != image_name_or_num && *p == '\0' && image > 0) {
+		if (image > w->hdr.image_count)
 			return WIMLIB_NO_IMAGE;
 		return image;
 	} else {

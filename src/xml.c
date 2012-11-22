@@ -1443,7 +1443,7 @@ WIMLIBAPI bool wimlib_image_name_in_use(const WIMStruct *w, const char *name)
 	int i;
 
 	DEBUG("Checking to see if the image name `%s' is already in use", name);
-	if (!name || !w->wim_info)
+	if (!name || !*name || !w->wim_info)
 		return false;
 	for (i = 1; i <= w->wim_info->num_images; i++)
 		if (strcmp(w->wim_info->images[i - 1].name, name) == 0)
@@ -1455,6 +1455,9 @@ WIMLIBAPI bool wimlib_image_name_in_use(const WIMStruct *w, const char *name)
 WIMLIBAPI int wimlib_extract_xml_data(WIMStruct *w, FILE *fp)
 {
 	DEBUG("Extracting the XML data.");
+	if (!w->xml_data)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if (fwrite(w->xml_data, 1, w->hdr.xml_res_entry.size, fp) !=
 			w->hdr.xml_res_entry.size) {
 		ERROR_WITH_ERRNO("Failed to extract XML data");

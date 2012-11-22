@@ -22,7 +22,7 @@ Windows that are almost exactly the same.
 Microsoft provides documentation for the WIM file format, XPRESS compression
 format, and LZX compression format.  The XPRESS documentation is acceptable, but
 the LZX documentation is not entirely correct, and the WIM documentation itself
-is very incomplete and is of unacceptable quality.
+is incomplete.
 
 A WIM file may be either stand-alone or split into multiple parts.
 
