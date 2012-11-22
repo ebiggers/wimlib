@@ -10,8 +10,7 @@
 
 set -e
 cd tests
-srcdir="${srcdir:-.}/.."
-srcdir="$(cd $srcdir; pwd)"
+. tests-common.sh
 
 imagex() {
 	echo "imagex $@"

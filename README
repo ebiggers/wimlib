@@ -219,11 +219,10 @@ wimlib has mostly been developed and tested on x86_64 (64-bit) GNU/Linux.
 
 It has been tested on x86 (32-bit) GNU/Linux occasionally.
 
-wimlib may work on FreeBSD.  However, this is not well tested.  If you do not
-have libntfs-3g 2011-4-12 or later available, you must configure with
---without-ntfs-3g.  Also, GNU coreutils is needed to run the test suite.  Before
-mounting a WIM you need to load the POSIX message queue module (run `kldload
-mqueuefs').
+wimlib may work on FreeBSD and Mac OS X.  However, this is not well tested.  If
+you do not have libntfs-3g 2011-4-12 or later available, you must configure with
+--without-ntfs-3g.  Before mounting a WIM you need to load the POSIX message
+queue module (run `kldload mqueuefs').
 
 wimlib should work on big endian machines but it has not been tested.
 

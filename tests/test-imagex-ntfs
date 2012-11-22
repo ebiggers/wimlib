@@ -10,8 +10,7 @@
 
 set -e
 cd tests
-srcdir="${srcdir:-.}/.."
-srcdir="$(cd $srcdir; pwd)"
+. tests-common.sh
 
 imagex() {
 	../imagex $@ > /dev/null
@@ -23,6 +22,7 @@ __do_unmount() {
 	fi
 
 }
+
 do_unmount() {
 	if mountpoint $1 &> /dev/null; then
 		__do_unmount $1

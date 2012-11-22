@@ -5,8 +5,7 @@
 
 set -e
 cd tests
-srcdir="${srcdir:-.}/.."
-srcdir="$(cd $srcdir; pwd)"
+. tests-common.sh
 
 imagex() {
 	echo "imagex $@"
@@ -62,13 +61,13 @@ for comp_type in None LZX XPRESS; do
 	if ! diff -q -r dir tmp; then
 		error "Recursive diff of extracted directory with original failed"
 	fi
-	if ! test `stat -c %h tmp/subdir/hello` = 2; then
+	if ! test `get_link_count tmp/subdir/hello` = 2; then
 		error "Incorrect number of hard links in extracted file"
 	fi
-	if ! test `stat -c %i tmp/subdir/hello` != `stat -c %i tmp/subdir/hello2`; then
+	if ! test `get_inode_number tmp/subdir/hello` != `get_inode_number tmp/subdir/hello2`; then
 		error "Expected different inode numbers in files not hard-linked"
 	fi
-	if ! test "`stat -c %i tmp/subdir/hello`" = "`stat -c %i tmp/subdir/hellolink`"; then
+	if ! test "`get_inode_number tmp/subdir/hello`" = "`get_inode_number tmp/subdir/hellolink`"; then
 		error "Expected same inode numbers in hard-linked files"
 	fi
 	if ! test -L tmp/subdir/rel_symlink; then
@@ -288,13 +287,13 @@ fi
 if ! diff -q -r tmp/dir tmp/myname || ! diff -q -r dir tmp/dir; then
 	error "Recursive diff of applied WIM with original directory failed"
 fi
-if test "`stat -c %h tmp/dir/lz.c`" != 1; then
+if test "`get_link_count tmp/dir/lz.c`" != 1; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`stat -c %h tmp/myname/lz.c`" != 1; then
+if test "`get_link_count tmp/myname/lz.c`" != 1; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`stat -c %i tmp/myname/lz.c`" = "`stat -c %i tmp/dir/lz.c`"; then
+if test "`get_inode_number tmp/myname/lz.c`" = "`get_inode_number tmp/dir/lz.c`"; then
 	error "Incorrect inode number"
 fi
 rm -rf tmp
@@ -305,13 +304,13 @@ fi
 if ! diff -q -r tmp/dir tmp/myname || ! diff -q -r dir tmp/dir; then
 	error "Recursive diff of applied WIM with original directory failed"
 fi
-if test "`stat -c %h tmp/dir/lz.c`" != 2; then
+if test "`get_link_count tmp/dir/lz.c`" != 2; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`stat -c %h tmp/myname/lz.c`" != 2; then
+if test "`get_link_count tmp/myname/lz.c`" != 2; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`stat -c %i tmp/myname/lz.c`" != "`stat -c %i tmp/dir/lz.c`"; then
+if test "`get_inode_number tmp/myname/lz.c`" != "`get_inode_number tmp/dir/lz.c`"; then
 	error "Incorrect inode number"
 fi
 rm -rf tmp
@@ -320,16 +319,16 @@ echo "Testing application of single image containing identical files"
 if ! imagex apply dir.wim 1 tmp; then
 	error "Failed to apply WIM"
 fi
-if test "`stat -c %h tmp/subdir/hello`" != 2; then
+if test "`get_link_count tmp/subdir/hello`" != 2; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`stat -c %h tmp/subdir/hello2`" != 1; then
+if test "`get_link_count tmp/subdir/hello2`" != 1; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`stat -c %i tmp/subdir/hello`" = "`stat -c %i tmp/subdir/hello2`"; then
+if test "`get_inode_number tmp/subdir/hello`" = "`get_inode_number tmp/subdir/hello2`"; then
 	error "Inode numbers on non-hard-linked files are the same"
 fi
-if test "`stat -c %i tmp/subdir/hello`" != "`stat -c %i tmp/subdir/hellolink`"; then
+if test "`get_inode_number tmp/subdir/hello`" != "`get_inode_number tmp/subdir/hellolink`"; then
 	error "Inode numbers on hard-linked files are different"
 fi
 rm -rf tmp
@@ -338,16 +337,16 @@ echo "Testing application of single image containing identical files with hardli
 if ! imagex apply dir.wim 1 tmp --hardlink; then
 	error "Failed to apply WIM"
 fi
-if test "`stat -c %h tmp/subdir/hello`" != 3; then
+if test "`get_link_count tmp/subdir/hello`" != 3; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`stat -c %h tmp/subdir/hello2`" != 3; then
+if test "`get_link_count tmp/subdir/hello2`" != 3; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`stat -c %i tmp/subdir/hello`" != "`stat -c %i tmp/subdir/hello2`"; then
+if test "`get_inode_number tmp/subdir/hello`" != "`get_inode_number tmp/subdir/hello2`"; then
 	error "Hard link set does not share inode number"
 fi
-if test "`stat -c %i tmp/subdir/hello`" != "`stat -c %i tmp/subdir/hellolink`"; then
+if test "`get_inode_number tmp/subdir/hello`" != "`get_inode_number tmp/subdir/hellolink`"; then
 	error "Hard link set does not share inode number"
 fi
 rm -rf tmp
@@ -356,13 +355,13 @@ echo "Testing application of single image containing identical files with symlin
 if ! imagex apply dir.wim 1 tmp --symlink; then
 	error "Failed to apply WIM"
 fi
-if test "`stat -c %h tmp/subdir/hello`" != 1; then
+if test "`get_link_count tmp/subdir/hello`" != 1; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`stat -c %h tmp/subdir/hello2`" != 1; then
+if test "`get_link_count tmp/subdir/hello2`" != 1; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`stat -c %i tmp/subdir/hello`" = "`stat -c %i tmp/subdir/hello2`"; then
+if test "`get_inode_number tmp/subdir/hello`" = "`get_inode_number tmp/subdir/hello2`"; then
 	error "Incorrect inode number"
 fi
 if ! test -L tmp/subdir/hello -o -L tmp/subdir/hello2 -o -L tmp/subdir/hellolink; then
@@ -375,7 +374,7 @@ rm -rf dir.wim tmp
 
 echo "Creating random files to test WIM splitting on"
 mkdir tmp
-for i in `seq 1 100`; do
+for ((i = 0; i < 100; i++)); do
 	dd if=/dev/urandom of=tmp/file$i bs=4096 count=10 &> /dev/null
 done
 for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do

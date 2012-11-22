@@ -4,8 +4,7 @@
 
 set -e
 cd tests
-srcdir="${srcdir:-.}/.."
-srcdir="$(cd $srcdir; pwd)"
+. tests-common.sh
 
 if [ ! -r /dev/fuse ]; then
 	echo "WARNING: /dev/fuse is not readable."
@@ -167,7 +166,7 @@ fi
 if ! test -f tmp/newdir/empty_file; then
 	error "New empty file not created correctly in read-write mounted WIM"
 fi
-if ! test "`stat -c %s tmp/newdir/empty_file`" = 0; then
+if ! test "`get_file_size tmp/newdir/empty_file`" = 0; then
 	error "New empty file in read-write mounted WIM is not empty"
 fi
 echo "Testing making new non-empty file in mounted WIM"
@@ -194,10 +193,10 @@ fi
 if ! diff -q tmp/newdir/zeroes1 tmp/newdir/zeroes2; then
 	error "The new non-empty files we made in the read-write mounted WIM were not extracted correctly"
 fi
-if test `stat -c %s tmp/newdir/empty_file` != 0; then
+if test `get_file_size tmp/newdir/empty_file` != 0; then
 	error "The new empty file we made in the read-write mounted WIM was not extracted correctly"
 fi
-if test `stat -c %s tmp/newdir/zeroes1` != 4096; then
+if test `get_file_size tmp/newdir/zeroes1` != 4096; then
 	error "The new non-empty files we made in the read-write mounted WIM were not extracted correctly"
 fi
 
