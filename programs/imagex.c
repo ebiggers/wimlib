@@ -101,7 +101,7 @@ static const char *usage_strings[] = {
 "                      [--check] [--debug] [--streams-interface=INTERFACE]\n"
 "                      [--staging-dir=DIR]\n",
 [OPTIMIZE] =
-"imagex optimize WIMFILE [--check] [--recompress]\n",
+"imagex optimize WIMFILE [--check] [--recompress] [--compress=TYPE]\n",
 [SPLIT] =
 "imagex split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
 [UNMOUNT] =
@@ -398,10 +398,10 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 			putchar('\n');
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN:
-		/*printf("Applying image %d (%s) to `%s'\n",*/
-		       /*info->extract.image,*/
-		       /*info->extract.image_name,*/
-		       /*info->extract.target);*/
+		printf("Applying image %d (%s) to `%s'\n",
+		       info->extract.image,
+		       info->extract.image_name,
+		       info->extract.target);
 		break;
 	/*case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:*/
 		/*printf("Done applying image %d!\n",*/
@@ -1539,19 +1539,21 @@ static int imagex_optimize(int argc, const char **argv)
 
 	ret = wimlib_overwrite(w, write_flags, 0, imagex_progress_func);
 
-	new_size = file_get_size(argv[0]);
-	printf("`%s' optimized size: ", wimfile);
-	if (new_size == -1)
-		puts("Unknown");
-	else
-		printf("%"PRIu64" KiB\n", new_size >> 10);
+	if (ret == 0) {
+		new_size = file_get_size(argv[0]);
+		printf("`%s' optimized size: ", wimfile);
+		if (new_size == -1)
+			puts("Unknown");
+		else
+			printf("%"PRIu64" KiB\n", new_size >> 10);
 
-	fputs("Space saved: ", stdout);
-	if (new_size != -1 && old_size != -1) {
-		printf("%lld KiB\n",
-		       ((long long)old_size - (long long)new_size) >> 10);
-	} else {
-		puts("Unknown");
+		fputs("Space saved: ", stdout);
+		if (new_size != -1 && old_size != -1) {
+			printf("%lld KiB\n",
+			       ((long long)old_size - (long long)new_size) >> 10);
+		} else {
+			puts("Unknown");
+		}
 	}
 
 	wimlib_free(w);

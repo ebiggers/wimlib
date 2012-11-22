@@ -30,12 +30,14 @@ imagex join windows.wim windows*.swm
 .RE
 
 .SH NOTES
-You can also use \fBimagex export\fR to export all images from a split WIM.
-This would be nearly the same as \fBimagex join\fR, although some information in
-the XML data could be discarded.
+\fBimagex join\fR is roughly equivalent to:
+.RS
+.PP
+\fBimagex export\fR \fISWM_PART_1\fR --ref="\fISWM_GLOB\fR" [--check] all \fIOUT_WIMFILE\fR
+.RE
+.PP
 
-Perhaps for this reason, Microsoft's implementation of imagex does not provide a
-\fB/join\fR option.
 
 .SH SEE ALSO
 .BR imagex (1)
+.BR imagex-export (1)

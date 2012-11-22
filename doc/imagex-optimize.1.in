@@ -34,6 +34,14 @@ that the WIM is intact (equivalent to applying all the images from it).
 
 \fBimagex optimize\fR does not support split WIMs.
 
+\fBimagex optimize\fR is roughly equivalent to:
+.RS
+.PP
+\fBimagex export\fR \fIWIMFILE\fR all tmp.wim [--check] && mv tmp.wim \fIWIMFILE\fR
+.RE
+.PP
+
 .SH SEE ALSO
 .BR imagex (1)
+.BR imagex-export (1)
 
