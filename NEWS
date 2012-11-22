@@ -8,14 +8,28 @@ Version 1.2.0:
 	A new command `imagex optimize' is now available to manually re-build a
 	WIM that has wasted space due to repeated appends.
 
-	Previously, the soname of libwim.so has been 0.0.0, despite many
-	interface changes.  The soname is now updated to 1.0.0 and will now be
-	updated each release.
-
 	Progress information has been improved, and now arbitrary callback
 	functions can be used to show the progress of a WIM operation.
 
 	A possible bug with changing the bootable image of a WIM was fixed.
+
+	Some advisory locking is now done to prevent two processes from
+	modifying a WIM at the same time (but only in some cases).  e.g. You
+	cannot mount two images from a WIM read-write at the same time.
+
+	Some functions have been reorganized:
+		* wimlib_mount() renamed to wimlib_mount_image().
+		* wimlib_unmount() renamed to wimlib_unmount_image().
+		* wimlib_overwrite_xml_and_header() removed as
+		wimlib_overwrite() suffices now.
+		* wimlib_apply_image_to_ntfs_volume() removed as
+		wimlib_extract_image() suffices now.
+		* wimlib_add_image_from_ntfs_volume() removed as
+		* wimlib_add_image() suffices now.
+
+	Previously, the soname of libwim.so has been 0.0.0, despite many
+	interface changes.  The soname is now updated to 1.0.0 and will now be
+	updated each release.
 
 Version 1.1.0:
 	Resources will now be compressed using multiple threads by default.
