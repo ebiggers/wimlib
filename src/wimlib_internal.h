@@ -545,5 +545,14 @@ extern int begin_write(WIMStruct *w, const char *path, int write_flags);
 extern int finish_write(WIMStruct *w, int image, int write_flags,
 			wimlib_progress_func_t progress_func);
 
+#if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
+extern int lock_wim(FILE *fp, const char *path);
+#else
+static inline int lock_wim(FILE *fp, const char *path)
+{
+	return 0;
+}
+#endif
+
 #endif /* _WIMLIB_INTERNAL_H */
 

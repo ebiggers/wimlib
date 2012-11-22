@@ -1915,6 +1915,12 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		goto out;
 	}
 
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+		ret = lock_wim(wim->fp, wim->filename);
+		if (ret != 0)
+			goto out;
+	}
+
 	if (!(mount_flags & (WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE |
 		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR |
 		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)))

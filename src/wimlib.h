@@ -1399,6 +1399,11 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * 	directory in the future.  Set to @c NULL.
  *
  * @return 0 on success; nonzero on error.
+ * @retval ::WIMLIB_ERR_ALREADY_LOCKED
+ * 	A read-write mount was requested, but an an exclusive advisory lock on
+ * 	the on-disk WIM file could not be acquired because another thread or
+ * 	process has mounted an image from the WIM read-write or is currently
+ * 	modifying the WIM in-place.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
  * 	Could not decompress the metadata resource for @a image in @a wim.
  * @retval ::WIMLIB_ERR_FUSE
@@ -1577,10 +1582,10 @@ extern int wimlib_open_wim(const char *wim_file, int open_flags,
  * @return 0 on success; nonzero on error.  This function may return any value
  * returned by wimlib_write() as well as the following error codes:
  * @retval ::WIMLIB_ERR_ALREADY_LOCKED
- * 	The append-only overwrite mode was going to be used, but an exclusive
- * 	advisory lock on the on-disk WIM file could not be acquired, probably
- * 	because another thread or process was calling wimlib_overwrite() on the
- * 	same underlying on-disk file at the same time.
+ * 	The WIM was going to be modifien in-place (with no temporary file), but
+ * 	an exclusive advisory lock on the on-disk WIM file could not be acquired
+ * 	because another thread or process has mounted an image from the WIM
+ * 	read-write or is currently modifying the WIM in-place.
  * @retval ::WIMLIB_ERR_NO_FILENAME
  * 	@a wim corresponds to a WIM created with wimlib_create_new_wim() rather
  * 	than a WIM read with wimlib_open_wim().

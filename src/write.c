@@ -1492,6 +1492,29 @@ out:
 	return ret;
 }
 
+#if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
+int lock_wim(FILE *fp, const char *path)
+{
+	int ret = 0;
+	if (fp) {
+		ret = flock(fileno(fp), LOCK_EX | LOCK_NB);
+		if (ret != 0) {
+			if (errno == EWOULDBLOCK) {
+				ERROR("`%s' is already being modified or has been "
+				      "mounted read-write\n"
+				      "        by another process!", path);
+				ret = WIMLIB_ERR_ALREADY_LOCKED;
+			} else {
+				WARNING("Failed to lock `%s': %s",
+					path, strerror(errno));
+				ret = 0;
+			}
+		}
+	}
+	return ret;
+}
+#endif
+
 static int open_wim_writable(WIMStruct *w, const char *path,
 			     bool trunc, bool readable)
 {
@@ -1513,24 +1536,13 @@ static int open_wim_writable(WIMStruct *w, const char *path,
 		ERROR_WITH_ERRNO("Failed to open `%s' for writing", path);
 		return WIMLIB_ERR_OPEN;
 	}
-#if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
-	if (!trunc) {
-		ret = flock(fileno(w->out_fp), LOCK_EX | LOCK_NB);
+	if (trunc) {
+		ret = lock_wim(w->out_fp, path);
 		if (ret != 0) {
-			if (errno == EWOULDBLOCK) {
-				ERROR("`%s' is already being modified "
-				      "by another process", path);
-				ret = WIMLIB_ERR_ALREADY_LOCKED;
-				fclose(w->out_fp);
-				w->out_fp = NULL;
-			} else {
-				WARNING("Failed to lock `%s': %s",
-					path, strerror(errno));
-				ret = 0;
-			}
+			fclose(w->out_fp);
+			w->out_fp = NULL;
 		}
 	}
-#endif
 	return ret;
 }
 
