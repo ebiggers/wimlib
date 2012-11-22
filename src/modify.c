@@ -167,9 +167,15 @@ static int build_dentry_tree(struct dentry **root_ret,
 
 	inode = root->d_inode;
 
+#ifdef HAVE_STAT_NANOSECOND_PRECISION
 	inode->creation_time = timespec_to_wim_timestamp(&root_stbuf.st_mtim);
 	inode->last_write_time = timespec_to_wim_timestamp(&root_stbuf.st_mtim);
 	inode->last_access_time = timespec_to_wim_timestamp(&root_stbuf.st_atim);
+#else
+	inode->creation_time = unix_timestamp_to_wim(root_stbuf.st_mtime);
+	inode->last_write_time = unix_timestamp_to_wim(root_stbuf.st_mtime);
+	inode->last_access_time = unix_timestamp_to_wim(root_stbuf.st_atime);
+#endif
 	if (sizeof(ino_t) >= 8)
 		inode->ino = (u64)root_stbuf.st_ino;
 	else

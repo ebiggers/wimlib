@@ -34,6 +34,12 @@ AC_CHECK_HEADERS([endian.h byteswap.h sys/byteorder.h sys/endian.h \
 		  sys/param.h machine/endian.h alloca.h stdlib.h stdarg.h \
 		  errno.h attr/xattr.h utime.h sys/file.h])
 
+AC_CHECK_MEMBER([struct stat.st_mtim],
+		[AC_DEFINE([HAVE_STAT_NANOSECOND_PRECISION], [1],
+			  [Define to 1 if nanosecond precision timestamps are
+			   supported])],
+		[],
+		[[#include <sys/stat.h>]])
 
 AM_ICONV
 if test "x$am_cv_func_iconv" != "xyes"; then
