@@ -15,26 +15,33 @@ an image
 changes which image is bootable, or what the name and description of an image
 are.
 
-If neither an image nor any other flags other than \fB--check\fR are specified,
-some basic information about the WIM archive as well as information about the
-images contained in it will be printed.  If an image is specified, the printed
-information is restricted to that concerning the specified image.
+If neither an image nor any flags other than \fB--check\fR are specified, some
+basic information about the WIM archive as well as information about the images
+contained in it will be printed.  If an image is specified (as a 1-based image
+index or an image name), the printed information is restricted to that
+concerning the specified image.
 
 Changes to the WIM are made if \fINEW_NAME\fR and/or \fB--boot\fR are specified.
 \fINEW_NAME\fR is taken to be the new name of the image specified by
 \fIIMAGE_NUM\fR or \fIIMAGE_NAME\fR, while \fINEW_DESC\fR is taken to be its new
-description. \fINEW_DESC\fR defaults to the old description if it is not given.
+description.  If \fINEW_DESC\fR is not specified, the image's description is
+unchanged.
 
 \fBimagex info\fR does not support modifying a split WIM, although you may
 display information about one.
 
 .SH NOTES
 
+The possible modifications to \fIWIMFILE\fR by \fBimagex info\fR are made
+quickly without re-building the entire WIM.  \fBimagex info\fR will only take a
+significant amount of time to complete if \fB--check\fR is specified when the
+WIM previously had no integrity table.
+
 Aborting an \fBimagex info\fR command that modifies \fIWIMFILE\fR is unlikely to
-result in corruption of \fIWIMFILE\fR.  If \fBimagex info\fR is aborted while
-the integrity table is being calculated (with --check), the WIM should be in a
-consistent state with any previous changes to the bootable index, new, or
-description of the specified index committed.
+result in corruption of \fIWIMFILE\fR.  Even if \fBimagex info\fR is aborted
+while the integrity table is being calculated (with \fB--check\fR), the WIM
+should be in a consistent state with any changes to the bootable index,
+name, or description of the specified image committed.
 
 .SH OPTIONS
 .TP 6
@@ -44,14 +51,14 @@ archive.
 .TP
 \fB--check\fR
 When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
-present; additionally if an action that requires changing the WIM archive is
+present; additionally if an action that requires modifying the WIM archive is
 specified, include an integrity table in the modified WIM.  If this option is
-not specified and \fIWIMFILE\fR is recreated, no integrity table is included in
+not specified and \fIWIMFILE\fR is modified, no integrity table is included in
 the modified WIM, even if there was one before.
 .TP
 \fB--extract-xml\fR \fIFILE\fR
 Extracts the raw data from the XML resource in the WIM file to \fIFILE\fR.
-Note: the XML data should be encoded using UTF-16LE, and it should begin with a
+Note: the XML data will be encoded using UTF-16LE, and it will begin with a
 byte-order mark.
 .TP
 \fB--header\fR
@@ -61,12 +68,14 @@ Shows detailed information from the WIM header.
 Prints all the entries in the stream lookup table of the WIM.
 .TP
 \fB--metadata\fR
-Prints the metadata, including the security data and the directory entry tree,
-for the specified image.  This only works on standalone WIMs or on the first
-part of a split WIM.
+Prints the metadata, including the security data and the directory entry tree
+but not the XML data, for the specified image.  If no image is specified, the
+metadata for all images is printed.  This only works on standalone WIMs or on
+the first part of a split WIM.
 .TP
 \fB--xml\fR
-Prints the XML data for the WIM.
+Prints the raw XML data from the WIM.  Note: the XML data will be encoded using
+UTF-16LE, and it will begin with a byte-order mark.
 .SH SEE ALSO
 .BR imagex (1)
 
