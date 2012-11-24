@@ -207,6 +207,11 @@ int select_wim_image(WIMStruct *w, int image)
 
 	DEBUG("Selecting image %d", image);
 
+	if (image == WIMLIB_NO_IMAGE) {
+		ERROR("Invalid image: %d", WIMLIB_NO_IMAGE);
+		return WIMLIB_ERR_INVALID_IMAGE;
+	}
+
 	if (image == w->current_image)
 		return 0;
 
