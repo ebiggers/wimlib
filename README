@@ -40,6 +40,12 @@ details.
 image of Windows PE that can be put on a CD or USB drive, or published on a
 server for PXE booting.  See the main page `doc/mkwinpeimg.1' for more details.
 
+There is an additional program, `wimapply', that is not installed by default.
+It can be used to build a small executable with the ability to apply a WIM image
+from a standalone WIM, without having to build the whole shared library.  This
+could be useful on Linux boot clients that only need to be able to apply a WIM,
+not capture/split/join/append/export/mount a WIM.  See `programs/wimapply.c'.
+
 			       COMPRESSION RATIO
 
 wimlib can create XPRESS or LZX compressed WIM archives.  As of wimlib v1.0.3,
