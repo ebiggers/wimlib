@@ -103,6 +103,7 @@ EXTRA_DIST =					\
 	debian					\
 	rpm					\
 	programs/install.cmd			\
+	programs/wimapply.c			\
 	tests/common_tests.sh			\
 	tests/tests-common.sh			\
 	tests/security_descriptor_1.base64	\
