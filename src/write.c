@@ -323,6 +323,27 @@ static void end_wim_resource_read(struct lookup_table_entry *lte
 #endif
 }
 
+static int
+write_uncompressed_resource_and_truncate(struct lookup_table_entry *lte,
+					 FILE *out_fp,
+					 off_t file_offset,
+					 struct resource_entry *out_res_entry)
+{
+	int ret;
+	if (fseeko(out_fp, file_offset, SEEK_SET) != 0) {
+		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" of "
+				 "output WIM file", file_offset);
+		return WIMLIB_ERR_WRITE;
+	}
+	ret = write_wim_resource(lte, out_fp, WIMLIB_COMPRESSION_TYPE_NONE,
+				 out_res_entry, 0);
+	if (ret != 0)
+		return ret;
+
+	return fflush_and_ftruncate(out_fp,
+				    file_offset + wim_resource_size(lte));
+}
+
 /*
  * Writes a WIM resource to a FILE * opened for writing.  The resource may be
  * written uncompressed or compressed depending on the @out_ctype parameter.
@@ -498,18 +519,10 @@ int write_wim_resource(struct lookup_table_entry *lte,
 	{
 		/* Oops!  We compressed the resource to larger than the original
 		 * size.  Write the resource uncompressed instead. */
-		if (fseeko(out_fp, file_offset, SEEK_SET) != 0) {
-			ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" "
-					 "of output WIM file", file_offset);
-			ret = WIMLIB_ERR_WRITE;
-			goto out_fclose;
-		}
-		ret = write_wim_resource(lte, out_fp, WIMLIB_COMPRESSION_TYPE_NONE,
-					 out_res_entry, flags);
-		if (ret != 0)
-			goto out_fclose;
-
-		ret = fflush_and_ftruncate(out_fp, file_offset + out_res_entry->size);
+		ret = write_uncompressed_resource_and_truncate(lte,
+							       out_fp,
+							       file_offset,
+							       out_res_entry);
 		if (ret != 0)
 			goto out_fclose;
 	} else {
@@ -781,39 +794,25 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 	//
 	LIST_HEAD(outstanding_resources);
 	struct list_head *next_resource = stream_list->next;
-	struct lookup_table_entry *next_lte = container_of(next_resource,
-							   struct lookup_table_entry,
-							   staging_list);
-	next_resource = next_resource->next;
+	struct lookup_table_entry *next_lte = NULL;
 	u64 next_chunk = 0;
-	u64 next_num_chunks = wim_resource_chunks(next_lte);
-	INIT_LIST_HEAD(&next_lte->msg_list);
-	list_add_tail(&next_lte->staging_list, &outstanding_resources);
+	u64 next_num_chunks = 0;
 
 	// As in write_wim_resource(), each resource we read is checksummed.
 	SHA_CTX next_sha_ctx;
-	sha1_init(&next_sha_ctx);
 	u8 next_hash[SHA1_HASH_SIZE];
 
 	// Resources that don't need any chunks compressed are added to this
 	// list and written directly by the main thread.
 	LIST_HEAD(my_resources);
 
-	struct lookup_table_entry *cur_lte = next_lte;
+	struct lookup_table_entry *cur_lte = NULL;
 	struct chunk_table *cur_chunk_tab = NULL;
 	struct message *msg;
 
 #ifdef WITH_NTFS_3G
 	ntfs_inode *ni = NULL;
 #endif
-
-#ifdef WITH_NTFS_3G
-	ret = prepare_resource_for_read(next_lte, &ni);
-#else
-	ret = prepare_resource_for_read(next_lte);
-#endif
-	if (ret != 0)
-		goto out;
 
 	DEBUG("Initializing buffers for uncompressed "
 	      "and compressed data (%zu bytes needed)",
@@ -849,7 +848,88 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 		// are no more messages available since they were all sent off,
 		// or (b) there are no more resources that need to be
 		// compressed.
-		while (!list_empty(&available_msgs) && next_lte != NULL) {
+		while (!list_empty(&available_msgs)) {
+			if (next_chunk == next_num_chunks) {
+				// If next_chunk == next_num_chunks, there are
+				// no more chunks to write in the current
+				// stream.  So, check the SHA1 message digest of
+				// the stream that was just finished (unless
+				// next_lte == NULL, which is the case the very
+				// first time this loop is entered, and also
+				// near the very end of the compression when
+				// there are no more streams.)  Then, advance to
+				// the next stream (if there is one).
+				if (next_lte != NULL) {
+				#ifdef WITH_NTFS_3G
+					end_wim_resource_read(next_lte, ni);
+					ni = NULL;
+				#else
+					end_wim_resource_read(next_lte);
+				#endif
+					DEBUG2("Finalize SHA1 md (next_num_chunks=%zu)",
+					       next_num_chunks);
+					sha1_final(next_hash, &next_sha_ctx);
+					if (!hashes_equal(next_lte->hash, next_hash)) {
+						ERROR("WIM resource has incorrect hash!");
+						if (next_lte->resource_location ==
+						    RESOURCE_IN_FILE_ON_DISK)
+						{
+							ERROR("We were reading it from `%s'; "
+							      "maybe it changed while we were "
+							      "reading it.",
+							      next_lte->file_on_disk);
+						}
+						ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
+						goto out;
+					}
+				}
+
+				// Advance to the next resource.
+				//
+				// If the next resource needs no compression, just write
+				// it with this thread (not now though--- we could be in
+				// the middle of writing another resource.)  Keep doing
+				// this until we either get to the end of the resources
+				// list, or we get to a resource that needs compression.
+				while (1) {
+					if (next_resource == stream_list) {
+						next_lte = NULL;
+						break;
+					}
+					next_lte = container_of(next_resource,
+								struct lookup_table_entry,
+								staging_list);
+					next_resource = next_resource->next;
+					if ((!(write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
+					       && wim_resource_compression_type(next_lte) == out_ctype)
+					    || wim_resource_size(next_lte) == 0)
+					{
+						list_add_tail(&next_lte->staging_list,
+							      &my_resources);
+					} else {
+						list_add_tail(&next_lte->staging_list,
+							      &outstanding_resources);
+						next_chunk = 0;
+						next_num_chunks = wim_resource_chunks(next_lte);
+						sha1_init(&next_sha_ctx);
+						INIT_LIST_HEAD(&next_lte->msg_list);
+					#ifdef WITH_NTFS_3G
+						ret = prepare_resource_for_read(next_lte, &ni);
+					#else
+						ret = prepare_resource_for_read(next_lte);
+					#endif
+
+						if (ret != 0)
+							goto out;
+						if (cur_lte == NULL)
+							cur_lte = next_lte;
+						break;
+					}
+				}
+			}
+
+			if (next_lte == NULL)
+				break;
 
 			// Get a message from the available messages
 			// list
@@ -904,81 +984,11 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 			list_add_tail(&msg->list, &next_lte->msg_list);
 			shared_queue_put(res_to_compress_queue, msg);
 			DEBUG2("Compression request sent");
-
-			if (next_chunk != next_num_chunks)
-				// More chunks to send for this resource
-				continue;
-
-			// Done sending compression requests for a resource!
-			// Check the SHA1 message digest.
-			DEBUG2("Finalize SHA1 md (next_num_chunks=%zu)", next_num_chunks);
-			sha1_final(next_hash, &next_sha_ctx);
-			if (!hashes_equal(next_lte->hash, next_hash)) {
-				ERROR("WIM resource has incorrect hash!");
-				if (next_lte->resource_location == RESOURCE_IN_FILE_ON_DISK) {
-					ERROR("We were reading it from `%s'; maybe it changed "
-					      "while we were reading it.",
-					      next_lte->file_on_disk);
-				}
-				ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
-				goto out;
-			}
-
-			// Advance to the next resource.
-			//
-			// If the next resource needs no compression, just write
-			// it with this thread (not now though--- we could be in
-			// the middle of writing another resource.)  Keep doing
-			// this until we either get to the end of the resources
-			// list, or we get to a resource that needs compression.
-
-			while (1) {
-				if (next_resource == stream_list) {
-					next_lte = NULL;
-					break;
-				}
-			#ifdef WITH_NTFS_3G
-				end_wim_resource_read(next_lte, ni);
-				ni = NULL;
-			#else
-				end_wim_resource_read(next_lte);
-			#endif
-
-				next_lte = container_of(next_resource,
-							struct lookup_table_entry,
-							staging_list);
-				next_resource = next_resource->next;
-				if ((!(write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
-				      && next_lte->resource_location == RESOURCE_IN_WIM
-				      && wimlib_get_compression_type(next_lte->wim) == out_ctype)
-				    || wim_resource_size(next_lte) == 0)
-				{
-					list_add_tail(&next_lte->staging_list,
-						      &my_resources);
-				} else {
-					list_add_tail(&next_lte->staging_list,
-						      &outstanding_resources);
-					next_chunk = 0;
-					next_num_chunks = wim_resource_chunks(next_lte);
-					sha1_init(&next_sha_ctx);
-					INIT_LIST_HEAD(&next_lte->msg_list);
-				#ifdef WITH_NTFS_3G
-					ret = prepare_resource_for_read(next_lte, &ni);
-				#else
-					ret = prepare_resource_for_read(next_lte);
-				#endif
-					if (ret != 0)
-						goto out;
-					DEBUG2("Updated next_lte");
-					break;
-				}
-			}
 		}
 
 		// If there are no outstanding resources, there are no more
 		// resources that need to be written.
 		if (list_empty(&outstanding_resources)) {
-			DEBUG("No outstanding resources! Done");
 			ret = 0;
 			goto out;
 		}
@@ -986,15 +996,8 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 		// Get the next message from the queue and process it.
 		// The message will contain 1 or more data chunks that have been
 		// compressed.
-		DEBUG2("Waiting for message");
 		msg = shared_queue_get(compressed_res_queue);
 		msg->complete = true;
-
-		DEBUG2("Received msg (begin_chunk=%"PRIu64")", msg->begin_chunk);
-
-		list_for_each_entry(msg, &cur_lte->msg_list, list) {
-			DEBUG2("complete=%d", msg->complete);
-		}
 
 		// Is this the next chunk in the current resource?  If it's not
 		// (i.e., an earlier chunk in a same or different resource
@@ -1002,7 +1005,7 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 		// message around until all earlier chunks are received.
 		//
 		// Otherwise, write all the chunks we can.
-		while (!list_empty(&cur_lte->msg_list)
+		while (cur_lte != NULL && !list_empty(&cur_lte->msg_list)
 		        && (msg = container_of(cur_lte->msg_list.next,
 					       struct message,
 					       list))->complete)
@@ -1050,6 +1053,32 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 				if (ret != 0)
 					goto out;
 
+				if (res_csize >= wim_resource_size(cur_lte)) {
+					/* Oops!  We compressed the resource to
+					 * larger than the original size.  Write
+					 * the resource uncompressed instead. */
+					ret = write_uncompressed_resource_and_truncate(
+							 cur_lte,
+							 out_fp,
+							 cur_chunk_tab->file_offset,
+							 &cur_lte->output_resource_entry);
+					if (ret != 0)
+						goto out;
+				} else {
+					cur_lte->output_resource_entry.size =
+						res_csize;
+
+					cur_lte->output_resource_entry.original_size =
+						cur_lte->resource_entry.original_size;
+
+					cur_lte->output_resource_entry.offset =
+						cur_chunk_tab->file_offset;
+
+					cur_lte->output_resource_entry.flags =
+						cur_lte->resource_entry.flags |
+							WIM_RESHDR_FLAG_COMPRESSED;
+				}
+
 				progress->write_streams.completed_bytes +=
 						wim_resource_size(cur_lte);
 				progress->write_streams.completed_streams++;
@@ -1059,19 +1088,6 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 						      progress);
 				}
 
-				cur_lte->output_resource_entry.size =
-					res_csize;
-
-				cur_lte->output_resource_entry.original_size =
-					cur_lte->resource_entry.original_size;
-
-				cur_lte->output_resource_entry.offset =
-					cur_chunk_tab->file_offset;
-
-				cur_lte->output_resource_entry.flags =
-					cur_lte->resource_entry.flags |
-						WIM_RESHDR_FLAG_COMPRESSED;
-
 				FREE(cur_chunk_tab);
 				cur_chunk_tab = NULL;
 
@@ -1079,9 +1095,15 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 				list_del(&cur_lte->staging_list);
 
 				if (next == &outstanding_resources) {
-					DEBUG("No more outstanding resources");
-					ret = 0;
-					goto out;
+					if (next_lte == NULL) {
+						DEBUG("No more outstanding resources");
+						ret = 0;
+						goto out;
+					} else {
+						DEBUG("No more outstanding resources---"
+						      "but still more to compress!");
+						cur_lte = NULL;
+					}
 				} else {
 					cur_lte = container_of(cur_lte->staging_list.next,
 							       struct lookup_table_entry,
@@ -1108,11 +1130,14 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 	}
 
 out:
+	if (next_lte) {
 #ifdef WITH_NTFS_3G
-	end_wim_resource_read(cur_lte, ni);
+		end_wim_resource_read(next_lte, ni);
 #else
-	end_wim_resource_read(cur_lte);
+		end_wim_resource_read(next_lte);
 #endif
+	}
+
 	if (ret == 0) {
 		ret = do_write_stream_list(&my_resources, out_fp,
 					   out_ctype, progress_func,
