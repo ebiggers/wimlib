@@ -200,12 +200,23 @@ type, and \fBimagex\fR always enforces this.
 stream chunk size of 32768.  The only WIMs I've seen that are different from
 this are some pre-Vista WIMs that had a different version number.
 
-Unless --rebuild is specified, aborting an \fBimagex append\fR command mid-way
-through has a small chance of corrupting the WIM file.  However, a precaution is
-taken against this, so it should be very unlikely.  In the event of an aborted
-\fBimagex append\fR, \fBimagex optimize\fR may be run to remove extra data that
-may have been partially appended to the physical WIM file but not yet
-incorporated into the structure of the WIM.
+Unless \fB--rebuild\fR is specified, aborting an \fBimagex append\fR command
+mid-way through has a small chance of corrupting the WIM file.  However, a
+precaution is taken against this, so it should be very unlikely.  In the event
+of an aborted \fBimagex append\fR, \fBimagex optimize\fR may be run to remove
+extra data that may have been partially appended to the physical WIM file but
+not yet incorporated into the structure of the WIM.
+
+Capturing or appending an image happens in two main phases: (1) scanning the
+directory or NTFS volume to checksum all the files and determine the streams to
+be written, and (2) writing the new streams to the WIM file.  Streams are not
+stored in memory after (1), since there could easily be gigabytes of data;
+instead, they are read again during step (2); however, duplicate streams in the
+image, and streams already existing in any other image in the WIM, are not read
+again.  In the future, it may be possible to introduce the ability to capture an
+image with reading each file only one time, although this mode would have some
+limitations--- for example, a stream might be compressed only to be thrown away
+as a duplicate once it's been checksummed.
 
 .SH EXAMPLES
 Create a new WIM 'mywim.wim' from the directory 'somedir', using LZX compression and
