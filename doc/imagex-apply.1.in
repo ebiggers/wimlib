@@ -112,12 +112,11 @@ same directory are made to be names in the POSIX namespace.
 
 .PP
 
-Since all information from the WIM image is should be restored in the NTFS
-extraction mode, it is possible to restore an image of an actual Windows
-installation. In the examples at the end of this manual page, there is an
-example of applying an image from the "install.wim" file contained in the
-installation media for Windows Vista, Windows 7, and Windows 8 in the "sources"
-directory.
+Since all information from the WIM image is restored in the NTFS extraction
+mode, it is possible to restore an image of an actual Windows installation. In
+the examples at the end of this manual page, there is an example of applying an
+image from the "install.wim" file contained in the installation media for
+Windows Vista, Windows 7, and Windows 8 in the "sources" directory.
 
 But in order to actually boot Windows from an applied image, you must understand
 the boot process of Windows versions Vista and later.  Basically, it is the
