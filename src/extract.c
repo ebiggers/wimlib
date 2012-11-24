@@ -415,7 +415,6 @@ static void calculate_bytes_to_extract(struct list_head *stream_list,
 				       union wimlib_progress_info *progress)
 {
 	struct lookup_table_entry *lte;
-	struct inode *inode;
 	u64 total_bytes = 0;
 	u64 num_streams = 0;
 
