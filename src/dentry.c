@@ -1498,11 +1498,11 @@ out_free_ads_entries:
  * @offset:	Offset of this directory entry in the metadata resource.
  * @dentry:	A `struct dentry' that will be filled in by this function.
  *
- * Return 0 on success or nonzero on failure.  On failure, @dentry have been
- * modified, bu it will be left with no pointers to any allocated buffers.
- * On success, the dentry->length field must be examined.  If zero, this was a
- * special "end of directory" dentry and not a real dentry.  If nonzero, this
- * was a real dentry.
+ * Return 0 on success or nonzero on failure.  On failure, @dentry will have
+ * been modified, but it will not be left with pointers to any allocated
+ * buffers.  On success, the dentry->length field must be examined.  If zero,
+ * this was a special "end of directory" dentry and not a real dentry.  If
+ * nonzero, this was a real dentry.
  */
 int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		u64 offset, struct dentry *dentry)
