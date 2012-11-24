@@ -66,7 +66,7 @@ int init_inode_table(struct inode_table *table, size_t capacity)
 }
 
 
-static size_t inode_link_count(const struct inode *inode)
+static inline size_t inode_link_count(const struct inode *inode)
 {
 	const struct list_head *cur;
 	size_t size = 0;
