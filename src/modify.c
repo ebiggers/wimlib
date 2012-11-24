@@ -998,7 +998,7 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 		extra_arg = NULL;
 	}
 
-	DEBUG("Adding dentry tree from directory or NTFS volume `%s'.", dir);
+	DEBUG("Adding dentry tree from directory or NTFS volume `%s'.", source);
 
 	if (!name || !*name) {
 		ERROR("Must specify a non-empty string for the image name");
