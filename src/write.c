@@ -1255,6 +1255,7 @@ static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 	struct lookup_table_entry *lte;
 	size_t num_streams = 0;
 	u64 total_bytes = 0;
+	u64 total_compression_bytes = 0;
 	bool compression_needed = false;
 	union wimlib_progress_info progress;
 	int ret;
@@ -1262,14 +1263,12 @@ static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 	list_for_each_entry(lte, stream_list, staging_list) {
 		num_streams++;
 		total_bytes += wim_resource_size(lte);
-		if (!compression_needed
-		    &&
-		    (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE
-		       && (lte->resource_location != RESOURCE_IN_WIM
-		           || wimlib_get_compression_type(lte->wim) != out_ctype
-			   || (write_flags & WIMLIB_WRITE_FLAG_REBUILD)))
-		    && wim_resource_size(lte) != 0)
-			compression_needed = true;
+		if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE
+		       && (wim_resource_compression_type(lte) != out_ctype ||
+			   (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)))
+		{
+			total_compression_bytes += wim_resource_size(lte);
+		}
 	}
 	progress.write_streams.total_bytes       = total_bytes;
 	progress.write_streams.total_streams     = num_streams;
@@ -1284,7 +1283,7 @@ static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 	}
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
-	if (compression_needed && total_bytes >= 1000000 && num_threads != 1) {
+	if (total_compression_bytes >= 1000000 && num_threads != 1) {
 		ret = write_stream_list_parallel(stream_list,
 						 out_fp,
 						 out_ctype,
