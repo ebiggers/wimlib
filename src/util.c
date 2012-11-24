@@ -102,6 +102,8 @@ WIMLIBAPI int wimlib_set_print_errors(bool show_error_messages)
 #else
 	if (show_error_messages)
 		return WIMLIB_ERR_UNSUPPORTED;
+	else
+		return 0;
 #endif
 }
 
