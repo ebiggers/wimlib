@@ -1281,7 +1281,6 @@ static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 	size_t num_streams = 0;
 	u64 total_bytes = 0;
 	u64 total_compression_bytes = 0;
-	bool compression_needed = false;
 	union wimlib_progress_info progress;
 	int ret;
 
