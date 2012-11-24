@@ -407,8 +407,7 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 		       info->extract.target);
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:
-		printf("Done applying WIM image.\n",
-		       info->extract.image);
+		printf("Done applying WIM image.\n");
 		if (info->extract.extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 			printf("Unmounting NTFS volume `%s'...\n",
 			       info->extract.target);
