@@ -398,15 +398,22 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 			putchar('\n');
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN:
-		printf("Applying image %d (%s) to `%s'\n",
+		printf("Applying image %d (%s) from `%s' to %s `%s'\n",
 		       info->extract.image,
 		       info->extract.image_name,
+		       info->extract.wimfile_name,
+		       ((info->extract.extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) ?
+				"NTFS volume" : "directory"),
 		       info->extract.target);
 		break;
-	/*case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:*/
-		/*printf("Done applying image %d!\n",*/
-		       /*info->extract.image);*/
-		/*break;*/
+	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:
+		printf("Done applying WIM image.\n",
+		       info->extract.image);
+		if (info->extract.extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
+			printf("Unmounting NTFS volume `%s'...\n",
+			       info->extract.target);
+		}
+		break;
 	/*case WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN:*/
 		/*printf("Applying directory structure to %s\n",*/
 		       /*info->extract.target);*/
@@ -617,11 +624,8 @@ static int imagex_apply(int argc, const char **argv)
 
 	ret = stat(target, &stbuf);
 	if (ret == 0) {
-		if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
+		if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode))
 			extract_flags |= WIMLIB_EXTRACT_FLAG_NTFS;
-			printf("Applying `%s' image %d to NTFS volume `%s'\n",
-			       wimfile, image, target);
-		}
 	} else {
 		if (errno != ENOENT) {
 			imagex_error_with_errno("Failed to stat `%s'", target);

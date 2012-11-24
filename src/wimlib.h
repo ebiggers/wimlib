@@ -414,6 +414,12 @@ union wimlib_progress_info {
 		/** Number of the image being extracted (1-based). */
 		int image;
 
+		/** Flags passed to to wimlib_extract_image() */
+		int extract_flags;
+
+		/** Full path to the WIM file being extracted. */
+		const char *wimfile_name;
+
 		/** Name of the image being extracted. */
 		const char *image_name;
 

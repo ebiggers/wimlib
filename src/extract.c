@@ -583,9 +583,12 @@ static int extract_single_image(WIMStruct *w, int image,
 	args.progress_func	  = progress_func;
 
 	if (progress_func) {
-		args.progress.extract.image      = image;
+		args.progress.extract.wimfile_name = w->filename;
+		args.progress.extract.image = image;
+		args.progress.extract.extract_flags = (extract_flags &
+						       WIMLIB_EXTRACT_MASK_PUBLIC);
 		args.progress.extract.image_name = wimlib_get_image_name(w, image);
-		args.progress.extract.target     = target;
+		args.progress.extract.target = target;
 	}
 
 #ifdef WITH_NTFS_3G
