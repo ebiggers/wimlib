@@ -209,7 +209,7 @@ static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 }
 
 /*
- * Finishes a WIM chunk tale and writes it to the output file at the correct
+ * Finishes a WIM chunk table and writes it to the output file at the correct
  * offset.
  *
  * The final size of the full compressed resource is returned in the
