@@ -17,7 +17,7 @@
  * 	  ../src/*.c -I/usr/include/libxml2 -I.. -D_FILE_OFFSET_BITS=64 \
  * 	  -D_GNU_SOURCE -std=gnu99 -lxml2 -lcrypto -lpthread -lntfs-3g
  * 	$ stat -c %s wimapply
- *	48592
+ *	48880
  *
  * Compare this to:
  * 	$ stat -c %s /usr/lib/libwim.so.1.0.0
@@ -75,8 +75,7 @@ int main(int argc, char **argv)
 		return ret;
 	}
 
-	ret = wimlib_extract_image(w, image, target,
-				   WIMLIB_EXTRACT_FLAG_SEQUENTIAL,
+	ret = wimlib_extract_image(w, image, target, extract_flags,
 				   NULL, 0, NULL);
 	if (ret != 0) {
 		fputs("Failed to apply WIM image\n", stderr);
