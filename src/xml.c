@@ -621,13 +621,6 @@ static int xml_write_windows_info(xmlTextWriter *writer,
 			return rc;
 	}
 
-	if (windows_info->system_root) {
-		rc = xmlTextWriterWriteElement(writer, "SYSTEMROOT",
-						windows_info->system_root);
-			if (rc < 0)
-				return rc;
-	}
-
 	if (windows_info->product_type) {
 		rc = xmlTextWriterWriteElement(writer, "PRODUCTTYPE",
 						windows_info->product_type);
@@ -669,6 +662,13 @@ static int xml_write_windows_info(xmlTextWriter *writer,
 			return rc;
 	}
 
+	if (windows_info->system_root) {
+		rc = xmlTextWriterWriteElement(writer, "SYSTEMROOT",
+						windows_info->system_root);
+			if (rc < 0)
+				return rc;
+	}
+
 	return xmlTextWriterEndElement(writer); /* </WINDOWS> */
 }
 
@@ -682,12 +682,12 @@ static int xml_write_time(xmlTextWriter *writer, const char *element_name,
 		return rc;
 
 	rc = xmlTextWriterWriteFormatElement(writer, "HIGHPART",
-					"0x%"PRIX32, (u32)(time >> 32));
+					     "0x%08"PRIX32, (u32)(time >> 32));
 	if (rc < 0)
 		return rc;
 
 	rc = xmlTextWriterWriteFormatElement(writer, "LOWPART",
-						"0x%"PRIX32, (u32)time);
+					     "0x%08"PRIX32, (u32)time);
 	if (rc < 0)
 		return rc;
 
