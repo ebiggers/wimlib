@@ -549,8 +549,9 @@ static int apply_stream_list(struct list_head *stream_list,
 				ret = ops->apply_dentry(dentry, args);
 				if (ret != 0)
 					goto out;
-				if (args->progress.extract.completed_bytes >= next_progress
-				    && args->progress.extract.total_bytes != 0)
+				if (progress_func &&
+				    args->progress.extract.completed_bytes >= next_progress &&
+				    args->progress.extract.total_bytes != 0)
 				{
 					progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
 						      &args->progress);
