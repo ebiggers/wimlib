@@ -1351,27 +1351,21 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
 /**
  * Mounts an image in a WIM file on a directory read-only or read-write.
  *
- * A daemon will be forked to service the filesystem, unless
- * ::WIMLIB_MOUNT_FLAG_DEBUG is specified in @a mount_flags.  In other words,
- * this function returns @b before the image is unmounted, and filesystem
- * requests are handled by a new thread.  This also means that no functions may
- * be safely called on @a wim after wimlib_mount_image() has been called on any
- * images from it.  (@a wim will be freed by the filesystem thread after the
- * filesystem is unmounted.)
+ * The calling thread will be daemonized service the filesystem, and this
+ * function will not return until the image is unmounted, unless an error occurs
+ * before the filesystem is successfully mounted.
  *
  * If the mount is read-write (::WIMLIB_MOUNT_FLAG_READWRITE specified),
- * modifications to the WIM are staged in a temporary directory created in the
- * process's working directory when this function is called.
+ * modifications to the WIM are staged in a temporary directory.
  *
  * It is safe to mount multiple images from the same WIM file read-only at the
- * same time (but different ::WIMStruct's should be used).  However, it is @b
- * not safe to mount multiple images from the same WIM file read-write at the
- * same time.
+ * same time, but only if different ::WIMStruct's are used.  It is @b not safe
+ * to mount multiple images from the same WIM file read-write at the same time.
  *
  * wimlib_mount_image() cannot be used on an image that was exported with
  * wimlib_export_image() while the dentry trees for both images are still in
  * memory.  In addition, wimlib_mount_image() may not be used to mount an image
- * that has just been added with wimlib_add_image(), or unless the WIM has been
+ * that has just been added with wimlib_add_image(), unless the WIM has been
  * written and read into a new ::WIMStruct.
  *
  * @param wim
