@@ -317,16 +317,16 @@ void make_canonical_huffman_code(uint num_syms, uint max_codeword_len,
 
 	/* Pointer to the leaf node of lowest frequency that hasn't already been
 	 * added as the child of some intermediate note. */
-	HuffmanLeafNode *cur_leaf = &leaves[0];
+	HuffmanLeafNode *cur_leaf;
 
 	/* Pointer past the end of the array of leaves. */
 	HuffmanLeafNode *end_leaf = &leaves[num_used_symbols];
 
 	/* Pointer to the intermediate node of lowest frequency. */
-	HuffmanNode     *cur_inode = &inodes[0];
+	HuffmanNode     *cur_inode;
 
 	/* Pointer to the next unallocated intermediate node. */
-	HuffmanNode     *next_inode = &inodes[0];
+	HuffmanNode     *next_inode;
 
 	/* Only jump back to here if the maximum length of the codewords allowed
 	 * by the LZX format (16 bits) is exceeded. */
