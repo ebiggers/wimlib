@@ -108,9 +108,9 @@ struct wim_header {
 	/* size of WIM header in bytes. */
 	//u32 hdr_size;
 
-	/* Version of the WIM file.  M$ provides no documentation about exactly
-	 * what this field affects about the file format, other than the fact
-	 * that more recent versions have a higher value. */
+	/* Version of the WIM file.  Microsoft provides no documentation about
+	 * exactly what this field affects about the file format, other than the
+	 * fact that more recent versions have a higher value. */
 	//u32 version;
 
 	/* Bitwise OR of one or more of the WIM_HDR_FLAG_* defined below. */
@@ -118,8 +118,8 @@ struct wim_header {
 
 	/* The size of the pieces that the uncompressed files were split up into
 	 * when they were compressed.  This should be the same as
-	 * WIM_CHUNK_SIZE.  M$ incorrectly documents this as "the size of the
-	 * compressed .wim file in bytes".*/
+	 * WIM_CHUNK_SIZE.  Microsoft incorrectly documents this as "the size of
+	 * the compressed .wim file in bytes".*/
 	//u32 chunk_size;
 
 	/* A unique identifier for the WIM file. */
@@ -159,34 +159,35 @@ struct wim_header {
 
 /* Flags for the `flags' field of the struct wim_header: */
 
-/* Reserved for future use by M$ */
+/* Reserved for future use */
 #define WIM_HDR_FLAG_RESERVED           0x00000001
 
 /* Files and metadata in the WIM are compressed. */
 #define WIM_HDR_FLAG_COMPRESSION        0x00000002
 
-/* WIM is read-only (we ignore this). */
+/* WIM is read-only (wimlib ignores this because it's pretty much pointless) */
 #define WIM_HDR_FLAG_READONLY           0x00000004
 
 /* Resource data specified by images in this WIM may be contained in a different
  * WIM.  Or in other words, this WIM is part of a split WIM.  */
 #define WIM_HDR_FLAG_SPANNED            0x00000008
 
-/* The WIM contains resources only; no filesystem metadata.  We ignore this
- * flag, as we look for file resources in all the WIMs anyway. */
+/* The WIM contains resources only; no filesystem metadata.  wimlib ignores this
+ * flag, as it looks for resources in all the WIMs anyway. */
 #define WIM_HDR_FLAG_RESOURCE_ONLY      0x00000010
 
-/* The WIM contains metadata only.  We ignore this flag.  Note that all the
+/* The WIM contains metadata only.  wimlib ignores this flag.  Note that all the
  * metadata resources for a split WIM should be in the first part. */
 #define WIM_HDR_FLAG_METADATA_ONLY      0x00000020
 
-/* Lock field to prevent multiple writers from writing the WIM concurrently.  We
- * ignore this flag. */
+/* Lock field to prevent multiple writers from writing the WIM concurrently.
+ * wimlib ignores this flag as it uses flock() to acquire a real lock on the
+ * file (if supported by the underlying filesystem). */
 #define WIM_HDR_FLAG_WRITE_IN_PROGRESS  0x00000040
 
 /* Reparse point fixup ???
  * This has something to do with absolute targets of reparse points / symbolic
- * links but I don't know what.  We ignore this flag.  */
+ * links but I don't know what.  wimlib ignores this flag.  */
 #define WIM_HDR_FLAG_RP_FIX             0x00000080
 
 /* Unused, reserved flag for another compression type */
@@ -207,15 +208,15 @@ struct _ntfs_volume;
 /* Structure for security data.  Each image in the WIM file has its own security
  * data. */
 struct wim_security_data {
-	/* The total length of the security data, in bytes.  A typical size is
-	 * 2048 bytes.  If there is no security data, though (as in the WIMs
-	 * that wimlib writes, currently), it will be 8 bytes. */
+	/* The total length of the security data, in bytes.  If there are no
+	 * security descriptors, this field may be either 8 (which is correct)
+	 * or 0 (which is interpreted as 0). */
 	u32 total_length;
 
 	/* The number of security descriptors in the array @descriptors, below.
 	 * It is really an unsigned int, but it must fit into an int because the
 	 * security ID's are signed.  (Not like you would ever have more than a
-	 * few hundred security descriptors anyway). */
+	 * few hundred security descriptors anyway.) */
 	int32_t num_entries;
 
 	/* Array of sizes of the descriptors in the array @descriptors. */
@@ -224,13 +225,12 @@ struct wim_security_data {
 	/* Array of descriptors. */
 	u8 **descriptors;
 
-	/* keep track of how many WIMs reference this security data (used when
+	/* Keep track of how many WIMs reference this security data (used when
 	 * exporting images between WIMs) */
 	u32 refcnt;
 };
 
 struct inode_table;
-
 
 /* Metadata resource for an image. */
 struct image_metadata {
@@ -244,12 +244,15 @@ struct image_metadata {
 	 * resource. */
 	struct lookup_table_entry *metadata_lte;
 
+	/* Linked list of inodes for this image. */
 	struct hlist_head inode_list;
 
-	/* True if the filesystem of the image has been modified.  If this is
-	 * the case, the memory for the filesystem is not freed when switching
-	 * to a different WIM image. */
+	/* True iff the dentry tree has been modified.  If this is the case, the
+	 * memory for the dentry tree is not freed when switching to a different
+	 * WIM image. */
 	u8 modified : 1;
+
+	/* True iff this image has been mounted read-write. */
 	u8 has_been_mounted_rw : 1;
 };
 
@@ -270,7 +273,7 @@ struct WIMStruct {
 	pthread_mutex_t fp_tab_mutex;
 #endif
 
-	/* FILE pointer for the WIM file that is being written. */
+	/* FILE pointer for the WIM file (if any) currently being written. */
 	FILE *out_fp;
 
 	/* The name of the WIM file that has been opened. */
@@ -282,12 +285,11 @@ struct WIMStruct {
 	/* Pointer to the XML data read from the WIM file. */
 	u8 *xml_data;
 
-	/* Information retrieved from the XML data, arranged
-	 * in an orderly manner. */
+	/* Information retrieved from the XML data, arranged in an orderly
+	 * manner. */
 	struct wim_info *wim_info;
 
-	/* Array of the image metadata of length image_count.  Each image in the
-	 * WIM has a image metadata associated with it. */
+	/* Array of the image metadata, one for each image in the WIM. */
 	struct image_metadata *image_metadata;
 
 	/* The header of the WIM file. */
