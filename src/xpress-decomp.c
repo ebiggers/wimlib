@@ -58,7 +58,7 @@
  * The trickiest part is probably the fact that literal bytes for match lengths
  * are encoded "separately" from the bitstream.
  *
- * Also, a caveat--- according to M$'s documentation for XPRESS,
+ * Also, a caveat--- according to Microsoft's documentation for XPRESS,
  *
  * 	"Some implementation of the decompression algorithm expect an extra
  * 	symbol to mark the end of the data.  Specifically, some implementations
@@ -83,18 +83,19 @@
 
 /* Decodes @huffsym, a value >= XPRESS_NUM_CHARS, that is the header of a match.
  * */
-static int xpress_decode_match(int huffsym, uint window_pos, uint window_len,
-				u8 window[], struct input_bitstream *istream)
+static int xpress_decode_match(int huffsym, unsigned window_pos,
+			       unsigned window_len, u8 window[],
+			       struct input_bitstream *istream)
 {
-	uint match_len;
-	uint match_offset;
+	unsigned match_len;
+	unsigned match_offset;
 	u8 match_sym = (u8)huffsym;
 	u8 len_hdr = match_sym & 0xf;
 	u8 offset_bsr = match_sym >> 4;
 	int ret;
 	u8 *match_dest;
 	u8 *match_src;
-	uint i;
+	unsigned i;
 
 	ret = bitstream_read_bits(istream, offset_bsr, &match_offset);
 	if (ret != 0)
@@ -137,7 +138,7 @@ static int xpress_decode_match(int huffsym, uint window_pos, uint window_len,
 	match_src = match_dest - match_offset;
 
 	if (window_pos + match_len > window_len) {
-		ERROR("XPRESS dedecompression error: match of length %d "
+		ERROR("XPRESS decompression error: match of length %d "
 		      "bytes overflows window", match_len);
 		return -1;
 	}
@@ -159,12 +160,12 @@ static int xpress_decode_match(int huffsym, uint window_pos, uint window_len,
  * XPRESS-encoded data. */
 static int xpress_decompress_literals(struct input_bitstream *istream,
 				      u8 uncompressed_data[],
-				      uint uncompressed_len,
+				      unsigned uncompressed_len,
 				      const u8 lens[],
 				      const u16 decode_table[])
 {
-	uint curpos = 0;
-	uint huffsym;
+	unsigned curpos = 0;
+	unsigned huffsym;
 	int match_len;
 	int ret = 0;
 
@@ -194,15 +195,15 @@ static int xpress_decompress_literals(struct input_bitstream *istream,
 }
 
 
-int xpress_decompress(const void *__compressed_data, uint compressed_len,
-		      void *uncompressed_data, uint uncompressed_len)
+int xpress_decompress(const void *__compressed_data, unsigned compressed_len,
+		      void *uncompressed_data, unsigned uncompressed_len)
 {
 	u8 lens[XPRESS_NUM_SYMBOLS];
 	u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS];
 	struct input_bitstream istream;
 	u8 *lens_p;
 	const u8 *compressed_data;
-	uint i;
+	unsigned i;
 	int ret;
 
 	compressed_data = __compressed_data;

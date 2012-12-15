@@ -189,5 +189,19 @@ static inline void print_byte_field(const u8 field[], size_t len)
 		printf("%02hhx", *field++);
 }
 
+static inline u32 bsr32(u32 n)
+{
+#if defined(__x86__) || defined(__x86_64__)
+	asm("bsrl %0, %0;"
+			: "=r"(n)
+			: "0" (n));
+	return n;
+#else
+	u32 pow = 0;
+	while ((n >>= 1) != 0)
+		pow++;
+	return pow;
+#endif
+}
 
 #endif /* _WIMLIB_UTIL_H */

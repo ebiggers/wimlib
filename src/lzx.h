@@ -10,8 +10,7 @@
 #	define LZX_DEBUG(format, ...)
 #endif
 
-
-/* Constants, some defined by the LZX specification: */
+/* Constants, most of which are defined by the LZX specification: */
 
 /* The smallest and largest allowed match lengths. */
 #define LZX_MIN_MATCH                2
@@ -20,16 +19,17 @@
 /* Number of values an uncompressed literal byte can represent. */
 #define LZX_NUM_CHARS                256
 
-/* Each LZX block begins with 3 bits that determines the block type: */
+/* Each LZX block begins with 3 bits that determines the block type.  Below are
+ * the valid block types.  Values 0, and 4 through 7, are invalid. */
 #define LZX_BLOCKTYPE_VERBATIM       1
 #define LZX_BLOCKTYPE_ALIGNED        2
 #define LZX_BLOCKTYPE_UNCOMPRESSED   3
-/* values 0, and 4 through 7, are invalid. */
-
 
 #define LZX_NUM_PRIMARY_LENS         7	/* this one missing from spec! */
 
-/* Only valid for 32768 block size! */
+/* NOTE: There are really 51 position slots in the LZX format as a whole, but
+ * only 30 are needed to allow for the window to be up to 32768 bytes long,
+ * which is the maximum in the WIM format. */
 #define LZX_NUM_POSITION_SLOTS       30
 
 /* Read the LZX specification for information about the Huffman trees used in
@@ -58,7 +58,6 @@
 #define LZX_PRETREE_TABLEBITS		6
 #define LZX_PRETREE_ELEMENT_SIZE	4
 
-
 #define LZX_ALIGNEDTREE_NUM_SYMBOLS	8
 #define LZX_ALIGNEDTREE_TABLEBITS	7
 #define LZX_ALIGNEDTREE_ELEMENT_SIZE 	3
@@ -73,8 +72,8 @@
  * different as well.  */
 #define LZX_MAGIC_FILESIZE           12000000
 
-extern const u8 lzx_extra_bits[51];
-extern const u32 lzx_position_base[51];
+extern const u8 lzx_extra_bits[LZX_NUM_POSITION_SLOTS];
+extern const u32 lzx_position_base[LZX_NUM_POSITION_SLOTS];
 
 /* Least-recently used queue for match offsets. */
 struct lru_queue {

@@ -1,10 +1,8 @@
 /*
  * lzx-comp.c
  *
- * LZX compression routines.
- *
- * This code was originally based on code written by Matthew T. Russotto
- * 	(liblzxcomp).
+ * LZX compression routines, originally based on code written by Matthew T.
+ * Russotto (liblzxcomp), but heavily modified.
  */
 
 /*
@@ -28,17 +26,21 @@
  */
 
 
-
 /*
  * This file provides lzx_compress(), a function to compress an in-memory buffer
  * of data using LZX compression, as used in the WIM file format.
  *
- * There is no sliding window, as for the compressed chunks in WIM resources,
- * the window is always the length of the input.
+ * Please see the comments in lzx-decomp.c for more information about this
+ * compression format.
  *
- * The basic algorithm should be familiar if you are familiar with Huffman trees
- * and with other LZ77-based formats such as DEFLATE.  Otherwise it can be quite
- * tricky to understand.  Basically it is the following:
+ * One thing to keep in mind is that there is no sliding window, since the
+ * window is always the entirety of a WIM chunk, which is at most WIM_CHUNK_SIZE
+ * ( = 32768) bytes.
+ *
+ * The basic compression algorithm used here should be familiar if you are
+ * familiar with Huffman trees and with other LZ77 and Huffman-based formats
+ * such as DEFLATE.  Otherwise it can be quite tricky to understand.  Basically
+ * it is the following:
  *
  * - Preprocess the input data (LZX-specific)
  * - Go through the input data and determine matches.  This part is based on
@@ -48,8 +50,12 @@
  *       while recording matches.
  * - Output the block header, including the Huffman trees; then output the
  *       compressed stream of matches and literal characters.
+ *
+ * It is possible for a WIM chunk to include multiple LZX blocks, since for some
+ * input data this will produce a better compression ratio (especially since
+ * each block can include new Huffman codes).  However, producing multiple LZX
+ * blocks from one input chunk is not yet implemented.
  */
-
 
 #include "lzx.h"
 #include "comp.h"
@@ -80,44 +86,41 @@ struct lzx_freq_tables {
 
 
 
-/* Returns the position slot that corresponds to a given formatted offset.  This
- * means searching the lzx_position_base array to find what slot contains a
- * position base that is less than or equal to formatted_offset, where the next
- * slot contains a position base that is greater than or equal to
- * formatted_offset. */
-static uint lzx_get_position_slot(uint formatted_offset)
+/* Returns the LZX position slot that corresponds to a given formatted offset.
+ *
+ * Logically, this returns the smallest i such that
+ * formatted_offset >= lzx_position_base[i].
+ *
+ * The actual implementation below takes advantage of the regularity of the
+ * numbers in the lzx_position_base array to calculate the slot directly from
+ * the formatted offset without actually looking at the array.
+ */
+static inline unsigned lzx_get_position_slot(unsigned formatted_offset)
 {
-	int left;
-	int right;
-	int mid;
-
-	/* Calculate position base using binary search of table; if log2 can be
-	 * done in hardware, approximation might work;
-	 * trunc(log2(formatted_offset*formatted_offset)) gets either the proper
-	 * position slot or the next one, except for slots 0, 1, and 39-49
-	 *
-	 * Slots 0-1 are handled by the R0-R1 procedures
-	 *
+#if 0
+	/*
 	 * Slots 36-49 (formatted_offset >= 262144) can be found by
 	 * (formatted_offset/131072) + 34 == (formatted_offset >> 17) + 34;
+	 * however, this check for formatted_offset >= 262144 is commented out
+	 * because WIM chunks cannot be that large.
 	 */
 	if (formatted_offset >= 262144) {
 		return (formatted_offset >> 17) + 34;
-	} else {
-		left = 3;
-		right = LZX_NUM_POSITION_SLOTS - 1;
-		while (1) {
-			mid = (left + right) >> 1;
-			if ((lzx_position_base[mid] <= formatted_offset) &&
-			    lzx_position_base[mid + 1] > formatted_offset) {
-				return mid;
-			}
-			if (formatted_offset > lzx_position_base[mid])
-				/* too low */
-				left = mid + 1;
-			else	/* too high */
-				right = mid;
-		}
+	} else
+#endif
+	{
+		/* Note: this part here only works if:
+		 *
+		 *    2 <= formatted_offset < 655360
+		 *
+		 * It is < 655360 because the frequency of the position bases
+		 * increases starting at the 655360 entry, and it is >= 2
+		 * because the below calculation fails if the most significant
+		 * bit is lower than the 2's place. */
+		wimlib_assert(formatted_offset >= 2 && formatted_offset < 655360);
+		unsigned mssb_idx = bsr32(formatted_offset);
+		return (mssb_idx << 1) |
+			((formatted_offset >> (mssb_idx - 1)) & 1);
 	}
 }
 
@@ -128,11 +131,21 @@ static u32 lzx_record_literal(u8 literal, void *__main_freq_tab)
 	return literal;
 }
 
-/* Constructs a match from an offset and a length, and updates the LRU queue
- * and the frequency of symbols in the main, length, and aligned offset
- * alphabets.  The return value is a 32-bit integer that, if the high bit is
- * set, contains the match length, the position slot, and the position footer
- * for the match.  */
+/* Equivalent to lzx_extra_bits[position_slot] except position_slot must be
+ * between 2 and 37 */
+static inline unsigned lzx_get_num_extra_bits(unsigned position_slot)
+{
+#if 0
+	return lzx_extra_bits[position_slot];
+#endif
+	wimlib_assert(position_slot >= 2 && position_slot <= 37);
+	return (position_slot >> 1) - 1;
+}
+
+/* Constructs a match from an offset and a length, and updates the LRU queue and
+ * the frequency of symbols in the main, length, and aligned offset alphabets.
+ * The return value is a 32-bit number that provides the match in an
+ * intermediate representation documented below. */
 static u32 lzx_record_match(uint match_offset, uint match_len,
 			    void *__freq_tabs, void *__queue)
 {
@@ -145,10 +158,12 @@ static u32 lzx_record_match(uint match_offset, uint match_len,
 	u32 len_header;
 	u32 len_pos_header;
 	uint len_footer;
+	uint adjusted_match_len;
 
 	wimlib_assert(match_len >= LZX_MIN_MATCH && match_len <= LZX_MAX_MATCH);
+	wimlib_assert(match_offset != 0);
 
-
+	/* If possible, encode this offset as a repeated offset. */
 	if (match_offset == queue->R0) {
 		formatted_offset = 0;
 		position_slot    = 0;
@@ -163,38 +178,63 @@ static u32 lzx_record_match(uint match_offset, uint match_len,
 	} else {
 		/* Not a repeated offset. */
 
+		/* offsets of 0, 1, and 2 are reserved for the repeated offset
+		 * codes, so non-repeated offsets must be encoded as 3+.  The
+		 * minimum offset is 1, so encode the offsets offset by 2. */
 		formatted_offset = match_offset + LZX_MIN_MATCH;
 
 		queue->R2 = queue->R1;
 		queue->R1 = queue->R0;
 		queue->R0 = match_offset;
 
-		position_slot = lzx_get_position_slot(formatted_offset);
+		/* The (now-formatted) offset will actually be encoded as a
+		 * small position slot number that maps to a certain hard-coded
+		 * offset (position base), followed by a number of extra bits---
+		 * the position footer--- that are added to the position base to
+		 * get the original formatted offset. */
 
-		/* Just the extra bits of the formatted offset. */
-		position_footer = ((1UL << lzx_extra_bits[position_slot]) - 1) &
-								formatted_offset;
+		position_slot = lzx_get_position_slot(formatted_offset);
+		position_footer = formatted_offset &
+				  ((1 << lzx_get_num_extra_bits(position_slot)) - 1);
 	}
 
-	/* (match length - 2) = 8 bits */
-	/* position_slot = 6 bits */
-	/* position_footer = 17 bits */
-	/* total = 31 bits */
-	/* plus one to say whether it's a literal or not */
+	adjusted_match_len = match_len - LZX_MIN_MATCH;
 
-	match = 0x80000000 | /* bit 31 in intelligent bit ordering */
-		(position_slot << 25) | /* bits 30-25 */
-		(position_footer << 8) | /* bits 8-24 */
-		(match_len - LZX_MIN_MATCH); /* bits 0-7 */
+	/* Pack the position slot, position footer, and match length into an
+	 * intermediate representation.
+	 *
+	 * bits    description
+	 * ----    -----------------------------------------------------------
+	 *
+	 * 31      1 if a match, 0 if a literal.
+	 *
+	 * 30-25   position slot.  This can be at most 50, so it will fit in 6
+	 *         bits.
+	 *
+	 * 8-24    position footer.  This is the offset of the real formatted
+	 *         offset from the position base.  This can be at most 17 bits
+	 *         (since lzx_extra_bits[LZX_NUM_POSITION_SLOTS - 1] is 17).
+	 *
+	 * 0-7     length of match, offset by 2.  This can be at most
+	 *         (LZX_MAX_MATCH - 2) == 255, so it will fit in 8 bits.  */
+	match = 0x80000000 |
+		(position_slot << 25) |
+		(position_footer << 8) |
+		(adjusted_match_len);
 
-	/* Update the frequency for the main tree, the length tree (only if a
-	 * length symbol is to be output), and the aligned tree (only if an
-	 * aligned symbol is to be output.) */
-	if (match_len < (LZX_NUM_PRIMARY_LENS + LZX_MIN_MATCH)) {
-		len_header = match_len - LZX_MIN_MATCH;
+	/* The match length must be at least 2, so let the adjusted match length
+	 * be the match length minus 2.
+	 *
+	 * If it is less than 7, the adjusted match length is encoded as a 3-bit
+	 * number offset by 2.  Otherwise, the 3-bit length header is all 1's
+	 * and the actual adjusted length is given as a symbol encoded with the
+	 * length tree, offset by 7.
+	 */
+	if (adjusted_match_len < LZX_NUM_PRIMARY_LENS) {
+		len_header = adjusted_match_len;
 	} else {
 		len_header = LZX_NUM_PRIMARY_LENS;
-		len_footer = match_len - (LZX_NUM_PRIMARY_LENS + LZX_MIN_MATCH);
+		len_footer = adjusted_match_len - LZX_NUM_PRIMARY_LENS;
 		freq_tabs->len_freq_table[len_footer]++;
 	}
 	len_pos_header = (position_slot << 3) | len_header;
@@ -203,7 +243,9 @@ static u32 lzx_record_match(uint match_offset, uint match_len,
 
 	freq_tabs->main_freq_table[len_pos_header + LZX_NUM_CHARS]++;
 
-	if (lzx_extra_bits[position_slot] >= 3)
+	/* Equivalent to:
+	 * if (lzx_extra_bits[position_slot] >= 3) */
+	if (position_slot >= 8)
 		freq_tabs->aligned_freq_table[position_footer & 7]++;
 
 	return match;

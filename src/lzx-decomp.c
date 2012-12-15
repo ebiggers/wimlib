@@ -1,9 +1,9 @@
 /*
  * lzx-decomp.c
  *
- * Routines for LZX decompression.  The LZX format has many similarities to the
- * DEFLATE format used in zlib and gzip, but it's not quite the same.
- *
+ * LZX decompression routines, originally based on code taken from cabextract
+ * v0.5, which was, itself, a modified version of the lzx decompression code
+ * from unlzx.
  */
 
 /*
@@ -26,38 +26,39 @@
  */
 
 /*
- * This file has been modified from code taken from cabextract v0.5, which was,
- * itself, a modified version of the lzx decompression code from unlzx.  The
- * code has been customized for wimlib.
+ * LZX is a LZ77 and Huffman-code based compression format that has many
+ * similarities to the DEFLATE format used in zlib.  The compression ratio is as
+ * good or better than DEFLATE.  However, in WIM files only up to 32768 bytes of
+ * data can ever compressed be in the same LZX block, so a .tar.gz file could
+ * potentially be smaller than a WIM file that uses LZX compression because it
+ * can use a larger LZ77 window size.
  *
  * Some notes on the LZX compression format as used in Windows Imaging (WIM)
  * files:
  *
- * A compressed WIM file resource consists of a table of chunk offsets followed
- * by compressed chunks.  All compressed chunks except the last decompress to
- * WIM_CHUNK_SIZE (= 32768) bytes.  This is quite similar to the cabinet (.cab)
- * file format, but they are not the same (at least based on M$'s
- * documentation).  According to the documentation, in the cabinet format, the
- * LZX block size is independent from the CFDATA blocks and may span several
- * CFDATA blocks.  However, for WIM file resources, I have seen no case of a LZX
- * block spanning multiple WIM chunks.  This is probably done to make it easier
- * to randomly access the compressed file resources.  WIMLIB in fact makes use
- * of this feature to allow semi-random access to file resources in the
- * read_resource() function.
+ * A compressed WIM resource consists of a table of chunk offsets followed by
+ * the compressed chunks themselves.  All compressed chunks except possibly the
+ * last decompress to WIM_CHUNK_SIZE (= 32768) bytes.  This is quite similar to
+ * the cabinet (.cab) file format, but they are not the same.  According to the
+ * cabinet format documentation, the LZX block size is independent from the
+ * CFDATA blocks, and a LZX block may span several CFDATA blocks.  However, in
+ * WIMs, LZX blocks do not appear to ever span multiple WIM chunks.  Note that
+ * this means any WIM chunk may be decompressed or compressed independently from
+ * any other chunk, which is convenient.
  *
- * Usually a WIM chunk will contain only one LZX block, but on rare occasions it
- * may contain multiple LZX block. The LZX block are usually the aligned block
- * type or verbatim block type, but can (very rarely) be the uncompressed block
- * type.  The size of a LZX block is specified by 1 or 17 bits following the 3
- * bits that specify the block type.  A '1' means to use the default block size
- * (equal to 32768), while a '0' means that the block size is given by the next
- * 16 bits.
+ * A LZX compressed WIM chunk contains one or more LZX blocks of the aligned,
+ * verbatim, or uncompressed block types.  For aligned and verbatim blocks, the
+ * size of the block in uncompressed bytes is specified by a bit following the 3
+ * bits that specify the block type, possibly followed by an additional 16 bits.
+ * '1' means to use the default block size (equal to 32768, the size of a WIM
+ * chunk--- and this seems to only be valid for the first LZX block in a WIM
+ * chunk), while '0' means that the block size is provided by the next 16 bits.
  *
- * The cabinet format, as documented, allows for the possibility that a CFDATA
- * chunk is up to 6144 bytes larger than the uncompressed data.  In the WIM
- * format, however, it appears that every chunk that would be 32768 bytes or
- * more when compressed, is actually stored uncompressed.  This is not
- * documented by M$.
+ * The cabinet format, as documented, allows for the possibility that a
+ * compressed CFDATA chunk is up to 6144 bytes larger than the data it
+ * uncompresses to.  However, in the WIM format it appears that every chunk that
+ * would be 32768 bytes or more when compressed is actually stored fully
+ * uncompressed.
  *
  * The 'e8' preprocessing step that changes x86 call instructions to use
  * absolute offsets instead of relative offsets relies on a filesize parameter.
@@ -65,11 +66,10 @@
  * the file resource could be used for this purpose), and instead a magic file
  * size of 12000000 is used.  The 'e8' preprocessing is always done, and there
  * is no bit to indicate whether it is done or not.
- *
  */
 
 /*
- * Some more notes about errors in Microsoft's documentation:
+ * Some more notes about errors in Microsoft's LZX documentation:
  *
  * Microsoft's LZX document and their implementation of the com.ms.util.cab Java
  * package do not concur.
@@ -108,9 +108,7 @@
 
 #include "util.h"
 #include "lzx.h"
-
 #include "decomp.h"
-
 #include <string.h>
 
 /* Huffman decoding tables and maps from symbols to code lengths. */

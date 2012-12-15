@@ -30,22 +30,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline u32 bsr32(u32 n)
-{
-#if defined(__x86__) || defined(__x86_64__)
-	asm("bsrl %0, %0;"
-			: "=r"(n)
-			: "0" (n));
-	return n;
-#else
-	u32 pow = 0;
-	while ((n >>= 1) != 0)
-		pow++;
-	return pow;
-#endif
-}
-
-
 /*
  * Writes @match, which is a match given in the intermediate representation for
  * XPRESS matches, to the output stream @ostream.
