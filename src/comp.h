@@ -33,7 +33,6 @@ struct output_bitstream {
 	int num_bytes_remaining;
 };
 
-
 static inline int bitstream_put_byte(struct output_bitstream *ostream,
 				     u8 n)
 {
@@ -55,7 +54,6 @@ static inline int bitstream_put_two_bytes(struct output_bitstream *ostream,
 	ostream->num_bytes_remaining -= 2;
 	return 0;
 }
-
 
 struct lz_params {
 	uint min_match;

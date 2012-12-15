@@ -27,21 +27,19 @@
 
 
 /*
- * The XPRESS compression format is a LZ77-based algorithm.  That means it is
- * quite similar to LZX compression, but XPRESS is slightly simpler, so it is a
- * little faster to compress and decompress.
+ * The XPRESS compression format is a LZ77 and Huffman-code based algorithm.
+ * That means it is quite similar to LZX compression, but XPRESS is slightly
+ * simpler, so it is a little faster to compress and decompress.
  *
  * The XPRESS compression format is mostly documented in a file called "[MS-XCA]
  * Xpress Compression Algorithm".  In the MSDN library, it can currently be
  * found under Open Specifications => Protocols => Windows Protocols => Windows
- * Server Protocols => [MS-XCA] Xpress Compression Algorithm".  Note that
- * Microsoft apparently also has either a slightly different format or an
- * entirely different format that is also called XPRESS.  The other one is
- * supposedly used in Windows' hibernation file or something, but the one used
- * in WIM files is the one described in the above document.
+ * Server Protocols => [MS-XCA] Xpress Compression Algorithm".  The format in
+ * WIMs is specifically the algorithm labeled as the "LZ77+Huffman Algorithm"
+ * (there apparently are some other versions of XPRESS as well).
  *
  * If you are already familiar with the LZ77 algorithm and Huffman coding, the
- * XPRESS format is pretty simple.  The compressed data begins with 256 bytes
+ * XPRESS format is fairly simple.  The compressed data begins with 256 bytes
  * that contain 512 4-bit integers that are the lengths of the symbols in the
  * Huffman tree used for decoding compressed literals.  This is the only Huffman
  * tree that is used for the entirety of the compressed data, and the codeword
@@ -81,8 +79,17 @@
 #include "decomp.h"
 
 
-/* Decodes @huffsym, a value >= XPRESS_NUM_CHARS, that is the header of a match.
- * */
+/*
+ * Decodes a symbol @huffsym that begins an XPRESS match.
+ *
+ * The low 8 bits of the symbol are divided into:
+ *
+ * bits 0-3:  length header
+ * bits 4-7:  index of high-order bit of match offset
+ *
+ * Note: taking the low 8 bits of the symbol is the same as subtracting 256, the
+ * number of symbols reserved for literals.
+ */
 static int xpress_decode_match(int huffsym, unsigned window_pos,
 			       unsigned window_len, u8 window[],
 			       struct input_bitstream *istream)
@@ -108,7 +115,6 @@ static int xpress_decode_match(int huffsym, unsigned window_pos,
 			return -1;
 		match_len = ret;
 		if (match_len == 0xff) {
-
 			ret = bitstream_read_byte(istream);
 			if (ret == -1)
 				return -1;
@@ -128,7 +134,6 @@ static int xpress_decode_match(int huffsym, unsigned window_pos,
 		match_len = len_hdr;
 	}
 	match_len += XPRESS_MIN_MATCH;
-
 
 	/* Verify that the match is in the bounds of the part of the window
 	 * currently in use, then copy the source of the match to the current
