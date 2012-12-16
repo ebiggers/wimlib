@@ -700,6 +700,8 @@ int wim_run_full_verifications(WIMStruct *w)
 	w->full_verification_in_progress = false;
 	if (ret == 0) {
 		unsigned long num_ltes_with_bogus_refcnt = 0;
+		for (int i = 0; i < w->hdr.image_count; i++)
+			w->image_metadata[i].metadata_lte->real_refcnt++;
 		for_lookup_table_entry(w->lookup_table, lte_fix_refcnt,
 				       &num_ltes_with_bogus_refcnt);
 		if (num_ltes_with_bogus_refcnt != 0) {
