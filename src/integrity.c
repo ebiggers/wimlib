@@ -1,9 +1,9 @@
 /*
  * integrity.c
  *
- * WIM files can optionally contain an array of SHA1 message digests at the end,
- * one digest for each 1 MB of the file.  This file implements the checking of
- * the digests, and the writing of the digests for new WIM files.
+ * WIM files can optionally contain a table of SHA1 message digests at the end,
+ * one digest for each chunk of the file of some specified size (often 10 MB).
+ * This file implements the checking and writing this table.
  */
 
 /*
@@ -119,36 +119,30 @@ static int read_integrity_table(const struct resource_entry *res_entry,
 	u64 expected_size;
 	u64 expected_num_entries;
 
-	if (res_entry->original_size < 12) {
-		ERROR("Integrity table is too short (expected at least 12 bytes)");
-		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-		goto out;
+	if (resource_is_compressed(res_entry)) {
+		ERROR("Didn't expect a compressed integrity table");
+		return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 	}
 
-	if (res_entry->flags & WIM_RESHDR_FLAG_COMPRESSED) {
-		ERROR("Didn't expect a compressed integrity table");
-		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-		goto out;
+	if (res_entry->size < 8 || res_entry->size  > 0xffffffff) {
+		ERROR("Integrity table resource header is invalid");
+		return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 	}
 
 	/* Read the integrity table into memory. */
-	if ((sizeof(size_t) < sizeof(u64)
-	    && res_entry->size > ~(size_t)0)
-	    || ((table = MALLOC(res_entry->size)) == NULL))
-	{
-		ERROR("Out of memory (needed %zu bytes for integrity table)",
-		      (size_t)res_entry->size);
-		ret = WIMLIB_ERR_NOMEM;
-		goto out;
+	if ((table = MALLOC(res_entry->size)) == NULL) {
+		ERROR("Can't allocate %"PRIu64" bytes for integrity table",
+		      (u64)res_entry->size);
+		return WIMLIB_ERR_NOMEM;
 	}
 
 	ret = read_uncompressed_resource(fp, res_entry->offset,
 					 res_entry->size, (void*)table);
 
 	if (ret != 0) {
-		ERROR("Failed to read integrity table (size = %"PRIu64", "
+		ERROR("Failed to read integrity table (size = %u, "
 		      " offset = %"PRIu64")",
-		      (u64)res_entry->size, res_entry->offset);
+		      (unsigned)res_entry->size, res_entry->offset);
 		goto out;
 	}
 
@@ -158,8 +152,8 @@ static int read_integrity_table(const struct resource_entry *res_entry,
 
 	if (table->size != res_entry->size) {
 		ERROR("Inconsistent integrity table sizes: Table header says "
-		      "%u bytes but resource entry says %"PRIu64" bytes",
-		      table->size, (u64)res_entry->size);
+		      "%u bytes but resource entry says %u bytes",
+		      table->size, (unsigned)res_entry->size);
 		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 		goto out;
 	}
@@ -187,8 +181,9 @@ static int read_integrity_table(const struct resource_entry *res_entry,
 	expected_num_entries = DIV_ROUND_UP(num_checked_bytes, table->chunk_size);
 
 	if (table->num_entries != expected_num_entries) {
-		ERROR("%"PRIu64" entries would be required to checksum "
-		      "the %"PRIu64" bytes from the end of the header to the",
+		ERROR("%"PRIu64" integrity table entries would be required "
+		      "to checksum the %"PRIu64" bytes from the end of the "
+		      "header to the",
 		      expected_num_entries, num_checked_bytes);
 		ERROR("end of the lookup table with a chunk size of %u, but "
 		      "there were only %u entries",
@@ -245,7 +240,8 @@ static int calculate_integrity_table(FILE *fp,
 	/* If an old table is provided, set the chunk size to be compatible with
 	 * the old chunk size, unless the old chunk size was weird. */
 	if (old_table != NULL) {
-		if (old_table->chunk_size < INTEGRITY_MIN_CHUNK_SIZE ||
+		if (old_table->num_entries == 0 ||
+		    old_table->chunk_size < INTEGRITY_MIN_CHUNK_SIZE ||
 		    old_table->chunk_size > INTEGRITY_MAX_CHUNK_SIZE)
 			old_table = NULL;
 		else
@@ -375,10 +371,8 @@ int write_integrity_table(FILE *fp,
 	wimlib_assert(old_lookup_table_end <= new_lookup_table_end);
 
 	cur_offset = ftello(fp);
-	if (cur_offset == -1) {
-		ERROR_WITH_ERRNO("Failed to get offset in WIM");
+	if (cur_offset == -1)
 		return WIMLIB_ERR_WRITE;
-	}
 
 	if (integrity_res_entry->offset == 0 || old_lookup_table_end == 0) {
 		old_table = NULL;
@@ -504,7 +498,7 @@ static int verify_integrity(FILE *fp, const char *filename,
 /*
  * Verifies the integrity of the WIM by making sure the SHA1 message digests of
  * ~10 MiB chunks of the WIM match up with the values given in the integrity
- * tabel.
+ * table.
  *
  * @w:
  * 	The WIM, opened for reading, and with the header already read.
