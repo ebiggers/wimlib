@@ -685,10 +685,12 @@ static int lte_fix_refcnt(struct lookup_table_entry *lte, void *ctr)
 
 /* Ideally this would be unnecessary... however, the WIMs for Windows 8 are
  * screwed up because some lookup table entries are referenced more times than
- * their stated reference counts.  So theoretically, if we do the delete all the
+ * their stated reference counts.  So theoretically, if we delete all the
  * references to a stream and then remove it, it might still be referenced
- * somewhere else... So, work around this problem by looking at ALL the images
- * to re-calculate the reference count of EVERY lookup table entry. */
+ * somewhere else, making a file be missing from the WIM... So, work around this
+ * problem by looking at ALL the images to re-calculate the reference count of
+ * EVERY lookup table entry.  This only absolutely has to be done before an image
+ * is deleted or before an image is mounted read-write. */
 int wim_run_full_verifications(WIMStruct *w)
 {
 	int ret;
