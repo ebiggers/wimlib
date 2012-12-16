@@ -1100,6 +1100,7 @@ static int imagex_info(int argc, const char **argv)
 	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
 	int part_number;
 	int total_parts;
+	int num_images;
 
 	for_opt(c, info_options) {
 		switch (c) {
@@ -1165,7 +1166,7 @@ static int imagex_info(int argc, const char **argv)
 	image = wimlib_resolve_image(w, image_num_or_name);
 	if (image == WIMLIB_NO_IMAGE && strcmp(image_num_or_name, "0") != 0) {
 		imagex_error("The image `%s' does not exist",
-						image_num_or_name);
+			     image_num_or_name);
 		if (boot)
 			imagex_error("If you would like to set the boot "
 				     "index to 0, specify image \"0\" with "
@@ -1174,7 +1175,18 @@ static int imagex_info(int argc, const char **argv)
 		goto out;
 	}
 
-	if (image == WIMLIB_ALL_IMAGES && wimlib_get_num_images(w) > 1) {
+	num_images = wimlib_get_num_images(w);
+
+	if (num_images == 0) {
+		if (boot) {
+			imagex_error("--boot is meaningless on a WIM with no "
+				     "images");
+			ret = WIMLIB_ERR_INVALID_IMAGE;
+			goto out;
+		}
+	}
+
+	if (image == WIMLIB_ALL_IMAGES && num_images > 1) {
 		if (boot) {
 			imagex_error("Cannot specify the --boot flag "
 				     "without specifying a specific "
@@ -1232,13 +1244,14 @@ static int imagex_info(int argc, const char **argv)
 							"file `%s' for "
 							"writing ",
 							xml_out_file);
+				ret = -1;
 				goto out;
 			}
 			ret = wimlib_extract_xml_data(w, fp);
 			if (fclose(fp) != 0) {
 				imagex_error("Failed to close the file `%s'",
 					     xml_out_file);
-				goto out;
+				ret = -1;
 			}
 
 			if (ret != 0)
@@ -1258,7 +1271,8 @@ static int imagex_info(int argc, const char **argv)
 		/* Modification operations */
 		if (total_parts != 1) {
 			imagex_error("Modifying a split WIM is not supported.");
-			return -1;
+			ret = -1;
+			goto out;
 		}
 		if (image == WIMLIB_ALL_IMAGES)
 			image = 1;
@@ -1266,7 +1280,8 @@ static int imagex_info(int argc, const char **argv)
 		if (image == WIMLIB_NO_IMAGE && new_name) {
 			imagex_error("Cannot specify new_name (`%s') when "
 				     "using image 0", new_name);
-			return -1;
+			ret = -1;
+			goto out;
 		}
 
 		if (boot) {
@@ -1314,18 +1329,18 @@ static int imagex_info(int argc, const char **argv)
 		/* Only call wimlib_overwrite() if something actually needs to
 		 * be changed. */
 		if (boot || new_name || new_desc ||
-				check != wimlib_has_integrity_table(w)) {
+		    (check && !wimlib_has_integrity_table(w)))
+		{
+			int write_flags;
 
 			ret = file_writable(wimfile);
 			if (ret != 0)
 				return ret;
 
-			int write_flags;
-			if (check) {
+			if (check)
 				write_flags = WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-			} else {
+			else
 				write_flags = 0;
-			}
 
 			ret = wimlib_overwrite(w, write_flags, 1,
 					       imagex_progress_func);
@@ -1333,7 +1348,7 @@ static int imagex_info(int argc, const char **argv)
 				ret = 0;
 		} else {
 			printf("The file `%s' was not modified because nothing "
-					"needed to be done.\n", wimfile);
+			       "needed to be done.\n", wimfile);
 			ret = 0;
 		}
 	}
