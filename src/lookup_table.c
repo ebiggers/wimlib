@@ -39,21 +39,20 @@ struct lookup_table *new_lookup_table(size_t capacity)
 	struct hlist_head *array;
 
 	table = MALLOC(sizeof(struct lookup_table));
-	if (!table)
-		goto err;
-	array = CALLOC(capacity, sizeof(array[0]));
-	if (!array) {
-		FREE(table);
-		goto err;
+	if (table) {
+		array = CALLOC(capacity, sizeof(array[0]));
+		if (array) {
+			table->num_entries = 0;
+			table->capacity = capacity;
+			table->array = array;
+		} else {
+			FREE(table);
+			table = NULL;
+			ERROR("Failed to allocate memory for lookup table with capacity %zu",
+			      capacity);
+		}
 	}
-	table->num_entries = 0;
-	table->capacity = capacity;
-	table->array = array;
 	return table;
-err:
-	ERROR("Failed to allocate memory for lookup table with capacity %zu",
-	      capacity);
-	return NULL;
 }
 
 struct lookup_table_entry *new_lookup_table_entry()
@@ -270,11 +269,17 @@ int for_lookup_table_entry(struct lookup_table *table,
  */
 int read_lookup_table(WIMStruct *w)
 {
-	u64    num_entries;
-	u8     buf[WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
-	int    ret;
+	u64 num_entries;
+	u8 buf[WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
+	int ret;
 	struct lookup_table *table;
 	struct lookup_table_entry *cur_entry = NULL, *duplicate_entry;
+
+	if (resource_is_compressed(&w->hdr.lookup_table_res_entry)) {
+		ERROR("Didn't expect a compressed lookup table!");
+		ERROR("Ask the author to implement support for this.");
+		return WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE;
+	}
 
 	DEBUG("Reading lookup table: offset %"PRIu64", size %"PRIu64"",
 	      w->hdr.lookup_table_res_entry.offset,
