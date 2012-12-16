@@ -6,7 +6,7 @@
 /* A struct wim_info structure corresponds to the entire XML data for a WIM file. */
 struct wim_info {
 	u64 total_bytes;
-	u64 num_images;
+	int num_images;
 	/* Array of `struct image_info's, one for each image in the WIM that is
 	 * mentioned in the XML data. */
 	struct image_info *images;

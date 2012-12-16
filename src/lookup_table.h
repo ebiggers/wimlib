@@ -325,23 +325,10 @@ inode_stream_lte_unresolved(const struct inode *inode, unsigned stream_idx,
 					 inode->ads_entries[
 						stream_idx - 1].hash);
 }
-/*
- * Returns the lookup table entry for stream @stream_idx of the inode, where
- * stream_idx = 0 means the default un-named file stream, and stream_idx >= 1
- * corresponds to an alternate data stream.
- *
- * This works for both resolved and un-resolved dentries.
- */
-static inline struct lookup_table_entry *
-inode_stream_lte(const struct inode *inode, unsigned stream_idx,
-		 const struct lookup_table *table)
-{
-	if (inode->resolved)
-		return inode_stream_lte_resolved(inode, stream_idx);
-	else
-		return inode_stream_lte_unresolved(inode, stream_idx, table);
-}
 
+extern struct lookup_table_entry *
+inode_stream_lte(const struct inode *inode, unsigned stream_idx,
+		 const struct lookup_table *table);
 
 static inline const u8 *inode_stream_hash_unresolved(const struct inode *inode,
 						     unsigned stream_idx)

@@ -83,9 +83,6 @@ struct lzx_freq_tables {
 	u32 aligned_freq_table[LZX_ALIGNEDTREE_NUM_SYMBOLS];
 };
 
-
-
-
 /* Returns the LZX position slot that corresponds to a given formatted offset.
  *
  * Logically, this returns the smallest i such that
@@ -146,19 +143,19 @@ static inline unsigned lzx_get_num_extra_bits(unsigned position_slot)
  * the frequency of symbols in the main, length, and aligned offset alphabets.
  * The return value is a 32-bit number that provides the match in an
  * intermediate representation documented below. */
-static u32 lzx_record_match(uint match_offset, uint match_len,
+static u32 lzx_record_match(unsigned match_offset, unsigned match_len,
 			    void *__freq_tabs, void *__queue)
 {
 	struct lzx_freq_tables *freq_tabs = __freq_tabs;
 	struct lru_queue *queue = __queue;
-	uint formatted_offset;
-	uint position_slot;
-	uint position_footer = 0;
+	unsigned formatted_offset;
+	unsigned position_slot;
+	unsigned position_footer = 0;
 	u32 match;
 	u32 len_header;
 	u32 len_pos_header;
-	uint len_footer;
-	uint adjusted_match_len;
+	unsigned len_footer;
+	unsigned adjusted_match_len;
 
 	wimlib_assert(match_len >= LZX_MIN_MATCH && match_len <= LZX_MAX_MATCH);
 	wimlib_assert(match_offset != 0);
@@ -261,21 +258,21 @@ static u32 lzx_record_match(uint match_offset, uint match_len,
  * 			main, length, and aligned offset Huffman codes.
  */
 static int lzx_write_match(struct output_bitstream *out, int block_type,
-				u32 match, const struct lzx_codes *codes)
+			   u32 match, const struct lzx_codes *codes)
 {
 	/* low 8 bits are the match length minus 2 */
-	uint match_len_minus_2 = match & 0xff;
+	unsigned match_len_minus_2 = match & 0xff;
 	/* Next 17 bits are the position footer */
-	uint position_footer = (match >> 8) & 0x1ffff;	/* 17 bits */
+	unsigned position_footer = (match >> 8) & 0x1ffff;	/* 17 bits */
 	/* Next 6 bits are the position slot. */
-	uint position_slot = (match >> 25) & 0x3f;	/* 6 bits */
-	uint len_header;
-	uint len_footer;
-	uint len_pos_header;
-	uint main_symbol;
-	uint num_extra_bits;
-	uint verbatim_bits;
-	uint aligned_bits;
+	unsigned position_slot = (match >> 25) & 0x3f;	/* 6 bits */
+	unsigned len_header;
+	unsigned len_footer;
+	unsigned len_pos_header;
+	unsigned main_symbol;
+	unsigned num_extra_bits;
+	unsigned verbatim_bits;
+	unsigned aligned_bits;
 	int ret;
 
 	/* If the match length is less than MIN_MATCH (= 2) +
@@ -291,7 +288,7 @@ static int lzx_write_match(struct output_bitstream *out, int block_type,
 		len_header = match_len_minus_2;
 		/* No length footer-- mark it with a special
 		 * value. */
-		len_footer = (uint)(-1);
+		len_footer = (unsigned)(-1);
 	} else {
 		len_header = LZX_NUM_PRIMARY_LENS;
 		len_footer = match_len_minus_2 - LZX_NUM_PRIMARY_LENS;
@@ -315,7 +312,7 @@ static int lzx_write_match(struct output_bitstream *out, int block_type,
 
 	/* If there is a length footer, output it using the
 	 * length Huffman code. */
-	if (len_footer != (uint)(-1)) {
+	if (len_footer != (unsigned)(-1)) {
 		ret = bitstream_put_bits(out, codes->len_codewords[len_footer],
 					 codes->len_lens[len_footer]);
 		if (ret != 0)
@@ -369,10 +366,10 @@ static int lzx_write_match(struct output_bitstream *out, int block_type,
 static int lzx_write_compressed_literals(struct output_bitstream *ostream,
 					 int block_type,
 			 		 const u32 match_tab[],
-					 uint  num_compressed_literals,
+					 unsigned  num_compressed_literals,
 					 const struct lzx_codes *codes)
 {
-	uint i;
+	unsigned i;
 	u32 match;
 	int ret;
 
@@ -417,20 +414,19 @@ static int lzx_write_compressed_literals(struct output_bitstream *ostream,
  * @num_symbols:	The number of symbols in the code.
  */
 static int lzx_write_compressed_tree(struct output_bitstream *out,
-				const u8 lens[],
-				uint num_symbols)
+				     const u8 lens[], unsigned num_symbols)
 {
 	/* Frequencies of the length symbols, including the RLE symbols (NOT the
 	 * actual lengths themselves). */
-	uint pretree_freqs[LZX_PRETREE_NUM_SYMBOLS];
+	unsigned pretree_freqs[LZX_PRETREE_NUM_SYMBOLS];
 	u8 pretree_lens[LZX_PRETREE_NUM_SYMBOLS];
 	u16 pretree_codewords[LZX_PRETREE_NUM_SYMBOLS];
 	u8 output_syms[num_symbols * 2];
-	uint output_syms_idx;
-	uint cur_run_len;
-	uint i;
-	uint len_in_run;
-	uint additional_bits;
+	unsigned output_syms_idx;
+	unsigned cur_run_len;
+	unsigned i;
+	unsigned len_in_run;
+	unsigned additional_bits;
 	char delta;
 	u8 pretree_sym;
 
@@ -609,7 +605,7 @@ static void lzx_make_huffman_codes(const struct lzx_freq_tables *freq_tabs,
  * format as used in other file formats such as the cabinet format, where a bit
  * is reserved for that purpose. */
 static void do_call_insn_preprocessing(u8 uncompressed_data[],
-						uint uncompressed_data_len)
+				       unsigned uncompressed_data_len)
 {
 	int i = 0;
 	int file_size = LZX_MAGIC_FILESIZE;
@@ -671,38 +667,36 @@ static const struct lz_params lzx_lz_params = {
  * not reduce its size, and @compressed_data will not contain the full
  * compressed data.
  */
-int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
-		 void *compressed_data, uint *compressed_len_ret)
+int lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
+		 void *compressed_data, unsigned *compressed_len_ret)
 {
 	struct output_bitstream ostream;
 	u8 uncompressed_data[uncompressed_len + LZX_MAX_MATCH];
 	struct lzx_freq_tables freq_tabs;
 	struct lzx_codes codes;
 	u32 match_tab[uncompressed_len];
-	struct lru_queue queue = {.R0 = 1, .R1 = 1, .R2 = 1};
-	uint num_matches;
-	uint compressed_len;
-	uint i;
+	struct lru_queue queue;
+	unsigned num_matches;
+	unsigned compressed_len;
+	unsigned i;
 	int ret;
 	int block_type = LZX_BLOCKTYPE_ALIGNED;
-
-	LZX_DEBUG("uncompressed_len = %u", uncompressed_len);
 
 	if (uncompressed_len < 100)
 		return 1;
 
-
 	memset(&freq_tabs, 0, sizeof(freq_tabs));
+	queue.R0 = 1;
+	queue.R1 = 1;
+	queue.R2 = 1;
 
 	/* The input data must be preprocessed. To avoid changing the original
 	 * input, copy it to a temporary buffer. */
 	memcpy(uncompressed_data, __uncompressed_data, uncompressed_len);
 
-
 	/* Before doing any actual compression, do the call instruction (0xe8
 	 * byte) translation on the uncompressed data. */
 	do_call_insn_preprocessing(uncompressed_data, uncompressed_len);
-
 
 	/* Determine the sequence of matches and literals that will be output,
 	 * and in the process, keep counts of the number of times each symbol
@@ -713,8 +707,6 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 				       lzx_record_literal, &freq_tabs,
 				       &queue, freq_tabs.main_freq_table,
 				       &lzx_lz_params);
-
-	LZX_DEBUG("using %u matches", num_matches);
 
 	lzx_make_huffman_codes(&freq_tabs, &codes);
 
@@ -776,14 +768,10 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 
 	compressed_len = ostream.bit_output - (u8*)compressed_data;
 
-	LZX_DEBUG("Compressed %u => %u bytes",
-		  uncompressed_len, compressed_len);
-
 	*compressed_len_ret = compressed_len;
 
 #ifdef ENABLE_VERIFY_COMPRESSION
 	/* Verify that we really get the same thing back when decompressing. */
-	LZX_DEBUG("Verifying the compressed data.");
 	u8 buf[uncompressed_len];
 	ret = lzx_decompress(compressed_data, compressed_len, buf,
 			     uncompressed_len);
@@ -800,8 +788,6 @@ int lzx_compress(const void *__uncompressed_data, uint uncompressed_len,
 			abort();
 		}
 	}
-	LZX_DEBUG("Compression verified to be correct.");
 #endif
-
 	return 0;
 }

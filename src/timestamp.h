@@ -4,6 +4,7 @@
 #include "util.h"
 #include <sys/types.h>
 #include <sys/time.h>
+#include <time.h>
 
 #define intervals_per_second (1000000000ULL / 100ULL)
 #define intervals_per_microsecond (10)
@@ -51,7 +52,7 @@ static inline u64 timespec_to_wim_timestamp(const struct timespec *ts)
 	       + (u64)ts->tv_nsec / nanoseconds_per_interval;
 }
 
-
 extern u64 get_wim_timestamp();
+extern void wim_timestamp_to_str(u64 timestamp, char *buf, size_t len);
 
 #endif

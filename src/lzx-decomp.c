@@ -135,7 +135,7 @@ struct lzx_tables {
  */
 static inline int read_huffsym_using_pretree(struct input_bitstream *istream,
 					     const u16 pretree_decode_table[],
-					     const u8 pretree_lens[], uint *n)
+					     const u8 pretree_lens[], unsigned *n)
 {
 	return read_huffsym(istream, pretree_decode_table, pretree_lens,
 			    LZX_PRETREE_NUM_SYMBOLS, LZX_PRETREE_TABLEBITS, n,
@@ -145,7 +145,7 @@ static inline int read_huffsym_using_pretree(struct input_bitstream *istream,
 /* Reads a Huffman-encoded symbol using the main tree. */
 static inline int read_huffsym_using_maintree(struct input_bitstream *istream,
 					      const struct lzx_tables *tables,
-					      uint *n)
+					      unsigned *n)
 {
 	return read_huffsym(istream, tables->maintree_decode_table,
 			    tables->maintree_lens, LZX_MAINTREE_NUM_SYMBOLS,
@@ -155,7 +155,7 @@ static inline int read_huffsym_using_maintree(struct input_bitstream *istream,
 /* Reads a Huffman-encoded symbol using the length tree. */
 static inline int read_huffsym_using_lentree(struct input_bitstream *istream,
 					     const struct lzx_tables *tables,
-					     uint *n)
+					     unsigned *n)
 {
 	return read_huffsym(istream, tables->lentree_decode_table,
 			    tables->lentree_lens, LZX_LENTREE_NUM_SYMBOLS,
@@ -165,7 +165,7 @@ static inline int read_huffsym_using_lentree(struct input_bitstream *istream,
 /* Reads a Huffman-encoded symbol using the aligned offset tree. */
 static inline int read_huffsym_using_alignedtree(struct input_bitstream *istream,
 						 const struct lzx_tables *tables,
-						 uint *n)
+						 unsigned *n)
 {
 	return read_huffsym(istream, tables->alignedtree_decode_table,
 			    tables->alignedtree_lens,
@@ -186,14 +186,14 @@ static inline int read_huffsym_using_alignedtree(struct input_bitstream *istream
  *
  */
 static int lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
-			      uint num_lens)
+			      unsigned num_lens)
 {
 	/* Declare the decoding table and length table for the pretree. */
 	u16 pretree_decode_table[(1 << LZX_PRETREE_TABLEBITS) +
 					(LZX_PRETREE_NUM_SYMBOLS * 2)];
 	u8 pretree_lens[LZX_PRETREE_NUM_SYMBOLS];
-	uint i;
-	uint len;
+	unsigned i;
+	unsigned len;
 	int ret;
 
 	/* Read the code lengths of the pretree codes.  There are 20 lengths of
@@ -226,10 +226,10 @@ static int lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 		 * some number of the next lengths are all 0, or some number of
 		 * the next lengths are all equal to the next symbol in the
 		 * input. */
-		uint tree_code;
-		uint num_zeroes;
-		uint code;
-		uint num_same;
+		unsigned tree_code;
+		unsigned num_zeroes;
+		unsigned code;
+		unsigned num_same;
 		char value;
 
 		ret = read_huffsym_using_pretree(istream, pretree_decode_table,
@@ -307,16 +307,17 @@ static int lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
  * 			blocks, which contain this information in the header)
  */
 static int lzx_read_block_header(struct input_bitstream *istream,
-				 int *block_size_ret, int *block_type_ret,
+				 unsigned *block_size_ret,
+				 unsigned *block_type_ret,
 				 struct lzx_tables *tables,
 				 struct lru_queue *queue)
 {
 	int ret;
 	int block_type;
-	uint block_size;
+	unsigned block_size;
 	int s;
 	int i;
-	uint len;
+	unsigned len;
 	int32_t R[3];
 
 	ret = bitstream_ensure_bits(istream, 4);
@@ -492,14 +493,14 @@ static int lzx_decode_match(int main_element, int block_type,
 			    struct lru_queue *queue,
 			    struct input_bitstream *istream)
 {
-	uint length_header;
-	uint position_slot;
-	uint match_len;
-	uint match_offset;
-	uint additional_len;
-	uint num_extra_bits;
-	uint verbatim_bits;
-	uint aligned_bits;
+	unsigned length_header;
+	unsigned position_slot;
+	unsigned match_len;
+	unsigned match_offset;
+	unsigned additional_len;
+	unsigned num_extra_bits;
+	unsigned verbatim_bits;
+	unsigned aligned_bits;
 	int ret;
 	int i;
 	u8 *match_dest;
@@ -652,7 +653,7 @@ static int lzx_decode_match(int main_element, int block_type,
  * format as used in other file formats, where a bit is reserved for that
  * purpose. */
 static void undo_call_insn_preprocessing(u8 uncompressed_data[],
-					 uint uncompressed_data_len)
+					 unsigned uncompressed_data_len)
 {
 	int i = 0;
 	int file_size = LZX_MAGIC_FILESIZE;
@@ -704,8 +705,8 @@ static int lzx_decompress_block(int block_type, int block_size, u8 *window,
 				struct lru_queue *queue,
 				struct input_bitstream *istream)
 {
-	uint bytes_remaining;
-	uint main_element;
+	unsigned bytes_remaining;
+	unsigned main_element;
 	int match_len;
 	int ret;
 
@@ -749,16 +750,16 @@ static int lzx_decompress_block(int block_type, int block_size, u8 *window,
  *
  * Return non-zero on failure.
  */
-int lzx_decompress(const void *compressed_data, uint compressed_len,
-		   void *uncompressed_data, uint uncompressed_len)
+int lzx_decompress(const void *compressed_data, unsigned compressed_len,
+		   void *uncompressed_data, unsigned uncompressed_len)
 {
-	struct lzx_tables 	tables;
-	struct input_bitstream 	istream;
-	struct lru_queue 	queue;
-	uint 			bytes_remaining;
+	struct lzx_tables tables;
+	struct input_bitstream istream;
+	struct lru_queue queue;
+	unsigned bytes_remaining;
+	unsigned block_size;
+	unsigned block_type;
 	int ret;
-	int block_size;
-	int block_type;
 
 	LZX_DEBUG("lzx_decompress (compressed_data = %p, compressed_len = %d, "
 		  "uncompressed_data = %p, uncompressed_len = %d).",
@@ -784,17 +785,17 @@ int lzx_decompress(const void *compressed_data, uint compressed_len,
 	while (bytes_remaining != 0) {
 
 		LZX_DEBUG("Reading block header.");
-		ret = lzx_read_block_header(&istream, &block_size, &block_type,
-							&tables, &queue);
+		ret = lzx_read_block_header(&istream, &block_size,
+					    &block_type, &tables, &queue);
 		if (ret != 0)
 			return ret;
 
-		LZX_DEBUG("block_size = %d, bytes_remaining = %d.",
+		LZX_DEBUG("block_size = %u, bytes_remaining = %u",
 			  block_size, bytes_remaining);
 
 		if (block_size > bytes_remaining) {
 			ERROR("lzx_decompress(): Expected a block size of at "
-			      "most %d bytes (found %d bytes)",
+			      "most %u bytes (found %u bytes)",
 			      bytes_remaining, block_size);
 			return 1;
 		}
@@ -836,7 +837,6 @@ int lzx_decompress(const void *compressed_data, uint compressed_len,
 
 		if (bytes_remaining != 0)
 			LZX_DEBUG("%d bytes remaining.", bytes_remaining);
-
 	}
 
 	if (uncompressed_len >= 10)

@@ -25,15 +25,15 @@ struct input_bitstream {
 	const u8 *data;
 
 	/* Number of bits in @bitbuf that are valid. */
-	uint bitsleft;
+	unsigned bitsleft;
 
 	/* Number of words of data that are left. */
-	uint data_bytes_left;
+	unsigned data_bytes_left;
 };
 
 /* Initializes a bitstream to receive its input from @data. */
 static inline void init_input_bitstream(struct input_bitstream *istream,
-					const void *data, uint num_data_bytes)
+					const void *data, unsigned num_data_bytes)
 {
 	istream->bitbuf          = 0;
 	istream->bitsleft        = 0;
@@ -43,7 +43,7 @@ static inline void init_input_bitstream(struct input_bitstream *istream,
 
 /* Ensures that the bit buffer contains @num_bits bits. */
 static inline int bitstream_ensure_bits(struct input_bitstream *istream,
-					uint num_bits)
+					unsigned num_bits)
 {
 	wimlib_assert(num_bits <= 16);
 
@@ -62,8 +62,8 @@ static inline int bitstream_ensure_bits(struct input_bitstream *istream,
 		if (istream->data_bytes_left < 2)
 			return 1;
 
-		uint shift = sizeof(input_bitbuf_t) * 8 - 16 -
-			     istream->bitsleft;
+		unsigned shift = sizeof(input_bitbuf_t) * 8 - 16 -
+				 istream->bitsleft;
 		istream->bitbuf |= (input_bitbuf_t)le16_to_cpu(
 					*(u16*)istream->data) << shift;
 		istream->data += 2;
@@ -75,8 +75,8 @@ static inline int bitstream_ensure_bits(struct input_bitstream *istream,
 
 /* Returns the next @num_bits bits in the bit buffer.  It must contain at least
  * @num_bits bits to call this function. */
-static inline uint bitstream_peek_bits(const struct input_bitstream *istream,
-				       uint num_bits)
+static inline unsigned
+bitstream_peek_bits(const struct input_bitstream *istream, unsigned num_bits)
 {
 	if (num_bits == 0)
 		return 0;
@@ -86,7 +86,7 @@ static inline uint bitstream_peek_bits(const struct input_bitstream *istream,
 /* Removes @num_bits bits from the bit buffer.  It must contain at least
  * @num_bits bits to call this function. */
 static inline void bitstream_remove_bits(struct input_bitstream *istream,
-					 uint num_bits)
+					 unsigned num_bits)
 {
 	istream->bitbuf <<= num_bits;
 	istream->bitsleft -= num_bits;
@@ -94,7 +94,7 @@ static inline void bitstream_remove_bits(struct input_bitstream *istream,
 
 /* Reads and returns @num_bits bits from the input bitstream. */
 static inline int bitstream_read_bits(struct input_bitstream *istream,
-				      uint num_bits, uint *n)
+				      unsigned num_bits, unsigned *n)
 {
 	int ret;
 	ret = bitstream_ensure_bits(istream, num_bits);
@@ -129,10 +129,10 @@ static inline int bitstream_read_byte(struct input_bitstream *istream)
 
 /* Reads @num_bits bits from the bit buffer without checking to see if that many
  * bits are in the buffer or not. */
-static inline uint bitstream_read_bits_nocheck(struct input_bitstream *istream,
-					       uint num_bits)
+static inline unsigned
+bitstream_read_bits_nocheck(struct input_bitstream *istream, unsigned num_bits)
 {
-	uint n = bitstream_peek_bits(istream, num_bits);
+	unsigned n = bitstream_peek_bits(istream, num_bits);
 	bitstream_remove_bits(istream, num_bits);
 	return n;
 }
@@ -156,11 +156,11 @@ extern int read_huffsym(struct input_bitstream *stream,
 			const u8 lengths[],
 			unsigned num_symbols,
 			unsigned table_bits,
-			uint *n,
+			unsigned *n,
 			unsigned max_codeword_len);
 
-extern int make_huffman_decode_table(u16 decode_table[], uint num_syms,
-				     uint num_bits, const u8 lengths[],
-				     uint max_codeword_len);
+extern int make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
+				     unsigned num_bits, const u8 lengths[],
+				     unsigned max_codeword_len);
 
 #endif /* _WIMLIB_DECOMP_H */

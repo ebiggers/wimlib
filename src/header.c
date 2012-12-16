@@ -26,6 +26,7 @@
 
 #include "wimlib_internal.h"
 #include "io.h"
+#include <limits.h>
 
 /* First 8 bytes in every WIM file. */
 static const u8 wim_magic_chars[WIM_MAGIC_LEN] = {
@@ -104,6 +105,15 @@ int read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 	p = get_u16(p, &hdr->part_number);
 	p = get_u16(p, &hdr->total_parts);
 
+	if (hdr->total_parts == 0 ||
+	    hdr->part_number == 0 ||
+	    hdr->part_number > hdr->total_parts)
+	{
+		ERROR("Invalid WIM part number: %hu of %hu",
+		      hdr->part_number, hdr->total_parts);
+		return WIMLIB_ERR_INVALID_PART_NUMBER;
+	}
+
 	if (!(open_flags & WIMLIB_OPEN_FLAG_SPLIT_OK)
 	    && (hdr->part_number != 1 || hdr->total_parts != 1))
 	{
@@ -116,6 +126,11 @@ int read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 
 	DEBUG("part_number = %u, total_parts = %u, image_count = %u",
 	      hdr->part_number, hdr->total_parts, hdr->image_count);
+
+	if (hdr->image_count >= INT_MAX) {
+		ERROR("Invalid image count (%u)", hdr->image_count);
+		return WIMLIB_ERR_IMAGE_COUNT;
+	}
 
 	/* Byte 48 */
 
@@ -240,14 +255,13 @@ struct hdr_flag hdr_flags[] = {
 WIMLIBAPI void wimlib_print_header(const WIMStruct *w)
 {
 	const struct wim_header *hdr = &w->hdr;
-	uint i;
 
 	printf("Magic Characters            = MSWIM\\000\\000\\000\n");
 	printf("Header Size                 = %u\n", WIM_HEADER_DISK_SIZE);
 	printf("Version                     = 0x%x\n", WIM_VERSION);
 
 	printf("Flags                       = 0x%x\n", hdr->flags);
-	for (i = 0; i < ARRAY_LEN(hdr_flags); i++)
+	for (size_t i = 0; i < ARRAY_LEN(hdr_flags); i++)
 		if (hdr_flags[i].flag & hdr->flags)
 			printf("    WIM_HDR_FLAG_%s is set\n", hdr_flags[i].name);
 

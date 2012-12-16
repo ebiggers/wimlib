@@ -20,7 +20,7 @@ struct output_bitstream {
 	output_bitbuf_t bitbuf;
 
 	/* Number of free bits in @bitbuf */
-	uint free_bits;
+	unsigned free_bits;
 
 	u8 *bit_output;
 	u8 *next_bit_output;
@@ -56,27 +56,27 @@ static inline int bitstream_put_two_bytes(struct output_bitstream *ostream,
 }
 
 struct lz_params {
-	uint min_match;
-	uint max_match;
-	uint nice_match;
-	uint good_match;
-	uint max_chain_len;
-	uint max_lazy_match;
-	uint too_far;
+	unsigned min_match;
+	unsigned max_match;
+	unsigned nice_match;
+	unsigned good_match;
+	unsigned max_chain_len;
+	unsigned max_lazy_match;
+	unsigned too_far;
 };
 
-typedef uint (*lz_record_match_t)(uint, uint, void *, void *);
-typedef uint (*lz_record_literal_t)(u8, void *);
+typedef unsigned (*lz_record_match_t)(unsigned, unsigned, void *, void *);
+typedef unsigned (*lz_record_literal_t)(u8, void *);
 
-extern uint lz_analyze_block(const u8 uncompressed_data[],
-			     uint uncompressed_len,
-			     u32 match_tab[],
-			     lz_record_match_t record_match,
-			     lz_record_literal_t record_literal,
-			     void *record_match_arg1,
-			     void *record_match_arg2,
-			     void *record_literal_arg,
-			     const struct lz_params *params);
+extern unsigned lz_analyze_block(const u8 uncompressed_data[],
+				 unsigned uncompressed_len,
+				 u32 match_tab[],
+				 lz_record_match_t record_match,
+				 lz_record_literal_t record_literal,
+				 void *record_match_arg1,
+				 void *record_match_arg2,
+				 void *record_literal_arg,
+				 const struct lz_params *params);
 
 extern int bitstream_put_bits(struct output_bitstream *ostream,
 			      output_bitbuf_t bits, unsigned num_bits);
@@ -86,8 +86,10 @@ extern void init_output_bitstream(struct output_bitstream *ostream,
 
 extern int flush_output_bitstream(struct output_bitstream *ostream);
 
-extern void make_canonical_huffman_code(uint num_syms, uint max_codeword_len,
-					const u32 freq_tab[], u8 lens[],
+extern void make_canonical_huffman_code(unsigned num_syms,
+					unsigned max_codeword_len,
+					const u32 freq_tab[],
+					u8 lens[],
 					u16 codewords[]);
 
 #endif /* _WIMLIB_COMP_H */

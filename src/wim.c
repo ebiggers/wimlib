@@ -28,6 +28,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <errno.h>
 
 #include "dentry.h"
 #include <unistd.h>
@@ -433,7 +434,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
 		      wimlib_progress_func_t progress_func)
 {
 	int ret;
-	uint xml_num_images;
+	int xml_num_images;
 
 	DEBUG("Reading the WIM file `%s'", in_wim_path);
 
@@ -456,7 +457,10 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
 	w->filename = realpath(in_wim_path, NULL);
 	if (!w->filename) {
 		ERROR_WITH_ERRNO("Failed to resolve WIM filename");
-		ret = WIMLIB_ERR_NOMEM;
+		if (errno == ENOMEM)
+			ret = WIMLIB_ERR_NOMEM;
+		else
+			ret = WIMLIB_ERR_OPEN;
 		goto out_close;
 	}
 
@@ -464,7 +468,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
 	if (ret != 0)
 		goto out_close;
 
-	DEBUG("Wim file contains %u images", w->hdr.image_count);
+	DEBUG("According to header, WIM contains %u images", w->hdr.image_count);
 
 	/* If the boot index is invalid, print a warning and set it to 0 */
 	if (w->hdr.boot_idx > w->hdr.image_count) {
@@ -564,7 +568,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
 	}
 
 	DEBUG("Done beginning read of WIM file `%s'.", in_wim_path);
-	return 0;
+	/*return 0;*/
 
 	//
 	// Everything is freed in wimlib_free() anyway, so no need to roll back
@@ -585,7 +589,6 @@ out_free_lookup_table:
 out_close:
 	/*fclose(w->fp);*/
 	/*w->fp = NULL;*/
-out:
 	return ret;
 }
 

@@ -756,49 +756,37 @@ int print_dentry(struct dentry *dentry, void *lookup_table)
 	const u8 *hash;
 	struct lookup_table_entry *lte;
 	const struct inode *inode = dentry->d_inode;
-	time_t time;
-	char *p;
+	char buf[50];
 
 	printf("[DENTRY]\n");
 	printf("Length            = %"PRIu64"\n", dentry->length);
 	printf("Attributes        = 0x%x\n", inode->attributes);
-	for (unsigned i = 0; i < ARRAY_LEN(file_attr_flags); i++)
+	for (size_t i = 0; i < ARRAY_LEN(file_attr_flags); i++)
 		if (file_attr_flags[i].flag & inode->attributes)
 			printf("    FILE_ATTRIBUTE_%s is set\n",
 				file_attr_flags[i].name);
 	printf("Security ID       = %d\n", inode->security_id);
 	printf("Subdir offset     = %"PRIu64"\n", dentry->subdir_offset);
 
-	/* Translate the timestamps into something readable */
-	time = wim_timestamp_to_unix(inode->creation_time);
-	p = asctime(gmtime(&time));
-	*(strrchr(p, '\n')) = '\0';
-	printf("Creation Time     = %s UTC\n", p);
+	wim_timestamp_to_str(inode->creation_time, buf, sizeof(buf));
+	printf("Creation Time     = %s\n", buf);
 
-	time = wim_timestamp_to_unix(inode->last_access_time);
-	p = asctime(gmtime(&time));
-	*(strrchr(p, '\n')) = '\0';
-	printf("Last Access Time  = %s UTC\n", p);
+	wim_timestamp_to_str(inode->last_access_time, buf, sizeof(buf));
+	printf("Last Access Time  = %s\n", buf);
 
-	time = wim_timestamp_to_unix(inode->last_write_time);
-	p = asctime(gmtime(&time));
-	*(strrchr(p, '\n')) = '\0';
-	printf("Last Write Time   = %s UTC\n", p);
+	wim_timestamp_to_str(inode->last_write_time, buf, sizeof(buf));
+	printf("Last Write Time   = %s\n", buf);
 
 	printf("Reparse Tag       = 0x%"PRIx32"\n", inode->reparse_tag);
 	printf("Hard Link Group   = 0x%"PRIx64"\n", inode->ino);
 	printf("Hard Link Group Size = %"PRIu32"\n", inode->link_count);
 	printf("Number of Alternate Data Streams = %hu\n", inode->num_ads);
-	printf("Filename          = \"");
-	print_string(dentry->file_name, dentry->file_name_len);
-	puts("\"");
-	printf("Filename Length   = %hu\n", dentry->file_name_len);
 	printf("Filename (UTF-8)  = \"%s\"\n", dentry->file_name_utf8);
-	printf("Filename (UTF-8) Length = %hu\n", dentry->file_name_utf8_len);
-	printf("Short Name        = \"");
+	/*printf("Filename (UTF-8) Length = %hu\n", dentry->file_name_utf8_len);*/
+	printf("Short Name (UTF-16LE) = \"");
 	print_string(dentry->short_name, dentry->short_name_len);
 	puts("\"");
-	printf("Short Name Length = %hu\n", dentry->short_name_len);
+	/*printf("Short Name Length = %hu\n", dentry->short_name_len);*/
 	printf("Full Path (UTF-8) = \"%s\"\n", dentry->full_path_utf8);
 	lte = inode_stream_lte(dentry->d_inode, 0, lookup_table);
 	if (lte) {

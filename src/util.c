@@ -112,6 +112,8 @@ static const char *error_strings[] = {
 		= "Success",
 	[WIMLIB_ERR_ALREADY_LOCKED]
 		= "The WIM is already locked for writing",
+	[WIMLIB_ERR_CHAR_CONVERSION]
+		= "Failed to perform a conversion between UTF-8 and UTF-16LE",
 	[WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE]
 		= "Lookup table is compressed",
 	[WIMLIB_ERR_DECOMPRESSION]
@@ -152,6 +154,8 @@ static const char *error_strings[] = {
 		= "An entry in the WIM's lookup table is invalid",
 	[WIMLIB_ERR_INVALID_PARAM]
 		= "An invalid parameter was given",
+	[WIMLIB_ERR_INVALID_PART_NUMBER]
+		= "The part number or total parts of the WIM is invalid",
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
 		= "The SHA1 message digest of a WIM resource did not match the expected value",
 	[WIMLIB_ERR_INVALID_RESOURCE_SIZE]
@@ -533,4 +537,10 @@ u64 get_wim_timestamp()
 	return timeval_to_wim_timestamp(&tv);
 }
 
-
+void wim_timestamp_to_str(u64 timestamp, char *buf, size_t len)
+{
+	struct tm tm;
+	time_t t = wim_timestamp_to_unix(timestamp);
+	gmtime_r(&t, &tm);
+	strftime(buf, len, "%a %b %d %H:%M:%S %Y UTC", &tm);
+}

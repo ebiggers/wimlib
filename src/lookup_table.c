@@ -686,6 +686,24 @@ int dentry_unresolve_ltes(struct dentry *dentry, void *ignore)
 	return 0;
 }
 
+/*
+ * Returns the lookup table entry for stream @stream_idx of the inode, where
+ * stream_idx = 0 means the default un-named file stream, and stream_idx >= 1
+ * corresponds to an alternate data stream.
+ *
+ * This works for both resolved and un-resolved dentries.
+ */
+struct lookup_table_entry *
+inode_stream_lte(const struct inode *inode, unsigned stream_idx,
+		 const struct lookup_table *table)
+{
+	if (inode->resolved)
+		return inode_stream_lte_resolved(inode, stream_idx);
+	else
+		return inode_stream_lte_unresolved(inode, stream_idx, table);
+}
+
+
 /* Return the lookup table entry for the unnamed data stream of an inode, or
  * NULL if there is none.
  *
