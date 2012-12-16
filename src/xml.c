@@ -950,9 +950,6 @@ void xml_delete_image(struct wim_info **wim_info_p, int image)
 
 	wim_info = *wim_info_p;
 
-	wimlib_assert(wim_info != NULL);
-	wimlib_assert(image >= 1 && image <= wim_info->num_images);
-
 	destroy_image_info(&wim_info->images[image - 1]);
 
 	memcpy(&wim_info->images[image - 1],

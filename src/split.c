@@ -34,9 +34,9 @@ struct split_args {
 	size_t swm_base_name_len;
 	const char *swm_suffix;
 	struct list_head lte_list;
-	int    cur_part_number;
-	int    write_flags;
-	long   size_remaining;
+	int cur_part_number;
+	int write_flags;
+	long size_remaining;
 	size_t part_size;
 	wimlib_progress_func_t progress_func;
 	union wimlib_progress_info progress;
@@ -134,7 +134,7 @@ WIMLIBAPI int wimlib_split(WIMStruct *w, const char *swm_name,
 	size_t swm_name_len;
 	size_t swm_base_name_len;
 
-	if (!w || !swm_name || part_size == 0)
+	if (!swm_name || part_size == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (w->hdr.total_parts != 1)

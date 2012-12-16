@@ -511,9 +511,6 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	struct wim_security_data *sd;
 	struct lookup_table *joined_tab, *src_wim_tab_save;
 
-	if (!src_wim || !dest_wim)
-		return WIMLIB_ERR_INVALID_PARAM;
-
 	if (dest_wim->hdr.total_parts != 1) {
 		ERROR("Exporting an image to a split WIM is "
 		      "unsupported");
@@ -667,6 +664,56 @@ out:
 	return ret;
 }
 
+static int image_run_full_verifications(WIMStruct *w)
+{
+	return for_dentry_in_tree(wim_root_dentry(w), verify_dentry, w);
+}
+
+static int lte_fix_refcnt(struct lookup_table_entry *lte, void *ctr)
+{
+	if (lte->refcnt != lte->real_refcnt) {
+		WARNING("The following lookup table entry has a reference "
+			"count of %u, but", lte->refcnt);
+		WARNING("We found %u references to it",
+			lte->real_refcnt);
+		print_lookup_table_entry(lte);
+		lte->refcnt = lte->real_refcnt;
+		++*(unsigned long *)ctr;
+	}
+	return 0;
+}
+
+/* Ideally this would be unnecessary... however, the WIMs for Windows 8 are
+ * screwed up because some lookup table entries are referenced more times than
+ * their stated reference counts.  So theoretically, if we do the delete all the
+ * references to a stream and then remove it, it might still be referenced
+ * somewhere else... So, work around this problem by looking at ALL the images
+ * to re-calculate the reference count of EVERY lookup table entry. */
+int wim_run_full_verifications(WIMStruct *w)
+{
+	int ret;
+
+	for_lookup_table_entry(w->lookup_table, lte_zero_real_refcnt, NULL);
+	w->all_images_verified = true;
+	w->full_verification_in_progress = true;
+	ret = for_image(w, WIMLIB_ALL_IMAGES, image_run_full_verifications);
+	w->full_verification_in_progress = false;
+	if (ret == 0) {
+		unsigned long num_ltes_with_bogus_refcnt = 0;
+		for_lookup_table_entry(w->lookup_table, lte_fix_refcnt,
+				       &num_ltes_with_bogus_refcnt);
+		if (num_ltes_with_bogus_refcnt != 0) {
+			WARNING("A total of %lu entries in the WIM's stream "
+				"lookup table had to have\n"
+				"          their reference counts fixed.",
+				num_ltes_with_bogus_refcnt);
+		}
+	} else {
+		w->all_images_verified = false;
+	}
+	return ret;
+}
+
 /*
  * Deletes an image from the WIM.
  */
@@ -687,6 +734,12 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 				return ret;
 		}
 		return 0;
+	}
+
+	if (!w->all_images_verified) {
+		ret = wim_run_full_verifications(w);
+		if (ret != 0)
+			return ret;
 	}
 
 	DEBUG("Deleting image %d", image);

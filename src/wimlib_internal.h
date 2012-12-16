@@ -311,6 +311,9 @@ struct WIMStruct {
 
 	/* %true iff any images have been deleted from this WIM. */
 	bool deletion_occurred;
+
+	bool all_images_verified;
+	bool full_verification_in_progress;
 };
 
 
@@ -441,6 +444,7 @@ extern int do_add_image(WIMStruct *w, const char *dir, const char *name,
 				     int, void *),
 			void *extra_arg,
 			wimlib_progress_func_t progress_func);
+extern int wim_run_full_verifications(WIMStruct *w);
 
 /* ntfs-apply.c */
 

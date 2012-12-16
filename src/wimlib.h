@@ -503,9 +503,6 @@ union wimlib_progress_info {
 
 		/** Number of split WIM parts. */
 		unsigned total_parts;
-
-		/** Name of the joined WIM file being written. */
-		const char *filename;
 	} join;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART and
@@ -982,8 +979,7 @@ extern int wimlib_delete_image(WIMStruct *wim, int image);
  * 	::WIMLIB_ALL_IMAGES, @a src_wim contains multiple images, and no images in
  * 	@a src_wim are marked as bootable; or @a dest_name and/or @a
  * 	dest_description were non-<code>NULL</code>, @a src_image was
- * 	::WIMLIB_ALL_IMAGES, and @a src_wim contains multiple images; or @a src_wim
- * 	or @a dest_wim was @c NULL.
+ * 	::WIMLIB_ALL_IMAGES, and @a src_wim contains multiple images.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a src_image in @a src_wim is invalid.
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
@@ -1085,11 +1081,11 @@ extern int wimlib_export_image(WIMStruct *src_wim, int src_image,
  * 	A directory entry in the metadata resource for @a image in @a wim is
  * 	invalid.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a wim was @c NULL, or @a target was @c NULL, or both
- * 	::WIMLIB_EXTRACT_FLAG_HARDLINK and ::WIMLIB_EXTRACT_FLAG_SYMLINK were
- * 	specified in @a extract_flags, or both ::WIMLIB_EXTRACT_FLAG_NTFS and
- * 	either ::WIMLIB_EXTRACT_FLAG_HARDLINK or ::WIMLIB_EXTRACT_FLAG_SYMLINK
- * 	were specified in @a extract_flags, or ::WIMLIB_EXTRACT_FLAG_NTFS was
+ * 	@a target was @c NULL, or both ::WIMLIB_EXTRACT_FLAG_HARDLINK and
+ * 	::WIMLIB_EXTRACT_FLAG_SYMLINK were specified in @a extract_flags, or
+ * 	both ::WIMLIB_EXTRACT_FLAG_NTFS and either
+ * 	::WIMLIB_EXTRACT_FLAG_HARDLINK or ::WIMLIB_EXTRACT_FLAG_SYMLINK were
+ * 	specified in @a extract_flags, or ::WIMLIB_EXTRACT_FLAG_NTFS was
  * 	specified in @a extract_flags and @a image was ::WIMLIB_ALL_IMAGES.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_HASH
  * 	The SHA1 message digest of an extracted stream did not match the SHA1
@@ -1646,8 +1642,6 @@ extern void wimlib_print_available_images(const WIMStruct *wim, int image);
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a valid image in @a wim, and is not
  * 	::WIMLIB_ALL_IMAGES.
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  * 	The metadata resource for one of the specified images is invalid.
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
@@ -1710,8 +1704,6 @@ extern void wimlib_print_lookup_table(WIMStruct *wim);
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a valid image in @a wim, and is not
  * 	::WIMLIB_ALL_IMAGES.
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  * 	The metadata resource for one of the specified images is invalid.
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
@@ -1777,8 +1769,6 @@ extern int wimlib_resolve_image(WIMStruct *wim, const char *image_name_or_num);
  * 	The number of the image to mark as bootable, or 0 to mark no image as
  * 	bootable.
  * @return 0 on success; nonzero on error.
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a boot_idx does not specify an existing image in @a wim, and it was not
  * 	0.
@@ -1804,8 +1794,6 @@ extern int wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a single existing image in @a wim.
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @a description
  * 	string.
@@ -1830,8 +1818,6 @@ extern int wimlib_set_image_descripton(WIMStruct *wim, int image,
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a single existing image in @a wim.
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a wim was @c NULL.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @a flags string.
  */
@@ -1853,7 +1839,7 @@ extern int wimlib_set_image_flags(WIMStruct *wim, int image, const char *flags);
  * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
  * 	There is already an image named @a name in @a wim.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a name was @c NULL or the empty string, or @a wim was @c NULL.
+ * 	@a name was @c NULL or the empty string.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a single existing image in @a wim.
  * @retval ::WIMLIB_ERR_NOMEM
@@ -1943,7 +1929,7 @@ extern int wimlib_set_print_errors(bool show_messages);
  * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED:
  * 	@a wim is not part 1 of a stand-alone WIM.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a w was @c NULL, @a swm_name was @c NULL, or @a part_size was 0.
+ * 	@a swm_name was @c NULL, or @a part_size was 0.
  *
  * Note: the WIM's uncompressed and compressed resources are not checksummed
  * when they are copied from the joined WIM to the split WIM parts, nor are
@@ -2062,7 +2048,7 @@ extern int wimlib_unmount_image(const char *dir, int unmount_flags,
  * 	wimlib_add_image() or wimlib_add_image_from_ntfs_volume() functions was
  * 	concurrently modified, so it failed the SHA1 message digest check.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a wim or @a path was @c NULL.
+ * 	@a path was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in @a wim is invalid.
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA

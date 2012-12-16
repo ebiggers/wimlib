@@ -860,11 +860,13 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
-	DEBUG("Running miscellaneous verifications on the dentry tree");
-	for_lookup_table_entry(w->lookup_table, lte_zero_real_refcnt, NULL);
-	ret = for_dentry_in_tree(dentry, verify_dentry, w);
-	if (ret != 0)
-		goto out_free_dentry_tree;
+	if (!w->all_images_verified) {
+		DEBUG("Running miscellaneous verifications on the dentry tree");
+		for_lookup_table_entry(w->lookup_table, lte_zero_real_refcnt, NULL);
+		ret = for_dentry_in_tree(dentry, verify_dentry, w);
+		if (ret != 0)
+			goto out_free_dentry_tree;
+	}
 
 	DEBUG("Done reading image metadata");
 
@@ -881,6 +883,14 @@ out_free_buf:
 	return ret;
 }
 
+static void recalculate_security_data_length(struct wim_security_data *sd)
+{
+	u32 total_length = sizeof(u64) * sd->num_entries + 2 * sizeof(u32);
+	for (u32 i = 0; i < sd->num_entries; i++)
+		total_length += sd->sizes[i];
+	sd->total_length = total_length;
+}
+
 /* Write the metadata resource for the current WIM image. */
 int write_metadata_resource(WIMStruct *w)
 {
@@ -891,7 +901,7 @@ int write_metadata_resource(WIMStruct *w)
 	struct dentry *root;
 	struct lookup_table_entry *lte;
 	u64 metadata_original_size;
-	const struct wim_security_data *sd;
+	struct wim_security_data *sd;
 
 	DEBUG("Writing metadata resource for image %d (offset = %"PRIu64")",
 	      w->current_image, ftello(w->out_fp));
@@ -906,6 +916,7 @@ int write_metadata_resource(WIMStruct *w)
 	 * - plus 8 bytes for an end-of-directory entry following the root
 	 *   dentry (shouldn't really be needed, but just in case...)
 	 */
+	recalculate_security_data_length(sd);
 	subdir_offset = (((u64)sd->total_length + 7) & ~7) +
 			dentry_correct_total_length(root) + 8;
 

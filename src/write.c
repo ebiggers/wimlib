@@ -1426,6 +1426,8 @@ int finish_write(WIMStruct *w, int image, int write_flags,
 			memcpy(&checkpoint_hdr, &hdr, sizeof(struct wim_header));
 			memset(&checkpoint_hdr.integrity, 0, sizeof(struct resource_entry));
 			if (fseeko(out, 0, SEEK_SET) != 0) {
+				ERROR_WITH_ERRNO("Failed to seek to beginning "
+						 "of WIM being written");
 				ret = WIMLIB_ERR_WRITE;
 				goto out;
 			}
@@ -1440,6 +1442,8 @@ int finish_write(WIMStruct *w, int image, int write_flags,
 			}
 
 			if (fseeko(out, 0, SEEK_END) != 0) {
+				ERROR_WITH_ERRNO("Failed to seek to end "
+						 "of WIM being written");
 				ret = WIMLIB_ERR_WRITE;
 				goto out;
 			}
@@ -1474,16 +1478,6 @@ int finish_write(WIMStruct *w, int image, int write_flags,
 	 * it should be a copy of the resource entry for the image that is
 	 * marked as bootable.  This is not well documented...
 	 */
-	if (hdr.boot_idx == 0 || !w->image_metadata
-			|| (image != WIMLIB_ALL_IMAGES && image != hdr.boot_idx)) {
-		memset(&hdr.boot_metadata_res_entry, 0,
-		       sizeof(struct resource_entry));
-	} else {
-		memcpy(&hdr.boot_metadata_res_entry,
-		       &w->image_metadata[
-			  hdr.boot_idx - 1].metadata_lte->output_resource_entry,
-		       sizeof(struct resource_entry));
-	}
 
 	/* Set image count and boot index correctly for single image writes */
 	if (image != WIMLIB_ALL_IMAGES) {
@@ -1494,7 +1488,19 @@ int finish_write(WIMStruct *w, int image, int write_flags,
 			hdr.boot_idx = 0;
 	}
 
+	if (hdr.boot_idx == 0) {
+		memset(&hdr.boot_metadata_res_entry, 0,
+		       sizeof(struct resource_entry));
+	} else {
+		memcpy(&hdr.boot_metadata_res_entry,
+		       &w->image_metadata[
+			  hdr.boot_idx - 1].metadata_lte->output_resource_entry,
+		       sizeof(struct resource_entry));
+	}
+
 	if (fseeko(out, 0, SEEK_SET) != 0) {
+		ERROR_WITH_ERRNO("Failed to seek to beginning of WIM "
+				 "being written");
 		ret = WIMLIB_ERR_WRITE;
 		goto out;
 	}
@@ -1597,7 +1603,7 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 {
 	int ret;
 
-	if (!w || !path)
+	if (!path)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
@@ -1647,10 +1653,12 @@ static int lte_overwrite_prepare(struct lookup_table_entry *lte,
 
 static int check_resource_offset(struct lookup_table_entry *lte, void *arg)
 {
-	off_t end_offset = *(u64*)arg;
-
-	wimlib_assert(lte->out_refcnt <= lte->refcnt);
-	if (lte->out_refcnt < lte->refcnt) {
+	if (lte->out_refcnt > lte->refcnt) {
+		WARNING("Detected invalid stream reference count. "
+			"Forcing re-build of entire WIM.");
+		return WIMLIB_ERR_RESOURCE_ORDER;
+	} else if (lte->out_refcnt < lte->refcnt) {
+		off_t end_offset = *(u64*)arg;
 		if (lte->resource_entry.offset + lte->resource_entry.size > end_offset) {
 			ERROR("The following resource is after the XML data:");
 			print_lookup_table_entry(lte);
@@ -1724,7 +1732,7 @@ static int find_new_streams(struct lookup_table_entry *lte, void *arg)
  * is is crash-safe except in the case of write re-ordering, but the
  * disadvantage is that a small hole is left in the WIM where the old lookup
  * table, xml data, and integrity table were.  (These usually only take up a
- * small amount of space compared to the streams, however.
+ * small amount of space compared to the streams, however.)
  */
 static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 				 unsigned num_threads,
@@ -1799,8 +1807,9 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 
 	if (fseeko(w->out_fp, old_wim_end, SEEK_SET) != 0) {
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");
-		ret = WIMLIB_ERR_WRITE;
-		goto out_ftruncate;
+		fclose(w->out_fp);
+		w->out_fp = NULL;
+		return WIMLIB_ERR_WRITE;
 	}
 
 	if (!list_empty(&stream_list)) {
@@ -1827,7 +1836,7 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 			   progress_func);
 out_ftruncate:
 	close_wim_writable(w);
-	if (ret != 0) {
+	if (ret != 0 && !(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
 		WARNING("Truncating `%s' to its original size (%"PRIu64" bytes)",
 			w->filename, old_wim_end);
 		truncate(w->filename, old_wim_end);
@@ -1907,9 +1916,6 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
 			       unsigned num_threads,
 			       wimlib_progress_func_t progress_func)
 {
-	if (!w)
-		return WIMLIB_ERR_INVALID_PARAM;
-
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 
 	if (!w->filename)
@@ -1923,7 +1929,10 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
 	if ((!w->deletion_occurred || (write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE))
 	    && !(write_flags & WIMLIB_WRITE_FLAG_REBUILD))
 	{
-		int i, modified_image_idx;
+		int i;
+		int modified_image_idx;
+		int ret;
+
 		for (i = 0; i < w->hdr.image_count && !w->image_metadata[i].modified; i++)
 			;
 		modified_image_idx = i;
@@ -1931,9 +1940,13 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
 			!w->image_metadata[i].has_been_mounted_rw; i++)
 			;
 		if (i == w->hdr.image_count) {
-			return overwrite_wim_inplace(w, write_flags, num_threads,
-						     progress_func,
-						     modified_image_idx);
+			ret = overwrite_wim_inplace(w, write_flags, num_threads,
+						    progress_func,
+						    modified_image_idx);
+			if (ret == WIMLIB_ERR_RESOURCE_ORDER)
+				WARNING("Falling back to re-building entire WIM");
+			else
+				return ret;
 		}
 	}
 	return overwrite_wim_via_tmpfile(w, write_flags, num_threads,

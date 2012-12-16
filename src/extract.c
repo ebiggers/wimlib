@@ -720,7 +720,7 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w, int image,
 	struct lookup_table *joined_tab, *w_tab_save;
 	int ret;
 
-	if (!w || !target)
+	if (!target)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;

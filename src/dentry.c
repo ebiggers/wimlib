@@ -953,8 +953,7 @@ void free_inode(struct inode *inode)
  * */
 static void put_inode(struct inode *inode)
 {
-	wimlib_assert(inode);
-	wimlib_assert(inode->link_count);
+	wimlib_assert(inode->link_count != 0);
 	if (--inode->link_count == 0) {
 	#ifdef WITH_FUSE
 		if (inode->num_opened_fds == 0)
@@ -971,7 +970,6 @@ static void put_inode(struct inode *inode)
  */
 void free_dentry(struct dentry *dentry)
 {
-	wimlib_assert(dentry != NULL);
 	FREE(dentry->file_name);
 	FREE(dentry->file_name_utf8);
 	FREE(dentry->short_name);
@@ -983,9 +981,7 @@ void free_dentry(struct dentry *dentry)
 
 void put_dentry(struct dentry *dentry)
 {
-	wimlib_assert(dentry != NULL);
 	wimlib_assert(dentry->refcnt != 0);
-
 	if (--dentry->refcnt == 0)
 		free_dentry(dentry);
 }
@@ -1002,7 +998,7 @@ static int do_free_dentry(struct dentry *dentry, void *__lookup_table)
 	if (lookup_table) {
 		struct lookup_table_entry *lte;
 		struct inode *inode = dentry->d_inode;
-		wimlib_assert(inode->link_count);
+		wimlib_assert(inode->link_count != 0);
 		for (i = 0; i <= inode->num_ads; i++) {
 			lte = inode_stream_lte(inode, i, lookup_table);
 			if (lte)
@@ -1126,7 +1122,15 @@ static int verify_inode(struct inode *inode, const WIMStruct *w)
 				      "%u of dentry `%s'", i, first_dentry->full_path_utf8);
 				goto out;
 			}
-			if (lte && (lte->real_refcnt += inode->link_count) > lte->refcnt)
+			if (lte)
+				lte->real_refcnt += inode->link_count;
+
+			/* The following is now done when required by
+			 * wim_run_full_verifications(). */
+
+		#if 0
+			if (lte && !w->full_verification_in_progress &&
+			    lte->real_refcnt > lte->refcnt)
 			{
 			#ifdef ENABLE_ERROR_MESSAGES
 				WARNING("The following lookup table entry "
@@ -1140,9 +1144,9 @@ static int verify_inode(struct inode *inode, const WIMStruct *w)
 				print_lookup_table_entry(lte);
 			#endif
 				/* Guess what!  install.wim for Windows 8
-				 * contains a stream with 2 dentries referencing
-				 * it, but the lookup table entry has reference
-				 * count of 1.  So we will need to handle this
+				 * contains many streams referenced by more
+				 * dentries than the refcnt stated in the lookup
+				 * table entry.  So we will need to handle this
 				 * case and not just make it be an error...  I'm
 				 * just setting the reference count to the
 				 * number of references we found.
@@ -1157,6 +1161,7 @@ static int verify_inode(struct inode *inode, const WIMStruct *w)
 				goto out;
 			#endif
 			}
+		#endif
 		}
 	}
 

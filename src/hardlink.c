@@ -162,10 +162,12 @@ static void print_inode_dentries(const struct inode *inode)
 
 static void inconsistent_inode(const struct inode *inode)
 {
-	ERROR("An inconsistent hard link group that we cannot correct has been "
-	      "detected");
+	ERROR("An inconsistent hard link group that cannot be corrected has "
+	      "been detected");
 	ERROR("The dentries are located at the following paths:");
+#ifdef ENABLE_ERROR_MESSAGES
 	print_inode_dentries(inode);
+#endif
 }
 
 static bool ref_inodes_consistent(const struct inode * restrict ref_inode_1,
