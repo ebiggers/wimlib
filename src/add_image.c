@@ -242,7 +242,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 				   ((u64)root_stbuf.st_dev << ((sizeof(ino_t) * 8) & 63));
 
 	add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
-	inode->resolved = true;
+	inode->resolved = 1;
 
 	if (S_ISREG(root_stbuf.st_mode)) { /* Archiving a regular file */
 
@@ -752,6 +752,7 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 
 	DEBUG("Assigning hard link group IDs");
 	assign_inode_numbers(&inode_list);
+	w->image_metadata[w->hdr.image_count - 1].inode_list = inode_list;
 
 	ret = xml_add_image(w, name);
 	if (ret != 0)

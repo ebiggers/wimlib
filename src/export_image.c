@@ -247,7 +247,8 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 		goto out_free_ltes;
 
 	ret = xml_export_image(src_wim->wim_info, src_image,
-			       &dest_wim->wim_info, dest_name, dest_description);
+			       &dest_wim->wim_info, dest_name,
+			       dest_description);
 	if (ret != 0)
 		goto out_free_ltes;
 
@@ -267,10 +268,8 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	for_dentry_in_tree(root, add_lte_to_dest_wim, &wims);
 	wimlib_assert(list_empty(&wims.lte_list_head));
 
-	if (export_flags & WIMLIB_EXPORT_FLAG_BOOT) {
-		DEBUG("Setting boot_idx to %d", dest_wim->hdr.image_count);
+	if (export_flags & WIMLIB_EXPORT_FLAG_BOOT)
 		wimlib_set_boot_idx(dest_wim, dest_wim->hdr.image_count);
-	}
 	ret = 0;
 	goto out;
 

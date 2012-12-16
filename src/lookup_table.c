@@ -640,7 +640,7 @@ void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 	/* Resolve the default file stream */
 	lte = __lookup_resource(table, inode->hash);
 	inode->lte = lte;
-	inode->resolved = true;
+	inode->resolved = 1;
 
 	/* Resolve the alternate data streams */
 	for (u16 i = 0; i < inode->num_ads; i++) {
@@ -665,7 +665,7 @@ static void inode_unresolve_ltes(struct inode *inode)
 		else
 			zero_out_hash(inode->ads_entries[i].hash);
 	}
-	inode->resolved = false;
+	inode->resolved = 0;
 }
 
 /* Resolve a dentry's lookup table entries
