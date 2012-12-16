@@ -82,10 +82,10 @@ struct lru_queue {
 	int R2;
 };
 
-extern int lzx_decompress(const void *compressed_data, uint compressed_len,
-			  void *uncompressed_data, uint uncompressed_len);
+extern int lzx_decompress(const void *compressed_data, unsigned compressed_len,
+			  void *uncompressed_data, unsigned uncompressed_len);
 
-extern int lzx_compress(const void *uncompressed_data, uint uncompressed_len,
-			void *compressed_data, uint *compressed_len_ret);
+extern int lzx_compress(const void *uncompressed_data, unsigned uncompressed_len,
+			void *compressed_data, unsigned *compressed_len_ret);
 
 #endif /* _WIMLIB_LZX_H */

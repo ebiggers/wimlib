@@ -26,7 +26,7 @@
 #include "wimlib_internal.h"
 #include "lookup_table.h"
 #include "xml.h"
-#include "io.h"
+#include "buffer_io.h"
 
 struct split_args {
 	WIMStruct *w;

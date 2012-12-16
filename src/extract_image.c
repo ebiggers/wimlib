@@ -28,7 +28,6 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-
 #include "config.h"
 
 #include <dirent.h>

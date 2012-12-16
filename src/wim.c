@@ -3,7 +3,6 @@
  */
 
 /*
- * Copyright (C) 2010 Carl Thijssen
  * Copyright (C) 2012 Eric Biggers
  *
  * wimlib - Library for working with WIM files
@@ -40,9 +39,15 @@
 #endif
 
 #include "wimlib_internal.h"
-#include "io.h"
+#include "buffer_io.h"
 #include "lookup_table.h"
 #include "xml.h"
+
+static inline struct image_metadata *
+wim_get_current_image_metadata(WIMStruct *w)
+{
+	return &w->image_metadata[w->current_image - 1];
+}
 
 static int print_metadata(WIMStruct *w)
 {
@@ -59,7 +64,7 @@ static int print_files(WIMStruct *w)
 				  NULL);
 }
 
-WIMStruct *new_wim_struct()
+static WIMStruct *new_wim_struct()
 {
 	WIMStruct *w = CALLOC(1, sizeof(WIMStruct));
 #ifdef WITH_FUSE
@@ -149,7 +154,7 @@ static int append_metadata_resource_entry(struct lookup_table_entry *lte,
 }
 
 /* Returns the compression type given in the flags of a WIM header. */
-int wim_hdr_flags_compression_type(int wim_hdr_flags)
+static int wim_hdr_flags_compression_type(int wim_hdr_flags)
 {
 	if (wim_hdr_flags & WIM_HDR_FLAG_COMPRESSION) {
 		if (wim_hdr_flags & WIM_HDR_FLAG_COMPRESS_LZX)

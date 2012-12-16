@@ -381,9 +381,6 @@ extern void unlink_dentry(struct dentry *dentry);
 extern bool dentry_add_child(struct dentry * restrict parent,
 			     struct dentry * restrict child);
 
-extern int verify_dentry(struct dentry *dentry, void *wim);
-
-
 extern struct ads_entry *inode_get_ads_entry(struct inode *inode,
 					     const char *stream_name,
 					     u16 *idx_ret);
@@ -425,11 +422,6 @@ static inline bool inode_is_symlink(const struct inode *inode)
 	return (inode->attributes & FILE_ATTRIBUTE_REPARSE_POINT)
 		&& ((inode->reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK) ||
 		     inode->reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
-}
-
-static inline bool dentry_is_symlink(const struct dentry *dentry)
-{
-	return inode_is_symlink(dentry->d_inode);
 }
 
 static inline bool inode_is_regular_file(const struct inode *inode)

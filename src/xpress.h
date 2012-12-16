@@ -25,10 +25,10 @@
 #define XPRESS_MIN_MATCH	3
 #define XPRESS_MAX_MATCH    	65538
 
-extern int xpress_decompress(const void *__compressed_data, uint compressed_len,
-			     void *__uncompressed_data, uint uncompressed_len);
+extern int xpress_decompress(const void *__compressed_data, unsigned compressed_len,
+			     void *__uncompressed_data, unsigned uncompressed_len);
 
-extern int xpress_compress(const void *uncompressed_data, uint uncompressed_len,
-			   void *compressed_data, uint *compressed_len_ret);
+extern int xpress_compress(const void *uncompressed_data, unsigned uncompressed_len,
+			   void *compressed_data, unsigned *compressed_len_ret);
 
 #endif /* _WIMLIB_XPRESS_H */

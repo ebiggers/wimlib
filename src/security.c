@@ -26,7 +26,7 @@
  */
 
 #include "wimlib_internal.h"
-#include "io.h"
+#include "buffer_io.h"
 #include "security.h"
 
 /*
@@ -250,7 +250,7 @@ static void print_acl(const u8 *p, const char *type)
 	printf("    ACE Count = %u\n", ace_count);
 
 	p += sizeof(ACL);
-	for (uint i = 0; i < acl->ace_count; i++) {
+	for (u16 i = 0; i < ace_count; i++) {
 		const ACEHeader *hdr = (const ACEHeader*)p;
 		printf("        [ACE]\n");
 		printf("        ACE type  = %d\n", hdr->type);
@@ -274,7 +274,7 @@ static void print_sid(const u8 *p, const char *type)
 	print_byte_field(sid->identifier_authority,
 			 sizeof(sid->identifier_authority));
 	putchar('\n');
-	for (uint i = 0; i < sid->sub_authority_count; i++)
+	for (u8 i = 0; i < sid->sub_authority_count; i++)
 		printf("    Subauthority %u = %u\n",
 		       i, le32_to_cpu(sid->sub_authority[i]));
 	putchar('\n');

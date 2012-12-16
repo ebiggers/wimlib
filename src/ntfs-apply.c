@@ -34,7 +34,7 @@
 #include "wimlib_internal.h"
 #include "dentry.h"
 #include "lookup_table.h"
-#include "io.h"
+#include "buffer_io.h"
 #include <ntfs-3g/layout.h>
 #include <ntfs-3g/acls.h>
 #include <ntfs-3g/attrib.h>

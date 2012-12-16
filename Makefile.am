@@ -11,6 +11,7 @@ libwim_la_LDFLAGS = -version-info 1:0:0
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
+	src/buffer_io.h		\
 	src/compress.c		\
 	src/compress.h		\
 	src/decompress.c	\
@@ -24,7 +25,6 @@ libwim_la_SOURCES =		\
 	src/hardlink.c		\
 	src/header.c		\
 	src/integrity.c		\
-	src/io.h		\
 	src/join.c		\
 	src/list.h		\
 	src/lookup_table.c	\
@@ -48,6 +48,7 @@ libwim_la_SOURCES =		\
 	src/timestamp.h		\
 	src/util.c		\
 	src/util.h		\
+	src/verify.c		\
 	src/wim.c		\
 	src/wimlib.h		\
 	src/wimlib_internal.h	\

@@ -26,7 +26,7 @@
  */
 
 #include "wimlib_internal.h"
-#include "io.h"
+#include "buffer_io.h"
 #include "sha1.h"
 
 /* Size, in bytes, of each SHA1-summed chunk, when wimlib writes integrity

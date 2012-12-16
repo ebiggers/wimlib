@@ -26,7 +26,7 @@
 
 #include "wimlib_internal.h"
 #include "lookup_table.h"
-#include "io.h"
+#include "buffer_io.h"
 #include <errno.h>
 
 #ifdef WITH_FUSE

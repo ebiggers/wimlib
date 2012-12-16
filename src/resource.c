@@ -31,7 +31,7 @@
 
 #include "wimlib_internal.h"
 #include "lookup_table.h"
-#include "io.h"
+#include "buffer_io.h"
 #include "lzx.h"
 #include "xpress.h"
 #include "sha1.h"
@@ -81,7 +81,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	if (len == 0)
 		return 0;
 
-	int (*decompress)(const void *, uint, void *, uint);
+	int (*decompress)(const void *, unsigned, void *, unsigned);
 	/* Set the appropriate decompress function. */
 	if (resource_ctype == WIMLIB_COMPRESSION_TYPE_LZX)
 		decompress = lzx_decompress;
@@ -230,7 +230,8 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 
 		/* Calculate the sizes of the compressed chunk and of the
 		 * uncompressed chunk. */
-		uint compressed_chunk_size, uncompressed_chunk_size;
+		unsigned compressed_chunk_size;
+		unsigned uncompressed_chunk_size;
 		if (i != num_chunks - 1) {
 			/* All the chunks except the last one in the resource
 			 * expand to WIM_CHUNK_SIZE uncompressed, and the amount
@@ -946,7 +947,7 @@ int write_metadata_resource(WIMStruct *w)
 
 	/* Get the lookup table entry for the metadata resource so we can update
 	 * it. */
-	lte = wim_metadata_lookup_table_entry(w);
+	lte = w->image_metadata[w->current_image - 1].metadata_lte;
 
 	/* Write the metadata resource to the output WIM using the proper
 	 * compression type.  The lookup table entry for the metadata resource

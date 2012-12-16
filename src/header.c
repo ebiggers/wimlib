@@ -5,7 +5,6 @@
  */
 
 /*
- * Copyright (C) 2010 Carl Thijssen
  * Copyright (C) 2012 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
@@ -25,7 +24,7 @@
  */
 
 #include "wimlib_internal.h"
-#include "io.h"
+#include "buffer_io.h"
 #include <limits.h>
 
 /* First 8 bytes in every WIM file. */

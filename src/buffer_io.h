@@ -1,12 +1,12 @@
 /*
- * io.h
+ * buffer_io.h
  *
  * A few endianness-aware macros for reading and writing data from in-memory
  * buffers.
  */
 
-#ifndef _WIMLIB_IO_H
-#define _WIMLIB_IO_H
+#ifndef _WIMLIB_BUFFER_IO_H
+#define _WIMLIB_BUFFER_IO_H
 
 #include "util.h"
 #include "endianness.h"
@@ -117,4 +117,4 @@ static inline u8 *put_bytes(u8 *p, size_t num_bytes, const u8 *input)
 {
 	return (u8*)memcpy(p, input, num_bytes) + num_bytes;
 }
-#endif /* _WIMLIB_IO_H */
+#endif /* _WIMLIB_BUFFER_IO_H */

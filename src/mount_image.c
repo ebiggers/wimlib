@@ -33,7 +33,7 @@
 #include "sha1.h"
 #include "lookup_table.h"
 #include "xml.h"
-#include "io.h"
+#include "buffer_io.h"
 #include "timestamp.h"
 #include <limits.h>
 #include <stdlib.h>

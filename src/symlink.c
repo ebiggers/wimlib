@@ -24,7 +24,7 @@
  */
 
 #include "dentry.h"
-#include "io.h"
+#include "buffer_io.h"
 #include "lookup_table.h"
 #include "sha1.h"
 #include <errno.h>
@@ -124,7 +124,8 @@ out:
 	return ret;
 }
 
-void *make_symlink_reparse_data_buf(const char *symlink_target, size_t *len_ret)
+static void *make_symlink_reparse_data_buf(const char *symlink_target,
+					   size_t *len_ret)
 {
 	size_t utf8_len = strlen(symlink_target);
 	size_t utf16_len;
