@@ -1,10 +1,5 @@
 /*
- * modify.c
- *
- * Support for modifying WIM files with image-level operations (delete an image,
- * add an image, export an image from one WIM to another.)  There is nothing
- * here that lets you change individual files in the WIM; for that you will need
- * to look at the filesystem implementation in mount.c.
+ * add_image.c
  */
 
 /*
@@ -27,37 +22,90 @@
  */
 
 #include "wimlib_internal.h"
-#include "util.h"
-#include "sha1.h"
 #include "dentry.h"
-#include "xml.h"
-#include "lookup_table.h"
 #include "timestamp.h"
-#include <sys/stat.h>
-#include <dirent.h>
+#include "lookup_table.h"
+#include "xml.h"
 #include <string.h>
-#include <errno.h>
 #include <fnmatch.h>
 #include <ctype.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <errno.h>
 #include <unistd.h>
 
 /** Private flag: Used to mark that we currently adding the root directory of
  * the WIM image. */
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT 0x80000000
 
-void destroy_image_metadata(struct image_metadata *imd,
-			    struct lookup_table *table)
+/*
+ * Adds an image (given by its dentry tree) to the image metadata array of a WIM
+ * file, adds an entry to the lookup table for the image metadata, updates the
+ * image count in the header, and selects the new image.
+ *
+ * Does not update the XML data.
+ *
+ * On failure, WIMLIB_ERR_NOMEM is returned and no changes are made.  Otherwise,
+ * 0 is returned and the image metadata array of @w is modified.
+ *
+ * @w:		  The WIMStruct for the WIM file.
+ * @root_dentry:  The root of the directory tree for the image.
+ * @sd:		  The security data for the image.
+ */
+int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
+			       struct wim_security_data *sd)
 {
-	free_dentry_tree(imd->root_dentry, table);
-	free_security_data(imd->security_data);
+	struct lookup_table_entry *metadata_lte;
+	struct image_metadata *imd;
+	struct image_metadata *new_imd;
+	int ret;
 
-	/* Get rid of the lookup table entry for this image's metadata resource
-	 * */
-	if (table) {
-		lookup_table_unlink(table, imd->metadata_lte);
-		free_lookup_table_entry(imd->metadata_lte);
+	wimlib_assert(root_dentry != NULL);
+
+	DEBUG("Reallocating image metadata array for image_count = %u",
+	      w->hdr.image_count + 1);
+	imd = CALLOC((w->hdr.image_count + 1), sizeof(struct image_metadata));
+
+	if (!imd) {
+		ERROR("Failed to allocate memory for new image metadata array");
+		goto err;
 	}
+
+	memcpy(imd, w->image_metadata,
+	       w->hdr.image_count * sizeof(struct image_metadata));
+
+	metadata_lte = new_lookup_table_entry();
+	if (!metadata_lte)
+		goto err_free_imd;
+
+	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
+	random_hash(metadata_lte->hash);
+	lookup_table_insert(w->lookup_table, metadata_lte);
+
+	new_imd = &imd[w->hdr.image_count];
+
+	new_imd->root_dentry	= root_dentry;
+	new_imd->metadata_lte	= metadata_lte;
+	new_imd->security_data  = sd;
+	new_imd->modified	= true;
+
+	FREE(w->image_metadata);
+	w->image_metadata	= imd;
+	w->hdr.image_count++;
+
+	/* Change the current image to the new one.  There should not be any
+	 * ways for this to fail, since the image is valid and the dentry tree
+	 * is already in memory. */
+	ret = select_wim_image(w, w->hdr.image_count);
+	wimlib_assert(ret == 0);
+	return ret;
+err_free_imd:
+	FREE(imd);
+err:
+	return WIMLIB_ERR_NOMEM;
+
 }
+
 
 /*
  * Recursively builds a dentry tree from a directory tree on disk, outside the
@@ -331,458 +379,6 @@ out:
 	return ret;
 }
 
-struct wim_pair {
-	WIMStruct *src_wim;
-	WIMStruct *dest_wim;
-	struct list_head lte_list_head;
-};
-
-static int allocate_lte_if_needed(struct dentry *dentry, void *arg)
-{
-	const WIMStruct *src_wim, *dest_wim;
-	struct list_head *lte_list_head;
-	struct inode *inode;
-
-	src_wim = ((struct wim_pair*)arg)->src_wim;
-	dest_wim = ((struct wim_pair*)arg)->dest_wim;
-	lte_list_head = &((struct wim_pair*)arg)->lte_list_head;
-	inode = dentry->d_inode;
-
-	wimlib_assert(!inode->resolved);
-
-	for (unsigned i = 0; i <= inode->num_ads; i++) {
-		struct lookup_table_entry *src_lte, *dest_lte;
-		src_lte = inode_stream_lte_unresolved(inode, i,
-						      src_wim->lookup_table);
-
-		if (src_lte && ++src_lte->out_refcnt == 1) {
-			dest_lte = inode_stream_lte_unresolved(inode, i,
-							       dest_wim->lookup_table);
-
-			if (!dest_lte) {
-				dest_lte = clone_lookup_table_entry(src_lte);
-				if (!dest_lte)
-					return WIMLIB_ERR_NOMEM;
-				list_add_tail(&dest_lte->staging_list, lte_list_head);
-			}
-		}
-	}
-	return 0;
-}
-
-/*
- * This function takes in a dentry that was previously located only in image(s)
- * in @src_wim, but now is being added to @dest_wim.  For each stream associated
- * with the dentry, if there is already a lookup table entry for that stream in
- * the lookup table of the destination WIM file, its reference count is
- * incrementej.  Otherwise, a new lookup table entry is created that points back
- * to the stream in the source WIM file (through the @hash field combined with
- * the @wim field of the lookup table entry.)
- */
-static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
-{
-	WIMStruct *src_wim, *dest_wim;
-	struct inode *inode;
-
-	src_wim = ((struct wim_pair*)arg)->src_wim;
-	dest_wim = ((struct wim_pair*)arg)->dest_wim;
-	inode = dentry->d_inode;
-
-	wimlib_assert(!inode->resolved);
-
-	for (unsigned i = 0; i <= inode->num_ads; i++) {
-		struct lookup_table_entry *src_lte, *dest_lte;
-		src_lte = inode_stream_lte_unresolved(inode, i,
-						      src_wim->lookup_table);
-
-		if (!src_lte) /* Empty or nonexistent stream. */
-			continue;
-
-		dest_lte = inode_stream_lte_unresolved(inode, i,
-						       dest_wim->lookup_table);
-		if (dest_lte) {
-			dest_lte->refcnt++;
-		} else {
-			struct list_head *lte_list_head;
-			struct list_head *next;
-
-			lte_list_head = &((struct wim_pair*)arg)->lte_list_head;
-			wimlib_assert(!list_empty(lte_list_head));
-
-			next = lte_list_head->next;
-			list_del(next);
-			dest_lte = container_of(next, struct lookup_table_entry,
-						staging_list);
-			dest_lte->part_number = 1;
-			dest_lte->refcnt = 1;
-			wimlib_assert(hashes_equal(dest_lte->hash, src_lte->hash));
-
-			lookup_table_insert(dest_wim->lookup_table, dest_lte);
-		}
-	}
-	return 0;
-}
-
-/*
- * Adds an image (given by its dentry tree) to the image metadata array of a WIM
- * file, adds an entry to the lookup table for the image metadata, updates the
- * image count in the header, and selects the new image.
- *
- * Does not update the XML data.
- *
- * On failure, WIMLIB_ERR_NOMEM is returned and no changes are made.  Otherwise,
- * 0 is returned and the image metadata array of @w is modified.
- *
- * @w:		  The WIMStruct for the WIM file.
- * @root_dentry:  The root of the directory tree for the image.
- * @sd:		  The security data for the image.
- */
-static int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
-			       struct wim_security_data *sd)
-{
-	struct lookup_table_entry *metadata_lte;
-	struct image_metadata *imd;
-	struct image_metadata *new_imd;
-	int ret;
-
-	wimlib_assert(root_dentry != NULL);
-
-	DEBUG("Reallocating image metadata array for image_count = %u",
-	      w->hdr.image_count + 1);
-	imd = CALLOC((w->hdr.image_count + 1), sizeof(struct image_metadata));
-
-	if (!imd) {
-		ERROR("Failed to allocate memory for new image metadata array");
-		goto err;
-	}
-
-	memcpy(imd, w->image_metadata,
-	       w->hdr.image_count * sizeof(struct image_metadata));
-
-	metadata_lte = new_lookup_table_entry();
-	if (!metadata_lte)
-		goto err_free_imd;
-
-	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
-	random_hash(metadata_lte->hash);
-	lookup_table_insert(w->lookup_table, metadata_lte);
-
-	new_imd = &imd[w->hdr.image_count];
-
-	new_imd->root_dentry	= root_dentry;
-	new_imd->metadata_lte	= metadata_lte;
-	new_imd->security_data  = sd;
-	new_imd->modified	= true;
-
-	FREE(w->image_metadata);
-	w->image_metadata	= imd;
-	w->hdr.image_count++;
-
-	/* Change the current image to the new one.  There should not be any
-	 * ways for this to fail, since the image is valid and the dentry tree
-	 * is already in memory. */
-	ret = select_wim_image(w, w->hdr.image_count);
-	wimlib_assert(ret == 0);
-	return ret;
-err_free_imd:
-	FREE(imd);
-err:
-	return WIMLIB_ERR_NOMEM;
-
-}
-
-/*
- * Copies an image, or all the images, from a WIM file, into another WIM file.
- */
-WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
-				  int src_image,
-				  WIMStruct *dest_wim,
-				  const char *dest_name,
-				  const char *dest_description,
-				  int export_flags,
-				  WIMStruct **additional_swms,
-				  unsigned num_additional_swms,
-				  wimlib_progress_func_t progress_func)
-{
-	int i;
-	int ret;
-	struct dentry *root;
-	struct wim_pair wims;
-	struct wim_security_data *sd;
-	struct lookup_table *joined_tab, *src_wim_tab_save;
-
-	if (dest_wim->hdr.total_parts != 1) {
-		ERROR("Exporting an image to a split WIM is "
-		      "unsupported");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-	}
-
-	if (src_image == WIMLIB_ALL_IMAGES) {
-		if (src_wim->hdr.image_count > 1) {
-
-			/* multi-image export. */
-
-			if ((export_flags & WIMLIB_EXPORT_FLAG_BOOT) &&
-			      (src_wim->hdr.boot_idx == 0))
-			{
-				/* Specifying the boot flag on a multi-image
-				 * source WIM makes the boot index default to
-				 * the bootable image in the source WIM.  It is
-				 * an error if there is no such bootable image.
-				 * */
-				ERROR("Cannot specify `boot' flag when "
-				      "exporting multiple images from a WIM "
-				      "with no bootable images");
-				return WIMLIB_ERR_INVALID_PARAM;
-			}
-			if (dest_name || dest_description) {
-				ERROR("Image name or image description was "
-				      "specified, but we are exporting "
-				      "multiple images");
-				return WIMLIB_ERR_INVALID_PARAM;
-			}
-			for (i = 1; i <= src_wim->hdr.image_count; i++) {
-				int new_flags = export_flags;
-
-				if (i != src_wim->hdr.boot_idx)
-					new_flags &= ~WIMLIB_EXPORT_FLAG_BOOT;
-
-				ret = wimlib_export_image(src_wim, i, dest_wim,
-							  NULL, NULL,
-							  new_flags,
-							  additional_swms,
-							  num_additional_swms,
-							  progress_func);
-				if (ret != 0)
-					return ret;
-			}
-			return 0;
-		} else if (src_wim->hdr.image_count == 1) {
-			src_image = 1;
-		} else {
-			return 0;
-		}
-	}
-
-	if (!dest_name) {
-		dest_name = wimlib_get_image_name(src_wim, src_image);
-		DEBUG("Using name `%s' for source image %d",
-		      dest_name, src_image);
-	}
-
-	if (!dest_description) {
-		dest_description = wimlib_get_image_description(src_wim,
-								src_image);
-		DEBUG("Using description `%s' for source image %d",
-		      dest_description, src_image);
-	}
-
-	DEBUG("Exporting image %d from `%s'", src_image, src_wim->filename);
-
-	if (wimlib_image_name_in_use(dest_wim, dest_name)) {
-		ERROR("There is already an image named `%s' in the "
-		      "destination WIM", dest_name);
-		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
-	}
-
-	ret = verify_swm_set(src_wim, additional_swms, num_additional_swms);
-	if (ret != 0)
-		return ret;
-
-	if (num_additional_swms) {
-		ret = new_joined_lookup_table(src_wim, additional_swms,
-					      num_additional_swms,
-					      &joined_tab);
-		if (ret != 0)
-			return ret;
-		src_wim_tab_save = src_wim->lookup_table;
-		src_wim->lookup_table = joined_tab;
-	}
-
-	ret = select_wim_image(src_wim, src_image);
-	if (ret != 0) {
-		ERROR("Could not select image %d from the WIM `%s' "
-		      "to export it", src_image, src_wim->filename);
-		goto out;
-	}
-
-	/* Pre-allocate the new lookup table entries that will be needed.  This
-	 * way, it's not possible to run out of memory part-way through
-	 * modifying the lookup table of the destination WIM. */
-	wims.src_wim = src_wim;
-	wims.dest_wim = dest_wim;
-	INIT_LIST_HEAD(&wims.lte_list_head);
-	for_lookup_table_entry(src_wim->lookup_table, lte_zero_out_refcnt, NULL);
-	root = wim_root_dentry(src_wim);
-	for_dentry_in_tree(root, dentry_unresolve_ltes, NULL);
-	ret = for_dentry_in_tree(root, allocate_lte_if_needed, &wims);
-	if (ret != 0)
-		goto out_free_ltes;
-
-	ret = xml_export_image(src_wim->wim_info, src_image,
-			       &dest_wim->wim_info, dest_name, dest_description);
-	if (ret != 0)
-		goto out_free_ltes;
-
-	sd = wim_security_data(src_wim);
-	ret = add_new_dentry_tree(dest_wim, root, sd);
-	if (ret != 0)
-		goto out_xml_delete_image;
-
-
-	/* All memory allocations have been taken care of, so it's no longer
-	 * possible for this function to fail.  Go ahead and increment the
-	 * reference counts of the dentry tree and security data, then update
-	 * the lookup table of the destination WIM and the boot index, if
-	 * needed. */
-	for_dentry_in_tree(root, increment_dentry_refcnt, NULL);
-	sd->refcnt++;
-	for_dentry_in_tree(root, add_lte_to_dest_wim, &wims);
-	wimlib_assert(list_empty(&wims.lte_list_head));
-
-	if (export_flags & WIMLIB_EXPORT_FLAG_BOOT) {
-		DEBUG("Setting boot_idx to %d", dest_wim->hdr.image_count);
-		wimlib_set_boot_idx(dest_wim, dest_wim->hdr.image_count);
-	}
-	ret = 0;
-	goto out;
-
-out_xml_delete_image:
-	xml_delete_image(&dest_wim->wim_info, dest_wim->hdr.image_count);
-out_free_ltes:
-	{
-		struct lookup_table_entry *lte, *tmp;
-		list_for_each_entry_safe(lte, tmp, &wims.lte_list_head, staging_list)
-			free_lookup_table_entry(lte);
-	}
-
-out:
-	if (num_additional_swms) {
-		free_lookup_table(src_wim->lookup_table);
-		src_wim->lookup_table = src_wim_tab_save;
-	}
-	return ret;
-}
-
-static int image_run_full_verifications(WIMStruct *w)
-{
-	return for_dentry_in_tree(wim_root_dentry(w), verify_dentry, w);
-}
-
-static int lte_fix_refcnt(struct lookup_table_entry *lte, void *ctr)
-{
-	if (lte->refcnt != lte->real_refcnt) {
-		WARNING("The following lookup table entry has a reference "
-			"count of %u, but", lte->refcnt);
-		WARNING("We found %u references to it",
-			lte->real_refcnt);
-		print_lookup_table_entry(lte);
-		lte->refcnt = lte->real_refcnt;
-		++*(unsigned long *)ctr;
-	}
-	return 0;
-}
-
-/* Ideally this would be unnecessary... however, the WIMs for Windows 8 are
- * screwed up because some lookup table entries are referenced more times than
- * their stated reference counts.  So theoretically, if we delete all the
- * references to a stream and then remove it, it might still be referenced
- * somewhere else, making a file be missing from the WIM... So, work around this
- * problem by looking at ALL the images to re-calculate the reference count of
- * EVERY lookup table entry.  This only absolutely has to be done before an image
- * is deleted or before an image is mounted read-write. */
-int wim_run_full_verifications(WIMStruct *w)
-{
-	int ret;
-
-	for_lookup_table_entry(w->lookup_table, lte_zero_real_refcnt, NULL);
-	w->all_images_verified = true;
-	w->full_verification_in_progress = true;
-	ret = for_image(w, WIMLIB_ALL_IMAGES, image_run_full_verifications);
-	w->full_verification_in_progress = false;
-	if (ret == 0) {
-		unsigned long num_ltes_with_bogus_refcnt = 0;
-		for (int i = 0; i < w->hdr.image_count; i++)
-			w->image_metadata[i].metadata_lte->real_refcnt++;
-		for_lookup_table_entry(w->lookup_table, lte_fix_refcnt,
-				       &num_ltes_with_bogus_refcnt);
-		if (num_ltes_with_bogus_refcnt != 0) {
-			WARNING("A total of %lu entries in the WIM's stream "
-				"lookup table had to have\n"
-				"          their reference counts fixed.",
-				num_ltes_with_bogus_refcnt);
-		}
-	} else {
-		w->all_images_verified = false;
-	}
-	return ret;
-}
-
-/*
- * Deletes an image from the WIM.
- */
-WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
-{
-	int i;
-	int ret;
-
-	if (w->hdr.total_parts != 1) {
-		ERROR("Deleting an image from a split WIM is not supported.");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-	}
-
-	if (image == WIMLIB_ALL_IMAGES) {
-		for (i = w->hdr.image_count; i >= 1; i--) {
-			ret = wimlib_delete_image(w, i);
-			if (ret != 0)
-				return ret;
-		}
-		return 0;
-	}
-
-	if (!w->all_images_verified) {
-		ret = wim_run_full_verifications(w);
-		if (ret != 0)
-			return ret;
-	}
-
-	DEBUG("Deleting image %d", image);
-
-	/* Even if the dentry tree is not allocated, we must select it (and
-	 * therefore allocate it) so that we can decrement the reference counts
-	 * in the lookup table.  */
-	ret = select_wim_image(w, image);
-	if (ret != 0)
-		return ret;
-
-	/* Free the dentry tree, any lookup table entries that have their
-	 * refcnt decremented to 0, and the security data. */
-	destroy_image_metadata(&w->image_metadata[image - 1], w->lookup_table);
-
-	/* Get rid of the empty slot in the image metadata array. */
-	memmove(&w->image_metadata[image - 1], &w->image_metadata[image],
-		(w->hdr.image_count - image) * sizeof(struct image_metadata));
-
-	/* Decrement the image count. */
-	if (--w->hdr.image_count == 0) {
-		FREE(w->image_metadata);
-		w->image_metadata = NULL;
-	}
-
-	/* Fix the boot index. */
-	if (w->hdr.boot_idx == image)
-		w->hdr.boot_idx = 0;
-	else if (w->hdr.boot_idx > image)
-		w->hdr.boot_idx--;
-
-	w->current_image = WIMLIB_NO_IMAGE;
-
-	/* Remove the image from the XML information. */
-	xml_delete_image(&w->wim_info, image);
-
-	w->deletion_occurred = true;
-	return 0;
-}
 
 enum pattern_type {
 	NONE = 0,
@@ -1061,7 +657,7 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 		ERROR("Must specify a non-empty string for the image name");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
-	if (!source) {
+	if (!source || !*source) {
 		ERROR("Must specify the name of a directory or NTFS volume");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}

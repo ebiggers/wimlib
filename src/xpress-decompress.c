@@ -1,5 +1,5 @@
 /*
- * xpress-decomp.c
+ * xpress-decompress.c
  *
  * XPRESS decompression routines.
  */
@@ -67,8 +67,8 @@
  * the end.  Otherwise Microsoft's software will fail to decompress the
  * XPRESS-compressed data.
  *
- * Howeve, wimlib's decompressor in xpress-decomp.c currently does not care if
- * this extra symbol is there or not.
+ * However, wimlib's decompressor in this file currently does not care if this
+ * extra symbol is there or not.
  */
 
 #include "util.h"
@@ -76,8 +76,7 @@
 #include "wimlib.h"
 
 #define XPRESS_DECOMP
-#include "decomp.h"
-
+#include "decompress.h"
 
 /*
  * Decodes a symbol @huffsym that begins an XPRESS match.

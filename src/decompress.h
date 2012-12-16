@@ -1,5 +1,5 @@
 /*
- * decomp.h
+ * decompress.h
  *
  * Functions useful for decompression, mainly bitstreams.
  */

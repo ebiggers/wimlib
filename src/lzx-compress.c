@@ -1,5 +1,5 @@
 /*
- * lzx-comp.c
+ * lzx-compress.c
  *
  * LZX compression routines, originally based on code written by Matthew T.
  * Russotto (liblzxcomp), but heavily modified.
@@ -30,7 +30,7 @@
  * This file provides lzx_compress(), a function to compress an in-memory buffer
  * of data using LZX compression, as used in the WIM file format.
  *
- * Please see the comments in lzx-decomp.c for more information about this
+ * Please see the comments in lzx-decompress.c for more information about this
  * compression format.
  *
  * One thing to keep in mind is that there is no sliding window, since the
@@ -58,8 +58,7 @@
  */
 
 #include "lzx.h"
-#include "comp.h"
-#include <math.h>
+#include "compress.h"
 #include <stdlib.h>
 #include <string.h>
 

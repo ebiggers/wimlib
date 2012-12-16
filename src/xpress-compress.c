@@ -1,9 +1,9 @@
 /*
- * xpress-comp.c
+ * xpress-compress.c
  *
  * XPRESS compression routines.
  *
- * See the comments in xpress-decomp.c about the XPRESS format.
+ * See the comments in xpress-decompress.c about the XPRESS format.
  */
 
 /*
@@ -26,7 +26,7 @@
  */
 
 #include "xpress.h"
-#include "comp.h"
+#include "compress.h"
 #include <stdlib.h>
 #include <string.h>
 

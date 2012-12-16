@@ -1,5 +1,5 @@
 /*
- * comp.c
+ * compress.c
  *
  * Functions used for compression.
  */
@@ -23,7 +23,7 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "comp.h"
+#include "compress.h"
 #include <stdlib.h>
 #include <string.h>
 

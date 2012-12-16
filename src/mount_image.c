@@ -1,5 +1,5 @@
 /*
- * mount.c
+ * mount_image.c
  *
  * This file implements mounting of WIM files using FUSE, which stands for
  * Filesystem in Userspace.  FUSE allows a filesystem to be implemented in a

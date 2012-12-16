@@ -1,11 +1,11 @@
 /*
- * comp.h
+ * compress.h
  *
  * Functions useful for compression, mainly bitstreams.
  */
 
-#ifndef _WIMLIB_COMP_H
-#define _WIMLIB_COMP_H
+#ifndef _WIMLIB_COMPRESS_H
+#define _WIMLIB_COMPRESS_H
 
 #include "util.h"
 #include "endianness.h"
@@ -92,4 +92,4 @@ extern void make_canonical_huffman_code(unsigned num_syms,
 					u8 lens[],
 					u16 codewords[]);
 
-#endif /* _WIMLIB_COMP_H */
+#endif /* _WIMLIB_COMPRESS_H */

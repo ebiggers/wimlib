@@ -10,14 +10,17 @@ lib_LTLIBRARIES = libwim.la
 libwim_la_LDFLAGS = -version-info 1:0:0
 
 libwim_la_SOURCES =		\
-	src/comp.c		\
-	src/comp.h		\
-	src/decomp.c		\
-	src/decomp.h		\
+	src/add_image.c		\
+	src/compress.c		\
+	src/compress.h		\
+	src/decompress.c	\
+	src/decompress.h	\
+	src/delete_image.c	\
 	src/dentry.c		\
 	src/dentry.h		\
 	src/endianness.h	\
-	src/extract.c		\
+	src/export_image.c	\
+	src/extract_image.c	\
 	src/hardlink.c		\
 	src/header.c		\
 	src/integrity.c		\
@@ -26,13 +29,12 @@ libwim_la_SOURCES =		\
 	src/list.h		\
 	src/lookup_table.c	\
 	src/lookup_table.h	\
-	src/lz.c		\
+	src/lz77.c		\
 	src/lzx-common.c	\
-	src/lzx-comp.c		\
-	src/lzx-decomp.c	\
+	src/lzx-compress.c	\
+	src/lzx-decompress.c	\
 	src/lzx.h		\
-	src/modify.c		\
-	src/mount.c		\
+	src/mount_image.c	\
 	src/resource.c		\
 	src/rbtree.c		\
 	src/rbtree.h		\
@@ -52,8 +54,8 @@ libwim_la_SOURCES =		\
 	src/write.c		\
 	src/xml.c		\
 	src/xml.h		\
-	src/xpress-comp.c	\
-	src/xpress-decomp.c	\
+	src/xpress-compress.c	\
+	src/xpress-decompress.c	\
 	src/xpress.h
 
 if WITH_NTFS_3G

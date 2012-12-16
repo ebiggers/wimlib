@@ -1,5 +1,5 @@
 /*
- * lzx-decomp.c
+ * lzx-decompress.c
  *
  * LZX decompression routines, originally based on code taken from cabextract
  * v0.5, which was, itself, a modified version of the lzx decompression code
@@ -108,7 +108,7 @@
 
 #include "util.h"
 #include "lzx.h"
-#include "decomp.h"
+#include "decompress.h"
 #include <string.h>
 
 /* Huffman decoding tables and maps from symbols to code lengths. */

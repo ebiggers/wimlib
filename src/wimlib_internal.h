@@ -369,6 +369,13 @@ struct capture_config {
 	size_t prefix_len;
 };
 
+/* add_image.c */
+extern bool exclude_path(const char *path,
+			 const struct capture_config *config,
+			 bool exclude_prefix);
+extern int add_new_dentry_tree(WIMStruct *dest_wim, struct dentry *root,
+			       struct wim_security_data *sd);
+
 /* hardlink.c */
 
 /* Hash table to find inodes, identified by their inode ID.
@@ -402,7 +409,6 @@ extern int inode_table_insert(struct dentry *dentry, void *__table);
 extern u64 assign_inode_numbers(struct hlist_head *inode_list);
 extern int fix_inodes(struct inode_table *table, struct hlist_head *inode_list);
 
-
 /* header.c */
 extern int read_header(FILE *fp, struct wim_header *hdr, int split_ok);
 extern int write_header(const struct wim_header *hdr, FILE *out);
@@ -428,22 +434,6 @@ extern int new_joined_lookup_table(WIMStruct *w,
 extern int verify_swm_set(WIMStruct *w,
 			  WIMStruct **additional_swms,
 			  unsigned num_additional_swms);
-/* modify.c */
-extern void destroy_image_metadata(struct image_metadata *imd,
-				   struct lookup_table *lt);
-extern bool exclude_path(const char *path,
-			 const struct capture_config *config,
-			 bool exclude_prefix);
-extern int do_add_image(WIMStruct *w, const char *dir, const char *name,
-			const char *config_str, size_t config_len,
-			int flags,
-			int (*capture_tree)(struct dentry **, const char *,
-			 	     struct lookup_table *,
-				     struct wim_security_data *,
-				     const struct capture_config *,
-				     int, void *),
-			void *extra_arg,
-			wimlib_progress_func_t progress_func);
 extern int wim_run_full_verifications(WIMStruct *w);
 
 /* ntfs-apply.c */
@@ -531,6 +521,8 @@ extern WIMStruct *new_wim_struct();
 extern int select_wim_image(WIMStruct *w, int image);
 extern int wim_hdr_flags_compression_type(int wim_hdr_flags);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
+extern void destroy_image_metadata(struct image_metadata *imd,
+				   struct lookup_table *lt);
 
 /* Internal use only */
 #define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE	0x80000000

@@ -1,5 +1,5 @@
 /*
- * extract.c
+ * extract_image.c
  *
  * Support for extracting WIM files.
  *
@@ -10,7 +10,6 @@
  */
 
 /*
- * Copyright (C) 2010 Carl Thijssen
  * Copyright (C) 2012 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
@@ -43,7 +42,6 @@
 #ifdef HAVE_UTIME_H
 #include <utime.h>
 #endif
-
 
 #include <unistd.h>
 

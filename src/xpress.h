@@ -3,7 +3,7 @@
 
 #include "util.h"
 
-/* See the comments in xpress-decomp.c about the XPRESS format. */
+/* See the comments in xpress-decompress.c about the XPRESS format. */
 
 //#define ENABLE_XPRESS_DEBUG
 #ifdef ENABLE_XPRESS_DEBUG

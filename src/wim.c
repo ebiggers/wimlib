@@ -580,6 +580,20 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int open_flags,
 	return ret;
 }
 
+void destroy_image_metadata(struct image_metadata *imd,
+			    struct lookup_table *table)
+{
+	free_dentry_tree(imd->root_dentry, table);
+	free_security_data(imd->security_data);
+
+	/* Get rid of the lookup table entry for this image's metadata resource
+	 * */
+	if (table) {
+		lookup_table_unlink(table, imd->metadata_lte);
+		free_lookup_table_entry(imd->metadata_lte);
+	}
+}
+
 /* Frees the memory for the WIMStruct, including all internal memory; also
  * closes all files associated with the WIMStruct.  */
 WIMLIBAPI void wimlib_free(WIMStruct *w)

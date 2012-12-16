@@ -1,5 +1,5 @@
 /*
- * decomp.c
+ * decompress.c
  *
  * Functions used for decompression.
  */
@@ -23,7 +23,7 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "decomp.h"
+#include "decompress.h"
 #include <string.h>
 
 /* Reads @n bytes from the bitstream @stream into the location pointed to by @dest.
