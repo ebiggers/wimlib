@@ -34,6 +34,7 @@ libwim_la_SOURCES =		\
 	src/lzx-compress.c	\
 	src/lzx-decompress.c	\
 	src/lzx.h		\
+	src/metadata_resource.c	\
 	src/mount_image.c	\
 	src/resource.c		\
 	src/rbtree.c		\
