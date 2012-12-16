@@ -193,9 +193,20 @@ static int build_dentry_tree(struct dentry **root_ret,
 	}
 
 	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) &&
-	      !S_ISDIR(root_stbuf.st_mode)) {
-		ERROR("`%s' is not a directory", root_disk_path);
-		return WIMLIB_ERR_NOTDIR;
+	      !S_ISDIR(root_stbuf.st_mode))
+	{
+		/* Do a dereference-stat in case the root is a symbolic link.
+		 * This case is allowed, provided that the symbolic link points
+		 * to a directory. */
+		ret = stat(root_disk_path, &root_stbuf);
+		if (ret != 0) {
+			ERROR_WITH_ERRNO("Failed to stat `%s'", root_disk_path);
+			return WIMLIB_ERR_STAT;
+		}
+		if (!S_ISDIR(root_stbuf.st_mode)) {
+			ERROR("`%s' is not a directory", root_disk_path);
+			return WIMLIB_ERR_NOTDIR;
+		}
 	}
 	if (!S_ISREG(root_stbuf.st_mode) && !S_ISDIR(root_stbuf.st_mode)
 	    && !S_ISLNK(root_stbuf.st_mode)) {
