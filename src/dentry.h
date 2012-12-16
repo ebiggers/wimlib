@@ -334,9 +334,6 @@ static inline bool dentry_is_first_in_inode(const struct dentry *dentry)
 
 extern u64 dentry_correct_total_length(const struct dentry *dentry);
 
-extern int inode_to_stbuf(const struct inode *inode,
-			  struct lookup_table_entry *lte, struct stat *stbuf);
-
 extern int for_dentry_in_tree(struct dentry *root,
 			      int (*visitor)(struct dentry*, void*),
 			      void *args);

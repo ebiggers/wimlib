@@ -295,6 +295,50 @@ static void remove_dentry(struct dentry *dentry,
 	put_dentry(dentry);
 }
 
+/* Transfers file attributes from a struct inode to a `stat' buffer.
+ *
+ * The lookup table entry tells us which stream in the inode we are statting.
+ * For a named data stream, everything returned is the same as the unnamed data
+ * stream except possibly the size and block count. */
+static int inode_to_stbuf(const struct inode *inode,
+			  struct lookup_table_entry *lte, struct stat *stbuf)
+{
+	if (inode_is_symlink(inode))
+		stbuf->st_mode = S_IFLNK | 0777;
+	else if (inode_is_directory(inode))
+		stbuf->st_mode = S_IFDIR | 0755;
+	else
+		stbuf->st_mode = S_IFREG | 0755;
+
+	stbuf->st_ino   = (ino_t)inode->ino;
+	stbuf->st_nlink = inode->link_count;
+	stbuf->st_uid   = getuid();
+	stbuf->st_gid   = getgid();
+
+	if (lte) {
+		if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
+			wimlib_assert(lte->staging_file_name);
+			struct stat native_stat;
+			if (stat(lte->staging_file_name, &native_stat) != 0) {
+				DEBUG("Failed to stat `%s': %m",
+				      lte->staging_file_name);
+				return -errno;
+			}
+			stbuf->st_size = native_stat.st_size;
+		} else {
+			stbuf->st_size = wim_resource_size(lte);
+		}
+	} else {
+		stbuf->st_size = 0;
+	}
+
+	stbuf->st_atime   = wim_timestamp_to_unix(inode->last_access_time);
+	stbuf->st_mtime   = wim_timestamp_to_unix(inode->last_write_time);
+	stbuf->st_ctime   = wim_timestamp_to_unix(inode->creation_time);
+	stbuf->st_blocks  = (stbuf->st_size + 511) / 512;
+	return 0;
+}
+
 /* Creates a new staging file and returns its file descriptor opened for
  * writing.
  *
