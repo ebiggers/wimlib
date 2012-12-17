@@ -160,6 +160,9 @@ static const char *error_strings[] = {
 		= "The SHA1 message digest of a WIM resource did not match the expected value",
 	[WIMLIB_ERR_INVALID_RESOURCE_SIZE]
 		= "A resource entry in the WIM has an invalid size",
+	[WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE]
+		= "The version of wimlib that has mounted a WIM image is incompatible with the "
+		  "version being used to unmount it",
 	[WIMLIB_ERR_LINK]
 		= "Failed to create a hard or symbolic link when extracting "
 			"a file from the WIM",

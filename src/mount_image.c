@@ -666,11 +666,11 @@ static int set_message_queue_names(struct wimfs_context *ctx,
  	dir_path = realpath(mount_dir, NULL);
 	if (!dir_path) {
 		ERROR_WITH_ERRNO("Failed to resolve path \"%s\"", mount_dir);
-		return WIMLIB_ERR_NOTDIR;
+		if (errno == ENOMEM)
+			return WIMLIB_ERR_NOMEM;
+		else
+			return WIMLIB_ERR_NOTDIR;
 	}
-
-	DEBUG("Using absolute dir_path = `%s'", dir_path);
-
 
 	p = dir_path;
 	while (*p) {
@@ -800,7 +800,7 @@ static long mq_get_msgsize(mqd_t mq)
 }
 
 static int get_mailbox(mqd_t mq, long needed_msgsize, long *msgsize_ret,
-		       char **mailbox_ret)
+		       void **mailbox_ret)
 {
 	long msgsize;
 	char *mailbox;
@@ -838,6 +838,27 @@ static void close_message_queues(struct wimfs_context *ctx)
 	ctx->daemon_to_unmount_mq = (mqd_t)(-1);
 	unlink_message_queues(ctx);
 }
+
+struct unmount_message_header {
+	u32 min_version;
+	u32 cur_version;
+	u32 data_size;
+};
+
+struct unmount_request {
+	struct unmount_message_header hdr;
+	struct {
+		u32 unmount_flags;
+	} data;
+};
+
+struct unmount_response {
+	struct unmount_message_header hdr;
+	struct {
+		int32_t status;
+		u32 mount_flags;
+	} data;
+};
 
 static int wimfs_access(const char *path, int mask)
 {
@@ -978,77 +999,272 @@ static int rebuild_wim(struct wimfs_context *ctx, int write_flags)
 	return ret;
 }
 
-/* Called when the filesystem is unmounted. */
-static void wimfs_destroy(void *p)
+/* Send a message to the filesystem daemon saying whether to commit or not. */
+static int send_unmount_request(struct wimfs_context *ctx, int unmount_flags)
 {
-	/* For read-write mounts, the `imagex unmount' command, which is
-	 * running in a separate process and is executing the
-	 * wimlib_unmount() function, will send this process a byte
-	 * through a message queue that indicates whether the --commit
-	 * option was specified or not. */
-
-	long msgsize;
-	struct timespec timeout;
-	struct timeval now;
-	ssize_t bytes_received;
 	int ret;
-	char commit;
-	char check_integrity;
-	char status;
-	char *mailbox;
-	struct wimfs_context *ctx = wimfs_get_context();
-	int write_flags;
+	struct unmount_request msg;
 
-	if (open_message_queues(ctx, true))
-		return;
+	msg.hdr.min_version    = WIMLIB_MAKEVERSION(1, 2, 0);
+	msg.hdr.cur_version    = WIMLIB_VERSION_CODE;
+	msg.hdr.data_size      = sizeof(msg.data);
+	msg.data.unmount_flags = unmount_flags;
 
-	if (get_mailbox(ctx->unmount_to_daemon_mq, 2, &msgsize, &mailbox))
-		goto out_close_message_queues;
+	ret = mq_send(ctx->unmount_to_daemon_mq, (void*)&msg,
+		      sizeof(msg), 1);
+	if (ret == -1) {
+		ERROR_WITH_ERRNO("Failed to notify filesystem daemon whether "
+				 "we want to commit changes or not");
+		return WIMLIB_ERR_MQUEUE;
+	}
+	return 0;
+}
+
+static int receive_unmount_request(struct wimfs_context *ctx,
+				   int *unmount_flags)
+{
+	void *mailbox;
+	long msgsize;
+	struct timeval now;
+	struct timespec timeout;
+	ssize_t bytes_received;
+	struct unmount_request *msg;
+	int ret;
+
+	ret = get_mailbox(ctx->unmount_to_daemon_mq,
+			  sizeof(struct unmount_request),
+			  &msgsize, &mailbox);
+	if (ret != 0)
+		return ret;
 
 	/* Wait at most 3 seconds before giving up and discarding changes. */
 	gettimeofday(&now, NULL);
 	timeout.tv_sec = now.tv_sec + 3;
 	timeout.tv_nsec = now.tv_usec * 1000;
-	DEBUG("Waiting for message telling us whether to commit or not, and "
-	      "whether to include integrity checks.");
 
 	bytes_received = mq_timedreceive(ctx->unmount_to_daemon_mq, mailbox,
 					 msgsize, NULL, &timeout);
+	msg = mailbox;
 	if (bytes_received == -1) {
 		ERROR_WITH_ERRNO("mq_timedreceive()");
 		ERROR("Not committing.");
-		commit = 0;
-		check_integrity = 0;
+		ret = WIMLIB_ERR_MQUEUE;
+	} else if (bytes_received < sizeof(struct unmount_message_header) ||
+		   bytes_received != sizeof(struct unmount_message_header) + msg->hdr.data_size) {
+		ERROR("Received invalid unmount request");
+		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
+	} else if (WIMLIB_VERSION_CODE < msg->hdr.min_version) {
+		ERROR("Cannot understand the unmount request. "
+		      "Please upgrade wimlib to at least v%d.%d.%d",
+		      WIMLIB_GET_MAJOR_VERSION(msg->hdr.min_version),
+		      WIMLIB_GET_MINOR_VERSION(msg->hdr.min_version),
+		      WIMLIB_GET_PATCH_VERSION(msg->hdr.min_version));
+		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
 	} else {
-		DEBUG("Received message: [%d %d]", mailbox[0], mailbox[1]);
-		commit = mailbox[0];
-		check_integrity = mailbox[1];
+		*unmount_flags = msg->data.unmount_flags;
+		ret = 0;
+	}
+	FREE(mailbox);
+	return ret;
+}
+
+static void send_unmount_response(struct wimfs_context *ctx, int status)
+{
+	struct unmount_response response;
+	response.hdr.min_version  = WIMLIB_MAKEVERSION(1, 2, 0);
+	response.hdr.cur_version  = WIMLIB_VERSION_CODE;
+	response.hdr.data_size    = sizeof(response.data);
+	response.data.status      = status;
+	response.data.mount_flags = ctx->mount_flags;
+	if (mq_send(ctx->daemon_to_unmount_mq, (void*)&response,
+		    sizeof(response), 1))
+		ERROR_WITH_ERRNO("Failed to send status to unmount process");
+}
+
+/* Wait for a message from the filesytem daemon indicating whether  the
+ * filesystem was unmounted successfully.  This may
+ * take a long time if a big WIM file needs to be rewritten.
+ *
+ * Wait at most 600??? seconds before giving up and returning an error.  Either
+ * it's a really big WIM file, or (more likely) the filesystem daemon has
+ * crashed or failed for some reason.
+ *
+ * XXX come up with some method to determine if the filesystem daemon has really
+ * crashed or not.
+ *
+ * XXX Idea: have mount daemon write its PID into the WIM file header?  No, this
+ * wouldn't work because we know the directory but not the WIM file...
+ */
+static int receive_unmount_response(struct wimfs_context *ctx)
+{
+	long msgsize;
+	void *mailbox;
+	struct timeval now;
+	struct timespec timeout;
+	ssize_t bytes_received;
+	int ret;
+	struct unmount_response *msg;
+
+	ret = get_mailbox(ctx->daemon_to_unmount_mq,
+			  sizeof(struct unmount_response), &msgsize, &mailbox);
+	if (ret != 0)
+		return ret;
+
+	DEBUG("Waiting for message telling us whether the unmount was "
+	      "successful or not.");
+
+	gettimeofday(&now, NULL);
+	timeout.tv_sec = now.tv_sec + 600;
+	timeout.tv_nsec = now.tv_usec * 1000;
+	bytes_received = mq_timedreceive(ctx->daemon_to_unmount_mq,
+					 mailbox, msgsize, NULL, &timeout);
+	msg = mailbox;
+	if (bytes_received == -1) {
+		if (errno == ETIMEDOUT) {
+			ERROR("Timed out- probably the filesystem daemon "
+			      "crashed and the WIM was not written "
+			      "successfully.");
+			ret = WIMLIB_ERR_TIMEOUT;
+		} else {
+			ERROR_WITH_ERRNO("mq_receive()");
+			ret = WIMLIB_ERR_MQUEUE;
+		}
+	} else if (bytes_received < sizeof(struct unmount_message_header) ||
+		   bytes_received != sizeof(struct unmount_message_header) + msg->hdr.data_size ||
+		   WIMLIB_VERSION_CODE < msg->hdr.min_version) {
+		ERROR("Received invalid unmount response");
+		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
+	} else if (WIMLIB_VERSION_CODE < msg->hdr.min_version) {
+		ERROR("Cannot understand the unmount response. "
+		      "Please upgrade wimlib to at least v%d.%d.%d",
+		      WIMLIB_GET_MAJOR_VERSION(msg->hdr.min_version),
+		      WIMLIB_GET_MINOR_VERSION(msg->hdr.min_version),
+		      WIMLIB_GET_PATCH_VERSION(msg->hdr.min_version));
+		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
+	} else {
+		ret = msg->data.status;
+		if (ret) {
+			ERROR("A failure status (%d) was returned "
+			      "by the filesystem daemon", ret);
+		}
+	}
+	FREE(mailbox);
+	return ret;
+}
+
+/* Execute `fusermount -u', which is installed setuid root, to unmount the WIM.
+ *
+ * FUSE does not yet implement synchronous unmounts.  This means that fusermount
+ * -u will return before the filesystem daemon returns from wimfs_destroy().
+ *  This is partly what we want, because we need to send a message from this
+ *  process to the filesystem daemon telling whether --commit was specified or
+ *  not.  However, after that, the unmount process must wait for the filesystem
+ *  daemon to finish writing the WIM file.
+ */
+static int execute_fusermount(const char *dir)
+{
+	pid_t pid;
+	int ret;
+	int status;
+
+	pid = fork();
+	if (pid == -1) {
+		ERROR_WITH_ERRNO("Failed to fork()");
+		return WIMLIB_ERR_FORK;
+	}
+	if (pid == 0) {
+		/* Child */
+		execlp("fusermount", "fusermount", "-u", dir, NULL);
+		ERROR_WITH_ERRNO("Failed to execute `fusermount'");
+		exit(WIMLIB_ERR_FUSERMOUNT);
 	}
 
-	status = 0;
-	if (ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		if (commit) {
-			if (check_integrity)
-				write_flags = WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-			else
-				write_flags = 0;
-			status = rebuild_wim(ctx, write_flags);
-		}
-		ret = delete_staging_dir(ctx);
-		if (ret != 0) {
-			ERROR("Failed to delete the staging directory");
-			if (status == 0)
-				status = ret;
-		}
-	} else {
-		DEBUG("Read-only mount");
+	/* Parent */
+	ret = wait(&status);
+	if (ret == -1) {
+		ERROR_WITH_ERRNO("Failed to wait for fusermount process to "
+				 "terminate");
+		return WIMLIB_ERR_FUSERMOUNT;
 	}
-	DEBUG("Sending status %hhd", status);
-	ret = mq_send(ctx->daemon_to_unmount_mq, &status, 1, 1);
-	if (ret == -1)
-		ERROR_WITH_ERRNO("Failed to send status to unmount process");
-	FREE(mailbox);
-out_close_message_queues:
+
+	if (status != 0) {
+		if (status == WIMLIB_ERR_FUSERMOUNT)
+			ERROR("Could not find the `fusermount' program");
+		else
+			ERROR("fusermount exited with status %d", status);
+
+		/* Try again, but with the `umount' program.  This is required
+		 * on other FUSE implementations such as FreeBSD's that do not
+		 * have a `fusermount' program. */
+
+		pid = fork();
+		if (pid == -1) {
+			ERROR_WITH_ERRNO("Failed to fork()");
+			return WIMLIB_ERR_FORK;
+		}
+		if (pid == 0) {
+			/* Child */
+			execlp("umount", "umount", dir, NULL);
+			ERROR_WITH_ERRNO("Failed to execute `umount'");
+			exit(WIMLIB_ERR_FUSERMOUNT);
+		}
+
+		/* Parent */
+		ret = wait(&status);
+		if (ret == -1) {
+			ERROR_WITH_ERRNO("Failed to wait for `umount' process to "
+					 "terminate");
+			return WIMLIB_ERR_FUSERMOUNT;
+		}
+		if (status != 0) {
+			ERROR("`umount' exited with failure status");
+			return WIMLIB_ERR_FUSERMOUNT;
+		}
+	}
+	return 0;
+}
+
+/* Called when the filesystem is unmounted. */
+static void wimfs_destroy(void *p)
+{
+	/* The `imagex unmount' command, which is running in a separate process
+	 * and is executing the wimlib_unmount() function, will send this
+	 * process a `struct unmount_request' through a message queue that
+	 * specifies some unmount options, such as other to commit changes or
+	 * not. */
+
+	int ret;
+	int unmount_flags;
+	struct wimfs_context *ctx;
+	int status;
+
+	ctx = wimfs_get_context();
+	if (open_message_queues(ctx, true))
+		return;
+
+	ret = receive_unmount_request(ctx, &unmount_flags);
+	status = ret;
+	if (ret == 0) {
+		if (ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT) {
+				int write_flags;
+				if (unmount_flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY)
+					write_flags = WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+				else
+					write_flags = 0;
+				status = rebuild_wim(ctx, write_flags);
+			}
+			ret = delete_staging_dir(ctx);
+			if (ret != 0) {
+				ERROR("Failed to delete the staging directory");
+				if (status == 0)
+					status = ret;
+			}
+		} else {
+			DEBUG("Read-only mount");
+		}
+	}
+	send_unmount_response(ctx, status);
 	close_message_queues(ctx);
 }
 
@@ -2105,7 +2321,6 @@ out:
 	return ret;
 }
 
-
 /*
  * Unmounts the WIM file that was previously mounted on @dir by using
  * wimlib_mount_image().
@@ -2113,20 +2328,11 @@ out:
 WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags,
 				   wimlib_progress_func_t progress_func)
 {
-	pid_t pid;
-	int status;
 	int ret;
-	char msg[2];
-	struct timeval now;
-	struct timespec timeout;
-	long msgsize;
 	struct wimfs_context ctx;
-	char *mailbox;
 
 	init_wimfs_context(&ctx);
 
-	/* Open message queues between the unmount process and the
-	 * filesystem daemon. */
 	ret = set_message_queue_names(&ctx, dir);
 	if (ret != 0)
 		goto out;
@@ -2135,141 +2341,14 @@ WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags,
 	if (ret != 0)
 		goto out_free_message_queue_names;
 
-	/* Send a message to the filesystem daemon saying whether to commit or
-	 * not. */
-	msg[0] = (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT) ? 1 : 0;
-	msg[1] = (unmount_flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY) ? 1 : 0;
-
-	DEBUG("Sending message: %scommit, %scheck",
-			(msg[0] ? "" : "don't "),
-			(msg[1] ? "" : "don't "));
-	ret = mq_send(ctx.unmount_to_daemon_mq, msg, 2, 1);
-	if (ret == -1) {
-		ERROR_WITH_ERRNO("Failed to notify filesystem daemon whether "
-				 "we want to commit changes or not");
-		ret = WIMLIB_ERR_MQUEUE;
-		goto out_close_message_queues;
-	}
-
-	/* Execute `fusermount -u', which is installed setuid root, to unmount
-	 * the WIM.
-	 *
-	 * FUSE does not yet implement synchronous unmounts.  This means that
-	 * fusermount -u will return before the filesystem daemon returns from
-	 * wimfs_destroy().  This is partly what we want, because we need to
-	 * send a message from this process to the filesystem daemon telling
-	 * whether --commit was specified or not.  However, after that, the
-	 * unmount process must wait for the filesystem daemon to finish writing
-	 * the WIM file.
-	 */
-
-	pid = fork();
-	if (pid == -1) {
-		ERROR_WITH_ERRNO("Failed to fork()");
-		ret = WIMLIB_ERR_FORK;
-		goto out_close_message_queues;
-	}
-	if (pid == 0) {
-		/* Child */
-		execlp("fusermount", "fusermount", "-u", dir, NULL);
-		ERROR_WITH_ERRNO("Failed to execute `fusermount'");
-		exit(WIMLIB_ERR_FUSERMOUNT);
-	}
-
-	/* Parent */
-	ret = wait(&status);
-	if (ret == -1) {
-		ERROR_WITH_ERRNO("Failed to wait for fusermount process to "
-				 "terminate");
-		ret = WIMLIB_ERR_FUSERMOUNT;
-		goto out_close_message_queues;
-	}
-
-	if (status != 0) {
-		ERROR("fusermount exited with status %d", status);
-
-		/* Try again, but with the `umount' program.  This is required
-		 * on other FUSE implementations such as FreeBSD's that do not
-		 * have a `fusermount' program. */
-
-		pid = fork();
-		if (pid == -1) {
-			ERROR_WITH_ERRNO("Failed to fork()");
-			ret = WIMLIB_ERR_FORK;
-			goto out_close_message_queues;
-		}
-		if (pid == 0) {
-			/* Child */
-			execlp("umount", "umount", dir, NULL);
-			ERROR_WITH_ERRNO("Failed to execute `umount'");
-			exit(WIMLIB_ERR_FUSERMOUNT);
-		}
-
-		/* Parent */
-		ret = wait(&status);
-		if (ret == -1) {
-			ERROR_WITH_ERRNO("Failed to wait for `umount' process to "
-					 "terminate");
-			ret = WIMLIB_ERR_FUSERMOUNT;
-			goto out_close_message_queues;
-		}
-		if (status != 0) {
-			ERROR("`umount' exited with failure status");
-			ret = WIMLIB_ERR_FUSERMOUNT;
-			goto out_close_message_queues;
-		}
-	}
-
-	wimlib_assert(status == 0);
-
-	/* Wait for a message from the filesytem daemon indicating whether  the
-	 * filesystem was unmounted successfully (0) or an error occurred (1).
-	 * This may take a long time if a big WIM file needs to be rewritten. */
-
-	/* Wait at most 600??? seconds before giving up and returning false.
-	 * Either it's a really big WIM file, or (more likely) the
-	 * filesystem daemon has crashed or failed for some reason.
-	 *
-	 * XXX come up with some method to determine if the filesystem
-	 * daemon has really crashed or not.
-	 *
-	 * XXX Idea: have mount daemon write its PID into the WIM file header?
-	 * No, this wouldn't work because we know the directory but not the WIM
-	 * file...
-	 * */
-
-	gettimeofday(&now, NULL);
-	timeout.tv_sec = now.tv_sec + 600;
-	timeout.tv_nsec = now.tv_usec * 1000;
-
-	ret = get_mailbox(ctx.daemon_to_unmount_mq, 2, &msgsize, &mailbox);
+	ret = send_unmount_request(&ctx, unmount_flags);
 	if (ret != 0)
 		goto out_close_message_queues;
 
-	mailbox[0] = 0;
-	DEBUG("Waiting for message telling us whether the unmount was "
-			"successful or not.");
-	ret = mq_timedreceive(ctx.daemon_to_unmount_mq, mailbox,
-			      msgsize, NULL, &timeout);
-	if (ret == -1) {
-		if (errno == ETIMEDOUT) {
-			ERROR("Timed out- probably the filesystem daemon "
-			      "crashed and the WIM was not written "
-			      "successfully.");
-			ret = WIMLIB_ERR_TIMEOUT;
-		} else {
-			ERROR_WITH_ERRNO("mq_receive()");
-			ret = WIMLIB_ERR_MQUEUE;
-		}
-		goto out_free_mailbox;
-
-	}
-	DEBUG("Received message: Unmount %s", (mailbox[0] ? "Failed" : "Ok"));
-	ret = mailbox[0];
-	if (ret)
-		ERROR("Unmount failed");
-out_free_mailbox:
-	FREE(mailbox);
+	ret = execute_fusermount(dir);
+	if (ret != 0)
+		goto out_close_message_queues;
+	ret = receive_unmount_response(&ctx);
 out_close_message_queues:
 	close_message_queues(&ctx);
 out_free_message_queue_names:
