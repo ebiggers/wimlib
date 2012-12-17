@@ -2257,7 +2257,14 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	 * assign_inode_numbers() function, and the static variable @next_ino is
 	 * set to the next available inode number.
 	 */
-	char optstring[256] = "use_ino,subtype=wimfs,attr_timeout=0";
+	char optstring[256] =
+		"use_ino"
+		",subtype=wimfs"
+		",attr_timeout=0"
+#if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 8)
+		",hard_remove"
+#endif
+		;
 	argv[argc++] = "-o";
 	argv[argc++] = optstring;
 	if ((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
