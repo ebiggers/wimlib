@@ -202,8 +202,6 @@ static void finalize_lte(struct lookup_table_entry *lte)
 	#ifdef WITH_FUSE
 	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		unlink(lte->staging_file_name);
-		wimlib_assert(lte->staging_list.next);
-		wimlib_assert(lte->staging_list.prev);
 		list_del(&lte->staging_list);
 	}
 	#endif
@@ -231,11 +229,9 @@ void lte_decrement_refcnt(struct lookup_table_entry *lte,
 #ifdef WITH_FUSE
 void lte_decrement_num_opened_fds(struct lookup_table_entry *lte)
 {
-	wimlib_assert(lte != NULL);
-	if (lte->num_opened_fds != 0) {
+	if (lte->num_opened_fds != 0)
 		if (--lte->num_opened_fds == 0 && lte->refcnt == 0)
 			finalize_lte(lte);
-	}
 }
 #endif
 
@@ -463,12 +459,6 @@ int lte_zero_out_refcnt(struct lookup_table_entry *lte, void *ignore)
 	return 0;
 }
 
-int lte_zero_extracted_file(struct lookup_table_entry *lte, void *ignore)
-{
-	lte->extracted_file = NULL;
-	return 0;
-}
-
 int lte_free_extracted_file(struct lookup_table_entry *lte, void *ignore)
 {
 	if (lte->extracted_file != NULL) {
@@ -631,6 +621,15 @@ out:
 }
 #endif
 
+/* Resolve an inode's lookup table entries
+ *
+ * This replaces the SHA1 hash fields (which are used to lookup an entry in the
+ * lookup table) with pointers directly to the lookup table entries.  A circular
+ * linked list of streams sharing the same lookup table entry is created.
+ *
+ * This function always succeeds; unresolved lookup table entries are given a
+ * NULL pointer.
+ */
 void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 {
 
@@ -667,28 +666,6 @@ void inode_unresolve_ltes(struct inode *inode)
 		}
 		inode->resolved = 0;
 	}
-}
-
-/* Resolve a dentry's lookup table entries
- *
- * This replaces the SHA1 hash fields (which are used to lookup an entry in the
- * lookup table) with pointers directly to the lookup table entries.  A circular
- * linked list of streams sharing the same lookup table entry is created.
- *
- * This function always succeeds; unresolved lookup table entries are given a
- * NULL pointer.
- */
-int dentry_resolve_ltes(struct dentry *dentry, void *table)
-{
-	wimlib_assert(dentry->refcnt == 1);
-	inode_resolve_ltes(dentry->d_inode, table);
-	return 0;
-}
-
-int dentry_unresolve_ltes(struct dentry *dentry, void *ignore)
-{
-	inode_unresolve_ltes(dentry->d_inode);
-	return 0;
 }
 
 /*

@@ -58,7 +58,6 @@ int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 	struct lookup_table_entry *metadata_lte;
 	struct image_metadata *imd;
 	struct image_metadata *new_imd;
-	int ret;
 
 	wimlib_assert(root_dentry != NULL);
 

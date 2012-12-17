@@ -197,7 +197,6 @@ struct dentry {
 	 */
 	u64 length;
 
-
 	/* The offset, from the start of the uncompressed WIM metadata resource
 	 * for this image, of this dentry's child dentries.  0 if the directory
 	 * entry has no children, which is the case for regular files or reparse
@@ -208,7 +207,7 @@ struct dentry {
 	 * WIMStructs */
 	u32 refcnt;
 
-	u32   full_path_utf8_len;
+	u32 full_path_utf8_len;
 
 	/* Pointer to the UTF-16 short filename (malloc()ed buffer) */
 	char *short_name;
@@ -320,10 +319,7 @@ struct inode {
 		list_for_each_entry((dentry), &(inode)->dentry_list, inode_dentry_list)
 
 #define inode_add_dentry(dentry, inode) \
-	({								\
-	 	wimlib_assert((inode)->dentry_list.next != NULL);		\
-		list_add(&(dentry)->inode_dentry_list, &(inode)->dentry_list);	\
-	})
+		list_add_tail(&(dentry)->inode_dentry_list, &(inode)->dentry_list)
 
 static inline bool dentry_is_first_in_inode(const struct dentry *dentry)
 {
