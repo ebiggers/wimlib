@@ -288,6 +288,8 @@ extern void inode_resolve_ltes(struct inode *inode,
 			       struct lookup_table *table);
 
 extern int dentry_resolve_ltes(struct dentry *dentry, void *__table);
+
+extern void inode_unresolve_ltes(struct inode *inode);
 extern int dentry_unresolve_ltes(struct dentry *dentry, void *ignore);
 
 int write_lookup_table(struct lookup_table *table, FILE *out,

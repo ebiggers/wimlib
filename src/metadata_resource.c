@@ -48,7 +48,6 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	u32 dentry_offset;
 	int ret;
 	struct dentry *dentry;
-	struct inode_table inode_tab;
 	const struct lookup_table_entry *metadata_lte;
 	u64 metadata_len;
 	struct hlist_head inode_list;
@@ -157,16 +156,7 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 		goto out_free_dentry_tree;
 
 	/* Build hash table that maps hard link group IDs to dentry sets */
-	DEBUG("Building link group table");
-	ret = init_inode_table(&inode_tab, 9001);
-	if (ret != 0)
-		goto out_free_dentry_tree;
-
-	for_dentry_in_tree(dentry, inode_table_insert, &inode_tab);
-
-	DEBUG("Fixing inconsistencies in the hard link groups");
-	ret = fix_inodes(&inode_tab, &inode_list);
-	destroy_inode_table(&inode_tab);
+	ret = dentry_tree_fix_inodes(dentry, &inode_list);
 	if (ret != 0)
 		goto out_free_dentry_tree;
 

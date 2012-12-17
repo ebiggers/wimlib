@@ -320,6 +320,12 @@ wim_const_security_data(const WIMStruct *w)
 	return w->image_metadata[w->current_image - 1].security_data;
 }
 
+static inline struct image_metadata *
+wim_get_current_image_metadata(WIMStruct *w)
+{
+	return &w->image_metadata[w->current_image - 1];
+}
+
 /* Nonzero if a struct resource_entry indicates a compressed resource. */
 static inline int resource_is_compressed(const struct resource_entry *entry)
 {
@@ -358,36 +364,10 @@ extern int add_new_dentry_tree(WIMStruct *dest_wim, struct dentry *root,
 
 /* hardlink.c */
 
-/* Hash table to find inodes, identified by their inode ID.
- * */
-struct inode_table {
-	/* Fields for the hash table */
-	struct hlist_head *array;
-	u64 num_entries;
-	u64 capacity;
-
-	/*
-	 * Linked list of "extra" inodes.  These may be:
-	 *
-	 * - inodes with link count 1, which are all allowed to have 0 for their
-	 *   inode number, meaning we cannot insert them into the hash table
-	 *   before calling assign_inode_numbers().
-         *
-	 * - Groups we create ourselves by splitting a nominal inode due to
-	 *   inconsistencies in the dentries.  These inodes will share a inode
-	 *   ID with some other inode until assign_inode_numbers() is called.
-	 */
-	struct hlist_head extra_inodes;
-};
-
-extern int init_inode_table(struct inode_table *table, size_t capacity);
-static inline void destroy_inode_table(struct inode_table *table)
-{
-	FREE(table->array);
-}
-extern int inode_table_insert(struct dentry *dentry, void *__table);
 extern u64 assign_inode_numbers(struct hlist_head *inode_list);
-extern int fix_inodes(struct inode_table *table, struct hlist_head *inode_list);
+
+extern int dentry_tree_fix_inodes(struct dentry *root,
+				  struct hlist_head *inode_list);
 
 /* header.c */
 extern int read_header(FILE *fp, struct wim_header *hdr, int split_ok);

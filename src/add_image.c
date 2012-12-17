@@ -53,7 +53,7 @@
  * @sd:		  The security data for the image.
  */
 int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
-			       struct wim_security_data *sd)
+			struct wim_security_data *sd)
 {
 	struct lookup_table_entry *metadata_lte;
 	struct image_metadata *imd;
@@ -87,18 +87,12 @@ int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
 	new_imd->root_dentry	= root_dentry;
 	new_imd->metadata_lte	= metadata_lte;
 	new_imd->security_data  = sd;
-	new_imd->modified	= true;
+	new_imd->modified	= 1;
 
 	FREE(w->image_metadata);
-	w->image_metadata	= imd;
+	w->image_metadata = imd;
 	w->hdr.image_count++;
-
-	/* Change the current image to the new one.  There should not be any
-	 * ways for this to fail, since the image is valid and the dentry tree
-	 * is already in memory. */
-	ret = select_wim_image(w, w->hdr.image_count);
-	wimlib_assert(ret == 0);
-	return ret;
+	return 0;
 err_free_imd:
 	FREE(imd);
 err:
@@ -640,7 +634,6 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 	struct dentry *root_dentry = NULL;
 	struct wim_security_data *sd;
 	struct capture_config config;
-	struct inode_table inode_tab;
 	struct hlist_head inode_list;
 	int ret;
 
@@ -737,16 +730,8 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
-	DEBUG("Inserting dentries into inode table");
-	ret = init_inode_table(&inode_tab, 9001);
-	if (ret != 0)
-		goto out_destroy_imd;
 
-	for_dentry_in_tree(root_dentry, inode_table_insert, &inode_tab);
-
-	DEBUG("Cleaning up the hard link groups");
-	ret = fix_inodes(&inode_tab, &inode_list);
-	destroy_inode_table(&inode_tab);
+	ret = dentry_tree_fix_inodes(root_dentry, &inode_list);
 	if (ret != 0)
 		goto out_destroy_imd;
 

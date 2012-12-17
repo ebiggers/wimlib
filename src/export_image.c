@@ -26,34 +26,22 @@
 #include "lookup_table.h"
 #include "xml.h"
 
-struct wim_pair {
-	WIMStruct *src_wim;
-	WIMStruct *dest_wim;
-	struct list_head lte_list_head;
-};
-
-static int allocate_lte_if_needed(struct dentry *dentry, void *arg)
+static int inode_allocate_needed_ltes(struct inode *inode,
+				      struct lookup_table *src_lookup_table,
+				      struct lookup_table *dest_lookup_table,
+				      struct list_head *lte_list_head)
 {
-	const WIMStruct *src_wim, *dest_wim;
-	struct list_head *lte_list_head;
-	struct inode *inode;
+	struct lookup_table_entry *src_lte, *dest_lte;
+	unsigned i;
 
-	src_wim = ((struct wim_pair*)arg)->src_wim;
-	dest_wim = ((struct wim_pair*)arg)->dest_wim;
-	lte_list_head = &((struct wim_pair*)arg)->lte_list_head;
-	inode = dentry->d_inode;
-
-	wimlib_assert(!inode->resolved);
-
-	for (unsigned i = 0; i <= inode->num_ads; i++) {
-		struct lookup_table_entry *src_lte, *dest_lte;
+	inode_unresolve_ltes(inode);
+	for (i = 0; i <= inode->num_ads; i++) {
 		src_lte = inode_stream_lte_unresolved(inode, i,
-						      src_wim->lookup_table);
-
-		if (src_lte && ++src_lte->out_refcnt == 1) {
+						      src_lookup_table);
+		if (src_lte && src_lte->out_refcnt == 0) {
+			src_lte->out_refcnt = 1;
 			dest_lte = inode_stream_lte_unresolved(inode, i,
-							       dest_wim->lookup_table);
-
+							       dest_lookup_table);
 			if (!dest_lte) {
 				dest_lte = clone_lookup_table_entry(src_lte);
 				if (!dest_lte)
@@ -65,57 +53,40 @@ static int allocate_lte_if_needed(struct dentry *dentry, void *arg)
 	return 0;
 }
 
-/*
- * This function takes in a dentry that was previously located only in image(s)
- * in @src_wim, but now is being added to @dest_wim.  For each stream associated
- * with the dentry, if there is already a lookup table entry for that stream in
- * the lookup table of the destination WIM file, its reference count is
- * incrementej.  Otherwise, a new lookup table entry is created that points back
- * to the stream in the source WIM file (through the @hash field combined with
- * the @wim field of the lookup table entry.)
- */
-static int add_lte_to_dest_wim(struct dentry *dentry, void *arg)
+static void inode_move_ltes_to_table(struct inode *inode,
+				     struct lookup_table *src_lookup_table,
+				     struct lookup_table *dest_lookup_table,
+				     struct list_head *lte_list_head)
 {
-	WIMStruct *src_wim, *dest_wim;
-	struct inode *inode;
+	struct lookup_table_entry *src_lte, *dest_lte;
+	unsigned i;
+	struct dentry *dentry;
 
-	src_wim = ((struct wim_pair*)arg)->src_wim;
-	dest_wim = ((struct wim_pair*)arg)->dest_wim;
-	inode = dentry->d_inode;
+	inode_for_each_dentry(dentry, inode)
+		dentry->refcnt++;
 
-	wimlib_assert(!inode->resolved);
+	for (i = 0; i <= inode->num_ads; i++) {
+		src_lte = inode_stream_lte_unresolved(inode, i, src_lookup_table);
+		if (src_lte) {
+			dest_lte = inode_stream_lte_unresolved(inode, i,
+							       dest_lookup_table);
+			if (!dest_lte) {
+				struct list_head *next;
 
-	for (unsigned i = 0; i <= inode->num_ads; i++) {
-		struct lookup_table_entry *src_lte, *dest_lte;
-		src_lte = inode_stream_lte_unresolved(inode, i,
-						      src_wim->lookup_table);
-
-		if (!src_lte) /* Empty or nonexistent stream. */
-			continue;
-
-		dest_lte = inode_stream_lte_unresolved(inode, i,
-						       dest_wim->lookup_table);
-		if (dest_lte) {
-			dest_lte->refcnt++;
-		} else {
-			struct list_head *lte_list_head;
-			struct list_head *next;
-
-			lte_list_head = &((struct wim_pair*)arg)->lte_list_head;
-			wimlib_assert(!list_empty(lte_list_head));
-
-			next = lte_list_head->next;
-			list_del(next);
-			dest_lte = container_of(next, struct lookup_table_entry,
-						staging_list);
-			dest_lte->part_number = 1;
-			dest_lte->refcnt = 1;
-			wimlib_assert(hashes_equal(dest_lte->hash, src_lte->hash));
-
-			lookup_table_insert(dest_wim->lookup_table, dest_lte);
+				wimlib_assert(!list_empty(lte_list_head));
+				next = lte_list_head->next;
+				list_del(next);
+				dest_lte = container_of(next,
+							struct lookup_table_entry,
+							staging_list);
+				dest_lte->part_number = 1;
+				dest_lte->refcnt = 0;
+				wimlib_assert(hashes_equal(dest_lte->hash, src_lte->hash));
+				lookup_table_insert(dest_lookup_table, dest_lte);
+			}
+			dest_lte->refcnt += inode->link_count;
 		}
 	}
-	return 0;
 }
 
 /*
@@ -131,12 +102,13 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 				  unsigned num_additional_swms,
 				  wimlib_progress_func_t progress_func)
 {
-	int i;
 	int ret;
-	struct dentry *root;
-	struct wim_pair wims;
 	struct wim_security_data *sd;
 	struct lookup_table *joined_tab, *src_wim_tab_save;
+	struct image_metadata *src_imd;
+	struct hlist_node *cur_node;
+	struct list_head lte_list_head;
+	struct inode *inode;
 
 	if (dest_wim->hdr.total_parts != 1) {
 		ERROR("Exporting an image to a split WIM is "
@@ -168,7 +140,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 				      "multiple images");
 				return WIMLIB_ERR_INVALID_PARAM;
 			}
-			for (i = 1; i <= src_wim->hdr.image_count; i++) {
+			for (int i = 1; i <= src_wim->hdr.image_count; i++) {
 				int new_flags = export_flags;
 
 				if (i != src_wim->hdr.boot_idx)
@@ -236,15 +208,18 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	/* Pre-allocate the new lookup table entries that will be needed.  This
 	 * way, it's not possible to run out of memory part-way through
 	 * modifying the lookup table of the destination WIM. */
-	wims.src_wim = src_wim;
-	wims.dest_wim = dest_wim;
-	INIT_LIST_HEAD(&wims.lte_list_head);
+	INIT_LIST_HEAD(&lte_list_head);
 	for_lookup_table_entry(src_wim->lookup_table, lte_zero_out_refcnt, NULL);
-	root = wim_root_dentry(src_wim);
-	for_dentry_in_tree(root, dentry_unresolve_ltes, NULL);
-	ret = for_dentry_in_tree(root, allocate_lte_if_needed, &wims);
-	if (ret != 0)
-		goto out_free_ltes;
+	src_imd = wim_get_current_image_metadata(src_wim);
+
+	hlist_for_each_entry(inode, cur_node, &src_imd->inode_list, hlist) {
+		ret = inode_allocate_needed_ltes(inode,
+						 src_wim->lookup_table,
+						 dest_wim->lookup_table,
+						 &lte_list_head);
+		if (ret != 0)
+			goto out_free_ltes;
+	}
 
 	ret = xml_export_image(src_wim->wim_info, src_image,
 			       &dest_wim->wim_info, dest_name,
@@ -252,21 +227,26 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	if (ret != 0)
 		goto out_free_ltes;
 
-	sd = wim_security_data(src_wim);
-	ret = add_new_dentry_tree(dest_wim, root, sd);
+	sd = src_imd->security_data;
+	ret = add_new_dentry_tree(dest_wim, src_imd->root_dentry, sd);
 	if (ret != 0)
 		goto out_xml_delete_image;
 
+	dest_wim->image_metadata[
+		dest_wim->hdr.image_count - 1].inode_list = src_imd->inode_list;
 
 	/* All memory allocations have been taken care of, so it's no longer
 	 * possible for this function to fail.  Go ahead and increment the
 	 * reference counts of the dentry tree and security data, then update
 	 * the lookup table of the destination WIM and the boot index, if
 	 * needed. */
-	for_dentry_in_tree(root, increment_dentry_refcnt, NULL);
 	sd->refcnt++;
-	for_dentry_in_tree(root, add_lte_to_dest_wim, &wims);
-	wimlib_assert(list_empty(&wims.lte_list_head));
+	hlist_for_each_entry(inode, cur_node, &src_imd->inode_list, hlist) {
+		inode_move_ltes_to_table(inode,
+					 src_wim->lookup_table,
+					 dest_wim->lookup_table,
+					 &lte_list_head);
+	}
 
 	if (export_flags & WIMLIB_EXPORT_FLAG_BOOT)
 		wimlib_set_boot_idx(dest_wim, dest_wim->hdr.image_count);
@@ -278,7 +258,7 @@ out_xml_delete_image:
 out_free_ltes:
 	{
 		struct lookup_table_entry *lte, *tmp;
-		list_for_each_entry_safe(lte, tmp, &wims.lte_list_head, staging_list)
+		list_for_each_entry_safe(lte, tmp, &lte_list_head, staging_list)
 			free_lookup_table_entry(lte);
 	}
 

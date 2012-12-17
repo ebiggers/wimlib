@@ -51,8 +51,34 @@
  *                            -----------------
  */
 
+/* Hash table to find inodes, identified by their inode ID.
+ * */
+struct inode_table {
+	/* Fields for the hash table */
+	struct hlist_head *array;
+	u64 num_entries;
+	u64 capacity;
 
-int init_inode_table(struct inode_table *table, size_t capacity)
+	/*
+	 * Linked list of "extra" inodes.  These may be:
+	 *
+	 * - inodes with link count 1, which are all allowed to have 0 for their
+	 *   inode number, meaning we cannot insert them into the hash table
+	 *   before calling assign_inode_numbers().
+         *
+	 * - Groups we create ourselves by splitting a nominal inode due to
+	 *   inconsistencies in the dentries.  These inodes will share a inode
+	 *   ID with some other inode until assign_inode_numbers() is called.
+	 */
+	struct hlist_head extra_inodes;
+};
+
+static inline void destroy_inode_table(struct inode_table *table)
+{
+	FREE(table->array);
+}
+
+static int init_inode_table(struct inode_table *table, size_t capacity)
 {
 	table->array = CALLOC(capacity, sizeof(table->array[0]));
 	if (!table->array) {
@@ -64,7 +90,6 @@ int init_inode_table(struct inode_table *table, size_t capacity)
 	INIT_HLIST_HEAD(&table->extra_inodes);
 	return 0;
 }
-
 
 static inline size_t inode_link_count(const struct inode *inode)
 {
@@ -90,7 +115,7 @@ static inline size_t inode_link_count(const struct inode *inode)
  * we keep a linked list of the single dentries, and assign them inode
  * numbers later.
  */
-int inode_table_insert(struct dentry *dentry, void *__table)
+static int inode_table_insert(struct dentry *dentry, void *__table)
 {
 	struct inode_table *table = __table;
 	struct inode *d_inode = dentry->d_inode;
@@ -279,8 +304,8 @@ static int fix_true_inode(struct inode *inode, struct hlist_head *inode_list)
  * inodes'.  There will be just one `struct inode' for each hard link group
  * remaining.
  */
-static int
-fix_nominal_inode(struct inode *inode, struct hlist_head *inode_list)
+static int fix_nominal_inode(struct inode *inode,
+			     struct hlist_head *inode_list)
 {
 	struct dentry *dentry;
 	struct hlist_node *cur, *tmp;
@@ -413,7 +438,7 @@ next_dentry_2:
  * split inodes as well as the inodes that were good before, is returned in the
  * list @inode_list.
  */
-int fix_inodes(struct inode_table *table, struct hlist_head *inode_list)
+static int fix_inodes(struct inode_table *table, struct hlist_head *inode_list)
 {
 	struct inode *inode;
 	struct hlist_node *cur, *tmp;
@@ -429,4 +454,22 @@ int fix_inodes(struct inode_table *table, struct hlist_head *inode_list)
 	hlist_for_each_safe(cur, tmp, &table->extra_inodes)
 		hlist_add_head(cur, inode_list);
 	return 0;
+}
+
+int dentry_tree_fix_inodes(struct dentry *root, struct hlist_head *inode_list)
+{
+	struct inode_table inode_tab;
+	int ret;
+
+	DEBUG("Inserting dentries into inode table");
+	ret = init_inode_table(&inode_tab, 9001);
+	if (ret != 0)
+		return ret;
+
+	for_dentry_in_tree(root, inode_table_insert, &inode_tab);
+
+	DEBUG("Cleaning up the hard link groups");
+	ret = fix_inodes(&inode_tab, inode_list);
+	destroy_inode_table(&inode_tab);
+	return ret;
 }

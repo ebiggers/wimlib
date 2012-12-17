@@ -43,12 +43,6 @@
 #include "lookup_table.h"
 #include "xml.h"
 
-static inline struct image_metadata *
-wim_get_current_image_metadata(WIMStruct *w)
-{
-	return &w->image_metadata[w->current_image - 1];
-}
-
 static int print_metadata(WIMStruct *w)
 {
 	DEBUG("Printing metadata for image %d", w->current_image);

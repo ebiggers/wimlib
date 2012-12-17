@@ -1939,6 +1939,8 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	struct lookup_table *joined_tab, *wim_tab_save;
 	struct image_metadata *imd;
 	struct wimfs_context ctx;
+	struct hlist_node *cur_node;
+	struct inode *inode;
 
 	DEBUG("Mount: wim = %p, image = %d, dir = %s, flags = %d, ",
 	      wim, image, dir, mount_flags);
@@ -2072,14 +2074,17 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		imd->has_been_mounted_rw = 1;
 	}
 
-	/* Resolve all the lookup table entries of the dentry tree */
-	DEBUG("Resolving lookup table entries");
-	for_dentry_in_tree(imd->root_dentry, dentry_resolve_ltes,
-			   wim->lookup_table);
+	/* Resolve the lookup table entries for every inode in the image, and
+	 * assign inode numbers */
+	DEBUG("Resolving lookup table entries and assigning inode numbers");
 
-	ctx.next_ino = assign_inode_numbers(&imd->inode_list);
+	ctx.next_ino = 1;
+	hlist_for_each_entry(inode, cur_node, &imd->inode_list, hlist) {
+		inode_resolve_ltes(inode, wim->lookup_table);
+		inode->ino = ctx.next_ino++;
+	}
+	/*ctx.next_ino = assign_inode_numbers(&imd->inode_list);*/
 	DEBUG("(next_ino = %"PRIu64")", ctx.next_ino);
-
 
 	DEBUG("Calling fuse_main()");
 

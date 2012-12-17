@@ -633,39 +633,40 @@ out:
 
 void inode_resolve_ltes(struct inode *inode, struct lookup_table *table)
 {
-	struct lookup_table_entry *lte;
 
-	wimlib_assert(!inode->resolved);
+	if (!inode->resolved) {
+		struct lookup_table_entry *lte;
+		/* Resolve the default file stream */
+		lte = __lookup_resource(table, inode->hash);
+		inode->lte = lte;
+		inode->resolved = 1;
 
-	/* Resolve the default file stream */
-	lte = __lookup_resource(table, inode->hash);
-	inode->lte = lte;
-	inode->resolved = 1;
-
-	/* Resolve the alternate data streams */
-	for (u16 i = 0; i < inode->num_ads; i++) {
-		struct ads_entry *cur_entry = &inode->ads_entries[i];
-		lte = __lookup_resource(table, cur_entry->hash);
-		cur_entry->lte = lte;
+		/* Resolve the alternate data streams */
+		for (u16 i = 0; i < inode->num_ads; i++) {
+			struct ads_entry *cur_entry = &inode->ads_entries[i];
+			lte = __lookup_resource(table, cur_entry->hash);
+			cur_entry->lte = lte;
+		}
 	}
 }
 
-static void inode_unresolve_ltes(struct inode *inode)
+void inode_unresolve_ltes(struct inode *inode)
 {
-	wimlib_assert(inode->resolved);
-	if (inode->lte)
-		copy_hash(inode->hash, inode->lte->hash);
-	else
-		zero_out_hash(inode->hash);
-
-	for (u16 i = 0; i < inode->num_ads; i++) {
-		if (inode->ads_entries[i].lte)
-			copy_hash(inode->ads_entries[i].hash,
-				  inode->ads_entries[i].lte->hash);
+	if (inode->resolved) {
+		if (inode->lte)
+			copy_hash(inode->hash, inode->lte->hash);
 		else
-			zero_out_hash(inode->ads_entries[i].hash);
+			zero_out_hash(inode->hash);
+
+		for (u16 i = 0; i < inode->num_ads; i++) {
+			if (inode->ads_entries[i].lte)
+				copy_hash(inode->ads_entries[i].hash,
+					  inode->ads_entries[i].lte->hash);
+			else
+				zero_out_hash(inode->ads_entries[i].hash);
+		}
+		inode->resolved = 0;
 	}
-	inode->resolved = 0;
 }
 
 /* Resolve a dentry's lookup table entries
@@ -679,15 +680,14 @@ static void inode_unresolve_ltes(struct inode *inode)
  */
 int dentry_resolve_ltes(struct dentry *dentry, void *table)
 {
-	if (!dentry->d_inode->resolved)
-		inode_resolve_ltes(dentry->d_inode, table);
+	wimlib_assert(dentry->refcnt == 1);
+	inode_resolve_ltes(dentry->d_inode, table);
 	return 0;
 }
 
 int dentry_unresolve_ltes(struct dentry *dentry, void *ignore)
 {
-	if (dentry->d_inode->resolved)
-		inode_unresolve_ltes(dentry->d_inode);
+	inode_unresolve_ltes(dentry->d_inode);
 	return 0;
 }
 
