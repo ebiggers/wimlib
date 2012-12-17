@@ -1020,6 +1020,7 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 		//
 		// Otherwise, write all the chunks we can.
 		while (cur_lte != NULL &&
+		       !list_empty(&cur_lte->msg_list) &&
 		       (msg = container_of(cur_lte->msg_list.next,
 					   struct message,
 					   list))->complete)
