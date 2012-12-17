@@ -360,31 +360,6 @@ char *utf8_to_utf16(const char *utf8_str, size_t utf8_len,
 	return orig_utf16_str;
 }
 
-/* Write @n bytes from @buf to the file descriptor @fd, retrying on interupt and
- * on short writes.
- *
- * Returns short count and set errno on failure. */
-ssize_t full_write(int fd, const void *buf, size_t n)
-{
-	const char *p = buf;
-	ssize_t ret;
-	ssize_t total = 0;
-
-	while (total != n) {
-		ret = write(fd, p, n);
-		if (ret < 0) {
-			if (errno == EINTR)
-				continue;
-			else
-				break;
-		}
-		total += ret;
-		p += ret;
-	}
-	return total;
-}
-
-
 static bool seeded = false;
 
 static void seed_random()

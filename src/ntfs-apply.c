@@ -44,6 +44,18 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+static int extract_wim_chunk_to_ntfs_attr(const u8 *buf, size_t len,
+					  u64 offset, void *arg)
+{
+	ntfs_attr *na = arg;
+	if (ntfs_attr_pwrite(na, offset, len, buf) == len) {
+		return 0;
+	} else {
+		ERROR_WITH_ERRNO("Error extracting WIM resource to NTFS attribute");
+		return WIMLIB_ERR_WRITE;
+	}
+}
+
 /*
  * Extracts a WIM resource to a NTFS attribute.
  */
@@ -51,37 +63,8 @@ static int
 extract_wim_resource_to_ntfs_attr(const struct lookup_table_entry *lte,
 			          ntfs_attr *na)
 {
-	u64 bytes_remaining = wim_resource_size(lte);
-	u8 buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
-	u64 offset = 0;
-	int ret = 0;
-	u8 hash[SHA1_HASH_SIZE];
-
-	SHA_CTX ctx;
-	sha1_init(&ctx);
-
-	while (bytes_remaining) {
-		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
-		ret = read_wim_resource(lte, buf, to_read, offset, 0);
-		if (ret != 0)
-			break;
-		sha1_update(&ctx, buf, to_read);
-		if (ntfs_attr_pwrite(na, offset, to_read, buf) != to_read) {
-			ERROR_WITH_ERRNO("Error extracting WIM resource");
-			return WIMLIB_ERR_WRITE;
-		}
-		bytes_remaining -= to_read;
-		offset += to_read;
-	}
-	sha1_final(hash, &ctx);
-	if (!hashes_equal(hash, lte->hash)) {
-		ERROR("Invalid checksum on a WIM resource "
-		      "(detected when extracting to NTFS stream)");
-		ERROR("The following WIM resource is invalid:");
-		print_lookup_table_entry(lte);
-		return WIMLIB_ERR_INVALID_RESOURCE_HASH;
-	}
-	return 0;
+	return extract_wim_resource(lte, wim_resource_size(lte),
+				    extract_wim_chunk_to_ntfs_attr, na);
 }
 
 /* Writes the data streams to a NTFS file

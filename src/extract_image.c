@@ -174,7 +174,7 @@ static int extract_regular_file_unlinked(struct dentry *dentry,
 		goto out;
 	}
 
-	ret = extract_full_wim_resource_to_fd(lte, out_fd);
+	ret = extract_wim_resource_to_fd(lte, out_fd, wim_resource_size(lte));
 	if (ret != 0) {
 		ERROR("Failed to extract resource to `%s'", output_path);
 		goto out;

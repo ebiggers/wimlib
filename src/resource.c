@@ -22,21 +22,18 @@
  * wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "config.h"
-
-#include <stdlib.h>
-#include <stdarg.h>
-
-#include "dentry.h"
-
 #include "wimlib_internal.h"
+#include "dentry.h"
 #include "lookup_table.h"
 #include "buffer_io.h"
 #include "lzx.h"
 #include "xpress.h"
 #include "sha1.h"
-#include <unistd.h>
+
 #include <errno.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #ifdef WITH_NTFS_3G
 #include <time.h>
@@ -44,7 +41,6 @@
 #include <ntfs-3g/inode.h>
 #include <ntfs-3g/dir.h>
 #endif
-
 
 /*
  * Reads all or part of a compressed resource into an in-memory buffer.
@@ -375,9 +371,6 @@ int read_uncompressed_resource(FILE *fp, u64 offset, u64 len,
 	return 0;
 }
 
-
-
-
 /* Reads the contents of a struct resource_entry, as represented in the on-disk
  * format, from the memory pointed to by @p, and fills in the fields of @entry.
  * A pointer to the byte after the memory read at @p is returned. */
@@ -609,14 +602,10 @@ int read_full_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
 	return read_wim_resource(lte, buf, wim_resource_size(lte), 0, flags);
 }
 
-/*
- * Extracts the first @size bytes of the WIM resource specified by @lte to the
- * open file descriptor @fd.
- *
- * Returns 0 on success; nonzero on failure.
- */
-int extract_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd,
-			       u64 size)
+int extract_wim_resource(const struct lookup_table_entry *lte,
+			 u64 size,
+			 extract_chunk_func_t extract_chunk,
+			 void *extract_chunk_arg)
 {
 	u64 bytes_remaining = size;
 	u8 buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
@@ -628,37 +617,65 @@ int extract_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd,
 	sha1_init(&ctx);
 
 	while (bytes_remaining) {
-		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
+		u64 to_read = min(bytes_remaining, sizeof(buf));
 		ret = read_wim_resource(lte, buf, to_read, offset, 0);
 		if (ret != 0)
 			break;
 		sha1_update(&ctx, buf, to_read);
-		if (full_write(fd, buf, to_read) < to_read) {
+		ret = extract_chunk(buf, to_read, offset, extract_chunk_arg);
+		if (ret != 0) {
 			ERROR_WITH_ERRNO("Error extracting WIM resource");
-			return WIMLIB_ERR_WRITE;
+			return ret;
 		}
 		bytes_remaining -= to_read;
 		offset += to_read;
 	}
 	sha1_final(hash, &ctx);
 	if (!hashes_equal(hash, lte->hash)) {
-		ERROR("Invalid checksum on a WIM resource "
-		      "(detected when extracting to external file)");
-		ERROR("The following WIM resource is invalid:");
+	#ifdef ENABLE_ERROR_MESSAGES
+		ERROR("Invalid checksum on the following WIM resource:");
 		print_lookup_table_entry(lte);
+	#endif
 		return WIMLIB_ERR_INVALID_RESOURCE_HASH;
 	}
 	return 0;
 }
 
-/*
- * Extracts the WIM resource specified by @lte to the open file descriptor @fd.
+/* Write @n bytes from @buf to the file descriptor @fd, retrying on interupt and
+ * on short writes.
  *
- * Returns 0 on success; nonzero on failure.
- */
-int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte, int fd)
+ * Returns short count and set errno on failure. */
+static ssize_t full_write(int fd, const void *buf, size_t n)
 {
-	return extract_wim_resource_to_fd(lte, fd, wim_resource_size(lte));
+	const char *p = buf;
+	ssize_t ret;
+	ssize_t total = 0;
+
+	while (total != n) {
+		ret = write(fd, p, n);
+		if (ret < 0) {
+			if (errno == EINTR)
+				continue;
+			else
+				break;
+		}
+		total += ret;
+		p += ret;
+	}
+	return total;
+}
+
+int extract_wim_chunk_to_fd(const u8 *buf, size_t len,
+			    u64 offset, void *arg)
+{
+	int fd = *(int*)arg;
+	ssize_t ret = full_write(fd, buf, len);
+	if (ret < len) {
+		ERROR_WITH_ERRNO("Error writing to file descriptor");
+		return WIMLIB_ERR_WRITE;
+	} else {
+		return 0;
+	}
 }
 
 /*

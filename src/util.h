@@ -181,8 +181,6 @@ extern void print_string(const void *string, size_t len);
 
 extern int get_num_path_components(const char *path);
 
-extern ssize_t full_write(int fd, const void *buf, size_t n);
-
 static inline void print_byte_field(const u8 field[], size_t len)
 {
 	while (len--)

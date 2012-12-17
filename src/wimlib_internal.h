@@ -396,6 +396,12 @@ extern int new_joined_lookup_table(WIMStruct *w,
 			    	   unsigned num_additional_swms,
 				   struct lookup_table **table_ret);
 
+/* metadata_resource.c */
+
+extern int read_metadata_resource(WIMStruct *w,
+				  struct image_metadata *image_metadata);
+extern int write_metadata_resource(WIMStruct *w);
+
 /* ntfs-apply.c */
 
 struct apply_args {
@@ -447,20 +453,32 @@ extern int write_wim_resource(struct lookup_table_entry *lte,
 			      struct resource_entry *out_res_entry,
 			      int flags);
 
-extern int extract_wim_resource_to_fd(const struct lookup_table_entry *lte,
-				      int fd, u64 size);
 
+typedef int (*extract_chunk_func_t)(const u8 *, size_t, u64, void *);
 
-extern int extract_full_wim_resource_to_fd(const struct lookup_table_entry *lte,
-					   int fd);
+extern int extract_wim_chunk_to_fd(const u8 *buf, size_t len,
+				   u64 offset, void *arg);
 
-extern int read_metadata_resource(WIMStruct *w,
-				  struct image_metadata *image_metadata);
+extern int extract_wim_resource(const struct lookup_table_entry *lte,
+				u64 size, extract_chunk_func_t extract_chunk,
+				void *extract_chunk_arg);
+/*
+ * Extracts the first @size bytes of the WIM resource specified by @lte to the
+ * open file descriptor @fd.
+ *
+ * Returns 0 on success; nonzero on failure.
+ */
+static inline int
+extract_wim_resource_to_fd(const struct lookup_table_entry *lte,
+			   int fd, u64 size)
+{
+	return extract_wim_resource(lte, size,
+				    extract_wim_chunk_to_fd, &fd);
+}
 
 
 extern int write_dentry_resources(struct dentry *dentry, void *wim_p);
 extern int copy_resource(struct lookup_table_entry *lte, void *w);
-extern int write_metadata_resource(WIMStruct *w);
 
 
 /* security.c */
