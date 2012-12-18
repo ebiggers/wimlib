@@ -1694,6 +1694,14 @@ out:
 	return ret;
 }
 
+static bool any_images_modified(WIMStruct *w)
+{
+	for (int i = 0; i < w->hdr.image_count; i++)
+		if (w->image_metadata[i].modified)
+			return true;
+	return false;
+}
+
 /*
  * Overwrite a WIM, possibly appending streams to it.
  *
@@ -1753,12 +1761,12 @@ out:
  */
 static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 				 unsigned num_threads,
-				 wimlib_progress_func_t progress_func,
-				 int modified_image_idx)
+				 wimlib_progress_func_t progress_func)
 {
 	int ret;
 	struct list_head stream_list;
 	off_t old_wim_end;
+	bool found_modified_image;
 
 	DEBUG("Overwriting `%s' in-place", w->filename);
 
@@ -1783,8 +1791,7 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	else
 		old_wim_end = w->hdr.xml_res_entry.offset + w->hdr.xml_res_entry.size;
 
-
-	if (modified_image_idx == w->hdr.image_count && !w->deletion_occurred) {
+	if (!w->deletion_occurred && !any_images_modified(w)) {
 		/* If no images have been modified and no images have been
 		 * deleted, a new lookup table does not need to be written. */
 		old_wim_end = w->hdr.lookup_table_res_entry.offset +
@@ -1830,11 +1837,16 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 		DEBUG("No new streams were added");
 	}
 
-	for (int i = modified_image_idx; i < w->hdr.image_count; i++) {
-		select_wim_image(w, i + 1);
-		ret = write_metadata_resource(w);
-		if (ret != 0)
-			goto out_ftruncate;
+	found_modified_image = false;
+	for (int i = 0; i < w->hdr.image_count; i++) {
+		if (!found_modified_image)
+			found_modified_image = w->image_metadata[i].modified;
+		if (found_modified_image) {
+			select_wim_image(w, i + 1);
+			ret = write_metadata_resource(w);
+			if (ret != 0)
+				goto out_ftruncate;
+		}
 	}
 	write_flags |= WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE;
 	ret = finish_write(w, WIMLIB_ALL_IMAGES, write_flags,
@@ -1935,24 +1947,13 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
 	if ((!w->deletion_occurred || (write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE))
 	    && !(write_flags & WIMLIB_WRITE_FLAG_REBUILD))
 	{
-		int i;
-		int modified_image_idx;
 		int ret;
-
-		for (i = 0; i < w->hdr.image_count && !w->image_metadata[i].modified; i++)
-			;
-		modified_image_idx = i;
-		for (; i < w->hdr.image_count && w->image_metadata[i].modified; i++)
-			;
-		if (i == w->hdr.image_count) {
-			ret = overwrite_wim_inplace(w, write_flags, num_threads,
-						    progress_func,
-						    modified_image_idx);
-			if (ret == WIMLIB_ERR_RESOURCE_ORDER)
-				WARNING("Falling back to re-building entire WIM");
-			else
-				return ret;
-		}
+		ret = overwrite_wim_inplace(w, write_flags, num_threads,
+					    progress_func);
+		if (ret == WIMLIB_ERR_RESOURCE_ORDER)
+			WARNING("Falling back to re-building entire WIM");
+		else
+			return ret;
 	}
 	return overwrite_wim_via_tmpfile(w, write_flags, num_threads,
 					 progress_func);
