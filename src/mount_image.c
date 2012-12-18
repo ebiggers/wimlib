@@ -1017,7 +1017,6 @@ enum {
 };
 
 struct msg_handler_context {
-	bool is_daemon;
 	int timeout_seconds;
 	union {
 		struct {
@@ -1464,7 +1463,6 @@ static void wimfs_destroy(void *p)
 		return;
 
 	struct msg_handler_context handler_ctx = {
-		.is_daemon = true,
 		.timeout_seconds = 5,
 		.daemon = {
 			.wimfs_ctx = wimfs_ctx,
@@ -2523,7 +2521,6 @@ WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags,
 		goto out_close_message_queues;
 
 	struct msg_handler_context handler_ctx = {
-		.is_daemon = false,
 		.timeout_seconds = 5,
 		.unmount = {
 			.daemon_pid = 0,
