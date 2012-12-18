@@ -84,6 +84,9 @@ struct wimfs_context {
 	/* List of lookup table entries in the staging directory */
 	struct list_head staging_list;
 
+	/* List of inodes in the mounted image */
+	struct hlist_head *image_inode_list;
+
 	/* Name and message queue descriptors for message queues between the filesystem
 	 * daemon process and the unmount process.  These are used when the filesystem
 	 * is unmounted and the process running wimlib_mount() (i.e. the `imagex
@@ -289,6 +292,7 @@ static int create_dentry(struct wimfs_context *ctx, const char *path,
 	new->d_inode->resolved = 1;
 	new->d_inode->ino = ctx->next_ino++;
 	dentry_add_child(parent, new);
+	hlist_add_head(&new->d_inode->hlist, ctx->image_inode_list);
 	*dentry_ret = new;
 	return 0;
 }
@@ -448,7 +452,6 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 	int ret;
 	int fd;
 	struct lookup_table_entry *old_lte, *new_lte;
-	off_t old_size;
 	off_t extract_size;
 
 	DEBUG("Extracting resource to staging dir: inode %"PRIu64", "
@@ -1266,11 +1269,13 @@ static void wimfs_destroy(void *p)
 	if (ret == 0) {
 		if (ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT) {
-				int write_flags;
+				int write_flags = 0;
 				if (unmount_flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY)
-					write_flags = WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-				else
-					write_flags = 0;
+					write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+				if (unmount_flags & WIMLIB_UNMOUNT_FLAG_REBUILD)
+					write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
+				if (unmount_flags & WIMLIB_UNMOUNT_FLAG_RECOMPRESS)
+					write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 				status = rebuild_wim(ctx, write_flags);
 			}
 			ret = delete_staging_dir(ctx);
@@ -1417,8 +1422,6 @@ static int wimfs_link(const char *to, const char *from)
 	from_dentry->d_inode = inode;
 	inode->link_count++;
 
-	if (inode->lte)
-		inode->lte->refcnt++;
 	for (i = 0; i <= inode->num_ads; i++) {
 		lte = inode_stream_lte_resolved(inode, i);
 		if (lte)
@@ -2160,13 +2163,12 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	}
 
 	ret = select_wim_image(wim, image);
-
 	if (ret != 0)
 		goto out;
 
-	imd = &wim->image_metadata[image - 1];
-
 	DEBUG("Selected image %d", image);
+
+	imd = wim_get_current_image_metadata(wim);
 
 	if (imd->root_dentry->refcnt != 1) {
 		ERROR("Cannot mount image that was just exported with "
@@ -2183,7 +2185,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	}
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		ret = lock_wim(wim->fp, wim->filename);
+		ret = lock_wim(wim, wim->fp);
 		if (ret != 0)
 			goto out;
 	}
@@ -2198,6 +2200,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	init_wimfs_context(&ctx);
 	ctx.wim = wim;
 	ctx.mount_flags = mount_flags;
+	ctx.image_inode_list = &imd->inode_list;
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 		ctx.default_lookup_flags = LOOKUP_FLAG_ADS_OK;
@@ -2205,7 +2208,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	DEBUG("Unlinking message queues in case they already exist");
 	ret = set_message_queue_names(&ctx, dir);
 	if (ret != 0)
-		goto out;
+		goto out_unlock;
 	unlink_message_queues(&ctx);
 
 	DEBUG("Preparing arguments to fuse_main()");
@@ -2291,6 +2294,8 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		ret = WIMLIB_ERR_FUSE;
 out_free_dir_copy:
 	FREE(dir_copy);
+out_unlock:
+	wim->wim_locked = 0;
 out_free_message_queue_names:
 	free_message_queue_names(&ctx);
 out:

@@ -317,6 +317,7 @@ struct WIMStruct {
 	u8 deletion_occurred : 1;
 	u8 all_images_verified : 1;
 	u8 full_verification_in_progress : 1;
+	u8 wim_locked : 1;
 };
 
 /* Inline utility functions for WIMStructs. */
@@ -543,9 +544,9 @@ extern int finish_write(WIMStruct *w, int image, int write_flags,
 			wimlib_progress_func_t progress_func);
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
-extern int lock_wim(FILE *fp, const char *path);
+extern int lock_wim(WIMStruct *w, FILE *fp);
 #else
-static inline int lock_wim(FILE *fp, const char *path)
+static inline int lock_wim(WIMStruct *w, FILE *fp)
 {
 	return 0;
 }

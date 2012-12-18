@@ -172,6 +172,8 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 
 	imd->root_dentry = dentry;
 	imd->inode_list  = inode_list;
+	if (imd->inode_list.first)
+		imd->inode_list.first->pprev = &imd->inode_list.first;
 	goto out_free_buf;
 out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL);

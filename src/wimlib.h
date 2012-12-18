@@ -636,6 +636,12 @@ typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
  * discarded.  Ignored for read-only mounts. */
 #define WIMLIB_UNMOUNT_FLAG_COMMIT			0x00000002
 
+/** See ::WIMLIB_WRITE_FLAG_REBUILD */
+#define WIMLIB_UNMOUNT_FLAG_REBUILD			0x00000004
+
+/** See ::WIMLIB_WRITE_FLAG_RECOMPRESS */
+#define WIMLIB_UNMOUNT_FLAG_RECOMPRESS			0x00000008
+
 /******************************
  * WIMLIB_WRITE_FLAG_*        *
  ******************************/
@@ -655,7 +661,7 @@ typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
 /** Call fsync() when the WIM file is closed */
 #define WIMLIB_WRITE_FLAG_FSYNC				0x00000008
 
-/** Specifying this flag overrides the default behavior of wimlib_overwrite()
+/* Specifying this flag overrides the default behavior of wimlib_overwrite()
  * after one or more calls to wimlib_delete_image(), which is to rebuild the
  * entire WIM.
  *
@@ -1404,6 +1410,7 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * 	the same directory as the WIM file that @a wim was originally read from.
  *
  * @return 0 on success; nonzero on error.
+ *
  * @retval ::WIMLIB_ERR_ALREADY_LOCKED
  * 	A read-write mount was requested, but an an exclusive advisory lock on
  * 	the on-disk WIM file could not be acquired because another thread or

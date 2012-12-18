@@ -1339,6 +1339,47 @@ static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 						&progress);
 }
 
+struct lte_overwrite_prepare_args {
+	WIMStruct *wim;
+	struct list_head *stream_list;
+	off_t end_offset;
+};
+
+static int lte_overwrite_prepare(struct lookup_table_entry *lte, void *arg)
+{
+	struct lte_overwrite_prepare_args *args = arg;
+
+	if (lte->resource_entry.offset +
+	    lte->resource_entry.size > args->end_offset)
+	{
+		ERROR("The following resource is after the XML data:");
+		print_lookup_table_entry(lte);
+		return WIMLIB_ERR_RESOURCE_ORDER;
+	}
+
+	lte->out_refcnt = lte->refcnt;
+	memcpy(&lte->output_resource_entry, &lte->resource_entry,
+	       sizeof(struct resource_entry));
+	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)) {
+		wimlib_assert(lte->resource_location != RESOURCE_NONEXISTENT);
+		if (lte->resource_location != RESOURCE_IN_WIM || lte->wim != args->wim)
+			list_add(&lte->staging_list, args->stream_list);
+	}
+	return 0;
+}
+
+static int wim_find_new_streams(WIMStruct *wim, off_t end_offset,
+				struct list_head *stream_list)
+{
+	struct lte_overwrite_prepare_args args = {
+		.wim = wim,
+		.stream_list = stream_list,
+		.end_offset = end_offset,
+	};
+
+	return for_lookup_table_entry(wim->lookup_table,
+				      lte_overwrite_prepare, &args);
+}
 
 static int dentry_find_streams_to_write(struct dentry *dentry,
 					void *wim)
@@ -1537,22 +1578,24 @@ out:
 }
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
-int lock_wim(FILE *fp, const char *path)
+int lock_wim(WIMStruct *w, FILE *fp)
 {
 	int ret = 0;
-	if (fp) {
+	if (fp && !w->wim_locked) {
 		ret = flock(fileno(fp), LOCK_EX | LOCK_NB);
 		if (ret != 0) {
 			if (errno == EWOULDBLOCK) {
 				ERROR("`%s' is already being modified or has been "
 				      "mounted read-write\n"
-				      "        by another process!", path);
+				      "        by another process!", w->filename);
 				ret = WIMLIB_ERR_ALREADY_LOCKED;
 			} else {
 				WARNING("Failed to lock `%s': %s",
-					path, strerror(errno));
+					w->filename, strerror(errno));
 				ret = 0;
 			}
+		} else {
+			w->wim_locked = 1;
 		}
 	}
 	return ret;
@@ -1651,45 +1694,6 @@ out:
 	return ret;
 }
 
-static int lte_overwrite_prepare(struct lookup_table_entry *lte,
-				 void *ignore)
-{
-	memcpy(&lte->output_resource_entry, &lte->resource_entry,
-	       sizeof(struct resource_entry));
-	lte->out_refcnt = 0;
-	return 0;
-}
-
-static int check_resource_offset(struct lookup_table_entry *lte, void *arg)
-{
-	wimlib_assert(lte->out_refcnt <= lte->refcnt);
-	if (lte->out_refcnt < lte->refcnt) {
-		off_t end_offset = *(u64*)arg;
-		if (lte->resource_entry.offset +
-		    lte->resource_entry.size > end_offset)
-		{
-			ERROR("The following resource is after the XML data:");
-			print_lookup_table_entry(lte);
-			return WIMLIB_ERR_RESOURCE_ORDER;
-		}
-	}
-	return 0;
-}
-
-static int find_new_streams(struct lookup_table_entry *lte, void *arg)
-{
-	if (lte->out_refcnt == lte->refcnt) {
-		/* Newly added stream that is only referenced in the modified
-		 * images.  Append it to the list of streams to write. */
-		list_add(&lte->staging_list, (struct list_head*)arg);
-	} else {
-		/* Not a newly added stream.  But set out_refcnt to the full
-		 * refcnt so that it's written correctly. */
-		lte->out_refcnt = lte->refcnt;
-	}
-	return 0;
-}
-
 /*
  * Overwrite a WIM, possibly appending streams to it.
  *
@@ -1773,25 +1777,12 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 		return WIMLIB_ERR_RESOURCE_ORDER;
 	}
 
-	DEBUG("Identifying newly added streams");
-	for_lookup_table_entry(w->lookup_table, lte_overwrite_prepare, NULL);
-	INIT_LIST_HEAD(&stream_list);
-	for (int i = modified_image_idx; i < w->hdr.image_count; i++) {
-		DEBUG("Identifiying streams in image %d", i + 1);
-		w->private = &stream_list;
-		for_dentry_in_tree(w->image_metadata[i].root_dentry,
-				   dentry_find_streams_to_write, w);
-	}
 
 	if (w->hdr.integrity.offset)
 		old_wim_end = w->hdr.integrity.offset + w->hdr.integrity.size;
 	else
 		old_wim_end = w->hdr.xml_res_entry.offset + w->hdr.xml_res_entry.size;
 
-	ret = for_lookup_table_entry(w->lookup_table, check_resource_offset,
-				     &old_wim_end);
-	if (ret != 0)
-		return ret;
 
 	if (modified_image_idx == w->hdr.image_count && !w->deletion_occurred) {
 		/* If no images have been modified and no images have been
@@ -1801,17 +1792,17 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 		write_flags |= WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE |
 			       WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML;
 	}
-
 	INIT_LIST_HEAD(&stream_list);
-	for_lookup_table_entry(w->lookup_table, find_new_streams,
-			       &stream_list);
+	ret = wim_find_new_streams(w, old_wim_end, &stream_list);
+	if (ret != 0)
+		return ret;
 
 	ret = open_wim_writable(w, w->filename, false,
 				(write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) != 0);
 	if (ret != 0)
 		return ret;
 
-	ret = lock_wim(w->out_fp, w->filename);
+	ret = lock_wim(w, w->out_fp);
 	if (ret != 0) {
 		fclose(w->out_fp);
 		w->out_fp = NULL;
@@ -1822,6 +1813,7 @@ static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");
 		fclose(w->out_fp);
 		w->out_fp = NULL;
+		w->wim_locked = 0;
 		return WIMLIB_ERR_WRITE;
 	}
 
@@ -1854,6 +1846,7 @@ out_ftruncate:
 			w->filename, old_wim_end);
 		truncate(w->filename, old_wim_end);
 	}
+	w->wim_locked = 0;
 	return ret;
 }
 
@@ -1949,8 +1942,7 @@ WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
 		for (i = 0; i < w->hdr.image_count && !w->image_metadata[i].modified; i++)
 			;
 		modified_image_idx = i;
-		for (; i < w->hdr.image_count && w->image_metadata[i].modified &&
-			!w->image_metadata[i].has_been_mounted_rw; i++)
+		for (; i < w->hdr.image_count && w->image_metadata[i].modified; i++)
 			;
 		if (i == w->hdr.image_count) {
 			ret = overwrite_wim_inplace(w, write_flags, num_threads,

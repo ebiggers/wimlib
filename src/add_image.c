@@ -633,7 +633,7 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 	struct dentry *root_dentry = NULL;
 	struct wim_security_data *sd;
 	struct capture_config config;
-	struct hlist_head inode_list;
+	struct image_metadata *imd;
 	int ret;
 
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
@@ -729,14 +729,14 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 	if (ret != 0)
 		goto out_free_dentry_tree;
 
+	imd = &w->image_metadata[w->hdr.image_count - 1];
 
-	ret = dentry_tree_fix_inodes(root_dentry, &inode_list);
+	ret = dentry_tree_fix_inodes(root_dentry, &imd->inode_list);
 	if (ret != 0)
 		goto out_destroy_imd;
 
 	DEBUG("Assigning hard link group IDs");
-	assign_inode_numbers(&inode_list);
-	w->image_metadata[w->hdr.image_count - 1].inode_list = inode_list;
+	assign_inode_numbers(&imd->inode_list);
 
 	ret = xml_add_image(w, name);
 	if (ret != 0)
