@@ -9,7 +9,7 @@ imagex-mount, imagex-mountrw, imagex-unmount \- Mount and unmount an image from 
 \fBimagex mountrw\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [--check]
 [--streams-interface=\fIINTERFACE\fR] [--staging-dir=\fIDIR\fR]
 .br
-\fBimagex unmount\fR \fIDIRECTORY\fR [--commit] [--check]
+\fBimagex unmount\fR \fIDIRECTORY\fR [--commit] [--check] [--rebuild]
 
 .SH DESCRIPTION
 .PP
@@ -77,6 +77,13 @@ descriptor.  Although there is support for accessing named data streams (see the
 to set or get DOS names, file attributes, or security
 descriptors in a mounted WIM.
 
+By default, changes to a read-write WIM are made in-place by appending to the
+WIM.  This is ideal for big WIM files, since the entire file doesn't have to be
+rebuilt to make a small change.  But, if you are making many changes to a
+read-write mounted WIM, especially deleting large files, it is suggested to
+provide the \fB--rebuild\fR option to \fBimagex unmount\fR to force the WIM to
+be rebuilt, or else run \fBimagex optimize\fR on the WIM afterwards.
+
 .SH MOUNT OPTIONS
 
 .TP
@@ -122,12 +129,20 @@ Store temporary staging files in the directory \fIDIR\fR.  Only valid for
 
 .TP
 \fB--commit\fR
-Recreate the WIM file with the changes that have been made.  Has no effect if
-the mount is read-only.
-.TP 6
+Update the WIM file with the changes that have been made.  Has no effect if the
+mount is read-only.
+.TP
 \fB--check\fR
 When writing \fIWIMFILE\fR, include an integrity table.  Has no effect if the
 mount is read-only or if --commit was not specified.
+.TP
+\fB--rebuild\fR
+Rebuild the entire WIM rather than appending any new data to the end of it.
+Rebuilding the WIM is slower, but will save a little bit of space that would
+otherwise be left as a hole in the WIM.  Even more space will be saved if the
+read-write mount resulted in streams being deleted from the WIM.  Also see
+\fBimagex optimize\fR.  Has no effect if the mount is read-only or if --commit
+was not specified.
 
 .SH IMPLEMENTATION DETAILS
 

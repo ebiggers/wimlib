@@ -105,7 +105,7 @@ static const char *usage_strings[] = {
 [SPLIT] =
 "imagex split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
 [UNMOUNT] =
-"imagex unmount DIRECTORY [--commit] [--check]\n",
+"imagex unmount DIRECTORY [--commit] [--check] [--rebuild]\n",
 };
 
 static const struct option common_options[] = {
@@ -187,8 +187,9 @@ static const struct option split_options[] = {
 };
 
 static const struct option unmount_options[] = {
-	{"commit", no_argument, NULL, 'c'},
-	{"check", no_argument, NULL, 'C'},
+	{"commit",  no_argument, NULL, 'c'},
+	{"check",   no_argument, NULL, 'C'},
+	{"rebuild", no_argument, NULL, 'R'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1635,6 +1636,9 @@ static int imagex_unmount(int argc, const char **argv)
 			break;
 		case 'C':
 			unmount_flags |= WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY;
+			break;
+		case 'R':
+			unmount_flags |= WIMLIB_UNMOUNT_FLAG_REBUILD;
 			break;
 		default:
 			usage(UNMOUNT);
