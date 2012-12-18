@@ -515,7 +515,6 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	u32 attributes;
 	int mrec_flags;
 	int ret;
-	char dos_name_utf8[64];
 	struct dentry *root;
 
 	if (exclude_path(path, config, false)) {
@@ -561,8 +560,9 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	if (dir_ni && (name_type == FILE_NAME_WIN32_AND_DOS
 		       || name_type == FILE_NAME_WIN32))
 	{
+		char dos_name_utf8[12 * 4 + 1] = {0};
 		ret = ntfs_get_ntfs_dos_name(ni, dir_ni, dos_name_utf8,
-					     sizeof(dos_name_utf8));
+					     sizeof(dos_name_utf8) - 1);
 		if (ret > 0) {
 			DEBUG("Changing short name of `%s'", path);
 			ret = change_dentry_short_name(root, dos_name_utf8,

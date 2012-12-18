@@ -36,6 +36,11 @@
 #include <unistd.h>
 #include <errno.h>
 
+#ifdef WITH_NTFS_3G
+#include <ntfs-3g/volume.h>
+#include <ntfs-3g/unistr.h>
+#endif
+
 /* True if wimlib is to print an informational message when an error occurs.
  * This can be turned off by calling wimlib_set_print_errors(false). */
 #ifdef ENABLE_ERROR_MESSAGES
@@ -285,6 +290,22 @@ static iconv_t cd_utf16_to_utf8 = (iconv_t)(-1);
 char *utf16_to_utf8(const char *utf16_str, size_t utf16_len,
 		    size_t *utf8_len_ret)
 {
+#ifdef WITH_NTFS_3G
+	if (utf16_len & 1) {
+		errno = -EILSEQ;
+		return NULL;
+	}
+	char *outs = NULL;
+	int outs_len = ntfs_ucstombs((const ntfschar*)utf16_str,
+				     utf16_len >> 1, &outs, 0);
+	if (outs_len >= 0) {
+		*utf8_len_ret = outs_len;
+	} else {
+		ERROR_WITH_ERRNO("Error converting UTF-16LE string to UTF-8");
+		outs = NULL;
+	}
+	return outs;
+#else
 	if (cd_utf16_to_utf8 == (iconv_t)(-1)) {
 		cd_utf16_to_utf8 = iconv_open("UTF-8", "UTF-16LE");
 		if (cd_utf16_to_utf8 == (iconv_t)-1) {
@@ -317,6 +338,7 @@ char *utf16_to_utf8(const char *utf16_str, size_t utf16_len,
 	*utf8_len_ret = utf8_len;
 	orig_utf8_str[utf8_len] = '\0';
 	return orig_utf8_str;
+#endif
 }
 
 static iconv_t cd_utf8_to_utf16 = (iconv_t)(-1);
@@ -326,6 +348,17 @@ static iconv_t cd_utf8_to_utf16 = (iconv_t)(-1);
 char *utf8_to_utf16(const char *utf8_str, size_t utf8_len,
 		    size_t *utf16_len_ret)
 {
+#ifdef WITH_NTFS_3G
+	char *outs = NULL;
+	int outs_nchars = ntfs_mbstoucs(utf8_str, (ntfschar**)&outs);
+	if (outs_nchars >= 0) {
+		*utf16_len_ret = (size_t)outs_nchars * 2;
+	} else {
+		ERROR_WITH_ERRNO("Error converting UTF-8 string to UTF-16LE");
+		outs = NULL;
+	}
+	return outs;
+#else
 	if (cd_utf8_to_utf16 == (iconv_t)(-1)) {
 		cd_utf8_to_utf16 = iconv_open("UTF-16LE", "UTF-8");
 		if (cd_utf8_to_utf16 == (iconv_t)-1) {
@@ -361,6 +394,7 @@ char *utf8_to_utf16(const char *utf8_str, size_t utf8_len,
 	orig_utf16_str[utf16_len] = '\0';
 	orig_utf16_str[utf16_len + 1] = '\0';
 	return orig_utf16_str;
+#endif
 }
 
 static bool seeded = false;
