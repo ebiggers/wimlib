@@ -120,6 +120,8 @@ static const char *error_strings[] = {
 		= "Failed to decompress compressed data",
 	[WIMLIB_ERR_DELETE_STAGING_DIR]
 		= "Failed to delete staging directory",
+	[WIMLIB_ERR_FILESYSTEM_DAEMON_CRASHED]
+		= "The process servicing the mounted WIM has crashed",
 	[WIMLIB_ERR_FORK]
 		= "Failed to fork another process",
 	[WIMLIB_ERR_FUSE]
@@ -203,8 +205,6 @@ static const char *error_strings[] = {
 		= "The WIM is part of a split WIM, which is not supported for this operation",
 	[WIMLIB_ERR_STAT]
 		= "Could not read the metadata for a file or directory",
-	[WIMLIB_ERR_TIMEOUT]
-		= "Timed out",
 	[WIMLIB_ERR_UNKNOWN_VERSION]
 		= "The WIM file is marked with an unknown version number",
 	[WIMLIB_ERR_UNSUPPORTED]

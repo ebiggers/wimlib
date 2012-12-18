@@ -52,6 +52,9 @@
 #include <attr/xattr.h>
 #endif
 
+#define MSG_VERSION_TOO_HIGH	-1
+#define MSG_BREAK_LOOP		-2
+
 /* File descriptor to a file open on the WIM filesystem. */
 struct wimlib_fd {
 	struct inode *f_inode;
@@ -676,7 +679,6 @@ static int remove_file_or_directory(const char *fpath, const struct stat *sb,
 	}
 }
 
-
 /*
  * Deletes the staging directory and all the files contained in it.
  */
@@ -689,210 +691,6 @@ static int delete_staging_dir(struct wimfs_context *ctx)
 	ctx->staging_dir_name = NULL;
 	return ret;
 }
-
-
-/* Simple function that returns the concatenation of 2 strings. */
-static char *strcat_dup(const char *s1, const char *s2, size_t max_len)
-{
-	size_t len = strlen(s1) + strlen(s2);
-	if (len > max_len)
-		len = max_len;
-	char *p = MALLOC(len + 1);
-	if (!p)
-		return NULL;
-	snprintf(p, len + 1, "%s%s", s1, s2);
-	return p;
-}
-
-static int set_message_queue_names(struct wimfs_context *ctx,
-				   const char *mount_dir)
-{
-	static const char *u2d_prefix = "/wimlib-unmount-to-daemon-mq";
-	static const char *d2u_prefix = "/wimlib-daemon-to-unmount-mq";
-	char *dir_path;
-	char *p;
-	int ret;
-
- 	dir_path = realpath(mount_dir, NULL);
-	if (!dir_path) {
-		ERROR_WITH_ERRNO("Failed to resolve path \"%s\"", mount_dir);
-		if (errno == ENOMEM)
-			return WIMLIB_ERR_NOMEM;
-		else
-			return WIMLIB_ERR_NOTDIR;
-	}
-
-	p = dir_path;
-	while (*p) {
-		if (*p == '/')
-			*p = 0xff;
-		p++;
-	}
-
-	ctx->unmount_to_daemon_mq_name = strcat_dup(u2d_prefix, dir_path,
-						    NAME_MAX);
-	if (!ctx->unmount_to_daemon_mq_name) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_dir_path;
-	}
-	ctx->daemon_to_unmount_mq_name = strcat_dup(d2u_prefix, dir_path,
-						    NAME_MAX);
-	if (!ctx->daemon_to_unmount_mq_name) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_unmount_to_daemon_mq_name;
-	}
-
-	ret = 0;
-	goto out_free_dir_path;
-out_free_unmount_to_daemon_mq_name:
-	FREE(ctx->unmount_to_daemon_mq_name);
-	ctx->unmount_to_daemon_mq_name = NULL;
-out_free_dir_path:
-	FREE(dir_path);
-	return ret;
-}
-
-static void free_message_queue_names(struct wimfs_context *ctx)
-{
-	FREE(ctx->unmount_to_daemon_mq_name);
-	FREE(ctx->daemon_to_unmount_mq_name);
-	ctx->unmount_to_daemon_mq_name = NULL;
-	ctx->daemon_to_unmount_mq_name = NULL;
-}
-
-/*
- * Opens two POSIX message queue: one for sending messages from the unmount
- * process to the daemon process, and one to go the other way.  The names of the
- * message queues, which must be system-wide unique, are be based on the mount
- * point.  (There of course is still a possibility of a collision if one were to
- * unmount two identically named directories simultaneously...)
- *
- * @daemon specifies whether the calling process is the filesystem daemon or the
- * unmount process.
- */
-static int open_message_queues(struct wimfs_context *ctx, bool daemon)
-{
-	int unmount_to_daemon_mq_flags = O_WRONLY | O_CREAT;
-	int daemon_to_unmount_mq_flags = O_RDONLY | O_CREAT;
-
-	if (daemon)
-		swap(unmount_to_daemon_mq_flags, daemon_to_unmount_mq_flags);
-
-	DEBUG("Opening message queue \"%s\"", ctx->unmount_to_daemon_mq_name);
-	ctx->unmount_to_daemon_mq = mq_open(ctx->unmount_to_daemon_mq_name,
-					    unmount_to_daemon_mq_flags, 0700, NULL);
-
-	if (ctx->unmount_to_daemon_mq == (mqd_t)-1) {
-		ERROR_WITH_ERRNO("mq_open()");
-		return WIMLIB_ERR_MQUEUE;
-	}
-
-	DEBUG("Opening message queue \"%s\"", ctx->daemon_to_unmount_mq_name);
-	ctx->daemon_to_unmount_mq = mq_open(ctx->daemon_to_unmount_mq_name,
-					    daemon_to_unmount_mq_flags, 0700, NULL);
-
-	if (ctx->daemon_to_unmount_mq == (mqd_t)-1) {
-		ERROR_WITH_ERRNO("mq_open()");
-		mq_close(ctx->unmount_to_daemon_mq);
-		mq_unlink(ctx->unmount_to_daemon_mq_name);
-		ctx->unmount_to_daemon_mq = (mqd_t)-1;
-		return WIMLIB_ERR_MQUEUE;
-	}
-	return 0;
-}
-
-/* Try to determine the maximum message size of a message queue.  The return
- * value is the maximum message size, or a guess of 8192 bytes if it cannot be
- * determined. */
-static long mq_get_msgsize(mqd_t mq)
-{
-	static const char *msgsize_max_file = "/proc/sys/fs/mqueue/msgsize_max";
-	FILE *fp;
-	struct mq_attr attr;
-	long msgsize;
-
-	if (mq_getattr(mq, &attr) == 0) {
-		msgsize = attr.mq_msgsize;
-	} else {
-		ERROR_WITH_ERRNO("mq_getattr()");
-		ERROR("Attempting to read %s", msgsize_max_file);
-		fp = fopen(msgsize_max_file, "rb");
-		if (fp) {
-			if (fscanf(fp, "%ld", &msgsize) != 1) {
-				ERROR("Assuming message size of 8192");
-				msgsize = 8192;
-			}
-			fclose(fp);
-		} else {
-			ERROR_WITH_ERRNO("Failed to open the file `%s'",
-					 msgsize_max_file);
-			ERROR("Assuming message size of 8192");
-			msgsize = 8192;
-		}
-	}
-	return msgsize;
-}
-
-static int get_mailbox(mqd_t mq, long needed_msgsize, long *msgsize_ret,
-		       void **mailbox_ret)
-{
-	long msgsize;
-	char *mailbox;
-
-	msgsize = mq_get_msgsize(mq);
-
-	if (msgsize < needed_msgsize) {
-		ERROR("Message queue max size must be at least %ld!",
-		      needed_msgsize);
-		return WIMLIB_ERR_MQUEUE;
-	}
-
-	mailbox = MALLOC(msgsize);
-	if (!mailbox) {
-		ERROR("Failed to allocate %ld bytes for mailbox", msgsize);
-		return WIMLIB_ERR_NOMEM;
-	}
-	*msgsize_ret = msgsize;
-	*mailbox_ret = mailbox;
-	return 0;
-}
-
-static void unlink_message_queues(struct wimfs_context *ctx)
-{
-	mq_unlink(ctx->unmount_to_daemon_mq_name);
-	mq_unlink(ctx->daemon_to_unmount_mq_name);
-}
-
-/* Closes the message queues, which are allocated in static variables */
-static void close_message_queues(struct wimfs_context *ctx)
-{
-	mq_close(ctx->unmount_to_daemon_mq);
-	ctx->unmount_to_daemon_mq = (mqd_t)(-1);
-	mq_close(ctx->daemon_to_unmount_mq);
-	ctx->daemon_to_unmount_mq = (mqd_t)(-1);
-	unlink_message_queues(ctx);
-}
-
-struct unmount_message_header {
-	u32 min_version;
-	u32 cur_version;
-	u32 data_size;
-};
-
-struct unmount_request {
-	struct unmount_message_header hdr;
-	struct {
-		u32 unmount_flags;
-	} data;
-};
-
-struct unmount_response {
-	struct unmount_message_header hdr;
-	struct {
-		int32_t status;
-		u32 mount_flags;
-	} data;
-};
 
 static void inode_update_lte_ptr(struct inode *inode,
 				 struct lookup_table_entry *old_lte,
@@ -994,156 +792,517 @@ static int rebuild_wim(struct wimfs_context *ctx, int write_flags)
 	return ret;
 }
 
-/* Send a message to the filesystem daemon saying whether to commit or not. */
-static int send_unmount_request(struct wimfs_context *ctx, int unmount_flags)
+
+
+/* Simple function that returns the concatenation of 2 strings. */
+static char *strcat_dup(const char *s1, const char *s2, size_t max_len)
 {
+	size_t len = strlen(s1) + strlen(s2);
+	if (len > max_len)
+		len = max_len;
+	char *p = MALLOC(len + 1);
+	if (!p)
+		return NULL;
+	snprintf(p, len + 1, "%s%s", s1, s2);
+	return p;
+}
+
+static int set_message_queue_names(struct wimfs_context *ctx,
+				   const char *mount_dir)
+{
+	static const char *u2d_prefix = "/wimlib-unmount-to-daemon-mq";
+	static const char *d2u_prefix = "/wimlib-daemon-to-unmount-mq";
+	char *dir_path;
+	char *p;
 	int ret;
-	struct unmount_request msg;
 
-	msg.hdr.min_version    = WIMLIB_MAKEVERSION(1, 2, 0);
-	msg.hdr.cur_version    = WIMLIB_VERSION_CODE;
-	msg.hdr.data_size      = sizeof(msg.data);
-	msg.data.unmount_flags = unmount_flags;
+ 	dir_path = realpath(mount_dir, NULL);
+	if (!dir_path) {
+		ERROR_WITH_ERRNO("Failed to resolve path \"%s\"", mount_dir);
+		if (errno == ENOMEM)
+			return WIMLIB_ERR_NOMEM;
+		else
+			return WIMLIB_ERR_NOTDIR;
+	}
 
-	ret = mq_send(ctx->unmount_to_daemon_mq, (void*)&msg,
-		      sizeof(msg), 1);
-	if (ret == -1) {
-		ERROR_WITH_ERRNO("Failed to notify filesystem daemon whether "
-				 "we want to commit changes or not");
+	p = dir_path;
+	while (*p) {
+		if (*p == '/')
+			*p = 0xff;
+		p++;
+	}
+
+	ctx->unmount_to_daemon_mq_name = strcat_dup(u2d_prefix, dir_path,
+						    NAME_MAX);
+	if (!ctx->unmount_to_daemon_mq_name) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_dir_path;
+	}
+	ctx->daemon_to_unmount_mq_name = strcat_dup(d2u_prefix, dir_path,
+						    NAME_MAX);
+	if (!ctx->daemon_to_unmount_mq_name) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_unmount_to_daemon_mq_name;
+	}
+
+	ret = 0;
+	goto out_free_dir_path;
+out_free_unmount_to_daemon_mq_name:
+	FREE(ctx->unmount_to_daemon_mq_name);
+	ctx->unmount_to_daemon_mq_name = NULL;
+out_free_dir_path:
+	FREE(dir_path);
+	return ret;
+}
+
+static void free_message_queue_names(struct wimfs_context *ctx)
+{
+	FREE(ctx->unmount_to_daemon_mq_name);
+	FREE(ctx->daemon_to_unmount_mq_name);
+	ctx->unmount_to_daemon_mq_name = NULL;
+	ctx->daemon_to_unmount_mq_name = NULL;
+}
+
+/*
+ * Opens two POSIX message queue: one for sending messages from the unmount
+ * process to the daemon process, and one to go the other way.  The names of the
+ * message queues, which must be system-wide unique, are be based on the mount
+ * point.
+ *
+ * @daemon specifies whether the calling process is the filesystem daemon or the
+ * unmount process.
+ */
+static int open_message_queues(struct wimfs_context *ctx, bool daemon)
+{
+	int unmount_to_daemon_mq_flags = O_WRONLY | O_CREAT;
+	int daemon_to_unmount_mq_flags = O_RDONLY | O_CREAT;
+
+	if (daemon)
+		swap(unmount_to_daemon_mq_flags, daemon_to_unmount_mq_flags);
+
+	DEBUG("Opening message queue \"%s\"", ctx->unmount_to_daemon_mq_name);
+	ctx->unmount_to_daemon_mq = mq_open(ctx->unmount_to_daemon_mq_name,
+					    unmount_to_daemon_mq_flags, 0700, NULL);
+
+	if (ctx->unmount_to_daemon_mq == (mqd_t)-1) {
+		ERROR_WITH_ERRNO("mq_open()");
+		return WIMLIB_ERR_MQUEUE;
+	}
+
+	DEBUG("Opening message queue \"%s\"", ctx->daemon_to_unmount_mq_name);
+	ctx->daemon_to_unmount_mq = mq_open(ctx->daemon_to_unmount_mq_name,
+					    daemon_to_unmount_mq_flags, 0700, NULL);
+
+	if (ctx->daemon_to_unmount_mq == (mqd_t)-1) {
+		ERROR_WITH_ERRNO("mq_open()");
+		mq_close(ctx->unmount_to_daemon_mq);
+		mq_unlink(ctx->unmount_to_daemon_mq_name);
+		ctx->unmount_to_daemon_mq = (mqd_t)-1;
 		return WIMLIB_ERR_MQUEUE;
 	}
 	return 0;
 }
 
-static int receive_unmount_request(struct wimfs_context *ctx,
-				   int *unmount_flags)
+/* Try to determine the maximum message size of a message queue.  The return
+ * value is the maximum message size, or a guess of 8192 bytes if it cannot be
+ * determined. */
+static long mq_get_msgsize(mqd_t mq)
 {
-	void *mailbox;
+	static const char *msgsize_max_file = "/proc/sys/fs/mqueue/msgsize_max";
+	FILE *fp;
+	struct mq_attr attr;
 	long msgsize;
-	struct timeval now;
-	struct timespec timeout;
-	ssize_t bytes_received;
-	struct unmount_request *msg;
-	int ret;
 
-	ret = get_mailbox(ctx->unmount_to_daemon_mq,
-			  sizeof(struct unmount_request),
-			  &msgsize, &mailbox);
-	if (ret != 0)
-		return ret;
-
-	/* Wait at most 3 seconds before giving up and discarding changes. */
-	gettimeofday(&now, NULL);
-	timeout.tv_sec = now.tv_sec + 3;
-	timeout.tv_nsec = now.tv_usec * 1000;
-
-	bytes_received = mq_timedreceive(ctx->unmount_to_daemon_mq, mailbox,
-					 msgsize, NULL, &timeout);
-	msg = mailbox;
-	if (bytes_received == -1) {
-		ERROR_WITH_ERRNO("mq_timedreceive()");
-		ERROR("Not committing.");
-		ret = WIMLIB_ERR_MQUEUE;
-	} else if (bytes_received < sizeof(struct unmount_message_header) ||
-		   bytes_received != sizeof(struct unmount_message_header) + msg->hdr.data_size) {
-		ERROR("Received invalid unmount request");
-		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	} else if (WIMLIB_VERSION_CODE < msg->hdr.min_version) {
-		ERROR("Cannot understand the unmount request. "
-		      "Please upgrade wimlib to at least v%d.%d.%d",
-		      WIMLIB_GET_MAJOR_VERSION(msg->hdr.min_version),
-		      WIMLIB_GET_MINOR_VERSION(msg->hdr.min_version),
-		      WIMLIB_GET_PATCH_VERSION(msg->hdr.min_version));
-		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
+	if (mq_getattr(mq, &attr) == 0) {
+		msgsize = attr.mq_msgsize;
 	} else {
-		*unmount_flags = msg->data.unmount_flags;
-		ret = 0;
+		ERROR_WITH_ERRNO("mq_getattr()");
+		ERROR("Attempting to read %s", msgsize_max_file);
+		fp = fopen(msgsize_max_file, "rb");
+		if (fp) {
+			if (fscanf(fp, "%ld", &msgsize) != 1) {
+				ERROR("Assuming message size of 8192");
+				msgsize = 8192;
+			}
+			fclose(fp);
+		} else {
+			ERROR_WITH_ERRNO("Failed to open the file `%s'",
+					 msgsize_max_file);
+			ERROR("Assuming message size of 8192");
+			msgsize = 8192;
+		}
 	}
-	FREE(mailbox);
-	return ret;
+	return msgsize;
 }
 
-static void send_unmount_response(struct wimfs_context *ctx, int status)
+static int get_mailbox(mqd_t mq, long needed_msgsize, long *msgsize_ret,
+		       void **mailbox_ret)
 {
-	struct unmount_response response;
-	response.hdr.min_version  = WIMLIB_MAKEVERSION(1, 2, 0);
-	response.hdr.cur_version  = WIMLIB_VERSION_CODE;
-	response.hdr.data_size    = sizeof(response.data);
-	response.data.status      = status;
-	response.data.mount_flags = ctx->mount_flags;
-	if (mq_send(ctx->daemon_to_unmount_mq, (void*)&response,
-		    sizeof(response), 1))
+	long msgsize;
+	char *mailbox;
+
+	msgsize = mq_get_msgsize(mq);
+
+	if (msgsize < needed_msgsize) {
+		ERROR("Message queue max size must be at least %ld!",
+		      needed_msgsize);
+		return WIMLIB_ERR_MQUEUE;
+	}
+
+	mailbox = MALLOC(msgsize);
+	if (!mailbox) {
+		ERROR("Failed to allocate %ld bytes for mailbox", msgsize);
+		return WIMLIB_ERR_NOMEM;
+	}
+	*msgsize_ret = msgsize;
+	*mailbox_ret = mailbox;
+	return 0;
+}
+
+static void unlink_message_queues(struct wimfs_context *ctx)
+{
+	mq_unlink(ctx->unmount_to_daemon_mq_name);
+	mq_unlink(ctx->daemon_to_unmount_mq_name);
+}
+
+/* Closes the message queues, which are allocated in static variables */
+static void close_message_queues(struct wimfs_context *ctx)
+{
+	DEBUG("Closing message queues");
+	mq_close(ctx->unmount_to_daemon_mq);
+	ctx->unmount_to_daemon_mq = (mqd_t)(-1);
+	mq_close(ctx->daemon_to_unmount_mq);
+	ctx->daemon_to_unmount_mq = (mqd_t)(-1);
+	unlink_message_queues(ctx);
+}
+
+
+struct unmount_msg_hdr {
+	u32 min_version;
+	u32 cur_version;
+	u32 msg_type;
+	u32 msg_size;
+} PACKED;
+
+struct msg_unmount_request {
+	struct unmount_msg_hdr hdr;
+	u32 unmount_flags;
+} PACKED;
+
+struct msg_daemon_info {
+	struct unmount_msg_hdr hdr;
+	pid_t daemon_pid;
+	u32 mount_flags;
+} PACKED;
+
+struct msg_unmount_finished {
+	struct unmount_msg_hdr hdr;
+	int32_t status;
+} PACKED;
+
+enum {
+	MSG_TYPE_UNMOUNT_REQUEST,
+	MSG_TYPE_DAEMON_INFO,
+	MSG_TYPE_UNMOUNT_FINISHED,
+	MSG_TYPE_MAX,
+};
+
+struct msg_handler_context {
+	bool is_daemon;
+	int timeout_seconds;
+	union {
+		struct {
+			/*bool unmount_complete;*/
+			pid_t daemon_pid;
+			int mount_flags;
+			int status;
+		} unmount;
+		struct {
+			/*int unmount_flags;*/
+			struct wimfs_context *wimfs_ctx;
+		} daemon;
+	};
+};
+
+static int send_unmount_request_msg(mqd_t mq, int unmount_flags)
+{
+	DEBUG("Sending unmount request msg");
+	struct msg_unmount_request msg = {
+		.hdr = {
+			.min_version = WIMLIB_MAKEVERSION(1, 2, 0),
+			.cur_version = WIMLIB_VERSION_CODE,
+			.msg_type    = MSG_TYPE_UNMOUNT_REQUEST,
+			.msg_size    = sizeof(msg),
+		},
+		.unmount_flags = unmount_flags,
+	};
+
+	if (mq_send(mq, (void*)&msg, sizeof(msg), 1)) {
+		ERROR_WITH_ERRNO("Failed to communicate with filesystem daemon");
+		return WIMLIB_ERR_MQUEUE;
+	}
+	return 0;
+}
+
+static int send_daemon_info_msg(mqd_t mq, pid_t pid, int mount_flags)
+{
+	DEBUG("Sending daemon info msg (pid = %d, mount_flags=%x)",
+	      pid, mount_flags);
+
+	struct msg_daemon_info msg = {
+		.hdr = {
+			.min_version = WIMLIB_MAKEVERSION(1, 2, 0),
+			.cur_version = WIMLIB_VERSION_CODE,
+			.msg_type = MSG_TYPE_DAEMON_INFO,
+			.msg_size = sizeof(msg),
+		},
+		.daemon_pid = pid,
+		.mount_flags = mount_flags,
+	};
+	if (mq_send(mq, (void*)&msg, sizeof(msg), 1)) {
+		ERROR_WITH_ERRNO("Failed to send daemon info to unmount process");
+		return WIMLIB_ERR_MQUEUE;
+	}
+	return 0;
+}
+
+static void send_unmount_finished_msg(mqd_t mq, int status)
+{
+	DEBUG("Sending unmount finished msg");
+	struct msg_unmount_finished msg = {
+		.hdr = {
+			.min_version = WIMLIB_MAKEVERSION(1, 2, 0),
+			.cur_version = WIMLIB_VERSION_CODE,
+			.msg_type = MSG_TYPE_UNMOUNT_FINISHED,
+			.msg_size = sizeof(msg),
+		},
+		.status = status,
+	};
+	if (mq_send(mq, (void*)&msg, sizeof(msg), 1))
 		ERROR_WITH_ERRNO("Failed to send status to unmount process");
 }
 
-/* Wait for a message from the filesytem daemon indicating whether  the
- * filesystem was unmounted successfully.  This may
- * take a long time if a big WIM file needs to be rewritten.
- *
- * Wait at most 600??? seconds before giving up and returning an error.  Either
- * it's a really big WIM file, or (more likely) the filesystem daemon has
- * crashed or failed for some reason.
- *
- * XXX come up with some method to determine if the filesystem daemon has really
- * crashed or not.
- *
- * XXX Idea: have mount daemon write its PID into the WIM file header?  No, this
- * wouldn't work because we know the directory but not the WIM file...
- */
-static int receive_unmount_response(struct wimfs_context *ctx)
+static int msg_unmount_request_handler(const void *_msg,
+				       struct msg_handler_context *handler_ctx)
 {
-	long msgsize;
-	void *mailbox;
+	const struct msg_unmount_request *msg;
+	struct wimfs_context *wimfs_ctx;
+	int status = 0;
+	int ret;
+	int unmount_flags;
+
+	DEBUG("Handling unmount request msg");
+
+	msg = _msg;
+	wimfs_ctx = handler_ctx->daemon.wimfs_ctx;
+
+	if (msg->hdr.msg_size < sizeof(*msg)) {
+		status = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
+		goto out;
+	}
+
+	unmount_flags = msg->unmount_flags;
+
+	ret = send_daemon_info_msg(wimfs_ctx->daemon_to_unmount_mq, getpid(),
+				   wimfs_ctx->mount_flags);
+	if (ret != 0) {
+		status = ret;
+		goto out;
+	}
+
+	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+		if (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT) {
+			int write_flags = 0;
+			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY)
+				write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_REBUILD)
+				write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
+			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_RECOMPRESS)
+				write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
+			status = rebuild_wim(wimfs_ctx, write_flags);
+		}
+	} else {
+		DEBUG("Read-only mount");
+		status = 0;
+	}
+
+out:
+	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+		ret = delete_staging_dir(wimfs_ctx);
+		if (ret != 0) {
+			ERROR("Failed to delete the staging directory");
+			if (status == 0)
+				status = ret;
+		}
+	}
+	send_unmount_finished_msg(wimfs_ctx->daemon_to_unmount_mq, status);
+	return MSG_BREAK_LOOP;
+}
+
+static int msg_daemon_info_handler(const void *_msg,
+				   struct msg_handler_context *handler_ctx)
+{
+	const struct msg_daemon_info *msg = _msg;
+	DEBUG("Handling daemon info msg");
+	if (msg->hdr.msg_size < sizeof(*msg))
+		return WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
+	handler_ctx->unmount.daemon_pid = msg->daemon_pid;
+	handler_ctx->unmount.mount_flags = msg->mount_flags;
+	handler_ctx->timeout_seconds = 1;
+	DEBUG("pid of daemon is %d; mount flags were %#x",
+	      handler_ctx->unmount.daemon_pid,
+	      handler_ctx->unmount.mount_flags);
+	return 0;
+}
+
+static int msg_unmount_finished_handler(const void *_msg,
+					struct msg_handler_context *handler_ctx)
+{
+	const struct msg_unmount_finished *msg = _msg;
+	DEBUG("Handling unmount finished message");
+	if (msg->hdr.msg_size < sizeof(*msg))
+		return WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
+	handler_ctx->unmount.status = msg->status;
+	DEBUG("status is %d", handler_ctx->unmount.status);
+	return MSG_BREAK_LOOP;
+}
+
+static int unmount_timed_out_cb(struct msg_handler_context *handler_ctx)
+{
+	if (handler_ctx->unmount.daemon_pid == 0) {
+		goto out_crashed;
+	} else {
+		errno = 0;
+		kill(handler_ctx->unmount.daemon_pid, 0);
+		if (errno == ESRCH) {
+			goto out_crashed;
+		} else if (errno != 0) {
+			ERROR_WITH_ERRNO("Error determining state of "
+					 "filesystem daemon");
+			return WIMLIB_ERR_MQUEUE;
+		} else {
+			DEBUG("Filesystem daemon is still alive... "
+			      "Waiting another %d seconds",
+			      handler_ctx->timeout_seconds);
+			return 0;
+		}
+	}
+out_crashed:
+	ERROR("The filesystem daemon has crashed!  Changes to the "
+	      "WIM may not have been commited.");
+	return WIMLIB_ERR_FILESYSTEM_DAEMON_CRASHED;
+}
+
+static int daemon_timed_out_cb(struct msg_handler_context *handler_ctx)
+{
+	DEBUG("Timed out");
+	return WIMLIB_ERR_TIMEOUT;
+}
+
+typedef int (*msg_handler_t)(const void *_msg,
+			     struct msg_handler_context *handler_ctx);
+
+struct msg_handler_callbacks {
+	int (*timed_out)(struct msg_handler_context *);
+	msg_handler_t msg_handlers[MSG_TYPE_MAX];
+};
+
+static const struct msg_handler_callbacks unmount_msg_handler_callbacks = {
+	.timed_out = unmount_timed_out_cb,
+	.msg_handlers = {
+		[MSG_TYPE_DAEMON_INFO] = msg_daemon_info_handler,
+		[MSG_TYPE_UNMOUNT_FINISHED] = msg_unmount_finished_handler,
+	},
+};
+
+static const struct msg_handler_callbacks daemon_msg_handler_callbacks = {
+	.timed_out = daemon_timed_out_cb,
+	.msg_handlers = {
+		[MSG_TYPE_UNMOUNT_REQUEST] = msg_unmount_request_handler,
+	},
+};
+
+static int receive_message(mqd_t mq, struct msg_handler_context *handler_ctx,
+			   const msg_handler_t msg_handlers[],
+			   long mailbox_size, void *mailbox)
+{
 	struct timeval now;
 	struct timespec timeout;
 	ssize_t bytes_received;
+	struct unmount_msg_hdr *hdr;
 	int ret;
-	struct unmount_response *msg;
-
-	ret = get_mailbox(ctx->daemon_to_unmount_mq,
-			  sizeof(struct unmount_response), &msgsize, &mailbox);
-	if (ret != 0)
-		return ret;
-
-	DEBUG("Waiting for message telling us whether the unmount was "
-	      "successful or not.");
 
 	gettimeofday(&now, NULL);
-	timeout.tv_sec = now.tv_sec + 600;
+	timeout.tv_sec = now.tv_sec + handler_ctx->timeout_seconds;
 	timeout.tv_nsec = now.tv_usec * 1000;
-	bytes_received = mq_timedreceive(ctx->daemon_to_unmount_mq,
-					 mailbox, msgsize, NULL, &timeout);
-	msg = mailbox;
+
+	bytes_received = mq_timedreceive(mq, mailbox,
+					 mailbox_size, NULL, &timeout);
+	hdr = mailbox;
 	if (bytes_received == -1) {
-		if (errno == ETIMEDOUT) {
-			ERROR("Timed out- probably the filesystem daemon "
-			      "crashed and the WIM was not written "
-			      "successfully.");
+		ERROR_WITH_ERRNO("mq_timedreceive()");
+		if (errno == ETIMEDOUT)
 			ret = WIMLIB_ERR_TIMEOUT;
-		} else {
-			ERROR_WITH_ERRNO("mq_receive()");
+		else
 			ret = WIMLIB_ERR_MQUEUE;
-		}
-	} else if (bytes_received < sizeof(struct unmount_message_header) ||
-		   bytes_received != sizeof(struct unmount_message_header) + msg->hdr.data_size ||
-		   WIMLIB_VERSION_CODE < msg->hdr.min_version) {
-		ERROR("Received invalid unmount response");
+	} else if (bytes_received < sizeof(*hdr) ||
+		   bytes_received != hdr->msg_size) {
 		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	} else if (WIMLIB_VERSION_CODE < msg->hdr.min_version) {
-		ERROR("Cannot understand the unmount response. "
-		      "Please upgrade wimlib to at least v%d.%d.%d",
-		      WIMLIB_GET_MAJOR_VERSION(msg->hdr.min_version),
-		      WIMLIB_GET_MINOR_VERSION(msg->hdr.min_version),
-		      WIMLIB_GET_PATCH_VERSION(msg->hdr.min_version));
+	} else if (WIMLIB_VERSION_CODE < hdr->min_version) {
+		/*ERROR("Cannot understand the received message. "*/
+		      /*"Please upgrade wimlib to at least v%d.%d.%d",*/
+		      /*WIMLIB_GET_MAJOR_VERSION(hdr->min_version),*/
+		      /*WIMLIB_GET_MINOR_VERSION(hdr->min_version),*/
+		      /*WIMLIB_GET_PATCH_VERSION(hdr->min_version));*/
+		ret = MSG_VERSION_TOO_HIGH;
+	} else if (hdr->msg_type >= MSG_TYPE_MAX) {
+		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
+	} else if (msg_handlers[hdr->msg_type] == NULL) {
 		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
 	} else {
-		ret = msg->data.status;
-		if (ret) {
-			ERROR("A failure status (%d) was returned "
-			      "by the filesystem daemon", ret);
+		ret = msg_handlers[hdr->msg_type](mailbox, handler_ctx);
+	}
+	return ret;
+}
+
+static int message_loop(mqd_t mq,
+			const struct msg_handler_callbacks *callbacks,
+			struct msg_handler_context *handler_ctx)
+{
+	static const size_t MAX_MSG_SIZE = 512;
+	long msgsize;
+	void *mailbox;
+	int ret;
+
+	DEBUG("Entering message loop");
+
+	ret = get_mailbox(mq, MAX_MSG_SIZE, &msgsize, &mailbox);
+	if (ret != 0)
+		return ret;
+	while (1) {
+		ret = receive_message(mq, handler_ctx,
+				      callbacks->msg_handlers,
+				      msgsize, mailbox);
+		if (ret == 0 || ret == MSG_VERSION_TOO_HIGH) {
+			continue;
+		} else if (ret == MSG_BREAK_LOOP) {
+			ret = 0;
+			break;
+		} else if (ret == WIMLIB_ERR_TIMEOUT) {
+			if (callbacks->timed_out)
+				ret = callbacks->timed_out(handler_ctx);
+			if (ret == 0)
+				continue;
+			else
+				break;
+		} else {
+			ERROR_WITH_ERRNO("Error communicating with "
+					 "filesystem daemon");
+			break;
 		}
 	}
 	FREE(mailbox);
+	DEBUG("Exiting message loop");
 	return ret;
 }
 
@@ -1249,47 +1408,26 @@ static int wimfs_chmod(const char *path, mode_t mask)
 /* Called when the filesystem is unmounted. */
 static void wimfs_destroy(void *p)
 {
-	/* The `imagex unmount' command, which is running in a separate process
-	 * and is executing the wimlib_unmount() function, will send this
-	 * process a `struct unmount_request' through a message queue that
-	 * specifies some unmount options, such as other to commit changes or
-	 * not. */
+	struct wimfs_context *wimfs_ctx;
 
-	int ret;
-	int unmount_flags;
-	struct wimfs_context *ctx;
-	int status;
+	wimfs_ctx = wimfs_get_context();
 
-	ctx = wimfs_get_context();
-	if (open_message_queues(ctx, true))
+	if (open_message_queues(wimfs_ctx, true))
 		return;
 
-	ret = receive_unmount_request(ctx, &unmount_flags);
-	status = ret;
-	if (ret == 0) {
-		if (ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT) {
-				int write_flags = 0;
-				if (unmount_flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY)
-					write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-				if (unmount_flags & WIMLIB_UNMOUNT_FLAG_REBUILD)
-					write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
-				if (unmount_flags & WIMLIB_UNMOUNT_FLAG_RECOMPRESS)
-					write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
-				status = rebuild_wim(ctx, write_flags);
-			}
-			ret = delete_staging_dir(ctx);
-			if (ret != 0) {
-				ERROR("Failed to delete the staging directory");
-				if (status == 0)
-					status = ret;
-			}
-		} else {
-			DEBUG("Read-only mount");
-		}
-	}
-	send_unmount_response(ctx, status);
-	close_message_queues(ctx);
+	struct msg_handler_context handler_ctx = {
+		.is_daemon = true,
+		.timeout_seconds = 5,
+		.daemon = {
+			.wimfs_ctx = wimfs_ctx,
+		},
+	};
+
+	message_loop(wimfs_ctx->unmount_to_daemon_mq,
+		     &daemon_msg_handler_callbacks,
+		     &handler_ctx);
+
+	close_message_queues(wimfs_ctx);
 }
 
 #if 0
@@ -2314,30 +2452,44 @@ WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags,
 				   wimlib_progress_func_t progress_func)
 {
 	int ret;
-	struct wimfs_context ctx;
+	struct wimfs_context wimfs_ctx;
 
-	init_wimfs_context(&ctx);
+	init_wimfs_context(&wimfs_ctx);
 
-	ret = set_message_queue_names(&ctx, dir);
+	ret = set_message_queue_names(&wimfs_ctx, dir);
 	if (ret != 0)
 		goto out;
 
-	ret = open_message_queues(&ctx, false);
+	ret = open_message_queues(&wimfs_ctx, false);
 	if (ret != 0)
 		goto out_free_message_queue_names;
 
-	ret = send_unmount_request(&ctx, unmount_flags);
+	ret = send_unmount_request_msg(wimfs_ctx.unmount_to_daemon_mq,
+				       unmount_flags);
 	if (ret != 0)
 		goto out_close_message_queues;
 
 	ret = execute_fusermount(dir);
 	if (ret != 0)
 		goto out_close_message_queues;
-	ret = receive_unmount_response(&ctx);
+
+	struct msg_handler_context handler_ctx = {
+		.is_daemon = false,
+		.timeout_seconds = 5,
+		.unmount = {
+			.daemon_pid = 0,
+		},
+	};
+
+	ret = message_loop(wimfs_ctx.daemon_to_unmount_mq,
+			   &unmount_msg_handler_callbacks,
+			   &handler_ctx);
+	if (ret == 0)
+		ret = handler_ctx.unmount.status;
 out_close_message_queues:
-	close_message_queues(&ctx);
+	close_message_queues(&wimfs_ctx);
 out_free_message_queue_names:
-	free_message_queue_names(&ctx);
+	free_message_queue_names(&wimfs_ctx);
 out:
 	return ret;
 }

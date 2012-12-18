@@ -10,24 +10,21 @@
 
 #ifdef __GNUC__
 #	define WIMLIBAPI __attribute__((visibility("default")))
-#	define NOINLINE __attribute__((noinline))
 #	define ALWAYS_INLINE inline __attribute__((always_inline))
+#	define PACKED __attribute__((packed))
 #	define FORMAT(type, format_str, args_start) \
 			__attribute__((format(type, format_str, args_start)))
 #	if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 4)
 #		define COLD     __attribute__((cold))
-#		define HOT      __attribute__((hot))
 #	else
 #		define COLD
-#		define HOT
 #	endif
 #else
 #	define WIMLIBAPI
-#	define NOINLINE
 #	define ALWAYS_INLINE inline
 #	define FORMAT(type, format_str, args_start)
 #	define COLD
-#	define HOT
+#	define PACKED
 #endif /* __GNUC__ */
 
 
