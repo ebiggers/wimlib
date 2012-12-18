@@ -1968,8 +1968,8 @@ extern int wimlib_split(WIMStruct *wim, const char *swm_name,
  * 	::WIMLIB_UNMOUNT_FLAG_COMMIT.  Neither of these flags affect read-only
  * 	mounts.
  * @param progress_func
- * 	Currently ignored, but may be used for a progress callback in the
- * 	future.  Set to @c NULL.
+ * 	If non-NULL, a function that will be called periodically with the
+ * 	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.
  *

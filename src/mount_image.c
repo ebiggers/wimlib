@@ -766,7 +766,8 @@ static int inode_close_fds(struct inode *inode)
 }
 
 /* Overwrites the WIM file, with changes saved. */
-static int rebuild_wim(struct wimfs_context *ctx, int write_flags)
+static int rebuild_wim(struct wimfs_context *ctx, int write_flags,
+		       wimlib_progress_func_t progress_func)
 {
 	int ret;
 	struct lookup_table_entry *lte, *tmp;
@@ -787,7 +788,7 @@ static int rebuild_wim(struct wimfs_context *ctx, int write_flags)
 	}
 
 	xml_update_image_info(w, w->current_image);
-	ret = wimlib_overwrite(w, write_flags, 0, NULL);
+	ret = wimlib_overwrite(w, write_flags, 0, progress_func);
 	if (ret != 0)
 		ERROR("Failed to commit changes to mounted WIM image");
 	return ret;
@@ -988,6 +989,7 @@ struct unmount_msg_hdr {
 struct msg_unmount_request {
 	struct unmount_msg_hdr hdr;
 	u32 unmount_flags;
+	u8 want_progress_messages;
 } PACKED;
 
 struct msg_daemon_info {
@@ -1001,9 +1003,15 @@ struct msg_unmount_finished {
 	int32_t status;
 } PACKED;
 
+struct msg_write_streams_progress {
+	struct unmount_msg_hdr hdr;
+	union wimlib_progress_info info;
+} PACKED;
+
 enum {
 	MSG_TYPE_UNMOUNT_REQUEST,
 	MSG_TYPE_DAEMON_INFO,
+	MSG_TYPE_WRITE_STREAMS_PROGRESS,
 	MSG_TYPE_UNMOUNT_FINISHED,
 	MSG_TYPE_MAX,
 };
@@ -1016,6 +1024,7 @@ struct msg_handler_context {
 			pid_t daemon_pid;
 			int mount_flags;
 			int status;
+			wimlib_progress_func_t progress_func;
 		} unmount;
 		struct {
 			struct wimfs_context *wimfs_ctx;
@@ -1023,7 +1032,8 @@ struct msg_handler_context {
 	};
 };
 
-static int send_unmount_request_msg(mqd_t mq, int unmount_flags)
+static int send_unmount_request_msg(mqd_t mq, int unmount_flags,
+				    u8 want_progress_messages)
 {
 	DEBUG("Sending unmount request msg");
 	struct msg_unmount_request msg = {
@@ -1034,6 +1044,7 @@ static int send_unmount_request_msg(mqd_t mq, int unmount_flags)
 			.msg_size    = sizeof(msg),
 		},
 		.unmount_flags = unmount_flags,
+		.want_progress_messages = want_progress_messages,
 	};
 
 	if (mq_send(mq, (void*)&msg, sizeof(msg), 1)) {
@@ -1081,6 +1092,28 @@ static void send_unmount_finished_msg(mqd_t mq, int status)
 		ERROR_WITH_ERRNO("Failed to send status to unmount process");
 }
 
+static int unmount_progress_func(enum wimlib_progress_msg msg,
+				 const union wimlib_progress_info *info)
+{
+	if (msg == WIMLIB_PROGRESS_MSG_WRITE_STREAMS) {
+		struct msg_write_streams_progress msg = {
+			.hdr = {
+				.min_version = WIMLIB_MAKEVERSION(1, 2, 0),
+				.cur_version = WIMLIB_VERSION_CODE,
+				.msg_type = MSG_TYPE_WRITE_STREAMS_PROGRESS,
+				.msg_size = sizeof(msg),
+			},
+			.info = *info,
+		};
+		if (mq_send(wimfs_get_context()->daemon_to_unmount_mq,
+			    (void*)&msg, sizeof(msg), 1))
+		{
+			ERROR_WITH_ERRNO("Failed to send status to unmount process");
+		}
+	}
+	return 0;
+}
+
 static int msg_unmount_request_handler(const void *_msg,
 				       struct msg_handler_context *handler_ctx)
 {
@@ -1118,7 +1151,8 @@ static int msg_unmount_request_handler(const void *_msg,
 				write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
 			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_RECOMPRESS)
 				write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
-			status = rebuild_wim(wimfs_ctx, write_flags);
+			status = rebuild_wim(wimfs_ctx, write_flags,
+					     unmount_progress_func);
 		}
 	} else {
 		DEBUG("Read-only mount");
@@ -1151,6 +1185,19 @@ static int msg_daemon_info_handler(const void *_msg,
 	DEBUG("pid of daemon is %d; mount flags were %#x",
 	      handler_ctx->unmount.daemon_pid,
 	      handler_ctx->unmount.mount_flags);
+	return 0;
+}
+
+static int msg_write_streams_progress_handler(const void *_msg,
+					      struct msg_handler_context *handler_ctx)
+{
+	const struct msg_write_streams_progress *msg = _msg;
+	if (msg->hdr.msg_size < sizeof(*msg))
+		return WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
+	if (handler_ctx->unmount.progress_func) {
+		handler_ctx->unmount.progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
+						   &msg->info);
+	}
 	return 0;
 }
 
@@ -1205,6 +1252,7 @@ static const struct msg_handler_callbacks unmount_msg_handler_callbacks = {
 	.timed_out = unmount_timed_out_cb,
 	.msg_handlers = {
 		[MSG_TYPE_DAEMON_INFO] = msg_daemon_info_handler,
+		[MSG_TYPE_WRITE_STREAMS_PROGRESS] = msg_write_streams_progress_handler,
 		[MSG_TYPE_UNMOUNT_FINISHED] = msg_unmount_finished_handler,
 	},
 };
@@ -2460,7 +2508,8 @@ WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags,
 		goto out_free_message_queue_names;
 
 	ret = send_unmount_request_msg(wimfs_ctx.unmount_to_daemon_mq,
-				       unmount_flags);
+				       unmount_flags,
+				       progress_func != NULL);
 	if (ret != 0)
 		goto out_close_message_queues;
 
@@ -2473,6 +2522,7 @@ WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags,
 		.timeout_seconds = 5,
 		.unmount = {
 			.daemon_pid = 0,
+			.progress_func = progress_func,
 		},
 	};
 
