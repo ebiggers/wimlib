@@ -1,5 +1,34 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.2.1:
+	By default, unmounting a read-write mounted WIM with 'imagex unmount
+	--commit' will now change the WIM in-place without needing to write the
+	entire WIM again.  Use 'imagex unmount --commit --rebuild' to get the
+	old behavior.
+
+	'imagex unmount' no longer has a hard-coded limit of 10 minutes to wait
+	for a response from the daemon servicing the mounted WIM.  Instead,
+	every second 'imagex unmount' will check if the daemon is still alive,
+	and keep waiting if so, otherwise terminate with an error.
+
+	'imagex unmount --commit' on a read-write mounted WIM will now print
+	progress information regarding the writing of new or modified streams
+	the WIM, just like when capturing or appending a WIM.
+
+	A small change has been made to XPRESS compression and it should improve
+	the compression ratio slightly.
+
+	Microsoft has managed to introduce even more bugs into their software,
+	and now the WIMs for Windows 8 have incorrect (too low) reference counts
+	for some streams.  This is unsafe because such streams can be removed
+	when they are in actuality still referenced in the WIM (perhaps by a
+	different image).  wimlib will now work around this problem by fixing
+	the stream reference counts.  This is only done when wimlib_delete_image() is
+	called ('imagex delete') or when wimlib_mount_image() is called with
+	WIMLIB_MOUNT_FLAG_READWRITE ('imagex mountrw').  Please note that this
+	requires reading the metadata for all images in the WIM, so this will
+	make these operations noticably slower on WIMs with multiple images.
+
 Version 1.2.0:
 	Appending images to a WIM is now be done by default without re-building
 	the whole WIM.  Use the --rebuild flag to get the old behavior (which

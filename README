@@ -48,12 +48,12 @@ not capture/split/join/append/export/mount a WIM.  See `programs/wimapply.c'.
 
 			       COMPRESSION RATIO
 
-wimlib can create XPRESS or LZX compressed WIM archives.  As of wimlib v1.0.3,
-the XPRESS compression ratio is slightly better than that provided by
-Microsoft's software, while the LZX compression ratio is approaching that of
-Microsoft's software but is not quite there yet.  Running time is as good as or
-better than Microsoft's software, especially with multithreaded compression,
-available in v1.1.0 and later.
+wimlib can create XPRESS or LZX compressed WIM archives.  Currently, the the
+XPRESS compression ratio is slightly better than that provided by Microsoft's
+software, while the LZX compression ratio is approaching that of Microsoft's
+software but is not quite there yet.  Running time is as good as or better than
+Microsoft's software, especially with multithreaded compression, available in
+wimlib v1.1.0 and later.
 
 The following tables compare the compression ratio and performance for creating
 a compressed Windows PE image (disk usage of about 524 MB, uncompressed WIM size
@@ -62,16 +62,13 @@ a compressed Windows PE image (disk usage of about 524 MB, uncompressed WIM size
 	Table 1. WIM size
 
 					XPRESS Compression	LZX Compression
-	wimlib imagex (v1.0.2):		145,283,871 bytes	139,288,293 bytes
-	wimlib imagex (v1.0.3):		139,288,293 bytes	131,379,869 bytes
+	wimlib imagex (v1.2.1):		138,971,353 bytes	131,379,943 bytes
 	Microsoft imagex.exe:		140,406,981 bytes	127,249,176 bytes
 
 	Table 2. Time to create WIM
 
 					   XPRESS Compression	LZX Compression
-	wimlib imagex (v1.0.2):		   18 sec		49 sec
-	wimlib imagex (v1.0.3):		   19 sec		30 sec
-	wimlib imagex (v1.1.0, 2 threads): 11 sec		17 sec
+	wimlib imagex (v1.2.1, 2 threads): 11 sec		17 sec
 	Microsoft imagex.exe:		   25 sec		89 sec
 
 				  NTFS SUPPORT
