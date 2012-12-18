@@ -1122,6 +1122,7 @@ static int msg_unmount_request_handler(const void *_msg,
 	int status = 0;
 	int ret;
 	int unmount_flags;
+	wimlib_progress_func_t progress_func;
 
 	DEBUG("Handling unmount request msg");
 
@@ -1134,6 +1135,10 @@ static int msg_unmount_request_handler(const void *_msg,
 	}
 
 	unmount_flags = msg->unmount_flags;
+	if (msg->want_progress_messages)
+		progress_func = unmount_progress_func;
+	else
+		progress_func = NULL;
 
 	ret = send_daemon_info_msg(wimfs_ctx->daemon_to_unmount_mq, getpid(),
 				   wimfs_ctx->mount_flags);
@@ -1152,7 +1157,7 @@ static int msg_unmount_request_handler(const void *_msg,
 			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_RECOMPRESS)
 				write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			status = rebuild_wim(wimfs_ctx, write_flags,
-					     unmount_progress_func);
+					     progress_func);
 		}
 	} else {
 		DEBUG("Read-only mount");
