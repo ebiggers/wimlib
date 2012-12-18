@@ -1389,46 +1389,53 @@ static int execute_fusermount(const char *dir)
 	}
 
 	/* Parent */
-	ret = wait(&status);
+	ret = waitpid(pid, &status, 0);
 	if (ret == -1) {
 		ERROR_WITH_ERRNO("Failed to wait for fusermount process to "
 				 "terminate");
 		return WIMLIB_ERR_FUSERMOUNT;
 	}
 
+	if (!WIFEXITED(status)) {
+		ERROR("'fusermount' did not terminate normally!");
+		return WIMLIB_ERR_FUSERMOUNT;
+	}
+
+	status = WEXITSTATUS(status);
+
+	if (status == 0)
+		return 0;
+
+	if (status != WIMLIB_ERR_FUSERMOUNT)
+		return WIMLIB_ERR_FUSERMOUNT;
+
+	/* Try again, but with the `umount' program.  This is required on other
+	 * FUSE implementations such as FreeBSD's that do not have a
+	 * `fusermount' program. */
+	ERROR("Falling back to 'umount'.  Note: you may need to be "
+	      "root for this to work");
+	pid = fork();
+	if (pid == -1) {
+		ERROR_WITH_ERRNO("Failed to fork()");
+		return WIMLIB_ERR_FORK;
+	}
+	if (pid == 0) {
+		/* Child */
+		execlp("umount", "umount", dir, NULL);
+		ERROR_WITH_ERRNO("Failed to execute `umount'");
+		exit(WIMLIB_ERR_FUSERMOUNT);
+	}
+
+	/* Parent */
+	ret = waitpid(pid, &status, 0);
+	if (ret == -1) {
+		ERROR_WITH_ERRNO("Failed to wait for `umount' process to "
+				 "terminate");
+		return WIMLIB_ERR_FUSERMOUNT;
+	}
 	if (status != 0) {
-		if (status == WIMLIB_ERR_FUSERMOUNT)
-			ERROR("Could not find the `fusermount' program");
-		else
-			ERROR("fusermount exited with status %d", status);
-
-		/* Try again, but with the `umount' program.  This is required
-		 * on other FUSE implementations such as FreeBSD's that do not
-		 * have a `fusermount' program. */
-
-		pid = fork();
-		if (pid == -1) {
-			ERROR_WITH_ERRNO("Failed to fork()");
-			return WIMLIB_ERR_FORK;
-		}
-		if (pid == 0) {
-			/* Child */
-			execlp("umount", "umount", dir, NULL);
-			ERROR_WITH_ERRNO("Failed to execute `umount'");
-			exit(WIMLIB_ERR_FUSERMOUNT);
-		}
-
-		/* Parent */
-		ret = wait(&status);
-		if (ret == -1) {
-			ERROR_WITH_ERRNO("Failed to wait for `umount' process to "
-					 "terminate");
-			return WIMLIB_ERR_FUSERMOUNT;
-		}
-		if (status != 0) {
-			ERROR("`umount' exited with failure status");
-			return WIMLIB_ERR_FUSERMOUNT;
-		}
+		ERROR("`umount' did not successfully complete");
+		return WIMLIB_ERR_FUSERMOUNT;
 	}
 	return 0;
 }
