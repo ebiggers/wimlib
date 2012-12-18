@@ -1107,7 +1107,8 @@ static int unmount_progress_func(enum wimlib_progress_msg msg,
 		if (mq_send(wimfs_get_context()->daemon_to_unmount_mq,
 			    (void*)&msg, sizeof(msg), 1))
 		{
-			ERROR_WITH_ERRNO("Failed to send status to unmount process");
+			ERROR_WITH_ERRNO("Failed to send progress information "
+					 "to unmount process");
 		}
 	}
 	return 0;
@@ -1240,7 +1241,8 @@ out_crashed:
 
 static int daemon_timed_out_cb(struct msg_handler_context *handler_ctx)
 {
-	DEBUG("Timed out");
+	ERROR("Timed out waiting for unmount request! "
+	      "Changes to the mounted WIM will not be committed.");
 	return WIMLIB_ERR_TIMEOUT;
 }
 
@@ -1455,25 +1457,19 @@ static int wimfs_chmod(const char *path, mode_t mask)
 /* Called when the filesystem is unmounted. */
 static void wimfs_destroy(void *p)
 {
-	struct wimfs_context *wimfs_ctx;
-
-	wimfs_ctx = wimfs_get_context();
-
-	if (open_message_queues(wimfs_ctx, true))
-		return;
-
-	struct msg_handler_context handler_ctx = {
-		.timeout_seconds = 5,
-		.daemon = {
-			.wimfs_ctx = wimfs_ctx,
-		},
-	};
-
-	message_loop(wimfs_ctx->unmount_to_daemon_mq,
-		     &daemon_msg_handler_callbacks,
-		     &handler_ctx);
-
-	close_message_queues(wimfs_ctx);
+	struct wimfs_context *wimfs_ctx = wimfs_get_context();
+	if (open_message_queues(wimfs_ctx, true) == 0) {
+		struct msg_handler_context handler_ctx = {
+			.timeout_seconds = 5,
+			.daemon = {
+				.wimfs_ctx = wimfs_ctx,
+			},
+		};
+		message_loop(wimfs_ctx->unmount_to_daemon_mq,
+			     &daemon_msg_handler_callbacks,
+			     &handler_ctx);
+		close_message_queues(wimfs_ctx);
+	}
 }
 
 #if 0
