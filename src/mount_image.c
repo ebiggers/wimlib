@@ -47,6 +47,7 @@
 #include <ftw.h>
 #include <mqueue.h>
 #include <utime.h>
+#include <signal.h>
 
 #ifdef ENABLE_XATTR
 #include <attr/xattr.h>
@@ -1012,13 +1013,11 @@ struct msg_handler_context {
 	int timeout_seconds;
 	union {
 		struct {
-			/*bool unmount_complete;*/
 			pid_t daemon_pid;
 			int mount_flags;
 			int status;
 		} unmount;
 		struct {
-			/*int unmount_flags;*/
 			struct wimfs_context *wimfs_ctx;
 		} daemon;
 	};
@@ -1172,17 +1171,12 @@ static int unmount_timed_out_cb(struct msg_handler_context *handler_ctx)
 	if (handler_ctx->unmount.daemon_pid == 0) {
 		goto out_crashed;
 	} else {
-		errno = 0;
 		kill(handler_ctx->unmount.daemon_pid, 0);
 		if (errno == ESRCH) {
 			goto out_crashed;
-		} else if (errno != 0) {
-			ERROR_WITH_ERRNO("Error determining state of "
-					 "filesystem daemon");
-			return WIMLIB_ERR_MQUEUE;
 		} else {
 			DEBUG("Filesystem daemon is still alive... "
-			      "Waiting another %d seconds",
+			      "Waiting another %d seconds\n",
 			      handler_ctx->timeout_seconds);
 			return 0;
 		}
@@ -1240,11 +1234,12 @@ static int receive_message(mqd_t mq, struct msg_handler_context *handler_ctx,
 					 mailbox_size, NULL, &timeout);
 	hdr = mailbox;
 	if (bytes_received == -1) {
-		ERROR_WITH_ERRNO("mq_timedreceive()");
-		if (errno == ETIMEDOUT)
+		if (errno == ETIMEDOUT) {
 			ret = WIMLIB_ERR_TIMEOUT;
-		else
+		} else {
+			ERROR_WITH_ERRNO("mq_timedreceive()");
 			ret = WIMLIB_ERR_MQUEUE;
+		}
 	} else if (bytes_received < sizeof(*hdr) ||
 		   bytes_received != hdr->msg_size) {
 		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;

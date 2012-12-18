@@ -150,21 +150,15 @@ Since a WIM is an archive and not a filesystem, \fBimagex mountrw\fR creates a
 temporary staging directory to contain files that are created or modified.  This
 directory is located in the same directory as \fIWIMFILE\fR by default, but the
 location can be set using the \fB--staging-dir\fR option.  When the filesystem
-is unmounted with \fB--commit\fR, the WIM is rebuilt, merging in the staging
-files as needed.  Then, the temporary staging directory is deleted.
+is unmounted with \fB--commit\fR, the WIM is modified in-place (or rebuild
+completely with \fB--rebuild\fR), merging in the staging files as needed.  Then,
+the temporary staging directory is deleted.
 
-\fBimagex unmount\fR executes the \fBfusermount\fR (1) program, which should be
-installed as part of libfuse, to unmount the filesystem.  It then uses a POSIX
-message queue (see \fBmq_overview\fR (7)) to communicate with the filesystem
-daemon (the instance of \fBimagex\fR that has mounted the WIM image) so that it
-can know whether whether changes are to be committed and whether an integrity
-table is to be included.  A message is then sent from the filesystem daemon to
-unmounting process when the unmounting has been completed, and this message
-indicates whether the unmounting was successful or not.
-
-If the filesystem daemon has crashed or been killed, is possible for \fBimagex
-unmount\fR to wait a very long time before timing out.  A solution to this
-problem may be implemented in the future.
+\fBimagex unmount\fR runs in a separate process from the process that previously
+ran \fBimagex mount\fR, and these two processes communicate using POSIX message
+queue.  See \fIsrc/mount_image.c\fR in the sources for details.  Note: As of wimlib
+v1.2.1, \fBimagex unmount\fR correctly fails with an error within a reasonable
+amount of time (1 second) if the filesystem daemon is abnormally terminated.
 
 .SH SEE ALSO
 .BR imagex (1)

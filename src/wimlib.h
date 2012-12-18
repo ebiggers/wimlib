@@ -1957,14 +1957,9 @@ extern int wimlib_split(WIMStruct *wim, const char *swm_name,
  *
  * To unmount the image, the thread calling this function communicates with the
  * thread that is managing the mounted WIM image.  This function blocks until it
- * is known whether the unmount succeeded or failed.  (This means until the
- * entire WIM has been re-written, in the case of a read-write mounted WIM.)
- *
- * There is currently a design problem with this function because it is hard to
- * know whether the filesystem thread is still working or whether it has crashed
- * or has been killed.  Currently, a timeout of 600 seconds (so long because
- * WIMs can be very large) is implemented so that this function will not wait
- * forever before returning failure.
+ * is known whether the unmount succeeded or failed.  In the case of a
+ * read-write mounted WIM, the unmount is not considered to have succeeded until
+ * all changes have been saved to the underlying WIM file.
  *
  * @param dir
  * 	The directory that the WIM image was mounted on.
@@ -1977,9 +1972,13 @@ extern int wimlib_split(WIMStruct *wim, const char *swm_name,
  * 	future.  Set to @c NULL.
  *
  * @return 0 on success; nonzero on error.
+ *
  * @retval ::WIMLIB_ERR_DELETE_STAGING_DIR
  * 	The filesystem daemon was unable to remove the staging directory and the
  * 	temporary files that it contains.
+ * @retval ::WIMLIB_ERR_FILESYSTEM_DAEMON_CRASHED
+ * 	The filesystem daemon appears to have terminated before sending an exit
+ * 	status.
  * @retval ::WIMLIB_ERR_FORK
  * 	Could not @c fork() the process.
  * @retval ::WIMLIB_ERR_FUSERMOUNT
@@ -1994,10 +1993,6 @@ extern int wimlib_split(WIMStruct *wim, const char *swm_name,
  * @retval ::WIMLIB_ERR_OPEN
  * 	The filesystem daemon could not open a temporary file for writing the
  * 	new WIM.
- * @retval ::WIMLIB_ERR_TIMEOUT
- * 	600 seconds elapsed while waiting for the filesystem daemon to notify
- * 	the process of its exit status, so the WIM file probably was not written
- * 	successfully.
  * @retval ::WIMLIB_ERR_READ
  * 	A read error occurred when the filesystem daemon tried to a file from
  * 	the staging directory
