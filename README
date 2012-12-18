@@ -1,6 +1,6 @@
 				   WIMLIB
 
-This is wimlib version 1.2.0 (November 2012).  wimlib can be used to read,
+This is wimlib version 1.2.1 (December 2012).  wimlib can be used to read,
 write, and mount files in the Windows Imaging Format (WIM files).  These files
 are normally created by using the `imagex.exe' utility on Windows, but this
 library provides a free implementation of imagex for UNIX-based systems.

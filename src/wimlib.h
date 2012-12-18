@@ -31,7 +31,7 @@
  *
  * \section intro Introduction
  *
- * This is the documentation for the library interface of wimlib 1.2.0.  If you
+ * This is the documentation for the library interface of wimlib 1.2.1.  If you
  * have installed wimlib and want to know how to use the @c imagex program,
  * please see the man pages instead.
  *
@@ -217,7 +217,7 @@
 
 #define WIMLIB_MAJOR_VERSION 1
 #define WIMLIB_MINOR_VERSION 2
-#define WIMLIB_PATCH_VERSION 0
+#define WIMLIB_PATCH_VERSION 1
 
 /**
  * Opaque structure that represents a WIM file.  This is an in-memory structure

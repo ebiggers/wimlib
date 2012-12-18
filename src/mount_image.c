@@ -1037,7 +1037,7 @@ static int send_unmount_request_msg(mqd_t mq, int unmount_flags,
 	DEBUG("Sending unmount request msg");
 	struct msg_unmount_request msg = {
 		.hdr = {
-			.min_version = WIMLIB_MAKEVERSION(1, 2, 0),
+			.min_version = WIMLIB_MAKEVERSION(1, 2, 1),
 			.cur_version = WIMLIB_VERSION_CODE,
 			.msg_type    = MSG_TYPE_UNMOUNT_REQUEST,
 			.msg_size    = sizeof(msg),
@@ -1060,7 +1060,7 @@ static int send_daemon_info_msg(mqd_t mq, pid_t pid, int mount_flags)
 
 	struct msg_daemon_info msg = {
 		.hdr = {
-			.min_version = WIMLIB_MAKEVERSION(1, 2, 0),
+			.min_version = WIMLIB_MAKEVERSION(1, 2, 1),
 			.cur_version = WIMLIB_VERSION_CODE,
 			.msg_type = MSG_TYPE_DAEMON_INFO,
 			.msg_size = sizeof(msg),
@@ -1080,7 +1080,7 @@ static void send_unmount_finished_msg(mqd_t mq, int status)
 	DEBUG("Sending unmount finished msg");
 	struct msg_unmount_finished msg = {
 		.hdr = {
-			.min_version = WIMLIB_MAKEVERSION(1, 2, 0),
+			.min_version = WIMLIB_MAKEVERSION(1, 2, 1),
 			.cur_version = WIMLIB_VERSION_CODE,
 			.msg_type = MSG_TYPE_UNMOUNT_FINISHED,
 			.msg_size = sizeof(msg),
@@ -1097,7 +1097,7 @@ static int unmount_progress_func(enum wimlib_progress_msg msg,
 	if (msg == WIMLIB_PROGRESS_MSG_WRITE_STREAMS) {
 		struct msg_write_streams_progress msg = {
 			.hdr = {
-				.min_version = WIMLIB_MAKEVERSION(1, 2, 0),
+				.min_version = WIMLIB_MAKEVERSION(1, 2, 1),
 				.cur_version = WIMLIB_VERSION_CODE,
 				.msg_type = MSG_TYPE_WRITE_STREAMS_PROGRESS,
 				.msg_size = sizeof(msg),
