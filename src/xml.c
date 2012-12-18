@@ -185,8 +185,8 @@ static u64 node_get_timestamp(const xmlNode *time_node)
 /* Used to sort an array of struct image_infos by their image indices. */
 static int sort_by_index(const void *p1, const void *p2)
 {
-	int index_1 = ((struct image_info*)p1)->index;
-	int index_2 = ((struct image_info*)p1)->index;
+	int index_1 = ((const struct image_info*)p1)->index;
+	int index_2 = ((const struct image_info*)p2)->index;
 	if (index_1 < index_2)
 		return -1;
 	else if (index_1 > index_2)
