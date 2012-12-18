@@ -1016,19 +1016,21 @@ enum {
 	MSG_TYPE_MAX,
 };
 
-struct msg_handler_context {
+struct msg_handler_context_hdr {
 	int timeout_seconds;
-	union {
-		struct {
-			pid_t daemon_pid;
-			int mount_flags;
-			int status;
-			wimlib_progress_func_t progress_func;
-		} unmount;
-		struct {
-			struct wimfs_context *wimfs_ctx;
-		} daemon;
-	};
+};
+
+struct unmount_msg_handler_context {
+	struct msg_handler_context_hdr hdr;
+	pid_t daemon_pid;
+	int mount_flags;
+	int status;
+	wimlib_progress_func_t progress_func;
+};
+
+struct daemon_msg_handler_context {
+	struct msg_handler_context_hdr hdr;
+	struct wimfs_context *wimfs_ctx;
 };
 
 static int send_unmount_request_msg(mqd_t mq, int unmount_flags,
@@ -1114,10 +1116,10 @@ static int unmount_progress_func(enum wimlib_progress_msg msg,
 	return 0;
 }
 
-static int msg_unmount_request_handler(const void *_msg,
-				       struct msg_handler_context *handler_ctx)
+static int msg_unmount_request_handler(const void *_msg, void *_handler_ctx)
 {
-	const struct msg_unmount_request *msg;
+	const struct msg_unmount_request *msg = _msg;
+	struct daemon_msg_handler_context *handler_ctx = _handler_ctx;
 	struct wimfs_context *wimfs_ctx;
 	int status = 0;
 	int ret;
@@ -1126,9 +1128,7 @@ static int msg_unmount_request_handler(const void *_msg,
 
 	DEBUG("Handling unmount request msg");
 
-	msg = _msg;
-	wimfs_ctx = handler_ctx->daemon.wimfs_ctx;
-
+	wimfs_ctx = handler_ctx->wimfs_ctx;
 	if (msg->hdr.msg_size < sizeof(*msg)) {
 		status = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
 		goto out;
@@ -1177,59 +1177,65 @@ out:
 	return MSG_BREAK_LOOP;
 }
 
-static int msg_daemon_info_handler(const void *_msg,
-				   struct msg_handler_context *handler_ctx)
+static int msg_daemon_info_handler(const void *_msg, void *_handler_ctx)
 {
 	const struct msg_daemon_info *msg = _msg;
+	struct unmount_msg_handler_context *handler_ctx = _handler_ctx;
+
 	DEBUG("Handling daemon info msg");
 	if (msg->hdr.msg_size < sizeof(*msg))
 		return WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	handler_ctx->unmount.daemon_pid = msg->daemon_pid;
-	handler_ctx->unmount.mount_flags = msg->mount_flags;
-	handler_ctx->timeout_seconds = 1;
+	handler_ctx->daemon_pid = msg->daemon_pid;
+	handler_ctx->mount_flags = msg->mount_flags;
+	handler_ctx->hdr.timeout_seconds = 1;
 	DEBUG("pid of daemon is %d; mount flags were %#x",
-	      handler_ctx->unmount.daemon_pid,
-	      handler_ctx->unmount.mount_flags);
+	      handler_ctx->daemon_pid,
+	      handler_ctx->mount_flags);
 	return 0;
 }
 
 static int msg_write_streams_progress_handler(const void *_msg,
-					      struct msg_handler_context *handler_ctx)
+					      void *_handler_ctx)
 {
 	const struct msg_write_streams_progress *msg = _msg;
+	struct unmount_msg_handler_context *handler_ctx = _handler_ctx;
+
 	if (msg->hdr.msg_size < sizeof(*msg))
 		return WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	if (handler_ctx->unmount.progress_func) {
-		handler_ctx->unmount.progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
-						   &msg->info);
+	if (handler_ctx->progress_func) {
+		handler_ctx->progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
+					   &msg->info);
 	}
 	return 0;
 }
 
-static int msg_unmount_finished_handler(const void *_msg,
-					struct msg_handler_context *handler_ctx)
+static int msg_unmount_finished_handler(const void *_msg, void *_handler_ctx)
 {
 	const struct msg_unmount_finished *msg = _msg;
+	struct unmount_msg_handler_context *handler_ctx = _handler_ctx;
+
 	DEBUG("Handling unmount finished message");
 	if (msg->hdr.msg_size < sizeof(*msg))
 		return WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	handler_ctx->unmount.status = msg->status;
-	DEBUG("status is %d", handler_ctx->unmount.status);
+	handler_ctx->status = msg->status;
+	DEBUG("status is %d", handler_ctx->status);
 	return MSG_BREAK_LOOP;
 }
 
-static int unmount_timed_out_cb(struct msg_handler_context *handler_ctx)
+static int unmount_timed_out_cb(void *_handler_ctx)
 {
-	if (handler_ctx->unmount.daemon_pid == 0) {
+	struct unmount_msg_handler_context *handler_ctx = _handler_ctx;
+
+	if (handler_ctx->daemon_pid == 0) {
 		goto out_crashed;
 	} else {
-		kill(handler_ctx->unmount.daemon_pid, 0);
+		kill(handler_ctx->daemon_pid, 0);
 		if (errno == ESRCH) {
 			goto out_crashed;
 		} else {
 			DEBUG("Filesystem daemon is still alive... "
 			      "Waiting another %d seconds\n",
-			      handler_ctx->timeout_seconds);
+			      handler_ctx->hdr.timeout_seconds);
 			return 0;
 		}
 	}
@@ -1239,18 +1245,17 @@ out_crashed:
 	return WIMLIB_ERR_FILESYSTEM_DAEMON_CRASHED;
 }
 
-static int daemon_timed_out_cb(struct msg_handler_context *handler_ctx)
+static int daemon_timed_out_cb(void *_handler_ctx)
 {
 	ERROR("Timed out waiting for unmount request! "
 	      "Changes to the mounted WIM will not be committed.");
 	return WIMLIB_ERR_TIMEOUT;
 }
 
-typedef int (*msg_handler_t)(const void *_msg,
-			     struct msg_handler_context *handler_ctx);
+typedef int (*msg_handler_t)(const void *_msg, void *_handler_ctx);
 
 struct msg_handler_callbacks {
-	int (*timed_out)(struct msg_handler_context *);
+	int (*timed_out)(void * _handler_ctx);
 	msg_handler_t msg_handlers[MSG_TYPE_MAX];
 };
 
@@ -1270,7 +1275,8 @@ static const struct msg_handler_callbacks daemon_msg_handler_callbacks = {
 	},
 };
 
-static int receive_message(mqd_t mq, struct msg_handler_context *handler_ctx,
+static int receive_message(mqd_t mq,
+			   struct msg_handler_context_hdr *handler_ctx,
 			   const msg_handler_t msg_handlers[],
 			   long mailbox_size, void *mailbox)
 {
@@ -1316,7 +1322,7 @@ static int receive_message(mqd_t mq, struct msg_handler_context *handler_ctx,
 
 static int message_loop(mqd_t mq,
 			const struct msg_handler_callbacks *callbacks,
-			struct msg_handler_context *handler_ctx)
+			struct msg_handler_context_hdr *handler_ctx)
 {
 	static const size_t MAX_MSG_SIZE = 512;
 	long msgsize;
@@ -1459,15 +1465,15 @@ static void wimfs_destroy(void *p)
 {
 	struct wimfs_context *wimfs_ctx = wimfs_get_context();
 	if (open_message_queues(wimfs_ctx, true) == 0) {
-		struct msg_handler_context handler_ctx = {
-			.timeout_seconds = 5,
-			.daemon = {
-				.wimfs_ctx = wimfs_ctx,
+		struct daemon_msg_handler_context handler_ctx = {
+			.hdr = {
+				.timeout_seconds = 5,
 			},
+			.wimfs_ctx = wimfs_ctx,
 		};
 		message_loop(wimfs_ctx->unmount_to_daemon_mq,
 			     &daemon_msg_handler_callbacks,
-			     &handler_ctx);
+			     &handler_ctx.hdr);
 		close_message_queues(wimfs_ctx);
 	}
 }
@@ -2516,19 +2522,19 @@ WIMLIBAPI int wimlib_unmount_image(const char *dir, int unmount_flags,
 	if (ret != 0)
 		goto out_close_message_queues;
 
-	struct msg_handler_context handler_ctx = {
-		.timeout_seconds = 5,
-		.unmount = {
-			.daemon_pid = 0,
-			.progress_func = progress_func,
+	struct unmount_msg_handler_context handler_ctx = {
+		.hdr = {
+			.timeout_seconds = 5,
 		},
+		.daemon_pid = 0,
+		.progress_func = progress_func,
 	};
 
 	ret = message_loop(wimfs_ctx.daemon_to_unmount_mq,
 			   &unmount_msg_handler_callbacks,
-			   &handler_ctx);
+			   &handler_ctx.hdr);
 	if (ret == 0)
-		ret = handler_ctx.unmount.status;
+		ret = handler_ctx.status;
 out_close_message_queues:
 	close_message_queues(&wimfs_ctx);
 out_free_message_queue_names:
