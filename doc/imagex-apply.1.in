@@ -228,6 +228,9 @@ integrity table of the WIM, which provides SHA1 message digests over raw chunks
 of the entire WIM file and is checked separately if the \fB--check\fR option is
 specified.
 
+You cannot use \fBimagex apply\fR to apply a WIM from a pipe (such as standard
+input) because the WIM file format is not designed for this.
+
 .SH EXAMPLES
 .SS Normal extraction mode
 Extract the first image from the Windows PE image from the Windows Vista/7/8
