@@ -157,8 +157,6 @@ struct dentry {
 	u16 file_name_utf8_len;
 
 	u8 is_extracted : 1;
-	u8 visited : 1;
-	u8 canonical : 1;
 
 	/* Byte 40 */
 
@@ -250,11 +248,8 @@ struct inode {
 	 * (This is not an on-disk field.) */
 	u8 resolved : 1;
 
-	/* %true iff verify_inode() has run on this dentry. */
+	/* %true iff verify_inode() has run on this inode. */
 	u8 verified : 1;
-
-	/* temporary flag */
-	u8 visited    : 1;
 
 	/* Number of alternate data streams associated with this inode */
 	u16 num_ads;
