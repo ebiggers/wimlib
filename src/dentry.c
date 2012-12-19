@@ -895,7 +895,7 @@ void free_inode(struct inode *inode)
 		wimlib_assert(inode->num_opened_fds == 0);
 		FREE(inode->fds);
 		pthread_mutex_destroy(&inode->i_mutex);
-		if (inode->hlist.next)
+		if (inode->hlist.pprev)
 			hlist_del(&inode->hlist);
 	#endif
 		FREE(inode->extracted_file);
