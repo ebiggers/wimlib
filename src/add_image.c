@@ -217,8 +217,10 @@ static int build_dentry_tree(struct dentry **root_ret,
 	if (!root) {
 		if (errno == EILSEQ)
 			return WIMLIB_ERR_INVALID_UTF8_STRING;
-		else
+		else if (errno == ENOMEM)
 			return WIMLIB_ERR_NOMEM;
+		else
+			return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
 	}
 
 	inode = root->d_inode;

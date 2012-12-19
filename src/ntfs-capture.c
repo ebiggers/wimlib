@@ -556,8 +556,10 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	if (!root) {
 		if (errno == EILSEQ)
 			return WIMLIB_ERR_INVALID_UTF8_STRING;
-		else
+		else if (errno == ENOMEM)
 			return WIMLIB_ERR_NOMEM;
+		else
+			return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
 	}
 	*root_p = root;
 
