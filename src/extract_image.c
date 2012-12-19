@@ -546,12 +546,20 @@ static int apply_stream_list(struct list_head *stream_list,
 				if (ret != 0)
 					goto out;
 				if (progress_func &&
-				    args->progress.extract.completed_bytes >= next_progress &&
-				    args->progress.extract.total_bytes != 0)
+				    args->progress.extract.completed_bytes >= next_progress)
 				{
 					progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
 						      &args->progress);
-					next_progress += bytes_per_progress;
+					if (args->progress.extract.completed_bytes >=
+					    args->progress.extract.total_bytes)
+					{
+						next_progress = ~0ULL;
+					} else {
+						next_progress =
+							min (args->progress.extract.completed_bytes +
+							     bytes_per_progress,
+							     args->progress.extract.total_bytes);
+					}
 				}
 			}
 		}

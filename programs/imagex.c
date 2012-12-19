@@ -361,7 +361,7 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 		       info->write_streams.completed_bytes >> 20,
 		       info->write_streams.total_bytes >> 20,
 		       percent_done);
-		if (info->write_streams.completed_bytes == info->write_streams.total_bytes)
+		if (info->write_streams.completed_bytes >= info->write_streams.total_bytes)
 			putchar('\n');
 		break;
 	case WIMLIB_PROGRESS_MSG_SCAN_BEGIN:
@@ -426,7 +426,7 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 		       info->extract.completed_bytes >> 20,
 		       info->extract.total_bytes >> 20,
 		       percent_done);
-		if (info->extract.completed_bytes == info->extract.total_bytes)
+		if (info->extract.completed_bytes >= info->extract.total_bytes)
 			putchar('\n');
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY:
