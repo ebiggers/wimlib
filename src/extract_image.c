@@ -533,12 +533,15 @@ static int apply_stream_list(struct list_head *stream_list,
 	struct lookup_table_entry *lte;
 	struct inode *inode;
 	struct dentry *dentry;
-	int ret = 0;
+	int ret;
 
-	/* This complicated loop is actually just looping through the dentries
-	 * (as for_dentry_in_tree() does), but the outer loop is actually over
-	 * the distinct streams to be extracted so that sequential reading of
-	 * the WIM can be implemented. */
+	/* This complicated loop is essentially looping through the dentries,
+	 * although dentries may be visited more than once (if a dentry contains
+	 * two different nonempty streams) or not at all (if a dentry contains
+	 * no non-empty streams).
+	 *
+	 * The outer loop is over the distinct streams to be extracted so that
+	 * sequential reading of the WIM can be implemented. */
 
 	/* For each distinct stream to be extracted */
 	list_for_each_entry(lte, stream_list, staging_list) {
@@ -546,9 +549,11 @@ static int apply_stream_list(struct list_head *stream_list,
 		list_for_each_entry(inode, &lte->inode_list, lte_inode_list) {
 			/* For each dentry that points to the inode */
 			inode_for_each_dentry(dentry, inode) {
+				/* Extract the dentry if it was not already
+				 * extracted */
 				ret = maybe_apply_dentry(dentry, args);
 				if (ret != 0)
-					goto out;
+					return ret;
 				if (progress_func &&
 				    args->progress.extract.completed_bytes >= next_progress)
 				{
@@ -568,8 +573,7 @@ static int apply_stream_list(struct list_head *stream_list,
 			}
 		}
 	}
-out:
-	return ret;
+	return 0;
 }
 
 static int extract_single_image(WIMStruct *w, int image,
