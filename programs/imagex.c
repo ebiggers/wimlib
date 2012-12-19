@@ -1787,7 +1787,7 @@ int main(int argc, const char **argv)
 				imagex_error("Exiting with error code %d:\n"
 					     "       %s.", ret,
 					     wimlib_get_error_string(ret));
-				if (ret == WIMLIB_ERR_NTFS_3G)
+				if (ret == WIMLIB_ERR_NTFS_3G && errno != 0)
 					imagex_error_with_errno("errno");
 			}
 			return ret;
