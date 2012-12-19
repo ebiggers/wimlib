@@ -234,6 +234,8 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 
 	dest_wim->image_metadata[
 		dest_wim->hdr.image_count - 1].inode_list = src_imd->inode_list;
+	if (src_imd->inode_list.first)
+		src_imd->inode_list.first->pprev = NULL;
 
 	/* All memory allocations have been taken care of, so it's no longer
 	 * possible for this function to fail.  Go ahead and increment the

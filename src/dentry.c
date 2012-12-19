@@ -896,7 +896,7 @@ void free_inode(struct inode *inode)
 		FREE(inode->fds);
 		pthread_mutex_destroy(&inode->i_mutex);
 		if (inode->hlist.pprev)
-			hlist_del(&inode->hlist);
+			hlist_safe_del(&inode->hlist);
 	#endif
 		FREE(inode->extracted_file);
 		FREE(inode);

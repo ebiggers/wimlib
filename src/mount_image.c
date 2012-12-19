@@ -2370,6 +2370,9 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		goto out;
 	}
 
+	if (imd->inode_list.first)
+		imd->inode_list.first->pprev = &imd->inode_list.first;
+
 	if (imd->modified) {
 		ERROR("Cannot mount image that was added "
 		      "with wimlib_add_image()");
