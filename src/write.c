@@ -1341,16 +1341,17 @@ static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 
 struct lte_overwrite_prepare_args {
 	WIMStruct *wim;
-	struct list_head *stream_list;
 	off_t end_offset;
+	struct list_head *stream_list;
 };
 
 static int lte_overwrite_prepare(struct lookup_table_entry *lte, void *arg)
 {
 	struct lte_overwrite_prepare_args *args = arg;
 
-	if (lte->resource_entry.offset +
-	    lte->resource_entry.size > args->end_offset)
+	if (lte->resource_location == RESOURCE_IN_WIM &&
+	    lte->wim == args->wim &&
+	    lte->resource_entry.offset + lte->resource_entry.size > args->end_offset)
 	{
 		ERROR("The following resource is after the XML data:");
 		print_lookup_table_entry(lte);
@@ -1372,9 +1373,9 @@ static int wim_find_new_streams(WIMStruct *wim, off_t end_offset,
 				struct list_head *stream_list)
 {
 	struct lte_overwrite_prepare_args args = {
-		.wim = wim,
+		.wim         = wim,
+		.end_offset  = end_offset,
 		.stream_list = stream_list,
-		.end_offset = end_offset,
 	};
 
 	return for_lookup_table_entry(wim->lookup_table,
