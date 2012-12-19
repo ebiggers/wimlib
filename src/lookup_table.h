@@ -131,9 +131,17 @@ struct lookup_table_entry {
 		size_t hash_short;
 	};
 
-	#ifdef WITH_FUSE
-	u16 num_opened_fds;
-	#endif
+	union {
+		#ifdef WITH_FUSE
+		u16 num_opened_fds;
+		#endif
+
+		/* This field is used for the special hardlink or symlink image
+		 * extraction mode.   In these mode, all identical files are linked
+		 * together, and @extracted_file will be set to the filename of the
+		 * first extracted file containing this stream.  */
+		char *extracted_file;
+	};
 
 	/* Pointers to somewhere where the stream is actually located.  See the
 	 * comments for the @resource_location field above. */
@@ -193,12 +201,6 @@ struct lookup_table_entry {
 	 * This field is also used to make other lists of lookup table entries.
 	 * */
 	struct list_head staging_list;
-
-	/* This field is used for the special hardlink or symlink image
-	 * extraction mode.   In these mode, all identical files are linked
-	 * together, and @extracted_file will be set to the filename of the
-	 * first extracted file containing this stream.  */
-	char *extracted_file;
 };
 
 static inline u64
