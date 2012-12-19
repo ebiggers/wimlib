@@ -169,8 +169,14 @@ int xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 
 	/* XPRESS requires 256 bytes of overhead for the Huffman tables, so it's
 	 * impossible cannot compress 256 bytes or less of data to less than the
-	 * input size. */
-	if (uncompressed_len <= XPRESS_NUM_SYMBOLS / 2)
+	 * input size.
+	 *
+	 * +1 to take into account that the buffer for compressed data is 1 byte
+	 * smaller than the buffer for uncompressed data.
+	 *
+	 * +4 to take into account that init_output_bitstream() requires at
+	 * least 4 bytes of data. */
+	if (uncompressed_len < XPRESS_NUM_SYMBOLS / 2 + 1 + 4)
 		return 1;
 
 	ZERO_ARRAY(freq_tab);
