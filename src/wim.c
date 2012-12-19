@@ -43,7 +43,7 @@
 #include "lookup_table.h"
 #include "xml.h"
 
-static int print_metadata(WIMStruct *w)
+static int image_print_metadata(WIMStruct *w)
 {
 	DEBUG("Printing metadata for image %d", w->current_image);
 	print_security_data(wim_security_data(w));
@@ -52,7 +52,7 @@ static int print_metadata(WIMStruct *w)
 }
 
 
-static int print_files(WIMStruct *w)
+static int image_print_files(WIMStruct *w)
 {
 	return for_dentry_in_tree(wim_root_dentry(w), print_dentry_full_path,
 				  NULL);
@@ -368,7 +368,7 @@ WIMLIBAPI int wimlib_print_metadata(WIMStruct *w, int image)
 		ERROR("Select the first part of the split WIM to see the metadata.");
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
-	return for_image(w, image, print_metadata);
+	return for_image(w, image, image_print_metadata);
 }
 
 WIMLIBAPI int wimlib_print_files(WIMStruct *w, int image)
@@ -379,7 +379,7 @@ WIMLIBAPI int wimlib_print_files(WIMStruct *w, int image)
 		ERROR("Select the first part of the split WIM if you'd like to list the files.");
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
-	return for_image(w, image, print_files);
+	return for_image(w, image, image_print_files);
 }
 
 /* Sets the index of the bootable image. */

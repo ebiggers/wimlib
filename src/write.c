@@ -1395,7 +1395,7 @@ static int dentry_find_streams_to_write(struct dentry *dentry,
 	return 0;
 }
 
-static int find_streams_to_write(WIMStruct *w)
+static int image_find_streams_to_write(WIMStruct *w)
 {
 	return for_dentry_in_tree(wim_root_dentry(w),
 				  dentry_find_streams_to_write, w);
@@ -1409,7 +1409,7 @@ static int write_wim_streams(WIMStruct *w, int image, int write_flags,
 	for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt, NULL);
 	LIST_HEAD(stream_list);
 	w->private = &stream_list;
-	for_image(w, image, find_streams_to_write);
+	for_image(w, image, image_find_streams_to_write);
 	return write_stream_list(&stream_list, w->out_fp,
 				 wimlib_get_compression_type(w), write_flags,
 				 num_threads, progress_func);
