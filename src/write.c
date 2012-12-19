@@ -1381,24 +1381,34 @@ static int wim_find_new_streams(WIMStruct *wim, off_t end_offset,
 				      lte_overwrite_prepare, &args);
 }
 
-static int dentry_find_streams_to_write(struct dentry *dentry,
-					void *wim)
+static int inode_find_streams_to_write(struct inode *inode,
+				       struct lookup_table *table,
+				       struct list_head *stream_list)
 {
-	WIMStruct *w = wim;
-	struct list_head *stream_list = w->private;
 	struct lookup_table_entry *lte;
-	for (unsigned i = 0; i <= dentry->d_inode->num_ads; i++) {
-		lte = inode_stream_lte(dentry->d_inode, i, w->lookup_table);
-		if (lte && ++lte->out_refcnt == 1)
-			list_add_tail(&lte->staging_list, stream_list);
+	for (unsigned i = 0; i <= inode->num_ads; i++) {
+		lte = inode_stream_lte(inode, i, table);
+		if (lte) {
+			if (lte->out_refcnt == 0)
+				list_add_tail(&lte->staging_list, stream_list);
+			lte->out_refcnt += inode->link_count;
+		}
 	}
 	return 0;
 }
 
 static int image_find_streams_to_write(WIMStruct *w)
 {
-	return for_dentry_in_tree(wim_root_dentry(w),
-				  dentry_find_streams_to_write, w);
+	struct inode *inode;
+	struct hlist_node *cur;
+	struct hlist_head *inode_list;
+
+	inode_list = &wim_get_current_image_metadata(w)->inode_list;
+	hlist_for_each_entry(inode, cur, inode_list, hlist) {
+		inode_find_streams_to_write(inode, w->lookup_table,
+					    (struct list_head*)w->private);
+	}
+	return 0;
 }
 
 static int write_wim_streams(WIMStruct *w, int image, int write_flags,
