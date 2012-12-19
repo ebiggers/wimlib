@@ -90,7 +90,6 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 
 	while (1) {
 		struct lookup_table_entry *lte;
-		ntfs_attr *na;
 
 		lte = inode_stream_lte_resolved(inode, stream_idx);
 
@@ -112,6 +111,8 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 		 * Otherwise, we must open the attribute and extract the data.
 		 * */
 		if (lte) {
+			ntfs_attr *na;
+
 			na = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_len);
 			if (!na) {
 				ERROR_WITH_ERRNO("Failed to open a data stream of "
@@ -120,11 +121,17 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 				ret = WIMLIB_ERR_NTFS_3G;
 				break;
 			}
+			ret = ntfs_attr_truncate_solid(na, wim_resource_size(lte));
+			if (ret != 0) {
+				ntfs_attr_close(na);
+				break;
+			}
+
 			ret = extract_wim_resource_to_ntfs_attr(lte, na);
+			ntfs_attr_close(na);
 			if (ret != 0)
 				break;
 			args->progress.extract.completed_bytes += wim_resource_size(lte);
-			ntfs_attr_close(na);
 		}
 		if (stream_idx == inode->num_ads)
 			break;
