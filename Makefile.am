@@ -19,6 +19,7 @@ libwim_la_SOURCES =		\
 	src/delete_image.c	\
 	src/dentry.c		\
 	src/dentry.h		\
+	src/encoding.c		\
 	src/endianness.h	\
 	src/export_image.c	\
 	src/extract_image.c	\

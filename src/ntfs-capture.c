@@ -362,10 +362,12 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 			 * alternate data stream entries */
 			struct ads_entry *new_ads_entry;
 			size_t stream_name_utf8_len;
-			stream_name_utf8 = utf16_to_utf8((const char*)attr_record_name(actx->attr),
-							 name_length * 2,
-							 &stream_name_utf8_len);
-			if (!stream_name_utf8)
+
+			ret = utf16_to_utf8((const char*)attr_record_name(actx->attr),
+					    name_length * 2,
+					    &stream_name_utf8,
+					    &stream_name_utf8_len);
+			if (ret != 0)
 				goto out_free_lte;
 			new_ads_entry = inode_add_ads(dentry->d_inode, stream_name_utf8);
 			FREE(stream_name_utf8);
@@ -435,12 +437,10 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	if (name_type == FILE_NAME_DOS)
 		return 0;
 
-	ret = -1;
-
- 	utf8_name = utf16_to_utf8((const char*)name, name_len * 2,
-				  &utf8_name_len);
-	if (!utf8_name)
-		goto out;
+	ret = utf16_to_utf8((const char*)name, name_len * 2,
+			    &utf8_name, &utf8_name_len);
+	if (ret != 0)
+		return -1;
 
 	if (utf8_name[0] == '.' &&
 	     (utf8_name[1] == '\0' ||
@@ -484,15 +484,15 @@ static int change_dentry_short_name(struct dentry *dentry,
 {
 	size_t short_name_utf16_len;
 	char *short_name_utf16;
-	short_name_utf16 = utf8_to_utf16(short_name_utf8, short_name_utf8_len,
-					 &short_name_utf16_len);
-	if (!short_name_utf16) {
-		ERROR_WITH_ERRNO("Failed to convert short name to UTF-16");
-		return WIMLIB_ERR_NOMEM;
+	int ret;
+
+	ret = utf8_to_utf16(short_name_utf8, short_name_utf8_len,
+			    &short_name_utf16, &short_name_utf16_len);
+	if (ret == 0) {
+		dentry->short_name = short_name_utf16;
+		dentry->short_name_len = short_name_utf16_len;
 	}
-	dentry->short_name = short_name_utf16;
-	dentry->short_name_len = short_name_utf16_len;
-	return 0;
+	return ret;
 }
 
 /* Recursively build a WIM dentry tree corresponding to a NTFS volume.
@@ -553,8 +553,12 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	}
 
 	root = new_dentry_with_timeless_inode(path_basename(path));
-	if (!root)
-		return WIMLIB_ERR_NOMEM;
+	if (!root) {
+		if (errno == EILSEQ)
+			return WIMLIB_ERR_INVALID_UTF8_STRING;
+		else
+			return WIMLIB_ERR_NOMEM;
+	}
 	*root_p = root;
 
 	if (dir_ni && (name_type == FILE_NAME_WIN32_AND_DOS

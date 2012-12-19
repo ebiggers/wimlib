@@ -80,9 +80,16 @@ static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 	}
 	if (header_size + substitute_name_offset + substitute_name_len > resource_len)
 		return -EIO;
-	link_target = utf16_to_utf8((const char *)p + substitute_name_offset,
-				    substitute_name_len,
-				    &link_target_len);
+
+	ret = utf16_to_utf8((const char *)p + substitute_name_offset,
+			    substitute_name_len,
+			    &link_target, &link_target_len);
+	if (ret == WIMLIB_ERR_INVALID_UTF16_STRING)
+		return -EILSEQ;
+	else if (ret == WIMLIB_ERR_NOMEM)
+		return -ENOMEM;
+
+	wimlib_assert(ret == 0);
 
 	if (!link_target)
 		return -EIO;
@@ -124,22 +131,28 @@ out:
 	return ret;
 }
 
-static void *make_symlink_reparse_data_buf(const char *symlink_target,
-					   size_t *len_ret)
+static int make_symlink_reparse_data_buf(const char *symlink_target,
+					 size_t *len_ret, void **buf_ret)
 {
 	size_t utf8_len = strlen(symlink_target);
+	char *name_utf16;
 	size_t utf16_len;
-	char *name_utf16 = utf8_to_utf16(symlink_target, utf8_len, &utf16_len);
-	if (!name_utf16)
-		return NULL;
+	int ret;
+
+	ret = utf8_to_utf16(symlink_target, utf8_len,
+			    &name_utf16, &utf16_len);
+	if (ret != 0)
+		return ret;
 
 	for (size_t i = 0; i < utf16_len / 2; i++)
 		if (((u16*)name_utf16)[i] == cpu_to_le16('/'))
 			((u16*)name_utf16)[i] = cpu_to_le16('\\');
 	size_t len = 12 + utf16_len * 2;
 	void *buf = MALLOC(len);
-	if (!buf)
-		goto out;
+	if (!buf) {
+		FREE(name_utf16);
+		return WIMLIB_ERR_NOMEM;
+	}
 
 	u8 *p = buf;
 	p = put_u16(p, utf16_len); /* Substitute name offset */
@@ -150,9 +163,10 @@ static void *make_symlink_reparse_data_buf(const char *symlink_target,
 	p = put_bytes(p, utf16_len, (const u8*)name_utf16);
 	p = put_bytes(p, utf16_len, (const u8*)name_utf16);
 	*len_ret = len;
+	*buf_ret = buf;
 out:
 	FREE(name_utf16);
-	return buf;
+	return 0;
 }
 
 /* Get the symlink target from a dentry.
@@ -204,9 +218,10 @@ int inode_set_symlink(struct inode *inode, const char *target,
 	u8 symlink_buf_hash[SHA1_HASH_SIZE];
 	void *symlink_buf;
 
-	symlink_buf = make_symlink_reparse_data_buf(target, &symlink_buf_len);
-	if (!symlink_buf)
-		return WIMLIB_ERR_NOMEM;
+	ret = make_symlink_reparse_data_buf(target, &symlink_buf_len,
+					    &symlink_buf);
+	if (ret != 0)
+		return ret;
 
 	DEBUG("Made symlink reparse data buf (len = %zu, name len = %zu)",
 			symlink_buf_len, symlink_buf_len);

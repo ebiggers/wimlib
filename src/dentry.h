@@ -358,7 +358,10 @@ extern struct dentry *get_parent_dentry(struct WIMStruct *w, const char *path);
 extern int print_dentry(struct dentry *dentry, void *lookup_table);
 extern int print_dentry_full_path(struct dentry *entry, void *ignore);
 
+#ifdef WITH_FUSE
 extern struct dentry *new_dentry(const char *name);
+#endif
+
 extern struct dentry *new_dentry_with_inode(const char *name);
 extern struct dentry *new_dentry_with_timeless_inode(const char *name);
 

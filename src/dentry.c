@@ -83,13 +83,12 @@ int get_names(char **name_utf16_ret, char **name_utf8_ret,
 	size_t utf8_len;
 	size_t utf16_len;
 	char *name_utf16, *name_utf8;
+	int ret;
 
 	utf8_len = strlen(name);
-
-	name_utf16 = utf8_to_utf16(name, utf8_len, &utf16_len);
-
-	if (!name_utf16)
-		return WIMLIB_ERR_NOMEM;
+	ret = utf8_to_utf16(name, utf8_len, &name_utf16, &utf16_len);
+	if (ret != 0)
+		return ret;
 
 	name_utf8 = MALLOC(utf8_len + 1);
 	if (!name_utf8) {
@@ -115,11 +114,14 @@ static int change_dentry_name(struct dentry *dentry, const char *new_name)
 
 	ret = get_names(&dentry->file_name, &dentry->file_name_utf8,
 			&dentry->file_name_len, &dentry->file_name_utf8_len,
-			 new_name);
-	FREE(dentry->short_name);
-	dentry->short_name_len = 0;
-	if (ret == 0)
+			new_name);
+	if (ret == 0) {
+		if (dentry->short_name_len) {
+			FREE(dentry->short_name);
+			dentry->short_name_len = 0;
+		}
 		dentry->length = dentry_correct_length(dentry);
+	}
 	return ret;
 }
 
@@ -809,6 +811,9 @@ static struct inode *new_inode()
  *
  * Returns a pointer to the new dentry, or NULL if out of memory.
  */
+#ifndef WITH_FUSE
+static
+#endif
 struct dentry *new_dentry(const char *name)
 {
 	struct dentry *dentry;
@@ -826,7 +831,7 @@ struct dentry *new_dentry(const char *name)
 	return dentry;
 err:
 	FREE(dentry);
-	ERROR("Failed to allocate new dentry");
+	ERROR_WITH_ERRNO("Failed to create new dentry with name \"%s\"", name);
 	return NULL;
 }
 
@@ -1251,15 +1256,14 @@ static int read_ads_entries(const u8 *p, struct inode *inode,
 			}
 			get_bytes(p, cur_entry->stream_name_len,
 				  (u8*)cur_entry->stream_name);
-			cur_entry->stream_name_utf8 = utf16_to_utf8(cur_entry->stream_name,
-								    cur_entry->stream_name_len,
-								    &utf8_len);
-			cur_entry->stream_name_utf8_len = utf8_len;
 
-			if (!cur_entry->stream_name_utf8) {
-				ret = WIMLIB_ERR_NOMEM;
+			ret = utf16_to_utf8(cur_entry->stream_name,
+					    cur_entry->stream_name_len,
+					    &cur_entry->stream_name_utf8,
+					    &utf8_len);
+			if (ret != 0)
 				goto out_free_ads_entries;
-			}
+			cur_entry->stream_name_utf8_len = utf8_len;
 		}
 		/* It's expected that the size of every ADS entry is a multiple
 		 * of 8.  However, to be safe, I'm allowing the possibility of
@@ -1434,15 +1438,10 @@ int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		p = get_bytes(p, file_name_len, file_name);
 
 		/* Convert filename to UTF-8. */
-		file_name_utf8 = utf16_to_utf8(file_name, file_name_len,
-					       &file_name_utf8_len);
-
-		if (!file_name_utf8) {
-			ERROR("Failed to allocate memory to convert UTF-16 "
-			      "filename (%hu bytes) to UTF-8", file_name_len);
-			ret = WIMLIB_ERR_NOMEM;
+		ret = utf16_to_utf8(file_name, file_name_len, &file_name_utf8,
+				    &file_name_utf8_len);
+		if (ret != 0)
 			goto out_free_file_name;
-		}
 		if (*(u16*)p)
 			WARNING("Expected two zero bytes following the file name "
 				"`%s', but found non-zero bytes", file_name_utf8);

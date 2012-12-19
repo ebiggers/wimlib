@@ -291,7 +291,7 @@ static int create_dentry(struct wimfs_context *ctx, const char *path,
 
 	new = new_dentry_with_inode(basename);
 	if (!new)
-		return -ENOMEM;
+		return -errno;
 
 	new->d_inode->resolved = 1;
 	new->d_inode->ino = ctx->next_ino++;
@@ -1609,7 +1609,7 @@ static int wimfs_link(const char *to, const char *from)
 		return -EEXIST;
 	from_dentry = new_dentry(link_name);
 	if (!from_dentry)
-		return -ENOMEM;
+		return -errno;
 
 	inode_add_dentry(from_dentry, inode);
 	from_dentry->d_inode = inode;

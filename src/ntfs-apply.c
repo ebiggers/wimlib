@@ -461,14 +461,12 @@ out_set_dos_name:
 
 		char *short_name_utf8;
 		size_t short_name_utf8_len;
-		short_name_utf8 = utf16_to_utf8(dentry->short_name,
-					   	dentry->short_name_len,
-					        &short_name_utf8_len);
-		if (!short_name_utf8) {
-			ERROR("Out of memory");
-			ret = WIMLIB_ERR_NOMEM;
+		ret = utf16_to_utf8(dentry->short_name,
+				    dentry->short_name_len,
+				    &short_name_utf8,
+				    &short_name_utf8_len);
+		if (ret != 0)
 			goto out_close_dir_ni;
-		}
 
 		if (is_hardlink) {
 			char *p;

@@ -155,12 +155,14 @@ extern char *wimlib_strdup(const char *str);
 #endif /* ENABLE_CUSTOM_MEMORY_ALLOCATOR */
 
 
-extern char *utf16_to_utf8(const char *utf16_str, size_t utf16_len,
-			   size_t *utf8_len_ret);
+/* encoding.c */
+extern int utf16_to_utf8(const char *utf16_str, size_t utf16_nbytes,
+			 char **utf8_str_ret, size_t *utf8_nbytes_ret);
 
-extern char *utf8_to_utf16(const char *utf8_str, size_t utf8_len,
-			   size_t *utf16_len_ret);
+extern int utf8_to_utf16(const char *utf8_str, size_t utf8_nbytes,
+			 char **utf16_str_ret, size_t *utf16_nbytes_ret);
 
+/* util.c */
 extern void randomize_byte_array(u8 *p, size_t n);
 
 extern void randomize_char_array_with_alnum(char p[], size_t n);

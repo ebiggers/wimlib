@@ -1322,7 +1322,7 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	encoding_handler = xmlGetCharEncodingHandler(XML_CHAR_ENCODING_UTF16LE);
 	if (!encoding_handler) {
 		ERROR("Failed to get XML character encoding handler for UTF-16LE");
-		ret = WIMLIB_ERR_CHAR_CONVERSION;
+		ret = WIMLIB_ERR_LIBXML_UTF16_HANDLER_NOT_AVAILABLE;
 		goto out_cleanup_char_encoding_handlers;
 	}
 

@@ -214,8 +214,12 @@ static int build_dentry_tree(struct dentry **root_ret,
 		filename = path_basename(root_disk_path);
 
 	root = new_dentry_with_timeless_inode(filename);
-	if (!root)
-		return WIMLIB_ERR_NOMEM;
+	if (!root) {
+		if (errno == EILSEQ)
+			return WIMLIB_ERR_INVALID_UTF8_STRING;
+		else
+			return WIMLIB_ERR_NOMEM;
+	}
 
 	inode = root->d_inode;
 

@@ -23,23 +23,13 @@
 
 #include "wimlib_internal.h"
 #include "endianness.h"
-#include "sha1.h"
 #include "timestamp.h"
-#include <sys/time.h>
 
-
-#include <iconv.h>
-#include <string.h>
 #include <ctype.h>
-#include <stdlib.h>
-#include <time.h>
-#include <unistd.h>
 #include <errno.h>
-
-#ifdef WITH_NTFS_3G
-#include <ntfs-3g/volume.h>
-#include <ntfs-3g/unistr.h>
-#endif
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h> /* for getpid() */
 
 /* True if wimlib is to print an informational message when an error occurs.
  * This can be turned off by calling wimlib_set_print_errors(false). */
@@ -117,8 +107,6 @@ static const char *error_strings[] = {
 		= "Success",
 	[WIMLIB_ERR_ALREADY_LOCKED]
 		= "The WIM is already locked for writing",
-	[WIMLIB_ERR_CHAR_CONVERSION]
-		= "Failed to perform a conversion between UTF-8 and UTF-16LE",
 	[WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE]
 		= "Lookup table is compressed",
 	[WIMLIB_ERR_DECOMPRESSION]
@@ -165,11 +153,21 @@ static const char *error_strings[] = {
 		= "The part number or total parts of the WIM is invalid",
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
 		= "The SHA1 message digest of a WIM resource did not match the expected value",
+	[WIMLIB_ERR_ICONV_NOT_AVAILABLE]
+		= "The iconv() function does not seem to work. "
+		  "Maybe check to make sure the directory /usr/lib/gconv exists",
 	[WIMLIB_ERR_INVALID_RESOURCE_SIZE]
 		= "A resource entry in the WIM has an invalid size",
 	[WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE]
 		= "The version of wimlib that has mounted a WIM image is incompatible with the "
 		  "version being used to unmount it",
+	[WIMLIB_ERR_INVALID_UTF8_STRING]
+		= "A string provided as input by the user was not a valid UTF-8 string",
+	[WIMLIB_ERR_INVALID_UTF16_STRING]
+		= "A string in a WIM dentry is not a valid UTF-16LE string",
+	[WIMLIB_ERR_LIBXML_UTF16_HANDLER_NOT_AVAILABLE]
+		= "libxml2 was unable to find a character encoding conversion handler "
+		  "for UTF-16LE",
 	[WIMLIB_ERR_LINK]
 		= "Failed to create a hard or symbolic link when extracting "
 			"a file from the WIM",
@@ -278,122 +276,6 @@ WIMLIBAPI int wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 	ERROR("wimlib was compiled with the --without-custom-memory-allocator "
 	      "flag");
 	return WIMLIB_ERR_UNSUPPORTED;
-#endif
-}
-
-
-
-static iconv_t cd_utf16_to_utf8 = (iconv_t)(-1);
-
-/* Converts a string in the UTF-16 encoding to a newly allocated string in the
- * UTF-8 encoding.  */
-char *utf16_to_utf8(const char *utf16_str, size_t utf16_len,
-		    size_t *utf8_len_ret)
-{
-#ifdef WITH_NTFS_3G
-	if (utf16_len & 1) {
-		errno = -EILSEQ;
-		return NULL;
-	}
-	char *outs = NULL;
-	int outs_len = ntfs_ucstombs((const ntfschar*)utf16_str,
-				     utf16_len >> 1, &outs, 0);
-	if (outs_len >= 0) {
-		*utf8_len_ret = outs_len;
-	} else {
-		ERROR_WITH_ERRNO("Error converting UTF-16LE string to UTF-8");
-		outs = NULL;
-	}
-	return outs;
-#else
-	if (cd_utf16_to_utf8 == (iconv_t)(-1)) {
-		cd_utf16_to_utf8 = iconv_open("UTF-8", "UTF-16LE");
-		if (cd_utf16_to_utf8 == (iconv_t)-1) {
-			ERROR_WITH_ERRNO("Failed to get conversion descriptor "
-					 "for converting UTF-16LE to UTF-8");
-			return NULL;
-		}
-	}
-	size_t utf16_bytes_left  = utf16_len;
-	size_t utf8_bytes_left   = utf16_len;
-
-	char *utf8_str = MALLOC(utf8_bytes_left);
-	if (!utf8_str)
-		return NULL;
-
-	char *orig_utf8_str = utf8_str;
-
-	size_t num_chars_converted = iconv(cd_utf16_to_utf8, (char**)&utf16_str,
-			&utf16_bytes_left, &utf8_str, &utf8_bytes_left);
-
-	if (num_chars_converted == (size_t)(-1)) {
-		ERROR_WITH_ERRNO("Failed to convert UTF-16LE string to UTF-8 "
-				 "string");
-		FREE(orig_utf8_str);
-		return NULL;
-	}
-
-	size_t utf8_len = utf16_len - utf8_bytes_left;
-
-	*utf8_len_ret = utf8_len;
-	orig_utf8_str[utf8_len] = '\0';
-	return orig_utf8_str;
-#endif
-}
-
-static iconv_t cd_utf8_to_utf16 = (iconv_t)(-1);
-
-/* Converts a string in the UTF-8 encoding to a newly allocated string in the
- * UTF-16 encoding.  */
-char *utf8_to_utf16(const char *utf8_str, size_t utf8_len,
-		    size_t *utf16_len_ret)
-{
-#ifdef WITH_NTFS_3G
-	char *outs = NULL;
-	int outs_nchars = ntfs_mbstoucs(utf8_str, (ntfschar**)&outs);
-	if (outs_nchars >= 0) {
-		*utf16_len_ret = (size_t)outs_nchars * 2;
-	} else {
-		ERROR_WITH_ERRNO("Error converting UTF-8 string to UTF-16LE");
-		outs = NULL;
-	}
-	return outs;
-#else
-	if (cd_utf8_to_utf16 == (iconv_t)(-1)) {
-		cd_utf8_to_utf16 = iconv_open("UTF-16LE", "UTF-8");
-		if (cd_utf8_to_utf16 == (iconv_t)-1) {
-			ERROR_WITH_ERRNO("Failed to get conversion descriptor "
-					 "for converting UTF-8 to UTF-16LE");
-			return NULL;
-		}
-	}
-
-	size_t utf8_bytes_left   = utf8_len;
-	size_t utf16_capacity    = utf8_len * 4;
-	size_t utf16_bytes_left  = utf16_capacity;
-
-	char *utf16_str = MALLOC(utf16_capacity + 2);
-	if (!utf16_str)
-		return NULL;
-
-	char *orig_utf16_str = utf16_str;
-
-	size_t num_chars_converted = iconv(cd_utf8_to_utf16, (char**)&utf8_str,
-			&utf8_bytes_left, &utf16_str, &utf16_bytes_left);
-
-	if (num_chars_converted == (size_t)(-1)) {
-		ERROR_WITH_ERRNO("Failed to convert UTF-8 string to UTF-16LE "
-				 "string");
-		FREE(orig_utf16_str);
-		return NULL;
-	}
-
-	size_t utf16_len = utf16_capacity - utf16_bytes_left;
-
-	*utf16_len_ret = utf16_len;
-	orig_utf16_str[utf16_len] = '\0';
-	orig_utf16_str[utf16_len + 1] = '\0';
-	return orig_utf16_str;
 #endif
 }
 
