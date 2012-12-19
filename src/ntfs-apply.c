@@ -506,7 +506,8 @@ out_set_dos_name:
 						    dentry->file_name_utf8);
 			if (!ni) {
 				ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
-						 dir_name);
+						 dentry->full_path_utf8);
+				ntfs_inode_close(dir_ni);
 				return WIMLIB_ERR_NTFS_3G;
 			}
 		}
@@ -527,6 +528,15 @@ out_set_dos_name:
 	}
 
 out_close_dir_ni:
+	if (ni && dir_ni) {
+		if (ntfs_inode_close_in_dir(ni, dir_ni) != 0) {
+			ni = NULL;
+			if (ret == 0)
+				ret = WIMLIB_ERR_NTFS_3G;
+			ERROR_WITH_ERRNO("Failed to close inode for `%s'",
+					 dentry->full_path_utf8);
+		}
+	}
 	if (ntfs_inode_close(dir_ni) != 0) {
 		if (ret == 0)
 			ret = WIMLIB_ERR_NTFS_3G;
@@ -535,7 +545,8 @@ out_close_dir_ni:
 	if (ni && ntfs_inode_close(ni) != 0) {
 		if (ret == 0)
 			ret = WIMLIB_ERR_NTFS_3G;
-		ERROR_WITH_ERRNO("Failed to close inode");
+		ERROR_WITH_ERRNO("Failed to close inode for `%s'",
+				 dentry->full_path_utf8);
 	}
 	return ret;
 }
