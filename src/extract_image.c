@@ -283,25 +283,8 @@ static int extract_directory(const char *output_path, bool is_root)
 static int apply_dentry_normal(struct dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
-	int extract_flags = args->extract_flags;
 	struct inode *inode = dentry->d_inode;
 	size_t len;
-	int ret;
-
-	if (dentry->is_extracted)
-		return 0;
-
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
-		if (inode_unnamed_lte_resolved(inode))
-			return 0;
-
-	if ((extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
-	     args->progress_func)
-	{
-		args->progress.extract.cur_path = dentry->full_path_utf8;
-		args->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY,
-				    &args->progress);
-	}
 
 	len = strlen(args->target);
 	char output_path[len + dentry->full_path_utf8_len + 1];
@@ -310,14 +293,11 @@ static int apply_dentry_normal(struct dentry *dentry, void *arg)
 	output_path[len + dentry->full_path_utf8_len] = '\0';
 
 	if (inode_is_symlink(inode))
-		ret = extract_symlink(dentry, args, output_path);
+		return extract_symlink(dentry, args, output_path);
 	else if (inode_is_directory(inode))
-		ret = extract_directory(output_path, false);
+		return extract_directory(output_path, false);
 	else
-		ret = extract_regular_file(dentry, args, output_path);
-	if (ret == 0)
-		dentry->is_extracted = 1;
-	return ret;
+		return extract_regular_file(dentry, args, output_path);
 }
 
 /* Apply timestamp to extracted file */
@@ -359,6 +339,30 @@ static int apply_dentry_timestamps_normal(struct dentry *dentry, void *arg)
 		}
 	}
 	return 0;
+}
+
+static int maybe_apply_dentry(struct dentry *dentry, void *arg)
+{
+	struct apply_args *args = arg;
+	int ret;
+
+	if (dentry->is_extracted)
+		return 0;
+
+	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
+		if (inode_unnamed_lte_resolved(dentry->d_inode))
+			return 0;
+
+	if ((args->extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
+	     args->progress_func) {
+		args->progress.extract.cur_path = dentry->full_path_utf8;
+		args->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY,
+				    &args->progress);
+	}
+	ret = args->apply_dentry(dentry, args);
+	if (ret == 0)
+		dentry->is_extracted = 1;
+	return ret;
 }
 
 static int cmp_streams_by_wim_position(const void *p1, const void *p2)
@@ -542,7 +546,7 @@ static int apply_stream_list(struct list_head *stream_list,
 		list_for_each_entry(inode, &lte->inode_list, lte_inode_list) {
 			/* For each dentry that points to the inode */
 			inode_for_each_dentry(dentry, inode) {
-				ret = ops->apply_dentry(dentry, args);
+				ret = maybe_apply_dentry(dentry, args);
 				if (ret != 0)
 					goto out;
 				if (progress_func &&
@@ -639,7 +643,8 @@ static int extract_single_image(WIMStruct *w, int image,
 	}
 
 	args.extract_flags |= WIMLIB_EXTRACT_FLAG_NO_STREAMS;
-	ret = for_dentry_in_tree(wim_root_dentry(w), ops->apply_dentry, &args);
+	args.apply_dentry = ops->apply_dentry;
+	ret = for_dentry_in_tree(wim_root_dentry(w), maybe_apply_dentry, &args);
 	args.extract_flags &= ~WIMLIB_EXTRACT_FLAG_NO_STREAMS;
 	if (ret != 0)
 		goto out;

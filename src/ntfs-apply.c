@@ -385,7 +385,7 @@ static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	bool is_hardlink = false;
 	ntfs_volume *vol = dir_ni->vol;
 	struct inode *inode = dentry->d_inode;
-	dentry->is_extracted = true;
+	dentry->is_extracted = 1;
 
 	if (inode->attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		type = S_IFDIR;
@@ -580,30 +580,9 @@ static int apply_root_dentry_ntfs(const struct dentry *dentry,
 int apply_dentry_ntfs(struct dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
-	ntfs_volume *vol             = args->vol;
-	int extract_flags            = args->extract_flags;
-	WIMStruct *w                 = args->w;
+	ntfs_volume *vol = args->vol;
+	WIMStruct *w = args->w;
 	ntfs_inode *dir_ni;
-	char *p;
-	char orig;
-	const char *dir_name;
-
-	if (dentry->is_extracted)
-		return 0;
-
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
-		if (inode_unnamed_lte_resolved(dentry->d_inode))
-			return 0;
-
-	DEBUG("Applying dentry `%s' to NTFS", dentry->full_path_utf8);
-
-	if ((extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
-	     args->progress_func)
-	{
-		args->progress.extract.cur_path = dentry->full_path_utf8;
-		args->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY,
-				    &args->progress);
-	}
 
 	if (dentry_is_root(dentry))
 		return apply_root_dentry_ntfs(dentry, vol, w);

@@ -434,6 +434,7 @@ struct apply_args {
 #endif
 	struct list_head empty_files;
 	wimlib_progress_func_t progress_func;
+	int (*apply_dentry)(struct dentry *, void *);
 };
 
 extern int apply_dentry_ntfs(struct dentry *dentry, void *arg);
