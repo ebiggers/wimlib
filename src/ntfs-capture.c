@@ -722,6 +722,10 @@ out_cleanup:
 	destroy_sd_set(&sd_set);
 
 out:
+	ntfs_index_ctx_put(vol->secure_xsii);
+	ntfs_index_ctx_put(vol->secure_xsdh);
+	ntfs_inode_close(vol->secure_ni);
+
 	if (ret) {
 		if (ntfs_umount(vol, FALSE) != 0) {
 			ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'",
