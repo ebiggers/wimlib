@@ -75,7 +75,7 @@ extract_wim_resource_to_ntfs_attr(const struct lookup_table_entry *lte,
  * Returns 0 on success, nonzero on failure.
  */
 static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
-				   struct apply_args *args)
+				   union wimlib_progress_info *progress_info)
 {
 	int ret = 0;
 	unsigned stream_idx = 0;
@@ -131,7 +131,7 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 			ntfs_attr_close(na);
 			if (ret != 0)
 				break;
-			args->progress.extract.completed_bytes += wim_resource_size(lte);
+			progress_info->extract.completed_bytes += wim_resource_size(lte);
 		}
 		if (stream_idx == inode->num_ads)
 			break;
@@ -140,6 +140,32 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 		stream_idx++;
 	}
 	return ret;
+}
+
+/* Open the NTFS inode that corresponds to the parent of a WIM dentry. */
+static ntfs_inode *dentry_open_parent_ni(const struct dentry *dentry,
+					 ntfs_volume *vol)
+{
+	char *p;
+	const char *dir_name;
+	ntfs_inode *dir_ni;
+	char orig;
+
+	p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
+	do {
+		p--;
+	} while (*p != '/');
+
+	orig = *p;
+	*p = '\0';
+	dir_name = dentry->full_path_utf8;
+	dir_ni = ntfs_pathname_to_inode(vol, NULL, dir_name);
+	if (!dir_ni) {
+		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
+				 dir_name);
+	}
+	*p = orig;
+	return dir_ni;
 }
 
 /*
@@ -164,9 +190,6 @@ static int apply_hardlink_ntfs(const struct dentry *from_dentry,
 	ntfs_inode *to_ni;
 	ntfs_volume *vol;
 
-	wimlib_assert(dentry_is_regular_file(from_dentry)
-			&& inode_is_regular_file(inode));
-
 	if (ntfs_inode_close(dir_ni) != 0) {
 		ERROR_WITH_ERRNO("Error closing directory");
 		return WIMLIB_ERR_NTFS_3G;
@@ -183,23 +206,12 @@ static int apply_hardlink_ntfs(const struct dentry *from_dentry,
 				 inode->extracted_file);
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	p = from_dentry->full_path_utf8 + from_dentry->full_path_utf8_len;
-	do {
-		p--;
-	} while (*p != '/');
 
-	orig = *p;
-	*p = '\0';
-	dir_name = from_dentry->full_path_utf8;
+	*to_ni_ret = to_ni;
 
-	dir_ni = ntfs_pathname_to_inode(vol, NULL, dir_name);
-	if (!dir_ni) {
-		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
-				 from_dentry->full_path_utf8);
-		*p = orig;
+	dir_ni = dentry_open_parent_ni(from_dentry, vol);
+	if (!dir_ni)
 		return WIMLIB_ERR_NTFS_3G;
-	}
-	*p = orig;
 
 	ret = ntfs_link(to_ni, dir_ni,
 			(ntfschar*)from_dentry->file_name,
@@ -210,7 +222,6 @@ static int apply_hardlink_ntfs(const struct dentry *from_dentry,
 				 inode->extracted_file);
 		ret = WIMLIB_ERR_NTFS_3G;
 	}
-	*to_ni_ret = to_ni;
 	return ret;
 }
 
@@ -261,7 +272,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 }
 
 static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
-			      struct apply_args *args)
+			      union wimlib_progress_info *progress_info)
 {
 	struct lookup_table_entry *lte;
 	int ret = 0;
@@ -299,7 +310,7 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 				 dentry->full_path_utf8);
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	args->progress.extract.completed_bytes += wim_resource_size(lte);
+	progress_info->extract.completed_bytes += wim_resource_size(lte);
 	return 0;
 }
 
@@ -349,22 +360,10 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
 					   *dir_ni_p, args);
 		if (ret != 0)
 			return ret;
-		p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
-		do {
-			p--;
-		} while (*p != '/');
 
-		orig = *p;
-		*p = '\0';
-		dir_name = dentry->full_path_utf8;
-
-		*dir_ni_p = ntfs_pathname_to_inode(vol, NULL, dir_name);
-		*p = orig;
-		if (!*dir_ni_p) {
-			ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
-					 dir_name);
+		*dir_ni_p = dentry_open_parent_ni(dentry, vol);
+		if (!*dir_ni_p)
 			return WIMLIB_ERR_NTFS_3G;
-		}
 	}
 	return 0;
 }
@@ -391,8 +390,10 @@ static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	if (inode->attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		type = S_IFDIR;
 	} else {
-		/* Apply hard-linked directory in same directory with DOS name
-		 * (if there is one) before this dentry */
+		/* If this dentry is hard-linked to any other dentries in the
+		 * same directory, make sure to apply the one (if any) with a
+		 * DOS name first.  Otherwise, NTFS-3g might not assign the file
+		 * names correctly. */
 		if (dentry->short_name_len == 0) {
 			ret = preapply_dentry_with_dos_name(dentry,
 							    &dir_ni, args);
@@ -445,7 +446,7 @@ static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	 * */
 	if (!(inode->attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
 				   FILE_ATTRIBUTE_DIRECTORY))) {
-		ret = write_ntfs_data_streams(ni, dentry, args);
+		ret = write_ntfs_data_streams(ni, dentry, &args->progress);
 		if (ret != 0)
 			goto out_close_dir_ni;
 	}
@@ -457,7 +458,7 @@ static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 		goto out_close_dir_ni;
 
 	if (inode->attributes & FILE_ATTR_REPARSE_POINT) {
-		ret = apply_reparse_data(ni, dentry, args);
+		ret = apply_reparse_data(ni, dentry, &args->progress);
 		if (ret != 0)
 			goto out_close_dir_ni;
 	}
@@ -487,35 +488,29 @@ out_set_dos_name:
 				if (ret == 0)
 					ret = WIMLIB_ERR_NTFS_3G;
 				ERROR_WITH_ERRNO("Failed to close directory inode");
+				goto out_close_ni;
 			}
 			if (ntfs_inode_close(ni) != 0) {
 				if (ret == 0)
 					ret = WIMLIB_ERR_NTFS_3G;
 				ERROR_WITH_ERRNO("Failed to close hard link target inode");
+				goto out;
 			}
-			p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
-			do {
-				p--;
-			} while (*p != '/');
 
-			orig = *p;
-			*p = '\0';
-			dir_name = dentry->full_path_utf8;
-
-			dir_ni = ntfs_pathname_to_inode(vol, NULL, dir_name);
-			*p = orig;
+			dir_ni = dentry_open_parent_ni(dentry, vol);
 			if (!dir_ni) {
-				ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
-						 dir_name);
-				return WIMLIB_ERR_NTFS_3G;
+				ret = WIMLIB_ERR_NTFS_3G;
+				goto out;
 			}
+
 			ni = ntfs_pathname_to_inode(vol, dir_ni,
 						    dentry->file_name_utf8);
 			if (!ni) {
 				ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
 						 dentry->full_path_utf8);
 				ntfs_inode_close(dir_ni);
-				return WIMLIB_ERR_NTFS_3G;
+				ret = WIMLIB_ERR_NTFS_3G;
+				goto out_close_dir_ni;
 			}
 		}
 
@@ -549,12 +544,14 @@ out_close_dir_ni:
 			ret = WIMLIB_ERR_NTFS_3G;
 		ERROR_WITH_ERRNO("Failed to close directory inode");
 	}
+out_close_ni:
 	if (ni && ntfs_inode_close(ni) != 0) {
 		if (ret == 0)
 			ret = WIMLIB_ERR_NTFS_3G;
 		ERROR_WITH_ERRNO("Failed to close inode for `%s'",
 				 dentry->full_path_utf8);
 	}
+out:
 	return ret;
 }
 
@@ -611,23 +608,11 @@ int apply_dentry_ntfs(struct dentry *dentry, void *arg)
 	if (dentry_is_root(dentry))
 		return apply_root_dentry_ntfs(dentry, vol, w);
 
-	p = dentry->full_path_utf8 + dentry->full_path_utf8_len;
-	do {
-		p--;
-	} while (*p != '/');
-
-	orig = *p;
-	*p = '\0';
-	dir_name = dentry->full_path_utf8;
-
-	dir_ni = ntfs_pathname_to_inode(vol, NULL, dir_name);
-	*p = orig;
-	if (!dir_ni) {
-		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
-				 dir_name);
+	dir_ni = dentry_open_parent_ni(dentry, vol);
+	if (dir_ni)
+		return do_apply_dentry_ntfs(dentry, dir_ni, arg);
+	else
 		return WIMLIB_ERR_NTFS_3G;
-	}
-	return do_apply_dentry_ntfs(dentry, dir_ni, arg);
 }
 
 int apply_dentry_timestamps_ntfs(struct dentry *dentry, void *arg)

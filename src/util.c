@@ -64,7 +64,9 @@ void wimlib_error_with_errno(const char *format, ...)
 		fflush(stdout);
 		fputs("[ERROR] ", stderr);
 		vfprintf(stderr, format, va);
-		fprintf(stderr, ": %s\n", strerror(errno_save));
+		if (errno_save != 0)
+			fprintf(stderr, ": %s", strerror(errno_save));
+		putc('\n', stderr);
 		errno = errno_save;
 		va_end(va);
 	}
