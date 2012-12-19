@@ -653,8 +653,10 @@ static int extract_single_image(WIMStruct *w, int image,
 	if (ret != 0)
 		goto out;
 
-	if (progress_func)
-		progress_func(WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS, NULL);
+	if (progress_func) {
+		progress_func(WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS,
+			      &args.progress);
+	}
 
 	ret = for_dentry_in_tree_depth(wim_root_dentry(w),
 				       ops->apply_dentry_timestamps, &args);

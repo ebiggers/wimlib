@@ -407,13 +407,6 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 				"NTFS volume" : "directory"),
 		       info->extract.target);
 		break;
-	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:
-		printf("Done applying WIM image.\n");
-		if (info->extract.extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
-			printf("Unmounting NTFS volume `%s'...\n",
-			       info->extract.target);
-		}
-		break;
 	/*case WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN:*/
 		/*printf("Applying directory structure to %s\n",*/
 		       /*info->extract.target);*/
@@ -431,6 +424,15 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY:
 		puts(info->extract.cur_path);
+		break;
+	case WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS:
+		printf("Setting timestamps on all extracted files...\n");
+		break;
+	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:
+		if (info->extract.extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
+			printf("Unmounting NTFS volume `%s'...\n",
+			       info->extract.target);
+		}
 		break;
 	case WIMLIB_PROGRESS_MSG_JOIN_STREAMS:
 		percent_done = TO_PERCENT(info->join.completed_bytes,
@@ -637,6 +639,8 @@ static int imagex_apply(int argc, const char **argv)
 	ret = wimlib_extract_image(w, image, target, extract_flags,
 				   additional_swms, num_additional_swms,
 				   imagex_progress_func);
+	if (ret == 0)
+		printf("Done applying WIM image.\n");
 out:
 	wimlib_free(w);
 	if (additional_swms) {
