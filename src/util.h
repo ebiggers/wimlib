@@ -44,7 +44,6 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 #endif
-typedef unsigned uint;
 
 #ifndef min
 #define min(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \

@@ -52,7 +52,7 @@
  * The AND operation guarantees that only 3 characters will affect the hash
  * value, so every identical 3-character string will have the same hash value.
  */
-static inline uint update_hash(uint hash, u8 c)
+static inline unsigned update_hash(unsigned hash, u8 c)
 {
 	return ((hash << HASH_SHIFT) ^ c) & HASH_MASK;
 }
@@ -70,8 +70,9 @@ static inline uint update_hash(uint hash, u8 c)
  * to walk through the hash chain, until the special index `0' is reached,
  * indicating the end of the hash chain.
  */
-static inline uint insert_string(u16 hash_tab[], u16 prev_tab[],
-				 const u8 window[], uint str_pos, uint hash)
+static inline unsigned insert_string(u16 hash_tab[], u16 prev_tab[],
+				     const u8 window[], unsigned str_pos,
+				     unsigned hash)
 {
 	hash = update_hash(hash, window[str_pos + LZ_MIN_MATCH - 1]);
 	prev_tab[str_pos] = hash_tab[hash];
@@ -101,21 +102,21 @@ static inline uint insert_string(u16 hash_tab[], u16 prev_tab[],
  *
  * Returns the length of the match that was found.
  */
-static uint longest_match(const u8 window[], uint bytes_remaining,
-			  uint strstart, const u16 prev_tab[],
-			  uint cur_match, uint prev_len,
-			  uint *match_start_ret,
-			  const struct lz_params *params)
+static unsigned longest_match(const u8 window[], unsigned bytes_remaining,
+			      unsigned strstart, const u16 prev_tab[],
+			      unsigned cur_match, unsigned prev_len,
+			      unsigned *match_start_ret,
+			      const struct lz_params *params)
 {
-	uint chain_len = params->max_chain_len;
+	unsigned chain_len = params->max_chain_len;
 
 	const u8 *scan = window + strstart;
 	const u8 *match;
-	uint len;
-	uint best_len = prev_len;
-	uint match_start = cur_match;
+	unsigned len;
+	unsigned best_len = prev_len;
+	unsigned match_start = cur_match;
 
-	uint nice_match = min(params->nice_match, bytes_remaining);
+	unsigned nice_match = min(params->nice_match, bytes_remaining);
 
 	const u8 *strend = scan + min(params->max_match, bytes_remaining);
 
@@ -209,20 +210,24 @@ static uint longest_match(const u8 window[], uint bytes_remaining,
  * is the number of slots in @match_tab that have been filled with the
  * intermediate representation of a match or literal byte.
  */
-uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
-		      u32 match_tab[], lz_record_match_t record_match,
-		      lz_record_literal_t record_literal, void *record_match_arg1,
-		      void *record_match_arg2, void *record_literal_arg,
-		      const struct lz_params *params)
+unsigned lz_analyze_block(const u8 uncompressed_data[],
+			  unsigned uncompressed_len,
+			  u32 match_tab[],
+			  lz_record_match_t record_match,
+			  lz_record_literal_t record_literal,
+			  void *record_match_arg1,
+			  void *record_match_arg2,
+			  void *record_literal_arg,
+			  const struct lz_params *params)
 {
-	uint cur_match_pos = 0;
-	uint cur_input_pos = 0;
-	uint hash          = 0;
-	uint hash_head     = 0;
-	uint prev_len      = params->min_match - 1;
-	uint prev_start;
-	uint match_len     = params->min_match - 1;
-	uint match_start   = 0;
+	unsigned cur_match_pos = 0;
+	unsigned cur_input_pos = 0;
+	unsigned hash          = 0;
+	unsigned hash_head     = 0;
+	unsigned prev_len      = params->min_match - 1;
+	unsigned prev_start;
+	unsigned match_len     = params->min_match - 1;
+	unsigned match_start   = 0;
 	bool match_available = false;
 	u16 hash_tab[HASH_SIZE];
 	u32 match;
@@ -275,7 +280,7 @@ uint lz_analyze_block(const u8 uncompressed_data[], uint uncompressed_len,
 		if (prev_len >= params->min_match && match_len <= prev_len) {
 
 			/* Do not insert strings in hash table beyond this. */
-			uint max_insert = uncompressed_len - params->min_match;
+			unsigned max_insert = uncompressed_len - params->min_match;
 
 			/*DEBUG("Recording match (pos = %u, offset = %u, len = %u)\n",*/
 					/*cur_input_pos - 1, */

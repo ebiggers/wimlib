@@ -154,9 +154,9 @@ int align_input_bitstream(struct input_bitstream *stream,
  * entries from pointers by the fact that values less than @num_syms must be
  * symbol values.
  */
-int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
-			      uint num_bits, const u8 lens[],
-			      uint max_code_len)
+int make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
+			      unsigned num_bits, const u8 lens[],
+			      unsigned max_code_len)
 {
 	/* Number of entries in the decode table. */
 	u32 table_num_entries = 1 << num_bits;
@@ -173,7 +173,7 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 	 * array, and both symbols have the same code length, then we know that
 	 * the code for A numerically precedes the code for B.
 	 * */
-	for (uint code_len = 1; code_len <= num_bits; code_len++) {
+	for (unsigned code_len = 1; code_len <= num_bits; code_len++) {
 
 		/* Number of entries that a code of length @code_length would
 		 * need.  */
@@ -182,7 +182,7 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 
 		/* For each symbol of length @code_len, fill in its entries in
 		 * the decode table. */
-		for (uint sym = 0; sym < num_syms; sym++) {
+		for (unsigned sym = 0; sym < num_syms; sym++) {
 
 			if (lens[sym] != code_len)
 				continue;
@@ -200,7 +200,7 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 
 			/* Fill all possible lookups of this symbol with
 			 * the symbol itself. */
-			for (uint i = 0; i < code_num_entries; i++)
+			for (unsigned i = 0; i < code_num_entries; i++)
 				decode_table[decode_table_pos + i] = sym;
 
 			/* Increment the position in the decode table by
@@ -222,7 +222,7 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 
 	/* First, zero out the rest of the entries; this is necessary so
 	 * that the entries appear as "unallocated" in the next part.  */
-	for (uint i = decode_table_pos; i < table_num_entries; i++)
+	for (unsigned i = decode_table_pos; i < table_num_entries; i++)
 		decode_table[i] = 0;
 
 	/* Assert that 2**num_bits is at least num_syms.  If this wasn't the
@@ -232,30 +232,30 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 
 
 	/* The current Huffman code.  */
-	uint current_code = decode_table_pos;
+	unsigned current_code = decode_table_pos;
 
 	/* The tree nodes are allocated starting at
 	 * decode_table[table_num_entries].  Remember that the full size of the
 	 * table, including the extra space for the tree nodes, is actually
 	 * 2**num_bits + 2 * num_syms slots, while table_num_entries is only
 	 * 2**num_bits. */
-	uint next_free_tree_slot = table_num_entries;
+	unsigned next_free_tree_slot = table_num_entries;
 
 	/* Go through every codeword of length greater than @num_bits.  Note:
 	 * the LZX format guarantees that the codeword length can be at most 16
 	 * bits. */
-	for (uint code_len = num_bits + 1; code_len <= max_code_len;
+	for (unsigned code_len = num_bits + 1; code_len <= max_code_len;
 							code_len++)
 	{
 		current_code <<= 1;
-		for (uint sym = 0; sym < num_syms; sym++) {
+		for (unsigned sym = 0; sym < num_syms; sym++) {
 			if (lens[sym] != code_len)
 				continue;
 
 
 			/* i is the index of the current node; find it from the
 			 * prefix of the current Huffman code. */
-			uint i = current_code >> (code_len - num_bits);
+			unsigned i = current_code >> (code_len - num_bits);
 
 			if (i >= (1 << num_bits)) {
 				ERROR("Invalid canonical Huffman code");
@@ -314,7 +314,7 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 
 	if (decode_table_pos != table_num_entries) {
 
-		for (uint i = 0; i < num_syms; i++) {
+		for (unsigned i = 0; i < num_syms; i++) {
 			if (lens[i] != 0) {
 				ERROR("Lengths do not form a valid canonical "
 				      "Huffman tree (only filled %u of %u "
@@ -332,12 +332,12 @@ int make_huffman_decode_table(u16 decode_table[],  uint num_syms,
 static int read_huffsym_near_end_of_input(struct input_bitstream *istream,
 					  const u16 decode_table[],
 					  const u8 lens[],
-					  uint num_syms,
-					  uint table_bits,
-					  uint *n)
+					  unsigned num_syms,
+					  unsigned table_bits,
+					  unsigned *n)
 {
-	uint bitsleft = istream->bitsleft;
-	uint key_size;
+	unsigned bitsleft = istream->bitsleft;
+	unsigned key_size;
 	u16 sym;
 	u16 key_bits;
 
@@ -394,7 +394,7 @@ int read_huffsym(struct input_bitstream *stream,
 		 const u8 lengths[],
 		 unsigned num_symbols,
 		 unsigned table_bits,
-		 uint *n,
+		 unsigned *n,
 		 unsigned max_codeword_len)
 {
 	/* In the most common case, there are at least max_codeword_len bits

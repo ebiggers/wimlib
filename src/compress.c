@@ -39,9 +39,9 @@ static inline void flush_bits(struct output_bitstream *ostream)
 /* Writes @num_bits bits, given by the @num_bits least significant bits of
  * @bits, to the output @ostream. */
 int bitstream_put_bits(struct output_bitstream *ostream, output_bitbuf_t bits,
-		       uint num_bits)
+		       unsigned num_bits)
 {
-	uint rem_bits;
+	unsigned rem_bits;
 
 	wimlib_assert(num_bits <= 16);
 	if (num_bits <= ostream->free_bits) {
@@ -88,7 +88,7 @@ int flush_output_bitstream(struct output_bitstream *ostream)
 /* Initializes an output bit buffer to write its output to the memory location
  * pointer to by @data. */
 void init_output_bitstream(struct output_bitstream *ostream, void *data,
-			   uint num_bytes)
+			   unsigned num_bytes)
 {
 	wimlib_assert(num_bytes >= 4);
 
@@ -223,7 +223,7 @@ static void huffman_tree_compute_path_lengths(HuffmanNode *node, u16 cur_len)
  * 			lens[i] bits of codewords[i] will contain the codeword
  * 			for symbol i.
  */
-void make_canonical_huffman_code(uint num_syms, uint max_codeword_len,
+void make_canonical_huffman_code(unsigned num_syms, unsigned max_codeword_len,
 				 const u32 freq_tab[], u8 lens[],
 				 u16 codewords[])
 {
@@ -238,8 +238,8 @@ void make_canonical_huffman_code(uint num_syms, uint max_codeword_len,
 
 	/* Calculate how many symbols have non-zero frequency.  These are the
 	 * symbols that actually appeared in the input. */
-	uint num_used_symbols = 0;
-	for (uint i = 0; i < num_syms; i++)
+	unsigned num_used_symbols = 0;
+	for (unsigned i = 0; i < num_syms; i++)
 		if (freq_tab[i] != 0)
 			num_used_symbols++;
 
@@ -251,8 +251,8 @@ void make_canonical_huffman_code(uint num_syms, uint max_codeword_len,
 	/* Initialize the array of leaf nodes with the symbols and their
 	 * frequencies. */
 	HuffmanLeafNode leaves[num_used_symbols];
-	uint leaf_idx = 0;
-	for (uint i = 0; i < num_syms; i++) {
+	unsigned leaf_idx = 0;
+	for (unsigned i = 0; i < num_syms; i++) {
 		if (freq_tab[i] != 0) {
 			leaves[leaf_idx].freq = freq_tab[i];
 			leaves[leaf_idx].sym  = i;
@@ -276,7 +276,7 @@ void make_canonical_huffman_code(uint num_syms, uint max_codeword_len,
 			 * encoded data take up more room anyway, since binary
 			 * data itself has 2 symbols. */
 
-			uint sym = leaves[0].sym;
+			unsigned sym = leaves[0].sym;
 
 			codewords[0] = 0;
 			lens[0]      = 1;
@@ -401,7 +401,7 @@ try_building_tree_again:
 			 * codewords approach the length
 			 * log_2(num_used_symbols).
 			 * */
-			for (uint i = 0; i < num_used_symbols; i++)
+			for (unsigned i = 0; i < num_used_symbols; i++)
 				if (leaves[i].freq > 1)
 					leaves[i].freq >>= 1;
 			goto try_building_tree_again;
@@ -423,8 +423,8 @@ try_building_tree_again:
 	qsort(leaves, num_used_symbols, sizeof(leaves[0]), cmp_leaves_by_code_len);
 
 	u16 cur_codeword = 0;
-	uint cur_codeword_len = 0;
-	for (uint i = 0; i < num_used_symbols; i++) {
+	unsigned cur_codeword_len = 0;
+	for (unsigned i = 0; i < num_used_symbols; i++) {
 
 		/* Each time a codeword becomes one longer, the current codeword
 		 * is left shifted by one place.  This is part of the procedure
@@ -432,7 +432,7 @@ try_building_tree_again:
 		 * whenever a codeword is used, 1 is added to the current
 		 * codeword.  */
 
-		uint len_diff = leaves[i].path_len - cur_codeword_len;
+		unsigned len_diff = leaves[i].path_len - cur_codeword_len;
 		cur_codeword <<= len_diff;
 		cur_codeword_len += len_diff;
 
