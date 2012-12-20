@@ -137,6 +137,7 @@ extern void wimlib_warning(const char *format, ...)
 #define wimlib_assert2(expr)
 #endif
 
+#define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
 
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 extern void *(*wimlib_malloc_func)(size_t);

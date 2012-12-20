@@ -69,233 +69,259 @@ int bitstream_read_bytes(struct input_bitstream *stream, size_t n, void *dest)
 }
 
 /*
- * Builds a fast huffman decoding table from a canonical huffman code lengths
- * table.  Based on code written by David Tritscher.
+ * Builds a fast huffman decoding table from an array that gives the length of
+ * the codeword for each symbol in the alphabet.  Originally based on code
+ * written by David Tritscher (taken the original LZX decompression code); also
+ * heavily modified to add some optimizations used in the zlib code, as well as
+ * more comments.
  *
  * @decode_table:	The array in which to create the fast huffman decoding
- * 				table.  It must have a length of at least
- * 				(2**num_bits) + 2 * num_syms to guarantee
- * 				that there is enough space.
+ * 			table.  It must have a length of at least
+ * 			(2**table_bits) + 2 * num_syms to guarantee
+ * 			that there is enough space.
  *
- * @num_syms: 	Total number of symbols in the Huffman tree.
+ * @num_syms: 		Total number of symbols in the Huffman tree.
  *
- * @num_bits:	Any symbols with a code length of num_bits or less can be
- * 			decoded in one lookup of the table.  2**num_bits
+ * @table_bits:		Any symbols with a code length of table_bits or less can
+ * 			be decoded in one lookup of the table.  2**table_bits
  * 			must be greater than or equal to @num_syms if there are
- * 			any Huffman codes longer than @num_bits.
+ * 			any Huffman codes longer than @table_bits.
  *
- * @lens:	An array of length @num_syms, indexable by symbol, that
- * 			gives the length of that symbol.  Because the Huffman
- * 			tree is in canonical form, it can be reconstructed by
- * 			only knowing the length of the code for each symbol.
+ * @lens:		An array of length @num_syms, indexable by symbol, that
+ * 			gives the length of the Huffman codeward for that
+ * 			symbol.  Because the Huffman tree is in canonical form,
+ * 			it can be reconstructed by only knowing the length of
+ * 			the codeword for each symbol.  It is assumed, but not
+ * 			checked, that every length is less than
+ * 			@max_codeword_len.
  *
- * @make_codeword_len:	An integer that gives the longest possible codeword
- * 			length.
+ * @max_codeword_len:	The longest codeword length allowed in the compression
+ * 			format.
  *
- * Returns 0 on success; returns 1 if the length values do not correspond to a
- * valid Huffman tree, or if there are codes of length greater than @num_bits
- * but 2**num_bits < num_syms.
+ * Returns 0 on success; returns -1 if the length values do not correspond to a
+ * valid Huffman tree.
  *
- * What exactly is the format of the fast Huffman decoding table?  The first
- * (1 << num_bits) entries of the table are indexed by chunks of the input of
- * size @num_bits.  If the next Huffman code in the input happens to have a
- * length of exactly @num_bits, the symbol is simply read directly from the
- * decoding table.  Alternatively, if the next Huffman code has length _less
- * than_ @num_bits, the symbol is also read directly from the decode table; this
- * is possible because every entry in the table that is indexed by an integer
- * that has the shorter code as a binary prefix is filled in with the
- * appropriate symbol.  If a code has length n <= num_bits, it will have
- * 2**(num_bits - n) possible suffixes, and thus that many entries in the
+ * The format of the Huffamn decoding table is as follows.  The first (1 <<
+ * table_bits) entries of the table are indexed by chunks of the input of size
+ * @table_bits.  If the next Huffman codeword in the input happens to have a
+ * length of exactly @table_bits, the symbol is simply read directly from the
+ * decoding table.  Alternatively, if the next Huffman codeword has length _less
+ * than_ @table_bits, the symbol is also read directly from the decode table;
+ * this is possible because every entry in the table that is indexed by an
+ * integer that has the shorter codeword as a binary prefix is filled in with
+ * the appropriate symbol.  If a codeword has length n <= table_bits, it will
+ * have 2**(table_bits - n) possible suffixes, and thus that many entries in the
  * decoding table.
  *
- * It's a bit more complicated if the next Huffman code has length of more than
- * @num_bits.  The table entry indexed by the first @num_bits of that code
- * cannot give the appropriate symbol directly, because that entry is guaranteed
- * to be referenced by the Huffman codes for multiple symbols.  And while the
- * LZX compression format does not allow codes longer than 16 bits, a table of
- * size (2 ** 16) = 65536 entries would be too slow to create.
+ * It's a bit more complicated if the next Huffman codeword has length of more
+ * than @table_bits.  The table entry indexed by the first @table_bits of that
+ * codeword cannot give the appropriate symbol directly, because that entry is
+ * guaranteed to be referenced by the Huffman codewords of multiple symbols.
+ * And while the LZX compression format does not allow codes longer than 16
+ * bits, a table of size (2 ** 16) = 65536 entries would be too slow to create.
  *
  * There are several different ways to make it possible to look up the symbols
- * for codes longer than @num_bits.  A common way is to make the entries for the
- * prefixes of length @num_bits of those entries be pointers to additional
+ * for codewords longer than @table_bits.  One way is to make the entries for
+ * the prefixes of length @table_bits of those entries be pointers to additional
  * decoding tables that are indexed by some number of additional bits of the
- * code symbol.  The technique used here is a bit simpler, however.  We just
- * store the needed subtrees of the Huffman tree in the decoding table after the
- * lookup entries, beginning at index (2**num_bits).  Real pointers are
- * replaced by indices into the decoding table, and we distinguish symbol
- * entries from pointers by the fact that values less than @num_syms must be
- * symbol values.
+ * codeword.  The technique used here is a bit simpler, however: just store the
+ * needed subtrees of the Huffman tree in the decoding table after the lookup
+ * entries, beginning at index (2**table_bits).  Real pointers are replaced by
+ * indices into the decoding table, and symbol entries are distinguished from
+ * pointers by the fact that values less than @num_syms must be symbol values.
  */
 int make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
-			      unsigned num_bits, const u8 lens[],
-			      unsigned max_code_len)
+			      unsigned table_bits, const u8 lens[],
+			      unsigned max_codeword_len)
 {
-	/* Number of entries in the decode table. */
-	u32 table_num_entries = 1 << num_bits;
+	unsigned len_counts[max_codeword_len + 1];
+	u16 sorted_syms[num_syms];
+	unsigned offsets[max_codeword_len + 1];
+	const unsigned table_num_entries = 1 << table_bits;
 
-	/* Current position in the decode table. */
-	u32 decode_table_pos = 0;
+	/* accumulate lengths for codes */
+	for (unsigned i = 0; i <= max_codeword_len; i++)
+		len_counts[i] = 0;
 
-	/* Fill entries for codes short enough for a direct mapping.  Here we
-	 * are taking advantage of the ordering of the codes, since they are for
-	 * a canonical Huffman tree.  It must be the case that all the codes of
-	 * some length @code_length, zero-extended or one-extended, numerically
-	 * precede all the codes of length @code_length + 1.  Furthermore, if we
-	 * have 2 symbols A and B, such that A is listed before B in the lens
-	 * array, and both symbols have the same code length, then we know that
-	 * the code for A numerically precedes the code for B.
-	 * */
-	for (unsigned code_len = 1; code_len <= num_bits; code_len++) {
+	for (unsigned sym = 0; sym < num_syms; sym++) {
+		wimlib_assert2(lens[sym] <= max_codeword_len);
+		len_counts[lens[sym]]++;
+	}
 
-		/* Number of entries that a code of length @code_length would
-		 * need.  */
-		u32 code_num_entries = 1 << (num_bits - code_len);
-
-
-		/* For each symbol of length @code_len, fill in its entries in
-		 * the decode table. */
-		for (unsigned sym = 0; sym < num_syms; sym++) {
-
-			if (lens[sym] != code_len)
-				continue;
-
-
-			/* Check for table overrun.  This can only happen if the
-			 * given lengths do not correspond to a valid Huffman
-			 * tree.  */
-			if (decode_table_pos >= table_num_entries) {
-				ERROR("Huffman decoding table overrun: "
-				      "pos = %u, num_entries = %u",
-				      decode_table_pos, table_num_entries);
-				return 1;
-			}
-
-			/* Fill all possible lookups of this symbol with
-			 * the symbol itself. */
-			for (unsigned i = 0; i < code_num_entries; i++)
-				decode_table[decode_table_pos + i] = sym;
-
-			/* Increment the position in the decode table by
-			 * the number of entries that were just filled
-			 * in. */
-			decode_table_pos += code_num_entries;
+	/* check for an over-subscribed or incomplete set of lengths */
+	int left = 1;
+	for (unsigned len = 1; len <= max_codeword_len; len++) {
+		left <<= 1;
+		left -= len_counts[len];
+		if (left < 0) { /* over-subscribed */
+			ERROR("Invalid Huffman code (over-subscribed)");
+			return -1;
+		}
+	}
+	if (left != 0) /* incomplete set */{
+		if (left == 1 << max_codeword_len) {
+			/* Empty code--- okay in XPRESS and LZX */
+			memset(decode_table, 0,
+			       table_num_entries * sizeof(decode_table[0]));
+			return 0;
+		} else {
+			ERROR("Invalid Huffman code (incomplete set)");
+			return -1;
 		}
 	}
 
-	/* If all entries of the decode table have been filled in, there are no
-	 * codes longer than num_bits, so we are done filling in the decode
-	 * table. */
-	if (decode_table_pos == table_num_entries)
-		return 0;
+	/* Generate offsets into symbol table for each length for sorting */
+	offsets[1] = 0;
+	for (unsigned len = 1; len < max_codeword_len; len++)
+		offsets[len + 1] = offsets[len] + len_counts[len];
 
-	/* Otherwise, fill in the remaining entries, which correspond to codes longer
-	 * than @num_bits. */
+	/* Sort symbols primarily by length and secondarily by symbol order.
+	 * This is basically a count-sort over the codeword lengths.
+	 * In the process, calculate the number of symbols that have nonzero
+	 * length and are therefore used in the symbol stream. */
+	unsigned num_used_syms = 0;
+	for (unsigned sym = 0; sym < num_syms; sym++) {
+		if (lens[sym] != 0) {
+			sorted_syms[offsets[lens[sym]]++] = sym;
+			num_used_syms++;
+		}
+	}
 
+	/* Fill entries for codewords short enough for a direct mapping.  We can
+	 * take advantage of the ordering of the codewords, since the Huffman
+	 * code is canonical.  It must be the case that all the codewords of
+	 * some length L numerically precede all the codewords of length L + 1.
+	 * Furthermore, if we have 2 symbols A and B with the same codeword
+	 * length but symbol A is sorted before symbol B, then then we know that
+	 * the codeword for A numerically precedes the codeword for B. */
+	unsigned decode_table_pos = 0;
+	unsigned i = 0;
 
-	/* First, zero out the rest of the entries; this is necessary so
-	 * that the entries appear as "unallocated" in the next part.  */
-	for (unsigned i = decode_table_pos; i < table_num_entries; i++)
-		decode_table[i] = 0;
+	wimlib_assert2(num_used_syms != 0);
+	while (1) {
+		unsigned sym = sorted_syms[i];
+		unsigned codeword_len = lens[sym];
+		if (codeword_len > table_bits)
+			break;
 
-	/* Assert that 2**num_bits is at least num_syms.  If this wasn't the
+		unsigned num_entries = 1 << (table_bits - codeword_len);
+		if (num_entries >=
+			(sizeof(unsigned long) / sizeof(decode_table[0])))
+		{
+			wimlib_assert2(decode_table_pos % 4 == 0);
+			BUILD_BUG_ON(sizeof(unsigned long) != 4 &&
+				     sizeof(unsigned long) != 8);
+
+			unsigned long *p = (unsigned long *)&decode_table[decode_table_pos];
+			unsigned long n = num_entries /
+						(sizeof(unsigned long) /
+							sizeof(decode_table[0]));
+			unsigned long v = sym;
+			if (sizeof(unsigned long) >= 4)
+				v |= v << 16;
+			if (sizeof(unsigned long) >= 8)
+				v |= v << 32;
+			do {
+				*p++ = v;
+			} while (--n);
+
+			decode_table_pos += num_entries;
+		} else {
+			do {
+				decode_table[decode_table_pos++] = sym;
+			} while (--num_entries);
+		}
+		wimlib_assert2(decode_table_pos <= table_num_entries);
+		if (++i == num_used_syms) {
+			wimlib_assert2(decode_table_pos == table_num_entries);
+			/* No codewords were longer than @table_bits, so the
+			 * table is now entirely filled with the codewords. */
+			return 0;
+		}
+	}
+
+	wimlib_assert2(i < num_used_syms);
+	wimlib_assert2(decode_table_pos < table_num_entries);
+
+	/* Fill in the remaining entries, which correspond to codes longer than
+	 * @table_bits.
+	 *
+	 * First, zero out the rest of the entries.  This is necessary so that
+	 * the entries appear as "unallocated" in the next part. */
+	{
+		unsigned j = decode_table_pos;
+		do {
+			decode_table[j] = 0;
+		} while (++j != table_num_entries);
+	}
+
+	/* Assert that 2**table_bits is at least num_syms.  If this wasn't the
 	 * case, we wouldn't be able to distinguish pointer entries from symbol
 	 * entries. */
-	wimlib_assert((1 << num_bits) >= num_syms);
+	wimlib_assert2(table_num_entries >= num_syms);
 
+	/* The current Huffman codeword  */
+	unsigned cur_codeword = decode_table_pos;
 
-	/* The current Huffman code.  */
-	unsigned current_code = decode_table_pos;
-
-	/* The tree nodes are allocated starting at
-	 * decode_table[table_num_entries].  Remember that the full size of the
-	 * table, including the extra space for the tree nodes, is actually
-	 * 2**num_bits + 2 * num_syms slots, while table_num_entries is only
-	 * 2**num_bits. */
+	/* The tree nodes are allocated starting at decode_table[1 <<
+	 * table_bits].  Remember that the full size of the table, including the
+	 * extra space for the tree nodes, is actually 2**table_bits + 2 *
+	 * num_syms slots, while table_num_entries is only 2**table_Bits. */
 	unsigned next_free_tree_slot = table_num_entries;
 
-	/* Go through every codeword of length greater than @num_bits.  Note:
-	 * the LZX format guarantees that the codeword length can be at most 16
-	 * bits. */
-	for (unsigned code_len = num_bits + 1; code_len <= max_code_len;
-							code_len++)
-	{
-		current_code <<= 1;
-		for (unsigned sym = 0; sym < num_syms; sym++) {
-			if (lens[sym] != code_len)
-				continue;
+	/* Go through every codeword of length greater than @table_bits,
+	 * primarily in order of codeword length and secondarily in order of
+	 * symbol. */
+	unsigned prev_codeword_len = table_bits;
+	do {
+		unsigned sym = sorted_syms[i];
+		unsigned codeword_len = lens[sym];
+		unsigned extra_bits = codeword_len - table_bits;
+		unsigned extra_mask;
 
+		cur_codeword <<= (codeword_len - prev_codeword_len);
+		prev_codeword_len = codeword_len;
 
-			/* i is the index of the current node; find it from the
-			 * prefix of the current Huffman code. */
-			unsigned i = current_code >> (code_len - num_bits);
+		/* index of the current node; find it from the prefix of the
+		 * current Huffman codeword. */
+		unsigned node_idx = cur_codeword >> extra_bits;
+		wimlib_assert2(node_idx < table_num_entries);
 
-			if (i >= (1 << num_bits)) {
-				ERROR("Invalid canonical Huffman code");
-				return 1;
+		/* Go through each bit of the current Huffman codeword beyond
+		 * the prefix of length @table_bits and walk the tree,
+		 * allocating any slots that have not yet been allocated. */
+		do {
+
+			/* If the current tree node points to nowhere
+			 * but we need to follow it, allocate a new node
+			 * for it to point to. */
+			if (decode_table[node_idx] == 0) {
+				decode_table[node_idx] = next_free_tree_slot;
+				decode_table[next_free_tree_slot++] = 0;
+				decode_table[next_free_tree_slot++] = 0;
+				wimlib_assert2(next_free_tree_slot <=
+					       table_num_entries + 2 * num_syms);
 			}
 
-			/* Go through each bit of the current Huffman code
-			 * beyond the prefix of length num_bits and walk the
-			 * tree, "allocating" slots that have not yet been
-			 * allocated. */
-			for (int bit_num = num_bits + 1; bit_num <= code_len; bit_num++) {
+			/* Set node_idx to left child */
+			node_idx = decode_table[node_idx];
 
-				/* If the current tree node points to nowhere
-				 * but we need to follow it, allocate a new node
-				 * for it to point to. */
-				if (decode_table[i] == 0) {
-					decode_table[i] = next_free_tree_slot;
-					decode_table[next_free_tree_slot++] = 0;
-					decode_table[next_free_tree_slot++] = 0;
-				}
+			/* Is the next bit 0 or 1? If 0, go left (already done).
+			 * If 1, go right by incrementing node_idx. */
+			--extra_bits;
+			node_idx += (cur_codeword >> extra_bits) & 1;
+		} while (extra_bits != 0);
 
-				i = decode_table[i];
+		/* node_idx is now the index of the leaf entry into which the
+		 * actual symbol will go. */
+		decode_table[node_idx] = sym;
 
-				/* Is the next bit 0 or 1? If 0, go left;
-				 * otherwise, go right (by incrementing i by 1) */
-				int bit_pos = code_len - bit_num;
-
-				int bit = (current_code & (1 << bit_pos)) >>
-								bit_pos;
-				i += bit;
-			}
-
-			/* i is now the index of the leaf entry into which the
-			 * actual symbol will go. */
-			decode_table[i] = sym;
-
-			/* Increment decode_table_pos only if the prefix of the
-			 * Huffman code changes. */
-			if (current_code >> (code_len - num_bits) !=
-					(current_code + 1) >> (code_len - num_bits))
-				decode_table_pos++;
-
-			/* current_code is always incremented because this is
-			 * how canonical Huffman codes are generated (add 1 for
-			 * each code, then left shift whenever the code length
-			 * increases) */
-			current_code++;
-		}
-	}
-
-
-	/* If the lengths really represented a valid Huffman tree, all
-	 * @table_num_entries in the table will have been filled.  However, it
-	 * is also possible that the tree is completely empty (as noted
-	 * earlier) with all 0 lengths, and this is expected to succeed. */
-
-	if (decode_table_pos != table_num_entries) {
-
-		for (unsigned i = 0; i < num_syms; i++) {
-			if (lens[i] != 0) {
-				ERROR("Lengths do not form a valid canonical "
-				      "Huffman tree (only filled %u of %u "
-				      "decode table slots)",
-				      decode_table_pos, table_num_entries);
-				return 1;
-			}
-		}
-	}
+		/* cur_codeword is always incremented because this is
+		 * how canonical Huffman codes are generated (add 1 for
+		 * each code, then left shift whenever the code length
+		 * increases) */
+		cur_codeword++;
+	} while (++i != num_used_syms);
 	return 0;
 }
 
