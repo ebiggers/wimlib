@@ -350,14 +350,13 @@ try_building_tree_again:
 	while (1) {
 
 		/* Lowest frequency node. */
-		HuffmanNode *f1 = NULL;
+		HuffmanNode *f1;
 
 		/* Second lowest frequency node. */
-		HuffmanNode *f2 = NULL;
+		HuffmanNode *f2;
 
-		/* Get the lowest and second lowest frequency nodes from
-		 * the remaining leaves or from the intermediate nodes.
-		 * */
+		/* Get the lowest and second lowest frequency nodes from the
+		 * remaining leaves or from the intermediate nodes. */
 
 		if (cur_leaf != end_leaf && (cur_inode == next_inode ||
 					cur_leaf->freq <= cur_inode->freq)) {
@@ -371,11 +370,10 @@ try_building_tree_again:
 			f2 = (HuffmanNode*)cur_leaf++;
 		} else if (cur_inode != next_inode) {
 			f2 = cur_inode++;
-		}
-
-		/* All nodes used up! */
-		if (f1 == NULL || f2 == NULL)
+		} else {
+			/* All nodes used up! */
 			break;
+		}
 
 		/* next_inode becomes the parent of f1 and f2. */
 
