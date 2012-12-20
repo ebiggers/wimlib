@@ -78,7 +78,7 @@ to set or get DOS names, file attributes, or security
 descriptors in a mounted WIM.
 
 By default, changes to a read-write WIM are made in-place by appending to the
-WIM.  This is ideal for big WIM files, since the entire file doesn't have to be
+WIM.  This is nice for big WIM files, since the entire file doesn't have to be
 rebuilt to make a small change.  But, if you are making many changes to a
 read-write mounted WIM, especially deleting large files, it is suggested to
 provide the \fB--rebuild\fR option to \fBimagex unmount\fR to force the WIM to

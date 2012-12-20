@@ -474,7 +474,6 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	ntfs_inode_close(ni);
 out_free_utf8_name:
 	FREE(utf8_name);
-out:
 	return ret;
 }
 

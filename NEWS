@@ -18,6 +18,9 @@ Version 1.2.1:
 	A small change has been made to XPRESS compression and it should improve
 	the compression ratio slightly.
 
+	A change was made that may improve performance slightly when applying a
+	WIM image to a NTFS volume.
+
 	Microsoft has managed to introduce even more bugs into their software,
 	and now the WIMs for Windows 8 have incorrect (too low) reference counts
 	for some streams.  This is unsafe because such streams can be removed
@@ -28,6 +31,8 @@ Version 1.2.1:
 	WIMLIB_MOUNT_FLAG_READWRITE ('imagex mountrw').  Please note that this
 	requires reading the metadata for all images in the WIM, so this will
 	make these operations noticably slower on WIMs with multiple images.
+
+	Various other bugfixes.
 
 Version 1.2.0:
 	Appending images to a WIM is now be done by default without re-building

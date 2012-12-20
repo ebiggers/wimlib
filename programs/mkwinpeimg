@@ -20,6 +20,7 @@
 
 script_name="$(basename $0)"
 PREFIX_REG="::"
+WIMLIB_VERSION=1.2.1
 
 calc_columns () {
 	STAT_COL=80
@@ -113,7 +114,7 @@ EOF
 }
 
 version() {
-	echo "$script_name (wimlib 0.4.8)"
+	echo "$script_name (wimlib $WIMLIB_VERSION)"
 	exit 0
 }
 

@@ -390,9 +390,6 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
 	}
 	/* If there's a dentry with a DOS name, extract it first */
 	if (dentry_with_dos_name && !dentry_with_dos_name->is_extracted) {
-		char *p;
-		const char *dir_name;
-		char orig;
 		int ret;
 		ntfs_volume *vol = (*dir_ni_p)->vol;
 

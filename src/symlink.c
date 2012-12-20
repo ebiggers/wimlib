@@ -149,24 +149,23 @@ static int make_symlink_reparse_data_buf(const char *symlink_target,
 			((u16*)name_utf16)[i] = cpu_to_le16('\\');
 	size_t len = 12 + utf16_len * 2;
 	void *buf = MALLOC(len);
-	if (!buf) {
-		FREE(name_utf16);
-		return WIMLIB_ERR_NOMEM;
+	if (buf) {
+		u8 *p = buf;
+		p = put_u16(p, utf16_len); /* Substitute name offset */
+		p = put_u16(p, utf16_len); /* Substitute name length */
+		p = put_u16(p, 0); /* Print name offset */
+		p = put_u16(p, utf16_len); /* Print name length */
+		p = put_u32(p, 1); /* flags: 0 iff *full* target, including drive letter??? */
+		p = put_bytes(p, utf16_len, (const u8*)name_utf16);
+		p = put_bytes(p, utf16_len, (const u8*)name_utf16);
+		*len_ret = len;
+		*buf_ret = buf;
+		ret = 0;
+	} else {
+		ret = WIMLIB_ERR_NOMEM;
 	}
-
-	u8 *p = buf;
-	p = put_u16(p, utf16_len); /* Substitute name offset */
-	p = put_u16(p, utf16_len); /* Substitute name length */
-	p = put_u16(p, 0); /* Print name offset */
-	p = put_u16(p, utf16_len); /* Print name length */
-	p = put_u32(p, 1); /* flags: 0 iff *full* target, including drive letter??? */
-	p = put_bytes(p, utf16_len, (const u8*)name_utf16);
-	p = put_bytes(p, utf16_len, (const u8*)name_utf16);
-	*len_ret = len;
-	*buf_ret = buf;
-out:
 	FREE(name_utf16);
-	return 0;
+	return ret;
 }
 
 /* Get the symlink target from a dentry.
