@@ -825,7 +825,7 @@ enum wimlib_error_code {
  * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
  * 	@a wim is part of a split WIM.  Adding an image to a split WIM is
  * 	unsupported.
- * @retval ::WIMLIB_ERR_UNSUPPORTED:
+ * @retval ::WIMLIB_ERR_UNSUPPORTED
  * 	::WIMLIB_ADD_IMAGE_FLAG_NTFS was specified in @a add_image_flags, but
  * 	wimlib was configured with the @c --without-ntfs-3g flag.
  */
@@ -1360,7 +1360,7 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
 /**
  * Mounts an image in a WIM file on a directory read-only or read-write.
  *
- * The calling thread will be daemonized service the filesystem, and this
+ * The calling thread will be daemonized to service the filesystem, and this
  * function will not return until the image is unmounted, unless an error occurs
  * before the filesystem is successfully mounted.
  *
@@ -1967,8 +1967,9 @@ extern int wimlib_split(WIMStruct *wim, const char *swm_name,
  * @param dir
  * 	The directory that the WIM image was mounted on.
  * @param unmount_flags
- * 	Bitwise OR of the flags ::WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY and/or
- * 	::WIMLIB_UNMOUNT_FLAG_COMMIT.  Neither of these flags affect read-only
+ * 	Bitwise OR of the flags ::WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY,
+ * 	::WIMLIB_UNMOUNT_FLAG_COMMIT, ::WIMLIB_UNMOUNT_FLAG_REBUILD, and/or
+ * 	::WIMLIB_UNMOUNT_FLAG_RECOMPRESS.  None of these flags affect read-only
  * 	mounts.
  * @param progress_func
  * 	If non-NULL, a function that will be called periodically with the
