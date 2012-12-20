@@ -131,6 +131,12 @@ extern void wimlib_warning(const char *format, ...)
 #	define wimlib_assert(expr)
 #endif
 
+#ifdef ENABLE_MORE_ASSERTIONS
+#define wimlib_assert2(expr) wimlib_assert(expr)
+#else
+#define wimlib_assert2(expr)
+#endif
+
 
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 extern void *(*wimlib_malloc_func)(size_t);

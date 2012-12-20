@@ -127,6 +127,17 @@ if test "x$ENABLE_ASSERTIONS" = "xyes"; then
 	AC_DEFINE([ENABLE_ASSERTIONS], [1], [Define to 1 if including assertions.])
 fi
 
+AC_MSG_CHECKING([whether to include more assertions])
+AC_ARG_ENABLE([more-assertions],
+	AS_HELP_STRING([--enable-more-assertions], [include even more assertions]),
+	[ENABLE_MORE_ASSERTIONS=$enableval],
+	[ENABLE_MORE_ASSERTIONS=no]
+	)
+AC_MSG_RESULT([$ENABLE_MORE_ASSERTIONS])
+if test "x$ENABLE_MORE_ASSERTIONS" = "xyes"; then
+	AC_DEFINE([ENABLE_MORE_ASSERTIONS], [1], [Define to 1 if including more assertions.])
+fi
+
 
 AC_MSG_CHECKING([whether to include compression verification])
 AC_ARG_ENABLE([verify_compression],

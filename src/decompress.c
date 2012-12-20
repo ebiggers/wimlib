@@ -31,7 +31,7 @@
 int bitstream_read_bytes(struct input_bitstream *stream, size_t n, void *dest)
 {
 	/* Precondition:  The bitstream is 16-byte aligned. */
-	wimlib_assert(stream->bitsleft % 16 == 0);
+	wimlib_assert2(stream->bitsleft % 16 == 0);
 
 	u8 *p = dest;
 
@@ -64,34 +64,6 @@ int bitstream_read_bytes(struct input_bitstream *stream, size_t n, void *dest)
 		stream->bitbuf |= (input_bitbuf_t)(*stream->data) <<
 					(sizeof(input_bitbuf_t) * 8 - 8);
 		stream->data++;
-	}
-	return 0;
-}
-
-/* Aligns the bitstream on a 16-bit boundary.
- *
- * Note: M$'s idea of "alignment" means that for some reason, a 16-bit word
- * should be skipped over if the buffer happens to already be aligned on such a
- * boundary.  This only applies for realigning the stream after the blocktype
- * and length fields of an uncompressed block, however; it does not apply when
- * realigning the stream after the end of the uncompressed block.
- */
-int align_input_bitstream(struct input_bitstream *stream,
-			  bool skip_word_if_aligned)
-{
-	int ret;
-	if (stream->bitsleft % 16 != 0) {
-		bitstream_remove_bits(stream, stream->bitsleft % 16);
-	} else if (skip_word_if_aligned) {
-		if (stream->bitsleft == 0) {
-			ret = bitstream_ensure_bits(stream, 16);
-			if (ret != 0) {
-				ERROR("Unexpected end of input when "
-				      "aligning bitstream");
-				return ret;
-			}
-		}
-		bitstream_remove_bits(stream, 16);
 	}
 	return 0;
 }
@@ -329,12 +301,12 @@ int make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
 
 /* Reads a Huffman-encoded symbol when it is known there are less than
  * MAX_CODE_LEN bits remaining in the bitstream. */
-static int read_huffsym_near_end_of_input(struct input_bitstream *istream,
-					  const u16 decode_table[],
-					  const u8 lens[],
-					  unsigned num_syms,
-					  unsigned table_bits,
-					  unsigned *n)
+int read_huffsym_near_end_of_input(struct input_bitstream *istream,
+				   const u16 decode_table[],
+				   const u8 lens[],
+				   unsigned num_syms,
+				   unsigned table_bits,
+				   unsigned *n)
 {
 	unsigned bitsleft = istream->bitsleft;
 	unsigned key_size;
@@ -369,66 +341,4 @@ static int read_huffsym_near_end_of_input(struct input_bitstream *istream,
 	}
 	*n = sym;
 	return 0;
-}
-
-/*
- * Reads a Huffman-encoded symbol from a bitstream.
- *
- * This function may be called hundreds of millions of times when extracting a
- * large WIM file.  I'm not sure it could be made much faster that it is,
- * especially since there isn't enough time to make a big table that allows
- * decoding multiple symbols per lookup.  But if extracting files to a hard
- * disk, the IO will be the bottleneck anyway.
- *
- * @buf:	The input buffer from which the symbol will be read.
- * @decode_table:	The fast Huffman decoding table for the Huffman tree.
- * @lengths:		The table that gives the length of the code for each
- * 				symbol.
- * @num_symbols:	The number of symbols in the Huffman code.
- * @table_bits:		Huffman codes this length or less can be looked up
- * 				directory in the decode_table, as the
- * 				decode_table contains 2**table_bits entries.
- */
-int read_huffsym(struct input_bitstream *stream,
-		 const u16 decode_table[],
-		 const u8 lengths[],
-		 unsigned num_symbols,
-		 unsigned table_bits,
-		 unsigned *n,
-		 unsigned max_codeword_len)
-{
-	/* In the most common case, there are at least max_codeword_len bits
-	 * remaining in the stream. */
-	if (bitstream_ensure_bits(stream, max_codeword_len) == 0) {
-
-		/* Use the next table_bits of the input as an index into the
-		 * decode_table. */
-		u16 key_bits = bitstream_peek_bits(stream, table_bits);
-
-		u16 sym = decode_table[key_bits];
-
-		/* If the entry in the decode table is not a valid symbol, it is
-		 * the offset of the root of its Huffman subtree. */
-		if (sym >= num_symbols) {
-			bitstream_remove_bits(stream, table_bits);
-			do {
-				key_bits = sym + bitstream_peek_bits(stream, 1);
-				bitstream_remove_bits(stream, 1);
-
-				wimlib_assert(key_bits < num_symbols * 2 +
-							(1 << table_bits));
-			} while ((sym = decode_table[key_bits]) >= num_symbols);
-		} else {
-			wimlib_assert(lengths[sym] <= table_bits);
-			bitstream_remove_bits(stream, lengths[sym]);
-		}
-		*n = sym;
-		return 0;
-	} else {
-		/* Otherwise, we must be careful to use only the bits that are
-		 * actually remaining.  */
-		return read_huffsym_near_end_of_input(stream, decode_table,
-						      lengths, num_symbols,
-						      table_bits, n);
-	}
 }

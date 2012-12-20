@@ -443,9 +443,12 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 
 	case LZX_BLOCKTYPE_UNCOMPRESSED:
 		LZX_DEBUG("Found uncompressed block.");
-		ret = align_input_bitstream(istream, true);
+
+		/* Mystery bit! */
+		ret = bitstream_read_bits(istream, 1, &i);
 		if (ret != 0)
 			return ret;
+		align_input_bitstream(istream);
 		ret = bitstream_read_bytes(istream, sizeof(R), R);
 		if (ret != 0)
 			return ret;
@@ -826,7 +829,7 @@ int lzx_decompress(const void *compressed_data, unsigned compressed_len,
 			if (ret != 0)
 				return ret;
 			if (block_size & 1)
-				align_input_bitstream(&istream, false);
+				align_input_bitstream(&istream);
 			break;
 		default:
 			wimlib_assert(0);
