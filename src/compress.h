@@ -12,6 +12,10 @@
 
 typedef u16 output_bitbuf_t;
 
+/* Assuming that WIM chunks are at most 32768 bytes, 16 bits is enough for any
+ * symbol frequency. */
+typedef u16 freq_t;
+
 /* Structure to keep track of the current position in the compressed output. */
 struct output_bitstream {
 
@@ -88,7 +92,7 @@ extern int flush_output_bitstream(struct output_bitstream *ostream);
 
 extern void make_canonical_huffman_code(unsigned num_syms,
 					unsigned max_codeword_len,
-					const u32 freq_tab[],
+					const freq_t freq_tab[],
 					u8 lens[],
 					u16 codewords[]);
 

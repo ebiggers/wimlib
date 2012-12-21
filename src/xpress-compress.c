@@ -90,7 +90,7 @@ static int xpress_write_compressed_literals(struct output_bitstream *ostream,
 
 static u32 xpress_record_literal(u8 literal, void *__freq_tab)
 {
-	u32 *freq_tab = __freq_tab;
+	freq_t *freq_tab = __freq_tab;
 	freq_tab[literal]++;
 	return literal;
 }
@@ -121,7 +121,7 @@ static u32 xpress_record_match(unsigned match_offset, unsigned match_len,
 	u32 len_hdr = min(adjusted_match_len, 0xf);
 	u32 offset_bsr = bsr32(match_offset);
 	u32 sym = len_hdr | (offset_bsr << 4) | XPRESS_NUM_CHARS;
-	((u32*)freq_tab)[sym]++;
+	((freq_t*)freq_tab)[sym]++;
 	return adjusted_match_len | (match_offset << 16);
 }
 
@@ -159,7 +159,7 @@ int xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 	u8 *compressed_data = __compressed_data;
 	struct output_bitstream ostream;
 	u32 match_tab[uncompressed_len];
-	u32 freq_tab[XPRESS_NUM_SYMBOLS];
+	freq_t freq_tab[XPRESS_NUM_SYMBOLS];
 	u16 codewords[XPRESS_NUM_SYMBOLS];
 	u8 lens[XPRESS_NUM_SYMBOLS];
 	unsigned num_matches;

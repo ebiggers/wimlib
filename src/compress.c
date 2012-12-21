@@ -224,7 +224,7 @@ static void huffman_tree_compute_path_lengths(HuffmanNode *node, u16 cur_len)
  * 			for symbol i.
  */
 void make_canonical_huffman_code(unsigned num_syms, unsigned max_codeword_len,
-				 const u32 freq_tab[], u8 lens[],
+				 const freq_t freq_tab[], u8 lens[],
 				 u16 codewords[])
 {
 	/* We require at least 2 possible symbols in the alphabet to produce a

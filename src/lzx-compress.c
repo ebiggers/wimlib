@@ -77,9 +77,9 @@ struct lzx_codes {
 };
 
 struct lzx_freq_tables {
-	u32 main_freq_table[LZX_MAINTREE_NUM_SYMBOLS];
-	u32 len_freq_table[LZX_LENTREE_NUM_SYMBOLS];
-	u32 aligned_freq_table[LZX_ALIGNEDTREE_NUM_SYMBOLS];
+	freq_t main_freq_table[LZX_MAINTREE_NUM_SYMBOLS];
+	freq_t len_freq_table[LZX_LENTREE_NUM_SYMBOLS];
+	freq_t aligned_freq_table[LZX_ALIGNEDTREE_NUM_SYMBOLS];
 };
 
 /* Returns the LZX position slot that corresponds to a given formatted offset.
@@ -122,7 +122,7 @@ static inline unsigned lzx_get_position_slot(unsigned formatted_offset)
 
 static u32 lzx_record_literal(u8 literal, void *__main_freq_tab)
 {
-	u32 *main_freq_tab = __main_freq_tab;
+	freq_t *main_freq_tab = __main_freq_tab;
 	main_freq_tab[literal]++;
 	return literal;
 }
@@ -406,7 +406,7 @@ static int lzx_write_compressed_tree(struct output_bitstream *out,
 {
 	/* Frequencies of the length symbols, including the RLE symbols (NOT the
 	 * actual lengths themselves). */
-	unsigned pretree_freqs[LZX_PRETREE_NUM_SYMBOLS];
+	freq_t pretree_freqs[LZX_PRETREE_NUM_SYMBOLS];
 	u8 pretree_lens[LZX_PRETREE_NUM_SYMBOLS];
 	u16 pretree_codewords[LZX_PRETREE_NUM_SYMBOLS];
 	u8 output_syms[num_symbols * 2];
