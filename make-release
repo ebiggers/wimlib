@@ -1,0 +1,42 @@
+#!/bin/bash
+
+oldver='1\.2\.1'
+oldmonth=December
+oldyear=2012
+
+newmajor=1
+newminor=2
+newpatch=2
+newmonth=December
+newyear=2012
+
+
+newver="${newmajor}.${newminor}.${newpatch}"
+pat='This is wimlib version [^[:space:]]\+ ([^[:space:]]\+ [^[:space:]]\+)'
+sed -i "s/$pat/This is wimlib version $newver ($newmonth $newyear)/" README
+
+sed -i "s/$oldver/$newver/" configure.ac
+
+sed -i -e 's/\(#define WIMLIB_MAJOR_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'$newmajor'/' \
+       -e 's/\(#define WIMLIB_MINOR_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'$newminor'/' \
+       -e 's/\(#define WIMLIB_PATCH_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'$newpatch'/' \
+       -e 's/\(the library interface of wimlib \)'$oldver'/\1'$newver'/' \
+	  src/wimlib.h
+
+sed -i -e "1s/$oldmonth $oldyear/$newmonth $newyear/" doc/*.1.in
+
+sed -i "s/pkgver=$oldver/pkgver=$newver/" archlinux/PKGBUILD
+
+sed -i "1i\\
+wimlib ($newver-1) unstable; urgency=low\\
+\\
+  * Update to v$newver\\
+\\
+ -- Eric Biggers <ebiggers3gmail.com>  $(date -R)\\
+" debian/changelog
+
+sed -i 's/\(Version:[[:space:]]*\)[^[:space:]]\+/\1'"$newver"'/' \
+		rpm/*.spec
+
+sed -i 's/WIMLIB_VERSION=[^[:space:]]\+/WIMLIB_VERSION='"$newver"'/' \
+		programs/mkwinpeimg
