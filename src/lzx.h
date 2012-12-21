@@ -70,16 +70,35 @@
  * though the blocks themselves are not this size, and the size of the actual
  * file resource in the WIM file is very likely to be something entirely
  * different as well.  */
-#define LZX_MAGIC_FILESIZE           12000000
+#define LZX_WIM_MAGIC_FILESIZE		12000000
 
+#define USE_LZX_EXTRA_BITS_ARRAY
+
+#ifdef USE_LZX_EXTRA_BITS_ARRAY
 extern const u8 lzx_extra_bits[LZX_NUM_POSITION_SLOTS];
+#endif
+
+/* Given the number of a LZX position slot, return the number of extra bits that
+ * are needed to encode the match offset. */
+static inline unsigned lzx_get_num_extra_bits(unsigned position_slot)
+{
+#ifdef USE_LZX_EXTRA_BITS_ARRAY
+	/* Use a table */
+	return lzx_extra_bits[position_slot];
+#else
+	/* Calculate directly using a shift and subtraction. */
+	wimlib_assert(position_slot >= 2 && position_slot <= 37);
+	return (position_slot >> 1) - 1;
+#endif
+}
+
 extern const u32 lzx_position_base[LZX_NUM_POSITION_SLOTS];
 
 /* Least-recently used queue for match offsets. */
 struct lru_queue {
-	int R0;
-	int R1;
-	int R2;
+	u32 R0;
+	u32 R1;
+	u32 R2;
 };
 
 extern int lzx_decompress(const void *compressed_data, unsigned compressed_len,

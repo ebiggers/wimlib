@@ -620,7 +620,7 @@ int extract_wim_resource(const struct lookup_table_entry *lte,
 		u64 to_read = min(bytes_remaining, sizeof(buf));
 		ret = read_wim_resource(lte, buf, to_read, offset, 0);
 		if (ret != 0)
-			break;
+			return ret;
 		sha1_update(&ctx, buf, to_read);
 		ret = extract_chunk(buf, to_read, offset, extract_chunk_arg);
 		if (ret != 0) {

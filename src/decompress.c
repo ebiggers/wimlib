@@ -26,48 +26,6 @@
 #include "decompress.h"
 #include <string.h>
 
-/* Reads @n bytes from the bitstream @stream into the location pointed to by @dest.
- * The bitstream must be 16-bit aligned. */
-int bitstream_read_bytes(struct input_bitstream *stream, size_t n, void *dest)
-{
-	/* Precondition:  The bitstream is 16-byte aligned. */
-	wimlib_assert2(stream->bitsleft % 16 == 0);
-
-	u8 *p = dest;
-
-	/* Get the bytes currently in the buffer variable. */
-	while (stream->bitsleft != 0) {
-		if (n-- == 0)
-			return 0;
-		*p++ = bitstream_peek_bits(stream, 8);
-		bitstream_remove_bits(stream, 8);
-	}
-
-	/* Get the rest directly from the pointer to the data.  Of course, it's
-	 * necessary to check there are really n bytes available. */
-	if (n > stream->data_bytes_left) {
-		ERROR("Unexpected end of input when reading %zu bytes from "
-		      "bitstream (only have %u bytes left)",
-		      n, stream->data_bytes_left);
-		return 1;
-	}
-	memcpy(p, stream->data, n);
-	stream->data += n;
-	stream->data_bytes_left -= n;
-
-	/* It's possible to copy an odd number of bytes and leave the stream in
-	 * an inconsistent state. Fix it by reading the next byte, if it is
-	 * there. */
-	if ((n & 1) && stream->data_bytes_left != 0) {
-		stream->bitsleft = 8;
-		stream->data_bytes_left--;
-		stream->bitbuf |= (input_bitbuf_t)(*stream->data) <<
-					(sizeof(input_bitbuf_t) * 8 - 8);
-		stream->data++;
-	}
-	return 0;
-}
-
 /*
  * Builds a fast huffman decoding table from an array that gives the length of
  * the codeword for each symbol in the alphabet.  Originally based on code
@@ -356,7 +314,7 @@ int read_huffsym_near_end_of_input(struct input_bitstream *istream,
 		do {
 			if (bitsleft == 0) {
 				ERROR("Input stream exhausted");
-				return 1;
+				return -1;
 			}
 			key_bits = sym + bitstream_peek_bits(istream, 1);
 			bitstream_remove_bits(istream, 1);

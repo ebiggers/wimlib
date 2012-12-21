@@ -127,17 +127,6 @@ static u32 lzx_record_literal(u8 literal, void *__main_freq_tab)
 	return literal;
 }
 
-/* Equivalent to lzx_extra_bits[position_slot] except position_slot must be
- * between 2 and 37 */
-static inline unsigned lzx_get_num_extra_bits(unsigned position_slot)
-{
-#if 0
-	return lzx_extra_bits[position_slot];
-#endif
-	wimlib_assert(position_slot >= 2 && position_slot <= 37);
-	return (position_slot >> 1) - 1;
-}
-
 /* Constructs a match from an offset and a length, and updates the LRU queue and
  * the frequency of symbols in the main, length, and aligned offset alphabets.
  * The return value is a 32-bit number that provides the match in an
@@ -320,7 +309,7 @@ static int lzx_write_match(struct output_bitstream *out, int block_type,
 
 	wimlib_assert(position_slot < LZX_NUM_POSITION_SLOTS);
 
-	num_extra_bits = lzx_extra_bits[position_slot];
+	num_extra_bits = lzx_get_num_extra_bits(position_slot);
 
 	/* For aligned offset blocks with at least 3 extra bits, output the
 	 * verbatim bits literally, then the aligned bits encoded using the
@@ -596,41 +585,37 @@ static void lzx_make_huffman_codes(const struct lzx_freq_tables *freq_tabs,
 					codes->aligned_codewords);
 }
 
-/* Do the 'E8' preprocessing, where the targets of x86 CALL instructions were
- * changed from relative offsets to absolute offsets.  This type of
- * preprocessing can be used on any binary data even if it is not actually
- * machine code.  It seems to always be used in WIM files, even though there is
- * no bit to indicate that it actually is used, unlike in the LZX compressed
- * format as used in other file formats such as the cabinet format, where a bit
- * is reserved for that purpose. */
-static void do_call_insn_preprocessing(u8 uncompressed_data[],
-				       unsigned uncompressed_data_len)
+static void do_call_insn_translation(u32 *call_insn_target, int input_pos,
+				     int32_t file_size)
 {
-	int i = 0;
-	int file_size = LZX_MAGIC_FILESIZE;
-	int32_t rel_offset;
 	int32_t abs_offset;
+	int32_t rel_offset;
 
-	/* Not enabled in the last 6 bytes, which means the 5-byte call
-	 * instruction cannot start in the last *10* bytes. */
-	while (i < uncompressed_data_len - 10) {
-		if (uncompressed_data[i] != 0xe8) {
-			i++;
-			continue;
+	rel_offset = le32_to_cpu(*call_insn_target);
+	if (rel_offset >= -input_pos && rel_offset < file_size) {
+		if (rel_offset < file_size - input_pos) {
+			/* "good translation" */
+			abs_offset = rel_offset + input_pos;
+		} else {
+			/* "compensating translation" */
+			abs_offset = rel_offset - file_size;
 		}
-		rel_offset = le32_to_cpu(*(int32_t*)(uncompressed_data + i + 1));
+		*call_insn_target = cpu_to_le32(abs_offset);
+	}
+}
 
-		if (rel_offset >= -i && rel_offset < file_size) {
-			if (rel_offset < file_size - i) {
-				/* "good translation" */
-				abs_offset = rel_offset + i;
-			} else {
-				/* "compensating translation" */
-				abs_offset = rel_offset - file_size;
-			}
-			*(int32_t*)(uncompressed_data + i + 1) = cpu_to_le32(abs_offset);
+/* This is the reverse of undo_call_insn_preprocessing() in lzx-decompress.c.
+ * See the comment above that function for more information. */
+static void do_call_insn_preprocessing(u8 uncompressed_data[],
+				       int uncompressed_data_len)
+{
+	for (int i = 0; i < uncompressed_data_len - 10; i++) {
+		if (uncompressed_data[i] == 0xe8) {
+			do_call_insn_translation((u32*)&uncompressed_data[i + 1],
+						 i,
+						 LZX_WIM_MAGIC_FILESIZE);
+			i += 4;
 		}
-		i += 5;
 	}
 }
 
@@ -670,7 +655,7 @@ int lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 		 void *compressed_data, unsigned *compressed_len_ret)
 {
 	struct output_bitstream ostream;
-	u8 uncompressed_data[uncompressed_len + LZX_MAX_MATCH];
+	u8 uncompressed_data[uncompressed_len + 8];
 	struct lzx_freq_tables freq_tabs;
 	struct lzx_codes codes;
 	u32 match_tab[uncompressed_len];

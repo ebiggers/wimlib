@@ -1,5 +1,6 @@
 #include "lzx.h"
 
+#ifdef USE_LZX_EXTRA_BITS_ARRAY
 /* LZX uses what it calls 'position slots' to represent match offsets.
  * What this means is that a small 'position slot' number and a small
  * offset from that slot are encoded instead of one large offset for
@@ -20,6 +21,7 @@ const u8 lzx_extra_bits[LZX_NUM_POSITION_SLOTS] = {
 	/*17, 17, 17, 17, 17,*/
 	/*17*/
 };
+#endif
 
 const u32 lzx_position_base[LZX_NUM_POSITION_SLOTS] = {
 	0      , 1      , 2      , 3      , 4      ,

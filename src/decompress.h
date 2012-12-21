@@ -13,12 +13,16 @@
 /* Must be at least 32 bits. */
 typedef unsigned long input_bitbuf_t;
 
-/* Structure to provide a bitstream. */
+/* Structure to encapsulate a block of in-memory data that is being interpreted
+ * as a stream of bits.
+ *
+ * This is geared specifically towards the XPRESS and LZX compression formats
+ * with regards to the actual ordering the bits within the byte sequence. */
 struct input_bitstream {
 
 	/* A variable of length at least 32 bits that is used to hold bits that
 	 * have been read from the stream.  The bits are ordered from high-order
-	 * to low-order; the next bit is always the high-order bit. */
+	 * to low-order, and the next bit is always the high-order bit. */
 	input_bitbuf_t  bitbuf;
 
 	/* Pointer to the next byte to be retrieved from the input. */
@@ -41,7 +45,11 @@ static inline void init_input_bitstream(struct input_bitstream *istream,
 	istream->data_bytes_left = num_data_bytes;
 }
 
-/* Ensures that the bit buffer contains @num_bits bits. */
+/* Ensures that the bit buffer variable for the bitstream contains @num_bits
+ * bits.
+ *
+ * If there are at least @num_bits bits remaining in the bitstream, 0 is
+ * returned.  Otherwise, -1 is returned.  */
 static inline int bitstream_ensure_bits(struct input_bitstream *istream,
 					unsigned num_bits)
 {
@@ -70,15 +78,15 @@ static inline int bitstream_ensure_bits(struct input_bitstream *istream,
 			istream->bitsleft += 16;
 			istream->data_bytes_left -= 2;
 		} else {
-			ret = 1;
+			ret = -1;
 		}
 	}
 	wimlib_assert2(ret != 0 || istream->bitsleft >= num_bits);
 	return ret;
 }
 
-/* Returns the next @num_bits bits in the bit buffer.  It must contain at least
- * @num_bits bits to call this function. */
+/* Returns the next @num_bits bits in the buffer variable, which must contain at
+ * least @num_bits bits, for the bitstream. */
 static inline unsigned
 bitstream_peek_bits(const struct input_bitstream *istream, unsigned num_bits)
 {
@@ -91,8 +99,8 @@ bitstream_peek_bits(const struct input_bitstream *istream, unsigned num_bits)
 	return ret;
 }
 
-/* Removes @num_bits bits from the bit buffer.  It must contain at least
- * @num_bits bits to call this function. */
+/* Removes @num_bits bits from the buffer variable, which must contain at least
+ * @num_bits bits, for the bitstream. */
 static inline void bitstream_remove_bits(struct input_bitstream *istream,
 					 unsigned num_bits)
 {
@@ -101,28 +109,31 @@ static inline void bitstream_remove_bits(struct input_bitstream *istream,
 	istream->bitsleft -= num_bits;
 }
 
-/* Reads and returns @num_bits bits from the input bitstream. */
+/* Reads @num_bits bits from the input bitstream.  @num_bits must be 16 or fewer.
+ * On success, returns 0 and returns the requested bits in @n.  If there are
+ * fewer than @num_bits remaining in the bitstream, -1 is returned. */
 static inline int bitstream_read_bits(struct input_bitstream *istream,
 				      unsigned num_bits, unsigned *n)
 {
+	wimlib_assert2(num_bits <= 16);
 	int ret = bitstream_ensure_bits(istream, num_bits);
 	if (ret == 0) {
 		*n = bitstream_peek_bits(istream, num_bits);
 		bitstream_remove_bits(istream, num_bits);
+		wimlib_assert2(istream->bitsleft < 16);
 	} else {
 		ERROR("bitstream_read_bits(): Input buffer exhausted");
 	}
 	return ret;
 }
 
-/* In the XPRESS format there can be literal length bytes embedded in the
- * compressed bitstream.  These bytes are basically separate from the bitstream,
- * as they come AFTER the bits that are currently in the buffer variable (based
- * on reading 16 bits at a time), even though the buffer variable may not be
- * empty.
+/* In the XPRESS format there can be literal bytes embedded in the bitstream.
+ * These bytes are basically separate from the bitstream, as they come AFTER the
+ * bits that are currently in the buffer variable (based on reading 16 bits at a
+ * time), even though the buffer variable may not be empty.
  *
- * This function returns the next such literal length byte in the input
- * bitstream.  Returns -1 if we are at the end of the bitstream. */
+ * This function returns the next such literal byte, or -1 if there are no more.
+ */
 static inline int bitstream_read_byte(struct input_bitstream *istream)
 {
 	wimlib_assert2(istream->bitsleft < 32);
@@ -138,31 +149,14 @@ static inline int bitstream_read_byte(struct input_bitstream *istream)
 	return ret;
 }
 
-/* Reads @num_bits bits from the bit buffer without checking to see if that many
- * bits are in the buffer or not. */
+/* Reads @num_bits bits from the buffer variable for a bistream without checking
+ * to see if that many bits are in the buffer or not. */
 static inline unsigned
 bitstream_read_bits_nocheck(struct input_bitstream *istream, unsigned num_bits)
 {
 	unsigned n = bitstream_peek_bits(istream, num_bits);
 	bitstream_remove_bits(istream, num_bits);
 	return n;
-}
-
-/* Removes the bits that have been read into the bit buffer variable. */
-static inline void flush_input_bitstream(struct input_bitstream *istream)
-{
-	bitstream_remove_bits(istream, istream->bitsleft);
-	istream->bitbuf = 0;
-	wimlib_assert2(istream->bitsleft == 0);
-}
-
-extern int bitstream_read_bytes(struct input_bitstream *istream, size_t n,
-				void *dest);
-
-/* Aligns the bitstream on a 16-bit boundary. */
-static inline void align_input_bitstream(struct input_bitstream *istream)
-{
-	bitstream_remove_bits(istream, istream->bitsleft & 15);
 }
 
 extern int read_huffsym_near_end_of_input(struct input_bitstream *istream,
@@ -179,7 +173,7 @@ extern int read_huffsym_near_end_of_input(struct input_bitstream *istream,
  * large WIM file.  I'm not sure it could be made much faster that it is,
  * especially since there isn't enough time to make a big table that allows
  * decoding multiple symbols per lookup.  But if extracting files to a hard
- * disk, the IO will be the bottleneck anyway.
+ * disk, the I/O will be the bottleneck anyway.
  *
  * @buf:	The input buffer from which the symbol will be read.
  * @decode_table:	The fast Huffman decoding table for the Huffman tree.
