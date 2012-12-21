@@ -126,8 +126,6 @@ static int xpress_decode_match(unsigned huffsym, unsigned window_pos,
 				return ret;
 
 			match_len |= (ret << 8);
-			if (match_len < 0xf)
-				return -1;
 		} else {
 			match_len += 0xf;
 		}
