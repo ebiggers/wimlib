@@ -163,17 +163,15 @@ int make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
 			break;
 
 		unsigned num_entries = 1 << (table_bits - codeword_len);
-		if (num_entries >=
-			(sizeof(unsigned long) / sizeof(decode_table[0])))
-		{
-			wimlib_assert2(decode_table_pos % 4 == 0);
+		const unsigned entries_per_long = sizeof(unsigned long) /
+						  sizeof(decode_table[0]);
+		if (num_entries >= entries_per_long) {
+			wimlib_assert2(decode_table_pos % entries_per_long == 0);
 			BUILD_BUG_ON(sizeof(unsigned long) != 4 &&
 				     sizeof(unsigned long) != 8);
 
 			unsigned long *p = (unsigned long *)&decode_table[decode_table_pos];
-			unsigned long n = num_entries /
-						(sizeof(unsigned long) /
-							sizeof(decode_table[0]));
+			unsigned n = num_entries / entries_per_long;
 			unsigned long v = sym;
 			if (sizeof(unsigned long) >= 4)
 				v |= v << 16;
