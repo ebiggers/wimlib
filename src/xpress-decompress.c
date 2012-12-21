@@ -142,15 +142,15 @@ static int xpress_decode_match(unsigned huffsym, unsigned window_pos,
 	match_src = match_dest - match_offset;
 
 	if (window_pos + match_len > window_len) {
-		ERROR("XPRESS decompression error: match of length %d "
+		ERROR("XPRESS decompression error: match of length %u "
 		      "bytes overflows window", match_len);
 		return -1;
 	}
 
 	if (match_src < window) {
-		ERROR("XPRESS decompression error: match of length %d bytes "
-		      "references data before window (match_offset = %d, "
-		      "window_pos = %d)", match_len, match_offset, window_pos);
+		ERROR("XPRESS decompression error: match of length %u bytes "
+		      "references data before window (match_offset = %u, "
+		      "window_pos = %u)", match_len, match_offset, window_pos);
 		return -1;
 	}
 
