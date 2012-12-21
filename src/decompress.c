@@ -38,7 +38,8 @@
  * 			(2**table_bits) + 2 * num_syms to guarantee
  * 			that there is enough space.
  *
- * @num_syms: 		Total number of symbols in the Huffman tree.
+ * @num_syms: 		Number of symbols in the alphabet, including symbols
+ *			that do not appear in this particular input chunk.
  *
  * @table_bits:		Any symbols with a code length of table_bits or less can
  * 			be decoded in one lookup of the table.  2**table_bits
@@ -46,7 +47,7 @@
  * 			any Huffman codes longer than @table_bits.
  *
  * @lens:		An array of length @num_syms, indexable by symbol, that
- * 			gives the length of the Huffman codeward for that
+ * 			gives the length of the Huffman codeword for that
  * 			symbol.  Because the Huffman tree is in canonical form,
  * 			it can be reconstructed by only knowing the length of
  * 			the codeword for each symbol.  It is assumed, but not
