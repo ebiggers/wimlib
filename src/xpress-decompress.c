@@ -88,8 +88,10 @@
  *
  * Note: taking the low 8 bits of the symbol is the same as subtracting 256, the
  * number of symbols reserved for literals.
+ *
+ * Returns the match length, or -1 on error.
  */
-static int xpress_decode_match(int huffsym, unsigned window_pos,
+static int xpress_decode_match(unsigned huffsym, unsigned window_pos,
 			       unsigned window_len, u8 window[],
 			       struct input_bitstream *istream)
 {
@@ -105,23 +107,23 @@ static int xpress_decode_match(int huffsym, unsigned window_pos,
 
 	ret = bitstream_read_bits(istream, offset_bsr, &match_offset);
 	if (ret != 0)
-		return -1;
+		return ret;
 	match_offset |= (1 << offset_bsr);
 
 	if (len_hdr == 0xf) {
 		ret = bitstream_read_byte(istream);
-		if (ret == -1)
-			return -1;
+		if (ret < 0)
+			return ret;
 		match_len = ret;
 		if (match_len == 0xff) {
 			ret = bitstream_read_byte(istream);
-			if (ret == -1)
-				return -1;
+			if (ret < 0)
+				return ret;
 			match_len = ret;
 
 			ret = bitstream_read_byte(istream);
-			if (ret == -1)
-				return -1;
+			if (ret < 0)
+				return ret;
 
 			match_len |= (ret << 8);
 			if (match_len < 0xf)
@@ -162,23 +164,24 @@ static int xpress_decode_match(int huffsym, unsigned window_pos,
 
 /* Decodes the Huffman-encoded matches and literal bytes in a block of
  * XPRESS-encoded data. */
-static int xpress_decompress_literals(struct input_bitstream *istream,
-				      u8 uncompressed_data[],
-				      unsigned uncompressed_len,
-				      const u8 lens[],
-				      const u16 decode_table[])
+static int xpress_decompress_block(struct input_bitstream *istream,
+				   u8 uncompressed_data[],
+				   unsigned uncompressed_len,
+				   const u8 lens[],
+				   const u16 decode_table[])
 {
-	unsigned curpos = 0;
+	unsigned curpos;
 	unsigned huffsym;
+	int ret;
 	int match_len;
-	int ret = 0;
 
+	curpos = 0;
 	while (curpos < uncompressed_len) {
 		ret = read_huffsym(istream, decode_table, lens,
 				   XPRESS_NUM_SYMBOLS, XPRESS_TABLEBITS,
 				   &huffsym, XPRESS_MAX_CODEWORD_LEN);
 		if (ret != 0)
-			break;
+			return ret;
 
 		if (huffsym < XPRESS_NUM_CHARS) {
 			uncompressed_data[curpos++] = huffsym;
@@ -188,14 +191,12 @@ static int xpress_decompress_literals(struct input_bitstream *istream,
 							uncompressed_len,
 							uncompressed_data,
 							istream);
-			if (match_len == -1) {
-				ret = 1;
-				break;
-			}
+			if (match_len < 0)
+				return match_len;
 			curpos += match_len;
 		}
 	}
-	return ret;
+	return 0;
 }
 
 
@@ -221,7 +222,7 @@ int xpress_decompress(const void *__compressed_data, unsigned compressed_len,
 	 * in the first 256 bytes of the compressed data.
 	 */
 	if (compressed_len < XPRESS_NUM_SYMBOLS / 2)
-		return WIMLIB_ERR_DECOMPRESSION;
+		return -1;
 
 	for (i = 0; i < XPRESS_NUM_SYMBOLS / 2; i++) {
 		*lens_p++ = compressed_data[i] & 0xf;
@@ -237,7 +238,7 @@ int xpress_decompress(const void *__compressed_data, unsigned compressed_len,
 	init_input_bitstream(&istream, compressed_data + XPRESS_NUM_SYMBOLS / 2,
 			     compressed_len - XPRESS_NUM_SYMBOLS / 2);
 
-	return xpress_decompress_literals(&istream, uncompressed_data,
-					  uncompressed_len, lens,
-					  decode_table);
+	return xpress_decompress_block(&istream, uncompressed_data,
+				       uncompressed_len, lens,
+				       decode_table);
 }

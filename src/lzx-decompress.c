@@ -747,32 +747,32 @@ static int lzx_decompress_block(int block_type, unsigned block_size,
 {
 	unsigned main_element;
 	unsigned end;
+	int ret;
 	int match_len;
-	int ret = 0;
 
 	end = window_pos + block_size;
 	while (window_pos < end) {
 		ret = read_huffsym_using_maintree(istream, tables,
 						  &main_element);
 		if (ret != 0)
-			break;
+			return ret;
 
 		if (main_element < LZX_NUM_CHARS) {
 			/* literal: 0 to LZX_NUM_CHARS - 1 */
 			window[window_pos++] = main_element;
 		} else {
 			/* match: LZX_NUM_CHARS to LZX_MAINTREE_NUM_SYMBOLS - 1 */
-			ret = lzx_decode_match(main_element,
-					       block_type,
-					       end - window_pos,
-					       window,
-					       window_pos,
-					       tables,
-					       queue,
-					       istream);
-			if (ret < 0)
-				break;
-			window_pos += ret;
+			match_len = lzx_decode_match(main_element,
+						     block_type,
+						     end - window_pos,
+						     window,
+						     window_pos,
+						     tables,
+						     queue,
+						     istream);
+			if (match_len < 0)
+				return match_len;
+			window_pos += match_len;
 		}
 	}
 	return 0;
