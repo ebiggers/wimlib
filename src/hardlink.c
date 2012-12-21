@@ -278,6 +278,8 @@ static int fix_true_inode(struct inode *inode, struct hlist_head *inode_list)
 				return WIMLIB_ERR_INVALID_DENTRY;
 			}
 			/* Free the unneeded `struct inode'. */
+			dentry->d_inode->hlist.next = NULL;
+			dentry->d_inode->hlist.pprev = NULL;
 			free_inode(dentry->d_inode);
 			dentry->d_inode = ref_inode;
 			ref_inode->link_count++;

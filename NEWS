@@ -5,6 +5,9 @@ Version 1.2.2:
 	and should now be even faster.  (Although, they were already pretty
 	fast--- much faster than typical I/O speeds.)
 
+	Fixed a bug introduced in v1.2.1 that would cause a directory tree
+	containing hard links to be captured incorrectly in some cases.
+
 Version 1.2.1:
 	By default, unmounting a read-write mounted WIM with 'imagex unmount
 	--commit' will now change the WIM in-place without needing to write the
