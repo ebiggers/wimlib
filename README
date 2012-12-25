@@ -48,12 +48,12 @@ not capture/split/join/append/export/mount a WIM.  See `programs/wimapply.c'.
 
 			       COMPRESSION RATIO
 
-wimlib can create XPRESS or LZX compressed WIM archives.  Currently, the the
-XPRESS compression ratio is slightly better than that provided by Microsoft's
-software, while the LZX compression ratio is approaching that of Microsoft's
-software but is not quite there yet.  Running time is as good as or better than
-Microsoft's software, especially with multithreaded compression, available in
-wimlib v1.1.0 and later.
+wimlib can create XPRESS or LZX compressed WIM archives.  Currently, the XPRESS
+compression ratio is slightly better than that provided by Microsoft's software,
+while the LZX compression ratio is approaching that of Microsoft's software but
+is not quite there yet.  Running time is as good as or better than Microsoft's
+software, especially with multithreaded compression, available in wimlib v1.1.0
+and later.
 
 The following tables compare the compression ratio and performance for creating
 a compressed Windows PE image (disk usage of about 524 MB, uncompressed WIM size
