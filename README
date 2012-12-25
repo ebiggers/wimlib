@@ -152,15 +152,14 @@ Besides the various well-known options, the following options can be passed to
 wimlib's `configure' script:
 
 --without-ntfs-3g
-	If libntfs-3g is not available or is not version 2011-4-12 or later, we
-	can build without it.  wimlib will then not be able to apply or capture
-	images directly to NTFS volumes.
+	If libntfs-3g is not available or is not version 2011-4-12 or later,
+	wimlib can be built without it, in which case it will not be possible to
+	apply or capture images directly to/from NTFS volumes.
 
 --without-fuse
 	If libfuse or the FUSE kernel module is not available, wimlib can be
 	compiled with --without-fuse.  This will remove the ability to mount and
-	unmount WIM files.  wimlib_mount() and wimlib_unmount() will fail with
-	WIMLIB_ERR_UNSUPPORTED.
+	unmount WIM files.
 
 --without-libcrypto
 	Build in functions for SHA1 rather than using external SHA1 functions
@@ -169,9 +168,9 @@ wimlib's `configure' script:
 
 --enable-xattr, --disable-xattr
 	Enable or disable support for the extended-attributes interface to NTFS
-	alternate data streams in mounted WIMs.  To support these, we require
-	the setxattr() function and the attr/xattr.h header be available.  The
-	default is to autodetect whether support is possible.
+	alternate data streams in mounted WIMs.  To support these, wimlib
+	requires that the setxattr() function and the attr/xattr.h header are
+	available.  The default is to autodetect whether support is possible.
 
 --disable-multithreaded-compression
 	By default, data will be compressed using multiple threads when writing
@@ -183,30 +182,27 @@ wimlib's `configure' script:
 	Only use this if the build target supports the SSSE3 instructions.
 
 --disable-custom-memory-allocator
-	If this option is given, MALLOC(), FREE(), CALLOC(), and STRDUP() will
-	directly call the appropriate functions in the C library.
-	wimlib_set_memory_allocator() will fail with WIMLIB_ERR_UNSUPPORTED.
+	If this option is given, a very small amount of space will be saved by
+	removing support for the wimlib_set_memory_allocator() function.  imagex
+	will be unaffected.
 
 --disable-verify-compression
-	Unless this option is given, every time wimlib compresses a data block
-	it will decompress it into a temporary buffer and abort() the program
-	with an error message if the decompressed data does not exactly match
-	the original data.  This is to find bugs.
+	Unless this option is given, every time wimlib compresses a data block,
+	it will decompress it into a temporary buffer and abort the program with
+	an error message if the decompressed data does not exactly match the
+	original data.  This only makes compression about 10% slower.  However,
+	this checking can probably be safely disabled because there are no known
+	bugs in the compression code, and the SHA1 message digest of every
+	extracted file is checked anyway.
 
 --disable-error-messages
-	Removes all error messages from the library.  If left in, they still
-	have to explicitly turned on with wimlib_set_print_errors() in order to
-	see them.  Also, error codes will still be returned regardless of
-	whether error messages are printed or not.
-
-	If --disable-error-messages is given, wimlib_set_print_errors() will
-	fail with WIMLIB_ERR_UNSUPPORTED if the action is to turn error messages
-	on.
+	Save some space by removing all error messages from the library.
 
 --disable-assertions
-	Remove all assertions.  Without this option, wimlib will abort() the
-	program if an assertion fails.  An assertion failure should only occur
-	if there is a bug in the library.
+	Remove all assertions, even the ones that are included by default.
+
+--enable-more-assertions
+	Enable assertions that are not included by default.
 
 --enable-debug
 	Include debugging messages.  Only use this option if you have found a
@@ -223,11 +219,12 @@ wimlib has mostly been developed and tested on x86_64 (64-bit) GNU/Linux.
 It has been tested on x86 (32-bit) GNU/Linux occasionally.
 
 wimlib may work on FreeBSD and Mac OS X.  However, this is not well tested.  If
-you do not have libntfs-3g 2011-4-12 or later available, you must configure with
---without-ntfs-3g.  On FreeBSD, before mounting a WIM you need to load the POSIX
-message queue module (run `kldload mqueuefs').
+you do not have libntfs-3g 2011-4-12 or later available, you must configure
+wimlib with --without-ntfs-3g.  On FreeBSD, before mounting a WIM you need to
+load the POSIX message queue module (run `kldload mqueuefs').
 
-wimlib should work on big endian machines but it has not been tested.
+The code pays attention to endianness, so it should work on big-endian
+architectures, but I've never tested this so do not expect it to work.
 
 There are no plans to port wimlib to Windows since the programming interface on
 Windows is very different and Microsoft's imagex.exe is already available.
@@ -249,14 +246,14 @@ library for reading and writing to NTFS filesystems (the filesystem used by
 recent versions of Windows).  See
 http://www.tuxera.com/community/ntfs-3g-download/ for more information.
 
-lzx-decomp.c, the code to decompress WIM file resources that are compressed
+lzx-decompress.c, the code to decompress WIM file resources that are compressed
 using LZX compression, is originally based on code from the cabextract project
 (http://www.cabextract.org.uk).
 
-lzx-comp.c, the code to compress WIM file resources using LZX compression, is
-originally based on code written by Matthew Russotto (www.russotto.net/chm/).
+lzx-compress.c, the code to compress WIM file resources using LZX compression,
+is originally based on code written by Matthew Russotto (www.russotto.net/chm/).
 
-lz.c, the code to find LZ77 matches (used for both XPRESS and LZX compression),
+lz77.c, the code to find LZ77 matches (used for both XPRESS and LZX compression),
 is based on code from zlib.
 
 A very limited number of other free programs can handle some parts of the WIM
@@ -272,7 +269,7 @@ http://www.ultimatedeployment.org/.
 
 You can see the documentation about Microsoft's version of the imagex program at
 http://technet.microsoft.com/en-us/library/cc749447(v=ws.10).aspx, so you can
-see how it compares.
+see how it compares to the version provided by this library.
 
 		      GNU/Linux equivalents of WIM format
 
