@@ -18,9 +18,9 @@ In addition, some errors in the original WIM may be fixed by re-writing it
 .TP 6
 \fB--check\fR
 When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
-present; include an integrity table in the optimized WIM.  If this option is not
-specified and \fIWIMFILE\fR, no integrity table is included in the optimized
-WIM, even if there was one before.
+present; in addition, include an integrity table in the optimized WIM.  If this
+option is not specified, no integrity table is included in the optimized WIM,
+even if there was one before.
 .TP 6
 \fB--recompress\fR
 Recompress all compressed streams in \fIWIMFILE\fR when rebuilding it.  This
