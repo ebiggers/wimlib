@@ -1,6 +1,6 @@
 				   WIMLIB
 
-This is wimlib version 1.2.2 (December 2012).  wimlib can be used to read,
+This is wimlib version 1.2.3 (January 2013).  wimlib can be used to read,
 write, and mount files in the Windows Imaging Format (WIM files).  These files
 are normally created by using the `imagex.exe' utility on Windows, but this
 library provides a free implementation of imagex for UNIX-based systems.
@@ -328,8 +328,8 @@ By default, wimlib will be linked to the system library "libcrypto", which
 probably will be OpenSSL.  Some people believe that GPL code cannot be linked to
 OpenSSL without a linking exception.  As far as I know, I cannot officially
 include a linking exception with the license of this library because several
-files could be considered derived works of LGPL code copyrighted by others.  If
-you believe this to be a problem, configure with --without-libcrypto to avoid
+files could be considered derived works of code copyrighted by others.  If you
+believe this to be a problem, configure with --without-libcrypto to avoid
 linking with OpenSSL.  There is no difference in functionality--- there will
 just be stand-alone SHA1 message digest code built into the library.
 

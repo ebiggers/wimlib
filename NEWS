@@ -1,5 +1,11 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.2.3:
+	Fixed truncating file to shorter but non-zero length on read-write
+	mounted WIM image.
+
+	Various code cleanups and minor documentation fixes.
+
 Version 1.2.2:
 	LZX and XPRESS decompression have received some additional optimizations
 	and should now be even faster.  (Although, they were already pretty
