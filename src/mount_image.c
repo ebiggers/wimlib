@@ -2334,7 +2334,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	int ret;
 	char *dir_copy;
 	struct wim_lookup_table *joined_tab, *wim_tab_save;
-	struct image_metadata *imd;
+	struct wim_image_metadata *imd;
 	struct wimfs_context ctx;
 	struct hlist_node *cur_node;
 	struct wim_inode *inode;

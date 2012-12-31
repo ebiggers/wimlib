@@ -242,7 +242,7 @@ struct wim_security_data {
 struct wim_inode_table;
 
 /* Metadata resource for an image. */
-struct image_metadata {
+struct wim_image_metadata {
 	/* Pointer to the root dentry for the image. */
 	struct wim_dentry    *root_dentry;
 
@@ -295,7 +295,7 @@ struct WIMStruct {
 	struct wim_info *wim_info;
 
 	/* Array of the image metadata, one for each image in the WIM. */
-	struct image_metadata *image_metadata;
+	struct wim_image_metadata *image_metadata;
 
 	/* The header of the WIM file. */
 	struct wim_header hdr;
@@ -338,7 +338,7 @@ wim_const_security_data(const WIMStruct *w)
 	return w->image_metadata[w->current_image - 1].security_data;
 }
 
-static inline struct image_metadata *
+static inline struct wim_image_metadata *
 wim_get_current_image_metadata(WIMStruct *w)
 {
 	return &w->image_metadata[w->current_image - 1];
@@ -417,7 +417,7 @@ extern int new_joined_lookup_table(WIMStruct *w,
 /* metadata_resource.c */
 
 extern int read_metadata_resource(WIMStruct *w,
-				  struct image_metadata *image_metadata);
+				  struct wim_image_metadata *image_metadata);
 extern int write_metadata_resource(WIMStruct *w);
 
 /* ntfs-apply.c */
@@ -526,7 +526,7 @@ extern int verify_swm_set(WIMStruct *w,
 /* wim.c */
 extern int select_wim_image(WIMStruct *w, int image);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
-extern void destroy_image_metadata(struct image_metadata *imd,
+extern void destroy_image_metadata(struct wim_image_metadata *imd,
 				   struct wim_lookup_table *lt);
 
 

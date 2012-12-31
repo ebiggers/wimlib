@@ -68,7 +68,7 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 
 	/* Get rid of the empty slot in the image metadata array. */
 	memmove(&w->image_metadata[image - 1], &w->image_metadata[image],
-		(w->hdr.image_count - image) * sizeof(struct image_metadata));
+		(w->hdr.image_count - image) * sizeof(struct wim_image_metadata));
 
 	/* Decrement the image count. */
 	if (--w->hdr.image_count == 0) {

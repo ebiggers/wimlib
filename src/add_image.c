@@ -46,14 +46,14 @@ int add_new_dentry_tree(WIMStruct *w, struct wim_dentry *root_dentry,
 			struct wim_security_data *sd)
 {
 	struct wim_lookup_table_entry *metadata_lte;
-	struct image_metadata *imd;
-	struct image_metadata *new_imd;
+	struct wim_image_metadata *imd;
+	struct wim_image_metadata *new_imd;
 
 	wimlib_assert(root_dentry != NULL);
 
 	DEBUG("Reallocating image metadata array for image_count = %u",
 	      w->hdr.image_count + 1);
-	imd = CALLOC((w->hdr.image_count + 1), sizeof(struct image_metadata));
+	imd = CALLOC((w->hdr.image_count + 1), sizeof(struct wim_image_metadata));
 
 	if (!imd) {
 		ERROR("Failed to allocate memory for new image metadata array");
@@ -61,7 +61,7 @@ int add_new_dentry_tree(WIMStruct *w, struct wim_dentry *root_dentry,
 	}
 
 	memcpy(imd, w->image_metadata,
-	       w->hdr.image_count * sizeof(struct image_metadata));
+	       w->hdr.image_count * sizeof(struct wim_image_metadata));
 
 	metadata_lte = new_lookup_table_entry();
 	if (!metadata_lte)
@@ -91,8 +91,9 @@ err:
 
 
 /*
- * build_dentry_tree: - Recursively builds a tree of `struct wim_dentry tree
- * 			from an on-disk directory tree.
+ * build_dentry_tree():
+ * 	Recursively builds a tree of WIM dentries from an on-disk directory
+ * 	tree.
  *
  * @root_ret:   Place to return a pointer to the root of the dentry tree.  Only
  *		modified if successful.  Set to NULL if the file or directory was
@@ -629,7 +630,7 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 	struct wim_dentry *root_dentry = NULL;
 	struct wim_security_data *sd;
 	struct capture_config config;
-	struct image_metadata *imd;
+	struct wim_image_metadata *imd;
 	int ret;
 
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {

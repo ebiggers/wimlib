@@ -42,7 +42,7 @@
  *
  * @return:	Zero on success, nonzero on failure.
  */
-int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
+int read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 {
 	u8 *buf;
 	u32 dentry_offset;

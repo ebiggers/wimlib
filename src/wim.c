@@ -107,8 +107,8 @@ int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
 
 static int sort_image_metadata_by_position(const void *p1, const void *p2)
 {
-	const struct image_metadata *imd1 = p1;
-	const struct image_metadata *imd2 = p2;
+	const struct wim_image_metadata *imd1 = p1;
+	const struct wim_image_metadata *imd2 = p2;
 	u64 offset1 = imd1->metadata_lte->resource_entry.offset;
 	u64 offset2 = imd2->metadata_lte->resource_entry.offset;
 	if (offset1 < offset2)
@@ -203,7 +203,7 @@ WIMLIBAPI int wimlib_get_num_images(const WIMStruct *w)
 
 int select_wim_image(WIMStruct *w, int image)
 {
-	struct image_metadata *imd;
+	struct wim_image_metadata *imd;
 
 	DEBUG("Selecting image %d", image);
 
@@ -495,7 +495,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
 
 	if (w->hdr.image_count != 0) {
 		w->image_metadata = CALLOC(w->hdr.image_count,
-					   sizeof(struct image_metadata));
+					   sizeof(struct wim_image_metadata));
 
 		if (!w->image_metadata) {
 			ERROR("Failed to allocate memory for %u image metadata structures",
@@ -529,7 +529,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
 	 * file, rather than their order in the lookup table, which is random
 	 * because of hashing. */
 	qsort(w->image_metadata, w->current_image,
-	      sizeof(struct image_metadata), sort_image_metadata_by_position);
+	      sizeof(struct wim_image_metadata), sort_image_metadata_by_position);
 
 	w->current_image = WIMLIB_NO_IMAGE;
 
@@ -579,7 +579,7 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int open_flags,
 	return ret;
 }
 
-void destroy_image_metadata(struct image_metadata *imd,
+void destroy_image_metadata(struct wim_image_metadata *imd,
 			    struct wim_lookup_table *table)
 {
 	free_dentry_tree(imd->root_dentry, table);

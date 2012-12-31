@@ -105,7 +105,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	int ret;
 	struct wim_security_data *sd;
 	struct wim_lookup_table *joined_tab, *src_wim_tab_save;
-	struct image_metadata *src_imd;
+	struct wim_image_metadata *src_imd;
 	struct hlist_node *cur_node;
 	struct list_head lte_list_head;
 	struct wim_inode *inode;
