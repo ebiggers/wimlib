@@ -18,7 +18,7 @@
 /* A lookup table that is used to translate the hash codes of dentries into the
  * offsets and sizes of uncompressed or compressed file resources.  It is
  * implemented as a hash table. */
-struct lookup_table {
+struct wim_lookup_table {
 	struct hlist_head *array;
 	u64 num_entries;
 	u64 capacity;
@@ -84,7 +84,7 @@ enum resource_location {
  * The lookup_table_entry for a given dentry or alternate stream entry in the
  * WIM is found using the SHA1 message digest field.
  */
-struct lookup_table_entry {
+struct wim_lookup_table_entry {
 
 	/* List of lookup table entries in this hash bucket */
 	struct hlist_node hash_list;
@@ -168,7 +168,7 @@ struct lookup_table_entry {
 		/* Pointer to inode that contains the opened file descriptors to
 		 * this stream (valid iff resource_location ==
 		 * RESOURCE_IN_STAGING_FILE) */
-		struct inode *lte_inode;
+		struct wim_inode *lte_inode;
 	};
 
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
@@ -204,19 +204,19 @@ struct lookup_table_entry {
 };
 
 static inline u64
-wim_resource_size(const struct lookup_table_entry *lte)
+wim_resource_size(const struct wim_lookup_table_entry *lte)
 {
 	return lte->resource_entry.original_size;
 }
 
 static inline u64
-wim_resource_chunks(const struct lookup_table_entry *lte)
+wim_resource_chunks(const struct wim_lookup_table_entry *lte)
 {
 	return (wim_resource_size(lte) + WIM_CHUNK_SIZE - 1) / WIM_CHUNK_SIZE;
 }
 
 static inline u64
-wim_resource_compressed_size(const struct lookup_table_entry *lte)
+wim_resource_compressed_size(const struct wim_lookup_table_entry *lte)
 {
 	return lte->resource_entry.size;
 }
@@ -226,7 +226,7 @@ wim_resource_compressed_size(const struct lookup_table_entry *lte)
  * entry
  */
 static inline int
-wim_resource_compression_type(const struct lookup_table_entry *lte)
+wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
 {
 	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
 	    || lte->resource_location != RESOURCE_IN_WIM)
@@ -235,79 +235,79 @@ wim_resource_compression_type(const struct lookup_table_entry *lte)
 }
 
 
-extern struct lookup_table *
+extern struct wim_lookup_table *
 new_lookup_table(size_t capacity);
 
 extern int
 read_lookup_table(WIMStruct *w);
 
 extern int
-write_lookup_table(struct lookup_table *table, FILE *out,
+write_lookup_table(struct wim_lookup_table *table, FILE *out,
 		   struct resource_entry *out_res_entry);
 extern void
-free_lookup_table(struct lookup_table *table);
+free_lookup_table(struct wim_lookup_table *table);
 
 extern void
-lookup_table_insert(struct lookup_table *table, struct lookup_table_entry *lte);
+lookup_table_insert(struct wim_lookup_table *table, struct wim_lookup_table_entry *lte);
 
 /* Unlinks a lookup table entry from the table; does not free it. */
 static inline void
-lookup_table_unlink(struct lookup_table *table, struct lookup_table_entry *lte)
+lookup_table_unlink(struct wim_lookup_table *table, struct wim_lookup_table_entry *lte)
 {
 	hlist_del(&lte->hash_list);
 	table->num_entries--;
 }
 
-extern struct lookup_table_entry *
+extern struct wim_lookup_table_entry *
 new_lookup_table_entry();
 
-extern struct lookup_table_entry *
-clone_lookup_table_entry(const struct lookup_table_entry *lte);
+extern struct wim_lookup_table_entry *
+clone_lookup_table_entry(const struct wim_lookup_table_entry *lte);
 
 extern void
-print_lookup_table_entry(const struct lookup_table_entry *entry);
+print_lookup_table_entry(const struct wim_lookup_table_entry *entry);
 
 extern void
-free_lookup_table_entry(struct lookup_table_entry *lte);
+free_lookup_table_entry(struct wim_lookup_table_entry *lte);
 
 extern int
-for_lookup_table_entry(struct lookup_table *table,
-		       int (*visitor)(struct lookup_table_entry *, void *),
+for_lookup_table_entry(struct wim_lookup_table *table,
+		       int (*visitor)(struct wim_lookup_table_entry *, void *),
 		       void *arg);
 
-extern struct lookup_table_entry *
-__lookup_resource(const struct lookup_table *table, const u8 hash[]);
+extern struct wim_lookup_table_entry *
+__lookup_resource(const struct wim_lookup_table *table, const u8 hash[]);
 
 extern int
 lookup_resource(WIMStruct *w, const char *path,
-		int lookup_flags, struct dentry **dentry_ret,
-		struct lookup_table_entry **lte_ret, u16 *stream_idx_ret);
+		int lookup_flags, struct wim_dentry **dentry_ret,
+		struct wim_lookup_table_entry **lte_ret, u16 *stream_idx_ret);
 
 extern void
-lte_decrement_refcnt(struct lookup_table_entry *lte,
-		     struct lookup_table *table);
+lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
+		     struct wim_lookup_table *table);
 #ifdef WITH_FUSE
 extern void
-lte_decrement_num_opened_fds(struct lookup_table_entry *lte);
+lte_decrement_num_opened_fds(struct wim_lookup_table_entry *lte);
 #endif
 
 extern int
-lte_zero_out_refcnt(struct lookup_table_entry *entry, void *ignore);
+lte_zero_out_refcnt(struct wim_lookup_table_entry *entry, void *ignore);
 
 extern int
-lte_zero_real_refcnt(struct lookup_table_entry *entry, void *ignore);
+lte_zero_real_refcnt(struct wim_lookup_table_entry *entry, void *ignore);
 
 extern int
-lte_free_extracted_file(struct lookup_table_entry *lte, void *ignore);
+lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *ignore);
 
 extern void
-inode_resolve_ltes(struct inode *inode, struct lookup_table *table);
+inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table);
 
 extern void
-inode_unresolve_ltes(struct inode *inode);
+inode_unresolve_ltes(struct wim_inode *inode);
 
 extern int
-write_lookup_table_entry(struct lookup_table_entry *lte, void *__out);
+write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *__out);
 
 static inline struct resource_entry*
 wim_metadata_resource_entry(WIMStruct *w)
@@ -316,53 +316,53 @@ wim_metadata_resource_entry(WIMStruct *w)
 			w->current_image - 1].metadata_lte->resource_entry;
 }
 
-static inline struct lookup_table_entry *
-inode_stream_lte_resolved(const struct inode *inode, unsigned stream_idx)
+static inline struct wim_lookup_table_entry *
+inode_stream_lte_resolved(const struct wim_inode *inode, unsigned stream_idx)
 {
-	wimlib_assert(inode->resolved);
-	wimlib_assert(stream_idx <= inode->num_ads);
+	wimlib_assert(inode->i_resolved);
+	wimlib_assert(stream_idx <= inode->i_num_ads);
 	if (stream_idx == 0)
-		return inode->lte;
+		return inode->i_lte;
 	else
-		return inode->ads_entries[stream_idx - 1].lte;
+		return inode->i_ads_entries[stream_idx - 1].lte;
 }
 
-static inline struct lookup_table_entry *
-inode_stream_lte_unresolved(const struct inode *inode, unsigned stream_idx,
-			    const struct lookup_table *table)
+static inline struct wim_lookup_table_entry *
+inode_stream_lte_unresolved(const struct wim_inode *inode, unsigned stream_idx,
+			    const struct wim_lookup_table *table)
 {
-	wimlib_assert(!inode->resolved);
-	wimlib_assert(stream_idx <= inode->num_ads);
+	wimlib_assert(!inode->i_resolved);
+	wimlib_assert(stream_idx <= inode->i_num_ads);
 	if (!table)
 		return NULL;
 	if (stream_idx == 0)
-		return __lookup_resource(table, inode->hash);
+		return __lookup_resource(table, inode->i_hash);
 	else
 		return __lookup_resource(table,
-					 inode->ads_entries[
+					 inode->i_ads_entries[
 						stream_idx - 1].hash);
 }
 
-extern struct lookup_table_entry *
-inode_stream_lte(const struct inode *inode, unsigned stream_idx,
-		 const struct lookup_table *table);
+extern struct wim_lookup_table_entry *
+inode_stream_lte(const struct wim_inode *inode, unsigned stream_idx,
+		 const struct wim_lookup_table *table);
 
 static inline const u8 *
-inode_stream_hash_unresolved(const struct inode *inode, unsigned stream_idx)
+inode_stream_hash_unresolved(const struct wim_inode *inode, unsigned stream_idx)
 {
-	wimlib_assert(!inode->resolved);
-	wimlib_assert(stream_idx <= inode->num_ads);
+	wimlib_assert(!inode->i_resolved);
+	wimlib_assert(stream_idx <= inode->i_num_ads);
 	if (stream_idx == 0)
-		return inode->hash;
+		return inode->i_hash;
 	else
-		return inode->ads_entries[stream_idx - 1].hash;
+		return inode->i_ads_entries[stream_idx - 1].hash;
 }
 
 
 static inline const u8 *
-inode_stream_hash_resolved(const struct inode *inode, unsigned stream_idx)
+inode_stream_hash_resolved(const struct wim_inode *inode, unsigned stream_idx)
 {
-	struct lookup_table_entry *lte;
+	struct wim_lookup_table_entry *lte;
 	lte = inode_stream_lte_resolved(inode, stream_idx);
 	if (lte)
 		return lte->hash;
@@ -378,51 +378,57 @@ inode_stream_hash_resolved(const struct inode *inode, unsigned stream_idx)
  * This works for both resolved and un-resolved dentries.
  */
 static inline const u8 *
-inode_stream_hash(const struct inode *inode, unsigned stream_idx)
+inode_stream_hash(const struct wim_inode *inode, unsigned stream_idx)
 {
-	if (inode->resolved)
+	if (inode->i_resolved)
 		return inode_stream_hash_resolved(inode, stream_idx);
 	else
 		return inode_stream_hash_unresolved(inode, stream_idx);
 }
 
 static inline u16
-inode_stream_name_len(const struct inode *inode, unsigned stream_idx)
+inode_stream_name_len(const struct wim_inode *inode, unsigned stream_idx)
 {
-	wimlib_assert(stream_idx <= inode->num_ads);
+	wimlib_assert(stream_idx <= inode->i_num_ads);
 	if (stream_idx == 0)
 		return 0;
 	else
-		return inode->ads_entries[stream_idx - 1].stream_name_len;
+		return inode->i_ads_entries[stream_idx - 1].stream_name_len;
 }
 
-static inline struct lookup_table_entry *
-inode_unnamed_lte_resolved(const struct inode *inode)
+static inline struct wim_lookup_table_entry *
+inode_unnamed_lte_resolved(const struct wim_inode *inode)
 {
-	wimlib_assert(inode->resolved);
-	for (unsigned i = 0; i <= inode->num_ads; i++)
+	wimlib_assert(inode->i_resolved);
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 		if (inode_stream_name_len(inode, i) == 0 &&
-		     !is_zero_hash(inode_stream_hash_resolved(inode, i)))
+		    !is_zero_hash(inode_stream_hash_resolved(inode, i)))
+		{
 			return inode_stream_lte_resolved(inode, i);
+		}
+	}
 	return NULL;
 }
 
-static inline struct lookup_table_entry *
-inode_unnamed_lte_unresolved(const struct inode *inode,
-			     const struct lookup_table *table)
+static inline struct wim_lookup_table_entry *
+inode_unnamed_lte_unresolved(const struct wim_inode *inode,
+			     const struct wim_lookup_table *table)
 {
-	wimlib_assert(!inode->resolved);
-	for (unsigned i = 0; i <= inode->num_ads; i++)
+	wimlib_assert(!inode->i_resolved);
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 		if (inode_stream_name_len(inode, i) == 0 &&
-		     !is_zero_hash(inode_stream_hash_unresolved(inode, i)))
+		    !is_zero_hash(inode_stream_hash_unresolved(inode, i)))
+		{
 			return inode_stream_lte_unresolved(inode, i, table);
+		}
+	}
 	return NULL;
 }
 
-extern struct lookup_table_entry *
-inode_unnamed_lte(const struct inode *inode, const struct lookup_table *table);
+extern struct wim_lookup_table_entry *
+inode_unnamed_lte(const struct wim_inode *inode, const struct wim_lookup_table *table);
 
 extern u64
-lookup_table_total_stream_size(struct lookup_table *table);
+lookup_table_total_stream_size(struct wim_lookup_table *table);
 
 #endif

@@ -1,7 +1,7 @@
 /*
  * resource.c
  *
- * Read uncompressed and compressed metadata and file resources.
+ * Read uncompressed and compressed metadata and file resources from a WIM file.
  */
 
 /*
@@ -476,7 +476,7 @@ out:
  *
  * Returns zero on success, nonzero on failure.
  */
-int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
+int read_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
 		      size_t size, u64 offset, int flags)
 {
 	int ctype;
@@ -596,13 +596,19 @@ int read_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
  *
  * Returns 0 on success; nonzero on failure.
  */
-int read_full_wim_resource(const struct lookup_table_entry *lte, u8 buf[],
+int read_full_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
 			   int flags)
 {
 	return read_wim_resource(lte, buf, wim_resource_size(lte), 0, flags);
 }
 
-int extract_wim_resource(const struct lookup_table_entry *lte,
+/* Extracts the first @size bytes of a WIM resource to somewhere.  In the
+ * process, the SHA1 message digest of the resource is checked if the full
+ * resource is being extracted.
+ *
+ * @extract_chunk is a function that is called to extract each chunk of the
+ * resource. */
+int extract_wim_resource(const struct wim_lookup_table_entry *lte,
 			 u64 size,
 			 extract_chunk_func_t extract_chunk,
 			 void *extract_chunk_arg)
@@ -612,16 +618,19 @@ int extract_wim_resource(const struct lookup_table_entry *lte,
 	u64 offset = 0;
 	int ret = 0;
 	u8 hash[SHA1_HASH_SIZE];
-
+	bool check_hash = (size == wim_resource_size(lte));
 	SHA_CTX ctx;
-	sha1_init(&ctx);
+
+	if (check_hash)
+		sha1_init(&ctx);
 
 	while (bytes_remaining) {
 		u64 to_read = min(bytes_remaining, sizeof(buf));
 		ret = read_wim_resource(lte, buf, to_read, offset, 0);
 		if (ret != 0)
 			return ret;
-		sha1_update(&ctx, buf, to_read);
+		if (check_hash)
+			sha1_update(&ctx, buf, to_read);
 		ret = extract_chunk(buf, to_read, offset, extract_chunk_arg);
 		if (ret != 0) {
 			ERROR_WITH_ERRNO("Error extracting WIM resource");
@@ -630,19 +639,21 @@ int extract_wim_resource(const struct lookup_table_entry *lte,
 		bytes_remaining -= to_read;
 		offset += to_read;
 	}
-	sha1_final(hash, &ctx);
-	if (!hashes_equal(hash, lte->hash)) {
-	#ifdef ENABLE_ERROR_MESSAGES
-		ERROR("Invalid checksum on the following WIM resource:");
-		print_lookup_table_entry(lte);
-	#endif
-		return WIMLIB_ERR_INVALID_RESOURCE_HASH;
+	if (check_hash) {
+		sha1_final(hash, &ctx);
+		if (!hashes_equal(hash, lte->hash)) {
+		#ifdef ENABLE_ERROR_MESSAGES
+			ERROR("Invalid checksum on the following WIM resource:");
+			print_lookup_table_entry(lte);
+		#endif
+			return WIMLIB_ERR_INVALID_RESOURCE_HASH;
+		}
 	}
 	return 0;
 }
 
-/* Write @n bytes from @buf to the file descriptor @fd, retrying on interupt and
- * on short writes.
+/* Write @n bytes from @buf to the file descriptor @fd, retrying on internupt
+ * and on short writes.
  *
  * Returns short count and set errno on failure. */
 static ssize_t full_write(int fd, const void *buf, size_t n)
@@ -665,8 +676,7 @@ static ssize_t full_write(int fd, const void *buf, size_t n)
 	return total;
 }
 
-int extract_wim_chunk_to_fd(const u8 *buf, size_t len,
-			    u64 offset, void *arg)
+int extract_wim_chunk_to_fd(const u8 *buf, size_t len, u64 offset, void *arg)
 {
 	int fd = *(int*)arg;
 	ssize_t ret = full_write(fd, buf, len);
@@ -685,8 +695,10 @@ int extract_wim_chunk_to_fd(const u8 *buf, size_t len,
  *
  * The output_resource_entry, out_refcnt, and part_number fields of @lte are
  * updated.
+ *
+ * (This function is confusing and should be refactored somehow.)
  */
-int copy_resource(struct lookup_table_entry *lte, void *wim)
+int copy_resource(struct wim_lookup_table_entry *lte, void *wim)
 {
 	WIMStruct *w = wim;
 	int ret;

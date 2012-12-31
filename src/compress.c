@@ -168,7 +168,8 @@ static void huffman_tree_compute_path_lengths(HuffmanNode *node, u16 cur_len)
 	}
 }
 
-/* Creates a canonical Huffman code from an array of symbol frequencies.
+/* make_canonical_huffman_code: - Creates a canonical Huffman code from an array
+ *				  of symbol frequencies.
  *
  * The algorithm used is similar to the well-known algorithm that builds a
  * Huffman tree using a minheap.  In that algorithm, the leaf nodes are

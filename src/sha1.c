@@ -222,9 +222,8 @@ static int sha1_stream(FILE *fp, u8 md[SHA1_HASH_SIZE])
 
 }
 
-/* Calculates the SHA1 message digest given the name of a file.  @md must point
- * to a buffer of length 20 bytes into which the message digest is written.
- */
+/* Calculates the SHA1 message digest of a file.  @md must point to a buffer of
+ * length 20 bytes into which the message digest is written. */
 int sha1sum(const char *filename, u8 md[SHA1_HASH_SIZE])
 {
 	FILE *fp;

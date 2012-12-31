@@ -79,7 +79,7 @@ struct image_info {
 	char *display_description;
 	union {
 		char *flags;
-		struct lookup_table *lookup_table;
+		struct wim_lookup_table *lookup_table;
 	};
 };
 
@@ -988,12 +988,12 @@ void xml_set_memory_allocator(void *(*malloc_func)(size_t),
 }
 #endif
 
-static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
+static int calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 {
 	struct image_info *info = arg;
-	struct lookup_table *lookup_table = info->lookup_table;
-	const struct inode *inode = dentry->d_inode;
-	struct lookup_table_entry *lte;
+	struct wim_lookup_table *lookup_table = info->lookup_table;
+	const struct wim_inode *inode = dentry->d_inode;
+	struct wim_lookup_table_entry *lte;
 
 	/* Update directory count and file count.
 	 *
@@ -1045,12 +1045,12 @@ static int calculate_dentry_statistics(struct dentry *dentry, void *arg)
 			info->hard_link_bytes += wim_resource_size(lte);
 	}
 
-	if (inode->link_count >= 2 && dentry_is_first_in_inode(dentry)) {
-		for (unsigned i = 0; i < inode->num_ads; i++) {
-			if (inode->ads_entries[i].stream_name_len) {
+	if (inode->i_nlink >= 2 && dentry_is_first_in_inode(dentry)) {
+		for (unsigned i = 0; i < inode->i_num_ads; i++) {
+			if (inode->i_ads_entries[i].stream_name_len) {
 				lte = inode_stream_lte(inode, i + 1, lookup_table);
 				if (lte) {
-					info->hard_link_bytes += inode->link_count *
+					info->hard_link_bytes += inode->i_nlink *
 								 wim_resource_size(lte);
 				}
 			}

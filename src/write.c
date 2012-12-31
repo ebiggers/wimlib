@@ -98,7 +98,7 @@ struct chunk_table {
  * output file.
  */
 static int
-begin_wim_resource_chunk_tab(const struct lookup_table_entry *lte,
+begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 			     FILE *out_fp,
 			     off_t file_offset,
 			     struct chunk_table **chunk_tab_ret)
@@ -250,7 +250,7 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 
 /* Prepare for multiple reads to a resource by caching a FILE * or NTFS
  * attribute pointer in the lookup table entry. */
-static int prepare_resource_for_read(struct lookup_table_entry *lte
+static int prepare_resource_for_read(struct wim_lookup_table_entry *lte
 
 					#ifdef WITH_NTFS_3G
 					, ntfs_inode **ni_ret
@@ -299,7 +299,7 @@ static int prepare_resource_for_read(struct lookup_table_entry *lte
 
 /* Undo prepare_resource_for_read() by closing the cached FILE * or NTFS
  * attribute. */
-static void end_wim_resource_read(struct lookup_table_entry *lte
+static void end_wim_resource_read(struct wim_lookup_table_entry *lte
 				#ifdef WITH_NTFS_3G
 					, ntfs_inode *ni
 				#endif
@@ -323,7 +323,7 @@ static void end_wim_resource_read(struct lookup_table_entry *lte
 }
 
 static int
-write_uncompressed_resource_and_truncate(struct lookup_table_entry *lte,
+write_uncompressed_resource_and_truncate(struct wim_lookup_table_entry *lte,
 					 FILE *out_fp,
 					 off_t file_offset,
 					 struct resource_entry *out_res_entry)
@@ -364,7 +364,7 @@ write_uncompressed_resource_and_truncate(struct lookup_table_entry *lte,
  *
  * Returns 0 on success; nonzero on failure.
  */
-int write_wim_resource(struct lookup_table_entry *lte,
+int write_wim_resource(struct wim_lookup_table_entry *lte,
 		       FILE *out_fp, int out_ctype,
 		       struct resource_entry *out_res_entry,
 		       int flags)
@@ -626,7 +626,7 @@ struct compressor_thread_params {
 #define MAX_CHUNKS_PER_MSG 2
 
 struct message {
-	struct lookup_table_entry *lte;
+	struct wim_lookup_table_entry *lte;
 	u8 *uncompressed_chunks[MAX_CHUNKS_PER_MSG];
 	u8 *out_compressed_chunks[MAX_CHUNKS_PER_MSG];
 	u8 *compressed_chunks[MAX_CHUNKS_PER_MSG];
@@ -686,7 +686,7 @@ static int do_write_stream_list(struct list_head *my_resources,
 				int write_resource_flags)
 {
 	int ret;
-	struct lookup_table_entry *lte, *tmp;
+	struct wim_lookup_table_entry *lte, *tmp;
 
 	list_for_each_entry_safe(lte, tmp, my_resources, staging_list) {
 		ret = write_wim_resource(lte,
@@ -777,7 +777,7 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 	int ret;
 	struct chunk_table *cur_chunk_tab = NULL;
 	struct message *msgs = CALLOC(num_messages, sizeof(struct message));
-	struct lookup_table_entry *next_lte = NULL;
+	struct wim_lookup_table_entry *next_lte = NULL;
 
 	// Initially, all the messages are available to use.
 	LIST_HEAD(available_msgs);
@@ -818,7 +818,7 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 	// list and written directly by the main thread.
 	LIST_HEAD(my_resources);
 
-	struct lookup_table_entry *cur_lte = NULL;
+	struct wim_lookup_table_entry *cur_lte = NULL;
 	struct message *msg;
 
 #ifdef WITH_NTFS_3G
@@ -908,7 +908,7 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 						break;
 					}
 					next_lte = container_of(next_resource,
-								struct lookup_table_entry,
+								struct wim_lookup_table_entry,
 								staging_list);
 					next_resource = next_resource->next;
 					if ((!(write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
@@ -1113,7 +1113,7 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 					cur_lte = NULL;
 				else
 					cur_lte = container_of(cur_lte->staging_list.next,
-							       struct lookup_table_entry,
+							       struct wim_lookup_table_entry,
 							       staging_list);
 
 				// Since we just finished writing a stream,
@@ -1297,7 +1297,7 @@ static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
 			     unsigned num_threads,
 			     wimlib_progress_func_t progress_func)
 {
-	struct lookup_table_entry *lte;
+	struct wim_lookup_table_entry *lte;
 	size_t num_streams = 0;
 	u64 total_bytes = 0;
 	u64 total_compression_bytes = 0;
@@ -1345,7 +1345,7 @@ struct lte_overwrite_prepare_args {
 	struct list_head *stream_list;
 };
 
-static int lte_overwrite_prepare(struct lookup_table_entry *lte, void *arg)
+static int lte_overwrite_prepare(struct wim_lookup_table_entry *lte, void *arg)
 {
 	struct lte_overwrite_prepare_args *args = arg;
 
@@ -1382,17 +1382,17 @@ static int wim_find_new_streams(WIMStruct *wim, off_t end_offset,
 				      lte_overwrite_prepare, &args);
 }
 
-static int inode_find_streams_to_write(struct inode *inode,
-				       struct lookup_table *table,
+static int inode_find_streams_to_write(struct wim_inode *inode,
+				       struct wim_lookup_table *table,
 				       struct list_head *stream_list)
 {
-	struct lookup_table_entry *lte;
-	for (unsigned i = 0; i <= inode->num_ads; i++) {
+	struct wim_lookup_table_entry *lte;
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 		lte = inode_stream_lte(inode, i, table);
 		if (lte) {
 			if (lte->out_refcnt == 0)
 				list_add_tail(&lte->staging_list, stream_list);
-			lte->out_refcnt += inode->link_count;
+			lte->out_refcnt += inode->i_nlink;
 		}
 	}
 	return 0;
@@ -1400,12 +1400,12 @@ static int inode_find_streams_to_write(struct inode *inode,
 
 static int image_find_streams_to_write(WIMStruct *w)
 {
-	struct inode *inode;
+	struct wim_inode *inode;
 	struct hlist_node *cur;
 	struct hlist_head *inode_list;
 
 	inode_list = &wim_get_current_image_metadata(w)->inode_list;
-	hlist_for_each_entry(inode, cur, inode_list, hlist) {
+	hlist_for_each_entry(inode, cur, inode_list, i_hlist) {
 		inode_find_streams_to_write(inode, w->lookup_table,
 					    (struct list_head*)w->private);
 	}

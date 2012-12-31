@@ -58,7 +58,7 @@ static int extract_wim_chunk_to_ntfs_attr(const u8 *buf, size_t len,
  * Extracts a WIM resource to a NTFS attribute.
  */
 static int
-extract_wim_resource_to_ntfs_attr(const struct lookup_table_entry *lte,
+extract_wim_resource_to_ntfs_attr(const struct wim_lookup_table_entry *lte,
 			          ntfs_attr *na)
 {
 	return extract_wim_resource(lte, wim_resource_size(lte),
@@ -81,22 +81,22 @@ extract_wim_resource_to_ntfs_attr(const struct lookup_table_entry *lte,
  *
  * Returns 0 on success, nonzero on failure.
  */
-static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
+static int write_ntfs_data_streams(ntfs_inode *ni, const struct wim_dentry *dentry,
 				   union wimlib_progress_info *progress_info)
 {
 	int ret = 0;
 	unsigned stream_idx = 0;
 	ntfschar *stream_name = AT_UNNAMED;
 	u32 stream_name_len = 0;
-	const struct inode *inode = dentry->d_inode;
-	struct lookup_table_entry *lte;
+	const struct wim_inode *inode = dentry->d_inode;
+	struct wim_lookup_table_entry *lte;
 
 	DEBUG("Writing %u NTFS data stream%s for `%s'",
-	      inode->num_ads + 1,
-	      (inode->num_ads == 0 ? "" : "s"),
+	      inode->i_num_ads + 1,
+	      (inode->i_num_ads == 0 ? "" : "s"),
 	      dentry->full_path_utf8);
 
-	lte = inode->lte;
+	lte = inode->i_lte;
 	while (1) {
 		if (stream_name_len) {
 			/* Create an empty named stream. */
@@ -148,13 +148,13 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 			 * have been extracted. */
 			progress_info->extract.completed_bytes += wim_resource_size(lte);
 		}
-		if (stream_idx == inode->num_ads) /* Has the last stream been extracted? */
+		if (stream_idx == inode->i_num_ads) /* Has the last stream been extracted? */
 			break;
 
 		/* Get the name and lookup table entry for the next stream. */
-		stream_name = (ntfschar*)inode->ads_entries[stream_idx].stream_name;
-		stream_name_len = inode->ads_entries[stream_idx].stream_name_len / 2;
-		lte = inode->ads_entries[stream_idx].lte;
+		stream_name = (ntfschar*)inode->i_ads_entries[stream_idx].stream_name;
+		stream_name_len = inode->i_ads_entries[stream_idx].stream_name_len / 2;
+		lte = inode->i_ads_entries[stream_idx].lte;
 		stream_idx++;
 	}
 	return ret;
@@ -162,7 +162,7 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct dentry *dentry,
 
 /* Open the NTFS inode that corresponds to the parent of a WIM dentry.  Returns
  * the opened inode, or NULL on failure. */
-static ntfs_inode *dentry_open_parent_ni(const struct dentry *dentry,
+static ntfs_inode *dentry_open_parent_ni(const struct wim_dentry *dentry,
 					 ntfs_volume *vol)
 {
 	char *p;
@@ -192,15 +192,15 @@ static ntfs_inode *dentry_open_parent_ni(const struct dentry *dentry,
  *
  * The hard link is named @from_dentry->file_name and is located under the
  * directory specified by @dir_ni, and it is made to point to the previously
- * extracted file located at @inode->extracted_file.
+ * extracted file located at @inode->i_extracted_file.
  *
  * Or, in other words, this adds a new name @from_dentry->full_path_utf8 to an
- * existing NTFS inode which already has a name @inode->extracted_file.
+ * existing NTFS inode which already has a name @inode->i_extracted_file.
  *
  * Return 0 on success, nonzero on failure.
  */
-static int apply_ntfs_hardlink(const struct dentry *from_dentry,
-			       const struct inode *inode,
+static int apply_ntfs_hardlink(const struct wim_dentry *from_dentry,
+			       const struct wim_inode *inode,
 			       ntfs_inode **dir_ni_p)
 {
 	int ret;
@@ -218,12 +218,12 @@ static int apply_ntfs_hardlink(const struct dentry *from_dentry,
 	}
 
 	DEBUG("Extracting NTFS hard link `%s' => `%s'",
-	      from_dentry->full_path_utf8, inode->extracted_file);
+	      from_dentry->full_path_utf8, inode->i_extracted_file);
 
-	to_ni = ntfs_pathname_to_inode(vol, NULL, inode->extracted_file);
+	to_ni = ntfs_pathname_to_inode(vol, NULL, inode->i_extracted_file);
 	if (!to_ni) {
 		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
-				 inode->extracted_file);
+				 inode->i_extracted_file);
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
@@ -241,7 +241,7 @@ static int apply_ntfs_hardlink(const struct dentry *from_dentry,
 	if (ntfs_inode_close_in_dir(to_ni, dir_ni) || ret != 0) {
 		ERROR_WITH_ERRNO("Could not create hard link `%s' => `%s'",
 				 from_dentry->full_path_utf8,
-				 inode->extracted_file);
+				 inode->i_extracted_file);
 		ret = WIMLIB_ERR_NTFS_3G;
 	}
 	return ret;
@@ -261,20 +261,20 @@ static int apply_ntfs_hardlink(const struct dentry *from_dentry,
 static int
 apply_file_attributes_and_security_data(ntfs_inode *ni,
 					ntfs_inode *dir_ni,
-					const struct dentry *dentry,
+					const struct wim_dentry *dentry,
 					const WIMStruct *w)
 {
 	int ret;
 	struct SECURITY_CONTEXT ctx;
 	u32 attributes_le32;
-	const struct inode *inode;
+	const struct wim_inode *inode;
 
 	inode = dentry->d_inode;
 
 	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
-	      dentry->full_path_utf8, inode->attributes);
+	      dentry->full_path_utf8, inode->i_attributes);
 
-	attributes_le32 = cpu_to_le32(inode->attributes);
+	attributes_le32 = cpu_to_le32(inode->i_attributes);
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.vol = ni->vol;
 	ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ATTRIB,
@@ -286,19 +286,19 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 		       dentry->full_path_utf8);
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	if (inode->security_id != -1) {
+	if (inode->i_security_id != -1) {
 		const char *desc;
 		const struct wim_security_data *sd;
 
 		sd = wim_const_security_data(w);
-		wimlib_assert(inode->security_id < sd->num_entries);
-		desc = (const char *)sd->descriptors[inode->security_id];
+		wimlib_assert(inode->i_security_id < sd->num_entries);
+		desc = (const char *)sd->descriptors[inode->i_security_id];
 		DEBUG("Applying security descriptor %d to `%s'",
-		      inode->security_id, dentry->full_path_utf8);
+		      inode->i_security_id, dentry->full_path_utf8);
 
 		ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ACL,
 						 ni, dir_ni, desc,
-						 sd->sizes[inode->security_id], 0);
+						 sd->sizes[inode->i_security_id], 0);
 
 		if (ret != 0) {
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
@@ -313,10 +313,10 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
  * Transfers the reparse data from a WIM inode (which must represent a reparse
  * point) to a NTFS inode.
  */
-static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
+static int apply_reparse_data(ntfs_inode *ni, const struct wim_dentry *dentry,
 			      union wimlib_progress_info *progress_info)
 {
-	struct lookup_table_entry *lte;
+	struct wim_lookup_table_entry *lte;
 	int ret = 0;
 
 	lte = inode_unnamed_lte_resolved(dentry->d_inode);
@@ -337,7 +337,7 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 
 	u8 reparse_data_buf[8 + wim_resource_size(lte)];
 	u8 *p = reparse_data_buf;
-	p = put_u32(p, dentry->d_inode->reparse_tag); /* ReparseTag */
+	p = put_u32(p, dentry->d_inode->i_reparse_tag); /* ReparseTag */
 	p = put_u16(p, wim_resource_size(lte)); /* ReparseDataLength */
 	p = put_u16(p, 0); /* Reserved */
 
@@ -356,7 +356,7 @@ static int apply_reparse_data(ntfs_inode *ni, const struct dentry *dentry,
 	return 0;
 }
 
-static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
+static int do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 				struct apply_args *args);
 
 /*
@@ -367,12 +367,12 @@ static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
  * in the Win32 namespace, and not any of the additional names in the POSIX
  * namespace created from hard links.
  */
-static int preapply_dentry_with_dos_name(struct dentry *dentry,
+static int preapply_dentry_with_dos_name(struct wim_dentry *dentry,
 				    	 ntfs_inode **dir_ni_p,
 					 struct apply_args *args)
 {
-	struct dentry *other;
-	struct dentry *dentry_with_dos_name;
+	struct wim_dentry *other;
+	struct wim_dentry *dentry_with_dos_name;
 
 	dentry_with_dos_name = NULL;
 	inode_for_each_dentry(other, dentry->d_inode) {
@@ -415,17 +415,17 @@ static int preapply_dentry_with_dos_name(struct dentry *dentry,
  *
  * @return:  0 on success; nonzero on failure.
  */
-static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
+static int do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 				struct apply_args *args)
 {
 	int ret = 0;
 	mode_t type;
 	ntfs_inode *ni = NULL;
 	ntfs_volume *vol = dir_ni->vol;
-	struct inode *inode = dentry->d_inode;
+	struct wim_inode *inode = dentry->d_inode;
 	dentry->is_extracted = 1;
 
-	if (inode->attributes & FILE_ATTRIBUTE_DIRECTORY) {
+	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		type = S_IFDIR;
 	} else {
 		/* If this dentry is hard-linked to any other dentries in the
@@ -439,10 +439,10 @@ static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 				return ret;
 		}
 		type = S_IFREG;
-		if (inode->link_count > 1) {
+		if (inode->i_nlink > 1) {
 			/* Inode has multiple dentries referencing it. */
 
-			if (inode->extracted_file) {
+			if (inode->i_extracted_file) {
 				/* Already extracted another dentry in the hard
 				 * link group.  Make a hard link instead of
 				 * extracting the file data. */
@@ -456,9 +456,9 @@ static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 				/* None of the dentries of this inode have been
 				 * extracted yet, so go ahead and extract the
 				 * first one. */
-				FREE(inode->extracted_file);
-				inode->extracted_file = STRDUP(dentry->full_path_utf8);
-				if (!inode->extracted_file) {
+				FREE(inode->i_extracted_file);
+				inode->i_extracted_file = STRDUP(dentry->full_path_utf8);
+				if (!inode->i_extracted_file) {
 					ret = WIMLIB_ERR_NOMEM;
 					goto out_close_dir_ni;
 				}
@@ -483,7 +483,7 @@ static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 
 	/* Write the data streams, unless this is a directory or reparse point
 	 * */
-	if (!(inode->attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
+	if (!(inode->i_attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
 				   FILE_ATTRIBUTE_DIRECTORY))) {
 		ret = write_ntfs_data_streams(ni, dentry, &args->progress);
 		if (ret != 0)
@@ -496,7 +496,7 @@ static int do_apply_dentry_ntfs(struct dentry *dentry, ntfs_inode *dir_ni,
 	if (ret != 0)
 		goto out_close_dir_ni;
 
-	if (inode->attributes & FILE_ATTR_REPARSE_POINT) {
+	if (inode->i_attributes & FILE_ATTR_REPARSE_POINT) {
 		ret = apply_reparse_data(ni, dentry, &args->progress);
 		if (ret != 0)
 			goto out_close_dir_ni;
@@ -566,7 +566,7 @@ out_close_dir_ni:
 	return ret;
 }
 
-static int apply_root_dentry_ntfs(const struct dentry *dentry,
+static int apply_root_dentry_ntfs(const struct wim_dentry *dentry,
 				  ntfs_volume *vol, const WIMStruct *w)
 {
 	ntfs_inode *ni;
@@ -587,7 +587,7 @@ static int apply_root_dentry_ntfs(const struct dentry *dentry,
 }
 
 /* Applies a WIM dentry to the NTFS volume */
-int apply_dentry_ntfs(struct dentry *dentry, void *arg)
+int apply_dentry_ntfs(struct wim_dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
 	ntfs_volume *vol = args->vol;
@@ -606,7 +606,7 @@ int apply_dentry_ntfs(struct dentry *dentry, void *arg)
 
 /* Transfers the 100-nanosecond precision timestamps from a WIM dentry to a NTFS
  * inode */
-int apply_dentry_timestamps_ntfs(struct dentry *dentry, void *arg)
+int apply_dentry_timestamps_ntfs(struct wim_dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
 	ntfs_volume *vol = args->vol;
@@ -625,9 +625,9 @@ int apply_dentry_timestamps_ntfs(struct dentry *dentry, void *arg)
 	}
 
 	p = buf;
-	p = put_u64(p, dentry->d_inode->creation_time);
-	p = put_u64(p, dentry->d_inode->last_write_time);
-	p = put_u64(p, dentry->d_inode->last_access_time);
+	p = put_u64(p, dentry->d_inode->i_creation_time);
+	p = put_u64(p, dentry->d_inode->i_last_write_time);
+	p = put_u64(p, dentry->d_inode->i_last_access_time);
 	ret = ntfs_inode_set_times(ni, (const char*)buf, 3 * sizeof(u64), 0);
 	if (ret != 0) {
 		ERROR_WITH_ERRNO("Failed to set NTFS timestamps on `%s'",

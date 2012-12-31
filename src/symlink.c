@@ -32,10 +32,13 @@
 /*
  * Find the symlink target of a symbolic link or junction point in the WIM.
  *
- * See http://msdn.microsoft.com/en-us/library/cc232006(v=prot.10).aspx
- * Except the first 8 bytes aren't included in the resource (presumably because
- * we already know the reparse tag from the dentry, and we already know the
- * reparse tag len from the lookup table entry resource length).
+ * See http://msdn.microsoft.com/en-us/library/cc232006(v=prot.10).aspx for a
+ * description of the format of the so-called "reparse point data buffers".
+ *
+ * But, in the WIM format, the first 8 bytes of the reparse point data buffer
+ * are omitted, presumably because we already know the reparse tag from the
+ * dentry, and we already know the reparse tag length from the lookup table
+ * entry resource length.
  */
 static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 			        char *buf, size_t buf_len,
@@ -64,12 +67,6 @@ static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
 
 	wimlib_assert(reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
 		      reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
-
-	/* I think that some junction points incorrectly get marked as symbolic
-	 * links.  So, parse the link buffer as a symlink if the flags seem
-	 * plausible. */
-	if (flags <= 1)
-		reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
 
 	if (reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT) {
 		header_size = 8;
@@ -168,14 +165,14 @@ static int make_symlink_reparse_data_buf(const char *symlink_target,
 	return ret;
 }
 
-/* Get the symlink target from a dentry.
+/* Get the symlink target from a WIM inode.
  *
- * The dentry may be either "real" symlink or a junction point.
+ * The inode may be either "real" symlink or a junction point.
  */
-ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
+ssize_t inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
 		       const WIMStruct *w, int read_resource_flags)
 {
-	const struct lookup_table_entry *lte;
+	const struct wim_lookup_table_entry *lte;
 	int ret;
 
 	wimlib_assert(inode_is_symlink(inode));
@@ -192,7 +189,7 @@ ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
 	if (ret != 0)
 		return -EIO;
 	return get_symlink_name(res_buf, wim_resource_size(lte), buf,
-				buf_len, inode->reparse_tag);
+				buf_len, inode->i_reparse_tag);
 }
 
 /*
@@ -206,14 +203,14 @@ ssize_t inode_readlink(const struct inode *inode, char *buf, size_t buf_len,
  *
  * On failure @dentry and @lookup_table are not modified.
  */
-int inode_set_symlink(struct inode *inode, const char *target,
-		      struct lookup_table *lookup_table,
-		      struct lookup_table_entry **lte_ret)
+int inode_set_symlink(struct wim_inode *inode, const char *target,
+		      struct wim_lookup_table *lookup_table,
+		      struct wim_lookup_table_entry **lte_ret)
 
 {
 	int ret;
 	size_t symlink_buf_len;
-	struct lookup_table_entry *lte = NULL, *existing_lte;
+	struct wim_lookup_table_entry *lte = NULL, *existing_lte;
 	u8 symlink_buf_hash[SHA1_HASH_SIZE];
 	void *symlink_buf;
 
@@ -247,8 +244,8 @@ int inode_set_symlink(struct inode *inode, const char *target,
 		copy_hash(lte->hash, symlink_buf_hash);
 	}
 
-	inode->lte = lte;
-	inode->resolved = true;
+	inode->i_lte = lte;
+	inode->i_resolved = 1;
 
 	DEBUG("Loaded symlink buf");
 

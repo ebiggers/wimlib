@@ -47,7 +47,7 @@ static int finish_swm(WIMStruct *w, struct list_head *lte_list,
 {
 	off_t lookup_table_offset = ftello(w->out_fp);
 	int ret;
-	struct lookup_table_entry *lte;
+	struct wim_lookup_table_entry *lte;
 
 	list_for_each_entry(lte, lte_list, staging_list) {
 		ret = write_lookup_table_entry(lte, w->out_fp);
@@ -70,7 +70,7 @@ static int finish_swm(WIMStruct *w, struct list_head *lte_list,
 			    progress_func);
 }
 
-static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
+static int copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *__args)
 {
 	struct split_args *args = (struct split_args*)__args;
 	WIMStruct *w = args->w;
@@ -121,8 +121,8 @@ static int copy_resource_to_swm(struct lookup_table_entry *lte, void *__args)
 	return copy_resource(lte, w);
 }
 
-/* Splits the WIM file @wimfile into multiple parts prefixed by @swm_name with
- * size at most @part_size. */
+/* Splits the WIM file @w into multiple parts prefixed by @swm_name with size at
+ * most @part_size bytes. */
 WIMLIBAPI int wimlib_split(WIMStruct *w, const char *swm_name,
 			   size_t part_size, int write_flags,
 			   wimlib_progress_func_t progress_func)
@@ -186,7 +186,7 @@ WIMLIBAPI int wimlib_split(WIMStruct *w, const char *swm_name,
 
 	w->write_metadata = true;
 	for (int i = 0; i < w->hdr.image_count; i++) {
-		struct lookup_table_entry *metadata_lte;
+		struct wim_lookup_table_entry *metadata_lte;
 		metadata_lte = w->image_metadata[i].metadata_lte;
 		ret = copy_resource(metadata_lte, w);
 		if (ret != 0)
@@ -212,8 +212,8 @@ WIMLIBAPI int wimlib_split(WIMStruct *w, const char *swm_name,
 	}
 
 	/* The swms are all ready now, except the total_parts and part_number
-	 * fields in their headers are wrong (we don't know the total parts
-	 * until they are all written).  Fix them. */
+	 * fields in their headers are wrong (since we don't know the total
+	 * parts until they are all written).  Fix them. */
 	int total_parts = args.cur_part_number;
 	for (int i = 1; i <= total_parts; i++) {
 		const char *part_name;
@@ -236,8 +236,9 @@ WIMLIBAPI int wimlib_split(WIMStruct *w, const char *swm_name,
 		put_u16(&buf[2], total_parts);
 
 		if (fseek(fp, 40, SEEK_SET) != 0 ||
-				fwrite(buf, 1, sizeof(buf), fp) != sizeof(buf)
-				|| fclose(fp) != 0) {
+		    fwrite(buf, 1, sizeof(buf), fp) != sizeof(buf) ||
+		    fclose(fp) != 0)
+		{
 			ERROR_WITH_ERRNO("Error overwriting header of `%s'",
 					 part_name);
 			ret = WIMLIB_ERR_WRITE;

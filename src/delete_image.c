@@ -62,8 +62,8 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 	if (ret != 0)
 		return ret;
 
-	/* Free the dentry tree, any lookup table entries that have their
-	 * refcnt decremented to 0, and the security data. */
+	/* Free the dentry tree, any lookup table entries that have their refcnt
+	 * decremented to 0, and the security data. */
 	destroy_image_metadata(&w->image_metadata[image - 1], w->lookup_table);
 
 	/* Get rid of the empty slot in the image metadata array. */
@@ -87,6 +87,6 @@ WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
 	/* Remove the image from the XML information. */
 	xml_delete_image(&w->wim_info, image);
 
-	w->deletion_occurred = true;
+	w->deletion_occurred = 1;
 	return 0;
 }

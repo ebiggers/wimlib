@@ -27,11 +27,11 @@
 #include <string.h>
 
 /*
- * Builds a fast huffman decoding table from an array that gives the length of
- * the codeword for each symbol in the alphabet.  Originally based on code
- * written by David Tritscher (taken the original LZX decompression code); also
- * heavily modified to add some optimizations used in the zlib code, as well as
- * more comments.
+ * make_huffman_decode_table: - Builds a fast huffman decoding table from an
+ * array that gives the length of the codeword for each symbol in the alphabet.
+ * Originally based on code written by David Tritscher (taken the original LZX
+ * decompression code); also heavily modified to add some optimizations used in
+ * the zlib code, as well as more comments.
  *
  * @decode_table:	The array in which to create the fast huffman decoding
  * 			table.  It must have a length of at least
@@ -282,8 +282,8 @@ int make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
 	return 0;
 }
 
-/* Reads a Huffman-encoded symbol when it is known there are less than
- * MAX_CODE_LEN bits remaining in the bitstream. */
+/* Reads a Huffman-encoded symbol from the bistream when the number of remaining
+ * bits is less than the maximum codeword length. */
 int read_huffsym_near_end_of_input(struct input_bitstream *istream,
 				   const u16 decode_table[],
 				   const u8 lens[],

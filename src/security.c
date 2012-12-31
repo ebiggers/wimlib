@@ -1,9 +1,7 @@
 /*
  * security.c
  *
- * Read and write the WIM security data.  The security data is a table of
- * security descriptors. Each WIM image has its own security data, but it's
- * possible that an image's security data have no security descriptors.
+ * Read and write the per-WIM-image table of security descriptors.
  */
 
 /*
@@ -57,7 +55,7 @@ static void empty_sacl_fixup(u8 *descr, u64 *size_p)
  *
  * @metadata_resource:	An array that contains the uncompressed metadata
  * 				resource for the WIM file.
- * @metadata_resource_len:	The length of @metadata_resource.  It MUST be at
+ * @metadata_resource_len:	The length of @metadata_resource.  It must be at
  *				least 8 bytes.
  * @sd_p:	A pointer to a pointer to a wim_security_data structure that
  * 		will be filled in with a pointer to a new wim_security_data
@@ -73,6 +71,8 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 	const u8 *p;
 	int ret;
 	u64 total_len;
+
+	wimlib_assert(metadata_resource_len >= 8);
 
 	/*
 	 * Sorry this function is excessively complicated--- I'm just being
@@ -121,7 +121,9 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 	      sd->num_entries, sd->total_length);
 
 	if (sd->num_entries == 0) {
-		/* No security descriptors. */
+		/* No security descriptors.  We allow the total_length field to
+		 * be either 8 (which is correct, since there are always 2
+		 * 32-bit integers) or 0. */
 		if (sd->total_length != 0 && sd->total_length != 8) {
 			ERROR("Invalid security data length (%u): expected 0 or 8",
 			      sd->total_length);
@@ -135,14 +137,11 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 	u64 size_no_descriptors = 8 + sizes_size;
 	if (size_no_descriptors > (u64)sd->total_length) {
 		ERROR("Security data total length of %u is too short because "
-		      "there must be at least %"PRIu64" bytes of security data",
+		      "there seem to be at least %"PRIu64" bytes of security data",
 		      sd->total_length, 8 + sizes_size);
 		goto out_invalid_sd;
 	}
-	if (sizeof(size_t) < 8 && sizes_size > 0xffffffff) {
-		ERROR("Too many security descriptors!");
-		goto out_invalid_sd;
-	}
+
 	sd->sizes = MALLOC(sizes_size);
 	if (!sd->sizes) {
 		ret = WIMLIB_ERR_NOMEM;
@@ -174,14 +173,15 @@ int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 			goto out_invalid_sd;
 		}
 		total_len += sd->sizes[i];
-		/* This check assures that the descriptor size fits in a 32 bit
+		/* This check ensures that the descriptor size fits in a 32 bit
 		 * integer.  Because if it didn't, the total length would come
 		 * out bigger than sd->total_length, which is a 32 bit integer.
 		 * */
 		if (total_len > (u64)sd->total_length) {
 			ERROR("Security data total length of %u is too short "
-			      "because there are at least %"PRIu64" bytes of "
-			      "security data", sd->total_length, total_len);
+			      "because there seem to be at least %"PRIu64" "
+			      "bytes of security data",
+			      sd->total_length, total_len);
 			goto out_invalid_sd;
 		}
 		sd->descriptors[i] = MALLOC(sd->sizes[i]);

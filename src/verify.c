@@ -30,30 +30,23 @@
 #include "dentry.h"
 #include "lookup_table.h"
 
-static inline struct dentry *inode_first_dentry(struct inode *inode)
+static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 {
-	wimlib_assert(inode->dentry_list.next != &inode->dentry_list);
-	return container_of(inode->dentry_list.next, struct dentry,
-			    inode_dentry_list);
-}
-
-static int verify_inode(struct inode *inode, const WIMStruct *w)
-{
-	const struct lookup_table *table = w->lookup_table;
+	const struct wim_lookup_table *table = w->lookup_table;
 	const struct wim_security_data *sd = wim_const_security_data(w);
-	const struct dentry *first_dentry = inode_first_dentry(inode);
+	const struct wim_dentry *first_dentry = inode_first_dentry(inode);
 	int ret = WIMLIB_ERR_INVALID_DENTRY;
 
 	/* Check the security ID */
-	if (inode->security_id < -1) {
+	if (inode->i_security_id < -1) {
 		ERROR("Dentry `%s' has an invalid security ID (%d)",
-			first_dentry->full_path_utf8, inode->security_id);
+			first_dentry->full_path_utf8, inode->i_security_id);
 		goto out;
 	}
-	if (inode->security_id >= sd->num_entries) {
+	if (inode->i_security_id >= sd->num_entries) {
 		ERROR("Dentry `%s' has an invalid security ID (%d) "
 		      "(there are only %u entries in the security table)",
-			first_dentry->full_path_utf8, inode->security_id,
+			first_dentry->full_path_utf8, inode->i_security_id,
 			sd->num_entries);
 		goto out;
 	}
@@ -62,8 +55,8 @@ static int verify_inode(struct inode *inode, const WIMStruct *w)
 	 * if the SHA1 message digest is all 0's, which indicates there is
 	 * intentionally no resource there.  */
 	if (w->hdr.total_parts == 1) {
-		for (unsigned i = 0; i <= inode->num_ads; i++) {
-			struct lookup_table_entry *lte;
+		for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+			struct wim_lookup_table_entry *lte;
 			const u8 *hash;
 			hash = inode_stream_hash_unresolved(inode, i);
 			lte = __lookup_resource(table, hash);
@@ -73,7 +66,7 @@ static int verify_inode(struct inode *inode, const WIMStruct *w)
 				goto out;
 			}
 			if (lte)
-				lte->real_refcnt += inode->link_count;
+				lte->real_refcnt += inode->i_nlink;
 
 			/* The following is now done when required by
 			 * wim_run_full_verifications(). */
@@ -117,10 +110,10 @@ static int verify_inode(struct inode *inode, const WIMStruct *w)
 
 	/* Make sure there is only one un-named stream. */
 	unsigned num_unnamed_streams = 0;
-	for (unsigned i = 0; i <= inode->num_ads; i++) {
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 		const u8 *hash;
 		hash = inode_stream_hash_unresolved(inode, i);
-		if (!inode_stream_name_len(inode, i) && !is_zero_hash(hash))
+		if (inode_stream_name_len(inode, i) == 0 && !is_zero_hash(hash))
 			num_unnamed_streams++;
 	}
 	if (num_unnamed_streams > 1) {
@@ -128,18 +121,18 @@ static int verify_inode(struct inode *inode, const WIMStruct *w)
 		      first_dentry->full_path_utf8, num_unnamed_streams);
 		goto out;
 	}
-	inode->verified = true;
+	inode->i_verified = 1;
 	ret = 0;
 out:
 	return ret;
 }
 
 /* Run some miscellaneous verifications on a WIM dentry */
-int verify_dentry(struct dentry *dentry, void *wim)
+int verify_dentry(struct wim_dentry *dentry, void *wim)
 {
 	int ret;
 
-	if (!dentry->d_inode->verified) {
+	if (!dentry->d_inode->i_verified) {
 		ret = verify_inode(dentry->d_inode, wim);
 		if (ret != 0)
 			return ret;
@@ -163,8 +156,8 @@ int verify_dentry(struct dentry *dentry, void *wim)
 
 #if 0
 	/* Check timestamps */
-	if (inode->last_access_time < inode->creation_time ||
-	    inode->last_write_time < inode->creation_time) {
+	if (inode->i_last_access_time < inode->i_creation_time ||
+	    inode->i_last_write_time < inode->i_creation_time) {
 		WARNING("Dentry `%s' was created after it was last accessed or "
 		      "written to", dentry->full_path_utf8);
 	}
@@ -178,7 +171,7 @@ static int image_run_full_verifications(WIMStruct *w)
 	return for_dentry_in_tree(wim_root_dentry(w), verify_dentry, w);
 }
 
-static int lte_fix_refcnt(struct lookup_table_entry *lte, void *ctr)
+static int lte_fix_refcnt(struct wim_lookup_table_entry *lte, void *ctr)
 {
 	if (lte->refcnt != lte->real_refcnt) {
 		WARNING("The following lookup table entry has a reference "
@@ -228,8 +221,8 @@ int wim_run_full_verifications(WIMStruct *w)
 }
 
 /*
- * Sanity checks to make sure a set of WIMs correctly correspond to a spanned
- * set.
+ * verify_swm_set: - Sanity checks to make sure a set of WIMs correctly
+ *		     correspond to a spanned set.
  *
  * @w:
  * 	Part 1 of the set.

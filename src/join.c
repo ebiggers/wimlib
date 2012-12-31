@@ -28,22 +28,22 @@
 #include "xml.h"
 #include <stdlib.h>
 
-static int move_lte_to_table(struct lookup_table_entry *lte,
+static int move_lte_to_table(struct wim_lookup_table_entry *lte,
 			     void *other_tab)
 {
 	hlist_del(&lte->hash_list);
-	lookup_table_insert((struct lookup_table*)other_tab, lte);
+	lookup_table_insert((struct wim_lookup_table*)other_tab, lte);
 	return 0;
 }
 
-static int lookup_table_join(struct lookup_table *table,
-			     struct lookup_table *new)
+static int lookup_table_join(struct wim_lookup_table *table,
+			     struct wim_lookup_table *new)
 {
 	return for_lookup_table_entry(new, move_lte_to_table, table);
 }
 
 /*
- * Joins lookup tables from the parts of a split WIM.
+ * new_joined_lookup_table: - Join lookup tables from the parts of a split WIM.
  *
  * @w specifies the first part, while @additional_swms and @num_additional_swms
  * specify an array of pointers to the WIMStruct's for additional split WIM parts.
@@ -53,18 +53,15 @@ static int lookup_table_join(struct lookup_table *table,
  * On success, 0 is returned on a pointer to the joined lookup table is returned
  * in @table_ret.
  *
- * The reason we join the lookup tables is so:
- * 	- We only have to search one lookup table to find the location of a
- * 	resource in the entire split WIM.
- * 	- Each lookup table entry will have a pointer to its split WIM part (and
- * 	a part number field, although we don't really use it).
+ * The reason we join the lookup tables is so we only have to search one lookup
+ * table to find the location of a resource in the entire WIM.
  */
 int new_joined_lookup_table(WIMStruct *w,
 			    WIMStruct **additional_swms,
 			    unsigned num_additional_swms,
-			    struct lookup_table **table_ret)
+			    struct wim_lookup_table **table_ret)
 {
-	struct lookup_table *table;
+	struct wim_lookup_table *table;
 	int ret;
 	unsigned i;
 

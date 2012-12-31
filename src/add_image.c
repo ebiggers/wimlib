@@ -39,23 +39,13 @@
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT 0x80000000
 
 /*
- * Adds an image (given by its dentry tree) to the image metadata array of a WIM
- * file, adds an entry to the lookup table for the image metadata, updates the
- * image count in the header, and selects the new image.
- *
- * Does not update the XML data.
- *
- * On failure, WIMLIB_ERR_NOMEM is returned and no changes are made.  Otherwise,
- * 0 is returned and the image metadata array of @w is modified.
- *
- * @w:		  The WIMStruct for the WIM file.
- * @root_dentry:  The root of the directory tree for the image.
- * @sd:		  The security data for the image.
+ * Adds the dentry tree and security data for a new image to the image metadata
+ * array of the WIMStruct.
  */
-int add_new_dentry_tree(WIMStruct *w, struct dentry *root_dentry,
+int add_new_dentry_tree(WIMStruct *w, struct wim_dentry *root_dentry,
 			struct wim_security_data *sd)
 {
-	struct lookup_table_entry *metadata_lte;
+	struct wim_lookup_table_entry *metadata_lte;
 	struct image_metadata *imd;
 	struct image_metadata *new_imd;
 
@@ -101,11 +91,11 @@ err:
 
 
 /*
- * Recursively builds a dentry tree from a directory tree on disk, outside the
- * WIM file.
+ * build_dentry_tree: - Recursively builds a tree of `struct wim_dentry tree
+ * 			from an on-disk directory tree.
  *
  * @root_ret:   Place to return a pointer to the root of the dentry tree.  Only
- *		modified if successful.  NULL if the file or directory was
+ *		modified if successful.  Set to NULL if the file or directory was
  *		excluded from capture.
  *
  * @root_disk_path:  The path to the root of the directory tree on disk.
@@ -132,9 +122,9 @@ err:
  *		the on-disk files during a call to wimlib_write() or
  *		wimlib_overwrite().
  */
-static int build_dentry_tree(struct dentry **root_ret,
+static int build_dentry_tree(struct wim_dentry **root_ret,
 			     const char *root_disk_path,
-			     struct lookup_table *lookup_table,
+			     struct wim_lookup_table *lookup_table,
 			     struct wim_security_data *sd,
 			     const struct capture_config *config,
 			     int add_image_flags,
@@ -144,9 +134,9 @@ static int build_dentry_tree(struct dentry **root_ret,
 	struct stat root_stbuf;
 	int ret = 0;
 	int (*stat_fn)(const char *restrict, struct stat *restrict);
-	struct dentry *root;
+	struct wim_dentry *root;
 	const char *filename;
-	struct inode *inode;
+	struct wim_inode *inode;
 
 	if (exclude_path(root_disk_path, config, true)) {
 		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
@@ -226,29 +216,29 @@ static int build_dentry_tree(struct dentry **root_ret,
 	inode = root->d_inode;
 
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
-	inode->creation_time = timespec_to_wim_timestamp(&root_stbuf.st_mtim);
-	inode->last_write_time = timespec_to_wim_timestamp(&root_stbuf.st_mtim);
-	inode->last_access_time = timespec_to_wim_timestamp(&root_stbuf.st_atim);
+	inode->i_creation_time = timespec_to_wim_timestamp(&root_stbuf.st_mtim);
+	inode->i_last_write_time = timespec_to_wim_timestamp(&root_stbuf.st_mtim);
+	inode->i_last_access_time = timespec_to_wim_timestamp(&root_stbuf.st_atim);
 #else
-	inode->creation_time = unix_timestamp_to_wim(root_stbuf.st_mtime);
-	inode->last_write_time = unix_timestamp_to_wim(root_stbuf.st_mtime);
-	inode->last_access_time = unix_timestamp_to_wim(root_stbuf.st_atime);
+	inode->i_creation_time = unix_timestamp_to_wim(root_stbuf.st_mtime);
+	inode->i_last_write_time = unix_timestamp_to_wim(root_stbuf.st_mtime);
+	inode->i_last_access_time = unix_timestamp_to_wim(root_stbuf.st_atime);
 #endif
 	if (sizeof(ino_t) >= 8)
-		inode->ino = (u64)root_stbuf.st_ino;
+		inode->i_ino = (u64)root_stbuf.st_ino;
 	else
-		inode->ino = (u64)root_stbuf.st_ino |
+		inode->i_ino = (u64)root_stbuf.st_ino |
 				   ((u64)root_stbuf.st_dev << ((sizeof(ino_t) * 8) & 63));
 
 	add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
-	inode->resolved = 1;
+	inode->i_resolved = 1;
 
 	if (S_ISREG(root_stbuf.st_mode)) { /* Archiving a regular file */
 
-		struct lookup_table_entry *lte;
+		struct wim_lookup_table_entry *lte;
 		u8 hash[SHA1_HASH_SIZE];
 
-		inode->attributes = FILE_ATTRIBUTE_NORMAL;
+		inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
 
 		/* Empty files do not have to have a lookup table entry. */
 		if (root_stbuf.st_size == 0)
@@ -288,14 +278,14 @@ static int build_dentry_tree(struct dentry **root_ret,
 			copy_hash(lte->hash, hash);
 			lookup_table_insert(lookup_table, lte);
 		}
-		root->d_inode->lte = lte;
+		root->d_inode->i_lte = lte;
 	} else if (S_ISDIR(root_stbuf.st_mode)) { /* Archiving a directory */
 
-		inode->attributes = FILE_ATTRIBUTE_DIRECTORY;
+		inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
 
 		DIR *dir;
 		struct dirent entry, *result;
-		struct dentry *child;
+		struct wim_dentry *child;
 
 		dir = opendir(root_disk_path);
 		if (!dir) {
@@ -339,8 +329,8 @@ static int build_dentry_tree(struct dentry **root_ret,
 		}
 		closedir(dir);
 	} else { /* Archiving a symbolic link */
-		inode->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
-		inode->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+		inode->i_attributes = FILE_ATTRIBUTE_REPARSE_POINT;
+		inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
 
 		/* The idea here is to call readlink() to get the UNIX target of
 		 * the symbolic link, then turn the target into a reparse point
@@ -372,7 +362,7 @@ static int build_dentry_tree(struct dentry **root_ret,
 				if (stat(root_disk_path, &stbuf) == 0 &&
 				    S_ISDIR(stbuf.st_mode))
 				{
-					inode->attributes |= FILE_ATTRIBUTE_DIRECTORY;
+					inode->i_attributes |= FILE_ATTRIBUTE_DIRECTORY;
 				}
 			}
 		} else {
@@ -629,14 +619,14 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 			       size_t config_len, int add_image_flags,
 			       wimlib_progress_func_t progress_func)
 {
-	int (*capture_tree)(struct dentry **, const char *,
-			    struct lookup_table *,
+	int (*capture_tree)(struct wim_dentry **, const char *,
+			    struct wim_lookup_table *,
 			    struct wim_security_data *,
 			    const struct capture_config *,
 			    int, wimlib_progress_func_t, void *);
 	void *extra_arg;
 
-	struct dentry *root_dentry = NULL;
+	struct wim_dentry *root_dentry = NULL;
 	struct wim_security_data *sd;
 	struct capture_config config;
 	struct image_metadata *imd;

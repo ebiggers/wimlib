@@ -3,7 +3,7 @@
  *
  * WIM files can optionally contain a table of SHA1 message digests at the end,
  * one digest for each chunk of the file of some specified size (often 10 MB).
- * This file implements the checking and writing this table.
+ * This file implements the checking and writing of this table.
  */
 
 /*
@@ -86,7 +86,7 @@ static int calculate_chunk_sha1(FILE *fp, size_t this_chunk_size,
 
 
 /*
- * Reads the integrity table from a WIM file.
+ * read_integrity_table: -  Reads the integrity table from a WIM file.
  *
  * @res_entry:
  * 	The resource entry that specifies the location of the integrity table.
@@ -199,6 +199,8 @@ out:
 }
 
 /*
+ * calculate_integrity_table():
+ *
  * Calculates an integrity table for the data in a file beginning at offset 208
  * (WIM_HEADER_DISK_SIZE).
  *
@@ -210,7 +212,7 @@ out:
  * 	Offset of byte after the last byte to be checked.
  *
  * @old_table:
- * 	If non-NULL, a pointer to the table containing previously contained
+ * 	If non-NULL, a pointer to the table containing the previously calculated
  * 	integrity data for a prefix of this file.
  *
  * @old_check_end:
@@ -317,6 +319,8 @@ static int calculate_integrity_table(FILE *fp,
 }
 
 /*
+ * write_integrity_table():
+ *
  * Writes a WIM integrity table (a list of SHA1 message digests of raw 10 MiB
  * chunks of the file).
  *
@@ -426,6 +430,8 @@ out_free_old_table:
 }
 
 /*
+ * verify_integrity():
+ *
  * Checks a WIM for consistency with the integrity table.
  *
  * @fp:
@@ -496,6 +502,8 @@ static int verify_integrity(FILE *fp, const char *filename,
 
 
 /*
+ * check_wim_integrity():
+ *
  * Verifies the integrity of the WIM by making sure the SHA1 message digests of
  * ~10 MiB chunks of the WIM match up with the values given in the integrity
  * table.

@@ -26,16 +26,16 @@
 #include "lookup_table.h"
 #include "xml.h"
 
-static int inode_allocate_needed_ltes(struct inode *inode,
-				      struct lookup_table *src_lookup_table,
-				      struct lookup_table *dest_lookup_table,
+static int inode_allocate_needed_ltes(struct wim_inode *inode,
+				      struct wim_lookup_table *src_lookup_table,
+				      struct wim_lookup_table *dest_lookup_table,
 				      struct list_head *lte_list_head)
 {
-	struct lookup_table_entry *src_lte, *dest_lte;
+	struct wim_lookup_table_entry *src_lte, *dest_lte;
 	unsigned i;
 
 	inode_unresolve_ltes(inode);
-	for (i = 0; i <= inode->num_ads; i++) {
+	for (i = 0; i <= inode->i_num_ads; i++) {
 		src_lte = inode_stream_lte_unresolved(inode, i,
 						      src_lookup_table);
 		if (src_lte && src_lte->out_refcnt == 0) {
@@ -53,19 +53,19 @@ static int inode_allocate_needed_ltes(struct inode *inode,
 	return 0;
 }
 
-static void inode_move_ltes_to_table(struct inode *inode,
-				     struct lookup_table *src_lookup_table,
-				     struct lookup_table *dest_lookup_table,
+static void inode_move_ltes_to_table(struct wim_inode *inode,
+				     struct wim_lookup_table *src_lookup_table,
+				     struct wim_lookup_table *dest_lookup_table,
 				     struct list_head *lte_list_head)
 {
-	struct lookup_table_entry *src_lte, *dest_lte;
+	struct wim_lookup_table_entry *src_lte, *dest_lte;
 	unsigned i;
-	struct dentry *dentry;
+	struct wim_dentry *dentry;
 
 	inode_for_each_dentry(dentry, inode)
 		dentry->refcnt++;
 
-	for (i = 0; i <= inode->num_ads; i++) {
+	for (i = 0; i <= inode->i_num_ads; i++) {
 		src_lte = inode_stream_lte_unresolved(inode, i, src_lookup_table);
 		if (src_lte) {
 			dest_lte = inode_stream_lte_unresolved(inode, i,
@@ -77,14 +77,14 @@ static void inode_move_ltes_to_table(struct inode *inode,
 				next = lte_list_head->next;
 				list_del(next);
 				dest_lte = container_of(next,
-							struct lookup_table_entry,
+							struct wim_lookup_table_entry,
 							staging_list);
 				dest_lte->part_number = 1;
 				dest_lte->refcnt = 0;
 				wimlib_assert(hashes_equal(dest_lte->hash, src_lte->hash));
 				lookup_table_insert(dest_lookup_table, dest_lte);
 			}
-			dest_lte->refcnt += inode->link_count;
+			dest_lte->refcnt += inode->i_nlink;
 		}
 	}
 }
@@ -104,11 +104,11 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 {
 	int ret;
 	struct wim_security_data *sd;
-	struct lookup_table *joined_tab, *src_wim_tab_save;
+	struct wim_lookup_table *joined_tab, *src_wim_tab_save;
 	struct image_metadata *src_imd;
 	struct hlist_node *cur_node;
 	struct list_head lte_list_head;
-	struct inode *inode;
+	struct wim_inode *inode;
 
 	if (dest_wim->hdr.total_parts != 1) {
 		ERROR("Exporting an image to a split WIM is "
@@ -212,7 +212,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	for_lookup_table_entry(src_wim->lookup_table, lte_zero_out_refcnt, NULL);
 	src_imd = wim_get_current_image_metadata(src_wim);
 
-	hlist_for_each_entry(inode, cur_node, &src_imd->inode_list, hlist) {
+	hlist_for_each_entry(inode, cur_node, &src_imd->inode_list, i_hlist) {
 		ret = inode_allocate_needed_ltes(inode,
 						 src_wim->lookup_table,
 						 dest_wim->lookup_table,
@@ -243,7 +243,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	 * the lookup table of the destination WIM and the boot index, if
 	 * needed. */
 	sd->refcnt++;
-	hlist_for_each_entry(inode, cur_node, &src_imd->inode_list, hlist) {
+	hlist_for_each_entry(inode, cur_node, &src_imd->inode_list, i_hlist) {
 		inode_move_ltes_to_table(inode,
 					 src_wim->lookup_table,
 					 dest_wim->lookup_table,
@@ -259,7 +259,7 @@ out_xml_delete_image:
 	xml_delete_image(&dest_wim->wim_info, dest_wim->hdr.image_count);
 out_free_ltes:
 	{
-		struct lookup_table_entry *lte, *tmp;
+		struct wim_lookup_table_entry *lte, *tmp;
 		list_for_each_entry_safe(lte, tmp, &lte_list_head, staging_list)
 			free_lookup_table_entry(lte);
 	}

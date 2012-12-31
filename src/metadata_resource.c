@@ -47,8 +47,8 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	u8 *buf;
 	u32 dentry_offset;
 	int ret;
-	struct dentry *dentry;
-	const struct lookup_table_entry *metadata_lte;
+	struct wim_dentry *dentry;
+	const struct wim_lookup_table_entry *metadata_lte;
 	u64 metadata_len;
 	struct hlist_head inode_list;
 
@@ -118,10 +118,10 @@ int read_metadata_resource(WIMStruct *w, struct image_metadata *imd)
 	DEBUG("Reading root dentry");
 
 	/* Allocate memory for the root dentry and read it into memory */
-	dentry = MALLOC(sizeof(struct dentry));
+	dentry = MALLOC(sizeof(struct wim_dentry));
 	if (!dentry) {
 		ERROR("Failed to allocate %zu bytes for root dentry",
-		      sizeof(struct dentry));
+		      sizeof(struct wim_dentry));
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_free_security_data;
 	}
@@ -203,7 +203,7 @@ static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 {
 	/* Set up a temporary lookup table entry to provide to
 	 * write_wim_resource(). */
-	struct lookup_table_entry lte;
+	struct wim_lookup_table_entry lte;
 	int ret;
 	lte.resource_entry.flags         = 0;
 	lte.resource_entry.original_size = buf_size;
@@ -227,8 +227,8 @@ int write_metadata_resource(WIMStruct *w)
 	u8 *p;
 	int ret;
 	u64 subdir_offset;
-	struct dentry *root;
-	struct lookup_table_entry *lte;
+	struct wim_dentry *root;
+	struct wim_lookup_table_entry *lte;
 	u64 metadata_original_size;
 	struct wim_security_data *sd;
 

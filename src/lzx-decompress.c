@@ -873,7 +873,7 @@ int lzx_decompress(const void *compressed_data, unsigned compressed_len,
 			LZX_DEBUG("LZX_BLOCKTYPE_UNCOMPRESSED");
 			if (istream.data_bytes_left < block_size) {
 				ERROR("Unexpected end of input when "
-				      "reading %zu bytes from LZX bitstream "
+				      "reading %u bytes from LZX bitstream "
 				      "(only have %u bytes left)",
 				      block_size, istream.data_bytes_left);
 				return -1;

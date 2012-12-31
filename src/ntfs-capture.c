@@ -246,9 +246,9 @@ out_error:
 
 /* Load the streams from a file or reparse point in the NTFS volume into the WIM
  * lookup table */
-static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
+static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 				char path[], size_t path_len,
-				struct lookup_table *lookup_table,
+				struct wim_lookup_table *lookup_table,
 				ntfs_volume **ntfs_vol_p,
 				ATTR_TYPES type)
 {
@@ -256,7 +256,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 	u8 attr_hash[SHA1_HASH_SIZE];
 	struct ntfs_location *ntfs_loc = NULL;
 	int ret = 0;
-	struct lookup_table_entry *lte;
+	struct wim_lookup_table_entry *lte;
 
 	DEBUG2("Capturing NTFS data streams from `%s'", path);
 
@@ -330,7 +330,7 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 				lte->ntfs_loc = ntfs_loc;
 				lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
 				if (type == AT_REPARSE_POINT) {
-					dentry->d_inode->reparse_tag = reparse_tag;
+					dentry->d_inode->i_reparse_tag = reparse_tag;
 					ntfs_loc->is_reparse_point = true;
 					lte->resource_entry.original_size = data_size - 8;
 					lte->resource_entry.size = data_size - 8;
@@ -350,13 +350,13 @@ static int capture_ntfs_streams(struct dentry *dentry, ntfs_inode *ni,
 		if (name_length == 0) {
 			/* Unnamed data stream.  Put the reference to it in the
 			 * dentry's inode. */
-			if (dentry->d_inode->lte) {
+			if (dentry->d_inode->i_lte) {
 				ERROR("Found two un-named data streams for "
 				      "`%s'", path);
 				ret = WIMLIB_ERR_NTFS_3G;
 				goto out_free_lte;
 			}
-			dentry->d_inode->lte = lte;
+			dentry->d_inode->i_lte = lte;
 		} else {
 			/* Named data stream.  Put the reference to it in the
 			 * alternate data stream entries */
@@ -399,11 +399,11 @@ out_put_actx:
 }
 
 struct readdir_ctx {
-	struct dentry	    *parent;
+	struct wim_dentry	    *parent;
 	ntfs_inode	    *dir_ni;
 	char		    *path;
 	size_t		     path_len;
-	struct lookup_table *lookup_table;
+	struct wim_lookup_table *lookup_table;
 	struct sd_set	    *sd_set;
 	const struct capture_config *config;
 	ntfs_volume	   **ntfs_vol_p;
@@ -412,10 +412,10 @@ struct readdir_ctx {
 };
 
 static int
-build_dentry_tree_ntfs_recursive(struct dentry **root_p, ntfs_inode *dir_ni,
+build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p, ntfs_inode *dir_ni,
 				 ntfs_inode *ni, char path[], size_t path_len,
 				 int name_type,
-				 struct lookup_table *lookup_table,
+				 struct wim_lookup_table *lookup_table,
 				 struct sd_set *sd_set,
 				 const struct capture_config *config,
 				 ntfs_volume **ntfs_vol_p,
@@ -430,7 +430,7 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	struct readdir_ctx *ctx;
 	size_t utf8_name_len;
 	char *utf8_name;
-	struct dentry *child = NULL;
+	struct wim_dentry *child = NULL;
 	int ret;
 	size_t path_len;
 
@@ -477,7 +477,7 @@ out_free_utf8_name:
 	return ret;
 }
 
-static int change_dentry_short_name(struct dentry *dentry,
+static int change_dentry_short_name(struct wim_dentry *dentry,
 				    const char short_name_utf8[],
 				    int short_name_utf8_len)
 {
@@ -498,13 +498,13 @@ static int change_dentry_short_name(struct dentry *dentry,
  * At the same time, update the WIM lookup table with lookup table entries for
  * the NTFS streams, and build an array of security descriptors.
  */
-static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
+static int build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 					    ntfs_inode *dir_ni,
 					    ntfs_inode *ni,
 				    	    char path[],
 					    size_t path_len,
 					    int name_type,
-				    	    struct lookup_table *lookup_table,
+				    	    struct wim_lookup_table *lookup_table,
 				    	    struct sd_set *sd_set,
 				    	    const struct capture_config *config,
 				    	    ntfs_volume **ntfs_vol_p,
@@ -514,7 +514,7 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 	u32 attributes;
 	int mrec_flags;
 	int ret;
-	struct dentry *root;
+	struct wim_dentry *root;
 
 	if (exclude_path(path, config, false)) {
 		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
@@ -585,12 +585,12 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 		}
 	}
 
-	root->d_inode->creation_time    = le64_to_cpu(ni->creation_time);
-	root->d_inode->last_write_time  = le64_to_cpu(ni->last_data_change_time);
-	root->d_inode->last_access_time = le64_to_cpu(ni->last_access_time);
-	root->d_inode->attributes       = le32_to_cpu(attributes);
-	root->d_inode->ino              = ni->mft_no;
-	root->d_inode->resolved         = true;
+	root->d_inode->i_creation_time    = le64_to_cpu(ni->creation_time);
+	root->d_inode->i_last_write_time  = le64_to_cpu(ni->last_data_change_time);
+	root->d_inode->i_last_access_time = le64_to_cpu(ni->last_access_time);
+	root->d_inode->i_attributes       = le32_to_cpu(attributes);
+	root->d_inode->i_ino              = ni->mft_no;
+	root->d_inode->i_resolved         = 1;
 
 	if (attributes & FILE_ATTR_REPARSE_POINT) {
 		/* Junction point, symbolic link, or other reparse point */
@@ -639,28 +639,28 @@ static int build_dentry_tree_ntfs_recursive(struct dentry **root_p,
 						 ni, dir_ni, sd, ret);
 	}
 	if (ret > 0) {
-		root->d_inode->security_id = sd_set_add_sd(sd_set, sd, ret);
-		if (root->d_inode->security_id == -1) {
+		root->d_inode->i_security_id = sd_set_add_sd(sd_set, sd, ret);
+		if (root->d_inode->i_security_id == -1) {
 			ERROR("Out of memory");
 			return WIMLIB_ERR_NOMEM;
 		}
 		DEBUG("Added security ID = %u for `%s'",
-		      root->d_inode->security_id, path);
+		      root->d_inode->i_security_id, path);
 		ret = 0;
 	} else if (ret < 0) {
 		ERROR_WITH_ERRNO("Failed to get security information from "
 				 "`%s'", path);
 		ret = WIMLIB_ERR_NTFS_3G;
 	} else {
-		root->d_inode->security_id = -1;
+		root->d_inode->i_security_id = -1;
 		DEBUG("No security ID for `%s'", path);
 	}
 	return ret;
 }
 
-int build_dentry_tree_ntfs(struct dentry **root_p,
+int build_dentry_tree_ntfs(struct wim_dentry **root_p,
 			   const char *device,
-			   struct lookup_table *lookup_table,
+			   struct wim_lookup_table *lookup_table,
 			   struct wim_security_data *sd,
 			   const struct capture_config *config,
 			   int add_image_flags,

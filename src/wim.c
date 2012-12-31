@@ -1,5 +1,5 @@
 /*
- * wim.c
+ * wim.c - Stuff that doesn't fit into any other file
  */
 
 /*
@@ -123,7 +123,7 @@ static int sort_image_metadata_by_position(const void *p1, const void *p2)
  * If @lte points to a metadata resource, append it to the list of metadata
  * resources in the WIMStruct.  Otherwise, do nothing.
  */
-static int append_metadata_resource_entry(struct lookup_table_entry *lte,
+static int append_metadata_resource_entry(struct wim_lookup_table_entry *lte,
 					  void *wim_p)
 {
 	WIMStruct *w = wim_p;
@@ -168,7 +168,7 @@ static int wim_hdr_flags_compression_type(int wim_hdr_flags)
 WIMLIBAPI int wimlib_create_new_wim(int ctype, WIMStruct **w_ret)
 {
 	WIMStruct *w;
-	struct lookup_table *table;
+	struct wim_lookup_table *table;
 	int ret;
 
 	DEBUG("Creating new WIM with %s compression.",
@@ -580,7 +580,7 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int open_flags,
 }
 
 void destroy_image_metadata(struct image_metadata *imd,
-			    struct lookup_table *table)
+			    struct wim_lookup_table *table)
 {
 	free_dentry_tree(imd->root_dentry, table);
 	free_security_data(imd->security_data);

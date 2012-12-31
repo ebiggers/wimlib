@@ -57,9 +57,9 @@
 #define MSG_BREAK_LOOP		-2
 
 /* File descriptor to a file open on the WIM filesystem. */
-struct wimlib_fd {
-	struct inode *f_inode;
-	struct lookup_table_entry *f_lte;
+struct wimfs_fd {
+	struct wim_inode *f_inode;
+	struct wim_lookup_table_entry *f_lte;
 	int staging_fd;
 	u16 idx;
 	u32 stream_id;
@@ -80,23 +80,28 @@ struct wimfs_context {
 	/* Flags passed to wimlib_mount(). */
 	int mount_flags;
 
+	/* Default flags to use when looking up a WIM dentry (depends on whether
+	 * the Windows interface to alternate data streams is being used or
+	 * not). */
 	int default_lookup_flags;
 
-	/* Next inode number to be assigned. */
+	/* Next inode number to be assigned.  Note: I didn't bother with a
+	 * bitmap of free inode numbers since this isn't even a "real"
+	 * filesystem anyway. */
 	u64 next_ino;
 
-	/* List of lookup table entries in the staging directory */
+	/* List of lookup table entries for files in the staging directory */
 	struct list_head staging_list;
 
 	/* List of inodes in the mounted image */
 	struct hlist_head *image_inode_list;
 
-	/* Name and message queue descriptors for message queues between the filesystem
-	 * daemon process and the unmount process.  These are used when the filesystem
-	 * is unmounted and the process running wimlib_mount() (i.e. the `imagex
-	 * unmount' command) needs to communicate with the filesystem daemon running
-	 * fuse_main() (i.e. that spawned by the `imagex mount' or `imagex mountrw'
-	 * commands */
+	/* Name and message queue descriptors for message queues between the
+	 * filesystem daemon process and the unmount process.  These are used
+	 * when the filesystem is unmounted and the process running
+	 * wimlib_unmount_image() (i.e. the `imagex unmount' command) needs to
+	 * communicate with the filesystem daemon running fuse_main() (i.e. the
+	 * daemon created by the `imagex mount' or `imagex mountrw' commands */
 	char *unmount_to_daemon_mq_name;
 	char *daemon_to_unmount_mq_name;
 	mqd_t unmount_to_daemon_mq;
@@ -148,11 +153,11 @@ static inline int flags_writable(int open_flags)
  *
  * Return 0 iff successful or error code if unsuccessful.
  */
-static int alloc_wimlib_fd(struct inode *inode,
-			   u32 stream_id,
-			   struct lookup_table_entry *lte,
-			   struct wimlib_fd **fd_ret,
-			   bool readonly)
+static int alloc_wimfs_fd(struct wim_inode *inode,
+			  u32 stream_id,
+			  struct wim_lookup_table_entry *lte,
+			  struct wimfs_fd **fd_ret,
+			  bool readonly)
 {
 	static const u16 fds_per_alloc = 8;
 	static const u16 max_fds = 0xffff;
@@ -161,35 +166,35 @@ static int alloc_wimlib_fd(struct inode *inode,
 	pthread_mutex_lock(&inode->i_mutex);
 
 	DEBUG("Allocating fd for stream ID %u from inode %lx (open = %u, allocated = %u)",
-	      stream_id, inode->ino, inode->num_opened_fds,
-	      inode->num_allocated_fds);
+	      stream_id, inode->i_ino, inode->i_num_opened_fds,
+	      inode->i_num_allocated_fds);
 
-	if (inode->num_opened_fds == inode->num_allocated_fds) {
-		struct wimlib_fd **fds;
+	if (inode->i_num_opened_fds == inode->i_num_allocated_fds) {
+		struct wimfs_fd **fds;
 		u16 num_new_fds;
 
-		if (inode->num_allocated_fds == max_fds) {
+		if (inode->i_num_allocated_fds == max_fds) {
 			ret = -EMFILE;
 			goto out;
 		}
 		num_new_fds = min(fds_per_alloc,
-				  max_fds - inode->num_allocated_fds);
+				  max_fds - inode->i_num_allocated_fds);
 
-		fds = REALLOC(inode->fds,
-			      (inode->num_allocated_fds + num_new_fds) *
-			        sizeof(inode->fds[0]));
+		fds = REALLOC(inode->i_fds,
+			      (inode->i_num_allocated_fds + num_new_fds) *
+			        sizeof(inode->i_fds[0]));
 		if (!fds) {
 			ret = -ENOMEM;
 			goto out;
 		}
-		memset(&fds[inode->num_allocated_fds], 0,
+		memset(&fds[inode->i_num_allocated_fds], 0,
 		       num_new_fds * sizeof(fds[0]));
-		inode->fds = fds;
-		inode->num_allocated_fds += num_new_fds;
+		inode->i_fds = fds;
+		inode->i_num_allocated_fds += num_new_fds;
 	}
 	for (u16 i = 0; ; i++) {
-		if (!inode->fds[i]) {
-			struct wimlib_fd *fd = CALLOC(1, sizeof(*fd));
+		if (!inode->i_fds[i]) {
+			struct wimfs_fd *fd = CALLOC(1, sizeof(*fd));
 			if (!fd) {
 				ret = -ENOMEM;
 				break;
@@ -200,8 +205,8 @@ static int alloc_wimlib_fd(struct inode *inode,
 			fd->idx        = i;
 			fd->stream_id  = stream_id;
 			*fd_ret        = fd;
-			inode->fds[i]  = fd;
-			inode->num_opened_fds++;
+			inode->i_fds[i]  = fd;
+			inode->i_num_opened_fds++;
 			if (lte && !readonly)
 				lte->num_opened_fds++;
 			DEBUG("Allocated fd (idx = %u)", fd->idx);
@@ -214,20 +219,20 @@ out:
 	return ret;
 }
 
-static void inode_put_fd(struct inode *inode, struct wimlib_fd *fd)
+static void inode_put_fd(struct wim_inode *inode, struct wimfs_fd *fd)
 {
 	wimlib_assert(inode != NULL);
 
 	pthread_mutex_lock(&inode->i_mutex);
 
 	wimlib_assert(fd->f_inode == inode);
-	wimlib_assert(inode->num_opened_fds != 0);
-	wimlib_assert(fd->idx < inode->num_allocated_fds);
-	wimlib_assert(inode->fds[fd->idx] == fd);
+	wimlib_assert(inode->i_num_opened_fds != 0);
+	wimlib_assert(fd->idx < inode->i_num_allocated_fds);
+	wimlib_assert(inode->i_fds[fd->idx] == fd);
 
-	inode->fds[fd->idx] = NULL;
+	inode->i_fds[fd->idx] = NULL;
 	FREE(fd);
-	if (--inode->num_opened_fds == 0 && inode->link_count == 0) {
+	if (--inode->i_num_opened_fds == 0 && inode->i_nlink == 0) {
 		pthread_mutex_unlock(&inode->i_mutex);
 		free_inode(inode);
 	} else {
@@ -235,7 +240,7 @@ static void inode_put_fd(struct inode *inode, struct wimlib_fd *fd)
 	}
 }
 
-static int lte_put_fd(struct lookup_table_entry *lte, struct wimlib_fd *fd)
+static int lte_put_fd(struct wim_lookup_table_entry *lte, struct wimfs_fd *fd)
 {
 	wimlib_assert(fd->f_lte == lte);
 
@@ -257,12 +262,12 @@ static int lte_put_fd(struct lookup_table_entry *lte, struct wimlib_fd *fd)
 }
 
 /* Close a file descriptor. */
-static int close_wimlib_fd(struct wimlib_fd *fd)
+static int close_wimfs_fd(struct wimfs_fd *fd)
 {
 	int ret;
 	DEBUG("Closing fd (inode = %lu, opened = %u, allocated = %u)",
-	      fd->f_inode->ino, fd->f_inode->num_opened_fds,
-	      fd->f_inode->num_allocated_fds);
+	      fd->f_inode->i_ino, fd->f_inode->i_num_opened_fds,
+	      fd->f_inode->i_num_allocated_fds);
 	ret = lte_put_fd(fd->f_lte, fd);
 	if (ret != 0)
 		return ret;
@@ -271,16 +276,25 @@ static int close_wimlib_fd(struct wimlib_fd *fd)
 	return 0;
 }
 
+/*
+ * Add a new dentry with a new inode to a WIM image.
+ *
+ * @ctx:	 Context for the mounted WIM image.
+ * @path:	 Path to create the dentry at.
+ * @dentry_ret:  Return the pointer to the dentry if successful.
+ *
+ * Returns 0 on success, or negative error number on failure.
+ */
 static int create_dentry(struct wimfs_context *ctx, const char *path,
-			 struct dentry **dentry_ret)
+			 struct wim_dentry **dentry_ret)
 {
-	struct dentry *parent;
-	struct dentry *new;
+	struct wim_dentry *parent;
+	struct wim_dentry *new;
 	const char *basename;
 
 	parent = get_parent_dentry(ctx->wim, path);
 	if (!parent)
-		return -ENOENT;
+		return -errno;
 
 	if (!dentry_is_directory(parent))
 		return -ENOTDIR;
@@ -293,15 +307,16 @@ static int create_dentry(struct wimfs_context *ctx, const char *path,
 	if (!new)
 		return -errno;
 
-	new->d_inode->resolved = 1;
-	new->d_inode->ino = ctx->next_ino++;
+	new->d_inode->i_resolved = 1;
+	new->d_inode->i_ino = ctx->next_ino++;
 	dentry_add_child(parent, new);
-	hlist_add_head(&new->d_inode->hlist, ctx->image_inode_list);
+	hlist_add_head(&new->d_inode->i_hlist, ctx->image_inode_list);
 	*dentry_ret = new;
 	return 0;
 }
 
-/* Remove a dentry; i.e. remove a reference to the corresponding inode.
+/* Remove a dentry from a mounted WIM image; i.e. remove an alias for the
+ * corresponding inode.
  *
  * If there are no remaining references to the inode either through dentries or
  * open file descriptors, the inode is freed.  Otherwise, the inode is not
@@ -309,17 +324,17 @@ static int create_dentry(struct wimfs_context *ctx, const char *path,
  *
  * Either way, all lookup table entries referenced by the inode have their
  * reference count decremented.  If a lookup table entry has no open file
- * descriptors and no references remaining, it is freed, and the staging file is
- * unlinked.
+ * descriptors and no references remaining, it is freed, and the corresponding
+ * staging file is unlinked.
  */
-static void remove_dentry(struct dentry *dentry,
-			  struct lookup_table *lookup_table)
+static void remove_dentry(struct wim_dentry *dentry,
+			  struct wim_lookup_table *lookup_table)
 {
-	struct inode *inode = dentry->d_inode;
-	struct lookup_table_entry *lte;
+	struct wim_inode *inode = dentry->d_inode;
+	struct wim_lookup_table_entry *lte;
 	unsigned i;
 
-	for (i = 0; i <= inode->num_ads; i++) {
+	for (i = 0; i <= inode->i_num_ads; i++) {
 		lte = inode_stream_lte_resolved(inode, i);
 		if (lte)
 			lte_decrement_refcnt(lte, lookup_table);
@@ -328,13 +343,14 @@ static void remove_dentry(struct dentry *dentry,
 	put_dentry(dentry);
 }
 
-/* Transfers file attributes from a struct inode to a `stat' buffer.
+/* Transfers file attributes from a struct wim_inode to a `stat' buffer.
  *
  * The lookup table entry tells us which stream in the inode we are statting.
  * For a named data stream, everything returned is the same as the unnamed data
  * stream except possibly the size and block count. */
-static int inode_to_stbuf(const struct inode *inode,
-			  struct lookup_table_entry *lte, struct stat *stbuf)
+static int inode_to_stbuf(const struct wim_inode *inode,
+			  const struct wim_lookup_table_entry *lte,
+			  struct stat *stbuf)
 {
 	if (inode_is_symlink(inode))
 		stbuf->st_mode = S_IFLNK | 0777;
@@ -343,8 +359,8 @@ static int inode_to_stbuf(const struct inode *inode,
 	else
 		stbuf->st_mode = S_IFREG | 0755;
 
-	stbuf->st_ino   = (ino_t)inode->ino;
-	stbuf->st_nlink = inode->link_count;
+	stbuf->st_ino   = (ino_t)inode->i_ino;
+	stbuf->st_nlink = inode->i_nlink;
 	stbuf->st_uid   = getuid();
 	stbuf->st_gid   = getgid();
 
@@ -364,9 +380,9 @@ static int inode_to_stbuf(const struct inode *inode,
 		stbuf->st_size = 0;
 	}
 
-	stbuf->st_atime   = wim_timestamp_to_unix(inode->last_access_time);
-	stbuf->st_mtime   = wim_timestamp_to_unix(inode->last_write_time);
-	stbuf->st_ctime   = wim_timestamp_to_unix(inode->creation_time);
+	stbuf->st_atime   = wim_timestamp_to_unix(inode->i_last_access_time);
+	stbuf->st_mtime   = wim_timestamp_to_unix(inode->i_last_write_time);
+	stbuf->st_ctime   = wim_timestamp_to_unix(inode->i_creation_time);
 	stbuf->st_blocks  = (stbuf->st_size + 511) / 512;
 	return 0;
 }
@@ -375,12 +391,15 @@ static int inode_to_stbuf(const struct inode *inode,
  * writing.
  *
  * @name_ret: A location into which the a pointer to the newly allocated name of
- * 			the staging file is stored.
- * @return:  The file descriptor for the new file.  Returns -1 and sets errno on
- * 		error, for any reason possible from the creat() function.
+ *	      the staging file is stored.
+ *
+ * @ctx:      Context for the WIM filesystem; this provides the name of the
+ *	      staging directory.
+ *
+ * On success, returns the file descriptor for the staging file, opened for
+ * writing.  On failure, returns -1 and sets errno.
  */
-static int create_staging_file(char **name_ret, int open_flags,
-			       struct wimfs_context *ctx)
+static int create_staging_file(char **name_ret, struct wimfs_context *ctx)
 {
 	size_t name_len;
 	char *name;
@@ -388,7 +407,9 @@ static int create_staging_file(char **name_ret, int open_flags,
 	int fd;
 	int errno_save;
 
-	name_len = ctx->staging_dir_name_len + 1 + SHA1_HASH_SIZE;
+	static const size_t STAGING_FILE_NAME_LEN = 20;
+
+	name_len = ctx->staging_dir_name_len + 1 + STAGING_FILE_NAME_LEN;
  	name = MALLOC(name_len + 1);
 	if (!name) {
 		errno = ENOMEM;
@@ -400,7 +421,7 @@ static int create_staging_file(char **name_ret, int open_flags,
 		memcpy(name, ctx->staging_dir_name, ctx->staging_dir_name_len);
 		name[ctx->staging_dir_name_len] = '/';
 		randomize_char_array_with_alnum(name + ctx->staging_dir_name_len + 1,
-						SHA1_HASH_SIZE);
+						STAGING_FILE_NAME_LEN);
 		name[name_len] = '\0';
 
 
@@ -408,15 +429,14 @@ static int create_staging_file(char **name_ret, int open_flags,
 	 * existing file, and try again if so  */
 	} while (stat(name, &stbuf) == 0);
 
-	if (errno != ENOENT)
-		/* other error! */
+	if (errno != ENOENT) /* other error?! */
 		return -1;
 
 	/* doesn't exist--- ok */
 
 	DEBUG("Creating staging file `%s'", name);
 
-	fd = open(name, open_flags | O_CREAT | O_TRUNC, 0600);
+	fd = open(name, O_WRONLY | O_CREAT | O_EXCL, 0600);
 	if (fd == -1) {
 		errno_save = errno;
 		FREE(name);
@@ -446,20 +466,20 @@ static int create_staging_file(char **name_ret, int open_flags,
  *
  * Returns 0 on success or a negative error code on failure.
  */
-static int extract_resource_to_staging_dir(struct inode *inode,
+static int extract_resource_to_staging_dir(struct wim_inode *inode,
 					   u32 stream_id,
-					   struct lookup_table_entry **lte,
+					   struct wim_lookup_table_entry **lte,
 					   off_t size,
 					   struct wimfs_context *ctx)
 {
 	char *staging_file_name;
 	int ret;
 	int fd;
-	struct lookup_table_entry *old_lte, *new_lte;
+	struct wim_lookup_table_entry *old_lte, *new_lte;
 	off_t extract_size;
 
 	DEBUG("Extracting resource to staging dir: inode %"PRIu64", "
-	      "stream id %"PRIu32, inode->ino, stream_id);
+	      "stream id %"PRIu32, inode->i_ino, stream_id);
 
 	old_lte = *lte;
 
@@ -467,7 +487,7 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 		      old_lte->resource_location != RESOURCE_IN_STAGING_FILE);
 
 	/* Create the staging file */
-	fd = create_staging_file(&staging_file_name, O_WRONLY, ctx);
+	fd = create_staging_file(&staging_file_name, ctx);
 	if (fd == -1)
 		return -errno;
 
@@ -500,7 +520,7 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 	/* Now deal with the lookup table entries.  We may be able to re-use the
 	 * existing entry, but we may have to create a new one instead. */
 
-	if (old_lte && inode->link_count == old_lte->refcnt) {
+	if (old_lte && inode->i_nlink == old_lte->refcnt) {
 		/* The reference count of the existing lookup table entry is the
 		 * same as the link count of the inode that contains the stream
 		 * we're opening.  Therefore, ALL the references to the lookup
@@ -516,10 +536,10 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 			 * the inode containing a stream we're opening.
 			 * Therefore, we need to split the lookup table entry.
 			 */
-			wimlib_assert(old_lte->refcnt > inode->link_count);
+			wimlib_assert(old_lte->refcnt > inode->i_nlink);
 			DEBUG("Splitting lookup table entry "
-			      "(inode->link_count = %u, old_lte->refcnt = %u)",
-			      inode->link_count, old_lte->refcnt);
+			      "(inode->i_nlink = %u, old_lte->refcnt = %u)",
+			      inode->i_nlink, old_lte->refcnt);
 		}
 
 		new_lte = new_lookup_table_entry();
@@ -539,8 +559,8 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 		 * file descriptors to the new lookup table entry.  If there's
 		 * an old lookup table entry, this number needs to be subtracted
 		 * from the fd's opened to the old entry. */
-		for (u16 i = 0, j = 0; j < inode->num_opened_fds; i++) {
-			struct wimlib_fd *fd = inode->fds[i];
+		for (u16 i = 0, j = 0; j < inode->i_num_opened_fds; i++) {
+			struct wimfs_fd *fd = inode->i_fds[i];
 			if (fd) {
 				if (fd->stream_id == stream_id) {
 					wimlib_assert(fd->f_lte == old_lte);
@@ -560,22 +580,22 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 		      new_lte->num_opened_fds);
 		if (old_lte) {
 			old_lte->num_opened_fds -= new_lte->num_opened_fds;
-			old_lte->refcnt -= inode->link_count;
+			old_lte->refcnt -= inode->i_nlink;
 		}
 	}
 
-	new_lte->refcnt                       = inode->link_count;
+	new_lte->refcnt                       = inode->i_nlink;
 	new_lte->resource_location            = RESOURCE_IN_STAGING_FILE;
 	new_lte->staging_file_name            = staging_file_name;
 	new_lte->lte_inode                    = inode;
 	random_hash(new_lte->hash);
 
 	if (stream_id == 0)
-		inode->lte = new_lte;
+		inode->i_lte = new_lte;
 	else
-		for (u16 i = 0; i < inode->num_ads; i++)
-			if (inode->ads_entries[i].stream_id == stream_id)
-				inode->ads_entries[i].lte = new_lte;
+		for (u16 i = 0; i < inode->i_num_ads; i++)
+			if (inode->i_ads_entries[i].stream_id == stream_id)
+				inode->i_ads_entries[i].lte = new_lte;
 
 	lookup_table_insert(ctx->wim->lookup_table, new_lte);
 	list_add(&new_lte->staging_list, &ctx->staging_list);
@@ -583,7 +603,7 @@ static int extract_resource_to_staging_dir(struct inode *inode,
 	return 0;
 out_revert_fd_changes:
 	for (u16 i = 0, j = 0; j < new_lte->num_opened_fds; i++) {
-		struct wimlib_fd *fd = inode->fds[i];
+		struct wimfs_fd *fd = inode->i_fds[i];
 		if (fd && fd->stream_id == stream_id && fd->f_lte == new_lte) {
 			fd->f_lte = old_lte;
 			if (fd->staging_fd != -1) {
@@ -693,26 +713,26 @@ static int delete_staging_dir(struct wimfs_context *ctx)
 	return ret;
 }
 
-static void inode_update_lte_ptr(struct inode *inode,
-				 struct lookup_table_entry *old_lte,
-				 struct lookup_table_entry *new_lte)
+static void inode_update_lte_ptr(struct wim_inode *inode,
+				 struct wim_lookup_table_entry *old_lte,
+				 struct wim_lookup_table_entry *new_lte)
 {
-	if (inode->lte == old_lte) {
-		inode->lte = new_lte;
+	if (inode->i_lte == old_lte) {
+		inode->i_lte = new_lte;
 	} else {
-		for (unsigned i = 0; i < inode->num_ads; i++) {
-			if (inode->ads_entries[i].lte == old_lte) {
-				inode->ads_entries[i].lte = new_lte;
+		for (unsigned i = 0; i < inode->i_num_ads; i++) {
+			if (inode->i_ads_entries[i].lte == old_lte) {
+				inode->i_ads_entries[i].lte = new_lte;
 				break;
 			}
 		}
 	}
 }
 
-static int update_lte_of_staging_file(struct lookup_table_entry *lte,
-				      struct lookup_table *table)
+static int update_lte_of_staging_file(struct wim_lookup_table_entry *lte,
+				      struct wim_lookup_table *table)
 {
-	struct lookup_table_entry *duplicate_lte;
+	struct wim_lookup_table_entry *duplicate_lte;
 	int ret;
 	u8 hash[SHA1_HASH_SIZE];
 	struct stat stbuf;
@@ -749,14 +769,14 @@ static int update_lte_of_staging_file(struct lookup_table_entry *lte,
 	return 0;
 }
 
-static int inode_close_fds(struct inode *inode)
+static int inode_close_fds(struct wim_inode *inode)
 {
-	u16 num_opened_fds = inode->num_opened_fds;
+	u16 num_opened_fds = inode->i_num_opened_fds;
 	for (u16 i = 0, j = 0; j < num_opened_fds; i++) {
-		struct wimlib_fd *fd = inode->fds[i];
+		struct wimfs_fd *fd = inode->i_fds[i];
 		if (fd) {
 			wimlib_assert(fd->f_inode == inode);
-			int ret = close_wimlib_fd(fd);
+			int ret = close_wimfs_fd(fd);
 			if (ret != 0)
 				return ret;
 			j++;
@@ -770,7 +790,7 @@ static int rebuild_wim(struct wimfs_context *ctx, int write_flags,
 		       wimlib_progress_func_t progress_func)
 {
 	int ret;
-	struct lookup_table_entry *lte, *tmp;
+	struct wim_lookup_table_entry *lte, *tmp;
 	WIMStruct *w = ctx->wim;
 
 	DEBUG("Closing all staging file descriptors.");
@@ -1448,9 +1468,9 @@ static int wimfs_access(const char *path, int mask)
 
 static int wimfs_chmod(const char *path, mode_t mask)
 {
-	struct dentry *dentry;
+	struct wim_dentry *dentry;
 	struct wimfs_context *ctx = wimfs_get_context();
-	struct inode *inode;
+	struct wim_inode *inode;
 	struct stat stbuf;
 	int ret;
 
@@ -1489,7 +1509,7 @@ static void wimfs_destroy(void *p)
 static int wimfs_fallocate(const char *path, int mode,
 			   off_t offset, off_t len, struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
+	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	wimlib_assert(fd->staging_fd != -1);
 	return fallocate(fd->staging_fd, mode, offset, len);
 }
@@ -1499,14 +1519,14 @@ static int wimfs_fallocate(const char *path, int mode,
 static int wimfs_fgetattr(const char *path, struct stat *stbuf,
 			  struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
+	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	return inode_to_stbuf(fd->f_inode, fd->f_lte, stbuf);
 }
 
 static int wimfs_ftruncate(const char *path, off_t size,
 			   struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
+	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	int ret = ftruncate(fd->staging_fd, size);
 	if (ret != 0)
 		return -errno;
@@ -1520,8 +1540,8 @@ static int wimfs_ftruncate(const char *path, off_t size,
  */
 static int wimfs_getattr(const char *path, struct stat *stbuf)
 {
-	struct dentry *dentry;
-	struct lookup_table_entry *lte;
+	struct wim_dentry *dentry;
+	struct wim_lookup_table_entry *lte;
 	int ret;
 	struct wimfs_context *ctx = wimfs_get_context();
 
@@ -1539,10 +1559,10 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 			  size_t size)
 {
 	int ret;
-	struct inode *inode;
+	struct wim_inode *inode;
 	struct ads_entry *ads_entry;
 	size_t res_size;
-	struct lookup_table_entry *lte;
+	struct wim_lookup_table_entry *lte;
 	struct wimfs_context *ctx = wimfs_get_context();
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
@@ -1554,7 +1574,7 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
-		return -ENOENT;
+		return -errno;
 
 	ads_entry = inode_get_ads_entry(inode, name, NULL);
 	if (!ads_entry)
@@ -1581,21 +1601,21 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 /* Create a hard link */
 static int wimfs_link(const char *to, const char *from)
 {
-	struct dentry *from_dentry, *from_dentry_parent;
+	struct wim_dentry *from_dentry, *from_dentry_parent;
 	const char *link_name;
-	struct inode *inode;
-	struct lookup_table_entry *lte;
+	struct wim_inode *inode;
+	struct wim_lookup_table_entry *lte;
 	WIMStruct *w = wimfs_get_WIMStruct();
 	u16 i;
 
 	inode = wim_pathname_to_inode(w, to);
 	if (!inode)
-		return -ENOENT;
+		return -errno;
 
-	if (inode->attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
 		return -EEXIST;
 
-	if (inode->attributes & FILE_ATTRIBUTE_DIRECTORY)
+	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
 		return -EPERM;
 
 	from_dentry_parent = get_parent_dentry(w, from);
@@ -1613,9 +1633,9 @@ static int wimfs_link(const char *to, const char *from)
 
 	inode_add_dentry(from_dentry, inode);
 	from_dentry->d_inode = inode;
-	inode->link_count++;
+	inode->i_nlink++;
 
-	for (i = 0; i <= inode->num_ads; i++) {
+	for (i = 0; i <= inode->i_num_ads; i++) {
 		lte = inode_stream_lte_resolved(inode, i);
 		if (lte)
 			lte->refcnt++;
@@ -1628,7 +1648,7 @@ static int wimfs_link(const char *to, const char *from)
 static int wimfs_listxattr(const char *path, char *list, size_t size)
 {
 	size_t needed_size;
-	struct inode *inode;
+	struct wim_inode *inode;
 	struct wimfs_context *ctx = wimfs_get_context();
 	u16 i;
 	char *p;
@@ -1640,21 +1660,21 @@ static int wimfs_listxattr(const char *path, char *list, size_t size)
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
-		return -ENOENT;
+		return -errno;
 
 	if (size == 0) {
 		needed_size = 0;
-		for (i = 0; i < inode->num_ads; i++)
-			needed_size += inode->ads_entries[i].stream_name_utf8_len + 6;
+		for (i = 0; i < inode->i_num_ads; i++)
+			needed_size += inode->i_ads_entries[i].stream_name_utf8_len + 6;
 		return needed_size;
 	} else {
 		p = list;
-		for (i = 0; i < inode->num_ads; i++) {
-			needed_size = inode->ads_entries[i].stream_name_utf8_len + 6;
+		for (i = 0; i < inode->i_num_ads; i++) {
+			needed_size = inode->i_ads_entries[i].stream_name_utf8_len + 6;
 			if (needed_size > size)
 				return -ERANGE;
 			p += sprintf(p, "user.%s",
-				     inode->ads_entries[i].stream_name_utf8) + 1;
+				     inode->i_ads_entries[i].stream_name_utf8) + 1;
 			size -= needed_size;
 		}
 		return p - list;
@@ -1667,12 +1687,12 @@ static int wimfs_listxattr(const char *path, char *list, size_t size)
  * @mode is currently ignored.  */
 static int wimfs_mkdir(const char *path, mode_t mode)
 {
-	struct dentry *dentry;
+	struct wim_dentry *dentry;
 	int ret;
 
 	ret = create_dentry(wimfs_get_context(), path, &dentry);
 	if (ret == 0)
-		dentry->d_inode->attributes = FILE_ATTRIBUTE_DIRECTORY;
+		dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
 	return ret;
 }
 
@@ -1686,7 +1706,7 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	     && (stream_name = path_stream_name(path))) {
 		/* Make an alternate data stream */
 		struct ads_entry *new_entry;
-		struct inode *inode;
+		struct wim_inode *inode;
 
 		char *p = (char*)stream_name - 1;
 		wimlib_assert(*p == ':');
@@ -1694,8 +1714,8 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 
 		inode = wim_pathname_to_inode(ctx->wim, path);
 		if (!inode)
-			return -ENOENT;
-		if (inode->attributes &
+			return -errno;
+		if (inode->i_attributes &
 		    (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
 			return -ENOENT;
 		if (inode_get_ads_entry(inode, stream_name, NULL))
@@ -1705,13 +1725,13 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 			return -ENOMEM;
 		return 0;
 	} else {
-		struct dentry *dentry;
+		struct wim_dentry *dentry;
 		int ret;
 
 		/* Make a normal file (not an alternate data stream) */
 		ret = create_dentry(ctx, path, &dentry);
 		if (ret == 0)
-			dentry->d_inode->attributes = FILE_ATTRIBUTE_NORMAL;
+			dentry->d_inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
 		return ret;
 	}
 }
@@ -1720,11 +1740,11 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 /* Open a file.  */
 static int wimfs_open(const char *path, struct fuse_file_info *fi)
 {
-	struct dentry *dentry;
-	struct lookup_table_entry *lte;
+	struct wim_dentry *dentry;
+	struct wim_lookup_table_entry *lte;
 	int ret;
-	struct wimlib_fd *fd;
-	struct inode *inode;
+	struct wimfs_fd *fd;
+	struct wim_inode *inode;
 	u16 stream_idx;
 	u32 stream_id;
 	struct wimfs_context *ctx = wimfs_get_context();
@@ -1739,7 +1759,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	if (stream_idx == 0)
 		stream_id = 0;
 	else
-		stream_id = inode->ads_entries[stream_idx - 1].stream_id;
+		stream_id = inode->i_ads_entries[stream_idx - 1].stream_id;
 
 	/* The file resource may be in the staging directory (read-write mounts
 	 * only) or in the WIM.  If it's in the staging directory, we need to
@@ -1757,7 +1777,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 			return ret;
 	}
 
-	ret = alloc_wimlib_fd(inode, stream_id, lte, &fd,
+	ret = alloc_wimfs_fd(inode, stream_id, lte, &fd,
 			      wimfs_ctx_readonly(ctx));
 	if (ret != 0)
 		return ret;
@@ -1766,7 +1786,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 		fd->staging_fd = open(lte->staging_file_name, fi->flags);
 		if (fd->staging_fd == -1) {
 			int errno_save = errno;
-			close_wimlib_fd(fd);
+			close_wimfs_fd(fd);
 			return -errno_save;
 		}
 	}
@@ -1777,18 +1797,18 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 /* Opens a directory. */
 static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 {
-	struct inode *inode;
+	struct wim_inode *inode;
 	int ret;
-	struct wimlib_fd *fd = NULL;
+	struct wimfs_fd *fd = NULL;
 	struct wimfs_context *ctx = wimfs_get_context();
 	WIMStruct *w = ctx->wim;
 
 	inode = wim_pathname_to_inode(w, path);
 	if (!inode)
-		return -ENOENT;
+		return -errno;
 	if (!inode_is_directory(inode))
 		return -ENOTDIR;
-	ret = alloc_wimlib_fd(inode, 0, NULL, &fd, wimfs_ctx_readonly(ctx));
+	ret = alloc_wimfs_fd(inode, 0, NULL, &fd, wimfs_ctx_readonly(ctx));
 	fi->fh = (uintptr_t)fd;
 	return ret;
 }
@@ -1800,7 +1820,7 @@ static int wimfs_opendir(const char *path, struct fuse_file_info *fi)
 static int wimfs_read(const char *path, char *buf, size_t size,
 		      off_t offset, struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
+	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	ssize_t ret;
 
 	if (!fd)
@@ -1842,7 +1862,7 @@ struct fill_params {
 	fuse_fill_dir_t filler;
 };
 
-static int dentry_fuse_fill(struct dentry *dentry, void *arg)
+static int dentry_fuse_fill(struct wim_dentry *dentry, void *arg)
 {
 	struct fill_params *fill_params = arg;
 	return fill_params->filler(fill_params->buf, dentry->file_name_utf8,
@@ -1854,8 +1874,8 @@ static int dentry_fuse_fill(struct dentry *dentry, void *arg)
 static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
-	struct inode *inode;
+	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
+	struct wim_inode *inode;
 
 	if (!fd)
 		return -EBADF;
@@ -1870,7 +1890,7 @@ static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 
-	return for_dentry_in_rbtree(inode->children.rb_node,
+	return for_dentry_in_rbtree(inode->i_children.rb_node,
 				    dentry_fuse_fill, &fill_params);
 }
 
@@ -1878,10 +1898,10 @@ static int wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int wimfs_readlink(const char *path, char *buf, size_t buf_len)
 {
 	struct wimfs_context *ctx = wimfs_get_context();
-	struct inode *inode = wim_pathname_to_inode(ctx->wim, path);
+	struct wim_inode *inode = wim_pathname_to_inode(ctx->wim, path);
 	int ret;
 	if (!inode)
-		return -ENOENT;
+		return -errno;
 	if (!inode_is_symlink(inode))
 		return -EINVAL;
 
@@ -1895,22 +1915,22 @@ static int wimfs_readlink(const char *path, char *buf, size_t buf_len)
 /* Close a file. */
 static int wimfs_release(const char *path, struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
-	return close_wimlib_fd(fd);
+	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
+	return close_wimfs_fd(fd);
 }
 
 /* Close a directory */
 static int wimfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
-	return close_wimlib_fd(fd);
+	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
+	return close_wimfs_fd(fd);
 }
 
 #ifdef ENABLE_XATTR
 /* Remove an alternate data stream through the XATTR interface */
 static int wimfs_removexattr(const char *path, const char *name)
 {
-	struct inode *inode;
+	struct wim_inode *inode;
 	struct ads_entry *ads_entry;
 	u16 ads_idx;
 	struct wimfs_context *ctx = wimfs_get_context();
@@ -1924,7 +1944,7 @@ static int wimfs_removexattr(const char *path, const char *name)
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
-		return -ENOENT;
+		return -errno;
 
 	ads_entry = inode_get_ads_entry(inode, name, &ads_idx);
 	if (!ads_entry)
@@ -1937,11 +1957,9 @@ static int wimfs_removexattr(const char *path, const char *name)
 /* Renames a file or directory.  See rename (3) */
 static int wimfs_rename(const char *from, const char *to)
 {
-	struct dentry *src;
-	struct dentry *dst;
-	struct dentry *parent_of_dst;
-	char *file_name_utf16 = NULL, *file_name_utf8 = NULL;
-	u16 file_name_utf16_len, file_name_utf8_len;
+	struct wim_dentry *src;
+	struct wim_dentry *dst;
+	struct wim_dentry *parent_of_dst;
 	WIMStruct *w = wimfs_get_WIMStruct();
 	int ret;
 
@@ -1950,15 +1968,9 @@ static int wimfs_rename(const char *from, const char *to)
 
 	src = get_dentry(w, from);
 	if (!src)
-		return -ENOENT;
+		return -errno;
 
 	dst = get_dentry(w, to);
-
-	ret = get_names(&file_name_utf16, &file_name_utf8,
-			&file_name_utf16_len, &file_name_utf8_len,
-			path_basename(to));
-	if (ret != 0)
-		return -ENOMEM;
 
 	if (dst) {
 		/* Destination file exists */
@@ -1979,24 +1991,21 @@ static int wimfs_rename(const char *from, const char *to)
 				return -ENOTEMPTY;
 		}
 		parent_of_dst = dst->parent;
-		remove_dentry(dst, w->lookup_table);
 	} else {
 		/* Destination does not exist */
 		parent_of_dst = get_parent_dentry(w, to);
 		if (!parent_of_dst)
-			return -ENOENT;
+			return -errno;
 
 		if (!dentry_is_directory(parent_of_dst))
 			return -ENOTDIR;
 	}
 
-	FREE(src->file_name);
-	FREE(src->file_name_utf8);
-	src->file_name          = file_name_utf16;
-	src->file_name_utf8     = file_name_utf8;
-	src->file_name_len      = file_name_utf16_len;
-	src->file_name_utf8_len = file_name_utf8_len;
-
+	ret = set_dentry_name(src, to);
+	if (ret != 0)
+		return -ENOMEM;
+	if (dst)
+		remove_dentry(dst, w->lookup_table);
 	unlink_dentry(src);
 	dentry_add_child(parent_of_dst, src);
 	return 0;
@@ -2005,14 +2014,17 @@ static int wimfs_rename(const char *from, const char *to)
 /* Remove a directory */
 static int wimfs_rmdir(const char *path)
 {
-	struct dentry *dentry;
+	struct wim_dentry *parent, *dentry;
 	WIMStruct *w = wimfs_get_WIMStruct();
 
 	dentry = get_dentry(w, path);
 	if (!dentry)
-		return -ENOENT;
+		return -errno;
 
-	if (!dentry_is_empty_directory(dentry))
+	if (!dentry_is_directory(dentry))
+		return -ENOTDIR;
+
+	if (dentry_has_children(dentry))
 		return -ENOTEMPTY;
 
 	remove_dentry(dentry, w->lookup_table);
@@ -2026,9 +2038,9 @@ static int wimfs_setxattr(const char *path, const char *name,
 {
 	struct ads_entry *existing_ads_entry;
 	struct ads_entry *new_ads_entry;
-	struct lookup_table_entry *existing_lte;
-	struct lookup_table_entry *lte;
-	struct inode *inode;
+	struct wim_lookup_table_entry *existing_lte;
+	struct wim_lookup_table_entry *lte;
+	struct wim_inode *inode;
 	u8 value_hash[SHA1_HASH_SIZE];
 	u16 ads_idx;
 	struct wimfs_context *ctx = wimfs_get_context();
@@ -2042,7 +2054,7 @@ static int wimfs_setxattr(const char *path, const char *name,
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
-		return -ENOENT;
+		return -errno;
 
 	existing_ads_entry = inode_get_ads_entry(inode, name, &ads_idx);
 	if (existing_ads_entry) {
@@ -2091,13 +2103,13 @@ static int wimfs_setxattr(const char *path, const char *name,
 static int wimfs_symlink(const char *to, const char *from)
 {
 	struct wimfs_context *ctx = wimfs_get_context();
-	struct dentry *dentry;
+	struct wim_dentry *dentry;
 	int ret;
 
 	ret = create_dentry(ctx, from, &dentry);
 	if (ret == 0) {
-		dentry->d_inode->attributes = FILE_ATTRIBUTE_REPARSE_POINT;
-		dentry->d_inode->reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+		dentry->d_inode->i_attributes = FILE_ATTRIBUTE_REPARSE_POINT;
+		dentry->d_inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
 		if (inode_set_symlink(dentry->d_inode, to,
 				      ctx->wim->lookup_table, NULL))
 		{
@@ -2113,12 +2125,12 @@ static int wimfs_symlink(const char *to, const char *from)
 /* Reduce the size of a file */
 static int wimfs_truncate(const char *path, off_t size)
 {
-	struct dentry *dentry;
-	struct lookup_table_entry *lte;
+	struct wim_dentry *dentry;
+	struct wim_lookup_table_entry *lte;
 	int ret;
 	u16 stream_idx;
 	u32 stream_id;
-	struct inode *inode;
+	struct wim_inode *inode;
 	struct wimfs_context *ctx = wimfs_get_context();
 
 	ret = lookup_resource(ctx->wim, path, get_lookup_flags(ctx),
@@ -2134,7 +2146,7 @@ static int wimfs_truncate(const char *path, off_t size)
 	if (stream_idx == 0)
 		stream_id = 0;
 	else
-		stream_id = inode->ads_entries[stream_idx - 1].stream_id;
+		stream_id = inode->i_ads_entries[stream_idx - 1].stream_id;
 
 	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		ret = truncate(lte->staging_file_name, size);
@@ -2152,8 +2164,8 @@ static int wimfs_truncate(const char *path, off_t size)
 /* Unlink a non-directory or alternate data stream */
 static int wimfs_unlink(const char *path)
 {
-	struct dentry *dentry;
-	struct lookup_table_entry *lte;
+	struct wim_dentry *dentry;
+	struct wim_lookup_table_entry *lte;
 	int ret;
 	u16 stream_idx;
 	struct wimfs_context *ctx = wimfs_get_context();
@@ -2180,43 +2192,43 @@ static int wimfs_unlink(const char *path)
  */
 static int wimfs_utimens(const char *path, const struct timespec tv[2])
 {
-	struct dentry *dentry;
-	struct inode *inode;
+	struct wim_dentry *dentry;
+	struct wim_inode *inode;
 	WIMStruct *w = wimfs_get_WIMStruct();
 
  	dentry = get_dentry(w, path);
 	if (!dentry)
-		return -ENOENT;
+		return -errno;
 	inode = dentry->d_inode;
 
 	if (tv[0].tv_nsec != UTIME_OMIT) {
 		if (tv[0].tv_nsec == UTIME_NOW)
-			inode->last_access_time = get_wim_timestamp();
+			inode->i_last_access_time = get_wim_timestamp();
 		else
-			inode->last_access_time = timespec_to_wim_timestamp(&tv[0]);
+			inode->i_last_access_time = timespec_to_wim_timestamp(&tv[0]);
 	}
 	if (tv[1].tv_nsec != UTIME_OMIT) {
 		if (tv[1].tv_nsec == UTIME_NOW)
-			inode->last_write_time = get_wim_timestamp();
+			inode->i_last_write_time = get_wim_timestamp();
 		else
-			inode->last_write_time = timespec_to_wim_timestamp(&tv[1]);
+			inode->i_last_write_time = timespec_to_wim_timestamp(&tv[1]);
 	}
 	return 0;
 }
 #else
 static int wimfs_utime(const char *path, struct utimbuf *times)
 {
-	struct dentry *dentry;
-	struct inode *inode;
+	struct wim_dentry *dentry;
+	struct wim_inode *inode;
 	WIMStruct *w = wimfs_get_WIMStruct();
 
  	dentry = get_dentry(w, path);
 	if (!dentry)
-		return -ENOENT;
+		return -errno;
 	inode = dentry->d_inode;
 
-	inode->last_write_time = unix_timestamp_to_wim(times->modtime);
-	inode->last_access_time = unix_timestamp_to_wim(times->actime);
+	inode->i_last_write_time = unix_timestamp_to_wim(times->modtime);
+	inode->i_last_access_time = unix_timestamp_to_wim(times->actime);
 	return 0;
 }
 #endif
@@ -2227,7 +2239,7 @@ static int wimfs_utime(const char *path, struct utimbuf *times)
 static int wimfs_write(const char *path, const char *buf, size_t size,
 		       off_t offset, struct fuse_file_info *fi)
 {
-	struct wimlib_fd *fd = (struct wimlib_fd*)(uintptr_t)fi->fh;
+	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	int ret;
 	u64 now;
 
@@ -2249,8 +2261,8 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 		return -errno;
 
 	now = get_wim_timestamp();
-	fd->f_inode->last_write_time = now;
-	fd->f_inode->last_access_time = now;
+	fd->f_inode->i_last_write_time = now;
+	fd->f_inode->i_last_access_time = now;
 	return ret;
 }
 
@@ -2298,6 +2310,9 @@ static struct fuse_operations wimfs_operations = {
 #endif
 	.write       = wimfs_write,
 
+	/* wimfs keeps file descriptor structures (struct wimfs_fd), so there is
+	 * no need to have the file path provided on operations such as read()
+	 * where only the file descriptor is needed. */
 #if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 8)
 	.flag_nullpath_ok = 1,
 #endif
@@ -2318,11 +2333,11 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	char *argv[16];
 	int ret;
 	char *dir_copy;
-	struct lookup_table *joined_tab, *wim_tab_save;
+	struct wim_lookup_table *joined_tab, *wim_tab_save;
 	struct image_metadata *imd;
 	struct wimfs_context ctx;
 	struct hlist_node *cur_node;
-	struct inode *inode;
+	struct wim_inode *inode;
 
 	DEBUG("Mount: wim = %p, image = %d, dir = %s, flags = %d, ",
 	      wim, image, dir, mount_flags);
@@ -2370,7 +2385,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		goto out;
 	}
 
-	if (imd->inode_list.first)
+	if (imd->inode_list.first) /* May be unneeded? */
 		imd->inode_list.first->pprev = &imd->inode_list.first;
 
 	if (imd->modified) {
@@ -2386,6 +2401,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 			goto out;
 	}
 
+	/* Use default stream interface if one was not specified */
 	if (!(mount_flags & (WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE |
 		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR |
 		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)))
@@ -2424,11 +2440,8 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		argv[argc++] = "-d";
 
 	/*
-	 * We provide the use_ino option because we are going to assign inode
-	 * numbers oursides.  The inodes will be given unique numbers in the
-	 * assign_inode_numbers() function, and the static variable @next_ino is
-	 * set to the next available inode number.
-	 */
+	 * We provide the use_ino option to the FUSE mount because we are going
+	 * to assign inode numbers oursides. */
 	char optstring[256] =
 		"use_ino"
 		",subtype=wimfs"
@@ -2472,13 +2485,11 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	/* Resolve the lookup table entries for every inode in the image, and
 	 * assign inode numbers */
 	DEBUG("Resolving lookup table entries and assigning inode numbers");
-
 	ctx.next_ino = 1;
-	hlist_for_each_entry(inode, cur_node, &imd->inode_list, hlist) {
+	hlist_for_each_entry(inode, cur_node, &imd->inode_list, i_hlist) {
 		inode_resolve_ltes(inode, wim->lookup_table);
-		inode->ino = ctx.next_ino++;
+		inode->i_ino = ctx.next_ino++;
 	}
-	/*ctx.next_ino = assign_inode_numbers(&imd->inode_list);*/
 	DEBUG("(next_ino = %"PRIu64")", ctx.next_ino);
 
 	DEBUG("Calling fuse_main()");
@@ -2486,6 +2497,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	ret = fuse_main(argc, argv, &wimfs_operations, &ctx);
 
 	DEBUG("Returned from fuse_main() (ret = %d)", ret);
+
 	if (ret)
 		ret = WIMLIB_ERR_FUSE;
 out_free_dir_copy:
