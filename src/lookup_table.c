@@ -1,8 +1,8 @@
 /*
  * lookup_table.c
  *
- * Lookup table, implemented as a hash table, that maps dentries to file
- * resources.
+ * Lookup table, implemented as a hash table, that maps SHA1 message digests to
+ * data streams.
  */
 
 /*
@@ -593,7 +593,7 @@ int lookup_resource(WIMStruct *w, const char *path,
 		return -EISDIR;
 
 	if (stream_name) {
-		struct ads_entry *ads_entry;
+		struct wim_ads_entry *ads_entry;
 		u16 ads_idx;
 		ads_entry = inode_get_ads_entry(inode, stream_name,
 						&ads_idx);
@@ -640,7 +640,7 @@ void inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table)
 
 		/* Resolve the alternate data streams */
 		for (u16 i = 0; i < inode->i_num_ads; i++) {
-			struct ads_entry *cur_entry = &inode->i_ads_entries[i];
+			struct wim_ads_entry *cur_entry = &inode->i_ads_entries[i];
 			lte = __lookup_resource(table, cur_entry->hash);
 			cur_entry->lte = lte;
 		}

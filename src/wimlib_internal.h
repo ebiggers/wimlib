@@ -214,18 +214,18 @@ struct wim_header {
 struct _ntfs_volume;
 #endif
 
-/* Structure for security data.  Each image in the WIM file has its own security
- * data. */
+/* Table of security descriptors for a WIM image. */
 struct wim_security_data {
 	/* The total length of the security data, in bytes.  If there are no
-	 * security descriptors, this field may be either 8 (which is correct)
-	 * or 0 (which is interpreted as 0). */
+	 * security descriptors, this field, when read from the on-disk metadata
+	 * resource, may be either 8 (which is correct) or 0 (which is
+	 * interpreted as 0). */
 	u32 total_length;
 
 	/* The number of security descriptors in the array @descriptors, below.
-	 * It is really an unsigned int, but it must fit into an int because the
-	 * security ID's are signed.  (Not like you would ever have more than a
-	 * few hundred security descriptors anyway.) */
+	 * It is really an unsigned int on-disk, but it must fit into an int
+	 * because the security ID's are signed.  (Not like you would ever have
+	 * more than a few hundred security descriptors anyway.) */
 	int32_t num_entries;
 
 	/* Array of sizes of the descriptors in the array @descriptors. */
@@ -239,29 +239,28 @@ struct wim_security_data {
 	u32 refcnt;
 };
 
-struct wim_inode_table;
-
-/* Metadata resource for an image. */
+/* Metadata for a WIM image */
 struct wim_image_metadata {
-	/* Pointer to the root dentry for the image. */
+
+	/* Pointer to the root dentry of the image. */
 	struct wim_dentry    *root_dentry;
 
-	/* Pointer to the security data for the image. */
+	/* Pointer to the security data of the image. */
 	struct wim_security_data *security_data;
 
-	/* A pointer to the lookup table entry for this image's metadata
-	 * resource. */
+	/* Pointer to the lookup table entry for this image's metadata resource
+	 */
 	struct wim_lookup_table_entry *metadata_lte;
 
-	/* Linked list of inodes for this image. */
+	/* Linked list of inodes of this image */
 	struct hlist_head inode_list;
 
-	/* True iff the dentry tree has been modified.  If this is the case, the
-	 * memory for the dentry tree is not freed when switching to a different
-	 * WIM image. */
+	/* 1 iff the dentry tree has been modified.  If this is the case, the
+	 * memory for the dentry tree should not be freed when switching to a
+	 * different WIM image. */
 	u8 modified : 1;
 
-	/* True iff this image has been mounted read-write. */
+	/* 1 iff this image has been mounted read-write */
 	u8 has_been_mounted_rw : 1;
 };
 
@@ -281,7 +280,7 @@ struct WIMStruct {
 	/* FILE pointer for the WIM file (if any) currently being written. */
 	FILE *out_fp;
 
-	/* The name of the WIM file that has been opened. */
+	/* The name of the WIM file (if any) that has been opened. */
 	char *filename;
 
 	/* The lookup table for the WIM file. */

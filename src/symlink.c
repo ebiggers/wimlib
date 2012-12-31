@@ -167,7 +167,9 @@ static int make_symlink_reparse_data_buf(const char *symlink_target,
 
 /* Get the symlink target from a WIM inode.
  *
- * The inode may be either "real" symlink or a junction point.
+ * The inode may be either a "real" symlink (reparse tag
+ * WIM_IO_REPARSE_TAG_SYMLINK), or it may be a junction point (reparse tag
+ * WIM_IO_REPARSE_TAG_MOUNT_POINT).
  */
 ssize_t inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
 		       const WIMStruct *w, int read_resource_flags)

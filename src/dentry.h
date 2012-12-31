@@ -64,7 +64,7 @@ struct wim_dentry;
  *
  * We read this from disk in the read_ads_entries() function; see that function
  * for more explanation. */
-struct ads_entry {
+struct wim_ads_entry {
 	union {
 		/* SHA-1 message digest of stream contents */
 		u8 hash[SHA1_HASH_SIZE];
@@ -95,8 +95,8 @@ struct ads_entry {
 };
 
 
-static inline bool ads_entries_have_same_name(const struct ads_entry *entry_1,
-					      const struct ads_entry *entry_2)
+static inline bool ads_entries_have_same_name(const struct wim_ads_entry *entry_1,
+					      const struct wim_ads_entry *entry_2)
 {
 	if (entry_1->stream_name_len != entry_2->stream_name_len)
 		return false;
@@ -110,8 +110,9 @@ static inline bool ads_entries_have_same_name(const struct ads_entry *entry_1,
  *
  * Note that this is a directory entry and not an inode.  Since NTFS allows hard
  * links, it's possible for a NTFS inode to correspond to multiple WIM dentries.
- * The hard_link field on the on-disk WIM dentry tells us the number of the NTFS
- * inode that the dentry corresponds to.
+ * The hard link group ID field of the on-disk WIM dentry tells us the number of
+ * the NTFS inode that the dentry corresponds to (and this gets placed in
+ * d_inode->i_ino).
  *
  * Unfortunately, WIM files do not have an analogue to an inode; instead certain
  * information, such as file attributes, the security descriptor, and file
@@ -128,8 +129,8 @@ static inline bool ads_entries_have_same_name(const struct ads_entry *entry_1,
  * file streams when they share the same hard link ID (don't even ask.  I hope
  * that Microsoft may have fixed this problem, since I've only noticed it in the
  * 'install.wim' for Windows 7).  For those dentries, we have to use the
- * conflicting fields to split up the hard link groups.  (See fix_inodes() in
- * hardlink.c).
+ * conflicting fields to split up the hard link groups.  (See
+ * dentry_tree_fix_inodes() in hardlink.c).
  */
 struct wim_dentry {
 	/* Byte 0 */
@@ -274,7 +275,7 @@ struct wim_inode {
 	u32 i_nlink;
 
 	/* Alternate data stream entries. */
-	struct ads_entry *i_ads_entries;
+	struct wim_ads_entry *i_ads_entries;
 
 	/* Inode number */
 	u64 i_ino;
@@ -345,11 +346,15 @@ extern void calculate_subdir_offsets(struct wim_dentry *dentry, u64 *subdir_offs
 extern int set_dentry_name(struct wim_dentry *dentry, const char *new_name);
 
 extern struct wim_dentry *get_dentry(struct WIMStruct *w, const char *path);
+
 extern struct wim_inode *wim_pathname_to_inode(struct WIMStruct *w,
-					   const char *path);
-extern struct wim_dentry *get_dentry_child_with_name(const struct wim_dentry *dentry,
-						 const char *name);
-extern struct wim_dentry *get_parent_dentry(struct WIMStruct *w, const char *path);
+					       const char *path);
+
+extern struct wim_dentry *
+get_dentry_child_with_name(const struct wim_dentry *dentry, const char *name);
+
+extern struct wim_dentry *get_parent_dentry(struct WIMStruct *w,
+					    const char *path);
 
 extern int print_dentry(struct wim_dentry *dentry, void *lookup_table);
 extern int print_dentry_full_path(struct wim_dentry *entry, void *ignore);
@@ -370,11 +375,12 @@ extern void unlink_dentry(struct wim_dentry *dentry);
 extern bool dentry_add_child(struct wim_dentry * restrict parent,
 			     struct wim_dentry * restrict child);
 
-extern struct ads_entry *inode_get_ads_entry(struct wim_inode *inode,
-					     const char *stream_name,
-					     u16 *idx_ret);
-extern struct ads_entry *inode_add_ads(struct wim_inode *dentry,
-				       const char *stream_name);
+extern struct wim_ads_entry *inode_get_ads_entry(struct wim_inode *inode,
+						 const char *stream_name,
+						 u16 *idx_ret);
+
+extern struct wim_ads_entry *inode_add_ads(struct wim_inode *dentry,
+					   const char *stream_name);
 
 extern void inode_remove_ads(struct wim_inode *inode, u16 idx,
 			     struct wim_lookup_table *lookup_table);
@@ -384,7 +390,8 @@ extern int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 
 extern int read_dentry_tree(const u8 metadata_resource[],
-			    u64 metadata_resource_len, struct wim_dentry *dentry);
+			    u64 metadata_resource_len,
+			    struct wim_dentry *dentry);
 
 extern u8 *write_dentry_tree(const struct wim_dentry *tree, u8 *p);
 

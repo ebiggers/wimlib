@@ -66,7 +66,7 @@ static u64 dentry_correct_length(const struct wim_dentry *dentry)
 
 /* Return %true iff the alternate data stream entry @entry has the UTF-8 stream
  * name @name that has length @name_len bytes. */
-static inline bool ads_entry_has_name(const struct ads_entry *entry,
+static inline bool ads_entry_has_name(const struct wim_ads_entry *entry,
 				      const char *name, size_t name_len)
 {
 	if (entry->stream_name_utf8_len != name_len)
@@ -126,7 +126,7 @@ int set_dentry_name(struct wim_dentry *dentry, const char *new_name)
 
 /*
  * Changes the name of an alternate data stream */
-static int change_ads_name(struct ads_entry *entry, const char *new_name)
+static int change_ads_name(struct wim_ads_entry *entry, const char *new_name)
 {
 	return get_names(&entry->stream_name, &entry->stream_name_utf8,
 			 &entry->stream_name_len,
@@ -137,7 +137,7 @@ static int change_ads_name(struct ads_entry *entry, const char *new_name)
 /* Returns the total length of a WIM alternate data stream entry on-disk,
  * including the stream name, the null terminator, AND the padding after the
  * entry to align the next ADS entry or dentry on an 8-byte boundary. */
-static u64 ads_entry_total_length(const struct ads_entry *entry)
+static u64 ads_entry_total_length(const struct wim_ads_entry *entry)
 {
 	u64 len = WIM_ADS_ENTRY_DISK_SIZE;
 	if (entry->stream_name_len)
@@ -870,7 +870,7 @@ struct wim_dentry *new_dentry_with_inode(const char *name)
 }
 
 
-static int init_ads_entry(struct ads_entry *ads_entry, const char *name)
+static int init_ads_entry(struct wim_ads_entry *ads_entry, const char *name)
 {
 	int ret = 0;
 	memset(ads_entry, 0, sizeof(*ads_entry));
@@ -879,7 +879,7 @@ static int init_ads_entry(struct ads_entry *ads_entry, const char *name)
 	return ret;
 }
 
-static void destroy_ads_entry(struct ads_entry *ads_entry)
+static void destroy_ads_entry(struct wim_ads_entry *ads_entry)
 {
 	FREE(ads_entry->stream_name);
 	FREE(ads_entry->stream_name_utf8);
@@ -1023,11 +1023,7 @@ bool dentry_add_child(struct wim_dentry * restrict parent,
 }
 
 #ifdef WITH_FUSE
-/*
- * Unlink a dentry from the directory tree.
- *
- * Note: This merely removes it from the in-memory tree structure.
- */
+/* Unlink a WIM dentry from the directory entry tree. */
 void unlink_dentry(struct wim_dentry *dentry)
 {
 	struct wim_dentry *parent = dentry->parent;
@@ -1038,9 +1034,11 @@ void unlink_dentry(struct wim_dentry *dentry)
 #endif
 
 #ifdef WITH_FUSE
-/* Returns the alternate data stream entry belonging to @inode that has the
- * stream name @stream_name. */
-struct ads_entry *inode_get_ads_entry(struct wim_inode *inode,
+/* 
+ * Returns the alternate data stream entry belonging to @inode that has the
+ * stream name @stream_name.
+ */
+struct wim_ads_entry *inode_get_ads_entry(struct wim_inode *inode,
 				      const char *stream_name,
 				      u16 *idx_ret)
 {
@@ -1063,14 +1061,14 @@ struct ads_entry *inode_get_ads_entry(struct wim_inode *inode,
 
 #if defined(WITH_FUSE) || defined(WITH_NTFS_3G)
 /*
- * Add an alternate stream entry to an inode and return a pointer to it, or NULL
- * if memory could not be allocated.
+ * Add an alternate stream entry to a WIM inode and return a pointer to it, or
+ * NULL if memory could not be allocated.
  */
-struct ads_entry *inode_add_ads(struct wim_inode *inode, const char *stream_name)
+struct wim_ads_entry *inode_add_ads(struct wim_inode *inode, const char *stream_name)
 {
 	u16 num_ads;
-	struct ads_entry *ads_entries;
-	struct ads_entry *new_entry;
+	struct wim_ads_entry *ads_entries;
+	struct wim_ads_entry *new_entry;
 
 	DEBUG("Add alternate data stream \"%s\"", stream_name);
 
@@ -1099,11 +1097,11 @@ struct ads_entry *inode_add_ads(struct wim_inode *inode, const char *stream_name
 #endif
 
 #ifdef WITH_FUSE
-/* Remove an alternate data stream from the inode  */
+/* Remove an alternate data stream from a WIM inode  */
 void inode_remove_ads(struct wim_inode *inode, u16 idx,
 		      struct wim_lookup_table *lookup_table)
 {
-	struct ads_entry *ads_entry;
+	struct wim_ads_entry *ads_entry;
 	struct wim_lookup_table_entry *lte;
 
 	wimlib_assert(idx < inode->i_num_ads);
@@ -1129,7 +1127,7 @@ void inode_remove_ads(struct wim_inode *inode, u16 idx,
 
 
 /*
- * Reads the alternate data stream entries for a dentry.
+ * Reads the alternate data stream entries of a WIM dentry.
  *
  * @p:	Pointer to buffer that starts with the first alternate stream entry.
  *
@@ -1142,7 +1140,7 @@ void inode_remove_ads(struct wim_inode *inode, u16 idx,
  *
  * The format of the on-disk alternate stream entries is as follows:
  *
- * struct ads_entry_on_disk {
+ * struct wim_ads_entry_on_disk {
  * 	u64  length;          // Length of the entry, in bytes.  This includes
  *				    all fields (including the stream name and
  *				    null terminator if present, AND the padding!).
@@ -1165,14 +1163,14 @@ void inode_remove_ads(struct wim_inode *inode, u16 idx,
  * In addition, the entries are 8-byte aligned.
  *
  * Return 0 on success or nonzero on failure.  On success, inode->i_ads_entries
- * is set to an array of `struct ads_entry's of length inode->i_num_ads.  On
+ * is set to an array of `struct wim_ads_entry's of length inode->i_num_ads.  On
  * failure, @inode is not modified.
  */
 static int read_ads_entries(const u8 *p, struct wim_inode *inode,
 			    u64 remaining_size)
 {
 	u16 num_ads;
-	struct ads_entry *ads_entries;
+	struct wim_ads_entry *ads_entries;
 	int ret;
 
 	num_ads = inode->i_num_ads;
@@ -1184,7 +1182,7 @@ static int read_ads_entries(const u8 *p, struct wim_inode *inode,
 	}
 
 	for (u16 i = 0; i < num_ads; i++) {
-		struct ads_entry *cur_entry;
+		struct wim_ads_entry *cur_entry;
 		u64 length;
 		u64 length_no_padding;
 		u64 total_length;
@@ -1292,7 +1290,7 @@ out_free_ads_entries:
 }
 
 /*
- * Reads a directory entry, including all alternate data stream entries that
+ * Reads a WIM directory entry, including all alternate data stream entries that
  * follow it, from the WIM image's metadata resource.
  *
  * @metadata_resource:	Buffer containing the uncompressed metadata resource.

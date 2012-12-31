@@ -11,13 +11,19 @@
 #define LOOKUP_FLAG_ADS_OK		0x00000001
 #define LOOKUP_FLAG_DIRECTORY_OK	0x00000002
 
-/* Not yet used */
-//#define LOOKUP_FLAG_FOLLOW_SYMLINKS	0x00000004
 
-
-/* A lookup table that is used to translate the hash codes of dentries into the
- * offsets and sizes of uncompressed or compressed file resources.  It is
- * implemented as a hash table. */
+/* The lookup table of a WIM file maps SHA1 message digests to streams of data.
+ * Here, the in-memory structure is implemented as a hash table.
+ *
+ * Given a SHA1 message digest, the mapped-to stream is specified by an offset
+ * in the WIM, an uncompressed and compressed size, and resource flags (see
+ * 'struct resource_entry').  But, we associate additional information, such as
+ * a reference count, with each stream, so the actual mapping is from SHA1
+ * message digests to 'struct wim_lookup_table_entry's, each of which contains
+ * an embedded 'struct resource_entry'.
+ *
+ * Note: Everything will break horribly if there is a SHA1 collision.
+ */
 struct wim_lookup_table {
 	struct hlist_head *array;
 	u64 num_entries;

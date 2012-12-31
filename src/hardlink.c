@@ -66,7 +66,8 @@ struct wim_inode_table {
          *
 	 * - Groups we create ourselves by splitting a nominal inode due to
 	 *   inconsistencies in the dentries.  These inodes will share a inode
-	 *   ID with some other inode until assign_inode_numbers() is called.
+	 *   number with some other inode until assign_inode_numbers() is
+	 *   called.
 	 */
 	struct hlist_head extra_inodes;
 };
@@ -414,13 +415,13 @@ static int fix_inodes(struct wim_inode_table *table,
 /*
  * dentry_tree_fix_inodes():
  *
- * This function takes as input a tree of WIM dentries that has a different
- * inode associated with every dentry.  Sets of dentries that share the same
- * inode (a.k.a. hard link groups) are built using the i_ino field of each
- * inode, then the link count and alias list for one inode in each set is set
- * correctly and the unnecessary struct wim_inode's freed.  The effect is to
- * correctly associate exactly one struct wim_inode with each original inode,
- * regardless of how many dentries are aliases for that inode.
+ * This function takes as input a tree of WIM dentries that initially has a
+ * different inode associated with each dentry.  Sets of dentries that should
+ * share the same inode (a.k.a. hard link groups) are built using the i_ino
+ * field of each inode, then the link count and alias list for one inode in each
+ * set is set correctly and the unnecessary struct wim_inode's freed.  The
+ * effect is to correctly associate exactly one struct wim_inode with each
+ * original inode, regardless of how many dentries are aliases for that inode.
  *
  * The special inode number of 0 indicates that the dentry is in a hard link
  * group by itself, and therefore has a 'struct wim_inode' with i_nlink=1 to
@@ -429,11 +430,11 @@ static int fix_inodes(struct wim_inode_table *table,
  * This function also checks the dentries in each hard link group for
  * consistency.  In some WIMs, such as install.wim for some versions of Windows
  * 7, dentries can share the same hard link group ID but not actually be hard
- * linked to each other (e.g. to having different data streams).  This should be
- * an error, but this case needs be handled.  So, each "nominal" inode (the
- * inode based on the inode numbers provided in the WIM) is examined for
- * consistency and may be split into multiple "true" inodes that are maximally
- * sized consistent sets of dentries.
+ * linked to each other (based on conflicting information, such as file
+ * contents).  This should be an error, but this case needs be handled.  So,
+ * each "nominal" inode (the inode based on the inode numbers provided in the
+ * WIM) is examined for consistency and may be split into multiple "true" inodes
+ * that are maximally sized consistent sets of dentries.
  *
  * Return 0 on success; WIMLIB_ERR_NOMEM or WIMLIB_ERR_INVALID_DENTRY on
  * failure.  On success, the list of "true" inodes, linked by the i_hlist field,
@@ -457,7 +458,7 @@ int dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_lis
 	return ret;
 }
 
-/* Assign inode numbers to a list of inode, and return the next available
+/* Assign inode numbers to a list of inodes and return the next available
  * number. */
 u64 assign_inode_numbers(struct hlist_head *inode_list)
 {

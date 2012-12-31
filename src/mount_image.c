@@ -1560,7 +1560,7 @@ static int wimfs_getxattr(const char *path, const char *name, char *value,
 {
 	int ret;
 	struct wim_inode *inode;
-	struct ads_entry *ads_entry;
+	struct wim_ads_entry *ads_entry;
 	size_t res_size;
 	struct wim_lookup_table_entry *lte;
 	struct wimfs_context *ctx = wimfs_get_context();
@@ -1705,7 +1705,7 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	if ((ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 	     && (stream_name = path_stream_name(path))) {
 		/* Make an alternate data stream */
-		struct ads_entry *new_entry;
+		struct wim_ads_entry *new_entry;
 		struct wim_inode *inode;
 
 		char *p = (char*)stream_name - 1;
@@ -1931,7 +1931,7 @@ static int wimfs_releasedir(const char *path, struct fuse_file_info *fi)
 static int wimfs_removexattr(const char *path, const char *name)
 {
 	struct wim_inode *inode;
-	struct ads_entry *ads_entry;
+	struct wim_ads_entry *ads_entry;
 	u16 ads_idx;
 	struct wimfs_context *ctx = wimfs_get_context();
 
@@ -2036,8 +2036,8 @@ static int wimfs_rmdir(const char *path)
 static int wimfs_setxattr(const char *path, const char *name,
 			  const char *value, size_t size, int flags)
 {
-	struct ads_entry *existing_ads_entry;
-	struct ads_entry *new_ads_entry;
+	struct wim_ads_entry *existing_ads_entry;
+	struct wim_ads_entry *new_ads_entry;
 	struct wim_lookup_table_entry *existing_lte;
 	struct wim_lookup_table_entry *lte;
 	struct wim_inode *inode;
@@ -2441,7 +2441,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	/*
 	 * We provide the use_ino option to the FUSE mount because we are going
-	 * to assign inode numbers oursides. */
+	 * to assign inode numbers ourselves. */
 	char optstring[256] =
 		"use_ino"
 		",subtype=wimfs"

@@ -360,7 +360,7 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 		} else {
 			/* Named data stream.  Put the reference to it in the
 			 * alternate data stream entries */
-			struct ads_entry *new_ads_entry;
+			struct wim_ads_entry *new_ads_entry;
 			size_t stream_name_utf8_len;
 
 			ret = utf16_to_utf8((const char*)attr_record_name(actx->attr),
