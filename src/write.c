@@ -1867,7 +1867,9 @@ out_ftruncate:
 	if (ret != 0 && !(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
 		WARNING("Truncating `%s' to its original size (%"PRIu64" bytes)",
 			w->filename, old_wim_end);
-		truncate(w->filename, old_wim_end);
+		/* Return value of truncate() is ignored because this is already
+		 * an error path. */
+		(void)truncate(w->filename, old_wim_end);
 	}
 	w->wim_locked = 0;
 	return ret;

@@ -167,6 +167,10 @@ int make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
 		const unsigned entries_per_long = sizeof(unsigned long) /
 						  sizeof(decode_table[0]);
 		if (num_entries >= entries_per_long) {
+			/* Fill in the Huffman decode table entries one unsigned
+			 * long at a time.  On 32-bit systems this is 2 entries
+			 * per store, while on 64-bit systems this is 4 entries
+			 * per store. */
 			wimlib_assert2(decode_table_pos % entries_per_long == 0);
 			BUILD_BUG_ON(sizeof(unsigned long) != 4 &&
 				     sizeof(unsigned long) != 8);
@@ -176,14 +180,21 @@ int make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
 			unsigned long v = sym;
 			if (sizeof(unsigned long) >= 4)
 				v |= v << 16;
-			if (sizeof(unsigned long) >= 8)
+			if (sizeof(unsigned long) >= 8) {
+				/* This may produce a compiler warning if an
+				 * unsigned long is 32 bits, but this won't be
+				 * executed unless an unsigned long is at least
+				 * 64 bits anyway. */
 				v |= v << 32;
+			}
 			do {
 				*p++ = v;
 			} while (--n);
 
 			decode_table_pos += num_entries;
 		} else {
+			/* Fill in the Huffman decode table entries one 16-bit
+			 * integer at a time. */
 			do {
 				decode_table[decode_table_pos++] = sym;
 			} while (--num_entries);
