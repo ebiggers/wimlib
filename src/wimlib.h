@@ -745,14 +745,19 @@ enum wimlib_error_code {
 /**
  * Adds an image to a WIM file from an on-disk directory tree or NTFS volume.
  *
- * The directory tree is read immediately for the purpose of constructing a
- * directory entry tree in-memory.  Also, all files are read to calculate their
- * SHA1 message digests.  However, because the directory tree may contain a very
- * large amount of data, the files themselves are not read into memory
- * permanently, and instead references to their paths saved.  The files are then
- * read on-demand if wimlib_write() or wimlib_overwrite() is called.
+ * The directory tree of NTFS volume is read immediately for the purpose of
+ * constructing a directory entry tree in-memory.  Also, all files are read to
+ * calculate their SHA1 message digests.  However, because the directory tree
+ * may contain a very large amount of data, the files themselves are not read
+ * into memory permanently, and instead references to their paths saved.  The
+ * files are then read on-demand if wimlib_write() or wimlib_overwrite() is
+ * called.
  *
- * Please note that @b no changes are committed to the underlying WIM file (if
+ * See the manual page for the @c imagex program for more information about the
+ * "normal" capture mode versus the NTFS capture mode (entered by providing the
+ * flag ::WIMLIB_ADD_IMAGE_FLAG_NTFS).
+ *
+ * Note that @b no changes are committed to the underlying WIM file (if
  * any) until wimlib_write() or wimlib_overwrite() is called.
  *
  * @param wim
@@ -770,17 +775,8 @@ enum wimlib_error_code {
  * @param config_len
  * 	Length of the string @a config in bytes.  Ignored if @a config is @c
  * 	NULL.
- *
  * @param add_image_flags
- * 	Bitwise OR of flags prefixed with WIMLIB_ADD_IMAGE_FLAG.  If
- * 	::WIMLIB_ADD_IMAGE_FLAG_BOOT is specified, the image in @a wim that is
- * 	marked as bootable is changed to the one being added.  If
- * 	::WIMLIB_ADD_IMAGE_FLAG_VERBOSE is specified, the name of each file is
- * 	printed as it is scanned or captured.  If
- * 	::WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE is specified, the files or
- * 	directories pointed to by symbolic links are archived rather than the
- * 	symbolic links themselves.
- *
+ * 	Bitwise OR of flags prefixed with WIMLIB_ADD_IMAGE_FLAG.
  * @param progress_func
  * 	If non-NULL, a function that will be called periodically with the
  * 	progress of the current operation.
