@@ -802,7 +802,7 @@ static int rebuild_wim(struct wimfs_context *ctx, int write_flags,
 	}
 
 	DEBUG("Calculating SHA1 checksums for all new staging files.");
-	list_for_each_entry(lte, &ctx->staging_list, staging_list) {
+	list_for_each_entry_safe(lte, tmp, &ctx->staging_list, staging_list) {
 		ret = update_lte_of_staging_file(lte, w->lookup_table);
 		if (ret != 0)
 			return ret;
