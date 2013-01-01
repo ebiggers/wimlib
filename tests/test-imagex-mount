@@ -26,11 +26,7 @@ imagex_info() {
 
 imagex_mountrw() {
 	echo "imagex mountrw $@"
-	../imagex mountrw --debug "$@" &> mount.log &
-	while ! mountpoint $2 >& /dev/null; do
-		sleep 0.01;
-	done
-	return 0
+	../imagex mountrw "$@"
 }
 
 cleanup() {
