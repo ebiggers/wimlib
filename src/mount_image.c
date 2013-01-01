@@ -2002,7 +2002,7 @@ static int wimfs_rename(const char *from, const char *to)
 			return -ENOTDIR;
 	}
 
-	ret = set_dentry_name(src, to);
+	ret = set_dentry_name(src, path_basename(to));
 	if (ret != 0)
 		return -ENOMEM;
 	if (dst)
