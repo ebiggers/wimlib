@@ -1117,9 +1117,9 @@ void inode_remove_ads(struct wim_inode *inode, u16 idx,
 
 	destroy_ads_entry(ads_entry);
 
-	memcpy(&inode->i_ads_entries[idx],
-	       &inode->i_ads_entries[idx + 1],
-	       (inode->i_num_ads - idx - 1) * sizeof(inode->i_ads_entries[0]));
+	memmove(&inode->i_ads_entries[idx],
+		&inode->i_ads_entries[idx + 1],
+		(inode->i_num_ads - idx - 1) * sizeof(inode->i_ads_entries[0]));
 	inode->i_num_ads--;
 }
 #endif

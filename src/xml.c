@@ -952,9 +952,9 @@ void xml_delete_image(struct wim_info **wim_info_p, int image)
 
 	destroy_image_info(&wim_info->images[image - 1]);
 
-	memcpy(&wim_info->images[image - 1],
-	       &wim_info->images[image],
-	       (wim_info->num_images - image) * sizeof(struct image_info));
+	memmove(&wim_info->images[image - 1],
+		&wim_info->images[image],
+		(wim_info->num_images - image) * sizeof(struct image_info));
 
 	if (--wim_info->num_images == 0) {
 		free_wim_info(wim_info);
