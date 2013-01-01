@@ -1011,7 +1011,7 @@ static int imagex_export(int argc, const char **argv)
 
 		ret = file_writable(dest_wimfile);
 		if (ret != 0)
-			return ret;
+			goto out;
 
 		dest_ctype = wimlib_get_compression_type(dest_w);
 		if (compression_type_specified
