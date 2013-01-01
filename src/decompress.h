@@ -120,7 +120,6 @@ static inline int bitstream_read_bits(struct input_bitstream *istream,
 	if (ret == 0) {
 		*n = bitstream_peek_bits(istream, num_bits);
 		bitstream_remove_bits(istream, num_bits);
-		wimlib_assert2(istream->bitsleft < 16);
 	} else {
 		ERROR("bitstream_read_bits(): Input buffer exhausted");
 	}
