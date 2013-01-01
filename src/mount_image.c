@@ -1613,15 +1613,13 @@ static int wimfs_link(const char *to, const char *from)
 	if (!inode)
 		return -errno;
 
-	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
-		return -EEXIST;
-
-	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+	if (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+				   FILE_ATTRIBUTE_REPARSE_POINT))
 		return -EPERM;
 
 	from_dentry_parent = get_parent_dentry(w, from);
 	if (!from_dentry_parent)
-		return -ENOENT;
+		return -errno;
 	if (!dentry_is_directory(from_dentry_parent))
 		return -ENOTDIR;
 
@@ -1779,7 +1777,7 @@ static int wimfs_open(const char *path, struct fuse_file_info *fi)
 	}
 
 	ret = alloc_wimfs_fd(inode, stream_id, lte, &fd,
-			      wimfs_ctx_readonly(ctx));
+			     wimfs_ctx_readonly(ctx));
 	if (ret != 0)
 		return ret;
 
