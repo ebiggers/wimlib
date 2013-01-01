@@ -45,10 +45,11 @@ If multiple images are being exported, this flag indicates that the image in the
 error.
 .TP
 \fB--check\fR
-When reading \fISRC_WIMFILE\fR, verify its integrity if the integrity table is
-present; additionally, when writing \fIDEST_WIMFILE\fR with the new image added,
-write an integrity table.  If this option is not specified, no integrity table
-is included in \fIDEST_WIMFILE\fR, even if there was one before.
+When reading \fISRC_WIMFILE\fR, and \fIDEST_WIMFILE\fR if it exists, verify the
+file's integrity if the integrity table is present; additionally, when writing
+\fIDEST_WIMFILE\fR with the new image added, write an integrity table.  If this
+option is not specified, no integrity table is included in \fIDEST_WIMFILE\fR,
+even if there was one before.
 .TP
 \fB--compress\fR=\fITYPE\fR
 Specifies the compression type for \fIDEST_WIMFILE\fR.  This is only valid if
