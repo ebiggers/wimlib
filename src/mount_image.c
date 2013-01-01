@@ -165,7 +165,8 @@ static int alloc_wimfs_fd(struct wim_inode *inode,
 
 	pthread_mutex_lock(&inode->i_mutex);
 
-	DEBUG("Allocating fd for stream ID %u from inode %lx (open = %u, allocated = %u)",
+	DEBUG("Allocating fd for stream ID %u from inode %#"PRIx64" "
+	      "(open = %u, allocated = %u)",
 	      stream_id, inode->i_ino, inode->i_num_opened_fds,
 	      inode->i_num_allocated_fds);
 
@@ -265,7 +266,7 @@ static int lte_put_fd(struct wim_lookup_table_entry *lte, struct wimfs_fd *fd)
 static int close_wimfs_fd(struct wimfs_fd *fd)
 {
 	int ret;
-	DEBUG("Closing fd (inode = %lu, opened = %u, allocated = %u)",
+	DEBUG("Closing fd (ino = %#"PRIx64", opened = %u, allocated = %u)",
 	      fd->f_inode->i_ino, fd->f_inode->i_num_opened_fds,
 	      fd->f_inode->i_num_allocated_fds);
 	ret = lte_put_fd(fd->f_lte, fd);
@@ -1835,7 +1836,7 @@ static int wimfs_read(const char *path, char *buf, size_t size,
 		wimlib_assert(fd->f_lte->staging_file_name);
 		wimlib_assert(fd->staging_fd != -1);
 
-		DEBUG("Seek to offset %zu", offset);
+		DEBUG("Seek to offset %"PRIu64, offset);
 
 		if (lseek(fd->staging_fd, offset, SEEK_SET) == -1)
 			return -errno;

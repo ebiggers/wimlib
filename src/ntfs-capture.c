@@ -340,7 +340,7 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 					lte->resource_entry.size = data_size;
 				}
 				ntfs_loc = NULL;
-				DEBUG("Add resource for `%s' (size = %zu)",
+				DEBUG("Add resource for `%s' (size = %"PRIu64")",
 				      dentry->file_name_utf8,
 				      lte->resource_entry.original_size);
 				copy_hash(lte->hash, attr_hash);
