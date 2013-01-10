@@ -1841,7 +1841,7 @@ extern int wimlib_set_image_flags(WIMStruct *wim, int image, const char *flags);
  * @param image
  * 	The number of the image for which to change the name.
  * @param name
- * 	The new name to give the image.  It must not a nonempty string.
+ * 	The new name to give the image.  It must be a nonempty string.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
@@ -1934,7 +1934,7 @@ extern int wimlib_set_print_errors(bool show_messages);
  * @return 0 on success; nonzero on error.  This function may return any value
  * returned by wimlib_write() as well as the following error codes:
  *
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED:
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
  * 	@a wim is not part 1 of a stand-alone WIM.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	@a swm_name was @c NULL, or @a part_size was 0.
