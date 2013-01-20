@@ -136,7 +136,6 @@ static u32 lzx_record_match(unsigned match_offset, unsigned match_len,
 {
 	struct lzx_freq_tables *freq_tabs = __freq_tabs;
 	struct lru_queue *queue = __queue;
-	unsigned formatted_offset;
 	unsigned position_slot;
 	unsigned position_footer = 0;
 	u32 match;
@@ -150,23 +149,20 @@ static u32 lzx_record_match(unsigned match_offset, unsigned match_len,
 
 	/* If possible, encode this offset as a repeated offset. */
 	if (match_offset == queue->R0) {
-		formatted_offset = 0;
-		position_slot    = 0;
+		position_slot = 0;
 	} else if (match_offset == queue->R1) {
 		swap(queue->R0, queue->R1);
-		formatted_offset = 1;
-		position_slot    = 1;
+		position_slot = 1;
 	} else if (match_offset == queue->R2) {
 		swap(queue->R0, queue->R2);
-		formatted_offset = 2;
-		position_slot    = 2;
+		position_slot = 2;
 	} else {
 		/* Not a repeated offset. */
 
 		/* offsets of 0, 1, and 2 are reserved for the repeated offset
 		 * codes, so non-repeated offsets must be encoded as 3+.  The
 		 * minimum offset is 1, so encode the offsets offset by 2. */
-		formatted_offset = match_offset + LZX_MIN_MATCH;
+		unsigned formatted_offset = match_offset + LZX_MIN_MATCH;
 
 		queue->R2 = queue->R1;
 		queue->R1 = queue->R0;
