@@ -106,6 +106,8 @@ Usage: $script_name [OPTIONS] IMAGE
   -O, --overlay=DIR        Adds all the files in DIR to the Windows PE image.
   -t, --tmp-dir=DIR        Use DIR as the temporary base of the ISO filesystem.  
                               Defaults to making one using "mktemp -d".
+  -a, --arch=ARCH          Use ARCH version (x86 or amd64)
+                              Defaults: x86
   -h, --help               Display this information.
   -v, --version            Show version information.
 
@@ -122,12 +124,17 @@ make=disk
 
 process_command_line() {
 
-	if ! options=$(getopt -o oiw:W:s:O:t:A:hv -l \
-		only-wim,iso,wim:,windows-dir:,start-script:,overlay:,tmp-dir:,waik-dir:,help,version \
+	if ! options=$(getopt -o oiw:W:s:O:t:A:a:hv -l \
+		only-wim,iso,wim:,windows-dir:,start-script:,overlay:,tmp-dir:,waik-dir:,arch:,help,version \
 				-- "$@" ); then
 		usage
 		exit 1
 	fi
+
+	# default arch value
+	arch="X86"
+	arch_id="1"
+
 	eval set -- "$options"
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -171,6 +178,21 @@ process_command_line() {
 			tmp_dir="$2"
 			shift
 			;;
+		-a|--arch)
+			if [ "$2" == "x86" ]; then
+				arch="X86"
+				arch_id="1"
+
+			elif [ "$2" == "amd64" ]; then
+				arch="AMD64"
+				arch_id="3"
+
+			else 
+				echo "ERROR: $2 is not a valid arch (x86/amd64)"
+				exit 1
+			fi
+			shift
+			;;
 		-h|--help)
 			usage
 			exit 0
@@ -190,6 +212,7 @@ process_command_line() {
 		esac
 		shift
 	done
+
 	if [ $# -ne 1 ]; then
 		echo "You must specify the name of the image file to create!"
 		echo "Run \"$script_name -h\" to see usage information."
@@ -289,16 +312,16 @@ get_primary_boot_files() {
 	if [ -n "$waik_dir" ]; then
 		# Get boot files from the WAIK.
 
-		stat_busy "Copying primary boot files from the Windows Automated Installation Kit ($waik_dir)"
+		stat_busy "Copying primary boot files from the Windows Automated Installation Kit ($waik_dir, $arch)"
 		if [ $make = iso ]; then
-			cabextract "$waik_dir"/wAIKX86.msi -F F_WINPE_X86_etfsboot.com -p \
+			cabextract "$waik_dir"/wAIK${arch}.msi -F F_WINPE_${arch}_etfsboot.com -p \
 					> "$tmp_dir"/etfsboot.com || stat_fail
 		fi
-		cabextract "$waik_dir"/wAIKX86.msi -F F1_BOOTMGR -p \
+		cabextract "$waik_dir"/wAIK${arch}.msi -F F${arch_id}_BOOTMGR -p \
 				> "$tmp_dir"/bootmgr || stat_fail
-		cabextract "$waik_dir"/wAIKX86.msi -F F_WINPE_X86_boot.sdi -p \
+		cabextract "$waik_dir"/wAIK${arch}.msi -F F_WINPE_${arch}_boot.sdi -p \
 				> "$tmp_dir"/boot/boot.sdi || stat_fail
-		cabextract "$waik_dir"/wAIKX86.msi -F F_WINPE_X86_bcd -p \
+		cabextract "$waik_dir"/wAIK${arch}.msi -F F_WINPE_${arch}_bcd -p \
 				> "$tmp_dir"/boot/bcd || stat_fail
 		stat_done
 	else
@@ -325,7 +348,7 @@ get_boot_wim() {
 		if [ -n "$waik_dir" ]; then
 			# WAIK
 			stat_busy "Extracting boot.wim from \"$waik_dir/WinPE.cab\""
-			cabextract "$waik_dir/WinPE.cab" -F F1_WINPE.WIM -p \
+			cabextract "$waik_dir/WinPE.cab" -F F${arch_id}_WINPE.WIM -p \
 					> "$boot_wim" 2>/dev/null || stat_fail
 			stat_done
 		else
