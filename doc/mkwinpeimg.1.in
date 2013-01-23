@@ -81,7 +81,9 @@ Use DIR for temporary files.  Defaults to a directory made using "mktemp -d".
 \fB\-a\fR, \fB\-\-arch\fR=\fIARCH\fR
 Use the Windows PE version from the Windows Automated Installation Kit that has
 the CPU architecture \fIARCH\fR.  Only valid with \fB\-\-waik\-dir\fR.  Possible
-values: "x86", "amd64", or "ia64".  Default is "x86".
+values: "x86" or "amd64".  Default is "x86".  Note: the WAIK also contains a
+Windows PE image for the ia64 (Itanium) architecture; however, this is not
+supported by this script.
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Display help.

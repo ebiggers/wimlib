@@ -108,7 +108,7 @@ Usage: $script_name [OPTIONS] IMAGE
                               Defaults to making one using "mktemp -d".
   -a, --arch=ARCH          Use the Windows PE version from the WAIK that has
                               the CPU architecture ARCH.  Possible values:
-                              "x86", "amd64", or "ia64".  Default is "x86".
+                              "x86" or "amd64".  Default is "x86".
   -h, --help               Display this information.
   -v, --version            Show version information.
 
@@ -183,14 +183,17 @@ process_command_line() {
 			if [ "$2" == "x86" ]; then
 				arch="X86"
 				arch_id="1"
-			elif [ "$2" == "ia64" ]; then
-				arch="IA64"
-				arch_id="2"
+			# Need to test Itanium images before making it an
+			# option.  Note: syslinux is x86 only so can't be used
+			# for the Itanium disk image.
+			#elif [ "$2" == "ia64" ]; then
+				#arch="IA64"
+				#arch_id="2"
 			elif [ "$2" == "amd64" ]; then
 				arch="AMD64"
 				arch_id="3"
 			else 
-				echo "ERROR: $2 is not a valid arch (x86/amd64/ia64)"
+				echo "ERROR: $2 is not a valid arch (x86/amd64)"
 				exit 1
 			fi
 			shift
