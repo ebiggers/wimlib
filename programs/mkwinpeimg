@@ -423,7 +423,7 @@ make_iso_img() {
 
 	stat_busy "Making ISO image \"$image\""
 
-	mkisofs -sysid ""  -A ""  -V "Microsoft Windows PE (x86)"  -d -N \
+	mkisofs -sysid ""  -A ""  -V "Microsoft Windows PE ($arch)"  -d -N \
 		-b etfsboot.com  -no-emul-boot   -c boot.cat  -hide etfsboot.com  \
 		-hide boot.cat -quiet -o "$image" "$tmp_dir" || stat_fail
 
