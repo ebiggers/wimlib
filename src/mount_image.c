@@ -2499,6 +2499,12 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	if (ret)
 		ret = WIMLIB_ERR_FUSE;
+
+	/* Try to delete the staging directory if a deletion wasn't yet
+	 * attempted due to an earlier error */
+	if (ctx.staging_dir_name)
+		delete_staging_dir(&ctx);
+
 out_free_dir_copy:
 	FREE(dir_copy);
 out_unlock:
