@@ -575,13 +575,16 @@ static int build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 			if (ret != 0)
 				return ret;
 		} else {
+			if (
 		#ifdef ENODATA
-			if (errno != ENODATA) {
+			    errno != ENODATA &&
+		#endif
+			    errno != EMLINK
+			    ) {
 				ERROR_WITH_ERRNO("Error getting DOS name "
 						 "of `%s'", path);
 				return WIMLIB_ERR_NTFS_3G;
 			}
-		#endif
 		}
 	}
 

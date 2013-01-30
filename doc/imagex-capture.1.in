@@ -91,8 +91,9 @@ The security descriptor for each NTFS inode.
 .IP \[bu]
 File attribute flags.
 .IP \[bu]
-All names of all files, including names in the Win32 namespace, DOS namespace,
-Win32+DOS namespace, and POSIX namespace.  This includes hard links.
+All names of all singly-linked files, including names in the Win32 namespace,
+DOS namespace, Win32+DOS namespace, and POSIX namespace; all names of all
+multi-linked files except DOS names.
 
 .SH OPTIONS
 .TP 6
