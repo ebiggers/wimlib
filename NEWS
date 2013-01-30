@@ -4,7 +4,8 @@ Version 1.2.4:
 	Added --arch switch to mkwinpeimg script to support getting AMD64 WinPE
 	from the WAIK.
 
-	Update to work with ntfs-3g version 2013.1.13.
+	Update to work with ntfs-3g version 2013.1.13.  DOS names are no longer
+	applied to files with multiple links.
 
 Version 1.2.3:
 	Fixed truncating file to shorter but non-zero length on read-write

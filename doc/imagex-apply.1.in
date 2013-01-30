@@ -71,8 +71,9 @@ Short (DOS) names for files
 A special extraction mode is entered when \fITARGET\fR is a regular file or
 block device.  If this is the case, \fITARGET\fR is interpreted as an NTFS
 volume and opened using libntfs-3g.  If successful, the WIM image is extracted
-to the root of the NTFS volume in a special mode that preserves all information
-contained in the WIM image.  \fIIMAGE\fR may not be "all" for this action.
+to the root of the NTFS volume in a special mode that preserves almost all
+information contained in the WIM image.  \fIIMAGE\fR may not be "all" for this
+action.
 
 The NTFS volume does not need to be empty, although it's expected that it be
 empty for the intended use cases.  A new NTFS filesystem can be created using
@@ -106,17 +107,22 @@ the WIM.
 .IP \[bu]
 File attribute flags are applied.
 .IP \[bu]
-Short (DOS) names for files are extracted.  The corresponding long name for each
-DOS name is made to be a Win32 name.  Any additional names for the file in the
-same directory are made to be names in the POSIX namespace.
+Short (DOS) names for non-hard-linked files are extracted.  The corresponding
+long name for each DOS name is made to be a Win32 name.  Files with multiple
+hard links are extracted with filenames in the POSIX namespace, and short names
+(if any) are ignored.  A singly-linked file with no short name is also extracted
+in the POSIX namespace.  Note that this assigning of namespaces may not be
+exactly the same as in the original filesystem that was captured, and also this
+means that some DOS names may be lost (most likely inconsequentially).
 
 .PP
 
-Since all information from the WIM image is restored in the NTFS extraction
-mode, it is possible to restore an image of an actual Windows installation. In
-the examples at the end of this manual page, there is an example of applying an
-image from the "install.wim" file contained in the installation media for
-Windows Vista, Windows 7, and Windows 8 in the "sources" directory.
+Since almost all information from the WIM image is restored in the NTFS
+extraction mode, it is possible to restore an image of an actual Windows
+installation. In the examples at the end of this manual page, there is an
+example of applying an image from the "install.wim" file contained in the
+installation media for Windows Vista, Windows 7, and Windows 8 in the "sources"
+directory.
 
 But in order to actually boot Windows from an applied image, you must understand
 the boot process of Windows versions Vista and later.  Basically, it is the
