@@ -1,3 +1,9 @@
+wimlib (1.2.4-1) unstable; urgency=low
+
+  * Update to v1.2.4
+
+ -- Eric Biggers <ebiggers3gmail.com>  Tue, 29 Jan 2013 20:19:29 -0600
+
 wimlib (1.2.3-1) unstable; urgency=low
 
   * Update to v1.2.3

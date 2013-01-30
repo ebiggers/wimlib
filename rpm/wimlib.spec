@@ -1,6 +1,6 @@
 Summary:   Library to extract, create, and modify WIM files
 Name:      wimlib
-Version:   1.2.3
+Version:   1.2.4
 Release:   1
 License:   GPLv3+
 Group:     System/Libraries
