@@ -185,6 +185,7 @@ if test "x$WITH_NTFS_3G" = "xyes"; then
 	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 to enable support for
 		   NTFS-specific information])
 
+	dnl This effectively checks for NTFS-3g 2011.4.12 or later
 	AC_CHECK_LIB([ntfs-3g], [ntfs_xattr_system_setxattr], [],
 			[AC_MSG_ERROR([Cannot find libntfs-3g version 2011-4-12
 	or later. Without libntfs-3g, wimlib cannot include support for
@@ -195,6 +196,15 @@ if test "x$WITH_NTFS_3G" = "xyes"; then
 	features.])])
 	LIBNTFS_3G_LDADD="`pkg-config --libs libntfs-3g`"
 	LIBNTFS_3G_CFLAGS="`pkg-config --cflags libntfs-3g`"
+
+	dnl This checks for a NTFS-3g interface that was changed in the
+	dnl 2013.1.13 release
+	AC_CHECK_DECL([NTFS_MNT_RDONLY],
+		      [AC_DEFINE([HAVE_NTFS_MNT_RDONLY],
+				 [1],
+				 [Define to 1 if ntfs_mount() takes the flag NTFS_MNT_RDONLY])],
+		      ,
+		      [#include <ntfs-3g/volume.h>])
 else
 	LIBNTFS_3G_LDADD=
 	LIBNTFS_3G_CFLAGS=
