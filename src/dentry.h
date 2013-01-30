@@ -252,6 +252,8 @@ struct wim_inode {
 	/* %true iff verify_inode() has run on this inode. */
 	u8 i_verified : 1;
 
+	u8 i_dos_name_extracted : 1;
+
 	/* Number of alternate data streams associated with this inode */
 	u16 i_num_ads;
 

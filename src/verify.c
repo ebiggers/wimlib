@@ -35,14 +35,18 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	const struct wim_lookup_table *table = w->lookup_table;
 	const struct wim_security_data *sd = wim_const_security_data(w);
 	const struct wim_dentry *first_dentry = inode_first_dentry(inode);
+	const struct wim_dentry *dentry;
 	int ret = WIMLIB_ERR_INVALID_DENTRY;
 
-	/* Check the security ID */
+	/* Check the security ID.  -1 is valid and means "no security
+	 * descriptor".  Anything else has to be a valid index into the WIM
+	 * image's security descriptors table. */
 	if (inode->i_security_id < -1) {
 		ERROR("Dentry `%s' has an invalid security ID (%d)",
 			first_dentry->full_path_utf8, inode->i_security_id);
 		goto out;
 	}
+
 	if (inode->i_security_id >= sd->num_entries) {
 		ERROR("Dentry `%s' has an invalid security ID (%d) "
 		      "(there are only %u entries in the security table)",
@@ -51,9 +55,11 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 		goto out;
 	}
 
-	/* Check that lookup table entries for all the resources exist, except
-	 * if the SHA1 message digest is all 0's, which indicates there is
-	 * intentionally no resource there.  */
+	/* Check that lookup table entries for all the inode's stream exist,
+	 * except if the SHA1 message digest is all 0's, which indicates an
+	 * empty stream. 
+	 *
+	 * This check is skipped on split WIMs. */
 	if (w->hdr.total_parts == 1) {
 		for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 			struct wim_lookup_table_entry *lte;
@@ -108,7 +114,7 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 		}
 	}
 
-	/* Make sure there is only one un-named stream. */
+	/* Make sure there is only one unnamed data stream. */
 	unsigned num_unnamed_streams = 0;
 	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 		const u8 *hash;
@@ -121,6 +127,34 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 		      first_dentry->full_path_utf8, num_unnamed_streams);
 		goto out;
 	}
+
+	/* Currently ignoring this test because wimlib does not apply DOS names
+	 * to a file with hard links (see apply_dentry_ntfs()). */
+#if 0
+	/* Files cannot have multiple DOS names, even if they have multiple
+	 * names in multiple directories (i.e. hard links) ??? XXX */
+	const struct wim_dentry *dentry_with_dos_name = NULL;
+	inode_for_each_dentry(dentry, inode) {
+		if (dentry->short_name_len) {
+			if (dentry_with_dos_name) {
+				ERROR("Hard-linked file has a DOS name at "
+				      "both `%s' and `%s'",
+				      dentry_with_dos_name->full_path_utf8,
+				      dentry->full_path_utf8);
+				goto out;
+			}
+			dentry_with_dos_name = dentry;
+		}
+	}
+#endif
+
+	/* Directories with multiple links have not been tested. XXX */
+	if (inode->i_nlink > 1 && inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
+		ERROR("Hard-linked directory `%s' is unsupported",
+		      first_dentry->full_path_utf8);
+		goto out;
+	}
+
 	inode->i_verified = 1;
 	ret = 0;
 out:
@@ -132,24 +166,28 @@ int verify_dentry(struct wim_dentry *dentry, void *wim)
 {
 	int ret;
 
+	/* Verify the associated inode, but only one time no matter how many
+	 * dentries it has. */
 	if (!dentry->d_inode->i_verified) {
 		ret = verify_inode(dentry->d_inode, wim);
 		if (ret != 0)
 			return ret;
 	}
 
-	/* Cannot have a short name but no long name */
-	if (dentry->short_name_len && !dentry->file_name_len) {
-		ERROR("Dentry `%s' has a short name but no long name",
-		      dentry->full_path_utf8);
-		return WIMLIB_ERR_INVALID_DENTRY;
-	}
-
-	/* Make sure root dentry is unnamed */
+	/* Make sure root dentry is unnamed, while every other dentry has at
+	 * least a long name.
+	 *
+	 * XXX Files having only a DOS name may be acceptable. */
 	if (dentry_is_root(dentry)) {
-		if (dentry->file_name_len) {
+		if (dentry->file_name_len || dentry->short_name_len) {
 			ERROR("The root dentry is named `%s', but it must "
 			      "be unnamed", dentry->file_name_utf8);
+			return WIMLIB_ERR_INVALID_DENTRY;
+		}
+	} else {
+		if (!dentry->file_name_len) {
+			ERROR("Dentry `%s' has no long name",
+			      dentry->full_path_utf8);
 			return WIMLIB_ERR_INVALID_DENTRY;
 		}
 	}
