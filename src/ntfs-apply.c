@@ -198,26 +198,20 @@ static ntfs_inode *dentry_open_parent_ni(const struct wim_dentry *dentry,
  * existing NTFS inode which already has a name @inode->i_extracted_file.
  *
  * The new name is made in the POSIX namespace (this is the behavior of
- * ntfs_link()).  I am assuming this is an acceptable behavior; however, it's
- * possible that the original name was actually in the Win32 namespace.  Note
- * that the WIM format does not provide enough information to distinguish Win32
- * names from POSIX names in all cases.
+ * ntfs_link()).
  *
- * Return 0 on success, nonzero on failure.
+ * Return 0 on success, nonzero on failure.  dir_ni is closed either way.
  */
 static int apply_ntfs_hardlink(const struct wim_dentry *from_dentry,
 			       const struct wim_inode *inode,
-			       ntfs_inode **dir_ni_p)
+			       ntfs_inode *dir_ni)
 {
 	int ret;
 	ntfs_inode *to_ni;
-	ntfs_inode *dir_ni;
 	ntfs_volume *vol;
 
-	dir_ni = *dir_ni_p;
 	vol = dir_ni->vol;
 	ret = ntfs_inode_close(dir_ni);
-	*dir_ni_p = NULL;
 	if (ret != 0) {
 		ERROR_WITH_ERRNO("Error closing directory");
 		return WIMLIB_ERR_NTFS_3G;
@@ -245,10 +239,9 @@ static int apply_ntfs_hardlink(const struct wim_dentry *from_dentry,
 	ret |= ntfs_inode_close(dir_ni);
 	ret |= ntfs_inode_close(to_ni);
 	if (ret) {
-		ERROR_WITH_ERRNO("Could not create hard link `%s' => `%s' (ret=%d)",
+		ERROR_WITH_ERRNO("Could not create hard link `%s' => `%s'",
 				 from_dentry->full_path_utf8,
-				 inode->i_extracted_file,
-				 ret);
+				 inode->i_extracted_file);
 		ret = WIMLIB_ERR_NTFS_3G;
 	}
 	return ret;
@@ -390,9 +383,9 @@ static int do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 				/* Already extracted another dentry in the hard
 				 * link group.  Make a hard link instead of
 				 * extracting the file data. */
-				ret = apply_ntfs_hardlink(dentry, inode,
-							  &dir_ni);
-				goto out_close_dir_ni;
+				ret = apply_ntfs_hardlink(dentry, inode, dir_ni);
+				/* dir_ni was closed */
+				goto out;
 			} else {
 				/* None of the dentries of this inode have been
 				 * extracted yet, so go ahead and extract the

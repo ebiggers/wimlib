@@ -245,7 +245,6 @@ int make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
 		unsigned sym = sorted_syms[i];
 		unsigned codeword_len = lens[sym];
 		unsigned extra_bits = codeword_len - table_bits;
-		unsigned extra_mask;
 
 		cur_codeword <<= (codeword_len - prev_codeword_len);
 		prev_codeword_len = codeword_len;

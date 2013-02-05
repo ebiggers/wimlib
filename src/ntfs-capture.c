@@ -49,14 +49,14 @@
 #include <errno.h>
 #include "rbtree.h"
 
-/* Structure that allows searching the security descriptors by SHA1 message
- * digest. */
+/* Red-black tree that maps SHA1 message digests of security descriptors to
+ * security IDs, which are themselves indices into the table of security
+ * descriptors in the 'struct wim_security_data'. */
 struct sd_set {
 	struct wim_security_data *sd;
 	struct rb_root rb_root;
 };
 
-/* Binary tree node of security descriptors, indexed by the @hash field. */
 struct sd_node {
 	int security_id;
 	u8 hash[SHA1_HASH_SIZE];
@@ -489,19 +489,18 @@ static int set_dentry_dos_name(struct wim_dentry *dentry, void *arg)
 	if (dentry->is_win32_name) {
 		node = lookup_dos_name(map, dentry->d_inode->i_ino);
 		if (node) {
-			dentry->short_name = MALLOC(node->name_len_bytes + 2);
+			dentry->short_name = MALLOC(node->name_len_bytes);
 			if (!dentry->short_name)
 				return WIMLIB_ERR_NOMEM;
 			memcpy(dentry->short_name, node->dos_name,
 			       node->name_len_bytes);
-			*(u16*)&dentry->short_name[node->name_len_bytes] = 0;
 			dentry->short_name_len = node->name_len_bytes;
 			DEBUG("Assigned DOS name to ino %"PRIu64,
 			      dentry->d_inode->i_ino);
 		} else {
-			DEBUG("ino %"PRIu64" has Win32 name with no "
-			      "corresponding DOS name",
-			      dentry->d_inode->i_ino);
+			WARNING("NTFS inode %"PRIu64" has Win32 name with no "
+				"corresponding DOS name",
+				dentry->d_inode->i_ino);
 		}
 	}
 	return 0;
@@ -559,14 +558,14 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 
 	ctx = dirent;
 	if (name_type & FILE_NAME_DOS) {
-		/* Special case: If this is the entry for a DOS name, store it
-		 * for later. */
+		/* If this is the entry for a DOS name, store it for later. */
 		ret = insert_dos_name(ctx->dos_name_map, name,
 				      name_len, mref & MFT_REF_MASK_CPU);
-		if (ret != 0)
+
+		/* Return now if an error occurred or if this is just a DOS name
+		 * and not a Win32+DOS name. */
+		if (ret != 0 || name_type == FILE_NAME_DOS)
 			return ret;
-		if (name_type == FILE_NAME_DOS) /* DOS only, not Win32 + DOS */
-			return 0;
 	}
 	ret = utf16_to_utf8((const char*)name, name_len * 2,
 			    &utf8_name, &utf8_name_len);

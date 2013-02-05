@@ -318,7 +318,6 @@ static int lzx_read_block_header(struct input_bitstream *istream,
 	unsigned s;
 	unsigned i;
 	unsigned len;
-	u32 R[3];
 
 	ret = bitstream_ensure_bits(istream, 4);
 	if (ret != 0) {
