@@ -47,71 +47,76 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include "rbtree.h"
 
 /* Structure that allows searching the security descriptors by SHA1 message
  * digest. */
 struct sd_set {
 	struct wim_security_data *sd;
-	struct sd_node *root;
+	struct rb_root rb_root;
 };
 
 /* Binary tree node of security descriptors, indexed by the @hash field. */
 struct sd_node {
 	int security_id;
 	u8 hash[SHA1_HASH_SIZE];
-	struct sd_node *left;
-	struct sd_node *right;
+	struct rb_node rb_node;
 };
 
-static void free_sd_tree(struct sd_node *root)
+static void free_sd_tree(struct rb_node *node)
 {
-	if (root) {
-		free_sd_tree(root->left);
-		free_sd_tree(root->right);
-		FREE(root);
+	if (node) {
+		free_sd_tree(node->rb_left);
+		free_sd_tree(node->rb_right);
+		FREE(container_of(node, struct sd_node, rb_node));
 	}
 }
 /* Frees a security descriptor index set. */
 static void destroy_sd_set(struct sd_set *sd_set)
 {
-	free_sd_tree(sd_set->root);
+	free_sd_tree(sd_set->rb_root.rb_node);
 }
 
 /* Inserts a a new node into the security descriptor index tree. */
-static void insert_sd_node(struct sd_node *new, struct sd_node *root)
+static void insert_sd_node(struct sd_set *set, struct sd_node *new)
 {
-	int cmp = hashes_cmp(new->hash, root->hash);
-	if (cmp < 0) {
-		if (root->left)
-			insert_sd_node(new, root->left);
+	struct rb_root *root = &set->rb_root;
+	struct rb_node **p = &(root->rb_node);
+	struct rb_node *rb_parent = NULL;
+
+	while (*p) {
+		struct sd_node *this = container_of(*p, struct sd_node, rb_node);
+		int cmp = hashes_cmp(new->hash, this->hash);
+
+		rb_parent = *p;
+		if (cmp < 0)
+			p = &((*p)->rb_left);
+		else if (cmp > 0)
+			p = &((*p)->rb_right);
 		else
-			root->left = new;
-	} else if (cmp > 0) {
-		if (root->right)
-			insert_sd_node(new, root->right);
-		else
-			root->right = new;
-	} else {
-		wimlib_assert(0);
+			wimlib_assert(0); /* Duplicate SHA1 message digest */
 	}
+	rb_link_node(&new->rb_node, rb_parent, p);
+	rb_insert_color(&new->rb_node, root);
 }
 
-/* Returns the security ID of the security data having a SHA1 message digest of
- * @hash in the security descriptor index tree rooted at @root.
- *
- * If not found, return -1. */
-static int lookup_sd(const u8 hash[SHA1_HASH_SIZE], struct sd_node *root)
+/* Returns the index of the security descriptor having a SHA1 message digest of
+ * @hash.  If not found, return -1. */
+static int lookup_sd(struct sd_set *set, const u8 hash[SHA1_HASH_SIZE])
 {
-	int cmp;
-	if (!root)
-		return -1;
-	cmp = hashes_cmp(hash, root->hash);
-	if (cmp < 0)
-		return lookup_sd(hash, root->left);
-	else if (cmp > 0)
-		return lookup_sd(hash, root->right);
-	else
-		return root->security_id;
+	struct rb_node *node = set->rb_root.rb_node;
+
+	while (node) {
+		struct sd_node *sd_node = container_of(node, struct sd_node, rb_node);
+		int cmp = hashes_cmp(hash, sd_node->hash);
+		if (cmp < 0)
+			node = node->rb_left;
+		else if (cmp > 0)
+			node = node->rb_right;
+		else
+			return sd_node->security_id;
+	}
+	return -1;
 }
 
 /*
@@ -134,10 +139,11 @@ static int sd_set_add_sd(struct sd_set *sd_set, const char descriptor[],
 
 	sha1_buffer((const u8*)descriptor, size, hash);
 
-	security_id = lookup_sd(hash, sd_set->root);
-	if (security_id >= 0)
+	security_id = lookup_sd(sd_set, hash);
+	if (security_id >= 0) /* Identical descriptor already exists */
 		return security_id;
 
+	/* Need to add a new security descriptor */
 	new = MALLOC(sizeof(*new));
 	if (!new)
 		goto out;
@@ -149,10 +155,7 @@ static int sd_set_add_sd(struct sd_set *sd_set, const char descriptor[],
 
 	memcpy(descr_copy, descriptor, size);
 	new->security_id = sd->num_entries;
-	new->left = NULL;
-	new->right = NULL;
 	copy_hash(new->hash, hash);
-
 
 	descriptors = REALLOC(sd->descriptors,
 			      (sd->num_entries + 1) * sizeof(sd->descriptors[0]));
@@ -169,11 +172,7 @@ static int sd_set_add_sd(struct sd_set *sd_set, const char descriptor[],
 	sd->num_entries++;
 	DEBUG("There are now %d security descriptors", sd->num_entries);
 	sd->total_length += size + sizeof(sd->sizes[0]);
-
-	if (sd_set->root)
-		insert_sd_node(new, sd_set->root);
-	else
-		sd_set->root = new;
+	insert_sd_node(sd_set, new);
 	return new->security_id;
 out_free_descr:
 	FREE(descr_copy);
@@ -672,10 +671,10 @@ int build_dentry_tree_ntfs(struct wim_dentry **root_p,
 {
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
-	int ret = 0;
+	int ret;
 	struct sd_set sd_set = {
 		.sd = sd,
-		.root = NULL,
+		.rb_root = {NULL},
 	};
 	ntfs_volume **ntfs_vol_p = extra_arg;
 
@@ -714,6 +713,7 @@ int build_dentry_tree_ntfs(struct wim_dentry **root_p,
 	char *path = MALLOC(32768);
 	if (!path) {
 		ERROR("Could not allocate memory for NTFS pathname");
+		ret = WIMLIB_ERR_NOMEM;
 		goto out_cleanup;
 	}
 
