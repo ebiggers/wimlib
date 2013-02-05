@@ -128,11 +128,9 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 		goto out;
 	}
 
-	/* Currently ignoring this test because wimlib does not apply DOS names
-	 * to a file with hard links (see apply_dentry_ntfs()). */
-#if 0
 	/* Files cannot have multiple DOS names, even if they have multiple
-	 * names in multiple directories (i.e. hard links) ??? XXX */
+	 * names in multiple directories (i.e. hard links).
+	 * Source: NTFS-3g authors. */
 	const struct wim_dentry *dentry_with_dos_name = NULL;
 	inode_for_each_dentry(dentry, inode) {
 		if (dentry->short_name_len) {
@@ -146,7 +144,6 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 			dentry_with_dos_name = dentry;
 		}
 	}
-#endif
 
 	/* Directories with multiple links have not been tested. XXX */
 	if (inode->i_nlink > 1 && inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
@@ -177,7 +174,10 @@ int verify_dentry(struct wim_dentry *dentry, void *wim)
 	/* Make sure root dentry is unnamed, while every other dentry has at
 	 * least a long name.
 	 *
-	 * XXX Files having only a DOS name may be acceptable. */
+	 * I am assuming that dentries having only a DOS name is illegal; i.e.,
+	 * Windows will always combine the Win32 name and DOS name for a file
+	 * into a single WIM dentry, even if they are stored separately on NTFS.
+	 * (This seems to be the case...) */
 	if (dentry_is_root(dentry)) {
 		if (dentry->file_name_len || dentry->short_name_len) {
 			ERROR("The root dentry is named `%s', but it must "
