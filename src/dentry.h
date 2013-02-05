@@ -159,6 +159,9 @@ struct wim_dentry {
 
 	u8 is_extracted : 1;
 
+	/* Only used during NTFS capture */
+	u8 is_win32_name : 1;
+
 	/* Byte 40 */
 
 	/* Pointer to the filename converted to UTF-8 (malloc()ed buffer). */
@@ -338,6 +341,15 @@ extern int for_dentry_in_tree(struct wim_dentry *root,
 extern int for_dentry_in_rbtree(struct rb_node *node,
 				int (*visitor)(struct wim_dentry *, void *),
 				void *arg);
+
+static inline int for_dentry_child(const struct wim_dentry *dentry,
+				   int (*visitor)(struct wim_dentry *, void *),
+				   void *arg)
+{
+	return for_dentry_in_rbtree(dentry->d_inode->i_children.rb_node,
+				    visitor,
+				    arg);
+}
 
 extern int for_dentry_in_tree_depth(struct wim_dentry *root,
 				    int (*visitor)(struct wim_dentry*, void*),

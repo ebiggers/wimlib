@@ -1745,14 +1745,13 @@ static u8 *write_dentry_tree_recursive(const struct wim_dentry *parent, u8 *p)
 	 * recursively writing the directory trees rooted at each of the child
 	 * dentries, since the on-disk dentries for a dentry's children are
 	 * always located at consecutive positions in the metadata resource! */
-	for_dentry_in_rbtree(parent->d_inode->i_children.rb_node, write_dentry_cb, &p);
+	for_dentry_child(parent, write_dentry_cb, &p);
 
 	/* write end of directory entry */
 	p = put_u64(p, 0);
 
 	/* Recurse on children. */
-	for_dentry_in_rbtree(parent->d_inode->i_children.rb_node,
-			     write_dentry_tree_recursive_cb, &p);
+	for_dentry_child(parent, write_dentry_tree_recursive_cb, &p);
 	return p;
 }
 
