@@ -239,15 +239,16 @@ static int apply_ntfs_hardlink(const struct wim_dentry *from_dentry,
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
-	*dir_ni_p = dir_ni;
-
 	ret = ntfs_link(to_ni, dir_ni,
 			(ntfschar*)from_dentry->file_name,
 			from_dentry->file_name_len / 2);
-	if (ntfs_inode_close_in_dir(to_ni, dir_ni) || ret != 0) {
-		ERROR_WITH_ERRNO("Could not create hard link `%s' => `%s'",
+	ret |= ntfs_inode_close(dir_ni);
+	ret |= ntfs_inode_close(to_ni);
+	if (ret) {
+		ERROR_WITH_ERRNO("Could not create hard link `%s' => `%s' (ret=%d)",
 				 from_dentry->full_path_utf8,
-				 inode->i_extracted_file);
+				 inode->i_extracted_file,
+				 ret);
 		ret = WIMLIB_ERR_NTFS_3G;
 	}
 	return ret;
@@ -376,7 +377,6 @@ static int do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 	int ret = 0;
 	mode_t type;
 	ntfs_inode *ni = NULL;
-	ntfs_volume *vol = dir_ni->vol;
 	struct wim_inode *inode = dentry->d_inode;
 	dentry->is_extracted = 1;
 
@@ -386,7 +386,6 @@ static int do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 		type = S_IFREG;
 		if (inode->i_nlink > 1) {
 			/* Inode has multiple dentries referencing it. */
-
 			if (inode->i_extracted_file) {
 				/* Already extracted another dentry in the hard
 				 * link group.  Make a hard link instead of
@@ -523,76 +522,78 @@ int apply_dentry_ntfs(struct wim_dentry *dentry, void *arg)
 	/* Treat the root dentry specially. */
 	if (dentry_is_root(dentry))
 		return apply_root_dentry_ntfs(dentry, vol, w);
+
 	/* NTFS filename namespaces need careful consideration.  A name for a
 	 * NTFS file may be in either the POSIX, Win32, DOS, or Win32+DOS
-	 * namespaces.  The following list of assumptions and facts clarify the
-	 * way that WIM dentries are mapped to NTFS files.  The statements
-	 * marked ASSUMPTION are statements I am assuming to be true due to the
-	 * lack of documentation; they are verified in verify_dentry() and
-	 * verify_inode() in verify.c.
+	 * namespaces.  A NTFS file (a.k.a. inode) may have multiple names in
+	 * multiple directories (i.e. hard links); however, a NTFS file can have
+	 * at most 1 DOS name total.  Furthermore, a Win32 name is always
+	 * associated with a DOS name (either as a Win32+DOS name, or a Win32
+	 * name and a DOS name separately), which implies that a NTFS file can
+	 * have at most 1 Win32 name.
 	 *
-	 * - ASSUMPTION: The root WIM dentry has neither a "long name" nor a
-	 *   "short name".
+	 * A WIM dentry just contains a "long name", which wimlib makes sure is
+	 * non-empty, and a "short name", which may be empty.  So, wimlib must
+	 * map these to the correct NTFS names.  wimlib collects all WIM
+	 * dentries that map to the same NTFS inode and factors out the common
+	 * information into a 'struct wim_inode', so this should make the
+	 * mapping a little more obvious.  As a NTFS file can have at most 1 DOS
+	 * name, a WIM inode cannot have more than 1 dentry with a non-empty
+	 * short name, and this is checked in the verify_inode() function in
+	 * verify.c.  Furthermore, a WIM dentry, if any, that has a DOS name
+	 * must have a long name that corresponds to a Win32 name or Win32+DOS
+	 * name.
 	 *
-	 * - ASSUMPTION: Every WIM dentry other than the root directory provides
-	 *   a non-empty "long name" and a possibly empty "short name".  The
-	 *   "short name" corresponds to the DOS name of the file, while the
-	 *   "long name" may be Win32 or POSIX.
+	 * WIM dentries that have a long name but no associated short name are
+	 * assumed to be in the POSIX namespace.
 	 *
-	 *   XXX It may actually be legal to have a short name but no long name
+	 * So, given a WIM inode that is to map to a NTFS inode, we must apply
+	 * the Win32 and DOS or Win32+DOS names, if they exist, then any
+	 * additional (POSIX) names.  A caveat when actually doing this:  as
+	 * confirmed by the libntfs-3g authors, ntfs_set_ntfs_dos_name() is only
+	 * guaranteed to associate a DOS name with the appropriate long name if
+	 * it's called when that long name is the only one in existence for that
+	 * file.  So, this implies that the correct ordering of function calls
+	 * to extract a NTFS file are:
 	 *
-	 * - FACT: If a dentry has a "long name" but no "short name", then it is
-	 *   ambigious whether the name is POSIX or Win32+DOS, unless the name
-	 *   is a valid POSIX name but not a valid Win32+DOS name.  wimlib
-	 *   currently will always create POSIX names for these files, as this
-	 *   is the behavior of the ntfs_create() and ntfs_link() functions.
-	 *
-	 * - FACT: Multiple WIM dentries may correspond to the same underlying
-	 *   inode, as provided at this point in the code by the d_inode member.
+	 * 	if (file has a DOS name) {
+	 * 		- Call ntfs_create() to create long name associated with
+	 * 		the DOS name (this initially creates a POSIX name)
+	 * 		- Call ntfs_set_ntfs_dos_name() to associate a DOS name
+	 * 		with the long name just created.  This either changes
+	 * 		the POSIX name to Win32+DOS, or changes the POSIX name
+	 * 		to Win32 and creates a separate DOS name.
+	 * 	} else {
+	 * 		- Call ntfs_create() to create the first link to the
+	 * 		file in the POSIX namespace
+	 * 	}
+	 * 	- Call ntfs_link() to create the other names of the file, in the
+	 * 	POSIX namespace.
 	 */
-
-
-	/* Currently wimlib does not apply DOS names to hard linked files due to
-	 * issues with ntfs-3g, so the following is commented out. */
-#if 0
 again:
-	/*
-	 * libntfs-3g requires that for an NTFS inode with a DOS name, the
-	 * corresponding long name be extracted first so that the DOS name is
-	 * associated with the correct long name.  Note that by the last
-	 * ASSUMPTION above, a NTFS inode can have at most one DOS name (i.e. a
-	 * WIM inode can have at most one non-empty short name).
-	 *
-	 * Therefore, search for an alias of this dentry that has a short name,
-	 * and extract it first unless it was already extracted.
-	 */
 	orig_dentry = NULL;
-	if (!dentry->d_inode->i_dos_name_extracted) {
+	if (!dentry->d_inode->i_dos_name_extracted &&
+	    dentry->short_name_len == 0)
+	{
 		inode_for_each_dentry(other, dentry->d_inode) {
-			if (other->short_name_len && other != dentry &&
-			    !other->is_extracted)
-			{
+			if (other->short_name_len != 0) {
 				orig_dentry = dentry;
 				dentry = other;
 				break;
 			}
 		}
-		dentry->d_inode->i_dos_name_extracted = 1;
 	}
-#endif
-
+	dentry->d_inode->i_dos_name_extracted = 1;
 	ntfs_inode *dir_ni = dentry_open_parent_ni(dentry, vol);
-	if (dir_ni)
+	if (dir_ni) {
 		ret = do_apply_dentry_ntfs(dentry, dir_ni, arg);
-	else
+		if (ret == 0 && orig_dentry != NULL) {
+			dentry = orig_dentry;
+			goto again;
+		}
+	} else {
 		ret = WIMLIB_ERR_NTFS_3G;
-
-#if 0
-	if (ret == 0 && orig_dentry) {
-		dentry = orig_dentry;
-		goto again;
 	}
-#endif
 	return ret;
 }
 
