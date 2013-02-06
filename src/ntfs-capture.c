@@ -349,6 +349,7 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 		if (name_length == 0) {
 			/* Unnamed data stream.  Put the reference to it in the
 			 * dentry's inode. */
+		#if 0
 			if (dentry->d_inode->i_lte) {
 				ERROR("Found two un-named data streams for "
 				      "`%s'", path);
@@ -356,6 +357,15 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 				goto out_free_lte;
 			}
 			dentry->d_inode->i_lte = lte;
+		#else
+			if (dentry->d_inode->i_lte) {
+				WARNING("Found two un-named data streams for "
+					"`%s'", path);
+				free_lookup_table_entry(lte);
+			} else {
+				dentry->d_inode->i_lte = lte;
+			}
+		#endif
 		} else {
 			/* Named data stream.  Put the reference to it in the
 			 * alternate data stream entries */
