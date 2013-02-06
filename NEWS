@@ -1,5 +1,13 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.2.5:
+	NTFS capture: Fixed capturing duplicate reparse points.
+
+	NTFS capture: Capture first unnamed stream if there are more than one
+	(print warning instead of error).
+
+	Allow multiple test cases to execute concurrently (e.g. make -j2 check).
+
 Version 1.2.4:
 	Added --arch switch to mkwinpeimg script to support getting AMD64 WinPE
 	from the WAIK.
