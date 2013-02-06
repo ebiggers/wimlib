@@ -338,6 +338,7 @@ static int apply_reparse_data(ntfs_inode *ni, const struct wim_dentry *dentry,
 	u8 reparse_data_buf[8 + wim_resource_size(lte)];
 	u8 *p = reparse_data_buf;
 	p = put_u32(p, dentry->d_inode->i_reparse_tag); /* ReparseTag */
+	DEBUG("ReparseTag = %#x", dentry->d_inode->i_reparse_tag);
 	p = put_u16(p, wim_resource_size(lte)); /* ReparseDataLength */
 	p = put_u16(p, 0); /* Reserved */
 

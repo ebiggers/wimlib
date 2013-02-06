@@ -222,6 +222,7 @@ static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
 		if (ntfs_attr_pread(na, 0, 8, buf) != 8)
 			goto out_error;
 		*reparse_tag_ret = le32_to_cpu(*(u32*)buf);
+		DEBUG("ReparseTag = %#x", *reparse_tag_ret);
 		pos = 8;
 		bytes_remaining -= 8;
 	}
@@ -298,6 +299,9 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 			if (ret != 0)
 				goto out_put_actx;
 
+			if (type == AT_REPARSE_POINT)
+				dentry->d_inode->i_reparse_tag = reparse_tag;
+
 			/* Make a lookup table entry for the stream, or use an existing
 			 * one if there's already an identical stream. */
 			lte = __lookup_resource(lookup_table, attr_hash);
@@ -329,7 +333,6 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 				lte->ntfs_loc = ntfs_loc;
 				lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
 				if (type == AT_REPARSE_POINT) {
-					dentry->d_inode->i_reparse_tag = reparse_tag;
 					ntfs_loc->is_reparse_point = true;
 					lte->resource_entry.original_size = data_size - 8;
 					lte->resource_entry.size = data_size - 8;
