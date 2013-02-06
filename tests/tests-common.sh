@@ -30,3 +30,32 @@ get_file_size()
 		stat -c %s "$1"
 	fi
 }
+
+imagex()
+{
+	echo "imagex $@"
+	if [[ $1 == info || $1 == mountrw ]]; then
+		../../imagex "$@"
+	else
+		../../imagex "$@" > /dev/null
+	fi
+}
+
+wim_ctype()
+{
+	imagex info $1 | grep Compression | awk '{print $2}'
+}
+
+default_cleanup()
+{
+	rm -rf $TEST_SUBDIR
+}
+
+error()
+{
+	echo "****************************************************************"
+	echo "                         Test failure                           "
+	echo $*
+	echo "****************************************************************"
+	exit 1
+}

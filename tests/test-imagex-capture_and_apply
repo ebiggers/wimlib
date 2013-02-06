@@ -14,39 +14,10 @@ srcdir="${srcdir:-.}/.."
 srcdir="$(cd $srcdir; pwd)"
 . "$srcdir/tests/tests-common.sh"
 
-
-imagex() {
-	echo "imagex $@"
-	../imagex "$@" > /dev/null
-}
-
-imagex_info() {
-	echo "imagex info $@"
-	../imagex info "$@"
-}
-
-init() {
-	mkdir in.dir out.dir
-}
-
-cleanup() {
-	rm -rf in.dir out.dir test*.wim test*.swm
-}
-
-error() {
-	echo "****************************************************************"
-	echo "                         Test failure                           "
-	echo $*
-	echo "****************************************************************"
-	exit 1
-}
-
-wim_ctype() {
-	../imagex info $1 | grep Compression | awk '{print $2}'
-}
+TEST_SUBDIR=tmpdir_test-imagex-capture_and_apply
 
 do_tree_cmp() {
-	if ! ./tree-cmp in.dir out.dir; then
+	if ! ../tree-cmp in.dir out.dir; then
 		if [ -x /usr/bin/tree ]; then
 			echo "Dumping tree of applied image"
 			echo "(Note: compression type was $ctype)"
@@ -126,8 +97,10 @@ msg() {
 	__msg "Testing image capture and application of directory containing $1"
 }
 
-cleanup
-init
+default_cleanup
+mkdir $TEST_SUBDIR
+cd $TEST_SUBDIR
+mkdir in.dir out.dir
 
 . $srcdir/tests/common_tests.sh
 
@@ -140,10 +113,10 @@ imagex apply test.wim out.dir
 if [ -e out.dir/hiberfil.sys -o -e "out.dir/System Volume Information" ]; then
 	error "Files were not excluded from capture as expected"
 fi
-rm -rf out.dir/* in.dir/*
-
-cleanup
 
 echo "**********************************************************"
 echo "          imagex capture/apply tests passed               "
 echo "**********************************************************"
+
+cd ..
+default_cleanup

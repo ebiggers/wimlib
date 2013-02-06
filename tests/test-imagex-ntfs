@@ -14,12 +14,10 @@ srcdir="${srcdir:-.}/.."
 srcdir="$(cd $srcdir; pwd)"
 . "$srcdir/tests/tests-common.sh"
 
-imagex() {
-	../imagex $@ > /dev/null
-}
+TEST_SUBDIR=tmpdir_test-imagex-ntfs
 
 __do_unmount() {
-	if !  fusermount -z -u $1; then
+	if ! fusermount -z -u $1; then
 		error "Failed to unmount \"$1\""
 	fi
 
@@ -51,7 +49,7 @@ do_mount() {
 }
 
 do_mkntfs() {
-	if ! mkntfs --force --fast $1 &> /dev/null; then
+	if ! mkntfs --force --fast $1 > /dev/null; then
 		error "Could not create NTFS volume \"$1\"!  Make sure ntfsprogs are installed."
 	fi
 }
@@ -67,22 +65,9 @@ init() {
 }
 
 cleanup() {
-	do_unmount in.mnt
-	do_unmount out.mnt
-	rm -rf in.ntfs out.ntfs in.mnt out.mnt in.xattr out.xattr ntfs.wim
-}
-#trap cleanup exit
-
-
-error() {
-	echo "****************************************************************"
-	echo "                         Test failure                           "
-	while [ $# -gt 0 ]; do
-		echo $1
-		shift
-	done
-	echo "****************************************************************"
-	exit 1
+	do_unmount $TEST_SUBDIR/in.mnt
+	do_unmount $TEST_SUBDIR/out.mnt
+	rm -rf $TEST_SUBDIR
 }
 
 do_test() {
@@ -101,7 +86,7 @@ do_test() {
 	if [ -x /usr/bin/tree ]; then
 		tree in.mnt --inodes -F -s --noreport
 	fi
-	if ! ./tree-cmp in.mnt out.mnt NTFS; then
+	if ! ../tree-cmp in.mnt out.mnt NTFS; then
 		if [ -x /usr/bin/tree ]; then
 			echo "Dumping tree of applied image"
 			tree out.mnt --inodes -F -s --noreport
@@ -119,6 +104,8 @@ msg() {
 }
 
 cleanup
+mkdir $TEST_SUBDIR
+cd $TEST_SUBDIR
 init
 
 msg "Empty NTFS volume"
@@ -288,8 +275,10 @@ do_test 'echo -n 8 > file;
 	 setfattr -n user.yet_another_ads3 -v "abc" dir/subdir/link;
 	 setfattr -n user.yet_another_ads4 -v "" dir/subdir/link;'
 
-cleanup
-
 echo "**********************************************************"
 echo "           NTFS capture/apply tests passed                "
 echo "**********************************************************"
+
+cd ..
+cleanup
+

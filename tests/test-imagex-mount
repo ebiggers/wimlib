@@ -8,33 +8,20 @@ srcdir="${srcdir:-.}/.."
 srcdir="$(cd $srcdir; pwd)"
 . "$srcdir/tests/tests-common.sh"
 
+TEST_SUBDIR=tmpdir_test-imagex-mount
+
 if [ ! -r /dev/fuse ]; then
 	echo "WARNING: /dev/fuse is not readable."
 	echo "Skipping WIM mounting checks"
 	exit 0
 fi
 
-imagex() {
-	echo "imagex $@"
-	../imagex $@  > /dev/null
-}
-
-imagex_info() {
-	echo "imagex info $@"
-	../imagex info "$@"
-}
-
-imagex_mountrw() {
-	echo "imagex mountrw $@"
-	../imagex mountrw "$@"
-}
-
 cleanup() {
-	fusermount -u tmp &> /dev/null || true
-	fusermount -u tmp.mnt &> /dev/null || true
-	rm -rf dir* tmp* *.wim *.swm empty.wim tmp.orig tmp.mnt \
-			tmp.apply mount.log test.tar wimlib-staging*
+	fusermount -u $TEST_SUBDIR/tmp &> /dev/null || true
+	fusermount -u $TEST_SUBDIR/tmp.mnt &> /dev/null || true
+	rm -rf $TEST_SUBDIR
 }
+
 init() {
 	mkdir dir
 	cp $srcdir/src/*.c $srcdir/src/*.h dir
@@ -52,18 +39,9 @@ init() {
 	imagex capture tmp.empty empty.wim
 }
 
-error() {
-	echo "****************************************************************"
-	echo "                         Test failure                           "
-	while [ $# -gt 0 ]; do
-		echo $1
-		shift
-	done
-	echo "****************************************************************"
-	exit 1
-}
-
 cleanup
+mkdir $TEST_SUBDIR
+cd $TEST_SUBDIR
 init
 
 # imagex mount
@@ -181,7 +159,7 @@ echo "Unmounting WIM with changes committed and --check"
 if ! imagex unmount tmp --commit --check; then
 	error "Failed to unmount read-write mounted WIM"
 fi
-if test "`imagex_info dir.wim | grep Integrity | awk '{print $3}'`" != "yes"; then
+if test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" != "yes"; then
 	error "Integrity information was not included"
 fi
 rm -rf tmp
@@ -200,7 +178,7 @@ fi
 
 # Now do some tests using tar.
 do_tree_cmp() {
-	if ! ./tree-cmp $1 $2; then
+	if ! ../tree-cmp $1 $2; then
 		if [ -x /usr/bin/tree ]; then
 			echo "Dumping tree of applied image"
 			tree $2 --inodes -F -s --noreport
@@ -231,7 +209,7 @@ do_test() {
 	tar cf ../test.tar .
 	cd ..
 
-	if ! imagex_mountrw test.wim tmp.mnt; then
+	if ! imagex mountrw test.wim tmp.mnt; then
 		error "Failed to mount WIM read-write"
 	fi
 
@@ -273,8 +251,10 @@ do_test() {
 
 . $srcdir/tests/common_tests.sh
 
-cleanup
 
 echo "**********************************************************"
 echo "                 WIM mount tests passed                   "
 echo "**********************************************************"
+
+cd ..
+cleanup
