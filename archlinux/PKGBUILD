@@ -31,4 +31,6 @@ check() {
 package() {
 	cd "$pkgname-$pkgver"
 	make DESTDIR="$pkgdir" install
+	install -Dm644 README "$pkgdir/usr/share/doc/$pkgname/README"
+	install -Dm644 NEWS "$pkgdir/usr/share/doc/$pkgname/NEWS"
 }
