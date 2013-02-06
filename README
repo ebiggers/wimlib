@@ -127,7 +127,8 @@ Windows PE.
 	and headers for libntfs-3g version 2011-4-12 or later to be installed.
 	Versions dated 2010-3-6 and earlier do not work because they are missing
 	the header xattrs.h (and the file xattrs.c, which contains functions we
-	need).
+	need).  libntfs-3g version 2013-1-13 is compatible only with wimlib
+	1.2.4 and later.
 
 * OpenSSL / libcrypto (optional)
 	wimlib can use the SHA1 message digest code from OpenSSL instead of
@@ -260,8 +261,9 @@ A very limited number of other free programs can handle some parts of the WIM
 file format.  7-zip is able to extract and create WIMs (as well as files in many
 other archive formats).  However, wimlib is designed specifically to handle WIM
 files and provides features previously only available in Microsoft's imagex.exe,
-such as the ability to mount WIMs read-write as well as read-only, and the
-ability to create LZX or XPRESS compressed WIMs.
+such as the ability to mount WIMs read-write as well as read-only, the ability
+to create LZX or XPRESS compressed WIMs, and the correct handling of security
+descriptors and hard links.
 
 An earlier version of wimlib is being used to deploy Windows 7 from the Ultimate
 Deployment Appliance.  For more information see
