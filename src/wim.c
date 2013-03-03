@@ -515,7 +515,7 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
 		return ret;
 
 	/* Make sure all the expected images were found.  (We already have
-	 * returned false if *extra* images were found) */
+	 * returned WIMLIB_ERR_IMAGE_COUNT if *extra* images were found) */
 	if (w->current_image != w->hdr.image_count &&
 	    w->hdr.part_number == 1)
 	{
