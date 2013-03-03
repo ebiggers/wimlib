@@ -233,10 +233,9 @@ int select_wim_image(WIMStruct *w, int image)
 			imd->security_data = NULL;
 			INIT_HLIST_HEAD(&imd->inode_list);
 		}
-		w->current_image = WIMLIB_NO_IMAGE;
 	}
-
-	imd = wim_get_current_image_metadata(w);
+	w->current_image = image;
+	imd = &w->image_metadata[image - 1];
 	if (imd->root_dentry) {
 		ret = 0;
 	} else {
@@ -246,9 +245,9 @@ int select_wim_image(WIMStruct *w, int image)
 		print_lookup_table_entry(imd->metadata_lte, stdout);
 		#endif
 		ret = read_metadata_resource(w, imd);
+		if (ret)
+			w->current_image = WIMLIB_NO_IMAGE;
 	}
-	if (ret == 0)
-		w->current_image = image;
 	return ret;
 }
 
