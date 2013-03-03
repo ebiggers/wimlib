@@ -162,6 +162,19 @@ extern char *wimlib_strdup(const char *str);
 
 
 /* encoding.c */
+
+#ifdef WITH_NTFS_3G
+static inline int iconv_global_init()
+{
+	return 0;
+}
+
+static inline void iconv_global_cleanup() { }
+#else
+extern int iconv_global_init();
+extern void iconv_global_cleanup();
+#endif
+
 extern int utf16_to_utf8(const char *utf16_str, size_t utf16_nbytes,
 			 char **utf8_str_ret, size_t *utf8_nbytes_ret);
 

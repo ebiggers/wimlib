@@ -634,3 +634,19 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 #endif
 	FREE(w);
 }
+
+/* Get global memory allocations out of the way.  Not strictly necessary in
+ * single-threaded programs like 'imagex'. */
+WIMLIBAPI int wimlib_global_init()
+{
+	libxml_global_init();
+	return iconv_global_init();
+}
+
+/* Free global memory allocations.  Not strictly necessary if the process using
+ * wimlib is just about to exit (as is the case for 'imagex'). */
+WIMLIBAPI void wimlib_global_cleanup()
+{
+	libxml_global_cleanup();
+	iconv_global_cleanup();
+}

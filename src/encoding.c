@@ -132,6 +132,47 @@ static int utf8_to_utf16_size(const char *s)
 }
 #endif /* !WITH_NTFS_3G */
 
+#ifndef WITH_NTFS_3G
+static iconv_t cd_utf8_to_utf16 = (iconv_t)(-1);
+static iconv_t cd_utf16_to_utf8 = (iconv_t)(-1);
+
+int iconv_global_init()
+{
+	if (cd_utf16_to_utf8 == (iconv_t)(-1)) {
+		cd_utf16_to_utf8 = iconv_open("UTF-8", "UTF-16LE");
+		if (cd_utf16_to_utf8 == (iconv_t)-1) {
+			ERROR_WITH_ERRNO("Failed to get conversion descriptor "
+					 "for converting UTF-16LE to UTF-8");
+			if (errno == ENOMEM)
+				return WIMLIB_ERR_NOMEM;
+			else
+				return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
+		}
+	}
+
+	if (cd_utf8_to_utf16 == (iconv_t)(-1)) {
+		cd_utf8_to_utf16 = iconv_open("UTF-16LE", "UTF-8");
+		if (cd_utf8_to_utf16 == (iconv_t)-1) {
+			ERROR_WITH_ERRNO("Failed to get conversion descriptor "
+					 "for converting UTF-8 to UTF-16LE");
+			if (errno == ENOMEM)
+				return WIMLIB_ERR_NOMEM;
+			else
+				return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
+		}
+	}
+	return 0;
+}
+
+void iconv_global_cleanup()
+{
+	if (cd_utf8_to_utf16 != (iconv_t)(-1))
+		iconv_close(cd_utf8_to_utf16);
+	if (cd_utf16_to_utf8 != (iconv_t)(-1))
+		iconv_close(cd_utf16_to_utf8);
+}
+#endif
+
 /* Converts a string in the UTF-16LE encoding to a newly allocated string in the
  * UTF-8 encoding.
  *
@@ -167,19 +208,12 @@ int utf16_to_utf8(const char *utf16_str, size_t utf16_nbytes,
 		else
 			ret = WIMLIB_ERR_INVALID_UTF16_STRING;
 	}
-#else /* WITH_NTFS_3G */
-	static iconv_t cd_utf16_to_utf8 = (iconv_t)(-1);
-	if (cd_utf16_to_utf8 == (iconv_t)(-1)) {
-		cd_utf16_to_utf8 = iconv_open("UTF-8", "UTF-16LE");
-		if (cd_utf16_to_utf8 == (iconv_t)-1) {
-			ERROR_WITH_ERRNO("Failed to get conversion descriptor "
-					 "for converting UTF-16LE to UTF-8");
-			if (errno == ENOMEM)
-				return WIMLIB_ERR_NOMEM;
-			else
-				return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
-		}
-	}
+#else /* !WITH_NTFS_3G */
+
+	ret = iconv_global_init();
+	if (ret != 0)
+		return ret;
+
 	ret = utf16_to_utf8_size((const u16*)utf16_str, utf16_nbytes / 2);
 	if (ret >= 0) {
 		size_t utf8_expected_nbytes;
@@ -262,20 +296,11 @@ int utf8_to_utf16(const char *utf8_str, size_t utf8_nbytes,
 		else
 			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
 	}
-#else /* WITH_NTFS_3G */
-	static iconv_t cd_utf8_to_utf16 = (iconv_t)(-1);
-	if (cd_utf8_to_utf16 == (iconv_t)(-1)) {
-		cd_utf8_to_utf16 = iconv_open("UTF-16LE", "UTF-8");
-		if (cd_utf8_to_utf16 == (iconv_t)-1) {
-			ERROR_WITH_ERRNO("Failed to get conversion descriptor "
-					 "for converting UTF-8 to UTF-16LE");
-			if (errno == ENOMEM)
-				return WIMLIB_ERR_NOMEM;
-			else
-				return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
-		}
-	}
+#else /* !WITH_NTFS_3G */
 
+	ret = iconv_global_init();
+	if (ret != 0)
+		return ret;
 	ret = utf8_to_utf16_size(utf8_str);
 	if (ret >= 0) {
 		size_t utf16_expected_nbytes;

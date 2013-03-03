@@ -1779,22 +1779,28 @@ int main(int argc, const char **argv)
 	argv++;
 
 	wimlib_set_print_errors(true);
+	ret = wimlib_global_init();
+	if (ret)
+		goto out;
 
 	for_imagex_command(cmd) {
 		if (strcmp(cmd->name, *argv) == 0) {
 			ret = cmd->func(argc, argv);
-			if (ret > 0) {
-				imagex_error("Exiting with error code %d:\n"
-					     "       %s.", ret,
-					     wimlib_get_error_string(ret));
-				if (ret == WIMLIB_ERR_NTFS_3G && errno != 0)
-					imagex_error_with_errno("errno");
-			}
-			return ret;
+			goto out;
 		}
 	}
 
 	imagex_error("Unrecognized command: `%s'", argv[0]);
 	usage_all();
 	return 1;
+out:
+	if (ret > 0) {
+		imagex_error("Exiting with error code %d:\n"
+			     "       %s.", ret,
+			     wimlib_get_error_string(ret));
+		if (ret == WIMLIB_ERR_NTFS_3G && errno != 0)
+			imagex_error_with_errno("errno");
+	}
+	wimlib_global_cleanup();
+	return ret;
 }

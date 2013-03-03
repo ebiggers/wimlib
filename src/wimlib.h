@@ -1283,6 +1283,34 @@ extern int wimlib_get_num_images(const WIMStruct *wim);
 extern int wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret);
 
 /**
+ * Since wimlib 1.2.6:  Initialization function for wimlib.  This is not
+ * re-entrant.  If you are calling wimlib functions concurrently in different
+ * threads, then you must call this function serially first.  Otherwise, calling
+ * this function is not required.
+ *
+ * @return 0 on success; nonzero on error.
+ * @retval ::WIMLIB_ERR_NOMEM
+ * 	Could not allocate memory.
+ * @retval ::WIMLIB_ERR_ICONV_NOT_AVAILABLE
+ * 	wimlib was configured --without-libntfs-3g at compilation time, and at
+ * 	runtime the iconv() set of functions did not seem to be available,
+ * 	perhaps due to missing files in the C library installation.
+ *
+ * If this function is not called or returns nonzero, then it will not be safe
+ * to use wimlib in multiple threads.  Furthermore, a nonzero return value here
+ * indicates that further calls into wimlib will probably fail when they try to
+ * repeat the same initializations.
+ */
+extern int wimlib_global_init();
+
+/**
+ * Since wimlib 1.2.6:  Cleanup function for wimlib.  This is not re-entrant.
+ * You are not required to call this function, but it will release any global
+ * memory allocated by the library.
+ */
+extern void wimlib_global_cleanup();
+
+/**
  * Returns true if the WIM has an integrity table.
  *
  * @param wim

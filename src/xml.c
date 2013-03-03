@@ -1177,6 +1177,16 @@ void print_image_info(const struct wim_info *wim_info, int image)
 	putchar('\n');
 }
 
+void libxml_global_init()
+{
+	xmlInitParser();
+}
+
+void libxml_global_cleanup()
+{
+	xmlCleanupParser();
+}
+
 /*
  * Reads the XML data from a WIM file.
  */
@@ -1194,19 +1204,19 @@ int read_xml_data(FILE *fp, const struct resource_entry *res_entry,
 	if (resource_is_compressed(res_entry)) {
 		ERROR("XML data is supposed to be uncompressed");
 		ret = WIMLIB_ERR_XML;
-		goto out_cleanup_parser;
+		goto out;
 	}
 
 	if (res_entry->size < 2) {
 		ERROR("XML data must be at least 2 bytes long");
 		ret = WIMLIB_ERR_XML;
-		goto out_cleanup_parser;
+		goto out;
 	}
 
 	xml_data = MALLOC(res_entry->size + 2);
 	if (!xml_data) {
 		ret = WIMLIB_ERR_NOMEM;
-		goto out_cleanup_parser;
+		goto out;
 	}
 
 	ret = read_uncompressed_resource(fp, res_entry->offset,
@@ -1249,16 +1259,14 @@ int read_xml_data(FILE *fp, const struct resource_entry *res_entry,
 	if (ret != 0)
 		goto out_free_doc;
 
-	DEBUG("Freeing XML tree.");
-
 	*xml_data_ret = xml_data;
 	xml_data = NULL;
 out_free_doc:
+	DEBUG("Freeing XML tree.");
 	xmlFreeDoc(doc);
 out_free_xml_data:
 	FREE(xml_data);
-out_cleanup_parser:
-	xmlCleanupParser();
+out:
 	return ret;
 }
 
