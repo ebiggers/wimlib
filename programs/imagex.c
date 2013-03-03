@@ -1489,7 +1489,7 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = file_writable(wimfile);
 		if (ret != 0)
-			return ret;
+			goto out;
 	}
 
 	ret = wimlib_mount_image(w, image, dir, mount_flags, additional_swms,
