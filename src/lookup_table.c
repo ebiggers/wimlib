@@ -344,12 +344,14 @@ int read_lookup_table(WIMStruct *w)
 		    && !((duplicate_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
 			  && cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA))
 		{
+		#ifdef ENABLE_ERROR_MESSAGES
 			ERROR("The WIM lookup table contains two entries with the "
 			      "same SHA1 message digest!");
 			ERROR("The first entry is:");
 			print_lookup_table_entry(duplicate_entry);
 			ERROR("The second entry is:");
 			print_lookup_table_entry(cur_entry);
+		#endif
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 			goto out_free_cur_entry;
 		}
@@ -358,18 +360,22 @@ int read_lookup_table(WIMStruct *w)
 		    && (cur_entry->resource_entry.size !=
 		        cur_entry->resource_entry.original_size))
 		{
+		#ifdef ENABLE_ERROR_MESSAGES
 			ERROR("Found uncompressed resource with original size "
 			      "not the same as compressed size");
 			ERROR("The lookup table entry for the resource is as follows:");
 			print_lookup_table_entry(cur_entry);
+		#endif
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 			goto out_free_cur_entry;
 		}
 		if ((cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
 		    && cur_entry->refcnt != 1)
 		{
+		#ifdef ENABLE_ERROR_MESSAGES
 			ERROR("Found metadata resource with refcnt != 1:");
 			print_lookup_table_entry(cur_entry);
+		#endif
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 			goto out_free_cur_entry;
 		}
