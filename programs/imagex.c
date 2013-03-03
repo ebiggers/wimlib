@@ -318,7 +318,7 @@ out_fclose:
 static int file_writable(const char *path)
 {
 	int ret;
-	ret = access(path, F_OK | W_OK);
+	ret = access(path, W_OK);
 	if (ret != 0)
 		imagex_error_with_errno("Can't modify `%s'", path);
 	return ret;
