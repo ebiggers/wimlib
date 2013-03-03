@@ -2325,7 +2325,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 				 unsigned num_additional_swms,
 				 const char *staging_dir)
 {
-	int argc = 0;
+	int argc;
 	char *argv[16];
 	int ret;
 	char *dir_copy;
@@ -2425,6 +2425,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	if (!dir_copy)
 		goto out_free_message_queue_names;
 
+	argc = 0;
 	argv[argc++] = "imagex";
 	argv[argc++] = dir_copy;
 
