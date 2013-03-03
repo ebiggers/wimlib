@@ -271,7 +271,8 @@ extern struct wim_lookup_table_entry *
 clone_lookup_table_entry(const struct wim_lookup_table_entry *lte);
 
 extern void
-print_lookup_table_entry(const struct wim_lookup_table_entry *entry);
+print_lookup_table_entry(const struct wim_lookup_table_entry *entry,
+			 FILE *out);
 
 extern void
 free_lookup_table_entry(struct wim_lookup_table_entry *lte);

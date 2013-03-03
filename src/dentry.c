@@ -745,7 +745,7 @@ int print_dentry(struct wim_dentry *dentry, void *lookup_table)
 	printf("Full Path (UTF-8) = \"%s\"\n", dentry->full_path_utf8);
 	lte = inode_stream_lte(dentry->d_inode, 0, lookup_table);
 	if (lte) {
-		print_lookup_table_entry(lte);
+		print_lookup_table_entry(lte, stdout);
 	} else {
 		hash = inode_stream_hash(inode, 0);
 		if (hash) {
@@ -766,8 +766,8 @@ int print_dentry(struct wim_dentry *dentry, void *lookup_table)
 			print_hash(hash);
 			putchar('\n');
 		}
-		print_lookup_table_entry(inode_stream_lte(inode, i + 1,
-							  lookup_table));
+		print_lookup_table_entry(inode_stream_lte(inode, i + 1, lookup_table),
+					 stdout);
 	}
 	return 0;
 }

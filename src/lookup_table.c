@@ -348,9 +348,9 @@ int read_lookup_table(WIMStruct *w)
 			ERROR("The WIM lookup table contains two entries with the "
 			      "same SHA1 message digest!");
 			ERROR("The first entry is:");
-			print_lookup_table_entry(duplicate_entry);
+			print_lookup_table_entry(duplicate_entry, stderr);
 			ERROR("The second entry is:");
-			print_lookup_table_entry(cur_entry);
+			print_lookup_table_entry(cur_entry, stderr);
 		#endif
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 			goto out_free_cur_entry;
@@ -364,7 +364,7 @@ int read_lookup_table(WIMStruct *w)
 			ERROR("Found uncompressed resource with original size "
 			      "not the same as compressed size");
 			ERROR("The lookup table entry for the resource is as follows:");
-			print_lookup_table_entry(cur_entry);
+			print_lookup_table_entry(cur_entry, stderr);
 		#endif
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 			goto out_free_cur_entry;
@@ -374,7 +374,7 @@ int read_lookup_table(WIMStruct *w)
 		{
 		#ifdef ENABLE_ERROR_MESSAGES
 			ERROR("Found metadata resource with refcnt != 1:");
-			print_lookup_table_entry(cur_entry);
+			print_lookup_table_entry(cur_entry, stderr);
 		#endif
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 			goto out_free_cur_entry;
@@ -475,57 +475,58 @@ int lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *ignore)
 	return 0;
 }
 
-void print_lookup_table_entry(const struct wim_lookup_table_entry *lte)
+void print_lookup_table_entry(const struct wim_lookup_table_entry *lte,
+			      FILE *out)
 {
 	if (!lte) {
-		putchar('\n');
+		putc('\n', out);
 		return;
 	}
-	printf("Offset            = %"PRIu64" bytes\n",
+	fprintf(out, "Offset            = %"PRIu64" bytes\n",
 	       lte->resource_entry.offset);
-	printf("Size              = %"PRIu64" bytes\n",
+	fprintf(out, "Size              = %"PRIu64" bytes\n",
 	       (u64)lte->resource_entry.size);
-	printf("Original size     = %"PRIu64" bytes\n",
+	fprintf(out, "Original size     = %"PRIu64" bytes\n",
 	       lte->resource_entry.original_size);
-	printf("Part Number       = %hu\n", lte->part_number);
-	printf("Reference Count   = %u\n", lte->refcnt);
-	printf("Hash              = 0x");
+	fprintf(out, "Part Number       = %hu\n", lte->part_number);
+	fprintf(out, "Reference Count   = %u\n", lte->refcnt);
+	fprintf(out, "Hash              = 0x");
 	print_hash(lte->hash);
-	putchar('\n');
-	printf("Flags             = ");
+	putc('\n', out);
+	fprintf(out, "Flags             = ");
 	u8 flags = lte->resource_entry.flags;
 	if (flags & WIM_RESHDR_FLAG_COMPRESSED)
-		fputs("WIM_RESHDR_FLAG_COMPRESSED, ", stdout);
+		fputs("WIM_RESHDR_FLAG_COMPRESSED, ", out);
 	if (flags & WIM_RESHDR_FLAG_FREE)
-		fputs("WIM_RESHDR_FLAG_FREE, ", stdout);
+		fputs("WIM_RESHDR_FLAG_FREE, ", out);
 	if (flags & WIM_RESHDR_FLAG_METADATA)
-		fputs("WIM_RESHDR_FLAG_METADATA, ", stdout);
+		fputs("WIM_RESHDR_FLAG_METADATA, ", out);
 	if (flags & WIM_RESHDR_FLAG_SPANNED)
-		fputs("WIM_RESHDR_FLAG_SPANNED, ", stdout);
-	putchar('\n');
+		fputs("WIM_RESHDR_FLAG_SPANNED, ", out);
+	putc('\n', out);
 	switch (lte->resource_location) {
 	case RESOURCE_IN_WIM:
 		if (lte->wim->filename) {
-			printf("WIM file          = `%s'\n",
+			fprintf(out, "WIM file          = `%s'\n",
 			       lte->wim->filename);
 		}
 		break;
 	case RESOURCE_IN_FILE_ON_DISK:
-		printf("File on Disk      = `%s'\n", lte->file_on_disk);
+		fprintf(out, "File on Disk      = `%s'\n", lte->file_on_disk);
 		break;
 	case RESOURCE_IN_STAGING_FILE:
-		printf("Staging File      = `%s'\n", lte->staging_file_name);
+		fprintf(out, "Staging File      = `%s'\n", lte->staging_file_name);
 		break;
 	default:
 		break;
 	}
-	putchar('\n');
+	putc('\n', out);
 }
 
 static int do_print_lookup_table_entry(struct wim_lookup_table_entry *lte,
-				       void *ignore)
+				       void *fp)
 {
-	print_lookup_table_entry(lte);
+	print_lookup_table_entry(lte, (FILE*)fp);
 	return 0;
 }
 
@@ -536,7 +537,7 @@ WIMLIBAPI void wimlib_print_lookup_table(WIMStruct *w)
 {
 	for_lookup_table_entry(w->lookup_table,
 			       do_print_lookup_table_entry,
-			       NULL);
+			       stdout);
 }
 
 /* Given a SHA1 message digest, return the corresponding entry in the WIM's

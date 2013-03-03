@@ -212,11 +212,13 @@ static int image_run_full_verifications(WIMStruct *w)
 static int lte_fix_refcnt(struct wim_lookup_table_entry *lte, void *ctr)
 {
 	if (lte->refcnt != lte->real_refcnt) {
+	#ifdef ENABLE_ERROR_MESSAGES
 		WARNING("The following lookup table entry has a reference "
 			"count of %u, but", lte->refcnt);
 		WARNING("We found %u references to it",
 			lte->real_refcnt);
-		print_lookup_table_entry(lte);
+		print_lookup_table_entry(lte, stderr);
+	#endif
 		lte->refcnt = lte->real_refcnt;
 		++*(unsigned long *)ctr;
 	}

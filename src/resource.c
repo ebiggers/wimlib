@@ -644,7 +644,7 @@ int extract_wim_resource(const struct wim_lookup_table_entry *lte,
 		if (!hashes_equal(hash, lte->hash)) {
 		#ifdef ENABLE_ERROR_MESSAGES
 			ERROR("Invalid checksum on the following WIM resource:");
-			print_lookup_table_entry(lte);
+			print_lookup_table_entry(lte, stderr);
 		#endif
 			return WIMLIB_ERR_INVALID_RESOURCE_HASH;
 		}
