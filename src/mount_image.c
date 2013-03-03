@@ -848,12 +848,9 @@ static int set_message_queue_names(struct wimfs_context *ctx,
 			return WIMLIB_ERR_NOTDIR;
 	}
 
-	p = dir_path;
-	while (*p) {
+	for (p = dir_path; *p; p++)
 		if (*p == '/')
 			*p = 0xff;
-		p++;
-	}
 
 	ctx->unmount_to_daemon_mq_name = strcat_dup(u2d_prefix, dir_path,
 						    NAME_MAX);
