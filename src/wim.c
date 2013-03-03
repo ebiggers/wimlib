@@ -204,6 +204,7 @@ WIMLIBAPI int wimlib_get_num_images(const WIMStruct *w)
 int select_wim_image(WIMStruct *w, int image)
 {
 	struct wim_image_metadata *imd;
+	int ret;
 
 	DEBUG("Selecting image %d", image);
 
@@ -232,21 +233,23 @@ int select_wim_image(WIMStruct *w, int image)
 			imd->security_data = NULL;
 			INIT_HLIST_HEAD(&imd->inode_list);
 		}
+		w->current_image = WIMLIB_NO_IMAGE;
 	}
 
-	w->current_image = image;
 	imd = wim_get_current_image_metadata(w);
-
 	if (imd->root_dentry) {
-		return 0;
+		ret = 0;
 	} else {
 		#ifdef ENABLE_DEBUG
 		DEBUG("Reading metadata resource specified by the following "
 		      "lookup table entry:");
-		print_lookup_table_entry(imd->metadata_lte);
+		print_lookup_table_entry(imd->metadata_lte, stdout);
 		#endif
-		return read_metadata_resource(w, imd);
+		ret = read_metadata_resource(w, imd);
 	}
+	if (ret == 0)
+		w->current_image = image;
+	return ret;
 }
 
 
