@@ -118,7 +118,8 @@
  *
  * wimlib is thread-safe as long as different ::WIMStruct's are used, except for
  * the fact that wimlib_set_print_errors() and wimlib_set_memory_allocator()
- * both apply globally.
+ * both apply globally, and you also must call wimlib_global_init() in the main
+ * thread to avoid any race conditions with one-time allocations of memory.
  *
  * To open an existing WIM, use wimlib_open_wim().
  *

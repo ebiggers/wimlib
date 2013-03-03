@@ -321,8 +321,8 @@ static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 		}
 		#endif
 		if (errno != ENOSYS || args->num_lutimes_warnings < 10) {
-			/*WARNING("Failed to set timestamp on file `%s': %s",*/
-				/*output_path, strerror(errno));*/
+			/*WARNING_WITH_ERRNO("Failed to set timestamp on file `%s',*/
+					    /*output_path");*/
 			args->num_lutimes_warnings++;
 		}
 	}

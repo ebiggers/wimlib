@@ -1265,8 +1265,8 @@ out_join:
 
 	for (unsigned i = 0; i < num_threads; i++) {
 		if (pthread_join(compressor_threads[i], NULL)) {
-			WARNING("Failed to join compressor thread %u: %s",
-				i, strerror(errno));
+			WARNING_WITH_ERRNO("Failed to join compressor "
+					   "thread %u", i);
 		}
 	}
 	FREE(compressor_threads);
@@ -1603,8 +1603,8 @@ int lock_wim(WIMStruct *w, FILE *fp)
 				      "        by another process!", w->filename);
 				ret = WIMLIB_ERR_ALREADY_LOCKED;
 			} else {
-				WARNING("Failed to lock `%s': %s",
-					w->filename, strerror(errno));
+				WARNING_WITH_ERRNO("Failed to lock `%s'",
+						   w->filename);
 				ret = 0;
 			}
 		} else {
@@ -1642,8 +1642,7 @@ void close_wim_writable(WIMStruct *w)
 {
 	if (w->out_fp) {
 		if (fclose(w->out_fp) != 0) {
-			WARNING("Failed to close output WIM: %s",
-				strerror(errno));
+			WARNING_WITH_ERRNO("Failed to close output WIM");
 		}
 		w->out_fp = NULL;
 	}
@@ -1929,8 +1928,8 @@ static int overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 	w->fp = fopen(w->filename, "rb");
 	if (w->fp == NULL) {
 		ret = WIMLIB_ERR_REOPEN;
-		WARNING("Failed to re-open `%s' read-only: %s",
-			w->filename, strerror(errno));
+		WARNING_WITH_ERRNO("Failed to re-open `%s' read-only",
+				   w->filename);
 		FREE(w->filename);
 		w->filename = NULL;
 	}
@@ -1938,7 +1937,7 @@ static int overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 err:
 	/* Remove temporary file. */
 	if (unlink(tmpfile) != 0)
-		WARNING("Failed to remove `%s': %s", tmpfile, strerror(errno));
+		WARNING_WITH_ERRNO("Failed to remove `%s'", tmpfile);
 	return ret;
 }
 

@@ -21,6 +21,13 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+#undef _GNU_SOURCE
+/* Make sure the POSIX-compatible strerror_r() is declared, rather than the GNU
+ * version, which has a different return type. */
+#define _POSIX_C_SOURCE 200112
+#include <string.h>
+#define _GNU_SOURCE
+
 #include "wimlib_internal.h"
 #include "endianness.h"
 #include "timestamp.h"
@@ -28,65 +35,71 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
-#include <string.h>
+
 #include <unistd.h> /* for getpid() */
 
 /* True if wimlib is to print an informational message when an error occurs.
  * This can be turned off by calling wimlib_set_print_errors(false). */
 #ifdef ENABLE_ERROR_MESSAGES
 #include <stdarg.h>
-bool __wimlib_print_errors = false;
+static bool wimlib_print_errors = false;
+
+static void wimlib_vmsg(const char *tag, const char *format,
+			va_list va, bool perror)
+{
+	if (wimlib_print_errors) {
+		int errno_save = errno;
+		fflush(stdout);
+		fputs(tag, stderr);
+		vfprintf(stderr, format, va);
+		if (perror && errno_save != 0) {
+			char buf[50];
+			int res = strerror_r(errno_save, buf, sizeof(buf));
+			if (res) {
+				snprintf(buf, sizeof(buf),
+					 "unknown error (errno=%d)", errno_save);
+			}
+			fputs(buf, stderr);
+		}
+		putc('\n', stderr);
+		errno = errno_save;
+	}
+}
 
 void wimlib_error(const char *format, ...)
 {
- 	if (__wimlib_print_errors) {
-		va_list va;
-		int errno_save;
+	va_list va;
 
-		va_start(va, format);
-		errno_save = errno;
-		fputs("[ERROR] ", stderr);
-		vfprintf(stderr, format, va);
-		putc('\n', stderr);
-		errno = errno_save;
-		va_end(va);
-	}
+	va_start(va, format);
+	wimlib_vmsg("[ERROR] ", format, va, false);
+	va_end(va);
 }
 
 void wimlib_error_with_errno(const char *format, ...)
 {
- 	if (__wimlib_print_errors) {
-		va_list va;
-		int errno_save;
+	va_list va;
 
-		va_start(va, format);
-		errno_save = errno;
-		fflush(stdout);
-		fputs("[ERROR] ", stderr);
-		vfprintf(stderr, format, va);
-		if (errno_save != 0)
-			fprintf(stderr, ": %s", strerror(errno_save));
-		putc('\n', stderr);
-		errno = errno_save;
-		va_end(va);
-	}
+	va_start(va, format);
+	wimlib_vmsg("[ERROR] ", format, va, true);
+	va_end(va);
 }
 
 void wimlib_warning(const char *format, ...)
 {
- 	if (__wimlib_print_errors) {
-		va_list va;
-		int errno_save;
+	va_list va;
 
-		va_start(va, format);
-		errno_save = errno;
-		fflush(stdout);
-		fputs("[WARNING] ", stderr);
-		vfprintf(stderr, format, va);
-		putc('\n', stderr);
-		errno = errno_save;
-		va_end(va);
-	}
+	va_start(va, format);
+	wimlib_vmsg("[WARNING] ", format, va, false);
+	va_end(va);
+}
+
+void wimlib_warning_with_errno(const char *format, ...)
+{
+	va_list va;
+
+	va_start(va, format);
+	wimlib_vmsg("[WARNING] ", format, va, true);
+	va_end(va);
 }
 
 #endif
@@ -94,7 +107,7 @@ void wimlib_warning(const char *format, ...)
 WIMLIBAPI int wimlib_set_print_errors(bool show_error_messages)
 {
 #ifdef ENABLE_ERROR_MESSAGES
-	__wimlib_print_errors = show_error_messages;
+	wimlib_print_errors = show_error_messages;
 	return 0;
 #else
 	if (show_error_messages)

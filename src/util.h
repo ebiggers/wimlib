@@ -86,20 +86,25 @@ typedef uint64_t u64;
 #define BUFFER_SIZE 4096
 
 #ifdef ENABLE_ERROR_MESSAGES
-extern bool __wimlib_print_errors;
 extern void wimlib_error(const char *format, ...)
 		FORMAT(printf, 1, 2) COLD;
 extern void wimlib_error_with_errno(const char *format, ...)
 		FORMAT(printf, 1, 2) COLD;
 extern void wimlib_warning(const char *format, ...)
 		FORMAT(printf, 1, 2) COLD;
-#	define ERROR		wimlib_error
-#	define ERROR_WITH_ERRNO wimlib_error_with_errno
-#	define WARNING		wimlib_warning
+extern void wimlib_warning_with_errno(const char *format, ...)
+		FORMAT(printf, 1, 2) COLD;
+#	define ERROR			wimlib_error
+#	define ERROR_WITH_ERRNO 	wimlib_error_with_errno
+#	define WARNING			wimlib_warning
+#	define WARNING_WITH_ERRNO	wimlib_warning
 #else
-#	define ERROR(format, ...)
-#	define ERROR_WITH_ERRNO(format, ...)
-#	define WARNING(format, ...)
+static inline FORMAT(printf, 1, 2) void
+dummy_printf(const char *format, ...) { }
+#	define ERROR(format, ...)		dummy_printf
+#	define ERROR_WITH_ERRNO(format, ...)	dummy_printf
+#	define WARNING(format, ...)		dummy_printf
+#	define WARNING_WITH_ERRNO(format, ...)	dummy_printf
 #endif /* ENABLE_ERROR_MESSAGES */
 
 #if defined(ENABLE_DEBUG) || defined(ENABLE_MORE_DEBUG)
