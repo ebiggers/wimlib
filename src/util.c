@@ -59,7 +59,7 @@ static void wimlib_vmsg(const char *tag, const char *format,
 				snprintf(buf, sizeof(buf),
 					 "unknown error (errno=%d)", errno_save);
 			}
-			fputs(buf, stderr);
+			fprintf(stderr, ": %s", buf);
 		}
 		putc('\n', stderr);
 		errno = errno_save;
