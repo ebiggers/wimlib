@@ -113,8 +113,8 @@ int read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 		return WIMLIB_ERR_INVALID_PART_NUMBER;
 	}
 
-	if (!(open_flags & WIMLIB_OPEN_FLAG_SPLIT_OK)
-	    && (hdr->part_number != 1 || hdr->total_parts != 1))
+	if (!(open_flags & WIMLIB_OPEN_FLAG_SPLIT_OK) &&
+	    hdr->total_parts != 1)
 	{
 		ERROR("This WIM is part %u of a %u-part WIM",
 		      hdr->part_number, hdr->total_parts);
