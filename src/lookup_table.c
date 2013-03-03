@@ -186,7 +186,7 @@ void free_lookup_table(struct wim_lookup_table *table)
  * Inserts an entry into the lookup table.
  *
  * @table:	A pointer to the lookup table.
- * @entry:	A pointer to the entry to insert.
+ * @lte:	A pointer to the entry to insert.
  */
 void lookup_table_insert(struct wim_lookup_table *table,
 			 struct wim_lookup_table_entry *lte)
