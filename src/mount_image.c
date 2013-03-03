@@ -758,7 +758,7 @@ static int update_lte_of_staging_file(struct wim_lookup_table_entry *lte,
 			inode_update_lte_ptr(lte->lte_inode, lte, NULL);
 			free_lookup_table_entry(lte);
 		} else {
-			wimlib_assert(&lte->file_on_disk == &lte->staging_file_name);
+			BUILD_BUG_ON(&lte->file_on_disk != &lte->staging_file_name);
 			lte->resource_entry.original_size = stbuf.st_size;
 			lte->resource_entry.size = stbuf.st_size;
 			lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
