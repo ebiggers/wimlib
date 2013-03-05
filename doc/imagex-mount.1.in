@@ -172,9 +172,10 @@ the temporary staging directory is deleted.
 
 \fBimagex unmount\fR runs in a separate process from the process that previously
 ran \fBimagex mount\fR, and these two processes communicate using POSIX message
-queue.  See \fIsrc/mount_image.c\fR in the sources for details.  Note: As of wimlib
-v1.2.1, \fBimagex unmount\fR correctly fails with an error within a reasonable
-amount of time (1 second) if the filesystem daemon is abnormally terminated.
+queues.  See \fIsrc/mount_image.c\fR in the sources for details.  Note: As of
+wimlib v1.2.1, \fBimagex unmount\fR correctly fails with an error within a
+reasonable amount of time (1 second) if the filesystem daemon is abnormally
+terminated.
 
 .SH SEE ALSO
 .BR imagex (1)
