@@ -54,8 +54,8 @@ for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
 	fi
 	mkdir tmp
 	if ! imagex mount dir.wim dir tmp; then
-		error "Failed to mount test WIM read-only" \
-		      "Please read any error messages above before reporting this test failure."\
+		error "Failed to mount test WIM read-only. " \
+		      "Please read any error messages above before reporting this test failure. "\
 		      "Perhaps you don't have FUSE installed, or the FUSE kernel module isn't" \
 		      "loaded, or you aren't a member of the FUSE group?"
 	fi

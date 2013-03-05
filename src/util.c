@@ -137,6 +137,9 @@ static const char *error_strings[] = {
 	[WIMLIB_ERR_FUSERMOUNT]
 		= "Could not execute the `fusermount' program, or it exited "
 			"with a failure status",
+	[WIMLIB_ERR_ICONV_NOT_AVAILABLE]
+		= "The iconv() function does not seem to work. "
+		  "Maybe check to make sure the directory /usr/lib/gconv exists",
 	[WIMLIB_ERR_IMAGE_COUNT]
 		= "Inconsistent image count among the metadata "
 			"resources, the WIM header, and/or the XML data",
@@ -168,11 +171,10 @@ static const char *error_strings[] = {
 		= "The part number or total parts of the WIM is invalid",
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
 		= "The SHA1 message digest of a WIM resource did not match the expected value",
-	[WIMLIB_ERR_ICONV_NOT_AVAILABLE]
-		= "The iconv() function does not seem to work. "
-		  "Maybe check to make sure the directory /usr/lib/gconv exists",
 	[WIMLIB_ERR_INVALID_RESOURCE_SIZE]
 		= "A resource entry in the WIM has an invalid size",
+	[WIMLIB_ERR_INVALID_SECURITY_DATA]
+		= "The table of security descriptors in the WIM is invalid",
 	[WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE]
 		= "The version of wimlib that has mounted a WIM image is incompatible with the "
 		  "version being used to unmount it",
@@ -223,6 +225,8 @@ static const char *error_strings[] = {
 		= "The WIM is part of a split WIM, which is not supported for this operation",
 	[WIMLIB_ERR_STAT]
 		= "Could not read the metadata for a file or directory",
+	[WIMLIB_ERR_TIMEOUT]
+		= "Timed out while waiting for a message to arrive from another process",
 	[WIMLIB_ERR_UNKNOWN_VERSION]
 		= "The WIM file is marked with an unknown version number",
 	[WIMLIB_ERR_UNSUPPORTED]

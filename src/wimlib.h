@@ -711,6 +711,9 @@ typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
  * See the documentation for each wimlib function to see specifically what error
  * codes can be returned by a given function, and what they mean.
  */
+/* Note: these are currently in alphabetic order, but new error codes should be
+ * added at the end to maintain a compatible ABI, except when it's being broken
+ * anyway. */
 enum wimlib_error_code {
 	WIMLIB_ERR_SUCCESS = 0,
 	WIMLIB_ERR_ALREADY_LOCKED,

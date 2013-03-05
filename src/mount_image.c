@@ -109,6 +109,9 @@ struct wimfs_context {
 
 	uid_t default_uid;
 	gid_t default_gid;
+
+	int status;
+	bool have_status;
 };
 
 static void init_wimfs_context(struct wimfs_context *ctx)
@@ -1236,7 +1239,8 @@ out:
 				status = ret;
 		}
 	}
-	send_unmount_finished_msg(wimfs_ctx->daemon_to_unmount_mq, status);
+	wimfs_ctx->status = status;
+	wimfs_ctx->have_status = true;
 	return MSG_BREAK_LOOP;
 }
 
@@ -1565,7 +1569,6 @@ static void wimfs_destroy(void *p)
 		message_loop(wimfs_ctx->unmount_to_daemon_mq,
 			     &daemon_msg_handler_callbacks,
 			     &handler_ctx.hdr);
-		close_message_queues(wimfs_ctx);
 	}
 }
 
@@ -2530,14 +2533,23 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	DEBUG("Returned from fuse_main() (ret = %d)", ret);
 
-	if (ret)
+	if (ret) {
 		ret = WIMLIB_ERR_FUSE;
+	} else {
+		if (ctx.have_status)
+			ret = ctx.status;
+		else
+			ret = WIMLIB_ERR_TIMEOUT;
+	}
+	if (ctx.daemon_to_unmount_mq != (mqd_t)(-1)) {
+		send_unmount_finished_msg(ctx.daemon_to_unmount_mq, ret);
+		close_message_queues(&ctx);
+	}
 
 	/* Try to delete the staging directory if a deletion wasn't yet
 	 * attempted due to an earlier error */
 	if (ctx.staging_dir_name)
 		delete_staging_dir(&ctx);
-
 out_free_dir_copy:
 	FREE(dir_copy);
 out_unlock:
