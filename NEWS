@@ -1,5 +1,11 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.2.6:
+	Storing UNIX file owners, groups, and modes in WIM images is now
+	possible using `imagex capture' with the --unix-data flag.
+
+	Minor bug fixes and documentation fixes.
+
 Version 1.2.5:
 	NTFS capture: Fixed capturing duplicate reparse points.
 
