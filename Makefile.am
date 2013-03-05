@@ -7,7 +7,7 @@ AM_CFLAGS	= -std=gnu99 -D_LARGEFILE_SOURCE \
 
 lib_LTLIBRARIES = libwim.la
 
-libwim_la_LDFLAGS = -version-info 2:3:0
+libwim_la_LDFLAGS = -version-info 2:4:0
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
