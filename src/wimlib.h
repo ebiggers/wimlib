@@ -809,8 +809,8 @@ enum wimlib_error_code {
  * 	NULL, a default string is used.  Please see the manual page for
  * 	<b>imagex capture</b> for more information.
  * @param config_len
- * 	Length of the string @a config in bytes.  Ignored if @a config is @c
- * 	NULL.
+ * 	Length of the string @a config in bytes, not including an optional
+ * 	null-terminator.  Ignored if @a config is @c NULL.
  * @param add_image_flags
  * 	Bitwise OR of flags prefixed with WIMLIB_ADD_IMAGE_FLAG.
  * @param progress_func

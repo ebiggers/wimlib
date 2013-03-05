@@ -396,8 +396,13 @@ enum pattern_type {
 	ALIGNMENT_LIST,
 };
 
+#define COMPAT_DEFAULT_CONFIG
+
 /* Default capture configuration file when none is specified. */
 static const char *default_config =
+#ifdef COMPAT_DEFAULT_CONFIG /* XXX: This policy is being moved to library
+				users.  The next ABI-incompatible library
+				version will default to the empty string here. */
 "[ExclusionList]\n"
 "\\$ntfs.log\n"
 "\\hiberfil.sys\n"
@@ -411,6 +416,9 @@ static const char *default_config =
 "*.zip\n"
 "*.cab\n"
 "\\WINDOWS\\inf\\*.pnf\n";
+#else
+"";
+#endif
 
 static void destroy_pattern_list(struct pattern_list *list)
 {
@@ -583,21 +591,6 @@ static bool match_pattern(const char *path, const char *path_basename,
 	return false;
 }
 
-static void print_pattern_list(const struct pattern_list *list)
-{
-	for (size_t i = 0; i < list->num_pats; i++)
-		printf("    %s\n", list->pats[i]);
-}
-
-static void print_capture_config(const struct capture_config *config)
-{
-	if (config->exclusion_list.num_pats) {
-		puts("Files or folders excluded from image capture:");
-		print_pattern_list(&config->exclusion_list);
-		putchar('\n');
-	}
-}
-
 /* Return true if the image capture configuration file indicates we should
  * exclude the filename @path from capture.
  *
@@ -694,7 +687,6 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 	ret = init_capture_config(config_str, config_len, source, &config);
 	if (ret != 0)
 		return ret;
-	print_capture_config(&config);
 
 	DEBUG("Allocating security data");
 

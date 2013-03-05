@@ -280,6 +280,21 @@ static off_t file_get_size(const char *filename)
 		return (off_t)-1;
 }
 
+static const char *default_capture_config =
+"[ExclusionList]\n"
+"\\$ntfs.log\n"
+"\\hiberfil.sys\n"
+"\\pagefile.sys\n"
+"\\System Volume Information\n"
+"\\RECYCLER\n"
+"\\Windows\\CSC\n"
+"\n"
+"[CompressionExclusionList]\n"
+"*.mp3\n"
+"*.zip\n"
+"*.cab\n"
+"\\WINDOWS\\inf\\*.pnf\n";
+
 static char *file_get_contents(const char *filename, size_t *len_ret)
 {
 	struct stat stbuf;
@@ -769,8 +784,10 @@ static int imagex_capture_or_append(int argc, const char **argv)
 		}
 	}
 
-	ret = wimlib_add_image(w, source, name, config_str, config_len,
-			       add_image_flags, imagex_progress_func);
+	ret = wimlib_add_image(w, source, name,
+			       config_str ? config_str : default_capture_config,
+			       config_len, add_image_flags,
+			       imagex_progress_func);
 
 	if (ret != 0)
 		goto out;
