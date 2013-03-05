@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2012 Eric Biggers
+ * Copyright (C) 2012, 2013 Biggers
  * Copyright (C) 1995-2010 Jean-loup Gailly and Mark Adler
  *
  * This file is part of wimlib, a library for working with WIM files.

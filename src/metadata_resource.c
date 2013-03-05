@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012 Eric Biggers
+ * Copyright (C) 2012, 2013 Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *

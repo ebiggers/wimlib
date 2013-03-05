@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012 Eric Biggers
+ * Copyright (C) 2012, 2013 Biggers
  *
  * wimlib - Library for working with WIM files
  *
