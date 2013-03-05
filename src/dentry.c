@@ -218,9 +218,6 @@ static int for_dentry_tree_in_rbtree_depth(struct rb_node *node,
 	return 0;
 }
 
-/*#define RECURSIVE_FOR_DENTRY_IN_TREE*/
-
-#ifdef RECURSIVE_FOR_DENTRY_IN_TREE
 static int for_dentry_tree_in_rbtree(struct rb_node *node,
 				     int (*visitor)(struct wim_dentry*, void*),
 				     void *arg)
@@ -239,7 +236,6 @@ static int for_dentry_tree_in_rbtree(struct rb_node *node,
 	}
 	return 0;
 }
-#endif
 
 /*
  * Calls a function on all directory entries in a WIM dentry tree.  Logically,
@@ -253,112 +249,10 @@ static int for_dentry_tree_in_rbtree(struct rb_node *node,
 int for_dentry_in_tree(struct wim_dentry *root,
 		       int (*visitor)(struct wim_dentry*, void*), void *arg)
 {
-#ifdef RECURSIVE_FOR_DENTRY_IN_TREE
 	int ret = visitor(root, arg);
 	if (ret != 0)
 		return ret;
 	return for_dentry_tree_in_rbtree(root->d_inode->i_children.rb_node, visitor, arg);
-#else
-	int ret;
-	struct list_head main_stack;
-	struct list_head sibling_stack;
-	struct list_head *sibling_stack_bottom;
-	struct wim_dentry *main_dentry;
-	struct rb_node *node;
-	struct list_head *next_sibling;
-	struct wim_dentry *dentry;
-
-	ret = visitor(root, arg);
-	if (ret != 0)
-		return ret;
-
-	main_dentry = root;
-	sibling_stack_bottom = &sibling_stack;
-	INIT_LIST_HEAD(&main_stack);
-	INIT_LIST_HEAD(&sibling_stack);
-
-	list_add(&root->tmp_list, &main_stack);
-	node = root->d_inode->i_children.rb_node;
-
-	while (1) {
-		// Prepare for non-recursive in-order traversal of the red-black
-		// tree of this dentry's children
-
-		while (node) {
-			// Push this node to the sibling stack and examine the
-			// left neighbor, if any
-			list_add(&rbnode_dentry(node)->tmp_list, &sibling_stack);
-			node = node->rb_left;
-		}
-
-		next_sibling = sibling_stack.next;
-		if (next_sibling == sibling_stack_bottom) {
-			// Done with all siblings.  Pop the main dentry to move
-			// back up one level.
-			main_dentry = container_of(main_stack.next,
-						   struct wim_dentry,
-						   tmp_list);
-			list_del(&main_dentry->tmp_list);
-
-			if (main_dentry == root)
-				goto out;
-
-			// Restore sibling stack bottom from the previous level
-			sibling_stack_bottom = (void*)main_dentry->parent;
-
-			// Restore the just-popped main dentry's parent
-			main_dentry->parent = container_of(main_stack.next,
-							   struct wim_dentry,
-							   tmp_list);
-
-			// The next sibling to traverse in the previous level,
-			// in the in-order traversal of the red-black tree, is
-			// the one to the right.
-			node = main_dentry->rb_node.rb_right;
-		} else {
-			// The sibling stack is not empty, so there are more to
-			// go!
-
-			// Pop a sibling from the stack.
-			list_del(next_sibling);
-			dentry = container_of(next_sibling, struct wim_dentry, tmp_list);
-
-			// Visit the sibling.
-			ret = visitor(dentry, arg);
-			if (ret != 0) {
-				// Failed.  Restore parent pointers for the
-				// dentries in the main stack
-				list_for_each_entry(dentry, &main_stack, tmp_list) {
-					dentry->parent = container_of(dentry->tmp_list.next,
-								      struct wim_dentry,
-								      tmp_list);
-				}
-				goto out;
-			}
-
-			// We'd like to recursively visit the dentry tree rooted
-			// at this sibling.  To do this, add it to the main
-			// stack, save the bottom of this level's sibling stack
-			// in the dentry->parent field, re-set the bottom of the
-			// sibling stack to be its current height, and set
-			// main_dentry to the sibling so it becomes the parent
-			// dentry in the next iteration through the outer loop.
-			if (inode_has_children(dentry->d_inode)) {
-				list_add(&dentry->tmp_list, &main_stack);
-				dentry->parent = (void*)sibling_stack_bottom;
-				sibling_stack_bottom = sibling_stack.next;
-
-				main_dentry = dentry;
-				node = main_dentry->d_inode->i_children.rb_node;
-			} else {
-				node = dentry->rb_node.rb_right;
-			}
-		}
-	}
-out:
-	root->parent = root;
-	return ret;
-#endif
 }
 
 /*
@@ -368,96 +262,12 @@ out:
 int for_dentry_in_tree_depth(struct wim_dentry *root,
 			     int (*visitor)(struct wim_dentry*, void*), void *arg)
 {
-#if 1
 	int ret;
 	ret = for_dentry_tree_in_rbtree_depth(root->d_inode->i_children.rb_node,
 					      visitor, arg);
 	if (ret != 0)
 		return ret;
 	return visitor(root, arg);
-
-#else
-	int ret;
-	struct list_head main_stack;
-	struct list_head sibling_stack;
-	struct list_head *sibling_stack_bottom;
-	struct wim_dentry *main_dentry;
-	struct rb_node *node;
-	struct list_head *next_sibling;
-	struct wim_dentry *dentry;
-
-	main_dentry = root;
-	sibling_stack_bottom = &sibling_stack;
-	INIT_LIST_HEAD(&main_stack);
-	INIT_LIST_HEAD(&sibling_stack);
-
-	list_add(&main_dentry->tmp_list, &main_stack);
-
-	while (1) {
-		node = main_dentry->d_inode->i_children.rb_node;
-
-		while (1) {
-			if (node->rb_left) {
-				list_add(&rbnode_dentry(node)->tmp_list, &sibling_stack);
-				node = node->rb_left;
-				continue;
-			}
-			if (node->rb_right) {
-				list_add(&rbnode_dentry(node)->tmp_list, &sibling_stack);
-				node = node->rb_right;
-				continue;
-			}
-			list_add(&rbnode_dentry(node)->tmp_list, &sibling_stack);
-		}
-
-	pop_sibling:
-		next_sibling = sibling_stack.next;
-		if (next_sibling == sibling_stack_bottom) {
-			main_dentry = container_of(main_stack.next,
-						   struct wim_dentry,
-						   tmp_list);
-			list_del(&main_dentry->tmp_list);
-
-
-			sibling_stack_bottom = (void*)main_dentry->parent;
-
-			if (main_dentry == root) {
-				main_dentry->parent = main_dentry;
-				ret = visitor(dentry, arg);
-				return ret;
-			} else {
-				main_dentry->parent = container_of(main_stack.next,
-								   struct wim_dentry,
-								   tmp_list);
-			}
-
-			ret = visitor(main_dentry, arg);
-
-			if (ret != 0) {
-				list_del(&root->tmp_list);
-				list_for_each_entry(dentry, &main_stack, tmp_list) {
-					dentry->parent = container_of(dentry->tmp_list.next,
-								      struct wim_dentry,
-								      tmp_list);
-				}
-				root->parent = root;
-				return ret;
-			}
-			goto pop_sibling;
-		} else {
-
-			list_del(next_sibling);
-			dentry = container_of(next_sibling, struct wim_dentry, tmp_list);
-
-
-			list_add(&dentry->tmp_list, &main_stack);
-			dentry->parent = (void*)sibling_stack_bottom;
-			sibling_stack_bottom = sibling_stack.next;
-
-			main_dentry = dentry;
-		}
-	}
-#endif
 }
 
 /*
