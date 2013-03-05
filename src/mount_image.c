@@ -2115,7 +2115,6 @@ static int wimfs_setxattr(const char *path, const char *name,
 	if (existing_ads_entry) {
 		if (flags & XATTR_CREATE)
 			return -EEXIST;
-		inode_remove_ads(inode, ads_idx, ctx->wim->lookup_table);
 	} else {
 		if (flags & XATTR_REPLACE)
 			return -ENOATTR;
@@ -2123,7 +2122,13 @@ static int wimfs_setxattr(const char *path, const char *name,
 
 	ret = inode_add_ads_with_data(inode, name, (const u8*)value,
 				      size, ctx->wim->lookup_table);
-	return ret ? -ENOMEM : 0;
+	if (ret == 0) {
+		if (existing_ads_entry)
+			inode_remove_ads(inode, ads_idx, ctx->wim->lookup_table);
+	} else {
+		ret = -ENOMEM;
+	}
+	return ret;
 }
 #endif
 
