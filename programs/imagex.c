@@ -785,9 +785,9 @@ static int imagex_capture_or_append(int argc, const char **argv)
 	}
 
 	ret = wimlib_add_image(w, source, name,
-			       config_str ? config_str : default_capture_config,
-			       config_len, add_image_flags,
-			       imagex_progress_func);
+			       (config_str ? config_str : default_capture_config),
+			       (config_str ? config_len : strlen(default_capture_config)),
+			       add_image_flags, imagex_progress_func);
 
 	if (ret != 0)
 		goto out;
