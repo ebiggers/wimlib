@@ -56,7 +56,9 @@ information from the directory tree:
 .IP \[bu] 4
 File permissions.  The resulting WIM image will not contain any security
 descriptors because the format of the security descriptors is Windows-specific,
-and they cannot contain UNIX file modes.
+and they cannot contain UNIX file modes.  (Exception: see the \fB--unix-data\fR
+option.)
+
 .IP \[bu]
 No alternate data streams will be captured, since these do not exist on
 POSIX-compliant filesystems.  The resulting WIM image will not contain any
@@ -187,6 +189,14 @@ used:
 .RE
 .RE
 
+.TP
+\fB--unix-data\fR
+Store the UNIX owner, group, and mode of regular files, symbolic links, and
+directories.  This is done by adding a special alternate data stream to each
+directory entry that contains this information.  Please note that this flag is
+for convenience only, in case you want to use \fBimagex\fR to archive files on
+UNIX.  Microsoft's software will not understand this special information.
+
 .SH NOTES
 
 \fBimage append\fR does not support appending an image to a split WIM.
@@ -229,8 +239,8 @@ imagex capture somedir mywim.wim --compress=maximum --check
 Append an image to the WIM we just captured, but do it from a NTFS volume on the
 partition /dev/sda2, and name the image "Windows 7" and give it a description.
 You do not need to specify the compression type, because the WIM already is
-using LZX compression and this cannot be changed.  You need to specify --check
-if you don't want the integrity table to be discarded.
+using LZX compression and this cannot be changed.  You need to specify
+\fB--check\fR if you don't want the integrity table to be discarded.
 .RS
 .PP
 imagex append /dev/sda2 mywim.wim --check "Windows 7" "Warning: This operating

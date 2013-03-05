@@ -106,6 +106,9 @@ struct wimfs_context {
 	char *daemon_to_unmount_mq_name;
 	mqd_t unmount_to_daemon_mq;
 	mqd_t daemon_to_unmount_mq;
+
+	uid_t default_uid;
+	gid_t default_gid;
 };
 
 static void init_wimfs_context(struct wimfs_context *ctx)
@@ -116,9 +119,11 @@ static void init_wimfs_context(struct wimfs_context *ctx)
 	INIT_LIST_HEAD(&ctx->staging_list);
 }
 
+#define WIMFS_CTX(fuse_ctx) ((struct wimfs_context*)(fuse_ctx)->private_data)
+
 static inline struct wimfs_context *wimfs_get_context()
 {
-	return (struct wimfs_context*)fuse_get_context()->private_data;
+	return WIMFS_CTX(fuse_get_context());
 }
 
 static inline WIMStruct *wimfs_get_WIMStruct()
@@ -280,20 +285,18 @@ static int close_wimfs_fd(struct wimfs_fd *fd)
 /*
  * Add a new dentry with a new inode to a WIM image.
  *
- * @ctx:	 Context for the mounted WIM image.
- * @path:	 Path to create the dentry at.
- * @dentry_ret:  Return the pointer to the dentry if successful.
- *
  * Returns 0 on success, or negative error number on failure.
  */
-static int create_dentry(struct wimfs_context *ctx, const char *path,
+static int create_dentry(struct fuse_context *fuse_ctx,const char *path,
+			 mode_t mode, int attributes,
 			 struct wim_dentry **dentry_ret)
 {
 	struct wim_dentry *parent;
 	struct wim_dentry *new;
 	const char *basename;
+	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
 
-	parent = get_parent_dentry(ctx->wim, path);
+	parent = get_parent_dentry(wimfs_ctx->wim, path);
 	if (!parent)
 		return -errno;
 
@@ -309,10 +312,25 @@ static int create_dentry(struct wimfs_context *ctx, const char *path,
 		return -errno;
 
 	new->d_inode->i_resolved = 1;
-	new->d_inode->i_ino = ctx->next_ino++;
+	new->d_inode->i_ino = wimfs_ctx->next_ino++;
+	new->d_inode->i_attributes = attributes;
+
+	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) {
+		if (inode_set_unix_data(new->d_inode,
+					fuse_ctx->uid,
+					fuse_ctx->gid,
+					mode & ~fuse_ctx->umask,
+					wimfs_ctx->wim->lookup_table,
+					UNIX_DATA_ALL | UNIX_DATA_CREATE))
+		{
+			free_dentry(new);
+			return -ENOMEM;
+		}
+	}
 	dentry_add_child(parent, new);
-	hlist_add_head(&new->d_inode->i_hlist, ctx->image_inode_list);
-	*dentry_ret = new;
+	hlist_add_head(&new->d_inode->i_hlist, wimfs_ctx->image_inode_list);
+	if (dentry_ret)
+		*dentry_ret = new;
 	return 0;
 }
 
@@ -344,6 +362,16 @@ static void remove_dentry(struct wim_dentry *dentry,
 	put_dentry(dentry);
 }
 
+static mode_t inode_default_unix_mode(const struct wim_inode *inode)
+{
+	if (inode_is_symlink(inode))
+		return S_IFLNK | 0777;
+	else if (inode_is_directory(inode))
+		return S_IFDIR | 0777;
+	else
+		return S_IFREG | 0777;
+}
+
 /* Transfers file attributes from a struct wim_inode to a `stat' buffer.
  *
  * The lookup table entry tells us which stream in the inode we are statting.
@@ -353,18 +381,22 @@ static int inode_to_stbuf(const struct wim_inode *inode,
 			  const struct wim_lookup_table_entry *lte,
 			  struct stat *stbuf)
 {
-	if (inode_is_symlink(inode))
-		stbuf->st_mode = S_IFLNK | 0777;
-	else if (inode_is_directory(inode))
-		stbuf->st_mode = S_IFDIR | 0755;
-	else
-		stbuf->st_mode = S_IFREG | 0755;
+	const struct wimfs_context *ctx = wimfs_get_context();
 
-	stbuf->st_ino   = (ino_t)inode->i_ino;
+	memset(stbuf, 0, sizeof(struct stat));
+	stbuf->st_mode = inode_default_unix_mode(inode);
+	stbuf->st_uid = ctx->default_uid;
+	stbuf->st_gid = ctx->default_gid;
+	if (ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) {
+		struct wimlib_unix_data unix_data;
+		if (inode_get_unix_data(inode, &unix_data, NULL) == 0) {
+			stbuf->st_uid = unix_data.uid;
+			stbuf->st_gid = unix_data.gid;
+			stbuf->st_mode = unix_data.mode;
+		}
+	}
+	stbuf->st_ino = (ino_t)inode->i_ino;
 	stbuf->st_nlink = inode->i_nlink;
-	stbuf->st_uid   = getuid();
-	stbuf->st_gid   = getgid();
-
 	if (lte) {
 		if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 			struct stat native_stat;
@@ -381,10 +413,10 @@ static int inode_to_stbuf(const struct wim_inode *inode,
 		stbuf->st_size = 0;
 	}
 
-	stbuf->st_atime   = wim_timestamp_to_unix(inode->i_last_access_time);
-	stbuf->st_mtime   = wim_timestamp_to_unix(inode->i_last_write_time);
-	stbuf->st_ctime   = wim_timestamp_to_unix(inode->i_creation_time);
-	stbuf->st_blocks  = (stbuf->st_size + 511) / 512;
+	stbuf->st_atime = wim_timestamp_to_unix(inode->i_last_access_time);
+	stbuf->st_mtime = wim_timestamp_to_unix(inode->i_last_write_time);
+	stbuf->st_ctime = wim_timestamp_to_unix(inode->i_creation_time);
+	stbuf->st_blocks = (stbuf->st_size + 511) / 512;
 	return 0;
 }
 
@@ -896,31 +928,44 @@ static int open_message_queues(struct wimfs_context *ctx, bool daemon)
 {
 	int unmount_to_daemon_mq_flags = O_WRONLY | O_CREAT;
 	int daemon_to_unmount_mq_flags = O_RDONLY | O_CREAT;
+	mode_t mode;
+	mode_t orig_umask;
+	int ret;
 
-	if (daemon)
+	if (daemon) {
 		swap(unmount_to_daemon_mq_flags, daemon_to_unmount_mq_flags);
+		mode = 0600;
+	} else {
+		mode = 0666;
+	}
 
+	orig_umask = umask(0000);
 	DEBUG("Opening message queue \"%s\"", ctx->unmount_to_daemon_mq_name);
 	ctx->unmount_to_daemon_mq = mq_open(ctx->unmount_to_daemon_mq_name,
-					    unmount_to_daemon_mq_flags, 0700, NULL);
+					    unmount_to_daemon_mq_flags, mode, NULL);
 
 	if (ctx->unmount_to_daemon_mq == (mqd_t)-1) {
 		ERROR_WITH_ERRNO("mq_open()");
-		return WIMLIB_ERR_MQUEUE;
+		ret = WIMLIB_ERR_MQUEUE;
+		goto out;
 	}
 
 	DEBUG("Opening message queue \"%s\"", ctx->daemon_to_unmount_mq_name);
 	ctx->daemon_to_unmount_mq = mq_open(ctx->daemon_to_unmount_mq_name,
-					    daemon_to_unmount_mq_flags, 0700, NULL);
+					    daemon_to_unmount_mq_flags, mode, NULL);
 
 	if (ctx->daemon_to_unmount_mq == (mqd_t)-1) {
 		ERROR_WITH_ERRNO("mq_open()");
 		mq_close(ctx->unmount_to_daemon_mq);
 		mq_unlink(ctx->unmount_to_daemon_mq_name);
 		ctx->unmount_to_daemon_mq = (mqd_t)-1;
-		return WIMLIB_ERR_MQUEUE;
+		ret = WIMLIB_ERR_MQUEUE;
+		goto out;
 	}
-	return 0;
+	ret = 0;
+out:
+	umask(orig_umask);
+	return ret;
 }
 
 /* Try to determine the maximum message size of a message queue.  The return
@@ -1458,31 +1503,52 @@ static int execute_fusermount(const char *dir)
 	return 0;
 }
 
+#if 0
 static int wimfs_access(const char *path, int mask)
 {
-	/* Permissions not implemented */
-	return 0;
+	return -ENOSYS;
 }
+#endif
 
 static int wimfs_chmod(const char *path, mode_t mask)
 {
 	struct wim_dentry *dentry;
 	struct wimfs_context *ctx = wimfs_get_context();
-	struct wim_inode *inode;
-	struct stat stbuf;
 	int ret;
 
-	ret = lookup_resource(ctx->wim, path,
-			      get_lookup_flags(ctx) | LOOKUP_FLAG_DIRECTORY_OK,
-			      &dentry, NULL, NULL);
-	if (ret != 0)
-		return ret;
-	inode = dentry->d_inode;
-	inode_to_stbuf(inode, NULL, &stbuf);
-	if (mask == stbuf.st_mode)
-		return 0;
-	else
+	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
 		return -EPERM;
+
+	ret = lookup_resource(ctx->wim, path, LOOKUP_FLAG_DIRECTORY_OK,
+			      &dentry, NULL, NULL);
+	if (ret)
+		return ret;
+
+	ret = inode_set_unix_data(dentry->d_inode, ctx->default_uid,
+				  ctx->default_gid, mask,
+				  ctx->wim->lookup_table, UNIX_DATA_MODE);
+	return ret ? -ENOMEM : 0;
+}
+
+static int wimfs_chown(const char *path, uid_t uid, gid_t gid)
+{
+	struct wim_dentry *dentry;
+	struct wimfs_context *ctx = wimfs_get_context();
+	int ret;
+
+	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
+		return -EPERM;
+
+	ret = lookup_resource(ctx->wim, path, LOOKUP_FLAG_DIRECTORY_OK,
+			      &dentry, NULL, NULL);
+	if (ret)
+		return ret;
+
+	ret = inode_set_unix_data(dentry->d_inode, uid, gid,
+				  inode_default_unix_mode(dentry->d_inode),
+				  ctx->wim->lookup_table,
+				  UNIX_DATA_UID | UNIX_DATA_GID);
+	return ret ? -ENOMEM : 0;
 }
 
 /* Called when the filesystem is unmounted. */
@@ -1679,26 +1745,24 @@ static int wimfs_listxattr(const char *path, char *list, size_t size)
 #endif
 
 
-/* Create a directory in the WIM.
- * @mode is currently ignored.  */
+/* Create a directory in the WIM image. */
 static int wimfs_mkdir(const char *path, mode_t mode)
 {
-	struct wim_dentry *dentry;
-	int ret;
-
-	ret = create_dentry(wimfs_get_context(), path, &dentry);
-	if (ret == 0)
-		dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
-	return ret;
+	return create_dentry(fuse_get_context(), path, mode | S_IFDIR,
+			     FILE_ATTRIBUTE_DIRECTORY, NULL);
 }
 
-/* Create a regular file in the WIM.
- * @mode is currently ignored.  */
+/* Create a regular file or alternate data stream in the WIM image. */
 static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
 	const char *stream_name;
-	struct wimfs_context *ctx = wimfs_get_context();
-	if ((ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
+	struct fuse_context *fuse_ctx = fuse_get_context();
+	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
+
+	if (!S_ISREG(mode))
+		return -EPERM;
+
+	if ((wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 	     && (stream_name = path_stream_name(path))) {
 		/* Make an alternate data stream */
 		struct wim_ads_entry *new_entry;
@@ -1708,7 +1772,7 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		wimlib_assert(*p == ':');
 		*p = '\0';
 
-		inode = wim_pathname_to_inode(ctx->wim, path);
+		inode = wim_pathname_to_inode(wimfs_ctx->wim, path);
 		if (!inode)
 			return -errno;
 		if (inode->i_attributes &
@@ -1721,14 +1785,9 @@ static int wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 			return -ENOMEM;
 		return 0;
 	} else {
-		struct wim_dentry *dentry;
-		int ret;
-
 		/* Make a normal file (not an alternate data stream) */
-		ret = create_dentry(ctx, path, &dentry);
-		if (ret == 0)
-			dentry->d_inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
-		return ret;
+		return create_dentry(fuse_ctx, path, mode | S_IFREG,
+				     FILE_ATTRIBUTE_NORMAL, NULL);
 	}
 }
 
@@ -2010,7 +2069,7 @@ static int wimfs_rename(const char *from, const char *to)
 /* Remove a directory */
 static int wimfs_rmdir(const char *path)
 {
-	struct wim_dentry *parent, *dentry;
+	struct wim_dentry *dentry;
 	WIMStruct *w = wimfs_get_WIMStruct();
 
 	dentry = get_dentry(w, path);
@@ -2033,13 +2092,10 @@ static int wimfs_setxattr(const char *path, const char *name,
 			  const char *value, size_t size, int flags)
 {
 	struct wim_ads_entry *existing_ads_entry;
-	struct wim_ads_entry *new_ads_entry;
-	struct wim_lookup_table_entry *existing_lte;
-	struct wim_lookup_table_entry *lte;
 	struct wim_inode *inode;
-	u8 value_hash[SHA1_HASH_SIZE];
 	u16 ads_idx;
 	struct wimfs_context *ctx = wimfs_get_context();
+	int ret;
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
@@ -2061,56 +2117,28 @@ static int wimfs_setxattr(const char *path, const char *name,
 		if (flags & XATTR_REPLACE)
 			return -ENOATTR;
 	}
-	new_ads_entry = inode_add_ads(inode, name);
-	if (!new_ads_entry)
-		return -ENOMEM;
 
-	sha1_buffer((const u8*)value, size, value_hash);
-
-	existing_lte = __lookup_resource(ctx->wim->lookup_table, value_hash);
-
-	if (existing_lte) {
-		lte = existing_lte;
-		lte->refcnt++;
-	} else {
-		u8 *value_copy;
-		lte = new_lookup_table_entry();
-		if (!lte)
-			return -ENOMEM;
-		value_copy = MALLOC(size);
-		if (!value_copy) {
-			FREE(lte);
-			return -ENOMEM;
-		}
-		memcpy(value_copy, value, size);
-		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
-		lte->attached_buffer              = value_copy;
-		lte->resource_entry.original_size = size;
-		lte->resource_entry.size          = size;
-		lte->resource_entry.flags         = 0;
-		copy_hash(lte->hash, value_hash);
-		lookup_table_insert(ctx->wim->lookup_table, lte);
-	}
-	new_ads_entry->lte = lte;
-	return 0;
+	ret = inode_add_ads_with_data(inode, name, (const u8*)value,
+				      size, ctx->wim->lookup_table);
+	return ret ? -ENOMEM : 0;
 }
 #endif
 
 static int wimfs_symlink(const char *to, const char *from)
 {
-	struct wimfs_context *ctx = wimfs_get_context();
+	struct fuse_context *fuse_ctx = fuse_get_context();
+	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
 	struct wim_dentry *dentry;
 	int ret;
 
-	ret = create_dentry(ctx, from, &dentry);
+	ret = create_dentry(fuse_ctx, from, S_IFLNK | 0777,
+			    FILE_ATTRIBUTE_REPARSE_POINT, &dentry);
 	if (ret == 0) {
-		dentry->d_inode->i_attributes = FILE_ATTRIBUTE_REPARSE_POINT;
 		dentry->d_inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
 		if (inode_set_symlink(dentry->d_inode, to,
-				      ctx->wim->lookup_table, NULL))
+				      wimfs_ctx->wim->lookup_table, NULL))
 		{
-			unlink_dentry(dentry);
-			free_dentry(dentry);
+			remove_dentry(dentry, wimfs_ctx->wim->lookup_table);
 			ret = -ENOMEM;
 		}
 	}
@@ -2263,8 +2291,11 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 }
 
 static struct fuse_operations wimfs_operations = {
+#if 0
 	.access      = wimfs_access,
+#endif
 	.chmod       = wimfs_chmod,
+	.chown       = wimfs_chown,
 	.destroy     = wimfs_destroy,
 #if 0
 	.fallocate   = wimfs_fallocate,
@@ -2409,7 +2440,8 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	ctx.wim = wim;
 	ctx.mount_flags = mount_flags;
 	ctx.image_inode_list = &imd->inode_list;
-
+	ctx.default_uid = getuid();
+	ctx.default_gid = getgid();
 	if (mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 		ctx.default_lookup_flags = LOOKUP_FLAG_ADS_OK;
 
@@ -2446,6 +2478,7 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 #if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 8)
 		",hard_remove"
 #endif
+		",default_permissions"
 		;
 	argv[argc++] = "-o";
 	argv[argc++] = optstring;
@@ -2458,6 +2491,8 @@ WIMLIBAPI int wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		/* Read-only mount */
 		strcat(optstring, ",ro");
 	}
+	if (mount_flags & WIMLIB_MOUNT_FLAG_ALLOW_OTHER)
+		strcat(optstring, ",allow_other");
 	argv[argc] = NULL;
 
 #ifdef ENABLE_DEBUG

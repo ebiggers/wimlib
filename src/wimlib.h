@@ -117,9 +117,14 @@
  * message being printed.
  *
  * wimlib is thread-safe as long as different ::WIMStruct's are used, except for
- * the fact that wimlib_set_print_errors() and wimlib_set_memory_allocator()
- * both apply globally, and you also must call wimlib_global_init() in the main
- * thread to avoid any race conditions with one-time allocations of memory.
+ * the following exceptions:
+ * - wimlib_set_print_errors() and wimlib_set_memory_allocator() both apply globally.
+ * - You also must call wimlib_global_init() in the main thread to avoid any
+ *   race conditions with one-time allocations of memory.
+ * - wimlib_mount_image(), while it can be used to mount multiple WIMs
+ *   concurrently in the same process, will daemonize the entire process when it
+ *   does so for the first time.  This includes changing the working directory
+ *   to the root directory.
  *
  * To open an existing WIM, use wimlib_open_wim().
  *
@@ -216,8 +221,13 @@
 #include <stdbool.h>
 #include <inttypes.h>
 
+/** Major version of the library (for example, the 1 in 1.2.5). */
 #define WIMLIB_MAJOR_VERSION 1
+
+/** Minor version of the library (for example, the 2 in 1.2.5). */
 #define WIMLIB_MINOR_VERSION 2
+
+/** Patch version of the library (for example, the 5 in 1.2.5). */
 #define WIMLIB_PATCH_VERSION 5
 
 /**
@@ -547,7 +557,9 @@ typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
  * WIMLIB_ADD_IMAGE_FLAG_*   *
  *****************************/
 
-/** Directly capture a NTFS volume rather than a generic directory */
+/** Directly capture a NTFS volume rather than a generic directory.  This flag
+ * cannot be combined with ::WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE or
+ * ::WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA.   */
 #define WIMLIB_ADD_IMAGE_FLAG_NTFS			0x00000001
 
 /** Follow symlinks; archive and dump the files they point to.  Cannot be used
@@ -561,6 +573,14 @@ typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
 
 /** Mark the image being added as the bootable image of the WIM. */
 #define WIMLIB_ADD_IMAGE_FLAG_BOOT			0x00000008
+
+/** Store the UNIX owner, group, and mode.  This is done by adding a special
+ * alternate data stream to each regular file, symbolic link, and directory to
+ * contain this information.  Please note that this flag is for convenience
+ * only; Microsoft's version of imagex.exe will not understand this special
+ * information.  This flag cannot be combined with ::WIMLIB_ADD_IMAGE_FLAG_NTFS.
+ * */
+#define WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA			0x00000010
 
 /******************************
  * WIMLIB_EXPORT_FLAG_* *
@@ -594,6 +614,10 @@ typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
 /** Read the WIM file sequentially while extracting the image. */
 #define WIMLIB_EXTRACT_FLAG_SEQUENTIAL			0x00000010
 
+/** Extract special UNIX data captured with ::WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA.
+ * Cannot be used with ::WIMLIB_EXTRACT_FLAG_NTFS. */
+#define WIMLIB_EXTRACT_FLAG_UNIX_DATA			0x00000020
+
 /******************************
  * WIMLIB_MOUNT_FLAG_*        *
  ******************************/
@@ -614,6 +638,14 @@ typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
 /** Access alternate data streams in the mounted WIM image by specifying the
  * file name, a colon, then the alternate file stream name. */
 #define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS	0x00000010
+
+/** Use UNIX file owners, groups, and modes if available in the WIM (see
+ * ::WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA). */
+#define WIMLIB_MOUNT_FLAG_UNIX_DATA			0x00000020
+
+/** Allow other users to see the mounted filesystem.  (this passes the @c
+ * allow_other option to FUSE mount) */
+#define WIMLIB_MOUNT_FLAG_ALLOW_OTHER			0x00000040
 
 /******************************
  * WIMLIB_OPEN_FLAG_*         *
@@ -1090,11 +1122,13 @@ extern int wimlib_export_image(WIMStruct *src_wim, int src_image,
  * 	invalid.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	@a target was @c NULL, or both ::WIMLIB_EXTRACT_FLAG_HARDLINK and
- * 	::WIMLIB_EXTRACT_FLAG_SYMLINK were specified in @a extract_flags, or
+ * 	::WIMLIB_EXTRACT_FLAG_SYMLINK were specified in @a extract_flags; or
  * 	both ::WIMLIB_EXTRACT_FLAG_NTFS and either
  * 	::WIMLIB_EXTRACT_FLAG_HARDLINK or ::WIMLIB_EXTRACT_FLAG_SYMLINK were
- * 	specified in @a extract_flags, or ::WIMLIB_EXTRACT_FLAG_NTFS was
- * 	specified in @a extract_flags and @a image was ::WIMLIB_ALL_IMAGES.
+ * 	specified in @a extract_flags; or ::WIMLIB_EXTRACT_FLAG_NTFS was
+ * 	specified in @a extract_flags and @a image was ::WIMLIB_ALL_IMAGES; or
+ * 	both ::WIMLIB_EXTRACT_FLAG_NTFS and ::WIMLIB_EXTRACT_FLAG_UNIX_DATA were
+ * 	specified in @a extract_flag.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_HASH
  * 	The SHA1 message digest of an extracted stream did not match the SHA1
  * 	message digest given in the WIM file.
@@ -1293,8 +1327,8 @@ extern int wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret);
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Could not allocate memory.
  * @retval ::WIMLIB_ERR_ICONV_NOT_AVAILABLE
- * 	wimlib was configured --without-libntfs-3g at compilation time, and at
- * 	runtime the iconv() set of functions did not seem to be available,
+ * 	wimlib was configured @c --without-libntfs-3g at compilation time, and
+ * 	at runtime the @c iconv() set of functions did not seem to be available,
  * 	perhaps due to missing files in the C library installation.
  *
  * If this function is not called or returns nonzero, then it will not be safe
@@ -1385,9 +1419,8 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
 /**
  * Mounts an image in a WIM file on a directory read-only or read-write.
  *
- * The calling thread will be daemonized to service the filesystem, and this
- * function will not return until the image is unmounted, unless an error occurs
- * before the filesystem is successfully mounted.
+ * Unless ::WIMLIB_MOUNT_FLAG_DEBUG is specified or an early error occurs, the
+ * process shall be daemonized.
  *
  * If the mount is read-write (::WIMLIB_MOUNT_FLAG_READWRITE specified),
  * modifications to the WIM are staged in a temporary directory.
@@ -1457,7 +1490,7 @@ extern int wimlib_join(const char **swms, unsigned num_swms,
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	@a image is shared among multiple ::WIMStruct's as a result of a call to
  * 	wimlib_export_image(), or @a image has been added with
- * 	wimlib_add_image() or wimlib_add_image_from_ntfs_volume().
+ * 	wimlib_add_image().
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
  *	The metadata resource for @a image in @a wim is invalid.
  * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
@@ -2077,9 +2110,9 @@ extern int wimlib_unmount_image(const char *dir, int unmount_flags,
  * 	@a image does not specify a single existing image in @a wim, and is not
  * 	::WIMLIB_ALL_IMAGES.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_HASH
- * 	A file that had previously been scanned for inclusion in the WIM by the
- * 	wimlib_add_image() or wimlib_add_image_from_ntfs_volume() functions was
- * 	concurrently modified, so it failed the SHA1 message digest check.
+ * 	A file that had previously been scanned for inclusion in the WIM by
+ * 	wimlib_add_image() was concurrently modified, so it failed the SHA1
+ * 	message digest check.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	@a path was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE

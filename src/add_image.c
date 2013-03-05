@@ -230,10 +230,17 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 	else
 		inode->i_ino = (u64)root_stbuf.st_ino |
 				   ((u64)root_stbuf.st_dev << ((sizeof(ino_t) * 8) & 63));
-
-	add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
 	inode->i_resolved = 1;
-
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
+		ret = inode_set_unix_data(inode, root_stbuf.st_uid,
+					  root_stbuf.st_gid,
+					  root_stbuf.st_mode,
+					  lookup_table,
+					  UNIX_DATA_ALL | UNIX_DATA_CREATE);
+		if (ret)
+			goto out;
+	}
+	add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
 	if (S_ISREG(root_stbuf.st_mode)) { /* Archiving a regular file */
 
 		struct wim_lookup_table_entry *lte;
@@ -635,8 +642,13 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
 #ifdef WITH_NTFS_3G
-		if (add_image_flags & (WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)) {
+		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE) {
 			ERROR("Cannot dereference files when capturing directly from NTFS");
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
+			ERROR("Capturing UNIX owner and mode not supported "
+			      "when capturing directly from NTFS");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 		capture_tree = build_dentry_tree_ntfs;

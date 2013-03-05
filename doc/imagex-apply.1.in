@@ -56,7 +56,8 @@ In the normal mode of extraction, the following information will \fInot\fR be
 extracted from the WIM image(s):
 
 .IP \[bu] 4
-Security descriptors (file permissions)
+Security descriptors (file permissions) except through the extensions available
+through the \fB--unix-data\fR option
 .IP \[bu]
 The alternate (named) data streams for each file
 .IP \[bu]
@@ -79,7 +80,7 @@ empty for the intended use cases.  A new NTFS filesystem can be created using
 the \fBmkntfs\fR (8) command.
 
 The NTFS extraction mode is not available if wimlib was compiled using the
---without-ntfs-3g option.
+\fB--without-ntfs-3g\fR option.
 
 Please note that the NTFS extraction mode is \fInot\fR entered if \fITARGET\fR
 is a directory, even if a NTFS filesystem is mounted on \fITARGET\fR.  You must
@@ -171,7 +172,7 @@ included in the glob (but the first part MUST be specified as \fIWIMFILE\fR as
 well).
 
 Here's an example.  The names for the split WIMs usually go something like:
-	
+
 .RS
 .PP
 .nf
@@ -214,6 +215,14 @@ extracted, and some additional informational messages.
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional split WIM parts that are part of the split WIM being
 applied.  See \fBSPLIT_WIMS\fR.
+.TP
+\fB--unix-data\fR
+This option may only be given in the normal extraction mode (not NTFS).
+By default, in the normal extraction mode, \fBimagex apply\fR will ignore both
+Windows-style security descriptors and UNIX-specific file owners, groups, and
+modes set when using \fBimagex capture\fR with the \fB--unix-data\fR flag.  By
+passing \fB--unix-data\fR to \fBimagex apply\fR instead, this causes this
+UNIX-specific data to be restored when available.
 
 .SH NOTES
 

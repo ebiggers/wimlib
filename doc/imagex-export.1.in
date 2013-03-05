@@ -92,7 +92,7 @@ included in the glob (but the first part MUST be specified as \fISRC_WIMFILE\fR 
 well).
 
 Here's an example.  The names for the split WIMs usually go something like:
-	
+
 .RS
 .PP
 .nf
@@ -113,12 +113,12 @@ imagex export mywim.swm 1 other.wim --ref="mywim*.swm"
 
 .SH NOTES
 
-Unless --rebuild is specified, aborting an \fBimagex export\fR command mid-way
-through has a small chance of corrupting the destination WIM file.  However, a
-precaution is taken against this, so it should be very unlikely.  In the event
-of an aborted \fBimagex export\fR, \fBimagex optimize\fR can be run to remove
-extra data that may have been partially appended to the physical destination WIM
-file but not yet incorporated into the structure of the WIM.
+Unless \fB--rebuild\fR is specified, aborting an \fBimagex export\fR command
+mid-way through has a small chance of corrupting the destination WIM file.
+However, a precaution is taken against this, so it should be very unlikely.  In
+the event of an aborted \fBimagex export\fR, \fBimagex optimize\fR can be run to
+remove extra data that may have been partially appended to the physical
+destination WIM file but not yet incorporated into the structure of the WIM.
 
 .SH EXAMPLES
 Export the second image of 'boot.wim' to the new WIM file 'new.wim', and

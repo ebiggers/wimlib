@@ -57,7 +57,7 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 
 	/* Check that lookup table entries for all the inode's stream exist,
 	 * except if the SHA1 message digest is all 0's, which indicates an
-	 * empty stream. 
+	 * empty stream.
 	 *
 	 * This check is skipped on split WIMs. */
 	if (w->hdr.total_parts == 1) {

@@ -3,11 +3,9 @@
 imagex-mount, imagex-mountrw, imagex-unmount \- Mount and unmount an image from a WIM archive
 
 .SH SYNOPSIS
-\fBimagex mount\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [--check]
-[--streams-interface=\fIINTERFACE\fR] [--ref="\fIGLOB\fR"]
+\fBimagex mount\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [\fIOPTION\fR]...
 .br
-\fBimagex mountrw\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [--check]
-[--streams-interface=\fIINTERFACE\fR] [--staging-dir=\fIDIR\fR]
+\fBimagex mountrw\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [\fIOPTION\fR]...
 .br
 \fBimagex unmount\fR \fIDIRECTORY\fR [--commit] [--check] [--rebuild]
 
@@ -43,7 +41,7 @@ included in the glob (but the first part MUST be specified as \fIWIMFILE\fR as
 well).
 
 Here's an example.  The names for the split WIMs usually go something like:
-	
+
 .RS
 .PP
 .nf
@@ -63,7 +61,7 @@ imagex mount mywim.swm 1 dir --ref="mywim*.swm"
 
 .SH NOTES
 
-If wimlib was configured using the --without-fuse flag, then the \fBimagex
+If wimlib was configured using the \fB--without-fuse\fR flag, then the \fBimagex
 mount\fR, \fBimagex mountrw\fR, and \fBimagex unmount\fR commands will not work.
 
 You can mount multiple images from a WIM file read-only at the same time, but
@@ -124,6 +122,24 @@ mountrw\fR.  See \fBSPLIT_WIMS\fR.
 \fB--staging-dir\fR=\fIDIR\fR
 Store temporary staging files in the directory \fIDIR\fR.  Only valid for
 \fBimagex mountrw\fR.
+.TP
+\fB--unix-data\fR
+By default, \fBimagex mount\fR and \fBimagex mountrw\fR will ignore both
+Windows-style security descriptors (which may have been set either from Windows or by
+\fBimagex capture\fR from a NTFS-volume) and UNIX-specific data (which is from using
+\fBimagex capture\fR with the \fB--unix-data\fR flag).  In this default mode,
+all files will simply be owned by the user running \fBimagex\fR and will have mode 0777.
+(Note: they will still not be accessible to other users unless you also specify
+\fB--allow-other\fR.)  If you instead provide the \fB--unix-data\fR flag, these
+default permissions will be overridden on a per-file basis with the
+UNIX-specific data when available, and in the case of \fBimagex mountrw\fR it
+will be possible to change the UNIX permissions using the standard UNIX
+tools and functions.
+.TP
+\fB--allow-other\fR
+Pass the \fBallow_other\fR option to the FUSE mount.  See \fBmount.fuse\fR (8).
+Note: to do this is a non-root user, \fBuser_allow_other\fR needs to be
+specified in /etc/fuse.conf (with the FUSE implementation on Linux, at least).
 
 .SH UNMOUNT OPTIONS
 
@@ -134,15 +150,15 @@ mount is read-only.
 .TP
 \fB--check\fR
 When writing \fIWIMFILE\fR, include an integrity table.  Has no effect if the
-mount is read-only or if --commit was not specified.
+mount is read-only or if \fB--commit\fR was not specified.
 .TP
 \fB--rebuild\fR
 Rebuild the entire WIM rather than appending any new data to the end of it.
 Rebuilding the WIM is slower, but will save a little bit of space that would
 otherwise be left as a hole in the WIM.  Even more space will be saved if the
 read-write mount resulted in streams being deleted from the WIM.  Also see
-\fBimagex optimize\fR.  Has no effect if the mount is read-only or if --commit
-was not specified.
+\fBimagex optimize\fR.  Has no effect if the mount is read-only or if
+\fB--commit\fR was not specified.
 
 .SH IMPLEMENTATION DETAILS
 

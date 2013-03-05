@@ -88,6 +88,7 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct wim_dentry *dent
 	unsigned stream_idx = 0;
 	ntfschar *stream_name = AT_UNNAMED;
 	u32 stream_name_len = 0;
+	const char *stream_name_utf8;
 	const struct wim_inode *inode = dentry->d_inode;
 	struct wim_lookup_table_entry *lte;
 
@@ -99,6 +100,15 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct wim_dentry *dent
 	lte = inode->i_lte;
 	while (1) {
 		if (stream_name_len) {
+
+			/* Skip special UNIX data entries (see documentation for
+			 * WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
+			if (stream_name_len == WIMLIB_UNIX_DATA_TAG_LEN
+			    && !memcmp(stream_name_utf8,
+				       WIMLIB_UNIX_DATA_TAG,
+				       WIMLIB_UNIX_DATA_TAG_LEN))
+				goto cont;
+
 			/* Create an empty named stream. */
 			ret = ntfs_attr_add(ni, AT_DATA, stream_name,
 					    stream_name_len, NULL, 0);
@@ -148,11 +158,13 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct wim_dentry *dent
 			 * have been extracted. */
 			progress_info->extract.completed_bytes += wim_resource_size(lte);
 		}
+	cont:
 		if (stream_idx == inode->i_num_ads) /* Has the last stream been extracted? */
 			break;
 
 		/* Get the name and lookup table entry for the next stream. */
 		stream_name = (ntfschar*)inode->i_ads_entries[stream_idx].stream_name;
+		stream_name_utf8 = inode->i_ads_entries[stream_idx].stream_name_utf8;
 		stream_name_len = inode->i_ads_entries[stream_idx].stream_name_len / 2;
 		lte = inode->i_ads_entries[stream_idx].lte;
 		stream_idx++;

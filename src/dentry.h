@@ -396,9 +396,40 @@ extern struct wim_ads_entry *inode_get_ads_entry(struct wim_inode *inode,
 
 extern struct wim_ads_entry *inode_add_ads(struct wim_inode *dentry,
 					   const char *stream_name);
+extern int inode_add_ads_with_data(struct wim_inode *inode, const char *name,
+				   const u8 *value, size_t size,
+				   struct wim_lookup_table *lookup_table);
 
 extern void inode_remove_ads(struct wim_inode *inode, u16 idx,
 			     struct wim_lookup_table *lookup_table);
+
+#define WIMLIB_UNIX_DATA_TAG "$$__wimlib_UNIX_data"
+
+#define WIMLIB_UNIX_DATA_TAG_LEN (sizeof(WIMLIB_UNIX_DATA_TAG) - 1)
+
+/* Format for special alternate data stream entries to store UNIX data for files
+ * and directories (see: WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
+struct wimlib_unix_data {
+	u16 version; /* Must be 0 */
+	u16 uid;
+	u16 gid;
+	u16 mode;
+} PACKED;
+#define NO_UNIX_DATA (-1)
+#define BAD_UNIX_DATA (-2)
+extern int inode_get_unix_data(const struct wim_inode *inode,
+			       struct wimlib_unix_data *unix_data,
+			       u16 *stream_idx_ret);
+
+#define UNIX_DATA_UID    0x1
+#define UNIX_DATA_GID    0x2
+#define UNIX_DATA_MODE   0x4
+#define UNIX_DATA_ALL    (UNIX_DATA_UID | UNIX_DATA_GID | UNIX_DATA_MODE)
+#define UNIX_DATA_CREATE 0x8
+extern int inode_set_unix_data(struct wim_inode *inode,
+			       uid_t uid, gid_t gid, mode_t mode,
+			       struct wim_lookup_table *lookup_table,
+			       int which);
 
 extern int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		       u64 offset, struct wim_dentry *dentry);

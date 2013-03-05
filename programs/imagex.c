@@ -67,16 +67,16 @@ static const char *usage_strings[] = {
 "imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                     [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
 "                     [--verbose] [--dereference] [--config=FILE]\n"
-"                     [--threads=NUM_THREADS] [--rebuild]\n",
+"                     [--threads=NUM_THREADS] [--rebuild] [--unix-data]\n",
 [APPLY] =
 "imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
-"                    [--symlink] [--verbose] [--ref=\"GLOB\"]\n",
+"                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n",
 [CAPTURE] =
 "imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                      [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
 "                      [--flags EDITION_ID] [--verbose] [--dereference]\n"
-"                      [--config=FILE] [--threads=NUM_THREADS]\n",
+"                      [--config=FILE] [--threads=NUM_THREADS] [--unix-data]\n",
 [DELETE] =
 "imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check] [--soft]\n",
 [DIR] =
@@ -95,11 +95,11 @@ static const char *usage_strings[] = {
 [MOUNT] =
 "imagex mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
 "                    [--check] [--debug] [--streams-interface=INTERFACE]\n"
-"                    [--ref=\"GLOB\"]\n",
+"                    [--ref=\"GLOB\"] [--unix-data] [--allow-other]\n",
 [MOUNTRW] =
 "imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
 "                      [--check] [--debug] [--streams-interface=INTERFACE]\n"
-"                      [--staging-dir=DIR]\n",
+"                      [--staging-dir=DIR] [--unix-data] [--allow-other]\n",
 [OPTIMIZE] =
 "imagex optimize WIMFILE [--check] [--recompress] [--compress=TYPE]\n",
 [SPLIT] =
@@ -115,11 +115,12 @@ static const struct option common_options[] = {
 };
 
 static const struct option apply_options[] = {
-	{"check",    no_argument,       NULL, 'c'},
-	{"hardlink", no_argument,       NULL, 'h'},
-	{"symlink",  no_argument,       NULL, 's'},
-	{"verbose",  no_argument,       NULL, 'v'},
-	{"ref",      required_argument, NULL, 'r'},
+	{"check",     no_argument,       NULL, 'c'},
+	{"hardlink",  no_argument,       NULL, 'h'},
+	{"symlink",   no_argument,       NULL, 's'},
+	{"verbose",   no_argument,       NULL, 'v'},
+	{"ref",       required_argument, NULL, 'r'},
+	{"unix-data", no_argument,       NULL, 'U'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_or_append_options[] = {
@@ -132,6 +133,7 @@ static const struct option capture_or_append_options[] = {
 	{"verbose",	no_argument,       NULL, 'v'},
 	{"threads",     required_argument, NULL, 't'},
 	{"rebuild",     no_argument,       NULL, 'R'},
+	{"unix-data",   no_argument,       NULL, 'U'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -172,6 +174,8 @@ static const struct option mount_options[] = {
 	{"streams-interface", required_argument, NULL, 's'},
 	{"ref",               required_argument, NULL, 'r'},
 	{"staging-dir",       required_argument, NULL, 'D'},
+	{"unix-data",         no_argument,       NULL, 'U'},
+	{"allow-other",       no_argument,       NULL, 'A'},
 	{NULL, 0, NULL, 0},
 };
 
@@ -575,6 +579,9 @@ static int imagex_apply(int argc, const char **argv)
 		case 'r':
 			swm_glob = optarg;
 			break;
+		case 'U':
+			extract_flags |= WIMLIB_EXTRACT_FLAG_UNIX_DATA;
+			break;
 		default:
 			usage(APPLY);
 			return -1;
@@ -706,6 +713,9 @@ static int imagex_capture_or_append(int argc, const char **argv)
 			break;
 		case 'R':
 			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
+			break;
+		case 'U':
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA;
 			break;
 		default:
 			usage(cmd);
@@ -1418,6 +1428,9 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 
 	for_opt(c, mount_options) {
 		switch (c) {
+		case 'A':
+			mount_flags |= WIMLIB_MOUNT_FLAG_ALLOW_OTHER;
+			break;
 		case 'c':
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			break;
@@ -1441,6 +1454,9 @@ static int imagex_mount_rw_or_ro(int argc, const char **argv)
 			break;
 		case 'D':
 			staging_dir = optarg;
+			break;
+		case 'U':
+			mount_flags |= WIMLIB_MOUNT_FLAG_UNIX_DATA;
 			break;
 		default:
 			goto mount_usage;

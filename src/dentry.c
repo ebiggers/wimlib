@@ -1022,7 +1022,6 @@ bool dentry_add_child(struct wim_dentry * restrict parent,
 	return true;
 }
 
-#ifdef WITH_FUSE
 /* Unlink a WIM dentry from the directory entry tree. */
 void unlink_dentry(struct wim_dentry *dentry)
 {
@@ -1031,10 +1030,8 @@ void unlink_dentry(struct wim_dentry *dentry)
 		return;
 	rb_erase(&dentry->rb_node, &parent->d_inode->i_children);
 }
-#endif
 
-#ifdef WITH_FUSE
-/* 
+/*
  * Returns the alternate data stream entry belonging to @inode that has the
  * stream name @stream_name.
  */
@@ -1057,9 +1054,7 @@ struct wim_ads_entry *inode_get_ads_entry(struct wim_inode *inode,
 	}
 	return NULL;
 }
-#endif
 
-#if defined(WITH_FUSE) || defined(WITH_NTFS_3G)
 /*
  * Add an alternate stream entry to a WIM inode and return a pointer to it, or
  * NULL if memory could not be allocated.
@@ -1094,9 +1089,55 @@ struct wim_ads_entry *inode_add_ads(struct wim_inode *inode, const char *stream_
 	inode->i_num_ads = num_ads;
 	return new_entry;
 }
-#endif
 
-#ifdef WITH_FUSE
+int inode_add_ads_with_data(struct wim_inode *inode, const char *name,
+			    const u8 *value, size_t size,
+			    struct wim_lookup_table *lookup_table)
+{
+	int ret = WIMLIB_ERR_NOMEM;
+	struct wim_ads_entry *new_ads_entry;
+	struct wim_lookup_table_entry *existing_lte;
+	struct wim_lookup_table_entry *lte;
+	u8 value_hash[SHA1_HASH_SIZE];
+
+	wimlib_assert(inode->i_resolved);
+	new_ads_entry = inode_add_ads(inode, name);
+	if (!new_ads_entry)
+		goto out;
+	sha1_buffer((const u8*)value, size, value_hash);
+	existing_lte = __lookup_resource(lookup_table, value_hash);
+	if (existing_lte) {
+		lte = existing_lte;
+		lte->refcnt++;
+	} else {
+		u8 *value_copy;
+		lte = new_lookup_table_entry();
+		if (!lte)
+			goto out_free_ads_entry;
+		value_copy = MALLOC(size);
+		if (!value_copy) {
+			FREE(lte);
+			goto out_free_ads_entry;
+		}
+		memcpy(value_copy, value, size);
+		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
+		lte->attached_buffer              = value_copy;
+		lte->resource_entry.original_size = size;
+		lte->resource_entry.size          = size;
+		lte->resource_entry.flags         = 0;
+		copy_hash(lte->hash, value_hash);
+		lookup_table_insert(lookup_table, lte);
+	}
+	new_ads_entry->lte = lte;
+	ret = 0;
+	goto out;
+out_free_ads_entry:
+	inode_remove_ads(inode, new_ads_entry - inode->i_ads_entries,
+			 lookup_table);
+out:
+	return ret;
+}
+
 /* Remove an alternate data stream from a WIM inode  */
 void inode_remove_ads(struct wim_inode *inode, u16 idx,
 		      struct wim_lookup_table *lookup_table)
@@ -1122,9 +1163,76 @@ void inode_remove_ads(struct wim_inode *inode, u16 idx,
 		(inode->i_num_ads - idx - 1) * sizeof(inode->i_ads_entries[0]));
 	inode->i_num_ads--;
 }
-#endif
 
+int inode_get_unix_data(const struct wim_inode *inode,
+			struct wimlib_unix_data *unix_data,
+			u16 *stream_idx_ret)
+{
+	const struct wim_ads_entry *ads_entry;
+	const struct wim_lookup_table_entry *lte;
+	size_t size;
+	int ret;
 
+	wimlib_assert(inode->i_resolved);
+
+	ads_entry = inode_get_ads_entry((struct wim_inode*)inode,
+					WIMLIB_UNIX_DATA_TAG, NULL);
+	if (!ads_entry)
+		return NO_UNIX_DATA;
+
+	if (stream_idx_ret)
+		*stream_idx_ret = ads_entry - inode->i_ads_entries;
+
+	lte = ads_entry->lte;
+	if (!lte)
+		return NO_UNIX_DATA;
+
+	size = wim_resource_size(lte);
+	if (size != sizeof(struct wimlib_unix_data))
+		return BAD_UNIX_DATA;
+
+	ret = read_full_wim_resource(lte, (u8*)unix_data, 0);
+	if (ret)
+		return ret;
+
+	if (unix_data->version != 0)
+		return BAD_UNIX_DATA;
+	return 0;
+}
+
+int inode_set_unix_data(struct wim_inode *inode,
+			uid_t uid, gid_t gid, mode_t mode,
+			struct wim_lookup_table *lookup_table,
+			int which)
+{
+	struct wimlib_unix_data unix_data;
+	int ret;
+	bool have_good_unix_data = false;
+	bool have_unix_data = false;
+	u16 stream_idx;
+
+	if (!(which & UNIX_DATA_CREATE)) {
+		ret = inode_get_unix_data(inode, &unix_data, &stream_idx);
+		if (ret == 0 || ret == BAD_UNIX_DATA || ret > 0)
+			have_unix_data = true;
+		if (ret == 0)
+			have_good_unix_data = true;
+	}
+	unix_data.version = 0;
+	if (which & UNIX_DATA_UID || !have_good_unix_data)
+		unix_data.uid = uid;
+	if (which & UNIX_DATA_GID || !have_good_unix_data)
+		unix_data.gid = gid;
+	if (which & UNIX_DATA_MODE || !have_good_unix_data)
+		unix_data.mode = mode;
+	ret = inode_add_ads_with_data(inode, WIMLIB_UNIX_DATA_TAG,
+				      (const u8*)&unix_data,
+				      sizeof(struct wimlib_unix_data),
+				      lookup_table);
+	if (ret == 0 && have_unix_data)
+		inode_remove_ads(inode, stream_idx, lookup_table);
+	return ret;
+}
 
 /*
  * Reads the alternate data stream entries of a WIM dentry.

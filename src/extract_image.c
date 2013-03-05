@@ -114,6 +114,63 @@ static int extract_regular_file_linked(struct wim_dentry *dentry,
 	return 0;
 }
 
+static int symlink_apply_unix_data(const char *link,
+				   const struct wimlib_unix_data *unix_data)
+{
+	if (lchown(link, unix_data->uid, unix_data->gid)) {
+		if (errno == EPERM) {
+			/* Ignore */
+			WARNING_WITH_ERRNO("failed to set symlink UNIX owner/group");
+		} else {
+			ERROR_WITH_ERRNO("failed to set symlink UNIX owner/group");
+			return WIMLIB_ERR_INVALID_DENTRY;
+		}
+	}
+	return 0;
+}
+
+static int fd_apply_unix_data(int fd, const struct wimlib_unix_data *unix_data)
+{
+	if (fchown(fd, unix_data->uid, unix_data->gid)) {
+		if (errno == EPERM) {
+			WARNING_WITH_ERRNO("failed to set file UNIX owner/group");
+			/* Ignore? */
+		} else {
+			ERROR_WITH_ERRNO("failed to set file UNIX owner/group");
+			return WIMLIB_ERR_INVALID_DENTRY;
+		}
+	}
+
+	if (fchmod(fd, unix_data->mode)) {
+		if (errno == EPERM) {
+			WARNING_WITH_ERRNO("failed to set UNIX file mode");
+			/* Ignore? */
+		} else {
+			ERROR_WITH_ERRNO("failed to set UNIX file mode");
+			return WIMLIB_ERR_INVALID_DENTRY;
+		}
+	}
+	return 0;
+}
+
+static int dir_apply_unix_data(const char *dir,
+			       const struct wimlib_unix_data *unix_data)
+{
+	int dfd = open(dir, O_RDONLY);
+	int ret;
+	if (dfd >= 0) {
+		ret = fd_apply_unix_data(dfd, unix_data);
+		if (close(dfd)) {
+			ERROR_WITH_ERRNO("can't close directory `%s'", dir);
+			ret = WIMLIB_ERR_MKDIR;
+		}
+	} else {
+		ERROR_WITH_ERRNO("can't open directory `%s'", dir);
+		ret = WIMLIB_ERR_MKDIR;
+	}
+	return ret;
+}
+
 static int extract_regular_file_unlinked(struct wim_dentry *dentry,
 				         struct apply_args *args,
 				         const char *output_path,
@@ -171,7 +228,7 @@ static int extract_regular_file_unlinked(struct wim_dentry *dentry,
 		/* Empty file with no lookup table entry */
 		DEBUG("Empty file `%s'.", output_path);
 		ret = 0;
-		goto out;
+		goto out_extract_unix_data;
 	}
 
 	ret = extract_wim_resource_to_fd(lte, out_fd, wim_resource_size(lte));
@@ -179,11 +236,27 @@ static int extract_regular_file_unlinked(struct wim_dentry *dentry,
 		ERROR("Failed to extract resource to `%s'", output_path);
 		goto out;
 	}
-	args->progress.extract.completed_bytes += wim_resource_size(lte);
+
+out_extract_unix_data:
+	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
+		struct wimlib_unix_data unix_data;
+		ret = inode_get_unix_data(inode, &unix_data, NULL);
+		if (ret > 0)
+			;
+		else if (ret < 0)
+			ret = 0;
+		else
+			ret = fd_apply_unix_data(out_fd, &unix_data);
+		if (ret != 0)
+			goto out;
+	}
+	if (lte)
+		args->progress.extract.completed_bytes += wim_resource_size(lte);
 out:
 	if (close(out_fd) != 0) {
 		ERROR_WITH_ERRNO("Failed to close file `%s'", output_path);
-		ret = WIMLIB_ERR_WRITE;
+		if (ret == 0)
+			ret = WIMLIB_ERR_WRITE;
 	}
 	return ret;
 }
@@ -232,20 +305,35 @@ static int extract_symlink(struct wim_dentry *dentry,
 		return WIMLIB_ERR_LINK;
 	}
 	lte = inode_unnamed_lte_resolved(dentry->d_inode);
+	wimlib_assert(lte != NULL);
+	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
+		struct wimlib_unix_data unix_data;
+		ret = inode_get_unix_data(dentry->d_inode, &unix_data, NULL);
+		if (ret > 0)
+			;
+		else if (ret < 0)
+			ret = 0;
+		else
+			ret = symlink_apply_unix_data(output_path, &unix_data);
+		if (ret != 0)
+			return ret;
+	}
 	args->progress.extract.completed_bytes += wim_resource_size(lte);
 	return 0;
 }
 
-static int extract_directory(const char *output_path, bool is_root)
+static int extract_directory(struct wim_dentry *dentry,
+			     const char *output_path, bool is_root)
 {
 	int ret;
 	struct stat stbuf;
+
 	ret = stat(output_path, &stbuf);
 	if (ret == 0) {
 		if (S_ISDIR(stbuf.st_mode)) {
 			/*if (!is_root)*/
 				/*WARNING("`%s' already exists", output_path);*/
-			return 0;
+			goto dir_exists;
 		} else {
 			ERROR("`%s' is not a directory", output_path);
 			return WIMLIB_ERR_MKDIR;
@@ -262,7 +350,20 @@ static int extract_directory(const char *output_path, bool is_root)
 				 output_path);
 		return WIMLIB_ERR_MKDIR;
 	}
-	return 0;
+dir_exists:
+	if (dentry) {
+		struct wimlib_unix_data unix_data;
+		ret = inode_get_unix_data(dentry->d_inode, &unix_data, NULL);
+		if (ret > 0)
+			;
+		else if (ret < 0)
+			ret = 0;
+		else
+			ret = dir_apply_unix_data(output_path, &unix_data);
+	} else {
+		ret = 0;
+	}
+	return ret;
 }
 
 /* Extracts a file, directory, or symbolic link from the WIM archive. */
@@ -281,7 +382,9 @@ static int apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 	if (inode_is_symlink(inode))
 		return extract_symlink(dentry, args, output_path);
 	else if (inode_is_directory(inode))
-		return extract_directory(output_path, false);
+		return extract_directory((args->extract_flags &
+					   WIMLIB_EXTRACT_FLAG_UNIX_DATA) ? dentry : NULL,
+					 output_path, false);
 	else
 		return extract_regular_file(dentry, args, output_path);
 }
@@ -702,7 +805,7 @@ static int extract_all_images(WIMStruct *w, const char *target,
 	int image;
 	const char *image_name;
 
-	ret = extract_directory(target, true);
+	ret = extract_directory(NULL, target, true);
 	if (ret != 0)
 		return ret;
 
@@ -756,6 +859,10 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w,
 		if (image == WIMLIB_ALL_IMAGES) {
 			ERROR("Can only apply a single image when applying "
 			      "directly to a NTFS volume");
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+		if (extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
+			ERROR("Cannot restore UNIX-specific data in the NTFS extraction mode");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 #else

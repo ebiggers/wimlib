@@ -209,12 +209,12 @@ do_test() {
 	tar cf ../test.tar .
 	cd ..
 
-	if ! imagex mountrw test.wim tmp.mnt; then
+	if ! imagex mountrw test.wim tmp.mnt --unix-data; then
 		error "Failed to mount WIM read-write"
 	fi
 
 	cd tmp.mnt
-	if ! tar xf ../test.tar --no-same-owner; then
+	if ! tar xf ../test.tar; then
 		error "Failed to untar archive on read-write mounted WIM"
 	fi
 	cd ..
@@ -229,7 +229,7 @@ do_test() {
 	fi
 
 	cd tmp.mnt
-	if ! tar xf ../test.tar --no-same-owner; then
+	if ! tar xf ../test.tar; then
 		error "Failed to untar archive on read-write mounted WIM"
 	fi
 	cd ..
