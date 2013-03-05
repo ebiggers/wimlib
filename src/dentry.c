@@ -371,7 +371,7 @@ void calculate_subdir_offsets(struct wim_dentry *dentry, u64 *subdir_offset_p)
 static int compare_names(const char *name_1, u16 len_1,
 			 const char *name_2, u16 len_2)
 {
-	int result = strncasecmp(name_1, name_2, min(len_1, len_2));
+	int result = strncmp(name_1, name_2, min(len_1, len_2));
 	if (result) {
 		return result;
 	} else {
