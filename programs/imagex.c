@@ -1050,7 +1050,6 @@ static int imagex_export(int argc, const char **argv)
 			ret = -1;
 			goto out;
 		}
-		compression_type = dest_ctype;
 	} else {
 		wim_is_new = true;
 		/* dest_wimfile is not an existing file, so create a new WIM. */
