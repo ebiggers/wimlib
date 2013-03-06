@@ -36,15 +36,13 @@ To do its work, \fBimagex\fR uses \fBwimlib\fR, a library which provides
 interfaces for manipulating WIM archives.  You could wimlib in your own programs
 if you wanted to.  wimlib's public interface is documented.
 
-See \fBWARNING\fR.
-
 .SH COMMANDS
 
 There is a separate manual page for each \fBimagex\fR command.
 
 .SH SUPPORTED FEATURES
 
-The following features are currently supported:
+The following general features are currently supported:
 
 .IP \[bu] 3
 Create a stand-alone WIM from a directory or NTFS volume (\fBimagex capture\fR)
@@ -80,53 +78,66 @@ WIM integrity table is supported (\fB--check\fR option to many commands)
 .IP \[bu]
 WIM XML data (parsed and written using \fBlibxml\fR(3))
 
-.SH UNSUPPORTED FEATURES
-
-As of version 1.0.0, wimlib supports capturing and applying WIMs directly from
-NTFS and has much improved support for hard links and symbolic links.  In
-addition, you may now apply split WIMs and mount them read-only.  I don't think
-there are many other features that would be worth it to implement.  Besides
-porting the library to Windows (which I'm not really interested in), the main
-thing that could use improvement (in my opinion) is that the LZX compression
-ratio still isn't quite as good as Microsoft's version.  Furthermore, if
-Microsoft updates the WIM format, I'd need to support it, but it looks like the
-format for Windows 8 is the same as that of Windows 7.
-
 .SH DIFFERENCES FROM MICROSOFT IMAGEX
 
 While similar to Microsoft's "imagex.exe" program, this program is designed for
 UNIX-based systems and by the nature of the platform cannot be exactly the same
-as Microsoft's version.
+as Microsoft's version.  In addition, I have added additional useful features
+when appropriate.
 
-In particular, because Microsoft designed the WIM file format to accomodate
-Windows-specific and NTFS-specific features, we must have two separate image
-capture and application modes (although the \fBimagex\fR subcommands for the
-modes are the same): one for general image capture and application, and one for
-the capture or application of an image specifically from/to an NTFS volume.
+.IP \[bu] 4
+Because Microsoft designed the WIM file format to accomodate Windows-specific
+and NTFS-specific features, \fBimagex\fR must have two separate image capture
+and application modes (although the \fBimagex\fR subcommands for the modes are
+the same): one for general image capture and application, and one for the
+capture or application of an image specifically from/to an NTFS volume.
 
-Some features, such as the ability to keep files hard-linked across WIM images
-when they are extracted from a WIM, are not available in Microsoft's version of
-imagex.  Also, this version of \fBimagex\fR lets you mount an image from a split
-WIM read-only, while Microsoft's version does not.
-
+.IP \[bu]
 Microsoft's version has some weird limitations, like it won't let you extract a
 WIM on a shared folder, and it requires some commands to be run only from
 Windows PE and not from regular Windows.  This version does not have these
 unusual limitations, although it won't actually run on Windows anyway.
 
-There are bugs in Microsoft's WIM library and I obviously have not included
-these bugs in my version; however it's to be expected that despite that fact, my
-version has more bugs because it's been less widely tested and used.
+.IP \[bu]
+There are bugs in Microsoft's WIM library and I obviously have not included the
+same bugs in wimlib, although in some cases I have had to work around some
+bugs for compatibility purposes.
 
-Obviously, this version of imagex is free software but Microsoft's version is
-not.
+.IP \[bu]
+wimlib's \fBimagex\fR offers the extra commands \fBimagex optimize\fR and
+\fBimagex join\fR to easily remove holes in a WIM or join the parts of a split
+WIM, respectively.
+
+.IP \[bu]
+wimlib's \fBimagex apply\fR supports keeping files hard-linked or symlinked
+across WIM images when extracted from a WIM.  So you can, for example, extract
+different versions of Windows from an install.wim without using much extra space.
+
+.IP \[bu]
+wimlib's \fBimagex capture\fR supports combining multiple separate directories
+and files together in a configurable way to create a WIM image.
+
+.IP \[bu]
+wimlib's XPRESS compressor is better than Microsoft's.
+
+.IP \[bu]
+wimlib supports multithreaded compression, which can make it much faster to
+create compressed WIM files.
+
+.IP \[bu]
+wimlib's \fBimagex capture\fR supports a special mode where UNIX file modes,
+owners, and groups are stored.
+
+.IP \[bu]
+wimlib's \fBimagex mount\fR and \fBimagex mountrw\fR are much faster than
+Microsoft's versions for some reason.  I don't know what they have their program
+do that takes so long to simply set up a mountpoint.
 
 .SH WARNING
 
 Note: \fBwimlib\fR and \fBimagex\fR are experimental.  Use Microsoft's
-imagex.exe if you have to make sure your WIM files are made "correctly".  Not
-all features listed under \fBSUPPORTED FEATURES\fR have been thoroughly tested.
-Feel free to submit a bug report if you find a bug.
+imagex.exe if you have to make sure your WIM files are made "correctly".  Feel
+free to submit a bug report if you find a bug.
 
 Some parts of the WIM file format are poorly documented or even completely
 undocumented, so I've just had to do the best I can to read and write WIMs in a
@@ -150,4 +161,3 @@ Report bugs to ebiggers3@gmail.com.
 .BR imagex-optimize (1),
 .BR imagex-split (1),
 .BR imagex-unmount (1),
-
