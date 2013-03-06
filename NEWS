@@ -1,5 +1,8 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.2.7:
+	--source-list option added to `imagex capture' and `imagex append'.
+
 Version 1.2.6:
 	Storing UNIX file owners, groups, and modes in WIM images is now
 	possible using `imagex capture' with the --unix-data flag.
