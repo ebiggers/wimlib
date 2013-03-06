@@ -9,7 +9,7 @@
  */
 
 /*
- * Copyright (C) 2012 Eric Biggers
+ * Copyright (C) 2012, 2013 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -414,6 +414,11 @@ union wimlib_progress_info {
 		/** True iff @a cur_path is being excluded from the image
 		 * capture due to the capture configuration file. */
 		bool excluded;
+
+		/** Target path in the WIM.  Only valid on messages
+		 * ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN and
+		 * ::WIMLIB_PROGRESS_MSG_SCAN_END. */
+		const char *wim_target_path;
 	} scan;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
@@ -551,6 +556,22 @@ union wimlib_progress_info {
  */
 typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
 				      const union wimlib_progress_info *info);
+
+/** An array of these structures is passed to wimlib_add_image_multisource() to
+ * specify the sources from which to create a WIM image. */
+struct wimlib_capture_source {
+	/** Absolute or relative path to a file or directory on the external
+	 * filesystem to be included in the WIM image. */
+	char *fs_source_path;
+
+	/** Destination path in the WIM image.  Leading and trailing slashes are
+	 * ignored.  The empty string or @c NULL means the root directory of the
+	 * WIM image. */
+	char *wim_target_path;
+
+	/** Reserved; set to 0. */
+	long reserved;
+};
 
 
 /*****************************
@@ -865,6 +886,21 @@ extern int wimlib_add_image(WIMStruct *wim, const char *source,
 			    const char *name, const char *config,
 			    size_t config_len, int add_image_flags,
 			    wimlib_progress_func_t progress_func);
+
+/** This function is equivalent to wimlib_add_image() except it allows for
+ * multiple sources to be combined into a single WIM image.  This is done by
+ * specifying the @a sources and @a num_sources parameters instead of the @a
+ * source parameter.  The rest of the parameters are the same as
+ * wimlib_add_image().  See the documentation for <b>imagex capture</b> for full
+ * details on how this mode works. */
+extern int wimlib_add_image_multisource(WIMStruct *w,
+					struct wimlib_capture_source *sources,
+					size_t num_sources,
+					const char *name,
+					const char *config_str,
+					size_t config_len,
+					int add_image_flags,
+					wimlib_progress_func_t progress_func);
 
 /**
  * Creates a ::WIMStruct for a new WIM file.
@@ -1414,7 +1450,7 @@ extern bool wimlib_image_name_in_use(const WIMStruct *wim, const char *name);
  * Note: wimlib_export_image() can provide similar functionality to
  * wimlib_join(), since it is possible to export all images from a split WIM.
  */
-extern int wimlib_join(const char **swms, unsigned num_swms,
+extern int wimlib_join(const char * const *swms, unsigned num_swms,
 		       const char *output_path, int swm_open_flags,
 		       int wim_write_flags,
 		       wimlib_progress_func_t progress_func);

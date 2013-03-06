@@ -160,7 +160,7 @@ static int cmp_swms_by_part_number(const void *swm1, const void *swm2)
 /*
  * Join a set of split WIMs into a stand-alone WIM.
  */
-WIMLIBAPI int wimlib_join(const char **swm_names, unsigned num_swms,
+WIMLIBAPI int wimlib_join(const char * const *swm_names, unsigned num_swms,
 			  const char *output_path, int swm_open_flags,
 			  int wim_write_flags,
 			  wimlib_progress_func_t progress_func)

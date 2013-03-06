@@ -28,15 +28,15 @@
 #include "xml.h"
 #include <string.h>
 #include <fnmatch.h>
+#include <stdlib.h>
 #include <ctype.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <errno.h>
 #include <unistd.h>
 
-/** Private flag: Used to mark that we currently adding the root directory of
- * the WIM image. */
-#define WIMLIB_ADD_IMAGE_FLAG_ROOT 0x80000000
+#define WIMLIB_ADD_IMAGE_FLAG_ROOT	0x80000000
+#define WIMLIB_ADD_IMAGE_FLAG_SOURCE    0x40000000
 
 /*
  * Adds the dentry tree and security data for a new image to the image metadata
@@ -136,7 +136,6 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 	int ret = 0;
 	int (*stat_fn)(const char *restrict, struct stat *restrict);
 	struct wim_dentry *root;
-	const char *filename;
 	struct wim_inode *inode;
 
 	if (exclude_path(root_disk_path, config, true)) {
@@ -199,12 +198,7 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 		return WIMLIB_ERR_SPECIAL_FILE;
 	}
 
-	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT)
-		filename = "";
-	else
-		filename = path_basename(root_disk_path);
-
-	root = new_dentry_with_timeless_inode(filename);
+	root = new_dentry_with_timeless_inode(path_basename(root_disk_path));
 	if (!root) {
 		if (errno == EILSEQ)
 			return WIMLIB_ERR_INVALID_UTF8_STRING;
@@ -240,7 +234,7 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 		if (ret)
 			goto out;
 	}
-	add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
+	add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
 	if (S_ISREG(root_stbuf.st_mode)) { /* Archiving a regular file */
 
 		struct wim_lookup_table_entry *lte;
@@ -615,10 +609,240 @@ bool exclude_path(const char *path, const struct capture_config *config,
 
 }
 
-WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
-			       const char *name, const char *config_str,
-			       size_t config_len, int add_image_flags,
-			       wimlib_progress_func_t progress_func)
+/* Strip leading and trailing forward slashes from a string.  Modifies it in
+ * place and returns the stripped string. */
+static const char *canonicalize_target_path(char *target_path)
+{
+	char *p;
+	if (target_path == NULL)
+		target_path = "";
+	for (;;) {
+		if (*target_path == '\0')
+			return target_path;
+		else if (*target_path == '/')
+			target_path++;
+		else
+			break;
+	}
+
+	p = target_path + strlen(target_path) - 1;
+	while (*p == '/')
+		*p-- = '\0';
+	return target_path;
+}
+
+/* Strip leading and trailing slashes from the target paths */
+static void canonicalize_targets(struct wimlib_capture_source *sources,
+				 size_t num_sources)
+{
+	while (num_sources--) {
+		DEBUG("Canonicalizing { source: \"%s\", target=\"%s\"}",
+		      sources->fs_source_path,
+		      sources->wim_target_path);
+		sources->wim_target_path =
+			(char*)canonicalize_target_path(sources->wim_target_path);
+		DEBUG("\"%s\"", sources->wim_target_path);
+		sources++;
+	}
+}
+
+static int capture_source_cmp(const void *p1, const void *p2)
+{
+	const struct wimlib_capture_source *s1, *s2;
+
+	s1 = p1;
+	s2 = p2;
+	return strcmp(s1->wim_target_path, s2->wim_target_path);
+}
+
+/* Sorts the capture sources lexicographically by target path.  This occurs
+ * after leading and trailing forward slashes are stripped.
+ *
+ * One purpose of this is to make sure that target paths that are inside other
+ * target paths are extracted after the containing target paths. */
+static void sort_sources(struct wimlib_capture_source *sources,
+			 size_t num_sources)
+{
+	qsort(sources, num_sources, sizeof(sources[0]), capture_source_cmp);
+}
+
+static int check_sorted_sources(struct wimlib_capture_source *sources,
+				size_t num_sources, int add_image_flags)
+{
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
+		if (num_sources != 1) {
+			ERROR("Must specify exactly 1 capture source "
+			      "(the NTFS volume) in NTFS mode!");
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+		if (sources[0].wim_target_path[0] != '\0') {
+			ERROR("In NTFS capture mode the target path inside "
+			      "the image must be the root directory!");
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+	} else if (num_sources != 0) {
+		/* This code is disabled because the current code
+		 * unconditionally attempts to do overlays.  So, duplicate
+		 * target paths are OK. */
+	#if 0
+		if (num_sources > 1 && sources[0].wim_target_path[0] == '\0') {
+			ERROR("Cannot specify root target when using multiple "
+			      "capture sources!");
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+		for (size_t i = 0; i < num_sources - 1; i++) {
+			size_t len = strlen(sources[i].wim_target_path);
+			size_t j = i + 1;
+			const char *target1 = sources[i].wim_target_path;
+			do {
+				const char *target2 = sources[j].wim_target_path;
+				DEBUG("target1=%s, target2=%s",
+				      target1,target2);
+				if (strncmp(target1, target2, len) ||
+				    target2[len] > '/')
+					break;
+				if (target2[len] == '/') {
+					ERROR("Invalid target `%s': is a prefix of `%s'",
+					      target1, target2);
+					return WIMLIB_ERR_INVALID_PARAM;
+				}
+				if (target2[len] == '\0') {
+					ERROR("Invalid target `%s': is a duplicate of `%s'",
+					      target1, target2);
+					return WIMLIB_ERR_INVALID_PARAM;
+				}
+			} while (++j != num_sources);
+		}
+	#endif
+	}
+	return 0;
+
+}
+
+/* Creates a new directory to place in the WIM image.  This is to create parent
+ * directories that are not part of any target as needed.  */
+static struct wim_dentry *
+new_filler_directory(const char *name)
+{
+	struct wim_dentry *dentry;
+	DEBUG("Creating filler directory \"%s\"", name);
+	dentry = new_dentry_with_inode(name);
+	if (dentry) {
+		dentry->d_inode->i_ino = 0;
+		dentry->d_inode->i_resolved = 1;
+		dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
+	}
+	return dentry;
+}
+
+/* Transfers the children of @branch to @target.  It is an error if @target is
+ * not a directory or if both @branch and @target contain a child dentry with
+ * the same name. */
+static int do_overlay(struct wim_dentry *target,
+		      struct wim_dentry *branch)
+{
+	struct rb_root *rb_root;
+
+	if (!dentry_is_directory(target)) {
+		ERROR("Cannot overlay directory `%s' over non-directory",
+		      branch->file_name_utf8);
+		/* XXX Use a different error code */
+		return WIMLIB_ERR_INVALID_DENTRY;
+	}
+
+	rb_root = &branch->d_inode->i_children;
+	while (rb_root->rb_node) { /* While @branch has children... */
+		struct wim_dentry *child;
+
+		child = container_of(rb_root->rb_node, struct wim_dentry, rb_node);
+		unlink_dentry(child);
+		if (!dentry_add_child(target, child)) {
+			dentry_add_child(branch, child);
+			ERROR("Overlay error: file `%s' already exists as child of `%s'",
+			      child->file_name_utf8, target->file_name_utf8);
+			return WIMLIB_ERR_INVALID_DENTRY;
+		}
+	}
+	return 0;
+
+}
+
+/* Attach or overlay a branch onto the WIM image.
+ *
+ * @root_p:
+ * 	Pointer to the root of the WIM image, or pointer to NULL if it has not
+ * 	been created yet.
+ * @branch
+ * 	Branch to add.
+ * @target_path:
+ * 	Path in the WIM image to add the branch.
+ */
+static int attach_branch(struct wim_dentry **root_p,
+			 struct wim_dentry *branch,
+			 char *target_path)
+{
+	char *slash;
+	struct wim_dentry *dentry, *parent, *target;
+
+	if (*target_path == '\0') {
+		/* Target: root directory */
+		if (*root_p) {
+			/* Overlay on existing root */
+			return do_overlay(*root_p, branch);
+		} else  {
+			/* Set as root */
+			*root_p = branch;
+			return 0;
+		}
+	}
+
+	/* Adding a non-root branch.  Create root if it hasn't been created
+	 * already. */
+	if (!*root_p) {
+		*root_p = new_filler_directory("");
+		if (!*root_p)
+			return WIMLIB_ERR_NOMEM;
+	}
+
+	/* Walk the path to the branch, creating filler directories as needed.
+	 * */
+	parent = *root_p;
+	while ((slash = strchr(target_path, '/'))) {
+		*slash = '\0';
+		dentry = get_dentry_child_with_name(parent, target_path);
+		if (!dentry) {
+			dentry = new_filler_directory(target_path);
+			if (!dentry)
+				return WIMLIB_ERR_NOMEM;
+			dentry_add_child(parent, dentry);
+		}
+		parent = dentry;
+		target_path = slash;
+		do {
+			++target_path;
+			wimlib_assert(*target_path != '\0');
+		} while (*target_path == '/');
+	}
+
+	/* If the target path already existed, overlay the branch onto it.
+	 * Otherwise, set the branch as the target path. */
+	target = get_dentry_child_with_name(parent, branch->file_name_utf8);
+	if (target) {
+		return do_overlay(target, branch);
+	} else {
+		dentry_add_child(parent, branch);
+		return 0;
+	}
+}
+
+WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
+					   struct wimlib_capture_source *sources,
+					   size_t num_sources,
+					   const char *name,
+					   const char *config_str,
+					   size_t config_len,
+					   int add_image_flags,
+					   wimlib_progress_func_t progress_func)
 {
 	int (*capture_tree)(struct wim_dentry **, const char *,
 			    struct wim_lookup_table *,
@@ -626,7 +850,6 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 			    const struct capture_config *,
 			    int, wimlib_progress_func_t, void *);
 	void *extra_arg;
-
 	struct wim_dentry *root_dentry = NULL;
 	struct wim_security_data *sd;
 	struct capture_config config;
@@ -656,14 +879,8 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 		extra_arg = NULL;
 	}
 
-	DEBUG("Adding dentry tree from directory or NTFS volume `%s'.", source);
-
 	if (!name || !*name) {
 		ERROR("Must specify a non-empty string for the image name");
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-	if (!source || !*source) {
-		ERROR("Must specify the name of a directory or NTFS volume");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
@@ -678,15 +895,12 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 	}
 
-	DEBUG("Initializing capture configuration");
 	if (!config_str) {
 		DEBUG("Using default capture configuration");
 		config_str = default_config;
 		config_len = strlen(default_config);
 	}
-	ret = init_capture_config(config_str, config_len, source, &config);
-	if (ret != 0)
-		return ret;
+	memset(&config, 0, sizeof(struct capture_config));
 
 	DEBUG("Allocating security data");
 
@@ -698,27 +912,73 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 	sd->total_length = 8;
 	sd->refcnt = 1;
 
-	if (progress_func) {
-		union wimlib_progress_info progress;
-		progress.scan.source = source;
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &progress);
-	}
-
-	DEBUG("Building dentry tree.");
-	ret = (*capture_tree)(&root_dentry, source, w->lookup_table, sd,
-			      &config, add_image_flags | WIMLIB_ADD_IMAGE_FLAG_ROOT,
-			      progress_func, extra_arg);
-	destroy_capture_config(&config);
-
-	if (ret != 0) {
-		ERROR("Failed to build dentry tree for `%s'", source);
+	DEBUG("Using %zu capture sources", num_sources);
+	canonicalize_targets(sources, num_sources);
+	sort_sources(sources, num_sources);
+	ret = check_sorted_sources(sources, num_sources, add_image_flags);
+	if (ret) {
+		ret = WIMLIB_ERR_INVALID_PARAM;
 		goto out_free_security_data;
 	}
 
-	if (progress_func) {
-		union wimlib_progress_info progress;
-		progress.scan.source = source;
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &progress);
+	DEBUG("Building dentry tree.");
+	if (num_sources == 0) {
+		root_dentry = new_filler_directory("");
+		if (!root_dentry)
+			goto out_free_security_data;
+	} else {
+		size_t i = 0;
+		struct wim_dentry *branch;
+		int flags;
+		do {
+			DEBUG("Building dentry tree for source %zu of %zu "
+			      "(\"%s\" => \"%s\")", i + 1, num_sources,
+			      sources[i].fs_source_path,
+			      sources[i].wim_target_path);
+			union wimlib_progress_info progress;
+			if (progress_func) {
+				memset(&progress, 0, sizeof(progress));
+				progress.scan.source = sources[i].fs_source_path;
+				progress.scan.wim_target_path = sources[i].wim_target_path;
+				progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &progress);
+			}
+			ret = init_capture_config(config_str, config_len,
+						  sources[i].fs_source_path,
+						  &config);
+			if (ret)
+				goto out_free_dentry_tree;
+			flags = add_image_flags | WIMLIB_ADD_IMAGE_FLAG_SOURCE;
+			if (!*sources[i].wim_target_path)
+				flags |= WIMLIB_ADD_IMAGE_FLAG_ROOT;
+			ret = (*capture_tree)(&branch, sources[i].fs_source_path,
+					      w->lookup_table, sd,
+					      &config,
+					      flags,
+					      progress_func, extra_arg);
+			if (ret) {
+				ERROR("Failed to build dentry tree for `%s'",
+				      sources[i].fs_source_path);
+				goto out_free_dentry_tree;
+			}
+			if (branch) {
+				ret = set_dentry_name(branch,
+						      path_basename(sources[i].wim_target_path));
+				if (ret) {
+					free_dentry_tree(branch, w->lookup_table);
+					goto out_free_dentry_tree;
+				}
+
+				ret = attach_branch(&root_dentry, branch,
+						    sources[i].wim_target_path);
+				if (ret) {
+					free_dentry_tree(branch, w->lookup_table);
+					goto out_free_dentry_tree;
+				}
+			}
+			destroy_capture_config(&config);
+			if (progress_func)
+				progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &progress);
+		} while (++i != num_sources);
 	}
 
 	DEBUG("Calculating full paths of dentries.");
@@ -745,7 +1005,8 @@ WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
 
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wimlib_set_boot_idx(w, w->hdr.image_count);
-	return 0;
+	ret = 0;
+	goto out;
 out_destroy_imd:
 	destroy_image_metadata(&w->image_metadata[w->hdr.image_count - 1],
 			       w->lookup_table);
@@ -757,5 +1018,28 @@ out_free_security_data:
 	free_security_data(sd);
 out_destroy_config:
 	destroy_capture_config(&config);
+out:
+	return ret;
+}
+
+WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
+			       const char *name, const char *config_str,
+			       size_t config_len, int add_image_flags,
+			       wimlib_progress_func_t progress_func)
+{
+	if (!source || !*source)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	char *fs_source_path = STRDUP(source);
+	int ret;
+	struct wimlib_capture_source capture_src = {
+		.fs_source_path = fs_source_path,
+		.wim_target_path = NULL,
+		.reserved = 0,
+	};
+	ret = wimlib_add_image_multisource(w, &capture_src, 1, name,
+					   config_str, config_len,
+					   add_image_flags, progress_func);
+	FREE(fs_source_path);
 	return ret;
 }

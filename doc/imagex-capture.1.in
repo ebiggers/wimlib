@@ -23,8 +23,11 @@ in the entire WIM, regardless of how many images the file appears in.
 
 \fISOURCE\fR specifies the location of the files to create the new WIM image
 from.  If \fISOURCE\fR is a directory, the WIM image is captured from that
-directory.  If \fISOURCE\fR is a regular file or block device, it is interpreted
-as a NTFS volume from which a WIM image is to be captured.
+directory.  Alternatively, \fISOURCE\fR is a regular file or block device, it is
+interpreted as a NTFS volume from which a WIM image is to be captured.  Still
+alternatively, if the \fB--source-list\fR option is given, \fISOURCE\fR is
+interpreted as a file that itself provides a list of files and directories to
+include in the new WIM image.
 
 \fIIMAGE_NAME\fR and \fIDESCRIPTION\fR specify the name and description of the
 new image.  If \fIIMAGE_NAME\fR is not given, it is taken to be the same as the
@@ -95,6 +98,13 @@ File attribute flags.
 .IP \[bu]
 All names of all files, including names in the Win32 namespace, DOS namespace,
 Win32+DOS namespace, and POSIX namespace.  This includes hard links.
+
+.SH SOURCE LIST MODE
+
+Yet another capture mode is entered when the \fB--source-list\fR option is
+given.  It is essentially an extension of the \fBNORMAL MODE\fR that allows
+multiple files or directories to be incorporated into a WIM image in a single
+command.  See the documentation for \fB--source-list\fR below.
 
 .SH OPTIONS
 .TP 6
@@ -196,12 +206,57 @@ directories.  This is done by adding a special alternate data stream to each
 directory entry that contains this information.  Please note that this flag is
 for convenience only, in case you want to use \fBimagex\fR to archive files on
 UNIX.  Microsoft's software will not understand this special information.
+.TP
+\fB--source-list\fR
+\fBimagex capture\fR and \fBimagex append\fR, as of wimlib 1.2.7, support a new
+option to create a WIM image from multiple files or directories.  When
+\fB--source-list\fR is specified, the \fISOURCE\fR argument specifies the name
+of a text file, each line of which is either 1 or 2 whitespace separated
+filenames.  The first filename, the source, specifies the path to a file or
+directory to capture into the WIM image.  It may be either absolute or relative
+to the current working directory.  The second filename, if provided, is the
+target and specifies the path  in the WIM image that this file or directory will
+be saved as.  Leading and trailing slashes are ignored.  "/" indicates that
+the directory is to become the root of the WIM image.  If not specified, the
+target string defaults to the same as the source string.
+
+An example is as follows:
+
+.RS
+.RS
+.PP
+.nf
+# Make the WIM image from the 'winpe' directory
+winpe	/
+
+# Send the 'overlay' directory to '/overlay' in the WIM image
+overlay	/overlay
+
+# Overlay a separate directory directly on the root of the WIM image.
+# This is only legal if there are no conflicting files.
+/data/stuff	/
+.RE
+
+Subdirectories in the WIM are created as needed.  Multiple source directories
+may share the same target, which implies an overlay; however, an error is issued
+if the same file appears in different overlays.
+
+Filenames containing whitespace may be quoted with either single quotes or
+double quotes.  Quotes may not be escaped.
+
+Empty lines, and lines beginning with '#' followed by optional whitespace, are
+ignored.
+
+As a special case, if \fISOURCE\fR is "-" the source list is read from standard
+input rather than an external file.
+
+The NTFS capture mode cannot be used with \fB--source-list\fR.
 
 .SH NOTES
 
 \fBimage append\fR does not support appending an image to a split WIM.
 
-The two different capture modes only specify the data that is captured and don't
+The different capture modes only specify the data that is captured and don't
 specify a special WIM format.  A WIM file can contain images captured using
 different modes.  However, all images in a WIM must have the same compression
 type, and \fBimagex\fR always enforces this.
@@ -227,6 +282,12 @@ again.  In the future, it may be possible to introduce the ability to capture an
 image with reading each file only one time, although this mode would have some
 limitations--- for example, a stream might be compressed only to be thrown away
 as a duplicate once it's been checksummed.
+
+\fISOURCE\fR may be a symbolic link to a directory rather than a directory
+itself.  However, additional symbolic links in subdirectories, or in additional
+source directories not destined for the WIM image root with
+(\fB--source-list\fR), are not dereferenced unless \fB--dereference\fR is
+specified.
 
 .SH EXAMPLES
 Create a new WIM 'mywim.wim' from the directory 'somedir', using LZX compression and

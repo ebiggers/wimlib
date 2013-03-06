@@ -26,6 +26,7 @@
 
 #include "wimlib.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <getopt.h>
 #include <glob.h>
@@ -37,6 +38,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#ifdef HAVE_ALLOCA_H
+#include <alloca.h>
+#endif
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
 
@@ -67,7 +72,8 @@ static const char *usage_strings[] = {
 "imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                     [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
 "                     [--verbose] [--dereference] [--config=FILE]\n"
-"                     [--threads=NUM_THREADS] [--rebuild] [--unix-data]\n",
+"                     [--threads=NUM_THREADS] [--rebuild] [--unix-data]\n"
+"                     [--source-list]\n",
 [APPLY] =
 "imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
@@ -76,7 +82,8 @@ static const char *usage_strings[] = {
 "imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                      [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
 "                      [--flags EDITION_ID] [--verbose] [--dereference]\n"
-"                      [--config=FILE] [--threads=NUM_THREADS] [--unix-data]\n",
+"                      [--config=FILE] [--threads=NUM_THREADS] [--unix-data]\n"
+"                      [--source-list]\n",
 [DELETE] =
 "imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check] [--soft]\n",
 [DIR] =
@@ -134,6 +141,7 @@ static const struct option capture_or_append_options[] = {
 	{"threads",     required_argument, NULL, 't'},
 	{"rebuild",     no_argument,       NULL, 'R'},
 	{"unix-data",   no_argument,       NULL, 'U'},
+	{"source-list", no_argument,       NULL, 'S'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -295,23 +303,177 @@ static const char *default_capture_config =
 "*.cab\n"
 "\\WINDOWS\\inf\\*.pnf\n";
 
+static char *stdin_get_contents(size_t *len_ret)
+{
+	char *buf = NULL;
+	size_t newlen = 1024;
+	size_t pos = 0;
+	size_t inc = 1024;
+	for (;;) {
+		char *p = realloc(buf, newlen);
+		size_t bytes_read, bytes_to_read;
+		if (!p) {
+			imagex_error("out of memory while reading stdin");
+			break;
+		}
+		buf = p;
+		bytes_to_read = newlen - pos;
+		bytes_read = fread(&buf[pos], 1, bytes_to_read, stdin);
+		pos += bytes_read;
+		if (bytes_read != bytes_to_read) {
+			if (feof(stdin)) {
+				*len_ret = pos;
+				return buf;
+			} else {
+				imagex_error_with_errno("error reading stdin");
+				break;
+			}
+		}
+		newlen += inc;
+		inc *= 3;
+		inc /= 2;
+	}
+	free(buf);
+	return NULL;
+}
+
+enum {
+	PARSE_FILENAME_SUCCESS = 0,
+	PARSE_FILENAME_FAILURE = 1,
+	PARSE_FILENAME_NONE = 2,
+};
+
+static int parse_filename(char **fn_ret, char **line_p, size_t *len_p)
+{
+	size_t len = *len_p;
+	char *line = *line_p;
+	char *fn;
+	int ret;
+	char quote_char;
+
+	/* Skip leading whitespace */
+	for (;;) {
+		if (len == 0)
+			return PARSE_FILENAME_NONE;
+		if (!isspace(*line) && *line != '\0')
+			break;
+		line++;
+		len--;
+	}
+	quote_char = *line;
+	if (quote_char == '"' || quote_char == '\'') {
+		/* Quoted filename */
+		line++;
+		len--;
+		fn = line;
+		line = memchr(line, quote_char, len);
+		if (line) {
+			*line = '\0';
+			len -= line - fn;
+			ret = PARSE_FILENAME_SUCCESS;
+		} else {
+			imagex_error("Missing closing quote: %s", fn - 1);
+			return PARSE_FILENAME_FAILURE;
+		}
+	} else {
+		/* Unquoted filename.  Go until whitespace.  Line is terminated
+		 * by '\0', so no need to check 'len'. */
+		fn = line;
+		do {
+			line++;
+			len--;
+		} while (!isspace(*line) && *line != '\0');
+		*line = '\0';
+		ret = PARSE_FILENAME_SUCCESS;
+	}
+	*len_p = len;
+	*line_p = line;
+	*fn_ret = fn;
+	return ret;
+}
+
+static bool
+parse_source_list_line(char *line, size_t len,
+		       struct wimlib_capture_source *source)
+{
+	int ret;
+	ret = parse_filename(&source->fs_source_path, &line, &len);
+	if (ret != PARSE_FILENAME_SUCCESS)
+		return false;
+	ret = parse_filename(&source->wim_target_path, &line, &len);
+	if (ret == PARSE_FILENAME_NONE)
+		source->wim_target_path = source->fs_source_path;
+	return ret != PARSE_FILENAME_FAILURE;
+}
+
+static bool is_comment_line(const char *line, size_t len)
+{
+	for (;;) {
+		if (*line == '#')
+			return true;
+		if (!isspace(*line) && *line != '\0')
+			return false;
+		++line;
+		--len;
+		if (len == 0)
+			return true;
+	}
+}
+
+static struct wimlib_capture_source *
+parse_source_list(char *source_list_contents, size_t source_list_nbytes,
+		  size_t *nsources_ret)
+{
+	size_t nlines;
+	char *p;
+	struct wimlib_capture_source *sources;
+	size_t i, j;
+
+	nlines = 0;
+	for (i = 0; i < source_list_nbytes; i++)
+		if (source_list_contents[i] == '\n')
+			nlines++;
+	sources = calloc(nlines, sizeof(*sources));
+	if (!sources) {
+		imagex_error("out of memory");
+		return NULL;
+	}
+	p = source_list_contents;
+	j = 0;
+	for (i = 0; i < nlines; i++) {
+		char *endp = strchr(p, '\n');
+		size_t len = endp - p + 1;
+		*endp = '\0';
+		if (!is_comment_line(p, len)) {
+			if (!parse_source_list_line(p, len, &sources[j++])) {
+				free(sources);
+				return NULL;
+			}
+		}
+		p = endp + 1;
+
+	}
+	*nsources_ret = j;
+	return sources;
+}
+
 static char *file_get_contents(const char *filename, size_t *len_ret)
 {
 	struct stat stbuf;
-	char *buf;
+	char *buf = NULL;
 	size_t len;
 	FILE *fp;
 
 	if (stat(filename, &stbuf) != 0) {
 		imagex_error_with_errno("Failed to stat the file `%s'", filename);
-		return NULL;
+		goto out;
 	}
 	len = stbuf.st_size;
 
 	fp = fopen(filename, "rb");
 	if (!fp) {
 		imagex_error_with_errno("Failed to open the file `%s'", filename);
-		return NULL;
+		goto out;
 	}
 
 	buf = malloc(len);
@@ -326,12 +488,14 @@ static char *file_get_contents(const char *filename, size_t *len_ret)
 		goto out_free_buf;
 	}
 	*len_ret = len;
-	return buf;
+	goto out_fclose;
 out_free_buf:
 	free(buf);
+	buf = NULL;
 out_fclose:
 	fclose(fp);
-	return NULL;
+out:
+	return buf;
 }
 
 static int file_writable(const char *path)
@@ -384,7 +548,13 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 			putchar('\n');
 		break;
 	case WIMLIB_PROGRESS_MSG_SCAN_BEGIN:
-		printf("Scanning `%s'...\n", info->scan.source);
+		printf("Scanning `%s'", info->scan.source);
+		if (*info->scan.wim_target_path) {
+			printf(" (loading as WIM path: `/%s')...\n",
+			       info->scan.wim_target_path);
+		} else {
+			printf(" (loading as root of WIM image)...\n");
+		}
 		break;
 	case WIMLIB_PROGRESS_MSG_SCAN_DENTRY:
 		if (info->scan.excluded)
@@ -560,7 +730,7 @@ static unsigned parse_num_threads(const char *optarg)
 
 
 /* Extract one image, or all images, from a WIM file into a directory. */
-static int imagex_apply(int argc, const char **argv)
+static int imagex_apply(int argc, char **argv)
 {
 	int c;
 	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
@@ -673,27 +843,37 @@ out:
 	return ret;
 }
 
-static int imagex_capture_or_append(int argc, const char **argv)
+static int imagex_capture_or_append(int argc, char **argv)
 {
 	int c;
 	int open_flags = 0;
 	int add_image_flags = 0;
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
-	const char *source;
 	const char *wimfile;
 	const char *name;
 	const char *desc;
 	const char *flags_element = NULL;
-	const char *config_file = NULL;
-	char *config_str = NULL;
-	size_t config_len = 0;
 	WIMStruct *w = NULL;
 	int ret;
 	int cur_image;
-	char *default_name;
 	int cmd = strcmp(argv[0], "append") ? CAPTURE : APPEND;
 	unsigned num_threads = 0;
+
+	char *source;
+	size_t source_name_len;
+	char *source_copy;
+
+	const char *config_file = NULL;
+	char *config_str = NULL;
+	size_t config_len = 0;
+
+	bool source_list = false;
+	size_t source_list_nbytes;
+	char *source_list_contents = NULL;
+	bool capture_sources_malloced = false;
+	struct wimlib_capture_source *capture_sources;
+	size_t num_sources;
 
 	for_opt(c, capture_or_append_options) {
 		switch (c) {
@@ -732,6 +912,9 @@ static int imagex_capture_or_append(int argc, const char **argv)
 		case 'U':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA;
 			break;
+		case 'S':
+			source_list = true;
+			break;
 		default:
 			usage(cmd);
 			return -1;
@@ -739,24 +922,56 @@ static int imagex_capture_or_append(int argc, const char **argv)
 	}
 	argc -= optind;
 	argv += optind;
+
 	if (argc < 2 || argc > 4) {
 		usage(cmd);
 		return -1;
 	}
+
 	source = argv[0];
 	wimfile = argv[1];
 
-	char source_copy[strlen(source) + 1];
-	memcpy(source_copy, source, strlen(source) + 1);
-	default_name = basename(source_copy);
-
-	name = (argc >= 3) ? argv[2] : default_name;
+	if (argc >= 3) {
+		name = argv[2];
+	} else {
+		source_name_len = strlen(source);
+		source_copy = alloca(source_name_len + 1);
+		name = basename(strcpy(source_copy, source));
+	}
 	desc = (argc >= 4) ? argv[3] : NULL;
+
+	if (source_list) {
+		if (source[0] == '-' && source[1] == '\0') {
+			source_list_contents = stdin_get_contents(&source_list_nbytes);
+		} else {
+			source_list_contents = file_get_contents(source,
+								 &source_list_nbytes);
+		}
+		if (!source_list_contents)
+			return -1;
+
+		capture_sources = parse_source_list(source_list_contents,
+						    source_list_nbytes,
+						    &num_sources);
+		if (!capture_sources) {
+			ret = -1;
+			goto out;
+		}
+		capture_sources_malloced = true;
+	} else {
+		capture_sources = alloca(sizeof(struct wimlib_capture_source));
+		capture_sources[0].fs_source_path = source;
+		capture_sources[0].wim_target_path = NULL;
+		capture_sources[0].reserved = 0;
+		num_sources = 1;
+	}
 
 	if (config_file) {
 		config_str = file_get_contents(config_file, &config_len);
-		if (!config_str)
-			return -1;
+		if (!config_str) {
+			ret = -1;
+			goto out;
+		}
 	}
 
 	if (cmd == APPEND)
@@ -767,28 +982,32 @@ static int imagex_capture_or_append(int argc, const char **argv)
 	if (ret != 0)
 		goto out;
 
-	struct stat stbuf;
-
-	ret = stat(source, &stbuf);
-	if (ret == 0) {
-		if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
-			printf("Capturing WIM image from NTFS filesystem on `%s'\n",
-			       source);
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NTFS;
-		}
-	} else {
-		if (errno != ENOENT) {
-			imagex_error_with_errno("Failed to stat `%s'", source);
-			ret = -1;
-			goto out;
+	if (!source_list) {
+		struct stat stbuf;
+		ret = stat(source, &stbuf);
+		if (ret == 0) {
+			if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
+				printf("Capturing WIM image from NTFS filesystem on `%s'\n",
+				       source);
+				add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NTFS;
+			}
+		} else {
+			if (errno != ENOENT) {
+				imagex_error_with_errno("Failed to stat `%s'", source);
+				ret = -1;
+				goto out;
+			}
 		}
 	}
 
-	ret = wimlib_add_image(w, source, name,
-			       (config_str ? config_str : default_capture_config),
-			       (config_str ? config_len : strlen(default_capture_config)),
-			       add_image_flags, imagex_progress_func);
-
+	ret = wimlib_add_image_multisource(w, capture_sources,
+					   num_sources, name,
+					   (config_str ? config_str :
+						default_capture_config),
+					   (config_str ? config_len :
+						strlen(default_capture_config)),
+					   add_image_flags,
+					   imagex_progress_func);
 	if (ret != 0)
 		goto out;
 	cur_image = wimlib_get_num_images(w);
@@ -816,11 +1035,14 @@ static int imagex_capture_or_append(int argc, const char **argv)
 out:
 	wimlib_free(w);
 	free(config_str);
+	free(source_list_contents);
+	if (capture_sources_malloced)
+		free(capture_sources);
 	return ret;
 }
 
 /* Remove image(s) from a WIM. */
-static int imagex_delete(int argc, const char **argv)
+static int imagex_delete(int argc, char **argv)
 {
 	int c;
 	int open_flags = 0;
@@ -893,7 +1115,7 @@ out:
 }
 
 /* Print the files contained in an image(s) in a WIM file. */
-static int imagex_dir(int argc, const char **argv)
+static int imagex_dir(int argc, char **argv)
 {
 	const char *wimfile;
 	WIMStruct *w;
@@ -945,7 +1167,7 @@ out:
 
 /* Exports one, or all, images from a WIM file to a new WIM file or an existing
  * WIM file. */
-static int imagex_export(int argc, const char **argv)
+static int imagex_export(int argc, char **argv)
 {
 	int c;
 	int open_flags = 0;
@@ -1109,7 +1331,7 @@ out:
 
 /* Prints information about a WIM file; also can mark an image as bootable,
  * change the name of an image, or change the description of an image. */
-static int imagex_info(int argc, const char **argv)
+static int imagex_info(int argc, char **argv)
 {
 	int c;
 	bool boot         = false;
@@ -1389,7 +1611,7 @@ out:
 }
 
 /* Join split WIMs into one part WIM */
-static int imagex_join(int argc, const char **argv)
+static int imagex_join(int argc, char **argv)
 {
 	int c;
 	int swm_open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
@@ -1415,15 +1637,16 @@ static int imagex_join(int argc, const char **argv)
 		goto err;
 	}
 	output_path = argv[0];
-	return wimlib_join(++argv, --argc, output_path, swm_open_flags,
-			   wim_write_flags, imagex_progress_func);
+	return wimlib_join((const char **)++argv, --argc, output_path,
+			   swm_open_flags, wim_write_flags,
+			   imagex_progress_func);
 err:
 	usage(JOIN);
 	return -1;
 }
 
 /* Mounts an image using a FUSE mount. */
-static int imagex_mount_rw_or_ro(int argc, const char **argv)
+static int imagex_mount_rw_or_ro(int argc, char **argv)
 {
 	int c;
 	int mount_flags = 0;
@@ -1545,7 +1768,7 @@ mount_usage:
 	return -1;
 }
 
-static int imagex_optimize(int argc, const char **argv)
+static int imagex_optimize(int argc, char **argv)
 {
 	int c;
 	int open_flags = 0;
@@ -1616,7 +1839,7 @@ static int imagex_optimize(int argc, const char **argv)
 }
 
 /* Split a WIM into a spanned set */
-static int imagex_split(int argc, const char **argv)
+static int imagex_split(int argc, char **argv)
 {
 	int c;
 	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
@@ -1659,7 +1882,7 @@ static int imagex_split(int argc, const char **argv)
 }
 
 /* Unmounts an image. */
-static int imagex_unmount(int argc, const char **argv)
+static int imagex_unmount(int argc, char **argv)
 {
 	int c;
 	int unmount_flags = 0;
@@ -1697,7 +1920,7 @@ static int imagex_unmount(int argc, const char **argv)
 
 struct imagex_command {
 	const char *name;
-	int (*func)(int , const char **);
+	int (*func)(int , char **);
 	int cmd;
 };
 
@@ -1735,7 +1958,7 @@ static void version()
 }
 
 
-static void help_or_version(int argc, const char **argv)
+static void help_or_version(int argc, char **argv)
 {
 	int i;
 	const char *p;
@@ -1795,7 +2018,7 @@ static void usage_all()
 }
 
 
-int main(int argc, const char **argv)
+int main(int argc, char **argv)
 {
 	const struct imagex_command *cmd;
 	int ret;
