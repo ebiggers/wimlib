@@ -33,7 +33,9 @@
  *
  * This is the documentation for the library interface of wimlib 1.2.7.  If you
  * have installed wimlib and want to know how to use the @c imagex program,
- * please see the man pages instead.
+ * please see the man pages instead.  Also: the actual project page where you
+ * can download the source code for the library is at <a
+ * href="https://sourceforge.net/projects/wimlib">https://sourceforge.net/projects/wimlib</a>.
  *
  * wimlib is a C library to read, write, and mount archive files in the Windows
  * Imaging Format (WIM files).  These files are normally created using the @c
