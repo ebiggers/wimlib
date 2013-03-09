@@ -1,6 +1,6 @@
 .TH IMAGEX "1" "March 2013" "imagex (wimlib) wimlib @VERSION@" "User Commands"
 .SH NAME
-imagex-capture, imagex-append \- Capture a WIM image from a directory tree
+imagex-capture, imagex-append \- Create or append a WIM image
 
 .SH SYNOPSIS
 \fBimagex capture\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
@@ -40,8 +40,7 @@ The normal image capture mode is entered when \fISOURCE\fR specifies a
 directory.  The WIM image will be captured from the directory tree rooted at
 this directory.  The directory may be on any type of filesystem.
 
-In this normal image capture mode, we capture the following information from the
-directory tree:
+In this mode, the following information is captured from the directory tree:
 
 .IP \[bu] 4
 The "normal" name and contents of each file and directory
@@ -53,8 +52,8 @@ Hard links and symbolic links
 
 .PP
 
-However, in the normal image capture mode, we do \fInot\fR capture the following
-information from the directory tree:
+However, in this mode, the following information is \fInot\fR captured from the
+directory tree:
 
 .IP \[bu] 4
 File permissions.  The resulting WIM image will not contain any security
@@ -65,7 +64,7 @@ option.)
 .IP \[bu]
 No alternate data streams will be captured, since these do not exist on
 POSIX-compliant filesystems.  The resulting WIM image will not contain any
-alternate data streams.
+alternate data streams.  (Exception: see the \fB--unix-data\fR option.)
 
 .SH NTFS MODE
 
@@ -79,7 +78,7 @@ Please note that the NTFS image capture mode is \fInot\fR entered if
 \fISOURCE\fR.  You must specify the NTFS volume itself (and it must be
 unmounted, and you must have permission to read from it).
 
-More specifically, in this mode, we capture the following types of information
+More specifically, in this mode, the following types of information are captured
 from the NTFS volume:
 
 .IP \[bu] 4
@@ -104,8 +103,8 @@ Win32+DOS namespace, and POSIX namespace.  This includes hard links.
 Yet another capture mode is entered when the \fB--source-list\fR option is
 given.  It is essentially an extension of the \fBNORMAL MODE\fR that allows
 multiple files or directories to be incorporated into a WIM image using a single
-\fBimagex capture\fR command.  See the documentation for \fB--source-list\fR
-below.
+\fBimagex capture\fR or \fBimagex append\fR command.  See the documentation for
+\fB--source-list\fR below.
 
 .SH OPTIONS
 .TP 6
@@ -206,7 +205,8 @@ Store the UNIX owner, group, and mode of regular files, symbolic links, and
 directories.  This is done by adding a special alternate data stream to each
 directory entry that contains this information.  Please note that this flag is
 for convenience only, in case you want to use \fBimagex\fR to archive files on
-UNIX.  Microsoft's software will not understand this special information.
+UNIX.  Microsoft's software will not understand this special
+information.
 .TP
 \fB--source-list\fR
 \fBimagex capture\fR and \fBimagex append\fR, as of wimlib 1.2.7, support a new
@@ -300,14 +300,13 @@ imagex capture somedir mywim.wim --compress=maximum --check
 .RE
 .PP
 Append an image to the WIM we just captured, but do it from a NTFS volume on the
-partition /dev/sda2, and name the image "Windows 7" and give it a description.
-You do not need to specify the compression type, because the WIM already is
-using LZX compression and this cannot be changed.  You need to specify
-\fB--check\fR if you don't want the integrity table to be discarded.
+partition /dev/sda2 and name the image "Windows 7".  You do not need to specify
+the compression type, because the WIM already is using LZX compression and this
+cannot be changed.  You need to specify \fB--check\fR if you don't want the
+integrity table to be discarded.
 .RS
 .PP
-imagex append /dev/sda2 mywim.wim --check "Windows 7" "Warning: This operating
-system has been approved by Bill Gates"
+imagex append /dev/sda2 mywim.wim --check "Windows 7"
 .RE
 .PP
 

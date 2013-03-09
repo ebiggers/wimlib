@@ -120,8 +120,8 @@ mounted.  This option is valid for \fBimagex mount\fR but not \fBimagex
 mountrw\fR.  See \fBSPLIT_WIMS\fR.
 .TP
 \fB--staging-dir\fR=\fIDIR\fR
-Store temporary staging files in the directory \fIDIR\fR.  Only valid for
-\fBimagex mountrw\fR.
+Store temporary staging files in a subdirectory of the directory \fIDIR\fR.
+Only valid for \fBimagex mountrw\fR.
 .TP
 \fB--unix-data\fR
 By default, \fBimagex mount\fR and \fBimagex mountrw\fR will ignore both
