@@ -323,4 +323,22 @@ AC_SUBST([LIBCRYPTO_LDADD], [$LIBCRYPTO_LDADD])
 AC_SUBST([LIBCRYPTO_CFLAGS], [$LIBCRYPTO_CFLAGS])
 AC_SUBST([SHA1_SOURCES], [$SHA1_SOURCES])
 
+case "$host" in
+	*-*-cygwin*)
+		dnl -no-undefined is needed to build a DLL in a Cygwin environment.
+		CYGWIN_EXTRA_LDFLAGS="-no-undefined"
+
+		dnl -fvisibility=hidden should not be used in a Cygwin
+		dnl  environment
+		VISIBILITY_CFLAGS=""
+		;;
+	*)
+		CYGWIN_EXTRA_LDFLAGS=""
+		VISIBILITY_CFLAGS="-fvisibility=hidden"
+		;;
+esac
+
+AC_SUBST([CYGWIN_EXTRA_LDFLAGS], [$CYGWIN_EXTRA_LDFLAGS])
+AC_SUBST([VISIBILITY_CFLAGS], [$VISIBILITY_CFLAGS])
+
 AC_OUTPUT

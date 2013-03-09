@@ -9,7 +9,11 @@
 #include "config.h"
 
 #ifdef __GNUC__
-#	define WIMLIBAPI __attribute__((visibility("default")))
+#	if defined(__CYGWIN__) || defined(__WIN32__)
+#		define WIMLIBAPI __declspec(dllexport)
+#	else
+#		define WIMLIBAPI __attribute__((visibility("default")))
+#	endif
 #	define ALWAYS_INLINE inline __attribute__((always_inline))
 #	define PACKED __attribute__((packed))
 #	define FORMAT(type, format_str, args_start) \

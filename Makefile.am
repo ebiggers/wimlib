@@ -7,7 +7,7 @@ AM_CFLAGS	= -std=gnu99 -D_LARGEFILE_SOURCE \
 
 lib_LTLIBRARIES = libwim.la
 
-libwim_la_LDFLAGS = -version-info 4:0:2
+libwim_la_LDFLAGS = -version-info 4:0:2 $(CYGWIN_EXTRA_LDFLAGS)
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
@@ -86,7 +86,7 @@ libwim_la_LIBADD =		\
 
 libwim_la_CFLAGS =		\
 	$(AM_CFLAGS)		\
-	-fvisibility=hidden	\
+	$(VISIBILITY_CFLAGS)	\
 	$(LIBXML2_CFLAGS)	\
 	$(LIBFUSE_CFLAGS)	\
 	$(LIBNTFS_3G_CFLAGS)	\
