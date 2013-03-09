@@ -893,19 +893,25 @@ extern int wimlib_add_image(WIMStruct *wim, const char *source,
 /** This function is equivalent to wimlib_add_image() except it allows for
  * multiple sources to be combined into a single WIM image.  This is done by
  * specifying the @a sources and @a num_sources parameters instead of the @a
- * source parameter.  The rest of the parameters are the same as
- * wimlib_add_image().  See the documentation for <b>imagex capture</b> for full
- * details on how this mode works.
+ * source parameter of wimlib_add_image().  The rest of the parameters are the
+ * same as wimlib_add_image().  See the documentation for <b>imagex capture</b>
+ * for full details on how this mode works.
  *
- * Additional notes:  @a sources is not a @c const parameter and you cannot
+ * Additional note:  @a sources is not a @c const parameter and you cannot
  * assume that its contents are valid after this function returns.  You must
  * save pointers to the strings in these structures if you need to free them
  * later, and/or save copies if needed.
  *
- * It is also possible for this function to return ::WIMLIB_ERR_INVALID_OVERLAY
+ * In addition to the error codes that wimlib_add_image() can return,
+ * wimlib_add_image_multisource() can return ::WIMLIB_ERR_INVALID_OVERLAY
  * when trying to overlay a non-directory on a directory or when otherwise
  * trying to overlay multiple conflicting files to the same location in the WIM
- * image. */
+ * image.  It will also return ::WIMLIB_ERR_INVALID_PARAM if
+ * ::WIMLIB_ADD_IMAGE_FLAG_NTFS was specified in @a add_image_flags but there
+ * was not exactly one capture source with the target being the root directory.
+ * (In this respect, there is no advantage to using
+ * wimlib_add_image_multisource() instead of wimlib_add_image() when requesting
+ * NTFS mode.) */
 extern int wimlib_add_image_multisource(WIMStruct *w,
 					struct wimlib_capture_source *sources,
 					size_t num_sources,
