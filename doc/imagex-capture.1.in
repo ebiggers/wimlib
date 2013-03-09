@@ -23,8 +23,8 @@ in the entire WIM, regardless of how many images the file appears in.
 
 \fISOURCE\fR specifies the location of the files to create the new WIM image
 from.  If \fISOURCE\fR is a directory, the WIM image is captured from that
-directory.  Alternatively, \fISOURCE\fR is a regular file or block device, it is
-interpreted as a NTFS volume from which a WIM image is to be captured.  Still
+directory.  Alternatively, if \fISOURCE\fR is a regular file or block device, it
+is interpreted as a NTFS volume from which a WIM image is to be captured.  Still
 alternatively, if the \fB--source-list\fR option is given, \fISOURCE\fR is
 interpreted as a file that itself provides a list of files and directories to
 include in the new WIM image.
@@ -103,8 +103,9 @@ Win32+DOS namespace, and POSIX namespace.  This includes hard links.
 
 Yet another capture mode is entered when the \fB--source-list\fR option is
 given.  It is essentially an extension of the \fBNORMAL MODE\fR that allows
-multiple files or directories to be incorporated into a WIM image in a single
-command.  See the documentation for \fB--source-list\fR below.
+multiple files or directories to be incorporated into a WIM image using a single
+\fBimagex capture\fR command.  See the documentation for \fB--source-list\fR
+below.
 
 .SH OPTIONS
 .TP 6
@@ -244,13 +245,14 @@ if the same file appears in different overlays.
 Filenames containing whitespace may be quoted with either single quotes or
 double quotes.  Quotes may not be escaped.
 
-Empty lines, and lines beginning with '#' followed by optional whitespace, are
-ignored.
+Lines consisting only of whitespace and lines beginning with '#' preceded by
+optional whitespace are ignored.
 
-As a special case, if \fISOURCE\fR is "-" the source list is read from standard
+As a special case, if \fISOURCE\fR is "-", the source list is read from standard
 input rather than an external file.
 
-The NTFS capture mode cannot be used with \fB--source-list\fR.
+The NTFS capture mode cannot be used with \fB--source-list\fR, as only capturing
+a full NTFS volume is supported.
 
 .SH NOTES
 
@@ -285,8 +287,8 @@ as a duplicate once it's been checksummed.
 
 \fISOURCE\fR may be a symbolic link to a directory rather than a directory
 itself.  However, additional symbolic links in subdirectories, or in additional
-source directories not destined for the WIM image root with
-(\fB--source-list\fR), are not dereferenced unless \fB--dereference\fR is
+source directories not destined for the WIM image root (with
+\fB--source-list\fR), are not dereferenced unless \fB--dereference\fR is
 specified.
 
 .SH EXAMPLES

@@ -42,7 +42,8 @@ There is a separate manual page for each \fBimagex\fR command.
 
 .SH SUPPORTED FEATURES
 
-The following general features are currently supported:
+The following general features are currently supported (note: this is not a
+complete list):
 
 .IP \[bu] 3
 Create a stand-alone WIM from a directory or NTFS volume (\fBimagex capture\fR)
@@ -87,10 +88,10 @@ when appropriate.
 
 .IP \[bu] 4
 Because Microsoft designed the WIM file format to accomodate Windows-specific
-and NTFS-specific features, \fBimagex\fR must have two separate image capture
-and application modes (although the \fBimagex\fR subcommands for the modes are
-the same): one for general image capture and application, and one for the
-capture or application of an image specifically from/to an NTFS volume.
+and NTFS-specific features, wimlib must have two separate image capture and
+application modes (although the \fBimagex\fR subcommands for the modes are the
+same): one for general image capture and application, and one for the capture or
+application of an image specifically from/to an NTFS volume.
 
 .IP \[bu]
 Microsoft's version has some weird limitations, like it won't let you extract a
@@ -100,13 +101,17 @@ unusual limitations, although it won't actually run on Windows anyway.
 
 .IP \[bu]
 There are bugs in Microsoft's WIM library and I obviously have not included the
-same bugs in wimlib, although in some cases I have had to work around some
-bugs for compatibility purposes.
+same bugs in wimlib, although in some cases I have had to work around bugs for
+compatibility purposes.
 
 .IP \[bu]
-wimlib's \fBimagex\fR offers the extra commands \fBimagex optimize\fR and
-\fBimagex join\fR to easily remove holes in a WIM or join the parts of a split
-WIM, respectively.
+wimlib's \fBimagex\fR offers the extra command \fBimagex optimize\fR,
+which lets you easily remove wasted space in a WIM (which can arise after
+a WIM image is appended or mounted read-write).
+
+.IP \[bu]
+wimlib's \fBimagex\fR also offers the command \fBimagex join\fR, which lets you
+easily join the parts of a split WIM.
 
 .IP \[bu]
 wimlib's \fBimagex apply\fR supports keeping files hard-linked or symlinked
@@ -132,6 +137,10 @@ owners, and groups are stored.
 wimlib's \fBimagex mount\fR and \fBimagex mountrw\fR are much faster than
 Microsoft's versions for some reason.  I don't know what they have their program
 do that takes so long to simply set up a mountpoint.
+
+.IP \[bu]
+wimlib's \fBimagex mount\fR supports mounting an image from a split WIM, but
+Microsoft's software does not.
 
 .SH WARNING
 

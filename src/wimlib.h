@@ -790,6 +790,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_UNSUPPORTED,
 	WIMLIB_ERR_WRITE,
 	WIMLIB_ERR_XML,
+	WIMLIB_ERR_INVALID_OVERLAY,
 };
 
 
@@ -892,7 +893,17 @@ extern int wimlib_add_image(WIMStruct *wim, const char *source,
  * specifying the @a sources and @a num_sources parameters instead of the @a
  * source parameter.  The rest of the parameters are the same as
  * wimlib_add_image().  See the documentation for <b>imagex capture</b> for full
- * details on how this mode works. */
+ * details on how this mode works.
+ *
+ * Additional notes:  @a sources is not a @c const parameter and you cannot
+ * assume that its contents are valid after this function returns.  You must
+ * save pointers to the strings in these structures if you need to free them
+ * later, and/or save copies if needed.
+ *
+ * It is also possible for this function to return ::WIMLIB_ERR_INVALID_OVERLAY
+ * when trying to overlay a non-directory on a directory or when otherwise
+ * trying to overlay multiple conflicting files to the same location in the WIM
+ * image. */
 extern int wimlib_add_image_multisource(WIMStruct *w,
 					struct wimlib_capture_source *sources,
 					size_t num_sources,

@@ -835,10 +835,11 @@ static int main_writer_thread_proc(struct list_head *stream_list,
 		for (size_t j = 0; j < MAX_CHUNKS_PER_MSG; j++) {
 			msgs[i].compressed_chunks[j] = MALLOC(WIM_CHUNK_SIZE);
 
-			// The extra 8 bytes is because longest_match() in lz.c
-			// may read a little bit off the end of the uncompressed
-			// data.  It doesn't need to be initialized--- we really
-			// just need to avoid accessing an unmapped page.
+			// The extra 8 bytes is because longest_match() in
+			// lz77.c may read a little bit off the end of the
+			// uncompressed data.  It doesn't need to be
+			// initialized--- we really just need to avoid accessing
+			// an unmapped page.
 			msgs[i].uncompressed_chunks[j] = MALLOC(WIM_CHUNK_SIZE + 8);
 			if (msgs[i].compressed_chunks[j] == NULL ||
 			    msgs[i].uncompressed_chunks[j] == NULL)

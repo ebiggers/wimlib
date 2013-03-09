@@ -448,11 +448,10 @@ static int pattern_list_add_pattern(struct pattern_list *list,
 
 /* Parses the contents of the image capture configuration file and fills in a
  * `struct capture_config'. */
-static int init_capture_config(const char *_config_str, size_t config_len,
-			       const char *_prefix, struct capture_config *config)
+static int init_capture_config(struct capture_config *config,
+			       const char *_config_str, size_t config_len)
 {
 	char *config_str;
-	char *prefix;
 	char *p;
 	char *eol;
 	char *next_p;
@@ -469,17 +468,10 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 		ERROR("Could not duplicate capture config string");
 		return WIMLIB_ERR_NOMEM;
 	}
-	prefix = STRDUP(_prefix);
-	if (!prefix) {
-		FREE(config_str);
-		return WIMLIB_ERR_NOMEM;
-	}
 
 	memcpy(config_str, _config_str, config_len);
 	next_p = config_str;
 	config->config_str = config_str;
-	config->prefix = prefix;
-	config->prefix_len = strlen(prefix);
 	while (bytes_remaining) {
 		line_no++;
 		p = next_p;
@@ -552,6 +544,19 @@ static int init_capture_config(const char *_config_str, size_t config_len,
 out_destroy:
 	destroy_capture_config(config);
 	return ret;
+}
+
+static int capture_config_set_prefix(struct capture_config *config,
+				     const char *_prefix)
+{
+	char *prefix = STRDUP(_prefix);
+
+	if (!prefix)
+		return WIMLIB_ERR_NOMEM;
+	FREE(config->prefix);
+	config->prefix = prefix;
+	config->prefix_len = strlen(prefix);
+	return 0;
 }
 
 static bool match_pattern(const char *path, const char *path_basename,
@@ -641,17 +646,14 @@ static void canonicalize_targets(struct wimlib_capture_source *sources,
 		      sources->wim_target_path);
 		sources->wim_target_path =
 			(char*)canonicalize_target_path(sources->wim_target_path);
-		DEBUG("\"%s\"", sources->wim_target_path);
+		DEBUG("Canonical target: \"%s\"", sources->wim_target_path);
 		sources++;
 	}
 }
 
 static int capture_source_cmp(const void *p1, const void *p2)
 {
-	const struct wimlib_capture_source *s1, *s2;
-
-	s1 = p1;
-	s2 = p2;
+	const struct wimlib_capture_source *s1 = p1, *s2 = p2;
 	return strcmp(s1->wim_target_path, s2->wim_target_path);
 }
 
@@ -728,6 +730,8 @@ new_filler_directory(const char *name)
 	DEBUG("Creating filler directory \"%s\"", name);
 	dentry = new_dentry_with_inode(name);
 	if (dentry) {
+		/* Set the inode number to 0 for now.  The final inode number
+		 * will be assigned later by assign_inode_numbers(). */
 		dentry->d_inode->i_ino = 0;
 		dentry->d_inode->i_resolved = 1;
 		dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
@@ -738,29 +742,29 @@ new_filler_directory(const char *name)
 /* Transfers the children of @branch to @target.  It is an error if @target is
  * not a directory or if both @branch and @target contain a child dentry with
  * the same name. */
-static int do_overlay(struct wim_dentry *target,
-		      struct wim_dentry *branch)
+static int do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 {
 	struct rb_root *rb_root;
 
 	if (!dentry_is_directory(target)) {
 		ERROR("Cannot overlay directory `%s' over non-directory",
 		      branch->file_name_utf8);
-		/* XXX Use a different error code */
-		return WIMLIB_ERR_INVALID_DENTRY;
+		return WIMLIB_ERR_INVALID_OVERLAY;
 	}
 
 	rb_root = &branch->d_inode->i_children;
 	while (rb_root->rb_node) { /* While @branch has children... */
-		struct wim_dentry *child;
-
-		child = container_of(rb_root->rb_node, struct wim_dentry, rb_node);
+		struct wim_dentry *child = rbnode_dentry(rb_root->rb_node);
+		/* Move @child to the directory @target */
 		unlink_dentry(child);
 		if (!dentry_add_child(target, child)) {
+			/* Revert the change to avoid leaking the directory tree
+			 * rooted at @child */
 			dentry_add_child(branch, child);
-			ERROR("Overlay error: file `%s' already exists as child of `%s'",
+			ERROR("Overlay error: file `%s' already exists "
+			      "as a child of `%s'",
 			      child->file_name_utf8, target->file_name_utf8);
-			return WIMLIB_ERR_INVALID_DENTRY;
+			return WIMLIB_ERR_INVALID_OVERLAY;
 		}
 	}
 	return 0;
@@ -775,7 +779,8 @@ static int do_overlay(struct wim_dentry *target,
  * @branch
  * 	Branch to add.
  * @target_path:
- * 	Path in the WIM image to add the branch.
+ * 	Path in the WIM image to add the branch, with leading and trailing
+ * 	slashes stripped.
  */
 static int attach_branch(struct wim_dentry **root_p,
 			 struct wim_dentry *branch,
@@ -818,9 +823,11 @@ static int attach_branch(struct wim_dentry **root_p,
 		}
 		parent = dentry;
 		target_path = slash;
+		/* Skip over slashes.  Note: this cannot overrun the length of
+		 * the string because the last character cannot be a slash, as
+		 * trailing slashes were tripped.  */
 		do {
 			++target_path;
-			wimlib_assert(*target_path != '\0');
 		} while (*target_path == '/');
 	}
 
@@ -850,7 +857,8 @@ WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
 			    const struct capture_config *,
 			    int, wimlib_progress_func_t, void *);
 	void *extra_arg;
-	struct wim_dentry *root_dentry = NULL;
+	struct wim_dentry *root_dentry;
+	struct wim_dentry *branch;
 	struct wim_security_data *sd;
 	struct capture_config config;
 	struct wim_image_metadata *imd;
@@ -900,14 +908,15 @@ WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
 		config_str = default_config;
 		config_len = strlen(default_config);
 	}
-	memset(&config, 0, sizeof(struct capture_config));
+	ret = init_capture_config(&config, config_str, config_len);
+	if (ret)
+		goto out;
 
 	DEBUG("Allocating security data");
-
 	sd = CALLOC(1, sizeof(struct wim_security_data));
 	if (!sd) {
 		ret = WIMLIB_ERR_NOMEM;
-		goto out_destroy_config;
+		goto out_destroy_capture_config;
 	}
 	sd->total_length = 8;
 	sd->refcnt = 1;
@@ -927,24 +936,26 @@ WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
 		if (!root_dentry)
 			goto out_free_security_data;
 	} else {
-		size_t i = 0;
-		struct wim_dentry *branch;
-		int flags;
+		size_t i;
+
+		root_dentry = NULL;
+		i = 0;
 		do {
+			int flags;
+			union wimlib_progress_info progress;
+
 			DEBUG("Building dentry tree for source %zu of %zu "
 			      "(\"%s\" => \"%s\")", i + 1, num_sources,
 			      sources[i].fs_source_path,
 			      sources[i].wim_target_path);
-			union wimlib_progress_info progress;
 			if (progress_func) {
 				memset(&progress, 0, sizeof(progress));
 				progress.scan.source = sources[i].fs_source_path;
 				progress.scan.wim_target_path = sources[i].wim_target_path;
 				progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &progress);
 			}
-			ret = init_capture_config(config_str, config_len,
-						  sources[i].fs_source_path,
-						  &config);
+			ret = capture_config_set_prefix(&config,
+							sources[i].fs_source_path);
 			if (ret)
 				goto out_free_dentry_tree;
 			flags = add_image_flags | WIMLIB_ADD_IMAGE_FLAG_SOURCE;
@@ -961,21 +972,20 @@ WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
 				goto out_free_dentry_tree;
 			}
 			if (branch) {
+				/* Use the target name, not the source name, for
+				 * the root of each branch from a capture
+				 * source.  (This will also set the root dentry
+				 * of the entire image to be unnamed.) */
 				ret = set_dentry_name(branch,
 						      path_basename(sources[i].wim_target_path));
-				if (ret) {
-					free_dentry_tree(branch, w->lookup_table);
-					goto out_free_dentry_tree;
-				}
+				if (ret)
+					goto out_free_branch;
 
 				ret = attach_branch(&root_dentry, branch,
 						    sources[i].wim_target_path);
-				if (ret) {
-					free_dentry_tree(branch, w->lookup_table);
-					goto out_free_dentry_tree;
-				}
+				if (ret)
+					goto out_free_branch;
 			}
-			destroy_capture_config(&config);
 			if (progress_func)
 				progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &progress);
 		} while (++i != num_sources);
@@ -1011,12 +1021,14 @@ out_destroy_imd:
 	destroy_image_metadata(&w->image_metadata[w->hdr.image_count - 1],
 			       w->lookup_table);
 	w->hdr.image_count--;
-	return ret;
+	goto out;
+out_free_branch:
+	free_dentry_tree(branch, w->lookup_table);
 out_free_dentry_tree:
 	free_dentry_tree(root_dentry, w->lookup_table);
 out_free_security_data:
 	free_security_data(sd);
-out_destroy_config:
+out_destroy_capture_config:
 	destroy_capture_config(&config);
 out:
 	return ret;

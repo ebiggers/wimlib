@@ -49,7 +49,7 @@
 				opts, NULL)) != -1)
 
 enum imagex_op_type {
-	APPEND,
+	APPEND = 0,
 	APPLY,
 	CAPTURE,
 	DELETE,
@@ -113,12 +113,6 @@ static const char *usage_strings[] = {
 "imagex split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
 [UNMOUNT] =
 "imagex unmount DIRECTORY [--commit] [--check] [--rebuild]\n",
-};
-
-static const struct option common_options[] = {
-	{"help", 0, NULL, 'h'},
-	{"version", 0, NULL, 'v'},
-	{NULL, 0, NULL, 0},
 };
 
 static const struct option apply_options[] = {
@@ -264,6 +258,7 @@ static int verify_image_exists_and_is_single(int image, const char *image_name,
 	return ret;
 }
 
+/* Parse the argument to --compress */
 static int get_compression_type(const char *optarg)
 {
 	if (strcasecmp(optarg, "maximum") == 0 || strcasecmp(optarg, "lzx") == 0)
@@ -279,6 +274,8 @@ static int get_compression_type(const char *optarg)
 	}
 }
 
+/* Returns the size of a file given its name, or -1 if the file does not exist
+ * or its size cannot be determined.  */
 static off_t file_get_size(const char *filename)
 {
 	struct stat st;
@@ -303,8 +300,13 @@ static const char *default_capture_config =
 "*.cab\n"
 "\\WINDOWS\\inf\\*.pnf\n";
 
+/* Read standard input until EOF and return the full contents in a malloc()ed
+ * buffer and the number of bytes of data in @len_ret.  Returns NULL on read
+ * error. */
 static char *stdin_get_contents(size_t *len_ret)
 {
+	/* stdin can, of course, be a pipe or other non-seekable file, so the
+	 * total length of the data cannot be pre-determined */
 	char *buf = NULL;
 	size_t newlen = 1024;
 	size_t pos = 0;
@@ -343,12 +345,34 @@ enum {
 	PARSE_FILENAME_NONE = 2,
 };
 
-static int parse_filename(char **fn_ret, char **line_p, size_t *len_p)
+/*
+ * Parses a filename in the source list file format.  (See the man page for
+ * 'imagex capture' for details on this format and the meaning.)  Accepted
+ * formats for filenames are an unquoted string, whitespace-delimited, or a
+ * double or single-quoted string.
+ *
+ * @line_p:  Pointer to the pointer to the line of data.  Will be updated
+ *           to point past the filename iff the return value is
+ *           PARSE_FILENAME_SUCCESS.  If *len_p > 0, (*line_p)[*len_p - 1] must
+ *           be '\0'.
+ *
+ * @len_p:   @len_p initially stores the length of the line of data, which may
+ *           be 0, and it will be updated to the number of bytes remaining in
+ *           the line iff the return value is PARSE_FILENAME_SUCCESS.
+ *
+ * @fn_ret:  Iff the return value is PARSE_FILENAME_SUCCESS, a pointer to the
+ *           parsed filename will be returned here.
+ *
+ * Returns: PARSE_FILENAME_SUCCESS if a filename was successfully parsed; or
+ *          PARSE_FILENAME_FAILURE if the data was invalid due to a missing
+ *          closing quote; or PARSE_FILENAME_NONE if the line ended before the
+ *          beginning of a filename was found.
+ */
+static int parse_filename(char **line_p, size_t *len_p, char **fn_ret)
 {
 	size_t len = *len_p;
 	char *line = *line_p;
 	char *fn;
-	int ret;
 	char quote_char;
 
 	/* Skip leading whitespace */
@@ -367,11 +391,7 @@ static int parse_filename(char **fn_ret, char **line_p, size_t *len_p)
 		len--;
 		fn = line;
 		line = memchr(line, quote_char, len);
-		if (line) {
-			*line = '\0';
-			len -= line - fn;
-			ret = PARSE_FILENAME_SUCCESS;
-		} else {
+		if (!line) {
 			imagex_error("Missing closing quote: %s", fn - 1);
 			return PARSE_FILENAME_FAILURE;
 		}
@@ -381,31 +401,47 @@ static int parse_filename(char **fn_ret, char **line_p, size_t *len_p)
 		fn = line;
 		do {
 			line++;
-			len--;
 		} while (!isspace(*line) && *line != '\0');
-		*line = '\0';
-		ret = PARSE_FILENAME_SUCCESS;
 	}
+	*line = '\0';
+	len -= line - fn;
 	*len_p = len;
 	*line_p = line;
 	*fn_ret = fn;
-	return ret;
+	return PARSE_FILENAME_SUCCESS;
 }
 
+/* Parses a line of data (not an empty line or comment) in the source list file
+ * format.  (See the man page for 'imagex capture' for details on this format
+ * and the meaning.)
+ *
+ * @line:  Line of data to be parsed.  line[len - 1] must be '\0', unless
+ *         len == 0.  The data in @line will be modified by this function call.
+ *
+ * @len:   Length of the line of data.
+ *
+ * @source:  On success, the capture source and target described by the line is
+ *           written into this destination.  Note that it will contain pointers
+ *           to data in the @line array.
+ *
+ * Returns true if the line was valid; false otherwise.  */
 static bool
 parse_source_list_line(char *line, size_t len,
 		       struct wimlib_capture_source *source)
 {
+	/* SOURCE [DEST] */
 	int ret;
-	ret = parse_filename(&source->fs_source_path, &line, &len);
+	ret = parse_filename(&line, &len, &source->fs_source_path);
 	if (ret != PARSE_FILENAME_SUCCESS)
 		return false;
-	ret = parse_filename(&source->wim_target_path, &line, &len);
+	ret = parse_filename(&line, &len, &source->wim_target_path);
 	if (ret == PARSE_FILENAME_NONE)
 		source->wim_target_path = source->fs_source_path;
 	return ret != PARSE_FILENAME_FAILURE;
 }
 
+/* Returns %true if the given line of length @len > 0 is a comment or empty line
+ * in the source list file format. */
 static bool is_comment_line(const char *line, size_t len)
 {
 	for (;;) {
@@ -420,6 +456,23 @@ static bool is_comment_line(const char *line, size_t len)
 	}
 }
 
+/* Parses a file in the source list format.  (See the man page for 'imagex
+ * capture' for details on this format and the meaning.)
+ *
+ * @source_list_contents:  Contents of the source list file.  Note that this
+ *                         buffer will be modified to save memory allocations,
+ *                         and cannot be freed until the returned array of
+ *                         wimlib_capture_source's has also been freed.
+ *
+ * @source_list_nbytes:    Number of bytes of data in the @source_list_contents
+ *                         buffer.
+ *
+ * @nsources_ret:          On success, the length of the returned array is
+ *                         returned here.
+ *
+ * Returns:   An array of `struct wimlib_capture_source's that can be passed to
+ * the wimlib_add_image_multisource() function to specify how a WIM image is to
+ * be created.  */
 static struct wimlib_capture_source *
 parse_source_list(char *source_list_contents, size_t source_list_nbytes,
 		  size_t *nsources_ret)
@@ -457,6 +510,7 @@ parse_source_list(char *source_list_contents, size_t source_list_nbytes,
 	return sources;
 }
 
+/* Reads the contents of a file into memory. */
 static char *file_get_contents(const char *filename, size_t *len_ret)
 {
 	struct stat stbuf;
@@ -498,6 +552,8 @@ out:
 	return buf;
 }
 
+/* Return 0 if a path names a file to which the current user has write access;
+ * -1 otherwise (and print an error message). */
 static int file_writable(const char *path)
 {
 	int ret;
@@ -510,6 +566,8 @@ static int file_writable(const char *path)
 #define TO_PERCENT(numerator, denominator) \
 	(((denominator) == 0) ? 0 : ((numerator) * 100 / (denominator)))
 
+/* Given an enumerated value for WIM compression type, return a descriptive
+ * string. */
 static const char *get_data_type(int ctype)
 {
 	switch (ctype) {
@@ -523,6 +581,7 @@ static const char *get_data_type(int ctype)
 	return NULL;
 }
 
+/* Progress callback function passed to various wimlib functions. */
 static int imagex_progress_func(enum wimlib_progress_msg msg,
 				const union wimlib_progress_info *info)
 {
@@ -657,7 +716,10 @@ static int imagex_progress_func(enum wimlib_progress_msg msg,
 	return 0;
 }
 
-
+/* Open all the split WIM parts that correspond to a file glob.
+ *
+ * @first_part specifies the first part of the split WIM and it may be either
+ * included or omitted from the glob. */
 static int open_swms_from_glob(const char *swm_glob,
 			       const char *first_part,
 			       int open_flags,
@@ -729,7 +791,8 @@ static unsigned parse_num_threads(const char *optarg)
 }
 
 
-/* Extract one image, or all images, from a WIM file into a directory. */
+/* Apply one image, or all images, from a WIM file into a directory, OR apply
+ * one image from a WIM file to a NTFS volume. */
 static int imagex_apply(int argc, char **argv)
 {
 	int c;
@@ -843,6 +906,9 @@ out:
 	return ret;
 }
 
+/* Create a WIM image from a directory tree, NTFS volume, or multiple files or
+ * directory trees.  'imagex capture': create a new WIM file containing the
+ * desired image.  'imagex append': add a new image to an existing WIM file. */
 static int imagex_capture_or_append(int argc, char **argv)
 {
 	int c;
@@ -866,7 +932,7 @@ static int imagex_capture_or_append(int argc, char **argv)
 
 	const char *config_file = NULL;
 	char *config_str = NULL;
-	size_t config_len = 0;
+	size_t config_len;
 
 	bool source_list = false;
 	size_t source_list_nbytes;
@@ -934,13 +1000,18 @@ static int imagex_capture_or_append(int argc, char **argv)
 	if (argc >= 3) {
 		name = argv[2];
 	} else {
+		/* Set default name to SOURCE argument, omitting any directory
+		 * prefixes and trailing slashes.  This requires making a copy
+		 * of @source. */
 		source_name_len = strlen(source);
 		source_copy = alloca(source_name_len + 1);
 		name = basename(strcpy(source_copy, source));
 	}
+	/* Image description defaults to NULL if not given. */
 	desc = (argc >= 4) ? argv[3] : NULL;
 
 	if (source_list) {
+		/* Set up capture sources in source list mode */
 		if (source[0] == '-' && source[1] == '\0') {
 			source_list_contents = stdin_get_contents(&source_list_nbytes);
 		} else {
@@ -959,6 +1030,8 @@ static int imagex_capture_or_append(int argc, char **argv)
 		}
 		capture_sources_malloced = true;
 	} else {
+		/* Set up capture source in non-source-list mode (could be
+		 * either "normal" mode or "NTFS mode"--- see the man page). */
 		capture_sources = alloca(sizeof(struct wimlib_capture_source));
 		capture_sources[0].fs_source_path = source;
 		capture_sources[0].wim_target_path = NULL;
@@ -1768,6 +1841,7 @@ mount_usage:
 	return -1;
 }
 
+/* Rebuild a WIM file */
 static int imagex_optimize(int argc, char **argv)
 {
 	int c;
@@ -1881,7 +1955,7 @@ static int imagex_split(int argc, char **argv)
 	return ret;
 }
 
-/* Unmounts an image. */
+/* Unmounts a mounted WIM image. */
 static int imagex_unmount(int argc, char **argv)
 {
 	int c;
@@ -2017,7 +2091,7 @@ static void usage_all()
 	fputs(extra, stdout);
 }
 
-
+/* Entry point for the 'imagex' program. */
 int main(int argc, char **argv)
 {
 	const struct imagex_command *cmd;
@@ -2029,15 +2103,22 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	/* Handle --help and --version for all commands.  Note that this will
+	 * not return if either of these arguments are present. */
 	help_or_version(argc, argv);
 	argc--;
 	argv++;
 
+	/* The user may like to see more informative error messages. */
 	wimlib_set_print_errors(true);
+
+	/* Calling wimlib_global_init() is not strictly necessary because
+	 * 'imagex' is single-threaded. */
 	ret = wimlib_global_init();
 	if (ret)
 		goto out;
 
+	/* Search for the function to handle the 'imagex' subcommand. */
 	for_imagex_command(cmd) {
 		if (strcmp(cmd->name, *argv) == 0) {
 			ret = cmd->func(argc, argv);
@@ -2049,6 +2130,21 @@ int main(int argc, char **argv)
 	usage_all();
 	return 1;
 out:
+	/* For 'imagex info' and 'imagex dir', data printed to standard output
+	 * is part of the program's actual behavior and not just for
+	 * informational purposes, so we should set a failure exit status if
+	 * there was a write error. */
+	if (cmd == &imagex_commands[INFO] || cmd == &imagex_commands[DIR]) {
+		if (ferror(stdout) || fclose(stdout)) {
+			imagex_error_with_errno("output error");
+			if (ret == 0)
+				ret = -1;
+		}
+	}
+
+	/* Exit status (ret):  -1 indicates an error found by 'imagex' outside
+	 * of the wimlib library code.  0 indicates success.  > 0 indicates a
+	 * wimlib error code from which an error message can be printed. */
 	if (ret > 0) {
 		imagex_error("Exiting with error code %d:\n"
 			     "       %s.", ret,
@@ -2056,6 +2152,8 @@ out:
 		if (ret == WIMLIB_ERR_NTFS_3G && errno != 0)
 			imagex_error_with_errno("errno");
 	}
+	/* Calling wimlib_global_cleanup() is not strictly necessary because the
+	 * process is exiting anyway. */
 	wimlib_global_cleanup();
 	return ret;
 }

@@ -165,6 +165,8 @@ static const char *error_strings[] = {
 		= "The WIM's integrity table is invalid",
 	[WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY]
 		= "An entry in the WIM's lookup table is invalid",
+	[WIMLIB_ERR_INVALID_OVERLAY]
+		= "Conflicting files in overlay when creating a WIM image",
 	[WIMLIB_ERR_INVALID_PARAM]
 		= "An invalid parameter was given",
 	[WIMLIB_ERR_INVALID_PART_NUMBER]
