@@ -53,6 +53,7 @@ libwim_la_SOURCES =		\
 	src/wim.c		\
 	src/wimlib.h		\
 	src/wimlib_internal.h	\
+	src/win32.c		\
 	src/write.c		\
 	src/xml.c		\
 	src/xml.h		\

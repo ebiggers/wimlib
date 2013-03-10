@@ -1,0 +1,41 @@
+wimlib 1.3.0 has added experimental support for Windows builds.  These builds
+include both the "wimlib" library (built as a DLL) and the "imagex" executable.
+
+The Windows builds use native Win32 calls when appropriate to handle alternate
+data streams, security descriptors, and reparse points.
+
+Windows support currently has the following limitations:
+
+-  It relies on the Cygwin UNIX-compatibility layer.  You do not, however, need
+   to have the Cygwin distribution installed to run it, as I have posted a ZIP
+   file on SourceForge that contains the build of wimlib along with the DLLs
+   needed for it to run.  Please note that these DLLs are free and open source
+   software; see http://www.cygwin.com/ for more details.
+
+-  Mounting WIM files is not supported.  On Windows there is no equivalent of
+   FUSE, which I used to get mounting working on Linux and BSD, so I would have
+   to program a "Filesystem Filter" driver with Microsoft's eccentric API.
+
+-  wimlib's API is not compatible with Microsoft's WIMGAPI, although they offer
+   some of the same functionality.
+
+So to be clear:
+
+"imagex capture", "imagex append", and "imagex apply" will work on Windows and
+have the added advantage of saving and restoring alternate data streams,
+security descriptors, and reparse points.
+
+"imagex delete", "imagex dir", "imagex export", "imagex info", "imagex join",
+"imagex optimize", and "imagex split" are all portable and should work the same
+way on Windows as on UNIX.
+
+"imagex mount", "imagex mountrw", and "imagex unmount" will NOT work on Windows.
+
+So on Windows, why would you want to use wimlib's ImageX instead of Microsoft's?
+Well, here are a few reasons:
+
+- wimlib can be freely distributed; there is no need to download a 1.8 gigabyte
+  "Windows Automated Installation Kit".
+- wimlib offers fast multithreaded compression, so making WIM images can be much
+  faster.
+- wimlib is free software, so you can modify and/or audit the source code.

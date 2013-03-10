@@ -1,4 +1,4 @@
-AC_INIT([wimlib], [1.2.7], [ebiggers3@gmail.com])
+AC_INIT([wimlib], [1.3.0], [ebiggers3@gmail.com])
 AC_CONFIG_SRCDIR([src/wim.c])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
@@ -171,6 +171,29 @@ else
 fi
 AC_SUBST([PTHREAD_LDADD], [$PTHREAD_LDADD])
 
+case "$host" in
+	*-*-cygwin*)
+		dnl -no-undefined is needed to build a DLL in a Cygwin environment.
+		CYGWIN_EXTRA_LDFLAGS="-no-undefined"
+
+		dnl -fvisibility=hidden should not be used in a Cygwin
+		dnl  environment
+		VISIBILITY_CFLAGS=""
+
+		WITH_NTFS_3G_DEFAULT="no"
+		WITH_FUSE_DEFAULT="no"
+		;;
+	*)
+		CYGWIN_EXTRA_LDFLAGS=""
+		VISIBILITY_CFLAGS="-fvisibility=hidden"
+		WITH_NTFS_3G_DEFAULT="yes"
+		WITH_FUSE_DEFAULT="yes"
+		;;
+esac
+
+AC_SUBST([CYGWIN_EXTRA_LDFLAGS], [$CYGWIN_EXTRA_LDFLAGS])
+AC_SUBST([VISIBILITY_CFLAGS], [$VISIBILITY_CFLAGS])
+
 AC_MSG_CHECKING([whether to include support for ntfs-3g])
 AC_ARG_WITH([ntfs-3g],
 	      AS_HELP_STRING([--without-ntfs-3g], [build without NTFS-3g.
@@ -178,7 +201,7 @@ AC_ARG_WITH([ntfs-3g],
 			      information when capturing or applying WIMs to a
 			      NTFS filesystem.]),
 	[WITH_NTFS_3G=$withval],
-	[WITH_NTFS_3G=yes]
+	[WITH_NTFS_3G=$WITH_NTFS_3G_DEFAULT]
 	)
 AC_MSG_RESULT([$WITH_NTFS_3G])
 if test "x$WITH_NTFS_3G" = "xyes"; then
@@ -220,7 +243,7 @@ AC_ARG_WITH([fuse],
 					This will disable the ability to mount
 					WIM files.]),
 	[WITH_FUSE=$withval],
-	[WITH_FUSE=yes]
+	[WITH_FUSE=$WITH_FUSE_DEFAULT]
 	)
 AC_MSG_RESULT([$WITH_FUSE])
 if test "x$WITH_FUSE" = "xyes"; then
@@ -322,23 +345,5 @@ fi
 AC_SUBST([LIBCRYPTO_LDADD], [$LIBCRYPTO_LDADD])
 AC_SUBST([LIBCRYPTO_CFLAGS], [$LIBCRYPTO_CFLAGS])
 AC_SUBST([SHA1_SOURCES], [$SHA1_SOURCES])
-
-case "$host" in
-	*-*-cygwin*)
-		dnl -no-undefined is needed to build a DLL in a Cygwin environment.
-		CYGWIN_EXTRA_LDFLAGS="-no-undefined"
-
-		dnl -fvisibility=hidden should not be used in a Cygwin
-		dnl  environment
-		VISIBILITY_CFLAGS=""
-		;;
-	*)
-		CYGWIN_EXTRA_LDFLAGS=""
-		VISIBILITY_CFLAGS="-fvisibility=hidden"
-		;;
-esac
-
-AC_SUBST([CYGWIN_EXTRA_LDFLAGS], [$CYGWIN_EXTRA_LDFLAGS])
-AC_SUBST([VISIBILITY_CFLAGS], [$VISIBILITY_CFLAGS])
 
 AC_OUTPUT

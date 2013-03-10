@@ -93,11 +93,15 @@ application modes (although the \fBimagex\fR subcommands for the modes are the
 same): one for general image capture and application, and one for the capture or
 application of an image specifically from/to an NTFS volume.
 
+Note: the above applies to UNIX builds.  On the experimental Windows builds of
+wimlib, there is only one image capture and application mode, similar to
+Microsoft's ImageX.
+
 .IP \[bu]
 Microsoft's version has some weird limitations, like it won't let you extract a
 WIM on a shared folder, and it requires some commands to be run only from
 Windows PE and not from regular Windows.  This version does not have these
-unusual limitations, although it won't actually run on Windows anyway.
+unusual limitations.
 
 .IP \[bu]
 There are bugs in Microsoft's WIM library and I obviously have not included the
@@ -116,7 +120,8 @@ easily join the parts of a split WIM.
 .IP \[bu]
 wimlib's \fBimagex apply\fR supports keeping files hard-linked or symlinked
 across WIM images when extracted from a WIM.  So you can, for example, extract
-different versions of Windows from an install.wim without using much extra space.
+different versions of Windows from an install.wim without using much extra
+space.  (Note: this functionality is only available in UNIX builds of wimlib.)
 
 .IP \[bu]
 wimlib's \fBimagex capture\fR supports combining multiple separate directories
@@ -136,11 +141,13 @@ owners, and groups are stored.
 .IP \[bu]
 wimlib's \fBimagex mount\fR and \fBimagex mountrw\fR are much faster than
 Microsoft's versions for some reason.  I don't know what they have their program
-do that takes so long to simply set up a mountpoint.
+do that takes so long to simply set up a mountpoint.  (Note: this functionality
+is only available on UNIX builds.)
 
 .IP \[bu]
 wimlib's \fBimagex mount\fR supports mounting an image from a split WIM, but
-Microsoft's software does not.
+Microsoft's software does not.  (Note: this functionality is only available on
+UNIX builds.)
 
 .SH WARNING
 

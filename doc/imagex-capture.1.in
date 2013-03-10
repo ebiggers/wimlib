@@ -17,6 +17,9 @@ Imaging (WIM) image from a directory tree.  The \fBimagex capture\fR command
 creates a new WIM file containing the captured image, while the \fBimagex
 append\fR command appends the captured image to an existing WIM file.
 
+Note: this man page primarily documents the UNIX behavior.  See \fBWINDOWS
+VERSION\fR for information specific to the Windows build of wimlib.
+
 A WIM image is an independent directory tree in the WIM file.  A WIM file may
 contain any number of separate images.  However, files are stored only one time
 in the entire WIM, regardless of how many images the file appears in.
@@ -105,6 +108,29 @@ given.  It is essentially an extension of the \fBNORMAL MODE\fR that allows
 multiple files or directories to be incorporated into a WIM image using a single
 \fBimagex capture\fR or \fBimagex append\fR command.  See the documentation for
 \fB--source-list\fR below.
+
+.SH WINDOWS VERSION
+
+This section documents the differences between \fBimagex capture\fR and
+\fBimagex append\fR in the Windows builds of wimlib versus the rest of this man
+page, which is written to document UNIX version.
+
+\fBimagex capture\fR and \fBimagex append\fR do not have separate "normal" and
+"NTFS" modes on Windows.  There is simply one mode, and it uses the Windows API
+to capture NTFS-specific information, including alternate data streams, reparse
+points, hard link, and symbolic links.  So, you essentially get the advantages
+of the "NTFS mode" documented above, but you can capture a WIM image from any
+directory, not just an entire NTFS volume.  This is mostly the same behavior as
+Microsoft's ImageX.
+
+The \fB--source-list\fR option is supported on Windows, but the
+\fB--dereference\fR option is not.
+
+Other than the differences documented in this section, the Windows version
+should be essentially equivalent to the UNIX version.  However, one additional
+thing to note is that wimlib's Windows version of ImageX is NOT written to be
+command-line compatible with Microsoft's version of ImageX, although they are
+very similar.
 
 .SH OPTIONS
 .TP 6

@@ -11,6 +11,9 @@ imagex-apply \- Extract one image, or all images, from a WIM archive
 \fBimagex apply\fR extracts an image, or all images, from the Windows Imaging
 (WIM) file \fIWIMFILE\fR.
 
+Note: this man page primarily documents the UNIX behavior.  See \fBWINDOWS
+VERSION\fR for information specific to the Windows build of wimlib.
+
 \fIIMAGE\fR specifies the WIM image to extract.  It may be a 1-based index of an
 image in the WIM, the name of an image in the WIM, or the keyword "all" to
 indicate that all images are to be extracted.  Use the \fBimagex info\fR (1)
@@ -189,6 +192,28 @@ To apply the first image of this split WIM to the directory "dir", run:
 imagex apply mywim.swm 1 dir --ref="mywim*.swm"
 .RE
 .PP
+
+.SH WINDOWS VERSION
+
+This section documents the differences between \fBimagex apply\fR in the Windows
+builds of wimlib versus the rest of this man page, which is written to document
+UNIX version.
+
+\fBimagex apply\fR does not have separate "normal" and "NTFS" modes on Windows.
+There is simply one mode, and it uses the Windows API to apply NTFS-specific
+information, including alternate data streams, reparse points, hard link, and
+symbolic links.  So, you essentially get the advantages of the "NTFS mode"
+documented above, but you can apply the WIM image to any directory, not just an
+entire NTFS volume.  This is mostly the same behavior as Microsoft's ImageX.
+
+\fB--hardlink\fR, \fB--symlink\fR, and \fB--unix-data\fR are not supported on
+Windows.
+
+Other than the differences documented in this section, the Windows version
+should be essentially equivalent to the UNIX version.  However, one additional
+thing to note is that wimlib's Windows version of ImageX is NOT written to be
+command-line compatible with Microsoft's version of ImageX, although they are
+very similar.
 
 .SH OPTIONS
 .TP 6

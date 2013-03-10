@@ -63,6 +63,8 @@ imagex mount mywim.swm 1 dir --ref="mywim*.swm"
 
 If wimlib was configured using the \fB--without-fuse\fR flag, then the \fBimagex
 mount\fR, \fBimagex mountrw\fR, and \fBimagex unmount\fR commands will not work.
+Also, these commands are not available in the experimental Windows builds of
+wimlib.
 
 You can mount multiple images from a WIM file read-only at the same time, but
 you can only mount one image at a time from a WIM read-write.

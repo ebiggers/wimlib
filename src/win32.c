@@ -40,7 +40,7 @@ void *win32_open_file(const void *path)
 				   FILE_FLAG_OPEN_REPARSE_POINT,
 			   NULL /* hTemplateFile */);
 }
-		
+
 int win32_read_file(const char *filename,
 		    void *handle, u64 offset, size_t size, u8 *buf)
 {
@@ -48,7 +48,7 @@ int win32_read_file(const char *filename,
 	DWORD err;
 	DWORD bytesRead;
 	LARGE_INTEGER liOffset = {.QuadPart = offset};
-	
+
 	wimlib_assert(size <= 0xffffffff);
 
 	if (SetFilePointerEx(h, liOffset, NULL, FILE_BEGIN))
