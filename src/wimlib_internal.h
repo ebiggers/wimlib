@@ -372,10 +372,6 @@ extern bool exclude_path(const char *path,
 extern int add_new_dentry_tree(WIMStruct *dest_wim, struct wim_dentry *root,
 			       struct wim_security_data *sd);
 
-#if defined(__CYGWIN__) || defined(__WIN32__)
-extern FILE *win32_open_fp(const char *path_utf16);
-#endif
-
 /* extract_image.c */
 
 /* Internal use only */
@@ -435,7 +431,6 @@ struct apply_args {
 #ifdef WITH_NTFS_3G
 	struct _ntfs_volume *vol;
 #endif
-	struct list_head empty_files;
 	wimlib_progress_func_t progress_func;
 	int (*apply_dentry)(struct wim_dentry *, void *);
 };
@@ -485,13 +480,6 @@ extern int extract_wim_resource(const struct wim_lookup_table_entry *lte,
 				u64 size, extract_chunk_func_t extract_chunk,
 				void *extract_chunk_arg);
 
-#if defined(__CYGWIN__) || defined(__WIN32__)
-extern int win32_read_file(const char *filename, void *handle, u64 offset,
-			   size_t size, u8 *buf);
-extern void *win32_open_handle(const char *path_utf16);
-extern void win32_close_handle(void *handle);
-#endif
-
 /*
  * Extracts the first @size bytes of the WIM resource specified by @lte to the
  * open file descriptor @fd.
@@ -539,6 +527,20 @@ extern int select_wim_image(WIMStruct *w, int image);
 extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 extern void destroy_image_metadata(struct wim_image_metadata *imd,
 				   struct wim_lookup_table *lt);
+
+/* win32.c */
+
+#if defined(__CYGWIN__) || defined(__WIN32__)
+extern int win32_read_file(const char *filename, void *handle, u64 offset,
+			   size_t size, u8 *buf);
+extern void *win32_open_file(const void *path_utf16);
+extern void win32_close_file(void *handle);
+#ifdef ENABLE_ERROR_MESSAGES
+extern void win32_error(u32 err);
+#else
+#define win32_error(err)
+#endif
+#endif
 
 
 /* write.c */

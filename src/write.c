@@ -259,7 +259,7 @@ static int prepare_resource_for_read(struct wim_lookup_table_entry *lte
 {
 	switch (lte->resource_location) {
 	case RESOURCE_IN_FILE_ON_DISK:
-		if (!lte->file_on_disk_fp) {
+	      	if (!lte->file_on_disk_fp) {
 			lte->file_on_disk_fp = fopen(lte->file_on_disk, "rb");
 			if (!lte->file_on_disk_fp) {
 				ERROR_WITH_ERRNO("Failed to open the file "
@@ -297,7 +297,7 @@ static int prepare_resource_for_read(struct wim_lookup_table_entry *lte
 #if defined(__CYGWIN__) || defined(__WIN32__)
 	case RESOURCE_WIN32:
 		if (!lte->file_on_disk_fp) {
-			lte->file_on_disk_fp = win32_open_handle(lte->file_on_disk);
+			lte->file_on_disk_fp = win32_open_file(lte->file_on_disk);
 			if (!lte->file_on_disk_fp)
 				return WIMLIB_ERR_OPEN;
 		}
@@ -337,7 +337,7 @@ static void end_wim_resource_read(struct wim_lookup_table_entry *lte
 	else if (lte->resource_location == RESOURCE_WIN32
 		 && lte->file_on_disk_fp)
 	{
-		win32_close_handle(lte->file_on_disk_fp);
+		win32_close_file(lte->file_on_disk_fp);
 		lte->file_on_disk_fp = NULL;
 	}
 #endif

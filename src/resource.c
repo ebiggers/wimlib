@@ -561,7 +561,6 @@ int read_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
 #if defined(__CYGWIN__) || defined(__WIN32__)
 	case RESOURCE_WIN32:
 		wimlib_assert(lte->file_on_disk_fp != NULL);
-		DEBUG("Calling win32_read_file()");
 		ret = win32_read_file(lte->file_on_disk, lte->file_on_disk_fp,
 				      offset, size, buf);
 		break;

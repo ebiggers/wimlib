@@ -21,6 +21,7 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+#include "config.h"
 
 #if defined(__CYGWIN__) || defined(__WIN32__)
 #	include <windows.h>
@@ -48,19 +49,10 @@
 #include <errno.h>
 #include <unistd.h>
 
-#if defined(__CYGWIN__) || defined(__WIN32__)
-/*#define ERROR_WIN32_SAFE(format, ...)		\*/
-/*{(						\*/
-          /*DWORD err = GetLastError();		\*/
-	/*ERROR(format, ##__VA_ARGS__);		\*/
-	/*SetLastError(err);			\*/
-/*)}*/
-#define DEBUG_WIN32_SAFE(format, ...)		\
-({						\
-	DWORD err = GetLastError();		\
-	DEBUG(format, ##__VA_ARGS__);		\
-	SetLastError(err);			\
-})
+#ifdef HAVE_ALLOCA_H
+#include <alloca.h>
+#else
+#include <stdlib.h>
 #endif
 
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT	0x80000000
@@ -118,71 +110,12 @@ err:
 }
 
 #if defined(__CYGWIN__) || defined(__WIN32__)
+
 static u64 FILETIME_to_u64(const FILETIME *ft)
 {
 	return ((u64)ft->dwHighDateTime << 32) | (u64)ft->dwLowDateTime;
 }
 
-#ifdef ENABLE_ERROR_MESSAGES
-static void win32_error(DWORD err_code)
-{
-	char *buffer;
-	DWORD nchars;
-	nchars = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER,
-				NULL, err_code, 0,
-				(char*)&buffer, 0, NULL);
-	if (nchars == 0) {
-		ERROR("Error printing error message! "
-		      "Computer will self-destruct in 3 seconds.");
-	} else {
-		ERROR("Win32 error: %s", buffer);
-		LocalFree(buffer);
-	}
-}
-#else
-#define win32_error(err_code)
-#endif
-
-static HANDLE win32_open_file(const wchar_t *path)
-{
-	return CreateFileW(path,
-			   GENERIC_READ | READ_CONTROL,
-			   FILE_SHARE_READ,
-			   NULL, /* lpSecurityAttributes */
-			   OPEN_EXISTING,
-			   FILE_FLAG_BACKUP_SEMANTICS |
-				   FILE_FLAG_OPEN_REPARSE_POINT,
-			   NULL /* hTemplateFile */);
-}
-
-int win32_read_file(const char *filename,
-		    void *handle, u64 offset, size_t size, u8 *buf)
-{
-	HANDLE h = handle;
-	DWORD err;
-	DWORD bytesRead;
-	LARGE_INTEGER liOffset = {.QuadPart = offset};
-
-	wimlib_assert(size <= 0xffffffff);
-
-	if (SetFilePointerEx(h, liOffset, NULL, FILE_BEGIN))
-		if (ReadFile(h, buf, size, &bytesRead, NULL) && bytesRead == size)
-			return 0;
-	err = GetLastError();
-	ERROR("Error reading \"%s\"", filename);
-	win32_error(err);
-	return WIMLIB_ERR_READ;
-}
-
-void win32_close_handle(void *handle)
-{
-	CloseHandle((HANDLE)handle);
-}
-
-void *win32_open_handle(const char *path_utf16)
-{
-	return (void*)win32_open_file((const wchar_t*)path_utf16);
-}
 
 static int build_dentry_tree(struct wim_dentry **root_ret,
 			     const char *root_disk_path,
@@ -221,14 +154,10 @@ static int win32_get_security_descriptor(struct wim_dentry *dentry,
 	BOOL status;
 	DWORD err;
 
-#ifdef BACKUP_SECURITY_INFORMATION
-	requestedInformation = BACKUP_SECURITY_INFORMATION;
-#else
 	requestedInformation = DACL_SECURITY_INFORMATION |
 			       SACL_SECURITY_INFORMATION |
 			       OWNER_SECURITY_INFORMATION |
 			       GROUP_SECURITY_INFORMATION;
-#endif
 	/* Request length of security descriptor */
 	status = GetFileSecurityW(path_utf16, requestedInformation,
 				  NULL, 0, &lenNeeded);
@@ -369,7 +298,7 @@ static int win32_sha1sum(const wchar_t *path, u8 hash[SHA1_HASH_SIZE])
 	DWORD bytesRead;
 	int ret;
 
-	hFile = win32_open_file(path);
+ 	hFile = win32_open_file(path);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return WIMLIB_ERR_OPEN;
 
@@ -425,12 +354,11 @@ static int win32_capture_stream(const char *path,
 		char *utf8_stream_name;
 		size_t utf8_stream_name_len;
 		ret = utf16_to_utf8((const char *)p,
-				    colon - p,
+				    (colon - p) * sizeof(wchar_t),
 				    &utf8_stream_name,
 				    &utf8_stream_name_len);
 		if (ret)
 			goto out;
-		DEBUG_WIN32_SAFE("Add alternate data stream %s:%s", path, utf8_stream_name);
 		ads_entry = inode_add_ads(inode, utf8_stream_name);
 		FREE(utf8_stream_name);
 		if (!ads_entry) {
@@ -450,7 +378,7 @@ static int win32_capture_stream(const char *path,
 		spath[path_utf16_nchars] = L':';
 		memcpy(&spath[path_utf16_nchars + 1], p, (colon - p) * sizeof(wchar_t));
 	}
-	spath[spath_nchars] = L'\0';
+       	spath[spath_nchars] = L'\0';
 
 	ret = win32_sha1sum(spath, hash);
 	if (ret) {
@@ -497,7 +425,7 @@ static int win32_capture_streams(const char *path,
 	int ret;
 	HANDLE hFind;
 	DWORD err;
-
+	
 	hFind = FindFirstStreamW(path_utf16, FindStreamInfoStandard, &dat, 0);
 	if (hFind == INVALID_HANDLE_VALUE) {
 		ERROR("Win32 API: Failed to look up data streams of \"%s\"",
@@ -829,14 +757,12 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 		sd_set = extra_arg;
 	}
 
-	DEBUG_WIN32_SAFE("root_disk_path=\"%s\"", root_disk_path);
 	ret = utf8_to_utf16(root_disk_path, strlen(root_disk_path),
 			    (char**)&path_utf16, &path_utf16_nchars);
 	if (ret)
 		goto out_destroy_sd_set;
 	path_utf16_nchars /= sizeof(wchar_t);
 
-	DEBUG_WIN32_SAFE("Win32: Opening file `%s'", root_disk_path);
 	HANDLE hFile = win32_open_file(path_utf16);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
@@ -892,7 +818,16 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 
 	if (inode_is_directory(inode)) {
 		/* Directory (not a reparse point) --- recurse to children */
-		DEBUG_WIN32_SAFE("Recursing to directory \"%s\"", root_disk_path);
+
+		/* But first... directories may have alternate data streams that
+		 * need to be captured */
+		ret = win32_capture_streams(root_disk_path,
+					    path_utf16,
+					    path_utf16_nchars,
+					    inode,
+					    lookup_table);
+		if (ret)
+			goto out_close_handle;
 		ret = win32_recurse_directory(root,
 					      root_disk_path,
 					      lookup_table,
@@ -906,14 +841,12 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Reparse point: save the reparse tag and data */
 
-		DEBUG_WIN32_SAFE("Capturing reparse point `%s'", root_disk_path);
 		ret = win32_capture_reparse_point(root_disk_path,
 						  hFile,
 						  inode,
 						  lookup_table);
 
 	} else {
-		DEBUG_WIN32_SAFE("Capturing streams of \"%s\"", root_disk_path);
 		/* Not a directory, not a reparse point */
 		ret = win32_capture_streams(root_disk_path,
 					    path_utf16,
