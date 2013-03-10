@@ -323,10 +323,8 @@ struct wim_inode {
 #define inode_add_dentry(dentry, inode) \
 		list_add_tail(&(dentry)->d_alias, &(inode)->i_dentry)
 
-static inline struct wim_dentry *inode_first_dentry(struct wim_inode *inode)
-{
-	return container_of(inode->i_dentry.next, struct wim_dentry, d_alias);
-}
+#define inode_first_dentry(inode) \
+		container_of(inode->i_dentry.next, struct wim_dentry, d_alias)
 
 static inline bool dentry_is_first_in_inode(const struct wim_dentry *dentry)
 {

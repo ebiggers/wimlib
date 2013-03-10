@@ -298,7 +298,7 @@ static int win32_sha1sum(const wchar_t *path, u8 hash[SHA1_HASH_SIZE])
 	DWORD bytesRead;
 	int ret;
 
- 	hFile = win32_open_file(path);
+	hFile = win32_open_file(path);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return WIMLIB_ERR_OPEN;
 
@@ -378,7 +378,7 @@ static int win32_capture_stream(const char *path,
 		spath[path_utf16_nchars] = L':';
 		memcpy(&spath[path_utf16_nchars + 1], p, (colon - p) * sizeof(wchar_t));
 	}
-       	spath[spath_nchars] = L'\0';
+	spath[spath_nchars] = L'\0';
 
 	ret = win32_sha1sum(spath, hash);
 	if (ret) {
@@ -425,12 +425,24 @@ static int win32_capture_streams(const char *path,
 	int ret;
 	HANDLE hFind;
 	DWORD err;
-	
+
 	hFind = FindFirstStreamW(path_utf16, FindStreamInfoStandard, &dat, 0);
 	if (hFind == INVALID_HANDLE_VALUE) {
-		ERROR("Win32 API: Failed to look up data streams of \"%s\"",
-		      path);
-		return WIMLIB_ERR_READ;
+		err = GetLastError();
+
+		/* Seems legal for this to return ERROR_HANDLE_EOF on reparse
+		 * points and directories */
+		if ((inode->i_attributes &
+		    (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
+		    && err == ERROR_HANDLE_EOF)
+		{
+			return 0;
+		} else {
+			ERROR("Win32 API: Failed to look up data streams of \"%s\"",
+			      path);
+			win32_error(err);
+			return WIMLIB_ERR_READ;
+		}
 	}
 	do {
 		ret = win32_capture_stream(path, path_utf16,
@@ -820,7 +832,7 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 		/* Directory (not a reparse point) --- recurse to children */
 
 		/* But first... directories may have alternate data streams that
-		 * need to be captured */
+		 * need to be captured (maybe?) */
 		ret = win32_capture_streams(root_disk_path,
 					    path_utf16,
 					    path_utf16_nchars,
@@ -1374,6 +1386,17 @@ WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
 		capture_tree = build_dentry_tree;
 		extra_arg = NULL;
 	}
+
+#if defined(__CYGWIN__) || defined(__WIN32__)
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
+		ERROR("Capturing UNIX-specific data is not supported on Windows");
+		return WIMLIB_ERR_INVALID_PARAM;
+	}
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE) {
+		ERROR("Dereferencing symbolic links is not supported on Windows");
+		return WIMLIB_ERR_INVALID_PARAM;
+	}
+#endif
 
 	if (!name || !*name) {
 		ERROR("Must specify a non-empty string for the image name");

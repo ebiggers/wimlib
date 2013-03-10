@@ -143,6 +143,8 @@ static int win32_extract_stream(const struct wim_inode *inode,
 	wchar_t *stream_path;
 	HANDLE h;
 	int ret;
+	DWORD err;
+	DWORD creationDisposition = CREATE_ALWAYS;
 
 	if (stream_name_utf16) {
 		size_t stream_path_nchars;
@@ -163,30 +165,57 @@ static int win32_extract_stream(const struct wim_inode *inode,
 			 /*path, stream_name_utf16);*/
 	} else {
 		stream_path = (wchar_t*)path;
+		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
+			if (!CreateDirectoryW(stream_path, NULL)) {
+				err = GetLastError();
+				if (err == ERROR_FILE_EXISTS &&
+				    dentry_is_root(inode_first_dentry(inode)))
+				{
+					/* Already exists */
+					return 0;
+				}
+				ERROR("Failed to create directory \"%s\"", path_utf8);
+				win32_error(err);
+				ret = WIMLIB_ERR_MKDIR;
+				goto fail;
+			}
+			creationDisposition = OPEN_EXISTING;
+		}
 	}
 
 	h = CreateFileW(stream_path,
 			GENERIC_WRITE | WRITE_OWNER | WRITE_DAC,
 			0,
 			NULL,
-			CREATE_ALWAYS,
+			creationDisposition,
 			FILE_FLAG_OPEN_REPARSE_POINT |
 			    FILE_FLAG_BACKUP_SEMANTICS |
 			    inode->i_attributes,
 			NULL);
-	if (!h) {
-		win32_error(GetLastError());
+	if (h == INVALID_HANDLE_VALUE) {
+		err = GetLastError();
+		if (err == ERROR_FILE_EXISTS &&
+		    dentry_is_root(inode_first_dentry(inode)))
+		{
+			/* Already exists */
+			return 0;
+		}
+		ERROR("Failed to create \"%s\"", path_utf8);
+		win32_error(err);
 		ret = WIMLIB_ERR_OPEN;
 		goto fail;
 	}
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		DEBUG("Setting reparse data on \"%s\"", path_utf8);
 		ret = win32_set_reparse_data(h, inode->i_reparse_tag,
 					     lte, path, path_utf8);
 		if (ret)
 			goto fail_close_handle;
 	} else {
 		if (lte) {
+			DEBUG("Extracting stream for \"%s\" (len = %zu)",
+			      path_utf8, wim_resource_size(lte));
 			ret = do_win32_extract_stream(h, lte);
 			if (ret)
 				goto fail_close_handle;
@@ -194,7 +223,9 @@ static int win32_extract_stream(const struct wim_inode *inode,
 	}
 
 	if (!CloseHandle(h)) {
-		win32_error(GetLastError());
+		err = GetLastError();
+		ERROR("Failed to close \"%s\"", path_utf8);
+		win32_error(err);
 		ret = WIMLIB_ERR_WRITE;
 		goto fail;
 	}
@@ -556,6 +587,8 @@ static int extract_directory(struct wim_dentry *dentry,
 		return WIMLIB_ERR_MKDIR;
 	}
 dir_exists:
+	ret = 0;
+#if !defined(__CYGWIN__) && !defined(__WIN32__)
 	if (dentry) {
 		struct wimlib_unix_data unix_data;
 		ret = inode_get_unix_data(dentry->d_inode, &unix_data, NULL);
@@ -565,9 +598,8 @@ dir_exists:
 			ret = 0;
 		else
 			ret = dir_apply_unix_data(output_path, &unix_data);
-	} else {
-		ret = 0;
 	}
+#endif
 	return ret;
 }
 
@@ -577,20 +609,25 @@ static int apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 	struct apply_args *args = arg;
 	struct wim_inode *inode = dentry->d_inode;
 	size_t len;
+	char *output_path;
 
 	len = strlen(args->target);
-	char output_path[len + dentry->full_path_utf8_len + 1];
-	memcpy(output_path, args->target, len);
-	memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
-	output_path[len + dentry->full_path_utf8_len] = '\0';
+	if (dentry_is_root(dentry)) {
+		output_path = (char*)args->target;
+	} else {
+		output_path = alloca(len + dentry->full_path_utf8_len + 1);
+		memcpy(output_path, args->target, len);
+		memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
+		output_path[len + dentry->full_path_utf8_len] = '\0';
+		len += dentry->full_path_utf8_len;
+	}
 
 #if defined(__CYGWIN__) || defined(__WIN32__)
 	char *utf16_path;
 	size_t utf16_path_len;
 	DWORD err;
 	int ret;
-	ret = utf8_to_utf16(output_path, len + dentry->full_path_utf8_len,
-			    &utf16_path, &utf16_path_len);
+	ret = utf8_to_utf16(output_path, len, &utf16_path, &utf16_path_len);
 	if (ret)
 		return ret;
 
@@ -615,6 +652,8 @@ static int apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 		goto out_free_utf16_path;
 
 	if (inode->i_security_id != -1) {
+		DEBUG("Setting security descriptor %d on %s",
+		      inode->i_security_id, output_path);
 		ret = win32_set_security_data(inode,
 					      (const wchar_t*)utf16_path,
 					      wim_const_security_data(args->w),
@@ -678,10 +717,10 @@ static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 		       FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
 		       NULL);
 
-	if (!h)
+	if (h == INVALID_HANDLE_VALUE)
 		err = GetLastError();
 	FREE(utf16_path);
-	if (!h)
+	if (h == INVALID_HANDLE_VALUE)
 		goto fail;
 
 	FILETIME creationTime = {.dwLowDateTime = dentry->d_inode->i_creation_time & 0xffffffff,
@@ -1160,6 +1199,10 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w,
 #if defined(__CYGWIN__) || defined(__WIN32__)
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
 		ERROR("Extracting UNIX data is not supported on Windows");
+		return WIMLIB_ERR_INVALID_PARAM;
+	}
+	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK)) {
+		ERROR("Linked extraction modes are not supported on Windows");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 #endif
