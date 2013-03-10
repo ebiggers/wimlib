@@ -2,11 +2,6 @@
  * extract_image.c
  *
  * Support for extracting WIM files.
- *
- * This code does NOT contain any filesystem-specific features.  In particular,
- * security information (i.e. file permissions) and alternate data streams are
- * ignored, except possibly to read an alternate data stream that contains
- * symbolic link data.
  */
 
 /*
@@ -31,30 +26,30 @@
 #include "config.h"
 
 #if defined(__CYGWIN__) || defined(__WIN32__)
-#include <windows.h>
-#ifdef ERROR
-#undef ERROR
-#endif
-#include <wchar.h>
+#	include <windows.h>
+#	ifdef ERROR
+#		undef ERROR
+#	endif
+#	include <wchar.h>
+#else
+#	include <dirent.h>
+#	ifdef HAVE_UTIME_H
+#		include <utime.h>
+#	endif
+#	include "timestamp.h"
+#	include <sys/time.h>
 #endif
 
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <stdlib.h>
-#include <sys/time.h>
-
-#ifdef HAVE_UTIME_H
-#include <utime.h>
-#endif
 
 #include <unistd.h>
 
 #include "dentry.h"
 #include "lookup_table.h"
-#include "timestamp.h"
 #include "wimlib_internal.h"
 #include "xml.h"
 
@@ -64,8 +59,6 @@
 
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
-#else
-#include <stdlib.h>
 #endif
 
 #if defined(__CYGWIN__) || defined(__WIN32__)
@@ -350,7 +343,7 @@ static int win32_set_security_data(const struct wim_inode *inode,
 	return 0;
 }
 
-#else
+#else /* __CYGWIN__ || __WIN32__ */
 static int extract_regular_file_linked(struct wim_dentry *dentry,
 				       const char *output_path,
 				       struct apply_args *args,
@@ -619,7 +612,7 @@ static int extract_symlink(struct wim_dentry *dentry,
 	return 0;
 }
 
-#endif /* !__CYGWIN__ && !__WIN32__ */
+#endif /* !(__CYGWIN__ || __WIN32__) */
 
 static int extract_directory(struct wim_dentry *dentry,
 			     const char *output_path, bool is_root)
@@ -785,8 +778,11 @@ static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 		return ret;
 
 	DEBUG("Opening \"%ls\" to set timestamps", utf16_path);
-	h = CreateFileW(utf16_path, GENERIC_WRITE, FILE_SHARE_READ,
-			NULL, OPEN_EXISTING,
+	h = CreateFileW((const wchar_t*)utf16_path,
+			GENERIC_WRITE,
+			FILE_SHARE_READ,
+			NULL,
+			OPEN_EXISTING,
 			FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
 			NULL);
 

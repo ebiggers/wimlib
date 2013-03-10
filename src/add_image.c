@@ -27,32 +27,29 @@
 #	include <windows.h>
 #	include <ntdef.h>
 #	include <wchar.h>
-#	include <sys/cygwin.h>
-#	include <fcntl.h>
 #	ifdef ERROR
 #		undef ERROR
 #	endif
 #	include "security.h"
+#else
+#	include <dirent.h>
+#	include <sys/stat.h>
+#	include "timestamp.h"
 #endif
 
 #include "wimlib_internal.h"
 #include "dentry.h"
-#include "timestamp.h"
 #include "lookup_table.h"
 #include "xml.h"
-#include <string.h>
+#include <ctype.h>
+#include <errno.h>
 #include <fnmatch.h>
 #include <stdlib.h>
-#include <ctype.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include <errno.h>
+#include <string.h>
 #include <unistd.h>
 
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
-#else
-#include <stdlib.h>
 #endif
 
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT	0x80000000
@@ -146,8 +143,7 @@ static int win32_get_short_name(struct wim_dentry *dentry,
 
 static int win32_get_security_descriptor(struct wim_dentry *dentry,
 					 struct sd_set *sd_set,
-					 const wchar_t *path_utf16,
-					 const char *path)
+					 const wchar_t *path_utf16)
 {
 	SECURITY_INFORMATION requestedInformation;
 	DWORD lenNeeded = 0;
@@ -162,10 +158,7 @@ static int win32_get_security_descriptor(struct wim_dentry *dentry,
 	status = GetFileSecurityW(path_utf16, requestedInformation,
 				  NULL, 0, &lenNeeded);
 	err = GetLastError();
-
-	/* Error code appears to be ERROR_INSUFFICIENT_BUFFER but
-	 * GetFileSecurity is poorly documented... */
-	if (err == ERROR_INSUFFICIENT_BUFFER || err == NO_ERROR) {
+	if (!status && err == ERROR_INSUFFICIENT_BUFFER) {
 		DWORD len = lenNeeded;
 		char buf[len];
 		if (GetFileSecurityW(path_utf16, requestedInformation,
@@ -182,13 +175,14 @@ static int win32_get_security_descriptor(struct wim_dentry *dentry,
 			err = GetLastError();
 		}
 	}
-	ERROR("Win32 API: Failed to read security descriptor of \"%s\"",
-	      path);
+	ERROR("Win32 API: Failed to read security descriptor of \"%ls\"",
+	      path_utf16);
 	win32_error(err);
 	return WIMLIB_ERR_READ;
 }
 
-
+/* Reads the directory entries of directory using a Win32 API and recursively
+ * calls build_dentry_tree() on them. */
 static int win32_recurse_directory(struct wim_dentry *root,
 				   const char *root_disk_path,
 				   struct wim_lookup_table *lookup_table,
@@ -206,6 +200,10 @@ static int win32_recurse_directory(struct wim_dentry *root,
 	int ret;
 
 	{
+		/* Begin reading the directory by calling FindFirstFileW.
+		 * Unlink UNIX opendir(), FindFirstFileW has file globbing built
+		 * into it.  But this isn't what we actually want, so just add a
+		 * dummy glob to get all entries. */
 		wchar_t pattern_buf[path_utf16_nchars + 3];
 		memcpy(pattern_buf, path_utf16,
 		       path_utf16_nchars * sizeof(wchar_t));
@@ -227,6 +225,7 @@ static int win32_recurse_directory(struct wim_dentry *root,
 	}
 	ret = 0;
 	do {
+		/* Skip . and .. entries */
 		if (!(dat.cFileName[0] == L'.' &&
 		      (dat.cFileName[1] == L'\0' ||
 		       (dat.cFileName[1] == L'.' && dat.cFileName[2] == L'\0'))))
@@ -242,7 +241,7 @@ static int win32_recurse_directory(struct wim_dentry *root,
 			if (ret)
 				goto out_find_close;
 
-			char name[strlen(root_disk_path) + utf8_name_nbytes + 1];
+			char name[strlen(root_disk_path) + 1 + utf8_name_nbytes + 1];
 			sprintf(name, "%s/%s", root_disk_path, utf8_name);
 			FREE(utf8_name);
 			ret = build_dentry_tree(&child, name, lookup_table,
@@ -266,30 +265,61 @@ out_find_close:
 	return ret;
 }
 
-static int win32_capture_reparse_point(const char *path,
-				       HANDLE hFile,
+/* Load a reparse point into a WIM inode.  It is just stored in memory.
+ *
+ * @hFile:  Open handle to a reparse point, with permission to read the reparse
+ *          data.
+ *
+ * @inode:  WIM inode for the reparse point.
+ *
+ * @lookup_table:  Stream lookup table for the WIM; an entry will be added to it
+ *                 for the reparse point unless an entry already exists for
+ *                 the exact same data stream.
+ *
+ * @path:  External path to the parse point (UTF-8).  Used for error messages
+ *         only.
+ *
+ * Returns 0 on success; nonzero on failure. */
+static int win32_capture_reparse_point(HANDLE hFile,
 				       struct wim_inode *inode,
-				       struct wim_lookup_table *lookup_table)
+				       struct wim_lookup_table *lookup_table,
+				       const char *path)
 {
 	/* "Reparse point data, including the tag and optional GUID,
 	 * cannot exceed 16 kilobytes." - MSDN  */
 	char reparse_point_buf[16 * 1024];
 	DWORD bytesReturned;
-	const REPARSE_DATA_BUFFER *buf;
 
 	if (!DeviceIoControl(hFile, FSCTL_GET_REPARSE_POINT,
 			     NULL, 0, reparse_point_buf,
 			     sizeof(reparse_point_buf), &bytesReturned, NULL))
 	{
+		DWORD err = GetLastError();
 		ERROR("Win32 API: Failed to get reparse data of \"%s\"", path);
+		win32_error(err);
 		return WIMLIB_ERR_READ;
 	}
-	buf = (const REPARSE_DATA_BUFFER*)reparse_point_buf;
-	inode->i_reparse_tag = buf->ReparseTag;
-	return inode_add_ads_with_data(inode, "", (const u8*)buf + 8,
+	if (bytesReturned < 8) {
+		ERROR("Reparse data on \"%s\" is invalid", path);
+		return WIMLIB_ERR_READ;
+	}
+	inode->i_reparse_tag = *(u32*)reparse_point_buf;
+	return inode_add_ads_with_data(inode, "",
+				       (const u8*)reparse_point_buf + 8,
 				       bytesReturned - 8, lookup_table);
 }
 
+/* Calculate the SHA1 message digest of a Win32 data stream, which may be either
+ * an unnamed or named data stream.
+ *
+ * @path:	Path to the file, with the stream noted at the end for named
+ *              streams.  UTF-16LE encoding.
+ *
+ * @hash:       On success, the SHA1 message digest of the stream is written to
+ *              this location.
+ *
+ * Returns 0 on success; nonzero on failure.
+ */
 static int win32_sha1sum(const wchar_t *path, u8 hash[SHA1_HASH_SIZE])
 {
 	HANDLE hFile;
@@ -298,7 +328,7 @@ static int win32_sha1sum(const wchar_t *path, u8 hash[SHA1_HASH_SIZE])
 	DWORD bytesRead;
 	int ret;
 
-	hFile = win32_open_file(path);
+	hFile = win32_open_file_readonly(path);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return WIMLIB_ERR_OPEN;
 
@@ -319,8 +349,25 @@ out_close_handle:
 	return ret;
 }
 
-static int win32_capture_stream(const char *path,
-				const wchar_t *path_utf16,
+/* Scans an unnamed or named stream of a Win32 file (not a reparse point
+ * stream); calculates its SHA1 message digest and either creates a `struct
+ * wim_lookup_table_entry' in memory for it, or uses an existing 'struct
+ * wim_lookup_table_entry' for an identical stream.
+ *
+ * @path_utf16:         Path to the file (UTF-16LE).
+ *
+ * @path_utf16_nchars:  Number of 2-byte characters in @path_utf16.
+ *
+ * @inode:              WIM inode to save the stream into.
+ *
+ * @lookup_table:       Stream lookup table for the WIM.
+ *
+ * @dat:                A `WIN32_FIND_STREAM_DATA' structure that specifies the
+ *                      stream name.
+ *
+ * Returns 0 on success; nonzero on failure.
+ */
+static int win32_capture_stream(const wchar_t *path_utf16,
 				size_t path_utf16_nchars,
 				struct wim_inode *inode,
 				struct wim_lookup_table *lookup_table,
@@ -336,11 +383,14 @@ static int win32_capture_stream(const char *path,
 	size_t spath_nchars;
 	DWORD err;
 
+	/* The stream name should be returned as :NAME:TYPE */
 	p = dat->cStreamName;
-	wimlib_assert(*p == L':');
+	if (*p != L':')
+		goto out_invalid_stream_name;
 	p += 1;
 	colon = wcschr(p, L':');
-	wimlib_assert(colon != NULL);
+	if (colon == NULL)
+		goto out_invalid_stream_name;
 
 	if (wcscmp(colon + 1, L"$DATA")) {
 		/* Not a DATA stream */
@@ -349,8 +399,8 @@ static int win32_capture_stream(const char *path,
 	}
 
 	is_named_stream = (p != colon);
-
 	if (is_named_stream) {
+		/* Allocate an ADS entry for the named stream. */
 		char *utf8_stream_name;
 		size_t utf8_stream_name_len;
 		ret = utf16_to_utf8((const char *)p,
@@ -367,6 +417,10 @@ static int win32_capture_stream(const char *path,
 		}
 	}
 
+	/* Create a UTF-16 string @spath that gives the filename, then a colon,
+	 * then the stream name.  Or, if it's an unnamed stream, just the
+	 * filename.  It is MALLOC()'ed so that it can be saved in the
+	 * wim_lookup_table_entry if needed. */
 	*colon = '\0';
 	spath_nchars = path_utf16_nchars;
 	if (is_named_stream)
@@ -383,15 +437,19 @@ static int win32_capture_stream(const char *path,
 	ret = win32_sha1sum(spath, hash);
 	if (ret) {
 		err = GetLastError();
-		ERROR("Win32 API: Failed to read \"%s\" to calculate SHA1sum", path);
+		ERROR("Win32 API: Failed to read \"%ls\" to calculate SHA1sum",
+		      path_utf16);
 		win32_error(err);
 		goto out_free_spath;
 	}
 
 	lte = __lookup_resource(lookup_table, hash);
 	if (lte) {
+		/* Use existing wim_lookup_table_entry that has the same SHA1
+		 * message digest */
 		lte->refcnt++;
 	} else {
+		/* Make a new new wim_lookup_table_entry */
 		lte = new_lookup_table_entry();
 		if (!lte) {
 			ret = WIMLIB_ERR_NOMEM;
@@ -413,10 +471,26 @@ out_free_spath:
 	FREE(spath);
 out:
 	return ret;
+out_invalid_stream_name:
+	ERROR("Invalid stream name: \"%ls:%ls\"", path_utf16, dat->cStreamName);
+	ret = WIMLIB_ERR_READ;
+	goto out;
 }
 
-static int win32_capture_streams(const char *path,
-				 const wchar_t *path_utf16,
+/* Scans a Win32 file for unnamed and named data streams (not reparse point
+ * streams).
+ *
+ * @path_utf16:         Path to the file (UTF-16LE).
+ *
+ * @path_utf16_nchars:  Number of 2-byte characters in @path_utf16.
+ *
+ * @inode:              WIM inode to save the stream into.
+ *
+ * @lookup_table:       Stream lookup table for the WIM.
+ *
+ * Returns 0 on success; nonzero on failure.
+ */
+static int win32_capture_streams(const wchar_t *path_utf16,
 				 size_t path_utf16_nchars,
 				 struct wim_inode *inode,
 				 struct wim_lookup_table *lookup_table)
@@ -438,14 +512,14 @@ static int win32_capture_streams(const char *path,
 		{
 			return 0;
 		} else {
-			ERROR("Win32 API: Failed to look up data streams of \"%s\"",
-			      path);
+			ERROR("Win32 API: Failed to look up data streams of \"%ls\"",
+			      path_utf16);
 			win32_error(err);
 			return WIMLIB_ERR_READ;
 		}
 	}
 	do {
-		ret = win32_capture_stream(path, path_utf16,
+		ret = win32_capture_stream(path_utf16,
 					   path_utf16_nchars,
 					   inode, lookup_table,
 					   &dat);
@@ -454,7 +528,7 @@ static int win32_capture_streams(const char *path,
 	} while (FindNextStreamW(hFind, &dat));
 	err = GetLastError();
 	if (err != ERROR_HANDLE_EOF) {
-		ERROR("Win32 API: Error reading data streams from \"%s\"", path);
+		ERROR("Win32 API: Error reading data streams from \"%ls\"", path_utf16);
 		win32_error(err);
 		ret = WIMLIB_ERR_READ;
 	}
@@ -473,7 +547,7 @@ out_find_close:
  *		modified if successful.  Set to NULL if the file or directory was
  *		excluded from capture.
  *
- * @root_disk_path:  The path to the root of the directory tree on disk.
+ * @root_disk_path:  The path to the root of the directory tree on disk (UTF-8).
  *
  * @lookup_table: The lookup table for the WIM file.  For each file added to the
  * 		dentry tree being built, an entry is added to the lookup table,
@@ -488,7 +562,8 @@ out_find_close:
  *
  * @add_flags:  Bitwise or of WIMLIB_ADD_IMAGE_FLAG_*
  *
- * @extra_arg:	Ignored. (Only used in NTFS mode.)
+ * @extra_arg:	Ignored in UNIX builds; used to pass sd_set pointer in Windows
+ *		builds.
  *
  * @return:	0 on success, nonzero on failure.  It is a failure if any of
  *		the files cannot be `stat'ed, or if any of the needed
@@ -772,10 +847,10 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 	ret = utf8_to_utf16(root_disk_path, strlen(root_disk_path),
 			    (char**)&path_utf16, &path_utf16_nchars);
 	if (ret)
-		goto out_destroy_sd_set;
+		goto out;
 	path_utf16_nchars /= sizeof(wchar_t);
 
-	HANDLE hFile = win32_open_file(path_utf16);
+	HANDLE hFile = win32_open_file_readonly(path_utf16);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
 		ERROR("Win32 API: Failed to open \"%s\"", root_disk_path);
@@ -803,7 +878,7 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 			ret = WIMLIB_ERR_NOMEM;
 		else
 			ret = WIMLIB_ERR_ICONV_NOT_AVAILABLE;
-		goto out_free_path_utf16;
+		goto out_close_handle;
 	}
 
 	/* Start preparing the associated WIM inode */
@@ -823,8 +898,7 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 	ret = win32_get_short_name(root, path_utf16);
 	if (ret)
 		goto out_close_handle;
-	ret = win32_get_security_descriptor(root, sd_set, path_utf16,
-					    root_disk_path);
+	ret = win32_get_security_descriptor(root, sd_set, path_utf16);
 	if (ret)
 		goto out_close_handle;
 
@@ -832,9 +906,8 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 		/* Directory (not a reparse point) --- recurse to children */
 
 		/* But first... directories may have alternate data streams that
-		 * need to be captured (maybe?) */
-		ret = win32_capture_streams(root_disk_path,
-					    path_utf16,
+		 * need to be captured. */
+		ret = win32_capture_streams(path_utf16,
 					    path_utf16_nchars,
 					    inode,
 					    lookup_table);
@@ -852,16 +925,14 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 					      path_utf16_nchars);
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Reparse point: save the reparse tag and data */
-
-		ret = win32_capture_reparse_point(root_disk_path,
-						  hFile,
+		ret = win32_capture_reparse_point(hFile,
 						  inode,
-						  lookup_table);
-
+						  lookup_table,
+						  root_disk_path);
 	} else {
-		/* Not a directory, not a reparse point */
-		ret = win32_capture_streams(root_disk_path,
-					    path_utf16,
+		/* Not a directory, not a reparse point; capture the default
+		 * file contents and any alternate data streams. */
+		ret = win32_capture_streams(path_utf16,
 					    path_utf16_nchars,
 					    inode,
 					    lookup_table);
@@ -874,6 +945,9 @@ out_destroy_sd_set:
 out_free_path_utf16:
 	FREE(path_utf16);
 #endif
+	/* The below lines of code are common to both UNIX and Win32 builds.  It
+	 * simply returns the captured directory tree if the capture was
+	 * successful, or frees it if the capture was unsuccessful. */
 out:
 	if (ret == 0)
 		*root_ret = root;
@@ -1136,6 +1210,17 @@ static const char *canonicalize_target_path(char *target_path)
 	return target_path;
 }
 
+#if defined(__CYGWIN__) || defined(__WIN32__)
+static void zap_backslashes(char *s)
+{
+	while (*s) {
+		if (*s == '\\')
+			*s = '/';
+		s++;
+	}
+}
+#endif
+
 /* Strip leading and trailing slashes from the target paths */
 static void canonicalize_targets(struct wimlib_capture_source *sources,
 				 size_t num_sources)
@@ -1144,6 +1229,13 @@ static void canonicalize_targets(struct wimlib_capture_source *sources,
 		DEBUG("Canonicalizing { source: \"%s\", target=\"%s\"}",
 		      sources->fs_source_path,
 		      sources->wim_target_path);
+#if defined(__CYGWIN__) || defined(__WIN32__)
+		/* The Windows API can handle forward slashes.  Just get rid of
+		 * backslashes to avoid confusing other parts of the library
+		 * code. */
+		zap_backslashes(sources->fs_source_path);
+		zap_backslashes(sources->wim_target_path);
+#endif
 		sources->wim_target_path =
 			(char*)canonicalize_target_path(sources->wim_target_path);
 		DEBUG("Canonical target: \"%s\"", sources->wim_target_path);

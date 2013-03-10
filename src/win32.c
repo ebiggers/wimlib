@@ -29,7 +29,7 @@ void win32_error(u32 err_code)
 #define win32_error(err_code)
 #endif
 
-void *win32_open_file(const void *path)
+void *win32_open_file_readonly(const void *path)
 {
 	return CreateFileW((const wchar_t*)path,
 			   GENERIC_READ | READ_CONTROL,

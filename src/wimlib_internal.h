@@ -533,7 +533,7 @@ extern void destroy_image_metadata(struct wim_image_metadata *imd,
 #if defined(__CYGWIN__) || defined(__WIN32__)
 extern int win32_read_file(const char *filename, void *handle, u64 offset,
 			   size_t size, u8 *buf);
-extern void *win32_open_file(const void *path_utf16);
+extern void *win32_open_file_readonly(const void *path_utf16);
 extern void win32_close_file(void *handle);
 #ifdef ENABLE_ERROR_MESSAGES
 extern void win32_error(u32 err);
