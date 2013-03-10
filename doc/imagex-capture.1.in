@@ -118,7 +118,7 @@ page, which is written to document UNIX version.
 \fBimagex capture\fR and \fBimagex append\fR do not have separate "normal" and
 "NTFS" modes on Windows.  There is simply one mode, and it uses the Windows API
 to capture NTFS-specific information, including alternate data streams, reparse
-points, hard link, and symbolic links.  So, you essentially get the advantages
+points, hard links, and file attributes.  So, you essentially get the advantages
 of the "NTFS mode" documented above, but you can capture a WIM image from any
 directory, not just an entire NTFS volume.  This is mostly the same behavior as
 Microsoft's ImageX.

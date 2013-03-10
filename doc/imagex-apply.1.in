@@ -201,8 +201,8 @@ UNIX version.
 
 \fBimagex apply\fR does not have separate "normal" and "NTFS" modes on Windows.
 There is simply one mode, and it uses the Windows API to apply NTFS-specific
-information, including alternate data streams, reparse points, hard link, and
-symbolic links.  So, you essentially get the advantages of the "NTFS mode"
+information, including alternate data streams, reparse points, hard links, and
+file attributes.  So, you essentially get the advantages of the "NTFS mode"
 documented above, but you can apply the WIM image to any directory, not just an
 entire NTFS volume.  This is mostly the same behavior as Microsoft's ImageX.
 

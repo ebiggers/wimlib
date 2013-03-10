@@ -182,17 +182,20 @@ case "$host" in
 
 		WITH_NTFS_3G_DEFAULT="no"
 		WITH_FUSE_DEFAULT="no"
+		WINDOWS_BUILD="yes"
 		;;
 	*)
 		CYGWIN_EXTRA_LDFLAGS=""
 		VISIBILITY_CFLAGS="-fvisibility=hidden"
 		WITH_NTFS_3G_DEFAULT="yes"
 		WITH_FUSE_DEFAULT="yes"
+		WINDOWS_BUILD="no"
 		;;
 esac
 
 AC_SUBST([CYGWIN_EXTRA_LDFLAGS], [$CYGWIN_EXTRA_LDFLAGS])
 AC_SUBST([VISIBILITY_CFLAGS], [$VISIBILITY_CFLAGS])
+AM_CONDITIONAL([WINDOWS_BUILD], [test "x$WINDOWS_BUILD" = "xyes"])
 
 AC_MSG_CHECKING([whether to include support for ntfs-3g])
 AC_ARG_WITH([ntfs-3g],
