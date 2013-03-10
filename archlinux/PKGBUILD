@@ -1,7 +1,7 @@
 # Maintainer:  Eric Biggers <ebiggers3 at gmail dot com>
 
 pkgname=wimlib
-pkgver=1.2.7
+pkgver=1.3.0
 pkgrel=1
 pkgdesc="A library to extract, create, and modify WIM files"
 arch=("i686" "x86_64")
@@ -31,6 +31,7 @@ check() {
 package() {
 	cd "$pkgname-$pkgver"
 	make DESTDIR="$pkgdir" install
-	install -Dm644 README "$pkgdir/usr/share/doc/$pkgname/README"
-	install -Dm644 NEWS "$pkgdir/usr/share/doc/$pkgname/NEWS"
+	for file in README NEWS README.WINDOWS; do
+		install -Dm644 $file "$pkgdir/usr/share/doc/$pkgname/$file"
+	done
 }

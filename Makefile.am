@@ -107,6 +107,7 @@ EXTRA_DIST =					\
 	archlinux				\
 	debian					\
 	rpm					\
+	README.WINDOWS				\
 	programs/install.cmd			\
 	programs/wimapply.c			\
 	tests/common_tests.sh			\
