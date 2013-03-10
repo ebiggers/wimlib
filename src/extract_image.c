@@ -220,7 +220,7 @@ static int win32_extract_stream(const struct wim_inode *inode,
 
 	DEBUG("Opening \"%ls\"", stream_path);
 	h = CreateFileW(stream_path,
-			GENERIC_WRITE | WRITE_OWNER | WRITE_DAC,
+			GENERIC_WRITE | WRITE_OWNER | WRITE_DAC | ACCESS_SYSTEM_SECURITY,
 			0,
 			NULL,
 			creationDisposition,
@@ -282,7 +282,7 @@ out:
  * Returns 0 on success; nonzero on failure.
  */
 static int win32_extract_streams(struct wim_inode *inode,
-				 const wchar_t *path)
+				 const wchar_t *path, u64 *completed_bytes_p)
 {
 	struct wim_lookup_table_entry *unnamed_lte;
 	int ret;
@@ -291,6 +291,8 @@ static int win32_extract_streams(struct wim_inode *inode,
 	ret = win32_extract_stream(inode, path, NULL, unnamed_lte);
 	if (ret)
 		goto out;
+	if (unnamed_lte)
+		*completed_bytes_p += wim_resource_size(unnamed_lte);
 	for (u16 i = 0; i < inode->i_num_ads; i++) {
 		const struct wim_ads_entry *ads_entry = &inode->i_ads_entries[i];
 		if (ads_entry->stream_name_len != 0) {
@@ -307,6 +309,8 @@ static int win32_extract_streams(struct wim_inode *inode,
 						   ads_entry->lte);
 			if (ret)
 				break;
+			if (ads_entry->lte)
+				*completed_bytes_p += wim_resource_size(ads_entry->lte);
 		}
 	}
 out:
@@ -707,7 +711,8 @@ static int apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 	} else {
 		/* Create the file, directory, or reparse point, and extract the
 		 * data streams. */
-		ret = win32_extract_streams(inode, (const wchar_t*)utf16_path);
+		ret = win32_extract_streams(inode, (const wchar_t*)utf16_path,
+					    &args->progress.extract.completed_bytes);
 		if (ret)
 			goto out_free_utf16_path;
 
@@ -779,7 +784,7 @@ static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 
 	DEBUG("Opening \"%ls\" to set timestamps", utf16_path);
 	h = CreateFileW((const wchar_t*)utf16_path,
-			GENERIC_WRITE,
+			GENERIC_WRITE | WRITE_OWNER | WRITE_DAC | ACCESS_SYSTEM_SECURITY,
 			FILE_SHARE_READ,
 			NULL,
 			OPEN_EXISTING,
@@ -810,11 +815,13 @@ static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 		err = GetLastError();
 		goto fail;
 	}
-	return 0;
+	goto out;
 fail:
-	ERROR("Can't set timestamps on \"%s\"", output_path);
+	/* Only warn if setting timestamps failed. */
+	WARNING("Can't set timestamps on \"%s\"", output_path);
 	win32_error(err);
-	return WIMLIB_ERR_WRITE;
+out:
+	return 0;
 #else
 	/* UNIX */
 

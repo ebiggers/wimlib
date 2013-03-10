@@ -1234,7 +1234,8 @@ static void canonicalize_targets(struct wimlib_capture_source *sources,
 		 * backslashes to avoid confusing other parts of the library
 		 * code. */
 		zap_backslashes(sources->fs_source_path);
-		zap_backslashes(sources->wim_target_path);
+		if (sources->wim_target_path)
+			zap_backslashes(sources->wim_target_path);
 #endif
 		sources->wim_target_path =
 			(char*)canonicalize_target_path(sources->wim_target_path);
