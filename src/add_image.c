@@ -21,6 +21,19 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+
+#if defined(__CYGWIN__) || defined(__WIN32__)
+#	include <windows.h>
+#	include <ntdef.h>
+#	include <wchar.h>
+#	include <sys/cygwin.h>
+#	include <fcntl.h>
+#	ifdef ERROR
+#		undef ERROR
+#	endif
+#	include "security.h"
+#endif
+
 #include "wimlib_internal.h"
 #include "dentry.h"
 #include "timestamp.h"
@@ -34,6 +47,21 @@
 #include <dirent.h>
 #include <errno.h>
 #include <unistd.h>
+
+#if defined(__CYGWIN__) || defined(__WIN32__)
+/*#define ERROR_WIN32_SAFE(format, ...)		\*/
+/*{(						\*/
+          /*DWORD err = GetLastError();		\*/
+	/*ERROR(format, ##__VA_ARGS__);		\*/
+	/*SetLastError(err);			\*/
+/*)}*/
+#define DEBUG_WIN32_SAFE(format, ...)		\
+({						\
+	DWORD err = GetLastError();		\
+	DEBUG(format, ##__VA_ARGS__);		\
+	SetLastError(err);			\
+})
+#endif
 
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT	0x80000000
 #define WIMLIB_ADD_IMAGE_FLAG_SOURCE    0x40000000
@@ -89,6 +117,412 @@ err:
 
 }
 
+#if defined(__CYGWIN__) || defined(__WIN32__)
+static u64 FILETIME_to_u64(const FILETIME *ft)
+{
+	return ((u64)ft->dwHighDateTime << 32) | (u64)ft->dwLowDateTime;
+}
+
+#ifdef ENABLE_ERROR_MESSAGES
+static void win32_error(DWORD err_code)
+{
+	char *buffer;
+	DWORD nchars;
+	nchars = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER,
+				NULL, err_code, 0,
+				(char*)&buffer, 0, NULL);
+	if (nchars == 0) {
+		ERROR("Error printing error message! "
+		      "Computer will self-destruct in 3 seconds.");
+	} else {
+		ERROR("Win32 error: %s", buffer);
+		LocalFree(buffer);
+	}
+}
+#else
+#define win32_error(err_code)
+#endif
+
+static HANDLE win32_open_file(const wchar_t *path)
+{
+	return CreateFileW(path,
+			   GENERIC_READ | READ_CONTROL,
+			   FILE_SHARE_READ,
+			   NULL, /* lpSecurityAttributes */
+			   OPEN_EXISTING,
+			   FILE_FLAG_BACKUP_SEMANTICS |
+				   FILE_FLAG_OPEN_REPARSE_POINT,
+			   NULL /* hTemplateFile */);
+}
+
+int win32_read_file(const char *filename,
+		    void *handle, u64 offset, size_t size, u8 *buf)
+{
+	HANDLE h = handle;
+	DWORD err;
+	DWORD bytesRead;
+	LARGE_INTEGER liOffset = {.QuadPart = offset};
+
+	wimlib_assert(size <= 0xffffffff);
+
+	if (SetFilePointerEx(h, liOffset, NULL, FILE_BEGIN))
+		if (ReadFile(h, buf, size, &bytesRead, NULL) && bytesRead == size)
+			return 0;
+	err = GetLastError();
+	ERROR("Error reading \"%s\"", filename);
+	win32_error(err);
+	return WIMLIB_ERR_READ;
+}
+
+void win32_close_handle(void *handle)
+{
+	CloseHandle((HANDLE)handle);
+}
+
+void *win32_open_handle(const char *path_utf16)
+{
+	return (void*)win32_open_file((const wchar_t*)path_utf16);
+}
+
+static int build_dentry_tree(struct wim_dentry **root_ret,
+			     const char *root_disk_path,
+			     struct wim_lookup_table *lookup_table,
+			     struct wim_security_data *sd,
+			     const struct capture_config *config,
+			     int add_image_flags,
+			     wimlib_progress_func_t progress_func,
+			     void *extra_arg);
+
+static int win32_get_short_name(struct wim_dentry *dentry,
+				const wchar_t *path_utf16)
+{
+	WIN32_FIND_DATAW dat;
+	if (FindFirstFileW(path_utf16, &dat) &&
+	    dat.cAlternateFileName[0] != L'\0')
+	{
+		size_t short_name_len = wcslen(dat.cAlternateFileName) * 2;
+		size_t n = short_name_len + sizeof(wchar_t);
+		dentry->short_name = MALLOC(n);
+		if (!dentry->short_name)
+			return WIMLIB_ERR_NOMEM;
+		memcpy(dentry->short_name, dat.cAlternateFileName, n);
+		dentry->short_name_len = short_name_len;
+	}
+	return 0;
+}
+
+static int win32_get_security_descriptor(struct wim_dentry *dentry,
+					 struct sd_set *sd_set,
+					 const wchar_t *path_utf16,
+					 const char *path)
+{
+	SECURITY_INFORMATION requestedInformation;
+	DWORD lenNeeded = 0;
+	BOOL status;
+	DWORD err;
+
+#ifdef BACKUP_SECURITY_INFORMATION
+	requestedInformation = BACKUP_SECURITY_INFORMATION;
+#else
+	requestedInformation = DACL_SECURITY_INFORMATION |
+			       SACL_SECURITY_INFORMATION |
+			       OWNER_SECURITY_INFORMATION |
+			       GROUP_SECURITY_INFORMATION;
+#endif
+	/* Request length of security descriptor */
+	status = GetFileSecurityW(path_utf16, requestedInformation,
+				  NULL, 0, &lenNeeded);
+	err = GetLastError();
+
+	/* Error code appears to be ERROR_INSUFFICIENT_BUFFER but
+	 * GetFileSecurity is poorly documented... */
+	if (err == ERROR_INSUFFICIENT_BUFFER || err == NO_ERROR) {
+		DWORD len = lenNeeded;
+		char buf[len];
+		if (GetFileSecurityW(path_utf16, requestedInformation,
+				     buf, len, &lenNeeded))
+		{
+			int security_id = sd_set_add_sd(sd_set, buf, len);
+			if (security_id < 0)
+				return WIMLIB_ERR_NOMEM;
+			else {
+				dentry->d_inode->i_security_id = security_id;
+				return 0;
+			}
+		} else {
+			err = GetLastError();
+		}
+	}
+	ERROR("Win32 API: Failed to read security descriptor of \"%s\"",
+	      path);
+	win32_error(err);
+	return WIMLIB_ERR_READ;
+}
+
+
+static int win32_recurse_directory(struct wim_dentry *root,
+				   const char *root_disk_path,
+				   struct wim_lookup_table *lookup_table,
+				   struct wim_security_data *sd,
+				   const struct capture_config *config,
+				   int add_image_flags,
+				   wimlib_progress_func_t progress_func,
+				   struct sd_set *sd_set,
+				   const wchar_t *path_utf16,
+				   size_t path_utf16_nchars)
+{
+	WIN32_FIND_DATAW dat;
+	HANDLE hFind;
+	DWORD err;
+	int ret;
+
+	{
+		wchar_t pattern_buf[path_utf16_nchars + 3];
+		memcpy(pattern_buf, path_utf16,
+		       path_utf16_nchars * sizeof(wchar_t));
+		pattern_buf[path_utf16_nchars] = L'/';
+		pattern_buf[path_utf16_nchars + 1] = L'*';
+		pattern_buf[path_utf16_nchars + 2] = L'\0';
+		hFind = FindFirstFileW(pattern_buf, &dat);
+	}
+	if (hFind == INVALID_HANDLE_VALUE) {
+		err = GetLastError();
+		if (err == ERROR_FILE_NOT_FOUND) {
+			return 0;
+		} else {
+			ERROR("Win32 API: Failed to read directory \"%s\"",
+			      root_disk_path);
+			win32_error(err);
+			return WIMLIB_ERR_READ;
+		}
+	}
+	ret = 0;
+	do {
+		if (!(dat.cFileName[0] == L'.' &&
+		      (dat.cFileName[1] == L'\0' ||
+		       (dat.cFileName[1] == L'.' && dat.cFileName[2] == L'\0'))))
+		{
+			struct wim_dentry *child;
+
+			char *utf8_name;
+			size_t utf8_name_nbytes;
+			ret = utf16_to_utf8((const char*)dat.cFileName,
+					    wcslen(dat.cFileName) * sizeof(wchar_t),
+					    &utf8_name,
+					    &utf8_name_nbytes);
+			if (ret)
+				goto out_find_close;
+
+			char name[strlen(root_disk_path) + utf8_name_nbytes + 1];
+			sprintf(name, "%s/%s", root_disk_path, utf8_name);
+			FREE(utf8_name);
+			ret = build_dentry_tree(&child, name, lookup_table,
+						sd, config, add_image_flags,
+						progress_func, sd_set);
+			if (ret)
+				goto out_find_close;
+			if (child)
+				dentry_add_child(root, child);
+		}
+	} while (FindNextFileW(hFind, &dat));
+	err = GetLastError();
+	if (err != ERROR_NO_MORE_FILES) {
+		ERROR("Win32 API: Failed to read directory \"%s\"", root_disk_path);
+		win32_error(err);
+		if (ret == 0)
+			ret = WIMLIB_ERR_READ;
+	}
+out_find_close:
+	FindClose(hFind);
+	return ret;
+}
+
+static int win32_capture_reparse_point(const char *path,
+				       HANDLE hFile,
+				       struct wim_inode *inode,
+				       struct wim_lookup_table *lookup_table)
+{
+	/* "Reparse point data, including the tag and optional GUID,
+	 * cannot exceed 16 kilobytes." - MSDN  */
+	char reparse_point_buf[16 * 1024];
+	DWORD bytesReturned;
+	const REPARSE_DATA_BUFFER *buf;
+
+	if (!DeviceIoControl(hFile, FSCTL_GET_REPARSE_POINT,
+			     NULL, 0, reparse_point_buf,
+			     sizeof(reparse_point_buf), &bytesReturned, NULL))
+	{
+		ERROR("Win32 API: Failed to get reparse data of \"%s\"", path);
+		return WIMLIB_ERR_READ;
+	}
+	buf = (const REPARSE_DATA_BUFFER*)reparse_point_buf;
+	inode->i_reparse_tag = buf->ReparseTag;
+	return inode_add_ads_with_data(inode, "", (const u8*)buf + 8,
+				       bytesReturned - 8, lookup_table);
+}
+
+static int win32_sha1sum(const wchar_t *path, u8 hash[SHA1_HASH_SIZE])
+{
+	HANDLE hFile;
+	SHA_CTX ctx;
+	u8 buf[32768];
+	DWORD bytesRead;
+	int ret;
+
+	hFile = win32_open_file(path);
+	if (hFile == INVALID_HANDLE_VALUE)
+		return WIMLIB_ERR_OPEN;
+
+	sha1_init(&ctx);
+	for (;;) {
+		if (!ReadFile(hFile, buf, sizeof(buf), &bytesRead, NULL)) {
+			ret = WIMLIB_ERR_READ;
+			goto out_close_handle;
+		}
+		if (bytesRead == 0)
+			break;
+		sha1_update(&ctx, buf, bytesRead);
+	}
+	ret = 0;
+	sha1_final(hash, &ctx);
+out_close_handle:
+	CloseHandle(hFile);
+	return ret;
+}
+
+static int win32_capture_stream(const char *path,
+				const wchar_t *path_utf16,
+				size_t path_utf16_nchars,
+				struct wim_inode *inode,
+				struct wim_lookup_table *lookup_table,
+				WIN32_FIND_STREAM_DATA *dat)
+{
+	struct wim_ads_entry *ads_entry;
+	u8 hash[SHA1_HASH_SIZE];
+	struct wim_lookup_table_entry *lte;
+	int ret;
+	wchar_t *p, *colon;
+	bool is_named_stream;
+	wchar_t *spath;
+	size_t spath_nchars;
+	DWORD err;
+
+	p = dat->cStreamName;
+	wimlib_assert(*p == L':');
+	p += 1;
+	colon = wcschr(p, L':');
+	wimlib_assert(colon != NULL);
+
+	if (wcscmp(colon + 1, L"$DATA")) {
+		/* Not a DATA stream */
+		ret = 0;
+		goto out;
+	}
+
+	is_named_stream = (p != colon);
+
+	if (is_named_stream) {
+		char *utf8_stream_name;
+		size_t utf8_stream_name_len;
+		ret = utf16_to_utf8((const char *)p,
+				    colon - p,
+				    &utf8_stream_name,
+				    &utf8_stream_name_len);
+		if (ret)
+			goto out;
+		DEBUG_WIN32_SAFE("Add alternate data stream %s:%s", path, utf8_stream_name);
+		ads_entry = inode_add_ads(inode, utf8_stream_name);
+		FREE(utf8_stream_name);
+		if (!ads_entry) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out;
+		}
+	}
+
+	*colon = '\0';
+	spath_nchars = path_utf16_nchars;
+	if (is_named_stream)
+		spath_nchars += colon - p + 1;
+
+	spath = MALLOC((spath_nchars + 1) * sizeof(wchar_t));
+	memcpy(spath, path_utf16, path_utf16_nchars * sizeof(wchar_t));
+	if (is_named_stream) {
+		spath[path_utf16_nchars] = L':';
+		memcpy(&spath[path_utf16_nchars + 1], p, (colon - p) * sizeof(wchar_t));
+	}
+	spath[spath_nchars] = L'\0';
+
+	ret = win32_sha1sum(spath, hash);
+	if (ret) {
+		err = GetLastError();
+		ERROR("Win32 API: Failed to read \"%s\" to calculate SHA1sum", path);
+		win32_error(err);
+		goto out_free_spath;
+	}
+
+	lte = __lookup_resource(lookup_table, hash);
+	if (lte) {
+		lte->refcnt++;
+	} else {
+		lte = new_lookup_table_entry();
+		if (!lte) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_spath;
+		}
+		lte->file_on_disk = (char*)spath;
+		spath = NULL;
+		lte->resource_location = RESOURCE_WIN32;
+		lte->resource_entry.original_size = (uint64_t)dat->StreamSize.QuadPart;
+		lte->resource_entry.size = (uint64_t)dat->StreamSize.QuadPart;
+		copy_hash(lte->hash, hash);
+		lookup_table_insert(lookup_table, lte);
+	}
+	if (is_named_stream)
+		ads_entry->lte = lte;
+	else
+		inode->i_lte = lte;
+out_free_spath:
+	FREE(spath);
+out:
+	return ret;
+}
+
+static int win32_capture_streams(const char *path,
+				 const wchar_t *path_utf16,
+				 size_t path_utf16_nchars,
+				 struct wim_inode *inode,
+				 struct wim_lookup_table *lookup_table)
+{
+	WIN32_FIND_STREAM_DATA dat;
+	int ret;
+	HANDLE hFind;
+	DWORD err;
+
+	hFind = FindFirstStreamW(path_utf16, FindStreamInfoStandard, &dat, 0);
+	if (hFind == INVALID_HANDLE_VALUE) {
+		ERROR("Win32 API: Failed to look up data streams of \"%s\"",
+		      path);
+		return WIMLIB_ERR_READ;
+	}
+	do {
+		ret = win32_capture_stream(path, path_utf16,
+					   path_utf16_nchars,
+					   inode, lookup_table,
+					   &dat);
+		if (ret)
+			goto out_find_close;
+	} while (FindNextStreamW(hFind, &dat));
+	err = GetLastError();
+	if (err != ERROR_HANDLE_EOF) {
+		ERROR("Win32 API: Error reading data streams from \"%s\"", path);
+		win32_error(err);
+		ret = WIMLIB_ERR_READ;
+	}
+out_find_close:
+	FindClose(hFind);
+	return ret;
+}
+#endif
 
 /*
  * build_dentry_tree():
@@ -132,16 +566,15 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 			     wimlib_progress_func_t progress_func,
 			     void *extra_arg)
 {
-	struct stat root_stbuf;
+	struct wim_dentry *root = NULL;
 	int ret = 0;
-	int (*stat_fn)(const char *restrict, struct stat *restrict);
-	struct wim_dentry *root;
 	struct wim_inode *inode;
 
 	if (exclude_path(root_disk_path, config, true)) {
 		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
 			ERROR("Cannot exclude the root directory from capture");
-			return WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+			goto out;
 		}
 		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
 		    && progress_func)
@@ -151,8 +584,7 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 			info.scan.excluded = true;
 			progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 		}
-		*root_ret = NULL;
-		return 0;
+		goto out;
 	}
 
 	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
@@ -164,6 +596,10 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 		progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 	}
 
+#if !defined(__CYGWIN__) && !defined(__WIN32__)
+	/* UNIX version of capturing a directory tree */
+	struct stat root_stbuf;
+	int (*stat_fn)(const char *restrict, struct stat *restrict);
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)
 		stat_fn = stat;
 	else
@@ -172,7 +608,7 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 	ret = (*stat_fn)(root_disk_path, &root_stbuf);
 	if (ret != 0) {
 		ERROR_WITH_ERRNO("Failed to stat `%s'", root_disk_path);
-		return WIMLIB_ERR_STAT;
+		goto out;
 	}
 
 	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) &&
@@ -184,28 +620,32 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 		ret = stat(root_disk_path, &root_stbuf);
 		if (ret != 0) {
 			ERROR_WITH_ERRNO("Failed to stat `%s'", root_disk_path);
-			return WIMLIB_ERR_STAT;
+			ret = WIMLIB_ERR_STAT;
+			goto out;
 		}
 		if (!S_ISDIR(root_stbuf.st_mode)) {
 			ERROR("`%s' is not a directory", root_disk_path);
-			return WIMLIB_ERR_NOTDIR;
+			ret = WIMLIB_ERR_NOTDIR;
+			goto out;
 		}
 	}
 	if (!S_ISREG(root_stbuf.st_mode) && !S_ISDIR(root_stbuf.st_mode)
 	    && !S_ISLNK(root_stbuf.st_mode)) {
 		ERROR("`%s' is not a regular file, directory, or symbolic link.",
 		      root_disk_path);
-		return WIMLIB_ERR_SPECIAL_FILE;
+		ret = WIMLIB_ERR_SPECIAL_FILE;
+		goto out;
 	}
 
 	root = new_dentry_with_timeless_inode(path_basename(root_disk_path));
 	if (!root) {
 		if (errno == EILSEQ)
-			return WIMLIB_ERR_INVALID_UTF8_STRING;
+			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
 		else if (errno == ENOMEM)
-			return WIMLIB_ERR_NOMEM;
+			ret = WIMLIB_ERR_NOMEM;
 		else
-			return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
+			ret = WIMLIB_ERR_ICONV_NOT_AVAILABLE;
+		goto out;
 	}
 
 	inode = root->d_inode;
@@ -373,6 +813,122 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 			ret = WIMLIB_ERR_READLINK;
 		}
 	}
+#else
+	/* Win32 version of capturing a directory tree */
+
+	wchar_t *path_utf16;
+	size_t path_utf16_nchars;
+	struct sd_set *sd_set;
+	DWORD err;
+
+	if (extra_arg == NULL) {
+		sd_set = alloca(sizeof(struct sd_set));
+		sd_set->rb_root.rb_node = NULL,
+		sd_set->sd = sd;
+	} else {
+		sd_set = extra_arg;
+	}
+
+	DEBUG_WIN32_SAFE("root_disk_path=\"%s\"", root_disk_path);
+	ret = utf8_to_utf16(root_disk_path, strlen(root_disk_path),
+			    (char**)&path_utf16, &path_utf16_nchars);
+	if (ret)
+		goto out_destroy_sd_set;
+	path_utf16_nchars /= sizeof(wchar_t);
+
+	DEBUG_WIN32_SAFE("Win32: Opening file `%s'", root_disk_path);
+	HANDLE hFile = win32_open_file(path_utf16);
+	if (hFile == INVALID_HANDLE_VALUE) {
+		err = GetLastError();
+		ERROR("Win32 API: Failed to open \"%s\"", root_disk_path);
+		win32_error(err);
+		ret = WIMLIB_ERR_OPEN;
+		goto out_free_path_utf16;
+	}
+
+	BY_HANDLE_FILE_INFORMATION file_info;
+	if (!GetFileInformationByHandle(hFile, &file_info)) {
+		err = GetLastError();
+		ERROR("Win32 API: Failed to get file information for \"%s\"",
+		      root_disk_path);
+		win32_error(err);
+		ret = WIMLIB_ERR_STAT;
+		goto out_close_handle;
+	}
+
+	/* Create a WIM dentry */
+	root = new_dentry_with_timeless_inode(path_basename(root_disk_path));
+	if (!root) {
+		if (errno == EILSEQ)
+			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
+		else if (errno == ENOMEM)
+			ret = WIMLIB_ERR_NOMEM;
+		else
+			ret = WIMLIB_ERR_ICONV_NOT_AVAILABLE;
+		goto out_free_path_utf16;
+	}
+
+	/* Start preparing the associated WIM inode */
+	inode = root->d_inode;
+
+	inode->i_attributes = file_info.dwFileAttributes;
+	inode->i_creation_time = FILETIME_to_u64(&file_info.ftCreationTime);
+	inode->i_last_write_time = FILETIME_to_u64(&file_info.ftLastWriteTime);
+	inode->i_last_access_time = FILETIME_to_u64(&file_info.ftLastAccessTime);
+	inode->i_ino = ((u64)file_info.nFileIndexHigh << 32) |
+			(u64)file_info.nFileIndexLow;
+
+	inode->i_resolved = 1;
+	add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
+
+	/* Get DOS name and security descriptor (if any). */
+	ret = win32_get_short_name(root, path_utf16);
+	if (ret)
+		goto out_close_handle;
+	ret = win32_get_security_descriptor(root, sd_set, path_utf16,
+					    root_disk_path);
+	if (ret)
+		goto out_close_handle;
+
+	if (inode_is_directory(inode)) {
+		/* Directory (not a reparse point) --- recurse to children */
+		DEBUG_WIN32_SAFE("Recursing to directory \"%s\"", root_disk_path);
+		ret = win32_recurse_directory(root,
+					      root_disk_path,
+					      lookup_table,
+					      sd,
+					      config,
+					      add_image_flags,
+					      progress_func,
+					      sd_set,
+					      path_utf16,
+					      path_utf16_nchars);
+	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		/* Reparse point: save the reparse tag and data */
+
+		DEBUG_WIN32_SAFE("Capturing reparse point `%s'", root_disk_path);
+		ret = win32_capture_reparse_point(root_disk_path,
+						  hFile,
+						  inode,
+						  lookup_table);
+
+	} else {
+		DEBUG_WIN32_SAFE("Capturing streams of \"%s\"", root_disk_path);
+		/* Not a directory, not a reparse point */
+		ret = win32_capture_streams(root_disk_path,
+					    path_utf16,
+					    path_utf16_nchars,
+					    inode,
+					    lookup_table);
+	}
+out_close_handle:
+	CloseHandle(hFile);
+out_destroy_sd_set:
+	if (extra_arg == NULL)
+		destroy_sd_set(sd_set);
+out_free_path_utf16:
+	FREE(path_utf16);
+#endif
 out:
 	if (ret == 0)
 		*root_ret = root;
@@ -380,7 +936,6 @@ out:
 		free_dentry_tree(root, lookup_table);
 	return ret;
 }
-
 
 enum pattern_type {
 	NONE = 0,

@@ -539,8 +539,8 @@ int read_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
 	case RESOURCE_IN_FILE_ON_DISK:
 		/* The resource is in some file on the external filesystem and
 		 * needs to be read uncompressed */
-		wimlib_assert(lte->file_on_disk);
-		wimlib_assert(&lte->file_on_disk == &lte->staging_file_name);
+		wimlib_assert(lte->file_on_disk != NULL);
+		BUILD_BUG_ON(&lte->file_on_disk != &lte->staging_file_name);
 		/* Use existing file pointer if available; otherwise open one
 		 * temporarily */
 		if (lte->file_on_disk_fp) {
@@ -558,6 +558,14 @@ int read_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
 		if (fp != lte->file_on_disk_fp)
 			fclose(fp);
 		break;
+#if defined(__CYGWIN__) || defined(__WIN32__)
+	case RESOURCE_WIN32:
+		wimlib_assert(lte->file_on_disk_fp != NULL);
+		DEBUG("Calling win32_read_file()");
+		ret = win32_read_file(lte->file_on_disk, lte->file_on_disk_fp,
+				      offset, size, buf);
+		break;
+#endif
 	case RESOURCE_IN_ATTACHED_BUFFER:
 		/* The resource is directly attached uncompressed in an
 		 * in-memory buffer. */

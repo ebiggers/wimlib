@@ -599,7 +599,7 @@ void destroy_image_metadata(struct wim_image_metadata *imd,
  * closes all files associated with the WIMStruct.  */
 WIMLIBAPI void wimlib_free(WIMStruct *w)
 {
-	DEBUG2("Freeing WIMStruct");
+	DEBUG("Freeing WIMStruct");
 
 	if (!w)
 		return;
@@ -635,6 +635,7 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 	}
 #endif
 	FREE(w);
+	DEBUG("Freed WIMStruct");
 }
 
 /* Get global memory allocations out of the way.  Not strictly necessary in

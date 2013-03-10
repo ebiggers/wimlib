@@ -77,6 +77,10 @@ enum resource_location {
 	 * point or not. @ntfs_loc points to a structure containing this
 	 * information. */
 	RESOURCE_IN_NTFS_VOLUME,
+
+	/* Resource must be accessed using Win32 API (may be a named data
+	 * stream) */
+	RESOURCE_WIN32,
 };
 
 /*

@@ -257,43 +257,55 @@ static int prepare_resource_for_read(struct wim_lookup_table_entry *lte
 					#endif
 		)
 {
-	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
-	     && !lte->file_on_disk_fp)
-	{
-		wimlib_assert(lte->file_on_disk);
-		lte->file_on_disk_fp = fopen(lte->file_on_disk, "rb");
+	switch (lte->resource_location) {
+	case RESOURCE_IN_FILE_ON_DISK:
 		if (!lte->file_on_disk_fp) {
-			ERROR_WITH_ERRNO("Failed to open the file `%s' for "
-					 "reading", lte->file_on_disk);
-			return WIMLIB_ERR_OPEN;
+			lte->file_on_disk_fp = fopen(lte->file_on_disk, "rb");
+			if (!lte->file_on_disk_fp) {
+				ERROR_WITH_ERRNO("Failed to open the file "
+						 "`%s'", lte->file_on_disk);
+				return WIMLIB_ERR_OPEN;
+			}
 		}
-	}
+		break;
 #ifdef WITH_NTFS_3G
-	else if (lte->resource_location == RESOURCE_IN_NTFS_VOLUME
-		  && !lte->attr)
-	{
-		struct ntfs_location *loc = lte->ntfs_loc;
-		ntfs_inode *ni;
-		wimlib_assert(loc);
-		ni = ntfs_pathname_to_inode(*loc->ntfs_vol_p, NULL, loc->path_utf8);
-		if (!ni) {
-			ERROR_WITH_ERRNO("Failed to open inode `%s' in NTFS "
-					 "volume", loc->path_utf8);
-			return WIMLIB_ERR_NTFS_3G;
-		}
-		lte->attr = ntfs_attr_open(ni,
-					   loc->is_reparse_point ? AT_REPARSE_POINT : AT_DATA,
-					   (ntfschar*)loc->stream_name_utf16,
-					   loc->stream_name_utf16_num_chars);
+	case RESOURCE_IN_NTFS_VOLUME:
 		if (!lte->attr) {
-			ERROR_WITH_ERRNO("Failed to open attribute of `%s' in "
-					 "NTFS volume", loc->path_utf8);
-			ntfs_inode_close(ni);
-			return WIMLIB_ERR_NTFS_3G;
+			struct ntfs_location *loc = lte->ntfs_loc;
+			ntfs_inode *ni;
+			wimlib_assert(loc);
+			ni = ntfs_pathname_to_inode(*loc->ntfs_vol_p, NULL, loc->path_utf8);
+			if (!ni) {
+				ERROR_WITH_ERRNO("Failed to open inode `%s' in NTFS "
+						 "volume", loc->path_utf8);
+				return WIMLIB_ERR_NTFS_3G;
+			}
+			lte->attr = ntfs_attr_open(ni,
+						   loc->is_reparse_point ? AT_REPARSE_POINT : AT_DATA,
+						   (ntfschar*)loc->stream_name_utf16,
+						   loc->stream_name_utf16_num_chars);
+			if (!lte->attr) {
+				ERROR_WITH_ERRNO("Failed to open attribute of `%s' in "
+						 "NTFS volume", loc->path_utf8);
+				ntfs_inode_close(ni);
+				return WIMLIB_ERR_NTFS_3G;
+			}
+			*ni_ret = ni;
 		}
-		*ni_ret = ni;
-	}
+		break;
 #endif
+#if defined(__CYGWIN__) || defined(__WIN32__)
+	case RESOURCE_WIN32:
+		if (!lte->file_on_disk_fp) {
+			lte->file_on_disk_fp = win32_open_handle(lte->file_on_disk);
+			if (!lte->file_on_disk_fp)
+				return WIMLIB_ERR_OPEN;
+		}
+		break;
+#endif
+	default:
+		break;
+	}
 	return 0;
 }
 
@@ -306,7 +318,8 @@ static void end_wim_resource_read(struct wim_lookup_table_entry *lte
 					)
 {
 	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
-	    && lte->file_on_disk_fp) {
+	    && lte->file_on_disk_fp)
+	{
 		fclose(lte->file_on_disk_fp);
 		lte->file_on_disk_fp = NULL;
 	}
@@ -318,6 +331,14 @@ static void end_wim_resource_read(struct wim_lookup_table_entry *lte
 		}
 		if (ni)
 			ntfs_inode_close(ni);
+	}
+#endif
+#if defined(__CYGWIN__) || defined(__WIN32__)
+	else if (lte->resource_location == RESOURCE_WIN32
+		 && lte->file_on_disk_fp)
+	{
+		win32_close_handle(lte->file_on_disk_fp);
+		lte->file_on_disk_fp = NULL;
 	}
 #endif
 }
@@ -1704,6 +1725,7 @@ WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
 	ret = finish_write(w, image, write_flags, progress_func);
 out:
 	close_wim_writable(w);
+	DEBUG("wimlib_write(path=%s) = %d", path, ret);
 	return ret;
 }
 

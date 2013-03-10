@@ -372,6 +372,10 @@ extern bool exclude_path(const char *path,
 extern int add_new_dentry_tree(WIMStruct *dest_wim, struct wim_dentry *root,
 			       struct wim_security_data *sd);
 
+#if defined(__CYGWIN__) || defined(__WIN32__)
+extern FILE *win32_open_fp(const char *path_utf16);
+#endif
+
 /* extract_image.c */
 
 /* Internal use only */
@@ -480,6 +484,14 @@ extern int extract_wim_chunk_to_fd(const u8 *buf, size_t len,
 extern int extract_wim_resource(const struct wim_lookup_table_entry *lte,
 				u64 size, extract_chunk_func_t extract_chunk,
 				void *extract_chunk_arg);
+
+#if defined(__CYGWIN__) || defined(__WIN32__)
+extern int win32_read_file(const char *filename, void *handle, u64 offset,
+			   size_t size, u8 *buf);
+extern void *win32_open_handle(const char *path_utf16);
+extern void win32_close_handle(void *handle);
+#endif
+
 /*
  * Extracts the first @size bytes of the WIM resource specified by @lte to the
  * open file descriptor @fd.
