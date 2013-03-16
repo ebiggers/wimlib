@@ -245,7 +245,7 @@ static int win32_extract_stream(const struct wim_inode *inode,
 			goto fail_close_handle;
 	} else {
 		if (lte) {
-			DEBUG("Extracting \"%ls\" (len = %zu)",
+			DEBUG("Extracting \"%ls\" (len = %"PRIu64")",
 			      stream_path, wim_resource_size(lte));
 			ret = do_win32_extract_stream(h, lte);
 			if (ret)
@@ -781,7 +781,7 @@ static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 	if (ret)
 		return ret;
 
-	DEBUG("Opening \"%ls\" to set timestamps", utf16_path);
+	DEBUG("Opening \"%s\" to set timestamps", output_path);
 	h = CreateFileW((const wchar_t*)utf16_path,
 			GENERIC_WRITE | WRITE_OWNER | WRITE_DAC | ACCESS_SYSTEM_SECURITY,
 			FILE_SHARE_READ,
@@ -796,12 +796,12 @@ static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 	if (h == INVALID_HANDLE_VALUE)
 		goto fail;
 
-	FILETIME creationTime = {.dwLowDateTime = dentry->d_inode->i_creation_time & 0xffffffff,
-				 .dwHighDateTime = dentry->d_inode->i_creation_time >> 32};
-	FILETIME lastAccessTime = {.dwLowDateTime = dentry->d_inode->i_last_access_time & 0xffffffff,
-				  .dwHighDateTime = dentry->d_inode->i_last_access_time >> 32};
-	FILETIME lastWriteTime = {.dwLowDateTime = dentry->d_inode->i_last_write_time & 0xffffffff,
-				  .dwHighDateTime = dentry->d_inode->i_last_write_time >> 32};
+	FILETIME creationTime = {.dwLowDateTime = inode->i_creation_time & 0xffffffff,
+				 .dwHighDateTime = inode->i_creation_time >> 32};
+	FILETIME lastAccessTime = {.dwLowDateTime = inode->i_last_access_time & 0xffffffff,
+				  .dwHighDateTime = inode->i_last_access_time >> 32};
+	FILETIME lastWriteTime = {.dwLowDateTime = inode->i_last_write_time & 0xffffffff,
+				  .dwHighDateTime = inode->i_last_write_time >> 32};
 
 	DEBUG("Calling SetFileTime() on \"%s\"", output_path);
 	if (!SetFileTime(h, &creationTime, &lastAccessTime, &lastWriteTime)) {

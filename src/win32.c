@@ -32,12 +32,15 @@ void win32_error(u32 err_code)
 void *win32_open_file_readonly(const void *path)
 {
 	return CreateFileW((const wchar_t*)path,
-			   GENERIC_READ | READ_CONTROL,
+			   FILE_READ_DATA |
+			       FILE_READ_ATTRIBUTES |
+			       READ_CONTROL |
+			       ACCESS_SYSTEM_SECURITY,
 			   FILE_SHARE_READ,
 			   NULL, /* lpSecurityAttributes */
 			   OPEN_EXISTING,
 			   FILE_FLAG_BACKUP_SEMANTICS |
-				   FILE_FLAG_OPEN_REPARSE_POINT,
+			       FILE_FLAG_OPEN_REPARSE_POINT,
 			   NULL /* hTemplateFile */);
 }
 
