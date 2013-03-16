@@ -169,19 +169,19 @@ static int win32_extract_stream(const struct wim_inode *inode,
 		/* Named stream.  Create a buffer that contains the UTF-16LE
 		 * string [./]@path:@stream_name_utf16.  This is needed to
 		 * create and open the stream using CreateFileW().  I'm not
-		 * aware of any other APIs to do this.  Note: note that the
-		 * '$DATA' suffix seems to be unneeded; Additional note: a "./"
-		 * prefix needs to be added when the path is not absolute to
-		 * avoid ambiguity with drive letters. */
+		 * aware of any other APIs to do this.  Note: the '$DATA' suffix
+		 * seems to be unneeded.  Additional note: a "./" prefix needs
+		 * to be added when the path is not absolute to avoid ambiguity
+		 * with drive letters. */
 		size_t stream_path_nchars;
 		size_t path_nchars;
 		size_t stream_name_nchars;
 		const wchar_t *prefix;
 
- 		path_nchars = wcslen(path);
+		path_nchars = wcslen(path);
 		stream_name_nchars = wcslen(stream_name_utf16);
 		stream_path_nchars = path_nchars + 1 + stream_name_nchars;
-		if (path[0] != L'/' && path[1] != L'\\') {
+		if (path[0] != L'/' && path[0] != L'\\') {
 			prefix = L"./";
 			stream_path_nchars += 2;
 		} else {
@@ -191,8 +191,8 @@ static int win32_extract_stream(const struct wim_inode *inode,
 		swprintf(stream_path, stream_path_nchars + 1, L"%ls%ls:%ls",
 			 prefix, path, stream_name_utf16);
 	} else {
-		/* Unnamed stream; it's path is just the path to the file
-		 * itself. */
+		/* Unnamed stream; its path is just the path to the file itself.
+		 * */
 		stream_path = (wchar_t*)path;
 
 		/* Directories must be created with CreateDirectoryW().  Then
@@ -203,7 +203,7 @@ static int win32_extract_stream(const struct wim_inode *inode,
 				err = GetLastError();
 				if (err != ERROR_ALREADY_EXISTS) {
 					ERROR("Failed to create directory \"%ls\"",
-					      path);
+					      stream_path);
 					win32_error(err);
 					ret = WIMLIB_ERR_MKDIR;
 					goto fail;
@@ -324,7 +324,6 @@ out:
  * @inode:	The WIM inode that was extracted and has a security descriptor.
  * @path:	UTF-16LE external path that the inode was extracted to.
  * @sd:		Security data for the WIM image.
- * @path_utf8:  @path in UTF-8 for error messages only.
  *
  * Returns 0 on success; nonzero on failure.
  */

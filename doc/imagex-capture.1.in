@@ -113,24 +113,24 @@ multiple files or directories to be incorporated into a WIM image using a single
 
 This section documents the differences between \fBimagex capture\fR and
 \fBimagex append\fR in the Windows builds of wimlib versus the rest of this man
-page, which is written to document UNIX version.
+page, which is written to document UNIX build.
 
 \fBimagex capture\fR and \fBimagex append\fR do not have separate "normal" and
 "NTFS" modes on Windows.  There is simply one mode, and it uses the Windows API
 to capture NTFS-specific information, including alternate data streams, reparse
 points, hard links, and file attributes.  So, you essentially get the advantages
 of the "NTFS mode" documented above, but you can capture a WIM image from any
-directory, not just an entire NTFS volume.  This is mostly the same behavior as
-Microsoft's ImageX.
+directory, not just an entire NTFS volume.  This is essentially the same
+behavior as Microsoft's ImageX.
 
 The \fB--source-list\fR option is supported on Windows, but the
 \fB--dereference\fR option is not.
 
-Other than the differences documented in this section, the Windows version
-should be essentially equivalent to the UNIX version.  However, one additional
-thing to note is that wimlib's Windows version of ImageX is NOT written to be
-command-line compatible with Microsoft's version of ImageX, although they are
-very similar.
+Except for the differences documented in this section, the Windows build of
+\fBimagex capture\fR and \fBimagex append\fR should be essentially equivalent to
+the UNIX build.  However, one additional thing to note is that wimlib's Windows
+ImageX is NOT written to be command-line compatible with Microsoft's ImageX,
+although they are very similar.
 
 .SH OPTIONS
 .TP 6
@@ -235,7 +235,7 @@ UNIX.  Microsoft's software will not understand this special
 information.
 .TP
 \fB--source-list\fR
-\fBimagex capture\fR and \fBimagex append\fR, as of wimlib 1.2.7, support a new
+\fBimagex capture\fR and \fBimagex append\fR, as of wimlib 1.3.0, support a new
 option to create a WIM image from multiple files or directories.  When
 \fB--source-list\fR is specified, the \fISOURCE\fR argument specifies the name
 of a text file, each line of which is either 1 or 2 whitespace separated
@@ -266,7 +266,7 @@ overlay	/overlay
 
 Subdirectories in the WIM are created as needed.  Multiple source directories
 may share the same target, which implies an overlay; however, an error is issued
-if the same file appears in different overlays.
+if the same file appears in different overlays to the same directory.
 
 Filenames containing whitespace may be quoted with either single quotes or
 double quotes.  Quotes may not be escaped.

@@ -176,8 +176,8 @@ case "$host" in
 		dnl -no-undefined is needed to build a DLL in a Cygwin environment.
 		CYGWIN_EXTRA_LDFLAGS="-no-undefined"
 
-		dnl -fvisibility=hidden should not be used in a Cygwin
-		dnl  environment
+		dnl -fvisibility=hidden should not be used when building PE
+		dnl binaries on Windows
 		VISIBILITY_CFLAGS=""
 
 		WITH_NTFS_3G_DEFAULT="no"

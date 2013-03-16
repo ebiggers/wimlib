@@ -201,7 +201,7 @@ static int win32_recurse_directory(struct wim_dentry *root,
 
 	{
 		/* Begin reading the directory by calling FindFirstFileW.
-		 * Unlink UNIX opendir(), FindFirstFileW has file globbing built
+		 * Unlike UNIX opendir(), FindFirstFileW has file globbing built
 		 * into it.  But this isn't what we actually want, so just add a
 		 * dummy glob to get all entries. */
 		wchar_t pattern_buf[path_utf16_nchars + 3];
@@ -449,7 +449,7 @@ static int win32_capture_stream(const wchar_t *path_utf16,
 		 * message digest */
 		lte->refcnt++;
 	} else {
-		/* Make a new new wim_lookup_table_entry */
+		/* Make a new wim_lookup_table_entry */
 		lte = new_lookup_table_entry();
 		if (!lte) {
 			ret = WIMLIB_ERR_NOMEM;
@@ -856,7 +856,7 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 		ERROR("Win32 API: Failed to open \"%s\"", root_disk_path);
 		win32_error(err);
 		ret = WIMLIB_ERR_OPEN;
-		goto out_free_path_utf16;
+		goto out_destroy_sd_set;
 	}
 
 	BY_HANDLE_FILE_INFORMATION file_info;
@@ -1194,7 +1194,7 @@ static const char *canonicalize_target_path(char *target_path)
 {
 	char *p;
 	if (target_path == NULL)
-		target_path = "";
+		return "";
 	for (;;) {
 		if (*target_path == '\0')
 			return target_path;
@@ -1254,7 +1254,7 @@ static int capture_source_cmp(const void *p1, const void *p2)
  * after leading and trailing forward slashes are stripped.
  *
  * One purpose of this is to make sure that target paths that are inside other
- * target paths are extracted after the containing target paths. */
+ * target paths are added after the containing target paths. */
 static void sort_sources(struct wimlib_capture_source *sources,
 			 size_t num_sources)
 {
@@ -1537,8 +1537,10 @@ WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
 	DEBUG("Building dentry tree.");
 	if (num_sources == 0) {
 		root_dentry = new_filler_directory("");
-		if (!root_dentry)
+		if (!root_dentry) {
+			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_security_data;
+		}
 	} else {
 		size_t i;
 

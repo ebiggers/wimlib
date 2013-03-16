@@ -93,9 +93,8 @@ application modes (although the \fBimagex\fR subcommands for the modes are the
 same): one for general image capture and application, and one for the capture or
 application of an image specifically from/to an NTFS volume.
 
-Note: the above applies to UNIX builds.  On the experimental Windows builds of
-wimlib, there is only one image capture and application mode, similar to
-Microsoft's ImageX.
+Note: the above applies to UNIX builds.  On the Windows builds of wimlib, there
+is only one image capture and application mode, similar to Microsoft's ImageX.
 
 .IP \[bu]
 Microsoft's version has some weird limitations, like it won't let you extract a
@@ -136,7 +135,8 @@ create compressed WIM files.
 
 .IP \[bu]
 wimlib's \fBimagex capture\fR supports a special mode where UNIX file modes,
-owners, and groups are stored.
+owners, and groups are stored.  (Note: this functionality is only available on
+UNIX builds.)
 
 .IP \[bu]
 wimlib's \fBimagex mount\fR and \fBimagex mountrw\fR are much faster than

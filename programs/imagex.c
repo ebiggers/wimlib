@@ -348,7 +348,7 @@ enum {
 /*
  * Parses a filename in the source list file format.  (See the man page for
  * 'imagex capture' for details on this format and the meaning.)  Accepted
- * formats for filenames are an unquoted string, whitespace-delimited, or a
+ * formats for filenames are an unquoted string (whitespace-delimited), or a
  * double or single-quoted string.
  *
  * @line_p:  Pointer to the pointer to the line of data.  Will be updated
@@ -494,7 +494,9 @@ parse_source_list(char *source_list_contents, size_t source_list_nbytes,
 	p = source_list_contents;
 	j = 0;
 	for (i = 0; i < nlines; i++) {
-		char *endp = strchr(p, '\n');
+		/* XXX: Could use rawmemchr() here instead, but it may not be
+		 * available on all platforms. */
+		char *endp = memchr(p, '\n', source_list_nbytes);
 		size_t len = endp - p + 1;
 		*endp = '\0';
 		if (!is_comment_line(p, len)) {

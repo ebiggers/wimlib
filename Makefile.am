@@ -159,7 +159,7 @@ if WINDOWS_BUILD
 TESTS =
 else
 # TODO: The tests need to be re-written for Windows builds.  One issue (that
-# applies to both test-imagex and test-imagex-capture_and_apply.) is that
+# applies to both test-imagex and test-imagex-capture_and_apply) is that
 # Cygwin's 'ln -s' will create some sort of regular file with special contents
 # rather than a reparse point.
 TESTS = $(dist_check_SCRIPTS)

@@ -197,23 +197,24 @@ imagex apply mywim.swm 1 dir --ref="mywim*.swm"
 
 This section documents the differences between \fBimagex apply\fR in the Windows
 builds of wimlib versus the rest of this man page, which is written to document
-UNIX version.
+the UNIX build.
 
 \fBimagex apply\fR does not have separate "normal" and "NTFS" modes on Windows.
 There is simply one mode, and it uses the Windows API to apply NTFS-specific
 information, including alternate data streams, reparse points, hard links, and
 file attributes.  So, you essentially get the advantages of the "NTFS mode"
 documented above, but you can apply the WIM image to any directory, not just an
-entire NTFS volume.  This is mostly the same behavior as Microsoft's ImageX.
+entire NTFS volume.  This is essentially the same behavior as Microsoft's
+ImageX.
 
 \fB--hardlink\fR, \fB--symlink\fR, and \fB--unix-data\fR are not supported on
 Windows.
 
-Other than the differences documented in this section, the Windows version
-should be essentially equivalent to the UNIX version.  However, one additional
-thing to note is that wimlib's Windows version of ImageX is NOT written to be
-command-line compatible with Microsoft's version of ImageX, although they are
-very similar.
+Except for the differences documented in this section, the Windows build of
+\fBimagex apply\fR should be essentially equivalent to the UNIX build.  However,
+one additional thing to note is that wimlib's Windows ImageX is NOT written to
+be command-line compatible with Microsoft's ImageX, although they are very
+similar.
 
 .SH OPTIONS
 .TP 6
@@ -257,9 +258,9 @@ the WIM file.  It is an error if the message digests don't match.  It's also
 considered to be an error if any WIM resources cannot be found in the stream
 lookup table.  So you can be fairly certain that the file streams are extracted
 correctly, even though \fBimagex apply\fR don't have a \fB/verify\fR option like
-Microsoft's version of imagex does.  Please note that this is separate from the
-integrity table of the WIM, which provides SHA1 message digests over raw chunks
-of the entire WIM file and is checked separately if the \fB--check\fR option is
+Microsoft's ImageX does.  Please note that this is separate from the integrity
+table of the WIM, which provides SHA1 message digests over raw chunks of the
+entire WIM file and is checked separately if the \fB--check\fR option is
 specified.
 
 You cannot use \fBimagex apply\fR to apply a WIM from a pipe (such as standard
