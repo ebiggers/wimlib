@@ -2124,14 +2124,14 @@ int main(int argc, char **argv)
 	for_imagex_command(cmd) {
 		if (strcmp(cmd->name, *argv) == 0) {
 			ret = cmd->func(argc, argv);
-			goto out;
+			goto out_check_write_error;
 		}
 	}
 
 	imagex_error("Unrecognized command: `%s'", argv[0]);
 	usage_all();
 	return 1;
-out:
+out_check_write_error:
 	/* For 'imagex info' and 'imagex dir', data printed to standard output
 	 * is part of the program's actual behavior and not just for
 	 * informational purposes, so we should set a failure exit status if
@@ -2143,7 +2143,7 @@ out:
 				ret = -1;
 		}
 	}
-
+out:
 	/* Exit status (ret):  -1 indicates an error found by 'imagex' outside
 	 * of the wimlib library code.  0 indicates success.  > 0 indicates a
 	 * wimlib error code from which an error message can be printed. */
