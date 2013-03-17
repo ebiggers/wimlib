@@ -1365,6 +1365,7 @@ static int do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 			return WIMLIB_ERR_INVALID_OVERLAY;
 		}
 	}
+	free_dentry(branch);
 	return 0;
 
 }
