@@ -675,11 +675,15 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 	inode->i_last_write_time = unix_timestamp_to_wim(root_stbuf.st_mtime);
 	inode->i_last_access_time = unix_timestamp_to_wim(root_stbuf.st_atime);
 #endif
-	if (sizeof(ino_t) >= 8)
-		inode->i_ino = (u64)root_stbuf.st_ino;
-	else
-		inode->i_ino = (u64)root_stbuf.st_ino |
-				   ((u64)root_stbuf.st_dev << ((sizeof(ino_t) * 8) & 63));
+	/* Leave the inode number at 0 for directories. */
+	if (!S_ISDIR(root_stbuf.st_mode)) {
+		if (sizeof(ino_t) >= 8)
+			inode->i_ino = (u64)root_stbuf.st_ino;
+		else
+			inode->i_ino = (u64)root_stbuf.st_ino |
+					   ((u64)root_stbuf.st_dev <<
+					    	((sizeof(ino_t) * 8) & 63));
+	}
 	inode->i_resolved = 1;
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
 		ret = inode_set_unix_data(inode, root_stbuf.st_uid,
