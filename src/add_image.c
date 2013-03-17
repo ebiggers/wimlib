@@ -1328,9 +1328,8 @@ new_filler_directory(const char *name)
 	DEBUG("Creating filler directory \"%s\"", name);
 	dentry = new_dentry_with_inode(name);
 	if (dentry) {
-		/* Set the inode number to 0 for now.  The final inode number
+		/* Leave the inode number as 0 for now.  The final inode number
 		 * will be assigned later by assign_inode_numbers(). */
-		dentry->d_inode->i_ino = 0;
 		dentry->d_inode->i_resolved = 1;
 		dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
 	}
@@ -1343,6 +1342,9 @@ new_filler_directory(const char *name)
 static int do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 {
 	struct rb_root *rb_root;
+
+	DEBUG("Doing overlay %s => %s",
+	      branch->file_name_utf8, target->file_name_utf8);
 
 	if (!dentry_is_directory(target)) {
 		ERROR("Cannot overlay directory `%s' over non-directory",
@@ -1387,6 +1389,9 @@ static int attach_branch(struct wim_dentry **root_p,
 {
 	char *slash;
 	struct wim_dentry *dentry, *parent, *target;
+
+	DEBUG("Attaching branch \"%s\" => \"%s\"",
+	      branch->file_name_utf8, target_path);
 
 	if (*target_path == '\0') {
 		/* Target: root directory */
