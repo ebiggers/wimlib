@@ -89,6 +89,11 @@ typedef uint64_t u64;
 /* Used for buffering FILE IO in a few places */
 #define BUFFER_SIZE 4096
 
+static inline void FORMAT(printf, 1, 2)
+dummy_printf(const char *format, ...)
+{
+}
+
 #ifdef ENABLE_ERROR_MESSAGES
 extern void wimlib_error(const char *format, ...)
 		FORMAT(printf, 1, 2) COLD;
@@ -103,8 +108,6 @@ extern void wimlib_warning_with_errno(const char *format, ...)
 #	define WARNING			wimlib_warning
 #	define WARNING_WITH_ERRNO	wimlib_warning
 #else
-static inline FORMAT(printf, 1, 2) void
-dummy_printf(const char *format, ...) { }
 #	define ERROR(format, ...)		dummy_printf
 #	define ERROR_WITH_ERRNO(format, ...)	dummy_printf
 #	define WARNING(format, ...)		dummy_printf
@@ -124,13 +127,13 @@ dummy_printf(const char *format, ...) { }
 	})
 
 #else
-#	define DEBUG(format, ...)
+#	define DEBUG(format, ...) dummy_printf(format, ## __VA_ARGS__)
 #endif /* ENABLE_DEBUG || ENABLE_MORE_DEBUG */
 
 #ifdef ENABLE_MORE_DEBUG
 #	define DEBUG2(format, ...) DEBUG(format, ## __VA_ARGS__)
 #else
-#	define DEBUG2(format, ...)
+#	define DEBUG2(format, ...) dummy_printf(format, ## __VA_ARGS__)
 #endif /* ENABLE_DEBUG */
 
 #ifdef ENABLE_ASSERTIONS
