@@ -801,8 +801,8 @@ int increment_dentry_refcnt(struct wim_dentry *dentry, void *ignore)
 /*
  * Links a dentry into the directory tree.
  *
- * @dentry: The dentry to link.
  * @parent: The dentry that will be the parent of @dentry.
+ * @dentry: The dentry to link.
  */
 bool dentry_add_child(struct wim_dentry * restrict parent,
 		      struct wim_dentry * restrict child)
