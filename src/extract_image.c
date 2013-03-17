@@ -775,7 +775,6 @@ static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 	size_t utf16_path_len;
 	DWORD err;
 	HANDLE h;
-	BOOL bret1, bret2;
 
 	ret = utf8_to_utf16(output_path, len, &utf16_path, &utf16_path_len);
 	if (ret)
@@ -1319,6 +1318,11 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w,
 		w->lookup_table = joined_tab;
 	}
 
+#if defined(__CYGWIN__) || defined(__WIN32__)
+	win32_acquire_privilege(SE_RESTORE_NAME);
+	win32_acquire_privilege(SE_SECURITY_NAME);
+	win32_acquire_privilege(SE_TAKE_OWNERSHIP_NAME);
+#endif
 	if (image == WIMLIB_ALL_IMAGES) {
 		extract_flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
 		ret = extract_all_images(w, target, extract_flags,
@@ -1328,6 +1332,11 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w,
 		ret = extract_single_image(w, image, target, extract_flags,
 					   progress_func);
 	}
+#if defined(__CYGWIN__) || defined(__WIN32__)
+	win32_release_privilege(SE_RESTORE_NAME);
+	win32_release_privilege(SE_SECURITY_NAME);
+	win32_release_privilege(SE_TAKE_OWNERSHIP_NAME);
+#endif
 
 	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
 			     WIMLIB_EXTRACT_FLAG_HARDLINK))

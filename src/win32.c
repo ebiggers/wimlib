@@ -68,4 +68,57 @@ void win32_close_file(void *handle)
 	CloseHandle((HANDLE)handle);
 }
 
+static bool win32_modify_privilege(const char *privilege, bool enable)
+{
+	HANDLE hToken;
+	LUID luid;
+	TOKEN_PRIVILEGES newState;
+	bool ret = false;
+
+	DEBUG("%s privilege %s",
+	      enable ? "Enabling" : "Disabling", privilege);
+
+	if (!OpenProcessToken(GetCurrentProcess(),
+			      TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+			      &hToken))
+	{
+		DEBUG("OpenProcessToken() failed");
+		goto out;
+	}
+
+	if (!LookupPrivilegeValue(NULL, privilege, &luid)) {
+		DEBUG("LookupPrivilegeValue() failed");
+		goto out;
+	}
+
+	newState.PrivilegeCount = 1;
+	newState.Privileges[0].Luid = luid;
+	newState.Privileges[0].Attributes = (enable ? SE_PRIVILEGE_ENABLED : 0);
+	ret = AdjustTokenPrivileges(hToken, FALSE, &newState, 0, NULL, NULL);
+	if (!ret)
+		DEBUG("AdjustTokenPrivileges() failed");
+	CloseHandle(hToken);
+out:
+	if (!ret) {
+		DWORD err = GetLastError();
+		win32_error(err);
+		WARNING("Failed to %s privilege %s",
+			enable ? "enable" : "disable", privilege);
+		WARNING("The program will continue, but if permission issues are "
+			"encountered, you may need to run this program as the administrator");
+	}
+	return ret;
+}
+
+bool win32_acquire_privilege(const char *privilege)
+{
+	return win32_modify_privilege(privilege, true);
+}
+
+bool win32_release_privilege(const char *privilege)
+{
+	return win32_modify_privilege(privilege, false);
+}
+
+
 #endif /* __CYGWIN__ || __WIN32__ */

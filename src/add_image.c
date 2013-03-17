@@ -536,6 +536,7 @@ out_find_close:
 	FindClose(hFind);
 	return ret;
 }
+
 #endif
 
 /*
@@ -939,11 +940,11 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 	}
 out_close_handle:
 	CloseHandle(hFile);
+out_free_path_utf16:
+	FREE(path_utf16);
 out_destroy_sd_set:
 	if (extra_arg == NULL)
 		destroy_sd_set(sd_set);
-out_free_path_utf16:
-	FREE(path_utf16);
 #endif
 	/* The below lines of code are common to both UNIX and Win32 builds.  It
 	 * simply returns the captured directory tree if the capture was
@@ -1544,6 +1545,11 @@ WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
 	} else {
 		size_t i;
 
+#if defined(__CYGWIN__) || defined(__WIN32__)
+		win32_acquire_privilege(SE_BACKUP_NAME);
+		win32_acquire_privilege(SE_SECURITY_NAME);
+		win32_acquire_privilege(SE_TAKE_OWNERSHIP_NAME);
+#endif
 		root_dentry = NULL;
 		i = 0;
 		do {
@@ -1637,6 +1643,11 @@ out_free_security_data:
 out_destroy_capture_config:
 	destroy_capture_config(&config);
 out:
+#if defined(__CYGWIN__) || defined(__WIN32__)
+	win32_release_privilege(SE_BACKUP_NAME);
+	win32_release_privilege(SE_SECURITY_NAME);
+	win32_release_privilege(SE_TAKE_OWNERSHIP_NAME);
+#endif
 	return ret;
 }
 

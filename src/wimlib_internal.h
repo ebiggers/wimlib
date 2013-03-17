@@ -535,6 +535,8 @@ extern int win32_read_file(const char *filename, void *handle, u64 offset,
 			   size_t size, u8 *buf);
 extern void *win32_open_file_readonly(const void *path_utf16);
 extern void win32_close_file(void *handle);
+extern bool win32_acquire_privilege(const char *privilege);
+extern bool win32_release_privilege(const char *privilege);
 #ifdef ENABLE_ERROR_MESSAGES
 extern void win32_error(u32 err);
 #else
