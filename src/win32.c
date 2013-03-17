@@ -1068,10 +1068,12 @@ static int win32_set_security_data(const struct wim_inode *inode,
 	return 0;
 }
 
-int win32_apply_dentry(const char *output_path,
-		       size_t output_path_len,
-		       const struct wim_dentry *dentry,
-		       struct apply_args *args)
+/* Extract a file, directory, reparse point, or hard link to an
+ * already-extracted file using the Win32 API */
+int win32_do_apply_dentry(const char *output_path,
+			  size_t output_path_len,
+			  struct wim_dentry *dentry,
+			  struct apply_args *args)
 {
 	char *utf16_path;
 	size_t utf16_path_len;
@@ -1133,10 +1135,11 @@ out:
 	return ret;
 }
 
-int win32_apply_dentry_timestamps(const char *output_path,
-				  size_t output_path_len,
-				  const struct wim_dentry *dentry,
-				  const struct apply_args *args)
+/* Set timestamps on an extracted file using the Win32 API */
+int win32_do_apply_dentry_timestamps(const char *output_path,
+				     size_t output_path_len,
+				     const struct wim_dentry *dentry,
+				     const struct apply_args *args)
 {
 	/* Win32 */
 	char *utf16_path;
@@ -1208,6 +1211,7 @@ int fsync(int fd)
 	return 0;
 }
 
+/* Use the Win32 API to get the number of processors */
 unsigned win32_get_number_of_processors()
 {
 	SYSTEM_INFO sysinfo;
@@ -1215,6 +1219,9 @@ unsigned win32_get_number_of_processors()
 	return sysinfo.dwNumberOfProcessors;
 }
 
+/* Replacement for POSIX-2008 realpath().  Warning: partial functionality only
+ * (resolved_path must be NULL).   Also I highly doubt that GetFullPathName
+ * really does the right thing under all circumstances. */
 char *realpath(const char *path, char *resolved_path)
 {
 	DWORD ret;

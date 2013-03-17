@@ -36,15 +36,15 @@ extern int fnmatch(const char *pattern, const char *string, int flags);
 
 #define mkdir(name, mode) _mkdir(name)
 
-extern int win32_apply_dentry(const char *output_path,
-			      size_t output_path_len,
-			      const struct wim_dentry *dentry,
-			      struct apply_args *args);
+extern int win32_do_apply_dentry(const char *output_path,
+				 size_t output_path_len,
+				 struct wim_dentry *dentry,
+				 struct apply_args *args);
 
-extern int win32_apply_dentry_timestamps(const char *output_path,
-					 size_t output_path_len,
-					 const struct wim_dentry *dentry,
-					 const struct apply_args *args);
+extern int win32_do_apply_dentry_timestamps(const char *output_path,
+					    size_t output_path_len,
+					    const struct wim_dentry *dentry,
+					    const struct apply_args *args);
 
 extern int fsync(int fd);
 

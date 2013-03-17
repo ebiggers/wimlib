@@ -375,10 +375,10 @@ dir_exists:
 }
 
 #ifndef __WIN32__
-static int unix_apply_dentry(const char *output_path,
-			     size_t output_path_len,
-			     const struct wim_dentry *dentry,
-			     const struct apply_args *args)
+static int unix_do_apply_dentry(const char *output_path,
+				size_t output_path_len,
+				struct wim_dentry *dentry,
+				struct apply_args *args)
 {
 	const struct wim_inode *inode = dentry->d_inode;
 
@@ -392,12 +392,14 @@ static int unix_apply_dentry(const char *output_path,
 		return extract_regular_file(dentry, args, output_path);
 }
 
-static int unix_apply_dentry_timestamps(const char *output_path,
-					size_t output_path_len,
-					const struct wim_dentry *dentry,
-					struct apply_args *args)
+static int unix_do_apply_dentry_timestamps(const char *output_path,
+					   size_t output_path_len,
+					   const struct wim_dentry *dentry,
+					   struct apply_args *args)
 {
 	int ret;
+	const struct wim_inode *inode = dentry->d_inode;
+
 	/* Convert the WIM timestamps, which are accurate to 100 nanoseconds,
 	 * into struct timeval's. */
 	struct timeval tv[2];
@@ -448,9 +450,9 @@ static int apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 		len += dentry->full_path_utf8_len;
 	}
 #ifdef __WIN32__
-	return win32_apply_dentry(output_path, len, dentry, args);
+	return win32_do_apply_dentry(output_path, len, dentry, args);
 #else
-	return unix_apply_dentry(output_path, len, dentry, args);
+	return unix_do_apply_dentry(output_path, len, dentry, args);
 #endif
 }
 
@@ -473,9 +475,9 @@ static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 		len += dentry->full_path_utf8_len;
 	}
 #ifdef __WIN32__
-	return win32_apply_dentry_timestamps(output_path, len, dentry, args);
+	return win32_do_apply_dentry_timestamps(output_path, len, dentry, args);
 #else
-	return unix_apply_dentry_timestamps(output_path, len, dentry, args);
+	return unix_do_apply_dentry_timestamps(output_path, len, dentry, args);
 #endif
 }
 
