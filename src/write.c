@@ -65,6 +65,8 @@
 #  include <stdlib.h>
 #endif
 
+#include <limits.h>
+
 static int fflush_and_ftruncate(FILE *fp, off_t size)
 {
 	int ret;
