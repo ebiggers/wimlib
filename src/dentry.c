@@ -974,6 +974,7 @@ void inode_remove_ads(struct wim_inode *inode, u16 idx,
 	inode->i_num_ads--;
 }
 
+#ifndef __WIN32__
 int inode_get_unix_data(const struct wim_inode *inode,
 			struct wimlib_unix_data *unix_data,
 			u16 *stream_idx_ret)
@@ -1043,6 +1044,7 @@ int inode_set_unix_data(struct wim_inode *inode,
 		inode_remove_ads(inode, stream_idx, lookup_table);
 	return ret;
 }
+#endif /* !__WIN32__ */
 
 /*
  * Reads the alternate data stream entries of a WIM dentry.

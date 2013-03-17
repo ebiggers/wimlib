@@ -29,7 +29,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <getopt.h>
-#include <glob.h>
+
 #include <inttypes.h>
 #include <libgen.h>
 #include <limits.h>
@@ -41,6 +41,12 @@
 
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
+#endif
+
+#ifdef __WIN32__
+#  include "imagex-win32.h"
+#else
+#  include <glob.h>
 #endif
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
@@ -733,6 +739,7 @@ static int open_swms_from_glob(const char *swm_glob,
 	glob_t globbuf;
 	int ret;
 
+	/* Warning: glob() is replaced in Windows native builds */
 	ret = glob(swm_glob, GLOB_ERR | GLOB_NOSORT, NULL, &globbuf);
 	if (ret != 0) {
 		if (ret == GLOB_NOMATCH) {
@@ -1322,9 +1329,10 @@ static int imagex_export(int argc, char **argv)
 
 		wim_is_new = false;
 		/* Destination file exists. */
-		if (!S_ISREG(stbuf.st_mode) && !S_ISLNK(stbuf.st_mode)) {
+
+		if (!S_ISREG(stbuf.st_mode)) {
 			imagex_error("`%s' is not a regular file",
-					dest_wimfile);
+				     dest_wimfile);
 			ret = -1;
 			goto out;
 		}

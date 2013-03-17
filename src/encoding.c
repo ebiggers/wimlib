@@ -21,6 +21,7 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+#include "config.h"
 #include "wimlib.h"
 #include "util.h"
 #include "endianness.h"
@@ -28,10 +29,13 @@
 #include <errno.h>
 
 #ifdef WITH_NTFS_3G
-#include <ntfs-3g/volume.h>
-#include <ntfs-3g/unistr.h>
+#  include <ntfs-3g/volume.h>
+#  include <ntfs-3g/unistr.h>
+#elif defined(__WIN32__)
+#  include <wchar.h>
+#  include <stdlib.h>
 #else
-#include <iconv.h>
+#  include <iconv.h>
 #endif
 
 /*
@@ -41,7 +45,7 @@
  * libntfs-3g/unistr.c in the NTFS-3g sources.  (Modified slightly to remove
  * unneeded functionality.)
  */
-#ifndef WITH_NTFS_3G
+#if !defined(WITH_NTFS_3G) && !defined(__WIN32__)
 /*
  * Return the amount of 8-bit elements in UTF-8 needed (without the terminating
  * null) to store a given UTF-16LE string.
@@ -130,9 +134,7 @@ static int utf8_to_utf16_size(const char *s)
 	}
 	return count;
 }
-#endif /* !WITH_NTFS_3G */
 
-#ifndef WITH_NTFS_3G
 static iconv_t cd_utf8_to_utf16 = (iconv_t)(-1);
 static iconv_t cd_utf16_to_utf8 = (iconv_t)(-1);
 
@@ -171,7 +173,7 @@ void iconv_global_cleanup()
 	if (cd_utf16_to_utf8 != (iconv_t)(-1))
 		iconv_close(cd_utf16_to_utf8);
 }
-#endif
+#endif /* !WITH_NTFS_3G && !__WIN32__ */
 
 /* Converts a string in the UTF-16LE encoding to a newly allocated string in the
  * UTF-8 encoding.
@@ -208,8 +210,24 @@ int utf16_to_utf8(const char *utf16_str, size_t utf16_nbytes,
 		else
 			ret = WIMLIB_ERR_INVALID_UTF16_STRING;
 	}
-#else /* !WITH_NTFS_3G */
-
+#elif defined(__WIN32__)
+	char *utf8_str;
+	size_t utf8_nbytes;
+	utf8_nbytes = wcstombs(NULL, (const wchar_t*)utf16_str, 0);
+	if (utf8_nbytes == (size_t)(-1)) {
+		ret = WIMLIB_ERR_INVALID_UTF16_STRING;
+	} else {
+		utf8_str = MALLOC(utf8_nbytes + 1);
+		if (!utf8_str) {
+			ret = WIMLIB_ERR_NOMEM;
+		} else {
+			wcstombs(utf8_str, (const wchar_t*)utf16_str, utf8_nbytes + 1);
+			*utf8_str_ret = utf8_str;
+			*utf8_nbytes_ret = utf8_nbytes;
+			ret = 0;
+		}
+	}
+#else
 	ret = iconv_global_init();
 	if (ret != 0)
 		return ret;
@@ -296,8 +314,27 @@ int utf8_to_utf16(const char *utf8_str, size_t utf8_nbytes,
 		else
 			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
 	}
-#else /* !WITH_NTFS_3G */
+#elif defined(__WIN32__)
 
+	char *utf16_str;
+	size_t utf16_nchars;
+	utf16_nchars = mbstowcs(NULL, utf8_str, 0);
+	if (utf16_nchars == (size_t)(-1)) {
+		ret = WIMLIB_ERR_INVALID_UTF8_STRING;
+	} else {
+		utf16_str = MALLOC((utf16_nchars + 1) * sizeof(wchar_t));
+		if (!utf16_str) {
+			ret = WIMLIB_ERR_NOMEM;
+		} else {
+			mbstowcs((wchar_t*)utf16_str, utf8_str,
+				 utf16_nchars + 1);
+			*utf16_str_ret = utf16_str;
+			*utf16_nbytes_ret = utf16_nchars * sizeof(wchar_t);
+			ret = 0;
+		}
+	}
+	
+#else
 	ret = iconv_global_init();
 	if (ret != 0)
 		return ret;

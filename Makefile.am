@@ -7,7 +7,7 @@ AM_CFLAGS	= -std=gnu99 -D_LARGEFILE_SOURCE \
 
 lib_LTLIBRARIES = libwim.la
 
-libwim_la_LDFLAGS = -version-info 4:0:2 $(CYGWIN_EXTRA_LDFLAGS)
+libwim_la_LDFLAGS = -version-info 4:0:2 $(WINDOWS_EXTRA_LDFLAGS)
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
@@ -83,7 +83,8 @@ libwim_la_LIBADD =		\
 	$(LTLIBICONV)		\
 	$(LIBCRYPTO_LDADD)	\
 	$(SSSE3_SHA1_OBJ)	\
-	$(PTHREAD_LDADD)
+	$(PTHREAD_LDADD)	\
+	$(WINDOWS_LDADD)
 
 libwim_la_CFLAGS =		\
 	$(AM_CFLAGS)		\
@@ -97,6 +98,10 @@ libwim_la_CFLAGS =		\
 bin_PROGRAMS	 = imagex
 imagex_SOURCES   = programs/imagex.c
 imagex_LDADD	 = $(top_builddir)/libwim.la
+
+if WINDOWS_BUILD
+imagex_SOURCES += programs/imagex-win32.c programs/imagex-win32.h
+endif
 
 dist_bin_SCRIPTS = programs/mkwinpeimg
 

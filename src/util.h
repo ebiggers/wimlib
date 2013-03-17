@@ -175,7 +175,7 @@ extern char *wimlib_strdup(const char *str);
 
 /* encoding.c */
 
-#ifdef WITH_NTFS_3G
+#if defined(WITH_NTFS_3G) || defined(__WIN32__)
 static inline int iconv_global_init()
 {
 	return 0;

@@ -32,6 +32,13 @@
 #include <sys/file.h>
 #endif
 
+#ifdef __WIN32__
+#	include <windows.h>
+#	ifdef ERROR
+#		undef ERROR
+#	endif
+#endif
+
 #include "list.h"
 #include "wimlib_internal.h"
 #include "buffer_io.h"
@@ -59,6 +66,13 @@
 #include <alloca.h>
 #else
 #include <stdlib.h>
+#endif
+
+#ifdef __WIN32__
+#	ifdef fsync
+#		undef fsync
+#	endif
+#	define fsync(fd) 0
 #endif
 
 static int fflush_and_ftruncate(FILE *fp, off_t size)
@@ -1205,6 +1219,16 @@ out:
 	return ret;
 }
 
+static long get_default_num_threads()
+{
+#ifdef __WIN32__
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	return sysinfo.dwNumberOfProcessors;
+#else
+	return sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+}
 
 static int write_stream_list_parallel(struct list_head *stream_list,
 				      FILE *out_fp,
@@ -1220,8 +1244,8 @@ static int write_stream_list_parallel(struct list_head *stream_list,
 	pthread_t *compressor_threads = NULL;
 
 	if (num_threads == 0) {
-		long nthreads = sysconf(_SC_NPROCESSORS_ONLN);
-		if (nthreads < 1) {
+		long nthreads = get_default_num_threads();
+		if (nthreads < 1 || nthreads > UINT_MAX) {
 			WARNING("Could not determine number of processors! Assuming 1");
 			goto out_serial;
 		} else {

@@ -21,6 +21,10 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+#include "config.h"
+
+#define MINGW_HAS_SECURE_API
+
 #undef _GNU_SOURCE
 /* Make sure the POSIX-compatible strerror_r() is declared, rather than the GNU
  * version, which has a different return type. */
@@ -38,6 +42,11 @@
 
 #include <unistd.h> /* for getpid() */
 
+/* Windoze compatibility */
+#ifdef __WIN32__
+#  define strerror_r(errnum, buf, bufsize) strerror_s(buf, bufsize, errnum)
+#endif
+
 /* True if wimlib is to print an informational message when an error occurs.
  * This can be turned off by calling wimlib_set_print_errors(false). */
 #ifdef ENABLE_ERROR_MESSAGES
@@ -54,7 +63,8 @@ static void wimlib_vmsg(const char *tag, const char *format,
 		vfprintf(stderr, format, va);
 		if (perror && errno_save != 0) {
 			char buf[50];
-			int res = strerror_r(errno_save, buf, sizeof(buf));
+			int res;
+			res = strerror_r(errno_save, buf, sizeof(buf));
 			if (res) {
 				snprintf(buf, sizeof(buf),
 					 "unknown error (errno=%d)", errno_save);

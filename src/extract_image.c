@@ -61,6 +61,11 @@
 #include <alloca.h>
 #endif
 
+#if defined(__WIN32__)
+#	define swprintf _snwprintf
+#	define mkdir(path, mode) (!CreateDirectoryA(path, NULL))
+#endif
+
 #if defined(__CYGWIN__) || defined(__WIN32__)
 
 static int win32_set_reparse_data(HANDLE h,

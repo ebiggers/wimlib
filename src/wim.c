@@ -24,6 +24,14 @@
  */
 
 #include "config.h"
+
+#ifdef __WIN32__
+#	include <windows.h>
+#	ifdef ERROR
+#		undef ERROR
+#	endif
+#endif
+
 #include <limits.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -42,6 +50,32 @@
 #include "buffer_io.h"
 #include "lookup_table.h"
 #include "xml.h"
+
+#ifdef __WIN32__
+static char *realpath(const char *path, char *resolved_path)
+{
+	DWORD ret;
+	wimlib_assert(resolved_path == NULL);
+
+	ret = GetFullPathNameA(path, 0, NULL, NULL);
+	if (!ret)
+		goto fail_win32;
+
+	resolved_path = MALLOC(ret + 1);
+	if (!resolved_path)
+		goto fail;
+	ret = GetFullPathNameA(path, ret, resolved_path, NULL);
+	if (!ret) {
+		free(resolved_path);
+		goto fail_win32;
+	}
+	return resolved_path;
+fail_win32:
+	win32_error(GetLastError());
+fail:
+	return NULL;
+}
+#endif
 
 static int image_print_metadata(WIMStruct *w)
 {

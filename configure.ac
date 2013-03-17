@@ -28,11 +28,12 @@ AC_CONFIG_FILES([Makefile
 		])
 AC_PROG_CC
 AM_PROG_CC_C_O
+AC_CANONICAL_HOST
 
 AC_CHECK_FUNCS([utimensat lutimes utime flock])
 AC_CHECK_HEADERS([endian.h byteswap.h sys/byteorder.h sys/endian.h \
 		  sys/param.h machine/endian.h alloca.h stdlib.h stdarg.h \
-		  errno.h attr/xattr.h utime.h sys/file.h])
+		  errno.h attr/xattr.h utime.h sys/file.h glob.h])
 
 AC_CHECK_MEMBER([struct stat.st_mtim],
 		[AC_DEFINE([HAVE_STAT_NANOSECOND_PRECISION], [1],
@@ -40,15 +41,6 @@ AC_CHECK_MEMBER([struct stat.st_mtim],
 			   supported])],
 		[],
 		[[#include <sys/stat.h>]])
-
-AM_ICONV
-if test "x$am_cv_func_iconv" != "xyes"; then
-	AC_MSG_ERROR([Cannot find the iconv() function.
-	iconv() is used to convert between UTF-8 and UTF-16 encodings of WIM
-	filenames and XML data.  Wimlib cannot be compiled without it.  iconv()
-	is available in the latest version of glibc and sometimes in other
-	libraries.])
-fi
 
 
 AC_ARG_WITH(pkgconfigdir,
@@ -172,29 +164,38 @@ fi
 AC_SUBST([PTHREAD_LDADD], [$PTHREAD_LDADD])
 
 case "$host" in
-	*-*-cygwin*)
-		dnl -no-undefined is needed to build a DLL in a Cygwin environment.
-		CYGWIN_EXTRA_LDFLAGS="-no-undefined"
-
-		dnl -fvisibility=hidden should not be used when building PE
-		dnl binaries on Windows
+	*-*-mingw*)
+		# Native Windows
+		WINDOWS_EXTRA_LDFLAGS="-no-undefined"
 		VISIBILITY_CFLAGS=""
-
 		WITH_NTFS_3G_DEFAULT="no"
 		WITH_FUSE_DEFAULT="no"
 		WINDOWS_BUILD="yes"
+		WINDOWS_LDADD="-lshlwapi"
+		;;
+ 	*-*-cygwin*)
+		# Cygwin (WARNING: not well supported)
+		WINDOWS_EXTRA_LDFLAGS="-no-undefined"
+		VISIBILITY_CFLAGS=""
+		WITH_NTFS_3G_DEFAULT="no"
+		WITH_FUSE_DEFAULT="no"
+		WINDOWS_BUILD="yes"
+		WINDOWS_LDADD=""
 		;;
 	*)
-		CYGWIN_EXTRA_LDFLAGS=""
+		# UNIX / other
+		WINDOWS_EXTRA_LDFLAGS=""
 		VISIBILITY_CFLAGS="-fvisibility=hidden"
 		WITH_NTFS_3G_DEFAULT="yes"
 		WITH_FUSE_DEFAULT="yes"
 		WINDOWS_BUILD="no"
+		WINDOWS_LDADD=""
 		;;
 esac
 
-AC_SUBST([CYGWIN_EXTRA_LDFLAGS], [$CYGWIN_EXTRA_LDFLAGS])
+AC_SUBST([WINDOWS_EXTRA_LDFLAGS], [$WINDOWS_EXTRA_LDFLAGS])
 AC_SUBST([VISIBILITY_CFLAGS], [$VISIBILITY_CFLAGS])
+AC_SUBST([WINDOWS_LDADD], [$WINDOWS_LDADD])
 AM_CONDITIONAL([WINDOWS_BUILD], [test "x$WINDOWS_BUILD" = "xyes"])
 
 AC_MSG_CHECKING([whether to include support for ntfs-3g])
@@ -234,6 +235,17 @@ if test "x$WITH_NTFS_3G" = "xyes"; then
 else
 	LIBNTFS_3G_LDADD=
 	LIBNTFS_3G_CFLAGS=
+
+	if test "x$WINDOWS_BUILD" != "xyes"; then
+		AM_ICONV
+		if test "x$am_cv_func_iconv" != "xyes"; then
+			AC_MSG_ERROR([Cannot find the iconv() function.
+			iconv() is used to convert between UTF-8 and UTF-16 encodings of WIM
+			filenames and XML data.  Wimlib cannot be compiled without it.  iconv()
+			is available in the latest version of glibc and sometimes in other
+			libraries.])
+		fi
+	fi
 fi
 AM_CONDITIONAL([WITH_NTFS_3G], [test "x$WITH_NTFS_3G" = "xyes"])
 

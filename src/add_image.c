@@ -37,13 +37,21 @@
 #	include "timestamp.h"
 #endif
 
+#ifdef __WIN32__
+#include <shlwapi.h>
+#endif
+
 #include "wimlib_internal.h"
 #include "dentry.h"
 #include "lookup_table.h"
 #include "xml.h"
 #include <ctype.h>
 #include <errno.h>
+
+#ifndef __WIN32__
 #include <fnmatch.h>
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -162,7 +170,7 @@ static int win32_get_security_descriptor(struct wim_dentry *dentry,
 		DWORD len = lenNeeded;
 		char buf[len];
 		if (GetFileSecurityW(path_utf16, requestedInformation,
-				     buf, len, &lenNeeded))
+				     (PSECURITY_DESCRIPTOR)buf, len, &lenNeeded))
 		{
 			int security_id = sd_set_add_sd(sd_set, buf, len);
 			if (security_id < 0)
@@ -1138,6 +1146,19 @@ static int capture_config_set_prefix(struct capture_config *config,
 	return 0;
 }
 
+static bool path_matches_pattern(const char *path, const char *pattern)
+{
+#ifdef __WIN32__
+	return PathMatchSpecA(path, pattern);
+#else
+	return fnmatch(pattern, path, FNM_PATHNAME
+			#ifdef FNM_CASEFOLD
+					| FNM_CASEFOLD
+			#endif
+		) == 0;
+#endif
+}
+
 static bool match_pattern(const char *path, const char *path_basename,
 			  const struct pattern_list *list)
 {
@@ -1155,12 +1176,8 @@ static bool match_pattern(const char *path, const char *path_basename,
 				/* A file name pattern */
 				string = path_basename;
 		}
-		if (fnmatch(pat, string, FNM_PATHNAME
-			#ifdef FNM_CASEFOLD
-					| FNM_CASEFOLD
-			#endif
-			) == 0)
-		{
+
+		if (path_matches_pattern(string, pat)) {
 			DEBUG("`%s' matches the pattern \"%s\"",
 			      string, pat);
 			return true;

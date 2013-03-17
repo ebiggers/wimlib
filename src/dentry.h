@@ -413,6 +413,9 @@ struct wimlib_unix_data {
 	u16 gid;
 	u16 mode;
 } PACKED;
+
+#ifndef __WIN32__
+
 #define NO_UNIX_DATA (-1)
 #define BAD_UNIX_DATA (-2)
 extern int inode_get_unix_data(const struct wim_inode *inode,
@@ -428,6 +431,7 @@ extern int inode_set_unix_data(struct wim_inode *inode,
 			       uid_t uid, gid_t gid, mode_t mode,
 			       struct wim_lookup_table *lookup_table,
 			       int which);
+#endif
 
 extern int read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		       u64 offset, struct wim_dentry *dentry);
