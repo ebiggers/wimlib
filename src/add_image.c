@@ -848,7 +848,7 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 	ret = utf8_to_utf16(root_disk_path, strlen(root_disk_path),
 			    (char**)&path_utf16, &path_utf16_nchars);
 	if (ret)
-		goto out;
+		goto out_destroy_sd_set;
 	path_utf16_nchars /= sizeof(wchar_t);
 
 	HANDLE hFile = win32_open_file_readonly(path_utf16);
@@ -857,7 +857,7 @@ static int build_dentry_tree(struct wim_dentry **root_ret,
 		ERROR("Win32 API: Failed to open \"%s\"", root_disk_path);
 		win32_error(err);
 		ret = WIMLIB_ERR_OPEN;
-		goto out_destroy_sd_set;
+		goto out_free_path_utf16;
 	}
 
 	BY_HANDLE_FILE_INFORMATION file_info;
@@ -1628,7 +1628,7 @@ WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wimlib_set_boot_idx(w, w->hdr.image_count);
 	ret = 0;
-	goto out;
+	goto out_destroy_capture_config;
 out_destroy_imd:
 	destroy_image_metadata(&w->image_metadata[w->hdr.image_count - 1],
 			       w->lookup_table);
