@@ -279,9 +279,9 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 		bool is_partial_chunk = (partial_chunk_size !=
 						uncompressed_chunk_size);
 
-		DEBUG2("start_offset = %u, end_offset = %u", start_offset,
-					end_offset);
-		DEBUG2("partial_chunk_size = %u", partial_chunk_size);
+		DEBUG2("start_offset = %"PRIu64", end_offset = %"PRIu64"",
+		       start_offset, end_offset);
+		DEBUG2("partial_chunk_size = %"PRIu64"", partial_chunk_size);
 
 		/* This is undocumented, but chunks can be uncompressed.  This
 		 * appears to always be the case when the compressed chunk size
