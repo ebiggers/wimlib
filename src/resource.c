@@ -30,16 +30,20 @@
 #include "xpress.h"
 #include "sha1.h"
 
+#ifdef __WIN32__
+#  include "win32.h"
+#endif
+
 #include <errno.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 #ifdef WITH_NTFS_3G
-#include <time.h>
-#include <ntfs-3g/attrib.h>
-#include <ntfs-3g/inode.h>
-#include <ntfs-3g/dir.h>
+#  include <time.h>
+#  include <ntfs-3g/attrib.h>
+#  include <ntfs-3g/inode.h>
+#  include <ntfs-3g/dir.h>
 #endif
 
 /*
@@ -558,7 +562,7 @@ int read_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
 		if (fp != lte->file_on_disk_fp)
 			fclose(fp);
 		break;
-#if defined(__CYGWIN__) || defined(__WIN32__)
+#ifdef __WIN32__
 	case RESOURCE_WIN32:
 		wimlib_assert(lte->file_on_disk_fp != NULL);
 		ret = win32_read_file(lte->file_on_disk, lte->file_on_disk_fp,

@@ -29,14 +29,11 @@
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
 /* On BSD, this should be included before "list.h" so that "list.h" can
  * overwrite the LIST_HEAD macro. */
-#include <sys/file.h>
+#  include <sys/file.h>
 #endif
 
 #ifdef __WIN32__
-#	include <windows.h>
-#	ifdef ERROR
-#		undef ERROR
-#	endif
+#  include <win32.h>
 #endif
 
 #include "list.h"
@@ -49,30 +46,23 @@
 #include "xpress.h"
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
-#include <pthread.h>
+#  include <pthread.h>
 #endif
 
 #include <unistd.h>
 #include <errno.h>
 
 #ifdef WITH_NTFS_3G
-#include <time.h>
-#include <ntfs-3g/attrib.h>
-#include <ntfs-3g/inode.h>
-#include <ntfs-3g/dir.h>
+#  include <time.h>
+#  include <ntfs-3g/attrib.h>
+#  include <ntfs-3g/inode.h>
+#  include <ntfs-3g/dir.h>
 #endif
 
 #ifdef HAVE_ALLOCA_H
-#include <alloca.h>
+#  include <alloca.h>
 #else
-#include <stdlib.h>
-#endif
-
-#ifdef __WIN32__
-#	ifdef fsync
-#		undef fsync
-#	endif
-#	define fsync(fd) 0
+#  include <stdlib.h>
 #endif
 
 static int fflush_and_ftruncate(FILE *fp, off_t size)
@@ -308,7 +298,7 @@ static int prepare_resource_for_read(struct wim_lookup_table_entry *lte
 		}
 		break;
 #endif
-#if defined(__CYGWIN__) || defined(__WIN32__)
+#ifdef __WIN32__
 	case RESOURCE_WIN32:
 		if (!lte->file_on_disk_fp) {
 			lte->file_on_disk_fp = win32_open_file_readonly(lte->file_on_disk);
@@ -347,7 +337,7 @@ static void end_wim_resource_read(struct wim_lookup_table_entry *lte
 			ntfs_inode_close(ni);
 	}
 #endif
-#if defined(__CYGWIN__) || defined(__WIN32__)
+#ifdef __WIN32__
 	else if (lte->resource_location == RESOURCE_WIN32
 		 && lte->file_on_disk_fp)
 	{
@@ -1222,9 +1212,7 @@ out:
 static long get_default_num_threads()
 {
 #ifdef __WIN32__
-	SYSTEM_INFO sysinfo;
-	GetSystemInfo(&sysinfo);
-	return sysinfo.dwNumberOfProcessors;
+	return win32_get_number_of_processors();
 #else
 	return sysconf(_SC_NPROCESSORS_ONLN);
 #endif

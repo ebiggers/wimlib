@@ -1,13 +1,13 @@
 ACLOCAL_AMFLAGS = -I m4
 
-AM_CPPFLAGS	= -I$(top_srcdir)/src
+AM_CPPFLAGS	= -I$(top_srcdir)/src $(WINDOWS_CPPFLAGS)
 
 AM_CFLAGS	= -std=gnu99 -D_LARGEFILE_SOURCE \
 		   -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
 
 lib_LTLIBRARIES = libwim.la
 
-libwim_la_LDFLAGS = -version-info 4:0:2 $(WINDOWS_EXTRA_LDFLAGS)
+libwim_la_LDFLAGS = -version-info 4:0:2 $(WINDOWS_LDFLAGS)
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
@@ -53,7 +53,6 @@ libwim_la_SOURCES =		\
 	src/wim.c		\
 	src/wimlib.h		\
 	src/wimlib_internal.h	\
-	src/win32.c		\
 	src/write.c		\
 	src/xml.c		\
 	src/xml.h		\
@@ -99,8 +98,9 @@ bin_PROGRAMS	 = imagex
 imagex_SOURCES   = programs/imagex.c
 imagex_LDADD	 = $(top_builddir)/libwim.la
 
-if WINDOWS_BUILD
+if WINDOWS_NATIVE_BUILD
 imagex_SOURCES += programs/imagex-win32.c programs/imagex-win32.h
+libwim_la_SOURCES += src/win32.c
 endif
 
 dist_bin_SCRIPTS = programs/mkwinpeimg
@@ -160,13 +160,10 @@ if WITH_NTFS_3G
 dist_check_SCRIPTS += tests/test-imagex-ntfs
 endif
 
-if WINDOWS_BUILD
+if WINDOWS_NATIVE_BUILD
+# TODO: The tests need to be re-written for Windows builds.
 TESTS =
 else
-# TODO: The tests need to be re-written for Windows builds.  One issue (that
-# applies to both test-imagex and test-imagex-capture_and_apply) is that
-# Cygwin's 'ln -s' will create some sort of regular file with special contents
-# rather than a reparse point.
 TESTS = $(dist_check_SCRIPTS)
 endif
 

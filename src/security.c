@@ -560,7 +560,9 @@ void free_security_data(struct wim_security_data *sd)
 	}
 }
 
-#if defined(WITH_NTFS_3G) || defined(__CYGWIN__) || defined(__WIN32__)
+/* The security tree stuff is only needed when NTFS capture is supported, either
+ * through NTFS-3G or through a native Windows build. */
+#if defined(WITH_NTFS_3G) || defined(__WIN32__)
 struct sd_node {
 	int security_id;
 	u8 hash[SHA1_HASH_SIZE];
@@ -686,4 +688,4 @@ out_free_node:
 out:
 	return -1;
 }
-#endif /* WITH_NTFS_3G || __CYGWIN__ || __WIN32__ */
+#endif /* WITH_NTFS_3G || __WIN32__ */

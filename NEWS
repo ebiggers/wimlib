@@ -1,7 +1,7 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
 Version 1.3.0:
-	Experimental support for Windows builds of wimlib has been added.
+	Added experimental support for native Windows builds.
 
 	--source-list option added to `imagex capture' and `imagex append'.
 

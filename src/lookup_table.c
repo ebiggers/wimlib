@@ -86,7 +86,7 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 	switch (new->resource_location) {
 	case RESOURCE_IN_STAGING_FILE:
 	case RESOURCE_IN_FILE_ON_DISK:
-#if defined(__CYGWIN__) || defined(__WIN32__)
+#ifdef __WIN32__
 	case RESOURCE_WIN32:
 #endif
 		BUILD_BUG_ON((void*)&old->file_on_disk !=
@@ -141,7 +141,7 @@ void free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 		case RESOURCE_IN_STAGING_FILE:
 		case RESOURCE_IN_ATTACHED_BUFFER:
 		case RESOURCE_IN_FILE_ON_DISK:
-#if defined(__CYGWIN__) || defined(__WIN32__)
+#ifdef __WIN32__
 		case RESOURCE_WIN32:
 #endif
 			BUILD_BUG_ON((void*)&lte->file_on_disk !=

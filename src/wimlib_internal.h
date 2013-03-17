@@ -528,23 +528,6 @@ extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 extern void destroy_image_metadata(struct wim_image_metadata *imd,
 				   struct wim_lookup_table *lt);
 
-/* win32.c */
-
-#if defined(__CYGWIN__) || defined(__WIN32__)
-extern int win32_read_file(const char *filename, void *handle, u64 offset,
-			   size_t size, u8 *buf);
-extern void *win32_open_file_readonly(const void *path_utf16);
-extern void win32_close_file(void *handle);
-extern bool win32_acquire_privilege(const char *privilege);
-extern bool win32_release_privilege(const char *privilege);
-#ifdef ENABLE_ERROR_MESSAGES
-extern void win32_error(u32 err);
-#else
-#define win32_error(err)
-#endif
-#endif
-
-
 /* write.c */
 
 /* Internal use only */
@@ -552,6 +535,10 @@ extern void win32_error(u32 err);
 #define WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE 0x40000000
 #define WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML  0x20000000
 #define WIMLIB_WRITE_MASK_PUBLIC		0x1fffffff
+
+#define WIMLIB_ADD_IMAGE_FLAG_ROOT	0x80000000
+#define WIMLIB_ADD_IMAGE_FLAG_SOURCE    0x40000000
+
 
 extern int begin_write(WIMStruct *w, const char *path, int write_flags);
 extern void close_wim_writable(WIMStruct *w);

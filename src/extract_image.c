@@ -25,19 +25,16 @@
 
 #include "config.h"
 
-#if defined(__CYGWIN__) || defined(__WIN32__)
-#	include <windows.h>
-#	ifdef ERROR
-#		undef ERROR
-#	endif
-#	include <wchar.h>
+#include <dirent.h>
+
+#ifdef __WIN32__
+#  include "win32.h"
 #else
-#	include <dirent.h>
-#	ifdef HAVE_UTIME_H
-#		include <utime.h>
-#	endif
-#	include "timestamp.h"
-#	include <sys/time.h>
+#  ifdef HAVE_UTIME_H
+#    include <utime.h>
+#  endif
+#  include "timestamp.h"
+#  include <sys/time.h>
 #endif
 
 #include <errno.h>
@@ -54,304 +51,14 @@
 #include "xml.h"
 
 #ifdef WITH_NTFS_3G
-#include <ntfs-3g/volume.h>
+#  include <ntfs-3g/volume.h>
 #endif
 
 #ifdef HAVE_ALLOCA_H
-#include <alloca.h>
+#  include <alloca.h>
 #endif
 
-#if defined(__WIN32__)
-#	define swprintf _snwprintf
-#	define mkdir(path, mode) (!CreateDirectoryA(path, NULL))
-#endif
-
-#if defined(__CYGWIN__) || defined(__WIN32__)
-
-static int win32_set_reparse_data(HANDLE h,
-				  u32 reparse_tag,
-				  const struct wim_lookup_table_entry *lte,
-				  const wchar_t *path)
-{
-	int ret;
-	u8 *buf;
-	size_t len;
-
-	if (!lte) {
-		WARNING("\"%ls\" is marked as a reparse point but had no reparse data",
-			path);
-		return 0;
-	}
-	len = wim_resource_size(lte);
-	if (len > 16 * 1024 - 8) {
-		WARNING("\"%ls\": reparse data too long!", path);
-		return 0;
-	}
-
-	/* The WIM stream omits the ReparseTag and ReparseDataLength fields, so
-	 * leave 8 bytes of space for them at the beginning of the buffer, then
-	 * set them manually. */
-	buf = alloca(len + 8);
-	ret = read_full_wim_resource(lte, buf + 8, 0);
-	if (ret)
-		return ret;
-	*(u32*)(buf + 0) = reparse_tag;
-	*(u16*)(buf + 4) = len;
-	*(u16*)(buf + 6) = 0;
-
-	/* Set the reparse data on the open file using the
-	 * FSCTL_SET_REPARSE_POINT ioctl.
-	 *
-	 * There are contradictions in Microsoft's documentation for this:
-	 *
-	 * "If hDevice was opened without specifying FILE_FLAG_OVERLAPPED,
-	 * lpOverlapped is ignored."
-	 *
-	 * --- So setting lpOverlapped to NULL is okay since it's ignored.
-	 *
-	 * "If lpOverlapped is NULL, lpBytesReturned cannot be NULL. Even when an
-	 * operation returns no output data and lpOutBuffer is NULL,
-	 * DeviceIoControl makes use of lpBytesReturned. After such an
-	 * operation, the value of lpBytesReturned is meaningless."
-	 *
-	 * --- So lpOverlapped not really ignored, as it affects another
-	 *  parameter.  This is the actual behavior: lpBytesReturned must be
-	 *  specified, even though lpBytesReturned is documented as:
-	 *
-	 *  "Not used with this operation; set to NULL."
-	 */
-	DWORD bytesReturned;
-	if (!DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, buf, len + 8,
-			     NULL, 0,
-			     &bytesReturned /* lpBytesReturned */,
-			     NULL /* lpOverlapped */))
-	{
-		DWORD err = GetLastError();
-		ERROR("Failed to set reparse data on \"%ls\"", path);
-		win32_error(err);
-		return WIMLIB_ERR_WRITE;
-	}
-	return 0;
-}
-
-
-static int win32_extract_chunk(const u8 *buf, size_t len, u64 offset, void *arg)
-{
-	HANDLE hStream = arg;
-
-	DWORD nbytes_written;
-	wimlib_assert(len <= 0xffffffff);
-
-	if (!WriteFile(hStream, buf, len, &nbytes_written, NULL) ||
-	    nbytes_written != len)
-	{
-		DWORD err = GetLastError();
-		ERROR("WriteFile(): write error");
-		win32_error(err);
-		return WIMLIB_ERR_WRITE;
-	}
-	return 0;
-}
-
-static int do_win32_extract_stream(HANDLE hStream, struct wim_lookup_table_entry *lte)
-{
-	return extract_wim_resource(lte, wim_resource_size(lte),
-				    win32_extract_chunk, hStream);
-}
-
-static int win32_extract_stream(const struct wim_inode *inode,
-				const wchar_t *path,
-				const wchar_t *stream_name_utf16,
-				struct wim_lookup_table_entry *lte)
-{
-	wchar_t *stream_path;
-	HANDLE h;
-	int ret;
-	DWORD err;
-	DWORD creationDisposition = CREATE_ALWAYS;
-
-	if (stream_name_utf16) {
-		/* Named stream.  Create a buffer that contains the UTF-16LE
-		 * string [./]@path:@stream_name_utf16.  This is needed to
-		 * create and open the stream using CreateFileW().  I'm not
-		 * aware of any other APIs to do this.  Note: the '$DATA' suffix
-		 * seems to be unneeded.  Additional note: a "./" prefix needs
-		 * to be added when the path is not absolute to avoid ambiguity
-		 * with drive letters. */
-		size_t stream_path_nchars;
-		size_t path_nchars;
-		size_t stream_name_nchars;
-		const wchar_t *prefix;
-
-		path_nchars = wcslen(path);
-		stream_name_nchars = wcslen(stream_name_utf16);
-		stream_path_nchars = path_nchars + 1 + stream_name_nchars;
-		if (path[0] != L'/' && path[0] != L'\\') {
-			prefix = L"./";
-			stream_path_nchars += 2;
-		} else {
-			prefix = L"";
-		}
-		stream_path = alloca((stream_path_nchars + 1) * sizeof(wchar_t));
-		swprintf(stream_path, stream_path_nchars + 1, L"%ls%ls:%ls",
-			 prefix, path, stream_name_utf16);
-	} else {
-		/* Unnamed stream; its path is just the path to the file itself.
-		 * */
-		stream_path = (wchar_t*)path;
-
-		/* Directories must be created with CreateDirectoryW().  Then
-		 * the call to CreateFileW() will merely open the directory that
-		 * was already created rather than creating a new file. */
-		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-			if (!CreateDirectoryW(stream_path, NULL)) {
-				err = GetLastError();
-				if (err != ERROR_ALREADY_EXISTS) {
-					ERROR("Failed to create directory \"%ls\"",
-					      stream_path);
-					win32_error(err);
-					ret = WIMLIB_ERR_MKDIR;
-					goto fail;
-				}
-			}
-			DEBUG("Created directory \"%ls\"", stream_path);
-			if (!(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-				ret = 0;
-				goto out;
-			}
-			creationDisposition = OPEN_EXISTING;
-		}
-	}
-
-	DEBUG("Opening \"%ls\"", stream_path);
-	h = CreateFileW(stream_path,
-			GENERIC_WRITE | WRITE_OWNER | WRITE_DAC | ACCESS_SYSTEM_SECURITY,
-			0,
-			NULL,
-			creationDisposition,
-			FILE_FLAG_OPEN_REPARSE_POINT |
-			    FILE_FLAG_BACKUP_SEMANTICS |
-			    inode->i_attributes,
-			NULL);
-	if (h == INVALID_HANDLE_VALUE) {
-		err = GetLastError();
-		ERROR("Failed to create \"%ls\"", stream_path);
-		win32_error(err);
-		ret = WIMLIB_ERR_OPEN;
-		goto fail;
-	}
-
-	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT &&
-	    stream_name_utf16 == NULL)
-	{
-		DEBUG("Setting reparse data on \"%ls\"", path);
-		ret = win32_set_reparse_data(h, inode->i_reparse_tag, lte, path);
-		if (ret)
-			goto fail_close_handle;
-	} else {
-		if (lte) {
-			DEBUG("Extracting \"%ls\" (len = %"PRIu64")",
-			      stream_path, wim_resource_size(lte));
-			ret = do_win32_extract_stream(h, lte);
-			if (ret)
-				goto fail_close_handle;
-		}
-	}
-
-	DEBUG("Closing \"%ls\"", stream_path);
-	if (!CloseHandle(h)) {
-		err = GetLastError();
-		ERROR("Failed to close \"%ls\"", stream_path);
-		win32_error(err);
-		ret = WIMLIB_ERR_WRITE;
-		goto fail;
-	}
-	ret = 0;
-	goto out;
-fail_close_handle:
-	CloseHandle(h);
-fail:
-	ERROR("Error extracting %ls", stream_path);
-out:
-	return ret;
-}
-
-/*
- * Creates a file, directory, or reparse point and extracts all streams to it
- * (unnamed data stream and/or reparse point stream, plus any alternate data
- * streams).  This in Win32-specific code.
- *
- * @inode:	WIM inode for this file or directory.
- * @path:	UTF-16LE external path to extract the inode to.
- *
- * Returns 0 on success; nonzero on failure.
- */
-static int win32_extract_streams(struct wim_inode *inode,
-				 const wchar_t *path, u64 *completed_bytes_p)
-{
-	struct wim_lookup_table_entry *unnamed_lte;
-	int ret;
-
-	unnamed_lte = inode_unnamed_lte_resolved(inode);
-	ret = win32_extract_stream(inode, path, NULL, unnamed_lte);
-	if (ret)
-		goto out;
-	if (unnamed_lte)
-		*completed_bytes_p += wim_resource_size(unnamed_lte);
-	for (u16 i = 0; i < inode->i_num_ads; i++) {
-		const struct wim_ads_entry *ads_entry = &inode->i_ads_entries[i];
-		if (ads_entry->stream_name_len != 0) {
-			/* Skip special UNIX data entries (see documentation for
-			 * WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
-			if (ads_entry->stream_name_len == WIMLIB_UNIX_DATA_TAG_LEN
-			    && !memcmp(ads_entry->stream_name_utf8,
-				       WIMLIB_UNIX_DATA_TAG,
-				       WIMLIB_UNIX_DATA_TAG_LEN))
-				continue;
-			ret = win32_extract_stream(inode,
-						   path,
-						   (const wchar_t*)ads_entry->stream_name,
-						   ads_entry->lte);
-			if (ret)
-				break;
-			if (ads_entry->lte)
-				*completed_bytes_p += wim_resource_size(ads_entry->lte);
-		}
-	}
-out:
-	return ret;
-}
-
-/*
- * Sets the security descriptor on an extracted file.  This is Win32-specific
- * code.
- *
- * @inode:	The WIM inode that was extracted and has a security descriptor.
- * @path:	UTF-16LE external path that the inode was extracted to.
- * @sd:		Security data for the WIM image.
- *
- * Returns 0 on success; nonzero on failure.
- */
-static int win32_set_security_data(const struct wim_inode *inode,
-				   const wchar_t *path,
-				   const struct wim_security_data *sd)
-{
-	SECURITY_INFORMATION securityInformation = DACL_SECURITY_INFORMATION |
-					           SACL_SECURITY_INFORMATION |
-					           OWNER_SECURITY_INFORMATION |
-					           GROUP_SECURITY_INFORMATION;
-	if (!SetFileSecurityW(path, securityInformation,
-			      (PSECURITY_DESCRIPTOR)sd->descriptors[inode->i_security_id]))
-	{
-		DWORD err = GetLastError();
-		ERROR("Can't set security descriptor on \"%ls\"", path);
-		win32_error(err);
-		return WIMLIB_ERR_WRITE;
-	}
-	return 0;
-}
-
-#else /* __CYGWIN__ || __WIN32__ */
+#ifndef __WIN32__
 static int extract_regular_file_linked(struct wim_dentry *dentry,
 				       const char *output_path,
 				       struct apply_args *args,
@@ -620,7 +327,7 @@ static int extract_symlink(struct wim_dentry *dentry,
 	return 0;
 }
 
-#endif /* !(__CYGWIN__ || __WIN32__) */
+#endif /* !__WIN32__ */
 
 static int extract_directory(struct wim_dentry *dentry,
 			     const char *output_path, bool is_root)
@@ -652,7 +359,7 @@ static int extract_directory(struct wim_dentry *dentry,
 	}
 dir_exists:
 	ret = 0;
-#if !defined(__CYGWIN__) && !defined(__WIN32__)
+#ifndef __WIN32__
 	if (dentry) {
 		struct wimlib_unix_data unix_data;
 		ret = inode_get_unix_data(dentry->d_inode, &unix_data, NULL);
@@ -667,82 +374,14 @@ dir_exists:
 	return ret;
 }
 
-/* Extracts a file, directory, or symbolic link from the WIM archive. */
-static int apply_dentry_normal(struct wim_dentry *dentry, void *arg)
+#ifndef __WIN32__
+static int unix_apply_dentry(const char *output_path,
+			     size_t output_path_len,
+			     const struct wim_dentry *dentry,
+			     const struct apply_args *args)
 {
-	struct apply_args *args = arg;
-	struct wim_inode *inode = dentry->d_inode;
-	size_t len;
-	char *output_path;
+	const struct wim_inode *inode = dentry->d_inode;
 
-	len = strlen(args->target);
-	if (dentry_is_root(dentry)) {
-		output_path = (char*)args->target;
-	} else {
-		output_path = alloca(len + dentry->full_path_utf8_len + 1);
-		memcpy(output_path, args->target, len);
-		memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
-		output_path[len + dentry->full_path_utf8_len] = '\0';
-		len += dentry->full_path_utf8_len;
-	}
-
-#if defined(__CYGWIN__) || defined(__WIN32__)
-	char *utf16_path;
-	size_t utf16_path_len;
-	DWORD err;
-	int ret;
-	ret = utf8_to_utf16(output_path, len, &utf16_path, &utf16_path_len);
-	if (ret)
-		return ret;
-
-	if (inode->i_nlink > 1 && inode->i_extracted_file != NULL) {
-		/* Linked file, with another name already extracted.  Create a
-		 * hard link. */
-		DEBUG("Creating hard link \"%ls => %ls\"",
-		      (const wchar_t*)utf16_path,
-		      (const wchar_t*)inode->i_extracted_file);
-		if (!CreateHardLinkW((const wchar_t*)utf16_path,
-				     (const wchar_t*)inode->i_extracted_file,
-				     NULL))
-		{
-			err = GetLastError();
-			ERROR("Can't create hard link \"%ls => %ls\"",
-			      (const wchar_t*)utf16_path,
-			      (const wchar_t*)inode->i_extracted_file);
-			ret = WIMLIB_ERR_LINK;
-			win32_error(err);
-		}
-	} else {
-		/* Create the file, directory, or reparse point, and extract the
-		 * data streams. */
-		ret = win32_extract_streams(inode, (const wchar_t*)utf16_path,
-					    &args->progress.extract.completed_bytes);
-		if (ret)
-			goto out_free_utf16_path;
-
-		/* Set security descriptor if present */
-		if (inode->i_security_id != -1) {
-			DEBUG("Setting security descriptor %d on %s",
-			      inode->i_security_id, output_path);
-			ret = win32_set_security_data(inode,
-						      (const wchar_t*)utf16_path,
-						      wim_const_security_data(args->w));
-			if (ret)
-				goto out_free_utf16_path;
-		}
-		if (inode->i_nlink > 1) {
-			/* Save extracted path for a later call to
-			 * CreateHardLinkW() if this inode has multiple links.
-			 * */
-			inode->i_extracted_file = utf16_path;
-			goto out;
-		}
-	}
-out_free_utf16_path:
-	FREE(utf16_path);
-out:
-	return ret;
-#else
 	if (inode_is_symlink(inode))
 		return extract_symlink(dentry, args, output_path);
 	else if (inode_is_directory(inode))
@@ -751,83 +390,14 @@ out:
 					 output_path, false);
 	else
 		return extract_regular_file(dentry, args, output_path);
-#endif
 }
 
-/* Apply timestamps to an extracted file or directory */
-static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
+static int unix_apply_dentry_timestamps(const char *output_path,
+					size_t output_path_len,
+					const struct wim_dentry *dentry,
+					struct apply_args *args)
 {
-	struct apply_args *args = arg;
-	size_t len;
-	char *output_path;
 	int ret;
-	const struct wim_inode *inode = dentry->d_inode;
-
-	len = strlen(args->target);
-	if (dentry_is_root(dentry)) {
-		output_path = (char*)args->target;
-	} else {
-		output_path = alloca(len + dentry->full_path_utf8_len + 1);
-		memcpy(output_path, args->target, len);
-		memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
-		output_path[len + dentry->full_path_utf8_len] = '\0';
-		len += dentry->full_path_utf8_len;
-	}
-
-#if defined(__CYGWIN__) || defined(__WIN32__)
-	/* Win32 */
-	char *utf16_path;
-	size_t utf16_path_len;
-	DWORD err;
-	HANDLE h;
-
-	ret = utf8_to_utf16(output_path, len, &utf16_path, &utf16_path_len);
-	if (ret)
-		return ret;
-
-	DEBUG("Opening \"%s\" to set timestamps", output_path);
-	h = CreateFileW((const wchar_t*)utf16_path,
-			GENERIC_WRITE | WRITE_OWNER | WRITE_DAC | ACCESS_SYSTEM_SECURITY,
-			FILE_SHARE_READ,
-			NULL,
-			OPEN_EXISTING,
-			FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-			NULL);
-
-	if (h == INVALID_HANDLE_VALUE)
-		err = GetLastError();
-	FREE(utf16_path);
-	if (h == INVALID_HANDLE_VALUE)
-		goto fail;
-
-	FILETIME creationTime = {.dwLowDateTime = inode->i_creation_time & 0xffffffff,
-				 .dwHighDateTime = inode->i_creation_time >> 32};
-	FILETIME lastAccessTime = {.dwLowDateTime = inode->i_last_access_time & 0xffffffff,
-				  .dwHighDateTime = inode->i_last_access_time >> 32};
-	FILETIME lastWriteTime = {.dwLowDateTime = inode->i_last_write_time & 0xffffffff,
-				  .dwHighDateTime = inode->i_last_write_time >> 32};
-
-	DEBUG("Calling SetFileTime() on \"%s\"", output_path);
-	if (!SetFileTime(h, &creationTime, &lastAccessTime, &lastWriteTime)) {
-		err = GetLastError();
-		CloseHandle(h);
-		goto fail;
-	}
-	DEBUG("Closing \"%s\"", output_path);
-	if (!CloseHandle(h)) {
-		err = GetLastError();
-		goto fail;
-	}
-	goto out;
-fail:
-	/* Only warn if setting timestamps failed. */
-	WARNING("Can't set timestamps on \"%s\"", output_path);
-	win32_error(err);
-out:
-	return 0;
-#else
-	/* UNIX */
-
 	/* Convert the WIM timestamps, which are accurate to 100 nanoseconds,
 	 * into struct timeval's. */
 	struct timeval tv[2];
@@ -856,6 +426,56 @@ out:
 		}
 	}
 	return 0;
+}
+#endif /* !__WIN32__ */
+
+/* Extracts a file, directory, or symbolic link from the WIM archive. */
+static int apply_dentry_normal(struct wim_dentry *dentry, void *arg)
+{
+	struct apply_args *args = arg;
+	struct wim_inode *inode = dentry->d_inode;
+	size_t len;
+	char *output_path;
+
+	len = strlen(args->target);
+	if (dentry_is_root(dentry)) {
+		output_path = (char*)args->target;
+	} else {
+		output_path = alloca(len + dentry->full_path_utf8_len + 1);
+		memcpy(output_path, args->target, len);
+		memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
+		output_path[len + dentry->full_path_utf8_len] = '\0';
+		len += dentry->full_path_utf8_len;
+	}
+#ifdef __WIN32__
+	return win32_apply_dentry(output_path, len, dentry, args);
+#else
+	return unix_apply_dentry(output_path, len, dentry, args);
+#endif
+}
+
+
+/* Apply timestamps to an extracted file or directory */
+static int apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
+{
+	struct apply_args *args = arg;
+	size_t len;
+	char *output_path;
+
+	len = strlen(args->target);
+	if (dentry_is_root(dentry)) {
+		output_path = (char*)args->target;
+	} else {
+		output_path = alloca(len + dentry->full_path_utf8_len + 1);
+		memcpy(output_path, args->target, len);
+		memcpy(output_path + len, dentry->full_path_utf8, dentry->full_path_utf8_len);
+		output_path[len + dentry->full_path_utf8_len] = '\0';
+		len += dentry->full_path_utf8_len;
+	}
+#ifdef __WIN32__
+	return win32_apply_dentry_timestamps(output_path, len, dentry, args);
+#else
+	return unix_apply_dentry_timestamps(output_path, len, dentry, args);
 #endif
 }
 
@@ -1276,7 +896,7 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w,
 			== (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-#if defined(__CYGWIN__) || defined(__WIN32__)
+#ifdef __WIN32__
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
 		ERROR("Extracting UNIX data is not supported on Windows");
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -1323,10 +943,8 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w,
 		w->lookup_table = joined_tab;
 	}
 
-#if defined(__CYGWIN__) || defined(__WIN32__)
-	win32_acquire_privilege(SE_RESTORE_NAME);
-	win32_acquire_privilege(SE_SECURITY_NAME);
-	win32_acquire_privilege(SE_TAKE_OWNERSHIP_NAME);
+#ifdef __WIN32__
+	win32_acquire_restore_privileges();
 #endif
 	if (image == WIMLIB_ALL_IMAGES) {
 		extract_flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
@@ -1337,10 +955,8 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w,
 		ret = extract_single_image(w, image, target, extract_flags,
 					   progress_func);
 	}
-#if defined(__CYGWIN__) || defined(__WIN32__)
-	win32_release_privilege(SE_RESTORE_NAME);
-	win32_release_privilege(SE_SECURITY_NAME);
-	win32_release_privilege(SE_TAKE_OWNERSHIP_NAME);
+#ifdef __WIN32__
+	win32_release_restore_privileges();
 #endif
 
 	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |

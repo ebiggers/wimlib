@@ -2625,7 +2625,7 @@ out:
 
 static inline int mount_unsupported_error()
 {
-#if defined(__CYGWIN__) || defined (__WIN32__)
+#if defined(__WIN32__)
 	ERROR("Sorry-- Mounting WIM images is not supported on Windows!");
 #else
 	ERROR("wimlib was compiled with --without-fuse, which disables support "

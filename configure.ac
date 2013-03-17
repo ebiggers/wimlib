@@ -163,40 +163,41 @@ else
 fi
 AC_SUBST([PTHREAD_LDADD], [$PTHREAD_LDADD])
 
+WITH_NTFS_3G_DEFAULT="yes"
+WITH_FUSE_DEFAULT="yes"
+WINDOWS_NATIVE_BUILD="no"
+VISIBILITY_CFLAGS="-fvisibility=hidden"
+WINDOWS_CPPFLAGS=""
+WINDOWS_LDFLAGS=""
+WINDOWS_LDADD=""
+
 case "$host" in
 	*-*-mingw*)
 		# Native Windows
-		WINDOWS_EXTRA_LDFLAGS="-no-undefined"
-		VISIBILITY_CFLAGS=""
 		WITH_NTFS_3G_DEFAULT="no"
 		WITH_FUSE_DEFAULT="no"
-		WINDOWS_BUILD="yes"
+		WINDOWS_NATIVE_BUILD="yes"
+		VISIBILITY_CFLAGS=""
+		WINDOWS_CPPFLAGS="-D_POSIX"
+		WINDOWS_LDFLAGS="-no-undefined"
 		WINDOWS_LDADD="-lshlwapi"
 		;;
  	*-*-cygwin*)
 		# Cygwin (WARNING: not well supported)
-		WINDOWS_EXTRA_LDFLAGS="-no-undefined"
-		VISIBILITY_CFLAGS=""
 		WITH_NTFS_3G_DEFAULT="no"
 		WITH_FUSE_DEFAULT="no"
-		WINDOWS_BUILD="yes"
-		WINDOWS_LDADD=""
+		VISIBILITY_CFLAGS=""
 		;;
 	*)
 		# UNIX / other
-		WINDOWS_EXTRA_LDFLAGS=""
-		VISIBILITY_CFLAGS="-fvisibility=hidden"
-		WITH_NTFS_3G_DEFAULT="yes"
-		WITH_FUSE_DEFAULT="yes"
-		WINDOWS_BUILD="no"
-		WINDOWS_LDADD=""
 		;;
 esac
 
-AC_SUBST([WINDOWS_EXTRA_LDFLAGS], [$WINDOWS_EXTRA_LDFLAGS])
 AC_SUBST([VISIBILITY_CFLAGS], [$VISIBILITY_CFLAGS])
+AC_SUBST([WINDOWS_LDFLAGS], [$WINDOWS_LDFLAGS])
 AC_SUBST([WINDOWS_LDADD], [$WINDOWS_LDADD])
-AM_CONDITIONAL([WINDOWS_BUILD], [test "x$WINDOWS_BUILD" = "xyes"])
+AC_SUBST([WINDOWS_CPPFLAGS], [$WINDOWS_CPPFLAGS])
+AM_CONDITIONAL([WINDOWS_NATIVE_BUILD], [test "x$WINDOWS_NATIVE_BUILD" = "xyes"])
 
 AC_MSG_CHECKING([whether to include support for ntfs-3g])
 AC_ARG_WITH([ntfs-3g],
@@ -236,7 +237,7 @@ else
 	LIBNTFS_3G_LDADD=
 	LIBNTFS_3G_CFLAGS=
 
-	if test "x$WINDOWS_BUILD" != "xyes"; then
+	if test "x$WINDOWS_NATIVE_BUILD" != "xyes"; then
 		AM_ICONV
 		if test "x$am_cv_func_iconv" != "xyes"; then
 			AC_MSG_ERROR([Cannot find the iconv() function.

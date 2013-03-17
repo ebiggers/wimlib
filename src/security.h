@@ -12,7 +12,7 @@
 #ifndef _WIMLIB_SECURITY_H
 #define _WIMLIB_SECURITY_H
 
-#if defined(WITH_NTFS_3G) || defined(__CYGWIN__) || defined(__WIN32__)
+#if defined(WITH_NTFS_3G) || defined(__WIN32__)
 /* Red-black tree that maps SHA1 message digests of security descriptors to
  * security IDs, which are themselves indices into the table of security
  * descriptors in the 'struct wim_security_data'. */
