@@ -1214,3 +1214,27 @@ unsigned win32_get_number_of_processors()
 	GetSystemInfo(&sysinfo);
 	return sysinfo.dwNumberOfProcessors;
 }
+
+char *realpath(const char *path, char *resolved_path)
+{
+	DWORD ret;
+	wimlib_assert(resolved_path == NULL);
+
+	ret = GetFullPathNameA(path, 0, NULL, NULL);
+	if (!ret)
+		goto fail_win32;
+
+	resolved_path = MALLOC(ret + 1);
+	if (!resolved_path)
+		goto fail;
+	ret = GetFullPathNameA(path, ret, resolved_path, NULL);
+	if (!ret) {
+		free(resolved_path);
+		goto fail_win32;
+	}
+	return resolved_path;
+fail_win32:
+	win32_error(GetLastError());
+fail:
+	return NULL;
+}

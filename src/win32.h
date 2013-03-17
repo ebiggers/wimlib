@@ -50,4 +50,6 @@ extern int fsync(int fd);
 
 extern unsigned win32_get_number_of_processors();
 
+extern char *realpath(const char *path, char *resolved_path);
+
 #endif /* _WIMLIB_WIN32_H */

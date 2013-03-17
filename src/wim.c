@@ -25,57 +25,27 @@
 
 #include "config.h"
 
-#ifdef __WIN32__
-#	include <windows.h>
-#	ifdef ERROR
-#		undef ERROR
-#	endif
-#endif
-
-#include <limits.h>
-#include <stdlib.h>
-#include <stdarg.h>
 #include <errno.h>
-
-#include "dentry.h"
-#include <unistd.h>
 #include <fcntl.h>
+#include <limits.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #ifdef WITH_NTFS_3G
-#include <time.h>
-#include <ntfs-3g/volume.h>
+#  include <time.h>
+#  include <ntfs-3g/volume.h>
 #endif
-
-#include "wimlib_internal.h"
-#include "buffer_io.h"
-#include "lookup_table.h"
-#include "xml.h"
 
 #ifdef __WIN32__
-static char *realpath(const char *path, char *resolved_path)
-{
-	DWORD ret;
-	wimlib_assert(resolved_path == NULL);
-
-	ret = GetFullPathNameA(path, 0, NULL, NULL);
-	if (!ret)
-		goto fail_win32;
-
-	resolved_path = MALLOC(ret + 1);
-	if (!resolved_path)
-		goto fail;
-	ret = GetFullPathNameA(path, ret, resolved_path, NULL);
-	if (!ret) {
-		free(resolved_path);
-		goto fail_win32;
-	}
-	return resolved_path;
-fail_win32:
-	win32_error(GetLastError());
-fail:
-	return NULL;
-}
+#  include "win32.h"
 #endif
+
+#include "buffer_io.h"
+#include "dentry.h"
+#include "lookup_table.h"
+#include "wimlib_internal.h"
+#include "xml.h"
 
 static int image_print_metadata(WIMStruct *w)
 {
