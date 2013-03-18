@@ -44,7 +44,7 @@
 #include <unistd.h>
 
 #ifdef HAVE_ALLOCA_H
-#include <alloca.h>
+#  include <alloca.h>
 #endif
 
 /*
@@ -226,9 +226,9 @@ static int unix_build_dentry_tree(struct wim_dentry **root_ret,
 	inode = root->d_inode;
 
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
-	inode->i_creation_time = timespec_to_wim_timestamp(&root_stbuf.st_mtim);
-	inode->i_last_write_time = timespec_to_wim_timestamp(&root_stbuf.st_mtim);
-	inode->i_last_access_time = timespec_to_wim_timestamp(&root_stbuf.st_atim);
+	inode->i_creation_time = timespec_to_wim_timestamp(root_stbuf.st_mtim);
+	inode->i_last_write_time = timespec_to_wim_timestamp(root_stbuf.st_mtim);
+	inode->i_last_access_time = timespec_to_wim_timestamp(root_stbuf.st_atim);
 #else
 	inode->i_creation_time = unix_timestamp_to_wim(root_stbuf.st_mtime);
 	inode->i_last_write_time = unix_timestamp_to_wim(root_stbuf.st_mtime);

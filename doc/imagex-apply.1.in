@@ -48,7 +48,8 @@ The default (unnamed) data stream of each file
 Hard links
 .IP \[bu]
 File and directory creation, access, and modification timestamps to the nearest
-microsecond, if supported by the underlying filesystem
+100 nanoseconds, if supported by the underlying filesystem, operating system,
+and C library
 .IP \[bu]
 Symbolic links and junction points, although they will not necessarily point to
 the desired location (for example, the target of the link may contain a Windows

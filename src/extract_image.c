@@ -399,32 +399,53 @@ static int unix_do_apply_dentry_timestamps(const char *output_path,
 	int ret;
 	const struct wim_inode *inode = dentry->d_inode;
 
+#ifdef HAVE_UTIMENSAT
 	/* Convert the WIM timestamps, which are accurate to 100 nanoseconds,
-	 * into struct timeval's. */
-	struct timeval tv[2];
-	wim_timestamp_to_timeval(inode->i_last_access_time, &tv[0]);
-	wim_timestamp_to_timeval(inode->i_last_write_time, &tv[1]);
+	 * into `struct timespec's for passing to utimensat(), which is accurate
+	 * to 1 nanosecond. */
+
+	struct timespec ts[2];
+	ts[0] = wim_timestamp_to_timespec(inode->i_last_access_time);
+	ts[1] = wim_timestamp_to_timespec(inode->i_last_write_time);
+	ret = utimensat(AT_FDCWD, output_path, ts, AT_SYMLINK_NOFOLLOW);
+	if (ret)
+		ret = errno;
+#else
+	ret = ENOSYS;
+#endif
+
+	if (ret == ENOSYS) {
+		/* utimensat() not implemented or not available */
 	#ifdef HAVE_LUTIMES
-	ret = lutimes(output_path, tv);
-	#else
-	ret = -1;
-	errno = ENOSYS;
+		/* Convert the WIM timestamps, which are accurate to 100
+		 * nanoseconds, into `struct timeval's for passing to lutimes(),
+		 * which is accurate to 1 microsecond. */
+		struct timeval tv[2];
+		tv[0] = wim_timestamp_to_timeval(inode->i_last_access_time);
+		tv[1] = wim_timestamp_to_timeval(inode->i_last_write_time);
+		ret = lutimes(output_path, tv);
+		if (ret)
+			ret = errno;
 	#endif
-	if (ret != 0) {
-		#ifdef HAVE_UTIME
-		if (errno == ENOSYS) {
-			struct utimbuf buf;
-			buf.actime = wim_timestamp_to_unix(inode->i_last_access_time);
-			buf.modtime = wim_timestamp_to_unix(inode->i_last_write_time);
-			if (utime(output_path, &buf) == 0)
-				return 0;
-		}
-		#endif
-		if (errno != ENOSYS || args->num_lutimes_warnings < 10) {
-			/*WARNING_WITH_ERRNO("Failed to set timestamp on file `%s',*/
-					    /*output_path");*/
-			args->num_lutimes_warnings++;
-		}
+	}
+
+	if (ret == ENOSYS) {
+		/* utimensat() and lutimes() both not implemented or not
+		 * available */
+	#ifdef HAVE_UTIME
+		/* Convert the WIM timestamps, which are accurate to 100
+		 * nanoseconds, into a `struct utimbuf's for passing to
+		 * utime(), which is accurate to 1 second. */
+		struct utimbuf buf;
+		buf.actime = wim_timestamp_to_unix(inode->i_last_access_time);
+		buf.modtime = wim_timestamp_to_unix(inode->i_last_write_time);
+		ret = utime(output_path, &buf);
+	#endif
+	}
+	if (ret && args->num_utime_warnings < 10) {
+		WARNING_WITH_ERRNO("Failed to set timestamp on file `%s'",
+				    output_path);
+		args->num_utime_warnings++;
 	}
 	return 0;
 }
@@ -728,12 +749,12 @@ static int extract_single_image(WIMStruct *w, int image,
 	struct apply_args args;
 	const struct apply_operations *ops;
 
-	args.w                    = w;
-	args.target               = target;
-	args.extract_flags        = extract_flags;
-	args.num_lutimes_warnings = 0;
-	args.stream_list          = &stream_list;
-	args.progress_func	  = progress_func;
+	args.w                  = w;
+	args.target             = target;
+	args.extract_flags      = extract_flags;
+	args.num_utime_warnings = 0;
+	args.stream_list        = &stream_list;
+	args.progress_func      = progress_func;
 
 	if (progress_func) {
 		args.progress.extract.wimfile_name = w->filename;

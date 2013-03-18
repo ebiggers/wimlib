@@ -459,7 +459,7 @@ u64 get_wim_timestamp()
 {
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
-	return timeval_to_wim_timestamp(&tv);
+	return timeval_to_wim_timestamp(tv);
 }
 
 void wim_timestamp_to_str(u64 timestamp, char *buf, size_t len)

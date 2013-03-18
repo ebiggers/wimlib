@@ -425,7 +425,7 @@ struct apply_args {
 	WIMStruct *w;
 	const char *target;
 	int extract_flags;
-	unsigned num_lutimes_warnings;
+	unsigned num_utime_warnings;
 	struct list_head *stream_list;
 	union wimlib_progress_info progress;
 #ifdef WITH_NTFS_3G

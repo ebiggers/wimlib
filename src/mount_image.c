@@ -420,11 +420,24 @@ static int inode_to_stbuf(const struct wim_inode *inode,
 		stbuf->st_size = 0;
 	}
 
+#ifdef HAVE_STAT_NANOSECOND_PRECISION
+	stbuf->st_atim = wim_timestamp_to_timespec(inode->i_last_access_time);
+	stbuf->st_mtim = wim_timestamp_to_timespec(inode->i_last_write_time);
+	stbuf->st_ctim = stbuf->st_mtim;
+#else
 	stbuf->st_atime = wim_timestamp_to_unix(inode->i_last_access_time);
 	stbuf->st_mtime = wim_timestamp_to_unix(inode->i_last_write_time);
-	stbuf->st_ctime = wim_timestamp_to_unix(inode->i_creation_time);
+	stbuf->st_ctime = stbuf->st_mtime;
+#endif
 	stbuf->st_blocks = (stbuf->st_size + 511) / 512;
 	return 0;
+}
+
+static void touch_inode(struct wim_inode *inode)
+{
+	u64 now = get_wim_timestamp();
+	inode->i_last_access_time = now;
+	inode->i_last_write_time = now;
 }
 
 /* Creates a new staging file and returns its file descriptor opened for
@@ -2241,13 +2254,13 @@ static int wimfs_utimens(const char *path, const struct timespec tv[2])
 		if (tv[0].tv_nsec == UTIME_NOW)
 			inode->i_last_access_time = get_wim_timestamp();
 		else
-			inode->i_last_access_time = timespec_to_wim_timestamp(&tv[0]);
+			inode->i_last_access_time = timespec_to_wim_timestamp(tv[0]);
 	}
 	if (tv[1].tv_nsec != UTIME_OMIT) {
 		if (tv[1].tv_nsec == UTIME_NOW)
 			inode->i_last_write_time = get_wim_timestamp();
 		else
-			inode->i_last_write_time = timespec_to_wim_timestamp(&tv[1]);
+			inode->i_last_write_time = timespec_to_wim_timestamp(tv[1]);
 	}
 	return 0;
 }
@@ -2296,9 +2309,8 @@ static int wimfs_write(const char *path, const char *buf, size_t size,
 	if (ret == -1)
 		return -errno;
 
-	now = get_wim_timestamp();
-	fd->f_inode->i_last_write_time = now;
-	fd->f_inode->i_last_access_time = now;
+	/* Update timestamps */
+	touch_inode(fd->f_inode);
 	return ret;
 }
 
