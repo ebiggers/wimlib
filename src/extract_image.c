@@ -42,7 +42,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-
 #include <unistd.h>
 
 #include "dentry.h"
@@ -435,7 +434,6 @@ static int unix_do_apply_dentry_timestamps(const char *output_path,
 static int apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
-	struct wim_inode *inode = dentry->d_inode;
 	size_t len;
 	char *output_path;
 

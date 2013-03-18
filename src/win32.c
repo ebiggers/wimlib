@@ -1,7 +1,7 @@
 /*
  * win32.c
  *
- * All the code specific to native Windows builds is in here.
+ * All the library code specific to native Windows builds is in here.
  */
 
 /*
@@ -31,15 +31,10 @@
 #include <windows.h>
 #include <ntdef.h>
 #include <wchar.h>
-#include <shlwapi.h>
-#ifdef ERROR
+#include <shlwapi.h> /* shlwapi.h for PathMatchSpecA() */
+#ifdef ERROR /* windows.h defines this */
 #  undef ERROR
 #endif
-
-
-/* Microsoft's swprintf() violates the C standard and they require programmers
- * to do this weird define to get the correct function.  */
-#define swprintf _snwprintf
 
 #include "win32.h"
 #include "dentry.h"
@@ -64,8 +59,6 @@ void win32_error(u32 err_code)
 		LocalFree(buffer);
 	}
 }
-#else
-#define win32_error(err_code)
 #endif
 
 void *win32_open_file_readonly(const void *path)
@@ -191,16 +184,6 @@ static u64 FILETIME_to_u64(const FILETIME *ft)
 	return ((u64)ft->dwHighDateTime << 32) | (u64)ft->dwLowDateTime;
 }
 
-
-int win32_build_dentry_tree(struct wim_dentry **root_ret,
-			    const char *root_disk_path,
-			    struct wim_lookup_table *lookup_table,
-			    struct wim_security_data *sd,
-			    const struct capture_config *config,
-			    int add_image_flags,
-			    wimlib_progress_func_t progress_func,
-			    void *extra_arg);
-
 static int win32_get_short_name(struct wim_dentry *dentry,
 				const wchar_t *path_utf16)
 {
@@ -260,7 +243,7 @@ static int win32_get_security_descriptor(struct wim_dentry *dentry,
 }
 
 /* Reads the directory entries of directory using a Win32 API and recursively
- * calls build_dentry_tree() on them. */
+ * calls win32_build_dentry_tree() on them. */
 static int win32_recurse_directory(struct wim_dentry *root,
 				   const char *root_disk_path,
 				   struct wim_lookup_table *lookup_table,
@@ -777,7 +760,7 @@ out:
 }
 
 /* Replacement for POSIX fnmatch() (partial functionality only) */
-extern int fnmatch(const char *pattern, const char *string, int flags)
+int fnmatch(const char *pattern, const char *string, int flags)
 {
 	if (PathMatchSpecA(string, pattern))
 		return 0;

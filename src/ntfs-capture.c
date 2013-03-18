@@ -30,24 +30,27 @@
 #include <ntfs-3g/endians.h>
 #include <ntfs-3g/types.h>
 
-#include "wimlib_internal.h"
-
-
+#include "buffer_io.h"
 #include "dentry.h"
 #include "lookup_table.h"
-#include "buffer_io.h"
+#include "security.h"
+#include "wimlib_internal.h"
+
 #include <ntfs-3g/layout.h>
 #include <ntfs-3g/acls.h>
 #include <ntfs-3g/attrib.h>
 #include <ntfs-3g/misc.h>
 #include <ntfs-3g/reparse.h>
-#include <ntfs-3g/security.h> /* security.h before xattrs.h */
+#include <ntfs-3g/security.h> /* ntfs-3g/security.h before ntfs-3g/xattrs.h */
 #include <ntfs-3g/xattrs.h>
 #include <ntfs-3g/volume.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include "security.h"
+
+#ifdef HAVE_ALLOCA_H
+#include <alloca.h>
+#endif
 
 static inline ntfschar *attr_record_name(ATTR_RECORD *ar)
 {

@@ -598,6 +598,8 @@ static bool match_pattern(const char *path, const char *path_basename,
 				string = path_basename;
 		}
 
+		/* Warning: on Windows native builds, fnmatch() calls the
+		 * replacement function in win32.c. */
 		if (fnmatch(pat, string, FNM_PATHNAME
 				#ifdef FNM_CASEFOLD
 			    		| FNM_CASEFOLD

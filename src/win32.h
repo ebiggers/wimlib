@@ -34,8 +34,6 @@ extern void win32_error(u32 err);
 #define FNM_NOMATCH 1
 extern int fnmatch(const char *pattern, const char *string, int flags);
 
-#define mkdir(name, mode) _mkdir(name)
-
 extern int win32_do_apply_dentry(const char *output_path,
 				 size_t output_path_len,
 				 struct wim_dentry *dentry,
@@ -51,5 +49,12 @@ extern int fsync(int fd);
 extern unsigned win32_get_number_of_processors();
 
 extern char *realpath(const char *path, char *resolved_path);
+
+/* Microsoft's swprintf() violates the C standard and they require programmers
+ * to do this weird define to get the correct function.  */
+#define swprintf _snwprintf
+
+/* Use Microsoft's weird _mkdir() function instead of mkdir() */
+#define mkdir(name, mode) _mkdir(name)
 
 #endif /* _WIMLIB_WIN32_H */

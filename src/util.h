@@ -108,10 +108,10 @@ extern void wimlib_warning_with_errno(const char *format, ...)
 #	define WARNING			wimlib_warning
 #	define WARNING_WITH_ERRNO	wimlib_warning
 #else
-#	define ERROR(format, ...)		dummy_printf
-#	define ERROR_WITH_ERRNO(format, ...)	dummy_printf
-#	define WARNING(format, ...)		dummy_printf
-#	define WARNING_WITH_ERRNO(format, ...)	dummy_printf
+#	define ERROR(format, ...)		dummy_printf(format, ## __VA_ARGS__)
+#	define ERROR_WITH_ERRNO(format, ...)	dummy_printf(format, ## __VA_ARGS__)
+#	define WARNING(format, ...)		dummy_printf(format, ## __VA_ARGS__)
+#	define WARNING_WITH_ERRNO(format, ...)	dummy_printf(format, ## __VA_ARGS__)
 #endif /* ENABLE_ERROR_MESSAGES */
 
 #if defined(ENABLE_DEBUG) || defined(ENABLE_MORE_DEBUG)

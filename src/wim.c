@@ -452,6 +452,9 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
 	 *
 	 * This will break if the full path to the WIM changes in the
 	 * intervening time...
+	 *
+	 * Warning: in Windows native builds, realpath() calls the replacement
+	 * function in win32.c.
 	 */
 	w->filename = realpath(in_wim_path, NULL);
 	if (!w->filename) {

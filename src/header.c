@@ -274,7 +274,7 @@ WIMLIBAPI void wimlib_print_header(const WIMStruct *w)
 	printf("Lookup Table Size           = %"PRIu64"\n",
 				(u64)hdr->lookup_table_res_entry.size);
 	printf("Lookup Table Flags          = 0x%hhx\n",
-				hdr->lookup_table_res_entry.flags);
+				(u8)hdr->lookup_table_res_entry.flags);
 	printf("Lookup Table Offset         = %"PRIu64"\n",
 				hdr->lookup_table_res_entry.offset);
 	printf("Lookup Table Original_size  = %"PRIu64"\n",
@@ -282,7 +282,7 @@ WIMLIBAPI void wimlib_print_header(const WIMStruct *w)
 	printf("XML Data Size               = %"PRIu64"\n",
 				(u64)hdr->xml_res_entry.size);
 	printf("XML Data Flags              = 0x%hhx\n",
-				hdr->xml_res_entry.flags);
+				(u8)hdr->xml_res_entry.flags);
 	printf("XML Data Offset             = %"PRIu64"\n",
 				hdr->xml_res_entry.offset);
 	printf("XML Data Original Size      = %"PRIu64"\n",
@@ -290,18 +290,18 @@ WIMLIBAPI void wimlib_print_header(const WIMStruct *w)
 	printf("Boot Metadata Size          = %"PRIu64"\n",
 				(u64)hdr->boot_metadata_res_entry.size);
 	printf("Boot Metadata Flags         = 0x%hhx\n",
-				hdr->boot_metadata_res_entry.flags);
+				(u8)hdr->boot_metadata_res_entry.flags);
 	printf("Boot Metadata Offset        = %"PRIu64"\n",
 				hdr->boot_metadata_res_entry.offset);
 	printf("Boot Metadata Original Size = %"PRIu64"\n",
 				hdr->boot_metadata_res_entry.original_size);
 	printf("Boot Index                  = %u\n", hdr->boot_idx);
 	printf("Integrity Size              = %"PRIu64"\n",
-					(u64)hdr->integrity.size);
+				(u64)hdr->integrity.size);
 	printf("Integrity Flags             = 0x%hhx\n",
-					hdr->integrity.flags);
+				(u8)hdr->integrity.flags);
 	printf("Integrity Offset            = %"PRIu64"\n",
-					hdr->integrity.offset);
+				hdr->integrity.offset);
 	printf("Integrity Original_size     = %"PRIu64"\n",
-					hdr->integrity.original_size);
+				hdr->integrity.original_size);
 }

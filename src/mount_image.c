@@ -30,24 +30,28 @@
 
 #ifdef WITH_FUSE
 
-#include "sha1.h"
-#include "lookup_table.h"
-#include "xml.h"
 #include "buffer_io.h"
+#include "lookup_table.h"
+#include "sha1.h"
 #include "timestamp.h"
-#include <limits.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#define FUSE_USE_VERSION 26
+#include "xml.h"
+
 #include <errno.h>
-#include <string.h>
-#include <sys/time.h>
-#include <fuse.h>
 #include <ftw.h>
+#include <limits.h>
 #include <mqueue.h>
-#include <utime.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <utime.h>
+
+#define FUSE_USE_VERSION 26
+#include <fuse.h>
 
 #ifdef ENABLE_XATTR
 #include <attr/xattr.h>
