@@ -900,11 +900,17 @@ static int imagex_apply(int argc, char **argv)
 		}
 	}
 
+#ifdef __WIN32__
+	win32_acquire_restore_privileges();
+#endif
 	ret = wimlib_extract_image(w, image, target, extract_flags,
 				   additional_swms, num_additional_swms,
 				   imagex_progress_func);
 	if (ret == 0)
 		printf("Done applying WIM image.\n");
+#ifdef __WIN32__
+	win32_release_restore_privileges();
+#endif
 out:
 	wimlib_free(w);
 	if (additional_swms) {
@@ -1081,6 +1087,9 @@ static int imagex_capture_or_append(int argc, char **argv)
 			}
 		}
 	}
+#ifdef __WIN32__
+	win32_acquire_capture_privileges();
+#endif
 
 	ret = wimlib_add_image_multisource(w, capture_sources,
 					   num_sources, name,
@@ -1091,17 +1100,17 @@ static int imagex_capture_or_append(int argc, char **argv)
 					   add_image_flags,
 					   imagex_progress_func);
 	if (ret != 0)
-		goto out;
+		goto out_release_privs;
 	cur_image = wimlib_get_num_images(w);
 	if (desc) {
 		ret = wimlib_set_image_descripton(w, cur_image, desc);
 		if (ret != 0)
-			goto out;
+			goto out_release_privs;
 	}
 	if (flags_element) {
 		ret = wimlib_set_image_flags(w, cur_image, flags_element);
 		if (ret != 0)
-			goto out;
+			goto out_release_privs;
 	}
 	if (cmd == APPEND) {
 		ret = wimlib_overwrite(w, write_flags, num_threads,
@@ -1114,6 +1123,10 @@ static int imagex_capture_or_append(int argc, char **argv)
 		ret = 0;
 	if (ret != 0)
 		imagex_error("Failed to write the WIM file `%s'", wimfile);
+out_release_privs:
+#ifdef __WIN32__
+	win32_release_capture_privileges();
+#endif
 out:
 	wimlib_free(w);
 	free(config_str);

@@ -271,7 +271,11 @@ struct wim_inode {
 
 	struct list_head i_lte_inode_list;
 
+#ifdef __WIN32__
+	utf16lechar *i_extracted_file;
+#else
 	mbchar *i_extracted_file;
+#endif
 
 	/* Root of a red-black tree storing the children of this inode (if
 	 * non-empty, implies the inode is a directory, although that is also

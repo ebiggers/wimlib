@@ -67,6 +67,9 @@ typedef char utf8char;
 /* A pointer to 'utf16lechar' indicates a UTF-16LE encoded string */
 typedef u16 utf16lechar;
 
+extern size_t
+utf16le_strlen(const utf16lechar *s);
+
 /* encoding.c */
 extern void
 iconv_global_cleanup();
@@ -272,9 +275,13 @@ bsr32(u32 n)
 }
 
 extern int
-wimlib_fprintf(FILE *fp, const char *format, ...) FORMAT(printf, 2, 3);
+wimlib_fprintf(FILE *fp, const char *format, ...)
+	//FORMAT(printf, 2, 3)
+	;
 
 extern int
-wimlib_printf(const char *format, ...) FORMAT(printf, 1, 2);
+wimlib_printf(const char *format, ...)
+	//FORMAT(printf, 1, 2)
+	;
 
 #endif /* _WIMLIB_UTIL_H */

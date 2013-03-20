@@ -237,21 +237,19 @@ else
 	LIBNTFS_3G_LDADD=
 	LIBNTFS_3G_CFLAGS=
 
-	if test "x$WINDOWS_NATIVE_BUILD" != "xyes"; then
-		AM_ICONV
-		if test "x$am_cv_func_iconv" != "xyes"; then
-			AC_MSG_ERROR([Cannot find the iconv() function.
-			iconv() is used to convert between UTF-8 and UTF-16 encodings of WIM
-			filenames and XML data.  Wimlib cannot be compiled without it.  iconv()
-			is available in the latest version of glibc and sometimes in other
-			libraries.])
-		fi
-	fi
 fi
 AM_CONDITIONAL([WITH_NTFS_3G], [test "x$WITH_NTFS_3G" = "xyes"])
 
 AC_SUBST([LIBNTFS_3G_LDADD], [$LIBNTFS_3G_LDADD])
 AC_SUBST([LIBNTFS_3G_CFLAGS], [$LIBNTFS_3G_CFLAGS])
+
+AM_ICONV
+if test "x$am_cv_func_iconv" != "xyes"; then
+	AC_MSG_ERROR([Cannot find the iconv() function.
+	iconv() is used to convert between encodings of WIM filenames and XML data.
+	wimlib cannot be compiled without it.  iconv() is available in the latest
+	version of glibc and sometimes in other libraries.])
+fi
 
 AC_MSG_CHECKING([whether to include support for mounting WIMs])
 AC_ARG_WITH([fuse],

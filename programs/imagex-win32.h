@@ -2,6 +2,7 @@
 #define _IMAGEX_WIN32_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
 typedef struct {
 	size_t gl_pathc;
@@ -23,5 +24,17 @@ extern void globfree(glob_t *pglob);
 #define	GLOB_NOSPACE	1	/* Ran out of memory.  */
 #define	GLOB_ABORTED	2	/* Read error.  */
 #define	GLOB_NOMATCH	3	/* No matches found.  */
+
+extern void
+win32_acquire_capture_privileges();
+
+extern void
+win32_release_capture_privileges();
+
+extern void
+win32_acquire_restore_privileges();
+
+extern void
+win32_release_restore_privileges();
 
 #endif

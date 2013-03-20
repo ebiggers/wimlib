@@ -84,11 +84,20 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 	memcpy(new, old, sizeof(*old));
 	new->extracted_file = NULL;
 	switch (new->resource_location) {
-	case RESOURCE_IN_STAGING_FILE:
-	case RESOURCE_IN_FILE_ON_DISK:
 #ifdef __WIN32__
 	case RESOURCE_WIN32:
+		{
+			size_t nbytes = utf16le_strlen(old->win32_file_on_disk);
+			new->win32_file_on_disk = MALLOC(nbytes + 2);
+			if (!new->win32_file_on_disk)
+				goto out_free;
+			memcpy(new->win32_file_on_disk, old->win32_file_on_disk,
+			       nbytes + 2);
+		}
+		break;
 #endif
+	case RESOURCE_IN_STAGING_FILE:
+	case RESOURCE_IN_FILE_ON_DISK:
 		BUILD_BUG_ON((void*)&old->file_on_disk !=
 			     (void*)&old->staging_file_name);
 		new->staging_file_name = STRDUP(old->staging_file_name);

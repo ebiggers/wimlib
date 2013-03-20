@@ -45,7 +45,8 @@ const u8 zero_hash[SHA1_HASH_SIZE] = {
 #ifndef WITH_LIBCRYPTO
 
 /*  Initialize new context */
-void sha1_init(SHA_CTX* context)
+void
+sha1_init(SHA_CTX* context)
 {
 	/* SHA1 initialization constants */
 	context->state[0] = 0x67452301;
@@ -57,9 +58,11 @@ void sha1_init(SHA_CTX* context)
 }
 
 #ifdef ENABLE_SSSE3_SHA1
-extern void sha1_update_intel(int *hash, const char* input, size_t num_blocks);
+extern void
+sha1_update_intel(int *hash, const void* input, size_t num_blocks);
 
-void sha1_update(SHA_CTX *context, const u8 data[], size_t len)
+void
+sha1_update(SHA_CTX *context, const void *data, size_t len)
 {
 	sha1_update_intel((int*)&context->state, data, len / 64);
 	size_t j = (context->count[0] >> 3) & 63;
@@ -67,7 +70,8 @@ void sha1_update(SHA_CTX *context, const u8 data[], size_t len)
 	context->count[1] += (len >> 29);
 }
 #include <stdlib.h>
-void ssse3_not_found()
+void
+ssse3_not_found()
 {
 	fprintf(stderr,
 "Cannot calculate SHA1 message digest: CPU does not support SSSE3\n"
@@ -99,7 +103,8 @@ void ssse3_not_found()
 #define R4(v,w,x,y,z,i) z+=(w^x^y)+blk(i)+0xCA62C1D6+rol(v,5);w=rol(w,30);
 
 /* Hash a single 512-bit block. This is the core of the algorithm. */
-static void sha1_transform(u32 state[5], const u8 buffer[64])
+static void
+sha1_transform(u32 state[5], const u8 buffer[64])
 {
 	u32 a, b, c, d, e;
 	typedef union {
@@ -149,7 +154,8 @@ static void sha1_transform(u32 state[5], const u8 buffer[64])
 	state[4] += e;
 }
 
-void sha1_update(SHA_CTX* context, const u8 data[], const size_t len)
+void
+sha1_update(SHA_CTX* context, const void *data, const size_t len)
 {
 	size_t i, j;
 
@@ -167,13 +173,14 @@ void sha1_update(SHA_CTX* context, const u8 data[], const size_t len)
 	} else  {
 		i = 0;
 	}
-	memcpy(&context->buffer[j], &data[i], len - i);
+	memcpy(&context->buffer[j], data + i, len - i);
 }
 
 #endif /* !ENABLE_SSSE3_SHA1 */
 
 /* Add padding and return the message digest. */
-void sha1_final(u8 md[SHA1_HASH_SIZE], SHA_CTX* context)
+void
+sha1_final(u8 md[SHA1_HASH_SIZE], SHA_CTX* context)
 {
 	u32 i;
 	u8  finalcount[8];
@@ -192,7 +199,8 @@ void sha1_final(u8 md[SHA1_HASH_SIZE], SHA_CTX* context)
 	}
 }
 
-void sha1_buffer(const u8 buffer[], size_t len, u8 md[SHA1_HASH_SIZE])
+void
+sha1_buffer(const void *buffer, size_t len, u8 md[SHA1_HASH_SIZE])
 {
 	SHA_CTX ctx;
 	sha1_init(&ctx);
@@ -202,7 +210,8 @@ void sha1_buffer(const u8 buffer[], size_t len, u8 md[SHA1_HASH_SIZE])
 
 #endif /* !WITH_LIBCRYPTO */
 
-static int sha1_stream(FILE *fp, u8 md[SHA1_HASH_SIZE])
+static int
+sha1_stream(FILE *fp, u8 md[SHA1_HASH_SIZE])
 {
 	char buf[BUFFER_SIZE];
 	size_t bytes_read;

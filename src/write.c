@@ -67,6 +67,10 @@
 
 #include <limits.h>
 
+#if defined(__WIN32__) && !defined(INVALID_HANDLE_VALUE)
+#  define INVALID_HANDLE_VALUE ((HANDLE)(-1))
+#endif
+
 static int
 fflush_and_ftruncate(FILE *fp, off_t size)
 {
@@ -306,10 +310,14 @@ prepare_resource_for_read(struct wim_lookup_table_entry *lte
 #endif
 #ifdef __WIN32__
 	case RESOURCE_WIN32:
-		if (!lte->file_on_disk_fp) {
-			lte->file_on_disk_fp = win32_open_file_readonly(lte->file_on_disk);
-			if (!lte->file_on_disk_fp)
+		if (lte->win32_file_on_disk_fp == INVALID_HANDLE_VALUE) {
+			lte->win32_file_on_disk_fp =
+				win32_open_file_readonly(lte->win32_file_on_disk, true);
+			if (lte->win32_file_on_disk_fp == INVALID_HANDLE_VALUE) {
+				ERROR("Win32 API: Can't open %ls", lte->win32_file_on_disk);
+				win32_error_last();
 				return WIMLIB_ERR_OPEN;
+			}
 		}
 		break;
 #endif
@@ -346,10 +354,10 @@ end_wim_resource_read(struct wim_lookup_table_entry *lte
 #endif
 #ifdef __WIN32__
 	else if (lte->resource_location == RESOURCE_WIN32
-		 && lte->file_on_disk_fp)
+		 && lte->win32_file_on_disk_fp != INVALID_HANDLE_VALUE)
 	{
-		win32_close_file(lte->file_on_disk_fp);
-		lte->file_on_disk_fp = NULL;
+		win32_close_file(lte->win32_file_on_disk_fp);
+		lte->win32_file_on_disk_fp = INVALID_HANDLE_VALUE;
 	}
 #endif
 }

@@ -1,6 +1,7 @@
 
 /* Replacements for functions needed specifically by the 'imagex' program in
- * Windows native builds */
+ * Windows native builds; also, Windows-specific code to acquire and release
+ * privileges needed to backup and restore files */
 
 #ifndef __WIN32__
 #  error "This file contains Windows code"
@@ -11,7 +12,7 @@
 #include <errno.h>
 #include <string.h>
 #include <assert.h>
-
+#include <stdio.h>
 
 /* Replacement for glob() in Windows native builds. */
 int glob(const char *pattern, int flags,
@@ -93,4 +94,80 @@ void globfree(glob_t *pglob)
 	for (i = 0; i < pglob->gl_pathc; i++)
 		free(pglob->gl_pathv[i]);
 	free(pglob->gl_pathv[i]);
+}
+
+static bool
+win32_modify_privilege(const char *privilege, bool enable)
+{
+	HANDLE hToken;
+	LUID luid;
+	TOKEN_PRIVILEGES newState;
+	bool ret = false;
+
+	if (!OpenProcessToken(GetCurrentProcess(),
+			      TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+			      &hToken))
+	{
+		goto out;
+	}
+
+	if (!LookupPrivilegeValue(NULL, privilege, &luid)) {
+		goto out;
+	}
+
+	newState.PrivilegeCount = 1;
+	newState.Privileges[0].Luid = luid;
+	newState.Privileges[0].Attributes = (enable ? SE_PRIVILEGE_ENABLED : 0);
+	ret = AdjustTokenPrivileges(hToken, FALSE, &newState, 0, NULL, NULL);
+	CloseHandle(hToken);
+out:
+	if (!ret) {
+		fprintf(stderr, "WARNING: Failed to %s privilege %s\n",
+			enable ? "enable" : "disable", privilege);
+		fprintf(stderr,
+			"WARNING: The program will continue, "
+			"but if permission issues are\n"
+			"encountered, you may need to run "
+			"this program as the administrator\n");
+	}
+	return ret;
+}
+
+static void
+win32_modify_capture_privileges(bool enable)
+{
+	win32_modify_privilege(SE_BACKUP_NAME, enable);
+	win32_modify_privilege(SE_SECURITY_NAME, enable);
+}
+
+static void
+win32_modify_restore_privileges(bool enable)
+{
+	win32_modify_privilege(SE_RESTORE_NAME, enable);
+	win32_modify_privilege(SE_SECURITY_NAME, enable);
+	win32_modify_privilege(SE_TAKE_OWNERSHIP_NAME, enable);
+}
+
+void
+win32_acquire_capture_privileges()
+{
+	win32_modify_capture_privileges(true);
+}
+
+void
+win32_release_capture_privileges()
+{
+	win32_modify_capture_privileges(false);
+}
+
+void
+win32_acquire_restore_privileges()
+{
+	win32_modify_restore_privileges(true);
+}
+
+void
+win32_release_restore_privileges()
+{
+	win32_modify_restore_privileges(false);
 }

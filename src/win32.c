@@ -40,11 +40,13 @@
 #include "dentry.h"
 #include "lookup_table.h"
 #include "security.h"
+#include "endianness.h"
 
 #include <errno.h>
 
 #ifdef ENABLE_ERROR_MESSAGES
-void win32_error(u32 err_code)
+void
+win32_error(u32 err_code)
 {
 	char *buffer;
 	DWORD nchars;
@@ -59,15 +61,22 @@ void win32_error(u32 err_code)
 		LocalFree(buffer);
 	}
 }
+
+void
+win32_error_last()
+{
+	win32_error(GetLastError());
+}
 #endif
 
-void *win32_open_file_readonly(const void *path)
+HANDLE
+win32_open_file_readonly(const wchar_t *path, bool data_only)
 {
-	return CreateFileW((const wchar_t*)path,
-			   FILE_READ_DATA |
-			       FILE_READ_ATTRIBUTES |
-			       READ_CONTROL |
-			       ACCESS_SYSTEM_SECURITY,
+	DWORD dwDesiredAccess = FILE_READ_DATA;
+	if (!data_only)
+		dwDesiredAccess |= FILE_READ_ATTRIBUTES | READ_CONTROL | ACCESS_SYSTEM_SECURITY;
+	return CreateFileW(path,
+			   dwDesiredAccess,
 			   FILE_SHARE_READ,
 			   NULL, /* lpSecurityAttributes */
 			   OPEN_EXISTING,
@@ -76,8 +85,9 @@ void *win32_open_file_readonly(const void *path)
 			   NULL /* hTemplateFile */);
 }
 
-int win32_read_file(const char *filename,
-		    void *handle, u64 offset, size_t size, void *buf)
+int
+win32_read_file(const mbchar *filename,
+		void *handle, u64 offset, size_t size, void *buf)
 {
 	HANDLE h = handle;
 	DWORD err;
@@ -95,116 +105,41 @@ int win32_read_file(const char *filename,
 	return WIMLIB_ERR_READ;
 }
 
-void win32_close_file(void *handle)
+void
+win32_close_file(void *handle)
 {
 	CloseHandle((HANDLE)handle);
 }
 
-static bool win32_modify_privilege(const char *privilege, bool enable)
-{
-	HANDLE hToken;
-	LUID luid;
-	TOKEN_PRIVILEGES newState;
-	bool ret = false;
-
-	DEBUG("%s privilege %s",
-	      enable ? "Enabling" : "Disabling", privilege);
-
-	if (!OpenProcessToken(GetCurrentProcess(),
-			      TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
-			      &hToken))
-	{
-		DEBUG("OpenProcessToken() failed");
-		goto out;
-	}
-
-	if (!LookupPrivilegeValue(NULL, privilege, &luid)) {
-		DEBUG("LookupPrivilegeValue() failed");
-		goto out;
-	}
-
-	newState.PrivilegeCount = 1;
-	newState.Privileges[0].Luid = luid;
-	newState.Privileges[0].Attributes = (enable ? SE_PRIVILEGE_ENABLED : 0);
-	ret = AdjustTokenPrivileges(hToken, FALSE, &newState, 0, NULL, NULL);
-	if (!ret)
-		DEBUG("AdjustTokenPrivileges() failed");
-	CloseHandle(hToken);
-out:
-	if (!ret) {
-		DWORD err = GetLastError();
-		win32_error(err);
-		WARNING("Failed to %s privilege %s",
-			enable ? "enable" : "disable", privilege);
-		WARNING("The program will continue, but if permission issues are "
-			"encountered, you may need to run this program as the administrator");
-	}
-	return ret;
-}
-
-static bool win32_acquire_privilege(const char *privilege)
-{
-	return win32_modify_privilege(privilege, true);
-}
-
-static bool win32_release_privilege(const char *privilege)
-{
-	return win32_modify_privilege(privilege, false);
-}
-
-
-void win32_acquire_capture_privileges()
-{
-	win32_acquire_privilege(SE_BACKUP_NAME);
-	win32_acquire_privilege(SE_SECURITY_NAME);
-}
-
-void win32_release_capture_privileges()
-{
-	win32_release_privilege(SE_BACKUP_NAME);
-	win32_release_privilege(SE_SECURITY_NAME);
-}
-
-void win32_acquire_restore_privileges()
-{
-	win32_acquire_privilege(SE_RESTORE_NAME);
-	win32_acquire_privilege(SE_SECURITY_NAME);
-	win32_acquire_privilege(SE_TAKE_OWNERSHIP_NAME);
-}
-
-void win32_release_restore_privileges()
-{
-	win32_release_privilege(SE_RESTORE_NAME);
-	win32_release_privilege(SE_SECURITY_NAME);
-	win32_release_privilege(SE_TAKE_OWNERSHIP_NAME);
-}
-
-static u64 FILETIME_to_u64(const FILETIME *ft)
+static u64
+FILETIME_to_u64(const FILETIME *ft)
 {
 	return ((u64)ft->dwHighDateTime << 32) | (u64)ft->dwLowDateTime;
 }
 
-static int win32_get_short_name(struct wim_dentry *dentry,
-				const wchar_t *path_utf16)
+static int
+win32_get_short_name(struct wim_dentry *dentry,
+		     const wchar_t *path_utf16)
 {
 	WIN32_FIND_DATAW dat;
 	if (FindFirstFileW(path_utf16, &dat) &&
 	    dat.cAlternateFileName[0] != L'\0')
 	{
-		size_t short_name_len = wcslen(dat.cAlternateFileName) * 2;
-		size_t n = short_name_len + sizeof(wchar_t);
+		size_t short_name_nbytes = wcslen(dat.cAlternateFileName) * 2;
+		size_t n = short_name_nbytes + sizeof(wchar_t);
 		dentry->short_name = MALLOC(n);
 		if (!dentry->short_name)
 			return WIMLIB_ERR_NOMEM;
 		memcpy(dentry->short_name, dat.cAlternateFileName, n);
-		dentry->short_name_len = short_name_len;
+		dentry->short_name_nbytes = short_name_nbytes;
 	}
 	return 0;
 }
 
-static int win32_get_security_descriptor(struct wim_dentry *dentry,
-					 struct sd_set *sd_set,
-					 const wchar_t *path_utf16)
+static int
+win32_get_security_descriptor(struct wim_dentry *dentry,
+			      struct sd_set *sd_set,
+			      const wchar_t *path_utf16)
 {
 	SECURITY_INFORMATION requestedInformation;
 	DWORD lenNeeded = 0;
@@ -244,16 +179,17 @@ static int win32_get_security_descriptor(struct wim_dentry *dentry,
 
 /* Reads the directory entries of directory using a Win32 API and recursively
  * calls win32_build_dentry_tree() on them. */
-static int win32_recurse_directory(struct wim_dentry *root,
-				   const char *root_disk_path,
-				   struct wim_lookup_table *lookup_table,
-				   struct wim_security_data *sd,
-				   const struct capture_config *config,
-				   int add_image_flags,
-				   wimlib_progress_func_t progress_func,
-				   struct sd_set *sd_set,
-				   const wchar_t *path_utf16,
-				   size_t path_utf16_nchars)
+static int
+win32_recurse_directory(struct wim_dentry *root,
+			const mbchar *root_disk_path,
+			struct wim_lookup_table *lookup_table,
+			struct wim_security_data *sd,
+			const struct capture_config *config,
+			int add_image_flags,
+			wimlib_progress_func_t progress_func,
+			struct sd_set *sd_set,
+			const wchar_t *path_utf16,
+			size_t path_utf16_nchars)
 {
 	WIN32_FIND_DATAW dat;
 	HANDLE hFind;
@@ -293,18 +229,18 @@ static int win32_recurse_directory(struct wim_dentry *root,
 		{
 			struct wim_dentry *child;
 
-			char *utf8_name;
-			size_t utf8_name_nbytes;
-			ret = utf16_to_utf8((const char*)dat.cFileName,
-					    wcslen(dat.cFileName) * sizeof(wchar_t),
-					    &utf8_name,
-					    &utf8_name_nbytes);
+			char *mbs_name;
+			size_t mbs_name_nbytes;
+			ret = utf16le_to_mbs(dat.cFileName,
+					     wcslen(dat.cFileName) * sizeof(wchar_t),
+					     &mbs_name,
+					     &mbs_name_nbytes);
 			if (ret)
 				goto out_find_close;
 
-			char name[strlen(root_disk_path) + 1 + utf8_name_nbytes + 1];
-			sprintf(name, "%s/%s", root_disk_path, utf8_name);
-			FREE(utf8_name);
+			char name[strlen(root_disk_path) + 1 + mbs_name_nbytes + 1];
+			sprintf(name, "%s/%s", root_disk_path, mbs_name);
+			FREE(mbs_name);
 			ret = win32_build_dentry_tree(&child, name, lookup_table,
 						      sd, config, add_image_flags,
 						      progress_func, sd_set);
@@ -341,10 +277,11 @@ out_find_close:
  *         only.
  *
  * Returns 0 on success; nonzero on failure. */
-static int win32_capture_reparse_point(HANDLE hFile,
-				       struct wim_inode *inode,
-				       struct wim_lookup_table *lookup_table,
-				       const char *path)
+static int
+win32_capture_reparse_point(HANDLE hFile,
+			    struct wim_inode *inode,
+			    struct wim_lookup_table *lookup_table,
+			    const char *path)
 {
 	/* "Reparse point data, including the tag and optional GUID,
 	 * cannot exceed 16 kilobytes." - MSDN  */
@@ -364,7 +301,7 @@ static int win32_capture_reparse_point(HANDLE hFile,
 		ERROR("Reparse data on \"%s\" is invalid", path);
 		return WIMLIB_ERR_READ;
 	}
-	inode->i_reparse_tag = *(u32*)reparse_point_buf;
+	inode->i_reparse_tag = le32_to_cpu(*(u32*)reparse_point_buf);
 	return inode_add_ads_with_data(inode, "",
 				       (const u8*)reparse_point_buf + 8,
 				       bytesReturned - 8, lookup_table);
@@ -381,7 +318,8 @@ static int win32_capture_reparse_point(HANDLE hFile,
  *
  * Returns 0 on success; nonzero on failure.
  */
-static int win32_sha1sum(const wchar_t *path, u8 hash[SHA1_HASH_SIZE])
+static int
+win32_sha1sum(const wchar_t *path, u8 hash[SHA1_HASH_SIZE])
 {
 	HANDLE hFile;
 	SHA_CTX ctx;
@@ -389,7 +327,7 @@ static int win32_sha1sum(const wchar_t *path, u8 hash[SHA1_HASH_SIZE])
 	DWORD bytesRead;
 	int ret;
 
-	hFile = win32_open_file_readonly(path);
+	hFile = win32_open_file_readonly(path, false);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return WIMLIB_ERR_OPEN;
 
@@ -428,11 +366,12 @@ out_close_handle:
  *
  * Returns 0 on success; nonzero on failure.
  */
-static int win32_capture_stream(const wchar_t *path_utf16,
-				size_t path_utf16_nchars,
-				struct wim_inode *inode,
-				struct wim_lookup_table *lookup_table,
-				WIN32_FIND_STREAM_DATA *dat)
+static int
+win32_capture_stream(const wchar_t *path_utf16,
+		     size_t path_utf16_nchars,
+		     struct wim_inode *inode,
+		     struct wim_lookup_table *lookup_table,
+		     WIN32_FIND_STREAM_DATA *dat)
 {
 	struct wim_ads_entry *ads_entry;
 	u8 hash[SHA1_HASH_SIZE];
@@ -462,16 +401,16 @@ static int win32_capture_stream(const wchar_t *path_utf16,
 	is_named_stream = (p != colon);
 	if (is_named_stream) {
 		/* Allocate an ADS entry for the named stream. */
-		char *utf8_stream_name;
-		size_t utf8_stream_name_len;
-		ret = utf16_to_utf8((const char *)p,
-				    (colon - p) * sizeof(wchar_t),
-				    &utf8_stream_name,
-				    &utf8_stream_name_len);
+		char *mbs_stream_name;
+		size_t mbs_stream_name_nbytes;
+		ret = utf16le_to_mbs(p,
+				     (colon - p) * sizeof(wchar_t),
+				     &mbs_stream_name,
+				     &mbs_stream_name_nbytes);
 		if (ret)
 			goto out;
-		ads_entry = inode_add_ads(inode, utf8_stream_name);
-		FREE(utf8_stream_name);
+		ads_entry = inode_add_ads(inode, mbs_stream_name);
+		FREE(mbs_stream_name);
 		if (!ads_entry) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
@@ -516,7 +455,8 @@ static int win32_capture_stream(const wchar_t *path_utf16,
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_spath;
 		}
-		lte->file_on_disk = (char*)spath;
+		lte->win32_file_on_disk = spath;
+		lte->file_on_disk_fp = INVALID_HANDLE_VALUE;
 		spath = NULL;
 		lte->resource_location = RESOURCE_WIN32;
 		lte->resource_entry.original_size = (uint64_t)dat->StreamSize.QuadPart;
@@ -551,10 +491,11 @@ out_invalid_stream_name:
  *
  * Returns 0 on success; nonzero on failure.
  */
-static int win32_capture_streams(const wchar_t *path_utf16,
-				 size_t path_utf16_nchars,
-				 struct wim_inode *inode,
-				 struct wim_lookup_table *lookup_table)
+static int
+win32_capture_streams(const wchar_t *path_utf16,
+		      size_t path_utf16_nchars,
+		      struct wim_inode *inode,
+		      struct wim_lookup_table *lookup_table)
 {
 	WIN32_FIND_STREAM_DATA dat;
 	int ret;
@@ -599,20 +540,22 @@ out_find_close:
 }
 
 /* Win32 version of capturing a directory tree */
-int win32_build_dentry_tree(struct wim_dentry **root_ret,
-			    const char *root_disk_path,
-			    struct wim_lookup_table *lookup_table,
-			    struct wim_security_data *sd,
-			    const struct capture_config *config,
-			    int add_image_flags,
-			    wimlib_progress_func_t progress_func,
-			    void *extra_arg)
+int
+win32_build_dentry_tree(struct wim_dentry **root_ret,
+			const char *root_disk_path,
+			struct wim_lookup_table *lookup_table,
+			struct wim_security_data *sd,
+			const struct capture_config *config,
+			int add_image_flags,
+			wimlib_progress_func_t progress_func,
+			void *extra_arg)
 {
 	struct wim_dentry *root = NULL;
 	int ret = 0;
 	struct wim_inode *inode;
 
 	wchar_t *path_utf16;
+	size_t path_utf16_nbytes;
 	size_t path_utf16_nchars;
 	struct sd_set *sd_set;
 	DWORD err;
@@ -651,13 +594,13 @@ int win32_build_dentry_tree(struct wim_dentry **root_ret,
 		sd_set = extra_arg;
 	}
 
-	ret = utf8_to_utf16(root_disk_path, strlen(root_disk_path),
-			    (char**)&path_utf16, &path_utf16_nchars);
+	ret = mbs_to_utf16le(root_disk_path, strlen(root_disk_path),
+			     &path_utf16, &path_utf16_nbytes);
 	if (ret)
 		goto out_destroy_sd_set;
-	path_utf16_nchars /= sizeof(wchar_t);
+	path_utf16_nchars = path_utf16_nbytes / sizeof(wchar_t);
 
-	HANDLE hFile = win32_open_file_readonly(path_utf16);
+	HANDLE hFile = win32_open_file_readonly(path_utf16, false);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
 		ERROR("Win32 API: Failed to open \"%s\"", root_disk_path);
@@ -677,16 +620,9 @@ int win32_build_dentry_tree(struct wim_dentry **root_ret,
 	}
 
 	/* Create a WIM dentry */
-	root = new_dentry_with_timeless_inode(path_basename(root_disk_path));
-	if (!root) {
-		if (errno == EILSEQ)
-			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
-		else if (errno == ENOMEM)
-			ret = WIMLIB_ERR_NOMEM;
-		else
-			ret = WIMLIB_ERR_ICONV_NOT_AVAILABLE;
+	ret = new_dentry_with_timeless_inode(path_basename(root_disk_path), &root);
+	if (ret)
 		goto out_close_handle;
-	}
 
 	/* Start preparing the associated WIM inode */
 	inode = root->d_inode;
@@ -760,7 +696,8 @@ out:
 }
 
 /* Replacement for POSIX fnmatch() (partial functionality only) */
-int fnmatch(const char *pattern, const char *string, int flags)
+int
+fnmatch(const char *pattern, const char *string, int flags)
 {
 	if (PathMatchSpecA(string, pattern))
 		return 0;
@@ -768,10 +705,11 @@ int fnmatch(const char *pattern, const char *string, int flags)
 		return FNM_NOMATCH;
 }
 
-static int win32_set_reparse_data(HANDLE h,
-				  u32 reparse_tag,
-				  const struct wim_lookup_table_entry *lte,
-				  const wchar_t *path)
+static int
+win32_set_reparse_data(HANDLE h,
+		       u32 reparse_tag,
+		       const struct wim_lookup_table_entry *lte,
+		       const wchar_t *path)
 {
 	int ret;
 	u8 *buf;
@@ -795,8 +733,8 @@ static int win32_set_reparse_data(HANDLE h,
 	ret = read_full_wim_resource(lte, buf + 8, 0);
 	if (ret)
 		return ret;
-	*(u32*)(buf + 0) = reparse_tag;
-	*(u16*)(buf + 4) = len;
+	*(u32*)(buf + 0) = cpu_to_le32(reparse_tag);
+	*(u16*)(buf + 4) = cpu_to_le16(len);
 	*(u16*)(buf + 6) = 0;
 
 	/* Set the reparse data on the open file using the
@@ -835,7 +773,8 @@ static int win32_set_reparse_data(HANDLE h,
 }
 
 
-static int win32_extract_chunk(const u8 *buf, size_t len, u64 offset, void *arg)
+static int
+win32_extract_chunk(const void *buf, size_t len, u64 offset, void *arg)
 {
 	HANDLE hStream = arg;
 
@@ -853,16 +792,18 @@ static int win32_extract_chunk(const u8 *buf, size_t len, u64 offset, void *arg)
 	return 0;
 }
 
-static int do_win32_extract_stream(HANDLE hStream, struct wim_lookup_table_entry *lte)
+static int
+do_win32_extract_stream(HANDLE hStream, struct wim_lookup_table_entry *lte)
 {
 	return extract_wim_resource(lte, wim_resource_size(lte),
 				    win32_extract_chunk, hStream);
 }
 
-static int win32_extract_stream(const struct wim_inode *inode,
-				const wchar_t *path,
-				const wchar_t *stream_name_utf16,
-				struct wim_lookup_table_entry *lte)
+static int
+win32_extract_stream(const struct wim_inode *inode,
+		     const wchar_t *path,
+		     const wchar_t *stream_name_utf16,
+		     struct wim_lookup_table_entry *lte)
 {
 	wchar_t *stream_path;
 	HANDLE h;
@@ -986,8 +927,9 @@ out:
  *
  * Returns 0 on success; nonzero on failure.
  */
-static int win32_extract_streams(const struct wim_inode *inode,
-				 const wchar_t *path, u64 *completed_bytes_p)
+static int
+win32_extract_streams(const struct wim_inode *inode,
+		      const wchar_t *path, u64 *completed_bytes_p)
 {
 	struct wim_lookup_table_entry *unnamed_lte;
 	int ret;
@@ -1000,17 +942,17 @@ static int win32_extract_streams(const struct wim_inode *inode,
 		*completed_bytes_p += wim_resource_size(unnamed_lte);
 	for (u16 i = 0; i < inode->i_num_ads; i++) {
 		const struct wim_ads_entry *ads_entry = &inode->i_ads_entries[i];
-		if (ads_entry->stream_name_len != 0) {
+		if (ads_entry->stream_name_nbytes != 0) {
 			/* Skip special UNIX data entries (see documentation for
 			 * WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
-			if (ads_entry->stream_name_len == WIMLIB_UNIX_DATA_TAG_LEN
-			    && !memcmp(ads_entry->stream_name_utf8,
-				       WIMLIB_UNIX_DATA_TAG,
-				       WIMLIB_UNIX_DATA_TAG_LEN))
+			if (ads_entry->stream_name_nbytes == WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES
+			    && !memcmp(ads_entry->stream_name,
+				       WIMLIB_UNIX_DATA_TAG_UTF16LE,
+				       WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES))
 				continue;
 			ret = win32_extract_stream(inode,
 						   path,
-						   (const wchar_t*)ads_entry->stream_name,
+						   ads_entry->stream_name,
 						   ads_entry->lte);
 			if (ret)
 				break;
@@ -1053,19 +995,19 @@ static int win32_set_security_data(const struct wim_inode *inode,
 
 /* Extract a file, directory, reparse point, or hard link to an
  * already-extracted file using the Win32 API */
-int win32_do_apply_dentry(const char *output_path,
-			  size_t output_path_len,
+int win32_do_apply_dentry(const mbchar *output_path,
+			  size_t output_path_nbytes,
 			  struct wim_dentry *dentry,
 			  struct apply_args *args)
 {
-	char *utf16_path;
-	size_t utf16_path_len;
+	wchar_t *utf16le_path;
+	size_t utf16le_path_nbytes;
 	DWORD err;
 	int ret;
 	struct wim_inode *inode = dentry->d_inode;
 
-	ret = utf8_to_utf16(output_path, output_path_len,
-			    &utf16_path, &utf16_path_len);
+	ret = mbs_to_utf16le(output_path, output_path_nbytes,
+			     &utf16le_path, &utf16le_path_nbytes);
 	if (ret)
 		return ret;
 
@@ -1073,23 +1015,19 @@ int win32_do_apply_dentry(const char *output_path,
 		/* Linked file, with another name already extracted.  Create a
 		 * hard link. */
 		DEBUG("Creating hard link \"%ls => %ls\"",
-		      (const wchar_t*)utf16_path,
-		      (const wchar_t*)inode->i_extracted_file);
-		if (!CreateHardLinkW((const wchar_t*)utf16_path,
-				     (const wchar_t*)inode->i_extracted_file,
-				     NULL))
+		      utf16le_path, inode->i_extracted_file);
+		if (!CreateHardLinkW(utf16le_path, inode->i_extracted_file, NULL))
 		{
 			err = GetLastError();
 			ERROR("Can't create hard link \"%ls => %ls\"",
-			      (const wchar_t*)utf16_path,
-			      (const wchar_t*)inode->i_extracted_file);
+			      utf16le_path, inode->i_extracted_file);
 			ret = WIMLIB_ERR_LINK;
 			win32_error(err);
 		}
 	} else {
 		/* Create the file, directory, or reparse point, and extract the
 		 * data streams. */
-		ret = win32_extract_streams(inode, (const wchar_t*)utf16_path,
+		ret = win32_extract_streams(inode, utf16le_path,
 					    &args->progress.extract.completed_bytes);
 		if (ret)
 			goto out_free_utf16_path;
@@ -1099,7 +1037,7 @@ int win32_do_apply_dentry(const char *output_path,
 			DEBUG("Setting security descriptor %d on %s",
 			      inode->i_security_id, output_path);
 			ret = win32_set_security_data(inode,
-						      (const wchar_t*)utf16_path,
+						      utf16le_path,
 						      wim_const_security_data(args->w));
 			if (ret)
 				goto out_free_utf16_path;
@@ -1108,37 +1046,38 @@ int win32_do_apply_dentry(const char *output_path,
 			/* Save extracted path for a later call to
 			 * CreateHardLinkW() if this inode has multiple links.
 			 * */
-			inode->i_extracted_file = utf16_path;
+			inode->i_extracted_file = utf16le_path;
 			goto out;
 		}
 	}
 out_free_utf16_path:
-	FREE(utf16_path);
+	FREE(utf16le_path);
 out:
 	return ret;
 }
 
 /* Set timestamps on an extracted file using the Win32 API */
-int win32_do_apply_dentry_timestamps(const char *output_path,
-				     size_t output_path_len,
-				     const struct wim_dentry *dentry,
-				     const struct apply_args *args)
+int
+win32_do_apply_dentry_timestamps(const mbchar *output_path,
+				 size_t output_path_nbytes,
+				 const struct wim_dentry *dentry,
+				 const struct apply_args *args)
 {
 	/* Win32 */
-	char *utf16_path;
-	size_t utf16_path_len;
+	wchar_t *utf16le_path;
+	size_t utf16le_path_nbytes;
 	DWORD err;
 	HANDLE h;
 	int ret;
 	const struct wim_inode *inode = dentry->d_inode;
 
-	ret = utf8_to_utf16(output_path, output_path_len,
-			    &utf16_path, &utf16_path_len);
+	ret = mbs_to_utf16le(output_path, output_path_nbytes,
+			    &utf16le_path, &utf16le_path_nbytes);
 	if (ret)
 		return ret;
 
 	DEBUG("Opening \"%s\" to set timestamps", output_path);
-	h = CreateFileW((const wchar_t*)utf16_path,
+	h = CreateFileW(utf16le_path,
 			GENERIC_WRITE | WRITE_OWNER | WRITE_DAC | ACCESS_SYSTEM_SECURITY,
 			FILE_SHARE_READ,
 			NULL,
@@ -1148,7 +1087,7 @@ int win32_do_apply_dentry_timestamps(const char *output_path,
 
 	if (h == INVALID_HANDLE_VALUE)
 		err = GetLastError();
-	FREE(utf16_path);
+	FREE(utf16le_path);
 	if (h == INVALID_HANDLE_VALUE)
 		goto fail;
 
@@ -1180,14 +1119,19 @@ out:
 }
 
 /* Replacement for POSIX fsync() */
-int fsync(int fd)
+int
+fsync(int fd)
 {
 	HANDLE h = (HANDLE)_get_osfhandle(fd);
 	if (h == INVALID_HANDLE_VALUE) {
+		ERROR("Could not get Windows handle for file descriptor");
+		win32_error(GetLastError());
 		errno = EBADF;
 		return -1;
 	}
 	if (!FlushFileBuffers(h)) {
+		ERROR("Could not flush file buffers to disk");
+		win32_error(GetLastError());
 		errno = EIO;
 		return -1;
 	}
@@ -1195,7 +1139,8 @@ int fsync(int fd)
 }
 
 /* Use the Win32 API to get the number of processors */
-unsigned win32_get_number_of_processors()
+unsigned
+win32_get_number_of_processors()
 {
 	SYSTEM_INFO sysinfo;
 	GetSystemInfo(&sysinfo);
@@ -1228,4 +1173,13 @@ fail_win32:
 	win32_error(GetLastError());
 fail:
 	return NULL;
+}
+
+char *
+nl_langinfo(nl_item item)
+{
+	wimlib_assert(item == CODESET);
+	static char buf[64];
+	strcpy(buf, "Unknown");
+	return buf;
 }

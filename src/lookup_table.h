@@ -11,6 +11,10 @@
 #define LOOKUP_FLAG_ADS_OK		0x00000001
 #define LOOKUP_FLAG_DIRECTORY_OK	0x00000002
 
+#ifdef __WIN32__
+#include <windef.h>
+#endif
+
 
 /* The lookup table of a WIM file maps SHA1 message digests to streams of data.
  * Here, the in-memory structure is implemented as a hash table.
@@ -159,6 +163,9 @@ struct wim_lookup_table_entry {
 		WIMStruct *wim;
 		mbchar *file_on_disk;
 		mbchar *staging_file_name;
+	#ifdef __WIN32__
+		wchar_t *win32_file_on_disk;
+	#endif
 		u8 *attached_buffer;
 	#ifdef WITH_NTFS_3G
 		struct ntfs_location *ntfs_loc;
@@ -168,12 +175,15 @@ struct wim_lookup_table_entry {
 		/* @file_on_disk_fp and @attr are both used to cache file/stream
 		 * handles so we don't have re-open them on every read */
 
+
 		/* Valid iff resource_location == RESOURCE_IN_FILE_ON_DISK */
 		FILE *file_on_disk_fp;
 	#ifdef WITH_NTFS_3G
 		/* Valid iff resource_location == RESOURCE_IN_NTFS_VOLUME */
 		struct _ntfs_attr *attr;
 	#endif
+
+		HANDLE win32_file_on_disk_fp;
 
 		/* Pointer to inode that contains the opened file descriptors to
 		 * this stream (valid iff resource_location ==

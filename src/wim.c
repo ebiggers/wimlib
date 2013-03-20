@@ -27,7 +27,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <langinfo.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -40,6 +39,8 @@
 
 #ifdef __WIN32__
 #  include "win32.h"
+#else
+#  include <langinfo.h>
 #endif
 
 #include "buffer_io.h"
@@ -669,6 +670,16 @@ wimlib_free(WIMStruct *w)
 	DEBUG("Freed WIMStruct");
 }
 
+static bool test_locale_ctype_utf8()
+{
+	char *ctype = nl_langinfo(CODESET);
+
+	return (strstr(ctype, "UTF-8") == 0 ||
+		strstr(ctype, "UTF8") == 0 ||
+		strstr(ctype, "utf8") == 0 ||
+		strstr(ctype, "utf-8") == 0);
+}
+
 bool wimlib_mbs_is_utf8;
 
 /* Get global memory allocations out of the way.  Not strictly necessary in
@@ -680,7 +691,7 @@ wimlib_global_init()
 #ifdef WITH_NTFS_3G
 	libntfs3g_global_init();
 #endif
-	wimlib_mbs_is_utf8 = (strcmp(nl_langinfo(CODESET), "UTF-8") == 0);
+	wimlib_mbs_is_utf8 = test_locale_ctype_utf8();
 	return 0;
 }
 

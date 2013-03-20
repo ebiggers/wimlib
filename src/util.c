@@ -48,7 +48,7 @@
 #  define strerror_r(errnum, buf, bufsize) strerror_s(buf, bufsize, errnum)
 #endif
 
-static size_t
+size_t
 utf16le_strlen(const utf16lechar *s)
 {
 	const utf16lechar *p = s;

@@ -784,6 +784,7 @@ new_filler_directory(const mbchar *name, struct wim_dentry **dentry_ret)
 		 * will be assigned later by assign_inode_numbers(). */
 		dentry->d_inode->i_resolved = 1;
 		dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
+		*dentry_ret = dentry;
 	}
 	return ret;
 }
@@ -1009,68 +1010,62 @@ wimlib_add_image_multisource(WIMStruct *w,
 	}
 
 	DEBUG("Building dentry tree.");
-	if (num_sources == 0) {
-		ret = new_filler_directory("", &root_dentry);
+	root_dentry = NULL;
+
+	for (size_t i = 0; i < num_sources; i++) {
+		int flags;
+		union wimlib_progress_info progress;
+
+		DEBUG("Building dentry tree for source %zu of %zu "
+		      "(\"%s\" => \"%s\")", i + 1, num_sources,
+		      sources[i].fs_source_path,
+		      sources[i].wim_target_path);
+		if (progress_func) {
+			memset(&progress, 0, sizeof(progress));
+			progress.scan.source = sources[i].fs_source_path;
+			progress.scan.wim_target_path = sources[i].wim_target_path;
+			progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &progress);
+		}
+		ret = capture_config_set_prefix(&config,
+						sources[i].fs_source_path);
 		if (ret)
-			goto out_free_security_data;
-	} else {
-		size_t i;
-
-	#ifdef __WIN32__
-		win32_acquire_capture_privileges();
-	#endif
-
-		root_dentry = NULL;
-		i = 0;
-		do {
-			int flags;
-			union wimlib_progress_info progress;
-
-			DEBUG("Building dentry tree for source %zu of %zu "
-			      "(\"%s\" => \"%s\")", i + 1, num_sources,
-			      sources[i].fs_source_path,
-			      sources[i].wim_target_path);
-			if (progress_func) {
-				memset(&progress, 0, sizeof(progress));
-				progress.scan.source = sources[i].fs_source_path;
-				progress.scan.wim_target_path = sources[i].wim_target_path;
-				progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &progress);
-			}
-			ret = capture_config_set_prefix(&config,
-							sources[i].fs_source_path);
+			goto out_free_dentry_tree;
+		flags = add_image_flags | WIMLIB_ADD_IMAGE_FLAG_SOURCE;
+		if (!*sources[i].wim_target_path)
+			flags |= WIMLIB_ADD_IMAGE_FLAG_ROOT;
+		ret = (*capture_tree)(&branch, sources[i].fs_source_path,
+				      w->lookup_table, sd,
+				      &config,
+				      flags,
+				      progress_func, extra_arg);
+		if (ret) {
+			ERROR("Failed to build dentry tree for `%s'",
+			      sources[i].fs_source_path);
+			goto out_free_dentry_tree;
+		}
+		if (branch) {
+			/* Use the target name, not the source name, for
+			 * the root of each branch from a capture
+			 * source.  (This will also set the root dentry
+			 * of the entire image to be unnamed.) */
+			ret = set_dentry_name(branch,
+					      path_basename(sources[i].wim_target_path));
 			if (ret)
-				goto out_free_dentry_tree;
-			flags = add_image_flags | WIMLIB_ADD_IMAGE_FLAG_SOURCE;
-			if (!*sources[i].wim_target_path)
-				flags |= WIMLIB_ADD_IMAGE_FLAG_ROOT;
-			ret = (*capture_tree)(&branch, sources[i].fs_source_path,
-					      w->lookup_table, sd,
-					      &config,
-					      flags,
-					      progress_func, extra_arg);
-			if (ret) {
-				ERROR("Failed to build dentry tree for `%s'",
-				      sources[i].fs_source_path);
-				goto out_free_dentry_tree;
-			}
-			if (branch) {
-				/* Use the target name, not the source name, for
-				 * the root of each branch from a capture
-				 * source.  (This will also set the root dentry
-				 * of the entire image to be unnamed.) */
-				ret = set_dentry_name(branch,
-						      path_basename(sources[i].wim_target_path));
-				if (ret)
-					goto out_free_branch;
+				goto out_free_branch;
 
-				ret = attach_branch(&root_dentry, branch,
-						    sources[i].wim_target_path);
-				if (ret)
-					goto out_free_branch;
-			}
-			if (progress_func)
-				progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &progress);
-		} while (++i != num_sources);
+			ret = attach_branch(&root_dentry, branch,
+					    sources[i].wim_target_path);
+			if (ret)
+				goto out_free_branch;
+		}
+		if (progress_func)
+			progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &progress);
+	}
+
+	if (root_dentry == NULL) {
+		ret = new_filler_directory("" , &root_dentry);
+		if (ret)
+			goto out_free_dentry_tree;
 	}
 
 	DEBUG("Calculating full paths of dentries.");
@@ -1113,9 +1108,6 @@ out_free_security_data:
 out_destroy_capture_config:
 	destroy_capture_config(&config);
 out:
-#ifdef __WIN32__
-	win32_release_capture_privileges();
-#endif
 	return ret;
 }
 

@@ -989,9 +989,6 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w,
 		w->lookup_table = joined_tab;
 	}
 
-#ifdef __WIN32__
-	win32_acquire_restore_privileges();
-#endif
 	if (image == WIMLIB_ALL_IMAGES) {
 		extract_flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
 		ret = extract_all_images(w, target, extract_flags,
@@ -1001,9 +998,6 @@ WIMLIBAPI int wimlib_extract_image(WIMStruct *w,
 		ret = extract_single_image(w, image, target, extract_flags,
 					   progress_func);
 	}
-#ifdef __WIN32__
-	win32_release_restore_privileges();
-#endif
 
 	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
 			     WIMLIB_EXTRACT_FLAG_HARDLINK))
