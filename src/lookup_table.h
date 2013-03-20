@@ -32,8 +32,8 @@ struct wim_lookup_table {
 
 #ifdef WITH_NTFS_3G
 struct ntfs_location {
-	char *path_utf8;
-	char *stream_name_utf16;
+	utf8char *path_utf8;
+	utf16lechar *stream_name_utf16;
 	u16 stream_name_utf16_num_chars;
 	struct _ntfs_volume **ntfs_vol_p;
 	bool is_reparse_point;
@@ -150,15 +150,15 @@ struct wim_lookup_table_entry {
 		 * extraction mode.   In these mode, all identical files are linked
 		 * together, and @extracted_file will be set to the filename of the
 		 * first extracted file containing this stream.  */
-		char *extracted_file;
+		mbchar *extracted_file;
 	};
 
 	/* Pointers to somewhere where the stream is actually located.  See the
 	 * comments for the @resource_location field above. */
 	union {
 		WIMStruct *wim;
-		char *file_on_disk;
-		char *staging_file_name;
+		mbchar *file_on_disk;
+		mbchar *staging_file_name;
 		u8 *attached_buffer;
 	#ifdef WITH_NTFS_3G
 		struct ntfs_location *ntfs_loc;
@@ -290,7 +290,7 @@ extern struct wim_lookup_table_entry *
 __lookup_resource(const struct wim_lookup_table *table, const u8 hash[]);
 
 extern int
-lookup_resource(WIMStruct *w, const char *path,
+lookup_resource(WIMStruct *w, const mbchar *path,
 		int lookup_flags, struct wim_dentry **dentry_ret,
 		struct wim_lookup_table_entry **lte_ret, u16 *stream_idx_ret);
 
@@ -398,13 +398,13 @@ inode_stream_hash(const struct wim_inode *inode, unsigned stream_idx)
 }
 
 static inline u16
-inode_stream_name_len(const struct wim_inode *inode, unsigned stream_idx)
+inode_stream_name_nbytes(const struct wim_inode *inode, unsigned stream_idx)
 {
 	wimlib_assert(stream_idx <= inode->i_num_ads);
 	if (stream_idx == 0)
 		return 0;
 	else
-		return inode->i_ads_entries[stream_idx - 1].stream_name_len;
+		return inode->i_ads_entries[stream_idx - 1].stream_name_nbytes;
 }
 
 static inline struct wim_lookup_table_entry *
@@ -412,7 +412,7 @@ inode_unnamed_lte_resolved(const struct wim_inode *inode)
 {
 	wimlib_assert(inode->i_resolved);
 	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		if (inode_stream_name_len(inode, i) == 0 &&
+		if (inode_stream_name_nbytes(inode, i) == 0 &&
 		    !is_zero_hash(inode_stream_hash_resolved(inode, i)))
 		{
 			return inode_stream_lte_resolved(inode, i);
@@ -427,7 +427,7 @@ inode_unnamed_lte_unresolved(const struct wim_inode *inode,
 {
 	wimlib_assert(!inode->i_resolved);
 	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		if (inode_stream_name_len(inode, i) == 0 &&
+		if (inode_stream_name_nbytes(inode, i) == 0 &&
 		    !is_zero_hash(inode_stream_hash_unresolved(inode, i)))
 		{
 			return inode_stream_lte_unresolved(inode, i, table);

@@ -255,7 +255,8 @@ typedef struct {
  * entries anyway; however this ensures that that the security descriptors pass
  * the validation in libntfs-3g.
  */
-static void empty_sacl_fixup(u8 *descr, u64 *size_p)
+static void
+empty_sacl_fixup(u8 *descr, u64 *size_p)
 {
 	if (*size_p >= sizeof(SecurityDescriptor)) {
 		SecurityDescriptor *sd = (SecurityDescriptor*)descr;
@@ -281,8 +282,9 @@ static void empty_sacl_fixup(u8 *descr, u64 *size_p)
  * Note: There is no `offset' argument because the security data is located at
  * the beginning of the metadata resource.
  */
-int read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
-		       struct wim_security_data **sd_p)
+int
+read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
+		   struct wim_security_data **sd_p)
 {
 	struct wim_security_data *sd;
 	const u8 *p;
@@ -431,7 +433,8 @@ out_free_sd:
 /*
  * Writes security data to an in-memory buffer.
  */
-u8 *write_security_data(const struct wim_security_data *sd, u8 *p)
+u8 *
+write_security_data(const struct wim_security_data *sd, u8 *p)
 {
 	DEBUG("Writing security data (total_length = %"PRIu32", num_entries "
 	      "= %"PRIu32")", sd->total_length, sd->num_entries);
@@ -455,7 +458,8 @@ u8 *write_security_data(const struct wim_security_data *sd, u8 *p)
 	return p;
 }
 
-static void print_acl(const u8 *p, const char *type)
+static void
+print_acl(const u8 *p, const char *type)
 {
 	const ACL *acl = (const ACL*)p;
 	u8 revision = acl->revision;
@@ -481,7 +485,8 @@ static void print_acl(const u8 *p, const char *type)
 	putchar('\n');
 }
 
-static void print_sid(const u8 *p, const char *type)
+static void
+print_sid(const u8 *p, const char *type)
 {
 	const SID *sid = (const SID*)p;
 	printf("    [%s SID]\n", type);
@@ -497,7 +502,8 @@ static void print_sid(const u8 *p, const char *type)
 	putchar('\n');
 }
 
-static void print_security_descriptor(const u8 *p, u64 size)
+static void
+print_security_descriptor(const u8 *p, u64 size)
 {
 	const SecurityDescriptor *sd = (const SecurityDescriptor*)p;
 	u8 revision      = sd->revision;
@@ -526,7 +532,8 @@ static void print_security_descriptor(const u8 *p, u64 size)
 /*
  * Prints the security data for a WIM file.
  */
-void print_security_data(const struct wim_security_data *sd)
+void
+print_security_data(const struct wim_security_data *sd)
 {
 	wimlib_assert(sd != NULL);
 
@@ -543,7 +550,8 @@ void print_security_data(const struct wim_security_data *sd)
 	putchar('\n');
 }
 
-void free_security_data(struct wim_security_data *sd)
+void
+free_security_data(struct wim_security_data *sd)
 {
 	if (sd) {
 		wimlib_assert(sd->refcnt != 0);
@@ -569,7 +577,8 @@ struct sd_node {
 	struct rb_node rb_node;
 };
 
-static void free_sd_tree(struct rb_node *node)
+static void
+free_sd_tree(struct rb_node *node)
 {
 	if (node) {
 		free_sd_tree(node->rb_left);
@@ -579,13 +588,15 @@ static void free_sd_tree(struct rb_node *node)
 }
 
 /* Frees a security descriptor index set. */
-void destroy_sd_set(struct sd_set *sd_set)
+void
+destroy_sd_set(struct sd_set *sd_set)
 {
 	free_sd_tree(sd_set->rb_root.rb_node);
 }
 
 /* Inserts a a new node into the security descriptor index tree. */
-static void insert_sd_node(struct sd_set *set, struct sd_node *new)
+static void
+insert_sd_node(struct sd_set *set, struct sd_node *new)
 {
 	struct rb_root *root = &set->rb_root;
 	struct rb_node **p = &(root->rb_node);
@@ -609,7 +620,8 @@ static void insert_sd_node(struct sd_set *set, struct sd_node *new)
 
 /* Returns the index of the security descriptor having a SHA1 message digest of
  * @hash.  If not found, return -1. */
-int lookup_sd(struct sd_set *set, const u8 hash[SHA1_HASH_SIZE])
+int
+lookup_sd(struct sd_set *set, const u8 hash[SHA1_HASH_SIZE])
 {
 	struct rb_node *node = set->rb_root.rb_node;
 
@@ -633,8 +645,8 @@ int lookup_sd(struct sd_set *set, const u8 hash[SHA1_HASH_SIZE])
  * the security ID for it.  If a new security descriptor cannot be allocated,
  * return -1.
  */
-int sd_set_add_sd(struct sd_set *sd_set, const char descriptor[],
-		  size_t size)
+int
+sd_set_add_sd(struct sd_set *sd_set, const char descriptor[], size_t size)
 {
 	u8 hash[SHA1_HASH_SIZE];
 	int security_id;

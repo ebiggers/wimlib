@@ -27,6 +27,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <langinfo.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -645,11 +646,16 @@ WIMLIBAPI void wimlib_free(WIMStruct *w)
 	DEBUG("Freed WIMStruct");
 }
 
+bool wimlib_mbs_is_utf8;
+
 /* Get global memory allocations out of the way.  Not strictly necessary in
  * single-threaded programs like 'imagex'. */
 WIMLIBAPI int wimlib_global_init()
 {
+	char *encoding;
+
 	libxml_global_init();
+	wimlib_mbs_is_utf8 = (strcmp(nl_langinfo(CODESET), "UTF-8") == 0);
 	return iconv_global_init();
 }
 

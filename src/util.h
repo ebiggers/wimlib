@@ -49,6 +49,24 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 #endif
 
+/* A pointer to 'mbchar' indicates a string of "multibyte characters" provided
+ * in the default encoding of the user's locale, which may be "UTF-8",
+ * "ISO-8859-1", "C", or any other ASCII-compatible encoding.
+ * "ASCII-compatible" here means any encoding where all ASCII characters have
+ * the same representation, and any non-ASCII character is represented as a
+ * sequence of one or more bytes not already used by any ASCII character. */
+typedef char mbchar;
+
+/* A pointer to 'utf8char' indicates a UTF-8 encoded string */
+typedef char utf8char;
+
+/* Note: in some places in the code, strings of plain old 'char' are still used.
+ * This means that the string is being operated on in an ASCII-compatible way,
+ * and may be either a multibyte or UTF-8 string.  */
+
+/* A pointer to 'utf16lechar' indicates a UTF-16LE encoded string */
+typedef u16 utf16lechar;
+
 #ifndef min
 #define min(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \
 					(__a < __b) ? __a : __b; })
@@ -95,14 +113,17 @@ dummy_printf(const char *format, ...)
 }
 
 #ifdef ENABLE_ERROR_MESSAGES
-extern void wimlib_error(const char *format, ...)
-		FORMAT(printf, 1, 2) COLD;
-extern void wimlib_error_with_errno(const char *format, ...)
-		FORMAT(printf, 1, 2) COLD;
-extern void wimlib_warning(const char *format, ...)
-		FORMAT(printf, 1, 2) COLD;
-extern void wimlib_warning_with_errno(const char *format, ...)
-		FORMAT(printf, 1, 2) COLD;
+extern void
+wimlib_error(const char *format, ...) FORMAT(printf, 1, 2) COLD;
+
+extern void
+wimlib_error_with_errno(const char *format, ...) FORMAT(printf, 1, 2) COLD;
+
+extern void
+wimlib_warning(const char *format, ...) FORMAT(printf, 1, 2) COLD;
+
+extern void
+wimlib_warning_with_errno(const char *format, ...) FORMAT(printf, 1, 2) COLD;
 #	define ERROR			wimlib_error
 #	define ERROR_WITH_ERRNO 	wimlib_error_with_errno
 #	define WARNING			wimlib_warning
@@ -119,7 +140,7 @@ extern void wimlib_warning_with_errno(const char *format, ...)
 #	define DEBUG(format, ...)					\
 	({								\
  		int __errno_save = errno;				\
-		fprintf(stdout, "[%s %d] %s(): " format,		\
+		wimlib_fprintf(stdout, "[%s %d] %s(): " format,		\
 			__FILE__, __LINE__, __func__, ## __VA_ARGS__);	\
 	 	putchar('\n');						\
 		fflush(stdout);						\
@@ -173,51 +194,40 @@ extern char *wimlib_strdup(const char *str);
 #endif /* ENABLE_CUSTOM_MEMORY_ALLOCATOR */
 
 
-/* encoding.c */
-
-#if defined(WITH_NTFS_3G) || defined(__WIN32__)
-static inline int iconv_global_init()
-{
-	return 0;
-}
-
-static inline void iconv_global_cleanup() { }
-#else
-extern int iconv_global_init();
-extern void iconv_global_cleanup();
-#endif
-
-extern int utf16_to_utf8(const char *utf16_str, size_t utf16_nbytes,
-			 char **utf8_str_ret, size_t *utf8_nbytes_ret);
-
-extern int utf8_to_utf16(const char *utf8_str, size_t utf8_nbytes,
-			 char **utf16_str_ret, size_t *utf16_nbytes_ret);
-
 /* util.c */
-extern void randomize_byte_array(u8 *p, size_t n);
+extern void
+randomize_byte_array(u8 *p, size_t n);
 
-extern void randomize_char_array_with_alnum(char p[], size_t n);
+extern void
+randomize_char_array_with_alnum(char p[], size_t n);
 
-extern const char *path_next_part(const char *path,
-				  size_t *first_part_len_ret);
+extern const char *
+path_next_part(const char *path, size_t *first_part_len_ret);
 
-extern const char *path_basename(const char *path);
+extern const char *
+path_basename(const char *path);
 
-extern const char *path_stream_name(const char *path);
+extern const char *
+path_stream_name(const char *path);
 
-extern void to_parent_name(char buf[], size_t len);
+extern void
+to_parent_name(char buf[], size_t len);
 
-extern void print_string(const void *string, size_t len);
+extern void
+print_string(const void *string, size_t len);
 
-extern int get_num_path_components(const char *path);
+extern int
+get_num_path_components(const char *path);
 
-static inline void print_byte_field(const u8 field[], size_t len)
+static inline void
+print_byte_field(const u8 field[], size_t len)
 {
 	while (len--)
 		printf("%02hhx", *field++);
 }
 
-static inline u32 bsr32(u32 n)
+static inline u32
+bsr32(u32 n)
 {
 #if defined(__x86__) || defined(__x86_64__)
 	asm("bsrl %0, %0;"
@@ -231,5 +241,11 @@ static inline u32 bsr32(u32 n)
 	return pow;
 #endif
 }
+
+extern int
+wimlib_fprintf(FILE *fp, const char *format, ...) FORMAT(printf, 2, 3);
+
+extern int
+wimlib_printf(const char *format, ...) FORMAT(printf, 1, 2);
 
 #endif /* _WIMLIB_UTIL_H */

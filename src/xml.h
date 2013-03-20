@@ -13,38 +13,53 @@ struct wim_info {
 };
 
 /* xml.c */
-extern int xml_export_image(const struct wim_info *old_wim_info, int image,
-			    struct wim_info **new_wim_info_p,
-			    const char *dest_image_name,
-			    const char *dest_image_description);
+extern int
+xml_export_image(const struct wim_info *old_wim_info, int image,
+		 struct wim_info **new_wim_info_p,
+		 const utf8char *dest_image_name,
+		 const utf8char *dest_image_description);
 
-extern size_t xml_get_max_image_name_len(const WIMStruct *w);
+extern size_t
+xml_get_max_image_name_len(const WIMStruct *w);
 
-extern void xml_update_image_info(WIMStruct *w, int image);
+extern void
+xml_update_image_info(WIMStruct *w, int image);
 
-extern void xml_delete_image(struct wim_info **wim_info_p, int image);
+extern void
+xml_delete_image(struct wim_info **wim_info_p, int image);
 
-extern int xml_add_image(WIMStruct *w, const char *name);
+extern int
+xml_add_image(WIMStruct *w, const utf8char *name);
 
-extern void free_wim_info(struct wim_info *info);
+extern void
+free_wim_info(struct wim_info *info);
 
-extern void print_image_info(const struct wim_info *wim_info, int image);
+extern void
+print_image_info(const struct wim_info *wim_info, int image);
 
-extern int read_xml_data(FILE *fp, const struct resource_entry *res,
-			 u8 **xml_data_ret, struct wim_info **info_ret);
+extern int
+read_xml_data(FILE *fp, const struct resource_entry *res,
+	      utf16lechar **xml_data_ret,
+	      struct wim_info **info_ret);
 
-extern int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
-			  u64 total_bytes, struct resource_entry *out_res_entry);
+extern int
+write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
+	       u64 total_bytes, struct resource_entry *out_res_entry);
 
-extern void libxml_global_init();
-extern void libxml_global_cleanup();
+extern void
+libxml_global_init();
 
-static inline u64 wim_info_get_total_bytes(const struct wim_info *info)
+extern void
+libxml_global_cleanup();
+
+static inline u64
+wim_info_get_total_bytes(const struct wim_info *info)
 {
 	return info->total_bytes;
 }
 
-static inline unsigned wim_info_get_num_images(const struct wim_info *info)
+static inline unsigned
+wim_info_get_num_images(const struct wim_info *info)
 {
 	return info->num_images;
 }

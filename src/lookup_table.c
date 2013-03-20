@@ -572,18 +572,20 @@ __lookup_resource(const struct wim_lookup_table *table, const u8 hash[])
  *
  * This is only for pre-resolved inodes.
  */
-int lookup_resource(WIMStruct *w, const char *path,
-		    int lookup_flags,
-		    struct wim_dentry **dentry_ret,
-		    struct wim_lookup_table_entry **lte_ret,
-		    u16 *stream_idx_ret)
+int
+lookup_resource(WIMStruct *w,
+		const mbchar *path,
+		int lookup_flags,
+		struct wim_dentry **dentry_ret,
+		struct wim_lookup_table_entry **lte_ret,
+		u16 *stream_idx_ret)
 {
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
 	u16 stream_idx;
-	const char *stream_name = NULL;
+	const mbchar *stream_name = NULL;
 	struct wim_inode *inode;
-	char *p = NULL;
+	mbchar *p = NULL;
 
 	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
 		stream_name = path_stream_name(path);

@@ -72,12 +72,8 @@ struct wim_inode_table {
 	struct hlist_head extra_inodes;
 };
 
-static inline void destroy_inode_table(struct wim_inode_table *table)
-{
-	FREE(table->array);
-}
-
-static int init_inode_table(struct wim_inode_table *table, size_t capacity)
+static int
+init_inode_table(struct wim_inode_table *table, size_t capacity)
 {
 	table->array = CALLOC(capacity, sizeof(table->array[0]));
 	if (!table->array) {
@@ -90,7 +86,14 @@ static int init_inode_table(struct wim_inode_table *table, size_t capacity)
 	return 0;
 }
 
-static inline size_t inode_link_count(const struct wim_inode *inode)
+static inline void
+destroy_inode_table(struct wim_inode_table *table)
+{
+	FREE(table->array);
+}
+
+static inline size_t
+inode_link_count(const struct wim_inode *inode)
 {
 	const struct list_head *cur;
 	size_t size = 0;
@@ -102,9 +105,10 @@ static inline size_t inode_link_count(const struct wim_inode *inode)
 /* Insert a dentry into the inode table based on the inode number of the
  * attached inode (which came from the hard link group ID field of the on-disk
  * WIM dentry) */
-static int inode_table_insert(struct wim_dentry *dentry, void *__table)
+static int
+inode_table_insert(struct wim_dentry *dentry, void *_table)
 {
-	struct wim_inode_table *table = __table;
+	struct wim_inode_table *table = _table;
 	struct wim_inode *d_inode = dentry->d_inode;
 
 	if (d_inode->i_ino == 0) {
@@ -146,25 +150,30 @@ static int inode_table_insert(struct wim_dentry *dentry, void *__table)
 	return 0;
 }
 
-static void print_inode_dentries(const struct wim_inode *inode)
+#ifdef ENABLE_ERROR_MESSAGES
+static void
+print_inode_dentries(const struct wim_inode *inode)
 {
 	struct wim_dentry *dentry;
 	inode_for_each_dentry(dentry, inode)
-		printf("`%s'\n", dentry->full_path_utf8);
+		printf("`%s'\n", dentry->full_path);
 }
+#endif
 
-static void inconsistent_inode(const struct wim_inode *inode)
+static void
+inconsistent_inode(const struct wim_inode *inode)
 {
+#ifdef ENABLE_ERROR_MESSAGES
 	ERROR("An inconsistent hard link group that cannot be corrected has "
 	      "been detected");
 	ERROR("The dentries are located at the following paths:");
-#ifdef ENABLE_ERROR_MESSAGES
 	print_inode_dentries(inode);
 #endif
 }
 
-static bool ref_inodes_consistent(const struct wim_inode * restrict ref_inode_1,
-				  const struct wim_inode * restrict ref_inode_2)
+static bool
+ref_inodes_consistent(const struct wim_inode * restrict ref_inode_1,
+		      const struct wim_inode * restrict ref_inode_2)
 {
 	wimlib_assert(ref_inode_1 != ref_inode_2);
 
@@ -187,8 +196,9 @@ static bool ref_inodes_consistent(const struct wim_inode * restrict ref_inode_1,
 	return true;
 }
 
-static bool inodes_consistent(const struct wim_inode * restrict ref_inode,
-			      const struct wim_inode * restrict inode)
+static bool
+inodes_consistent(const struct wim_inode * restrict ref_inode,
+		  const struct wim_inode * restrict inode)
 {
 	wimlib_assert(ref_inode != inode);
 
@@ -212,7 +222,8 @@ static bool inodes_consistent(const struct wim_inode * restrict ref_inode,
 }
 
 /* Fix up a "true" inode and check for inconsistencies */
-static int fix_true_inode(struct wim_inode *inode, struct hlist_head *inode_list)
+static int
+fix_true_inode(struct wim_inode *inode, struct hlist_head *inode_list)
 {
 	struct wim_dentry *dentry;
 	struct wim_dentry *ref_dentry = NULL;
@@ -274,8 +285,8 @@ static int fix_true_inode(struct wim_inode *inode, struct hlist_head *inode_list
  * wim_inode's.  There will be just one `struct wim_inode' for each hard link
  * group remaining.
  */
-static int fix_nominal_inode(struct wim_inode *inode,
-			     struct hlist_head *inode_list)
+static int
+fix_nominal_inode(struct wim_inode *inode, struct hlist_head *inode_list)
 {
 	struct wim_dentry *dentry;
 	struct hlist_node *cur, *tmp;
@@ -393,8 +404,8 @@ next_dentry_2:
 	return 0;
 }
 
-static int fix_inodes(struct wim_inode_table *table,
-		      struct hlist_head *inode_list)
+static int
+fix_inodes(struct wim_inode_table *table, struct hlist_head *inode_list)
 {
 	struct wim_inode *inode;
 	struct hlist_node *cur, *tmp;
@@ -440,7 +451,8 @@ static int fix_inodes(struct wim_inode_table *table,
  * failure.  On success, the list of "true" inodes, linked by the i_hlist field,
  * is returned in the hlist @inode_list.
  */
-int dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_list)
+int
+dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_list)
 {
 	struct wim_inode_table inode_tab;
 	int ret;
@@ -460,7 +472,8 @@ int dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_lis
 
 /* Assign inode numbers to a list of inodes and return the next available
  * number. */
-u64 assign_inode_numbers(struct hlist_head *inode_list)
+u64
+assign_inode_numbers(struct hlist_head *inode_list)
 {
 	DEBUG("Assigning inode numbers");
 	struct wim_inode *inode;

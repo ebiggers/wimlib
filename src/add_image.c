@@ -51,8 +51,9 @@
  * Adds the dentry tree and security data for a new image to the image metadata
  * array of the WIMStruct.
  */
-int add_new_dentry_tree(WIMStruct *w, struct wim_dentry *root_dentry,
-			struct wim_security_data *sd)
+int
+add_new_dentry_tree(WIMStruct *w, struct wim_dentry *root_dentry,
+		    struct wim_security_data *sd)
 {
 	struct wim_lookup_table_entry *metadata_lte;
 	struct wim_image_metadata *imd;
@@ -133,14 +134,15 @@ err:
  *		the on-disk files during a call to wimlib_write() or
  *		wimlib_overwrite().
  */
-static int unix_build_dentry_tree(struct wim_dentry **root_ret,
-				  const char *root_disk_path,
-				  struct wim_lookup_table *lookup_table,
-				  struct wim_security_data *sd,
-				  const struct capture_config *config,
-				  int add_image_flags,
-				  wimlib_progress_func_t progress_func,
-				  void *extra_arg)
+static int
+unix_build_dentry_tree(struct wim_dentry **root_ret,
+		       const mbchar *root_disk_path,
+		       struct wim_lookup_table *lookup_table,
+		       struct wim_security_data *sd,
+		       const struct capture_config *config,
+		       int add_image_flags,
+		       wimlib_progress_func_t progress_func,
+		       void *extra_arg)
 {
 	struct wim_dentry *root = NULL;
 	int ret = 0;
@@ -280,7 +282,7 @@ static int unix_build_dentry_tree(struct wim_dentry **root_ret,
 			DEBUG("Add lte reference %u for `%s'", lte->refcnt,
 			      root_disk_path);
 		} else {
-			char *file_on_disk = STRDUP(root_disk_path);
+			mbchar *file_on_disk = STRDUP(root_disk_path);
 			if (!file_on_disk) {
 				ERROR("Failed to allocate memory for file path");
 				ret = WIMLIB_ERR_NOMEM;
@@ -318,7 +320,7 @@ static int unix_build_dentry_tree(struct wim_dentry **root_ret,
 
 		/* Buffer for names of files in directory. */
 		size_t len = strlen(root_disk_path);
-		char name[len + 1 + FILENAME_MAX + 1];
+		mbchar name[len + 1 + FILENAME_MAX + 1];
 		memcpy(name, root_disk_path, len);
 		name[len] = '/';
 
@@ -362,7 +364,7 @@ static int unix_build_dentry_tree(struct wim_dentry **root_ret,
 		 * drive letter).
 		 */
 
-		char deref_name_buf[4096];
+		mbchar deref_name_buf[4096];
 		ssize_t deref_name_len;
 
 		deref_name_len = readlink(root_disk_path, deref_name_buf,
@@ -414,7 +416,7 @@ enum pattern_type {
 #define COMPAT_DEFAULT_CONFIG
 
 /* Default capture configuration file when none is specified. */
-static const char *default_config =
+static const mbchar *default_config =
 #ifdef COMPAT_DEFAULT_CONFIG /* XXX: This policy is being moved to library
 				users.  The next ABI-incompatible library
 				version will default to the empty string here. */
@@ -435,12 +437,14 @@ static const char *default_config =
 "";
 #endif
 
-static void destroy_pattern_list(struct pattern_list *list)
+static void
+destroy_pattern_list(struct pattern_list *list)
 {
 	FREE(list->pats);
 }
 
-static void destroy_capture_config(struct capture_config *config)
+static void
+destroy_capture_config(struct capture_config *config)
 {
 	destroy_pattern_list(&config->exclusion_list);
 	destroy_pattern_list(&config->exclusion_exception);
@@ -451,8 +455,8 @@ static void destroy_capture_config(struct capture_config *config)
 	memset(config, 0, sizeof(*config));
 }
 
-static int pattern_list_add_pattern(struct pattern_list *list,
-				    const char *pattern)
+static int
+pattern_list_add_pattern(struct pattern_list *list, const mbchar *pattern)
 {
 	const char **pats;
 	if (list->num_pats >= list->num_allocated_pats) {
@@ -469,13 +473,14 @@ static int pattern_list_add_pattern(struct pattern_list *list,
 
 /* Parses the contents of the image capture configuration file and fills in a
  * `struct capture_config'. */
-static int init_capture_config(struct capture_config *config,
-			       const char *_config_str, size_t config_len)
+static int
+init_capture_config(struct capture_config *config,
+		    const mbchar *_config_str, size_t config_len)
 {
-	char *config_str;
-	char *p;
-	char *eol;
-	char *next_p;
+	mbchar *config_str;
+	mbchar *p;
+	mbchar *eol;
+	mbchar *next_p;
 	size_t bytes_remaining;
 	enum pattern_type type = NONE;
 	int ret;
@@ -514,7 +519,7 @@ static int init_capture_config(struct capture_config *config,
 		*eol = '\0';
 
 		/* Translate backslash to forward slash */
-		for (char *pp = p; pp != eol; pp++)
+		for (mbchar *pp = p; pp != eol; pp++)
 			if (*pp == '\\')
 				*pp = '/';
 
@@ -568,9 +573,9 @@ out_destroy:
 }
 
 static int capture_config_set_prefix(struct capture_config *config,
-				     const char *_prefix)
+				     const mbchar *_prefix)
 {
-	char *prefix = STRDUP(_prefix);
+	mbchar *prefix = STRDUP(_prefix);
 
 	if (!prefix)
 		return WIMLIB_ERR_NOMEM;
@@ -580,7 +585,8 @@ static int capture_config_set_prefix(struct capture_config *config,
 	return 0;
 }
 
-static bool match_pattern(const char *path, const char *path_basename,
+static bool match_pattern(const mbchar *path,
+			  const mbchar *path_basename,
 			  const struct pattern_list *list)
 {
 	for (size_t i = 0; i < list->num_pats; i++) {
@@ -623,10 +629,11 @@ static bool match_pattern(const char *path, const char *path_basename,
  * file /mnt/windows7/hiberfil.sys if we are capturing the /mnt/windows7
  * directory.
  */
-bool exclude_path(const char *path, const struct capture_config *config,
-		  bool exclude_prefix)
+bool
+exclude_path(const mbchar *path, const struct capture_config *config,
+	     bool exclude_prefix)
 {
-	const char *basename = path_basename(path);
+	const mbchar *basename = path_basename(path);
 	if (exclude_prefix) {
 		wimlib_assert(strlen(path) >= config->prefix_len);
 		if (memcmp(config->prefix, path, config->prefix_len) == 0
@@ -640,7 +647,8 @@ bool exclude_path(const char *path, const struct capture_config *config,
 
 /* Strip leading and trailing forward slashes from a string.  Modifies it in
  * place and returns the stripped string. */
-static const char *canonicalize_target_path(char *target_path)
+static const char *
+canonicalize_target_path(char *target_path)
 {
 	char *p;
 	if (target_path == NULL)
@@ -661,7 +669,8 @@ static const char *canonicalize_target_path(char *target_path)
 }
 
 #ifdef __WIN32__
-static void zap_backslashes(char *s)
+static void
+zap_backslashes(char *s)
 {
 	while (*s) {
 		if (*s == '\\')
@@ -672,8 +681,8 @@ static void zap_backslashes(char *s)
 #endif
 
 /* Strip leading and trailing slashes from the target paths */
-static void canonicalize_targets(struct wimlib_capture_source *sources,
-				 size_t num_sources)
+static void
+canonicalize_targets(struct wimlib_capture_source *sources, size_t num_sources)
 {
 	while (num_sources--) {
 		DEBUG("Canonicalizing { source: \"%s\", target=\"%s\"}",
@@ -694,7 +703,8 @@ static void canonicalize_targets(struct wimlib_capture_source *sources,
 	}
 }
 
-static int capture_source_cmp(const void *p1, const void *p2)
+static int
+capture_source_cmp(const void *p1, const void *p2)
 {
 	const struct wimlib_capture_source *s1 = p1, *s2 = p2;
 	return strcmp(s1->wim_target_path, s2->wim_target_path);
@@ -705,14 +715,15 @@ static int capture_source_cmp(const void *p1, const void *p2)
  *
  * One purpose of this is to make sure that target paths that are inside other
  * target paths are added after the containing target paths. */
-static void sort_sources(struct wimlib_capture_source *sources,
-			 size_t num_sources)
+static void
+sort_sources(struct wimlib_capture_source *sources, size_t num_sources)
 {
 	qsort(sources, num_sources, sizeof(sources[0]), capture_source_cmp);
 }
 
-static int check_sorted_sources(struct wimlib_capture_source *sources,
-				size_t num_sources, int add_image_flags)
+static int
+check_sorted_sources(struct wimlib_capture_source *sources, size_t num_sources,
+		     int add_image_flags)
 {
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
 		if (num_sources != 1) {
@@ -767,7 +778,7 @@ static int check_sorted_sources(struct wimlib_capture_source *sources,
 /* Creates a new directory to place in the WIM image.  This is to create parent
  * directories that are not part of any target as needed.  */
 static struct wim_dentry *
-new_filler_directory(const char *name)
+new_filler_directory(const mbchar *name)
 {
 	struct wim_dentry *dentry;
 	DEBUG("Creating filler directory \"%s\"", name);
@@ -784,16 +795,17 @@ new_filler_directory(const char *name)
 /* Transfers the children of @branch to @target.  It is an error if @target is
  * not a directory or if both @branch and @target contain a child dentry with
  * the same name. */
-static int do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
+static int
+do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 {
 	struct rb_root *rb_root;
 
-	DEBUG("Doing overlay %s => %s",
-	      branch->file_name_utf8, target->file_name_utf8);
+	DEBUG("Doing overlay \"%W\" => \"%W\"",
+	      branch->file_name, target->file_name);
 
 	if (!dentry_is_directory(target)) {
-		ERROR("Cannot overlay directory `%s' over non-directory",
-		      branch->file_name_utf8);
+		ERROR("Cannot overlay directory \"%W\" over non-directory",
+		      branch->file_name);
 		return WIMLIB_ERR_INVALID_OVERLAY;
 	}
 
@@ -806,9 +818,9 @@ static int do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 			/* Revert the change to avoid leaking the directory tree
 			 * rooted at @child */
 			dentry_add_child(branch, child);
-			ERROR("Overlay error: file `%s' already exists "
-			      "as a child of `%s'",
-			      child->file_name_utf8, target->file_name_utf8);
+			ERROR("Overlay error: file \"%W\" already exists "
+			      "as a child of \"%W\"",
+			      child->file_name, target->file_name);
 			return WIMLIB_ERR_INVALID_OVERLAY;
 		}
 	}
@@ -828,15 +840,15 @@ static int do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
  * 	Path in the WIM image to add the branch, with leading and trailing
  * 	slashes stripped.
  */
-static int attach_branch(struct wim_dentry **root_p,
-			 struct wim_dentry *branch,
-			 char *target_path)
+static int
+attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
+	      mbchar *target_path)
 {
 	char *slash;
 	struct wim_dentry *dentry, *parent, *target;
 
-	DEBUG("Attaching branch \"%s\" => \"%s\"",
-	      branch->file_name_utf8, target_path);
+	DEBUG("Attaching branch \"%W\" => \"%s\"",
+	      branch->file_name, target_path);
 
 	if (*target_path == '\0') {
 		/* Target: root directory */
@@ -882,7 +894,7 @@ static int attach_branch(struct wim_dentry **root_p,
 
 	/* If the target path already existed, overlay the branch onto it.
 	 * Otherwise, set the branch as the target path. */
-	target = get_dentry_child_with_name(parent, branch->file_name_utf8);
+	target = get_dentry_child_with_utf16le_name(parent, branch->file_name);
 	if (target) {
 		return do_overlay(target, branch);
 	} else {
@@ -891,20 +903,24 @@ static int attach_branch(struct wim_dentry **root_p,
 	}
 }
 
-WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
-					   struct wimlib_capture_source *sources,
-					   size_t num_sources,
-					   const char *name,
-					   const char *config_str,
-					   size_t config_len,
-					   int add_image_flags,
-					   wimlib_progress_func_t progress_func)
+WIMLIBAPI int
+wimlib_add_image_multisource(WIMStruct *w,
+			     struct wimlib_capture_source *sources,
+			     size_t num_sources,
+			     const utf8char *name,
+			     const mbchar *config_str,
+			     size_t config_len,
+			     int add_image_flags,
+			     wimlib_progress_func_t progress_func)
 {
-	int (*capture_tree)(struct wim_dentry **, const char *,
+	int (*capture_tree)(struct wim_dentry **,
+			    const mbchar *,
 			    struct wim_lookup_table *,
 			    struct wim_security_data *,
 			    const struct capture_config *,
-			    int, wimlib_progress_func_t, void *);
+			    int,
+			    wimlib_progress_func_t,
+			    void *);
 	void *extra_arg;
 	struct wim_dentry *root_dentry;
 	struct wim_dentry *branch;
@@ -1063,24 +1079,24 @@ WIMLIBAPI int wimlib_add_image_multisource(WIMStruct *w,
 
 	DEBUG("Calculating full paths of dentries.");
 	ret = for_dentry_in_tree(root_dentry, calculate_dentry_full_path, NULL);
-	if (ret != 0)
+	if (ret)
 		goto out_free_dentry_tree;
 
 	ret = add_new_dentry_tree(w, root_dentry, sd);
-	if (ret != 0)
+	if (ret)
 		goto out_free_dentry_tree;
 
 	imd = &w->image_metadata[w->hdr.image_count - 1];
 
 	ret = dentry_tree_fix_inodes(root_dentry, &imd->inode_list);
-	if (ret != 0)
+	if (ret)
 		goto out_destroy_imd;
 
 	DEBUG("Assigning hard link group IDs");
 	assign_inode_numbers(&imd->inode_list);
 
 	ret = xml_add_image(w, name);
-	if (ret != 0)
+	if (ret)
 		goto out_destroy_imd;
 
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
@@ -1107,10 +1123,14 @@ out:
 	return ret;
 }
 
-WIMLIBAPI int wimlib_add_image(WIMStruct *w, const char *source,
-			       const char *name, const char *config_str,
-			       size_t config_len, int add_image_flags,
-			       wimlib_progress_func_t progress_func)
+WIMLIBAPI int
+wimlib_add_image(WIMStruct *w,
+		 const mbchar *source,
+		 const utf8char *name,
+		 const mbchar *config_str,
+		 size_t config_len,
+		 int add_image_flags,
+		 wimlib_progress_func_t progress_func)
 {
 	if (!source || !*source)
 		return WIMLIB_ERR_INVALID_PARAM;

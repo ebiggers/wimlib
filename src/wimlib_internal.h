@@ -281,13 +281,13 @@ struct WIMStruct {
 	FILE *out_fp;
 
 	/* The name of the WIM file (if any) that has been opened. */
-	char *filename;
+	mbchar *filename;
 
 	/* The lookup table for the WIM file. */
 	struct wim_lookup_table *lookup_table;
 
-	/* Pointer to the XML data read from the WIM file. */
-	u8 *xml_data;
+	/* Pointer to the XML data read from the WIM file (UTF16LE-encoded). */
+	utf16lechar *xml_data;
 
 	/* Information retrieved from the XML data, arranged in an orderly
 	 * manner. */
@@ -321,7 +321,8 @@ struct WIMStruct {
 
 /* Inline utility functions for WIMStructs. */
 
-static inline struct wim_dentry *wim_root_dentry(WIMStruct *w)
+static inline struct wim_dentry *
+wim_root_dentry(WIMStruct *w)
 {
 	return w->image_metadata[w->current_image - 1].root_dentry;
 }
@@ -344,7 +345,8 @@ wim_get_current_image_metadata(WIMStruct *w)
 }
 
 /* Nonzero if a struct resource_entry indicates a compressed resource. */
-static inline int resource_is_compressed(const struct resource_entry *entry)
+static inline int
+resource_is_compressed(const struct resource_entry *entry)
 {
 	return (entry->flags & WIM_RESHDR_FLAG_COMPRESSED);
 }
@@ -352,7 +354,7 @@ static inline int resource_is_compressed(const struct resource_entry *entry)
 /* add_image.c */
 
 struct pattern_list {
-	const char **pats;
+	const mbchar **pats;
 	size_t num_pats;
 	size_t num_allocated_pats;
 };
@@ -362,15 +364,66 @@ struct capture_config {
 	struct pattern_list exclusion_exception;
 	struct pattern_list compression_exclusion_list;
 	struct pattern_list alignment_list;
-	char *config_str;
-	char *prefix;
+	mbchar *config_str;
+	mbchar *prefix;
 	size_t prefix_len;
 };
-extern bool exclude_path(const char *path,
-			 const struct capture_config *config,
-			 bool exclude_prefix);
-extern int add_new_dentry_tree(WIMStruct *dest_wim, struct wim_dentry *root,
-			       struct wim_security_data *sd);
+extern bool
+exclude_path(const mbchar *path, const struct capture_config *config,
+	     bool exclude_prefix);
+
+extern int
+add_new_dentry_tree(WIMStruct *dest_wim, struct wim_dentry *root,
+		    struct wim_security_data *sd);
+
+/* encoding.c */
+
+#if defined(WITH_NTFS_3G) || defined(__WIN32__)
+
+static inline int
+iconv_global_init()
+{
+	return 0;
+}
+
+static inline void
+iconv_global_cleanup() { }
+#else
+extern int
+iconv_global_init();
+
+extern void
+iconv_global_cleanup();
+#endif
+
+extern bool wimlib_mbs_is_utf8;
+
+extern bool
+utf8_str_contains_nonascii_chars(const utf8char *utf8_str);
+
+extern int
+mbs_to_utf16le_nbytes(const mbchar *mbs, size_t mbs_nbytes,
+		      size_t *utf16le_nbytes_ret);
+
+extern int
+utf16le_to_mbs_nbytes(const utf16lechar *utf16le_str,
+		      size_t utf16le_nbytes, size_t *mbs_nbytes_ret);
+
+extern int
+mbs_to_utf16le_buf(const mbchar *mbs, size_t mbs_nbytes,
+		   utf16lechar *utf16le_str);
+
+extern int
+utf16le_to_mbs_buf(const utf16lechar *utf16le_str, size_t utf16le_nbytes,
+		   mbchar *mbs);
+
+extern int
+mbs_to_utf16le(const mbchar *mbs, size_t mbs_nbytes,
+	       utf16lechar **utf16le_str_ret, size_t *utf16le_nbytes_ret);
+
+extern int
+utf16le_to_mbs(const utf16lechar *utf16le_str, size_t utf16le_nbytes,
+	       mbchar **mbs_ret, size_t *mbs_nbytes_ret);
 
 /* extract_image.c */
 
@@ -381,15 +434,22 @@ extern int add_new_dentry_tree(WIMStruct *dest_wim, struct wim_dentry *root,
 
 /* hardlink.c */
 
-extern u64 assign_inode_numbers(struct hlist_head *inode_list);
+extern u64
+assign_inode_numbers(struct hlist_head *inode_list);
 
-extern int dentry_tree_fix_inodes(struct wim_dentry *root,
-				  struct hlist_head *inode_list);
+extern int
+dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_list);
 
 /* header.c */
-extern int read_header(FILE *fp, struct wim_header *hdr, int split_ok);
-extern int write_header(const struct wim_header *hdr, FILE *out);
-extern int init_header(struct wim_header *hdr, int ctype);
+
+extern int
+read_header(FILE *fp, struct wim_header *hdr, int split_ok);
+
+extern int
+write_header(const struct wim_header *hdr, FILE *out);
+
+extern int
+init_header(struct wim_header *hdr, int ctype);
 
 /* integrity.c */
 
@@ -397,33 +457,36 @@ extern int init_header(struct wim_header *hdr, int ctype);
 #define WIM_INTEGRITY_NOT_OK -1
 #define WIM_INTEGRITY_NONEXISTENT -2
 
-extern int write_integrity_table(FILE *out,
-				 struct resource_entry *integrity_res_entry,
-				 off_t new_lookup_table_end,
-				 off_t old_lookup_table_end,
-				 wimlib_progress_func_t progress_func);
+extern int
+write_integrity_table(FILE *out, struct resource_entry *integrity_res_entry,
+		      off_t new_lookup_table_end,
+		      off_t old_lookup_table_end,
+		      wimlib_progress_func_t progress_func);
 
-extern int check_wim_integrity(WIMStruct *w,
-			       wimlib_progress_func_t progress_func);
+extern int
+check_wim_integrity(WIMStruct *w, wimlib_progress_func_t progress_func);
 
 /* join.c */
 
-extern int new_joined_lookup_table(WIMStruct *w,
-				   WIMStruct **additional_swms,
-			    	   unsigned num_additional_swms,
-				   struct wim_lookup_table **table_ret);
+extern int
+new_joined_lookup_table(WIMStruct *w, WIMStruct **additional_swms,
+			unsigned num_additional_swms,
+			struct wim_lookup_table **table_ret);
 
 /* metadata_resource.c */
 
-extern int read_metadata_resource(WIMStruct *w,
+extern int
+read_metadata_resource(WIMStruct *w,
 				  struct wim_image_metadata *image_metadata);
-extern int write_metadata_resource(WIMStruct *w);
+
+extern int
+write_metadata_resource(WIMStruct *w);
 
 /* ntfs-apply.c */
 
 struct apply_args {
 	WIMStruct *w;
-	const char *target;
+	const mbchar *target;
 	int extract_flags;
 	unsigned num_utime_warnings;
 	struct list_head *stream_list;
@@ -435,18 +498,22 @@ struct apply_args {
 	int (*apply_dentry)(struct wim_dentry *, void *);
 };
 
-extern int apply_dentry_ntfs(struct wim_dentry *dentry, void *arg);
-extern int apply_dentry_timestamps_ntfs(struct wim_dentry *dentry, void *arg);
+extern int
+apply_dentry_ntfs(struct wim_dentry *dentry, void *arg);
+
+extern int
+apply_dentry_timestamps_ntfs(struct wim_dentry *dentry, void *arg);
 
 /* ntfs-capture.c */
-extern int build_dentry_tree_ntfs(struct wim_dentry **root_p,
-				  const char *device,
-				  struct wim_lookup_table *lookup_table,
-				  struct wim_security_data *sd,
-				  const struct capture_config *config,
-				  int add_image_flags,
-				  wimlib_progress_func_t progress_func,
-				  void *extra_arg);
+extern int
+build_dentry_tree_ntfs(struct wim_dentry **root_p,
+		       const mbchar *device,
+		       struct wim_lookup_table *lookup_table,
+		       struct wim_security_data *sd,
+		       const struct capture_config *config,
+		       int add_image_flags,
+		       wimlib_progress_func_t progress_func,
+		       void *extra_arg);
 
 /* resource.c */
 
@@ -454,31 +521,38 @@ extern int build_dentry_tree_ntfs(struct wim_dentry **root_p,
 #define WIMLIB_RESOURCE_FLAG_MULTITHREADED	0x2
 #define WIMLIB_RESOURCE_FLAG_RECOMPRESS		0x4
 
-extern const u8 *get_resource_entry(const u8 *p, struct resource_entry *entry);
-extern u8 *put_resource_entry(u8 *p, const struct resource_entry *entry);
+extern const u8 *
+get_resource_entry(const u8 *p, struct resource_entry *entry);
 
-extern int read_uncompressed_resource(FILE *fp, u64 offset, u64 size, u8 buf[]);
+extern u8 *
+put_resource_entry(u8 *p, const struct resource_entry *entry);
 
-extern int read_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
-			     size_t size, u64 offset, int flags);
+extern int
+read_uncompressed_resource(FILE *fp, u64 offset, u64 size, void *buf);
 
-extern int read_full_wim_resource(const struct wim_lookup_table_entry *lte,
-				  u8 buf[], int flags);
+extern int
+read_wim_resource(const struct wim_lookup_table_entry *lte, void *buf,
+		  size_t size, u64 offset, int flags);
 
-extern int write_wim_resource(struct wim_lookup_table_entry *lte,
-			      FILE *out_fp, int out_ctype,
-			      struct resource_entry *out_res_entry,
-			      int flags);
+extern int
+read_full_wim_resource(const struct wim_lookup_table_entry *lte,
+		       void *buf, int flags);
+
+extern int
+write_wim_resource(struct wim_lookup_table_entry *lte, FILE *out_fp,
+		   int out_ctype, struct resource_entry *out_res_entry,
+		   int flags);
 
 
-typedef int (*extract_chunk_func_t)(const u8 *, size_t, u64, void *);
+typedef int (*extract_chunk_func_t)(const void *, size_t, u64, void *);
 
-extern int extract_wim_chunk_to_fd(const u8 *buf, size_t len,
-				   u64 offset, void *arg);
+extern int
+extract_wim_chunk_to_fd(const void *buf, size_t len, u64 offset, void *arg);
 
-extern int extract_wim_resource(const struct wim_lookup_table_entry *lte,
-				u64 size, extract_chunk_func_t extract_chunk,
-				void *extract_chunk_arg);
+extern int
+extract_wim_resource(const struct wim_lookup_table_entry *lte,
+		     u64 size, extract_chunk_func_t extract_chunk,
+		     void *extract_chunk_arg);
 
 /*
  * Extracts the first @size bytes of the WIM resource specified by @lte to the
@@ -495,38 +569,59 @@ extract_wim_resource_to_fd(const struct wim_lookup_table_entry *lte,
 }
 
 
-extern int write_dentry_resources(struct wim_dentry *dentry, void *wim_p);
-extern int copy_resource(struct wim_lookup_table_entry *lte, void *w);
+extern int
+write_dentry_resources(struct wim_dentry *dentry, void *wim_p);
+
+extern int
+copy_resource(struct wim_lookup_table_entry *lte, void *w);
 
 
 /* security.c */
-extern int read_security_data(const u8 metadata_resource[],
-			      u64 metadata_resource_len,
-			      struct wim_security_data **sd_p);
-extern void print_security_data(const struct wim_security_data *sd);
-extern u8 *write_security_data(const struct wim_security_data *sd, u8 *p);
-extern void free_security_data(struct wim_security_data *sd);
+extern int
+read_security_data(const u8 metadata_resource[],
+		   u64 metadata_resource_len, struct wim_security_data **sd_p);
+extern void
+print_security_data(const struct wim_security_data *sd);
+
+extern u8 *
+write_security_data(const struct wim_security_data *sd, u8 *p);
+
+extern void
+free_security_data(struct wim_security_data *sd);
 
 /* symlink.c */
-ssize_t inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
-			const WIMStruct *w, int read_resource_flags);
-extern int inode_set_symlink(struct wim_inode *inode,
-			     const char *target,
-			     struct wim_lookup_table *lookup_table,
-			     struct wim_lookup_table_entry **lte_ret);
+ssize_t
+inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
+	       const WIMStruct *w, int read_resource_flags);
+
+extern int
+inode_set_symlink(struct wim_inode *inode, const mbchar *target,
+		  struct wim_lookup_table *lookup_table,
+		  struct wim_lookup_table_entry **lte_ret);
 
 /* verify.c */
-extern int verify_dentry(struct wim_dentry *dentry, void *wim);
-extern int wim_run_full_verifications(WIMStruct *w);
-extern int verify_swm_set(WIMStruct *w,
-			  WIMStruct **additional_swms,
-			  unsigned num_additional_swms);
+
+extern int
+verify_dentry(struct wim_dentry *dentry, void *wim);
+
+extern int
+wim_run_full_verifications(WIMStruct *w);
+
+extern int
+verify_swm_set(WIMStruct *w,
+	       WIMStruct **additional_swms, unsigned num_additional_swms);
 
 /* wim.c */
-extern int select_wim_image(WIMStruct *w, int image);
-extern int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
-extern void destroy_image_metadata(struct wim_image_metadata *imd,
-				   struct wim_lookup_table *lt);
+
+extern int
+select_wim_image(WIMStruct *w, int image);
+
+extern int
+for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
+
+extern void
+destroy_image_metadata(struct wim_image_metadata *imd,
+		       struct wim_lookup_table *lt);
 
 /* write.c */
 
@@ -540,16 +635,22 @@ extern void destroy_image_metadata(struct wim_image_metadata *imd,
 #define WIMLIB_ADD_IMAGE_FLAG_SOURCE    0x40000000
 
 
-extern int begin_write(WIMStruct *w, const char *path, int write_flags);
-extern void close_wim_writable(WIMStruct *w);
+extern int
+begin_write(WIMStruct *w, const mbchar *path, int write_flags);
 
-extern int finish_write(WIMStruct *w, int image, int write_flags,
-			wimlib_progress_func_t progress_func);
+extern void
+close_wim_writable(WIMStruct *w);
+
+extern int
+finish_write(WIMStruct *w, int image, int write_flags,
+	     wimlib_progress_func_t progress_func);
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
-extern int lock_wim(WIMStruct *w, FILE *fp);
+extern int
+lock_wim(WIMStruct *w, FILE *fp);
 #else
-static inline int lock_wim(WIMStruct *w, FILE *fp)
+static inline int
+lock_wim(WIMStruct *w, FILE *fp)
 {
 	return 0;
 }

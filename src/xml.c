@@ -48,19 +48,19 @@ struct windows_version {
 };
 
 struct windows_info {
-	u64    arch;
-	char  *product_name;
-	char  *edition_id;
-	char  *installation_type;
-	char  *hal;
-	char  *product_type;
-	char  *product_suite;
-	char **languages;
-	char  *default_language;
-	size_t num_languages;
-	char  *system_root;
-	bool   windows_version_exists;
-	struct windows_version windows_version;
+	u64        arch;
+	utf8char  *product_name;
+	utf8char  *edition_id;
+	utf8char  *installation_type;
+	utf8char  *hal;
+	utf8char  *product_type;
+	utf8char  *product_suite;
+	utf8char **languages;
+	utf8char  *default_language;
+	size_t     num_languages;
+	utf8char  *system_root;
+	bool       windows_version_exists;
+	struct     windows_version windows_version;
 };
 
 struct image_info {
@@ -73,12 +73,12 @@ struct image_info {
 	u64 creation_time;
 	u64 last_modification_time;
 	struct windows_info windows_info;
-	char *name;
-	char *description;
-	char *display_name;
-	char *display_description;
+	utf8char *name;
+	utf8char *description;
+	utf8char *display_name;
+	utf8char *display_description;
 	union {
-		char *flags;
+		utf8char *flags;
 		struct wim_lookup_table *lookup_table;
 	};
 };
@@ -86,9 +86,9 @@ struct image_info {
 
 /* Returns a statically allocated string that is a string representation of the
  * architecture number. */
-static const char *get_arch(int arch)
+static const char *
+get_arch(int arch)
 {
-	static char buf[20];
 	switch (arch) {
 	case 0:
 		return "x86";
@@ -98,8 +98,7 @@ static const char *get_arch(int arch)
 		return "x86_64";
 	/* XXX Are there other arch values? */
 	default:
-		snprintf(buf, sizeof(buf), "%d (unknown)", arch);
-		return buf;
+		return NULL;
 	}
 }
 
@@ -109,17 +108,20 @@ static const char *get_arch(int arch)
 	for (child = parent->children; child != NULL; child = child->next)
 
 /* Utility functions for xmlNodes */
-static inline bool node_is_element(xmlNode *node)
+static inline bool
+node_is_element(xmlNode *node)
 {
 	return node->type == XML_ELEMENT_NODE;
 }
 
-static inline bool node_is_text(xmlNode *node)
+static inline bool
+node_is_text(xmlNode *node)
 {
 	return node->type == XML_TEXT_NODE;
 }
 
-static inline bool node_name_is(xmlNode *node, const char *name)
+static inline bool
+node_name_is(xmlNode *node, const utf8char *name)
 {
 	/* For now, both upper case and lower case element names are accepted. */
 	return strcasecmp((const char *)node->name, name) == 0;
@@ -128,7 +130,8 @@ static inline bool node_name_is(xmlNode *node, const char *name)
 /* Finds the text node that is a child of an element node and returns its
  * content converted to a 64-bit unsigned integer.  Returns 0 if no text node is
  * found. */
-static u64 node_get_u64(const xmlNode *u64_node)
+static u64
+node_get_u64(const xmlNode *u64_node)
 {
 	xmlNode *child;
 	for_node_child(u64_node, child)
@@ -138,7 +141,8 @@ static u64 node_get_u64(const xmlNode *u64_node)
 }
 
 /* Like node_get_u64(), but expects a number in base 16. */
-static u64 node_get_hex_u64(const xmlNode *u64_node)
+static u64
+node_get_hex_u64(const xmlNode *u64_node)
 {
 	xmlNode *child;
 	for_node_child(u64_node, child)
@@ -147,7 +151,8 @@ static u64 node_get_hex_u64(const xmlNode *u64_node)
 	return 0;
 }
 
-static int node_get_string(const xmlNode *string_node, char **str)
+static int
+node_get_string(const xmlNode *string_node, utf8char **str)
 {
 	xmlNode *child;
 	char *p = NULL;
@@ -166,7 +171,8 @@ static int node_get_string(const xmlNode *string_node, char **str)
 
 /* Returns the timestamp from a time node.  It has child elements <HIGHPART> and
  * <LOWPART> that are then used to construct a 64-bit timestamp. */
-static u64 node_get_timestamp(const xmlNode *time_node)
+static u64
+node_get_timestamp(const xmlNode *time_node)
 {
 	u32 high_part = 0;
 	u32 low_part = 0;
@@ -183,7 +189,8 @@ static u64 node_get_timestamp(const xmlNode *time_node)
 }
 
 /* Used to sort an array of struct image_infos by their image indices. */
-static int sort_by_index(const void *p1, const void *p2)
+static int
+sort_by_index(const void *p1, const void *p2)
 {
 	int index_1 = ((const struct image_info*)p1)->index;
 	int index_2 = ((const struct image_info*)p2)->index;
@@ -197,7 +204,8 @@ static int sort_by_index(const void *p1, const void *p2)
 
 
 /* Frees memory allocated inside a struct windows_info structure. */
-static void destroy_windows_info(struct windows_info *windows_info)
+static void
+destroy_windows_info(struct windows_info *windows_info)
 {
 	FREE(windows_info->product_name);
 	FREE(windows_info->edition_id);
@@ -213,7 +221,8 @@ static void destroy_windows_info(struct windows_info *windows_info)
 }
 
 /* Frees memory allocated inside a struct image_info structure. */
-static void destroy_image_info(struct image_info *image_info)
+static void
+destroy_image_info(struct image_info *image_info)
 {
 	FREE(image_info->name);
 	FREE(image_info->description);
@@ -224,7 +233,8 @@ static void destroy_image_info(struct image_info *image_info)
 	memset(image_info, 0, sizeof(struct image_info));
 }
 
-void free_wim_info(struct wim_info *info)
+void
+free_wim_info(struct wim_info *info)
 {
 	if (info) {
 		if (info->images) {
@@ -238,8 +248,9 @@ void free_wim_info(struct wim_info *info)
 
 /* Reads the information from a <VERSION> element inside the <WINDOWS> element.
  * */
-static void xml_read_windows_version(const xmlNode *version_node,
-				     struct windows_version* windows_version)
+static void
+xml_read_windows_version(const xmlNode *version_node,
+			 struct windows_version* windows_version)
 {
 	xmlNode *child;
 	for_node_child(version_node, child) {
@@ -260,14 +271,15 @@ static void xml_read_windows_version(const xmlNode *version_node,
 
 /* Reads the information from a <LANGUAGE> element inside a <WINDOWS> element.
  * */
-static int xml_read_languages(const xmlNode *languages_node,
-			      char ***languages_ret,
-			      size_t *num_languages_ret,
-			      char **default_language_ret)
+static int
+xml_read_languages(const xmlNode *languages_node,
+		   utf8char ***languages_ret,
+		   size_t *num_languages_ret,
+		   utf8char **default_language_ret)
 {
 	xmlNode *child;
 	size_t num_languages = 0;
-	char **languages;
+	utf8char **languages;
 	int ret;
 
 	for_node_child(languages_node, child)
@@ -296,8 +308,9 @@ static int xml_read_languages(const xmlNode *languages_node,
 }
 
 /* Reads the information from a <WINDOWS> element inside an <IMAGE> element. */
-static int xml_read_windows_info(const xmlNode *windows_node,
-				 struct windows_info *windows_info)
+static int
+xml_read_windows_info(const xmlNode *windows_node,
+		      struct windows_info *windows_info)
 {
 	xmlNode *child;
 	int ret = 0;
@@ -343,8 +356,8 @@ static int xml_read_windows_info(const xmlNode *windows_node,
 }
 
 /* Reads the information from an <IMAGE> element. */
-static int xml_read_image_info(xmlNode *image_node,
-			       struct image_info *image_info)
+static int
+xml_read_image_info(xmlNode *image_node, struct image_info *image_info)
 {
 	xmlNode *child;
 	xmlChar *index_prop;
@@ -394,7 +407,7 @@ static int xml_read_image_info(xmlNode *image_node,
 			return ret;
 	}
 	if (!image_info->name) {
-		char *empty_name;
+		utf8char *empty_name;
 		WARNING("Image with index %d has no name", image_info->index);
 		empty_name = MALLOC(1);
 		if (!empty_name)
@@ -407,8 +420,8 @@ static int xml_read_image_info(xmlNode *image_node,
 
 /* Reads the information from a <WIM> element, which should be the root element
  * of the XML tree. */
-static int xml_read_wim_info(const xmlNode *wim_node,
-			     struct wim_info **wim_info_ret)
+static int
+xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info_ret)
 {
 	struct wim_info *wim_info;
 	xmlNode *child;
@@ -477,49 +490,54 @@ err:
 	return ret;
 }
 
-/* Prints the information contained in a `struct windows_info'. */
-static void print_windows_info(const struct windows_info *windows_info)
+/* Prints the information contained in a `struct windows_info'. 
+ *
+ * Warning: any strings printed here are in UTF-8 encoding.  If the locale
+ * character encoding is not UTF-8, the printed strings may be garbled. */
+static void
+print_windows_info(const struct windows_info *windows_info)
 {
 	const struct windows_version *windows_version;
 
-	printf("Architecture:           %s\n", get_arch(windows_info->arch));
+	wimlib_printf("Architecture:           %s\n",
+		      get_arch(windows_info->arch) ?: "unknown");
 
 	if (windows_info->product_name)
-		printf("Product Name:           %s\n",
-		       windows_info->product_name);
+		wimlib_printf("Product Name:           %U\n",
+			      windows_info->product_name);
 
 	if (windows_info->edition_id)
-		printf("Edition ID:             %s\n",
-		       windows_info->edition_id);
+		wimlib_printf("Edition ID:             %U\n",
+			      windows_info->edition_id);
 
 	if (windows_info->installation_type)
-		printf("Installation Type:      %s\n",
-		       windows_info->installation_type);
+		wimlib_printf("Installation Type:      %U\n",
+			      windows_info->installation_type);
 
 	if (windows_info->hal)
-		printf("HAL:                    %s\n",
-		       windows_info->hal);
+		wimlib_printf("HAL:                    %U\n",
+			      windows_info->hal);
 
 	if (windows_info->product_type)
-		printf("Product Type:           %s\n",
-		       windows_info->product_type);
+		wimlib_printf("Product Type:           %U\n",
+			      windows_info->product_type);
 
 	if (windows_info->product_suite)
-		printf("Product Suite:          %s\n",
-		       windows_info->product_suite);
+		wimlib_printf("Product Suite:          %U\n",
+			      windows_info->product_suite);
 
 	printf("Languages:              ");
 	for (size_t i = 0; i < windows_info->num_languages; i++) {
-		fputs(windows_info->languages[i], stdout);
+		wimlib_printf("%U", windows_info->languages[i]);
 		putchar(' ');
 	}
 	putchar('\n');
 	if (windows_info->default_language)
-		printf("Default Language:       %s\n",
+		wimlib_printf("Default Language:       %U\n",
 		       windows_info->default_language);
 	if (windows_info->system_root)
-		printf("System Root:            %s\n",
-		       windows_info->system_root);
+		wimlib_printf("System Root:            %U\n",
+			      windows_info->system_root);
 	if (windows_info->windows_version_exists) {
 		windows_version = &windows_info->windows_version;
 		printf("Major Version:          %"PRIu64"\n",
@@ -539,8 +557,9 @@ static void print_windows_info(const struct windows_info *windows_info)
 /* Writes the information contained in a `struct windows_version' to the XML
  * document being written.  This is the <VERSION> element inside the <WINDOWS>
  * element. */
-static int xml_write_windows_version(xmlTextWriter *writer,
-				     const struct windows_version *version)
+static int
+xml_write_windows_version(xmlTextWriter *writer,
+			  const struct windows_version *version)
 {
 	int rc;
 	rc = xmlTextWriterStartElement(writer, "VERSION");
@@ -577,8 +596,9 @@ static int xml_write_windows_version(xmlTextWriter *writer,
 
 /* Writes the information contained in a `struct windows_info' to the XML
  * document being written. This is the <WINDOWS> element. */
-static int xml_write_windows_info(xmlTextWriter *writer,
-				  const struct windows_info *windows_info)
+static int
+xml_write_windows_info(xmlTextWriter *writer,
+		       const struct windows_info *windows_info)
 {
 	int rc;
 	rc = xmlTextWriterStartElement(writer, "WINDOWS");
@@ -670,8 +690,8 @@ static int xml_write_windows_info(xmlTextWriter *writer,
 }
 
 /* Writes a time element to the XML document being constructed in memory. */
-static int xml_write_time(xmlTextWriter *writer, const char *element_name,
-			  u64 time)
+static int
+xml_write_time(xmlTextWriter *writer, const utf8char *element_name, u64 time)
 {
 	int rc;
 	rc = xmlTextWriterStartElement(writer, element_name);
@@ -695,8 +715,8 @@ static int xml_write_time(xmlTextWriter *writer, const char *element_name,
 }
 
 /* Writes an <IMAGE> element to the XML document. */
-static int xml_write_image_info(xmlTextWriter *writer,
-				const struct image_info *image_info)
+static int
+xml_write_image_info(xmlTextWriter *writer, const struct image_info *image_info)
 {
 	int rc;
 	rc = xmlTextWriterStartElement(writer, "IMAGE");
@@ -783,7 +803,8 @@ static int xml_write_image_info(xmlTextWriter *writer,
 
 /* Makes space for another image in the XML information and return a pointer to
  * it.*/
-static struct image_info *add_image_info_struct(struct wim_info *wim_info)
+static struct image_info *
+add_image_info_struct(struct wim_info *wim_info)
 {
 	struct image_info *images;
 
@@ -798,8 +819,8 @@ static struct image_info *add_image_info_struct(struct wim_info *wim_info)
 	return &images[wim_info->num_images - 1];
 }
 
-static int clone_windows_info(const struct windows_info *old,
-			      struct windows_info *new)
+static int
+clone_windows_info(const struct windows_info *old, struct windows_info *new)
 {
 	if (old->product_name && !(new->product_name = STRDUP(old->product_name)))
 		return WIMLIB_ERR_NOMEM;
@@ -816,7 +837,7 @@ static int clone_windows_info(const struct windows_info *old,
 		return WIMLIB_ERR_NOMEM;
 
 	if (old->languages) {
-		new->languages = CALLOC(old->num_languages, sizeof(char*));
+		new->languages = CALLOC(old->num_languages, sizeof(new->languages[0]));
 		if (!new->languages)
 			return WIMLIB_ERR_NOMEM;
 		new->num_languages = old->num_languages;
@@ -841,7 +862,8 @@ static int clone_windows_info(const struct windows_info *old,
 	return 0;
 }
 
-static int clone_image_info(const struct image_info *old, struct image_info *new)
+static int
+clone_image_info(const struct image_info *old, struct image_info *new)
 {
 	new->dir_count              = old->dir_count;
 	new->file_count             = old->file_count;
@@ -886,11 +908,12 @@ static int clone_image_info(const struct image_info *old, struct image_info *new
  * On failure, WIMLIB_ERR_NOMEM is returned and no changes are made.  Otherwise,
  * 0 is returned and the WIM information at *new_wim_info_p is modified.
  */
-int xml_export_image(const struct wim_info *old_wim_info,
-		     int image,
-		     struct wim_info **new_wim_info_p,
-		     const char *dest_image_name,
-		     const char *dest_image_description)
+int
+xml_export_image(const struct wim_info *old_wim_info,
+		 int image,
+		 struct wim_info **new_wim_info_p,
+		 const utf8char *dest_image_name,
+		 const utf8char *dest_image_description)
 {
 	struct wim_info *new_wim_info;
 	struct image_info *image_info;
@@ -942,7 +965,8 @@ err:
 }
 
 /* Removes an image from the XML information. */
-void xml_delete_image(struct wim_info **wim_info_p, int image)
+void
+xml_delete_image(struct wim_info **wim_info_p, int image)
 {
 	struct wim_info *wim_info;
 
@@ -965,7 +989,8 @@ void xml_delete_image(struct wim_info **wim_info_p, int image)
 	}
 }
 
-size_t xml_get_max_image_name_len(const WIMStruct *w)
+size_t
+xml_get_max_image_name_len(const WIMStruct *w)
 {
 	size_t max_len = 0;
 	if (w->wim_info) {
@@ -980,15 +1005,17 @@ size_t xml_get_max_image_name_len(const WIMStruct *w)
 }
 
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
-void xml_set_memory_allocator(void *(*malloc_func)(size_t),
-				   void (*free_func)(void *),
-				   void *(*realloc_func)(void *, size_t))
+void
+xml_set_memory_allocator(void *(*malloc_func)(size_t),
+			 void (*free_func)(void *),
+			 void *(*realloc_func)(void *, size_t))
 {
 	xmlMemSetup(free_func, malloc_func, realloc_func, STRDUP);
 }
 #endif
 
-static int calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
+static int
+calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 {
 	struct image_info *info = arg;
 	struct wim_lookup_table *lookup_table = info->lookup_table;
@@ -1066,10 +1093,11 @@ static int calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
  * Please note there is no official documentation for exactly how this is done.
  * But, see calculate_dentry_statistics().
  */
-void xml_update_image_info(WIMStruct *w, int image)
+void
+xml_update_image_info(WIMStruct *w, int image)
 {
 	struct image_info *image_info;
-	char *flags_save;
+	utf8char *flags_save;
 
 	DEBUG("Updating the image info for image %d", image);
 
@@ -1090,7 +1118,8 @@ void xml_update_image_info(WIMStruct *w, int image)
 }
 
 /* Adds an image to the XML information. */
-int xml_add_image(WIMStruct *w, const char *name)
+int
+xml_add_image(WIMStruct *w, const utf8char *name)
 {
 	struct wim_info *wim_info;
 	struct image_info *image_info;
@@ -1131,7 +1160,8 @@ out_free_wim_info:
 
 /* Prints information about the specified image from struct wim_info structure.
  * */
-void print_image_info(const struct wim_info *wim_info, int image)
+void
+print_image_info(const struct wim_info *wim_info, int image)
 {
 	const struct image_info *image_info;
 	const char *desc;
@@ -1142,7 +1172,7 @@ void print_image_info(const struct wim_info *wim_info, int image)
 	image_info = &wim_info->images[image - 1];
 
 	printf("Index:                  %d\n", image_info->index);
-	printf("Name:                   %s\n", image_info->name);
+	wimlib_printf("Name:                   %U\n", image_info->name);
 
 	/* Always print the Description: part even if there is no
 	 * description. */
@@ -1150,15 +1180,15 @@ void print_image_info(const struct wim_info *wim_info, int image)
 		desc = image_info->description;
 	else
 		desc = "";
-	printf("Description:            %s\n", desc);
+	wimlib_printf("Description:            %U\n", desc);
 
 	if (image_info->display_name)
-		printf("Display Name:           %s\n",
-		       image_info->display_name);
+		wimlib_printf("Display Name:           %U\n",
+			      image_info->display_name);
 
 	if (image_info->display_description)
-		printf("Display Description:    %s\n",
-		       image_info->display_description);
+		wimlib_printf("Display Description:    %U\n",
+			      image_info->display_description);
 
 	printf("Directory Count:        %"PRIu64"\n", image_info->dir_count);
 	printf("File Count:             %"PRIu64"\n", image_info->file_count);
@@ -1177,23 +1207,28 @@ void print_image_info(const struct wim_info *wim_info, int image)
 	putchar('\n');
 }
 
-void libxml_global_init()
+void
+libxml_global_init()
 {
 	xmlInitParser();
+	xmlInitCharEncodingHandlers();
 }
 
-void libxml_global_cleanup()
+void
+libxml_global_cleanup()
 {
 	xmlCleanupParser();
+	xmlCleanupCharEncodingHandlers();
 }
 
 /*
  * Reads the XML data from a WIM file.
  */
-int read_xml_data(FILE *fp, const struct resource_entry *res_entry,
-		  u8 **xml_data_ret, struct wim_info **info_ret)
+int
+read_xml_data(FILE *fp, const struct resource_entry *res_entry,
+	      utf16lechar **xml_data_ret, struct wim_info **info_ret)
 {
-	u8 *xml_data;
+	utf16lechar *xml_data;
 	xmlDoc *doc;
 	xmlNode *root;
 	int ret;
@@ -1213,7 +1248,7 @@ int read_xml_data(FILE *fp, const struct resource_entry *res_entry,
 		goto out;
 	}
 
-	xml_data = MALLOC(res_entry->size + 2);
+	xml_data = MALLOC(res_entry->size + 3);
 	if (!xml_data) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;
@@ -1225,8 +1260,9 @@ int read_xml_data(FILE *fp, const struct resource_entry *res_entry,
 		goto out_free_xml_data;
 
 	/* Null-terminate just in case */
-	xml_data[res_entry->size] = 0;
-	xml_data[res_entry->size + 1] = 0;
+	((u8*)xml_data)[res_entry->size] = 0;
+	((u8*)xml_data)[res_entry->size + 1] = 0;
+	((u8*)xml_data)[res_entry->size + 2] = 0;
 
 	DEBUG("Parsing XML using libxml2 to create XML tree");
 
@@ -1283,8 +1319,9 @@ out:
  * element in the XML data.  If zero, TOTALBYTES is given the default value of
  * the offset of the XML data.
  */
-int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
-		   u64 total_bytes, struct resource_entry *out_res_entry)
+int
+write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
+	       u64 total_bytes, struct resource_entry *out_res_entry)
 {
 	xmlCharEncodingHandler *encoding_handler;
 	xmlOutputBuffer *out_buffer;
@@ -1324,21 +1361,19 @@ int write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	if (total_bytes == 0)
 		total_bytes = start_offset;
 
-	xmlInitCharEncodingHandlers();
-
 	/* The encoding of the XML data must be UTF-16LE. */
 	encoding_handler = xmlGetCharEncodingHandler(XML_CHAR_ENCODING_UTF16LE);
 	if (!encoding_handler) {
 		ERROR("Failed to get XML character encoding handler for UTF-16LE");
 		ret = WIMLIB_ERR_LIBXML_UTF16_HANDLER_NOT_AVAILABLE;
-		goto out_cleanup_char_encoding_handlers;
+		goto out;
 	}
 
 	out_buffer = xmlOutputBufferCreateFile(out, encoding_handler);
 	if (!out_buffer) {
 		ERROR("Failed to allocate xmlOutputBuffer");
 		ret = WIMLIB_ERR_NOMEM;
-		goto out_cleanup_char_encoding_handlers;
+		goto out;
 	}
 
 	writer = xmlNewTextWriter(out_buffer);
@@ -1403,8 +1438,6 @@ out_free_text_writer:
 out_output_buffer_close:
 	if (out_buffer != NULL)
 		xmlOutputBufferClose(out_buffer);
-out_cleanup_char_encoding_handlers:
-	xmlCleanupCharEncodingHandlers();
 out:
 	if (ret == 0)
 		DEBUG("Successfully wrote XML data");
@@ -1412,7 +1445,8 @@ out:
 }
 
 /* Returns the name of the specified image. */
-WIMLIBAPI const char *wimlib_get_image_name(const WIMStruct *w, int image)
+WIMLIBAPI const utf8char *
+wimlib_get_image_name(const WIMStruct *w, int image)
 {
 	if (image < 1 || image > w->hdr.image_count)
 		return NULL;
@@ -1420,8 +1454,8 @@ WIMLIBAPI const char *wimlib_get_image_name(const WIMStruct *w, int image)
 }
 
 /* Returns the description of the specified image. */
-WIMLIBAPI const char *wimlib_get_image_description(const WIMStruct *w,
-						   int image)
+WIMLIBAPI const utf8char *
+wimlib_get_image_description(const WIMStruct *w, int image)
 {
 	if (image < 1 || image > w->hdr.image_count)
 		return NULL;
@@ -1429,7 +1463,8 @@ WIMLIBAPI const char *wimlib_get_image_description(const WIMStruct *w,
 }
 
 /* Determines if an image name is already used by some image in the WIM. */
-WIMLIBAPI bool wimlib_image_name_in_use(const WIMStruct *w, const char *name)
+WIMLIBAPI bool
+wimlib_image_name_in_use(const WIMStruct *w, const utf8char *name)
 {
 	if (!name || !*name)
 		return false;
@@ -1440,12 +1475,15 @@ WIMLIBAPI bool wimlib_image_name_in_use(const WIMStruct *w, const char *name)
 }
 
 /* Extracts the raw XML data to a file stream. */
-WIMLIBAPI int wimlib_extract_xml_data(WIMStruct *w, FILE *fp)
+WIMLIBAPI int
+wimlib_extract_xml_data(WIMStruct *w, FILE *fp)
 {
+	size_t bytes_written;
+
 	if (!w->xml_data)
 		return WIMLIB_ERR_INVALID_PARAM;
-	if (fwrite(w->xml_data, 1, w->hdr.xml_res_entry.size, fp) !=
-			w->hdr.xml_res_entry.size) {
+	bytes_written = fwrite(w->xml_data, 1, w->hdr.xml_res_entry.size, fp);
+	if (bytes_written != w->hdr.xml_res_entry.size) {
 		ERROR_WITH_ERRNO("Failed to extract XML data");
 		return WIMLIB_ERR_WRITE;
 	}
@@ -1453,9 +1491,10 @@ WIMLIBAPI int wimlib_extract_xml_data(WIMStruct *w, FILE *fp)
 }
 
 /* Sets the name of an image in the WIM. */
-WIMLIBAPI int wimlib_set_image_name(WIMStruct *w, int image, const char *name)
+WIMLIBAPI int
+wimlib_set_image_name(WIMStruct *w, int image, const utf8char *name)
 {
-	char *p;
+	utf8char *p;
 	int i;
 
 	DEBUG("Setting the name of image %d to %s", image, name);
@@ -1474,8 +1513,8 @@ WIMLIBAPI int wimlib_set_image_name(WIMStruct *w, int image, const char *name)
 		if (i == image)
 			continue;
 		if (strcmp(w->wim_info->images[i - 1].name, name) == 0) {
-			ERROR("The name `%s' is already used for image %d",
-			      name, i);
+			ERROR("The name `%U' is already in use in the WIM!",
+			      name);
 			return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 		}
 	}
@@ -1490,10 +1529,11 @@ WIMLIBAPI int wimlib_set_image_name(WIMStruct *w, int image, const char *name)
 }
 
 /* Sets the description of an image in the WIM. */
-WIMLIBAPI int wimlib_set_image_descripton(WIMStruct *w, int image,
-					  const char *description)
+WIMLIBAPI int
+wimlib_set_image_descripton(WIMStruct *w, int image,
+			    const utf8char *description)
 {
-	char *p;
+	utf8char *p;
 
 	if (image < 1 || image > w->hdr.image_count) {
 		ERROR("%d is not a valid image", image);
@@ -1512,8 +1552,8 @@ WIMLIBAPI int wimlib_set_image_descripton(WIMStruct *w, int image,
 }
 
 /* Set the <FLAGS> element of a WIM image */
-WIMLIBAPI int wimlib_set_image_flags(WIMStruct *w, int image,
-				     const char *flags)
+WIMLIBAPI int
+wimlib_set_image_flags(WIMStruct *w, int image, const utf8char *flags)
 {
 	char *p;
 

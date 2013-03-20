@@ -113,7 +113,7 @@ static inline u8 *put_zeroes(u8 *p, size_t num_bytes)
 	return (u8*)memset(p, 0, num_bytes) + num_bytes;
 }
 
-static inline u8 *put_bytes(u8 *p, size_t num_bytes, const u8 *input)
+static inline u8 *put_bytes(u8 *p, size_t num_bytes, const void *input)
 {
 	return (u8*)memcpy(p, input, num_bytes) + num_bytes;
 }

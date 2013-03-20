@@ -1,5 +1,7 @@
 /*
- * encoding.c:  Convert UTF-8 to UTF-16LE strings and vice versa
+ * encoding.c:  Convert "multibyte" strings (the locale-default encoding---
+ * generally, UTF-8 or something like ISO-8859-1) to UTF-16LE strings, and vice
+ * versa.
  */
 
 /*
@@ -22,373 +24,256 @@
  */
 
 #include "config.h"
-#include "wimlib.h"
-#include "util.h"
-#include "endianness.h"
+#include "wimlib_internal.h"
+#include <pthread.h>
+#include "list.h"
 
-#include <errno.h>
+#include <iconv.h>
+#include <stdlib.h>
 
-#ifdef WITH_NTFS_3G
-#  include <ntfs-3g/volume.h>
-#  include <ntfs-3g/unistr.h>
-#elif defined(__WIN32__)
-#  include <wchar.h>
-#  include <stdlib.h>
-#else
-#  include <iconv.h>
-#endif
+bool wimlib_mbs_is_utf8 = false;
 
-/*
- * NOTE:
- *
- * utf16_to_utf8_size() and utf8_to_utf16_size() were taken from
- * libntfs-3g/unistr.c in the NTFS-3g sources.  (Modified slightly to remove
- * unneeded functionality.)
- */
-#if !defined(WITH_NTFS_3G) && !defined(__WIN32__)
-/*
- * Return the amount of 8-bit elements in UTF-8 needed (without the terminating
- * null) to store a given UTF-16LE string.
- *
- * Return -1 with errno set if string has invalid byte sequence or too long.
- */
-static int utf16_to_utf8_size(const u16 *ins, const int ins_len)
-{
-	int i, ret = -1;
-	int count = 0;
-	bool surrog;
+struct iconv_list_head {
+	const char *from_encoding;
+	const char *to_encoding;
+	struct list_head list;
+	pthread_mutex_t mutex;
+};
 
-	surrog = false;
-	for (i = 0; i < ins_len && ins[i]; i++) {
-		unsigned short c = le16_to_cpu(ins[i]);
-		if (surrog) {
-			if ((c >= 0xdc00) && (c < 0xe000)) {
-				surrog = false;
-				count += 4;
-			} else
-				goto fail;
-		} else
-			if (c < 0x80)
-				count++;
-			else if (c < 0x800)
-				count += 2;
-			else if (c < 0xd800)
-				count += 3;
-			else if (c < 0xdc00)
-				surrog = true;
-#if NOREVBOM
-			else if ((c >= 0xe000) && (c < 0xfffe))
-#else
-			else if (c >= 0xe000)
-#endif
-				count += 3;
-			else
-				goto fail;
-	}
-	if (surrog)
-		goto fail;
+struct iconv_node {
+	iconv_t cd;
+	struct list_head list;
+	struct iconv_list_head *head;
+};
 
-	ret = count;
-out:
-	return ret;
-fail:
-	errno = EILSEQ;
-	goto out;
+#define ICONV_LIST(name, from, to)			\
+struct iconv_list_head name = {				\
+	.from_encoding = from,				\
+	.to_encoding = to,				\
+	.list = LIST_HEAD_INIT(name.list),		\
+	.mutex = PTHREAD_MUTEX_INITIALIZER,		\
 }
 
-/*
- * Return the amount of 16-bit elements in UTF-16LE needed
- * (without the terminating null) to store given UTF-8 string.
- *
- * Return -1 with errno set if it's longer than PATH_MAX or string is invalid.
- *
- * Note: This does not check whether the input sequence is a valid utf8 string,
- *	 and should be used only in context where such check is made!
- */
-static int utf8_to_utf16_size(const char *s)
+static ICONV_LIST(iconv_mbs_to_utf16le, "", "UTF-16LE");
+static ICONV_LIST(iconv_utf16le_to_mbs, "UTF-16LE", "");
+
+static iconv_t *
+get_iconv(struct iconv_list_head *head)
 {
-	unsigned int byte;
-	size_t count = 0;
-	while ((byte = *((const unsigned char *)s++))) {
-		count++;
-		if (byte >= 0xc0) {
-			if (byte >= 0xF5) {
-				errno = EILSEQ;
-				return -1;
-			}
-			if (!*s)
-				break;
-			if (byte >= 0xC0)
-				s++;
-			if (!*s)
-				break;
-			if (byte >= 0xE0)
-				s++;
-			if (!*s)
-				break;
-			if (byte >= 0xF0) {
-				s++;
-				count++;
-			}
-		}
-	}
-	return count;
-}
+	iconv_t cd;
+	struct iconv_node *i;
 
-static iconv_t cd_utf8_to_utf16 = (iconv_t)(-1);
-static iconv_t cd_utf16_to_utf8 = (iconv_t)(-1);
-
-int iconv_global_init()
-{
-	if (cd_utf16_to_utf8 == (iconv_t)(-1)) {
-		cd_utf16_to_utf8 = iconv_open("UTF-8", "UTF-16LE");
-		if (cd_utf16_to_utf8 == (iconv_t)-1) {
-			ERROR_WITH_ERRNO("Failed to get conversion descriptor "
-					 "for converting UTF-16LE to UTF-8");
-			if (errno == ENOMEM)
-				return WIMLIB_ERR_NOMEM;
-			else
-				return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
-		}
-	}
-
-	if (cd_utf8_to_utf16 == (iconv_t)(-1)) {
-		cd_utf8_to_utf16 = iconv_open("UTF-16LE", "UTF-8");
-		if (cd_utf8_to_utf16 == (iconv_t)-1) {
-			ERROR_WITH_ERRNO("Failed to get conversion descriptor "
-					 "for converting UTF-8 to UTF-16LE");
-			if (errno == ENOMEM)
-				return WIMLIB_ERR_NOMEM;
-			else
-				return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
-		}
-	}
-	return 0;
-}
-
-void iconv_global_cleanup()
-{
-	if (cd_utf8_to_utf16 != (iconv_t)(-1))
-		iconv_close(cd_utf8_to_utf16);
-	if (cd_utf16_to_utf8 != (iconv_t)(-1))
-		iconv_close(cd_utf16_to_utf8);
-}
-#endif /* !WITH_NTFS_3G && !__WIN32__ */
-
-/* Converts a string in the UTF-16LE encoding to a newly allocated string in the
- * UTF-8 encoding.
- *
- * If available, do so by calling a similar function from libntfs-3g.
- * Otherwise, use iconv() along with the helper function utf16_to_utf8_size().
- */
-int utf16_to_utf8(const char *utf16_str, size_t utf16_nbytes,
-		  char **utf8_str_ret, size_t *utf8_nbytes_ret)
-{
-	int ret;
-
-	if (utf16_nbytes == 0) {
-		*utf8_str_ret = NULL;
-		*utf8_nbytes_ret = 0;
-		return 0;
-	}
-
-	if (utf16_nbytes & 1) {
-		ERROR("UTF-16LE string is invalid (odd number of bytes)!");
-		return WIMLIB_ERR_INVALID_UTF16_STRING;
-	}
-#ifdef WITH_NTFS_3G
-	char *outs = NULL;
-	int outs_len = ntfs_ucstombs((const ntfschar*)utf16_str,
-				     utf16_nbytes / 2, &outs, 0);
-	if (outs_len >= 0) {
-		*utf8_str_ret = outs;
-		*utf8_nbytes_ret = outs_len;
-		ret = 0;
-	} else {
-		if (errno == ENOMEM)
-			ret = WIMLIB_ERR_NOMEM;
-		else
-			ret = WIMLIB_ERR_INVALID_UTF16_STRING;
-	}
-#elif defined(__WIN32__)
-	char *utf8_str;
-	size_t utf8_nbytes;
-	utf8_nbytes = wcstombs(NULL, (const wchar_t*)utf16_str, 0);
-	if (utf8_nbytes == (size_t)(-1)) {
-		ret = WIMLIB_ERR_INVALID_UTF16_STRING;
-	} else {
-		utf8_str = MALLOC(utf8_nbytes + 1);
-		if (!utf8_str) {
-			ret = WIMLIB_ERR_NOMEM;
+	pthread_mutex_lock(&head->mutex);
+	if (list_empty(&head->list)) {
+		cd = iconv_open(head->to_encoding, head->from_encoding);
+		if (cd == (iconv_t)-1) {
+			goto out_unlock;
 		} else {
-			wcstombs(utf8_str, (const wchar_t*)utf16_str, utf8_nbytes + 1);
-			*utf8_str_ret = utf8_str;
-			*utf8_nbytes_ret = utf8_nbytes;
-			ret = 0;
-		}
-	}
-#else
-	ret = iconv_global_init();
-	if (ret != 0)
-		return ret;
-
-	ret = utf16_to_utf8_size((const u16*)utf16_str, utf16_nbytes / 2);
-	if (ret >= 0) {
-		size_t utf8_expected_nbytes;
-		char  *utf8_str;
-		size_t utf8_bytes_left;
-		size_t utf16_bytes_left;
-		size_t num_chars_converted;
-		char  *utf8_str_save;
-		const char *utf16_str_save;
-
-		utf8_expected_nbytes = ret;
- 		utf8_str = MALLOC(utf8_expected_nbytes + 1);
-		if (utf8_str) {
-			utf8_bytes_left = utf8_expected_nbytes;
-			utf16_bytes_left = utf16_nbytes;
-			utf8_str_save = utf8_str;
-			utf16_str_save = utf16_str;
-			num_chars_converted = iconv(cd_utf16_to_utf8,
-						    (char**)&utf16_str,
-						    &utf16_bytes_left,
-						    &utf8_str,
-						    &utf8_bytes_left);
-			utf8_str = utf8_str_save;
-			utf16_str = utf16_str_save;
-			if (utf16_bytes_left == 0 &&
-			    utf8_bytes_left == 0 &&
-			    num_chars_converted != (size_t)(-1))
-			{
-				utf8_str[utf8_expected_nbytes] = '\0';
-				*utf8_str_ret = utf8_str;
-				*utf8_nbytes_ret = utf8_expected_nbytes;
-				ret = 0;
-			} else {
-				FREE(utf8_str);
-				ret = WIMLIB_ERR_INVALID_UTF16_STRING;
+			i = MALLOC(sizeof(struct iconv_node));
+			if (!i) {
+				iconv_close(cd);
+				cd = (iconv_t)-1;
+				goto out_unlock;
 			}
-		} else
-			ret = WIMLIB_ERR_NOMEM;
-	} else
-		ret = WIMLIB_ERR_INVALID_UTF16_STRING;
-#endif /* WITH_NTFS_3G */
-
-#ifdef ENABLE_ERROR_MESSAGES
-	if (ret != 0) {
-		ERROR_WITH_ERRNO("Error converting UTF-16LE string to UTF-8");
-		ERROR("The failing string was:");
-		print_string(utf16_str, utf16_nbytes);
-		putchar('\n');
+			i->head = head;
+		}
+	} else {
+		i = container_of(head->list.next, struct iconv_node, list);
+		list_del(head->list.next);
 	}
-#endif /* ENABLE_ERROR_MESSAGES */
-	return ret;
+	cd = i->cd;
+out_unlock:
+	pthread_mutex_unlock(&head->mutex);
+	return cd;
 }
 
-
-/* Converts a string in the UTF-8 encoding to a newly allocated string in the
- * UTF-16 encoding.
- *
- * If available, do so by calling a similar function from libntfs-3g.
- * Otherwise, use iconv() along with the helper function utf8_to_utf16_size().
- */
-int utf8_to_utf16(const char *utf8_str, size_t utf8_nbytes,
-		  char **utf16_str_ret, size_t *utf16_nbytes_ret)
+static void
+put_iconv(iconv_t *cd)
 {
-	int ret;
-	if (utf8_nbytes == 0) {
-		*utf16_str_ret = NULL;
-		*utf16_nbytes_ret = 0;
-		return 0;
-	}
-#ifdef WITH_NTFS_3G
-	char *outs = NULL;
-	int outs_nchars = ntfs_mbstoucs(utf8_str, (ntfschar**)&outs);
-	if (outs_nchars >= 0) {
-		*utf16_str_ret = outs;
-		*utf16_nbytes_ret = (size_t)outs_nchars * 2;
-		ret = 0;
-	} else {
-		if (errno == ENOMEM)
-			ret = WIMLIB_ERR_NOMEM;
-		else
-			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
-	}
-#elif defined(__WIN32__)
-
-	char *utf16_str;
-	size_t utf16_nchars;
-	utf16_nchars = mbstowcs(NULL, utf8_str, 0);
-	if (utf16_nchars == (size_t)(-1)) {
-		ret = WIMLIB_ERR_INVALID_UTF8_STRING;
-	} else {
-		utf16_str = MALLOC((utf16_nchars + 1) * sizeof(wchar_t));
-		if (!utf16_str) {
-			ret = WIMLIB_ERR_NOMEM;
-		} else {
-			mbstowcs((wchar_t*)utf16_str, utf8_str,
-				 utf16_nchars + 1);
-			*utf16_str_ret = utf16_str;
-			*utf16_nbytes_ret = utf16_nchars * sizeof(wchar_t);
-			ret = 0;
-		}
-	}
+	struct iconv_node *i = container_of(cd, struct iconv_node, cd);
+	struct iconv_list_head *head = i->head;
 	
-#else
-	ret = iconv_global_init();
-	if (ret != 0)
-		return ret;
-	ret = utf8_to_utf16_size(utf8_str);
-	if (ret >= 0) {
-		size_t utf16_expected_nbytes;
-		char  *utf16_str;
-		size_t utf16_bytes_left;
-		size_t utf8_bytes_left;
-		size_t num_chars_converted;
-		const char *utf8_str_save;
-		char  *utf16_str_save;
+	pthread_mutex_lock(&head->mutex);
+	list_add(&i->list, &head->list);
+	pthread_mutex_unlock(&head->mutex);
+}
 
-		utf16_expected_nbytes = (size_t)ret * 2;
- 		utf16_str = MALLOC(utf16_expected_nbytes + 2);
-		if (utf16_str) {
-			utf16_bytes_left = utf16_expected_nbytes;
-			utf8_bytes_left = utf8_nbytes;
-			utf8_str_save = utf8_str;
-			utf16_str_save = utf16_str;
-			num_chars_converted = iconv(cd_utf8_to_utf16,
-						    (char**)&utf8_str,
-						    &utf8_bytes_left,
-						    &utf16_str,
-						    &utf16_bytes_left);
-			utf8_str = utf8_str_save;
-			utf16_str = utf16_str_save;
-			if (utf16_bytes_left == 0 &&
-			    utf8_bytes_left == 0 &&
-			    num_chars_converted != (size_t)(-1))
-			{
-				utf16_str[utf16_expected_nbytes] = '\0';
-				utf16_str[utf16_expected_nbytes + 1] = '\0';
-				*utf16_str_ret = utf16_str;
-				*utf16_nbytes_ret = utf16_expected_nbytes;
-				ret = 0;
-			} else {
-				FREE(utf16_str);
-				ret = WIMLIB_ERR_INVALID_UTF8_STRING;
-			}
-		} else
-			ret = WIMLIB_ERR_NOMEM;
-	} else
-		ret = WIMLIB_ERR_INVALID_UTF8_STRING;
-#endif /* WITH_NTFS_3G */
+int
+mbs_to_utf16le_nbytes(const mbchar *mbs, size_t mbs_nbytes,
+		      size_t *utf16le_nbytes_ret)
+{
+	iconv_t *cd = get_iconv(&iconv_mbs_to_utf16le);
+	if (*cd == (iconv_t)-1)
+		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
 
-#ifdef ENABLE_ERROR_MESSAGES
-	if (ret != 0) {
-		ERROR_WITH_ERRNO("Error converting UTF-8 string to UTF-16LE");
-		ERROR("The failing string was:");
-		print_string(utf8_str, utf8_nbytes);
-		putchar('\n');
-		ERROR("Length: %zu bytes", utf8_nbytes);
+	/* Worst case length */
+	utf16lechar buf[mbs_nbytes * 2];
+	char *inbuf = (char*)mbs;
+	char *outbuf = (char*)buf;
+	size_t outbytesleft = sizeof(buf);
+	size_t inbytesleft = mbs_nbytes;
+	size_t len;
+	int ret;
+
+	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);
+	if (len == (size_t)-1) {
+		ret = WIMLIB_ERR_INVALID_MULTIBYTE_STRING;
+	} else {
+		*utf16le_nbytes_ret = sizeof(buf) - outbytesleft;
+		ret = 0;
 	}
-#endif /* ENABLE_ERROR_MESSAGES */
+	put_iconv(cd);
 	return ret;
+}
+
+
+int
+utf16le_to_mbs_nbytes(const utf16lechar *utf16le_str, size_t utf16le_nbytes,
+		      size_t *mbs_nbytes_ret)
+{
+	iconv_t *cd = get_iconv(&iconv_utf16le_to_mbs);
+	if (*cd == (iconv_t)-1)
+		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
+
+	/* Worst case length */
+	mbchar buf[utf16le_nbytes / 2 * MB_CUR_MAX];
+	char *inbuf = (char*)utf16le_str;
+	char *outbuf = (char*)buf;
+	size_t outbytesleft = sizeof(buf);
+	size_t inbytesleft = utf16le_nbytes;
+	size_t len;
+	int ret;
+
+	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);
+	if (len == (size_t)-1) {
+		ERROR("Could not convert \"%W\" to encoding of current locale",
+		      utf16le_str);
+		/* EILSEQ is supposed to mean that the *input* is invalid, but
+		 * it's also returned if any input characters are not
+		 * representable in the output encoding.  (The actual behavior
+		 * in this case is undefined for some reason...).  Assume it's
+		 * the latter error case. */
+		ret = WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE;
+	} else {
+		*mbs_nbytes_ret  = sizeof(buf) - outbytesleft;
+		ret = 0;
+	}
+	put_iconv(cd);
+	return ret;
+}
+
+int
+mbs_to_utf16le_buf(const mbchar *mbs, size_t mbs_nbytes,
+		   utf16lechar *utf16le_str)
+{
+	iconv_t *cd = get_iconv(&iconv_mbs_to_utf16le);
+	if (*cd == (iconv_t)-1)
+		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
+
+	char *inbuf = (char*)mbs;
+	size_t inbytesleft = mbs_nbytes;
+	char *outbuf = (char*)utf16le_str;
+	size_t outbytesleft = SIZE_MAX;
+	size_t len;
+	int ret;
+
+	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);
+	if (len == (size_t)-1) {
+		ret = WIMLIB_ERR_INVALID_MULTIBYTE_STRING;
+	} else {
+		ret = 0;
+	}
+	put_iconv(cd);
+	return ret;
+}
+
+int
+utf16le_to_mbs_buf(const utf16lechar *utf16le_str, size_t utf16le_nbytes,
+		   mbchar *mbs)
+{
+	int ret;
+	iconv_t *cd = get_iconv(&iconv_utf16le_to_mbs);
+	if (*cd == (iconv_t)-1)
+		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
+
+	char *inbuf = (char*)utf16le_str;
+	size_t inbytesleft;
+	char *outbuf = (char*)mbs;
+	size_t outbytesleft = SIZE_MAX;
+	size_t len;
+
+	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);
+	if (len == (size_t)-1) {
+		ret = WIMLIB_ERR_INVALID_UTF16_STRING;
+	} else {
+		ret = 0;
+	}
+	mbs[SIZE_MAX - inbytesleft] = '\0';
+	put_iconv(cd);
+	return ret;
+}
+
+int
+mbs_to_utf16le(const mbchar *mbs, size_t mbs_nbytes,
+	       utf16lechar **utf16le_ret, size_t *utf16le_nbytes_ret)
+{
+	int ret;
+	utf16lechar *utf16le_str;
+	size_t utf16le_nbytes;
+
+	ret = mbs_to_utf16le_nbytes(mbs, mbs_nbytes,
+				    &utf16le_nbytes);
+	if (ret)
+		return ret;
+
+	utf16le_str = MALLOC(utf16le_nbytes + 1);
+	if (!utf16le_str)
+		return WIMLIB_ERR_NOMEM;
+
+	ret = mbs_to_utf16le_buf(mbs, mbs_nbytes, utf16le_str);
+	if (ret) {
+		FREE(utf16le_str);
+	} else {
+		*utf16le_ret = utf16le_str;
+		*utf16le_nbytes_ret = utf16le_nbytes;
+	}
+	return ret;
+}
+
+
+int
+utf16le_to_mbs(const utf16lechar *utf16le_str, size_t utf16le_nbytes,
+	       mbchar **mbs_ret, size_t *mbs_nbytes_ret)
+{
+	int ret;
+	mbchar *mbs;
+	size_t mbs_nbytes;
+
+	ret = utf16le_to_mbs_nbytes(utf16le_str, utf16le_nbytes,
+				    &mbs_nbytes);
+	if (ret)
+		return ret;
+
+	mbs = MALLOC(mbs_nbytes + 1);
+	if (!mbs)
+		return WIMLIB_ERR_NOMEM;
+
+	ret = utf16le_to_mbs_buf(utf16le_str, utf16le_nbytes, mbs);
+	if (ret) {
+		FREE(mbs);
+	} else {
+		*mbs_ret = mbs;
+		*mbs_nbytes_ret = mbs_nbytes;
+	}
+	return ret;
+}
+
+bool
+utf8_str_contains_nonascii_chars(const utf8char *utf8_str)
+{
+	do {
+		if ((unsigned char)*utf8_str > 127)
+			return false;
+	} while (*++utf8_str);
+	return true;
 }

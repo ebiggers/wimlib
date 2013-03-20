@@ -28,7 +28,8 @@
 /*
  * Deletes an image from the WIM.
  */
-WIMLIBAPI int wimlib_delete_image(WIMStruct *w, int image)
+WIMLIBAPI int
+wimlib_delete_image(WIMStruct *w, int image)
 {
 	int i;
 	int ret;

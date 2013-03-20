@@ -64,10 +64,11 @@
  *
  * Returns zero on success, nonzero on failure.
  */
-static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
-				    u64 resource_uncompressed_size,
-				    u64 resource_offset, int resource_ctype,
-				    u64 len, u64 offset, u8  contents_ret[])
+static int
+read_compressed_resource(FILE *fp, u64 resource_compressed_size,
+			 u64 resource_uncompressed_size,
+			 u64 resource_offset, int resource_ctype,
+			 u64 len, u64 offset, void *contents_ret)
 {
 
 	DEBUG2("comp size = %"PRIu64", uncomp size = %"PRIu64", "
@@ -211,7 +212,7 @@ static int read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 
 	/* Pointer to current position in the output buffer for uncompressed
 	 * data. */
-	u8 *out_p = (u8*)contents_ret;
+	u8 *out_p = contents_ret;
 
 	/* Buffer for compressed data.  While most compressed chunks will have a
 	 * size much less than WIM_CHUNK_SIZE, WIM_CHUNK_SIZE - 1 is the maximum
@@ -353,8 +354,8 @@ err:
 /*
  * Reads uncompressed data from an open file stream.
  */
-int read_uncompressed_resource(FILE *fp, u64 offset, u64 len,
-			       u8 contents_ret[])
+int
+read_uncompressed_resource(FILE *fp, u64 offset, u64 len, void *contents_ret)
 {
 	if (fseeko(fp, offset, SEEK_SET) != 0) {
 		ERROR("Failed to seek to byte %"PRIu64" of input file "
@@ -378,7 +379,8 @@ int read_uncompressed_resource(FILE *fp, u64 offset, u64 len,
 /* Reads the contents of a struct resource_entry, as represented in the on-disk
  * format, from the memory pointed to by @p, and fills in the fields of @entry.
  * A pointer to the byte after the memory read at @p is returned. */
-const u8 *get_resource_entry(const u8 *p, struct resource_entry *entry)
+const u8 *
+get_resource_entry(const u8 *p, struct resource_entry *entry)
 {
 	u64 size;
 	u8 flags;
@@ -408,7 +410,8 @@ const u8 *get_resource_entry(const u8 *p, struct resource_entry *entry)
 /* Copies the struct resource_entry @entry to the memory pointed to by @p in the
  * on-disk format.  A pointer to the byte after the memory written at @p is
  * returned. */
-u8 *put_resource_entry(u8 *p, const struct resource_entry *entry)
+u8 *
+put_resource_entry(u8 *p, const struct resource_entry *entry)
 {
 	p = put_u56(p, entry->size);
 	p = put_u8(p, entry->flags);
@@ -418,7 +421,8 @@ u8 *put_resource_entry(u8 *p, const struct resource_entry *entry)
 }
 
 #ifdef WITH_FUSE
-static FILE *wim_get_fp(WIMStruct *w)
+static FILE *
+wim_get_fp(WIMStruct *w)
 {
 	pthread_mutex_lock(&w->fp_tab_mutex);
 	FILE *fp;
@@ -441,7 +445,8 @@ out:
 	return fp;
 }
 
-static int wim_release_fp(WIMStruct *w, FILE *fp)
+static int
+wim_release_fp(WIMStruct *w, FILE *fp)
 {
 	int ret = 0;
 	FILE **fp_tab;
@@ -468,7 +473,7 @@ out:
 	pthread_mutex_unlock(&w->fp_tab_mutex);
 	return ret;
 }
-#endif
+#endif /* !WITH_FUSE */
 
 /*
  * Reads some data from the resource corresponding to a WIM lookup table entry.
@@ -480,8 +485,9 @@ out:
  *
  * Returns zero on success, nonzero on failure.
  */
-int read_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
-		      size_t size, u64 offset, int flags)
+int
+read_wim_resource(const struct wim_lookup_table_entry *lte, void *buf,
+		  size_t size, u64 offset, int flags)
 {
 	int ctype;
 	int ret = 0;
@@ -607,8 +613,9 @@ int read_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
  *
  * Returns 0 on success; nonzero on failure.
  */
-int read_full_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
-			   int flags)
+int
+read_full_wim_resource(const struct wim_lookup_table_entry *lte,
+		       void *buf, int flags)
 {
 	return read_wim_resource(lte, buf, wim_resource_size(lte), 0, flags);
 }
@@ -619,10 +626,11 @@ int read_full_wim_resource(const struct wim_lookup_table_entry *lte, u8 buf[],
  *
  * @extract_chunk is a function that is called to extract each chunk of the
  * resource. */
-int extract_wim_resource(const struct wim_lookup_table_entry *lte,
-			 u64 size,
-			 extract_chunk_func_t extract_chunk,
-			 void *extract_chunk_arg)
+int
+extract_wim_resource(const struct wim_lookup_table_entry *lte,
+		     u64 size,
+		     extract_chunk_func_t extract_chunk,
+		     void *extract_chunk_arg)
 {
 	u64 bytes_remaining = size;
 	u8 buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
@@ -667,9 +675,10 @@ int extract_wim_resource(const struct wim_lookup_table_entry *lte,
  * and on short writes.
  *
  * Returns short count and set errno on failure. */
-static ssize_t full_write(int fd, const void *buf, size_t n)
+static ssize_t
+full_write(int fd, const void *buf, size_t n)
 {
-	const char *p = buf;
+	const void *p = buf;
 	ssize_t ret;
 	ssize_t total = 0;
 
@@ -687,7 +696,8 @@ static ssize_t full_write(int fd, const void *buf, size_t n)
 	return total;
 }
 
-int extract_wim_chunk_to_fd(const u8 *buf, size_t len, u64 offset, void *arg)
+int
+extract_wim_chunk_to_fd(const void *buf, size_t len, u64 offset, void *arg)
 {
 	int fd = *(int*)arg;
 	ssize_t ret = full_write(fd, buf, len);
@@ -709,7 +719,8 @@ int extract_wim_chunk_to_fd(const u8 *buf, size_t len, u64 offset, void *arg)
  *
  * (This function is confusing and should be refactored somehow.)
  */
-int copy_resource(struct wim_lookup_table_entry *lte, void *wim)
+int
+copy_resource(struct wim_lookup_table_entry *lte, void *wim)
 {
 	WIMStruct *w = wim;
 	int ret;

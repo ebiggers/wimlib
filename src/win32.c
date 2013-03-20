@@ -77,7 +77,7 @@ void *win32_open_file_readonly(const void *path)
 }
 
 int win32_read_file(const char *filename,
-		    void *handle, u64 offset, size_t size, u8 *buf)
+		    void *handle, u64 offset, size_t size, void *buf)
 {
 	HANDLE h = handle;
 	DWORD err;
@@ -1205,7 +1205,8 @@ unsigned win32_get_number_of_processors()
 /* Replacement for POSIX-2008 realpath().  Warning: partial functionality only
  * (resolved_path must be NULL).   Also I highly doubt that GetFullPathName
  * really does the right thing under all circumstances. */
-char *realpath(const char *path, char *resolved_path)
+mbchar *
+realpath(const mbchar *path, mbchar *resolved_path)
 {
 	DWORD ret;
 	wimlib_assert(resolved_path == NULL);

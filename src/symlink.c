@@ -40,9 +40,10 @@
  * dentry, and we already know the reparse tag length from the lookup table
  * entry resource length.
  */
-static ssize_t get_symlink_name(const u8 *resource, size_t resource_len,
-			        char *buf, size_t buf_len,
-			        u32 reparse_tag)
+static ssize_t
+get_symlink_name(const void *resource, size_t resource_len,
+		 void *buf, size_t buf_len,
+		 u32 reparse_tag)
 {
 	const u8 *p = resource;
 	u16 substitute_name_offset;
@@ -128,8 +129,9 @@ out:
 	return ret;
 }
 
-static int make_symlink_reparse_data_buf(const char *symlink_target,
-					 size_t *len_ret, void **buf_ret)
+static int
+make_symlink_reparse_data_buf(const mbchar *symlink_target,
+			      size_t *len_ret, void **buf_ret)
 {
 	size_t utf8_len = strlen(symlink_target);
 	char *name_utf16;
@@ -171,8 +173,9 @@ static int make_symlink_reparse_data_buf(const char *symlink_target,
  * WIM_IO_REPARSE_TAG_SYMLINK), or it may be a junction point (reparse tag
  * WIM_IO_REPARSE_TAG_MOUNT_POINT).
  */
-ssize_t inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
-		       const WIMStruct *w, int read_resource_flags)
+ssize_t
+inode_readlink(const struct wim_inode *inode, mbchar *buf, size_t buf_len,
+	       const WIMStruct *w, int read_resource_flags)
 {
 	const struct wim_lookup_table_entry *lte;
 	int ret;
@@ -205,9 +208,11 @@ ssize_t inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
  *
  * On failure @dentry and @lookup_table are not modified.
  */
-int inode_set_symlink(struct wim_inode *inode, const char *target,
-		      struct wim_lookup_table *lookup_table,
-		      struct wim_lookup_table_entry **lte_ret)
+int
+inode_set_symlink(struct wim_inode *inode,
+		  const mbchar *target,
+		  struct wim_lookup_table *lookup_table,
+		  struct wim_lookup_table_entry **lte_ret)
 
 {
 	int ret;

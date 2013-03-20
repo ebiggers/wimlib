@@ -39,6 +39,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 #include <unistd.h> /* for getpid() */
 
@@ -47,20 +48,106 @@
 #  define strerror_r(errnum, buf, bufsize) strerror_s(buf, bufsize, errnum)
 #endif
 
+static size_t utf16le_strlen(const utf16lechar *s)
+{
+	const utf16lechar *p = s;
+	while (p)
+		p++;
+	return (p - s) / sizeof(utf16lechar);
+}
+
+/* Handle %W for UTF16-LE printing and %U for UTF-8 printing.
+ *
+ * WARNING: this is not yet done properly--- it's assumed that if the format
+ * string contains %W and/or %U, then it contains no other format specifiers.
+ */
+static int
+wimlib_vfprintf(FILE *fp, const char *format, va_list va)
+{
+	const char *p;
+
+	for (p = format; *p; p++)
+		if (*p == '%' && ((*p + 1) == 'W' || *(p + 1) == 'U'))
+			goto special;
+	return vfprintf(fp, format, va);
+special:
+	;
+	int n = 0;
+	for (p = format; *p; p++) {
+		if (*p == '%' && ((*p + 1) == 'W' || *(p + 1) == 'U')) {
+			int ret;
+			mbchar *mbs;
+			size_t mbs_len;
+
+			if (*(p + 1) == 'W') {
+				utf16lechar *ucs = va_arg(va, utf16lechar*);
+				size_t ucs_nbytes = utf16le_strlen(ucs);
+				ret = utf16le_to_mbs(ucs, ucs_nbytes,
+						     &mbs, &mbs_len);
+			} else {
+				utf8char *ucs = va_arg(va, utf8char*);
+				size_t ucs_nbytes = strlen(ucs);
+				ret = utf8_to_mbs(ucs, ucs_nbytes,
+						  &mbs, &mbs_len);
+			}
+			if (ret) {
+				ret = fprintf(fp, "???");
+			} else {
+				ret = fprintf(fp, "%s", mbs);
+				FREE(mbs);
+			}
+			if (ret < 0)
+				return -1;
+			else
+				n += ret;
+		} else {
+			if (putc(*p, fp) == EOF)
+				return -1;
+			n++;
+		}
+	}
+	return n;
+}
+
+int
+wimlib_printf(const char *format, ...)
+{
+	int ret;
+	va_list va;
+
+	va_start(va, format);
+	ret = wimlib_vfprintf(stdout, format, va);
+	va_end(va);
+	return ret;
+}
+
+int
+wimlib_fprintf(FILE *fp, const char *format, ...)
+{
+	int ret;
+	va_list va;
+
+	va_start(va, format);
+	ret = wimlib_vfprintf(fp, format, va);
+	va_end(va);
+	return ret;
+}
+
 /* True if wimlib is to print an informational message when an error occurs.
  * This can be turned off by calling wimlib_set_print_errors(false). */
 #ifdef ENABLE_ERROR_MESSAGES
 #include <stdarg.h>
 static bool wimlib_print_errors = false;
 
-static void wimlib_vmsg(const char *tag, const char *format,
-			va_list va, bool perror)
+static void
+wimlib_vmsg(const char *tag, const char *format,
+	    va_list va, bool perror)
 {
 	if (wimlib_print_errors) {
 		int errno_save = errno;
 		fflush(stdout);
 		fputs(tag, stderr);
-		vfprintf(stderr, format, va);
+		wimlib_vfprintf(stderr, format, va);
 		if (perror && errno_save != 0) {
 			char buf[50];
 			int res;
@@ -76,7 +163,8 @@ static void wimlib_vmsg(const char *tag, const char *format,
 	}
 }
 
-void wimlib_error(const char *format, ...)
+void
+wimlib_error(const char *format, ...)
 {
 	va_list va;
 
@@ -85,7 +173,8 @@ void wimlib_error(const char *format, ...)
 	va_end(va);
 }
 
-void wimlib_error_with_errno(const char *format, ...)
+void
+wimlib_error_with_errno(const char *format, ...)
 {
 	va_list va;
 
@@ -94,7 +183,8 @@ void wimlib_error_with_errno(const char *format, ...)
 	va_end(va);
 }
 
-void wimlib_warning(const char *format, ...)
+void
+wimlib_warning(const char *format, ...)
 {
 	va_list va;
 
@@ -103,7 +193,8 @@ void wimlib_warning(const char *format, ...)
 	va_end(va);
 }
 
-void wimlib_warning_with_errno(const char *format, ...)
+void
+wimlib_warning_with_errno(const char *format, ...)
 {
 	va_list va;
 
@@ -114,7 +205,8 @@ void wimlib_warning_with_errno(const char *format, ...)
 
 #endif
 
-WIMLIBAPI int wimlib_set_print_errors(bool show_error_messages)
+WIMLIBAPI int
+wimlib_set_print_errors(bool show_error_messages)
 {
 #ifdef ENABLE_ERROR_MESSAGES
 	wimlib_print_errors = show_error_messages;
@@ -127,7 +219,7 @@ WIMLIBAPI int wimlib_set_print_errors(bool show_error_messages)
 #endif
 }
 
-static const char *error_strings[] = {
+static const mbchar *error_strings[] = {
 	[WIMLIB_ERR_SUCCESS]
 		= "Success",
 	[WIMLIB_ERR_ALREADY_LOCKED]
@@ -175,6 +267,8 @@ static const char *error_strings[] = {
 		= "The WIM's integrity table is invalid",
 	[WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY]
 		= "An entry in the WIM's lookup table is invalid",
+	[WIMLIB_ERR_INVALID_MULTIBYTE_STRING]
+		= "A string was not valid in the current locale's character encoding",
 	[WIMLIB_ERR_INVALID_OVERLAY]
 		= "Conflicting files in overlay when creating a WIM image",
 	[WIMLIB_ERR_INVALID_PARAM]
@@ -239,6 +333,8 @@ static const char *error_strings[] = {
 		= "Could not read the metadata for a file or directory",
 	[WIMLIB_ERR_TIMEOUT]
 		= "Timed out while waiting for a message to arrive from another process",
+	[WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE]
+		= "A Unicode string could not be represented in the current locale's encoding",
 	[WIMLIB_ERR_UNKNOWN_VERSION]
 		= "The WIM file is marked with an unknown version number",
 	[WIMLIB_ERR_UNSUPPORTED]
@@ -249,7 +345,8 @@ static const char *error_strings[] = {
 		= "The XML data of the WIM is invalid",
 };
 
-WIMLIBAPI const char *wimlib_get_error_string(enum wimlib_error_code code)
+WIMLIBAPI const mbchar *
+wimlib_get_error_string(enum wimlib_error_code code)
 {
 	if (code < WIMLIB_ERR_SUCCESS || code > WIMLIB_ERR_XML)
 		return NULL;
@@ -264,7 +361,8 @@ void *(*wimlib_malloc_func) (size_t)	     = malloc;
 void  (*wimlib_free_func)   (void *)	     = free;
 void *(*wimlib_realloc_func)(void *, size_t) = realloc;
 
-void *wimlib_calloc(size_t nmemb, size_t size)
+void *
+wimlib_calloc(size_t nmemb, size_t size)
 {
 	size_t total_size = nmemb * size;
 	void *p = MALLOC(total_size);
@@ -273,7 +371,8 @@ void *wimlib_calloc(size_t nmemb, size_t size)
 	return p;
 }
 
-char *wimlib_strdup(const char *str)
+char *
+wimlib_strdup(const char *str)
 {
 	size_t size;
 	char *p;
@@ -285,14 +384,16 @@ char *wimlib_strdup(const char *str)
 	return p;
 }
 
-extern void xml_set_memory_allocator(void *(*malloc_func)(size_t),
-				   void (*free_func)(void *),
-				   void *(*realloc_func)(void *, size_t));
+extern void
+xml_set_memory_allocator(void *(*malloc_func)(size_t),
+			 void (*free_func)(void *),
+			 void *(*realloc_func)(void *, size_t));
 #endif
 
-WIMLIBAPI int wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
-					   void (*free_func)(void *),
-					   void *(*realloc_func)(void *, size_t))
+WIMLIBAPI int
+wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
+			    void (*free_func)(void *),
+			    void *(*realloc_func)(void *, size_t))
 {
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 	wimlib_malloc_func  = malloc_func  ? malloc_func  : malloc;
@@ -312,14 +413,16 @@ WIMLIBAPI int wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 
 static bool seeded = false;
 
-static void seed_random()
+static void
+seed_random()
 {
 	srand(time(NULL) * getpid());
 	seeded = true;
 }
 
 /* Fills @n bytes pointed to by @p with random alphanumeric characters. */
-void randomize_char_array_with_alnum(char p[], size_t n)
+void
+randomize_char_array_with_alnum(char p[], size_t n)
 {
 	if (!seeded)
 		seed_random();
@@ -335,7 +438,8 @@ void randomize_char_array_with_alnum(char p[], size_t n)
 }
 
 /* Fills @n bytes pointer to by @p with random numbers. */
-void randomize_byte_array(u8 *p, size_t n)
+void
+randomize_byte_array(u8 *p, size_t n)
 {
 	if (!seeded)
 		seed_random();
@@ -345,7 +449,8 @@ void randomize_byte_array(u8 *p, size_t n)
 
 /* Takes in a path of length @len in @buf, and transforms it into a string for
  * the path of its parent directory. */
-void to_parent_name(char buf[], size_t len)
+void
+to_parent_name(char buf[], size_t len)
 {
 	ssize_t i = (ssize_t)len - 1;
 	while (i >= 0 && buf[i] == '/')
@@ -359,7 +464,8 @@ void to_parent_name(char buf[], size_t len)
 
 /* Like the basename() function, but does not modify @path; it just returns a
  * pointer to it. */
-const char *path_basename(const char *path)
+const char *
+path_basename(const char *path)
 {
 	const char *p = path;
 	while (*p)
@@ -385,7 +491,8 @@ const char *path_basename(const char *path)
  * Returns a pointer to the part of @path following the first colon in the last
  * path component, or NULL if the last path component does not contain a colon.
  */
-const char *path_stream_name(const char *path)
+const char *
+path_stream_name(const char *path)
 {
 	const char *base = path_basename(path);
 	const char *stream_name = strchr(base, ':');
@@ -406,7 +513,8 @@ const char *path_stream_name(const char *path)
  * 				sequence of '/', or a pointer to the terminating
  * 				null byte in the case of a path without any '/'.
  */
-const char *path_next_part(const char *path, size_t *first_part_len_ret)
+const char *
+path_next_part(const char *path, size_t *first_part_len_ret)
 {
 	size_t i;
 	const char *next_part;
@@ -423,7 +531,8 @@ const char *path_next_part(const char *path, size_t *first_part_len_ret)
 }
 
 /* Returns the number of components of @path.  */
-int get_num_path_components(const char *path)
+int
+get_num_path_components(const char *path)
 {
 	int num_components = 0;
 	while (*path) {
@@ -442,7 +551,8 @@ int get_num_path_components(const char *path)
  * Prints a string.  Printable characters are printed as-is, while unprintable
  * characters are printed as their octal escape codes.
  */
-void print_string(const void *string, size_t len)
+void
+print_string(const void *string, size_t len)
 {
 	const u8 *p = string;
 
@@ -455,14 +565,16 @@ void print_string(const void *string, size_t len)
 	}
 }
 
-u64 get_wim_timestamp()
+u64
+get_wim_timestamp()
 {
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	return timeval_to_wim_timestamp(tv);
 }
 
-void wim_timestamp_to_str(u64 timestamp, char *buf, size_t len)
+void
+wim_timestamp_to_str(u64 timestamp, char *buf, size_t len)
 {
 	struct tm tm;
 	time_t t = wim_timestamp_to_unix(timestamp);
