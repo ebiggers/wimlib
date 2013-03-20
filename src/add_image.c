@@ -214,16 +214,10 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 		goto out;
 	}
 
-	root = new_dentry_with_timeless_inode(path_basename(root_disk_path));
-	if (!root) {
-		if (errno == EILSEQ)
-			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
-		else if (errno == ENOMEM)
-			ret = WIMLIB_ERR_NOMEM;
-		else
-			ret = WIMLIB_ERR_ICONV_NOT_AVAILABLE;
+	ret = new_dentry_with_timeless_inode(path_basename(root_disk_path),
+					     &root);
+	if (ret)
 		goto out;
-	}
 
 	inode = root->d_inode;
 
@@ -777,19 +771,21 @@ check_sorted_sources(struct wimlib_capture_source *sources, size_t num_sources,
 
 /* Creates a new directory to place in the WIM image.  This is to create parent
  * directories that are not part of any target as needed.  */
-static struct wim_dentry *
-new_filler_directory(const mbchar *name)
+static int
+new_filler_directory(const mbchar *name, struct wim_dentry **dentry_ret)
 {
+	int ret;
 	struct wim_dentry *dentry;
+
 	DEBUG("Creating filler directory \"%s\"", name);
-	dentry = new_dentry_with_inode(name);
-	if (dentry) {
+	ret = new_dentry_with_inode(name, &dentry);
+	if (ret == 0) {
 		/* Leave the inode number as 0 for now.  The final inode number
 		 * will be assigned later by assign_inode_numbers(). */
 		dentry->d_inode->i_resolved = 1;
 		dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
 	}
-	return dentry;
+	return ret;
 }
 
 /* Transfers the children of @branch to @target.  It is an error if @target is
@@ -846,6 +842,7 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 {
 	char *slash;
 	struct wim_dentry *dentry, *parent, *target;
+	int ret;
 
 	DEBUG("Attaching branch \"%W\" => \"%s\"",
 	      branch->file_name, target_path);
@@ -865,9 +862,9 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	/* Adding a non-root branch.  Create root if it hasn't been created
 	 * already. */
 	if (!*root_p) {
-		*root_p = new_filler_directory("");
-		if (!*root_p)
-			return WIMLIB_ERR_NOMEM;
+		ret  = new_filler_directory("", root_p);
+		if (ret)
+			return ret;
 	}
 
 	/* Walk the path to the branch, creating filler directories as needed.
@@ -877,9 +874,9 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 		*slash = '\0';
 		dentry = get_dentry_child_with_name(parent, target_path);
 		if (!dentry) {
-			dentry = new_filler_directory(target_path);
-			if (!dentry)
-				return WIMLIB_ERR_NOMEM;
+			ret = new_filler_directory(target_path, &dentry);
+			if (ret)
+				return ret;
 			dentry_add_child(parent, dentry);
 		}
 		parent = dentry;
@@ -894,7 +891,8 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 
 	/* If the target path already existed, overlay the branch onto it.
 	 * Otherwise, set the branch as the target path. */
-	target = get_dentry_child_with_utf16le_name(parent, branch->file_name);
+	target = get_dentry_child_with_utf16le_name(parent, branch->file_name,
+						    branch->file_name_nbytes);
 	if (target) {
 		return do_overlay(target, branch);
 	} else {
@@ -978,8 +976,8 @@ wimlib_add_image_multisource(WIMStruct *w,
 	}
 
 	if (wimlib_image_name_in_use(w, name)) {
-		ERROR("There is already an image named \"%s\" in `%s'",
-		      name, w->filename);
+		ERROR("There is already an image named \"%U\" in the WIM!",
+		      name);
 		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 	}
 
@@ -1012,11 +1010,9 @@ wimlib_add_image_multisource(WIMStruct *w,
 
 	DEBUG("Building dentry tree.");
 	if (num_sources == 0) {
-		root_dentry = new_filler_directory("");
-		if (!root_dentry) {
-			ret = WIMLIB_ERR_NOMEM;
+		ret = new_filler_directory("", &root_dentry);
+		if (ret)
 			goto out_free_security_data;
-		}
 	} else {
 		size_t i;
 

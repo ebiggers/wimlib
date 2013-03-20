@@ -358,7 +358,8 @@ get_dentry_child_with_name(const struct wim_dentry *dentry,
 
 extern struct wim_dentry *
 get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
-				   const utf16lechar *name);
+				   const utf16lechar *name,
+				   size_t name_nbytes);
 
 extern struct wim_dentry *
 get_parent_dentry(struct WIMStruct *w, const mbchar *path);
@@ -369,14 +370,14 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table);
 extern int
 print_dentry_full_path(struct wim_dentry *entry, void *ignore);
 
-extern struct
-wim_dentry *new_dentry(const mbchar *name);
+extern int
+new_dentry(const mbchar *name, struct wim_dentry **dentry_ret);
 
-extern struct wim_dentry *
-new_dentry_with_inode(const mbchar *name);
+extern int
+new_dentry_with_inode(const mbchar *name, struct wim_dentry **dentry_ret);
 
-extern struct wim_dentry *
-new_dentry_with_timeless_inode(const mbchar *name);
+extern int
+new_dentry_with_timeless_inode(const mbchar *name, struct wim_dentry **dentry_ret);
 
 extern void
 free_inode(struct wim_inode *inode);
@@ -406,6 +407,11 @@ inode_get_ads_entry(struct wim_inode *inode, const mbchar *stream_name,
 		    u16 *idx_ret);
 
 extern struct wim_ads_entry *
+inode_add_ads_utf16le(struct wim_inode *inode,
+		      const utf16lechar *stream_name,
+		      size_t stream_name_nbytes);
+
+extern struct wim_ads_entry *
 inode_add_ads(struct wim_inode *dentry, const mbchar *stream_name);
 
 extern int
@@ -417,9 +423,12 @@ extern void
 inode_remove_ads(struct wim_inode *inode, u16 idx,
 		 struct wim_lookup_table *lookup_table);
 
-#define WIMLIB_UNIX_DATA_TAG "$$__wimlib_UNIX_data"
 
-#define WIMLIB_UNIX_DATA_TAG_LEN (sizeof(WIMLIB_UNIX_DATA_TAG) - 1)
+#define WIMLIB_UNIX_DATA_TAG "$$__wimlib_UNIX_data"
+#define WIMLIB_UNIX_DATA_TAG_NBYTES (sizeof(WIMLIB_UNIX_DATA_TAG) - 1)
+
+#define WIMLIB_UNIX_DATA_TAG_UTF16LE "$\0$\0_\0_\0w\0i\0m\0l\0i\0b\0_\0U\0N\0I\0X\0_\0d\0a\0t\0a\0"
+#define WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES (sizeof(WIMLIB_UNIX_DATA_TAG_UTF16LE) - 1)
 
 /* Format for special alternate data stream entries to store UNIX data for files
  * and directories (see: WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
@@ -512,6 +521,18 @@ static inline bool
 dentry_has_children(const struct wim_dentry *dentry)
 {
 	return inode_has_children(dentry->d_inode);
+}
+
+static inline bool
+dentry_has_short_name(const struct wim_dentry *dentry)
+{
+	return dentry->short_name_nbytes != 0;
+}
+
+static inline bool
+dentry_has_long_name(const struct wim_dentry *dentry)
+{
+	return dentry->file_name_nbytes != 0;
 }
 
 #endif

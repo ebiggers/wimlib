@@ -312,6 +312,7 @@ create_dentry(struct fuse_context *fuse_ctx, const mbchar *path,
 	struct wim_dentry *new;
 	const mbchar *basename;
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
+	int ret;
 
 	parent = get_parent_dentry(wimfs_ctx->wim, path);
 	if (!parent)
@@ -324,9 +325,9 @@ create_dentry(struct fuse_context *fuse_ctx, const mbchar *path,
 	if (get_dentry_child_with_name(parent, basename))
 		return -EEXIST;
 
-	new = new_dentry_with_inode(basename);
-	if (!new)
-		return -errno;
+	ret = new_dentry_with_inode(basename, &new);
+	if (ret)
+		return -ENOMEM;
 
 	new->d_inode->i_resolved = 1;
 	new->d_inode->i_ino = wimfs_ctx->next_ino++;
@@ -1737,6 +1738,7 @@ wimfs_link(const mbchar *to, const mbchar *from)
 	struct wim_lookup_table_entry *lte;
 	WIMStruct *w = wimfs_get_WIMStruct();
 	u16 i;
+	int ret;
 
 	inode = wim_pathname_to_inode(w, to);
 	if (!inode)
@@ -1755,9 +1757,10 @@ wimfs_link(const mbchar *to, const mbchar *from)
 	link_name = path_basename(from);
 	if (get_dentry_child_with_name(from_dentry_parent, link_name))
 		return -EEXIST;
-	from_dentry = new_dentry(link_name);
-	if (!from_dentry)
-		return -errno;
+
+	ret = new_dentry(link_name, &from_dentry);
+	if (ret)
+		return -ENOMEM;
 
 	inode_add_dentry(from_dentry, inode);
 	from_dentry->d_inode = inode;
@@ -2386,7 +2389,6 @@ wimfs_write(const mbchar *path, const char *buf, size_t size,
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	int ret;
-	u64 now;
 
 	if (!fd)
 		return -EBADF;

@@ -48,7 +48,8 @@
 #include "wimlib_internal.h"
 #include "xml.h"
 
-static int image_print_metadata(WIMStruct *w)
+static int
+image_print_metadata(WIMStruct *w)
 {
 	DEBUG("Printing metadata for image %d", w->current_image);
 	print_security_data(wim_security_data(w));
@@ -57,13 +58,15 @@ static int image_print_metadata(WIMStruct *w)
 }
 
 
-static int image_print_files(WIMStruct *w)
+static int
+image_print_files(WIMStruct *w)
 {
 	return for_dentry_in_tree(wim_root_dentry(w), print_dentry_full_path,
 				  NULL);
 }
 
-static WIMStruct *new_wim_struct()
+static WIMStruct *
+new_wim_struct()
 {
 	WIMStruct *w = CALLOC(1, sizeof(WIMStruct));
 #ifdef WITH_FUSE
@@ -83,7 +86,8 @@ static WIMStruct *new_wim_struct()
  * current image in turn.  If @image is a certain image, @visitor is called on
  * the WIM only once, with that image selected.
  */
-int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
+int
+for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
 {
 	int ret;
 	int start;
@@ -110,7 +114,8 @@ int for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
 	return 0;
 }
 
-static int sort_image_metadata_by_position(const void *p1, const void *p2)
+static int
+sort_image_metadata_by_position(const void *p1, const void *p2)
 {
 	const struct wim_image_metadata *imd1 = p1;
 	const struct wim_image_metadata *imd2 = p2;
@@ -128,8 +133,8 @@ static int sort_image_metadata_by_position(const void *p1, const void *p2)
  * If @lte points to a metadata resource, append it to the list of metadata
  * resources in the WIMStruct.  Otherwise, do nothing.
  */
-static int append_metadata_resource_entry(struct wim_lookup_table_entry *lte,
-					  void *wim_p)
+static int
+append_metadata_resource_entry(struct wim_lookup_table_entry *lte, void *wim_p)
 {
 	WIMStruct *w = wim_p;
 	int ret = 0;
@@ -153,7 +158,8 @@ static int append_metadata_resource_entry(struct wim_lookup_table_entry *lte,
 }
 
 /* Returns the compression type given in the flags of a WIM header. */
-static int wim_hdr_flags_compression_type(int wim_hdr_flags)
+static int
+wim_hdr_flags_compression_type(int wim_hdr_flags)
 {
 	if (wim_hdr_flags & WIM_HDR_FLAG_COMPRESSION) {
 		if (wim_hdr_flags & WIM_HDR_FLAG_COMPRESS_LZX)
@@ -170,7 +176,8 @@ static int wim_hdr_flags_compression_type(int wim_hdr_flags)
 /*
  * Creates a WIMStruct for a new WIM file.
  */
-WIMLIBAPI int wimlib_create_new_wim(int ctype, WIMStruct **w_ret)
+WIMLIBAPI int
+wimlib_create_new_wim(int ctype, WIMStruct **w_ret)
 {
 	WIMStruct *w;
 	struct wim_lookup_table *table;
@@ -201,12 +208,14 @@ out_free:
 	return ret;
 }
 
-WIMLIBAPI int wimlib_get_num_images(const WIMStruct *w)
+WIMLIBAPI int
+wimlib_get_num_images(const WIMStruct *w)
 {
 	return w->hdr.image_count;
 }
 
-int select_wim_image(WIMStruct *w, int image)
+int
+select_wim_image(WIMStruct *w, int image)
 {
 	struct wim_image_metadata *imd;
 	int ret;
@@ -258,12 +267,14 @@ int select_wim_image(WIMStruct *w, int image)
 
 
 /* Returns the compression type of the WIM file. */
-WIMLIBAPI int wimlib_get_compression_type(const WIMStruct *w)
+WIMLIBAPI int
+wimlib_get_compression_type(const WIMStruct *w)
 {
 	return wim_hdr_flags_compression_type(w->hdr.flags);
 }
 
-WIMLIBAPI const char *wimlib_get_compression_type_string(int ctype)
+WIMLIBAPI const char *
+wimlib_get_compression_type_string(int ctype)
 {
 	switch (ctype) {
 		case WIMLIB_COMPRESSION_TYPE_NONE:
@@ -282,7 +293,8 @@ WIMLIBAPI const char *wimlib_get_compression_type_string(int ctype)
  * the number of the image, or the name of the image.  The images are numbered
  * starting at 1.
  */
-WIMLIBAPI int wimlib_resolve_image(WIMStruct *w, const char *image_name_or_num)
+WIMLIBAPI int
+wimlib_resolve_image(WIMStruct *w, const utf8char *image_name_or_num)
 {
 	char *p;
 	int image;
@@ -311,7 +323,8 @@ WIMLIBAPI int wimlib_resolve_image(WIMStruct *w, const char *image_name_or_num)
 
 
 /* Prints some basic information about a WIM file. */
-WIMLIBAPI void wimlib_print_wim_information(const WIMStruct *w)
+WIMLIBAPI void
+wimlib_print_wim_information(const WIMStruct *w)
 {
 	const struct wim_header *hdr;
 
@@ -333,12 +346,14 @@ WIMLIBAPI void wimlib_print_wim_information(const WIMStruct *w)
 	putchar('\n');
 }
 
-WIMLIBAPI bool wimlib_has_integrity_table(const WIMStruct *w)
+WIMLIBAPI bool
+wimlib_has_integrity_table(const WIMStruct *w)
 {
 	return w->hdr.integrity.size != 0;
 }
 
-WIMLIBAPI void wimlib_print_available_images(const WIMStruct *w, int image)
+WIMLIBAPI void
+wimlib_print_available_images(const WIMStruct *w, int image)
 {
 	int first;
 	int last;
@@ -367,7 +382,8 @@ WIMLIBAPI void wimlib_print_available_images(const WIMStruct *w, int image)
 
 /* Prints the metadata for the specified image, which may be WIMLIB_ALL_IMAGES, but
  * not WIMLIB_NO_IMAGE. */
-WIMLIBAPI int wimlib_print_metadata(WIMStruct *w, int image)
+WIMLIBAPI int
+wimlib_print_metadata(WIMStruct *w, int image)
 {
 	if (w->hdr.part_number != 1) {
 		ERROR("Cannot show the metadata from part %hu of a %hu-part split WIM!",
@@ -378,7 +394,8 @@ WIMLIBAPI int wimlib_print_metadata(WIMStruct *w, int image)
 	return for_image(w, image, image_print_metadata);
 }
 
-WIMLIBAPI int wimlib_print_files(WIMStruct *w, int image)
+WIMLIBAPI int
+wimlib_print_files(WIMStruct *w, int image)
 {
 	if (w->hdr.part_number != 1) {
 		ERROR("Cannot list the files from part %hu of a %hu-part split WIM!",
@@ -390,7 +407,8 @@ WIMLIBAPI int wimlib_print_files(WIMStruct *w, int image)
 }
 
 /* Sets the index of the bootable image. */
-WIMLIBAPI int wimlib_set_boot_idx(WIMStruct *w, int boot_idx)
+WIMLIBAPI int
+wimlib_set_boot_idx(WIMStruct *w, int boot_idx)
 {
 	if (w->hdr.total_parts != 1) {
 		ERROR("Cannot modify the boot index of a split WIM!");
@@ -413,7 +431,8 @@ WIMLIBAPI int wimlib_set_boot_idx(WIMStruct *w, int boot_idx)
 	return 0;
 }
 
-WIMLIBAPI int wimlib_get_part_number(const WIMStruct *w, int *total_parts_ret)
+WIMLIBAPI int
+wimlib_get_part_number(const WIMStruct *w, int *total_parts_ret)
 {
 	if (total_parts_ret)
 		*total_parts_ret = w->hdr.total_parts;
@@ -421,7 +440,8 @@ WIMLIBAPI int wimlib_get_part_number(const WIMStruct *w, int *total_parts_ret)
 }
 
 
-WIMLIBAPI int wimlib_get_boot_idx(const WIMStruct *w)
+WIMLIBAPI int
+wimlib_get_boot_idx(const WIMStruct *w)
 {
 	return w->hdr.boot_idx;
 }
@@ -430,8 +450,9 @@ WIMLIBAPI int wimlib_get_boot_idx(const WIMStruct *w)
  * Begins the reading of a WIM file; opens the file and reads its header and
  * lookup table, and optionally checks the integrity.
  */
-static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
-		      wimlib_progress_func_t progress_func)
+static int
+begin_read(WIMStruct *w, const mbchar *in_wim_path, int open_flags,
+	   wimlib_progress_func_t progress_func)
 {
 	int ret;
 	int xml_num_images;
@@ -563,13 +584,13 @@ static int begin_read(WIMStruct *w, const char *in_wim_path, int open_flags,
 	return 0;
 }
 
-
 /*
  * Opens a WIM file and creates a WIMStruct for it.
  */
-WIMLIBAPI int wimlib_open_wim(const char *wim_file, int open_flags,
-			      WIMStruct **w_ret,
-			      wimlib_progress_func_t progress_func)
+WIMLIBAPI int
+wimlib_open_wim(const mbchar *wim_file, int open_flags,
+		WIMStruct **w_ret,
+		wimlib_progress_func_t progress_func)
 {
 	WIMStruct *w;
 	int ret;
@@ -589,8 +610,9 @@ WIMLIBAPI int wimlib_open_wim(const char *wim_file, int open_flags,
 	return ret;
 }
 
-void destroy_image_metadata(struct wim_image_metadata *imd,
-			    struct wim_lookup_table *table)
+void
+destroy_image_metadata(struct wim_image_metadata *imd,
+		       struct wim_lookup_table *table)
 {
 	free_dentry_tree(imd->root_dentry, table);
 	free_security_data(imd->security_data);
@@ -605,7 +627,8 @@ void destroy_image_metadata(struct wim_image_metadata *imd,
 
 /* Frees the memory for the WIMStruct, including all internal memory; also
  * closes all files associated with the WIMStruct.  */
-WIMLIBAPI void wimlib_free(WIMStruct *w)
+WIMLIBAPI void
+wimlib_free(WIMStruct *w)
 {
 	DEBUG("Freeing WIMStruct");
 
@@ -650,18 +673,21 @@ bool wimlib_mbs_is_utf8;
 
 /* Get global memory allocations out of the way.  Not strictly necessary in
  * single-threaded programs like 'imagex'. */
-WIMLIBAPI int wimlib_global_init()
+WIMLIBAPI int
+wimlib_global_init()
 {
-	char *encoding;
-
 	libxml_global_init();
+#ifdef WITH_NTFS_3G
+	libntfs3g_global_init();
+#endif
 	wimlib_mbs_is_utf8 = (strcmp(nl_langinfo(CODESET), "UTF-8") == 0);
-	return iconv_global_init();
+	return 0;
 }
 
 /* Free global memory allocations.  Not strictly necessary if the process using
  * wimlib is just about to exit (as is the case for 'imagex'). */
-WIMLIBAPI void wimlib_global_cleanup()
+WIMLIBAPI void
+wimlib_global_cleanup()
 {
 	libxml_global_cleanup();
 	iconv_global_cleanup();

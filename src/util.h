@@ -67,6 +67,40 @@ typedef char utf8char;
 /* A pointer to 'utf16lechar' indicates a UTF-16LE encoded string */
 typedef u16 utf16lechar;
 
+/* encoding.c */
+extern void
+iconv_global_cleanup();
+
+extern bool wimlib_mbs_is_utf8;
+
+#define DECLARE_CHAR_CONVERSION_FUNCTIONS(varname1, varname2,		\
+					  chartype1, chartype2)		\
+									\
+extern int								\
+varname1##_to_##varname2##_nbytes(const chartype1 *in, size_t in_nbytes,\
+				  size_t *out_nbytes_ret);		\
+									\
+extern int								\
+varname1##_to_##varname2##_buf(const chartype1 *in, size_t in_nbytes,	\
+			       chartype2 *out);				\
+									\
+extern int								\
+varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
+			 chartype2 **out_ret,				\
+			 size_t *out_nbytes_ret);			\
+
+/* multi-byte string to UTF16-LE string */
+DECLARE_CHAR_CONVERSION_FUNCTIONS(mbs, utf16le, mbchar, utf16lechar);
+
+/* UTF16-LE string to multi-byte string */
+DECLARE_CHAR_CONVERSION_FUNCTIONS(utf16le, mbs, utf16lechar, mbchar);
+
+/* UTF-8 string to multi-byte string */
+DECLARE_CHAR_CONVERSION_FUNCTIONS(utf8, mbs, utf8char, mbchar);
+
+extern bool
+utf8_str_contains_nonascii_chars(const utf8char *utf8_str);
+
 #ifndef min
 #define min(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \
 					(__a < __b) ? __a : __b; })

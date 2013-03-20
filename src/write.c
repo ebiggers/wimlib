@@ -67,7 +67,8 @@
 
 #include <limits.h>
 
-static int fflush_and_ftruncate(FILE *fp, off_t size)
+static int
+fflush_and_ftruncate(FILE *fp, off_t size)
 {
 	int ret;
 
@@ -161,7 +162,8 @@ out:
  */
 typedef int (*compress_func_t)(const void *, unsigned, void *, unsigned *);
 
-compress_func_t get_compress_func(int out_ctype)
+compress_func_t
+get_compress_func(int out_ctype)
 {
 	if (out_ctype == WIMLIB_COMPRESSION_TYPE_LZX)
 		return lzx_compress;
@@ -182,9 +184,10 @@ compress_func_t get_compress_func(int out_ctype)
  *
  * Returns 0 on success; nonzero on failure.
  */
-static int write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
-				    FILE *out_fp, compress_func_t compress,
-				    struct chunk_table *chunk_tab)
+static int
+write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
+			 FILE *out_fp, compress_func_t compress,
+			 struct chunk_table *chunk_tab)
 {
 	const u8 *out_chunk;
 	unsigned out_chunk_size;
@@ -256,12 +259,13 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 
 /* Prepare for multiple reads to a resource by caching a FILE * or NTFS
  * attribute pointer in the lookup table entry. */
-static int prepare_resource_for_read(struct wim_lookup_table_entry *lte
+static int
+prepare_resource_for_read(struct wim_lookup_table_entry *lte
 
-					#ifdef WITH_NTFS_3G
-					, ntfs_inode **ni_ret
-					#endif
-		)
+				#ifdef WITH_NTFS_3G
+				, ntfs_inode **ni_ret
+				#endif
+			)
 {
 	switch (lte->resource_location) {
 	case RESOURCE_IN_FILE_ON_DISK:
@@ -280,19 +284,19 @@ static int prepare_resource_for_read(struct wim_lookup_table_entry *lte
 			struct ntfs_location *loc = lte->ntfs_loc;
 			ntfs_inode *ni;
 			wimlib_assert(loc);
-			ni = ntfs_pathname_to_inode(*loc->ntfs_vol_p, NULL, loc->path_utf8);
+			ni = ntfs_pathname_to_inode(*loc->ntfs_vol_p, NULL, loc->path);
 			if (!ni) {
 				ERROR_WITH_ERRNO("Failed to open inode `%s' in NTFS "
-						 "volume", loc->path_utf8);
+						 "volume", loc->path);
 				return WIMLIB_ERR_NTFS_3G;
 			}
 			lte->attr = ntfs_attr_open(ni,
 						   loc->is_reparse_point ? AT_REPARSE_POINT : AT_DATA,
-						   (ntfschar*)loc->stream_name_utf16,
-						   loc->stream_name_utf16_num_chars);
+						   loc->stream_name,
+						   loc->stream_name_nchars);
 			if (!lte->attr) {
 				ERROR_WITH_ERRNO("Failed to open attribute of `%s' in "
-						 "NTFS volume", loc->path_utf8);
+						 "NTFS volume", loc->path);
 				ntfs_inode_close(ni);
 				return WIMLIB_ERR_NTFS_3G;
 			}
@@ -317,11 +321,12 @@ static int prepare_resource_for_read(struct wim_lookup_table_entry *lte
 
 /* Undo prepare_resource_for_read() by closing the cached FILE * or NTFS
  * attribute. */
-static void end_wim_resource_read(struct wim_lookup_table_entry *lte
-				#ifdef WITH_NTFS_3G
-					, ntfs_inode *ni
-				#endif
-					)
+static void 
+end_wim_resource_read(struct wim_lookup_table_entry *lte
+			#ifdef WITH_NTFS_3G
+				, ntfs_inode *ni
+			#endif
+			)
 {
 	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
 	    && lte->file_on_disk_fp)
@@ -391,10 +396,11 @@ write_uncompressed_resource_and_truncate(struct wim_lookup_table_entry *lte,
  *
  * Returns 0 on success; nonzero on failure.
  */
-int write_wim_resource(struct wim_lookup_table_entry *lte,
-		       FILE *out_fp, int out_ctype,
-		       struct resource_entry *out_res_entry,
-		       int flags)
+int
+write_wim_resource(struct wim_lookup_table_entry *lte,
+		   FILE *out_fp, int out_ctype,
+		   struct resource_entry *out_res_entry,
+		   int flags)
 {
 	u64 bytes_remaining;
 	u64 original_size;
@@ -588,7 +594,8 @@ struct shared_queue {
 	pthread_cond_t space_avail_cond;
 };
 
-static int shared_queue_init(struct shared_queue *q, unsigned size)
+static int
+shared_queue_init(struct shared_queue *q, unsigned size)
 {
 	wimlib_assert(size != 0);
 	q->array = CALLOC(sizeof(q->array[0]), size);
@@ -604,7 +611,8 @@ static int shared_queue_init(struct shared_queue *q, unsigned size)
 	return 0;
 }
 
-static void shared_queue_destroy(struct shared_queue *q)
+static void
+shared_queue_destroy(struct shared_queue *q)
 {
 	FREE(q->array);
 	pthread_mutex_destroy(&q->lock);
@@ -612,7 +620,8 @@ static void shared_queue_destroy(struct shared_queue *q)
 	pthread_cond_destroy(&q->space_avail_cond);
 }
 
-static void shared_queue_put(struct shared_queue *q, void *obj)
+static void
+shared_queue_put(struct shared_queue *q, void *obj)
 {
 	pthread_mutex_lock(&q->lock);
 	while (q->filled_slots == q->size)
@@ -626,7 +635,8 @@ static void shared_queue_put(struct shared_queue *q, void *obj)
 	pthread_mutex_unlock(&q->lock);
 }
 
-static void *shared_queue_get(struct shared_queue *q)
+static void *
+shared_queue_get(struct shared_queue *q)
 {
 	void *obj;
 
@@ -665,7 +675,8 @@ struct message {
 	u64 begin_chunk;
 };
 
-static void compress_chunks(struct message *msg, compress_func_t compress)
+static void
+compress_chunks(struct message *msg, compress_func_t compress)
 {
 	for (unsigned i = 0; i < msg->num_chunks; i++) {
 		DEBUG2("compress chunk %u of %u", i, msg->num_chunks);
@@ -687,7 +698,8 @@ static void compress_chunks(struct message *msg, compress_func_t compress)
  * res_to_compress_queue, compress them, and put them in the
  * compressed_res_queue.  A NULL pointer indicates that the thread should stop.
  * */
-static void *compressor_thread_proc(void *arg)
+static void *
+compressor_thread_proc(void *arg)
 {
 	struct compressor_thread_params *params = arg;
 	struct shared_queue *res_to_compress_queue = params->res_to_compress_queue;
@@ -703,14 +715,15 @@ static void *compressor_thread_proc(void *arg)
 	DEBUG("Compressor thread terminating");
 	return NULL;
 }
-#endif
+#endif /* ENABLE_MULTITHREADED_COMPRESSION */
 
-static int do_write_stream_list(struct list_head *my_resources,
-				FILE *out_fp,
-				int out_ctype,
-				wimlib_progress_func_t progress_func,
-				union wimlib_progress_info *progress,
-				int write_resource_flags)
+static int
+do_write_stream_list(struct list_head *my_resources,
+		     FILE *out_fp,
+		     int out_ctype,
+		     wimlib_progress_func_t progress_func,
+		     union wimlib_progress_info *progress,
+		     int write_resource_flags)
 {
 	int ret;
 	struct wim_lookup_table_entry *lte, *tmp;
@@ -735,12 +748,13 @@ static int do_write_stream_list(struct list_head *my_resources,
 	return 0;
 }
 
-static int write_stream_list_serial(struct list_head *stream_list,
-				    FILE *out_fp,
-				    int out_ctype,
-				    int write_flags,
-				    wimlib_progress_func_t progress_func,
-				    union wimlib_progress_info *progress)
+static int
+write_stream_list_serial(struct list_head *stream_list,
+			 FILE *out_fp,
+			 int out_ctype,
+			 int write_flags,
+			 wimlib_progress_func_t progress_func,
+			 union wimlib_progress_info *progress)
 {
 	int write_resource_flags;
 
@@ -757,8 +771,9 @@ static int write_stream_list_serial(struct list_head *stream_list,
 }
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
-static int write_wim_chunks(struct message *msg, FILE *out_fp,
-			    struct chunk_table *chunk_tab)
+static int
+write_wim_chunks(struct message *msg, FILE *out_fp,
+		 struct chunk_table *chunk_tab)
 {
 	for (unsigned i = 0; i < msg->num_chunks; i++) {
 		unsigned chunk_csize = msg->compressed_chunk_sizes[i];
@@ -791,15 +806,16 @@ static int write_wim_chunks(struct message *msg, FILE *out_fp,
  * res_to_compress_queue, and it is passed back through the
  * compressed_res_queue.
  */
-static int main_writer_thread_proc(struct list_head *stream_list,
-				   FILE *out_fp,
-				   int out_ctype,
-				   struct shared_queue *res_to_compress_queue,
-				   struct shared_queue *compressed_res_queue,
-				   size_t num_messages,
-				   int write_flags,
-				   wimlib_progress_func_t progress_func,
-				   union wimlib_progress_info *progress)
+static int
+main_writer_thread_proc(struct list_head *stream_list,
+			FILE *out_fp,
+			int out_ctype,
+			struct shared_queue *res_to_compress_queue,
+			struct shared_queue *compressed_res_queue,
+			size_t num_messages,
+			int write_flags,
+			wimlib_progress_func_t progress_func,
+			union wimlib_progress_info *progress)
 {
 	int ret;
 	struct chunk_table *cur_chunk_tab = NULL;
@@ -1211,7 +1227,8 @@ out:
 	return ret;
 }
 
-static long get_default_num_threads()
+static long
+get_default_num_threads()
 {
 #ifdef __WIN32__
 	return win32_get_number_of_processors();
@@ -1220,13 +1237,14 @@ static long get_default_num_threads()
 #endif
 }
 
-static int write_stream_list_parallel(struct list_head *stream_list,
-				      FILE *out_fp,
-				      int out_ctype,
-				      int write_flags,
-				      unsigned num_threads,
-				      wimlib_progress_func_t progress_func,
-				      union wimlib_progress_info *progress)
+static int
+write_stream_list_parallel(struct list_head *stream_list,
+			   FILE *out_fp,
+			   int out_ctype,
+			   int write_flags,
+			   unsigned num_threads,
+			   wimlib_progress_func_t progress_func,
+			   union wimlib_progress_info *progress)
 {
 	int ret;
 	struct shared_queue res_to_compress_queue;
@@ -1328,10 +1346,11 @@ out_serial:
  * Write a list of streams to a WIM (@out_fp) using the compression type
  * @out_ctype and up to @num_threads compressor threads.
  */
-static int write_stream_list(struct list_head *stream_list, FILE *out_fp,
-			     int out_ctype, int write_flags,
-			     unsigned num_threads,
-			     wimlib_progress_func_t progress_func)
+static int
+write_stream_list(struct list_head *stream_list, FILE *out_fp,
+		  int out_ctype, int write_flags,
+		  unsigned num_threads,
+		  wimlib_progress_func_t progress_func)
 {
 	struct wim_lookup_table_entry *lte;
 	size_t num_streams = 0;
@@ -1381,7 +1400,8 @@ struct lte_overwrite_prepare_args {
 	struct list_head *stream_list;
 };
 
-static int lte_overwrite_prepare(struct wim_lookup_table_entry *lte, void *arg)
+static int
+lte_overwrite_prepare(struct wim_lookup_table_entry *lte, void *arg)
 {
 	struct lte_overwrite_prepare_args *args = arg;
 
@@ -1407,8 +1427,9 @@ static int lte_overwrite_prepare(struct wim_lookup_table_entry *lte, void *arg)
 	return 0;
 }
 
-static int wim_find_new_streams(WIMStruct *wim, off_t end_offset,
-				struct list_head *stream_list)
+static int
+wim_find_new_streams(WIMStruct *wim, off_t end_offset,
+		     struct list_head *stream_list)
 {
 	struct lte_overwrite_prepare_args args = {
 		.wim         = wim,
@@ -1420,9 +1441,10 @@ static int wim_find_new_streams(WIMStruct *wim, off_t end_offset,
 				      lte_overwrite_prepare, &args);
 }
 
-static int inode_find_streams_to_write(struct wim_inode *inode,
-				       struct wim_lookup_table *table,
-				       struct list_head *stream_list)
+static int
+inode_find_streams_to_write(struct wim_inode *inode,
+			    struct wim_lookup_table *table,
+			    struct list_head *stream_list)
 {
 	struct wim_lookup_table_entry *lte;
 	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
@@ -1436,7 +1458,8 @@ static int inode_find_streams_to_write(struct wim_inode *inode,
 	return 0;
 }
 
-static int image_find_streams_to_write(WIMStruct *w)
+static int
+image_find_streams_to_write(WIMStruct *w)
 {
 	struct wim_inode *inode;
 	struct hlist_node *cur;
@@ -1450,7 +1473,8 @@ static int image_find_streams_to_write(WIMStruct *w)
 	return 0;
 }
 
-static int write_wim_streams(WIMStruct *w, int image, int write_flags,
+static int
+write_wim_streams(WIMStruct *w, int image, int write_flags,
 			     unsigned num_threads,
 			     wimlib_progress_func_t progress_func)
 {
@@ -1493,8 +1517,9 @@ static int write_wim_streams(WIMStruct *w, int image, int write_flags,
  * 		fsync() the output file before closing it.
  *
  */
-int finish_write(WIMStruct *w, int image, int write_flags,
-		 wimlib_progress_func_t progress_func)
+int
+finish_write(WIMStruct *w, int image, int write_flags,
+	     wimlib_progress_func_t progress_func)
 {
 	int ret;
 	struct wim_header hdr;
@@ -1627,7 +1652,8 @@ out:
 }
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
-int lock_wim(WIMStruct *w, FILE *fp)
+int
+lock_wim(WIMStruct *w, FILE *fp)
 {
 	int ret = 0;
 	if (fp && !w->wim_locked) {
@@ -1651,8 +1677,9 @@ int lock_wim(WIMStruct *w, FILE *fp)
 }
 #endif
 
-static int open_wim_writable(WIMStruct *w, const char *path,
-			     bool trunc, bool readable)
+static int
+open_wim_writable(WIMStruct *w, const mbchar *path,
+		  bool trunc, bool readable)
 {
 	const char *mode;
 	if (trunc)
@@ -1674,7 +1701,8 @@ static int open_wim_writable(WIMStruct *w, const char *path,
 }
 
 
-void close_wim_writable(WIMStruct *w)
+void
+close_wim_writable(WIMStruct *w)
 {
 	if (w->out_fp) {
 		if (fclose(w->out_fp) != 0) {
@@ -1685,7 +1713,8 @@ void close_wim_writable(WIMStruct *w)
 }
 
 /* Open file stream and write dummy header for WIM. */
-int begin_write(WIMStruct *w, const char *path, int write_flags)
+int
+begin_write(WIMStruct *w, const mbchar *path, int write_flags)
 {
 	int ret;
 	ret = open_wim_writable(w, path, true,
@@ -1697,9 +1726,10 @@ int begin_write(WIMStruct *w, const char *path, int write_flags)
 }
 
 /* Writes a stand-alone WIM to a file.  */
-WIMLIBAPI int wimlib_write(WIMStruct *w, const char *path,
-			   int image, int write_flags, unsigned num_threads,
-			   wimlib_progress_func_t progress_func)
+WIMLIBAPI int
+wimlib_write(WIMStruct *w, const mbchar *path,
+	     int image, int write_flags, unsigned num_threads,
+	     wimlib_progress_func_t progress_func)
 {
 	int ret;
 
@@ -1743,7 +1773,8 @@ out:
 	return ret;
 }
 
-static bool any_images_modified(WIMStruct *w)
+static bool
+any_images_modified(WIMStruct *w)
 {
 	for (int i = 0; i < w->hdr.image_count; i++)
 		if (w->image_metadata[i].modified)
@@ -1808,9 +1839,10 @@ static bool any_images_modified(WIMStruct *w)
  * table, xml data, and integrity table were.  (These usually only take up a
  * small amount of space compared to the streams, however.)
  */
-static int overwrite_wim_inplace(WIMStruct *w, int write_flags,
-				 unsigned num_threads,
-				 wimlib_progress_func_t progress_func)
+static int
+overwrite_wim_inplace(WIMStruct *w, int write_flags,
+		      unsigned num_threads,
+		      wimlib_progress_func_t progress_func)
 {
 	int ret;
 	struct list_head stream_list;
@@ -1913,9 +1945,10 @@ out_ftruncate:
 	return ret;
 }
 
-static int overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
-				     unsigned num_threads,
-				     wimlib_progress_func_t progress_func)
+static int
+overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
+			  unsigned num_threads,
+			  wimlib_progress_func_t progress_func)
 {
 	size_t wim_name_len;
 	int ret;
@@ -1925,7 +1958,7 @@ static int overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 	/* Write the WIM to a temporary file in the same directory as the
 	 * original WIM. */
 	wim_name_len = strlen(w->filename);
-	char tmpfile[wim_name_len + 10];
+	mbchar tmpfile[wim_name_len + 10];
 	memcpy(tmpfile, w->filename, wim_name_len);
 	randomize_char_array_with_alnum(tmpfile + wim_name_len, 9);
 	tmpfile[wim_name_len + 9] = '\0';
@@ -1981,9 +2014,10 @@ err:
 /*
  * Writes a WIM file to the original file that it was read from, overwriting it.
  */
-WIMLIBAPI int wimlib_overwrite(WIMStruct *w, int write_flags,
-			       unsigned num_threads,
-			       wimlib_progress_func_t progress_func)
+WIMLIBAPI int
+wimlib_overwrite(WIMStruct *w, int write_flags,
+		 unsigned num_threads,
+		 wimlib_progress_func_t progress_func)
 {
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 

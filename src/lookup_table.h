@@ -32,9 +32,9 @@ struct wim_lookup_table {
 
 #ifdef WITH_NTFS_3G
 struct ntfs_location {
-	utf8char *path_utf8;
-	utf16lechar *stream_name_utf16;
-	u16 stream_name_utf16_num_chars;
+	mbchar *path;
+	utf16lechar *stream_name;
+	u16 stream_name_nchars;
 	struct _ntfs_volume **ntfs_vol_p;
 	bool is_reparse_point;
 };

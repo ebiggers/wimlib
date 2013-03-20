@@ -51,7 +51,7 @@
 static size_t utf16le_strlen(const utf16lechar *s)
 {
 	const utf16lechar *p = s;
-	while (p)
+	while (*p)
 		p++;
 	return (p - s) / sizeof(utf16lechar);
 }
@@ -67,31 +67,31 @@ wimlib_vfprintf(FILE *fp, const char *format, va_list va)
 	const char *p;
 
 	for (p = format; *p; p++)
-		if (*p == '%' && ((*p + 1) == 'W' || *(p + 1) == 'U'))
+		if (*p == '%' && (*(p + 1) == 'W' || *(p + 1) == 'U'))
 			goto special;
 	return vfprintf(fp, format, va);
 special:
 	;
 	int n = 0;
 	for (p = format; *p; p++) {
-		if (*p == '%' && ((*p + 1) == 'W' || *(p + 1) == 'U')) {
+		if (*p == '%' && (*(p + 1) == 'W' || *(p + 1) == 'U')) {
 			int ret;
 			mbchar *mbs;
-			size_t mbs_len;
+			size_t mbs_nbytes;
 
 			if (*(p + 1) == 'W') {
 				utf16lechar *ucs = va_arg(va, utf16lechar*);
 				size_t ucs_nbytes = utf16le_strlen(ucs);
 				ret = utf16le_to_mbs(ucs, ucs_nbytes,
-						     &mbs, &mbs_len);
+						     &mbs, &mbs_nbytes);
 			} else {
 				utf8char *ucs = va_arg(va, utf8char*);
 				size_t ucs_nbytes = strlen(ucs);
 				ret = utf8_to_mbs(ucs, ucs_nbytes,
-						  &mbs, &mbs_len);
+						  &mbs, &mbs_nbytes);
 			}
 			if (ret) {
-				ret = fprintf(fp, "???");
+				ret = fprintf(fp, "???CONVERSION FAILURE???");
 			} else {
 				ret = fprintf(fp, "%s", mbs);
 				FREE(mbs);
@@ -100,6 +100,7 @@ special:
 				return -1;
 			else
 				n += ret;
+			p++;
 		} else {
 			if (putc(*p, fp) == EOF)
 				return -1;
@@ -348,7 +349,7 @@ static const mbchar *error_strings[] = {
 WIMLIBAPI const mbchar *
 wimlib_get_error_string(enum wimlib_error_code code)
 {
-	if (code < WIMLIB_ERR_SUCCESS || code > WIMLIB_ERR_XML)
+	if (code < 0 || code >= ARRAY_LEN(error_strings))
 		return NULL;
 	else
 		return error_strings[code];

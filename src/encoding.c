@@ -54,219 +54,193 @@ struct iconv_list_head name = {				\
 	.mutex = PTHREAD_MUTEX_INITIALIZER,		\
 }
 
-static ICONV_LIST(iconv_mbs_to_utf16le, "", "UTF-16LE");
-static ICONV_LIST(iconv_utf16le_to_mbs, "UTF-16LE", "");
-
 static iconv_t *
 get_iconv(struct iconv_list_head *head)
 {
 	iconv_t cd;
+	iconv_t *cd_p;
 	struct iconv_node *i;
 
 	pthread_mutex_lock(&head->mutex);
 	if (list_empty(&head->list)) {
 		cd = iconv_open(head->to_encoding, head->from_encoding);
 		if (cd == (iconv_t)-1) {
-			goto out_unlock;
+			ERROR_WITH_ERRNO("Failed to open iconv from %s to %s",
+					 head->from_encoding, head->to_encoding);
+			cd_p = NULL;
 		} else {
 			i = MALLOC(sizeof(struct iconv_node));
-			if (!i) {
+			if (i) {
+				i->head = head;
+				i->cd = cd;
+				cd_p = &i->cd;
+			} else {
 				iconv_close(cd);
-				cd = (iconv_t)-1;
-				goto out_unlock;
+				cd_p = NULL;
 			}
-			i->head = head;
 		}
 	} else {
 		i = container_of(head->list.next, struct iconv_node, list);
 		list_del(head->list.next);
+		cd_p = &i->cd;
 	}
-	cd = i->cd;
-out_unlock:
 	pthread_mutex_unlock(&head->mutex);
-	return cd;
+	return cd_p;
 }
 
 static void
 put_iconv(iconv_t *cd)
 {
+	int errno_save = errno;
 	struct iconv_node *i = container_of(cd, struct iconv_node, cd);
 	struct iconv_list_head *head = i->head;
 	
 	pthread_mutex_lock(&head->mutex);
 	list_add(&i->list, &head->list);
 	pthread_mutex_unlock(&head->mutex);
+	errno = errno_save;
 }
 
-int
-mbs_to_utf16le_nbytes(const mbchar *mbs, size_t mbs_nbytes,
-		      size_t *utf16le_nbytes_ret)
+#define DEFINE_CHAR_CONVERSION_FUNCTIONS(varname1, longname1, chartype1,\
+					 varname2, longname2, chartype2,\
+					 worst_case_len_expr,		\
+					 err_return,			\
+					 err_msg)			\
+static ICONV_LIST(iconv_##varname1##_to_##varname2,			\
+		  longname1, longname2);				\
+									\
+int									\
+varname1##_to_##varname2##_nbytes(const chartype1 *in, size_t in_nbytes,\
+				  size_t *out_nbytes_ret)		\
+{									\
+	iconv_t *cd = get_iconv(&iconv_##varname1##_to_##varname2);	\
+	if (cd == NULL)							\
+		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;			\
+									\
+	/* Worst case length */						\
+	chartype2 buf[worst_case_len_expr];				\
+	char *inbuf = (char*)in;					\
+	size_t inbytesleft = in_nbytes;					\
+	char *outbuf = (char*)buf;					\
+	size_t outbytesleft = sizeof(buf);				\
+	size_t len;							\
+	int ret;							\
+									\
+	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);	\
+	if (len == (size_t)-1) {					\
+		err_msg;						\
+		ret = err_return;					\
+	} else {							\
+		*out_nbytes_ret = sizeof(buf) - outbytesleft;		\
+		ret = 0;						\
+	}								\
+	put_iconv(cd);							\
+	return ret;							\
+}									\
+									\
+int									\
+varname1##_to_##varname2##_buf(const chartype1 *in, size_t in_nbytes,	\
+			       chartype2 *out)				\
+{									\
+	iconv_t *cd = get_iconv(&iconv_##varname1##_to_##varname2);	\
+	if (cd == NULL)							\
+		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;			\
+									\
+	char *inbuf = (char*)in;					\
+	size_t inbytesleft = in_nbytes;					\
+	char *outbuf = (char*)out;					\
+	const size_t LARGE_NUMBER = 1000000000;				\
+	size_t outbytesleft = LARGE_NUMBER;				\
+	size_t len;							\
+	int ret;							\
+									\
+	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);	\
+	if (len == (size_t)-1) {					\
+		err_msg;						\
+		ret = err_return;					\
+	} else {							\
+		out[(LARGE_NUMBER-outbytesleft)/sizeof(chartype2)] = 0;	\
+		ret = 0;						\
+	}								\
+	put_iconv(cd);							\
+	return ret;							\
+}									\
+									\
+int									\
+varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
+			 chartype2 **out_ret,				\
+			 size_t *out_nbytes_ret)			\
+{									\
+	int ret;							\
+	chartype2 *out;							\
+	size_t out_nbytes;						\
+									\
+	ret = varname1##_to_##varname2##_nbytes(in, in_nbytes,		\
+						&out_nbytes);		\
+	if (ret)							\
+		return ret;						\
+									\
+	out = MALLOC(out_nbytes + sizeof(chartype2));			\
+	if (!out)							\
+		return WIMLIB_ERR_NOMEM;				\
+									\
+	ret = varname1##_to_##varname2##_buf(in, in_nbytes, out);	\
+	if (ret) {							\
+		int errno_save = errno;					\
+		FREE(out);						\
+		errno = errno_save;					\
+	} else {							\
+		*out_ret = out;						\
+		*out_nbytes_ret = out_nbytes;				\
+	}								\
+	return ret;							\
+}
+
+DEFINE_CHAR_CONVERSION_FUNCTIONS(utf16le, "UTF-16LE", utf16lechar,
+				 mbs, "", mbchar,
+				 in_nbytes / 2 * MB_CUR_MAX,
+				 WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE,
+				 ERROR_WITH_ERRNO("Failed to convert UTF-16LE "
+						  "string %U to multibyte string", in))
+
+DEFINE_CHAR_CONVERSION_FUNCTIONS(mbs, "", mbchar,
+				 utf16le, "UTF-16LE", utf16lechar,
+				 in_nbytes * 2,
+				 WIMLIB_ERR_INVALID_MULTIBYTE_STRING,
+				 ERROR_WITH_ERRNO("Failed to convert multibyte "
+						  "string %s to UTF-16LE string", in))
+
+DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", utf8char,
+				 mbs, "", mbchar,
+				 in_nbytes,
+				 WIMLIB_ERR_INVALID_UTF8_STRING,
+				 ERROR_WITH_ERRNO("Failed to convert UTF-8 "
+						  "string %U to multibyte string", in))
+
+
+static void
+iconv_cleanup(struct iconv_list_head *head)
 {
-	iconv_t *cd = get_iconv(&iconv_mbs_to_utf16le);
-	if (*cd == (iconv_t)-1)
-		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
-
-	/* Worst case length */
-	utf16lechar buf[mbs_nbytes * 2];
-	char *inbuf = (char*)mbs;
-	char *outbuf = (char*)buf;
-	size_t outbytesleft = sizeof(buf);
-	size_t inbytesleft = mbs_nbytes;
-	size_t len;
-	int ret;
-
-	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);
-	if (len == (size_t)-1) {
-		ret = WIMLIB_ERR_INVALID_MULTIBYTE_STRING;
-	} else {
-		*utf16le_nbytes_ret = sizeof(buf) - outbytesleft;
-		ret = 0;
+	pthread_mutex_destroy(&head->mutex);
+	while (!list_empty(&head->list)) {
+		struct iconv_node *i;
+		
+		i = container_of(head->list.next, struct iconv_node, list);
+		list_del(&i->list);
+		iconv_close(i->cd);
+		FREE(i);
 	}
-	put_iconv(cd);
-	return ret;
 }
 
-
-int
-utf16le_to_mbs_nbytes(const utf16lechar *utf16le_str, size_t utf16le_nbytes,
-		      size_t *mbs_nbytes_ret)
+void
+iconv_global_cleanup()
 {
-	iconv_t *cd = get_iconv(&iconv_utf16le_to_mbs);
-	if (*cd == (iconv_t)-1)
-		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
-
-	/* Worst case length */
-	mbchar buf[utf16le_nbytes / 2 * MB_CUR_MAX];
-	char *inbuf = (char*)utf16le_str;
-	char *outbuf = (char*)buf;
-	size_t outbytesleft = sizeof(buf);
-	size_t inbytesleft = utf16le_nbytes;
-	size_t len;
-	int ret;
-
-	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);
-	if (len == (size_t)-1) {
-		ERROR("Could not convert \"%W\" to encoding of current locale",
-		      utf16le_str);
-		/* EILSEQ is supposed to mean that the *input* is invalid, but
-		 * it's also returned if any input characters are not
-		 * representable in the output encoding.  (The actual behavior
-		 * in this case is undefined for some reason...).  Assume it's
-		 * the latter error case. */
-		ret = WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE;
-	} else {
-		*mbs_nbytes_ret  = sizeof(buf) - outbytesleft;
-		ret = 0;
-	}
-	put_iconv(cd);
-	return ret;
-}
-
-int
-mbs_to_utf16le_buf(const mbchar *mbs, size_t mbs_nbytes,
-		   utf16lechar *utf16le_str)
-{
-	iconv_t *cd = get_iconv(&iconv_mbs_to_utf16le);
-	if (*cd == (iconv_t)-1)
-		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
-
-	char *inbuf = (char*)mbs;
-	size_t inbytesleft = mbs_nbytes;
-	char *outbuf = (char*)utf16le_str;
-	size_t outbytesleft = SIZE_MAX;
-	size_t len;
-	int ret;
-
-	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);
-	if (len == (size_t)-1) {
-		ret = WIMLIB_ERR_INVALID_MULTIBYTE_STRING;
-	} else {
-		ret = 0;
-	}
-	put_iconv(cd);
-	return ret;
-}
-
-int
-utf16le_to_mbs_buf(const utf16lechar *utf16le_str, size_t utf16le_nbytes,
-		   mbchar *mbs)
-{
-	int ret;
-	iconv_t *cd = get_iconv(&iconv_utf16le_to_mbs);
-	if (*cd == (iconv_t)-1)
-		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
-
-	char *inbuf = (char*)utf16le_str;
-	size_t inbytesleft;
-	char *outbuf = (char*)mbs;
-	size_t outbytesleft = SIZE_MAX;
-	size_t len;
-
-	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);
-	if (len == (size_t)-1) {
-		ret = WIMLIB_ERR_INVALID_UTF16_STRING;
-	} else {
-		ret = 0;
-	}
-	mbs[SIZE_MAX - inbytesleft] = '\0';
-	put_iconv(cd);
-	return ret;
-}
-
-int
-mbs_to_utf16le(const mbchar *mbs, size_t mbs_nbytes,
-	       utf16lechar **utf16le_ret, size_t *utf16le_nbytes_ret)
-{
-	int ret;
-	utf16lechar *utf16le_str;
-	size_t utf16le_nbytes;
-
-	ret = mbs_to_utf16le_nbytes(mbs, mbs_nbytes,
-				    &utf16le_nbytes);
-	if (ret)
-		return ret;
-
-	utf16le_str = MALLOC(utf16le_nbytes + 1);
-	if (!utf16le_str)
-		return WIMLIB_ERR_NOMEM;
-
-	ret = mbs_to_utf16le_buf(mbs, mbs_nbytes, utf16le_str);
-	if (ret) {
-		FREE(utf16le_str);
-	} else {
-		*utf16le_ret = utf16le_str;
-		*utf16le_nbytes_ret = utf16le_nbytes;
-	}
-	return ret;
+	iconv_cleanup(&iconv_utf16le_to_mbs);
+	iconv_cleanup(&iconv_mbs_to_utf16le);
+	iconv_cleanup(&iconv_utf8_to_mbs);
 }
 
 
-int
-utf16le_to_mbs(const utf16lechar *utf16le_str, size_t utf16le_nbytes,
-	       mbchar **mbs_ret, size_t *mbs_nbytes_ret)
-{
-	int ret;
-	mbchar *mbs;
-	size_t mbs_nbytes;
-
-	ret = utf16le_to_mbs_nbytes(utf16le_str, utf16le_nbytes,
-				    &mbs_nbytes);
-	if (ret)
-		return ret;
-
-	mbs = MALLOC(mbs_nbytes + 1);
-	if (!mbs)
-		return WIMLIB_ERR_NOMEM;
-
-	ret = utf16le_to_mbs_buf(utf16le_str, utf16le_nbytes, mbs);
-	if (ret) {
-		FREE(mbs);
-	} else {
-		*mbs_ret = mbs;
-		*mbs_nbytes_ret = mbs_nbytes;
-	}
-	return ret;
-}
 
 bool
 utf8_str_contains_nonascii_chars(const utf8char *utf8_str)

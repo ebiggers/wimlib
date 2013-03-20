@@ -376,54 +376,6 @@ extern int
 add_new_dentry_tree(WIMStruct *dest_wim, struct wim_dentry *root,
 		    struct wim_security_data *sd);
 
-/* encoding.c */
-
-#if defined(WITH_NTFS_3G) || defined(__WIN32__)
-
-static inline int
-iconv_global_init()
-{
-	return 0;
-}
-
-static inline void
-iconv_global_cleanup() { }
-#else
-extern int
-iconv_global_init();
-
-extern void
-iconv_global_cleanup();
-#endif
-
-extern bool wimlib_mbs_is_utf8;
-
-extern bool
-utf8_str_contains_nonascii_chars(const utf8char *utf8_str);
-
-extern int
-mbs_to_utf16le_nbytes(const mbchar *mbs, size_t mbs_nbytes,
-		      size_t *utf16le_nbytes_ret);
-
-extern int
-utf16le_to_mbs_nbytes(const utf16lechar *utf16le_str,
-		      size_t utf16le_nbytes, size_t *mbs_nbytes_ret);
-
-extern int
-mbs_to_utf16le_buf(const mbchar *mbs, size_t mbs_nbytes,
-		   utf16lechar *utf16le_str);
-
-extern int
-utf16le_to_mbs_buf(const utf16lechar *utf16le_str, size_t utf16le_nbytes,
-		   mbchar *mbs);
-
-extern int
-mbs_to_utf16le(const mbchar *mbs, size_t mbs_nbytes,
-	       utf16lechar **utf16le_str_ret, size_t *utf16le_nbytes_ret);
-
-extern int
-utf16le_to_mbs(const utf16lechar *utf16le_str, size_t utf16le_nbytes,
-	       mbchar **mbs_ret, size_t *mbs_nbytes_ret);
 
 /* extract_image.c */
 
@@ -503,6 +455,9 @@ apply_dentry_ntfs(struct wim_dentry *dentry, void *arg);
 
 extern int
 apply_dentry_timestamps_ntfs(struct wim_dentry *dentry, void *arg);
+
+extern void
+libntfs3g_global_init();
 
 /* ntfs-capture.c */
 extern int

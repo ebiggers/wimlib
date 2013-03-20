@@ -41,20 +41,19 @@
  * entry resource length.
  */
 static ssize_t
-get_symlink_name(const void *resource, size_t resource_len,
-		 void *buf, size_t buf_len,
-		 u32 reparse_tag)
+get_symlink_name(const void *resource, size_t resource_len, mbchar *buf,
+		 size_t buf_len, u32 reparse_tag)
 {
 	const u8 *p = resource;
 	u16 substitute_name_offset;
 	u16 substitute_name_len;
 	u16 print_name_offset;
 	u16 print_name_len;
-	char *link_target;
+	mbchar *link_target;
 	size_t link_target_len;
 	ssize_t ret;
 	unsigned header_size;
-	char *translated_target;
+	mbchar *translated_target;
 	bool is_absolute;
 	u32 flags;
 
@@ -79,7 +78,7 @@ get_symlink_name(const void *resource, size_t resource_len,
 	if (header_size + substitute_name_offset + substitute_name_len > resource_len)
 		return -EIO;
 
-	ret = utf16_to_utf8((const char *)p + substitute_name_offset,
+	ret = utf16le_to_mbs((const utf16lechar*)(p + substitute_name_offset),
 			    substitute_name_len,
 			    &link_target, &link_target_len);
 	if (ret == WIMLIB_ERR_INVALID_UTF16_STRING)
@@ -133,37 +132,37 @@ static int
 make_symlink_reparse_data_buf(const mbchar *symlink_target,
 			      size_t *len_ret, void **buf_ret)
 {
-	size_t utf8_len = strlen(symlink_target);
-	char *name_utf16;
-	size_t utf16_len;
+	utf16lechar *name_utf16le;
+	size_t name_utf16le_nbytes;
 	int ret;
 
-	ret = utf8_to_utf16(symlink_target, utf8_len,
-			    &name_utf16, &utf16_len);
+	ret = mbs_to_utf16le(symlink_target, strlen(symlink_target),
+			     &name_utf16le, &name_utf16le_nbytes);
 	if (ret != 0)
 		return ret;
 
-	for (size_t i = 0; i < utf16_len / 2; i++)
-		if (((u16*)name_utf16)[i] == cpu_to_le16('/'))
-			((u16*)name_utf16)[i] = cpu_to_le16('\\');
-	size_t len = 12 + utf16_len * 2;
+	for (size_t i = 0; i < name_utf16le_nbytes / 2; i++)
+		if (name_utf16le[i] == cpu_to_le16('/'))
+			name_utf16le[i] = cpu_to_le16('\\');
+
+	size_t len = 12 + name_utf16le_nbytes * 2;
 	void *buf = MALLOC(len);
 	if (buf) {
 		u8 *p = buf;
-		p = put_u16(p, utf16_len); /* Substitute name offset */
-		p = put_u16(p, utf16_len); /* Substitute name length */
+		p = put_u16(p, name_utf16le_nbytes); /* Substitute name offset */
+		p = put_u16(p, name_utf16le_nbytes); /* Substitute name length */
 		p = put_u16(p, 0); /* Print name offset */
-		p = put_u16(p, utf16_len); /* Print name length */
+		p = put_u16(p, name_utf16le_nbytes); /* Print name length */
 		p = put_u32(p, 1); /* flags: 0 iff *full* target, including drive letter??? */
-		p = put_bytes(p, utf16_len, (const u8*)name_utf16);
-		p = put_bytes(p, utf16_len, (const u8*)name_utf16);
+		p = put_bytes(p, name_utf16le_nbytes, name_utf16le);
+		p = put_bytes(p, name_utf16le_nbytes, name_utf16le);
 		*len_ret = len;
 		*buf_ret = buf;
 		ret = 0;
 	} else {
 		ret = WIMLIB_ERR_NOMEM;
 	}
-	FREE(name_utf16);
+	FREE(name_utf16le);
 	return ret;
 }
 

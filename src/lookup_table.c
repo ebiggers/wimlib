@@ -110,18 +110,18 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 			if (!loc)
 				goto out_free;
 			memcpy(loc, old->ntfs_loc, sizeof(*loc));
-			loc->path_utf8 = NULL;
-			loc->stream_name_utf16 = NULL;
+			loc->path = NULL;
+			loc->stream_name = NULL;
 			new->ntfs_loc = loc;
-			loc->path_utf8 = STRDUP(old->ntfs_loc->path_utf8);
-			if (!loc->path_utf8)
+			loc->path = STRDUP(old->ntfs_loc->path);
+			if (!loc->path)
 				goto out_free;
-			loc->stream_name_utf16 = MALLOC(loc->stream_name_utf16_num_chars * 2);
-			if (!loc->stream_name_utf16)
+			loc->stream_name = MALLOC((loc->stream_name_nchars + 1) * 2);
+			if (!loc->stream_name)
 				goto out_free;
-			memcpy(loc->stream_name_utf16,
-			       old->ntfs_loc->stream_name_utf16,
-			       loc->stream_name_utf16_num_chars * 2);
+			memcpy(loc->stream_name,
+			       old->ntfs_loc->stream_name,
+			       (loc->stream_name_nchars + 1) * 2);
 		}
 		break;
 #endif
@@ -153,8 +153,8 @@ void free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 #ifdef WITH_NTFS_3G
 		case RESOURCE_IN_NTFS_VOLUME:
 			if (lte->ntfs_loc) {
-				FREE(lte->ntfs_loc->path_utf8);
-				FREE(lte->ntfs_loc->stream_name_utf16);
+				FREE(lte->ntfs_loc->path);
+				FREE(lte->ntfs_loc->stream_name);
 				FREE(lte->ntfs_loc);
 			}
 			break;
@@ -590,7 +590,7 @@ lookup_resource(WIMStruct *w,
 	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
 		stream_name = path_stream_name(path);
 		if (stream_name) {
-			p = (char*)stream_name - 1;
+			p = (mbchar*)stream_name - 1;
 			*p = '\0';
 		}
 	}
@@ -599,7 +599,7 @@ lookup_resource(WIMStruct *w,
 	if (p)
 		*p = ':';
 	if (!dentry)
-		return -ENOENT;
+		return -errno;
 
 	inode = dentry->d_inode;
 

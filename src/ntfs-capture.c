@@ -52,7 +52,8 @@
 #include <alloca.h>
 #endif
 
-static inline ntfschar *attr_record_name(ATTR_RECORD *ar)
+static inline ntfschar *
+attr_record_name(ATTR_RECORD *ar)
 {
 	return (ntfschar*)((u8*)ar + le16_to_cpu(ar->name_offset));
 }
@@ -68,10 +69,11 @@ static inline ntfschar *attr_record_name(ATTR_RECORD *ar)
  *
  * Return 0 on success or nonzero on error.
  */
-static int ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
-			     u8 md[SHA1_HASH_SIZE],
-			     bool is_reparse_point,
-			     u32 *reparse_tag_ret)
+static int
+ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
+		  u8 md[SHA1_HASH_SIZE],
+		  bool is_reparse_point,
+		  u32 *reparse_tag_ret)
 {
 	s64 pos = 0;
 	s64 bytes_remaining;
@@ -116,11 +118,14 @@ out_error:
 
 /* Load the streams from a file or reparse point in the NTFS volume into the WIM
  * lookup table */
-static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
-				char path[], size_t path_len,
-				struct wim_lookup_table *lookup_table,
-				ntfs_volume **ntfs_vol_p,
-				ATTR_TYPES type)
+static int
+capture_ntfs_streams(struct wim_dentry *dentry,
+		     ntfs_inode *ni,
+		     mbchar *path,
+		     size_t path_len,
+		     struct wim_lookup_table *lookup_table,
+		     ntfs_volume **ntfs_vol_p,
+		     ATTR_TYPES type)
 {
 	ntfs_attr_search_ctx *actx;
 	u8 attr_hash[SHA1_HASH_SIZE];
@@ -142,11 +147,9 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 	while (!ntfs_attr_lookup(type, NULL, 0,
 				 CASE_SENSITIVE, 0, NULL, 0, actx))
 	{
-		char *stream_name_utf8;
 		u32 reparse_tag;
 		u64 data_size = ntfs_get_attribute_value_length(actx->attr);
 		u64 name_length = actx->attr->name_length;
-
 		if (data_size == 0) {
 			if (errno != 0) {
 				ERROR_WITH_ERRNO("Failed to get size of attribute of "
@@ -183,18 +186,18 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 				if (!ntfs_loc)
 					goto out_put_actx;
 				ntfs_loc->ntfs_vol_p = ntfs_vol_p;
-				ntfs_loc->path_utf8 = MALLOC(path_len + 1);
-				if (!ntfs_loc->path_utf8)
+				ntfs_loc->path = MALLOC(path_len + 1);
+				if (!ntfs_loc->path)
 					goto out_free_ntfs_loc;
-				memcpy(ntfs_loc->path_utf8, path, path_len + 1);
+				memcpy(ntfs_loc->path, path, path_len + 1);
 				if (name_length) {
-					ntfs_loc->stream_name_utf16 = MALLOC(name_length * 2);
-					if (!ntfs_loc->stream_name_utf16)
+					ntfs_loc->stream_name = MALLOC(name_length * 2);
+					if (!ntfs_loc->stream_name)
 						goto out_free_ntfs_loc;
-					memcpy(ntfs_loc->stream_name_utf16,
+					memcpy(ntfs_loc->stream_name,
 					       attr_record_name(actx->attr),
 					       actx->attr->name_length * 2);
-					ntfs_loc->stream_name_utf16_num_chars = name_length;
+					ntfs_loc->stream_name_nchars = name_length;
 				}
 
 				lte = new_lookup_table_entry();
@@ -212,9 +215,6 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 					lte->resource_entry.size = data_size;
 				}
 				ntfs_loc = NULL;
-				DEBUG("Add resource for `%s' (size = %"PRIu64")",
-				      dentry->file_name_utf8,
-				      lte->resource_entry.original_size);
 				copy_hash(lte->hash, attr_hash);
 				lookup_table_insert(lookup_table, lte);
 			}
@@ -222,15 +222,6 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 		if (name_length == 0) {
 			/* Unnamed data stream.  Put the reference to it in the
 			 * dentry's inode. */
-		#if 0
-			if (dentry->d_inode->i_lte) {
-				ERROR("Found two un-named data streams for "
-				      "`%s'", path);
-				ret = WIMLIB_ERR_NTFS_3G;
-				goto out_free_lte;
-			}
-			dentry->d_inode->i_lte = lte;
-		#else
 			if (dentry->d_inode->i_lte) {
 				WARNING("Found two un-named data streams for "
 					"`%s'", path);
@@ -238,26 +229,17 @@ static int capture_ntfs_streams(struct wim_dentry *dentry, ntfs_inode *ni,
 			} else {
 				dentry->d_inode->i_lte = lte;
 			}
-		#endif
 		} else {
 			/* Named data stream.  Put the reference to it in the
 			 * alternate data stream entries */
 			struct wim_ads_entry *new_ads_entry;
-			size_t stream_name_utf8_len;
 
-			ret = utf16_to_utf8((const char*)attr_record_name(actx->attr),
-					    name_length * 2,
-					    &stream_name_utf8,
-					    &stream_name_utf8_len);
-			if (ret != 0)
-				goto out_free_lte;
-			new_ads_entry = inode_add_ads(dentry->d_inode, stream_name_utf8);
-			FREE(stream_name_utf8);
+			new_ads_entry = inode_add_ads_utf16le(dentry->d_inode,
+							      attr_record_name(actx->attr),
+							      name_length * 2);
 			if (!new_ads_entry)
 				goto out_free_lte;
-
-			wimlib_assert(new_ads_entry->stream_name_len == name_length * 2);
-
+			wimlib_assert(new_ads_entry->stream_name_nbytes == name_length * 2);
 			new_ads_entry->lte = lte;
 		}
 	}
@@ -267,8 +249,8 @@ out_free_lte:
 	free_lookup_table_entry(lte);
 out_free_ntfs_loc:
 	if (ntfs_loc) {
-		FREE(ntfs_loc->path_utf8);
-		FREE(ntfs_loc->stream_name_utf16);
+		FREE(ntfs_loc->path);
+		FREE(ntfs_loc->stream_name);
 		FREE(ntfs_loc);
 	}
 out_put_actx:
@@ -288,33 +270,33 @@ struct dos_name_map {
 struct dos_name_node {
 	struct rb_node rb_node;
 	char dos_name[24];
-	int name_len_bytes;
+	int name_nbytes;
 	u64 ntfs_ino;
 };
 
 /* Inserts a new DOS name into the map */
-static int insert_dos_name(struct dos_name_map *map,
-			   const ntfschar *dos_name, int name_len,
-			   u64 ntfs_ino)
+static int
+insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
+		size_t name_nbytes, u64 ntfs_ino)
 {
 	struct dos_name_node *new_node;
 	struct rb_node **p;
 	struct rb_root *root;
 	struct rb_node *rb_parent;
 
-	DEBUG("DOS name_len = %d", name_len);
+	DEBUG("DOS name_len = %zu", name_nbytes);
 	new_node = MALLOC(sizeof(struct dos_name_node));
 	if (!new_node)
 		return -1;
 
 	/* DOS names are supposed to be 12 characters max (that's 24 bytes,
 	 * assuming 2-byte ntfs characters) */
-	wimlib_assert(name_len * sizeof(ntfschar) <= sizeof(new_node->dos_name));
+	wimlib_assert(name_nbytes <= sizeof(new_node->dos_name));
 
 	/* Initialize the DOS name, DOS name length, and NTFS inode number of
 	 * the red-black tree node */
-	memcpy(new_node->dos_name, dos_name, name_len * sizeof(ntfschar));
-	new_node->name_len_bytes = name_len * sizeof(ntfschar);
+	memcpy(new_node->dos_name, dos_name, name_nbytes);
+	new_node->name_nbytes = name_nbytes;
 	new_node->ntfs_ino = ntfs_ino;
 
 	/* Insert the red-black tree node */
@@ -364,7 +346,8 @@ lookup_dos_name(const struct dos_name_map *map, u64 ntfs_ino)
 	return NULL;
 }
 
-static int set_dentry_dos_name(struct wim_dentry *dentry, void *arg)
+static int
+set_dentry_dos_name(struct wim_dentry *dentry, void *arg)
 {
 	const struct dos_name_map *map = arg;
 	const struct dos_name_node *node;
@@ -372,12 +355,13 @@ static int set_dentry_dos_name(struct wim_dentry *dentry, void *arg)
 	if (dentry->is_win32_name) {
 		node = lookup_dos_name(map, dentry->d_inode->i_ino);
 		if (node) {
-			dentry->short_name = MALLOC(node->name_len_bytes);
+			dentry->short_name = MALLOC(node->name_nbytes + 2);
 			if (!dentry->short_name)
 				return WIMLIB_ERR_NOMEM;
 			memcpy(dentry->short_name, node->dos_name,
-			       node->name_len_bytes);
-			dentry->short_name_len = node->name_len_bytes;
+			       node->name_nbytes);
+			dentry->short_name[node->name_nbytes / 2] = 0;
+			dentry->short_name_nbytes = node->name_nbytes;
 			DEBUG("Assigned DOS name to ino %"PRIu64,
 			      dentry->d_inode->i_ino);
 		} else {
@@ -389,7 +373,8 @@ static int set_dentry_dos_name(struct wim_dentry *dentry, void *arg)
 	return 0;
 }
 
-static void free_dos_name_tree(struct rb_node *node) {
+static void
+free_dos_name_tree(struct rb_node *node) {
 	if (node) {
 		free_dos_name_tree(node->rb_left);
 		free_dos_name_tree(node->rb_right);
@@ -397,7 +382,8 @@ static void free_dos_name_tree(struct rb_node *node) {
 	}
 }
 
-static void destroy_dos_name_map(struct dos_name_map *map)
+static void 
+destroy_dos_name_map(struct dos_name_map *map)
 {
 	free_dos_name_tree(map->rb_root.rb_node);
 }
@@ -405,7 +391,7 @@ static void destroy_dos_name_map(struct dos_name_map *map)
 struct readdir_ctx {
 	struct wim_dentry *parent;
 	ntfs_inode *dir_ni;
-	char *path;
+	mbchar *path;
 	size_t path_len;
 	struct wim_lookup_table	*lookup_table;
 	struct sd_set *sd_set;
@@ -427,43 +413,45 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p, ntfs_inode *dir_ni,
 				 int add_image_flags,
 				 wimlib_progress_func_t progress_func);
 
-static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
-				    const int name_len, const int name_type,
-				    const s64 pos, const MFT_REF mref,
-				    const unsigned dt_type)
+static int
+wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
+			 const int name_nchars, const int name_type,
+			 const s64 pos, const MFT_REF mref,
+			 const unsigned dt_type)
 {
 	struct readdir_ctx *ctx;
-	size_t utf8_name_len;
-	char *utf8_name;
+	size_t mbs_name_nbytes;
+	char *mbs_name;
 	struct wim_dentry *child;
 	int ret;
 	size_t path_len;
+	size_t name_nbytes = name_nchars * sizeof(ntfschar);
 
 	ctx = dirent;
 	if (name_type & FILE_NAME_DOS) {
 		/* If this is the entry for a DOS name, store it for later. */
 		ret = insert_dos_name(ctx->dos_name_map, name,
-				      name_len, mref & MFT_REF_MASK_CPU);
+				      name_nbytes, mref & MFT_REF_MASK_CPU);
 
 		/* Return now if an error occurred or if this is just a DOS name
 		 * and not a Win32+DOS name. */
 		if (ret != 0 || name_type == FILE_NAME_DOS)
 			return ret;
 	}
-	ret = utf16_to_utf8((const char*)name, name_len * 2,
-			    &utf8_name, &utf8_name_len);
+	ret = utf16le_to_mbs(name, name_nbytes,
+			     &mbs_name, &mbs_name_nbytes);
 	if (ret != 0)
 		return -1;
 
-	if (utf8_name[0] == '.' &&
-	     (utf8_name[1] == '\0' ||
-	      (utf8_name[1] == '.' && utf8_name[2] == '\0'))) {
+	if (mbs_name[0] == '.' &&
+	     (mbs_name[1] == '\0' ||
+	      (mbs_name[1] == '.' && mbs_name[2] == '\0'))) {
 		/* . or .. entries
 		 *
 		 * note: name_type is POSIX for these, so DOS names will not
 		 * have been inserted for them.  */
 		ret = 0;
-		goto out_free_utf8_name;
+		goto out_free_mbs_name;
 	}
 
 	/* Open the inode for this directory entry and recursively capture the
@@ -471,13 +459,13 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	ntfs_inode *ni = ntfs_inode_open(ctx->dir_ni->vol, mref);
 	if (!ni) {
 		ERROR_WITH_ERRNO("Failed to open NTFS inode");
-		goto out_free_utf8_name;
+		goto out_free_mbs_name;
 	}
 	path_len = ctx->path_len;
 	if (path_len != 1)
 		ctx->path[path_len++] = '/';
-	memcpy(ctx->path + path_len, utf8_name, utf8_name_len + 1);
-	path_len += utf8_name_len;
+	memcpy(ctx->path + path_len, mbs_name, mbs_name_nbytes + 1);
+	path_len += mbs_name_nbytes;
 	child = NULL;
 	ret = build_dentry_tree_ntfs_recursive(&child, ctx->dir_ni,
 					       ni, ctx->path, path_len, name_type,
@@ -488,8 +476,8 @@ static int wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	if (child)
 		dentry_add_child(ctx->parent, child);
 	ntfs_inode_close(ni);
-out_free_utf8_name:
-	FREE(utf8_name);
+out_free_mbs_name:
+	FREE(mbs_name);
 	return ret;
 }
 
@@ -497,18 +485,19 @@ out_free_utf8_name:
  * At the same time, update the WIM lookup table with lookup table entries for
  * the NTFS streams, and build an array of security descriptors.
  */
-static int build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
-					    ntfs_inode *dir_ni,
-					    ntfs_inode *ni,
-				    	    char path[],
-					    size_t path_len,
-					    int name_type,
-				    	    struct wim_lookup_table *lookup_table,
-				    	    struct sd_set *sd_set,
-				    	    const struct capture_config *config,
-				    	    ntfs_volume **ntfs_vol_p,
-					    int add_image_flags,
-					    wimlib_progress_func_t progress_func)
+static int
+build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
+				 ntfs_inode *dir_ni,
+				 ntfs_inode *ni,
+				 mbchar *path,
+				 size_t path_len,
+				 int name_type,
+				 struct wim_lookup_table *lookup_table,
+				 struct sd_set *sd_set,
+				 const struct capture_config *config,
+				 ntfs_volume **ntfs_vol_p,
+				 int add_image_flags,
+				 wimlib_progress_func_t progress_func)
 {
 	u32 attributes;
 	int ret;
@@ -552,15 +541,10 @@ static int build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 	}
 
 	/* Create the new WIM dentry */
-	root = new_dentry_with_timeless_inode(path_basename(path));
-	if (!root) {
-		if (errno == EILSEQ)
-			return WIMLIB_ERR_INVALID_UTF8_STRING;
-		else if (errno == ENOMEM)
-			return WIMLIB_ERR_NOMEM;
-		else
-			return WIMLIB_ERR_ICONV_NOT_AVAILABLE;
-	}
+	ret = new_dentry_with_timeless_inode(path_basename(path), &root);
+	if (ret)
+		return ret;
+
 	*root_p = root;
 
 	if (name_type & FILE_NAME_WIN32) /* Win32 or Win32+DOS name */
@@ -645,14 +629,15 @@ static int build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 	return ret;
 }
 
-int build_dentry_tree_ntfs(struct wim_dentry **root_p,
-			   const char *device,
-			   struct wim_lookup_table *lookup_table,
-			   struct wim_security_data *sd,
-			   const struct capture_config *config,
-			   int add_image_flags,
-			   wimlib_progress_func_t progress_func,
-			   void *extra_arg)
+int
+build_dentry_tree_ntfs(struct wim_dentry **root_p,
+		       const mbchar *device,
+		       struct wim_lookup_table *lookup_table,
+		       struct wim_security_data *sd,
+		       const struct capture_config *config,
+		       int add_image_flags,
+		       wimlib_progress_func_t progress_func,
+		       void *extra_arg)
 {
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
@@ -693,9 +678,9 @@ int build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		goto out;
 	}
 
-	/* Currently we assume that all the UTF-8 paths fit into this length and
-	 * there is no check for overflow. */
-	char *path = MALLOC(32768);
+	/* Currently we assume that all the paths fit into this length and there
+	 * is no check for overflow. */
+	mbchar *path = MALLOC(32768);
 	if (!path) {
 		ERROR("Could not allocate memory for NTFS pathname");
 		ret = WIMLIB_ERR_NOMEM;

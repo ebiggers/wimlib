@@ -590,7 +590,7 @@ read_wim_resource(const struct wim_lookup_table_entry *lte, void *buf,
 		if (ntfs_attr_pread(lte->attr, offset, size, buf) != size) {
 			ERROR_WITH_ERRNO("Error reading NTFS attribute "
 					 "at `%s'",
-					 lte->ntfs_loc->path_utf8);
+					 lte->ntfs_loc->path);
 			ret = WIMLIB_ERR_NTFS_3G;
 		}
 		break;

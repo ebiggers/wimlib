@@ -1074,7 +1074,7 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 
 	if (inode->i_nlink >= 2 && dentry_is_first_in_inode(dentry)) {
 		for (unsigned i = 0; i < inode->i_num_ads; i++) {
-			if (inode->i_ads_entries[i].stream_name_len) {
+			if (inode->i_ads_entries[i].stream_name_nbytes) {
 				lte = inode_stream_lte(inode, i + 1, lookup_table);
 				if (lte) {
 					info->hard_link_bytes += inode->i_nlink *
@@ -1266,8 +1266,8 @@ read_xml_data(FILE *fp, const struct resource_entry *res_entry,
 
 	DEBUG("Parsing XML using libxml2 to create XML tree");
 
-	doc = xmlReadMemory(xml_data, res_entry->size,
-			    "noname.xml", "UTF-16", 0);
+	doc = xmlReadMemory((const char *)xml_data,
+			    res_entry->size, "noname.xml", "UTF-16", 0);
 
 	if (!doc) {
 		ERROR("Failed to parse XML data");
