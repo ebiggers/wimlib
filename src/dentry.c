@@ -592,7 +592,7 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table)
 	for (u16 i = 0; i < inode->i_num_ads; i++) {
 		printf("[Alternate Stream Entry %u]\n", i);
 		wimlib_printf("Name = \"%W\"\n", inode->i_ads_entries[i].stream_name);
-		printf("Name Length (UTF16) = %u\n",
+		printf("Name Length (UTF16 bytes) = %hu\n",
 		       inode->i_ads_entries[i].stream_name_nbytes);
 		hash = inode_stream_hash(inode, i + 1);
 		if (hash) {

@@ -158,50 +158,45 @@ wimlib_warning(const char *format, ...) FORMAT(printf, 1, 2) COLD;
 
 extern void
 wimlib_warning_with_errno(const char *format, ...) FORMAT(printf, 1, 2) COLD;
-#	define ERROR			wimlib_error
-#	define ERROR_WITH_ERRNO 	wimlib_error_with_errno
-#	define WARNING			wimlib_warning
-#	define WARNING_WITH_ERRNO	wimlib_warning
-#else
-#	define ERROR(format, ...)		dummy_printf(format, ## __VA_ARGS__)
-#	define ERROR_WITH_ERRNO(format, ...)	dummy_printf(format, ## __VA_ARGS__)
-#	define WARNING(format, ...)		dummy_printf(format, ## __VA_ARGS__)
-#	define WARNING_WITH_ERRNO(format, ...)	dummy_printf(format, ## __VA_ARGS__)
-#endif /* ENABLE_ERROR_MESSAGES */
+#  define ERROR			wimlib_error
+#  define ERROR_WITH_ERRNO 	wimlib_error_with_errno
+#  define WARNING		wimlib_warning
+#  define WARNING_WITH_ERRNO	wimlib_warning
+#else /* ENABLE_ERROR_MESSAGES */
+#  define ERROR(format, ...)			dummy_printf(format, ## __VA_ARGS__)
+#  define ERROR_WITH_ERRNO(format, ...)		dummy_printf(format, ## __VA_ARGS__)
+#  define WARNING(format, ...)			dummy_printf(format, ## __VA_ARGS__)
+#  define WARNING_WITH_ERRNO(format, ...)	dummy_printf(format, ## __VA_ARGS__)
+#endif /* !ENABLE_ERROR_MESSAGES */
 
 #if defined(ENABLE_DEBUG) || defined(ENABLE_MORE_DEBUG)
-#	include <errno.h>
-#	define DEBUG(format, ...)					\
-	({								\
- 		int __errno_save = errno;				\
-		wimlib_fprintf(stdout, "[%s %d] %s(): " format,		\
-			__FILE__, __LINE__, __func__, ## __VA_ARGS__);	\
-	 	putchar('\n');						\
-		fflush(stdout);						\
-		errno = __errno_save;					\
-	})
+extern void
+wimlib_debug(const char *file, int line, const char *func,
+	     const char *format, ...);
+#  define DEBUG(format, ...) \
+	 	wimlib_debug(__FILE__, __LINE__, __func__, format, ## __VA_ARGS__);
 
 #else
-#	define DEBUG(format, ...) dummy_printf(format, ## __VA_ARGS__)
+#  define DEBUG(format, ...) dummy_printf(format, ## __VA_ARGS__)
 #endif /* ENABLE_DEBUG || ENABLE_MORE_DEBUG */
 
 #ifdef ENABLE_MORE_DEBUG
-#	define DEBUG2(format, ...) DEBUG(format, ## __VA_ARGS__)
+#  define DEBUG2(format, ...) DEBUG(format, ## __VA_ARGS__)
 #else
-#	define DEBUG2(format, ...) dummy_printf(format, ## __VA_ARGS__)
+#  define DEBUG2(format, ...) dummy_printf(format, ## __VA_ARGS__)
 #endif /* ENABLE_DEBUG */
 
 #ifdef ENABLE_ASSERTIONS
 #include <assert.h>
-#	define wimlib_assert(expr) assert(expr)
+#  define wimlib_assert(expr) assert(expr)
 #else
-#	define wimlib_assert(expr)
+#  define wimlib_assert(expr)
 #endif
 
 #ifdef ENABLE_MORE_ASSERTIONS
-#define wimlib_assert2(expr) wimlib_assert(expr)
+#  define wimlib_assert2(expr) wimlib_assert(expr)
 #else
-#define wimlib_assert2(expr)
+#  define wimlib_assert2(expr)
 #endif
 
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
@@ -212,20 +207,20 @@ extern void (*wimlib_free_func)(void *);
 extern void *(*wimlib_realloc_func)(void *, size_t);
 extern void *wimlib_calloc(size_t nmemb, size_t size);
 extern char *wimlib_strdup(const char *str);
-#	define	MALLOC	wimlib_malloc_func
-#	define	FREE	wimlib_free_func
-#	define	REALLOC	wimlib_realloc_func
-#	define	CALLOC	wimlib_calloc
-#	define	STRDUP	wimlib_strdup
-#else
-#	include <stdlib.h>
-#	include <string.h>
-#	define	MALLOC	malloc
-#	define	FREE	free
-#	define	REALLOC	realloc
-#	define	CALLOC	calloc
-#	define	STRDUP	strdup
-#endif /* ENABLE_CUSTOM_MEMORY_ALLOCATOR */
+#  define	MALLOC	wimlib_malloc_func
+#  define	FREE	wimlib_free_func
+#  define	REALLOC	wimlib_realloc_func
+#  define	CALLOC	wimlib_calloc
+#  define	STRDUP	wimlib_strdup
+#else /* ENABLE_CUSTOM_MEMORY_ALLOCATOR */
+#  include <stdlib.h>
+#  include <string.h>
+#  define	MALLOC	malloc
+#  define	FREE	free
+#  define	REALLOC	realloc
+#  define	CALLOC	calloc
+#  define	STRDUP	strdup
+#endif /* !ENABLE_CUSTOM_MEMORY_ALLOCATOR */
 
 
 /* util.c */

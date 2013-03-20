@@ -109,7 +109,7 @@ err:
  *		modified if successful.  Set to NULL if the file or directory was
  *		excluded from capture.
  *
- * @root_disk_path:  The path to the root of the directory tree on disk (UTF-8).
+ * @root_disk_path:  The path to the root of the directory tree on disk.
  *
  * @lookup_table: The lookup table for the WIM file.  For each file added to the
  * 		dentry tree being built, an entry is added to the lookup table,

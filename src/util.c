@@ -48,7 +48,8 @@
 #  define strerror_r(errnum, buf, bufsize) strerror_s(buf, bufsize, errnum)
 #endif
 
-static size_t utf16le_strlen(const utf16lechar *s)
+static size_t
+utf16le_strlen(const utf16lechar *s)
 {
 	const utf16lechar *p = s;
 	while (*p)
@@ -58,8 +59,8 @@ static size_t utf16le_strlen(const utf16lechar *s)
 
 /* Handle %W for UTF16-LE printing and %U for UTF-8 printing.
  *
- * WARNING: this is not yet done properly--- it's assumed that if the format
- * string contains %W and/or %U, then it contains no other format specifiers.
+ * TODO: this is not yet done properly--- it's assumed that if the format string
+ * contains %W and/or %U, then it contains no other format specifiers.
  */
 static int
 wimlib_vfprintf(FILE *fp, const char *format, va_list va)
@@ -134,17 +135,14 @@ wimlib_fprintf(FILE *fp, const char *format, ...)
 	return ret;
 }
 
-/* True if wimlib is to print an informational message when an error occurs.
- * This can be turned off by calling wimlib_set_print_errors(false). */
-#ifdef ENABLE_ERROR_MESSAGES
-#include <stdarg.h>
-static bool wimlib_print_errors = false;
-
+#if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
 static void
 wimlib_vmsg(const char *tag, const char *format,
 	    va_list va, bool perror)
 {
+#ifndef DEBUG
 	if (wimlib_print_errors) {
+#endif
 		int errno_save = errno;
 		fflush(stdout);
 		fputs(tag, stderr);
@@ -161,8 +159,17 @@ wimlib_vmsg(const char *tag, const char *format,
 		}
 		putc('\n', stderr);
 		errno = errno_save;
+#ifndef DEBUG
 	}
+#endif
 }
+#endif
+
+/* True if wimlib is to print an informational message when an error occurs.
+ * This can be turned off by calling wimlib_set_print_errors(false). */
+#ifdef ENABLE_ERROR_MESSAGES
+static bool wimlib_print_errors = false;
+
 
 void
 wimlib_error(const char *format, ...)
@@ -204,6 +211,21 @@ wimlib_warning_with_errno(const char *format, ...)
 	va_end(va);
 }
 
+#endif
+
+#ifdef ENABLE_DEBUG
+void wimlib_debug(const char *file, int line, const char *func,
+		  const char *format, ...)
+{
+
+	va_list va;
+	char buf[strlen(file) + strlen(func) + 30];
+
+	sprintf(buf, "[%s %d] %s(): ", file, line, func);
+	va_start(va, format);
+	wimlib_vmsg(buf, format, va, false);
+	va_end(va);
+}
 #endif
 
 WIMLIBAPI int

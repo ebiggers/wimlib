@@ -30,6 +30,7 @@
 
 #include <iconv.h>
 #include <stdlib.h>
+#include <errno.h>
 
 bool wimlib_mbs_is_utf8 = false;
 
@@ -256,7 +257,7 @@ utf8_str_contains_nonascii_chars(const utf8char *utf8_str)
 {
 	do {
 		if ((unsigned char)*utf8_str > 127)
-			return false;
+			return true;
 	} while (*++utf8_str);
-	return true;
+	return false;
 }
