@@ -53,7 +53,7 @@ static size_t utf16le_strlen(const utf16lechar *s)
 	const utf16lechar *p = s;
 	while (*p)
 		p++;
-	return (p - s) / sizeof(utf16lechar);
+	return (p - s) * sizeof(utf16lechar);
 }
 
 /* Handle %W for UTF16-LE printing and %U for UTF-8 printing.
