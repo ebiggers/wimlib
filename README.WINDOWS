@@ -45,9 +45,17 @@ precompiled binaries from http://sourceforge.net/projects/wimlib/files/ instead.
 I did it using MinGW-w64 on a Linux host, with the following configuration
 command:
 
-$ ./configure --host=i686-w64-mingw32 \
-	       CPPFLAGS=-I/opt/libxml2-min/i686-w64-mingw32/include/libxml2 \
-	       LDFLAGS=-L/opt/libxml2-min/i686-w64-mingw32/lib
+$ ./configure --host=i686-w64-mingw32
+
+after having installed the required libraries:
+
+* mingw-w64-gettext
+* mingw-w64-libiconv
+* mingw-w64-libxml2
+* mingw-w64-winpthreads
+* mingw-w64-zlib
+
+Note: zlib and gettext are only necessary when required by the build of libxml2.
 
 Building wimlib using Cygwin is not supported.  I was trying this for a while,
 but I ran into some issues with mixing native Win32 functions and
