@@ -183,7 +183,9 @@ struct wim_lookup_table_entry {
 		struct _ntfs_attr *attr;
 	#endif
 
+	#ifdef __WIN32__
 		HANDLE win32_file_on_disk_fp;
+	#endif
 
 		/* Pointer to inode that contains the opened file descriptors to
 		 * this stream (valid iff resource_location ==
