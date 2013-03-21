@@ -230,8 +230,9 @@ load the POSIX message queue module (run `kldload mqueuefs').
 The code pays attention to endianness, so it should work on big-endian
 architectures, but I've never tested this so do not expect it to work.
 
-There are no plans to port wimlib to Windows since the programming interface on
-Windows is very different and Microsoft's imagex.exe is already available.
+As of wimlib 1.3.0, there is experimental support for Microsoft Windows.  I
+expect it to work on Windows Vista and later, although I have only tested it on
+Windows 7.  See README.WINDOWS for more information.
 
 				   REFERENCES
 
