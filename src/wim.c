@@ -670,7 +670,8 @@ wimlib_free(WIMStruct *w)
 	DEBUG("Freed WIMStruct");
 }
 
-static bool test_locale_ctype_utf8()
+static bool
+test_locale_ctype_utf8()
 {
 	char *ctype = nl_langinfo(CODESET);
 
@@ -679,8 +680,6 @@ static bool test_locale_ctype_utf8()
 		strstr(ctype, "utf8") == 0 ||
 		strstr(ctype, "utf-8") == 0);
 }
-
-bool wimlib_mbs_is_utf8;
 
 /* Get global memory allocations out of the way.  Not strictly necessary in
  * single-threaded programs like 'imagex'. */

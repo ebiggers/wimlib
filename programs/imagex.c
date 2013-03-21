@@ -38,6 +38,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <locale.h>
 
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
@@ -2119,6 +2120,8 @@ int main(int argc, char **argv)
 {
 	const struct imagex_command *cmd;
 	int ret;
+
+	setlocale(LC_ALL, "");
 
 	if (argc < 2) {
 		imagex_error("No command specified");

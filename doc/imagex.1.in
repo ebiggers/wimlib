@@ -149,6 +149,21 @@ wimlib's \fBimagex mount\fR supports mounting an image from a split WIM, but
 Microsoft's software does not.  (Note: this functionality is only available on
 UNIX builds.)
 
+.SH LOCALES AND CHARACTER ENCODINGS
+
+wimlib 1.3.0 has improved support for alternate character encodings.
+However, not everything has been well tested, and on UNIX you are strongly
+encouraged to use a UTF-8 locale so that you do not run into any problems.
+In particular, if your locale uses a character encoding that is
+not UTF-8, then you will not be able to open or capture WIM files containing
+files with paths not representable in the current locale's character encoding.
+
+Similar restrictions apply to the Windows-native build of wimlib, but
+unfortunately Windows does not support UTF-8 locales.  So you will not be able
+to apply a WIM image containing files with names not representable in the
+current Windows code page, nor will you be able to capture a directory tree
+containing files with names not representable in the current Windows code page.
+
 .SH WARNING
 
 Note: \fBwimlib\fR and \fBimagex\fR are experimental.  Use Microsoft's

@@ -5,6 +5,8 @@ Version 1.3.0:
 
 	--source-list option added to `imagex capture' and `imagex append'.
 
+	Better support for different character encodings.
+
 Version 1.2.6:
 	Storing UNIX file owners, groups, and modes in WIM images is now
 	possible using `imagex capture' with the --unix-data flag.

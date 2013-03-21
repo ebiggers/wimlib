@@ -181,11 +181,20 @@
  * wimlib also comes with the <b>mkwinpeimg</b> script, which is documented in a
  * man page.
  *
+ * \section Locales and character encodings
+ *
+ * wimlib 1.3.0 is able to better handle alternate character encodings than
+ * previous versions.  Functions are explictly noted as taking ::wimlib_mbchar
+ * strings, which are encoded in the locale-dependent multibyte encoding (e.g.
+ * ASCII, ISO-8859-1, or UTF-8), or ::wimlib_utf8char strings, which are
+ * encoded in UTF-8.  Generally, filenames and paths are in the locale-dependent
+ * multibyte encoding, while other types of data must be provided in UTF-8.
+ * Please see the  man page for 'imagex' for more information.
+ *
  * \section Limitations
  *
  * While wimlib supports the main features of WIM files, wimlib currently has
  * the following limitations:
- * - wimlib cannot be used on MS-Windows.
  * - There is no way to add, remove, modify, or extract specific files in a WIM
  *   without mounting it, other than by adding, removing, or extracting an
  *   entire image.  The FUSE mount feature should be used for this purpose.
@@ -1403,21 +1412,12 @@ wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret);
 /**
  * Since wimlib 1.2.6:  Initialization function for wimlib.  This is not
  * re-entrant.  If you are calling wimlib functions concurrently in different
- * threads, then you must call this function serially first.  Otherwise, calling
- * this function is not required.
+ * threads, then you must call this function serially first.  Also, since wimlib
+ * 1.3.0, you must call this function if the character encoding of the current
+ * locale is not UTF-8.  Otherwise, calling this function this function is not
+ * required.
  *
- * @return 0 on success; nonzero on error.
- * @retval ::WIMLIB_ERR_NOMEM
- * 	Could not allocate memory.
- * @retval ::WIMLIB_ERR_ICONV_NOT_AVAILABLE
- * 	wimlib was configured @c --without-libntfs-3g at compilation time, and
- * 	at runtime the @c iconv() set of functions did not seem to be available,
- * 	perhaps due to missing files in the C library installation.
- *
- * If this function is not called or returns nonzero, then it will not be safe
- * to use wimlib in multiple threads.  Furthermore, a nonzero return value here
- * indicates that further calls into wimlib will probably fail when they try to
- * repeat the same initializations.
+ * This function always returns 0.
  */
 extern int
 wimlib_global_init();

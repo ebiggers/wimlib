@@ -32,7 +32,7 @@
 #include <stdlib.h>
 #include <errno.h>
 
-bool wimlib_mbs_is_utf8 = false;
+bool wimlib_mbs_is_utf8 = true;
 
 struct iconv_list_head {
 	const char *from_encoding;
