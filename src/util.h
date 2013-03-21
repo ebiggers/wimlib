@@ -52,9 +52,10 @@ typedef uint64_t u64;
 /* A pointer to 'mbchar' indicates a string of "multibyte characters" provided
  * in the default encoding of the user's locale, which may be "UTF-8",
  * "ISO-8859-1", "C", or any other ASCII-compatible encoding.
- * "ASCII-compatible" here means any encoding where all ASCII characters have
- * the same representation, and any non-ASCII character is represented as a
- * sequence of one or more bytes not already used by any ASCII character. */
+ * "ASCII-compatible" here means any encoding where all ASCII-representable
+ * characters have the same representation as in ASCII itself, and any non-ASCII
+ * character is represented as a sequence of one or more bytes not already used
+ * by any ASCII character. */
 typedef char mbchar;
 
 /* A pointer to 'utf8char' indicates a UTF-8 encoded string */

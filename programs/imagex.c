@@ -2138,8 +2138,7 @@ int main(int argc, char **argv)
 	/* The user may like to see more informative error messages. */
 	wimlib_set_print_errors(true);
 
-	/* Calling wimlib_global_init() is not strictly necessary because
-	 * 'imagex' is single-threaded. */
+	/* Do any initializations that the library needs */
 	ret = wimlib_global_init();
 	if (ret)
 		goto out;
@@ -2178,8 +2177,9 @@ out:
 		if (ret == WIMLIB_ERR_NTFS_3G && errno != 0)
 			imagex_error_with_errno("errno");
 	}
-	/* Calling wimlib_global_cleanup() is not strictly necessary because the
-	 * process is exiting anyway. */
+
+	/* Make the library free any resources it's holding (not strictly
+	 * necessary because the process is ending anyway). */
 	wimlib_global_cleanup();
 	return ret;
 }

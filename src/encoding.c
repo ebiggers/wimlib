@@ -1,7 +1,7 @@
 /*
  * encoding.c:  Convert "multibyte" strings (the locale-default encoding---
  * generally, UTF-8 or something like ISO-8859-1) to UTF-16LE strings, and vice
- * versa.
+ * versa.  Also, convert UTF-8 strings to multibyte strings.
  */
 
 /*
@@ -23,17 +23,21 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "config.h"
 #include "wimlib_internal.h"
-#include <pthread.h>
-#include "list.h"
 
-#include <iconv.h>
-#include <stdlib.h>
 #include <errno.h>
+#include <iconv.h>
+#include <pthread.h>
+#include <stdlib.h>
 
 bool wimlib_mbs_is_utf8 = true;
 
+/* List of iconv_t conversion descriptors for a specific character conversion.
+ * The idea is that it is not thread-safe to have just one conversion
+ * descriptor, but it also is inefficient to open a new conversion descriptor to
+ * convert every string.  Both these problems can be solved by maintaining a
+ * list of conversion descriptors; then, a thread can use an existing conversion
+ * descriptor if available. */
 struct iconv_list_head {
 	const char *from_encoding;
 	const char *to_encoding;
@@ -166,7 +170,11 @@ varname1##_to_##varname2##_buf(const chartype1 *in, size_t in_nbytes,	\
 									\
 	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);	\
 	if (len == (size_t)-1) {					\
-		err_msg;						\
+		if (!error_message_being_printed) {			\
+			error_message_being_printed = true;		\
+			err_msg;					\
+			error_message_being_printed = false;		\
+		}							\
 		ret = err_return;					\
 	} else {							\
 		out[(LARGE_NUMBER-outbytesleft)/sizeof(chartype2)] = 0;	\
@@ -210,23 +218,28 @@ DEFINE_CHAR_CONVERSION_FUNCTIONS(utf16le, "UTF-16LE", utf16lechar,
 				 mbs, "", mbchar,
 				 in_nbytes / 2 * MB_CUR_MAX,
 				 WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE,
-				 ERROR_WITH_ERRNO("Failed to convert UTF-16LE "
-						  "string %U to multibyte string", in))
+				 ERROR("Failed to convert UTF-16LE string "
+				       "to multibyte string!");
+				 ERROR("This may be because the UTF-16LE data "
+				       "could not be represented in your "
+				       "locale's character encoding."))
 
 DEFINE_CHAR_CONVERSION_FUNCTIONS(mbs, "", mbchar,
 				 utf16le, "UTF-16LE", utf16lechar,
 				 in_nbytes * 2,
 				 WIMLIB_ERR_INVALID_MULTIBYTE_STRING,
 				 ERROR_WITH_ERRNO("Failed to convert multibyte "
-						  "string %s to UTF-16LE string", in))
+						  "string \"%s\" to UTF-16LE string!", in);
+				 ERROR("If the data you provided was UTF-8, please make sure "
+				       "the character encoding of your current locale is UTF-8."))
 
 DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", utf8char,
 				 mbs, "", mbchar,
 				 in_nbytes,
-				 WIMLIB_ERR_INVALID_UTF8_STRING,
-				 ERROR_WITH_ERRNO("Failed to convert UTF-8 "
-						  "string %U to multibyte string", in))
-
+				 WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE,
+				 ERROR("Failed to convert UTF-8 string to multibyte string!");
+				 ERROR("This may be because the UTF-8 data could not be represented "
+				       "in your locale's character encoding."))
 
 static void
 iconv_cleanup(struct iconv_list_head *head)
@@ -249,8 +262,6 @@ iconv_global_cleanup()
 	iconv_cleanup(&iconv_mbs_to_utf16le);
 	iconv_cleanup(&iconv_utf8_to_mbs);
 }
-
-
 
 bool
 utf8_str_contains_nonascii_chars(const utf8char *utf8_str)

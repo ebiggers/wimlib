@@ -92,7 +92,7 @@ special:
 						  &mbs, &mbs_nbytes);
 			}
 			if (ret) {
-				ret = fprintf(fp, "???CONVERSION FAILURE???");
+				ret = fprintf(fp, "??????");
 			} else {
 				ret = fprintf(fp, "%s", mbs);
 				FREE(mbs);

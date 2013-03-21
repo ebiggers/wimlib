@@ -157,10 +157,9 @@ if test "x$ENABLE_MULTITHREADED_COMPRESSION" = "xyes"; then
 	AC_DEFINE([ENABLE_MULTITHREADED_COMPRESSION], [1],
 		  	[Define to 1 if including support for multithreaded
 			 compression])
-	PTHREAD_LDADD="-lpthread"
-else
-	PTHREAD_LDADD=""
 fi
+
+PTHREAD_LDADD="-lpthread"
 AC_SUBST([PTHREAD_LDADD], [$PTHREAD_LDADD])
 
 WITH_NTFS_3G_DEFAULT="yes"
