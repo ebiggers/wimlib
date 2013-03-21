@@ -150,7 +150,7 @@ inode_table_insert(struct wim_dentry *dentry, void *_table)
 	return 0;
 }
 
-#ifdef ENABLE_ERROR_MESSAGES
+#if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
 static void
 print_inode_dentries(const struct wim_inode *inode)
 {

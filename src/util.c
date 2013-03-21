@@ -213,7 +213,7 @@ wimlib_warning_with_errno(const char *format, ...)
 
 #endif
 
-#ifdef ENABLE_DEBUG
+#if defined(ENABLE_DEBUG) || defined(ENABLE_MORE_DEBUG)
 void wimlib_debug(const char *file, int line, const char *func,
 		  const char *format, ...)
 {

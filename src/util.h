@@ -173,7 +173,15 @@ wimlib_warning_with_errno(const char *format, ...) FORMAT(printf, 1, 2) COLD;
 #  define WARNING_WITH_ERRNO(format, ...)	dummy_printf(format, ## __VA_ARGS__)
 #endif /* !ENABLE_ERROR_MESSAGES */
 
-#if defined(ENABLE_DEBUG) || defined(ENABLE_MORE_DEBUG)
+#if defined(ENABLE_MORE_DEBUG) && !defined(ENABLE_DEBUG)
+#  define ENABLE_DEBUG 1
+#endif
+
+#if defined(ENABLE_MORE_ASSERTIONS) && !defined(ENABLE_ASSERTIONS)
+#  define ENABLE_ASSERTIONS 1
+#endif
+
+#ifdef ENABLE_DEBUG
 extern void
 wimlib_debug(const char *file, int line, const char *func,
 	     const char *format, ...);
@@ -182,26 +190,26 @@ wimlib_debug(const char *file, int line, const char *func,
 
 #else
 #  define DEBUG(format, ...) dummy_printf(format, ## __VA_ARGS__)
-#endif /* ENABLE_DEBUG || ENABLE_MORE_DEBUG */
+#endif /* !ENABLE_DEBUG */
 
 #ifdef ENABLE_MORE_DEBUG
 #  define DEBUG2(format, ...) DEBUG(format, ## __VA_ARGS__)
 #else
 #  define DEBUG2(format, ...) dummy_printf(format, ## __VA_ARGS__)
-#endif /* ENABLE_DEBUG */
+#endif /* !ENABLE_MORE_DEBUG */
 
 #ifdef ENABLE_ASSERTIONS
 #include <assert.h>
 #  define wimlib_assert(expr) assert(expr)
 #else
 #  define wimlib_assert(expr)
-#endif
+#endif /* !ENABLE_ASSERTIONS */
 
 #ifdef ENABLE_MORE_ASSERTIONS
 #  define wimlib_assert2(expr) wimlib_assert(expr)
 #else
 #  define wimlib_assert2(expr)
-#endif
+#endif /* !ENABLE_MORE_ASSERTIONS */
 
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
 
