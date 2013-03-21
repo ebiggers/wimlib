@@ -382,7 +382,7 @@ free_dos_name_tree(struct rb_node *node) {
 	}
 }
 
-static void 
+static void
 destroy_dos_name_map(struct dos_name_map *map)
 {
 	free_dos_name_tree(map->rb_root.rb_node);
@@ -436,12 +436,12 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 		/* Return now if an error occurred or if this is just a DOS name
 		 * and not a Win32+DOS name. */
 		if (ret != 0 || name_type == FILE_NAME_DOS)
-			return ret;
+			goto out;
 	}
 	ret = utf16le_to_mbs(name, name_nbytes,
 			     &mbs_name, &mbs_name_nbytes);
-	if (ret != 0)
-		return -1;
+	if (ret)
+		goto out;
 
 	if (mbs_name[0] == '.' &&
 	     (mbs_name[1] == '\0' ||
@@ -459,6 +459,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	ntfs_inode *ni = ntfs_inode_open(ctx->dir_ni->vol, mref);
 	if (!ni) {
 		ERROR_WITH_ERRNO("Failed to open NTFS inode");
+		ret = -1;
 		goto out_free_mbs_name;
 	}
 	path_len = ctx->path_len;
@@ -478,6 +479,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	ntfs_inode_close(ni);
 out_free_mbs_name:
 	FREE(mbs_name);
+out:
 	return ret;
 }
 

@@ -99,7 +99,7 @@ put_iconv(iconv_t *cd)
 	int errno_save = errno;
 	struct iconv_node *i = container_of(cd, struct iconv_node, cd);
 	struct iconv_list_head *head = i->head;
-	
+
 	pthread_mutex_lock(&head->mutex);
 	list_add(&i->list, &head->list);
 	pthread_mutex_unlock(&head->mutex);
@@ -247,7 +247,7 @@ iconv_cleanup(struct iconv_list_head *head)
 	pthread_mutex_destroy(&head->mutex);
 	while (!list_empty(&head->list)) {
 		struct iconv_node *i;
-		
+
 		i = container_of(head->list.next, struct iconv_node, list);
 		list_del(&i->list);
 		iconv_close(i->cd);

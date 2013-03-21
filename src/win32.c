@@ -44,6 +44,12 @@
 
 #include <errno.h>
 
+static const char *access_denied_msg =
+"         If you are not running this program as the administrator, you may\n"
+"         need to do so, so that all data and metadata can be backed up.\n"
+"         Otherwise, there may be no way to access the desired data or\n"
+"         metadata without taking ownership of the file or directory.\n";
+
 #ifdef ENABLE_ERROR_MESSAGES
 void
 win32_error(u32 err_code)
@@ -171,10 +177,17 @@ win32_get_security_descriptor(struct wim_dentry *dentry,
 			err = GetLastError();
 		}
 	}
-	ERROR("Win32 API: Failed to read security descriptor of \"%ls\"",
-	      path_utf16);
-	win32_error(err);
-	return WIMLIB_ERR_READ;
+
+	if (err == ERROR_ACCESS_DENIED) {
+		WARNING("Failed to read security descriptor of \"%ls\": "
+			"Access denied!\n%s", path_utf16, access_denied_msg);
+		return 0;
+	} else {
+		ERROR("Win32 API: Failed to read security descriptor of \"%ls\"",
+		      path_utf16);
+		win32_error(err);
+		return WIMLIB_ERR_READ;
+	}
 }
 
 /* Reads the directory entries of directory using a Win32 API and recursively
@@ -514,10 +527,17 @@ win32_capture_streams(const wchar_t *path_utf16,
 		{
 			return 0;
 		} else {
-			ERROR("Win32 API: Failed to look up data streams of \"%ls\"",
-			      path_utf16);
-			win32_error(err);
-			return WIMLIB_ERR_READ;
+			if (err == ERROR_ACCESS_DENIED) {
+				WARNING("Failed to look up data streams of \"%ls\": "
+					"Access denied!\n%s", path_utf16,
+					access_denied_msg);
+				return 0;
+			} else {
+				ERROR("Win32 API: Failed to look up data streams of \"%ls\"",
+				      path_utf16);
+				win32_error(err);
+				return WIMLIB_ERR_READ;
+			}
 		}
 	}
 	do {

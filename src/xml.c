@@ -490,7 +490,7 @@ err:
 	return ret;
 }
 
-/* Prints the information contained in a `struct windows_info'. 
+/* Prints the information contained in a `struct windows_info'.
  *
  * Warning: any strings printed here are in UTF-8 encoding.  If the locale
  * character encoding is not UTF-8, the printed strings may be garbled. */

@@ -329,7 +329,7 @@ prepare_resource_for_read(struct wim_lookup_table_entry *lte
 
 /* Undo prepare_resource_for_read() by closing the cached FILE * or NTFS
  * attribute. */
-static void 
+static void
 end_wim_resource_read(struct wim_lookup_table_entry *lte
 			#ifdef WITH_NTFS_3G
 				, ntfs_inode *ni

@@ -258,6 +258,9 @@ typedef struct {
 static void
 empty_sacl_fixup(u8 *descr, u64 *size_p)
 {
+	/* No-op if no NTFS-3g support, or if NTFS-3g is version 2013 or later
+	 * */
+#if defined(WITH_NTFS_3G) && !defined(HAVE_NTFS_MNT_RDONLY)
 	if (*size_p >= sizeof(SecurityDescriptor)) {
 		SecurityDescriptor *sd = (SecurityDescriptor*)descr;
 		u32 sacl_offset = le32_to_cpu(sd->sacl_offset);
@@ -266,6 +269,7 @@ empty_sacl_fixup(u8 *descr, u64 *size_p)
 			*size_p -= sizeof(ACL);
 		}
 	}
+#endif
 }
 
 /*
