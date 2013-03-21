@@ -181,15 +181,18 @@
  * wimlib also comes with the <b>mkwinpeimg</b> script, which is documented in a
  * man page.
  *
- * \section Locales and character encodings
+ * \section encodings Locales and character encodings
  *
- * wimlib 1.3.0 is able to better handle alternate character encodings than
- * previous versions.  Functions are explictly noted as taking ::wimlib_mbchar
- * strings, which are encoded in the locale-dependent multibyte encoding (e.g.
- * ASCII, ISO-8859-1, or UTF-8), or ::wimlib_utf8char strings, which are
- * encoded in UTF-8.  Generally, filenames and paths are in the locale-dependent
- * multibyte encoding, while other types of data must be provided in UTF-8.
- * Please see the  man page for 'imagex' for more information.
+ * wimlib 1.3.0 has improved handling of different character encodings compared
+ * to previous versions.  Functions are explictly noted as taking
+ * ::wimlib_mbchar strings, which are encoded in the locale-dependent multibyte
+ * encoding (e.g.  ASCII, ISO-8859-1, or UTF-8), or ::wimlib_utf8char strings,
+ * which are encoded in UTF-8.  Generally, filenames and paths are in the
+ * locale-dependent multibyte encoding, while other types of data must be
+ * provided in UTF-8.  Please see the  man page for @b imagex for more
+ * information.  However, I strongly recommend that you use UTF-8 for your
+ * locale's encoding so that ::wimlib_mbchar strings will be encoded the same
+ * way as ::wimlib_utf8char strings.
  *
  * \section Limitations
  *
@@ -216,6 +219,10 @@
  *   script for a similar purpose, however.  With regards to adding drivers to
  *   Windows PE, you have the option of putting them anywhere in the Windows PE
  *   image, then loading them after boot using @b drvload.exe.
+ * - Although wimlib 1.3.0 and later can be used on Windows as well as UNIX, the
+ *   Windows build has some limitations compared to the UNIX build.
+ *   (The differences are documented better in the man pages for @b imagex than
+ *   here.)
  *
  * \section legal License
  *
@@ -256,7 +263,10 @@
  */
 typedef struct WIMStruct WIMStruct;
 
+/** Byte of a string encoded in the locale-dependent encoding */
 typedef char wimlib_mbchar;
+
+/** Byte of a string encoded in UTF-8 */
 typedef char wimlib_utf8char;
 
 /**
