@@ -403,8 +403,11 @@ struct readdir_ctx {
 };
 
 static int
-build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p, ntfs_inode *dir_ni,
-				 ntfs_inode *ni, char path[], size_t path_len,
+build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
+				 ntfs_inode *dir_ni,
+				 ntfs_inode *ni,
+				 mbchar *path,
+				 size_t path_len,
 				 int name_type,
 				 struct wim_lookup_table *lookup_table,
 				 struct sd_set *sd_set,
@@ -421,7 +424,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 {
 	struct readdir_ctx *ctx;
 	size_t mbs_name_nbytes;
-	char *mbs_name;
+	mbchar *mbs_name;
 	struct wim_dentry *child;
 	int ret;
 	size_t path_len;

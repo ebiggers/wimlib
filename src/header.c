@@ -32,7 +32,8 @@ static const u8 wim_magic_chars[WIM_MAGIC_LEN] = {
 			'M', 'S', 'W', 'I', 'M', '\0', '\0', '\0' };
 
 /* Reads the header for a WIM file.  */
-int read_header(FILE *fp, struct wim_header *hdr, int open_flags)
+int
+read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 {
 	size_t bytes_read;
 	u8 buf[WIM_HEADER_DISK_SIZE];
@@ -169,7 +170,8 @@ err:
  * 		place (the beginning of the file).
  * @return:	Zero on success, nonzero on failure.
  */
-int write_header(const struct wim_header *hdr, FILE *out_fp)
+int
+write_header(const struct wim_header *hdr, FILE *out_fp)
 {
 	u8 buf[WIM_HEADER_DISK_SIZE];
 	u8 *p;
@@ -207,7 +209,8 @@ int write_header(const struct wim_header *hdr, FILE *out_fp)
 /*
  * Initializes the header for a WIM file.
  */
-int init_header(struct wim_header *hdr, int ctype)
+int
+init_header(struct wim_header *hdr, int ctype)
 {
 	memset(hdr, 0, sizeof(struct wim_header));
 	switch (ctype) {
@@ -251,7 +254,8 @@ struct hdr_flag hdr_flags[] = {
 };
 
 /* Prints information from the header of the WIM file associated with @w. */
-WIMLIBAPI void wimlib_print_header(const WIMStruct *w)
+WIMLIBAPI void
+wimlib_print_header(const WIMStruct *w)
 {
 	const struct wim_header *hdr = &w->hdr;
 

@@ -242,7 +242,7 @@ win32_recurse_directory(struct wim_dentry *root,
 		{
 			struct wim_dentry *child;
 
-			char *mbs_name;
+			mbchar *mbs_name;
 			size_t mbs_name_nbytes;
 			ret = utf16le_to_mbs(dat.cFileName,
 					     wcslen(dat.cFileName) * sizeof(wchar_t),
@@ -251,7 +251,7 @@ win32_recurse_directory(struct wim_dentry *root,
 			if (ret)
 				goto out_find_close;
 
-			char name[strlen(root_disk_path) + 1 + mbs_name_nbytes + 1];
+			mbchar name[strlen(root_disk_path) + 1 + mbs_name_nbytes + 1];
 			sprintf(name, "%s/%s", root_disk_path, mbs_name);
 			FREE(mbs_name);
 			ret = win32_build_dentry_tree(&child, name, lookup_table,
@@ -294,7 +294,7 @@ static int
 win32_capture_reparse_point(HANDLE hFile,
 			    struct wim_inode *inode,
 			    struct wim_lookup_table *lookup_table,
-			    const char *path)
+			    const mbchar *path)
 {
 	/* "Reparse point data, including the tag and optional GUID,
 	 * cannot exceed 16 kilobytes." - MSDN  */
@@ -414,7 +414,7 @@ win32_capture_stream(const wchar_t *path_utf16,
 	is_named_stream = (p != colon);
 	if (is_named_stream) {
 		/* Allocate an ADS entry for the named stream. */
-		char *mbs_stream_name;
+		mbchar *mbs_stream_name;
 		size_t mbs_stream_name_nbytes;
 		ret = utf16le_to_mbs(p,
 				     (colon - p) * sizeof(wchar_t),
@@ -562,7 +562,7 @@ out_find_close:
 /* Win32 version of capturing a directory tree */
 int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
-			const char *root_disk_path,
+			const mbchar *root_disk_path,
 			struct wim_lookup_table *lookup_table,
 			struct wim_security_data *sd,
 			const struct capture_config *config,
@@ -1202,4 +1202,21 @@ nl_langinfo(nl_item item)
 	static char buf[64];
 	strcpy(buf, "Unknown");
 	return buf;
+}
+
+/* rename() on Windows fails if the destination file exists.  Fix it. */
+int
+rename_replacement(const char *oldpath, const char *newpath)
+{
+	if (MoveFileExA(oldpath, newpath, MOVEFILE_REPLACE_EXISTING)) {
+		return 0;
+	} else {
+		/* As usual, the possible error values are not documented */
+		DWORD err = GetLastError();
+		ERROR("MoveFileExA(): Can't rename \"%s\" to \"%s\"",
+		      oldpath, newpath);
+		win32_error(err);
+		errno = 0;
+		return -1;
+	}
 }

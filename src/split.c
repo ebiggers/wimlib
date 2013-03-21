@@ -30,9 +30,9 @@
 
 struct split_args {
 	WIMStruct *w;
-	char *swm_base_name;
+	mbchar *swm_base_name;
 	size_t swm_base_name_len;
-	const char *swm_suffix;
+	const mbchar *swm_suffix;
 	struct list_head lte_list;
 	int cur_part_number;
 	int write_flags;
@@ -42,8 +42,9 @@ struct split_args {
 	union wimlib_progress_info progress;
 };
 
-static int finish_swm(WIMStruct *w, struct list_head *lte_list,
-		      int write_flags, wimlib_progress_func_t progress_func)
+static int
+finish_swm(WIMStruct *w, struct list_head *lte_list,
+	   int write_flags, wimlib_progress_func_t progress_func)
 {
 	off_t lookup_table_offset = ftello(w->out_fp);
 	int ret;
@@ -70,7 +71,8 @@ static int finish_swm(WIMStruct *w, struct list_head *lte_list,
 			    progress_func);
 }
 
-static int copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *__args)
+static int
+copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *__args)
 {
 	struct split_args *args = (struct split_args*)__args;
 	WIMStruct *w = args->w;
@@ -123,14 +125,15 @@ static int copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *__args
 
 /* Splits the WIM file @w into multiple parts prefixed by @swm_name with size at
  * most @part_size bytes. */
-WIMLIBAPI int wimlib_split(WIMStruct *w, const char *swm_name,
-			   size_t part_size, int write_flags,
-			   wimlib_progress_func_t progress_func)
+WIMLIBAPI int
+wimlib_split(WIMStruct *w, const mbchar *swm_name,
+	     size_t part_size, int write_flags,
+	     wimlib_progress_func_t progress_func)
 {
 	int ret;
 	struct wim_header hdr_save;
 	struct split_args args;
-	const char *swm_suffix;
+	const mbchar *swm_suffix;
 	size_t swm_name_len;
 	size_t swm_base_name_len;
 
@@ -143,7 +146,7 @@ WIMLIBAPI int wimlib_split(WIMStruct *w, const char *swm_name,
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 
 	swm_name_len = strlen(swm_name);
-	char swm_base_name[swm_name_len + 20];
+	mbchar swm_base_name[swm_name_len + 20];
 
 	memcpy(&hdr_save, &w->hdr, sizeof(struct wim_header));
 	w->hdr.flags |= WIM_HDR_FLAG_SPANNED;
@@ -216,7 +219,7 @@ WIMLIBAPI int wimlib_split(WIMStruct *w, const char *swm_name,
 	 * parts until they are all written).  Fix them. */
 	int total_parts = args.cur_part_number;
 	for (int i = 1; i <= total_parts; i++) {
-		const char *part_name;
+		const mbchar *part_name;
 		if (i == 1) {
 			part_name = swm_name;
 		} else {

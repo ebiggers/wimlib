@@ -33,7 +33,7 @@
 #endif
 
 #ifdef __WIN32__
-#  include <win32.h>
+#  include "win32.h"
 #endif
 
 #include "list.h"
@@ -44,6 +44,7 @@
 #include "xml.h"
 #include "lzx.h"
 #include "xpress.h"
+
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 #  include <pthread.h>
@@ -1980,6 +1981,17 @@ overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 	}
 
 	DEBUG("Renaming `%s' to `%s'", tmpfile, w->filename);
+
+#ifdef __WIN32__
+	/* Windows won't let you delete open files unless FILE_SHARE_DELETE was
+	 * specified to CreateFile().  The WIM was opened with fopen(), which
+	 * didn't provided this flag to CreateFile, so the handle must be closed
+	 * before executing the rename(). */
+	if (w->fp != NULL) {
+		fclose(w->fp);
+		w->fp = NULL;
+	}
+#endif
 
 	/* Rename the new file to the old file .*/
 	if (rename(tmpfile, w->filename) != 0) {

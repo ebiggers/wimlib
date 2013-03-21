@@ -1,7 +1,8 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
 Version 1.3.0:
-	Added experimental support for native Windows builds.
+	Added experimental support for native Windows builds.  Binaries can be
+	downloaded from the SourceForge page.
 
 	--source-list option added to `imagex capture' and `imagex append'.
 

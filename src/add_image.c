@@ -452,7 +452,7 @@ destroy_capture_config(struct capture_config *config)
 static int
 pattern_list_add_pattern(struct pattern_list *list, const mbchar *pattern)
 {
-	const char **pats;
+	const mbchar **pats;
 	if (list->num_pats >= list->num_allocated_pats) {
 		pats = REALLOC(list->pats,
 			       sizeof(list->pats[0]) * (list->num_allocated_pats + 8));
@@ -584,8 +584,8 @@ static bool match_pattern(const mbchar *path,
 			  const struct pattern_list *list)
 {
 	for (size_t i = 0; i < list->num_pats; i++) {
-		const char *pat = list->pats[i];
-		const char *string;
+		const mbchar *pat = list->pats[i];
+		const mbchar *string;
 		if (pat[0] == '/')
 			/* Absolute path from root of capture */
 			string = path;
@@ -841,7 +841,7 @@ static int
 attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	      mbchar *target_path)
 {
-	char *slash;
+	mbchar *slash;
 	struct wim_dentry *dentry, *parent, *target;
 	int ret;
 
@@ -1123,7 +1123,7 @@ wimlib_add_image(WIMStruct *w,
 	if (!source || !*source)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	char *fs_source_path = STRDUP(source);
+	mbchar *fs_source_path = STRDUP(source);
 	int ret;
 	struct wimlib_capture_source capture_src = {
 		.fs_source_path = fs_source_path,

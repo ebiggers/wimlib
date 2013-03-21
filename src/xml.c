@@ -155,7 +155,7 @@ static int
 node_get_string(const xmlNode *string_node, utf8char **str)
 {
 	xmlNode *child;
-	char *p = NULL;
+	utf8char *p = NULL;
 
 	for_node_child(string_node, child) {
 		if (node_is_text(child) && child->content) {
@@ -1164,7 +1164,7 @@ void
 print_image_info(const struct wim_info *wim_info, int image)
 {
 	const struct image_info *image_info;
-	const char *desc;
+	const utf8char *desc;
 	char buf[50];
 
 	wimlib_assert(image >= 1 && image <= wim_info->num_images);
@@ -1555,7 +1555,7 @@ wimlib_set_image_descripton(WIMStruct *w, int image,
 WIMLIBAPI int
 wimlib_set_image_flags(WIMStruct *w, int image, const utf8char *flags)
 {
-	char *p;
+	utf8char *p;
 
 	if (image < 1 || image > w->hdr.image_count) {
 		ERROR("%d is not a valid image", image);

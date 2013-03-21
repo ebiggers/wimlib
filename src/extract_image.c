@@ -922,13 +922,14 @@ extract_all_images(WIMStruct *w, const mbchar *target,
 
 /* Extracts a single image or all images from a WIM file to a directory or NTFS
  * volume. */
-WIMLIBAPI int wimlib_extract_image(WIMStruct *w,
-				   int image,
-				   const char *target,
-				   int extract_flags,
-				   WIMStruct **additional_swms,
-				   unsigned num_additional_swms,
-				   wimlib_progress_func_t progress_func)
+WIMLIBAPI int
+wimlib_extract_image(WIMStruct *w,
+		     int image,
+		     const mbchar *target,
+		     int extract_flags,
+		     WIMStruct **additional_swms,
+		     unsigned num_additional_swms,
+		     wimlib_progress_func_t progress_func)
 {
 	struct wim_lookup_table *joined_tab, *w_tab_save;
 	int ret;

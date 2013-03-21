@@ -28,16 +28,17 @@
 #include "xml.h"
 #include <stdlib.h>
 
-static int move_lte_to_table(struct wim_lookup_table_entry *lte,
-			     void *other_tab)
+static int
+move_lte_to_table(struct wim_lookup_table_entry *lte, void *other_tab)
 {
 	hlist_del(&lte->hash_list);
 	lookup_table_insert((struct wim_lookup_table*)other_tab, lte);
 	return 0;
 }
 
-static int lookup_table_join(struct wim_lookup_table *table,
-			     struct wim_lookup_table *new)
+static int
+lookup_table_join(struct wim_lookup_table *table,
+		  struct wim_lookup_table *new)
 {
 	return for_lookup_table_entry(new, move_lte_to_table, table);
 }
@@ -56,10 +57,11 @@ static int lookup_table_join(struct wim_lookup_table *table,
  * The reason we join the lookup tables is so we only have to search one lookup
  * table to find the location of a resource in the entire WIM.
  */
-int new_joined_lookup_table(WIMStruct *w,
-			    WIMStruct **additional_swms,
-			    unsigned num_additional_swms,
-			    struct wim_lookup_table **table_ret)
+int
+new_joined_lookup_table(WIMStruct *w,
+			WIMStruct **additional_swms,
+			unsigned num_additional_swms,
+			struct wim_lookup_table **table_ret)
 {
 	struct wim_lookup_table *table;
 	int ret;
@@ -85,9 +87,10 @@ out_free_table:
 }
 
 
-static int join_wims(WIMStruct **swms, unsigned num_swms,
-		     WIMStruct *joined_wim, int write_flags,
-		     wimlib_progress_func_t progress_func)
+static int
+join_wims(WIMStruct **swms, unsigned num_swms,
+	  WIMStruct *joined_wim, int write_flags,
+	  wimlib_progress_func_t progress_func)
 {
 	int ret;
 	unsigned i;
@@ -150,7 +153,8 @@ static int join_wims(WIMStruct **swms, unsigned num_swms,
 	return ret;
 }
 
-static int cmp_swms_by_part_number(const void *swm1, const void *swm2)
+static int
+cmp_swms_by_part_number(const void *swm1, const void *swm2)
 {
 	u16 partno_1 = (*(const WIMStruct**)swm1)->hdr.part_number;
 	u16 partno_2 = (*(const WIMStruct**)swm2)->hdr.part_number;
@@ -160,10 +164,11 @@ static int cmp_swms_by_part_number(const void *swm1, const void *swm2)
 /*
  * Join a set of split WIMs into a stand-alone WIM.
  */
-WIMLIBAPI int wimlib_join(const char * const *swm_names, unsigned num_swms,
-			  const char *output_path, int swm_open_flags,
-			  int wim_write_flags,
-			  wimlib_progress_func_t progress_func)
+WIMLIBAPI int
+wimlib_join(const mbchar * const *swm_names, unsigned num_swms,
+	    const mbchar *output_path, int swm_open_flags,
+	    int wim_write_flags,
+	    wimlib_progress_func_t progress_func)
 {
 	int ret;
 	WIMStruct *joined_wim = NULL;

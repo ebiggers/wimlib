@@ -454,7 +454,7 @@ out_free_old_table:
  * 	were no inconsistencies.
  * 	-1 (WIM_INTEGRITY_NOT_OK) if the WIM failed the integrity check.
  */
-static int verify_integrity(FILE *fp, const char *filename,
+static int verify_integrity(FILE *fp, const mbchar *filename,
 			    const struct integrity_table *table,
 			    u64 bytes_to_check,
 			    wimlib_progress_func_t progress_func)

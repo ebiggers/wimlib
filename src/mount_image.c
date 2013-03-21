@@ -542,7 +542,7 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 				off_t size,
 				struct wimfs_context *ctx)
 {
-	char *staging_file_name;
+	mbchar *staging_file_name;
 	int ret;
 	int fd;
 	struct wim_lookup_table_entry *old_lte, *new_lte;
@@ -1051,7 +1051,7 @@ get_mailbox(mqd_t mq, long needed_msgsize, long *msgsize_ret,
 	    void **mailbox_ret)
 {
 	long msgsize;
-	char *mailbox;
+	void *mailbox;
 
 	msgsize = mq_get_msgsize(mq);
 
@@ -2093,7 +2093,7 @@ wimfs_releasedir(const mbchar *path, struct fuse_file_info *fi)
 #ifdef ENABLE_XATTR
 /* Remove an alternate data stream through the XATTR interface */
 static int
-wimfs_removexattr(const char *path, const mbchar *name)
+wimfs_removexattr(const mbchar *path, const mbchar *name)
 {
 	struct wim_inode *inode;
 	struct wim_ads_entry *ads_entry;
@@ -2480,7 +2480,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const mbchar *dir,
 		   const mbchar *staging_dir)
 {
 	int argc;
-	char *argv[16];
+	mbchar *argv[16];
 	int ret;
 	mbchar *dir_copy;
 	struct wim_lookup_table *joined_tab, *wim_tab_save;
@@ -2594,7 +2594,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const mbchar *dir,
 	/*
 	 * We provide the use_ino option to the FUSE mount because we are going
 	 * to assign inode numbers ourselves. */
-	char optstring[256] =
+	mbchar optstring[256] =
 		"use_ino"
 		",subtype=wimfs"
 		",attr_timeout=0"
