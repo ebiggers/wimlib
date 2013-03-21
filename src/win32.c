@@ -1180,7 +1180,7 @@ realpath(const mbchar *path, mbchar *resolved_path)
 	if (!ret)
 		goto fail_win32;
 
-	resolved_path = MALLOC(ret + 1);
+	resolved_path = MALLOC(ret);
 	if (!resolved_path)
 		goto fail;
 	ret = GetFullPathNameA(path, ret, resolved_path, NULL);
