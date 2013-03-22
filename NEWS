@@ -9,6 +9,15 @@ Version 1.3.1:
 	or even simply rename the binary yourself (but the former way will
 	configure the man pages to use the chosen name).
 
+	Various bugs fixed in the Windows build.  Mainly to do with capturing
+	and restoring alternate data streams correctly in weird cases, and
+	requesting the correct privileges when opening files.  Also added the
+	--noacls options to wimlib-imagex capture, append, and apply.
+
+	Windows build again: FindFirstStreamW() and FindNextStreamW() are now
+	dynamically loaded, so this may make the library compatible with Windows
+	XP (however, there may still be other problems).
+
 Version 1.3.0:
 	Added experimental support for native Windows builds.  Binaries can be
 	downloaded from the SourceForge page.
