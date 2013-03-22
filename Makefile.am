@@ -137,7 +137,7 @@ pkgconfig_DATA	= wimlib.pc
 
 $(pkgconfig_DATA): config.status
 
-man1_MANS =					\
+wimlib_manpages =				\
 	doc/@IMAGEX_PROGNAME@.1			\
 	doc/@IMAGEX_PROGNAME@-append.1		\
 	doc/@IMAGEX_PROGNAME@-apply.1		\
@@ -153,6 +153,9 @@ man1_MANS =					\
 	doc/@IMAGEX_PROGNAME@-split.1		\
 	doc/@IMAGEX_PROGNAME@-unmount.1		\
 	doc/mkwinpeimg.1
+
+man1_MANS = $(wimlib_manpages)
+DISTCLEANFILES = $(wimlib_manpages)
 
 $(man1_MANS): config.status
 
