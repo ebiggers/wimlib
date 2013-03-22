@@ -1000,25 +1000,24 @@ inode_add_ads_with_data(struct wim_inode *inode, const mbchar *name,
 		u8 *value_copy;
 		lte = new_lookup_table_entry();
 		if (!lte)
-			goto out_free_ads_entry;
+			goto out_remove_ads_entry;
 		value_copy = MALLOC(size);
 		if (!value_copy) {
 			FREE(lte);
-			goto out_free_ads_entry;
+			goto out_remove_ads_entry;
 		}
 		memcpy(value_copy, value, size);
 		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
 		lte->attached_buffer              = value_copy;
 		lte->resource_entry.original_size = size;
 		lte->resource_entry.size          = size;
-		lte->resource_entry.flags         = 0;
 		copy_hash(lte->hash, value_hash);
 		lookup_table_insert(lookup_table, lte);
 	}
 	new_ads_entry->lte = lte;
 	ret = 0;
 	goto out;
-out_free_ads_entry:
+out_remove_ads_entry:
 	inode_remove_ads(inode, new_ads_entry - inode->i_ads_entries,
 			 lookup_table);
 out:
