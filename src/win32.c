@@ -236,9 +236,10 @@ win32_recurse_directory(struct wim_dentry *root,
 	ret = 0;
 	do {
 		/* Skip . and .. entries */
-		if (!(dat.cFileName[0] == L'.' &&
-		      (dat.cFileName[1] == L'\0' ||
-		       (dat.cFileName[1] == L'.' && dat.cFileName[2] == L'\0'))))
+		if (!(dat.cFileName[0] == cpu_to_le16(L'.') &&
+		      (dat.cFileName[1] == cpu_to_le16(L'\0') ||
+		       (dat.cFileName[1] == cpu_to_le16(L'.') &&
+			dat.cFileName[2] == cpu_to_le16(L'\0')))))
 		{
 			struct wim_dentry *child;
 
@@ -286,8 +287,7 @@ out_find_close:
  *                 for the reparse point unless an entry already exists for
  *                 the exact same data stream.
  *
- * @path:  External path to the parse point (UTF-8).  Used for error messages
- *         only.
+ * @path:  External path to the reparse point.  Used for error messages only.
  *
  * Returns 0 on success; nonzero on failure. */
 static int
@@ -302,8 +302,14 @@ win32_capture_reparse_point(HANDLE hFile,
 	DWORD bytesReturned;
 
 	if (!DeviceIoControl(hFile, FSCTL_GET_REPARSE_POINT,
-			     NULL, 0, reparse_point_buf,
-			     sizeof(reparse_point_buf), &bytesReturned, NULL))
+			     NULL, /* "Not used with this operation; set to NULL" */
+			     0, /* "Not used with this operation; set to 0" */
+			     reparse_point_buf, /* "A pointer to a buffer that
+						   receives the reparse point data */
+			     sizeof(reparse_point_buf), /* "The size of the output
+							   buffer, in bytes */
+			     &bytesReturned,
+			     NULL))
 	{
 		DWORD err = GetLastError();
 		ERROR("Win32 API: Failed to get reparse data of \"%s\"", path);
@@ -316,7 +322,7 @@ win32_capture_reparse_point(HANDLE hFile,
 	}
 	inode->i_reparse_tag = le32_to_cpu(*(u32*)reparse_point_buf);
 	return inode_add_ads_with_data(inode, "",
-				       (const u8*)reparse_point_buf + 8,
+				       reparse_point_buf + 8,
 				       bytesReturned - 8, lookup_table);
 }
 
@@ -390,18 +396,22 @@ win32_capture_stream(const wchar_t *path_utf16,
 	u8 hash[SHA1_HASH_SIZE];
 	struct wim_lookup_table_entry *lte;
 	int ret;
-	wchar_t *p, *colon;
+	wchar_t *stream_name, *colon;
+	size_t stream_name_nchars;
 	bool is_named_stream;
 	wchar_t *spath;
 	size_t spath_nchars;
 	DWORD err;
+	size_t spath_buf_nbytes;
+	const wchar_t *relpath_prefix;
+	const wchar_t *colonchar;
 
 	/* The stream name should be returned as :NAME:TYPE */
-	p = dat->cStreamName;
-	if (*p != L':')
+	stream_name = dat->cStreamName;
+	if (*stream_name != L':')
 		goto out_invalid_stream_name;
-	p += 1;
-	colon = wcschr(p, L':');
+	stream_name += 1;
+	colon = wcschr(stream_name, L':');
 	if (colon == NULL)
 		goto out_invalid_stream_name;
 
@@ -411,47 +421,56 @@ win32_capture_stream(const wchar_t *path_utf16,
 		goto out;
 	}
 
-	is_named_stream = (p != colon);
+	*colon = '\0';
+
+	stream_name_nchars = colon - stream_name;
+	is_named_stream = (stream_name_nchars != 0);
+
 	if (is_named_stream) {
 		/* Allocate an ADS entry for the named stream. */
-		mbchar *mbs_stream_name;
-		size_t mbs_stream_name_nbytes;
-		ret = utf16le_to_mbs(p,
-				     (colon - p) * sizeof(wchar_t),
-				     &mbs_stream_name,
-				     &mbs_stream_name_nbytes);
-		if (ret)
-			goto out;
-		ads_entry = inode_add_ads(inode, mbs_stream_name);
-		FREE(mbs_stream_name);
+		ads_entry = inode_add_ads_utf16le(inode, stream_name,
+						  stream_name_nchars * 2);
 		if (!ads_entry) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
 		}
 	}
 
-	/* Create a UTF-16 string @spath that gives the filename, then a colon,
-	 * then the stream name.  Or, if it's an unnamed stream, just the
+	/* Create a UTF-16LE string @spath that gives the filename, then a
+	 * colon, then the stream name.  Or, if it's an unnamed stream, just the
 	 * filename.  It is MALLOC()'ed so that it can be saved in the
-	 * wim_lookup_table_entry if needed. */
-	*colon = '\0';
+	 * wim_lookup_table_entry if needed.
+	 *
+	 * As yet another special case, relative paths need to be changed to
+	 * begin with an explicit "./" so that, for example, a file t:ads, where
+	 * :ads is the part we added, is not interpreted as a file on the t:
+	 * drive. */
 	spath_nchars = path_utf16_nchars;
-	if (is_named_stream)
-		spath_nchars += colon - p + 1;
-
-	spath = MALLOC((spath_nchars + 1) * sizeof(wchar_t));
-	memcpy(spath, path_utf16, path_utf16_nchars * sizeof(wchar_t));
+	relpath_prefix = L"";
+	colonchar = L"";
 	if (is_named_stream) {
-		spath[path_utf16_nchars] = L':';
-		memcpy(&spath[path_utf16_nchars + 1], p, (colon - p) * sizeof(wchar_t));
+		spath_nchars += 1 + stream_name_nchars;
+		colonchar = L":";
+		if (path_utf16_nchars == 1 &&
+		    path_utf16[0] != cpu_to_le16('/') &&
+		    path_utf16[0] != cpu_to_le16('\\'))
+		{
+			spath_nchars += 2;
+			relpath_prefix = L"./";
+		}
 	}
-	spath[spath_nchars] = L'\0';
+
+	spath_buf_nbytes = (spath_nchars + 1) * sizeof(wchar_t);
+	spath = MALLOC(spath_buf_nbytes);
+
+	swprintf(spath, spath_buf_nbytes, L"%ls%ls%ls%ls",
+		 relpath_prefix, path_utf16, colonchar, stream_name);
 
 	ret = win32_sha1sum(spath, hash);
 	if (ret) {
 		err = GetLastError();
 		ERROR("Win32 API: Failed to read \"%ls\" to calculate SHA1sum",
-		      path_utf16);
+		      spath);
 		win32_error(err);
 		goto out_free_spath;
 	}
@@ -833,7 +852,7 @@ win32_extract_stream(const struct wim_inode *inode,
 
 	if (stream_name_utf16) {
 		/* Named stream.  Create a buffer that contains the UTF-16LE
-		 * string [./]@path:@stream_name_utf16.  This is needed to
+		 * string [.\]@path:@stream_name_utf16.  This is needed to
 		 * create and open the stream using CreateFileW().  I'm not
 		 * aware of any other APIs to do this.  Note: the '$DATA' suffix
 		 * seems to be unneeded.  Additional note: a "./" prefix needs
@@ -847,7 +866,11 @@ win32_extract_stream(const struct wim_inode *inode,
 		path_nchars = wcslen(path);
 		stream_name_nchars = wcslen(stream_name_utf16);
 		stream_path_nchars = path_nchars + 1 + stream_name_nchars;
-		if (path[0] != L'/' && path[0] != L'\\') {
+		if (path[0] != cpu_to_le16(L'\0') &&
+		    path[0] != cpu_to_le16(L'/') &&
+		    path[0] != cpu_to_le16(L'\\') &&
+		    path[1] != cpu_to_le16(L':'))
+		{
 			prefix = L"./";
 			stream_path_nchars += 2;
 		} else {
