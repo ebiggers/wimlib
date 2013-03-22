@@ -31,7 +31,7 @@
 
 /* None of this file is ever needed in Win32 builds because the reparse point
  * buffers are not parsed. */
-#if !defined(__WIN32__) && !defined(WITH_FUSE)
+#if !defined(__WIN32__) || defined(WITH_FUSE)
 
 /*
  * Find the symlink target of a symbolic link or junction point in the WIM.
