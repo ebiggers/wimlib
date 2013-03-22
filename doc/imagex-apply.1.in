@@ -244,12 +244,18 @@ File glob of additional split WIM parts that are part of the split WIM being
 applied.  See \fBSPLIT_WIMS\fR.
 .TP
 \fB--unix-data\fR
-This option may only be given in the normal extraction mode (not NTFS).
-By default, in the normal extraction mode, \fB@IMAGEX_PROGNAME@ apply\fR will ignore both
-Windows-style security descriptors and UNIX-specific file owners, groups, and
-modes set when using \fB@IMAGEX_PROGNAME@ capture\fR with the \fB--unix-data\fR flag.  By
-passing \fB--unix-data\fR to \fB@IMAGEX_PROGNAME@ apply\fR instead, this causes this
-UNIX-specific data to be restored when available.
+This option may only be given in the normal extraction mode (not NTFS).  By
+default, in the normal extraction mode on UNIX, \fB@IMAGEX_PROGNAME@ apply\fR
+will ignore both Windows-style security descriptors and UNIX-specific file
+owners, groups, and modes set when using \fB@IMAGEX_PROGNAME@ capture\fR with
+the \fB--unix-data\fR flag.  By passing \fB--unix-data\fR to
+\fB@IMAGEX_PROGNAME@ apply\fR instead, this causes this UNIX-specific data to be
+restored when available.
+.TP
+\fB--noacls\fR
+In the NTFS apply mode, do not apply security descriptors.  This flag is also
+available in the native Win32 build of wimlib and may be useful when running
+\fB@IMAGEX_PROGNAME@\fR as a non-administrator.
 
 .SH NOTES
 

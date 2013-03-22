@@ -20,7 +20,7 @@ win32_read_file(const mbchar *filename, void *handle, u64 offset,
 		size_t size, void *buf);
 
 extern HANDLE
-win32_open_file_readonly(const wchar_t *path_utf16, bool data_only);
+win32_open_file_data_only(const wchar_t *path_utf16);
 
 extern void
 win32_close_file(void *handle);

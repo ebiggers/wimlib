@@ -274,7 +274,8 @@ static int
 apply_file_attributes_and_security_data(ntfs_inode *ni,
 					ntfs_inode *dir_ni,
 					const struct wim_dentry *dentry,
-					const WIMStruct *w)
+					const WIMStruct *w,
+					int extract_flags)
 {
 	int ret;
 	struct SECURITY_CONTEXT ctx;
@@ -298,7 +299,9 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 		       dentry->full_path);
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	if (inode->i_security_id != -1) {
+	if (inode->i_security_id != -1 &&
+	    !(extract_flags & WIMLIB_EXTRACT_FLAG_NOACLS))
+	{
 		const char *desc;
 		const struct wim_security_data *sd;
 
@@ -439,7 +442,8 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 	}
 
 	ret = apply_file_attributes_and_security_data(ni, dir_ni, dentry,
-						      args->w);
+						      args->w,
+						      args->extract_flags);
 	if (ret != 0)
 		goto out_close_dir_ni;
 
@@ -497,7 +501,8 @@ out:
 
 static int
 apply_root_dentry_ntfs(const struct wim_dentry *dentry,
-		       ntfs_volume *vol, const WIMStruct *w)
+		       ntfs_volume *vol, const WIMStruct *w,
+		       int extract_flags)
 {
 	ntfs_inode *ni;
 	int ret = 0;
@@ -507,7 +512,8 @@ apply_root_dentry_ntfs(const struct wim_dentry *dentry,
 		ERROR_WITH_ERRNO("Could not find root NTFS inode");
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	ret = apply_file_attributes_and_security_data(ni, ni, dentry, w);
+	ret = apply_file_attributes_and_security_data(ni, ni, dentry, w,
+						      extract_flags);
 	if (ntfs_inode_close(ni) != 0) {
 		ERROR_WITH_ERRNO("Failed to close NTFS inode for root "
 				 "directory");
@@ -529,7 +535,8 @@ apply_dentry_ntfs(struct wim_dentry *dentry, void *arg)
 
 	/* Treat the root dentry specially. */
 	if (dentry_is_root(dentry))
-		return apply_root_dentry_ntfs(dentry, vol, w);
+		return apply_root_dentry_ntfs(dentry, vol, w,
+					      args->extract_flags);
 
 	/* NTFS filename namespaces need careful consideration.  A name for a
 	 * NTFS file may be in either the POSIX, Win32, DOS, or Win32+DOS

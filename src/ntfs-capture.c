@@ -602,34 +602,36 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 	if (ret != 0)
 		return ret;
 
-	/* Get security descriptor */
-	char _sd[1];
-	char *sd = _sd;
-	errno = 0;
-	ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ACL,
-					 ni, dir_ni, sd,
-					 sizeof(sd));
-	if (ret > sizeof(sd)) {
-		sd = alloca(ret);
+	if (!(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
+		/* Get security descriptor */
+		char _sd[1];
+		char *sd = _sd;
+		errno = 0;
 		ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ACL,
-						 ni, dir_ni, sd, ret);
-	}
-	if (ret > 0) {
-		root->d_inode->i_security_id = sd_set_add_sd(sd_set, sd, ret);
-		if (root->d_inode->i_security_id == -1) {
-			ERROR("Out of memory");
-			return WIMLIB_ERR_NOMEM;
+						 ni, dir_ni, sd,
+						 sizeof(sd));
+		if (ret > sizeof(sd)) {
+			sd = alloca(ret);
+			ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ACL,
+							 ni, dir_ni, sd, ret);
 		}
-		DEBUG("Added security ID = %u for `%s'",
-		      root->d_inode->i_security_id, path);
-		ret = 0;
-	} else if (ret < 0) {
-		ERROR_WITH_ERRNO("Failed to get security information from "
-				 "`%s'", path);
-		ret = WIMLIB_ERR_NTFS_3G;
-	} else {
-		root->d_inode->i_security_id = -1;
-		DEBUG("No security ID for `%s'", path);
+		if (ret > 0) {
+			root->d_inode->i_security_id = sd_set_add_sd(sd_set, sd, ret);
+			if (root->d_inode->i_security_id == -1) {
+				ERROR("Out of memory");
+				return WIMLIB_ERR_NOMEM;
+			}
+			DEBUG("Added security ID = %u for `%s'",
+			      root->d_inode->i_security_id, path);
+			ret = 0;
+		} else if (ret < 0) {
+			ERROR_WITH_ERRNO("Failed to get security information from "
+					 "`%s'", path);
+			ret = WIMLIB_ERR_NTFS_3G;
+		} else {
+			root->d_inode->i_security_id = -1;
+			DEBUG("No security ID for `%s'", path);
+		}
 	}
 	return ret;
 }

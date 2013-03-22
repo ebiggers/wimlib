@@ -75,12 +75,9 @@ win32_error_last()
 }
 #endif
 
-HANDLE
-win32_open_file_readonly(const wchar_t *path, bool data_only)
+static HANDLE
+win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess)
 {
-	DWORD dwDesiredAccess = FILE_READ_DATA;
-	if (!data_only)
-		dwDesiredAccess |= FILE_READ_ATTRIBUTES | READ_CONTROL | ACCESS_SYSTEM_SECURITY;
 	return CreateFileW(path,
 			   dwDesiredAccess,
 			   FILE_SHARE_READ,
@@ -89,6 +86,12 @@ win32_open_file_readonly(const wchar_t *path, bool data_only)
 			   FILE_FLAG_BACKUP_SEMANTICS |
 			       FILE_FLAG_OPEN_REPARSE_POINT,
 			   NULL /* hTemplateFile */);
+}
+
+HANDLE
+win32_open_file_data_only(const wchar_t *path)
+{
+	return win32_open_existing_file(path, FILE_READ_DATA);
 }
 
 int
@@ -346,7 +349,7 @@ win32_sha1sum(const wchar_t *path, u8 hash[SHA1_HASH_SIZE])
 	DWORD bytesRead;
 	int ret;
 
-	hFile = win32_open_file_readonly(path, false);
+	hFile = win32_open_file_data_only(path);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return WIMLIB_ERR_OPEN;
 
@@ -639,7 +642,8 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		goto out_destroy_sd_set;
 	path_utf16_nchars = path_utf16_nbytes / sizeof(wchar_t);
 
-	HANDLE hFile = win32_open_file_readonly(path_utf16, false);
+	HANDLE hFile = win32_open_existing_file(path_utf16,
+						FILE_READ_DATA | FILE_READ_ATTRIBUTES);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
 		ERROR("Win32 API: Failed to open \"%s\"", root_disk_path);
@@ -680,9 +684,12 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	ret = win32_get_short_name(root, path_utf16);
 	if (ret)
 		goto out_close_handle;
-	ret = win32_get_security_descriptor(root, sd_set, path_utf16);
-	if (ret)
-		goto out_close_handle;
+
+	if (!(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
+		ret = win32_get_security_descriptor(root, sd_set, path_utf16);
+		if (ret)
+			goto out_close_handle;
+	}
 
 	if (inode_is_directory(inode)) {
 		/* Directory (not a reparse point) --- recurse to children */
@@ -842,13 +849,25 @@ static int
 win32_extract_stream(const struct wim_inode *inode,
 		     const wchar_t *path,
 		     const wchar_t *stream_name_utf16,
-		     struct wim_lookup_table_entry *lte)
+		     struct wim_lookup_table_entry *lte,
+		     const struct wim_security_data *security_data)
 {
 	wchar_t *stream_path;
 	HANDLE h;
 	int ret;
 	DWORD err;
 	DWORD creationDisposition = CREATE_ALWAYS;
+
+	SECURITY_ATTRIBUTES *secattr;
+
+	if (security_data && inode->i_security_id != -1) {
+		secattr = alloca(sizeof(*secattr));
+		secattr->nLength = sizeof(*secattr);
+		secattr->lpSecurityDescriptor = security_data->descriptors[inode->i_security_id];
+		secattr->bInheritHandle = FALSE;
+	} else {
+		secattr = NULL;
+	}
 
 	if (stream_name_utf16) {
 		/* Named stream.  Create a buffer that contains the UTF-16LE
@@ -888,7 +907,7 @@ win32_extract_stream(const struct wim_inode *inode,
 		 * the call to CreateFileW() will merely open the directory that
 		 * was already created rather than creating a new file. */
 		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-			if (!CreateDirectoryW(stream_path, NULL)) {
+			if (!CreateDirectoryW(stream_path, secattr)) {
 				err = GetLastError();
 				if (err != ERROR_ALREADY_EXISTS) {
 					ERROR("Failed to create directory \"%ls\"",
@@ -909,9 +928,9 @@ win32_extract_stream(const struct wim_inode *inode,
 
 	DEBUG("Opening \"%ls\"", stream_path);
 	h = CreateFileW(stream_path,
-			GENERIC_WRITE | WRITE_OWNER | WRITE_DAC | ACCESS_SYSTEM_SECURITY,
+			GENERIC_WRITE,
 			0,
-			NULL,
+			secattr,
 			creationDisposition,
 			FILE_FLAG_OPEN_REPARSE_POINT |
 			    FILE_FLAG_BACKUP_SEMANTICS |
@@ -972,13 +991,15 @@ out:
  */
 static int
 win32_extract_streams(const struct wim_inode *inode,
-		      const wchar_t *path, u64 *completed_bytes_p)
+		      const wchar_t *path, u64 *completed_bytes_p,
+		      const struct wim_security_data *security_data)
 {
 	struct wim_lookup_table_entry *unnamed_lte;
 	int ret;
 
 	unnamed_lte = inode_unnamed_lte_resolved(inode);
-	ret = win32_extract_stream(inode, path, NULL, unnamed_lte);
+	ret = win32_extract_stream(inode, path, NULL, unnamed_lte,
+				   security_data);
 	if (ret)
 		goto out;
 	if (unnamed_lte)
@@ -996,7 +1017,8 @@ win32_extract_streams(const struct wim_inode *inode,
 			ret = win32_extract_stream(inode,
 						   path,
 						   ads_entry->stream_name,
-						   ads_entry->lte);
+						   ads_entry->lte,
+						   NULL);
 			if (ret)
 				break;
 			if (ads_entry->lte)
@@ -1005,35 +1027,6 @@ win32_extract_streams(const struct wim_inode *inode,
 	}
 out:
 	return ret;
-}
-
-/*
- * Sets the security descriptor on an extracted file.  This is Win32-specific
- * code.
- *
- * @inode:	The WIM inode that was extracted and has a security descriptor.
- * @path:	UTF-16LE external path that the inode was extracted to.
- * @sd:		Security data for the WIM image.
- *
- * Returns 0 on success; nonzero on failure.
- */
-static int win32_set_security_data(const struct wim_inode *inode,
-				   const wchar_t *path,
-				   const struct wim_security_data *sd)
-{
-	SECURITY_INFORMATION securityInformation = DACL_SECURITY_INFORMATION |
-					           SACL_SECURITY_INFORMATION |
-					           OWNER_SECURITY_INFORMATION |
-					           GROUP_SECURITY_INFORMATION;
-	if (!SetFileSecurityW(path, securityInformation,
-			      (PSECURITY_DESCRIPTOR)sd->descriptors[inode->i_security_id]))
-	{
-		DWORD err = GetLastError();
-		ERROR("Can't set security descriptor on \"%ls\"", path);
-		win32_error(err);
-		return WIMLIB_ERR_WRITE;
-	}
-	return 0;
 }
 
 /* Extract a file, directory, reparse point, or hard link to an
@@ -1070,21 +1063,18 @@ int win32_do_apply_dentry(const mbchar *output_path,
 	} else {
 		/* Create the file, directory, or reparse point, and extract the
 		 * data streams. */
+		const struct wim_security_data *security_data;
+		if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NOACLS)
+			security_data = NULL;
+		else
+			security_data = wim_const_security_data(args->w);
+
 		ret = win32_extract_streams(inode, utf16le_path,
-					    &args->progress.extract.completed_bytes);
+					    &args->progress.extract.completed_bytes,
+					    security_data);
 		if (ret)
 			goto out_free_utf16_path;
 
-		/* Set security descriptor if present */
-		if (inode->i_security_id != -1) {
-			DEBUG("Setting security descriptor %d on %s",
-			      inode->i_security_id, output_path);
-			ret = win32_set_security_data(inode,
-						      utf16le_path,
-						      wim_const_security_data(args->w));
-			if (ret)
-				goto out_free_utf16_path;
-		}
 		if (inode->i_nlink > 1) {
 			/* Save extracted path for a later call to
 			 * CreateHardLinkW() if this inode has multiple links.
@@ -1120,13 +1110,7 @@ win32_do_apply_dentry_timestamps(const mbchar *output_path,
 		return ret;
 
 	DEBUG("Opening \"%s\" to set timestamps", output_path);
-	h = CreateFileW(utf16le_path,
-			GENERIC_WRITE | WRITE_OWNER | WRITE_DAC | ACCESS_SYSTEM_SECURITY,
-			FILE_SHARE_READ,
-			NULL,
-			OPEN_EXISTING,
-			FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-			NULL);
+	h = win32_open_existing_file(utf16le_path, FILE_WRITE_ATTRIBUTES);
 
 	if (h == INVALID_HANDLE_VALUE)
 		err = GetLastError();

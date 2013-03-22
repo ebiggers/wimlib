@@ -633,6 +633,10 @@ struct wimlib_capture_source {
  * This flag cannot be combined with ::WIMLIB_ADD_IMAGE_FLAG_NTFS.  */
 #define WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA			0x00000010
 
+/** Do not capture security descriptors.  Only has an effect in NTFS capture
+ * mode, or in Win32 native builds. */
+#define WIMLIB_ADD_IMAGE_FLAG_NO_ACLS			0x00000020
+
 /******************************
  * WIMLIB_EXPORT_FLAG_* *
  ******************************/
@@ -668,6 +672,10 @@ struct wimlib_capture_source {
 /** Extract special UNIX data captured with ::WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA.
  * Cannot be used with ::WIMLIB_EXTRACT_FLAG_NTFS. */
 #define WIMLIB_EXTRACT_FLAG_UNIX_DATA			0x00000020
+
+/** Do not extract security descriptors.  Only has an effect in NTFS apply mode,
+ * or in Win32 native builds. */
+#define WIMLIB_EXTRACT_FLAG_NOACLS			0x00000040
 
 /******************************
  * WIMLIB_MOUNT_FLAG_*        *

@@ -81,17 +81,18 @@ IMAGEX_PROGNAME" append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                     [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
 "                     [--verbose] [--dereference] [--config=FILE]\n"
 "                     [--threads=NUM_THREADS] [--rebuild] [--unix-data]\n"
-"                     [--source-list]\n",
+"                     [--source-list] [--noacls]\n",
 [APPLY] =
 IMAGEX_PROGNAME" apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
-"                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n",
+"                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n"
+"                    [--noacls]\n",
 [CAPTURE] =
 IMAGEX_PROGNAME" capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                      [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
 "                      [--flags EDITION_ID] [--verbose] [--dereference]\n"
 "                      [--config=FILE] [--threads=NUM_THREADS] [--unix-data]\n"
-"                      [--source-list]\n",
+"                      [--source-list] [--noacls]\n",
 [DELETE] =
 IMAGEX_PROGNAME" delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check] [--soft]\n",
 [DIR] =
@@ -130,6 +131,7 @@ static const struct option apply_options[] = {
 	{"verbose",   no_argument,       NULL, 'v'},
 	{"ref",       required_argument, NULL, 'r'},
 	{"unix-data", no_argument,       NULL, 'U'},
+	{"noacls",    no_argument,       NULL, 'N'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_or_append_options[] = {
@@ -144,6 +146,7 @@ static const struct option capture_or_append_options[] = {
 	{"rebuild",     no_argument,       NULL, 'R'},
 	{"unix-data",   no_argument,       NULL, 'U'},
 	{"source-list", no_argument,       NULL, 'S'},
+	{"noacls",      no_argument,       NULL, 'N'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -841,6 +844,9 @@ static int imagex_apply(int argc, char **argv)
 		case 'U':
 			extract_flags |= WIMLIB_EXTRACT_FLAG_UNIX_DATA;
 			break;
+		case 'N':
+			extract_flags |= WIMLIB_EXTRACT_FLAG_NOACLS;
+			break;
 		default:
 			usage(APPLY);
 			return -1;
@@ -998,6 +1004,9 @@ static int imagex_capture_or_append(int argc, char **argv)
 			break;
 		case 'S':
 			source_list = true;
+			break;
+		case 'N':
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NO_ACLS;
 			break;
 		default:
 			usage(cmd);

@@ -313,7 +313,7 @@ prepare_resource_for_read(struct wim_lookup_table_entry *lte
 	case RESOURCE_WIN32:
 		if (lte->win32_file_on_disk_fp == INVALID_HANDLE_VALUE) {
 			lte->win32_file_on_disk_fp =
-				win32_open_file_readonly(lte->win32_file_on_disk, true);
+				win32_open_file_data_only(lte->win32_file_on_disk);
 			if (lte->win32_file_on_disk_fp == INVALID_HANDLE_VALUE) {
 				ERROR("Win32 API: Can't open %ls", lte->win32_file_on_disk);
 				win32_error_last();

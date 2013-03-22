@@ -234,6 +234,11 @@ for convenience only, in case you want to use \fB@IMAGEX_PROGNAME@\fR to archive
 UNIX.  Microsoft's software will not understand this special
 information.
 .TP
+\fB--noacls\fR
+In the NTFS capture mode, do not capture security descriptors.  This flag is
+also available in the native Win32 build of wimlib and may be useful when
+running \fB@IMAGEX_PROGNAME@\fR as a non-administrator.
+.TP
 \fB--source-list\fR
 \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR, as of wimlib 1.3.0, support a new
 option to create a WIM image from multiple files or directories.  When
