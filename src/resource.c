@@ -46,6 +46,10 @@
 #  include <ntfs-3g/dir.h>
 #endif
 
+#if defined(__WIN32__) && !defined(INVALID_HANDLE_VALUE)
+#  define INVALID_HANDLE_VALUE ((HANDLE)(-1))
+#endif
+
 /*
  * Reads all or part of a compressed resource into an in-memory buffer.
  *
@@ -570,9 +574,10 @@ read_wim_resource(const struct wim_lookup_table_entry *lte, void *buf,
 		break;
 #ifdef __WIN32__
 	case RESOURCE_WIN32:
-		wimlib_assert(lte->file_on_disk_fp != NULL);
-		ret = win32_read_file(lte->file_on_disk, lte->file_on_disk_fp,
-				      offset, size, buf);
+		wimlib_assert(lte->win32_file_on_disk_fp != INVALID_HANDLE_VALUE);
+		ret = win32_read_file(lte->win32_file_on_disk,
+				      lte->win32_file_on_disk_fp, offset, size,
+				      buf);
 		break;
 #endif
 	case RESOURCE_IN_ATTACHED_BUFFER:

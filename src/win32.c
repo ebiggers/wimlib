@@ -159,7 +159,7 @@ win32_open_file_data_only(const wchar_t *path)
 }
 
 int
-win32_read_file(const mbchar *filename,
+win32_read_file(const utf16lechar *win32_filename,
 		void *handle, u64 offset, size_t size, void *buf)
 {
 	HANDLE h = handle;
@@ -173,7 +173,7 @@ win32_read_file(const mbchar *filename,
 		if (ReadFile(h, buf, size, &bytesRead, NULL) && bytesRead == size)
 			return 0;
 	err = GetLastError();
-	ERROR("Error reading \"%s\"", filename);
+	ERROR("Error reading \"%ls\"", win32_filename);
 	win32_error(err);
 	return WIMLIB_ERR_READ;
 }

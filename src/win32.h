@@ -16,8 +16,8 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 			void *extra_arg);
 
 extern int
-win32_read_file(const mbchar *filename, void *handle, u64 offset,
-		size_t size, void *buf);
+win32_read_file(const utf16lechar *win32_filename, void *handle,
+		u64 offset, size_t size, void *buf);
 
 extern HANDLE
 win32_open_file_data_only(const wchar_t *path_utf16);
