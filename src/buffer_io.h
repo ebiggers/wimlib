@@ -121,12 +121,12 @@ get_bytes(const void *p, size_t num_bytes, void *res)
 static inline void *
 put_zeroes(void *p, size_t num_bytes)
 {
-	return (u8*)memset(p, 0, num_bytes) + num_bytes;
+	return memset(p, 0, num_bytes) + num_bytes;
 }
 
 static inline void *
 put_bytes(void *p, size_t num_bytes, const void *input)
 {
-	return (u8*)memcpy(p, input, num_bytes) + num_bytes;
+	return memcpy(p, input, num_bytes) + num_bytes;
 }
 #endif /* _WIMLIB_BUFFER_IO_H */
