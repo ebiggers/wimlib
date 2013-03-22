@@ -108,22 +108,22 @@ same bugs in wimlib, although in some cases I have had to work around bugs for
 compatibility purposes.
 
 .IP \[bu]
-wimlib's \fB@IMAGEX_PROGNAME@\fR offers the extra command \fB@IMAGEX_PROGNAME@ optimize\fR,
+\fB@IMAGEX_PROGNAME@\fR offers the extra command \fB@IMAGEX_PROGNAME@ optimize\fR,
 which lets you easily remove wasted space in a WIM (which can arise after
 a WIM image is appended or mounted read-write).
 
 .IP \[bu]
-wimlib's \fB@IMAGEX_PROGNAME@\fR also offers the command \fB@IMAGEX_PROGNAME@ join\fR, which lets you
+\fB@IMAGEX_PROGNAME@\fR also offers the command \fB@IMAGEX_PROGNAME@ join\fR, which lets you
 easily join the parts of a split WIM.
 
 .IP \[bu]
-wimlib's \fB@IMAGEX_PROGNAME@ apply\fR supports keeping files hard-linked or symlinked
+\fB@IMAGEX_PROGNAME@ apply\fR supports keeping files hard-linked or symlinked
 across WIM images when extracted from a WIM.  So you can, for example, extract
 different versions of Windows from an install.wim without using much extra
 space.  (Note: this functionality is only available in UNIX builds of wimlib.)
 
 .IP \[bu]
-wimlib's \fB@IMAGEX_PROGNAME@ capture\fR supports combining multiple separate directories
+\fB@IMAGEX_PROGNAME@ capture\fR supports combining multiple separate directories
 and files together in a configurable way to create a WIM image.
 
 .IP \[bu]
@@ -134,18 +134,18 @@ wimlib supports multithreaded compression, which can make it much faster to
 create compressed WIM files.
 
 .IP \[bu]
-wimlib's \fB@IMAGEX_PROGNAME@ capture\fR supports a special mode where UNIX file modes,
+\fB@IMAGEX_PROGNAME@ capture\fR supports a special mode where UNIX file modes,
 owners, and groups are stored.  (Note: this functionality is only available on
 UNIX builds.)
 
 .IP \[bu]
-wimlib's \fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR are much faster than
+\fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR are much faster than
 Microsoft's versions for some reason.  I don't know what they have their program
 do that takes so long to simply set up a mountpoint.  (Note: this functionality
 is only available on UNIX builds.)
 
 .IP \[bu]
-wimlib's \fB@IMAGEX_PROGNAME@ mount\fR supports mounting an image from a split WIM, but
+\fB@IMAGEX_PROGNAME@ mount\fR supports mounting an image from a split WIM, but
 Microsoft's software does not.  (Note: this functionality is only available on
 UNIX builds.)
 
