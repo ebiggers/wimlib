@@ -80,4 +80,7 @@ rename_replacement(const char *oldpath, const char *newpath);
 extern void
 win32_global_init();
 
+extern void
+win32_global_cleanup();
+
 #endif /* _WIMLIB_WIN32_H */

@@ -704,4 +704,7 @@ wimlib_global_cleanup()
 {
 	libxml_global_cleanup();
 	iconv_global_cleanup();
+#ifdef __WIN32__
+	win32_global_cleanup();
+#endif
 }

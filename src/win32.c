@@ -60,6 +60,8 @@ static HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
 static BOOL (WINAPI *win32func_FindNextStreamW)(HANDLE hFindStream,
 					 LPVOID lpFindStreamData) = NULL;
 
+static HMODULE hKernel32 = NULL;
+
 /* Try to dynamically load some functions */
 void
 win32_global_init()
@@ -67,34 +69,43 @@ win32_global_init()
 	DWORD err;
 	bool warned;
 
-	DEBUG("Loading Kernel32.dll");
 
-	HMODULE lib = LoadLibraryA("Kernel32.dll");
-	if (lib == NULL) {
-		err = GetLastError();
-		WARNING("Can't load Kernel32.dll");
-		win32_error(err);
-		return;
+	if (hKernel32 == NULL) {
+		DEBUG("Loading Kernel32.dll");
+		hKernel32 = LoadLibraryA("Kernel32.dll");
+		if (hKernel32 == NULL) {
+			err = GetLastError();
+			WARNING("Can't load Kernel32.dll");
+			win32_error(err);
+			return;
+		}
 	}
 
 	DEBUG("Looking for FindFirstStreamW");
-	win32func_FindFirstStreamW = (void*)GetProcAddress(lib, "FindFirstStreamW");
+	win32func_FindFirstStreamW = (void*)GetProcAddress(hKernel32, "FindFirstStreamW");
 	if (!win32func_FindFirstStreamW) {
 		WARNING("Could not find function FindFirstStreamW() in Kernel32.dll!");
 		WARNING("Capturing alternate data streams will not be supported.");
-		goto out_free_lib;
+		return;
 	}
 
 	DEBUG("Looking for FindNextStreamW");
-	win32func_FindNextStreamW = (void*)GetProcAddress(lib, "FindNextStreamW");
+	win32func_FindNextStreamW = (void*)GetProcAddress(hKernel32, "FindNextStreamW");
 	if (!win32func_FindNextStreamW) {
 		WARNING("Could not find function FindNextStreamW() in Kernel32.dll!");
 		WARNING("Capturing alternate data streams will not be supported.");
 		win32func_FindFirstStreamW = NULL;
 	}
-out_free_lib:
-	DEBUG("Closing Kernel32.dll");
-	FreeLibrary(lib);
+}
+
+void
+win32_global_cleanup()
+{
+	if (hKernel32 != NULL) {
+		DEBUG("Closing Kernel32.dll");
+		FreeLibrary(hKernel32);
+		hKernel32 = NULL;
+	}
 }
 
 static const char *access_denied_msg =
