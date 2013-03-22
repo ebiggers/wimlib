@@ -29,6 +29,10 @@
 #include "sha1.h"
 #include <errno.h>
 
+/* None of this file is ever needed in Win32 builds because the reparse point
+ * buffers are not parsed. */
+#if !defined(__WIN32__) && !defined(WITH_FUSE)
+
 /*
  * Find the symlink target of a symbolic link or junction point in the WIM.
  *
@@ -266,3 +270,5 @@ out_free_symlink_buf:
 	FREE(symlink_buf);
 	return ret;
 }
+
+#endif /* !defined(__WIN32__) && !defined(WITH_FUSE) */
