@@ -691,6 +691,9 @@ wimlib_global_init()
 	libntfs3g_global_init();
 #endif
 	wimlib_mbs_is_utf8 = test_locale_ctype_utf8();
+#ifdef __WIN32__
+	win32_global_init();
+#endif
 	return 0;
 }
 

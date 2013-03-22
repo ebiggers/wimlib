@@ -44,6 +44,59 @@
 
 #include <errno.h>
 
+
+
+/* Pointers to functions that are not available on all targetted versions of
+ * Windows (XP and later).  NOTE: The WINAPI annotations seem to be important; I
+ * assume it specifies a certain calling convention. */
+
+/* Vista and later */
+static HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
+					    STREAM_INFO_LEVELS InfoLevel,
+					    LPVOID lpFindStreamData,
+					    DWORD dwFlags) = NULL;
+
+/* Vista and later */
+static BOOL (WINAPI *win32func_FindNextStreamW)(HANDLE hFindStream,
+					 LPVOID lpFindStreamData) = NULL;
+
+/* Try to dynamically load some functions */
+void
+win32_global_init()
+{
+	DWORD err;
+	bool warned;
+
+	DEBUG("Loading Kernel32.dll");
+
+	HMODULE lib = LoadLibraryA("Kernel32.dll");
+	if (lib == NULL) {
+		err = GetLastError();
+		WARNING("Can't load Kernel32.dll");
+		win32_error(err);
+		return;
+	}
+
+	DEBUG("Looking for FindFirstStreamW");
+	win32func_FindFirstStreamW = (void*)GetProcAddress(lib, "FindFirstStreamW");
+	if (!win32func_FindFirstStreamW) {
+		WARNING("Could not find function FindFirstStreamW() in Kernel32.dll!");
+		WARNING("Capturing alternate data streams will not be supported.");
+		goto out_free_lib;
+	}
+
+	DEBUG("Looking for FindNextStreamW");
+	win32func_FindNextStreamW = (void*)GetProcAddress(lib, "FindNextStreamW");
+	if (!win32func_FindNextStreamW) {
+		WARNING("Could not find function FindNextStreamW() in Kernel32.dll!");
+		WARNING("Capturing alternate data streams will not be supported.");
+		win32func_FindFirstStreamW = NULL;
+	}
+out_free_lib:
+	DEBUG("Closing Kernel32.dll");
+	FreeLibrary(lib);
+}
+
 static const char *access_denied_msg =
 "         If you are not running this program as the administrator, you may\n"
 "         need to do so, so that all data and metadata can be backed up.\n"
@@ -524,22 +577,32 @@ out_invalid_stream_name:
  *
  * @lookup_table:       Stream lookup table for the WIM.
  *
+ * @file_size:		Size of unnamed data stream.  (Used only if alternate
+ *                      data streams API appears to be unavailable.)
+ *
  * Returns 0 on success; nonzero on failure.
  */
 static int
 win32_capture_streams(const wchar_t *path_utf16,
 		      size_t path_utf16_nchars,
 		      struct wim_inode *inode,
-		      struct wim_lookup_table *lookup_table)
+		      struct wim_lookup_table *lookup_table,
+		      u64 file_size)
 {
 	WIN32_FIND_STREAM_DATA dat;
 	int ret;
 	HANDLE hFind;
 	DWORD err;
 
-	hFind = FindFirstStreamW(path_utf16, FindStreamInfoStandard, &dat, 0);
+	if (win32func_FindFirstStreamW == NULL)
+		goto unnamed_only;
+
+	hFind = win32func_FindFirstStreamW(path_utf16, FindStreamInfoStandard, &dat, 0);
 	if (hFind == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
+
+		if (err == ERROR_CALL_NOT_IMPLEMENTED)
+			goto unnamed_only;
 
 		/* Seems legal for this to return ERROR_HANDLE_EOF on reparse
 		 * points and directories */
@@ -569,7 +632,7 @@ win32_capture_streams(const wchar_t *path_utf16,
 					   &dat);
 		if (ret)
 			goto out_find_close;
-	} while (FindNextStreamW(hFind, &dat));
+	} while (win32func_FindNextStreamW(hFind, &dat));
 	err = GetLastError();
 	if (err != ERROR_HANDLE_EOF) {
 		ERROR("Win32 API: Error reading data streams from \"%ls\"", path_utf16);
@@ -578,6 +641,20 @@ win32_capture_streams(const wchar_t *path_utf16,
 	}
 out_find_close:
 	FindClose(hFind);
+	return ret;
+unnamed_only:
+	if (inode->i_attributes &
+	     (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
+	{
+		ret = 0;
+	} else {
+		wcscpy(dat.cStreamName, L"::$DATA");
+		dat.StreamSize.QuadPart = file_size;
+		ret = win32_capture_stream(path_utf16,
+					   path_utf16_nchars,
+					   inode, lookup_table,
+					   &dat);
+	}
 	return ret;
 }
 
@@ -601,6 +678,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	size_t path_utf16_nchars;
 	struct sd_set *sd_set;
 	DWORD err;
+	u64 file_size;
 
 	if (exclude_path(root_disk_path, config, true)) {
 		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
@@ -691,6 +769,9 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 			goto out_close_handle;
 	}
 
+	file_size = ((u64)file_info.nFileSizeHigh << 32) |
+		     (u64)file_info.nFileSizeLow;
+
 	if (inode_is_directory(inode)) {
 		/* Directory (not a reparse point) --- recurse to children */
 
@@ -699,7 +780,8 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		ret = win32_capture_streams(path_utf16,
 					    path_utf16_nchars,
 					    inode,
-					    lookup_table);
+					    lookup_table,
+					    file_size);
 		if (ret)
 			goto out_close_handle;
 		ret = win32_recurse_directory(root,
@@ -724,7 +806,8 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		ret = win32_capture_streams(path_utf16,
 					    path_utf16_nchars,
 					    inode,
-					    lookup_table);
+					    lookup_table,
+					    file_size);
 	}
 out_close_handle:
 	CloseHandle(hFile);

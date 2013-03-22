@@ -73,7 +73,11 @@ typedef enum {
 extern char *
 nl_langinfo(nl_item item);
 
-extern int rename_replacement(const char *oldpath, const char *newpath);
+extern int
+rename_replacement(const char *oldpath, const char *newpath);
 #define rename(oldpath, newpath) rename_replacement(oldpath, newpath)
+
+extern void
+win32_global_init();
 
 #endif /* _WIMLIB_WIN32_H */
