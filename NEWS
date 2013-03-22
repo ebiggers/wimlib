@@ -1,5 +1,14 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.3.1:
+	Since wimlib can now be used on Windows, wimlib's implementation of
+	ImageX has been renamed to wimlib-imagex to avoid confusion with
+	Microsoft's implementation of ImageX, which would have the same file
+	name ("imagex.exe").  If you really don't like this you can pass the
+	--with-imagex-progname option to `configure' to choose a different name,
+	or even simply rename the binary yourself (but the former way will
+	configure the man pages to use the chosen name).
+
 Version 1.3.0:
 	Added experimental support for native Windows builds.  Binaries can be
 	downloaded from the SourceForge page.

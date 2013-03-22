@@ -1,17 +1,17 @@
-.TH IMAGEX "1" "March 2013" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "March 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
-imagex-info \- Display information about a WIM file, or change information about
+@IMAGEX_PROGNAME@-info \- Display information about a WIM file, or change information about
 an image
 
 .SH SYNOPSIS
-\fBimagex info\fR \fIWIMFILE\fR [\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR]  \
+\fB@IMAGEX_PROGNAME@ info\fR \fIWIMFILE\fR [\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR]  \
 [\fINEW_NAME\fR] [\fINEW_DESC\fR] [\fIOPTION\fR]...
 
 
 .SH DESCRIPTION
 .PP
 
-\fBimagex info\fR displays information about \fIWIMFILE\fR, and optionally
+\fB@IMAGEX_PROGNAME@ info\fR displays information about \fIWIMFILE\fR, and optionally
 changes which image is bootable, or what the name and description of an image
 are.
 
@@ -27,18 +27,18 @@ Changes to the WIM are made if \fINEW_NAME\fR and/or \fB--boot\fR are specified.
 description.  If \fINEW_DESC\fR is not specified, the image's description is
 unchanged.
 
-\fBimagex info\fR does not support modifying a split WIM, although you may
+\fB@IMAGEX_PROGNAME@ info\fR does not support modifying a split WIM, although you may
 display information about one.
 
 .SH NOTES
 
-The possible modifications to \fIWIMFILE\fR by \fBimagex info\fR are made
-quickly without re-building the entire WIM.  \fBimagex info\fR will only take a
+The possible modifications to \fIWIMFILE\fR by \fB@IMAGEX_PROGNAME@ info\fR are made
+quickly without re-building the entire WIM.  \fB@IMAGEX_PROGNAME@ info\fR will only take a
 significant amount of time to complete if \fB--check\fR is specified when the
 WIM previously had no integrity table.
 
-Aborting an \fBimagex info\fR command that modifies \fIWIMFILE\fR is unlikely to
-result in corruption of \fIWIMFILE\fR.  Even if \fBimagex info\fR is aborted
+Aborting an \fB@IMAGEX_PROGNAME@ info\fR command that modifies \fIWIMFILE\fR is unlikely to
+result in corruption of \fIWIMFILE\fR.  Even if \fB@IMAGEX_PROGNAME@ info\fR is aborted
 while the integrity table is being calculated (with \fB--check\fR), the WIM
 should be in a consistent state with any changes to the bootable index,
 name, or description of the specified image committed.
@@ -77,5 +77,5 @@ the first part of a split WIM.
 Prints the raw XML data from the WIM.  Note: the XML data will be encoded using
 UTF-16LE, and it will begin with a byte-order mark.
 .SH SEE ALSO
-.BR imagex (1)
+.BR @IMAGEX_PROGNAME@ (1)
 

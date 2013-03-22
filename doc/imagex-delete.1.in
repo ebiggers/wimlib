@@ -1,19 +1,19 @@
-.TH IMAGEX "1" "March 2013" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "March 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
-imagex-delete \- Delete an image from a WIM archive
+@IMAGEX_PROGNAME@-delete \- Delete an image from a WIM archive
 
 .SH SYNOPSIS
-\fBimagex delete\fR \fIWIMFILE\fR \fIIMAGE\fR [--check]
+\fB@IMAGEX_PROGNAME@ delete\fR \fIWIMFILE\fR \fIIMAGE\fR [--check]
 
 .SH DESCRIPTION
 .PP
 
-\fBimagex delete\fR deletes the specified image from the Windows Imaging (WIM)
+\fB@IMAGEX_PROGNAME@ delete\fR deletes the specified image from the Windows Imaging (WIM)
 file \fIWIMFILE\fR.
 
 \fIIMAGE\fR specifies the WIM image to deleted.  It may be a 1-based index of an
 image in the WIM, the name of an image in the WIM, or the keyword "all" to
-indicate that all images are to be deleted.  Use the \fBimagex info\fR (1)
+indicate that all images are to be deleted.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1)
 command to show what images a WIM file contains.
 
 .SH NOTES
@@ -23,10 +23,10 @@ This is different from Microsoft's imagex.exe, which only will delete the
 directory tree metadata and XML data for this operation.  (See the \fB--soft\fR
 option for the other kind of delete).
 
-Also, unlike imagex.exe, it is legal to delete all the images from a WIM and
-have a WIM with 0 images, although such a file wouldn't be very useful.
+Also, unlike Microsoft's imagex.exe, it is legal to delete all the images from a
+WIM and have a WIM with 0 images, although such a file wouldn't be very useful.
 
-\fBimagex delete\fR does not support split WIMs.
+\fB@IMAGEX_PROGNAME@ delete\fR does not support split WIMs.
 
 .SH OPTIONS
 .TP 6
@@ -44,7 +44,7 @@ particular, all streams will be left alone, even if they are no longer
 referenced.  This is probably not what you want, because almost no space will be
 saved by deleting an image in this way.
 
-You may use \fBimagex optimize\fR to delete unreferenced streams from a WIM that
+You may use \fB@IMAGEX_PROGNAME@ optimize\fR to delete unreferenced streams from a WIM that
 has had images soft-deleted from it.
 
 .SH EXAMPLES
@@ -56,5 +56,5 @@ image delete boot.wim 1
 .PP
 
 .SH SEE ALSO
-.BR imagex (1)
+.BR @IMAGEX_PROGNAME@ (1)
 

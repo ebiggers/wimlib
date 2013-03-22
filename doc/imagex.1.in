@@ -1,44 +1,44 @@
-.TH IMAGEX 1 "March 2013" "imagex (wimlib @VERSION@)" "User Commands"
+.TH IMAGEX 1 "March 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
-imagex \- Create, modify, extract, mount, or unmount a WIM (Windows Imaging Format) archive
+@IMAGEX_PROGNAME@ \- Create, modify, extract, mount, or unmount a WIM (Windows Imaging Format) archive
 .SH SYNOPSIS
-\fBimagex append\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ append\fR \fIarguments...\fR
 .br
-\fBimagex apply\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ apply\fR \fIarguments...\fR
 .br
-\fBimagex capture\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ capture\fR \fIarguments...\fR
 .br
-\fBimagex delete\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ delete\fR \fIarguments...\fR
 .br
-\fBimagex dir\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ dir\fR \fIarguments...\fR
 .br
-\fBimagex export\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ export\fR \fIarguments...\fR
 .br
-\fBimagex info\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ info\fR \fIarguments...\fR
 .br
-\fBimagex join\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ join\fR \fIarguments...\fR
 .br
-\fBimagex mount\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ mount\fR \fIarguments...\fR
 .br
-\fBimagex mountrw\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ mountrw\fR \fIarguments...\fR
 .br
-\fBimagex optimize\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ optimize\fR \fIarguments...\fR
 .br
-\fBimagex split\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ split\fR \fIarguments...\fR
 .br
-\fBimagex unmount\fR \fIarguments...\fR
+\fB@IMAGEX_PROGNAME@ unmount\fR \fIarguments...\fR
 
 .SH DESCRIPTION
-\fBimagex\fR is able to deal with archives in the Windows Imaging Format (.wim
+\fB@IMAGEX_PROGNAME@\fR is able to deal with archives in the Windows Imaging Format (.wim
 files). Its interface is meant to be similar to Microsoft's imagex.exe program.
 
-To do its work, \fBimagex\fR uses \fBwimlib\fR, a library which provides
+To do its work, \fB@IMAGEX_PROGNAME@\fR uses \fBwimlib\fR, a library which provides
 interfaces for manipulating WIM archives.  You could wimlib in your own programs
 if you wanted to.  wimlib's public interface is documented.
 
 .SH COMMANDS
 
-There is a separate manual page for each \fBimagex\fR command.
+There is a separate manual page for each \fB@IMAGEX_PROGNAME@\fR command.
 
 .SH SUPPORTED FEATURES
 
@@ -46,31 +46,31 @@ The following general features are currently supported (note: this is not a
 complete list):
 
 .IP \[bu] 3
-Create a stand-alone WIM from a directory or NTFS volume (\fBimagex capture\fR)
+Create a stand-alone WIM from a directory or NTFS volume (\fB@IMAGEX_PROGNAME@ capture\fR)
 .IP \[bu]
-Append a directory or NTFS volume onto a stand-alone WIM as a new image (\fBimagex
+Append a directory or NTFS volume onto a stand-alone WIM as a new image (\fB@IMAGEX_PROGNAME@
 append\fR)
 .IP \[bu]
 Apply an image from a stand-alone or split WIM to a directory or NTFS volume
-(\fBimagex apply\fR)
+(\fB@IMAGEX_PROGNAME@ apply\fR)
 .IP \[bu]
-Mount an image from a stand-alone or split WIM read-only (\fBimagex mount\fR)
+Mount an image from a stand-alone or split WIM read-only (\fB@IMAGEX_PROGNAME@ mount\fR)
 .IP \[bu]
-Mount an image from a stand-alone WIM read-write (\fBimagex mountrw\fR)
+Mount an image from a stand-alone WIM read-write (\fB@IMAGEX_PROGNAME@ mountrw\fR)
 .IP \[bu]
-Delete image(s) from a stand-alone WIM (\fBimagex delete\fR)
+Delete image(s) from a stand-alone WIM (\fB@IMAGEX_PROGNAME@ delete\fR)
 .IP \[bu]
-Export image(s) from a stand-alone or split WIM (\fBimagex export\fR)
+Export image(s) from a stand-alone or split WIM (\fB@IMAGEX_PROGNAME@ export\fR)
 .IP \[bu]
-Display information about a WIM file (\fBimagex info\fR, \fBimagex dir\fR)
+Display information about a WIM file (\fB@IMAGEX_PROGNAME@ info\fR, \fB@IMAGEX_PROGNAME@ dir\fR)
 .IP \[bu]
-Change the name or description of an image in the WIM (\fBimagex info\fR)
+Change the name or description of an image in the WIM (\fB@IMAGEX_PROGNAME@ info\fR)
 .IP \[bu]
-Change which image in a WIM is bootable (\fBimagex info\fR)
+Change which image in a WIM is bootable (\fB@IMAGEX_PROGNAME@ info\fR)
 .IP \[bu]
-Combine split WIMs into one stand-alone WIM (\fBimage join\fR)
+Combine split WIMs into one stand-alone WIM (\fB@IMAGEX_PROGNAME@ join\fR)
 .IP \[bu]
-Split a stand-alone WIM into multiple parts (\fBimage split\fR)
+Split a stand-alone WIM into multiple parts (\fB@IMAGEX_PROGNAME@ split\fR)
 .IP \[bu]
 Support for all WIM compression types, both compression and decompression (LZX,
 XPRESS, and none)
@@ -89,7 +89,7 @@ when appropriate.
 .IP \[bu] 4
 Because Microsoft designed the WIM file format to accomodate Windows-specific
 and NTFS-specific features, wimlib must have two separate image capture and
-application modes (although the \fBimagex\fR subcommands for the modes are the
+application modes (although the \fB@IMAGEX_PROGNAME@\fR subcommands for the modes are the
 same): one for general image capture and application, and one for the capture or
 application of an image specifically from/to an NTFS volume.
 
@@ -108,22 +108,22 @@ same bugs in wimlib, although in some cases I have had to work around bugs for
 compatibility purposes.
 
 .IP \[bu]
-wimlib's \fBimagex\fR offers the extra command \fBimagex optimize\fR,
+wimlib's \fB@IMAGEX_PROGNAME@\fR offers the extra command \fB@IMAGEX_PROGNAME@ optimize\fR,
 which lets you easily remove wasted space in a WIM (which can arise after
 a WIM image is appended or mounted read-write).
 
 .IP \[bu]
-wimlib's \fBimagex\fR also offers the command \fBimagex join\fR, which lets you
+wimlib's \fB@IMAGEX_PROGNAME@\fR also offers the command \fB@IMAGEX_PROGNAME@ join\fR, which lets you
 easily join the parts of a split WIM.
 
 .IP \[bu]
-wimlib's \fBimagex apply\fR supports keeping files hard-linked or symlinked
+wimlib's \fB@IMAGEX_PROGNAME@ apply\fR supports keeping files hard-linked or symlinked
 across WIM images when extracted from a WIM.  So you can, for example, extract
 different versions of Windows from an install.wim without using much extra
 space.  (Note: this functionality is only available in UNIX builds of wimlib.)
 
 .IP \[bu]
-wimlib's \fBimagex capture\fR supports combining multiple separate directories
+wimlib's \fB@IMAGEX_PROGNAME@ capture\fR supports combining multiple separate directories
 and files together in a configurable way to create a WIM image.
 
 .IP \[bu]
@@ -134,18 +134,18 @@ wimlib supports multithreaded compression, which can make it much faster to
 create compressed WIM files.
 
 .IP \[bu]
-wimlib's \fBimagex capture\fR supports a special mode where UNIX file modes,
+wimlib's \fB@IMAGEX_PROGNAME@ capture\fR supports a special mode where UNIX file modes,
 owners, and groups are stored.  (Note: this functionality is only available on
 UNIX builds.)
 
 .IP \[bu]
-wimlib's \fBimagex mount\fR and \fBimagex mountrw\fR are much faster than
+wimlib's \fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR are much faster than
 Microsoft's versions for some reason.  I don't know what they have their program
 do that takes so long to simply set up a mountpoint.  (Note: this functionality
 is only available on UNIX builds.)
 
 .IP \[bu]
-wimlib's \fBimagex mount\fR supports mounting an image from a split WIM, but
+wimlib's \fB@IMAGEX_PROGNAME@ mount\fR supports mounting an image from a split WIM, but
 Microsoft's software does not.  (Note: this functionality is only available on
 UNIX builds.)
 
@@ -166,7 +166,7 @@ containing files with names not representable in the current Windows code page.
 
 .SH WARNING
 
-Note: \fBwimlib\fR and \fBimagex\fR are experimental.  Use Microsoft's
+Note: \fBwimlib\fR and \fB@IMAGEX_PROGNAME@\fR are experimental.  Use Microsoft's
 imagex.exe if you have to make sure your WIM files are made "correctly".  Feel
 free to submit a bug report if you find a bug.
 
@@ -179,16 +179,16 @@ way that appears to be compatible with Microsoft's software.
 Report bugs to ebiggers3@gmail.com.
 
 .SH SEE ALSO
-.BR imagex-append (1),
-.BR imagex-apply (1),
-.BR imagex-capture (1),
-.BR imagex-delete (1),
-.BR imagex-dir (1),
-.BR imagex-export (1),
-.BR imagex-info (1),
-.BR imagex-join (1),
-.BR imagex-mount (1),
-.BR imagex-mountrw (1),
-.BR imagex-optimize (1),
-.BR imagex-split (1),
-.BR imagex-unmount (1),
+.BR @IMAGEX_PROGNAME@-append (1),
+.BR @IMAGEX_PROGNAME@-apply (1),
+.BR @IMAGEX_PROGNAME@-capture (1),
+.BR @IMAGEX_PROGNAME@-delete (1),
+.BR @IMAGEX_PROGNAME@-dir (1),
+.BR @IMAGEX_PROGNAME@-export (1),
+.BR @IMAGEX_PROGNAME@-info (1),
+.BR @IMAGEX_PROGNAME@-join (1),
+.BR @IMAGEX_PROGNAME@-mount (1),
+.BR @IMAGEX_PROGNAME@-mountrw (1),
+.BR @IMAGEX_PROGNAME@-optimize (1),
+.BR @IMAGEX_PROGNAME@-split (1),
+.BR @IMAGEX_PROGNAME@-unmount (1),

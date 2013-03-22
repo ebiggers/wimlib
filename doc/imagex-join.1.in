@@ -1,9 +1,9 @@
-.TH IMAGEX "1" "March 2013" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "March 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
-imagex-join \- Join split WIMs into a standalone one-part WIM
+@IMAGEX_PROGNAME@-join \- Join split WIMs into a standalone one-part WIM
 
 .SH SYNOPSIS
-\fBimagex join\fR [\fIOPTION...] \fIOUT_WIMFILE\fR \fISPLIT_WIM...\fR
+\fB@IMAGEX_PROGNAME@ join\fR [\fIOPTION...] \fIOUT_WIMFILE\fR \fISPLIT_WIM...\fR
 
 .SH DESCRIPTION
 .PP
@@ -26,18 +26,18 @@ Join a split WIM, with the parts named `windows*.swm' where the * is anything
 number), and write the joined WIM to the file `windows.wim'.
 .RS
 .PP
-imagex join windows.wim windows*.swm
+@IMAGEX_PROGNAME@ join windows.wim windows*.swm
 .RE
 
 .SH NOTES
-\fBimagex join\fR is roughly equivalent to:
+\fB@IMAGEX_PROGNAME@ join\fR is roughly equivalent to:
 .RS
 .PP
-\fBimagex export\fR \fISWM_PART_1\fR --ref="\fISWM_GLOB\fR" [--check] all \fIOUT_WIMFILE\fR
+\fB@IMAGEX_PROGNAME@ export\fR \fISWM_PART_1\fR --ref="\fISWM_GLOB\fR" [--check] all \fIOUT_WIMFILE\fR
 .RE
 .PP
 
 
 .SH SEE ALSO
-.BR imagex (1)
-.BR imagex-export (1)
+.BR @IMAGEX_PROGNAME@ (1)
+.BR @IMAGEX_PROGNAME@-export (1)

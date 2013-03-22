@@ -1,34 +1,34 @@
-.TH IMAGEX "1" "March 2013" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "March 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
-imagex-mount, imagex-mountrw, imagex-unmount \- Mount and unmount an image from a WIM archive
+@IMAGEX_PROGNAME@-mount, @IMAGEX_PROGNAME@-mountrw, @IMAGEX_PROGNAME@-unmount \- Mount and unmount an image from a WIM archive
 
 .SH SYNOPSIS
-\fBimagex mount\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [\fIOPTION\fR]...
+\fB@IMAGEX_PROGNAME@ mount\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [\fIOPTION\fR]...
 .br
-\fBimagex mountrw\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [\fIOPTION\fR]...
+\fB@IMAGEX_PROGNAME@ mountrw\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [\fIOPTION\fR]...
 .br
-\fBimagex unmount\fR \fIDIRECTORY\fR [--commit] [--check] [--rebuild]
+\fB@IMAGEX_PROGNAME@ unmount\fR \fIDIRECTORY\fR [--commit] [--check] [--rebuild]
 
 .SH DESCRIPTION
 .PP
-The \fBimagex mount\fR and \fBimagex mountrw\fR commands will mount the image in
+The \fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR commands will mount the image in
 the Windows Imaging (WIM) file \fIWIMFILE\fR specified by \fIIMAGE\fR on the
-directory \fIDIRECTORY\fR using FUSE (Filesystem in Userspace).  \fBimagex
-mount\fR will mount the image read-only, while \fBimagex mountrw\fR will mount
+directory \fIDIRECTORY\fR using FUSE (Filesystem in Userspace).  \fB@IMAGEX_PROGNAME@
+mount\fR will mount the image read-only, while \fB@IMAGEX_PROGNAME@ mountrw\fR will mount
 the image read-write.
 
 \fIIMAGE\fR may be a 1-based index of the image in the WIM to mount, or it may
-be the name of an image in the WIM.  Use the \fBimagex info\fR (1) command to
+be the name of an image in the WIM.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1) command to
 see the available images in the WIM.  It is possible to omit \fIIMAGE\fR, but
 only if the WIM contains only one image.
 
-The WIM image can be unmounted using the \fBimagex unmount\fR command.  Changes
+The WIM image can be unmounted using the \fB@IMAGEX_PROGNAME@ unmount\fR command.  Changes
 made to a WIM mounted read-write will be discarded unless the \fB--commit\fR
-flag is provided to \fBimagex unmount\fR.
+flag is provided to \fB@IMAGEX_PROGNAME@ unmount\fR.
 
 .SH SPLIT WIMS
 
-You may use \fBimagex mount\fR to mount an image from a split WIM read-only.
+You may use \fB@IMAGEX_PROGNAME@ mount\fR to mount an image from a split WIM read-only.
 However, you may not mount an image from a split WIM read-write.
 
 The \fIWIMFILE\fR argument is used to specify the first part of the split WIM, and
@@ -55,14 +55,14 @@ mywim5.swm
 To mount the first image of this split WIM to the directory "dir", we would do:
 .PP
 .RS
-imagex mount mywim.swm 1 dir --ref="mywim*.swm"
+@IMAGEX_PROGNAME@ mount mywim.swm 1 dir --ref="mywim*.swm"
 .RE
 .PP
 
 .SH NOTES
 
-If wimlib was configured using the \fB--without-fuse\fR flag, then the \fBimagex
-mount\fR, \fBimagex mountrw\fR, and \fBimagex unmount\fR commands will not work.
+If wimlib was configured using the \fB--without-fuse\fR flag, then the \fB@IMAGEX_PROGNAME@
+mount\fR, \fB@IMAGEX_PROGNAME@ mountrw\fR, and \fB@IMAGEX_PROGNAME@ unmount\fR commands will not work.
 Also, these commands are not available in the Windows builds of wimlib.
 
 You can mount multiple images from a WIM file read-only at the same time, but
@@ -80,8 +80,8 @@ By default, changes to a read-write WIM are made in-place by appending to the
 WIM.  This is nice for big WIM files, since the entire file doesn't have to be
 rebuilt to make a small change.  But, if you are making many changes to a
 read-write mounted WIM, especially deleting large files, it is suggested to
-provide the \fB--rebuild\fR option to \fBimagex unmount\fR to force the WIM to
-be rebuilt, or else run \fBimagex optimize\fR on the WIM afterwards.
+provide the \fB--rebuild\fR option to \fB@IMAGEX_PROGNAME@ unmount\fR to force the WIM to
+be rebuilt, or else run \fB@IMAGEX_PROGNAME@ optimize\fR on the WIM afterwards.
 
 .SH MOUNT OPTIONS
 
@@ -117,23 +117,23 @@ the background.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional split WIM parts that are part of the split WIM being
-mounted.  This option is valid for \fBimagex mount\fR but not \fBimagex
+mounted.  This option is valid for \fB@IMAGEX_PROGNAME@ mount\fR but not \fB@IMAGEX_PROGNAME@
 mountrw\fR.  See \fBSPLIT_WIMS\fR.
 .TP
 \fB--staging-dir\fR=\fIDIR\fR
 Store temporary staging files in a subdirectory of the directory \fIDIR\fR.
-Only valid for \fBimagex mountrw\fR.
+Only valid for \fB@IMAGEX_PROGNAME@ mountrw\fR.
 .TP
 \fB--unix-data\fR
-By default, \fBimagex mount\fR and \fBimagex mountrw\fR will ignore both
+By default, \fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR will ignore both
 Windows-style security descriptors (which may have been set either from Windows or by
-\fBimagex capture\fR from a NTFS-volume) and UNIX-specific data (which is from using
-\fBimagex capture\fR with the \fB--unix-data\fR flag).  In this default mode,
-all files will simply be owned by the user running \fBimagex\fR and will have mode 0777.
+\fB@IMAGEX_PROGNAME@ capture\fR from a NTFS-volume) and UNIX-specific data (which is from using
+\fB@IMAGEX_PROGNAME@ capture\fR with the \fB--unix-data\fR flag).  In this default mode,
+all files will simply be owned by the user running \fB@IMAGEX_PROGNAME@\fR and will have mode 0777.
 (Note: they will still not be accessible to other users unless you also specify
 \fB--allow-other\fR.)  If you instead provide the \fB--unix-data\fR flag, these
 default permissions will be overridden on a per-file basis with the
-UNIX-specific data when available, and in the case of \fBimagex mountrw\fR it
+UNIX-specific data when available, and in the case of \fB@IMAGEX_PROGNAME@ mountrw\fR it
 will be possible to change the UNIX permissions using the standard UNIX
 tools and functions.
 .TP
@@ -158,12 +158,12 @@ Rebuild the entire WIM rather than appending any new data to the end of it.
 Rebuilding the WIM is slower, but will save a little bit of space that would
 otherwise be left as a hole in the WIM.  Even more space will be saved if the
 read-write mount resulted in streams being deleted from the WIM.  Also see
-\fBimagex optimize\fR.  Has no effect if the mount is read-only or if
+\fB@IMAGEX_PROGNAME@ optimize\fR.  Has no effect if the mount is read-only or if
 \fB--commit\fR was not specified.
 
 .SH IMPLEMENTATION DETAILS
 
-Since a WIM is an archive and not a filesystem, \fBimagex mountrw\fR creates a
+Since a WIM is an archive and not a filesystem, \fB@IMAGEX_PROGNAME@ mountrw\fR creates a
 temporary staging directory to contain files that are created or modified.  This
 directory is located in the same directory as \fIWIMFILE\fR by default, but the
 location can be set using the \fB--staging-dir\fR option.  When the filesystem
@@ -171,13 +171,13 @@ is unmounted with \fB--commit\fR, the WIM is modified in-place (or rebuild
 completely with \fB--rebuild\fR), merging in the staging files as needed.  Then,
 the temporary staging directory is deleted.
 
-\fBimagex unmount\fR runs in a separate process from the process that previously
-ran \fBimagex mount\fR, and these two processes communicate using POSIX message
+\fB@IMAGEX_PROGNAME@ unmount\fR runs in a separate process from the process that previously
+ran \fB@IMAGEX_PROGNAME@ mount\fR, and these two processes communicate using POSIX message
 queues.  See \fIsrc/mount_image.c\fR in the sources for details.  Note: As of
-wimlib v1.2.1, \fBimagex unmount\fR correctly fails with an error within a
+wimlib v1.2.1, \fB@IMAGEX_PROGNAME@ unmount\fR correctly fails with an error within a
 reasonable amount of time (1 second) if the filesystem daemon is abnormally
 terminated.
 
 .SH SEE ALSO
-.BR imagex (1)
+.BR @IMAGEX_PROGNAME@ (1)
 

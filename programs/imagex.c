@@ -74,52 +74,53 @@ enum imagex_op_type {
 static void usage(int cmd_type);
 static void usage_all();
 
+
 static const char *usage_strings[] = {
 [APPEND] =
-"imagex append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
+IMAGEX_PROGNAME" append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                     [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
 "                     [--verbose] [--dereference] [--config=FILE]\n"
 "                     [--threads=NUM_THREADS] [--rebuild] [--unix-data]\n"
 "                     [--source-list]\n",
 [APPLY] =
-"imagex apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
+IMAGEX_PROGNAME" apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n",
 [CAPTURE] =
-"imagex capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
+IMAGEX_PROGNAME" capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                      [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
 "                      [--flags EDITION_ID] [--verbose] [--dereference]\n"
 "                      [--config=FILE] [--threads=NUM_THREADS] [--unix-data]\n"
 "                      [--source-list]\n",
 [DELETE] =
-"imagex delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check] [--soft]\n",
+IMAGEX_PROGNAME" delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check] [--soft]\n",
 [DIR] =
-"imagex dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n",
+IMAGEX_PROGNAME" dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n",
 [EXPORT] =
-"imagex export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
+IMAGEX_PROGNAME" export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
 "              DEST_WIMFILE [DEST_IMAGE_NAME] [DEST_IMAGE_DESCRIPTION]\n"
 "              [--boot] [--check] [--compress=TYPE] [--ref=\"GLOB\"]\n"
 "              [--threads=NUM_THREADS] [--rebuild]\n",
 [INFO] =
-"imagex info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
+IMAGEX_PROGNAME" info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
 "                   [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
 "                   [--xml] [--extract-xml FILE] [--metadata]\n",
 [JOIN] =
-"imagex join [--check] WIMFILE SPLIT_WIM...\n",
+IMAGEX_PROGNAME" join [--check] WIMFILE SPLIT_WIM...\n",
 [MOUNT] =
-"imagex mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
+IMAGEX_PROGNAME" mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
 "                    [--check] [--debug] [--streams-interface=INTERFACE]\n"
 "                    [--ref=\"GLOB\"] [--unix-data] [--allow-other]\n",
 [MOUNTRW] =
-"imagex mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
+IMAGEX_PROGNAME" mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
 "                      [--check] [--debug] [--streams-interface=INTERFACE]\n"
 "                      [--staging-dir=DIR] [--unix-data] [--allow-other]\n",
 [OPTIMIZE] =
-"imagex optimize WIMFILE [--check] [--recompress] [--compress=TYPE]\n",
+IMAGEX_PROGNAME" optimize WIMFILE [--check] [--recompress] [--compress=TYPE]\n",
 [SPLIT] =
-"imagex split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
+IMAGEX_PROGNAME" split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n",
 [UNMOUNT] =
-"imagex unmount DIRECTORY [--commit] [--check] [--rebuild]\n",
+IMAGEX_PROGNAME" unmount DIRECTORY [--commit] [--check] [--rebuild]\n",
 };
 
 static const struct option apply_options[] = {
@@ -236,9 +237,9 @@ static int verify_image_exists(int image, const char *image_name,
 {
 	if (image == WIMLIB_NO_IMAGE) {
 		imagex_error("\"%s\" is not a valid image in `%s'!\n"
-			     "       Please specify a 1-based imagex index or "
+			     "       Please specify a 1-based image index or "
 			     "image name.\n"
-			     "       You may use `imagex info' to list the images "
+			     "       You may use `"IMAGEX_PROGNAME" info' to list the images "
 			     "contained in a WIM.",
 			     image_name, wim_name);
 		return -1;
@@ -354,9 +355,9 @@ enum {
 
 /*
  * Parses a filename in the source list file format.  (See the man page for
- * 'imagex capture' for details on this format and the meaning.)  Accepted
- * formats for filenames are an unquoted string (whitespace-delimited), or a
- * double or single-quoted string.
+ * 'wimlib-imagex capture' for details on this format and the meaning.)
+ * Accepted formats for filenames are an unquoted string (whitespace-delimited),
+ * or a double or single-quoted string.
  *
  * @line_p:  Pointer to the pointer to the line of data.  Will be updated
  *           to point past the filename iff the return value is
@@ -419,8 +420,8 @@ static int parse_filename(char **line_p, size_t *len_p, char **fn_ret)
 }
 
 /* Parses a line of data (not an empty line or comment) in the source list file
- * format.  (See the man page for 'imagex capture' for details on this format
- * and the meaning.)
+ * format.  (See the man page for 'wimlib-imagex capture' for details on this
+ * format and the meaning.)
  *
  * @line:  Line of data to be parsed.  line[len - 1] must be '\0', unless
  *         len == 0.  The data in @line will be modified by this function call.
@@ -463,8 +464,8 @@ static bool is_comment_line(const char *line, size_t len)
 	}
 }
 
-/* Parses a file in the source list format.  (See the man page for 'imagex
- * capture' for details on this format and the meaning.)
+/* Parses a file in the source list format.  (See the man page for
+ * 'wimlib-imagex capture' for details on this format and the meaning.)
  *
  * @source_list_contents:  Contents of the source list file.  Note that this
  *                         buffer will be modified to save memory allocations,
@@ -923,8 +924,9 @@ out:
 }
 
 /* Create a WIM image from a directory tree, NTFS volume, or multiple files or
- * directory trees.  'imagex capture': create a new WIM file containing the
- * desired image.  'imagex append': add a new image to an existing WIM file. */
+ * directory trees.  'wimlib-imagex capture': create a new WIM file containing
+ * the desired image.  'wimlib-imagex append': add a new image to an existing
+ * WIM file. */
 static int imagex_capture_or_append(int argc, char **argv)
 {
 	int c;
@@ -2045,7 +2047,7 @@ static const struct imagex_command imagex_commands[] = {
 static void version()
 {
 	static const char *s =
-	"imagex (" PACKAGE ") " PACKAGE_VERSION "\n"
+	IMAGEX_PROGNAME " (" PACKAGE ") " PACKAGE_VERSION "\n"
 	"Copyright (C) 2012, 2013 Eric Biggers\n"
 	"License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
 	"This is free software: you are free to change and redistribute it.\n"
@@ -2094,7 +2096,7 @@ static void usage(int cmd_type)
 	printf("Usage: %s", usage_strings[cmd_type]);
 	for_imagex_command(cmd) {
 		if (cmd->cmd == cmd_type)
-			printf("\nTry `man imagex-%s' for more details.\n",
+			printf("\nTry `man "IMAGEX_PROGNAME"-%s' for more details.\n",
 			       cmd->name);
 	}
 }
@@ -2105,17 +2107,17 @@ static void usage_all()
 	for (int i = 0; i < ARRAY_LEN(usage_strings); i++)
 		printf("    %s", usage_strings[i]);
 	static const char *extra =
-"    imagex --help\n"
-"    imagex --version\n"
+"    "IMAGEX_PROGNAME" --help\n"
+"    "IMAGEX_PROGNAME" --version\n"
 "\n"
 "    The compression TYPE may be \"maximum\", \"fast\", or \"none\".\n"
 "\n"
-"    Try `man imagex' for more information.\n"
+"    Try `man "IMAGEX_PROGNAME"' for more information.\n"
 	;
 	fputs(extra, stdout);
 }
 
-/* Entry point for the 'imagex' program. */
+/* Entry point for wimlib's ImageX implementation */
 int main(int argc, char **argv)
 {
 	const struct imagex_command *cmd;
@@ -2143,7 +2145,7 @@ int main(int argc, char **argv)
 	if (ret)
 		goto out;
 
-	/* Search for the function to handle the 'imagex' subcommand. */
+	/* Search for the function to handle the ImageX subcommand. */
 	for_imagex_command(cmd) {
 		if (strcmp(cmd->name, *argv) == 0) {
 			ret = cmd->func(argc, argv);
@@ -2155,9 +2157,9 @@ int main(int argc, char **argv)
 	usage_all();
 	return 1;
 out_check_write_error:
-	/* For 'imagex info' and 'imagex dir', data printed to standard output
-	 * is part of the program's actual behavior and not just for
-	 * informational purposes, so we should set a failure exit status if
+	/* For 'wimlib-imagex info' and 'wimlib-imagex dir', data printed to
+	 * standard output is part of the program's actual behavior and not just
+	 * for informational purposes, so we should set a failure exit status if
 	 * there was a write error. */
 	if (cmd == &imagex_commands[INFO] || cmd == &imagex_commands[DIR]) {
 		if (ferror(stdout) || fclose(stdout)) {
@@ -2167,9 +2169,10 @@ out_check_write_error:
 		}
 	}
 out:
-	/* Exit status (ret):  -1 indicates an error found by 'imagex' outside
-	 * of the wimlib library code.  0 indicates success.  > 0 indicates a
-	 * wimlib error code from which an error message can be printed. */
+	/* Exit status (ret):  -1 indicates an error found by 'wimlib-imagex'
+	 * outside of the wimlib library code.  0 indicates success.  > 0
+	 * indicates a wimlib error code from which an error message can be
+	 * printed. */
 	if (ret > 0) {
 		imagex_error("Exiting with error code %d:\n"
 			     "       %s.", ret,

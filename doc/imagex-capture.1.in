@@ -1,20 +1,20 @@
-.TH IMAGEX "1" "March 2013" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "March 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
-imagex-capture, imagex-append \- Create or append a WIM image
+@IMAGEX_PROGNAME@-capture, @IMAGEX_PROGNAME@-append \- Create or append a WIM image
 
 .SH SYNOPSIS
-\fBimagex capture\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
+\fB@IMAGEX_PROGNAME@ capture\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
 [\fIDESCRIPTION\fR] [\fIOPTION\fR]...
 .br
-\fBimagex append\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
+\fB@IMAGEX_PROGNAME@ append\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
 [\fIDESCRIPTION\fR] [\fIOPTION\fR]...
 
 .SH DESCRIPTION
 .PP
 
-The \fBimagex capture\fR and \fBimagex append\fR commands create a Windows
-Imaging (WIM) image from a directory tree.  The \fBimagex capture\fR command
-creates a new WIM file containing the captured image, while the \fBimagex
+The \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR commands create a Windows
+Imaging (WIM) image from a directory tree.  The \fB@IMAGEX_PROGNAME@ capture\fR command
+creates a new WIM file containing the captured image, while the \fB@IMAGEX_PROGNAME@
 append\fR command appends the captured image to an existing WIM file.
 
 Note: this man page primarily documents the UNIX behavior.  See \fBWINDOWS
@@ -106,16 +106,16 @@ Win32+DOS namespace, and POSIX namespace.  This includes hard links.
 Yet another capture mode is entered when the \fB--source-list\fR option is
 given.  It is essentially an extension of the \fBNORMAL MODE\fR that allows
 multiple files or directories to be incorporated into a WIM image using a single
-\fBimagex capture\fR or \fBimagex append\fR command.  See the documentation for
+\fB@IMAGEX_PROGNAME@ capture\fR or \fB@IMAGEX_PROGNAME@ append\fR command.  See the documentation for
 \fB--source-list\fR below.
 
 .SH WINDOWS VERSION
 
-This section documents the differences between \fBimagex capture\fR and
-\fBimagex append\fR in the Windows builds of wimlib versus the rest of this man
+This section documents the differences between \fB@IMAGEX_PROGNAME@ capture\fR and
+\fB@IMAGEX_PROGNAME@ append\fR in the Windows builds of wimlib versus the rest of this man
 page, which is written to document UNIX build.
 
-\fBimagex capture\fR and \fBimagex append\fR do not have separate "normal" and
+\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR do not have separate "normal" and
 "NTFS" modes on Windows.  There is simply one mode, and it uses the Windows API
 to capture NTFS-specific information, including alternate data streams, reparse
 points, hard links, and file attributes.  So, you essentially get the advantages
@@ -127,7 +127,7 @@ The \fB--source-list\fR option is supported on Windows, but the
 \fB--dereference\fR option is not.
 
 Except for the differences documented in this section, the Windows build of
-\fBimagex capture\fR and \fBimagex append\fR should be essentially equivalent to
+\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR should be essentially equivalent to
 the UNIX build.  However, one additional thing to note is that wimlib's Windows
 ImageX is NOT written to be command-line compatible with Microsoft's ImageX,
 although they are very similar.
@@ -140,11 +140,11 @@ Specifies that the new image is to be made the bootable image of the WIM archive
 \fB--check\fR
 Include an integrity table in the new WIM file or the modified WIM file.  If
 this option is not specified, no integrity table is included in \fIWIMFILE\fR,
-even if there was one before in the case of \fBimagex append\fR.
+even if there was one before in the case of \fB@IMAGEX_PROGNAME@ append\fR.
 .TP
 \fB--compress\fR=\fITYPE\fR
 Specifies the compression type for the new WIM file.  This flag is only valid
-for \fBimagex capture\fR, since the compression mode for \fBimagex append\fR
+for \fB@IMAGEX_PROGNAME@ capture\fR, since the compression mode for \fB@IMAGEX_PROGNAME@ append\fR
 must be the same as that of the existing WIM.  \fITYPE\fR may be "none",
 "maximum", or "fast".  By default, it is "fast".
 
@@ -158,9 +158,9 @@ threads will not be used, regardless of this parameter, since no compression
 needs to be done in this case.
 .TP
 \fB--rebuild\fR
-For \fBimagex append\fR: rebuild the entire WIM rather than appending the new
+For \fB@IMAGEX_PROGNAME@ append\fR: rebuild the entire WIM rather than appending the new
 data to the end of it.  Rebuilding the WIM is slower, but will save a little bit
-of space that would otherwise be left as a hole in the WIM.  Also see \fBimagex
+of space that would otherwise be left as a hole in the WIM.  Also see \fB@IMAGEX_PROGNAME@
 optimize\fR.
 .TP
 \fB--flags\fR=\fIEDITIONID\fR
@@ -230,12 +230,12 @@ used:
 Store the UNIX owner, group, and mode of regular files, symbolic links, and
 directories.  This is done by adding a special alternate data stream to each
 directory entry that contains this information.  Please note that this flag is
-for convenience only, in case you want to use \fBimagex\fR to archive files on
+for convenience only, in case you want to use \fB@IMAGEX_PROGNAME@\fR to archive files on
 UNIX.  Microsoft's software will not understand this special
 information.
 .TP
 \fB--source-list\fR
-\fBimagex capture\fR and \fBimagex append\fR, as of wimlib 1.3.0, support a new
+\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR, as of wimlib 1.3.0, support a new
 option to create a WIM image from multiple files or directories.  When
 \fB--source-list\fR is specified, the \fISOURCE\fR argument specifies the name
 of a text file, each line of which is either 1 or 2 whitespace separated
@@ -287,16 +287,16 @@ a full NTFS volume is supported.
 The different capture modes only specify the data that is captured and don't
 specify a special WIM format.  A WIM file can contain images captured using
 different modes.  However, all images in a WIM must have the same compression
-type, and \fBimagex\fR always enforces this.
+type, and \fB@IMAGEX_PROGNAME@\fR always enforces this.
 
-\fBimagex\fR writes WIMs having the version number 0x10d00 and a compressed
+\fB@IMAGEX_PROGNAME@\fR writes WIMs having the version number 0x10d00 and a compressed
 stream chunk size of 32768.  The only WIMs I've seen that are different from
 this are some pre-Vista WIMs that had a different version number.
 
-Unless \fB--rebuild\fR is specified, aborting an \fBimagex append\fR command
+Unless \fB--rebuild\fR is specified, aborting an \fB@IMAGEX_PROGNAME@ append\fR command
 mid-way through has a small chance of corrupting the WIM file.  However, a
 precaution is taken against this, so it should be very unlikely.  In the event
-of an aborted \fBimagex append\fR, \fBimagex optimize\fR may be run to remove
+of an aborted \fB@IMAGEX_PROGNAME@ append\fR, \fB@IMAGEX_PROGNAME@ optimize\fR may be run to remove
 extra data that may have been partially appended to the physical WIM file but
 not yet incorporated into the structure of the WIM.
 
@@ -322,7 +322,7 @@ Create a new WIM 'mywim.wim' from the directory 'somedir', using LZX compression
 including an integrity table:
 .RS
 .PP
-imagex capture somedir mywim.wim --compress=maximum --check
+@IMAGEX_PROGNAME@ capture somedir mywim.wim --compress=maximum --check
 .RE
 .PP
 Append an image to the WIM we just captured, but do it from a NTFS volume on the
@@ -332,10 +332,10 @@ cannot be changed.  You need to specify \fB--check\fR if you don't want the
 integrity table to be discarded.
 .RS
 .PP
-imagex append /dev/sda2 mywim.wim --check "Windows 7"
+@IMAGEX_PROGNAME@ append /dev/sda2 mywim.wim --check "Windows 7"
 .RE
 .PP
 
 .SH SEE ALSO
-.BR imagex (1)
+.BR @IMAGEX_PROGNAME@ (1)
 

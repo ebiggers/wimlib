@@ -1,13 +1,13 @@
-.TH IMAGEX "1" "March 2013" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "March 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
-imagex-optimize \- Optimize a WIM archive
+@IMAGEX_PROGNAME@-optimize \- Optimize a WIM archive
 
 .SH SYNOPSIS
-\fBimagex optimize\fR \fIWIMFILE\fR [--check] [--recompress]
+\fB@IMAGEX_PROGNAME@ optimize\fR \fIWIMFILE\fR [--check] [--recompress]
 
 .SH DESCRIPTION
 .PP
-\fBimagex optimize\fR will rebuild the stand-alone WIM \fIWIMFILE\fR.  The new
+\fB@IMAGEX_PROGNAME@ optimize\fR will rebuild the stand-alone WIM \fIWIMFILE\fR.  The new
 WIM is written to a temporary file, and it is renamed to the original file when
 it's ready.  This action will remove any holes that have been left as a result
 of appending images, so the new WIM may be slightly smaller than the old WIM.
@@ -38,16 +38,16 @@ created on Windows.
 
 .SH NOTES
 
-\fBimagex optimize\fR does not support split WIMs.
+\fB@IMAGEX_PROGNAME@ optimize\fR does not support split WIMs.
 
-\fBimagex optimize\fR is roughly equivalent to:
+\fB@IMAGEX_PROGNAME@ optimize\fR is roughly equivalent to:
 .RS
 .PP
-\fBimagex export\fR \fIWIMFILE\fR all tmp.wim [--check] && mv tmp.wim \fIWIMFILE\fR
+\fB@IMAGEX_PROGNAME@ export\fR \fIWIMFILE\fR all tmp.wim [--check] && mv tmp.wim \fIWIMFILE\fR
 .RE
 .PP
 
 .SH SEE ALSO
-.BR imagex (1)
-.BR imagex-export (1)
+.BR @IMAGEX_PROGNAME@ (1)
+.BR @IMAGEX_PROGNAME@-export (1)
 

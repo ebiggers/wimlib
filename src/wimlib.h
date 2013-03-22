@@ -32,17 +32,18 @@
  * \section intro Introduction
  *
  * This is the documentation for the library interface of wimlib 1.3.0.  If you
- * have installed wimlib and want to know how to use the @c imagex program,
- * please see the man pages instead.  Also: the actual project page where you
- * can download the source code for the library is at <a
+ * have installed wimlib and want to know how to use the @b wimlib-imagex
+ * program, please see the man pages instead.  Also: the actual project page
+ * where you can download the source code for the library is at <a
  * href="https://sourceforge.net/projects/wimlib">https://sourceforge.net/projects/wimlib</a>.
  *
  * wimlib is a C library to read, write, and mount archive files in the Windows
- * Imaging Format (WIM files).  These files are normally created using the @c
- * imagex.exe utility on Windows, but this library provides a free
- * implementetion of @c imagex for UNIX-based systems and an API to allow other
- * programs to read, write, and mount WIM files.  wimlib is comparable to
- * Microsoft's WIMGAPI, but was designed independently and is not a clone of it.
+ * Imaging Format (WIM files).  These files are normally created using the
+ * ImageX (@a imagex.exe) utility on Windows, but this library provides a free
+ * implementation of ImageX for UNIX-based systems (and, since v1.3.0, for
+ * Windows systems) and an API to allow other programs to read, write, and mount
+ * WIM files.  wimlib is comparable to Microsoft's WIMGAPI, but was designed
+ * independently and is not a clone of it.
  *
  * \section format WIM files
  *
@@ -80,6 +81,10 @@
  * NTFS volume, and then boot Windows from it after preparing the Boot
  * Configuration Data.  In addition, a Windows installation can be captured (or
  * backed up) into a WIM file, and then re-applied later.
+ *
+ * wimlib v1.3.0 and later also supports NTFS capture and apply in the native
+ * Windows build, which works slightly differently and relies on native Win32
+ * API calls rather than libntfs-3g.
  *
  * \section winpe Windows PE
  *
@@ -170,11 +175,13 @@
  * the WIM operation(s) to report on the progress of the operation (for example,
  * how many bytes have been written so far).
  *
- * \section imagex imagex
+ * \section imagex wimlib-imagex
  *
- * wimlib comes with a command-line interface, the @b imagex program.  It is
- * documented with man pages.  See its source code (@c programs/imagex.c in
- * wimlib's source tree) for an example of how to use wimlib in your program.
+ * wimlib comes with a command-line interface, the @b wimlib-imagex program.  It
+ * is documented with man pages.  This program was originally just called @b
+ * imagex, but has been changed to @b wimlib-imagex to avoid confusion with
+ * Microsoft's @a imagex.exe (which would otherwise have exactly the same
+ * filename on Windows).
  *
  * \section mkwinpeimg mkwinpeimg
  *
@@ -189,7 +196,7 @@
  * encoding (e.g.  ASCII, ISO-8859-1, or UTF-8), or ::wimlib_utf8char strings,
  * which are encoded in UTF-8.  Generally, filenames and paths are in the
  * locale-dependent multibyte encoding, while other types of data must be
- * provided in UTF-8.  Please see the  man page for @b imagex for more
+ * provided in UTF-8.  Please see the  man page for @b wimlib-imagex for more
  * information.  However, I strongly recommend that you use UTF-8 for your
  * locale's encoding so that ::wimlib_mbchar strings will be encoded the same
  * way as ::wimlib_utf8char strings.
@@ -221,14 +228,14 @@
  *   image, then loading them after boot using @b drvload.exe.
  * - Although wimlib 1.3.0 and later can be used on Windows as well as UNIX, the
  *   Windows build has some limitations compared to the UNIX build.
- *   (The differences are documented better in the man pages for @b imagex than
- *   here.)
+ *   (The differences are documented better in the man pages for
+ *   @b wimlib-imagex than here.)
  *
  * \section legal License
  *
  * The wimlib library, as well as the programs and scripts distributed with it
- * (@b imagex and @b mkwinpeimg), is licensed under the GNU General Public
- * License version 3 or later.
+ * (@b wimlib-imagex and @b mkwinpeimg), is licensed under the GNU General
+ * Public License version 3 or later.
  */
 
 #ifndef _WIMLIB_H
@@ -622,9 +629,8 @@ struct wimlib_capture_source {
 /** Store the UNIX owner, group, and mode.  This is done by adding a special
  * alternate data stream to each regular file, symbolic link, and directory to
  * contain this information.  Please note that this flag is for convenience
- * only; Microsoft's version of imagex.exe will not understand this special
- * information.  This flag cannot be combined with ::WIMLIB_ADD_IMAGE_FLAG_NTFS.
- * */
+ * only; Microsoft's @a imagex.exe will not understand this special information.
+ * This flag cannot be combined with ::WIMLIB_ADD_IMAGE_FLAG_NTFS.  */
 #define WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA			0x00000010
 
 /******************************
@@ -837,9 +843,9 @@ enum wimlib_error_code {
  * files are then read on-demand if wimlib_write() or wimlib_overwrite() is
  * called.
  *
- * See the manual page for the @c imagex program for more information about the
- * "normal" capture mode versus the NTFS capture mode (entered by providing the
- * flag ::WIMLIB_ADD_IMAGE_FLAG_NTFS).
+ * See the manual page for the @b wimlib-imagex program for more information
+ * about the "normal" capture mode versus the NTFS capture mode (entered by
+ * providing the flag ::WIMLIB_ADD_IMAGE_FLAG_NTFS).
  *
  * Note that @b no changes are committed to the underlying WIM file (if
  * any) until wimlib_write() or wimlib_overwrite() is called.
@@ -855,7 +861,7 @@ enum wimlib_error_code {
  * @param config
  * 	Pointer to the contents of an image capture configuration file.  If @c
  * 	NULL, a default string is used.  Please see the manual page for
- * 	<b>imagex capture</b> for more information.
+ * 	<b>wimlib-imagex capture</b> for more information.
  * @param config_len
  * 	Length of the string @a config in bytes, not including an optional
  * 	null-terminator.  Ignored if @a config is @c NULL.
@@ -920,8 +926,8 @@ wimlib_add_image(WIMStruct *wim, const wimlib_mbchar *source,
  * multiple sources to be combined into a single WIM image.  This is done by
  * specifying the @a sources and @a num_sources parameters instead of the @a
  * source parameter of wimlib_add_image().  The rest of the parameters are the
- * same as wimlib_add_image().  See the documentation for <b>imagex capture</b>
- * for full details on how this mode works.
+ * same as wimlib_add_image().  See the documentation for <b>wimlib-imagex
+ * capture</b> for full details on how this mode works.
  *
  * Additional note:  @a sources is not a @c const parameter and you cannot
  * assume that its contents are valid after this function returns.  You must
@@ -1138,9 +1144,9 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  * Extracts an image, or all images, from a standalone or split WIM file to a
  * directory or a NTFS volume.
  *
- * Please see the manual page for the @c imagex program for more information
- * about the "normal" extraction mode versus the NTFS extraction mode
- * (entered by providing flag ::WIMLIB_EXTRACT_FLAG_NTFS).
+ * Please see the manual page for the @c wimlib-imagex program for more
+ * information about the "normal" extraction mode versus the NTFS extraction
+ * mode (entered by providing flag ::WIMLIB_EXTRACT_FLAG_NTFS).
  *
  * Extraction is done with one thread.
  *

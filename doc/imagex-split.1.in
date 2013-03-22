@@ -1,9 +1,9 @@
-.TH IMAGEX "1" "March 2013" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "March 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
-imagex-split \- Split a WIM into multiple parts
+@IMAGEX_PROGNAME@-split \- Split a WIM into multiple parts
 
 .SH SYNOPSIS
-\fBimagex split\fR \fIWIMFILE\fR \fISPLIT_WIMFILE\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
+\fB@IMAGEX_PROGNAME@ split\fR \fIWIMFILE\fR \fISPLIT_WIMFILE\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
 
 .SH DESCRIPTION
 .PP
@@ -25,7 +25,7 @@ Splits the WIM 'windows.wim' into 'windows.swm', 'windows2.swm', 'windows3.swm',
 etc. where each part is at most 100 MiB:
 .RS
 .PP
-imagex split windows.wim windows.swm 100
+@IMAGEX_PROGNAME@ split windows.wim windows.swm 100
 .RE
 
 .SH NOTE
@@ -39,4 +39,4 @@ least one part that is 100 MiB in size to contain that file.  However, if the
 WIM resources are compressed then less space would be needed.
 
 .SH SEE ALSO
-.BR imagex (1)
+.BR @IMAGEX_PROGNAME@ (1)

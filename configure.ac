@@ -6,26 +6,39 @@ AM_INIT_AUTOMAKE([-Wall -Werror subdir-objects])
 AC_C_BIGENDIAN
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 LT_INIT
+
+AC_ARG_WITH(imagex-progname,
+            [AS_HELP_STRING([--with-imagex-progname=NAME],
+			    [Set the name of installed ImageX program (default: wimlib-imagex)])],
+            [IMAGEX_PROGNAME=$withval],
+            [IMAGEX_PROGNAME="wimlib-imagex"])
+
+AC_SUBST([IMAGEX_PROGNAME], [$IMAGEX_PROGNAME])
+AC_DEFINE_UNQUOTED([IMAGEX_PROGNAME], ["$IMAGEX_PROGNAME"],
+		   [Binary name for the implementation of ImageX distributed with wimlib])
+
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([Makefile
-		doc/Doxyfile
-		wimlib.pc
-		doc/imagex.1
-		doc/imagex-append.1
-		doc/imagex-apply.1
-		doc/imagex-capture.1
-		doc/imagex-delete.1
-		doc/imagex-dir.1
-		doc/imagex-export.1
-		doc/imagex-info.1
-		doc/imagex-join.1
-		doc/imagex-mount.1
-		doc/imagex-mountrw.1
-		doc/imagex-optimize.1
-		doc/imagex-split.1
-		doc/imagex-unmount.1
-		doc/mkwinpeimg.1
-		])
+AC_CONFIG_FILES([Makefile]
+		[doc/Doxyfile]
+		[wimlib.pc]
+		[doc/"$IMAGEX_PROGNAME".1:doc/imagex.1.in]
+		[doc/"$IMAGEX_PROGNAME"-append.1:doc/imagex-append.1.in]
+		[doc/"$IMAGEX_PROGNAME"-apply.1:doc/imagex-apply.1.in]
+		[doc/"$IMAGEX_PROGNAME"-capture.1:doc/imagex-capture.1.in]
+		[doc/"$IMAGEX_PROGNAME"-delete.1:doc/imagex-delete.1.in]
+		[doc/"$IMAGEX_PROGNAME"-dir.1:doc/imagex-dir.1.in]
+		[doc/"$IMAGEX_PROGNAME"-export.1:doc/imagex-export.1.in]
+		[doc/"$IMAGEX_PROGNAME"-info.1:doc/imagex-info.1.in]
+		[doc/"$IMAGEX_PROGNAME"-join.1:doc/imagex-join.1.in]
+		[doc/"$IMAGEX_PROGNAME"-mount.1:doc/imagex-mount.1.in]
+		[doc/"$IMAGEX_PROGNAME"-mountrw.1:doc/imagex-mountrw.1.in]
+		[doc/"$IMAGEX_PROGNAME"-optimize.1:doc/imagex-optimize.1.in]
+		[doc/"$IMAGEX_PROGNAME"-split.1:doc/imagex-split.1.in]
+		[doc/"$IMAGEX_PROGNAME"-unmount.1:doc/imagex-unmount.1.in]
+		[doc/mkwinpeimg.1])
+
+AC_CONFIG_FILES([programs/mkwinpeimg], [chmod +x programs/mkwinpeimg])
+
 AC_PROG_CC
 AM_PROG_CC_C_O
 AC_CANONICAL_HOST

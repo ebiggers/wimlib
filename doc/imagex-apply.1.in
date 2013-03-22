@@ -1,14 +1,14 @@
-.TH IMAGEX "1" "March 2013" "imagex (wimlib) wimlib @VERSION@" "User Commands"
+.TH IMAGEX "1" "March 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
-imagex-apply \- Extract one image, or all images, from a WIM archive
+@IMAGEX_PROGNAME@-apply \- Extract one image, or all images, from a WIM archive
 
 .SH SYNOPSIS
-\fBimagex apply\fR \fIWIMFILE\fR \fIIMAGE\fR \fITARGET\fR [\fIOPTION\fR]...
+\fB@IMAGEX_PROGNAME@ apply\fR \fIWIMFILE\fR \fIIMAGE\fR \fITARGET\fR [\fIOPTION\fR]...
 
 .SH DESCRIPTION
 .PP
 
-\fBimagex apply\fR extracts an image, or all images, from the Windows Imaging
+\fB@IMAGEX_PROGNAME@ apply\fR extracts an image, or all images, from the Windows Imaging
 (WIM) file \fIWIMFILE\fR.
 
 Note: this man page primarily documents the UNIX behavior.  See \fBWINDOWS
@@ -16,7 +16,7 @@ VERSION\fR for information specific to the Windows build of wimlib.
 
 \fIIMAGE\fR specifies the WIM image to extract.  It may be a 1-based index of an
 image in the WIM, the name of an image in the WIM, or the keyword "all" to
-indicate that all images are to be extracted.  Use the \fBimagex info\fR (1)
+indicate that all images are to be extracted.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1)
 command to show what images a WIM file contains.
 
 \fITARGET\fR specifies where to extract the WIM image(s) to.  If \fITARGET\fR
@@ -26,7 +26,7 @@ location and the WIM image(s) are extracted to that directory.  If \fITARGET\fR
 specifies a regular file or block device, it is interpreted as a NTFS volume to
 which the WIM image is to be extracted.
 
-\fBimagex apply\fR supports applying images from stand-alone WIMs as well as
+\fB@IMAGEX_PROGNAME@ apply\fR supports applying images from stand-alone WIMs as well as
 split WIMs.  See \fBSPLIT WIMS\fR.
 
 .SH NORMAL MODE
@@ -146,7 +146,7 @@ is installed.
 
 So let's say you applied an image from an existing "install.wim" as in the
 example, or you've applied a custom Windows image that you've created using the
-\fBimagex capture\fR (1) command.  You've just applied the "Boot" partition, or
+\fB@IMAGEX_PROGNAME@ capture\fR (1) command.  You've just applied the "Boot" partition, or
 the main Windows partition, but there is no "System" partition yet (i.e.  no
 \\BOOTMGR and no \\Boot\\BCD).
 
@@ -165,7 +165,7 @@ partition (Windows' MBR does, and SYSLINUX provides an equivalent MBR).
 
 .SH SPLIT WIMS
 
-You may use \fBimagex apply\fR to apply images from a split WIM.  The
+You may use \fB@IMAGEX_PROGNAME@ apply\fR to apply images from a split WIM.  The
 \fIWIMFILE\fR argument is used to specify the first part of the split WIM, and
 the \fB--refs\fR="\fIGLOB\fR" option is used to provide a shell-style file glob
 that specifies the additional parts of the split WIM.  \fIGLOB\fR is expected to
@@ -190,17 +190,17 @@ mywim5.swm
 To apply the first image of this split WIM to the directory "dir", run:
 .PP
 .RS
-imagex apply mywim.swm 1 dir --ref="mywim*.swm"
+@IMAGEX_PROGNAME@ apply mywim.swm 1 dir --ref="mywim*.swm"
 .RE
 .PP
 
 .SH WINDOWS VERSION
 
-This section documents the differences between \fBimagex apply\fR in the Windows
+This section documents the differences between \fB@IMAGEX_PROGNAME@ apply\fR in the Windows
 builds of wimlib versus the rest of this man page, which is written to document
 the UNIX build.
 
-\fBimagex apply\fR does not have separate "normal" and "NTFS" modes on Windows.
+\fB@IMAGEX_PROGNAME@ apply\fR does not have separate "normal" and "NTFS" modes on Windows.
 There is simply one mode, and it uses the Windows API to apply NTFS-specific
 information, including alternate data streams, reparse points, hard links, and
 file attributes.  So, you essentially get the advantages of the "NTFS mode"
@@ -212,7 +212,7 @@ ImageX.
 Windows.
 
 Except for the differences documented in this section, the Windows build of
-\fBimagex apply\fR should be essentially equivalent to the UNIX build.  However,
+\fB@IMAGEX_PROGNAME@ apply\fR should be essentially equivalent to the UNIX build.  However,
 one additional thing to note is that wimlib's Windows ImageX is NOT written to
 be command-line compatible with Microsoft's ImageX, although they are very
 similar.
@@ -245,26 +245,26 @@ applied.  See \fBSPLIT_WIMS\fR.
 .TP
 \fB--unix-data\fR
 This option may only be given in the normal extraction mode (not NTFS).
-By default, in the normal extraction mode, \fBimagex apply\fR will ignore both
+By default, in the normal extraction mode, \fB@IMAGEX_PROGNAME@ apply\fR will ignore both
 Windows-style security descriptors and UNIX-specific file owners, groups, and
-modes set when using \fBimagex capture\fR with the \fB--unix-data\fR flag.  By
-passing \fB--unix-data\fR to \fBimagex apply\fR instead, this causes this
+modes set when using \fB@IMAGEX_PROGNAME@ capture\fR with the \fB--unix-data\fR flag.  By
+passing \fB--unix-data\fR to \fB@IMAGEX_PROGNAME@ apply\fR instead, this causes this
 UNIX-specific data to be restored when available.
 
 .SH NOTES
 
-\fBimagex apply\fR calculates the SHA1 message digest of every file stream it
+\fB@IMAGEX_PROGNAME@ apply\fR calculates the SHA1 message digest of every file stream it
 extracts and verifies that it is the same as the SHA1 message digest provided in
 the WIM file.  It is an error if the message digests don't match.  It's also
 considered to be an error if any WIM resources cannot be found in the stream
 lookup table.  So you can be fairly certain that the file streams are extracted
-correctly, even though \fBimagex apply\fR don't have a \fB/verify\fR option like
+correctly, even though \fB@IMAGEX_PROGNAME@ apply\fR don't have a \fB/verify\fR option like
 Microsoft's ImageX does.  Please note that this is separate from the integrity
 table of the WIM, which provides SHA1 message digests over raw chunks of the
 entire WIM file and is checked separately if the \fB--check\fR option is
 specified.
 
-You cannot use \fBimagex apply\fR to apply a WIM from a pipe (such as standard
+You cannot use \fB@IMAGEX_PROGNAME@ apply\fR to apply a WIM from a pipe (such as standard
 input) because the WIM file format is not designed for this.
 
 .SH EXAMPLES
@@ -287,7 +287,7 @@ image apply /media/windows8/sources/boot.wim all boot --hardlink
 Apply a WIM image to a NTFS filesystem image:
 .RS
 .PP
-imagex apply mywim.wim 1 fsimage.ntfs
+@IMAGEX_PROGNAME@ apply mywim.wim 1 fsimage.ntfs
 .RE
 .PP
 Create a new NTFS filesystem on the partition /dev/sda2 and apply the first
@@ -295,10 +295,10 @@ image in the Windows Vista/7/8 installation WIM to it.  (Obviously, only do this
 if you want to erase everything on that partition.)
 .RS
 .PP
-mkntfs /dev/sda2 && imagex apply /media/windows/sources/install.wim 1 /dev/sda2
+mkntfs /dev/sda2 && @IMAGEX_PROGNAME@ apply /media/windows/sources/install.wim 1 /dev/sda2
 .RE
 .PP
 
 .SH SEE ALSO
-.BR imagex (1)
+.BR @IMAGEX_PROGNAME@ (1)
 

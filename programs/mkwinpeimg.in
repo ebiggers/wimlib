@@ -20,7 +20,8 @@
 
 script_name="$(basename $0)"
 PREFIX_REG="::"
-WIMLIB_VERSION=1.3.0
+WIMLIB_VERSION=@VERSION@
+imagex=@IMAGEX_PROGNAME@
 
 calc_columns () {
 	STAT_COL=80
@@ -78,7 +79,7 @@ stat_fail() {
 
 cleanup() {
 	if mountpoint -q "$mnt_dir" ; then
-		imagex unmount "$mnt_dir"
+		@IMAGEX_PROGNAME@ unmount "$mnt_dir"
 	fi
 	rm -rf "$tmp_dir"
 }
@@ -88,23 +89,23 @@ usage() {
 Usage: $script_name [OPTIONS] IMAGE
 
   -i, --iso                Make an ISO image instead of a disk image.
-  -o, --only-wim           Make neither a disk image nor an ISO image; 
+  -o, --only-wim           Make neither a disk image nor an ISO image;
                               instead, only make a modified boot.wim file.
   -W, --windows-dir=DIR    Use DIR as the location of the mounted Windows 7
                               or Windows 8 DVD.  Default is /mnt/windows,
                               then /mnt/windows7, then /mnt/windows8.
-  -A, --waik-dir=DIR       Get the boot files and boot.wim from the ISO of the 
+  -A, --waik-dir=DIR       Get the boot files and boot.wim from the ISO of the
                               Windows Automated Installation Kit mounted on DIR
                               instead of from the Windows 7 or Windows 8 DVD.
-  -s, --start-script=FILE  Add FILE to the root directory of Windows PE image 
-                              and adjust \Windows\System32\winpeshl.ini to 
+  -s, --start-script=FILE  Add FILE to the root directory of Windows PE image
+                              and adjust \Windows\System32\winpeshl.ini to
                               execute FILE when Windows PE starts up.
-  -w, --wim=WIM            Use WIM as the boot.wim file.  Defaults to 
+  -w, --wim=WIM            Use WIM as the boot.wim file.  Defaults to
                               sources/boot.wim in the Windows DVD directory, or
                               F1_WINPE.WIM from the WAIK if --waik-dir is
                               specified.
   -O, --overlay=DIR        Adds all the files in DIR to the Windows PE image.
-  -t, --tmp-dir=DIR        Use DIR as the temporary base of the ISO filesystem.  
+  -t, --tmp-dir=DIR        Use DIR as the temporary base of the ISO filesystem.
                               Defaults to making one using "mktemp -d".
   -a, --arch=ARCH          Use the Windows PE version from the WAIK that has
                               the CPU architecture ARCH.  Possible values:
@@ -192,7 +193,7 @@ process_command_line() {
 			elif [ "$2" == "amd64" ]; then
 				arch="AMD64"
 				arch_id="3"
-			else 
+			else
 				echo "ERROR: $2 is not a valid arch (x86/amd64)"
 				exit 1
 			fi
@@ -257,11 +258,11 @@ EOF
 
 check_needed_programs() {
 	if [ -z "$waik_dir" -o -n "$modify_wim" ]; then
-		if ! type -P imagex &> /dev/null ; then
+		if ! type -P @IMAGEX_PROGNAME@ &> /dev/null ; then
 			cat << EOF
-ERROR: To make a customized image of Windows PE, we need the "imagex" program
-from WIMLIB so that we can modify the boot.wim file.  However, "imagex"
-doesn't seem to be installed.  Please install WIMLIB to continue.
+ERROR: To make a customized image of Windows PE, we need the "$imagex" program
+from "wimlib" so that we can modify the boot.wim file.  However, "$imagex"
+doesn't seem to be installed.  Please install "wimlib" to continue.
 EOF
 			exit 1
 		fi
@@ -269,7 +270,7 @@ EOF
 
 	if [ $make = iso ]; then
 		if ! type -P mkisofs &> /dev/null ; then
-			cat << EOF 
+			cat << EOF
 ERROR: To make a bootable ISO image of Windows PE, we need the "mkisofs"
 program, but it doesn't seem to be installed.  Please install the "cdrkit"
 package to continue, or try omitting the --iso option to make a disk image
@@ -361,7 +362,7 @@ get_boot_wim() {
 			remove_setup=yes
 			wim="$windows_dir/sources/boot.wim"
 			stat_busy "Exporting image from \"$wim\""
-			imagex export "$windows_dir"/sources/boot.wim 2 \
+			"$imagex" export "$windows_dir"/sources/boot.wim 2 \
 						--boot "$boot_wim" || stat_fail
 			stat_done
 		fi
@@ -377,11 +378,11 @@ modify_boot_wim() {
 	boot_wim="$1"
 	mnt_dir="$2"
 
-	# Make modifications to the WIM. 
+	# Make modifications to the WIM.
 	stat_busy "Mounting "$1" read-write"
 
 	mkdir -p "$mnt_dir" || stat_fail
-	imagex mountrw "$boot_wim" "$mnt_dir"|| stat_fail
+	"$imagex" mountrw "$boot_wim" "$mnt_dir"|| stat_fail
 
 	stat_done
 
@@ -410,7 +411,7 @@ EOF
 	fi
 
 	stat_busy "Rebuilding WIM with changes made"
-	imagex unmount --commit "$mnt_dir" || stat_fail
+	"$imagex" unmount --commit "$mnt_dir" || stat_fail
 	stat_done
 
 	rmdir "$mnt_dir"
