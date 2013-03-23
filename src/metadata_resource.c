@@ -42,7 +42,8 @@
  *
  * @return:	Zero on success, nonzero on failure.
  */
-int read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
+int
+read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 {
 	u8 *buf;
 	u32 dentry_offset;
@@ -185,7 +186,8 @@ out_free_buf:
 	return ret;
 }
 
-static void recalculate_security_data_length(struct wim_security_data *sd)
+static void
+recalculate_security_data_length(struct wim_security_data *sd)
 {
 	u32 total_length = sizeof(u64) * sd->num_entries + 2 * sizeof(u32);
 	for (u32 i = 0; i < sd->num_entries; i++)
@@ -196,10 +198,11 @@ static void recalculate_security_data_length(struct wim_security_data *sd)
 /* Like write_wim_resource(), but the resource is specified by a buffer of
  * uncompressed data rather a lookup table entry; also writes the SHA1 hash of
  * the buffer to @hash.  */
-static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
-					  FILE *out_fp, int out_ctype,
-					  struct resource_entry *out_res_entry,
-					  u8 hash[SHA1_HASH_SIZE])
+static int
+write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
+			       FILE *out_fp, int out_ctype,
+			       struct resource_entry *out_res_entry,
+			       u8 hash[SHA1_HASH_SIZE])
 {
 	/* Set up a temporary lookup table entry to provide to
 	 * write_wim_resource(). */
@@ -210,7 +213,7 @@ static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 	lte.resource_entry.size          = buf_size;
 	lte.resource_entry.offset        = 0;
 	lte.resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
-	lte.attached_buffer              = (u8*)buf;
+	lte.attached_buffer              = buf;
 
 	zero_out_hash(lte.hash);
 	ret = write_wim_resource(&lte, out_fp, out_ctype, out_res_entry, 0);
@@ -221,7 +224,8 @@ static int write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 }
 
 /* Write the metadata resource for the current WIM image. */
-int write_metadata_resource(WIMStruct *w)
+int
+write_metadata_resource(WIMStruct *w)
 {
 	u8 *buf;
 	u8 *p;

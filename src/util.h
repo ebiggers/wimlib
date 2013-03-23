@@ -1,12 +1,14 @@
 #ifndef _WIMLIB_UTIL_H
 #define _WIMLIB_UTIL_H
 
+#include "config.h"
+#include "wimlib_tchar.h"
+
 #include <stdio.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <inttypes.h>
 #include <sys/types.h>
-#include "config.h"
 
 #ifdef __GNUC__
 #	if defined(__CYGWIN__) || defined(__WIN32__)
@@ -16,9 +18,8 @@
 #	endif
 #	define ALWAYS_INLINE inline __attribute__((always_inline))
 #	define PACKED __attribute__((packed))
-//#	define FORMAT(type, format_str, args_start) \
-			//__attribute__((format(type, format_str, args_start)))
-#	define FORMAT(type, format_str, args_start)
+#	define FORMAT(type, format_str, args_start) \
+			/*__attribute__((format(type, format_str, args_start))) */
 #	if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 4)
 #		define COLD     __attribute__((cold))
 #	else
@@ -54,100 +55,7 @@ typedef uint64_t u64;
 /* A pointer to 'utf16lechar' indicates a UTF-16LE encoded string */
 typedef u16 utf16lechar;
 
-typedef u8 utf8char;
-
-#ifdef __WIN32__
-/* For Windows builds, the "tchar" type will be 2 bytes and will be equivalent
- * to "wchar_t" and "utf16lechar".  All indicate one code unit of a UTF16-LE
- * string. */
-typedef wchar_t tchar;
-#  define TCHAR_IS_UTF16LE 1
-#  define T(text) L##text /* Make a string literal into a wide string */
-#  define TS "ls" /* Format a string of "tchar" */
-#  define WS "ls" /* Format a UTF-16LE string (same as above) */
-
-/* For Windows builds, the following definitions replace the "tchar" functions
- * with the "wide-character" functions. */
-#  define tmemchr  wmemchr
-#  define tmemcpy  wmemcpy
-#  define tstrcpy  wcscpy
-#  define tprintf  wprintf
-#  define tsprintf swprintf
-#  define tfprintf fwprintf
-#  define tvfprintf vfwprintf
-#  define istalpha iswalpha
-#  define tstrcmp  wcscmp
-#  define tstrchr  wcschr
-#  define tstrrchr wcsrchr
-#  define tstrlen  wcslen
-#  define tmemcmp  wmemcmp
-#  define tstrftime wcsftime
-#  define tputchar putwchar
-#  define tputc    putwc
-#  define tputs    _putws
-#  define tfputs   fputws
-#  define tfopen   _wfopen
-#  define tstat    _wstati64
-#  define tstrtol  wcstol
-#  define tunlink  _wunlink
-/* The following "tchar" functions do not have exact wide-character equivalents
- * on Windows so require parameter rearrangement or redirection to a replacement
- * function defined ourselves. */
-#  define TSTRDUP  WSTRDUP
-#  define tmkdir(path, mode) _wmkdir(path)
-#  define tstrerror_r(errnum, buf, bufsize) _wcserror_s(buf, bufsize, errnum)
-#  define trename  win32_rename_replacement
-#  define ttruncate win32_truncate_replacement
-#else
-/* For non-Windows builds, the "tchar" type will be one byte and will specify a
- * string in the locale-dependent multibyte encoding.  However, only UTF-8 is
- * well supported in this library. */
-typedef char tchar;
-#  define TCHAR_IS_UTF16LE 0
-#  define T(text) text /* In this case, strings of "tchar" are simply strings of
-			  char */
-#  define TS "s"       /* Similarly, a string of "tchar" is printed just as a
-			  normal string. */
-#  define WS "W"       /* UTF-16LE strings must be printed using a special
-			  extension implemented by wimlib itself.  Note that
-			  "ls" will not work here because a string of wide
-			  characters on non-Windows systems is typically not
-			  UTF-16LE. */
-/* For non-Windows builds, replace the "tchar" functions with the regular old
- * string functions. */
-#  define tmemchr  memchr
-#  define tmemcpy  memcpy
-#  define tstrcpy  strcpy
-#  define tprintf  printf
-#  define tsprintf sprintf
-#  define tfprintf fprintf
-#  define tvfprintf vfprintf
-#  define istalpha isalpha
-#  define tstrcmp  strcmp
-#  define tstrchr  strchr
-#  define tstrrchr strrchr
-#  define tstrlen  strlen
-#  define tmemcmp  memcmp
-#  define tstrftime strftime
-#  define tputchar putchar
-#  define tputc    putc
-#  define tputs    puts
-#  define tfputs   fputs
-#  define tfopen   fopen
-#  define tstat    stat
-#  define tunlink  unlink
-#  define tstrtol  strtol
-#  define tmkdir   mkdir
-#  define TSTRDUP  STRDUP
-#  define tstrerror_r strerror_r
-#  define trename  rename
-#  define ttruncate truncate
-#endif
-
 #define TMALLOC(n) MALLOC((n) * sizeof(tchar))
-
-extern size_t
-utf16le_strlen(const utf16lechar *s);
 
 /* encoding.c */
 extern void
@@ -159,27 +67,29 @@ extern bool wimlib_mbs_is_utf8;
 					  chartype1, chartype2)		\
 									\
 extern int								\
+varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
+			 chartype2 **out_ret,				\
+			 size_t *out_nbytes_ret);			\
+									\
+extern int								\
 varname1##_to_##varname2##_nbytes(const chartype1 *in, size_t in_nbytes,\
 				  size_t *out_nbytes_ret);		\
 									\
 extern int								\
 varname1##_to_##varname2##_buf(const chartype1 *in, size_t in_nbytes,	\
-			       chartype2 *out);				\
-									\
-extern int								\
-varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
-			 chartype2 **out_ret,				\
-			 size_t *out_nbytes_ret);			\
+			       chartype2 *out);
+
 
 #if !TCHAR_IS_UTF16LE
 DECLARE_CHAR_CONVERSION_FUNCTIONS(utf16le, tstr, utf16lechar, tchar);
+DECLARE_CHAR_CONVERSION_FUNCTIONS(tstr, utf16le, tchar, utf16lechar);
 #endif
 
 extern int
-utf8_to_tstr_simple(const utf8char *utf8str, tchar **out);
+utf8_to_tstr_simple(const char *utf8str, tchar **out);
 
 extern int
-tstr_to_utf8_simple(const tchar *tstr, utf8char **out);
+tstr_to_utf8_simple(const tchar *tstr, char **out);
 
 #ifndef min
 #define min(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \
@@ -222,7 +132,7 @@ tstr_to_utf8_simple(const tchar *tstr, utf8char **out);
 #define BUFFER_SIZE 4096
 
 static inline void FORMAT(printf, 1, 2)
-dummy_printf(const char *format, ...)
+dummy_tprintf(const tchar *format, ...)
 {
 }
 
@@ -243,10 +153,10 @@ wimlib_warning_with_errno(const tchar *format, ...) FORMAT(printf, 1, 2) COLD;
 #  define WARNING(format, ...)			wimlib_warning(T(format), ## __VA_ARGS__)
 #  define WARNING_WITH_ERRNO(format, ...)	wimlib_warning(T(format), ## __VA_ARGS__)
 #else /* ENABLE_ERROR_MESSAGES */
-#  define ERROR(format, ...)			dummy_printf(format, ## __VA_ARGS__)
-#  define ERROR_WITH_ERRNO(format, ...)		dummy_printf(format, ## __VA_ARGS__)
-#  define WARNING(format, ...)			dummy_printf(format, ## __VA_ARGS__)
-#  define WARNING_WITH_ERRNO(format, ...)	dummy_printf(format, ## __VA_ARGS__)
+#  define ERROR(format, ...)			dummy_tprintf(T(format), ## __VA_ARGS__)
+#  define ERROR_WITH_ERRNO(format, ...)		dummy_tprintf(T(format), ## __VA_ARGS__)
+#  define WARNING(format, ...)			dummy_tprintf(T(format), ## __VA_ARGS__)
+#  define WARNING_WITH_ERRNO(format, ...)	dummy_tprintf(T(format), ## __VA_ARGS__)
 #endif /* !ENABLE_ERROR_MESSAGES */
 
 #if defined(ENABLE_MORE_DEBUG) && !defined(ENABLE_DEBUG)
@@ -265,13 +175,13 @@ wimlib_debug(const tchar *file, int line, const char *func,
 	 	wimlib_debug(T(__FILE__), __LINE__, __func__, T(format), ## __VA_ARGS__);
 
 #else
-#  define DEBUG(format, ...) dummy_printf(format, ## __VA_ARGS__)
+#  define DEBUG(format, ...) dummy_tprintf(T(format), ## __VA_ARGS__)
 #endif /* !ENABLE_DEBUG */
 
 #ifdef ENABLE_MORE_DEBUG
 #  define DEBUG2(format, ...) DEBUG(format, ## __VA_ARGS__)
 #else
-#  define DEBUG2(format, ...) dummy_printf(format, ## __VA_ARGS__)
+#  define DEBUG2(format, ...) dummy_tprintf(T(format), ## __VA_ARGS__)
 #endif /* !ENABLE_MORE_DEBUG */
 
 #ifdef ENABLE_ASSERTIONS
@@ -323,9 +233,6 @@ randomize_byte_array(u8 *p, size_t n);
 extern void
 randomize_char_array_with_alnum(tchar p[], size_t n);
 
-extern const tchar *
-path_next_part(const tchar *path, size_t *first_part_len_ret);
-
 const tchar *
 path_basename_with_len(const tchar *path, size_t len);
 
@@ -334,15 +241,6 @@ path_basename(const tchar *path);
 
 extern const tchar *
 path_stream_name(const tchar *path);
-
-extern void
-to_parent_name(tchar *buf, size_t len);
-
-extern void
-print_string(const void *string, size_t len);
-
-extern int
-get_num_path_components(const char *path);
 
 static inline void
 print_byte_field(const u8 field[], size_t len)
@@ -367,14 +265,18 @@ bsr32(u32 n)
 #endif
 }
 
+#ifdef __WIN32__
+#  define wimlib_fprintf fwprintf
+#  define wimlib_printf	 wprintf
+#else /* __WIN32__ */
 extern int
-wimlib_fprintf(FILE *fp, const tchar *format, ...)
-	//FORMAT(printf, 2, 3)
-	;
+wimlib_fprintf(FILE *fp, const tchar *format, ...) FORMAT(printf, 2, 3);
 
 extern int
-wimlib_printf(const tchar *format, ...)
-	//FORMAT(printf, 1, 2)
-	;
+wimlib_printf(const tchar *format, ...) FORMAT(printf, 1, 2);
+#endif /* !__WIN32__ */
+
+extern void
+zap_backslashes(tchar *s);
 
 #endif /* _WIMLIB_UTIL_H */

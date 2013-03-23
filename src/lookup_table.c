@@ -33,7 +33,8 @@
 #include <unistd.h>
 #endif
 
-struct wim_lookup_table *new_lookup_table(size_t capacity)
+struct wim_lookup_table *
+new_lookup_table(size_t capacity)
 {
 	struct wim_lookup_table *table;
 	struct hlist_head *array;
@@ -84,7 +85,9 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 	memcpy(new, old, sizeof(*old));
 	new->extracted_file = NULL;
 	switch (new->resource_location) {
+#ifdef __WIN32__
 	case RESOURCE_WIN32:
+#endif
 	case RESOURCE_IN_STAGING_FILE:
 	case RESOURCE_IN_FILE_ON_DISK:
 		BUILD_BUG_ON((void*)&old->file_on_disk !=
@@ -132,7 +135,8 @@ out_free:
 	return NULL;
 }
 
-void free_lookup_table_entry(struct wim_lookup_table_entry *lte)
+void
+free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 {
 	if (lte) {
 		switch (lte->resource_location) {
@@ -164,15 +168,16 @@ void free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 	}
 }
 
-static int do_free_lookup_table_entry(struct wim_lookup_table_entry *entry,
-				      void *ignore)
+static int
+do_free_lookup_table_entry(struct wim_lookup_table_entry *entry, void *ignore)
 {
 	free_lookup_table_entry(entry);
 	return 0;
 }
 
 
-void free_lookup_table(struct wim_lookup_table *table)
+void
+free_lookup_table(struct wim_lookup_table *table)
 {
 	DEBUG2("Freeing lookup table");
 	if (table) {
@@ -192,8 +197,9 @@ void free_lookup_table(struct wim_lookup_table *table)
  * @table:	A pointer to the lookup table.
  * @lte:	A pointer to the entry to insert.
  */
-void lookup_table_insert(struct wim_lookup_table *table,
-			 struct wim_lookup_table_entry *lte)
+void
+lookup_table_insert(struct wim_lookup_table *table,
+		    struct wim_lookup_table_entry *lte)
 {
 	size_t i = lte->hash_short % table->capacity;
 	hlist_add_head(&lte->hash_list, &table->array[i]);
@@ -202,7 +208,8 @@ void lookup_table_insert(struct wim_lookup_table *table,
 	table->num_entries++;
 }
 
-static void finalize_lte(struct wim_lookup_table_entry *lte)
+static void
+finalize_lte(struct wim_lookup_table_entry *lte)
 {
 	#ifdef WITH_FUSE
 	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
@@ -217,8 +224,9 @@ static void finalize_lte(struct wim_lookup_table_entry *lte)
  * reference count reaches 0, it is unlinked from the lookup table.  If,
  * furthermore, the entry has no opened file descriptors associated with it, the
  * entry is freed.  */
-void lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
-			  struct wim_lookup_table *table)
+void
+lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
+		     struct wim_lookup_table *table)
 {
 	wimlib_assert(lte != NULL);
 	wimlib_assert(lte->refcnt != 0);
@@ -232,7 +240,8 @@ void lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
 }
 
 #ifdef WITH_FUSE
-void lte_decrement_num_opened_fds(struct wim_lookup_table_entry *lte)
+void
+lte_decrement_num_opened_fds(struct wim_lookup_table_entry *lte)
 {
 	if (lte->num_opened_fds != 0)
 		if (--lte->num_opened_fds == 0 && lte->refcnt == 0)
@@ -242,9 +251,10 @@ void lte_decrement_num_opened_fds(struct wim_lookup_table_entry *lte)
 
 /* Calls a function on all the entries in the WIM lookup table.  Stop early and
  * return nonzero if any call to the function returns nonzero. */
-int for_lookup_table_entry(struct wim_lookup_table *table,
-			   int (*visitor)(struct wim_lookup_table_entry *, void *),
-			   void *arg)
+int
+for_lookup_table_entry(struct wim_lookup_table *table,
+		       int (*visitor)(struct wim_lookup_table_entry *, void *),
+		       void *arg)
 {
 	struct wim_lookup_table_entry *lte;
 	struct hlist_node *pos, *tmp;
@@ -266,7 +276,8 @@ int for_lookup_table_entry(struct wim_lookup_table *table,
 /*
  * Reads the lookup table from a WIM file.
  */
-int read_lookup_table(WIMStruct *w)
+int
+read_lookup_table(WIMStruct *w)
 {
 	u64 num_entries;
 	u8 buf[WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
@@ -400,7 +411,8 @@ out:
 /*
  * Writes a lookup table entry to the output file.
  */
-int write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *__out)
+int
+write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *__out)
 {
 	FILE *out;
 	u8 buf[WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
@@ -431,8 +443,9 @@ int write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *__out)
 }
 
 /* Writes the lookup table to the output file. */
-int write_lookup_table(struct wim_lookup_table *table, FILE *out,
-		       struct resource_entry *out_res_entry)
+int
+write_lookup_table(struct wim_lookup_table *table, FILE *out,
+		   struct resource_entry *out_res_entry)
 {
 	off_t start_offset, end_offset;
 	int ret;
@@ -458,19 +471,22 @@ int write_lookup_table(struct wim_lookup_table *table, FILE *out,
 }
 
 
-int lte_zero_real_refcnt(struct wim_lookup_table_entry *lte, void *ignore)
+int
+lte_zero_real_refcnt(struct wim_lookup_table_entry *lte, void *ignore)
 {
 	lte->real_refcnt = 0;
 	return 0;
 }
 
-int lte_zero_out_refcnt(struct wim_lookup_table_entry *lte, void *ignore)
+int
+lte_zero_out_refcnt(struct wim_lookup_table_entry *lte, void *ignore)
 {
 	lte->out_refcnt = 0;
 	return 0;
 }
 
-int lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *ignore)
+int
+lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *ignore)
 {
 	if (lte->extracted_file != NULL) {
 		FREE(lte->extracted_file);
@@ -479,8 +495,8 @@ int lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *ignore)
 	return 0;
 }
 
-void print_lookup_table_entry(const struct wim_lookup_table_entry *lte,
-			      FILE *out)
+void
+print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 {
 	if (!lte) {
 		tputc(T('\n'), out);
@@ -520,6 +536,9 @@ void print_lookup_table_entry(const struct wim_lookup_table_entry *lte,
 				 lte->wim->filename);
 		}
 		break;
+#ifdef __WIN32__
+	case RESOURCE_WIN32:
+#endif
 	case RESOURCE_IN_FILE_ON_DISK:
 		tfprintf(out, T("File on Disk      = `%"TS"'\n"),
 			 lte->file_on_disk);
@@ -534,8 +553,8 @@ void print_lookup_table_entry(const struct wim_lookup_table_entry *lte,
 	tputc(T('\n'), out);
 }
 
-static int do_print_lookup_table_entry(struct wim_lookup_table_entry *lte,
-				       void *fp)
+static int
+do_print_lookup_table_entry(struct wim_lookup_table_entry *lte, void *fp)
 {
 	print_lookup_table_entry(lte, (FILE*)fp);
 	return 0;
@@ -544,7 +563,8 @@ static int do_print_lookup_table_entry(struct wim_lookup_table_entry *lte,
 /*
  * Prints the lookup table of a WIM file.
  */
-WIMLIBAPI void wimlib_print_lookup_table(WIMStruct *w)
+WIMLIBAPI void
+wimlib_print_lookup_table(WIMStruct *w)
 {
 	for_lookup_table_entry(w->lookup_table,
 			       do_print_lookup_table_entry,
@@ -650,7 +670,8 @@ out:
  * This function always succeeds; unresolved lookup table entries are given a
  * NULL pointer.
  */
-void inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table)
+void
+inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table)
 {
 
 	if (!inode->i_resolved) {
@@ -669,7 +690,8 @@ void inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table)
 	}
 }
 
-void inode_unresolve_ltes(struct wim_inode *inode)
+void
+inode_unresolve_ltes(struct wim_inode *inode)
 {
 	if (inode->i_resolved) {
 		if (inode->i_lte)
@@ -693,7 +715,7 @@ void inode_unresolve_ltes(struct wim_inode *inode)
  * stream_idx = 0 means the default un-named file stream, and stream_idx >= 1
  * corresponds to an alternate data stream.
  *
- * This works for both resolved and un-resolved dentries.
+ * This works for both resolved and un-resolved inodes.
  */
 struct wim_lookup_table_entry *
 inode_stream_lte(const struct wim_inode *inode, unsigned stream_idx,
@@ -732,14 +754,15 @@ inode_unnamed_lte(const struct wim_inode *inode,
 		return inode_unnamed_lte_unresolved(inode, table);
 }
 
-static int lte_add_stream_size(struct wim_lookup_table_entry *lte,
-			       void *total_bytes_p)
+static int
+lte_add_stream_size(struct wim_lookup_table_entry *lte, void *total_bytes_p)
 {
 	*(u64*)total_bytes_p += lte->resource_entry.size;
 	return 0;
 }
 
-u64 lookup_table_total_stream_size(struct wim_lookup_table *table)
+u64
+lookup_table_total_stream_size(struct wim_lookup_table *table)
 {
 	u64 total_size = 0;
 	for_lookup_table_entry(table, lte_add_stream_size, &total_size);

@@ -66,7 +66,8 @@ sha1_update(SHA_CTX *context, const void *data, size_t len)
 {
 	sha1_update_intel((int*)&context->state, data, len / 64);
 	size_t j = (context->count[0] >> 3) & 63;
-	if ((context->count[0] += len << 3) < (len << 3)) context->count[1]++;
+	if ((context->count[0] += len << 3) < (len << 3))
+		context->count[1]++;
 	context->count[1] += (len >> 29);
 }
 #include <stdlib.h>

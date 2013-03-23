@@ -142,9 +142,10 @@ struct wim_dentry {
 	u16 file_name_nbytes;
 
 	/* Length of full path name encoded using "tchars", in bytes, not
-	 * including the terminating null terminator. */
+	 * including the terminating null character. */
 	u32 full_path_nbytes;
 
+	/* Has this dentry been extracted yet? */
 	u8 is_extracted : 1;
 
 	/* Only used during NTFS capture */

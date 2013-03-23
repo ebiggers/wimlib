@@ -156,7 +156,7 @@ print_inode_dentries(const struct wim_inode *inode)
 {
 	struct wim_dentry *dentry;
 	inode_for_each_dentry(dentry, inode)
-		printf("`%s'\n", dentry->full_path);
+		tprintf(T("`%"TS"'\n"), dentry->full_path);
 }
 #endif
 
@@ -382,17 +382,18 @@ next_dentry_2:
         if (num_true_inodes != 1) {
 		inode = container_of(true_inodes.first, struct wim_inode, i_hlist);
 
-		printf("Split nominal inode 0x%"PRIx64" into %zu "
-		       "inodes:\n",
-		       inode->i_ino, num_true_inodes);
-		puts("------------------------------------------------------------------------------");
+		tprintf(T("Split nominal inode 0x%"PRIx64" into %zu "
+			  "inodes:\n"), inode->i_ino, num_true_inodes);
+		tputs(T("----------------------------------------------------"
+			"--------------------------"));
 		size_t i = 1;
 		hlist_for_each_entry(inode, cur, &true_inodes, i_hlist) {
-			printf("[Split inode %zu]\n", i++);
+			tprintf(T("[Split inode %zu]\n"), i++);
 			print_inode_dentries(inode);
-			putchar('\n');
+			tputchar(T('\n'));
 		}
-		puts("------------------------------------------------------------------------------");
+		tputs(T("----------------------------------------------------"
+			"--------------------------"));
         }
 	#endif
 

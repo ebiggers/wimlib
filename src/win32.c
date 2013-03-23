@@ -31,7 +31,7 @@
 #include <windows.h>
 #include <ntdef.h>
 #include <wchar.h>
-#include <shlwapi.h> /* shlwapi.h for PathMatchSpecA() */
+#include <shlwapi.h> /* shlwapi.h for PathMatchSpecW() */
 #ifdef ERROR /* windows.h defines this */
 #  undef ERROR
 #endif
@@ -70,7 +70,7 @@ win32_global_init()
 
 	if (hKernel32 == NULL) {
 		DEBUG("Loading Kernel32.dll");
-		hKernel32 = LoadLibraryA("Kernel32.dll");
+		hKernel32 = LoadLibraryW(L"Kernel32.dll");
 		if (hKernel32 == NULL) {
 			err = GetLastError();
 			WARNING("Can't load Kernel32.dll");
@@ -329,7 +329,7 @@ win32_recurse_directory(struct wim_dentry *root,
 	} while (FindNextFileW(hFind, &dat));
 	err = GetLastError();
 	if (err != ERROR_NO_MORE_FILES) {
-		ERROR("Failed to read directory \"%s\"", dir_path);
+		ERROR("Failed to read directory \"%ls\"", dir_path);
 		win32_error(err);
 		if (ret == 0)
 			ret = WIMLIB_ERR_READ;
@@ -818,7 +818,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	size_t path_nchars;
 	wchar_t *path;
 	int ret;
-	
+
 	path_nchars = wcslen(root_disk_path);
 	if (path_nchars > 32767)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -830,6 +830,8 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	path = MALLOC(32770 * sizeof(wchar_t));
 	if (!path)
 		return WIMLIB_ERR_NOMEM;
+
+	wmemcpy(path, root_disk_path, path_nchars + 1);
 
 	ret = win32_build_dentry_tree_recursive(root_ret,
 						path,
@@ -1189,7 +1191,6 @@ win32_do_apply_dentry_timestamps(const wchar_t *path,
 {
 	DWORD err;
 	HANDLE h;
-	int ret;
 	const struct wim_inode *inode = dentry->d_inode;
 
 	DEBUG("Opening \"%ls\" to set timestamps", path);

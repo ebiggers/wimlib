@@ -1500,12 +1500,17 @@ wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret);
 /**
  * Since wimlib 1.2.6:  Initialization function for wimlib.  This is not
  * re-entrant.  If you are calling wimlib functions concurrently in different
- * threads, then you must call this function serially first.  Also, since wimlib
- * 1.3.0, you must call this function if the character encoding of the current
- * locale is not UTF-8.  Otherwise, calling this function this function is not
- * required.
+ * threads, then you must call this function serially first.
  *
- * This function always returns 0.
+ * Since wimlib 1.3.0, you must call this function if the character encoding of
+ * the current locale is not UTF-8.
+ *
+ * Since wimlib 1.3.2, you must call this function if using the Windows-native
+ * build of the library so that certain functions can be dynamically loaded from
+ * system DLLs.
+ *
+ * This function currently always returns 0, but it may return other error codes
+ * in future releases.
  */
 extern int
 wimlib_global_init();

@@ -27,129 +27,6 @@
 #include "buffer_io.h"
 #include "security.h"
 
-
-#define	SECURITY_DESCRIPTOR_REVISION	1
-#define	SECURITY_DESCRIPTOR_REVISION1	1
-
-/* inherit AceFlags */
-#define	OBJECT_INHERIT_ACE		0x01
-#define	CONTAINER_INHERIT_ACE		0x02
-#define	NO_PROPAGATE_INHERIT_ACE	0x04
-#define	INHERIT_ONLY_ACE		0x08
-#define	INHERITED_ACE		        0x10
-#define	VALID_INHERIT_FLAGS		0x1F
-
-#define SE_OWNER_DEFAULTED		0x00000001
-#define SE_GROUP_DEFAULTED		0x00000002
-#define SE_DACL_PRESENT			0x00000004
-#define SE_DACL_DEFAULTED		0x00000008
-#define SE_SACL_PRESENT			0x00000010
-#define SE_SACL_DEFAULTED		0x00000020
-#define SE_DACL_AUTO_INHERIT_REQ	0x00000100
-#define SE_SACL_AUTO_INHERIT_REQ	0x00000200
-#define SE_DACL_AUTO_INHERITED		0x00000400
-#define SE_SACL_AUTO_INHERITED		0x00000800
-#define SE_DACL_PROTECTED 		0x00001000
-#define SE_SACL_PROTECTED 		0x00002000
-#define SE_RM_CONTROL_VALID		0x00004000
-#define SE_SELF_RELATIVE		0x00008000
-
-/* Flags in access control entries */
-#define DELETE                     0x00010000
-#define READ_CONTROL               0x00020000
-#define WRITE_DAC                  0x00040000
-#define WRITE_OWNER                0x00080000
-#define SYNCHRONIZE                0x00100000
-#define STANDARD_RIGHTS_REQUIRED   0x000f0000
-
-#define STANDARD_RIGHTS_READ       READ_CONTROL
-#define STANDARD_RIGHTS_WRITE      READ_CONTROL
-#define STANDARD_RIGHTS_EXECUTE    READ_CONTROL
-
-#define STANDARD_RIGHTS_ALL        0x001f0000
-
-#define SPECIFIC_RIGHTS_ALL        0x0000ffff
-
-#define GENERIC_READ               0x80000000
-#define GENERIC_WRITE              0x40000000
-#define GENERIC_EXECUTE            0x20000000
-#define GENERIC_ALL                0x10000000
-
-#define MAXIMUM_ALLOWED            0x02000000
-#define ACCESS_SYSTEM_SECURITY     0x01000000
-
-#define EVENT_QUERY_STATE          0x0001
-#define EVENT_MODIFY_STATE         0x0002
-#define EVENT_ALL_ACCESS           (STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3)
-
-#define SEMAPHORE_MODIFY_STATE     0x0002
-#define SEMAPHORE_ALL_ACCESS       (STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3)
-
-#define MUTEX_MODIFY_STATE         0x0001
-#define MUTEX_ALL_ACCESS           (STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x1)
-
-#define JOB_OBJECT_ASSIGN_PROCESS           0x0001
-#define JOB_OBJECT_SET_ATTRIBUTES           0x0002
-#define JOB_OBJECT_QUERY                    0x0004
-#define JOB_OBJECT_TERMINATE                0x0008
-#define JOB_OBJECT_SET_SECURITY_ATTRIBUTES  0x0010
-#define JOB_OBJECT_ALL_ACCESS               (STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x1f)
-
-#define TIMER_QUERY_STATE          0x0001
-#define TIMER_MODIFY_STATE         0x0002
-#define TIMER_ALL_ACCESS           (STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3)
-
-#define PROCESS_TERMINATE          0x0001
-#define PROCESS_CREATE_THREAD      0x0002
-#define PROCESS_VM_OPERATION       0x0008
-#define PROCESS_VM_READ            0x0010
-#define PROCESS_VM_WRITE           0x0020
-#define PROCESS_DUP_HANDLE         0x0040
-#define PROCESS_CREATE_PROCESS     0x0080
-#define PROCESS_SET_QUOTA          0x0100
-#define PROCESS_SET_INFORMATION    0x0200
-#define PROCESS_QUERY_INFORMATION  0x0400
-#define PROCESS_SUSPEND_RESUME     0x0800
-#define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
-#define PROCESS_ALL_ACCESS         (STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0xfff)
-
-#define THREAD_TERMINATE           0x0001
-#define THREAD_SUSPEND_RESUME      0x0002
-#define THREAD_GET_CONTEXT         0x0008
-#define THREAD_SET_CONTEXT         0x0010
-#define THREAD_SET_INFORMATION     0x0020
-#define THREAD_QUERY_INFORMATION   0x0040
-#define THREAD_SET_THREAD_TOKEN    0x0080
-#define THREAD_IMPERSONATE         0x0100
-#define THREAD_DIRECT_IMPERSONATION 0x0200
-#define THREAD_ALL_ACCESS          (STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3ff)
-
-#define THREAD_BASE_PRIORITY_LOWRT  15
-#define THREAD_BASE_PRIORITY_MAX    2
-#define THREAD_BASE_PRIORITY_MIN   -2
-#define THREAD_BASE_PRIORITY_IDLE  -15
-
-/* predefined authority values for SID's (security identifiers) */
-enum sid_authority_value {
-	SECURITY_NULL_SID_AUTHORITY    = 0,
-	SECURITY_WORLD_SID_AUTHORITY   = 1,
-	SECURITY_LOCAL_SID_AUTHORITY   = 2,
-	SECURITY_CREATOR_SID_AUTHORITY = 3,
-	SECURITY_NON_UNIQUE_AUTHORITY  = 4,
-	SECURITY_NT_AUTHORITY          = 5,
-};
-
-/* local administrators group */
-#define SECURITY_BUILTIN_DOMAIN_RID 32
-#define DOMAIN_ALIAS_RID_ADMINS     544
-
-/* See ACEHeader. */
-enum ace_type {
-	ACCESS_ALLOWED_ACE_TYPE = 0,
-	ACCESS_DENIED_ACE_TYPE  = 1,
-	SYSTEM_AUDIT_ACE_TYPE   = 2,
-};
-
 /* At the start of each type of access control entry.  */
 typedef struct {
 	/* enum ace_type, specifies what type of ACE this is.  */
@@ -463,74 +340,76 @@ write_security_data(const struct wim_security_data *sd, u8 *p)
 }
 
 static void
-print_acl(const u8 *p, const char *type)
+print_acl(const void *p, const tchar *type)
 {
-	const ACL *acl = (const ACL*)p;
+	const ACL *acl = p;
 	u8 revision = acl->revision;
 	u16 acl_size = le16_to_cpu(acl->acl_size);
 	u16 ace_count = le16_to_cpu(acl->ace_count);
-	printf("    [%s ACL]\n", type);
-	printf("    Revision = %u\n", revision);
-	printf("    ACL Size = %u\n", acl_size);
-	printf("    ACE Count = %u\n", ace_count);
+	tprintf(T("    [%"TS" ACL]\n"), type);
+	tprintf(T("    Revision = %u\n"), revision);
+	tprintf(T("    ACL Size = %u\n"), acl_size);
+	tprintf(T("    ACE Count = %u\n"), ace_count);
 
 	p += sizeof(ACL);
 	for (u16 i = 0; i < ace_count; i++) {
-		const ACEHeader *hdr = (const ACEHeader*)p;
-		printf("        [ACE]\n");
-		printf("        ACE type  = %d\n", hdr->type);
-		printf("        ACE flags = 0x%x\n", hdr->flags);
-		printf("        ACE size  = %u\n", hdr->size);
+		const ACEHeader *hdr = p;
+		tprintf(T("        [ACE]\n"));
+		tprintf(T("        ACE type  = %d\n"), hdr->type);
+		tprintf(T("        ACE flags = 0x%x\n"), hdr->flags);
+		tprintf(T("        ACE size  = %u\n"), hdr->size);
 		const AccessAllowedACE *aaa = (const AccessAllowedACE*)hdr;
-		printf("        ACE mask = %x\n", le32_to_cpu(aaa->mask));
-		printf("        SID start = %u\n", le32_to_cpu(aaa->sid_start));
+		tprintf(T("        ACE mask = %x\n"), le32_to_cpu(aaa->mask));
+		tprintf(T("        SID start = %u\n"), le32_to_cpu(aaa->sid_start));
 		p += hdr->size;
 	}
-	putchar('\n');
+	tputchar(T('\n'));
 }
 
 static void
-print_sid(const u8 *p, const char *type)
+print_sid(const void *p, const tchar *type)
 {
-	const SID *sid = (const SID*)p;
-	printf("    [%s SID]\n", type);
-	printf("    Revision = %u\n", sid->revision);
-	printf("    Subauthority count = %u\n", sid->sub_authority_count);
-	printf("    Identifier authority = ");
+	const SID *sid = p;
+	tprintf(T("    [%"TS" SID]\n"), type);
+	tprintf(T("    Revision = %u\n"), sid->revision);
+	tprintf(T("    Subauthority count = %u\n"), sid->sub_authority_count);
+	tprintf(T("    Identifier authority = "));
 	print_byte_field(sid->identifier_authority,
 			 sizeof(sid->identifier_authority));
-	putchar('\n');
-	for (u8 i = 0; i < sid->sub_authority_count; i++)
-		printf("    Subauthority %u = %u\n",
-		       i, le32_to_cpu(sid->sub_authority[i]));
-	putchar('\n');
+	tputchar(T('\n'));
+	for (u8 i = 0; i < sid->sub_authority_count; i++) {
+		tprintf(T("    Subauthority %u = %u\n"),
+			i, le32_to_cpu(sid->sub_authority[i]));
+	}
+	tputchar(T('\n'));
 }
 
 static void
-print_security_descriptor(const u8 *p, u64 size)
+print_security_descriptor(const void *p, u64 size)
 {
-	const SecurityDescriptor *sd = (const SecurityDescriptor*)p;
+	const SecurityDescriptor *sd = p;
+
 	u8 revision      = sd->revision;
 	u16 control      = le16_to_cpu(sd->security_descriptor_control);
 	u32 owner_offset = le32_to_cpu(sd->owner_offset);
 	u32 group_offset = le32_to_cpu(sd->group_offset);
 	u32 sacl_offset  = le32_to_cpu(sd->sacl_offset);
 	u32 dacl_offset  = le32_to_cpu(sd->dacl_offset);
-	printf("Revision = %u\n", revision);
-	printf("Security Descriptor Control = %#x\n", control);
-	printf("Owner offset = %u\n", owner_offset);
-	printf("Group offset = %u\n", group_offset);
-	printf("System ACL offset = %u\n", sacl_offset);
-	printf("Discretionary ACL offset = %u\n", dacl_offset);
+	tprintf(T("Revision = %u\n"), revision);
+	tprintf(T("Security Descriptor Control = %#x\n"), control);
+	tprintf(T("Owner offset = %u\n"), owner_offset);
+	tprintf(T("Group offset = %u\n"), group_offset);
+	tprintf(T("System ACL offset = %u\n"), sacl_offset);
+	tprintf(T("Discretionary ACL offset = %u\n"), dacl_offset);
 
 	if (sd->owner_offset != 0)
-		print_sid(p + owner_offset, "Owner");
+		print_sid(p + owner_offset, T("Owner"));
 	if (sd->group_offset != 0)
-		print_sid(p + group_offset, "Group");
+		print_sid(p + group_offset, T("Group"));
 	if (sd->sacl_offset != 0)
-		print_acl(p + sacl_offset, "System");
+		print_acl(p + sacl_offset, T("System"));
 	if (sd->dacl_offset != 0)
-		print_acl(p + dacl_offset, "Discretionary");
+		print_acl(p + dacl_offset, T("Discretionary"));
 }
 
 /*
@@ -541,17 +420,17 @@ print_security_data(const struct wim_security_data *sd)
 {
 	wimlib_assert(sd != NULL);
 
-	puts("[SECURITY DATA]");
-	printf("Length            = %"PRIu32" bytes\n", sd->total_length);
-	printf("Number of Entries = %"PRIu32"\n", sd->num_entries);
+	tputs(T("[SECURITY DATA]"));
+	tprintf(T("Length            = %"PRIu32" bytes\n"), sd->total_length);
+	tprintf(T("Number of Entries = %"PRIu32"\n"), sd->num_entries);
 
 	for (u32 i = 0; i < sd->num_entries; i++) {
-		printf("[SecurityDescriptor %"PRIu32", length = %"PRIu64"]\n",
-		       i, sd->sizes[i]);
+		tprintf(T("[SecurityDescriptor %"PRIu32", length = %"PRIu64"]\n"),
+			i, sd->sizes[i]);
 		print_security_descriptor(sd->descriptors[i], sd->sizes[i]);
-		putchar('\n');
+		tputchar(T('\n'));
 	}
-	putchar('\n');
+	tputchar(T('\n'));
 }
 
 void

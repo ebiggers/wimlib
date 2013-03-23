@@ -179,6 +179,7 @@ WITH_NTFS_3G_DEFAULT="yes"
 WITH_FUSE_DEFAULT="yes"
 WINDOWS_NATIVE_BUILD="no"
 VISIBILITY_CFLAGS="-fvisibility=hidden"
+WINDOWS_CFLAGS=""
 WINDOWS_CPPFLAGS=""
 WINDOWS_LDFLAGS=""
 WINDOWS_LDADD=""
@@ -190,12 +191,15 @@ case "$host" in
 		WITH_FUSE_DEFAULT="no"
 		WINDOWS_NATIVE_BUILD="yes"
 		VISIBILITY_CFLAGS=""
+		WINDOWS_CFLAGS="-municode"
 		WINDOWS_CPPFLAGS="-D_POSIX"
 		WINDOWS_LDFLAGS="-no-undefined"
 		WINDOWS_LDADD="-lshlwapi"
 		;;
  	*-*-cygwin*)
 		# Cygwin (WARNING: not well supported)
+		AC_MSG_WARN([wimlib has not been tested with Cygwin!  Please do
+			     a Windows-native build with MinGW-w64 instead])
 		WITH_NTFS_3G_DEFAULT="no"
 		WITH_FUSE_DEFAULT="no"
 		VISIBILITY_CFLAGS=""
@@ -209,6 +213,7 @@ AC_SUBST([VISIBILITY_CFLAGS], [$VISIBILITY_CFLAGS])
 AC_SUBST([WINDOWS_LDFLAGS], [$WINDOWS_LDFLAGS])
 AC_SUBST([WINDOWS_LDADD], [$WINDOWS_LDADD])
 AC_SUBST([WINDOWS_CPPFLAGS], [$WINDOWS_CPPFLAGS])
+AC_SUBST([WINDOWS_CFLAGS], [$WINDOWS_CFLAGS])
 AM_CONDITIONAL([WINDOWS_NATIVE_BUILD], [test "x$WINDOWS_NATIVE_BUILD" = "xyes"])
 
 AC_MSG_CHECKING([whether to include support for ntfs-3g])

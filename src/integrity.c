@@ -45,8 +45,9 @@ struct integrity_table {
 	u8  sha1sums[0][20];
 };
 
-static int calculate_chunk_sha1(FILE *fp, size_t this_chunk_size,
-				off_t offset, u8 sha1_md[])
+static int
+calculate_chunk_sha1(FILE *fp, size_t this_chunk_size,
+		     off_t offset, u8 sha1_md[])
 {
 	int ret;
 	u8 buf[BUFFER_SIZE];
@@ -109,10 +110,11 @@ static int calculate_chunk_sha1(FILE *fp, size_t this_chunk_size,
  *     			    data.
  *     * WIMLIB_ERR_READ:   Could not read the integrity data from the WIM file.
  */
-static int read_integrity_table(const struct resource_entry *res_entry,
-				FILE *fp,
-				u64 num_checked_bytes,
-				struct integrity_table **table_ret)
+static int
+read_integrity_table(const struct resource_entry *res_entry,
+		     FILE *fp,
+		     u64 num_checked_bytes,
+		     struct integrity_table **table_ret)
 {
 	struct integrity_table *table = NULL;
 	int ret = 0;
@@ -229,12 +231,13 @@ out:
  *
  * Returns 0 on success; nonzero on failure.
  */
-static int calculate_integrity_table(FILE *fp,
-				     off_t new_check_end,
-				     const struct integrity_table *old_table,
-				     off_t old_check_end,
-				     wimlib_progress_func_t progress_func,
-				     struct integrity_table **integrity_table_ret)
+static int
+calculate_integrity_table(FILE *fp,
+			  off_t new_check_end,
+			  const struct integrity_table *old_table,
+			  off_t old_check_end,
+			  wimlib_progress_func_t progress_func,
+			  struct integrity_table **integrity_table_ret)
 {
 	int ret = 0;
 	size_t chunk_size = INTEGRITY_CHUNK_SIZE;
@@ -360,11 +363,12 @@ static int calculate_integrity_table(FILE *fp,
  * 	   * WIMLIB_ERR_READ:   Could not read a chunk of data that needed
  * 				to be checked.
  */
-int write_integrity_table(FILE *fp,
-			  struct resource_entry *integrity_res_entry,
-			  off_t new_lookup_table_end,
-			  off_t old_lookup_table_end,
-			  wimlib_progress_func_t progress_func)
+int
+write_integrity_table(FILE *fp,
+		      struct resource_entry *integrity_res_entry,
+		      off_t new_lookup_table_end,
+		      off_t old_lookup_table_end,
+		      wimlib_progress_func_t progress_func)
 {
 	struct integrity_table *old_table;
 	struct integrity_table *new_table;
@@ -454,10 +458,11 @@ out_free_old_table:
  * 	were no inconsistencies.
  * 	-1 (WIM_INTEGRITY_NOT_OK) if the WIM failed the integrity check.
  */
-static int verify_integrity(FILE *fp, const tchar *filename,
-			    const struct integrity_table *table,
-			    u64 bytes_to_check,
-			    wimlib_progress_func_t progress_func)
+static int
+verify_integrity(FILE *fp, const tchar *filename,
+		 const struct integrity_table *table,
+		 u64 bytes_to_check,
+		 wimlib_progress_func_t progress_func)
 {
 	int ret;
 	u64 offset = WIM_HEADER_DISK_SIZE;
@@ -523,7 +528,8 @@ static int verify_integrity(FILE *fp, const tchar *filename,
  * 	-2 (WIM_INTEGRITY_NONEXISTENT) if the WIM contains no integrity
  * 	information.
  */
-int check_wim_integrity(WIMStruct *w, wimlib_progress_func_t progress_func)
+int
+check_wim_integrity(WIMStruct *w, wimlib_progress_func_t progress_func)
 {
 	int ret;
 	u64 bytes_to_check;

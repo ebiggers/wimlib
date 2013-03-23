@@ -33,10 +33,6 @@
 #include "wimlib_internal.h"
 #include <errno.h>
 
-#ifdef TCHAR_IS_UTF16LE
-#  include <wchar.h>
-#endif
-
 /* Calculates the unaligned length, in bytes, of an on-disk WIM dentry that has
  * a file name and short name that take the specified numbers of bytes.  This
  * excludes any alternate data stream entries that may follow the dentry. */
@@ -91,20 +87,20 @@ get_utf16le_name(const tchar *name, utf16lechar **name_utf16le_ret,
 	size_t name_utf16le_nbytes;
 	int ret;
 #if TCHAR_IS_UTF16LE
-	name_utf16le_nbytes = tstrlen(name) * 2;
-	name_utf16le = MALLOC(name_utf16le_nbytes + 2);
+	name_utf16le_nbytes = tstrlen(name) * sizeof(utf16lechar);
+	name_utf16le = MALLOC(name_utf16le_nbytes + sizeof(utf16lechar));
 	if (!name_utf16le)
 		return WIMLIB_ERR_NOMEM;
-	memcpy(name_utf16le, name, name_utf16le_nbytes + 2);
+	memcpy(name_utf16le, name, name_utf16le_nbytes + sizeof(utf16lechar));
 	ret = 0;
 #else
 
-	ret = tstr_to_utf16le(name, strlen(name), &name_utf16le,
+	ret = tstr_to_utf16le(name, tstrlen(name), &name_utf16le,
 			      &name_utf16le_nbytes);
 	if (ret == 0) {
 		if (name_utf16le_nbytes > 0xffff) {
 			FREE(name_utf16le);
-			ERROR("Multibyte string \"%s\" is too long!", name);
+			ERROR("Multibyte string \"%"TS"\" is too long!", name);
 			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
 		}
 	}
@@ -278,7 +274,7 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 }
 
 /* Calculate the full path of @dentry.  The full path of its parent must have
- * already been calculated. */
+ * already been calculated, or it must be the root dentry. */
 int
 calculate_dentry_full_path(struct wim_dentry *dentry, void *ignore)
 {
@@ -289,18 +285,15 @@ calculate_dentry_full_path(struct wim_dentry *dentry, void *ignore)
 		      dentry->parent->full_path != NULL);
 
 	if (dentry_is_root(dentry)) {
-		full_path = TMALLOC(2);
+		full_path = TSTRDUP(T("/"));
 		if (!full_path)
 			return WIMLIB_ERR_NOMEM;
-		full_path[0] = T('/');
-		full_path[1] = T('\0');
 		full_path_nbytes = 1 * sizeof(tchar);
 	} else {
+		const struct wim_dentry *parent;
 		tchar *parent_full_path;
 		u32 parent_full_path_nbytes;
-		const struct wim_dentry *parent;
 		size_t filename_nbytes;
-		int ret;
 
 		parent = dentry->parent;
 		if (dentry_is_root(parent)) {
@@ -310,31 +303,37 @@ calculate_dentry_full_path(struct wim_dentry *dentry, void *ignore)
 			parent_full_path = parent->full_path;
 			parent_full_path_nbytes = parent->full_path_nbytes;
 		}
+
+		/* Append this dentry's name as a tchar string to the full path
+		 * of the parent followed by the path separator */
 	#if TCHAR_IS_UTF16LE
 		filename_nbytes = dentry->file_name_nbytes;
 	#else
-		ret = utf16le_to_mbs_nbytes(dentry->file_name,
-					    dentry->file_name_nbytes,
-					    &filename_nbytes);
-		if (ret)
-			return ret;
+		{
+			int ret = utf16le_to_tstr_nbytes(dentry->file_name,
+							 dentry->file_name_nbytes,
+							 &filename_nbytes);
+			if (ret)
+				return ret;
+		}
 	#endif
 
 		full_path_nbytes = parent_full_path_nbytes + sizeof(tchar) +
-				   dentry->file_name_nbytes;
+				   filename_nbytes;
 		full_path = MALLOC(full_path_nbytes + sizeof(tchar));
 		if (!full_path)
 			return WIMLIB_ERR_NOMEM;
 		memcpy(full_path, parent_full_path, parent_full_path_nbytes);
-		full_path[parent_full_path_nbytes] = T('/');
+		full_path[parent_full_path_nbytes / sizeof(tchar)] = T('/');
 	#if TCHAR_IS_UTF16LE
-		memcpy(&full_path[parent_full_path_nbytes + 1],
+		memcpy(&full_path[parent_full_path_nbytes / sizeof(tchar) + 1],
 		       dentry->file_name,
-		       dentry->file_name_nbytes + sizeof(tchar));
+		       filename_nbytes + sizeof(tchar));
 	#else
-		utf16le_to_mbs_buf(dentry->file_name,
-				   dentry->file_name_nbytes,
-				   &full_path[parent_full_path_nbytes + 1]);
+		utf16le_to_tstr_buf(dentry->file_name,
+				    dentry->file_name_nbytes,
+				    &full_path[parent_full_path_nbytes /
+					       sizeof(tchar) + 1]);
 	#endif
 	}
 	FREE(dentry->full_path);
@@ -448,7 +447,7 @@ get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name)
 	int ret;
 	struct wim_dentry *child;
 
-	ret = tstr_to_utf16le(name, strlen(name),
+	ret = tstr_to_utf16le(name, tstrlen(name) * sizeof(tchar),
 			      &utf16le_name, &utf16le_name_nbytes);
 	if (ret) {
 		child = NULL;
@@ -469,12 +468,11 @@ get_dentry_utf16le(WIMStruct *w, const utf16lechar *path,
 	struct wim_dentry *cur_dentry, *parent_dentry;
 	const utf16lechar *p, *pp;
 
-	parent_dentry = wim_root_dentry(w);
+	cur_dentry = parent_dentry = wim_root_dentry(w);
 	p = path;
 	while (1) {
 		while (*p == cpu_to_le16('/'))
 			p++;
-		cur_dentry = parent_dentry;
 		if (*p == '\0')
 			break;
 		pp = p;
@@ -516,7 +514,7 @@ get_dentry(WIMStruct *w, const tchar *path)
 		return NULL;
 	dentry = get_dentry_utf16le(w, path_utf16le, path_utf16le_nbytes);
 	FREE(path_utf16le);
-	return cur_dentry;
+	return dentry;
 #endif
 }
 
@@ -529,6 +527,21 @@ wim_pathname_to_inode(WIMStruct *w, const tchar *path)
 		return dentry->d_inode;
 	else
 		return NULL;
+}
+
+/* Takes in a path of length @len in @buf, and transforms it into a string for
+ * the path of its parent directory. */
+static void
+to_parent_name(tchar *buf, size_t len)
+{
+	ssize_t i = (ssize_t)len - 1;
+	while (i >= 0 && buf[i] == T('/'))
+		i--;
+	while (i >= 0 && buf[i] != T('/'))
+		i--;
+	while (i >= 0 && buf[i] == T('/'))
+		i--;
+	buf[i + 1] = T('\0');
 }
 
 /* Returns the dentry that corresponds to the parent directory of @path, or NULL
@@ -549,7 +562,7 @@ int
 print_dentry_full_path(struct wim_dentry *dentry, void *ignore)
 {
 	if (dentry->full_path)
-		printf("%"TS"\n", dentry->full_path);
+		tprintf(T("%"TS"\n"), dentry->full_path);
 	return 0;
 }
 
@@ -616,7 +629,7 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table)
 	if (dentry_has_short_name(dentry))
 		wimlib_printf(T("Short Name \"%"WS"\"\n"), dentry->short_name);
 	if (dentry->full_path)
-		tprintf(T("Full Path = \"%"WS"\"\n"), dentry->full_path);
+		tprintf(T("Full Path = \"%"TS"\"\n"), dentry->full_path);
 
 	lte = inode_stream_lte(dentry->d_inode, 0, lookup_table);
 	if (lte) {
@@ -690,7 +703,8 @@ new_inode()
 }
 
 /* Creates an unlinked directory entry. */
-int new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
+int
+new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 {
 	struct wim_dentry *dentry;
 	int ret;
@@ -938,7 +952,6 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 	if (inode->i_num_ads == 0) {
 		return NULL;
 	} else {
-		int ret;
 		size_t stream_name_utf16le_nbytes;
 		u16 i;
 		struct wim_ads_entry *result;
@@ -951,11 +964,15 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 	#else
 		utf16lechar *stream_name_utf16le;
 
-		ret = tstr_to_utf16le(stream_name, tstrlen(stream_name) * sizeof(tchar),
-				      &stream_name_utf16le,
-				      &stream_name_utf16le_nbytes);
-		if (ret)
-			return NULL;
+		{
+			int ret = tstr_to_utf16le(stream_name,
+						  tstrlen(stream_name) *
+						      sizeof(tchar),
+						  &stream_name_utf16le,
+						  &stream_name_utf16le_nbytes);
+			if (ret)
+				return NULL;
+		}
 	#endif
 		i = 0;
 		result = NULL;
@@ -1509,9 +1526,9 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		 * 	u64 reserved1; (always 0)
 		 * 	u64 reserved2; (always 0)
 		 * };*/
-		/*DEBUG("Dentry for file or directory `%s' has %"PRIu64" extra "*/
-		      /*"bytes of data",*/
-		      /*file_name_utf8, dentry->length - calculated_size);*/
+		/*DEBUG("Dentry for file or directory `%"WS"' has %"PRIu64" "*/
+		      /*"extra bytes of data", file_name,*/
+		      /*dentry->length - calculated_size);*/
 	}
 
 	/* Read the short filename if present.  Note: if there is no short

@@ -176,10 +176,10 @@ static int write_ntfs_data_streams(ntfs_inode *ni, const struct wim_dentry *dent
 static ntfs_inode *
 dentry_open_parent_ni(const struct wim_dentry *dentry, ntfs_volume *vol)
 {
-	mbchar *p;
-	const mbchar *dir_name;
+	char *p;
+	const char *dir_name;
 	ntfs_inode *dir_ni;
-	mbchar orig;
+	char orig;
 
 	p = dentry->full_path + dentry->full_path_nbytes;
 	do {
@@ -455,12 +455,12 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 
 	/* Set DOS (short) name if given */
 	if (dentry_has_short_name(dentry)) {
-		mbchar *short_name_mbs;
+		char *short_name_mbs;
 		size_t short_name_mbs_nbytes;
-		ret = utf16le_to_mbs(dentry->short_name,
-				     dentry->short_name_nbytes,
-				     &short_name_mbs,
-				     &short_name_mbs_nbytes);
+		ret = utf16le_to_tstr(dentry->short_name,
+				      dentry->short_name_nbytes,
+				      &short_name_mbs,
+				      &short_name_mbs_nbytes);
 		if (ret != 0)
 			goto out_close_dir_ni;
 
@@ -571,7 +571,7 @@ apply_dentry_ntfs(struct wim_dentry *dentry, void *arg)
 	 * file.  So, this implies that the correct ordering of function calls
 	 * to extract a NTFS file are:
 	 *
-	  	if (file has a DOS name) {
+	 *	if (file has a DOS name) {
 	 * 		- Call ntfs_create() to create long name associated with
 	 * 		the DOS name (this initially creates a POSIX name)
 	 * 		- Call ntfs_set_ntfs_dos_name() to associate a DOS name

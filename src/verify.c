@@ -30,7 +30,8 @@
 #include "dentry.h"
 #include "lookup_table.h"
 
-static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
+static int
+verify_inode(struct wim_inode *inode, const WIMStruct *w)
 {
 	const struct wim_lookup_table *table = w->lookup_table;
 	const struct wim_security_data *sd = wim_const_security_data(w);
@@ -42,13 +43,13 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	 * descriptor".  Anything else has to be a valid index into the WIM
 	 * image's security descriptors table. */
 	if (inode->i_security_id < -1) {
-		ERROR("Dentry `%s' has an invalid security ID (%d)",
-			first_dentry->full_path, inode->i_security_id);
+		ERROR("Dentry `%"TS"' has an invalid security ID (%d)",
+		      first_dentry->full_path, inode->i_security_id);
 		goto out;
 	}
 
 	if (inode->i_security_id >= sd->num_entries) {
-		ERROR("Dentry `%s' has an invalid security ID (%d) "
+		ERROR("Dentry `%"TS"' has an invalid security ID (%d) "
 		      "(there are only %u entries in the security table)",
 		      first_dentry->full_path, inode->i_security_id,
 		      sd->num_entries);
@@ -68,49 +69,12 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 			lte = __lookup_resource(table, hash);
 			if (!lte && !is_zero_hash(hash)) {
 				ERROR("Could not find lookup table entry for stream "
-				      "%u of dentry `%s'", i, first_dentry->full_path);
+				      "%u of dentry `%"TS"'",
+				      i, first_dentry->full_path);
 				goto out;
 			}
 			if (lte)
 				lte->real_refcnt += inode->i_nlink;
-
-			/* The following is now done when required by
-			 * wim_run_full_verifications(). */
-
-		#if 0
-			if (lte && !w->full_verification_in_progress &&
-			    lte->real_refcnt > lte->refcnt)
-			{
-			#ifdef ENABLE_ERROR_MESSAGES
-				WARNING("The following lookup table entry "
-					"has a reference count of %u, but",
-					lte->refcnt);
-				WARNING("We found %u references to it",
-					lte->real_refcnt);
-				WARNING("(One dentry referencing it is at `%s')",
-					 first_dentry->full_path_utf8);
-
-				print_lookup_table_entry(lte);
-			#endif
-				/* Guess what!  install.wim for Windows 8
-				 * contains many streams referenced by more
-				 * dentries than the refcnt stated in the lookup
-				 * table entry.  So we will need to handle this
-				 * case and not just make it be an error...  I'm
-				 * just setting the reference count to the
-				 * number of references we found.
-				 * (Unfortunately, even after doing this, the
-				 * reference count could be too low if it's also
-				 * referenced in other WIM images) */
-
-			#if 1
-				lte->refcnt = lte->real_refcnt;
-				WARNING("Fixing reference count");
-			#else
-				goto out;
-			#endif
-			}
-		#endif
 		}
 	}
 
@@ -123,7 +87,7 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 			num_unnamed_streams++;
 	}
 	if (num_unnamed_streams > 1) {
-		ERROR("Dentry `%s' has multiple (%u) un-named streams",
+		ERROR("Dentry `%"TS"' has multiple (%u) un-named streams",
 		      first_dentry->full_path, num_unnamed_streams);
 		goto out;
 	}
@@ -136,7 +100,7 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 		if (dentry_has_short_name(dentry)) {
 			if (dentry_with_dos_name) {
 				ERROR("Hard-linked file has a DOS name at "
-				      "both `%s' and `%s'",
+				      "both `%"TS"' and `%"TS"'",
 				      dentry_with_dos_name->full_path,
 				      dentry->full_path);
 				goto out;
@@ -147,7 +111,7 @@ static int verify_inode(struct wim_inode *inode, const WIMStruct *w)
 
 	/* Directories with multiple links have not been tested. XXX */
 	if (inode->i_nlink > 1 && inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-		ERROR("Hard-linked directory `%s' is unsupported",
+		ERROR("Hard-linked directory `%"TS"' is unsupported",
 		      first_dentry->full_path);
 		goto out;
 	}
@@ -159,14 +123,17 @@ out:
 }
 
 /* Run some miscellaneous verifications on a WIM dentry */
-int verify_dentry(struct wim_dentry *dentry, void *wim)
+int
+verify_dentry(struct wim_dentry *dentry, void *wim)
 {
 	int ret;
+	WIMStruct *w = wim;
 
 	/* Verify the associated inode, but only one time no matter how many
-	 * dentries it has. */
-	if (!dentry->d_inode->i_verified) {
-		ret = verify_inode(dentry->d_inode, wim);
+	 * dentries it has (unless we are doing a full verification of the WIM,
+	 * in which case we need to force the inode to be verified again.) */
+	if (!dentry->d_inode->i_verified || w->full_verification_in_progress) {
+		ret = verify_inode(dentry->d_inode, w);
 		if (ret != 0)
 			return ret;
 	}
@@ -185,7 +152,7 @@ int verify_dentry(struct wim_dentry *dentry, void *wim)
 		}
 	} else {
 		if (!dentry_has_long_name(dentry)) {
-			ERROR("Dentry `%s' has no long name!",
+			ERROR("Dentry `%"TS"' has no long name!",
 			      dentry->full_path);
 			return WIMLIB_ERR_INVALID_DENTRY;
 		}
@@ -195,20 +162,22 @@ int verify_dentry(struct wim_dentry *dentry, void *wim)
 	/* Check timestamps */
 	if (inode->i_last_access_time < inode->i_creation_time ||
 	    inode->i_last_write_time < inode->i_creation_time) {
-		WARNING("Dentry `%s' was created after it was last accessed or "
-		      "written to", dentry->full_path_utf8);
+		WARNING("Dentry `%"TS"' was created after it was last accessed or "
+			"written to", dentry->full_path);
 	}
 #endif
 
 	return 0;
 }
 
-static int image_run_full_verifications(WIMStruct *w)
+static int
+image_run_full_verifications(WIMStruct *w)
 {
 	return for_dentry_in_tree(wim_root_dentry(w), verify_dentry, w);
 }
 
-static int lte_fix_refcnt(struct wim_lookup_table_entry *lte, void *ctr)
+static int
+lte_fix_refcnt(struct wim_lookup_table_entry *lte, void *ctr)
 {
 	if (lte->refcnt != lte->real_refcnt) {
 	#ifdef ENABLE_ERROR_MESSAGES
@@ -232,7 +201,8 @@ static int lte_fix_refcnt(struct wim_lookup_table_entry *lte, void *ctr)
  * problem by looking at ALL the images to re-calculate the reference count of
  * EVERY lookup table entry.  This only absolutely has to be done before an image
  * is deleted or before an image is mounted read-write. */
-int wim_run_full_verifications(WIMStruct *w)
+int
+wim_run_full_verifications(WIMStruct *w)
 {
 	int ret;
 
@@ -276,31 +246,32 @@ int wim_run_full_verifications(WIMStruct *w)
  * @return:
  * 	0 on success; WIMLIB_ERR_SPLIT_INVALID if the set is not valid.
  */
-int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
-		   unsigned num_additional_swms)
+int
+verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
+	       unsigned num_additional_swms)
 {
 	unsigned total_parts = w->hdr.total_parts;
 	int ctype;
 	const u8 *guid;
 
 	if (total_parts != num_additional_swms + 1) {
-		ERROR("`%s' says there are %u parts in the spanned set, "
-		      "but %s%u part%s provided",
+		ERROR("`%"TS"' says there are %u parts in the spanned set, "
+		      "but %"TS"%u part%"TS" provided",
 		      w->filename, total_parts,
-		      (num_additional_swms + 1 < total_parts) ? "only " : "",
+		      (num_additional_swms + 1 < total_parts) ? T("only ") : T(""),
 		      num_additional_swms + 1,
-		      (num_additional_swms) ? "s were" : " was");
+		      (num_additional_swms) ? T("s were") : T(" was"));
 		return WIMLIB_ERR_SPLIT_INVALID;
 	}
 	if (w->hdr.part_number != 1) {
-		ERROR("WIM `%s' is not the first part of the split WIM.",
-		      w->filename);
+		ERROR("WIM `%"TS"' is not the first part of the split WIM.",
+		      T(w->filename));
 		return WIMLIB_ERR_SPLIT_INVALID;
 	}
 	for (unsigned i = 0; i < num_additional_swms; i++) {
 		if (additional_swms[i]->hdr.total_parts != total_parts) {
-			ERROR("WIM `%s' says there are %u parts in the spanned set, "
-			      "but %u parts were provided",
+			ERROR("WIM `%"TS"' says there are %u parts in the "
+			      "spanned set, but %u parts were provided",
 			      additional_swms[i]->filename,
 			      additional_swms[i]->hdr.total_parts,
 			      total_parts);
@@ -335,24 +306,24 @@ int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 				return WIMLIB_ERR_SPLIT_INVALID;
 			}
 			if (swm->hdr.part_number == 1) {
-				ERROR("WIMs `%s' and `%s' both are marked as the "
-				      "first WIM in the spanned set",
+				ERROR("WIMs `%"TS"' and `%"TS"' both are marked "
+				      "as the first WIM in the spanned set",
 				      w->filename, swm->filename);
 				return WIMLIB_ERR_SPLIT_INVALID;
 			}
 			if (swm->hdr.part_number == 0 ||
 			    swm->hdr.part_number > total_parts)
 			{
-				ERROR("WIM `%s' says it is part %u in the spanned set, "
-				      "but the part number must be in the range "
-				      "[1, %u]",
+				ERROR("WIM `%"TS"' says it is part %u in the "
+				      "spanned set, but the part number must "
+				      "be in the range [1, %u]",
 				      swm->filename, swm->hdr.part_number, total_parts);
 				return WIMLIB_ERR_SPLIT_INVALID;
 			}
 			if (parts_to_swms[swm->hdr.part_number - 2])
 			{
-				ERROR("`%s' and `%s' are both marked as part %u of %u "
-				      "in the spanned set",
+				ERROR("`%"TS"' and `%"TS"' are both marked as "
+				      "part %u of %u in the spanned set",
 				      parts_to_swms[swm->hdr.part_number - 2]->filename,
 				      swm->filename,
 				      swm->hdr.part_number,
@@ -365,4 +336,3 @@ int verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 	}
 	return 0;
 }
-

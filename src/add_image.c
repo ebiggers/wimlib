@@ -41,12 +41,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
-
-#if TCHAR_IS_UTF16LE
-#  include <wchar.h>
-#else
-#  include <string.h>
-#endif
+#include <string.h>
 
 #include <unistd.h>
 
@@ -144,7 +139,7 @@ static int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const char *root_disk_path,
 		       struct wim_lookup_table *lookup_table,
-		       struct sd_set *sd,
+		       struct sd_set *sd_set,
 		       const struct capture_config *config,
 		       int add_image_flags,
 		       wimlib_progress_func_t progress_func,
@@ -526,19 +521,20 @@ init_capture_config(struct capture_config *config,
 			if (*pp == T('\\'))
 				*pp = T('/');
 
-		/* Remove drive letter 
-		 * XXX maybe keep drive letter on Windows */
+		/* Remove drive letter (UNIX only) */
+	#ifndef __WIN32__
 		if (eol - p > 2 && istalpha(*p) && *(p + 1) == T(':'))
 			p += 2;
+	#endif
 
 		ret = 0;
-		if (tstrcmp(p, T("[ExclusionList]")) == 0)
+		if (!tstrcmp(p, T("[ExclusionList]")))
 			type = EXCLUSION_LIST;
-		else if (tstrcmp(p, T("[ExclusionException]")) == 0)
+		else if (!tstrcmp(p, T("[ExclusionException]")))
 			type = EXCLUSION_EXCEPTION;
-		else if (tstrcmp(p, T("[CompressionExclusionList]")) == 0)
+		else if (!tstrcmp(p, T("[CompressionExclusionList]")))
 			type = COMPRESSION_EXCLUSION_LIST;
-		else if (tstrcmp(p, T("[AlignmentList]")) == 0)
+		else if (!tstrcmp(p, T("[AlignmentList]")))
 			type = ALIGNMENT_LIST;
 		else if (p[0] == T('[') && tstrrchr(p, T(']'))) {
 			ERROR("Unknown capture configuration section \"%"TS"\"", p);
@@ -640,9 +636,11 @@ exclude_path(const tchar *path, const struct capture_config *config,
 	const tchar *basename = path_basename(path);
 	if (exclude_prefix) {
 		wimlib_assert(tstrlen(path) >= config->prefix_num_tchars);
-		if (tmemcmp(config->prefix, path, config->prefix_num_tchars) == 0
-		     && path[config->prefix_num_tchars] == T('/'))
+		if (!tmemcmp(config->prefix, path, config->prefix_num_tchars) &&
+		    path[config->prefix_num_tchars] == T('/'))
+		{
 			path += config->prefix_num_tchars;
+		}
 	}
 	return match_pattern(path, basename, &config->exclusion_list) &&
 		!match_pattern(path, basename, &config->exclusion_exception);
@@ -666,20 +664,10 @@ canonicalize_target_path(tchar *target_path)
 			break;
 	}
 
-	p = target_path + tstrlen(target_path) - 1;
+	p = tstrchr(target_path, T('\0')) - 1;
 	while (*p == T('/'))
 		*p-- = T('\0');
 	return target_path;
-}
-
-static void
-zap_backslashes(tchar *s)
-{
-	while (*s) {
-		if (*s == T('\\'))
-			*s = T('/');
-		s++;
-	}
 }
 
 /* Strip leading and trailing slashes from the target paths */
@@ -733,7 +721,7 @@ check_sorted_sources(struct wimlib_capture_source *sources, size_t num_sources,
 			      "(the NTFS volume) in NTFS mode!");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
-		if (sources[0].wim_target_path[0] != '\0') {
+		if (sources[0].wim_target_path[0] != T('\0')) {
 			ERROR("In NTFS capture mode the target path inside "
 			      "the image must be the root directory!");
 			return WIMLIB_ERR_INVALID_PARAM;
@@ -880,7 +868,7 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	 * */
 	parent = *root_p;
 	while ((slash = tstrchr(target_path, T('/')))) {
-		*slash = '\0';
+		*slash = T('\0');
 		dentry = get_dentry_child_with_name(parent, target_path);
 		if (!dentry) {
 			ret = new_filler_directory(target_path, &dentry);
@@ -1112,7 +1100,7 @@ out_destroy_imd:
 	destroy_image_metadata(&w->image_metadata[w->hdr.image_count - 1],
 			       w->lookup_table);
 	w->hdr.image_count--;
-	goto out;
+	goto out_destroy_sd_set;
 out_free_branch:
 	free_dentry_tree(branch, w->lookup_table);
 out_free_dentry_tree:

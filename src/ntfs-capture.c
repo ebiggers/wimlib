@@ -441,8 +441,8 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 		if (ret != 0 || name_type == FILE_NAME_DOS)
 			goto out;
 	}
-	ret = utf16le_to_mbs(name, name_nbytes,
-			     &mbs_name, &mbs_name_nbytes);
+	ret = utf16le_to_tstr(name, name_nbytes,
+			      &mbs_name, &mbs_name_nbytes);
 	if (ret)
 		goto out;
 

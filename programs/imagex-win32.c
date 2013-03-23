@@ -15,21 +15,22 @@
 #include <stdio.h>
 
 /* Replacement for glob() in Windows native builds. */
-int glob(const char *pattern, int flags,
-	 int (*errfunc)(const char *epath, int eerrno),
-	 glob_t *pglob)
+int
+win32_wglob(const wchar_t *pattern, int flags,
+	    int (*errfunc)(const wchar_t *epath, int eerrno),
+	    glob_t *pglob)
 {
-	WIN32_FIND_DATA dat;
+	WIN32_FIND_DATAW dat;
 	DWORD err;
 	HANDLE hFind;
 	int ret;
 	size_t nspaces;
 
-	const char *backslash, *forward_slash, *end_slash;
+	const wchar_t *backslash, *end_slash;
 	size_t prefix_len;
 
-	backslash = strrchr(pattern, '\\');
-	end_slash = strrchr(pattern, '/');
+	backslash = wcsrchr(pattern, L'\\');
+	end_slash = wcsrchr(pattern, L'/');
 
 	if (backslash > end_slash)
 		end_slash = backslash;
@@ -46,7 +47,7 @@ int glob(const char *pattern, int flags,
 	assert((flags & GLOB_ERR) == GLOB_ERR);
 	assert((flags & ~(GLOB_NOSORT | GLOB_ERR)) == 0);
 
-	hFind = FindFirstFileA(pattern, &dat);
+	hFind = FindFirstFileW(pattern, &dat);
 	if (hFind == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
 		if (err == ERROR_FILE_NOT_FOUND) {
@@ -63,10 +64,10 @@ int glob(const char *pattern, int flags,
 	pglob->gl_pathv = NULL;
 	nspaces = 0;
 	do {
-		char *path;
+		wchar_t *path;
 		if (pglob->gl_pathc == nspaces) {
 			size_t new_nspaces;
-			char **pathv;
+			wchar_t **pathv;
 
 		 	new_nspaces = nspaces * 2 + 1;	
 			pathv = realloc(pglob->gl_pathv,
@@ -76,17 +77,17 @@ int glob(const char *pattern, int flags,
 			pglob->gl_pathv = pathv;
 			nspaces = new_nspaces;
 		}
-		size_t filename_len = strlen(dat.cFileName);
+		size_t filename_len = wcslen(dat.cFileName);
 		size_t len_needed = prefix_len + filename_len;
 
-		path = malloc(len_needed + 1);
+		path = malloc(len_needed + sizeof(wchar_t));
 		if (!path)
 			goto oom;
 
-		memcpy(path, pattern, prefix_len);
-		memcpy(path + prefix_len, dat.cFileName, filename_len + 1);
+		wmemcpy(path, pattern, prefix_len);
+		wmemcpy(path + prefix_len, dat.cFileName, filename_len + 1);
 		pglob->gl_pathv[pglob->gl_pathc++] = path;
-	} while (FindNextFileA(hFind, &dat));
+	} while (FindNextFileW(hFind, &dat));
 	err = GetLastError();
 	CloseHandle(hFind);
 	if (err == ERROR_NO_MORE_FILES) {
@@ -108,7 +109,8 @@ fail_globfree:
 	return ret;
 }
 
-void globfree(glob_t *pglob)
+void
+globfree(glob_t *pglob)
 {
 	size_t i;
 	for (i = 0; i < pglob->gl_pathc; i++)
@@ -142,13 +144,13 @@ win32_modify_privilege(const char *privilege, bool enable)
 	CloseHandle(hToken);
 out:
 	if (!ret) {
-		fprintf(stderr, "WARNING: Failed to %s privilege %s\n",
-			enable ? "enable" : "disable", privilege);
-		fprintf(stderr,
-			"WARNING: The program will continue, "
-			"but if permission issues are\n"
-			"encountered, you may need to run "
-			"this program as the administrator\n");
+		fwprintf(stderr, L"WARNING: Failed to %ls privilege %s\n",
+			enable ? L"enable" : L"disable", privilege);
+		fwprintf(stderr,
+			L"WARNING: The program will continue, "
+			L"but if permission issues are\n"
+			L"encountered, you may need to run "
+			L"this program as the administrator\n");
 	}
 	return ret;
 }
@@ -191,3 +193,69 @@ win32_release_restore_privileges()
 {
 	win32_modify_restore_privileges(false);
 }
+
+wchar_t *
+win32_mbs_to_wcs(const char *mbs, size_t mbs_nbytes, size_t *num_wchars_ret)
+{
+	if (mbs_nbytes > INT_MAX) {
+		fwprintf(stderr, L"ERROR: too much data (%zu bytes)!\n",
+			 mbs_nbytes);
+		return NULL;
+	}
+	if (mbs_nbytes == 0) {
+		*num_wchars_ret = 0;
+		return (wchar_t*)mbs;
+	}
+	int len = MultiByteToWideChar(CP_ACP,
+				      MB_ERR_INVALID_CHARS,
+				      mbs,
+				      mbs_nbytes,
+				      NULL,
+				      0);
+	if (len <= 0)
+		goto out_invalid;
+	wchar_t *wcs = malloc(len * sizeof(wchar_t));
+	if (!wcs) {
+		fwprintf(stderr, L"ERROR: out of memory!\n");
+		return NULL;
+	}
+	int len2 = MultiByteToWideChar(CP_ACP,
+				       MB_ERR_INVALID_CHARS,
+				       mbs,
+				       mbs_nbytes,
+				       wcs,
+				       len);
+	if (len2 != len) {
+		free(wcs);
+		goto out_invalid;
+	}
+	*num_wchars_ret = len;
+	return wcs;
+out_invalid:
+	fwprintf(stderr,
+L"ERROR: Invalid multi-byte string in the text file you provided as input!\n"
+L"       Maybe try converting your text file to UTF-16LE?\n"
+	);
+	return NULL;
+}
+
+static inline bool
+is_path_separator(wchar_t c)
+{
+	return c == L'/' || c == L'\\';
+}
+
+wchar_t *
+win32_wbasename(wchar_t *path)
+{
+	wchar_t *p = wcschr(path, L'\0');
+
+	p--;
+	while (p >= path && is_path_separator(*p))
+		*p-- = '\0';
+	while (p >= path && !is_path_separator(*p))
+		p--;
+	p++;
+	return p;
+}
+

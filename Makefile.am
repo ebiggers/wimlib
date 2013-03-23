@@ -1,9 +1,8 @@
 ACLOCAL_AMFLAGS = -I m4
 
-AM_CPPFLAGS	= -I$(top_srcdir)/src $(WINDOWS_CPPFLAGS)
-
-AM_CFLAGS	= -std=gnu99 -D_LARGEFILE_SOURCE \
-		   -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
+AM_CPPFLAGS	= -I$(top_srcdir)/src $(WINDOWS_CPPFLAGS) \
+		  -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
+AM_CFLAGS	= -std=gnu99
 
 lib_LTLIBRARIES = libwim.la
 
@@ -52,6 +51,7 @@ libwim_la_SOURCES =		\
 	src/verify.c		\
 	src/wim.c		\
 	src/wimlib.h		\
+	wimlib_tchar.h		\
 	src/wimlib_internal.h	\
 	src/write.c		\
 	src/xml.c		\
@@ -95,11 +95,16 @@ libwim_la_CFLAGS =		\
 
 
 bin_PROGRAMS	 = imagex
-imagex_SOURCES   = programs/imagex.c
+imagex_SOURCES   = programs/imagex.c wimlib_tchar.h
 imagex_LDADD	 = $(top_builddir)/libwim.la
+imagex_CFLAGS    = $(AM_CFLAGS) $(WINDOWS_CFLAGS)
 
 if WINDOWS_NATIVE_BUILD
-imagex_SOURCES += programs/imagex-win32.c programs/imagex-win32.h
+imagex_SOURCES += programs/imagex-win32.c	\
+		  programs/imagex-win32.h	\
+		  programs/wgetopt.c		\
+		  programs/wgetopt.h
+
 libwim_la_SOURCES += src/win32.c
 endif
 

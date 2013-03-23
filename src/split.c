@@ -28,10 +28,6 @@
 #include "xml.h"
 #include "buffer_io.h"
 
-#if TCHAR_IS_UTF16LE
-#  include <wchar.h>
-#endif
-
 struct split_args {
 	WIMStruct *w;
 	tchar *swm_base_name;

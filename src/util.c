@@ -43,7 +43,7 @@
 
 #include <unistd.h> /* for getpid() */
 
-size_t
+static size_t
 utf16le_strlen(const utf16lechar *s)
 {
 	const utf16lechar *p = s;
@@ -52,48 +52,41 @@ utf16le_strlen(const utf16lechar *s)
 	return (p - s) * sizeof(utf16lechar);
 }
 
-/* Handle %W for UTF16-LE printing and %U for UTF-8 printing.
+#ifdef __WIN32__
+#  define wimlib_vfprintf vfwprintf
+#else
+/* Handle %W for UTF16-LE printing.
  *
  * TODO: this is not yet done properly--- it's assumed that if the format string
- * contains %W and/or %U, then it contains no other format specifiers.
+ * contains %W, then it contains no other format specifiers.
  */
 static int
 wimlib_vfprintf(FILE *fp, const tchar *format, va_list va)
 {
 	const tchar *p;
+	int n;
 
 	for (p = format; *p; p++)
-		if (*p == '%' && (*(p + 1) == T('W') || *(p + 1) == T('U')))
+		if (*p == T('%') && *(p + 1) == T('W'))
 			goto special;
 	return tvfprintf(fp, format, va);
 special:
-	/* XXX */
-	wimlib_assert(0);
-#if 0
-	;
-	int n = 0;
+	n = 0;
 	for (p = format; *p; p++) {
-		if (*p == T('%') && (*(p + 1) == T('W') || *(p + 1) == T('U'))) {
+		if (*p == T('%') && (*(p + 1) == T('W'))) {
 			int ret;
-			tchar *mbs;
-			size_t mbs_nbytes;
+			tchar *tstr;
+			size_t tstr_nbytes;
+			utf16lechar *ucs = va_arg(va, utf16lechar*);
+			size_t ucs_nbytes = utf16le_strlen(ucs);
 
-			if (*(p + 1) == T('W')) {
-				utf16lechar *ucs = va_arg(va, utf16lechar*);
-				size_t ucs_nbytes = utf16le_strlen(ucs);
-				ret = utf16le_to_mbs(ucs, ucs_nbytes,
-						     &mbs, &mbs_nbytes);
-			} else {
-				utf8char *ucs = va_arg(va, utf8char*);
-				size_t ucs_nbytes = strlen(ucs);
-				ret = utf8_to_mbs(ucs, ucs_nbytes,
-						  &mbs, &mbs_nbytes);
-			}
+			ret = utf16le_to_tstr(ucs, ucs_nbytes,
+					      &tstr, &tstr_nbytes);
 			if (ret) {
 				ret = tfprintf(fp, T("??????"));
 			} else {
-				ret = tfprintf(fp, T("%s"), mbs);
-				FREE(mbs);
+				ret = tfprintf(fp, T("%"TS), tstr);
+				FREE(tstr);
 			}
 			if (ret < 0)
 				return -1;
@@ -101,13 +94,12 @@ special:
 				n += ret;
 			p++;
 		} else {
-			if (putc(*p, fp) == EOF)
+			if (tputc(*p, fp) == EOF)
 				return -1;
 			n++;
 		}
 	}
 	return n;
-#endif
 }
 
 int
@@ -133,6 +125,7 @@ wimlib_fprintf(FILE *fp, const tchar *format, ...)
 	va_end(va);
 	return ret;
 }
+#endif
 
 #if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
 static void
@@ -486,21 +479,6 @@ randomize_byte_array(u8 *p, size_t n)
 		*p++ = rand();
 }
 
-/* Takes in a path of length @len in @buf, and transforms it into a string for
- * the path of its parent directory. */
-void
-to_parent_name(tchar *buf, size_t len)
-{
-	ssize_t i = (ssize_t)len - 1;
-	while (i >= 0 && buf[i] == T('/'))
-		i--;
-	while (i >= 0 && buf[i] != T('/'))
-		i--;
-	while (i >= 0 && buf[i] == T('/'))
-		i--;
-	buf[i + 1] = T('\0');
-}
-
 const tchar *
 path_basename_with_len(const tchar *path, size_t len)
 {
@@ -544,69 +522,6 @@ path_stream_name(const tchar *path)
 		return stream_name + 1;
 }
 
-/*
- * Splits a file path into the part before the first '/', or the entire name if
- * there is no '/', and the part after the first sequence of '/' characters.
- *
- * @path:  		The file path to split.
- * @first_part_len_ret: A pointer to a `size_t' into which the length of the
- * 				first part of the path will be returned.
- * @return:  		A pointer to the next part of the path, after the first
- * 				sequence of '/', or a pointer to the terminating
- * 				null byte in the case of a path without any '/'.
- */
-const tchar *
-path_next_part(const tchar *path, size_t *first_part_len_ret)
-{
-	size_t i;
-	const tchar *next_part;
-
-	i = 0;
-	while (path[i] != T('/') && path[i] != T('\0'))
-		i++;
-	if (first_part_len_ret)
-		*first_part_len_ret = i;
-	next_part = &path[i];
-	while (*next_part == T('/'))
-		next_part++;
-	return next_part;
-}
-
-/* Returns the number of components of @path.  */
-int
-get_num_path_components(const char *path)
-{
-	int num_components = 0;
-	while (*path) {
-		while (*path == '/')
-			path++;
-		if (*path)
-			num_components++;
-		while (*path && *path != '/')
-			path++;
-	}
-	return num_components;
-}
-
-
-/*
- * Prints a string.  Printable characters are printed as-is, while unprintable
- * characters are printed as their octal escape codes.
- */
-void
-print_string(const void *string, size_t len)
-{
-	const u8 *p = string;
-
-	while (len--) {
-		if (isprint(*p))
-			putchar(*p);
-		else
-			printf("\\%03hho", *p);
-		p++;
-	}
-}
-
 u64
 get_wim_timestamp()
 {
@@ -622,4 +537,16 @@ wim_timestamp_to_str(u64 timestamp, tchar *buf, size_t len)
 	time_t t = wim_timestamp_to_unix(timestamp);
 	gmtime_r(&t, &tm);
 	tstrftime(buf, len, T("%a %b %d %H:%M:%S %Y UTC"), &tm);
+}
+
+void
+zap_backslashes(tchar *s)
+{
+	if (s) {
+		while (*s != T('\0')) {
+			if (*s == T('\\'))
+				*s = T('/');
+			s++;
+		}
+	}
 }

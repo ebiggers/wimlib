@@ -26,10 +26,11 @@
 #include "lookup_table.h"
 #include "xml.h"
 
-static int inode_allocate_needed_ltes(struct wim_inode *inode,
-				      struct wim_lookup_table *src_lookup_table,
-				      struct wim_lookup_table *dest_lookup_table,
-				      struct list_head *lte_list_head)
+static int
+inode_allocate_needed_ltes(struct wim_inode *inode,
+			   struct wim_lookup_table *src_lookup_table,
+			   struct wim_lookup_table *dest_lookup_table,
+			   struct list_head *lte_list_head)
 {
 	struct wim_lookup_table_entry *src_lte, *dest_lte;
 	unsigned i;
@@ -53,10 +54,11 @@ static int inode_allocate_needed_ltes(struct wim_inode *inode,
 	return 0;
 }
 
-static void inode_move_ltes_to_table(struct wim_inode *inode,
-				     struct wim_lookup_table *src_lookup_table,
-				     struct wim_lookup_table *dest_lookup_table,
-				     struct list_head *lte_list_head)
+static void
+inode_move_ltes_to_table(struct wim_inode *inode,
+			 struct wim_lookup_table *src_lookup_table,
+			 struct wim_lookup_table *dest_lookup_table,
+			 struct list_head *lte_list_head)
 {
 	struct wim_lookup_table_entry *src_lte, *dest_lte;
 	unsigned i;
@@ -92,15 +94,16 @@ static void inode_move_ltes_to_table(struct wim_inode *inode,
 /*
  * Copies an image, or all the images, from a WIM file, into another WIM file.
  */
-WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
-				  int src_image,
-				  WIMStruct *dest_wim,
-				  const tchar *dest_name,
-				  const tchar *dest_description,
-				  int export_flags,
-				  WIMStruct **additional_swms,
-				  unsigned num_additional_swms,
-				  wimlib_progress_func_t progress_func)
+WIMLIBAPI int
+wimlib_export_image(WIMStruct *src_wim,
+		    int src_image,
+		    WIMStruct *dest_wim,
+		    const tchar *dest_name,
+		    const tchar *dest_description,
+		    int export_flags,
+		    WIMStruct **additional_swms,
+		    unsigned num_additional_swms,
+		    wimlib_progress_func_t progress_func)
 {
 	int ret;
 	struct wim_security_data *sd;
@@ -208,10 +211,9 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	/* Pre-allocate the new lookup table entries that will be needed.  This
 	 * way, it's not possible to run out of memory part-way through
 	 * modifying the lookup table of the destination WIM. */
-	INIT_LIST_HEAD(&lte_list_head);
 	for_lookup_table_entry(src_wim->lookup_table, lte_zero_out_refcnt, NULL);
 	src_imd = wim_get_current_image_metadata(src_wim);
-
+	INIT_LIST_HEAD(&lte_list_head);
 	hlist_for_each_entry(inode, cur_node, &src_imd->inode_list, i_hlist) {
 		ret = inode_allocate_needed_ltes(inode,
 						 src_wim->lookup_table,
@@ -256,7 +258,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 	goto out;
 
 out_xml_delete_image:
-	xml_delete_image(&dest_wim->wim_info, dest_wim->hdr.image_count);
+	xml_delete_image(&dest_wim->wim_info, dest_wim->hdr.image_count + 1);
 out_free_ltes:
 	{
 		struct wim_lookup_table_entry *lte, *tmp;

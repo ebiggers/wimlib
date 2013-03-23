@@ -163,7 +163,7 @@ struct wim_lookup_table_entry {
 		WIMStruct *wim;
 		tchar *file_on_disk;
 		tchar *staging_file_name;
-		u8 *attached_buffer;
+		void *attached_buffer;
 	#ifdef WITH_NTFS_3G
 		struct ntfs_location *ntfs_loc;
 	#endif

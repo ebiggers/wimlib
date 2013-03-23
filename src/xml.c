@@ -82,7 +82,7 @@ struct image_info {
 };
 
 struct xml_string_spec {
-	const utf8char *name;
+	const char *name;
 	size_t offset;
 };
 
@@ -126,7 +126,7 @@ get_arch(int arch)
 		return T("x86_64");
 	/* XXX Are there other arch values? */
 	default:
-		return NULL;
+		return T("unknown");
 	}
 }
 
@@ -149,10 +149,20 @@ node_is_text(xmlNode *node)
 }
 
 static inline bool
-node_name_is(xmlNode *node, const utf8char *name)
+node_name_is(xmlNode *node, const char *name)
 {
 	/* For now, both upper case and lower case element names are accepted. */
 	return strcasecmp((const char *)node->name, name) == 0;
+}
+
+static u64
+node_get_number(const xmlNode *u64_node, int base)
+{
+	xmlNode *child;
+	for_node_child(u64_node, child)
+		if (node_is_text(child))
+			return strtoull(child->content, NULL, base);
+	return 0;
 }
 
 /* Finds the text node that is a child of an element node and returns its
@@ -161,22 +171,14 @@ node_name_is(xmlNode *node, const utf8char *name)
 static u64
 node_get_u64(const xmlNode *u64_node)
 {
-	xmlNode *child;
-	for_node_child(u64_node, child)
-		if (node_is_text(child))
-			return strtoull((const char *)child->content, NULL, 10);
-	return 0;
+	return node_get_number(u64_node, 10);
 }
 
 /* Like node_get_u64(), but expects a number in base 16. */
 static u64
 node_get_hex_u64(const xmlNode *u64_node)
 {
-	xmlNode *child;
-	for_node_child(u64_node, child)
-		if (node_is_text(child))
-			return strtoull(child->content, NULL, 16);
-	return 0;
+	return node_get_number(u64_node, 16);
 }
 
 static int
@@ -529,7 +531,7 @@ print_windows_info(const struct windows_info *windows_info)
 	const struct windows_version *windows_version;
 
 	tprintf(T("Architecture:           %"TS"\n"),
-		get_arch(windows_info->arch) ?: T("unknown"));
+		get_arch(windows_info->arch));
 
 	if (windows_info->product_name) {
 		tprintf(T("Product Name:           %"TS"\n"),
@@ -597,7 +599,7 @@ xml_write_string(xmlTextWriter *writer, const char *name,
 		 const tchar *tstr)
 {
 	if (tstr) {
-		utf8char *utf8_str;
+		char *utf8_str;
 		int rc = tstr_to_utf8_simple(tstr, &utf8_str);
 		if (rc)
 			return rc;
@@ -745,7 +747,7 @@ xml_write_windows_info(xmlTextWriter *writer,
 
 /* Writes a time element to the XML document being constructed in memory. */
 static int
-xml_write_time(xmlTextWriter *writer, const utf8char *element_name, u64 time)
+xml_write_time(xmlTextWriter *writer, const char *element_name, u64 time)
 {
 	int rc;
 	rc = xmlTextWriterStartElement(writer, element_name);
@@ -813,7 +815,7 @@ xml_write_image_info(xmlTextWriter *writer, const struct image_info *image_info)
 
 	if (image_info->windows_info_exists) {
 		rc = xml_write_windows_info(writer, &image_info->windows_info);
-		if (rc < 0)
+		if (rc)
 			return rc;
 	}
 
@@ -856,6 +858,8 @@ clone_windows_info(const struct windows_info *old, struct windows_info *new)
 
 	ret = dup_strings_from_specs(old, new, windows_info_xml_string_specs,
 				     ARRAY_LEN(windows_info_xml_string_specs));
+	if (ret)
+		return ret;
 
 	if (old->languages) {
 		new->languages = CALLOC(old->num_languages, sizeof(new->languages[0]));
@@ -982,9 +986,9 @@ xml_delete_image(struct wim_info **wim_info_p, int image)
 {
 	struct wim_info *wim_info;
 
-	DEBUG("Deleting image %d from the XML data.", image);
-
 	wim_info = *wim_info_p;
+	wimlib_assert(image >= 1 && image <= wim_info->num_images);
+	DEBUG("Deleting image %d from the XML data.", image);
 
 	destroy_image_info(&wim_info->images[image - 1]);
 
@@ -1117,8 +1121,8 @@ xml_update_image_info(WIMStruct *w, int image)
 	image_info->dir_count       = 0;
 	image_info->total_bytes     = 0;
 	image_info->hard_link_bytes = 0;
-
 	image_info->lookup_table = w->lookup_table;
+
 	for_dentry_in_tree(w->image_metadata[image - 1].root_dentry,
 			   calculate_dentry_statistics,
 			   image_info);
@@ -1295,8 +1299,7 @@ read_xml_data(FILE *fp, const struct resource_entry *res_entry,
 	}
 
 	if (!node_is_element(root) || !node_name_is(root, "WIM")) {
-		ERROR("Expected <WIM> for the root XML element (found <%s>)",
-		      root->name);
+		ERROR("Expected <WIM> for the root XML element");
 		ret = WIMLIB_ERR_XML;
 		goto out_free_doc;
 	}
@@ -1482,7 +1485,7 @@ wimlib_image_name_in_use(const WIMStruct *w, const tchar *name)
 	if (!name || !*name)
 		return false;
 	for (int i = 1; i <= w->hdr.image_count; i++)
-		if (tstrcmp(w->wim_info->images[i - 1].name, name) == 0)
+		if (!tstrcmp(w->wim_info->images[i - 1].name, name))
 			return true;
 	return false;
 }

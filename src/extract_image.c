@@ -57,11 +57,34 @@
 #  include <alloca.h>
 #endif
 
-#if TCHAR_IS_UTF16LE
-#  include <wchar.h>
-#endif
-
 #ifndef __WIN32__
+
+/* Returns the number of components of @path.  */
+static unsigned
+get_num_path_components(const char *path)
+{
+	unsigned num_components = 0;
+	while (*path) {
+		while (*path == '/')
+			path++;
+		if (*path)
+			num_components++;
+		while (*path && *path != '/')
+			path++;
+	}
+	return num_components;
+}
+
+static const char *
+path_next_part(const char *path)
+{
+	while (*path && *path != '/')
+		path++;
+	while (*path && *path == '/')
+		path++;
+	return path;
+}
+
 static int
 extract_regular_file_linked(struct wim_dentry *dentry,
 			    const char *output_path,
@@ -110,8 +133,10 @@ extract_regular_file_linked(struct wim_dentry *dentry,
 		p2 = lte->extracted_file;
 		while (*p2 == '/')
 			p2++;
-		while (num_output_dir_path_components--)
-			p2 = path_next_part(p2, NULL);
+		while (num_output_dir_path_components > 0) {
+			p2 = path_next_part(p2);
+			num_output_dir_path_components--;
+		}
 		strcpy(p, p2);
 		if (symlink(buf, output_path) != 0) {
 			ERROR_WITH_ERRNO("Failed to symlink `%s' to `%s'",
@@ -123,7 +148,7 @@ extract_regular_file_linked(struct wim_dentry *dentry,
 }
 
 static int
-symlink_apply_unix_data(const mbchar *link,
+symlink_apply_unix_data(const char *link,
 			const struct wimlib_unix_data *unix_data)
 {
 	if (lchown(link, unix_data->uid, unix_data->gid)) {
@@ -887,19 +912,22 @@ out:
 	return ret;
 }
 
+static const tchar *filename_forbidden_chars = 
+T(
+#ifdef __WIN32__
+"<>:\"/\\|?*"
+#else
+"/"
+#endif
+);
 
+/* This function checks if it is okay to use a WIM image's name as a directory
+ * name.  */
 static bool
 image_name_ok_as_dir(const tchar *image_name)
 {
-	if (image_name == NULL)
-		return false;
-	if (image_name[0] == T('\0'))
-		return false;
-	if (tstrchr(image_name, T('/')))
-		return false;
-	if (tstrchr(image_name, T('\\')))
-		return false;
-	return true;
+	return image_name && *image_name &&
+		!tstrpbrk(image_name, filename_forbidden_chars);
 }
 
 /* Extracts all images from the WIM to the directory @target, with the images
@@ -921,16 +949,15 @@ extract_all_images(WIMStruct *w,
 	if (ret)
 		return ret;
 
-	wmemcpy(buf, target, output_path_len);
+	tmemcpy(buf, target, output_path_len);
 	buf[output_path_len] = T('/');
 	for (image = 1; image <= w->hdr.image_count; image++) {
 		image_name = wimlib_get_image_name(w, image);
 		if (image_name_ok_as_dir(image_name)) {
 			tstrcpy(buf + output_path_len + 1, image_name);
 		} else {
-			/* Image name is empty, or may not be representable in
-			 * the current locale, or contains path separators.  Use
-			 * the image number instead. */
+			/* Image name is empty, or contains forbidden
+			 * characters. */
 			tsprintf(buf + output_path_len + 1, T("%d"), image);
 		}
 		ret = extract_single_image(w, image, buf, extract_flags,

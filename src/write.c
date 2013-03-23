@@ -72,10 +72,6 @@
 #  define INVALID_HANDLE_VALUE ((HANDLE)(-1))
 #endif
 
-#if TCHAR_IS_UTF16LE
-#  include <wchar.h>
-#endif
-
 static int
 fflush_and_ftruncate(FILE *fp, off_t size)
 {
@@ -550,8 +546,8 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 		} else if (!hashes_equal(md, lte->hash)) {
 			ERROR("WIM resource has incorrect hash!");
 			if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK) {
-				ERROR("We were reading it from `%s'; maybe it changed "
-				      "while we were reading it.",
+				ERROR("We were reading it from `%"TS"'; maybe "
+				      "it changed while we were reading it.",
 				      lte->file_on_disk);
 			}
 			ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
@@ -1692,11 +1688,11 @@ lock_wim(WIMStruct *w, FILE *fp)
 
 static int
 open_wim_writable(WIMStruct *w, const tchar *path,
-		  bool trunc, bool readable)
+		  bool trunc, bool also_readable)
 {
 	const tchar *mode;
 	if (trunc)
-		if (readable)
+		if (also_readable)
 			mode = T("w+b");
 		else
 			mode = T("wb");

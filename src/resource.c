@@ -80,7 +80,7 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	       resource_compressed_size,
 	       resource_uncompressed_size,
 	       resource_offset);
-	DEBUG2("resource_ctype = %s, len = %"PRIu64", offset = %"PRIu64"",
+	DEBUG2("resource_ctype = %"TS", len = %"PRIu64", offset = %"PRIu64"",
 	       wimlib_get_compression_type_string(resource_ctype), len, offset);
 	/* Trivial case */
 	if (len == 0)

@@ -259,53 +259,53 @@ wimlib_print_header(const WIMStruct *w)
 {
 	const struct wim_header *hdr = &w->hdr;
 
-	printf("Magic Characters            = MSWIM\\000\\000\\000\n");
-	printf("Header Size                 = %u\n", WIM_HEADER_DISK_SIZE);
-	printf("Version                     = 0x%x\n", WIM_VERSION);
+	tprintf(T("Magic Characters            = MSWIM\\000\\000\\000\n"));
+	tprintf(T("Header Size                 = %u\n"), WIM_HEADER_DISK_SIZE);
+	tprintf(T("Version                     = 0x%x\n"), WIM_VERSION);
 
-	printf("Flags                       = 0x%x\n", hdr->flags);
+	tprintf(T("Flags                       = 0x%x\n"), hdr->flags);
 	for (size_t i = 0; i < ARRAY_LEN(hdr_flags); i++)
 		if (hdr_flags[i].flag & hdr->flags)
-			printf("    WIM_HDR_FLAG_%s is set\n", hdr_flags[i].name);
+			tprintf(T("    WIM_HDR_FLAG_%s is set\n"), hdr_flags[i].name);
 
-	printf("Chunk Size                  = %u\n", WIM_CHUNK_SIZE);
-	fputs ("GUID                        = ", stdout);
+	tprintf(T("Chunk Size                  = %u\n"), WIM_CHUNK_SIZE);
+	tfputs (T("GUID                        = "), stdout);
 	print_byte_field(hdr->guid, WIM_GID_LEN);
-	putchar('\n');
-	printf("Part Number                 = %hu\n", w->hdr.part_number);
-	printf("Total Parts                 = %hu\n", w->hdr.total_parts);
-	printf("Image Count                 = %u\n", hdr->image_count);
-	printf("Lookup Table Size           = %"PRIu64"\n",
+	tputchar(T('\n'));
+	tprintf(T("Part Number                 = %hu\n"), w->hdr.part_number);
+	tprintf(T("Total Parts                 = %hu\n"), w->hdr.total_parts);
+	tprintf(T("Image Count                 = %u\n"), hdr->image_count);
+	tprintf(T("Lookup Table Size           = %"PRIu64"\n"),
 				(u64)hdr->lookup_table_res_entry.size);
-	printf("Lookup Table Flags          = 0x%hhx\n",
+	tprintf(T("Lookup Table Flags          = 0x%hhx\n"),
 				(u8)hdr->lookup_table_res_entry.flags);
-	printf("Lookup Table Offset         = %"PRIu64"\n",
+	tprintf(T("Lookup Table Offset         = %"PRIu64"\n"),
 				hdr->lookup_table_res_entry.offset);
-	printf("Lookup Table Original_size  = %"PRIu64"\n",
+	tprintf(T("Lookup Table Original_size  = %"PRIu64"\n"),
 				hdr->lookup_table_res_entry.original_size);
-	printf("XML Data Size               = %"PRIu64"\n",
+	tprintf(T("XML Data Size               = %"PRIu64"\n"),
 				(u64)hdr->xml_res_entry.size);
-	printf("XML Data Flags              = 0x%hhx\n",
+	tprintf(T("XML Data Flags              = 0x%hhx\n"),
 				(u8)hdr->xml_res_entry.flags);
-	printf("XML Data Offset             = %"PRIu64"\n",
+	tprintf(T("XML Data Offset             = %"PRIu64"\n"),
 				hdr->xml_res_entry.offset);
-	printf("XML Data Original Size      = %"PRIu64"\n",
+	tprintf(T("XML Data Original Size      = %"PRIu64"\n"),
 				hdr->xml_res_entry.original_size);
-	printf("Boot Metadata Size          = %"PRIu64"\n",
+	tprintf(T("Boot Metadata Size          = %"PRIu64"\n"),
 				(u64)hdr->boot_metadata_res_entry.size);
-	printf("Boot Metadata Flags         = 0x%hhx\n",
+	tprintf(T("Boot Metadata Flags         = 0x%hhx\n"),
 				(u8)hdr->boot_metadata_res_entry.flags);
-	printf("Boot Metadata Offset        = %"PRIu64"\n",
+	tprintf(T("Boot Metadata Offset        = %"PRIu64"\n"),
 				hdr->boot_metadata_res_entry.offset);
-	printf("Boot Metadata Original Size = %"PRIu64"\n",
+	tprintf(T("Boot Metadata Original Size = %"PRIu64"\n"),
 				hdr->boot_metadata_res_entry.original_size);
-	printf("Boot Index                  = %u\n", hdr->boot_idx);
-	printf("Integrity Size              = %"PRIu64"\n",
+	tprintf(T("Boot Index                  = %u\n"), hdr->boot_idx);
+	tprintf(T("Integrity Size              = %"PRIu64"\n"),
 				(u64)hdr->integrity.size);
-	printf("Integrity Flags             = 0x%hhx\n",
+	tprintf(T("Integrity Flags             = 0x%hhx\n"),
 				(u8)hdr->integrity.flags);
-	printf("Integrity Offset            = %"PRIu64"\n",
+	tprintf(T("Integrity Offset            = %"PRIu64"\n"),
 				hdr->integrity.offset);
-	printf("Integrity Original_size     = %"PRIu64"\n",
+	tprintf(T("Integrity Original_size     = %"PRIu64"\n"),
 				hdr->integrity.original_size);
 }

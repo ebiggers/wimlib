@@ -184,7 +184,7 @@ wimlib_create_new_wim(int ctype, WIMStruct **w_ret)
 	struct wim_lookup_table *table;
 	int ret;
 
-	DEBUG("Creating new WIM with %s compression.",
+	DEBUG("Creating new WIM with %"TS" compression.",
 	      wimlib_get_compression_type_string(ctype));
 
 	/* Allocate the WIMStruct. */
@@ -304,8 +304,8 @@ wimlib_resolve_image(WIMStruct *w, const tchar *image_name_or_num)
 	if (!image_name_or_num || !*image_name_or_num)
 		return WIMLIB_NO_IMAGE;
 
-	if (tstrcmp(image_name_or_num, T("all")) == 0
-	    || tstrcmp(image_name_or_num, T("*")) == 0)
+	if (!tstrcasecmp(image_name_or_num, T("all"))
+	    || !tstrcasecmp(image_name_or_num, T("*")))
 		return WIMLIB_ALL_IMAGES;
 	image = tstrtol(image_name_or_num, &p, 10);
 	if (p != image_name_or_num && *p == T('\0') && image > 0) {
@@ -675,13 +675,13 @@ test_locale_ctype_utf8()
 {
 	char *ctype = nl_langinfo(CODESET);
 
-	return (strstr(ctype, "UTF-8") == 0 ||
-		strstr(ctype, "UTF8") == 0 ||
-		strstr(ctype, "utf8") == 0 ||
-		strstr(ctype, "utf-8") == 0);
+	return (!strstr(ctype, "UTF-8") ||
+		!strstr(ctype, "UTF8") ||
+		!strstr(ctype, "utf8") ||
+		!strstr(ctype, "utf-8"));
 }
 
-/* Get global memory allocations out of the way.  Not strictly necessary in
+/* Get global memory allocations out of the way, 
  * single-threaded programs like 'imagex'. */
 WIMLIBAPI int
 wimlib_global_init()

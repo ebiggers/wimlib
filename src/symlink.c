@@ -48,7 +48,7 @@ static ssize_t
 get_symlink_name(const void *resource, size_t resource_len, char *buf,
 		 size_t buf_len, u32 reparse_tag)
 {
-	const u8 *p = resource;
+	const void *p = resource;
 	u16 substitute_name_offset;
 	u16 substitute_name_len;
 	u16 print_name_offset;
@@ -82,16 +82,11 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 	if (header_size + substitute_name_offset + substitute_name_len > resource_len)
 		return -EIO;
 
-	ret = utf16le_to_mbs((const utf16lechar*)(p + substitute_name_offset),
-			    substitute_name_len,
-			    &link_target, &link_target_len);
+	ret = utf16le_to_tstr((const utf16lechar*)(p + substitute_name_offset),
+			      substitute_name_len,
+			      &link_target, &link_target_len);
 	if (ret)
 		return -errno;
-
-	wimlib_assert(ret == 0);
-
-	if (!link_target)
-		return -EIO;
 
 	if (link_target_len + 1 > buf_len) {
 		ret = -ENAMETOOLONG;
@@ -150,7 +145,7 @@ make_symlink_reparse_data_buf(const char *symlink_target,
 	size_t len = 12 + name_utf16le_nbytes * 2;
 	void *buf = MALLOC(len);
 	if (buf) {
-		u8 *p = buf;
+		void *p = buf;
 		p = put_u16(p, name_utf16le_nbytes); /* Substitute name offset */
 		p = put_u16(p, name_utf16le_nbytes); /* Substitute name length */
 		p = put_u16(p, 0); /* Print name offset */
@@ -269,4 +264,4 @@ out_free_symlink_buf:
 	return ret;
 }
 
-#endif /* !defined(__WIN32__) && !defined(WITH_FUSE) */
+#endif /* !defined(__WIN32__) */

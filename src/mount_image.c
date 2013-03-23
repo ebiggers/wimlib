@@ -1805,10 +1805,10 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 		size_t stream_name_mbs_nbytes;
 		int ret;
 
-		ret = utf16le_to_mbs(inode->i_ads_entries[i].stream_name,
-				     inode->i_ads_entries[i].stream_name_nbytes,
-				     &stream_name_mbs,
-				     &stream_name_mbs_nbytes);
+		ret = utf16le_to_tstr(inode->i_ads_entries[i].stream_name,
+				      inode->i_ads_entries[i].stream_name_nbytes,
+				      &stream_name_mbs,
+				      &stream_name_mbs_nbytes);
 		if (ret)
 			return -errno;
 
@@ -2014,10 +2014,10 @@ dentry_fuse_fill(struct wim_dentry *dentry, void *arg)
 	size_t file_name_mbs_nbytes;
 	int ret;
 
-	ret = utf16le_to_mbs(dentry->file_name,
-			     dentry->file_name_nbytes,
-			     &file_name_mbs,
-			     &file_name_mbs_nbytes);
+	ret = utf16le_to_tstr(dentry->file_name,
+			      dentry->file_name_nbytes,
+			      &file_name_mbs,
+			      &file_name_mbs_nbytes);
 	if (ret)
 		return -errno;
 
