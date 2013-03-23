@@ -43,11 +43,6 @@
 
 #include <unistd.h> /* for getpid() */
 
-/* Windoze compatibility */
-#ifdef __WIN32__
-#  define strerror_r(errnum, buf, bufsize) strerror_s(buf, bufsize, errnum)
-#endif
-
 size_t
 utf16le_strlen(const utf16lechar *s)
 {
@@ -63,24 +58,27 @@ utf16le_strlen(const utf16lechar *s)
  * contains %W and/or %U, then it contains no other format specifiers.
  */
 static int
-wimlib_vfprintf(FILE *fp, const char *format, va_list va)
+wimlib_vfprintf(FILE *fp, const tchar *format, va_list va)
 {
-	const char *p;
+	const tchar *p;
 
 	for (p = format; *p; p++)
-		if (*p == '%' && (*(p + 1) == 'W' || *(p + 1) == 'U'))
+		if (*p == '%' && (*(p + 1) == T('W') || *(p + 1) == T('U')))
 			goto special;
-	return vfprintf(fp, format, va);
+	return tvfprintf(fp, format, va);
 special:
+	/* XXX */
+	wimlib_assert(0);
+#if 0
 	;
 	int n = 0;
 	for (p = format; *p; p++) {
-		if (*p == '%' && (*(p + 1) == 'W' || *(p + 1) == 'U')) {
+		if (*p == T('%') && (*(p + 1) == T('W') || *(p + 1) == T('U'))) {
 			int ret;
-			mbchar *mbs;
+			tchar *mbs;
 			size_t mbs_nbytes;
 
-			if (*(p + 1) == 'W') {
+			if (*(p + 1) == T('W')) {
 				utf16lechar *ucs = va_arg(va, utf16lechar*);
 				size_t ucs_nbytes = utf16le_strlen(ucs);
 				ret = utf16le_to_mbs(ucs, ucs_nbytes,
@@ -92,9 +90,9 @@ special:
 						  &mbs, &mbs_nbytes);
 			}
 			if (ret) {
-				ret = fprintf(fp, "??????");
+				ret = tfprintf(fp, T("??????"));
 			} else {
-				ret = fprintf(fp, "%s", mbs);
+				ret = tfprintf(fp, T("%s"), mbs);
 				FREE(mbs);
 			}
 			if (ret < 0)
@@ -109,10 +107,11 @@ special:
 		}
 	}
 	return n;
+#endif
 }
 
 int
-wimlib_printf(const char *format, ...)
+wimlib_printf(const tchar *format, ...)
 {
 	int ret;
 	va_list va;
@@ -124,7 +123,7 @@ wimlib_printf(const char *format, ...)
 }
 
 int
-wimlib_fprintf(FILE *fp, const char *format, ...)
+wimlib_fprintf(FILE *fp, const tchar *format, ...)
 {
 	int ret;
 	va_list va;
@@ -137,7 +136,7 @@ wimlib_fprintf(FILE *fp, const char *format, ...)
 
 #if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
 static void
-wimlib_vmsg(const char *tag, const char *format,
+wimlib_vmsg(const tchar *tag, const tchar *format,
 	    va_list va, bool perror)
 {
 #ifndef DEBUG
@@ -145,19 +144,20 @@ wimlib_vmsg(const char *tag, const char *format,
 #endif
 		int errno_save = errno;
 		fflush(stdout);
-		fputs(tag, stderr);
+		tfputs(tag, stderr);
 		wimlib_vfprintf(stderr, format, va);
 		if (perror && errno_save != 0) {
-			char buf[50];
+			tchar buf[50];
 			int res;
-			res = strerror_r(errno_save, buf, sizeof(buf));
+			res = tstrerror_r(errno_save, buf, sizeof(buf));
 			if (res) {
-				snprintf(buf, sizeof(buf),
-					 "unknown error (errno=%d)", errno_save);
+				tsprintf(buf,
+					 T("unknown error (errno=%d)"),
+					 errno_save);
 			}
-			fprintf(stderr, ": %s", buf);
+			tfprintf(stderr, T(": %"TS), buf);
 		}
-		putc('\n', stderr);
+		tputc(T('\n'), stderr);
 		errno = errno_save;
 #ifndef DEBUG
 	}
@@ -172,56 +172,57 @@ static bool wimlib_print_errors = false;
 
 
 void
-wimlib_error(const char *format, ...)
+wimlib_error(const tchar *format, ...)
 {
 	va_list va;
 
 	va_start(va, format);
-	wimlib_vmsg("[ERROR] ", format, va, false);
+	wimlib_vmsg(T("[ERROR] "), format, va, false);
 	va_end(va);
 }
 
 void
-wimlib_error_with_errno(const char *format, ...)
+wimlib_error_with_errno(const tchar *format, ...)
 {
 	va_list va;
 
 	va_start(va, format);
-	wimlib_vmsg("[ERROR] ", format, va, true);
+	wimlib_vmsg(T("[ERROR] "), format, va, true);
 	va_end(va);
 }
 
 void
-wimlib_warning(const char *format, ...)
+wimlib_warning(const tchar *format, ...)
 {
 	va_list va;
 
 	va_start(va, format);
-	wimlib_vmsg("[WARNING] ", format, va, false);
+	wimlib_vmsg(T("[WARNING] "), format, va, false);
 	va_end(va);
 }
 
 void
-wimlib_warning_with_errno(const char *format, ...)
+wimlib_warning_with_errno(const tchar *format, ...)
 {
 	va_list va;
 
 	va_start(va, format);
-	wimlib_vmsg("[WARNING] ", format, va, true);
+	wimlib_vmsg(T("[WARNING] "), format, va, true);
 	va_end(va);
 }
 
 #endif
 
 #if defined(ENABLE_DEBUG) || defined(ENABLE_MORE_DEBUG)
-void wimlib_debug(const char *file, int line, const char *func,
-		  const char *format, ...)
+void wimlib_debug(const tchar *file, int line, const char *func,
+		  const tchar *format, ...)
 {
 
 	va_list va;
-	char buf[strlen(file) + strlen(func) + 30];
+	tchar buf[tstrlen(file) + strlen(func) + 30];
 
-	sprintf(buf, "[%s %d] %s(): ", file, line, func);
+	tsprintf(buf, "[%"TS" %d] %s(): ", file, line, func);
+
 	va_start(va, format);
 	wimlib_vmsg(buf, format, va, false);
 	va_end(va);
@@ -242,133 +243,133 @@ wimlib_set_print_errors(bool show_error_messages)
 #endif
 }
 
-static const mbchar *error_strings[] = {
+static const tchar *error_strings[] = {
 	[WIMLIB_ERR_SUCCESS]
-		= "Success",
+		= T("Success"),
 	[WIMLIB_ERR_ALREADY_LOCKED]
-		= "The WIM is already locked for writing",
+		= T("The WIM is already locked for writing"),
 	[WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE]
-		= "Lookup table is compressed",
+		= T("Lookup table is compressed"),
 	[WIMLIB_ERR_DECOMPRESSION]
-		= "Failed to decompress compressed data",
+		= T("Failed to decompress compressed data"),
 	[WIMLIB_ERR_DELETE_STAGING_DIR]
-		= "Failed to delete staging directory",
+		= T("Failed to delete staging directory"),
 	[WIMLIB_ERR_FILESYSTEM_DAEMON_CRASHED]
-		= "The process servicing the mounted WIM has crashed",
+		= T("The process servicing the mounted WIM has crashed"),
 	[WIMLIB_ERR_FORK]
-		= "Failed to fork another process",
+		= T("Failed to fork another process"),
 	[WIMLIB_ERR_FUSE]
-		= "An error was returned by fuse_main()",
+		= T("An error was returned by fuse_main()"),
 	[WIMLIB_ERR_FUSERMOUNT]
-		= "Could not execute the `fusermount' program, or it exited "
-			"with a failure status",
+		= T("Could not execute the `fusermount' program, or it exited "
+			"with a failure status"),
 	[WIMLIB_ERR_ICONV_NOT_AVAILABLE]
-		= "The iconv() function does not seem to work. "
-		  "Maybe check to make sure the directory /usr/lib/gconv exists",
+		= T("The iconv() function does not seem to work. "
+		  "Maybe check to make sure the directory /usr/lib/gconv exists"),
 	[WIMLIB_ERR_IMAGE_COUNT]
-		= "Inconsistent image count among the metadata "
-			"resources, the WIM header, and/or the XML data",
+		= T("Inconsistent image count among the metadata "
+			"resources, the WIM header, and/or the XML data"),
 	[WIMLIB_ERR_IMAGE_NAME_COLLISION]
-		= "Tried to add an image with a name that is already in use",
+		= T("Tried to add an image with a name that is already in use"),
 	[WIMLIB_ERR_INTEGRITY]
-		= "The WIM failed an integrity check",
+		= T("The WIM failed an integrity check"),
 	[WIMLIB_ERR_INVALID_CAPTURE_CONFIG]
-		= "The capture configuration string was invalid",
+		= T("The capture configuration string was invalid"),
 	[WIMLIB_ERR_INVALID_CHUNK_SIZE]
-		= "The WIM is compressed but does not have a chunk "
-			"size of 32768",
+		= T("The WIM is compressed but does not have a chunk "
+			"size of 32768"),
 	[WIMLIB_ERR_INVALID_COMPRESSION_TYPE]
-		= "The WIM is compressed, but is not marked as having LZX or "
-			"XPRESS compression",
+		= T("The WIM is compressed, but is not marked as having LZX or "
+			"XPRESS compression"),
 	[WIMLIB_ERR_INVALID_DENTRY]
-		= "A directory entry in the WIM was invalid",
+		= T("A directory entry in the WIM was invalid"),
 	[WIMLIB_ERR_INVALID_HEADER_SIZE]
-		= "The WIM header was not 208 bytes",
+		= T("The WIM header was not 208 bytes"),
 	[WIMLIB_ERR_INVALID_IMAGE]
-		= "Tried to select an image that does not exist in the WIM",
+		= T("Tried to select an image that does not exist in the WIM"),
 	[WIMLIB_ERR_INVALID_INTEGRITY_TABLE]
-		= "The WIM's integrity table is invalid",
+		= T("The WIM's integrity table is invalid"),
 	[WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY]
-		= "An entry in the WIM's lookup table is invalid",
+		= T("An entry in the WIM's lookup table is invalid"),
 	[WIMLIB_ERR_INVALID_MULTIBYTE_STRING]
-		= "A string was not valid in the current locale's character encoding",
+		= T("A string was not valid in the current locale's character encoding"),
 	[WIMLIB_ERR_INVALID_OVERLAY]
-		= "Conflicting files in overlay when creating a WIM image",
+		= T("Conflicting files in overlay when creating a WIM image"),
 	[WIMLIB_ERR_INVALID_PARAM]
-		= "An invalid parameter was given",
+		= T("An invalid parameter was given"),
 	[WIMLIB_ERR_INVALID_PART_NUMBER]
-		= "The part number or total parts of the WIM is invalid",
+		= T("The part number or total parts of the WIM is invalid"),
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
-		= "The SHA1 message digest of a WIM resource did not match the expected value",
+		= T("The SHA1 message digest of a WIM resource did not match the expected value"),
 	[WIMLIB_ERR_INVALID_RESOURCE_SIZE]
-		= "A resource entry in the WIM has an invalid size",
+		= T("A resource entry in the WIM has an invalid size"),
 	[WIMLIB_ERR_INVALID_SECURITY_DATA]
-		= "The table of security descriptors in the WIM is invalid",
+		= T("The table of security descriptors in the WIM is invalid"),
 	[WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE]
-		= "The version of wimlib that has mounted a WIM image is incompatible with the "
-		  "version being used to unmount it",
+		= T("The version of wimlib that has mounted a WIM image is incompatible with the "
+		  "version being used to unmount it"),
 	[WIMLIB_ERR_INVALID_UTF8_STRING]
-		= "A string provided as input by the user was not a valid UTF-8 string",
+		= T("A string provided as input by the user was not a valid UTF-8 string"),
 	[WIMLIB_ERR_INVALID_UTF16_STRING]
-		= "A string in a WIM dentry is not a valid UTF-16LE string",
+		= T("A string in a WIM dentry is not a valid UTF-16LE string"),
 	[WIMLIB_ERR_LIBXML_UTF16_HANDLER_NOT_AVAILABLE]
-		= "libxml2 was unable to find a character encoding conversion handler "
-		  "for UTF-16LE",
+		= T("libxml2 was unable to find a character encoding conversion handler "
+		  "for UTF-16LE"),
 	[WIMLIB_ERR_LINK]
-		= "Failed to create a hard or symbolic link when extracting "
-			"a file from the WIM",
+		= T("Failed to create a hard or symbolic link when extracting "
+			"a file from the WIM"),
 	[WIMLIB_ERR_MKDIR]
-		= "Failed to create a directory",
+		= T("Failed to create a directory"),
 	[WIMLIB_ERR_MQUEUE]
-		= "Failed to create or use a POSIX message queue",
+		= T("Failed to create or use a POSIX message queue"),
 	[WIMLIB_ERR_NOMEM]
-		= "Ran out of memory",
+		= T("Ran out of memory"),
 	[WIMLIB_ERR_NOTDIR]
-		= "Expected a directory",
+		= T("Expected a directory"),
 	[WIMLIB_ERR_NOT_A_WIM_FILE]
-		= "The file did not begin with the magic characters that "
-			"identify a WIM file",
+		= T("The file did not begin with the magic characters that "
+			"identify a WIM file"),
 	[WIMLIB_ERR_NO_FILENAME]
-		= "The WIM is not identified with a filename",
+		= T("The WIM is not identified with a filename"),
 	[WIMLIB_ERR_NTFS_3G]
-		= "NTFS-3g encountered an error (check errno)",
+		= T("NTFS-3g encountered an error (check errno)"),
 	[WIMLIB_ERR_OPEN]
-		= "Failed to open a file",
+		= T("Failed to open a file"),
 	[WIMLIB_ERR_OPENDIR]
-		= "Failed to open a directory",
+		= T("Failed to open a directory"),
 	[WIMLIB_ERR_READ]
-		= "Could not read data from a file",
+		= T("Could not read data from a file"),
 	[WIMLIB_ERR_READLINK]
-		= "Could not read the target of a symbolic link",
+		= T("Could not read the target of a symbolic link"),
 	[WIMLIB_ERR_RENAME]
-		= "Could not rename a file",
+		= T("Could not rename a file"),
 	[WIMLIB_ERR_REOPEN]
-		= "Could not re-open the WIM after overwriting it",
+		= T("Could not re-open the WIM after overwriting it"),
 	[WIMLIB_ERR_RESOURCE_ORDER]
-		= "The components of the WIM were arranged in an unexpected order",
+		= T("The components of the WIM were arranged in an unexpected order"),
 	[WIMLIB_ERR_SPECIAL_FILE]
-		= "Encountered a special file that cannot be archived",
+		= T("Encountered a special file that cannot be archived"),
 	[WIMLIB_ERR_SPLIT_INVALID]
-		= "The WIM is part of an invalid split WIM",
+		= T("The WIM is part of an invalid split WIM"),
 	[WIMLIB_ERR_SPLIT_UNSUPPORTED]
-		= "The WIM is part of a split WIM, which is not supported for this operation",
+		= T("The WIM is part of a split WIM, which is not supported for this operation"),
 	[WIMLIB_ERR_STAT]
-		= "Could not read the metadata for a file or directory",
+		= T("Could not read the metadata for a file or directory"),
 	[WIMLIB_ERR_TIMEOUT]
-		= "Timed out while waiting for a message to arrive from another process",
+		= T("Timed out while waiting for a message to arrive from another process"),
 	[WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE]
-		= "A Unicode string could not be represented in the current locale's encoding",
+		= T("A Unicode string could not be represented in the current locale's encoding"),
 	[WIMLIB_ERR_UNKNOWN_VERSION]
-		= "The WIM file is marked with an unknown version number",
+		= T("The WIM file is marked with an unknown version number"),
 	[WIMLIB_ERR_UNSUPPORTED]
-		= "The requested operation is unsupported",
+		= T("The requested operation is unsupported"),
 	[WIMLIB_ERR_WRITE]
-		= "Failed to write data to a file",
+		= T("Failed to write data to a file"),
 	[WIMLIB_ERR_XML]
-		= "The XML data of the WIM is invalid",
+		= T("The XML data of the WIM is invalid"),
 };
 
-WIMLIBAPI const mbchar *
+WIMLIBAPI const tchar *
 wimlib_get_error_string(enum wimlib_error_code code)
 {
 	if (code < 0 || code >= ARRAY_LEN(error_strings))
@@ -407,6 +408,21 @@ wimlib_strdup(const char *str)
 	return p;
 }
 
+#ifdef __WIN32__
+wchar_t *
+wimlib_wcsdup(const wchar_t *str)
+{
+	size_t size;
+	wchar_t *p;
+
+	size = wcslen(str);
+	p = MALLOC((size + 1) * sizeof(wchar_t));
+	if (p)
+		memcpy(p, str, (size + 1) * sizeof(wchar_t));
+	return p;
+}
+#endif
+
 extern void
 xml_set_memory_allocator(void *(*malloc_func)(size_t),
 			 void (*free_func)(void *),
@@ -443,9 +459,9 @@ seed_random()
 	seeded = true;
 }
 
-/* Fills @n bytes pointed to by @p with random alphanumeric characters. */
+/* Fills @n characters pointed to by @p with random alphanumeric characters. */
 void
-randomize_char_array_with_alnum(char p[], size_t n)
+randomize_char_array_with_alnum(tchar p[], size_t n)
 {
 	if (!seeded)
 		seed_random();
@@ -473,24 +489,24 @@ randomize_byte_array(u8 *p, size_t n)
 /* Takes in a path of length @len in @buf, and transforms it into a string for
  * the path of its parent directory. */
 void
-to_parent_name(char buf[], size_t len)
+to_parent_name(tchar *buf, size_t len)
 {
 	ssize_t i = (ssize_t)len - 1;
-	while (i >= 0 && buf[i] == '/')
+	while (i >= 0 && buf[i] == T('/'))
 		i--;
-	while (i >= 0 && buf[i] != '/')
+	while (i >= 0 && buf[i] != T('/'))
 		i--;
-	while (i >= 0 && buf[i] == '/')
+	while (i >= 0 && buf[i] == T('/'))
 		i--;
-	buf[i + 1] = '\0';
+	buf[i + 1] = T('\0');
 }
 
 /* Like the basename() function, but does not modify @path; it just returns a
  * pointer to it. */
-const char *
-path_basename(const char *path)
+const tchar *
+path_basename(const tchar *path)
 {
-	const char *p = path;
+	const tchar *p = path;
 	while (*p)
 		p++;
 	p--;
@@ -498,13 +514,13 @@ path_basename(const char *path)
 	/* Trailing slashes. */
 	while (1) {
 		if (p == path - 1)
-			return "";
-		if (*p != '/')
+			return T("");
+		if (*p != T('/'))
 			break;
 		p--;
 	}
 
-	while ((p != path - 1) && *p != '/')
+	while ((p != path - 1) && *p != T('/'))
 		p--;
 
 	return p + 1;
@@ -514,11 +530,11 @@ path_basename(const char *path)
  * Returns a pointer to the part of @path following the first colon in the last
  * path component, or NULL if the last path component does not contain a colon.
  */
-const char *
-path_stream_name(const char *path)
+const tchar *
+path_stream_name(const tchar *path)
 {
-	const char *base = path_basename(path);
-	const char *stream_name = strchr(base, ':');
+	const tchar *base = path_basename(path);
+	const tchar *stream_name = tstrchr(base, T(':'));
 	if (!stream_name)
 		return NULL;
 	else
@@ -536,19 +552,19 @@ path_stream_name(const char *path)
  * 				sequence of '/', or a pointer to the terminating
  * 				null byte in the case of a path without any '/'.
  */
-const char *
-path_next_part(const char *path, size_t *first_part_len_ret)
+const tchar *
+path_next_part(const tchar *path, size_t *first_part_len_ret)
 {
 	size_t i;
-	const char *next_part;
+	const tchar *next_part;
 
 	i = 0;
-	while (path[i] != '/' && path[i] != '\0')
+	while (path[i] != T('/') && path[i] != T('\0'))
 		i++;
 	if (first_part_len_ret)
 		*first_part_len_ret = i;
 	next_part = &path[i];
-	while (*next_part == '/')
+	while (*next_part == T('/'))
 		next_part++;
 	return next_part;
 }
@@ -597,10 +613,10 @@ get_wim_timestamp()
 }
 
 void
-wim_timestamp_to_str(u64 timestamp, char *buf, size_t len)
+wim_timestamp_to_str(u64 timestamp, tchar *buf, size_t len)
 {
 	struct tm tm;
 	time_t t = wim_timestamp_to_unix(timestamp);
 	gmtime_r(&t, &tm);
-	strftime(buf, len, "%a %b %d %H:%M:%S %Y UTC", &tm);
+	tstrftime(buf, len, T("%a %b %d %H:%M:%S %Y UTC"), &tm);
 }

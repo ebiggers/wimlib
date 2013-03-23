@@ -7,7 +7,7 @@
 
 extern int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
-			const mbchar *root_disk_path,
+			const tchar *root_disk_path,
 			struct wim_lookup_table *lookup_table,
 			struct wim_security_data *sd,
 			const struct capture_config *config,
@@ -16,7 +16,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 			void *extra_arg);
 
 extern int
-win32_read_file(const utf16lechar *win32_filename, void *handle,
+win32_read_file(const tchar *filename, HANDLE handle,
 		u64 offset, size_t size, void *buf);
 
 extern HANDLE
@@ -36,17 +36,17 @@ extern void win32_error_last();
 #define FNM_PATHNAME 0x1
 #define FNM_NOMATCH 1
 extern int
-fnmatch(const mbchar *pattern, const mbchar *string, int flags);
+fnmatch(const tchar *pattern, const tchar *string, int flags);
 
 extern int
-win32_do_apply_dentry(const mbchar *output_path,
-		      size_t output_path_len,
+win32_do_apply_dentry(const tchar *output_path,
+		      size_t output_path_nbytes,
 		      struct wim_dentry *dentry,
 		      struct apply_args *args);
 
 extern int
-win32_do_apply_dentry_timestamps(const mbchar *output_path,
-				 size_t output_path_len,
+win32_do_apply_dentry_timestamps(const tchar *output_path,
+				 size_t output_path_nbytes,
 				 const struct wim_dentry *dentry,
 				 const struct apply_args *args);
 
@@ -56,15 +56,8 @@ fsync(int fd);
 extern unsigned
 win32_get_number_of_processors();
 
-extern mbchar *
-realpath(const mbchar *path, mbchar *resolved_path);
-
-/* Microsoft's swprintf() violates the C standard and they require programmers
- * to do this weird define to get the correct function.  */
-#define swprintf _snwprintf
-
-/* Use Microsoft's weird _mkdir() function instead of mkdir() */
-#define mkdir(name, mode) _mkdir(name)
+extern tchar *
+realpath(const tchar *path, tchar *resolved_path);
 
 typedef enum {
 	CODESET
@@ -74,8 +67,10 @@ extern char *
 nl_langinfo(nl_item item);
 
 extern int
-rename_replacement(const char *oldpath, const char *newpath);
-#define rename(oldpath, newpath) rename_replacement(oldpath, newpath)
+win32_rename_replacement(const tchar *oldpath, const tchar *newpath);
+
+extern int
+win32_truncate_replacement(const tchar *path, off_t size);
 
 extern void
 win32_global_init();

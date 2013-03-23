@@ -95,8 +95,8 @@ static void inode_move_ltes_to_table(struct wim_inode *inode,
 WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 				  int src_image,
 				  WIMStruct *dest_wim,
-				  const utf8char *dest_name,
-				  const utf8char *dest_description,
+				  const tchar *dest_name,
+				  const tchar *dest_description,
 				  int export_flags,
 				  WIMStruct **additional_swms,
 				  unsigned num_additional_swms,
@@ -165,21 +165,21 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 
 	if (!dest_name) {
 		dest_name = wimlib_get_image_name(src_wim, src_image);
-		DEBUG("Using name `%s' for source image %d",
+		DEBUG("Using name `%"TS"' for source image %d",
 		      dest_name, src_image);
 	}
 
 	if (!dest_description) {
 		dest_description = wimlib_get_image_description(src_wim,
 								src_image);
-		DEBUG("Using description `%s' for source image %d",
+		DEBUG("Using description `%"TS"' for source image %d",
 		      dest_description, src_image);
 	}
 
-	DEBUG("Exporting image %d from `%s'", src_image, src_wim->filename);
+	DEBUG("Exporting image %d from `%"TS"'", src_image, src_wim->filename);
 
 	if (wimlib_image_name_in_use(dest_wim, dest_name)) {
-		ERROR("There is already an image named `%s' in the "
+		ERROR("There is already an image named `%"TS"' in the "
 		      "destination WIM", dest_name);
 		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 	}
@@ -200,7 +200,7 @@ WIMLIBAPI int wimlib_export_image(WIMStruct *src_wim,
 
 	ret = select_wim_image(src_wim, src_image);
 	if (ret != 0) {
-		ERROR("Could not select image %d from the WIM `%s' "
+		ERROR("Could not select image %d from the WIM `%"TS"' "
 		      "to export it", src_image, src_wim->filename);
 		goto out;
 	}

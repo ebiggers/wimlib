@@ -141,7 +141,8 @@ struct wim_dentry {
 	 * the terminating null character. */
 	u16 file_name_nbytes;
 
-	/* Length of full path name, in bytes, as a multibyte-encoded string */
+	/* Length of full path name encoded using "tchars", in bytes, not
+	 * including the terminating null terminator. */
 	u32 full_path_nbytes;
 
 	u8 is_extracted : 1;
@@ -195,7 +196,7 @@ struct wim_dentry {
 	utf16lechar *file_name;
 
 	/* Full path of this dentry */
-	mbchar *full_path;
+	tchar *full_path;
 };
 
 #define rbnode_dentry(node) container_of(node, struct wim_dentry, rb_node)
@@ -271,11 +272,7 @@ struct wim_inode {
 
 	struct list_head i_lte_inode_list;
 
-#ifdef __WIN32__
-	utf16lechar *i_extracted_file;
-#else
-	mbchar *i_extracted_file;
-#endif
+	tchar *i_extracted_file;
 
 	/* Root of a red-black tree storing the children of this inode (if
 	 * non-empty, implies the inode is a directory, although that is also
@@ -348,17 +345,17 @@ extern void
 calculate_subdir_offsets(struct wim_dentry *dentry, u64 *subdir_offset_p);
 
 extern int
-set_dentry_name(struct wim_dentry *dentry, const mbchar *new_name);
+set_dentry_name(struct wim_dentry *dentry, const tchar *new_name);
 
 extern struct wim_dentry *
-get_dentry(struct WIMStruct *w, const mbchar *path);
+get_dentry(struct WIMStruct *w, const tchar *path);
 
 extern struct wim_inode *
-wim_pathname_to_inode(struct WIMStruct *w, const mbchar *path);
+wim_pathname_to_inode(struct WIMStruct *w, const tchar *path);
 
 extern struct wim_dentry *
 get_dentry_child_with_name(const struct wim_dentry *dentry,
-			   const mbchar *name);
+			   const tchar *name);
 
 extern struct wim_dentry *
 get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
@@ -366,7 +363,7 @@ get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 				   size_t name_nbytes);
 
 extern struct wim_dentry *
-get_parent_dentry(struct WIMStruct *w, const mbchar *path);
+get_parent_dentry(struct WIMStruct *w, const tchar *path);
 
 extern int
 print_dentry(struct wim_dentry *dentry, void *lookup_table);
@@ -375,13 +372,13 @@ extern int
 print_dentry_full_path(struct wim_dentry *entry, void *ignore);
 
 extern int
-new_dentry(const mbchar *name, struct wim_dentry **dentry_ret);
+new_dentry(const tchar *name, struct wim_dentry **dentry_ret);
 
 extern int
-new_dentry_with_inode(const mbchar *name, struct wim_dentry **dentry_ret);
+new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret);
 
 extern int
-new_dentry_with_timeless_inode(const mbchar *name, struct wim_dentry **dentry_ret);
+new_dentry_with_timeless_inode(const tchar *name, struct wim_dentry **dentry_ret);
 
 extern void
 free_inode(struct wim_inode *inode);
@@ -407,7 +404,7 @@ dentry_add_child(struct wim_dentry * restrict parent,
 		 struct wim_dentry * restrict child);
 
 extern struct wim_ads_entry *
-inode_get_ads_entry(struct wim_inode *inode, const mbchar *stream_name,
+inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 		    u16 *idx_ret);
 
 extern struct wim_ads_entry *
@@ -416,10 +413,10 @@ inode_add_ads_utf16le(struct wim_inode *inode,
 		      size_t stream_name_nbytes);
 
 extern struct wim_ads_entry *
-inode_add_ads(struct wim_inode *dentry, const mbchar *stream_name);
+inode_add_ads(struct wim_inode *dentry, const tchar *stream_name);
 
 extern int
-inode_add_ads_with_data(struct wim_inode *inode, const mbchar *name,
+inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
 			const void *value, size_t size,
 			struct wim_lookup_table *lookup_table);
 

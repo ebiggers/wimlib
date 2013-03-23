@@ -118,9 +118,9 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 	 * part */
 	swms[0]->write_metadata = true;
 	for (i = 0; i < num_swms; i++) {
-		swms[i]->fp = fopen(swms[i]->filename, "rb");
+		swms[i]->fp = tfopen(swms[i]->filename, T("rb"));
 		if (!swms[i]->fp) {
-			ERROR_WITH_ERRNO("Failed to reopen `%s'",
+			ERROR_WITH_ERRNO("Failed to reopen `%"TS"'",
 					 swms[i]->filename);
 			return WIMLIB_ERR_OPEN;
 		}
@@ -165,8 +165,10 @@ cmp_swms_by_part_number(const void *swm1, const void *swm2)
  * Join a set of split WIMs into a stand-alone WIM.
  */
 WIMLIBAPI int
-wimlib_join(const mbchar * const *swm_names, unsigned num_swms,
-	    const mbchar *output_path, int swm_open_flags,
+wimlib_join(const tchar * const *swm_names,
+	    unsigned num_swms,
+	    const tchar *output_path,
+	    int swm_open_flags,
 	    int wim_write_flags,
 	    wimlib_progress_func_t progress_func)
 {

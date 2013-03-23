@@ -84,23 +84,12 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 	memcpy(new, old, sizeof(*old));
 	new->extracted_file = NULL;
 	switch (new->resource_location) {
-#ifdef __WIN32__
 	case RESOURCE_WIN32:
-		{
-			size_t nbytes = utf16le_strlen(old->win32_file_on_disk);
-			new->win32_file_on_disk = MALLOC(nbytes + 2);
-			if (!new->win32_file_on_disk)
-				goto out_free;
-			memcpy(new->win32_file_on_disk, old->win32_file_on_disk,
-			       nbytes + 2);
-		}
-		break;
-#endif
 	case RESOURCE_IN_STAGING_FILE:
 	case RESOURCE_IN_FILE_ON_DISK:
 		BUILD_BUG_ON((void*)&old->file_on_disk !=
 			     (void*)&old->staging_file_name);
-		new->staging_file_name = STRDUP(old->staging_file_name);
+		new->staging_file_name = TSTRDUP(old->staging_file_name);
 		if (!new->staging_file_name)
 			goto out_free;
 		break;
@@ -494,48 +483,55 @@ void print_lookup_table_entry(const struct wim_lookup_table_entry *lte,
 			      FILE *out)
 {
 	if (!lte) {
-		putc('\n', out);
+		tputc(T('\n'), out);
 		return;
 	}
-	fprintf(out, "Offset            = %"PRIu64" bytes\n",
-	       lte->resource_entry.offset);
-	fprintf(out, "Size              = %"PRIu64" bytes\n",
-	       (u64)lte->resource_entry.size);
-	fprintf(out, "Original size     = %"PRIu64" bytes\n",
-	       lte->resource_entry.original_size);
-	fprintf(out, "Part Number       = %hu\n", lte->part_number);
-	fprintf(out, "Reference Count   = %u\n", lte->refcnt);
-	fprintf(out, "Hash              = 0x");
+	tfprintf(out, T("Offset            = %"PRIu64" bytes\n"),
+		 lte->resource_entry.offset);
+
+	tfprintf(out, T("Size              = %"PRIu64" bytes\n"),
+		 (u64)lte->resource_entry.size);
+
+	tfprintf(out, T("Original size     = %"PRIu64" bytes\n"),
+		 lte->resource_entry.original_size);
+
+	tfprintf(out, T("Part Number       = %hu\n"), lte->part_number);
+	tfprintf(out, T("Reference Count   = %u\n"), lte->refcnt);
+
+	tfprintf(out, T("Hash              = 0x"));
 	print_hash(lte->hash);
-	putc('\n', out);
-	fprintf(out, "Flags             = ");
+	tputc(T('\n'), out);
+
+	tfprintf(out, T("Flags             = "));
 	u8 flags = lte->resource_entry.flags;
 	if (flags & WIM_RESHDR_FLAG_COMPRESSED)
-		fputs("WIM_RESHDR_FLAG_COMPRESSED, ", out);
+		tfputs(T("WIM_RESHDR_FLAG_COMPRESSED, "), out);
 	if (flags & WIM_RESHDR_FLAG_FREE)
-		fputs("WIM_RESHDR_FLAG_FREE, ", out);
+		tfputs(T("WIM_RESHDR_FLAG_FREE, "), out);
 	if (flags & WIM_RESHDR_FLAG_METADATA)
-		fputs("WIM_RESHDR_FLAG_METADATA, ", out);
+		tfputs(T("WIM_RESHDR_FLAG_METADATA, "), out);
 	if (flags & WIM_RESHDR_FLAG_SPANNED)
-		fputs("WIM_RESHDR_FLAG_SPANNED, ", out);
-	putc('\n', out);
+		tfputs(T("WIM_RESHDR_FLAG_SPANNED, "), out);
+	tputc(T('\n'), out);
 	switch (lte->resource_location) {
 	case RESOURCE_IN_WIM:
 		if (lte->wim->filename) {
-			fprintf(out, "WIM file          = `%s'\n",
-			       lte->wim->filename);
+			tfprintf(out, T("WIM file          = `%"TS"'\n"),
+				 lte->wim->filename);
 		}
 		break;
 	case RESOURCE_IN_FILE_ON_DISK:
-		fprintf(out, "File on Disk      = `%s'\n", lte->file_on_disk);
+		tfprintf(out, T("File on Disk      = `%"TS"'\n"),
+			 lte->file_on_disk);
 		break;
 	case RESOURCE_IN_STAGING_FILE:
-		fprintf(out, "Staging File      = `%s'\n", lte->staging_file_name);
+		tfprintf(out, T("Staging File      = `%"TS"'\n"),
+				lte->staging_file_name);
 		break;
 	default:
 		break;
 	}
-	putc('\n', out);
+	tputc(T('\n'), out);
 }
 
 static int do_print_lookup_table_entry(struct wim_lookup_table_entry *lte,
@@ -583,7 +579,7 @@ __lookup_resource(const struct wim_lookup_table *table, const u8 hash[])
  */
 int
 lookup_resource(WIMStruct *w,
-		const mbchar *path,
+		const tchar *path,
 		int lookup_flags,
 		struct wim_dentry **dentry_ret,
 		struct wim_lookup_table_entry **lte_ret,
@@ -592,21 +588,21 @@ lookup_resource(WIMStruct *w,
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
 	u16 stream_idx;
-	const mbchar *stream_name = NULL;
+	const tchar *stream_name = NULL;
 	struct wim_inode *inode;
-	mbchar *p = NULL;
+	tchar *p = NULL;
 
 	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
 		stream_name = path_stream_name(path);
 		if (stream_name) {
-			p = (mbchar*)stream_name - 1;
-			*p = '\0';
+			p = (tchar*)stream_name - 1;
+			*p = T('\0');
 		}
 	}
 
 	dentry = get_dentry(w, path);
 	if (p)
-		*p = ':';
+		*p = T(':');
 	if (!dentry)
 		return -errno;
 

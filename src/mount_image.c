@@ -30,6 +30,10 @@
 
 #ifdef WITH_FUSE
 
+#ifdef __WIN32__
+#  error "FUSE mount not supported on Win32!  Please configure --without-fuse"
+#endif
+
 #include "buffer_io.h"
 #include "lookup_table.h"
 #include "sha1.h"
@@ -78,7 +82,7 @@ struct wimfs_context {
 	 * file in the WIM is modified, it is extracted to the staging directory.  If
 	 * changes are commited when the WIM is unmounted, the file resources are merged
 	 * in from the staging directory when writing the new WIM. */
-	mbchar *staging_dir_name;
+	char *staging_dir_name;
 	size_t staging_dir_name_len;
 
 	/* Flags passed to wimlib_mount(). */
@@ -106,8 +110,8 @@ struct wimfs_context {
 	 * wimlib_unmount_image() (i.e. the `imagex unmount' command) needs to
 	 * communicate with the filesystem daemon running fuse_main() (i.e. the
 	 * daemon created by the `imagex mount' or `imagex mountrw' commands */
-	mbchar *unmount_to_daemon_mq_name;
-	mbchar *daemon_to_unmount_mq_name;
+	char *unmount_to_daemon_mq_name;
+	char *daemon_to_unmount_mq_name;
 	mqd_t unmount_to_daemon_mq;
 	mqd_t daemon_to_unmount_mq;
 
@@ -305,12 +309,12 @@ close_wimfs_fd(struct wimfs_fd *fd)
  * Returns 0 on success, or negative error number on failure.
  */
 static int
-create_dentry(struct fuse_context *fuse_ctx, const mbchar *path,
+create_dentry(struct fuse_context *fuse_ctx, const char *path,
 	      mode_t mode, int attributes, struct wim_dentry **dentry_ret)
 {
 	struct wim_dentry *parent;
 	struct wim_dentry *new;
-	const mbchar *basename;
+	const char *basename;
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
 	int ret;
 
@@ -468,10 +472,10 @@ touch_inode(struct wim_inode *inode)
  * writing.  On failure, returns -1 and sets errno.
  */
 static int
-create_staging_file(mbchar **name_ret, struct wimfs_context *ctx)
+create_staging_file(char **name_ret, struct wimfs_context *ctx)
 {
 	size_t name_len;
-	mbchar *name;
+	char *name;
 	struct stat stbuf;
 	int fd;
 	int errno_save;
@@ -542,7 +546,7 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 				off_t size,
 				struct wimfs_context *ctx)
 {
-	mbchar *staging_file_name;
+	char *staging_file_name;
 	int ret;
 	int fd;
 	struct wim_lookup_table_entry *old_lte, *new_lte;
@@ -695,17 +699,17 @@ out_delete_staging_file:
  * filesystem context structure.
  */
 static int
-make_staging_dir(struct wimfs_context *ctx, const mbchar *user_prefix)
+make_staging_dir(struct wimfs_context *ctx, const char *user_prefix)
 {
 	static const size_t random_suffix_len = 10;
-	static const mbchar *common_suffix = ".staging";
+	static const char *common_suffix = ".staging";
 	static const size_t common_suffix_len = 8;
 
-	mbchar *staging_dir_name = NULL;
+	char *staging_dir_name = NULL;
 	size_t staging_dir_name_len;
 	size_t prefix_len;
-	const mbchar *wim_basename;
-	mbchar *real_user_prefix = NULL;
+	const char *wim_basename;
+	char *real_user_prefix = NULL;
 	int ret;
 
 	if (user_prefix) {
@@ -761,7 +765,7 @@ out:
 }
 
 static int
-remove_file_or_directory(const mbchar *fpath, const struct stat *sb,
+remove_file_or_directory(const char *fpath, const struct stat *sb,
 			 int typeflag, struct FTW *ftwbuf)
 {
 	if (remove(fpath) == 0)
@@ -906,12 +910,12 @@ strcat_dup(const char *s1, const char *s2, size_t max_len)
 }
 
 static int
-set_message_queue_names(struct wimfs_context *ctx, const mbchar *mount_dir)
+set_message_queue_names(struct wimfs_context *ctx, const char *mount_dir)
 {
-	static const mbchar *u2d_prefix = "/wimlib-unmount-to-daemon-mq";
-	static const mbchar *d2u_prefix = "/wimlib-daemon-to-unmount-mq";
-	mbchar *dir_path;
-	mbchar *p;
+	static const char *u2d_prefix = "/wimlib-unmount-to-daemon-mq";
+	static const char *d2u_prefix = "/wimlib-daemon-to-unmount-mq";
+	char *dir_path;
+	char *p;
 	int ret;
 
  	dir_path = realpath(mount_dir, NULL);
@@ -1494,7 +1498,7 @@ message_loop(mqd_t mq,
  *  daemon to finish writing the WIM file.
  */
 static int
-execute_fusermount(const mbchar *dir)
+execute_fusermount(const char *dir)
 {
 	pid_t pid;
 	int ret;
@@ -1572,7 +1576,7 @@ static int wimfs_access(const char *path, int mask)
 #endif
 
 static int
-wimfs_chmod(const mbchar *path, mode_t mask)
+wimfs_chmod(const char *path, mode_t mask)
 {
 	struct wim_dentry *dentry;
 	struct wimfs_context *ctx = wimfs_get_context();
@@ -1593,7 +1597,7 @@ wimfs_chmod(const mbchar *path, mode_t mask)
 }
 
 static int
-wimfs_chown(const mbchar *path, uid_t uid, gid_t gid)
+wimfs_chown(const char *path, uid_t uid, gid_t gid)
 {
 	struct wim_dentry *dentry;
 	struct wimfs_context *ctx = wimfs_get_context();
@@ -1644,7 +1648,7 @@ static int wimfs_fallocate(const char *path, int mode,
 #endif
 
 static int
-wimfs_fgetattr(const mbchar *path, struct stat *stbuf,
+wimfs_fgetattr(const char *path, struct stat *stbuf,
 	       struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
@@ -1652,7 +1656,7 @@ wimfs_fgetattr(const mbchar *path, struct stat *stbuf,
 }
 
 static int
-wimfs_ftruncate(const mbchar *path, off_t size, struct fuse_file_info *fi)
+wimfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	int ret = ftruncate(fd->staging_fd, size);
@@ -1667,7 +1671,7 @@ wimfs_ftruncate(const mbchar *path, off_t size, struct fuse_file_info *fi)
  * Fills in a `struct stat' that corresponds to a file or directory in the WIM.
  */
 static int
-wimfs_getattr(const mbchar *path, struct stat *stbuf)
+wimfs_getattr(const char *path, struct stat *stbuf)
 {
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
@@ -1685,7 +1689,7 @@ wimfs_getattr(const mbchar *path, struct stat *stbuf)
 #ifdef ENABLE_XATTR
 /* Read an alternate data stream through the XATTR interface, or get its size */
 static int
-wimfs_getxattr(const mbchar *path, const mbchar *name, char *value,
+wimfs_getxattr(const char *path, const char *name, char *value,
 	       size_t size)
 {
 	int ret;
@@ -1730,10 +1734,10 @@ wimfs_getxattr(const mbchar *path, const mbchar *name, char *value,
 
 /* Create a hard link */
 static int
-wimfs_link(const mbchar *to, const mbchar *from)
+wimfs_link(const char *to, const char *from)
 {
 	struct wim_dentry *from_dentry, *from_dentry_parent;
-	const mbchar *link_name;
+	const char *link_name;
 	struct wim_inode *inode;
 	struct wim_lookup_table_entry *lte;
 	WIMStruct *w = wimfs_get_WIMStruct();
@@ -1777,13 +1781,13 @@ wimfs_link(const mbchar *to, const mbchar *from)
 
 #ifdef ENABLE_XATTR
 static int
-wimfs_listxattr(const mbchar *path, mbchar *list, size_t size)
+wimfs_listxattr(const char *path, char *list, size_t size)
 {
 	size_t needed_size;
 	struct wim_inode *inode;
 	struct wimfs_context *ctx = wimfs_get_context();
 	u16 i;
-	mbchar *p;
+	char *p;
 	bool size_only = (size == 0);
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
@@ -1797,7 +1801,7 @@ wimfs_listxattr(const mbchar *path, mbchar *list, size_t size)
 
 	p = list;
 	for (i = 0; i < inode->i_num_ads; i++) {
-		mbchar *stream_name_mbs;
+		char *stream_name_mbs;
 		size_t stream_name_mbs_nbytes;
 		int ret;
 
@@ -1805,12 +1809,8 @@ wimfs_listxattr(const mbchar *path, mbchar *list, size_t size)
 				     inode->i_ads_entries[i].stream_name_nbytes,
 				     &stream_name_mbs,
 				     &stream_name_mbs_nbytes);
-		if (ret) {
-			if (ret == WIMLIB_ERR_NOMEM)
-				return -ENOMEM;
-			else
-				return -EIO;
-		}
+		if (ret)
+			return -errno;
 
 		needed_size = stream_name_mbs_nbytes + 6;
 		if (!size_only) {
@@ -1831,7 +1831,7 @@ wimfs_listxattr(const mbchar *path, mbchar *list, size_t size)
 
 /* Create a directory in the WIM image. */
 static int
-wimfs_mkdir(const mbchar *path, mode_t mode)
+wimfs_mkdir(const char *path, mode_t mode)
 {
 	return create_dentry(fuse_get_context(), path, mode | S_IFDIR,
 			     FILE_ATTRIBUTE_DIRECTORY, NULL);
@@ -1839,9 +1839,9 @@ wimfs_mkdir(const mbchar *path, mode_t mode)
 
 /* Create a regular file or alternate data stream in the WIM image. */
 static int
-wimfs_mknod(const mbchar *path, mode_t mode, dev_t rdev)
+wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
-	const mbchar *stream_name;
+	const char *stream_name;
 	struct fuse_context *fuse_ctx = fuse_get_context();
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
 
@@ -1854,7 +1854,7 @@ wimfs_mknod(const mbchar *path, mode_t mode, dev_t rdev)
 		struct wim_ads_entry *new_entry;
 		struct wim_inode *inode;
 
-		mbchar *p = (mbchar*)stream_name - 1;
+		char *p = (char*)stream_name - 1;
 		wimlib_assert(*p == ':');
 		*p = '\0';
 
@@ -1879,7 +1879,7 @@ wimfs_mknod(const mbchar *path, mode_t mode, dev_t rdev)
 
 /* Open a file.  */
 static int
-wimfs_open(const mbchar *path, struct fuse_file_info *fi)
+wimfs_open(const char *path, struct fuse_file_info *fi)
 {
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
@@ -1937,7 +1937,7 @@ wimfs_open(const mbchar *path, struct fuse_file_info *fi)
 
 /* Opens a directory. */
 static int
-wimfs_opendir(const mbchar *path, struct fuse_file_info *fi)
+wimfs_opendir(const char *path, struct fuse_file_info *fi)
 {
 	struct wim_inode *inode;
 	int ret;
@@ -1960,7 +1960,7 @@ wimfs_opendir(const mbchar *path, struct fuse_file_info *fi)
  * Read data from a file in the WIM or in the staging directory.
  */
 static int
-wimfs_read(const mbchar *path, char *buf, size_t size,
+wimfs_read(const char *path, char *buf, size_t size,
 	   off_t offset, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
@@ -2010,7 +2010,7 @@ dentry_fuse_fill(struct wim_dentry *dentry, void *arg)
 {
 	struct fill_params *fill_params = arg;
 
-	mbchar *file_name_mbs;
+	char *file_name_mbs;
 	size_t file_name_mbs_nbytes;
 	int ret;
 
@@ -2018,12 +2018,9 @@ dentry_fuse_fill(struct wim_dentry *dentry, void *arg)
 			     dentry->file_name_nbytes,
 			     &file_name_mbs,
 			     &file_name_mbs_nbytes);
-	if (ret) {
-		if (ret == WIMLIB_ERR_NOMEM)
-			return -ENOMEM;
-		else
-			return -EILSEQ;
-	}
+	if (ret)
+		return -errno;
+
 	ret = fill_params->filler(fill_params->buf, file_name_mbs, NULL, 0);
 	FREE(file_name_mbs);
 	return ret;
@@ -2032,7 +2029,7 @@ dentry_fuse_fill(struct wim_dentry *dentry, void *arg)
 /* Fills in the entries of the directory specified by @path using the
  * FUSE-provided function @filler.  */
 static int
-wimfs_readdir(const mbchar *path, void *buf, fuse_fill_dir_t filler,
+wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	      off_t offset, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
@@ -2057,7 +2054,7 @@ wimfs_readdir(const mbchar *path, void *buf, fuse_fill_dir_t filler,
 
 
 static int
-wimfs_readlink(const mbchar *path, char *buf, size_t buf_len)
+wimfs_readlink(const char *path, char *buf, size_t buf_len)
 {
 	struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode = wim_pathname_to_inode(ctx->wim, path);
@@ -2076,7 +2073,7 @@ wimfs_readlink(const mbchar *path, char *buf, size_t buf_len)
 
 /* Close a file. */
 static int
-wimfs_release(const mbchar *path, struct fuse_file_info *fi)
+wimfs_release(const char *path, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	return close_wimfs_fd(fd);
@@ -2084,7 +2081,7 @@ wimfs_release(const mbchar *path, struct fuse_file_info *fi)
 
 /* Close a directory */
 static int
-wimfs_releasedir(const mbchar *path, struct fuse_file_info *fi)
+wimfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	return close_wimfs_fd(fd);
@@ -2093,7 +2090,7 @@ wimfs_releasedir(const mbchar *path, struct fuse_file_info *fi)
 #ifdef ENABLE_XATTR
 /* Remove an alternate data stream through the XATTR interface */
 static int
-wimfs_removexattr(const mbchar *path, const mbchar *name)
+wimfs_removexattr(const char *path, const char *name)
 {
 	struct wim_inode *inode;
 	struct wim_ads_entry *ads_entry;
@@ -2121,7 +2118,7 @@ wimfs_removexattr(const mbchar *path, const mbchar *name)
 
 /* Renames a file or directory.  See rename (3) */
 static int
-wimfs_rename(const mbchar *from, const mbchar *to)
+wimfs_rename(const char *from, const char *to)
 {
 	struct wim_dentry *src;
 	struct wim_dentry *dst;
@@ -2179,7 +2176,7 @@ wimfs_rename(const mbchar *from, const mbchar *to)
 
 /* Remove a directory */
 static int
-wimfs_rmdir(const mbchar *path)
+wimfs_rmdir(const char *path)
 {
 	struct wim_dentry *dentry;
 	WIMStruct *w = wimfs_get_WIMStruct();
@@ -2201,7 +2198,7 @@ wimfs_rmdir(const mbchar *path)
 #ifdef ENABLE_XATTR
 /* Write an alternate data stream through the XATTR interface */
 static int
-wimfs_setxattr(const mbchar *path, const mbchar *name,
+wimfs_setxattr(const char *path, const char *name,
 	       const char *value, size_t size, int flags)
 {
 	struct wim_ads_entry *existing_ads_entry;
@@ -2243,7 +2240,7 @@ wimfs_setxattr(const mbchar *path, const mbchar *name,
 #endif
 
 static int
-wimfs_symlink(const mbchar *to, const mbchar *from)
+wimfs_symlink(const char *to, const char *from)
 {
 	struct fuse_context *fuse_ctx = fuse_get_context();
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
@@ -2267,7 +2264,7 @@ wimfs_symlink(const mbchar *to, const mbchar *from)
 
 /* Reduce the size of a file */
 static int
-wimfs_truncate(const mbchar *path, off_t size)
+wimfs_truncate(const char *path, off_t size)
 {
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
@@ -2307,7 +2304,7 @@ wimfs_truncate(const mbchar *path, off_t size)
 
 /* Unlink a non-directory or alternate data stream */
 static int
-wimfs_unlink(const mbchar *path)
+wimfs_unlink(const char *path)
 {
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
@@ -2336,7 +2333,7 @@ wimfs_unlink(const mbchar *path)
  * Note that alternate data streams do not have their own timestamps.
  */
 static int
-wimfs_utimens(const mbchar *path, const struct timespec tv[2])
+wimfs_utimens(const char *path, const struct timespec tv[2])
 {
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
@@ -2363,7 +2360,7 @@ wimfs_utimens(const mbchar *path, const struct timespec tv[2])
 }
 #else /* HAVE_UTIMENSAT */
 static int
-wimfs_utime(const mbchar *path, struct utimbuf *times)
+wimfs_utime(const char *path, struct utimbuf *times)
 {
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
@@ -2384,7 +2381,7 @@ wimfs_utime(const mbchar *path, struct utimbuf *times)
  * It may be an alternate data stream, but here we don't even notice because we
  * just get a lookup table entry. */
 static int
-wimfs_write(const mbchar *path, const char *buf, size_t size,
+wimfs_write(const char *path, const char *buf, size_t size,
 	    off_t offset, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
@@ -2474,15 +2471,15 @@ static struct fuse_operations wimfs_operations = {
 
 /* Mounts an image from a WIM file. */
 WIMLIBAPI int
-wimlib_mount_image(WIMStruct *wim, int image, const mbchar *dir,
+wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		   int mount_flags, WIMStruct **additional_swms,
 		   unsigned num_additional_swms,
-		   const mbchar *staging_dir)
+		   const char *staging_dir)
 {
 	int argc;
-	mbchar *argv[16];
+	char *argv[16];
 	int ret;
-	mbchar *dir_copy;
+	char *dir_copy;
 	struct wim_lookup_table *joined_tab, *wim_tab_save;
 	struct wim_image_metadata *imd;
 	struct wimfs_context ctx;
@@ -2594,7 +2591,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const mbchar *dir,
 	/*
 	 * We provide the use_ino option to the FUSE mount because we are going
 	 * to assign inode numbers ourselves. */
-	mbchar optstring[256] =
+	char optstring[256] =
 		"use_ino"
 		",subtype=wimfs"
 		",attr_timeout=0"
@@ -2689,7 +2686,7 @@ out:
  * wimlib_mount_image().
  */
 WIMLIBAPI int
-wimlib_unmount_image(const mbchar *dir, int unmount_flags,
+wimlib_unmount_image(const char *dir, int unmount_flags,
 		     wimlib_progress_func_t progress_func)
 {
 	int ret;
@@ -2752,17 +2749,17 @@ mount_unsupported_error()
 }
 
 WIMLIBAPI int
-wimlib_unmount_image(const mbchar *dir, int unmount_flags,
+wimlib_unmount_image(const tchar *dir, int unmount_flags,
 		     wimlib_progress_func_t progress_func)
 {
 	return mount_unsupported_error();
 }
 
 WIMLIBAPI int
-wimlib_mount_image(WIMStruct *wim, int image, const mbchar *dir,
+wimlib_mount_image(WIMStruct *wim, int image, const tchar *dir,
 		   int mount_flags, WIMStruct **additional_swms,
 		   unsigned num_additional_swms,
-		   const mbchar *staging_dir)
+		   const tchar *staging_dir)
 {
 	return mount_unsupported_error();
 }

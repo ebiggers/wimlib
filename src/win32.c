@@ -837,9 +837,9 @@ out:
 
 /* Replacement for POSIX fnmatch() (partial functionality only) */
 int
-fnmatch(const char *pattern, const char *string, int flags)
+fnmatch(const wchar_t *pattern, const wchar_t *string, int flags)
 {
-	if (PathMatchSpecA(string, pattern))
+	if (PathMatchSpecW(string, pattern))
 		return 0;
 	else
 		return FNM_NOMATCH;
@@ -1125,32 +1125,22 @@ out:
 
 /* Extract a file, directory, reparse point, or hard link to an
  * already-extracted file using the Win32 API */
-int win32_do_apply_dentry(const mbchar *output_path,
-			  size_t output_path_nbytes,
+int win32_do_apply_dentry(const wchar_t *output_path,
+			  size_t output_path_num_wchars,
 			  struct wim_dentry *dentry,
 			  struct apply_args *args)
 {
-	wchar_t *utf16le_path;
-	size_t utf16le_path_nbytes;
-	DWORD err;
-	int ret;
-	struct wim_inode *inode = dentry->d_inode;
-
-	ret = mbs_to_utf16le(output_path, output_path_nbytes,
-			     &utf16le_path, &utf16le_path_nbytes);
-	if (ret)
-		return ret;
-
+	ret = 0;
 	if (inode->i_nlink > 1 && inode->i_extracted_file != NULL) {
 		/* Linked file, with another name already extracted.  Create a
 		 * hard link. */
 		DEBUG("Creating hard link \"%ls => %ls\"",
-		      utf16le_path, inode->i_extracted_file);
+		      output_path, inode->i_extracted_file);
 		if (!CreateHardLinkW(utf16le_path, inode->i_extracted_file, NULL))
 		{
 			err = GetLastError();
 			ERROR("Can't create hard link \"%ls => %ls\"",
-			      utf16le_path, inode->i_extracted_file);
+			      output_path, inode->i_extracted_file);
 			ret = WIMLIB_ERR_LINK;
 			win32_error(err);
 		}
@@ -1163,23 +1153,21 @@ int win32_do_apply_dentry(const mbchar *output_path,
 		else
 			security_data = wim_const_security_data(args->w);
 
-		ret = win32_extract_streams(inode, utf16le_path,
+		ret = win32_extract_streams(inode, output_path,
 					    &args->progress.extract.completed_bytes,
 					    security_data);
 		if (ret)
-			goto out_free_utf16_path;
+			return ret;
 
 		if (inode->i_nlink > 1) {
 			/* Save extracted path for a later call to
 			 * CreateHardLinkW() if this inode has multiple links.
 			 * */
-			inode->i_extracted_file = utf16le_path;
-			goto out;
+			inode->i_extracted_file = WSTRDUP(utf16le_path);
+			if (!inode->i_extracted_file)
+				ret = WIMLIB_ERR_NOMEM;
 		}
 	}
-out_free_utf16_path:
-	FREE(utf16le_path);
-out:
 	return ret;
 }
 
@@ -1271,20 +1259,20 @@ win32_get_number_of_processors()
 /* Replacement for POSIX-2008 realpath().  Warning: partial functionality only
  * (resolved_path must be NULL).   Also I highly doubt that GetFullPathName
  * really does the right thing under all circumstances. */
-mbchar *
-realpath(const mbchar *path, mbchar *resolved_path)
+wchar_t *
+realpath(const wchar_t *path, wchar_t *resolved_path)
 {
 	DWORD ret;
 	wimlib_assert(resolved_path == NULL);
 
-	ret = GetFullPathNameA(path, 0, NULL, NULL);
+	ret = GetFullPathNameW(path, 0, NULL, NULL);
 	if (!ret)
 		goto fail_win32;
 
-	resolved_path = MALLOC(ret);
+	resolved_path = TMALLOC(ret);
 	if (!resolved_path)
 		goto fail;
-	ret = GetFullPathNameA(path, ret, resolved_path, NULL);
+	ret = GetFullPathNameW(path, ret, resolved_path, NULL);
 	if (!ret) {
 		free(resolved_path);
 		goto fail_win32;
@@ -1305,19 +1293,28 @@ nl_langinfo(nl_item item)
 	return buf;
 }
 
-/* rename() on Windows fails if the destination file exists.  Fix it. */
+/* rename() on Windows fails if the destination file exists.  And we need to
+ * make it work on wide characters.  Fix it. */
 int
-rename_replacement(const char *oldpath, const char *newpath)
+win32_rename_replacement(const wchar_t *oldpath, const wchar_t *newpath)
 {
-	if (MoveFileExA(oldpath, newpath, MOVEFILE_REPLACE_EXISTING)) {
+	if (MoveFileExW(oldpath, newpath, MOVEFILE_REPLACE_EXISTING)) {
 		return 0;
 	} else {
 		/* As usual, the possible error values are not documented */
 		DWORD err = GetLastError();
-		ERROR("MoveFileExA(): Can't rename \"%s\" to \"%s\"",
+		ERROR("MoveFileEx(): Can't rename \"%ls\" to \"%ls\"",
 		      oldpath, newpath);
 		win32_error(err);
 		errno = 0;
 		return -1;
 	}
+}
+
+/* truncate for wide-character paths */
+int
+win32_truncate_replacement(const char *path, off_t size)
+{
+	/* TODO */
+	wimlib_assert(0);
 }

@@ -36,7 +36,7 @@ struct wim_lookup_table {
 
 #ifdef WITH_NTFS_3G
 struct ntfs_location {
-	mbchar *path;
+	tchar *path;
 	utf16lechar *stream_name;
 	u16 stream_name_nchars;
 	struct _ntfs_volume **ntfs_vol_p;
@@ -154,18 +154,15 @@ struct wim_lookup_table_entry {
 		 * extraction mode.   In these mode, all identical files are linked
 		 * together, and @extracted_file will be set to the filename of the
 		 * first extracted file containing this stream.  */
-		mbchar *extracted_file;
+		tchar *extracted_file;
 	};
 
 	/* Pointers to somewhere where the stream is actually located.  See the
 	 * comments for the @resource_location field above. */
 	union {
 		WIMStruct *wim;
-		mbchar *file_on_disk;
-		mbchar *staging_file_name;
-	#ifdef __WIN32__
-		wchar_t *win32_file_on_disk;
-	#endif
+		tchar *file_on_disk;
+		tchar *staging_file_name;
 		u8 *attached_buffer;
 	#ifdef WITH_NTFS_3G
 		struct ntfs_location *ntfs_loc;
@@ -302,7 +299,7 @@ extern struct wim_lookup_table_entry *
 __lookup_resource(const struct wim_lookup_table *table, const u8 hash[]);
 
 extern int
-lookup_resource(WIMStruct *w, const mbchar *path,
+lookup_resource(WIMStruct *w, const tchar *path,
 		int lookup_flags, struct wim_dentry **dentry_ret,
 		struct wim_lookup_table_entry **lte_ret, u16 *stream_idx_ret);
 

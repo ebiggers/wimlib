@@ -94,6 +94,6 @@ sha1_final(u8 hash[SHA1_HASH_SIZE], SHA_CTX *ctx);
 #endif /* !WITH_LIBCRYPTO */
 
 extern int
-sha1sum(const mbchar *filename, u8 hash[SHA1_HASH_SIZE]);
+sha1sum(const tchar *filename, u8 hash[SHA1_HASH_SIZE]);
 
 #endif /* _WIMLIB_SHA1_H */

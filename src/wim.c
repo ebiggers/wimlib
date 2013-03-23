@@ -274,18 +274,18 @@ wimlib_get_compression_type(const WIMStruct *w)
 	return wim_hdr_flags_compression_type(w->hdr.flags);
 }
 
-WIMLIBAPI const char *
+WIMLIBAPI const tchar *
 wimlib_get_compression_type_string(int ctype)
 {
 	switch (ctype) {
 		case WIMLIB_COMPRESSION_TYPE_NONE:
-			return "None";
+			return T("None");
 		case WIMLIB_COMPRESSION_TYPE_LZX:
-			return "LZX";
+			return T("LZX");
 		case WIMLIB_COMPRESSION_TYPE_XPRESS:
-			return "XPRESS";
+			return T("XPRESS");
 		default:
-			return "Invalid";
+			return T("Invalid");
 	}
 }
 
@@ -295,33 +295,32 @@ wimlib_get_compression_type_string(int ctype)
  * starting at 1.
  */
 WIMLIBAPI int
-wimlib_resolve_image(WIMStruct *w, const utf8char *image_name_or_num)
+wimlib_resolve_image(WIMStruct *w, const tchar *image_name_or_num)
 {
-	char *p;
+	tchar *p;
 	int image;
 	int i;
 
 	if (!image_name_or_num || !*image_name_or_num)
 		return WIMLIB_NO_IMAGE;
 
-	if (strcmp(image_name_or_num, "all") == 0
-	    || strcmp(image_name_or_num, "*") == 0)
+	if (tstrcmp(image_name_or_num, T("all")) == 0
+	    || tstrcmp(image_name_or_num, T("*")) == 0)
 		return WIMLIB_ALL_IMAGES;
-	image = strtol(image_name_or_num, &p, 10);
-	if (p != image_name_or_num && *p == '\0' && image > 0) {
+	image = tstrtol(image_name_or_num, &p, 10);
+	if (p != image_name_or_num && *p == T('\0') && image > 0) {
 		if (image > w->hdr.image_count)
 			return WIMLIB_NO_IMAGE;
 		return image;
 	} else {
 		for (i = 1; i <= w->hdr.image_count; i++) {
-			if (strcmp(image_name_or_num,
-				   wimlib_get_image_name(w, i)) == 0)
+			if (tstrcmp(image_name_or_num,
+				    wimlib_get_image_name(w, i)) == 0)
 				return i;
 		}
 		return WIMLIB_NO_IMAGE;
 	}
 }
-
 
 /* Prints some basic information about a WIM file. */
 WIMLIBAPI void
@@ -330,21 +329,22 @@ wimlib_print_wim_information(const WIMStruct *w)
 	const struct wim_header *hdr;
 
 	hdr = &w->hdr;
-	puts("WIM Information:");
-	puts("----------------");
-	printf("Path:           %s\n", w->filename);
-	fputs ("GUID:           0x", stdout);
+	tputs(T("WIM Information:"));
+	tputs(T("----------------"));
+	tprintf(T("Path:           %"TS"\n"), w->filename);
+	tfputs(T("GUID:           0x"), stdout);
 	print_byte_field(hdr->guid, WIM_GID_LEN);
-	putchar('\n');
-	printf("Image Count:    %d\n", hdr->image_count);
-	printf("Compression:    %s\n", wimlib_get_compression_type_string(
-						wimlib_get_compression_type(w)));
-	printf("Part Number:    %d/%d\n", hdr->part_number, hdr->total_parts);
-	printf("Boot Index:     %d\n", hdr->boot_idx);
-	printf("Size:           %"PRIu64" bytes\n",
-				wim_info_get_total_bytes(w->wim_info));
-	printf("Integrity Info: %s\n", (w->hdr.integrity.offset != 0) ? "yes" : "no");
-	putchar('\n');
+	tputchar(T('\n'));
+	tprintf(T("Image Count:    %d\n"), hdr->image_count);
+	tprintf(T("Compression:    %"TS"\n"),
+		wimlib_get_compression_type_string(wimlib_get_compression_type(w)));
+	tprintf(T("Part Number:    %d/%d\n"), hdr->part_number, hdr->total_parts);
+	tprintf(T("Boot Index:     %d\n"), hdr->boot_idx);
+	tprintf(T("Size:           %"PRIu64" bytes\n"),
+		wim_info_get_total_bytes(w->wim_info));
+	tprintf(T("Integrity Info: %"TS"\n"),
+		(w->hdr.integrity.offset != 0) ? T("yes") : T("no"));
+	tputchar(T('\n'));
 }
 
 WIMLIBAPI bool
@@ -361,21 +361,21 @@ wimlib_print_available_images(const WIMStruct *w, int image)
 	int i;
 	int n;
 	if (image == WIMLIB_ALL_IMAGES) {
-		n = printf("Available Images:\n");
+		n = tprintf(T("Available Images:\n"));
 		first = 1;
 		last = w->hdr.image_count;
 	} else if (image >= 1 && image <= w->hdr.image_count) {
-		n = printf("Information for Image %d\n", image);
+		n = tprintf(T("Information for Image %d\n"), image);
 		first = image;
 		last = image;
 	} else {
-		printf("wimlib_print_available_images(): Invalid image %d",
-		       image);
+		tprintf(T("wimlib_print_available_images(): Invalid image %d"),
+			image);
 		return;
 	}
 	for (i = 0; i < n - 1; i++)
-		putchar('-');
-	putchar('\n');
+		tputchar(T('-'));
+	tputchar(T('\n'));
 	for (i = first; i <= last; i++)
 		print_image_info(w->wim_info, i);
 }
@@ -452,17 +452,17 @@ wimlib_get_boot_idx(const WIMStruct *w)
  * lookup table, and optionally checks the integrity.
  */
 static int
-begin_read(WIMStruct *w, const mbchar *in_wim_path, int open_flags,
+begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 	   wimlib_progress_func_t progress_func)
 {
 	int ret;
 	int xml_num_images;
 
-	DEBUG("Reading the WIM file `%s'", in_wim_path);
+	DEBUG("Reading the WIM file `%"TS"'", in_wim_path);
 
-	w->fp = fopen(in_wim_path, "rb");
+	w->fp = tfopen(in_wim_path, T("rb"));
 	if (!w->fp) {
-		ERROR_WITH_ERRNO("Failed to open `%s' for reading",
+		ERROR_WITH_ERRNO("Failed to open `%"TS"' for reading",
 				 in_wim_path);
 		return WIMLIB_ERR_OPEN;
 	}
@@ -496,7 +496,7 @@ begin_read(WIMStruct *w, const mbchar *in_wim_path, int open_flags,
 
 	/* If the boot index is invalid, print a warning and set it to 0 */
 	if (w->hdr.boot_idx > w->hdr.image_count) {
-		WARNING("In `%s', image %u is marked as bootable, "
+		WARNING("In `%"TS"', image %u is marked as bootable, "
 			"but there are only %u images in the WIM",
 			in_wim_path, w->hdr.boot_idx, w->hdr.image_count);
 		w->hdr.boot_idx = 0;
@@ -511,7 +511,7 @@ begin_read(WIMStruct *w, const mbchar *in_wim_path, int open_flags,
 	if (open_flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY) {
 		ret = check_wim_integrity(w, progress_func);
 		if (ret == WIM_INTEGRITY_NONEXISTENT) {
-			WARNING("No integrity information for `%s'; skipping "
+			WARNING("No integrity information for `%"TS"'; skipping "
 				"integrity check.", in_wim_path);
 		} else if (ret == WIM_INTEGRITY_NOT_OK) {
 			ERROR("WIM is not intact! (Failed integrity check)");
@@ -574,14 +574,14 @@ begin_read(WIMStruct *w, const mbchar *in_wim_path, int open_flags,
 
 	xml_num_images = wim_info_get_num_images(w->wim_info);
 	if (xml_num_images != w->hdr.image_count) {
-		ERROR("In the file `%s', there are %u <IMAGE> elements "
+		ERROR("In the file `%"TS"', there are %u <IMAGE> elements "
 		      "in the XML data,", in_wim_path, xml_num_images);
 		ERROR("but %u images in the WIM!  There must be exactly one "
 		      "<IMAGE> element per image.", w->hdr.image_count);
 		return WIMLIB_ERR_IMAGE_COUNT;
 	}
 
-	DEBUG("Done beginning read of WIM file `%s'.", in_wim_path);
+	DEBUG("Done beginning read of WIM file `%"TS"'.", in_wim_path);
 	return 0;
 }
 
@@ -589,7 +589,7 @@ begin_read(WIMStruct *w, const mbchar *in_wim_path, int open_flags,
  * Opens a WIM file and creates a WIMStruct for it.
  */
 WIMLIBAPI int
-wimlib_open_wim(const mbchar *wim_file, int open_flags,
+wimlib_open_wim(const tchar *wim_file, int open_flags,
 		WIMStruct **w_ret,
 		wimlib_progress_func_t progress_func)
 {

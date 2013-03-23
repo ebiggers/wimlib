@@ -40,7 +40,13 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
-#include <string.h>
+
+#if TCHAR_IS_UTF16LE
+#  include <wchar.h>
+#else
+#  include <string.h>
+#endif
+
 #include <unistd.h>
 
 #ifdef HAVE_ALLOCA_H
@@ -101,9 +107,9 @@ err:
 
 #ifndef __WIN32__
 /*
- * build_dentry_tree():
+ * unix_build_dentry_tree():
  * 	Recursively builds a tree of WIM dentries from an on-disk directory
- * 	tree.
+ * 	tree (UNIX version; no NTFS-specific data is captured).
  *
  * @root_ret:   Place to return a pointer to the root of the dentry tree.  Only
  *		modified if successful.  Set to NULL if the file or directory was
@@ -136,7 +142,7 @@ err:
  */
 static int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
-		       const mbchar *root_disk_path,
+		       const char *root_disk_path,
 		       struct wim_lookup_table *lookup_table,
 		       struct wim_security_data *sd,
 		       const struct capture_config *config,
@@ -276,7 +282,7 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 			DEBUG("Add lte reference %u for `%s'", lte->refcnt,
 			      root_disk_path);
 		} else {
-			mbchar *file_on_disk = STRDUP(root_disk_path);
+			char *file_on_disk = STRDUP(root_disk_path);
 			if (!file_on_disk) {
 				ERROR("Failed to allocate memory for file path");
 				ret = WIMLIB_ERR_NOMEM;
@@ -314,7 +320,7 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 
 		/* Buffer for names of files in directory. */
 		size_t len = strlen(root_disk_path);
-		mbchar name[len + 1 + FILENAME_MAX + 1];
+		char name[len + 1 + FILENAME_MAX + 1];
 		memcpy(name, root_disk_path, len);
 		name[len] = '/';
 
@@ -358,7 +364,7 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 		 * drive letter).
 		 */
 
-		mbchar deref_name_buf[4096];
+		char deref_name_buf[4096];
 		ssize_t deref_name_len;
 
 		deref_name_len = readlink(root_disk_path, deref_name_buf,
@@ -410,10 +416,11 @@ enum pattern_type {
 #define COMPAT_DEFAULT_CONFIG
 
 /* Default capture configuration file when none is specified. */
-static const mbchar *default_config =
+static const tchar *default_config =
 #ifdef COMPAT_DEFAULT_CONFIG /* XXX: This policy is being moved to library
 				users.  The next ABI-incompatible library
 				version will default to the empty string here. */
+T(
 "[ExclusionList]\n"
 "\\$ntfs.log\n"
 "\\hiberfil.sys\n"
@@ -426,9 +433,10 @@ static const mbchar *default_config =
 "*.mp3\n"
 "*.zip\n"
 "*.cab\n"
-"\\WINDOWS\\inf\\*.pnf\n";
+"\\WINDOWS\\inf\\*.pnf\n"
+);
 #else
-"";
+T("");
 #endif
 
 static void
@@ -450,9 +458,9 @@ destroy_capture_config(struct capture_config *config)
 }
 
 static int
-pattern_list_add_pattern(struct pattern_list *list, const mbchar *pattern)
+pattern_list_add_pattern(struct pattern_list *list, const tchar *pattern)
 {
-	const mbchar **pats;
+	const tchar **pats;
 	if (list->num_pats >= list->num_allocated_pats) {
 		pats = REALLOC(list->pats,
 			       sizeof(list->pats[0]) * (list->num_allocated_pats + 8));
@@ -469,33 +477,34 @@ pattern_list_add_pattern(struct pattern_list *list, const mbchar *pattern)
  * `struct capture_config'. */
 static int
 init_capture_config(struct capture_config *config,
-		    const mbchar *_config_str, size_t config_len)
+		    const tchar *_config_str,
+		    size_t config_num_tchars)
 {
-	mbchar *config_str;
-	mbchar *p;
-	mbchar *eol;
-	mbchar *next_p;
-	size_t bytes_remaining;
+	tchar *config_str;
+	tchar *p;
+	tchar *eol;
+	tchar *next_p;
+	size_t num_tchars_remaining;
 	enum pattern_type type = NONE;
 	int ret;
 	unsigned long line_no = 0;
 
-	DEBUG("config_len = %zu", config_len);
-	bytes_remaining = config_len;
+	DEBUG("config_num_tchars = %zu", config_num_tchars);
+	num_tchars_remaining = config_num_tchars;
 	memset(config, 0, sizeof(*config));
-	config_str = MALLOC(config_len);
+	config_str = TMALLOC(config_num_tchars);
 	if (!config_str) {
 		ERROR("Could not duplicate capture config string");
 		return WIMLIB_ERR_NOMEM;
 	}
 
-	memcpy(config_str, _config_str, config_len);
+	tmemcpy(config_str, _config_str, config_num_tchars);
 	next_p = config_str;
 	config->config_str = config_str;
-	while (bytes_remaining) {
+	while (num_tchars_remaining != 0) {
 		line_no++;
 		p = next_p;
-		eol = memchr(p, '\n', bytes_remaining);
+		eol = tmemchr(p, T('\n'), num_tchars_remaining);
 		if (!eol) {
 			ERROR("Expected end-of-line in capture config file on "
 			      "line %lu", line_no);
@@ -504,50 +513,51 @@ init_capture_config(struct capture_config *config,
 		}
 
 		next_p = eol + 1;
-		bytes_remaining -= (next_p - p);
+		num_tchars_remaining -= (next_p - p);
 		if (eol == p)
 			continue;
 
-		if (*(eol - 1) == '\r')
+		if (*(eol - 1) == T('\r'))
 			eol--;
-		*eol = '\0';
+		*eol = T('\0');
 
 		/* Translate backslash to forward slash */
-		for (mbchar *pp = p; pp != eol; pp++)
-			if (*pp == '\\')
-				*pp = '/';
+		for (tchar *pp = p; pp != eol; pp++)
+			if (*pp == T('\\'))
+				*pp = T('/');
 
-		/* Remove drive letter */
-		if (eol - p > 2 && isalpha(*p) && *(p + 1) == ':')
+		/* Remove drive letter 
+		 * XXX maybe keep drive letter on Windows */
+		if (eol - p > 2 && istalpha(*p) && *(p + 1) == T(':'))
 			p += 2;
 
 		ret = 0;
-		if (strcmp(p, "[ExclusionList]") == 0)
+		if (tstrcmp(p, T("[ExclusionList]")) == 0)
 			type = EXCLUSION_LIST;
-		else if (strcmp(p, "[ExclusionException]") == 0)
+		else if (tstrcmp(p, T("[ExclusionException]")) == 0)
 			type = EXCLUSION_EXCEPTION;
-		else if (strcmp(p, "[CompressionExclusionList]") == 0)
+		else if (tstrcmp(p, T("[CompressionExclusionList]")) == 0)
 			type = COMPRESSION_EXCLUSION_LIST;
-		else if (strcmp(p, "[AlignmentList]") == 0)
+		else if (tstrcmp(p, T("[AlignmentList]")) == 0)
 			type = ALIGNMENT_LIST;
-		else if (p[0] == '[' && strrchr(p, ']')) {
-			ERROR("Unknown capture configuration section `%s'", p);
+		else if (p[0] == T('[') && tstrrchr(p, T(']'))) {
+			ERROR("Unknown capture configuration section \"%"TS"\"", p);
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 		} else switch (type) {
 		case EXCLUSION_LIST:
-			DEBUG("Adding pattern \"%s\" to exclusion list", p);
+			DEBUG("Adding pattern \"%"TS"\" to exclusion list", p);
 			ret = pattern_list_add_pattern(&config->exclusion_list, p);
 			break;
 		case EXCLUSION_EXCEPTION:
-			DEBUG("Adding pattern \"%s\" to exclusion exception list", p);
+			DEBUG("Adding pattern \"%"TS"\" to exclusion exception list", p);
 			ret = pattern_list_add_pattern(&config->exclusion_exception, p);
 			break;
 		case COMPRESSION_EXCLUSION_LIST:
-			DEBUG("Adding pattern \"%s\" to compression exclusion list", p);
+			DEBUG("Adding pattern \"%"TS"\" to compression exclusion list", p);
 			ret = pattern_list_add_pattern(&config->compression_exclusion_list, p);
 			break;
 		case ALIGNMENT_LIST:
-			DEBUG("Adding pattern \"%s\" to alignment list", p);
+			DEBUG("Adding pattern \"%"TS"\" to alignment list", p);
 			ret = pattern_list_add_pattern(&config->alignment_list, p);
 			break;
 		default:
@@ -567,30 +577,30 @@ out_destroy:
 }
 
 static int capture_config_set_prefix(struct capture_config *config,
-				     const mbchar *_prefix)
+				     const tchar *_prefix)
 {
-	mbchar *prefix = STRDUP(_prefix);
+	tchar *prefix = TSTRDUP(_prefix);
 
 	if (!prefix)
 		return WIMLIB_ERR_NOMEM;
 	FREE(config->prefix);
 	config->prefix = prefix;
-	config->prefix_len = strlen(prefix);
+	config->prefix_num_tchars = tstrlen(prefix);
 	return 0;
 }
 
-static bool match_pattern(const mbchar *path,
-			  const mbchar *path_basename,
+static bool match_pattern(const tchar *path,
+			  const tchar *path_basename,
 			  const struct pattern_list *list)
 {
 	for (size_t i = 0; i < list->num_pats; i++) {
-		const mbchar *pat = list->pats[i];
-		const mbchar *string;
+		const tchar *pat = list->pats[i];
+		const tchar *string;
 		if (pat[0] == '/')
 			/* Absolute path from root of capture */
 			string = path;
 		else {
-			if (strchr(pat, '/'))
+			if (tstrchr(pat, T('/')))
 				/* Relative path from root of capture */
 				string = path + 1;
 			else
@@ -606,7 +616,7 @@ static bool match_pattern(const mbchar *path,
 				#endif
 			    ) == 0)
 		{
-			DEBUG("`%s' matches the pattern \"%s\"",
+			DEBUG("\"%"TS"\" matches the pattern \"%"TS"\"",
 			      string, pat);
 			return true;
 		}
@@ -624,15 +634,15 @@ static bool match_pattern(const mbchar *path,
  * directory.
  */
 bool
-exclude_path(const mbchar *path, const struct capture_config *config,
+exclude_path(const tchar *path, const struct capture_config *config,
 	     bool exclude_prefix)
 {
-	const mbchar *basename = path_basename(path);
+	const tchar *basename = path_basename(path);
 	if (exclude_prefix) {
-		wimlib_assert(strlen(path) >= config->prefix_len);
-		if (memcmp(config->prefix, path, config->prefix_len) == 0
-		     && path[config->prefix_len] == '/')
-			path += config->prefix_len;
+		wimlib_assert(tstrlen(path) >= config->prefix_num_tchars);
+		if (tmemcmp(config->prefix, path, config->prefix_num_tchars) == 0
+		     && path[config->prefix_num_tchars] == T('/'))
+			path += config->prefix_num_tchars;
 	}
 	return match_pattern(path, basename, &config->exclusion_list) &&
 		!match_pattern(path, basename, &config->exclusion_exception);
@@ -641,58 +651,56 @@ exclude_path(const mbchar *path, const struct capture_config *config,
 
 /* Strip leading and trailing forward slashes from a string.  Modifies it in
  * place and returns the stripped string. */
-static const char *
-canonicalize_target_path(char *target_path)
+static const tchar *
+canonicalize_target_path(tchar *target_path)
 {
-	char *p;
+	tchar *p;
 	if (target_path == NULL)
-		return "";
+		return T("");
 	for (;;) {
-		if (*target_path == '\0')
+		if (*target_path == T('\0'))
 			return target_path;
-		else if (*target_path == '/')
+		else if (*target_path == T('/'))
 			target_path++;
 		else
 			break;
 	}
 
-	p = target_path + strlen(target_path) - 1;
-	while (*p == '/')
-		*p-- = '\0';
+	p = target_path + tstrlen(target_path) - 1;
+	while (*p == T('/'))
+		*p-- = T('\0');
 	return target_path;
 }
 
-#ifdef __WIN32__
 static void
-zap_backslashes(char *s)
+zap_backslashes(tchar *s)
 {
 	while (*s) {
-		if (*s == '\\')
-			*s = '/';
+		if (*s == T('\\'))
+			*s = T('/');
 		s++;
 	}
 }
-#endif
 
 /* Strip leading and trailing slashes from the target paths */
 static void
 canonicalize_targets(struct wimlib_capture_source *sources, size_t num_sources)
 {
 	while (num_sources--) {
-		DEBUG("Canonicalizing { source: \"%s\", target=\"%s\"}",
+		DEBUG("Canonicalizing { source: \"%"TS"\", target=\"%"TS"\"}",
 		      sources->fs_source_path,
 		      sources->wim_target_path);
-#ifdef __WIN32__
+
 		/* The Windows API can handle forward slashes.  Just get rid of
 		 * backslashes to avoid confusing other parts of the library
 		 * code. */
 		zap_backslashes(sources->fs_source_path);
 		if (sources->wim_target_path)
 			zap_backslashes(sources->wim_target_path);
-#endif
+
 		sources->wim_target_path =
-			(char*)canonicalize_target_path(sources->wim_target_path);
-		DEBUG("Canonical target: \"%s\"", sources->wim_target_path);
+			(tchar*)canonicalize_target_path(sources->wim_target_path);
+		DEBUG("Canonical target: \"%"TS"\"", sources->wim_target_path);
 		sources++;
 	}
 }
@@ -701,7 +709,7 @@ static int
 capture_source_cmp(const void *p1, const void *p2)
 {
 	const struct wimlib_capture_source *s1 = p1, *s2 = p2;
-	return strcmp(s1->wim_target_path, s2->wim_target_path);
+	return tstrcmp(s1->wim_target_path, s2->wim_target_path);
 }
 
 /* Sorts the capture sources lexicographically by target path.  This occurs
@@ -772,12 +780,12 @@ check_sorted_sources(struct wimlib_capture_source *sources, size_t num_sources,
 /* Creates a new directory to place in the WIM image.  This is to create parent
  * directories that are not part of any target as needed.  */
 static int
-new_filler_directory(const mbchar *name, struct wim_dentry **dentry_ret)
+new_filler_directory(const tchar *name, struct wim_dentry **dentry_ret)
 {
 	int ret;
 	struct wim_dentry *dentry;
 
-	DEBUG("Creating filler directory \"%s\"", name);
+	DEBUG("Creating filler directory \"%"TS"\"", name);
 	ret = new_dentry_with_inode(name, &dentry);
 	if (ret == 0) {
 		/* Leave the inode number as 0 for now.  The final inode number
@@ -797,12 +805,12 @@ do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 {
 	struct rb_root *rb_root;
 
-	DEBUG("Doing overlay \"%W\" => \"%W\"",
+	DEBUG("Doing overlay \"%"WS"\" => \"%"WS"\"",
 	      branch->file_name, target->file_name);
 
 	if (!dentry_is_directory(target)) {
-		ERROR("Cannot overlay directory \"%W\" over non-directory",
-		      branch->file_name);
+		ERROR("Cannot overlay directory \"%"WS"\" "
+		      "over non-directory", branch->file_name);
 		return WIMLIB_ERR_INVALID_OVERLAY;
 	}
 
@@ -815,8 +823,8 @@ do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 			/* Revert the change to avoid leaking the directory tree
 			 * rooted at @child */
 			dentry_add_child(branch, child);
-			ERROR("Overlay error: file \"%W\" already exists "
-			      "as a child of \"%W\"",
+			ERROR("Overlay error: file \"%"WS"\" already exists "
+			      "as a child of \"%"WS"\"",
 			      child->file_name, target->file_name);
 			return WIMLIB_ERR_INVALID_OVERLAY;
 		}
@@ -839,16 +847,16 @@ do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
  */
 static int
 attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
-	      mbchar *target_path)
+	      tchar *target_path)
 {
-	mbchar *slash;
+	tchar *slash;
 	struct wim_dentry *dentry, *parent, *target;
 	int ret;
 
-	DEBUG("Attaching branch \"%W\" => \"%s\"",
+	DEBUG("Attaching branch \"%"WS"\" => \"%"TS"\"",
 	      branch->file_name, target_path);
 
-	if (*target_path == '\0') {
+	if (*target_path == T('\0')) {
 		/* Target: root directory */
 		if (*root_p) {
 			/* Overlay on existing root */
@@ -863,7 +871,7 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	/* Adding a non-root branch.  Create root if it hasn't been created
 	 * already. */
 	if (!*root_p) {
-		ret  = new_filler_directory("", root_p);
+		ret  = new_filler_directory(T(""), root_p);
 		if (ret)
 			return ret;
 	}
@@ -871,7 +879,7 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	/* Walk the path to the branch, creating filler directories as needed.
 	 * */
 	parent = *root_p;
-	while ((slash = strchr(target_path, '/'))) {
+	while ((slash = tstrchr(target_path, T('/')))) {
 		*slash = '\0';
 		dentry = get_dentry_child_with_name(parent, target_path);
 		if (!dentry) {
@@ -887,7 +895,7 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 		 * trailing slashes were tripped.  */
 		do {
 			++target_path;
-		} while (*target_path == '/');
+		} while (*target_path == T('/'));
 	}
 
 	/* If the target path already existed, overlay the branch onto it.
@@ -906,14 +914,14 @@ WIMLIBAPI int
 wimlib_add_image_multisource(WIMStruct *w,
 			     struct wimlib_capture_source *sources,
 			     size_t num_sources,
-			     const utf8char *name,
-			     const mbchar *config_str,
+			     const tchar *name,
+			     const tchar *config_str,
 			     size_t config_len,
 			     int add_image_flags,
 			     wimlib_progress_func_t progress_func)
 {
 	int (*capture_tree)(struct wim_dentry **,
-			    const mbchar *,
+			    const tchar *,
 			    struct wim_lookup_table *,
 			    struct wim_security_data *,
 			    const struct capture_config *,
@@ -977,7 +985,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	}
 
 	if (wimlib_image_name_in_use(w, name)) {
-		ERROR("There is already an image named \"%U\" in the WIM!",
+		ERROR("There is already an image named \"%"TS"\" in the WIM!",
 		      name);
 		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 	}
@@ -985,7 +993,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	if (!config_str) {
 		DEBUG("Using default capture configuration");
 		config_str = default_config;
-		config_len = strlen(default_config);
+		config_len = tstrlen(default_config);
 	}
 	ret = init_capture_config(&config, config_str, config_len);
 	if (ret)
@@ -1017,7 +1025,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 		union wimlib_progress_info progress;
 
 		DEBUG("Building dentry tree for source %zu of %zu "
-		      "(\"%s\" => \"%s\")", i + 1, num_sources,
+		      "(\"%"TS"\" => \"%"TS"\")", i + 1, num_sources,
 		      sources[i].fs_source_path,
 		      sources[i].wim_target_path);
 		if (progress_func) {
@@ -1039,7 +1047,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 				      flags,
 				      progress_func, extra_arg);
 		if (ret) {
-			ERROR("Failed to build dentry tree for `%s'",
+			ERROR("Failed to build dentry tree for `%"TS"'",
 			      sources[i].fs_source_path);
 			goto out_free_dentry_tree;
 		}
@@ -1063,7 +1071,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	}
 
 	if (root_dentry == NULL) {
-		ret = new_filler_directory("" , &root_dentry);
+		ret = new_filler_directory(T(""), &root_dentry);
 		if (ret)
 			goto out_free_dentry_tree;
 	}
@@ -1113,9 +1121,9 @@ out:
 
 WIMLIBAPI int
 wimlib_add_image(WIMStruct *w,
-		 const mbchar *source,
-		 const utf8char *name,
-		 const mbchar *config_str,
+		 const tchar *source,
+		 const tchar *name,
+		 const tchar *config_str,
 		 size_t config_len,
 		 int add_image_flags,
 		 wimlib_progress_func_t progress_func)
@@ -1123,7 +1131,7 @@ wimlib_add_image(WIMStruct *w,
 	if (!source || !*source)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	mbchar *fs_source_path = STRDUP(source);
+	tchar *fs_source_path = TSTRDUP(source);
 	int ret;
 	struct wimlib_capture_source capture_src = {
 		.fs_source_path = fs_source_path,

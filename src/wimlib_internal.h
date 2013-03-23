@@ -281,7 +281,7 @@ struct WIMStruct {
 	FILE *out_fp;
 
 	/* The name of the WIM file (if any) that has been opened. */
-	mbchar *filename;
+	tchar *filename;
 
 	/* The lookup table for the WIM file. */
 	struct wim_lookup_table *lookup_table;
@@ -354,7 +354,7 @@ resource_is_compressed(const struct resource_entry *entry)
 /* add_image.c */
 
 struct pattern_list {
-	const mbchar **pats;
+	const tchar **pats;
 	size_t num_pats;
 	size_t num_allocated_pats;
 };
@@ -364,12 +364,12 @@ struct capture_config {
 	struct pattern_list exclusion_exception;
 	struct pattern_list compression_exclusion_list;
 	struct pattern_list alignment_list;
-	mbchar *config_str;
-	mbchar *prefix;
-	size_t prefix_len;
+	tchar *config_str;
+	tchar *prefix;
+	size_t prefix_num_tchars;
 };
 extern bool
-exclude_path(const mbchar *path, const struct capture_config *config,
+exclude_path(const tchar *path, const struct capture_config *config,
 	     bool exclude_prefix);
 
 extern int
@@ -438,7 +438,7 @@ write_metadata_resource(WIMStruct *w);
 
 struct apply_args {
 	WIMStruct *w;
-	const mbchar *target;
+	const tchar *target;
 	int extract_flags;
 	unsigned num_utime_warnings;
 	struct list_head *stream_list;
@@ -462,7 +462,7 @@ libntfs3g_global_init();
 /* ntfs-capture.c */
 extern int
 build_dentry_tree_ntfs(struct wim_dentry **root_p,
-		       const mbchar *device,
+		       const tchar *device,
 		       struct wim_lookup_table *lookup_table,
 		       struct wim_security_data *sd,
 		       const struct capture_config *config,
@@ -545,14 +545,17 @@ extern void
 free_security_data(struct wim_security_data *sd);
 
 /* symlink.c */
+
+#ifndef __WIN32__
 ssize_t
 inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
 	       const WIMStruct *w, int read_resource_flags);
 
 extern int
-inode_set_symlink(struct wim_inode *inode, const mbchar *target,
+inode_set_symlink(struct wim_inode *inode, const char *target,
 		  struct wim_lookup_table *lookup_table,
 		  struct wim_lookup_table_entry **lte_ret);
+#endif
 
 /* verify.c */
 
@@ -591,7 +594,7 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 
 
 extern int
-begin_write(WIMStruct *w, const mbchar *path, int write_flags);
+begin_write(WIMStruct *w, const tchar *path, int write_flags);
 
 extern void
 close_wim_writable(WIMStruct *w);

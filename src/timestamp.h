@@ -72,6 +72,6 @@ extern u64
 get_wim_timestamp();
 
 extern void
-wim_timestamp_to_str(u64 timestamp, char *buf, size_t len);
+wim_timestamp_to_str(u64 timestamp, tchar *buf, size_t len);
 
 #endif

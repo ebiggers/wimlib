@@ -234,21 +234,21 @@ sha1_stream(FILE *fp, u8 md[SHA1_HASH_SIZE])
 /* Calculates the SHA1 message digest of a file.  @md must point to a buffer of
  * length 20 bytes into which the message digest is written. */
 int
-sha1sum(const mbchar *filename, u8 md[SHA1_HASH_SIZE])
+sha1sum(const tchar *filename, u8 md[SHA1_HASH_SIZE])
 {
 	FILE *fp;
 	int ret;
 
-	fp = fopen(filename, "rb");
+	fp = tfopen(filename, T("rb"));
 	if (!fp) {
-		ERROR_WITH_ERRNO("Cannot open the file `%s' for reading",
+		ERROR_WITH_ERRNO("Cannot open the file `%"TS"' for reading",
 				 filename);
 		return WIMLIB_ERR_OPEN;
 	}
 	ret = sha1_stream(fp, md);
 	if (ret != 0) {
 		ERROR_WITH_ERRNO("Error calculating SHA1 message digest of "
-				 "`%s'", filename);
+				 "`%"TS"'", filename);
 	}
 	fclose(fp);
 	return ret;

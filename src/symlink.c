@@ -31,7 +31,7 @@
 
 /* None of this file is ever needed in Win32 builds because the reparse point
  * buffers are not parsed. */
-#if !defined(__WIN32__) || defined(WITH_FUSE)
+#if !defined(__WIN32__)
 
 /*
  * Find the symlink target of a symbolic link or junction point in the WIM.
@@ -45,7 +45,7 @@
  * entry resource length.
  */
 static ssize_t
-get_symlink_name(const void *resource, size_t resource_len, mbchar *buf,
+get_symlink_name(const void *resource, size_t resource_len, char *buf,
 		 size_t buf_len, u32 reparse_tag)
 {
 	const u8 *p = resource;
@@ -53,11 +53,11 @@ get_symlink_name(const void *resource, size_t resource_len, mbchar *buf,
 	u16 substitute_name_len;
 	u16 print_name_offset;
 	u16 print_name_len;
-	mbchar *link_target;
+	char *link_target;
 	size_t link_target_len;
 	ssize_t ret;
 	unsigned header_size;
-	mbchar *translated_target;
+	char *translated_target;
 	bool is_absolute;
 	u32 flags;
 
@@ -85,10 +85,8 @@ get_symlink_name(const void *resource, size_t resource_len, mbchar *buf,
 	ret = utf16le_to_mbs((const utf16lechar*)(p + substitute_name_offset),
 			    substitute_name_len,
 			    &link_target, &link_target_len);
-	if (ret == WIMLIB_ERR_INVALID_UTF16_STRING)
-		return -EILSEQ;
-	else if (ret == WIMLIB_ERR_NOMEM)
-		return -ENOMEM;
+	if (ret)
+		return -errno;
 
 	wimlib_assert(ret == 0);
 
@@ -133,15 +131,15 @@ out:
 }
 
 static int
-make_symlink_reparse_data_buf(const mbchar *symlink_target,
+make_symlink_reparse_data_buf(const char *symlink_target,
 			      size_t *len_ret, void **buf_ret)
 {
 	utf16lechar *name_utf16le;
 	size_t name_utf16le_nbytes;
 	int ret;
 
-	ret = mbs_to_utf16le(symlink_target, strlen(symlink_target),
-			     &name_utf16le, &name_utf16le_nbytes);
+	ret = tstr_to_utf16le(symlink_target, strlen(symlink_target),
+			      &name_utf16le, &name_utf16le_nbytes);
 	if (ret != 0)
 		return ret;
 
@@ -177,7 +175,7 @@ make_symlink_reparse_data_buf(const mbchar *symlink_target,
  * WIM_IO_REPARSE_TAG_MOUNT_POINT).
  */
 ssize_t
-inode_readlink(const struct wim_inode *inode, mbchar *buf, size_t buf_len,
+inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
 	       const WIMStruct *w, int read_resource_flags)
 {
 	const struct wim_lookup_table_entry *lte;
@@ -213,7 +211,7 @@ inode_readlink(const struct wim_inode *inode, mbchar *buf, size_t buf_len,
  */
 int
 inode_set_symlink(struct wim_inode *inode,
-		  const mbchar *target,
+		  const char *target,
 		  struct wim_lookup_table *lookup_table,
 		  struct wim_lookup_table_entry **lte_ret)
 

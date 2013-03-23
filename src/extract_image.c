@@ -57,10 +57,14 @@
 #  include <alloca.h>
 #endif
 
+#if TCHAR_IS_UTF16LE
+#  include <wchar.h>
+#endif
+
 #ifndef __WIN32__
 static int
 extract_regular_file_linked(struct wim_dentry *dentry,
-			    const mbchar *output_path,
+			    const char *output_path,
 			    struct apply_args *args,
 			    struct wim_lookup_table_entry *lte)
 {
@@ -80,8 +84,8 @@ extract_regular_file_linked(struct wim_dentry *dentry,
 		int num_path_components;
 		int num_output_dir_path_components;
 		size_t extracted_file_len;
-		mbchar *p;
-		const mbchar *p2;
+		char *p;
+		const char *p2;
 		size_t i;
 
 		num_path_components =
@@ -95,7 +99,7 @@ extract_regular_file_linked(struct wim_dentry *dentry,
 		}
 		extracted_file_len = strlen(lte->extracted_file);
 
-		mbchar buf[extracted_file_len + 3 * num_path_components + 1];
+		char buf[extracted_file_len + 3 * num_path_components + 1];
 		p = &buf[0];
 
 		for (i = 0; i < num_path_components; i++) {
@@ -160,7 +164,7 @@ fd_apply_unix_data(int fd, const struct wimlib_unix_data *unix_data)
 }
 
 static int
-dir_apply_unix_data(const mbchar *dir, const struct wimlib_unix_data *unix_data)
+dir_apply_unix_data(const char *dir, const struct wimlib_unix_data *unix_data)
 {
 	int dfd = open(dir, O_RDONLY);
 	int ret;
@@ -180,7 +184,7 @@ dir_apply_unix_data(const mbchar *dir, const struct wimlib_unix_data *unix_data)
 static int
 extract_regular_file_unlinked(struct wim_dentry *dentry,
 			      struct apply_args *args,
-			      const mbchar *output_path,
+			      const char *output_path,
 			      struct wim_lookup_table_entry *lte)
 {
 	/* Normal mode of extraction.  Regular files and hard links are
@@ -271,7 +275,7 @@ out:
 static int
 extract_regular_file(struct wim_dentry *dentry,
 		     struct apply_args *args,
-		     const mbchar *output_path)
+		     const char *output_path)
 {
 	struct wim_lookup_table_entry *lte;
 	const struct wim_inode *inode = dentry->d_inode;
@@ -295,9 +299,9 @@ extract_regular_file(struct wim_dentry *dentry,
 static int
 extract_symlink(struct wim_dentry *dentry,
 		struct apply_args *args,
-		const mbchar *output_path)
+		const char *output_path)
 {
-	mbchar target[4096];
+	char target[4096];
 	ssize_t ret = inode_readlink(dentry->d_inode, target,
 				     sizeof(target), args->w, 0);
 	struct wim_lookup_table_entry *lte;
@@ -335,31 +339,31 @@ extract_symlink(struct wim_dentry *dentry,
 
 static int
 extract_directory(struct wim_dentry *dentry,
-		  const mbchar *output_path, bool is_root)
+		  const tchar *output_path, bool is_root)
 {
 	int ret;
 	struct stat stbuf;
 
-	ret = stat(output_path, &stbuf);
+	ret = tstat(output_path, &stbuf);
 	if (ret == 0) {
 		if (S_ISDIR(stbuf.st_mode)) {
 			/*if (!is_root)*/
 				/*WARNING("`%s' already exists", output_path);*/
 			goto dir_exists;
 		} else {
-			ERROR("`%s' is not a directory", output_path);
+			ERROR("`%"TS"' is not a directory", output_path);
 			return WIMLIB_ERR_MKDIR;
 		}
 	} else {
 		if (errno != ENOENT) {
-			ERROR_WITH_ERRNO("Failed to stat `%s'", output_path);
+			ERROR_WITH_ERRNO("Failed to stat `%"TS"'", output_path);
 			return WIMLIB_ERR_STAT;
 		}
 	}
 
-	if (mkdir(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH))
+	if (tmkdir(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH))
 	{
-		ERROR_WITH_ERRNO("Cannot create directory `%s'", output_path);
+		ERROR_WITH_ERRNO("Cannot create directory `%"TS"'", output_path);
 		return WIMLIB_ERR_MKDIR;
 	}
 dir_exists:
@@ -380,7 +384,7 @@ dir_exists:
 }
 
 #ifndef __WIN32__
-static int unix_do_apply_dentry(const mbchar *output_path,
+static int unix_do_apply_dentry(const char *output_path,
 				size_t output_path_len,
 				struct wim_dentry *dentry,
 				struct apply_args *args)
@@ -398,7 +402,7 @@ static int unix_do_apply_dentry(const mbchar *output_path,
 }
 
 static int
-unix_do_apply_dentry_timestamps(const mbchar *output_path,
+unix_do_apply_dentry_timestamps(const char *output_path,
 				size_t output_path_len,
 				const struct wim_dentry *dentry,
 				struct apply_args *args)
@@ -463,18 +467,19 @@ static int
 apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
+	tchar *output_path;
 	size_t len;
-	mbchar *output_path;
 
-	len = strlen(args->target);
+	len = tstrlen(args->target);
 	if (dentry_is_root(dentry)) {
-		output_path = (mbchar*)args->target;
+		output_path = (tchar*)args->target;
 	} else {
-		output_path = alloca(len + dentry->full_path_nbytes + 1);
-		memcpy(output_path, args->target, len);
+		output_path = alloca(len * sizeof(tchar) + dentry->full_path_nbytes +
+				     sizeof(tchar));
+		memcpy(output_path, args->target, len * sizeof(tchar));
 		memcpy(output_path + len, dentry->full_path, dentry->full_path_nbytes);
-		output_path[len + dentry->full_path_nbytes] = '\0';
-		len += dentry->full_path_nbytes;
+		len += dentry->full_path_nbytes / sizeof(tchar);
+		output_path[len] = T('\0');
 	}
 #ifdef __WIN32__
 	return win32_do_apply_dentry(output_path, len, dentry, args);
@@ -490,18 +495,20 @@ apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
 	size_t len;
-	mbchar *output_path;
+	tchar *output_path;
 
-	len = strlen(args->target);
+	len = tstrlen(args->target);
 	if (dentry_is_root(dentry)) {
-		output_path = (mbchar*)args->target;
+		output_path = (tchar*)args->target;
 	} else {
-		output_path = alloca(len + dentry->full_path_nbytes + 1);
-		memcpy(output_path, args->target, len);
+		output_path = alloca(len * sizeof(tchar) + dentry->full_path_nbytes +
+				     sizeof(tchar));
+		memcpy(output_path, args->target, len * sizeof(tchar));
 		memcpy(output_path + len, dentry->full_path, dentry->full_path_nbytes);
-		output_path[len + dentry->full_path_nbytes] = '\0';
-		len += dentry->full_path_nbytes;
+		len += dentry->full_path_nbytes / sizeof(tchar);
+		output_path[len] = T('\0');
 	}
+
 
 #ifdef __WIN32__
 	return win32_do_apply_dentry_timestamps(output_path, len, dentry, args);
@@ -758,7 +765,7 @@ apply_stream_list(struct list_head *stream_list,
  * @target. */
 static int
 extract_single_image(WIMStruct *w, int image,
-		     const mbchar *target, int extract_flags,
+		     const tchar *target, int extract_flags,
 		     wimlib_progress_func_t progress_func)
 {
 	int ret;
@@ -788,7 +795,8 @@ extract_single_image(WIMStruct *w, int image,
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 		args.vol = ntfs_mount(target, 0);
 		if (!args.vol) {
-			ERROR_WITH_ERRNO("Failed to mount NTFS volume `%s'", target);
+			ERROR_WITH_ERRNO("Failed to mount NTFS volume `%"TS"'",
+					 target);
 			return WIMLIB_ERR_NTFS_3G;
 		}
 		ops = &ntfs_apply_operations;
@@ -869,7 +877,8 @@ out:
 	/* Unmount the NTFS volume */
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 		if (ntfs_umount(args.vol, FALSE) != 0) {
-			ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'", args.target);
+			ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%"TS"'",
+					 args.target);
 			if (ret == 0)
 				ret = WIMLIB_ERR_NTFS_3G;
 		}
@@ -879,38 +888,50 @@ out:
 }
 
 
+static bool
+image_name_ok_as_dir(const tchar *image_name)
+{
+	if (image_name == NULL)
+		return false;
+	if (image_name[0] == T('\0'))
+		return false;
+	if (tstrchr(image_name, T('/')))
+		return false;
+	if (tstrchr(image_name, T('\\')))
+		return false;
+	return true;
+}
+
 /* Extracts all images from the WIM to the directory @target, with the images
  * placed in subdirectories named by their image names. */
 static int
-extract_all_images(WIMStruct *w, const mbchar *target,
+extract_all_images(WIMStruct *w,
+		   const tchar *target,
 		   int extract_flags,
 		   wimlib_progress_func_t progress_func)
 {
 	size_t image_name_max_len = max(xml_get_max_image_name_len(w), 20);
-	size_t output_path_len = strlen(target);
-	mbchar buf[output_path_len + 1 + image_name_max_len + 1];
+	size_t output_path_len = tstrlen(target);
+	tchar buf[output_path_len + 1 + image_name_max_len + 1];
 	int ret;
 	int image;
-	const utf8char *image_name;
+	const tchar *image_name;
 
 	ret = extract_directory(NULL, target, true);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
-	memcpy(buf, target, output_path_len);
-	buf[output_path_len] = '/';
+	wmemcpy(buf, target, output_path_len);
+	buf[output_path_len] = T('/');
 	for (image = 1; image <= w->hdr.image_count; image++) {
 		image_name = wimlib_get_image_name(w, image);
-		if (image_name && *image_name &&
-		    (wimlib_mbs_is_utf8 || !utf8_str_contains_nonascii_chars(image_name))
-		    && strchr(image_name, '/') == NULL)
-		{
-			strcpy(buf + output_path_len + 1, image_name);
+		if (image_name_ok_as_dir(image_name)) {
+			tstrcpy(buf + output_path_len + 1, image_name);
 		} else {
 			/* Image name is empty, or may not be representable in
 			 * the current locale, or contains path separators.  Use
 			 * the image number instead. */
-			sprintf(buf + output_path_len + 1, "%d", image);
+			tsprintf(buf + output_path_len + 1, T("%d"), image);
 		}
 		ret = extract_single_image(w, image, buf, extract_flags,
 					   progress_func);
@@ -925,7 +946,7 @@ extract_all_images(WIMStruct *w, const mbchar *target,
 WIMLIBAPI int
 wimlib_extract_image(WIMStruct *w,
 		     int image,
-		     const mbchar *target,
+		     const tchar *target,
 		     int extract_flags,
 		     WIMStruct **additional_swms,
 		     unsigned num_additional_swms,

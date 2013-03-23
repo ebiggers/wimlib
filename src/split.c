@@ -28,11 +28,15 @@
 #include "xml.h"
 #include "buffer_io.h"
 
+#if TCHAR_IS_UTF16LE
+#  include <wchar.h>
+#endif
+
 struct split_args {
 	WIMStruct *w;
-	mbchar *swm_base_name;
+	tchar *swm_base_name;
 	size_t swm_base_name_len;
-	const mbchar *swm_suffix;
+	const tchar *swm_suffix;
 	struct list_head lte_list;
 	int cur_part_number;
 	int write_flags;
@@ -101,8 +105,8 @@ copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *__args)
 		INIT_LIST_HEAD(&args->lte_list);
 		args->cur_part_number++;
 
-		sprintf(args->swm_base_name + args->swm_base_name_len, "%d%s",
-			args->cur_part_number, args->swm_suffix);
+		tsprintf(args->swm_base_name + args->swm_base_name_len, T("%d%"TS),
+			 args->cur_part_number, args->swm_suffix);
 
 		w->hdr.part_number = args->cur_part_number;
 
@@ -126,14 +130,14 @@ copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *__args)
 /* Splits the WIM file @w into multiple parts prefixed by @swm_name with size at
  * most @part_size bytes. */
 WIMLIBAPI int
-wimlib_split(WIMStruct *w, const mbchar *swm_name,
+wimlib_split(WIMStruct *w, const tchar *swm_name,
 	     size_t part_size, int write_flags,
 	     wimlib_progress_func_t progress_func)
 {
 	int ret;
 	struct wim_header hdr_save;
 	struct split_args args;
-	const mbchar *swm_suffix;
+	const tchar *swm_suffix;
 	size_t swm_name_len;
 	size_t swm_base_name_len;
 
@@ -145,8 +149,8 @@ wimlib_split(WIMStruct *w, const mbchar *swm_name,
 
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 
-	swm_name_len = strlen(swm_name);
-	mbchar swm_base_name[swm_name_len + 20];
+	swm_name_len = tstrlen(swm_name);
+	tchar swm_base_name[swm_name_len + 20];
 
 	memcpy(&hdr_save, &w->hdr, sizeof(struct wim_header));
 	w->hdr.flags |= WIM_HDR_FLAG_SPANNED;
@@ -156,15 +160,15 @@ wimlib_split(WIMStruct *w, const mbchar *swm_name,
 	if (ret != 0)
 		goto out;
 
-	memcpy(swm_base_name, swm_name, swm_name_len + 1);
+	tmemcpy(swm_base_name, swm_name, swm_name_len + 1);
 
-	swm_suffix = strchr(swm_name, '.');
+	swm_suffix = tstrchr(swm_name, T('.'));
 	if (swm_suffix) {
 		swm_base_name_len = swm_suffix - swm_name;
 	} else {
 		swm_base_name_len = swm_name_len;
-		swm_base_name[sizeof(swm_base_name) - 1] = '\0';
-		swm_suffix = &swm_base_name[sizeof(swm_base_name) - 1];
+		swm_base_name[ARRAY_LEN(swm_base_name) - 1] = T('\0');
+		swm_suffix = &swm_base_name[ARRAY_LEN(swm_base_name) - 1];
 	}
 
 	args.w                              = w;
@@ -219,18 +223,18 @@ wimlib_split(WIMStruct *w, const mbchar *swm_name,
 	 * parts until they are all written).  Fix them. */
 	int total_parts = args.cur_part_number;
 	for (int i = 1; i <= total_parts; i++) {
-		const mbchar *part_name;
+		const tchar *part_name;
 		if (i == 1) {
 			part_name = swm_name;
 		} else {
-			sprintf(swm_base_name + swm_base_name_len, "%d%s",
-				i, swm_suffix);
+			tsprintf(swm_base_name + swm_base_name_len, T("%d%"TS),
+				 i, swm_suffix);
 			part_name = swm_base_name;
 		}
 
-		FILE *fp = fopen(part_name, "r+b");
+		FILE *fp = tfopen(part_name, T("r+b"));
 		if (!fp) {
-			ERROR_WITH_ERRNO("Failed to open `%s'", part_name);
+			ERROR_WITH_ERRNO("Failed to open `%"TS"'", part_name);
 			ret = WIMLIB_ERR_OPEN;
 			goto out;
 		}
@@ -242,7 +246,7 @@ wimlib_split(WIMStruct *w, const mbchar *swm_name,
 		    fwrite(buf, 1, sizeof(buf), fp) != sizeof(buf) ||
 		    fclose(fp) != 0)
 		{
-			ERROR_WITH_ERRNO("Error overwriting header of `%s'",
+			ERROR_WITH_ERRNO("Error overwriting header of `%"TS"'",
 					 part_name);
 			ret = WIMLIB_ERR_WRITE;
 			break;

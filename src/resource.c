@@ -440,10 +440,10 @@ wim_get_fp(WIMStruct *w)
 			goto out;
 		}
 	}
-	DEBUG("Opening extra file descriptor to `%s'", w->filename);
-	fp = fopen(w->filename, "rb");
+	DEBUG("Opening extra file descriptor to `%"TS"'", w->filename);
+	fp = tfopen(w->filename, T("rb"));
 	if (!fp)
-		ERROR_WITH_ERRNO("Failed to open `%s'", w->filename);
+		ERROR_WITH_ERRNO("Failed to open `%"TS"'", w->filename);
 out:
 	pthread_mutex_unlock(&w->fp_tab_mutex);
 	return fp;
@@ -560,10 +560,10 @@ read_wim_resource(const struct wim_lookup_table_entry *lte, void *buf,
 		if (lte->file_on_disk_fp) {
 			fp = lte->file_on_disk_fp;
 		} else {
-			fp = fopen(lte->file_on_disk, "rb");
+			fp = tfopen(lte->file_on_disk, T("rb"));
 			if (!fp) {
 				ERROR_WITH_ERRNO("Failed to open the file "
-						 "`%s'", lte->file_on_disk);
+						 "`%"TS"'", lte->file_on_disk);
 				ret = WIMLIB_ERR_OPEN;
 				break;
 			}
@@ -575,9 +575,9 @@ read_wim_resource(const struct wim_lookup_table_entry *lte, void *buf,
 #ifdef __WIN32__
 	case RESOURCE_WIN32:
 		wimlib_assert(lte->win32_file_on_disk_fp != INVALID_HANDLE_VALUE);
-		ret = win32_read_file(lte->win32_file_on_disk,
-				      lte->win32_file_on_disk_fp, offset, size,
-				      buf);
+		ret = win32_read_file(lte->file_on_disk,
+				      lte->win32_file_on_disk_fp, offset,
+				      size, buf);
 		break;
 #endif
 	case RESOURCE_IN_ATTACHED_BUFFER:
@@ -594,7 +594,7 @@ read_wim_resource(const struct wim_lookup_table_entry *lte, void *buf,
 			offset += 8;
 		if (ntfs_attr_pread(lte->attr, offset, size, buf) != size) {
 			ERROR_WITH_ERRNO("Error reading NTFS attribute "
-					 "at `%s'",
+					 "at `%"TS"'",
 					 lte->ntfs_loc->path);
 			ret = WIMLIB_ERR_NTFS_3G;
 		}

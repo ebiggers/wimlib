@@ -29,8 +29,9 @@
 #include <iconv.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <string.h>
 
-bool wimlib_mbs_is_utf8 = true;
+bool wimlib_mbs_is_utf8 = !TCHAR_IS_UTF16LE;
 
 /* List of iconv_t conversion descriptors for a specific character conversion.
  * The idea is that it is not thread-safe to have just one conversion
@@ -113,6 +114,7 @@ static bool error_message_being_printed = false;
 
 #define DEFINE_CHAR_CONVERSION_FUNCTIONS(varname1, longname1, chartype1,\
 					 varname2, longname2, chartype2,\
+					 earlyreturn,			\
 					 worst_case_len_expr,		\
 					 err_return,			\
 					 err_msg)			\
@@ -193,6 +195,18 @@ varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
 	chartype2 *out;							\
 	size_t out_nbytes;						\
 									\
+	if (earlyreturn) {						\
+		/* Out same as in */					\
+		out = MALLOC(in_nbytes + sizeof(chartype2));		\
+		if (!out)						\
+			return WIMLIB_ERR_NOMEM;			\
+		memcpy(out, in, in_nbytes);				\
+		out[in_nbytes / sizeof(chartype2)] = 0;			\
+		*out_ret = out;						\
+		*out_nbytes_ret = in_nbytes;				\
+		return 0;						\
+	}								\
+									\
 	ret = varname1##_to_##varname2##_nbytes(in, in_nbytes,		\
 						&out_nbytes);		\
 	if (ret)							\
@@ -214,8 +228,10 @@ varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
 	return ret;							\
 }
 
+#if 0
 DEFINE_CHAR_CONVERSION_FUNCTIONS(utf16le, "UTF-16LE", utf16lechar,
 				 mbs, "", mbchar,
+				 false,
 				 in_nbytes / 2 * MB_CUR_MAX,
 				 WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE,
 				 ERROR("Failed to convert UTF-16LE string "
@@ -223,23 +239,75 @@ DEFINE_CHAR_CONVERSION_FUNCTIONS(utf16le, "UTF-16LE", utf16lechar,
 				 ERROR("This may be because the UTF-16LE data "
 				       "could not be represented in your "
 				       "locale's character encoding."))
+#endif
 
-DEFINE_CHAR_CONVERSION_FUNCTIONS(mbs, "", mbchar,
+#if !TCHAR_IS_UTF16LE
+DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "", tchar,
 				 utf16le, "UTF-16LE", utf16lechar,
+				 false,
 				 in_nbytes * 2,
 				 WIMLIB_ERR_INVALID_MULTIBYTE_STRING,
 				 ERROR_WITH_ERRNO("Failed to convert multibyte "
-						  "string \"%s\" to UTF-16LE string!", in);
+						  "string \"%"TS"\" to UTF-16LE string!", in);
 				 ERROR("If the data you provided was UTF-8, please make sure "
 				       "the character encoding of your current locale is UTF-8."))
+#endif
+
+/* tchar to UTF-8 and back */
+#if TCHAR_IS_UTF16LE
+DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "UTF16-LE", tchar,
+				 utf8, "UTF-8", utf8char,
+				 false,
+				 in_nbytes * 2,
+				 WIMLIB_ERR_INVALID_MULTIBYTE_STRING,
+				 ERROR_WITH_ERRNO("Failed to convert UTF-16LE "
+						  "string \"%"TS"\" to UTF-8 string!", in);
+				)
 
 DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", utf8char,
-				 mbs, "", mbchar,
-				 in_nbytes,
+				 tstr, "UTF16-LE", tchar,
+				 false,
+				 in_nbytes * 2,
+				 WIMLIB_ERR_INVALID_MULTIBYTE_STRING,
+				 ERROR_WITH_ERRNO("Failed to convert UTF-8 string "
+						  "to UTF-16LE string!");
+				)
+#else
+DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "", tchar,
+				 utf8, "UTF-8", utf8char,
+				 wimlib_mbs_is_utf8,
+				 in_nbytes * 4,
+				 WIMLIB_ERR_INVALID_MULTIBYTE_STRING,
+				 ERROR_WITH_ERRNO("Failed to convert multibyte "
+						  "string \"%"TS"\" to UTF-8 string!", in);
+				 ERROR("If the data you provided was UTF-8, please make sure "
+				       "the character encoding of your current locale is UTF-8.");)
+
+DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", utf8char,
+				 tstr, "", tchar,
+				 wimlib_mbs_is_utf8,
+				 in_nbytes * 4,
 				 WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE,
-				 ERROR("Failed to convert UTF-8 string to multibyte string!");
-				 ERROR("This may be because the UTF-8 data could not be represented "
-				       "in your locale's character encoding."))
+				 ERROR("Failed to convert UTF-8 string to "
+				       "multibyte string!");
+				 ERROR("This may be because the UTF-8 data "
+				       "could not be represented in your "
+				       "locale's character encoding.");)
+#endif
+
+int
+tstr_to_utf8_simple(const tchar *tstr, utf8char **out)
+{
+	size_t out_nbytes;
+	return tstr_to_utf8(tstr, tstrlen(tstr), out, &out_nbytes);
+}
+
+int
+utf8_to_tstr_simple(const utf8char *utf8str, tchar **out)
+{
+	size_t out_nbytes;
+	return utf8_to_tstr(utf8str, strlen(utf8str), out, &out_nbytes);
+}
 
 static void
 iconv_cleanup(struct iconv_list_head *head)
@@ -258,11 +326,14 @@ iconv_cleanup(struct iconv_list_head *head)
 void
 iconv_global_cleanup()
 {
-	iconv_cleanup(&iconv_utf16le_to_mbs);
+	/*iconv_cleanup(&iconv_utf16le_to_mbs);*/
+#if !TCHAR_IS_UTF16LE
 	iconv_cleanup(&iconv_mbs_to_utf16le);
-	iconv_cleanup(&iconv_utf8_to_mbs);
+#endif
+	/*iconv_cleanup(&iconv_utf8_to_mbs);*/
 }
 
+#if 0
 bool
 utf8_str_contains_nonascii_chars(const utf8char *utf8_str)
 {
@@ -272,3 +343,4 @@ utf8_str_contains_nonascii_chars(const utf8char *utf8_str)
 	} while (*++utf8_str);
 	return false;
 }
+#endif

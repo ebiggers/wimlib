@@ -72,6 +72,10 @@
 #  define INVALID_HANDLE_VALUE ((HANDLE)(-1))
 #endif
 
+#if TCHAR_IS_UTF16LE
+#  include <wchar.h>
+#endif
+
 static int
 fflush_and_ftruncate(FILE *fp, off_t size)
 {
@@ -275,10 +279,10 @@ prepare_resource_for_read(struct wim_lookup_table_entry *lte
 	switch (lte->resource_location) {
 	case RESOURCE_IN_FILE_ON_DISK:
 		if (!lte->file_on_disk_fp) {
-			lte->file_on_disk_fp = fopen(lte->file_on_disk, "rb");
+			lte->file_on_disk_fp = tfopen(lte->file_on_disk, T("rb"));
 			if (!lte->file_on_disk_fp) {
 				ERROR_WITH_ERRNO("Failed to open the file "
-						 "`%s'", lte->file_on_disk);
+						 "`%"TS"'", lte->file_on_disk);
 				return WIMLIB_ERR_OPEN;
 			}
 		}
@@ -291,7 +295,7 @@ prepare_resource_for_read(struct wim_lookup_table_entry *lte
 			wimlib_assert(loc);
 			ni = ntfs_pathname_to_inode(*loc->ntfs_vol_p, NULL, loc->path);
 			if (!ni) {
-				ERROR_WITH_ERRNO("Failed to open inode `%s' in NTFS "
+				ERROR_WITH_ERRNO("Failed to open inode `%"TS"' in NTFS "
 						 "volume", loc->path);
 				return WIMLIB_ERR_NTFS_3G;
 			}
@@ -300,7 +304,7 @@ prepare_resource_for_read(struct wim_lookup_table_entry *lte
 						   loc->stream_name,
 						   loc->stream_name_nchars);
 			if (!lte->attr) {
-				ERROR_WITH_ERRNO("Failed to open attribute of `%s' in "
+				ERROR_WITH_ERRNO("Failed to open attribute of `%"TS"' in "
 						 "NTFS volume", loc->path);
 				ntfs_inode_close(ni);
 				return WIMLIB_ERR_NTFS_3G;
@@ -313,9 +317,9 @@ prepare_resource_for_read(struct wim_lookup_table_entry *lte
 	case RESOURCE_WIN32:
 		if (lte->win32_file_on_disk_fp == INVALID_HANDLE_VALUE) {
 			lte->win32_file_on_disk_fp =
-				win32_open_file_data_only(lte->win32_file_on_disk);
+				win32_open_file_data_only(lte->file_on_disk);
 			if (lte->win32_file_on_disk_fp == INVALID_HANDLE_VALUE) {
-				ERROR("Win32 API: Can't open %ls", lte->win32_file_on_disk);
+				ERROR("Win32 API: Can't open %"TS, lte->file_on_disk);
 				win32_error_last();
 				return WIMLIB_ERR_OPEN;
 			}
@@ -936,7 +940,7 @@ main_writer_thread_proc(struct list_head *stream_list,
 						if (next_lte->resource_location ==
 						    RESOURCE_IN_FILE_ON_DISK)
 						{
-							ERROR("We were reading it from `%s'; "
+							ERROR("We were reading it from `%"TS"'; "
 							      "maybe it changed while we were "
 							      "reading it.",
 							      next_lte->file_on_disk);
@@ -1669,12 +1673,12 @@ lock_wim(WIMStruct *w, FILE *fp)
 		ret = flock(fileno(fp), LOCK_EX | LOCK_NB);
 		if (ret != 0) {
 			if (errno == EWOULDBLOCK) {
-				ERROR("`%s' is already being modified or has been "
+				ERROR("`%"TS"' is already being modified or has been "
 				      "mounted read-write\n"
 				      "        by another process!", w->filename);
 				ret = WIMLIB_ERR_ALREADY_LOCKED;
 			} else {
-				WARNING_WITH_ERRNO("Failed to lock `%s'",
+				WARNING_WITH_ERRNO("Failed to lock `%"TS"'",
 						   w->filename);
 				ret = 0;
 			}
@@ -1687,24 +1691,24 @@ lock_wim(WIMStruct *w, FILE *fp)
 #endif
 
 static int
-open_wim_writable(WIMStruct *w, const mbchar *path,
+open_wim_writable(WIMStruct *w, const tchar *path,
 		  bool trunc, bool readable)
 {
-	const char *mode;
+	const tchar *mode;
 	if (trunc)
 		if (readable)
-			mode = "w+b";
+			mode = T("w+b");
 		else
-			mode = "wb";
+			mode = T("wb");
 	else
-		mode = "r+b";
+		mode = T("r+b");
 
 	wimlib_assert(w->out_fp == NULL);
-	w->out_fp = fopen(path, mode);
+	w->out_fp = tfopen(path, mode);
 	if (w->out_fp) {
 		return 0;
 	} else {
-		ERROR_WITH_ERRNO("Failed to open `%s' for writing", path);
+		ERROR_WITH_ERRNO("Failed to open `%"TS"' for writing", path);
 		return WIMLIB_ERR_OPEN;
 	}
 }
@@ -1723,7 +1727,7 @@ close_wim_writable(WIMStruct *w)
 
 /* Open file stream and write dummy header for WIM. */
 int
-begin_write(WIMStruct *w, const mbchar *path, int write_flags)
+begin_write(WIMStruct *w, const tchar *path, int write_flags)
 {
 	int ret;
 	ret = open_wim_writable(w, path, true,
@@ -1736,7 +1740,7 @@ begin_write(WIMStruct *w, const mbchar *path, int write_flags)
 
 /* Writes a stand-alone WIM to a file.  */
 WIMLIBAPI int
-wimlib_write(WIMStruct *w, const mbchar *path,
+wimlib_write(WIMStruct *w, const tchar *path,
 	     int image, int write_flags, unsigned num_threads,
 	     wimlib_progress_func_t progress_func)
 {
@@ -1778,7 +1782,7 @@ wimlib_write(WIMStruct *w, const mbchar *path,
 	ret = finish_write(w, image, write_flags, progress_func);
 out:
 	close_wim_writable(w);
-	DEBUG("wimlib_write(path=%s) = %d", path, ret);
+	DEBUG("wimlib_write(path=%"TS") = %d", path, ret);
 	return ret;
 }
 
@@ -1858,7 +1862,7 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	off_t old_wim_end;
 	bool found_modified_image;
 
-	DEBUG("Overwriting `%s' in-place", w->filename);
+	DEBUG("Overwriting `%"TS"' in-place", w->filename);
 
 	/* Make sure that the integrity table (if present) is after the XML
 	 * data, and that there are no stream resources, metadata resources, or
@@ -1944,11 +1948,11 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 out_ftruncate:
 	close_wim_writable(w);
 	if (ret != 0 && !(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
-		WARNING("Truncating `%s' to its original size (%"PRIu64" bytes)",
+		WARNING("Truncating `%"TS"' to its original size (%"PRIu64" bytes)",
 			w->filename, old_wim_end);
 		/* Return value of truncate() is ignored because this is already
 		 * an error path. */
-		(void)truncate(w->filename, old_wim_end);
+		(void)ttruncate(w->filename, old_wim_end);
 	}
 	w->wim_locked = 0;
 	return ret;
@@ -1962,25 +1966,25 @@ overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 	size_t wim_name_len;
 	int ret;
 
-	DEBUG("Overwriting `%s' via a temporary file", w->filename);
+	DEBUG("Overwriting `%"TS"' via a temporary file", w->filename);
 
 	/* Write the WIM to a temporary file in the same directory as the
 	 * original WIM. */
-	wim_name_len = strlen(w->filename);
-	mbchar tmpfile[wim_name_len + 10];
-	memcpy(tmpfile, w->filename, wim_name_len);
+	wim_name_len = tstrlen(w->filename);
+	tchar tmpfile[wim_name_len + 10];
+	tmemcpy(tmpfile, w->filename, wim_name_len);
 	randomize_char_array_with_alnum(tmpfile + wim_name_len, 9);
-	tmpfile[wim_name_len + 9] = '\0';
+	tmpfile[wim_name_len + 9] = T('\0');
 
 	ret = wimlib_write(w, tmpfile, WIMLIB_ALL_IMAGES,
 			   write_flags | WIMLIB_WRITE_FLAG_FSYNC,
 			   num_threads, progress_func);
 	if (ret != 0) {
-		ERROR("Failed to write the WIM file `%s'", tmpfile);
+		ERROR("Failed to write the WIM file `%"TS"'", tmpfile);
 		goto err;
 	}
 
-	DEBUG("Renaming `%s' to `%s'", tmpfile, w->filename);
+	DEBUG("Renaming `%"TS"' to `%"TS"'", tmpfile, w->filename);
 
 #ifdef __WIN32__
 	/* Windows won't let you delete open files unless FILE_SHARE_DELETE was
@@ -1994,8 +1998,8 @@ overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 #endif
 
 	/* Rename the new file to the old file .*/
-	if (rename(tmpfile, w->filename) != 0) {
-		ERROR_WITH_ERRNO("Failed to rename `%s' to `%s'",
+	if (trename(tmpfile, w->filename) != 0) {
+		ERROR_WITH_ERRNO("Failed to rename `%"TS"' to `%"TS"'",
 				 tmpfile, w->filename);
 		ret = WIMLIB_ERR_RENAME;
 		goto err;
@@ -2015,10 +2019,10 @@ overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 	}
 
 	/* Re-open the WIM read-only. */
-	w->fp = fopen(w->filename, "rb");
+	w->fp = tfopen(w->filename, T("rb"));
 	if (w->fp == NULL) {
 		ret = WIMLIB_ERR_REOPEN;
-		WARNING_WITH_ERRNO("Failed to re-open `%s' read-only",
+		WARNING_WITH_ERRNO("Failed to re-open `%"TS"' read-only",
 				   w->filename);
 		FREE(w->filename);
 		w->filename = NULL;
@@ -2026,8 +2030,8 @@ overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 	return ret;
 err:
 	/* Remove temporary file. */
-	if (unlink(tmpfile) != 0)
-		WARNING_WITH_ERRNO("Failed to remove `%s'", tmpfile);
+	if (tunlink(tmpfile) != 0)
+		WARNING_WITH_ERRNO("Failed to remove `%"TS"'", tmpfile);
 	return ret;
 }
 

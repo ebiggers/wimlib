@@ -33,6 +33,10 @@
 #include "wimlib_internal.h"
 #include <errno.h>
 
+#ifdef TCHAR_IS_UTF16LE
+#  include <wchar.h>
+#endif
+
 /* Calculates the unaligned length, in bytes, of an on-disk WIM dentry that has
  * a file name and short name that take the specified numbers of bytes.  This
  * excludes any alternate data stream entries that may follow the dentry. */
@@ -76,36 +80,46 @@ ads_entry_has_name(const struct wim_ads_entry *entry,
 	       memcmp(entry->stream_name, name, name_nbytes) == 0;
 }
 
-/* Duplicates a multibyte string into a UTF-16LE string and returns the string
- * and its length, in bytes, in the pointer arguments.  Frees any existing
- * string at the return location before overwriting it. */
+/* Duplicates a string of system-dependent encoding into a UTF-16LE string and
+ * returns the string and its length, in bytes, in the pointer arguments.  Frees
+ * any existing string at the return location before overwriting it. */
 static int
-get_utf16le_name(const mbchar *name, utf16lechar **name_utf16le_ret,
+get_utf16le_name(const tchar *name, utf16lechar **name_utf16le_ret,
 		 u16 *name_utf16le_nbytes_ret)
 {
 	utf16lechar *name_utf16le;
 	size_t name_utf16le_nbytes;
 	int ret;
+#if TCHAR_IS_UTF16LE
+	name_utf16le_nbytes = tstrlen(name) * 2;
+	name_utf16le = MALLOC(name_utf16le_nbytes + 2);
+	if (!name_utf16le)
+		return WIMLIB_ERR_NOMEM;
+	memcpy(name_utf16le, name, name_utf16le_nbytes + 2);
+	ret = 0;
+#else
 
-	ret = mbs_to_utf16le(name, strlen(name), &name_utf16le,
-			     &name_utf16le_nbytes);
+	ret = tstr_to_utf16le(name, strlen(name), &name_utf16le,
+			      &name_utf16le_nbytes);
 	if (ret == 0) {
 		if (name_utf16le_nbytes > 0xffff) {
 			FREE(name_utf16le);
 			ERROR("Multibyte string \"%s\" is too long!", name);
 			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
-		} else {
-			FREE(*name_utf16le_ret);
-			*name_utf16le_ret = name_utf16le;
-			*name_utf16le_nbytes_ret = name_utf16le_nbytes;
 		}
+	}
+#endif
+	if (ret == 0) {
+		FREE(*name_utf16le_ret);
+		*name_utf16le_ret = name_utf16le;
+		*name_utf16le_nbytes_ret = name_utf16le_nbytes;
 	}
 	return ret;
 }
 
 /* Sets the name of a WIM dentry from a multibyte string. */
 int
-set_dentry_name(struct wim_dentry *dentry, const mbchar *new_name)
+set_dentry_name(struct wim_dentry *dentry, const tchar *new_name)
 {
 	int ret;
 	ret = get_utf16le_name(new_name, &dentry->file_name,
@@ -268,50 +282,60 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 int
 calculate_dentry_full_path(struct wim_dentry *dentry, void *ignore)
 {
-	char *full_path;
+	tchar *full_path;
 	u32 full_path_nbytes;
 
 	wimlib_assert(dentry_is_root(dentry) ||
 		      dentry->parent->full_path != NULL);
 
 	if (dentry_is_root(dentry)) {
-		full_path = MALLOC(2);
+		full_path = TMALLOC(2);
 		if (!full_path)
 			return WIMLIB_ERR_NOMEM;
-		full_path[0] = '/';
-		full_path[1] = '\0';
-		full_path_nbytes = 1;
+		full_path[0] = T('/');
+		full_path[1] = T('\0');
+		full_path_nbytes = 1 * sizeof(tchar);
 	} else {
-		char *parent_full_path;
+		tchar *parent_full_path;
 		u32 parent_full_path_nbytes;
 		const struct wim_dentry *parent;
-		size_t name_mbs_nbytes;
+		size_t filename_nbytes;
 		int ret;
 
-		ret = utf16le_to_mbs_nbytes(dentry->file_name,
-					    dentry->file_name_nbytes,
-					    &name_mbs_nbytes);
-		if (ret)
-			return ret;
 		parent = dentry->parent;
 		if (dentry_is_root(parent)) {
-			parent_full_path = "";
+			parent_full_path = T("");
 			parent_full_path_nbytes = 0;
 		} else {
 			parent_full_path = parent->full_path;
 			parent_full_path_nbytes = parent->full_path_nbytes;
 		}
-		full_path_nbytes = parent_full_path_nbytes + 1 +
-				   name_mbs_nbytes;
-		full_path = MALLOC(full_path_nbytes + 1);
+	#if TCHAR_IS_UTF16LE
+		filename_nbytes = dentry->file_name_nbytes;
+	#else
+		ret = utf16le_to_mbs_nbytes(dentry->file_name,
+					    dentry->file_name_nbytes,
+					    &filename_nbytes);
+		if (ret)
+			return ret;
+	#endif
+
+		full_path_nbytes = parent_full_path_nbytes + sizeof(tchar) +
+				   dentry->file_name_nbytes;
+		full_path = MALLOC(full_path_nbytes + sizeof(tchar));
 		if (!full_path)
 			return WIMLIB_ERR_NOMEM;
 		memcpy(full_path, parent_full_path, parent_full_path_nbytes);
-		full_path[parent_full_path_nbytes] = '/';
-
+		full_path[parent_full_path_nbytes] = T('/');
+	#if TCHAR_IS_UTF16LE
+		memcpy(&full_path[parent_full_path_nbytes + 1],
+		       dentry->file_name,
+		       dentry->file_name_nbytes + sizeof(tchar));
+	#else
 		utf16le_to_mbs_buf(dentry->file_name,
 				   dentry->file_name_nbytes,
 				   &full_path[parent_full_path_nbytes + 1]);
+	#endif
 	}
 	FREE(dentry->full_path);
 	dentry->full_path = full_path;
@@ -413,15 +437,19 @@ get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 /* Returns the child of @dentry that has the file name @name.  Returns NULL if
  * no child has the name. */
 struct wim_dentry *
-get_dentry_child_with_name(const struct wim_dentry *dentry, const mbchar *name)
+get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name)
 {
+#if TCHAR_IS_UTF16LE
+	return get_dentry_child_with_utf16le_name(dentry, name,
+						  tstrlen(name) * sizeof(tchar));
+#else
 	utf16lechar *utf16le_name;
 	size_t utf16le_name_nbytes;
 	int ret;
 	struct wim_dentry *child;
 
-	ret = mbs_to_utf16le(name, strlen(name),
-			     &utf16le_name, &utf16le_name_nbytes);
+	ret = tstr_to_utf16le(name, strlen(name),
+			      &utf16le_name, &utf16le_name_nbytes);
 	if (ret) {
 		child = NULL;
 	} else {
@@ -431,27 +459,18 @@ get_dentry_child_with_name(const struct wim_dentry *dentry, const mbchar *name)
 		FREE(utf16le_name);
 	}
 	return child;
+#endif
 }
 
-/* Returns the dentry corresponding to the @path, or NULL if there is no such
- * dentry. */
-struct wim_dentry *
-get_dentry(WIMStruct *w, const mbchar *path)
+static struct wim_dentry *
+get_dentry_utf16le(WIMStruct *w, const utf16lechar *path,
+		   size_t path_nbytes)
 {
-	utf16lechar *path_utf16le;
-	size_t path_utf16le_nbytes;
-	int ret;
 	struct wim_dentry *cur_dentry, *parent_dentry;
-	utf16lechar *p, *pp;
-
-	ret = mbs_to_utf16le(path, strlen(path), &path_utf16le,
-			     &path_utf16le_nbytes);
-	if (ret)
-		return NULL;
+	const utf16lechar *p, *pp;
 
 	parent_dentry = wim_root_dentry(w);
-	p = path_utf16le;
-
+	p = path;
 	while (1) {
 		while (*p == cpu_to_le16('/'))
 			p++;
@@ -459,7 +478,7 @@ get_dentry(WIMStruct *w, const mbchar *path)
 		if (*p == '\0')
 			break;
 		pp = p;
-		while (*pp != cpu_to_le16('/') && *pp != '\0')
+		while (*pp != cpu_to_le16('/') && *pp != cpu_to_le16('\0'))
 			pp++;
 
 		cur_dentry = get_dentry_child_with_utf16le_name(parent_dentry, p,
@@ -469,7 +488,6 @@ get_dentry(WIMStruct *w, const mbchar *path)
 		p = pp;
 		parent_dentry = cur_dentry;
 	}
-	FREE(path_utf16le);
 	if (cur_dentry == NULL) {
 		if (dentry_is_directory(parent_dentry))
 			errno = ENOENT;
@@ -479,8 +497,31 @@ get_dentry(WIMStruct *w, const mbchar *path)
 	return cur_dentry;
 }
 
+/* Returns the dentry corresponding to the @path, or NULL if there is no such
+ * dentry. */
+struct wim_dentry *
+get_dentry(WIMStruct *w, const tchar *path)
+{
+#if TCHAR_IS_UTF16LE
+	return get_dentry_utf16le(w, path, tstrlen(path) * sizeof(tchar));
+#else
+	utf16lechar *path_utf16le;
+	size_t path_utf16le_nbytes;
+	int ret;
+	struct wim_dentry *dentry;
+
+	ret = tstr_to_utf16le(path, tstrlen(path) * sizeof(tchar),
+			      &path_utf16le, &path_utf16le_nbytes);
+	if (ret)
+		return NULL;
+	dentry = get_dentry_utf16le(w, path_utf16le, path_utf16le_nbytes);
+	FREE(path_utf16le);
+	return cur_dentry;
+#endif
+}
+
 struct wim_inode *
-wim_pathname_to_inode(WIMStruct *w, const mbchar *path)
+wim_pathname_to_inode(WIMStruct *w, const tchar *path)
 {
 	struct wim_dentry *dentry;
 	dentry = get_dentry(w, path);
@@ -493,12 +534,12 @@ wim_pathname_to_inode(WIMStruct *w, const mbchar *path)
 /* Returns the dentry that corresponds to the parent directory of @path, or NULL
  * if the dentry is not found. */
 struct wim_dentry *
-get_parent_dentry(WIMStruct *w, const mbchar *path)
+get_parent_dentry(WIMStruct *w, const tchar *path)
 {
-	size_t path_len = strlen(path);
-	mbchar buf[path_len + 1];
+	size_t path_len = tstrlen(path);
+	tchar buf[path_len + 1];
 
-	memcpy(buf, path, path_len + 1);
+	tmemcpy(buf, path, path_len + 1);
 	to_parent_name(buf, path_len);
 	return get_dentry(w, buf);
 }
@@ -508,7 +549,7 @@ int
 print_dentry_full_path(struct wim_dentry *dentry, void *ignore)
 {
 	if (dentry->full_path)
-		puts(dentry->full_path);
+		printf("%"TS"\n", dentry->full_path);
 	return 0;
 }
 
@@ -516,24 +557,24 @@ print_dentry_full_path(struct wim_dentry *dentry, void *ignore)
  * set. */
 struct file_attr_flag {
 	u32 flag;
-	const char *name;
+	const tchar *name;
 };
 struct file_attr_flag file_attr_flags[] = {
-	{FILE_ATTRIBUTE_READONLY,	    "READONLY"},
-	{FILE_ATTRIBUTE_HIDDEN,		    "HIDDEN"},
-	{FILE_ATTRIBUTE_SYSTEM,		    "SYSTEM"},
-	{FILE_ATTRIBUTE_DIRECTORY,	    "DIRECTORY"},
-	{FILE_ATTRIBUTE_ARCHIVE,	    "ARCHIVE"},
-	{FILE_ATTRIBUTE_DEVICE,		    "DEVICE"},
-	{FILE_ATTRIBUTE_NORMAL,		    "NORMAL"},
-	{FILE_ATTRIBUTE_TEMPORARY,	    "TEMPORARY"},
-	{FILE_ATTRIBUTE_SPARSE_FILE,	    "SPARSE_FILE"},
-	{FILE_ATTRIBUTE_REPARSE_POINT,	    "REPARSE_POINT"},
-	{FILE_ATTRIBUTE_COMPRESSED,	    "COMPRESSED"},
-	{FILE_ATTRIBUTE_OFFLINE,	    "OFFLINE"},
-	{FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,"NOT_CONTENT_INDEXED"},
-	{FILE_ATTRIBUTE_ENCRYPTED,	    "ENCRYPTED"},
-	{FILE_ATTRIBUTE_VIRTUAL,	    "VIRTUAL"},
+	{FILE_ATTRIBUTE_READONLY,	    T("READONLY")},
+	{FILE_ATTRIBUTE_HIDDEN,		    T("HIDDEN")},
+	{FILE_ATTRIBUTE_SYSTEM,		    T("SYSTEM")},
+	{FILE_ATTRIBUTE_DIRECTORY,	    T("DIRECTORY")},
+	{FILE_ATTRIBUTE_ARCHIVE,	    T("ARCHIVE")},
+	{FILE_ATTRIBUTE_DEVICE,		    T("DEVICE")},
+	{FILE_ATTRIBUTE_NORMAL,		    T("NORMAL")},
+	{FILE_ATTRIBUTE_TEMPORARY,	    T("TEMPORARY")},
+	{FILE_ATTRIBUTE_SPARSE_FILE,	    T("SPARSE_FILE")},
+	{FILE_ATTRIBUTE_REPARSE_POINT,	    T("REPARSE_POINT")},
+	{FILE_ATTRIBUTE_COMPRESSED,	    T("COMPRESSED")},
+	{FILE_ATTRIBUTE_OFFLINE,	    T("OFFLINE")},
+	{FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,T("NOT_CONTENT_INDEXED")},
+	{FILE_ATTRIBUTE_ENCRYPTED,	    T("ENCRYPTED")},
+	{FILE_ATTRIBUTE_VIRTUAL,	    T("VIRTUAL")},
 };
 
 /* Prints a directory entry.  @lookup_table is a pointer to the lookup table, if
@@ -545,37 +586,37 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table)
 	const u8 *hash;
 	struct wim_lookup_table_entry *lte;
 	const struct wim_inode *inode = dentry->d_inode;
-	char buf[50];
+	tchar buf[50];
 
-	printf("[DENTRY]\n");
-	printf("Length            = %"PRIu64"\n", dentry->length);
-	printf("Attributes        = 0x%x\n", inode->i_attributes);
+	tprintf(T("[DENTRY]\n"));
+	tprintf(T("Length            = %"PRIu64"\n"), dentry->length);
+	tprintf(T("Attributes        = 0x%x\n"), inode->i_attributes);
 	for (size_t i = 0; i < ARRAY_LEN(file_attr_flags); i++)
 		if (file_attr_flags[i].flag & inode->i_attributes)
-			printf("    FILE_ATTRIBUTE_%s is set\n",
+			tprintf(T("    FILE_ATTRIBUTE_%"TS" is set\n"),
 				file_attr_flags[i].name);
-	printf("Security ID       = %d\n", inode->i_security_id);
-	printf("Subdir offset     = %"PRIu64"\n", dentry->subdir_offset);
+	tprintf(T("Security ID       = %d\n"), inode->i_security_id);
+	tprintf(T("Subdir offset     = %"PRIu64"\n"), dentry->subdir_offset);
 
 	wim_timestamp_to_str(inode->i_creation_time, buf, sizeof(buf));
-	printf("Creation Time     = %s\n", buf);
+	tprintf(T("Creation Time     = %"TS"\n"), buf);
 
 	wim_timestamp_to_str(inode->i_last_access_time, buf, sizeof(buf));
-	printf("Last Access Time  = %s\n", buf);
+	tprintf(T("Last Access Time  = %"TS"\n"), buf);
 
 	wim_timestamp_to_str(inode->i_last_write_time, buf, sizeof(buf));
-	printf("Last Write Time   = %s\n", buf);
+	tprintf(T("Last Write Time   = %"TS"\n"), buf);
 
-	printf("Reparse Tag       = 0x%"PRIx32"\n", inode->i_reparse_tag);
-	printf("Hard Link Group   = 0x%"PRIx64"\n", inode->i_ino);
-	printf("Hard Link Group Size = %"PRIu32"\n", inode->i_nlink);
-	printf("Number of Alternate Data Streams = %hu\n", inode->i_num_ads);
+	tprintf(T("Reparse Tag       = 0x%"PRIx32"\n"), inode->i_reparse_tag);
+	tprintf(T("Hard Link Group   = 0x%"PRIx64"\n"), inode->i_ino);
+	tprintf(T("Hard Link Group Size = %"PRIu32"\n"), inode->i_nlink);
+	tprintf(T("Number of Alternate Data Streams = %hu\n"), inode->i_num_ads);
 	if (dentry_has_long_name(dentry))
-		wimlib_printf("Filename = \"%W\"\n", dentry->file_name);
+		wimlib_printf(T("Filename = \"%"WS"\"\n"), dentry->file_name);
 	if (dentry_has_short_name(dentry))
-		wimlib_printf("Short Name \"%W\"\n", dentry->short_name);
+		wimlib_printf(T("Short Name \"%"WS"\"\n"), dentry->short_name);
 	if (dentry->full_path)
-		printf("Full Path = \"%s\"\n", dentry->full_path);
+		tprintf(T("Full Path = \"%"WS"\"\n"), dentry->full_path);
 
 	lte = inode_stream_lte(dentry->d_inode, 0, lookup_table);
 	if (lte) {
@@ -583,22 +624,23 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table)
 	} else {
 		hash = inode_stream_hash(inode, 0);
 		if (hash) {
-			printf("Hash              = 0x");
+			tprintf(T("Hash              = 0x"));
 			print_hash(hash);
-			putchar('\n');
-			putchar('\n');
+			tputchar(T('\n'));
+			tputchar(T('\n'));
 		}
 	}
 	for (u16 i = 0; i < inode->i_num_ads; i++) {
-		printf("[Alternate Stream Entry %u]\n", i);
-		wimlib_printf("Name = \"%W\"\n", inode->i_ads_entries[i].stream_name);
-		printf("Name Length (UTF16 bytes) = %hu\n",
+		tprintf(T("[Alternate Stream Entry %u]\n"), i);
+		wimlib_printf(T("Name = \"%"WS"\"\n"),
+			      inode->i_ads_entries[i].stream_name);
+		tprintf(T("Name Length (UTF16 bytes) = %hu\n"),
 		       inode->i_ads_entries[i].stream_name_nbytes);
 		hash = inode_stream_hash(inode, i + 1);
 		if (hash) {
-			printf("Hash              = 0x");
+			tprintf(T("Hash              = 0x"));
 			print_hash(hash);
-			putchar('\n');
+			tputchar(T('\n'));
 		}
 		print_lookup_table_entry(inode_stream_lte(inode, i + 1, lookup_table),
 					 stdout);
@@ -648,7 +690,7 @@ new_inode()
 }
 
 /* Creates an unlinked directory entry. */
-int new_dentry(const mbchar *name, struct wim_dentry **dentry_ret)
+int new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 {
 	struct wim_dentry *dentry;
 	int ret;
@@ -664,14 +706,15 @@ int new_dentry(const mbchar *name, struct wim_dentry **dentry_ret)
 		*dentry_ret = dentry;
 	} else {
 		FREE(dentry);
-		ERROR("Failed to set name on new dentry with name \"%s\"", name);
+		ERROR("Failed to set name on new dentry with name \"%"TS"\"",
+		      name);
 	}
 	return ret;
 }
 
 
 static int
-__new_dentry_with_inode(const mbchar *name, struct wim_dentry **dentry_ret,
+__new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
 			bool timeless)
 {
 	struct wim_dentry *dentry;
@@ -696,13 +739,13 @@ __new_dentry_with_inode(const mbchar *name, struct wim_dentry **dentry_ret,
 }
 
 int
-new_dentry_with_timeless_inode(const mbchar *name, struct wim_dentry **dentry_ret)
+new_dentry_with_timeless_inode(const tchar *name, struct wim_dentry **dentry_ret)
 {
 	return __new_dentry_with_inode(name, dentry_ret, true);
 }
 
 int
-new_dentry_with_inode(const mbchar *name, struct wim_dentry **dentry_ret)
+new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret)
 {
 	return __new_dentry_with_inode(name, dentry_ret, false);
 }
@@ -724,7 +767,7 @@ init_ads_entry(struct wim_ads_entry *ads_entry, const void *name,
 		ads_entry->stream_name = p;
 		ads_entry->stream_name_nbytes = name_nbytes;
 	} else {
-		if (name && *(const char*)name) {
+		if (name && *(const tchar*)name == T('\0')) {
 			ret = get_utf16le_name(name, &ads_entry->stream_name,
 					       &ads_entry->stream_name_nbytes);
 		}
@@ -889,24 +932,31 @@ unlink_dentry(struct wim_dentry *dentry)
  * stream name @stream_name.
  */
 struct wim_ads_entry *
-inode_get_ads_entry(struct wim_inode *inode, const mbchar *stream_name,
+inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 		    u16 *idx_ret)
 {
 	if (inode->i_num_ads == 0) {
 		return NULL;
 	} else {
 		int ret;
-		utf16lechar *stream_name_utf16le;
 		size_t stream_name_utf16le_nbytes;
 		u16 i;
 		struct wim_ads_entry *result;
 
-		ret = mbs_to_utf16le(stream_name, strlen(stream_name),
-				     &stream_name_utf16le,
-				     &stream_name_utf16le_nbytes);
+	#if TCHAR_IS_UTF16LE
+		const utf16lechar *stream_name_utf16le;
+
+		stream_name_utf16le = stream_name;
+		stream_name_utf16le_nbytes = tstrlen(stream_name) * sizeof(tchar);
+	#else
+		utf16lechar *stream_name_utf16le;
+
+		ret = tstr_to_utf16le(stream_name, tstrlen(stream_name) * sizeof(tchar),
+				      &stream_name_utf16le,
+				      &stream_name_utf16le_nbytes);
 		if (ret)
 			return NULL;
-
+	#endif
 		i = 0;
 		result = NULL;
 		do {
@@ -920,7 +970,9 @@ inode_get_ads_entry(struct wim_inode *inode, const mbchar *stream_name,
 				break;
 			}
 		} while (++i != inode->i_num_ads);
+	#if !TCHAR_IS_UTF16LE
 		FREE(stream_name_utf16le);
+	#endif
 		return result;
 	}
 }
@@ -932,8 +984,6 @@ do_inode_add_ads(struct wim_inode *inode, const void *stream_name,
 	u16 num_ads;
 	struct wim_ads_entry *ads_entries;
 	struct wim_ads_entry *new_entry;
-
-	DEBUG("Add alternate data stream \"%s\"", stream_name);
 
 	if (inode->i_num_ads >= 0xfffe) {
 		ERROR("Too many alternate data streams in one inode!");
@@ -963,6 +1013,7 @@ inode_add_ads_utf16le(struct wim_inode *inode,
 		      const utf16lechar *stream_name,
 		      size_t stream_name_nbytes)
 {
+	DEBUG("Add alternate data stream \"%"WS"\"", stream_name);
 	return do_inode_add_ads(inode, stream_name, stream_name_nbytes, true);
 }
 
@@ -971,13 +1022,16 @@ inode_add_ads_utf16le(struct wim_inode *inode,
  * NULL if memory could not be allocated.
  */
 struct wim_ads_entry *
-inode_add_ads(struct wim_inode *inode, const char *stream_name)
+inode_add_ads(struct wim_inode *inode, const tchar *stream_name)
 {
-	return do_inode_add_ads(inode, stream_name, strlen(stream_name), false);
+	DEBUG("Add alternate data stream \"%"TS"\"", stream_name);
+	return do_inode_add_ads(inode, stream_name,
+				tstrlen(stream_name) * sizeof(tchar),
+				TCHAR_IS_UTF16LE);
 }
 
 int
-inode_add_ads_with_data(struct wim_inode *inode, const mbchar *name,
+inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
 			const void *value, size_t size,
 			struct wim_lookup_table *lookup_table)
 {
@@ -1037,7 +1091,7 @@ inode_remove_ads(struct wim_inode *inode, u16 idx,
 
 	ads_entry = &inode->i_ads_entries[idx];
 
-	DEBUG("Remove alternate data stream \"%W\"", ads_entry->stream_name);
+	DEBUG("Remove alternate data stream \"%"WS"\"", ads_entry->stream_name);
 
 	lte = ads_entry->lte;
 	if (lte)
@@ -1080,7 +1134,7 @@ inode_get_unix_data(const struct wim_inode *inode,
 	if (size != sizeof(struct wimlib_unix_data))
 		return BAD_UNIX_DATA;
 
-	ret = read_full_wim_resource(lte, (u8*)unix_data, 0);
+	ret = read_full_wim_resource(lte, unix_data, 0);
 	if (ret)
 		return ret;
 
@@ -1114,7 +1168,7 @@ inode_set_unix_data(struct wim_inode *inode, uid_t uid, gid_t gid, mode_t mode,
 	if (which & UNIX_DATA_MODE || !have_good_unix_data)
 		unix_data.mode = mode;
 	ret = inode_add_ads_with_data(inode, WIMLIB_UNIX_DATA_TAG,
-				      (const u8*)&unix_data,
+				      &unix_data,
 				      sizeof(struct wimlib_unix_data),
 				      lookup_table);
 	if (ret == 0 && have_unix_data)
@@ -1423,7 +1477,7 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		p = get_bytes(p, file_name_nbytes + 2, file_name);
 		if (file_name[file_name_nbytes / 2] != 0) {
 			file_name[file_name_nbytes / 2] = 0;
-			WARNING("File name in WIM dentry \"%W\" is not "
+			WARNING("File name in WIM dentry \"%"WS"\" is not "
 				"null-terminated!", file_name);
 		}
 	}
@@ -1473,7 +1527,7 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		p = get_bytes(p, short_name_nbytes + 2, short_name);
 		if (short_name[short_name_nbytes / 2] != 0) {
 			short_name[short_name_nbytes / 2] = 0;
-			WARNING("Short name in WIM dentry \"%W\" is not "
+			WARNING("Short name in WIM dentry \"%"WS"\" is not "
 				"null-terminated!", file_name);
 		}
 	}
@@ -1513,7 +1567,7 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 				goto out;
 		}
 		ERROR("Failed to read alternate data stream "
-		      "entries of WIM dentry \"%W\"", file_name);
+		      "entries of WIM dentry \"%"WS"\"", file_name);
 		goto out_free_short_name;
 	}
 out:
