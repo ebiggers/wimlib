@@ -190,16 +190,17 @@
  *
  * \section encodings Locales and character encodings
  *
- * wimlib 1.3.0 has improved handling of different character encodings compared
- * to previous versions.  Functions are explictly noted as taking
- * ::wimlib_mbchar strings, which are encoded in the locale-dependent multibyte
- * encoding (e.g.  ASCII, ISO-8859-1, or UTF-8), or ::wimlib_utf8char strings,
- * which are encoded in UTF-8.  Generally, filenames and paths are in the
- * locale-dependent multibyte encoding, while other types of data must be
- * provided in UTF-8.  Please see the  man page for @b wimlib-imagex for more
- * information.  However, I strongly recommend that you use UTF-8 for your
- * locale's encoding so that ::wimlib_mbchar strings will be encoded the same
- * way as ::wimlib_utf8char strings.
+ * To support Windows as well as UNIX, wimlib's API typically takes and returns
+ * strings of "tchars", which are in a platform-dependent encoding.
+ *
+ * On Windows, each "tchar" is 2 bytes and is the same as a "wchar_t", and the
+ * encoding is UTF-16LE.
+ *
+ * On UNIX, each "tchar" is 1 byte and is simply a "char", and the encoding is
+ * the locale-dependent multibyte encoding.  I recommend you set your locale to a
+ * UTF-8 capable locale to avoid any issues.  Also, by default, wimlib on UNIX
+ * will assume the locale is UTF-8 capable unless you call wimlib_global_init()
+ * after having set your desired locale.
  *
  * \section Limitations
  *

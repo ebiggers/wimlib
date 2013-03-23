@@ -151,18 +151,11 @@ UNIX builds.)
 
 .SH LOCALES AND CHARACTER ENCODINGS
 
-wimlib 1.3.0 has improved support for alternate character encodings.
-However, not everything has been well tested, and on UNIX you are strongly
-encouraged to use a UTF-8 locale so that you do not run into any problems.
-In particular, if your locale uses a character encoding that is
-not UTF-8, then you will not be able to open or capture WIM files containing
-files with paths not representable in the current locale's character encoding.
+On Windows, wimlib 1.3.2 and later works in UTF-16LE, and there should be no
+problems with character encodings.
 
-Similar restrictions apply to the Windows-native build of wimlib, but
-unfortunately Windows does not support UTF-8 locales.  So you will not be able
-to apply a WIM image containing files with names not representable in the
-current Windows code page, nor will you be able to capture a directory tree
-containing files with names not representable in the current Windows code page.
+On UNIX, wimlib works primarily in the locale-dependent multibyte encoding,
+which you are strongly recommended to set to UTF-8 to avoid any problems.
 
 .SH WARNING
 
