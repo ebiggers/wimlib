@@ -27,7 +27,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline void flush_bits(struct output_bitstream *ostream)
+static inline void
+flush_bits(struct output_bitstream *ostream)
 {
 	*(u16*)ostream->bit_output = cpu_to_le16(ostream->bitbuf);
 	ostream->bit_output = ostream->next_bit_output;
@@ -38,8 +39,9 @@ static inline void flush_bits(struct output_bitstream *ostream)
 
 /* Writes @num_bits bits, given by the @num_bits least significant bits of
  * @bits, to the output @ostream. */
-int bitstream_put_bits(struct output_bitstream *ostream, output_bitbuf_t bits,
-		       unsigned num_bits)
+int
+bitstream_put_bits(struct output_bitstream *ostream, output_bitbuf_t bits,
+		   unsigned num_bits)
 {
 	unsigned rem_bits;
 
@@ -73,7 +75,8 @@ int bitstream_put_bits(struct output_bitstream *ostream, output_bitbuf_t bits,
 }
 
 /* Flushes any remaining bits in the output buffer to the output byte stream. */
-int flush_output_bitstream(struct output_bitstream *ostream)
+int
+flush_output_bitstream(struct output_bitstream *ostream)
 {
 	if (ostream->num_bytes_remaining + (ostream->output -
 					ostream->bit_output) < 2)
@@ -87,8 +90,9 @@ int flush_output_bitstream(struct output_bitstream *ostream)
 
 /* Initializes an output bit buffer to write its output to the memory location
  * pointer to by @data. */
-void init_output_bitstream(struct output_bitstream *ostream, void *data,
-			   unsigned num_bytes)
+void
+init_output_bitstream(struct output_bitstream *ostream, void *data,
+		      unsigned num_bytes)
 {
 	wimlib_assert(num_bytes >= 4);
 
@@ -126,7 +130,8 @@ typedef struct {
 
 /* Comparator function for HuffmanLeafNodes.  Sorts primarily by symbol
  * frequency and secondarily by symbol value. */
-static int cmp_leaves_by_freq(const void *__leaf1, const void *__leaf2)
+static int
+cmp_leaves_by_freq(const void *__leaf1, const void *__leaf2)
 {
 	const HuffmanLeafNode *leaf1 = __leaf1;
 	const HuffmanLeafNode *leaf2 = __leaf2;
@@ -141,7 +146,8 @@ static int cmp_leaves_by_freq(const void *__leaf1, const void *__leaf2)
 
 /* Comparator function for HuffmanLeafNodes.  Sorts primarily by code length and
  * secondarily by symbol value. */
-static int cmp_leaves_by_code_len(const void *__leaf1, const void *__leaf2)
+static int
+cmp_leaves_by_code_len(const void *__leaf1, const void *__leaf2)
 {
 	const HuffmanLeafNode *leaf1 = __leaf1;
 	const HuffmanLeafNode *leaf2 = __leaf2;
@@ -156,7 +162,8 @@ static int cmp_leaves_by_code_len(const void *__leaf1, const void *__leaf2)
 
 /* Recursive function to calculate the depth of the leaves in a Huffman tree.
  * */
-static void huffman_tree_compute_path_lengths(HuffmanNode *node, u16 cur_len)
+static void
+huffman_tree_compute_path_lengths(HuffmanNode *node, u16 cur_len)
 {
 	if (node->sym == (u16)(-1)) {
 		/* Intermediate node. */
@@ -224,9 +231,10 @@ static void huffman_tree_compute_path_lengths(HuffmanNode *node, u16 cur_len)
  * 			lens[i] bits of codewords[i] will contain the codeword
  * 			for symbol i.
  */
-void make_canonical_huffman_code(unsigned num_syms, unsigned max_codeword_len,
-				 const freq_t freq_tab[], u8 lens[],
-				 u16 codewords[])
+void
+make_canonical_huffman_code(unsigned num_syms, unsigned max_codeword_len,
+			    const freq_t freq_tab[], u8 lens[],
+			    u16 codewords[])
 {
 	/* We require at least 2 possible symbols in the alphabet to produce a
 	 * valid Huffman decoding table. It is allowed that fewer than 2 symbols

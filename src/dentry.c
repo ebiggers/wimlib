@@ -796,7 +796,8 @@ destroy_ads_entry(struct wim_ads_entry *ads_entry)
 }
 
 /* Frees an inode. */
-void free_inode(struct wim_inode *inode)
+void
+free_inode(struct wim_inode *inode)
 {
 	if (inode) {
 		if (inode->i_ads_entries) {
@@ -818,7 +819,8 @@ void free_inode(struct wim_inode *inode)
 
 /* Decrements link count on an inode and frees it if the link count reaches 0.
  * */
-static void put_inode(struct wim_inode *inode)
+static void
+put_inode(struct wim_inode *inode)
 {
 	wimlib_assert(inode->i_nlink != 0);
 	if (--inode->i_nlink == 0) {
@@ -836,7 +838,8 @@ static void put_inode(struct wim_inode *inode)
  * The corresponding inode (if any) is freed only if its link count is
  * decremented to 0.
  */
-void free_dentry(struct wim_dentry *dentry)
+void
+free_dentry(struct wim_dentry *dentry)
 {
 	FREE(dentry->file_name);
 	FREE(dentry->short_name);
@@ -846,7 +849,8 @@ void free_dentry(struct wim_dentry *dentry)
 	FREE(dentry);
 }
 
-void put_dentry(struct wim_dentry *dentry)
+void
+put_dentry(struct wim_dentry *dentry)
 {
 	wimlib_assert(dentry->refcnt != 0);
 	if (--dentry->refcnt == 0)
@@ -855,7 +859,8 @@ void put_dentry(struct wim_dentry *dentry)
 
 /* This function is passed as an argument to for_dentry_in_tree_depth() in order
  * to free a directory tree. */
-static int do_free_dentry(struct wim_dentry *dentry, void *__lookup_table)
+static int
+do_free_dentry(struct wim_dentry *dentry, void *__lookup_table)
 {
 	struct wim_lookup_table *lookup_table = __lookup_table;
 	unsigned i;
@@ -884,13 +889,15 @@ static int do_free_dentry(struct wim_dentry *dentry, void *__lookup_table)
  * 			table entries corresponding to the dentries will be
  * 			decremented.
  */
-void free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
+void
+free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
 {
 	if (root)
 		for_dentry_in_tree_depth(root, do_free_dentry, lookup_table);
 }
 
-int increment_dentry_refcnt(struct wim_dentry *dentry, void *ignore)
+int
+increment_dentry_refcnt(struct wim_dentry *dentry, void *ignore)
 {
 	dentry->refcnt++;
 	return 0;

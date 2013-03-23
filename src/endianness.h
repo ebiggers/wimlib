@@ -8,14 +8,16 @@
 /* Watch out for conflicts with ntfs-3g headers... */
 
 #ifndef bswap16
-static inline uint16_t bswap16(uint16_t n)
+static inline uint16_t
+bswap16(uint16_t n)
 {
 	return (n << 8) | (n >> 8);
 }
 #endif /* ifndef bswap16 */
 
 #ifndef bswap32
-static inline uint32_t bswap32(uint32_t n)
+static inline uint32_t
+bswap32(uint32_t n)
 {
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3)
 	return __builtin_bswap32(n);
@@ -27,7 +29,8 @@ static inline uint32_t bswap32(uint32_t n)
 #endif /* ifndef bswap32 */
 
 #ifndef bswap64
-static inline uint64_t bswap64(uint64_t n)
+static inline uint64_t
+bswap64(uint64_t n)
 {
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3)
 	return __builtin_bswap64(n);
@@ -59,25 +62,29 @@ static inline uint64_t bswap64(uint64_t n)
 #	endif
 #endif
 
-static inline void array_cpu_to_le32(uint32_t *p, size_t n)
+static inline void
+array_cpu_to_le32(uint32_t *p, size_t n)
 {
 	for (size_t i = 0; i < n; i++)
 		p[i] = cpu_to_le32(p[i]);
 }
 
-static inline void array_le32_to_cpu(uint32_t *p, size_t n)
+static inline void
+array_le32_to_cpu(uint32_t *p, size_t n)
 {
 	for (size_t i = 0; i < n; i++)
 		p[i] = le32_to_cpu(p[i]);
 }
 
-static inline void array_cpu_to_le64(uint64_t *p, size_t n)
+static inline void
+array_cpu_to_le64(uint64_t *p, size_t n)
 {
 	for (size_t i = 0; i < n; i++)
 		p[i] = cpu_to_le64(p[i]);
 }
 
-static inline void array_le64_to_cpu(uint64_t *p, size_t n)
+static inline void
+array_le64_to_cpu(uint64_t *p, size_t n)
 {
 	for (size_t i = 0; i < n; i++)
 		p[i] = le64_to_cpu(p[i]);

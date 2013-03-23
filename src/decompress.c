@@ -89,9 +89,10 @@
  * indices into the decoding table, and symbol entries are distinguished from
  * pointers by the fact that values less than @num_syms must be symbol values.
  */
-int make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
-			      unsigned table_bits, const u8 lens[],
-			      unsigned max_codeword_len)
+int
+make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
+			  unsigned table_bits, const u8 lens[],
+			  unsigned max_codeword_len)
 {
 	unsigned len_counts[max_codeword_len + 1];
 	u16 sorted_syms[num_syms];
@@ -294,12 +295,13 @@ int make_huffman_decode_table(u16 decode_table[],  unsigned num_syms,
 
 /* Reads a Huffman-encoded symbol from the bistream when the number of remaining
  * bits is less than the maximum codeword length. */
-int read_huffsym_near_end_of_input(struct input_bitstream *istream,
-				   const u16 decode_table[],
-				   const u8 lens[],
-				   unsigned num_syms,
-				   unsigned table_bits,
-				   unsigned *n)
+int
+read_huffsym_near_end_of_input(struct input_bitstream *istream,
+			       const u16 decode_table[],
+			       const u8 lens[],
+			       unsigned num_syms,
+			       unsigned table_bits,
+			       unsigned *n)
 {
 	unsigned bitsleft = istream->bitsleft;
 	unsigned key_size;

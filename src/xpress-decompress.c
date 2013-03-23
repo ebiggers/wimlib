@@ -91,9 +91,10 @@
  *
  * Returns the match length, or -1 on error.
  */
-static int xpress_decode_match(unsigned huffsym, unsigned window_pos,
-			       unsigned window_len, u8 window[],
-			       struct input_bitstream *istream)
+static int
+xpress_decode_match(unsigned huffsym, unsigned window_pos,
+		    unsigned window_len, u8 window[],
+		    struct input_bitstream *istream)
 {
 	unsigned match_len;
 	unsigned match_offset;
@@ -162,11 +163,12 @@ static int xpress_decode_match(unsigned huffsym, unsigned window_pos,
 
 /* Decodes the Huffman-encoded matches and literal bytes in a block of
  * XPRESS-encoded data. */
-static int xpress_decompress_block(struct input_bitstream *istream,
-				   u8 uncompressed_data[],
-				   unsigned uncompressed_len,
-				   const u8 lens[],
-				   const u16 decode_table[])
+static int
+xpress_decompress_block(struct input_bitstream *istream,
+			u8 uncompressed_data[],
+			unsigned uncompressed_len,
+			const u8 lens[],
+			const u16 decode_table[])
 {
 	unsigned curpos;
 	unsigned huffsym;
@@ -198,8 +200,9 @@ static int xpress_decompress_block(struct input_bitstream *istream,
 }
 
 
-int xpress_decompress(const void *__compressed_data, unsigned compressed_len,
-		      void *uncompressed_data, unsigned uncompressed_len)
+int
+xpress_decompress(const void *__compressed_data, unsigned compressed_len,
+		  void *uncompressed_data, unsigned uncompressed_len)
 {
 	u8 lens[XPRESS_NUM_SYMBOLS];
 	u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS];

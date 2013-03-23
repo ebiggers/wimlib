@@ -36,8 +36,9 @@
  *
  * @codewords and @lens provide the Huffman code that is being used.
  */
-static int xpress_write_match(struct output_bitstream *ostream, u32 match,
-			      const u16 codewords[], const u8 lens[])
+static int
+xpress_write_match(struct output_bitstream *ostream, u32 match,
+		   const u16 codewords[], const u8 lens[])
 {
 	u32 adjusted_match_len = match & 0xffff;
 	u32 match_offset = match >> 16;
@@ -65,11 +66,12 @@ static int xpress_write_match(struct output_bitstream *ostream, u32 match,
 				  match_offset ^ (1 << offset_bsr), offset_bsr);
 }
 
-static int xpress_write_compressed_literals(struct output_bitstream *ostream,
-					    const u32 match_tab[],
-					    unsigned num_matches,
-					    const u16 codewords[],
-					    const u8 lens[])
+static int
+xpress_write_compressed_literals(struct output_bitstream *ostream,
+				 const u32 match_tab[],
+				 unsigned num_matches,
+				 const u16 codewords[],
+				 const u8 lens[])
 {
 	for (unsigned i = 0; i < num_matches; i++) {
 		int ret;
@@ -88,15 +90,17 @@ static int xpress_write_compressed_literals(struct output_bitstream *ostream,
 				  lens[XPRESS_END_OF_DATA]);
 }
 
-static u32 xpress_record_literal(u8 literal, void *__freq_tab)
+static u32
+xpress_record_literal(u8 literal, void *__freq_tab)
 {
 	freq_t *freq_tab = __freq_tab;
 	freq_tab[literal]++;
 	return literal;
 }
 
-static u32 xpress_record_match(unsigned match_offset, unsigned match_len,
-			       void *freq_tab, void *ignore)
+static u32
+xpress_record_match(unsigned match_offset, unsigned match_len,
+		    void *freq_tab, void *ignore)
 {
 	wimlib_assert(match_len >= XPRESS_MIN_MATCH &&
 		      match_len <= XPRESS_MAX_MATCH);
@@ -152,8 +156,9 @@ static const struct lz_params xpress_lz_params = {
  * not reduce its size, and @compressed_data will not contain the full
  * compressed data.
  */
-int xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
-		    void *__compressed_data, unsigned *compressed_len_ret)
+int
+xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
+		void *__compressed_data, unsigned *compressed_len_ret)
 {
 	const u8 *uncompressed_data = __uncompressed_data;
 	u8 *compressed_data = __compressed_data;

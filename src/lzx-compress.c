@@ -91,7 +91,8 @@ struct lzx_freq_tables {
  * numbers in the lzx_position_base array to calculate the slot directly from
  * the formatted offset without actually looking at the array.
  */
-static inline unsigned lzx_get_position_slot(unsigned formatted_offset)
+static inline unsigned
+lzx_get_position_slot(unsigned formatted_offset)
 {
 #if 0
 	/*
@@ -120,7 +121,8 @@ static inline unsigned lzx_get_position_slot(unsigned formatted_offset)
 	}
 }
 
-static u32 lzx_record_literal(u8 literal, void *__main_freq_tab)
+static u32
+lzx_record_literal(u8 literal, void *__main_freq_tab)
 {
 	freq_t *main_freq_tab = __main_freq_tab;
 	main_freq_tab[literal]++;
@@ -131,8 +133,9 @@ static u32 lzx_record_literal(u8 literal, void *__main_freq_tab)
  * the frequency of symbols in the main, length, and aligned offset alphabets.
  * The return value is a 32-bit number that provides the match in an
  * intermediate representation documented below. */
-static u32 lzx_record_match(unsigned match_offset, unsigned match_len,
-			    void *__freq_tabs, void *__queue)
+static u32
+lzx_record_match(unsigned match_offset, unsigned match_len,
+		 void *__freq_tabs, void *__queue)
 {
 	struct lzx_freq_tables *freq_tabs = __freq_tabs;
 	struct lru_queue *queue = __queue;
@@ -241,8 +244,9 @@ static u32 lzx_record_match(unsigned match_offset, unsigned match_len,
  * @codes:	Pointer to a structure that contains the codewords for the
  * 			main, length, and aligned offset Huffman codes.
  */
-static int lzx_write_match(struct output_bitstream *out, int block_type,
-			   u32 match, const struct lzx_codes *codes)
+static int
+lzx_write_match(struct output_bitstream *out, int block_type,
+		u32 match, const struct lzx_codes *codes)
 {
 	/* low 8 bits are the match length minus 2 */
 	unsigned match_len_minus_2 = match & 0xff;
@@ -347,11 +351,12 @@ static int lzx_write_match(struct output_bitstream *out, int block_type,
  * @codes:	Pointer to a structure that contains the codewords for the
  * 			main, length, and aligned offset Huffman codes.
  */
-static int lzx_write_compressed_literals(struct output_bitstream *ostream,
-					 int block_type,
-			 		 const u32 match_tab[],
-					 unsigned  num_compressed_literals,
-					 const struct lzx_codes *codes)
+static int
+lzx_write_compressed_literals(struct output_bitstream *ostream,
+			      int block_type,
+			      const u32 match_tab[],
+			      unsigned  num_compressed_literals,
+			      const struct lzx_codes *codes)
 {
 	unsigned i;
 	u32 match;
@@ -397,8 +402,9 @@ static int lzx_write_compressed_literals(struct output_bitstream *ostream,
  * @lens:	The code lengths for the Huffman tree, indexed by symbol.
  * @num_symbols:	The number of symbols in the code.
  */
-static int lzx_write_compressed_tree(struct output_bitstream *out,
-				     const u8 lens[], unsigned num_symbols)
+static int
+lzx_write_compressed_tree(struct output_bitstream *out,
+			  const u8 lens[], unsigned num_symbols)
 {
 	/* Frequencies of the length symbols, including the RLE symbols (NOT the
 	 * actual lengths themselves). */
@@ -560,8 +566,9 @@ static int lzx_write_compressed_tree(struct output_bitstream *out,
 
 /* Builds the canonical Huffman code for the main tree, the length tree, and the
  * aligned offset tree. */
-static void lzx_make_huffman_codes(const struct lzx_freq_tables *freq_tabs,
-				struct lzx_codes *codes)
+static void 
+lzx_make_huffman_codes(const struct lzx_freq_tables *freq_tabs,
+		       struct lzx_codes *codes)
 {
 	make_canonical_huffman_code(LZX_MAINTREE_NUM_SYMBOLS,
 					LZX_MAX_CODEWORD_LEN,
@@ -581,8 +588,9 @@ static void lzx_make_huffman_codes(const struct lzx_freq_tables *freq_tabs,
 					codes->aligned_codewords);
 }
 
-static void do_call_insn_translation(u32 *call_insn_target, int input_pos,
-				     int32_t file_size)
+static void
+do_call_insn_translation(u32 *call_insn_target, int input_pos,
+			 int32_t file_size)
 {
 	int32_t abs_offset;
 	int32_t rel_offset;
@@ -602,8 +610,8 @@ static void do_call_insn_translation(u32 *call_insn_target, int input_pos,
 
 /* This is the reverse of undo_call_insn_preprocessing() in lzx-decompress.c.
  * See the comment above that function for more information. */
-static void do_call_insn_preprocessing(u8 uncompressed_data[],
-				       int uncompressed_data_len)
+static void
+do_call_insn_preprocessing(u8 uncompressed_data[], int uncompressed_data_len)
 {
 	for (int i = 0; i < uncompressed_data_len - 10; i++) {
 		if (uncompressed_data[i] == 0xe8) {
@@ -647,8 +655,9 @@ static const struct lz_params lzx_lz_params = {
  * not reduce its size, and @compressed_data will not contain the full
  * compressed data.
  */
-int lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
-		 void *compressed_data, unsigned *compressed_len_ret)
+int
+lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
+	     void *compressed_data, unsigned *compressed_len_ret)
 {
 	struct output_bitstream ostream;
 	u8 uncompressed_data[uncompressed_len + 8];

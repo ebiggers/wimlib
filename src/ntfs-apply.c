@@ -43,8 +43,9 @@
 #include <string.h>
 #include <locale.h>
 
-static int extract_wim_chunk_to_ntfs_attr(const void *buf, size_t len,
-					  u64 offset, void *arg)
+static int
+extract_wim_chunk_to_ntfs_attr(const void *buf, size_t len,
+			       u64 offset, void *arg)
 {
 	ntfs_attr *na = arg;
 	if (ntfs_attr_pwrite(na, offset, len, buf) == len) {
@@ -82,8 +83,9 @@ extract_wim_resource_to_ntfs_attr(const struct wim_lookup_table_entry *lte,
  *
  * Returns 0 on success, nonzero on failure.
  */
-static int write_ntfs_data_streams(ntfs_inode *ni, const struct wim_dentry *dentry,
-				   union wimlib_progress_info *progress_info)
+static int
+write_ntfs_data_streams(ntfs_inode *ni, const struct wim_dentry *dentry,
+			union wimlib_progress_info *progress_info)
 {
 	int ret = 0;
 	unsigned stream_idx = 0;
@@ -328,8 +330,9 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
  * Transfers the reparse data from a WIM inode (which must represent a reparse
  * point) to a NTFS inode.
  */
-static int apply_reparse_data(ntfs_inode *ni, const struct wim_dentry *dentry,
-			      union wimlib_progress_info *progress_info)
+static int
+apply_reparse_data(ntfs_inode *ni, const struct wim_dentry *dentry,
+		   union wimlib_progress_info *progress_info)
 {
 	struct wim_lookup_table_entry *lte;
 	int ret = 0;
