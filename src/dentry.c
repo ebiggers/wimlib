@@ -781,7 +781,7 @@ init_ads_entry(struct wim_ads_entry *ads_entry, const void *name,
 		ads_entry->stream_name = p;
 		ads_entry->stream_name_nbytes = name_nbytes;
 	} else {
-		if (name && *(const tchar*)name == T('\0')) {
+		if (name && *(const tchar*)name != T('\0')) {
 			ret = get_utf16le_name(name, &ads_entry->stream_name,
 					       &ads_entry->stream_name_nbytes);
 		}
