@@ -36,6 +36,7 @@
 #include "dentry.h"
 #include "lookup_table.h"
 #include "xml.h"
+#include "security.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -123,15 +124,14 @@ err:
  * 		These lookup table entries that are added point to the path of
  * 		the file on disk.
  *
- * @sd:		Ignored.  (Security data only captured in NTFS mode.)
+ * @sd_set:	Ignored.  (Security data only captured in NTFS mode.)
  *
  * @capture_config:
  * 		Configuration for files to be excluded from capture.
  *
  * @add_flags:  Bitwise or of WIMLIB_ADD_IMAGE_FLAG_*
  *
- * @extra_arg:	Ignored in UNIX builds; used to pass sd_set pointer in Windows
- *		builds.
+ * @extra_arg:	Ignored
  *
  * @return:	0 on success, nonzero on failure.  It is a failure if any of
  *		the files cannot be `stat'ed, or if any of the needed
@@ -144,7 +144,7 @@ static int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const char *root_disk_path,
 		       struct wim_lookup_table *lookup_table,
-		       struct wim_security_data *sd,
+		       struct sd_set *sd,
 		       const struct capture_config *config,
 		       int add_image_flags,
 		       wimlib_progress_func_t progress_func,
@@ -923,7 +923,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	int (*capture_tree)(struct wim_dentry **,
 			    const tchar *,
 			    struct wim_lookup_table *,
-			    struct wim_security_data *,
+			    struct sd_set *,
 			    const struct capture_config *,
 			    int,
 			    wimlib_progress_func_t,
@@ -935,6 +935,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	struct capture_config config;
 	struct wim_image_metadata *imd;
 	int ret;
+	struct sd_set sd_set;
 
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
 #ifdef WITH_NTFS_3G
@@ -1008,6 +1009,9 @@ wimlib_add_image_multisource(WIMStruct *w,
 	sd->total_length = 8;
 	sd->refcnt = 1;
 
+	sd_set.sd = sd;
+	sd_set.rb_root.rb_node = NULL;
+
 	DEBUG("Using %zu capture sources", num_sources);
 	canonicalize_targets(sources, num_sources);
 	sort_sources(sources, num_sources);
@@ -1041,8 +1045,10 @@ wimlib_add_image_multisource(WIMStruct *w,
 		flags = add_image_flags | WIMLIB_ADD_IMAGE_FLAG_SOURCE;
 		if (!*sources[i].wim_target_path)
 			flags |= WIMLIB_ADD_IMAGE_FLAG_ROOT;
-		ret = (*capture_tree)(&branch, sources[i].fs_source_path,
-				      w->lookup_table, sd,
+		ret = (*capture_tree)(&branch,
+				      sources[i].fs_source_path,
+				      w->lookup_table,
+				      &sd_set,
 				      &config,
 				      flags,
 				      progress_func, extra_arg);
@@ -1101,7 +1107,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wimlib_set_boot_idx(w, w->hdr.image_count);
 	ret = 0;
-	goto out_destroy_capture_config;
+	goto out_destroy_sd_set;
 out_destroy_imd:
 	destroy_image_metadata(&w->image_metadata[w->hdr.image_count - 1],
 			       w->lookup_table);
@@ -1113,6 +1119,8 @@ out_free_dentry_tree:
 	free_dentry_tree(root_dentry, w->lookup_table);
 out_free_security_data:
 	free_security_data(sd);
+out_destroy_sd_set:
+	destroy_sd_set(&sd_set);
 out_destroy_capture_config:
 	destroy_capture_config(&config);
 out:

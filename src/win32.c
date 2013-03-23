@@ -67,8 +67,6 @@ void
 win32_global_init()
 {
 	DWORD err;
-	bool warned;
-
 
 	if (hKernel32 == NULL) {
 		DEBUG("Loading Kernel32.dll");
@@ -108,26 +106,28 @@ win32_global_cleanup()
 	}
 }
 
-static const char *access_denied_msg =
-"         If you are not running this program as the administrator, you may\n"
-"         need to do so, so that all data and metadata can be backed up.\n"
-"         Otherwise, there may be no way to access the desired data or\n"
-"         metadata without taking ownership of the file or directory.\n";
+static const wchar_t *access_denied_msg =
+L"         If you are not running this program as the administrator, you may\n"
+ "         need to do so, so that all data and metadata can be backed up.\n"
+ "         Otherwise, there may be no way to access the desired data or\n"
+ "         metadata without taking ownership of the file or directory.\n"
+ ;
 
 #ifdef ENABLE_ERROR_MESSAGES
 void
 win32_error(u32 err_code)
 {
-	char *buffer;
+	wchar_t *buffer;
 	DWORD nchars;
-	nchars = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER,
+	nchars = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM |
+				    FORMAT_MESSAGE_ALLOCATE_BUFFER,
 				NULL, err_code, 0,
-				(char*)&buffer, 0, NULL);
+				(wchar_t*)&buffer, 0, NULL);
 	if (nchars == 0) {
 		ERROR("Error printing error message! "
 		      "Computer will self-destruct in 3 seconds.");
 	} else {
-		ERROR("Win32 error: %s", buffer);
+		ERROR("Win32 error: %ls", buffer);
 		LocalFree(buffer);
 	}
 }
@@ -159,7 +159,7 @@ win32_open_file_data_only(const wchar_t *path)
 }
 
 int
-win32_read_file(const utf16lechar *win32_filename,
+win32_read_file(const wchar_t *filename,
 		void *handle, u64 offset, size_t size, void *buf)
 {
 	HANDLE h = handle;
@@ -173,7 +173,7 @@ win32_read_file(const utf16lechar *win32_filename,
 		if (ReadFile(h, buf, size, &bytesRead, NULL) && bytesRead == size)
 			return 0;
 	err = GetLastError();
-	ERROR("Error reading \"%ls\"", win32_filename);
+	ERROR("Error reading \"%ls\"", filename);
 	win32_error(err);
 	return WIMLIB_ERR_READ;
 }
@@ -191,14 +191,12 @@ FILETIME_to_u64(const FILETIME *ft)
 }
 
 static int
-win32_get_short_name(struct wim_dentry *dentry,
-		     const wchar_t *path_utf16)
+win32_get_short_name(struct wim_dentry *dentry, const wchar_t *path)
 {
 	WIN32_FIND_DATAW dat;
-	if (FindFirstFileW(path_utf16, &dat) &&
-	    dat.cAlternateFileName[0] != L'\0')
-	{
-		size_t short_name_nbytes = wcslen(dat.cAlternateFileName) * 2;
+	if (FindFirstFileW(path, &dat) && dat.cAlternateFileName[0] != L'\0') {
+		size_t short_name_nbytes = wcslen(dat.cAlternateFileName) *
+					   sizeof(wchar_t);
 		size_t n = short_name_nbytes + sizeof(wchar_t);
 		dentry->short_name = MALLOC(n);
 		if (!dentry->short_name)
@@ -212,7 +210,7 @@ win32_get_short_name(struct wim_dentry *dentry,
 static int
 win32_get_security_descriptor(struct wim_dentry *dentry,
 			      struct sd_set *sd_set,
-			      const wchar_t *path_utf16)
+			      const wchar_t *path)
 {
 	SECURITY_INFORMATION requestedInformation;
 	DWORD lenNeeded = 0;
@@ -224,13 +222,13 @@ win32_get_security_descriptor(struct wim_dentry *dentry,
 			       OWNER_SECURITY_INFORMATION |
 			       GROUP_SECURITY_INFORMATION;
 	/* Request length of security descriptor */
-	status = GetFileSecurityW(path_utf16, requestedInformation,
+	status = GetFileSecurityW(path, requestedInformation,
 				  NULL, 0, &lenNeeded);
 	err = GetLastError();
 	if (!status && err == ERROR_INSUFFICIENT_BUFFER) {
 		DWORD len = lenNeeded;
 		char buf[len];
-		if (GetFileSecurityW(path_utf16, requestedInformation,
+		if (GetFileSecurityW(path, requestedInformation,
 				     (PSECURITY_DESCRIPTOR)buf, len, &lenNeeded))
 		{
 			int security_id = sd_set_add_sd(sd_set, buf, len);
@@ -247,29 +245,36 @@ win32_get_security_descriptor(struct wim_dentry *dentry,
 
 	if (err == ERROR_ACCESS_DENIED) {
 		WARNING("Failed to read security descriptor of \"%ls\": "
-			"Access denied!\n%s", path_utf16, access_denied_msg);
+			"Access denied!\n%ls", path, access_denied_msg);
 		return 0;
 	} else {
-		ERROR("Win32 API: Failed to read security descriptor of \"%ls\"",
-		      path_utf16);
+		ERROR("Failed to read security descriptor of \"%ls\"", path);
 		win32_error(err);
 		return WIMLIB_ERR_READ;
 	}
 }
 
+static int
+win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
+				  const wchar_t *path,
+				  const size_t path_num_chars,
+				  struct wim_lookup_table *lookup_table,
+				  struct sd_set *sd_set,
+				  const struct capture_config *config,
+				  int add_image_flags,
+				  wimlib_progress_func_t progress_func);
+
 /* Reads the directory entries of directory using a Win32 API and recursively
  * calls win32_build_dentry_tree() on them. */
 static int
 win32_recurse_directory(struct wim_dentry *root,
-			const mbchar *root_disk_path,
+			const wchar_t *dir_path,
+			const size_t dir_path_num_chars,
 			struct wim_lookup_table *lookup_table,
-			struct wim_security_data *sd,
+			struct sd_set *sd_set,
 			const struct capture_config *config,
 			int add_image_flags,
-			wimlib_progress_func_t progress_func,
-			struct sd_set *sd_set,
-			const wchar_t *path_utf16,
-			size_t path_utf16_nchars)
+			wimlib_progress_func_t progress_func)
 {
 	WIN32_FIND_DATAW dat;
 	HANDLE hFind;
@@ -281,12 +286,8 @@ win32_recurse_directory(struct wim_dentry *root,
 		 * Unlike UNIX opendir(), FindFirstFileW has file globbing built
 		 * into it.  But this isn't what we actually want, so just add a
 		 * dummy glob to get all entries. */
-		wchar_t pattern_buf[path_utf16_nchars + 3];
-		memcpy(pattern_buf, path_utf16,
-		       path_utf16_nchars * sizeof(wchar_t));
-		pattern_buf[path_utf16_nchars] = L'/';
-		pattern_buf[path_utf16_nchars + 1] = L'*';
-		pattern_buf[path_utf16_nchars + 2] = L'\0';
+		wchar_t pattern_buf[dir_path_num_chars + 3];
+		swprintf(pattern_buf, L"%ls/*", dir_path);
 		hFind = FindFirstFileW(pattern_buf, &dat);
 	}
 	if (hFind == INVALID_HANDLE_VALUE) {
@@ -294,8 +295,7 @@ win32_recurse_directory(struct wim_dentry *root,
 		if (err == ERROR_FILE_NOT_FOUND) {
 			return 0;
 		} else {
-			ERROR("Win32 API: Failed to read directory \"%s\"",
-			      root_disk_path);
+			ERROR("Failed to read directory \"%ls\"", dir_path);
 			win32_error(err);
 			return WIMLIB_ERR_READ;
 		}
@@ -303,28 +303,24 @@ win32_recurse_directory(struct wim_dentry *root,
 	ret = 0;
 	do {
 		/* Skip . and .. entries */
-		if (!(dat.cFileName[0] == cpu_to_le16(L'.') &&
-		      (dat.cFileName[1] == cpu_to_le16(L'\0') ||
-		       (dat.cFileName[1] == cpu_to_le16(L'.') &&
-			dat.cFileName[2] == cpu_to_le16(L'\0')))))
+		if (wcscmp(dat.cFileName, L".") && wcscmp(dat.cFileName, L".."))
 		{
+			size_t filename_num_chars = wcslen(dat.cFileName);
+			size_t new_path_num_chars = dir_path_num_chars + 1 +
+						    filename_num_chars;
+			wchar_t new_path[new_path_num_chars + 1];
+
+			swprintf(new_path, L"%ls/%ls", dir_path, dat.cFileName);
+
 			struct wim_dentry *child;
-
-			mbchar *mbs_name;
-			size_t mbs_name_nbytes;
-			ret = utf16le_to_mbs(dat.cFileName,
-					     wcslen(dat.cFileName) * sizeof(wchar_t),
-					     &mbs_name,
-					     &mbs_name_nbytes);
-			if (ret)
-				goto out_find_close;
-
-			mbchar name[strlen(root_disk_path) + 1 + mbs_name_nbytes + 1];
-			sprintf(name, "%s/%s", root_disk_path, mbs_name);
-			FREE(mbs_name);
-			ret = win32_build_dentry_tree(&child, name, lookup_table,
-						      sd, config, add_image_flags,
-						      progress_func, sd_set);
+			ret = win32_build_dentry_tree_recursive(&child,
+								new_path,
+								new_path_num_chars,
+								lookup_table,
+								sd_set,
+								config,
+								add_image_flags,
+								progress_func);
 			if (ret)
 				goto out_find_close;
 			if (child)
@@ -333,7 +329,7 @@ win32_recurse_directory(struct wim_dentry *root,
 	} while (FindNextFileW(hFind, &dat));
 	err = GetLastError();
 	if (err != ERROR_NO_MORE_FILES) {
-		ERROR("Win32 API: Failed to read directory \"%s\"", root_disk_path);
+		ERROR("Failed to read directory \"%s\"", dir_path);
 		win32_error(err);
 		if (ret == 0)
 			ret = WIMLIB_ERR_READ;
@@ -361,7 +357,7 @@ static int
 win32_capture_reparse_point(HANDLE hFile,
 			    struct wim_inode *inode,
 			    struct wim_lookup_table *lookup_table,
-			    const mbchar *path)
+			    const wchar_t *path)
 {
 	/* "Reparse point data, including the tag and optional GUID,
 	 * cannot exceed 16 kilobytes." - MSDN  */
@@ -379,16 +375,16 @@ win32_capture_reparse_point(HANDLE hFile,
 			     NULL))
 	{
 		DWORD err = GetLastError();
-		ERROR("Win32 API: Failed to get reparse data of \"%s\"", path);
+		ERROR("Failed to get reparse data of \"%ls\"", path);
 		win32_error(err);
 		return WIMLIB_ERR_READ;
 	}
 	if (bytesReturned < 8) {
-		ERROR("Reparse data on \"%s\" is invalid", path);
+		ERROR("Reparse data on \"%ls\" is invalid", path);
 		return WIMLIB_ERR_READ;
 	}
 	inode->i_reparse_tag = le32_to_cpu(*(u32*)reparse_point_buf);
-	return inode_add_ads_with_data(inode, "",
+	return inode_add_ads_with_data(inode, L"",
 				       reparse_point_buf + 8,
 				       bytesReturned - 8, lookup_table);
 }
@@ -439,9 +435,9 @@ out_close_handle:
  * wim_lookup_table_entry' in memory for it, or uses an existing 'struct
  * wim_lookup_table_entry' for an identical stream.
  *
- * @path_utf16:         Path to the file (UTF-16LE).
+ * @path:               Path to the file (UTF-16LE).
  *
- * @path_utf16_nchars:  Number of 2-byte characters in @path_utf16.
+ * @path_num_chars:     Number of 2-byte characters in @path.
  *
  * @inode:              WIM inode to save the stream into.
  *
@@ -453,8 +449,8 @@ out_close_handle:
  * Returns 0 on success; nonzero on failure.
  */
 static int
-win32_capture_stream(const wchar_t *path_utf16,
-		     size_t path_utf16_nchars,
+win32_capture_stream(const wchar_t *path,
+		     size_t path_num_chars,
 		     struct wim_inode *inode,
 		     struct wim_lookup_table *lookup_table,
 		     WIN32_FIND_STREAM_DATA *dat)
@@ -496,7 +492,7 @@ win32_capture_stream(const wchar_t *path_utf16,
 	if (is_named_stream) {
 		/* Allocate an ADS entry for the named stream. */
 		ads_entry = inode_add_ads_utf16le(inode, stream_name,
-						  stream_name_nchars * 2);
+						  stream_name_nchars * sizeof(wchar_t));
 		if (!ads_entry) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
@@ -512,15 +508,15 @@ win32_capture_stream(const wchar_t *path_utf16,
 	 * begin with an explicit "./" so that, for example, a file t:ads, where
 	 * :ads is the part we added, is not interpreted as a file on the t:
 	 * drive. */
-	spath_nchars = path_utf16_nchars;
+	spath_nchars = path_num_chars;
 	relpath_prefix = L"";
 	colonchar = L"";
 	if (is_named_stream) {
 		spath_nchars += 1 + stream_name_nchars;
 		colonchar = L":";
-		if (path_utf16_nchars == 1 &&
-		    path_utf16[0] != cpu_to_le16('/') &&
-		    path_utf16[0] != cpu_to_le16('\\'))
+		if (path_num_chars == 1 &&
+		    path[0] != L'/' &&
+		    path[0] != L'\\')
 		{
 			spath_nchars += 2;
 			relpath_prefix = L"./";
@@ -530,14 +526,13 @@ win32_capture_stream(const wchar_t *path_utf16,
 	spath_buf_nbytes = (spath_nchars + 1) * sizeof(wchar_t);
 	spath = MALLOC(spath_buf_nbytes);
 
-	swprintf(spath, spath_buf_nbytes, L"%ls%ls%ls%ls",
-		 relpath_prefix, path_utf16, colonchar, stream_name);
+	swprintf(spath, L"%ls%ls%ls%ls",
+		 relpath_prefix, path, colonchar, stream_name);
 
 	ret = win32_sha1sum(spath, hash);
 	if (ret) {
 		err = GetLastError();
-		ERROR("Win32 API: Failed to read \"%ls\" to calculate SHA1sum",
-		      spath);
+		ERROR("Failed to read \"%ls\" to calculate SHA1sum", spath);
 		win32_error(err);
 		goto out_free_spath;
 	}
@@ -554,8 +549,8 @@ win32_capture_stream(const wchar_t *path_utf16,
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_spath;
 		}
-		lte->win32_file_on_disk = spath;
-		lte->file_on_disk_fp = INVALID_HANDLE_VALUE;
+		lte->file_on_disk = spath;
+		lte->win32_file_on_disk_fp = INVALID_HANDLE_VALUE;
 		spath = NULL;
 		lte->resource_location = RESOURCE_WIN32;
 		lte->resource_entry.original_size = (uint64_t)dat->StreamSize.QuadPart;
@@ -572,7 +567,7 @@ out_free_spath:
 out:
 	return ret;
 out_invalid_stream_name:
-	ERROR("Invalid stream name: \"%ls:%ls\"", path_utf16, dat->cStreamName);
+	ERROR("Invalid stream name: \"%ls:%ls\"", path, dat->cStreamName);
 	ret = WIMLIB_ERR_READ;
 	goto out;
 }
@@ -580,9 +575,9 @@ out_invalid_stream_name:
 /* Scans a Win32 file for unnamed and named data streams (not reparse point
  * streams).
  *
- * @path_utf16:         Path to the file (UTF-16LE).
+ * @path:               Path to the file (UTF-16LE).
  *
- * @path_utf16_nchars:  Number of 2-byte characters in @path_utf16.
+ * @path_num_chars:     Number of 2-byte characters in @path.
  *
  * @inode:              WIM inode to save the stream into.
  *
@@ -594,8 +589,8 @@ out_invalid_stream_name:
  * Returns 0 on success; nonzero on failure.
  */
 static int
-win32_capture_streams(const wchar_t *path_utf16,
-		      size_t path_utf16_nchars,
+win32_capture_streams(const wchar_t *path,
+		      size_t path_num_chars,
 		      struct wim_inode *inode,
 		      struct wim_lookup_table *lookup_table,
 		      u64 file_size)
@@ -608,7 +603,7 @@ win32_capture_streams(const wchar_t *path_utf16,
 	if (win32func_FindFirstStreamW == NULL)
 		goto unnamed_only;
 
-	hFind = win32func_FindFirstStreamW(path_utf16, FindStreamInfoStandard, &dat, 0);
+	hFind = win32func_FindFirstStreamW(path, FindStreamInfoStandard, &dat, 0);
 	if (hFind == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
 
@@ -624,21 +619,21 @@ win32_capture_streams(const wchar_t *path_utf16,
 			return 0;
 		} else {
 			if (err == ERROR_ACCESS_DENIED) {
-				WARNING("Failed to look up data streams of \"%ls\": "
-					"Access denied!\n%s", path_utf16,
-					access_denied_msg);
+				WARNING("Failed to look up data streams "
+					"of \"%ls\": Access denied!\n%ls",
+					path, access_denied_msg);
 				return 0;
 			} else {
-				ERROR("Win32 API: Failed to look up data streams of \"%ls\"",
-				      path_utf16);
+				ERROR("Failed to look up data streams "
+				      "of \"%ls\"", path);
 				win32_error(err);
 				return WIMLIB_ERR_READ;
 			}
 		}
 	}
 	do {
-		ret = win32_capture_stream(path_utf16,
-					   path_utf16_nchars,
+		ret = win32_capture_stream(path,
+					   path_num_chars,
 					   inode, lookup_table,
 					   &dat);
 		if (ret)
@@ -646,7 +641,7 @@ win32_capture_streams(const wchar_t *path_utf16,
 	} while (win32func_FindNextStreamW(hFind, &dat));
 	err = GetLastError();
 	if (err != ERROR_HANDLE_EOF) {
-		ERROR("Win32 API: Error reading data streams from \"%ls\"", path_utf16);
+		ERROR("Win32 API: Error reading data streams from \"%ls\"", path);
 		win32_error(err);
 		ret = WIMLIB_ERR_READ;
 	}
@@ -661,37 +656,31 @@ unnamed_only:
 	} else {
 		wcscpy(dat.cStreamName, L"::$DATA");
 		dat.StreamSize.QuadPart = file_size;
-		ret = win32_capture_stream(path_utf16,
-					   path_utf16_nchars,
+		ret = win32_capture_stream(path,
+					   path_num_chars,
 					   inode, lookup_table,
 					   &dat);
 	}
 	return ret;
 }
 
-/* Win32 version of capturing a directory tree */
-int
-win32_build_dentry_tree(struct wim_dentry **root_ret,
-			const mbchar *root_disk_path,
-			struct wim_lookup_table *lookup_table,
-			struct wim_security_data *sd,
-			const struct capture_config *config,
-			int add_image_flags,
-			wimlib_progress_func_t progress_func,
-			void *extra_arg)
+static int
+win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
+				  const wchar_t *path,
+				  const size_t path_num_chars,
+				  struct wim_lookup_table *lookup_table,
+				  struct sd_set *sd_set,
+				  const struct capture_config *config,
+				  int add_image_flags,
+				  wimlib_progress_func_t progress_func)
 {
 	struct wim_dentry *root = NULL;
-	int ret = 0;
 	struct wim_inode *inode;
-
-	wchar_t *path_utf16;
-	size_t path_utf16_nbytes;
-	size_t path_utf16_nchars;
-	struct sd_set *sd_set;
 	DWORD err;
 	u64 file_size;
+	int ret = 0;
 
-	if (exclude_path(root_disk_path, config, true)) {
+	if (exclude_path(path, config, true)) {
 		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
 			ERROR("Cannot exclude the root directory from capture");
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
@@ -701,7 +690,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		    && progress_func)
 		{
 			union wimlib_progress_info info;
-			info.scan.cur_path = root_disk_path;
+			info.scan.cur_path = path;
 			info.scan.excluded = true;
 			progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 		}
@@ -712,47 +701,34 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	    && progress_func)
 	{
 		union wimlib_progress_info info;
-		info.scan.cur_path = root_disk_path;
+		info.scan.cur_path = path;
 		info.scan.excluded = false;
 		progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 	}
 
-	if (extra_arg == NULL) {
-		sd_set = alloca(sizeof(struct sd_set));
-		sd_set->rb_root.rb_node = NULL,
-		sd_set->sd = sd;
-	} else {
-		sd_set = extra_arg;
-	}
-
-	ret = mbs_to_utf16le(root_disk_path, strlen(root_disk_path),
-			     &path_utf16, &path_utf16_nbytes);
-	if (ret)
-		goto out_destroy_sd_set;
-	path_utf16_nchars = path_utf16_nbytes / sizeof(wchar_t);
-
-	HANDLE hFile = win32_open_existing_file(path_utf16,
+	HANDLE hFile = win32_open_existing_file(path,
 						FILE_READ_DATA | FILE_READ_ATTRIBUTES);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
-		ERROR("Win32 API: Failed to open \"%s\"", root_disk_path);
+		ERROR("Win32 API: Failed to open \"%ls\"", path);
 		win32_error(err);
 		ret = WIMLIB_ERR_OPEN;
-		goto out_free_path_utf16;
+		goto out;
 	}
 
 	BY_HANDLE_FILE_INFORMATION file_info;
 	if (!GetFileInformationByHandle(hFile, &file_info)) {
 		err = GetLastError();
-		ERROR("Win32 API: Failed to get file information for \"%s\"",
-		      root_disk_path);
+		ERROR("Win32 API: Failed to get file information for \"%ls\"",
+		      path);
 		win32_error(err);
 		ret = WIMLIB_ERR_STAT;
 		goto out_close_handle;
 	}
 
 	/* Create a WIM dentry */
-	ret = new_dentry_with_timeless_inode(path_basename(root_disk_path), &root);
+	ret = new_dentry_with_timeless_inode(path_basename_with_len(path, path_num_chars),
+					     &root);
 	if (ret)
 		goto out_close_handle;
 
@@ -770,12 +746,12 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
 
 	/* Get DOS name and security descriptor (if any). */
-	ret = win32_get_short_name(root, path_utf16);
+	ret = win32_get_short_name(root, path);
 	if (ret)
 		goto out_close_handle;
 
 	if (!(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
-		ret = win32_get_security_descriptor(root, sd_set, path_utf16);
+		ret = win32_get_security_descriptor(root, sd_set, path);
 		if (ret)
 			goto out_close_handle;
 	}
@@ -788,50 +764,82 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 
 		/* But first... directories may have alternate data streams that
 		 * need to be captured. */
-		ret = win32_capture_streams(path_utf16,
-					    path_utf16_nchars,
+		ret = win32_capture_streams(path,
+					    path_num_chars,
 					    inode,
 					    lookup_table,
 					    file_size);
 		if (ret)
 			goto out_close_handle;
 		ret = win32_recurse_directory(root,
-					      root_disk_path,
+					      path,
+					      path_num_chars,
 					      lookup_table,
-					      sd,
+					      sd_set,
 					      config,
 					      add_image_flags,
-					      progress_func,
-					      sd_set,
-					      path_utf16,
-					      path_utf16_nchars);
+					      progress_func);
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Reparse point: save the reparse tag and data */
 		ret = win32_capture_reparse_point(hFile,
 						  inode,
 						  lookup_table,
-						  root_disk_path);
+						  path);
 	} else {
 		/* Not a directory, not a reparse point; capture the default
 		 * file contents and any alternate data streams. */
-		ret = win32_capture_streams(path_utf16,
-					    path_utf16_nchars,
+		ret = win32_capture_streams(path,
+					    path_num_chars,
 					    inode,
 					    lookup_table,
 					    file_size);
 	}
 out_close_handle:
 	CloseHandle(hFile);
-out_free_path_utf16:
-	FREE(path_utf16);
-out_destroy_sd_set:
-	if (extra_arg == NULL)
-		destroy_sd_set(sd_set);
 out:
 	if (ret == 0)
 		*root_ret = root;
 	else
 		free_dentry_tree(root, lookup_table);
+	return ret;
+}
+
+/* Win32 version of capturing a directory tree */
+int
+win32_build_dentry_tree(struct wim_dentry **root_ret,
+			const wchar_t *root_disk_path,
+			struct wim_lookup_table *lookup_table,
+			struct sd_set *sd_set,
+			const struct capture_config *config,
+			int add_image_flags,
+			wimlib_progress_func_t progress_func,
+			void *extra_arg)
+{
+	size_t path_nchars;
+	wchar_t *path;
+	int ret;
+	
+	path_nchars = wcslen(root_disk_path);
+	if (path_nchars > 32767)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	/* There is no check for overflow later when this buffer is being used!
+	 * But the max path length on NTFS is 32767 characters, and paths need
+	 * to be written specially to even go past 260 characters, so we should
+	 * be okay with 32770 characters. */
+	path = MALLOC(32770 * sizeof(wchar_t));
+	if (!path)
+		return WIMLIB_ERR_NOMEM;
+
+	ret = win32_build_dentry_tree_recursive(root_ret,
+						path,
+						path_nchars,
+						lookup_table,
+						sd_set,
+						config,
+						add_image_flags,
+						progress_func);
+	FREE(path);
 	return ret;
 }
 
@@ -990,7 +998,7 @@ win32_extract_stream(const struct wim_inode *inode,
 			prefix = L"";
 		}
 		stream_path = alloca((stream_path_nchars + 1) * sizeof(wchar_t));
-		swprintf(stream_path, stream_path_nchars + 1, L"%ls%ls:%ls",
+		swprintf(stream_path, L"%ls%ls:%ls",
 			 prefix, path, stream_name_utf16);
 	} else {
 		/* Unnamed stream; its path is just the path to the file itself.
@@ -1126,18 +1134,22 @@ out:
 /* Extract a file, directory, reparse point, or hard link to an
  * already-extracted file using the Win32 API */
 int win32_do_apply_dentry(const wchar_t *output_path,
-			  size_t output_path_num_wchars,
+			  size_t output_path_num_chars,
 			  struct wim_dentry *dentry,
 			  struct apply_args *args)
 {
-	ret = 0;
+	int ret;
+	struct wim_inode *inode = dentry->d_inode;
+	DWORD err;
+
 	if (inode->i_nlink > 1 && inode->i_extracted_file != NULL) {
 		/* Linked file, with another name already extracted.  Create a
 		 * hard link. */
 		DEBUG("Creating hard link \"%ls => %ls\"",
 		      output_path, inode->i_extracted_file);
-		if (!CreateHardLinkW(utf16le_path, inode->i_extracted_file, NULL))
-		{
+		if (CreateHardLinkW(output_path, inode->i_extracted_file, NULL)) {
+			ret = 0;
+		} else {
 			err = GetLastError();
 			ERROR("Can't create hard link \"%ls => %ls\"",
 			      output_path, inode->i_extracted_file);
@@ -1156,14 +1168,11 @@ int win32_do_apply_dentry(const wchar_t *output_path,
 		ret = win32_extract_streams(inode, output_path,
 					    &args->progress.extract.completed_bytes,
 					    security_data);
-		if (ret)
-			return ret;
-
-		if (inode->i_nlink > 1) {
+		if (ret == 0 && inode->i_nlink > 1) {
 			/* Save extracted path for a later call to
 			 * CreateHardLinkW() if this inode has multiple links.
 			 * */
-			inode->i_extracted_file = WSTRDUP(utf16le_path);
+			inode->i_extracted_file = WSTRDUP(output_path);
 			if (!inode->i_extracted_file)
 				ret = WIMLIB_ERR_NOMEM;
 		}
@@ -1173,32 +1182,22 @@ int win32_do_apply_dentry(const wchar_t *output_path,
 
 /* Set timestamps on an extracted file using the Win32 API */
 int
-win32_do_apply_dentry_timestamps(const mbchar *output_path,
-				 size_t output_path_nbytes,
+win32_do_apply_dentry_timestamps(const wchar_t *path,
+				 size_t path_num_chars,
 				 const struct wim_dentry *dentry,
 				 const struct apply_args *args)
 {
-	/* Win32 */
-	wchar_t *utf16le_path;
-	size_t utf16le_path_nbytes;
 	DWORD err;
 	HANDLE h;
 	int ret;
 	const struct wim_inode *inode = dentry->d_inode;
 
-	ret = mbs_to_utf16le(output_path, output_path_nbytes,
-			    &utf16le_path, &utf16le_path_nbytes);
-	if (ret)
-		return ret;
-
-	DEBUG("Opening \"%s\" to set timestamps", output_path);
-	h = win32_open_existing_file(utf16le_path, FILE_WRITE_ATTRIBUTES);
-
-	if (h == INVALID_HANDLE_VALUE)
+	DEBUG("Opening \"%ls\" to set timestamps", path);
+	h = win32_open_existing_file(path, FILE_WRITE_ATTRIBUTES);
+	if (h == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
-	FREE(utf16le_path);
-	if (h == INVALID_HANDLE_VALUE)
 		goto fail;
+	}
 
 	FILETIME creationTime = {.dwLowDateTime = inode->i_creation_time & 0xffffffff,
 				 .dwHighDateTime = inode->i_creation_time >> 32};
@@ -1207,21 +1206,21 @@ win32_do_apply_dentry_timestamps(const mbchar *output_path,
 	FILETIME lastWriteTime = {.dwLowDateTime = inode->i_last_write_time & 0xffffffff,
 				  .dwHighDateTime = inode->i_last_write_time >> 32};
 
-	DEBUG("Calling SetFileTime() on \"%s\"", output_path);
+	DEBUG("Calling SetFileTime() on \"%ls\"", path);
 	if (!SetFileTime(h, &creationTime, &lastAccessTime, &lastWriteTime)) {
 		err = GetLastError();
 		CloseHandle(h);
 		goto fail;
 	}
-	DEBUG("Closing \"%s\"", output_path);
+	DEBUG("Closing \"%ls\"", path);
 	if (!CloseHandle(h)) {
 		err = GetLastError();
 		goto fail;
 	}
 	goto out;
 fail:
-	/* Only warn if setting timestamps failed. */
-	WARNING("Can't set timestamps on \"%s\"", output_path);
+	/* Only warn if setting timestamps failed; still return 0. */
+	WARNING("Can't set timestamps on \"%ls\"", path);
 	win32_error(err);
 out:
 	return 0;
@@ -1311,10 +1310,34 @@ win32_rename_replacement(const wchar_t *oldpath, const wchar_t *newpath)
 	}
 }
 
-/* truncate for wide-character paths */
+/* truncate() replacement */
 int
-win32_truncate_replacement(const char *path, off_t size)
+win32_truncate_replacement(const wchar_t *path, off_t size)
 {
-	/* TODO */
-	wimlib_assert(0);
+	DWORD err = NO_ERROR;
+	LARGE_INTEGER liOffset;
+
+	HANDLE h = win32_open_existing_file(path, GENERIC_WRITE);
+	if (h == INVALID_HANDLE_VALUE)
+		goto fail;
+
+	liOffset.QuadPart = size;
+	if (!SetFilePointerEx(h, liOffset, NULL, FILE_BEGIN))
+		goto fail_close_handle;
+
+	if (!SetEndOfFile(h))
+		goto fail_close_handle;
+	CloseHandle(h);
+	return 0;
+
+fail_close_handle:
+	err = GetLastError();
+	CloseHandle(h);
+fail:
+	if (err == NO_ERROR)
+		err = GetLastError();
+	ERROR("Can't truncate %ls to %"PRIu64" bytes", path, size);
+	win32_error(err);
+	errno = -1;
+	return -1;
 }

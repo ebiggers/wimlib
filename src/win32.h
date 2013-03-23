@@ -9,7 +9,7 @@ extern int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const tchar *root_disk_path,
 			struct wim_lookup_table *lookup_table,
-			struct wim_security_data *sd,
+			struct sd_set *sd,
 			const struct capture_config *config,
 			int add_image_flags,
 			wimlib_progress_func_t progress_func,

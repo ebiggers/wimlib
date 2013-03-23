@@ -121,7 +121,7 @@ out_error:
 static int
 capture_ntfs_streams(struct wim_dentry *dentry,
 		     ntfs_inode *ni,
-		     mbchar *path,
+		     char *path,
 		     size_t path_len,
 		     struct wim_lookup_table *lookup_table,
 		     ntfs_volume **ntfs_vol_p,
@@ -391,7 +391,7 @@ destroy_dos_name_map(struct dos_name_map *map)
 struct readdir_ctx {
 	struct wim_dentry *parent;
 	ntfs_inode *dir_ni;
-	mbchar *path;
+	char *path;
 	size_t path_len;
 	struct wim_lookup_table	*lookup_table;
 	struct sd_set *sd_set;
@@ -406,7 +406,7 @@ static int
 build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 				 ntfs_inode *dir_ni,
 				 ntfs_inode *ni,
-				 mbchar *path,
+				 char *path,
 				 size_t path_len,
 				 int name_type,
 				 struct wim_lookup_table *lookup_table,
@@ -424,7 +424,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 {
 	struct readdir_ctx *ctx;
 	size_t mbs_name_nbytes;
-	mbchar *mbs_name;
+	char *mbs_name;
 	struct wim_dentry *child;
 	int ret;
 	size_t path_len;
@@ -494,7 +494,7 @@ static int
 build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 				 ntfs_inode *dir_ni,
 				 ntfs_inode *ni,
-				 mbchar *path,
+				 char *path,
 				 size_t path_len,
 				 int name_type,
 				 struct wim_lookup_table *lookup_table,
@@ -638,9 +638,9 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 
 int
 build_dentry_tree_ntfs(struct wim_dentry **root_p,
-		       const mbchar *device,
+		       const char *device,
 		       struct wim_lookup_table *lookup_table,
-		       struct wim_security_data *sd,
+		       struct sd_set *sd_set,
 		       const struct capture_config *config,
 		       int add_image_flags,
 		       wimlib_progress_func_t progress_func,
@@ -649,10 +649,6 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
 	int ret;
-	struct sd_set sd_set = {
-		.sd = sd,
-		.rb_root = {NULL},
-	};
 	ntfs_volume **ntfs_vol_p = extra_arg;
 
 	DEBUG("Mounting NTFS volume `%s' read-only", device);
@@ -687,7 +683,7 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 
 	/* Currently we assume that all the paths fit into this length and there
 	 * is no check for overflow. */
-	mbchar *path = MALLOC(32768);
+	char *path = MALLOC(32768);
 	if (!path) {
 		ERROR("Could not allocate memory for NTFS pathname");
 		ret = WIMLIB_ERR_NOMEM;
@@ -698,14 +694,13 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 	path[1] = '\0';
 	ret = build_dentry_tree_ntfs_recursive(root_p, NULL, root_ni, path, 1,
 					       FILE_NAME_POSIX, lookup_table,
-					       &sd_set,
+					       sd_set,
 					       config, ntfs_vol_p,
 					       add_image_flags,
 					       progress_func);
 out_cleanup:
 	FREE(path);
 	ntfs_inode_close(root_ni);
-	destroy_sd_set(&sd_set);
 out:
 	ntfs_index_ctx_put(vol->secure_xsii);
 	ntfs_index_ctx_put(vol->secure_xsdh);

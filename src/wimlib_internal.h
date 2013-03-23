@@ -55,6 +55,7 @@
 struct stat;
 struct wim_dentry;
 struct wim_inode;
+struct sd_set;
 
 #define WIM_MAGIC_LEN  8
 #define WIM_GID_LEN    16
@@ -464,7 +465,7 @@ extern int
 build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       const tchar *device,
 		       struct wim_lookup_table *lookup_table,
-		       struct wim_security_data *sd,
+		       struct sd_set *sd_set,
 		       const struct capture_config *config,
 		       int add_image_flags,
 		       wimlib_progress_func_t progress_func,

@@ -327,6 +327,9 @@ extern const tchar *
 path_next_part(const tchar *path, size_t *first_part_len_ret);
 
 const tchar *
+path_basename_with_len(const tchar *path, size_t len);
+
+const tchar *
 path_basename(const tchar *path);
 
 extern const tchar *

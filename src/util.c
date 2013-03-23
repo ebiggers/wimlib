@@ -501,15 +501,10 @@ to_parent_name(tchar *buf, size_t len)
 	buf[i + 1] = T('\0');
 }
 
-/* Like the basename() function, but does not modify @path; it just returns a
- * pointer to it. */
 const tchar *
-path_basename(const tchar *path)
+path_basename_with_len(const tchar *path, size_t len)
 {
-	const tchar *p = path;
-	while (*p)
-		p++;
-	p--;
+	const tchar *p = &path[len] - 1;
 
 	/* Trailing slashes. */
 	while (1) {
@@ -524,6 +519,14 @@ path_basename(const tchar *path)
 		p--;
 
 	return p + 1;
+}
+
+/* Like the basename() function, but does not modify @path; it just returns a
+ * pointer to it. */
+const tchar *
+path_basename(const tchar *path)
+{
+	return path_basename_with_len(path, tstrlen(path));
 }
 
 /*
