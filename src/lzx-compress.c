@@ -641,23 +641,12 @@ static const struct lz_params lzx_lz_params = {
 /*
  * Performs LZX compression on a block of data.
  *
- * @__uncompressed_data:  Pointer to the data to be compressed.
- * @uncompressed_len:	  Length, in bytes, of the data to be compressed.
- * @compressed_data:	  Pointer to a location at least (@uncompressed_len - 1)
- * 				bytes long into which the compressed data may be
- * 				written.
- * @compressed_len_ret:	  A pointer to an unsigned int into which the length of
- * 				the compressed data may be returned.
- *
- * Returns zero if compression was successfully performed.  In that case
- * @compressed_data and @compressed_len_ret will contain the compressed data and
- * its length.  A return value of nonzero means that compressing the data did
- * not reduce its size, and @compressed_data will not contain the full
- * compressed data.
+ * Please see the documentation for the 'compress_func_t' type in write.c for
+ * the exact behavior of this function and how to call it.
  */
-int
+unsigned
 lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
-	     void *compressed_data, unsigned *compressed_len_ret)
+	     void *compressed_data)
 {
 	struct output_bitstream ostream;
 	u8 uncompressed_data[uncompressed_len + 8];
@@ -671,8 +660,10 @@ lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 	int ret;
 	int block_type = LZX_BLOCKTYPE_ALIGNED;
 
+	wimlib_assert(uncompressed_len <= 32768);
+
 	if (uncompressed_len < 100)
-		return 1;
+		return 0;
 
 	memset(&freq_tabs, 0, sizeof(freq_tabs));
 	queue.R0 = 1;
@@ -728,36 +719,34 @@ lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 	 * main tree. */
 	ret = lzx_write_compressed_tree(&ostream, codes.main_lens,
 				        LZX_NUM_CHARS);
-	if (ret != 0)
-		return ret;
+	if (ret)
+		return 0;
 
 	/* Write the pre-tree and symbols for the rest of the main tree. */
 	ret = lzx_write_compressed_tree(&ostream, codes.main_lens +
 					LZX_NUM_CHARS,
 					LZX_MAINTREE_NUM_SYMBOLS -
 						LZX_NUM_CHARS);
-	if (ret != 0)
-		return ret;
+	if (ret)
+		return 0;
 
 	/* Write the pre-tree and symbols for the length tree. */
 	ret = lzx_write_compressed_tree(&ostream, codes.len_lens,
 					LZX_LENTREE_NUM_SYMBOLS);
-	if (ret != 0)
-		return ret;
+	if (ret)
+		return 0;
 
 	/* Write the compressed literals. */
 	ret = lzx_write_compressed_literals(&ostream, block_type,
 					    match_tab, num_matches, &codes);
-	if (ret != 0)
-		return ret;
+	if (ret)
+		return 0;
 
 	ret = flush_output_bitstream(&ostream);
-	if (ret != 0)
-		return ret;
+	if (ret)
+		return 0;
 
 	compressed_len = ostream.bit_output - (u8*)compressed_data;
-
-	*compressed_len_ret = compressed_len;
 
 #ifdef ENABLE_VERIFY_COMPRESSION
 	/* Verify that we really get the same thing back when decompressing. */
@@ -778,5 +767,5 @@ lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 		}
 	}
 #endif
-	return 0;
+	return compressed_len;
 }

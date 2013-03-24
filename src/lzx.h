@@ -80,7 +80,8 @@ extern const u8 lzx_extra_bits[LZX_NUM_POSITION_SLOTS];
 
 /* Given the number of a LZX position slot, return the number of extra bits that
  * are needed to encode the match offset. */
-static inline unsigned lzx_get_num_extra_bits(unsigned position_slot)
+static inline unsigned
+lzx_get_num_extra_bits(unsigned position_slot)
 {
 #ifdef USE_LZX_EXTRA_BITS_ARRAY
 	/* Use a table */
@@ -101,10 +102,12 @@ struct lru_queue {
 	u32 R2;
 };
 
-extern int lzx_decompress(const void *compressed_data, unsigned compressed_len,
-			  void *uncompressed_data, unsigned uncompressed_len);
+extern int
+lzx_decompress(const void *compressed_data, unsigned compressed_len,
+	       void *uncompressed_data, unsigned uncompressed_len);
 
-extern int lzx_compress(const void *uncompressed_data, unsigned uncompressed_len,
-			void *compressed_data, unsigned *compressed_len_ret);
+extern unsigned
+lzx_compress(const void *uncompressed_data, unsigned uncompressed_len,
+	     void *compressed_data);
 
 #endif /* _WIMLIB_LZX_H */

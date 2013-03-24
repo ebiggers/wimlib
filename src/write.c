@@ -151,21 +151,29 @@ out:
 }
 
 /*
- * Pointer to function to compresses a chunk of a WIM resource.
+ * compress_func_t- Pointer to a function to compresses a chunk
+ *                  of a WIM resource.  This may be either xpress_compress()
+ *                  (xpress-compress.c) or lzx_compress() (lzx-compress.c).
  *
- * @chunk:		Uncompressed data of the chunk.
- * @chunk_size:		Size of the uncompressed chunk in bytes.
- * @compressed_chunk:	Pointer to output buffer of size at least
- * 				(@chunk_size - 1) bytes.
- * @compressed_chunk_len_ret:	Pointer to an unsigned int into which the size
- * 					of the compressed chunk will be
- * 					returned.
+ * @chunk:	  Uncompressed data of the chunk.
+ * @chunk_size:	  Size of the uncompressed chunk, in bytes.
+ * @out:	  Pointer to output buffer of size at least (@chunk_size - 1) bytes.
  *
- * Returns zero if compressed succeeded, and nonzero if the chunk could not be
- * compressed to any smaller than @chunk_size.  This function cannot fail for
- * any other reasons.
+ * Returns the size of the compressed data written to @out in bytes, or 0 if the
+ * data could not be compressed to (@chunk_size - 1) bytes or fewer.
+ *
+ * As a special requirement, the compression code is optimized for the WIM
+ * format and therefore requires (@chunk_size <= 32768).
+ *
+ * As another special requirement, the compression code will read up to 8 bytes
+ * off the end of the @chunk array for performance reasons.  The values of these
+ * bytes will not affect the output of the compression, but the calling code
+ * must make sure that the buffer holding the uncompressed chunk is actually at
+ * least (@chunk_size + 8) bytes, or at least that these extra bytes are in
+ * mapped memory that will not cause a memory access violation if accessed.
  */
-typedef int (*compress_func_t)(const void *, unsigned, void *, unsigned *);
+typedef unsigned (*compress_func_t)(const void *chunk, unsigned chunk_size,
+				    void *out);
 
 compress_func_t
 get_compress_func(int out_ctype)
@@ -198,19 +206,20 @@ write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
 	unsigned out_chunk_size;
 	if (chunk_tab) {
 		u8 *compressed_chunk = alloca(chunk_size);
-		int ret;
 
-		ret = compress(chunk, chunk_size, compressed_chunk,
-			       &out_chunk_size);
-		if (ret == 0) {
+		out_chunk_size = compress(chunk, chunk_size, compressed_chunk);
+		if (out_chunk_size) {
+			/* Write compressed */
 			out_chunk = compressed_chunk;
 		} else {
+			/* Write uncompressed */
 			out_chunk = chunk;
 			out_chunk_size = chunk_size;
 		}
 		*chunk_tab->cur_offset_p++ = chunk_tab->cur_offset;
 		chunk_tab->cur_offset += out_chunk_size;
 	} else {
+		/* Write uncompressed */
 		out_chunk = chunk;
 		out_chunk_size = chunk_size;
 	}
@@ -689,15 +698,18 @@ compress_chunks(struct message *msg, compress_func_t compress)
 {
 	for (unsigned i = 0; i < msg->num_chunks; i++) {
 		DEBUG2("compress chunk %u of %u", i, msg->num_chunks);
-		int ret = compress(msg->uncompressed_chunks[i],
-				   msg->uncompressed_chunk_sizes[i],
-				   msg->compressed_chunks[i],
-				   &msg->compressed_chunk_sizes[i]);
-		if (ret == 0) {
+		unsigned len = compress(msg->uncompressed_chunks[i],
+					msg->uncompressed_chunk_sizes[i],
+					msg->compressed_chunks[i]);
+		if (len) {
+			/* To be written compressed */
 			msg->out_compressed_chunks[i] = msg->compressed_chunks[i];
+			msg->compressed_chunk_sizes[i] = len;
 		} else {
+			/* To be written uncompressed */
 			msg->out_compressed_chunks[i] = msg->uncompressed_chunks[i];
 			msg->compressed_chunk_sizes[i] = msg->uncompressed_chunk_sizes[i];
+
 		}
 	}
 }

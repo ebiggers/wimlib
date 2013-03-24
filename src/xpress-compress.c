@@ -142,23 +142,12 @@ static const struct lz_params xpress_lz_params = {
 /*
  * Performs XPRESS compression on a block of data.
  *
- * @__uncompressed_data:  Pointer to the data to be compressed.
- * @uncompressed_len:	Length, in bytes, of the data to be compressed.
- * @__compressed_data:	Pointer to a location at least (@uncompressed_len - 1)
- * 				bytes long into which the compressed data may be
- * 				written.
- * @compressed_len_ret:	A pointer to an unsigned int into which the length of
- * 				the compressed data may be returned.
- *
- * Returns zero if compression was successfully performed.  In that case
- * @compressed_data and @compressed_len_ret will contain the compressed data and
- * its length.  A return value of nonzero means that compressing the data did
- * not reduce its size, and @compressed_data will not contain the full
- * compressed data.
+ * Please see the documentation for the 'compress_func_t' type in write.c for
+ * the exact behavior of this function and how to call it.
  */
-int
+unsigned
 xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
-		void *__compressed_data, unsigned *compressed_len_ret)
+		void *__compressed_data)
 {
 	const u8 *uncompressed_data = __uncompressed_data;
 	u8 *compressed_data = __compressed_data;
@@ -172,6 +161,8 @@ xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 	unsigned i;
 	int ret;
 
+	wimlib_assert(uncompressed_len <= 32768);
+
 	/* XPRESS requires 256 bytes of overhead for the Huffman tables, so it's
 	 * impossible cannot compress 256 bytes or less of data to less than the
 	 * input size.
@@ -182,7 +173,7 @@ xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 	 * +4 to take into account that init_output_bitstream() requires at
 	 * least 4 bytes of data. */
 	if (uncompressed_len < XPRESS_NUM_SYMBOLS / 2 + 1 + 4)
-		return 1;
+		return 0;
 
 	ZERO_ARRAY(freq_tab);
 	num_matches = lz_analyze_block(uncompressed_data, uncompressed_len,
@@ -216,13 +207,13 @@ xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 
 	ret = xpress_write_compressed_literals(&ostream, match_tab,
 					       num_matches, codewords, lens);
-	if (ret != 0)
-		return ret;
+	if (ret)
+		return 0;
 
 	/* Flush any bits that are buffered. */
 	ret = flush_output_bitstream(&ostream);
-	if (ret != 0)
-		return ret;
+	if (ret)
+		return 0;
 
 	/* Assert that there are no output bytes between the ostream.output
 	 * pointer and the ostream.next_bit_output pointer.  This can only
@@ -242,20 +233,18 @@ xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 	 * they may precede a number of bytes embedded into the bitstream.) */
 	if (ostream.bit_output >
 	    (const u8*)__compressed_data + uncompressed_len - 3)
-		return 1;
+		return 0;
 	*(u16*)ostream.bit_output = cpu_to_le16(0);
 	compressed_len = ostream.next_bit_output - (const u8*)__compressed_data;
 
 	wimlib_assert(compressed_len <= uncompressed_len - 1);
-
-	*compressed_len_ret = compressed_len;
 
 #ifdef ENABLE_VERIFY_COMPRESSION
 	/* Verify that we really get the same thing back when decompressing. */
 	u8 buf[uncompressed_len];
 	ret = xpress_decompress(__compressed_data, compressed_len, buf,
 				uncompressed_len);
-	if (ret != 0) {
+	if (ret) {
 		ERROR("xpress_compress(): Failed to decompress data we "
 		      "compressed");
 		abort();
@@ -269,5 +258,5 @@ xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 		}
 	}
 #endif
-	return 0;
+	return compressed_len;
 }
