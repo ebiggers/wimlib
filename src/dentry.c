@@ -638,7 +638,7 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table)
 		hash = inode_stream_hash(inode, 0);
 		if (hash) {
 			tprintf(T("Hash              = 0x"));
-			print_hash(hash);
+			print_hash(hash, stdout);
 			tputchar(T('\n'));
 			tputchar(T('\n'));
 		}
@@ -652,7 +652,7 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table)
 		hash = inode_stream_hash(inode, i + 1);
 		if (hash) {
 			tprintf(T("Hash              = 0x"));
-			print_hash(hash);
+			print_hash(hash, stdout);
 			tputchar(T('\n'));
 		}
 		print_lookup_table_entry(inode_stream_lte(inode, i + 1, lookup_table),

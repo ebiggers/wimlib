@@ -300,11 +300,9 @@ struct WIMStruct {
 	/* The header of the WIM file. */
 	struct wim_header hdr;
 
-	/* Temporary fields */
-	union {
-		bool write_metadata;
-		void *private;
-	};
+	/* Temporary field */
+	void *private;
+
 #ifdef WITH_NTFS_3G
 	struct _ntfs_volume *ntfs_vol;
 #endif

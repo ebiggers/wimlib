@@ -264,6 +264,7 @@ for_lookup_table_entry(struct wim_lookup_table *table,
 		hlist_for_each_entry_safe(lte, pos, tmp, &table->array[i],
 					  hash_list)
 		{
+			wimlib_assert2(!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA));
 			ret = visitor(lte, arg);
 			if (ret != 0)
 				return ret;
@@ -275,6 +276,10 @@ for_lookup_table_entry(struct wim_lookup_table *table,
 
 /*
  * Reads the lookup table from a WIM file.
+ *
+ * Saves lookup table entries for non-metadata streams in a hash table, and
+ * saves the metadata entry for each image in a special per-image location (the
+ * image_metadata array).
  */
 int
 read_lookup_table(WIMStruct *w)
@@ -283,7 +288,7 @@ read_lookup_table(WIMStruct *w)
 	u8 buf[WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
 	int ret;
 	struct wim_lookup_table *table;
-	struct wim_lookup_table_entry *cur_entry = NULL, *duplicate_entry;
+	struct wim_lookup_table_entry *cur_entry, *duplicate_entry;
 
 	if (resource_is_compressed(&w->hdr.lookup_table_res_entry)) {
 		ERROR("Didn't expect a compressed lookup table!");
@@ -309,6 +314,7 @@ read_lookup_table(WIMStruct *w)
 	if (!table)
 		return WIMLIB_ERR_NOMEM;
 
+	w->current_image = 0;
 	while (num_entries--) {
 		const u8 *p;
 
@@ -320,16 +326,16 @@ read_lookup_table(WIMStruct *w)
 						 "table");
 			}
 			ret = WIMLIB_ERR_READ;
-			goto out;
+			goto out_free_lookup_table;
 		}
 		cur_entry = new_lookup_table_entry();
 		if (!cur_entry) {
 			ret = WIMLIB_ERR_NOMEM;
-			goto out;
+			goto out_free_lookup_table;
 		}
+
 		cur_entry->wim = w;
 		cur_entry->resource_location = RESOURCE_IN_WIM;
-
 		p = get_resource_entry(buf, &cur_entry->resource_entry);
 		p = get_u16(p, &cur_entry->part_number);
 		p = get_u32(p, &cur_entry->refcnt);
@@ -350,27 +356,6 @@ read_lookup_table(WIMStruct *w)
 			goto out_free_cur_entry;
 		}
 
-		/* Ordinarily, no two streams should share the same SHA1 message
-		 * digest.  However, this constraint can be broken for metadata
-		 * resources--- two identical images will have the same metadata
-		 * resource, but their lookup table entries are not shared. */
-		duplicate_entry = __lookup_resource(table, cur_entry->hash);
-		if (duplicate_entry
-		    && !((duplicate_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
-			  && cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA))
-		{
-		#ifdef ENABLE_ERROR_MESSAGES
-			ERROR("The WIM lookup table contains two entries with the "
-			      "same SHA1 message digest!");
-			ERROR("The first entry is:");
-			print_lookup_table_entry(duplicate_entry, stderr);
-			ERROR("The second entry is:");
-			print_lookup_table_entry(cur_entry, stderr);
-		#endif
-			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-			goto out_free_cur_entry;
-		}
-
 		if (!(cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
 		    && (cur_entry->resource_entry.size !=
 		        cur_entry->resource_entry.original_size))
@@ -384,26 +369,84 @@ read_lookup_table(WIMStruct *w)
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 			goto out_free_cur_entry;
 		}
-		if ((cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
-		    && cur_entry->refcnt != 1)
-		{
-		#ifdef ENABLE_ERROR_MESSAGES
-			ERROR("Found metadata resource with refcnt != 1:");
-			print_lookup_table_entry(cur_entry, stderr);
-		#endif
-			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-			goto out_free_cur_entry;
-		}
-		lookup_table_insert(table, cur_entry);
 
+		if (cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) {
+			/* Lookup table entry for a metadata resource */
+			if (cur_entry->refcnt != 1) {
+			#ifdef ENABLE_ERROR_MESSAGES
+				ERROR("Found metadata resource with refcnt != 1:");
+				print_lookup_table_entry(cur_entry, stderr);
+			#endif
+				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+				goto out_free_cur_entry;
+			}
+
+			if (w->hdr.part_number != 1) {
+				ERROR("Found a metadata resource in a "
+				      "non-first part of the split WIM!");
+				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+				goto out_free_cur_entry;
+			}
+			if (w->current_image == w->hdr.image_count) {
+				ERROR("The WIM header says there are %u images "
+				      "in the WIM, but we found more metadata "
+				      "resources than this", w->hdr.image_count);
+				ret = WIMLIB_ERR_IMAGE_COUNT;
+				goto out_free_cur_entry;
+			}
+
+			/* Notice very carefully:  We are assigning the metadata
+			 * resources in the exact order mirrored by their lookup
+			 * table entries on disk, which is the behavior of
+			 * Microsoft's software.  In particular, this overrides
+			 * the actual locations of the metadata resources
+			 * themselves in the WIM file as well as any information
+			 * written in the XML data. */
+			DEBUG("Found metadata resource for image %u at "
+			      "offset %"PRIu64".",
+			      w->current_image + 1,
+			      cur_entry->resource_entry.offset);
+			w->image_metadata[
+				w->current_image++].metadata_lte = cur_entry;
+		} else {
+			/* Lookup table entry for a stream that is not a
+			 * metadata resource */
+			duplicate_entry = __lookup_resource(table, cur_entry->hash);
+			if (duplicate_entry) {
+			#ifdef ENABLE_ERROR_MESSAGES
+				ERROR("The WIM lookup table contains two entries with the "
+				      "same SHA1 message digest!");
+				ERROR("The first entry is:");
+				print_lookup_table_entry(duplicate_entry, stderr);
+				ERROR("The second entry is:");
+				print_lookup_table_entry(cur_entry, stderr);
+			#endif
+				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+				goto out_free_cur_entry;
+			}
+			lookup_table_insert(table, cur_entry);
+		}
+	}
+
+	if (w->hdr.part_number == 1 &&
+	    w->current_image != w->hdr.image_count)
+	{
+		ERROR("The WIM header says there are %u images "
+		      "in the WIM, but we only found %d metadata "
+		      "resources!", w->hdr.image_count, w->current_image);
+		ret = WIMLIB_ERR_IMAGE_COUNT;
+		goto out_free_lookup_table;
 	}
 	DEBUG("Done reading lookup table.");
 	w->lookup_table = table;
-	return 0;
+	ret = 0;
+	goto out;
 out_free_cur_entry:
 	FREE(cur_entry);
-out:
+out_free_lookup_table:
 	free_lookup_table(table);
+out:
+	w->current_image = 0;
 	return ret;
 }
 
@@ -412,13 +455,13 @@ out:
  * Writes a lookup table entry to the output file.
  */
 int
-write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *__out)
+write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *_out)
 {
 	FILE *out;
 	u8 buf[WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
 	u8 *p;
 
-	out = __out;
+	out = _out;
 
 	/* Don't write entries that have not had file resources or metadata
 	 * resources written for them. */
@@ -442,20 +485,39 @@ write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *__out)
 	return 0;
 }
 
-/* Writes the lookup table to the output file. */
+/* Writes the WIM lookup table to the output file. */
 int
-write_lookup_table(struct wim_lookup_table *table, FILE *out,
-		   struct resource_entry *out_res_entry)
+write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry)
 {
+	FILE *out = w->out_fp;
 	off_t start_offset, end_offset;
 	int ret;
+	int start_image, end_image;
 
 	start_offset = ftello(out);
 	if (start_offset == -1)
 		return WIMLIB_ERR_WRITE;
 
-	ret = for_lookup_table_entry(table, write_lookup_table_entry, out);
-	if (ret != 0)
+	if (image == WIMLIB_ALL_IMAGES) {
+		start_image = 1;
+		end_image = w->hdr.image_count;
+	} else {
+		start_image = image;
+		end_image = image;
+	}
+	for (int i = start_image; i <= end_image; i++) {
+		struct wim_lookup_table_entry *metadata_lte;
+
+		metadata_lte = w->image_metadata[i - 1].metadata_lte;
+		metadata_lte->out_refcnt = 1;
+		metadata_lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
+		ret = write_lookup_table_entry(metadata_lte, out);
+		if (ret)
+			return ret;
+	}
+
+	ret = for_lookup_table_entry(w->lookup_table, write_lookup_table_entry, out);
+	if (ret)
 		return ret;
 
 	end_offset = ftello(out);
@@ -466,7 +528,6 @@ write_lookup_table(struct wim_lookup_table *table, FILE *out,
 	out_res_entry->size          = end_offset - start_offset;
 	out_res_entry->original_size = end_offset - start_offset;
 	out_res_entry->flags         = WIM_RESHDR_FLAG_METADATA;
-
 	return 0;
 }
 
@@ -515,7 +576,7 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 	tfprintf(out, T("Reference Count   = %u\n"), lte->refcnt);
 
 	tfprintf(out, T("Hash              = 0x"));
-	print_hash(lte->hash);
+	print_hash(lte->hash, out);
 	tputc(T('\n'), out);
 
 	tfprintf(out, T("Flags             = "));

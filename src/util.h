@@ -243,10 +243,10 @@ extern const tchar *
 path_stream_name(const tchar *path);
 
 static inline void
-print_byte_field(const u8 field[], size_t len)
+print_byte_field(const u8 field[], size_t len, FILE *out)
 {
 	while (len--)
-		tprintf(T("%02hhx"), *field++);
+		tfprintf(out, T("%02hhx"), *field++);
 }
 
 static inline u32

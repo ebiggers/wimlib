@@ -261,8 +261,8 @@ extern int
 read_lookup_table(WIMStruct *w);
 
 extern int
-write_lookup_table(struct wim_lookup_table *table, FILE *out,
-		   struct resource_entry *out_res_entry);
+write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry);
+
 extern void
 free_lookup_table(struct wim_lookup_table *table);
 

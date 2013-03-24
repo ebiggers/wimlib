@@ -119,7 +119,7 @@ copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *__args)
 	}
 	args->size_remaining -= lte->resource_entry.size;
 	args->progress.split.completed_bytes += lte->resource_entry.size;
-	list_add(&lte->staging_list, &args->lte_list);
+	list_add_tail(&lte->staging_list, &args->lte_list);
 	return copy_resource(lte, w);
 }
 
@@ -187,7 +187,6 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 			      &args.progress);
 	}
 
-	w->write_metadata = true;
 	for (int i = 0; i < w->hdr.image_count; i++) {
 		struct wim_lookup_table_entry *metadata_lte;
 		metadata_lte = w->image_metadata[i].metadata_lte;
@@ -196,9 +195,10 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 			goto out;
 		args.size_remaining -= metadata_lte->resource_entry.size;
 		args.progress.split.completed_bytes += metadata_lte->resource_entry.size;
-		list_add(&metadata_lte->staging_list, &args.lte_list);
+		/* Careful: The metadata lookup table entries must be added in
+		 * order of the images. */
+		list_add_tail(&metadata_lte->staging_list, &args.lte_list);
 	}
-	w->write_metadata = false;
 
 	ret = for_lookup_table_entry(w->lookup_table,
 				     copy_resource_to_swm, &args);

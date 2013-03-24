@@ -214,10 +214,11 @@ wim_run_full_verifications(WIMStruct *w)
 	int ret;
 
 	for_lookup_table_entry(w->lookup_table, lte_zero_real_refcnt, NULL);
+
+	w->all_images_verified = 1; /* Set *before* image_run_full_verifications,
+				       because of check in read_metadata_resource() */
 	ret = for_image(w, WIMLIB_ALL_IMAGES, image_run_full_verifications);
 	if (ret == 0) {
-		w->all_images_verified = 1;
-
 		unsigned long num_ltes_with_bogus_refcnt = 0;
 		for (int i = 0; i < w->hdr.image_count; i++)
 			w->image_metadata[i].metadata_lte->real_refcnt++;
@@ -229,6 +230,8 @@ wim_run_full_verifications(WIMStruct *w)
 				"          their reference counts fixed.",
 				num_ltes_with_bogus_refcnt);
 		}
+	} else {
+		w->all_images_verified = 0;
 	}
 	return ret;
 }

@@ -80,8 +80,6 @@ add_new_dentry_tree(WIMStruct *w, struct wim_dentry *root_dentry,
 		goto err_free_imd;
 
 	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
-	random_hash(metadata_lte->hash);
-	lookup_table_insert(w->lookup_table, metadata_lte);
 
 	new_imd = &imd[w->hdr.image_count];
 

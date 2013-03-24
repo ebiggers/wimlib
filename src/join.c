@@ -114,9 +114,7 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 		progress_func(WIMLIB_PROGRESS_MSG_JOIN_STREAMS, &progress);
 	}
 
-	/* Write the resources (streams and metadata resources) from each SWM
-	 * part */
-	swms[0]->write_metadata = true;
+	/* Write the non-metadata resources from each SWM part */
 	for (i = 0; i < num_swms; i++) {
 		swms[i]->fp = tfopen(swms[i]->filename, T("rb"));
 		if (!swms[i]->fp) {
@@ -129,8 +127,11 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 		ret = for_lookup_table_entry(swms[i]->lookup_table,
 					     copy_resource, swms[i]);
 		swms[i]->out_fp = NULL;
-		fclose(swms[i]->fp);
-		swms[i]->fp = NULL;
+
+		if (i != 0) {
+			fclose(swms[i]->fp);
+			swms[i]->fp = NULL;
+		}
 
 		if (ret != 0)
 			return ret;
@@ -142,14 +143,27 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 		}
 	}
 
+	/* Write metadata resources from the first SWM part */
+	swms[0]->out_fp = joined_wim->out_fp;
+	ret = for_image(swms[0], WIMLIB_ALL_IMAGES, write_metadata_resource);
+	swms[0]->out_fp = NULL;
+	fclose(swms[0]->fp);
+	swms[0]->fp = NULL;
+
+	if (ret)
+		return ret;
+
+	/* Write lookup table, XML data, and optional integrity table */
 	joined_wim->hdr.image_count = swms[0]->hdr.image_count;
 	for (i = 0; i < num_swms; i++)
 		lookup_table_join(joined_wim->lookup_table, swms[i]->lookup_table);
 
 	free_wim_info(joined_wim->wim_info);
 	joined_wim->wim_info = swms[0]->wim_info;
+	joined_wim->image_metadata = swms[0]->image_metadata;
 	ret = finish_write(joined_wim, WIMLIB_ALL_IMAGES, write_flags, progress_func);
 	joined_wim->wim_info = NULL;
+	joined_wim->image_metadata = NULL;
 	return ret;
 }
 

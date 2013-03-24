@@ -375,7 +375,7 @@ print_sid(const void *p, const tchar *type)
 	tprintf(T("    Subauthority count = %u\n"), sid->sub_authority_count);
 	tprintf(T("    Identifier authority = "));
 	print_byte_field(sid->identifier_authority,
-			 sizeof(sid->identifier_authority));
+			 sizeof(sid->identifier_authority), stdout);
 	tputchar(T('\n'));
 	for (u8 i = 0; i < sid->sub_authority_count; i++) {
 		tprintf(T("    Subauthority %u = %u\n"),

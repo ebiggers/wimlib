@@ -236,8 +236,12 @@ write_metadata_resource(WIMStruct *w)
 	u64 metadata_original_size;
 	struct wim_security_data *sd;
 
+	wimlib_assert(w->out_fp != NULL);
+	wimlib_assert(w->current_image != WIMLIB_NO_IMAGE);
+
 	DEBUG("Writing metadata resource for image %d (offset = %"PRIu64")",
 	      w->current_image, ftello(w->out_fp));
+
 
 	root = wim_root_dentry(w);
 	sd = wim_security_data(w);
@@ -292,22 +296,11 @@ write_metadata_resource(WIMStruct *w)
 	if (ret != 0)
 		goto out;
 
-	/* It's very likely the SHA1 message digest of the metadata resource
-	 * changed, so re-insert the lookup table entry into the lookup table.
-	 *
-	 * We do not check for other lookup table entries having the same SHA1
-	 * message digest.  It's possible for 2 absolutely identical images to
-	 * be added, therefore causing 2 identical metadata resources to be in
-	 * the WIM.  However, in this case, it's expected for 2 separate lookup
-	 * table entries to be created, even though this doesn't make a whole
-	 * lot of sense since they will share the same SHA1 message digest.
-	 * */
-	lookup_table_unlink(w->lookup_table, lte);
-	lookup_table_insert(w->lookup_table, lte);
+	/* Note that although the SHA1 message digest of the metadata resource
+	 * is very likely to have changed, the corresponding lookup table entry
+	 * is not actually located in the hash table, so it need not be
+	 * re-inserted in the hash table. */
 	lte->out_refcnt = 1;
-
-	/* Make sure that the lookup table entry for this metadata resource is
-	 * marked with the metadata flag. */
 	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
 out:
 	/* All the data has been written to the new WIM; no need for the buffer

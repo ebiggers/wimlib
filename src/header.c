@@ -270,7 +270,7 @@ wimlib_print_header(const WIMStruct *w)
 
 	tprintf(T("Chunk Size                  = %u\n"), WIM_CHUNK_SIZE);
 	tfputs (T("GUID                        = "), stdout);
-	print_byte_field(hdr->guid, WIM_GID_LEN);
+	print_byte_field(hdr->guid, WIM_GID_LEN, stdout);
 	tputchar(T('\n'));
 	tprintf(T("Part Number                 = %hu\n"), w->hdr.part_number);
 	tprintf(T("Total Parts                 = %hu\n"), w->hdr.total_parts);

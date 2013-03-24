@@ -730,16 +730,12 @@ copy_resource(struct wim_lookup_table_entry *lte, void *wim)
 	WIMStruct *w = wim;
 	int ret;
 
-	if ((lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) &&
-	    !w->write_metadata)
-		return 0;
-
 	ret = write_wim_resource(lte, w->out_fp,
 				 wim_resource_compression_type(lte),
 				 &lte->output_resource_entry, 0);
-	if (ret != 0)
-		return ret;
-	lte->out_refcnt = lte->refcnt;
-	lte->part_number = w->hdr.part_number;
-	return 0;
+	if (ret == 0) {
+		lte->out_refcnt = lte->refcnt;
+		lte->part_number = w->hdr.part_number;
+	}
+	return ret;
 }

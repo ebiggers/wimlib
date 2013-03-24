@@ -37,9 +37,9 @@ hashes_cmp(const u8 h1[SHA1_HASH_SIZE],
 }
 
 static inline void
-print_hash(const u8 hash[SHA1_HASH_SIZE])
+print_hash(const u8 hash[SHA1_HASH_SIZE], FILE *out)
 {
-	print_byte_field(hash, SHA1_HASH_SIZE);
+	print_byte_field(hash, SHA1_HASH_SIZE, out);
 }
 
 static inline bool

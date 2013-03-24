@@ -115,49 +115,6 @@ for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
 	return 0;
 }
 
-static int
-sort_image_metadata_by_position(const void *p1, const void *p2)
-{
-	const struct wim_image_metadata *imd1 = p1;
-	const struct wim_image_metadata *imd2 = p2;
-	u64 offset1 = imd1->metadata_lte->resource_entry.offset;
-	u64 offset2 = imd2->metadata_lte->resource_entry.offset;
-	if (offset1 < offset2)
-		return -1;
-	else if (offset1 > offset2)
-		return 1;
-	else
-		return 0;
-}
-
-/*
- * If @lte points to a metadata resource, append it to the list of metadata
- * resources in the WIMStruct.  Otherwise, do nothing.
- */
-static int
-append_metadata_resource_entry(struct wim_lookup_table_entry *lte, void *wim_p)
-{
-	WIMStruct *w = wim_p;
-	int ret = 0;
-
-	if (lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) {
-		if (w->current_image == w->hdr.image_count) {
-			ERROR("The WIM header says there are %u images in the WIM,\n"
-			      "        but we found more metadata resources than this",
-			      w->hdr.image_count);
-			ret = WIMLIB_ERR_IMAGE_COUNT;
-		} else {
-			DEBUG("Found metadata resource for image %u at "
-			      "offset %"PRIu64".",
-			      w->current_image + 1,
-			      lte->resource_entry.offset);
-			w->image_metadata[
-				w->current_image++].metadata_lte = lte;
-		}
-	}
-	return ret;
-}
-
 /* Returns the compression type given in the flags of a WIM header. */
 static int
 wim_hdr_flags_compression_type(int wim_hdr_flags)
@@ -257,7 +214,7 @@ select_wim_image(WIMStruct *w, int image)
 		#ifdef ENABLE_DEBUG
 		DEBUG("Reading metadata resource specified by the following "
 		      "lookup table entry:");
-		print_lookup_table_entry(imd->metadata_lte, stdout);
+		print_lookup_table_entry(imd->metadata_lte, stderr);
 		#endif
 		ret = read_metadata_resource(w, imd);
 		if (ret)
@@ -333,7 +290,7 @@ wimlib_print_wim_information(const WIMStruct *w)
 	tputs(T("----------------"));
 	tprintf(T("Path:           %"TS"\n"), w->filename);
 	tfputs(T("GUID:           0x"), stdout);
-	print_byte_field(hdr->guid, WIM_GID_LEN);
+	print_byte_field(hdr->guid, WIM_GID_LEN, stdout);
 	tputchar(T('\n'));
 	tprintf(T("Image Count:    %d\n"), hdr->image_count);
 	tprintf(T("Compression:    %"TS"\n"),
@@ -489,7 +446,7 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 	}
 
 	ret = read_header(w->fp, &w->hdr, open_flags);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	DEBUG("According to header, WIM contains %u images", w->hdr.image_count);
@@ -521,11 +478,7 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 		}
 	}
 
-	ret = read_lookup_table(w);
-	if (ret != 0)
-		return ret;
-
-	if (w->hdr.image_count != 0) {
+	if (w->hdr.image_count != 0 && w->hdr.part_number == 1) {
 		w->image_metadata = CALLOC(w->hdr.image_count,
 					   sizeof(struct wim_image_metadata));
 
@@ -535,41 +488,14 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 			return WIMLIB_ERR_NOMEM;
 		}
 	}
-	w->current_image = 0;
 
-	DEBUG("Looking for metadata resources in the lookup table.");
-
-	/* Find the images in the WIM by searching the lookup table. */
-	ret = for_lookup_table_entry(w->lookup_table,
-	  			     append_metadata_resource_entry, w);
-
-	if (ret != 0)
+	ret = read_lookup_table(w);
+	if (ret)
 		return ret;
 
-	/* Make sure all the expected images were found.  (We already have
-	 * returned WIMLIB_ERR_IMAGE_COUNT if *extra* images were found) */
-	if (w->current_image != w->hdr.image_count &&
-	    w->hdr.part_number == 1)
-	{
-		ERROR("Only found %d images in WIM, but expected %u",
-		      w->current_image, w->hdr.image_count);
-		return WIMLIB_ERR_IMAGE_COUNT;
-	}
-
-	/* Sort images by the position of their metadata resources.  I'm
-	 * assuming that is what determines the other of the images in the WIM
-	 * file, rather than their order in the lookup table, which is random
-	 * because of hashing. */
-	qsort(w->image_metadata, w->current_image,
-	      sizeof(struct wim_image_metadata), sort_image_metadata_by_position);
-
-	w->current_image = WIMLIB_NO_IMAGE;
-
-	/* Read the XML data. */
 	ret = read_xml_data(w->fp, &w->hdr.xml_res_entry,
 			    &w->xml_data, &w->wim_info);
-
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	xml_num_images = wim_info_get_num_images(w->wim_info);
@@ -617,13 +543,8 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 {
 	free_dentry_tree(imd->root_dentry, table);
 	free_security_data(imd->security_data);
-
-	/* Get rid of the lookup table entry for this image's metadata resource
-	 * */
-	if (table) {
-		lookup_table_unlink(table, imd->metadata_lte);
+	if (table)
 		free_lookup_table_entry(imd->metadata_lte);
-	}
 }
 
 /* Frees the memory for the WIMStruct, including all internal memory; also
@@ -656,8 +577,10 @@ wimlib_free(WIMStruct *w)
 	FREE(w->xml_data);
 	free_wim_info(w->wim_info);
 	if (w->image_metadata) {
-		for (unsigned i = 0; i < w->hdr.image_count; i++)
+		for (unsigned i = 0; i < w->hdr.image_count; i++) {
 			destroy_image_metadata(&w->image_metadata[i], NULL);
+			free_lookup_table_entry(w->image_metadata[i].metadata_lte);
+		}
 		FREE(w->image_metadata);
 	}
 #ifdef WITH_NTFS_3G

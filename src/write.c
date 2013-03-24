@@ -1440,24 +1440,29 @@ lte_overwrite_prepare(struct wim_lookup_table_entry *lte, void *arg)
 	lte->out_refcnt = lte->refcnt;
 	memcpy(&lte->output_resource_entry, &lte->resource_entry,
 	       sizeof(struct resource_entry));
-	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)) {
-		wimlib_assert(lte->resource_location != RESOURCE_NONEXISTENT);
+	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA))
 		if (lte->resource_location != RESOURCE_IN_WIM || lte->wim != args->wim)
 			list_add(&lte->staging_list, args->stream_list);
-	}
 	return 0;
 }
 
 static int
-wim_find_new_streams(WIMStruct *wim, off_t end_offset,
-		     struct list_head *stream_list)
+wim_prepare_streams(WIMStruct *wim, off_t end_offset,
+		    struct list_head *stream_list)
 {
 	struct lte_overwrite_prepare_args args = {
 		.wim         = wim,
 		.end_offset  = end_offset,
 		.stream_list = stream_list,
 	};
+	int ret;
 
+	for (int i = 0; i < wim->hdr.image_count; i++) {
+		ret = lte_overwrite_prepare(wim->image_metadata[i].metadata_lte,
+					    &args);
+		if (ret)
+			return ret;
+	}
 	return for_lookup_table_entry(wim->lookup_table,
 				      lte_overwrite_prepare, &args);
 }
@@ -1553,7 +1558,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 	memcpy(&hdr, &w->hdr, sizeof(struct wim_header));
 
 	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
-		ret = write_lookup_table(w->lookup_table, out, &hdr.lookup_table_res_entry);
+		ret = write_lookup_table(w, image, &hdr.lookup_table_res_entry);
 		if (ret != 0)
 			goto out;
 	}
@@ -1902,7 +1907,7 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 			       WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML;
 	}
 	INIT_LIST_HEAD(&stream_list);
-	ret = wim_find_new_streams(w, old_wim_end, &stream_list);
+	ret = wim_prepare_streams(w, old_wim_end, &stream_list);
 	if (ret != 0)
 		return ret;
 
