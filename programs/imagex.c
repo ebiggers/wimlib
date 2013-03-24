@@ -88,14 +88,14 @@ IMAGEX_PROGNAME" append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                     [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
 "                     [--verbose] [--dereference] [--config=FILE]\n"
 "                     [--threads=NUM_THREADS] [--rebuild] [--unix-data]\n"
-"                     [--source-list] [--noacls]\n"
+"                     [--source-list] [--no-acls] [--strict-acls]\n"
 ),
 [APPLY] =
 T(
 IMAGEX_PROGNAME" apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n"
-"                    [--noacls]\n"
+"                    [--no-acls] [--strict-acls]\n"
 ),
 [CAPTURE] =
 T(
@@ -103,7 +103,7 @@ IMAGEX_PROGNAME" capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                      [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
 "                      [--flags EDITION_ID] [--verbose] [--dereference]\n"
 "                      [--config=FILE] [--threads=NUM_THREADS] [--unix-data]\n"
-"                      [--source-list] [--noacls]\n"
+"                      [--source-list] [--no-acls] [--strict-acls]\n"
 ),
 [DELETE] =
 T(
@@ -164,6 +164,8 @@ static const struct option apply_options[] = {
 	{T("ref"),       required_argument, NULL, 'r'},
 	{T("unix-data"), no_argument,       NULL, 'U'},
 	{T("noacls"),    no_argument,       NULL, 'N'},
+	{T("no-acls"),    no_argument,      NULL, 'N'},
+	{T("strict-acls"), no_argument,     NULL, 'A'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_or_append_options[] = {
@@ -179,6 +181,8 @@ static const struct option capture_or_append_options[] = {
 	{T("unix-data"),   no_argument,       NULL, 'U'},
 	{T("source-list"), no_argument,       NULL, 'S'},
 	{T("noacls"),      no_argument,       NULL, 'N'},
+	{T("no-acls"),     no_argument,       NULL, 'N'},
+	{T("strict-acls"), no_argument,       NULL, 'A'},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -978,7 +982,10 @@ imagex_apply(int argc, tchar **argv)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_UNIX_DATA;
 			break;
 		case 'N':
-			extract_flags |= WIMLIB_EXTRACT_FLAG_NOACLS;
+			extract_flags |= WIMLIB_EXTRACT_FLAG_NO_ACLS;
+			break;
+		case 'A':
+			extract_flags |= WIMLIB_EXTRACT_FLAG_STRICT_ACLS;
 			break;
 		default:
 			usage(APPLY);
@@ -1142,6 +1149,9 @@ imagex_capture_or_append(int argc, tchar **argv)
 			break;
 		case 'N':
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NO_ACLS;
+			break;
+		case 'A':
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS;
 			break;
 		default:
 			usage(cmd);

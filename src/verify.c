@@ -132,7 +132,7 @@ verify_dentry(struct wim_dentry *dentry, void *wim)
 	/* Verify the associated inode, but only one time no matter how many
 	 * dentries it has (unless we are doing a full verification of the WIM,
 	 * in which case we need to force the inode to be verified again.) */
-	if (!dentry->d_inode->i_verified || w->full_verification_in_progress) {
+	if (!dentry->d_inode->i_verified) {
 		ret = verify_inode(dentry->d_inode, w);
 		if (ret != 0)
 			return ret;
@@ -173,7 +173,14 @@ verify_dentry(struct wim_dentry *dentry, void *wim)
 static int
 image_run_full_verifications(WIMStruct *w)
 {
-	return for_dentry_in_tree(wim_root_dentry(w), verify_dentry, w);
+	struct wim_image_metadata *imd;
+	struct wim_inode *inode;
+	struct hlist_node *cur;
+
+	imd = wim_get_current_image_metadata(w);
+	hlist_for_each_entry(inode, cur, &imd->inode_list, i_hlist)
+		inode->i_verified = 0;
+	return for_dentry_in_tree(imd->root_dentry, verify_dentry, w);
 }
 
 static int
@@ -207,11 +214,10 @@ wim_run_full_verifications(WIMStruct *w)
 	int ret;
 
 	for_lookup_table_entry(w->lookup_table, lte_zero_real_refcnt, NULL);
-	w->all_images_verified = 1;
-	w->full_verification_in_progress = 1;
 	ret = for_image(w, WIMLIB_ALL_IMAGES, image_run_full_verifications);
-	w->full_verification_in_progress = 0;
 	if (ret == 0) {
+		w->all_images_verified = 1;
+
 		unsigned long num_ltes_with_bogus_refcnt = 0;
 		for (int i = 0; i < w->hdr.image_count; i++)
 			w->image_metadata[i].metadata_lte->real_refcnt++;
@@ -223,8 +229,6 @@ wim_run_full_verifications(WIMStruct *w)
 				"          their reference counts fixed.",
 				num_ltes_with_bogus_refcnt);
 		}
-	} else {
-		w->all_images_verified = 0;
 	}
 	return ret;
 }

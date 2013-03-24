@@ -44,7 +44,15 @@
 
 #include <errno.h>
 
+#define MAX_GET_SD_ACCESS_DENIED_WARNINGS 1
+#define MAX_GET_SACL_PRIV_NOTHELD_WARNINGS 1
+struct win32_capture_state {
+	unsigned long num_get_sd_access_denied;
+	unsigned long num_get_sacl_priv_notheld;
+};
 
+#define MAX_SET_SD_ACCESS_DENIED_WARNINGS 1
+#define MAX_SET_SACL_PRIV_NOTHELD_WARNINGS 1
 
 /* Pointers to functions that are not available on all targetted versions of
  * Windows (XP and later).  NOTE: The WINAPI annotations seem to be important; I
@@ -106,11 +114,19 @@ win32_global_cleanup()
 	}
 }
 
-static const wchar_t *access_denied_msg =
+static const wchar_t *capture_access_denied_msg =
 L"         If you are not running this program as the administrator, you may\n"
  "         need to do so, so that all data and metadata can be backed up.\n"
  "         Otherwise, there may be no way to access the desired data or\n"
  "         metadata without taking ownership of the file or directory.\n"
+ ;
+
+static const wchar_t *apply_access_denied_msg =
+L"If you are not running this program as the administrator, you may\n"
+ "          need to do so, so that all data and metadata can be extracted\n"
+ "          exactly as the origignal copy.  However, if you do not care that\n"
+ "          the security descriptors are extracted correctly, you could run\n"
+ "          `wimlib-imagex apply' with the --no-acls flag instead.\n"
  ;
 
 #ifdef ENABLE_ERROR_MESSAGES
@@ -210,17 +226,21 @@ win32_get_short_name(struct wim_dentry *dentry, const wchar_t *path)
 static int
 win32_get_security_descriptor(struct wim_dentry *dentry,
 			      struct sd_set *sd_set,
-			      const wchar_t *path)
+			      const wchar_t *path,
+			      struct win32_capture_state *state,
+			      int add_image_flags)
 {
 	SECURITY_INFORMATION requestedInformation;
 	DWORD lenNeeded = 0;
 	BOOL status;
 	DWORD err;
+	unsigned long n;
 
 	requestedInformation = DACL_SECURITY_INFORMATION |
 			       SACL_SECURITY_INFORMATION |
 			       OWNER_SECURITY_INFORMATION |
 			       GROUP_SECURITY_INFORMATION;
+again:
 	/* Request length of security descriptor */
 	status = GetFileSecurityW(path, requestedInformation,
 				  NULL, 0, &lenNeeded);
@@ -243,11 +263,39 @@ win32_get_security_descriptor(struct wim_dentry *dentry,
 		}
 	}
 
-	if (err == ERROR_ACCESS_DENIED) {
-		WARNING("Failed to read security descriptor of \"%ls\": "
-			"Access denied!\n%ls", path, access_denied_msg);
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS)
+		goto fail;
+
+	switch (err) {
+	case ERROR_PRIVILEGE_NOT_HELD:
+		if (requestedInformation & SACL_SECURITY_INFORMATION) {
+			n = state->num_get_sacl_priv_notheld++;
+			requestedInformation &= ~SACL_SECURITY_INFORMATION;
+			if (n < MAX_GET_SACL_PRIV_NOTHELD_WARNINGS) {
+				WARNING(
+"We don't have enough privileges to read the full security\n"
+"          descriptor of \"%ls\"!\n"
+"          Re-trying with SACL omitted.\n", path);
+			} else if (n == MAX_GET_SACL_PRIV_NOTHELD_WARNINGS) {
+				WARNING(
+"Suppressing further privileges not held error messages when reading\n"
+"          security descriptors.");
+			}
+			goto again;
+		}
+		/* Fall through */
+	case ERROR_ACCESS_DENIED:
+		n = state->num_get_sd_access_denied++;
+		if (n < MAX_GET_SD_ACCESS_DENIED_WARNINGS) {
+			WARNING("Failed to read security descriptor of \"%ls\": "
+				"Access denied!\n%ls", path, capture_access_denied_msg);
+		} else if (n == MAX_GET_SD_ACCESS_DENIED_WARNINGS) {
+			WARNING("Suppressing further access denied errors messages i"
+				"when reading security descriptors");
+		}
 		return 0;
-	} else {
+	default:
+fail:
 		ERROR("Failed to read security descriptor of \"%ls\"", path);
 		win32_error(err);
 		return WIMLIB_ERR_READ;
@@ -256,40 +304,43 @@ win32_get_security_descriptor(struct wim_dentry *dentry,
 
 static int
 win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
-				  const wchar_t *path,
-				  const size_t path_num_chars,
+				  wchar_t *path,
+				  size_t path_num_chars,
 				  struct wim_lookup_table *lookup_table,
 				  struct sd_set *sd_set,
 				  const struct capture_config *config,
 				  int add_image_flags,
-				  wimlib_progress_func_t progress_func);
+				  wimlib_progress_func_t progress_func,
+				  struct win32_capture_state *state);
 
 /* Reads the directory entries of directory using a Win32 API and recursively
  * calls win32_build_dentry_tree() on them. */
 static int
 win32_recurse_directory(struct wim_dentry *root,
-			const wchar_t *dir_path,
-			const size_t dir_path_num_chars,
+			wchar_t *dir_path,
+			size_t dir_path_num_chars,
 			struct wim_lookup_table *lookup_table,
 			struct sd_set *sd_set,
 			const struct capture_config *config,
 			int add_image_flags,
-			wimlib_progress_func_t progress_func)
+			wimlib_progress_func_t progress_func,
+			struct win32_capture_state *state)
 {
 	WIN32_FIND_DATAW dat;
 	HANDLE hFind;
 	DWORD err;
 	int ret;
 
-	{
-		/* Begin reading the directory by calling FindFirstFileW.
-		 * Unlike UNIX opendir(), FindFirstFileW has file globbing built
-		 * into it.  But this isn't what we actually want, so just add a
-		 * dummy glob to get all entries. */
-		wchar_t pattern_buf[dir_path_num_chars + 3];
-		swprintf(pattern_buf, L"%ls/*", dir_path);
-		hFind = FindFirstFileW(pattern_buf, &dat);
-	}
+	/* Begin reading the directory by calling FindFirstFileW.  Unlike UNIX
+	 * opendir(), FindFirstFileW has file globbing built into it.  But this
+	 * isn't what we actually want, so just add a dummy glob to get all
+	 * entries. */
+	dir_path[dir_path_num_chars] = L'/';
+	dir_path[dir_path_num_chars + 1] = L'*';
+	dir_path[dir_path_num_chars + 2] = L'\0';
+	hFind = FindFirstFileW(dir_path, &dat);
+	dir_path[dir_path_num_chars] = L'\0';
+
 	if (hFind == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
 		if (err == ERROR_FILE_NOT_FOUND) {
@@ -303,29 +354,34 @@ win32_recurse_directory(struct wim_dentry *root,
 	ret = 0;
 	do {
 		/* Skip . and .. entries */
-		if (wcscmp(dat.cFileName, L".") && wcscmp(dat.cFileName, L".."))
-		{
-			size_t filename_num_chars = wcslen(dat.cFileName);
-			size_t new_path_num_chars = dir_path_num_chars + 1 +
-						    filename_num_chars;
-			wchar_t new_path[new_path_num_chars + 1];
+		if (dat.cFileName[0] == L'.' &&
+		    (dat.cFileName[1] == L'\0' ||
+		     (dat.cFileName[1] == L'.' &&
+		      dat.cFileName[2] == L'\0')))
+			continue;
+		size_t filename_len = wcslen(dat.cFileName);
 
-			swprintf(new_path, L"%ls/%ls", dir_path, dat.cFileName);
+		dir_path[dir_path_num_chars] = L'/';
+		wmemcpy(dir_path + dir_path_num_chars + 1,
+			dat.cFileName,
+			filename_len + 1);
 
-			struct wim_dentry *child;
-			ret = win32_build_dentry_tree_recursive(&child,
-								new_path,
-								new_path_num_chars,
-								lookup_table,
-								sd_set,
-								config,
-								add_image_flags,
-								progress_func);
-			if (ret)
-				goto out_find_close;
-			if (child)
-				dentry_add_child(root, child);
-		}
+		struct wim_dentry *child;
+		size_t path_len = dir_path_num_chars + 1 + filename_len;
+		ret = win32_build_dentry_tree_recursive(&child,
+							dir_path,
+							path_len,
+							lookup_table,
+							sd_set,
+							config,
+							add_image_flags,
+							progress_func,
+							state);
+		dir_path[dir_path_num_chars] = L'\0';
+		if (ret)
+			goto out_find_close;
+		if (child)
+			dentry_add_child(root, child);
 	} while (FindNextFileW(hFind, &dat));
 	err = GetLastError();
 	if (err != ERROR_NO_MORE_FILES) {
@@ -621,7 +677,7 @@ win32_capture_streams(const wchar_t *path,
 			if (err == ERROR_ACCESS_DENIED) {
 				WARNING("Failed to look up data streams "
 					"of \"%ls\": Access denied!\n%ls",
-					path, access_denied_msg);
+					path, capture_access_denied_msg);
 				return 0;
 			} else {
 				ERROR("Failed to look up data streams "
@@ -666,13 +722,14 @@ unnamed_only:
 
 static int
 win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
-				  const wchar_t *path,
-				  const size_t path_num_chars,
+				  wchar_t *path,
+				  size_t path_num_chars,
 				  struct wim_lookup_table *lookup_table,
 				  struct sd_set *sd_set,
 				  const struct capture_config *config,
 				  int add_image_flags,
-				  wimlib_progress_func_t progress_func)
+				  wimlib_progress_func_t progress_func,
+				  struct win32_capture_state *state)
 {
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode;
@@ -751,7 +808,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out_close_handle;
 
 	if (!(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
-		ret = win32_get_security_descriptor(root, sd_set, path);
+		ret = win32_get_security_descriptor(root, sd_set, path, state,
+						    add_image_flags);
 		if (ret)
 			goto out_close_handle;
 	}
@@ -778,7 +836,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 					      sd_set,
 					      config,
 					      add_image_flags,
-					      progress_func);
+					      progress_func,
+					      state);
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Reparse point: save the reparse tag and data */
 		ret = win32_capture_reparse_point(hFile,
@@ -804,6 +863,38 @@ out:
 	return ret;
 }
 
+static void
+win32_do_capture_warnings(const struct win32_capture_state *state,
+			  int add_image_flags)
+{
+	if (state->num_get_sacl_priv_notheld == 0 &&
+	    state->num_get_sd_access_denied == 0)
+		return;
+
+	WARNING("");
+	WARNING("Built dentry tree successfully, but with the following problem(s):");
+	if (state->num_get_sacl_priv_notheld != 0) {
+		WARNING("Could not capture SACL (System Access Control List)\n"
+			"          on %lu files or directories.",
+			state->num_get_sacl_priv_notheld);
+	}
+	if (state->num_get_sd_access_denied != 0) {
+		WARNING("Could not capture security descriptor at all\n"
+			"          on %lu files or directories.",
+			state->num_get_sd_access_denied);
+	}
+	WARNING(
+          "Try running the program as the Administrator to make sure all the\n"
+"          desired metadata has been captured exactly.  However, if you\n"
+"          do not care about capturing security descriptors correctly, then\n"
+"          nothing more needs to be done%ls\n",
+	(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS) ? L"." :
+         L", although you might consider\n"
+"          passing the --no-acls flag to `wimlib-imagex capture' or\n"
+"          `wimlib-imagex append' to explicitly capture no security\n"
+"          descriptors.\n");
+}
+
 /* Win32 version of capturing a directory tree */
 int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
@@ -818,6 +909,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	size_t path_nchars;
 	wchar_t *path;
 	int ret;
+	struct win32_capture_state state;
 
 	path_nchars = wcslen(root_disk_path);
 	if (path_nchars > 32767)
@@ -833,6 +925,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 
 	wmemcpy(path, root_disk_path, path_nchars + 1);
 
+	memset(&state, 0, sizeof(state));
 	ret = win32_build_dentry_tree_recursive(root_ret,
 						path,
 						path_nchars,
@@ -840,19 +933,12 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 						sd_set,
 						config,
 						add_image_flags,
-						progress_func);
+						progress_func,
+						&state);
 	FREE(path);
+	if (ret == 0)
+		win32_do_capture_warnings(&state, add_image_flags);
 	return ret;
-}
-
-/* Replacement for POSIX fnmatch() (partial functionality only) */
-int
-fnmatch(const wchar_t *pattern, const wchar_t *string, int flags)
-{
-	if (PathMatchSpecW(string, pattern))
-		return 0;
-	else
-		return FNM_NOMATCH;
 }
 
 static int
@@ -922,6 +1008,82 @@ win32_set_reparse_data(HANDLE h,
 	return 0;
 }
 
+/*
+ * Sets the security descriptor on an extracted file.
+ */
+static int
+win32_set_security_data(const struct wim_inode *inode,
+			const wchar_t *path,
+			struct apply_args *args)
+{
+	PSECURITY_DESCRIPTOR descriptor;
+	unsigned long n;
+	DWORD err;
+
+	descriptor = wim_const_security_data(args->w)->descriptors[inode->i_security_id];
+
+	SECURITY_INFORMATION securityInformation = DACL_SECURITY_INFORMATION |
+					           SACL_SECURITY_INFORMATION |
+					           OWNER_SECURITY_INFORMATION |
+					           GROUP_SECURITY_INFORMATION;
+again:
+	if (SetFileSecurityW(path, securityInformation, descriptor))
+		return 0;
+
+	err = GetLastError();
+
+	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
+		goto fail;
+
+	switch (err) {
+	case ERROR_PRIVILEGE_NOT_HELD:
+		if (securityInformation & SACL_SECURITY_INFORMATION) {
+			n = args->num_set_sacl_priv_notheld++;
+			securityInformation &= ~SACL_SECURITY_INFORMATION;
+			if (n < MAX_SET_SACL_PRIV_NOTHELD_WARNINGS) {
+				WARNING(
+"We don't have enough privileges to set the full security\n"
+"          descriptor on \"%ls\"!\n", path);
+				if (args->num_set_sd_access_denied +
+				    args->num_set_sacl_priv_notheld == 1)
+				{
+					WARNING("%ls", apply_access_denied_msg);
+				}
+				WARNING("Re-trying with SACL omitted.\n", path);
+			} else if (n == MAX_GET_SACL_PRIV_NOTHELD_WARNINGS) {
+				WARNING(
+"Suppressing further 'privileges not held' error messages when setting\n"
+"          security descriptors.");
+			}
+			goto again;
+		}
+		/* Fall through */
+	case ERROR_INVALID_OWNER:
+	case ERROR_ACCESS_DENIED:
+		n = args->num_set_sd_access_denied++;
+		if (n < MAX_SET_SD_ACCESS_DENIED_WARNINGS) {
+			WARNING("Failed to set security descriptor on \"%ls\": "
+				"Access denied!\n", path);
+			if (args->num_set_sd_access_denied +
+			    args->num_set_sacl_priv_notheld == 1)
+			{
+				WARNING("%ls", apply_access_denied_msg);
+			}
+		} else if (n == MAX_SET_SD_ACCESS_DENIED_WARNINGS) {
+			WARNING(
+"Suppressing further access denied error messages when setting\n"
+"          security descriptors");
+		}
+		return 0;
+	default:
+fail:
+		ERROR("Failed to set security descriptor on \"%ls\"", path);
+		win32_error(err);
+		return WIMLIB_ERR_WRITE;
+	}
+	return 0;
+}
+
 
 static int
 win32_extract_chunk(const void *buf, size_t len, u64 offset, void *arg)
@@ -970,25 +1132,13 @@ static int
 win32_extract_stream(const struct wim_inode *inode,
 		     const wchar_t *path,
 		     const wchar_t *stream_name_utf16,
-		     struct wim_lookup_table_entry *lte,
-		     const struct wim_security_data *security_data)
+		     struct wim_lookup_table_entry *lte)
 {
 	wchar_t *stream_path;
 	HANDLE h;
 	int ret;
 	DWORD err;
 	DWORD creationDisposition = CREATE_ALWAYS;
-
-	SECURITY_ATTRIBUTES *secattr;
-
-	if (security_data && inode->i_security_id != -1) {
-		secattr = alloca(sizeof(*secattr));
-		secattr->nLength = sizeof(*secattr);
-		secattr->lpSecurityDescriptor = security_data->descriptors[inode->i_security_id];
-		secattr->bInheritHandle = FALSE;
-	} else {
-		secattr = NULL;
-	}
 
 	if (stream_name_utf16) {
 		/* Named stream.  Create a buffer that contains the UTF-16LE
@@ -1028,7 +1178,7 @@ win32_extract_stream(const struct wim_inode *inode,
 		 * the call to CreateFileW() will merely open the directory that
 		 * was already created rather than creating a new file. */
 		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-			if (!CreateDirectoryW(stream_path, secattr)) {
+			if (!CreateDirectoryW(stream_path, NULL)) {
 				err = GetLastError();
 				switch (err) {
 				case ERROR_ALREADY_EXISTS:
@@ -1058,7 +1208,7 @@ win32_extract_stream(const struct wim_inode *inode,
 	h = CreateFileW(stream_path,
 			GENERIC_WRITE,
 			0,
-			secattr,
+			NULL,
 			creationDisposition,
 			FILE_FLAG_OPEN_REPARSE_POINT |
 			    FILE_FLAG_BACKUP_SEMANTICS |
@@ -1119,15 +1269,13 @@ out:
  */
 static int
 win32_extract_streams(const struct wim_inode *inode,
-		      const wchar_t *path, u64 *completed_bytes_p,
-		      const struct wim_security_data *security_data)
+		      const wchar_t *path, u64 *completed_bytes_p)
 {
 	struct wim_lookup_table_entry *unnamed_lte;
 	int ret;
 
 	unnamed_lte = inode_unnamed_lte_resolved(inode);
-	ret = win32_extract_stream(inode, path, NULL, unnamed_lte,
-				   security_data);
+	ret = win32_extract_stream(inode, path, NULL, unnamed_lte);
 	if (ret)
 		goto out;
 	if (unnamed_lte)
@@ -1145,8 +1293,7 @@ win32_extract_streams(const struct wim_inode *inode,
 			ret = win32_extract_stream(inode,
 						   path,
 						   ads_entry->stream_name,
-						   ads_entry->lte,
-						   NULL);
+						   ads_entry->lte);
 			if (ret)
 				break;
 			if (ads_entry->lte)
@@ -1159,10 +1306,11 @@ out:
 
 /* Extract a file, directory, reparse point, or hard link to an
  * already-extracted file using the Win32 API */
-int win32_do_apply_dentry(const wchar_t *output_path,
-			  size_t output_path_num_chars,
-			  struct wim_dentry *dentry,
-			  struct apply_args *args)
+int
+win32_do_apply_dentry(const wchar_t *output_path,
+		      size_t output_path_num_chars,
+		      struct wim_dentry *dentry,
+		      struct apply_args *args)
 {
 	int ret;
 	struct wim_inode *inode = dentry->d_inode;
@@ -1173,28 +1321,29 @@ int win32_do_apply_dentry(const wchar_t *output_path,
 		 * hard link. */
 		DEBUG("Creating hard link \"%ls => %ls\"",
 		      output_path, inode->i_extracted_file);
-		if (CreateHardLinkW(output_path, inode->i_extracted_file, NULL)) {
-			ret = 0;
-		} else {
+		if (!CreateHardLinkW(output_path, inode->i_extracted_file, NULL)) {
 			err = GetLastError();
 			ERROR("Can't create hard link \"%ls => %ls\"",
 			      output_path, inode->i_extracted_file);
-			ret = WIMLIB_ERR_LINK;
 			win32_error(err);
+			return WIMLIB_ERR_LINK;
 		}
 	} else {
 		/* Create the file, directory, or reparse point, and extract the
 		 * data streams. */
-		const struct wim_security_data *security_data;
-		if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NOACLS)
-			security_data = NULL;
-		else
-			security_data = wim_const_security_data(args->w);
-
 		ret = win32_extract_streams(inode, output_path,
-					    &args->progress.extract.completed_bytes,
-					    security_data);
-		if (ret == 0 && inode->i_nlink > 1) {
+					    &args->progress.extract.completed_bytes);
+		if (ret)
+			return ret;
+
+		if (inode->i_security_id >= 0 &&
+		    !(args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS))
+		{
+			ret = win32_set_security_data(inode, output_path, args);
+			if (ret)
+				return ret;
+		}
+		if (inode->i_nlink > 1) {
 			/* Save extracted path for a later call to
 			 * CreateHardLinkW() if this inode has multiple links.
 			 * */
@@ -1203,7 +1352,7 @@ int win32_do_apply_dentry(const wchar_t *output_path,
 				ret = WIMLIB_ERR_NOMEM;
 		}
 	}
-	return ret;
+	return 0;
 }
 
 /* Set timestamps on an extracted file using the Win32 API */
@@ -1333,6 +1482,16 @@ win32_rename_replacement(const wchar_t *oldpath, const wchar_t *newpath)
 		errno = 0;
 		return -1;
 	}
+}
+
+/* Replacement for POSIX fnmatch() (partial functionality only) */
+int
+fnmatch(const wchar_t *pattern, const wchar_t *string, int flags)
+{
+	if (PathMatchSpecW(string, pattern))
+		return 0;
+	else
+		return FNM_NOMATCH;
 }
 
 /* truncate() replacement */

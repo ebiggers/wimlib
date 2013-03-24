@@ -252,10 +252,17 @@ the \fB--unix-data\fR flag.  By passing \fB--unix-data\fR to
 \fB@IMAGEX_PROGNAME@ apply\fR instead, this causes this UNIX-specific data to be
 restored when available.
 .TP
-\fB--noacls\fR
+\fB--no-acls\fR
 In the NTFS apply mode, do not apply security descriptors.  This flag is also
 available in the native Win32 build of wimlib and may be useful when running
 \fB@IMAGEX_PROGNAME@\fR as a non-administrator.
+.TP
+\fB--strict-acls\fR
+Fail immediately if the full security descriptor of any file or directory cannot
+be set exactly as specified in the WIM file.  The default behavior without this
+option is to fall back to setting a security descriptor with the SACL omitted,
+then only the default inherited security descriptor, if we do not have
+permission to set the desired one.
 
 .SH NOTES
 

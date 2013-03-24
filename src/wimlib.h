@@ -638,6 +638,13 @@ struct wimlib_capture_source {
  * mode, or in Win32 native builds. */
 #define WIMLIB_ADD_IMAGE_FLAG_NO_ACLS			0x00000020
 
+/** Fail immediately if the full security descriptor of any file or directory
+ * cannot be accessed.  Only has an effect in Win32 native builds.  The default
+ * behavior without this flag is to first try omitting the SACL from the
+ * security descriptor, then to try omitting the security descriptor entirely.
+ * */
+#define WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS		0x00000040
+
 /******************************
  * WIMLIB_EXPORT_FLAG_* *
  ******************************/
@@ -676,7 +683,14 @@ struct wimlib_capture_source {
 
 /** Do not extract security descriptors.  Only has an effect in NTFS apply mode,
  * or in Win32 native builds. */
-#define WIMLIB_EXTRACT_FLAG_NOACLS			0x00000040
+#define WIMLIB_EXTRACT_FLAG_NO_ACLS			0x00000040
+
+/** Fail immediately if the full security descriptor of any file or directory
+ * cannot be set exactly as specified in the WIM file.  The default behavior
+ * without this flag is to fall back to setting the security descriptor with the
+ * SACL omitted, then only the default inherited security descriptor, if we do
+ * not have permission to set the desired one. */
+#define WIMLIB_EXTRACT_FLAG_STRICT_ACLS			0x00000080
 
 /******************************
  * WIMLIB_MOUNT_FLAG_*        *

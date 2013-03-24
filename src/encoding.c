@@ -254,7 +254,7 @@ DEFINE_CHAR_CONVERSION_FUNCTIONS(utf16le, "UTF-16LE", utf16lechar,
 
 /* tchar to UTF-8 and back */
 #if TCHAR_IS_UTF16LE
-DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "UTF16-LE", tchar,
+DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "UTF-16LE", tchar,
 				 utf8, "UTF-8", char,
 				 false,
 				 in_nbytes * 2,
@@ -264,7 +264,7 @@ DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "UTF16-LE", tchar,
 				 static)
 
 DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", char,
-				 tstr, "UTF16-LE", tchar,
+				 tstr, "UTF-16LE", tchar,
 				 false,
 				 in_nbytes * 2,
 				 WIMLIB_ERR_INVALID_UTF8_STRING,
@@ -300,7 +300,8 @@ int
 tstr_to_utf8_simple(const tchar *tstr, char **out)
 {
 	size_t out_nbytes;
-	return tstr_to_utf8(tstr, tstrlen(tstr), out, &out_nbytes);
+	return tstr_to_utf8(tstr, tstrlen(tstr) * sizeof(tchar),
+			    out, &out_nbytes);
 }
 
 int

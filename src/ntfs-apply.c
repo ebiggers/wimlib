@@ -302,7 +302,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 		return WIMLIB_ERR_NTFS_3G;
 	}
 	if (inode->i_security_id != -1 &&
-	    !(extract_flags & WIMLIB_EXTRACT_FLAG_NOACLS))
+	    !(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS))
 	{
 		const char *desc;
 		const struct wim_security_data *sd;

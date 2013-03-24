@@ -800,11 +800,11 @@ extract_single_image(WIMStruct *w, int image,
 	struct apply_args args;
 	const struct apply_operations *ops;
 
+	memset(&args, 0, sizeof(args));
+
 	args.w                  = w;
 	args.target             = target;
 	args.extract_flags      = extract_flags;
-	args.num_utime_warnings = 0;
-	args.stream_list        = &stream_list;
 	args.progress_func      = progress_func;
 
 	if (progress_func) {

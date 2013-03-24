@@ -316,7 +316,6 @@ struct WIMStruct {
 
 	u8 deletion_occurred : 1;
 	u8 all_images_verified : 1;
-	u8 full_verification_in_progress : 1;
 	u8 wim_locked : 1;
 };
 
@@ -441,14 +440,27 @@ struct apply_args {
 	WIMStruct *w;
 	const tchar *target;
 	int extract_flags;
-	unsigned num_utime_warnings;
-	struct list_head *stream_list;
 	union wimlib_progress_info progress;
-#ifdef WITH_NTFS_3G
-	struct _ntfs_volume *vol;
-#endif
 	wimlib_progress_func_t progress_func;
 	int (*apply_dentry)(struct wim_dentry *, void *);
+	union {
+	#ifdef WITH_NTFS_3G
+		struct {
+			/* NTFS apply only */
+			struct _ntfs_volume *vol;
+		};
+	#endif
+		struct {
+			/* Normal apply only (UNIX) */
+			unsigned long num_utime_warnings;
+		};
+
+		struct {
+			/* Normal apply only (Win32) */
+			unsigned long num_set_sacl_priv_notheld;
+			unsigned long num_set_sd_access_denied;
+		};
+	};
 };
 
 extern int
