@@ -119,7 +119,7 @@ globfree(glob_t *pglob)
 }
 
 static bool
-win32_modify_privilege(const char *privilege, bool enable)
+win32_modify_privilege(const wchar_t *privilege, bool enable)
 {
 	HANDLE hToken;
 	LUID luid;
@@ -129,13 +129,10 @@ win32_modify_privilege(const char *privilege, bool enable)
 	if (!OpenProcessToken(GetCurrentProcess(),
 			      TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
 			      &hToken))
-	{
 		goto out;
-	}
 
-	if (!LookupPrivilegeValue(NULL, privilege, &luid)) {
+	if (!LookupPrivilegeValueW(NULL, privilege, &luid))
 		goto out;
-	}
 
 	newState.PrivilegeCount = 1;
 	newState.Privileges[0].Luid = luid;

@@ -265,7 +265,7 @@ verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 	}
 	if (w->hdr.part_number != 1) {
 		ERROR("WIM `%"TS"' is not the first part of the split WIM.",
-		      T(w->filename));
+		      w->filename);
 		return WIMLIB_ERR_SPLIT_INVALID;
 	}
 	for (unsigned i = 0; i < num_additional_swms; i++) {

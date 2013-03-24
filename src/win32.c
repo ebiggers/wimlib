@@ -949,6 +949,23 @@ do_win32_extract_stream(HANDLE hStream, struct wim_lookup_table_entry *lte)
 				    win32_extract_chunk, hStream);
 }
 
+static bool
+path_is_root_of_drive(const wchar_t *path)
+{
+	if (!*path)
+		return false;
+
+	if (*path != L'/' && *path != L'\\') {
+		if (*(path + 1) == L':')
+			path += 2;
+		else
+			return false;
+	}
+	while (*path == L'/' || *path == L'\\')
+		path++;
+	return (*path == L'\0');
+}
+
 static int
 win32_extract_stream(const struct wim_inode *inode,
 		     const wchar_t *path,
@@ -1013,7 +1030,14 @@ win32_extract_stream(const struct wim_inode *inode,
 		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
 			if (!CreateDirectoryW(stream_path, secattr)) {
 				err = GetLastError();
-				if (err != ERROR_ALREADY_EXISTS) {
+				switch (err) {
+				case ERROR_ALREADY_EXISTS:
+					break;
+				case ERROR_ACCESS_DENIED:
+					if (path_is_root_of_drive(path))
+						break;
+					/* Fall through */
+				default:
 					ERROR("Failed to create directory \"%ls\"",
 					      stream_path);
 					win32_error(err);

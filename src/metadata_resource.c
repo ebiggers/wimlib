@@ -213,7 +213,7 @@ write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 	lte.resource_entry.size          = buf_size;
 	lte.resource_entry.offset        = 0;
 	lte.resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
-	lte.attached_buffer              = buf;
+	lte.attached_buffer              = (void*)buf;
 
 	zero_out_hash(lte.hash);
 	ret = write_wim_resource(&lte, out_fp, out_ctype, out_res_entry, 0);
