@@ -367,7 +367,8 @@ struct capture_config {
 	size_t prefix_num_tchars;
 };
 extern bool
-exclude_path(const tchar *path, const struct capture_config *config,
+exclude_path(const tchar *path, size_t path_len,
+	     const struct capture_config *config,
 	     bool exclude_prefix);
 
 extern int
@@ -600,7 +601,11 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 #define WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML  0x20000000
 #define WIMLIB_WRITE_MASK_PUBLIC		0x1fffffff
 
+/* We are capturing a tree to be placed in the root of the WIM image */
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT	0x80000000
+
+/* We are capturing a dentry that will become the root of a tree to be added to
+ * the WIM image */
 #define WIMLIB_ADD_IMAGE_FLAG_SOURCE    0x40000000
 
 

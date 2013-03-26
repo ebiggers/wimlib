@@ -216,12 +216,6 @@ used:
 \\System Volume Information
 \\RECYCLER
 \\Windows\\CSC
-
-[CompressionExclusionList]
-*.mp3
-*.zip
-*.cab
-\\WINDOWS\\inf\\*.pnf
 .RE
 .RE
 

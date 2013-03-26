@@ -745,7 +745,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	u64 file_size;
 	int ret = 0;
 
-	if (exclude_path(path, config, true)) {
+	if (exclude_path(path, path_num_chars, config, true)) {
 		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
 			ERROR("Cannot exclude the root directory from capture");
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;

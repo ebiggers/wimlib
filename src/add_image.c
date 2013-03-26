@@ -41,6 +41,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 
 #include <unistd.h>
@@ -100,10 +101,310 @@ err:
 }
 
 #ifndef __WIN32__
+
+static int
+unix_capture_regular_file(const char *path,
+			  uint64_t size,
+			  struct wim_inode *inode,
+			  struct wim_lookup_table *lookup_table)
+{
+	struct wim_lookup_table_entry *lte;
+	u8 hash[SHA1_HASH_SIZE];
+	int ret;
+
+	inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
+
+	/* Empty files do not have to have a lookup table entry. */
+	if (size == 0)
+		return 0;
+
+	/* For each regular file, we must check to see if the file is in
+	 * the lookup table already; if it is, we increment its refcnt;
+	 * otherwise, we create a new lookup table entry and insert it.
+	 * */
+
+	ret = sha1sum(path, hash);
+	if (ret)
+		return ret;
+
+	lte = __lookup_resource(lookup_table, hash);
+	if (lte) {
+		lte->refcnt++;
+		DEBUG("Add lte reference %u for `%s'", lte->refcnt,
+		      path);
+	} else {
+		char *file_on_disk = STRDUP(path);
+		if (!file_on_disk) {
+			ERROR("Failed to allocate memory for file path");
+			return WIMLIB_ERR_NOMEM;
+		}
+		lte = new_lookup_table_entry();
+		if (!lte) {
+			FREE(file_on_disk);
+			return WIMLIB_ERR_NOMEM;
+		}
+		lte->file_on_disk = file_on_disk;
+		lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
+		lte->resource_entry.original_size = size;
+		lte->resource_entry.size = size;
+		copy_hash(lte->hash, hash);
+		lookup_table_insert(lookup_table, lte);
+	}
+	inode->i_lte = lte;
+	return 0;
+}
+
+static int
+unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
+				 char *path,
+				 size_t path_len,
+				 struct wim_lookup_table *lookup_table,
+				 const struct capture_config *config,
+				 int add_image_flags,
+				 wimlib_progress_func_t progress_func);
+
+static int
+unix_capture_directory(struct wim_dentry *dir_dentry,
+		       char *path,
+		       size_t path_len,
+		       struct wim_lookup_table *lookup_table,
+		       const struct capture_config *config,
+		       int add_image_flags,
+		       wimlib_progress_func_t progress_func)
+{
+
+	DIR *dir;
+	struct dirent entry, *result;
+	struct wim_dentry *child;
+	int ret;
+
+	dir_dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
+	dir = opendir(path);
+	if (!dir) {
+		ERROR_WITH_ERRNO("Failed to open the directory `%s'",
+				 path);
+		return WIMLIB_ERR_OPEN;
+	}
+
+	/* Recurse on directory contents */
+	while (1) {
+		errno = 0;
+		ret = readdir_r(dir, &entry, &result);
+		if (ret != 0) {
+			ret = WIMLIB_ERR_READ;
+			ERROR_WITH_ERRNO("Error reading the "
+					 "directory `%s'",
+					 path);
+			break;
+		}
+		if (result == NULL)
+			break;
+		if (result->d_name[0] == '.' && (result->d_name[1] == '\0'
+		      || (result->d_name[1] == '.' && result->d_name[2] == '\0')))
+				continue;
+
+		size_t name_len = strlen(result->d_name);
+
+		path[path_len] = '/';
+		memcpy(&path[path_len + 1], result->d_name, name_len + 1);
+		ret = unix_build_dentry_tree_recursive(&child,
+						       path,
+						       path_len + 1 + name_len,
+						       lookup_table,
+						       config,
+						       add_image_flags,
+						       progress_func);
+		if (ret)
+			break;
+		if (child)
+			dentry_add_child(dir_dentry, child);
+	}
+	closedir(dir);
+	return ret;
+}
+
+static int
+unix_capture_symlink(const char *path,
+		     struct wim_inode *inode,
+		     struct wim_lookup_table *lookup_table)
+{
+	char deref_name_buf[4096];
+	ssize_t deref_name_len;
+	int ret;
+
+	inode->i_attributes = FILE_ATTRIBUTE_REPARSE_POINT;
+	inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+
+	/* The idea here is to call readlink() to get the UNIX target of
+	 * the symbolic link, then turn the target into a reparse point
+	 * data buffer that contains a relative or absolute symbolic
+	 * link (NOT a junction point or *full* path symbolic link with
+	 * drive letter).
+	 */
+	deref_name_len = readlink(path, deref_name_buf,
+				  sizeof(deref_name_buf) - 1);
+	if (deref_name_len >= 0) {
+		deref_name_buf[deref_name_len] = '\0';
+		DEBUG("Read symlink `%s'", deref_name_buf);
+		ret = inode_set_symlink(inode, deref_name_buf,
+					lookup_table, NULL);
+		if (ret == 0) {
+			/* Unfortunately, Windows seems to have the concept of
+			 * "file" symbolic links as being different from
+			 * "directory" symbolic links...  so
+			 * FILE_ATTRIBUTE_DIRECTORY needs to be set on the
+			 * symbolic link if the *target* of the symbolic link is
+			 * a directory.  */
+			struct stat stbuf;
+			if (stat(path, &stbuf) == 0 && S_ISDIR(stbuf.st_mode))
+				inode->i_attributes |= FILE_ATTRIBUTE_DIRECTORY;
+		}
+	} else {
+		ERROR_WITH_ERRNO("Failed to read target of "
+				 "symbolic link `%s'", path);
+		ret = WIMLIB_ERR_READLINK;
+	}
+	return ret;
+}
+
+static int
+unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
+				 char *path,
+				 size_t path_len,
+				 struct wim_lookup_table *lookup_table,
+				 const struct capture_config *config,
+				 int add_image_flags,
+				 wimlib_progress_func_t progress_func)
+{
+	struct wim_dentry *root = NULL;
+	int ret = 0;
+	struct wim_inode *inode;
+
+	if (exclude_path(path, path_len, config, true)) {
+		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
+			ERROR("Cannot exclude the root directory from capture");
+			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+			goto out;
+		}
+		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+		    && progress_func)
+		{
+			union wimlib_progress_info info;
+			info.scan.cur_path = path;
+			info.scan.excluded = true;
+			progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+		}
+		goto out;
+	}
+
+	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+	    && progress_func)
+	{
+		union wimlib_progress_info info;
+		info.scan.cur_path = path;
+		info.scan.excluded = false;
+		progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+	}
+
+	/* UNIX version of capturing a directory tree */
+	struct stat stbuf;
+	int (*stat_fn)(const char *restrict, struct stat *restrict);
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)
+		stat_fn = stat;
+	else
+		stat_fn = lstat;
+
+	ret = (*stat_fn)(path, &stbuf);
+	if (ret != 0) {
+		ERROR_WITH_ERRNO("Failed to stat `%s'", path);
+		goto out;
+	}
+
+	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) &&
+	      !S_ISDIR(stbuf.st_mode))
+	{
+		/* Do a dereference-stat in case the root is a symbolic link.
+		 * This case is allowed, provided that the symbolic link points
+		 * to a directory. */
+		ret = stat(path, &stbuf);
+		if (ret != 0) {
+			ERROR_WITH_ERRNO("Failed to stat `%s'", path);
+			ret = WIMLIB_ERR_STAT;
+			goto out;
+		}
+		if (!S_ISDIR(stbuf.st_mode)) {
+			ERROR("`%s' is not a directory", path);
+			ret = WIMLIB_ERR_NOTDIR;
+			goto out;
+		}
+	}
+	if (!S_ISREG(stbuf.st_mode) && !S_ISDIR(stbuf.st_mode)
+	    && !S_ISLNK(stbuf.st_mode)) {
+		ERROR("`%s' is not a regular file, directory, or symbolic link.",
+		      path);
+		ret = WIMLIB_ERR_SPECIAL_FILE;
+		goto out;
+	}
+
+	ret = new_dentry_with_timeless_inode(path_basename_with_len(path, path_len),
+					     &root);
+	if (ret)
+		goto out;
+
+	inode = root->d_inode;
+
+#ifdef HAVE_STAT_NANOSECOND_PRECISION
+	inode->i_creation_time = timespec_to_wim_timestamp(stbuf.st_mtim);
+	inode->i_last_write_time = timespec_to_wim_timestamp(stbuf.st_mtim);
+	inode->i_last_access_time = timespec_to_wim_timestamp(stbuf.st_atim);
+#else
+	inode->i_creation_time = unix_timestamp_to_wim(stbuf.st_mtime);
+	inode->i_last_write_time = unix_timestamp_to_wim(stbuf.st_mtime);
+	inode->i_last_access_time = unix_timestamp_to_wim(stbuf.st_atime);
+#endif
+	/* Leave the inode number at 0 for directories.  Otherwise grab the
+	 * inode number from the `stat' buffer, including the device number if
+	 * possible. */
+	if (!S_ISDIR(stbuf.st_mode)) {
+		if (sizeof(ino_t) >= 8)
+			inode->i_ino = (u64)stbuf.st_ino;
+		else
+			inode->i_ino = (u64)stbuf.st_ino |
+					   ((u64)stbuf.st_dev <<
+					    	((sizeof(ino_t) * 8) & 63));
+	}
+	inode->i_resolved = 1;
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
+		ret = inode_set_unix_data(inode, stbuf.st_uid,
+					  stbuf.st_gid,
+					  stbuf.st_mode,
+					  lookup_table,
+					  UNIX_DATA_ALL | UNIX_DATA_CREATE);
+		if (ret)
+			goto out;
+	}
+	add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
+	if (S_ISREG(stbuf.st_mode))
+		ret = unix_capture_regular_file(path, stbuf.st_size,
+						inode, lookup_table);
+	else if (S_ISDIR(stbuf.st_mode))
+		ret = unix_capture_directory(root, path, path_len,
+					     lookup_table, config,
+					     add_image_flags, progress_func);
+	else
+		ret = unix_capture_symlink(path, inode, lookup_table);
+out:
+	if (ret == 0)
+		*root_ret = root;
+	else
+		free_dentry_tree(root, lookup_table);
+	return ret;
+}
+
 /*
  * unix_build_dentry_tree():
- * 	Recursively builds a tree of WIM dentries from an on-disk directory
- * 	tree (UNIX version; no NTFS-specific data is captured).
+ * 	Builds a tree of WIM dentries from an on-disk directory tree (UNIX
+ * 	version; no NTFS-specific data is captured).
  *
  * @root_ret:   Place to return a pointer to the root of the dentry tree.  Only
  *		modified if successful.  Set to NULL if the file or directory was
@@ -143,257 +444,29 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       wimlib_progress_func_t progress_func,
 		       void *extra_arg)
 {
-	struct wim_dentry *root = NULL;
-	int ret = 0;
-	struct wim_inode *inode;
+	char *path_buf;
+	int ret;
+	size_t path_len;
+	size_t path_bufsz;
 
-	if (exclude_path(root_disk_path, config, true)) {
-		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
-			ERROR("Cannot exclude the root directory from capture");
-			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
-			goto out;
-		}
-		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
-		    && progress_func)
-		{
-			union wimlib_progress_info info;
-			info.scan.cur_path = root_disk_path;
-			info.scan.excluded = true;
-			progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
-		}
-		goto out;
-	}
+	path_bufsz = min(32790, PATH_MAX + 1);
+	path_len = strlen(root_disk_path);
 
-	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
-	    && progress_func)
-	{
-		union wimlib_progress_info info;
-		info.scan.cur_path = root_disk_path;
-		info.scan.excluded = false;
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
-	}
+	if (path_len >= path_bufsz)
+		return WIMLIB_ERR_INVALID_PARAM;
 
-	/* UNIX version of capturing a directory tree */
-	struct stat root_stbuf;
-	int (*stat_fn)(const char *restrict, struct stat *restrict);
-	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)
-		stat_fn = stat;
-	else
-		stat_fn = lstat;
-
-	ret = (*stat_fn)(root_disk_path, &root_stbuf);
-	if (ret != 0) {
-		ERROR_WITH_ERRNO("Failed to stat `%s'", root_disk_path);
-		goto out;
-	}
-
-	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) &&
-	      !S_ISDIR(root_stbuf.st_mode))
-	{
-		/* Do a dereference-stat in case the root is a symbolic link.
-		 * This case is allowed, provided that the symbolic link points
-		 * to a directory. */
-		ret = stat(root_disk_path, &root_stbuf);
-		if (ret != 0) {
-			ERROR_WITH_ERRNO("Failed to stat `%s'", root_disk_path);
-			ret = WIMLIB_ERR_STAT;
-			goto out;
-		}
-		if (!S_ISDIR(root_stbuf.st_mode)) {
-			ERROR("`%s' is not a directory", root_disk_path);
-			ret = WIMLIB_ERR_NOTDIR;
-			goto out;
-		}
-	}
-	if (!S_ISREG(root_stbuf.st_mode) && !S_ISDIR(root_stbuf.st_mode)
-	    && !S_ISLNK(root_stbuf.st_mode)) {
-		ERROR("`%s' is not a regular file, directory, or symbolic link.",
-		      root_disk_path);
-		ret = WIMLIB_ERR_SPECIAL_FILE;
-		goto out;
-	}
-
-	ret = new_dentry_with_timeless_inode(path_basename(root_disk_path),
-					     &root);
-	if (ret)
-		goto out;
-
-	inode = root->d_inode;
-
-#ifdef HAVE_STAT_NANOSECOND_PRECISION
-	inode->i_creation_time = timespec_to_wim_timestamp(root_stbuf.st_mtim);
-	inode->i_last_write_time = timespec_to_wim_timestamp(root_stbuf.st_mtim);
-	inode->i_last_access_time = timespec_to_wim_timestamp(root_stbuf.st_atim);
-#else
-	inode->i_creation_time = unix_timestamp_to_wim(root_stbuf.st_mtime);
-	inode->i_last_write_time = unix_timestamp_to_wim(root_stbuf.st_mtime);
-	inode->i_last_access_time = unix_timestamp_to_wim(root_stbuf.st_atime);
-#endif
-	/* Leave the inode number at 0 for directories. */
-	if (!S_ISDIR(root_stbuf.st_mode)) {
-		if (sizeof(ino_t) >= 8)
-			inode->i_ino = (u64)root_stbuf.st_ino;
-		else
-			inode->i_ino = (u64)root_stbuf.st_ino |
-					   ((u64)root_stbuf.st_dev <<
-					    	((sizeof(ino_t) * 8) & 63));
-	}
-	inode->i_resolved = 1;
-	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
-		ret = inode_set_unix_data(inode, root_stbuf.st_uid,
-					  root_stbuf.st_gid,
-					  root_stbuf.st_mode,
-					  lookup_table,
-					  UNIX_DATA_ALL | UNIX_DATA_CREATE);
-		if (ret)
-			goto out;
-	}
-	add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
-	if (S_ISREG(root_stbuf.st_mode)) { /* Archiving a regular file */
-
-		struct wim_lookup_table_entry *lte;
-		u8 hash[SHA1_HASH_SIZE];
-
-		inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
-
-		/* Empty files do not have to have a lookup table entry. */
-		if (root_stbuf.st_size == 0)
-			goto out;
-
-		/* For each regular file, we must check to see if the file is in
-		 * the lookup table already; if it is, we increment its refcnt;
-		 * otherwise, we create a new lookup table entry and insert it.
-		 * */
-
-		ret = sha1sum(root_disk_path, hash);
-		if (ret != 0)
-			goto out;
-
-		lte = __lookup_resource(lookup_table, hash);
-		if (lte) {
-			lte->refcnt++;
-			DEBUG("Add lte reference %u for `%s'", lte->refcnt,
-			      root_disk_path);
-		} else {
-			char *file_on_disk = STRDUP(root_disk_path);
-			if (!file_on_disk) {
-				ERROR("Failed to allocate memory for file path");
-				ret = WIMLIB_ERR_NOMEM;
-				goto out;
-			}
-			lte = new_lookup_table_entry();
-			if (!lte) {
-				FREE(file_on_disk);
-				ret = WIMLIB_ERR_NOMEM;
-				goto out;
-			}
-			lte->file_on_disk = file_on_disk;
-			lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
-			lte->resource_entry.original_size = root_stbuf.st_size;
-			lte->resource_entry.size = root_stbuf.st_size;
-			copy_hash(lte->hash, hash);
-			lookup_table_insert(lookup_table, lte);
-		}
-		root->d_inode->i_lte = lte;
-	} else if (S_ISDIR(root_stbuf.st_mode)) { /* Archiving a directory */
-
-		inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
-
-		DIR *dir;
-		struct dirent entry, *result;
-		struct wim_dentry *child;
-
-		dir = opendir(root_disk_path);
-		if (!dir) {
-			ERROR_WITH_ERRNO("Failed to open the directory `%s'",
-					 root_disk_path);
-			ret = WIMLIB_ERR_OPEN;
-			goto out;
-		}
-
-		/* Buffer for names of files in directory. */
-		size_t len = strlen(root_disk_path);
-		char name[len + 1 + FILENAME_MAX + 1];
-		memcpy(name, root_disk_path, len);
-		name[len] = '/';
-
-		/* Create a dentry for each entry in the directory on disk, and recurse
-		 * to any subdirectories. */
-		while (1) {
-			errno = 0;
-			ret = readdir_r(dir, &entry, &result);
-			if (ret != 0) {
-				ret = WIMLIB_ERR_READ;
-				ERROR_WITH_ERRNO("Error reading the "
-						 "directory `%s'",
-						 root_disk_path);
-				break;
-			}
-			if (result == NULL)
-				break;
-			if (result->d_name[0] == '.' && (result->d_name[1] == '\0'
-			      || (result->d_name[1] == '.' && result->d_name[2] == '\0')))
-					continue;
-			strcpy(name + len + 1, result->d_name);
-			ret = unix_build_dentry_tree(&child, name,
-						     lookup_table,
-						     NULL, config,
-						     add_image_flags,
-						     progress_func, NULL);
-			if (ret != 0)
-				break;
-			if (child)
-				dentry_add_child(root, child);
-		}
-		closedir(dir);
-	} else { /* Archiving a symbolic link */
-		inode->i_attributes = FILE_ATTRIBUTE_REPARSE_POINT;
-		inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
-
-		/* The idea here is to call readlink() to get the UNIX target of
-		 * the symbolic link, then turn the target into a reparse point
-		 * data buffer that contains a relative or absolute symbolic
-		 * link (NOT a junction point or *full* path symbolic link with
-		 * drive letter).
-		 */
-
-		char deref_name_buf[4096];
-		ssize_t deref_name_len;
-
-		deref_name_len = readlink(root_disk_path, deref_name_buf,
-					  sizeof(deref_name_buf) - 1);
-		if (deref_name_len >= 0) {
-			deref_name_buf[deref_name_len] = '\0';
-			DEBUG("Read symlink `%s'", deref_name_buf);
-			ret = inode_set_symlink(root->d_inode, deref_name_buf,
-						lookup_table, NULL);
-			if (ret == 0) {
-				/*
-				 * Unfortunately, Windows seems to have the
-				 * concept of "file" symbolic links as being
-				 * different from "directory" symbolic links...
-				 * so FILE_ATTRIBUTE_DIRECTORY needs to be set
-				 * on the symbolic link if the *target* of the
-				 * symbolic link is a directory.
-				 */
-				struct stat stbuf;
-				if (stat(root_disk_path, &stbuf) == 0 &&
-				    S_ISDIR(stbuf.st_mode))
-				{
-					inode->i_attributes |= FILE_ATTRIBUTE_DIRECTORY;
-				}
-			}
-		} else {
-			ERROR_WITH_ERRNO("Failed to read target of "
-					 "symbolic link `%s'", root_disk_path);
-			ret = WIMLIB_ERR_READLINK;
-		}
-	}
-out:
-	if (ret == 0)
-		*root_ret = root;
-	else
-		free_dentry_tree(root, lookup_table);
+ 	path_buf = MALLOC(path_bufsz);
+	if (!path_buf)
+		return WIMLIB_ERR_NOMEM;
+	memcpy(path_buf, root_disk_path, path_len + 1);
+	ret = unix_build_dentry_tree_recursive(root_ret,
+					       path_buf,
+					       path_len,
+					       lookup_table,
+					       config,
+					       add_image_flags,
+					       progress_func);
+	FREE(path_buf);
 	return ret;
 }
 #endif /* !__WIN32__ */
@@ -440,7 +513,6 @@ destroy_capture_config(struct capture_config *config)
 	destroy_pattern_list(&config->compression_exclusion_list);
 	destroy_pattern_list(&config->alignment_list);
 	FREE(config->config_str);
-	FREE(config->prefix);
 	memset(config, 0, sizeof(*config));
 }
 
@@ -513,11 +585,23 @@ init_capture_config(struct capture_config *config,
 			if (*pp == T('\\'))
 				*pp = T('/');
 
-		/* Remove drive letter (UNIX only) */
-	#ifndef __WIN32__
-		if (eol - p > 2 && istalpha(*p) && *(p + 1) == T(':'))
+		/* Check if the path begins with a drive letter */
+		if (eol - p > 2 && *p != T('/') && *(p + 1) == T(':')) {
+			/* Don't allow relative paths on other drives */
+			if (eol - p < 3 || *(p + 2) != T('/')) {
+				ERROR("Relative paths including a drive letter "
+				      "are not allowed!\n"
+				      "        Perhaps you meant "
+				      "\"%"TS":/%"TS"\"?\n",
+				      *p, p + 2);
+				ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+				goto out_destroy;
+			}
+		#ifndef __WIN32__
+			/* UNIX: strip the drive letter */
 			p += 2;
-	#endif
+		#endif
+		}
 
 		ret = 0;
 		if (!tstrcmp(p, T("[ExclusionList]")))
@@ -564,30 +648,31 @@ out_destroy:
 	return ret;
 }
 
-static int capture_config_set_prefix(struct capture_config *config,
-				     const tchar *_prefix)
+static bool
+is_absolute_path(const tchar *path)
 {
-	tchar *prefix = TSTRDUP(_prefix);
-
-	if (!prefix)
-		return WIMLIB_ERR_NOMEM;
-	FREE(config->prefix);
-	config->prefix = prefix;
-	config->prefix_num_tchars = tstrlen(prefix);
-	return 0;
+	if (*path == T('/'))
+		return true;
+#ifdef __WIN32__
+	/* Drive letter */
+	if (*path && *(path + 1) == T(':'))
+		return true;
+#endif
+	return false;
 }
 
-static bool match_pattern(const tchar *path,
-			  const tchar *path_basename,
-			  const struct pattern_list *list)
+static bool
+match_pattern(const tchar *path,
+	      const tchar *path_basename,
+	      const struct pattern_list *list)
 {
 	for (size_t i = 0; i < list->num_pats; i++) {
 		const tchar *pat = list->pats[i];
 		const tchar *string;
-		if (pat[0] == '/')
+		if (is_absolute_path(pat)) {
 			/* Absolute path from root of capture */
 			string = path;
-		else {
+		} else {
 			if (tstrchr(pat, T('/')))
 				/* Relative path from root of capture */
 				string = path + 1;
@@ -622,12 +707,12 @@ static bool match_pattern(const tchar *path,
  * directory.
  */
 bool
-exclude_path(const tchar *path, const struct capture_config *config,
-	     bool exclude_prefix)
+exclude_path(const tchar *path, size_t path_len,
+	     const struct capture_config *config, bool exclude_prefix)
 {
-	const tchar *basename = path_basename(path);
+	const tchar *basename = path_basename_with_len(path, path_len);
 	if (exclude_prefix) {
-		wimlib_assert(tstrlen(path) >= config->prefix_num_tchars);
+		wimlib_assert(path_len >= config->prefix_num_tchars);
 		if (!tmemcmp(config->prefix, path, config->prefix_num_tchars) &&
 		    path[config->prefix_num_tchars] == T('/'))
 		{
@@ -662,9 +747,11 @@ canonicalize_target_path(tchar *target_path)
 	return target_path;
 }
 
-/* Strip leading and trailing slashes from the target paths */
+/* Strip leading and trailing slashes from the target paths, and translate all
+ * backslashes in the source and target paths into forward slashes. */
 static void
-canonicalize_targets(struct wimlib_capture_source *sources, size_t num_sources)
+canonicalize_sources_and_targets(struct wimlib_capture_source *sources,
+				 size_t num_sources)
 {
 	while (num_sources--) {
 		DEBUG("Canonicalizing { source: \"%"TS"\", target=\"%"TS"\"}",
@@ -993,7 +1080,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	sd_set.rb_root.rb_node = NULL;
 
 	DEBUG("Using %zu capture sources", num_sources);
-	canonicalize_targets(sources, num_sources);
+	canonicalize_sources_and_targets(sources, num_sources);
 	sort_sources(sources, num_sources);
 	ret = check_sorted_sources(sources, num_sources, add_image_flags);
 	if (ret) {
@@ -1018,10 +1105,8 @@ wimlib_add_image_multisource(WIMStruct *w,
 			progress.scan.wim_target_path = sources[i].wim_target_path;
 			progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &progress);
 		}
-		ret = capture_config_set_prefix(&config,
-						sources[i].fs_source_path);
-		if (ret)
-			goto out_free_dentry_tree;
+		config.prefix = sources[i].fs_source_path;
+		config.prefix_num_tchars = tstrlen(sources[i].fs_source_path);
 		flags = add_image_flags | WIMLIB_ADD_IMAGE_FLAG_SOURCE;
 		if (!*sources[i].wim_target_path)
 			flags |= WIMLIB_ADD_IMAGE_FLAG_ROOT;
