@@ -551,7 +551,9 @@ parse_source_list(tchar **source_list_contents_p, size_t source_list_nchars,
 		nlines++;
 	}
 
-	sources = calloc(nlines, sizeof(*sources));
+	/* Always allocate at least 1 slot, just in case the implementation of
+	 * calloc() returns NULL if 0 bytes are requested. */
+	sources = calloc(nlines ?: 1, sizeof(*sources));
 	if (!sources)
 		goto oom;
 	p = source_list_contents;
