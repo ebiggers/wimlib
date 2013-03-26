@@ -421,12 +421,6 @@ T(
 "\\System Volume Information\n"
 "\\RECYCLER\n"
 "\\Windows\\CSC\n"
-"\n"
-"[CompressionExclusionList]\n"
-"*.mp3\n"
-"*.zip\n"
-"*.cab\n"
-"\\WINDOWS\\inf\\*.pnf\n"
 );
 #else
 T("");
