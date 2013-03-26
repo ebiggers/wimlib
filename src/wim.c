@@ -596,12 +596,16 @@ wimlib_free(WIMStruct *w)
 static bool
 test_locale_ctype_utf8()
 {
+#ifdef __WIN32__
+	return false;
+#else
 	char *ctype = nl_langinfo(CODESET);
 
 	return (!strstr(ctype, "UTF-8") ||
 		!strstr(ctype, "UTF8") ||
 		!strstr(ctype, "utf8") ||
 		!strstr(ctype, "utf-8"));
+#endif
 }
 
 /* Get global memory allocations out of the way, 

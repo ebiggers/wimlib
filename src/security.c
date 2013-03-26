@@ -556,6 +556,9 @@ sd_set_add_sd(struct sd_set *sd_set, const char descriptor[], size_t size)
 	new->security_id = sd->num_entries;
 	copy_hash(new->hash, hash);
 
+	/* There typically are only a few dozen security descriptors in a
+	 * directory tree, so expanding the array of security descriptors by
+	 * only 1 extra space each time should not be a problem. */
 	descriptors = REALLOC(sd->descriptors,
 			      (sd->num_entries + 1) * sizeof(sd->descriptors[0]));
 	if (!descriptors)

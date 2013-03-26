@@ -63,9 +63,6 @@ typedef enum {
 	CODESET
 } nl_item;
 
-extern char *
-nl_langinfo(nl_item item);
-
 extern int
 win32_rename_replacement(const tchar *oldpath, const tchar *newpath);
 

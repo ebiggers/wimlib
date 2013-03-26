@@ -546,7 +546,8 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 	}
 
 	/* Create the new WIM dentry */
-	ret = new_dentry_with_timeless_inode(path_basename(path), &root);
+	ret = new_dentry_with_timeless_inode(path_basename_with_len(path, path_len),
+					     &root);
 	if (ret)
 		return ret;
 

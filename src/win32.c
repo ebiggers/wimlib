@@ -23,9 +23,7 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#ifndef __WIN32__
-#  error "This file contains Windows code"
-#endif
+#ifdef __WIN32__
 
 #include "config.h"
 #include <windows.h>
@@ -220,6 +218,10 @@ win32_get_short_name(struct wim_dentry *dentry, const wchar_t *path)
 		memcpy(dentry->short_name, dat.cAlternateFileName, n);
 		dentry->short_name_nbytes = short_name_nbytes;
 	}
+	/* If we can't read the short filename for some reason, we just ignore
+	 * the error and assume the file has no short name.  I don't think this
+	 * should be an issue, since the short names are essentially obsolete
+	 * anyway. */
 	return 0;
 }
 
@@ -675,6 +677,7 @@ win32_capture_streams(const wchar_t *path,
 			return 0;
 		} else {
 			if (err == ERROR_ACCESS_DENIED) {
+				/* XXX This maybe should be an error. */
 				WARNING("Failed to look up data streams "
 					"of \"%ls\": Access denied!\n%ls",
 					path, capture_access_denied_msg);
@@ -705,11 +708,16 @@ out_find_close:
 	FindClose(hFind);
 	return ret;
 unnamed_only:
+	/* FindFirstStreamW() API is not available.  Only capture the unnamed
+	 * data stream. */
 	if (inode->i_attributes &
 	     (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
 	{
 		ret = 0;
 	} else {
+		/* Just create our own WIN32_FIND_STREAM_DATA for an unnamed
+		 * stream to reduce the code to a call to the
+		 * already-implemented win32_capture_stream() */
 		wcscpy(dat.cStreamName, L"::$DATA");
 		dat.StreamSize.QuadPart = file_size;
 		ret = win32_capture_stream(path,
@@ -839,7 +847,9 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 					      progress_func,
 					      state);
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		/* Reparse point: save the reparse tag and data */
+		/* Reparse point: save the reparse tag and data.  Alternate data
+		 * streams are not captured, if it's even possible for a reparse
+		 * point to have alternate data streams... */
 		ret = win32_capture_reparse_point(hFile,
 						  inode,
 						  lookup_table,
@@ -1029,12 +1039,9 @@ win32_set_security_data(const struct wim_inode *inode,
 again:
 	if (SetFileSecurityW(path, securityInformation, descriptor))
 		return 0;
-
 	err = GetLastError();
-
 	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
 		goto fail;
-
 	switch (err) {
 	case ERROR_PRIVILEGE_NOT_HELD:
 		if (securityInformation & SACL_SECURITY_INFORMATION) {
@@ -1081,7 +1088,6 @@ fail:
 		win32_error(err);
 		return WIMLIB_ERR_WRITE;
 	}
-	return 0;
 }
 
 
@@ -1404,16 +1410,21 @@ out:
 int
 fsync(int fd)
 {
-	HANDLE h = (HANDLE)_get_osfhandle(fd);
+	DWORD err;
+	HANDLE h;
+
+	h = (HANDLE)_get_osfhandle(fd);
 	if (h == INVALID_HANDLE_VALUE) {
+		err = GetLastError();
 		ERROR("Could not get Windows handle for file descriptor");
-		win32_error(GetLastError());
+		win32_error(err);
 		errno = EBADF;
 		return -1;
 	}
 	if (!FlushFileBuffers(h)) {
+		err = GetLastError();
 		ERROR("Could not flush file buffers to disk");
-		win32_error(GetLastError());
+		win32_error(err);
 		errno = EIO;
 		return -1;
 	}
@@ -1437,33 +1448,30 @@ realpath(const wchar_t *path, wchar_t *resolved_path)
 {
 	DWORD ret;
 	wimlib_assert(resolved_path == NULL);
+	DWORD err;
 
 	ret = GetFullPathNameW(path, 0, NULL, NULL);
-	if (!ret)
+	if (!ret) {
+		err = GetLastError();
 		goto fail_win32;
+	}
 
 	resolved_path = TMALLOC(ret);
 	if (!resolved_path)
-		goto fail;
+		goto out;
 	ret = GetFullPathNameW(path, ret, resolved_path, NULL);
 	if (!ret) {
+		err = GetLastError();
 		free(resolved_path);
+		resolved_path = NULL;
 		goto fail_win32;
 	}
-	return resolved_path;
+	goto out;
 fail_win32:
-	win32_error(GetLastError());
-fail:
-	return NULL;
-}
-
-char *
-nl_langinfo(nl_item item)
-{
-	wimlib_assert(item == CODESET);
-	static char buf[64];
-	strcpy(buf, "Unknown");
-	return buf;
+	win32_error(err);
+	errno = -1;
+out:
+	return resolved_path;
 }
 
 /* rename() on Windows fails if the destination file exists.  And we need to
@@ -1479,7 +1487,7 @@ win32_rename_replacement(const wchar_t *oldpath, const wchar_t *newpath)
 		ERROR("MoveFileEx(): Can't rename \"%ls\" to \"%ls\"",
 		      oldpath, newpath);
 		win32_error(err);
-		errno = 0;
+		errno = -1;
 		return -1;
 	}
 }
@@ -1520,8 +1528,10 @@ fail_close_handle:
 fail:
 	if (err == NO_ERROR)
 		err = GetLastError();
-	ERROR("Can't truncate %ls to %"PRIu64" bytes", path, size);
+	ERROR("Can't truncate \"%ls\" to %"PRIu64" bytes", path, size);
 	win32_error(err);
 	errno = -1;
 	return -1;
 }
+
+#endif /* __WIN32__ */
