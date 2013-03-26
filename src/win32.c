@@ -751,7 +751,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 			goto out;
 		}
-		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
 		    && progress_func)
 		{
 			union wimlib_progress_info info;

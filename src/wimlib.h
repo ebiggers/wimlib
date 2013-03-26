@@ -645,6 +645,12 @@ struct wimlib_capture_source {
  * */
 #define WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS		0x00000040
 
+/** Call the progress function with the message
+ * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY when a directory or file is excluded from
+ * capture.  This is a subset of the messages provided by
+ * ::WIMLIB_ADD_IMAGE_FLAG_VERBOSE. */
+#define WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE		0x00000080
+
 /******************************
  * WIMLIB_EXPORT_FLAG_* *
  ******************************/

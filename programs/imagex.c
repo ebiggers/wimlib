@@ -1106,7 +1106,7 @@ imagex_capture_or_append(int argc, tchar **argv)
 {
 	int c;
 	int open_flags = 0;
-	int add_image_flags = 0;
+	int add_image_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
 	const tchar *wimfile;

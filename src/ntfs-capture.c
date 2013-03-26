@@ -511,7 +511,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 	if (exclude_path(path, path_len, config, false)) {
 		/* Exclude a file or directory tree based on the capture
 		 * configuration file */
-		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
 		    && progress_func)
 		{
 			union wimlib_progress_info info;

@@ -202,6 +202,9 @@ forward slashes or backslashes, and the line separators may be either UNIX-style
 or DOS-style.  However, globs with spaces in them currently must not be quoted.
 Empty lines are ignored.
 
+On UNIX, drive letters are stripped from all patterns.  On Windows, drive
+letters are allowed, but must specify absolute paths and are treated as such.
+
 If this option is not specified the following default configuration file is
 used:
 
