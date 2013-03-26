@@ -191,16 +191,16 @@
  * \section encodings Locales and character encodings
  *
  * To support Windows as well as UNIX, wimlib's API typically takes and returns
- * strings of "tchars", which are in a platform-dependent encoding.
+ * strings of ::wimlib_tchar, which are in a platform-dependent encoding.
  *
- * On Windows, each "tchar" is 2 bytes and is the same as a "wchar_t", and the
- * encoding is UTF-16LE.
+ * On Windows, each ::wimlib_tchar is 2 bytes and is the same as a "wchar_t",
+ * and the encoding is UTF-16LE.
  *
- * On UNIX, each "tchar" is 1 byte and is simply a "char", and the encoding is
- * the locale-dependent multibyte encoding.  I recommend you set your locale to a
- * UTF-8 capable locale to avoid any issues.  Also, by default, wimlib on UNIX
- * will assume the locale is UTF-8 capable unless you call wimlib_global_init()
- * after having set your desired locale.
+ * On UNIX, each ::wimlib_tchar is 1 byte and is simply a "char", and the
+* encoding is the locale-dependent multibyte encoding.  I recommend you set your
+* locale to a UTF-8 capable locale to avoid any issues.  Also, by default,
+	* wimlib on UNIX will assume the locale is UTF-8 capable unless you call
+* wimlib_global_init() after having set your desired locale.
  *
  * \section Limitations
  *
@@ -210,8 +210,7 @@
  *   without mounting it, other than by adding, removing, or extracting an
  *   entire image.  The FUSE mount feature should be used for this purpose.
  * - Currently, Microsoft's @a image.exe can create slightly smaller WIM files
- *   than wimlib when using maximum (LZX) compression because it knows how to
- *   split up LZX compressed blocks, which is not yet implemented in wimlib.
+ *   than wimlib (~2% or 3% smaller) when using maximum (LZX) compression.
  * - wimlib is experimental and likely contains bugs; use Microsoft's @a
  *   imagex.exe if you want to make sure your WIM files are made "correctly".
  * - The old WIM format from Vista pre-releases is not supported.
@@ -274,6 +273,7 @@ typedef struct WIMStruct WIMStruct;
 #ifdef __WIN32__
 typedef wchar_t wimlib_tchar;
 #else
+/** See \ref encodings */
 typedef char wimlib_tchar;
 #endif
 
