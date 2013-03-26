@@ -14,7 +14,8 @@
 #include <assert.h>
 #include <stdio.h>
 
-/* Replacement for glob() in Windows native builds. */
+/* Replacement for glob() in Windows native builds that operates on wide
+ * characters. */
 int
 win32_wglob(const wchar_t *pattern, int flags,
 	    int (*errfunc)(const wchar_t *epath, int eerrno),
@@ -191,6 +192,7 @@ win32_release_restore_privileges()
 	win32_modify_restore_privileges(false);
 }
 
+/* Convert a string from the "current Windows codepage" to UTF-16LE. */
 wchar_t *
 win32_mbs_to_wcs(const char *mbs, size_t mbs_nbytes, size_t *num_wchars_ret)
 {
@@ -242,6 +244,8 @@ is_path_separator(wchar_t c)
 	return c == L'/' || c == L'\\';
 }
 
+/* basename() (modifying, trailing-slash stripping version) for wide-character
+ * strings. */
 wchar_t *
 win32_wbasename(wchar_t *path)
 {

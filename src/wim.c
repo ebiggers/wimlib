@@ -255,7 +255,7 @@ WIMLIBAPI int
 wimlib_resolve_image(WIMStruct *w, const tchar *image_name_or_num)
 {
 	tchar *p;
-	int image;
+	long image;
 	int i;
 
 	if (!image_name_or_num || !*image_name_or_num)
@@ -271,8 +271,8 @@ wimlib_resolve_image(WIMStruct *w, const tchar *image_name_or_num)
 		return image;
 	} else {
 		for (i = 1; i <= w->hdr.image_count; i++) {
-			if (tstrcmp(image_name_or_num,
-				    wimlib_get_image_name(w, i)) == 0)
+			if (!tstrcmp(image_name_or_num,
+				     wimlib_get_image_name(w, i)))
 				return i;
 		}
 		return WIMLIB_NO_IMAGE;

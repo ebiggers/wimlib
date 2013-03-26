@@ -156,93 +156,124 @@ IMAGEX_PROGNAME" unmount DIRECTORY [--commit] [--check] [--rebuild]\n"
 ),
 };
 
+enum {
+	IMAGEX_ALLOW_OTHER_OPTION,
+	IMAGEX_BOOT_OPTION,
+	IMAGEX_CHECK_OPTION,
+	IMAGEX_COMMIT_OPTION,
+	IMAGEX_COMPRESS_OPTION,
+	IMAGEX_CONFIG_OPTION,
+	IMAGEX_DEBUG_OPTION,
+	IMAGEX_DEREFERENCE_OPTION,
+	IMAGEX_EXTRACT_XML_OPTION,
+	IMAGEX_FLAGS_OPTION,
+	IMAGEX_HARDLINK_OPTION,
+	IMAGEX_HEADER_OPTION,
+	IMAGEX_LOOKUP_TABLE_OPTION,
+	IMAGEX_METADATA_OPTION,
+	IMAGEX_NO_ACLS_OPTION,
+	IMAGEX_REBULID_OPTION,
+	IMAGEX_RECOMPRESS_OPTION,
+	IMAGEX_REF_OPTION,
+	IMAGEX_SOFT_OPTION,
+	IMAGEX_SOURCE_LIST_OPTION,
+	IMAGEX_STAGING_DIR_OPTION,
+	IMAGEX_STREAMS_INTERFACE_OPTION,
+	IMAGEX_STRICT_ACLS_OPTION,
+	IMAGEX_SYMLINK_OPTION,
+	IMAGEX_THREADS_OPTION,
+	IMAGEX_UNIX_DATA_OPTION,
+	IMAGEX_VERBOSE_OPTION,
+	IMAGEX_XML_OPTION,
+};
+
 static const struct option apply_options[] = {
-	{T("check"),     no_argument,       NULL, 'c'},
-	{T("hardlink"),  no_argument,       NULL, 'h'},
-	{T("symlink"),   no_argument,       NULL, 's'},
-	{T("verbose"),   no_argument,       NULL, 'v'},
-	{T("ref"),       required_argument, NULL, 'r'},
-	{T("unix-data"), no_argument,       NULL, 'U'},
-	{T("noacls"),    no_argument,       NULL, 'N'},
-	{T("no-acls"),    no_argument,      NULL, 'N'},
-	{T("strict-acls"), no_argument,     NULL, 'A'},
+	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("hardlink"),    no_argument,       NULL, IMAGEX_HARDLINK_OPTION},
+	{T("symlink"),     no_argument,       NULL, IMAGEX_SYMLINK_OPTION},
+	{T("verbose"),     no_argument,       NULL, IMAGEX_VERBOSE_OPTION},
+	{T("ref"),         required_argument, NULL, IMAGEX_REF_OPTION},
+	{T("unix-data"),   no_argument,       NULL, IMAGEX_UNIX_DATA_OPTION},
+	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
+	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
+	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_or_append_options[] = {
-	{T("boot"),	no_argument,       NULL, 'b'},
-	{T("check"),	no_argument,       NULL, 'c'},
-	{T("compress"),	required_argument, NULL, 'x'},
-	{T("config"),	required_argument, NULL, 'C'},
-	{T("dereference"), no_argument,	   NULL, 'L'},
-	{T("flags"),	required_argument, NULL, 'f'},
-	{T("verbose"),	no_argument,       NULL, 'v'},
-	{T("threads"),     required_argument, NULL, 't'},
-	{T("rebuild"),     no_argument,       NULL, 'R'},
-	{T("unix-data"),   no_argument,       NULL, 'U'},
-	{T("source-list"), no_argument,       NULL, 'S'},
-	{T("noacls"),      no_argument,       NULL, 'N'},
-	{T("no-acls"),     no_argument,       NULL, 'N'},
-	{T("strict-acls"), no_argument,       NULL, 'A'},
+	{T("boot"),        no_argument,       NULL, IMAGEX_BOOT_OPTION},
+	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
+	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
+	{T("dereference"), no_argument,       NULL, IMAGEX_DEREFERENCE_OPTION},
+	{T("flags"),       required_argument, NULL, IMAGEX_FLAGS_OPTION},
+	{T("verbose"),     no_argument,       NULL, IMAGEX_VERBOSE_OPTION},
+	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
+	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBULID_OPTION},
+	{T("unix-data"),   no_argument,       NULL, IMAGEX_UNIX_DATA_OPTION},
+	{T("source-list"), no_argument,       NULL, IMAGEX_SOURCE_LIST_OPTION},
+	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
+	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
+	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
-	{T("check"), no_argument, NULL, 'c'},
-	{T("soft"),  no_argument, NULL, 's'},
+	{T("check"), no_argument, NULL, IMAGEX_CHECK_OPTION},
+	{T("soft"),  no_argument, NULL, IMAGEX_SOFT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
 static const struct option export_options[] = {
-	{T("boot"),       no_argument,	  NULL, 'b'},
-	{T("check"),      no_argument,	  NULL, 'c'},
-	{T("compress"),   required_argument, NULL, 'x'},
-	{T("ref"),        required_argument, NULL, 'r'},
-	{T("threads"),    required_argument, NULL, 't'},
-	{T("rebuild"),    no_argument,       NULL, 'R'},
+	{T("boot"),       no_argument,       NULL, IMAGEX_BOOT_OPTION},
+	{T("check"),      no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("compress"),   required_argument, NULL, IMAGEX_COMPRESS_OPTION},
+	{T("ref"),        required_argument, NULL, IMAGEX_REF_OPTION},
+	{T("threads"),    required_argument, NULL, IMAGEX_THREADS_OPTION},
+	{T("rebuild"),    no_argument,       NULL, IMAGEX_REBULID_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
 static const struct option info_options[] = {
-	{T("boot"),         no_argument, NULL, 'b'},
-	{T("check"),        no_argument, NULL, 'c'},
-	{T("extract-xml"),  required_argument, NULL, 'X'},
-	{T("header"),       no_argument, NULL, 'h'},
-	{T("lookup-table"), no_argument, NULL, 'l'},
-	{T("metadata"),     no_argument, NULL, 'm'},
-	{T("xml"),          no_argument, NULL, 'x'},
+	{T("boot"),         no_argument,       NULL, IMAGEX_BOOT_OPTION},
+	{T("check"),        no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("extract-xml"),  required_argument, NULL, IMAGEX_EXTRACT_XML_OPTION},
+	{T("header"),       no_argument,       NULL, IMAGEX_HEADER_OPTION},
+	{T("lookup-table"), no_argument,       NULL, IMAGEX_LOOKUP_TABLE_OPTION},
+	{T("metadata"),     no_argument,       NULL, IMAGEX_METADATA_OPTION},
+	{T("xml"),          no_argument,       NULL, IMAGEX_XML_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
 static const struct option join_options[] = {
-	{T("check"), no_argument, NULL, 'c'},
+	{T("check"), no_argument, NULL, IMAGEX_CHECK_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
 static const struct option mount_options[] = {
-	{T("check"),	      no_argument,	 NULL, 'c'},
-	{T("debug"),	      no_argument,	 NULL, 'd'},
-	{T("streams-interface"), required_argument, NULL, 's'},
-	{T("ref"),               required_argument, NULL, 'r'},
-	{T("staging-dir"),       required_argument, NULL, 'D'},
-	{T("unix-data"),         no_argument,       NULL, 'U'},
-	{T("allow-other"),       no_argument,       NULL, 'A'},
+	{T("check"),             no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("debug"),             no_argument,       NULL, IMAGEX_DEBUG_OPTION},
+	{T("streams-interface"), required_argument, NULL, IMAGEX_STREAMS_INTERFACE_OPTION},
+	{T("ref"),               required_argument, NULL, IMAGEX_REF_OPTION},
+	{T("staging-dir"),       required_argument, NULL, IMAGEX_STAGING_DIR_OPTION},
+	{T("unix-data"),         no_argument,       NULL, IMAGEX_UNIX_DATA_OPTION},
+	{T("allow-other"),       no_argument,       NULL, IMAGEX_ALLOW_OTHER_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
 static const struct option optimize_options[] = {
-	{T("check"),      no_argument, NULL, 'c'},
-	{T("recompress"), no_argument, NULL, 'r'},
+	{T("check"),      no_argument, NULL, IMAGEX_CHECK_OPTION},
+	{T("recompress"), no_argument, NULL, IMAGEX_RECOMPRESS_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
 static const struct option split_options[] = {
-	{T("check"), no_argument, NULL, 'c'},
+	{T("check"), no_argument, NULL, IMAGEX_CHECK_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
 static const struct option unmount_options[] = {
-	{T("commit"),  no_argument, NULL, 'c'},
-	{T("check"),   no_argument, NULL, 'C'},
-	{T("rebuild"), no_argument, NULL, 'R'},
+	{T("commit"),  no_argument, NULL, IMAGEX_COMMIT_OPTION},
+	{T("check"),   no_argument, NULL, IMAGEX_CHECK_OPTION},
+	{T("rebuild"), no_argument, NULL, IMAGEX_REBULID_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -313,11 +344,11 @@ verify_image_exists_and_is_single(int image, const tchar *image_name,
 static int
 get_compression_type(const tchar *optarg)
 {
-	if (tstrcasecmp(optarg, T("maximum")) == 0 || tstrcasecmp(optarg, T("lzx")) == 0)
+	if (!tstrcasecmp(optarg, T("maximum")) || !tstrcasecmp(optarg, T("lzx")))
 		return WIMLIB_COMPRESSION_TYPE_LZX;
-	else if (tstrcasecmp(optarg, T("fast")) == 0 || tstrcasecmp(optarg, T("xpress")) == 0)
+	else if (!tstrcasecmp(optarg, T("fast")) || !tstrcasecmp(optarg, T("xpress")))
 		return WIMLIB_COMPRESSION_TYPE_XPRESS;
-	else if (tstrcasecmp(optarg, T("none")) == 0)
+	else if (!tstrcasecmp(optarg, T("none")))
 		return WIMLIB_COMPRESSION_TYPE_NONE;
 	else {
 		imagex_error(T("Invalid compression type \"%"TS"\"! Must be "
@@ -632,38 +663,38 @@ stdin_get_contents(size_t *len_ret)
 
 
 static tchar *
-translate_text_to_tstr(char **text_p, size_t num_bytes,
+translate_text_to_tstr(char *text, size_t num_bytes,
 		       size_t *num_tchars_ret)
 {
 #ifndef __WIN32__
 	/* On non-Windows, assume an ASCII-compatible encoding, such as UTF-8.
 	 * */
 	*num_tchars_ret = num_bytes;
-	return *text_p;
+	return text;
 #else /* !__WIN32__ */
 	/* On Windows, translate the text to UTF-16LE */
-	const char *text_bytestr = *text_p;
 	wchar_t *text_wstr;
 	size_t num_wchars;
 
 	if (num_bytes >= 2 &&
-	    ((text_bytestr[0] == 0xff && text_bytestr[1] == 0xfe) ||
-	     (text_bytestr[0] <= 0x7f && text_bytestr[1] == 0x00)))
+	    ((text[0] == 0xff && text[1] == 0xfe) ||
+	     (text[0] <= 0x7f && text[1] == 0x00)))
 	{
 		/* File begins with 0xfeff, the BOM for UTF-16LE, or it begins
 		 * with something that looks like an ASCII character encoded as
 		 * a UTF-16LE code unit.  Assume the file is encoded as
 		 * UTF-16LE.  This is not a 100% reliable check. */
 		num_wchars = num_bytes / 2;
-		text_wstr = (wchar_t*)text_bytestr;
+		text_wstr = (wchar_t*)text;
 	} else {
 		/* File does not look like UTF-16LE.  Assume it is encoded in
 		 * the current Windows code page.  I think these are always
 		 * ASCII-compatible, so any so-called "plain-text" (ASCII) files
 		 * should work as expected. */
-		text_wstr = win32_mbs_to_wcs(text_bytestr,
+		text_wstr = win32_mbs_to_wcs(text,
 					     num_bytes,
 					     &num_wchars);
+		free(text);
 	}
 	*num_tchars_ret = num_wchars;
 	return text_wstr;
@@ -679,7 +710,7 @@ file_get_text_contents(const tchar *filename, size_t *num_tchars_ret)
 	contents = file_get_contents(filename, &num_bytes);
 	if (!contents)
 		return NULL;
-	return translate_text_to_tstr(&contents, num_bytes, num_tchars_ret);
+	return translate_text_to_tstr(contents, num_bytes, num_tchars_ret);
 }
 
 static tchar *
@@ -691,7 +722,7 @@ stdin_get_text_contents(size_t *num_tchars_ret)
 	contents = stdin_get_contents(&num_bytes);
 	if (!contents)
 		return NULL;
-	return translate_text_to_tstr(&contents, num_bytes, num_tchars_ret);
+	return translate_text_to_tstr(contents, num_bytes, num_tchars_ret);
 }
 
 /* Return 0 if a path names a file to which the current user has write access;
@@ -802,8 +833,8 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			info->extract.target);
 		break;
 	/*case WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN:*/
-		/*printf("Applying directory structure to %s\n",*/
-		       /*info->extract.target);*/
+		/*tprintf(T("Applying directory structure to %"TS"\n"),*/
+			/*info->extract.target);*/
 		/*break;*/
 	case WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS:
 		percent_done = TO_PERCENT(info->extract.completed_bytes,
@@ -814,7 +845,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			info->extract.total_bytes >> 20,
 			percent_done);
 		if (info->extract.completed_bytes >= info->extract.total_bytes)
-			putchar('\n');
+			tputchar(T('\n'));
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY:
 		tprintf(T("%"TS"\n"), info->extract.cur_path);
@@ -831,14 +862,14 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	case WIMLIB_PROGRESS_MSG_JOIN_STREAMS:
 		percent_done = TO_PERCENT(info->join.completed_bytes,
 					  info->join.total_bytes);
-		printf("Writing resources from part %u of %u: "
-		       "%"PRIu64 " MiB of %"PRIu64" MiB (%u%%) written\n",
-		       (info->join.completed_parts == info->join.total_parts) ?
-				info->join.completed_parts : info->join.completed_parts + 1,
-		       info->join.total_parts,
-		       info->join.completed_bytes >> 20,
-		       info->join.total_bytes >> 20,
-		       percent_done);
+		tprintf(T("Writing resources from part %u of %u: "
+			  "%"PRIu64 " MiB of %"PRIu64" MiB (%u%%) written\n"),
+			(info->join.completed_parts == info->join.total_parts) ?
+			info->join.completed_parts : info->join.completed_parts + 1,
+			info->join.total_parts,
+			info->join.completed_bytes >> 20,
+			info->join.total_bytes >> 20,
+			percent_done);
 		break;
 	case WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART:
 		percent_done = TO_PERCENT(info->split.completed_bytes,
@@ -931,12 +962,12 @@ static unsigned
 parse_num_threads(const tchar *optarg)
 {
 	tchar *tmp;
-	unsigned nthreads = tstrtoul(optarg, &tmp, 10);
-	if (nthreads == UINT_MAX || *tmp || tmp == optarg) {
+	unsigned long ul_nthreads = tstrtoul(optarg, &tmp, 10);
+	if (ul_nthreads >= UINT_MAX || *tmp || tmp == optarg) {
 		imagex_error(T("Number of threads must be a non-negative integer!"));
 		return UINT_MAX;
 	} else {
-		return nthreads;
+		return ul_nthreads;
 	}
 }
 
@@ -963,28 +994,28 @@ imagex_apply(int argc, tchar **argv)
 
 	for_opt(c, apply_options) {
 		switch (c) {
-		case 'c':
+		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			break;
-		case 'h':
+		case IMAGEX_HARDLINK_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_HARDLINK;
 			break;
-		case 's':
+		case IMAGEX_SYMLINK_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_SYMLINK;
 			break;
-		case 'v':
+		case IMAGEX_VERBOSE_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_VERBOSE;
 			break;
-		case 'r':
+		case IMAGEX_REF_OPTION:
 			swm_glob = optarg;
 			break;
-		case 'U':
+		case IMAGEX_UNIX_DATA_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_UNIX_DATA;
 			break;
-		case 'N':
+		case IMAGEX_NO_ACLS_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_NO_ACLS;
 			break;
-		case 'A':
+		case IMAGEX_STRICT_ACLS_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_STRICT_ACLS;
 			break;
 		default:
@@ -1109,48 +1140,48 @@ imagex_capture_or_append(int argc, tchar **argv)
 
 	for_opt(c, capture_or_append_options) {
 		switch (c) {
-		case 'b':
+		case IMAGEX_BOOT_OPTION:
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_BOOT;
 			break;
-		case 'c':
+		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
-		case 'C':
+		case IMAGEX_CONFIG_OPTION:
 			config_file = optarg;
 			break;
-		case 'x':
+		case IMAGEX_COMPRESS_OPTION:
 			compression_type = get_compression_type(optarg);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				return -1;
 			break;
-		case 'f':
+		case IMAGEX_FLAGS_OPTION:
 			flags_element = optarg;
 			break;
-		case 'L':
+		case IMAGEX_DEREFERENCE_OPTION:
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
 			break;
-		case 'v':
+		case IMAGEX_VERBOSE_OPTION:
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
 			break;
-		case 't':
+		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);
 			if (num_threads == UINT_MAX)
 				return -1;
 			break;
-		case 'R':
+		case IMAGEX_REBULID_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
 			break;
-		case 'U':
+		case IMAGEX_UNIX_DATA_OPTION:
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA;
 			break;
-		case 'S':
+		case IMAGEX_SOURCE_LIST_OPTION:
 			source_list = true;
 			break;
-		case 'N':
+		case IMAGEX_NO_ACLS_OPTION:
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NO_ACLS;
 			break;
-		case 'A':
+		case IMAGEX_STRICT_ACLS_OPTION:
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS;
 			break;
 		default:
@@ -1310,11 +1341,11 @@ imagex_delete(int argc, tchar **argv)
 
 	for_opt(c, delete_options) {
 		switch (c) {
-		case 'c':
+		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
-		case 's':
+		case IMAGEX_SOFT_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_SOFT_DELETE;
 			break;
 		default:
@@ -1450,28 +1481,28 @@ imagex_export(int argc, tchar **argv)
 
 	for_opt(c, export_options) {
 		switch (c) {
-		case 'b':
+		case IMAGEX_BOOT_OPTION:
 			export_flags |= WIMLIB_EXPORT_FLAG_BOOT;
 			break;
-		case 'c':
+		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
-		case 'x':
+		case IMAGEX_COMPRESS_OPTION:
 			compression_type = get_compression_type(optarg);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				return -1;
 			compression_type_specified = true;
 			break;
-		case 'r':
+		case IMAGEX_REF_OPTION:
 			swm_glob = optarg;
 			break;
-		case 't':
+		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);
 			if (num_threads == UINT_MAX)
 				return -1;
 			break;
-		case 'R':
+		case IMAGEX_REBULID_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
 			break;
 		default:
@@ -1616,29 +1647,29 @@ imagex_info(int argc, tchar **argv)
 
 	for_opt(c, info_options) {
 		switch (c) {
-		case 'b':
+		case IMAGEX_BOOT_OPTION:
 			boot = true;
 			break;
-		case 'c':
+		case IMAGEX_CHECK_OPTION:
 			check = true;
 			break;
-		case 'h':
+		case IMAGEX_HEADER_OPTION:
 			header = true;
 			short_header = false;
 			break;
-		case 'l':
+		case IMAGEX_LOOKUP_TABLE_OPTION:
 			lookup_table = true;
 			short_header = false;
 			break;
-		case 'x':
+		case IMAGEX_XML_OPTION:
 			xml = true;
 			short_header = false;
 			break;
-		case 'X':
+		case IMAGEX_EXTRACT_XML_OPTION:
 			xml_out_file = optarg;
 			short_header = false;
 			break;
-		case 'm':
+		case IMAGEX_METADATA_OPTION:
 			metadata = true;
 			short_header = false;
 			break;
@@ -1882,7 +1913,7 @@ imagex_join(int argc, tchar **argv)
 
 	for_opt(c, join_options) {
 		switch (c) {
-		case 'c':
+		case IMAGEX_CHECK_OPTION:
 			swm_open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			wim_write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
@@ -1928,26 +1959,26 @@ imagex_mount_rw_or_ro(int argc, tchar **argv)
 	unsigned num_additional_swms = 0;
 	const tchar *staging_dir = NULL;
 
-	if (tstrcmp(argv[0], T("mountrw")) == 0)
+	if (!tstrcmp(argv[0], T("mountrw")))
 		mount_flags |= WIMLIB_MOUNT_FLAG_READWRITE;
 
 	for_opt(c, mount_options) {
 		switch (c) {
-		case 'A':
+		case IMAGEX_ALLOW_OTHER_OPTION:
 			mount_flags |= WIMLIB_MOUNT_FLAG_ALLOW_OTHER;
 			break;
-		case 'c':
+		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			break;
-		case 'd':
+		case IMAGEX_DEBUG_OPTION:
 			mount_flags |= WIMLIB_MOUNT_FLAG_DEBUG;
 			break;
-		case 's':
-			if (tstrcasecmp(optarg, T("none")) == 0)
+		case IMAGEX_STREAMS_INTERFACE_OPTION:
+			if (!tstrcasecmp(optarg, T("none")))
 				mount_flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE;
-			else if (tstrcasecmp(optarg, T("xattr")) == 0)
+			else if (!tstrcasecmp(optarg, T("xattr")))
 				mount_flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR;
-			else if (tstrcasecmp(optarg, T("windows")) == 0)
+			else if (!tstrcasecmp(optarg, T("windows")))
 				mount_flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS;
 			else {
 				imagex_error(T("Unknown stream interface \"%"TS"\""),
@@ -1955,13 +1986,13 @@ imagex_mount_rw_or_ro(int argc, tchar **argv)
 				goto mount_usage;
 			}
 			break;
-		case 'r':
+		case IMAGEX_REF_OPTION:
 			swm_glob = optarg;
 			break;
-		case 'D':
+		case IMAGEX_STAGING_DIR_OPTION:
 			staging_dir = optarg;
 			break;
-		case 'U':
+		case IMAGEX_UNIX_DATA_OPTION:
 			mount_flags |= WIMLIB_MOUNT_FLAG_UNIX_DATA;
 			break;
 		default:
@@ -2051,11 +2082,11 @@ imagex_optimize(int argc, tchar **argv)
 
 	for_opt(c, optimize_options) {
 		switch (c) {
-		case 'c':
+		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
-		case 'r':
+		case IMAGEX_RECOMPRESS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
 		default:
@@ -2122,7 +2153,7 @@ imagex_split(int argc, tchar **argv)
 
 	for_opt(c, split_options) {
 		switch (c) {
-		case 'c':
+		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
@@ -2163,13 +2194,13 @@ imagex_unmount(int argc, tchar **argv)
 
 	for_opt(c, unmount_options) {
 		switch (c) {
-		case 'c':
+		case IMAGEX_COMMIT_OPTION:
 			unmount_flags |= WIMLIB_UNMOUNT_FLAG_COMMIT;
 			break;
-		case 'C':
+		case IMAGEX_CHECK_OPTION:
 			unmount_flags |= WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY;
 			break;
-		case 'R':
+		case IMAGEX_REBULID_OPTION:
 			unmount_flags |= WIMLIB_UNMOUNT_FLAG_REBUILD;
 			break;
 		default:
@@ -2243,11 +2274,11 @@ help_or_version(int argc, tchar **argv)
 
 	for (i = 1; i < argc; i++) {
 		p = argv[i];
-		if (*p == '-')
+		if (*p == T('-'))
 			p++;
 		else
 			continue;
-		if (*p == '-')
+		if (*p == T('-'))
 			p++;
 		if (!tstrcmp(p, T("help"))) {
 			for_imagex_command(cmd) {
@@ -2332,7 +2363,8 @@ main(int argc, char **argv)
 	if (argc < 2) {
 		imagex_error(T("No command specified"));
 		usage_all();
-		return 1;
+		ret = 2;
+		goto out;
 	}
 
 	/* Handle --help and --version for all commands.  Note that this will
@@ -2347,7 +2379,7 @@ main(int argc, char **argv)
 	/* Do any initializations that the library needs */
 	ret = wimlib_global_init();
 	if (ret)
-		goto out;
+		goto out_check_status;
 
 	/* Search for the function to handle the ImageX subcommand. */
 	for_imagex_command(cmd) {
@@ -2359,7 +2391,8 @@ main(int argc, char **argv)
 
 	imagex_error(T("Unrecognized command: `%"TS"'"), argv[0]);
 	usage_all();
-	return 1;
+	ret = 2;
+	goto out_cleanup;
 out_check_write_error:
 	/* For 'wimlib-imagex info' and 'wimlib-imagex dir', data printed to
 	 * standard output is part of the program's actual behavior and not just
@@ -2367,12 +2400,12 @@ out_check_write_error:
 	 * there was a write error. */
 	if (cmd == &imagex_commands[INFO] || cmd == &imagex_commands[DIR]) {
 		if (ferror(stdout) || fclose(stdout)) {
-			imagex_error_with_errno(T("output error"));
+			imagex_error_with_errno(T("error writing to standard output"));
 			if (ret == 0)
 				ret = -1;
 		}
 	}
-out:
+out_check_status:
 	/* Exit status (ret):  -1 indicates an error found by 'wimlib-imagex'
 	 * outside of the wimlib library code.  0 indicates success.  > 0
 	 * indicates a wimlib error code from which an error message can be
@@ -2384,9 +2417,10 @@ out:
 		if (ret == WIMLIB_ERR_NTFS_3G && errno != 0)
 			imagex_error_with_errno(T("errno"));
 	}
-
+out_cleanup:
 	/* Make the library free any resources it's holding (not strictly
 	 * necessary because the process is ending anyway). */
 	wimlib_global_cleanup();
+out:
 	return ret;
 }
