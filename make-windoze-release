@@ -1,0 +1,43 @@
+#!/bin/bash
+
+set -e -u
+
+DESTDIR=/mnt/tmp/wimlib
+ARCH=i686
+VERSION=$(grep 'This is wimlib version' README | grep -o '[0-9]\+\.[0-9]\+\.[0-9]')
+ZIPFILE=wimlib-${VERSION}-windows-${ARCH}-bin.zip
+
+if ! grep -q "./configure --host=${ARCH}-w64-mingw32" config.log; then
+	./configure --host=${ARCH}-w64-mingw32
+fi
+
+make -j2
+
+rm -f $DESTDIR/{libwim-*.dll,doc/*,README*,NEWS*}
+
+cp .libs/imagex.exe $DESTDIR/wimlib-imagex.exe
+cp .libs/libwim-*.dll $DESTDIR
+cp README* NEWS $DESTDIR
+
+
+
+for fil in ./doc/wimlib-imagex-*.1; do
+	echo $fil
+	base=`basename $fil`
+	base=${base%%.1}
+	MANWIDTH=80 man $fil | col -b > $DESTDIR/doc/$base
+done
+
+for fil in $DESTDIR/{README*,NEWS} $DESTDIR/doc/*; do
+	sed < $fil > ${fil}.txt -e 's/$/\r/g'
+	rm $fil
+done
+
+
+rm -f $ZIPFILE
+(
+	dir=$PWD
+	cd $(dirname $DESTDIR) &> /dev/null
+	zip -r $dir/$ZIPFILE $(basename $DESTDIR)
+)
+
