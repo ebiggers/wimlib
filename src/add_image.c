@@ -501,11 +501,11 @@ match_pattern(const tchar *path,
 				#endif
 			    ) == 0)
 		{
-			WARNING("\"%"TS"\" matches the pattern \"%"TS"\"",
+			DEBUG("\"%"TS"\" matches the pattern \"%"TS"\"",
 			      string, pat);
 			return true;
 		} else {
-			WARNING("\"%"TS"\" does not match the pattern \"%"TS"\"",
+			DEBUG2("\"%"TS"\" does not match the pattern \"%"TS"\"",
 			       string, pat);
 		}
 	}
