@@ -145,6 +145,9 @@ static const struct lz_params xpress_lz_params = {
  * Please see the documentation for the 'compress_func_t' type in write.c for
  * the exact behavior of this function and how to call it.
  */
+#ifdef EXPORT_COMPRESSION_FUNCTIONS
+WIMLIBAPI
+#endif
 unsigned
 xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 		void *__compressed_data)
