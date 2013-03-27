@@ -498,6 +498,7 @@ write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry
 	if (start_offset == -1)
 		return WIMLIB_ERR_WRITE;
 
+	/* Write lookup table entries for metadata resources */
 	if (image == WIMLIB_ALL_IMAGES) {
 		start_image = 1;
 		end_image = w->hdr.image_count;
@@ -516,10 +517,12 @@ write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry
 			return ret;
 	}
 
+	/* Write lookup table entries for other resources */
 	ret = for_lookup_table_entry(w->lookup_table, write_lookup_table_entry, out);
 	if (ret)
 		return ret;
 
+	/* Fill in the resource entry for the lookup table itself */
 	end_offset = ftello(out);
 	if (end_offset == -1)
 		return WIMLIB_ERR_WRITE;

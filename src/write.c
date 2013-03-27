@@ -1961,9 +1961,7 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 
 	found_modified_image = false;
 	for (int i = 0; i < w->hdr.image_count; i++) {
-		if (!found_modified_image)
-			found_modified_image = w->image_metadata[i].modified;
-		if (found_modified_image) {
+		if (w->image_metadata[i].modified) {
 			select_wim_image(w, i + 1);
 			ret = write_metadata_resource(w);
 			if (ret != 0)
