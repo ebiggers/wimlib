@@ -180,30 +180,32 @@ capture mode.
 Specifies a configuration file for capturing the new image.  The configuration
 file specifies files that are to be treated specially during the image capture.
 
-The format of the configuration file is a number of sections containing file
+The format of the configuration file is a number of sections containing path
 globs one per line, where each section begins with the tag [ExclusionList],
 [ExclusionException], [CompressionExclusionList], or [AlignmentList].
 Currently, only the [ExclusionList] and [ExclusionException] sections are
-implemented.  The [ExclusionList] section specifies a list of file globs to
+implemented.  The [ExclusionList] section specifies a list of path globs to
 exclude from capture, while the [ExclusionException] section specifies a list of
-file globs to include in the capture even if the matched file or directory name
+path globs to include in the capture even if the matched file or directory name
 also appears in the [ExclusionList].
 
-Relative globs with only one path component match against a filename in any
-directory.  Relative globs with multiple path components, as well as absolute
-globs, are treated as paths starting at the root directory of capture, or the
-root of the NTFS volume for NTFS capture mode.  If a directory is matched by a
-glob in the [ExclusionList], the entire directory tree rooted at that directory
-is excluded from the capture, unless \fB--dereference\fR is specified and there
-is another path into that directory through a symbolic link.
+Relative globs with only one path component (e.g. *.mp3) match against a filename in any
+directory.  Relative globs with multiple path components (e.g. dir/file),
+as well as absolute globs (e.g. /dir/file), are treated as paths starting at the
+root directory of capture, or the root of the NTFS volume for NTFS capture mode.
+If a directory is matched by a glob in the [ExclusionList], the entire directory
+tree rooted at that directory is excluded from the capture, unless
+\fB--dereference\fR is specified and there is another path into that directory
+through a symbolic link.
 
 For compatibility with Windows, the path separators in the globs may be either
 forward slashes or backslashes, and the line separators may be either UNIX-style
-or DOS-style.  However, globs with spaces in them currently must not be quoted.
-Empty lines are ignored.
+or DOS-style.  Globs with spaces in them must be quoted, and leading and
+trailing whitespace is not significant.  Empty lines and lines beginning with
+'#' or whitespace followed by '#' are ignored.
 
-On UNIX, drive letters are stripped from all patterns.  On Windows, drive
-letters are allowed, but must specify absolute paths and are treated as such.
+Paths may not have drive letters in them, as they are all relative to the root
+of capture and not absolute external paths.
 
 If this option is not specified the following default configuration file is
 used:
@@ -216,7 +218,7 @@ used:
 \\$ntfs.log
 \\hiberfil.sys
 \\pagefile.sys
-\\System Volume Information
+"\\System Volume Information"
 \\RECYCLER
 \\Windows\\CSC
 .RE

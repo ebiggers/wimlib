@@ -605,6 +605,46 @@ struct wimlib_capture_source {
 	long reserved;
 };
 
+/** Structure that specifies a list of path patterns. */
+struct wimlib_pattern_list {
+	/** Array of patterns.  The patterns may be modified by library code,
+	 * but the @a pats pointer itself will not.  See the man page for
+	 * <b>wimlib-imagex capture</b> for more information about allowed
+	 * patterns. */
+	tchar **pats;
+
+	/** Number of patterns in the @a pats array. */
+	size_t num_pats;
+
+	/** Ignored; may be used by the calling code. */
+	size_t num_allocated_pats;
+};
+
+/** A structure that contains lists of wildcards that match paths to treat
+ * specially when capturing a WIM image. */
+struct wimlib_capture_config {
+	/** Paths matching any pattern this list are excluded from being
+	 * captured, except if the same path appears in @a
+	 * exclusion_exception_pats. */
+	struct wimlib_pattern_list exclusion_pats;
+
+	/** Paths matching any pattern in this list are never excluded from
+	 * being captured. */
+	struct wimlib_pattern_list exclusion_exception_pats;
+
+	/** Reserved for future capture configuration options. */
+	struct wimlib_pattern_list reserved1;
+
+	/** Reserved for future capture configuration options. */
+	struct wimlib_pattern_list reserved2;
+
+	/** Library internal use only. */
+	tchar *_prefix;
+
+	/** Library internal use only. */
+	size_t _prefix_num_tchars;
+};
+
 
 /*****************************
  * WIMLIB_ADD_IMAGE_FLAG_*   *
@@ -857,8 +897,7 @@ struct wimlib_modify_command {
  * added at the end to maintain a compatible ABI, except when it's being broken
  * anyway. */
 enum wimlib_error_code {
-	WIMLIB_ERR_SUCCESS = 0,
-	WIMLIB_ERR_ALREADY_LOCKED,
+	WIMLIB_ERR_ALREADY_LOCKED = 1,
 	WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE,
 	WIMLIB_ERR_DECOMPRESSION,
 	WIMLIB_ERR_DELETE_STAGING_DIR,
@@ -878,14 +917,16 @@ enum wimlib_error_code {
 	WIMLIB_ERR_INVALID_IMAGE,
 	WIMLIB_ERR_INVALID_INTEGRITY_TABLE,
 	WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY,
+	WIMLIB_ERR_INVALID_MULTIBYTE_STRING,
+	WIMLIB_ERR_INVALID_OVERLAY,
 	WIMLIB_ERR_INVALID_PARAM,
 	WIMLIB_ERR_INVALID_PART_NUMBER,
 	WIMLIB_ERR_INVALID_RESOURCE_HASH,
 	WIMLIB_ERR_INVALID_RESOURCE_SIZE,
 	WIMLIB_ERR_INVALID_SECURITY_DATA,
 	WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE,
-	WIMLIB_ERR_INVALID_UTF8_STRING,
 	WIMLIB_ERR_INVALID_UTF16_STRING,
+	WIMLIB_ERR_INVALID_UTF8_STRING,
 	WIMLIB_ERR_LIBXML_UTF16_HANDLER_NOT_AVAILABLE,
 	WIMLIB_ERR_LINK,
 	WIMLIB_ERR_MKDIR,
@@ -897,8 +938,8 @@ enum wimlib_error_code {
 	WIMLIB_ERR_NTFS_3G,
 	WIMLIB_ERR_OPEN,
 	WIMLIB_ERR_OPENDIR,
-	WIMLIB_ERR_READLINK,
 	WIMLIB_ERR_READ,
+	WIMLIB_ERR_READLINK,
 	WIMLIB_ERR_RENAME,
 	WIMLIB_ERR_REOPEN,
 	WIMLIB_ERR_RESOURCE_ORDER,
@@ -906,14 +947,13 @@ enum wimlib_error_code {
 	WIMLIB_ERR_SPLIT_INVALID,
 	WIMLIB_ERR_SPLIT_UNSUPPORTED,
 	WIMLIB_ERR_STAT,
+	WIMLIB_ERR_SUCCESS = 0,
 	WIMLIB_ERR_TIMEOUT,
+	WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE,
 	WIMLIB_ERR_UNKNOWN_VERSION,
 	WIMLIB_ERR_UNSUPPORTED,
 	WIMLIB_ERR_WRITE,
 	WIMLIB_ERR_XML,
-	WIMLIB_ERR_INVALID_OVERLAY,
-	WIMLIB_ERR_INVALID_MULTIBYTE_STRING,
-	WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE,
 };
 
 
@@ -950,12 +990,9 @@ enum wimlib_error_code {
  * @param name
  * 	The name to give the image.  This must be non-@c NULL.
  * @param config
- * 	Pointer to the contents of an image capture configuration file.  If @c
- * 	NULL, a default string is used.  Please see the manual page for
- * 	<b>wimlib-imagex capture</b> for more information.
- * @param config_len
- * 	Length of the string @a config in bytes, not including an optional
- * 	null-terminator.  Ignored if @a config is @c NULL.
+ * 	Capture configuration that specifies files, directories, or path globs
+ * 	to exclude from being captured.  If @c NULL, a dummy configuration where
+ * 	no paths are treated specially is used.
  * @param add_image_flags
  * 	Bitwise OR of flags prefixed with WIMLIB_ADD_IMAGE_FLAG.
  * @param progress_func
@@ -1010,8 +1047,7 @@ extern int
 wimlib_add_image(WIMStruct *wim,
 		 const wimlib_tchar *source,
 		 const wimlib_tchar *name,
-		 const wimlib_tchar *config,
-		 size_t config_len,
+		 struct wimlib_capture_config *config,
 		 int add_image_flags,
 		 wimlib_progress_func_t progress_func);
 
@@ -1042,8 +1078,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 			     struct wimlib_capture_source *sources,
 			     size_t num_sources,
 			     const wimlib_tchar *name,
-			     const wimlib_tchar *config_str,
-			     size_t config_len,
+			     struct wimlib_capture_config *config,
 			     int add_image_flags,
 			     wimlib_progress_func_t progress_func);
 

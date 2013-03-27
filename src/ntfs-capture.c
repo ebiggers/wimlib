@@ -396,7 +396,7 @@ struct readdir_ctx {
 	struct wim_lookup_table	*lookup_table;
 	struct sd_set *sd_set;
 	struct dos_name_map *dos_name_map;
-	const struct capture_config *config;
+	const struct wimlib_capture_config *config;
 	ntfs_volume **ntfs_vol_p;
 	int add_image_flags;
 	wimlib_progress_func_t progress_func;
@@ -411,7 +411,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 				 int name_type,
 				 struct wim_lookup_table *lookup_table,
 				 struct sd_set *sd_set,
-				 const struct capture_config *config,
+				 const struct wimlib_capture_config *config,
 				 ntfs_volume **ntfs_vol_p,
 				 int add_image_flags,
 				 wimlib_progress_func_t progress_func);
@@ -499,7 +499,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 				 int name_type,
 				 struct wim_lookup_table *lookup_table,
 				 struct sd_set *sd_set,
-				 const struct capture_config *config,
+				 const struct wimlib_capture_config *config,
 				 ntfs_volume **ntfs_vol_p,
 				 int add_image_flags,
 				 wimlib_progress_func_t progress_func)
@@ -642,7 +642,7 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       const char *device,
 		       struct wim_lookup_table *lookup_table,
 		       struct sd_set *sd_set,
-		       const struct capture_config *config,
+		       const struct wimlib_capture_config *config,
 		       int add_image_flags,
 		       wimlib_progress_func_t progress_func,
 		       void *extra_arg)

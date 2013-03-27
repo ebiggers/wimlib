@@ -351,24 +351,9 @@ resource_is_compressed(const struct resource_entry *entry)
 
 /* add_image.c */
 
-struct pattern_list {
-	const tchar **pats;
-	size_t num_pats;
-	size_t num_allocated_pats;
-};
-
-struct capture_config {
-	struct pattern_list exclusion_list;
-	struct pattern_list exclusion_exception;
-	struct pattern_list compression_exclusion_list;
-	struct pattern_list alignment_list;
-	tchar *config_str;
-	tchar *prefix;
-	size_t prefix_num_tchars;
-};
 extern bool
 exclude_path(const tchar *path, size_t path_len,
-	     const struct capture_config *config,
+	     const struct wimlib_capture_config *config,
 	     bool exclude_prefix);
 
 extern int
@@ -477,7 +462,7 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       const tchar *device,
 		       struct wim_lookup_table *lookup_table,
 		       struct sd_set *sd_set,
-		       const struct capture_config *config,
+		       const struct wimlib_capture_config *config,
 		       int add_image_flags,
 		       wimlib_progress_func_t progress_func,
 		       void *extra_arg);

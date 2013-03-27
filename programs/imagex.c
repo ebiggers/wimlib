@@ -369,16 +369,28 @@ file_get_size(const tchar *filename)
 		return (off_t)-1;
 }
 
-static const tchar *default_capture_config =
-T(
-"[ExclusionList]\n"
-"\\$ntfs.log\n"
-"\\hiberfil.sys\n"
-"\\pagefile.sys\n"
-"\\System Volume Information\n"
-"\\RECYCLER\n"
-"\\Windows\\CSC\n"
-);
+tchar pat_ntfs_log[]                  = T("/$ntfs.log");
+tchar pat_hiberfil_sys[]              = T("/hiberfil.sys");
+tchar pat_pagefile_sys[]              = T("/pagefile.sys");
+tchar pat_system_volume_information[] = T("/System Volume Information");
+tchar pat_recycler[]                  = T("/RECYCLER");
+tchar pat_windows_csc[]               = T("/Windows/CSC");
+
+tchar *default_pats[] = {
+	pat_ntfs_log,
+	pat_hiberfil_sys,
+	pat_pagefile_sys,
+	pat_system_volume_information,
+	pat_recycler,
+	pat_windows_csc,
+};
+
+static struct wimlib_capture_config default_capture_config = {
+	.exclusion_pats = {
+		.num_pats = sizeof(default_pats) / sizeof(*default_pats),
+		.pats = default_pats,
+	},
+};
 
 enum {
 	PARSE_FILENAME_SUCCESS = 0,
@@ -499,6 +511,34 @@ is_comment_line(const tchar *line, size_t len)
 	}
 }
 
+static ssize_t
+text_file_count_lines(tchar **contents_p, size_t *nchars_p)
+{
+	ssize_t nlines = 0;
+	tchar *contents = *contents_p;
+	size_t nchars = *nchars_p;
+	size_t i;
+
+	for (i = 0; i < nchars; i++)
+		if (contents[i] == T('\n'))
+			nlines++;
+
+	/* Handle last line not terminated by a newline */
+	if (nchars != 0 && contents[nchars - 1] != T('\n')) {
+		contents = realloc(contents, (nchars + 1) * sizeof(tchar));
+		if (!contents) {
+			imagex_error(T("Out of memory!"));
+			return -1;
+		}
+		contents[nchars] = T('\n');
+		*contents_p = contents;
+		nchars++;
+		nlines++;
+	}
+	*nchars_p = nchars;
+	return nlines;
+}
+
 /* Parses a file in the source list format.  (See the man page for
  * 'wimlib-imagex capture' for details on this format and the meaning.)
  *
@@ -520,37 +560,24 @@ static struct wimlib_capture_source *
 parse_source_list(tchar **source_list_contents_p, size_t source_list_nchars,
 		  size_t *nsources_ret)
 {
-	size_t nlines;
+	ssize_t nlines;
 	tchar *p;
 	struct wimlib_capture_source *sources;
 	size_t i, j;
-	tchar *source_list_contents = *source_list_contents_p;
 
-	nlines = 0;
-	for (i = 0; i < source_list_nchars; i++)
-		if (source_list_contents[i] == T('\n'))
-			nlines++;
-
-	/* Handle last line not terminated by a newline */
-	if (source_list_nchars != 0 &&
-	    source_list_contents[source_list_nchars - 1] != T('\n'))
-	{
-		source_list_contents = realloc(source_list_contents,
-					       (source_list_nchars + 1) * sizeof(tchar));
-		if (!source_list_contents)
-			goto oom;
-		source_list_contents[source_list_nchars] = T('\n');
-		*source_list_contents_p = source_list_contents;
-		source_list_nchars++;
-		nlines++;
-	}
+	nlines = text_file_count_lines(source_list_contents_p,
+				       &source_list_nchars);
+	if (nlines < 0)
+		return NULL;
 
 	/* Always allocate at least 1 slot, just in case the implementation of
 	 * calloc() returns NULL if 0 bytes are requested. */
 	sources = calloc(nlines ?: 1, sizeof(*sources));
-	if (!sources)
-		goto oom;
-	p = source_list_contents;
+	if (!sources) {
+		imagex_error(T("out of memory"));
+		return NULL;
+	}
+	p = *source_list_contents_p;
 	j = 0;
 	for (i = 0; i < nlines; i++) {
 		/* XXX: Could use rawmemchr() here instead, but it may not be
@@ -569,9 +596,145 @@ parse_source_list(tchar **source_list_contents_p, size_t source_list_nchars,
 	}
 	*nsources_ret = j;
 	return sources;
-oom:
-	imagex_error(T("out of memory"));
-	return NULL;
+}
+
+
+enum capture_config_section {
+	CAPTURE_CONFIG_NO_SECTION,
+	CAPTURE_CONFIG_EXCLUSION_SECTION,
+	CAPTURE_CONFIG_EXCLUSION_EXCEPTION_SECTION,
+	CAPTURE_CONFIG_IGNORE_SECTION,
+};
+
+enum {
+	CAPTURE_CONFIG_INVALID_SECTION,
+	CAPTURE_CONFIG_CHANGED_SECTION,
+	CAPTURE_CONFIG_SAME_SECTION,
+};
+
+static int
+check_config_section(tchar *line, size_t len,
+		     enum capture_config_section *cur_section)
+{
+	while (istspace(*line))
+		line++;
+
+	if (*line != T('['))
+		return CAPTURE_CONFIG_SAME_SECTION;
+
+	line++;
+	tchar *endbrace = tstrrchr(line, T(']'));
+	if (!endbrace)
+		return CAPTURE_CONFIG_SAME_SECTION;
+
+	if (!tmemcmp(line, T("ExclusionList"), endbrace - line)) {
+		*cur_section = CAPTURE_CONFIG_EXCLUSION_SECTION;
+	} else if (!tmemcmp(line, T("ExclusionException"), endbrace - line)) {
+		*cur_section = CAPTURE_CONFIG_EXCLUSION_EXCEPTION_SECTION;
+	} else if (!tmemcmp(line, T("CompressionExclusionList"), endbrace - line)) {
+		*cur_section = CAPTURE_CONFIG_IGNORE_SECTION;
+		tfputs(T("WARNING: Ignoring [CompressionExclusionList] section "
+			 "of capture config file\n"),
+		       stderr);
+	} else if (!tmemcmp(line, T("AlignmentList"), endbrace - line)) {
+		*cur_section = CAPTURE_CONFIG_IGNORE_SECTION;
+		tfputs(T("WARNING: Ignoring [AlignmentList] section "
+			 "of capture config file\n"),
+		       stderr);
+	} else {
+		imagex_error(T("Invalid capture config file section \"%"TS"\""),
+			     line - 1);
+		return CAPTURE_CONFIG_INVALID_SECTION;
+	}
+	return CAPTURE_CONFIG_CHANGED_SECTION;
+}
+
+
+static bool
+pattern_list_add_pattern(struct wimlib_pattern_list *pat_list,
+			 tchar *pat)
+{
+	if (pat_list->num_pats == pat_list->num_allocated_pats) {
+		tchar **pats;
+		size_t num_allocated_pats = pat_list->num_pats + 8;
+
+		pats = realloc(pat_list->pats,
+			       num_allocated_pats * sizeof(pat_list->pats[0]));
+		if (!pats) {
+			imagex_error(T("Out of memory!"));
+			return false;
+		}
+		pat_list->pats = pats;
+		pat_list->num_allocated_pats = num_allocated_pats;
+	}
+	pat_list->pats[pat_list->num_pats++] = pat;
+	return true;
+}
+
+static bool
+parse_capture_config_line(tchar *line, size_t len,
+			  enum capture_config_section *cur_section,
+			  struct wimlib_capture_config *config)
+{
+	tchar *filename;
+	int ret;
+
+	ret = check_config_section(line, len, cur_section);
+	if (ret == CAPTURE_CONFIG_INVALID_SECTION)
+		return false;
+	if (ret == CAPTURE_CONFIG_CHANGED_SECTION)
+		return true;
+
+	switch (*cur_section) {
+	case CAPTURE_CONFIG_NO_SECTION:
+		imagex_error(T("Line \"%"TS"\" is not in a section "
+			       "(such as [ExclusionList]"), line);
+		return false;
+	case CAPTURE_CONFIG_EXCLUSION_SECTION:
+		if (parse_filename(&line, &len, &filename) != PARSE_FILENAME_SUCCESS)
+			return false;
+		return pattern_list_add_pattern(&config->exclusion_pats,
+						filename);
+	case CAPTURE_CONFIG_EXCLUSION_EXCEPTION_SECTION:
+		if (parse_filename(&line, &len, &filename) != PARSE_FILENAME_SUCCESS)
+			return false;
+		return pattern_list_add_pattern(&config->exclusion_exception_pats,
+						filename);
+	case CAPTURE_CONFIG_IGNORE_SECTION:
+		return true;
+	}
+	return false;
+}
+
+static int
+parse_capture_config(tchar **contents_p, size_t nchars,
+		     struct wimlib_capture_config *config)
+{
+	ssize_t nlines;
+	tchar *p;
+	struct wimlib_capture_source *sources;
+	size_t i, j;
+	enum capture_config_section cur_section;
+
+	memset(config, 0, sizeof(*config));
+
+	nlines = text_file_count_lines(contents_p, &nchars);
+	if (nlines < 0)
+		return -1;
+
+	cur_section = CAPTURE_CONFIG_NO_SECTION;
+	p = *contents_p;
+	for (i = 0; i < nlines; i++) {
+		tchar *endp = tmemchr(p, T('\n'), nchars);
+		size_t len = endp - p + 1;
+		*endp = T('\0');
+		if (!is_comment_line(p, len))
+			if (!parse_capture_config_line(p, len, &cur_section, config))
+				return -1;
+		p = endp + 1;
+
+	}
+	return 0;
 }
 
 /* Reads the contents of a file into memory. */
@@ -1113,7 +1276,7 @@ imagex_capture_or_append(int argc, tchar **argv)
 	const tchar *name;
 	const tchar *desc;
 	const tchar *flags_element = NULL;
-	WIMStruct *w = NULL;
+	WIMStruct *w;
 	int ret;
 	int cur_image;
 	int cmd = tstrcmp(argv[0], T("append")) ? CAPTURE : APPEND;
@@ -1124,13 +1287,13 @@ imagex_capture_or_append(int argc, tchar **argv)
 	tchar *source_copy;
 
 	const tchar *config_file = NULL;
-	tchar *config_str = NULL;
-	size_t config_len;
+	tchar *config_str;
+	struct wimlib_capture_config *config = NULL;
 
 	bool source_list = false;
 	size_t source_list_nchars;
-	tchar *source_list_contents = NULL;
-	bool capture_sources_malloced = false;
+	tchar *source_list_contents;
+	bool capture_sources_malloced;
 	struct wimlib_capture_source *capture_sources;
 	size_t num_sources;
 
@@ -1225,7 +1388,7 @@ imagex_capture_or_append(int argc, tchar **argv)
 						    &num_sources);
 		if (!capture_sources) {
 			ret = -1;
-			goto out;
+			goto out_free_source_list_contents;
 		}
 		capture_sources_malloced = true;
 	} else {
@@ -1236,14 +1399,25 @@ imagex_capture_or_append(int argc, tchar **argv)
 		capture_sources[0].wim_target_path = NULL;
 		capture_sources[0].reserved = 0;
 		num_sources = 1;
+		capture_sources_malloced = false;
+		source_list_contents = NULL;
 	}
 
 	if (config_file) {
+		size_t config_len;
+
 		config_str = file_get_text_contents(config_file, &config_len);
 		if (!config_str) {
 			ret = -1;
-			goto out;
+			goto out_free_capture_sources;
 		}
+
+		config = alloca(sizeof(*config));
+		ret = parse_capture_config(&config_str, config_len, config);
+		if (ret)
+			goto out_free_config;
+	} else {
+		config = &default_capture_config;
 	}
 
 	if (cmd == APPEND)
@@ -1251,8 +1425,8 @@ imagex_capture_or_append(int argc, tchar **argv)
 				      imagex_progress_func);
 	else
 		ret = wimlib_create_new_wim(compression_type, &w);
-	if (ret != 0)
-		goto out;
+	if (ret)
+		goto out_free_config;
 
 	if (!source_list) {
 		struct stat stbuf;
@@ -1268,7 +1442,7 @@ imagex_capture_or_append(int argc, tchar **argv)
 				imagex_error_with_errno(T("Failed to stat "
 							  "\"%"TS"\""), source);
 				ret = -1;
-				goto out;
+				goto out_wimlib_free;
 			}
 		}
 	}
@@ -1276,12 +1450,11 @@ imagex_capture_or_append(int argc, tchar **argv)
 	win32_acquire_capture_privileges();
 #endif
 
-	ret = wimlib_add_image_multisource(w, capture_sources,
-					   num_sources, name,
-					   (config_str ? config_str :
-						default_capture_config),
-					   (config_str ? config_len :
-						tstrlen(default_capture_config)),
+	ret = wimlib_add_image_multisource(w,
+					   capture_sources,
+					   num_sources,
+					   name,
+					   config,
 					   add_image_flags,
 					   imagex_progress_func);
 	if (ret != 0)
@@ -1313,12 +1486,20 @@ out_release_privs:
 #ifdef __WIN32__
 	win32_release_capture_privileges();
 #endif
-out:
+out_wimlib_free:
 	wimlib_free(w);
-	free(config_str);
-	free(source_list_contents);
+out_free_config:
+	if (config != NULL && config != &default_capture_config) {
+		free(config->exclusion_pats.pats);
+		free(config->exclusion_exception_pats.pats);
+		free(config_str);
+	}
+out_free_capture_sources:
 	if (capture_sources_malloced)
 		free(capture_sources);
+out_free_source_list_contents:
+	free(source_list_contents);
+out:
 	return ret;
 }
 

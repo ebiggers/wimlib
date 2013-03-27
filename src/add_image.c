@@ -159,7 +159,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				 char *path,
 				 size_t path_len,
 				 struct wim_lookup_table *lookup_table,
-				 const struct capture_config *config,
+				 const struct wimlib_capture_config *config,
 				 int add_image_flags,
 				 wimlib_progress_func_t progress_func);
 
@@ -168,7 +168,7 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 		       char *path,
 		       size_t path_len,
 		       struct wim_lookup_table *lookup_table,
-		       const struct capture_config *config,
+		       const struct wimlib_capture_config *config,
 		       int add_image_flags,
 		       wimlib_progress_func_t progress_func)
 {
@@ -272,7 +272,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				 char *path,
 				 size_t path_len,
 				 struct wim_lookup_table *lookup_table,
-				 const struct capture_config *config,
+				 const struct wimlib_capture_config *config,
 				 int add_image_flags,
 				 wimlib_progress_func_t progress_func)
 {
@@ -420,7 +420,7 @@ out:
  *
  * @sd_set:	Ignored.  (Security data only captured in NTFS mode.)
  *
- * @capture_config:
+ * @config:
  * 		Configuration for files to be excluded from capture.
  *
  * @add_flags:  Bitwise or of WIMLIB_ADD_IMAGE_FLAG_*
@@ -439,7 +439,7 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const char *root_disk_path,
 		       struct wim_lookup_table *lookup_table,
 		       struct sd_set *sd_set,
-		       const struct capture_config *config,
+		       const struct wimlib_capture_config *config,
 		       int add_image_flags,
 		       wimlib_progress_func_t progress_func,
 		       void *extra_arg)
@@ -471,205 +471,17 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 }
 #endif /* !__WIN32__ */
 
-enum pattern_type {
-	NONE = 0,
-	EXCLUSION_LIST,
-	EXCLUSION_EXCEPTION,
-	COMPRESSION_EXCLUSION_LIST,
-	ALIGNMENT_LIST,
-};
-
-#define COMPAT_DEFAULT_CONFIG
-
-/* Default capture configuration file when none is specified. */
-static const tchar *default_config =
-#ifdef COMPAT_DEFAULT_CONFIG /* XXX: This policy is being moved to library
-				users.  The next ABI-incompatible library
-				version will default to the empty string here. */
-T(
-"[ExclusionList]\n"
-"\\$ntfs.log\n"
-"\\hiberfil.sys\n"
-"\\pagefile.sys\n"
-"\\System Volume Information\n"
-"\\RECYCLER\n"
-"\\Windows\\CSC\n"
-);
-#else
-T("");
-#endif
-
-static void
-destroy_pattern_list(struct pattern_list *list)
-{
-	FREE(list->pats);
-}
-
-static void
-destroy_capture_config(struct capture_config *config)
-{
-	destroy_pattern_list(&config->exclusion_list);
-	destroy_pattern_list(&config->exclusion_exception);
-	destroy_pattern_list(&config->compression_exclusion_list);
-	destroy_pattern_list(&config->alignment_list);
-	FREE(config->config_str);
-	memset(config, 0, sizeof(*config));
-}
-
-static int
-pattern_list_add_pattern(struct pattern_list *list, const tchar *pattern)
-{
-	const tchar **pats;
-	if (list->num_pats >= list->num_allocated_pats) {
-		pats = REALLOC(list->pats,
-			       sizeof(list->pats[0]) * (list->num_allocated_pats + 8));
-		if (!pats)
-			return WIMLIB_ERR_NOMEM;
-		list->num_allocated_pats += 8;
-		list->pats = pats;
-	}
-	list->pats[list->num_pats++] = pattern;
-	return 0;
-}
-
-/* Parses the contents of the image capture configuration file and fills in a
- * `struct capture_config'. */
-static int
-init_capture_config(struct capture_config *config,
-		    const tchar *_config_str,
-		    size_t config_num_tchars)
-{
-	tchar *config_str;
-	tchar *p;
-	tchar *eol;
-	tchar *next_p;
-	size_t num_tchars_remaining;
-	enum pattern_type type = NONE;
-	int ret;
-	unsigned long line_no = 0;
-
-	DEBUG("config_num_tchars = %zu", config_num_tchars);
-	num_tchars_remaining = config_num_tchars;
-	memset(config, 0, sizeof(*config));
-	config_str = TMALLOC(config_num_tchars);
-	if (!config_str) {
-		ERROR("Could not duplicate capture config string");
-		return WIMLIB_ERR_NOMEM;
-	}
-
-	tmemcpy(config_str, _config_str, config_num_tchars);
-	next_p = config_str;
-	config->config_str = config_str;
-	while (num_tchars_remaining != 0) {
-		line_no++;
-		p = next_p;
-		eol = tmemchr(p, T('\n'), num_tchars_remaining);
-		if (!eol) {
-			ERROR("Expected end-of-line in capture config file on "
-			      "line %lu", line_no);
-			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
-			goto out_destroy;
-		}
-
-		next_p = eol + 1;
-		num_tchars_remaining -= (next_p - p);
-		if (eol == p)
-			continue;
-
-		if (*(eol - 1) == T('\r'))
-			eol--;
-		*eol = T('\0');
-
-		/* Translate backslash to forward slash */
-		for (tchar *pp = p; pp != eol; pp++)
-			if (*pp == T('\\'))
-				*pp = T('/');
-
-		/* Check if the path begins with a drive letter */
-		if (eol - p > 2 && *p != T('/') && *(p + 1) == T(':')) {
-			/* Don't allow relative paths on other drives */
-			if (eol - p < 3 || *(p + 2) != T('/')) {
-				ERROR("Relative paths including a drive letter "
-				      "are not allowed!\n"
-				      "        Perhaps you meant "
-				      "\"%"TS":/%"TS"\"?\n",
-				      *p, p + 2);
-				ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
-				goto out_destroy;
-			}
-		#ifndef __WIN32__
-			/* UNIX: strip the drive letter */
-			p += 2;
-		#endif
-		}
-
-		ret = 0;
-		if (!tstrcmp(p, T("[ExclusionList]")))
-			type = EXCLUSION_LIST;
-		else if (!tstrcmp(p, T("[ExclusionException]")))
-			type = EXCLUSION_EXCEPTION;
-		else if (!tstrcmp(p, T("[CompressionExclusionList]")))
-			type = COMPRESSION_EXCLUSION_LIST;
-		else if (!tstrcmp(p, T("[AlignmentList]")))
-			type = ALIGNMENT_LIST;
-		else if (p[0] == T('[') && tstrrchr(p, T(']'))) {
-			ERROR("Unknown capture configuration section \"%"TS"\"", p);
-			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
-		} else switch (type) {
-		case EXCLUSION_LIST:
-			DEBUG("Adding pattern \"%"TS"\" to exclusion list", p);
-			ret = pattern_list_add_pattern(&config->exclusion_list, p);
-			break;
-		case EXCLUSION_EXCEPTION:
-			DEBUG("Adding pattern \"%"TS"\" to exclusion exception list", p);
-			ret = pattern_list_add_pattern(&config->exclusion_exception, p);
-			break;
-		case COMPRESSION_EXCLUSION_LIST:
-			DEBUG("Adding pattern \"%"TS"\" to compression exclusion list", p);
-			ret = pattern_list_add_pattern(&config->compression_exclusion_list, p);
-			break;
-		case ALIGNMENT_LIST:
-			DEBUG("Adding pattern \"%"TS"\" to alignment list", p);
-			ret = pattern_list_add_pattern(&config->alignment_list, p);
-			break;
-		default:
-			ERROR("Line %lu of capture configuration is not "
-			      "in a block (such as [ExclusionList])",
-			      line_no);
-			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
-			break;
-		}
-		if (ret != 0)
-			goto out_destroy;
-	}
-	return 0;
-out_destroy:
-	destroy_capture_config(config);
-	return ret;
-}
-
-static bool
-is_absolute_path(const tchar *path)
-{
-	if (*path == T('/'))
-		return true;
-#ifdef __WIN32__
-	/* Drive letter */
-	if (*path && *(path + 1) == T(':'))
-		return true;
-#endif
-	return false;
-}
-
 static bool
 match_pattern(const tchar *path,
 	      const tchar *path_basename,
-	      const struct pattern_list *list)
+	      const struct wimlib_pattern_list *list)
 {
 	for (size_t i = 0; i < list->num_pats; i++) {
+
 		const tchar *pat = list->pats[i];
 		const tchar *string;
-		if (is_absolute_path(pat)) {
+
+		if (*pat == T('/')) {
 			/* Absolute path from root of capture */
 			string = path;
 		} else {
@@ -683,15 +495,18 @@ match_pattern(const tchar *path,
 
 		/* Warning: on Windows native builds, fnmatch() calls the
 		 * replacement function in win32.c. */
-		if (fnmatch(pat, string, FNM_PATHNAME
+		if (fnmatch(pat, string, FNM_PATHNAME | FNM_NOESCAPE
 				#ifdef FNM_CASEFOLD
 			    		| FNM_CASEFOLD
 				#endif
 			    ) == 0)
 		{
-			DEBUG("\"%"TS"\" matches the pattern \"%"TS"\"",
+			WARNING("\"%"TS"\" matches the pattern \"%"TS"\"",
 			      string, pat);
 			return true;
+		} else {
+			WARNING("\"%"TS"\" does not match the pattern \"%"TS"\"",
+			       string, pat);
 		}
 	}
 	return false;
@@ -708,19 +523,19 @@ match_pattern(const tchar *path,
  */
 bool
 exclude_path(const tchar *path, size_t path_len,
-	     const struct capture_config *config, bool exclude_prefix)
+	     const struct wimlib_capture_config *config, bool exclude_prefix)
 {
 	const tchar *basename = path_basename_with_len(path, path_len);
 	if (exclude_prefix) {
-		wimlib_assert(path_len >= config->prefix_num_tchars);
-		if (!tmemcmp(config->prefix, path, config->prefix_num_tchars) &&
-		    path[config->prefix_num_tchars] == T('/'))
+		wimlib_assert(path_len >= config->_prefix_num_tchars);
+		if (!tmemcmp(config->_prefix, path, config->_prefix_num_tchars) &&
+		    path[config->_prefix_num_tchars] == T('/'))
 		{
-			path += config->prefix_num_tchars;
+			path += config->_prefix_num_tchars;
 		}
 	}
-	return match_pattern(path, basename, &config->exclusion_list) &&
-		!match_pattern(path, basename, &config->exclusion_exception);
+	return match_pattern(path, basename, &config->exclusion_pats) &&
+		!match_pattern(path, basename, &config->exclusion_exception_pats);
 
 }
 
@@ -977,13 +792,64 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	}
 }
 
+static int
+canonicalize_pat(tchar **pat_p)
+{
+	tchar *pat = *pat_p;
+
+	/* Turn all backslashes in the pattern into forward slashes. */
+	zap_backslashes(pat);
+
+	if (*pat != T('/') && *pat != T('\0') && *(pat + 1) == T(':')) {
+		/* Pattern begins with drive letter */
+		if (*(pat + 2) != T('/')) {
+			/* Something like c:file, which is actually a path
+			 * relative to the current working directory on the c:
+			 * drive.  We require paths with drive letters to be
+			 * absolute. */
+			ERROR("Invalid path \"%"TS"\"; paths including drive letters "
+			      "must be absolute!", pat);
+			ERROR("Maybe try \"%"TC":/%"TS"\"?",
+			      *pat, pat + 2);
+			return WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+		}
+
+		WARNING("Pattern \"%"TS"\" starts with a drive letter, which is "
+			"being removed.", pat);
+		/* Strip the drive letter */
+		pat += 2;
+		*pat_p = pat;
+	}
+	return 0;
+}
+
+static int
+canonicalize_pat_list(struct wimlib_pattern_list *pat_list)
+{
+	int ret = 0;
+	for (size_t i = 0; i < pat_list->num_pats; i++) {
+		ret = canonicalize_pat(&pat_list->pats[i]);
+		if (ret)
+			break;
+	}
+	return ret;
+}
+
+static int
+canonicalize_capture_config(struct wimlib_capture_config *config)
+{
+	int ret = canonicalize_pat_list(&config->exclusion_pats);
+	if (ret)
+		return ret;
+	return canonicalize_pat_list(&config->exclusion_exception_pats);
+}
+
 WIMLIBAPI int
 wimlib_add_image_multisource(WIMStruct *w,
 			     struct wimlib_capture_source *sources,
 			     size_t num_sources,
 			     const tchar *name,
-			     const tchar *config_str,
-			     size_t config_len,
+			     struct wimlib_capture_config *config,
 			     int add_image_flags,
 			     wimlib_progress_func_t progress_func)
 {
@@ -991,7 +857,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 			    const tchar *,
 			    struct wim_lookup_table *,
 			    struct sd_set *,
-			    const struct capture_config *,
+			    const struct wimlib_capture_config *,
 			    int,
 			    wimlib_progress_func_t,
 			    void *);
@@ -999,7 +865,6 @@ wimlib_add_image_multisource(WIMStruct *w,
 	struct wim_dentry *root_dentry;
 	struct wim_dentry *branch;
 	struct wim_security_data *sd;
-	struct capture_config config;
 	struct wim_image_metadata *imd;
 	int ret;
 	struct sd_set sd_set;
@@ -1061,12 +926,13 @@ wimlib_add_image_multisource(WIMStruct *w,
 		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 	}
 
-	if (!config_str) {
-		DEBUG("Using default capture configuration");
-		config_str = default_config;
-		config_len = tstrlen(default_config);
+	if (!config) {
+		DEBUG("Capture config not provided; using empty config");
+		config = alloca(sizeof(*config));
+		memset(config, 0, sizeof(*config));
 	}
-	ret = init_capture_config(&config, config_str, config_len);
+
+	ret = canonicalize_capture_config(config);
 	if (ret)
 		goto out;
 
@@ -1074,7 +940,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	sd = CALLOC(1, sizeof(struct wim_security_data));
 	if (!sd) {
 		ret = WIMLIB_ERR_NOMEM;
-		goto out_destroy_capture_config;
+		goto out;
 	}
 	sd->total_length = 8;
 	sd->refcnt = 1;
@@ -1108,8 +974,8 @@ wimlib_add_image_multisource(WIMStruct *w,
 			progress.scan.wim_target_path = sources[i].wim_target_path;
 			progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &progress);
 		}
-		config.prefix = sources[i].fs_source_path;
-		config.prefix_num_tchars = tstrlen(sources[i].fs_source_path);
+		config->_prefix = sources[i].fs_source_path;
+		config->_prefix_num_tchars = tstrlen(sources[i].fs_source_path);
 		flags = add_image_flags | WIMLIB_ADD_IMAGE_FLAG_SOURCE;
 		if (!*sources[i].wim_target_path)
 			flags |= WIMLIB_ADD_IMAGE_FLAG_ROOT;
@@ -1117,7 +983,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 				      sources[i].fs_source_path,
 				      w->lookup_table,
 				      &sd_set,
-				      &config,
+				      config,
 				      flags,
 				      progress_func, extra_arg);
 		if (ret) {
@@ -1189,8 +1055,6 @@ out_free_security_data:
 	free_security_data(sd);
 out_destroy_sd_set:
 	destroy_sd_set(&sd_set);
-out_destroy_capture_config:
-	destroy_capture_config(&config);
 out:
 	return ret;
 }
@@ -1199,8 +1063,7 @@ WIMLIBAPI int
 wimlib_add_image(WIMStruct *w,
 		 const tchar *source,
 		 const tchar *name,
-		 const tchar *config_str,
-		 size_t config_len,
+		 struct wimlib_capture_config *config,
 		 int add_image_flags,
 		 wimlib_progress_func_t progress_func)
 {
@@ -1215,8 +1078,8 @@ wimlib_add_image(WIMStruct *w,
 		.reserved = 0,
 	};
 	ret = wimlib_add_image_multisource(w, &capture_src, 1, name,
-					   config_str, config_len,
-					   add_image_flags, progress_func);
+					   config, add_image_flags,
+					   progress_func);
 	FREE(fs_source_path);
 	return ret;
 }

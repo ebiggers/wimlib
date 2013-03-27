@@ -10,7 +10,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const tchar *root_disk_path,
 			struct wim_lookup_table *lookup_table,
 			struct sd_set *sd,
-			const struct capture_config *config,
+			const struct wimlib_capture_config *config,
 			int add_image_flags,
 			wimlib_progress_func_t progress_func,
 			void *extra_arg);
@@ -34,6 +34,7 @@ extern void win32_error_last();
 #endif
 
 #define FNM_PATHNAME 0x1
+#define FNM_NOESCAPE 0x2
 #define FNM_NOMATCH 1
 extern int
 fnmatch(const tchar *pattern, const tchar *string, int flags);
