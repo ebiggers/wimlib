@@ -430,6 +430,8 @@ union wimlib_progress_info {
 		 * ::WIMLIB_COMPRESSION_TYPE_XPRESS, or
 		 * ::WIMLIB_COMPRESSION_TYPE_LZX. */
 		int	 compression_type;
+
+		uint64_t _private;
 	} write_streams;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN and

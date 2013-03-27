@@ -738,6 +738,29 @@ compressor_thread_proc(void *arg)
 }
 #endif /* ENABLE_MULTITHREADED_COMPRESSION */
 
+static void
+do_write_streams_progress(union wimlib_progress_info *progress,
+			  wimlib_progress_func_t progress_func,
+			  uint64_t size_added)
+{
+	progress->write_streams.completed_bytes += size_added;
+	progress->write_streams.completed_streams++;
+	if (progress_func &&
+	    progress->write_streams.completed_bytes >= progress->write_streams._private)
+	{
+		progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
+			      progress);
+		if (progress->write_streams._private == progress->write_streams.total_bytes) {
+			progress->write_streams._private = ~0;
+		} else {
+			progress->write_streams._private =
+				min(progress->write_streams.total_bytes,
+				    progress->write_streams.completed_bytes +
+				        progress->write_streams.total_bytes / 100);
+		}
+	}
+}
+
 static int
 do_write_stream_list(struct list_head *my_resources,
 		     FILE *out_fp,
@@ -758,13 +781,10 @@ do_write_stream_list(struct list_head *my_resources,
 		if (ret != 0)
 			return ret;
 		list_del(&lte->staging_list);
-		progress->write_streams.completed_bytes +=
-			wim_resource_size(lte);
-		progress->write_streams.completed_streams++;
-		if (progress_func) {
-			progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
-				      progress);
-		}
+
+		do_write_streams_progress(progress,
+					  progress_func,
+					  wim_resource_size(lte));
 	}
 	return 0;
 }
@@ -1159,14 +1179,8 @@ main_writer_thread_proc(struct list_head *stream_list,
 							WIM_RESHDR_FLAG_COMPRESSED;
 				}
 
-				progress->write_streams.completed_bytes +=
-						wim_resource_size(cur_lte);
-				progress->write_streams.completed_streams++;
-
-				if (progress_func) {
-					progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
-						      progress);
-				}
+				do_write_streams_progress(progress, progress_func,
+							  wim_resource_size(cur_lte));
 
 				FREE(cur_chunk_tab);
 				cur_chunk_tab = NULL;
@@ -1395,6 +1409,7 @@ write_stream_list(struct list_head *stream_list, FILE *out_fp,
 	progress.write_streams.completed_streams = 0;
 	progress.write_streams.num_threads       = num_threads;
 	progress.write_streams.compression_type  = out_ctype;
+	progress.write_streams._private          = 0;
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 	if (total_compression_bytes >= 1000000 && num_threads != 1)
