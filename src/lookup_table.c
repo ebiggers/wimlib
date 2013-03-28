@@ -28,6 +28,7 @@
 #include "lookup_table.h"
 #include "buffer_io.h"
 #include <errno.h>
+#include <stdlib.h>
 
 #ifdef WITH_FUSE
 #include <unistd.h>
@@ -273,6 +274,93 @@ for_lookup_table_entry(struct wim_lookup_table *table,
 	return 0;
 }
 
+static int
+cmp_streams_by_wim_position(const void *p1, const void *p2)
+{
+	const struct wim_lookup_table_entry *lte1, *lte2;
+	lte1 = *(const struct wim_lookup_table_entry**)p1;
+	lte2 = *(const struct wim_lookup_table_entry**)p2;
+	if (lte1->resource_entry.offset < lte2->resource_entry.offset)
+		return -1;
+	else if (lte1->resource_entry.offset > lte2->resource_entry.offset)
+		return 1;
+	else
+		return 0;
+}
+
+int
+sort_stream_list_by_wim_position(struct list_head *stream_list)
+{
+	struct list_head *cur;
+	size_t num_streams;
+	struct wim_lookup_table_entry **array;
+	size_t i;
+	size_t array_size;
+
+	num_streams = 0;
+	list_for_each(cur, stream_list)
+		num_streams++;
+	array_size = num_streams * sizeof(array[0]);
+	array = MALLOC(array_size);
+	if (!array) {
+		ERROR("Failed to allocate %zu bytes to sort stream entries",
+		      array_size);
+		return WIMLIB_ERR_NOMEM;
+	}
+	cur = stream_list->next;
+	for (i = 0; i < num_streams; i++) {
+		array[i] = container_of(cur, struct wim_lookup_table_entry, staging_list);
+		cur = cur->next;
+	}
+
+	qsort(array, num_streams, sizeof(array[0]), cmp_streams_by_wim_position);
+
+	INIT_LIST_HEAD(stream_list);
+	for (i = 0; i < num_streams; i++)
+		list_add_tail(&array[i]->staging_list, stream_list);
+	FREE(array);
+	return 0;
+}
+
+
+static int
+add_lte_to_array(struct wim_lookup_table_entry *lte,
+		 void *_pp)
+{
+	struct wim_lookup_table_entry ***pp = _pp;
+	*(*pp)++ = lte;
+	return 0;
+}
+
+/* Iterate through the lookup table entries, but first sort them by stream
+ * offset in the WIM.  Caution: this is intended to be used when the stream
+ * offset field has actually been set. */
+int
+for_lookup_table_entry_pos_sorted(struct wim_lookup_table *table,
+				  int (*visitor)(struct wim_lookup_table_entry *,
+						 void *),
+				  void *arg)
+{
+	struct wim_lookup_table_entry **lte_array, **p;
+	size_t num_streams = table->num_entries;
+	int ret;
+
+	lte_array = MALLOC(num_streams * sizeof(lte_array[0]));
+	if (!lte_array)
+		return WIMLIB_ERR_NOMEM;
+	p = lte_array;
+	for_lookup_table_entry(table, add_lte_to_array, &p);
+
+	wimlib_assert(p == lte_array + num_streams);
+
+	qsort(lte_array, num_streams, sizeof(lte_array[0]),
+	      cmp_streams_by_wim_position);
+	ret = 0;
+	for (size_t i = 0; i < num_streams && ret == 0; i++)
+		ret = visitor(lte_array[i], arg);
+	FREE(lte_array);
+	return ret;
+}
 
 /*
  * Reads the lookup table from a WIM file.

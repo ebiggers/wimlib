@@ -569,54 +569,6 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 	return ret;
 }
 
-static int
-cmp_streams_by_wim_position(const void *p1, const void *p2)
-{
-	const struct wim_lookup_table_entry *lte1, *lte2;
-	lte1 = *(const struct wim_lookup_table_entry**)p1;
-	lte2 = *(const struct wim_lookup_table_entry**)p2;
-	if (lte1->resource_entry.offset < lte2->resource_entry.offset)
-		return -1;
-	else if (lte1->resource_entry.offset > lte2->resource_entry.offset)
-		return 1;
-	else
-		return 0;
-}
-
-static int
-sort_stream_list_by_wim_position(struct list_head *stream_list)
-{
-	struct list_head *cur;
-	size_t num_streams;
-	struct wim_lookup_table_entry **array;
-	size_t i;
-	size_t array_size;
-
-	num_streams = 0;
-	list_for_each(cur, stream_list)
-		num_streams++;
-	array_size = num_streams * sizeof(array[0]);
-	array = MALLOC(array_size);
-	if (!array) {
-		ERROR("Failed to allocate %zu bytes to sort stream entries",
-		      array_size);
-		return WIMLIB_ERR_NOMEM;
-	}
-	cur = stream_list->next;
-	for (i = 0; i < num_streams; i++) {
-		array[i] = container_of(cur, struct wim_lookup_table_entry, staging_list);
-		cur = cur->next;
-	}
-
-	qsort(array, num_streams, sizeof(array[0]), cmp_streams_by_wim_position);
-
-	INIT_LIST_HEAD(stream_list);
-	for (i = 0; i < num_streams; i++)
-		list_add_tail(&array[i]->staging_list, stream_list);
-	FREE(array);
-	return 0;
-}
-
 static void
 calculate_bytes_to_extract(struct list_head *stream_list,
 			   int extract_flags,

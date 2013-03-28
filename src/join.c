@@ -40,7 +40,9 @@ static int
 lookup_table_join(struct wim_lookup_table *table,
 		  struct wim_lookup_table *new)
 {
-	return for_lookup_table_entry(new, move_lte_to_table, table);
+	for_lookup_table_entry(new, move_lte_to_table, table);
+	new->num_entries = 0;
+	return 0;
 }
 
 /*
@@ -124,8 +126,10 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 		}
 		swms[i]->out_fp = joined_wim->out_fp;
 		swms[i]->hdr.part_number = 1;
-		ret = for_lookup_table_entry(swms[i]->lookup_table,
-					     copy_resource, swms[i]);
+
+		ret = for_lookup_table_entry_pos_sorted(swms[i]->lookup_table,
+							copy_resource,
+							swms[i]);
 		swms[i]->out_fp = NULL;
 
 		if (i != 0) {

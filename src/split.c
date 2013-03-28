@@ -200,8 +200,9 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 		list_add_tail(&metadata_lte->staging_list, &args.lte_list);
 	}
 
-	ret = for_lookup_table_entry(w->lookup_table,
-				     copy_resource_to_swm, &args);
+	ret = for_lookup_table_entry_pos_sorted(w->lookup_table,
+						copy_resource_to_swm,
+						&args);
 	if (ret != 0)
 		goto out;
 

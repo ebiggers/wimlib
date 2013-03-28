@@ -274,6 +274,7 @@ static inline void
 lookup_table_unlink(struct wim_lookup_table *table, struct wim_lookup_table_entry *lte)
 {
 	hlist_del(&lte->hash_list);
+	wimlib_assert(table->num_entries != 0);
 	table->num_entries--;
 }
 
@@ -294,6 +295,15 @@ extern int
 for_lookup_table_entry(struct wim_lookup_table *table,
 		       int (*visitor)(struct wim_lookup_table_entry *, void *),
 		       void *arg);
+
+extern int
+sort_stream_list_by_wim_position(struct list_head *stream_list);
+
+extern int
+for_lookup_table_entry_pos_sorted(struct wim_lookup_table *table,
+				  int (*visitor)(struct wim_lookup_table_entry *,
+						 void *),
+				  void *arg);
 
 extern struct wim_lookup_table_entry *
 __lookup_resource(const struct wim_lookup_table *table, const u8 hash[]);
