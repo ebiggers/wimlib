@@ -133,7 +133,7 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 			swms[i]->fp = NULL;
 		}
 
-		if (ret != 0)
+		if (ret)
 			return ret;
 
 		if (progress_func) {
@@ -143,15 +143,14 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 		}
 	}
 
-	/* Write metadata resources from the first SWM part */
-	swms[0]->out_fp = joined_wim->out_fp;
-	ret = for_image(swms[0], WIMLIB_ALL_IMAGES, write_metadata_resource);
-	swms[0]->out_fp = NULL;
-	fclose(swms[0]->fp);
-	swms[0]->fp = NULL;
-
-	if (ret)
-		return ret;
+	/* Copy the metadata resources from the first SWM part */
+	joined_wim->hdr.image_count = swms[0]->hdr.image_count;
+	for (i = 0; i < joined_wim->hdr.image_count; i++) {
+		ret = copy_resource(swms[0]->image_metadata[i].metadata_lte,
+				    joined_wim);
+		if (ret)
+			return ret;
+	}
 
 	/* Write lookup table, XML data, and optional integrity table */
 	joined_wim->hdr.image_count = swms[0]->hdr.image_count;
