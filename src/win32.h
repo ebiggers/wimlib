@@ -76,4 +76,7 @@ win32_global_init();
 extern void
 win32_global_cleanup();
 
+extern int
+win32_strerror_r_replacement(int errnum, tchar *buf, size_t buflen);
+
 #endif /* _WIMLIB_WIN32_H */

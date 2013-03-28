@@ -39,6 +39,7 @@
 #include "lookup_table.h"
 #include "security.h"
 #include "endianness.h"
+#include <pthread.h>
 
 #include <errno.h>
 
@@ -1532,6 +1533,22 @@ fail:
 	win32_error(err);
 	errno = -1;
 	return -1;
+}
+
+
+/* This really could be replaced with _wcserror_s, but this doesn't seem to
+ * actually be available in MSVCRT.DLL on Windows XP (perhaps it's statically
+ * linked in by Visual Studio...?). */
+extern int
+win32_strerror_r_replacement(int errnum, wchar_t *buf, size_t buflen)
+{
+	static pthread_mutex_t strerror_lock = PTHREAD_MUTEX_INITIALIZER;
+
+	pthread_mutex_lock(&strerror_lock);
+	mbstowcs(buf, strerror(errnum), buflen);
+	buf[buflen - 1] = '\0';
+	pthread_mutex_unlock(&strerror_lock);
+	return 0;
 }
 
 #endif /* __WIN32__ */
