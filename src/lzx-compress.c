@@ -27,8 +27,8 @@
 
 
 /*
- * This file provides lzx_compress(), a function to compress an in-memory buffer
- * of data using LZX compression, as used in the WIM file format.
+ * This file provides wimlib_lzx_compress(), a function to compress an in-memory
+ * buffer of data using LZX compression, as used in the WIM file format.
  *
  * Please see the comments in lzx-decompress.c for more information about this
  * compression format.
@@ -57,6 +57,7 @@
  * blocks from one input chunk is not yet implemented.
  */
 
+#include "wimlib.h"
 #include "lzx.h"
 #include "compress.h"
 #include <stdlib.h>
@@ -638,18 +639,10 @@ static const struct lz_params lzx_lz_params = {
 	.too_far        = 4096,
 };
 
-/*
- * Performs LZX compression on a block of data.
- *
- * Please see the documentation for the 'compress_func_t' type in write.c for
- * the exact behavior of this function and how to call it.
- */
-#ifdef EXPORT_COMPRESSION_FUNCTIONS
-WIMLIBAPI
-#endif
-unsigned
-lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
-	     void *compressed_data)
+/* Documented in wimlib.h */
+WIMLIBAPI unsigned
+wimlib_lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
+		    void *compressed_data)
 {
 	struct output_bitstream ostream;
 	u8 uncompressed_data[uncompressed_len + 8];
@@ -754,8 +747,8 @@ lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 #ifdef ENABLE_VERIFY_COMPRESSION
 	/* Verify that we really get the same thing back when decompressing. */
 	u8 buf[uncompressed_len];
-	ret = lzx_decompress(compressed_data, compressed_len, buf,
-			     uncompressed_len);
+	ret = wimlib_lzx_decompress(compressed_data, compressed_len,
+				    buf, uncompressed_len);
 	if (ret != 0) {
 		ERROR("lzx_compress(): Failed to decompress data we compressed");
 		abort();

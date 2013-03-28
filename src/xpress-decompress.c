@@ -200,9 +200,10 @@ xpress_decompress_block(struct input_bitstream *istream,
 }
 
 
-int
-xpress_decompress(const void *__compressed_data, unsigned compressed_len,
-		  void *uncompressed_data, unsigned uncompressed_len)
+/* Documented in wimlib.h */
+WIMLIBAPI int
+wimlib_xpress_decompress(const void *__compressed_data, unsigned compressed_len,
+			 void *uncompressed_data, unsigned uncompressed_len)
 {
 	u8 lens[XPRESS_NUM_SYMBOLS];
 	u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS];

@@ -26,8 +26,6 @@
 #include "dentry.h"
 #include "lookup_table.h"
 #include "buffer_io.h"
-#include "lzx.h"
-#include "xpress.h"
 #include "sha1.h"
 
 #ifdef __WIN32__
@@ -89,9 +87,9 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	int (*decompress)(const void *, unsigned, void *, unsigned);
 	/* Set the appropriate decompress function. */
 	if (resource_ctype == WIMLIB_COMPRESSION_TYPE_LZX)
-		decompress = lzx_decompress;
+		decompress = wimlib_lzx_decompress;
 	else
-		decompress = xpress_decompress;
+		decompress = wimlib_xpress_decompress;
 
 	/* The structure of a compressed resource consists of a table of chunk
 	 * offsets followed by the chunks themselves.  Each chunk consists of

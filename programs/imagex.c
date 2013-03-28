@@ -23,8 +23,8 @@
  */
 
 #include "config.h"
-#include "wimlib_tchar.h"
 #include "wimlib.h"
+#include "wimlib_tchar.h"
 
 #include <ctype.h>
 #include <errno.h>

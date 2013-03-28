@@ -26,7 +26,9 @@
  */
 
 #include "xpress.h"
+#include "wimlib.h"
 #include "compress.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -139,18 +141,10 @@ static const struct lz_params xpress_lz_params = {
 	.too_far        = 4096,
 };
 
-/*
- * Performs XPRESS compression on a block of data.
- *
- * Please see the documentation for the 'compress_func_t' type in write.c for
- * the exact behavior of this function and how to call it.
- */
-#ifdef EXPORT_COMPRESSION_FUNCTIONS
-WIMLIBAPI
-#endif
-unsigned
-xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
-		void *__compressed_data)
+/* Documented in wimlib.h */
+WIMLIBAPI unsigned
+wimlib_xpress_compress(const void *__uncompressed_data,
+		       unsigned uncompressed_len, void *__compressed_data)
 {
 	const u8 *uncompressed_data = __uncompressed_data;
 	u8 *compressed_data = __compressed_data;
@@ -245,8 +239,8 @@ xpress_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 #ifdef ENABLE_VERIFY_COMPRESSION
 	/* Verify that we really get the same thing back when decompressing. */
 	u8 buf[uncompressed_len];
-	ret = xpress_decompress(__compressed_data, compressed_len, buf,
-				uncompressed_len);
+	ret = wimlib_xpress_decompress(__compressed_data, compressed_len,
+				       buf, uncompressed_len);
 	if (ret) {
 		ERROR("xpress_compress(): Failed to decompress data we "
 		      "compressed");

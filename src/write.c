@@ -42,9 +42,6 @@
 #include "dentry.h"
 #include "lookup_table.h"
 #include "xml.h"
-#include "lzx.h"
-#include "xpress.h"
-
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 #  include <pthread.h>
@@ -152,8 +149,9 @@ out:
 
 /*
  * compress_func_t- Pointer to a function to compresses a chunk
- *                  of a WIM resource.  This may be either xpress_compress()
- *                  (xpress-compress.c) or lzx_compress() (lzx-compress.c).
+ *                  of a WIM resource.  This may be either
+ *                  wimlib_xpress_compress() (xpress-compress.c) or
+ *                  wimlib_lzx_compress() (lzx-compress.c).
  *
  * @chunk:	  Uncompressed data of the chunk.
  * @chunk_size:	  Size of the uncompressed chunk, in bytes.
@@ -179,9 +177,9 @@ compress_func_t
 get_compress_func(int out_ctype)
 {
 	if (out_ctype == WIMLIB_COMPRESSION_TYPE_LZX)
-		return lzx_compress;
+		return wimlib_lzx_compress;
 	else
-		return xpress_compress;
+		return wimlib_xpress_compress;
 }
 
 /*

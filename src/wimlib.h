@@ -613,7 +613,7 @@ struct wimlib_pattern_list {
 	 * but the @a pats pointer itself will not.  See the man page for
 	 * <b>wimlib-imagex capture</b> for more information about allowed
 	 * patterns. */
-	tchar **pats;
+	wimlib_tchar **pats;
 
 	/** Number of patterns in the @a pats array. */
 	size_t num_pats;
@@ -641,7 +641,7 @@ struct wimlib_capture_config {
 	struct wimlib_pattern_list reserved2;
 
 	/** Library internal use only. */
-	tchar *_prefix;
+	wimlib_tchar *_prefix;
 
 	/** Library internal use only. */
 	size_t _prefix_num_tchars;
@@ -1657,6 +1657,64 @@ wimlib_join(const wimlib_tchar * const *swms,
 	    wimlib_progress_func_t progress_func);
 
 /**
+ * Compress a chunk of a WIM resource using LZX compression.
+ *
+ * This function is exported for convenience only and need not be used.
+ *
+ * @param chunk
+ * 	Uncompressed data of the chunk.
+ * @param chunk_size
+ * 	Size of the uncompressed chunk, in bytes.
+ * @param out
+ * 	Pointer to output buffer of size at least (@a chunk_size - 1) bytes.
+ *
+ * @return
+ * 	The size of the compressed data written to @a out in bytes, or 0 if the
+ * 	data could not be compressed to (@a chunk_size - 1) bytes or fewer.
+ *
+ * As a special requirement, the compression code is optimized for the WIM
+ * format and therefore requires (@a chunk_size <= 32768).
+ *
+ * As another special requirement, the compression code will read up to 8 bytes
+ * off the end of the @a chunk array for performance reasons.  The values of
+ * these bytes will not affect the output of the compression, but the calling
+ * code must make sure that the buffer holding the uncompressed chunk is
+ * actually at least (@a chunk_size + 8) bytes, or at least that these extra
+ * bytes are in mapped memory that will not cause a memory access violation if
+ * accessed.
+ */
+extern unsigned
+wimlib_lzx_compress(const void *chunk, unsigned chunk_size, void *out);
+
+/**
+ * Decompresses a block of LZX-compressed data as used in the WIM file format.
+ *
+ * Note that this will NOT work unmodified for LZX as used in the cabinet
+ * format, which is not the same as in the WIM format!
+ *
+ * This function is exported for convenience only and need not be used.
+ *
+ * @param compressed_data
+ * 	Pointer to the compressed data.
+ *
+ * @param compressed_len
+ * 	Length of the compressed data, in bytes.
+ *
+ * @param uncompressed_data
+ * 	Pointer to the buffer into which to write the uncompressed data.
+ *
+ * @param uncompressed_len
+ * 	Length of the uncompressed data.  It must be 32768 bytes or less.
+ *
+ * @return
+ * 	0 on success; non-zero on failure.
+ */
+extern int
+wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
+		      void *uncompressed_data, unsigned uncompressed_len);
+
+
+/**
  * Mounts an image in a WIM file on a directory read-only or read-write.
  *
  * Unless ::WIMLIB_MOUNT_FLAG_DEBUG is specified or an early error occurs, the
@@ -2409,5 +2467,20 @@ wimlib_write(WIMStruct *wim,
 	     int write_flags,
 	     unsigned num_threads,
 	     wimlib_progress_func_t progress_func);
+
+/**
+ * This function is equivalent to wimlib_lzx_compress(), but instead compresses
+ * the data using "XPRESS" compression.
+ */
+extern unsigned
+wimlib_xpress_compress(const void *chunk, unsigned chunk_size, void *out);
+
+/**
+ * This function is equivalent to wimlib_lzx_decompress(), but instead assumes
+ * the data is compressed using "XPRESS" compression.
+ */
+extern int
+wimlib_xpress_decompress(const void *compressed_data, unsigned compressed_len,
+			 void *uncompressed_data, unsigned uncompressed_len);
 
 #endif /* _WIMLIB_H */

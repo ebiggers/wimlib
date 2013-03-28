@@ -107,6 +107,7 @@
  */
 
 #include "util.h"
+#include "wimlib.h"
 #include "lzx.h"
 #include "decompress.h"
 #include <string.h>
@@ -786,27 +787,10 @@ lzx_decompress_block(int block_type, unsigned block_size,
 	return 0;
 }
 
-/*
- * Decompresses a block of LZX-compressed data as used in the WIM file format.
- *
- * Note that this will NOT work unmodified for LZX as used in the cabinet
- * format, which is not the same as in the WIM format!
- *
- * @compressed_data:	A pointer to the compressed data.
- *
- * @compressed_len:	The length of the compressed data, in bytes.
- *
- * @uncompressed_data:	A pointer to the buffer into which to write the
- * 			uncompressed data.
- *
- * @uncompressed_len:	The length of the uncompressed data.  It must be
- * 			32768 bytes or less.
- *
- * Return 0 on success; non-zero on failure.
- */
-int
-lzx_decompress(const void *compressed_data, unsigned compressed_len,
-	       void *uncompressed_data, unsigned uncompressed_len)
+/* Documented in wimlib.h */
+WIMLIBAPI int
+wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
+		      void *uncompressed_data, unsigned uncompressed_len)
 {
 	struct lzx_tables tables;
 	struct input_bitstream istream;
