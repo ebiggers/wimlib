@@ -271,7 +271,14 @@ struct wim_inode {
 
 	struct hlist_node i_hlist;
 
-	struct list_head i_lte_inode_list;
+	union {
+		/* Used during image extraction to build a list of inodes that
+		 * share a certain stream */
+		struct list_head i_lte_inode_list;
+
+		/* Device number, used only during image capture */
+		u64 i_devno;
+	};
 
 	tchar *i_extracted_file;
 
@@ -371,6 +378,9 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table);
 
 extern int
 print_dentry_full_path(struct wim_dentry *entry, void *ignore);
+
+extern struct wim_inode *
+new_timeless_inode();
 
 extern int
 new_dentry(const tchar *name, struct wim_dentry **dentry_ret);

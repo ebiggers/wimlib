@@ -279,4 +279,10 @@ wimlib_printf(const tchar *format, ...) FORMAT(printf, 1, 2);
 extern void
 zap_backslashes(tchar *s);
 
+static inline u64
+hash_u64(u64 n)
+{
+	return n * 0x9e37fffffffc0001ULL;
+}
+
 #endif /* _WIMLIB_UTIL_H */

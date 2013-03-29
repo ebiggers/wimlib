@@ -23,8 +23,6 @@
 
 #include "config.h"
 
-#define MINGW_HAS_SECURE_API
-
 #undef _GNU_SOURCE
 /* Make sure the POSIX-compatible strerror_r() is declared, rather than the GNU
  * version, which has a different return type. */
@@ -42,6 +40,10 @@
 #include <stdarg.h>
 
 #include <unistd.h> /* for getpid() */
+
+#ifdef __WIN32__
+#include "win32.h"
+#endif
 
 static size_t
 utf16le_strlen(const utf16lechar *s)

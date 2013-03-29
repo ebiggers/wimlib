@@ -159,6 +159,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				 char *path,
 				 size_t path_len,
 				 struct wim_lookup_table *lookup_table,
+				 struct wim_inode_table *inode_table,
 				 const struct wimlib_capture_config *config,
 				 int add_image_flags,
 				 wimlib_progress_func_t progress_func);
@@ -168,6 +169,7 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 		       char *path,
 		       size_t path_len,
 		       struct wim_lookup_table *lookup_table,
+		       struct wim_inode_table *inode_table,
 		       const struct wimlib_capture_config *config,
 		       int add_image_flags,
 		       wimlib_progress_func_t progress_func)
@@ -211,6 +213,7 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 						       path,
 						       path_len + 1 + name_len,
 						       lookup_table,
+						       inode_table,
 						       config,
 						       add_image_flags,
 						       progress_func);
@@ -272,6 +275,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				 char *path,
 				 size_t path_len,
 				 struct wim_lookup_table *lookup_table,
+				 struct wim_inode_table *inode_table,
 				 const struct wimlib_capture_config *config,
 				 int add_image_flags,
 				 wimlib_progress_func_t progress_func)
@@ -346,12 +350,18 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out;
 	}
 
-	ret = new_dentry_with_timeless_inode(path_basename_with_len(path, path_len),
-					     &root);
+	ret = inode_table_new_dentry(inode_table,
+				     path_basename_with_len(path, path_len),
+				     stbuf.st_ino,
+				     stbuf.st_dev,
+				     &root);
 	if (ret)
 		goto out;
 
 	inode = root->d_inode;
+
+	if (inode->i_nlink > 1) /* Already captured this inode? */
+		goto out;
 
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
 	inode->i_creation_time = timespec_to_wim_timestamp(stbuf.st_mtim);
@@ -362,17 +372,6 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	inode->i_last_write_time = unix_timestamp_to_wim(stbuf.st_mtime);
 	inode->i_last_access_time = unix_timestamp_to_wim(stbuf.st_atime);
 #endif
-	/* Leave the inode number at 0 for directories.  Otherwise grab the
-	 * inode number from the `stat' buffer, including the device number if
-	 * possible. */
-	if (!S_ISDIR(stbuf.st_mode)) {
-		if (sizeof(ino_t) >= 8)
-			inode->i_ino = (u64)stbuf.st_ino;
-		else
-			inode->i_ino = (u64)stbuf.st_ino |
-					   ((u64)stbuf.st_dev <<
-					    	((sizeof(ino_t) * 8) & 63));
-	}
 	inode->i_resolved = 1;
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
 		ret = inode_set_unix_data(inode, stbuf.st_uid,
@@ -389,7 +388,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 						inode, lookup_table);
 	else if (S_ISDIR(stbuf.st_mode))
 		ret = unix_capture_directory(root, path, path_len,
-					     lookup_table, config,
+					     lookup_table, inode_table, config,
 					     add_image_flags, progress_func);
 	else
 		ret = unix_capture_symlink(path, inode, lookup_table);
@@ -438,6 +437,7 @@ static int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const char *root_disk_path,
 		       struct wim_lookup_table *lookup_table,
+		       struct wim_inode_table *inode_table,
 		       struct sd_set *sd_set,
 		       const struct wimlib_capture_config *config,
 		       int add_image_flags,
@@ -463,6 +463,7 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 					       path_buf,
 					       path_len,
 					       lookup_table,
+					       inode_table,
 					       config,
 					       add_image_flags,
 					       progress_func);
@@ -670,8 +671,8 @@ new_filler_directory(const tchar *name, struct wim_dentry **dentry_ret)
 	DEBUG("Creating filler directory \"%"TS"\"", name);
 	ret = new_dentry_with_inode(name, &dentry);
 	if (ret == 0) {
-		/* Leave the inode number as 0 for now.  The final inode number
-		 * will be assigned later by assign_inode_numbers(). */
+		/* Leave the inode number as 0; this is allowed for non
+		 * hard-linked files. */
 		dentry->d_inode->i_resolved = 1;
 		dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
 		*dentry_ret = dentry;
@@ -856,6 +857,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	int (*capture_tree)(struct wim_dentry **,
 			    const tchar *,
 			    struct wim_lookup_table *,
+			    struct wim_inode_table *,
 			    struct sd_set *,
 			    const struct wimlib_capture_config *,
 			    int,
@@ -866,6 +868,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	struct wim_dentry *branch;
 	struct wim_security_data *sd;
 	struct wim_image_metadata *imd;
+	struct wim_inode_table inode_table;
 	int ret;
 	struct sd_set sd_set;
 
@@ -936,17 +939,22 @@ wimlib_add_image_multisource(WIMStruct *w,
 	if (ret)
 		goto out;
 
+	ret = init_inode_table(&inode_table, 9001);
+	if (ret)
+		goto out;
+
 	DEBUG("Allocating security data");
 	sd = CALLOC(1, sizeof(struct wim_security_data));
 	if (!sd) {
 		ret = WIMLIB_ERR_NOMEM;
-		goto out;
+		goto out_destroy_inode_table;
 	}
 	sd->total_length = 8;
 	sd->refcnt = 1;
 
 	sd_set.sd = sd;
 	sd_set.rb_root.rb_node = NULL;
+
 
 	DEBUG("Using %zu capture sources", num_sources);
 	canonicalize_sources_and_targets(sources, num_sources);
@@ -956,6 +964,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 		ret = WIMLIB_ERR_INVALID_PARAM;
 		goto out_free_security_data;
 	}
+
 
 	DEBUG("Building dentry tree.");
 	root_dentry = NULL;
@@ -982,6 +991,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 		ret = (*capture_tree)(&branch,
 				      sources[i].fs_source_path,
 				      w->lookup_table,
+				      &inode_table,
 				      &sd_set,
 				      config,
 				      flags,
@@ -1027,12 +1037,8 @@ wimlib_add_image_multisource(WIMStruct *w,
 
 	imd = &w->image_metadata[w->hdr.image_count - 1];
 
-	ret = dentry_tree_fix_inodes(root_dentry, &imd->inode_list);
-	if (ret)
-		goto out_destroy_imd;
-
 	DEBUG("Assigning hard link group IDs");
-	assign_inode_numbers(&imd->inode_list);
+	inode_table_prepare_inode_list(&inode_table, &imd->inode_list);
 
 	ret = xml_add_image(w, name);
 	if (ret)
@@ -1041,19 +1047,20 @@ wimlib_add_image_multisource(WIMStruct *w,
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wimlib_set_boot_idx(w, w->hdr.image_count);
 	ret = 0;
-	goto out_destroy_sd_set;
+	goto out_destroy_inode_table;
 out_destroy_imd:
 	destroy_image_metadata(&w->image_metadata[w->hdr.image_count - 1],
 			       w->lookup_table);
 	w->hdr.image_count--;
-	goto out_destroy_sd_set;
+	goto out_destroy_inode_table;
 out_free_branch:
 	free_dentry_tree(branch, w->lookup_table);
 out_free_dentry_tree:
 	free_dentry_tree(root_dentry, w->lookup_table);
 out_free_security_data:
 	free_security_data(sd);
-out_destroy_sd_set:
+out_destroy_inode_table:
+	destroy_inode_table(&inode_table);
 	destroy_sd_set(&sd_set);
 out:
 	return ret;

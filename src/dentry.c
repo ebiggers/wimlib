@@ -669,7 +669,7 @@ dentry_common_init(struct wim_dentry *dentry)
 	dentry->refcnt = 1;
 }
 
-static struct wim_inode *
+struct wim_inode *
 new_timeless_inode()
 {
 	struct wim_inode *inode = CALLOC(1, sizeof(struct wim_inode));

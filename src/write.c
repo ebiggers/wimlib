@@ -1886,7 +1886,6 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	int ret;
 	struct list_head stream_list;
 	off_t old_wim_end;
-	bool found_modified_image;
 
 	DEBUG("Overwriting `%"TS"' in-place", w->filename);
 
@@ -1957,7 +1956,6 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 		DEBUG("No new streams were added");
 	}
 
-	found_modified_image = false;
 	for (int i = 0; i < w->hdr.image_count; i++) {
 		if (w->image_metadata[i].modified) {
 			select_wim_image(w, i + 1);

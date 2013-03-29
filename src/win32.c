@@ -310,6 +310,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  wchar_t *path,
 				  size_t path_num_chars,
 				  struct wim_lookup_table *lookup_table,
+				  struct wim_inode_table *inode_table,
 				  struct sd_set *sd_set,
 				  const struct wimlib_capture_config *config,
 				  int add_image_flags,
@@ -323,6 +324,7 @@ win32_recurse_directory(struct wim_dentry *root,
 			wchar_t *dir_path,
 			size_t dir_path_num_chars,
 			struct wim_lookup_table *lookup_table,
+			struct wim_inode_table *inode_table,
 			struct sd_set *sd_set,
 			const struct wimlib_capture_config *config,
 			int add_image_flags,
@@ -375,6 +377,7 @@ win32_recurse_directory(struct wim_dentry *root,
 							dir_path,
 							path_len,
 							lookup_table,
+							inode_table,
 							sd_set,
 							config,
 							add_image_flags,
@@ -734,6 +737,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  wchar_t *path,
 				  size_t path_num_chars,
 				  struct wim_lookup_table *lookup_table,
+				  struct wim_inode_table *inode_table,
 				  struct sd_set *sd_set,
 				  const struct wimlib_capture_config *config,
 				  int add_image_flags,
@@ -792,29 +796,32 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out_close_handle;
 	}
 
-	/* Create a WIM dentry */
-	ret = new_dentry_with_timeless_inode(path_basename_with_len(path, path_num_chars),
-					     &root);
+	/* Create a WIM dentry with an associated inode, which may be shared */
+	ret = inode_table_new_dentry(inode_table,
+				     path_basename_with_len(path, path_num_chars),
+				     ((u64)file_info.nFileIndexHigh << 32) |
+				         (u64)file_info.nFileIndexLow,
+				     file_info.dwVolumeSerialNumber,
+				     &root);
 	if (ret)
 		goto out_close_handle;
 
-	/* Start preparing the associated WIM inode */
+	ret = win32_get_short_name(root, path);
+	if (ret)
+		goto out_close_handle;
+
 	inode = root->d_inode;
+
+	if (inode->i_nlink > 1) /* Shared inode; nothing more to do */
+		goto out_close_handle;
 
 	inode->i_attributes = file_info.dwFileAttributes;
 	inode->i_creation_time = FILETIME_to_u64(&file_info.ftCreationTime);
 	inode->i_last_write_time = FILETIME_to_u64(&file_info.ftLastWriteTime);
 	inode->i_last_access_time = FILETIME_to_u64(&file_info.ftLastAccessTime);
-	inode->i_ino = ((u64)file_info.nFileIndexHigh << 32) |
-			(u64)file_info.nFileIndexLow;
-
 	inode->i_resolved = 1;
-	add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
 
-	/* Get DOS name and security descriptor (if any). */
-	ret = win32_get_short_name(root, path);
-	if (ret)
-		goto out_close_handle;
+	add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
 
 	if (!(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
 		ret = win32_get_security_descriptor(root, sd_set, path, state,
@@ -842,6 +849,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 					      path,
 					      path_num_chars,
 					      lookup_table,
+					      inode_table,
 					      sd_set,
 					      config,
 					      add_image_flags,
@@ -911,6 +919,7 @@ int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const wchar_t *root_disk_path,
 			struct wim_lookup_table *lookup_table,
+			struct wim_inode_table *inode_table,
 			struct sd_set *sd_set,
 			const struct wimlib_capture_config *config,
 			int add_image_flags,
@@ -941,6 +950,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 						path,
 						path_nchars,
 						lookup_table,
+						inode_table,
 						sd_set,
 						config,
 						add_image_flags,

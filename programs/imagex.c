@@ -712,8 +712,7 @@ parse_capture_config(tchar **contents_p, size_t nchars,
 {
 	ssize_t nlines;
 	tchar *p;
-	struct wimlib_capture_source *sources;
-	size_t i, j;
+	size_t i;
 	enum capture_config_section cur_section;
 
 	memset(config, 0, sizeof(*config));
@@ -1499,7 +1498,6 @@ out_free_capture_sources:
 		free(capture_sources);
 out_free_source_list_contents:
 	free(source_list_contents);
-out:
 	return ret;
 }
 
