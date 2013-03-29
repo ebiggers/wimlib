@@ -1,5 +1,21 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.3.3:
+	Windows build now works on Windows XP.
+
+	On the Windows build, hidden directories are now correctly restored as
+	hidden.  Also compressed, encrypted, and sparse files are now restored
+	as such.
+
+	Performance improvements when capturing hard-linked files (both UNIX and
+	Windows).  Now, each file is only checksummed once total, rather than
+	once per link.
+
+	Performance of splitting and joining WIMs should be slightly improved.
+
+	Compression and decompression functions are now exported from the
+	library.
+
 Version 1.3.2:
 	Improvements and bugfixes for the Windows build.
 

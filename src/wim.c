@@ -608,7 +608,7 @@ test_locale_ctype_utf8()
 #endif
 }
 
-/* Get global memory allocations out of the way, 
+/* Get global memory allocations out of the way,
  * single-threaded programs like 'imagex'. */
 WIMLIBAPI int
 wimlib_global_init()

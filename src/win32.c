@@ -1029,6 +1029,41 @@ win32_set_reparse_data(HANDLE h,
 	return 0;
 }
 
+static int
+win32_set_compressed(HANDLE hFile, const wchar_t *path)
+{
+	USHORT format = COMPRESSION_FORMAT_DEFAULT;
+	DWORD bytesReturned = 0;
+	if (!DeviceIoControl(hFile, FSCTL_SET_COMPRESSION,
+			     &format, sizeof(USHORT),
+			     NULL, 0,
+			     &bytesReturned, NULL))
+	{
+		/* Warning only */
+		DWORD err = GetLastError();
+		WARNING("Failed to set compression flag on \"%ls\"", path);
+		win32_error(err);
+	}
+	return 0;
+}
+
+static int
+win32_set_sparse(HANDLE hFile, const wchar_t *path)
+{
+	DWORD bytesReturned = 0;
+	if (!DeviceIoControl(hFile, FSCTL_SET_SPARSE,
+			     NULL, 0,
+			     NULL, 0,
+			     &bytesReturned, NULL))
+	{
+		/* Warning only */
+		DWORD err = GetLastError();
+		WARNING("Failed to set sparse flag on \"%ls\"", path);
+		win32_error(err);
+	}
+	return 0;
+}
+
 /*
  * Sets the security descriptor on an extracted file.
  */
@@ -1145,6 +1180,91 @@ path_is_root_of_drive(const wchar_t *path)
 	return (*path == L'\0');
 }
 
+static DWORD
+win32_get_create_flags_and_attributes(DWORD i_attributes)
+{
+	DWORD attributes;
+
+	/*
+	 * Some attributes cannot be set by passing them to CreateFile().  In
+	 * particular:
+	 *
+	 * FILE_ATTRIBUTE_DIRECTORY:
+	 *   CreateDirectory() must be called instead of CreateFile().
+	 *
+	 * FILE_ATTRIBUTE_SPARSE_FILE:
+	 *   Needs an ioctl.
+	 *   See: win32_set_sparse().
+	 *
+	 * FILE_ATTRIBUTE_COMPRESSED:
+	 *   Not clear from the documentation, but apparently this needs an
+	 *   ioctl as well.
+	 *   See: win32_set_compressed().
+	 *
+	 * FILE_ATTRIBUTE_REPARSE_POINT:
+	 *   Needs an ioctl, with the reparse data specified.
+	 *   See: win32_set_reparse_data().
+	 *
+	 * In addition, clear any file flags in the attributes that we don't
+	 * want, but also specify FILE_FLAG_OPEN_REPARSE_POINT and
+	 * FILE_FLAG_BACKUP_SEMANTICS as we are a backup application.
+	 */
+	attributes = i_attributes & ~(FILE_ATTRIBUTE_SPARSE_FILE |
+				      FILE_ATTRIBUTE_COMPRESSED |
+				      FILE_ATTRIBUTE_REPARSE_POINT |
+				      FILE_ATTRIBUTE_DIRECTORY |
+				      FILE_FLAG_DELETE_ON_CLOSE |
+				      FILE_FLAG_NO_BUFFERING |
+				      FILE_FLAG_OPEN_NO_RECALL |
+				      FILE_FLAG_OVERLAPPED |
+				      FILE_FLAG_RANDOM_ACCESS |
+				      /*FILE_FLAG_SESSION_AWARE |*/
+				      FILE_FLAG_SEQUENTIAL_SCAN |
+				      FILE_FLAG_WRITE_THROUGH);
+	return attributes |
+	       FILE_FLAG_OPEN_REPARSE_POINT |
+	       FILE_FLAG_BACKUP_SEMANTICS;
+}
+
+static bool
+inode_has_special_attributes(const struct wim_inode *inode)
+{
+	return (inode->i_attributes & (FILE_ATTRIBUTE_COMPRESSED |
+				       FILE_ATTRIBUTE_REPARSE_POINT |
+				       FILE_ATTRIBUTE_SPARSE_FILE)) != 0;
+}
+
+static int
+win32_set_special_attributes(HANDLE hFile, const struct wim_inode *inode,
+			     struct wim_lookup_table_entry *unnamed_stream_lte,
+			     const wchar_t *path)
+{
+	int ret;
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		DEBUG("Setting reparse data on \"%ls\"", path);
+		ret = win32_set_reparse_data(hFile, inode->i_reparse_tag,
+					     unnamed_stream_lte, path);
+		if (ret)
+			return ret;
+	}
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED) {
+		DEBUG("Setting compression flag on \"%ls\"", path);
+		ret = win32_set_compressed(hFile, path);
+		if (ret)
+			return ret;
+	}
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_SPARSE_FILE) {
+		DEBUG("Setting sparse flag on \"%ls\"", path);
+		ret = win32_set_sparse(hFile, path);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
 static int
 win32_extract_stream(const struct wim_inode *inode,
 		     const wchar_t *path,
@@ -1213,7 +1333,7 @@ win32_extract_stream(const struct wim_inode *inode,
 				}
 			}
 			DEBUG("Created directory \"%ls\"", stream_path);
-			if (!(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+			if (!inode_has_special_attributes(inode)) {
 				ret = 0;
 				goto out;
 			}
@@ -1223,13 +1343,11 @@ win32_extract_stream(const struct wim_inode *inode,
 
 	DEBUG("Opening \"%ls\"", stream_path);
 	h = CreateFileW(stream_path,
-			GENERIC_WRITE,
+			GENERIC_READ | GENERIC_WRITE,
 			0,
 			NULL,
 			creationDisposition,
-			FILE_FLAG_OPEN_REPARSE_POINT |
-			    FILE_FLAG_BACKUP_SEMANTICS |
-			    inode->i_attributes,
+			win32_get_create_flags_and_attributes(inode->i_attributes),
 			NULL);
 	if (h == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
@@ -1239,14 +1357,13 @@ win32_extract_stream(const struct wim_inode *inode,
 		goto fail;
 	}
 
-	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT &&
-	    stream_name_utf16 == NULL)
-	{
-		DEBUG("Setting reparse data on \"%ls\"", path);
-		ret = win32_set_reparse_data(h, inode->i_reparse_tag, lte, path);
+	if (stream_name_utf16 == NULL && inode_has_special_attributes(inode)) {
+		ret = win32_set_special_attributes(h, inode, lte, path);
 		if (ret)
 			goto fail_close_handle;
-	} else {
+	}
+
+	if (!(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
 		if (lte) {
 			DEBUG("Extracting \"%ls\" (len = %"PRIu64")",
 			      stream_path, wim_resource_size(lte));

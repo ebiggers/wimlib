@@ -567,7 +567,7 @@ lzx_write_compressed_tree(struct output_bitstream *out,
 
 /* Builds the canonical Huffman code for the main tree, the length tree, and the
  * aligned offset tree. */
-static void 
+static void
 lzx_make_huffman_codes(const struct lzx_freq_tables *freq_tabs,
 		       struct lzx_codes *codes)
 {

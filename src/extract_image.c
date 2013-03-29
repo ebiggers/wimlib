@@ -864,7 +864,7 @@ out:
 	return ret;
 }
 
-static const tchar *filename_forbidden_chars = 
+static const tchar *filename_forbidden_chars =
 T(
 #ifdef __WIN32__
 "<>:\"/\\|?*"

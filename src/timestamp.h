@@ -63,7 +63,7 @@ wim_timestamp_to_timespec(u64 timestamp)
 {
 	struct timespec ts;
 	ts.tv_sec = (timestamp - intervals_1601_to_1970) / intervals_per_second;
-	ts.tv_nsec = ((timestamp - intervals_1601_to_1970) % intervals_per_second) * 
+	ts.tv_nsec = ((timestamp - intervals_1601_to_1970) % intervals_per_second) *
 			nanoseconds_per_interval;
 	return ts;
 }
