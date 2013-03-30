@@ -544,9 +544,10 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 			goto out_release_fp;
 		}
 		if (cb) {
-			char buf[min(32768, size)];
+			/* Send data to callback function */
+			u8 buf[min(WIM_CHUNK_SIZE, size)];
 			while (size) {
-				size_t bytes_to_read = min(32768, size);
+				size_t bytes_to_read = min(WIM_CHUNK_SIZE, size);
 				size_t bytes_read = fread(buf, 1, bytes_to_read, wim_fp);
 				
 				if (bytes_read != bytes_to_read)
@@ -554,8 +555,10 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 				ret = cb(buf, bytes_read, ctx_or_buf);
 				if (ret)
 					goto out_release_fp;
+				size -= bytes_read;
 			}
 		} else {
+			/* Send data directly to a buffer */
 			if (fread(ctx_or_buf, 1, size, wim_fp) != size)
 				goto read_error;
 		}
@@ -572,7 +575,6 @@ out:
 	if (ret) {
 		if (errno == 0)
 			errno = EIO;
-		ret = -1;
 	}
 	return ret;
 }
@@ -618,16 +620,17 @@ read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte,
 	}
 	if (cb) {
 		/* Send data to callback function */
-		char buf[min(32768, size)];
+		u8 buf[min(WIM_CHUNK_SIZE, size)];
 		size_t bytes_to_read;
 		while (size) {
-			bytes_to_read = min(32768, size);
+			bytes_to_read = min(WIM_CHUNK_SIZE, size);
 			bytes_read = full_read(fd, buf, bytes_to_read);
 			if (bytes_read != bytes_to_read)
 				goto read_error;
 			ret = cb(buf, bytes_read, ctx_or_buf);
 			if (ret)
 				goto out_close;
+			size -= bytes_read;
 		}
 	} else {
 		/* Send data directly to a buffer */

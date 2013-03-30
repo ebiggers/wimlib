@@ -35,8 +35,8 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 {
 	const struct wim_lookup_table *table = w->lookup_table;
 	const struct wim_security_data *sd = wim_const_security_data(w);
-	const struct wim_dentry *first_dentry = inode_first_dentry(inode);
-	const struct wim_dentry *dentry;
+	struct wim_dentry *first_dentry = inode_first_dentry(inode);
+	struct wim_dentry *dentry;
 	int ret = WIMLIB_ERR_INVALID_DENTRY;
 
 	/* Check the security ID.  -1 is valid and means "no security
@@ -44,14 +44,14 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	 * image's security descriptors table. */
 	if (inode->i_security_id < -1) {
 		ERROR("Dentry `%"TS"' has an invalid security ID (%d)",
-		      first_dentry->full_path, inode->i_security_id);
+		      dentry_full_path(first_dentry), inode->i_security_id);
 		goto out;
 	}
 
 	if (inode->i_security_id >= sd->num_entries) {
 		ERROR("Dentry `%"TS"' has an invalid security ID (%d) "
 		      "(there are only %u entries in the security table)",
-		      first_dentry->full_path, inode->i_security_id,
+		      dentry_full_path(first_dentry), inode->i_security_id,
 		      sd->num_entries);
 		goto out;
 	}
@@ -70,7 +70,7 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 			if (!lte && !is_zero_hash(hash)) {
 				ERROR("Could not find lookup table entry for stream "
 				      "%u of dentry `%"TS"'",
-				      i, first_dentry->full_path);
+				      i, dentry_full_path(first_dentry));
 				goto out;
 			}
 			if (lte)
@@ -88,21 +88,21 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	}
 	if (num_unnamed_streams > 1) {
 		ERROR("Dentry `%"TS"' has multiple (%u) un-named streams",
-		      first_dentry->full_path, num_unnamed_streams);
+		      dentry_full_path(first_dentry), num_unnamed_streams);
 		goto out;
 	}
 
 	/* Files cannot have multiple DOS names, even if they have multiple
 	 * names in multiple directories (i.e. hard links).
 	 * Source: NTFS-3g authors. */
-	const struct wim_dentry *dentry_with_dos_name = NULL;
+	struct wim_dentry *dentry_with_dos_name = NULL;
 	inode_for_each_dentry(dentry, inode) {
 		if (dentry_has_short_name(dentry)) {
 			if (dentry_with_dos_name) {
 				ERROR("Hard-linked file has a DOS name at "
 				      "both `%"TS"' and `%"TS"'",
-				      dentry_with_dos_name->full_path,
-				      dentry->full_path);
+				      dentry_full_path(dentry_with_dos_name),
+				      dentry_full_path(dentry));
 				goto out;
 			}
 			dentry_with_dos_name = dentry;
@@ -112,7 +112,7 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	/* Directories with multiple links have not been tested. XXX */
 	if (inode->i_nlink > 1 && inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		ERROR("Hard-linked directory `%"TS"' is unsupported",
-		      first_dentry->full_path);
+		      dentry_full_path(first_dentry));
 		goto out;
 	}
 
@@ -153,7 +153,7 @@ verify_dentry(struct wim_dentry *dentry, void *wim)
 	} else {
 		if (!dentry_has_long_name(dentry)) {
 			ERROR("Dentry `%"TS"' has no long name!",
-			      dentry->full_path);
+			      dentry_full_path(dentry));
 			return WIMLIB_ERR_INVALID_DENTRY;
 		}
 	}
@@ -220,8 +220,6 @@ wim_run_full_verifications(WIMStruct *w)
 	ret = for_image(w, WIMLIB_ALL_IMAGES, image_run_full_verifications);
 	if (ret == 0) {
 		unsigned long num_ltes_with_bogus_refcnt = 0;
-		for (int i = 0; i < w->hdr.image_count; i++)
-			w->image_metadata[i].metadata_lte->real_refcnt++;
 		for_lookup_table_entry(w->lookup_table, lte_fix_refcnt,
 				       &num_ltes_with_bogus_refcnt);
 		if (num_ltes_with_bogus_refcnt != 0) {

@@ -98,9 +98,6 @@ struct wimfs_context {
 	 * filesystem anyway. */
 	u64 next_ino;
 
-	/* List of lookup table entries for files in the staging directory */
-	struct list_head staging_list;
-
 	/* List of inodes in the mounted image */
 	struct hlist_head *image_inode_list;
 
@@ -128,7 +125,6 @@ init_wimfs_context(struct wimfs_context *ctx)
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->unmount_to_daemon_mq = (mqd_t)-1;
 	ctx->daemon_to_unmount_mq = (mqd_t)-1;
-	INIT_LIST_HEAD(&ctx->staging_list);
 }
 
 #define WIMFS_CTX(fuse_ctx) ((struct wimfs_context*)(fuse_ctx)->private_data)
@@ -296,7 +292,7 @@ close_wimfs_fd(struct wimfs_fd *fd)
 	      fd->f_inode->i_ino, fd->f_inode->i_num_opened_fds,
 	      fd->f_inode->i_num_allocated_fds);
 	ret = lte_put_fd(fd->f_lte, fd);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	inode_put_fd(fd->f_inode, fd);
@@ -382,7 +378,7 @@ remove_dentry(struct wim_dentry *dentry,
 			lte_decrement_refcnt(lte, lookup_table);
 	}
 	unlink_dentry(dentry);
-	put_dentry(dentry);
+	free_dentry(dentry);
 }
 
 static mode_t
@@ -651,15 +647,21 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 	new_lte->staging_file_name = staging_file_name;
 	new_lte->lte_inode         = inode;
 
-	if (stream_id == 0)
-		inode->i_lte = new_lte;
-	else
-		for (u16 i = 0; i < inode->i_num_ads; i++)
-			if (inode->i_ads_entries[i].stream_id == stream_id)
-				inode->i_ads_entries[i].lte = new_lte;
+	struct wim_lookup_table_entry **my_ptr;
 
-	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte);
-	list_add_tail(&new_lte->staging_list, &ctx->staging_list);
+	if (stream_id == 0) {
+		my_ptr = &inode->i_lte;
+	} else {
+		for (u16 i = 0; ; i++) {
+			wimlib_assert(i < inode->i_num_ads);
+			if (inode->i_ads_entries[i].stream_id == stream_id) {
+				my_ptr = &inode->i_ads_entries[i].lte;
+				break;
+			}
+		}
+	}
+
+	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte, my_ptr);
 	*lte = new_lte;
 	return 0;
 out_revert_fd_changes:
@@ -777,34 +779,6 @@ delete_staging_dir(struct wimfs_context *ctx)
 	return ret;
 }
 
-static void
-inode_update_lte_ptr(struct wim_inode *inode,
-		     struct wim_lookup_table_entry *old_lte,
-		     struct wim_lookup_table_entry *new_lte)
-{
-	if (inode->i_lte == old_lte) {
-		inode->i_lte = new_lte;
-	} else {
-		for (unsigned i = 0; i < inode->i_num_ads; i++) {
-			if (inode->i_ads_entries[i].lte == old_lte) {
-				inode->i_ads_entries[i].lte = new_lte;
-				break;
-			}
-		}
-	}
-}
-
-static void
-free_lte_if_unneeded(struct wim_lookup_table_entry *lte)
-{
-
-	if (wim_resource_size(lte) == 0) {
-		/* Zero-length stream.  No lookup table entry needed. */
-		inode_update_lte_ptr(lte->lte_inode, lte, NULL);
-		free_lookup_table_entry(lte);
-	}
-}
-
 static int
 inode_close_fds(struct wim_inode *inode)
 {
@@ -830,23 +804,26 @@ rebuild_wim(struct wimfs_context *ctx, int write_flags,
 	int ret;
 	struct wim_lookup_table_entry *lte, *tmp;
 	WIMStruct *w = ctx->wim;
+	struct wim_image_metadata *imd = wim_get_current_image_metadata(ctx->wim);
 
 	DEBUG("Closing all staging file descriptors.");
-	list_for_each_entry_safe(lte, tmp, &ctx->staging_list, staging_list) {
+	list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, staging_list) {
 		ret = inode_close_fds(lte->lte_inode);
-		if (ret != 0)
+		if (ret)
 			return ret;
 	}
 
 	DEBUG("Freeing entries for zero-length streams");
-	list_for_each_entry_safe(lte, tmp, &ctx->staging_list, staging_list)
-		free_lte_if_unneeded(lte);
+	list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, staging_list) {
+		if (wim_resource_size(lte) == 0) {
+			*lte->my_ptr = NULL;
+			free_lookup_table_entry(lte);
+		}
+	}
 
 	xml_update_image_info(w, w->current_image);
-	list_splice(&ctx->staging_list,
-		    &w->image_metadata[w->current_image - 1].unhashed_streams);
 	ret = wimlib_overwrite(w, write_flags, 0, progress_func);
-	if (ret != 0)
+	if (ret)
 		ERROR("Failed to commit changes to mounted WIM image");
 	return ret;
 }
@@ -2483,15 +2460,12 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	imd = wim_get_current_image_metadata(wim);
 
-	if (imd->root_dentry->refcnt != 1) {
+	if (imd->refcnt != 1) {
 		ERROR("Cannot mount image that was just exported with "
 		      "wimlib_export_image()");
 		ret = WIMLIB_ERR_INVALID_PARAM;
 		goto out;
 	}
-
-	if (imd->inode_list.first) /* May be unneeded? */
-		imd->inode_list.first->pprev = &imd->inode_list.first;
 
 	if (imd->modified) {
 		ERROR("Cannot mount image that was added "

@@ -62,10 +62,6 @@ inode_move_ltes_to_table(struct wim_inode *inode,
 {
 	struct wim_lookup_table_entry *src_lte, *dest_lte;
 	unsigned i;
-	struct wim_dentry *dentry;
-
-	inode_for_each_dentry(dentry, inode)
-		dentry->refcnt++;
 
 	for (i = 0; i <= inode->i_num_ads; i++) {
 		src_lte = inode_stream_lte_unresolved(inode, i, src_lookup_table);
@@ -92,7 +88,7 @@ inode_move_ltes_to_table(struct wim_inode *inode,
 }
 
 /*
- * Copies an image, or all the images, from a WIM file, into another WIM file.
+ * Exports an image, or all the images, from a WIM file, into another WIM file.
  */
 WIMLIBAPI int
 wimlib_export_image(WIMStruct *src_wim,
@@ -106,7 +102,6 @@ wimlib_export_image(WIMStruct *src_wim,
 		    wimlib_progress_func_t progress_func)
 {
 	int ret;
-	struct wim_security_data *sd;
 	struct wim_lookup_table *joined_tab, *src_wim_tab_save;
 	struct wim_image_metadata *src_imd;
 	struct hlist_node *cur_node;
@@ -155,7 +150,7 @@ wimlib_export_image(WIMStruct *src_wim,
 							  additional_swms,
 							  num_additional_swms,
 							  progress_func);
-				if (ret != 0)
+				if (ret)
 					return ret;
 			}
 			return 0;
@@ -188,21 +183,21 @@ wimlib_export_image(WIMStruct *src_wim,
 	}
 
 	ret = verify_swm_set(src_wim, additional_swms, num_additional_swms);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	if (num_additional_swms) {
 		ret = new_joined_lookup_table(src_wim, additional_swms,
 					      num_additional_swms,
 					      &joined_tab);
-		if (ret != 0)
+		if (ret)
 			return ret;
 		src_wim_tab_save = src_wim->lookup_table;
 		src_wim->lookup_table = joined_tab;
 	}
 
 	ret = select_wim_image(src_wim, src_image);
-	if (ret != 0) {
+	if (ret) {
 		ERROR("Could not select image %d from the WIM `%"TS"' "
 		      "to export it", src_image, src_wim->filename);
 		goto out;
@@ -219,32 +214,27 @@ wimlib_export_image(WIMStruct *src_wim,
 						 src_wim->lookup_table,
 						 dest_wim->lookup_table,
 						 &lte_list_head);
-		if (ret != 0)
+		if (ret)
 			goto out_free_ltes;
 	}
 
 	ret = xml_export_image(src_wim->wim_info, src_image,
 			       &dest_wim->wim_info, dest_name,
 			       dest_description);
-	if (ret != 0)
+	if (ret)
 		goto out_free_ltes;
 
-	sd = src_imd->security_data;
-	ret = add_new_dentry_tree(dest_wim, src_imd->root_dentry, sd);
-	if (ret != 0)
+	ret = append_image_metadata(dest_wim, src_imd);
+	if (ret)
 		goto out_xml_delete_image;
 
-	dest_wim->image_metadata[
-		dest_wim->hdr.image_count - 1].inode_list = src_imd->inode_list;
-	if (src_imd->inode_list.first)
-		src_imd->inode_list.first->pprev = NULL;
+	/* The `struct image_metadata' is now referenced by both the @src_wim
+	 * and the @dest_wim. */
+	src_imd->refcnt++;
 
 	/* All memory allocations have been taken care of, so it's no longer
-	 * possible for this function to fail.  Go ahead and increment the
-	 * reference counts of the dentry tree and security data, then update
-	 * the lookup table of the destination WIM and the boot index, if
-	 * needed. */
-	sd->refcnt++;
+	 * possible for this function to fail.  Go ahead and update the lookup
+	 * table of the destination WIM and the boot index, if needed. */
 	hlist_for_each_entry(inode, cur_node, &src_imd->inode_list, i_hlist) {
 		inode_move_ltes_to_table(inode,
 					 src_wim->lookup_table,
@@ -253,10 +243,9 @@ wimlib_export_image(WIMStruct *src_wim,
 	}
 
 	if (export_flags & WIMLIB_EXPORT_FLAG_BOOT)
-		wimlib_set_boot_idx(dest_wim, dest_wim->hdr.image_count);
+		dest_wim->hdr.boot_idx = dest_wim->hdr.image_count;
 	ret = 0;
 	goto out;
-
 out_xml_delete_image:
 	xml_delete_image(&dest_wim->wim_info, dest_wim->hdr.image_count + 1);
 out_free_ltes:
@@ -265,7 +254,6 @@ out_free_ltes:
 		list_for_each_entry_safe(lte, tmp, &lte_list_head, staging_list)
 			free_lookup_table_entry(lte);
 	}
-
 out:
 	if (num_additional_swms) {
 		free_lookup_table(src_wim->lookup_table);

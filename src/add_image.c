@@ -54,49 +54,36 @@
  * Adds the dentry tree and security data for a new image to the image metadata
  * array of the WIMStruct.
  */
-int
+static int
 add_new_dentry_tree(WIMStruct *w, struct wim_dentry *root_dentry,
 		    struct wim_security_data *sd)
 {
-	struct wim_lookup_table_entry *metadata_lte;
-	struct wim_image_metadata *imd;
 	struct wim_image_metadata *new_imd;
-
-	wimlib_assert(root_dentry != NULL);
-
-	DEBUG("Reallocating image metadata array for image_count = %u",
-	      w->hdr.image_count + 1);
-	imd = CALLOC((w->hdr.image_count + 1), sizeof(struct wim_image_metadata));
-
-	if (!imd) {
-		ERROR("Failed to allocate memory for new image metadata array");
-		goto err;
-	}
-
-	memcpy(imd, w->image_metadata,
-	       w->hdr.image_count * sizeof(struct wim_image_metadata));
+	int ret;
+	struct wim_lookup_table_entry *metadata_lte;
 
 	metadata_lte = new_lookup_table_entry();
 	if (!metadata_lte)
-		goto err_free_imd;
+		return WIMLIB_ERR_NOMEM;
 
 	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
+	metadata_lte->unhashed = 1;
 
-	new_imd = &imd[w->hdr.image_count];
+	new_imd = new_image_metadata();
+	if (!new_imd) {
+		free_lookup_table_entry(metadata_lte);
+		return WIMLIB_ERR_NOMEM;
+	}
 
 	new_imd->root_dentry	= root_dentry;
 	new_imd->metadata_lte	= metadata_lte;
 	new_imd->security_data  = sd;
 	new_imd->modified	= 1;
 
-	FREE(w->image_metadata);
-	w->image_metadata = imd;
-	w->hdr.image_count++;
-	return 0;
-err_free_imd:
-	FREE(imd);
-err:
-	return WIMLIB_ERR_NOMEM;
+	ret = append_image_metadata(w, new_imd);
+	if (ret)
+		put_image_metadata(new_imd, NULL);
+	return ret;
 
 }
 
@@ -126,8 +113,7 @@ unix_capture_regular_file(const char *path,
 		lte->file_on_disk = file_on_disk;
 		lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
 		lte->resource_entry.original_size = size;
-		lookup_table_insert_unhashed(lookup_table, lte);
-		inode->i_lte = lte;
+		lookup_table_insert_unhashed(lookup_table, lte, &inode->i_lte);
 	}
 	return 0;
 }
@@ -371,12 +357,10 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	else
 		ret = unix_capture_symlink(path, inode, lookup_table);
 out:
-	if (ret == 0) {
+	if (ret == 0)
 		*root_ret = root;
-	} else {
+	else
 		free_dentry_tree(root, lookup_table);
-		lookup_table_free_unhashed_streams(lookup_table);
-	}
 	return ret;
 }
 
@@ -849,6 +833,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	struct wim_security_data *sd;
 	struct wim_image_metadata *imd;
 	struct wim_inode_table inode_table;
+	struct list_head unhashed_streams;
 	int ret;
 	struct sd_set sd_set;
 
@@ -930,7 +915,6 @@ wimlib_add_image_multisource(WIMStruct *w,
 		goto out_destroy_inode_table;
 	}
 	sd->total_length = 8;
-	sd->refcnt = 1;
 
 	sd_set.sd = sd;
 	sd_set.rb_root.rb_node = NULL;
@@ -945,10 +929,9 @@ wimlib_add_image_multisource(WIMStruct *w,
 		goto out_free_security_data;
 	}
 
-
-	DEBUG("Building dentry tree.");
+	INIT_LIST_HEAD(&unhashed_streams);
+	w->lookup_table->unhashed_streams = &unhashed_streams;
 	root_dentry = NULL;
-
 	for (size_t i = 0; i < num_sources; i++) {
 		int flags;
 		union wimlib_progress_info progress;
@@ -1006,32 +989,29 @@ wimlib_add_image_multisource(WIMStruct *w,
 			goto out_free_dentry_tree;
 	}
 
-	DEBUG("Calculating full paths of dentries.");
-	ret = for_dentry_in_tree(root_dentry, calculate_dentry_full_path, NULL);
-	if (ret)
-		goto out_free_dentry_tree;
-
 	ret = add_new_dentry_tree(w, root_dentry, sd);
 	if (ret)
 		goto out_free_dentry_tree;
 
-	imd = &w->image_metadata[w->hdr.image_count - 1];
+	imd = w->image_metadata[w->hdr.image_count - 1];
+	INIT_LIST_HEAD(&imd->unhashed_streams);
+	list_splice(&unhashed_streams, &imd->unhashed_streams);
 
 	DEBUG("Assigning hard link group IDs");
 	inode_table_prepare_inode_list(&inode_table, &imd->inode_list);
 
 	ret = xml_add_image(w, name);
 	if (ret)
-		goto out_destroy_imd;
+		goto out_put_imd;
 
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wimlib_set_boot_idx(w, w->hdr.image_count);
+
 	ret = 0;
 	goto out_destroy_inode_table;
-out_destroy_imd:
-	destroy_image_metadata(&w->image_metadata[w->hdr.image_count - 1],
-			       w->lookup_table);
-	w->hdr.image_count--;
+out_put_imd:
+	put_image_metadata(w->image_metadata[--w->hdr.image_count],
+			   w->lookup_table);
 	goto out_destroy_inode_table;
 out_free_branch:
 	free_dentry_tree(branch, w->lookup_table);

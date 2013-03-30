@@ -378,12 +378,12 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	ret = read_resource_prefix(lte, wim_resource_size(lte),
 				   write_resource_cb, &write_ctx, 0);
 
-	/* Verify SHA1 message digest of the resource,  Or, if the hash we had
-	 * before is all 0's, just re-set it to be the new hash. */
+	/* Verify SHA1 message digest of the resource, or set the hash for the
+	 * first time. */
 	if (write_ctx.doing_sha) {
 		u8 md[SHA1_HASH_SIZE];
 		sha1_final(md, &write_ctx.sha_ctx);
-		if (is_zero_hash(lte->hash)) {
+		if (lte->unhashed) {
 			copy_hash(lte->hash, md);
 		} else if (!hashes_equal(md, lte->hash)) {
 			ERROR("WIM resource has incorrect hash!");
@@ -600,7 +600,34 @@ do_write_streams_progress(union wimlib_progress_info *progress,
 }
 
 static int
+sha1_chunk(const void *buf, size_t len, void *ctx)
+{
+	sha1_update(ctx, buf, len);
+	return 0;
+}
+
+static int
+sha1_resource(struct wim_lookup_table_entry *lte)
+{
+	int ret;
+	SHA_CTX sha_ctx;
+
+	sha1_init(&sha_ctx);
+	ret = read_resource_prefix(lte, wim_resource_size(lte),
+				   sha1_chunk, &sha_ctx, 0);
+	if (ret == 0)
+		sha1_final(lte->hash, &sha_ctx);
+	return ret;
+}
+
+enum {
+	STREAMS_MERGED = 0,
+	STREAMS_NOT_MERGED = 1,
+};
+
+static int
 do_write_stream_list(struct list_head *my_resources,
+		     struct wim_lookup_table *lookup_table,
 		     FILE *out_fp,
 		     int out_ctype,
 		     wimlib_progress_func_t progress_func,
@@ -608,18 +635,53 @@ do_write_stream_list(struct list_head *my_resources,
 		     int write_resource_flags)
 {
 	int ret;
-	struct wim_lookup_table_entry *lte, *tmp;
+	struct wim_lookup_table_entry *lte;
 
-	list_for_each_entry_safe(lte, tmp, my_resources, staging_list) {
+	while (!list_empty(my_resources)) {
+		lte = container_of(my_resources->next,
+				   struct wim_lookup_table_entry,
+				   write_streams_list);
+		list_del(&lte->write_streams_list);
+		if (lte->unhashed && !lte->unique_size) {
+			struct wim_lookup_table_entry *duplicate_lte;
+
+			ret = sha1_resource(lte);
+			if (ret)
+				return ret;
+			list_del(&lte->staging_list);
+
+			duplicate_lte = __lookup_resource(lookup_table, lte->hash);
+			if (duplicate_lte) {
+				bool new_stream = (duplicate_lte->out_refcnt == 0);
+				duplicate_lte->refcnt += lte->refcnt;
+				duplicate_lte->out_refcnt += lte->refcnt;
+				free_lookup_table_entry(lte);
+
+				if (new_stream)
+					lte = duplicate_lte;
+				else
+					continue;
+			} else {
+				lookup_table_insert(lookup_table, lte);
+				lte->out_refcnt = lte->refcnt;
+				lte->unhashed = 0;
+			}
+		}
+
+		wimlib_assert(lte->out_refcnt != 0);
+
 		ret = write_wim_resource(lte,
 					 out_fp,
 					 out_ctype,
 					 &lte->output_resource_entry,
 					 write_resource_flags);
-		if (ret != 0)
+		if (ret)
 			return ret;
-		list_del(&lte->staging_list);
-
+		if (lte->unhashed) {
+			wimlib_assert(__lookup_resource(lookup_table, lte->hash) == NULL);
+			lookup_table_insert(lookup_table, lte);
+			lte->unhashed = 0;
+		}
 		do_write_streams_progress(progress,
 					  progress_func,
 					  wim_resource_size(lte));
@@ -629,6 +691,7 @@ do_write_stream_list(struct list_head *my_resources,
 
 static int
 write_stream_list_serial(struct list_head *stream_list,
+			 struct wim_lookup_table *lookup_table,
 			 FILE *out_fp,
 			 int out_ctype,
 			 int write_flags,
@@ -644,7 +707,9 @@ write_stream_list_serial(struct list_head *stream_list,
 	progress->write_streams.num_threads = 1;
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS, progress);
-	return do_write_stream_list(stream_list, out_fp,
+	return do_write_stream_list(stream_list,
+				    lookup_table,
+				    out_fp,
 				    out_ctype, progress_func,
 				    progress, write_resource_flags);
 }
@@ -1112,6 +1177,7 @@ get_default_num_threads()
 
 static int
 write_stream_list_parallel(struct list_head *stream_list,
+			   struct wim_lookup_table *lookup_table,
 			   FILE *out_fp,
 			   int out_ctype,
 			   int write_flags,
@@ -1206,6 +1272,7 @@ out_destroy_res_to_compress_queue:
 out_serial:
 	WARNING("Falling back to single-threaded compression");
 	return write_stream_list_serial(stream_list,
+					lookup_table,
 					out_fp,
 					out_ctype,
 					write_flags,
@@ -1220,18 +1287,19 @@ out_serial:
  * @out_ctype and up to @num_threads compressor threads.
  */
 static int
-write_stream_list(struct list_head *stream_list, FILE *out_fp,
-		  int out_ctype, int write_flags,
-		  unsigned num_threads,
-		  wimlib_progress_func_t progress_func)
+write_stream_list(struct list_head *stream_list,
+		  struct wim_lookup_table *lookup_table,
+		  FILE *out_fp, int out_ctype, int write_flags,
+		  unsigned num_threads, wimlib_progress_func_t progress_func)
 {
 	struct wim_lookup_table_entry *lte;
 	size_t num_streams = 0;
 	u64 total_bytes = 0;
 	u64 total_compression_bytes = 0;
 	union wimlib_progress_info progress;
+	int ret;
 
-	list_for_each_entry(lte, stream_list, staging_list) {
+	list_for_each_entry(lte, stream_list, write_streams_list) {
 		num_streams++;
 		total_bytes += wim_resource_size(lte);
 		if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE
@@ -1251,21 +1319,24 @@ write_stream_list(struct list_head *stream_list, FILE *out_fp,
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 	if (total_compression_bytes >= 1000000 && num_threads != 1)
-		return write_stream_list_parallel(stream_list,
-						  out_fp,
-						  out_ctype,
-						  write_flags,
-						  num_threads,
-						  progress_func,
-						  &progress);
+		ret = write_stream_list_parallel(stream_list,
+						 lookup_table,
+						 out_fp,
+						 out_ctype,
+						 write_flags,
+						 num_threads,
+						 progress_func,
+						 &progress);
 	else
 #endif
-		return write_stream_list_serial(stream_list,
-						out_fp,
-						out_ctype,
-						write_flags,
-						progress_func,
-						&progress);
+		ret = write_stream_list_serial(stream_list,
+					       lookup_table,
+					       out_fp,
+					       out_ctype,
+					       write_flags,
+					       progress_func,
+					       &progress);
+	return ret;
 }
 
 struct lte_overwrite_prepare_args {
@@ -1311,7 +1382,7 @@ wim_prepare_streams(WIMStruct *wim, off_t end_offset,
 	int ret;
 
 	for (int i = 0; i < wim->hdr.image_count; i++) {
-		ret = lte_overwrite_prepare(wim->image_metadata[i].metadata_lte,
+		ret = lte_overwrite_prepare(wim->image_metadata[i]->metadata_lte,
 					    &args);
 		if (ret)
 			return ret;
@@ -1320,18 +1391,72 @@ wim_prepare_streams(WIMStruct *wim, off_t end_offset,
 				      lte_overwrite_prepare, &args);
 }
 
+struct stream_size_table {
+	struct hlist_head *array;
+	size_t num_entries;
+	size_t capacity;
+};
+
+static int
+init_stream_size_table(struct stream_size_table *tab, size_t capacity)
+{
+	tab->array = CALLOC(capacity, sizeof(tab->array[0]));
+	if (!tab->array)
+		return WIMLIB_ERR_NOMEM;
+	tab->num_entries = 0;
+	tab->capacity = capacity;
+	return 0;
+}
+
+static void
+destroy_stream_size_table(struct stream_size_table *tab)
+{
+	FREE(tab->array);
+}
+
+static int
+stream_size_table_insert(struct wim_lookup_table_entry *lte, void *_tab)
+{
+	struct stream_size_table *tab = _tab;
+	size_t pos = hash_u64(wim_resource_size(lte)) % tab->capacity;
+	struct wim_lookup_table_entry *hashed_lte;
+	struct hlist_node *tmp;
+
+	lte->unique_size = 1;
+	hlist_for_each_entry(hashed_lte, tmp, &tab->array[pos], hash_list_2) {
+		if (wim_resource_size(hashed_lte) == wim_resource_size(lte)) {
+			lte->unique_size = 0;
+			hashed_lte->unique_size = 0;
+			break;
+		}
+	}
+
+	hlist_add_head(&lte->hash_list_2, &tab->array[pos]);
+	tab->num_entries++;
+	return 0;
+}
+
+
+struct find_streams_ctx {
+	struct list_head stream_list;
+	struct stream_size_table stream_size_tab;
+};
+
 static int
 inode_find_streams_to_write(struct wim_inode *inode,
 			    struct wim_lookup_table *table,
-			    struct list_head *stream_list)
+			    struct list_head *stream_list,
+			    struct stream_size_table *tab)
 {
 	struct wim_lookup_table_entry *lte;
 	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 		lte = inode_stream_lte(inode, i, table);
 		if (lte) {
 			if (lte->out_refcnt == 0)
-				list_add_tail(&lte->staging_list, stream_list);
+				list_add_tail(&lte->write_streams_list, stream_list);
 			lte->out_refcnt += inode->i_nlink;
+			if (lte->unhashed)
+				stream_size_table_insert(lte, tab);
 		}
 	}
 	return 0;
@@ -1340,31 +1465,46 @@ inode_find_streams_to_write(struct wim_inode *inode,
 static int
 image_find_streams_to_write(WIMStruct *w)
 {
+	struct wim_image_metadata *imd;
+	struct find_streams_ctx *ctx;
 	struct wim_inode *inode;
 	struct hlist_node *cur;
-	struct hlist_head *inode_list;
 
-	inode_list = &wim_get_current_image_metadata(w)->inode_list;
-	hlist_for_each_entry(inode, cur, inode_list, i_hlist) {
+	ctx = w->private;
+ 	imd = wim_get_current_image_metadata(w);
+	hlist_for_each_entry(inode, cur, &imd->inode_list, i_hlist) {
 		inode_find_streams_to_write(inode, w->lookup_table,
-					    (struct list_head*)w->private);
+					    &ctx->stream_list,
+					    &ctx->stream_size_tab);
 	}
 	return 0;
 }
 
 static int
 write_wim_streams(WIMStruct *w, int image, int write_flags,
-			     unsigned num_threads,
-			     wimlib_progress_func_t progress_func)
+		  unsigned num_threads,
+		  wimlib_progress_func_t progress_func)
 {
+	struct find_streams_ctx ctx;
+	int ret;
 
 	for_lookup_table_entry(w->lookup_table, lte_zero_out_refcnt, NULL);
-	LIST_HEAD(stream_list);
-	w->private = &stream_list;
+	ret = init_stream_size_table(&ctx.stream_size_tab, 9001);
+	if (ret)
+		return ret;
+	for_lookup_table_entry(w->lookup_table, stream_size_table_insert,
+			       &ctx.stream_size_tab);
+
+	INIT_LIST_HEAD(&ctx.stream_list);
+	w->private = &ctx;
 	for_image(w, image, image_find_streams_to_write);
-	return write_stream_list(&stream_list, w->out_fp,
-				 wimlib_get_compression_type(w), write_flags,
-				 num_threads, progress_func);
+	destroy_stream_size_table(&ctx.stream_size_tab);
+	ret = write_stream_list(&ctx.stream_list,
+				w->lookup_table,
+				w->out_fp,
+				wimlib_get_compression_type(w), write_flags,
+				num_threads, progress_func);
+	return ret;
 }
 
 /*
@@ -1497,7 +1637,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 	} else {
 		memcpy(&hdr.boot_metadata_res_entry,
 		       &w->image_metadata[
-			  hdr.boot_idx - 1].metadata_lte->output_resource_entry,
+			  hdr.boot_idx - 1]->metadata_lte->output_resource_entry,
 		       sizeof(struct resource_entry));
 	}
 
@@ -1509,7 +1649,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 	}
 
 	ret = write_header(&hdr, out);
-	if (ret != 0)
+	if (ret)
 		goto out;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
@@ -1656,7 +1796,7 @@ static bool
 any_images_modified(WIMStruct *w)
 {
 	for (int i = 0; i < w->hdr.image_count; i++)
-		if (w->image_metadata[i].modified)
+		if (w->image_metadata[i]->modified)
 			return true;
 	return false;
 }
@@ -1786,7 +1926,9 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	if (!list_empty(&stream_list)) {
 		DEBUG("Writing newly added streams (offset = %"PRIu64")",
 		      old_wim_end);
-		ret = write_stream_list(&stream_list, w->out_fp,
+		ret = write_stream_list(&stream_list,
+					w->lookup_table,
+					w->out_fp,
 					wimlib_get_compression_type(w),
 					write_flags, num_threads,
 					progress_func);
@@ -1797,10 +1939,10 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	}
 
 	for (int i = 0; i < w->hdr.image_count; i++) {
-		if (w->image_metadata[i].modified) {
+		if (w->image_metadata[i]->modified) {
 			select_wim_image(w, i + 1);
 			ret = write_metadata_resource(w);
-			if (ret != 0)
+			if (ret)
 				goto out_ftruncate;
 		}
 	}

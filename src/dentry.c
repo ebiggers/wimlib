@@ -275,14 +275,15 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 
 /* Calculate the full path of @dentry.  The full path of its parent must have
  * already been calculated, or it must be the root dentry. */
-int
-calculate_dentry_full_path(struct wim_dentry *dentry, void *ignore)
+static int
+calculate_dentry_full_path(struct wim_dentry *dentry)
 {
 	tchar *full_path;
 	u32 full_path_nbytes;
+	int ret;
 
-	wimlib_assert(dentry_is_root(dentry) ||
-		      dentry->parent->full_path != NULL);
+	if (dentry->_full_path)
+		return 0;
 
 	if (dentry_is_root(dentry)) {
 		full_path = TSTRDUP(T("/"));
@@ -290,7 +291,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry, void *ignore)
 			return WIMLIB_ERR_NOMEM;
 		full_path_nbytes = 1 * sizeof(tchar);
 	} else {
-		const struct wim_dentry *parent;
+		struct wim_dentry *parent;
 		tchar *parent_full_path;
 		u32 parent_full_path_nbytes;
 		size_t filename_nbytes;
@@ -300,7 +301,12 @@ calculate_dentry_full_path(struct wim_dentry *dentry, void *ignore)
 			parent_full_path = T("");
 			parent_full_path_nbytes = 0;
 		} else {
-			parent_full_path = parent->full_path;
+			if (!parent->_full_path) {
+				ret = calculate_dentry_full_path(parent);
+				if (ret)
+					return ret;
+			}
+			parent_full_path = parent->_full_path;
 			parent_full_path_nbytes = parent->full_path_nbytes;
 		}
 
@@ -336,10 +342,16 @@ calculate_dentry_full_path(struct wim_dentry *dentry, void *ignore)
 					       sizeof(tchar) + 1]);
 	#endif
 	}
-	FREE(dentry->full_path);
-	dentry->full_path = full_path;
+	dentry->_full_path = full_path;
 	dentry->full_path_nbytes= full_path_nbytes;
 	return 0;
+}
+
+tchar *
+dentry_full_path(struct wim_dentry *dentry)
+{
+	calculate_dentry_full_path(dentry);
+	return dentry->_full_path;
 }
 
 static int
@@ -559,10 +571,15 @@ get_parent_dentry(WIMStruct *w, const tchar *path)
 
 /* Prints the full path of a dentry. */
 int
-print_dentry_full_path(struct wim_dentry *dentry, void *ignore)
+print_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
 {
-	if (dentry->full_path)
-		tprintf(T("%"TS"\n"), dentry->full_path);
+	tchar *full_path = dentry_full_path(dentry);
+	if (!full_path)
+		return WIMLIB_ERR_NOMEM;
+	tprintf(T("%"TS"\n"), full_path);
+	FREE(full_path);
+	dentry->_full_path = 0;
+	dentry->full_path_nbytes = 0;
 	return 0;
 }
 
@@ -628,8 +645,8 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table)
 		wimlib_printf(T("Filename = \"%"WS"\"\n"), dentry->file_name);
 	if (dentry_has_short_name(dentry))
 		wimlib_printf(T("Short Name \"%"WS"\"\n"), dentry->short_name);
-	if (dentry->full_path)
-		tprintf(T("Full Path = \"%"TS"\"\n"), dentry->full_path);
+	if (dentry->_full_path)
+		tprintf(T("Full Path = \"%"TS"\"\n"), dentry->_full_path);
 
 	lte = inode_stream_lte(dentry->d_inode, 0, lookup_table);
 	if (lte) {
@@ -666,7 +683,6 @@ static void
 dentry_common_init(struct wim_dentry *dentry)
 {
 	memset(dentry, 0, sizeof(struct wim_dentry));
-	dentry->refcnt = 1;
 }
 
 struct wim_inode *
@@ -843,18 +859,10 @@ free_dentry(struct wim_dentry *dentry)
 {
 	FREE(dentry->file_name);
 	FREE(dentry->short_name);
-	FREE(dentry->full_path);
+	FREE(dentry->_full_path);
 	if (dentry->d_inode)
 		put_inode(dentry->d_inode);
 	FREE(dentry);
-}
-
-void
-put_dentry(struct wim_dentry *dentry)
-{
-	wimlib_assert(dentry->refcnt != 0);
-	if (--dentry->refcnt == 0)
-		free_dentry(dentry);
 }
 
 /* This function is passed as an argument to for_dentry_in_tree_depth() in order
@@ -875,8 +883,7 @@ do_free_dentry(struct wim_dentry *dentry, void *__lookup_table)
 				lte_decrement_refcnt(lte, lookup_table);
 		}
 	}
-
-	put_dentry(dentry);
+	free_dentry(dentry);
 	return 0;
 }
 
@@ -894,13 +901,6 @@ free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
 {
 	if (root)
 		for_dentry_in_tree_depth(root, do_free_dentry, lookup_table);
-}
-
-int
-increment_dentry_refcnt(struct wim_dentry *dentry, void *ignore)
-{
-	dentry->refcnt++;
-	return 0;
 }
 
 /*

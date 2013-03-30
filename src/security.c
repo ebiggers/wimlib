@@ -186,7 +186,6 @@ read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 	}
 	sd->sizes	= NULL;
 	sd->descriptors = NULL;
-	sd->refcnt	= 1;
 
 	p = metadata_resource;
 	p = get_u32(p, &sd->total_length);
@@ -437,17 +436,14 @@ void
 free_security_data(struct wim_security_data *sd)
 {
 	if (sd) {
-		wimlib_assert(sd->refcnt != 0);
-		if (--sd->refcnt == 0) {
-			u8 **descriptors = sd->descriptors;
-			u32 num_entries  = sd->num_entries;
-			if (descriptors)
-				while (num_entries--)
-					FREE(*descriptors++);
-			FREE(sd->sizes);
-			FREE(sd->descriptors);
-			FREE(sd);
-		}
+		u8 **descriptors = sd->descriptors;
+		u32 num_entries  = sd->num_entries;
+		if (descriptors)
+			while (num_entries--)
+				FREE(*descriptors++);
+		FREE(sd->sizes);
+		FREE(sd->descriptors);
+		FREE(sd);
 	}
 }
 

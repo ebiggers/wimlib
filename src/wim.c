@@ -200,14 +200,11 @@ select_wim_image(WIMStruct *w, int image)
 		imd = wim_get_current_image_metadata(w);
 		if (!imd->modified) {
 			DEBUG("Freeing image %u", w->current_image);
-			destroy_image_metadata(imd, NULL);
-			imd->root_dentry = NULL;
-			imd->security_data = NULL;
-			INIT_HLIST_HEAD(&imd->inode_list);
+			destroy_image_metadata(imd, NULL, false);
 		}
 	}
 	w->current_image = image;
-	imd = &w->image_metadata[image - 1];
+	imd = wim_get_current_image_metadata(w);
 	if (imd->root_dentry) {
 		ret = 0;
 	} else {
@@ -375,17 +372,6 @@ wimlib_set_boot_idx(WIMStruct *w, int boot_idx)
 	if (boot_idx < 0 || boot_idx > w->hdr.image_count)
 		return WIMLIB_ERR_INVALID_IMAGE;
 	w->hdr.boot_idx = boot_idx;
-
-	if (boot_idx == 0) {
-		memset(&w->hdr.boot_metadata_res_entry, 0,
-		       sizeof(struct resource_entry));
-	} else {
-		memcpy(&w->hdr.boot_metadata_res_entry,
-		       &w->image_metadata[
-			  boot_idx - 1].metadata_lte->resource_entry,
-		       sizeof(struct resource_entry));
-	}
-
 	return 0;
 }
 
@@ -479,14 +465,9 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 	}
 
 	if (w->hdr.image_count != 0 && w->hdr.part_number == 1) {
-		w->image_metadata = CALLOC(w->hdr.image_count,
-					   sizeof(struct wim_image_metadata));
-
-		if (!w->image_metadata) {
-			ERROR("Failed to allocate memory for %u image metadata structures",
-			      w->hdr.image_count);
+		w->image_metadata = new_image_metadata_array(w->hdr.image_count);
+		if (!w->image_metadata)
 			return WIMLIB_ERR_NOMEM;
-		}
 	}
 
 	ret = read_lookup_table(w);
@@ -539,12 +520,94 @@ wimlib_open_wim(const tchar *wim_file, int open_flags,
 
 void
 destroy_image_metadata(struct wim_image_metadata *imd,
-		       struct wim_lookup_table *table)
+		       struct wim_lookup_table *table,
+		       bool free_metadata_lte)
 {
 	free_dentry_tree(imd->root_dentry, table);
+	imd->root_dentry = NULL;
 	free_security_data(imd->security_data);
-	if (table)
+	imd->security_data = NULL;
+
+	if (free_metadata_lte) {
 		free_lookup_table_entry(imd->metadata_lte);
+		imd->metadata_lte = NULL;
+	}
+	INIT_LIST_HEAD(&imd->unhashed_streams);
+	INIT_HLIST_HEAD(&imd->inode_list);
+}
+
+void
+put_image_metadata(struct wim_image_metadata *imd,
+		   struct wim_lookup_table *table)
+{
+	if (imd && --imd->refcnt == 0) {
+		destroy_image_metadata(imd, table, true);
+		FREE(imd);
+	}
+}
+
+/* Appends the specified image metadata structure to the array of image metadata
+ * for a WIM, and increments the image count. */
+int
+append_image_metadata(WIMStruct *w, struct wim_image_metadata *imd)
+{
+	struct wim_image_metadata **imd_array;
+
+	DEBUG("Reallocating image metadata array for image_count = %u",
+	      w->hdr.image_count + 1);
+	imd_array = REALLOC(w->image_metadata,
+			    sizeof(w->image_metadata[0]) * (w->hdr.image_count + 1));
+
+	if (!imd_array)
+		return WIMLIB_ERR_NOMEM;
+	w->image_metadata = imd_array;
+	imd_array[w->hdr.image_count++] = imd;
+	return 0;
+}
+
+
+struct wim_image_metadata *
+new_image_metadata()
+{
+	struct wim_image_metadata *imd;
+	
+	imd = CALLOC(1, sizeof(*imd));
+	if (imd) {
+		imd->refcnt = 1;
+		INIT_HLIST_HEAD(&imd->inode_list);
+		INIT_LIST_HEAD(&imd->unhashed_streams);
+		DEBUG("Created new image metadata (refcnt=1)");
+	} else {
+		ERROR_WITH_ERRNO("Failed to allocate new image metadata structure");
+	}
+	return imd;
+}
+
+struct wim_image_metadata **
+new_image_metadata_array(unsigned num_images)
+{
+	struct wim_image_metadata **imd_array;
+
+	DEBUG("Creating new image metadata array for %u images",
+	      num_images);
+
+	imd_array = CALLOC(num_images, sizeof(imd_array[0]));
+
+	if (!imd_array) {
+		ERROR("Failed to allocate memory for %u image metadata structures",
+		      num_images);
+		return NULL;
+	}
+	for (unsigned i = 0; i < num_images; i++) {
+		imd_array[i] = new_image_metadata();
+		if (!imd_array[i]) {
+			for (unsigned j = 0; j < i; j++)
+				put_image_metadata(imd_array[j], NULL);
+			FREE(imd_array);
+			return NULL;
+		}
+	}
+	return imd_array;
 }
 
 /* Frees the memory for the WIMStruct, including all internal memory; also
@@ -577,10 +640,8 @@ wimlib_free(WIMStruct *w)
 	FREE(w->xml_data);
 	free_wim_info(w->wim_info);
 	if (w->image_metadata) {
-		for (unsigned i = 0; i < w->hdr.image_count; i++) {
-			destroy_image_metadata(&w->image_metadata[i], NULL);
-			free_lookup_table_entry(w->image_metadata[i].metadata_lte);
-		}
+		for (unsigned i = 0; i < w->hdr.image_count; i++)
+			put_image_metadata(w->image_metadata[i], NULL);
 		FREE(w->image_metadata);
 	}
 #ifdef WITH_NTFS_3G

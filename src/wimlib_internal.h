@@ -234,14 +234,12 @@ struct wim_security_data {
 
 	/* Array of descriptors. */
 	u8 **descriptors;
-
-	/* Keep track of how many WIMs reference this security data (used when
-	 * exporting images between WIMs) */
-	u32 refcnt;
 };
 
 /* Metadata for a WIM image */
 struct wim_image_metadata {
+
+	unsigned long refcnt;
 
 	/* Pointer to the root dentry of the image. */
 	struct wim_dentry    *root_dentry;
@@ -297,7 +295,7 @@ struct WIMStruct {
 	struct wim_info *wim_info;
 
 	/* Array of the image metadata, one for each image in the WIM. */
-	struct wim_image_metadata *image_metadata;
+	struct wim_image_metadata **image_metadata;
 
 	/* The header of the WIM file. */
 	struct wim_header hdr;
@@ -321,27 +319,34 @@ struct WIMStruct {
 
 /* Inline utility functions for WIMStructs. */
 
+static inline struct wim_image_metadata *
+wim_get_current_image_metadata(WIMStruct *w)
+{
+	return w->image_metadata[w->current_image - 1];
+}
+
+static inline const struct wim_image_metadata *
+wim_get_const_current_image_metadata(const WIMStruct *w)
+{
+	return w->image_metadata[w->current_image - 1];
+}
+
 static inline struct wim_dentry *
 wim_root_dentry(WIMStruct *w)
 {
-	return w->image_metadata[w->current_image - 1].root_dentry;
+	return wim_get_current_image_metadata(w)->root_dentry;
 }
 
 static inline struct wim_security_data *
 wim_security_data(WIMStruct *w)
 {
-	return w->image_metadata[w->current_image - 1].security_data;
+	return wim_get_current_image_metadata(w)->security_data;
 }
+
 static inline const struct wim_security_data *
 wim_const_security_data(const WIMStruct *w)
 {
-	return w->image_metadata[w->current_image - 1].security_data;
-}
-
-static inline struct wim_image_metadata *
-wim_get_current_image_metadata(WIMStruct *w)
-{
-	return &w->image_metadata[w->current_image - 1];
+	return wim_get_const_current_image_metadata(w)->security_data;
 }
 
 /* Nonzero if a struct resource_entry indicates a compressed resource. */
@@ -357,11 +362,6 @@ extern bool
 exclude_path(const tchar *path, size_t path_len,
 	     const struct wimlib_capture_config *config,
 	     bool exclude_prefix);
-
-extern int
-add_new_dentry_tree(WIMStruct *dest_wim, struct wim_dentry *root,
-		    struct wim_security_data *sd);
-
 
 /* extract_image.c */
 
@@ -612,7 +612,21 @@ for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
 
 extern void
 destroy_image_metadata(struct wim_image_metadata *imd,
-		       struct wim_lookup_table *lt);
+		       struct wim_lookup_table *table,
+		       bool free_metadata_lte);
+
+extern void
+put_image_metadata(struct wim_image_metadata *imd,
+		   struct wim_lookup_table *table);
+
+extern int
+append_image_metadata(WIMStruct *w, struct wim_image_metadata *imd);
+
+extern struct wim_image_metadata *
+new_image_metadata();
+
+extern struct wim_image_metadata **
+new_image_metadata_array(unsigned num_images);
 
 /* write.c */
 

@@ -105,7 +105,7 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 
 	wimlib_assert(imd->security_data == NULL);
 	ret = read_security_data(buf, metadata_len, &imd->security_data);
-	if (ret != 0)
+	if (ret)
 		goto out_free_buf;
 
 	dentry_offset = (imd->security_data->total_length + 7) & ~7;
@@ -147,18 +147,12 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 	/* Now read the entire directory entry tree into memory. */
 	DEBUG("Reading dentry tree");
 	ret = read_dentry_tree(buf, metadata_len, dentry);
-	if (ret != 0)
-		goto out_free_dentry_tree;
-
-	/* Calculate the full paths in the dentry tree. */
-	DEBUG("Calculating dentry full paths");
-	ret = for_dentry_in_tree(dentry, calculate_dentry_full_path, NULL);
-	if (ret != 0)
+	if (ret)
 		goto out_free_dentry_tree;
 
 	/* Build hash table that maps hard link group IDs to dentry sets */
 	ret = dentry_tree_fix_inodes(dentry, &inode_list);
-	if (ret != 0)
+	if (ret)
 		goto out_free_dentry_tree;
 
 	if (!w->all_images_verified) {
@@ -175,6 +169,7 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 	imd->inode_list  = inode_list;
 	if (imd->inode_list.first)
 		imd->inode_list.first->pprev = &imd->inode_list.first;
+	INIT_LIST_HEAD(&imd->unhashed_streams);
 	goto out_free_buf;
 out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL);
@@ -199,7 +194,7 @@ recalculate_security_data_length(struct wim_security_data *sd)
  * uncompressed data rather a lookup table entry; also writes the SHA1 hash of
  * the buffer to @hash.  */
 static int
-write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
+write_wim_resource_from_buffer(const void *buf, u64 buf_size,
 			       FILE *out_fp, int out_ctype,
 			       struct resource_entry *out_res_entry,
 			       u8 hash[SHA1_HASH_SIZE])
@@ -211,6 +206,7 @@ write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 	lte.resource_entry.original_size = buf_size;
 	lte.resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
 	lte.attached_buffer              = (void*)buf;
+	lte.unhashed                     = 1;
 	zero_out_hash(lte.hash);
 	ret = write_wim_resource(&lte, out_fp, out_ctype, out_res_entry, 0);
 	if (ret)
@@ -279,7 +275,7 @@ write_metadata_resource(WIMStruct *w)
 
 	/* Get the lookup table entry for the metadata resource so we can update
 	 * it. */
-	lte = w->image_metadata[w->current_image - 1].metadata_lte;
+	lte = wim_get_current_image_metadata(w)->metadata_lte;
 
 	/* Write the metadata resource to the output WIM using the proper
 	 * compression type.  The lookup table entry for the metadata resource

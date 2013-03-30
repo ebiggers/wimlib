@@ -189,9 +189,9 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 
 	for (int i = 0; i < w->hdr.image_count; i++) {
 		struct wim_lookup_table_entry *metadata_lte;
-		metadata_lte = w->image_metadata[i].metadata_lte;
+		metadata_lte = w->image_metadata[i]->metadata_lte;
 		ret = copy_resource(metadata_lte, w);
-		if (ret != 0)
+		if (ret)
 			goto out;
 		args.size_remaining -= metadata_lte->resource_entry.size;
 		args.progress.split.completed_bytes += metadata_lte->resource_entry.size;

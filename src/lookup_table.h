@@ -136,7 +136,10 @@ struct wim_lookup_table_entry {
 	u16 part_number;
 
 	/* See enum resource_location above */
-	u16 resource_location;
+	u16 resource_location : 5;
+	u8 unique_size : 1;
+	u8 unhashed : 1;
+	u8 is_ads : 1;
 
 	/* (On-disk field)
 	 * Number of times this lookup table entry is referenced by dentries.
@@ -156,19 +159,16 @@ struct wim_lookup_table_entry {
 		 * the full 20 byte hash just to insert the entry in a hash
 		 * table. */
 		size_t hash_short;
+
+		struct wim_lookup_table_entry **my_ptr;
 	};
 
-	union {
-		#ifdef WITH_FUSE
-		u16 num_opened_fds;
-		#endif
-
-		/* This field is used for the special hardlink or symlink image
-		 * extraction mode.   In these mode, all identical files are linked
-		 * together, and @extracted_file will be set to the filename of the
-		 * first extracted file containing this stream.  */
-		tchar *extracted_file;
-	};
+	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
+	 * whenever the file resource pointed to by this lookup table entry
+	 * needs to be written.  The file resource only need to be written when
+	 * out_refcnt is nonzero, since otherwise it is not referenced by any
+	 * dentries. */
+	u32 out_refcnt;
 
 	/* Pointers to somewhere where the stream is actually located.  See the
 	 * comments for the @resource_location field above. */
@@ -187,14 +187,19 @@ struct wim_lookup_table_entry {
 	 * RESOURCE_IN_STAGING_FILE) */
 	struct wim_inode *lte_inode;
 
-	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
-	 * whenever the file resource pointed to by this lookup table entry
-	 * needs to be written.  The file resource only need to be written when
-	 * out_refcnt is nonzero, since otherwise it is not referenced by any
-	 * dentries. */
-	u32 out_refcnt;
-
 	u32 real_refcnt;
+
+	union {
+		#ifdef WITH_FUSE
+		u16 num_opened_fds;
+		#endif
+
+		/* This field is used for the special hardlink or symlink image
+		 * extraction mode.   In these mode, all identical files are linked
+		 * together, and @extracted_file will be set to the filename of the
+		 * first extracted file containing this stream.  */
+		tchar *extracted_file;
+	};
 
 	union {
 		/* When a WIM file is written, @output_resource_entry is filled
@@ -208,6 +213,11 @@ struct wim_lookup_table_entry {
 
 		struct list_head msg_list;
 		struct list_head inode_list;
+
+		struct {
+			struct hlist_node hash_list_2;
+			struct list_head write_streams_list;
+		};
 	};
 
 	/* List of lookup table entries that correspond to streams that have
@@ -349,13 +359,6 @@ inode_unresolve_ltes(struct wim_inode *inode);
 extern int
 write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *__out);
 
-static inline struct resource_entry*
-wim_metadata_resource_entry(WIMStruct *w)
-{
-	return &w->image_metadata[
-			w->current_image - 1].metadata_lte->resource_entry;
-}
-
 static inline struct wim_lookup_table_entry *
 inode_stream_lte_resolved(const struct wim_inode *inode, unsigned stream_idx)
 {
@@ -474,12 +477,16 @@ lookup_table_total_stream_size(struct wim_lookup_table *table);
 
 static inline void
 lookup_table_insert_unhashed(struct wim_lookup_table *table,
-			     struct wim_lookup_table_entry *lte)
+			     struct wim_lookup_table_entry *lte,
+			     struct wim_lookup_table_entry **my_ptr)
 {
+	lte->unhashed = 1;
 	list_add_tail(&lte->staging_list, table->unhashed_streams);
+	lte->my_ptr = my_ptr;
+	*my_ptr = lte;
 }
 
 extern void
-lookup_table_free_unhashed_streams(struct wim_lookup_table *table);
+free_lte_list(struct list_head *list);
 
 #endif

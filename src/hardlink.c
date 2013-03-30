@@ -184,7 +184,7 @@ print_inode_dentries(const struct wim_inode *inode)
 {
 	struct wim_dentry *dentry;
 	inode_for_each_dentry(dentry, inode)
-		tprintf(T("`%"TS"'\n"), dentry->full_path);
+		print_dentry_full_path(dentry, NULL);
 }
 #endif
 

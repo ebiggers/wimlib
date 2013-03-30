@@ -150,7 +150,7 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 	/* Copy the metadata resources from the first SWM part */
 	joined_wim->hdr.image_count = swms[0]->hdr.image_count;
 	for (i = 0; i < joined_wim->hdr.image_count; i++) {
-		ret = copy_resource(swms[0]->image_metadata[i].metadata_lte,
+		ret = copy_resource(swms[0]->image_metadata[i]->metadata_lte,
 				    joined_wim);
 		if (ret)
 			return ret;

@@ -186,10 +186,6 @@ struct wim_dentry {
 	 * points. */
 	u64 subdir_offset;
 
-	/* Number of references to the dentry tree itself, as in multiple
-	 * WIMStructs */
-	u32 refcnt;
-
 	/* Pointer to the UTF-16LE short filename (malloc()ed buffer) */
 	utf16lechar *short_name;
 
@@ -197,7 +193,7 @@ struct wim_dentry {
 	utf16lechar *file_name;
 
 	/* Full path of this dentry */
-	tchar *full_path;
+	tchar *_full_path;
 };
 
 #define rbnode_dentry(node) container_of(node, struct wim_dentry, rb_node)
@@ -346,9 +342,6 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 			 int (*visitor)(struct wim_dentry*, void*),
 			 void *args);
 
-extern int
-calculate_dentry_full_path(struct wim_dentry *dentry, void *ignore);
-
 extern void
 calculate_subdir_offsets(struct wim_dentry *dentry, u64 *subdir_offset_p);
 
@@ -379,6 +372,9 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table);
 extern int
 print_dentry_full_path(struct wim_dentry *entry, void *ignore);
 
+extern tchar *
+dentry_full_path(struct wim_dentry *dentry);
+
 extern struct wim_inode *
 new_timeless_inode();
 
@@ -403,9 +399,6 @@ put_dentry(struct wim_dentry *dentry);
 extern void
 free_dentry_tree(struct wim_dentry *root,
 		 struct wim_lookup_table *lookup_table);
-
-extern int
-increment_dentry_refcnt(struct wim_dentry *dentry, void *ignore);
 
 extern void
 unlink_dentry(struct wim_dentry *dentry);

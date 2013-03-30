@@ -232,7 +232,8 @@ lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
 	wimlib_assert(lte != NULL);
 	wimlib_assert(lte->refcnt != 0);
 	if (--lte->refcnt == 0) {
-		lookup_table_unlink(table, lte);
+		if (!lte->unhashed)
+			lookup_table_unlink(table, lte);
 	#ifdef WITH_FUSE
 		if (lte->num_opened_fds == 0)
 	#endif
@@ -267,7 +268,7 @@ for_lookup_table_entry(struct wim_lookup_table *table,
 		{
 			wimlib_assert2(!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA));
 			ret = visitor(lte, arg);
-			if (ret != 0)
+			if (ret)
 				return ret;
 		}
 	}
@@ -495,7 +496,7 @@ read_lookup_table(WIMStruct *w)
 			      w->current_image + 1,
 			      cur_entry->resource_entry.offset);
 			w->image_metadata[
-				w->current_image++].metadata_lte = cur_entry;
+				w->current_image++]->metadata_lte = cur_entry;
 		} else {
 			/* Lookup table entry for a stream that is not a
 			 * metadata resource */
@@ -597,7 +598,7 @@ write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry
 	for (int i = start_image; i <= end_image; i++) {
 		struct wim_lookup_table_entry *metadata_lte;
 
-		metadata_lte = w->image_metadata[i - 1].metadata_lte;
+		metadata_lte = w->image_metadata[i - 1]->metadata_lte;
 		metadata_lte->out_refcnt = 1;
 		metadata_lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
 		ret = write_lookup_table_entry(metadata_lte, out);
@@ -922,11 +923,13 @@ lookup_table_total_stream_size(struct wim_lookup_table *table)
 }
 
 void
-lookup_table_free_unhashed_streams(struct wim_lookup_table *table)
+free_lte_list(struct list_head *list)
 {
 	struct wim_lookup_table_entry *lte, *tmp;
 
-	list_for_each_entry_safe(lte, tmp, table->unhashed_streams, staging_list)
+	list_for_each_entry_safe(lte, tmp, list, staging_list) {
+		DEBUG("%p", lte);
 		free_lookup_table_entry(lte);
-	INIT_LIST_HEAD(table->unhashed_streams);
+}
+	INIT_LIST_HEAD(list);
 }

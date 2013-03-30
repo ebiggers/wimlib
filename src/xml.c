@@ -1123,7 +1123,7 @@ xml_update_image_info(WIMStruct *w, int image)
 	image_info->hard_link_bytes = 0;
 	image_info->lookup_table = w->lookup_table;
 
-	for_dentry_in_tree(w->image_metadata[image - 1].root_dentry,
+	for_dentry_in_tree(w->image_metadata[image - 1]->root_dentry,
 			   calculate_dentry_statistics,
 			   image_info);
 	image_info->last_modification_time = get_wim_timestamp();

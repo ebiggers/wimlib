@@ -112,7 +112,7 @@ extract_regular_file_linked(struct wim_dentry *dentry,
 		size_t i;
 
 		num_path_components =
-			get_num_path_components(dentry->full_path) - 1;
+			get_num_path_components(dentry_full_path(dentry)) - 1;
 		num_output_dir_path_components =
 			get_num_path_components(args->target);
 
@@ -333,7 +333,7 @@ extract_symlink(struct wim_dentry *dentry,
 
 	if (ret <= 0) {
 		ERROR("Could not read the symbolic link from dentry `%s'",
-		      dentry->full_path);
+		      dentry_full_path(dentry));
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 	ret = symlink(target, output_path);
@@ -499,10 +499,12 @@ apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 	if (dentry_is_root(dentry)) {
 		output_path = (tchar*)args->target;
 	} else {
+		if (!dentry_full_path(dentry))
+			return WIMLIB_ERR_NOMEM;
 		output_path = alloca(len * sizeof(tchar) + dentry->full_path_nbytes +
 				     sizeof(tchar));
 		memcpy(output_path, args->target, len * sizeof(tchar));
-		memcpy(output_path + len, dentry->full_path, dentry->full_path_nbytes);
+		memcpy(output_path + len, dentry->_full_path, dentry->full_path_nbytes);
 		len += dentry->full_path_nbytes / sizeof(tchar);
 		output_path[len] = T('\0');
 	}
@@ -526,10 +528,12 @@ apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 	if (dentry_is_root(dentry)) {
 		output_path = (tchar*)args->target;
 	} else {
+		if (!dentry_full_path(dentry))
+			return WIMLIB_ERR_NOMEM;
 		output_path = alloca(len * sizeof(tchar) + dentry->full_path_nbytes +
 				     sizeof(tchar));
 		memcpy(output_path, args->target, len * sizeof(tchar));
-		memcpy(output_path + len, dentry->full_path, dentry->full_path_nbytes);
+		memcpy(output_path + len, dentry->_full_path, dentry->full_path_nbytes);
 		len += dentry->full_path_nbytes / sizeof(tchar);
 		output_path[len] = T('\0');
 	}
@@ -553,13 +557,16 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 	if (dentry->is_extracted)
 		return 0;
 
+	if (!dentry_full_path(dentry))
+		return WIMLIB_ERR_NOMEM;
+
 	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
 		if (inode_unnamed_lte_resolved(dentry->d_inode))
 			return 0;
 
 	if ((args->extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
 	     args->progress_func) {
-		args->progress.extract.cur_path = dentry->full_path;
+		args->progress.extract.cur_path = dentry_full_path(dentry);
 		args->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY,
 				    &args->progress);
 	}
@@ -782,10 +789,10 @@ extract_single_image(WIMStruct *w, int image,
 		ops = &normal_apply_operations;
 
 	ret = select_wim_image(w, image);
-	if (ret != 0)
+	if (ret)
 		goto out;
 
-	inode_list = &w->image_metadata[image - 1].inode_list;
+	inode_list = &wim_get_current_image_metadata(w)->inode_list;
 
 	/* Build a list of the streams that need to be extracted */
 	find_streams_for_extraction(inode_list, &stream_list,
