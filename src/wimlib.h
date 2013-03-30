@@ -1674,14 +1674,6 @@ wimlib_join(const wimlib_tchar * const *swms,
  *
  * As a special requirement, the compression code is optimized for the WIM
  * format and therefore requires (@a chunk_size <= 32768).
- *
- * As another special requirement, the compression code will read up to 8 bytes
- * off the end of the @a chunk array for performance reasons.  The values of
- * these bytes will not affect the output of the compression, but the calling
- * code must make sure that the buffer holding the uncompressed chunk is
- * actually at least (@a chunk_size + 8) bytes, or at least that these extra
- * bytes are in mapped memory that will not cause a memory access violation if
- * accessed.
  */
 extern unsigned
 wimlib_lzx_compress(const void *chunk, unsigned chunk_size, void *out);

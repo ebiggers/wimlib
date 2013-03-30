@@ -146,7 +146,6 @@ WIMLIBAPI unsigned
 wimlib_xpress_compress(const void *__uncompressed_data,
 		       unsigned uncompressed_len, void *__compressed_data)
 {
-	const u8 *uncompressed_data = __uncompressed_data;
 	u8 *compressed_data = __compressed_data;
 	struct output_bitstream ostream;
 	u32 match_tab[uncompressed_len];
@@ -157,6 +156,10 @@ wimlib_xpress_compress(const void *__uncompressed_data,
 	unsigned compressed_len;
 	unsigned i;
 	int ret;
+	u8 uncompressed_data[uncompressed_len + 8];
+
+	memcpy(uncompressed_data, __uncompressed_data, uncompressed_len);
+	memset(uncompressed_data + uncompressed_len, 0, 8);
 
 	wimlib_assert(uncompressed_len <= 32768);
 

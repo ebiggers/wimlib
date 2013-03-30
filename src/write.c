@@ -656,15 +656,14 @@ do_write_stream_list(struct list_head *my_resources,
 				duplicate_lte->out_refcnt += lte->refcnt;
 				*my_ptr = duplicate_lte;
 				free_lookup_table_entry(lte);
-
+				lte = duplicate_lte;
 				if (new_stream) {
-					lte = duplicate_lte;
 					DEBUG("Stream of length %"PRIu64" is duplicate "
 					      "with one already in WIM",
-					      wim_resource_size(duplicate_lte));
+					      wim_resource_size(lte));
 				} else {
 					DEBUG("Discarding duplicate stream of length %"PRIu64,
-					      wim_resource_size(duplicate_lte));
+					      wim_resource_size(lte));
 					goto skip_to_progress;
 				}
 
@@ -1306,6 +1305,9 @@ write_stream_list(struct list_head *stream_list,
 	union wimlib_progress_info progress;
 	int ret;
 
+	if (list_empty(stream_list))
+		return 0;
+
 	list_for_each_entry(lte, stream_list, write_streams_list) {
 		num_streams++;
 		total_bytes += wim_resource_size(lte);
@@ -1344,58 +1346,6 @@ write_stream_list(struct list_head *stream_list,
 					       progress_func,
 					       &progress);
 	return ret;
-}
-
-struct lte_overwrite_prepare_args {
-	WIMStruct *wim;
-	off_t end_offset;
-	struct list_head *stream_list;
-};
-
-static int
-lte_overwrite_prepare(struct wim_lookup_table_entry *lte, void *arg)
-{
-	struct lte_overwrite_prepare_args *args = arg;
-
-	if (lte->resource_location == RESOURCE_IN_WIM &&
-	    lte->wim == args->wim &&
-	    lte->resource_entry.offset + lte->resource_entry.size > args->end_offset)
-	{
-	#ifdef ENABLE_ERROR_MESSAGES
-		ERROR("The following resource is after the XML data:");
-		print_lookup_table_entry(lte, stderr);
-	#endif
-		return WIMLIB_ERR_RESOURCE_ORDER;
-	}
-
-	lte->out_refcnt = lte->refcnt;
-	memcpy(&lte->output_resource_entry, &lte->resource_entry,
-	       sizeof(struct resource_entry));
-	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA))
-		if (lte->resource_location != RESOURCE_IN_WIM || lte->wim != args->wim)
-			list_add(&lte->staging_list, args->stream_list);
-	return 0;
-}
-
-static int
-wim_prepare_streams(WIMStruct *wim, off_t end_offset,
-		    struct list_head *stream_list)
-{
-	struct lte_overwrite_prepare_args args = {
-		.wim         = wim,
-		.end_offset  = end_offset,
-		.stream_list = stream_list,
-	};
-	int ret;
-
-	for (int i = 0; i < wim->hdr.image_count; i++) {
-		ret = lte_overwrite_prepare(wim->image_metadata[i]->metadata_lte,
-					    &args);
-		if (ret)
-			return ret;
-	}
-	return for_lookup_table_entry(wim->lookup_table,
-				      lte_overwrite_prepare, &args);
 }
 
 struct stream_size_table {
@@ -1442,6 +1392,111 @@ stream_size_table_insert(struct wim_lookup_table_entry *lte, void *_tab)
 	hlist_add_head(&lte->hash_list_2, &tab->array[pos]);
 	tab->num_entries++;
 	return 0;
+}
+
+
+struct lte_overwrite_prepare_args {
+	WIMStruct *wim;
+	off_t end_offset;
+	struct list_head *stream_list;
+	struct stream_size_table *stream_size_tab;
+};
+
+static int
+lte_overwrite_prepare(struct wim_lookup_table_entry *lte, void *arg)
+{
+	struct lte_overwrite_prepare_args *args = arg;
+
+	if (lte->resource_location == RESOURCE_IN_WIM &&
+	    lte->wim == args->wim)
+	{
+		/* We can't do an in place overwrite on the WIM if there are
+		 * streams after the XML data. */
+		if (lte->resource_entry.offset +
+		    lte->resource_entry.size > args->end_offset)
+		{
+		#ifdef ENABLE_ERROR_MESSAGES
+			ERROR("The following resource is after the XML data:");
+			print_lookup_table_entry(lte, stderr);
+		#endif
+			return WIMLIB_ERR_RESOURCE_ORDER;
+		}
+	} else {
+		if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA))
+			list_add_tail(&lte->write_streams_list, args->stream_list);
+	}
+	lte->out_refcnt = lte->refcnt;
+	stream_size_table_insert(lte, args->stream_size_tab);
+	return 0;
+}
+
+static int
+lte_set_output_res_entry(struct wim_lookup_table_entry *lte, void *_wim)
+{
+	if (lte->resource_location == RESOURCE_IN_WIM &&
+	    lte->wim == _wim)
+	{
+		memcpy(&lte->output_resource_entry, &lte->resource_entry,
+		       sizeof(struct resource_entry));
+	}
+	return 0;
+}
+
+/* Given a WIM that we are going to overwrite in place with zero or more
+ * additional streams added, construct a list the list of new unique streams
+ * ('struct wim_lookup_table_entry's) that must be written, plus any unhashed
+ * streams that need to be added but may be identical to other hashed or
+ * unhashed streams.  These unhashed streams are checksummed while the streams
+ * are being written.  To aid this process, the member @unique_size is set to 1
+ * on streams that have a unique size and therefore must be written.
+ *
+ * The out_refcnt member of each 'struct wim_lookup_table_entry' is set to
+ * indicate the number of times the stream is referenced in only the streams
+ * that are being written; this may still be adjusted later when unhashed
+ * streams are being resolved.
+ */
+static int
+prepare_streams_for_overwrite(WIMStruct *wim, off_t end_offset,
+			      struct list_head *stream_list)
+{
+	int ret;
+	struct stream_size_table stream_size_tab;
+	struct lte_overwrite_prepare_args args = {
+		.wim         = wim,
+		.end_offset  = end_offset,
+		.stream_list = stream_list,
+		.stream_size_tab = &stream_size_tab,
+	};
+
+	ret = init_stream_size_table(&stream_size_tab, 9001);
+	if (ret)
+		return ret;
+
+	INIT_LIST_HEAD(stream_list);
+	for (int i = 0; i < wim->hdr.image_count; i++) {
+		struct wim_image_metadata *imd;
+		struct wim_lookup_table_entry *lte;
+
+ 		imd = wim->image_metadata[i];
+		image_for_each_unhashed_stream(lte, imd) {
+			ret = lte_overwrite_prepare(lte, &args);
+			if (ret)
+				goto out_destroy_stream_size_table;
+		}
+	}
+	ret = for_lookup_table_entry(wim->lookup_table,
+				     lte_overwrite_prepare, &args);
+	if (ret)
+		goto out_destroy_stream_size_table;
+
+	for (int i = 0; i < wim->hdr.image_count; i++)
+		lte_set_output_res_entry(wim->image_metadata[i]->metadata_lte,
+					 wim);
+	ret = for_lookup_table_entry(wim->lookup_table,
+				     lte_set_output_res_entry, wim);
+out_destroy_stream_size_table:
+	destroy_stream_size_table(&stream_size_tab);
+	return ret;
 }
 
 
@@ -1946,18 +2001,17 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 		write_flags |= WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE |
 			       WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML;
 	}
-	INIT_LIST_HEAD(&stream_list);
-	ret = wim_prepare_streams(w, old_wim_end, &stream_list);
-	if (ret != 0)
+	ret = prepare_streams_for_overwrite(w, old_wim_end, &stream_list);
+	if (ret)
 		return ret;
 
 	ret = open_wim_writable(w, w->filename, false,
 				(write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) != 0);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	ret = lock_wim(w, w->out_fp);
-	if (ret != 0) {
+	if (ret) {
 		fclose(w->out_fp);
 		w->out_fp = NULL;
 		return ret;
@@ -1971,20 +2025,16 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 		return WIMLIB_ERR_WRITE;
 	}
 
-	if (!list_empty(&stream_list)) {
-		DEBUG("Writing newly added streams (offset = %"PRIu64")",
-		      old_wim_end);
-		ret = write_stream_list(&stream_list,
-					w->lookup_table,
-					w->out_fp,
-					wimlib_get_compression_type(w),
-					write_flags, num_threads,
-					progress_func);
-		if (ret != 0)
-			goto out_ftruncate;
-	} else {
-		DEBUG("No new streams were added");
-	}
+	DEBUG("Writing newly added streams (offset = %"PRIu64")",
+	      old_wim_end);
+	ret = write_stream_list(&stream_list,
+				w->lookup_table,
+				w->out_fp,
+				wimlib_get_compression_type(w),
+				write_flags, num_threads,
+				progress_func);
+	if (ret)
+		goto out_ftruncate;
 
 	for (int i = 0; i < w->hdr.image_count; i++) {
 		if (w->image_metadata[i]->modified) {

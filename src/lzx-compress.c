@@ -669,6 +669,7 @@ wimlib_lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 	/* The input data must be preprocessed. To avoid changing the original
 	 * input, copy it to a temporary buffer. */
 	memcpy(uncompressed_data, __uncompressed_data, uncompressed_len);
+	memset(uncompressed_data + uncompressed_len, 0, 8);
 
 	/* Before doing any actual compression, do the call instruction (0xe8
 	 * byte) translation on the uncompressed data. */
