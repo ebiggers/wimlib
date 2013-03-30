@@ -265,7 +265,10 @@ struct wim_inode {
 	 * link_count of them) */
 	struct list_head i_dentry;
 
-	struct hlist_node i_hlist;
+	union {
+		struct hlist_node i_hlist;
+		struct list_head i_list;
+	};
 
 	union {
 		/* Used during image extraction to build a list of inodes that

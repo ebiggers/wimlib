@@ -533,7 +533,7 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 		imd->metadata_lte = NULL;
 	}
 	INIT_LIST_HEAD(&imd->unhashed_streams);
-	INIT_HLIST_HEAD(&imd->inode_list);
+	INIT_LIST_HEAD(&imd->inode_list);
 }
 
 void
@@ -574,7 +574,7 @@ new_image_metadata()
 	imd = CALLOC(1, sizeof(*imd));
 	if (imd) {
 		imd->refcnt = 1;
-		INIT_HLIST_HEAD(&imd->inode_list);
+		INIT_LIST_HEAD(&imd->inode_list);
 		INIT_LIST_HEAD(&imd->unhashed_streams);
 		DEBUG("Created new image metadata (refcnt=1)");
 	} else {

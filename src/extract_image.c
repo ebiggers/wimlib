@@ -268,7 +268,7 @@ extract_regular_file_unlinked(struct wim_dentry *dentry,
 	}
 
 	ret = extract_wim_resource_to_fd(lte, out_fd, wim_resource_size(lte));
-	if (ret != 0) {
+	if (ret) {
 		ERROR("Failed to extract resource to `%s'", output_path);
 		goto out;
 	}
@@ -586,7 +586,7 @@ calculate_bytes_to_extract(struct list_head *stream_list,
 	u64 num_streams = 0;
 
 	/* For each stream to be extracted... */
-	list_for_each_entry(lte, stream_list, staging_list) {
+	list_for_each_entry(lte, stream_list, extraction_list) {
 		if (extract_flags &
 		    (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))
 		{
@@ -614,7 +614,7 @@ maybe_add_stream_for_extraction(struct wim_lookup_table_entry *lte,
 {
 	if (++lte->out_refcnt == 1) {
 		INIT_LIST_HEAD(&lte->inode_list);
-		list_add_tail(&lte->staging_list, stream_list);
+		list_add_tail(&lte->extraction_list, stream_list);
 	}
 }
 
@@ -653,18 +653,17 @@ inode_find_streams_for_extraction(struct wim_inode *inode,
 }
 
 static void
-find_streams_for_extraction(struct hlist_head *inode_list,
+find_streams_for_extraction(struct wim_image_metadata *imd,
 			    struct list_head *stream_list,
 			    struct wim_lookup_table *lookup_table,
 			    int extract_flags)
 {
 	struct wim_inode *inode;
-	struct hlist_node *cur;
 	struct wim_dentry *dentry;
 
 	for_lookup_table_entry(lookup_table, lte_zero_out_refcnt, NULL);
 	INIT_LIST_HEAD(stream_list);
-	hlist_for_each_entry(inode, cur, inode_list, i_hlist) {
+	image_for_each_inode(inode, imd) {
 		if (!inode->i_resolved)
 			inode_resolve_ltes(inode, lookup_table);
 		inode_for_each_dentry(dentry, inode)
@@ -713,7 +712,7 @@ apply_stream_list(struct list_head *stream_list,
 	 * sequential reading of the WIM can be implemented. */
 
 	/* For each distinct stream to be extracted */
-	list_for_each_entry(lte, stream_list, staging_list) {
+	list_for_each_entry(lte, stream_list, extraction_list) {
 		/* For each inode that contains the stream */
 		list_for_each_entry(inode, &lte->inode_list, i_lte_inode_list) {
 			/* For each dentry that points to the inode */
@@ -745,6 +744,41 @@ apply_stream_list(struct list_head *stream_list,
 	return 0;
 }
 
+static int
+sort_stream_list_by_wim_position(struct list_head *stream_list)
+{
+	struct list_head *cur;
+	size_t num_streams;
+	struct wim_lookup_table_entry **array;
+	size_t i;
+	size_t array_size;
+
+	num_streams = 0;
+	list_for_each(cur, stream_list)
+		num_streams++;
+	array_size = num_streams * sizeof(array[0]);
+	array = MALLOC(array_size);
+	if (!array) {
+		ERROR("Failed to allocate %zu bytes to sort stream entries",
+		      array_size);
+		return WIMLIB_ERR_NOMEM;
+	}
+	cur = stream_list->next;
+	for (i = 0; i < num_streams; i++) {
+		array[i] = container_of(cur, struct wim_lookup_table_entry, extraction_list);
+		cur = cur->next;
+	}
+
+	qsort(array, num_streams, sizeof(array[0]), cmp_streams_by_wim_position);
+
+	INIT_LIST_HEAD(stream_list);
+	for (i = 0; i < num_streams; i++)
+		list_add_tail(&array[i]->extraction_list, stream_list);
+	FREE(array);
+	return 0;
+}
+
+
 /* Extracts the image @image from the WIM @w to the directory or NTFS volume
  * @target. */
 static int
@@ -754,7 +788,6 @@ extract_single_image(WIMStruct *w, int image,
 {
 	int ret;
 	struct list_head stream_list;
-	struct hlist_head *inode_list;
 
 	struct apply_args args;
 	const struct apply_operations *ops;
@@ -792,10 +825,9 @@ extract_single_image(WIMStruct *w, int image,
 	if (ret)
 		goto out;
 
-	inode_list = &wim_get_current_image_metadata(w)->inode_list;
-
 	/* Build a list of the streams that need to be extracted */
-	find_streams_for_extraction(inode_list, &stream_list,
+	find_streams_for_extraction(wim_get_current_image_metadata(w),
+				    &stream_list,
 				    w->lookup_table, extract_flags);
 
 	/* Calculate the number of bytes of data that will be extracted */

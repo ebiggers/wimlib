@@ -215,7 +215,7 @@ finalize_lte(struct wim_lookup_table_entry *lte)
 	#ifdef WITH_FUSE
 	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		unlink(lte->staging_file_name);
-		list_del(&lte->staging_list);
+		list_del(&lte->unhashed_list);
 	}
 	#endif
 	free_lookup_table_entry(lte);
@@ -275,7 +275,7 @@ for_lookup_table_entry(struct wim_lookup_table *table,
 	return 0;
 }
 
-static int
+int
 cmp_streams_by_wim_position(const void *p1, const void *p2)
 {
 	const struct wim_lookup_table_entry *lte1, *lte2;
@@ -287,40 +287,6 @@ cmp_streams_by_wim_position(const void *p1, const void *p2)
 		return 1;
 	else
 		return 0;
-}
-
-int
-sort_stream_list_by_wim_position(struct list_head *stream_list)
-{
-	struct list_head *cur;
-	size_t num_streams;
-	struct wim_lookup_table_entry **array;
-	size_t i;
-	size_t array_size;
-
-	num_streams = 0;
-	list_for_each(cur, stream_list)
-		num_streams++;
-	array_size = num_streams * sizeof(array[0]);
-	array = MALLOC(array_size);
-	if (!array) {
-		ERROR("Failed to allocate %zu bytes to sort stream entries",
-		      array_size);
-		return WIMLIB_ERR_NOMEM;
-	}
-	cur = stream_list->next;
-	for (i = 0; i < num_streams; i++) {
-		array[i] = container_of(cur, struct wim_lookup_table_entry, staging_list);
-		cur = cur->next;
-	}
-
-	qsort(array, num_streams, sizeof(array[0]), cmp_streams_by_wim_position);
-
-	INIT_LIST_HEAD(stream_list);
-	for (i = 0; i < num_streams; i++)
-		list_add_tail(&array[i]->staging_list, stream_list);
-	FREE(array);
-	return 0;
 }
 
 
@@ -667,9 +633,13 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 	tfprintf(out, T("Part Number       = %hu\n"), lte->part_number);
 	tfprintf(out, T("Reference Count   = %u\n"), lte->refcnt);
 
-	tfprintf(out, T("Hash              = 0x"));
-	print_hash(lte->hash, out);
-	tputc(T('\n'), out);
+	if (lte->unhashed) {
+		tfprintf(out, T("(Unhashed, back ptr at %p)\n"), lte->my_ptr);
+	} else {
+		tfprintf(out, T("Hash              = 0x"));
+		print_hash(lte->hash, out);
+		tputc(T('\n'), out);
+	}
 
 	tfprintf(out, T("Flags             = "));
 	u8 flags = lte->resource_entry.flags;

@@ -99,7 +99,7 @@ struct wimfs_context {
 	u64 next_ino;
 
 	/* List of inodes in the mounted image */
-	struct hlist_head *image_inode_list;
+	struct list_head *image_inode_list;
 
 	/* Name and message queue descriptors for message queues between the
 	 * filesystem daemon process and the unmount process.  These are used
@@ -346,7 +346,7 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 		}
 	}
 	dentry_add_child(parent, new);
-	hlist_add_head(&new->d_inode->i_hlist, wimfs_ctx->image_inode_list);
+	list_add_tail(&new->d_inode->i_list, wimfs_ctx->image_inode_list);
 	if (dentry_ret)
 		*dentry_ret = new;
 	return 0;
@@ -802,19 +802,19 @@ rebuild_wim(struct wimfs_context *ctx, int write_flags,
 	    wimlib_progress_func_t progress_func)
 {
 	int ret;
-	struct wim_lookup_table_entry *lte, *tmp;
+	struct wim_lookup_table_entry *lte;
 	WIMStruct *w = ctx->wim;
 	struct wim_image_metadata *imd = wim_get_current_image_metadata(ctx->wim);
 
 	DEBUG("Closing all staging file descriptors.");
-	list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, staging_list) {
+	image_for_each_unhashed_stream(lte, imd) {
 		ret = inode_close_fds(lte->lte_inode);
 		if (ret)
 			return ret;
 	}
 
 	DEBUG("Freeing entries for zero-length streams");
-	list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, staging_list) {
+	image_for_each_unhashed_stream(lte, imd) {
 		if (wim_resource_size(lte) == 0) {
 			*lte->my_ptr = NULL;
 			free_lookup_table_entry(lte);
@@ -1671,9 +1671,7 @@ wimfs_link(const char *to, const char *from)
 	struct wim_dentry *from_dentry, *from_dentry_parent;
 	const char *link_name;
 	struct wim_inode *inode;
-	struct wim_lookup_table_entry *lte;
 	WIMStruct *w = wimfs_get_WIMStruct();
-	u16 i;
 	int ret;
 
 	inode = wim_pathname_to_inode(w, to);
@@ -1698,15 +1696,10 @@ wimfs_link(const char *to, const char *from)
 	if (ret)
 		return -ENOMEM;
 
-	inode_add_dentry(from_dentry, inode);
-	from_dentry->d_inode = inode;
 	inode->i_nlink++;
-
-	for (i = 0; i <= inode->i_num_ads; i++) {
-		lte = inode_stream_lte_resolved(inode, i);
-		if (lte)
-			lte->refcnt++;
-	}
+	inode_ref_streams(inode);
+	from_dentry->d_inode = inode;
+	inode_add_dentry(from_dentry, inode);
 	dentry_add_child(from_dentry_parent, from_dentry);
 	return 0;
 }
@@ -2418,7 +2411,6 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	struct wim_lookup_table *joined_tab, *wim_tab_save;
 	struct wim_image_metadata *imd;
 	struct wimfs_context ctx;
-	struct hlist_node *cur_node;
 	struct wim_inode *inode;
 
 	DEBUG("Mount: wim = %p, image = %d, dir = %s, flags = %d, ",
@@ -2428,7 +2420,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	ret = verify_swm_set(wim, additional_swms, num_additional_swms);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	if ((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) && (wim->hdr.total_parts != 1)) {
@@ -2440,7 +2432,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		ret = new_joined_lookup_table(wim, additional_swms,
 					      num_additional_swms,
 					      &joined_tab);
-		if (ret != 0)
+		if (ret)
 			return ret;
 		wim_tab_save = wim->lookup_table;
 		wim->lookup_table = joined_tab;
@@ -2448,12 +2440,12 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = wim_run_full_verifications(wim);
-		if (ret != 0)
+		if (ret)
 			goto out;
 	}
 
 	ret = select_wim_image(wim, image);
-	if (ret != 0)
+	if (ret)
 		goto out;
 
 	DEBUG("Selected image %d", image);
@@ -2476,7 +2468,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = lock_wim(wim, wim->fp);
-		if (ret != 0)
+		if (ret)
 			goto out;
 	}
 
@@ -2494,12 +2486,13 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	ctx.image_inode_list = &imd->inode_list;
 	ctx.default_uid = getuid();
 	ctx.default_gid = getgid();
+	ctx.wim->lookup_table->unhashed_streams = &imd->unhashed_streams;
 	if (mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 		ctx.default_lookup_flags = LOOKUP_FLAG_ADS_OK;
 
 	DEBUG("Unlinking message queues in case they already exist");
 	ret = set_message_queue_names(&ctx, dir);
-	if (ret != 0)
+	if (ret)
 		goto out_unlock;
 	unlink_message_queues(&ctx);
 
@@ -2537,7 +2530,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	if ((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
 		/* Read-write mount.  Make the staging directory */
 		ret = make_staging_dir(&ctx, staging_dir);
-		if (ret != 0)
+		if (ret)
 			goto out_free_dir_copy;
 	} else {
 		/* Read-only mount */
@@ -2570,7 +2563,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	 * assign inode numbers */
 	DEBUG("Resolving lookup table entries and assigning inode numbers");
 	ctx.next_ino = 1;
-	hlist_for_each_entry(inode, cur_node, &imd->inode_list, i_hlist) {
+	image_for_each_inode(inode, imd) {
 		inode_resolve_ltes(inode, wim->lookup_table);
 		inode->i_ino = ctx.next_ino++;
 	}

@@ -537,6 +537,8 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 					       cb,
 					       ctx_or_buf);
 	} else {
+		offset += lte->resource_entry.offset;
+
 		if (fseeko(wim_fp, offset, SEEK_SET)) {
 			ERROR_WITH_ERRNO("Failed to seek to offset %"PRIu64
 					 " in WIM", offset);
@@ -654,12 +656,21 @@ read_buffer_prefix(const struct wim_lookup_table_entry *lte,
 		   void *ctx_or_buf, int _ignored_flags)
 {
 	const void *inbuf = lte->attached_buffer;
+	int ret;
+
 	if (cb) {
-		return cb(inbuf, size, ctx_or_buf);
+		while (size) {
+			size_t chunk_size = min(WIM_CHUNK_SIZE, size);
+			ret = cb(inbuf, chunk_size, ctx_or_buf);
+			if (ret)
+				return ret;
+			size -= chunk_size;
+			inbuf += chunk_size;
+		}
 	} else {
 		memcpy(ctx_or_buf, inbuf, size);
-		return 0;
 	}
+	return 0;
 }
 
 typedef int (*read_resource_prefix_handler_t)(const struct wim_lookup_table_entry *lte,
@@ -668,6 +679,23 @@ typedef int (*read_resource_prefix_handler_t)(const struct wim_lookup_table_entr
 					      void *ctx_or_buf,
 					      int flags);
 
+/*
+ * Read the first @size bytes from a generic "resource", which may be located in
+ * the WIM (compressed or uncompressed), in an external file, or directly in an
+ * in-memory buffer.
+ *
+ * Feed the data either to a callback function (cb != NULL, passing it
+ * ctx_or_buf), or write it directly into a buffer (cb == NULL, ctx_or_buf
+ * specifies the buffer, which must have room for @size bytes).
+ *
+ * When using a callback function, it is called with chunks up to 32768 bytes in
+ * size until the resource is exhausted.
+ *
+ * If the resource is located in a WIM file, @flags can be
+ * WIMLIB_RESOURCE_FLAG_MULTITHREADED if it must be safe to access the resource
+ * concurrently by multiple threads, or WIMLIB_RESOURCE_FLAG_RAW if the raw
+ * compressed data is to be supplied instead of the uncompressed data.
+ */
 int
 read_resource_prefix(const struct wim_lookup_table_entry *lte,
 		     u64 size, consume_data_callback_t cb, void *ctx_or_buf,
@@ -703,6 +731,22 @@ read_full_resource_into_buf(const struct wim_lookup_table_entry *lte,
 				    thread_safe ? WIMLIB_RESOURCE_FLAG_MULTITHREADED : 0);
 }
 
+struct extract_ctx {
+	SHA_CTX sha_ctx;
+	consume_data_callback_t extract_chunk;
+	void *extract_chunk_arg;
+};
+
+static int
+extract_chunk_sha1_wrapper(const void *chunk, size_t chunk_size,
+			   void *_ctx)
+{
+	struct extract_ctx *ctx = _ctx;
+
+	sha1_update(&ctx->sha_ctx, chunk, chunk_size);
+	return ctx->extract_chunk(chunk, chunk_size, ctx->extract_chunk_arg);
+}
+
 /* Extracts the first @size bytes of a WIM resource to somewhere.  In the
  * process, the SHA1 message digest of the resource is checked if the full
  * resource is being extracted.
@@ -715,8 +759,36 @@ extract_wim_resource(const struct wim_lookup_table_entry *lte,
 		     consume_data_callback_t extract_chunk,
 		     void *extract_chunk_arg)
 {
-	return read_resource_prefix(lte, size, extract_chunk,
-				    extract_chunk_arg, 0);
+	int ret;
+	if (size == wim_resource_size(lte)) {
+		/* Do SHA1 */
+		struct extract_ctx ctx;
+		ctx.extract_chunk = extract_chunk;
+		ctx.extract_chunk_arg = extract_chunk_arg;
+		sha1_init(&ctx.sha_ctx);
+		ret = read_resource_prefix(lte, size,
+					   extract_chunk_sha1_wrapper,
+					   &ctx, 0);
+		if (ret == 0) {
+			u8 hash[SHA1_HASH_SIZE];
+			sha1_final(hash, &ctx.sha_ctx);
+			if (!hashes_equal(hash, lte->hash)) {
+			#ifdef ENABLE_ERROR_MESSAGES
+				ERROR_WITH_ERRNO("Invalid SHA1 message digest "
+						 "on the following WIM resource:");
+				print_lookup_table_entry(lte, stderr);
+				if (lte->resource_location == RESOURCE_IN_WIM)
+					ERROR("The WIM file appears to be corrupt!");
+				ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
+			#endif
+			}
+		}
+	} else {
+		/* Don't do SHA1 */
+		ret = read_resource_prefix(lte, size, extract_chunk,
+					   extract_chunk_arg, 0);
+	}
+	return ret;
 }
 
 static int

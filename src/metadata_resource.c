@@ -51,7 +51,6 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 	struct wim_dentry *dentry;
 	const struct wim_lookup_table_entry *metadata_lte;
 	u64 metadata_len;
-	struct hlist_head inode_list;
 
 	metadata_lte = imd->metadata_lte;
 	metadata_len = wim_resource_size(metadata_lte);
@@ -151,7 +150,7 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 		goto out_free_dentry_tree;
 
 	/* Build hash table that maps hard link group IDs to dentry sets */
-	ret = dentry_tree_fix_inodes(dentry, &inode_list);
+	ret = dentry_tree_fix_inodes(dentry, &imd->inode_list);
 	if (ret)
 		goto out_free_dentry_tree;
 
@@ -159,16 +158,13 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 		DEBUG("Running miscellaneous verifications on the dentry tree");
 		for_lookup_table_entry(w->lookup_table, lte_zero_real_refcnt, NULL);
 		ret = for_dentry_in_tree(dentry, verify_dentry, w);
-		if (ret != 0)
+		if (ret)
 			goto out_free_dentry_tree;
 	}
 
 	DEBUG("Done reading image metadata");
 
 	imd->root_dentry = dentry;
-	imd->inode_list  = inode_list;
-	if (imd->inode_list.first)
-		imd->inode_list.first->pprev = &imd->inode_list.first;
 	INIT_LIST_HEAD(&imd->unhashed_streams);
 	goto out_free_buf;
 out_free_dentry_tree:
@@ -203,16 +199,15 @@ write_wim_resource_from_buffer(const void *buf, u64 buf_size,
 	 * write_wim_resource(). */
 	struct wim_lookup_table_entry lte;
 	int ret;
-	lte.resource_entry.original_size = buf_size;
 	lte.resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
 	lte.attached_buffer              = (void*)buf;
+	lte.resource_entry.original_size = buf_size;
+	lte.resource_entry.flags         = 0;
 	lte.unhashed                     = 1;
-	zero_out_hash(lte.hash);
 	ret = write_wim_resource(&lte, out_fp, out_ctype, out_res_entry, 0);
-	if (ret)
-		return ret;
-	copy_hash(hash, lte.hash);
-	return 0;
+	if (ret == 0)
+		copy_hash(hash, lte.hash);
+	return ret;
 }
 
 /* Write the metadata resource for the current WIM image. */

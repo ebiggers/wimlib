@@ -104,7 +104,6 @@ wimlib_export_image(WIMStruct *src_wim,
 	int ret;
 	struct wim_lookup_table *joined_tab, *src_wim_tab_save;
 	struct wim_image_metadata *src_imd;
-	struct hlist_node *cur_node;
 	struct list_head lte_list_head;
 	struct wim_inode *inode;
 
@@ -209,7 +208,7 @@ wimlib_export_image(WIMStruct *src_wim,
 	for_lookup_table_entry(src_wim->lookup_table, lte_zero_out_refcnt, NULL);
 	src_imd = wim_get_current_image_metadata(src_wim);
 	INIT_LIST_HEAD(&lte_list_head);
-	hlist_for_each_entry(inode, cur_node, &src_imd->inode_list, i_hlist) {
+	image_for_each_inode(inode, src_imd) {
 		ret = inode_allocate_needed_ltes(inode,
 						 src_wim->lookup_table,
 						 dest_wim->lookup_table,
@@ -235,7 +234,7 @@ wimlib_export_image(WIMStruct *src_wim,
 	/* All memory allocations have been taken care of, so it's no longer
 	 * possible for this function to fail.  Go ahead and update the lookup
 	 * table of the destination WIM and the boot index, if needed. */
-	hlist_for_each_entry(inode, cur_node, &src_imd->inode_list, i_hlist) {
+	image_for_each_inode(inode, src_imd) {
 		inode_move_ltes_to_table(inode,
 					 src_wim->lookup_table,
 					 dest_wim->lookup_table,

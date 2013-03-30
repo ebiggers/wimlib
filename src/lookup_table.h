@@ -139,7 +139,6 @@ struct wim_lookup_table_entry {
 	u16 resource_location : 5;
 	u8 unique_size : 1;
 	u8 unhashed : 1;
-	u8 is_ads : 1;
 
 	/* (On-disk field)
 	 * Number of times this lookup table entry is referenced by dentries.
@@ -160,6 +159,10 @@ struct wim_lookup_table_entry {
 		 * table. */
 		size_t hash_short;
 
+		/* Unhashed entries only (unhashed == 1): this points directly
+		 * to the pointer to this 'struct wim_lookup_table_entry'
+		 * contained in a 'struct wim_ads_entry' or 'struct wim_inode'.
+		 * */
 		struct wim_lookup_table_entry **my_ptr;
 	};
 
@@ -226,7 +229,11 @@ struct wim_lookup_table_entry {
 	 *
 	 * This field is also used to make other lists of lookup table entries.
 	 * */
-	struct list_head staging_list;
+	union {
+		struct list_head unhashed_list;
+		struct list_head staging_list;
+		struct list_head extraction_list;
+	};
 };
 
 static inline u64
@@ -317,7 +324,7 @@ for_lookup_table_entry(struct wim_lookup_table *table,
 		       void *arg);
 
 extern int
-sort_stream_list_by_wim_position(struct list_head *stream_list);
+cmp_streams_by_wim_position(const void *p1, const void *p2);
 
 extern int
 for_lookup_table_entry_pos_sorted(struct wim_lookup_table *table,
@@ -481,7 +488,7 @@ lookup_table_insert_unhashed(struct wim_lookup_table *table,
 			     struct wim_lookup_table_entry **my_ptr)
 {
 	lte->unhashed = 1;
-	list_add_tail(&lte->staging_list, table->unhashed_streams);
+	list_add_tail(&lte->unhashed_list, table->unhashed_streams);
 	lte->my_ptr = my_ptr;
 	*my_ptr = lte;
 }

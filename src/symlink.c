@@ -219,7 +219,7 @@ inode_set_symlink(struct wim_inode *inode,
 
 	ret = make_symlink_reparse_data_buf(target, &symlink_buf_len,
 					    &symlink_buf);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	DEBUG("Made symlink reparse data buf (len = %zu, name len = %zu)",
@@ -243,7 +243,6 @@ inode_set_symlink(struct wim_inode *inode,
 		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
 		lte->attached_buffer              = symlink_buf;
 		lte->resource_entry.original_size = symlink_buf_len;
-		lte->resource_entry.size          = symlink_buf_len;
 		copy_hash(lte->hash, symlink_buf_hash);
 	}
 

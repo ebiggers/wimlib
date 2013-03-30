@@ -239,10 +239,12 @@ struct wim_security_data {
 /* Metadata for a WIM image */
 struct wim_image_metadata {
 
+	/* Number of WIMStruct's that are sharing this image metadata (from
+	 * calls to wimlib_export_image().) */
 	unsigned long refcnt;
 
 	/* Pointer to the root dentry of the image. */
-	struct wim_dentry    *root_dentry;
+	struct wim_dentry *root_dentry;
 
 	/* Pointer to the security data of the image. */
 	struct wim_security_data *security_data;
@@ -251,9 +253,14 @@ struct wim_image_metadata {
 	 */
 	struct wim_lookup_table_entry *metadata_lte;
 
-	/* Linked list of inodes of this image */
-	struct hlist_head inode_list;
+	/* Linked list of 'struct wim_inode's for this image. */
+	struct list_head inode_list;
 
+	/* Linked list of 'struct wim_lookup_table_entry's for this image that
+	 * are referred to in the dentry tree, but have not had a SHA1 message
+	 * digest calculated yet and therefore have not been inserted into the
+	 * WIM's lookup table.  This list is added to during wimlib_add_image()
+	 * and wimlib_mount_image() (read-write only). */
 	struct list_head unhashed_streams;
 
 	/* 1 iff the dentry tree has been modified.  If this is the case, the
@@ -356,6 +363,12 @@ resource_is_compressed(const struct resource_entry *entry)
 	return (entry->flags & WIM_RESHDR_FLAG_COMPRESSED);
 }
 
+#define image_for_each_inode(inode, imd) \
+	list_for_each_entry(inode, &imd->inode_list, i_list)
+
+#define image_for_each_unhashed_stream(lte, imd) \
+	list_for_each_entry(lte, &imd->unhashed_streams, unhashed_list)
+
 /* add_image.c */
 
 extern bool
@@ -392,7 +405,7 @@ struct wim_inode_table {
 	 *   number with some other inode until assign_inode_numbers() is
 	 *   called.
 	 */
-	struct hlist_head extra_inodes;
+	struct list_head extra_inodes;
 };
 
 extern int
@@ -403,8 +416,11 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		       u64 ino, u64 devno, struct wim_dentry **dentry_ret);
 
 extern void
+inode_ref_streams(struct wim_inode *inode);
+
+extern void
 inode_table_prepare_inode_list(struct wim_inode_table *table,
-			       struct hlist_head *head);
+			       struct list_head *head);
 
 static inline void
 destroy_inode_table(struct wim_inode_table *table)
@@ -414,7 +430,7 @@ destroy_inode_table(struct wim_inode_table *table)
 
 
 extern int
-dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_list);
+dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list);
 
 /* header.c */
 
