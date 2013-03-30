@@ -58,62 +58,79 @@ attr_record_name(ATTR_RECORD *ar)
 	return (ntfschar*)((u8*)ar + le16_to_cpu(ar->name_offset));
 }
 
-/* Calculates the SHA1 message digest of a NTFS attribute.
- *
- * @ni:  The NTFS inode containing the attribute.
- * @ar:	 The ATTR_RECORD describing the attribute.
- * @md:  If successful, the returned SHA1 message digest.
- * @reparse_tag_ret:	Optional pointer into which the first 4 bytes of the
- * 				attribute will be written (to get the reparse
- * 				point ID)
- *
- * Return 0 on success or nonzero on error.
- */
-static int
-ntfs_attr_sha1sum(ntfs_inode *ni, ATTR_RECORD *ar,
-		  u8 md[SHA1_HASH_SIZE],
-		  bool is_reparse_point,
-		  u32 *reparse_tag_ret)
+int
+read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
+		      u64 size,
+		      consume_data_callback_t cb,
+		      void *ctx_or_buf,
+		      int _ignored_flags)
 {
-	s64 pos = 0;
-	s64 bytes_remaining;
-	char buf[BUFFER_SIZE];
+	struct ntfs_location *loc = lte->ntfs_loc;
+	ntfs_volume *vol = *loc->ntfs_vol_p;
+	ntfs_inode *ni;
 	ntfs_attr *na;
-	SHA_CTX ctx;
+	s64 pos;
+	s64 bytes_remaining;
+	void *out_buf;
+	int ret;
 
-	na = ntfs_attr_open(ni, ar->type, attr_record_name(ar),
-			    ar->name_length);
+ 	ni = ntfs_pathname_to_inode(vol, NULL, loc->path);
+	if (!ni) {
+		ERROR_WITH_ERRNO("Can't find NTFS inode for \"%"TS"\"", loc->path);
+		ret = WIMLIB_ERR_NTFS_3G;
+		goto out;
+	}
+
+	na = ntfs_attr_open(ni,
+			    loc->is_reparse_point ? AT_REPARSE_POINT : AT_DATA,
+			    loc->stream_name,
+			    loc->stream_name_nchars);
 	if (!na) {
-		ERROR_WITH_ERRNO("Failed to open NTFS attribute");
-		return WIMLIB_ERR_NTFS_3G;
+		ERROR_WITH_ERRNO("Failed to open attribute of \"%"TS"\" in "
+				 "NTFS volume", loc->path);
+		ret = WIMLIB_ERR_NTFS_3G;
+		goto out_close_ntfs_inode;
 	}
 
+	/*if (is_reparse_point) {*/
+		/*if (ntfs_attr_pread(na, 0, 8, buf) != 8)*/
+			/*goto out_error;*/
+		/**reparse_tag_ret = le32_to_cpu(*(u32*)buf);*/
+		/*DEBUG("ReparseTag = %#x", *reparse_tag_ret);*/
+		/*pos = 8;*/
+		/*bytes_remaining -= 8;*/
+	/*}*/
+
+	if (cb)
+		out_buf = alloca(WIM_CHUNK_SIZE);
+	else
+		out_buf = ctx_or_buf;
+	pos = 0;
 	bytes_remaining = na->data_size;
-
-	if (is_reparse_point) {
-		if (ntfs_attr_pread(na, 0, 8, buf) != 8)
-			goto out_error;
-		*reparse_tag_ret = le32_to_cpu(*(u32*)buf);
-		DEBUG("ReparseTag = %#x", *reparse_tag_ret);
-		pos = 8;
-		bytes_remaining -= 8;
-	}
-
-	sha1_init(&ctx);
 	while (bytes_remaining) {
-		s64 to_read = min(bytes_remaining, sizeof(buf));
-		if (ntfs_attr_pread(na, pos, to_read, buf) != to_read)
-			goto out_error;
-		sha1_update(&ctx, buf, to_read);
+		s64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
+		if (ntfs_attr_pread(na, pos, to_read, out_buf) != to_read) {
+			ERROR_WITH_ERRNO("Error reading \"%"TS"\"", loc->path);
+			ret = WIMLIB_ERR_NTFS_3G;
+			goto out_close_ntfs_attr;
+		}
 		pos += to_read;
 		bytes_remaining -= to_read;
+		if (cb) {
+			ret = cb(out_buf, to_read, ctx_or_buf);
+			if (ret)
+				goto out_close_ntfs_attr;
+		} else {
+			out_buf += to_read;
+		}
 	}
-	sha1_final(md, &ctx);
+	ret = 0;
+out_close_ntfs_attr:
 	ntfs_attr_close(na);
-	return 0;
-out_error:
-	ERROR_WITH_ERRNO("Error reading NTFS attribute");
-	return WIMLIB_ERR_NTFS_3G;
+out_close_ntfs_inode:
+	ntfs_inode_close(ni);
+out:
+	return ret;
 }
 
 /* Load the streams from a file or reparse point in the NTFS volume into the WIM
@@ -128,7 +145,6 @@ capture_ntfs_streams(struct wim_inode *inode,
 		     ATTR_TYPES type)
 {
 	ntfs_attr_search_ctx *actx;
-	u8 attr_hash[SHA1_HASH_SIZE];
 	struct ntfs_location *ntfs_loc = NULL;
 	int ret = 0;
 	struct wim_lookup_table_entry *lte;
@@ -147,7 +163,6 @@ capture_ntfs_streams(struct wim_inode *inode,
 	while (!ntfs_attr_lookup(type, NULL, 0,
 				 CASE_SENSITIVE, 0, NULL, 0, actx))
 	{
-		u32 reparse_tag;
 		u64 data_size = ntfs_get_attribute_value_length(actx->attr);
 		u64 name_length = actx->attr->name_length;
 		if (data_size == 0) {
@@ -160,64 +175,44 @@ capture_ntfs_streams(struct wim_inode *inode,
 			/* Empty stream.  No lookup table entry is needed. */
 			lte = NULL;
 		} else {
-			if (type == AT_REPARSE_POINT && data_size < 8) {
-				ERROR("`%s': reparse point buffer too small",
-				      path);
-				ret = WIMLIB_ERR_NTFS_3G;
+			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
+			if (!ntfs_loc)
 				goto out_put_actx;
+			ntfs_loc->ntfs_vol_p = ntfs_vol_p;
+			ntfs_loc->path = MALLOC(path_len + 1);
+			if (!ntfs_loc->path)
+				goto out_free_ntfs_loc;
+			memcpy(ntfs_loc->path, path, path_len + 1);
+			if (name_length) {
+				ntfs_loc->stream_name = MALLOC(name_length * 2);
+				if (!ntfs_loc->stream_name)
+					goto out_free_ntfs_loc;
+				memcpy(ntfs_loc->stream_name,
+				       attr_record_name(actx->attr),
+				       actx->attr->name_length * 2);
+				ntfs_loc->stream_name_nchars = name_length;
 			}
-			/* Checksum the stream. */
-			ret = ntfs_attr_sha1sum(ni, actx->attr, attr_hash,
-						type == AT_REPARSE_POINT, &reparse_tag);
-			if (ret != 0)
-				goto out_put_actx;
 
-			if (type == AT_REPARSE_POINT)
-				inode->i_reparse_tag = reparse_tag;
-
-			/* Make a lookup table entry for the stream, or use an existing
-			 * one if there's already an identical stream. */
-			lte = __lookup_resource(lookup_table, attr_hash);
-			ret = WIMLIB_ERR_NOMEM;
-			if (lte) {
-				lte->refcnt++;
+			lte = new_lookup_table_entry();
+			if (!lte)
+				goto out_free_ntfs_loc;
+			lte->ntfs_loc = ntfs_loc;
+			lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
+		#if 0
+			if (type == AT_REPARSE_POINT) {
+				ntfs_loc->is_reparse_point = true;
+				lte->resource_entry.original_size = data_size - 8;
+				lte->resource_entry.size = data_size - 8;
 			} else {
-				ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
-				if (!ntfs_loc)
-					goto out_put_actx;
-				ntfs_loc->ntfs_vol_p = ntfs_vol_p;
-				ntfs_loc->path = MALLOC(path_len + 1);
-				if (!ntfs_loc->path)
-					goto out_free_ntfs_loc;
-				memcpy(ntfs_loc->path, path, path_len + 1);
-				if (name_length) {
-					ntfs_loc->stream_name = MALLOC(name_length * 2);
-					if (!ntfs_loc->stream_name)
-						goto out_free_ntfs_loc;
-					memcpy(ntfs_loc->stream_name,
-					       attr_record_name(actx->attr),
-					       actx->attr->name_length * 2);
-					ntfs_loc->stream_name_nchars = name_length;
-				}
-
-				lte = new_lookup_table_entry();
-				if (!lte)
-					goto out_free_ntfs_loc;
-				lte->ntfs_loc = ntfs_loc;
-				lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
-				if (type == AT_REPARSE_POINT) {
-					ntfs_loc->is_reparse_point = true;
-					lte->resource_entry.original_size = data_size - 8;
-					lte->resource_entry.size = data_size - 8;
-				} else {
-					ntfs_loc->is_reparse_point = false;
-					lte->resource_entry.original_size = data_size;
-					lte->resource_entry.size = data_size;
-				}
-				ntfs_loc = NULL;
-				copy_hash(lte->hash, attr_hash);
-				lookup_table_insert(lookup_table, lte);
+				ntfs_loc->is_reparse_point = false;
+				lte->resource_entry.original_size = data_size;
+				lte->resource_entry.size = data_size;
 			}
+		#else
+			ntfs_loc->is_reparse_point = (type == AT_REPARSE_POINT);
+			lte->resource_entry.original_size = data_size;
+		#endif
+			ntfs_loc = NULL;
 		}
 		if (name_length == 0) {
 			/* Unnamed data stream.  Put the reference to it in the
@@ -242,6 +237,8 @@ capture_ntfs_streams(struct wim_inode *inode,
 			wimlib_assert(new_ads_entry->stream_name_nbytes == name_length * 2);
 			new_ads_entry->lte = lte;
 		}
+		if (lte)
+			lookup_table_insert_unhashed(lookup_table, lte);
 	}
 	ret = 0;
 	goto out_put_actx;

@@ -1158,7 +1158,7 @@ inode_get_unix_data(const struct wim_inode *inode,
 	if (size != sizeof(struct wimlib_unix_data))
 		return BAD_UNIX_DATA;
 
-	ret = read_full_wim_resource(lte, unix_data, 0);
+	ret = read_full_resource_into_buf(lte, unix_data, true);
 	if (ret)
 		return ret;
 

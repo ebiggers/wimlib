@@ -86,8 +86,8 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 	}
 
 	/* Read the metadata resource into memory.  (It may be compressed.) */
-	ret = read_full_wim_resource(metadata_lte, buf, 0);
-	if (ret != 0)
+	ret = read_full_resource_into_buf(metadata_lte, buf, false);
+	if (ret)
 		goto out_free_buf;
 
 	DEBUG("Finished reading metadata resource into memory.");
@@ -208,16 +208,12 @@ write_wim_resource_from_buffer(const u8 *buf, u64 buf_size,
 	 * write_wim_resource(). */
 	struct wim_lookup_table_entry lte;
 	int ret;
-	lte.resource_entry.flags         = 0;
 	lte.resource_entry.original_size = buf_size;
-	lte.resource_entry.size          = buf_size;
-	lte.resource_entry.offset        = 0;
 	lte.resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
 	lte.attached_buffer              = (void*)buf;
-
 	zero_out_hash(lte.hash);
 	ret = write_wim_resource(&lte, out_fp, out_ctype, out_res_entry, 0);
-	if (ret != 0)
+	if (ret)
 		return ret;
 	copy_hash(hash, lte.hash);
 	return 0;
@@ -293,8 +289,8 @@ write_metadata_resource(WIMStruct *w)
 					     wimlib_get_compression_type(w),
 					     &lte->output_resource_entry,
 					     lte->hash);
-	if (ret != 0)
-		goto out;
+	if (ret)
+		goto out_free_buf;
 
 	/* Note that although the SHA1 message digest of the metadata resource
 	 * is very likely to have changed, the corresponding lookup table entry
@@ -302,7 +298,7 @@ write_metadata_resource(WIMStruct *w)
 	 * re-inserted in the hash table. */
 	lte->out_refcnt = 1;
 	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
-out:
+out_free_buf:
 	/* All the data has been written to the new WIM; no need for the buffer
 	 * anymore */
 	FREE(buf);

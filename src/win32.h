@@ -20,19 +20,14 @@ extern int
 win32_read_file(const tchar *filename, HANDLE handle,
 		u64 offset, size_t size, void *buf);
 
-extern HANDLE
-win32_open_file_data_only(const wchar_t *path_utf16);
-
-extern void
-win32_close_file(void *handle);
-
-#ifdef ENABLE_ERROR_MESSAGES
-extern void win32_error(u32 err);
-extern void win32_error_last();
-#else
-#  define win32_error(err)
-#  define win32_error_last()
-#endif
+extern int
+read_win32_file_prefix(const struct lookup_table_entry *lte,
+		       u64 size,
+		       consume_data_callback_t cb,
+		       void *ctx_or_buf,
+		       int _ignored_flags)
+{
+}
 
 #define FNM_PATHNAME 0x1
 #define FNM_NOESCAPE 0x2

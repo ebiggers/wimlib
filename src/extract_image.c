@@ -328,7 +328,7 @@ extract_symlink(struct wim_dentry *dentry,
 {
 	char target[4096];
 	ssize_t ret = inode_readlink(dentry->d_inode, target,
-				     sizeof(target), args->w, 0);
+				     sizeof(target), args->w, false);
 	struct wim_lookup_table_entry *lte;
 
 	if (ret <= 0) {

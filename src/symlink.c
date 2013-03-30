@@ -171,7 +171,7 @@ make_symlink_reparse_data_buf(const char *symlink_target,
  */
 ssize_t
 inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
-	       const WIMStruct *w, int read_resource_flags)
+	       const WIMStruct *w, bool threadsafe)
 {
 	const struct wim_lookup_table_entry *lte;
 	int ret;
@@ -186,7 +186,7 @@ inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
 		return -EIO;
 
 	u8 res_buf[wim_resource_size(lte)];
-	ret = read_full_wim_resource(lte, res_buf, read_resource_flags);
+	ret = read_full_resource_into_buf(lte, res_buf, threadsafe);
 	if (ret != 0)
 		return -EIO;
 	return get_symlink_name(res_buf, wim_resource_size(lte), buf,

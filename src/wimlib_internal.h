@@ -256,6 +256,8 @@ struct wim_image_metadata {
 	/* Linked list of inodes of this image */
 	struct hlist_head inode_list;
 
+	struct list_head unhashed_streams;
+
 	/* 1 iff the dentry tree has been modified.  If this is the case, the
 	 * memory for the dentry tree should not be freed when switching to a
 	 * different WIM image. */
@@ -495,6 +497,16 @@ extern void
 libntfs3g_global_init();
 
 /* ntfs-capture.c */
+
+/* The types of these two callbacks are intentionally the same. */
+typedef int (*consume_data_callback_t)(const void *buf, size_t len, void *ctx);
+
+extern int
+read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
+		      u64 size,
+		      consume_data_callback_t cb,
+		      void *ctx_or_buf,
+		      int _ignored_flags);
 extern int
 build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       const tchar *device,
@@ -512,60 +524,45 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 #define WIMLIB_RESOURCE_FLAG_MULTITHREADED	0x2
 #define WIMLIB_RESOURCE_FLAG_RECOMPRESS		0x4
 
-extern const u8 *
-get_resource_entry(const u8 *p, struct resource_entry *entry);
+extern int
+read_resource_prefix(const struct wim_lookup_table_entry *lte,
+		     u64 size, consume_data_callback_t cb, void *ctx_or_buf,
+		     int flags);
 
-extern u8 *
-put_resource_entry(u8 *p, const struct resource_entry *entry);
+extern const void *
+get_resource_entry(const void *p, struct resource_entry *entry);
+
+extern void *
+put_resource_entry(void *p, const struct resource_entry *entry);
 
 extern int
 read_uncompressed_resource(FILE *fp, u64 offset, u64 size, void *buf);
 
 extern int
-read_wim_resource(const struct wim_lookup_table_entry *lte, void *buf,
-		  size_t size, u64 offset, int flags);
-
+read_partial_wim_resource_into_buf(const struct wim_lookup_table_entry *lte,
+				   size_t size, u64 offset, void *buf,
+				   bool threadsafe);
 extern int
-read_full_wim_resource(const struct wim_lookup_table_entry *lte,
-		       void *buf, int flags);
+read_full_resource_into_buf(const struct wim_lookup_table_entry *lte,
+			    void *buf, bool thread_safe);
 
 extern int
 write_wim_resource(struct wim_lookup_table_entry *lte, FILE *out_fp,
 		   int out_ctype, struct resource_entry *out_res_entry,
 		   int flags);
 
-
-typedef int (*extract_chunk_func_t)(const void *, size_t, u64, void *);
-
-extern int
-extract_wim_chunk_to_fd(const void *buf, size_t len, u64 offset, void *arg);
-
 extern int
 extract_wim_resource(const struct wim_lookup_table_entry *lte,
-		     u64 size, extract_chunk_func_t extract_chunk,
+		     u64 size,
+		     consume_data_callback_t extract_chunk,
 		     void *extract_chunk_arg);
 
-/*
- * Extracts the first @size bytes of the WIM resource specified by @lte to the
- * open file descriptor @fd.
- *
- * Returns 0 on success; nonzero on failure.
- */
-static inline int
-extract_wim_resource_to_fd(const struct wim_lookup_table_entry *lte,
-			   int fd, u64 size)
-{
-	return extract_wim_resource(lte, size,
-				    extract_wim_chunk_to_fd, &fd);
-}
-
-
 extern int
-write_dentry_resources(struct wim_dentry *dentry, void *wim_p);
+extract_wim_resource_to_fd(const struct wim_lookup_table_entry *lte,
+			   int fd, u64 size);
 
 extern int
 copy_resource(struct wim_lookup_table_entry *lte, void *w);
-
 
 /* security.c */
 extern int
@@ -585,7 +582,7 @@ free_security_data(struct wim_security_data *sd);
 #ifndef __WIN32__
 ssize_t
 inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
-	       const WIMStruct *w, int read_resource_flags);
+	       const WIMStruct *w, bool threadsafe);
 
 extern int
 inode_set_symlink(struct wim_inode *inode, const char *target,

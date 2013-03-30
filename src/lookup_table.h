@@ -32,6 +32,7 @@ struct wim_lookup_table {
 	struct hlist_head *array;
 	u64 num_entries;
 	u64 capacity;
+	struct list_head *unhashed_streams;
 };
 
 #ifdef WITH_NTFS_3G
@@ -68,23 +69,35 @@ enum resource_location {
 	 * */
 	RESOURCE_IN_FILE_ON_DISK,
 
-	/* The stream resource is located in an external file in the staging
-	 * directory for a read-write mount.  */
-	RESOURCE_IN_STAGING_FILE,
-
 	/* The stream resource is directly attached in an in-memory buffer
 	 * pointed to by @attached_buffer. */
 	RESOURCE_IN_ATTACHED_BUFFER,
 
+#ifdef WITH_FUSE
+	/* The stream resource is located in an external file in the staging
+	 * directory for a read-write mount.  */
+	RESOURCE_IN_STAGING_FILE,
+#endif
+
+#ifdef WITH_NTFS_3G
 	/* The stream resource is located in an NTFS volume.  It is identified
 	 * by volume, filename, data stream name, and by whether it is a reparse
 	 * point or not. @ntfs_loc points to a structure containing this
 	 * information. */
 	RESOURCE_IN_NTFS_VOLUME,
+#endif
 
+#ifdef __WIN32__
 	/* Resource must be accessed using Win32 API (may be a named data
 	 * stream) */
 	RESOURCE_WIN32,
+
+	/* Windows only: the file is on disk in the file named @file_on_disk,
+	 * but the file is encrypted and must be read using special functions.
+	 * */
+	RESOURCE_WIN32_ENCRYPTED,
+#endif
+
 };
 
 /*
@@ -168,27 +181,11 @@ struct wim_lookup_table_entry {
 		struct ntfs_location *ntfs_loc;
 	#endif
 	};
-	union {
-		/* @file_on_disk_fp and @attr are both used to cache file/stream
-		 * handles so we don't have re-open them on every read */
 
-
-		/* Valid iff resource_location == RESOURCE_IN_FILE_ON_DISK */
-		FILE *file_on_disk_fp;
-	#ifdef WITH_NTFS_3G
-		/* Valid iff resource_location == RESOURCE_IN_NTFS_VOLUME */
-		struct _ntfs_attr *attr;
-	#endif
-
-	#ifdef __WIN32__
-		HANDLE win32_file_on_disk_fp;
-	#endif
-
-		/* Pointer to inode that contains the opened file descriptors to
-		 * this stream (valid iff resource_location ==
-		 * RESOURCE_IN_STAGING_FILE) */
-		struct wim_inode *lte_inode;
-	};
+	/* Pointer to inode that contains the opened file descriptors to
+	 * this stream (valid iff resource_location ==
+	 * RESOURCE_IN_STAGING_FILE) */
+	struct wim_inode *lte_inode;
 
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
 	 * whenever the file resource pointed to by this lookup table entry
@@ -253,6 +250,19 @@ wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
 	return wimlib_get_compression_type(lte->wim);
 }
 
+static inline bool
+lte_filename_valid(const struct wim_lookup_table_entry *lte)
+{
+	return lte->resource_location == RESOURCE_IN_FILE_ON_DISK
+	#ifdef __WIN32__
+		|| lte->resource_location == RESOURCE_WIN32
+		|| lte->resource_location == RESOURCE_WIN32_ENCRYPTED
+	#endif
+	#ifdef WITH_FUSE
+		|| lte->resource_location == RESOURCE_IN_STAGING_FILE
+	#endif
+		;
+}
 
 extern struct wim_lookup_table *
 new_lookup_table(size_t capacity);
@@ -460,5 +470,16 @@ inode_unnamed_lte(const struct wim_inode *inode, const struct wim_lookup_table *
 
 extern u64
 lookup_table_total_stream_size(struct wim_lookup_table *table);
+
+
+static inline void
+lookup_table_insert_unhashed(struct wim_lookup_table *table,
+			     struct wim_lookup_table_entry *lte)
+{
+	list_add_tail(&lte->staging_list, table->unhashed_streams);
+}
+
+extern void
+lookup_table_free_unhashed_streams(struct wim_lookup_table *table);
 
 #endif

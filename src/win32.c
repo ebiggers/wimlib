@@ -53,6 +53,28 @@ struct win32_capture_state {
 #define MAX_SET_SD_ACCESS_DENIED_WARNINGS 1
 #define MAX_SET_SACL_PRIV_NOTHELD_WARNINGS 1
 
+#ifdef ENABLE_ERROR_MESSAGES
+static void
+win32_error(u32 err_code)
+{
+	wchar_t *buffer;
+	DWORD nchars;
+	nchars = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM |
+				    FORMAT_MESSAGE_ALLOCATE_BUFFER,
+				NULL, err_code, 0,
+				(wchar_t*)&buffer, 0, NULL);
+	if (nchars == 0) {
+		ERROR("Error printing error message! "
+		      "Computer will self-destruct in 3 seconds.");
+	} else {
+		ERROR("Win32 error: %ls", buffer);
+		LocalFree(buffer);
+	}
+}
+#else /* ENABLE_ERROR_MESSAGES */
+#  define win32_error(err_code)
+#endif /* !ENABLE_ERROR_MESSAGES */
+
 /* Pointers to functions that are not available on all targetted versions of
  * Windows (XP and later).  NOTE: The WINAPI annotations seem to be important; I
  * assume it specifies a certain calling convention. */
@@ -128,32 +150,6 @@ L"If you are not running this program as the administrator, you may\n"
  "          `wimlib-imagex apply' with the --no-acls flag instead.\n"
  ;
 
-#ifdef ENABLE_ERROR_MESSAGES
-void
-win32_error(u32 err_code)
-{
-	wchar_t *buffer;
-	DWORD nchars;
-	nchars = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM |
-				    FORMAT_MESSAGE_ALLOCATE_BUFFER,
-				NULL, err_code, 0,
-				(wchar_t*)&buffer, 0, NULL);
-	if (nchars == 0) {
-		ERROR("Error printing error message! "
-		      "Computer will self-destruct in 3 seconds.");
-	} else {
-		ERROR("Win32 error: %ls", buffer);
-		LocalFree(buffer);
-	}
-}
-
-void
-win32_error_last()
-{
-	win32_error(GetLastError());
-}
-#endif
-
 static HANDLE
 win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess)
 {
@@ -174,29 +170,58 @@ win32_open_file_data_only(const wchar_t *path)
 }
 
 int
-win32_read_file(const wchar_t *filename,
-		void *handle, u64 offset, size_t size, void *buf)
+read_win32_file_prefix(const struct lookup_table_entry *lte,
+		       u64 size,
+		       consume_data_callback_t cb,
+		       void *ctx_or_buf,
+		       int _ignored_flags)
 {
-	HANDLE h = handle;
+	int ret;
+	void *out_buf;
 	DWORD err;
-	DWORD bytesRead;
-	LARGE_INTEGER liOffset = {.QuadPart = offset};
+	u64 bytes_remaining;
 
-	wimlib_assert(size <= 0xffffffff);
+	HANDLE hFile = win32_open_file_data_only(lte->file_on_disk);
+	if (hFile == INVALID_HANDLE_VALUE) {
+		err = GetLastError();
+		ERROR("Failed to open \"%ls\"", lte->file_on_disk);
+		win32_error(err);
+		ret = WIMLIB_ERR_OPEN;
+		goto out;
+	}
 
-	if (SetFilePointerEx(h, liOffset, NULL, FILE_BEGIN))
-		if (ReadFile(h, buf, size, &bytesRead, NULL) && bytesRead == size)
-			return 0;
-	err = GetLastError();
-	ERROR("Error reading \"%ls\"", filename);
-	win32_error(err);
-	return WIMLIB_ERR_READ;
-}
+	if (cb)
+		out_buf = alloca(WIM_CHUNK_SIZE);
+	else
+		out_buf = ctx_or_buf;
 
-void
-win32_close_file(void *handle)
-{
-	CloseHandle((HANDLE)handle);
+	bytes_remaining = size;
+	while (bytes_remaining) {
+		DWORD bytesToRead, bytesRead;
+
+		bytesToRead = min(WIM_CHUNK_SIZE, bytes_remaining);
+		if (!ReadFile(h, out_buf, bytesToRead, &bytesRead, NULL) ||
+		    bytesRead != bytesToRead)
+		{
+			err = GetLastError();
+			ERROR("Failed to read data from \"%ls\"", lte->file_on_disk);
+			win32_error(err);
+			ret = WIMLIB_ERR_READ;
+			goto out_close_handle;
+		}
+		bytes_remaining -= bytesRead;
+		if (cb) {
+			ret = cb(out_buf, bytesRead, ctx_or_buf);
+			if (ret)
+				goto out_close_handle;
+		} else {
+			out_buf += bytesRead;
+		}
+	}
+out_close_handle:
+	CloseHandle(hFile);
+out:
+	return ret;
 }
 
 static u64
@@ -451,47 +476,6 @@ win32_capture_reparse_point(HANDLE hFile,
 				       bytesReturned - 8, lookup_table);
 }
 
-/* Calculate the SHA1 message digest of a Win32 data stream, which may be either
- * an unnamed or named data stream.
- *
- * @path:	Path to the file, with the stream noted at the end for named
- *              streams.  UTF-16LE encoding.
- *
- * @hash:       On success, the SHA1 message digest of the stream is written to
- *              this location.
- *
- * Returns 0 on success; nonzero on failure.
- */
-static int
-win32_sha1sum(const wchar_t *path, u8 hash[SHA1_HASH_SIZE])
-{
-	HANDLE hFile;
-	SHA_CTX ctx;
-	u8 buf[32768];
-	DWORD bytesRead;
-	int ret;
-
-	hFile = win32_open_file_data_only(path);
-	if (hFile == INVALID_HANDLE_VALUE)
-		return WIMLIB_ERR_OPEN;
-
-	sha1_init(&ctx);
-	for (;;) {
-		if (!ReadFile(hFile, buf, sizeof(buf), &bytesRead, NULL)) {
-			ret = WIMLIB_ERR_READ;
-			goto out_close_handle;
-		}
-		if (bytesRead == 0)
-			break;
-		sha1_update(&ctx, buf, bytesRead);
-	}
-	ret = 0;
-	sha1_final(hash, &ctx);
-out_close_handle:
-	CloseHandle(hFile);
-	return ret;
-}
-
 /* Scans an unnamed or named stream of a Win32 file (not a reparse point
  * stream); calculates its SHA1 message digest and either creates a `struct
  * wim_lookup_table_entry' in memory for it, or uses an existing 'struct
@@ -591,35 +575,18 @@ win32_capture_stream(const wchar_t *path,
 	swprintf(spath, L"%ls%ls%ls%ls",
 		 relpath_prefix, path, colonchar, stream_name);
 
-	ret = win32_sha1sum(spath, hash);
-	if (ret) {
-		err = GetLastError();
-		ERROR("Failed to read \"%ls\" to calculate SHA1sum", spath);
-		win32_error(err);
+	/* Make a new wim_lookup_table_entry */
+	lte = new_lookup_table_entry();
+	if (!lte) {
+		ret = WIMLIB_ERR_NOMEM;
 		goto out_free_spath;
 	}
+	lte->file_on_disk = spath;
+	spath = NULL;
+	lte->resource_location = RESOURCE_WIN32;
+	lte->resource_entry.original_size = (u64)dat->StreamSize.QuadPart;
+	lookup_table_insert_unhashed(lookup_table, lte);
 
-	lte = __lookup_resource(lookup_table, hash);
-	if (lte) {
-		/* Use existing wim_lookup_table_entry that has the same SHA1
-		 * message digest */
-		lte->refcnt++;
-	} else {
-		/* Make a new wim_lookup_table_entry */
-		lte = new_lookup_table_entry();
-		if (!lte) {
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_spath;
-		}
-		lte->file_on_disk = spath;
-		lte->win32_file_on_disk_fp = INVALID_HANDLE_VALUE;
-		spath = NULL;
-		lte->resource_location = RESOURCE_WIN32;
-		lte->resource_entry.original_size = (uint64_t)dat->StreamSize.QuadPart;
-		lte->resource_entry.size = (uint64_t)dat->StreamSize.QuadPart;
-		copy_hash(lte->hash, hash);
-		lookup_table_insert(lookup_table, lte);
-	}
 	if (is_named_stream)
 		ads_entry->lte = lte;
 	else

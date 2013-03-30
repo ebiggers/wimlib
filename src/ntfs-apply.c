@@ -43,12 +43,17 @@
 #include <string.h>
 #include <locale.h>
 
+struct ntfs_attr_extract_ctx {
+	u64 offset;
+	ntfs_attr *na;
+};
+
 static int
-extract_wim_chunk_to_ntfs_attr(const void *buf, size_t len,
-			       u64 offset, void *arg)
+extract_wim_chunk_to_ntfs_attr(const void *buf, size_t len, void *_ctx)
 {
-	ntfs_attr *na = arg;
-	if (ntfs_attr_pwrite(na, offset, len, buf) == len) {
+	struct ntfs_attr_extract_ctx *ctx = _ctx;
+	if (ntfs_attr_pwrite(ctx->na, ctx->offset, len, buf) == len) {
+		ctx->offset += len;
 		return 0;
 	} else {
 		ERROR_WITH_ERRNO("Error extracting WIM resource to NTFS attribute");
@@ -63,8 +68,11 @@ static int
 extract_wim_resource_to_ntfs_attr(const struct wim_lookup_table_entry *lte,
 			          ntfs_attr *na)
 {
+	struct ntfs_attr_extract_ctx ctx;
+	ctx.na = na;
+	ctx.offset = 0;
 	return extract_wim_resource(lte, wim_resource_size(lte),
-				    extract_wim_chunk_to_ntfs_attr, na);
+				    extract_wim_chunk_to_ntfs_attr, &ctx);
 }
 
 /* Writes the data streams of a WIM inode to the data attributes of a NTFS
@@ -360,13 +368,13 @@ apply_reparse_data(ntfs_inode *ni, const struct wim_dentry *dentry,
 	p = put_u16(p, wim_resource_size(lte)); /* ReparseDataLength */
 	p = put_u16(p, 0); /* Reserved */
 
-	ret = read_full_wim_resource(lte, p, 0);
-	if (ret != 0)
+	ret = read_full_resource_into_buf(lte, p, false);
+	if (ret)
 		return ret;
 
 	ret = ntfs_set_ntfs_reparse_data(ni, (char*)reparse_data_buf,
 					 wim_resource_size(lte) + 8, 0);
-	if (ret != 0) {
+	if (ret) {
 		ERROR_WITH_ERRNO("Failed to set NTFS reparse data on `%s'",
 				 dentry->full_path);
 		return WIMLIB_ERR_NTFS_3G;

@@ -36,33 +36,56 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
 
-#ifdef WITH_NTFS_3G
-#  include <time.h>
-#  include <ntfs-3g/attrib.h>
-#  include <ntfs-3g/inode.h>
-#  include <ntfs-3g/dir.h>
-#endif
+/* Write @n bytes from @buf to the file descriptor @fd, retrying on internupt
+ * and on short writes.
+ *
+ * Returns short count and set errno on failure. */
+static ssize_t
+full_write(int fd, const void *buf, size_t n)
+{
+	const void *p = buf;
+	ssize_t ret;
+	ssize_t total = 0;
 
-#if defined(__WIN32__) && !defined(INVALID_HANDLE_VALUE)
-#  define INVALID_HANDLE_VALUE ((HANDLE)(-1))
-#endif
+	while (total != n) {
+		ret = write(fd, p, n);
+		if (ret < 0) {
+			if (errno == EINTR)
+				continue;
+			else
+				break;
+		}
+		total += ret;
+		p += ret;
+	}
+	return total;
+}
+
+/* Read @n bytes from the file descriptor @fd to the buffer @buf, retrying on
+ * internupt and on short reads.
+ *
+ * Returns short count and set errno on failure. */
+static size_t
+full_read(int fd, void *buf, size_t n)
+{
+	size_t bytes_remaining = n;
+	while (bytes_remaining) {
+		ssize_t bytes_read = read(fd, buf, bytes_remaining);
+		if (bytes_read < 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		bytes_remaining -= bytes_read;
+		buf += bytes_read;
+	}
+	return n - bytes_remaining;
+}
 
 /*
- * Reads all or part of a compressed resource into an in-memory buffer.
- *
- * @fp:      		The FILE* for the WIM file.
- * @resource_compressed_size:  	 The compressed size of the resource.
- * @resource_uncompressed_size:  The uncompressed size of the resource.
- * @resource_offset:		 The offset of the start of the resource from
- * 					the start of the stream @fp.
- * @resource_ctype:	The compression type of the resource.
- * @len:		The number of bytes of uncompressed data to read from
- * 				the resource.
- * @offset:		The offset of the bytes to read within the uncompressed
- * 				resource.
- * @contents_len:	An array into which the uncompressed data is written.
- * 				It must be at least @len bytes long.
+ * Reads all or part of a compressed WIM resource.
  *
  * Returns zero on success, nonzero on failure.
  */
@@ -70,16 +93,12 @@ static int
 read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 			 u64 resource_uncompressed_size,
 			 u64 resource_offset, int resource_ctype,
-			 u64 len, u64 offset, void *contents_ret)
+			 u64 len, u64 offset,
+			 consume_data_callback_t cb,
+			 void *ctx_or_buf)
 {
+	int ret;
 
-	DEBUG2("comp size = %"PRIu64", uncomp size = %"PRIu64", "
-	       "res offset = %"PRIu64"",
-	       resource_compressed_size,
-	       resource_uncompressed_size,
-	       resource_offset);
-	DEBUG2("resource_ctype = %"TS", len = %"PRIu64", offset = %"PRIu64"",
-	       wimlib_get_compression_type_string(resource_ctype), len, offset);
 	/* Trivial case */
 	if (len == 0)
 		return 0;
@@ -168,36 +187,34 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	/* Skip over unneeded chunk table entries. */
 	u64 file_offset_of_needed_chunk_entries = resource_offset +
 				start_table_idx * chunk_entry_size;
-	if (fseeko(fp, file_offset_of_needed_chunk_entries, SEEK_SET) != 0) {
-		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" to read "
-				 "chunk table of compressed resource",
-				 file_offset_of_needed_chunk_entries);
-		return WIMLIB_ERR_READ;
-	}
+	if (fseeko(fp, file_offset_of_needed_chunk_entries, SEEK_SET))
+		goto read_error;
 
 	/* Number of bytes we need to read from the chunk table. */
 	size_t size = num_needed_chunk_entries * chunk_entry_size;
 
-	u8 chunk_tab_buf[size];
+	{
+		u8 chunk_tab_buf[size];
 
-	if (fread(chunk_tab_buf, 1, size, fp) != size)
-		goto err;
+		if (fread(chunk_tab_buf, 1, size, fp) != size)
+			goto read_error;
 
-	/* Now fill in chunk_offsets from the entries we have read in
-	 * chunk_tab_buf. */
+		/* Now fill in chunk_offsets from the entries we have read in
+		 * chunk_tab_buf. */
 
-	u64 *chunk_tab_p = chunk_offsets;
-	if (start_chunk == 0)
-		chunk_tab_p++;
+		u64 *chunk_tab_p = chunk_offsets;
+		if (start_chunk == 0)
+			chunk_tab_p++;
 
-	if (chunk_entry_size == 4) {
-		u32 *entries = (u32*)chunk_tab_buf;
-		while (num_needed_chunk_entries--)
-			*chunk_tab_p++ = le32_to_cpu(*entries++);
-	} else {
-		u64 *entries = (u64*)chunk_tab_buf;
-		while (num_needed_chunk_entries--)
-			*chunk_tab_p++ = le64_to_cpu(*entries++);
+		if (chunk_entry_size == 4) {
+			u32 *entries = (u32*)chunk_tab_buf;
+			while (num_needed_chunk_entries--)
+				*chunk_tab_p++ = le32_to_cpu(*entries++);
+		} else {
+			u64 *entries = (u64*)chunk_tab_buf;
+			while (num_needed_chunk_entries--)
+				*chunk_tab_p++ = le64_to_cpu(*entries++);
+		}
 	}
 
 	/* Done with the chunk table now.  We must now seek to the first chunk
@@ -205,16 +222,16 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 
 	u64 file_offset_of_first_needed_chunk = resource_offset +
 				chunk_table_size + chunk_offsets[0];
-	if (fseeko(fp, file_offset_of_first_needed_chunk, SEEK_SET) != 0) {
-		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" to read "
-				 "first chunk of compressed resource",
-				 file_offset_of_first_needed_chunk);
-		return WIMLIB_ERR_READ;
-	}
+	if (fseeko(fp, file_offset_of_first_needed_chunk, SEEK_SET))
+		goto read_error;
 
 	/* Pointer to current position in the output buffer for uncompressed
 	 * data. */
-	u8 *out_p = contents_ret;
+	u8 *out_p;
+	if (cb)
+		out_p = alloca(32768);
+	else
+		out_p = ctx_or_buf;
 
 	/* Buffer for compressed data.  While most compressed chunks will have a
 	 * size much less than WIM_CHUNK_SIZE, WIM_CHUNK_SIZE - 1 is the maximum
@@ -222,14 +239,10 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	 * happen to compress to more than the uncompressed size (i.e. a
 	 * sequence of random bytes) are always stored uncompressed. But this seems
 	 * to be the case in M$'s WIM files, even though it is undocumented. */
-	u8 compressed_buf[WIM_CHUNK_SIZE - 1];
-
+	void *compressed_buf = alloca(WIM_CHUNK_SIZE - 1);
 
 	/* Decompress all the chunks. */
 	for (u64 i = start_chunk; i <= end_chunk; i++) {
-
-		DEBUG2("Chunk %"PRIu64" (start %"PRIu64", end %"PRIu64").",
-		       i, start_chunk, end_chunk);
 
 		/* Calculate the sizes of the compressed chunk and of the
 		 * uncompressed chunk. */
@@ -265,11 +278,6 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 				uncompressed_chunk_size = WIM_CHUNK_SIZE;
 		}
 
-		DEBUG2("compressed_chunk_size = %u, "
-		       "uncompressed_chunk_size = %u",
-		       compressed_chunk_size, uncompressed_chunk_size);
-
-
 		/* Figure out how much of this chunk we actually need to read */
 		u64 start_offset;
 		if (i == start_chunk)
@@ -282,75 +290,80 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 		else
 			end_offset = WIM_CHUNK_SIZE - 1;
 
-		u64 partial_chunk_size = end_offset + 1 - start_offset;
-		bool is_partial_chunk = (partial_chunk_size !=
-						uncompressed_chunk_size);
-
-		DEBUG2("start_offset = %"PRIu64", end_offset = %"PRIu64"",
-		       start_offset, end_offset);
-		DEBUG2("partial_chunk_size = %"PRIu64"", partial_chunk_size);
+		unsigned partial_chunk_size = end_offset + 1 - start_offset;
+		bool is_partial_chunk = (partial_chunk_size != uncompressed_chunk_size);
 
 		/* This is undocumented, but chunks can be uncompressed.  This
 		 * appears to always be the case when the compressed chunk size
 		 * is equal to the uncompressed chunk size. */
 		if (compressed_chunk_size == uncompressed_chunk_size) {
-			/* Probably an uncompressed chunk */
+			/* Uncompressed chunk */
 
-			if (start_offset != 0) {
-				if (fseeko(fp, start_offset, SEEK_CUR) != 0) {
-					ERROR_WITH_ERRNO("Uncompressed partial "
-							 "chunk fseek() error");
-					return WIMLIB_ERR_READ;
-				}
-			}
-			if (fread(out_p, 1, partial_chunk_size, fp) !=
-					partial_chunk_size)
-				goto err;
+			if (start_offset != 0)
+				if (fseeko(fp, start_offset, SEEK_CUR))
+					goto read_error;
+			if (fread(out_p, 1, partial_chunk_size, fp) != partial_chunk_size)
+				goto read_error;
 		} else {
 			/* Compressed chunk */
-			int ret;
 
 			/* Read the compressed data into compressed_buf. */
 			if (fread(compressed_buf, 1, compressed_chunk_size,
 						fp) != compressed_chunk_size)
-				goto err;
+				goto read_error;
 
-			/* For partial chunks we must buffer the uncompressed
-			 * data because we don't need all of it. */
-			if (is_partial_chunk) {
+			/* For partial chunks and when writing directly to a
+			 * buffer, we must buffer the uncompressed data because
+			 * we don't need all of it. */
+			if (is_partial_chunk && !cb) {
 				u8 uncompressed_buf[uncompressed_chunk_size];
 
 				ret = decompress(compressed_buf,
-						compressed_chunk_size,
-						uncompressed_buf,
-						uncompressed_chunk_size);
-				if (ret != 0)
-					return WIMLIB_ERR_DECOMPRESSION;
+						 compressed_chunk_size,
+						 uncompressed_buf,
+						 uncompressed_chunk_size);
+				if (ret) {
+					ret = WIMLIB_ERR_DECOMPRESSION;
+					goto out;
+				}
 				memcpy(out_p, uncompressed_buf + start_offset,
-						partial_chunk_size);
+				       partial_chunk_size);
 			} else {
 				ret = decompress(compressed_buf,
-						compressed_chunk_size,
-						out_p,
-						uncompressed_chunk_size);
-				if (ret != 0)
-					return WIMLIB_ERR_DECOMPRESSION;
+						 compressed_chunk_size,
+						 out_p,
+						 uncompressed_chunk_size);
+				if (ret) {
+					ret = WIMLIB_ERR_DECOMPRESSION;
+					goto out;
+				}
 			}
 		}
-
-		/* Advance the pointer into the uncompressed output data by the
-		 * number of uncompressed bytes that were written.  */
-		out_p += partial_chunk_size;
+		if (cb) {
+			/* Feed the data to the callback function */
+			ret = cb(out_p, partial_chunk_size, ctx_or_buf);
+			if (ret)
+				goto out;
+		} else {
+			/* No callback function provided; we are writing
+			 * directly to a buffer.  Advance the pointer into this
+			 * buffer by the number of uncompressed bytes that were
+			 * written.  */
+			out_p += partial_chunk_size;
+		}
 	}
 
-	return 0;
+	ret = 0;
+out:
+	return ret;
 
-err:
+read_error:
 	if (feof(fp))
 		ERROR("Unexpected EOF in compressed file resource");
 	else
 		ERROR_WITH_ERRNO("Error reading compressed file resource");
-	return WIMLIB_ERR_READ;
+	ret = WIMLIB_ERR_READ;
+	goto out;
 }
 
 /*
@@ -381,8 +394,8 @@ read_uncompressed_resource(FILE *fp, u64 offset, u64 len, void *contents_ret)
 /* Reads the contents of a struct resource_entry, as represented in the on-disk
  * format, from the memory pointed to by @p, and fills in the fields of @entry.
  * A pointer to the byte after the memory read at @p is returned. */
-const u8 *
-get_resource_entry(const u8 *p, struct resource_entry *entry)
+const void *
+get_resource_entry(const void *p, struct resource_entry *entry)
 {
 	u64 size;
 	u8 flags;
@@ -412,8 +425,8 @@ get_resource_entry(const u8 *p, struct resource_entry *entry)
 /* Copies the struct resource_entry @entry to the memory pointed to by @p in the
  * on-disk format.  A pointer to the byte after the memory written at @p is
  * returned. */
-u8 *
-put_resource_entry(u8 *p, const struct resource_entry *entry)
+void *
+put_resource_entry(void *p, const struct resource_entry *entry)
 {
 	p = put_u56(p, entry->size);
 	p = put_u8(p, entry->flags);
@@ -422,10 +435,10 @@ put_resource_entry(u8 *p, const struct resource_entry *entry)
 	return p;
 }
 
-#ifdef WITH_FUSE
 static FILE *
 wim_get_fp(WIMStruct *w)
 {
+#ifdef WITH_FUSE
 	pthread_mutex_lock(&w->fp_tab_mutex);
 	FILE *fp;
 
@@ -435,15 +448,18 @@ wim_get_fp(WIMStruct *w)
 		if (w->fp_tab[i]) {
 			fp = w->fp_tab[i];
 			w->fp_tab[i] = NULL;
-			goto out;
+			goto out_unlock;
 		}
 	}
 	DEBUG("Opening extra file descriptor to `%"TS"'", w->filename);
 	fp = tfopen(w->filename, T("rb"));
 	if (!fp)
 		ERROR_WITH_ERRNO("Failed to open `%"TS"'", w->filename);
-out:
+out_unlock:
 	pthread_mutex_unlock(&w->fp_tab_mutex);
+#else /* WITH_FUSE */
+	fp = w->fp;
+#endif /* !WITH_FUSE */
 	return fp;
 }
 
@@ -451,6 +467,7 @@ static int
 wim_release_fp(WIMStruct *w, FILE *fp)
 {
 	int ret = 0;
+#ifdef WITH_FUSE
 	FILE **fp_tab;
 
 	pthread_mutex_lock(&w->fp_tab_mutex);
@@ -458,169 +475,229 @@ wim_release_fp(WIMStruct *w, FILE *fp)
 	for (size_t i = 0; i < w->num_allocated_fps; i++) {
 		if (w->fp_tab[i] == NULL) {
 			w->fp_tab[i] = fp;
-			goto out;
+			goto out_unlock;
 		}
 	}
 
 	fp_tab = REALLOC(w->fp_tab, sizeof(FILE*) * (w->num_allocated_fps + 4));
 	if (!fp_tab) {
 		ret = WIMLIB_ERR_NOMEM;
-		goto out;
+		fclose(fp);
+		goto out_unlock;
 	}
 	w->fp_tab = fp_tab;
 	memset(&w->fp_tab[w->num_allocated_fps], 0, 4 * sizeof(FILE*));
 	w->fp_tab[w->num_allocated_fps] = fp;
 	w->num_allocated_fps += 4;
-out:
+out_unlock:
 	pthread_mutex_unlock(&w->fp_tab_mutex);
+#endif /* WITH_FUSE */
 	return ret;
 }
-#endif /* !WITH_FUSE */
 
-/*
- * Reads some data from the resource corresponding to a WIM lookup table entry.
- *
- * @lte:	The WIM lookup table entry for the resource.
- * @buf:	Buffer into which to write the data.
- * @size:	Number of bytes to read.
- * @offset:	Offset at which to start reading the resource.
- *
- * Returns zero on success, nonzero on failure.
- */
-int
-read_wim_resource(const struct wim_lookup_table_entry *lte, void *buf,
-		  size_t size, u64 offset, int flags)
+static int
+read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
+			  u64 size,
+			  consume_data_callback_t cb,
+			  void *ctx_or_buf,
+			  int flags,
+			  u64 offset)
 {
-	int ctype;
-	int ret = 0;
-	FILE *fp;
+	FILE *wim_fp;
+	WIMStruct *wim;
+	int ret;
 
-	/* We shouldn't be allowing read over-runs in any part of the library.
-	 * */
-	if (flags & WIMLIB_RESOURCE_FLAG_RAW)
-		wimlib_assert(offset + size <= lte->resource_entry.size);
-	else
-		wimlib_assert(offset + size <= lte->resource_entry.original_size);
+	wimlib_assert(lte->resource_location == RESOURCE_IN_WIM);
+	wimlib_assert(offset + size <= lte->resource_entry.original_size);
 
-	switch (lte->resource_location) {
-	case RESOURCE_IN_WIM:
-		/* The resource is in a WIM file, and its WIMStruct is given by
-		 * the lte->wim member.  The resource may be either compressed
-		 * or uncompressed. */
-		wimlib_assert(lte->wim != NULL);
+	wim = lte->wim;
 
-		#ifdef WITH_FUSE
-		if (flags & WIMLIB_RESOURCE_FLAG_MULTITHREADED) {
-			fp = wim_get_fp(lte->wim);
-			if (!fp)
-				return WIMLIB_ERR_OPEN;
-		} else
-		#endif
-		{
-			wimlib_assert(!(flags & WIMLIB_RESOURCE_FLAG_MULTITHREADED));
-			wimlib_assert(lte->wim->fp != NULL);
-			fp = lte->wim->fp;
+	if (flags & WIMLIB_RESOURCE_FLAG_MULTITHREADED) {
+		wim_fp = wim_get_fp(wim);
+		if (!wim_fp) {
+			ret = -1;
+			goto out;
 		}
+	} else {
+		wim_fp = lte->wim->fp;
+	}
 
-		ctype = wim_resource_compression_type(lte);
+	wimlib_assert(wim_fp != NULL);
 
-		wimlib_assert(ctype != WIMLIB_COMPRESSION_TYPE_NONE ||
-			      (lte->resource_entry.original_size ==
-			       lte->resource_entry.size));
-
-		if ((flags & WIMLIB_RESOURCE_FLAG_RAW)
-		    || ctype == WIMLIB_COMPRESSION_TYPE_NONE)
-			ret = read_uncompressed_resource(fp,
-							 lte->resource_entry.offset + offset,
-							 size, buf);
-		else
-			ret = read_compressed_resource(fp,
-						       lte->resource_entry.size,
-						       lte->resource_entry.original_size,
-						       lte->resource_entry.offset,
-						       ctype, size, offset, buf);
-	#ifdef WITH_FUSE
-		if (flags & WIMLIB_RESOURCE_FLAG_MULTITHREADED) {
-			int ret2 = wim_release_fp(lte->wim, fp);
-			if (ret == 0)
-				ret = ret2;
+	if (lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED &&
+	    !(flags & WIMLIB_RESOURCE_FLAG_RAW))
+	{
+		ret = read_compressed_resource(wim_fp,
+					       lte->resource_entry.size,
+					       lte->resource_entry.original_size,
+					       lte->resource_entry.offset,
+					       wimlib_get_compression_type(wim),
+					       size,
+					       offset,
+					       cb,
+					       ctx_or_buf);
+	} else {
+		if (fseeko(wim_fp, offset, SEEK_SET)) {
+			ERROR_WITH_ERRNO("Failed to seek to offset %"PRIu64
+					 " in WIM", offset);
+			ret = WIMLIB_ERR_READ;
+			goto out_release_fp;
 		}
-	#endif
-		break;
-	case RESOURCE_IN_STAGING_FILE:
-	case RESOURCE_IN_FILE_ON_DISK:
-		/* The resource is in some file on the external filesystem and
-		 * needs to be read uncompressed */
-		wimlib_assert(lte->file_on_disk != NULL);
-		BUILD_BUG_ON(&lte->file_on_disk != &lte->staging_file_name);
-		/* Use existing file pointer if available; otherwise open one
-		 * temporarily */
-		if (lte->file_on_disk_fp) {
-			fp = lte->file_on_disk_fp;
-		} else {
-			fp = tfopen(lte->file_on_disk, T("rb"));
-			if (!fp) {
-				ERROR_WITH_ERRNO("Failed to open the file "
-						 "`%"TS"'", lte->file_on_disk);
-				ret = WIMLIB_ERR_OPEN;
-				break;
+		if (cb) {
+			char buf[min(32768, size)];
+			while (size) {
+				size_t bytes_to_read = min(32768, size);
+				size_t bytes_read = fread(buf, 1, bytes_to_read, wim_fp);
+				
+				if (bytes_read != bytes_to_read)
+					goto read_error;
+				ret = cb(buf, bytes_read, ctx_or_buf);
+				if (ret)
+					goto out_release_fp;
 			}
+		} else {
+			if (fread(ctx_or_buf, 1, size, wim_fp) != size)
+				goto read_error;
 		}
-		ret = read_uncompressed_resource(fp, offset, size, buf);
-		if (fp != lte->file_on_disk_fp)
-			fclose(fp);
-		break;
-#ifdef __WIN32__
-	case RESOURCE_WIN32:
-		wimlib_assert(lte->win32_file_on_disk_fp != INVALID_HANDLE_VALUE);
-		ret = win32_read_file(lte->file_on_disk,
-				      lte->win32_file_on_disk_fp, offset,
-				      size, buf);
-		break;
-#endif
-	case RESOURCE_IN_ATTACHED_BUFFER:
-		/* The resource is directly attached uncompressed in an
-		 * in-memory buffer. */
-		wimlib_assert(lte->attached_buffer != NULL);
-		memcpy(buf, lte->attached_buffer + offset, size);
-		break;
-#ifdef WITH_NTFS_3G
-	case RESOURCE_IN_NTFS_VOLUME:
-		wimlib_assert(lte->ntfs_loc != NULL);
-		wimlib_assert(lte->attr != NULL);
-		if (lte->ntfs_loc->is_reparse_point)
-			offset += 8;
-		if (ntfs_attr_pread(lte->attr, offset, size, buf) != size) {
-			ERROR_WITH_ERRNO("Error reading NTFS attribute "
-					 "at `%"TS"'",
-					 lte->ntfs_loc->path);
-			ret = WIMLIB_ERR_NTFS_3G;
-		}
-		break;
-#endif
-	default:
-		wimlib_assert(0);
+		ret = 0;
+	}
+	goto out_release_fp;
+read_error:
+	ERROR_WITH_ERRNO("Error reading data from WIM");
+	ret = WIMLIB_ERR_READ;
+out_release_fp:
+	if (flags & WIMLIB_RESOURCE_FLAG_MULTITHREADED)
+		ret |= wim_release_fp(wim, wim_fp);
+out:
+	if (ret) {
+		if (errno == 0)
+			errno = EIO;
 		ret = -1;
-		break;
 	}
 	return ret;
 }
 
-/*
- * Reads all the data from the resource corresponding to a WIM lookup table
- * entry.
- *
- * @lte:	The WIM lookup table entry for the resource.
- * @buf:	Buffer into which to write the data.  It must be at least
- * 		wim_resource_size(lte) bytes long.
- *
- * Returns 0 on success; nonzero on failure.
- */
+
 int
-read_full_wim_resource(const struct wim_lookup_table_entry *lte,
-		       void *buf, int flags)
+read_partial_wim_resource_into_buf(const struct wim_lookup_table_entry *lte,
+				   size_t size, u64 offset, void *buf,
+				   bool threadsafe)
 {
-	return read_wim_resource(lte, buf, wim_resource_size(lte), 0, flags);
+	return read_partial_wim_resource(lte, size, NULL, buf,
+					 threadsafe ? WIMLIB_RESOURCE_FLAG_MULTITHREADED : 0,
+					 offset);
+}
+
+static int
+read_wim_resource_prefix(const struct wim_lookup_table_entry *lte,
+			 u64 size,
+			 consume_data_callback_t cb,
+			 void *ctx_or_buf,
+			 int flags)
+{
+	return read_partial_wim_resource(lte, size, cb, ctx_or_buf, flags, 0);
+}
+
+
+static int
+read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte,
+			 u64 size,
+			 consume_data_callback_t cb,
+			 void *ctx_or_buf,
+			 int _ignored_flags)
+{
+	const tchar *filename = lte->file_on_disk;
+	int ret;
+	int fd;
+	size_t bytes_read;
+
+	fd = open(filename, O_RDONLY);
+	if (fd < 0) {
+		ERROR_WITH_ERRNO("Can't open \"%"TS"\"", filename);
+		return WIMLIB_ERR_OPEN;
+	}
+	if (cb) {
+		/* Send data to callback function */
+		char buf[min(32768, size)];
+		size_t bytes_to_read;
+		while (size) {
+			bytes_to_read = min(32768, size);
+			bytes_read = full_read(fd, buf, bytes_to_read);
+			if (bytes_read != bytes_to_read)
+				goto read_error;
+			ret = cb(buf, bytes_read, ctx_or_buf);
+			if (ret)
+				goto out_close;
+		}
+	} else {
+		/* Send data directly to a buffer */
+		bytes_read = full_read(fd, ctx_or_buf, size);
+		if (bytes_read != size)
+			goto read_error;
+	}
+	ret = 0;
+	goto out_close;
+read_error:
+	ERROR_WITH_ERRNO("Error reading \"%"TS"\"", filename);
+	ret = WIMLIB_ERR_READ;
+out_close:
+	close(fd);
+	return ret;
+}
+
+static int
+read_buffer_prefix(const struct wim_lookup_table_entry *lte,
+		   u64 size, consume_data_callback_t cb,
+		   void *ctx_or_buf, int _ignored_flags)
+{
+	const void *inbuf = lte->attached_buffer;
+	if (cb) {
+		return cb(inbuf, size, ctx_or_buf);
+	} else {
+		memcpy(ctx_or_buf, inbuf, size);
+		return 0;
+	}
+}
+
+typedef int (*read_resource_prefix_handler_t)(const struct wim_lookup_table_entry *lte,
+					      u64 size,
+					      consume_data_callback_t cb,
+					      void *ctx_or_buf,
+					      int flags);
+
+int
+read_resource_prefix(const struct wim_lookup_table_entry *lte,
+		     u64 size, consume_data_callback_t cb, void *ctx_or_buf,
+		     int flags)
+{
+	static const read_resource_prefix_handler_t handlers[] = {
+		[RESOURCE_IN_WIM]             = read_wim_resource_prefix,
+		[RESOURCE_IN_FILE_ON_DISK]    = read_file_on_disk_prefix,
+		[RESOURCE_IN_ATTACHED_BUFFER] = read_buffer_prefix,
+	#ifdef WITH_FUSE
+		[RESOURCE_IN_STAGING_FILE]    = read_file_on_disk_prefix,
+	#endif
+	#ifdef WITH_NTFS_3G
+		[RESOURCE_IN_NTFS_VOLUME]     = read_ntfs_file_prefix,
+	#endif
+	#ifdef __WIN32__
+		[RESOURCE_WIN32]              = read_win32_file_prefix,
+		[RESOURCE_WIN32_ENCRYPTED]    = read_win32_encrypted_file_prefix,
+	#endif
+	};
+	wimlib_assert(lte->resource_location < ARRAY_LEN(handlers)
+		      && handlers[lte->resource_location] != NULL);
+	return handlers[lte->resource_location](lte, size, cb, ctx_or_buf, flags);
+}
+
+int
+read_full_resource_into_buf(const struct wim_lookup_table_entry *lte,
+			    void *buf, bool thread_safe)
+{
+	return read_resource_prefix(lte,
+				    wim_resource_size(lte),
+				    NULL, buf,
+				    thread_safe ? WIMLIB_RESOURCE_FLAG_MULTITHREADED : 0);
 }
 
 /* Extracts the first @size bytes of a WIM resource to somewhere.  In the
@@ -632,77 +709,17 @@ read_full_wim_resource(const struct wim_lookup_table_entry *lte,
 int
 extract_wim_resource(const struct wim_lookup_table_entry *lte,
 		     u64 size,
-		     extract_chunk_func_t extract_chunk,
+		     consume_data_callback_t extract_chunk,
 		     void *extract_chunk_arg)
 {
-	u64 bytes_remaining = size;
-	u8 buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
-	u64 offset = 0;
-	int ret = 0;
-	u8 hash[SHA1_HASH_SIZE];
-	bool check_hash = (size == wim_resource_size(lte));
-	SHA_CTX ctx;
-
-	if (check_hash)
-		sha1_init(&ctx);
-
-	while (bytes_remaining) {
-		u64 to_read = min(bytes_remaining, sizeof(buf));
-		ret = read_wim_resource(lte, buf, to_read, offset, 0);
-		if (ret != 0)
-			return ret;
-		if (check_hash)
-			sha1_update(&ctx, buf, to_read);
-		ret = extract_chunk(buf, to_read, offset, extract_chunk_arg);
-		if (ret != 0) {
-			ERROR_WITH_ERRNO("Error extracting WIM resource");
-			return ret;
-		}
-		bytes_remaining -= to_read;
-		offset += to_read;
-	}
-	if (check_hash) {
-		sha1_final(hash, &ctx);
-		if (!hashes_equal(hash, lte->hash)) {
-		#ifdef ENABLE_ERROR_MESSAGES
-			ERROR("Invalid checksum on the following WIM resource:");
-			print_lookup_table_entry(lte, stderr);
-		#endif
-			return WIMLIB_ERR_INVALID_RESOURCE_HASH;
-		}
-	}
-	return 0;
+	return read_resource_prefix(lte, size, extract_chunk,
+				    extract_chunk_arg, 0);
 }
 
-/* Write @n bytes from @buf to the file descriptor @fd, retrying on internupt
- * and on short writes.
- *
- * Returns short count and set errno on failure. */
-static ssize_t
-full_write(int fd, const void *buf, size_t n)
+static int
+extract_wim_chunk_to_fd(const void *buf, size_t len, void *_fd_p)
 {
-	const void *p = buf;
-	ssize_t ret;
-	ssize_t total = 0;
-
-	while (total != n) {
-		ret = write(fd, p, n);
-		if (ret < 0) {
-			if (errno == EINTR)
-				continue;
-			else
-				break;
-		}
-		total += ret;
-		p += ret;
-	}
-	return total;
-}
-
-int
-extract_wim_chunk_to_fd(const void *buf, size_t len, u64 offset, void *arg)
-{
-	int fd = *(int*)arg;
+	int fd = *(int*)_fd_p;
 	ssize_t ret = full_write(fd, buf, len);
 	if (ret < len) {
 		ERROR_WITH_ERRNO("Error writing to file descriptor");
@@ -710,6 +727,13 @@ extract_wim_chunk_to_fd(const void *buf, size_t len, u64 offset, void *arg)
 	} else {
 		return 0;
 	}
+}
+
+int
+extract_wim_resource_to_fd(const struct wim_lookup_table_entry *lte,
+			   int fd, u64 size)
+{
+	return extract_wim_resource(lte, size, extract_wim_chunk_to_fd, &fd);
 }
 
 /*

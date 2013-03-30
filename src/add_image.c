@@ -104,40 +104,20 @@ err:
 
 static int
 unix_capture_regular_file(const char *path,
-			  uint64_t size,
+			  u64 size,
 			  struct wim_inode *inode,
 			  struct wim_lookup_table *lookup_table)
 {
-	struct wim_lookup_table_entry *lte;
-	u8 hash[SHA1_HASH_SIZE];
-	int ret;
-
 	inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
 
 	/* Empty files do not have to have a lookup table entry. */
-	if (size == 0)
-		return 0;
+	if (size != 0) {
+		struct wim_lookup_table_entry *lte;
+		char *file_on_disk;
 
-	/* For each regular file, we must check to see if the file is in
-	 * the lookup table already; if it is, we increment its refcnt;
-	 * otherwise, we create a new lookup table entry and insert it.
-	 * */
-
-	ret = sha1sum(path, hash);
-	if (ret)
-		return ret;
-
-	lte = __lookup_resource(lookup_table, hash);
-	if (lte) {
-		lte->refcnt++;
-		DEBUG("Add lte reference %u for `%s'", lte->refcnt,
-		      path);
-	} else {
-		char *file_on_disk = STRDUP(path);
-		if (!file_on_disk) {
-			ERROR("Failed to allocate memory for file path");
+		file_on_disk = STRDUP(path);
+		if (!file_on_disk)
 			return WIMLIB_ERR_NOMEM;
-		}
 		lte = new_lookup_table_entry();
 		if (!lte) {
 			FREE(file_on_disk);
@@ -146,11 +126,9 @@ unix_capture_regular_file(const char *path,
 		lte->file_on_disk = file_on_disk;
 		lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
 		lte->resource_entry.original_size = size;
-		lte->resource_entry.size = size;
-		copy_hash(lte->hash, hash);
-		lookup_table_insert(lookup_table, lte);
+		lookup_table_insert_unhashed(lookup_table, lte);
+		inode->i_lte = lte;
 	}
-	inode->i_lte = lte;
 	return 0;
 }
 
@@ -393,10 +371,12 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	else
 		ret = unix_capture_symlink(path, inode, lookup_table);
 out:
-	if (ret == 0)
+	if (ret == 0) {
 		*root_ret = root;
-	else
+	} else {
 		free_dentry_tree(root, lookup_table);
+		lookup_table_free_unhashed_streams(lookup_table);
+	}
 	return ret;
 }
 

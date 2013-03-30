@@ -422,22 +422,10 @@ inode_to_stbuf(const struct wim_inode *inode,
 	}
 	stbuf->st_ino = (ino_t)inode->i_ino;
 	stbuf->st_nlink = inode->i_nlink;
-	if (lte) {
-		if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
-			struct stat native_stat;
-			if (stat(lte->staging_file_name, &native_stat) != 0) {
-				DEBUG("Failed to stat `%s': %m",
-				      lte->staging_file_name);
-				return -errno;
-			}
-			stbuf->st_size = native_stat.st_size;
-		} else {
-			stbuf->st_size = wim_resource_size(lte);
-		}
-	} else {
+	if (lte)
+		stbuf->st_size = wim_resource_size(lte);
+	else
 		stbuf->st_size = 0;
-	}
-
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
 	stbuf->st_atim = wim_timestamp_to_timespec(inode->i_last_access_time);
 	stbuf->st_mtim = wim_timestamp_to_timespec(inode->i_last_write_time);
@@ -658,11 +646,10 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 		}
 	}
 
-	new_lte->refcnt                       = inode->i_nlink;
-	new_lte->resource_location            = RESOURCE_IN_STAGING_FILE;
-	new_lte->staging_file_name            = staging_file_name;
-	new_lte->lte_inode                    = inode;
-	random_hash(new_lte->hash);
+	new_lte->refcnt            = inode->i_nlink;
+	new_lte->resource_location = RESOURCE_IN_STAGING_FILE;
+	new_lte->staging_file_name = staging_file_name;
+	new_lte->lte_inode         = inode;
 
 	if (stream_id == 0)
 		inode->i_lte = new_lte;
@@ -671,8 +658,8 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 			if (inode->i_ads_entries[i].stream_id == stream_id)
 				inode->i_ads_entries[i].lte = new_lte;
 
-	lookup_table_insert(ctx->wim->lookup_table, new_lte);
-	list_add(&new_lte->staging_list, &ctx->staging_list);
+	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte);
+	list_add_tail(&new_lte->staging_list, &ctx->staging_list);
 	*lte = new_lte;
 	return 0;
 out_revert_fd_changes:
@@ -807,45 +794,15 @@ inode_update_lte_ptr(struct wim_inode *inode,
 	}
 }
 
-static int
-update_lte_of_staging_file(struct wim_lookup_table_entry *lte,
-			   struct wim_lookup_table *table)
+static void
+free_lte_if_unneeded(struct wim_lookup_table_entry *lte)
 {
-	struct wim_lookup_table_entry *duplicate_lte;
-	int ret;
-	u8 hash[SHA1_HASH_SIZE];
-	struct stat stbuf;
 
-	ret = sha1sum(lte->staging_file_name, hash);
-	if (ret != 0)
-		return ret;
-	lookup_table_unlink(table, lte);
-	duplicate_lte = __lookup_resource(table, hash);
-	if (duplicate_lte) {
-		/* Merge duplicate lookup table entries */
-		duplicate_lte->refcnt += lte->refcnt;
-		inode_update_lte_ptr(lte->lte_inode, lte, duplicate_lte);
+	if (wim_resource_size(lte) == 0) {
+		/* Zero-length stream.  No lookup table entry needed. */
+		inode_update_lte_ptr(lte->lte_inode, lte, NULL);
 		free_lookup_table_entry(lte);
-	} else {
-		if (stat(lte->staging_file_name, &stbuf) != 0) {
-			ERROR_WITH_ERRNO("Failed to stat `%s'", lte->staging_file_name);
-			return WIMLIB_ERR_STAT;
-		}
-		if (stbuf.st_size == 0) {
-			/* Zero-length stream.  No lookup table entry needed. */
-			inode_update_lte_ptr(lte->lte_inode, lte, NULL);
-			free_lookup_table_entry(lte);
-		} else {
-			BUILD_BUG_ON(&lte->file_on_disk != &lte->staging_file_name);
-			lte->resource_entry.original_size = stbuf.st_size;
-			lte->resource_entry.size = stbuf.st_size;
-			lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
-			lte->file_on_disk_fp = NULL;
-			copy_hash(lte->hash, hash);
-			lookup_table_insert(table, lte);
-		}
 	}
-	return 0;
 }
 
 static int
@@ -881,14 +838,13 @@ rebuild_wim(struct wimfs_context *ctx, int write_flags,
 			return ret;
 	}
 
-	DEBUG("Calculating SHA1 checksums for all new staging files.");
-	list_for_each_entry_safe(lte, tmp, &ctx->staging_list, staging_list) {
-		ret = update_lte_of_staging_file(lte, w->lookup_table);
-		if (ret != 0)
-			return ret;
-	}
+	DEBUG("Freeing entries for zero-length streams");
+	list_for_each_entry_safe(lte, tmp, &ctx->staging_list, staging_list)
+		free_lte_if_unneeded(lte);
 
 	xml_update_image_info(w, w->current_image);
+	list_splice(&ctx->staging_list,
+		    &w->image_metadata[w->current_image - 1].unhashed_streams);
 	ret = wimlib_overwrite(w, write_flags, 0, progress_func);
 	if (ret != 0)
 		ERROR("Failed to commit changes to mounted WIM image");
@@ -1660,10 +1616,10 @@ wimfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	int ret = ftruncate(fd->staging_fd, size);
-	if (ret != 0)
+	if (ret)
 		return -errno;
-	if (fd->f_lte && size < fd->f_lte->resource_entry.original_size)
-		fd->f_lte->resource_entry.original_size = size;
+	touch_inode(fd->f_inode);
+	fd->f_lte->resource_entry.original_size = size;
 	return 0;
 }
 
@@ -1723,8 +1679,7 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 	if (res_size > size)
 		return -ERANGE;
 
-	ret = read_full_wim_resource(lte, (u8*)value,
-				     WIMLIB_RESOURCE_FLAG_MULTITHREADED);
+	ret = read_full_resource_into_buf(lte, value, true);
 	if (ret != 0)
 		return -EIO;
 
@@ -1861,8 +1816,7 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		inode = wim_pathname_to_inode(wimfs_ctx->wim, path);
 		if (!inode)
 			return -errno;
-		if (inode->i_attributes &
-		    (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
+		if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
 			return -ENOENT;
 		if (inode_get_ads_entry(inode, stream_name, NULL))
 			return -EEXIST;
@@ -1965,6 +1919,7 @@ wimfs_read(const char *path, char *buf, size_t size,
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	ssize_t ret;
+	u64 res_size;
 
 	if (!fd)
 		return -EBADF;
@@ -1972,32 +1927,34 @@ wimfs_read(const char *path, char *buf, size_t size,
 	if (!fd->f_lte) /* Empty stream with no lookup table entry */
 		return 0;
 
-	if (fd->f_lte->resource_location == RESOURCE_IN_STAGING_FILE) {
-		/* Read from staging file */
+	res_size = wim_resource_size(fd->f_lte);
+	if (offset > res_size)
+		return -EOVERFLOW;
+	size = min(size, INT_MAX);
+	size = min(size, res_size - offset);
 
-		wimlib_assert(fd->f_lte->staging_file_name);
-		wimlib_assert(fd->staging_fd != -1);
-
-		DEBUG("Seek to offset %"PRIu64, offset);
-
-		if (lseek(fd->staging_fd, offset, SEEK_SET) == -1)
-			return -errno;
-		ret = read(fd->staging_fd, buf, size);
-		if (ret == -1)
-			return -errno;
-		return ret;
-	} else {
-		/* Read from WIM */
-		u64 res_size = wim_resource_size(fd->f_lte);
-		if (offset > res_size)
-			return -EOVERFLOW;
-		size = min(size, res_size - offset);
-		if (read_wim_resource(fd->f_lte, buf,
-				      size, offset,
-				      WIMLIB_RESOURCE_FLAG_MULTITHREADED) != 0)
-			return -EIO;
-		return size;
+	switch (fd->f_lte->resource_location) {
+	case RESOURCE_IN_STAGING_FILE:
+		ret = pread(fd->staging_fd, buf, size, offset);
+		if (ret < 0)
+			ret = -errno;
+		break;
+	case RESOURCE_IN_WIM:
+		if (read_partial_wim_resource_into_buf(fd->f_lte, size,
+						       offset, buf, true))
+			ret = -errno;
+		ret = size;
+		break;
+	case RESOURCE_IN_ATTACHED_BUFFER:
+		memcpy(buf, fd->f_lte->attached_buffer + offset, size);
+		ret = size;
+		break;
+	default:
+		ERROR("Invalid resource location");
+		ret = -EIO;
+		break;
 	}
+	return ret;
 }
 
 struct fill_params {
@@ -2064,8 +2021,7 @@ wimfs_readlink(const char *path, char *buf, size_t buf_len)
 	if (!inode_is_symlink(inode))
 		return -EINVAL;
 
-	ret = inode_readlink(inode, buf, buf_len, ctx->wim,
-			     WIMLIB_RESOURCE_FLAG_MULTITHREADED);
+	ret = inode_readlink(inode, buf, buf_len, ctx->wim, true);
 	if (ret > 0)
 		ret = 0;
 	return ret;
@@ -2299,6 +2255,8 @@ wimfs_truncate(const char *path, off_t size)
 		ret = extract_resource_to_staging_dir(inode, stream_id,
 						      &lte, size, ctx);
 	}
+	if (ret == 0)
+		lte->resource_entry.original_size = size;
 	return ret;
 }
 
@@ -2390,19 +2348,19 @@ wimfs_write(const char *path, const char *buf, size_t size,
 	if (!fd)
 		return -EBADF;
 
-	wimlib_assert(fd->f_lte);
-	wimlib_assert(fd->f_lte->staging_file_name);
+	wimlib_assert(fd->f_lte != NULL);
+	wimlib_assert(fd->f_lte->staging_file_name != NULL);
 	wimlib_assert(fd->staging_fd != -1);
-	wimlib_assert(fd->f_inode);
-
-	/* Seek to the requested position */
-	if (lseek(fd->staging_fd, offset, SEEK_SET) == -1)
-		return -errno;
+	wimlib_assert(fd->f_inode != NULL);
 
 	/* Write the data. */
-	ret = write(fd->staging_fd, buf, size);
+	ret = pwrite(fd->staging_fd, buf, size, offset);
 	if (ret == -1)
 		return -errno;
+
+	/* Update file size */
+	if (offset + size > fd->f_lte->resource_entry.original_size)
+		fd->f_lte->resource_entry.original_size = offset + size;
 
 	/* Update timestamps */
 	touch_inode(fd->f_inode);

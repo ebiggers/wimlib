@@ -40,7 +40,7 @@ new_lookup_table(size_t capacity)
 	struct wim_lookup_table *table;
 	struct hlist_head *array;
 
-	table = MALLOC(sizeof(struct wim_lookup_table));
+	table = CALLOC(1, sizeof(struct wim_lookup_table));
 	if (table) {
 		array = CALLOC(capacity, sizeof(array[0]));
 		if (array) {
@@ -919,4 +919,14 @@ lookup_table_total_stream_size(struct wim_lookup_table *table)
 	u64 total_size = 0;
 	for_lookup_table_entry(table, lte_add_stream_size, &total_size);
 	return total_size;
+}
+
+void
+lookup_table_free_unhashed_streams(struct wim_lookup_table *table)
+{
+	struct wim_lookup_table_entry *lte, *tmp;
+
+	list_for_each_entry_safe(lte, tmp, table->unhashed_streams, staging_list)
+		free_lookup_table_entry(lte);
+	INIT_LIST_HEAD(table->unhashed_streams);
 }

@@ -196,7 +196,7 @@ get_compress_func(int out_ctype)
  * Returns 0 on success; nonzero on failure.
  */
 static int
-write_wim_resource_chunk(const u8 chunk[], unsigned chunk_size,
+write_wim_resource_chunk(const void *chunk, unsigned chunk_size,
 			 FILE *out_fp, compress_func_t compress,
 			 struct chunk_table *chunk_tab)
 {
@@ -269,107 +269,6 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 	return 0;
 }
 
-/* Prepare for multiple reads to a resource by caching a FILE * or NTFS
- * attribute pointer in the lookup table entry. */
-static int
-prepare_resource_for_read(struct wim_lookup_table_entry *lte
-
-				#ifdef WITH_NTFS_3G
-				, ntfs_inode **ni_ret
-				#endif
-			)
-{
-	switch (lte->resource_location) {
-	case RESOURCE_IN_FILE_ON_DISK:
-		if (!lte->file_on_disk_fp) {
-			lte->file_on_disk_fp = tfopen(lte->file_on_disk, T("rb"));
-			if (!lte->file_on_disk_fp) {
-				ERROR_WITH_ERRNO("Failed to open the file "
-						 "`%"TS"'", lte->file_on_disk);
-				return WIMLIB_ERR_OPEN;
-			}
-		}
-		break;
-#ifdef WITH_NTFS_3G
-	case RESOURCE_IN_NTFS_VOLUME:
-		if (!lte->attr) {
-			struct ntfs_location *loc = lte->ntfs_loc;
-			ntfs_inode *ni;
-			wimlib_assert(loc);
-			ni = ntfs_pathname_to_inode(*loc->ntfs_vol_p, NULL, loc->path);
-			if (!ni) {
-				ERROR_WITH_ERRNO("Failed to open inode `%"TS"' in NTFS "
-						 "volume", loc->path);
-				return WIMLIB_ERR_NTFS_3G;
-			}
-			lte->attr = ntfs_attr_open(ni,
-						   loc->is_reparse_point ? AT_REPARSE_POINT : AT_DATA,
-						   loc->stream_name,
-						   loc->stream_name_nchars);
-			if (!lte->attr) {
-				ERROR_WITH_ERRNO("Failed to open attribute of `%"TS"' in "
-						 "NTFS volume", loc->path);
-				ntfs_inode_close(ni);
-				return WIMLIB_ERR_NTFS_3G;
-			}
-			*ni_ret = ni;
-		}
-		break;
-#endif
-#ifdef __WIN32__
-	case RESOURCE_WIN32:
-		if (lte->win32_file_on_disk_fp == INVALID_HANDLE_VALUE) {
-			lte->win32_file_on_disk_fp =
-				win32_open_file_data_only(lte->file_on_disk);
-			if (lte->win32_file_on_disk_fp == INVALID_HANDLE_VALUE) {
-				ERROR("Win32 API: Can't open %"TS, lte->file_on_disk);
-				win32_error_last();
-				return WIMLIB_ERR_OPEN;
-			}
-		}
-		break;
-#endif
-	default:
-		break;
-	}
-	return 0;
-}
-
-/* Undo prepare_resource_for_read() by closing the cached FILE * or NTFS
- * attribute. */
-static void
-end_wim_resource_read(struct wim_lookup_table_entry *lte
-			#ifdef WITH_NTFS_3G
-				, ntfs_inode *ni
-			#endif
-			)
-{
-	if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK
-	    && lte->file_on_disk_fp)
-	{
-		fclose(lte->file_on_disk_fp);
-		lte->file_on_disk_fp = NULL;
-	}
-#ifdef WITH_NTFS_3G
-	else if (lte->resource_location == RESOURCE_IN_NTFS_VOLUME) {
-		if (lte->attr) {
-			ntfs_attr_close(lte->attr);
-			lte->attr = NULL;
-		}
-		if (ni)
-			ntfs_inode_close(ni);
-	}
-#endif
-#ifdef __WIN32__
-	else if (lte->resource_location == RESOURCE_WIN32
-		 && lte->win32_file_on_disk_fp != INVALID_HANDLE_VALUE)
-	{
-		win32_close_file(lte->win32_file_on_disk_fp);
-		lte->win32_file_on_disk_fp = INVALID_HANDLE_VALUE;
-	}
-#endif
-}
-
 static int
 write_uncompressed_resource_and_truncate(struct wim_lookup_table_entry *lte,
 					 FILE *out_fp,
@@ -382,217 +281,158 @@ write_uncompressed_resource_and_truncate(struct wim_lookup_table_entry *lte,
 				 "output WIM file", file_offset);
 		return WIMLIB_ERR_WRITE;
 	}
-	ret = write_wim_resource(lte, out_fp, WIMLIB_COMPRESSION_TYPE_NONE,
-				 out_res_entry, 0);
-	if (ret != 0)
+	ret = write_wim_resource(lte, out_fp,
+				 WIMLIB_COMPRESSION_TYPE_NONE,
+				 out_res_entry,
+				 0);
+	if (ret)
 		return ret;
 
 	return fflush_and_ftruncate(out_fp,
 				    file_offset + wim_resource_size(lte));
 }
 
-/*
- * Writes a WIM resource to a FILE * opened for writing.  The resource may be
- * written uncompressed or compressed depending on the @out_ctype parameter.
- *
- * If by chance the resource compresses to more than the original size (this may
- * happen with random data or files than are pre-compressed), the resource is
- * instead written uncompressed (and this is reflected in the @out_res_entry by
- * removing the WIM_RESHDR_FLAG_COMPRESSED flag).
- *
- * @lte:	The lookup table entry for the WIM resource.
- * @out_fp:	The FILE * to write the resource to.
- * @out_ctype:  The compression type of the resource to write.  Note: if this is
- * 			the same as the compression type of the WIM resource we
- * 			need to read, we simply copy the data (i.e. we do not
- * 			uncompress it, then compress it again).
- * @out_res_entry:  If non-NULL, a resource entry that is filled in with the
- * 		    offset, original size, compressed size, and compression flag
- * 		    of the output resource.
- *
- * Returns 0 on success; nonzero on failure.
- */
+struct write_resource_ctx {
+	compress_func_t compress;
+	struct chunk_table *chunk_tab;
+	FILE *out_fp;
+	SHA_CTX sha_ctx;
+	bool doing_sha;
+};
+
+static int
+write_resource_cb(const void *chunk, size_t chunk_size, void *_ctx)
+{
+	struct write_resource_ctx *ctx = _ctx;
+
+	if (ctx->doing_sha)
+		sha1_update(&ctx->sha_ctx, chunk, chunk_size);
+
+	if (ctx->compress) {
+		return write_wim_resource_chunk(chunk, chunk_size,
+						ctx->out_fp, ctx->compress,
+						ctx->chunk_tab);
+	} else {
+		if (fwrite(chunk, 1, chunk_size, ctx->out_fp) != chunk_size) {
+			ERROR_WITH_ERRNO("Error writing to output WIM");
+			return WIMLIB_ERR_WRITE;
+		} else {
+			return 0;
+		}
+	}
+}
+
 int
 write_wim_resource(struct wim_lookup_table_entry *lte,
 		   FILE *out_fp, int out_ctype,
 		   struct resource_entry *out_res_entry,
 		   int flags)
 {
-	u64 bytes_remaining;
-	u64 original_size;
-	u64 old_compressed_size;
-	u64 new_compressed_size;
-	u64 offset;
+	struct write_resource_ctx write_ctx;
+	u64 new_size;
+	off_t offset;
 	int ret;
-	struct chunk_table *chunk_tab = NULL;
-	bool raw;
-	off_t file_offset;
-	compress_func_t compress = NULL;
-#ifdef WITH_NTFS_3G
-	ntfs_inode *ni = NULL;
-#endif
 
-	wimlib_assert(lte);
+	if (wim_resource_size(lte) == 0) {
+		/* Empty resource; nothing needs to be done, so just return
+		 * success. */
+		return 0;
+	}
 
-	/* Original size of the resource */
- 	original_size = wim_resource_size(lte);
-
-	/* Compressed size of the resource (as it exists now) */
-	old_compressed_size = wim_resource_compressed_size(lte);
-
-	/* Current offset in output file */
-	file_offset = ftello(out_fp);
-	if (file_offset == -1) {
-		ERROR_WITH_ERRNO("Failed to get offset in output "
-				 "stream");
+	offset = ftello(out_fp);
+	if (offset == -1) {
+		ERROR_WITH_ERRNO("Can't get position in output WIM");
 		return WIMLIB_ERR_WRITE;
 	}
 
-	/* Are the compression types the same?  If so, do a raw copy (copy
-	 * without decompressing and recompressing the data). */
-	raw = (wim_resource_compression_type(lte) == out_ctype
-	       && out_ctype != WIMLIB_COMPRESSION_TYPE_NONE
-	       && !(flags & WIMLIB_RESOURCE_FLAG_RECOMPRESS));
+	/* Can we simply copy the compressed data without recompressing it? */
 
-	if (raw) {
+	if (!(flags & WIMLIB_RESOURCE_FLAG_RECOMPRESS) &&
+	    lte->resource_location == RESOURCE_IN_WIM &&
+	    wimlib_get_compression_type(lte->wim) == out_ctype)
+	{
 		flags |= WIMLIB_RESOURCE_FLAG_RAW;
-		bytes_remaining = old_compressed_size;
+		write_ctx.doing_sha = false;
 	} else {
-		flags &= ~WIMLIB_RESOURCE_FLAG_RAW;
-		bytes_remaining = original_size;
+		write_ctx.doing_sha = true;
+		sha1_init(&write_ctx.sha_ctx);
 	}
 
-	/* Empty resource; nothing needs to be done, so just return success. */
-	if (bytes_remaining == 0)
-		return 0;
-
-	/* Buffer for reading chunks for the resource */
-	u8 buf[min(WIM_CHUNK_SIZE, bytes_remaining)];
-
-	/* If we are writing a compressed resource and not doing a raw copy, we
-	 * need to initialize the chunk table */
-	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE && !raw) {
-		ret = begin_wim_resource_chunk_tab(lte, out_fp, file_offset,
-						   &chunk_tab);
-		if (ret != 0)
-			goto out;
-	}
-
-	/* If the WIM resource is in an external file, open a FILE * to it so we
-	 * don't have to open a temporary one in read_wim_resource() for each
-	 * chunk. */
-#ifdef WITH_NTFS_3G
-	ret = prepare_resource_for_read(lte, &ni);
-#else
-	ret = prepare_resource_for_read(lte);
-#endif
-	if (ret != 0)
-		goto out;
-
-	/* If we aren't doing a raw copy, we will compute the SHA1 message
-	 * digest of the resource as we read it, and verify it's the same as the
-	 * hash given in the lookup table entry once we've finished reading the
-	 * resource. */
-	SHA_CTX ctx;
-	if (!raw) {
-		sha1_init(&ctx);
-		compress = get_compress_func(out_ctype);
-	}
-	offset = 0;
-
-	/* While there are still bytes remaining in the WIM resource, read a
-	 * chunk of the resource, update SHA1, then write that chunk using the
-	 * desired compression type. */
-	do {
-		u64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
-		ret = read_wim_resource(lte, buf, to_read, offset, flags);
-		if (ret != 0)
-			goto out_fclose;
-		if (!raw)
-			sha1_update(&ctx, buf, to_read);
-		ret = write_wim_resource_chunk(buf, to_read, out_fp,
-					       compress, chunk_tab);
-		if (ret != 0)
-			goto out_fclose;
-		bytes_remaining -= to_read;
-		offset += to_read;
-	} while (bytes_remaining);
-
-	/* Raw copy:  The new compressed size is the same as the old compressed
-	 * size
-	 *
-	 * Using WIMLIB_COMPRESSION_TYPE_NONE:  The new compressed size is the
-	 * original size
-	 *
-	 * Using a different compression type:  Call
-	 * finish_wim_resource_chunk_tab() and it will provide the new
-	 * compressed size.
-	 */
-	if (raw) {
-		new_compressed_size = old_compressed_size;
+	/* Initialize the chunk table and set the compression function if
+	 * compressing the resource. */
+	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE ||
+	    (flags & WIMLIB_RESOURCE_FLAG_RAW)) {
+		write_ctx.compress = NULL;
+		write_ctx.chunk_tab = NULL;
 	} else {
-		if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
-			new_compressed_size = original_size;
-		else {
-			ret = finish_wim_resource_chunk_tab(chunk_tab, out_fp,
-							    &new_compressed_size);
-			if (ret != 0)
-				goto out_fclose;
-		}
+		write_ctx.compress = get_compress_func(out_ctype);
+		ret = begin_wim_resource_chunk_tab(lte, out_fp,
+						   offset,
+						   &write_ctx.chunk_tab);
+		if (ret)
+			return ret;
 	}
 
-	/* Verify SHA1 message digest of the resource, unless we are doing a raw
-	 * write (in which case we never even saw the uncompressed data).  Or,
-	 * if the hash we had before is all 0's, just re-set it to be the new
-	 * hash. */
-	if (!raw) {
+	/* Write the data */
+	write_ctx.out_fp = out_fp;
+	ret = read_resource_prefix(lte, wim_resource_size(lte),
+				   write_resource_cb, &write_ctx, 0);
+
+	/* Verify SHA1 message digest of the resource,  Or, if the hash we had
+	 * before is all 0's, just re-set it to be the new hash. */
+	if (write_ctx.doing_sha) {
 		u8 md[SHA1_HASH_SIZE];
-		sha1_final(md, &ctx);
+		sha1_final(md, &write_ctx.sha_ctx);
 		if (is_zero_hash(lte->hash)) {
 			copy_hash(lte->hash, md);
 		} else if (!hashes_equal(md, lte->hash)) {
 			ERROR("WIM resource has incorrect hash!");
-			if (lte->resource_location == RESOURCE_IN_FILE_ON_DISK) {
-				ERROR("We were reading it from `%"TS"'; maybe "
+			if (lte_filename_valid(lte)) {
+				ERROR("We were reading it from \"%"TS"\"; maybe "
 				      "it changed while we were reading it.",
 				      lte->file_on_disk);
 			}
 			ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
-			goto out_fclose;
+			goto out_free_chunk_tab;
 		}
 	}
 
-	if (!raw && new_compressed_size >= original_size &&
-	    out_ctype != WIMLIB_COMPRESSION_TYPE_NONE)
-	{
-		/* Oops!  We compressed the resource to larger than the original
-		 * size.  Write the resource uncompressed instead. */
-		ret = write_uncompressed_resource_and_truncate(lte,
-							       out_fp,
-							       file_offset,
-							       out_res_entry);
-		if (ret != 0)
-			goto out_fclose;
+	out_res_entry->flags = lte->resource_entry.flags;
+	out_res_entry->original_size = wim_resource_size(lte);
+	out_res_entry->offset = offset;
+	if (flags & WIMLIB_RESOURCE_FLAG_RAW) {
+		/* Doing a raw write:  The new compressed size is the same as
+		 * the compressed size in the other WIM. */
+		new_size = lte->resource_entry.size;
+		out_res_entry->flags = lte->resource_entry.flags;
+	} else if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE) {
+		/* Using WIMLIB_COMPRESSION_TYPE_NONE:  The new compressed size
+		 * is the original size. */
+		new_size = lte->resource_entry.original_size;
+		out_res_entry->flags &= ~WIM_RESHDR_FLAG_COMPRESSED;
 	} else {
-		if (out_res_entry) {
-			out_res_entry->size          = new_compressed_size;
-			out_res_entry->original_size = original_size;
-			out_res_entry->offset        = file_offset;
-			out_res_entry->flags         = lte->resource_entry.flags
-							& ~WIM_RESHDR_FLAG_COMPRESSED;
-			if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE)
-				out_res_entry->flags |= WIM_RESHDR_FLAG_COMPRESSED;
+		/* Using a different compression type:  Call
+		 * finish_wim_resource_chunk_tab() and it will provide the new
+		 * compressed size. */
+		ret = finish_wim_resource_chunk_tab(write_ctx.chunk_tab, out_fp,
+						    &new_size);
+		if (ret)
+			goto out_free_chunk_tab;
+		if (new_size >= wim_resource_size(lte)) {
+			/* Oops!  We compressed the resource to larger than the original
+			 * size.  Write the resource uncompressed instead. */
+			ret = write_uncompressed_resource_and_truncate(lte,
+								       out_fp,
+								       offset,
+								       out_res_entry);
+			goto out_free_chunk_tab;
 		}
+		out_res_entry->flags |= WIM_RESHDR_FLAG_COMPRESSED;
 	}
+	out_res_entry->size = new_size;
 	ret = 0;
-out_fclose:
-#ifdef WITH_NTFS_3G
-	end_wim_resource_read(lte, ni);
-#else
-	end_wim_resource_read(lte);
-#endif
-out:
-	FREE(chunk_tab);
+out_free_chunk_tab:
+	FREE(write_ctx.chunk_tab);
 	return ret;
 }
 
