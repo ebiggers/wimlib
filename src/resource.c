@@ -38,6 +38,10 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#endif
+
 /* Write @n bytes from @buf to the file descriptor @fd, retrying on internupt
  * and on short writes.
  *
@@ -90,10 +94,13 @@ full_read(int fd, void *buf, size_t n)
  * Returns zero on success, nonzero on failure.
  */
 static int
-read_compressed_resource(FILE *fp, u64 resource_compressed_size,
+read_compressed_resource(FILE *fp,
+			 u64 resource_compressed_size,
 			 u64 resource_uncompressed_size,
-			 u64 resource_offset, int resource_ctype,
-			 u64 len, u64 offset,
+			 u64 resource_offset,
+			 int resource_ctype,
+			 u64 len,
+			 u64 offset,
 			 consume_data_callback_t cb,
 			 void *ctx_or_buf)
 {
@@ -122,7 +129,8 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	 * follows the chunk table and therefore must have an offset of 0.
 	 */
 
-	/* Calculate how many chunks the resource conists of in its entirety. */
+	/* Calculate how many chunks the resource consists of in its entirety.
+	 * */
 	u64 num_chunks = (resource_uncompressed_size + WIM_CHUNK_SIZE - 1) /
 								WIM_CHUNK_SIZE;
 	/* As mentioned, the first chunk has no entry in the chunk table. */
@@ -149,9 +157,22 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	if (end_chunk != num_chunks - 1)
 		num_needed_chunks++;
 
-	/* Declare the chunk table.  It will only contain offsets for the chunks
-	 * that are actually needed for this read. */
-	u64 chunk_offsets[num_needed_chunks];
+	/* Allocate the chunk table.  It will only contain offsets for the
+	 * chunks that are actually needed for this read. */
+	u64 *chunk_offsets;
+	bool chunk_offsets_malloced;
+	if (num_needed_chunks < 1000) {
+		chunk_offsets = alloca(num_needed_chunks * sizeof(u64));
+		chunk_offsets_malloced = false;
+	} else {
+		chunk_offsets = malloc(num_needed_chunks * sizeof(u64));
+		if (!chunk_offsets) {
+			ERROR("Failed to allocate chunk table "
+			      "with %"PRIu64" entries", num_needed_chunks);
+			return WIMLIB_ERR_NOMEM;
+		}
+		chunk_offsets_malloced = true;
+	}
 
 	/* Set the implicit offset of the first chunk if it is included in the
 	 * needed chunks.
@@ -193,28 +214,28 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 	/* Number of bytes we need to read from the chunk table. */
 	size_t size = num_needed_chunk_entries * chunk_entry_size;
 
-	{
-		u8 chunk_tab_buf[size];
+	/* Read the raw data into the end of the chunk_offsets array to
+	 * avoid allocating another array. */
+	void *chunk_tab_buf = (void*)&chunk_offsets[num_needed_chunks] - size;
 
-		if (fread(chunk_tab_buf, 1, size, fp) != size)
-			goto read_error;
+	if (fread(chunk_tab_buf, 1, size, fp) != size)
+		goto read_error;
 
-		/* Now fill in chunk_offsets from the entries we have read in
-		 * chunk_tab_buf. */
+	/* Now fill in chunk_offsets from the entries we have read in
+	 * chunk_tab_buf. */
 
-		u64 *chunk_tab_p = chunk_offsets;
-		if (start_chunk == 0)
-			chunk_tab_p++;
+	u64 *chunk_tab_p = chunk_offsets;
+	if (start_chunk == 0)
+		chunk_tab_p++;
 
-		if (chunk_entry_size == 4) {
-			u32 *entries = (u32*)chunk_tab_buf;
-			while (num_needed_chunk_entries--)
-				*chunk_tab_p++ = le32_to_cpu(*entries++);
-		} else {
-			u64 *entries = (u64*)chunk_tab_buf;
-			while (num_needed_chunk_entries--)
-				*chunk_tab_p++ = le64_to_cpu(*entries++);
-		}
+	if (chunk_entry_size == 4) {
+		u32 *entries = (u32*)chunk_tab_buf;
+		while (num_needed_chunk_entries--)
+			*chunk_tab_p++ = le32_to_cpu(*entries++);
+	} else {
+		u64 *entries = (u64*)chunk_tab_buf;
+		while (num_needed_chunk_entries--)
+			*chunk_tab_p++ = le64_to_cpu(*entries++);
 	}
 
 	/* Done with the chunk table now.  We must now seek to the first chunk
@@ -226,10 +247,11 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 		goto read_error;
 
 	/* Pointer to current position in the output buffer for uncompressed
-	 * data. */
+	 * data.  Alternatively, if using a callback function, we repeatedly
+	 * fill a temporary buffer to feed data into the callback function.  */
 	u8 *out_p;
 	if (cb)
-		out_p = alloca(32768);
+		out_p = alloca(WIM_CHUNK_SIZE);
 	else
 		out_p = ctx_or_buf;
 
@@ -341,7 +363,8 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 		}
 		if (cb) {
 			/* Feed the data to the callback function */
-			ret = cb(out_p, partial_chunk_size, ctx_or_buf);
+			ret = cb(out_p + start_offset,
+				 partial_chunk_size, ctx_or_buf);
 			if (ret)
 				goto out;
 		} else {
@@ -355,6 +378,8 @@ read_compressed_resource(FILE *fp, u64 resource_compressed_size,
 
 	ret = 0;
 out:
+	if (chunk_offsets_malloced)
+		FREE(chunk_offsets);
 	return ret;
 
 read_error:
@@ -512,7 +537,7 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 
 	wim = lte->wim;
 
-	if (flags & WIMLIB_RESOURCE_FLAG_MULTITHREADED) {
+	if (flags & WIMLIB_RESOURCE_FLAG_THREADSAFE_READ) {
 		wim_fp = wim_get_fp(wim);
 		if (!wim_fp) {
 			ret = -1;
@@ -571,7 +596,7 @@ read_error:
 	ERROR_WITH_ERRNO("Error reading data from WIM");
 	ret = WIMLIB_ERR_READ;
 out_release_fp:
-	if (flags & WIMLIB_RESOURCE_FLAG_MULTITHREADED)
+	if (flags & WIMLIB_RESOURCE_FLAG_THREADSAFE_READ)
 		ret |= wim_release_fp(wim, wim_fp);
 out:
 	if (ret) {
@@ -588,7 +613,7 @@ read_partial_wim_resource_into_buf(const struct wim_lookup_table_entry *lte,
 				   bool threadsafe)
 {
 	return read_partial_wim_resource(lte, size, NULL, buf,
-					 threadsafe ? WIMLIB_RESOURCE_FLAG_MULTITHREADED : 0,
+					 threadsafe ? WIMLIB_RESOURCE_FLAG_THREADSAFE_READ : 0,
 					 offset);
 }
 
@@ -691,10 +716,12 @@ typedef int (*read_resource_prefix_handler_t)(const struct wim_lookup_table_entr
  * When using a callback function, it is called with chunks up to 32768 bytes in
  * size until the resource is exhausted.
  *
- * If the resource is located in a WIM file, @flags can be
- * WIMLIB_RESOURCE_FLAG_MULTITHREADED if it must be safe to access the resource
- * concurrently by multiple threads, or WIMLIB_RESOURCE_FLAG_RAW if the raw
- * compressed data is to be supplied instead of the uncompressed data.
+ * If the resource is located in a WIM file, @flags can be:
+ *   * WIMLIB_RESOURCE_FLAG_THREADSAFE_READ if it must be safe to access the resource
+ *     concurrently by multiple threads.
+ *   * WIMLIB_RESOURCE_FLAG_RAW if the raw compressed data is to be supplied
+ *     instead of the uncompressed data.
+ * Otherwise, the @flags are ignored.
  */
 int
 read_resource_prefix(const struct wim_lookup_table_entry *lte,
@@ -728,7 +755,7 @@ read_full_resource_into_buf(const struct wim_lookup_table_entry *lte,
 	return read_resource_prefix(lte,
 				    wim_resource_size(lte),
 				    NULL, buf,
-				    thread_safe ? WIMLIB_RESOURCE_FLAG_MULTITHREADED : 0);
+				    thread_safe ? WIMLIB_RESOURCE_FLAG_THREADSAFE_READ : 0);
 }
 
 struct extract_ctx {

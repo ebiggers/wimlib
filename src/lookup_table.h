@@ -163,7 +163,7 @@ struct wim_lookup_table_entry {
 		 * to the pointer to this 'struct wim_lookup_table_entry'
 		 * contained in a 'struct wim_ads_entry' or 'struct wim_inode'.
 		 * */
-		struct wim_lookup_table_entry **my_ptr;
+		struct wim_lookup_table_entry **back_ptr;
 	};
 
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
@@ -176,10 +176,13 @@ struct wim_lookup_table_entry {
 	/* Pointers to somewhere where the stream is actually located.  See the
 	 * comments for the @resource_location field above. */
 	union {
+		void *resource_loc_private;
 		WIMStruct *wim;
 		tchar *file_on_disk;
-		tchar *staging_file_name;
 		void *attached_buffer;
+	#ifdef WITH_FUSE
+		tchar *staging_file_name;
+	#endif
 	#ifdef WITH_NTFS_3G
 		struct ntfs_location *ntfs_loc;
 	#endif
@@ -219,20 +222,17 @@ struct wim_lookup_table_entry {
 
 		struct {
 			struct hlist_node hash_list_2;
+
 			struct list_head write_streams_list;
 		};
 	};
 
-	/* List of lookup table entries that correspond to streams that have
-	 * been extracted to the staging directory when modifying a read-write
-	 * mounted WIM.
-	 *
-	 * This field is also used to make other lists of lookup table entries.
-	 * */
+	/* Temporary list fields */
 	union {
 		struct list_head unhashed_list;
-		struct list_head staging_list;
+		struct list_head swm_stream_list;
 		struct list_head extraction_list;
+		struct list_head new_stream_list;
 	};
 };
 
@@ -485,15 +485,12 @@ lookup_table_total_stream_size(struct wim_lookup_table *table);
 static inline void
 lookup_table_insert_unhashed(struct wim_lookup_table *table,
 			     struct wim_lookup_table_entry *lte,
-			     struct wim_lookup_table_entry **my_ptr)
+			     struct wim_lookup_table_entry **back_ptr)
 {
 	lte->unhashed = 1;
 	list_add_tail(&lte->unhashed_list, table->unhashed_streams);
-	lte->my_ptr = my_ptr;
-	*my_ptr = lte;
+	lte->back_ptr = back_ptr;
+	*back_ptr = lte;
 }
-
-extern void
-free_lte_list(struct list_head *list);
 
 #endif

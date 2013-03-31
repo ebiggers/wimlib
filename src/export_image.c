@@ -47,7 +47,8 @@ inode_allocate_needed_ltes(struct wim_inode *inode,
 				dest_lte = clone_lookup_table_entry(src_lte);
 				if (!dest_lte)
 					return WIMLIB_ERR_NOMEM;
-				list_add_tail(&dest_lte->staging_list, lte_list_head);
+				list_add_tail(&dest_lte->new_stream_list,
+					      lte_list_head);
 			}
 		}
 	}
@@ -76,7 +77,7 @@ inode_move_ltes_to_table(struct wim_inode *inode,
 				list_del(next);
 				dest_lte = container_of(next,
 							struct wim_lookup_table_entry,
-							staging_list);
+							new_stream_list);
 				dest_lte->part_number = 1;
 				dest_lte->refcnt = 0;
 				wimlib_assert(hashes_equal(dest_lte->hash, src_lte->hash));
@@ -250,7 +251,7 @@ out_xml_delete_image:
 out_free_ltes:
 	{
 		struct wim_lookup_table_entry *lte, *tmp;
-		list_for_each_entry_safe(lte, tmp, &lte_list_head, staging_list)
+		list_for_each_entry_safe(lte, tmp, &lte_list_head, new_stream_list)
 			free_lookup_table_entry(lte);
 	}
 out:

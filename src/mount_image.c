@@ -647,21 +647,21 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 	new_lte->staging_file_name = staging_file_name;
 	new_lte->lte_inode         = inode;
 
-	struct wim_lookup_table_entry **my_ptr;
+	struct wim_lookup_table_entry **back_ptr;
 
 	if (stream_id == 0) {
-		my_ptr = &inode->i_lte;
+		back_ptr = &inode->i_lte;
 	} else {
 		for (u16 i = 0; ; i++) {
 			wimlib_assert(i < inode->i_num_ads);
 			if (inode->i_ads_entries[i].stream_id == stream_id) {
-				my_ptr = &inode->i_ads_entries[i].lte;
+				back_ptr = &inode->i_ads_entries[i].lte;
 				break;
 			}
 		}
 	}
 
-	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte, my_ptr);
+	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte, back_ptr);
 	*lte = new_lte;
 	return 0;
 out_revert_fd_changes:
@@ -816,7 +816,7 @@ rebuild_wim(struct wimfs_context *ctx, int write_flags,
 	DEBUG("Freeing entries for zero-length streams");
 	image_for_each_unhashed_stream(lte, imd) {
 		if (wim_resource_size(lte) == 0) {
-			*lte->my_ptr = NULL;
+			*lte->back_ptr = NULL;
 			free_lookup_table_entry(lte);
 		}
 	}

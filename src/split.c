@@ -50,9 +50,9 @@ finish_swm(WIMStruct *w, struct list_head *lte_list,
 	int ret;
 	struct wim_lookup_table_entry *lte;
 
-	list_for_each_entry(lte, lte_list, staging_list) {
+	list_for_each_entry(lte, lte_list, swm_stream_list) {
 		ret = write_lookup_table_entry(lte, w->out_fp);
-		if (ret != 0)
+		if (ret)
 			return ret;
 	}
 
@@ -90,7 +90,7 @@ copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *__args)
 
 		ret = finish_swm(w, &args->lte_list, args->write_flags,
 				 args->progress_func);
-		if (ret != 0)
+		if (ret)
 			return ret;
 
 		if (args->progress_func) {
@@ -113,13 +113,13 @@ copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *__args)
 		}
 
 		ret = begin_write(w, args->swm_base_name, args->write_flags);
-		if (ret != 0)
+		if (ret)
 			return ret;
 		args->size_remaining = args->part_size;
 	}
 	args->size_remaining -= lte->resource_entry.size;
 	args->progress.split.completed_bytes += lte->resource_entry.size;
-	list_add_tail(&lte->staging_list, &args->lte_list);
+	list_add_tail(&lte->swm_stream_list, &args->lte_list);
 	return copy_resource(lte, w);
 }
 
@@ -153,7 +153,7 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 	w->hdr.boot_idx = 0;
 	randomize_byte_array(w->hdr.guid, WIM_GID_LEN);
 	ret = begin_write(w, swm_name, write_flags);
-	if (ret != 0)
+	if (ret)
 		goto out;
 
 	tmemcpy(swm_base_name, swm_name, swm_name_len + 1);
@@ -197,17 +197,17 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 		args.progress.split.completed_bytes += metadata_lte->resource_entry.size;
 		/* Careful: The metadata lookup table entries must be added in
 		 * order of the images. */
-		list_add_tail(&metadata_lte->staging_list, &args.lte_list);
+		list_add_tail(&metadata_lte->swm_stream_list, &args.lte_list);
 	}
 
 	ret = for_lookup_table_entry_pos_sorted(w->lookup_table,
 						copy_resource_to_swm,
 						&args);
-	if (ret != 0)
+	if (ret)
 		goto out;
 
 	ret = finish_swm(w, &args.lte_list, write_flags, progress_func);
-	if (ret != 0)
+	if (ret)
 		goto out;
 
 	if (progress_func) {

@@ -199,6 +199,7 @@ select_wim_image(WIMStruct *w, int image)
 	if (w->current_image != WIMLIB_NO_IMAGE) {
 		imd = wim_get_current_image_metadata(w);
 		if (!imd->modified) {
+			wimlib_assert(list_empty(&imd->unhashed_streams));
 			DEBUG("Freeing image %u", w->current_image);
 			destroy_image_metadata(imd, NULL, false);
 		}
@@ -531,6 +532,11 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 	if (free_metadata_lte) {
 		free_lookup_table_entry(imd->metadata_lte);
 		imd->metadata_lte = NULL;
+	}
+	if (!table) {
+		struct wim_lookup_table_entry *lte, *tmp;
+		list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, unhashed_list)
+			free_lookup_table_entry(lte);
 	}
 	INIT_LIST_HEAD(&imd->unhashed_streams);
 	INIT_LIST_HEAD(&imd->inode_list);

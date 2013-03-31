@@ -55,8 +55,10 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 	metadata_lte = imd->metadata_lte;
 	metadata_len = wim_resource_size(metadata_lte);
 
-	DEBUG("Reading metadata resource: length = %"PRIu64", "
-	      "offset = %"PRIu64"", metadata_len,
+	DEBUG("Reading metadata resource: original_size = %"PRIu64", "
+	      "size = %"PRIu64", offset = %"PRIu64"",
+	      metadata_lte->resource_entry.original_size,
+	      metadata_lte->resource_entry.size,
 	      metadata_lte->resource_entry.offset);
 
 	/* There is no way the metadata resource could possibly be less than (8
@@ -280,16 +282,11 @@ write_metadata_resource(WIMStruct *w)
 					     wimlib_get_compression_type(w),
 					     &lte->output_resource_entry,
 					     lte->hash);
-	if (ret)
-		goto out_free_buf;
-
 	/* Note that although the SHA1 message digest of the metadata resource
 	 * is very likely to have changed, the corresponding lookup table entry
 	 * is not actually located in the hash table, so it need not be
 	 * re-inserted in the hash table. */
-	lte->out_refcnt = 1;
-	lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
-out_free_buf:
+
 	/* All the data has been written to the new WIM; no need for the buffer
 	 * anymore */
 	FREE(buf);

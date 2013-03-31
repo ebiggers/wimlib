@@ -586,13 +586,13 @@ win32_capture_stream(const wchar_t *path,
 	lte->resource_location = RESOURCE_WIN32;
 	lte->resource_entry.original_size = (u64)dat->StreamSize.QuadPart;
 
-	struct wim_lookup_table_entry **my_ptr;
+	struct wim_lookup_table_entry **back_ptr;
 	if (is_named_stream)
-		my_ptr = &ads_entry->lte;
+		back_ptr = &ads_entry->lte;
 	else
-		my_ptr = &inode->i_lte;
+		back_ptr = &inode->i_lte;
 
-	lookup_table_insert_unhashed(lookup_table, lte, my_ptr);
+	lookup_table_insert_unhashed(lookup_table, lte, back_ptr);
 out_free_spath:
 	FREE(spath);
 out:

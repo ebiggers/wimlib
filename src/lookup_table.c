@@ -634,7 +634,7 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 	tfprintf(out, T("Reference Count   = %u\n"), lte->refcnt);
 
 	if (lte->unhashed) {
-		tfprintf(out, T("(Unhashed, back ptr at %p)\n"), lte->my_ptr);
+		tfprintf(out, T("(Unhashed, back ptr at %p)\n"), lte->back_ptr);
 	} else {
 		tfprintf(out, T("Hash              = 0x"));
 		print_hash(lte->hash, out);
@@ -890,16 +890,4 @@ lookup_table_total_stream_size(struct wim_lookup_table *table)
 	u64 total_size = 0;
 	for_lookup_table_entry(table, lte_add_stream_size, &total_size);
 	return total_size;
-}
-
-void
-free_lte_list(struct list_head *list)
-{
-	struct wim_lookup_table_entry *lte, *tmp;
-
-	list_for_each_entry_safe(lte, tmp, list, staging_list) {
-		DEBUG("%p", lte);
-		free_lookup_table_entry(lte);
-}
-	INIT_LIST_HEAD(list);
 }

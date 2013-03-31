@@ -327,7 +327,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 	unsigned len;
 
 	ret = bitstream_ensure_bits(istream, 4);
-	if (ret != 0) {
+	if (ret) {
 		ERROR("LZX input stream overrun");
 		return ret;
 	}
@@ -345,7 +345,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 		block_size = 32768;
 	} else {
 		ret = bitstream_read_bits(istream, 16, &block_size);
-		if (ret != 0)
+		if (ret)
 			return ret;
 		block_size = le16_to_cpu(block_size);
 	}
@@ -359,7 +359,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 			ret = bitstream_read_bits(istream,
 						  LZX_ALIGNEDTREE_ELEMENT_SIZE,
 						  &len);
-			if (ret != 0)
+			if (ret)
 				return ret;
 			tables->alignedtree_lens[i] = len;
 		}
@@ -370,7 +370,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 						LZX_ALIGNEDTREE_TABLEBITS,
 						tables->alignedtree_lens,
 						8);
-		if (ret != 0) {
+		if (ret) {
 			ERROR("lzx_decompress(): Failed to make the decode "
 			      "table for the aligned offset tree");
 			return ret;
@@ -388,7 +388,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 		 * tree. */
 		ret = lzx_read_code_lens(istream, tables->maintree_lens,
 					 LZX_NUM_CHARS);
-		if (ret != 0) {
+		if (ret) {
 			ERROR("lzx_decompress(): Failed to read the code "
 			      "lengths for the first 256 elements of the "
 			      "main tree");
@@ -403,7 +403,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 		ret = lzx_read_code_lens(istream,
 					 tables->maintree_lens + LZX_NUM_CHARS,
 					 LZX_MAINTREE_NUM_SYMBOLS - LZX_NUM_CHARS);
-		if (ret != 0) {
+		if (ret) {
 			ERROR("lzx_decompress(): Failed to read the path "
 			      "lengths for the remaining elements of the main "
 			      "tree");
@@ -418,7 +418,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 						LZX_MAINTREE_TABLEBITS,
 						tables->maintree_lens,
 						LZX_MAX_CODEWORD_LEN);
-		if (ret != 0) {
+		if (ret) {
 			ERROR("lzx_decompress(): Failed to make the decode "
 			      "table for the main tree");
 			return ret;
@@ -427,7 +427,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 		LZX_DEBUG("Reading path lengths for the length tree.");
 		ret = lzx_read_code_lens(istream, tables->lentree_lens,
 					 LZX_LENTREE_NUM_SYMBOLS);
-		if (ret != 0) {
+		if (ret) {
 			ERROR("lzx_decompress(): Failed to read the path "
 			      "lengths for the length tree");
 			return ret;
@@ -439,7 +439,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 						LZX_LENTREE_TABLEBITS,
 						tables->lentree_lens,
 						LZX_MAX_CODEWORD_LEN);
-		if (ret != 0) {
+		if (ret) {
 			ERROR("lzx_decompress(): Failed to build the length "
 			      "Huffman tree");
 			return ret;
@@ -456,13 +456,19 @@ lzx_read_block_header(struct input_bitstream *istream,
 		 * *already* aligned, the correct thing to do is to throw away
 		 * the next 16 bits. */
 		if (istream->bitsleft == 0) {
-			if (istream->data_bytes_left < 14)
+			if (istream->data_bytes_left < 14) {
+				ERROR("lzx_decompress(): Insufficient length in "
+				      "uncompressed block");
 				return -1;
+			}
 			istream->data += 2;
 			istream->data_bytes_left -= 2;
 		} else {
-			if (istream->data_bytes_left < 12)
+			if (istream->data_bytes_left < 12) {
+				ERROR("lzx_decompress(): Insufficient length in "
+				      "uncompressed block");
 				return -1;
+			}
 			istream->bitsleft = 0;
 			istream->bitbuf = 0;
 		}
@@ -763,7 +769,7 @@ lzx_decompress_block(int block_type, unsigned block_size,
 	while (window_pos < end) {
 		ret = read_huffsym_using_maintree(istream, tables,
 						  &main_element);
-		if (ret != 0)
+		if (ret)
 			return ret;
 
 		if (main_element < LZX_NUM_CHARS) {
@@ -830,7 +836,7 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 		LZX_DEBUG("Reading block header.");
 		ret = lzx_read_block_header(&istream, &block_size,
 					    &block_type, &tables, &queue);
-		if (ret != 0)
+		if (ret)
 			return ret;
 
 		LZX_DEBUG("block_size = %u, window_pos = %u",
@@ -857,7 +863,7 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 						   &tables,
 						   &queue,
 						   &istream);
-			if (ret != 0)
+			if (ret)
 				return ret;
 			if (tables.maintree_lens[0xe8] != 0)
 				e8_preprocessing_done = true;

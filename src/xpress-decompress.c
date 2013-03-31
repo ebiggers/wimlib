@@ -180,7 +180,7 @@ xpress_decompress_block(struct input_bitstream *istream,
 		ret = read_huffsym(istream, decode_table, lens,
 				   XPRESS_NUM_SYMBOLS, XPRESS_TABLEBITS,
 				   &huffsym, XPRESS_MAX_CODEWORD_LEN);
-		if (ret != 0)
+		if (ret)
 			return ret;
 
 		if (huffsym < XPRESS_NUM_CHARS) {
@@ -223,8 +223,10 @@ wimlib_xpress_decompress(const void *__compressed_data, unsigned compressed_len,
 	 * code lengths of these symbols are given literally as 4-bit integers
 	 * in the first 256 bytes of the compressed data.
 	 */
-	if (compressed_len < XPRESS_NUM_SYMBOLS / 2)
+	if (compressed_len < XPRESS_NUM_SYMBOLS / 2) {
+		ERROR("xpress_decompress(): Compressed length too short!");
 		return -1;
+	}
 
 	for (i = 0; i < XPRESS_NUM_SYMBOLS / 2; i++) {
 		*lens_p++ = compressed_data[i] & 0xf;
@@ -234,7 +236,7 @@ wimlib_xpress_decompress(const void *__compressed_data, unsigned compressed_len,
 	ret = make_huffman_decode_table(decode_table, XPRESS_NUM_SYMBOLS,
 					XPRESS_TABLEBITS, lens,
 					XPRESS_MAX_CODEWORD_LEN);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	init_input_bitstream(&istream, compressed_data + XPRESS_NUM_SYMBOLS / 2,

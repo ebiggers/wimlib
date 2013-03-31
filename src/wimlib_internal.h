@@ -369,6 +369,21 @@ resource_is_compressed(const struct resource_entry *entry)
 #define image_for_each_unhashed_stream(lte, imd) \
 	list_for_each_entry(lte, &imd->unhashed_streams, unhashed_list)
 
+#if 1
+#  define copy_resource_entry(dst, src) memcpy(dst, src, sizeof(struct resource_entry))
+#else
+static inline void
+copy_resource_entry(struct resource_entry *dst,
+		    const struct resource_entry *src)
+{
+	memcpy(dst, src, sizeof(struct resource_entry));
+	BUILD_BUG_ON(sizeof(struct resource_entry) != 24);
+	((u64*)dst)[0] = ((u64*)src)[0];
+	((u64*)dst)[1] = ((u64*)src)[1];
+	((u64*)dst)[2] = ((u64*)src)[2];
+}
+#endif
+
 /* add_image.c */
 
 extern bool
@@ -537,8 +552,9 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 /* resource.c */
 
 #define WIMLIB_RESOURCE_FLAG_RAW		0x1
-#define WIMLIB_RESOURCE_FLAG_MULTITHREADED	0x2
+#define WIMLIB_RESOURCE_FLAG_THREADSAFE_READ	0x2
 #define WIMLIB_RESOURCE_FLAG_RECOMPRESS		0x4
+//#define WIMLIB_RESOURCE_FLAG_OVERWRITE_INPLACE	0x8
 
 extern int
 read_resource_prefix(const struct wim_lookup_table_entry *lte,
@@ -650,7 +666,8 @@ new_image_metadata_array(unsigned num_images);
 #define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE	0x80000000
 #define WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE 0x40000000
 #define WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML  0x20000000
-#define WIMLIB_WRITE_MASK_PUBLIC		0x1fffffff
+//#define WIMLIB_WRITE_FLAG_OVERWRITE_INPLACE     0x10000000
+#define WIMLIB_WRITE_MASK_PUBLIC		0x0fffffff
 
 /* We are capturing a tree to be placed in the root of the WIM image */
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT	0x80000000
