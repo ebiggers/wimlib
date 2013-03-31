@@ -4,7 +4,7 @@
 #include "config.h"
 #include <stdio.h>
 #include <stddef.h>
-#include "string.h"
+#include <string.h>
 #include "util.h"
 
 #define SHA1_HASH_SIZE 20
