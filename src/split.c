@@ -145,6 +145,10 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 
+	ret = wim_checksum_unhashed_streams(w);
+	if (ret)
+		return ret;
+
 	swm_name_len = tstrlen(swm_name);
 	tchar swm_base_name[swm_name_len + 20];
 
@@ -190,6 +194,7 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 	for (int i = 0; i < w->hdr.image_count; i++) {
 		struct wim_lookup_table_entry *metadata_lte;
 		metadata_lte = w->image_metadata[i]->metadata_lte;
+		print_lookup_table_entry(metadata_lte, stderr);
 		ret = copy_resource(metadata_lte, w);
 		if (ret)
 			goto out;

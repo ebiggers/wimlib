@@ -369,6 +369,9 @@ resource_is_compressed(const struct resource_entry *entry)
 #define image_for_each_unhashed_stream(lte, imd) \
 	list_for_each_entry(lte, &imd->unhashed_streams, unhashed_list)
 
+#define image_for_each_unhashed_stream_safe(lte, tmp, imd) \
+	list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, unhashed_list)
+
 #if 1
 #  define copy_resource_entry(dst, src) memcpy(dst, src, sizeof(struct resource_entry))
 #else
@@ -594,6 +597,9 @@ extract_wim_resource_to_fd(const struct wim_lookup_table_entry *lte,
 			   int fd, u64 size);
 
 extern int
+sha1_resource(struct wim_lookup_table_entry *lte);
+
+extern int
 copy_resource(struct wim_lookup_table_entry *lte, void *w);
 
 /* security.c */
@@ -659,6 +665,9 @@ new_image_metadata();
 
 extern struct wim_image_metadata **
 new_image_metadata_array(unsigned num_images);
+
+extern int
+wim_checksum_unhashed_streams(WIMStruct *w);
 
 /* write.c */
 

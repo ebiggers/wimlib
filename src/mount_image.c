@@ -642,26 +642,14 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 		}
 	}
 
-	new_lte->refcnt            = inode->i_nlink;
-	new_lte->resource_location = RESOURCE_IN_STAGING_FILE;
-	new_lte->staging_file_name = staging_file_name;
-	new_lte->lte_inode         = inode;
+	new_lte->refcnt                       = inode->i_nlink;
+	new_lte->resource_location            = RESOURCE_IN_STAGING_FILE;
+	new_lte->staging_file_name            = staging_file_name;
+	new_lte->lte_inode                    = inode;
+	new_lte->resource_entry.original_size = size;
 
-	struct wim_lookup_table_entry **back_ptr;
-
-	if (stream_id == 0) {
-		back_ptr = &inode->i_lte;
-	} else {
-		for (u16 i = 0; ; i++) {
-			wimlib_assert(i < inode->i_num_ads);
-			if (inode->i_ads_entries[i].stream_id == stream_id) {
-				back_ptr = &inode->i_ads_entries[i].lte;
-				break;
-			}
-		}
-	}
-
-	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte, back_ptr);
+	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte,
+				     inode, stream_id);
 	*lte = new_lte;
 	return 0;
 out_revert_fd_changes:
@@ -802,21 +790,26 @@ rebuild_wim(struct wimfs_context *ctx, int write_flags,
 	    wimlib_progress_func_t progress_func)
 {
 	int ret;
-	struct wim_lookup_table_entry *lte;
+	struct wim_lookup_table_entry *lte, *tmp;
 	WIMStruct *w = ctx->wim;
 	struct wim_image_metadata *imd = wim_get_current_image_metadata(ctx->wim);
 
 	DEBUG("Closing all staging file descriptors.");
-	image_for_each_unhashed_stream(lte, imd) {
+	image_for_each_unhashed_stream_safe(lte, tmp, imd) {
 		ret = inode_close_fds(lte->lte_inode);
 		if (ret)
 			return ret;
 	}
 
 	DEBUG("Freeing entries for zero-length streams");
-	image_for_each_unhashed_stream(lte, imd) {
+	image_for_each_unhashed_stream_safe(lte, tmp, imd) {
+		wimlib_assert(lte->unhashed);
 		if (wim_resource_size(lte) == 0) {
-			*lte->back_ptr = NULL;
+			print_lookup_table_entry(lte, stderr);
+			struct wim_lookup_table_entry **back_ptr;
+			back_ptr = retrieve_lte_pointer(lte);
+			*back_ptr = NULL;
+			list_del(&lte->unhashed_list);
 			free_lookup_table_entry(lte);
 		}
 	}
@@ -1813,6 +1806,7 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 	u16 stream_idx;
 	u32 stream_id;
 	struct wimfs_context *ctx = wimfs_get_context();
+	struct wim_lookup_table_entry **back_ptr;
 
 	ret = lookup_resource(ctx->wim, path, get_lookup_flags(ctx),
 			      &dentry, &lte, &stream_idx);
@@ -1821,10 +1815,13 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 
 	inode = dentry->d_inode;
 
-	if (stream_idx == 0)
+	if (stream_idx == 0) {
 		stream_id = 0;
-	else
+		back_ptr = &inode->i_lte;
+	} else {
 		stream_id = inode->i_ads_entries[stream_idx - 1].stream_id;
+		back_ptr = &inode->i_ads_entries[stream_idx - 1].lte;
+	}
 
 	/* The file resource may be in the staging directory (read-write mounts
 	 * only) or in the WIM.  If it's in the staging directory, we need to
@@ -1840,7 +1837,9 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 						      &lte, size, ctx);
 		if (ret != 0)
 			return ret;
+		*back_ptr = lte;
 	}
+	print_lookup_table_entry(lte, stderr);
 
 	ret = alloc_wimfs_fd(inode, stream_id, lte, &fd,
 			     wimfs_ctx_readonly(ctx));
@@ -2209,24 +2208,23 @@ wimfs_truncate(const char *path, off_t size)
 	if (lte == NULL && size == 0)
 		return 0;
 
-	inode = dentry->d_inode;
-	if (stream_idx == 0)
-		stream_id = 0;
-	else
-		stream_id = inode->i_ads_entries[stream_idx - 1].stream_id;
-
 	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		ret = truncate(lte->staging_file_name, size);
-		if (ret != 0)
+		if (ret)
 			ret = -errno;
+		else
+			lte->resource_entry.original_size = size;
 	} else {
 		/* File in WIM.  Extract it to the staging directory, but only
 		 * the first @size bytes of it. */
+		inode = dentry->d_inode;
+		if (stream_idx == 0)
+			stream_id = 0;
+		else
+			stream_id = inode->i_ads_entries[stream_idx - 1].stream_id;
 		ret = extract_resource_to_staging_dir(inode, stream_id,
 						      &lte, size, ctx);
 	}
-	if (ret == 0)
-		lte->resource_entry.original_size = size;
 	return ret;
 }
 
@@ -2329,8 +2327,12 @@ wimfs_write(const char *path, const char *buf, size_t size,
 		return -errno;
 
 	/* Update file size */
-	if (offset + size > fd->f_lte->resource_entry.original_size)
+	if (offset + size > fd->f_lte->resource_entry.original_size) {
+		DEBUG("Update file size %"PRIu64 " => %"PRIu64"",
+		      fd->f_lte->resource_entry.original_size,
+		      offset + size);
 		fd->f_lte->resource_entry.original_size = offset + size;
+	}
 
 	/* Update timestamps */
 	touch_inode(fd->f_inode);
@@ -2444,6 +2446,10 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 			goto out;
 	}
 
+	ret = wim_checksum_unhashed_streams(wim);
+	if (ret)
+		goto out;
+
 	ret = select_wim_image(wim, image);
 	if (ret)
 		goto out;
@@ -2486,6 +2492,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	ctx.image_inode_list = &imd->inode_list;
 	ctx.default_uid = getuid();
 	ctx.default_gid = getgid();
+	wimlib_assert(list_empty(&imd->unhashed_streams));
 	ctx.wim->lookup_table->unhashed_streams = &imd->unhashed_streams;
 	if (mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 		ctx.default_lookup_flags = LOOKUP_FLAG_ADS_OK;

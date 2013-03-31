@@ -312,6 +312,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 		   int flags)
 {
 	struct write_resource_ctx write_ctx;
+	u64 read_size;
 	u64 new_size;
 	off_t offset;
 	int ret;
@@ -343,9 +344,11 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	{
 		flags |= WIMLIB_RESOURCE_FLAG_RAW;
 		write_ctx.doing_sha = false;
+		read_size = lte->resource_entry.size;
 	} else {
 		write_ctx.doing_sha = true;
 		sha1_init(&write_ctx.sha_ctx);
+		read_size = lte->resource_entry.original_size;
 	}
 
 	/* Initialize the chunk table and set the compression function if
@@ -367,8 +370,10 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	 * the data through the write_resource_cb function. */
 	write_ctx.out_fp = out_fp;
 try_write_again:
-	ret = read_resource_prefix(lte, wim_resource_size(lte),
+	ret = read_resource_prefix(lte, read_size,
 				   write_resource_cb, &write_ctx, flags);
+	if (ret)
+		goto out_free_chunk_tab;
 
 	/* Verify SHA1 message digest of the resource, or set the hash for the
 	 * first time. */
@@ -602,27 +607,6 @@ do_write_streams_progress(union wimlib_progress_info *progress,
 	}
 }
 
-static int
-sha1_chunk(const void *buf, size_t len, void *ctx)
-{
-	sha1_update(ctx, buf, len);
-	return 0;
-}
-
-static int
-sha1_resource(struct wim_lookup_table_entry *lte)
-{
-	int ret;
-	SHA_CTX sha_ctx;
-
-	sha1_init(&sha_ctx);
-	ret = read_resource_prefix(lte, wim_resource_size(lte),
-				   sha1_chunk, &sha_ctx, 0);
-	if (ret == 0)
-		sha1_final(lte->hash, &sha_ctx);
-	return ret;
-}
-
 enum {
 	STREAMS_MERGED = 0,
 	STREAMS_NOT_MERGED = 1,
@@ -647,52 +631,21 @@ do_write_stream_list(struct list_head *stream_list,
 				   write_streams_list);
 		list_del(&lte->write_streams_list);
 		if (lte->unhashed && !lte->unique_size) {
-
 			/* Unhashed stream that shares a size with some other
 			 * stream in the WIM we are writing.  The stream must be
 			 * checksummed to know if we need to write it or not. */
-			struct wim_lookup_table_entry *duplicate_lte;
-			struct wim_lookup_table_entry **back_ptr;
+			struct wim_lookup_table_entry *tmp;
+			u32 orig_refcnt = lte->out_refcnt;
 
-			/* back_ptr must be saved because it's in union with the
-			 * SHA1 message digest and will no longer be valid once
-			 * the SHA1 has been calculated. */
-			back_ptr = lte->back_ptr;
-
-			/* Checksum the stream */
-			ret = sha1_resource(lte);
+			ret = hash_unhashed_stream(lte,
+						   lookup_table,
+						   &tmp);
 			if (ret)
 				return ret;
-
-			/* Look for a duplicate stream */
-			duplicate_lte = __lookup_resource(lookup_table, lte->hash);
-			if (duplicate_lte) {
-				/* We have a duplicate stream.  Transfer the
-				 * reference counts from this stream to the
-				 * duplicate, update the reference to this
-				 * stream (in an inode or ads_entry) to point to
-				 * the duplicate, then free this stream. */
-				wimlib_assert(!(duplicate_lte->unhashed));
-				bool is_new_stream = (duplicate_lte->out_refcnt == 0);
-				duplicate_lte->refcnt += lte->refcnt;
-				duplicate_lte->out_refcnt += lte->refcnt;
-				*back_ptr = duplicate_lte;
-				list_del(&lte->unhashed_list);
-				free_lookup_table_entry(lte);
-				lte = duplicate_lte;
-
-				if (is_new_stream) {
-					/* The duplicate stream is one we
-					 * weren't already planning to write.
-					 * But, now we must write it.
-					 *
-					 * XXX:  Currently, the copy of the
-					 * stream in the WIM is always chosen
-					 * for writing, rather than the extra
-					 * copy we just read (which may be in an
-					 * external file).  This may not always
-					 * be fastest. */
-				} else {
+			if (tmp != lte) {
+				lte = tmp;
+				/* We found a duplicate stream. */
+				if (orig_refcnt != tmp->out_refcnt) {
 					/* We have already written, or are going
 					 * to write, the duplicate stream.  So
 					 * just skip to the next stream. */
@@ -700,28 +653,17 @@ do_write_stream_list(struct list_head *stream_list,
 					      wim_resource_size(lte));
 					goto skip_to_progress;
 				}
-
-			} else {
-				/* No duplicate stream, so we need to insert
-				 * this stream into the lookup table and treat
-				 * it as a hashed stream. */
-				list_del(&lte->unhashed_list);
-				lookup_table_insert(lookup_table, lte);
-				lte->out_refcnt = lte->refcnt;
-				lte->unhashed = 0;
 			}
 		}
 
-		/* Here, @lte either a hashed stream or an unhashed stream with
-		 * a unique size.  In either case we know that the stream has to
-		 * be written.  In either case the SHA1 message digest will be
-		 * calculated over the stream while writing it; however, in the
-		 * former case this is done merely to check the data, while in
-		 * the latter case this is done because we do not have the SHA1
-		 * message digest yet.  */
-
+		/* Here, @lte is either a hashed stream or an unhashed stream
+		 * with a unique size.  In either case we know that the stream
+		 * has to be written.  In either case the SHA1 message digest
+		 * will be calculated over the stream while writing it; however,
+		 * in the former case this is done merely to check the data,
+		 * while in the latter case this is done because we do not have
+		 * the SHA1 message digest yet.  */
 		wimlib_assert(lte->out_refcnt != 0);
-
 		ret = write_wim_resource(lte,
 					 out_fp,
 					 out_ctype,
@@ -1577,11 +1519,8 @@ image_find_streams_to_write(WIMStruct *w)
 	ctx = w->private;
  	imd = wim_get_current_image_metadata(w);
 
-	image_for_each_unhashed_stream(lte, imd) {
+	image_for_each_unhashed_stream(lte, imd)
 		lte->out_refcnt = 0;
-		wimlib_assert(lte->unhashed);
-		wimlib_assert(lte->back_ptr != NULL);
-	}
 
 	/* Go through this image's inodes to find any streams that have not been
 	 * found yet. */
@@ -1697,43 +1636,43 @@ finish_write(WIMStruct *w, int image, int write_flags,
 
 	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
 		ret = write_lookup_table(w, image, &hdr.lookup_table_res_entry);
-		if (ret != 0)
-			goto out;
+		if (ret)
+			goto out_close_wim;
 	}
 
 	ret = write_xml_data(w->wim_info, image, out,
 			     (write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE) ?
 			      wim_info_get_total_bytes(w->wim_info) : 0,
 			     &hdr.xml_res_entry);
-	if (ret != 0)
-		goto out;
+	if (ret)
+		goto out_close_wim;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
 		if (write_flags & WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML) {
 			struct wim_header checkpoint_hdr;
 			memcpy(&checkpoint_hdr, &hdr, sizeof(struct wim_header));
 			memset(&checkpoint_hdr.integrity, 0, sizeof(struct resource_entry));
-			if (fseeko(out, 0, SEEK_SET) != 0) {
+			if (fseeko(out, 0, SEEK_SET)) {
 				ERROR_WITH_ERRNO("Failed to seek to beginning "
 						 "of WIM being written");
 				ret = WIMLIB_ERR_WRITE;
-				goto out;
+				goto out_close_wim;
 			}
 			ret = write_header(&checkpoint_hdr, out);
-			if (ret != 0)
-				goto out;
+			if (ret)
+				goto out_close_wim;
 
 			if (fflush(out) != 0) {
 				ERROR_WITH_ERRNO("Can't write data to WIM");
 				ret = WIMLIB_ERR_WRITE;
-				goto out;
+				goto out_close_wim;
 			}
 
 			if (fseeko(out, 0, SEEK_END) != 0) {
 				ERROR_WITH_ERRNO("Failed to seek to end "
 						 "of WIM being written");
 				ret = WIMLIB_ERR_WRITE;
-				goto out;
+				goto out_close_wim;
 			}
 		}
 
@@ -1753,8 +1692,8 @@ finish_write(WIMStruct *w, int image, int write_flags,
 					    new_lookup_table_end,
 					    old_lookup_table_end,
 					    progress_func);
-		if (ret != 0)
-			goto out;
+		if (ret)
+			goto out_close_wim;
 	} else {
 		memset(&hdr.integrity, 0, sizeof(struct resource_entry));
 	}
@@ -1790,12 +1729,12 @@ finish_write(WIMStruct *w, int image, int write_flags,
 		ERROR_WITH_ERRNO("Failed to seek to beginning of WIM "
 				 "being written");
 		ret = WIMLIB_ERR_WRITE;
-		goto out;
+		goto out_close_wim;
 	}
 
 	ret = write_header(&hdr, out);
 	if (ret)
-		goto out;
+		goto out_close_wim;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
 		if (fflush(out) != 0
@@ -1805,7 +1744,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 			ret = WIMLIB_ERR_WRITE;
 		}
 	}
-out:
+out_close_wim:
 	if (fclose(out) != 0) {
 		ERROR_WITH_ERRNO("Failed to close the WIM file");
 		if (ret == 0)
@@ -2038,6 +1977,8 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	if (!w->deletion_occurred && !any_images_modified(w)) {
 		/* If no images have been modified and no images have been
 		 * deleted, a new lookup table does not need to be written. */
+		DEBUG("Skipping writing lookup table "
+		      "(no images modified or deleted)");
 		old_wim_end = w->hdr.lookup_table_res_entry.offset +
 			      w->hdr.lookup_table_res_entry.size;
 		write_flags |= WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE |

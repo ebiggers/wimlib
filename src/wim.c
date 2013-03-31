@@ -616,6 +616,24 @@ new_image_metadata_array(unsigned num_images)
 	return imd_array;
 }
 
+int
+wim_checksum_unhashed_streams(WIMStruct *w)
+{
+	int ret;
+	for (int i = 0; i < w->hdr.image_count; i++) {
+		struct wim_lookup_table_entry *lte, *tmp;
+		list_for_each_entry_safe(lte, tmp,
+					 &w->image_metadata[i]->unhashed_streams,
+					 unhashed_list)
+		{
+			ret = hash_unhashed_stream(lte, w->lookup_table, NULL);
+			if (ret)
+				return ret;
+		}
+	}
+	return 0;
+}
+
 /* Frees the memory for the WIMStruct, including all internal memory; also
  * closes all files associated with the WIMStruct.  */
 WIMLIBAPI void

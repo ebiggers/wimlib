@@ -88,8 +88,11 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 	switch (new->resource_location) {
 #ifdef __WIN32__
 	case RESOURCE_WIN32:
+	case RESOURCE_WIN32_ENCRYPTED:
 #endif
+#ifdef WITH_FUSE
 	case RESOURCE_IN_STAGING_FILE:
+#endif
 	case RESOURCE_IN_FILE_ON_DISK:
 		BUILD_BUG_ON((void*)&old->file_on_disk !=
 			     (void*)&old->staging_file_name);
@@ -323,8 +326,11 @@ for_lookup_table_entry_pos_sorted(struct wim_lookup_table *table,
 	qsort(lte_array, num_streams, sizeof(lte_array[0]),
 	      cmp_streams_by_wim_position);
 	ret = 0;
-	for (size_t i = 0; i < num_streams && ret == 0; i++)
+	for (size_t i = 0; i < num_streams; i++) {
 		ret = visitor(lte_array[i], arg);
+		if (ret)
+			break;
+	}
 	FREE(lte_array);
 	return ret;
 }
@@ -634,7 +640,8 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 	tfprintf(out, T("Reference Count   = %u\n"), lte->refcnt);
 
 	if (lte->unhashed) {
-		tfprintf(out, T("(Unhashed, back ptr at %p)\n"), lte->back_ptr);
+		tfprintf(out, T("(Unhashed: inode %p, stream_id = %u)\n"),
+			 lte->back_inode, lte->back_stream_id);
 	} else {
 		tfprintf(out, T("Hash              = 0x"));
 		print_hash(lte->hash, out);
@@ -891,3 +898,68 @@ lookup_table_total_stream_size(struct wim_lookup_table *table)
 	for_lookup_table_entry(table, lte_add_stream_size, &total_size);
 	return total_size;
 }
+
+struct wim_lookup_table_entry **
+retrieve_lte_pointer(struct wim_lookup_table_entry *lte)
+{
+	wimlib_assert(lte->unhashed);
+	struct wim_inode *inode = lte->back_inode;
+	u32 stream_id = lte->back_stream_id;
+	if (stream_id == 0)
+		return &inode->i_lte;
+	else
+		for (u16 i = 0; i < inode->i_num_ads; i++)
+			if (inode->i_ads_entries[i].stream_id == stream_id)
+				return &inode->i_ads_entries[i].lte;
+	wimlib_assert(0);
+	return NULL;
+}
+
+int
+hash_unhashed_stream(struct wim_lookup_table_entry *lte,
+		     struct wim_lookup_table *lookup_table,
+		     struct wim_lookup_table_entry **lte_ret)
+{
+	int ret;
+	struct wim_lookup_table_entry *duplicate_lte;
+	struct wim_lookup_table_entry **back_ptr;
+
+	wimlib_assert(lte->unhashed);
+
+	/* back_ptr must be saved because @back_inode and @back_stream_id are in
+	 * union with the SHA1 message digest and will no longer be valid once
+	 * the SHA1 has been calculated. */
+	back_ptr = retrieve_lte_pointer(lte);
+
+	ret = sha1_resource(lte);
+	if (ret)
+		return ret;
+
+	/* Look for a duplicate stream */
+	duplicate_lte = __lookup_resource(lookup_table, lte->hash);
+	list_del(&lte->unhashed_list);
+	if (duplicate_lte) {
+		/* We have a duplicate stream.  Transfer the reference counts
+		 * from this stream to the duplicate, update the reference to
+		 * this stream (in an inode or ads_entry) to point to the
+		 * duplicate, then free this stream. */
+		wimlib_assert(!(duplicate_lte->unhashed));
+		duplicate_lte->refcnt += lte->refcnt;
+		duplicate_lte->out_refcnt += lte->refcnt;
+		*back_ptr = duplicate_lte;
+		free_lookup_table_entry(lte);
+		lte = duplicate_lte;
+	} else {
+		/* No duplicate stream, so we need to insert
+		 * this stream into the lookup table and treat
+		 * it as a hashed stream. */
+		list_del(&lte->unhashed_list);
+		lookup_table_insert(lookup_table, lte);
+		lte->out_refcnt = lte->refcnt;
+		lte->unhashed = 0;
+	}
+	if (lte_ret)
+		*lte_ret = lte;
+	return 0;
+}
+

@@ -159,11 +159,14 @@ struct wim_lookup_table_entry {
 		 * table. */
 		size_t hash_short;
 
-		/* Unhashed entries only (unhashed == 1): this points directly
-		 * to the pointer to this 'struct wim_lookup_table_entry'
-		 * contained in a 'struct wim_ads_entry' or 'struct wim_inode'.
-		 * */
-		struct wim_lookup_table_entry **back_ptr;
+		/* Unhashed entries only (unhashed == 1): these variables make
+		 * it possible to find the to the pointer to this 'struct
+		 * wim_lookup_table_entry' contained in a 'struct wim_ads_entry'
+		 * or 'struct wim_inode'.  */
+		struct {
+			struct wim_inode *back_inode;
+			u32 back_stream_id;
+		};
 	};
 
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
@@ -188,17 +191,12 @@ struct wim_lookup_table_entry {
 	#endif
 	};
 
-	/* Pointer to inode that contains the opened file descriptors to
-	 * this stream (valid iff resource_location ==
-	 * RESOURCE_IN_STAGING_FILE) */
-	struct wim_inode *lte_inode;
-
 	u32 real_refcnt;
 
 	union {
-		#ifdef WITH_FUSE
+	#ifdef WITH_FUSE
 		u16 num_opened_fds;
-		#endif
+	#endif
 
 		/* This field is used for the special hardlink or symlink image
 		 * extraction mode.   In these mode, all identical files are linked
@@ -225,6 +223,13 @@ struct wim_lookup_table_entry {
 
 			struct list_head write_streams_list;
 		};
+
+	#ifdef WITH_FUSE
+		/* Pointer to inode that contains the opened file descriptors to
+		 * this stream (valid when resource_location ==
+		 * RESOURCE_IN_STAGING_FILE) */
+		struct wim_inode *lte_inode;
+	#endif
 	};
 
 	/* Temporary list fields */
@@ -232,7 +237,7 @@ struct wim_lookup_table_entry {
 		struct list_head unhashed_list;
 		struct list_head swm_stream_list;
 		struct list_head extraction_list;
-		struct list_head new_stream_list;
+		struct list_head export_stream_list;
 	};
 };
 
@@ -300,6 +305,7 @@ lookup_table_insert(struct wim_lookup_table *table, struct wim_lookup_table_entr
 static inline void
 lookup_table_unlink(struct wim_lookup_table *table, struct wim_lookup_table_entry *lte)
 {
+	wimlib_assert(!lte->unhashed);
 	hlist_del(&lte->hash_list);
 	wimlib_assert(table->num_entries != 0);
 	table->num_entries--;
@@ -485,12 +491,21 @@ lookup_table_total_stream_size(struct wim_lookup_table *table);
 static inline void
 lookup_table_insert_unhashed(struct wim_lookup_table *table,
 			     struct wim_lookup_table_entry *lte,
-			     struct wim_lookup_table_entry **back_ptr)
+			     struct wim_inode *back_inode,
+			     u32 back_stream_id)
 {
 	lte->unhashed = 1;
+	lte->back_inode = back_inode;
+	lte->back_stream_id = back_stream_id;
 	list_add_tail(&lte->unhashed_list, table->unhashed_streams);
-	lte->back_ptr = back_ptr;
-	*back_ptr = lte;
 }
+
+extern int
+hash_unhashed_stream(struct wim_lookup_table_entry *lte,
+		     struct wim_lookup_table *lookup_table,
+		     struct wim_lookup_table_entry **lte_ret);
+
+extern struct wim_lookup_table_entry **
+retrieve_lte_pointer(struct wim_lookup_table_entry *lte);
 
 #endif

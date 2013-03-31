@@ -165,7 +165,8 @@ capture_ntfs_streams(struct wim_inode *inode,
 	{
 		u64 data_size = ntfs_get_attribute_value_length(actx->attr);
 		u64 name_length = actx->attr->name_length;
-		struct wim_lookup_table_entry **back_ptr;
+		u32 stream_id;
+
 		if (data_size == 0) {
 			if (errno != 0) {
 				ERROR_WITH_ERRNO("Failed to get size of attribute of "
@@ -224,7 +225,8 @@ capture_ntfs_streams(struct wim_inode *inode,
 				ret = WIMLIB_ERR_NTFS_3G;
 				goto out_free_lte;
 			}
-			back_ptr = &inode->i_lte;
+			stream_id = 0;
+			inode->i_lte = lte;
 		} else {
 			/* Named data stream.  Put the reference to it in the
 			 * alternate data stream entries */
@@ -236,9 +238,13 @@ capture_ntfs_streams(struct wim_inode *inode,
 			if (!new_ads_entry)
 				goto out_free_lte;
 			wimlib_assert(new_ads_entry->stream_name_nbytes == name_length * 2);
-			back_ptr = &new_ads_entry->lte;
+			stream_id = new_ads_entry->stream_id;
+			new_ads_entry->lte = lte;
 		}
-		lookup_table_insert_unhashed(lookup_table, lte, back_ptr);
+		if (lte) {
+			lookup_table_insert_unhashed(lookup_table, lte,
+						     inode, stream_id);
+		}
 	}
 	ret = 0;
 	goto out_put_actx;

@@ -1017,7 +1017,11 @@ wimlib_extract_image(WIMStruct *w,
 	}
 
 	ret = verify_swm_set(w, additional_swms, num_additional_swms);
-	if (ret != 0)
+	if (ret)
+		return ret;
+
+	ret = wim_checksum_unhashed_streams(w);
+	if (ret)
 		return ret;
 
 	if (num_additional_swms) {

@@ -81,11 +81,9 @@ struct wim_ads_entry {
 	/* Stream name (UTF-16LE) */
 	utf16lechar *stream_name;
 
-#ifdef WITH_FUSE
 	/* Number to identify an alternate data stream even after it's possibly
 	 * been moved or renamed. */
 	u32 stream_id;
-#endif
 };
 
 
@@ -286,15 +284,14 @@ struct wim_inode {
 	 * noted in the @attributes field.) */
 	struct rb_root i_children;
 
+	/* Next alternate data stream ID to be assigned */
+	u32 i_next_stream_id;
+
 #ifdef WITH_FUSE
 	/* wimfs file descriptors table for the inode */
 	u16 i_num_opened_fds;
 	u16 i_num_allocated_fds;
 	struct wimfs_fd **i_fds;
-
-	/* Next alternate data stream ID to be assigned */
-	u32 i_next_stream_id;
-
 	/* This mutex protects the inode's file descriptors table during
 	 * read-only mounts.  Read-write mounts are still restricted to 1
 	 * thread. */

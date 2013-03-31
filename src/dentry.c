@@ -692,8 +692,8 @@ new_timeless_inode()
 	if (inode) {
 		inode->i_security_id = -1;
 		inode->i_nlink = 1;
-	#ifdef WITH_FUSE
 		inode->i_next_stream_id = 1;
+	#ifdef WITH_FUSE
 		if (pthread_mutex_init(&inode->i_mutex, NULL) != 0) {
 			ERROR_WITH_ERRNO("Error initializing mutex");
 			FREE(inode);
@@ -1025,9 +1025,7 @@ do_inode_add_ads(struct wim_inode *inode, const void *stream_name,
 	new_entry = &inode->i_ads_entries[num_ads - 1];
 	if (init_ads_entry(new_entry, stream_name, stream_name_nbytes, is_utf16le))
 		return NULL;
-#ifdef WITH_FUSE
 	new_entry->stream_id = inode->i_next_stream_id++;
-#endif
 	inode->i_num_ads = num_ads;
 	return new_entry;
 }

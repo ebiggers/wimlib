@@ -593,7 +593,11 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 	}
 	goto out_release_fp;
 read_error:
-	ERROR_WITH_ERRNO("Error reading data from WIM");
+	if (ferror(wim_fp)) {
+		ERROR_WITH_ERRNO("Error reading data from WIM");
+	} else {
+		ERROR("Unexpected EOF in WIM!");
+	}
 	ret = WIMLIB_ERR_READ;
 out_release_fp:
 	if (flags & WIMLIB_RESOURCE_FLAG_THREADSAFE_READ)
@@ -836,6 +840,28 @@ extract_wim_resource_to_fd(const struct wim_lookup_table_entry *lte,
 			   int fd, u64 size)
 {
 	return extract_wim_resource(lte, size, extract_wim_chunk_to_fd, &fd);
+}
+
+
+static int
+sha1_chunk(const void *buf, size_t len, void *ctx)
+{
+	sha1_update(ctx, buf, len);
+	return 0;
+}
+
+int
+sha1_resource(struct wim_lookup_table_entry *lte)
+{
+	int ret;
+	SHA_CTX sha_ctx;
+
+	sha1_init(&sha_ctx);
+	ret = read_resource_prefix(lte, wim_resource_size(lte),
+				   sha1_chunk, &sha_ctx, 0);
+	if (ret == 0)
+		sha1_final(lte->hash, &sha_ctx);
+	return ret;
 }
 
 /*

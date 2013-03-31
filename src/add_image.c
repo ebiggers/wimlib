@@ -113,7 +113,8 @@ unix_capture_regular_file(const char *path,
 		lte->file_on_disk = file_on_disk;
 		lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
 		lte->resource_entry.original_size = size;
-		lookup_table_insert_unhashed(lookup_table, lte, &inode->i_lte);
+		lookup_table_insert_unhashed(lookup_table, lte, inode, 0);
+		inode->i_lte = lte;
 	}
 	return 0;
 }

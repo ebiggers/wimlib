@@ -69,9 +69,8 @@ wimlib_delete_image(WIMStruct *w, int image)
 		put_image_metadata(w->image_metadata[image - 1], w->lookup_table);
 
 		/* Get rid of the empty slot in the image metadata array. */
-		memmove(w->image_metadata[image - 1],
-			&w->image_metadata[image],
-			(w->hdr.image_count - image) * sizeof(w->image_metadata[0]));
+		for (int i = image - 1; i < w->hdr.image_count - 1; i++)
+			w->image_metadata[i] = w->image_metadata[i + 1];
 
 		/* Decrement the image count. */
 		--w->hdr.image_count;

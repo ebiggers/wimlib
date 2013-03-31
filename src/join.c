@@ -109,10 +109,10 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 	}
 
 	if (progress_func) {
-		progress.join.total_bytes        = total_bytes;
-		progress.join.total_parts        = swms[0]->hdr.total_parts;
-		progress.join.completed_bytes    = 0;
-		progress.join.completed_parts    = 0;
+		progress.join.total_bytes     = total_bytes;
+		progress.join.total_parts     = swms[0]->hdr.total_parts;
+		progress.join.completed_bytes = 0;
+		progress.join.completed_parts = 0;
 		progress_func(WIMLIB_PROGRESS_MSG_JOIN_STREAMS, &progress);
 	}
 
@@ -157,7 +157,6 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 	}
 
 	/* Write lookup table, XML data, and optional integrity table */
-	joined_wim->hdr.image_count = swms[0]->hdr.image_count;
 	for (i = 0; i < num_swms; i++)
 		lookup_table_join(joined_wim->lookup_table, swms[i]->lookup_table);
 
@@ -205,8 +204,8 @@ wimlib_join(const tchar * const *swm_names,
 	for (i = 0; i < num_swms; i++) {
 		ret = wimlib_open_wim(swm_names[i], swm_open_flags, &swms[i],
 				      progress_func);
-		if (ret != 0)
-			goto out;
+		if (ret)
+			goto out_free_wims;
 
 		/* Don't open all the parts at the same time, in case there are
 		 * a lot of them */
@@ -217,20 +216,20 @@ wimlib_join(const tchar * const *swm_names,
 	qsort(swms, num_swms, sizeof(swms[0]), cmp_swms_by_part_number);
 
 	ret = verify_swm_set(swms[0], &swms[1], num_swms - 1);
-	if (ret != 0)
-		goto out;
+	if (ret)
+		goto out_free_wims;
 
 	ret = wimlib_create_new_wim(wimlib_get_compression_type(swms[0]),
 				    &joined_wim);
-	if (ret != 0)
-		goto out;
+	if (ret)
+		goto out_free_wims;
 
 	ret = begin_write(joined_wim, output_path, wim_write_flags);
-	if (ret != 0)
-		goto out;
+	if (ret)
+		goto out_free_wims;
 	ret = join_wims(swms, num_swms, joined_wim, wim_write_flags,
 			progress_func);
-out:
+out_free_wims:
 	for (i = 0; i < num_swms; i++)
 		wimlib_free(swms[i]);
 	wimlib_free(joined_wim);
