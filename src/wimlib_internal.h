@@ -270,6 +270,10 @@ struct wim_image_metadata {
 
 	/* 1 iff this image has been mounted read-write */
 	u8 has_been_mounted_rw : 1;
+
+#ifdef WITH_NTFS_3G
+	struct _ntfs_volume *ntfs_vol;
+#endif
 };
 
 /* The opaque structure exposed to the wimlib API. */
@@ -309,10 +313,6 @@ struct WIMStruct {
 
 	/* Temporary field */
 	void *private;
-
-#ifdef WITH_NTFS_3G
-	struct _ntfs_volume *ntfs_vol;
-#endif
 
 	/* The currently selected image, indexed starting at 1.  If not 0,
 	 * subtract 1 from this to get the index of the current image in the
@@ -551,6 +551,9 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       int add_image_flags,
 		       wimlib_progress_func_t progress_func,
 		       void *extra_arg);
+
+extern int
+do_ntfs_umount(struct _ntfs_volume *vol);
 
 /* resource.c */
 

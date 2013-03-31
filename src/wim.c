@@ -32,11 +32,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#ifdef WITH_NTFS_3G
-#  include <time.h>
-#  include <ntfs-3g/volume.h>
-#endif
-
 #ifdef __WIN32__
 #  include "win32.h"
 #else
@@ -540,6 +535,12 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 	}
 	INIT_LIST_HEAD(&imd->unhashed_streams);
 	INIT_LIST_HEAD(&imd->inode_list);
+#ifdef WITH_NTFS_3G
+	if (imd->ntfs_vol) {
+		do_ntfs_umount(imd->ntfs_vol);	
+		imd->ntfs_vol = NULL;
+	}
+#endif
 }
 
 void
@@ -576,7 +577,7 @@ struct wim_image_metadata *
 new_image_metadata()
 {
 	struct wim_image_metadata *imd;
-	
+
 	imd = CALLOC(1, sizeof(*imd));
 	if (imd) {
 		imd->refcnt = 1;
@@ -668,12 +669,6 @@ wimlib_free(WIMStruct *w)
 			put_image_metadata(w->image_metadata[i], NULL);
 		FREE(w->image_metadata);
 	}
-#ifdef WITH_NTFS_3G
-	if (w->ntfs_vol) {
-		DEBUG("Unmounting NTFS volume");
-		ntfs_umount(w->ntfs_vol, FALSE);
-	}
-#endif
 	FREE(w);
 	DEBUG("Freed WIMStruct");
 }

@@ -645,7 +645,6 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 	new_lte->refcnt                       = inode->i_nlink;
 	new_lte->resource_location            = RESOURCE_IN_STAGING_FILE;
 	new_lte->staging_file_name            = staging_file_name;
-	new_lte->lte_inode                    = inode;
 	new_lte->resource_entry.original_size = size;
 
 	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte,
@@ -796,7 +795,7 @@ rebuild_wim(struct wimfs_context *ctx, int write_flags,
 
 	DEBUG("Closing all staging file descriptors.");
 	image_for_each_unhashed_stream_safe(lte, tmp, imd) {
-		ret = inode_close_fds(lte->lte_inode);
+		ret = inode_close_fds(lte->back_inode);
 		if (ret)
 			return ret;
 	}

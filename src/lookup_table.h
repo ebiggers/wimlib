@@ -40,7 +40,7 @@ struct ntfs_location {
 	tchar *path;
 	utf16lechar *stream_name;
 	u16 stream_name_nchars;
-	struct _ntfs_volume **ntfs_vol_p;
+	struct _ntfs_volume *ntfs_vol;
 	bool is_reparse_point;
 };
 #endif
@@ -223,13 +223,6 @@ struct wim_lookup_table_entry {
 
 			struct list_head write_streams_list;
 		};
-
-	#ifdef WITH_FUSE
-		/* Pointer to inode that contains the opened file descriptors to
-		 * this stream (valid when resource_location ==
-		 * RESOURCE_IN_STAGING_FILE) */
-		struct wim_inode *lte_inode;
-	#endif
 	};
 
 	/* Temporary list fields */

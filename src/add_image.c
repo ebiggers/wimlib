@@ -837,6 +837,9 @@ wimlib_add_image_multisource(WIMStruct *w,
 	struct list_head unhashed_streams;
 	int ret;
 	struct sd_set sd_set;
+#ifdef WITH_NTFS_3G
+	struct _ntfs_volume *ntfs_vol = NULL;
+#endif
 
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
 #ifdef WITH_NTFS_3G
@@ -850,7 +853,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 		capture_tree = build_dentry_tree_ntfs;
-		extra_arg = &w->ntfs_vol;
+		extra_arg = &ntfs_vol;
 #else
 		ERROR("wimlib was compiled without support for NTFS-3g, so\n"
 		      "        cannot capture a WIM image directly from a NTFS volume!");
@@ -991,12 +994,22 @@ wimlib_add_image_multisource(WIMStruct *w,
 	}
 
 	ret = add_new_dentry_tree(w, root_dentry, sd);
-	if (ret)
+
+	if (ret) {
+#ifdef WITH_NTFS_3G
+		if (ntfs_vol)
+			do_ntfs_umount(ntfs_vol);
+#endif
 		goto out_free_dentry_tree;
+	}
 
 	imd = w->image_metadata[w->hdr.image_count - 1];
 	INIT_LIST_HEAD(&imd->unhashed_streams);
 	list_splice(&unhashed_streams, &imd->unhashed_streams);
+
+#ifdef WITH_NTFS_3G
+	imd->ntfs_vol = ntfs_vol;
+#endif
 
 	DEBUG("Assigning hard link group IDs");
 	inode_table_prepare_inode_list(&inode_table, &imd->inode_list);

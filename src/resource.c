@@ -576,7 +576,7 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 			while (size) {
 				size_t bytes_to_read = min(WIM_CHUNK_SIZE, size);
 				size_t bytes_read = fread(buf, 1, bytes_to_read, wim_fp);
-				
+
 				if (bytes_read != bytes_to_read)
 					goto read_error;
 				ret = cb(buf, bytes_read, ctx_or_buf);

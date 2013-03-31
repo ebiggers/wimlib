@@ -58,6 +58,22 @@ attr_record_name(ATTR_RECORD *ar)
 	return (ntfschar*)((u8*)ar + le16_to_cpu(ar->name_offset));
 }
 
+static ntfs_attr *
+open_ntfs_attr(ntfs_inode *ni, struct ntfs_location *loc)
+{
+	ntfs_attr *na;
+
+	na = ntfs_attr_open(ni,
+			    loc->is_reparse_point ? AT_REPARSE_POINT : AT_DATA,
+			    loc->stream_name,
+			    loc->stream_name_nchars);
+	if (!na) {
+		ERROR_WITH_ERRNO("Failed to open attribute of \"%"TS"\" in "
+				 "NTFS volume", loc->path);
+	}
+	return na;
+}
+
 int
 read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
 		      u64 size,
@@ -66,7 +82,7 @@ read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
 		      int _ignored_flags)
 {
 	struct ntfs_location *loc = lte->ntfs_loc;
-	ntfs_volume *vol = *loc->ntfs_vol_p;
+	ntfs_volume *vol = loc->ntfs_vol;
 	ntfs_inode *ni;
 	ntfs_attr *na;
 	s64 pos;
@@ -81,32 +97,18 @@ read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
 		goto out;
 	}
 
-	na = ntfs_attr_open(ni,
-			    loc->is_reparse_point ? AT_REPARSE_POINT : AT_DATA,
-			    loc->stream_name,
-			    loc->stream_name_nchars);
+	na = open_ntfs_attr(ni, loc);
 	if (!na) {
-		ERROR_WITH_ERRNO("Failed to open attribute of \"%"TS"\" in "
-				 "NTFS volume", loc->path);
 		ret = WIMLIB_ERR_NTFS_3G;
 		goto out_close_ntfs_inode;
 	}
-
-	/*if (is_reparse_point) {*/
-		/*if (ntfs_attr_pread(na, 0, 8, buf) != 8)*/
-			/*goto out_error;*/
-		/**reparse_tag_ret = le32_to_cpu(*(u32*)buf);*/
-		/*DEBUG("ReparseTag = %#x", *reparse_tag_ret);*/
-		/*pos = 8;*/
-		/*bytes_remaining -= 8;*/
-	/*}*/
 
 	if (cb)
 		out_buf = alloca(WIM_CHUNK_SIZE);
 	else
 		out_buf = ctx_or_buf;
-	pos = 0;
-	bytes_remaining = na->data_size;
+	pos = (loc->is_reparse_point) ? 8 : 0;
+	bytes_remaining = size;
 	while (bytes_remaining) {
 		s64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
 		if (ntfs_attr_pread(na, pos, to_read, out_buf) != to_read) {
@@ -133,6 +135,35 @@ out:
 	return ret;
 }
 
+static int
+read_reparse_tag(ntfs_inode *ni, struct ntfs_location *loc,
+		 u32 *reparse_tag_ret)
+{
+	int ret;
+	u8 buf[8];
+	ntfs_attr *na;
+
+	na = open_ntfs_attr(ni, loc);
+	if (!na) {
+		ret = WIMLIB_ERR_NTFS_3G;
+		goto out;
+	}
+
+	if (ntfs_attr_pread(na, 0, 8, buf) != 8) {
+		ERROR_WITH_ERRNO("Error reading reparse data");
+		ret = WIMLIB_ERR_NTFS_3G;
+		goto out_close_ntfs_attr;
+	}
+	*reparse_tag_ret = le32_to_cpu(*(u32*)buf);
+	DEBUG("ReparseTag = %#x", *reparse_tag_ret);
+	ret = 0;
+out_close_ntfs_attr:
+	ntfs_attr_close(na);
+out:
+	return ret;
+
+}
+
 /* Load the streams from a file or reparse point in the NTFS volume into the WIM
  * lookup table */
 static int
@@ -141,7 +172,7 @@ capture_ntfs_streams(struct wim_inode *inode,
 		     char *path,
 		     size_t path_len,
 		     struct wim_lookup_table *lookup_table,
-		     ntfs_volume **ntfs_vol_p,
+		     ntfs_volume *vol,
 		     ATTR_TYPES type)
 {
 	ntfs_attr_search_ctx *actx;
@@ -180,7 +211,7 @@ capture_ntfs_streams(struct wim_inode *inode,
 			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
 			if (!ntfs_loc)
 				goto out_put_actx;
-			ntfs_loc->ntfs_vol_p = ntfs_vol_p;
+			ntfs_loc->ntfs_vol = vol;
 			ntfs_loc->path = MALLOC(path_len + 1);
 			if (!ntfs_loc->path)
 				goto out_free_ntfs_loc;
@@ -198,23 +229,26 @@ capture_ntfs_streams(struct wim_inode *inode,
 			lte = new_lookup_table_entry();
 			if (!lte)
 				goto out_free_ntfs_loc;
-			lte->ntfs_loc = ntfs_loc;
 			lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
-		#if 0
-			if (type == AT_REPARSE_POINT) {
-				ntfs_loc->is_reparse_point = true;
-				lte->resource_entry.original_size = data_size - 8;
-				lte->resource_entry.size = data_size - 8;
-			} else {
-				ntfs_loc->is_reparse_point = false;
-				lte->resource_entry.original_size = data_size;
-				lte->resource_entry.size = data_size;
-			}
-		#else
-			ntfs_loc->is_reparse_point = (type == AT_REPARSE_POINT);
-			lte->resource_entry.original_size = data_size;
-		#endif
+			lte->ntfs_loc = ntfs_loc;
 			ntfs_loc = NULL;
+			if (type == AT_REPARSE_POINT) {
+				if (data_size < 8) {
+					ERROR("Invalid reparse data (only %u bytes)!",
+					      (unsigned)data_size);
+					ret = WIMLIB_ERR_NTFS_3G;
+					goto out_free_lte;
+				}
+				lte->ntfs_loc->is_reparse_point = true;
+				lte->resource_entry.original_size = data_size - 8;
+				ret = read_reparse_tag(ni, lte->ntfs_loc,
+						       &inode->i_reparse_tag);
+				if (ret)
+					goto out_free_lte;
+			} else {
+				lte->ntfs_loc->is_reparse_point = false;
+				lte->resource_entry.original_size = data_size;
+			}
 		}
 		if (name_length == 0) {
 			/* Unnamed data stream.  Put the reference to it in the
@@ -401,7 +435,7 @@ struct readdir_ctx {
 	struct sd_set *sd_set;
 	struct dos_name_map *dos_name_map;
 	const struct wimlib_capture_config *config;
-	ntfs_volume **ntfs_vol_p;
+	ntfs_volume *vol;
 	int add_image_flags;
 	wimlib_progress_func_t progress_func;
 };
@@ -417,7 +451,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 				 struct wim_inode_table *inode_table,
 				 struct sd_set *sd_set,
 				 const struct wimlib_capture_config *config,
-				 ntfs_volume **ntfs_vol_p,
+				 ntfs_volume *ntfs_vol,
 				 int add_image_flags,
 				 wimlib_progress_func_t progress_func);
 
@@ -481,7 +515,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 					       ctx->lookup_table,
 					       ctx->inode_table,
 					       ctx->sd_set,
-					       ctx->config, ctx->ntfs_vol_p,
+					       ctx->config, ctx->vol,
 					       ctx->add_image_flags,
 					       ctx->progress_func);
 	if (child)
@@ -508,7 +542,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 				 struct wim_inode_table *inode_table,
 				 struct sd_set *sd_set,
 				 const struct wimlib_capture_config *config,
-				 ntfs_volume **ntfs_vol_p,
+				 ntfs_volume *vol,
 				 int add_image_flags,
 				 wimlib_progress_func_t progress_func)
 {
@@ -536,7 +570,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	/* Get file attributes */
 	struct SECURITY_CONTEXT ctx;
 	memset(&ctx, 0, sizeof(ctx));
-	ctx.vol = ni->vol;
+	ctx.vol = vol;
 	ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ATTRIB,
 					 ni, dir_ni, (char *)&attributes,
 					 sizeof(u32));
@@ -581,7 +615,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		/* Junction point, symbolic link, or other reparse point */
 		ret = capture_ntfs_streams(inode, ni, path,
 					   path_len, lookup_table,
-					   ntfs_vol_p, AT_REPARSE_POINT);
+					   vol, AT_REPARSE_POINT);
 	} else if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY) {
 
 		/* Normal directory */
@@ -597,7 +631,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			.sd_set          = sd_set,
 			.dos_name_map    = &dos_name_map,
 			.config          = config,
-			.ntfs_vol_p      = ntfs_vol_p,
+			.vol             = vol,
 			.add_image_flags = add_image_flags,
 			.progress_func   = progress_func,
 		};
@@ -614,7 +648,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		/* Normal file */
 		ret = capture_ntfs_streams(inode, ni, path,
 					   path_len, lookup_table,
-					   ntfs_vol_p, AT_DATA);
+					   vol, AT_DATA);
 	}
 	if (ret)
 		goto out;
@@ -659,6 +693,17 @@ out:
 	return ret;
 }
 
+
+int
+do_ntfs_umount(struct _ntfs_volume *vol)
+{
+	DEBUG("Unmounting NTFS volume");
+	if (ntfs_umount(vol, FALSE))
+		return WIMLIB_ERR_NTFS_3G;
+	else
+		return 0;
+}
+
 int
 build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       const char *device,
@@ -673,7 +718,6 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
 	int ret;
-	ntfs_volume **ntfs_vol_p = extra_arg;
 
 	DEBUG("Mounting NTFS volume `%s' read-only", device);
 
@@ -720,7 +764,7 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 					       FILE_NAME_POSIX, lookup_table,
 					       inode_table,
 					       sd_set,
-					       config, ntfs_vol_p,
+					       config, vol,
 					       add_image_flags,
 					       progress_func);
 out_cleanup:
@@ -732,7 +776,7 @@ out:
 	ntfs_inode_close(vol->secure_ni);
 
 	if (ret) {
-		if (ntfs_umount(vol, FALSE) != 0) {
+		if (do_ntfs_umount(vol)) {
 			ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'",
 					 device);
 			if (ret == 0)
@@ -741,7 +785,7 @@ out:
 	} else {
 		/* We need to leave the NTFS volume mounted so that we can read
 		 * the NTFS files again when we are actually writing the WIM */
-		*ntfs_vol_p = vol;
+		*(ntfs_volume**)extra_arg = vol;
 	}
 	return ret;
 }
