@@ -1607,6 +1607,30 @@ finish_write(WIMStruct *w, int image, int write_flags,
 	 * count.  */
 	memcpy(&hdr, &w->hdr, sizeof(struct wim_header));
 
+	/* Set image count and boot index correctly for single image writes */
+	if (image != WIMLIB_ALL_IMAGES) {
+		hdr.image_count = 1;
+		if (hdr.boot_idx == image)
+			hdr.boot_idx = 1;
+		else
+			hdr.boot_idx = 0;
+	}
+
+	/* In the WIM header, there is room for the resource entry for a
+	 * metadata resource labeled as the "boot metadata".  This entry should
+	 * be zeroed out if there is no bootable image (boot_idx 0).  Otherwise,
+	 * it should be a copy of the resource entry for the image that is
+	 * marked as bootable.  This is not well documented...  */
+	if (hdr.boot_idx == 0) {
+		memset(&hdr.boot_metadata_res_entry, 0,
+		       sizeof(struct resource_entry));
+	} else {
+		memcpy(&hdr.boot_metadata_res_entry,
+		       &w->image_metadata[
+			  hdr.boot_idx - 1]->metadata_lte->output_resource_entry,
+		       sizeof(struct resource_entry));
+	}
+
 	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
 		ret = write_lookup_table(w, image, &hdr.lookup_table_res_entry);
 		if (ret)
@@ -1671,33 +1695,6 @@ finish_write(WIMStruct *w, int image, int write_flags,
 		memset(&hdr.integrity, 0, sizeof(struct resource_entry));
 	}
 
-	/*
-	 * In the WIM header, there is room for the resource entry for a
-	 * metadata resource labeled as the "boot metadata".  This entry should
-	 * be zeroed out if there is no bootable image (boot_idx 0).  Otherwise,
-	 * it should be a copy of the resource entry for the image that is
-	 * marked as bootable.  This is not well documented...
-	 */
-
-	/* Set image count and boot index correctly for single image writes */
-	if (image != WIMLIB_ALL_IMAGES) {
-		hdr.image_count = 1;
-		if (hdr.boot_idx == image)
-			hdr.boot_idx = 1;
-		else
-			hdr.boot_idx = 0;
-	}
-
-	if (hdr.boot_idx == 0) {
-		memset(&hdr.boot_metadata_res_entry, 0,
-		       sizeof(struct resource_entry));
-	} else {
-		memcpy(&hdr.boot_metadata_res_entry,
-		       &w->image_metadata[
-			  hdr.boot_idx - 1]->metadata_lte->output_resource_entry,
-		       sizeof(struct resource_entry));
-	}
-
 	if (fseeko(out, 0, SEEK_SET) != 0) {
 		ERROR_WITH_ERRNO("Failed to seek to beginning of WIM "
 				 "being written");
@@ -1719,7 +1716,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 	}
 out_close_wim:
 	if (fclose(out) != 0) {
-		ERROR_WITH_ERRNO("Failed to close the WIM file");
+		ERROR_WITH_ERRNO("Failed to close the output WIM file");
 		if (ret == 0)
 			ret = WIMLIB_ERR_WRITE;
 	}
@@ -1825,26 +1822,29 @@ wimlib_write(WIMStruct *w, const tchar *path,
 
 	ret = begin_write(w, path, write_flags);
 	if (ret)
-		goto out;
+		goto out_close_wim;
 
 	ret = write_wim_streams(w, image, write_flags, num_threads,
 				progress_func);
 	if (ret)
-		goto out;
+		goto out_close_wim;
 
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN, NULL);
 
 	ret = for_image(w, image, write_metadata_resource);
 	if (ret)
-		goto out;
+		goto out_close_wim;
 
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_WRITE_METADATA_END, NULL);
 
 	ret = finish_write(w, image, write_flags, progress_func);
-out:
+	/* finish_write() closed the WIM for us */
+	goto out;
+out_close_wim:
 	close_wim_writable(w);
+out:
 	DEBUG("wimlib_write(path=%"TS") = %d", path, ret);
 	return ret;
 }
