@@ -78,7 +78,6 @@ struct image_info {
 	tchar *display_name;
 	tchar *display_description;
 	tchar *flags;
-	struct wim_lookup_table *lookup_table; /* Temporary field only */
 };
 
 struct xml_string_spec {
@@ -1033,7 +1032,6 @@ static int
 calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 {
 	struct image_info *info = arg;
-	struct wim_lookup_table *lookup_table = info->lookup_table;
 	const struct wim_inode *inode = dentry->d_inode;
 	struct wim_lookup_table_entry *lte;
 
@@ -1080,7 +1078,7 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 	 * link bytes", and this size is multiplied by the link count (NOT one
 	 * less than the link count).
 	 */
-	lte = inode_unnamed_lte(inode, info->lookup_table);
+	lte = inode_unnamed_lte_resolved(inode);
 	if (lte) {
 		info->total_bytes += wim_resource_size(lte);
 		if (!dentry_is_first_in_inode(dentry))
@@ -1090,7 +1088,7 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 	if (inode->i_nlink >= 2 && dentry_is_first_in_inode(dentry)) {
 		for (unsigned i = 0; i < inode->i_num_ads; i++) {
 			if (inode->i_ads_entries[i].stream_name_nbytes) {
-				lte = inode_stream_lte(inode, i + 1, lookup_table);
+				lte = inode_stream_lte_resolved(inode, i + 1);
 				if (lte) {
 					info->hard_link_bytes += inode->i_nlink *
 								 wim_resource_size(lte);
@@ -1121,7 +1119,6 @@ xml_update_image_info(WIMStruct *w, int image)
 	image_info->dir_count       = 0;
 	image_info->total_bytes     = 0;
 	image_info->hard_link_bytes = 0;
-	image_info->lookup_table = w->lookup_table;
 
 	for_dentry_in_tree(w->image_metadata[image - 1]->root_dentry,
 			   calculate_dentry_statistics,

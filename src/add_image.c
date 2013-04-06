@@ -59,8 +59,8 @@ add_new_dentry_tree(WIMStruct *w, struct wim_dentry *root_dentry,
 		    struct wim_security_data *sd)
 {
 	struct wim_image_metadata *new_imd;
-	int ret;
 	struct wim_lookup_table_entry *metadata_lte;
+	int ret;
 
 	metadata_lte = new_lookup_table_entry();
 	if (!metadata_lte)
