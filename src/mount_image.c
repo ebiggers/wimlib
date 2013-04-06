@@ -2483,7 +2483,6 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)))
 		mount_flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR;
 
-
 	DEBUG("Initializing struct wimfs_context");
 	init_wimfs_context(&ctx);
 	ctx.wim = wim;

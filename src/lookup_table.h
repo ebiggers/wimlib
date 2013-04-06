@@ -135,9 +135,13 @@ struct wim_lookup_table_entry {
 	 */
 	u16 part_number;
 
-	/* See enum resource_location above */
+	/* One of the `enum resource_location' values documented above. */
 	u16 resource_location : 5;
+
+	/* 1 if this stream is a unique size (only set while writing streams). */
 	u8 unique_size : 1;
+
+	/* 1 if this stream had a SHA1-message digest calculated for it yet? */
 	u8 unhashed : 1;
 
 	/* (On-disk field)
@@ -160,9 +164,11 @@ struct wim_lookup_table_entry {
 		size_t hash_short;
 
 		/* Unhashed entries only (unhashed == 1): these variables make
-		 * it possible to find the to the pointer to this 'struct
-		 * wim_lookup_table_entry' contained in a 'struct wim_ads_entry'
-		 * or 'struct wim_inode'.  */
+		 * it possible to find the pointer to this 'struct
+		 * wim_lookup_table_entry' contained in either 'struct
+		 * wim_ads_entry' or 'struct wim_inode'.  There can be at most 1
+		 * such pointer, as we can only join duplicate streams after
+		 * they have been hashed.  */
 		struct {
 			struct wim_inode *back_inode;
 			u32 back_stream_id;
@@ -170,16 +176,14 @@ struct wim_lookup_table_entry {
 	};
 
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
-	 * whenever the file resource pointed to by this lookup table entry
-	 * needs to be written.  The file resource only need to be written when
-	 * out_refcnt is nonzero, since otherwise it is not referenced by any
-	 * dentries. */
+	 * whenever the stream pointed to by this lookup table entry needs to be
+	 * written.  The stream only need to be written when out_refcnt is
+	 * nonzero, since otherwise it is not referenced by any dentries. */
 	u32 out_refcnt;
 
 	/* Pointers to somewhere where the stream is actually located.  See the
 	 * comments for the @resource_location field above. */
 	union {
-		void *resource_loc_private;
 		WIMStruct *wim;
 		tchar *file_on_disk;
 		void *attached_buffer;
@@ -191,10 +195,14 @@ struct wim_lookup_table_entry {
 	#endif
 	};
 
+	/* Actual reference count to this stream (only used while
+	 * verifying an image). */
 	u32 real_refcnt;
 
 	union {
 	#ifdef WITH_FUSE
+		/* Number of times this stream has been opened (used only during
+		 * mounting) */
 		u16 num_opened_fds;
 	#endif
 

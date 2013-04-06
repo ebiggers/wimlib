@@ -1027,7 +1027,7 @@ wimlib_extract_image(WIMStruct *w,
 	if (num_additional_swms) {
 		ret = new_joined_lookup_table(w, additional_swms,
 					      num_additional_swms, &joined_tab);
-		if (ret != 0)
+		if (ret)
 			return ret;
 		w_tab_save = w->lookup_table;
 		w->lookup_table = joined_tab;

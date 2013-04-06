@@ -595,23 +595,22 @@ write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry
 	return 0;
 }
 
-
 int
-lte_zero_real_refcnt(struct wim_lookup_table_entry *lte, void *ignore)
+lte_zero_real_refcnt(struct wim_lookup_table_entry *lte, void *_ignore)
 {
 	lte->real_refcnt = 0;
 	return 0;
 }
 
 int
-lte_zero_out_refcnt(struct wim_lookup_table_entry *lte, void *ignore)
+lte_zero_out_refcnt(struct wim_lookup_table_entry *lte, void *_ignore)
 {
 	lte->out_refcnt = 0;
 	return 0;
 }
 
 int
-lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *ignore)
+lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *_ignore)
 {
 	if (lte->extracted_file != NULL) {
 		FREE(lte->extracted_file);

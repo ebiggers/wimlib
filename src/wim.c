@@ -617,6 +617,10 @@ new_image_metadata_array(unsigned num_images)
 	return imd_array;
 }
 
+/* Checksum all streams that are unhashed (other than the metadata streams),
+ * merging them into the lookup table as needed.  This is a no-op unless the
+ * library has previously used to add or mount an image using the same
+ * WIMStruct. */
 int
 wim_checksum_unhashed_streams(WIMStruct *w)
 {
