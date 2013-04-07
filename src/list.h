@@ -164,6 +164,29 @@ static inline void list_transfer(struct list_head *old,
 }
 
 /**
+ * list_move - delete from one list and add as another's head
+ * @list: the entry to move
+ * @head: the head that will precede our entry
+ */
+static inline void list_move(struct list_head *list, struct list_head *head)
+{
+	list_del(list);
+	list_add(list, head);
+}
+
+/**
+ * list_move_tail - delete from one list and add as another's tail
+ * @list: the entry to move
+ * @head: the head that will follow our entry
+ */
+static inline void list_move_tail(struct list_head *list,
+				  struct list_head *head)
+{
+	list_del(list);
+	list_add_tail(list, head);
+}
+
+/**
  * list_splice_tail - join two lists, each list being a queue
  * @list: the new list to add.
  * @head: the place to add it in the first list.

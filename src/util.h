@@ -172,7 +172,7 @@ extern void
 wimlib_debug(const tchar *file, int line, const char *func,
 	     const tchar *format, ...);
 #  define DEBUG(format, ...) \
-	 	wimlib_debug(T(__FILE__), __LINE__, __func__, T(format), ## __VA_ARGS__);
+	 	wimlib_debug(T(__FILE__), __LINE__, __func__, T(format), ## __VA_ARGS__)
 
 #else
 #  define DEBUG(format, ...) dummy_tprintf(T(format), ## __VA_ARGS__)

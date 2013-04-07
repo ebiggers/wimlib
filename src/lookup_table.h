@@ -143,6 +143,8 @@ struct wim_lookup_table_entry {
 
 	/* 1 if this stream had a SHA1-message digest calculated for it yet? */
 	u8 unhashed : 1;
+	
+	u8 deferred : 1;
 
 	/* (On-disk field)
 	 * Number of times this lookup table entry is referenced by dentries.
@@ -223,7 +225,10 @@ struct wim_lookup_table_entry {
 		 */
 		struct resource_entry output_resource_entry;
 
-		struct list_head msg_list;
+		struct {
+			struct list_head msg_list;
+			struct list_head being_compressed_list;
+		};
 		struct list_head inode_list;
 
 		struct {

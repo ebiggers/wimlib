@@ -337,6 +337,8 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	off_t offset;
 	int ret;
 
+	DEBUG2("wim_resource_size(lte)=%"PRIu64, wim_resource_size(lte));
+
 	flags &= ~WIMLIB_RESOURCE_FLAG_RECOMPRESS;
 
 	/* Get current position in output WIM */
@@ -467,15 +469,30 @@ shared_queue_init(struct shared_queue *q, unsigned size)
 	wimlib_assert(size != 0);
 	q->array = CALLOC(sizeof(q->array[0]), size);
 	if (!q->array)
-		return WIMLIB_ERR_NOMEM;
+		goto err;
 	q->filled_slots = 0;
 	q->front = 0;
 	q->back = size - 1;
 	q->size = size;
-	pthread_mutex_init(&q->lock, NULL);
-	pthread_cond_init(&q->msg_avail_cond, NULL);
-	pthread_cond_init(&q->space_avail_cond, NULL);
+	if (pthread_mutex_init(&q->lock, NULL)) {
+		ERROR_WITH_ERRNO("Failed to initialize mutex");
+		goto err;
+	}
+	if (pthread_cond_init(&q->msg_avail_cond, NULL)) {
+		ERROR_WITH_ERRNO("Failed to initialize condition variable");
+		goto err_destroy_lock;
+	}
+	if (pthread_cond_init(&q->space_avail_cond, NULL)) {
+		ERROR_WITH_ERRNO("Failed to initialize condition variable");
+		goto err_destroy_msg_avail_cond;
+	}
 	return 0;
+err_destroy_msg_avail_cond:
+	pthread_cond_destroy(&q->msg_avail_cond);
+err_destroy_lock:
+	pthread_mutex_destroy(&q->lock);
+err:
+	return WIMLIB_ERR_NOMEM;
 }
 
 static void
@@ -610,16 +627,30 @@ do_write_streams_progress(union wimlib_progress_info *progress,
 	}
 }
 
+struct serial_write_stream_ctx {
+	FILE *out_fp;
+	int out_ctype;
+	int write_resource_flags;
+};
+
+static int
+serial_write_stream(struct wim_lookup_table_entry *lte, void *_ctx)
+{
+	struct serial_write_stream_ctx *ctx = _ctx;
+	return write_wim_resource(lte, ctx->out_fp,
+				  ctx->out_ctype, &lte->output_resource_entry,
+				  ctx->write_resource_flags);
+}
+
 static int
 do_write_stream_list(struct list_head *stream_list,
 		     struct wim_lookup_table *lookup_table,
-		     FILE *out_fp,
-		     int out_ctype,
-		     int write_resource_flags,
+		     int (*write_stream_cb)(struct wim_lookup_table_entry *, void *),
+		     void *write_stream_ctx,
 		     wimlib_progress_func_t progress_func,
 		     union wimlib_progress_info *progress)
 {
-	int ret = 0;
+	int ret;
 	struct wim_lookup_table_entry *lte;
 
 	/* For each stream in @stream_list ... */
@@ -639,7 +670,7 @@ do_write_stream_list(struct list_head *stream_list,
 						   lookup_table,
 						   &tmp);
 			if (ret)
-				break;
+				goto out;
 			if (tmp != lte) {
 				lte = tmp;
 				/* We found a duplicate stream. */
@@ -662,24 +693,53 @@ do_write_stream_list(struct list_head *stream_list,
 		 * while in the latter case this is done because we do not have
 		 * the SHA1 message digest yet.  */
 		wimlib_assert(lte->out_refcnt != 0);
-		ret = write_wim_resource(lte,
-					 out_fp,
-					 out_ctype,
-					 &lte->output_resource_entry,
-					 write_resource_flags);
+		ret = (*write_stream_cb)(lte, write_stream_ctx);
 		if (ret)
-			break;
+			goto out;
 		if (lte->unhashed) {
 			list_del(&lte->unhashed_list);
 			lookup_table_insert(lookup_table, lte);
 			lte->unhashed = 0;
 		}
 	skip_to_progress:
-		do_write_streams_progress(progress,
-					  progress_func,
-					  wim_resource_size(lte));
+		if (progress_func) {
+			do_write_streams_progress(progress,
+						  progress_func,
+						  wim_resource_size(lte));
+		}
 	}
+	ret = 0;
+out:
 	return ret;
+}
+
+static int
+do_write_stream_list_serial(struct list_head *stream_list,
+			    struct wim_lookup_table *lookup_table,
+			    FILE *out_fp,
+			    int out_ctype,
+			    int write_resource_flags,
+			    wimlib_progress_func_t progress_func,
+			    union wimlib_progress_info *progress)
+{
+	struct serial_write_stream_ctx ctx = {
+		.out_fp = out_fp,
+		.out_ctype = out_ctype,
+		.write_resource_flags = write_resource_flags,
+	};
+	return do_write_stream_list(stream_list,
+				    lookup_table,
+				    serial_write_stream,
+				    &ctx,
+				    progress_func,
+				    progress);
+}
+
+static inline int
+write_flags_to_resource_flags(int write_flags)
+{
+	return (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS) ?
+			WIMLIB_RESOURCE_FLAG_RECOMPRESS : 0;
 }
 
 static int
@@ -687,24 +747,20 @@ write_stream_list_serial(struct list_head *stream_list,
 			 struct wim_lookup_table *lookup_table,
 			 FILE *out_fp,
 			 int out_ctype,
-			 int write_flags,
+			 int write_resource_flags,
 			 wimlib_progress_func_t progress_func,
 			 union wimlib_progress_info *progress)
 {
-	int write_resource_flags = 0;
-	if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
-		write_resource_flags |= WIMLIB_RESOURCE_FLAG_RECOMPRESS;
-
 	progress->write_streams.num_threads = 1;
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS, progress);
-	return do_write_stream_list(stream_list,
-				    lookup_table,
-				    out_fp,
-				    out_ctype,
-				    write_resource_flags,
-				    progress_func,
-				    progress);
+	return do_write_stream_list_serial(stream_list,
+					   lookup_table,
+					   out_fp,
+					   out_ctype,
+					   write_resource_flags,
+					   progress_func,
+					   progress);
 }
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
@@ -736,26 +792,25 @@ struct main_writer_thread_ctx {
 	struct wim_lookup_table *lookup_table;
 	FILE *out_fp;
 	int out_ctype;
+	int write_resource_flags;
 	struct shared_queue *res_to_compress_queue;
 	struct shared_queue *compressed_res_queue;
 	size_t num_messages;
-	int write_flags;
 	wimlib_progress_func_t progress_func;
 	union wimlib_progress_info *progress;
 
 	struct list_head available_msgs;
 	struct list_head outstanding_streams;
 	struct list_head serial_streams;
+
+	SHA_CTX next_sha_ctx;
 	u64 next_chunk;
 	u64 next_num_chunks;
+	struct wim_lookup_table_entry *next_lte;
+
 	struct message *msgs;
 	struct message *next_msg;
-	size_t next_chunk_in_msg;
-	struct wim_lookup_table_entry *cur_lte;
 	struct chunk_table *cur_chunk_tab;
-	struct wim_lookup_table_entry *next_lte;
-	SHA_CTX sha_ctx;
-	u8 next_hash[20];
 };
 
 static int
@@ -810,6 +865,18 @@ allocate_messages(size_t num_messages)
 static void
 main_writer_thread_destroy_ctx(struct main_writer_thread_ctx *ctx)
 {
+	size_t num_available_msgs;
+	size_t num_outstanding_msgs;
+	struct list_head *cur;
+
+	num_available_msgs = 0;
+	list_for_each(cur, &ctx->available_msgs)
+		num_available_msgs++;
+	
+	num_outstanding_msgs = ctx->num_messages - num_available_msgs;
+	while (num_outstanding_msgs--)
+		shared_queue_get(ctx->compressed_res_queue);
+
 	free_messages(ctx->msgs, ctx->num_messages);
 	FREE(ctx->cur_chunk_tab);
 }
@@ -833,17 +900,17 @@ main_writer_thread_init_ctx(struct main_writer_thread_ctx *ctx)
 	 * chunks sent off for compression.
 	 *
 	 * The first stream in outstanding_streams is the stream that is
-	 * currently being written (cur_lte).
+	 * currently being written.
 	 *
 	 * The last stream in outstanding_streams is the stream that is
-	 * currently being read and chunks fed to the compressor threads.  */
+	 * currently being read and having chunks fed to the compressor threads.
+	 * */
 	INIT_LIST_HEAD(&ctx->outstanding_streams);
 
 	/* Resources that don't need any chunks compressed are added to this
 	 * list and written directly by the main thread. */
 	INIT_LIST_HEAD(&ctx->serial_streams);
 
-	ctx->cur_lte = NULL;
 	return 0;
 }
 
@@ -855,13 +922,18 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 	int ret;
 
 	wimlib_assert(!list_empty(&ctx->outstanding_streams));
+	DEBUG2("Receiving more compressed chunks");
+	cur_lte = container_of(ctx->outstanding_streams.next,
+			       struct wim_lookup_table_entry,
+			       being_compressed_list);
 
 	/* Get the next message from the queue and process it.
 	 * The message will contain 1 or more data chunks that have been
 	 * compressed. */
 	msg = shared_queue_get(ctx->compressed_res_queue);
 	msg->complete = true;
-	cur_lte = ctx->cur_lte;
+
+	DEBUG2("recved msg %p", msg);
 
 	/* Is this the next chunk in the current resource?  If it's not
 	 * (i.e., an earlier chunk in a same or different resource
@@ -869,39 +941,30 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 	 * message around until all earlier chunks are received.
 	 *
 	 * Otherwise, write all the chunks we can. */
-	while (cur_lte != NULL &&
-	       !list_empty(&cur_lte->msg_list) &&
-	       (msg = container_of(cur_lte->msg_list.next,
-				   struct message,
-				   list))->complete)
+	while (!list_empty(&cur_lte->msg_list) 
+	       && (msg = container_of(cur_lte->msg_list.next,
+				      struct message,
+				      list))->complete)
 	{
+		list_move(&msg->list, &ctx->available_msgs);
 		if (msg->begin_chunk == 0) {
-
 			/* This is the first set of chunks.  Leave space
 			 * for the chunk table in the output file. */
 			off_t cur_offset = ftello(ctx->out_fp);
-			if (cur_offset == -1) {
-				ret = WIMLIB_ERR_WRITE;
-				goto out;
-			}
+			if (cur_offset == -1)
+				return WIMLIB_ERR_WRITE;
 			ret = begin_wim_resource_chunk_tab(cur_lte,
 							   ctx->out_fp,
 							   cur_offset,
 							   &ctx->cur_chunk_tab);
 			if (ret)
-				goto out;
+				return ret;
 		}
 
 		/* Write the compressed chunks from the message. */
 		ret = write_wim_chunks(msg, ctx->out_fp, ctx->cur_chunk_tab);
 		if (ret)
-			goto out;
-
-		list_del(&msg->list);
-
-		/* This message is available to use for different chunks
-		 * now. */
-		list_add(&msg->list, &ctx->available_msgs);
+			return ret;
 
 		/* Was this the last chunk of the stream?  If so, finish
 		 * it. */
@@ -914,8 +977,9 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 							    ctx->out_fp,
 							    &res_csize);
 			if (ret)
-				goto out;
+				return ret;
 
+			list_del(&cur_lte->being_compressed_list);
 #if 0
 			if (res_csize >= wim_resource_size(cur_lte)) {
 				/* Oops!  We compressed the resource to
@@ -949,36 +1013,35 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 			FREE(ctx->cur_chunk_tab);
 			ctx->cur_chunk_tab = NULL;
 
-			struct list_head *next = cur_lte->write_streams_list.next;
-			list_del(&cur_lte->write_streams_list);
-
-			if (next == &ctx->outstanding_streams)
-				cur_lte = NULL;
-			else
-				cur_lte = container_of(cur_lte->write_streams_list.next,
-						       struct wim_lookup_table_entry,
-						       write_streams_list);
-
 			/* Since we just finished writing a stream, write any
 			 * streams that have been added to the serial_streams
 			 * list for direct writing by the main thread (e.g.
 			 * resources that don't need to be compressed because
 			 * the desired compression type is the same as the
 			 * previous compression type). */
-			ret = do_write_stream_list(&ctx->serial_streams,
-						   ctx->lookup_table,
-						   ctx->out_fp,
-						   ctx->out_ctype,
-						   ctx->progress_func,
-						   ctx->progress,
-						   0);
+#if 0
+			ret = do_write_stream_list_serial(&ctx->serial_streams,
+							  ctx->lookup_table,
+							  ctx->out_fp,
+							  ctx->out_ctype,
+							  ctx->write_resource_flags,
+							  ctx->progress_func,
+							  ctx->progress);
+#endif
 			if (ret)
-				goto out;
+				return ret;
+			if (list_empty(&ctx->outstanding_streams))
+				return 0;
+			cur_lte = container_of(ctx->outstanding_streams.next,
+					       struct wim_lookup_table_entry,
+					       being_compressed_list);
+		#ifdef ENABLE_MORE_DEBUG
+			DEBUG2("Advance to stream:");
+			print_lookup_table_entry(cur_lte, stderr);
+		#endif
 		}
 	}
-out:
-	ctx->cur_lte = cur_lte;
-	return ret;
+	return 0;
 }
 
 static int
@@ -988,43 +1051,72 @@ main_writer_thread_cb(const void *chunk, size_t chunk_size, void *_ctx)
 	int ret;
 	struct message *next_msg;
 
+	DEBUG2("chunk_size=%zu, wim_resource_size(next_lte)=%"PRIu64,
+	       chunk_size, wim_resource_size(ctx->next_lte));
+
+	sha1_update(&ctx->next_sha_ctx, chunk, chunk_size);
 	next_msg = ctx->next_msg;
-
-	sha1_update(&ctx->sha_ctx, chunk, chunk_size);
-
 	if (!next_msg) {
-		if (list_empty(&ctx->available_msgs)) {
+		/* Start filling in a new message */
+
+		DEBUG2("Start new msg");
+
+		while (list_empty(&ctx->available_msgs)) {
+			/* No message available; receive messages, writing
+			 * compressed data. */
+			DEBUG2("No msgs available!");
 			ret = receive_compressed_chunks(ctx);
 			if (ret)
 				return ret;
 		}
 
-		wimlib_assert(!list_empty(&ctx->available_msgs));
-
 		next_msg = container_of(ctx->available_msgs.next,
-				       struct message,
-				       list);
+					struct message, list);
 		list_del(&next_msg->list);
 		next_msg->complete = false;
 		next_msg->begin_chunk = ctx->next_chunk;
 		next_msg->num_chunks = min(MAX_CHUNKS_PER_MSG,
 					   ctx->next_num_chunks - ctx->next_chunk);
-		ctx->next_chunk_in_msg = 0;
+		DEBUG2("next_msg {begin_chunk=%"PRIu64", num_chunks=%"PRIu64"}",
+		       next_msg->begin_chunk, next_msg->num_chunks);
+		ctx->next_msg = next_msg;
 	}
 
-	wimlib_assert(next_msg != NULL);
-	wimlib_assert(ctx->next_chunk_in_msg < next_msg->num_chunks);
+	u64 next_chunk_in_msg = ctx->next_chunk - next_msg->begin_chunk;
 
-	next_msg->uncompressed_chunk_sizes[ctx->next_chunk_in_msg] = chunk_size;
-	memcpy(next_msg->uncompressed_chunks[ctx->next_chunk_in_msg],
+	/* Fill in the next chunk to compress */
+	next_msg->uncompressed_chunk_sizes[next_chunk_in_msg] = chunk_size;
+	memcpy(next_msg->uncompressed_chunks[next_chunk_in_msg],
 	       chunk, chunk_size);
-
-	if (++ctx->next_chunk_in_msg == next_msg->num_chunks) {
-		shared_queue_put(ctx->res_to_compress_queue,
-				 next_msg);
+	ctx->next_chunk++;
+	if (++next_chunk_in_msg == next_msg->num_chunks) {
+		DEBUG2("Sending message %p", next_msg);
+		/* Send off an array of chunks to compress */
+		list_add_tail(&next_msg->list, &ctx->next_lte->msg_list);
+		shared_queue_put(ctx->res_to_compress_queue, next_msg);
 		ctx->next_msg = NULL;
 	}
 	return 0;
+}
+
+static int
+main_writer_thread_finish(void *_ctx)
+{
+	struct main_writer_thread_ctx *ctx = _ctx;
+	int ret = 0;
+	DEBUG2("finishing");
+	while (!list_empty(&ctx->outstanding_streams)) {
+		ret = receive_compressed_chunks(ctx);
+		if (ret)
+			break;
+	}
+	return do_write_stream_list_serial(&ctx->serial_streams,
+					   ctx->lookup_table,
+					   ctx->out_fp,
+					   ctx->out_ctype,
+					   ctx->write_resource_flags,
+					   ctx->progress_func,
+					   ctx->progress);
 }
 
 static int
@@ -1033,94 +1125,43 @@ submit_stream_for_compression(struct wim_lookup_table_entry *lte,
 {
 	int ret;
 
-	sha1_init(&ctx->sha_ctx);
+#ifdef ENABLE_MORE_DEBUG
+	DEBUG2("Submit for compression:");
+	print_lookup_table_entry(lte, stderr);
+#endif
+
+	sha1_init(&ctx->next_sha_ctx);
+	ctx->next_chunk = 0;
 	ctx->next_num_chunks = wim_resource_chunks(lte);
+	ctx->next_lte = lte;
+	INIT_LIST_HEAD(&lte->msg_list);
+	list_add_tail(&lte->being_compressed_list, &ctx->outstanding_streams);
 	ret = read_resource_prefix(lte, wim_resource_size(lte),
 				   main_writer_thread_cb, ctx, 0);
-	if (ret)
-		return ret;
-	ret = finalize_and_check_sha1(&ctx->sha_ctx, lte);
-	if (ret)
-		return ret;
+	if (ret == 0) {
+		wimlib_assert(ctx->next_chunk == ctx->next_num_chunks);
+		ret = finalize_and_check_sha1(&ctx->next_sha_ctx, lte);
+	}
+	return ret;
 }
 
-/*
- * This function is executed by the main thread when the resources are being
- * compressed in parallel.  The main thread is in change of all reading of the
- * uncompressed data and writing of the compressed data.  The compressor threads
- * *only* do compression from/to in-memory buffers.
- *
- * Each unit of work given to a compressor thread is up to MAX_CHUNKS_PER_MSG
- * chunks of compressed data to compress, represented in a `struct message'.
- * Each message is passed from the main thread to a worker thread through the
- * res_to_compress_queue, and it is passed back through the
- * compressed_res_queue.
- */
 static int
-main_writer_thread_proc(struct main_writer_thread_ctx *ctx)
+main_thread_process_next_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 {
+	struct main_writer_thread_ctx *ctx = _ctx;
 	int ret;
-	struct list_head *stream_list;
-	struct wim_lookup_table_entry *lte;
 
-	ret = main_writer_thread_init_ctx(ctx);
-	if (ret)
-		goto out_destroy_ctx;
-
- 	stream_list = ctx->stream_list;
-	while (!list_empty(stream_list)) {
-		lte = container_of(stream_list->next,
-				   struct wim_lookup_table_entry,
-				   write_streams_list);
-		list_del(&lte->write_streams_list);
-		if (lte->unhashed && !lte->unique_size) {
-			struct wim_lookup_table_entry *tmp;
-			u32 orig_refcnt = lte->out_refcnt;
-
-			ret = hash_unhashed_stream(lte, ctx->lookup_table, &tmp);
-			if (ret)
-				goto out_destroy_ctx;
-			if (tmp != lte) {
-				lte = tmp;
-				if (orig_refcnt != tmp->out_refcnt) {
-					DEBUG("Discarding duplicate stream of length %"PRIu64,
-					      wim_resource_size(lte));
-					goto skip_to_progress;
-				}
-			}
-		}
-
-		if (wim_resource_size(lte) < 1000 ||
-		    ctx->out_ctype == WIMLIB_COMPRESSION_TYPE_NONE ||
-		    (lte->resource_location == RESOURCE_IN_WIM &&
-		     wimlib_get_compression_type(lte->wim) == ctx->out_ctype))
-		{
-			list_add(&lte->write_streams_list,
-				 &ctx->serial_streams);
-		} else {
-			ret = submit_stream_for_compression(lte, ctx);
-			if (ret)
-				goto out_destroy_ctx;
-			if (lte->unhashed) {
-				list_del(&lte->unhashed_list);
-				lookup_table_insert(ctx->lookup_table, lte);
-				lte->unhashed = 0;
-			}
-		}
-	skip_to_progress:
-		do_write_streams_progress(ctx->progress,
-					  ctx->progress_func,
-					  wim_resource_size(lte));
+	if (wim_resource_size(lte) < 1000 ||
+	    ctx->out_ctype == WIMLIB_COMPRESSION_TYPE_NONE ||
+	    (lte->resource_location == RESOURCE_IN_WIM &&
+	     wimlib_get_compression_type(lte->wim) == ctx->out_ctype))
+	{
+		list_add_tail(&lte->write_streams_list,
+			      &ctx->serial_streams);
+		ret = 0;
+	} else {
+		ret = submit_stream_for_compression(lte, ctx);
 	}
-
-	while (!list_empty(&ctx->outstanding_streams)) {
-		ret = receive_compressed_chunks(ctx);
-		if (ret)
-			goto out_destroy_ctx;
-	}
-	ret = 0;
-out_destroy_ctx:
-	main_writer_thread_destroy_ctx(ctx);
 	return ret;
 }
 
@@ -1139,7 +1180,7 @@ write_stream_list_parallel(struct list_head *stream_list,
 			   struct wim_lookup_table *lookup_table,
 			   FILE *out_fp,
 			   int out_ctype,
-			   int write_flags,
+			   int write_resource_flags,
 			   unsigned num_threads,
 			   wimlib_progress_func_t progress_func,
 			   union wimlib_progress_info *progress)
@@ -1161,17 +1202,17 @@ write_stream_list_parallel(struct list_head *stream_list,
 
 	progress->write_streams.num_threads = num_threads;
 
-	static const double MESSAGES_PER_THREAD = 2.0;
+	static const size_t MESSAGES_PER_THREAD = 2;
 	size_t queue_size = (size_t)(num_threads * MESSAGES_PER_THREAD);
 
 	DEBUG("Initializing shared queues (queue_size=%zu)", queue_size);
 
 	ret = shared_queue_init(&res_to_compress_queue, queue_size);
-	if (ret != 0)
+	if (ret)
 		goto out_serial;
 
 	ret = shared_queue_init(&compressed_res_queue, queue_size);
-	if (ret != 0)
+	if (ret)
 		goto out_destroy_res_to_compress_queue;
 
 	struct compressor_thread_params params;
@@ -1186,13 +1227,14 @@ write_stream_list_parallel(struct list_head *stream_list,
 	}
 
 	for (unsigned i = 0; i < num_threads; i++) {
-		DEBUG("pthread_create thread %u", i);
+		DEBUG("pthread_create thread %u of %u", i + 1, num_threads);
 		ret = pthread_create(&compressor_threads[i], NULL,
 				     compressor_thread_proc, &params);
 		if (ret != 0) {
 			ret = -1;
 			ERROR_WITH_ERRNO("Failed to create compressor "
-					 "thread %u", i);
+					 "thread %u of %u",
+					 i + 1, num_threads);
 			num_threads = i;
 			goto out_join;
 		}
@@ -1210,10 +1252,23 @@ write_stream_list_parallel(struct list_head *stream_list,
 	ctx.res_to_compress_queue = &res_to_compress_queue;
 	ctx.compressed_res_queue  = &compressed_res_queue;
 	ctx.num_messages          = queue_size;
-	ctx.write_flags           = write_flags;
+	ctx.write_resource_flags  = write_resource_flags;
 	ctx.progress_func         = progress_func;
 	ctx.progress              = progress;
-	ret = main_writer_thread_proc(&ctx);
+	ret = main_writer_thread_init_ctx(&ctx);
+	if (ret)
+		goto out;
+	ret = do_write_stream_list(stream_list,
+				   lookup_table,
+				   main_thread_process_next_stream,
+				   &ctx,
+				   NULL,
+				   NULL);
+	if (ret)
+		goto out_destroy_ctx;
+	ret = main_writer_thread_finish(&ctx);
+out_destroy_ctx:
+	main_writer_thread_destroy_ctx(&ctx);
 out_join:
 	for (unsigned i = 0; i < num_threads; i++)
 		shared_queue_put(&res_to_compress_queue, NULL);
@@ -1221,7 +1276,8 @@ out_join:
 	for (unsigned i = 0; i < num_threads; i++) {
 		if (pthread_join(compressor_threads[i], NULL)) {
 			WARNING_WITH_ERRNO("Failed to join compressor "
-					   "thread %u", i);
+					   "thread %u of %u",
+					   i + 1, num_threads);
 		}
 	}
 	FREE(compressor_threads);
@@ -1229,6 +1285,7 @@ out_destroy_compressed_res_queue:
 	shared_queue_destroy(&compressed_res_queue);
 out_destroy_res_to_compress_queue:
 	shared_queue_destroy(&res_to_compress_queue);
+out:
 	if (ret >= 0 && ret != WIMLIB_ERR_NOMEM)
 		return ret;
 out_serial:
@@ -1237,7 +1294,7 @@ out_serial:
 					lookup_table,
 					out_fp,
 					out_ctype,
-					write_flags,
+					write_resource_flags,
 					progress_func,
 					progress);
 
@@ -1251,7 +1308,7 @@ out_serial:
 static int
 write_stream_list(struct list_head *stream_list,
 		  struct wim_lookup_table *lookup_table,
-		  FILE *out_fp, int out_ctype, int write_flags,
+		  FILE *out_fp, int out_ctype, int write_resource_flags,
 		  unsigned num_threads, wimlib_progress_func_t progress_func)
 {
 	struct wim_lookup_table_entry *lte;
@@ -1273,7 +1330,7 @@ write_stream_list(struct list_head *stream_list,
 		total_bytes += wim_resource_size(lte);
 		if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE
 		       && (wim_resource_compression_type(lte) != out_ctype ||
-			   (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)))
+			   (write_resource_flags & WIMLIB_RESOURCE_FLAG_RECOMPRESS)))
 		{
 			total_compression_bytes += wim_resource_size(lte);
 		}
@@ -1292,7 +1349,7 @@ write_stream_list(struct list_head *stream_list,
 						 lookup_table,
 						 out_fp,
 						 out_ctype,
-						 write_flags,
+						 write_resource_flags,
 						 num_threads,
 						 progress_func,
 						 &progress);
@@ -1302,7 +1359,7 @@ write_stream_list(struct list_head *stream_list,
 					       lookup_table,
 					       out_fp,
 					       out_ctype,
-					       write_flags,
+					       write_resource_flags,
 					       progress_func,
 					       &progress);
 	return ret;
@@ -1562,7 +1619,7 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 				 wim->lookup_table,
 				 wim->out_fp,
 				 wimlib_get_compression_type(wim),
-				 write_flags,
+				 write_flags_to_resource_flags(write_flags),
 				 num_threads,
 				 progress_func);
 }
