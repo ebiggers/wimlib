@@ -850,6 +850,7 @@ sha1_chunk(const void *buf, size_t len, void *ctx)
 	return 0;
 }
 
+/* Calculate the SHA1 message digest of a stream. */
 int
 sha1_resource(struct wim_lookup_table_entry *lte)
 {

@@ -621,11 +621,11 @@ do_write_stream_list(struct list_head *stream_list,
 		     struct wim_lookup_table *lookup_table,
 		     FILE *out_fp,
 		     int out_ctype,
+		     int write_resource_flags,
 		     wimlib_progress_func_t progress_func,
-		     union wimlib_progress_info *progress,
-		     int write_resource_flags)
+		     union wimlib_progress_info *progress)
 {
-	int ret;
+	int ret = 0;
 	struct wim_lookup_table_entry *lte;
 
 	/* For each stream in @stream_list ... */
@@ -645,7 +645,7 @@ do_write_stream_list(struct list_head *stream_list,
 						   lookup_table,
 						   &tmp);
 			if (ret)
-				return ret;
+				break;
 			if (tmp != lte) {
 				lte = tmp;
 				/* We found a duplicate stream. */
@@ -674,7 +674,7 @@ do_write_stream_list(struct list_head *stream_list,
 					 &lte->output_resource_entry,
 					 write_resource_flags);
 		if (ret)
-			return ret;
+			break;
 		if (lte->unhashed) {
 			list_del(&lte->unhashed_list);
 			lookup_table_insert(lookup_table, lte);
@@ -685,7 +685,7 @@ do_write_stream_list(struct list_head *stream_list,
 					  progress_func,
 					  wim_resource_size(lte));
 	}
-	return 0;
+	return ret;
 }
 
 static int
@@ -707,8 +707,10 @@ write_stream_list_serial(struct list_head *stream_list,
 	return do_write_stream_list(stream_list,
 				    lookup_table,
 				    out_fp,
-				    out_ctype, progress_func,
-				    progress, write_resource_flags);
+				    out_ctype,
+				    write_resource_flags,
+				    progress_func,
+				    progress);
 }
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
@@ -1268,6 +1270,10 @@ write_stream_list(struct list_head *stream_list,
 	if (list_empty(stream_list))
 		return 0;
 
+	/* Calculate the total size of the streams to be written.  Note: this
+	 * will be the uncompressed size, as we may not know the compressed size
+	 * yet, and also this will assume that every unhashed stream will be
+	 * written (which will not necessarily be the case). */
 	list_for_each_entry(lte, stream_list, write_streams_list) {
 		num_streams++;
 		total_bytes += wim_resource_size(lte);
@@ -1448,8 +1454,7 @@ prepare_streams_for_overwrite(WIMStruct *wim, off_t end_offset,
 		lte_set_output_res_entry(wim->image_metadata[i]->metadata_lte,
 					 wim);
 	for_lookup_table_entry(wim->lookup_table, lte_set_output_res_entry, wim);
-	INIT_LIST_HEAD(stream_list);
-	list_splice(&args.stream_list, stream_list);
+	list_transfer(&args.stream_list, stream_list);
 out_destroy_stream_size_table:
 	destroy_stream_size_table(&args.stream_size_tab);
 	return ret;
@@ -1484,8 +1489,8 @@ inode_find_streams_to_write(struct wim_inode *inode,
 static int
 image_find_streams_to_write(WIMStruct *w)
 {
-	struct wim_image_metadata *imd;
 	struct find_streams_ctx *ctx;
+	struct wim_image_metadata *imd;
 	struct wim_inode *inode;
 	struct wim_lookup_table_entry *lte;
 
@@ -1535,10 +1540,8 @@ prepare_stream_list(WIMStruct *wim, int image, struct list_head *stream_list)
 	wim->private = &ctx;
 	ret = for_image(wim, image, image_find_streams_to_write);
 	destroy_stream_size_table(&ctx.stream_size_tab);
-	if (ret == 0) {
-		INIT_LIST_HEAD(stream_list);
-		list_splice(&ctx.stream_list, stream_list);
-	}
+	if (ret == 0)
+		list_transfer(&ctx.stream_list, stream_list);
 	return ret;
 }
 
@@ -1622,13 +1625,11 @@ finish_write(WIMStruct *w, int image, int write_flags,
 	 * it should be a copy of the resource entry for the image that is
 	 * marked as bootable.  This is not well documented...  */
 	if (hdr.boot_idx == 0) {
-		memset(&hdr.boot_metadata_res_entry, 0,
-		       sizeof(struct resource_entry));
+		zero_resource_entry(&hdr.boot_metadata_res_entry);
 	} else {
-		memcpy(&hdr.boot_metadata_res_entry,
-		       &w->image_metadata[
-			  hdr.boot_idx - 1]->metadata_lte->output_resource_entry,
-		       sizeof(struct resource_entry));
+		copy_resource_entry(&hdr.boot_metadata_res_entry,
+			    &w->image_metadata[ hdr.boot_idx- 1
+					]->metadata_lte->output_resource_entry);
 	}
 
 	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
@@ -1648,7 +1649,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 		if (write_flags & WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML) {
 			struct wim_header checkpoint_hdr;
 			memcpy(&checkpoint_hdr, &hdr, sizeof(struct wim_header));
-			memset(&checkpoint_hdr.integrity, 0, sizeof(struct resource_entry));
+			zero_resource_entry(&checkpoint_hdr.integrity);
 			if (fseeko(out, 0, SEEK_SET)) {
 				ERROR_WITH_ERRNO("Failed to seek to beginning "
 						 "of WIM being written");
@@ -1692,7 +1693,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 		if (ret)
 			goto out_close_wim;
 	} else {
-		memset(&hdr.integrity, 0, sizeof(struct resource_entry));
+		zero_resource_entry(&hdr.integrity);
 	}
 
 	if (fseeko(out, 0, SEEK_SET) != 0) {
@@ -2038,9 +2039,9 @@ overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 	ret = wimlib_write(w, tmpfile, WIMLIB_ALL_IMAGES,
 			   write_flags | WIMLIB_WRITE_FLAG_FSYNC,
 			   num_threads, progress_func);
-	if (ret != 0) {
+	if (ret) {
 		ERROR("Failed to write the WIM file `%"TS"'", tmpfile);
-		goto err;
+		goto out_unlink;
 	}
 
 	DEBUG("Renaming `%"TS"' to `%"TS"'", tmpfile, w->filename);
@@ -2061,7 +2062,7 @@ overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 		ERROR_WITH_ERRNO("Failed to rename `%"TS"' to `%"TS"'",
 				 tmpfile, w->filename);
 		ret = WIMLIB_ERR_RENAME;
-		goto err;
+		goto out_unlink;
 	}
 
 	if (progress_func) {
@@ -2086,11 +2087,12 @@ overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 		FREE(w->filename);
 		w->filename = NULL;
 	}
-	return ret;
-err:
+	goto out;
+out_unlink:
 	/* Remove temporary file. */
 	if (tunlink(tmpfile) != 0)
 		WARNING_WITH_ERRNO("Failed to remove `%"TS"'", tmpfile);
+out:
 	return ret;
 }
 

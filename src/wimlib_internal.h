@@ -363,27 +363,40 @@ resource_is_compressed(const struct resource_entry *entry)
 	return (entry->flags & WIM_RESHDR_FLAG_COMPRESSED);
 }
 
+/* Iterate over each inode in a WIM image that has not yet been hashed */
 #define image_for_each_inode(inode, imd) \
 	list_for_each_entry(inode, &imd->inode_list, i_list)
 
+/* Iterate over each stream in a WIM image that has not yet been hashed */
 #define image_for_each_unhashed_stream(lte, imd) \
 	list_for_each_entry(lte, &imd->unhashed_streams, unhashed_list)
 
+/* Iterate over each stream in a WIM image that has not yet been hashed (safe
+ * against stream removal) */
 #define image_for_each_unhashed_stream_safe(lte, tmp, imd) \
 	list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, unhashed_list)
 
 #if 1
 #  define copy_resource_entry(dst, src) memcpy(dst, src, sizeof(struct resource_entry))
+#  define zero_resource_entry(entry) memset(entry, 0, sizeof(struct resource_entry))
 #else
 static inline void
 copy_resource_entry(struct resource_entry *dst,
 		    const struct resource_entry *src)
 {
-	memcpy(dst, src, sizeof(struct resource_entry));
 	BUILD_BUG_ON(sizeof(struct resource_entry) != 24);
 	((u64*)dst)[0] = ((u64*)src)[0];
 	((u64*)dst)[1] = ((u64*)src)[1];
 	((u64*)dst)[2] = ((u64*)src)[2];
+}
+
+static inline void
+zero_resource_entry(struct resource_entry *entry)
+{
+	BUILD_BUG_ON(sizeof(struct resource_entry) != 24);
+	((u64*)entry)[0] = 0;
+	((u64*)entry)[1] = 0;
+	((u64*)entry)[2] = 0;
 }
 #endif
 
@@ -678,8 +691,7 @@ wim_checksum_unhashed_streams(WIMStruct *w);
 #define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE	0x80000000
 #define WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE 0x40000000
 #define WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML  0x20000000
-//#define WIMLIB_WRITE_FLAG_OVERWRITE_INPLACE     0x10000000
-#define WIMLIB_WRITE_MASK_PUBLIC		0x0fffffff
+#define WIMLIB_WRITE_MASK_PUBLIC		0x1fffffff
 
 /* We are capturing a tree to be placed in the root of the WIM image */
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT	0x80000000

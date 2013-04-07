@@ -914,6 +914,19 @@ retrieve_lte_pointer(struct wim_lookup_table_entry *lte)
 	return NULL;
 }
 
+/* Calculate the SHA1 message digest of a stream and move it from the list of
+ * unhashed streams to the stream lookup table, possibly joining it with an
+ * existing lookup table entry for an identical stream.
+ *
+ * @lte:  An unhashed lookup table entry.
+ * @lookup_table:  Lookup table for the WIM.
+ * @lte_ret:  On success, write a pointer to the resulting lookup table
+ *            entry to this location.  This will be the same as @lte
+ *            if it was inserted into the lookup table, or different if
+ *            a duplicate stream was found.
+ *
+ * Returns 0 on success; nonzero if there is an error reading the stream.
+ */
 int
 hash_unhashed_stream(struct wim_lookup_table_entry *lte,
 		     struct wim_lookup_table *lookup_table,
@@ -952,9 +965,7 @@ hash_unhashed_stream(struct wim_lookup_table_entry *lte,
 		/* No duplicate stream, so we need to insert
 		 * this stream into the lookup table and treat
 		 * it as a hashed stream. */
-		list_del(&lte->unhashed_list);
 		lookup_table_insert(lookup_table, lte);
-		lte->out_refcnt = lte->refcnt;
 		lte->unhashed = 0;
 	}
 	if (lte_ret)

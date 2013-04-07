@@ -1004,8 +1004,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	}
 
 	imd = w->image_metadata[w->hdr.image_count - 1];
-	INIT_LIST_HEAD(&imd->unhashed_streams);
-	list_splice(&unhashed_streams, &imd->unhashed_streams);
+	list_transfer(&unhashed_streams, &imd->unhashed_streams);
 
 #ifdef WITH_NTFS_3G
 	imd->ntfs_vol = ntfs_vol;

@@ -145,6 +145,24 @@ static inline void list_splice(const struct list_head *list,
 		__list_splice(list, head, head->next);
 }
 
+/* Move the entire list @old to the list @new, overwriting it. */
+static inline void list_transfer(struct list_head *old,
+				 struct list_head *new)
+{
+	struct list_head *prev, *next;
+
+	if (list_empty(old)) {
+		INIT_LIST_HEAD(new);
+	} else {
+		prev = old->prev;
+		next = old->next;
+		new->next = next;
+		new->prev = prev;
+		prev->next = new;
+		next->prev = new;
+	}
+}
+
 /**
  * list_splice_tail - join two lists, each list being a queue
  * @list: the new list to add.

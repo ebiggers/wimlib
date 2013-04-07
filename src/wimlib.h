@@ -431,6 +431,7 @@ union wimlib_progress_info {
 		 * ::WIMLIB_COMPRESSION_TYPE_LZX. */
 		int	 compression_type;
 
+		/** Library internal use only. */
 		uint64_t _private;
 	} write_streams;
 
