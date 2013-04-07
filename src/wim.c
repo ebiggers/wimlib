@@ -627,10 +627,8 @@ wim_checksum_unhashed_streams(WIMStruct *w)
 	int ret;
 	for (int i = 0; i < w->hdr.image_count; i++) {
 		struct wim_lookup_table_entry *lte, *tmp;
-		list_for_each_entry_safe(lte, tmp,
-					 &w->image_metadata[i]->unhashed_streams,
-					 unhashed_list)
-		{
+		struct wim_image_metadata *imd = w->image_metadata[i];
+		image_for_each_unhashed_stream_safe(lte, tmp, imd) {
 			ret = hash_unhashed_stream(lte, w->lookup_table, NULL);
 			if (ret)
 				return ret;
