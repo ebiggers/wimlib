@@ -320,11 +320,11 @@ read_compressed_resource(FILE *fp,
 		 * is equal to the uncompressed chunk size. */
 		if (compressed_chunk_size == uncompressed_chunk_size) {
 			/* Uncompressed chunk */
-
 			if (start_offset != 0)
 				if (fseeko(fp, start_offset, SEEK_CUR))
 					goto read_error;
-			if (fread(out_p, 1, partial_chunk_size, fp) != partial_chunk_size)
+			if (fread(cb ? out_p + start_offset : out_p,
+				  1, partial_chunk_size, fp) != partial_chunk_size)
 				goto read_error;
 		} else {
 			/* Compressed chunk */
@@ -533,21 +533,17 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 	int ret;
 
 	wimlib_assert(lte->resource_location == RESOURCE_IN_WIM);
-	wimlib_assert(offset + size <= lte->resource_entry.original_size);
 
 	wim = lte->wim;
-
 	if (flags & WIMLIB_RESOURCE_FLAG_THREADSAFE_READ) {
 		wim_fp = wim_get_fp(wim);
 		if (!wim_fp) {
-			ret = -1;
+			ret = WIMLIB_ERR_READ;
 			goto out;
 		}
 	} else {
 		wim_fp = lte->wim->fp;
 	}
-
-	wimlib_assert(wim_fp != NULL);
 
 	if (lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED &&
 	    !(flags & WIMLIB_RESOURCE_FLAG_RAW))
@@ -593,15 +589,17 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 	}
 	goto out_release_fp;
 read_error:
-	if (ferror(wim_fp)) {
+	if (ferror(wim_fp))
 		ERROR_WITH_ERRNO("Error reading data from WIM");
-	} else {
+	else
 		ERROR("Unexpected EOF in WIM!");
-	}
 	ret = WIMLIB_ERR_READ;
 out_release_fp:
-	if (flags & WIMLIB_RESOURCE_FLAG_THREADSAFE_READ)
-		ret |= wim_release_fp(wim, wim_fp);
+	if (flags & WIMLIB_RESOURCE_FLAG_THREADSAFE_READ) {
+		int ret2 = wim_release_fp(wim, wim_fp);
+		if (ret == 0)
+			ret = ret2;
+	}
 out:
 	if (ret) {
 		if (errno == 0)

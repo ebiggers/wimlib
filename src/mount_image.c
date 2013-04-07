@@ -2559,10 +2559,8 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 #endif
 
 	/* Mark dentry tree as modified if read-write mount. */
-	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		imd->modified = 1;
-		imd->has_been_mounted_rw = 1;
-	}
 
 	/* Resolve the lookup table entries for every inode in the image, and
 	 * assign inode numbers */

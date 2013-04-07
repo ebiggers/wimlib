@@ -268,9 +268,6 @@ struct wim_image_metadata {
 	 * different WIM image. */
 	u8 modified : 1;
 
-	/* 1 iff this image has been mounted read-write */
-	u8 has_been_mounted_rw : 1;
-
 #ifdef WITH_NTFS_3G
 	struct _ntfs_volume *ntfs_vol;
 #endif
@@ -573,7 +570,6 @@ do_ntfs_umount(struct _ntfs_volume *vol);
 #define WIMLIB_RESOURCE_FLAG_RAW		0x1
 #define WIMLIB_RESOURCE_FLAG_THREADSAFE_READ	0x2
 #define WIMLIB_RESOURCE_FLAG_RECOMPRESS		0x4
-//#define WIMLIB_RESOURCE_FLAG_OVERWRITE_INPLACE	0x8
 
 extern int
 read_resource_prefix(const struct wim_lookup_table_entry *lte,
