@@ -1443,19 +1443,16 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 
 	p = get_bytes(p, SHA1_HASH_SIZE, inode->i_hash);
 
-	/*
-	 * I don't know what's going on here.  It seems like M$ screwed up the
+	/* I don't know what's going on here.  It seems like M$ screwed up the
 	 * reparse points, then put the fields in the same place and didn't
-	 * document it.  The WIM_HDR_FLAG_RP_FIX flag in the WIM header might
-	 * have something to do with this, but it's not documented.
-	 */
+	 * document it.  */
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		/* ??? */
 		p += 4;
 		p = get_u32(p, &inode->i_reparse_tag);
 		p += 4;
 	} else {
-		p = get_u32(p, &inode->i_reparse_tag);
+		p += 4;
+		/* i_reparse_tag is irrelevant; just leave it at 0. */
 		p = get_u64(p, &inode->i_ino);
 	}
 
