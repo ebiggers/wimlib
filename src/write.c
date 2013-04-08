@@ -681,6 +681,7 @@ do_write_stream_list(struct list_head *stream_list,
 					 * just skip to the next stream. */
 					DEBUG("Discarding duplicate stream of length %"PRIu64,
 					      wim_resource_size(lte));
+					lte->no_progress = 0;
 					goto skip_to_progress;
 				}
 			}
@@ -695,6 +696,7 @@ do_write_stream_list(struct list_head *stream_list,
 		 * the SHA1 message digest yet.  */
 		wimlib_assert(lte->out_refcnt != 0);
 		lte->deferred = 0;
+		lte->no_progress = 0;
 		ret = (*write_stream_cb)(lte, write_stream_ctx);
 		if (ret)
 			break;
@@ -708,7 +710,7 @@ do_write_stream_list(struct list_head *stream_list,
 			lte->unhashed = 0;
 		}
 	skip_to_progress:
-		if (progress_func) {
+		if (!lte->no_progress) {
 			do_write_streams_progress(progress,
 						  progress_func,
 						  wim_resource_size(lte));
@@ -1185,6 +1187,7 @@ main_thread_process_next_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 	} else {
 		ret = submit_stream_for_compression(lte, ctx);
 	}
+	lte->no_progress = 1;
 	return ret;
 }
 
@@ -1313,7 +1316,7 @@ write_stream_list_parallel(struct list_head *stream_list,
 		goto out_join;
 	ret = do_write_stream_list(stream_list, lookup_table,
 				   main_thread_process_next_stream,
-				   &ctx, NULL, NULL);
+				   &ctx, progress_func, progress);
 	if (ret)
 		goto out_destroy_ctx;
 

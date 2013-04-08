@@ -146,6 +146,8 @@ struct wim_lookup_table_entry {
 	
 	u8 deferred : 1;
 
+	u8 no_progress : 1;
+
 	/* (On-disk field)
 	 * Number of times this lookup table entry is referenced by dentries.
 	 * Unfortunately, this field is not always set correctly in Microsoft's
