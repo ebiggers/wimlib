@@ -239,22 +239,24 @@ wimlib_xpress_compress(const void *__uncompressed_data,
 
 	wimlib_assert(compressed_len <= uncompressed_len - 1);
 
-#ifdef ENABLE_VERIFY_COMPRESSION
+#if defined(ENABLE_VERIFY_COMPRESSION)
 	/* Verify that we really get the same thing back when decompressing. */
-	u8 buf[uncompressed_len];
-	ret = wimlib_xpress_decompress(__compressed_data, compressed_len,
-				       buf, uncompressed_len);
-	if (ret) {
-		ERROR("xpress_compress(): Failed to decompress data we "
-		      "compressed");
-		abort();
-	}
-	for (i = 0; i < uncompressed_len; i++) {
-		if (buf[i] != uncompressed_data[i]) {
-			ERROR("xpress_compress(): Data we compressed didn't "
-			      "decompress to the original data (difference at "
-			      "byte %u of %u)", i + 1, uncompressed_len);
+	{
+		u8 buf[uncompressed_len];
+		ret = wimlib_xpress_decompress(__compressed_data, compressed_len,
+					       buf, uncompressed_len);
+		if (ret) {
+			ERROR("xpress_compress(): Failed to decompress data we "
+			      "compressed");
 			abort();
+		}
+		for (i = 0; i < uncompressed_len; i++) {
+			if (buf[i] != uncompressed_data[i]) {
+				ERROR("xpress_compress(): Data we compressed didn't "
+				      "decompress to the original data (difference at "
+				      "byte %u of %u)", i + 1, uncompressed_len);
+				abort();
+			}
 		}
 	}
 #endif

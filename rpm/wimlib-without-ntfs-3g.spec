@@ -33,8 +33,7 @@ Development files for wimlib
            --disable-rpath               \
 	   --with-libcrypto              \
 	   --without-ntfs-3g		 \
-	   --enable-xattr                \
-           --disable-verify-compression
+	   --enable-xattr
 %__make %{?_smp_mflags}
 
 %check

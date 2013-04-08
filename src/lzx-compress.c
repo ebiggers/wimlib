@@ -747,20 +747,22 @@ wimlib_lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 
 #ifdef ENABLE_VERIFY_COMPRESSION
 	/* Verify that we really get the same thing back when decompressing. */
-	u8 buf[uncompressed_len];
-	ret = wimlib_lzx_decompress(compressed_data, compressed_len,
-				    buf, uncompressed_len);
-	if (ret != 0) {
-		ERROR("lzx_compress(): Failed to decompress data we compressed");
-		abort();
-	}
-
-	for (i = 0; i < uncompressed_len; i++) {
-		if (buf[i] != *((u8*)__uncompressed_data + i)) {
-			ERROR("lzx_compress(): Data we compressed didn't "
-			      "decompress to the original data (difference at "
-			      "byte %u of %u)", i + 1, uncompressed_len);
+	{
+		u8 buf[uncompressed_len];
+		ret = wimlib_lzx_decompress(compressed_data, compressed_len,
+					    buf, uncompressed_len);
+		if (ret != 0) {
+			ERROR("lzx_compress(): Failed to decompress data we compressed");
 			abort();
+		}
+
+		for (i = 0; i < uncompressed_len; i++) {
+			if (buf[i] != *((u8*)__uncompressed_data + i)) {
+				ERROR("lzx_compress(): Data we compressed didn't "
+				      "decompress to the original data (difference at "
+				      "byte %u of %u)", i + 1, uncompressed_len);
+				abort();
+			}
 		}
 	}
 #endif

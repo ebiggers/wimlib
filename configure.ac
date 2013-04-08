@@ -150,7 +150,7 @@ AC_ARG_ENABLE([verify_compression],
 				checking if blocks we compress can be correctly
 				decompressed]),
 	[ENABLE_VERIFY_COMPRESSION=$enableval],
-	[ENABLE_VERIFY_COMPRESSION=yes]
+	[ENABLE_VERIFY_COMPRESSION=no]
 	)
 AC_MSG_RESULT([$ENABLE_VERIFY_COMPRESSION])
 if test "x$ENABLE_VERIFY_COMPRESSION" = "xyes"; then

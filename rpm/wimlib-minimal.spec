@@ -35,7 +35,6 @@ Development files for wimlib
 	   --without-ntfs-3g		 \
 	   --without-fuse		 \
 	   --disable-xattr               \
-           --disable-verify-compression  \
 	   --disable-multithreaded-compression \
 	   --disable-custom-memory-allocator \
 	   --disable-assertions
