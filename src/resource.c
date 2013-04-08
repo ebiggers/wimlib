@@ -463,7 +463,7 @@ put_resource_entry(void *p, const struct resource_entry *entry)
 static FILE *
 wim_get_fp(WIMStruct *w)
 {
-#ifdef WITH_FUSE
+#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
 	pthread_mutex_lock(&w->fp_tab_mutex);
 	FILE *fp;
 
@@ -482,9 +482,9 @@ wim_get_fp(WIMStruct *w)
 		ERROR_WITH_ERRNO("Failed to open `%"TS"'", w->filename);
 out_unlock:
 	pthread_mutex_unlock(&w->fp_tab_mutex);
-#else /* WITH_FUSE */
+#else /* WITH_FUSE || ENABLE_MULTITHREADED_COMPRESSION */
 	fp = w->fp;
-#endif /* !WITH_FUSE */
+#endif /* !WITH_FUSE && !ENABLE_MULTITHREADED_COMPRESSION */
 	return fp;
 }
 
@@ -492,7 +492,7 @@ static int
 wim_release_fp(WIMStruct *w, FILE *fp)
 {
 	int ret = 0;
-#ifdef WITH_FUSE
+#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
 	FILE **fp_tab;
 
 	pthread_mutex_lock(&w->fp_tab_mutex);
@@ -516,7 +516,7 @@ wim_release_fp(WIMStruct *w, FILE *fp)
 	w->num_allocated_fps += 4;
 out_unlock:
 	pthread_mutex_unlock(&w->fp_tab_mutex);
-#endif /* WITH_FUSE */
+#endif /* WITH_FUSE || ENABLE_MULTITHREADED_COMPRESSION */
 	return ret;
 }
 

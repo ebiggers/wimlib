@@ -65,7 +65,7 @@ static WIMStruct *
 new_wim_struct()
 {
 	WIMStruct *w = CALLOC(1, sizeof(WIMStruct));
-#ifdef WITH_FUSE
+#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
 	if (pthread_mutex_init(&w->fp_tab_mutex, NULL) != 0) {
 		ERROR_WITH_ERRNO("Failed to initialize mutex");
 		FREE(w);

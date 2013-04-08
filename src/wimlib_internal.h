@@ -279,7 +279,7 @@ struct WIMStruct {
 	/* A pointer to the file indicated by @filename, opened for reading. */
 	FILE *fp;
 
-#ifdef WITH_FUSE
+#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
 	/* Extra file pointers to be used by concurrent readers */
 	FILE **fp_tab;
 	size_t num_allocated_fps;
