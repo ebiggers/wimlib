@@ -145,6 +145,7 @@ IMAGEX_PROGNAME" mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
 [OPTIMIZE] =
 T(
 IMAGEX_PROGNAME" optimize WIMFILE [--check] [--recompress]\n"
+"                      [--threads=NUM_THREADS]\n"
 ),
 [SPLIT] =
 T(
@@ -262,6 +263,7 @@ static const struct option mount_options[] = {
 static const struct option optimize_options[] = {
 	{T("check"),      no_argument, NULL, IMAGEX_CHECK_OPTION},
 	{T("recompress"), no_argument, NULL, IMAGEX_RECOMPRESS_OPTION},
+	{T("threads"),    required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -2254,6 +2256,7 @@ imagex_optimize(int argc, tchar **argv)
 	const tchar *wimfile;
 	off_t old_size;
 	off_t new_size;
+	unsigned num_threads = 0;
 
 	for_opt(c, optimize_options) {
 		switch (c) {
@@ -2263,6 +2266,11 @@ imagex_optimize(int argc, tchar **argv)
 			break;
 		case IMAGEX_RECOMPRESS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
+			break;
+		case IMAGEX_THREADS_OPTION:
+			num_threads = parse_num_threads(optarg);
+			if (num_threads == UINT_MAX)
+				return -1;
 			break;
 		default:
 			usage(OPTIMIZE);
@@ -2291,7 +2299,8 @@ imagex_optimize(int argc, tchar **argv)
 	else
 		tprintf(T("%"PRIu64" KiB\n"), old_size >> 10);
 
-	ret = wimlib_overwrite(w, write_flags, 0, imagex_progress_func);
+	ret = wimlib_overwrite(w, write_flags, num_threads,
+			       imagex_progress_func);
 
 	if (ret == 0) {
 		new_size = file_get_size(argv[0]);

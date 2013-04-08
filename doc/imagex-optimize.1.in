@@ -21,7 +21,7 @@ When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
 present; in addition, include an integrity table in the optimized WIM.  If this
 option is not specified, no integrity table is included in the optimized WIM,
 even if there was one in the original WIM.
-.TP 6
+.TP
 \fB--recompress\fR
 Recompress all compressed streams in \fIWIMFILE\fR when rebuilding it.  This
 will increase the time needed to rebuild the WIM, unless the WIM is
@@ -35,6 +35,11 @@ XPRESS compression ratio than Microsoft's software, while it generally provides
 a slightly worse LZX compression ratio than Microsoft's software.  So, you may
 not want to specify \fB--recompress\fR when optimizing a LZX-compressed WIM
 created on Windows.
+.TP
+\fB--threads\fR=\fINUM_THREADS\fR
+Number of threads to use for compressing data.  Default: autodetect (number of
+processors).  This parameter is only meaningful when \fB--recompress\fR is also
+specified.
 
 .SH NOTES
 
