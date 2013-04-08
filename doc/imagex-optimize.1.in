@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "March 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "April 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-optimize \- Optimize a WIM archive
 
