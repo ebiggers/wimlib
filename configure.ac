@@ -146,8 +146,8 @@ fi
 
 AC_MSG_CHECKING([whether to include compression verification])
 AC_ARG_ENABLE([verify_compression],
-	      AS_HELP_STRING([--disable-verify-compression], [disable
-				checking if blocks we compress can be correctly
+	      AS_HELP_STRING([--enable-verify-compression], [always
+				check if blocks we compress can be correctly
 				decompressed]),
 	[ENABLE_VERIFY_COMPRESSION=$enableval],
 	[ENABLE_VERIFY_COMPRESSION=no]
