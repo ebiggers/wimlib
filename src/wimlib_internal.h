@@ -562,8 +562,10 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       wimlib_progress_func_t progress_func,
 		       void *extra_arg);
 
+#ifdef WITH_NTFS_3G
 extern int
 do_ntfs_umount(struct _ntfs_volume *vol);
+#endif
 
 /* resource.c */
 
