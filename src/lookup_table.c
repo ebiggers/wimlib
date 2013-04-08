@@ -90,14 +90,14 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 	case RESOURCE_WIN32:
 	case RESOURCE_WIN32_ENCRYPTED:
 #endif
+	case RESOURCE_IN_FILE_ON_DISK:
 #ifdef WITH_FUSE
 	case RESOURCE_IN_STAGING_FILE:
-#endif
-	case RESOURCE_IN_FILE_ON_DISK:
 		BUILD_BUG_ON((void*)&old->file_on_disk !=
 			     (void*)&old->staging_file_name);
-		new->staging_file_name = TSTRDUP(old->staging_file_name);
-		if (!new->staging_file_name)
+#endif
+		new->file_on_disk = TSTRDUP(old->file_on_disk);
+		if (!new->file_on_disk)
 			goto out_free;
 		break;
 	case RESOURCE_IN_ATTACHED_BUFFER:
@@ -144,14 +144,17 @@ free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 {
 	if (lte) {
 		switch (lte->resource_location) {
-		case RESOURCE_IN_STAGING_FILE:
-		case RESOURCE_IN_ATTACHED_BUFFER:
-		case RESOURCE_IN_FILE_ON_DISK:
-#ifdef __WIN32__
+	#ifdef __WIN32__
 		case RESOURCE_WIN32:
-#endif
+		case RESOURCE_WIN32_ENCRYPTED:
+	#endif
+	#ifdef WITH_FUSE
+		case RESOURCE_IN_STAGING_FILE:
 			BUILD_BUG_ON((void*)&lte->file_on_disk !=
 				     (void*)&lte->staging_file_name);
+	#endif
+		case RESOURCE_IN_FILE_ON_DISK:
+		case RESOURCE_IN_ATTACHED_BUFFER:
 			BUILD_BUG_ON((void*)&lte->file_on_disk !=
 				     (void*)&lte->attached_buffer);
 			FREE(lte->file_on_disk);
@@ -673,10 +676,12 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 		tfprintf(out, T("File on Disk      = `%"TS"'\n"),
 			 lte->file_on_disk);
 		break;
+#ifdef WITH_FUSE
 	case RESOURCE_IN_STAGING_FILE:
 		tfprintf(out, T("Staging File      = `%"TS"'\n"),
 				lte->staging_file_name);
 		break;
+#endif
 	default:
 		break;
 	}

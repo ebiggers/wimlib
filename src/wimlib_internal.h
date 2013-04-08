@@ -31,7 +31,7 @@
 #include "list.h"
 #include "wimlib.h"
 
-#ifdef WITH_FUSE
+#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
 #include <pthread.h>
 #endif
 
