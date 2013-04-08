@@ -2,7 +2,7 @@ ACLOCAL_AMFLAGS = -I m4
 
 AM_CPPFLAGS	= -I$(top_srcdir)/src $(WINDOWS_CPPFLAGS) \
 		  -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
-AM_CFLAGS	= -std=gnu99
+AM_CFLAGS	= -std=gnu99 -fno-strict-aliasing
 
 lib_LTLIBRARIES = libwim.la
 
