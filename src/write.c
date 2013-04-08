@@ -331,8 +331,6 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	off_t offset;
 	int ret;
 
-	DEBUG2("wim_resource_size(lte)=%"PRIu64, wim_resource_size(lte));
-
 	flags &= ~WIMLIB_RESOURCE_FLAG_RECOMPRESS;
 
 	/* Get current position in output WIM */
@@ -557,7 +555,6 @@ static void
 compress_chunks(struct message *msg, compress_func_t compress)
 {
 	for (unsigned i = 0; i < msg->num_chunks; i++) {
-		DEBUG2("compress chunk %u of %u", i, msg->num_chunks);
 		unsigned len = compress(msg->uncompressed_chunks[i],
 					msg->uncompressed_chunk_sizes[i],
 					msg->compressed_chunks[i]);
@@ -636,6 +633,10 @@ serial_write_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 				  ctx->write_resource_flags);
 }
 
+/* Write a list of streams, taking into account that some streams may be
+ * duplicates that are checksummed and discarded on the fly, and also delegating
+ * the actual writing of a stream to a function @write_stream_cb, which is
+ * passed the context @write_stream_ctx. */
 static int
 do_write_stream_list(struct list_head *stream_list,
 		     struct wim_lookup_table *lookup_table,
@@ -765,9 +766,6 @@ write_wim_chunks(struct message *msg, FILE *out_fp,
 {
 	for (unsigned i = 0; i < msg->num_chunks; i++) {
 		unsigned chunk_csize = msg->compressed_chunk_sizes[i];
-
-		DEBUG2("Write wim chunk %u of %u (csize = %u)",
-		      i, msg->num_chunks, chunk_csize);
 
 		if (fwrite(msg->out_compressed_chunks[i], 1, chunk_csize, out_fp)
 		    != chunk_csize)
@@ -914,7 +912,6 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 	wimlib_assert(!list_empty(&ctx->outstanding_streams));
 	wimlib_assert(ctx->num_outstanding_messages != 0);
 
-	DEBUG2("Receiving more compressed chunks");
 	cur_lte = container_of(ctx->outstanding_streams.next,
 			       struct wim_lookup_table_entry,
 			       being_compressed_list);
@@ -925,8 +922,6 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 	msg = shared_queue_get(ctx->compressed_res_queue);
 	msg->complete = true;
 	--ctx->num_outstanding_messages;
-
-	DEBUG2("recved msg %p", msg);
 
 	/* Is this the next chunk in the current resource?  If it's not
 	 * (i.e., an earlier chunk in a same or different resource
@@ -965,7 +960,6 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 		if (list_empty(&cur_lte->msg_list) &&
 		    msg->begin_chunk + msg->num_chunks == ctx->cur_chunk_tab->num_chunks)
 		{
-			DEBUG2("Finish wim chunk tab");
 			u64 res_csize;
 			ret = finish_wim_resource_chunk_tab(ctx->cur_chunk_tab,
 							    ctx->out_fp,
@@ -1022,22 +1016,21 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 							  ctx->progress);
 			if (ret)
 				return ret;
+
+			/* Advance to the next stream to write. */
 			if (list_empty(&ctx->outstanding_streams)) {
 				cur_lte = NULL;
 			} else {
 				cur_lte = container_of(ctx->outstanding_streams.next,
 						       struct wim_lookup_table_entry,
 						       being_compressed_list);
-			#ifdef ENABLE_MORE_DEBUG
-				DEBUG2("Advance to stream:");
-				print_lookup_table_entry(cur_lte, stderr);
-			#endif
 			}
 		}
 	}
 	return 0;
 }
 
+/* Called when the main thread has read a new chunk of data. */
 static int
 main_writer_thread_cb(const void *chunk, size_t chunk_size, void *_ctx)
 {
@@ -1046,20 +1039,29 @@ main_writer_thread_cb(const void *chunk, size_t chunk_size, void *_ctx)
 	struct message *next_msg;
 	u64 next_chunk_in_msg;
 
-	DEBUG2("chunk_size=%zu, wim_resource_size(next_lte)=%"PRIu64,
-	       chunk_size, wim_resource_size(ctx->next_lte));
-
+	/* Update SHA1 message digest for the stream currently being read by the
+	 * main thread. */
 	sha1_update(&ctx->next_sha_ctx, chunk, chunk_size);
+
+	/* We send chunks of data to the compressor chunks in batches which we
+	 * refer to as "messages".  @next_msg is the message that is currently
+	 * being prepared to send off.  If it is NULL, that indicates that we
+	 * need to start a new message. */
 	next_msg = ctx->next_msg;
 	if (!next_msg) {
-		/* Start filling in a new message */
-
-		DEBUG2("Start new msg");
-
+		/* We need to start a new message.  First check to see if there
+		 * is a message available in the list of available messages.  If
+		 * so, we can just take one.  If not, all the messages (there is
+		 * a fixed number of them, proportional to the number of
+		 * threads) have been sent off to the compressor threads, so we
+		 * receive messages from the compressor threads containing
+		 * compressed chunks of data. 
+		 *
+		 * We may need to receive multiple messages before one is
+		 * actually available to use because messages received that are
+		 * *not* for the very next set of chunks to compress must be
+		 * buffered until it's time to write those chunks. */
 		while (list_empty(&ctx->available_msgs)) {
-			/* No message available; receive messages, writing
-			 * compressed data. */
-			DEBUG2("No msgs available!");
 			ret = receive_compressed_chunks(ctx);
 			if (ret)
 				return ret;
@@ -1072,20 +1074,17 @@ main_writer_thread_cb(const void *chunk, size_t chunk_size, void *_ctx)
 		next_msg->begin_chunk = ctx->next_chunk;
 		next_msg->num_chunks = min(MAX_CHUNKS_PER_MSG,
 					   ctx->next_num_chunks - ctx->next_chunk);
-		DEBUG2("next_msg {begin_chunk=%"PRIu64", num_chunks=%"PRIu64"}",
-		       next_msg->begin_chunk, next_msg->num_chunks);
 		ctx->next_msg = next_msg;
 	}
 
+	/* Fill in the next chunk to compress */
 	next_chunk_in_msg = ctx->next_chunk - next_msg->begin_chunk;
 
-	/* Fill in the next chunk to compress */
 	next_msg->uncompressed_chunk_sizes[next_chunk_in_msg] = chunk_size;
 	memcpy(next_msg->uncompressed_chunks[next_chunk_in_msg],
 	       chunk, chunk_size);
 	ctx->next_chunk++;
 	if (++next_chunk_in_msg == next_msg->num_chunks) {
-		DEBUG2("Sending message %p", next_msg);
 		/* Send off an array of chunks to compress */
 		list_add_tail(&next_msg->list, &ctx->next_lte->msg_list);
 		shared_queue_put(ctx->res_to_compress_queue, next_msg);
@@ -1100,7 +1099,6 @@ main_writer_thread_finish(void *_ctx)
 {
 	struct main_writer_thread_ctx *ctx = _ctx;
 	int ret;
-	DEBUG2("finishing");
 	while (ctx->num_outstanding_messages != 0) {
 		ret = receive_compressed_chunks(ctx);
 		if (ret)
@@ -1122,11 +1120,10 @@ submit_stream_for_compression(struct wim_lookup_table_entry *lte,
 {
 	int ret;
 
-#ifdef ENABLE_MORE_DEBUG
-	DEBUG2("Submit for compression:");
-	print_lookup_table_entry(lte, stderr);
-#endif
-
+	/* Read the entire stream @lte, feeding its data chunks to the
+	 * compressor threads.  Also SHA1-sum the stream; this is required in
+	 * the case that @lte is unhashed, and a nice additional verification
+	 * when @lte is already hashed. */
 	sha1_init(&ctx->next_sha_ctx);
 	ctx->next_chunk = 0;
 	ctx->next_num_chunks = wim_resource_chunks(lte);
@@ -1154,6 +1151,10 @@ main_thread_process_next_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 	     !(ctx->write_resource_flags & WIMLIB_RESOURCE_FLAG_RECOMPRESS) &&
 	     wimlib_get_compression_type(lte->wim) == ctx->out_ctype))
 	{
+		/* Stream is too small or isn't being compressed.  Process it by
+		 * the main thread when we have a chance.  We can't necessarily
+		 * process it right here, as the main thread could be in the
+		 * middle of writing a different stream. */
 		list_add_tail(&lte->write_streams_list, &ctx->serial_streams);
 		lte->deferred = 1;
 		ret = 0;
@@ -1173,6 +1174,32 @@ get_default_num_threads()
 #endif
 }
 
+/* Equivalent to write_stream_list_serial(), except this takes a @num_threads
+ * parameter and will perform compression using that many threads.  Falls
+ * back to write_stream_list_serial() on certain errors, such as a failure to
+ * create the number of threads requested.
+ *
+ * High level description of the algorithm for writing compressed streams in
+ * parallel:  We perform compression on chunks of size WIM_CHUNK_SIZE bytes
+ * rather than on full files.  The currently executing thread becomes the main
+ * thread and is entirely in charge of reading the data to compress (which may
+ * be in any location understood by the resource code--- such as in an external
+ * file being captured, or in another WIM file from which an image is being
+ * exported) and actually writing the compressed data to the output file.
+ * Additional threads are "compressor threads" and all execute the
+ * compressor_thread_proc, where they repeatedly retrieve buffers of data from
+ * the main thread, compress them, and hand them back to the main thread.
+ *
+ * Certain streams, such as streams that do not need to be compressed (e.g.
+ * input compression type same as output compression type) or streams of very
+ * small size are placed in a list (main_writer_thread_ctx.serial_list) and
+ * handled entirely by the main thread at an appropriate time.
+ *
+ * At any given point in time, multiple streams may be having chunks compressed
+ * concurrently.  The stream that the main thread is currently *reading* may be
+ * later in the list that the stream that the main thread is currently
+ * *writing*.
+ */
 static int
 write_stream_list_parallel(struct list_head *stream_list,
 			   struct wim_lookup_table *lookup_table,
@@ -1260,6 +1287,13 @@ write_stream_list_parallel(struct list_head *stream_list,
 				   &ctx, NULL, NULL);
 	if (ret)
 		goto out_destroy_ctx;
+
+	/* The main thread has finished reading all streams that are going to be
+	 * compressed in parallel, and it now needs to wait for all remaining
+	 * chunks to be compressed so that the remaining streams can actually be
+	 * written to the output file.  Furthermore, any remaining streams that
+	 * had processing deferred to the main thread need to be handled.  These
+	 * tasks are done by the main_writer_thread_finish() function. */
 	ret = main_writer_thread_finish(&ctx);
 out_destroy_ctx:
 	main_writer_thread_destroy_ctx(&ctx);
