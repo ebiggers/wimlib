@@ -1,19 +1,20 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
 Version 1.3.3:
-	Windows build now works on Windows XP.
+	Capturing a WIM image should now be significantly faster in most cases
+	due to improved use of the operating system's cache and avoiding reading
+	files twice whenever possible.
+
+	The Windows build now works on Windows XP.
 
 	On the Windows build, hidden directories are now correctly restored as
 	hidden.  Also compressed, encrypted, and sparse files are now restored
 	as such.
 
-	Performance improvements when capturing hard-linked files (both UNIX and
-	Windows).  Now, each file is only checksummed once total, rather than
-	once per link.
+	The performance of splitting and joining WIMs should be slightly
+	improved.
 
-	Performance of splitting and joining WIMs should be slightly improved.
-
-	Compression and decompression functions are now exported from the
+	The compression and decompression functions are now exported from the
 	library.
 
 Version 1.3.2:
