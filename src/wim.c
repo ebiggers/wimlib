@@ -690,16 +690,17 @@ test_locale_ctype_utf8()
 #endif
 }
 
-/* Get global memory allocations out of the way,
- * single-threaded programs like 'imagex'. */
 WIMLIBAPI int
-wimlib_global_init()
+wimlib_global_init(int init_flags)
 {
 	libxml_global_init();
-#ifdef WITH_NTFS_3G
-	libntfs3g_global_init();
-#endif
-	wimlib_mbs_is_utf8 = test_locale_ctype_utf8();
+	if (!(init_flags & WIMLIB_INIT_FLAG_ASSUME_UTF8)) {
+		wimlib_mbs_is_utf8 = test_locale_ctype_utf8();
+	#ifdef WITH_NTFS_3G
+		if (!wimlib_mbs_is_utf8)
+			libntfs3g_global_init();
+	#endif
+	}
 #ifdef __WIN32__
 	win32_global_init();
 #endif

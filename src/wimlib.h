@@ -828,6 +828,10 @@ struct wimlib_capture_config {
  * deleting an image in this way. */
 #define WIMLIB_WRITE_FLAG_SOFT_DELETE			0x00000010
 
+/** Assume that strings are represented in UTF-8, even if this is not the
+ * locale's character encoding. */
+#define WIMLIB_INIT_FLAG_ASSUME_UTF8			0x00000001
+
 
 #if 0
 /****************************************************************
@@ -1562,17 +1566,24 @@ wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret);
  * threads, then you must call this function serially first.
  *
  * Since wimlib 1.3.0, you must call this function if the character encoding of
- * the current locale is not UTF-8.
+ * the current locale is not UTF-8 and you do not want wimlib to assume a UTF-8
+ * encoding.
  *
  * Since wimlib 1.3.2, you must call this function if using the Windows-native
  * build of the library so that certain functions can be dynamically loaded from
  * system DLLs.
  *
- * This function currently always returns 0, but it may return other error codes
- * in future releases.
+ * Since wimlib 1.3.3, this function takes the @a init_flags parameter.
+ *
+ * @param init_flags
+ * 	::WIMLIB_INIT_FLAG_ASSUME_UTF8 if wimlib should assume that all input
+ * 	data, including filenames, are in UTF-8, and that UTF-8 data can be
+ * 	directly printed to the console.
+ *
+ * @return 0; other error codes may be returned in future releases.
  */
 extern int
-wimlib_global_init();
+wimlib_global_init(int init_flags);
 
 /**
  * Since wimlib 1.2.6:  Cleanup function for wimlib.  This is not re-entrant.

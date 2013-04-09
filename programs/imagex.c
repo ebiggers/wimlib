@@ -2526,11 +2526,16 @@ main(int argc, char **argv)
 {
 	const struct imagex_command *cmd;
 	int ret;
+	int init_flags = 0;
 
 #ifndef __WIN32__
-	setlocale(LC_ALL, "");
-	{
-		char *codeset = nl_langinfo(CODESET);
+	if (getenv("WIMLIB_IMAGEX_USE_UTF8")) {
+		init_flags |= WIMLIB_INIT_FLAG_ASSUME_UTF8;
+	} else {
+		char *codeset;
+
+		setlocale(LC_ALL, "");
+		codeset = nl_langinfo(CODESET);
 		if (!strstr(codeset, "UTF-8") &&
 		    !strstr(codeset, "UTF8") &&
 		    !strstr(codeset, "utf-8") &&
@@ -2538,7 +2543,10 @@ main(int argc, char **argv)
 		{
 			fputs(
 "WARNING: Running "IMAGEX_PROGNAME" in a UTF-8 locale is recommended!\n"
-"         (Maybe try: `export LANG=en_US.UTF-8'?\n", stderr);
+"         Maybe try: `export LANG=en_US.UTF-8'?\n"
+"         Alternatively, set the environmental variable WIMLIB_IMAGEX_USE_UTF8\n"
+"         to any value to force wimlib to use UTF-8.\n",
+			stderr);
 
 		}
 	}
@@ -2561,7 +2569,7 @@ main(int argc, char **argv)
 	wimlib_set_print_errors(true);
 
 	/* Do any initializations that the library needs */
-	ret = wimlib_global_init();
+	ret = wimlib_global_init(init_flags);
 	if (ret)
 		goto out_check_status;
 

@@ -112,7 +112,8 @@ static bool error_message_being_printed = false;
 
 #define DEFINE_CHAR_CONVERSION_FUNCTIONS(varname1, longname1, chartype1,\
 					 varname2, longname2, chartype2,\
-					 earlyreturn,			\
+					 earlyreturn_on_utf8_locale,	\
+					 earlyreturn_expr,		\
 					 worst_case_len_expr,		\
 					 err_return,			\
 					 err_msg,			\
@@ -194,7 +195,8 @@ varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
 	chartype2 *out;							\
 	size_t out_nbytes;						\
 									\
-	if (earlyreturn) {						\
+	if (earlyreturn_on_utf8_locale && wimlib_mbs_is_utf8) {		\
+		earlyreturn_expr;					\
 		/* Out same as in */					\
 		out = MALLOC(in_nbytes + sizeof(chartype2));		\
 		if (!out)						\
@@ -217,9 +219,7 @@ varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
 									\
 	ret = varname1##_to_##varname2##_buf(in, in_nbytes, out);	\
 	if (ret) {							\
-		int errno_save = errno;					\
 		FREE(out);						\
-		errno = errno_save;					\
 	} else {							\
 		*out_ret = out;						\
 		*out_nbytes_ret = out_nbytes;				\
@@ -228,35 +228,64 @@ varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
 }
 
 #if !TCHAR_IS_UTF16LE
-DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "", tchar,
+
+/* UNIX */
+
+DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", tchar,
 				 utf16le, "UTF-16LE", utf16lechar,
 				 false,
-				 in_nbytes * 4,
+				 ,
+				 in_nbytes * 2,
+				 WIMLIB_ERR_INVALID_UTF8_STRING,
+				 ERROR_WITH_ERRNO("Failed to convert UTF-8 string "
+						  "to UTF-16LE string!"),
+				 static)
+
+DEFINE_CHAR_CONVERSION_FUNCTIONS(utf16le, "UTF-16LE", utf16lechar,
+				 utf8, "UTF-8", tchar,
+				 false,
+				 ,
+				 in_nbytes * 2,
+				 WIMLIB_ERR_INVALID_UTF16_STRING,
+				 ERROR_WITH_ERRNO("Failed to convert UTF-16LE string "
+						  "to UTF-8 string!"),
+				 static)
+
+DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "", tchar,
+				 utf16le, "UTF-16LE", utf16lechar,
+				 true,
+				 return utf8_to_utf16le(in, in_nbytes, out_ret, out_nbytes_ret),
+				 in_nbytes * 2,
 				 WIMLIB_ERR_INVALID_MULTIBYTE_STRING,
 				 ERROR_WITH_ERRNO("Failed to convert multibyte "
 						  "string \"%"TS"\" to UTF-16LE string!", in);
 				 ERROR("If the data you provided was UTF-8, please make sure "
-				       "the character encoding of your current locale is UTF-8."),
+				       "the character encoding\n"
+				       "        of your current locale is UTF-8."),
 				 )
 
 DEFINE_CHAR_CONVERSION_FUNCTIONS(utf16le, "UTF-16LE", utf16lechar,
 				 tstr, "", tchar,
-				 false,
+				 true,
+				 return utf16le_to_utf8(in, in_nbytes, out_ret, out_nbytes_ret),
 				 in_nbytes * 2,
 				 WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE,
 				 ERROR("Failed to convert UTF-16LE string to "
 				       "multibyte string!");
 				 ERROR("This may be because the UTF-16LE string "
-				       "could not be represented in your "
-				       "locale's character encoding."),
+				       "could not be represented\n"
+				       "        in your locale's character encoding."),
 				 )
 #endif
 
 /* tchar to UTF-8 and back */
 #if TCHAR_IS_UTF16LE
+
+/* Windows */
 DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "UTF-16LE", tchar,
 				 utf8, "UTF-8", char,
 				 false,
+				 ,
 				 in_nbytes * 2,
 				 WIMLIB_ERR_INVALID_UTF16_STRING,
 				 ERROR_WITH_ERRNO("Failed to convert UTF-16LE "
@@ -266,33 +295,40 @@ DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "UTF-16LE", tchar,
 DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", char,
 				 tstr, "UTF-16LE", tchar,
 				 false,
+				 ,
 				 in_nbytes * 2,
 				 WIMLIB_ERR_INVALID_UTF8_STRING,
 				 ERROR_WITH_ERRNO("Failed to convert UTF-8 string "
 						  "to UTF-16LE string!"),
 				 static)
 #else
+
+/* UNIX */
+
 DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "", tchar,
 				 utf8, "UTF-8", char,
-				 wimlib_mbs_is_utf8,
+				 true,
+				 ,
 				 in_nbytes * 4,
 				 WIMLIB_ERR_INVALID_MULTIBYTE_STRING,
 				 ERROR_WITH_ERRNO("Failed to convert multibyte "
 						  "string \"%"TS"\" to UTF-8 string!", in);
 				 ERROR("If the data you provided was UTF-8, please make sure "
-				       "the character encoding of your current locale is UTF-8."),
+				       "the character\n"
+				       "        encoding of your current locale is UTF-8."),
 				 static)
 
 DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", char,
 				 tstr, "", tchar,
-				 wimlib_mbs_is_utf8,
+				 true,
+				 ,
 				 in_nbytes * 4,
 				 WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE,
 				 ERROR("Failed to convert UTF-8 string to "
 				       "multibyte string!");
 				 ERROR("This may be because the UTF-8 data "
-				       "could not be represented in your "
-				       "locale's character encoding."),
+				       "could not be represented\n"
+				       "        in your locale's character encoding."),
 				 static)
 #endif
 

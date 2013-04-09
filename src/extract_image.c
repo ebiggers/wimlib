@@ -111,10 +111,8 @@ extract_regular_file_linked(struct wim_dentry *dentry,
 		const char *p2;
 		size_t i;
 
-		num_path_components =
-			get_num_path_components(dentry_full_path(dentry)) - 1;
-		num_output_dir_path_components =
-			get_num_path_components(args->target);
+		num_path_components = get_num_path_components(output_path) - 1;
+		num_output_dir_path_components = get_num_path_components(args->target);
 
 		if (args->extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE) {
 			num_path_components++;
@@ -494,13 +492,12 @@ apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 	struct apply_args *args = arg;
 	tchar *output_path;
 	size_t len;
+	int ret;
 
 	len = tstrlen(args->target);
 	if (dentry_is_root(dentry)) {
 		output_path = (tchar*)args->target;
 	} else {
-		if (!dentry_full_path(dentry))
-			return WIMLIB_ERR_NOMEM;
 		output_path = alloca(len * sizeof(tchar) + dentry->full_path_nbytes +
 				     sizeof(tchar));
 		memcpy(output_path, args->target, len * sizeof(tchar));
@@ -557,8 +554,9 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 	if (dentry->is_extracted)
 		return 0;
 
-	if (!dentry_full_path(dentry))
-		return WIMLIB_ERR_NOMEM;
+	ret = calculate_dentry_full_path(dentry);
+	if (ret)
+		return ret;
 
 	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
 		if (inode_unnamed_lte_resolved(dentry->d_inode))
@@ -566,7 +564,7 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 
 	if ((args->extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
 	     args->progress_func) {
-		args->progress.extract.cur_path = dentry_full_path(dentry);
+		args->progress.extract.cur_path = dentry->_full_path;
 		args->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY,
 				    &args->progress);
 	}

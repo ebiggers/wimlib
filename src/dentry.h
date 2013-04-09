@@ -372,6 +372,9 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table);
 extern int
 print_dentry_full_path(struct wim_dentry *entry, void *ignore);
 
+extern int
+calculate_dentry_full_path(struct wim_dentry *dentry);
+
 extern tchar *
 dentry_full_path(struct wim_dentry *dentry);
 
