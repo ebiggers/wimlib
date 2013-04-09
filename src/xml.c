@@ -1237,7 +1237,7 @@ libxml_global_cleanup()
  */
 int
 read_xml_data(FILE *fp, const struct resource_entry *res_entry,
-	      utf16lechar **xml_data_ret, struct wim_info **info_ret)
+	      struct wim_info **info_ret)
 {
 	utf16lechar *xml_data;
 	xmlDoc *doc;
@@ -1267,7 +1267,7 @@ read_xml_data(FILE *fp, const struct resource_entry *res_entry,
 
 	ret = read_uncompressed_resource(fp, res_entry->offset,
 					 res_entry->size, xml_data);
-	if (ret != 0)
+	if (ret)
 		goto out_free_xml_data;
 
 	/* Null-terminate just in case */
@@ -1300,13 +1300,7 @@ read_xml_data(FILE *fp, const struct resource_entry *res_entry,
 		ret = WIMLIB_ERR_XML;
 		goto out_free_doc;
 	}
-
 	ret = xml_read_wim_info(root, info_ret);
-	if (ret != 0)
-		goto out_free_doc;
-
-	*xml_data_ret = xml_data;
-	xml_data = NULL;
 out_free_doc:
 	DEBUG("Freeing XML tree.");
 	xmlFreeDoc(doc);
@@ -1493,15 +1487,33 @@ WIMLIBAPI int
 wimlib_extract_xml_data(WIMStruct *w, FILE *fp)
 {
 	size_t bytes_written;
+	size_t size;
+	void *buf;
+	int ret;
 
-	if (!w->xml_data)
-		return WIMLIB_ERR_INVALID_PARAM;
-	bytes_written = fwrite(w->xml_data, 1, w->hdr.xml_res_entry.size, fp);
-	if (bytes_written != w->hdr.xml_res_entry.size) {
+	size = w->hdr.xml_res_entry.size;
+	if (sizeof(size_t) < sizeof(u64))
+		if (size != w->hdr.xml_res_entry.size)
+			return WIMLIB_ERR_INVALID_PARAM;
+
+	buf = MALLOC(size);
+	if (!buf)
+		return WIMLIB_ERR_NOMEM;
+
+	ret = read_uncompressed_resource(w->fp, w->hdr.xml_res_entry.offset,
+					 size, buf);
+	if (ret)
+		goto out_free_buf;
+
+	if (fwrite(buf, 1, size, fp) != size) {
 		ERROR_WITH_ERRNO("Failed to extract XML data");
-		return WIMLIB_ERR_WRITE;
+		ret = WIMLIB_ERR_WRITE;
+	} else {
+		ret = 0;
 	}
-	return 0;
+out_free_buf:
+	FREE(buf);
+	return ret;
 }
 
 /* Sets the name of an image in the WIM. */

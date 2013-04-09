@@ -39,7 +39,6 @@ print_image_info(const struct wim_info *wim_info, int image);
 
 extern int
 read_xml_data(FILE *fp, const struct resource_entry *res,
-	      utf16lechar **xml_data_ret,
 	      struct wim_info **info_ret);
 
 extern int

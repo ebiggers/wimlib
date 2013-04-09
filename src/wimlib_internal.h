@@ -295,9 +295,6 @@ struct WIMStruct {
 	/* The lookup table for the WIM file. */
 	struct wim_lookup_table *lookup_table;
 
-	/* Pointer to the XML data read from the WIM file (UTF16LE-encoded). */
-	utf16lechar *xml_data;
-
 	/* Information retrieved from the XML data, arranged in an orderly
 	 * manner. */
 	struct wim_info *wim_info;

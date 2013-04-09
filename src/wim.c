@@ -470,8 +470,7 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 	if (ret)
 		return ret;
 
-	ret = read_xml_data(w->fp, &w->hdr.xml_res_entry,
-			    &w->xml_data, &w->wim_info);
+	ret = read_xml_data(w->fp, &w->hdr.xml_res_entry, &w->wim_info);
 	if (ret)
 		return ret;
 
@@ -664,7 +663,6 @@ wimlib_free(WIMStruct *w)
 	free_lookup_table(w->lookup_table);
 
 	FREE(w->filename);
-	FREE(w->xml_data);
 	free_wim_info(w->wim_info);
 	if (w->image_metadata) {
 		for (unsigned i = 0; i < w->hdr.image_count; i++)
