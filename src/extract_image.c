@@ -492,7 +492,6 @@ apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 	struct apply_args *args = arg;
 	tchar *output_path;
 	size_t len;
-	int ret;
 
 	len = tstrlen(args->target);
 	if (dentry_is_root(dentry)) {

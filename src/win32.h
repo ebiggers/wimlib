@@ -21,13 +21,18 @@ win32_read_file(const tchar *filename, HANDLE handle,
 		u64 offset, size_t size, void *buf);
 
 extern int
-read_win32_file_prefix(const struct lookup_table_entry *lte,
+read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 		       u64 size,
 		       consume_data_callback_t cb,
 		       void *ctx_or_buf,
-		       int _ignored_flags)
-{
-}
+		       int _ignored_flags);
+
+extern int
+read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
+				 u64 size,
+				 consume_data_callback_t cb,
+				 void *ctx_or_buf,
+				 int _ignored_flags);
 
 #define FNM_PATHNAME 0x1
 #define FNM_NOESCAPE 0x2

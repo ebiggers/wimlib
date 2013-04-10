@@ -630,6 +630,7 @@ read_wim_resource_prefix(const struct wim_lookup_table_entry *lte,
 }
 
 
+#ifndef __WIN32__
 static int
 read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte,
 			 u64 size,
@@ -676,6 +677,7 @@ out_close:
 	close(fd);
 	return ret;
 }
+#endif /* !__WIN32__ */
 
 static int
 read_buffer_prefix(const struct wim_lookup_table_entry *lte,
@@ -732,7 +734,9 @@ read_resource_prefix(const struct wim_lookup_table_entry *lte,
 {
 	static const read_resource_prefix_handler_t handlers[] = {
 		[RESOURCE_IN_WIM]             = read_wim_resource_prefix,
+	#ifndef __WIN32__
 		[RESOURCE_IN_FILE_ON_DISK]    = read_file_on_disk_prefix,
+	#endif
 		[RESOURCE_IN_ATTACHED_BUFFER] = read_buffer_prefix,
 	#ifdef WITH_FUSE
 		[RESOURCE_IN_STAGING_FILE]    = read_file_on_disk_prefix,

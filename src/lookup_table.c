@@ -89,8 +89,9 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 #ifdef __WIN32__
 	case RESOURCE_WIN32:
 	case RESOURCE_WIN32_ENCRYPTED:
-#endif
+#else
 	case RESOURCE_IN_FILE_ON_DISK:
+#endif
 #ifdef WITH_FUSE
 	case RESOURCE_IN_STAGING_FILE:
 		BUILD_BUG_ON((void*)&old->file_on_disk !=
@@ -147,13 +148,14 @@ free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 	#ifdef __WIN32__
 		case RESOURCE_WIN32:
 		case RESOURCE_WIN32_ENCRYPTED:
+	#else
+		case RESOURCE_IN_FILE_ON_DISK:
 	#endif
 	#ifdef WITH_FUSE
 		case RESOURCE_IN_STAGING_FILE:
 			BUILD_BUG_ON((void*)&lte->file_on_disk !=
 				     (void*)&lte->staging_file_name);
 	#endif
-		case RESOURCE_IN_FILE_ON_DISK:
 		case RESOURCE_IN_ATTACHED_BUFFER:
 			BUILD_BUG_ON((void*)&lte->file_on_disk !=
 				     (void*)&lte->attached_buffer);
@@ -671,8 +673,9 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 #ifdef __WIN32__
 	case RESOURCE_WIN32:
 	case RESOURCE_WIN32_ENCRYPTED:
-#endif
+#else
 	case RESOURCE_IN_FILE_ON_DISK:
+#endif
 		tfprintf(out, T("File on Disk      = `%"TS"'\n"),
 			 lte->file_on_disk);
 		break;

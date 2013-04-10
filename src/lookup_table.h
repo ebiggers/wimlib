@@ -67,7 +67,9 @@ enum resource_location {
 	 * file will be provided by @file_on_disk member.  In addition, if
 	 * @file_on_disk_fp is not NULL, it will be an open FILE * to the file.
 	 * */
+#ifndef __WIN32__
 	RESOURCE_IN_FILE_ON_DISK,
+#endif
 
 	/* The stream resource is directly attached in an in-memory buffer
 	 * pointed to by @attached_buffer. */
@@ -283,10 +285,12 @@ wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
 static inline bool
 lte_filename_valid(const struct wim_lookup_table_entry *lte)
 {
-	return lte->resource_location == RESOURCE_IN_FILE_ON_DISK
+	return 0
 	#ifdef __WIN32__
 		|| lte->resource_location == RESOURCE_WIN32
 		|| lte->resource_location == RESOURCE_WIN32_ENCRYPTED
+	#else
+		|| lte->resource_location == RESOURCE_IN_FILE_ON_DISK
 	#endif
 	#ifdef WITH_FUSE
 		|| lte->resource_location == RESOURCE_IN_STAGING_FILE

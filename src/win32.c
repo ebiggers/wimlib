@@ -170,13 +170,13 @@ win32_open_file_data_only(const wchar_t *path)
 }
 
 int
-read_win32_file_prefix(const struct lookup_table_entry *lte,
+read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 		       u64 size,
 		       consume_data_callback_t cb,
 		       void *ctx_or_buf,
 		       int _ignored_flags)
 {
-	int ret;
+	int ret = 0;
 	void *out_buf;
 	DWORD err;
 	u64 bytes_remaining;
@@ -186,8 +186,7 @@ read_win32_file_prefix(const struct lookup_table_entry *lte,
 		err = GetLastError();
 		ERROR("Failed to open \"%ls\"", lte->file_on_disk);
 		win32_error(err);
-		ret = WIMLIB_ERR_OPEN;
-		goto out;
+		return WIMLIB_ERR_OPEN;
 	}
 
 	if (cb)
@@ -200,27 +199,142 @@ read_win32_file_prefix(const struct lookup_table_entry *lte,
 		DWORD bytesToRead, bytesRead;
 
 		bytesToRead = min(WIM_CHUNK_SIZE, bytes_remaining);
-		if (!ReadFile(h, out_buf, bytesToRead, &bytesRead, NULL) ||
+		if (!ReadFile(hFile, out_buf, bytesToRead, &bytesRead, NULL) ||
 		    bytesRead != bytesToRead)
 		{
 			err = GetLastError();
 			ERROR("Failed to read data from \"%ls\"", lte->file_on_disk);
 			win32_error(err);
 			ret = WIMLIB_ERR_READ;
-			goto out_close_handle;
+			break;
 		}
 		bytes_remaining -= bytesRead;
 		if (cb) {
-			ret = cb(out_buf, bytesRead, ctx_or_buf);
+			ret = (*cb)(out_buf, bytesRead, ctx_or_buf);
 			if (ret)
-				goto out_close_handle;
+				break;
 		} else {
 			out_buf += bytesRead;
 		}
 	}
-out_close_handle:
 	CloseHandle(hFile);
-out:
+	return ret;
+}
+
+struct win32_encrypted_read_ctx {
+	consume_data_callback_t read_prefix_cb;
+	void *read_prefix_ctx_or_buf;
+	int wimlib_err_code;
+	void *buf;
+	size_t buf_filled;
+	u64 bytes_remaining;
+};
+
+static DWORD WINAPI
+win32_encrypted_export_cb(unsigned char *_data, void *_ctx, unsigned long len)
+{
+	const void *data = _data;
+	struct win32_encrypted_read_ctx *ctx = _ctx;
+	int ret;
+
+	DEBUG("len = %lu", len);
+	if (ctx->read_prefix_cb) {
+		/* The length of the buffer passed to the ReadEncryptedFileRaw()
+		 * export callback is undocumented, so we assume it may be of
+		 * arbitrary size. */
+		size_t bytes_to_buffer = min(ctx->bytes_remaining - ctx->buf_filled,
+					     len);
+		while (bytes_to_buffer) {
+			size_t bytes_to_copy_to_buf =
+				min(bytes_to_buffer, WIM_CHUNK_SIZE - ctx->buf_filled);
+
+			memcpy(ctx->buf + ctx->buf_filled, data,
+			       bytes_to_copy_to_buf);
+			ctx->buf_filled += bytes_to_copy_to_buf;
+			data += bytes_to_copy_to_buf;
+			bytes_to_buffer -= bytes_to_copy_to_buf;
+
+			if (ctx->buf_filled == WIM_CHUNK_SIZE ||
+			    ctx->buf_filled == ctx->bytes_remaining)
+			{
+				ret = (*ctx->read_prefix_cb)(ctx->buf,
+							     ctx->buf_filled,
+							     ctx->read_prefix_ctx_or_buf);
+				if (ret) {
+					ctx->wimlib_err_code = ret;
+					/* Shouldn't matter what error code is returned
+					 * here, as long as it isn't ERROR_SUCCESS. */
+					return ERROR_READ_FAULT;
+				}
+				ctx->bytes_remaining -= ctx->buf_filled;
+				ctx->buf_filled = 0;
+			}
+		}
+	} else {
+		size_t len_to_copy = min(len, ctx->bytes_remaining);
+		memcpy(ctx->read_prefix_ctx_or_buf, data, len_to_copy);
+		ctx->bytes_remaining -= len_to_copy;
+		ctx->read_prefix_ctx_or_buf += len_to_copy;
+	}
+	return ERROR_SUCCESS;
+}
+
+int
+read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
+				 u64 size,
+				 consume_data_callback_t cb,
+				 void *ctx_or_buf,
+				 int _ignored_flags)
+{
+	struct win32_encrypted_read_ctx export_ctx;
+	DWORD err;
+	void *file_ctx;
+	int ret;
+
+	DEBUG("Reading %"PRIu64" bytes from encryted file \"%ls\"",
+	      size, lte->file_on_disk);
+
+	export_ctx.read_prefix_cb = cb;
+	export_ctx.read_prefix_ctx_or_buf = ctx_or_buf;
+	export_ctx.wimlib_err_code = 0;
+	if (cb) {
+		export_ctx.buf = MALLOC(WIM_CHUNK_SIZE);
+		if (!export_ctx.buf)
+			return WIMLIB_ERR_NOMEM;
+	} else {
+		export_ctx.buf = NULL;
+	}
+	export_ctx.bytes_remaining = size;
+
+	err = OpenEncryptedFileRawW(lte->file_on_disk, 0, &file_ctx);
+	if (err != ERROR_SUCCESS) {
+		ERROR("Failed to open encrypted file \"%ls\" for raw read",
+		      lte->file_on_disk);
+		win32_error(err);
+		ret = WIMLIB_ERR_OPEN;
+		goto out_free_buf;
+	}
+	err = ReadEncryptedFileRaw(win32_encrypted_export_cb,
+				   &export_ctx, file_ctx);
+	if (err != ERROR_SUCCESS) {
+		ERROR("Failed to read encrypted file \"%ls\"",
+		      lte->file_on_disk);
+		win32_error(err);
+		ret = export_ctx.wimlib_err_code;
+		if (ret == 0)
+			ret = WIMLIB_ERR_READ;
+	} else if (export_ctx.bytes_remaining != 0) {
+		ERROR("Only could read %"PRIu64" of %"PRIu64" bytes from "
+		      "encryted file \"%ls\"",
+		      size - export_ctx.bytes_remaining, size,
+		      lte->file_on_disk);
+		ret = WIMLIB_ERR_READ;
+	} else {
+		ret = 0;
+	}
+	CloseEncryptedFileRaw(file_ctx);
+out_free_buf:
+	FREE(export_ctx.buf);
 	return ret;
 }
 
@@ -502,7 +616,6 @@ win32_capture_stream(const wchar_t *path,
 		     WIN32_FIND_STREAM_DATA *dat)
 {
 	struct wim_ads_entry *ads_entry;
-	u8 hash[SHA1_HASH_SIZE];
 	struct wim_lookup_table_entry *lte;
 	int ret;
 	wchar_t *stream_name, *colon;
@@ -510,7 +623,6 @@ win32_capture_stream(const wchar_t *path,
 	bool is_named_stream;
 	wchar_t *spath;
 	size_t spath_nchars;
-	DWORD err;
 	size_t spath_buf_nbytes;
 	const wchar_t *relpath_prefix;
 	const wchar_t *colonchar;
@@ -583,7 +695,10 @@ win32_capture_stream(const wchar_t *path,
 	}
 	lte->file_on_disk = spath;
 	spath = NULL;
-	lte->resource_location = RESOURCE_WIN32;
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED && !is_named_stream)
+		lte->resource_location = RESOURCE_WIN32_ENCRYPTED;
+	else
+		lte->resource_location = RESOURCE_WIN32;
 	lte->resource_entry.original_size = (u64)dat->StreamSize.QuadPart;
 
 	u32 stream_id;
@@ -959,7 +1074,7 @@ win32_set_reparse_data(HANDLE h,
 	 * leave 8 bytes of space for them at the beginning of the buffer, then
 	 * set them manually. */
 	buf = alloca(len + 8);
-	ret = read_full_wim_resource(lte, buf + 8, 0);
+	ret = read_full_resource_into_buf(lte, buf + 8, false);
 	if (ret)
 		return ret;
 	*(u32*)(buf + 0) = cpu_to_le32(reparse_tag);
@@ -1110,7 +1225,7 @@ fail:
 
 
 static int
-win32_extract_chunk(const void *buf, size_t len, u64 offset, void *arg)
+win32_extract_chunk(const void *buf, size_t len, void *arg)
 {
 	HANDLE hStream = arg;
 
@@ -1133,6 +1248,14 @@ do_win32_extract_stream(HANDLE hStream, struct wim_lookup_table_entry *lte)
 {
 	return extract_wim_resource(lte, wim_resource_size(lte),
 				    win32_extract_chunk, hStream);
+}
+
+static int
+do_win32_extract_encryted_stream(const wchar_t *path,
+				 const struct wim_lookup_table_entry *lte)
+{
+	ERROR("Extrat encryted streams not implemented");
+	return WIMLIB_ERR_INVALID_PARAM;
 }
 
 static bool
@@ -1339,7 +1462,13 @@ win32_extract_stream(const struct wim_inode *inode,
 		if (lte) {
 			DEBUG("Extracting \"%ls\" (len = %"PRIu64")",
 			      stream_path, wim_resource_size(lte));
-			ret = do_win32_extract_stream(h, lte);
+			if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED
+			    && stream_name_utf16 == NULL) {
+				ret = do_win32_extract_encryted_stream(stream_path,
+								       lte);
+			} else {
+				ret = do_win32_extract_stream(h, lte);
+			}
 			if (ret)
 				goto fail_close_handle;
 		}
