@@ -373,7 +373,7 @@ extern int
 print_dentry_full_path(struct wim_dentry *entry, void *ignore);
 
 extern int
-calculate_dentry_full_path(struct wim_dentry *dentry);
+calculate_dentry_tree_full_paths(struct wim_dentry *root);
 
 extern tchar *
 dentry_full_path(struct wim_dentry *dentry);

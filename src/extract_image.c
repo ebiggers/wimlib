@@ -111,7 +111,7 @@ extract_regular_file_linked(struct wim_dentry *dentry,
 		const char *p2;
 		size_t i;
 
-		num_path_components = get_num_path_components(output_path) - 1;
+		num_path_components = get_num_path_components(dentry->_full_path) - 1;
 		num_output_dir_path_components = get_num_path_components(args->target);
 
 		if (args->extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE) {
@@ -331,7 +331,7 @@ extract_symlink(struct wim_dentry *dentry,
 
 	if (ret <= 0) {
 		ERROR("Could not read the symbolic link from dentry `%s'",
-		      dentry_full_path(dentry));
+		      dentry->_full_path);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 	ret = symlink(target, output_path);
@@ -525,8 +525,6 @@ apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 	if (dentry_is_root(dentry)) {
 		output_path = (tchar*)args->target;
 	} else {
-		if (!dentry_full_path(dentry))
-			return WIMLIB_ERR_NOMEM;
 		output_path = alloca(len * sizeof(tchar) + dentry->full_path_nbytes +
 				     sizeof(tchar));
 		memcpy(output_path, args->target, len * sizeof(tchar));
@@ -553,10 +551,6 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 
 	if (dentry->is_extracted)
 		return 0;
-
-	ret = calculate_dentry_full_path(dentry);
-	if (ret)
-		return ret;
 
 	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
 		if (inode_unnamed_lte_resolved(dentry->d_inode))
@@ -853,12 +847,16 @@ extract_single_image(WIMStruct *w, int image,
 			      &args.progress);
 	}
 
+	ret = calculate_dentry_tree_full_paths(wim_root_dentry(w));
+	if (ret)
+		goto out;
+
 	/* Make the directory structure and extract empty files */
 	args.extract_flags |= WIMLIB_EXTRACT_FLAG_NO_STREAMS;
 	args.apply_dentry = ops->apply_dentry;
 	ret = for_dentry_in_tree(wim_root_dentry(w), maybe_apply_dentry, &args);
 	args.extract_flags &= ~WIMLIB_EXTRACT_FLAG_NO_STREAMS;
-	if (ret != 0)
+	if (ret)
 		goto out;
 
 	if (progress_func) {
@@ -868,7 +866,7 @@ extract_single_image(WIMStruct *w, int image,
 
 	/* Extract non-empty files */
 	ret = apply_stream_list(&stream_list, &args, ops, progress_func);
-	if (ret != 0)
+	if (ret)
 		goto out;
 
 	if (progress_func) {
@@ -879,7 +877,7 @@ extract_single_image(WIMStruct *w, int image,
 	/* Apply timestamps */
 	ret = for_dentry_in_tree_depth(wim_root_dentry(w),
 				       ops->apply_dentry_timestamps, &args);
-	if (ret != 0)
+	if (ret)
 		goto out;
 
 	if (progress_func) {

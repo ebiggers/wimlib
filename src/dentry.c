@@ -275,7 +275,7 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 
 /* Calculate the full path of @dentry.  The full path of its parent must have
  * already been calculated, or it must be the root dentry. */
-int
+static int
 calculate_dentry_full_path(struct wim_dentry *dentry)
 {
 	tchar *full_path;
@@ -345,6 +345,18 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 	dentry->_full_path = full_path;
 	dentry->full_path_nbytes= full_path_nbytes;
 	return 0;
+}
+
+static int
+do_calculate_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
+{
+	return calculate_dentry_full_path(dentry);
+}
+
+int
+calculate_dentry_tree_full_paths(struct wim_dentry *root)
+{
+	return for_dentry_in_tree(root, do_calculate_dentry_full_path, NULL);
 }
 
 tchar *

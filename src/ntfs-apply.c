@@ -105,7 +105,7 @@ write_ntfs_data_streams(ntfs_inode *ni, struct wim_dentry *dentry,
 	DEBUG("Writing %u NTFS data stream%s for `%s'",
 	      inode->i_num_ads + 1,
 	      (inode->i_num_ads == 0 ? "" : "s"),
-	      dentry_full_path(dentry));
+	      dentry->_full_path);
 
 	lte = inode->i_lte;
 	while (1) {
@@ -125,7 +125,7 @@ write_ntfs_data_streams(ntfs_inode *ni, struct wim_dentry *dentry,
 				ERROR_WITH_ERRNO("Failed to create named data "
 						 "stream for extracted file "
 						 "`%s'",
-						 dentry_full_path(dentry));
+						 dentry->_full_path);
 				ret = WIMLIB_ERR_NTFS_3G;
 				break;
 
@@ -142,7 +142,7 @@ write_ntfs_data_streams(ntfs_inode *ni, struct wim_dentry *dentry,
 			if (!na) {
 				ERROR_WITH_ERRNO("Failed to open a data stream of "
 						 "extracted file `%s'",
-						 dentry_full_path(dentry));
+						 dentry->_full_path);
 				ret = WIMLIB_ERR_NTFS_3G;
 				break;
 			}
@@ -190,9 +190,6 @@ dentry_open_parent_ni(struct wim_dentry *dentry, ntfs_volume *vol)
 	const char *dir_name;
 	ntfs_inode *dir_ni;
 	char orig;
-
-	if (!dentry_full_path(dentry))
-		return NULL;
 
 	p = dentry->_full_path + dentry->full_path_nbytes;
 	do {
@@ -243,7 +240,7 @@ apply_ntfs_hardlink(struct wim_dentry *from_dentry,
 	}
 
 	DEBUG("Extracting NTFS hard link `%s' => `%s'",
-	      dentry_full_path(from_dentry), inode->i_extracted_file);
+	      from_dentry->_full_path, inode->i_extracted_file);
 
 	to_ni = ntfs_pathname_to_inode(vol, NULL, inode->i_extracted_file);
 	if (!to_ni) {
@@ -265,7 +262,7 @@ apply_ntfs_hardlink(struct wim_dentry *from_dentry,
 	ret |= ntfs_inode_close(to_ni);
 	if (ret) {
 		ERROR_WITH_ERRNO("Could not create hard link `%s' => `%s'",
-				 dentry_full_path(from_dentry),
+				 from_dentry->_full_path,
 				 inode->i_extracted_file);
 		ret = WIMLIB_ERR_NTFS_3G;
 	}
@@ -298,7 +295,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 	inode = dentry->d_inode;
 
 	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
-	      dentry_full_path(dentry), inode->i_attributes);
+	      dentry->_full_path, inode->i_attributes);
 
 	attributes_le32 = cpu_to_le32(inode->i_attributes);
 	memset(&ctx, 0, sizeof(ctx));
@@ -309,7 +306,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 					 sizeof(u32), 0);
 	if (ret != 0) {
 		ERROR("Failed to set NTFS file attributes on `%s'",
-		      dentry_full_path(dentry));
+		      dentry->_full_path);
 		return WIMLIB_ERR_NTFS_3G;
 	}
 	if (inode->i_security_id != -1 &&
@@ -322,7 +319,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 		wimlib_assert(inode->i_security_id < sd->num_entries);
 		desc = (const char *)sd->descriptors[inode->i_security_id];
 		DEBUG("Applying security descriptor %d to `%s'",
-		      inode->i_security_id, dentry_full_path(dentry));
+		      inode->i_security_id, dentry->_full_path);
 
 		ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ACL,
 						 ni, dir_ni, desc,
@@ -330,7 +327,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 
 		if (ret != 0) {
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
-					dentry_full_path(dentry));
+					dentry->_full_path);
 			return WIMLIB_ERR_NTFS_3G;
 		}
 	}
@@ -350,17 +347,17 @@ apply_reparse_data(ntfs_inode *ni, struct wim_dentry *dentry,
 
 	lte = inode_unnamed_lte_resolved(dentry->d_inode);
 
-	DEBUG("Applying reparse data to `%s'", dentry_full_path(dentry));
+	DEBUG("Applying reparse data to `%s'", dentry->_full_path);
 
 	if (!lte) {
 		ERROR("Could not find reparse data for `%s'",
-		      dentry_full_path(dentry));
+		      dentry->_full_path);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
 	if (wim_resource_size(lte) >= 0xffff) {
 		ERROR("Reparse data of `%s' is too long (%"PRIu64" bytes)",
-		      dentry_full_path(dentry), wim_resource_size(lte));
+		      dentry->_full_path, wim_resource_size(lte));
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
@@ -379,7 +376,7 @@ apply_reparse_data(ntfs_inode *ni, struct wim_dentry *dentry,
 					 wim_resource_size(lte) + 8, 0);
 	if (ret) {
 		ERROR_WITH_ERRNO("Failed to set NTFS reparse data on `%s'",
-				 dentry_full_path(dentry));
+				 dentry->_full_path);
 		return WIMLIB_ERR_NTFS_3G;
 	}
 	progress_info->extract.completed_bytes += wim_resource_size(lte);
@@ -422,7 +419,7 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 				 * extracted yet, so go ahead and extract the
 				 * first one. */
 				FREE(inode->i_extracted_file);
-				const tchar *full_path = dentry_full_path(dentry);
+				const tchar *full_path = dentry->_full_path;
 
 				if (!full_path ||
 				    !(inode->i_extracted_file = STRDUP(full_path)))
@@ -444,7 +441,7 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 
 	if (!ni) {
 		ERROR_WITH_ERRNO("Could not create NTFS inode for `%s'",
-				 dentry_full_path(dentry));
+				 dentry->_full_path);
 		ret = WIMLIB_ERR_NTFS_3G;
 		goto out_close_dir_ni;
 	}
@@ -482,14 +479,14 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 			goto out_close_dir_ni;
 
 		DEBUG("Setting short (DOS) name of `%s' to %s",
-		      dentry_full_path(dentry), short_name_mbs);
+		      dentry->_full_path, short_name_mbs);
 
 		ret = ntfs_set_ntfs_dos_name(ni, dir_ni, short_name_mbs,
 					     short_name_mbs_nbytes, 0);
 		FREE(short_name_mbs);
 		if (ret != 0) {
 			ERROR_WITH_ERRNO("Could not set DOS (short) name for `%s'",
-					 dentry_full_path(dentry));
+					 dentry->_full_path);
 			ret = WIMLIB_ERR_NTFS_3G;
 		}
 		/* inodes have been closed by ntfs_set_ntfs_dos_name(). */
@@ -502,7 +499,7 @@ out_close_dir_ni:
 				if (ret == 0)
 					ret = WIMLIB_ERR_NTFS_3G;
 				ERROR_WITH_ERRNO("Failed to close inode for `%s'",
-						 dentry_full_path(dentry));
+						 dentry->_full_path);
 			}
 		}
 		if (ntfs_inode_close(dir_ni)) {
@@ -510,7 +507,7 @@ out_close_dir_ni:
 				ret = WIMLIB_ERR_NTFS_3G;
 			ERROR_WITH_ERRNO("Failed to close inode of directory "
 					 "containing `%s'",
-					 dentry_full_path(dentry));
+					 dentry->_full_path);
 		}
 	}
 out:
@@ -642,12 +639,12 @@ apply_dentry_timestamps_ntfs(struct wim_dentry *dentry, void *arg)
 	ntfs_inode *ni;
 	int ret;
 
-	DEBUG("Setting timestamps on `%s'", dentry_full_path(dentry));
+	DEBUG("Setting timestamps on `%s'", dentry->_full_path);
 
-	ni = ntfs_pathname_to_inode(vol, NULL, dentry_full_path(dentry));
+	ni = ntfs_pathname_to_inode(vol, NULL, dentry->_full_path);
 	if (!ni) {
 		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
-				 dentry_full_path(dentry));
+				 dentry->_full_path);
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
@@ -658,7 +655,7 @@ apply_dentry_timestamps_ntfs(struct wim_dentry *dentry, void *arg)
 	ret = ntfs_inode_set_times(ni, (const char*)buf, 3 * sizeof(u64), 0);
 	if (ret != 0) {
 		ERROR_WITH_ERRNO("Failed to set NTFS timestamps on `%s'",
-				 dentry_full_path(dentry));
+				 dentry->_full_path);
 		ret = WIMLIB_ERR_NTFS_3G;
 	}
 
@@ -666,7 +663,7 @@ apply_dentry_timestamps_ntfs(struct wim_dentry *dentry, void *arg)
 		if (ret == 0)
 			ret = WIMLIB_ERR_NTFS_3G;
 		ERROR_WITH_ERRNO("Failed to close NTFS inode for `%s'",
-				 dentry_full_path(dentry));
+				 dentry->_full_path);
 	}
 	return ret;
 }
