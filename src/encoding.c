@@ -369,5 +369,7 @@ iconv_global_cleanup()
 #if !TCHAR_IS_UTF16LE
 	iconv_cleanup(&iconv_utf16le_to_tstr);
 	iconv_cleanup(&iconv_tstr_to_utf16le);
+	iconv_cleanup(&iconv_utf16le_to_utf8);
+	iconv_cleanup(&iconv_utf8_to_utf16le);
 #endif
 }
