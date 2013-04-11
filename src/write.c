@@ -176,7 +176,7 @@ write_wim_resource_chunk(const void *chunk, unsigned chunk_size,
 			 FILE *out_fp, compress_func_t compress,
 			 struct chunk_table *chunk_tab)
 {
-	const u8 *out_chunk;
+	const void *out_chunk;
 	unsigned out_chunk_size;
 	if (compress) {
 		u8 *compressed_chunk = alloca(chunk_size);
@@ -295,19 +295,9 @@ write_resource_cb(const void *chunk, size_t chunk_size, void *_ctx)
 
 	if (ctx->doing_sha)
 		sha1_update(&ctx->sha_ctx, chunk, chunk_size);
-
-	if (ctx->compress) {
-		return write_wim_resource_chunk(chunk, chunk_size,
-						ctx->out_fp, ctx->compress,
-						ctx->chunk_tab);
-	} else {
-		if (fwrite(chunk, 1, chunk_size, ctx->out_fp) != chunk_size) {
-			ERROR_WITH_ERRNO("Error writing to output WIM");
-			return WIMLIB_ERR_WRITE;
-		} else {
-			return 0;
-		}
-	}
+	return write_wim_resource_chunk(chunk, chunk_size,
+					ctx->out_fp, ctx->compress,
+					ctx->chunk_tab);
 }
 
 /*
