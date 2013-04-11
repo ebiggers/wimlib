@@ -524,6 +524,8 @@ struct apply_args {
 			/* Normal apply only (Win32) */
 			unsigned long num_set_sacl_priv_notheld;
 			unsigned long num_set_sd_access_denied;
+			unsigned vol_flags;
+			bool have_vol_flags;
 		};
 	};
 };
@@ -694,7 +696,6 @@ wim_checksum_unhashed_streams(WIMStruct *w);
 /* We are capturing a dentry that will become the root of a tree to be added to
  * the WIM image */
 #define WIMLIB_ADD_IMAGE_FLAG_SOURCE    0x40000000
-
 
 extern int
 begin_write(WIMStruct *w, const tchar *path, int write_flags);

@@ -338,6 +338,50 @@ out_free_buf:
 	return ret;
 }
 
+/* Given a path, which may not yet exist, get a set of flags that describe the
+ * features of the volume the path is on. */
+static int
+win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret)
+{
+	wchar_t *volume;
+	BOOL bret;
+	DWORD vol_flags;
+
+	if (path[0] != L'\0' && path[0] != L'\\' &&
+	    path[0] != L'/' && path[1] == L':')
+	{
+		/* Path starts with a drive letter; use it. */
+		volume = alloca(4 * sizeof(wchar_t));
+		volume[0] = path[0];
+		volume[1] = path[1];
+		volume[2] = L'\\';
+		volume[3] = L'\0';
+	} else {
+		/* Path does not start with a drive letter; use the volume of
+		 * the current working directory. */
+		volume = NULL;
+	}
+	bret = GetVolumeInformationW(volume, /* lpRootPathName */
+				     NULL,  /* lpVolumeNameBuffer */
+				     0,     /* nVolumeNameSize */
+				     NULL,  /* lpVolumeSerialNumber */
+				     NULL,  /* lpMaximumComponentLength */
+				     &vol_flags, /* lpFileSystemFlags */
+				     NULL,  /* lpFileSystemNameBuffer */
+				     0);    /* nFileSystemNameSize */
+	if (!bret) {
+		DWORD err = GetLastError();
+		WARNING("Failed to get volume information for path \"%ls\"", path);
+		win32_error(err);
+		vol_flags = 0xffffffff;
+	}
+
+	DEBUG("using vol_flags = %x", vol_flags);
+	*vol_flags_ret = vol_flags;
+	return 0;
+}
+
+
 static u64
 FILETIME_to_u64(const FILETIME *ft)
 {
@@ -349,6 +393,7 @@ win32_get_short_name(struct wim_dentry *dentry, const wchar_t *path)
 {
 	WIN32_FIND_DATAW dat;
 	if (FindFirstFileW(path, &dat) && dat.cAlternateFileName[0] != L'\0') {
+		DEBUG("\"%ls\": short name \"%ls\"", path, dat.cAlternateFileName);
 		size_t short_name_nbytes = wcslen(dat.cAlternateFileName) *
 					   sizeof(wchar_t);
 		size_t n = short_name_nbytes + sizeof(wchar_t);
@@ -454,7 +499,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  const struct wimlib_capture_config *config,
 				  int add_image_flags,
 				  wimlib_progress_func_t progress_func,
-				  struct win32_capture_state *state);
+				  struct win32_capture_state *state,
+				  unsigned vol_flags);
 
 /* Reads the directory entries of directory using a Win32 API and recursively
  * calls win32_build_dentry_tree() on them. */
@@ -468,12 +514,15 @@ win32_recurse_directory(struct wim_dentry *root,
 			const struct wimlib_capture_config *config,
 			int add_image_flags,
 			wimlib_progress_func_t progress_func,
-			struct win32_capture_state *state)
+			struct win32_capture_state *state,
+			unsigned vol_flags)
 {
 	WIN32_FIND_DATAW dat;
 	HANDLE hFind;
 	DWORD err;
 	int ret;
+
+	DEBUG("Recurse to directory \"%ls\"", dir_path);
 
 	/* Begin reading the directory by calling FindFirstFileW.  Unlike UNIX
 	 * opendir(), FindFirstFileW has file globbing built into it.  But this
@@ -521,7 +570,8 @@ win32_recurse_directory(struct wim_dentry *root,
 							config,
 							add_image_flags,
 							progress_func,
-							state);
+							state,
+							vol_flags);
 		dir_path[dir_path_num_chars] = L'\0';
 		if (ret)
 			goto out_find_close;
@@ -560,6 +610,8 @@ win32_capture_reparse_point(HANDLE hFile,
 			    struct wim_lookup_table *lookup_table,
 			    const wchar_t *path)
 {
+	DEBUG("Capturing reparse point \"%ls\"", path);
+
 	/* "Reparse point data, including the tag and optional GUID,
 	 * cannot exceed 16 kilobytes." - MSDN  */
 	char reparse_point_buf[16 * 1024];
@@ -626,6 +678,8 @@ win32_capture_stream(const wchar_t *path,
 	size_t spath_buf_nbytes;
 	const wchar_t *relpath_prefix;
 	const wchar_t *colonchar;
+
+	DEBUG("Capture \"%ls\" stream \"%ls\"", path, dat->cStreamName);
 
 	/* The stream name should be returned as :NAME:TYPE */
 	stream_name = dat->cStreamName;
@@ -709,8 +763,8 @@ win32_capture_stream(const wchar_t *path,
 		stream_id = 0;
 		inode->i_lte = lte;
 	}
-
 	lookup_table_insert_unhashed(lookup_table, lte, inode, stream_id);
+	ret = 0;
 out_free_spath:
 	FREE(spath);
 out:
@@ -735,6 +789,9 @@ out_invalid_stream_name:
  * @file_size:		Size of unnamed data stream.  (Used only if alternate
  *                      data streams API appears to be unavailable.)
  *
+ * @vol_flags:          Flags that specify features of the volume being
+ *			captured.
+ *
  * Returns 0 on success; nonzero on failure.
  */
 static int
@@ -742,20 +799,23 @@ win32_capture_streams(const wchar_t *path,
 		      size_t path_num_chars,
 		      struct wim_inode *inode,
 		      struct wim_lookup_table *lookup_table,
-		      u64 file_size)
+		      u64 file_size,
+		      unsigned vol_flags)
 {
 	WIN32_FIND_STREAM_DATA dat;
 	int ret;
 	HANDLE hFind;
 	DWORD err;
 
-	if (win32func_FindFirstStreamW == NULL)
+	DEBUG("Capturing streams from \"%ls\"", path);
+
+	if (win32func_FindFirstStreamW == NULL ||
+	    !(vol_flags & FILE_NAMED_STREAMS))
 		goto unnamed_only;
 
 	hFind = win32func_FindFirstStreamW(path, FindStreamInfoStandard, &dat, 0);
 	if (hFind == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
-
 		if (err == ERROR_CALL_NOT_IMPLEMENTED)
 			goto unnamed_only;
 
@@ -765,14 +825,14 @@ win32_capture_streams(const wchar_t *path,
 		    (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
 		    && err == ERROR_HANDLE_EOF)
 		{
+			DEBUG("ERROR_HANDLE_EOF (ok)");
 			return 0;
 		} else {
 			if (err == ERROR_ACCESS_DENIED) {
-				/* XXX This maybe should be an error. */
-				WARNING("Failed to look up data streams "
-					"of \"%ls\": Access denied!\n%ls",
-					path, capture_access_denied_msg);
-				return 0;
+				ERROR("Failed to look up data streams "
+				      "of \"%ls\": Access denied!\n%ls",
+				      path, capture_access_denied_msg);
+				return WIMLIB_ERR_READ;
 			} else {
 				ERROR("Failed to look up data streams "
 				      "of \"%ls\"", path);
@@ -799,8 +859,9 @@ out_find_close:
 	FindClose(hFind);
 	return ret;
 unnamed_only:
-	/* FindFirstStreamW() API is not available.  Only capture the unnamed
-	 * data stream. */
+	/* FindFirstStreamW() API is not available, or the volume does not
+	 * support named streams.  Only capture the unnamed data stream. */
+	DEBUG("Only capturing unnamed data stream");
 	if (inode->i_attributes &
 	     (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
 	{
@@ -829,7 +890,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  const struct wimlib_capture_config *config,
 				  int add_image_flags,
 				  wimlib_progress_func_t progress_func,
-				  struct win32_capture_state *state)
+				  struct win32_capture_state *state,
+				  unsigned vol_flags)
 {
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode;
@@ -910,7 +972,9 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 
 	add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
 
-	if (!(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
+	if (!(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)
+	    && (vol_flags & FILE_PERSISTENT_ACLS))
+	{
 		ret = win32_get_security_descriptor(root, sd_set, path, state,
 						    add_image_flags);
 		if (ret)
@@ -929,7 +993,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 					    path_num_chars,
 					    inode,
 					    lookup_table,
-					    file_size);
+					    file_size,
+					    vol_flags);
 		if (ret)
 			goto out_close_handle;
 		ret = win32_recurse_directory(root,
@@ -941,7 +1006,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 					      config,
 					      add_image_flags,
 					      progress_func,
-					      state);
+					      state,
+					      vol_flags);
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Reparse point: save the reparse tag and data.  Alternate data
 		 * streams are not captured, if it's even possible for a reparse
@@ -957,7 +1023,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 					    path_num_chars,
 					    inode,
 					    lookup_table,
-					    file_size);
+					    file_size,
+					    vol_flags);
 	}
 out_close_handle:
 	CloseHandle(hFile);
@@ -1017,10 +1084,13 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	wchar_t *path;
 	int ret;
 	struct win32_capture_state state;
+	unsigned vol_flags;
 
 	path_nchars = wcslen(root_disk_path);
 	if (path_nchars > 32767)
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	win32_get_vol_flags(root_disk_path, &vol_flags);
 
 	/* There is no check for overflow later when this buffer is being used!
 	 * But the max path length on NTFS is 32767 characters, and paths need
@@ -1042,7 +1112,8 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 						config,
 						add_image_flags,
 						progress_func,
-						&state);
+						&state,
+						vol_flags);
 	FREE(path);
 	if (ret == 0)
 		win32_do_capture_warnings(&state, add_image_flags);
@@ -1126,10 +1197,12 @@ win32_set_compressed(HANDLE hFile, const wchar_t *path)
 			     NULL, 0,
 			     &bytesReturned, NULL))
 	{
-		/* Warning only */
+		/* Could be a warning only, but we only call this if the volume
+		 * supports compression.  So I'm calling this an error. */
 		DWORD err = GetLastError();
-		WARNING("Failed to set compression flag on \"%ls\"", path);
+		ERROR("Failed to set compression flag on \"%ls\"", path);
 		win32_error(err);
+		return WIMLIB_ERR_WRITE;
 	}
 	return 0;
 }
@@ -1143,10 +1216,12 @@ win32_set_sparse(HANDLE hFile, const wchar_t *path)
 			     NULL, 0,
 			     &bytesReturned, NULL))
 	{
-		/* Warning only */
+		/* Could be a warning only, but we only call this if the volume
+		 * supports sparse files.  So I'm calling this an error. */
 		DWORD err = GetLastError();
 		WARNING("Failed to set sparse flag on \"%ls\"", path);
 		win32_error(err);
+		return WIMLIB_ERR_WRITE;
 	}
 	return 0;
 }
@@ -1251,8 +1326,8 @@ do_win32_extract_stream(HANDLE hStream, struct wim_lookup_table_entry *lte)
 }
 
 static int
-do_win32_extract_encryted_stream(const wchar_t *path,
-				 const struct wim_lookup_table_entry *lte)
+do_win32_extract_encrypted_stream(const wchar_t *path,
+				  const struct wim_lookup_table_entry *lte)
 {
 	ERROR("Extrat encryted streams not implemented");
 	return WIMLIB_ERR_INVALID_PARAM;
@@ -1329,34 +1404,54 @@ inode_has_special_attributes(const struct wim_inode *inode)
 				       FILE_ATTRIBUTE_SPARSE_FILE)) != 0;
 }
 
+/* Set compression or sparse attributes, and reparse data, if supported by the
+ * volume. */
 static int
 win32_set_special_attributes(HANDLE hFile, const struct wim_inode *inode,
 			     struct wim_lookup_table_entry *unnamed_stream_lte,
-			     const wchar_t *path)
+			     const wchar_t *path, unsigned vol_flags)
 {
 	int ret;
 
-	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		DEBUG("Setting reparse data on \"%ls\"", path);
-		ret = win32_set_reparse_data(hFile, inode->i_reparse_tag,
-					     unnamed_stream_lte, path);
-		if (ret)
-			return ret;
-	}
-
 	if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED) {
-		DEBUG("Setting compression flag on \"%ls\"", path);
-		ret = win32_set_compressed(hFile, path);
-		if (ret)
-			return ret;
+		if (vol_flags & FILE_FILE_COMPRESSION) {
+			DEBUG("Setting compression flag on \"%ls\"", path);
+			ret = win32_set_compressed(hFile, path);
+			if (ret)
+				return ret;
+		} else {
+			DEBUG("Cannot set compression attribute on \"%ls\": "
+			      "volume does not support transparent compression",
+			      path);
+		}
 	}
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_SPARSE_FILE) {
-		DEBUG("Setting sparse flag on \"%ls\"", path);
-		ret = win32_set_sparse(hFile, path);
-		if (ret)
-			return ret;
+		if (vol_flags & FILE_SUPPORTS_SPARSE_FILES) {
+			DEBUG("Setting sparse flag on \"%ls\"", path);
+			ret = win32_set_sparse(hFile, path);
+			if (ret)
+				return ret;
+		} else {
+			DEBUG("Cannot set sparse attribute on \"%ls\": "
+			      "volume does not support sparse files",
+			      path);
+		}
 	}
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		if (vol_flags & FILE_SUPPORTS_REPARSE_POINTS) {
+			DEBUG("Setting reparse data on \"%ls\"", path);
+			ret = win32_set_reparse_data(hFile, inode->i_reparse_tag,
+						     unnamed_stream_lte, path);
+			if (ret)
+				return ret;
+		} else {
+			DEBUG("Cannot set reparse data on \"%ls\": volume "
+			      "does not support reparse points", path);
+		}
+	}
+
 	return 0;
 }
 
@@ -1364,7 +1459,8 @@ static int
 win32_extract_stream(const struct wim_inode *inode,
 		     const wchar_t *path,
 		     const wchar_t *stream_name_utf16,
-		     struct wim_lookup_table_entry *lte)
+		     struct wim_lookup_table_entry *lte,
+		     unsigned vol_flags)
 {
 	wchar_t *stream_path;
 	HANDLE h;
@@ -1432,6 +1528,8 @@ win32_extract_stream(const struct wim_inode *inode,
 				ret = 0;
 				goto out;
 			}
+			DEBUG("Directory \"%ls\" has special attributes!",
+			      stream_path);
 			creationDisposition = OPEN_EXISTING;
 		}
 	}
@@ -1453,7 +1551,8 @@ win32_extract_stream(const struct wim_inode *inode,
 	}
 
 	if (stream_name_utf16 == NULL && inode_has_special_attributes(inode)) {
-		ret = win32_set_special_attributes(h, inode, lte, path);
+		ret = win32_set_special_attributes(h, inode, lte, path,
+						   vol_flags);
 		if (ret)
 			goto fail_close_handle;
 	}
@@ -1463,9 +1562,11 @@ win32_extract_stream(const struct wim_inode *inode,
 			DEBUG("Extracting \"%ls\" (len = %"PRIu64")",
 			      stream_path, wim_resource_size(lte));
 			if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED
-			    && stream_name_utf16 == NULL) {
-				ret = do_win32_extract_encryted_stream(stream_path,
-								       lte);
+			    && stream_name_utf16 == NULL
+			    && (vol_flags & FILE_SUPPORTS_ENCRYPTION))
+			{
+				ret = do_win32_extract_encrypted_stream(stream_path,
+									lte);
 			} else {
 				ret = do_win32_extract_stream(h, lte);
 			}
@@ -1504,17 +1605,22 @@ out:
  */
 static int
 win32_extract_streams(const struct wim_inode *inode,
-		      const wchar_t *path, u64 *completed_bytes_p)
+		      const wchar_t *path, u64 *completed_bytes_p,
+		      unsigned vol_flags)
 {
 	struct wim_lookup_table_entry *unnamed_lte;
 	int ret;
 
 	unnamed_lte = inode_unnamed_lte_resolved(inode);
-	ret = win32_extract_stream(inode, path, NULL, unnamed_lte);
+	ret = win32_extract_stream(inode, path, NULL, unnamed_lte,
+				   vol_flags);
 	if (ret)
 		goto out;
 	if (unnamed_lte)
 		*completed_bytes_p += wim_resource_size(unnamed_lte);
+
+	if (!(vol_flags & FILE_NAMED_STREAMS))
+		goto out;
 	for (u16 i = 0; i < inode->i_num_ads; i++) {
 		const struct wim_ads_entry *ads_entry = &inode->i_ads_entries[i];
 		if (ads_entry->stream_name_nbytes != 0) {
@@ -1528,7 +1634,8 @@ win32_extract_streams(const struct wim_inode *inode,
 			ret = win32_extract_stream(inode,
 						   path,
 						   ads_entry->stream_name,
-						   ads_entry->lte);
+						   ads_entry->lte,
+						   vol_flags);
 			if (ret)
 				break;
 			if (ads_entry->lte)
@@ -1551,41 +1658,89 @@ win32_do_apply_dentry(const wchar_t *output_path,
 	struct wim_inode *inode = dentry->d_inode;
 	DWORD err;
 
+	if (!args->have_vol_flags) {
+		win32_get_vol_flags(output_path, &args->vol_flags);
+		args->have_vol_flags = true;
+		/* Warn the user about data that may not be extracted. */
+		if (!(args->vol_flags & FILE_SUPPORTS_SPARSE_FILES))
+			WARNING("Volume does not support sparse files!\n"
+				"          Sparse files will be extracted as non-sparse.");
+		if (!(args->vol_flags & FILE_SUPPORTS_REPARSE_POINTS))
+			WARNING("Volume does not support reparse points!\n"
+				"          Reparse point data will not be extracted.");
+		if (!(args->vol_flags & FILE_NAMED_STREAMS)) {
+			WARNING("Volume does not support named data streams!\n"
+				"          Named data streams will not be extracted.");
+		}
+		if (!(args->vol_flags & FILE_SUPPORTS_ENCRYPTION)) {
+			WARNING("Volume does not support encryption!\n"
+				"          Encrypted files will be extracted as raw data.");
+		}
+		if (!(args->vol_flags & FILE_FILE_COMPRESSION)) {
+			WARNING("Volume does not support transparent compression!\n"
+				"          Compressed files will be extracted as non-compressed.");
+		}
+		if (!(args->vol_flags & FILE_PERSISTENT_ACLS)) {
+			if (args->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS) {
+				ERROR("Strict ACLs requested, but the volume does not "
+				      "support ACLs!");
+				return WIMLIB_ERR_VOLUME_LACKS_FEATURES;
+			} else {
+				WARNING("Volume does not support persistent ACLS!\n"
+					"          File permissions will not be extracted.");
+			}
+		}
+	}
+
 	if (inode->i_nlink > 1 && inode->i_extracted_file != NULL) {
 		/* Linked file, with another name already extracted.  Create a
 		 * hard link. */
+
+		/* There is a volume flag for this (FILE_SUPPORTS_HARD_LINKS),
+		 * but it's only available on Windows 7 and later.  So no use
+		 * even checking it, really.  Instead, CreateHardLinkW() will
+		 * apparently return ERROR_INVALID_FUNCTION if the volume does
+		 * not support hard links. */
 		DEBUG("Creating hard link \"%ls => %ls\"",
 		      output_path, inode->i_extracted_file);
-		if (!CreateHardLinkW(output_path, inode->i_extracted_file, NULL)) {
-			err = GetLastError();
+		if (CreateHardLinkW(output_path, inode->i_extracted_file, NULL))
+			return 0;
+
+		err = GetLastError();
+		if (err != ERROR_INVALID_FUNCTION) {
 			ERROR("Can't create hard link \"%ls => %ls\"",
 			      output_path, inode->i_extracted_file);
 			win32_error(err);
 			return WIMLIB_ERR_LINK;
+		} else {
+			WARNING("Can't create hard link \"%ls => %ls\":\n"
+				"          Volume does not support hard links!\n"
+				"          Falling back to extracting a copy of the file.");
 		}
-	} else {
-		/* Create the file, directory, or reparse point, and extract the
-		 * data streams. */
-		ret = win32_extract_streams(inode, output_path,
-					    &args->progress.extract.completed_bytes);
+	}
+	/* Create the file, directory, or reparse point, and extract the
+	 * data streams. */
+	ret = win32_extract_streams(inode, output_path,
+				    &args->progress.extract.completed_bytes,
+				    args->vol_flags);
+	if (ret)
+		return ret;
+
+	if (inode->i_security_id >= 0 &&
+	    !(args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)
+	    && (args->vol_flags & FILE_PERSISTENT_ACLS))
+	{
+		ret = win32_set_security_data(inode, output_path, args);
 		if (ret)
 			return ret;
-
-		if (inode->i_security_id >= 0 &&
-		    !(args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS))
-		{
-			ret = win32_set_security_data(inode, output_path, args);
-			if (ret)
-				return ret;
-		}
-		if (inode->i_nlink > 1) {
-			/* Save extracted path for a later call to
-			 * CreateHardLinkW() if this inode has multiple links.
-			 * */
-			inode->i_extracted_file = WSTRDUP(output_path);
-			if (!inode->i_extracted_file)
-				ret = WIMLIB_ERR_NOMEM;
-		}
+	}
+	if (inode->i_nlink > 1) {
+		/* Save extracted path for a later call to
+		 * CreateHardLinkW() if this inode has multiple links.
+		 * */
+		inode->i_extracted_file = WSTRDUP(output_path);
+		if (!inode->i_extracted_file)
+			ret = WIMLIB_ERR_NOMEM;
 	}
 	return 0;
 }

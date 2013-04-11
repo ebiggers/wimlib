@@ -216,7 +216,7 @@ void wimlib_debug(const tchar *file, int line, const char *func,
 	va_list va;
 	tchar buf[tstrlen(file) + strlen(func) + 30];
 
-	tsprintf(buf, "[%"TS" %d] %s(): ", file, line, func);
+	tsprintf(buf, T("[%"TS" %d] %s(): "), file, line, func);
 
 	va_start(va, format);
 	wimlib_vmsg(buf, format, va, false);
@@ -358,6 +358,8 @@ static const tchar *error_strings[] = {
 		= T("The WIM file is marked with an unknown version number"),
 	[WIMLIB_ERR_UNSUPPORTED]
 		= T("The requested operation is unsupported"),
+	[WIMLIB_ERR_VOLUME_LACKS_FEATURES]
+		= T("The volume did not support a feature necessary to complete the operation"),
 	[WIMLIB_ERR_WRITE]
 		= T("Failed to write data to a file"),
 	[WIMLIB_ERR_XML]
