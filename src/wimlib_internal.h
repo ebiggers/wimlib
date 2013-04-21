@@ -541,7 +541,6 @@ libntfs3g_global_init();
 
 /* ntfs-capture.c */
 
-/* The types of these two callbacks are intentionally the same. */
 typedef int (*consume_data_callback_t)(const void *buf, size_t len, void *ctx);
 
 extern int

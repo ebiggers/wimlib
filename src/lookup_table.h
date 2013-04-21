@@ -63,11 +63,9 @@ enum resource_location {
 	 * WIM file will be pointed to by the @wim member. */
 	RESOURCE_IN_WIM,
 
-	/* The stream resource is located in an external file.  The name of the
-	 * file will be provided by @file_on_disk member.  In addition, if
-	 * @file_on_disk_fp is not NULL, it will be an open FILE * to the file.
-	 * */
 #ifndef __WIN32__
+	/* The stream resource is located in an external file.  The name of the
+	 * file will be provided by @file_on_disk member. */
 	RESOURCE_IN_FILE_ON_DISK,
 #endif
 
@@ -143,9 +141,10 @@ struct wim_lookup_table_entry {
 	/* 1 if this stream is a unique size (only set while writing streams). */
 	u8 unique_size : 1;
 
-	/* 1 if this stream had a SHA1-message digest calculated for it yet? */
+	/* 1 if this stream has not had a SHA1 message digest calculated for it
+	 * yet */
 	u8 unhashed : 1;
-	
+
 	u8 deferred : 1;
 
 	u8 no_progress : 1;
@@ -222,10 +221,10 @@ struct wim_lookup_table_entry {
 	union {
 		/* When a WIM file is written, @output_resource_entry is filled
 		 * in with the resource entry for the output WIM.  This will not
-		 * necessarily be the same as the @resource_entry since: - The
-		 * stream may have a different offset in the new WIM - The
-		 * stream may have a different compressed size in the new WIM if
-		 * the compression type changed
+		 * necessarily be the same as the @resource_entry since:
+		 * - The stream may have a different offset in the new WIM
+		 * - The stream may have a different compressed size in the new
+		 *   WIM if the compression type changed
 		 */
 		struct resource_entry output_resource_entry;
 
@@ -464,34 +463,12 @@ inode_stream_name_nbytes(const struct wim_inode *inode, unsigned stream_idx)
 		return inode->i_ads_entries[stream_idx - 1].stream_name_nbytes;
 }
 
-static inline struct wim_lookup_table_entry *
-inode_unnamed_lte_resolved(const struct wim_inode *inode)
-{
-	wimlib_assert(inode->i_resolved);
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		if (inode_stream_name_nbytes(inode, i) == 0 &&
-		    !is_zero_hash(inode_stream_hash_resolved(inode, i)))
-		{
-			return inode_stream_lte_resolved(inode, i);
-		}
-	}
-	return NULL;
-}
+extern struct wim_lookup_table_entry *
+inode_unnamed_lte_resolved(const struct wim_inode *inode);
 
-static inline struct wim_lookup_table_entry *
+extern struct wim_lookup_table_entry *
 inode_unnamed_lte_unresolved(const struct wim_inode *inode,
-			     const struct wim_lookup_table *table)
-{
-	wimlib_assert(!inode->i_resolved);
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		if (inode_stream_name_nbytes(inode, i) == 0 &&
-		    !is_zero_hash(inode_stream_hash_unresolved(inode, i)))
-		{
-			return inode_stream_lte_unresolved(inode, i, table);
-		}
-	}
-	return NULL;
-}
+			     const struct wim_lookup_table *table);
 
 extern struct wim_lookup_table_entry *
 inode_unnamed_lte(const struct wim_inode *inode, const struct wim_lookup_table *table);

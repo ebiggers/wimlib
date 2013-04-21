@@ -1329,7 +1329,7 @@ static int
 do_win32_extract_encrypted_stream(const wchar_t *path,
 				  const struct wim_lookup_table_entry *lte)
 {
-	ERROR("Extrat encryted streams not implemented");
+	ERROR("Extracting encryted streams not implemented");
 	return WIMLIB_ERR_INVALID_PARAM;
 }
 

@@ -536,7 +536,7 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 	INIT_LIST_HEAD(&imd->inode_list);
 #ifdef WITH_NTFS_3G
 	if (imd->ntfs_vol) {
-		do_ntfs_umount(imd->ntfs_vol);	
+		do_ntfs_umount(imd->ntfs_vol);
 		imd->ntfs_vol = NULL;
 	}
 #endif

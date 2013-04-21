@@ -47,7 +47,7 @@ is_zero_hash(const u8 hash[SHA1_HASH_SIZE])
 {
 	if (hash)
 		for (u8 i = 0; i < SHA1_HASH_SIZE / 4; i++)
-			if (((u32*)hash)[i])
+			if (((const u32*)hash)[i])
 				return false;
 	return true;
 }

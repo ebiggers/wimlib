@@ -865,6 +865,34 @@ inode_stream_lte(const struct wim_inode *inode, unsigned stream_idx,
 		return inode_stream_lte_unresolved(inode, stream_idx, table);
 }
 
+struct wim_lookup_table_entry *
+inode_unnamed_lte_resolved(const struct wim_inode *inode)
+{
+	wimlib_assert(inode->i_resolved);
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+		if (inode_stream_name_nbytes(inode, i) == 0 &&
+		    !is_zero_hash(inode_stream_hash_resolved(inode, i)))
+		{
+			return inode_stream_lte_resolved(inode, i);
+		}
+	}
+	return NULL;
+}
+
+struct wim_lookup_table_entry *
+inode_unnamed_lte_unresolved(const struct wim_inode *inode,
+			     const struct wim_lookup_table *table)
+{
+	wimlib_assert(!inode->i_resolved);
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+		if (inode_stream_name_nbytes(inode, i) == 0 &&
+		    !is_zero_hash(inode_stream_hash_unresolved(inode, i)))
+		{
+			return inode_stream_lte_unresolved(inode, i, table);
+		}
+	}
+	return NULL;
+}
 
 /* Return the lookup table entry for the unnamed data stream of an inode, or
  * NULL if there is none.

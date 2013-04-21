@@ -65,10 +65,6 @@
 
 #include <limits.h>
 
-#if defined(__WIN32__) && !defined(INVALID_HANDLE_VALUE)
-#  define INVALID_HANDLE_VALUE ((HANDLE)(-1))
-#endif
-
 /* Chunk table that's located at the beginning of each compressed resource in
  * the WIM.  (This is not the on-disk format; the on-disk format just has an
  * array of offsets.) */
@@ -172,16 +168,18 @@ get_compress_func(int out_ctype)
  * Returns 0 on success; nonzero on failure.
  */
 static int
-write_wim_resource_chunk(const void *chunk, unsigned chunk_size,
-			 FILE *out_fp, compress_func_t compress,
-			 struct chunk_table *chunk_tab)
+write_wim_resource_chunk(const void * restrict chunk,
+			 unsigned chunk_size,
+			 FILE * restrict out_fp,
+			 compress_func_t compress,
+			 struct chunk_table * restrict chunk_tab)
 {
 	const void *out_chunk;
 	unsigned out_chunk_size;
 	if (compress) {
-		u8 *compressed_chunk = alloca(chunk_size);
+		void *compressed_chunk = alloca(chunk_size);
 
-		out_chunk_size = compress(chunk, chunk_size, compressed_chunk);
+		out_chunk_size = (*compress)(chunk, chunk_size, compressed_chunk);
 		if (out_chunk_size) {
 			/* Write compressed */
 			out_chunk = compressed_chunk;
@@ -212,8 +210,9 @@ write_wim_resource_chunk(const void *chunk, unsigned chunk_size,
  * @compressed_size_p.
  */
 static int
-finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
-			      FILE *out_fp, u64 *compressed_size_p)
+finish_wim_resource_chunk_tab(struct chunk_table * restrict chunk_tab,
+			      FILE * restrict out_fp,
+			      u64 * restrict compressed_size_p)
 {
 	size_t bytes_written;
 	if (fseeko(out_fp, chunk_tab->file_offset, SEEK_SET) != 0) {
@@ -261,7 +260,8 @@ fflush_and_ftruncate(FILE *out_fp, off_t offset)
 }
 
 static int
-finalize_and_check_sha1(SHA_CTX *sha_ctx, struct wim_lookup_table_entry *lte)
+finalize_and_check_sha1(SHA_CTX * restrict sha_ctx,
+			struct wim_lookup_table_entry * restrict lte)
 {
 	u8 md[SHA1_HASH_SIZE];
 	sha1_final(md, sha_ctx);
@@ -289,7 +289,8 @@ struct write_resource_ctx {
 };
 
 static int
-write_resource_cb(const void *chunk, size_t chunk_size, void *_ctx)
+write_resource_cb(const void *restrict chunk, size_t chunk_size,
+		  void *restrict _ctx)
 {
 	struct write_resource_ctx *ctx = _ctx;
 
@@ -734,8 +735,11 @@ do_write_stream_list_serial(struct list_head *stream_list,
 static inline int
 write_flags_to_resource_flags(int write_flags)
 {
-	return (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS) ?
-			WIMLIB_RESOURCE_FLAG_RECOMPRESS : 0;
+	int resource_flags = 0;
+
+	if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
+		resource_flags |= WIMLIB_RESOURCE_FLAG_RECOMPRESS;
+	return resource_flags;
 }
 
 static int

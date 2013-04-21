@@ -159,11 +159,6 @@ inode_ref_streams(struct wim_inode *inode)
 	}
 }
 
-void
-inode_add_link(struct wim_inode *inode, struct wim_dentry *dentry)
-{
-}
-
 /* Given a directory entry with the name @name for the file with the inode
  * number @ino and device number @devno, create a new WIM dentry with an
  * associated inode, where the inode is shared if an inode with the same @ino

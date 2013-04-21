@@ -812,8 +812,8 @@ extract_wim_resource(const struct wim_lookup_table_entry *lte,
 				print_lookup_table_entry(lte, stderr);
 				if (lte->resource_location == RESOURCE_IN_WIM)
 					ERROR("The WIM file appears to be corrupt!");
-				ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
 			#endif
+				ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
 			}
 		}
 	} else {

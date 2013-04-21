@@ -102,13 +102,19 @@ write_ntfs_data_streams(ntfs_inode *ni, struct wim_dentry *dentry,
 	const struct wim_inode *inode = dentry->d_inode;
 	struct wim_lookup_table_entry *lte;
 
+	lte = inode->i_lte;
+
+	/* For directories, skip unnamed streams; just extract alternate data
+	 * streams. */
+	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+		goto cont;
+
 	DEBUG("Writing %u NTFS data stream%s for `%s'",
 	      inode->i_num_ads + 1,
 	      (inode->i_num_ads == 0 ? "" : "s"),
 	      dentry->_full_path);
 
-	lte = inode->i_lte;
-	while (1) {
+	for (;;) {
 		if (stream_name_nbytes) {
 			/* Skip special UNIX data entries (see documentation for
 			 * WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
@@ -121,7 +127,7 @@ write_ntfs_data_streams(ntfs_inode *ni, struct wim_dentry *dentry,
 			/* Create an empty named stream. */
 			ret = ntfs_attr_add(ni, AT_DATA, stream_name,
 					    stream_name_nbytes / 2, NULL, 0);
-			if (ret != 0) {
+			if (ret) {
 				ERROR_WITH_ERRNO("Failed to create named data "
 						 "stream for extracted file "
 						 "`%s'",
@@ -151,7 +157,7 @@ write_ntfs_data_streams(ntfs_inode *ni, struct wim_dentry *dentry,
 			 * length, so the NTFS attribute should be resized to
 			 * this length before starting to extract the data. */
 			ret = ntfs_attr_truncate_solid(na, wim_resource_size(lte));
-			if (ret != 0) {
+			if (ret) {
 				ntfs_attr_close(na);
 				break;
 			}
@@ -161,7 +167,7 @@ write_ntfs_data_streams(ntfs_inode *ni, struct wim_dentry *dentry,
 
 			/* Close the attribute */
 			ntfs_attr_close(na);
-			if (ret != 0)
+			if (ret)
 				break;
 
 			/* Record the number of bytes of uncompressed data that
@@ -304,13 +310,12 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 					 ni, dir_ni,
 					 (const char*)&attributes_le32,
 					 sizeof(u32), 0);
-	if (ret != 0) {
+	if (ret) {
 		ERROR("Failed to set NTFS file attributes on `%s'",
 		      dentry->_full_path);
-		return WIMLIB_ERR_NTFS_3G;
-	}
-	if (inode->i_security_id != -1 &&
-	    !(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS))
+		ret = WIMLIB_ERR_NTFS_3G;
+	} else if (inode->i_security_id != -1 &&
+		   !(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS))
 	{
 		const char *desc;
 		const struct wim_security_data *sd;
@@ -325,13 +330,13 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 						 ni, dir_ni, desc,
 						 sd->sizes[inode->i_security_id], 0);
 
-		if (ret != 0) {
+		if (ret) {
 			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
 					dentry->_full_path);
-			return WIMLIB_ERR_NTFS_3G;
+			ret = WIMLIB_ERR_NTFS_3G;
 		}
 	}
-	return 0;
+	return ret;
 }
 
 /*
@@ -343,7 +348,7 @@ apply_reparse_data(ntfs_inode *ni, struct wim_dentry *dentry,
 		   union wimlib_progress_info *progress_info)
 {
 	struct wim_lookup_table_entry *lte;
-	int ret = 0;
+	int ret;
 
 	lte = inode_unnamed_lte_resolved(dentry->d_inode);
 
@@ -355,7 +360,9 @@ apply_reparse_data(ntfs_inode *ni, struct wim_dentry *dentry,
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
-	if (wim_resource_size(lte) >= 0xffff) {
+	/* "Reparse point data, including the tag and optional GUID, cannot
+	 * exceed 16 kilobytes." - MSDN  */
+	if (wim_resource_size(lte) > (16 * 1024 - 8)) {
 		ERROR("Reparse data of `%s' is too long (%"PRIu64" bytes)",
 		      dentry->_full_path, wim_resource_size(lte));
 		return WIMLIB_ERR_INVALID_DENTRY;
@@ -378,9 +385,10 @@ apply_reparse_data(ntfs_inode *ni, struct wim_dentry *dentry,
 		ERROR_WITH_ERRNO("Failed to set NTFS reparse data on `%s'",
 				 dentry->_full_path);
 		return WIMLIB_ERR_NTFS_3G;
+	} else {
+		progress_info->extract.completed_bytes += wim_resource_size(lte);
 	}
-	progress_info->extract.completed_bytes += wim_resource_size(lte);
-	return 0;
+	return ret;
 }
 
 /*
@@ -395,7 +403,7 @@ static int
 do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 		     struct apply_args *args)
 {
-	int ret = 0;
+	int ret;
 	mode_t type;
 	ntfs_inode *ni = NULL;
 	struct wim_inode *inode = dentry->d_inode;
@@ -419,10 +427,7 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 				 * extracted yet, so go ahead and extract the
 				 * first one. */
 				FREE(inode->i_extracted_file);
-				const tchar *full_path = dentry->_full_path;
-
-				if (!full_path ||
-				    !(inode->i_extracted_file = STRDUP(full_path)))
+				if (!(inode->i_extracted_file = STRDUP(dentry->_full_path)))
 				{
 					ret = WIMLIB_ERR_NOMEM;
 					goto out_close_dir_ni;
@@ -446,24 +451,22 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 		goto out_close_dir_ni;
 	}
 
-	/* Write the data streams, unless this is a directory or reparse point
-	 * */
-	if (!(inode->i_attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
-				   FILE_ATTRIBUTE_DIRECTORY))) {
+	/* Write the data streams, unless this is reparse point. */
+	if (!(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
 		ret = write_ntfs_data_streams(ni, dentry, &args->progress);
-		if (ret != 0)
+		if (ret)
 			goto out_close_dir_ni;
 	}
 
 	ret = apply_file_attributes_and_security_data(ni, dir_ni, dentry,
 						      args->w,
 						      args->extract_flags);
-	if (ret != 0)
+	if (ret)
 		goto out_close_dir_ni;
 
 	if (inode->i_attributes & FILE_ATTR_REPARSE_POINT) {
 		ret = apply_reparse_data(ni, dentry, &args->progress);
-		if (ret != 0)
+		if (ret)
 			goto out_close_dir_ni;
 	}
 
@@ -475,7 +478,7 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 				      dentry->short_name_nbytes,
 				      &short_name_mbs,
 				      &short_name_mbs_nbytes);
-		if (ret != 0)
+		if (ret)
 			goto out_close_dir_ni;
 
 		DEBUG("Setting short (DOS) name of `%s' to %s",
@@ -484,7 +487,7 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 		ret = ntfs_set_ntfs_dos_name(ni, dir_ni, short_name_mbs,
 					     short_name_mbs_nbytes, 0);
 		FREE(short_name_mbs);
-		if (ret != 0) {
+		if (ret) {
 			ERROR_WITH_ERRNO("Could not set DOS (short) name for `%s'",
 					 dentry->_full_path);
 			ret = WIMLIB_ERR_NTFS_3G;

@@ -160,6 +160,54 @@ flags_writable(int open_flags)
 	return open_flags & (O_RDWR | O_WRONLY);
 }
 
+/* Like pread(), but keep trying until everything has been read or we know for
+ * sure that there was an error. */
+static ssize_t
+full_pread(int fd, void *buf, size_t count, off_t offset)
+{
+	ssize_t bytes_remaining = count;
+	ssize_t bytes_read;
+
+	while (bytes_remaining > 0) {
+		bytes_read = pread(fd, buf, bytes_remaining, offset);
+		if (bytes_read <= 0) {
+			if (bytes_read < 0) {
+				if (errno == EINTR)
+					continue;
+			} else {
+				errno = EIO;
+			}
+			break;
+		}
+		bytes_remaining -= bytes_read;
+		buf += bytes_read;
+		offset += bytes_read;
+	}
+	return count - bytes_remaining;
+}
+
+/* Like pwrite(), but keep trying until everything has been written or we know
+ * for sure that there was an error. */
+static ssize_t
+full_pwrite(int fd, const void *buf, size_t count, off_t offset)
+{
+	ssize_t bytes_remaining = count;
+	ssize_t bytes_written;
+
+	while (bytes_remaining > 0) {
+		bytes_written = pwrite(fd, buf, bytes_remaining, offset);
+		if (bytes_written < 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		bytes_remaining -= bytes_written;
+		buf += bytes_written;
+		offset += bytes_written;
+	}
+	return count - bytes_remaining;
+}
+
 /*
  * Allocate a file descriptor for a stream.
  *
@@ -649,6 +697,7 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 
 	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte,
 				     inode, stream_id);
+	*retrieve_lte_pointer(new_lte) = new_lte;
 	*lte = new_lte;
 	return 0;
 out_revert_fd_changes:
@@ -804,7 +853,6 @@ rebuild_wim(struct wimfs_context *ctx, int write_flags,
 	image_for_each_unhashed_stream_safe(lte, tmp, imd) {
 		wimlib_assert(lte->unhashed);
 		if (wim_resource_size(lte) == 0) {
-			print_lookup_table_entry(lte, stderr);
 			struct wim_lookup_table_entry **back_ptr;
 			back_ptr = retrieve_lte_pointer(lte);
 			*back_ptr = NULL;
@@ -1493,13 +1541,6 @@ execute_fusermount(const char *dir)
 	return 0;
 }
 
-#if 0
-static int wimfs_access(const char *path, int mask)
-{
-	return -ENOSYS;
-}
-#endif
-
 static int
 wimfs_chmod(const char *path, mode_t mask)
 {
@@ -1560,17 +1601,6 @@ wimfs_destroy(void *p)
 			     &handler_ctx.hdr);
 	}
 }
-
-#if 0
-static int wimfs_fallocate(const char *path, int mode,
-			   off_t offset, off_t len, struct fuse_file_info *fi)
-{
-	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
-	wimlib_assert(fd->staging_fd != -1);
-	return fallocate(fd->staging_fd, mode, offset, len);
-}
-
-#endif
 
 static int
 wimfs_fgetattr(const char *path, struct stat *stbuf,
@@ -1809,7 +1839,7 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 
 	ret = lookup_resource(ctx->wim, path, get_lookup_flags(ctx),
 			      &dentry, &lte, &stream_idx);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	inode = dentry->d_inode;
@@ -1834,15 +1864,14 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 		u64 size = (lte) ? wim_resource_size(lte) : 0;
 		ret = extract_resource_to_staging_dir(inode, stream_id,
 						      &lte, size, ctx);
-		if (ret != 0)
+		if (ret)
 			return ret;
 		*back_ptr = lte;
 	}
-	print_lookup_table_entry(lte, stderr);
 
 	ret = alloc_wimfs_fd(inode, stream_id, lte, &fd,
 			     wimfs_ctx_readonly(ctx));
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	if (lte && lte->resource_location == RESOURCE_IN_STAGING_FILE) {
@@ -1892,26 +1921,33 @@ wimfs_read(const char *path, char *buf, size_t size,
 	if (!fd)
 		return -EBADF;
 
-	if (!fd->f_lte) /* Empty stream with no lookup table entry */
+	if (size == 0)
 		return 0;
 
-	res_size = wim_resource_size(fd->f_lte);
+	if (fd->f_lte)
+		res_size = wim_resource_size(fd->f_lte);
+	else
+		res_size = 0;
+
 	if (offset > res_size)
 		return -EOVERFLOW;
-	size = min(size, INT_MAX);
+
 	size = min(size, res_size - offset);
+	if (size == 0)
+		return 0;
 
 	switch (fd->f_lte->resource_location) {
 	case RESOURCE_IN_STAGING_FILE:
-		ret = pread(fd->staging_fd, buf, size, offset);
-		if (ret < 0)
+		ret = full_pread(fd->staging_fd, buf, size, offset);
+		if (ret != size)
 			ret = -errno;
 		break;
 	case RESOURCE_IN_WIM:
 		if (read_partial_wim_resource_into_buf(fd->f_lte, size,
 						       offset, buf, true))
 			ret = -errno;
-		ret = size;
+		else
+			ret = size;
 		break;
 	case RESOURCE_IN_ATTACHED_BUFFER:
 		memcpy(buf, fd->f_lte->attached_buffer + offset, size);
@@ -2216,13 +2252,19 @@ wimfs_truncate(const char *path, off_t size)
 	} else {
 		/* File in WIM.  Extract it to the staging directory, but only
 		 * the first @size bytes of it. */
+		struct wim_lookup_table_entry **back_ptr;
+
 		inode = dentry->d_inode;
-		if (stream_idx == 0)
+		if (stream_idx == 0) {
 			stream_id = 0;
-		else
+			back_ptr = &inode->i_lte;
+		} else {
 			stream_id = inode->i_ads_entries[stream_idx - 1].stream_id;
+			back_ptr = &inode->i_ads_entries[stream_idx - 1].lte;
+		}
 		ret = extract_resource_to_staging_dir(inode, stream_id,
 						      &lte, size, ctx);
+		*back_ptr = lte;
 	}
 	return ret;
 }
@@ -2321,8 +2363,8 @@ wimfs_write(const char *path, const char *buf, size_t size,
 	wimlib_assert(fd->f_inode != NULL);
 
 	/* Write the data. */
-	ret = pwrite(fd->staging_fd, buf, size, offset);
-	if (ret == -1)
+	ret = full_pwrite(fd->staging_fd, buf, size, offset);
+	if (ret != size)
 		return -errno;
 
 	/* Update file size */
@@ -2339,15 +2381,9 @@ wimfs_write(const char *path, const char *buf, size_t size,
 }
 
 static struct fuse_operations wimfs_operations = {
-#if 0
-	.access      = wimfs_access,
-#endif
 	.chmod       = wimfs_chmod,
 	.chown       = wimfs_chown,
 	.destroy     = wimfs_destroy,
-#if 0
-	.fallocate   = wimfs_fallocate,
-#endif
 	.fgetattr    = wimfs_fgetattr,
 	.ftruncate   = wimfs_ftruncate,
 	.getattr     = wimfs_getattr,

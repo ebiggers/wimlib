@@ -589,9 +589,6 @@ print_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
 	if (ret)
 		return ret;
 	tprintf(T("%"TS"\n"), dentry->_full_path);
-	FREE(dentry->_full_path);
-	dentry->_full_path = NULL;
-	dentry->full_path_nbytes = 0;
 	return 0;
 }
 
@@ -1211,6 +1208,29 @@ inode_set_unix_data(struct wim_inode *inode, uid_t uid, gid_t gid, mode_t mode,
 }
 #endif /* !__WIN32__ */
 
+static void
+replace_forbidden_characters(utf16lechar *name)
+{
+	utf16lechar *p;
+
+	for (p = name; *p; p++) {
+	#ifdef __WIN32__
+		if (wcschr(L"<>:\"/\\|?*", (wchar_t)*p))
+	#else
+		if (*p == '/') {
+	#endif
+			if (name) {
+				WARNING("File, directory, or stream name \"%"WS"\"\n"
+					"          contains forbidden characters; "
+					"replacing them with Unicode codepoint U+001A",
+					name);
+				name = NULL;
+			}
+			*p = 0x1a;
+		}
+	}
+}
+
 /*
  * Reads the alternate data stream entries of a WIM dentry.
  *
@@ -1338,6 +1358,7 @@ read_ads_entries(const u8 *p, struct wim_inode *inode, u64 remaining_size)
 			get_bytes(p, cur_entry->stream_name_nbytes,
 				  cur_entry->stream_name);
 			cur_entry->stream_name[cur_entry->stream_name_nbytes / 2] = 0;
+			replace_forbidden_characters(cur_entry->stream_name);
 		}
 		/* It's expected that the size of every ADS entry is a multiple
 		 * of 8.  However, to be safe, I'm allowing the possibility of
@@ -1511,6 +1532,7 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 			WARNING("File name in WIM dentry \"%"WS"\" is not "
 				"null-terminated!", file_name);
 		}
+		replace_forbidden_characters(file_name);
 	}
 
 	/* Align the calculated size */
@@ -1561,6 +1583,7 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 			WARNING("Short name in WIM dentry \"%"WS"\" is not "
 				"null-terminated!", file_name);
 		}
+		replace_forbidden_characters(short_name);
 	}
 
 	/*

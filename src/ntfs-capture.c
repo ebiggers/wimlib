@@ -176,8 +176,8 @@ capture_ntfs_streams(struct wim_inode *inode,
 		     ATTR_TYPES type)
 {
 	ntfs_attr_search_ctx *actx;
-	struct ntfs_location *ntfs_loc = NULL;
-	int ret = 0;
+	struct ntfs_location *ntfs_loc;
+	int ret;
 	struct wim_lookup_table_entry *lte;
 
 	DEBUG2("Capturing NTFS data streams from `%s'", path);
@@ -199,14 +199,9 @@ capture_ntfs_streams(struct wim_inode *inode,
 		u32 stream_id;
 
 		if (data_size == 0) {
-			if (errno != 0) {
-				ERROR_WITH_ERRNO("Failed to get size of attribute of "
-						 "`%s'", path);
-				ret = WIMLIB_ERR_NTFS_3G;
-				goto out_put_actx;
-			}
 			/* Empty stream.  No lookup table entry is needed. */
 			lte = NULL;
+			ntfs_loc = NULL;
 		} else {
 			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
 			if (!ntfs_loc)
@@ -280,7 +275,13 @@ capture_ntfs_streams(struct wim_inode *inode,
 						     inode, stream_id);
 		}
 	}
-	ret = 0;
+	if (errno == ENOENT) {
+		ret = 0;
+	} else {
+		ERROR_WITH_ERRNO("Error listing NTFS attributes from `%s'",
+				 path);
+		ret = WIMLIB_ERR_NTFS_3G;
+	}
 	goto out_put_actx;
 out_free_lte:
 	free_lookup_table_entry(lte);
@@ -295,7 +296,7 @@ out_put_actx:
 	if (ret == 0)
 		DEBUG2("Successfully captured NTFS streams from `%s'", path);
 	else
-		ERROR("Failed to capture NTFS streams from `%s", path);
+		ERROR("Failed to capture NTFS streams from `%s'", path);
 	return ret;
 }
 
@@ -550,6 +551,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	int ret;
 	struct wim_dentry *root;
 	struct wim_inode *inode;
+	ATTR_TYPES stream_type;
 
 	if (exclude_path(path, path_len, config, false)) {
 		/* Exclude a file or directory tree based on the capture
@@ -603,7 +605,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	if (inode->i_nlink > 1) /* Shared inode; nothing more to do */
 		goto out;
 
-	if (name_type & FILE_NAME_WIN32) /* Win32 or Win32+DOS name */
+	if (name_type & FILE_NAME_WIN32) /* Win32 or Win32+DOS name (rather than POSIX) */
 		root->is_win32_name = 1;
 	inode->i_creation_time    = le64_to_cpu(ni->creation_time);
 	inode->i_last_write_time  = le64_to_cpu(ni->last_data_change_time);
@@ -611,14 +613,26 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	inode->i_attributes       = le32_to_cpu(attributes);
 	inode->i_resolved         = 1;
 
-	if (attributes & FILE_ATTR_REPARSE_POINT) {
-		/* Junction point, symbolic link, or other reparse point */
-		ret = capture_ntfs_streams(inode, ni, path,
-					   path_len, lookup_table,
-					   vol, AT_REPARSE_POINT);
-	} else if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY) {
+	if (attributes & FILE_ATTR_REPARSE_POINT)
+		stream_type = AT_REPARSE_POINT;
+	else
+		stream_type = AT_DATA;
 
-		/* Normal directory */
+	/* Capture the file's streams; more specifically, this is supposed to:
+	 *
+	 * - Regular files: capture unnamed data stream and any named data
+	 *   streams
+	 * - Directories: capture any named data streams
+	 * - Reparse points: capture reparse data only
+	 */
+	ret = capture_ntfs_streams(inode, ni, path, path_len, lookup_table,
+				   vol, stream_type);
+	if (ret)
+		goto out;
+
+	if (ni->mrec->flags & MFT_RECORD_IS_DIRECTORY) {
+
+		/* Recurse to directory children */
 		s64 pos = 0;
 		struct dos_name_map dos_name_map = { .rb_root = {.rb_node = NULL} };
 		struct readdir_ctx ctx = {
@@ -644,14 +658,9 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 					       &dos_name_map);
 		}
 		destroy_dos_name_map(&dos_name_map);
-	} else {
-		/* Normal file */
-		ret = capture_ntfs_streams(inode, ni, path,
-					   path_len, lookup_table,
-					   vol, AT_DATA);
+		if (ret)
+			goto out;
 	}
-	if (ret)
-		goto out;
 
 	if (!(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
 		/* Get security descriptor */
