@@ -141,7 +141,7 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 {
 
 	DIR *dir;
-	struct dirent entry, *result;
+	struct dirent *entry;
 	struct wim_dentry *child;
 	int ret;
 
@@ -154,26 +154,26 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 	}
 
 	/* Recurse on directory contents */
-	while (1) {
+	for (;;) {
 		errno = 0;
-		ret = readdir_r(dir, &entry, &result);
-		if (ret != 0) {
-			ret = WIMLIB_ERR_READ;
-			ERROR_WITH_ERRNO("Error reading the "
-					 "directory `%s'",
-					 path);
+		entry = readdir(dir);
+		if (!entry) {
+			if (errno) {
+				ret = WIMLIB_ERR_READ;
+				ERROR_WITH_ERRNO("Error reading the "
+						 "directory `%s'", path);
+			}
 			break;
 		}
-		if (result == NULL)
-			break;
-		if (result->d_name[0] == '.' && (result->d_name[1] == '\0'
-		      || (result->d_name[1] == '.' && result->d_name[2] == '\0')))
+
+		if (entry->d_name[0] == '.' && (entry->d_name[1] == '\0'
+		      || (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
 				continue;
 
-		size_t name_len = strlen(result->d_name);
+		size_t name_len = strlen(entry->d_name);
 
 		path[path_len] = '/';
-		memcpy(&path[path_len + 1], result->d_name, name_len + 1);
+		memcpy(&path[path_len + 1], entry->d_name, name_len + 1);
 		ret = unix_build_dentry_tree_recursive(&child,
 						       path,
 						       path_len + 1 + name_len,
