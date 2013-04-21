@@ -72,6 +72,8 @@ struct sd_set;
  * yet.  The differences between the versions are undocumented. */
 #define WIM_VERSION 0x10d00
 
+#define REPARSE_POINT_MAX_SIZE (16 * 1024)
+
 /* Metadata for a resource in a WIM file. */
 struct resource_entry {
 	/* Size, in bytes, of the resource in the WIM file. */

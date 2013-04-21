@@ -362,7 +362,7 @@ apply_reparse_data(ntfs_inode *ni, struct wim_dentry *dentry,
 
 	/* "Reparse point data, including the tag and optional GUID, cannot
 	 * exceed 16 kilobytes." - MSDN  */
-	if (wim_resource_size(lte) > (16 * 1024 - 8)) {
+	if (wim_resource_size(lte) > REPARSE_POINT_MAX_SIZE - 8) {
 		ERROR("Reparse data of `%s' is too long (%"PRIu64" bytes)",
 		      dentry->_full_path, wim_resource_size(lte));
 		return WIMLIB_ERR_INVALID_DENTRY;

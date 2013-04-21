@@ -614,7 +614,7 @@ win32_capture_reparse_point(HANDLE hFile,
 
 	/* "Reparse point data, including the tag and optional GUID,
 	 * cannot exceed 16 kilobytes." - MSDN  */
-	char reparse_point_buf[16 * 1024];
+	char reparse_point_buf[REPARSE_POINT_MAX_SIZE];
 	DWORD bytesReturned;
 
 	if (!DeviceIoControl(hFile, FSCTL_GET_REPARSE_POINT,

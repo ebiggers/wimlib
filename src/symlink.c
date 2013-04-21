@@ -182,7 +182,7 @@ inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
 	if (!lte)
 		return -EIO;
 
-	if (wim_resource_size(lte) > 10000)
+	if (wim_resource_size(lte) > REPARSE_POINT_MAX_SIZE)
 		return -EIO;
 
 	u8 res_buf[wim_resource_size(lte)];
