@@ -204,17 +204,23 @@ capture_ntfs_streams(struct wim_inode *inode,
 			ntfs_loc = NULL;
 		} else {
 			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
-			if (!ntfs_loc)
+			if (!ntfs_loc) {
+				ret = WIMLIB_ERR_NOMEM;
 				goto out_put_actx;
+			}
 			ntfs_loc->ntfs_vol = vol;
 			ntfs_loc->path = MALLOC(path_len + 1);
-			if (!ntfs_loc->path)
+			if (!ntfs_loc->path) {
+				ret = WIMLIB_ERR_NOMEM;
 				goto out_free_ntfs_loc;
+			}
 			memcpy(ntfs_loc->path, path, path_len + 1);
 			if (name_length) {
 				ntfs_loc->stream_name = MALLOC(name_length * 2);
-				if (!ntfs_loc->stream_name)
+				if (!ntfs_loc->stream_name) {
+					ret = WIMLIB_ERR_NOMEM;
 					goto out_free_ntfs_loc;
+				}
 				memcpy(ntfs_loc->stream_name,
 				       attr_record_name(actx->attr),
 				       actx->attr->name_length * 2);
@@ -222,8 +228,10 @@ capture_ntfs_streams(struct wim_inode *inode,
 			}
 
 			lte = new_lookup_table_entry();
-			if (!lte)
+			if (!lte) {
+				ret = WIMLIB_ERR_NOMEM;
 				goto out_free_ntfs_loc;
+			}
 			lte->resource_location = RESOURCE_IN_NTFS_VOLUME;
 			lte->ntfs_loc = ntfs_loc;
 			ntfs_loc = NULL;
@@ -264,8 +272,10 @@ capture_ntfs_streams(struct wim_inode *inode,
 			new_ads_entry = inode_add_ads_utf16le(inode,
 							      attr_record_name(actx->attr),
 							      name_length * 2);
-			if (!new_ads_entry)
+			if (!new_ads_entry) {
+				ret = WIMLIB_ERR_NOMEM;
 				goto out_free_lte;
+			}
 			wimlib_assert(new_ads_entry->stream_name_nbytes == name_length * 2);
 			stream_id = new_ads_entry->stream_id;
 			new_ads_entry->lte = lte;
