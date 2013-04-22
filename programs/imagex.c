@@ -89,6 +89,7 @@ IMAGEX_PROGNAME" append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                     [--verbose] [--dereference] [--config=FILE]\n"
 "                     [--threads=NUM_THREADS] [--rebuild] [--unix-data]\n"
 "                     [--source-list] [--no-acls] [--strict-acls]\n"
+"                     [--rpfix] [--norpfix]\n"
 ),
 [APPLY] =
 T(
@@ -104,6 +105,7 @@ IMAGEX_PROGNAME" capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
 "                      [--flags EDITION_ID] [--verbose] [--dereference]\n"
 "                      [--config=FILE] [--threads=NUM_THREADS] [--unix-data]\n"
 "                      [--source-list] [--no-acls] [--strict-acls]\n"
+"                      [--rpfix] [--norpfix]\n"
 ),
 [DELETE] =
 T(
@@ -173,9 +175,11 @@ enum {
 	IMAGEX_LOOKUP_TABLE_OPTION,
 	IMAGEX_METADATA_OPTION,
 	IMAGEX_NO_ACLS_OPTION,
+	IMAGEX_NORPFIX_OPTION,
 	IMAGEX_REBULID_OPTION,
 	IMAGEX_RECOMPRESS_OPTION,
 	IMAGEX_REF_OPTION,
+	IMAGEX_RPFIX_OPTION,
 	IMAGEX_SOFT_OPTION,
 	IMAGEX_SOURCE_LIST_OPTION,
 	IMAGEX_STAGING_DIR_OPTION,
@@ -215,6 +219,8 @@ static const struct option capture_or_append_options[] = {
 	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
+	{T("rpfix"),       no_argument,       NULL, IMAGEX_RPFIX_OPTION},
+	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -1343,6 +1349,12 @@ imagex_capture_or_append(int argc, tchar **argv)
 			break;
 		case IMAGEX_STRICT_ACLS_OPTION:
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS;
+			break;
+		case IMAGEX_RPFIX_OPTION:
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_RPFIX;
+			break;
+		case IMAGEX_NORPFIX_OPTION:
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NORPFIX;
 			break;
 		default:
 			usage(cmd);

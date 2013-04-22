@@ -694,6 +694,19 @@ struct wimlib_capture_config {
  * ::WIMLIB_ADD_IMAGE_FLAG_VERBOSE. */
 #define WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE		0x00000080
 
+/** Reparse-point fixups:  Modify absolute symbolic links (or junction points,
+ * in the case of Windows) that point inside the directory being captured to
+ * instead be absolute relative to the directory being captured, rather than the
+ * current root.
+ *
+ * Without this flag, the default is to do the reparse-point fixups if
+ * WIM_HDR_FLAG_RP_FIX is set in the WIM header. */
+#define WIMLIB_ADD_IMAGE_FLAG_RPFIX			0x00000100
+
+/* Don't do reparse point fixups.  Without this flag, the default is to do
+ * reparse point fixes if WIM_HDR_FLAG_RP_FIX is set in the WIM header. */
+#define WIMLIB_ADD_IMAGE_FLAG_NORPFIX			0x00000200
+
 /******************************
  * WIMLIB_EXPORT_FLAG_* *
  ******************************/

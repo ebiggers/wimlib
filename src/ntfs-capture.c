@@ -441,14 +441,9 @@ struct readdir_ctx {
 	ntfs_inode *dir_ni;
 	char *path;
 	size_t path_len;
-	struct wim_lookup_table	*lookup_table;
-	struct wim_inode_table *inode_table;
-	struct sd_set *sd_set;
 	struct dos_name_map *dos_name_map;
-	const struct wimlib_capture_config *config;
 	ntfs_volume *vol;
-	int add_image_flags;
-	wimlib_progress_func_t progress_func;
+	struct add_image_params *params;
 };
 
 static int
@@ -458,13 +453,8 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 				 char *path,
 				 size_t path_len,
 				 int name_type,
-				 struct wim_lookup_table *lookup_table,
-				 struct wim_inode_table *inode_table,
-				 struct sd_set *sd_set,
-				 const struct wimlib_capture_config *config,
 				 ntfs_volume *ntfs_vol,
-				 int add_image_flags,
-				 wimlib_progress_func_t progress_func);
+				 struct add_image_params *params);
 
 static int
 wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
@@ -523,12 +513,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	child = NULL;
 	ret = build_dentry_tree_ntfs_recursive(&child, ctx->dir_ni,
 					       ni, ctx->path, path_len, name_type,
-					       ctx->lookup_table,
-					       ctx->inode_table,
-					       ctx->sd_set,
-					       ctx->config, ctx->vol,
-					       ctx->add_image_flags,
-					       ctx->progress_func);
+					       ctx->vol, ctx->params);
 	if (child)
 		dentry_add_child(ctx->parent, child);
 	ntfs_inode_close(ni);
@@ -549,13 +534,8 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 				 char *path,
 				 size_t path_len,
 				 int name_type,
-				 struct wim_lookup_table *lookup_table,
-				 struct wim_inode_table *inode_table,
-				 struct sd_set *sd_set,
-				 const struct wimlib_capture_config *config,
 				 ntfs_volume *vol,
-				 int add_image_flags,
-				 wimlib_progress_func_t progress_func)
+				 struct add_image_params *params)
 {
 	u32 attributes;
 	int ret;
@@ -563,16 +543,16 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	struct wim_inode *inode;
 	ATTR_TYPES stream_type;
 
-	if (exclude_path(path, path_len, config, false)) {
+	if (exclude_path(path, path_len, params->config, false)) {
 		/* Exclude a file or directory tree based on the capture
 		 * configuration file */
-		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
-		    && progress_func)
+		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
+		    && params->progress_func)
 		{
 			union wimlib_progress_info info;
 			info.scan.cur_path = path;
 			info.scan.excluded = true;
-			progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 		}
 		root = NULL;
 		ret = 0;
@@ -592,17 +572,17 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
-	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
-	    && progress_func)
+	if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+	    && params->progress_func)
 	{
 		union wimlib_progress_info info;
 		info.scan.cur_path = path;
 		info.scan.excluded = false;
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 	}
 
 	/* Create a WIM dentry with an associated inode, which may be shared */
-	ret = inode_table_new_dentry(inode_table,
+	ret = inode_table_new_dentry(params->inode_table,
 				     path_basename_with_len(path, path_len),
 				     ni->mft_no,
 				     0,
@@ -635,8 +615,8 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	 * - Directories: capture any named data streams
 	 * - Reparse points: capture reparse data only
 	 */
-	ret = capture_ntfs_streams(inode, ni, path, path_len, lookup_table,
-				   vol, stream_type);
+	ret = capture_ntfs_streams(inode, ni, path, path_len,
+				   params->lookup_table, vol, stream_type);
 	if (ret)
 		goto out;
 
@@ -650,14 +630,9 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			.dir_ni          = ni,
 			.path            = path,
 			.path_len        = path_len,
-			.lookup_table    = lookup_table,
-			.inode_table     = inode_table,
-			.sd_set          = sd_set,
 			.dos_name_map    = &dos_name_map,
-			.config          = config,
 			.vol             = vol,
-			.add_image_flags = add_image_flags,
-			.progress_func   = progress_func,
+			.params          = params,
 		};
 		ret = ntfs_readdir(ni, &pos, &ctx, wim_ntfs_capture_filldir);
 		if (ret) {
@@ -672,7 +647,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			goto out;
 	}
 
-	if (!(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
+	if (!(params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
 		/* Get security descriptor */
 		char _sd[1];
 		char *sd = _sd;
@@ -686,7 +661,8 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 							 ni, dir_ni, sd, ret);
 		}
 		if (ret > 0) {
-			inode->i_security_id = sd_set_add_sd(sd_set, sd, ret);
+			inode->i_security_id = sd_set_add_sd(params->sd_set,
+							     sd, ret);
 			if (inode->i_security_id == -1) {
 				ERROR("Out of memory");
 				ret = WIMLIB_ERR_NOMEM;
@@ -708,7 +684,7 @@ out:
 	if (ret == 0)
 		*root_ret = root;
 	else
-		free_dentry_tree(root, lookup_table);
+		free_dentry_tree(root, params->lookup_table);
 	return ret;
 }
 
@@ -726,13 +702,7 @@ do_ntfs_umount(struct _ntfs_volume *vol)
 int
 build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       const char *device,
-		       struct wim_lookup_table *lookup_table,
-		       struct wim_inode_table *inode_table,
-		       struct sd_set *sd_set,
-		       const struct wimlib_capture_config *config,
-		       int add_image_flags,
-		       wimlib_progress_func_t progress_func,
-		       void *extra_arg)
+		       struct add_image_params *params)
 {
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
@@ -780,12 +750,7 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 	path[0] = '/';
 	path[1] = '\0';
 	ret = build_dentry_tree_ntfs_recursive(root_p, NULL, root_ni, path, 1,
-					       FILE_NAME_POSIX, lookup_table,
-					       inode_table,
-					       sd_set,
-					       config, vol,
-					       add_image_flags,
-					       progress_func);
+					       FILE_NAME_POSIX, vol, params);
 out_cleanup:
 	FREE(path);
 	ntfs_inode_close(root_ni);
@@ -804,7 +769,7 @@ out:
 	} else {
 		/* We need to leave the NTFS volume mounted so that we can read
 		 * the NTFS files again when we are actually writing the WIM */
-		*(ntfs_volume**)extra_arg = vol;
+		*(ntfs_volume**)params->extra_arg = vol;
 	}
 	return ret;
 }

@@ -30,7 +30,7 @@ do_tree_cmp() {
 
 image_name=0
 do_test() {
-	for ctype in None LZX XPRESS; do
+	for ctype in None XPRESS LZX; do
 
 		# Can we capture the WIM, apply it, and get the same result?
 		cd in.dir
@@ -112,6 +112,35 @@ imagex capture in.dir test.wim
 imagex apply test.wim out.dir
 if [ -e out.dir/hiberfil.sys -o -e "out.dir/System Volume Information" ]; then
 	error "Files were not excluded from capture as expected"
+fi
+
+__msg "Testing --rpfix"
+rm -r in.dir out.dir
+mkdir in.dir
+ln -s $PWD/in.dir          in.dir/absrootlink
+ln -s $PWD/in.dir////      in.dir/absrootlinkslashes
+ln -s /___NONEXISTENT___   in.dir/absnonexistent
+ln -s /usr/bin/env         in.dir/absoutoftree
+ln -s file                 in.dir/relalink
+ln -s $PWD/in.dir/file     in.dir/abslink
+ln -s $PWD/in.dir/file///  in.dir/abslinkslashes
+imagex capture --rpfix in.dir test.wim
+imagex apply --norpfix test.wim out.dir
+if [[ `readlink out.dir/absrootlink` != "/" ]] ||
+   [[ `readlink out.dir/absrootlinkslashes` != "////" ]]; then
+	error "imagex capture --rpfix failed to fix absolute link to capture root"
+fi
+
+if [[ -e out.dir/absnonexistent ]] ||
+   [[ -e out.dir/absoutoftree ]]; then
+	error "imagex capture --rpfix failed to exclude out of tree absolute links"
+fi
+if [[ `readlink out.dir/relalink` != "file" ]]; then
+	error "imagex capture --rpfix failed to capture relative symlink"
+fi
+if [[ `readlink out.dir/abslink` != "/file" ]] ||
+   [[ `readlink out.dir/abslinkslashes` != "/file///" ]]; then
+	error "imagex capture --rpfix did fix absolute link properly"
 fi
 
 echo "**********************************************************"

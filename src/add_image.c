@@ -123,21 +123,13 @@ static int
 unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				 char *path,
 				 size_t path_len,
-				 struct wim_lookup_table *lookup_table,
-				 struct wim_inode_table *inode_table,
-				 const struct wimlib_capture_config *config,
-				 int add_image_flags,
-				 wimlib_progress_func_t progress_func);
+				 struct add_image_params *params);
 
 static int
 unix_capture_directory(struct wim_dentry *dir_dentry,
 		       char *path,
 		       size_t path_len,
-		       struct wim_lookup_table *lookup_table,
-		       struct wim_inode_table *inode_table,
-		       const struct wimlib_capture_config *config,
-		       int add_image_flags,
-		       wimlib_progress_func_t progress_func)
+		       struct add_image_params *params)
 {
 
 	DIR *dir;
@@ -177,11 +169,7 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 		ret = unix_build_dentry_tree_recursive(&child,
 						       path,
 						       path_len + 1 + name_len,
-						       lookup_table,
-						       inode_table,
-						       config,
-						       add_image_flags,
-						       progress_func);
+						       params);
 		if (ret)
 			break;
 		if (child)
@@ -191,10 +179,58 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 	return ret;
 }
 
+static char *
+fixup_symlink(char *dest, ino_t capture_root_ino, dev_t capture_root_dev)
+{
+	char *p = dest;
+	struct stat stbuf;
+
+	for (;;) {
+		char save;
+		int ret;
+
+		while (*p == '/')
+			p++;
+
+		save = *p;
+		*p = '\0';
+		if (stat(dest, &stbuf)) {
+			WARNING_WITH_ERRNO("Failed to stat \"%s\": %m", dest);
+			*p = save;
+			/* Treat as a link pointing outside the capture root (it
+			 * most likely is). */
+			return NULL;
+		}
+		*p = save;
+
+		if (stbuf.st_ino == capture_root_ino &&
+		    stbuf.st_dev == capture_root_dev)
+		{
+			/* Link points inside capture root.  Return abbreviated
+			 * path. */
+			if (*p == '\0')
+				*(p - 1) = '/';
+			while (p - 1 >= dest && *(p - 1) == '/')
+				p--;
+			return p;
+		}
+
+		if (*p == '\0') {
+			/* Link points outside capture root. */
+			return NULL;
+		}
+
+		do {
+			p++;
+		} while (*p != '/' && *p != '\0');
+	}
+}
+
 static int
-unix_capture_symlink(const char *path,
+unix_capture_symlink(struct wim_dentry **root_p,
+		     const char *path,
 		     struct wim_inode *inode,
-		     struct wim_lookup_table *lookup_table)
+		     struct add_image_params *params)
 {
 	char deref_name_buf[4096];
 	ssize_t deref_name_len;
@@ -212,10 +248,30 @@ unix_capture_symlink(const char *path,
 	deref_name_len = readlink(path, deref_name_buf,
 				  sizeof(deref_name_buf) - 1);
 	if (deref_name_len >= 0) {
-		deref_name_buf[deref_name_len] = '\0';
-		DEBUG("Read symlink `%s'", deref_name_buf);
-		ret = inode_set_symlink(inode, deref_name_buf,
-					lookup_table, NULL);
+		char *dest = deref_name_buf;
+
+		dest[deref_name_len] = '\0';
+		DEBUG("Read symlink `%s'", dest);
+
+		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX) &&
+		     dest[0] == '/')
+		{
+			dest = fixup_symlink(dest,
+					     params->capture_root_ino,
+					     params->capture_root_dev);
+			if (!dest) {
+				WARNING("Ignoring out of tree absolute symlink "
+					"\"%s\" -> \"%s\"\n"
+					"          (Use --norpfix to capture "
+					"absolute symlinks as-is)",
+					path, deref_name_buf);
+				free_dentry(*root_p);
+				*root_p = NULL;
+				return 0;
+			}
+		}
+		ret = inode_set_symlink(inode, dest,
+					params->lookup_table, NULL);
 		if (ret == 0) {
 			/* Unfortunately, Windows seems to have the concept of
 			 * "file" symbolic links as being different from
@@ -239,46 +295,42 @@ static int
 unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				 char *path,
 				 size_t path_len,
-				 struct wim_lookup_table *lookup_table,
-				 struct wim_inode_table *inode_table,
-				 const struct wimlib_capture_config *config,
-				 int add_image_flags,
-				 wimlib_progress_func_t progress_func)
+				 struct add_image_params *params)
 {
 	struct wim_dentry *root = NULL;
 	int ret = 0;
 	struct wim_inode *inode;
 
-	if (exclude_path(path, path_len, config, true)) {
-		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
+	if (exclude_path(path, path_len, params->config, true)) {
+		if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
 			ERROR("Cannot exclude the root directory from capture");
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 			goto out;
 		}
-		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
-		    && progress_func)
+		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
+		    && params->progress_func)
 		{
 			union wimlib_progress_info info;
 			info.scan.cur_path = path;
 			info.scan.excluded = true;
-			progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 		}
 		goto out;
 	}
 
-	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
-	    && progress_func)
+	if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+	    && params->progress_func)
 	{
 		union wimlib_progress_info info;
 		info.scan.cur_path = path;
 		info.scan.excluded = false;
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 	}
 
-	/* UNIX version of capturing a directory tree */
 	struct stat stbuf;
 	int (*stat_fn)(const char *restrict, struct stat *restrict);
-	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE)
+	if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE) ||
+	    (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT))
 		stat_fn = stat;
 	else
 		stat_fn = lstat;
@@ -288,25 +340,6 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		ERROR_WITH_ERRNO("Failed to stat `%s'", path);
 		goto out;
 	}
-
-	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) &&
-	      !S_ISDIR(stbuf.st_mode))
-	{
-		/* Do a dereference-stat in case the root is a symbolic link.
-		 * This case is allowed, provided that the symbolic link points
-		 * to a directory. */
-		ret = stat(path, &stbuf);
-		if (ret != 0) {
-			ERROR_WITH_ERRNO("Failed to stat `%s'", path);
-			ret = WIMLIB_ERR_STAT;
-			goto out;
-		}
-		if (!S_ISDIR(stbuf.st_mode)) {
-			ERROR("`%s' is not a directory", path);
-			ret = WIMLIB_ERR_NOTDIR;
-			goto out;
-		}
-	}
 	if (!S_ISREG(stbuf.st_mode) && !S_ISDIR(stbuf.st_mode)
 	    && !S_ISLNK(stbuf.st_mode)) {
 		ERROR("`%s' is not a regular file, directory, or symbolic link.",
@@ -315,7 +348,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out;
 	}
 
-	ret = inode_table_new_dentry(inode_table,
+	ret = inode_table_new_dentry(params->inode_table,
 				     path_basename_with_len(path, path_len),
 				     stbuf.st_ino,
 				     stbuf.st_dev,
@@ -338,30 +371,29 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	inode->i_last_access_time = unix_timestamp_to_wim(stbuf.st_atime);
 #endif
 	inode->i_resolved = 1;
-	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
+	if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
 		ret = inode_set_unix_data(inode, stbuf.st_uid,
 					  stbuf.st_gid,
 					  stbuf.st_mode,
-					  lookup_table,
+					  params->lookup_table,
 					  UNIX_DATA_ALL | UNIX_DATA_CREATE);
 		if (ret)
 			goto out;
 	}
-	add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
+	params->add_image_flags &=
+		~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
 	if (S_ISREG(stbuf.st_mode))
 		ret = unix_capture_regular_file(path, stbuf.st_size,
-						inode, lookup_table);
+						inode, params->lookup_table);
 	else if (S_ISDIR(stbuf.st_mode))
-		ret = unix_capture_directory(root, path, path_len,
-					     lookup_table, inode_table, config,
-					     add_image_flags, progress_func);
+		ret = unix_capture_directory(root, path, path_len, params);
 	else
-		ret = unix_capture_symlink(path, inode, lookup_table);
+		ret = unix_capture_symlink(&root, path, inode, params);
 out:
 	if (ret == 0)
 		*root_ret = root;
 	else
-		free_dentry_tree(root, lookup_table);
+		free_dentry_tree(root, params->lookup_table);
 	return ret;
 }
 
@@ -376,20 +408,7 @@ out:
  *
  * @root_disk_path:  The path to the root of the directory tree on disk.
  *
- * @lookup_table: The lookup table for the WIM file.  For each file added to the
- * 		dentry tree being built, an entry is added to the lookup table,
- * 		unless an identical stream is already in the lookup table.
- * 		These lookup table entries that are added point to the path of
- * 		the file on disk.
- *
- * @sd_set:	Ignored.  (Security data only captured in NTFS mode.)
- *
- * @config:
- * 		Configuration for files to be excluded from capture.
- *
- * @add_flags:  Bitwise or of WIMLIB_ADD_IMAGE_FLAG_*
- *
- * @extra_arg:	Ignored
+ * @params:     See doc for `struct add_image_params'.
  *
  * @return:	0 on success, nonzero on failure.  It is a failure if any of
  *		the files cannot be `stat'ed, or if any of the needed
@@ -401,18 +420,28 @@ out:
 static int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const char *root_disk_path,
-		       struct wim_lookup_table *lookup_table,
-		       struct wim_inode_table *inode_table,
-		       struct sd_set *sd_set,
-		       const struct wimlib_capture_config *config,
-		       int add_image_flags,
-		       wimlib_progress_func_t progress_func,
-		       void *extra_arg)
+		       struct add_image_params *params)
 {
 	char *path_buf;
 	int ret;
 	size_t path_len;
 	size_t path_bufsz;
+
+	{
+		struct stat root_stbuf;
+		if (stat(root_disk_path, &root_stbuf)) {
+			ERROR_WITH_ERRNO("Failed to stat \"%s\"", root_disk_path);
+			return WIMLIB_ERR_STAT;
+		}
+
+		if (!S_ISDIR(root_stbuf.st_mode)) {
+			ERROR("Root of capture \"%s\" is not a directory",
+			      root_disk_path);
+			return WIMLIB_ERR_NOTDIR;
+		}
+		params->capture_root_ino = root_stbuf.st_ino;
+		params->capture_root_dev = root_stbuf.st_dev;
+	}
 
 	path_bufsz = min(32790, PATH_MAX + 1);
 	path_len = strlen(root_disk_path);
@@ -424,14 +453,9 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 	if (!path_buf)
 		return WIMLIB_ERR_NOMEM;
 	memcpy(path_buf, root_disk_path, path_len + 1);
-	ret = unix_build_dentry_tree_recursive(root_ret,
-					       path_buf,
-					       path_len,
-					       lookup_table,
-					       inode_table,
-					       config,
-					       add_image_flags,
-					       progress_func);
+
+	ret = unix_build_dentry_tree_recursive(root_ret, path_buf,
+					       path_len, params);
 	FREE(path_buf);
 	return ret;
 }
@@ -821,13 +845,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 {
 	int (*capture_tree)(struct wim_dentry **,
 			    const tchar *,
-			    struct wim_lookup_table *,
-			    struct wim_inode_table *,
-			    struct sd_set *,
-			    const struct wimlib_capture_config *,
-			    int,
-			    wimlib_progress_func_t,
-			    void *);
+			    struct add_image_params *);
 	void *extra_arg;
 	struct wim_dentry *root_dentry;
 	struct wim_dentry *branch;
@@ -835,6 +853,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 	struct wim_image_metadata *imd;
 	struct wim_inode_table inode_table;
 	struct list_head unhashed_streams;
+	struct add_image_params params;
 	int ret;
 	struct sd_set sd_set;
 #ifdef WITH_NTFS_3G
@@ -881,6 +900,19 @@ wimlib_add_image_multisource(WIMStruct *w,
 
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
 		add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
+
+	if ((add_image_flags & (WIMLIB_ADD_IMAGE_FLAG_RPFIX |
+				WIMLIB_ADD_IMAGE_FLAG_RPFIX)) ==
+		(WIMLIB_ADD_IMAGE_FLAG_RPFIX | WIMLIB_ADD_IMAGE_FLAG_NORPFIX))
+	{
+		ERROR("Cannot specify RPFIX and NORPFIX flags at the same time!");
+		return WIMLIB_ERR_INVALID_PARAM;
+	}
+
+	if ((add_image_flags & (WIMLIB_ADD_IMAGE_FLAG_RPFIX |
+				WIMLIB_ADD_IMAGE_FLAG_NORPFIX)) == 0)
+		if (w->hdr.flags & WIM_HDR_FLAG_RP_FIX)
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_RPFIX;
 
 	if (!name || !*name) {
 		ERROR("Must specify a non-empty string for the image name");
@@ -936,6 +968,14 @@ wimlib_add_image_multisource(WIMStruct *w,
 	INIT_LIST_HEAD(&unhashed_streams);
 	w->lookup_table->unhashed_streams = &unhashed_streams;
 	root_dentry = NULL;
+
+	params.lookup_table = w->lookup_table;
+	params.inode_table = &inode_table;
+	params.sd_set = &sd_set;
+	params.config = config;
+	params.add_image_flags = add_image_flags;
+	params.progress_func = progress_func;
+	params.extra_arg = extra_arg;
 	for (size_t i = 0; i < num_sources; i++) {
 		int flags;
 		union wimlib_progress_info progress;
@@ -955,14 +995,8 @@ wimlib_add_image_multisource(WIMStruct *w,
 		flags = add_image_flags | WIMLIB_ADD_IMAGE_FLAG_SOURCE;
 		if (!*sources[i].wim_target_path)
 			flags |= WIMLIB_ADD_IMAGE_FLAG_ROOT;
-		ret = (*capture_tree)(&branch,
-				      sources[i].fs_source_path,
-				      w->lookup_table,
-				      &inode_table,
-				      &sd_set,
-				      config,
-				      flags,
-				      progress_func, extra_arg);
+		ret = (*capture_tree)(&branch, sources[i].fs_source_path,
+				      &params);
 		if (ret) {
 			ERROR("Failed to build dentry tree for `%"TS"'",
 			      sources[i].fs_source_path);
@@ -1019,6 +1053,9 @@ wimlib_add_image_multisource(WIMStruct *w,
 
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wimlib_set_boot_idx(w, w->hdr.image_count);
+
+	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX)
+		w->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
 
 	ret = 0;
 	goto out_destroy_inode_table;

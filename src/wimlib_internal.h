@@ -197,9 +197,11 @@ struct wim_header {
  * file (if supported by the underlying filesystem). */
 #define WIM_HDR_FLAG_WRITE_IN_PROGRESS  0x00000040
 
-/* Reparse point fixup ???
- * This has something to do with absolute targets of reparse points / symbolic
- * links but I don't know what.  wimlib ignores this flag.  */
+/* Reparse point fixup flag.  See docs for --rpfix and --norpfix in imagex, or
+ * WIMLIB_ADD_IMAGE_FLAG_{RPFIX,NORPFIX} in wimlib.h.  Note that
+ * WIM_HDR_FLAG_RP_FIX is a header flag and just sets the default behavior for
+ * the WIM; it can still be overridder on a per-image basis.  But there is no
+ * flag to set the default behavior for a specific image. */
 #define WIM_HDR_FLAG_RP_FIX             0x00000080
 
 /* Unused, reserved flag for another compression type */
@@ -398,20 +400,6 @@ zero_resource_entry(struct resource_entry *entry)
 
 /* add_image.c */
 
-extern bool
-exclude_path(const tchar *path, size_t path_len,
-	     const struct wimlib_capture_config *config,
-	     bool exclude_prefix);
-
-/* extract_image.c */
-
-/* Internal use only */
-#define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE		0x80000000
-#define WIMLIB_EXTRACT_FLAG_NO_STREAMS		0x40000000
-#define WIMLIB_EXTRACT_MASK_PUBLIC		0x3fffffff
-
-/* hardlink.c */
-
 /* Hash table to find inodes, given an inode number (in the case of reading
  * a WIM images), or both an inode number and a device number (in the case of
  * capturing a WIM image). */
@@ -434,6 +422,52 @@ struct wim_inode_table {
 	 */
 	struct list_head extra_inodes;
 };
+
+/* Common parameters to implementations of building an in-memory dentry tree
+ * from an on-disk directory structure. */
+struct add_image_params {
+	/* Pointer to the lookup table of the WIM. */
+	struct wim_lookup_table *lookup_table;
+
+	/* Pointer to a hash table of inodes that have been captured for this
+	 * WIM image so far. */
+	struct wim_inode_table *inode_table;
+
+	/* Pointer to the set of security descriptors that have been captured
+	 * for this image so far. */
+	struct sd_set *sd_set;
+
+	/* Pointer to the capture configuration, which indicates whether any
+	 * files should be excluded from capture or not. */
+	const struct wimlib_capture_config *config;
+
+	/* Flags that affect the capture operation (WIMLIB_ADD_IMAGE_FLAG_*) */
+	int add_image_flags;
+
+	/* If non-NULL, the user-supplied progress function. */
+	wimlib_progress_func_t progress_func;
+
+	/* Extra argument; set to point to a pointer to the ntfs_volume for
+	 * libntfs-3g capture.  */
+	void *extra_arg;
+
+	u64 capture_root_ino;
+	u64 capture_root_dev;
+};
+
+extern bool
+exclude_path(const tchar *path, size_t path_len,
+	     const struct wimlib_capture_config *config,
+	     bool exclude_prefix);
+
+/* extract_image.c */
+
+/* Internal use only */
+#define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE		0x80000000
+#define WIMLIB_EXTRACT_FLAG_NO_STREAMS		0x40000000
+#define WIMLIB_EXTRACT_MASK_PUBLIC		0x3fffffff
+
+/* hardlink.c */
 
 extern int
 init_inode_table(struct wim_inode_table *table, size_t capacity);
@@ -554,13 +588,7 @@ read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
 extern int
 build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       const tchar *device,
-		       struct wim_lookup_table *lookup_table,
-		       struct wim_inode_table *inode_table,
-		       struct sd_set *sd_set,
-		       const struct wimlib_capture_config *config,
-		       int add_image_flags,
-		       wimlib_progress_func_t progress_func,
-		       void *extra_arg);
+		       struct add_image_params *ctx);
 
 #ifdef WITH_NTFS_3G
 extern int
