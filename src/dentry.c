@@ -702,6 +702,7 @@ new_timeless_inode()
 		inode->i_security_id = -1;
 		inode->i_nlink = 1;
 		inode->i_next_stream_id = 1;
+		inode->i_not_rpfixed = 1;
 	#ifdef WITH_FUSE
 		if (pthread_mutex_init(&inode->i_mutex, NULL) != 0) {
 			ERROR_WITH_ERRNO("Error initializing mutex");
@@ -1217,8 +1218,9 @@ replace_forbidden_characters(utf16lechar *name)
 	#ifdef __WIN32__
 		if (wcschr(L"<>:\"/\\|?*", (wchar_t)*p))
 	#else
-		if (*p == '/') {
+		if (*p == '/')
 	#endif
+		{
 			if (name) {
 				WARNING("File, directory, or stream name \"%"WS"\"\n"
 					"          contains forbidden characters; "
@@ -1482,7 +1484,8 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		p += 4;
 		p = get_u32(p, &inode->i_reparse_tag);
-		p += 4;
+		p += 2;
+		p = get_u16(p, &inode->i_not_rpfixed);
 	} else {
 		p += 4;
 		/* i_reparse_tag is irrelevant; just leave it at 0. */
@@ -1754,9 +1757,10 @@ write_dentry(const struct wim_dentry *dentry, u8 *p)
 	hash = inode_stream_hash(inode, 0);
 	p = put_bytes(p, SHA1_HASH_SIZE, hash);
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		p = put_zeroes(p, 4);
+		p = put_u32(p, 0);
 		p = put_u32(p, inode->i_reparse_tag);
-		p = put_zeroes(p, 4);
+		p = put_u16(p, 0);
+		p = put_u16(p, inode->i_not_rpfixed);
 	} else {
 		u64 link_group_id;
 		p = put_u32(p, 0);

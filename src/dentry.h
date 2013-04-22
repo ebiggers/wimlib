@@ -231,6 +231,8 @@ struct wim_inode {
 	/* Used only in NTFS-mode extraction */
 	u8 i_dos_name_extracted : 1;
 
+	u16 i_not_rpfixed;
+
 	/* Number of alternate data streams associated with this inode */
 	u16 i_num_ads;
 

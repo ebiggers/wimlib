@@ -179,53 +179,6 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 	return ret;
 }
 
-static char *
-fixup_symlink(char *dest, ino_t capture_root_ino, dev_t capture_root_dev)
-{
-	char *p = dest;
-	struct stat stbuf;
-
-	for (;;) {
-		char save;
-		int ret;
-
-		while (*p == '/')
-			p++;
-
-		save = *p;
-		*p = '\0';
-		if (stat(dest, &stbuf)) {
-			WARNING_WITH_ERRNO("Failed to stat \"%s\": %m", dest);
-			*p = save;
-			/* Treat as a link pointing outside the capture root (it
-			 * most likely is). */
-			return NULL;
-		}
-		*p = save;
-
-		if (stbuf.st_ino == capture_root_ino &&
-		    stbuf.st_dev == capture_root_dev)
-		{
-			/* Link points inside capture root.  Return abbreviated
-			 * path. */
-			if (*p == '\0')
-				*(p - 1) = '/';
-			while (p - 1 >= dest && *(p - 1) == '/')
-				p--;
-			return p;
-		}
-
-		if (*p == '\0') {
-			/* Link points outside capture root. */
-			return NULL;
-		}
-
-		do {
-			p++;
-		} while (*p != '/' && *p != '\0');
-	}
-}
-
 static int
 unix_capture_symlink(struct wim_dentry **root_p,
 		     const char *path,
@@ -269,6 +222,7 @@ unix_capture_symlink(struct wim_dentry **root_p,
 				*root_p = NULL;
 				return 0;
 			}
+			inode->i_not_rpfixed = 0;
 		}
 		ret = inode_set_symlink(inode, dest,
 					params->lookup_table, NULL);

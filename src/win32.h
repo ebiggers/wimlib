@@ -8,13 +8,10 @@
 extern int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const tchar *root_disk_path,
-			struct wim_lookup_table *lookup_table,
-			struct wim_inode_table *inode_table,
-			struct sd_set *sd,
-			const struct wimlib_capture_config *config,
-			int add_image_flags,
-			wimlib_progress_func_t progress_func,
-			void *extra_arg);
+			struct add_image_params *params);
+
+extern int
+win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret);
 
 extern int
 win32_read_file(const tchar *filename, HANDLE handle,

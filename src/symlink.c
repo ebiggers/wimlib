@@ -29,9 +29,10 @@
 #include "sha1.h"
 #include <errno.h>
 
-/* None of this file is ever needed in Win32 builds because the reparse point
- * buffers are not parsed. */
+/* UNIX version of getting and setting the data in reparse points */
 #if !defined(__WIN32__)
+
+#include <sys/stat.h>
 
 /*
  * Find the symlink target of a symbolic link or junction point in the WIM.
@@ -54,6 +55,7 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 	u16 print_name_offset;
 	u16 print_name_len;
 	char *link_target;
+	char *translated_target;
 	size_t link_target_len;
 	ssize_t ret;
 	unsigned header_size;
@@ -92,54 +94,55 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 	DEBUG("Interpeting substitute name \"%s\" (ReparseTag=0x%x)",
 	      link_target, reparse_tag);
 	translate_slashes = true;
+	translated_target = link_target;
 	if (link_target_len >= 7 &&
-	    link_target[0] == '\\' &&
-	    link_target[1] == '?' &&
-	    link_target[2] == '?' &&
-	    link_target[3] == '\\' &&
-	    link_target[4] != '\0' &&
-	    link_target[5] == ':' &&
-	    link_target[6] == '\\')
+	    translated_target[0] == '\\' &&
+	    translated_target[1] == '?' &&
+	    translated_target[2] == '?' &&
+	    translated_target[3] == '\\' &&
+	    translated_target[4] != '\0' &&
+	    translated_target[5] == ':' &&
+	    translated_target[6] == '\\')
 	{
 		/* "Full" symlink or junction (\??\x:\ prefixed path) */
-		link_target += 6;
+		translated_target += 6;
 		link_target_len -= 6;
 	} else if (reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT &&
 		   link_target_len >= 12 &&
-		   memcmp(link_target, "\\\\?\\Volume{", 11) == 0 &&
-		   link_target[link_target_len - 1] == '\\')
+		   memcmp(translated_target, "\\\\?\\Volume{", 11) == 0 &&
+		   translated_target[link_target_len - 1] == '\\')
 	{
 		/* Volume junction.  Can't really do anything with it. */
 		translate_slashes = false;
 	} else if (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK &&
 		   link_target_len >= 3 &&
-		   link_target[0] != '\0' &&
-		   link_target[1] == ':' &&
-		   link_target[2] == '/')
+		   translated_target[0] != '\0' &&
+		   translated_target[1] == ':' &&
+		   translated_target[2] == '/')
 	{
 		/* "Absolute" symlink, with drive letter */
-		link_target += 2;
+		translated_target += 2;
 		link_target_len -= 2;
 	} else if (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK &&
 		   link_target_len >= 1)
 	{
-		if (link_target[0] == '/')
+		if (translated_target[0] == '/')
 			/* "Absolute" symlink, without drive letter */
 			;
 		else
 			/* "Relative" symlink, without drive letter */
 			;
 	} else {
-		ERROR("Invalid reparse point: \"%s\"", link_target);
+		ERROR("Invalid reparse point: \"%s\"", translated_target);
 		ret = -EIO;
 		goto out;
 	}
 
 	if (translate_slashes)
 		for (size_t i = 0; i < link_target_len; i++)
-			if (link_target[i] == '\\')
-				link_target[i] = '/';
-	memcpy(buf, link_target, link_target_len + 1);
+			if (translated_target[i] == '\\')
+				translated_target[i] = '/';
+	memcpy(buf, translated_target, link_target_len + 1);
 	ret = link_target_len;
 out:
 	FREE(link_target);
@@ -156,24 +159,26 @@ make_symlink_reparse_data_buf(const char *symlink_target,
 
 	ret = tstr_to_utf16le(symlink_target, strlen(symlink_target),
 			      &name_utf16le, &name_utf16le_nbytes);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	for (size_t i = 0; i < name_utf16le_nbytes / 2; i++)
 		if (name_utf16le[i] == cpu_to_le16('/'))
 			name_utf16le[i] = cpu_to_le16('\\');
 
-	size_t len = 12 + name_utf16le_nbytes * 2;
+	size_t len = 12 + (name_utf16le_nbytes + 2) * 2;
 	void *buf = MALLOC(len);
 	if (buf) {
 		void *p = buf;
-		p = put_u16(p, name_utf16le_nbytes); /* Substitute name offset */
+		p = put_u16(p, 0); /* Substitute name offset */
 		p = put_u16(p, name_utf16le_nbytes); /* Substitute name length */
-		p = put_u16(p, 0); /* Print name offset */
+		p = put_u16(p, name_utf16le_nbytes + 2); /* Print name offset */
 		p = put_u16(p, name_utf16le_nbytes); /* Print name length */
-		p = put_u32(p, 1); /* flags: 0 iff *full* target, including drive letter??? */
+		p = put_u32(p, 1); /* flags: 0 if relative link, otherwise 1 */
 		p = put_bytes(p, name_utf16le_nbytes, name_utf16le);
+		p = put_u16(p, 0);
 		p = put_bytes(p, name_utf16le_nbytes, name_utf16le);
+		p = put_u16(p, 0);
 		*len_ret = len;
 		*buf_ret = buf;
 		ret = 0;
@@ -284,4 +289,86 @@ out_free_symlink_buf:
 	return ret;
 }
 
+static int
+unix_get_ino_and_dev(const char *path, u64 *ino_ret, u64 *dev_ret)
+{
+	struct stat stbuf;
+	if (stat(path, &stbuf)) {
+		WARNING_WITH_ERRNO("Failed to stat \"%s\"", path);
+		/* Treat as a link pointing outside the capture root (it
+		 * most likely is). */
+		return WIMLIB_ERR_STAT;
+	} else {
+		*ino_ret = stbuf.st_ino;
+		*dev_ret = stbuf.st_dev;
+		return 0;
+	}
+}
+
 #endif /* !defined(__WIN32__) */
+
+#ifdef __WIN32__
+#  include "win32.h"
+#  define RP_PATH_SEPARATOR L'\\'
+#  define os_get_ino_and_dev win32_get_file_and_vol_ids
+#else
+#  define RP_PATH_SEPARATOR '/'
+#  define os_get_ino_and_dev unix_get_ino_and_dev
+#endif
+
+/* Fix up reparse points--- mostly shared between UNIX and Windows */
+tchar *
+fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev)
+{
+	tchar *p = dest;
+
+#ifdef __WIN32__
+	/* Skip over drive letter */
+	if (*p != RP_PATH_SEPARATOR)
+		p += 2;
+#endif
+
+	DEBUG("Fixing symlink or junction \"%"TS"\"", dest);
+	for (;;) {
+		tchar save;
+		int ret;
+		u64 ino;
+		u64 dev;
+
+		while (*p == RP_PATH_SEPARATOR)
+			p++;
+
+		save = *p;
+		*p = T('\0');
+		ret = os_get_ino_and_dev(dest, &ino, &dev);
+		*p = save;
+
+		if (ino == capture_root_ino && dev == capture_root_dev) {
+			/* Link points inside capture root.  Return abbreviated
+			 * path. */
+			if (*p == T('\0'))
+				*(p - 1) = RP_PATH_SEPARATOR;
+			while (p - 1 >= dest && *(p - 1) == RP_PATH_SEPARATOR)
+				p--;
+		#ifdef __WIN32__
+			/* Add back drive letter */
+			if (*dest != RP_PATH_SEPARATOR) {
+				*--p = *(dest + 1);
+				*--p = *dest;
+			}
+		#endif
+			wimlib_assert(p >= dest);
+			return p;
+		}
+
+		if (*p == T('\0')) {
+			/* Link points outside capture root. */
+			return NULL;
+		}
+
+		do {
+			p++;
+		} while (*p != RP_PATH_SEPARATOR && *p != T('\0'));
+	}
+}
+

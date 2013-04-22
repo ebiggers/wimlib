@@ -39,6 +39,7 @@
 #include "lookup_table.h"
 #include "security.h"
 #include "endianness.h"
+#include "buffer_io.h"
 #include <pthread.h>
 
 #include <errno.h>
@@ -493,12 +494,7 @@ static int
 win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  wchar_t *path,
 				  size_t path_num_chars,
-				  struct wim_lookup_table *lookup_table,
-				  struct wim_inode_table *inode_table,
-				  struct sd_set *sd_set,
-				  const struct wimlib_capture_config *config,
-				  int add_image_flags,
-				  wimlib_progress_func_t progress_func,
+				  struct add_image_params *params,
 				  struct win32_capture_state *state,
 				  unsigned vol_flags);
 
@@ -508,12 +504,7 @@ static int
 win32_recurse_directory(struct wim_dentry *root,
 			wchar_t *dir_path,
 			size_t dir_path_num_chars,
-			struct wim_lookup_table *lookup_table,
-			struct wim_inode_table *inode_table,
-			struct sd_set *sd_set,
-			const struct wimlib_capture_config *config,
-			int add_image_flags,
-			wimlib_progress_func_t progress_func,
+			struct add_image_params *params,
 			struct win32_capture_state *state,
 			unsigned vol_flags)
 {
@@ -564,12 +555,7 @@ win32_recurse_directory(struct wim_dentry *root,
 		ret = win32_build_dentry_tree_recursive(&child,
 							dir_path,
 							path_len,
-							lookup_table,
-							inode_table,
-							sd_set,
-							config,
-							add_image_flags,
-							progress_func,
+							params,
 							state,
 							vol_flags);
 		dir_path[dir_path_num_chars] = L'\0';
@@ -590,6 +576,171 @@ out_find_close:
 	return ret;
 }
 
+int
+win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret)
+{
+	HANDLE hFile;
+	DWORD err;
+	BY_HANDLE_FILE_INFORMATION file_info;
+	int ret;
+
+ 	hFile = win32_open_existing_file(path, FILE_READ_ATTRIBUTES);
+	if (hFile == INVALID_HANDLE_VALUE) {
+		err = GetLastError();
+		WARNING("Failed to open \"%ls\" to get file and volume IDs",
+			path);
+		win32_error(err);
+		return WIMLIB_ERR_OPEN;
+	}
+
+	if (!GetFileInformationByHandle(hFile, &file_info)) {
+		err = GetLastError();
+		ERROR("Failed to get file information for \"%ls\"", path);
+		win32_error(err);
+		ret = WIMLIB_ERR_STAT;
+	} else {
+		*ino_ret = ((u64)file_info.nFileIndexHigh << 32) |
+			    (u64)file_info.nFileIndexLow;
+		*dev_ret = file_info.dwVolumeSerialNumber;
+		ret = 0;
+	}
+	CloseHandle(hFile);
+	return ret;
+}
+
+enum rp_status {
+	RP_EXCLUDED       = 0x0,
+	RP_NOT_FIXED      = 0x1,
+	RP_FIXED_FULLPATH = 0x2,
+	RP_FIXED_ABSPATH  = 0x4,
+	RP_FIXED          = RP_FIXED_FULLPATH | RP_FIXED_ABSPATH,
+};
+
+static enum rp_status
+win32_maybe_rpfix_target(wchar_t *target, size_t *target_nchars_p,
+			 u64 capture_root_ino, u64 capture_root_dev)
+{
+	size_t target_nchars= *target_nchars_p;
+	size_t stripped_chars;
+	wchar_t *orig_target;
+
+	if (target_nchars == 0)
+		return RP_NOT_FIXED;
+
+	if (target[0] == L'\\') {
+		if (target_nchars >= 2 && target[1] == L'\\') {
+			/* Probaby a volume.  Can't do anything with it. */
+			DEBUG("Not fixing target (probably a volume)");
+			return RP_NOT_FIXED;
+		} else if (target_nchars >= 7 &&
+			   target[1] == '?' &&
+			   target[2] == '?' &&
+			   target[3] == '\\' &&
+			   target[4] != '\0' &&
+			   target[5] == ':' &&
+			   target[6] == '\\')
+		{
+			DEBUG("Full style path");
+			/* Full \??\x:\ style path (may be junction or symlink)
+			 * */
+			stripped_chars = 4;
+		} else {
+			DEBUG("Absolute target without drive letter");
+			/* Absolute target, without drive letter */
+			stripped_chars = 0;
+		}
+	} else if (target_nchars >= 3 &&
+		   target[0] != L'\0' &&
+		   target[1] == L':' &&
+		   target[2] == L'\\')
+	{
+		DEBUG("Absolute target with drive letter");
+		/* Absolute target, with drive letter */
+		stripped_chars = 0;
+	} else {
+		DEBUG("Relative symlink or other link");
+		/* Relative symlink or other unexpected format */
+		return RP_NOT_FIXED;
+	}
+	target[target_nchars] = L'\0';
+	orig_target = target;
+	target = fixup_symlink(target + stripped_chars, capture_root_ino, capture_root_dev);
+	if (target) {
+		target_nchars = wcslen(target);
+		wmemmove(orig_target + stripped_chars, target, target_nchars + 1);
+		*target_nchars_p = target_nchars + stripped_chars;
+		DEBUG("Fixed reparse point (new target: \"%ls\")", orig_target);
+		return stripped_chars ? RP_FIXED_FULLPATH : RP_FIXED_ABSPATH;
+	} else {
+		return RP_EXCLUDED;
+	}
+}
+
+static enum rp_status
+win32_do_capture_rpfix(char *rpbuf, DWORD *rpbuflen_p,
+		       u64 capture_root_ino, u64 capture_root_dev)
+{
+	const char *p_get;
+	char *p_put;
+	u16 substitute_name_offset;
+	u16 substitute_name_len;
+	wchar_t *target;
+	size_t target_nchars;
+	enum rp_status status;
+	u32 rptag;
+	DWORD rpbuflen = *rpbuflen_p;
+
+	if (rpbuflen < 16)
+		return RP_EXCLUDED;
+	p_get = get_u32(rpbuf, &rptag);
+	p_get += 4;
+	p_get = get_u16(p_get, &substitute_name_offset);
+	p_get = get_u16(p_get, &substitute_name_len);
+	p_get += 4;
+	if ((size_t)substitute_name_offset + substitute_name_len > rpbuflen)
+		return RP_EXCLUDED;
+	if (rptag == WIM_IO_REPARSE_TAG_SYMLINK) {
+		if (rpbuflen < 20)
+			return RP_EXCLUDED;
+		p_get += 4;
+	}
+
+
+	target = (wchar_t*)&p_get[substitute_name_offset];
+	target_nchars = substitute_name_len / 2;
+	/* Note: target is not necessarily null-terminated */
+
+	status = win32_maybe_rpfix_target(target, &target_nchars,
+					  capture_root_ino, capture_root_dev);
+	if (status & RP_FIXED) {
+		size_t target_nbytes = target_nchars * 2;
+		size_t print_nbytes = target_nbytes;
+		wchar_t target_copy[target_nchars];
+		wchar_t *print_name = target_copy;
+
+		if (status == RP_FIXED_FULLPATH) {
+			print_nbytes -= 8;
+			print_name += 4;
+		}
+		wmemcpy(target_copy, target, target_nchars);
+		p_put = rpbuf + 8;
+		p_put = put_u16(p_put, 0); /* Substitute name offset */
+		p_put = put_u16(p_put, target_nbytes); /* Substitute name length */
+		p_put = put_u16(p_put, target_nbytes + 2); /* Print name offset */
+		p_put = put_u16(p_put, print_nbytes); /* Print name length */
+		if (rptag == WIM_IO_REPARSE_TAG_SYMLINK)
+			p_put = put_u32(p_put, 1);
+		p_put = put_bytes(p_put, target_nbytes, target_copy);
+		p_put = put_u16(p_put, 0);
+		p_put = put_bytes(p_put, print_nbytes, print_name);
+		p_put = put_u16(p_put, 0);
+		rpbuflen = p_put - rpbuf;
+		put_u16(rpbuf + 4, rpbuflen - 8);
+		*rpbuflen_p = rpbuflen;
+	}
+	return status;
+}
+
 /* Load a reparse point into a WIM inode.  It is just stored in memory.
  *
  * @hFile:  Open handle to a reparse point, with permission to read the reparse
@@ -605,10 +756,11 @@ out_find_close:
  *
  * Returns 0 on success; nonzero on failure. */
 static int
-win32_capture_reparse_point(HANDLE hFile,
+win32_capture_reparse_point(struct wim_dentry **root_p,
+			    HANDLE hFile,
 			    struct wim_inode *inode,
-			    struct wim_lookup_table *lookup_table,
-			    const wchar_t *path)
+			    const wchar_t *path,
+			    struct add_image_params *params)
 {
 	DEBUG("Capturing reparse point \"%ls\"", path);
 
@@ -616,6 +768,8 @@ win32_capture_reparse_point(HANDLE hFile,
 	 * cannot exceed 16 kilobytes." - MSDN  */
 	char reparse_point_buf[REPARSE_POINT_MAX_SIZE];
 	DWORD bytesReturned;
+	char *fixed_buf;
+	DWORD fixed_len;
 
 	if (!DeviceIoControl(hFile, FSCTL_GET_REPARSE_POINT,
 			     NULL, /* "Not used with this operation; set to NULL" */
@@ -637,9 +791,26 @@ win32_capture_reparse_point(HANDLE hFile,
 		return WIMLIB_ERR_READ;
 	}
 	inode->i_reparse_tag = le32_to_cpu(*(u32*)reparse_point_buf);
-	return inode_add_ads_with_data(inode, L"",
-				       reparse_point_buf + 8,
-				       bytesReturned - 8, lookup_table);
+
+	if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX &&
+	    (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
+	     inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
+	{
+		enum rp_status status;
+		status = win32_do_capture_rpfix(reparse_point_buf,
+						&bytesReturned,
+						params->capture_root_ino,
+						params->capture_root_dev);
+		if (status == RP_EXCLUDED) {
+			free_dentry(*root_p);
+			*root_p = NULL;
+			return 0;
+		} else if (status & RP_FIXED) {
+			inode->i_not_rpfixed = 0;
+		}
+	}
+	return inode_add_ads_with_data(inode, L"", reparse_point_buf + 8,
+				       bytesReturned - 8, params->lookup_table);
 }
 
 /* Scans an unnamed or named stream of a Win32 file (not a reparse point
@@ -884,12 +1055,7 @@ static int
 win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  wchar_t *path,
 				  size_t path_num_chars,
-				  struct wim_lookup_table *lookup_table,
-				  struct wim_inode_table *inode_table,
-				  struct sd_set *sd_set,
-				  const struct wimlib_capture_config *config,
-				  int add_image_flags,
-				  wimlib_progress_func_t progress_func,
+				  struct add_image_params *params,
 				  struct win32_capture_state *state,
 				  unsigned vol_flags)
 {
@@ -899,30 +1065,30 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	u64 file_size;
 	int ret = 0;
 
-	if (exclude_path(path, path_num_chars, config, true)) {
-		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
+	if (exclude_path(path, path_num_chars, params->config, true)) {
+		if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
 			ERROR("Cannot exclude the root directory from capture");
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 			goto out;
 		}
-		if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
-		    && progress_func)
+		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
+		    && params->progress_func)
 		{
 			union wimlib_progress_info info;
 			info.scan.cur_path = path;
 			info.scan.excluded = true;
-			progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 		}
 		goto out;
 	}
 
-	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
-	    && progress_func)
+	if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+	    && params->progress_func)
 	{
 		union wimlib_progress_info info;
 		info.scan.cur_path = path;
 		info.scan.excluded = false;
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 	}
 
 	HANDLE hFile = win32_open_existing_file(path,
@@ -946,7 +1112,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	}
 
 	/* Create a WIM dentry with an associated inode, which may be shared */
-	ret = inode_table_new_dentry(inode_table,
+	ret = inode_table_new_dentry(params->inode_table,
 				     path_basename_with_len(path, path_num_chars),
 				     ((u64)file_info.nFileIndexHigh << 32) |
 				         (u64)file_info.nFileIndexLow,
@@ -970,13 +1136,14 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	inode->i_last_access_time = FILETIME_to_u64(&file_info.ftLastAccessTime);
 	inode->i_resolved = 1;
 
-	add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
+	params->add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
 
-	if (!(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)
+	if (!(params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)
 	    && (vol_flags & FILE_PERSISTENT_ACLS))
 	{
-		ret = win32_get_security_descriptor(root, sd_set, path, state,
-						    add_image_flags);
+		ret = win32_get_security_descriptor(root, params->sd_set,
+						    path, state,
+						    params->add_image_flags);
 		if (ret)
 			goto out_close_handle;
 	}
@@ -992,7 +1159,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		ret = win32_capture_streams(path,
 					    path_num_chars,
 					    inode,
-					    lookup_table,
+					    params->lookup_table,
 					    file_size,
 					    vol_flags);
 		if (ret)
@@ -1000,29 +1167,21 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		ret = win32_recurse_directory(root,
 					      path,
 					      path_num_chars,
-					      lookup_table,
-					      inode_table,
-					      sd_set,
-					      config,
-					      add_image_flags,
-					      progress_func,
+					      params,
 					      state,
 					      vol_flags);
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Reparse point: save the reparse tag and data.  Alternate data
 		 * streams are not captured, if it's even possible for a reparse
 		 * point to have alternate data streams... */
-		ret = win32_capture_reparse_point(hFile,
-						  inode,
-						  lookup_table,
-						  path);
+		ret = win32_capture_reparse_point(&root, hFile, inode, path, params);
 	} else {
 		/* Not a directory, not a reparse point; capture the default
 		 * file contents and any alternate data streams. */
 		ret = win32_capture_streams(path,
 					    path_num_chars,
 					    inode,
-					    lookup_table,
+					    params->lookup_table,
 					    file_size,
 					    vol_flags);
 	}
@@ -1032,7 +1191,7 @@ out:
 	if (ret == 0)
 		*root_ret = root;
 	else
-		free_dentry_tree(root, lookup_table);
+		free_dentry_tree(root, params->lookup_table);
 	return ret;
 }
 
@@ -1072,13 +1231,7 @@ win32_do_capture_warnings(const struct win32_capture_state *state,
 int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const wchar_t *root_disk_path,
-			struct wim_lookup_table *lookup_table,
-			struct wim_inode_table *inode_table,
-			struct sd_set *sd_set,
-			const struct wimlib_capture_config *config,
-			int add_image_flags,
-			wimlib_progress_func_t progress_func,
-			void *extra_arg)
+			struct add_image_params *params)
 {
 	size_t path_nchars;
 	wchar_t *path;
@@ -1086,9 +1239,16 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	struct win32_capture_state state;
 	unsigned vol_flags;
 
+
 	path_nchars = wcslen(root_disk_path);
 	if (path_nchars > 32767)
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	ret = win32_get_file_and_vol_ids(root_disk_path,
+					 &params->capture_root_ino,
+					 &params->capture_root_dev);
+	if (ret)
+		return ret;
 
 	win32_get_vol_flags(root_disk_path, &vol_flags);
 
@@ -1103,20 +1263,12 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	wmemcpy(path, root_disk_path, path_nchars + 1);
 
 	memset(&state, 0, sizeof(state));
-	ret = win32_build_dentry_tree_recursive(root_ret,
-						path,
-						path_nchars,
-						lookup_table,
-						inode_table,
-						sd_set,
-						config,
-						add_image_flags,
-						progress_func,
-						&state,
-						vol_flags);
+	ret = win32_build_dentry_tree_recursive(root_ret, path,
+						path_nchars, params,
+						&state, vol_flags);
 	FREE(path);
 	if (ret == 0)
-		win32_do_capture_warnings(&state, add_image_flags);
+		win32_do_capture_warnings(&state, params->add_image_flags);
 	return ret;
 }
 

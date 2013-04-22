@@ -671,6 +671,8 @@ inode_set_symlink(struct wim_inode *inode, const char *target,
 		  struct wim_lookup_table *lookup_table,
 		  struct wim_lookup_table_entry **lte_ret);
 #endif
+extern tchar *
+fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev);
 
 /* verify.c */
 
