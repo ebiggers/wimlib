@@ -96,7 +96,7 @@ T(
 IMAGEX_PROGNAME" apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n"
-"                    [--no-acls] [--strict-acls]\n"
+"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
 ),
 [CAPTURE] =
 T(
@@ -202,6 +202,8 @@ static const struct option apply_options[] = {
 	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
+	{T("rpfix"),       no_argument,       NULL, IMAGEX_RPFIX_OPTION},
+	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_or_append_options[] = {
@@ -1183,6 +1185,12 @@ imagex_apply(int argc, tchar **argv)
 			break;
 		case IMAGEX_STRICT_ACLS_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_STRICT_ACLS;
+			break;
+		case IMAGEX_NORPFIX_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_NORPFIX;
+			break;
+		case IMAGEX_RPFIX_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_RPFIX;
 			break;
 		default:
 			usage(APPLY);

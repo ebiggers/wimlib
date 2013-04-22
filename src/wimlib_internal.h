@@ -540,6 +540,8 @@ write_metadata_resource(WIMStruct *w);
 struct apply_args {
 	WIMStruct *w;
 	const tchar *target;
+	tchar *target_realpath;
+	unsigned target_realpath_len;
 	int extract_flags;
 	union wimlib_progress_info progress;
 	wimlib_progress_func_t progress_func;

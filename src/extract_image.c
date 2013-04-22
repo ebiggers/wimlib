@@ -324,9 +324,13 @@ extract_symlink(struct wim_dentry *dentry,
 		struct apply_args *args,
 		const char *output_path)
 {
-	char target[4096];
-	ssize_t ret = inode_readlink(dentry->d_inode, target,
-				     sizeof(target), args->w, false);
+	char target[4096 + args->target_realpath_len];
+	char *fixed_target;
+
+	ssize_t ret = inode_readlink(dentry->d_inode,
+				     target + args->target_realpath_len,
+				     sizeof(target) - args->target_realpath_len - 1,
+				     args->w, false);
 	struct wim_lookup_table_entry *lte;
 
 	if (ret <= 0) {
@@ -334,10 +338,20 @@ extract_symlink(struct wim_dentry *dentry,
 		      dentry->_full_path);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
-	ret = symlink(target, output_path);
-	if (ret != 0) {
+	target[args->target_realpath_len + ret] = '\0';
+	if (target[args->target_realpath_len] == '/' &&
+	    args->extract_flags & WIMLIB_EXTRACT_FLAG_RPFIX)
+	{
+		memcpy(target, args->target_realpath,
+		       args->target_realpath_len);
+		fixed_target = target;
+	} else {
+		fixed_target = target + args->target_realpath_len;
+	}
+	ret = symlink(fixed_target, output_path);
+	if (ret) {
 		ERROR_WITH_ERRNO("Failed to symlink `%s' to `%s'",
-				 output_path, target);
+				 output_path, fixed_target);
 		return WIMLIB_ERR_LINK;
 	}
 	lte = inode_unnamed_lte_resolved(dentry->d_inode);
@@ -351,7 +365,7 @@ extract_symlink(struct wim_dentry *dentry,
 			ret = 0;
 		else
 			ret = symlink_apply_unix_data(output_path, &unix_data);
-		if (ret != 0)
+		if (ret)
 			return ret;
 	}
 	args->progress.extract.completed_bytes += wim_resource_size(lte);
@@ -782,6 +796,7 @@ extract_single_image(WIMStruct *w, int image,
 
 	struct apply_args args;
 	const struct apply_operations *ops;
+	tchar *target_realpath;
 
 	memset(&args, 0, sizeof(args));
 
@@ -863,10 +878,17 @@ extract_single_image(WIMStruct *w, int image,
 			      &args.progress);
 	}
 
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_RPFIX) {
+		args.target_realpath = realpath(target, NULL);
+		if (!args.target_realpath)
+			return WIMLIB_ERR_NOMEM;
+		args.target_realpath_len = tstrlen(args.target_realpath);
+	}
+
 	/* Extract non-empty files */
 	ret = apply_stream_list(&stream_list, &args, ops, progress_func);
 	if (ret)
-		goto out;
+		goto out_free_target_realpath;
 
 	if (progress_func) {
 		progress_func(WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS,
@@ -877,12 +899,14 @@ extract_single_image(WIMStruct *w, int image,
 	ret = for_dentry_in_tree_depth(wim_root_dentry(w),
 				       ops->apply_dentry_timestamps, &args);
 	if (ret)
-		goto out;
+		goto out_free_target_realpath;
 
 	if (progress_func) {
 		progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END,
 			      &args.progress);
 	}
+out_free_target_realpath:
+	FREE(args.target_realpath);
 out:
 #ifdef WITH_NTFS_3G
 	/* Unmount the NTFS volume */
@@ -1010,6 +1034,19 @@ wimlib_extract_image(WIMStruct *w,
 		return WIMLIB_ERR_UNSUPPORTED;
 #endif
 	}
+
+	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_RPFIX |
+			      WIMLIB_EXTRACT_FLAG_RPFIX)) ==
+		(WIMLIB_EXTRACT_FLAG_RPFIX | WIMLIB_EXTRACT_FLAG_NORPFIX))
+	{
+		ERROR("Cannot specify RPFIX and NORPFIX flags at the same time!");
+		return WIMLIB_ERR_INVALID_PARAM;
+	}
+
+	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_RPFIX |
+			      WIMLIB_EXTRACT_FLAG_NORPFIX)) == 0)
+		if (w->hdr.flags & WIM_HDR_FLAG_RP_FIX)
+			extract_flags |= WIMLIB_EXTRACT_FLAG_RPFIX;
 
 	ret = verify_swm_set(w, additional_swms, num_additional_swms);
 	if (ret)

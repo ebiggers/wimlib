@@ -57,9 +57,7 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 	size_t link_target_len;
 	ssize_t ret;
 	unsigned header_size;
-	char *translated_target;
-	bool is_absolute;
-	u32 flags;
+	bool translate_slashes;
 
 	if (resource_len < 12)
 		return -EIO;
@@ -67,15 +65,13 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 	p = get_u16(p, &substitute_name_len);
 	p = get_u16(p, &print_name_offset);
 	p = get_u16(p, &print_name_len);
-	get_u32(p, &flags);
 
 	wimlib_assert(reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
 		      reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
 
-	if (reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT) {
+	if (reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT)
 		header_size = 8;
-	} else {
-		is_absolute = (flags & 1) ? false : true;
+	else {
 		header_size = 12;
 		p += 4;
 	}
@@ -93,32 +89,57 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 		goto out;
 	}
 
-	translated_target = link_target;
-	if (reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT || is_absolute) {
-		if (link_target_len < 7
-		      || memcmp(translated_target, "\\??\\", 4) != 0
-		      || translated_target[4] == '\0'
-		      || translated_target[5] != ':'
-		      || translated_target[6] != '\\') {
-			ret = -EIO;
-			goto out;
-		}
-		translated_target += 4;
-		link_target_len -= 4;
-		/* There's a drive letter, so just leave the backslashes since
-		 * it won't go anyhwere on UNIX anyway...
-		 *
-		 * XXX
-		 * NTFS-3g tries to re-map these links to actually point to
-		 * something, so maybe we could do something like that here
-		 * XXX*/
+	DEBUG("Interpeting substitute name \"%s\" (ReparseTag=0x%x)",
+	      link_target, reparse_tag);
+	translate_slashes = true;
+	if (link_target_len >= 7 &&
+	    link_target[0] == '\\' &&
+	    link_target[1] == '?' &&
+	    link_target[2] == '?' &&
+	    link_target[3] == '\\' &&
+	    link_target[4] != '\0' &&
+	    link_target[5] == ':' &&
+	    link_target[6] == '\\')
+	{
+		/* "Full" symlink or junction (\??\x:\ prefixed path) */
+		link_target += 6;
+		link_target_len -= 6;
+	} else if (reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT &&
+		   link_target_len >= 12 &&
+		   memcmp(link_target, "\\\\?\\Volume{", 11) == 0 &&
+		   link_target[link_target_len - 1] == '\\')
+	{
+		/* Volume junction.  Can't really do anything with it. */
+		translate_slashes = false;
+	} else if (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK &&
+		   link_target_len >= 3 &&
+		   link_target[0] != '\0' &&
+		   link_target[1] == ':' &&
+		   link_target[2] == '/')
+	{
+		/* "Absolute" symlink, with drive letter */
+		link_target += 2;
+		link_target_len -= 2;
+	} else if (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK &&
+		   link_target_len >= 1)
+	{
+		if (link_target[0] == '/')
+			/* "Absolute" symlink, without drive letter */
+			;
+		else
+			/* "Relative" symlink, without drive letter */
+			;
 	} else {
-		for (size_t i = 0; i < link_target_len; i++)
-			if (translated_target[i] == '\\')
-				translated_target[i] = '/';
+		ERROR("Invalid reparse point: \"%s\"", link_target);
+		ret = -EIO;
+		goto out;
 	}
 
-	memcpy(buf, translated_target, link_target_len + 1);
+	if (translate_slashes)
+		for (size_t i = 0; i < link_target_len; i++)
+			if (link_target[i] == '\\')
+				link_target[i] = '/';
+	memcpy(buf, link_target, link_target_len + 1);
 	ret = link_target_len;
 out:
 	FREE(link_target);
@@ -187,7 +208,7 @@ inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
 
 	u8 res_buf[wim_resource_size(lte)];
 	ret = read_full_resource_into_buf(lte, res_buf, threadsafe);
-	if (ret != 0)
+	if (ret)
 		return -EIO;
 	return get_symlink_name(res_buf, wim_resource_size(lte), buf,
 				buf_len, inode->i_reparse_tag);
