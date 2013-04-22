@@ -646,7 +646,15 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table)
 	wim_timestamp_to_str(inode->i_last_write_time, buf, sizeof(buf));
 	tprintf(T("Last Write Time   = %"TS"\n"), buf);
 
-	tprintf(T("Reparse Tag       = 0x%"PRIx32"\n"), inode->i_reparse_tag);
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		tprintf(T("Reparse Tag       = 0x%"PRIx32"\n"), inode->i_reparse_tag);
+		tprintf(T("Reparse Point Flags = 0x%"PRIx16"\n"),
+			inode->i_not_rpfixed);
+		tprintf(T("Reparse Point Unknown 2 = 0x%"PRIx32"\n"),
+			inode->i_rp_unknown_2);
+	}
+	tprintf(T("Reparse Point Unknown 1 = 0x%"PRIx32"\n"),
+		inode->i_rp_unknown_1);
 	tprintf(T("Hard Link Group   = 0x%"PRIx64"\n"), inode->i_ino);
 	tprintf(T("Hard Link Group Size = %"PRIu32"\n"), inode->i_nlink);
 	tprintf(T("Number of Alternate Data Streams = %hu\n"), inode->i_num_ads);
@@ -1482,13 +1490,12 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * reparse points, then put the fields in the same place and didn't
 	 * document it.  */
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		p += 4;
+		p = get_u32(p, &inode->i_rp_unknown_1);
 		p = get_u32(p, &inode->i_reparse_tag);
-		p += 2;
+		p = get_u16(p, &inode->i_rp_unknown_2);
 		p = get_u16(p, &inode->i_not_rpfixed);
 	} else {
-		p += 4;
-		/* i_reparse_tag is irrelevant; just leave it at 0. */
+		p = get_u32(p, &inode->i_rp_unknown_1);
 		p = get_u64(p, &inode->i_ino);
 	}
 

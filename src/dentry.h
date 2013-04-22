@@ -236,6 +236,9 @@ struct wim_inode {
 	/* Number of alternate data streams associated with this inode */
 	u16 i_num_ads;
 
+	u16 i_rp_unknown_2;
+	u32 i_rp_unknown_1;
+
 	/* A hash of the file's contents, or a pointer to the lookup table entry
 	 * for this dentry if the lookup table entries have been resolved.
 	 *

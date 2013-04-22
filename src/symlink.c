@@ -118,7 +118,7 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 		   link_target_len >= 3 &&
 		   translated_target[0] != '\0' &&
 		   translated_target[1] == ':' &&
-		   translated_target[2] == '/')
+		   translated_target[2] == '\\')
 	{
 		/* "Absolute" symlink, with drive letter */
 		translated_target += 2;
@@ -126,7 +126,7 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 	} else if (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK &&
 		   link_target_len >= 1)
 	{
-		if (translated_target[0] == '/')
+		if (translated_target[0] == '\\')
 			/* "Absolute" symlink, without drive letter */
 			;
 		else
@@ -149,13 +149,25 @@ out:
 	return ret;
 }
 
+#define SYMBOLIC_LINK_RELATIVE 0x00000001
+
+/* Given a UNIX symlink target, prepare the corresponding symbolic link reparse
+ * data buffer. */
 static int
 make_symlink_reparse_data_buf(const char *symlink_target,
 			      size_t *len_ret, void **buf_ret)
 {
+	int ret;
 	utf16lechar *name_utf16le;
 	size_t name_utf16le_nbytes;
-	int ret;
+	size_t substitute_name_nbytes;
+	size_t print_name_nbytes;
+	static const char abs_subst_name_prefix[12] = "\\\0?\0?\0\\\0C\0:\0";
+	static const char abs_print_name_prefix[4] = "C\0:\0";
+	u32 flags;
+	size_t len;
+	void *buf;
+	void *p;
 
 	ret = tstr_to_utf16le(symlink_target, strlen(symlink_target),
 			      &name_utf16le, &name_utf16le_nbytes);
@@ -166,25 +178,103 @@ make_symlink_reparse_data_buf(const char *symlink_target,
 		if (name_utf16le[i] == cpu_to_le16('/'))
 			name_utf16le[i] = cpu_to_le16('\\');
 
-	size_t len = 12 + (name_utf16le_nbytes + 2) * 2;
-	void *buf = MALLOC(len);
-	if (buf) {
-		void *p = buf;
-		p = put_u16(p, 0); /* Substitute name offset */
-		p = put_u16(p, name_utf16le_nbytes); /* Substitute name length */
-		p = put_u16(p, name_utf16le_nbytes + 2); /* Print name offset */
-		p = put_u16(p, name_utf16le_nbytes); /* Print name length */
-		p = put_u32(p, 1); /* flags: 0 if relative link, otherwise 1 */
-		p = put_bytes(p, name_utf16le_nbytes, name_utf16le);
-		p = put_u16(p, 0);
-		p = put_bytes(p, name_utf16le_nbytes, name_utf16le);
-		p = put_u16(p, 0);
-		*len_ret = len;
-		*buf_ret = buf;
-		ret = 0;
-	} else {
-		ret = WIMLIB_ERR_NOMEM;
+	/* Compatability notes:
+	 *
+	 * On UNIX, an absolute symbolic link begins with '/'; everything else
+	 * is a relative symbolic link.  (Quite simple compared to the various
+	 * ways to provide Windows paths.)
+	 *
+	 * To change a UNIX relative symbolic link to Windows format, we only
+	 * need to translate it to UTF-16LE and replace backslashes with forward
+	 * slashes.  We do not make any attempt to handle filename character
+	 * problems, such as a link target that itself contains backslashes on
+	 * UNIX.  Then, for these relative links, we set the reparse header
+	 * @flags field to SYMBOLIC_LINK_RELATIVE.
+	 *
+	 * For UNIX absolute symbolic links, we must set the @flags field to 0.
+	 * Then, there are multiple options as to actually represent the
+	 * absolute link targets:
+	 *
+	 * (1) An absolute path beginning with one backslash character. similar
+	 * to UNIX-style, just with a different path separator.  Print name same
+	 * as substitute name.
+	 *
+	 * (2) Absolute path beginning with drive letter followed by a
+	 * backslash.  Print name same as substitute name.
+	 *
+	 * (3) Absolute path beginning with drive letter followed by a
+	 * backslash; substitute name prefixed with \??\, otherwise same as
+	 * print name.
+	 *
+	 * We choose option (3) here, and we just assume C: for the drive
+	 * letter.  The reasoning for this is:
+	 *
+	 * (1) Microsoft imagex.exe has a bug where it does not attempt to do
+	 * reparse point fixups for these links, even though they are valid
+	 * absolute links.  (Note: in this case prefixing the substitute name
+	 * with \??\ does not work; it just makes the data unable to be restored
+	 * at all.)
+	 * (2) Microsoft imagex.exe will fail when doing reparse point fixups
+	 * for these.  It apparently contains a bug that causes it to create an
+	 * invalid reparse point, which then cannot be restored.
+	 * (3) This is the only option I tested for which reparse point fixups
+	 * worked properly in Microsoft imagex.exe.
+	 *
+	 * So option (3) it is.
+	 */
+
+	substitute_name_nbytes = name_utf16le_nbytes;
+	print_name_nbytes = name_utf16le_nbytes;
+	if (symlink_target[0] == '/') {
+		substitute_name_nbytes += sizeof(abs_subst_name_prefix);
+		print_name_nbytes += sizeof(abs_print_name_prefix);
 	}
+
+	len = 12 + substitute_name_nbytes + print_name_nbytes +
+			2 * sizeof(utf16lechar);
+	buf = MALLOC(len);
+
+	if (!buf) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_name_utf16le;
+	}
+
+	p = buf;
+
+	/* Substitute name offset */
+	p = put_u16(p, 0);
+
+	/* Substitute name length */
+	p = put_u16(p, substitute_name_nbytes);
+
+	/* Print name offset */
+	p = put_u16(p, substitute_name_nbytes + sizeof(utf16lechar));
+
+	/* Print name length */
+	p = put_u16(p, print_name_nbytes);
+
+	/* Flags */
+	flags = 0;
+	if (symlink_target[0] != '/')
+		flags |= SYMBOLIC_LINK_RELATIVE;
+	p = put_u32(p, flags);
+
+	/* Substitute name */
+	if (symlink_target[0] == '/')
+		p = put_bytes(p, sizeof(abs_subst_name_prefix), abs_subst_name_prefix);
+	p = put_bytes(p, name_utf16le_nbytes, name_utf16le);
+	p = put_u16(p, 0);
+
+	/* Print name */
+	if (symlink_target[0] == '/')
+		p = put_bytes(p, sizeof(abs_print_name_prefix), abs_print_name_prefix);
+	p = put_bytes(p, name_utf16le_nbytes, name_utf16le);
+	p = put_u16(p, 0);
+
+	*len_ret = len;
+	*buf_ret = buf;
+	ret = 0;
+out_free_name_utf16le:
 	FREE(name_utf16le);
 	return ret;
 }
