@@ -80,20 +80,25 @@ special:
 			tchar *tstr;
 			size_t tstr_nbytes;
 			utf16lechar *ucs = va_arg(va, utf16lechar*);
-			size_t ucs_nbytes = utf16le_strlen(ucs);
 
-			ret = utf16le_to_tstr(ucs, ucs_nbytes,
-					      &tstr, &tstr_nbytes);
-			if (ret) {
-				ret = tfprintf(fp, T("??????"));
+			if (ucs) {
+				size_t ucs_nbytes = utf16le_strlen(ucs);
+
+				ret = utf16le_to_tstr(ucs, ucs_nbytes,
+						      &tstr, &tstr_nbytes);
+				if (ret) {
+					ret = tfprintf(fp, T("??????"));
+				} else {
+					ret = tfprintf(fp, T("%"TS), tstr);
+					FREE(tstr);
+				}
+				if (ret < 0)
+					return -1;
+				else
+					n += ret;
 			} else {
-				ret = tfprintf(fp, T("%"TS), tstr);
-				FREE(tstr);
+				n += tfprintf(fp, T("(null)"));
 			}
-			if (ret < 0)
-				return -1;
-			else
-				n += ret;
 			p++;
 		} else {
 			if (tputc(*p, fp) == EOF)
