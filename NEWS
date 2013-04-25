@@ -5,11 +5,19 @@ Version 1.3.3:
 	due to improved use of the operating system's cache and avoiding reading
 	files twice whenever possible.
 
-	The Windows build now works on Windows XP.
+	The Windows build should now work on Windows XP.
 
 	On the Windows build, hidden directories are now correctly restored as
-	hidden.  Also compressed, encrypted, and sparse files are now restored
-	as such.
+	hidden.  Also compressed and sparse files are now restored as such.
+	(Support for encrypted files still in progress.)
+
+	Capturing and applying WIM images from filesystems other than NTFS
+	should now be possible, although it may not do exactly what you expect
+	yet.
+
+	Added support for "reparse-point" fixups (i.e. fixing up of symbolic
+	links).  See docs for --rpfix and --norpfix flags of `wimlib-imagex
+	capture' and `wimlib-imagex apply'.
 
 	The performance of splitting and joining WIMs should be slightly
 	improved.
