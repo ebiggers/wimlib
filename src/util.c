@@ -158,6 +158,7 @@ wimlib_vmsg(const tchar *tag, const tchar *format,
 			tfprintf(stderr, T(": %"TS), buf);
 		}
 		tputc(T('\n'), stderr);
+		fflush(stderr);
 		errno = errno_save;
 #ifndef DEBUG
 	}
@@ -217,7 +218,6 @@ wimlib_warning_with_errno(const tchar *format, ...)
 void wimlib_debug(const tchar *file, int line, const char *func,
 		  const tchar *format, ...)
 {
-
 	va_list va;
 	tchar buf[tstrlen(file) + strlen(func) + 30];
 
