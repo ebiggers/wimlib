@@ -1123,11 +1123,14 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 
 	/* Create a WIM dentry with an associated inode, which may be shared.
 	 *
-	 * However, we need to explicitly check for directories and refuse to
-	 * hard link them.  This is because Windows has a bug where it can
-	 * return duplicate File IDs for directories on the FAT filesystem. */
+	 * However, we need to explicitly check for directories and files with
+	 * only 1 link and refuse to hard link them.  This is because Windows
+	 * has a bug where it can return duplicate File IDs for files and
+	 * directories on the FAT filesystem. */
 	basename = path_basename_with_len(path, path_num_chars);
-	if (!(file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+	if (!(file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+	    && file_info.nNumberOfLinks > 1)
+	{
 		ret = inode_table_new_dentry(params->inode_table,
 					     basename,
 					     ((u64)file_info.nFileIndexHigh << 32) |
