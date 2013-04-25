@@ -177,7 +177,7 @@ wimlib_error(const tchar *format, ...)
 	va_list va;
 
 	va_start(va, format);
-	wimlib_vmsg(T("[ERROR] "), format, va, false);
+	wimlib_vmsg(T("\r[ERROR] "), format, va, false);
 	va_end(va);
 }
 
@@ -187,7 +187,7 @@ wimlib_error_with_errno(const tchar *format, ...)
 	va_list va;
 
 	va_start(va, format);
-	wimlib_vmsg(T("[ERROR] "), format, va, true);
+	wimlib_vmsg(T("\r[ERROR] "), format, va, true);
 	va_end(va);
 }
 
@@ -197,7 +197,7 @@ wimlib_warning(const tchar *format, ...)
 	va_list va;
 
 	va_start(va, format);
-	wimlib_vmsg(T("[WARNING] "), format, va, false);
+	wimlib_vmsg(T("\r[WARNING] "), format, va, false);
 	va_end(va);
 }
 
@@ -207,7 +207,7 @@ wimlib_warning_with_errno(const tchar *format, ...)
 	va_list va;
 
 	va_start(va, format);
-	wimlib_vmsg(T("[WARNING] "), format, va, true);
+	wimlib_vmsg(T("\r[WARNING] "), format, va, true);
 	va_end(va);
 }
 
