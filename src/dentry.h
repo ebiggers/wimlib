@@ -411,7 +411,7 @@ free_dentry_tree(struct wim_dentry *root,
 extern void
 unlink_dentry(struct wim_dentry *dentry);
 
-extern bool
+extern struct wim_dentry *
 dentry_add_child(struct wim_dentry * restrict parent,
 		 struct wim_dentry * restrict child);
 

@@ -620,9 +620,7 @@ new_filler_directory(const tchar *name, struct wim_dentry **dentry_ret)
 	return ret;
 }
 
-/* Transfers the children of @branch to @target.  It is an error if @target is
- * not a directory or if both @branch and @target contain a child dentry with
- * the same name. */
+/* Overlays @branch onto @target, both of which must be directories. */
 static int
 do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 {
@@ -631,30 +629,36 @@ do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 	DEBUG("Doing overlay \"%"WS"\" => \"%"WS"\"",
 	      branch->file_name, target->file_name);
 
-	if (!dentry_is_directory(target)) {
-		ERROR("Cannot overlay directory \"%"WS"\" "
-		      "over non-directory", branch->file_name);
+	if (!dentry_is_directory(branch) || !dentry_is_directory(target)) {
+		ERROR("Cannot overlay \"%"WS"\" onto existing dentry: "
+		      "is not directory-on-directory!", branch->file_name);
 		return WIMLIB_ERR_INVALID_OVERLAY;
 	}
 
 	rb_root = &branch->d_inode->i_children;
 	while (rb_root->rb_node) { /* While @branch has children... */
 		struct wim_dentry *child = rbnode_dentry(rb_root->rb_node);
+		struct wim_dentry *existing;
+
 		/* Move @child to the directory @target */
 		unlink_dentry(child);
-		if (!dentry_add_child(target, child)) {
-			/* Revert the change to avoid leaking the directory tree
-			 * rooted at @child */
-			dentry_add_child(branch, child);
-			ERROR("Overlay error: file \"%"WS"\" already exists "
-			      "as a child of \"%"WS"\"",
-			      child->file_name, target->file_name);
-			return WIMLIB_ERR_INVALID_OVERLAY;
+		existing = dentry_add_child(target, child);
+
+		/* File or directory with same name already exists */
+		if (existing) {
+			int ret;
+			ret = do_overlay(existing, child);
+			if (ret) {
+				/* Overlay failed.  Revert the change to avoid
+				 * leaking the directory tree rooted at @child.
+				 * */
+				dentry_add_child(branch, child);
+				return ret;
+			}
 		}
 	}
 	free_dentry(branch);
 	return 0;
-
 }
 
 /* Attach or overlay a branch onto the WIM image.

@@ -927,7 +927,7 @@ free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
  * @parent: The dentry that will be the parent of @dentry.
  * @dentry: The dentry to link.
  */
-bool
+struct wim_dentry *
 dentry_add_child(struct wim_dentry * restrict parent,
 		 struct wim_dentry * restrict child)
 {
@@ -948,12 +948,12 @@ dentry_add_child(struct wim_dentry * restrict parent,
 		else if (result > 0)
 			new = &((*new)->rb_right);
 		else
-			return false;
+			return this;
 	}
 	child->parent = parent;
 	rb_link_node(&child->rb_node, rb_parent, new);
 	rb_insert_color(&child->rb_node, root);
-	return true;
+	return NULL;
 }
 
 /* Unlink a WIM dentry from the directory entry tree. */

@@ -153,6 +153,7 @@ then
 fi
 
 # Make sure source list mode is working as expected
+__msg "Testing source list capture mode"
 rm -rf in.dir out.dir
 mkdir in.dir
 echo 1 > in.dir/1
@@ -189,7 +190,38 @@ imagex capture srclist --source-list test.wim
 imagex apply test.wim out.dir
 if [[ ! -f out.dir/5 || ! -f out.dir/1 || ! -f out.dir/1link || \
       ! -f out.dir/otherdir/A || ! -f out.dir/otherdir/B ]]; then
-	error "source list capture (with quoted names and overlay) failed to work as expected"
+	error "source list capture (with quoted names and basic overlay) failed to work as expected"
+fi
+
+# Try deep overlay
+rm -rf in.dir out.dir "overlay dir 1" "overlay dir 2"
+mkdir -p in.dir.1/subdir/subdir2 in.dir.2/subdir/subdir2
+cat > srclist << EOF
+in.dir.1	/
+in.dir.2	/
+EOF
+echo 1 > in.dir.1/subdir/1
+echo 2 > in.dir.2/subdir/2
+echo 3 > in.dir.1/subdir/subdir2/3
+echo 4 > in.dir.2/subdir/subdir2/4
+imagex capture srclist --source-list test.wim
+imagex apply test.wim out.dir
+if [[ ! -f out.dir/subdir/1 || ! -f out.dir/subdir/2 ||	\
+	! -f out.dir/subdir/subdir2/3 || ! -f out.dir/subdir/subdir2/4 ]]; then
+	error "source list capture (with deep overlay) failed to work as expected"
+fi
+
+# Try bad overlay
+__msg "Testing bad overlay (errors expected)"
+rm -rf out.dir
+echo 5 > 5
+cat > srclist << EOF
+in.dir.1	/
+in.dir.2	/
+5		/subdir
+EOF
+if imagex capture srclist --source-list test.wim; then
+	error "unexpected success in bad overlay with --source-list!"
 fi
 
 echo "**********************************************************"
