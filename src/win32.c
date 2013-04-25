@@ -394,22 +394,31 @@ static int
 win32_get_short_name(struct wim_dentry *dentry, const wchar_t *path)
 {
 	WIN32_FIND_DATAW dat;
-	if (FindFirstFileW(path, &dat) && dat.cAlternateFileName[0] != L'\0') {
-		DEBUG("\"%ls\": short name \"%ls\"", path, dat.cAlternateFileName);
-		size_t short_name_nbytes = wcslen(dat.cAlternateFileName) *
-					   sizeof(wchar_t);
-		size_t n = short_name_nbytes + sizeof(wchar_t);
-		dentry->short_name = MALLOC(n);
-		if (!dentry->short_name)
-			return WIMLIB_ERR_NOMEM;
-		memcpy(dentry->short_name, dat.cAlternateFileName, n);
-		dentry->short_name_nbytes = short_name_nbytes;
-	}
+	HANDLE hFind;
+	int ret = 0;
+
 	/* If we can't read the short filename for some reason, we just ignore
 	 * the error and assume the file has no short name.  I don't think this
 	 * should be an issue, since the short names are essentially obsolete
 	 * anyway. */
-	return 0;
+	hFind = FindFirstFileW(path, &dat);
+	if (hFind != INVALID_HANDLE_VALUE) {
+		if (dat.cAlternateFileName[0] != L'\0') {
+			DEBUG("\"%ls\": short name \"%ls\"", path, dat.cAlternateFileName);
+			size_t short_name_nbytes = wcslen(dat.cAlternateFileName) *
+						   sizeof(wchar_t);
+			size_t n = short_name_nbytes + sizeof(wchar_t);
+			dentry->short_name = MALLOC(n);
+			if (dentry->short_name) {
+				memcpy(dentry->short_name, dat.cAlternateFileName, n);
+				dentry->short_name_nbytes = short_name_nbytes;
+			} else {
+				ret = WIMLIB_ERR_NOMEM;
+			}
+		}
+		FindClose(hFind);
+	}
+	return ret;
 }
 
 static int
