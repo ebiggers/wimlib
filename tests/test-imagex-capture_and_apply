@@ -114,6 +114,7 @@ if [ -e out.dir/hiberfil.sys -o -e "out.dir/System Volume Information" ]; then
 	error "Files were not excluded from capture as expected"
 fi
 
+# Make sure reparse point fixups are working as expected
 __msg "Testing --rpfix"
 rm -r in.dir out.dir
 mkdir in.dir
@@ -149,6 +150,46 @@ if [[ $(get_inode_number $(readlink out.dir/absrootlink)) != \
 	$(get_inode_number out.dir) ]];
 then
 	error "imagex apply failed to apply fixed absolute symlinks"
+fi
+
+# Make sure source list mode is working as expected
+rm -rf in.dir out.dir
+mkdir in.dir
+echo 1 > in.dir/1
+ln in.dir/1 in.dir/1link
+echo 5 > 5
+mkdir otherdir
+cp $srcdir/src/add_image.c otherdir
+cat > srclist << EOF
+in.dir /
+5      /5
+otherdir /otherdir
+EOF
+imagex capture srclist --source-list test.wim
+imagex apply test.wim out.dir
+if [[ ! -f out.dir/5 || ! -f out.dir/1 || ! -f out.dir/1link || \
+      ! -d out.dir/otherdir ]]; then
+	error "source list capture failed to work as expected"
+fi
+
+# Still testing source list capture: add quoted name, and try overlay
+rm -rf out.dir
+cat > srclist << EOF
+in.dir /
+5      /5
+otherdir /otherdir
+ "overlay dir 1"		'otherdir'  	
+ "overlay dir 2"		'otherdir'  
+EOF
+mkdir "overlay dir 1"
+mkdir "overlay dir 2"
+echo A > "overlay dir 1"/A
+echo B > "overlay dir 2"/B
+imagex capture srclist --source-list test.wim
+imagex apply test.wim out.dir
+if [[ ! -f out.dir/5 || ! -f out.dir/1 || ! -f out.dir/1link || \
+      ! -f out.dir/otherdir/A || ! -f out.dir/otherdir/B ]]; then
+	error "source list capture (with quoted names and overlay) failed to work as expected"
 fi
 
 echo "**********************************************************"

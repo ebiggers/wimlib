@@ -256,11 +256,6 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	struct wim_inode *inode;
 
 	if (exclude_path(path, path_len, params->config, true)) {
-		if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
-			ERROR("Cannot exclude the root directory from capture");
-			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
-			goto out;
-		}
 		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
 		    && params->progress_func)
 		{
@@ -388,7 +383,9 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 			return WIMLIB_ERR_STAT;
 		}
 
-		if (!S_ISDIR(root_stbuf.st_mode)) {
+		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) &&
+		    !S_ISDIR(root_stbuf.st_mode))
+		{
 			ERROR("Root of capture \"%s\" is not a directory",
 			      root_disk_path);
 			return WIMLIB_ERR_NOTDIR;
