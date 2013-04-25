@@ -1275,14 +1275,18 @@ replace_forbidden_characters(utf16lechar *name)
 		if (*p == '/')
 	#endif
 		{
+		#ifdef __WIN32__
+			*p = cpu_to_le16(0xfffd);
+		#else
+			*p = '?';
+		#endif
 			if (name) {
 				WARNING("File, directory, or stream name \"%"WS"\"\n"
 					"          contains forbidden characters; "
-					"replacing them with Unicode codepoint U+001A",
+					"substituting replacement characters.",
 					name);
 				name = NULL;
 			}
-			*p = 0x1a;
 		}
 	}
 }
