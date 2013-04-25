@@ -1258,6 +1258,11 @@ inode_set_unix_data(struct wim_inode *inode, uid_t uid, gid_t gid, mode_t mode,
 }
 #endif /* !__WIN32__ */
 
+/* Replace weird characters in filenames and alternate data stream names.
+ *
+ * In particular we do not want the path separator to appear in any names, as
+ * that would make it possible for a "malicious" WIM to extract itself to any
+ * location it wanted to. */
 static void
 replace_forbidden_characters(utf16lechar *name)
 {
@@ -1359,7 +1364,7 @@ read_ads_entries(const u8 *p, struct wim_inode *inode, u64 remaining_size)
 		}
 
 		p = get_u64(p, &length);
-		p += 8; /* Skip the reserved field */
+		p = get_u64(p, &cur_entry->unused);
 		p = get_bytes(p, SHA1_HASH_SIZE, cur_entry->hash);
 		p = get_u16(p, &cur_entry->stream_name_nbytes);
 
@@ -1516,10 +1521,8 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	p = get_u32(p, (u32*)&inode->i_security_id);
 	p = get_u64(p, &dentry->subdir_offset);
 
-	/* 2 unused fields */
-	p += 2 * sizeof(u64);
-	/*p = get_u64(p, &dentry->unused1);*/
-	/*p = get_u64(p, &dentry->unused2);*/
+	p = get_u64(p, &inode->i_unused_1);
+	p = get_u64(p, &inode->i_unused_2);
 
 	p = get_u64(p, &inode->i_creation_time);
 	p = get_u64(p, &inode->i_last_access_time);
@@ -1797,21 +1800,21 @@ write_dentry(const struct wim_dentry *dentry, u8 *p)
 	p = put_u32(p, inode->i_attributes);
 	p = put_u32(p, inode->i_security_id);
 	p = put_u64(p, dentry->subdir_offset);
-	p = put_u64(p, 0); /* unused1 */
-	p = put_u64(p, 0); /* unused2 */
+	p = put_u64(p, inode->i_unused_1);
+	p = put_u64(p, inode->i_unused_2);
 	p = put_u64(p, inode->i_creation_time);
 	p = put_u64(p, inode->i_last_access_time);
 	p = put_u64(p, inode->i_last_write_time);
 	hash = inode_stream_hash(inode, 0);
 	p = put_bytes(p, SHA1_HASH_SIZE, hash);
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		p = put_u32(p, 0);
+		p = put_u32(p, inode->i_rp_unknown_1);
 		p = put_u32(p, inode->i_reparse_tag);
-		p = put_u16(p, 0);
+		p = put_u16(p, inode->i_rp_unknown_2);
 		p = put_u16(p, inode->i_not_rpfixed);
 	} else {
 		u64 link_group_id;
-		p = put_u32(p, 0);
+		p = put_u32(p, inode->i_rp_unknown_1);
 		if (inode->i_nlink == 1)
 			link_group_id = 0;
 		else
@@ -1839,7 +1842,7 @@ write_dentry(const struct wim_dentry *dentry, u8 *p)
 	 * alternate data stream entries. */
 	for (u16 i = 0; i < inode->i_num_ads; i++) {
 		p = put_u64(p, ads_entry_total_length(&inode->i_ads_entries[i]));
-		p = put_u64(p, 0); /* Unused */
+		p = put_u64(p, inode->i_ads_entries[i].unused);
 		hash = inode_stream_hash(inode, i + 1);
 		p = put_bytes(p, SHA1_HASH_SIZE, hash);
 		p = put_u16(p, inode->i_ads_entries[i].stream_name_nbytes);

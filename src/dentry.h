@@ -78,12 +78,16 @@ struct wim_ads_entry {
 	 * terminating null character. */
 	u16 stream_name_nbytes;
 
-	/* Stream name (UTF-16LE) */
-	utf16lechar *stream_name;
-
 	/* Number to identify an alternate data stream even after it's possibly
 	 * been moved or renamed. */
 	u32 stream_id;
+
+	/* Stream name (UTF-16LE) */
+	utf16lechar *stream_name;
+
+	/* Unused field.  We read it into memory so we can write it out
+	 * unchanged. */
+	u64 unused;
 };
 
 
@@ -231,13 +235,20 @@ struct wim_inode {
 	/* Used only in NTFS-mode extraction */
 	u8 i_dos_name_extracted : 1;
 
+	/* Set to 0 if reparse point fixups have been done.  Otherwise set to 1.
+	 *
+	 * Note: this actually may reflect the SYMBOLIC_LINK_RELATIVE flag.  */
 	u16 i_not_rpfixed;
 
 	/* Number of alternate data streams associated with this inode */
 	u16 i_num_ads;
 
-	u16 i_rp_unknown_2;
+	/* Unused/unknown fields that we just read into memory so we can
+	 * re-write them unchanged.  */
+	u64 i_unused_1;
+	u64 i_unused_2;
 	u32 i_rp_unknown_1;
+	u16 i_rp_unknown_2;
 
 	/* A hash of the file's contents, or a pointer to the lookup table entry
 	 * for this dentry if the lookup table entries have been resolved.
