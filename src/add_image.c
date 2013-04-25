@@ -146,6 +146,7 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 	}
 
 	/* Recurse on directory contents */
+	ret = 0;
 	for (;;) {
 		errno = 0;
 		entry = readdir(dir);
