@@ -1768,7 +1768,7 @@ win32_extract_streams(const struct wim_inode *inode,
 				   vol_flags);
 	if (ret)
 		goto out;
-	if (unnamed_lte)
+	if (unnamed_lte && inode->i_extracted_file == NULL)
 		*completed_bytes_p += wim_resource_size(unnamed_lte);
 
 	if (!(vol_flags & FILE_NAMED_STREAMS))
@@ -1790,7 +1790,7 @@ win32_extract_streams(const struct wim_inode *inode,
 						   vol_flags);
 			if (ret)
 				break;
-			if (ads_entry->lte)
+			if (ads_entry->lte && inode->i_extracted_file == NULL)
 				*completed_bytes_p += wim_resource_size(ads_entry->lte);
 		}
 	}
@@ -1867,9 +1867,24 @@ win32_do_apply_dentry(const wchar_t *output_path,
 		} else {
 			WARNING("Can't create hard link \"%ls => %ls\":\n"
 				"          Volume does not support hard links!\n"
-				"          Falling back to extracting a copy of the file.");
+				"          Falling back to extracting a copy of the file.",
+				output_path, inode->i_extracted_file);
 		}
 	}
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT &&
+	    !(args->vol_flags & FILE_SUPPORTS_REPARSE_POINTS))
+	{
+		WARNING("Skipping extraction of reparse point \"%ls\":\n"
+			"          Not supported by destination filesystem",
+			output_path);
+		struct wim_lookup_table_entry *lte;
+		lte = inode_unnamed_lte_resolved(inode);
+		if (lte)
+			args->progress.extract.completed_bytes += wim_resource_size(lte);
+		return 0;
+	}
+
 	/* Create the file, directory, or reparse point, and extract the
 	 * data streams. */
 	ret = win32_extract_streams(inode, output_path,
@@ -1907,6 +1922,19 @@ win32_do_apply_dentry_timestamps(const wchar_t *path,
 	DWORD err;
 	HANDLE h;
 	const struct wim_inode *inode = dentry->d_inode;
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT &&
+	    !(args->vol_flags & FILE_SUPPORTS_REPARSE_POINTS))
+	{
+		/* Skip reparse points not extracted */
+		return 0;
+	}
+
+	/* Windows doesn't let you change the timestamps of the root directory
+	 * (at least on FAT, which is dumb but expected since FAT doesn't store
+	 * any metadata about the root directory...) */
+	if (path_is_root_of_drive(path))
+		return 0;
 
 	DEBUG("Opening \"%ls\" to set timestamps", path);
 	h = win32_open_existing_file(path, FILE_WRITE_ATTRIBUTES);
