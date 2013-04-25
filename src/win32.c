@@ -743,18 +743,11 @@ win32_do_capture_rpfix(char *rpbuf, DWORD *rpbuflen_p,
 
 /* Load a reparse point into a WIM inode.  It is just stored in memory.
  *
- * @hFile:  Open handle to a reparse point, with permission to read the reparse
- *          data.
+ * @hFile is the open handle to a reparse point, with permission to read the
+ * reparse data.
  *
- * @inode:  WIM inode for the reparse point.
- *
- * @lookup_table:  Stream lookup table for the WIM; an entry will be added to it
- *                 for the reparse point unless an entry already exists for
- *                 the exact same data stream.
- *
- * @path:  External path to the reparse point.  Used for error messages only.
- *
- * Returns 0 on success; nonzero on failure. */
+ * @inode is the WIM inode for the reparse point.
+ */
 static int
 win32_capture_reparse_point(struct wim_dentry **root_p,
 			    HANDLE hFile,
@@ -809,8 +802,8 @@ win32_capture_reparse_point(struct wim_dentry **root_p,
 			inode->i_not_rpfixed = 0;
 		}
 	}
-	return inode_add_ads_with_data(inode, L"", reparse_point_buf + 8,
-				       bytesReturned - 8, params->lookup_table);
+	return inode_set_unnamed_stream(inode, reparse_point_buf + 8,
+					bytesReturned - 8, params->lookup_table);
 }
 
 /* Scans an unnamed or named stream of a Win32 file (not a reparse point

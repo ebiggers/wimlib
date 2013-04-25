@@ -1118,6 +1118,47 @@ out:
 	return ret;
 }
 
+/* Set the unnamed stream of a WIM inode, given a data buffer containing the
+ * stream contents. */
+int
+inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
+			 struct wim_lookup_table *lookup_table)
+{
+	struct wim_lookup_table_entry *lte, *existing_lte;
+	u8 hash[SHA1_HASH_SIZE];
+	void *buf;
+
+	sha1_buffer(data, len, hash);
+
+	existing_lte = __lookup_resource(lookup_table, hash);
+
+	if (existing_lte) {
+		wimlib_assert(wim_resource_size(existing_lte) == len);
+		lte = existing_lte;
+		lte->refcnt++;
+	} else {
+		void *buf;
+
+		lte = new_lookup_table_entry();
+		if (!lte)
+			return WIMLIB_ERR_NOMEM;
+		buf = MALLOC(len);
+		if (!buf) {
+			free_lookup_table_entry(lte);
+			return WIMLIB_ERR_NOMEM;
+		}
+		memcpy(buf, data, len);
+		lte->resource_location = RESOURCE_IN_ATTACHED_BUFFER;
+		lte->attached_buffer = buf;
+		lte->resource_entry.original_size = len;
+		copy_hash(lte->hash, hash);
+		lookup_table_insert(lookup_table, lte);
+	}
+	inode->i_lte = lte;
+	inode->i_resolved = 1;
+	return 0;
+}
+
 /* Remove an alternate data stream from a WIM inode  */
 void
 inode_remove_ads(struct wim_inode *inode, u16 idx,

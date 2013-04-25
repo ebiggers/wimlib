@@ -160,8 +160,8 @@ out:
 /* Given a UNIX symlink target, prepare the corresponding symbolic link reparse
  * data buffer. */
 static int
-make_symlink_reparse_data_buf(const char *symlink_target,
-			      size_t *len_ret, void **buf_ret)
+make_symlink_reparse_data_buf(const char *symlink_target, void *rpdata,
+			      size_t *rplen_ret)
 {
 	int ret;
 	utf16lechar *name_utf16le;
@@ -171,8 +171,7 @@ make_symlink_reparse_data_buf(const char *symlink_target,
 	static const char abs_subst_name_prefix[12] = "\\\0?\0?\0\\\0C\0:\0";
 	static const char abs_print_name_prefix[4] = "C\0:\0";
 	u32 flags;
-	size_t len;
-	void *buf;
+	size_t rplen;
 	void *p;
 
 	ret = tstr_to_utf16le(symlink_target, strlen(symlink_target),
@@ -236,16 +235,15 @@ make_symlink_reparse_data_buf(const char *symlink_target,
 		print_name_nbytes += sizeof(abs_print_name_prefix);
 	}
 
-	len = 12 + substitute_name_nbytes + print_name_nbytes +
+	rplen = 12 + substitute_name_nbytes + print_name_nbytes +
 			2 * sizeof(utf16lechar);
-	buf = MALLOC(len);
 
-	if (!buf) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_name_utf16le;
+	if (rplen > REPARSE_POINT_MAX_SIZE) {
+		ERROR("Symlink \"%s\" is too long!", symlink_target);
+		return WIMLIB_ERR_LINK;
 	}
 
-	p = buf;
+	p = rpdata;
 
 	/* Substitute name offset */
 	p = put_u16(p, 0);
@@ -277,8 +275,7 @@ make_symlink_reparse_data_buf(const char *symlink_target,
 	p = put_bytes(p, name_utf16le_nbytes, name_utf16le);
 	p = put_u16(p, 0);
 
-	*len_ret = len;
-	*buf_ret = buf;
+	*rplen_ret = rplen;
 	ret = 0;
 out_free_name_utf16le:
 	FREE(name_utf16le);
@@ -335,55 +332,28 @@ inode_set_symlink(struct wim_inode *inode,
 
 {
 	int ret;
-	size_t symlink_buf_len;
-	struct wim_lookup_table_entry *lte = NULL, *existing_lte;
-	u8 symlink_buf_hash[SHA1_HASH_SIZE];
-	void *symlink_buf;
 
-	ret = make_symlink_reparse_data_buf(target, &symlink_buf_len,
-					    &symlink_buf);
+	/* Buffer for reparse point data */
+	u8 rpdata[REPARSE_POINT_MAX_SIZE];
+
+	/* Actual length of the reparse point data (to be calculated by
+	 * make_symlink_reparse_data_buf()) */
+	size_t rplen;
+
+	DEBUG("Creating reparse point data buffer "
+	      "for UNIX symlink target \"%s\"", target);
+
+	ret = make_symlink_reparse_data_buf(target, rpdata, &rplen);
 	if (ret)
 		return ret;
 
-	DEBUG("Made symlink reparse data buf (len = %zu, name len = %zu)",
-			symlink_buf_len, symlink_buf_len);
+	ret = inode_set_unnamed_stream(inode, rpdata, rplen, lookup_table);
+	if (ret)
+		return ret;
 
-	sha1_buffer(symlink_buf, symlink_buf_len, symlink_buf_hash);
-
-	existing_lte = __lookup_resource(lookup_table, symlink_buf_hash);
-
-	if (existing_lte) {
-		lte = existing_lte;
-		FREE(symlink_buf);
-		symlink_buf = NULL;
-	} else {
-		DEBUG("Creating new lookup table entry for symlink buf");
-		lte = new_lookup_table_entry();
-		if (!lte) {
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_symlink_buf;
-		}
-		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
-		lte->attached_buffer              = symlink_buf;
-		lte->resource_entry.original_size = symlink_buf_len;
-		copy_hash(lte->hash, symlink_buf_hash);
-	}
-
-	inode->i_lte = lte;
-	inode->i_resolved = 1;
-
-	DEBUG("Loaded symlink buf");
-
-	if (existing_lte)
-		lte->refcnt++;
-	else
-		lookup_table_insert(lookup_table, lte);
 	if (lte_ret)
-		*lte_ret = lte;
+		*lte_ret = inode->i_lte;
 	return 0;
-out_free_symlink_buf:
-	FREE(symlink_buf);
-	return ret;
 }
 
 static int
@@ -407,9 +377,11 @@ unix_get_ino_and_dev(const char *path, u64 *ino_ret, u64 *dev_ret)
 #ifdef __WIN32__
 #  include "win32.h"
 #  define RP_PATH_SEPARATOR L'\\'
+#  define is_rp_path_separator(c) ((c) == L'\\' || (c) == L'/')
 #  define os_get_ino_and_dev win32_get_file_and_vol_ids
 #else
 #  define RP_PATH_SEPARATOR '/'
+#  define is_rp_path_separator(c) ((c) == '/')
 #  define os_get_ino_and_dev unix_get_ino_and_dev
 #endif
 
@@ -422,7 +394,7 @@ fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev)
 
 #ifdef __WIN32__
 	/* Skip over drive letter */
-	if (*p != RP_PATH_SEPARATOR)
+	if (!is_rp_path_separator(*p))
 		p += 2;
 #endif
 
@@ -433,7 +405,7 @@ fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev)
 		u64 ino;
 		u64 dev;
 
-		while (*p == RP_PATH_SEPARATOR)
+		while (is_rp_path_separator(*p))
 			p++;
 
 		save = *p;
@@ -450,11 +422,11 @@ fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev)
 			 * path. */
 			if (*p == T('\0'))
 				*(p - 1) = RP_PATH_SEPARATOR;
-			while (p - 1 >= dest && *(p - 1) == RP_PATH_SEPARATOR)
+			while (p - 1 >= dest && is_rp_path_separator(*(p - 1)))
 				p--;
 		#ifdef __WIN32__
 			/* Add back drive letter */
-			if (*dest != RP_PATH_SEPARATOR) {
+			if (!is_rp_path_separator(*dest)) {
 				*--p = *(dest + 1);
 				*--p = *dest;
 			}
@@ -470,7 +442,6 @@ fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev)
 
 		do {
 			p++;
-		} while (*p != RP_PATH_SEPARATOR && *p != T('\0'));
+		} while (!is_rp_path_separator(*p) && *p != T('\0'));
 	}
 }
-

@@ -432,6 +432,10 @@ inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
 			const void *value, size_t size,
 			struct wim_lookup_table *lookup_table);
 
+extern int
+inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
+			 struct wim_lookup_table *lookup_table);
+
 extern void
 inode_remove_ads(struct wim_inode *inode, u16 idx,
 		 struct wim_lookup_table *lookup_table);
