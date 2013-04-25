@@ -657,6 +657,8 @@ wimlib_free(WIMStruct *w)
 				fclose(w->fp_tab[i]);
 		FREE(w->fp_tab);
 	}
+#endif
+#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
 	pthread_mutex_destroy(&w->fp_tab_mutex);
 #endif
 
