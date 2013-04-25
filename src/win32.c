@@ -46,6 +46,7 @@
 
 #define MAX_GET_SD_ACCESS_DENIED_WARNINGS 1
 #define MAX_GET_SACL_PRIV_NOTHELD_WARNINGS 1
+#define MAX_CREATE_HARD_LINK_WARNINGS 5
 struct win32_capture_state {
 	unsigned long num_get_sd_access_denied;
 	unsigned long num_get_sacl_priv_notheld;
@@ -1858,10 +1859,15 @@ win32_do_apply_dentry(const wchar_t *output_path,
 			win32_error(err);
 			return WIMLIB_ERR_LINK;
 		} else {
-			WARNING("Can't create hard link \"%ls => %ls\":\n"
-				"          Volume does not support hard links!\n"
-				"          Falling back to extracting a copy of the file.",
-				output_path, inode->i_extracted_file);
+			args->num_hard_links_failed++;
+			if (args->num_hard_links_failed < MAX_CREATE_HARD_LINK_WARNINGS) {
+				WARNING("Can't create hard link \"%ls => %ls\":\n"
+					"          Volume does not support hard links!\n"
+					"          Falling back to extracting a copy of the file.",
+					output_path, inode->i_extracted_file);
+			} else if (args->num_hard_links_failed == MAX_CREATE_HARD_LINK_WARNINGS) {
+				WARNING("Suppressing further hard linking warnings...");
+			}
 		}
 	}
 

@@ -553,18 +553,21 @@ struct apply_args {
 			struct _ntfs_volume *vol;
 		};
 	#endif
-		struct {
-			/* Normal apply only (UNIX) */
-			unsigned long num_utime_warnings;
-		};
-
+	#ifdef __WIN32__
 		struct {
 			/* Normal apply only (Win32) */
 			unsigned long num_set_sacl_priv_notheld;
 			unsigned long num_set_sd_access_denied;
 			unsigned vol_flags;
+			unsigned long num_hard_links_failed;
 			bool have_vol_flags;
 		};
+	#else
+		struct {
+			/* Normal apply only (UNIX) */
+			unsigned long num_utime_warnings;
+		};
+	#endif
 	};
 };
 
