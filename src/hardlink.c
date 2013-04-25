@@ -551,5 +551,6 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 		}
 		INIT_HLIST_HEAD(&table->array[i]);
 	}
+	list_splice_tail(&table->extra_inodes, head);
 	table->num_entries = 0;
 }

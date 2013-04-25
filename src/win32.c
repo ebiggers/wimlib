@@ -1073,6 +1073,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	DWORD err;
 	u64 file_size;
 	int ret = 0;
+	const wchar_t *basename;
 
 	if (exclude_path(path, path_num_chars, params->config, true)) {
 		if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
@@ -1120,15 +1121,28 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out_close_handle;
 	}
 
-	/* Create a WIM dentry with an associated inode, which may be shared */
-	ret = inode_table_new_dentry(params->inode_table,
-				     path_basename_with_len(path, path_num_chars),
-				     ((u64)file_info.nFileIndexHigh << 32) |
-				         (u64)file_info.nFileIndexLow,
-				     file_info.dwVolumeSerialNumber,
-				     &root);
-	if (ret)
-		goto out_close_handle;
+	/* Create a WIM dentry with an associated inode, which may be shared.
+	 *
+	 * However, we need to explicitly check for directories and refuse to
+	 * hard link them.  This is because Windows has a bug where it can
+	 * return duplicate File IDs for directories on the FAT filesystem. */
+	basename = path_basename_with_len(path, path_num_chars);
+	if (!(file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+		ret = inode_table_new_dentry(params->inode_table,
+					     basename,
+					     ((u64)file_info.nFileIndexHigh << 32) |
+						 (u64)file_info.nFileIndexLow,
+					     file_info.dwVolumeSerialNumber,
+					     &root);
+		if (ret)
+			goto out_close_handle;
+	} else {
+		ret = new_dentry_with_inode(basename, &root);
+		if (ret)
+			goto out_close_handle;
+		list_add_tail(&root->d_inode->i_list, &params->inode_table->extra_inodes);
+	}
+
 
 	ret = win32_get_short_name(root, path);
 	if (ret)
