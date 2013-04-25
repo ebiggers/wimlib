@@ -2024,10 +2024,16 @@ wimfs_readlink(const char *path, char *buf, size_t buf_len)
 		return -errno;
 	if (!inode_is_symlink(inode))
 		return -EINVAL;
-
-	ret = inode_readlink(inode, buf, buf_len, ctx->wim, true);
-	if (ret > 0)
+	if (buf_len == 0)
+		return -ENAMETOOLONG;
+	ret = inode_readlink(inode, buf, buf_len - 1, ctx->wim, true);
+	if (ret >= 0) {
+		wimlib_assert(ret <= buf_len - 1);
+		buf[ret] = '\0';
 		ret = 0;
+	} else if (ret == -ENAMETOOLONG) {
+		buf[buf_len - 1] = '\0';
+	}
 	return ret;
 }
 

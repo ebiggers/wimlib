@@ -263,6 +263,18 @@ be set exactly as specified in the WIM file.  The default behavior without this
 option is to fall back to setting a security descriptor with the SACL omitted,
 then only the default inherited security descriptor, if we do not have
 permission to set the desired one.
+.TP
+\fB--rpfix\fR, \fB--norpfix\fR
+Set whether to fix targets of absolute symbolic links (reparse points in Windows
+terminology) or not.  When enabled (\fB--rpfix\fR), extracted absolute symbolic
+links that are marked in the WIM image as being fixed are assumed to have
+absolute targets relative to the image root, and therefore have the actual root
+of extraction prepended to their targets.  The intention is that you can apply
+an image containing absolute symbolic links and still have them be valid after
+it's been applied to any location.
+
+The default behavior is \fB--rpfix\fR if any images in \fIWIMFILE\fR have been
+captured with reparse-point fixups done.  Otherwise, it is \fB--norpfix\fR.
 
 .SH NOTES
 
@@ -286,14 +298,14 @@ Extract the first image from the Windows PE image from the Windows Vista/7/8
 installation media to the directory "boot":
 .RS
 .PP
-image apply /media/windows/sources/boot.wim 1 boot
+@IMAGEX_PROGNAME@ apply /media/windows/sources/boot.wim 1 boot
 .RE
 .PP
 Extract all images from the Windows PE image from the Windows Vista/7/8
 installation media to the directory "boot", and hard link all identical files:
 .RS
 .PP
-image apply /media/windows8/sources/boot.wim all boot --hardlink
+@IMAGEX_PROGNAME@ apply /media/windows8/sources/boot.wim all boot --hardlink
 .RE
 .PP
 .SS NTFS extraction mode

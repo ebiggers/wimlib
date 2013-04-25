@@ -508,8 +508,8 @@ static inline bool
 inode_is_symlink(const struct wim_inode *inode)
 {
 	return (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
-		&& ((inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK) ||
-		     inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
+		&& (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
+		    inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
 }
 
 static inline bool

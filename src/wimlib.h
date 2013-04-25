@@ -700,14 +700,14 @@ struct wimlib_capture_config {
  * current root; also exclude absolute symbolic links that point outside the
  * directory tree being captured.
  *
- * Without this flag, the default is to do this only if WIM_HDR_FLAG_RP_FIX is
- * set in the WIM header.  WIM_HDR_FLAG_RP_FIX is set if the first image in a
- * WIM is captured with WIMLIB_ADD_IMAGE_FLAG_RPFIX enabled and currently cannot
- * be changed. */
+ * Without this flag, the default is to do this if WIM_HDR_FLAG_RP_FIX is set in
+ * the WIM header or if this is the first image being added.
+ * WIM_HDR_FLAG_RP_FIX is set if the first image in a WIM is captured with
+ * reparse point fixups enabled and currently cannot be unset. */
 #define WIMLIB_ADD_IMAGE_FLAG_RPFIX			0x00000100
 
-/* Don't do reparse point fixups.  Without this flag, the default is to do
- * reparse point fixes if WIM_HDR_FLAG_RP_FIX is set in the WIM header. */
+/* Don't do reparse point fixups.  The default behavior is described in the
+ * documentation for ::WIMLIB_ADD_IMAGE_FLAG_RPFIX. */
 #define WIMLIB_ADD_IMAGE_FLAG_NORPFIX			0x00000200
 
 /******************************
@@ -758,7 +758,7 @@ struct wimlib_capture_config {
 #define WIMLIB_EXTRACT_FLAG_STRICT_ACLS			0x00000080
 
 /* Extract equivalent to ::WIMLIB_ADD_IMAGE_FLAG_RPFIX; force reparse-point
- * fixups on, so absolute symbolic links are junction points will be fixed to be
+ * fixups on, so absolute symbolic links or junction points will be fixed to be
  * absolute relative to the actual extraction root.  Done by default if
  * WIM_HDR_FLAG_RP_FIX is set in the WIM header. */
 #define WIMLIB_EXTRACT_FLAG_RPFIX			0x00000100

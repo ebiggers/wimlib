@@ -39,7 +39,7 @@ do_test() {
 		if [ -x /usr/bin/tree -a "$ctype" = "None" ]; then
 			tree in.dir --inodes -F -s --noreport
 		fi
-		if ! imagex capture in.dir test.wim --compress=$ctype; then
+		if ! imagex capture in.dir test.wim --compress=$ctype --norpfix; then
 			error "Failed to capture directory tree into a WIM"
 		fi
 		if ! imagex apply test.wim 1 out.dir; then

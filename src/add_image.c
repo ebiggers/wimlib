@@ -865,8 +865,13 @@ wimlib_add_image_multisource(WIMStruct *w,
 
 	if ((add_image_flags & (WIMLIB_ADD_IMAGE_FLAG_RPFIX |
 				WIMLIB_ADD_IMAGE_FLAG_NORPFIX)) == 0)
-		if (w->hdr.flags & WIM_HDR_FLAG_RP_FIX)
+	{
+		/* Do reparse-point fixups by default if the header flag is set
+		 * from previous images, or if this is the first image being
+		 * added. */
+		if ((w->hdr.flags & WIM_HDR_FLAG_RP_FIX) || w->hdr.image_count == 0)
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_RPFIX;
+	}
 
 	if (!name || !*name) {
 		ERROR("Must specify a non-empty string for the image name");

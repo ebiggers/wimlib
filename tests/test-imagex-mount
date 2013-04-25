@@ -36,7 +36,7 @@ init() {
 	echo 'testing' > dir2/file
 	dd if=/dev/zero of=dir2/zeroes bs=4096 count=5
 	mkdir tmp.empty tmp.mnt tmp.apply tmp.orig
-	imagex capture tmp.empty empty.wim
+	imagex capture tmp.empty empty.wim --norpfix
 }
 
 cleanup

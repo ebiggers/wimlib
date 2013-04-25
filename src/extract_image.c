@@ -281,7 +281,7 @@ out_extract_unix_data:
 			ret = 0;
 		else
 			ret = fd_apply_unix_data(out_fd, &unix_data);
-		if (ret != 0)
+		if (ret)
 			goto out;
 	}
 	if (lte)
@@ -342,10 +342,13 @@ extract_symlink(struct wim_dentry *dentry,
 	if (target[args->target_realpath_len] == '/' &&
 	    args->extract_flags & WIMLIB_EXTRACT_FLAG_RPFIX)
 	{
+		/* Fix absolute symbolic link target to point into the actual
+		 * extraction destination */
 		memcpy(target, args->target_realpath,
 		       args->target_realpath_len);
 		fixed_target = target;
 	} else {
+		/* Keep same link target */
 		fixed_target = target + args->target_realpath_len;
 	}
 	ret = symlink(fixed_target, output_path);
@@ -421,10 +424,9 @@ dir_exists:
 }
 
 #ifndef __WIN32__
-static int unix_do_apply_dentry(const char *output_path,
-				size_t output_path_len,
-				struct wim_dentry *dentry,
-				struct apply_args *args)
+static int
+unix_do_apply_dentry(const char *output_path, size_t output_path_len,
+		     struct wim_dentry *dentry, struct apply_args *args)
 {
 	const struct wim_inode *inode = dentry->d_inode;
 
@@ -504,8 +506,8 @@ static int
 apply_dentry_normal(struct wim_dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
-	tchar *output_path;
 	size_t len;
+	tchar *output_path;
 
 	len = tstrlen(args->target);
 	if (dentry_is_root(dentry)) {
@@ -545,7 +547,6 @@ apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 		len += dentry->full_path_nbytes / sizeof(tchar);
 		output_path[len] = T('\0');
 	}
-
 
 #ifdef __WIN32__
 	return win32_do_apply_dentry_timestamps(output_path, len, dentry, args);
@@ -637,8 +638,21 @@ inode_find_streams_for_extraction(struct wim_inode *inode,
 		list_add_tail(&inode->i_lte_inode_list, &lte->inode_list);
 		inode_added = true;
 	}
-#ifdef WITH_NTFS_3G
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
+
+	/* Determine whether to include alternate data stream entries or not.
+	 *
+	 * UNIX:  Include them if extracting using NTFS-3g.
+	 *
+	 * Windows: Include them undconditionally, although if the filesystem is
+	 * not NTFS we won't actually be able to extract them. */
+#if defined(WITH_NTFS_3G)
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS)
+#elif defined(__WIN32__)
+	if (1)
+#else
+	if (0)
+#endif
+	{
 		for (unsigned i = 0; i < inode->i_num_ads; i++) {
 			if (inode->i_ads_entries[i].stream_name_nbytes != 0) {
 				lte = inode->i_ads_entries[i].lte;
@@ -654,7 +668,6 @@ inode_find_streams_for_extraction(struct wim_inode *inode,
 			}
 		}
 	}
-#endif
 }
 
 static void
@@ -725,7 +738,7 @@ apply_stream_list(struct list_head *stream_list,
 				/* Extract the dentry if it was not already
 				 * extracted */
 				ret = maybe_apply_dentry(dentry, args);
-				if (ret != 0)
+				if (ret)
 					return ret;
 				if (progress_func &&
 				    args->progress.extract.completed_bytes >= next_progress)

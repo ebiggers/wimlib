@@ -237,6 +237,24 @@ information.
 In the NTFS capture mode, do not capture security descriptors.  This flag is
 also available in the native Win32 build of wimlib.
 .TP
+\fB--rpfix\fR, \fB--norpfix\fR
+Set whether to fix targets of absolute symbolic links (reparse points in Windows
+terminology) or not.  When enabled (\fB--rpfix\fR), absolute symbolic links that
+point inside the directory tree being captured will be adjusted to be absolute
+relative to the root of the directory tree being captured.  In addition,
+absolute symbolic links that point outside the directory tree being captured
+will be ignored and not be captured at all.  When disabled (\fB--norpfix\fR),
+absolute symbolic links will be captured exactly as is.
+
+The default behavior for \fBimagex capture\fR is equivalent to \fB--rpfix\fR.
+The default behavior for \fBimagex append\fR will be \fB--rpfix\fR if reparse
+point fixups have previously been done on \fIWIMFILE\fR, otherwise
+\fB--norpfix\fR.
+
+Links are fixed up on a per-source basis in the case of a multi-source capture
+(\fB--source-list\fR specified), so you may wish to set \fB--norpfix\fR in that
+case.
+.TP
 \fB--strict-acls\fR
 In the Win32 native build of wimlib, fail immediately if the full security
 descriptor of any file or directory cannot be read.  The default behavior

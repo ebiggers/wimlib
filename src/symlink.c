@@ -34,6 +34,10 @@
 
 #include <sys/stat.h>
 
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#endif
+
 /*
  * Find the symlink target of a symbolic link or junction point in the WIM.
  *
@@ -77,7 +81,8 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 		header_size = 12;
 		p += 4;
 	}
-	if (header_size + substitute_name_offset + substitute_name_len > resource_len)
+	if (header_size +
+	    substitute_name_offset + substitute_name_len > resource_len)
 		return -EIO;
 
 	ret = utf16le_to_tstr((const utf16lechar*)(p + substitute_name_offset),
@@ -85,11 +90,6 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 			      &link_target, &link_target_len);
 	if (ret)
 		return -errno;
-
-	if (link_target_len + 1 > buf_len) {
-		ret = -ENAMETOOLONG;
-		goto out;
-	}
 
 	DEBUG("Interpeting substitute name \"%s\" (ReparseTag=0x%x)",
 	      link_target, reparse_tag);
@@ -133,7 +133,7 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 			/* "Relative" symlink, without drive letter */
 			;
 	} else {
-		ERROR("Invalid reparse point: \"%s\"", translated_target);
+		ERROR("Invalid reparse point substitute name: \"%s\"", translated_target);
 		ret = -EIO;
 		goto out;
 	}
@@ -142,8 +142,14 @@ get_symlink_name(const void *resource, size_t resource_len, char *buf,
 		for (size_t i = 0; i < link_target_len; i++)
 			if (translated_target[i] == '\\')
 				translated_target[i] = '/';
-	memcpy(buf, translated_target, link_target_len + 1);
-	ret = link_target_len;
+
+	if (link_target_len > buf_len) {
+		link_target_len = buf_len;
+		ret = -ENAMETOOLONG;
+	} else {
+		ret = link_target_len;
+	}
+	memcpy(buf, translated_target, link_target_len);
 out:
 	FREE(link_target);
 	return ret;
@@ -291,6 +297,7 @@ inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
 {
 	const struct wim_lookup_table_entry *lte;
 	int ret;
+	u8 *res_buf;
 
 	wimlib_assert(inode_is_symlink(inode));
 
@@ -301,12 +308,12 @@ inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len,
 	if (wim_resource_size(lte) > REPARSE_POINT_MAX_SIZE)
 		return -EIO;
 
-	u8 res_buf[wim_resource_size(lte)];
+	res_buf = alloca(wim_resource_size(lte));
 	ret = read_full_resource_into_buf(lte, res_buf, threadsafe);
 	if (ret)
 		return -EIO;
-	return get_symlink_name(res_buf, wim_resource_size(lte), buf,
-				buf_len, inode->i_reparse_tag);
+	return get_symlink_name(res_buf, wim_resource_size(lte),
+				buf, buf_len, inode->i_reparse_tag);
 }
 
 /*
@@ -406,7 +413,8 @@ unix_get_ino_and_dev(const char *path, u64 *ino_ret, u64 *dev_ret)
 #  define os_get_ino_and_dev unix_get_ino_and_dev
 #endif
 
-/* Fix up reparse points--- mostly shared between UNIX and Windows */
+/* Fix up absolute symbolic link targets--- mostly shared between UNIX and
+ * Windows */
 tchar *
 fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev)
 {
@@ -432,6 +440,10 @@ fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev)
 		*p = T('\0');
 		ret = os_get_ino_and_dev(dest, &ino, &dev);
 		*p = save;
+
+		if (ret) /* stat() failed before we got to the capture root---
+			    assume the link points outside it. */
+			return NULL;
 
 		if (ino == capture_root_ino && dev == capture_root_dev) {
 			/* Link points inside capture root.  Return abbreviated

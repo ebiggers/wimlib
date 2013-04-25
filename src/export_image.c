@@ -252,6 +252,12 @@ wimlib_export_image(WIMStruct *src_wim,
 
 	if (export_flags & WIMLIB_EXPORT_FLAG_BOOT)
 		dest_wim->hdr.boot_idx = dest_wim->hdr.image_count;
+	if (src_wim->hdr.flags & WIM_HDR_FLAG_RP_FIX)
+	{
+		/* Set the reparse point fixup flag on the destination WIM if
+		 * the flag is set on the source WIM. */
+		dest_wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
+	}
 	ret = 0;
 	goto out;
 out_xml_delete_image:
