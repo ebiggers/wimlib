@@ -94,6 +94,8 @@ begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 	size_t alloc_size = sizeof(struct chunk_table) + num_chunks * sizeof(u64);
 	struct chunk_table *chunk_tab = CALLOC(1, alloc_size);
 
+	DEBUG("Begin chunk table for stream with size %"PRIu64, size);
+
 	if (!chunk_tab) {
 		ERROR("Failed to allocate chunk table for %"PRIu64" byte "
 		      "resource", size);

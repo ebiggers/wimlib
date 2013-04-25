@@ -876,6 +876,12 @@ win32_capture_stream(const wchar_t *path,
 		}
 	}
 
+	/* If zero length stream, no lookup table entry needed. */
+	if ((u64)dat->StreamSize.QuadPart == 0) {
+		ret = 0;
+		goto out;
+	}
+
 	/* Create a UTF-16LE string @spath that gives the filename, then a
 	 * colon, then the stream name.  Or, if it's an unnamed stream, just the
 	 * filename.  It is MALLOC()'ed so that it can be saved in the
