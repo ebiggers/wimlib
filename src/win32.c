@@ -618,14 +618,47 @@ win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret)
 	return ret;
 }
 
+/* Reparse point fixup status code */
 enum rp_status {
+	/* Reparse point corresponded to an absolute symbolic link or junction
+	 * point that pointed outside the directory tree being captured, and
+	 * therefore was excluded. */
 	RP_EXCLUDED       = 0x0,
+
+	/* Reparse point was not fixed as it was either a relative symbolic
+	 * link, a mount point, or something else we could not understand. */
 	RP_NOT_FIXED      = 0x1,
+
+	/* Reparse point corresponded to an absolute symbolic link or junction
+	 * point that pointed inside the directory tree being captured, where
+	 * the target was specified by a "full" \??\ prefixed path, and
+	 * therefore was fixed to be relative to the root of the directory tree
+	 * being captured. */
 	RP_FIXED_FULLPATH = 0x2,
+
+	/* Same as RP_FIXED_FULLPATH, except the absolute link target did not
+	 * have the \??\ prefix.  It may have begun with a drive letter though.
+	 * */
 	RP_FIXED_ABSPATH  = 0x4,
+
+	/* Either RP_FIXED_FULLPATH or RP_FIXED_ABSPATH. */
 	RP_FIXED          = RP_FIXED_FULLPATH | RP_FIXED_ABSPATH,
 };
 
+/* Given the "substitute name" target of a Windows reparse point, try doing a
+ * fixup where we change it to be absolute relative to the root of the directory
+ * tree being captured.
+ *
+ * Note that this is only executed when WIMLIB_ADD_IMAGE_FLAG_RPFIX has been
+ * set.
+ *
+ * @capture_root_ino and @capture_root_dev indicate the inode number and device
+ * of the root of the directory tree being captured.  They are meant to identify
+ * this directory (as an alternative to its actual path, which could potentially
+ * be reached via multiple destinations due to other symbolic links).  This may
+ * not work properly on FAT, which doesn't seem to supply proper inode numbers
+ * or file IDs.  However, FAT doesn't support reparse points so this function
+ * wouldn't even be called anyway.  */
 static enum rp_status
 win32_maybe_rpfix_target(wchar_t *target, size_t *target_nchars_p,
 			 u64 capture_root_ino, u64 capture_root_dev)
@@ -635,11 +668,12 @@ win32_maybe_rpfix_target(wchar_t *target, size_t *target_nchars_p,
 	wchar_t *orig_target;
 
 	if (target_nchars == 0)
+		/* Invalid reparse point (empty target) */
 		return RP_NOT_FIXED;
 
 	if (target[0] == L'\\') {
 		if (target_nchars >= 2 && target[1] == L'\\') {
-			/* Probaby a volume.  Can't do anything with it. */
+			/* Probably a volume.  Can't do anything with it. */
 			DEBUG("Not fixing target (probably a volume)");
 			return RP_NOT_FIXED;
 		} else if (target_nchars >= 7 &&
@@ -653,7 +687,7 @@ win32_maybe_rpfix_target(wchar_t *target, size_t *target_nchars_p,
 			DEBUG("Full style path");
 			/* Full \??\x:\ style path (may be junction or symlink)
 			 * */
-			stripped_chars = 4;
+			stripped_chars = 6;
 		} else {
 			DEBUG("Absolute target without drive letter");
 			/* Absolute target, without drive letter */
@@ -666,7 +700,7 @@ win32_maybe_rpfix_target(wchar_t *target, size_t *target_nchars_p,
 	{
 		DEBUG("Absolute target with drive letter");
 		/* Absolute target, with drive letter */
-		stripped_chars = 0;
+		stripped_chars = 2;
 	} else {
 		DEBUG("Relative symlink or other link");
 		/* Relative symlink or other unexpected format */
@@ -675,15 +709,17 @@ win32_maybe_rpfix_target(wchar_t *target, size_t *target_nchars_p,
 	target[target_nchars] = L'\0';
 	orig_target = target;
 	target = fixup_symlink(target + stripped_chars, capture_root_ino, capture_root_dev);
-	if (target) {
-		target_nchars = wcslen(target);
-		wmemmove(orig_target + stripped_chars, target, target_nchars + 1);
-		*target_nchars_p = target_nchars + stripped_chars;
-		DEBUG("Fixed reparse point (new target: \"%ls\")", orig_target);
-		return stripped_chars ? RP_FIXED_FULLPATH : RP_FIXED_ABSPATH;
-	} else {
+	if (!target)
 		return RP_EXCLUDED;
-	}
+
+	target_nchars = wcslen(target);
+	wmemmove(orig_target + stripped_chars, target, target_nchars + 1);
+	*target_nchars_p = target_nchars + stripped_chars;
+	DEBUG("Fixed reparse point (new target: \"%ls\")", orig_target);
+	if (stripped_chars == 6)
+		return RP_FIXED_FULLPATH;
+	else
+		return RP_FIXED_ABSPATH;
 }
 
 static enum rp_status
@@ -700,21 +736,22 @@ win32_do_capture_rpfix(char *rpbuf, DWORD *rpbuflen_p,
 	u32 rptag;
 	DWORD rpbuflen = *rpbuflen_p;
 
-	if (rpbuflen < 16)
-		return RP_EXCLUDED;
+	if (rpbuflen < 16) /* Invalid reparse point (length too small) */
+		return RP_NOT_FIXED;
 	p_get = get_u32(rpbuf, &rptag);
 	p_get += 4;
 	p_get = get_u16(p_get, &substitute_name_offset);
 	p_get = get_u16(p_get, &substitute_name_len);
 	p_get += 4;
-	if ((size_t)substitute_name_offset + substitute_name_len > rpbuflen)
-		return RP_EXCLUDED;
 	if (rptag == WIM_IO_REPARSE_TAG_SYMLINK) {
-		if (rpbuflen < 20)
-			return RP_EXCLUDED;
+		if (rpbuflen < 20) /* Invalid reparse point (length too small) */
+			return RP_NOT_FIXED;
 		p_get += 4;
 	}
-
+	if ((DWORD)substitute_name_offset +
+	    substitute_name_len + (p_get - rpbuf) > rpbuflen)
+		/* Invalid reparse point (length too small) */
+		return RP_NOT_FIXED;
 
 	target = (wchar_t*)&p_get[substitute_name_offset];
 	target_nchars = substitute_name_len / 2;
@@ -729,6 +766,9 @@ win32_do_capture_rpfix(char *rpbuf, DWORD *rpbuflen_p,
 		wchar_t *print_name = target_copy;
 
 		if (status == RP_FIXED_FULLPATH) {
+			/* "full path", meaning \??\ prefixed.  We should not
+			 * include this prefix in the print name, as it is
+			 * apparently meant for the filesystem driver only. */
 			print_nbytes -= 8;
 			print_name += 4;
 		}
@@ -744,6 +784,9 @@ win32_do_capture_rpfix(char *rpbuf, DWORD *rpbuflen_p,
 		p_put = put_u16(p_put, 0);
 		p_put = put_bytes(p_put, print_nbytes, print_name);
 		p_put = put_u16(p_put, 0);
+
+		/* Wrote the end of the reparse data.  Recalculate the length,
+		 * set the length field correctly, and return it. */
 		rpbuflen = p_put - rpbuf;
 		put_u16(rpbuf + 4, rpbuflen - 8);
 		*rpbuflen_p = rpbuflen;
@@ -799,16 +842,20 @@ win32_capture_reparse_point(struct wim_dentry **root_p,
 	    (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
 	     inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
 	{
+		/* Try doing reparse point fixup */
 		enum rp_status status;
 		status = win32_do_capture_rpfix(reparse_point_buf,
 						&bytesReturned,
 						params->capture_root_ino,
 						params->capture_root_dev);
 		if (status == RP_EXCLUDED) {
+			/* Absolute path points out of capture tree.  Free the
+			 * dentry; we're not including it at all. */
 			free_dentry(*root_p);
 			*root_p = NULL;
 			return 0;
 		} else if (status & RP_FIXED) {
+			/* Absolute path fixup was done. */
 			inode->i_not_rpfixed = 0;
 		}
 	}

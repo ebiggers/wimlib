@@ -392,12 +392,6 @@ fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev)
 {
 	tchar *p = dest;
 
-#ifdef __WIN32__
-	/* Skip over drive letter */
-	if (!is_rp_path_separator(*p))
-		p += 2;
-#endif
-
 	DEBUG("Fixing symlink or junction \"%"TS"\"", dest);
 	for (;;) {
 		tchar save;
@@ -424,14 +418,6 @@ fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev)
 				*(p - 1) = RP_PATH_SEPARATOR;
 			while (p - 1 >= dest && is_rp_path_separator(*(p - 1)))
 				p--;
-		#ifdef __WIN32__
-			/* Add back drive letter */
-			if (!is_rp_path_separator(*dest)) {
-				*--p = *(dest + 1);
-				*--p = *dest;
-			}
-		#endif
-			wimlib_assert(p >= dest);
 			return p;
 		}
 
