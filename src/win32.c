@@ -1973,8 +1973,14 @@ win32_begin_extract_unnamed_stream(const struct wim_inode *inode,
 
 	/* Set file attributes if we created the file.  Otherwise, we haven't
 	 * created the file set and we will set the attributes in the call to
-	 * CreateFileW(). */
-	if (*creationDisposition_ret == OPEN_EXISTING) {
+	 * CreateFileW().
+	 *
+	 * The FAT filesystem does not let you change the attributes of the root
+	 * directory, so treat that as a special case and do not set attributes.
+	 * */
+	if (*creationDisposition_ret == OPEN_EXISTING &&
+	    !path_is_root_of_drive(path))
+	{
 		if (!SetFileAttributesW(path,
 					win32_mask_attributes(inode->i_attributes)))
 		{
