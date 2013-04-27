@@ -1403,9 +1403,8 @@ win32_set_reparse_data(HANDLE h,
 }
 
 static int
-win32_set_compressed(HANDLE hFile, const wchar_t *path)
+win32_set_compression_state(HANDLE hFile, USHORT format, const wchar_t *path)
 {
-	USHORT format = COMPRESSION_FORMAT_DEFAULT;
 	DWORD bytesReturned = 0;
 	if (!DeviceIoControl(hFile, FSCTL_SET_COMPRESSION,
 			     &format, sizeof(USHORT),
@@ -1655,14 +1654,6 @@ win32_get_create_flags_and_attributes(DWORD i_attributes)
 	       FILE_FLAG_BACKUP_SEMANTICS;
 }
 
-static bool
-inode_has_special_attributes(const struct wim_inode *inode)
-{
-	return (inode->i_attributes & (FILE_ATTRIBUTE_COMPRESSED |
-				       FILE_ATTRIBUTE_REPARSE_POINT |
-				       FILE_ATTRIBUTE_SPARSE_FILE)) != 0;
-}
-
 /* Set compression or sparse attributes, and reparse data, if supported by the
  * volume. */
 static int
@@ -1672,13 +1663,21 @@ win32_set_special_attributes(HANDLE hFile, const struct wim_inode *inode,
 {
 	int ret;
 
-	if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED) {
-		if (vol_flags & FILE_FILE_COMPRESSION) {
+	if (vol_flags & FILE_FILE_COMPRESSION) {
+
+		USHORT format;
+		if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED) {
+			format = COMPRESSION_FORMAT_DEFAULT;
 			DEBUG("Setting compression flag on \"%ls\"", path);
-			ret = win32_set_compressed(hFile, path);
-			if (ret)
-				return ret;
 		} else {
+			format = COMPRESSION_FORMAT_NONE;
+			DEBUG("Clearing compression flag on \"%ls\"", path);
+		}
+		ret = win32_set_compression_state(hFile, format, path);
+		if (ret)
+			return ret;
+	} else {
+		if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED) {
 			DEBUG("Cannot set compression attribute on \"%ls\": "
 			      "volume does not support transparent compression",
 			      path);
@@ -1822,12 +1821,10 @@ try_open_again:
 				goto fail_close_handle;
 		}
 
-		if (inode_has_special_attributes(inode)) {
-			ret = win32_set_special_attributes(h, inode, lte, path,
-							   args->vol_flags);
-			if (ret)
-				goto fail_close_handle;
-		}
+		ret = win32_set_special_attributes(h, inode, lte, path,
+						   args->vol_flags);
+		if (ret)
+			goto fail_close_handle;
 	}
 
 	if (!(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
