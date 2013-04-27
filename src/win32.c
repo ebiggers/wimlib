@@ -1663,24 +1663,26 @@ win32_set_special_attributes(HANDLE hFile, const struct wim_inode *inode,
 {
 	int ret;
 
-	if (vol_flags & FILE_FILE_COMPRESSION) {
-
-		USHORT format;
-		if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED) {
-			format = COMPRESSION_FORMAT_DEFAULT;
-			DEBUG("Setting compression flag on \"%ls\"", path);
+	/* Encrypted files cannot be [de]compressed. */
+	if (!(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
+		if (vol_flags & FILE_FILE_COMPRESSION) {
+			USHORT format;
+			if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED) {
+				format = COMPRESSION_FORMAT_DEFAULT;
+				DEBUG("Setting compression flag on \"%ls\"", path);
+			} else {
+				format = COMPRESSION_FORMAT_NONE;
+				DEBUG("Clearing compression flag on \"%ls\"", path);
+			}
+			ret = win32_set_compression_state(hFile, format, path);
+			if (ret)
+				return ret;
 		} else {
-			format = COMPRESSION_FORMAT_NONE;
-			DEBUG("Clearing compression flag on \"%ls\"", path);
-		}
-		ret = win32_set_compression_state(hFile, format, path);
-		if (ret)
-			return ret;
-	} else {
-		if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED) {
-			DEBUG("Cannot set compression attribute on \"%ls\": "
-			      "volume does not support transparent compression",
-			      path);
+			if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED) {
+				DEBUG("Cannot set compression attribute on \"%ls\": "
+				      "volume does not support transparent compression",
+				      path);
+			}
 		}
 	}
 
