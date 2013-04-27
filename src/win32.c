@@ -307,6 +307,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	} else {
 		export_ctx.buf = NULL;
 	}
+	export_ctx.buf_filled = 0;
 	export_ctx.bytes_remaining = size;
 
 	err = OpenEncryptedFileRawW(lte->file_on_disk, 0, &file_ctx);
@@ -841,6 +842,41 @@ win32_get_reparse_data(HANDLE hFile, const wchar_t *path,
 	return status;
 }
 
+static DWORD WINAPI
+win32_tally_encrypted_size_cb(unsigned char *_data, void *_ctx,
+			      unsigned long len)
+{
+	*(u64*)_ctx += len;
+	return ERROR_SUCCESS;
+}
+
+static int
+win32_get_encrypted_file_size(const wchar_t *path, u64 *size_ret)
+{
+	DWORD err;
+	void *file_ctx;
+	int ret;
+
+	*size_ret = 0;
+	err = OpenEncryptedFileRawW(path, 0, &file_ctx);
+	if (err != ERROR_SUCCESS) {
+		ERROR("Failed to open encrypted file \"%ls\" for raw read", path);
+		win32_error(err);
+		return WIMLIB_ERR_OPEN;
+	}
+	err = ReadEncryptedFileRaw(win32_tally_encrypted_size_cb,
+				   size_ret, file_ctx);
+	if (err != ERROR_SUCCESS) {
+		ERROR("Failed to read raw encrypted data from \"%ls\"", path);
+		win32_error(err);
+		ret = WIMLIB_ERR_READ;
+	} else {
+		ret = 0;
+	}
+	CloseEncryptedFileRaw(file_ctx);
+	return ret;
+}
+
 /* Scans an unnamed or named stream of a Win32 file (not a reparse point
  * stream); calculates its SHA1 message digest and either creates a `struct
  * wim_lookup_table_entry' in memory for it, or uses an existing 'struct
@@ -954,11 +990,17 @@ win32_capture_stream(const wchar_t *path,
 	}
 	lte->file_on_disk = spath;
 	spath = NULL;
-	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED && !is_named_stream)
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED && !is_named_stream) {
+		u64 encrypted_size;
 		lte->resource_location = RESOURCE_WIN32_ENCRYPTED;
-	else
+		ret = win32_get_encrypted_file_size(path, &encrypted_size);
+		if (ret)
+			goto out_free_spath;
+		lte->resource_entry.original_size = encrypted_size;
+	} else {
 		lte->resource_location = RESOURCE_WIN32;
-	lte->resource_entry.original_size = (u64)dat->StreamSize.QuadPart;
+		lte->resource_entry.original_size = (u64)dat->StreamSize.QuadPart;
+	}
 
 	u32 stream_id;
 	if (is_named_stream) {
@@ -1214,6 +1256,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	file_size = ((u64)file_info.nFileSizeHigh << 32) |
 		     (u64)file_info.nFileSizeLow;
 
+	CloseHandle(hFile);
+
 	/* Capture the unnamed data stream (only should be present for regular
 	 * files) and any alternate data streams. */
 	ret = win32_capture_streams(path,
@@ -1223,7 +1267,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				    file_size,
 				    vol_flags);
 	if (ret)
-		goto out_close_handle;
+		goto out;
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Reparse point: set the reparse data (which we read already)
@@ -1242,6 +1286,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 					      state,
 					      vol_flags);
 	}
+	goto out;
 out_close_handle:
 	CloseHandle(hFile);
 out:
