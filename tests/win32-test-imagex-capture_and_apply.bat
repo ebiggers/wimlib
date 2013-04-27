@@ -291,13 +291,13 @@ cipher /e subdir\1 > nul
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
-REM call :msg "encrypted directory with unencrypted file in it"
-REM md subdir
-REM echo 1 > subdir\1
-REM cipher /e subdir > nul
-REM cipher /d subdir\1 > nul
-REM call :do_test
-REM if %errorlevel% neq 0 exit /b %errorlevel%
+call :msg "encrypted directory with unencrypted file in it"
+md subdir
+echo 1 > subdir\1
+cipher /e subdir > nul
+cipher /d subdir\1 > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
 
 call :msg "hardlinked, encrypted file with alternate data streams"
 echo hello > file
