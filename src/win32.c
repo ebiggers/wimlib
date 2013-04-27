@@ -29,7 +29,8 @@
 #include <windows.h>
 #include <ntdef.h>
 #include <wchar.h>
-#include <shlwapi.h> /* shlwapi.h for PathMatchSpecW() */
+#include <shlwapi.h> /* for PathMatchSpecW() */
+#include <aclapi.h> /* for SetSecurityInfo() */
 #ifdef ERROR /* windows.h defines this */
 #  undef ERROR
 #endif
@@ -1390,7 +1391,13 @@ win32_set_reparse_data(HANDLE h,
 		DWORD err = GetLastError();
 		ERROR("Failed to set reparse data on \"%ls\"", path);
 		win32_error(err);
-		return WIMLIB_ERR_WRITE;
+		if (err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD)
+			return WIMLIB_ERR_INSUFFICIENT_PRIVILEGES_TO_EXTRACT;
+		else if (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
+			 reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT)
+			return WIMLIB_ERR_LINK;
+		else
+			return WIMLIB_ERR_WRITE;
 	}
 	return 0;
 }
@@ -1410,7 +1417,10 @@ win32_set_compressed(HANDLE hFile, const wchar_t *path)
 		DWORD err = GetLastError();
 		ERROR("Failed to set compression flag on \"%ls\"", path);
 		win32_error(err);
-		return WIMLIB_ERR_WRITE;
+		if (err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD)
+			return WIMLIB_ERR_INSUFFICIENT_PRIVILEGES_TO_EXTRACT;
+		else
+			return WIMLIB_ERR_WRITE;
 	}
 	return 0;
 }
@@ -1429,7 +1439,10 @@ win32_set_sparse(HANDLE hFile, const wchar_t *path)
 		DWORD err = GetLastError();
 		WARNING("Failed to set sparse flag on \"%ls\"", path);
 		win32_error(err);
-		return WIMLIB_ERR_WRITE;
+		if (err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD)
+			return WIMLIB_ERR_INSUFFICIENT_PRIVILEGES_TO_EXTRACT;
+		else
+			return WIMLIB_ERR_WRITE;
 	}
 	return 0;
 }
@@ -1439,21 +1452,55 @@ win32_set_sparse(HANDLE hFile, const wchar_t *path)
  */
 static int
 win32_set_security_data(const struct wim_inode *inode,
+			HANDLE hFile,
 			const wchar_t *path,
 			struct apply_args *args)
 {
 	PSECURITY_DESCRIPTOR descriptor;
 	unsigned long n;
 	DWORD err;
+	const struct wim_security_data *sd;
 
-	descriptor = wim_const_security_data(args->w)->descriptors[inode->i_security_id];
+	SECURITY_INFORMATION securityInformation = 0;
 
-	SECURITY_INFORMATION securityInformation = DACL_SECURITY_INFORMATION |
-					           SACL_SECURITY_INFORMATION |
-					           OWNER_SECURITY_INFORMATION |
-					           GROUP_SECURITY_INFORMATION;
+	void *owner = NULL;
+	void *group = NULL;
+	ACL *dacl = NULL;
+	ACL *sacl = NULL;
+
+	BOOL owner_defaulted;
+	BOOL group_defaulted;
+	BOOL dacl_present;
+	BOOL dacl_defaulted;
+	BOOL sacl_present;
+	BOOL sacl_defaulted;
+
+	sd = wim_const_security_data(args->w);
+	descriptor = sd->descriptors[inode->i_security_id];
+
+	GetSecurityDescriptorOwner(descriptor, &owner, &owner_defaulted);
+	if (owner)
+		securityInformation |= OWNER_SECURITY_INFORMATION;
+
+	GetSecurityDescriptorGroup(descriptor, &group, &group_defaulted);
+	if (group)
+		securityInformation |= GROUP_SECURITY_INFORMATION;
+
+	GetSecurityDescriptorDacl(descriptor, &dacl_present,
+				  &dacl, &dacl_defaulted);
+	if (dacl)
+		securityInformation |= DACL_SECURITY_INFORMATION;
+
+	GetSecurityDescriptorSacl(descriptor, &sacl_present,
+				  &sacl, &sacl_defaulted);
+	if (sacl)
+		securityInformation |= SACL_SECURITY_INFORMATION;
+
 again:
-	if (SetFileSecurityW(path, securityInformation, descriptor))
+	if (securityInformation == 0)
+		return 0;
+	if (SetSecurityInfo(hFile, SE_FILE_OBJECT,
+			    securityInformation, owner, group, dacl, sacl))
 		return 0;
 	err = GetLastError();
 	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
@@ -1463,6 +1510,7 @@ again:
 		if (securityInformation & SACL_SECURITY_INFORMATION) {
 			n = args->num_set_sacl_priv_notheld++;
 			securityInformation &= ~SACL_SECURITY_INFORMATION;
+			sacl = NULL;
 			if (n < MAX_SET_SACL_PRIV_NOTHELD_WARNINGS) {
 				WARNING(
 "We don't have enough privileges to set the full security\n"
@@ -1502,7 +1550,10 @@ again:
 fail:
 		ERROR("Failed to set security descriptor on \"%ls\"", path);
 		win32_error(err);
-		return WIMLIB_ERR_WRITE;
+		if (err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD)
+			return WIMLIB_ERR_INSUFFICIENT_PRIVILEGES_TO_EXTRACT;
+		else
+			return WIMLIB_ERR_WRITE;
 	}
 }
 
@@ -1659,7 +1710,6 @@ win32_set_special_attributes(HANDLE hFile, const struct wim_inode *inode,
 			      "does not support reparse points", path);
 		}
 	}
-
 	return 0;
 }
 
@@ -1668,17 +1718,18 @@ win32_extract_stream(const struct wim_inode *inode,
 		     const wchar_t *path,
 		     const wchar_t *stream_name_utf16,
 		     struct wim_lookup_table_entry *lte,
-		     unsigned vol_flags)
+		     struct apply_args *args)
 {
 	wchar_t *stream_path;
 	HANDLE h;
 	int ret;
 	DWORD err;
 	DWORD creationDisposition = CREATE_ALWAYS;
+	DWORD requestedAccess;
 
 	if (stream_name_utf16) {
 		/* Named stream.  Create a buffer that contains the UTF-16LE
-		 * string [.\]@path:@stream_name_utf16.  This is needed to
+		 * string [./]path:stream_name_utf16.  This is needed to
 		 * create and open the stream using CreateFileW().  I'm not
 		 * aware of any other APIs to do this.  Note: the '$DATA' suffix
 		 * seems to be unneeded.  Additional note: a "./" prefix needs
@@ -1732,19 +1783,16 @@ win32_extract_stream(const struct wim_inode *inode,
 				}
 			}
 			DEBUG("Created directory \"%ls\"", stream_path);
-			if (!inode_has_special_attributes(inode)) {
-				ret = 0;
-				goto out;
-			}
-			DEBUG("Directory \"%ls\" has special attributes!",
-			      stream_path);
 			creationDisposition = OPEN_EXISTING;
 		}
 	}
 
 	DEBUG("Opening \"%ls\"", stream_path);
+	requestedAccess = GENERIC_READ | GENERIC_WRITE |
+			  ACCESS_SYSTEM_SECURITY;
+try_open_again:
 	h = CreateFileW(stream_path,
-			GENERIC_READ | GENERIC_WRITE,
+			requestedAccess,
 			0,
 			NULL,
 			creationDisposition,
@@ -1752,17 +1800,34 @@ win32_extract_stream(const struct wim_inode *inode,
 			NULL);
 	if (h == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
+		if (err == ERROR_PRIVILEGE_NOT_HELD &&
+		    (requestedAccess & ACCESS_SYSTEM_SECURITY))
+		{
+			requestedAccess &= ~ACCESS_SYSTEM_SECURITY;
+			goto try_open_again;
+		}
 		ERROR("Failed to create \"%ls\"", stream_path);
 		win32_error(err);
 		ret = WIMLIB_ERR_OPEN;
 		goto fail;
 	}
 
-	if (stream_name_utf16 == NULL && inode_has_special_attributes(inode)) {
-		ret = win32_set_special_attributes(h, inode, lte, path,
-						   vol_flags);
-		if (ret)
-			goto fail_close_handle;
+	if (stream_name_utf16 == NULL) {
+		if (inode->i_security_id >= 0 &&
+		    !(args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)
+		    && (args->vol_flags & FILE_PERSISTENT_ACLS))
+		{
+			ret = win32_set_security_data(inode, h, path, args);
+			if (ret)
+				goto fail_close_handle;
+		}
+
+		if (inode_has_special_attributes(inode)) {
+			ret = win32_set_special_attributes(h, inode, lte, path,
+							   args->vol_flags);
+			if (ret)
+				goto fail_close_handle;
+		}
 	}
 
 	if (!(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
@@ -1771,7 +1836,7 @@ win32_extract_stream(const struct wim_inode *inode,
 			      stream_path, wim_resource_size(lte));
 			if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED
 			    && stream_name_utf16 == NULL
-			    && (vol_flags & FILE_SUPPORTS_ENCRYPTION))
+			    && (args->vol_flags & FILE_SUPPORTS_ENCRYPTION))
 			{
 				ret = do_win32_extract_encrypted_stream(stream_path,
 									lte);
@@ -1804,54 +1869,149 @@ out:
 /*
  * Creates a file, directory, or reparse point and extracts all streams to it
  * (unnamed data stream and/or reparse point stream, plus any alternate data
- * streams).  This in Win32-specific code.
+ * streams).
  *
  * @inode:	WIM inode for this file or directory.
  * @path:	UTF-16LE external path to extract the inode to.
+ * @args:	Additional extraction context.
  *
  * Returns 0 on success; nonzero on failure.
  */
 static int
 win32_extract_streams(const struct wim_inode *inode,
-		      const wchar_t *path, u64 *completed_bytes_p,
-		      unsigned vol_flags)
+		      const wchar_t *path, struct apply_args *args)
 {
 	struct wim_lookup_table_entry *unnamed_lte;
 	int ret;
 
+	/* Extract the unnamed stream. */
+
 	unnamed_lte = inode_unnamed_lte_resolved(inode);
-	ret = win32_extract_stream(inode, path, NULL, unnamed_lte,
-				   vol_flags);
+	ret = win32_extract_stream(inode, path, NULL, unnamed_lte, args);
 	if (ret)
 		goto out;
 	if (unnamed_lte && inode->i_extracted_file == NULL)
-		*completed_bytes_p += wim_resource_size(unnamed_lte);
+	{
+		args->progress.extract.completed_bytes +=
+			wim_resource_size(unnamed_lte);
+	}
 
-	if (!(vol_flags & FILE_NAMED_STREAMS))
+	/* Extract any named streams, if supported by the volume. */
+
+	if (!(args->vol_flags & FILE_NAMED_STREAMS))
 		goto out;
 	for (u16 i = 0; i < inode->i_num_ads; i++) {
 		const struct wim_ads_entry *ads_entry = &inode->i_ads_entries[i];
-		if (ads_entry->stream_name_nbytes != 0) {
-			/* Skip special UNIX data entries (see documentation for
-			 * WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
-			if (ads_entry->stream_name_nbytes == WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES
-			    && !memcmp(ads_entry->stream_name,
-				       WIMLIB_UNIX_DATA_TAG_UTF16LE,
-				       WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES))
-				continue;
-			ret = win32_extract_stream(inode,
-						   path,
-						   ads_entry->stream_name,
-						   ads_entry->lte,
-						   vol_flags);
-			if (ret)
-				break;
-			if (ads_entry->lte && inode->i_extracted_file == NULL)
-				*completed_bytes_p += wim_resource_size(ads_entry->lte);
+
+		/* Skip the unnamed stream if it's in the ADS entries (we
+		 * already extracted it...) */
+		if (ads_entry->stream_name_nbytes == 0)
+			continue;
+
+		/* Skip special UNIX data entries (see documentation for
+		 * WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
+		if (ads_entry->stream_name_nbytes == WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES
+		    && !memcmp(ads_entry->stream_name,
+			       WIMLIB_UNIX_DATA_TAG_UTF16LE,
+			       WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES))
+			continue;
+
+		/* Extract the named stream */
+		ret = win32_extract_stream(inode,
+					   path,
+					   ads_entry->stream_name,
+					   ads_entry->lte,
+					   args);
+		if (ret)
+			break;
+
+		/* Tally the bytes extracted, unless this was supposed to be a
+		 * hard link and we are extracting the data again only as a
+		 * fallback. */
+		if (ads_entry->lte && inode->i_extracted_file == NULL)
+		{
+			args->progress.extract.completed_bytes +=
+				wim_resource_size(ads_entry->lte);
 		}
 	}
 out:
 	return ret;
+}
+
+static int
+win32_check_vol_flags(const wchar_t *output_path, struct apply_args *args)
+{
+	if (args->have_vol_flags)
+		return 0;
+
+	win32_get_vol_flags(output_path, &args->vol_flags);
+	args->have_vol_flags = true;
+	/* Warn the user about data that may not be extracted. */
+	if (!(args->vol_flags & FILE_SUPPORTS_SPARSE_FILES))
+		WARNING("Volume does not support sparse files!\n"
+			"          Sparse files will be extracted as non-sparse.");
+	if (!(args->vol_flags & FILE_SUPPORTS_REPARSE_POINTS))
+		WARNING("Volume does not support reparse points!\n"
+			"          Reparse point data will not be extracted.");
+	if (!(args->vol_flags & FILE_NAMED_STREAMS)) {
+		WARNING("Volume does not support named data streams!\n"
+			"          Named data streams will not be extracted.");
+	}
+	if (!(args->vol_flags & FILE_SUPPORTS_ENCRYPTION)) {
+		WARNING("Volume does not support encryption!\n"
+			"          Encrypted files will be extracted as raw data.");
+	}
+	if (!(args->vol_flags & FILE_FILE_COMPRESSION)) {
+		WARNING("Volume does not support transparent compression!\n"
+			"          Compressed files will be extracted as non-compressed.");
+	}
+	if (!(args->vol_flags & FILE_PERSISTENT_ACLS)) {
+		if (args->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS) {
+			ERROR("Strict ACLs requested, but the volume does not "
+			      "support ACLs!");
+			return WIMLIB_ERR_VOLUME_LACKS_FEATURES;
+		} else {
+			WARNING("Volume does not support persistent ACLS!\n"
+				"          File permissions will not be extracted.");
+		}
+	}
+	return 0;
+}
+
+static int
+win32_try_hard_link(const wchar_t *output_path, const struct wim_inode *inode,
+		    struct apply_args *args)
+{
+	DWORD err;
+
+	/* There is a volume flag for this (FILE_SUPPORTS_HARD_LINKS),
+	 * but it's only available on Windows 7 and later.  So no use
+	 * even checking it, really.  Instead, CreateHardLinkW() will
+	 * apparently return ERROR_INVALID_FUNCTION if the volume does
+	 * not support hard links. */
+	DEBUG("Creating hard link \"%ls => %ls\"",
+	      output_path, inode->i_extracted_file);
+	if (CreateHardLinkW(output_path, inode->i_extracted_file, NULL))
+		return 0;
+
+	err = GetLastError();
+	if (err != ERROR_INVALID_FUNCTION) {
+		ERROR("Can't create hard link \"%ls => %ls\"",
+		      output_path, inode->i_extracted_file);
+		win32_error(err);
+		return WIMLIB_ERR_LINK;
+	} else {
+		args->num_hard_links_failed++;
+		if (args->num_hard_links_failed < MAX_CREATE_HARD_LINK_WARNINGS) {
+			WARNING("Can't create hard link \"%ls => %ls\":\n"
+				"          Volume does not support hard links!\n"
+				"          Falling back to extracting a copy of the file.",
+				output_path, inode->i_extracted_file);
+		} else if (args->num_hard_links_failed == MAX_CREATE_HARD_LINK_WARNINGS) {
+			WARNING("Suppressing further hard linking warnings...");
+		}
+		return -1;
+	}
 }
 
 /* Extract a file, directory, reparse point, or hard link to an
@@ -1864,73 +2024,17 @@ win32_do_apply_dentry(const wchar_t *output_path,
 {
 	int ret;
 	struct wim_inode *inode = dentry->d_inode;
-	DWORD err;
 
-	if (!args->have_vol_flags) {
-		win32_get_vol_flags(output_path, &args->vol_flags);
-		args->have_vol_flags = true;
-		/* Warn the user about data that may not be extracted. */
-		if (!(args->vol_flags & FILE_SUPPORTS_SPARSE_FILES))
-			WARNING("Volume does not support sparse files!\n"
-				"          Sparse files will be extracted as non-sparse.");
-		if (!(args->vol_flags & FILE_SUPPORTS_REPARSE_POINTS))
-			WARNING("Volume does not support reparse points!\n"
-				"          Reparse point data will not be extracted.");
-		if (!(args->vol_flags & FILE_NAMED_STREAMS)) {
-			WARNING("Volume does not support named data streams!\n"
-				"          Named data streams will not be extracted.");
-		}
-		if (!(args->vol_flags & FILE_SUPPORTS_ENCRYPTION)) {
-			WARNING("Volume does not support encryption!\n"
-				"          Encrypted files will be extracted as raw data.");
-		}
-		if (!(args->vol_flags & FILE_FILE_COMPRESSION)) {
-			WARNING("Volume does not support transparent compression!\n"
-				"          Compressed files will be extracted as non-compressed.");
-		}
-		if (!(args->vol_flags & FILE_PERSISTENT_ACLS)) {
-			if (args->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS) {
-				ERROR("Strict ACLs requested, but the volume does not "
-				      "support ACLs!");
-				return WIMLIB_ERR_VOLUME_LACKS_FEATURES;
-			} else {
-				WARNING("Volume does not support persistent ACLS!\n"
-					"          File permissions will not be extracted.");
-			}
-		}
-	}
-
+	ret = win32_check_vol_flags(output_path, args);
+	if (ret)
+		return ret;
 	if (inode->i_nlink > 1 && inode->i_extracted_file != NULL) {
 		/* Linked file, with another name already extracted.  Create a
 		 * hard link. */
-
-		/* There is a volume flag for this (FILE_SUPPORTS_HARD_LINKS),
-		 * but it's only available on Windows 7 and later.  So no use
-		 * even checking it, really.  Instead, CreateHardLinkW() will
-		 * apparently return ERROR_INVALID_FUNCTION if the volume does
-		 * not support hard links. */
-		DEBUG("Creating hard link \"%ls => %ls\"",
-		      output_path, inode->i_extracted_file);
-		if (CreateHardLinkW(output_path, inode->i_extracted_file, NULL))
-			return 0;
-
-		err = GetLastError();
-		if (err != ERROR_INVALID_FUNCTION) {
-			ERROR("Can't create hard link \"%ls => %ls\"",
-			      output_path, inode->i_extracted_file);
-			win32_error(err);
-			return WIMLIB_ERR_LINK;
-		} else {
-			args->num_hard_links_failed++;
-			if (args->num_hard_links_failed < MAX_CREATE_HARD_LINK_WARNINGS) {
-				WARNING("Can't create hard link \"%ls => %ls\":\n"
-					"          Volume does not support hard links!\n"
-					"          Falling back to extracting a copy of the file.",
-					output_path, inode->i_extracted_file);
-			} else if (args->num_hard_links_failed == MAX_CREATE_HARD_LINK_WARNINGS) {
-				WARNING("Suppressing further hard linking warnings...");
-			}
-		}
+		ret = win32_try_hard_link(output_path, inode, args);
+		if (ret >= 0)
+			return ret;
+		/* Falling back to extracting copy of file */
 	}
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT &&
@@ -1948,20 +2052,10 @@ win32_do_apply_dentry(const wchar_t *output_path,
 
 	/* Create the file, directory, or reparse point, and extract the
 	 * data streams. */
-	ret = win32_extract_streams(inode, output_path,
-				    &args->progress.extract.completed_bytes,
-				    args->vol_flags);
+	ret = win32_extract_streams(inode, output_path, args);
 	if (ret)
 		return ret;
 
-	if (inode->i_security_id >= 0 &&
-	    !(args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)
-	    && (args->vol_flags & FILE_PERSISTENT_ACLS))
-	{
-		ret = win32_set_security_data(inode, output_path, args);
-		if (ret)
-			return ret;
-	}
 	if (inode->i_nlink > 1) {
 		/* Save extracted path for a later call to
 		 * CreateHardLinkW() if this inode has multiple links.
@@ -1970,7 +2064,7 @@ win32_do_apply_dentry(const wchar_t *output_path,
 		if (!inode->i_extracted_file)
 			ret = WIMLIB_ERR_NOMEM;
 	}
-	return 0;
+	return ret;
 }
 
 /* Set timestamps on an extracted file using the Win32 API */

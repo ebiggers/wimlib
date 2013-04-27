@@ -269,6 +269,8 @@ static const tchar *error_strings[] = {
 	[WIMLIB_ERR_IMAGE_COUNT]
 		= T("Inconsistent image count among the metadata "
 			"resources, the WIM header, and/or the XML data"),
+	[WIMLIB_ERR_INSUFFICIENT_PRIVILEGES_TO_EXTRACT]
+		= T("User does not have sufficient privileges to correctly extract the data"),
 	[WIMLIB_ERR_IMAGE_NAME_COLLISION]
 		= T("Tried to add an image with a name that is already in use"),
 	[WIMLIB_ERR_INTEGRITY]
