@@ -1931,17 +1931,11 @@ win32_begin_extract_unnamed_stream(const struct wim_inode *inode,
 	/* Directories must be created with CreateDirectoryW().  Then the call
 	 * to CreateFileW() will merely open the directory that was already
 	 * created rather than creating a new file. */
-	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
+	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY &&
+	    !path_is_root_of_drive(path)) {
 		if (!CreateDirectoryW(path, NULL)) {
 			err = GetLastError();
-			switch (err) {
-			case ERROR_ALREADY_EXISTS:
-				break;
-			case ERROR_ACCESS_DENIED:
-				if (path_is_root_of_drive(path))
-					break;
-				/* Fall through */
-			default:
+			if (err != ERROR_ALREADY_EXISTS) {
 				ERROR("Failed to create directory \"%ls\"",
 				      path);
 				win32_error(err);
@@ -2185,6 +2179,12 @@ try_open_again:
 			NULL);
 	if (h == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
+		if (err == ERROR_ACCESS_DENIED &&
+		    path_is_root_of_drive(stream_path))
+		{
+			ret = 0;
+			goto out;
+		}
 		if (err == ERROR_PRIVILEGE_NOT_HELD &&
 		    (requestedAccess & ACCESS_SYSTEM_SECURITY))
 		{
