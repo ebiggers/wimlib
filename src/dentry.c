@@ -1129,16 +1129,12 @@ inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
 	void *buf;
 
 	sha1_buffer(data, len, hash);
-
 	existing_lte = __lookup_resource(lookup_table, hash);
-
 	if (existing_lte) {
 		wimlib_assert(wim_resource_size(existing_lte) == len);
 		lte = existing_lte;
 		lte->refcnt++;
 	} else {
-		void *buf;
-
 		lte = new_lookup_table_entry();
 		if (!lte)
 			return WIMLIB_ERR_NOMEM;

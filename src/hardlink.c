@@ -168,25 +168,32 @@ inode_ref_streams(struct wim_inode *inode)
  */
 int
 inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
-		       u64 ino, u64 devno, struct wim_dentry **dentry_ret)
+		       u64 ino, u64 devno, bool noshare,
+		       struct wim_dentry **dentry_ret)
 {
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
 	int ret;
 
-	ret = new_dentry(name, &dentry);
-	if (ret)
-		return ret;
-
-	inode = inode_table_get_inode(table, ino, devno);
-	if (!inode) {
-		free_dentry(dentry);
-		return WIMLIB_ERR_NOMEM;
+	if (noshare) {
+		ret = new_dentry_with_timeless_inode(name, &dentry);
+		if (ret)
+			return ret;
+		list_add_tail(&dentry->d_inode->i_list, &table->extra_inodes);
+	} else {
+		ret = new_dentry(name, &dentry);
+		if (ret)
+			return ret;
+		inode = inode_table_get_inode(table, ino, devno);
+		if (!inode) {
+			free_dentry(dentry);
+			return WIMLIB_ERR_NOMEM;
+		}
+		if (inode->i_nlink > 1)
+			inode_ref_streams(inode);
+		dentry->d_inode = inode;
+		inode_add_dentry(dentry, inode);
 	}
-	if (inode->i_nlink > 1)
-		inode_ref_streams(inode);
-	dentry->d_inode = inode;
-	inode_add_dentry(dentry, inode);
 	*dentry_ret = dentry;
 	return 0;
 }

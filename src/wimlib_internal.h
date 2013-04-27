@@ -474,7 +474,8 @@ init_inode_table(struct wim_inode_table *table, size_t capacity);
 
 extern int
 inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
-		       u64 ino, u64 devno, struct wim_dentry **dentry_ret);
+		       u64 ino, u64 devno, bool noshare,
+		       struct wim_dentry **dentry_ret);
 
 extern void
 inode_ref_streams(struct wim_inode *inode);

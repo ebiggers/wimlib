@@ -711,7 +711,6 @@ win32_maybe_rpfix_target(wchar_t *target, size_t *target_nchars_p,
 	target = fixup_symlink(target + stripped_chars, capture_root_ino, capture_root_dev);
 	if (!target)
 		return RP_EXCLUDED;
-
 	target_nchars = wcslen(target);
 	wmemmove(orig_target + stripped_chars, target, target_nchars + 1);
 	*target_nchars_p = target_nchars + stripped_chars;
@@ -723,8 +722,8 @@ win32_maybe_rpfix_target(wchar_t *target, size_t *target_nchars_p,
 }
 
 static enum rp_status
-win32_do_capture_rpfix(char *rpbuf, DWORD *rpbuflen_p,
-		       u64 capture_root_ino, u64 capture_root_dev)
+win32_try_capture_rpfix(char *rpbuf, DWORD *rpbuflen_p,
+			u64 capture_root_ino, u64 capture_root_dev)
 {
 	const char *p_get;
 	char *p_put;
@@ -794,73 +793,51 @@ win32_do_capture_rpfix(char *rpbuf, DWORD *rpbuflen_p,
 	return status;
 }
 
-/* Load a reparse point into a WIM inode.  It is just stored in memory.
- *
- * @hFile is the open handle to a reparse point, with permission to read the
- * reparse data.
- *
- * @inode is the WIM inode for the reparse point.
- */
 static int
-win32_capture_reparse_point(struct wim_dentry **root_p,
-			    HANDLE hFile,
-			    struct wim_inode *inode,
-			    const wchar_t *path,
-			    struct add_image_params *params)
+win32_get_reparse_data(HANDLE hFile, const wchar_t *path,
+		       struct add_image_params *params,
+		       void *reparse_data, size_t *reparse_data_len_ret)
 {
-	DEBUG("Capturing reparse point \"%ls\"", path);
-
-	/* "Reparse point data, including the tag and optional GUID,
-	 * cannot exceed 16 kilobytes." - MSDN  */
-	char reparse_point_buf[REPARSE_POINT_MAX_SIZE];
 	DWORD bytesReturned;
-	char *fixed_buf;
-	DWORD fixed_len;
+	u32 reparse_tag;
+	enum rp_status status;
 
+	DEBUG("Loading reparse data from \"%ls\"", path);
 	if (!DeviceIoControl(hFile, FSCTL_GET_REPARSE_POINT,
 			     NULL, /* "Not used with this operation; set to NULL" */
 			     0, /* "Not used with this operation; set to 0" */
-			     reparse_point_buf, /* "A pointer to a buffer that
+			     reparse_data, /* "A pointer to a buffer that
 						   receives the reparse point data */
-			     sizeof(reparse_point_buf), /* "The size of the output
-							   buffer, in bytes */
+			     REPARSE_POINT_MAX_SIZE, /* "The size of the output
+							buffer, in bytes */
 			     &bytesReturned,
 			     NULL))
 	{
 		DWORD err = GetLastError();
 		ERROR("Failed to get reparse data of \"%ls\"", path);
 		win32_error(err);
-		return WIMLIB_ERR_READ;
+		return -WIMLIB_ERR_READ;
 	}
 	if (bytesReturned < 8) {
 		ERROR("Reparse data on \"%ls\" is invalid", path);
-		return WIMLIB_ERR_READ;
+		return -WIMLIB_ERR_READ;
 	}
-	inode->i_reparse_tag = le32_to_cpu(*(u32*)reparse_point_buf);
 
+	reparse_tag = le32_to_cpu(*(u32*)reparse_data);
 	if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX &&
-	    (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
-	     inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
+	    (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
+	     reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
 	{
 		/* Try doing reparse point fixup */
-		enum rp_status status;
-		status = win32_do_capture_rpfix(reparse_point_buf,
-						&bytesReturned,
-						params->capture_root_ino,
-						params->capture_root_dev);
-		if (status == RP_EXCLUDED) {
-			/* Absolute path points out of capture tree.  Free the
-			 * dentry; we're not including it at all. */
-			free_dentry(*root_p);
-			*root_p = NULL;
-			return 0;
-		} else if (status & RP_FIXED) {
-			/* Absolute path fixup was done. */
-			inode->i_not_rpfixed = 0;
-		}
+		status = win32_try_capture_rpfix(reparse_data,
+						 &bytesReturned,
+						 params->capture_root_ino,
+						 params->capture_root_dev);
+	} else {
+		status = RP_NOT_FIXED;
 	}
-	return inode_set_unnamed_stream(inode, reparse_point_buf + 8,
-					bytesReturned - 8, params->lookup_table);
+	*reparse_data_len_ret = bytesReturned;
+	return status;
 }
 
 /* Scans an unnamed or named stream of a Win32 file (not a reparse point
@@ -1119,8 +1096,10 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	struct wim_inode *inode;
 	DWORD err;
 	u64 file_size;
-	int ret = 0;
-	const wchar_t *basename;
+	int ret;
+	void *reparse_data;
+	size_t reparse_data_len;
+	u16 not_rpfixed;
 
 	if (exclude_path(path, path_num_chars, params->config, true)) {
 		if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
@@ -1136,6 +1115,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			info.scan.excluded = true;
 			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 		}
+		ret = 0;
 		goto out;
 	}
 
@@ -1168,31 +1148,40 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out_close_handle;
 	}
 
+	if (file_info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		reparse_data = alloca(REPARSE_POINT_MAX_SIZE);
+		ret = win32_get_reparse_data(hFile, path, params,
+					     reparse_data, &reparse_data_len);
+		if (ret < 0) {
+			/* WIMLIB_ERR_* (inverted) */
+			ret = -ret;
+			goto out_close_handle;
+		} else if (ret & RP_FIXED) {
+			not_rpfixed = 0;
+		} else if (ret == RP_EXCLUDED) {
+			ret = 0;
+			goto out_close_handle;
+		} else {
+			not_rpfixed = 1;
+		}
+	}
+
 	/* Create a WIM dentry with an associated inode, which may be shared.
 	 *
 	 * However, we need to explicitly check for directories and files with
 	 * only 1 link and refuse to hard link them.  This is because Windows
 	 * has a bug where it can return duplicate File IDs for files and
 	 * directories on the FAT filesystem. */
-	basename = path_basename_with_len(path, path_num_chars);
-	if (!(file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-	    && file_info.nNumberOfLinks > 1)
-	{
-		ret = inode_table_new_dentry(params->inode_table,
-					     basename,
-					     ((u64)file_info.nFileIndexHigh << 32) |
-						 (u64)file_info.nFileIndexLow,
-					     file_info.dwVolumeSerialNumber,
-					     &root);
-		if (ret)
-			goto out_close_handle;
-	} else {
-		ret = new_dentry_with_inode(basename, &root);
-		if (ret)
-			goto out_close_handle;
-		list_add_tail(&root->d_inode->i_list, &params->inode_table->extra_inodes);
-	}
-
+	ret = inode_table_new_dentry(params->inode_table,
+				     path_basename_with_len(path, path_num_chars),
+				     ((u64)file_info.nFileIndexHigh << 32) |
+					 (u64)file_info.nFileIndexLow,
+				     file_info.dwVolumeSerialNumber,
+				     (file_info.nNumberOfLinks <= 1 ||
+				        (file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)),
+				     &root);
+	if (ret)
+		goto out_close_handle;
 
 	ret = win32_get_short_name(root, path);
 	if (ret)
@@ -1224,39 +1213,33 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	file_size = ((u64)file_info.nFileSizeHigh << 32) |
 		     (u64)file_info.nFileSizeLow;
 
-	if (inode_is_directory(inode)) {
-		/* Directory (not a reparse point) --- recurse to children */
+	/* Capture the unnamed data stream (only should be present for regular
+	 * files) and any alternate data streams. */
+	ret = win32_capture_streams(path,
+				    path_num_chars,
+				    inode,
+				    params->lookup_table,
+				    file_size,
+				    vol_flags);
+	if (ret)
+		goto out_close_handle;
 
-		/* But first... directories may have alternate data streams that
-		 * need to be captured. */
-		ret = win32_capture_streams(path,
-					    path_num_chars,
-					    inode,
-					    params->lookup_table,
-					    file_size,
-					    vol_flags);
-		if (ret)
-			goto out_close_handle;
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		/* Reparse point: set the reparse data (which we read already)
+		 * */
+		inode->i_not_rpfixed = not_rpfixed;
+		inode->i_reparse_tag = le32_to_cpu(*(u32*)reparse_data);
+		ret = inode_set_unnamed_stream(inode, reparse_data + 8,
+					       reparse_data_len - 8,
+					       params->lookup_table);
+	} else if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
+		/* Directory (not a reparse point) --- recurse to children */
 		ret = win32_recurse_directory(root,
 					      path,
 					      path_num_chars,
 					      params,
 					      state,
 					      vol_flags);
-	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		/* Reparse point: save the reparse tag and data.  Alternate data
-		 * streams are not captured, if it's even possible for a reparse
-		 * point to have alternate data streams... */
-		ret = win32_capture_reparse_point(&root, hFile, inode, path, params);
-	} else {
-		/* Not a directory, not a reparse point; capture the default
-		 * file contents and any alternate data streams. */
-		ret = win32_capture_streams(path,
-					    path_num_chars,
-					    inode,
-					    params->lookup_table,
-					    file_size,
-					    vol_flags);
 	}
 out_close_handle:
 	CloseHandle(hFile);

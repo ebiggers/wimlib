@@ -809,7 +809,6 @@ extract_single_image(WIMStruct *w, int image,
 
 	struct apply_args args;
 	const struct apply_operations *ops;
-	tchar *target_realpath;
 
 	memset(&args, 0, sizeof(args));
 
