@@ -2185,7 +2185,8 @@ try_open_again:
 			ret = 0;
 			goto out;
 		}
-		if (err == ERROR_PRIVILEGE_NOT_HELD &&
+		if ((err == ERROR_PRIVILEGE_NOT_HELD ||
+		     err == ERROR_ACCESS_DENIED) &&
 		    (requestedAccess & ACCESS_SYSTEM_SECURITY))
 		{
 			/* Try opening the file again without privilege to
