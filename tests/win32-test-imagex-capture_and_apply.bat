@@ -257,6 +257,56 @@ attrib +h hidden
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+call :msg "hidden directory"
+md subdir
+attrib +h subdir
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "encrypted file"
+echo "hello" > encrypted
+cipher /e encrypted > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "identical encrypted files"
+echo "hello" > encrypted1
+echo "hello" > encrypted2
+cipher /e encrypted1 > nul
+cipher /e encrypted2 > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "encrypted directory"
+md subdir
+cipher /e subdir > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "encrypted directory with encrypted file in it"
+md subdir
+echo 1 > subdir\1
+cipher /e subdir > nul
+cipher /e subdir\1 > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+REM call :msg "encrypted directory with unencrypted file in it"
+REM md subdir
+REM echo 1 > subdir\1
+REM cipher /e subdir > nul
+REM cipher /d subdir\1 > nul
+REM call :do_test
+REM if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "hardlinked, encrypted file with alternate data streams"
+echo hello > file
+echo hello > file:ads
+cipher /e file > nul
+mklink /h link file > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
 REM
 REM END OF TESTS
 REM

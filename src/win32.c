@@ -1456,9 +1456,18 @@ win32_set_compression_state(HANDLE hFile, USHORT format, const wchar_t *path)
 			     NULL, 0,
 			     &bytesReturned, NULL))
 	{
+		DWORD err = GetLastError();
+		if (err == ERROR_INVALID_FUNCTION)
+		{
+			/* XXX: This can happen if we're extracting an
+			 * unexpected file in an encrypted directory.  The file
+			 * gets its encryption flag set and therefore cannot be
+			 * compressed. */
+			return 0;
+		}
+
 		/* Could be a warning only, but we only call this if the volume
 		 * supports compression.  So I'm calling this an error. */
-		DWORD err = GetLastError();
 		ERROR("Failed to set compression flag on \"%ls\"", path);
 		win32_error(err);
 		if (err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD)
@@ -1628,12 +1637,159 @@ do_win32_extract_stream(HANDLE hStream, struct wim_lookup_table_entry *lte)
 				    win32_extract_chunk, hStream);
 }
 
+struct win32_encrypted_extract_ctx {
+	void *file_ctx;
+	int wimlib_err_code;
+	bool done;
+	pthread_cond_t cond;
+	pthread_mutex_t mutex;
+	u8 buf[WIM_CHUNK_SIZE];
+	size_t buf_filled;
+};
+
+static DWORD WINAPI
+win32_encrypted_import_cb(unsigned char *data, void *_ctx,
+			  unsigned long *len_p)
+{
+	struct win32_encrypted_extract_ctx *ctx = _ctx;
+	unsigned long len = *len_p;
+
+	pthread_mutex_lock(&ctx->mutex);
+	while (len) {
+		size_t bytes_to_copy;
+
+		DEBUG("Importing up to %lu more bytes of raw encrypted data", len);
+		while (ctx->buf_filled == 0) {
+			if (ctx->done)
+				goto out;
+			pthread_cond_wait(&ctx->cond, &ctx->mutex);
+		}
+		bytes_to_copy = min(len, ctx->buf_filled);
+		memcpy(data, ctx->buf, bytes_to_copy);
+		len -= bytes_to_copy;
+		data += bytes_to_copy;
+		ctx->buf_filled -= bytes_to_copy;
+		memmove(ctx->buf, ctx->buf + bytes_to_copy, ctx->buf_filled);
+		pthread_cond_signal(&ctx->cond);
+	}
+out:
+	*len_p -= len;
+	pthread_mutex_unlock(&ctx->mutex);
+	return ERROR_SUCCESS;
+}
+
+static void *
+win32_encrypted_import_proc(void *arg)
+{
+	struct win32_encrypted_extract_ctx *ctx = arg;
+	DWORD ret;
+	ret = WriteEncryptedFileRaw(win32_encrypted_import_cb, ctx,
+				    ctx->file_ctx);
+	pthread_mutex_lock(&ctx->mutex);
+	if (ret == ERROR_SUCCESS)
+		ctx->wimlib_err_code = 0;
+	else {
+		win32_error(ret);
+		ctx->wimlib_err_code = WIMLIB_ERR_WRITE;
+	}
+	ctx->done = true;
+	pthread_mutex_unlock(&ctx->mutex);
+	return NULL;
+}
+
+
+static int
+win32_extract_raw_encrypted_chunk(const void *buf, size_t len, void *arg)
+{
+	struct win32_encrypted_extract_ctx *ctx = arg;
+	size_t bytes_to_copy;
+
+	while (len) {
+		DEBUG("Extracting up to %zu more bytes of encrypted data", len);
+		pthread_mutex_lock(&ctx->mutex);
+		while (!ctx->done && ctx->buf_filled == WIM_CHUNK_SIZE)
+			pthread_cond_wait(&ctx->cond, &ctx->mutex);
+		if (ctx->done) {
+			pthread_mutex_unlock(&ctx->mutex);
+			return ctx->wimlib_err_code;
+		}
+		bytes_to_copy = min(len, WIM_CHUNK_SIZE - ctx->buf_filled);
+		memcpy(&ctx->buf[ctx->buf_filled], buf, bytes_to_copy);
+		len -= bytes_to_copy;
+		buf += bytes_to_copy;
+		ctx->buf_filled += bytes_to_copy;
+		pthread_cond_signal(&ctx->cond);
+		pthread_mutex_unlock(&ctx->mutex);
+	}
+	return 0;
+}
+
 static int
 do_win32_extract_encrypted_stream(const wchar_t *path,
 				  const struct wim_lookup_table_entry *lte)
 {
-	ERROR("Extracting encryted streams not implemented");
-	return WIMLIB_ERR_INVALID_PARAM;
+	struct win32_encrypted_extract_ctx ctx;
+	void *file_ctx;
+	pthread_t import_thread;
+	int ret;
+	int ret2;
+
+	DEBUG("Opening file \"%ls\" to extract raw encrypted data", path);
+
+	ret = OpenEncryptedFileRawW(path, CREATE_FOR_IMPORT, &file_ctx);
+	if (ret) {
+		ERROR("Failed to open \"%ls\" to write raw encrypted data", path);
+		win32_error(ret);
+		return WIMLIB_ERR_OPEN;
+	}
+
+	ctx.file_ctx = file_ctx;
+	ctx.buf_filled = 0;
+	ctx.done = false;
+	ctx.wimlib_err_code = 0;
+	if (pthread_mutex_init(&ctx.mutex, NULL)) {
+		ERROR_WITH_ERRNO("Can't create mutex");
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_close;
+	}
+	if (pthread_cond_init(&ctx.cond, NULL)) {
+		ERROR_WITH_ERRNO("Can't create condition variable");
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_pthread_mutex_destroy;
+	}
+	ret = pthread_create(&import_thread, NULL,
+			     win32_encrypted_import_proc, &ctx);
+	if (ret) {
+		errno = ret;
+		ERROR_WITH_ERRNO("Failed to create thread");
+		ret = WIMLIB_ERR_FORK;
+		goto out_pthread_cond_destroy;
+	}
+
+	ret = extract_wim_resource(lte, wim_resource_size(lte),
+				   win32_extract_raw_encrypted_chunk, &ctx);
+	pthread_mutex_lock(&ctx.mutex);
+	ctx.done = true;
+	pthread_cond_signal(&ctx.cond);
+	pthread_mutex_unlock(&ctx.mutex);
+	ret2 = pthread_join(import_thread, NULL);
+	if (ret2) {
+		errno = ret2;
+		ERROR_WITH_ERRNO("Failed to join encrypted import thread");
+		if (ret == 0)
+			ret = WIMLIB_ERR_WRITE;
+	}
+	if (ret == 0)
+		ret = ctx.wimlib_err_code;
+out_pthread_cond_destroy:
+	pthread_cond_destroy(&ctx.cond);
+out_pthread_mutex_destroy:
+	pthread_mutex_destroy(&ctx.mutex);
+out_close:
+	CloseEncryptedFileRaw(file_ctx);
+	if (ret)
+		ERROR("Failed to extract encrypted file \"%ls\"", path);
+	return ret;
 }
 
 static bool
@@ -1653,11 +1809,27 @@ path_is_root_of_drive(const wchar_t *path)
 	return (*path == L'\0');
 }
 
-static DWORD
+static inline DWORD
+win32_mask_attributes(DWORD i_attributes)
+{
+	return i_attributes & ~(FILE_ATTRIBUTE_SPARSE_FILE |
+				FILE_ATTRIBUTE_COMPRESSED |
+				FILE_ATTRIBUTE_REPARSE_POINT |
+				FILE_ATTRIBUTE_DIRECTORY |
+				FILE_ATTRIBUTE_ENCRYPTED |
+				FILE_FLAG_DELETE_ON_CLOSE |
+				FILE_FLAG_NO_BUFFERING |
+				FILE_FLAG_OPEN_NO_RECALL |
+				FILE_FLAG_OVERLAPPED |
+				FILE_FLAG_RANDOM_ACCESS |
+				/*FILE_FLAG_SESSION_AWARE |*/
+				FILE_FLAG_SEQUENTIAL_SCAN |
+				FILE_FLAG_WRITE_THROUGH);
+}
+
+static inline DWORD
 win32_get_create_flags_and_attributes(DWORD i_attributes)
 {
-	DWORD attributes;
-
 	/*
 	 * Some attributes cannot be set by passing them to CreateFile().  In
 	 * particular:
@@ -1682,21 +1854,9 @@ win32_get_create_flags_and_attributes(DWORD i_attributes)
 	 * want, but also specify FILE_FLAG_OPEN_REPARSE_POINT and
 	 * FILE_FLAG_BACKUP_SEMANTICS as we are a backup application.
 	 */
-	attributes = i_attributes & ~(FILE_ATTRIBUTE_SPARSE_FILE |
-				      FILE_ATTRIBUTE_COMPRESSED |
-				      FILE_ATTRIBUTE_REPARSE_POINT |
-				      FILE_ATTRIBUTE_DIRECTORY |
-				      FILE_FLAG_DELETE_ON_CLOSE |
-				      FILE_FLAG_NO_BUFFERING |
-				      FILE_FLAG_OPEN_NO_RECALL |
-				      FILE_FLAG_OVERLAPPED |
-				      FILE_FLAG_RANDOM_ACCESS |
-				      /*FILE_FLAG_SESSION_AWARE |*/
-				      FILE_FLAG_SEQUENTIAL_SCAN |
-				      FILE_FLAG_WRITE_THROUGH);
-	return attributes |
-	       FILE_FLAG_OPEN_REPARSE_POINT |
-	       FILE_FLAG_BACKUP_SEMANTICS;
+	return win32_mask_attributes(i_attributes) |
+		FILE_FLAG_OPEN_REPARSE_POINT |
+		FILE_FLAG_BACKUP_SEMANTICS;
 }
 
 /* Set compression or sparse attributes, and reparse data, if supported by the
@@ -1760,6 +1920,72 @@ win32_set_special_attributes(HANDLE hFile, const struct wim_inode *inode,
 }
 
 static int
+win32_begin_extract_unnamed_stream(const struct wim_inode *inode,
+				   const struct wim_lookup_table_entry *lte,
+				   const wchar_t *path,
+				   DWORD *creationDisposition_ret,
+				   unsigned int vol_flags)
+{
+	DWORD err;
+	int ret;
+
+	/* Directories must be created with CreateDirectoryW().  Then
+	 * the call to CreateFileW() will merely open the directory that
+	 * was already created rather than creating a new file. */
+	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
+		if (!CreateDirectoryW(path, NULL)) {
+			err = GetLastError();
+			switch (err) {
+			case ERROR_ALREADY_EXISTS:
+				break;
+			case ERROR_ACCESS_DENIED:
+				if (path_is_root_of_drive(path))
+					break;
+				/* Fall through */
+			default:
+				ERROR("Failed to create directory \"%ls\"",
+				      path);
+				win32_error(err);
+				return WIMLIB_ERR_MKDIR;
+			}
+		}
+		DEBUG("Created directory \"%ls\"", path);
+		*creationDisposition_ret = OPEN_EXISTING;
+	}
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED &&
+	    vol_flags & FILE_SUPPORTS_ENCRYPTION)
+	{
+		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
+			if (!EncryptFile(path)) {
+				err = GetLastError();
+				ERROR("Failed to encrypt directory \"%ls\"",
+				      path);
+				win32_error(err);
+				return WIMLIB_ERR_WRITE;
+			}
+		} else {
+			ret = do_win32_extract_encrypted_stream(path, lte);
+			if (ret)
+				return ret;
+			DEBUG("Extracted encrypeted file \"%ls\"", path);
+			*creationDisposition_ret = OPEN_EXISTING;
+		}
+	}
+	if (*creationDisposition_ret == OPEN_EXISTING)
+	{
+		if (!SetFileAttributesW(path,
+					win32_mask_attributes(inode->i_attributes)))
+		{
+			err = GetLastError();
+			ERROR("Failed to set attributes on \"%ls\"", path);
+			win32_error(err);
+			return WIMLIB_ERR_WRITE;
+		}
+	}
+	return 0;
+}
+
+static int
 win32_extract_stream(const struct wim_inode *inode,
 		     const wchar_t *path,
 		     const wchar_t *stream_name_utf16,
@@ -1807,30 +2033,11 @@ win32_extract_stream(const struct wim_inode *inode,
 		 * */
 		stream_path = (wchar_t*)path;
 
-		/* Directories must be created with CreateDirectoryW().  Then
-		 * the call to CreateFileW() will merely open the directory that
-		 * was already created rather than creating a new file. */
-		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-			if (!CreateDirectoryW(stream_path, NULL)) {
-				err = GetLastError();
-				switch (err) {
-				case ERROR_ALREADY_EXISTS:
-					break;
-				case ERROR_ACCESS_DENIED:
-					if (path_is_root_of_drive(path))
-						break;
-					/* Fall through */
-				default:
-					ERROR("Failed to create directory \"%ls\"",
-					      stream_path);
-					win32_error(err);
-					ret = WIMLIB_ERR_MKDIR;
-					goto fail;
-				}
-			}
-			DEBUG("Created directory \"%ls\"", stream_path);
-			creationDisposition = OPEN_EXISTING;
-		}
+		ret = win32_begin_extract_unnamed_stream(inode, lte, path,
+							 &creationDisposition,
+							 args->vol_flags);
+		if (ret)
+			goto fail;
 	}
 
 	DEBUG("Opening \"%ls\"", stream_path);
@@ -1874,22 +2081,13 @@ try_open_again:
 			goto fail_close_handle;
 	}
 
-	if (!(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-		if (lte) {
-			DEBUG("Extracting \"%ls\" (len = %"PRIu64")",
-			      stream_path, wim_resource_size(lte));
-			if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED
-			    && stream_name_utf16 == NULL
-			    && (args->vol_flags & FILE_SUPPORTS_ENCRYPTION))
-			{
-				ret = do_win32_extract_encrypted_stream(stream_path,
-									lte);
-			} else {
-				ret = do_win32_extract_stream(h, lte);
-			}
-			if (ret)
-				goto fail_close_handle;
-		}
+	if (!(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+	    lte != NULL &&
+	    creationDisposition != OPEN_EXISTING)
+	{
+		DEBUG("Extracting \"%ls\" (len = %"PRIu64")",
+		      stream_path, wim_resource_size(lte));
+		ret = do_win32_extract_stream(h, lte);
 	}
 
 	DEBUG("Closing \"%ls\"", stream_path);
@@ -1905,7 +2103,7 @@ try_open_again:
 fail_close_handle:
 	CloseHandle(h);
 fail:
-	ERROR("Error extracting %ls", stream_path);
+	ERROR("Error extracting \"%ls\"", stream_path);
 out:
 	return ret;
 }
