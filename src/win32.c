@@ -1045,10 +1045,10 @@ win32_capture_streams(const wchar_t *path,
 			return 0;
 		} else {
 			if (err == ERROR_ACCESS_DENIED) {
-				ERROR("Failed to look up data streams "
-				      "of \"%ls\": Access denied!\n%ls",
-				      path, capture_access_denied_msg);
-				return WIMLIB_ERR_READ;
+				WARNING("Failed to look up data streams "
+					"of \"%ls\": Access denied!\n%ls",
+					path, capture_access_denied_msg);
+				return 0;
 			} else {
 				ERROR("Failed to look up data streams "
 				      "of \"%ls\"", path);
