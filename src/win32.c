@@ -1685,14 +1685,8 @@ do_win32_extract_stream(HANDLE hStream, const struct wim_lookup_table_entry *lte
 }
 
 struct win32_encrypted_extract_ctx {
-	void *file_ctx;
-	int wimlib_err_code;
-	int win32_err_code;
-	bool done;
-	pthread_cond_t cond;
-	pthread_mutex_t mutex;
-	u8 buf[WIM_CHUNK_SIZE];
-	size_t buf_filled;
+	const struct wim_lookup_table_entry *lte;
+	u64 offset;
 };
 
 static DWORD WINAPI
@@ -1701,89 +1695,16 @@ win32_encrypted_import_cb(unsigned char *data, void *_ctx,
 {
 	struct win32_encrypted_extract_ctx *ctx = _ctx;
 	unsigned long len = *len_p;
-	int ret;
+	const struct wim_lookup_table_entry *lte = ctx->lte;
 
-	pthread_mutex_lock(&ctx->mutex);
-	while (len) {
-		size_t bytes_to_copy;
-		DEBUG("Importing up to %lu more bytes of raw encrypted data", len);
+	len = min(len, wim_resource_size(lte) - ctx->offset);
 
-		if (ctx->done && ctx->win32_err_code != ERROR_SUCCESS)
-			goto err;
-		while (ctx->buf_filled == 0) {
-			if (ctx->done)
-				goto err;
-			pthread_cond_wait(&ctx->cond, &ctx->mutex);
-		}
-		bytes_to_copy = min(len, ctx->buf_filled);
-		memcpy(data, ctx->buf, bytes_to_copy);
-		len -= bytes_to_copy;
-		data += bytes_to_copy;
-		ctx->buf_filled -= bytes_to_copy;
-		memmove(ctx->buf, ctx->buf + bytes_to_copy, ctx->buf_filled);
-		pthread_cond_signal(&ctx->cond);
-	}
-	ret = ERROR_SUCCESS;
-	goto out;
-err:
-	ret = ctx->win32_err_code;
-out:
-	*len_p -= len;
-	pthread_mutex_unlock(&ctx->mutex);
-	return ret;
-}
+	if (read_partial_wim_resource_into_buf(lte, len, ctx->offset, data, false))
+		return ERROR_READ_FAULT;
 
-/* Extract ("Import") an encrypted file in a different thread. */
-static void *
-win32_encrypted_import_proc(void *arg)
-{
-	struct win32_encrypted_extract_ctx *ctx = arg;
-	DWORD ret;
-	ret = WriteEncryptedFileRaw(win32_encrypted_import_cb, ctx,
-				    ctx->file_ctx);
-	pthread_mutex_lock(&ctx->mutex);
-	if (ret == ERROR_SUCCESS) {
-		ctx->wimlib_err_code = 0;
-	} else {
-		ERROR("Failed to extract raw encrypted file");
-		win32_error(ret);
-		ctx->wimlib_err_code = WIMLIB_ERR_WRITE;
-	}
-	ctx->done = true;
-	pthread_cond_signal(&ctx->cond);
-	pthread_mutex_unlock(&ctx->mutex);
-	return NULL;
-}
-
-
-static int
-win32_extract_raw_encrypted_chunk(const void *buf, size_t len, void *arg)
-{
-	struct win32_encrypted_extract_ctx *ctx = arg;
-	size_t bytes_to_copy;
-
-	while (len) {
-		DEBUG("Extracting up to %zu more bytes of encrypted data", len);
-		pthread_mutex_lock(&ctx->mutex);
-		if (ctx->done)
-			goto out_unlock;
-		while (ctx->buf_filled == WIM_CHUNK_SIZE) {
-			pthread_cond_wait(&ctx->cond, &ctx->mutex);
-			if (ctx->done)
-				goto out_unlock;
-		}
-		bytes_to_copy = min(len, WIM_CHUNK_SIZE - ctx->buf_filled);
-		memcpy(&ctx->buf[ctx->buf_filled], buf, bytes_to_copy);
-		len -= bytes_to_copy;
-		buf += bytes_to_copy;
-		ctx->buf_filled += bytes_to_copy;
-		pthread_cond_signal(&ctx->cond);
-		pthread_mutex_unlock(&ctx->mutex);
-	}
-	return 0;
-out_unlock:
-	pthread_mutex_unlock(&ctx->mutex);
-	return ctx->wimlib_err_code;
+	ctx->offset += len;
+	*len_p = len;
+	return ERROR_SUCCESS;
 }
 
 /* Create an encrypted file and extract the raw encrypted data to it.
@@ -1802,11 +1723,8 @@ static int
 do_win32_extract_encrypted_stream(const wchar_t *path,
 				  const struct wim_lookup_table_entry *lte)
 {
-	struct win32_encrypted_extract_ctx ctx;
 	void *file_ctx;
-	pthread_t import_thread;
 	int ret;
-	int ret2;
 
 	DEBUG("Opening file \"%ls\" to extract raw encrypted data", path);
 
@@ -1817,65 +1735,20 @@ do_win32_extract_encrypted_stream(const wchar_t *path,
 		return WIMLIB_ERR_OPEN;
 	}
 
-	if (!lte)
-		goto out_close;
+	if (lte) {
+		struct win32_encrypted_extract_ctx ctx;
 
-	/* Hack alert:  WriteEncryptedFileRaw() requires the callback function
-	 * to work with a buffer whose size we cannot control.  This doesn't
-	 * play well with our read_resource_prefix() function, which itself uses
-	 * a callback function to extract WIM_CHUNK_SIZE chunks of data.  We
-	 * work around this problem by calling WriteEncryptedFileRaw() in a
-	 * different thread and feeding it the data as needed.  */
-	ctx.file_ctx = file_ctx;
-	ctx.buf_filled = 0;
-	ctx.done = false;
-	ctx.wimlib_err_code = 0;
-	if (pthread_mutex_init(&ctx.mutex, NULL)) {
-		ERROR_WITH_ERRNO("Can't create mutex");
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_close;
-	}
-	if (pthread_cond_init(&ctx.cond, NULL)) {
-		ERROR_WITH_ERRNO("Can't create condition variable");
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_pthread_mutex_destroy;
-	}
-	ret = pthread_create(&import_thread, NULL,
-			     win32_encrypted_import_proc, &ctx);
-	if (ret) {
-		errno = ret;
-		ERROR_WITH_ERRNO("Failed to create thread");
-		ret = WIMLIB_ERR_FORK;
-		goto out_pthread_cond_destroy;
-	}
-
-	ret = extract_wim_resource(lte, wim_resource_size(lte),
-				   win32_extract_raw_encrypted_chunk, &ctx);
-	pthread_mutex_lock(&ctx.mutex);
-	if (ret)
-		ctx.win32_err_code = ERROR_READ_FAULT;
-	else
-		ctx.win32_err_code = ERROR_SUCCESS;
-	ctx.done = true;
-	pthread_cond_signal(&ctx.cond);
-	pthread_mutex_unlock(&ctx.mutex);
-	ret2 = pthread_join(import_thread, NULL);
-	if (ret2) {
-		errno = ret2;
-		ERROR_WITH_ERRNO("Failed to join encrypted import thread");
-		if (ret == 0)
+		ctx.lte = lte;
+		ctx.offset = 0;
+		ret = WriteEncryptedFileRaw(win32_encrypted_import_cb, &ctx, file_ctx);
+		if (ret == ERROR_SUCCESS) {
+			ret = 0;
+		} else {
 			ret = WIMLIB_ERR_WRITE;
+			ERROR("Failed to extract encrypted file \"%ls\"", path);
+		}
 	}
-	if (ret == 0)
-		ret = ctx.wimlib_err_code;
-out_pthread_cond_destroy:
-	pthread_cond_destroy(&ctx.cond);
-out_pthread_mutex_destroy:
-	pthread_mutex_destroy(&ctx.mutex);
-out_close:
 	CloseEncryptedFileRaw(file_ctx);
-	if (ret)
-		ERROR("Failed to extract encrypted file \"%ls\"", path);
 	return ret;
 }
 
@@ -2016,12 +1889,23 @@ win32_begin_extract_unnamed_stream(const struct wim_inode *inode,
 	    vol_flags & FILE_SUPPORTS_ENCRYPTION)
 	{
 		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-			if (!EncryptFile(path)) {
-				err = GetLastError();
-				ERROR("Failed to encrypt directory \"%ls\"",
-				      path);
-				win32_error(err);
-				return WIMLIB_ERR_WRITE;
+			unsigned remaining_sharing_violations = 100;
+			while (!EncryptFile(path)) {
+				if (remaining_sharing_violations &&
+				    err == ERROR_SHARING_VIOLATION)
+				{
+					WARNING("Couldn't encrypt directory \"%ls\" "
+						"due to sharing violation; re-trying "
+						"after 100 ms", path);
+					Sleep(100);
+					remaining_sharing_violations--;
+				} else {
+					err = GetLastError();
+					ERROR("Failed to encrypt directory \"%ls\"",
+					      path);
+					win32_error(err);
+					return WIMLIB_ERR_WRITE;
+				}
 			}
 		} else {
 			ret = do_win32_extract_encrypted_stream(path, lte);
@@ -2185,6 +2069,7 @@ win32_extract_stream(const struct wim_inode *inode,
 	DWORD creationDisposition = CREATE_ALWAYS;
 	DWORD requestedAccess;
 	BY_HANDLE_FILE_INFORMATION file_info;
+	unsigned remaining_sharing_violations = 1000;
 
 	if (stream_name_utf16) {
 		/* Named stream.  Create a buffer that contains the UTF-16LE
@@ -2237,7 +2122,7 @@ try_open_again:
 	 * CreateDirectoryW() or OpenEncryptedFileRawW(). */
 	h = CreateFileW(stream_path,
 			requestedAccess,
-			0,
+			FILE_SHARE_READ,
 			NULL,
 			creationDisposition,
 			win32_get_create_flags_and_attributes(inode->i_attributes),
@@ -2259,8 +2144,25 @@ try_open_again:
 			requestedAccess &= ~ACCESS_SYSTEM_SECURITY;
 			goto try_open_again;
 		}
-		ERROR("Failed to create \"%ls\"", stream_path);
-		win32_error(err);
+		if (err == ERROR_SHARING_VIOLATION) {
+			if (remaining_sharing_violations) {
+				--remaining_sharing_violations;
+				/* This can happen when restoring encrypted directories
+				 * for some reason.  Probably a bug in EncryptFile(). */
+				WARNING("Couldn't open \"%ls\" due to sharing violation; "
+					"re-trying after 100ms", stream_path);
+				Sleep(100);
+				goto try_open_again;
+			} else {
+				ERROR("Too many sharing violations; giving up...");
+			}
+		} else {
+			if (creationDisposition == OPEN_EXISTING)
+				ERROR("Failed to open \"%ls\"", stream_path);
+			else
+				ERROR("Failed to create \"%ls\"", stream_path);
+			win32_error(err);
+		}
 		ret = WIMLIB_ERR_OPEN;
 		goto fail;
 	}
