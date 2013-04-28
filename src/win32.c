@@ -678,6 +678,8 @@ win32_capture_maybe_rpfix_target(wchar_t *target, u16 *target_nbytes_p,
 	if (ret < 0)
 		return RP_NOT_FIXED;
 	stripped_chars = ret;
+	if (stripped_chars)
+		stripped_chars -= 2;
 	target[target_nchars] = L'\0';
 	orig_target = target;
 	target = capture_fixup_absolute_symlink(target + stripped_chars,
@@ -688,7 +690,7 @@ win32_capture_maybe_rpfix_target(wchar_t *target, u16 *target_nbytes_p,
 	wmemmove(orig_target + stripped_chars, target, target_nchars + 1);
 	*target_nbytes_p = (target_nchars + stripped_chars) * sizeof(wchar_t);
 	DEBUG("Fixed reparse point (new target: \"%ls\")", orig_target);
-	if (stripped_chars == 6)
+	if (stripped_chars)
 		return RP_FIXED_FULLPATH;
 	else
 		return RP_FIXED_ABSPATH;
@@ -1313,6 +1315,14 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	path_nchars = wcslen(root_disk_path);
 	if (path_nchars > 32767)
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (GetFileAttributesW(root_disk_path) == INVALID_FILE_ATTRIBUTES &&
+	    GetLastError() == ERROR_FILE_NOT_FOUND)
+	{
+		ERROR("Capture directory \"%ls\" does not exist!",
+		      root_disk_path);
+		return WIMLIB_ERR_OPENDIR;
+	}
 
 	ret = win32_get_file_and_vol_ids(root_disk_path,
 					 &params->capture_root_ino,

@@ -465,6 +465,12 @@ capture_fixup_absolute_symlink(tchar *dest,
 {
 	tchar *p = dest;
 
+#ifdef __WIN32__
+	/* Skip drive letter */
+	if (!is_rp_path_separator(*dest))
+		p += 2;
+#endif
+
 	DEBUG("Fixing symlink or junction \"%"TS"\"", dest);
 	for (;;) {
 		tchar save;
@@ -491,6 +497,13 @@ capture_fixup_absolute_symlink(tchar *dest,
 				*(p - 1) = RP_PATH_SEPARATOR;
 			while (p - 1 >= dest && is_rp_path_separator(*(p - 1)))
 				p--;
+		#ifdef __WIN32__
+			if (!is_rp_path_separator(dest[0])) {
+				*--p = dest[1];
+				*--p = dest[0];
+			}
+		#endif
+			wimlib_assert(p >= dest);
 			return p;
 		}
 
