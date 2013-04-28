@@ -599,9 +599,11 @@ win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret)
  	hFile = win32_open_existing_file(path, FILE_READ_ATTRIBUTES);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
-		WARNING("Failed to open \"%ls\" to get file and volume IDs",
-			path);
-		win32_error(err);
+		if (err != ERROR_FILE_NOT_FOUND) {
+			WARNING("Failed to open \"%ls\" to get file "
+				"and volume IDs", path);
+			win32_error(err);
+		}
 		return WIMLIB_ERR_OPEN;
 	}
 
@@ -678,8 +680,8 @@ win32_capture_maybe_rpfix_target(wchar_t *target, u16 *target_nbytes_p,
 	stripped_chars = ret;
 	target[target_nchars] = L'\0';
 	orig_target = target;
-	target = fixup_symlink(target + stripped_chars,
-			       capture_root_ino, capture_root_dev);
+	target = capture_fixup_absolute_symlink(target + stripped_chars,
+						capture_root_ino, capture_root_dev);
 	if (!target)
 		return RP_EXCLUDED;
 	target_nchars = wcslen(target);

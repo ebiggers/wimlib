@@ -432,7 +432,8 @@ unix_get_ino_and_dev(const char *path, u64 *ino_ret, u64 *dev_ret)
 {
 	struct stat stbuf;
 	if (stat(path, &stbuf)) {
-		WARNING_WITH_ERRNO("Failed to stat \"%s\"", path);
+		if (errno != ENOENT)
+			WARNING_WITH_ERRNO("Failed to stat \"%s\"", path);
 		/* Treat as a link pointing outside the capture root (it
 		 * most likely is). */
 		return WIMLIB_ERR_STAT;
@@ -459,7 +460,8 @@ unix_get_ino_and_dev(const char *path, u64 *ino_ret, u64 *dev_ret)
 /* Fix up absolute symbolic link targets--- mostly shared between UNIX and
  * Windows */
 tchar *
-fixup_symlink(tchar *dest, u64 capture_root_ino, u64 capture_root_dev)
+capture_fixup_absolute_symlink(tchar *dest,
+			       u64 capture_root_ino, u64 capture_root_dev)
 {
 	tchar *p = dest;
 

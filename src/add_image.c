@@ -210,9 +210,9 @@ unix_capture_symlink(struct wim_dentry **root_p,
 		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX) &&
 		     dest[0] == '/')
 		{
-			dest = fixup_symlink(dest,
-					     params->capture_root_ino,
-					     params->capture_root_dev);
+			dest = capture_fixup_absolute_symlink(dest,
+							      params->capture_root_ino,
+							      params->capture_root_dev);
 			if (!dest) {
 				WARNING("Ignoring out of tree absolute symlink "
 					"\"%s\" -> \"%s\"\n"

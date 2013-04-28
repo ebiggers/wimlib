@@ -305,8 +305,6 @@ fix_true_inode(struct wim_inode *inode, struct list_head *inode_list)
 				return WIMLIB_ERR_INVALID_DENTRY;
 			}
 			/* Free the unneeded `struct wim_inode'. */
-			dentry->d_inode->i_hlist.next = NULL;
-			dentry->d_inode->i_hlist.pprev = NULL;
 			free_inode(dentry->d_inode);
 			dentry->d_inode = ref_inode;
 			ref_inode->i_nlink++;
@@ -465,6 +463,7 @@ fix_inodes(struct wim_inode_table *table, struct list_head *inode_list,
 	INIT_LIST_HEAD(inode_list);
 	for (u64 i = 0; i < table->capacity; i++) {
 		hlist_for_each_entry_safe(inode, cur, tmp, &table->array[i], i_hlist) {
+			INIT_LIST_HEAD(&inode->i_list);
 			ret = fix_nominal_inode(inode, inode_list, ino_changes_needed);
 			if (ret)
 				return ret;
