@@ -1399,7 +1399,7 @@ win32_extract_try_rpfix(u8 *rpbuf,
 
 	/* Print name excludes the \??\ if present. */
 	new_print_name = p;
-	if (target_nchars - stripped_target_nchars != 0) {
+	if (stripped_nchars != 0) {
 		/* Get drive letter from real path to extract root, if a drive
 		 * letter was present before. */
 		*p++ = extract_root_realpath[0];
