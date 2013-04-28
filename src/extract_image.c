@@ -555,8 +555,9 @@ apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 #endif
 }
 
-/* Extract a dentry if it hasn't already been extracted, and either the dentry
- * has no streams or WIMLIB_EXTRACT_FLAG_NO_STREAMS is not specified. */
+/* Extract a dentry if it hasn't already been extracted and either
+ * WIMLIB_EXTRACT_FLAG_NO_STREAMS is not specified, or the dentry is a directory
+ * and/or has no unnamed stream. */
 static int
 maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 {
@@ -566,11 +567,10 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 	if (dentry->is_extracted)
 		return 0;
 
-	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
-		if (inode_unnamed_lte_resolved(dentry->d_inode) &&
-		    !(dentry->d_inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
-						       FILE_ATTRIBUTE_ENCRYPTED)))
-			return 0;
+	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS &&
+	    !dentry_is_directory(dentry) &&
+	    inode_unnamed_lte_resolved(dentry->d_inode) != NULL)
+		return 0;
 
 	if ((args->extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
 	     args->progress_func) {
