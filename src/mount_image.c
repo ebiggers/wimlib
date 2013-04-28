@@ -347,6 +347,15 @@ close_wimfs_fd(struct wimfs_fd *fd)
 	return 0;
 }
 
+static mode_t
+fuse_mask_mode(mode_t mode, struct fuse_context *fuse_ctx)
+{
+#if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 8)
+	mode &= ~fuse_ctx->umask;
+#endif
+	return mode;
+}
+
 /*
  * Add a new dentry with a new inode to a WIM image.
  *
@@ -385,7 +394,7 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 		if (inode_set_unix_data(new->d_inode,
 					fuse_ctx->uid,
 					fuse_ctx->gid,
-					mode & ~fuse_ctx->umask,
+					fuse_mask_mode(mode, fuse_ctx),
 					wimfs_ctx->wim->lookup_table,
 					UNIX_DATA_ALL | UNIX_DATA_CREATE))
 		{
