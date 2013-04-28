@@ -20,6 +20,8 @@ REM
 REM BEGIN TESTS
 REM
 
+REM goto :rpfix_tests
+
 call :msg "empty directory"
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
@@ -307,10 +309,49 @@ mklink /h link file > nul
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+:rpfix_tests
+
+echo Testing rpfix junction
+md subdir
+echo 1 > subdir\file
+mklink /j junction subdir > nul
+cd ..
+wimlib-imagex capture in.dir test.wim > nul
+rd /s /q in.dir
+wimlib-imagex apply test.wim out.dir > nul
+echo 1 > tmp1
+type out.dir\junction\file > tmp2
+fc tmp1 tmp2 > nul
+if %errorlevel% neq 0 exit /b %errorlevel%
+rd /s /q out.dir
+del tmp1 tmp2
+md in.dir
+cd in.dir
+
+echo Testing rpfix exclude
+mklink otherlink c:\some\other\directory > nul
+cd ..
+wimlib-imagex capture in.dir test.wim > nul
+wimlib-imagex apply test.wim out.dir > nul
+rd out.dir
+if %errorlevel% neq 0 exit /b %errorlevel%
+rd /s /q in.dir
+md in.dir
+cd in.dir
+
+echo Testing rpfix relative
+echo 1 > file
+mklink relink file > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
 REM
 REM END OF TESTS
 REM
 
+cd ..
+del test.wim
+rd /s /q in.dir
 exit /b 0
 
 :do_test
