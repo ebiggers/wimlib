@@ -567,7 +567,9 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 		return 0;
 
 	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS)
-		if (inode_unnamed_lte_resolved(dentry->d_inode))
+		if (inode_unnamed_lte_resolved(dentry->d_inode) &&
+		    !(dentry->d_inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+						       FILE_ATTRIBUTE_ENCRYPTED)))
 			return 0;
 
 	if ((args->extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
