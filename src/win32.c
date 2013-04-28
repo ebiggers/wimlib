@@ -1687,6 +1687,7 @@ do_win32_extract_stream(HANDLE hStream, const struct wim_lookup_table_entry *lte
 struct win32_encrypted_extract_ctx {
 	void *file_ctx;
 	int wimlib_err_code;
+	int win32_err_code;
 	bool done;
 	pthread_cond_t cond;
 	pthread_mutex_t mutex;
@@ -1700,15 +1701,18 @@ win32_encrypted_import_cb(unsigned char *data, void *_ctx,
 {
 	struct win32_encrypted_extract_ctx *ctx = _ctx;
 	unsigned long len = *len_p;
+	int ret;
 
 	pthread_mutex_lock(&ctx->mutex);
 	while (len) {
 		size_t bytes_to_copy;
-
 		DEBUG("Importing up to %lu more bytes of raw encrypted data", len);
+
+		if (ctx->done && ctx->win32_err_code != ERROR_SUCCESS)
+			goto err;
 		while (ctx->buf_filled == 0) {
 			if (ctx->done)
-				goto out;
+				goto err;
 			pthread_cond_wait(&ctx->cond, &ctx->mutex);
 		}
 		bytes_to_copy = min(len, ctx->buf_filled);
@@ -1719,10 +1723,14 @@ win32_encrypted_import_cb(unsigned char *data, void *_ctx,
 		memmove(ctx->buf, ctx->buf + bytes_to_copy, ctx->buf_filled);
 		pthread_cond_signal(&ctx->cond);
 	}
+	ret = ERROR_SUCCESS;
+	goto out;
+err:
+	ret = ctx->win32_err_code;
 out:
 	*len_p -= len;
 	pthread_mutex_unlock(&ctx->mutex);
-	return ERROR_SUCCESS;
+	return ret;
 }
 
 /* Extract ("Import") an encrypted file in a different thread. */
@@ -1737,6 +1745,7 @@ win32_encrypted_import_proc(void *arg)
 	if (ret == ERROR_SUCCESS) {
 		ctx->wimlib_err_code = 0;
 	} else {
+		ERROR("Failed to extract raw encrypted file");
 		win32_error(ret);
 		ctx->wimlib_err_code = WIMLIB_ERR_WRITE;
 	}
@@ -1756,12 +1765,12 @@ win32_extract_raw_encrypted_chunk(const void *buf, size_t len, void *arg)
 	while (len) {
 		DEBUG("Extracting up to %zu more bytes of encrypted data", len);
 		pthread_mutex_lock(&ctx->mutex);
+		if (ctx->done)
+			goto out_unlock;
 		while (ctx->buf_filled == WIM_CHUNK_SIZE) {
-			if (ctx->done) {
-				pthread_mutex_unlock(&ctx->mutex);
-				return ctx->wimlib_err_code;
-			}
 			pthread_cond_wait(&ctx->cond, &ctx->mutex);
+			if (ctx->done)
+				goto out_unlock;
 		}
 		bytes_to_copy = min(len, WIM_CHUNK_SIZE - ctx->buf_filled);
 		memcpy(&ctx->buf[ctx->buf_filled], buf, bytes_to_copy);
@@ -1772,6 +1781,9 @@ win32_extract_raw_encrypted_chunk(const void *buf, size_t len, void *arg)
 		pthread_mutex_unlock(&ctx->mutex);
 	}
 	return 0;
+out_unlock:
+	pthread_mutex_unlock(&ctx->mutex);
+	return ctx->wimlib_err_code;
 }
 
 /* Create an encrypted file and extract the raw encrypted data to it.
@@ -1840,6 +1852,10 @@ do_win32_extract_encrypted_stream(const wchar_t *path,
 	ret = extract_wim_resource(lte, wim_resource_size(lte),
 				   win32_extract_raw_encrypted_chunk, &ctx);
 	pthread_mutex_lock(&ctx.mutex);
+	if (ret)
+		ctx.win32_err_code = ERROR_READ_FAULT;
+	else
+		ctx.win32_err_code = ERROR_SUCCESS;
 	ctx.done = true;
 	pthread_cond_signal(&ctx.cond);
 	pthread_mutex_unlock(&ctx.mutex);
