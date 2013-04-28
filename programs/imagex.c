@@ -2077,7 +2077,7 @@ imagex_info(int argc, tchar **argv)
 
 			ret = file_writable(wimfile);
 			if (ret != 0)
-				return ret;
+				goto out;
 
 			if (check)
 				write_flags = WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
