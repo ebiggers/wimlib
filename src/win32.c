@@ -700,7 +700,8 @@ win32_capture_maybe_rpfix_target(wchar_t *target, u16 *target_nbytes_p,
  * failure. */
 static int
 win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
-			u64 capture_root_ino, u64 capture_root_dev)
+			u64 capture_root_ino, u64 capture_root_dev,
+			const wchar_t *path)
 {
 	struct reparse_data rpdata;
 	DWORD rpbuflen;
@@ -738,6 +739,19 @@ win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 		else
 			ret = -ret;
 	} else {
+		if (ret == RP_EXCLUDED) {
+			size_t print_name_nchars = rpdata.print_name_nbytes / 2;
+			wchar_t print_name0[print_name_nchars + 1];
+			print_name0[print_name_nchars] = L'\0';
+			wmemcpy(print_name0, rpdata.print_name, print_name_nchars);
+			WARNING("Ignoring %ls pointing out of capture directory:\n"
+				"          \"%ls\" -> \"%ls\"\n"
+				"          (Use --norpfix to capture all symbolic links "
+				"and junction points as-is)",
+				(rpdata.rptag == WIM_IO_REPARSE_TAG_SYMLINK) ?
+					L"absolute symbolic link" : L"junction point",
+				path, print_name0);
+		}
 		ret = rp_status;
 	}
 	return ret;
@@ -805,7 +819,8 @@ win32_get_reparse_data(HANDLE hFile, const wchar_t *path,
 		ret = win32_capture_try_rpfix(rpbuf,
 					      &rpbuflen,
 					      params->capture_root_ino,
-					      params->capture_root_dev);
+					      params->capture_root_dev,
+					      path);
 	} else {
 		ret = RP_NOT_FIXED;
 	}
