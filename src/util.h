@@ -151,7 +151,7 @@ wimlib_warning_with_errno(const tchar *format, ...) FORMAT(printf, 1, 2) COLD;
 #  define ERROR(format, ...)			wimlib_error(T(format), ## __VA_ARGS__)
 #  define ERROR_WITH_ERRNO(format, ...) 	wimlib_error_with_errno(T(format), ## __VA_ARGS__)
 #  define WARNING(format, ...)			wimlib_warning(T(format), ## __VA_ARGS__)
-#  define WARNING_WITH_ERRNO(format, ...)	wimlib_warning(T(format), ## __VA_ARGS__)
+#  define WARNING_WITH_ERRNO(format, ...)	wimlib_warning_with_errno(T(format), ## __VA_ARGS__)
 #else /* ENABLE_ERROR_MESSAGES */
 #  define ERROR(format, ...)			dummy_tprintf(T(format), ## __VA_ARGS__)
 #  define ERROR_WITH_ERRNO(format, ...)		dummy_tprintf(T(format), ## __VA_ARGS__)

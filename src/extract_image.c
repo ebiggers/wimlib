@@ -152,9 +152,11 @@ symlink_apply_unix_data(const char *link,
 	if (lchown(link, unix_data->uid, unix_data->gid)) {
 		if (errno == EPERM) {
 			/* Ignore */
-			WARNING_WITH_ERRNO("failed to set symlink UNIX owner/group");
+			WARNING_WITH_ERRNO("failed to set symlink UNIX "
+					   "owner/group on \"%s\"", link);
 		} else {
-			ERROR_WITH_ERRNO("failed to set symlink UNIX owner/group");
+			ERROR_WITH_ERRNO("failed to set symlink UNIX "
+					 "owner/group on \"%s\"", link);
 			return WIMLIB_ERR_INVALID_DENTRY;
 		}
 	}
@@ -162,24 +164,29 @@ symlink_apply_unix_data(const char *link,
 }
 
 static int
-fd_apply_unix_data(int fd, const struct wimlib_unix_data *unix_data)
+fd_apply_unix_data(int fd, const char *path,
+		   const struct wimlib_unix_data *unix_data)
 {
 	if (fchown(fd, unix_data->uid, unix_data->gid)) {
 		if (errno == EPERM) {
-			WARNING_WITH_ERRNO("failed to set file UNIX owner/group");
+			WARNING_WITH_ERRNO("failed to set file UNIX "
+					   "owner/group on \"%s\"", path);
 			/* Ignore? */
 		} else {
-			ERROR_WITH_ERRNO("failed to set file UNIX owner/group");
+			ERROR_WITH_ERRNO("failed to set file UNIX "
+					 "owner/group on \"%s\"", path);
 			return WIMLIB_ERR_INVALID_DENTRY;
 		}
 	}
 
 	if (fchmod(fd, unix_data->mode)) {
 		if (errno == EPERM) {
-			WARNING_WITH_ERRNO("failed to set UNIX file mode");
+			WARNING_WITH_ERRNO("failed to set UNIX file mode "
+					   "on \"%s\"", path);
 			/* Ignore? */
 		} else {
-			ERROR_WITH_ERRNO("failed to set UNIX file mode");
+			ERROR_WITH_ERRNO("failed to set UNIX file mode "
+					 "on \"%s\"", path);
 			return WIMLIB_ERR_INVALID_DENTRY;
 		}
 	}
@@ -192,7 +199,7 @@ dir_apply_unix_data(const char *dir, const struct wimlib_unix_data *unix_data)
 	int dfd = open(dir, O_RDONLY);
 	int ret;
 	if (dfd >= 0) {
-		ret = fd_apply_unix_data(dfd, unix_data);
+		ret = fd_apply_unix_data(dfd, dir, unix_data);
 		if (close(dfd)) {
 			ERROR_WITH_ERRNO("can't close directory `%s'", dir);
 			ret = WIMLIB_ERR_MKDIR;
@@ -280,7 +287,7 @@ out_extract_unix_data:
 		else if (ret < 0)
 			ret = 0;
 		else
-			ret = fd_apply_unix_data(out_fd, &unix_data);
+			ret = fd_apply_unix_data(out_fd, output_path, &unix_data);
 		if (ret)
 			goto out;
 	}
