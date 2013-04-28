@@ -1951,13 +1951,15 @@ win32_begin_extract_unnamed_stream(const struct wim_inode *inode,
 /* Set security descriptor and extract stream data or reparse data (skip the
  * unnamed data stream of encrypted files, which was already extracted). */
 static int
-win32_finish_extract_stream(HANDLE h, const struct wim_inode *inode,
+win32_finish_extract_stream(HANDLE h, const struct wim_dentry *dentry,
 			    const struct wim_lookup_table_entry *lte,
 			    const wchar_t *stream_path,
 			    const wchar_t *stream_name_utf16,
 			    struct apply_args *args)
 {
 	int ret = 0;
+	const struct wim_inode *inode = dentry->d_inode;
+	const wchar_t *short_name;
 	if (stream_name_utf16 == NULL) {
 		/* Unnamed stream. */
 
@@ -2008,6 +2010,21 @@ win32_finish_extract_stream(HANDLE h, const struct wim_inode *inode,
 			 * the stream is encrypted and therefore was already
 			 * extracted as a special case. */
 			ret = do_win32_extract_stream(h, lte);
+			if (ret)
+				return ret;
+		}
+
+		if (dentry_has_short_name(dentry))
+			short_name = dentry->short_name;
+		else
+			short_name = L"";
+		/* Set short name */
+		if (!SetFileShortNameW(h, short_name)) {
+		#if 0
+			DWORD err = GetLastError();
+			ERROR("Could not set short name on \"%ls\"", stream_path);
+			win32_error(err);
+		#endif
 		}
 	} else {
 		/* Extract the data for a named data stream. */
@@ -2048,7 +2065,7 @@ win32_decrypt_file(HANDLE open_handle, const wchar_t *path)
  * This handles reparse points, directories, alternate data streams, encrypted
  * files, compressed files, etc.
  *
- * @inode: WIM inode containing the stream.
+ * @dentry: WIM dentry for the file or directory being extracted.
  *
  * @path:  Path to extract the file to.
  *
@@ -2066,7 +2083,7 @@ win32_decrypt_file(HANDLE open_handle, const wchar_t *path)
  * Returns 0 on success; nonzero on failure.
  */
 static int
-win32_extract_stream(const struct wim_inode *inode,
+win32_extract_stream(const struct wim_dentry *dentry,
 		     const wchar_t *path,
 		     const wchar_t *stream_name_utf16,
 		     struct wim_lookup_table_entry *lte,
@@ -2080,6 +2097,7 @@ win32_extract_stream(const struct wim_inode *inode,
 	DWORD requestedAccess;
 	BY_HANDLE_FILE_INFORMATION file_info;
 	unsigned remaining_sharing_violations = 1000;
+	const struct wim_inode *inode = dentry->d_inode;
 
 	if (stream_name_utf16) {
 		/* Named stream.  Create a buffer that contains the UTF-16LE
@@ -2123,7 +2141,8 @@ win32_extract_stream(const struct wim_inode *inode,
 	}
 
 	DEBUG("Opening \"%ls\"", stream_path);
-	requestedAccess = GENERIC_READ | GENERIC_WRITE |
+	/* DELETE access is needed for SetFileShortNameW(), for some reason. */
+	requestedAccess = GENERIC_READ | GENERIC_WRITE | DELETE |
 			  ACCESS_SYSTEM_SECURITY;
 try_open_again:
 	/* Open the stream to be extracted.  Depending on what we have set
@@ -2231,7 +2250,7 @@ try_open_again:
 	 * descriptor and actually extract the stream data (other than for
 	 * extracted files, which were already extracted).
 	 * win32_finish_extract_stream() handles these additional steps. */
-	ret = win32_finish_extract_stream(h, inode, lte, stream_path,
+	ret = win32_finish_extract_stream(h, dentry, lte, stream_path,
 					  stream_name_utf16, args);
 	if (ret)
 		goto fail_close_handle;
@@ -2260,23 +2279,24 @@ out:
  * (unnamed data stream and/or reparse point stream, plus any alternate data
  * streams).  Handles sparse, compressed, and/or encrypted files.
  *
- * @inode:	WIM inode for this file or directory.
+ * @dentry:	WIM dentry for this file or directory.
  * @path:	UTF-16LE external path to extract the inode to.
  * @args:	Additional extraction context.
  *
  * Returns 0 on success; nonzero on failure.
  */
 static int
-win32_extract_streams(const struct wim_inode *inode,
+win32_extract_streams(const struct wim_dentry *dentry,
 		      const wchar_t *path, struct apply_args *args)
 {
 	struct wim_lookup_table_entry *unnamed_lte;
 	int ret;
+	const struct wim_inode *inode = dentry->d_inode;
 
 	/* First extract the unnamed stream. */
 
 	unnamed_lte = inode_unnamed_lte_resolved(inode);
-	ret = win32_extract_stream(inode, path, NULL, unnamed_lte, args);
+	ret = win32_extract_stream(dentry, path, NULL, unnamed_lte, args);
 	if (ret)
 		goto out;
 
@@ -2301,7 +2321,7 @@ win32_extract_streams(const struct wim_inode *inode,
 			continue;
 
 		/* Extract the named stream */
-		ret = win32_extract_stream(inode,
+		ret = win32_extract_stream(dentry,
 					   path,
 					   ads_entry->stream_name,
 					   ads_entry->lte,
@@ -2448,7 +2468,7 @@ win32_do_apply_dentry(const wchar_t *output_path,
 	} else {
 		/* Create the file, directory, or reparse point, and extract the
 		 * data streams. */
-		ret = win32_extract_streams(inode, output_path, args);
+		ret = win32_extract_streams(dentry, output_path, args);
 		if (ret)
 			return ret;
 	}
