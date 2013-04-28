@@ -515,13 +515,17 @@ tree_cmp(wchar_t *path_1, size_t path_1_len, wchar_t *path_2, size_t path_2_len)
 		      path_2, (unsigned)file_info_2.dwFileAttributes);
 	}
 
-	size_1 = ((u64)file_info_1.nFileSizeHigh << 32) |
-			file_info_1.nFileSizeLow;
-	size_2 = ((u64)file_info_2.nFileSizeHigh << 32) |
-			file_info_2.nFileSizeLow;
-	if (size_1 != size_2) {
-		error(L"Size for %ls (%"PRIu64") differs from size for %ls (%"PRIu64")",
-		      path_1, size_1, path_2, size_2);
+	attribs = file_info_1.dwFileAttributes;
+
+	if (!(attribs & FILE_ATTRIBUTE_DIRECTORY)) {
+		size_1 = ((u64)file_info_1.nFileSizeHigh << 32) |
+				file_info_1.nFileSizeLow;
+		size_2 = ((u64)file_info_2.nFileSizeHigh << 32) |
+				file_info_2.nFileSizeLow;
+		if (size_1 != size_2) {
+			error(L"Size for %ls (%"PRIu64") differs from size for %ls (%"PRIu64")",
+			      path_1, size_1, path_2, size_2);
+		}
 	}
 	if (file_info_1.nNumberOfLinks != file_info_2.nNumberOfLinks) {
 		error(L"Number of links for %ls (%u) differs from number "
@@ -546,8 +550,6 @@ tree_cmp(wchar_t *path_1, size_t path_1_len, wchar_t *path_2, size_t path_2_len)
 	if (!file_times_equal(&file_info_1.ftLastWriteTime, &file_info_2.ftLastWriteTime))
 		error(L"Last write times on %ls and %ls differ",
 		      path_1, path_2);
-
-	attribs = file_info_1.dwFileAttributes;
 
 	cmp_security(path_1, path_2);
 	cmp_streams(path_1, path_1_len, path_2, path_2_len);
