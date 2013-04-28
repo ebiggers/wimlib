@@ -1,29 +1,33 @@
 				   INTRODUCTION
 
-wimlib 1.3.0 has added experimental support for Windows builds.  The Windows
-build consists of both the "wimlib" library (which can be built as a DLL) and
-the "imagex" executable.
+wimlib 1.3.0 has added experimental support for Windows builds.  The support has
+been further improved in later versions.  The Windows build consists of both the
+"wimlib" library (which can be built as a DLL) and the "wimlib-imagex"
+executable.
 
 The Windows build of wimlib uses native Win32 calls when appropriate to handle
-alternate data streams, security descriptors, and reparse points.
+alternate data streams, security descriptors, reparse points, encrypted files,
+compressed files, and sparse files.
 
 Mounting WIM files is not supported on Windows.  Also please note that wimlib's
-"imagex" is NOT intended to be command-line compatible with Microsoft's
+"wimlib-imagex" is NOT intended to be command-line compatible with Microsoft's
 "imagex", and wimlib is NOT intended to be API compatible with Microsoft's
 WIMGAPI.  They are similar, though.
 
 				 NOTES ABOUT IMAGEX
 
-"imagex capture", "imagex append", and "imagex apply" will work on Windows and
-have the added advantage of saving and restoring alternate data streams,
-security descriptors, and reparse points.
+"wimlib-imagex capture", "wimlib-imagex append", and "wimlib-imagex apply" will
+work on Windows and have the added advantage of saving and restoring
+NTFS-specific data, such as alternate data streams, security descriptors, and
+reparse points.
 
-"imagex delete", "imagex dir", "imagex export", "imagex info", "imagex join",
-"imagex optimize", and "imagex split" are all portable and should work the same
-way on Windows as on UNIX.
+"wimlib-imagex delete", "wimlib-imagex dir", "wimlib-imagex export",
+"wimlib-imagex info", "wimlib-imagex join", "wimlib-imagex optimize", and
+"wimlib-imagex split" are all portable and should work the same way on Windows
+as on UNIX.
 
-"imagex mount", "imagex mountrw", and "imagex unmount" will NOT work on Windows.
-
+"wimlib-imagex mount", "wimlib-imagex mountrw", and "wimlib-imagex unmount" will
+NOT work on Windows.
 
 So on Windows, why would you want to use wimlib's ImageX instead of Microsoft's?
 Well, here are a few reasons:
@@ -31,12 +35,17 @@ Well, here are a few reasons:
 - wimlib offers fast multithreaded compression, so making WIM images can be much
   faster.
 
-- wimlib can correctly save and restore alternate data streams, which
-  Microsoft's ImageX sometimes captures incorrectly due to a bug.
+- Whenever possible I have included improved documentation and informational
+  output compared to Microsoft's software.
+
+- wimlib can correctly save and restore some combinations of data that
+  Microsoft's ImageX runs into bugs on --- for example, uncompressed files in
+  compressed directories, or files with alternate data streams and multiple
+  links.
 
 - wimlib is free software, so you can modify and/or audit the source code.
 
-See the man page for 'imagex' for more information.
+See the man page for 'wimlib-imagex' for more information.
 
 				 BUILDING ON WINDOWS
 
