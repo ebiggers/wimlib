@@ -1486,7 +1486,6 @@ wimlib_image_name_in_use(const WIMStruct *w, const tchar *name)
 WIMLIBAPI int
 wimlib_extract_xml_data(WIMStruct *w, FILE *fp)
 {
-	size_t bytes_written;
 	size_t size;
 	void *buf;
 	int ret;

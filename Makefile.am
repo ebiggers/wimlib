@@ -44,7 +44,7 @@ libwim_la_SOURCES =		\
 	src/sha1.c		\
 	src/sha1.h		\
 	src/split.c		\
-	src/symlink.c		\
+	src/reparse.c		\
 	src/timestamp.h		\
 	src/util.c		\
 	src/util.h		\

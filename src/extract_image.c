@@ -326,11 +326,11 @@ extract_symlink(struct wim_dentry *dentry,
 {
 	char target[4096 + args->target_realpath_len];
 	char *fixed_target;
+	const struct wim_inode *inode = dentry->d_inode;
 
-	ssize_t ret = inode_readlink(dentry->d_inode,
-				     target + args->target_realpath_len,
-				     sizeof(target) - args->target_realpath_len - 1,
-				     args->w, false);
+	ssize_t ret = wim_inode_readlink(inode,
+					 target + args->target_realpath_len,
+					 sizeof(target) - args->target_realpath_len - 1);
 	struct wim_lookup_table_entry *lte;
 
 	if (ret <= 0) {
@@ -357,11 +357,9 @@ extract_symlink(struct wim_dentry *dentry,
 				 output_path, fixed_target);
 		return WIMLIB_ERR_LINK;
 	}
-	lte = inode_unnamed_lte_resolved(dentry->d_inode);
-	wimlib_assert(lte != NULL);
 	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
 		struct wimlib_unix_data unix_data;
-		ret = inode_get_unix_data(dentry->d_inode, &unix_data, NULL);
+		ret = inode_get_unix_data(inode, &unix_data, NULL);
 		if (ret > 0)
 			;
 		else if (ret < 0)
@@ -371,6 +369,8 @@ extract_symlink(struct wim_dentry *dentry,
 		if (ret)
 			return ret;
 	}
+	lte = inode_unnamed_lte_resolved(inode);
+	wimlib_assert(lte != NULL);
 	args->progress.extract.completed_bytes += wim_resource_size(lte);
 	return 0;
 }

@@ -225,8 +225,7 @@ unix_capture_symlink(struct wim_dentry **root_p,
 			}
 			inode->i_not_rpfixed = 0;
 		}
-		ret = inode_set_symlink(inode, dest,
-					params->lookup_table, NULL);
+		ret = wim_inode_set_symlink(inode, dest, params->lookup_table);
 		if (ret == 0) {
 			/* Unfortunately, Windows seems to have the concept of
 			 * "file" symbolic links as being different from

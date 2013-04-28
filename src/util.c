@@ -301,6 +301,8 @@ static const tchar *error_strings[] = {
 		= T("An invalid parameter was given"),
 	[WIMLIB_ERR_INVALID_PART_NUMBER]
 		= T("The part number or total parts of the WIM is invalid"),
+	[WIMLIB_ERR_INVALID_REPARSE_DATA]
+		= T("The reparse data of a reparse point was invalid"),
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
 		= T("The SHA1 message digest of a WIM resource did not match the expected value"),
 	[WIMLIB_ERR_INVALID_RESOURCE_SIZE]
@@ -347,6 +349,8 @@ static const tchar *error_strings[] = {
 		= T("Could not rename a file"),
 	[WIMLIB_ERR_REOPEN]
 		= T("Could not re-open the WIM after overwriting it"),
+	[WIMLIB_ERR_REPARSE_POINT_FIXUP_FAILED]
+		= T("Unable to complete reparse point fixup"),
 	[WIMLIB_ERR_RESOURCE_ORDER]
 		= T("The components of the WIM were arranged in an unexpected order"),
 	[WIMLIB_ERR_SPECIAL_FILE]

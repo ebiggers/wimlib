@@ -650,15 +650,13 @@ wimlib_free(WIMStruct *w)
 	if (w->out_fp)
 		fclose(w->out_fp);
 
-#ifdef WITH_FUSE
+#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
 	if (w->fp_tab) {
 		for (size_t i = 0; i < w->num_allocated_fps; i++)
 			if (w->fp_tab[i])
 				fclose(w->fp_tab[i]);
 		FREE(w->fp_tab);
 	}
-#endif
-#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
 	pthread_mutex_destroy(&w->fp_tab_mutex);
 #endif
 

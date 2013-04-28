@@ -2026,7 +2026,7 @@ wimfs_readlink(const char *path, char *buf, size_t buf_len)
 		return -EINVAL;
 	if (buf_len == 0)
 		return -ENAMETOOLONG;
-	ret = inode_readlink(inode, buf, buf_len - 1, ctx->wim, true);
+	ret = wim_inode_readlink(inode, buf, buf_len - 1);
 	if (ret >= 0) {
 		wimlib_assert(ret <= buf_len - 1);
 		buf[ret] = '\0';
@@ -2217,11 +2217,14 @@ wimfs_symlink(const char *to, const char *from)
 			    FILE_ATTRIBUTE_REPARSE_POINT, &dentry);
 	if (ret == 0) {
 		dentry->d_inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
-		if (inode_set_symlink(dentry->d_inode, to,
-				      wimfs_ctx->wim->lookup_table, NULL))
-		{
+		ret = wim_inode_set_symlink(dentry->d_inode, to,
+					    wimfs_ctx->wim->lookup_table);
+		if (ret) {
 			remove_dentry(dentry, wimfs_ctx->wim->lookup_table);
-			ret = -ENOMEM;
+			if (ret == WIMLIB_ERR_NOMEM)
+				ret = -ENOMEM;
+			else
+				ret = -EIO;
 		}
 	}
 	return ret;

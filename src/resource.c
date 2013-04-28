@@ -463,9 +463,9 @@ put_resource_entry(void *p, const struct resource_entry *entry)
 static FILE *
 wim_get_fp(WIMStruct *w)
 {
+	FILE *fp;
 #if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
 	pthread_mutex_lock(&w->fp_tab_mutex);
-	FILE *fp;
 
 	wimlib_assert(w->filename != NULL);
 

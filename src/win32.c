@@ -660,62 +660,31 @@ enum rp_status {
  * be reached via multiple destinations due to other symbolic links).  This may
  * not work properly on FAT, which doesn't seem to supply proper inode numbers
  * or file IDs.  However, FAT doesn't support reparse points so this function
- * wouldn't even be called anyway.  */
+ * wouldn't even be called anyway.
+ */
 static enum rp_status
-win32_maybe_rpfix_target(wchar_t *target, size_t *target_nchars_p,
-			 u64 capture_root_ino, u64 capture_root_dev)
+win32_capture_maybe_rpfix_target(wchar_t *target, u16 *target_nbytes_p,
+				 u64 capture_root_ino, u64 capture_root_dev,
+				 u32 rptag)
 {
-	size_t target_nchars= *target_nchars_p;
+	u16 target_nchars = *target_nbytes_p / 2;
 	size_t stripped_chars;
 	wchar_t *orig_target;
+	int ret;
 
-	if (target_nchars == 0)
-		/* Invalid reparse point (empty target) */
+	ret = parse_substitute_name(target, *target_nbytes_p, rptag);
+	if (ret < 0)
 		return RP_NOT_FIXED;
-
-	if (target[0] == L'\\') {
-		if (target_nchars >= 2 && target[1] == L'\\') {
-			/* Probably a volume.  Can't do anything with it. */
-			DEBUG("Not fixing target (probably a volume)");
-			return RP_NOT_FIXED;
-		} else if (target_nchars >= 7 &&
-			   target[1] == '?' &&
-			   target[2] == '?' &&
-			   target[3] == '\\' &&
-			   target[4] != '\0' &&
-			   target[5] == ':' &&
-			   target[6] == '\\')
-		{
-			DEBUG("Full style path");
-			/* Full \??\x:\ style path (may be junction or symlink)
-			 * */
-			stripped_chars = 6;
-		} else {
-			DEBUG("Absolute target without drive letter");
-			/* Absolute target, without drive letter */
-			stripped_chars = 0;
-		}
-	} else if (target_nchars >= 3 &&
-		   target[0] != L'\0' &&
-		   target[1] == L':' &&
-		   target[2] == L'\\')
-	{
-		DEBUG("Absolute target with drive letter");
-		/* Absolute target, with drive letter */
-		stripped_chars = 2;
-	} else {
-		DEBUG("Relative symlink or other link");
-		/* Relative symlink or other unexpected format */
-		return RP_NOT_FIXED;
-	}
+	stripped_chars = ret;
 	target[target_nchars] = L'\0';
 	orig_target = target;
-	target = fixup_symlink(target + stripped_chars, capture_root_ino, capture_root_dev);
+	target = fixup_symlink(target + stripped_chars,
+			       capture_root_ino, capture_root_dev);
 	if (!target)
 		return RP_EXCLUDED;
 	target_nchars = wcslen(target);
 	wmemmove(orig_target + stripped_chars, target, target_nchars + 1);
-	*target_nchars_p = target_nchars + stripped_chars;
+	*target_nbytes_p = (target_nchars + stripped_chars) * sizeof(wchar_t);
 	DEBUG("Fixed reparse point (new target: \"%ls\")", orig_target);
 	if (stripped_chars == 6)
 		return RP_FIXED_FULLPATH;
@@ -723,92 +692,89 @@ win32_maybe_rpfix_target(wchar_t *target, size_t *target_nchars_p,
 		return RP_FIXED_ABSPATH;
 }
 
-static enum rp_status
-win32_try_capture_rpfix(char *rpbuf, DWORD *rpbuflen_p,
+/* Returns: `enum rp_status' value on success; negative WIMLIB_ERR_* value on
+ * failure. */
+static int
+win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 			u64 capture_root_ino, u64 capture_root_dev)
 {
-	const char *p_get;
-	char *p_put;
-	u16 substitute_name_offset;
-	u16 substitute_name_len;
-	wchar_t *target;
-	size_t target_nchars;
-	enum rp_status status;
-	u32 rptag;
-	DWORD rpbuflen = *rpbuflen_p;
+	struct reparse_data rpdata;
+	DWORD rpbuflen;
+	int ret;
+	enum rp_status rp_status;
 
-	if (rpbuflen < 16) /* Invalid reparse point (length too small) */
-		return RP_NOT_FIXED;
-	p_get = get_u32(rpbuf, &rptag);
-	p_get += 4;
-	p_get = get_u16(p_get, &substitute_name_offset);
-	p_get = get_u16(p_get, &substitute_name_len);
-	p_get += 4;
-	if (rptag == WIM_IO_REPARSE_TAG_SYMLINK) {
-		if (rpbuflen < 20) /* Invalid reparse point (length too small) */
-			return RP_NOT_FIXED;
-		p_get += 4;
-	}
-	if ((DWORD)substitute_name_offset +
-	    substitute_name_len + (p_get - rpbuf) > rpbuflen)
-		/* Invalid reparse point (length too small) */
-		return RP_NOT_FIXED;
+	rpbuflen = *rpbuflen_p;
+	ret = parse_reparse_data(rpbuf, rpbuflen, &rpdata);
+	if (ret)
+		return -ret;
 
-	target = (wchar_t*)&p_get[substitute_name_offset];
-	target_nchars = substitute_name_len / 2;
-	/* Note: target is not necessarily null-terminated */
-
-	status = win32_maybe_rpfix_target(target, &target_nchars,
-					  capture_root_ino, capture_root_dev);
-	if (status & RP_FIXED) {
-		size_t target_nbytes = target_nchars * 2;
-		size_t print_nbytes = target_nbytes;
-		wchar_t target_copy[target_nchars];
-		wchar_t *print_name = target_copy;
-
-		if (status == RP_FIXED_FULLPATH) {
+	rp_status = win32_capture_maybe_rpfix_target(rpdata.substitute_name,
+						     &rpdata.substitute_name_nbytes,
+						     capture_root_ino,
+						     capture_root_dev,
+						     le32_to_cpu(*(u32*)rpbuf));
+	if (rp_status & RP_FIXED) {
+		wimlib_assert(rpdata.substitute_name_nbytes % 2 == 0);
+		utf16lechar substitute_name_copy[rpdata.substitute_name_nbytes / 2];
+		wmemcpy(substitute_name_copy, rpdata.substitute_name,
+			rpdata.substitute_name_nbytes / 2);
+		rpdata.substitute_name = substitute_name_copy;
+		rpdata.print_name = substitute_name_copy;
+		rpdata.print_name_nbytes = rpdata.substitute_name_nbytes;
+		if (rp_status == RP_FIXED_FULLPATH) {
 			/* "full path", meaning \??\ prefixed.  We should not
 			 * include this prefix in the print name, as it is
 			 * apparently meant for the filesystem driver only. */
-			print_nbytes -= 8;
-			print_name += 4;
+			rpdata.print_name += 4;
+			rpdata.print_name_nbytes -= 8;
 		}
-		wmemcpy(target_copy, target, target_nchars);
-		p_put = rpbuf + 8;
-		p_put = put_u16(p_put, 0); /* Substitute name offset */
-		p_put = put_u16(p_put, target_nbytes); /* Substitute name length */
-		p_put = put_u16(p_put, target_nbytes + 2); /* Print name offset */
-		p_put = put_u16(p_put, print_nbytes); /* Print name length */
-		if (rptag == WIM_IO_REPARSE_TAG_SYMLINK)
-			p_put = put_u32(p_put, 1);
-		p_put = put_bytes(p_put, target_nbytes, target_copy);
-		p_put = put_u16(p_put, 0);
-		p_put = put_bytes(p_put, print_nbytes, print_name);
-		p_put = put_u16(p_put, 0);
-
-		/* Wrote the end of the reparse data.  Recalculate the length,
-		 * set the length field correctly, and return it. */
-		rpbuflen = p_put - rpbuf;
-		put_u16(rpbuf + 4, rpbuflen - 8);
-		*rpbuflen_p = rpbuflen;
+		ret = make_reparse_buffer(&rpdata, rpbuf);
+		if (ret == 0)
+			ret = rp_status;
+		else
+			ret = -ret;
+	} else {
+		ret = rp_status;
 	}
-	return status;
+	return ret;
 }
 
+/*
+ * Loads the reparse point data from a reparse point into memory, optionally
+ * fixing the targets of absolute symbolic links and junction points to be
+ * relative to the root of capture.
+ *
+ * @hFile:  Open handle to the reparse point.
+ * @path:   Path to the reparse point.  Used for error messages only.
+ * @params: Additional parameters, including whether to do reparse point fixups
+ *          or not.
+ * @rpbuf:  Buffer of length at least REPARSE_POINT_MAX_SIZE bytes into which
+ *          the reparse point buffer will be loaded.
+ * @rpbuflen_ret:  On success, the length of the reparse point buffer in bytes
+ *                 is written to this location.
+ *
+ * Returns:
+ *	On success, returns an `enum rp_status' value that indicates if and/or
+ *	how the reparse point fixup was done.
+ *
+ *	On failure, returns a negative value that is a negated WIMLIB_ERR_*
+ *	code.
+ */
 static int
 win32_get_reparse_data(HANDLE hFile, const wchar_t *path,
 		       struct add_image_params *params,
-		       void *reparse_data, size_t *reparse_data_len_ret)
+		       u8 *rpbuf, u16 *rpbuflen_ret)
 {
 	DWORD bytesReturned;
 	u32 reparse_tag;
-	enum rp_status status;
+	int ret;
+	u16 rpbuflen;
 
 	DEBUG("Loading reparse data from \"%ls\"", path);
 	if (!DeviceIoControl(hFile, FSCTL_GET_REPARSE_POINT,
 			     NULL, /* "Not used with this operation; set to NULL" */
 			     0, /* "Not used with this operation; set to 0" */
-			     reparse_data, /* "A pointer to a buffer that
+			     rpbuf, /* "A pointer to a buffer that
 						   receives the reparse point data */
 			     REPARSE_POINT_MAX_SIZE, /* "The size of the output
 							buffer, in bytes */
@@ -820,26 +786,27 @@ win32_get_reparse_data(HANDLE hFile, const wchar_t *path,
 		win32_error(err);
 		return -WIMLIB_ERR_READ;
 	}
-	if (bytesReturned < 8) {
+	if (bytesReturned < 8 || bytesReturned > REPARSE_POINT_MAX_SIZE) {
 		ERROR("Reparse data on \"%ls\" is invalid", path);
-		return -WIMLIB_ERR_READ;
+		return -WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
 
-	reparse_tag = le32_to_cpu(*(u32*)reparse_data);
+	rpbuflen = bytesReturned;
+	reparse_tag = le32_to_cpu(*(u32*)rpbuf);
 	if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX &&
 	    (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
 	     reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
 	{
 		/* Try doing reparse point fixup */
-		status = win32_try_capture_rpfix(reparse_data,
-						 &bytesReturned,
-						 params->capture_root_ino,
-						 params->capture_root_dev);
+		ret = win32_capture_try_rpfix(rpbuf,
+					      &rpbuflen,
+					      params->capture_root_ino,
+					      params->capture_root_dev);
 	} else {
-		status = RP_NOT_FIXED;
+		ret = RP_NOT_FIXED;
 	}
-	*reparse_data_len_ret = bytesReturned;
-	return status;
+	*rpbuflen_ret = rpbuflen;
+	return ret;
 }
 
 static DWORD WINAPI
@@ -1140,8 +1107,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	DWORD err;
 	u64 file_size;
 	int ret;
-	void *reparse_data;
-	size_t reparse_data_len;
+	u8 *rpbuf;
+	u16 rpbuflen;
 	u16 not_rpfixed;
 
 	if (exclude_path(path, path_num_chars, params->config, true)) {
@@ -1192,9 +1159,9 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	}
 
 	if (file_info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		reparse_data = alloca(REPARSE_POINT_MAX_SIZE);
+		rpbuf = alloca(REPARSE_POINT_MAX_SIZE);
 		ret = win32_get_reparse_data(hFile, path, params,
-					     reparse_data, &reparse_data_len);
+					     rpbuf, &rpbuflen);
 		if (ret < 0) {
 			/* WIMLIB_ERR_* (inverted) */
 			ret = -ret;
@@ -1273,9 +1240,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		/* Reparse point: set the reparse data (which we read already)
 		 * */
 		inode->i_not_rpfixed = not_rpfixed;
-		inode->i_reparse_tag = le32_to_cpu(*(u32*)reparse_data);
-		ret = inode_set_unnamed_stream(inode, reparse_data + 8,
-					       reparse_data_len - 8,
+		inode->i_reparse_tag = le32_to_cpu(*(u32*)rpbuf);
+		ret = inode_set_unnamed_stream(inode, rpbuf + 8, rpbuflen - 8,
 					       params->lookup_table);
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		/* Directory (not a reparse point) --- recurse to children */
@@ -1374,39 +1340,122 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	return ret;
 }
 
+static int
+win32_extract_try_rpfix(u8 *rpbuf,
+			const wchar_t *extract_root_realpath,
+			unsigned extract_root_realpath_nchars)
+{
+	struct reparse_data rpdata;
+	wchar_t *target;
+	size_t target_nchars;
+	size_t stripped_nchars;
+	wchar_t *stripped_target;
+	wchar_t stripped_target_nchars;
+	int ret;
+
+	utf16lechar *new_target;
+	utf16lechar *new_print_name;
+	size_t new_target_nchars;
+	size_t new_print_name_nchars;
+	utf16lechar *p;
+
+	ret = parse_reparse_data(rpbuf, 8 + le16_to_cpu(*(u16*)(rpbuf + 4)),
+				 &rpdata);
+	if (ret)
+		return ret;
+
+	if (extract_root_realpath[0] == L'\0' ||
+	    extract_root_realpath[1] != L':' ||
+	    extract_root_realpath[2] != L'\\')
+	{
+		ERROR("Can't understand full path format \"%ls\".  "
+		      "Try turning reparse point fixups off...",
+		      extract_root_realpath);
+		return WIMLIB_ERR_REPARSE_POINT_FIXUP_FAILED;
+	}
+
+	ret = parse_substitute_name(rpdata.substitute_name,
+				    rpdata.substitute_name_nbytes,
+				    rpdata.rptag);
+	if (ret < 0)
+		return 0;
+	stripped_nchars = ret;
+	target = rpdata.substitute_name;
+	target_nchars = rpdata.substitute_name_nbytes / sizeof(utf16lechar);
+	stripped_target = target + 6;
+	stripped_target_nchars = target_nchars - stripped_nchars;
+
+	new_target = alloca((6 + extract_root_realpath_nchars +
+			     stripped_target_nchars) * sizeof(utf16lechar));
+
+	p = new_target;
+	if (stripped_nchars == 6) {
+		/* Include \??\ prefix if it was present before */
+		wmemcpy(p, L"\\??\\", 4);
+		p += 4;
+	}
+
+	/* Print name excludes the \??\ if present. */
+	new_print_name = p;
+	if (target_nchars - stripped_target_nchars != 0) {
+		/* Get drive letter from real path to extract root, if a drive
+		 * letter was present before. */
+		*p++ = extract_root_realpath[0];
+		*p++ = extract_root_realpath[1];
+	}
+	/* Copy the rest of the extract root */
+	wmemcpy(p, extract_root_realpath + 2, extract_root_realpath_nchars - 2);
+	p += extract_root_realpath_nchars - 2;
+
+	/* Append the stripped target */
+	wmemcpy(p, stripped_target, stripped_target_nchars);
+	p += stripped_target_nchars;
+	new_target_nchars = p - new_target;
+	new_print_name_nchars = p - new_print_name;
+
+	if (new_target_nchars * sizeof(utf16lechar) >= REPARSE_POINT_MAX_SIZE ||
+	    new_print_name_nchars * sizeof(utf16lechar) >= REPARSE_POINT_MAX_SIZE)
+	{
+		ERROR("Path names too long to do reparse point fixup!");
+		return WIMLIB_ERR_REPARSE_POINT_FIXUP_FAILED;
+	}
+	rpdata.substitute_name = new_target;
+	rpdata.substitute_name_nbytes = new_target_nchars * sizeof(utf16lechar);
+	rpdata.print_name = new_print_name;
+	rpdata.print_name_nbytes = new_print_name_nchars * sizeof(utf16lechar);
+	return make_reparse_buffer(&rpdata, rpbuf);
+}
+
 /* Wrapper around the FSCTL_SET_REPARSE_POINT ioctl to set the reparse data on
  * an extracted reparse point. */
 static int
 win32_set_reparse_data(HANDLE h,
-		       u32 reparse_tag,
+		       const struct wim_inode *inode,
 		       const struct wim_lookup_table_entry *lte,
-		       const wchar_t *path)
+		       const wchar_t *path,
+		       const struct apply_args *args)
 {
 	int ret;
-	u8 *buf;
-	size_t len;
+	u8 rpbuf[REPARSE_POINT_MAX_SIZE];
+	DWORD bytesReturned;
 
-	if (!lte) {
-		WARNING("\"%ls\" is marked as a reparse point but had no reparse data",
-			path);
-		return 0;
-	}
-	len = wim_resource_size(lte);
-	if (len > 16 * 1024 - 8) {
-		WARNING("\"%ls\": reparse data too long!", path);
-		return 0;
-	}
+	DEBUG("Setting reparse data on \"%ls\"", path);
 
-	/* The WIM stream omits the ReparseTag and ReparseDataLength fields, so
-	 * leave 8 bytes of space for them at the beginning of the buffer, then
-	 * set them manually. */
-	buf = alloca(len + 8);
-	ret = read_full_resource_into_buf(lte, buf + 8, false);
+	ret = wim_inode_get_reparse_data(inode, rpbuf);
 	if (ret)
 		return ret;
-	*(u32*)(buf + 0) = cpu_to_le32(reparse_tag);
-	*(u16*)(buf + 4) = cpu_to_le16(len);
-	*(u16*)(buf + 6) = 0;
+
+	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_RPFIX &&
+	    (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
+	     inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT) &&
+	    !inode->i_not_rpfixed)
+	{
+		ret = win32_extract_try_rpfix(rpbuf,
+					      args->target_realpath,
+					      args->target_realpath_len);
+		if (ret)
+			return WIMLIB_ERR_REPARSE_POINT_FIXUP_FAILED;
+	}
 
 	/* Set the reparse data on the open file using the
 	 * FSCTL_SET_REPARSE_POINT ioctl.
@@ -1429,8 +1478,8 @@ win32_set_reparse_data(HANDLE h,
 	 *
 	 *  "Not used with this operation; set to NULL."
 	 */
-	DWORD bytesReturned;
-	if (!DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, buf, len + 8,
+	if (!DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, rpbuf,
+			     8 + le16_to_cpu(*(u16*)(rpbuf + 4)),
 			     NULL, 0,
 			     &bytesReturned /* lpBytesReturned */,
 			     NULL /* lpOverlapped */))
@@ -1440,8 +1489,8 @@ win32_set_reparse_data(HANDLE h,
 		win32_error(err);
 		if (err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD)
 			return WIMLIB_ERR_INSUFFICIENT_PRIVILEGES_TO_EXTRACT;
-		else if (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
-			 reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT)
+		else if (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
+			 inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT)
 			return WIMLIB_ERR_LINK;
 		else
 			return WIMLIB_ERR_WRITE;
@@ -2028,11 +2077,9 @@ win32_finish_extract_stream(HANDLE h, const struct wim_inode *inode,
 		 * entirely on such volumes.) */
 		if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 			if (args->vol_flags & FILE_SUPPORTS_REPARSE_POINTS) {
-				DEBUG("Setting reparse data on \"%ls\"",
-				      stream_path);
-				ret = win32_set_reparse_data(h,
-							     inode->i_reparse_tag,
-							     lte, stream_path);
+				ret = win32_set_reparse_data(h, inode,
+							     lte, stream_path,
+							     args);
 				if (ret)
 					return ret;
 			} else {
