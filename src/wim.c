@@ -294,6 +294,8 @@ wimlib_print_wim_information(const WIMStruct *w)
 		wim_info_get_total_bytes(w->wim_info));
 	tprintf(T("Integrity Info: %"TS"\n"),
 		(w->hdr.integrity.offset != 0) ? T("yes") : T("no"));
+	tprintf(T("Relative path junction: %"TS"\n"),
+		(hdr->flags & WIM_HDR_FLAG_RP_FIX) ? T("yes") : T("no"));
 	tputchar(T('\n'));
 }
 
