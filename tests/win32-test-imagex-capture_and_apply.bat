@@ -6,10 +6,12 @@ REM
 REM Run some tests on the Windows version of wimlib-imagex.
 REM
 REM This must be run on Windows Vista or later in a clean directory, with
-REM Administrator privileges.  wimlib-imagex and win32-tree-cmp must be callable
-REM (on PATH or in same directory).
+REM Administrator privileges.  wimlib-imagex and win32-tree-cmp must be
+REM executable using the paths set below.
 
 setlocal EnableDelayedExpansion
+set WIN32_TREE_CMP=win32-tree-cmp
+set WIMLIB_IMAGEX=wimlib-imagex
 
 if exist in.dir rd /S /Q in.dir
 if exist out.dir rd /S /Q out.dir
@@ -316,9 +318,9 @@ md subdir
 echo 1 > subdir\file
 mklink /j junction subdir > nul
 cd ..
-wimlib-imagex capture in.dir test.wim > nul
+%WIMLIB_IMAGEX% capture in.dir test.wim > nul
 rd /s /q in.dir
-wimlib-imagex apply test.wim out.dir > nul
+%WIMLIB_IMAGEX% apply test.wim out.dir > nul
 echo 1 > tmp1
 type out.dir\junction\file > tmp2
 fc tmp1 tmp2 > nul
@@ -331,8 +333,8 @@ cd in.dir
 echo Testing rpfix exclude
 mklink otherlink c:\some\other\directory > nul
 cd ..
-wimlib-imagex capture in.dir test.wim > nul
-wimlib-imagex apply test.wim out.dir > nul
+%WIMLIB_IMAGEX% capture in.dir test.wim > nul
+%WIMLIB_IMAGEX% apply test.wim out.dir > nul
 rd out.dir
 if %errorlevel% neq 0 exit /b %errorlevel%
 rd /s /q in.dir
@@ -342,8 +344,14 @@ cd in.dir
 echo Testing rpfix relative
 echo 1 > file
 mklink relink file > nul
-call :do_test
+cd ..
+%WIMLIB_IMAGEX% capture in.dir test.wim > nul
+%WIMLIB_IMAGEX% apply test.wim out.dir > nul
+fc in.dir\file out.dir\relink > nul
 if %errorlevel% neq 0 exit /b %errorlevel%
+rd /s /q in.dir out.dir
+md in.dir
+cd in.dir
 
 REM
 REM END OF TESTS
@@ -356,11 +364,11 @@ exit /b 0
 
 :do_test
 cd ..
-wimlib-imagex capture in.dir test.wim --norpfix > NUL
+%WIMLIB_IMAGEX% capture in.dir test.wim --norpfix > NUL
 if %errorlevel% neq 0 exit /b %errorlevel%
-wimlib-imagex apply test.wim out.dir > NUL
+%WIMLIB_IMAGEX% apply test.wim out.dir > NUL
 if %errorlevel% neq 0 exit /b %errorlevel%
-win32-tree-cmp in.dir out.dir
+%WIN32_TREE_CMP% in.dir out.dir
 if %errorlevel% neq 0 (
 	echo @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 	echo            TEST FAILED!!!!!!!
@@ -377,7 +385,7 @@ REM imagex /capture in.dir test.wim "test" /norpfix > nul
 REM if %errorlevel% neq 0 exit /b %errorlevel%
 REM imagex /apply test.wim 1 out.dir > nul
 REM if %errorlevel% neq 0 exit /b %errorlevel%
-REM win32-tree-cmp in.dir out.dir
+REM %WIN32_TREE_CMP% in.dir out.dir
 REM if %errorlevel% neq 0 (
 	REM echo @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 	REM echo            TEST FAILED!!!!!!! ^(imagex^)

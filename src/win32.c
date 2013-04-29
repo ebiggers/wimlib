@@ -739,7 +739,7 @@ win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 		else
 			ret = -ret;
 	} else {
-		if (ret == RP_EXCLUDED) {
+		if (rp_status == RP_EXCLUDED) {
 			size_t print_name_nchars = rpdata.print_name_nbytes / 2;
 			wchar_t print_name0[print_name_nchars + 1];
 			print_name0[print_name_nchars] = L'\0';
