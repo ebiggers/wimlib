@@ -38,11 +38,11 @@ extern void
 print_image_info(const struct wim_info *wim_info, int image);
 
 extern int
-read_xml_data(FILE *fp, const struct resource_entry *res,
+read_xml_data(filedes_t in_fd, const struct resource_entry *res,
 	      struct wim_info **info_ret);
 
 extern int
-write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
+write_xml_data(const struct wim_info *wim_info, int image, filedes_t out_fd,
 	       u64 total_bytes, struct resource_entry *out_res_entry);
 
 extern void

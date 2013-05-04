@@ -280,18 +280,12 @@ struct wim_image_metadata {
 /* The opaque structure exposed to the wimlib API. */
 struct WIMStruct {
 
-	/* A pointer to the file indicated by @filename, opened for reading. */
-	FILE *fp;
-
-#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
-	/* Extra file pointers to be used by concurrent readers */
-	FILE **fp_tab;
-	size_t num_allocated_fps;
-	pthread_mutex_t fp_tab_mutex;
-#endif
+	/* File descriptor for the WIM file, opened for reading, or -1 if it has
+	 * not been opened or there is no associated file backing it yet. */
+	filedes_t in_fd;
 
 	/* FILE pointer for the WIM file (if any) currently being written. */
-	FILE *out_fp;
+	filedes_t out_fd;
 
 	/* The name of the WIM file (if any) that has been opened. */
 	tchar *filename;
@@ -497,10 +491,10 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list);
 /* header.c */
 
 extern int
-read_header(FILE *fp, struct wim_header *hdr, int split_ok);
+read_header(filedes_t in_fd, struct wim_header *hdr, int split_ok);
 
 extern int
-write_header(const struct wim_header *hdr, FILE *out);
+write_header(const struct wim_header *hdr, filedes_t out_fd);
 
 extern int
 init_header(struct wim_header *hdr, int ctype);
@@ -512,7 +506,8 @@ init_header(struct wim_header *hdr, int ctype);
 #define WIM_INTEGRITY_NONEXISTENT -2
 
 extern int
-write_integrity_table(FILE *out, struct resource_entry *integrity_res_entry,
+write_integrity_table(filedes_t fd,
+		      struct resource_entry *integrity_res_entry,
 		      off_t new_lookup_table_end,
 		      off_t old_lookup_table_end,
 		      wimlib_progress_func_t progress_func);
@@ -672,7 +667,6 @@ capture_fixup_absolute_symlink(tchar *dest,
 /* resource.c */
 
 #define WIMLIB_RESOURCE_FLAG_RAW		0x1
-#define WIMLIB_RESOURCE_FLAG_THREADSAFE_READ	0x2
 #define WIMLIB_RESOURCE_FLAG_RECOMPRESS		0x4
 
 extern int
@@ -687,18 +681,13 @@ extern void *
 put_resource_entry(void *p, const struct resource_entry *entry);
 
 extern int
-read_uncompressed_resource(FILE *fp, u64 offset, u64 size, void *buf);
-
-extern int
 read_partial_wim_resource_into_buf(const struct wim_lookup_table_entry *lte,
-				   size_t size, u64 offset, void *buf,
-				   bool threadsafe);
+				   size_t size, u64 offset, void *buf);
 extern int
-read_full_resource_into_buf(const struct wim_lookup_table_entry *lte,
-			    void *buf, bool thread_safe);
+read_full_resource_into_buf(const struct wim_lookup_table_entry *lte, void *buf);
 
 extern int
-write_wim_resource(struct wim_lookup_table_entry *lte, FILE *out_fp,
+write_wim_resource(struct wim_lookup_table_entry *lte, filedes_t out_fd,
 		   int out_ctype, struct resource_entry *out_res_entry,
 		   int flags);
 
@@ -772,6 +761,12 @@ new_image_metadata_array(unsigned num_images);
 extern int
 wim_checksum_unhashed_streams(WIMStruct *w);
 
+extern int
+reopen_wim(WIMStruct *w);
+
+extern int
+close_wim(WIMStruct *w);
+
 /* write.c */
 
 /* Internal use only */
@@ -799,10 +794,10 @@ finish_write(WIMStruct *w, int image, int write_flags,
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
 extern int
-lock_wim(WIMStruct *w, FILE *fp);
+lock_wim(WIMStruct *w, filedes_t fd);
 #else
 static inline int
-lock_wim(WIMStruct *w, FILE *fp)
+lock_wim(WIMStruct *w, filedes_t fd)
 {
 	return 0;
 }

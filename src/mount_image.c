@@ -160,54 +160,6 @@ flags_writable(int open_flags)
 	return open_flags & (O_RDWR | O_WRONLY);
 }
 
-/* Like pread(), but keep trying until everything has been read or we know for
- * sure that there was an error. */
-static ssize_t
-full_pread(int fd, void *buf, size_t count, off_t offset)
-{
-	ssize_t bytes_remaining = count;
-	ssize_t bytes_read;
-
-	while (bytes_remaining > 0) {
-		bytes_read = pread(fd, buf, bytes_remaining, offset);
-		if (bytes_read <= 0) {
-			if (bytes_read < 0) {
-				if (errno == EINTR)
-					continue;
-			} else {
-				errno = EIO;
-			}
-			break;
-		}
-		bytes_remaining -= bytes_read;
-		buf += bytes_read;
-		offset += bytes_read;
-	}
-	return count - bytes_remaining;
-}
-
-/* Like pwrite(), but keep trying until everything has been written or we know
- * for sure that there was an error. */
-static ssize_t
-full_pwrite(int fd, const void *buf, size_t count, off_t offset)
-{
-	ssize_t bytes_remaining = count;
-	ssize_t bytes_written;
-
-	while (bytes_remaining > 0) {
-		bytes_written = pwrite(fd, buf, bytes_remaining, offset);
-		if (bytes_written < 0) {
-			if (errno == EINTR)
-				continue;
-			break;
-		}
-		bytes_remaining -= bytes_written;
-		buf += bytes_written;
-		offset += bytes_written;
-	}
-	return count - bytes_remaining;
-}
-
 /*
  * Allocate a file descriptor for a stream.
  *
@@ -1687,8 +1639,8 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 	if (res_size > size)
 		return -ERANGE;
 
-	ret = read_full_resource_into_buf(lte, value, true);
-	if (ret != 0)
+	ret = read_full_resource_into_buf(lte, value);
+	if (ret)
 		return -EIO;
 
 	return res_size;
@@ -1953,7 +1905,7 @@ wimfs_read(const char *path, char *buf, size_t size,
 		break;
 	case RESOURCE_IN_WIM:
 		if (read_partial_wim_resource_into_buf(fd->f_lte, size,
-						       offset, buf, true))
+						       offset, buf))
 			ret = -errno;
 		else
 			ret = size;
@@ -2526,7 +2478,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	}
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		ret = lock_wim(wim, wim->fp);
+		ret = lock_wim(wim, wim->in_fd);
 		if (ret)
 			goto out;
 	}

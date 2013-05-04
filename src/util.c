@@ -23,12 +23,14 @@
 
 #include "config.h"
 
+
 #undef _GNU_SOURCE
 /* Make sure the POSIX-compatible strerror_r() is declared, rather than the GNU
  * version, which has a different return type. */
-#define _POSIX_C_SOURCE 200112
 #include <string.h>
+
 #define _GNU_SOURCE
+#include <unistd.h>
 
 #include "wimlib_internal.h"
 #include "endianness.h"
@@ -38,8 +40,6 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <stdarg.h>
-
-#include <unistd.h> /* for getpid() */
 
 #ifdef __WIN32__
 #include "win32.h"
@@ -347,8 +347,6 @@ static const tchar *error_strings[] = {
 		= T("Could not read the target of a symbolic link"),
 	[WIMLIB_ERR_RENAME]
 		= T("Could not rename a file"),
-	[WIMLIB_ERR_REOPEN]
-		= T("Could not re-open the WIM after overwriting it"),
 	[WIMLIB_ERR_REPARSE_POINT_FIXUP_FAILED]
 		= T("Unable to complete reparse point fixup"),
 	[WIMLIB_ERR_RESOURCE_ORDER]
@@ -564,4 +562,110 @@ zap_backslashes(tchar *s)
 			s++;
 		}
 	}
+}
+
+/* Write @n bytes from @buf to the file descriptor @fd, retrying on internupt
+ * and on short writes.
+ *
+ * Returns short count and set errno on failure. */
+size_t
+full_write(int fd, const void *buf, size_t n)
+{
+	const void *p = buf;
+	ssize_t ret;
+	ssize_t total = 0;
+
+	while (total != n) {
+		ret = write(fd, p, n);
+		if (ret <= 0) {
+			if (errno == EINTR)
+				continue;
+			if (ret == 0)
+				errno = EIO;
+			break;
+		}
+		total += ret;
+		p += ret;
+	}
+	return total;
+}
+
+/* Read @n bytes from the file descriptor @fd to the buffer @buf, retrying on
+ * interrupt and on short reads.
+ *
+ * Returns short count and set errno on failure. */
+size_t
+full_read(int fd, void *buf, size_t n)
+{
+	size_t bytes_remaining = n;
+	while (bytes_remaining) {
+		ssize_t bytes_read = read(fd, buf, bytes_remaining);
+		if (bytes_read <= 0) {
+			if (errno == EINTR)
+				continue;
+			if (bytes_read == 0)
+				errno = EIO;
+			break;
+		}
+		bytes_remaining -= bytes_read;
+		buf += bytes_read;
+	}
+	return n - bytes_remaining;
+}
+
+/* Read @n bytes from the file descriptor @fd at the offset @offset to the
+ * buffer @buf, retrying on interrupt and on short reads.
+ *
+ * Returns short count and set errno on failure. */
+size_t
+full_pread(int fd, void *buf, size_t nbyte, off_t offset)
+{
+	size_t bytes_remaining = nbyte;
+	ssize_t bytes_read;
+
+	while (bytes_remaining) {
+		bytes_read = pread(fd, buf, bytes_remaining, offset);
+		if (bytes_read <= 0) {
+			if (errno == EINTR)
+				continue;
+			if (bytes_read == 0)
+				errno = EIO;
+			break;
+		}
+		bytes_remaining -= bytes_read;
+		buf += bytes_read;
+		offset += bytes_read;
+	}
+	return nbyte - bytes_remaining;
+}
+
+/* Like pwrite(), but keep trying until everything has been written or we know
+ * for sure that there was an error. */
+size_t
+full_pwrite(int fd, const void *buf, size_t count, off_t offset)
+{
+	ssize_t bytes_remaining = count;
+	ssize_t bytes_written;
+
+	while (bytes_remaining > 0) {
+		bytes_written = pwrite(fd, buf, bytes_remaining, offset);
+		if (bytes_written <= 0) {
+			if (errno == EINTR)
+				continue;
+			if (bytes_written == 0)
+				errno = EIO;
+			break;
+		}
+		bytes_remaining -= bytes_written;
+		buf += bytes_written;
+		offset += bytes_written;
+	}
+	return count - bytes_remaining;
+}
+
+
+off_t
+filedes_offset(filedes_t fd)
+{
+	return lseek(fd, 0, SEEK_CUR);
 }

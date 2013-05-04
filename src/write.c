@@ -65,6 +65,8 @@
 
 #include <limits.h>
 
+#include <sys/uio.h> /* writev() */
+
 /* Chunk table that's located at the beginning of each compressed resource in
  * the WIM.  (This is not the on-disk format; the on-disk format just has an
  * array of offsets.) */
@@ -85,7 +87,7 @@ struct chunk_table {
  */
 static int
 begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
-			     FILE *out_fp,
+			     int out_fd,
 			     off_t file_offset,
 			     struct chunk_table **chunk_tab_ret)
 {
@@ -110,8 +112,9 @@ begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 	chunk_tab->cur_offset = 0;
 	chunk_tab->cur_offset_p = chunk_tab->offsets;
 
-	if (fwrite(chunk_tab, 1, chunk_tab->table_disk_size, out_fp) !=
-		   chunk_tab->table_disk_size) {
+	if (full_write(out_fd, chunk_tab,
+		       chunk_tab->table_disk_size) != chunk_tab->table_disk_size)
+	{
 		ERROR_WITH_ERRNO("Failed to write chunk table in compressed "
 				 "file resource");
 		FREE(chunk_tab);
@@ -161,7 +164,7 @@ get_compress_func(int out_ctype)
  *
  * @chunk:	  Uncompressed data of the chunk.
  * @chunk_size:	  Size of the chunk (<= WIM_CHUNK_SIZE)
- * @out_fp:	  FILE * to write the chunk to.
+ * @out_fd:	  FILE descriptor to write the chunk to.
  * @compress:     Compression function to use (NULL if writing uncompressed
  *			data).
  * @chunk_tab:	  Pointer to chunk table being created.  It is updated with the
@@ -172,7 +175,7 @@ get_compress_func(int out_ctype)
 static int
 write_wim_resource_chunk(const void * restrict chunk,
 			 unsigned chunk_size,
-			 FILE * restrict out_fp,
+			 filedes_t out_fd,
 			 compress_func_t compress,
 			 struct chunk_table * restrict chunk_tab)
 {
@@ -197,7 +200,7 @@ write_wim_resource_chunk(const void * restrict chunk,
 		out_chunk = chunk;
 		out_chunk_size = chunk_size;
 	}
-	if (fwrite(out_chunk, 1, out_chunk_size, out_fp) != out_chunk_size) {
+	if (full_write(out_fd, out_chunk, out_chunk_size) != out_chunk_size) {
 		ERROR_WITH_ERRNO("Failed to write WIM resource chunk");
 		return WIMLIB_ERR_WRITE;
 	}
@@ -212,16 +215,10 @@ write_wim_resource_chunk(const void * restrict chunk,
  * @compressed_size_p.
  */
 static int
-finish_wim_resource_chunk_tab(struct chunk_table * restrict chunk_tab,
-			      FILE * restrict out_fp,
-			      u64 * restrict compressed_size_p)
+finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
+			      filedes_t out_fd, u64 *compressed_size_p)
 {
 	size_t bytes_written;
-	if (fseeko(out_fp, chunk_tab->file_offset, SEEK_SET) != 0) {
-		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" of output "
-				 "WIM file", chunk_tab->file_offset);
-		return WIMLIB_ERR_WRITE;
-	}
 
 	if (chunk_tab->bytes_per_chunk_entry == 8) {
 		array_cpu_to_le64(chunk_tab->offsets, chunk_tab->num_chunks);
@@ -230,16 +227,13 @@ finish_wim_resource_chunk_tab(struct chunk_table * restrict chunk_tab,
 			((u32*)chunk_tab->offsets)[i] =
 				cpu_to_le32(chunk_tab->offsets[i]);
 	}
-	bytes_written = fwrite((u8*)chunk_tab->offsets +
-					chunk_tab->bytes_per_chunk_entry,
-			       1, chunk_tab->table_disk_size, out_fp);
+	bytes_written = full_pwrite(out_fd,
+				    (u8*)chunk_tab->offsets + chunk_tab->bytes_per_chunk_entry,
+				    chunk_tab->table_disk_size,
+				    chunk_tab->file_offset);
 	if (bytes_written != chunk_tab->table_disk_size) {
 		ERROR_WITH_ERRNO("Failed to write chunk table in compressed "
 				 "file resource");
-		return WIMLIB_ERR_WRITE;
-	}
-	if (fseeko(out_fp, 0, SEEK_END) != 0) {
-		ERROR_WITH_ERRNO("Failed to seek to end of output WIM file");
 		return WIMLIB_ERR_WRITE;
 	}
 	*compressed_size_p = chunk_tab->cur_offset + chunk_tab->table_disk_size;
@@ -247,14 +241,12 @@ finish_wim_resource_chunk_tab(struct chunk_table * restrict chunk_tab,
 }
 
 static int
-fflush_and_ftruncate(FILE *out_fp, off_t offset)
+seek_and_truncate(filedes_t out_fd, off_t offset)
 {
-	if (fseeko(out_fp, offset, SEEK_SET) ||
-	    fflush(out_fp) ||
-	    ftruncate(fileno(out_fp), offset))
+	if (lseek(out_fd, offset, SEEK_SET) == -1 ||
+	    ftruncate(out_fd, offset))
 	{
-		ERROR_WITH_ERRNO("Failed to flush and/or truncate "
-				 "output WIM file");
+		ERROR_WITH_ERRNO("Failed to truncate output WIM file");
 		return WIMLIB_ERR_WRITE;
 	} else {
 		return 0;
@@ -285,7 +277,7 @@ finalize_and_check_sha1(SHA_CTX * restrict sha_ctx,
 struct write_resource_ctx {
 	compress_func_t compress;
 	struct chunk_table *chunk_tab;
-	FILE *out_fp;
+	filedes_t out_fd;
 	SHA_CTX sha_ctx;
 	bool doing_sha;
 };
@@ -299,7 +291,7 @@ write_resource_cb(const void *restrict chunk, size_t chunk_size,
 	if (ctx->doing_sha)
 		sha1_update(&ctx->sha_ctx, chunk, chunk_size);
 	return write_wim_resource_chunk(chunk, chunk_size,
-					ctx->out_fp, ctx->compress,
+					ctx->out_fd, ctx->compress,
 					ctx->chunk_tab);
 }
 
@@ -309,7 +301,7 @@ write_resource_cb(const void *restrict chunk, size_t chunk_size,
  * @lte:  Lookup table entry for the resource, which could be in another WIM,
  *        in an external file, or in another location.
  *
- * @out_fp:  FILE * opened to the output WIM.
+ * @out_fp:  File descriptor opened to the output WIM.
  *
  * @out_ctype:  One of the WIMLIB_COMPRESSION_TYPE_* constants to indicate
  *              which compression algorithm to use.
@@ -329,7 +321,7 @@ write_resource_cb(const void *restrict chunk, size_t chunk_size,
  */
 int
 write_wim_resource(struct wim_lookup_table_entry *lte,
-		   FILE *out_fp, int out_ctype,
+		   filedes_t out_fd, int out_ctype,
 		   struct resource_entry *out_res_entry,
 		   int flags)
 {
@@ -342,7 +334,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	flags &= ~WIMLIB_RESOURCE_FLAG_RECOMPRESS;
 
 	/* Get current position in output WIM */
-	offset = ftello(out_fp);
+	offset = filedes_offset(out_fd);
 	if (offset == -1) {
 		ERROR_WITH_ERRNO("Can't get position in output WIM");
 		return WIMLIB_ERR_WRITE;
@@ -375,7 +367,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 		write_ctx.chunk_tab = NULL;
 	} else {
 		write_ctx.compress = get_compress_func(out_ctype);
-		ret = begin_wim_resource_chunk_tab(lte, out_fp,
+		ret = begin_wim_resource_chunk_tab(lte, out_fd,
 						   offset,
 						   &write_ctx.chunk_tab);
 		if (ret)
@@ -384,7 +376,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 
 	/* Write the entire resource by reading the entire resource and feeding
 	 * the data through the write_resource_cb function. */
-	write_ctx.out_fp = out_fp;
+	write_ctx.out_fd = out_fd;
 try_write_again:
 	ret = read_resource_prefix(lte, read_size,
 				   write_resource_cb, &write_ctx, flags);
@@ -415,7 +407,7 @@ try_write_again:
 		/* Using a different compression type:  Call
 		 * finish_wim_resource_chunk_tab() and it will provide the new
 		 * compressed size. */
-		ret = finish_wim_resource_chunk_tab(write_ctx.chunk_tab, out_fp,
+		ret = finish_wim_resource_chunk_tab(write_ctx.chunk_tab, out_fd,
 						    &new_size);
 		if (ret)
 			goto out_free_chunk_tab;
@@ -425,7 +417,7 @@ try_write_again:
 			DEBUG("Compressed %"PRIu64" => %"PRIu64" bytes; "
 			      "writing uncompressed instead",
 			      wim_resource_size(lte), new_size);
-			ret = fflush_and_ftruncate(out_fp, offset);
+			ret = seek_and_truncate(out_fd, offset);
 			if (ret)
 				goto out_free_chunk_tab;
 			write_ctx.compress = NULL;
@@ -542,10 +534,10 @@ struct compressor_thread_params {
 struct message {
 	struct wim_lookup_table_entry *lte;
 	u8 *uncompressed_chunks[MAX_CHUNKS_PER_MSG];
-	u8 *out_compressed_chunks[MAX_CHUNKS_PER_MSG];
 	u8 *compressed_chunks[MAX_CHUNKS_PER_MSG];
 	unsigned uncompressed_chunk_sizes[MAX_CHUNKS_PER_MSG];
-	unsigned compressed_chunk_sizes[MAX_CHUNKS_PER_MSG];
+	struct iovec out_chunks[MAX_CHUNKS_PER_MSG];
+	size_t total_out_bytes;
 	unsigned num_chunks;
 	struct list_head list;
 	bool complete;
@@ -555,20 +547,25 @@ struct message {
 static void
 compress_chunks(struct message *msg, compress_func_t compress)
 {
+	msg->total_out_bytes = 0;
 	for (unsigned i = 0; i < msg->num_chunks; i++) {
 		unsigned len = compress(msg->uncompressed_chunks[i],
 					msg->uncompressed_chunk_sizes[i],
 					msg->compressed_chunks[i]);
+		void *out_chunk;
+		unsigned out_len;
 		if (len) {
 			/* To be written compressed */
-			msg->out_compressed_chunks[i] = msg->compressed_chunks[i];
-			msg->compressed_chunk_sizes[i] = len;
+			out_chunk = msg->compressed_chunks[i];
+			out_len = len;
 		} else {
 			/* To be written uncompressed */
-			msg->out_compressed_chunks[i] = msg->uncompressed_chunks[i];
-			msg->compressed_chunk_sizes[i] = msg->uncompressed_chunk_sizes[i];
-
+			out_chunk = msg->uncompressed_chunks[i];
+			out_len = msg->uncompressed_chunk_sizes[i];
 		}
+		msg->out_chunks[i].iov_base = out_chunk;
+		msg->out_chunks[i].iov_len = out_len;
+		msg->total_out_bytes += out_len;
 	}
 }
 
@@ -620,7 +617,7 @@ do_write_streams_progress(union wimlib_progress_info *progress,
 }
 
 struct serial_write_stream_ctx {
-	FILE *out_fp;
+	filedes_t out_fd;
 	int out_ctype;
 	int write_resource_flags;
 };
@@ -629,7 +626,7 @@ static int
 serial_write_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 {
 	struct serial_write_stream_ctx *ctx = _ctx;
-	return write_wim_resource(lte, ctx->out_fp,
+	return write_wim_resource(lte, ctx->out_fd,
 				  ctx->out_ctype, &lte->output_resource_entry,
 				  ctx->write_resource_flags);
 }
@@ -715,14 +712,14 @@ do_write_stream_list(struct list_head *stream_list,
 static int
 do_write_stream_list_serial(struct list_head *stream_list,
 			    struct wim_lookup_table *lookup_table,
-			    FILE *out_fp,
+			    filedes_t out_fd,
 			    int out_ctype,
 			    int write_resource_flags,
 			    wimlib_progress_func_t progress_func,
 			    union wimlib_progress_info *progress)
 {
 	struct serial_write_stream_ctx ctx = {
-		.out_fp = out_fp,
+		.out_fd = out_fd,
 		.out_ctype = out_ctype,
 		.write_resource_flags = write_resource_flags,
 	};
@@ -747,7 +744,7 @@ write_flags_to_resource_flags(int write_flags)
 static int
 write_stream_list_serial(struct list_head *stream_list,
 			 struct wim_lookup_table *lookup_table,
-			 FILE *out_fp,
+			 filedes_t out_fd,
 			 int out_ctype,
 			 int write_resource_flags,
 			 wimlib_progress_func_t progress_func,
@@ -759,7 +756,7 @@ write_stream_list_serial(struct list_head *stream_list,
 		progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS, progress);
 	return do_write_stream_list_serial(stream_list,
 					   lookup_table,
-					   out_fp,
+					   out_fd,
 					   out_ctype,
 					   write_resource_flags,
 					   progress_func,
@@ -768,29 +765,59 @@ write_stream_list_serial(struct list_head *stream_list,
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 static int
-write_wim_chunks(struct message *msg, FILE *out_fp,
+write_wim_chunks(struct message *msg, filedes_t out_fd,
 		 struct chunk_table *chunk_tab)
 {
+	ssize_t bytes_remaining = msg->total_out_bytes;
+	struct iovec *vecs = msg->out_chunks;
+	unsigned nvecs = msg->num_chunks;
+	int ret;
+
+	wimlib_assert(nvecs != 0);
+	wimlib_assert(msg->total_out_bytes != 0);
+
 	for (unsigned i = 0; i < msg->num_chunks; i++) {
-		unsigned chunk_csize = msg->compressed_chunk_sizes[i];
-
-		if (fwrite(msg->out_compressed_chunks[i], 1, chunk_csize, out_fp)
-		    != chunk_csize)
-		{
-			ERROR_WITH_ERRNO("Failed to write WIM chunk");
-			return WIMLIB_ERR_WRITE;
-		}
-
 		*chunk_tab->cur_offset_p++ = chunk_tab->cur_offset;
-		chunk_tab->cur_offset += chunk_csize;
+		chunk_tab->cur_offset += vecs[i].iov_len;
 	}
-	return 0;
+	for (;;) {
+		ssize_t bytes_written;
+
+		bytes_written = writev(out_fd, vecs, nvecs);
+		if (bytes_written <= 0) {
+			if (bytes_written < 0 && errno == EINTR)
+				continue;
+			else if (bytes_written == 0)
+				errno = EIO;
+			ERROR_WITH_ERRNO("Failed to write WIM chunks");
+			ret = WIMLIB_ERR_WRITE;
+			break;
+		}
+		bytes_remaining -= bytes_written;
+		if (bytes_remaining <= 0) {
+			ret = 0;
+			break;
+		}
+		while (bytes_written >= 0) {
+			wimlib_assert(nvecs != 0);
+			if (bytes_written >= vecs[0].iov_len) {
+				vecs++;
+				nvecs--;
+				bytes_written -= vecs[0].iov_len;
+			} else {
+				vecs[0].iov_base += bytes_written;
+				vecs[0].iov_len -= bytes_written;
+				bytes_written = 0;
+			}
+		}
+	}
+	return ret;
 }
 
 struct main_writer_thread_ctx {
 	struct list_head *stream_list;
 	struct wim_lookup_table *lookup_table;
-	FILE *out_fp;
+	filedes_t out_fd;
 	int out_ctype;
 	int write_resource_flags;
 	struct shared_queue *res_to_compress_queue;
@@ -946,11 +973,11 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 		if (msg->begin_chunk == 0) {
 			/* This is the first set of chunks.  Leave space
 			 * for the chunk table in the output file. */
-			off_t cur_offset = ftello(ctx->out_fp);
+			off_t cur_offset = filedes_offset(ctx->out_fd);
 			if (cur_offset == -1)
 				return WIMLIB_ERR_WRITE;
 			ret = begin_wim_resource_chunk_tab(cur_lte,
-							   ctx->out_fp,
+							   ctx->out_fd,
 							   cur_offset,
 							   &ctx->cur_chunk_tab);
 			if (ret)
@@ -958,7 +985,7 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 		}
 
 		/* Write the compressed chunks from the message. */
-		ret = write_wim_chunks(msg, ctx->out_fp, ctx->cur_chunk_tab);
+		ret = write_wim_chunks(msg, ctx->out_fd, ctx->cur_chunk_tab);
 		if (ret)
 			return ret;
 
@@ -971,7 +998,7 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 			off_t offset;
 
 			ret = finish_wim_resource_chunk_tab(ctx->cur_chunk_tab,
-							    ctx->out_fp,
+							    ctx->out_fd,
 							    &res_csize);
 			if (ret)
 				return ret;
@@ -992,11 +1019,11 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 				DEBUG("Compressed %"PRIu64" => %"PRIu64" bytes; "
 				      "writing uncompressed instead",
 				      wim_resource_size(cur_lte), res_csize);
-				ret = fflush_and_ftruncate(ctx->out_fp, offset);
+				ret = seek_and_truncate(ctx->out_fd, offset);
 				if (ret)
 					return ret;
 				ret = write_wim_resource(cur_lte,
-							 ctx->out_fp,
+							 ctx->out_fd,
 							 WIMLIB_COMPRESSION_TYPE_NONE,
 							 &cur_lte->output_resource_entry,
 							 ctx->write_resource_flags);
@@ -1030,7 +1057,7 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 			if (!list_empty(&ctx->serial_streams)) {
 				ret = do_write_stream_list_serial(&ctx->serial_streams,
 								  ctx->lookup_table,
-								  ctx->out_fp,
+								  ctx->out_fd,
 								  ctx->out_ctype,
 								  ctx->write_resource_flags,
 								  ctx->progress_func,
@@ -1129,7 +1156,7 @@ main_writer_thread_finish(void *_ctx)
 	wimlib_assert(list_empty(&ctx->outstanding_streams));
 	return do_write_stream_list_serial(&ctx->serial_streams,
 					   ctx->lookup_table,
-					   ctx->out_fp,
+					   ctx->out_fd,
 					   ctx->out_ctype,
 					   ctx->write_resource_flags,
 					   ctx->progress_func,
@@ -1226,7 +1253,7 @@ get_default_num_threads()
 static int
 write_stream_list_parallel(struct list_head *stream_list,
 			   struct wim_lookup_table *lookup_table,
-			   FILE *out_fp,
+			   filedes_t out_fd,
 			   int out_ctype,
 			   int write_resource_flags,
 			   wimlib_progress_func_t progress_func,
@@ -1299,12 +1326,12 @@ write_stream_list_parallel(struct list_head *stream_list,
 	struct main_writer_thread_ctx ctx;
 	ctx.stream_list           = stream_list;
 	ctx.lookup_table          = lookup_table;
-	ctx.out_fp                = out_fp;
+	ctx.out_fd                = out_fd;
 	ctx.out_ctype             = out_ctype;
 	ctx.res_to_compress_queue = &res_to_compress_queue;
 	ctx.compressed_res_queue  = &compressed_res_queue;
 	ctx.num_messages          = queue_size;
-	ctx.write_resource_flags  = write_resource_flags | WIMLIB_RESOURCE_FLAG_THREADSAFE_READ;
+	ctx.write_resource_flags  = write_resource_flags;
 	ctx.progress_func         = progress_func;
 	ctx.progress              = progress;
 	ret = main_writer_thread_init_ctx(&ctx);
@@ -1348,7 +1375,7 @@ out_serial:
 out_serial_quiet:
 	return write_stream_list_serial(stream_list,
 					lookup_table,
-					out_fp,
+					out_fd,
 					out_ctype,
 					write_resource_flags,
 					progress_func,
@@ -1358,13 +1385,13 @@ out_serial_quiet:
 #endif
 
 /*
- * Write a list of streams to a WIM (@out_fp) using the compression type
+ * Write a list of streams to a WIM (@out_fd) using the compression type
  * @out_ctype and up to @num_threads compressor threads.
  */
 static int
 write_stream_list(struct list_head *stream_list,
 		  struct wim_lookup_table *lookup_table,
-		  FILE *out_fp, int out_ctype, int write_flags,
+		  filedes_t out_fd, int out_ctype, int write_flags,
 		  unsigned num_threads, wimlib_progress_func_t progress_func)
 {
 	struct wim_lookup_table_entry *lte;
@@ -1406,7 +1433,7 @@ write_stream_list(struct list_head *stream_list,
 	if (total_compression_bytes >= 1000000 && num_threads != 1)
 		ret = write_stream_list_parallel(stream_list,
 						 lookup_table,
-						 out_fp,
+						 out_fd,
 						 out_ctype,
 						 write_resource_flags,
 						 progress_func,
@@ -1416,7 +1443,7 @@ write_stream_list(struct list_head *stream_list,
 #endif
 		ret = write_stream_list_serial(stream_list,
 					       lookup_table,
-					       out_fp,
+					       out_fd,
 					       out_ctype,
 					       write_resource_flags,
 					       progress_func,
@@ -1676,7 +1703,7 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 		return ret;
 	return write_stream_list(&stream_list,
 				 wim->lookup_table,
-				 wim->out_fp,
+				 wim->out_fd,
 				 wimlib_get_compression_type(wim),
 				 write_flags,
 				 num_threads,
@@ -1718,7 +1745,6 @@ finish_write(WIMStruct *w, int image, int write_flags,
 {
 	int ret;
 	struct wim_header hdr;
-	FILE *out = w->out_fp;
 
 	/* @hdr will be the header for the new WIM.  First copy all the data
 	 * from the header in the WIMStruct; then set all the fields that may
@@ -1754,7 +1780,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 			goto out_close_wim;
 	}
 
-	ret = write_xml_data(w->wim_info, image, out,
+	ret = write_xml_data(w->wim_info, image, w->out_fd,
 			     (write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE) ?
 			      wim_info_get_total_bytes(w->wim_info) : 0,
 			     &hdr.xml_res_entry);
@@ -1766,28 +1792,9 @@ finish_write(WIMStruct *w, int image, int write_flags,
 			struct wim_header checkpoint_hdr;
 			memcpy(&checkpoint_hdr, &hdr, sizeof(struct wim_header));
 			zero_resource_entry(&checkpoint_hdr.integrity);
-			if (fseeko(out, 0, SEEK_SET)) {
-				ERROR_WITH_ERRNO("Failed to seek to beginning "
-						 "of WIM being written");
-				ret = WIMLIB_ERR_WRITE;
-				goto out_close_wim;
-			}
-			ret = write_header(&checkpoint_hdr, out);
+			ret = write_header(&checkpoint_hdr, w->out_fd);
 			if (ret)
 				goto out_close_wim;
-
-			if (fflush(out) != 0) {
-				ERROR_WITH_ERRNO("Can't write data to WIM");
-				ret = WIMLIB_ERR_WRITE;
-				goto out_close_wim;
-			}
-
-			if (fseeko(out, 0, SEEK_END) != 0) {
-				ERROR_WITH_ERRNO("Failed to seek to end "
-						 "of WIM being written");
-				ret = WIMLIB_ERR_WRITE;
-				goto out_close_wim;
-			}
 		}
 
 		off_t old_lookup_table_end;
@@ -1801,7 +1808,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 		new_lookup_table_end = hdr.lookup_table_res_entry.offset +
 				       hdr.lookup_table_res_entry.size;
 
-		ret = write_integrity_table(out,
+		ret = write_integrity_table(w->out_fd,
 					    &hdr.integrity,
 					    new_lookup_table_end,
 					    old_lookup_table_end,
@@ -1812,42 +1819,33 @@ finish_write(WIMStruct *w, int image, int write_flags,
 		zero_resource_entry(&hdr.integrity);
 	}
 
-	if (fseeko(out, 0, SEEK_SET) != 0) {
-		ERROR_WITH_ERRNO("Failed to seek to beginning of WIM "
-				 "being written");
-		ret = WIMLIB_ERR_WRITE;
-		goto out_close_wim;
-	}
-
-	ret = write_header(&hdr, out);
+	ret = write_header(&hdr, w->out_fd);
 	if (ret)
 		goto out_close_wim;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
-		if (fflush(out) != 0
-		    || fsync(fileno(out)) != 0)
-		{
-			ERROR_WITH_ERRNO("Error flushing data to WIM file");
+		if (fsync(w->out_fd)) {
+			ERROR_WITH_ERRNO("Error syncing data to WIM file");
 			ret = WIMLIB_ERR_WRITE;
 		}
 	}
 out_close_wim:
-	if (fclose(out) != 0) {
+	if (close(w->out_fd)) {
 		ERROR_WITH_ERRNO("Failed to close the output WIM file");
 		if (ret == 0)
 			ret = WIMLIB_ERR_WRITE;
 	}
-	w->out_fp = NULL;
+	w->out_fd = INVALID_FILEDES;
 	return ret;
 }
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
 int
-lock_wim(WIMStruct *w, FILE *fp)
+lock_wim(WIMStruct *w, filedes_t fd)
 {
 	int ret = 0;
-	if (fp && !w->wim_locked) {
-		ret = flock(fileno(fp), LOCK_EX | LOCK_NB);
+	if (fd != INVALID_FILEDES && !w->wim_locked) {
+		ret = flock(fd, LOCK_EX | LOCK_NB);
 		if (ret != 0) {
 			if (errno == EWOULDBLOCK) {
 				ERROR("`%"TS"' is already being modified or has been "
@@ -1868,37 +1866,25 @@ lock_wim(WIMStruct *w, FILE *fp)
 #endif
 
 static int
-open_wim_writable(WIMStruct *w, const tchar *path,
-		  bool trunc, bool also_readable)
+open_wim_writable(WIMStruct *w, const tchar *path, int open_flags)
 {
-	const tchar *mode;
-	if (trunc)
-		if (also_readable)
-			mode = T("w+b");
-		else
-			mode = T("wb");
-	else
-		mode = T("r+b");
-
-	wimlib_assert(w->out_fp == NULL);
-	w->out_fp = tfopen(path, mode);
-	if (w->out_fp) {
-		return 0;
-	} else {
+	wimlib_assert(w->out_fd == INVALID_FILEDES);
+	w->out_fd = open(path, open_flags, 0644);
+	if (w->out_fd == INVALID_FILEDES) {
 		ERROR_WITH_ERRNO("Failed to open `%"TS"' for writing", path);
 		return WIMLIB_ERR_OPEN;
 	}
+	return 0;
 }
 
 
 void
 close_wim_writable(WIMStruct *w)
 {
-	if (w->out_fp) {
-		if (fclose(w->out_fp) != 0) {
+	if (w->out_fd != INVALID_FILEDES) {
+		if (close(w->out_fd))
 			WARNING_WITH_ERRNO("Failed to close output WIM");
-		}
-		w->out_fp = NULL;
+		w->out_fd = INVALID_FILEDES;
 	}
 }
 
@@ -1907,12 +1893,23 @@ int
 begin_write(WIMStruct *w, const tchar *path, int write_flags)
 {
 	int ret;
-	ret = open_wim_writable(w, path, true,
-				(write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) != 0);
+	int open_flags = O_TRUNC | O_CREAT;
+	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
+		open_flags |= O_RDWR;
+	else
+		open_flags |= O_WRONLY;
+	ret = open_wim_writable(w, path, open_flags);
 	if (ret)
 		return ret;
 	/* Write dummy header. It will be overwritten later. */
-	return write_header(&w->hdr, w->out_fp);
+	ret = write_header(&w->hdr, w->out_fd);
+	if (ret)
+		return ret;
+	if (lseek(w->out_fd, 0, SEEK_END) == -1) {
+		ERROR_WITH_ERRNO("Failed to seek to end of WIM");
+		return WIMLIB_ERR_WRITE;
+	}
+	return 0;
 }
 
 /* Writes a stand-alone WIM to a file.  */
@@ -2041,6 +2038,7 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	struct list_head stream_list;
 	off_t old_wim_end;
 	u64 old_lookup_table_end, old_xml_begin, old_xml_end;
+	int open_flags;
 
 	DEBUG("Overwriting `%"TS"' in-place", w->filename);
 
@@ -2091,18 +2089,22 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	if (ret)
 		return ret;
 
-	ret = open_wim_writable(w, w->filename, false,
-				(write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) != 0);
+	open_flags = 0;
+	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
+		open_flags |= O_RDWR;
+	else
+		open_flags |= O_WRONLY;
+	ret = open_wim_writable(w, w->filename, open_flags);
 	if (ret)
 		return ret;
 
-	ret = lock_wim(w, w->out_fp);
+	ret = lock_wim(w, w->out_fd);
 	if (ret) {
 		close_wim_writable(w);
 		return ret;
 	}
 
-	if (fseeko(w->out_fp, old_wim_end, SEEK_SET) != 0) {
+	if (lseek(w->out_fd, old_wim_end, SEEK_SET) == -1) {
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");
 		close_wim_writable(w);
 		w->wim_locked = 0;
@@ -2113,7 +2115,7 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	      old_wim_end);
 	ret = write_stream_list(&stream_list,
 				w->lookup_table,
-				w->out_fp,
+				w->out_fd,
 				wimlib_get_compression_type(w),
 				write_flags,
 				num_threads,
@@ -2197,22 +2199,6 @@ overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 		progress.rename.from = tmpfile;
 		progress.rename.to = w->filename;
 		progress_func(WIMLIB_PROGRESS_MSG_RENAME, &progress);
-	}
-
-	/* Close the original WIM file that was opened for reading. */
-	if (w->fp != NULL) {
-		fclose(w->fp);
-		w->fp = NULL;
-	}
-
-	/* Re-open the WIM read-only. */
-	w->fp = tfopen(w->filename, T("rb"));
-	if (w->fp == NULL) {
-		ret = WIMLIB_ERR_REOPEN;
-		WARNING_WITH_ERRNO("Failed to re-open `%"TS"' read-only",
-				   w->filename);
-		FREE(w->filename);
-		w->filename = NULL;
 	}
 	goto out;
 out_unlink:

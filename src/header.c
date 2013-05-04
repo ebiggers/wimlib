@@ -33,11 +33,10 @@ static const u8 wim_magic_chars[WIM_MAGIC_LEN] = {
 
 /* Reads the header for a WIM file.  */
 int
-read_header(FILE *fp, struct wim_header *hdr, int open_flags)
+read_header(filedes_t in_fd, struct wim_header *hdr, int open_flags)
 {
 	size_t bytes_read;
 	u8 buf[WIM_HEADER_DISK_SIZE];
-	size_t hdr_rem_size;
 	const u8 *p;
 
 	u32 hdr_size;
@@ -46,23 +45,24 @@ read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 
 	DEBUG("Reading WIM header.");
 
-	bytes_read = fread(buf, 1, WIM_MAGIC_LEN, fp);
+	bytes_read = full_read(in_fd, buf, WIM_HEADER_DISK_SIZE);
 
-	if (bytes_read != WIM_MAGIC_LEN)
-		goto err;
+	if (bytes_read != WIM_HEADER_DISK_SIZE) {
+		ERROR_WITH_ERRNO("Error reading WIM header");
+		return WIMLIB_ERR_READ;
+	}
 
 	/* Byte 8 */
 
-	if (memcmp(buf, wim_magic_chars, WIM_MAGIC_LEN) != 0) {
+	p = buf;
+
+	if (memcmp(p, wim_magic_chars, WIM_MAGIC_LEN)) {
 		ERROR("Invalid magic characters in WIM header");
 		return WIMLIB_ERR_NOT_A_WIM_FILE;
 	}
 
-	bytes_read = fread(&hdr_size, 1, sizeof(u32), fp);
-	if (bytes_read != sizeof(u32))
-		goto err;
-
-	hdr_size = le32_to_cpu(hdr_size);
+	p += 8;
+	p = get_u32(p, &hdr_size);
 
 	/* Byte 12 */
 
@@ -71,15 +71,6 @@ read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 		      hdr_size, WIM_HEADER_DISK_SIZE);
 		return WIMLIB_ERR_INVALID_HEADER_SIZE;
 	}
-
-	/* Read the rest of the header into a buffer. */
-
-	hdr_rem_size = WIM_HEADER_DISK_SIZE - WIM_MAGIC_LEN - sizeof(u32);
-
-	bytes_read = fread(buf + WIM_MAGIC_LEN + sizeof(u32), 1,
-			   hdr_rem_size, fp);
-	if (bytes_read != hdr_rem_size)
-		goto err;
 
 	p = get_u32(buf + WIM_MAGIC_LEN + sizeof(u32), &wim_version);
 
@@ -153,25 +144,17 @@ read_header(FILE *fp, struct wim_header *hdr, int open_flags)
 	/* Byte 208 */
 
 	return 0;
-
-err:
-	if (feof(fp))
-		ERROR("Unexpected EOF while reading WIM header");
-	else
-		ERROR_WITH_ERRNO("Error reading WIM header");
-	return WIMLIB_ERR_READ;
 }
 
 /*
  * Writes the header for a WIM file.
  *
  * @hdr: 	A pointer to a struct wim_header structure that describes the header.
- * @out:	The FILE* for the output file, positioned at the appropriate
- * 		place (the beginning of the file).
+ * @out_fd:	The file descriptor to the WIM file, opened for writing.
  * @return:	Zero on success, nonzero on failure.
  */
 int
-write_header(const struct wim_header *hdr, FILE *out_fp)
+write_header(const struct wim_header *hdr, int out_fd)
 {
 	u8 buf[WIM_HEADER_DISK_SIZE];
 	u8 *p;
@@ -197,8 +180,10 @@ write_header(const struct wim_header *hdr, FILE *out_fp)
 	p = put_resource_entry(p, &hdr->boot_metadata_res_entry);
 	p = put_u32(p, hdr->boot_idx);
 	p = put_resource_entry(p, &hdr->integrity);
-	memset(p, 0, WIM_UNUSED_LEN);
-	if (fwrite(buf, 1, sizeof(buf), out_fp) != sizeof(buf)) {
+	p = put_zeroes(p, WIM_UNUSED_LEN);
+	assert(p - buf == sizeof(buf));
+
+	if (full_pwrite(out_fd, buf, sizeof(buf), 0) != sizeof(buf)) {
 		ERROR_WITH_ERRNO("Failed to write WIM header");
 		return WIMLIB_ERR_WRITE;
 	}

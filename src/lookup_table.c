@@ -351,10 +351,16 @@ int
 read_lookup_table(WIMStruct *w)
 {
 	u64 num_entries;
-	u8 buf[WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
 	int ret;
 	struct wim_lookup_table *table;
 	struct wim_lookup_table_entry *cur_entry, *duplicate_entry;
+	void *table_buf;
+	size_t table_size;
+	const void *p;
+
+	DEBUG("Reading lookup table: offset %"PRIu64", size %"PRIu64"",
+	      w->hdr.lookup_table_res_entry.offset,
+	      w->hdr.lookup_table_res_entry.original_size);
 
 	if (resource_is_compressed(&w->hdr.lookup_table_res_entry)) {
 		ERROR("Didn't expect a compressed lookup table!");
@@ -362,38 +368,34 @@ read_lookup_table(WIMStruct *w)
 		return WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE;
 	}
 
-	DEBUG("Reading lookup table: offset %"PRIu64", size %"PRIu64"",
-	      w->hdr.lookup_table_res_entry.offset,
-	      w->hdr.lookup_table_res_entry.original_size);
+	table_size = w->hdr.lookup_table_res_entry.size;
+	if (table_size != w->hdr.lookup_table_res_entry.size) {
+		ERROR("Lookup table is invalid");
+		return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+	}
 
-	if (fseeko(w->fp, w->hdr.lookup_table_res_entry.offset, SEEK_SET) != 0)
+	table_buf = MALLOC(table_size);
+	if (!table_buf)
+		return WIMLIB_ERR_NOMEM;
+
+	if (full_pread(w->in_fd, table_buf, table_size,
+		       w->hdr.lookup_table_res_entry.offset) != table_size)
 	{
-		ERROR_WITH_ERRNO("Failed to seek to byte %"PRIu64" to read "
-				 "lookup table",
-				 w->hdr.lookup_table_res_entry.offset);
-		return WIMLIB_ERR_READ;
+		ret = WIMLIB_ERR_READ;
+		goto out_free_table_buf;
 	}
 
 	num_entries = w->hdr.lookup_table_res_entry.original_size /
 		      WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE;
 	table = new_lookup_table(num_entries * 2 + 1);
-	if (!table)
-		return WIMLIB_ERR_NOMEM;
+	if (!table) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_table_buf;
+	}
 
 	w->current_image = 0;
+	p = table_buf;
 	while (num_entries--) {
-		const u8 *p;
-
-		if (fread(buf, 1, sizeof(buf), w->fp) != sizeof(buf)) {
-			if (feof(w->fp)) {
-				ERROR("Unexpected EOF in WIM lookup table!");
-			} else {
-				ERROR_WITH_ERRNO("Error reading WIM lookup "
-						 "table");
-			}
-			ret = WIMLIB_ERR_READ;
-			goto out_free_lookup_table;
-		}
 		cur_entry = new_lookup_table_entry();
 		if (!cur_entry) {
 			ret = WIMLIB_ERR_NOMEM;
@@ -402,7 +404,7 @@ read_lookup_table(WIMStruct *w)
 
 		cur_entry->wim = w;
 		cur_entry->resource_location = RESOURCE_IN_WIM;
-		p = get_resource_entry(buf, &cur_entry->resource_entry);
+		p = get_resource_entry(p, &cur_entry->resource_entry);
 		p = get_u16(p, &cur_entry->part_number);
 		p = get_u32(p, &cur_entry->refcnt);
 		p = get_bytes(p, SHA1_HASH_SIZE, cur_entry->hash);
@@ -506,12 +508,13 @@ read_lookup_table(WIMStruct *w)
 	DEBUG("Done reading lookup table.");
 	w->lookup_table = table;
 	ret = 0;
-	goto out;
+	goto out_free_table_buf;
 out_free_cur_entry:
 	FREE(cur_entry);
 out_free_lookup_table:
 	free_lookup_table(table);
-out:
+out_free_table_buf:
+	FREE(table_buf);
 	w->current_image = 0;
 	return ret;
 }
@@ -520,51 +523,86 @@ out:
 /*
  * Writes a lookup table entry to the output file.
  */
-int
-write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *_out)
+static void *
+write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *buf_p)
 {
-	FILE *out;
-	u8 buf[WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
-	u8 *p;
+	buf_p = put_resource_entry(buf_p, &lte->output_resource_entry);
+	buf_p = put_u16(buf_p, lte->part_number);
+	buf_p = put_u32(buf_p, lte->out_refcnt);
+	buf_p = put_bytes(buf_p, SHA1_HASH_SIZE, lte->hash);
+	return buf_p;
+}
 
-	out = _out;
+int
+write_lookup_table_from_stream_list(struct list_head *stream_list,
+				    filedes_t out_fd,
+				    struct resource_entry *out_res_entry)
+{
+	size_t num_entries;
+	struct list_head *pos;
+	size_t table_size;
+	void *table_buf;
+	void *buf_p;
+	struct wim_lookup_table_entry *lte;
+	off_t start_offset;
+	int ret;
 
-	/* Don't write entries that have not had file resources or metadata
-	 * resources written for them. */
-	if (lte->out_refcnt == 0)
-		return 0;
-
-	if (lte->output_resource_entry.flags & WIM_RESHDR_FLAG_METADATA) {
-		DEBUG("Writing metadata entry at %"PRIu64" "
-		      "(orig size = %"PRIu64")",
-		      ftello(out), lte->output_resource_entry.original_size);
-	}
-
-	p = put_resource_entry(buf, &lte->output_resource_entry);
-	p = put_u16(p, lte->part_number);
-	p = put_u32(p, lte->out_refcnt);
-	p = put_bytes(p, SHA1_HASH_SIZE, lte->hash);
-	if (fwrite(buf, 1, sizeof(buf), out) != sizeof(buf)) {
-		ERROR_WITH_ERRNO("Failed to write lookup table entry");
+	start_offset = filedes_offset(out_fd);
+	if (start_offset == -1)
 		return WIMLIB_ERR_WRITE;
+
+	num_entries = 0;
+	list_for_each(pos, stream_list)
+		num_entries++;
+	table_size = num_entries * WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE;
+
+	table_buf = MALLOC(table_size);
+	if (!table_buf) {
+		ERROR("Failed to allocate lookup table buffer of %zu bytes", table_size);
+		return WIMLIB_ERR_NOMEM;
 	}
+
+	buf_p = table_buf;
+	list_for_each_entry(lte, stream_list, lookup_table_list)
+		buf_p =  write_lookup_table_entry(lte, buf_p);
+
+	wimlib_assert(buf_p - table_buf == table_size);
+
+	if (full_write(out_fd, table_buf, table_size) != table_size) {
+		ERROR_WITH_ERRNO("Failed to write lookup table");
+		ret = WIMLIB_ERR_WRITE;
+		goto out_free_table_buf;
+	}
+
+	out_res_entry->offset        = start_offset;
+	out_res_entry->size          = table_size;
+	out_res_entry->original_size = table_size;
+	out_res_entry->flags         = WIM_RESHDR_FLAG_METADATA;
+	ret = 0;
+out_free_table_buf:
+	FREE(table_buf);
+	return ret;
+}
+
+static int
+append_lookup_table_entry(struct wim_lookup_table_entry *lte, void *_list)
+{
+	struct list_head *list = _list;
+
+	if (lte->out_refcnt != 0)
+		list_add_tail(&lte->lookup_table_list, list);
 	return 0;
 }
+
 
 /* Writes the WIM lookup table to the output file. */
 int
 write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry)
 {
-	FILE *out = w->out_fp;
-	off_t start_offset, end_offset;
-	int ret;
-	int start_image, end_image;
+	LIST_HEAD(stream_list);
+	int start_image;
+	int end_image;
 
-	start_offset = ftello(out);
-	if (start_offset == -1)
-		return WIMLIB_ERR_WRITE;
-
-	/* Write lookup table entries for metadata resources */
 	if (image == WIMLIB_ALL_IMAGES) {
 		start_image = 1;
 		end_image = w->hdr.image_count;
@@ -572,32 +610,22 @@ write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry
 		start_image = image;
 		end_image = image;
 	}
+
 	for (int i = start_image; i <= end_image; i++) {
 		struct wim_lookup_table_entry *metadata_lte;
 
 		metadata_lte = w->image_metadata[i - 1]->metadata_lte;
 		metadata_lte->out_refcnt = 1;
 		metadata_lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
-		ret = write_lookup_table_entry(metadata_lte, out);
-		if (ret)
-			return ret;
+		append_lookup_table_entry(metadata_lte, &stream_list);
 	}
 
-	/* Write lookup table entries for other resources */
-	ret = for_lookup_table_entry(w->lookup_table, write_lookup_table_entry, out);
-	if (ret)
-		return ret;
-
-	/* Fill in the resource entry for the lookup table itself */
-	end_offset = ftello(out);
-	if (end_offset == -1)
-		return WIMLIB_ERR_WRITE;
-
-	out_res_entry->offset        = start_offset;
-	out_res_entry->size          = end_offset - start_offset;
-	out_res_entry->original_size = end_offset - start_offset;
-	out_res_entry->flags         = WIM_RESHDR_FLAG_METADATA;
-	return 0;
+	for_lookup_table_entry(w->lookup_table,
+			       append_lookup_table_entry,
+			       &stream_list);
+	return write_lookup_table_from_stream_list(&stream_list,
+						   w->out_fd,
+						   out_res_entry);
 }
 
 int

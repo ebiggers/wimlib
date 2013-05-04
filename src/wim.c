@@ -65,15 +65,10 @@ static WIMStruct *
 new_wim_struct()
 {
 	WIMStruct *w = CALLOC(1, sizeof(WIMStruct));
-#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
-	if (pthread_mutex_init(&w->fp_tab_mutex, NULL) != 0) {
-		ERROR_WITH_ERRNO("Failed to initialize mutex");
-		FREE(w);
-		w = NULL;
-	}
-#endif
+	w->in_fd = INVALID_FILEDES;
+	w->out_fd = INVALID_FILEDES;
+	w->current_image = WIMLIB_NO_IMAGE;
 	return w;
-
 }
 
 /*
@@ -388,6 +383,35 @@ wimlib_get_boot_idx(const WIMStruct *w)
 	return w->hdr.boot_idx;
 }
 
+static int
+do_open_wim(const tchar *filename, filedes_t *fd_ret)
+{
+	int fd;
+
+	fd = open(filename, O_RDONLY);
+	if (fd == -1) {
+		ERROR_WITH_ERRNO("Can't open \"%"TS"\" read-only", filename);
+		return WIMLIB_ERR_OPEN;
+	}
+	*fd_ret = fd;
+	return 0;
+}
+
+int
+reopen_wim(WIMStruct *w)
+{
+	wimlib_assert(w->in_fd == INVALID_FILEDES);
+	return do_open_wim(w->filename, &w->in_fd);
+}
+
+int
+close_wim(WIMStruct *w)
+{
+	close(w->in_fd);
+	w->in_fd = INVALID_FILEDES;
+	return 0;
+}
+
 /*
  * Begins the reading of a WIM file; opens the file and reads its header and
  * lookup table, and optionally checks the integrity.
@@ -401,12 +425,9 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 
 	DEBUG("Reading the WIM file `%"TS"'", in_wim_path);
 
-	w->fp = tfopen(in_wim_path, T("rb"));
-	if (!w->fp) {
-		ERROR_WITH_ERRNO("Failed to open `%"TS"' for reading",
-				 in_wim_path);
-		return WIMLIB_ERR_OPEN;
-	}
+	ret = do_open_wim(in_wim_path, &w->in_fd);
+	if (ret)
+		return ret;
 
 	/* The absolute path to the WIM is requested so that wimlib_overwrite()
 	 * still works even if the process changes its working directory.  This
@@ -429,7 +450,7 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 			return WIMLIB_ERR_OPEN;
 	}
 
-	ret = read_header(w->fp, &w->hdr, open_flags);
+	ret = read_header(w->in_fd, &w->hdr, open_flags);
 	if (ret)
 		return ret;
 
@@ -472,7 +493,7 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 	if (ret)
 		return ret;
 
-	ret = read_xml_data(w->fp, &w->hdr.xml_res_entry, &w->wim_info);
+	ret = read_xml_data(w->in_fd, &w->hdr.xml_res_entry, &w->wim_info);
 	if (ret)
 		return ret;
 
@@ -647,20 +668,10 @@ wimlib_free(WIMStruct *w)
 
 	if (!w)
 		return;
-	if (w->fp)
-		fclose(w->fp);
-	if (w->out_fp)
-		fclose(w->out_fp);
-
-#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
-	if (w->fp_tab) {
-		for (size_t i = 0; i < w->num_allocated_fps; i++)
-			if (w->fp_tab[i])
-				fclose(w->fp_tab[i]);
-		FREE(w->fp_tab);
-	}
-	pthread_mutex_destroy(&w->fp_tab_mutex);
-#endif
+	if (w->in_fd != INVALID_FILEDES)
+		close(w->in_fd);
+	if (w->out_fd != INVALID_FILEDES)
+		close(w->out_fd);
 
 	free_lookup_table(w->lookup_table);
 

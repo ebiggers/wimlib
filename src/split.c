@@ -46,26 +46,12 @@ static int
 finish_swm(WIMStruct *w, struct list_head *lte_list,
 	   int write_flags, wimlib_progress_func_t progress_func)
 {
-	off_t lookup_table_offset = ftello(w->out_fp);
 	int ret;
-	struct wim_lookup_table_entry *lte;
 
-	list_for_each_entry(lte, lte_list, swm_stream_list) {
-		ret = write_lookup_table_entry(lte, w->out_fp);
-		if (ret)
-			return ret;
-	}
-
-	off_t xml_data_offset = ftello(w->out_fp);
-
-	if (lookup_table_offset == -1 || xml_data_offset == -1)
-		return WIMLIB_ERR_WRITE;
-	w->hdr.lookup_table_res_entry.offset = lookup_table_offset;
-	w->hdr.lookup_table_res_entry.size =
-				xml_data_offset - lookup_table_offset;
-	w->hdr.lookup_table_res_entry.original_size =
-				xml_data_offset - lookup_table_offset;
-	w->hdr.lookup_table_res_entry.flags = WIM_RESHDR_FLAG_METADATA;
+	ret = write_lookup_table_from_stream_list(lte_list, w->out_fd,
+						  &w->hdr.lookup_table_res_entry);
+	if (ret)
+		return ret;
 	return finish_write(w, WIMLIB_ALL_IMAGES,
 			    write_flags | WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE,
 			    progress_func);

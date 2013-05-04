@@ -1977,6 +1977,10 @@ wimlib_open_wim(const wimlib_tchar *wim_file,
  * and while abnormal termination of the program will result in extra data
  * appended to the original WIM, it should still be a valid WIM.
  *
+ * If this function completes successfully, no functions should be called on @a
+ * wim other than wimlib_free().  You must use wimlib_open_wim() to read the WIM
+ * file anew.
+ *
  * @param wim
  * 	Pointer to the ::WIMStruct for the WIM file to write.  There may have
  * 	been in-memory changes made to it, which are then reflected in the
@@ -2004,11 +2008,6 @@ wimlib_open_wim(const wimlib_tchar *wim_file,
  * @retval ::WIMLIB_ERR_RENAME
  * 	The temporary file that the WIM was written to could not be renamed to
  * 	the original filename of @a wim.
- * @retval ::WIMLIB_ERR_REOPEN
- * 	The WIM was overwritten successfully, but it could not be re-opened
- * 	read-only.  Therefore, the resources in the WIM can no longer be
- * 	accessed, so this limits the functions that can be called on @a wim
- * 	before calling wimlib_free().
  */
 extern int
 wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads,

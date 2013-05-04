@@ -375,7 +375,7 @@ apply_reparse_data(ntfs_inode *ni, struct wim_dentry *dentry,
 	p = put_u16(p, wim_resource_size(lte)); /* ReparseDataLength */
 	p = put_u16(p, 0); /* Reserved */
 
-	ret = read_full_resource_into_buf(lte, p, false);
+	ret = read_full_resource_into_buf(lte, p);
 	if (ret)
 		return ret;
 

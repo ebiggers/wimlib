@@ -87,7 +87,7 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 	}
 
 	/* Read the metadata resource into memory.  (It may be compressed.) */
-	ret = read_full_resource_into_buf(metadata_lte, buf, false);
+	ret = read_full_resource_into_buf(metadata_lte, buf);
 	if (ret)
 		goto out_free_buf;
 
@@ -192,8 +192,8 @@ recalculate_security_data_length(struct wim_security_data *sd)
  * uncompressed data rather a lookup table entry; also writes the SHA1 hash of
  * the buffer to @hash.  */
 static int
-write_wim_resource_from_buffer(const void *buf, u64 buf_size,
-			       FILE *out_fp, int out_ctype,
+write_wim_resource_from_buffer(const void *buf, size_t buf_size,
+			       filedes_t out_fd, int out_ctype,
 			       struct resource_entry *out_res_entry,
 			       u8 hash[SHA1_HASH_SIZE])
 {
@@ -206,7 +206,7 @@ write_wim_resource_from_buffer(const void *buf, u64 buf_size,
 	lte.resource_entry.original_size = buf_size;
 	lte.resource_entry.flags         = 0;
 	lte.unhashed                     = 1;
-	ret = write_wim_resource(&lte, out_fp, out_ctype, out_res_entry, 0);
+	ret = write_wim_resource(&lte, out_fd, out_ctype, out_res_entry, 0);
 	if (ret == 0)
 		copy_hash(hash, lte.hash);
 	return ret;
@@ -225,11 +225,11 @@ write_metadata_resource(WIMStruct *w)
 	u64 metadata_original_size;
 	struct wim_security_data *sd;
 
-	wimlib_assert(w->out_fp != NULL);
+	wimlib_assert(w->out_fd != INVALID_FILEDES);
 	wimlib_assert(w->current_image != WIMLIB_NO_IMAGE);
 
 	DEBUG("Writing metadata resource for image %d (offset = %"PRIu64")",
-	      w->current_image, ftello(w->out_fp));
+	      w->current_image, filedes_offset(w->out_fd));
 
 
 	root = wim_root_dentry(w);
@@ -278,7 +278,7 @@ write_metadata_resource(WIMStruct *w)
 	 * compression type.  The lookup table entry for the metadata resource
 	 * is updated. */
 	ret = write_wim_resource_from_buffer(buf, metadata_original_size,
-					     w->out_fp,
+					     w->out_fd,
 					     wimlib_get_compression_type(w),
 					     &lte->output_resource_entry,
 					     lte->hash);

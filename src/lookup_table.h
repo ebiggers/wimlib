@@ -245,6 +245,7 @@ struct wim_lookup_table_entry {
 	union {
 		struct list_head unhashed_list;
 		struct list_head swm_stream_list;
+		struct list_head lookup_table_list;
 		struct list_head extraction_list;
 		struct list_head export_stream_list;
 	};
@@ -305,6 +306,11 @@ read_lookup_table(WIMStruct *w);
 
 extern int
 write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry);
+
+extern int
+write_lookup_table_from_stream_list(struct list_head *stream_list,
+				    filedes_t out_fd,
+				    struct resource_entry *out_res_entry);
 
 extern void
 free_lookup_table(struct wim_lookup_table *table);
@@ -379,9 +385,6 @@ inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table);
 
 extern void
 inode_unresolve_ltes(struct wim_inode *inode);
-
-extern int
-write_lookup_table_entry(struct wim_lookup_table_entry *lte, void *__out);
 
 static inline struct wim_lookup_table_entry *
 inode_stream_lte_resolved(const struct wim_inode *inode, unsigned stream_idx)

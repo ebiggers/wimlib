@@ -118,24 +118,18 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 
 	/* Write the non-metadata resources from each SWM part */
 	for (i = 0; i < num_swms; i++) {
-		swms[i]->fp = tfopen(swms[i]->filename, T("rb"));
-		if (!swms[i]->fp) {
-			ERROR_WITH_ERRNO("Failed to reopen `%"TS"'",
-					 swms[i]->filename);
-			return WIMLIB_ERR_OPEN;
-		}
-		swms[i]->out_fp = joined_wim->out_fp;
+		ret = reopen_wim(swms[i]);
+		if (ret)
+			return ret;
+		swms[i]->out_fd = joined_wim->out_fd;
 		swms[i]->hdr.part_number = 1;
 
 		ret = for_lookup_table_entry_pos_sorted(swms[i]->lookup_table,
 							copy_resource,
 							swms[i]);
-		swms[i]->out_fp = NULL;
-
-		if (i != 0) {
-			fclose(swms[i]->fp);
-			swms[i]->fp = NULL;
-		}
+		swms[i]->out_fd = INVALID_FILEDES;
+		if (i != 0)
+			close_wim(swms[i]);
 
 		if (ret)
 			return ret;
@@ -209,8 +203,7 @@ wimlib_join(const tchar * const *swm_names,
 
 		/* Don't open all the parts at the same time, in case there are
 		 * a lot of them */
-		fclose(swms[i]->fp);
-		swms[i]->fp = NULL;
+		close_wim(swms[i]);
 	}
 
 	qsort(swms, num_swms, sizeof(swms[0]), cmp_swms_by_part_number);

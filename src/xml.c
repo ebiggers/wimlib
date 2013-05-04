@@ -1236,7 +1236,8 @@ libxml_global_cleanup()
  * Reads the XML data from a WIM file.
  */
 int
-read_xml_data(FILE *fp, const struct resource_entry *res_entry,
+read_xml_data(filedes_t in_fd,
+	      const struct resource_entry *res_entry,
 	      struct wim_info **info_ret)
 {
 	utf16lechar *xml_data;
@@ -1265,10 +1266,13 @@ read_xml_data(FILE *fp, const struct resource_entry *res_entry,
 		goto out;
 	}
 
-	ret = read_uncompressed_resource(fp, res_entry->offset,
-					 res_entry->size, xml_data);
-	if (ret)
+	if (full_pread(in_fd, xml_data,
+		       res_entry->size, res_entry->offset) != res_entry->size)
+	{
+		ERROR_WITH_ERRNO("Error reading XML data");
+		ret = WIMLIB_ERR_READ;
 		goto out_free_xml_data;
+	}
 
 	/* Null-terminate just in case */
 	((u8*)xml_data)[res_entry->size] = 0;
@@ -1324,7 +1328,7 @@ out:
  * the offset of the XML data.
  */
 int
-write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
+write_xml_data(const struct wim_info *wim_info, int image, int out_fd,
 	       u64 total_bytes, struct resource_entry *out_res_entry)
 {
 	xmlCharEncodingHandler *encoding_handler;
@@ -1338,7 +1342,7 @@ write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 			(wim_info != NULL && image >= 1 &&
 			 image <= wim_info->num_images));
 
-	start_offset = ftello(out);
+	start_offset = filedes_offset(out_fd);
 	if (start_offset == -1)
 		return WIMLIB_ERR_WRITE;
 
@@ -1347,7 +1351,8 @@ write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 
 	/* 2 bytes endianness marker for UTF-16LE.  This is _required_ for WIM
 	 * XML data. */
-	if ((putc(0xff, out)) == EOF || (putc(0xfe, out) == EOF)) {
+	static u8 bom[2] = {0xff, 0xfe};
+	if (full_write(out_fd, bom, 2) != 2) {
 		ERROR_WITH_ERRNO("Error writing XML data");
 		return WIMLIB_ERR_WRITE;
 	}
@@ -1373,7 +1378,7 @@ write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 		goto out;
 	}
 
-	out_buffer = xmlOutputBufferCreateFile(out, encoding_handler);
+	out_buffer = xmlOutputBufferCreateFd(out_fd, encoding_handler);
 	if (!out_buffer) {
 		ERROR("Failed to allocate xmlOutputBuffer");
 		ret = WIMLIB_ERR_NOMEM;
@@ -1428,7 +1433,7 @@ write_xml_data(const struct wim_info *wim_info, int image, FILE *out,
 	xmlFreeTextWriter(writer);
 	writer = NULL;
 
-	end_offset = ftello(out);
+	end_offset = filedes_offset(out_fd);
 	if (end_offset == -1) {
 		ret = WIMLIB_ERR_WRITE;
 	} else {
@@ -1499,10 +1504,15 @@ wimlib_extract_xml_data(WIMStruct *w, FILE *fp)
 	if (!buf)
 		return WIMLIB_ERR_NOMEM;
 
-	ret = read_uncompressed_resource(w->fp, w->hdr.xml_res_entry.offset,
-					 size, buf);
-	if (ret)
+	if (full_pread(w->in_fd,
+		       buf,
+		       w->hdr.xml_res_entry.size,
+		       w->hdr.xml_res_entry.offset) != w->hdr.xml_res_entry.size)
+	{
+		ERROR_WITH_ERRNO("Error reading XML data");
+		ret = WIMLIB_ERR_READ;
 		goto out_free_buf;
+	}
 
 	if (fwrite(buf, 1, size, fp) != size) {
 		ERROR_WITH_ERRNO("Failed to extract XML data");

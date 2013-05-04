@@ -129,7 +129,7 @@ tstr_to_utf8_simple(const tchar *tstr, char **out);
 #define ZERO_ARRAY(array) memset(array, 0, sizeof(array))
 
 /* Used for buffering FILE IO in a few places */
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 32768
 
 static inline void FORMAT(printf, 1, 2)
 dummy_tprintf(const tchar *format, ...)
@@ -284,5 +284,24 @@ hash_u64(u64 n)
 {
 	return n * 0x9e37fffffffc0001ULL;
 }
+
+typedef int filedes_t;
+
+extern size_t
+full_read(filedes_t fd, void *buf, size_t n);
+
+extern size_t
+full_write(filedes_t fd, const void *buf, size_t n);
+
+extern size_t
+full_pread(filedes_t fd, void *buf, size_t nbyte, off_t offset);
+
+extern size_t
+full_pwrite(int fd, const void *buf, size_t count, off_t offset);
+
+extern off_t
+filedes_offset(filedes_t fd);
+
+#define INVALID_FILEDES (-1)
 
 #endif /* _WIMLIB_UTIL_H */
