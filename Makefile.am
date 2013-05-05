@@ -150,6 +150,7 @@ wimlib_manpages =				\
 	doc/@IMAGEX_PROGNAME@-delete.1		\
 	doc/@IMAGEX_PROGNAME@-dir.1		\
 	doc/@IMAGEX_PROGNAME@-export.1		\
+	doc/@IMAGEX_PROGNAME@-extract.1		\
 	doc/@IMAGEX_PROGNAME@-info.1		\
 	doc/@IMAGEX_PROGNAME@-join.1		\
 	doc/@IMAGEX_PROGNAME@-mount.1		\

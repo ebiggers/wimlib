@@ -127,9 +127,9 @@ IMAGEX_PROGNAME" export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
 ),
 [EXTRACT] =
 T(
-IMAGEX_PROGNAME" extract SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME) [PATH...]\n"
-"              [--check] [--ref=\"GLOB\"] [--verbose] [--unix-data] [--no-acls]\n"
-"              [--strict-acls] [--to-stdout] [--dest-dir=DIR]\n"
+IMAGEX_PROGNAME" extract WIMFILE (IMAGE_NUM | IMAGE_NAME) [PATH...]\n"
+"              [--check] [--ref=\"GLOB\"] [--verbose] [--unix-data]\n"
+"              [--no-acls] [--strict-acls] [--to-stdout] [--dest-dir=DIR]\n"
 ),
 [INFO] =
 T(

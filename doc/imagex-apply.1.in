@@ -326,4 +326,4 @@ mkntfs /dev/sda2 && @IMAGEX_PROGNAME@ apply /media/windows/sources/install.wim 1
 
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
-
+.BR @IMAGEX_PROGNAME@-extract (1)

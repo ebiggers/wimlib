@@ -302,7 +302,9 @@ enum wimlib_progress_msg {
 	 * ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
 
-	/** XXX */
+	/** A file or directory tree within a WIM image (not the full image) is
+	 * about to be extracted.  @a info will point to
+	 * ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN,
 
 	/** The directory structure of the WIM image is about to be extracted.
@@ -331,7 +333,9 @@ enum wimlib_progress_msg {
 	 * ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END,
 
-	/** XXX */
+	/** A file or directory tree within a WIM image (not the full image) has
+	 * been successfully extracted.  @a info will point to
+	 * ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END,
 
 	/** The directory or NTFS volume is about to be scanned to build a tree
@@ -771,14 +775,15 @@ struct wimlib_capture_config {
 /* Extract equivalent to ::WIMLIB_ADD_IMAGE_FLAG_RPFIX; force reparse-point
  * fixups on, so absolute symbolic links or junction points will be fixed to be
  * absolute relative to the actual extraction root.  Done by default if
- * WIM_HDR_FLAG_RP_FIX is set in the WIM header. */
+ * WIM_HDR_FLAG_RP_FIX is set in the WIM header.  This flag may only be
+ * specified when extracting a full image. */
 #define WIMLIB_EXTRACT_FLAG_RPFIX			0x00000100
 
 /** Force reparse-point fixups on extraction off, regardless of the state of the
  * WIM_HDR_FLAG_RP_FIX flag in the WIM header. */
 #define WIMLIB_EXTRACT_FLAG_NORPFIX			0x00000200
 
-/** Ignore the target directory; only extract file data to standard output. */
+/** Extract files to standard output rather than to the filesystem. */
 #define WIMLIB_EXTRACT_FLAG_TO_STDOUT			0x00000400
 
 /******************************
@@ -898,10 +903,17 @@ struct wimlib_update_command {
 	};
 };
 
-/** XXX */
+/** Specification of a file or directory tree to extract from a WIM image. */
 struct wimlib_extract_command {
+	/** Path to file or directory tree within the WIM image to extract.  It
+	 * must be provided as an absolute path from the root of the WIM image.
+	 * The path separators may be either forward slashes or backslashes. */
 	wimlib_tchar *wim_source_path;
+
+	/** Filesystem path to extract the file or directory tree to. */
 	wimlib_tchar *fs_dest_path;
+
+	/** Bitwise or of zero or more of the WIMLIB_EXTRACT_FLAG_* flags. */
 	int extract_flags;
 };
 
@@ -1289,7 +1301,68 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
 		    unsigned num_additional_swms,
 		    wimlib_progress_func_t progress_func);
 
-/** XXX */
+/**
+ * Extract zero or more files or directory trees from a WIM image.
+ *
+ * This generalizes the single-image extraction functionality of
+ * wimlib_extract_image() to allow extracting only the specified subsets of the
+ * image.
+ *
+ * @param wim
+ *	Pointer to the ::WIMStruct for a standalone WIM file, or part 1 of a
+ *	split WIM.
+ *
+ * @param image
+ *	The 1-based number of the image in @a wim from which the files or
+ *	directory trees are to be extracted.  It cannot be ::WIMLIB_ALL_IMAGES.
+ *
+ * @param default_extract_flags
+ *	Default extraction flags; the behavior shall be as if these flags had
+ *	been specified in the ::wimlib_extract_command.extract_flags member in
+ *	each extraction command, in combination with any flags already present.
+ *
+ * @param cmds
+ *	An array of ::wimlib_extract_command structures that specifies the
+ *	extractions to perform.
+ *
+ * @param num_cmds
+ *	Number of commands in the @a cmds array.
+ *
+ * @param additional_swms
+ * 	Array of pointers to the ::WIMStruct for each additional part in the
+ * 	split WIM.  Ignored if @a num_additional_swms is 0.  The pointers do not
+ * 	need to be in any particular order, but they must include all parts of
+ * 	the split WIM other than the first part, which must be provided in the
+ * 	@a wim parameter.
+ *
+ * @param num_additional_swms
+ * 	Number of additional WIM parts provided in the @a additional_swms array.
+ * 	This number should be one less than the total number of parts in the
+ * 	split WIM.  Set to 0 if the WIM is a standalone WIM.
+ *
+ * @param progress_func
+ * 	If non-NULL, a function that will be called periodically with the
+ * 	progress of the current operation.
+ *
+ * @return 0 on success; nonzero on error.  The possible error codes include
+ * those documented as returned by wimlib_extract_image() as well as the
+ * following additional error codes:
+ *
+ * @retval ::WIMLIB_ERR_PATH_DOES_NOT_EXIST
+ *	The ::wimlib_extract_command.wim_source_path member in one of the
+ *	extract commands did not exist in the WIM.
+ * @retval ::WIMLIB_ERR_NOT_A_REGULAR_FILE
+ *	::WIMLIB_EXTRACT_FLAG_TO_STDOUT was specified for an extraction command
+ *	in which ::wimlib_extract_command.wim_source_path existed but was not a
+ *	regular file or directory.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	::WIMLIB_EXTRACT_FLAG_HARDLINK or ::WIMLIB_EXTRACT_FLAG_SYMLINK was
+ *	specified for some commands but not all; or
+ *	::wimlib_extract_command.fs_dest_path was @c NULL or the empty string
+ *	for one or more commands; or ::WIMLIB_EXTRACT_FLAG_RPFIX was specified
+ *	for a command in which ::wimlib_extract_command.wim_source_path did not
+ *	specify the root directory of the WIM image.
+ */
 extern int
 wimlib_extract_files(WIMStruct *wim,
 		     int image,
