@@ -315,6 +315,10 @@ full_writev(int fd, struct iovec *iov, int iovcnt);
 extern off_t
 filedes_offset(filedes_t fd);
 
+#ifndef __WIN32__
+#  define O_BINARY 0
+#endif
+
 #define INVALID_FILEDES (-1)
 
 #endif /* _WIMLIB_UTIL_H */

@@ -225,7 +225,7 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 			part_name = swm_base_name;
 		}
 
-		part_fd = topen(part_name, O_WRONLY);
+		part_fd = topen(part_name, O_WRONLY | O_BINARY);
 		if (part_fd == INVALID_FILEDES) {
 			ERROR_WITH_ERRNO("Failed to open `%"TS"'", part_name);
 			ret = WIMLIB_ERR_OPEN;

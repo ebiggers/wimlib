@@ -2853,10 +2853,11 @@ fsync(int fd)
 	if (h == INVALID_HANDLE_VALUE)
 		goto err;
 	if (!FlushFileBuffers(h))
-		goto err;
+		goto err_set_errno;
 	return 0;
-err:
+err_set_errno:
 	set_errno_from_GetLastError();
+err:
 	return -1;
 }
 
@@ -2985,15 +2986,13 @@ do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
 	wimlib_assert(count <= 0xffffffff);
 
 	h = (HANDLE)_get_osfhandle(fd);
-	if (h == INVALID_HANDLE_VALUE) {
-		errno = EBADF;
-		return -1;
-	}
+	if (h == INVALID_HANDLE_VALUE)
+		goto err;
 
 	/* Get original position */
 	relative_offset.QuadPart = 0;
 	if (!SetFilePointerEx(h, relative_offset, &orig_offset, FILE_CURRENT))
-		goto err;
+		goto err_set_errno;
 
 	memset(&overlapped, 0, sizeof(overlapped));
 	overlapped.Offset = offset;
@@ -3005,15 +3004,16 @@ do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
 	else
 		bret = ReadFile(h, buf, count, &bytes_read_or_written, &overlapped);
 	if (!bret)
-		goto err;
+		goto err_set_errno;
 
 	/* Restore the original position */
 	if (!SetFilePointerEx(h, orig_offset, NULL, FILE_BEGIN))
-		goto err;
+		goto err_set_errno;
 
 	return bytes_read_or_written;
-err:
+err_set_errno:
 	set_errno_from_GetLastError();
+err:
 	return -1;
 }
 

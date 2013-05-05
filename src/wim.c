@@ -389,7 +389,7 @@ do_open_wim(const tchar *filename, filedes_t *fd_ret)
 {
 	int fd;
 
-	fd = topen(filename, O_RDONLY);
+	fd = topen(filename, O_RDONLY | O_BINARY);
 	if (fd == INVALID_FILEDES) {
 		ERROR_WITH_ERRNO("Can't open \"%"TS"\" read-only", filename);
 		return WIMLIB_ERR_OPEN;

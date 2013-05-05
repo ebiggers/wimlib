@@ -1428,11 +1428,6 @@ write_xml_data(const struct wim_info *wim_info, int image, int out_fd,
 
 	DEBUG("Ended XML document");
 
-	/* Call xmlFreeTextWriter() before ftello() because the former will
-	 * flush the file stream. */
-	xmlFreeTextWriter(writer);
-	writer = NULL;
-
 	end_offset = filedes_offset(out_fd);
 	if (end_offset == -1) {
 		ret = WIMLIB_ERR_WRITE;

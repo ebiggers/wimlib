@@ -1838,7 +1838,7 @@ lock_wim(WIMStruct *w, filedes_t fd)
 static int
 open_wim_writable(WIMStruct *w, const tchar *path, int open_flags)
 {
-	w->out_fd = topen(path, open_flags, 0644);
+	w->out_fd = topen(path, open_flags | O_BINARY, 0644);
 	if (w->out_fd == INVALID_FILEDES) {
 		ERROR_WITH_ERRNO("Failed to open `%"TS"' for writing", path);
 		return WIMLIB_ERR_OPEN;
