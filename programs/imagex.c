@@ -1922,7 +1922,7 @@ imagex_extract(int argc, tchar **argv)
 	const tchar *wimfile;
 	const tchar *image_num_or_name;
 	tchar *dest_dir = T(".");
-	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
+	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL | WIMLIB_EXTRACT_FLAG_NORPFIX;
 
 	const tchar *swm_glob = NULL;
 	WIMStruct **additional_swms = NULL;
