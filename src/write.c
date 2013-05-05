@@ -599,9 +599,19 @@ compressor_thread_proc(void *arg)
 static void
 do_write_streams_progress(union wimlib_progress_info *progress,
 			  wimlib_progress_func_t progress_func,
-			  uint64_t size_added)
+			  uint64_t size_added,
+			  bool stream_discarded)
 {
-	progress->write_streams.completed_bytes += size_added;
+	if (stream_discarded) {
+		progress->write_streams.total_bytes -= size_added;
+		if (progress->write_streams._private != ~(uint64_t)0 &&
+		    progress->write_streams._private > progress->write_streams.total_bytes)
+		{
+			progress->write_streams._private = progress->write_streams.total_bytes;
+		}
+	} else {
+		progress->write_streams.completed_bytes += size_added;
+	}
 	progress->write_streams.completed_streams++;
 	if (progress_func &&
 	    progress->write_streams.completed_bytes >= progress->write_streams._private)
@@ -609,7 +619,7 @@ do_write_streams_progress(union wimlib_progress_info *progress,
 		progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
 			      progress);
 		if (progress->write_streams._private == progress->write_streams.total_bytes) {
-			progress->write_streams._private = ~0;
+			progress->write_streams._private = ~(uint64_t)0;
 		} else {
 			progress->write_streams._private =
 				min(progress->write_streams.total_bytes,
@@ -648,9 +658,11 @@ do_write_stream_list(struct list_head *stream_list,
 {
 	int ret = 0;
 	struct wim_lookup_table_entry *lte;
+	bool stream_discarded;
 
 	/* For each stream in @stream_list ... */
 	while (!list_empty(stream_list)) {
+		stream_discarded = false;
 		lte = container_of(stream_list->next,
 				   struct wim_lookup_table_entry,
 				   write_streams_list);
@@ -675,6 +687,7 @@ do_write_stream_list(struct list_head *stream_list,
 					DEBUG("Discarding duplicate stream of length %"PRIu64,
 					      wim_resource_size(lte));
 					lte->no_progress = 0;
+					stream_discarded = true;
 					goto skip_to_progress;
 				}
 			}
@@ -706,7 +719,8 @@ do_write_stream_list(struct list_head *stream_list,
 		if (!lte->no_progress) {
 			do_write_streams_progress(progress,
 						  progress_func,
-						  wim_resource_size(lte));
+						  wim_resource_size(lte),
+						  stream_discarded);
 		}
 	}
 	return ret;
@@ -1016,7 +1030,8 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 
 			do_write_streams_progress(ctx->progress,
 						  ctx->progress_func,
-						  wim_resource_size(cur_lte));
+						  wim_resource_size(cur_lte),
+						  false);
 
 			/* Since we just finished writing a stream, write any
 			 * streams that have been added to the serial_streams
