@@ -77,4 +77,13 @@ win32_global_cleanup();
 extern int
 win32_strerror_r_replacement(int errnum, tchar *buf, size_t buflen);
 
+extern ssize_t
+win32_pread(int fd, void *buf, size_t count, off_t offset);
+
+extern ssize_t
+win32_pwrite(int fd, const void *buf, size_t count, off_t offset);
+
+extern ssize_t
+win32_writev(int fd, const struct iovec *iov, int iovcnt);
+
 #endif /* _WIMLIB_WIN32_H */

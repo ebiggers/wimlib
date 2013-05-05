@@ -48,6 +48,7 @@
 #endif
 
 #include <unistd.h>
+#include <fcntl.h>
 #include <errno.h>
 
 #ifdef WITH_NTFS_3G
@@ -64,6 +65,10 @@
 #endif
 
 #include <limits.h>
+
+#ifndef __WIN32__
+#  include <sys/uio.h> /* for `struct iovec' */
+#endif
 
 /* Chunk table that's located at the beginning of each compressed resource in
  * the WIM.  (This is not the on-disk format; the on-disk format just has an
@@ -1833,7 +1838,7 @@ lock_wim(WIMStruct *w, filedes_t fd)
 static int
 open_wim_writable(WIMStruct *w, const tchar *path, int open_flags)
 {
-	w->out_fd = open(path, open_flags, 0644);
+	w->out_fd = topen(path, open_flags, 0644);
 	if (w->out_fd == INVALID_FILEDES) {
 		ERROR_WITH_ERRNO("Failed to open `%"TS"' for writing", path);
 		return WIMLIB_ERR_OPEN;

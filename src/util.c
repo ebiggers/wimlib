@@ -39,12 +39,16 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <sys/uio.h>
 #include <unistd.h>
 
 
 #ifdef __WIN32__
-#include "win32.h"
+#  include "win32.h"
+#  define pread	 win32_pread
+#  define pwrite win32_pwrite
+#  define writev win32_writev
+#else
+#  include <sys/uio.h> /* for writev() and `struct iovec' */
 #endif
 
 static size_t

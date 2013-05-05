@@ -299,7 +299,15 @@ full_pread(filedes_t fd, void *buf, size_t nbyte, off_t offset);
 extern size_t
 full_pwrite(filedes_t fd, const void *buf, size_t count, off_t offset);
 
+#ifdef __WIN32__
+struct iovec {
+	void *iov_base;
+	size_t iov_len;
+};
+#else
 struct iovec;
+#endif
+
 
 extern size_t
 full_writev(int fd, struct iovec *iov, int iovcnt);
