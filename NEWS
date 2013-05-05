@@ -7,6 +7,9 @@ Version 1.3.4:
 	Fixed a bug in the Windows build where file handles were left open to
 	the WIM file, causing `wimlib_imagex optimize' to fail in some cases.
 
+	Fixed a bug in the Windows build of wimlib-imagex where globbing
+	split-WIM parts could cause a crash.
+
 	With the Windows build it is now possible to restore a WIM containing
 	symbolic links as a non-Administrator; however you will receive warnings
 	about not being able to extract the symbolic links.
