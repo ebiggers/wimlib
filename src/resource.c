@@ -563,8 +563,6 @@ typedef int (*read_resource_prefix_handler_t)(const struct wim_lookup_table_entr
  * size until the resource is exhausted.
  *
  * If the resource is located in a WIM file, @flags can be:
- *   * WIMLIB_RESOURCE_FLAG_THREADSAFE_READ if it must be safe to access the resource
- *     concurrently by multiple threads.
  *   * WIMLIB_RESOURCE_FLAG_RAW if the raw compressed data is to be supplied
  *     instead of the uncompressed data.
  * Otherwise, the @flags are ignored.
