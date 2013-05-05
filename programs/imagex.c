@@ -81,6 +81,8 @@ enum imagex_op_type {
 static void usage(int cmd_type);
 static void usage_all();
 
+static bool imagex_be_quiet = false;
+
 
 static const tchar *usage_strings[] = {
 [APPEND] =
@@ -952,6 +954,8 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		     const union wimlib_progress_info *info)
 {
 	unsigned percent_done;
+	if (imagex_be_quiet)
+		return 0;
 	switch (msg) {
 	case WIMLIB_PROGRESS_MSG_WRITE_STREAMS:
 		percent_done = TO_PERCENT(info->write_streams.completed_bytes,
@@ -1952,6 +1956,7 @@ imagex_extract(int argc, tchar **argv)
 			break;
 		case IMAGEX_TO_STDOUT_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_TO_STDOUT;
+			imagex_be_quiet = true;
 			break;
 		default:
 			usage(EXTRACT);
@@ -2006,8 +2011,14 @@ imagex_extract(int argc, tchar **argv)
 	ret = wimlib_extract_files(wim, image, 0, cmds, num_cmds,
 				   additional_swms, num_additional_swms,
 				   imagex_progress_func);
-	if (ret == 0)
-		tprintf(T("Done extracting files.\n"));
+	if (ret == 0) {
+		if (!imagex_be_quiet)
+			tprintf(T("Done extracting files.\n"));
+	} else if (ret == WIMLIB_ERR_PATH_DOES_NOT_EXIST) {
+		tfprintf(stderr, T("Note: You can use `"IMAGEX_PROGNAME" dir' to see what "
+				   "files and directories\n"
+				   "      are in the WIM image.\n"));
+	}
 #ifdef __WIN32__
 	win32_release_restore_privileges();
 #endif

@@ -864,6 +864,33 @@ sort_stream_list_by_wim_position(struct list_head *stream_list)
 }
 
 /*
+ * Extract a dentry to standard output.
+ *
+ * This obviously doesn't make sense in all cases.  We return an error if the
+ * dentry does not correspond to a regular file.  Otherwise we extract the
+ * unnamed data stream only.
+ */
+static int
+extract_dentry_to_stdout(struct wim_dentry *dentry)
+{
+	int ret = 0;
+	if (!dentry_is_regular_file(dentry)) {
+		ERROR("\"%"TS"\" is not a regular file and therefore cannot be "
+		      "extracted to standard output", dentry->_full_path);
+		ret = WIMLIB_ERR_NOT_A_REGULAR_FILE;
+	} else {
+		struct wim_lookup_table_entry *lte;
+
+		lte = inode_unnamed_lte_resolved(dentry->d_inode);
+		if (lte) {
+			ret = extract_wim_resource_to_fd(lte, STDOUT_FILENO,
+							 wim_resource_size(lte));
+		}
+	}
+	return ret;
+}
+
+/*
  * extract_tree - Extract a file or directory tree from the currently selected
  *		  WIM image.
  *
@@ -951,6 +978,11 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	}
 	args.extract_root = root;
 
+	ret = calculate_dentry_tree_full_paths(root);
+	if (ret)
+		goto out_ntfs_umount;
+
+
 	/* Build a list of the streams that need to be extracted */
 	find_streams_for_extraction(root,
 				    &stream_list,
@@ -959,6 +991,11 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	/* Calculate the number of bytes of data that will be extracted */
 	calculate_bytes_to_extract(&stream_list, extract_flags,
 				   &args.progress);
+
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT) {
+		ret = extract_dentry_to_stdout(root);
+		goto out_mark_inodes_unvisited;
+	}
 
 	if (progress_func) {
 		progress_func(*wim_source_path ? WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN :
@@ -981,10 +1018,6 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 		progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
 			      &args.progress);
 	}
-
-	ret = calculate_dentry_tree_full_paths(root);
-	if (ret)
-		goto out_mark_inodes_unvisited;
 
 	/* Make the directory structure and extract empty files */
 	args.extract_flags |= WIMLIB_EXTRACT_FLAG_NO_STREAMS;

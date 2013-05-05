@@ -339,6 +339,9 @@ static const tchar *error_strings[] = {
 	[WIMLIB_ERR_NOT_A_WIM_FILE]
 		= T("The file did not begin with the magic characters that "
 			"identify a WIM file"),
+	[WIMLIB_ERR_NOT_A_REGULAR_FILE]
+		= T("One of the specified paths to extract did not "
+		    "correspond to a regular file"),
 	[WIMLIB_ERR_NO_FILENAME]
 		= T("The WIM is not identified with a filename"),
 	[WIMLIB_ERR_NTFS_3G]
