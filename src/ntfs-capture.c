@@ -645,6 +645,12 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			goto out;
 	}
 
+	/* Reparse-point fixups are a no-op because in NTFS-3g capture mode we
+	 * only allow capturing an entire volume. */
+	if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX &&
+	    inode_is_symlink(inode))
+		inode->i_not_rpfixed = 0;
+
 	if (!(params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
 		/* Get security descriptor */
 		char _sd[1];
