@@ -1003,12 +1003,9 @@ enum wimlib_error_code {
 /**
  * Adds an image to a WIM file from an on-disk directory tree or NTFS volume.
  *
- * The directory tree of NTFS volume is read immediately for the purpose of
- * constructing a directory entry tree in-memory.  Also, all files are read to
- * calculate their SHA1 message digests.  However, because the directory tree
- * may contain a very large amount of data, the files themselves are not read
- * into memory permanently, and instead references to their paths saved.  The
- * files are then read on-demand if wimlib_write() or wimlib_overwrite() is
+ * The directory tree or NTFS volume is scanned immediately to load the dentry
+ * tree into memory, and file attributes and symbolic links are read.  However,
+ * actual file data is not read until wimlib_write() or wimlib_overwrite() is
  * called.
  *
  * See the manual page for the @b wimlib-imagex program for more information
