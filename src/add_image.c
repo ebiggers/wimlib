@@ -478,29 +478,6 @@ exclude_path(const tchar *path, size_t path_len,
 
 }
 
-/* Strip leading and trailing forward slashes from a string.  Modifies it in
- * place and returns the stripped string. */
-static const tchar *
-canonicalize_target_path(tchar *target_path)
-{
-	tchar *p;
-	if (target_path == NULL)
-		return T("");
-	for (;;) {
-		if (*target_path == T('\0'))
-			return target_path;
-		else if (*target_path == T('/'))
-			target_path++;
-		else
-			break;
-	}
-
-	p = tstrchr(target_path, T('\0')) - 1;
-	while (*p == T('/'))
-		*p-- = T('\0');
-	return target_path;
-}
-
 /* Strip leading and trailing slashes from the target paths, and translate all
  * backslashes in the source and target paths into forward slashes. */
 static void
@@ -515,12 +492,8 @@ canonicalize_sources_and_targets(struct wimlib_capture_source *sources,
 		/* The Windows API can handle forward slashes.  Just get rid of
 		 * backslashes to avoid confusing other parts of the library
 		 * code. */
-		zap_backslashes(sources->fs_source_path);
-		if (sources->wim_target_path)
-			zap_backslashes(sources->wim_target_path);
-
-		sources->wim_target_path =
-			(tchar*)canonicalize_target_path(sources->wim_target_path);
+		sources->fs_source_path = canonicalize_fs_path(sources->fs_source_path);
+		sources->wim_target_path = canonicalize_wim_path(sources->wim_target_path);
 		DEBUG("Canonical target: \"%"TS"\"", sources->wim_target_path);
 		sources++;
 	}

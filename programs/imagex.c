@@ -68,6 +68,7 @@ enum imagex_op_type {
 	DELETE,
 	DIR,
 	EXPORT,
+	EXTRACT,
 	INFO,
 	JOIN,
 	MOUNT,
@@ -122,6 +123,12 @@ IMAGEX_PROGNAME" export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
 "              [--boot] [--check] [--compress=TYPE] [--ref=\"GLOB\"]\n"
 "              [--threads=NUM_THREADS] [--rebuild]\n"
 ),
+[EXTRACT] =
+T(
+IMAGEX_PROGNAME" extract SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME) [PATH...]\n"
+"              [--check] [--ref=\"GLOB\"] [--verbose] [--unix-data] [--no-acls]\n"
+"              [--strict-acls] [--to-stdout] [--dest-dir=DIR]\n"
+),
 [INFO] =
 T(
 IMAGEX_PROGNAME" info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
@@ -168,14 +175,15 @@ enum {
 	IMAGEX_CONFIG_OPTION,
 	IMAGEX_DEBUG_OPTION,
 	IMAGEX_DEREFERENCE_OPTION,
+	IMAGEX_DEST_DIR_OPTION,
 	IMAGEX_EXTRACT_XML_OPTION,
 	IMAGEX_FLAGS_OPTION,
 	IMAGEX_HARDLINK_OPTION,
 	IMAGEX_HEADER_OPTION,
 	IMAGEX_LOOKUP_TABLE_OPTION,
 	IMAGEX_METADATA_OPTION,
-	IMAGEX_NO_ACLS_OPTION,
 	IMAGEX_NORPFIX_OPTION,
+	IMAGEX_NO_ACLS_OPTION,
 	IMAGEX_REBULID_OPTION,
 	IMAGEX_RECOMPRESS_OPTION,
 	IMAGEX_REF_OPTION,
@@ -187,6 +195,7 @@ enum {
 	IMAGEX_STRICT_ACLS_OPTION,
 	IMAGEX_SYMLINK_OPTION,
 	IMAGEX_THREADS_OPTION,
+	IMAGEX_TO_STDOUT_OPTION,
 	IMAGEX_UNIX_DATA_OPTION,
 	IMAGEX_VERBOSE_OPTION,
 	IMAGEX_XML_OPTION,
@@ -238,6 +247,19 @@ static const struct option export_options[] = {
 	{T("ref"),        required_argument, NULL, IMAGEX_REF_OPTION},
 	{T("threads"),    required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("rebuild"),    no_argument,       NULL, IMAGEX_REBULID_OPTION},
+	{NULL, 0, NULL, 0},
+};
+
+static const struct option extract_options[] = {
+	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("verbose"),     no_argument,       NULL, IMAGEX_VERBOSE_OPTION},
+	{T("ref"),         required_argument, NULL, IMAGEX_REF_OPTION},
+	{T("unix-data"),   no_argument,       NULL, IMAGEX_UNIX_DATA_OPTION},
+	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
+	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
+	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
+	{T("dest-dir"),    required_argument, NULL, IMAGEX_DEST_DIR_OPTION},
+	{T("to-stdout"),   no_argument,       NULL, IMAGEX_TO_STDOUT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -991,13 +1013,22 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			tputchar(T('\n'));
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN:
-		tprintf(T("Applying image %d (%"TS") from \"%"TS"\" "
+		tprintf(T("Applying image %d (\"%"TS"\") from \"%"TS"\" "
 			  "to %"TS" \"%"TS"\"\n"),
 			info->extract.image,
 			info->extract.image_name,
 			info->extract.wimfile_name,
 			((info->extract.extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) ?
 			 T("NTFS volume") : T("directory")),
+			info->extract.target);
+		break;
+	case WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN:
+		tprintf(T("Extracting \"%"TS"\" from image %d (\"%"TS"\") "
+			  "in \"%"TS"\" to \"%"TS"\"\n"),
+			info->extract.extract_root_wim_source_path,
+			info->extract.image,
+			info->extract.image_name,
+			info->extract.wimfile_name,
 			info->extract.target);
 		break;
 	/*case WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN:*/
@@ -1019,7 +1050,8 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		tprintf(T("%"TS"\n"), info->extract.cur_path);
 		break;
 	case WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS:
-		tprintf(T("Setting timestamps on all extracted files...\n"));
+		if (info->extract.extract_root_wim_source_path[0] == T('\0'))
+			tprintf(T("Setting timestamps on all extracted files...\n"));
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:
 		if (info->extract.extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
@@ -1815,6 +1847,183 @@ out:
 	return ret;
 }
 
+static bool
+is_root_wim_path(const tchar *path)
+{
+	const tchar *p;
+	for (p = path; *p; p++)
+		if (*p != T('\\') && *p != T('\\'))
+			return false;
+	return true;
+}
+
+static void
+free_extract_commands(struct wimlib_extract_command *cmds, size_t num_cmds,
+		      tchar *dest_dir)
+{
+	for (size_t i = 0; i < num_cmds; i++)
+		if (cmds[i].fs_dest_path != dest_dir)
+				free(cmds[i].fs_dest_path);
+	free(cmds);
+}
+
+static struct wimlib_extract_command *
+prepare_extract_commands(tchar **argv, int argc, int extract_flags,
+			 tchar *dest_dir, size_t *num_cmds_ret)
+{
+	struct wimlib_extract_command *cmds;
+	size_t num_cmds;
+	tchar *emptystr = T("");
+
+	num_cmds = argc;
+	if (argc == 0) {
+		num_cmds = 1;
+		argv = &emptystr;
+	}
+	cmds = calloc(num_cmds, sizeof(cmds[0]));
+	if (!cmds) {
+		imagex_error("Out of memory!");
+		return NULL;
+	}
+
+	for (size_t i = 0; i < num_cmds; i++) {
+		cmds[i].extract_flags = extract_flags;
+		cmds[i].wim_source_path = argv[i];
+		if (is_root_wim_path(argv[i])) {
+			cmds[i].fs_dest_path = dest_dir;
+		} else {
+			size_t len = tstrlen(dest_dir) + 1 + tstrlen(argv[i]);
+			cmds[i].fs_dest_path = malloc((len + 1) * sizeof(tchar));
+			if (!cmds[i].fs_dest_path)
+				goto oom;
+			tsprintf(cmds[i].fs_dest_path, "%"TS"/%"TS, dest_dir, tbasename(argv[i]));
+		}
+	}
+
+	*num_cmds_ret = num_cmds;
+	return cmds;
+oom:
+	free_extract_commands(cmds, num_cmds, dest_dir);
+	return NULL;
+}
+
+static int
+imagex_extract(int argc, tchar **argv)
+{
+	int c;
+	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int image;
+	WIMStruct *wim;
+	int ret;
+	const tchar *wimfile;
+	const tchar *image_num_or_name;
+	tchar *dest_dir = T(".");
+	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
+
+	const tchar *swm_glob = NULL;
+	WIMStruct **additional_swms = NULL;
+	unsigned num_additional_swms = 0;
+
+	struct wimlib_extract_command *cmds;
+	size_t num_cmds;
+
+	for_opt(c, extract_options) {
+		switch (c) {
+		case IMAGEX_CHECK_OPTION:
+			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			break;
+		case IMAGEX_VERBOSE_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_VERBOSE;
+			break;
+		case IMAGEX_REF_OPTION:
+			swm_glob = optarg;
+			break;
+		case IMAGEX_UNIX_DATA_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_UNIX_DATA;
+			break;
+		case IMAGEX_NO_ACLS_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_NO_ACLS;
+			break;
+		case IMAGEX_STRICT_ACLS_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_STRICT_ACLS;
+			break;
+		case IMAGEX_DEST_DIR_OPTION:
+			dest_dir = optarg;
+			break;
+		case IMAGEX_TO_STDOUT_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_TO_STDOUT;
+			break;
+		default:
+			usage(EXTRACT);
+			ret = -1;
+			goto out;
+		}
+	}
+	argc -= optind;
+	argv += optind;
+
+	if (argc < 2) {
+		usage(EXTRACT);
+		ret = -1;
+		goto out;
+	}
+	wimfile = argv[0];
+	image_num_or_name = argv[1];
+
+	argc -= 2;
+	argv += 2;
+
+	cmds = prepare_extract_commands(argv, argc, extract_flags, dest_dir,
+					&num_cmds);
+	if (!cmds) {
+		ret = -1;
+		goto out;
+	}
+
+	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
+	if (ret)
+		goto out_free_cmds;
+
+	image = wimlib_resolve_image(wim, image_num_or_name);
+	ret = verify_image_exists_and_is_single(image,
+						image_num_or_name,
+						wimfile);
+	if (ret)
+		goto out_wimlib_free;
+
+	if (swm_glob) {
+		ret = open_swms_from_glob(swm_glob, wimfile, open_flags,
+					  &additional_swms,
+					  &num_additional_swms);
+		if (ret)
+			goto out_wimlib_free;
+	}
+
+#ifdef __WIN32__
+	win32_acquire_restore_privileges();
+#endif
+
+	ret = wimlib_extract_files(wim, image, 0, cmds, num_cmds,
+				   additional_swms, num_additional_swms,
+				   imagex_progress_func);
+	if (ret == 0)
+		tprintf(T("Done extracting files.\n"));
+#ifdef __WIN32__
+	win32_release_restore_privileges();
+#endif
+	if (additional_swms) {
+		for (unsigned i = 0; i < num_additional_swms; i++)
+			wimlib_free(additional_swms[i]);
+		free(additional_swms);
+	}
+out_wimlib_free:
+	wimlib_free(wim);
+out_free_cmds:
+	free_extract_commands(cmds, num_cmds, dest_dir);
+out:
+	return ret;
+}
+
 /* Prints information about a WIM file; also can mark an image as bootable,
  * change the name of an image, or change the description of an image. */
 static int
@@ -2443,6 +2652,7 @@ static const struct imagex_command imagex_commands[] = {
 	{T("delete"),  imagex_delete,		 DELETE},
 	{T("dir"),     imagex_dir,		 DIR},
 	{T("export"),  imagex_export,		 EXPORT},
+	{T("extract"), imagex_extract,		 EXTRACT},
 	{T("info"),    imagex_info,		 INFO},
 	{T("join"),    imagex_join,		 JOIN},
 	{T("mount"),   imagex_mount_rw_or_ro,	 MOUNT},

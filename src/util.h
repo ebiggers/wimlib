@@ -279,6 +279,12 @@ wimlib_printf(const tchar *format, ...) FORMAT(printf, 1, 2);
 extern void
 zap_backslashes(tchar *s);
 
+extern tchar *
+canonicalize_wim_path(const tchar *wim_path);
+
+extern tchar *
+canonicalize_fs_path(const tchar *fs_path);
+
 static inline u64
 hash_u64(u64 n)
 {

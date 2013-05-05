@@ -302,6 +302,9 @@ enum wimlib_progress_msg {
 	 * ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
 
+	/** XXX */
+	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN,
+
 	/** The directory structure of the WIM image is about to be extracted.
 	 * @a info will point to ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
@@ -327,6 +330,9 @@ enum wimlib_progress_msg {
 	/** A WIM image has been successfully extracted.  @a info will point to
 	 * ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END,
+
+	/** XXX */
+	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END,
 
 	/** The directory or NTFS volume is about to be scanned to build a tree
 	 * of WIM dentries in-memory.  @a info will point to
@@ -497,6 +503,11 @@ union wimlib_progress_info {
 		 * special cases (hard links, symbolic links, and alternate data
 		 * streams.) */
 		uint64_t num_streams;
+
+		/** Path to the root dentry within the WIM for the tree that is
+		 * being extracted.  Will be the empty string when extracting a
+		 * full image. */
+		const wimlib_tchar *extract_root_wim_source_path;
 	} extract;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_RENAME. */
@@ -767,6 +778,9 @@ struct wimlib_capture_config {
  * WIM_HDR_FLAG_RP_FIX flag in the WIM header. */
 #define WIMLIB_EXTRACT_FLAG_NORPFIX			0x00000200
 
+/** Ignore the target directory; only extract file data to standard output. */
+#define WIMLIB_EXTRACT_FLAG_TO_STDOUT			0x00000400
+
 /******************************
  * WIMLIB_MOUNT_FLAG_*        *
  ******************************/
@@ -858,67 +872,38 @@ struct wimlib_capture_config {
  * locale's character encoding. */
 #define WIMLIB_INIT_FLAG_ASSUME_UTF8			0x00000001
 
-
-#if 0
-/****************************************************************
- * Definition of struct wimlib_modify_command, with various flags
- ****************************************************************/
-
-enum {
-	WIMLIB_MOVE_TREE_FLAG_OVERWRITE_ALL			= 0x1,
-	WIMLIB_MOVE_TREE_FLAG_OVERWRITE_NONDIRECTORIES		= 0x2,
-	WIMLIB_MOVE_TREE_FLAG_OVERWRITE_EMPTY_DIRECTORIES	= 0x4,
-	WIMLIB_MOVE_TREE_FLAG_OVERWRITE_DIRECTORIES		= 0x8,
-};
-
-enum {
-	WIMLIB_DELETE_TREE_FLAG_FORCE			= 0x1,
-	WIMLIB_DELETE_TREE_FLAG_RECURSIVE		= 0x2,
-	WIMLIB_DELETE_TREE_FLAG_REMOVE_EMPTY_DIR	= 0x4,
-};
-
-enum {
-	WIMLIB_ADD_TREE_FLAG_DEREFERENCE		= 0x1,
-	WIMLIB_ADD_TREE_FLAG_VERBOSE			= 0x2,
-	WIMLIB_ADD_TREE_FLAG_UNIX_DATA			= 0x4,
-	WIMLIB_ADD_TREE_FLAG_NOACLS			= 0x8,
-	WIMLIB_ADD_TREE_FLAG_NTFS_VOLUME		= 0x01,
-	WIMLIB_ADD_TREE_FLAG_OVERLAY			= 0x02,
-	WIMLIB_ADD_TREE_FLAG_MAKE_NECESSARY_DIRS	= 0x04,
-};
-
-enum wimlib_modify_op {
-	WIMLIB_MODIFY_OP_DELETE_TREE,
-	WIMLIB_MODIFY_OP_ADD_TREE,
-	WIMLIB_MODIFY_OP_MOVE_TREE,
-};
-
-struct wimlib_modify_command {
-	enum wimlib_modify_op op;
+/** XXX */
+struct wimlib_update_command {
+	enum {
+		WIMLIB_UPDATE_OP_ADD,
+		WIMLIB_UPDATE_OP_DELETE,
+		WIMLIB_UPDATE_OP_MOVE,
+	} op;
 	union {
-		struct wimlib_modify_command_delete_tree {
-			int delete_tree_flags;
-			const wimlib_tchar *tree_wim_path;
-			unsigned long reserved;
-		} delete_tree;
-
-		struct wimlib_modify_command_add_tree {
-			int add_tree_flags;
+		struct {
 			const wimlib_tchar *fs_source_path;
 			const wimlib_tchar *wim_target_path;
-			unsigned long reserved;
-		} add_tree;
-
-		struct wimlib_modify_command_move_tree {
-			int move_tree_flags;
+			const struct wimlib_capture_config *config;
+			int add_flags;
+		} add;
+		struct {
+			const wimlib_tchar *path_in_wim;
+			int delete_flags;
+		} delete;
+		struct {
 			const wimlib_tchar *wim_source_path;
 			const wimlib_tchar *wim_target_path;
-			unsigned long reserved;
-		} move_tree;
+			int rename_flags;
+		} rename;
 	};
 };
-#endif
 
+/** XXX */
+struct wimlib_extract_command {
+	wimlib_tchar *wim_source_path;
+	wimlib_tchar *fs_dest_path;
+	int extract_flags;
+};
 
 /**
  * Possible values of the error code returned by many functions in wimlib.
@@ -991,6 +976,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_VOLUME_LACKS_FEATURES,
 	WIMLIB_ERR_WRITE,
 	WIMLIB_ERR_XML,
+	WIMLIB_ERR_PATH_DOES_NOT_EXIST,
 };
 
 
@@ -1301,6 +1287,17 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
 		    WIMStruct **additional_swms,
 		    unsigned num_additional_swms,
 		    wimlib_progress_func_t progress_func);
+
+/** XXX */
+extern int
+wimlib_extract_files(WIMStruct *wim,
+		     int image,
+		     int default_extract_flags,
+		     const struct wimlib_extract_command *cmds,
+		     size_t num_cmds,
+		     WIMStruct **additional_swms,
+		     unsigned num_additional_swms,
+		     wimlib_progress_func_t progress_func);
 
 /**
  * Extracts an image, or all images, from a standalone or split WIM file to a

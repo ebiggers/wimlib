@@ -1270,13 +1270,13 @@ replace_forbidden_characters(utf16lechar *name)
 	#ifdef __WIN32__
 		if (wcschr(L"<>:\"/\\|?*", (wchar_t)*p))
 	#else
-		if (*p == '/')
+		if (*p == cpu_to_le16('/'))
 	#endif
 		{
 		#ifdef __WIN32__
 			*p = cpu_to_le16(0xfffd);
 		#else
-			*p = '?';
+			*p = cpu_to_le16('?');
 		#endif
 			if (name) {
 				WARNING("File, directory, or stream name \"%"WS"\"\n"

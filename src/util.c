@@ -347,6 +347,8 @@ static const tchar *error_strings[] = {
 		= T("Failed to open a file"),
 	[WIMLIB_ERR_OPENDIR]
 		= T("Failed to open a directory"),
+	[WIMLIB_ERR_PATH_DOES_NOT_EXIST]
+		= T("The path does not exist in the WIM image"),
 	[WIMLIB_ERR_READ]
 		= T("Could not read data from a file"),
 	[WIMLIB_ERR_READLINK]
@@ -568,6 +570,45 @@ zap_backslashes(tchar *s)
 			s++;
 		}
 	}
+}
+
+tchar *
+canonicalize_fs_path(const tchar *fs_path)
+{
+	tchar *canonical_path;
+
+	if (!fs_path)
+		fs_path = T("");
+	canonical_path = TSTRDUP(fs_path);
+	zap_backslashes(canonical_path);
+	return canonical_path;
+}
+
+/* Strip leading and trailing slashes from a string.  Also translates
+ * backslashes into forward slashes.  */
+tchar *
+canonicalize_wim_path(const tchar *wim_path)
+{
+	tchar *p;
+	tchar *canonical_path;
+
+	if (wim_path == NULL) {
+		wim_path = T("");
+	} else {
+		while (*wim_path == T('/') || *wim_path == T('\\'))
+			wim_path++;
+	}
+	canonical_path = TSTRDUP(wim_path);
+	if (canonical_path) {
+		zap_backslashes(canonical_path);
+		for (p = tstrchr(canonical_path, T('\0')) - 1;
+		     p >= canonical_path && *p == T('/');
+		     p--)
+		{
+			*p = T('\0');
+		}
+	}
+	return canonical_path;
 }
 
 /* Like read(), but keep trying until everything has been written or we know for
