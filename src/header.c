@@ -33,7 +33,8 @@ static const u8 wim_magic_chars[WIM_MAGIC_LEN] = {
 
 /* Reads the header from a WIM file.  */
 int
-read_header(int in_fd, struct wim_header *hdr, int open_flags)
+read_header(const tchar *filename, int in_fd,
+	    struct wim_header *hdr, int open_flags)
 {
 	size_t bytes_read;
 	u8 buf[WIM_HEADER_DISK_SIZE];
@@ -43,35 +44,35 @@ read_header(int in_fd, struct wim_header *hdr, int open_flags)
 	u32 wim_version;
 	u32 chunk_size;
 
-	DEBUG("Reading WIM header.");
+	DEBUG("Reading WIM header from \"%"TS"\".", filename);
 
 	bytes_read = full_pread(in_fd, buf, WIM_HEADER_DISK_SIZE, 0);
 
 	if (bytes_read != WIM_HEADER_DISK_SIZE) {
-		ERROR_WITH_ERRNO("Error reading WIM header");
+		ERROR_WITH_ERRNO("\"%"TS"\": Error reading header", filename);
 		return WIMLIB_ERR_READ;
 	}
 
 	p = buf;
 	if (memcmp(p, wim_magic_chars, WIM_MAGIC_LEN)) {
-		ERROR("Invalid magic characters in WIM header");
+		ERROR("\"%"TS"\": Invalid magic characters in header", filename);
 		return WIMLIB_ERR_NOT_A_WIM_FILE;
 	}
 
 	/* Byte 8 */
 	p = get_u32(p + 8, &hdr_size);
 	if (hdr_size != WIM_HEADER_DISK_SIZE) {
-		ERROR("Header is %u bytes (expected %u bytes)",
-		      hdr_size, WIM_HEADER_DISK_SIZE);
+		ERROR("\"%"TS"\": Header is %u bytes (expected %u bytes)",
+		      filename, hdr_size, WIM_HEADER_DISK_SIZE);
 		return WIMLIB_ERR_INVALID_HEADER_SIZE;
 	}
 
 	/* Byte 12 */
 	p = get_u32(buf + WIM_MAGIC_LEN + sizeof(u32), &wim_version);
 	if (wim_version != WIM_VERSION) {
-		ERROR("The WIM header says the WIM version is %u, but wimlib "
-		      "only knows about version %u",
-		      wim_version, WIM_VERSION);
+		ERROR("\"%"TS"\": The WIM header says the WIM version is %u, "
+		      "but wimlib only knows about version %u",
+		      filename, wim_version, WIM_VERSION);
 		return WIMLIB_ERR_UNKNOWN_VERSION;
 	}
 
@@ -79,9 +80,9 @@ read_header(int in_fd, struct wim_header *hdr, int open_flags)
 	p = get_u32(p, &chunk_size);
 	if (chunk_size != WIM_CHUNK_SIZE &&
 	    (hdr->flags & WIM_HDR_FLAG_COMPRESSION)) {
-		ERROR("Unexpected chunk size of %u! Ask the author to "
+		ERROR("\"%"TS"\": Unexpected chunk size of %u! Ask the author to "
 		      "implement support for other chunk sizes.",
-		      chunk_size);
+		      filename, chunk_size);
 		ERROR("(Or it might just be that the WIM header is invalid.)");
 		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
 	}
@@ -94,16 +95,16 @@ read_header(int in_fd, struct wim_header *hdr, int open_flags)
 	    hdr->part_number == 0 ||
 	    hdr->part_number > hdr->total_parts)
 	{
-		ERROR("Invalid WIM part number: %hu of %hu",
-		      hdr->part_number, hdr->total_parts);
+		ERROR("\"%"TS"\": Invalid WIM part number: %hu of %hu",
+		      filename, hdr->part_number, hdr->total_parts);
 		return WIMLIB_ERR_INVALID_PART_NUMBER;
 	}
 
 	if (!(open_flags & WIMLIB_OPEN_FLAG_SPLIT_OK) &&
 	    hdr->total_parts != 1)
 	{
-		ERROR("This WIM is part %u of a %u-part WIM",
-		      hdr->part_number, hdr->total_parts);
+		ERROR("\"%"TS"\": This WIM is part %u of a %u-part WIM",
+		      filename, hdr->part_number, hdr->total_parts);
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
 
@@ -113,7 +114,8 @@ read_header(int in_fd, struct wim_header *hdr, int open_flags)
 	      hdr->part_number, hdr->total_parts, hdr->image_count);
 
 	if (hdr->image_count >= INT_MAX) {
-		ERROR("Invalid image count (%u)", hdr->image_count);
+		ERROR("\"%"TS"\": Invalid image count (%u)",
+		      filename, hdr->image_count);
 		return WIMLIB_ERR_IMAGE_COUNT;
 	}
 

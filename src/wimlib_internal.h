@@ -493,7 +493,8 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list);
 /* header.c */
 
 extern int
-read_header(int in_fd, struct wim_header *hdr, int split_ok);
+read_header(const tchar *filename, int in_fd, struct wim_header *hdr,
+	    int split_ok);
 
 extern int
 write_header(const struct wim_header *hdr, int out_fd);

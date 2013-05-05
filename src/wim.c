@@ -453,7 +453,7 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 			return WIMLIB_ERR_OPEN;
 	}
 
-	ret = read_header(w->in_fd, &w->hdr, open_flags);
+	ret = read_header(w->filename, w->in_fd, &w->hdr, open_flags);
 	if (ret)
 		return ret;
 
