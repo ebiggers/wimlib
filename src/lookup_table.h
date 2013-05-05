@@ -309,7 +309,7 @@ write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry
 
 extern int
 write_lookup_table_from_stream_list(struct list_head *stream_list,
-				    filedes_t out_fd,
+				    int out_fd,
 				    struct resource_entry *out_res_entry);
 
 extern void

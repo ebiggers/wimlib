@@ -194,7 +194,7 @@ recalculate_security_data_length(struct wim_security_data *sd)
  * the buffer to @hash.  */
 static int
 write_wim_resource_from_buffer(const void *buf, size_t buf_size,
-			       filedes_t out_fd, int out_ctype,
+			       int out_fd, int out_ctype,
 			       struct resource_entry *out_res_entry,
 			       u8 hash[SHA1_HASH_SIZE])
 {
@@ -226,7 +226,7 @@ write_metadata_resource(WIMStruct *w)
 	u64 metadata_original_size;
 	struct wim_security_data *sd;
 
-	wimlib_assert(w->out_fd != INVALID_FILEDES);
+	wimlib_assert(w->out_fd != -1);
 	wimlib_assert(w->current_image != WIMLIB_NO_IMAGE);
 
 	DEBUG("Writing metadata resource for image %d (offset = %"PRIu64")",

@@ -127,7 +127,7 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 		ret = for_lookup_table_entry_pos_sorted(swms[i]->lookup_table,
 							copy_resource,
 							swms[i]);
-		swms[i]->out_fd = INVALID_FILEDES;
+		swms[i]->out_fd = -1;
 		if (i != 0)
 			close_wim(swms[i]);
 

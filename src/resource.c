@@ -48,7 +48,7 @@
  * Returns zero on success, nonzero on failure.
  */
 static int
-read_compressed_resource(filedes_t in_fd,
+read_compressed_resource(int in_fd,
 			 u64 resource_compressed_size,
 			 u64 resource_uncompressed_size,
 			 u64 resource_offset,
@@ -397,7 +397,7 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 			  u64 offset)
 {
 	WIMStruct *wim;
-	filedes_t in_fd;
+	int in_fd;
 	int ret;
 
 	wimlib_assert(lte->resource_location == RESOURCE_IN_WIM);

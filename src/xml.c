@@ -1236,7 +1236,7 @@ libxml_global_cleanup()
  * Reads the XML data from a WIM file.
  */
 int
-read_xml_data(filedes_t in_fd,
+read_xml_data(int in_fd,
 	      const struct resource_entry *res_entry,
 	      struct wim_info **info_ret)
 {

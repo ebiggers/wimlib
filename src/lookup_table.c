@@ -534,7 +534,7 @@ write_lookup_table_entry(struct wim_lookup_table_entry *lte, u8 *buf_p)
 
 int
 write_lookup_table_from_stream_list(struct list_head *stream_list,
-				    filedes_t out_fd,
+				    int out_fd,
 				    struct resource_entry *out_res_entry)
 {
 	int ret;

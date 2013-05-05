@@ -696,7 +696,7 @@ full_writev(int fd, struct iovec *iov, int iovcnt)
 }
 
 off_t
-filedes_offset(filedes_t fd)
+filedes_offset(int fd)
 {
 	return lseek(fd, 0, SEEK_CUR);
 }

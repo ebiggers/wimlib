@@ -66,8 +66,8 @@ new_wim_struct()
 {
 	WIMStruct *w = CALLOC(1, sizeof(WIMStruct));
 	if (w) {
-		w->in_fd = INVALID_FILEDES;
-		w->out_fd = INVALID_FILEDES;
+		w->in_fd = -1;
+		w->out_fd = -1;
 	}
 	return w;
 }
@@ -385,12 +385,12 @@ wimlib_get_boot_idx(const WIMStruct *w)
 }
 
 static int
-do_open_wim(const tchar *filename, filedes_t *fd_ret)
+do_open_wim(const tchar *filename, int *fd_ret)
 {
 	int fd;
 
 	fd = topen(filename, O_RDONLY | O_BINARY);
-	if (fd == INVALID_FILEDES) {
+	if (fd == -1) {
 		ERROR_WITH_ERRNO("Can't open \"%"TS"\" read-only", filename);
 		return WIMLIB_ERR_OPEN;
 	}
@@ -401,16 +401,16 @@ do_open_wim(const tchar *filename, filedes_t *fd_ret)
 int
 reopen_wim(WIMStruct *w)
 {
-	wimlib_assert(w->in_fd == INVALID_FILEDES);
+	wimlib_assert(w->in_fd == -1);
 	return do_open_wim(w->filename, &w->in_fd);
 }
 
 int
 close_wim(WIMStruct *w)
 {
-	if (w->in_fd != INVALID_FILEDES) {
+	if (w->in_fd != -1) {
 		close(w->in_fd);
-		w->in_fd = INVALID_FILEDES;
+		w->in_fd = -1;
 	}
 	return 0;
 }
@@ -671,9 +671,9 @@ wimlib_free(WIMStruct *w)
 
 	if (!w)
 		return;
-	if (w->in_fd != INVALID_FILEDES)
+	if (w->in_fd != -1)
 		close(w->in_fd);
-	if (w->out_fd != INVALID_FILEDES)
+	if (w->out_fd != -1)
 		close(w->out_fd);
 
 	free_lookup_table(w->lookup_table);

@@ -33,7 +33,7 @@ static const u8 wim_magic_chars[WIM_MAGIC_LEN] = {
 
 /* Reads the header from a WIM file.  */
 int
-read_header(filedes_t in_fd, struct wim_header *hdr, int open_flags)
+read_header(int in_fd, struct wim_header *hdr, int open_flags)
 {
 	size_t bytes_read;
 	u8 buf[WIM_HEADER_DISK_SIZE];

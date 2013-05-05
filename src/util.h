@@ -285,19 +285,17 @@ hash_u64(u64 n)
 	return n * 0x9e37fffffffc0001ULL;
 }
 
-typedef int filedes_t;
+extern size_t
+full_read(int fd, void *buf, size_t n);
 
 extern size_t
-full_read(filedes_t fd, void *buf, size_t n);
+full_write(int fd, const void *buf, size_t n);
 
 extern size_t
-full_write(filedes_t fd, const void *buf, size_t n);
+full_pread(int fd, void *buf, size_t nbyte, off_t offset);
 
 extern size_t
-full_pread(filedes_t fd, void *buf, size_t nbyte, off_t offset);
-
-extern size_t
-full_pwrite(filedes_t fd, const void *buf, size_t count, off_t offset);
+full_pwrite(int fd, const void *buf, size_t count, off_t offset);
 
 #ifdef __WIN32__
 struct iovec {
@@ -308,17 +306,14 @@ struct iovec {
 struct iovec;
 #endif
 
-
 extern size_t
 full_writev(int fd, struct iovec *iov, int iovcnt);
 
 extern off_t
-filedes_offset(filedes_t fd);
+filedes_offset(int fd);
 
 #ifndef __WIN32__
 #  define O_BINARY 0
 #endif
-
-#define INVALID_FILEDES (-1)
 
 #endif /* _WIMLIB_UTIL_H */

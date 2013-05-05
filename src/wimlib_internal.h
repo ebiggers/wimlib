@@ -282,12 +282,12 @@ struct WIMStruct {
 
 	/* File descriptor for the WIM file, opened for reading, or -1 if it has
 	 * not been opened or there is no associated file backing it yet. */
-	filedes_t in_fd;
+	int in_fd;
 
 	/* File descriptor, opened either for writing only or for
 	 * reading+writing, for the WIM file (if any) currently being written.
 	 * */
-	filedes_t out_fd;
+	int out_fd;
 
 	/* The name of the WIM file (if any) that has been opened. */
 	tchar *filename;
@@ -493,10 +493,10 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list);
 /* header.c */
 
 extern int
-read_header(filedes_t in_fd, struct wim_header *hdr, int split_ok);
+read_header(int in_fd, struct wim_header *hdr, int split_ok);
 
 extern int
-write_header(const struct wim_header *hdr, filedes_t out_fd);
+write_header(const struct wim_header *hdr, int out_fd);
 
 extern int
 init_header(struct wim_header *hdr, int ctype);
@@ -508,7 +508,7 @@ init_header(struct wim_header *hdr, int ctype);
 #define WIM_INTEGRITY_NONEXISTENT -2
 
 extern int
-write_integrity_table(filedes_t fd,
+write_integrity_table(int fd,
 		      struct resource_entry *integrity_res_entry,
 		      off_t new_lookup_table_end,
 		      off_t old_lookup_table_end,
@@ -689,7 +689,7 @@ extern int
 read_full_resource_into_buf(const struct wim_lookup_table_entry *lte, void *buf);
 
 extern int
-write_wim_resource(struct wim_lookup_table_entry *lte, filedes_t out_fd,
+write_wim_resource(struct wim_lookup_table_entry *lte, int out_fd,
 		   int out_ctype, struct resource_entry *out_res_entry,
 		   int flags);
 
@@ -796,10 +796,10 @@ finish_write(WIMStruct *w, int image, int write_flags,
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
 extern int
-lock_wim(WIMStruct *w, filedes_t fd);
+lock_wim(WIMStruct *w, int fd);
 #else
 static inline int
-lock_wim(WIMStruct *w, filedes_t fd)
+lock_wim(WIMStruct *w, int fd)
 {
 	return 0;
 }

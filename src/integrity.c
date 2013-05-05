@@ -46,7 +46,7 @@ struct integrity_table {
 };
 
 static int
-calculate_chunk_sha1(filedes_t in_fd, size_t this_chunk_size,
+calculate_chunk_sha1(int in_fd, size_t this_chunk_size,
 		     off_t offset, u8 sha1_md[])
 {
 	u8 buf[BUFFER_SIZE];
@@ -100,7 +100,7 @@ calculate_chunk_sha1(filedes_t in_fd, size_t this_chunk_size,
  */
 static int
 read_integrity_table(const struct resource_entry *res_entry,
-		     filedes_t in_fd,
+		     int in_fd,
 		     u64 num_checked_bytes,
 		     struct integrity_table **table_ret)
 {
@@ -223,7 +223,7 @@ out:
  * Returns 0 on success; nonzero on failure.
  */
 static int
-calculate_integrity_table(filedes_t in_fd,
+calculate_integrity_table(int in_fd,
 			  off_t new_check_end,
 			  const struct integrity_table *old_table,
 			  off_t old_check_end,
@@ -354,7 +354,7 @@ calculate_integrity_table(filedes_t in_fd,
  * 				to be checked.
  */
 int
-write_integrity_table(filedes_t fd,
+write_integrity_table(int fd,
 		      struct resource_entry *integrity_res_entry,
 		      off_t new_lookup_table_end,
 		      off_t old_lookup_table_end,
@@ -441,7 +441,7 @@ out_free_old_table:
  * 	-1 (WIM_INTEGRITY_NOT_OK) if the WIM failed the integrity check.
  */
 static int
-verify_integrity(filedes_t in_fd, const tchar *filename,
+verify_integrity(int in_fd, const tchar *filename,
 		 const struct integrity_table *table,
 		 u64 bytes_to_check,
 		 wimlib_progress_func_t progress_func)

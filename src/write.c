@@ -178,7 +178,7 @@ get_compress_func(int out_ctype)
 static int
 write_wim_resource_chunk(const void * restrict chunk,
 			 unsigned chunk_size,
-			 filedes_t out_fd,
+			 int out_fd,
 			 compress_func_t compress,
 			 struct chunk_table * restrict chunk_tab)
 {
@@ -219,7 +219,7 @@ write_wim_resource_chunk(const void * restrict chunk,
  */
 static int
 finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
-			      filedes_t out_fd, u64 *compressed_size_p)
+			      int out_fd, u64 *compressed_size_p)
 {
 	size_t bytes_written;
 
@@ -244,7 +244,7 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 }
 
 static int
-seek_and_truncate(filedes_t out_fd, off_t offset)
+seek_and_truncate(int out_fd, off_t offset)
 {
 	if (lseek(out_fd, offset, SEEK_SET) == -1 ||
 	    ftruncate(out_fd, offset))
@@ -280,7 +280,7 @@ finalize_and_check_sha1(SHA_CTX * restrict sha_ctx,
 struct write_resource_ctx {
 	compress_func_t compress;
 	struct chunk_table *chunk_tab;
-	filedes_t out_fd;
+	int out_fd;
 	SHA_CTX sha_ctx;
 	bool doing_sha;
 };
@@ -324,7 +324,7 @@ write_resource_cb(const void *restrict chunk, size_t chunk_size,
  */
 int
 write_wim_resource(struct wim_lookup_table_entry *lte,
-		   filedes_t out_fd, int out_ctype,
+		   int out_fd, int out_ctype,
 		   struct resource_entry *out_res_entry,
 		   int flags)
 {
@@ -620,7 +620,7 @@ do_write_streams_progress(union wimlib_progress_info *progress,
 }
 
 struct serial_write_stream_ctx {
-	filedes_t out_fd;
+	int out_fd;
 	int out_ctype;
 	int write_resource_flags;
 };
@@ -715,7 +715,7 @@ do_write_stream_list(struct list_head *stream_list,
 static int
 do_write_stream_list_serial(struct list_head *stream_list,
 			    struct wim_lookup_table *lookup_table,
-			    filedes_t out_fd,
+			    int out_fd,
 			    int out_ctype,
 			    int write_resource_flags,
 			    wimlib_progress_func_t progress_func,
@@ -747,7 +747,7 @@ write_flags_to_resource_flags(int write_flags)
 static int
 write_stream_list_serial(struct list_head *stream_list,
 			 struct wim_lookup_table *lookup_table,
-			 filedes_t out_fd,
+			 int out_fd,
 			 int out_ctype,
 			 int write_resource_flags,
 			 wimlib_progress_func_t progress_func,
@@ -768,7 +768,7 @@ write_stream_list_serial(struct list_head *stream_list,
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 static int
-write_wim_chunks(struct message *msg, filedes_t out_fd,
+write_wim_chunks(struct message *msg, int out_fd,
 		 struct chunk_table *chunk_tab)
 {
 	for (unsigned i = 0; i < msg->num_chunks; i++) {
@@ -787,7 +787,7 @@ write_wim_chunks(struct message *msg, filedes_t out_fd,
 struct main_writer_thread_ctx {
 	struct list_head *stream_list;
 	struct wim_lookup_table *lookup_table;
-	filedes_t out_fd;
+	int out_fd;
 	int out_ctype;
 	int write_resource_flags;
 	struct shared_queue *res_to_compress_queue;
@@ -1223,7 +1223,7 @@ get_default_num_threads()
 static int
 write_stream_list_parallel(struct list_head *stream_list,
 			   struct wim_lookup_table *lookup_table,
-			   filedes_t out_fd,
+			   int out_fd,
 			   int out_ctype,
 			   int write_resource_flags,
 			   wimlib_progress_func_t progress_func,
@@ -1361,7 +1361,7 @@ out_serial_quiet:
 static int
 write_stream_list(struct list_head *stream_list,
 		  struct wim_lookup_table *lookup_table,
-		  filedes_t out_fd, int out_ctype, int write_flags,
+		  int out_fd, int out_ctype, int write_flags,
 		  unsigned num_threads, wimlib_progress_func_t progress_func)
 {
 	struct wim_lookup_table_entry *lte;
@@ -1805,16 +1805,16 @@ out_close_wim:
 		if (ret == 0)
 			ret = WIMLIB_ERR_WRITE;
 	}
-	w->out_fd = INVALID_FILEDES;
+	w->out_fd = -1;
 	return ret;
 }
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
 int
-lock_wim(WIMStruct *w, filedes_t fd)
+lock_wim(WIMStruct *w, int fd)
 {
 	int ret = 0;
-	if (fd != INVALID_FILEDES && !w->wim_locked) {
+	if (fd != -1 && !w->wim_locked) {
 		ret = flock(fd, LOCK_EX | LOCK_NB);
 		if (ret != 0) {
 			if (errno == EWOULDBLOCK) {
@@ -1839,7 +1839,7 @@ static int
 open_wim_writable(WIMStruct *w, const tchar *path, int open_flags)
 {
 	w->out_fd = topen(path, open_flags | O_BINARY, 0644);
-	if (w->out_fd == INVALID_FILEDES) {
+	if (w->out_fd == -1) {
 		ERROR_WITH_ERRNO("Failed to open `%"TS"' for writing", path);
 		return WIMLIB_ERR_OPEN;
 	}
@@ -1850,10 +1850,10 @@ open_wim_writable(WIMStruct *w, const tchar *path, int open_flags)
 void
 close_wim_writable(WIMStruct *w)
 {
-	if (w->out_fd != INVALID_FILEDES) {
+	if (w->out_fd != -1) {
 		if (close(w->out_fd))
 			WARNING_WITH_ERRNO("Failed to close output WIM");
-		w->out_fd = INVALID_FILEDES;
+		w->out_fd = -1;
 	}
 }
 
