@@ -515,12 +515,19 @@ do_apply_op(struct wim_dentry *dentry, struct apply_args *args,
 				     struct wim_dentry *, struct apply_args *))
 {
 	tchar *p;
-	const tchar *full_path = dentry->_full_path + 1;
-	size_t full_path_nchars = dentry->full_path_nbytes / sizeof(tchar) - 1;
+	const tchar *full_path;
+	size_t full_path_nchars;
 
+	wimlib_assert(dentry->_full_path != NULL);
+ 	full_path = dentry->_full_path + 1;
+ 	full_path_nchars = dentry->full_path_nbytes / sizeof(tchar) - 1;
 	tchar output_path[args->target_nchars + 1 +
 			 (full_path_nchars - args->wim_source_path_nchars) + 1];
 	p = output_path;
+
+	/*print_dentry(dentry, NULL);*/
+	/*ERROR("%"TS" %"TS, args->target, dentry->_full_path);*/
+	/*ERROR("");*/
 
 	tmemcpy(p, args->target, args->target_nchars);
 	p += args->target_nchars;
@@ -560,6 +567,19 @@ apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 #endif
 }
 
+static bool
+dentry_is_descendent(const struct wim_dentry *dentry,
+		     const struct wim_dentry *ancestor)
+{
+	for (;;) {
+		if (dentry == ancestor)
+			return true;
+		if (dentry_is_root(dentry))
+			return false;
+		dentry = dentry->parent;
+	}
+}
+
 /* Extract a dentry if it hasn't already been extracted and either
  * WIMLIB_EXTRACT_FLAG_NO_STREAMS is not specified, or the dentry is a directory
  * and/or has no unnamed stream. */
@@ -570,6 +590,9 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 	int ret;
 
 	if (dentry->is_extracted)
+		return 0;
+
+	if (!dentry_is_descendent(dentry, args->extract_root))
 		return 0;
 
 	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS &&
@@ -840,10 +863,43 @@ sort_stream_list_by_wim_position(struct list_head *stream_list)
 	return 0;
 }
 
-
+/*
+ * extract_tree - Extract a file or directory tree from the currently selected
+ *		  WIM image.
+ *
+ * @wim:	WIMStruct for the WIM file, with the desired image selected
+ *		(as wim->current_image).
+ * @wim_source_path:
+ *		"Canonical" (i.e. no leading or trailing slashes, path
+ *		separators forwald slashes) path inside the WIM image to
+ *		extract.  An empty string means the full image.
+ * @target:
+ *		Filesystem path to extract the file or directory tree to.
+ *
+ * @extract_flags:
+ *		WIMLIB_EXTRACT_FLAG_*.  Also, the private flag
+ *		WIMLIB_EXTRACT_FLAG_MULTI_IMAGE will be set if this is being
+ *		called through wimlib_extract_image() with WIMLIB_ALL_IMAGES as
+ *		the image.
+ *
+ * @progress_func:
+ *		If non-NULL, progress function for the extraction.  The messages
+ *		we may in this function are:
+ *
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN or
+ *			WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN;
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN;
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END;
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY;
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS;
+ *		WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS;
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END or
+ *			WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END.
+ *
+ * Returns 0 on success; nonzero on failure.
+ */
 static int
-extract_tree(WIMStruct *wim, int image,
-	     const tchar *wim_source_path, const tchar *target,
+extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	     int extract_flags, wimlib_progress_func_t progress_func)
 {
 	int ret;
@@ -863,10 +919,11 @@ extract_tree(WIMStruct *wim, int image,
 
 	if (progress_func) {
 		args.progress.extract.wimfile_name = wim->filename;
-		args.progress.extract.image = image;
+		args.progress.extract.image = wim->current_image;
 		args.progress.extract.extract_flags = (extract_flags &
 						       WIMLIB_EXTRACT_MASK_PUBLIC);
-		args.progress.extract.image_name = wimlib_get_image_name(wim, image);
+		args.progress.extract.image_name = wimlib_get_image_name(wim,
+									 wim->current_image);
 		args.progress.extract.extract_root_wim_source_path = wim_source_path;
 		args.progress.extract.target = target;
 	}
@@ -888,7 +945,7 @@ extract_tree(WIMStruct *wim, int image,
 	root = get_dentry(wim, wim_source_path);
 	if (!root) {
 		ERROR("Path \"%"TS"\" does not exist in WIM image %d",
-		      wim_source_path, image);
+		      wim_source_path, wim->current_image);
 		ret = WIMLIB_ERR_PATH_DOES_NOT_EXIST;
 		goto out_ntfs_umount;
 	}
@@ -992,19 +1049,21 @@ out:
 	return ret;
 }
 
+/* Validates a single wimlib_extract_command, mostly checking to make sure the
+ * extract flags make sense. */
 static int
-check_extract_command(struct wimlib_extract_command *cmd,
-		      bool multiple_commands,
-		      int wim_header_flags)
+check_extract_command(struct wimlib_extract_command *cmd, int wim_header_flags)
 {
 	int extract_flags;
-	bool is_entire_image = (cmd->wim_source_path == T('\0'));
+	bool is_entire_image = (cmd->wim_source_path[0] == T('\0'));
 
+	/* Empty destination path? */
 	if (cmd->fs_dest_path[0] == T('\0'))
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	extract_flags = cmd->extract_flags;
 
+	/* Specified both symlink and hardlink modes? */
 	if ((extract_flags &
 	     (WIMLIB_EXTRACT_FLAG_SYMLINK |
 	      WIMLIB_EXTRACT_FLAG_HARDLINK)) == (WIMLIB_EXTRACT_FLAG_SYMLINK |
@@ -1012,10 +1071,13 @@ check_extract_command(struct wimlib_extract_command *cmd,
 		return WIMLIB_ERR_INVALID_PARAM;
 
 #ifdef __WIN32__
+	/* Wanted UNIX data on Win32? */
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
 		ERROR("Extracting UNIX data is not supported on Windows");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
+	/* Wanted linked extraction on Windows?  (XXX This is possible, just not
+	 * implemented yet.) */
 	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
 			     WIMLIB_EXTRACT_FLAG_HARDLINK))
 	{
@@ -1025,8 +1087,10 @@ check_extract_command(struct wimlib_extract_command *cmd,
 #endif
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
+		/* NTFS-3g extraction mode requested */
 #ifdef WITH_NTFS_3G
-		if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK | WIMLIB_EXTRACT_FLAG_HARDLINK))) {
+		if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
+				      WIMLIB_EXTRACT_FLAG_HARDLINK))) {
 			ERROR("Cannot specify symlink or hardlink flags when applying\n"
 			      "        directly to a NTFS volume");
 			return WIMLIB_ERR_INVALID_PARAM;
@@ -1034,8 +1098,8 @@ check_extract_command(struct wimlib_extract_command *cmd,
 		if (!is_entire_image &&
 		    (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS))
 		{
-			ERROR("Can only extract entire image when applying "
-			      "directly to a NTFS volume");
+			ERROR("When applying directly to a NTFS volume you can "
+			      "only extract a full image, not part of one");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 		if (extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
@@ -1061,6 +1125,8 @@ check_extract_command(struct wimlib_extract_command *cmd,
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_RPFIX |
 			      WIMLIB_EXTRACT_FLAG_NORPFIX)) == 0)
 	{
+		/* Do reparse point fixups by default if the WIM header says
+		 * they are enabled and we are extracting a full image. */
 		if ((wim_header_flags & WIM_HDR_FLAG_RP_FIX) && is_entire_image)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_RPFIX;
 	}
@@ -1075,6 +1141,7 @@ check_extract_command(struct wimlib_extract_command *cmd,
 }
 
 
+/* Internal function to execute extraction commands for a WIM image. */
 static int
 do_wimlib_extract_files(WIMStruct *wim,
 			int image,
@@ -1086,17 +1153,20 @@ do_wimlib_extract_files(WIMStruct *wim,
 	bool found_link_cmd = false;
 	bool found_nolink_cmd = false;
 
+	/* Select the image from which we are extracting files */
 	ret = select_wim_image(wim, image);
 	if (ret)
 		return ret;
 
+	/* Make sure there are no streams in the WIM that have not been
+	 * checksummed yet. */
 	ret = wim_checksum_unhashed_streams(wim);
 	if (ret)
 		return ret;
 
+	/* Check for problems with the extraction commands */
 	for (size_t i = 0; i < num_cmds; i++) {
-		ret = check_extract_command(&cmds[i], num_cmds > 1,
-					    wim->hdr.flags);
+		ret = check_extract_command(&cmds[i], wim->hdr.flags);
 		if (ret)
 			return ret;
 		if (cmds[i].extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
@@ -1112,8 +1182,9 @@ do_wimlib_extract_files(WIMStruct *wim,
 		}
 	}
 
+	/* Execute the extraction commands */
 	for (size_t i = 0; i < num_cmds; i++) {
-		ret = extract_tree(wim, image,
+		ret = extract_tree(wim,
 				   cmds[i].wim_source_path,
 				   cmds[i].fs_dest_path,
 				   cmds[i].extract_flags,
@@ -1124,6 +1195,7 @@ do_wimlib_extract_files(WIMStruct *wim,
 	return 0;
 }
 
+/* Extract files or directories from a WIM image. */
 WIMLIBAPI int
 wimlib_extract_files(WIMStruct *wim,
 		     int image,
@@ -1205,6 +1277,22 @@ out:
 	return ret;
 }
 
+/*
+ * Extracts an image from a WIM file.
+ *
+ * @wim:		WIMStruct for the WIM file.
+ *
+ * @image:		Number of the single image to extract.
+ *
+ * @target:		Directory or NTFS volume to extract the image to.
+ *
+ * @extract_flags:	Bitwise or of WIMLIB_EXTRACT_FLAG_*.
+ *
+ * @progress_func:	If non-NULL, a progress function to be called
+ *			periodically.
+ *
+ * Returns 0 on success; nonzero on failure.
+ */
 static int
 extract_single_image(WIMStruct *wim, int image,
 		     const tchar *target, int extract_flags,
@@ -1212,6 +1300,8 @@ extract_single_image(WIMStruct *wim, int image,
 {
 	int ret;
 	tchar *target_copy = canonicalize_fs_path(target);
+	if (!target_copy)
+		return WIMLIB_ERR_NOMEM;
 	struct wimlib_extract_command cmd = {
 		.wim_source_path = T(""),
 		.fs_dest_path = target_copy,
@@ -1266,8 +1356,8 @@ extract_all_images(WIMStruct *wim,
 		if (image_name_ok_as_dir(image_name)) {
 			tstrcpy(buf + output_path_len + 1, image_name);
 		} else {
-			/* Image name is empty, or contains forbidden
-			 * characters. */
+			/* Image name is empty or contains forbidden characters.
+			 * Use image number instead. */
 			tsprintf(buf + output_path_len + 1, T("%d"), image);
 		}
 		ret = extract_single_image(wim, image, buf, extract_flags,

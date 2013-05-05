@@ -1852,18 +1852,18 @@ is_root_wim_path(const tchar *path)
 {
 	const tchar *p;
 	for (p = path; *p; p++)
-		if (*p != T('\\') && *p != T('\\'))
+		if (*p != T('\\') && *p != T('/'))
 			return false;
 	return true;
 }
 
 static void
 free_extract_commands(struct wimlib_extract_command *cmds, size_t num_cmds,
-		      tchar *dest_dir)
+		      const tchar *dest_dir)
 {
 	for (size_t i = 0; i < num_cmds; i++)
 		if (cmds[i].fs_dest_path != dest_dir)
-				free(cmds[i].fs_dest_path);
+			free(cmds[i].fs_dest_path);
 	free(cmds);
 }
 
@@ -1875,14 +1875,14 @@ prepare_extract_commands(tchar **argv, int argc, int extract_flags,
 	size_t num_cmds;
 	tchar *emptystr = T("");
 
-	num_cmds = argc;
 	if (argc == 0) {
-		num_cmds = 1;
+		argc = 1;
 		argv = &emptystr;
 	}
+	num_cmds = argc;
 	cmds = calloc(num_cmds, sizeof(cmds[0]));
 	if (!cmds) {
-		imagex_error("Out of memory!");
+		imagex_error(T("Out of memory!"));
 		return NULL;
 	}
 
@@ -1894,19 +1894,19 @@ prepare_extract_commands(tchar **argv, int argc, int extract_flags,
 		} else {
 			size_t len = tstrlen(dest_dir) + 1 + tstrlen(argv[i]);
 			cmds[i].fs_dest_path = malloc((len + 1) * sizeof(tchar));
-			if (!cmds[i].fs_dest_path)
-				goto oom;
-			tsprintf(cmds[i].fs_dest_path, "%"TS"/%"TS, dest_dir, tbasename(argv[i]));
+			if (!cmds[i].fs_dest_path) {
+				free_extract_commands(cmds, num_cmds, dest_dir);
+				return NULL;
+			}
+			tsprintf(cmds[i].fs_dest_path, T("%"TS"/%"TS), dest_dir,
+				 tbasename(argv[i]));
 		}
 	}
-
 	*num_cmds_ret = num_cmds;
 	return cmds;
-oom:
-	free_extract_commands(cmds, num_cmds, dest_dir);
-	return NULL;
 }
 
+/* Extract files or directories from a WIM image */
 static int
 imagex_extract(int argc, tchar **argv)
 {

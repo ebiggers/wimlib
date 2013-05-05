@@ -46,8 +46,8 @@ win32_do_apply_dentry(const tchar *output_path,
 extern int
 win32_do_apply_dentry_timestamps(const tchar *output_path,
 				 size_t output_path_nbytes,
-				 const struct wim_dentry *dentry,
-				 const struct apply_args *args);
+				 struct wim_dentry *dentry,
+				 struct apply_args *args);
 
 extern int
 fsync(int fd);

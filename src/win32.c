@@ -2805,8 +2805,8 @@ win32_do_apply_dentry(const wchar_t *output_path,
 int
 win32_do_apply_dentry_timestamps(const wchar_t *path,
 				 size_t path_num_chars,
-				 const struct wim_dentry *dentry,
-				 const struct apply_args *args)
+				 struct wim_dentry *dentry,
+				 struct apply_args *args)
 {
 	DWORD err;
 	HANDLE h;
@@ -2863,7 +2863,6 @@ out:
 int
 fsync(int fd)
 {
-	DWORD err;
 	HANDLE h;
 
 	h = (HANDLE)_get_osfhandle(fd);
