@@ -3040,14 +3040,23 @@ win32_pwrite(int fd, const void *buf, size_t count, off_t offset)
 extern ssize_t
 win32_writev(int fd, const struct iovec *iov, int iovcnt)
 {
-	size_t total_bytes_written = 0;
-	for (int i = 0; i < iovcnt; i++) {
-		size_t bytes_written;
+	ssize_t total_bytes_written = 0;
 
-		bytes_written = full_write(fd, iov[i].iov_base, iov[i].iov_len);
-		total_bytes_written += bytes_written;
-		if (bytes_written != iov[i].iov_len)
+	if (iovcnt <= 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (int i = 0; i < iovcnt; i++) {
+		ssize_t bytes_written;
+
+		bytes_written = write(fd, iov[i].iov_base, iov[i].iov_len);
+		if (bytes_written >= 0)
+			total_bytes_written += bytes_written;
+		if (bytes_written != iov[i].iov_len) {
+			if (total_bytes_written == 0)
+				total_bytes_written = -1;
 			break;
+		}
 	}
 	return total_bytes_written;
 }
