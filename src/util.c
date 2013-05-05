@@ -30,16 +30,18 @@
 #include <string.h>
 
 #define _GNU_SOURCE
-#include <unistd.h>
 
-#include "wimlib_internal.h"
 #include "endianness.h"
 #include "timestamp.h"
+#include "wimlib_internal.h"
 
 #include <ctype.h>
 #include <errno.h>
-#include <stdlib.h>
 #include <stdarg.h>
+#include <stdlib.h>
+#include <sys/uio.h>
+#include <unistd.h>
+
 
 #ifdef __WIN32__
 #include "win32.h"
@@ -564,79 +566,75 @@ zap_backslashes(tchar *s)
 	}
 }
 
-/* Write @n bytes from @buf to the file descriptor @fd, retrying on internupt
- * and on short writes.
- *
- * Returns short count and set errno on failure. */
+/* Like read(), but keep trying until everything has been written or we know for
+ * sure that there was an error (or end-of-file). */
 size_t
-full_write(int fd, const void *buf, size_t n)
+full_read(int fd, void *buf, size_t count)
 {
-	const void *p = buf;
-	ssize_t ret;
-	ssize_t total = 0;
+	ssize_t bytes_read;
+	size_t bytes_remaining;
 
-	while (total != n) {
-		ret = write(fd, p, n);
-		if (ret <= 0) {
-			if (errno == EINTR)
-				continue;
-			if (ret == 0)
-				errno = EIO;
-			break;
-		}
-		total += ret;
-		p += ret;
-	}
-	return total;
-}
-
-/* Read @n bytes from the file descriptor @fd to the buffer @buf, retrying on
- * interrupt and on short reads.
- *
- * Returns short count and set errno on failure. */
-size_t
-full_read(int fd, void *buf, size_t n)
-{
-	size_t bytes_remaining = n;
-	while (bytes_remaining) {
-		ssize_t bytes_read = read(fd, buf, bytes_remaining);
+	for (bytes_remaining = count;
+	     bytes_remaining != 0;
+	     bytes_remaining -= bytes_read, buf += bytes_read)
+	{
+		bytes_read = read(fd, buf, bytes_remaining);
 		if (bytes_read <= 0) {
-			if (errno == EINTR)
-				continue;
 			if (bytes_read == 0)
 				errno = EIO;
+			else if (errno == EINTR)
+				continue;
 			break;
 		}
-		bytes_remaining -= bytes_read;
-		buf += bytes_read;
 	}
-	return n - bytes_remaining;
+	return count - bytes_remaining;
 }
 
-/* Read @n bytes from the file descriptor @fd at the offset @offset to the
- * buffer @buf, retrying on interrupt and on short reads.
- *
- * Returns short count and set errno on failure. */
+/* Like write(), but keep trying until everything has been written or we know
+ * for sure that there was an error. */
 size_t
-full_pread(int fd, void *buf, size_t nbyte, off_t offset)
+full_write(int fd, const void *buf, size_t count)
 {
-	size_t bytes_remaining = nbyte;
-	ssize_t bytes_read;
+	ssize_t bytes_written;
+	size_t bytes_remaining;
 
-	while (bytes_remaining) {
+	for (bytes_remaining = count;
+	     bytes_remaining != 0;
+	     bytes_remaining -= bytes_written, buf += bytes_written)
+	{
+		bytes_written = write(fd, buf, bytes_remaining);
+		if (bytes_written < 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+	}
+	return count - bytes_remaining;
+}
+
+/* Like pread(), but keep trying until everything has been read or we know for
+ * sure that there was an error (or end-of-file) */
+size_t
+full_pread(int fd, void *buf, size_t count, off_t offset)
+{
+	ssize_t bytes_read;
+	size_t bytes_remaining;
+
+	for (bytes_remaining = count;
+	     bytes_remaining != 0;
+	     bytes_remaining -= bytes_read, buf += bytes_read,
+	     	offset += bytes_read)
+	{
 		bytes_read = pread(fd, buf, bytes_remaining, offset);
 		if (bytes_read <= 0) {
-			if (errno == EINTR)
-				continue;
 			if (bytes_read == 0)
 				errno = EIO;
+			else if (errno == EINTR)
+				continue;
 			break;
 		}
-		bytes_remaining -= bytes_read;
-		buf += bytes_read;
-		offset += bytes_read;
 	}
-	return nbyte - bytes_remaining;
+	return count - bytes_remaining;
 }
 
 /* Like pwrite(), but keep trying until everything has been written or we know
@@ -644,25 +642,54 @@ full_pread(int fd, void *buf, size_t nbyte, off_t offset)
 size_t
 full_pwrite(int fd, const void *buf, size_t count, off_t offset)
 {
-	ssize_t bytes_remaining = count;
 	ssize_t bytes_written;
+	size_t bytes_remaining;
 
-	while (bytes_remaining > 0) {
+	for (bytes_remaining = count;
+	     bytes_remaining != 0;
+	     bytes_remaining -= bytes_written, buf += bytes_written,
+	     	offset += bytes_written)
+	{
 		bytes_written = pwrite(fd, buf, bytes_remaining, offset);
-		if (bytes_written <= 0) {
+		if (bytes_written < 0) {
 			if (errno == EINTR)
 				continue;
-			if (bytes_written == 0)
-				errno = EIO;
 			break;
 		}
-		bytes_remaining -= bytes_written;
-		buf += bytes_written;
-		offset += bytes_written;
 	}
 	return count - bytes_remaining;
 }
 
+/* Like writev(), but keep trying until everything has been written or we know
+ * for sure that there was an error. */
+size_t
+full_writev(int fd, struct iovec *iov, int iovcnt)
+{
+	size_t total_bytes_written = 0;
+	while (iovcnt > 0) {
+		ssize_t bytes_written;
+
+		bytes_written = writev(fd, iov, iovcnt);
+		if (bytes_written < 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		total_bytes_written += bytes_written;
+		while (bytes_written) {
+			if (bytes_written >= iov[0].iov_len) {
+				bytes_written -= iov[0].iov_len;
+				iov++;
+				iovcnt--;
+			} else {
+				iov[0].iov_base += bytes_written;
+				iov[0].iov_len -= bytes_written;
+				bytes_written = 0;
+			}
+		}
+	}
+	return total_bytes_written;
+}
 
 off_t
 filedes_offset(filedes_t fd)

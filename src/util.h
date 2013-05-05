@@ -297,7 +297,12 @@ extern size_t
 full_pread(filedes_t fd, void *buf, size_t nbyte, off_t offset);
 
 extern size_t
-full_pwrite(int fd, const void *buf, size_t count, off_t offset);
+full_pwrite(filedes_t fd, const void *buf, size_t count, off_t offset);
+
+struct iovec;
+
+extern size_t
+full_writev(int fd, struct iovec *iov, int iovcnt);
 
 extern off_t
 filedes_offset(filedes_t fd);

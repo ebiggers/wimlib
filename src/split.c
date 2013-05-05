@@ -27,6 +27,8 @@
 #include "lookup_table.h"
 #include "xml.h"
 #include "buffer_io.h"
+#include <unistd.h>
+#include <fcntl.h>
 
 struct split_args {
 	WIMStruct *w;
@@ -211,6 +213,10 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 	int total_parts = args.cur_part_number;
 	for (int i = 1; i <= total_parts; i++) {
 		const tchar *part_name;
+		int part_fd;
+		u8 part_data_buf[4];
+		size_t bytes_written;
+
 		if (i == 1) {
 			part_name = swm_name;
 		} else {
@@ -219,26 +225,26 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 			part_name = swm_base_name;
 		}
 
-		FILE *fp = tfopen(part_name, T("r+b"));
-		if (!fp) {
+		part_fd = topen(part_name, O_WRONLY);
+		if (part_fd == INVALID_FILEDES) {
 			ERROR_WITH_ERRNO("Failed to open `%"TS"'", part_name);
 			ret = WIMLIB_ERR_OPEN;
 			goto out;
 		}
-		u8 buf[4];
-		put_u16(&buf[0], i);
-		put_u16(&buf[2], total_parts);
+		put_u16(&part_data_buf[0], i);
+		put_u16(&part_data_buf[2], total_parts);
 
-		if (fseek(fp, 40, SEEK_SET) != 0 ||
-		    fwrite(buf, 1, sizeof(buf), fp) != sizeof(buf) ||
-		    fclose(fp) != 0)
-		{
-			ERROR_WITH_ERRNO("Error overwriting header of `%"TS"'",
+		bytes_written = full_pwrite(part_fd, part_data_buf,
+					    sizeof(part_data_buf), 40);
+		ret = close(part_fd);
+		if (bytes_written != sizeof(part_data_buf) || ret != 0) {
+			ERROR_WITH_ERRNO("Error updating header of `%"TS"'",
 					 part_name);
 			ret = WIMLIB_ERR_WRITE;
-			break;
+			goto out;
 		}
 	}
+	ret = 0;
 out:
 	close_wim_writable(w);
 	memcpy(&w->hdr, &hdr_save, sizeof(struct wim_header));

@@ -31,13 +31,13 @@
 static const u8 wim_magic_chars[WIM_MAGIC_LEN] = {
 			'M', 'S', 'W', 'I', 'M', '\0', '\0', '\0' };
 
-/* Reads the header for a WIM file.  */
+/* Reads the header from a WIM file.  */
 int
 read_header(filedes_t in_fd, struct wim_header *hdr, int open_flags)
 {
 	size_t bytes_read;
 	u8 buf[WIM_HEADER_DISK_SIZE];
-	const u8 *p;
+	const void *p;
 
 	u32 hdr_size;
 	u32 wim_version;
@@ -45,35 +45,29 @@ read_header(filedes_t in_fd, struct wim_header *hdr, int open_flags)
 
 	DEBUG("Reading WIM header.");
 
-	bytes_read = full_read(in_fd, buf, WIM_HEADER_DISK_SIZE);
+	bytes_read = full_pread(in_fd, buf, WIM_HEADER_DISK_SIZE, 0);
 
 	if (bytes_read != WIM_HEADER_DISK_SIZE) {
 		ERROR_WITH_ERRNO("Error reading WIM header");
 		return WIMLIB_ERR_READ;
 	}
 
-	/* Byte 8 */
-
 	p = buf;
-
 	if (memcmp(p, wim_magic_chars, WIM_MAGIC_LEN)) {
 		ERROR("Invalid magic characters in WIM header");
 		return WIMLIB_ERR_NOT_A_WIM_FILE;
 	}
 
-	p += 8;
-	p = get_u32(p, &hdr_size);
-
-	/* Byte 12 */
-
+	/* Byte 8 */
+	p = get_u32(p + 8, &hdr_size);
 	if (hdr_size != WIM_HEADER_DISK_SIZE) {
 		ERROR("Header is %u bytes (expected %u bytes)",
 		      hdr_size, WIM_HEADER_DISK_SIZE);
 		return WIMLIB_ERR_INVALID_HEADER_SIZE;
 	}
 
+	/* Byte 12 */
 	p = get_u32(buf + WIM_MAGIC_LEN + sizeof(u32), &wim_version);
-
 	if (wim_version != WIM_VERSION) {
 		ERROR("The WIM header says the WIM version is %u, but wimlib "
 		      "only knows about version %u",
@@ -151,7 +145,8 @@ read_header(filedes_t in_fd, struct wim_header *hdr, int open_flags)
  *
  * @hdr: 	A pointer to a struct wim_header structure that describes the header.
  * @out_fd:	The file descriptor to the WIM file, opened for writing.
- * @return:	Zero on success, nonzero on failure.
+ * 
+ * Returns zero on success, nonzero on failure.
  */
 int
 write_header(const struct wim_header *hdr, int out_fd)
@@ -166,12 +161,12 @@ write_header(const struct wim_header *hdr, int out_fd)
 	p = put_u32(p, hdr->flags);
 	p = put_u32(p, (hdr->flags & WIM_HDR_FLAG_COMPRESSION) ?
 				WIM_CHUNK_SIZE : 0);
-	/* byte 24 */
+	/* Byte 24 */
 
 	p = put_bytes(p, WIM_GID_LEN, hdr->guid);
 	p = put_u16(p, hdr->part_number);
 
-	/* byte 40 */
+	/* Byte 40 */
 
 	p = put_u16(p, hdr->total_parts);
 	p = put_u32(p, hdr->image_count);
@@ -181,7 +176,7 @@ write_header(const struct wim_header *hdr, int out_fd)
 	p = put_u32(p, hdr->boot_idx);
 	p = put_resource_entry(p, &hdr->integrity);
 	p = put_zeroes(p, WIM_UNUSED_LEN);
-	assert(p - buf == sizeof(buf));
+	wimlib_assert(p - buf == sizeof(buf));
 
 	if (full_pwrite(out_fd, buf, sizeof(buf), 0) != sizeof(buf)) {
 		ERROR_WITH_ERRNO("Failed to write WIM header");

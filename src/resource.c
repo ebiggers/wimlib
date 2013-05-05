@@ -344,31 +344,6 @@ read_error:
 	goto out;
 }
 
-/*
- * Reads uncompressed data from an open file stream.
- */
-int
-read_uncompressed_resource(FILE *fp, u64 offset, u64 len, void *contents_ret)
-{
-	if (fseeko(fp, offset, SEEK_SET) != 0) {
-		ERROR("Failed to seek to byte %"PRIu64" of input file "
-		      "to read uncompressed resource (len = %"PRIu64")",
-		      offset, len);
-		return WIMLIB_ERR_READ;
-	}
-	if (fread(contents_ret, 1, len, fp) != len) {
-		if (feof(fp)) {
-			ERROR("Unexpected EOF in uncompressed file resource");
-		} else {
-			ERROR("Failed to read %"PRIu64" bytes from "
-			      "uncompressed resource at offset %"PRIu64,
-			      len, offset);
-		}
-		return WIMLIB_ERR_READ;
-	}
-	return 0;
-}
-
 /* Reads the contents of a struct resource_entry, as represented in the on-disk
  * format, from the memory pointed to by @p, and fills in the fields of @entry.
  * A pointer to the byte after the memory read at @p is returned. */

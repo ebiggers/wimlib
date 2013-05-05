@@ -284,7 +284,9 @@ struct WIMStruct {
 	 * not been opened or there is no associated file backing it yet. */
 	filedes_t in_fd;
 
-	/* FILE pointer for the WIM file (if any) currently being written. */
+	/* File descriptor, opened either for writing only or for
+	 * reading+writing, for the WIM file (if any) currently being written.
+	 * */
 	filedes_t out_fd;
 
 	/* The name of the WIM file (if any) that has been opened. */

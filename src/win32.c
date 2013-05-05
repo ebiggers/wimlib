@@ -2646,10 +2646,6 @@ win32_rename_replacement(const wchar_t *oldpath, const wchar_t *newpath)
 		return 0;
 	} else {
 		/* As usual, the possible error values are not documented */
-		DWORD err = GetLastError();
-		ERROR("MoveFileEx(): Can't rename \"%ls\" to \"%ls\"",
-		      oldpath, newpath);
-		win32_error(err);
 		errno = -1;
 		return -1;
 	}

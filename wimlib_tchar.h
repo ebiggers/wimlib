@@ -41,6 +41,7 @@ typedef wchar_t tchar;
 #  define tputs		_putws
 #  define tfputs	fputws
 #  define tfopen	_wfopen
+#  define topen		_wopen
 #  define tstat		_wstati64
 #  define tstrtol	wcstol
 #  define tstrtod	wcstod
@@ -96,6 +97,7 @@ typedef char tchar;
 #  define tputs		puts
 #  define tfputs	fputs
 #  define tfopen	fopen
+#  define topen		open
 #  define tstat		stat
 #  define tunlink	unlink
 #  define tstrerror	strerror

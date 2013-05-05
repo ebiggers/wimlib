@@ -65,9 +65,10 @@ static WIMStruct *
 new_wim_struct()
 {
 	WIMStruct *w = CALLOC(1, sizeof(WIMStruct));
-	w->in_fd = INVALID_FILEDES;
-	w->out_fd = INVALID_FILEDES;
-	w->current_image = WIMLIB_NO_IMAGE;
+	if (w) {
+		w->in_fd = INVALID_FILEDES;
+		w->out_fd = INVALID_FILEDES;
+	}
 	return w;
 }
 
@@ -388,8 +389,8 @@ do_open_wim(const tchar *filename, filedes_t *fd_ret)
 {
 	int fd;
 
-	fd = open(filename, O_RDONLY);
-	if (fd == -1) {
+	fd = topen(filename, O_RDONLY);
+	if (fd == INVALID_FILEDES) {
 		ERROR_WITH_ERRNO("Can't open \"%"TS"\" read-only", filename);
 		return WIMLIB_ERR_OPEN;
 	}
@@ -407,8 +408,10 @@ reopen_wim(WIMStruct *w)
 int
 close_wim(WIMStruct *w)
 {
-	close(w->in_fd);
-	w->in_fd = INVALID_FILEDES;
+	if (w->in_fd != INVALID_FILEDES) {
+		close(w->in_fd);
+		w->in_fd = INVALID_FILEDES;
+	}
 	return 0;
 }
 

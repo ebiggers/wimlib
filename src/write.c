@@ -65,8 +65,6 @@
 
 #include <limits.h>
 
-#include <sys/uio.h> /* writev() */
-
 /* Chunk table that's located at the beginning of each compressed resource in
  * the WIM.  (This is not the on-disk format; the on-disk format just has an
  * array of offsets.) */
@@ -164,7 +162,7 @@ get_compress_func(int out_ctype)
  *
  * @chunk:	  Uncompressed data of the chunk.
  * @chunk_size:	  Size of the chunk (<= WIM_CHUNK_SIZE)
- * @out_fd:	  FILE descriptor to write the chunk to.
+ * @out_fd:	  File descriptor to write the chunk to.
  * @compress:     Compression function to use (NULL if writing uncompressed
  *			data).
  * @chunk_tab:	  Pointer to chunk table being created.  It is updated with the
@@ -301,7 +299,7 @@ write_resource_cb(const void *restrict chunk, size_t chunk_size,
  * @lte:  Lookup table entry for the resource, which could be in another WIM,
  *        in an external file, or in another location.
  *
- * @out_fp:  File descriptor opened to the output WIM.
+ * @out_fd:  File descriptor opened to the output WIM.
  *
  * @out_ctype:  One of the WIMLIB_COMPRESSION_TYPE_* constants to indicate
  *              which compression algorithm to use.
@@ -768,50 +766,17 @@ static int
 write_wim_chunks(struct message *msg, filedes_t out_fd,
 		 struct chunk_table *chunk_tab)
 {
-	ssize_t bytes_remaining = msg->total_out_bytes;
-	struct iovec *vecs = msg->out_chunks;
-	unsigned nvecs = msg->num_chunks;
-	int ret;
-
-	wimlib_assert(nvecs != 0);
-	wimlib_assert(msg->total_out_bytes != 0);
-
 	for (unsigned i = 0; i < msg->num_chunks; i++) {
 		*chunk_tab->cur_offset_p++ = chunk_tab->cur_offset;
-		chunk_tab->cur_offset += vecs[i].iov_len;
+		chunk_tab->cur_offset += msg->out_chunks[i].iov_len;
 	}
-	for (;;) {
-		ssize_t bytes_written;
-
-		bytes_written = writev(out_fd, vecs, nvecs);
-		if (bytes_written <= 0) {
-			if (bytes_written < 0 && errno == EINTR)
-				continue;
-			else if (bytes_written == 0)
-				errno = EIO;
-			ERROR_WITH_ERRNO("Failed to write WIM chunks");
-			ret = WIMLIB_ERR_WRITE;
-			break;
-		}
-		bytes_remaining -= bytes_written;
-		if (bytes_remaining <= 0) {
-			ret = 0;
-			break;
-		}
-		while (bytes_written >= 0) {
-			wimlib_assert(nvecs != 0);
-			if (bytes_written >= vecs[0].iov_len) {
-				vecs++;
-				nvecs--;
-				bytes_written -= vecs[0].iov_len;
-			} else {
-				vecs[0].iov_base += bytes_written;
-				vecs[0].iov_len -= bytes_written;
-				bytes_written = 0;
-			}
-		}
+	if (full_writev(out_fd, msg->out_chunks,
+			msg->num_chunks) != msg->total_out_bytes)
+	{
+		ERROR_WITH_ERRNO("Failed to write WIM chunks");
+		return WIMLIB_ERR_WRITE;
 	}
-	return ret;
+	return 0;
 }
 
 struct main_writer_thread_ctx {
@@ -1688,7 +1653,7 @@ prepare_stream_list(WIMStruct *wim, int image, struct list_head *stream_list)
 	return ret;
 }
 
-/* Writes the streams for the specified @image in @wim to @wim->out_fp.
+/* Writes the streams for the specified @image in @wim to @wim->out_fd.
  */
 static int
 write_wim_streams(WIMStruct *wim, int image, int write_flags,
@@ -1868,7 +1833,6 @@ lock_wim(WIMStruct *w, filedes_t fd)
 static int
 open_wim_writable(WIMStruct *w, const tchar *path, int open_flags)
 {
-	wimlib_assert(w->out_fd == INVALID_FILEDES);
 	w->out_fd = open(path, open_flags, 0644);
 	if (w->out_fd == INVALID_FILEDES) {
 		ERROR_WITH_ERRNO("Failed to open `%"TS"' for writing", path);
@@ -1905,8 +1869,8 @@ begin_write(WIMStruct *w, const tchar *path, int write_flags)
 	ret = write_header(&w->hdr, w->out_fd);
 	if (ret)
 		return ret;
-	if (lseek(w->out_fd, 0, SEEK_END) == -1) {
-		ERROR_WITH_ERRNO("Failed to seek to end of WIM");
+	if (lseek(w->out_fd, WIM_HEADER_DISK_SIZE, SEEK_SET) == -1) {
+		ERROR_WITH_ERRNO("Failed to seek to end of WIM header");
 		return WIMLIB_ERR_WRITE;
 	}
 	return 0;
@@ -2173,19 +2137,9 @@ overwrite_wim_via_tmpfile(WIMStruct *w, int write_flags,
 		goto out_unlink;
 	}
 
+	close_wim(w);
+
 	DEBUG("Renaming `%"TS"' to `%"TS"'", tmpfile, w->filename);
-
-#ifdef __WIN32__
-	/* Windows won't let you delete open files unless FILE_SHARE_DELETE was
-	 * specified to CreateFile().  The WIM was opened with fopen(), which
-	 * didn't provided this flag to CreateFile, so the handle must be closed
-	 * before executing the rename(). */
-	if (w->fp != NULL) {
-		fclose(w->fp);
-		w->fp = NULL;
-	}
-#endif
-
 	/* Rename the new file to the old file .*/
 	if (trename(tmpfile, w->filename) != 0) {
 		ERROR_WITH_ERRNO("Failed to rename `%"TS"' to `%"TS"'",
