@@ -25,7 +25,7 @@
 #include "lookup_table.h"
 
 /*
- * Reads the metadata metadata resource from the WIM file.  The metadata
+ * Reads a metadata resource for an image in the WIM file.  The metadata
  * resource consists of the security data, followed by the directory entry for
  * the root directory, followed by all the other directory entries in the
  * filesystem.  The subdir_offset field of each directory entry gives the start
@@ -33,14 +33,15 @@
  * end-of-directory is signaled by a directory entry of length '0', really of
  * length 8, because that's how long the 'length' field is.
  *
- * @fp:		The FILE* for the input WIM file.
- * @wim_ctype:	The compression type of the WIM file.
- * @imd:	Pointer to the image metadata structure.  Its `metadata_lte'
- * 		member specifies the lookup table entry for the metadata
- * 		resource.  The rest of the image metadata entry will be filled
- * 		in by this function.
+ * @w:		Pointer to the WIMStruct for the WIM file.
  *
- * @return:	Zero on success, nonzero on failure.
+ * @imd:	Pointer to the image metadata structure for the image whose
+ *		metadata resource we are reading.  Its `metadata_lte' member
+ *		specifies the lookup table entry for the metadata resource.  The
+ *		rest of the image metadata entry will be filled in by this
+ *		function.
+ *
+ * Returns:	Zero on success, nonzero on failure.
  */
 int
 read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
