@@ -81,7 +81,7 @@ win32_wglob(const wchar_t *pattern, int flags,
 		size_t filename_len = wcslen(dat.cFileName);
 		size_t len_needed = prefix_len + filename_len;
 
-		path = malloc(len_needed + sizeof(wchar_t));
+		path = malloc((len_needed + 1) * sizeof(wchar_t));
 		if (!path)
 			goto oom;
 
