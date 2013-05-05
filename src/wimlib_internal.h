@@ -558,6 +558,7 @@ struct apply_args {
 			unsigned long num_set_sd_access_denied;
 			unsigned vol_flags;
 			unsigned long num_hard_links_failed;
+			unsigned long num_soft_links_failed;
 			bool have_vol_flags;
 		};
 	#else

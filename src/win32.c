@@ -48,6 +48,7 @@
 #define MAX_GET_SD_ACCESS_DENIED_WARNINGS 1
 #define MAX_GET_SACL_PRIV_NOTHELD_WARNINGS 1
 #define MAX_CREATE_HARD_LINK_WARNINGS 5
+#define MAX_CREATE_SOFT_LINK_WARNINGS 5
 struct win32_capture_state {
 	unsigned long num_get_sd_access_denied;
 	unsigned long num_get_sacl_priv_notheld;
@@ -1733,7 +1734,7 @@ win32_set_reparse_data(HANDLE h,
 		       const struct wim_inode *inode,
 		       const struct wim_lookup_table_entry *lte,
 		       const wchar_t *path,
-		       const struct apply_args *args)
+		       struct apply_args *args)
 {
 	int ret;
 	u8 rpbuf[REPARSE_POINT_MAX_SIZE];
@@ -1785,15 +1786,30 @@ win32_set_reparse_data(HANDLE h,
 			     NULL /* lpOverlapped */))
 	{
 		DWORD err = GetLastError();
-		ERROR("Failed to set reparse data on \"%ls\"", path);
-		win32_error(err);
 		if (err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD)
-			return WIMLIB_ERR_INSUFFICIENT_PRIVILEGES_TO_EXTRACT;
-		else if (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
-			 inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT)
-			return WIMLIB_ERR_LINK;
-		else
-			return WIMLIB_ERR_WRITE;
+		{
+			args->num_soft_links_failed++;
+			if (args->num_soft_links_failed <= MAX_CREATE_SOFT_LINK_WARNINGS) {
+				WARNING("Can't set reparse data on \"%ls\": Access denied!\n"
+				        "          You may be trying to extract a symbolic "
+					"link without the\n"
+					"          SeCreateSymbolicLink privilege, which by "
+					"default non-Administrator\n"
+					"          accounts do not have.", path);
+			}
+			if (args->num_hard_links_failed == MAX_CREATE_HARD_LINK_WARNINGS) {
+				WARNING("Suppressing further warnings regarding failure to extract\n"
+					"          reparse points due to insufficient privileges...");
+			}
+		} else {
+			ERROR("Failed to set reparse data on \"%ls\"", path);
+			win32_error(err);
+			if (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
+			    inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT)
+				return WIMLIB_ERR_LINK;
+			else
+				return WIMLIB_ERR_WRITE;
+		}
 	}
 	return 0;
 }
@@ -2708,12 +2724,13 @@ win32_try_hard_link(const wchar_t *output_path, const struct wim_inode *inode,
 		return WIMLIB_ERR_LINK;
 	} else {
 		args->num_hard_links_failed++;
-		if (args->num_hard_links_failed < MAX_CREATE_HARD_LINK_WARNINGS) {
+		if (args->num_hard_links_failed <= MAX_CREATE_HARD_LINK_WARNINGS) {
 			WARNING("Can't create hard link \"%ls => %ls\":\n"
 				"          Volume does not support hard links!\n"
 				"          Falling back to extracting a copy of the file.",
 				output_path, inode->i_extracted_file);
-		} else if (args->num_hard_links_failed == MAX_CREATE_HARD_LINK_WARNINGS) {
+		}
+		if (args->num_hard_links_failed == MAX_CREATE_HARD_LINK_WARNINGS) {
 			WARNING("Suppressing further hard linking warnings...");
 		}
 		return -1;
