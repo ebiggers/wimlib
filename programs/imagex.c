@@ -76,6 +76,7 @@ enum imagex_op_type {
 	OPTIMIZE,
 	SPLIT,
 	UNMOUNT,
+	UPDATE,
 };
 
 static void usage(int cmd_type);
@@ -165,6 +166,17 @@ IMAGEX_PROGNAME" split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n"
 [UNMOUNT] =
 T(
 IMAGEX_PROGNAME" unmount DIRECTORY [--commit] [--check] [--rebuild]\n"
+),
+[UPDATE] =
+T(
+IMAGEX_PROGNAME" update WIMFILE IMAGE [--check] [--rebuild]\n"
+"                      [--threads=NUM_THREADS] [DEFAULT_ADD_OPTIONS]\n"
+"                      [DEFAULT_DELETE_OPTIONS] [CMD...] [< CMDFILE]\n"
+"               ... where each CMD is:\n"
+"               add [--unix-data] [--no-acls] [--strict-acls] [--dereference]\n"
+"                   [--verbose] FILE_OR_DIRECTORY DEST_WIM_PATH\n"
+"               delete [--force] [--recursive] WIM_PATH\n"
+"               rename SRC_PATH_IN_WIM DEST_PATH_IN_WIM\n"
 ),
 };
 
@@ -2646,6 +2658,41 @@ imagex_unmount(int argc, tchar **argv)
 	return ret;
 }
 
+static int
+imagex_update(int argc, tchar **argv)
+{
+	const tchar *wimfile;
+	const tchar *image_num_or_name;
+	int image;
+	WIMStruct *wim;
+	int ret;
+	int open_flags = 0;
+	int write_flags = 0;
+	unsigned num_threads = 0;
+
+	if (argc < 3)
+		goto out_usage;
+	wimfile = argv[1];
+	image_num_or_name = argv[2];
+
+	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
+	if (ret)
+		goto out;
+
+	/*wimlib_update_image();*/
+
+	ret = wimlib_overwrite(wim, write_flags, num_threads,
+			       imagex_progress_func);
+out_wimlib_free:
+	wimlib_free(wim);
+out:
+	return ret;
+out_usage:
+	usage(UPDATE);
+	ret = -1;
+	goto out;
+}
+
 struct imagex_command {
 	const tchar *name;
 	int (*func)(int , tchar **);
@@ -2671,6 +2718,7 @@ static const struct imagex_command imagex_commands[] = {
 	{T("optimize"),imagex_optimize,		 OPTIMIZE},
 	{T("split"),   imagex_split,		 SPLIT},
 	{T("unmount"), imagex_unmount,		 UNMOUNT},
+	{T("update"),  imagex_update,		 UPDATE},
 };
 
 static void
