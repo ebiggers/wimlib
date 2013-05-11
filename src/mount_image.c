@@ -2047,58 +2047,7 @@ wimfs_removexattr(const char *path, const char *name)
 static int
 wimfs_rename(const char *from, const char *to)
 {
-	struct wim_dentry *src;
-	struct wim_dentry *dst;
-	struct wim_dentry *parent_of_dst;
-	WIMStruct *w = wimfs_get_WIMStruct();
-	int ret;
-
-	/* This rename() implementation currently only supports actual files
-	 * (not alternate data streams) */
-
-	src = get_dentry(w, from);
-	if (!src)
-		return -errno;
-
-	dst = get_dentry(w, to);
-
-	if (dst) {
-		/* Destination file exists */
-
-		if (src == dst) /* Same file */
-			return 0;
-
-		if (!dentry_is_directory(src)) {
-			/* Cannot rename non-directory to directory. */
-			if (dentry_is_directory(dst))
-				return -EISDIR;
-		} else {
-			/* Cannot rename directory to a non-directory or a non-empty
-			 * directory */
-			if (!dentry_is_directory(dst))
-				return -ENOTDIR;
-			if (inode_has_children(dst->d_inode))
-				return -ENOTEMPTY;
-		}
-		parent_of_dst = dst->parent;
-	} else {
-		/* Destination does not exist */
-		parent_of_dst = get_parent_dentry(w, to);
-		if (!parent_of_dst)
-			return -errno;
-
-		if (!dentry_is_directory(parent_of_dst))
-			return -ENOTDIR;
-	}
-
-	ret = set_dentry_name(src, path_basename(to));
-	if (ret != 0)
-		return -ENOMEM;
-	if (dst)
-		remove_dentry(dst, w->lookup_table);
-	unlink_dentry(src);
-	dentry_add_child(parent_of_dst, src);
-	return 0;
+	return rename_wim_path(wimfs_get_WIMStruct(), from, to);
 }
 
 /* Remove a directory */

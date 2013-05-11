@@ -657,7 +657,7 @@ struct wimlib_capture_config {
 	struct wimlib_pattern_list reserved2;
 
 	/** Library internal use only. */
-	wimlib_tchar *_prefix;
+	const wimlib_tchar *_prefix;
 
 	/** Library internal use only. */
 	size_t _prefix_num_tchars;
@@ -721,9 +721,16 @@ struct wimlib_capture_config {
  * reparse point fixups enabled and currently cannot be unset. */
 #define WIMLIB_ADD_IMAGE_FLAG_RPFIX			0x00000100
 
-/* Don't do reparse point fixups.  The default behavior is described in the
+/** Don't do reparse point fixups.  The default behavior is described in the
  * documentation for ::WIMLIB_ADD_IMAGE_FLAG_RPFIX. */
 #define WIMLIB_ADD_IMAGE_FLAG_NORPFIX			0x00000200
+
+/** Do not issue an error if the path to delete does not exist. */
+#define WIMLIB_DELETE_FLAG_FORCE			0x00000001
+
+/** Delete a file or directory tree recursively; if not specified, an error is
+ * issued if the path to delete is a directory. */
+#define WIMLIB_DELETE_FLAG_RECURSIVE			0x00000002
 
 /******************************
  * WIMLIB_EXPORT_FLAG_* *
@@ -880,24 +887,24 @@ struct wimlib_capture_config {
 /** XXX */
 struct wimlib_update_command {
 	enum {
-		WIMLIB_UPDATE_OP_ADD,
+		WIMLIB_UPDATE_OP_ADD = 0,
 		WIMLIB_UPDATE_OP_DELETE,
-		WIMLIB_UPDATE_OP_MOVE,
+		WIMLIB_UPDATE_OP_RENAME,
 	} op;
 	union {
 		struct {
-			const wimlib_tchar *fs_source_path;
-			const wimlib_tchar *wim_target_path;
-			const struct wimlib_capture_config *config;
+			wimlib_tchar *fs_source_path;
+			wimlib_tchar *wim_target_path;
+			struct wimlib_capture_config *config;
 			int add_flags;
 		} add;
 		struct {
-			const wimlib_tchar *path_in_wim;
+			wimlib_tchar *wim_path;
 			int delete_flags;
 		} delete;
 		struct {
-			const wimlib_tchar *wim_source_path;
-			const wimlib_tchar *wim_target_path;
+			wimlib_tchar *wim_source_path;
+			wimlib_tchar *wim_target_path;
 			int rename_flags;
 		} rename;
 	};
@@ -990,6 +997,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_XML,
 	WIMLIB_ERR_PATH_DOES_NOT_EXIST,
 	WIMLIB_ERR_NOT_A_REGULAR_FILE,
+	WIMLIB_ERR_IS_DIRECTORY,
 };
 
 
@@ -998,6 +1006,12 @@ enum wimlib_error_code {
 
 /** Used to specify all images in the WIM. */
 #define WIMLIB_ALL_IMAGES	(-1)
+
+/** XXX */
+extern int
+wimlib_add_empty_image(WIMStruct *wim,
+		       const wimlib_tchar *name,
+		       int *new_idx_ret);
 
 /**
  * Adds an image to a WIM file from an on-disk directory tree or NTFS volume.
@@ -1080,7 +1094,7 @@ extern int
 wimlib_add_image(WIMStruct *wim,
 		 const wimlib_tchar *source,
 		 const wimlib_tchar *name,
-		 struct wimlib_capture_config *config,
+		 const struct wimlib_capture_config *config,
 		 int add_image_flags,
 		 wimlib_progress_func_t progress_func);
 
@@ -1090,11 +1104,6 @@ wimlib_add_image(WIMStruct *wim,
  * source parameter of wimlib_add_image().  The rest of the parameters are the
  * same as wimlib_add_image().  See the documentation for <b>wimlib-imagex
  * capture</b> for full details on how this mode works.
- *
- * Additional note:  @a sources is not a @c const parameter and you cannot
- * assume that its contents are valid after this function returns.  You must
- * save pointers to the strings in these structures if you need to free them
- * later, and/or save copies if needed.
  *
  * In addition to the error codes that wimlib_add_image() can return,
  * wimlib_add_image_multisource() can return ::WIMLIB_ERR_INVALID_OVERLAY
@@ -1108,10 +1117,10 @@ wimlib_add_image(WIMStruct *wim,
  * NTFS mode.) */
 extern int
 wimlib_add_image_multisource(WIMStruct *w,
-			     struct wimlib_capture_source *sources,
+			     const struct wimlib_capture_source *sources,
 			     size_t num_sources,
 			     const wimlib_tchar *name,
-			     struct wimlib_capture_config *config,
+			     const struct wimlib_capture_config *config,
 			     int add_image_flags,
 			     wimlib_progress_func_t progress_func);
 
@@ -2492,6 +2501,15 @@ extern int
 wimlib_unmount_image(const wimlib_tchar *dir,
 		     int unmount_flags,
 		     wimlib_progress_func_t progress_func);
+
+/** XXX */
+extern int
+wimlib_update_image(WIMStruct *wim,
+		    int image,
+		    const struct wimlib_update_command *cmds,
+		    size_t num_cmds,
+		    int update_flags,
+		    wimlib_progress_func_t progress_func);
 
 /**
  * Writes a standalone WIM to a file.

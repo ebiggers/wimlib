@@ -322,6 +322,8 @@ static const tchar *error_strings[] = {
 		= T("A string provided as input by the user was not a valid UTF-8 string"),
 	[WIMLIB_ERR_INVALID_UTF16_STRING]
 		= T("A string in a WIM dentry is not a valid UTF-16LE string"),
+	[WIMLIB_ERR_IS_DIRECTORY]
+		= T("One of the specified paths to delete was a directory"),
 	[WIMLIB_ERR_LIBXML_UTF16_HANDLER_NOT_AVAILABLE]
 		= T("libxml2 was unable to find a character encoding conversion handler "
 		  "for UTF-16LE"),

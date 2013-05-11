@@ -11,6 +11,7 @@ libwim_la_LDFLAGS = -version-info 6:0:0 $(WINDOWS_LDFLAGS)
 libwim_la_SOURCES =		\
 	src/add_image.c		\
 	src/buffer_io.h		\
+	src/capture_common.c	\
 	src/compress.c		\
 	src/compress.h		\
 	src/decompress.c	\
@@ -46,6 +47,7 @@ libwim_la_SOURCES =		\
 	src/split.c		\
 	src/reparse.c		\
 	src/timestamp.h		\
+	src/update_image.c	\
 	src/util.c		\
 	src/util.h		\
 	src/verify.c		\
@@ -106,6 +108,8 @@ imagex_SOURCES += programs/imagex-win32.c	\
 		  programs/wgetopt.h
 
 libwim_la_SOURCES += src/win32.c
+else
+libwim_la_SOURCES += src/unix_capture.c
 endif
 
 install-exec-hook:

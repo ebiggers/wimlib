@@ -1250,6 +1250,9 @@ wimlib_extract_files(WIMStruct *wim,
 	if (ret)
 		goto out;
 
+	if (num_cmds == 0)
+		goto out;
+
 	if (num_additional_swms) {
 		ret = new_joined_lookup_table(wim, additional_swms,
 					      num_additional_swms,

@@ -230,13 +230,13 @@ for_dentry_tree_in_rbtree(struct rb_node *node,
 	int ret;
 	if (node) {
 		ret = for_dentry_tree_in_rbtree(node->rb_left, visitor, arg);
-		if (ret != 0)
+		if (ret)
 			return ret;
 		ret = for_dentry_in_tree(rbnode_dentry(node), visitor, arg);
-		if (ret != 0)
+		if (ret)
 			return ret;
 		ret = for_dentry_tree_in_rbtree(node->rb_right, visitor, arg);
-		if (ret != 0)
+		if (ret)
 			return ret;
 	}
 	return 0;
@@ -250,11 +250,15 @@ int
 for_dentry_in_tree(struct wim_dentry *root,
 		   int (*visitor)(struct wim_dentry*, void*), void *arg)
 {
-	int ret = visitor(root, arg);
-	if (ret == 0) {
-		ret = for_dentry_tree_in_rbtree(root->d_inode->i_children.rb_node,
-						visitor,
-						arg);
+	int ret = 0;
+
+	if (root) {
+		int ret = visitor(root, arg);
+		if (ret == 0) {
+			ret = for_dentry_tree_in_rbtree(root->d_inode->i_children.rb_node,
+							visitor,
+							arg);
+		}
 	}
 	return ret;
 }
@@ -265,11 +269,13 @@ int
 for_dentry_in_tree_depth(struct wim_dentry *root,
 			 int (*visitor)(struct wim_dentry*, void*), void *arg)
 {
-	int ret;
-	ret = for_dentry_tree_in_rbtree_depth(root->d_inode->i_children.rb_node,
-					      visitor, arg);
-	if (ret == 0)
-		ret = visitor(root, arg);
+	int ret = 0;
+	if (root) {
+		ret = for_dentry_tree_in_rbtree_depth(root->d_inode->i_children.rb_node,
+						      visitor, arg);
+		if (ret == 0)
+			ret = visitor(root, arg);
+	}
 	return ret;
 }
 
@@ -919,8 +925,7 @@ do_free_dentry(struct wim_dentry *dentry, void *__lookup_table)
 void
 free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
 {
-	if (root)
-		for_dentry_in_tree_depth(root, do_free_dentry, lookup_table);
+	for_dentry_in_tree_depth(root, do_free_dentry, lookup_table);
 }
 
 /*

@@ -197,7 +197,7 @@ select_wim_image(WIMStruct *w, int image)
 	}
 	w->current_image = image;
 	imd = wim_get_current_image_metadata(w);
-	if (imd->root_dentry) {
+	if (imd->root_dentry || imd->modified) {
 		ret = 0;
 	} else {
 		#ifdef ENABLE_DEBUG

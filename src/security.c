@@ -149,6 +149,12 @@ empty_sacl_fixup(u8 *descr, u64 *size_p)
 #endif
 }
 
+struct wim_security_data *
+new_wim_security_data()
+{
+	return CALLOC(1, sizeof(struct wim_security_data));
+}
+
 /*
  * Reads the security data from the metadata resource.
  *
@@ -465,13 +471,20 @@ free_sd_tree(struct rb_node *node)
 
 /* Frees a security descriptor index set. */
 void
-destroy_sd_set(struct sd_set *sd_set)
+destroy_sd_set(struct sd_set *sd_set, bool rollback)
 {
+	if (rollback) {
+		struct wim_security_data *sd = sd_set->sd;
+		int32_t i;
+		for (i = sd_set->orig_num_entries; i < sd->num_entries; i++)
+			FREE(sd->descriptors[i]);
+		sd->num_entries = sd_set->orig_num_entries;
+	}
 	free_sd_tree(sd_set->rb_root.rb_node);
 }
 
 /* Inserts a a new node into the security descriptor index tree. */
-static void
+static bool
 insert_sd_node(struct sd_set *set, struct sd_node *new)
 {
 	struct rb_root *root = &set->rb_root;
@@ -488,10 +501,11 @@ insert_sd_node(struct sd_set *set, struct sd_node *new)
 		else if (cmp > 0)
 			p = &((*p)->rb_right);
 		else
-			wimlib_assert(0); /* Duplicate SHA1 message digest */
+			return false; /* Duplicate SHA1 message digest */
 	}
 	rb_link_node(&new->rb_node, rb_parent, p);
 	rb_insert_color(&new->rb_node, root);
+	return true;
 }
 
 /* Returns the index of the security descriptor having a SHA1 message digest of
@@ -531,6 +545,7 @@ sd_set_add_sd(struct sd_set *sd_set, const char descriptor[], size_t size)
 	u64 *sizes;
 	u8 *descr_copy;
 	struct wim_security_data *sd;
+	bool bret;
 
 	sha1_buffer((const u8*)descriptor, size, hash);
 
@@ -570,7 +585,8 @@ sd_set_add_sd(struct sd_set *sd_set, const char descriptor[], size_t size)
 	sd->num_entries++;
 	DEBUG("There are now %d security descriptors", sd->num_entries);
 	sd->total_length += size + sizeof(sd->sizes[0]);
-	insert_sd_node(sd_set, new);
+	bret = insert_sd_node(sd_set, new);
+	wimlib_assert(bret);
 	return new->security_id;
 out_free_descr:
 	FREE(descr_copy);
@@ -578,4 +594,33 @@ out_free_node:
 	FREE(new);
 out:
 	return -1;
+}
+
+int
+init_sd_set(struct sd_set *sd_set, struct wim_security_data *sd)
+{
+	int ret;
+
+	sd_set->sd = sd;
+	sd_set->rb_root.rb_node = NULL;
+	sd_set->orig_num_entries = sd->num_entries;
+	for (int32_t i = 0; i < sd->num_entries; i++) {
+		struct sd_node *new;
+
+		new = MALLOC(sizeof(struct sd_node));
+		if (!new) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_destroy_sd_set;
+		}
+		sha1_buffer(sd->descriptors[i], sd->sizes[i], new->hash);
+		new->security_id = i;
+		if (!insert_sd_node(sd_set, new))
+			FREE(new); /* Ignore duplicate security descriptor */
+	}
+	ret = 0;
+	goto out;
+out_destroy_sd_set:
+	destroy_sd_set(sd_set, false);
+out:
+	return ret;
 }

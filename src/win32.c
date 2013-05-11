@@ -1501,7 +1501,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	inode->i_last_access_time = FILETIME_to_u64(&file_info.ftLastAccessTime);
 	inode->i_resolved = 1;
 
-	params->add_image_flags &= ~(WIMLIB_ADD_IMAGE_FLAG_ROOT | WIMLIB_ADD_IMAGE_FLAG_SOURCE);
+	params->add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
 
 	if (!(params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)
 	    && (vol_flags & FILE_PERSISTENT_ACLS))

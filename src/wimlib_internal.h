@@ -451,10 +451,22 @@ struct add_image_params {
 	u64 capture_root_dev;
 };
 
+
+/* capture_common.c */
+
 extern bool
 exclude_path(const tchar *path, size_t path_len,
 	     const struct wimlib_capture_config *config,
 	     bool exclude_prefix);
+
+extern struct wimlib_capture_config *
+copy_capture_config(const struct wimlib_capture_config *config);
+
+extern int
+canonicalize_capture_config(struct wimlib_capture_config *config);
+
+extern void
+free_capture_config(struct wimlib_capture_config *config);
 
 /* extract_image.c */
 
@@ -715,6 +727,9 @@ extern int
 copy_resource(struct wim_lookup_table_entry *lte, void *w);
 
 /* security.c */
+extern struct wim_security_data *
+new_wim_security_data();
+
 extern int
 read_security_data(const u8 metadata_resource[],
 		   u64 metadata_resource_len, struct wim_security_data **sd_p);
@@ -726,6 +741,18 @@ write_security_data(const struct wim_security_data *sd, u8 *p);
 
 extern void
 free_security_data(struct wim_security_data *sd);
+
+/* unix_capture.c */
+#ifndef __WIN32__
+extern int
+unix_build_dentry_tree(struct wim_dentry **root_ret,
+		       const char *root_disk_path,
+		       struct add_image_params *params);
+#endif
+
+/* update_image.c */
+extern int
+rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to);
 
 /* verify.c */
 
@@ -784,10 +811,6 @@ close_wim(WIMStruct *w);
 
 /* We are capturing a tree to be placed in the root of the WIM image */
 #define WIMLIB_ADD_IMAGE_FLAG_ROOT	0x80000000
-
-/* We are capturing a dentry that will become the root of a tree to be added to
- * the WIM image */
-#define WIMLIB_ADD_IMAGE_FLAG_SOURCE    0x40000000
 
 extern int
 begin_write(WIMStruct *w, const tchar *path, int write_flags);

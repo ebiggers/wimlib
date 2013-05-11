@@ -545,7 +545,14 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 	struct hlist_node *cur, *tmp;
 	u64 cur_ino = 1;
 
-	INIT_LIST_HEAD(head);
+	list_for_each_entry(inode, head, i_list) {
+		if (inode->i_nlink > 1)
+			inode->i_ino = cur_ino++;
+		else
+			inode->i_ino = 0;
+		list_add_tail(&inode->i_list, head);
+	}
+
 	for (size_t i = 0; i < table->capacity; i++) {
 		hlist_for_each_entry_safe(inode, cur, tmp, &table->array[i], i_hlist)
 		{
