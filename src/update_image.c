@@ -25,6 +25,7 @@
 #include "dentry.h"
 #include "lookup_table.h"
 #include "security.h"
+#include "xml.h"
 #include <errno.h>
 
 /* Creates a new directory to place in the WIM image.  This is to create parent
@@ -706,7 +707,9 @@ wimlib_update_image(WIMStruct *wim,
 	DEBUG("Executing update commands");
 
 	ret = execute_update_commands(wim, cmds_copy, num_cmds, progress_func);
-
+	if (ret)
+		goto out_free_cmds_copy;
+	xml_update_image_info(wim, wim->current_image);
 out_free_cmds_copy:
 	free_update_commands(cmds_copy, num_cmds);
 out:
