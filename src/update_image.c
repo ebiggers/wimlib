@@ -470,6 +470,8 @@ execute_update_commands(WIMStruct *wim,
 			break;
 		case WIMLIB_UPDATE_OP_DELETE:
 			ret = execute_delete_command(wim, &cmds[i]);
+			if (ret == 0)
+				wim->deletion_occurred = 1;
 			break;
 		case WIMLIB_UPDATE_OP_RENAME:
 			ret = execute_rename_command(wim, &cmds[i]);
@@ -480,6 +482,7 @@ execute_update_commands(WIMStruct *wim,
 		}
 		if (ret)
 			break;
+		wim->image_metadata[wim->current_image - 1]->modified = 1;
 	}
 	return ret;
 }
@@ -616,6 +619,7 @@ copy_update_commands(const struct wimlib_update_command *cmds,
 		goto oom;
 
 	for (size_t i = 0; i < num_cmds; i++) {
+		cmds_copy[i].op = cmds[i].op;
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
 			cmds_copy[i].add.fs_source_path =
@@ -694,7 +698,7 @@ wimlib_update_image(WIMStruct *wim,
 	if (num_cmds == 0)
 		goto out;
 
-	DEBUG("Preparing update commands");
+	DEBUG("Preparing %zu update commands", num_cmds);
 
 	ret = copy_update_commands(cmds, num_cmds, &cmds_copy);
 	if (ret)
@@ -704,7 +708,7 @@ wimlib_update_image(WIMStruct *wim,
 	if (ret)
 		goto out_free_cmds_copy;
 
-	DEBUG("Executing update commands");
+	DEBUG("Executing %zu update commands", num_cmds);
 
 	ret = execute_update_commands(wim, cmds_copy, num_cmds, progress_func);
 	if (ret)

@@ -171,7 +171,7 @@ IMAGEX_PROGNAME" unmount DIRECTORY [--commit] [--check] [--rebuild]\n"
 T(
 IMAGEX_PROGNAME" update WIMFILE IMAGE [--check] [--rebuild]\n"
 "                      [--threads=NUM_THREADS] [DEFAULT_ADD_OPTIONS]\n"
-"                      [DEFAULT_DELETE_OPTIONS] [CMD...] [< CMDFILE]\n"
+"                      [DEFAULT_DELETE_OPTIONS] [< CMDFILE]\n"
 "               ... where each CMD is:\n"
 "               add [--unix-data] [--no-acls] [--strict-acls] [--dereference]\n"
 "                   [--verbose] FILE_OR_DIRECTORY DEST_WIM_PATH\n"
@@ -192,14 +192,16 @@ enum {
 	IMAGEX_DEST_DIR_OPTION,
 	IMAGEX_EXTRACT_XML_OPTION,
 	IMAGEX_FLAGS_OPTION,
+	IMAGEX_FORCE_OPTION,
 	IMAGEX_HARDLINK_OPTION,
 	IMAGEX_HEADER_OPTION,
 	IMAGEX_LOOKUP_TABLE_OPTION,
 	IMAGEX_METADATA_OPTION,
 	IMAGEX_NORPFIX_OPTION,
 	IMAGEX_NO_ACLS_OPTION,
-	IMAGEX_REBULID_OPTION,
+	IMAGEX_REBUILD_OPTION,
 	IMAGEX_RECOMPRESS_OPTION,
+	IMAGEX_RECURSIVE_OPTION,
 	IMAGEX_REF_OPTION,
 	IMAGEX_RPFIX_OPTION,
 	IMAGEX_SOFT_OPTION,
@@ -238,7 +240,7 @@ static const struct option capture_or_append_options[] = {
 	{T("flags"),       required_argument, NULL, IMAGEX_FLAGS_OPTION},
 	{T("verbose"),     no_argument,       NULL, IMAGEX_VERBOSE_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
-	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBULID_OPTION},
+	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
 	{T("unix-data"),   no_argument,       NULL, IMAGEX_UNIX_DATA_OPTION},
 	{T("source-list"), no_argument,       NULL, IMAGEX_SOURCE_LIST_OPTION},
 	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
@@ -260,7 +262,7 @@ static const struct option export_options[] = {
 	{T("compress"),   required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("ref"),        required_argument, NULL, IMAGEX_REF_OPTION},
 	{T("threads"),    required_argument, NULL, IMAGEX_THREADS_OPTION},
-	{T("rebuild"),    no_argument,       NULL, IMAGEX_REBULID_OPTION},
+	{T("rebuild"),    no_argument,       NULL, IMAGEX_REBUILD_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -319,11 +321,24 @@ static const struct option split_options[] = {
 static const struct option unmount_options[] = {
 	{T("commit"),  no_argument, NULL, IMAGEX_COMMIT_OPTION},
 	{T("check"),   no_argument, NULL, IMAGEX_CHECK_OPTION},
-	{T("rebuild"), no_argument, NULL, IMAGEX_REBULID_OPTION},
+	{T("rebuild"), no_argument, NULL, IMAGEX_REBUILD_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
-
+static const struct option update_options[] = {
+	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
+	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
+	{T("force"),       no_argument,       NULL, IMAGEX_FORCE_OPTION},
+	{T("recursive"),   no_argument,       NULL, IMAGEX_RECURSIVE_OPTION},
+	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
+	{T("dereference"), no_argument,       NULL, IMAGEX_DEREFERENCE_OPTION},
+	{T("unix-data"),   no_argument,       NULL, IMAGEX_UNIX_DATA_OPTION},
+	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
+	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
+	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
+	{NULL, 0, NULL, 0},
+};
 
 /* Print formatted error message to stderr. */
 static void
@@ -1187,6 +1202,180 @@ parse_num_threads(const tchar *optarg)
 	}
 }
 
+static bool
+update_command_add_option(int op, const tchar *option,
+			  struct wimlib_update_command *cmd)
+{
+	bool recognized = true;
+	switch (op) {
+	case WIMLIB_UPDATE_OP_ADD:
+		if (!tstrcmp(option, T("--unix-data")))
+			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA;
+		else if (!tstrcmp(option, T("--no-acls")) || !tstrcmp(option, T("--noacls")))
+			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_NO_ACLS;
+		else if (!tstrcmp(option, T("--strict-acls")))
+			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS;
+		else if (!tstrcmp(option, T("--dereference")))
+			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
+		else
+			recognized = false;
+		break;
+	case WIMLIB_UPDATE_OP_DELETE:
+		if (!tstrcmp(option, T("--force")))
+			cmd->delete.delete_flags |= WIMLIB_DELETE_FLAG_FORCE;
+		else if (!tstrcmp(option, T("--recursive")))
+			cmd->delete.delete_flags |= WIMLIB_DELETE_FLAG_RECURSIVE;
+		else
+			recognized = false;
+		break;
+	case WIMLIB_UPDATE_OP_RENAME:
+		recognized = false;
+		break;
+	}
+	return recognized;
+}
+
+static const unsigned update_command_num_nonoptions[] = {
+	[WIMLIB_UPDATE_OP_ADD] = 2,
+	[WIMLIB_UPDATE_OP_DELETE] = 1,
+	[WIMLIB_UPDATE_OP_RENAME] = 2,
+};
+
+static bool
+update_command_add_nonoption(int op, const tchar *nonoption,
+			     struct wimlib_update_command *cmd,
+			     unsigned num_nonoptions)
+{
+	switch (op) {
+	case WIMLIB_UPDATE_OP_ADD:
+		if (num_nonoptions == 0)
+			cmd->add.fs_source_path = (tchar*)nonoption;
+		else
+			cmd->add.wim_target_path = (tchar*)nonoption;
+		break;
+	case WIMLIB_UPDATE_OP_DELETE:
+		cmd->delete.wim_path = (tchar*)nonoption;
+		break;
+	case WIMLIB_UPDATE_OP_RENAME:
+		if (num_nonoptions == 0)
+			cmd->rename.wim_source_path = (tchar*)nonoption;
+		else
+			cmd->rename.wim_target_path = (tchar*)nonoption;
+		break;
+	}
+	return true;
+}
+
+static bool
+parse_update_command(tchar *line, size_t len,
+		     struct wimlib_update_command *command,
+		     size_t line_number)
+{
+	int ret;
+	tchar *command_name;
+	int op;
+	size_t num_nonoptions;
+
+	ret = parse_filename(&line, &len, &command_name);
+	if (ret != PARSE_FILENAME_SUCCESS)
+		return false;
+
+	if (!tstrcasecmp(command_name, T("add"))) {
+		op = WIMLIB_UPDATE_OP_ADD;
+	} else if (!tstrcasecmp(command_name, T("delete"))) {
+		op = WIMLIB_UPDATE_OP_DELETE;
+	} else if (!tstrcasecmp(command_name, T("rename"))) {
+		op = WIMLIB_UPDATE_OP_RENAME;
+	} else {
+		imagex_error(T("Unknown update command \"%"TS"\" on line %zu"),
+			     command_name, line_number);
+		return false;
+	}
+	command->op = op;
+	num_nonoptions = 0;
+	for (;;) {
+		tchar *next_string;
+
+		ret = parse_filename(&line, &len, &next_string);
+		if (ret == PARSE_FILENAME_NONE)
+			break;
+		else if (ret != PARSE_FILENAME_SUCCESS)
+			return false;
+		if (next_string[0] == T('-') && next_string[1] == T('-')) {
+			if (!update_command_add_option(op, next_string, command))
+			{
+				imagex_error(T("Unrecognized option \"%"TS"\" to "
+					       "update command on line %zu"),
+					     next_string, line_number);
+
+				return false;
+			}
+		} else {
+			if (num_nonoptions == update_command_num_nonoptions[op])
+			{
+				imagex_error(T("Unexpected argument \"%"TS"\" in "
+					       "update command on line %zu\n"
+					       "       (The \"%"TS"\" command only "
+					       "takes %u nonoption arguments!)\n"),
+					     next_string, line_number,
+					     command_name, num_nonoptions);
+				return false;
+			}
+			if (!update_command_add_nonoption(op, next_string,
+							  command, num_nonoptions))
+				return false;
+			num_nonoptions++;
+		}
+	}
+
+	if (num_nonoptions != update_command_num_nonoptions[op]) {
+		imagex_error(T("Not enough arguments to update command "
+			       "\"%"TS"\" on line %zu"), command_name, line_number);
+		return false;
+	}
+	return true;
+}
+
+static struct wimlib_update_command *
+parse_update_command_file(tchar **cmd_file_contents_p, size_t cmd_file_nchars,
+			  size_t *num_cmds_ret)
+{
+	ssize_t nlines;
+	tchar *p;
+	struct wimlib_update_command *cmds;
+	size_t i, j;
+
+	nlines = text_file_count_lines(cmd_file_contents_p,
+				       &cmd_file_nchars);
+	if (nlines < 0)
+		return NULL;
+
+	/* Always allocate at least 1 slot, just in case the implementation of
+	 * calloc() returns NULL if 0 bytes are requested. */
+	cmds = calloc(nlines ?: 1, sizeof(struct wimlib_update_command));
+	if (!cmds) {
+		imagex_error(T("out of memory"));
+		return NULL;
+	}
+	p = *cmd_file_contents_p;
+	j = 0;
+	for (i = 0; i < nlines; i++) {
+		/* XXX: Could use rawmemchr() here instead, but it may not be
+		 * available on all platforms. */
+		tchar *endp = tmemchr(p, T('\n'), cmd_file_nchars);
+		size_t len = endp - p + 1;
+		*endp = T('\0');
+		if (!is_comment_line(p, len)) {
+			if (!parse_update_command(p, len, &cmds[j++], i + 1)) {
+				free(cmds);
+				return NULL;
+			}
+		}
+		p = endp + 1;
+	}
+	*num_cmds_ret = j;
+	return cmds;
+}
 
 /* Apply one image, or all images, from a WIM file into a directory, OR apply
  * one image from a WIM file to a NTFS volume. */
@@ -1391,7 +1580,7 @@ imagex_capture_or_append(int argc, tchar **argv)
 			if (num_threads == UINT_MAX)
 				return -1;
 			break;
-		case IMAGEX_REBULID_OPTION:
+		case IMAGEX_REBUILD_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
 			break;
 		case IMAGEX_UNIX_DATA_OPTION:
@@ -1747,7 +1936,7 @@ imagex_export(int argc, tchar **argv)
 			if (num_threads == UINT_MAX)
 				return -1;
 			break;
-		case IMAGEX_REBULID_OPTION:
+		case IMAGEX_REBUILD_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
 			break;
 		default:
@@ -2636,7 +2825,7 @@ imagex_unmount(int argc, tchar **argv)
 		case IMAGEX_CHECK_OPTION:
 			unmount_flags |= WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY;
 			break;
-		case IMAGEX_REBULID_OPTION:
+		case IMAGEX_REBUILD_OPTION:
 			unmount_flags |= WIMLIB_UNMOUNT_FLAG_REBUILD;
 			break;
 		default:
@@ -2667,22 +2856,145 @@ imagex_update(int argc, tchar **argv)
 	WIMStruct *wim;
 	int ret;
 	int open_flags = 0;
-	int write_flags = 0;
+	int write_flags = WIMLIB_WRITE_FLAG_SOFT_DELETE;
+	int update_flags = 0;
+	int default_add_flags = 0;
+	int default_delete_flags = 0;
 	unsigned num_threads = 0;
+	int c;
+	tchar *cmd_file_contents;
+	size_t cmd_file_nchars;
+	struct wimlib_update_command *cmds;
+	size_t num_cmds;
 
-	if (argc < 3)
+	const tchar *config_file = NULL;
+	tchar *config_str;
+	struct wimlib_capture_config *config = NULL;
+
+	for_opt(c, update_options) {
+		switch (c) {
+		case IMAGEX_THREADS_OPTION:
+			num_threads = parse_num_threads(optarg);
+			if (num_threads == UINT_MAX) {
+				ret = -1;
+				goto out;
+			}
+			break;
+		case IMAGEX_CHECK_OPTION:
+			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+			break;
+		case IMAGEX_REBUILD_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
+			break;
+		case IMAGEX_FORCE_OPTION:
+			default_delete_flags |= WIMLIB_DELETE_FLAG_FORCE;
+			break;
+		case IMAGEX_RECURSIVE_OPTION:
+			default_delete_flags |= WIMLIB_DELETE_FLAG_RECURSIVE;
+			break;
+		case IMAGEX_CONFIG_OPTION:
+			config_file = optarg;
+			break;
+		case IMAGEX_DEREFERENCE_OPTION:
+			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
+			break;
+		case IMAGEX_UNIX_DATA_OPTION:
+			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA;
+			break;
+		case IMAGEX_NO_ACLS_OPTION:
+			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_NO_ACLS;
+			break;
+		case IMAGEX_STRICT_ACLS_OPTION:
+			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS;
+			break;
+		default:
+			goto out_usage;
+		}
+	}
+	argv += optind;
+	argc -= optind;
+
+	if (argc < 1 || argc > 2)
 		goto out_usage;
-	wimfile = argv[1];
-	image_num_or_name = argv[2];
-
+	wimfile = argv[0];
 	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
 	if (ret)
 		goto out;
 
-	/*wimlib_update_image();*/
+	if (argc == 2)
+		image_num_or_name = argv[1];
+	else
+		image_num_or_name = T("1");
+
+	image = wimlib_resolve_image(wim, image_num_or_name);
+
+	ret = verify_image_exists_and_is_single(image, image_num_or_name,
+						wimfile);
+	if (ret)
+		goto out_wimlib_free;
+
+	if (config_file) {
+		size_t config_len;
+
+		config_str = file_get_text_contents(config_file, &config_len);
+		if (!config_str) {
+			ret = -1;
+			goto out_wimlib_free;
+		}
+
+		config = alloca(sizeof(*config));
+		ret = parse_capture_config(&config_str, config_len, config);
+		if (ret)
+			goto out_free_config;
+	} else {
+		config = &default_capture_config;
+	}
+
+	cmd_file_contents = stdin_get_text_contents(&cmd_file_nchars);
+	if (!cmd_file_contents) {
+		ret = -1;
+		goto out_free_config;
+	}
+
+	cmds = parse_update_command_file(&cmd_file_contents, cmd_file_nchars,
+					 &num_cmds);
+	if (!cmds) {
+		ret = -1;
+		goto out_free_cmd_file_contents;
+	}
+
+	for (size_t i = 0; i < num_cmds; i++) {
+		switch (cmds[i].op) {
+		case WIMLIB_UPDATE_OP_ADD:
+			cmds[i].add.add_flags |= default_add_flags;
+			cmds[i].add.config = config;
+			break;
+		case WIMLIB_UPDATE_OP_DELETE:
+			cmds[i].delete.delete_flags |= default_delete_flags;
+			break;
+		default:
+			break;
+		}
+	}
+
+	ret = wimlib_update_image(wim, image, cmds, num_cmds, update_flags,
+				  imagex_progress_func);
+	if (ret)
+		goto out_free_cmds;
 
 	ret = wimlib_overwrite(wim, write_flags, num_threads,
 			       imagex_progress_func);
+out_free_cmds:
+	free(cmds);
+out_free_cmd_file_contents:
+	free(cmd_file_contents);
+out_free_config:
+	if (config != NULL && config != &default_capture_config) {
+		free(config->exclusion_pats.pats);
+		free(config->exclusion_exception_pats.pats);
+		free(config_str);
+	}
 out_wimlib_free:
 	wimlib_free(wim);
 out:

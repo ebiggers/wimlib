@@ -1704,9 +1704,6 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
  * 	(public)  WIMLIB_WRITE_FLAG_CHECK_INTEGRITY:
  * 		Include an integrity table.
  *
- * 	(public)  WIMLIB_WRITE_FLAG_SHOW_PROGRESS:
- * 		Show progress information when (if) writing the integrity table.
- *
  * 	(private) WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE:
  * 		Don't write the lookup table.
  *
