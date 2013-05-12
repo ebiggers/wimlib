@@ -177,7 +177,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 	}
 
 	/* Delegate the work to wimlib_update_image(). */
-	ret = wimlib_update_image(wim, wim->hdr.image_count, add_cmds, 
+	ret = wimlib_update_image(wim, wim->hdr.image_count, add_cmds,
 				  num_sources, 0, progress_func);
 	FREE(add_cmds);
 	if (ret)

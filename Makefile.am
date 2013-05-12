@@ -107,9 +107,14 @@ imagex_SOURCES += programs/imagex-win32.c	\
 		  programs/wgetopt.c		\
 		  programs/wgetopt.h
 
-libwim_la_SOURCES += src/win32.c
+libwim_la_SOURCES += src/win32_common.c		\
+		     src/win32_apply.c		\
+		     src/win32_capture.c	\
+		     src/win32.h		\
+		     src/win32_common.h
 else
-libwim_la_SOURCES += src/unix_capture.c
+libwim_la_SOURCES += src/unix_apply.c		\
+		     src/unix_capture.c
 endif
 
 install-exec-hook:

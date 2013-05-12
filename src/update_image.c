@@ -28,6 +28,10 @@
 #include "xml.h"
 #include <errno.h>
 
+#ifdef __WIN32__
+#  include "win32.h"
+#endif
+
 /* Overlays @branch onto @target, both of which must be directories. */
 static int
 do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
@@ -324,7 +328,7 @@ execute_delete_command(WIMStruct *wim,
 	return 0;
 }
 
-/* 
+/*
  * Rename a file or directory in the WIM.
  *
  * This is also called from wimfs_rename() in the FUSE mount code.

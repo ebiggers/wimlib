@@ -743,6 +743,18 @@ write_security_data(const struct wim_security_data *sd, u8 *p);
 extern void
 free_security_data(struct wim_security_data *sd);
 
+/* unix_apply.c */
+#ifndef __WIN32__
+extern int
+unix_do_apply_dentry(const char *output_path, size_t output_path_len,
+		     struct wim_dentry *dentry, struct apply_args *args);
+extern int
+unix_do_apply_dentry_timestamps(const char *output_path,
+				size_t output_path_len,
+				struct wim_dentry *dentry,
+				struct apply_args *args);
+#endif
+
 /* unix_capture.c */
 #ifndef __WIN32__
 extern int

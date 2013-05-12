@@ -147,7 +147,7 @@ read_header(const tchar *filename, int in_fd,
  *
  * @hdr: 	A pointer to a struct wim_header structure that describes the header.
  * @out_fd:	The file descriptor to the WIM file, opened for writing.
- * 
+ *
  * Returns zero on success, nonzero on failure.
  */
 int
