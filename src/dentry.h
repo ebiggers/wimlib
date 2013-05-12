@@ -461,7 +461,7 @@ inode_remove_ads(struct wim_inode *inode, u16 idx,
 #define WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES (sizeof(WIMLIB_UNIX_DATA_TAG_UTF16LE) - 1)
 
 /* Format for special alternate data stream entries to store UNIX data for files
- * and directories (see: WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
+ * and directories (see: WIMLIB_ADD_FLAG_UNIX_DATA) */
 struct wimlib_unix_data {
 	u16 version; /* Must be 0 */
 	u16 uid;

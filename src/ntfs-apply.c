@@ -117,7 +117,7 @@ write_ntfs_data_streams(ntfs_inode *ni, struct wim_dentry *dentry,
 	for (;;) {
 		if (stream_name_nbytes) {
 			/* Skip special UNIX data entries (see documentation for
-			 * WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
+			 * WIMLIB_ADD_FLAG_UNIX_DATA) */
 			if (stream_name_nbytes == WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES
 			    && !memcmp(stream_name,
 				       WIMLIB_UNIX_DATA_TAG_UTF16LE,

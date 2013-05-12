@@ -702,7 +702,7 @@ win32_get_security_descriptor(struct wim_dentry *dentry,
 			      struct sd_set *sd_set,
 			      const wchar_t *path,
 			      struct win32_capture_state *state,
-			      int add_image_flags)
+			      int add_flags)
 {
 	SECURITY_INFORMATION requestedInformation;
 	DWORD lenNeeded = 0;
@@ -737,7 +737,7 @@ again:
 		}
 	}
 
-	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS)
+	if (add_flags & WIMLIB_ADD_FLAG_STRICT_ACLS)
 		goto fail;
 
 	switch (err) {
@@ -927,7 +927,7 @@ enum rp_status {
  * fixup where we change it to be absolute relative to the root of the directory
  * tree being captured.
  *
- * Note that this is only executed when WIMLIB_ADD_IMAGE_FLAG_RPFIX has been
+ * Note that this is only executed when WIMLIB_ADD_FLAG_RPFIX has been
  * set.
  *
  * @capture_root_ino and @capture_root_dev indicate the inode number and device
@@ -1085,7 +1085,7 @@ win32_get_reparse_data(HANDLE hFile, const wchar_t *path,
 
 	rpbuflen = bytesReturned;
 	reparse_tag = le32_to_cpu(*(u32*)rpbuf);
-	if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX &&
+	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX &&
 	    (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
 	     reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
 	{
@@ -1405,12 +1405,12 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	u16 not_rpfixed;
 
 	if (exclude_path(path, path_num_chars, params->config, true)) {
-		if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) {
+		if (params->add_flags & WIMLIB_ADD_FLAG_ROOT) {
 			ERROR("Cannot exclude the root directory from capture");
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 			goto out;
 		}
-		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
+		if ((params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE)
 		    && params->progress_func)
 		{
 			union wimlib_progress_info info;
@@ -1422,7 +1422,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out;
 	}
 
-	if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+	if ((params->add_flags & WIMLIB_ADD_FLAG_VERBOSE)
 	    && params->progress_func)
 	{
 		union wimlib_progress_info info;
@@ -1501,14 +1501,14 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	inode->i_last_access_time = FILETIME_to_u64(&file_info.ftLastAccessTime);
 	inode->i_resolved = 1;
 
-	params->add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
+	params->add_flags &= ~WIMLIB_ADD_FLAG_ROOT;
 
-	if (!(params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)
+	if (!(params->add_flags & WIMLIB_ADD_FLAG_NO_ACLS)
 	    && (vol_flags & FILE_PERSISTENT_ACLS))
 	{
 		ret = win32_get_security_descriptor(root, params->sd_set,
 						    path, state,
-						    params->add_image_flags);
+						    params->add_flags);
 		if (ret)
 			goto out_close_handle;
 	}
@@ -1558,7 +1558,7 @@ out:
 
 static void
 win32_do_capture_warnings(const struct win32_capture_state *state,
-			  int add_image_flags)
+			  int add_flags)
 {
 	if (state->num_get_sacl_priv_notheld == 0 &&
 	    state->num_get_sd_access_denied == 0)
@@ -1581,7 +1581,7 @@ win32_do_capture_warnings(const struct win32_capture_state *state,
 "          desired metadata has been captured exactly.  However, if you\n"
 "          do not care about capturing security descriptors correctly, then\n"
 "          nothing more needs to be done%ls\n",
-	(add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS) ? L"." :
+	(add_flags & WIMLIB_ADD_FLAG_NO_ACLS) ? L"." :
          L", although you might consider\n"
 "          passing the --no-acls flag to `wimlib-imagex capture' or\n"
 "          `wimlib-imagex append' to explicitly capture no security\n"
@@ -1637,7 +1637,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 						&state, vol_flags);
 	FREE(path);
 	if (ret == 0)
-		win32_do_capture_warnings(&state, params->add_image_flags);
+		win32_do_capture_warnings(&state, params->add_flags);
 	return ret;
 }
 
@@ -2617,7 +2617,7 @@ win32_extract_streams(const struct wim_dentry *dentry,
 			continue;
 
 		/* Skip special UNIX data entries (see documentation for
-		 * WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) */
+		 * WIMLIB_ADD_FLAG_UNIX_DATA) */
 		if (ads_entry->stream_name_nbytes == WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES
 		    && !memcmp(ads_entry->stream_name,
 			       WIMLIB_UNIX_DATA_TAG_UTF16LE,

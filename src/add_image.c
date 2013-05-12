@@ -121,7 +121,7 @@ out:
 static struct wimlib_update_command *
 capture_sources_to_add_cmds(const struct wimlib_capture_source *sources,
 			    size_t num_sources,
-			    int add_image_flags,
+			    int add_flags,
 			    const struct wimlib_capture_config *config)
 {
 	struct wimlib_update_command *add_cmds;
@@ -137,7 +137,7 @@ capture_sources_to_add_cmds(const struct wimlib_capture_source *sources,
 			      sources[i].fs_source_path,
 			      sources[i].wim_target_path);
 			add_cmds[i].op = WIMLIB_UPDATE_OP_ADD;
-			add_cmds[i].add.add_flags = add_image_flags;
+			add_cmds[i].add.add_flags = add_flags;
 			add_cmds[i].add.config = (struct wimlib_capture_config*)config;
 			add_cmds[i].add.fs_source_path = sources[i].fs_source_path;
 			add_cmds[i].add.wim_target_path = sources[i].wim_target_path;
@@ -154,14 +154,14 @@ wimlib_add_image_multisource(WIMStruct *wim,
 			     size_t num_sources,
 			     const tchar *name,
 			     const struct wimlib_capture_config *config,
-			     int add_image_flags,
+			     int add_flags,
 			     wimlib_progress_func_t progress_func)
 {
 	int ret;
 	struct wimlib_update_command *add_cmds;
 
-	DEBUG("Adding image \"%"TS"\" from %zu sources (add_image_flags=%#x)",
-	      name, num_sources, add_image_flags);
+	DEBUG("Adding image \"%"TS"\" from %zu sources (add_flags=%#x)",
+	      name, num_sources, add_flags);
 
 	/* Add the new image (initially empty) */
 	ret = wimlib_add_empty_image(wim, name, NULL);
@@ -170,7 +170,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 
 	/* Translate the "capture sources" into generic update commands. */
 	add_cmds = capture_sources_to_add_cmds(sources, num_sources,
-					       add_image_flags, config);
+					       add_flags, config);
 	if (!add_cmds) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_delete_image;
@@ -184,7 +184,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 		goto out_delete_image;
 
 	/* Success; set boot index if requested. */
-	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
+	if (add_flags & WIMLIB_ADD_FLAG_BOOT)
 		wim->hdr.boot_idx = wim->hdr.image_count;
 	ret = 0;
 	goto out;
@@ -204,7 +204,7 @@ wimlib_add_image(WIMStruct *wim,
 		 const tchar *source,
 		 const tchar *name,
 		 const struct wimlib_capture_config *config,
-		 int add_image_flags,
+		 int add_flags,
 		 wimlib_progress_func_t progress_func)
 {
 	/* Delegate the work to the more general wimlib_add_image_multisource().
@@ -215,6 +215,6 @@ wimlib_add_image(WIMStruct *wim,
 		.reserved = 0,
 	};
 	return wimlib_add_image_multisource(wim, &capture_src, 1, name,
-					    config, add_image_flags,
+					    config, add_flags,
 					    progress_func);
 }

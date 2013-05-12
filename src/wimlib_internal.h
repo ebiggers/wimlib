@@ -198,7 +198,7 @@ struct wim_header {
 #define WIM_HDR_FLAG_WRITE_IN_PROGRESS  0x00000040
 
 /* Reparse point fixup flag.  See docs for --rpfix and --norpfix in imagex, or
- * WIMLIB_ADD_IMAGE_FLAG_{RPFIX,NORPFIX} in wimlib.h.  Note that
+ * WIMLIB_ADD_FLAG_{RPFIX,NORPFIX} in wimlib.h.  Note that
  * WIM_HDR_FLAG_RP_FIX is a header flag and just sets the default behavior for
  * the WIM; it can still be overridder on a per-image basis.  But there is no
  * flag to set the default behavior for a specific image. */
@@ -437,8 +437,8 @@ struct add_image_params {
 	 * files should be excluded from capture or not. */
 	const struct wimlib_capture_config *config;
 
-	/* Flags that affect the capture operation (WIMLIB_ADD_IMAGE_FLAG_*) */
-	int add_image_flags;
+	/* Flags that affect the capture operation (WIMLIB_ADD_FLAG_*) */
+	int add_flags;
 
 	/* If non-NULL, the user-supplied progress function. */
 	wimlib_progress_func_t progress_func;
@@ -811,7 +811,7 @@ close_wim(WIMStruct *w);
 #define WIMLIB_WRITE_MASK_PUBLIC		0x1fffffff
 
 /* We are capturing a tree to be placed in the root of the WIM image */
-#define WIMLIB_ADD_IMAGE_FLAG_ROOT	0x80000000
+#define WIMLIB_ADD_FLAG_ROOT	0x80000000
 
 extern int
 begin_write(WIMStruct *w, const tchar *path, int write_flags);

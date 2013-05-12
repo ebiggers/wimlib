@@ -142,7 +142,7 @@
  * wimlib_add_image().  This can be done with a ::WIMStruct gotten from
  * wimlib_open_wim() or from wimlib_create_new_wim().  wimlib_add_image() can
  * also capture a WIM image directly from a NTFS volume if you provide the
- * ::WIMLIB_ADD_IMAGE_FLAG_NTFS flag, provided that wimlib was not compiled with
+ * ::WIMLIB_ADD_FLAG_NTFS flag, provided that wimlib was not compiled with
  * the <code>--without-ntfs-3g</code> flag.
  *
  * To extract an image from a WIM file, call wimlib_extract_image().  You may
@@ -345,7 +345,7 @@ enum wimlib_progress_msg {
 
 	/** A directory or file is being scanned.  @a info will point to
 	 * ::wimlib_progress_info.scan, and its @a cur_path member will be
-	 * valid.  This message is only sent if ::WIMLIB_ADD_IMAGE_FLAG_VERBOSE
+	 * valid.  This message is only sent if ::WIMLIB_ADD_FLAG_VERBOSE
 	 * is passed to wimlib_add_image(). */
 	WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
 
@@ -665,49 +665,49 @@ struct wimlib_capture_config {
 
 
 /*****************************
- * WIMLIB_ADD_IMAGE_FLAG_*   *
+ * WIMLIB_ADD_FLAG_*   *
  *****************************/
 
 /** Directly capture a NTFS volume rather than a generic directory.  This flag
- * cannot be combined with ::WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE or
- * ::WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA.   */
-#define WIMLIB_ADD_IMAGE_FLAG_NTFS			0x00000001
+ * cannot be combined with ::WIMLIB_ADD_FLAG_DEREFERENCE or
+ * ::WIMLIB_ADD_FLAG_UNIX_DATA.   */
+#define WIMLIB_ADD_FLAG_NTFS			0x00000001
 
 /** Follow symlinks; archive and dump the files they point to.  Cannot be used
- * with ::WIMLIB_ADD_IMAGE_FLAG_NTFS. */
-#define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE		0x00000002
+ * with ::WIMLIB_ADD_FLAG_NTFS. */
+#define WIMLIB_ADD_FLAG_DEREFERENCE		0x00000002
 
 /** Call the progress function with the message
  * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY when each directory or file is starting to
  * be scanned. */
-#define WIMLIB_ADD_IMAGE_FLAG_VERBOSE			0x00000004
+#define WIMLIB_ADD_FLAG_VERBOSE			0x00000004
 
 /** Mark the image being added as the bootable image of the WIM. */
-#define WIMLIB_ADD_IMAGE_FLAG_BOOT			0x00000008
+#define WIMLIB_ADD_FLAG_BOOT			0x00000008
 
 /** Store the UNIX owner, group, and mode.  This is done by adding a special
  * alternate data stream to each regular file, symbolic link, and directory to
  * contain this information.  Please note that this flag is for convenience
  * only; Microsoft's @a imagex.exe will not understand this special information.
- * This flag cannot be combined with ::WIMLIB_ADD_IMAGE_FLAG_NTFS.  */
-#define WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA			0x00000010
+ * This flag cannot be combined with ::WIMLIB_ADD_FLAG_NTFS.  */
+#define WIMLIB_ADD_FLAG_UNIX_DATA			0x00000010
 
 /** Do not capture security descriptors.  Only has an effect in NTFS capture
  * mode, or in Win32 native builds. */
-#define WIMLIB_ADD_IMAGE_FLAG_NO_ACLS			0x00000020
+#define WIMLIB_ADD_FLAG_NO_ACLS			0x00000020
 
 /** Fail immediately if the full security descriptor of any file or directory
  * cannot be accessed.  Only has an effect in Win32 native builds.  The default
  * behavior without this flag is to first try omitting the SACL from the
  * security descriptor, then to try omitting the security descriptor entirely.
  * */
-#define WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS		0x00000040
+#define WIMLIB_ADD_FLAG_STRICT_ACLS		0x00000040
 
 /** Call the progress function with the message
  * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY when a directory or file is excluded from
  * capture.  This is a subset of the messages provided by
- * ::WIMLIB_ADD_IMAGE_FLAG_VERBOSE. */
-#define WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE		0x00000080
+ * ::WIMLIB_ADD_FLAG_VERBOSE. */
+#define WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE		0x00000080
 
 /** Reparse-point fixups:  Modify absolute symbolic links (or junction points,
  * in the case of Windows) that point inside the directory being captured to
@@ -719,11 +719,22 @@ struct wimlib_capture_config {
  * the WIM header or if this is the first image being added.
  * WIM_HDR_FLAG_RP_FIX is set if the first image in a WIM is captured with
  * reparse point fixups enabled and currently cannot be unset. */
-#define WIMLIB_ADD_IMAGE_FLAG_RPFIX			0x00000100
+#define WIMLIB_ADD_FLAG_RPFIX			0x00000100
 
 /** Don't do reparse point fixups.  The default behavior is described in the
- * documentation for ::WIMLIB_ADD_IMAGE_FLAG_RPFIX. */
-#define WIMLIB_ADD_IMAGE_FLAG_NORPFIX			0x00000200
+ * documentation for ::WIMLIB_ADD_FLAG_RPFIX. */
+#define WIMLIB_ADD_FLAG_NORPFIX			0x00000200
+
+#define WIMLIB_ADD_IMAGE_FLAG_NTFS		WIMLIB_ADD_FLAG_NTFS
+#define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	WIMLIB_ADD_FLAG_DEREFERENCE
+#define WIMLIB_ADD_IMAGE_FLAG_VERBOSE		WIMLIB_ADD_FLAG_VERBOSE
+#define WIMLIB_ADD_IMAGE_FLAG_BOOT		WIMLIB_ADD_FLAG_BOOT
+#define WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA		WIMLIB_ADD_FLAG_UNIX_DATA
+#define WIMLIB_ADD_IMAGE_FLAG_NO_ACLS		WIMLIB_ADD_FLAG_NO_ACLS	
+#define WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS	WIMLIB_ADD_FLAG_STRICT_ACLS
+#define WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE	WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE	
+#define WIMLIB_ADD_IMAGE_FLAG_RPFIX		WIMLIB_ADD_FLAG_RPFIX
+#define WIMLIB_ADD_IMAGE_FLAG_NORPFIX		WIMLIB_ADD_FLAG_NORPFIX
 
 /** Do not issue an error if the path to delete does not exist. */
 #define WIMLIB_DELETE_FLAG_FORCE			0x00000001
@@ -764,7 +775,7 @@ struct wimlib_capture_config {
 /** Read the WIM file sequentially while extracting the image. */
 #define WIMLIB_EXTRACT_FLAG_SEQUENTIAL			0x00000010
 
-/** Extract special UNIX data captured with ::WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA.
+/** Extract special UNIX data captured with ::WIMLIB_ADD_FLAG_UNIX_DATA.
  * Cannot be used with ::WIMLIB_EXTRACT_FLAG_NTFS. */
 #define WIMLIB_EXTRACT_FLAG_UNIX_DATA			0x00000020
 
@@ -779,7 +790,7 @@ struct wimlib_capture_config {
  * not have permission to set the desired one. */
 #define WIMLIB_EXTRACT_FLAG_STRICT_ACLS			0x00000080
 
-/* Extract equivalent to ::WIMLIB_ADD_IMAGE_FLAG_RPFIX; force reparse-point
+/* Extract equivalent to ::WIMLIB_ADD_FLAG_RPFIX; force reparse-point
  * fixups on, so absolute symbolic links or junction points will be fixed to be
  * absolute relative to the actual extraction root.  Done by default if
  * WIM_HDR_FLAG_RP_FIX is set in the WIM header.  This flag may only be
@@ -815,7 +826,7 @@ struct wimlib_capture_config {
 #define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS	0x00000010
 
 /** Use UNIX file owners, groups, and modes if available in the WIM (see
- * ::WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA). */
+ * ::WIMLIB_ADD_FLAG_UNIX_DATA). */
 #define WIMLIB_MOUNT_FLAG_UNIX_DATA			0x00000020
 
 /** Allow other users to see the mounted filesystem.  (this passes the @c
@@ -1047,7 +1058,7 @@ wimlib_add_empty_image(WIMStruct *wim,
  *
  * See the manual page for the @b wimlib-imagex program for more information
  * about the "normal" capture mode versus the NTFS capture mode (entered by
- * providing the flag ::WIMLIB_ADD_IMAGE_FLAG_NTFS).
+ * providing the flag ::WIMLIB_ADD_FLAG_NTFS).
  *
  * Note that @b no changes are committed to the underlying WIM file (if
  * any) until wimlib_write() or wimlib_overwrite() is called.
@@ -1064,8 +1075,8 @@ wimlib_add_empty_image(WIMStruct *wim,
  * 	Capture configuration that specifies files, directories, or path globs
  * 	to exclude from being captured.  If @c NULL, a dummy configuration where
  * 	no paths are treated specially is used.
- * @param add_image_flags
- * 	Bitwise OR of flags prefixed with WIMLIB_ADD_IMAGE_FLAG.
+ * @param add_flags
+ * 	Bitwise OR of flags prefixed with WIMLIB_ADD_FLAG.
  * @param progress_func
  * 	If non-NULL, a function that will be called periodically with the
  * 	progress of the current operation.
@@ -1084,34 +1095,34 @@ wimlib_add_empty_image(WIMStruct *wim,
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_NOTDIR
- * 	@a source is not a directory (only if ::WIMLIB_ADD_IMAGE_FLAG_NTFS was
- * 	not specified in @a add_image_flags).
+ * 	@a source is not a directory (only if ::WIMLIB_ADD_FLAG_NTFS was
+ * 	not specified in @a add_flags).
  * @retval ::WIMLIB_ERR_NTFS_3G
  * 	An error was returned from a libntfs-3g function when the NTFS volume
  * 	was being opened, scanned, or closed (only if
- * 	::WIMLIB_ADD_IMAGE_FLAG_NTFS was specified in @a add_image_flags).
+ * 	::WIMLIB_ADD_FLAG_NTFS was specified in @a add_flags).
  * @retval ::WIMLIB_ERR_OPEN
  * 	Failed to open a file or directory in the directory tree rooted at @a
- * 	source (only if ::WIMLIB_ADD_IMAGE_FLAG_NTFS was not specified in @a
- * 	add_image_flags).
+ * 	source (only if ::WIMLIB_ADD_FLAG_NTFS was not specified in @a
+ * 	add_flags).
  * @retval ::WIMLIB_ERR_READ
  * 	Failed to read a file in the directory tree rooted at @a source (only if
- * 	::WIMLIB_ADD_IMAGE_FLAG_NTFS was not specified in @a add_image_flags).
+ * 	::WIMLIB_ADD_FLAG_NTFS was not specified in @a add_flags).
  * @retval ::WIMLIB_ERR_SPECIAL_FILE
  * 	The directory tree rooted at @a source contains a special file that is
  * 	not a directory, regular file, or symbolic link.  This currently can
- * 	only be returned if ::WIMLIB_ADD_IMAGE_FLAG_NTFS was not specified in @a
- * 	add_image_flags, but it may be returned for unsupported NTFS files in
+ * 	only be returned if ::WIMLIB_ADD_FLAG_NTFS was not specified in @a
+ * 	add_flags, but it may be returned for unsupported NTFS files in
  * 	the future.
  * @retval ::WIMLIB_ERR_STAT
  * 	Failed obtain the metadata for a file or directory in the directory tree
- * 	rooted at @a source (only if ::WIMLIB_ADD_IMAGE_FLAG_NTFS was not
- * 	specified in @a add_image_flags).
+ * 	rooted at @a source (only if ::WIMLIB_ADD_FLAG_NTFS was not
+ * 	specified in @a add_flags).
  * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
  * 	@a wim is part of a split WIM.  Adding an image to a split WIM is
  * 	unsupported.
  * @retval ::WIMLIB_ERR_UNSUPPORTED
- * 	::WIMLIB_ADD_IMAGE_FLAG_NTFS was specified in @a add_image_flags, but
+ * 	::WIMLIB_ADD_FLAG_NTFS was specified in @a add_flags, but
  * 	wimlib was configured with the @c --without-ntfs-3g flag.
  */
 extern int
@@ -1119,7 +1130,7 @@ wimlib_add_image(WIMStruct *wim,
 		 const wimlib_tchar *source,
 		 const wimlib_tchar *name,
 		 const struct wimlib_capture_config *config,
-		 int add_image_flags,
+		 int add_flags,
 		 wimlib_progress_func_t progress_func);
 
 /** This function is equivalent to wimlib_add_image() except it allows for
@@ -1134,7 +1145,7 @@ wimlib_add_image(WIMStruct *wim,
  * when trying to overlay a non-directory on a directory or when otherwise
  * trying to overlay multiple conflicting files to the same location in the WIM
  * image.  It will also return ::WIMLIB_ERR_INVALID_PARAM if
- * ::WIMLIB_ADD_IMAGE_FLAG_NTFS was specified in @a add_image_flags but there
+ * ::WIMLIB_ADD_FLAG_NTFS was specified in @a add_flags but there
  * was not exactly one capture source with the target being the root directory.
  * (In this respect, there is no advantage to using
  * wimlib_add_image_multisource() instead of wimlib_add_image() when requesting
@@ -1145,7 +1156,7 @@ wimlib_add_image_multisource(WIMStruct *w,
 			     size_t num_sources,
 			     const wimlib_tchar *name,
 			     const struct wimlib_capture_config *config,
-			     int add_image_flags,
+			     int add_flags,
 			     wimlib_progress_func_t progress_func);
 
 /**

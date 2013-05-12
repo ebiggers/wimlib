@@ -207,7 +207,7 @@ execute_add_command(WIMStruct *wim,
 
 	imd = wim->image_metadata[wim->current_image - 1];
 
-	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
+	if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
 	#ifdef WITH_NTFS_3G
 		capture_tree = build_dentry_tree_ntfs;
 		extra_arg = &ntfs_vol;
@@ -243,7 +243,7 @@ execute_add_command(WIMStruct *wim,
 	params.inode_table = &inode_table;
 	params.sd_set = &sd_set;
 	params.config = config;
-	params.add_image_flags = add_flags;
+	params.add_flags = add_flags;
 	params.progress_func = progress_func;
 	params.extra_arg = extra_arg;
 
@@ -257,7 +257,7 @@ execute_add_command(WIMStruct *wim,
 	config->_prefix_num_tchars = tstrlen(fs_source_path);
 
 	if (wim_target_path[0] == T('\0'))
-		add_flags |= WIMLIB_ADD_IMAGE_FLAG_ROOT;
+		add_flags |= WIMLIB_ADD_FLAG_ROOT;
 	ret = (*capture_tree)(&branch, fs_source_path, &params);
 	if (ret) {
 		ERROR("Failed to build dentry tree for \"%"TS"\"",
@@ -287,7 +287,7 @@ execute_add_command(WIMStruct *wim,
 	inode_table_prepare_inode_list(&inode_table, &imd->inode_list);
 	ret = 0;
 	rollback_sd = false;
-	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX)
+	if (add_flags & WIMLIB_ADD_FLAG_RPFIX)
 		wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
 	goto out_destroy_sd_set;
 out_ntfs_umount:
@@ -502,30 +502,30 @@ check_add_command(struct wimlib_update_command *cmd,
 
 #ifdef __WIN32__
 	/* Check for flags not supported on Windows */
-	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
+	if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
 		ERROR("wimlib was compiled without support for NTFS-3g, so");
 		ERROR("we cannot capture a WIM image directly from a NTFS volume");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
-	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
+	if (add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {
 		ERROR("Capturing UNIX-specific data is not supported on Windows");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
-	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE) {
+	if (add_flags & WIMLIB_ADD_FLAG_DEREFERENCE) {
 		ERROR("Dereferencing symbolic links is not supported on Windows");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 #endif
 
 	/* VERBOSE implies EXCLUDE_VERBOSE */
-	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
-		add_flags |= WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
+	if (add_flags & WIMLIB_ADD_FLAG_VERBOSE)
+		add_flags |= WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE;
 
 	/* Check for contradictory reparse point fixup flags */
-	if ((add_flags & (WIMLIB_ADD_IMAGE_FLAG_RPFIX |
-			  WIMLIB_ADD_IMAGE_FLAG_NORPFIX)) ==
-		(WIMLIB_ADD_IMAGE_FLAG_RPFIX |
-		 WIMLIB_ADD_IMAGE_FLAG_NORPFIX))
+	if ((add_flags & (WIMLIB_ADD_FLAG_RPFIX |
+			  WIMLIB_ADD_FLAG_NORPFIX)) ==
+		(WIMLIB_ADD_FLAG_RPFIX |
+		 WIMLIB_ADD_FLAG_NORPFIX))
 	{
 		ERROR("Cannot specify RPFIX and NORPFIX flags "
 		      "at the same time!");
@@ -533,30 +533,31 @@ check_add_command(struct wimlib_update_command *cmd,
 	}
 
 	/* Set default behavior on reparse point fixups if requested */
-	if ((add_flags & (WIMLIB_ADD_IMAGE_FLAG_RPFIX |
-			  WIMLIB_ADD_IMAGE_FLAG_NORPFIX)) == 0)
+	if ((add_flags & (WIMLIB_ADD_FLAG_RPFIX |
+			  WIMLIB_ADD_FLAG_NORPFIX)) == 0)
 	{
 		/* Do reparse-point fixups by default if we are capturing an
 		 * entire image and either the header flag is set from previous
 		 * images, or if this is the first image being added. */
 		if (is_entire_image &&
 		    ((hdr->flags & WIM_HDR_FLAG_RP_FIX) || hdr->image_count == 1))
-			add_flags |= WIMLIB_ADD_IMAGE_FLAG_RPFIX;
+			add_flags |= WIMLIB_ADD_FLAG_RPFIX;
 	}
 
 	if (!is_entire_image) {
-		if (add_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
+		if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
 			ERROR("Cannot add directly from a NTFS volume "
 			      "when not capturing a full image!");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 
-		if (add_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX) {
+		if (add_flags & WIMLIB_ADD_FLAG_RPFIX) {
 			ERROR("Cannot do reparse point fixups when "
 			      "not capturing a full image!");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 	}
+	/* We may have modified the add flags. */
 	cmd->add.add_flags = add_flags;
 	return 0;
 }

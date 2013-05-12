@@ -147,7 +147,7 @@ unix_capture_symlink(struct wim_dentry **root_p,
 		dest[deref_name_len] = '\0';
 		DEBUG("Read symlink `%s'", dest);
 
-		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX) &&
+		if ((params->add_flags & WIMLIB_ADD_FLAG_RPFIX) &&
 		     dest[0] == '/')
 		{
 			dest = capture_fixup_absolute_symlink(dest,
@@ -196,7 +196,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	struct wim_inode *inode;
 
 	if (exclude_path(path, path_len, params->config, true)) {
-		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
+		if ((params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE)
 		    && params->progress_func)
 		{
 			union wimlib_progress_info info;
@@ -207,7 +207,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out;
 	}
 
-	if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+	if ((params->add_flags & WIMLIB_ADD_FLAG_VERBOSE)
 	    && params->progress_func)
 	{
 		union wimlib_progress_info info;
@@ -218,8 +218,8 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 
 	struct stat stbuf;
 	int (*stat_fn)(const char *restrict, struct stat *restrict);
-	if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE) ||
-	    (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT))
+	if ((params->add_flags & WIMLIB_ADD_FLAG_DEREFERENCE) ||
+	    (params->add_flags & WIMLIB_ADD_FLAG_ROOT))
 		stat_fn = stat;
 	else
 		stat_fn = lstat;
@@ -258,7 +258,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	inode->i_last_access_time = unix_timestamp_to_wim(stbuf.st_atime);
 #endif
 	inode->i_resolved = 1;
-	if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA) {
+	if (params->add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {
 		ret = inode_set_unix_data(inode, stbuf.st_uid,
 					  stbuf.st_gid,
 					  stbuf.st_mode,
@@ -267,7 +267,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		if (ret)
 			goto out;
 	}
-	params->add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_ROOT;
+	params->add_flags &= ~WIMLIB_ADD_FLAG_ROOT;
 	if (S_ISREG(stbuf.st_mode))
 		ret = unix_capture_regular_file(path, stbuf.st_size,
 						inode, params->lookup_table);
@@ -320,7 +320,7 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 			return WIMLIB_ERR_STAT;
 		}
 
-		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_ROOT) &&
+		if ((params->add_flags & WIMLIB_ADD_FLAG_ROOT) &&
 		    !S_ISDIR(root_stbuf.st_mode))
 		{
 			ERROR("Root of capture \"%s\" is not a directory",

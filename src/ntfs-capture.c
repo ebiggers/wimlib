@@ -546,7 +546,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	if (exclude_path(path, path_len, params->config, false)) {
 		/* Exclude a file or directory tree based on the capture
 		 * configuration file */
-		if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE)
+		if ((params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE)
 		    && params->progress_func)
 		{
 			union wimlib_progress_info info;
@@ -572,7 +572,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
-	if ((params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
+	if ((params->add_flags & WIMLIB_ADD_FLAG_VERBOSE)
 	    && params->progress_func)
 	{
 		union wimlib_progress_info info;
@@ -647,11 +647,11 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 
 	/* Reparse-point fixups are a no-op because in NTFS-3g capture mode we
 	 * only allow capturing an entire volume. */
-	if (params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_RPFIX &&
+	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX &&
 	    inode_is_symlink(inode))
 		inode->i_not_rpfixed = 0;
 
-	if (!(params->add_image_flags & WIMLIB_ADD_IMAGE_FLAG_NO_ACLS)) {
+	if (!(params->add_flags & WIMLIB_ADD_FLAG_NO_ACLS)) {
 		/* Get security descriptor */
 		char _sd[1];
 		char *sd = _sd;
