@@ -250,17 +250,16 @@ int
 for_dentry_in_tree(struct wim_dentry *root,
 		   int (*visitor)(struct wim_dentry*, void*), void *arg)
 {
-	int ret = 0;
+	int ret;
 
-	if (root) {
-		int ret = visitor(root, arg);
-		if (ret == 0) {
-			ret = for_dentry_tree_in_rbtree(root->d_inode->i_children.rb_node,
-							visitor,
-							arg);
-		}
-	}
-	return ret;
+	if (!root)
+		return 0;
+	ret = (*visitor)(root, arg);
+	if (ret)
+		return ret;
+	return for_dentry_tree_in_rbtree(root->d_inode->i_children.rb_node,
+					 visitor,
+					 arg);
 }
 
 /* Like for_dentry_in_tree(), but the visitor function is always called on a
@@ -269,14 +268,15 @@ int
 for_dentry_in_tree_depth(struct wim_dentry *root,
 			 int (*visitor)(struct wim_dentry*, void*), void *arg)
 {
-	int ret = 0;
-	if (root) {
-		ret = for_dentry_tree_in_rbtree_depth(root->d_inode->i_children.rb_node,
-						      visitor, arg);
-		if (ret == 0)
-			ret = visitor(root, arg);
-	}
-	return ret;
+	int ret;
+
+	if (!root)
+		return 0;
+	ret = for_dentry_tree_in_rbtree_depth(root->d_inode->i_children.rb_node,
+					      visitor, arg);
+	if (ret)
+		return ret;
+	return (*visitor)(root, arg);
 }
 
 /* Calculate the full path of @dentry.  The full path of its parent must have
