@@ -28,28 +28,6 @@
 #include "xml.h"
 #include <errno.h>
 
-/* Creates a new directory to place in the WIM image.  This is to create parent
- * directories that are not part of any target as needed.  */
-static int
-new_filler_directory(const tchar *name, struct wim_dentry **dentry_ret)
-{
-	int ret;
-	struct wim_dentry *dentry;
-
-	DEBUG("Creating filler directory \"%"TS"\"", name);
-	ret = new_dentry_with_inode(name, &dentry);
-	if (ret)
-		goto out;
-	/* Leave the inode number as 0; this is allowed for non
-	 * hard-linked files. */
-	dentry->d_inode->i_resolved = 1;
-	dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
-	*dentry_ret = dentry;
-	ret = 0;
-out:
-	return ret;
-}
-
 /* Overlays @branch onto @target, both of which must be directories. */
 static int
 do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
@@ -427,6 +405,8 @@ execute_rename_command(WIMStruct *wim,
 			ret = WIMLIB_ERR_NOTDIR;
 			break;
 		case -ENOTEMPTY:
+			ret = WIMLIB_ERR_NOTEMPTY;
+			break;
 		case -EISDIR:
 			ret = WIMLIB_ERR_IS_DIRECTORY;
 			break;
@@ -477,12 +457,11 @@ execute_update_commands(WIMStruct *wim,
 			ret = execute_rename_command(wim, &cmds[i]);
 			break;
 		default:
-			ret = WIMLIB_ERR_INVALID_PARAM;
+			wimlib_assert(0);
 			break;
 		}
 		if (ret)
 			break;
-		wim->image_metadata[wim->current_image - 1]->modified = 1;
 	}
 	return ret;
 }
@@ -733,10 +712,12 @@ wimlib_update_image(WIMStruct *wim,
 	if (ret)
 		goto out_free_cmds_copy;
 
+	wim->image_metadata[image - 1]->modified = 1;
+
 	/* Statistics about the WIM image, such as the numbers of files and
 	 * directories, may have changed.  Call xml_update_image_info() to
 	 * recalculate these statistics. */
-	xml_update_image_info(wim, wim->current_image);
+	xml_update_image_info(wim, image);
 out_free_cmds_copy:
 	free_update_commands(cmds_copy, num_cmds);
 out:

@@ -2372,16 +2372,19 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	DEBUG("Mount: wim = %p, image = %d, dir = %s, flags = %d, ",
 	      wim, image, dir, mount_flags);
 
-	if (!wim || !dir)
-		return WIMLIB_ERR_INVALID_PARAM;
+	if (!wim || !dir) {
+		ret = WIMLIB_ERR_INVALID_PARAM;
+		goto out;
+	}
 
 	ret = verify_swm_set(wim, additional_swms, num_additional_swms);
 	if (ret)
-		return ret;
+		goto out;
 
 	if ((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) && (wim->hdr.total_parts != 1)) {
 		ERROR("Cannot mount a split WIM read-write");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+		ret = WIMLIB_ERR_SPLIT_UNSUPPORTED;
+		goto out;
 	}
 
 	if (num_additional_swms) {
@@ -2389,7 +2392,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 					      num_additional_swms,
 					      &joined_tab);
 		if (ret)
-			return ret;
+			goto out;
 		wim_tab_save = wim->lookup_table;
 		wim->lookup_table = joined_tab;
 	}
@@ -2397,16 +2400,16 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = wim_run_full_verifications(wim);
 		if (ret)
-			goto out;
+			goto out_restore_lookup_table;
 	}
 
 	ret = wim_checksum_unhashed_streams(wim);
 	if (ret)
-		goto out;
+		goto out_restore_lookup_table;
 
 	ret = select_wim_image(wim, image);
 	if (ret)
-		goto out;
+		goto out_restore_lookup_table;
 
 	DEBUG("Selected image %d", image);
 
@@ -2416,20 +2419,20 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		ERROR("Cannot mount image that was just exported with "
 		      "wimlib_export_image()");
 		ret = WIMLIB_ERR_INVALID_PARAM;
-		goto out;
+		goto out_restore_lookup_table;
 	}
 
 	if (imd->modified) {
 		ERROR("Cannot mount image that was added "
 		      "with wimlib_add_image()");
 		ret = WIMLIB_ERR_INVALID_PARAM;
-		goto out;
+		goto out_restore_lookup_table;
 	}
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = lock_wim(wim, wim->in_fd);
 		if (ret)
-			goto out;
+			goto out_restore_lookup_table;
 	}
 
 	/* Use default stream interface if one was not specified */
@@ -2556,11 +2559,12 @@ out_unlock:
 	wim->wim_locked = 0;
 out_free_message_queue_names:
 	free_message_queue_names(&ctx);
-out:
+out_restore_lookup_table:
 	if (num_additional_swms) {
 		free_lookup_table(wim->lookup_table);
 		wim->lookup_table = wim_tab_save;
 	}
+out:
 	return ret;
 }
 

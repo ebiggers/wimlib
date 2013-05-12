@@ -1,4 +1,8 @@
 /*
+ * unix_capture.c:  Capture a directory tree on UNIX.
+ */
+
+/*
  * Copyright (C) 2013 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
@@ -82,7 +86,7 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 	if (!dir) {
 		ERROR_WITH_ERRNO("Failed to open the directory `%s'",
 				 path);
-		return WIMLIB_ERR_OPEN;
+		return WIMLIB_ERR_OPENDIR;
 	}
 
 	/* Recurse on directory contents */
@@ -225,8 +229,9 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		stat_fn = lstat;
 
 	ret = (*stat_fn)(path, &stbuf);
-	if (ret != 0) {
+	if (ret) {
 		ERROR_WITH_ERRNO("Failed to stat `%s'", path);
+		ret = WIMLIB_ERR_STAT;
 		goto out;
 	}
 	if (!S_ISREG(stbuf.st_mode) && !S_ISDIR(stbuf.st_mode)

@@ -665,7 +665,7 @@ struct wimlib_capture_config {
 
 
 /*****************************
- * WIMLIB_ADD_FLAG_*   *
+ * WIMLIB_ADD_FLAG_*
  *****************************/
 
 /** Directly capture a NTFS volume rather than a generic directory.  This flag
@@ -730,11 +730,15 @@ struct wimlib_capture_config {
 #define WIMLIB_ADD_IMAGE_FLAG_VERBOSE		WIMLIB_ADD_FLAG_VERBOSE
 #define WIMLIB_ADD_IMAGE_FLAG_BOOT		WIMLIB_ADD_FLAG_BOOT
 #define WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA		WIMLIB_ADD_FLAG_UNIX_DATA
-#define WIMLIB_ADD_IMAGE_FLAG_NO_ACLS		WIMLIB_ADD_FLAG_NO_ACLS	
+#define WIMLIB_ADD_IMAGE_FLAG_NO_ACLS		WIMLIB_ADD_FLAG_NO_ACLS
 #define WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS	WIMLIB_ADD_FLAG_STRICT_ACLS
-#define WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE	WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE	
+#define WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE	WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE
 #define WIMLIB_ADD_IMAGE_FLAG_RPFIX		WIMLIB_ADD_FLAG_RPFIX
 #define WIMLIB_ADD_IMAGE_FLAG_NORPFIX		WIMLIB_ADD_FLAG_NORPFIX
+
+/******************************
+ * WIMLIB_DELETE_FLAG_*
+ ******************************/
 
 /** Do not issue an error if the path to delete does not exist. */
 #define WIMLIB_DELETE_FLAG_FORCE			0x00000001
@@ -744,14 +748,14 @@ struct wimlib_capture_config {
 #define WIMLIB_DELETE_FLAG_RECURSIVE			0x00000002
 
 /******************************
- * WIMLIB_EXPORT_FLAG_* *
+ * WIMLIB_EXPORT_FLAG_*
  ******************************/
 
 /** See documentation for wimlib_export_image(). */
 #define WIMLIB_EXPORT_FLAG_BOOT				0x00000001
 
 /******************************
- * WIMLIB_EXTRACT_FLAG_*      *
+ * WIMLIB_EXTRACT_FLAG_*
  ******************************/
 
 /** Extract the image directly to a NTFS volume rather than a generic directory.
@@ -805,7 +809,7 @@ struct wimlib_capture_config {
 #define WIMLIB_EXTRACT_FLAG_TO_STDOUT			0x00000400
 
 /******************************
- * WIMLIB_MOUNT_FLAG_*        *
+ * WIMLIB_MOUNT_FLAG_*
  ******************************/
 
 /** Mount the WIM image read-write rather than the default of read-only. */
@@ -834,7 +838,7 @@ struct wimlib_capture_config {
 #define WIMLIB_MOUNT_FLAG_ALLOW_OTHER			0x00000040
 
 /******************************
- * WIMLIB_OPEN_FLAG_*         *
+ * WIMLIB_OPEN_FLAG_*
  ******************************/
 
 /** Verify the WIM contents against the WIM's integrity table, if present. */
@@ -844,7 +848,7 @@ struct wimlib_capture_config {
 #define WIMLIB_OPEN_FLAG_SPLIT_OK			0x00000002
 
 /******************************
- * WIMLIB_UNMOUNT_FLAG_*      *
+ * WIMLIB_UNMOUNT_FLAG_*
  ******************************/
 
 /** Include an integrity table in the WIM after it's been unmounted.  Ignored
@@ -862,7 +866,7 @@ struct wimlib_capture_config {
 #define WIMLIB_UNMOUNT_FLAG_RECOMPRESS			0x00000008
 
 /******************************
- * WIMLIB_WRITE_FLAG_*        *
+ * WIMLIB_WRITE_FLAG_*
  ******************************/
 
 /** Include an integrity table in the new WIM file. */
@@ -891,31 +895,67 @@ struct wimlib_capture_config {
  * deleting an image in this way. */
 #define WIMLIB_WRITE_FLAG_SOFT_DELETE			0x00000010
 
+/******************************
+ * WIMLIB_INIT_FLAG_*
+ ******************************/
+
 /** Assume that strings are represented in UTF-8, even if this is not the
  * locale's character encoding. */
 #define WIMLIB_INIT_FLAG_ASSUME_UTF8			0x00000001
 
-/** XXX */
+/** Specification of an update to perform on a WIM image. */
 struct wimlib_update_command {
-	enum {
+
+	/** The specific type of update to perform. */
+	enum wimlib_update_op {
+		/** Add a new file or directory tree to the WIM image in a
+		 * certain location. */
 		WIMLIB_UPDATE_OP_ADD = 0,
+
+		/** Delete a file or directory tree from the WIM image. */
 		WIMLIB_UPDATE_OP_DELETE,
+
+		/** Rename a file or directory tree in the WIM image. */
 		WIMLIB_UPDATE_OP_RENAME,
 	} op;
 	union {
-		struct {
+		/** Data for a ::WIMLIB_UPDATE_OP_ADD operation. */
+		struct wimlib_add_command {
+			/** Filesystem path to the file or directory tree to
+			 * add. */
 			wimlib_tchar *fs_source_path;
+			/** Path, specified from the root of the WIM image, at
+			 * which to add the file or directory tree within the
+			 * WIM image. */
 			wimlib_tchar *wim_target_path;
+
+			/** Configuration for excluded files.  @c NULL means
+			 * exclude no files. */
 			struct wimlib_capture_config *config;
+
+			/** Bitwise OR of WIMLIB_ADD_FLAG_* flags. */
 			int add_flags;
 		} add;
-		struct {
+		/** Data for a ::WIMLIB_UPDATE_OP_DELETE operation. */
+		struct wimlib_delete_command {
+			/** Path, specified from the root of the WIM image, for
+			 * the file or directory tree within the WIM image to be
+			 * deleted. */
 			wimlib_tchar *wim_path;
+			/** Bitwise OR of WIMLIB_DELETE_FLAG_* flags. */
 			int delete_flags;
 		} delete;
-		struct {
+		/** Data for a ::WIMLIB_UPDATE_OP_RENAME operation. */
+		struct wimlib_rename_command {
+			/** Path, specified from the root of the WIM image, for
+			 * the source file or directory tree within the WIM
+			 * image. */
 			wimlib_tchar *wim_source_path;
+			/** Path, specified from the root of the WIM image, for
+			 * the destination file or directory tree within the WIM
+			 * image. */
 			wimlib_tchar *wim_target_path;
+			/** Reserved; set to 0. */
 			int rename_flags;
 		} rename;
 	};
@@ -941,9 +981,6 @@ struct wimlib_extract_command {
  * See the documentation for each wimlib function to see specifically what error
  * codes can be returned by a given function, and what they mean.
  */
-/* Note: these are currently in alphabetic order, but new error codes should be
- * added at the end to maintain a compatible ABI, except when it's being broken
- * anyway. */
 enum wimlib_error_code {
 	WIMLIB_ERR_SUCCESS = 0,
 	WIMLIB_ERR_ALREADY_LOCKED,
@@ -1009,6 +1046,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_PATH_DOES_NOT_EXIST,
 	WIMLIB_ERR_NOT_A_REGULAR_FILE,
 	WIMLIB_ERR_IS_DIRECTORY,
+	WIMLIB_ERR_NOTEMPTY,
 };
 
 
@@ -1070,7 +1108,8 @@ wimlib_add_empty_image(WIMStruct *wim,
  * 	A path to a directory or unmounted NTFS volume that will be captured as
  * 	a WIM image.
  * @param name
- * 	The name to give the image.  This must be non-@c NULL.
+ * 	The name to give the image.  It must be nonempty and must specify a name
+ * 	that does not yet exist in @a wim.
  * @param config
  * 	Capture configuration that specifies files, directories, or path globs
  * 	to exclude from being captured.  If @c NULL, a dummy configuration where
@@ -1085,45 +1124,11 @@ wimlib_add_empty_image(WIMStruct *wim,
  * discarded so that it appears to be in the same state as when this function
  * was called.
  *
- * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
- * 	There is already an image named @a name in @a wim.
- * @retval ::WIMLIB_ERR_INVALID_CAPTURE_CONFIG
- * 	@a config was not @c NULL and did not specify a valid image capture
- * 	configuration.
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a dir was @c NULL, @a name was @c NULL, or @a name was the empty string.
- * @retval ::WIMLIB_ERR_NOMEM
- * 	Failed to allocate needed memory.
- * @retval ::WIMLIB_ERR_NOTDIR
- * 	@a source is not a directory (only if ::WIMLIB_ADD_FLAG_NTFS was
- * 	not specified in @a add_flags).
- * @retval ::WIMLIB_ERR_NTFS_3G
- * 	An error was returned from a libntfs-3g function when the NTFS volume
- * 	was being opened, scanned, or closed (only if
- * 	::WIMLIB_ADD_FLAG_NTFS was specified in @a add_flags).
- * @retval ::WIMLIB_ERR_OPEN
- * 	Failed to open a file or directory in the directory tree rooted at @a
- * 	source (only if ::WIMLIB_ADD_FLAG_NTFS was not specified in @a
- * 	add_flags).
- * @retval ::WIMLIB_ERR_READ
- * 	Failed to read a file in the directory tree rooted at @a source (only if
- * 	::WIMLIB_ADD_FLAG_NTFS was not specified in @a add_flags).
- * @retval ::WIMLIB_ERR_SPECIAL_FILE
- * 	The directory tree rooted at @a source contains a special file that is
- * 	not a directory, regular file, or symbolic link.  This currently can
- * 	only be returned if ::WIMLIB_ADD_FLAG_NTFS was not specified in @a
- * 	add_flags, but it may be returned for unsupported NTFS files in
- * 	the future.
- * @retval ::WIMLIB_ERR_STAT
- * 	Failed obtain the metadata for a file or directory in the directory tree
- * 	rooted at @a source (only if ::WIMLIB_ADD_FLAG_NTFS was not
- * 	specified in @a add_flags).
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a wim is part of a split WIM.  Adding an image to a split WIM is
- * 	unsupported.
- * @retval ::WIMLIB_ERR_UNSUPPORTED
- * 	::WIMLIB_ADD_FLAG_NTFS was specified in @a add_flags, but
- * 	wimlib was configured with the @c --without-ntfs-3g flag.
+ * This function is implemented by calling wimlib_add_empty_image(), then
+ * calling wimlib_update_image() with a single "add" command, so any error code
+ * returned by wimlib_add_empty_image() may be returned, as well as any error
+ * codes returned by wimlib_update_image() other than ones documented as only
+ * being returned specifically by an update involving delete or rename commands.
  */
 extern int
 wimlib_add_image(WIMStruct *wim,
@@ -1151,7 +1156,7 @@ wimlib_add_image(WIMStruct *wim,
  * wimlib_add_image_multisource() instead of wimlib_add_image() when requesting
  * NTFS mode.) */
 extern int
-wimlib_add_image_multisource(WIMStruct *w,
+wimlib_add_image_multisource(WIMStruct *wim,
 			     const struct wimlib_capture_source *sources,
 			     size_t num_sources,
 			     const wimlib_tchar *name,
@@ -1241,16 +1246,9 @@ wimlib_delete_image(WIMStruct *wim, int image);
  * wimlib_write() or wimlib_overwrite() on @a dest_wim because @a dest_wim will
  * have references back to @a src_wim.
  *
- * Previous versions of this function left @a dest_wim in an indeterminate state
- * on failure.  This is no longer the case; all changes to @a dest_wim made by
- * this function are rolled back on failure.
+ * If this function fails, all changes to @a dest_wim are rolled back.
  *
- * Previous versions of this function did not allow exporting an image that had
- * been added by wimlib_add_image().  This is no longer the case; you may now
- * export an image regardless of how it was added.
- *
- * Regardless of whether this function succeeds or fails, no changes are made to
- * @a src_wim.
+ * No changes shall be made to @a src_wim by this function.
  *
  * Please note that no changes are committed to the underlying WIM file of @a
  * dest_wim (if any) until wimlib_write() or wimlib_overwrite() is called.
@@ -2556,8 +2554,79 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  *	If non-NULL, a function that will be called periodically with the
  *	progress of the current operation.
  *
- * @return 0 on success; nonzero on error.  There are many possible error codes
- * (TODO: document them.)
+ * @return 0 on success; nonzero on error.  On failure, some but not all of the
+ * update commands may have been executed.  No individual update command will
+ * have been partially executed.  Possible error codes include:
+ *
+ * @retval ::WIMLIB_ERR_DECOMPRESSION
+ *	Failed to decompress the metadata resource from @a image in @a wim.
+ * @retval ::WIMLIB_ERR_INVALID_CAPTURE_CONFIG
+ *	The capture configuration structure specified for an add command was
+ *	invalid.
+ * @retval ::WIMLIB_ERR_INVALID_DENTRY
+ *	A directory entry for @a image in @a wim is invalid.
+ * @retval ::WIMLIB_ERR_INVALID_IMAGE
+ *	@a image did not specify a single, existing image in @a wim.
+ * @retval ::WIMLIB_ERR_INVALID_OVERLAY
+ *	Attempted to perform an add command that conflicted with previously
+ *	existing files in the WIM when an overlay was attempted.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	Attempted to perform an add command with ::WIMLIB_ADD_FLAG_NTFS set, but
+ *	the same image had previously already been added from a NTFS volume.
+ * @retval ::WIMLIB_ERR_INVALID_REPARSE_DATA
+ *	(Windows only):  While executing an add command, tried to capture a
+ *	reparse point with invalid data.
+ * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
+ *	The metadata resource for @a image in @a wim is invalid.
+ * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
+ *	The security data for image @a image in @a wim is invalid.
+ * @retval ::WIMLIB_ERR_IS_DIRECTORY
+ *	A delete command without ::WIMLIB_DELETE_FLAG_RECURSIVE specified was
+ *	for a WIM path that corresponded to a directory; or, a rename command
+ *	attempted to rename a directory to a non-directory.
+ * @retval ::WIMLIB_ERR_NOMEM
+ *	Failed to allocate needed memory.
+ * @retval ::WIMLIB_ERR_NOTDIR
+ *	A rename command attempted to rename a directory to a non-directory; or,
+ *	an add command was executed that attempted to set the root of the WIM
+ *	image as a non-directory.
+ * @retval ::WIMLIB_ERR_NOTEMPTY
+ *	A rename command attempted to rename a directory to a non-empty
+ *	directory.
+ * @retval ::WIMLIB_ERR_NTFS_3G
+ *	While executing an add command with ::WIMLIB_ADD_FLAG_NTFS specified, an
+ *	error occurred while reading data from the NTFS volume using libntfs-3g.
+ * @retval ::WIMLIB_ERR_OPEN
+ *	Failed to open a file to be captured while executing an add command.
+ * @retval ::WIMLIB_ERR_OPENDIR
+ *	Failed to open a file to be captured while executing an add command.
+ * @retval ::WIMLIB_ERR_PATH_DOES_NOT_EXIST
+ *	A delete command without ::WIMLIB_DELETE_FLAG_FORCE specified was for a
+ *	WIM path that did not exist; or, a component of the path of the source
+ *	or destination of a rename command was used as a directory but was not,
+ *	in fact, a directory.
+ * @retval ::WIMLIB_ERR_READ
+ *	Failed to read the metadata resource for @a image in @a wim; or, while
+ *	executing an add command, failed to read data from a file or directory
+ *	to be captured.
+ * @retval ::WIMLIB_ERR_READLINK
+ *	While executing an add command, failed to read the target of a symbolic
+ *	link or junction point.
+ * @retval ::WIMLIB_ERR_REPARSE_POINT_FIXUP_FAILED
+ *	(Windows only) Failed to perform a reparse point fixup because of
+ *	problems with the data of a reparse point.
+ * @retval ::WIMLIB_ERR_SPECIAL_FILE
+ *	While executing an add command, attempted to capture a file that was not
+ *	a supported file type, such as a regular file, directory, symbolic link,
+ *	or (on Windows) a reparse point.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a wim is part of a split WIM.  Updating a split WIM is unsupported.
+ * @retval ::WIMLIB_ERR_STAT
+ *	While executing an add command, failed to get attributes for a file or
+ *	directory.
+ * @retval ::WIMLIB_ERR_UNSUPPORTED
+ * 	::WIMLIB_ADD_FLAG_NTFS was specified in the @a add_flags for an update
+ * 	command, but wimlib was configured with the @c --without-ntfs-3g flag.
  */
 extern int
 wimlib_update_image(WIMStruct *wim,

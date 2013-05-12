@@ -338,6 +338,8 @@ static const tchar *error_strings[] = {
 		= T("Ran out of memory"),
 	[WIMLIB_ERR_NOTDIR]
 		= T("Expected a directory"),
+	[WIMLIB_ERR_NOTEMPTY]
+		= T("Directory was not empty"),
 	[WIMLIB_ERR_NOT_A_WIM_FILE]
 		= T("The file did not begin with the magic characters that "
 			"identify a WIM file"),

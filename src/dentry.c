@@ -499,6 +499,10 @@ get_dentry_utf16le(WIMStruct *w, const utf16lechar *path,
 	const utf16lechar *p, *pp;
 
 	cur_dentry = parent_dentry = wim_root_dentry(w);
+	if (!cur_dentry) {
+		errno = ENOENT;
+		return NULL;
+	}
 	p = path;
 	while (1) {
 		while (*p == cpu_to_le16('/'))
@@ -805,6 +809,25 @@ new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret)
 	return __new_dentry_with_inode(name, dentry_ret, false);
 }
 
+int
+new_filler_directory(const tchar *name, struct wim_dentry **dentry_ret)
+{
+	int ret;
+	struct wim_dentry *dentry;
+
+	DEBUG("Creating filler directory \"%"TS"\"", name);
+	ret = new_dentry_with_inode(name, &dentry);
+	if (ret)
+		goto out;
+	/* Leave the inode number as 0; this is allowed for non
+	 * hard-linked files. */
+	dentry->d_inode->i_resolved = 1;
+	dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
+	*dentry_ret = dentry;
+	ret = 0;
+out:
+	return ret;
+}
 
 static int
 init_ads_entry(struct wim_ads_entry *ads_entry, const void *name,

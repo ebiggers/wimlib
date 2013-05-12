@@ -1,7 +1,7 @@
 /*
  * win32.c
  *
- * All the library code specific to native Windows builds is in here.
+ * Most of the library code specific to native Windows builds is in here.
  */
 
 /*

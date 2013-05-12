@@ -1,4 +1,8 @@
 /*
+ * capture_common.c - Mostly code to handle excluding paths from capture.
+ */
+
+/*
  * Copyright (C) 2013 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
@@ -178,6 +182,8 @@ bool
 exclude_path(const tchar *path, size_t path_len,
 	     const struct wimlib_capture_config *config, bool exclude_prefix)
 {
+	if (!config)
+		return false;
 	const tchar *basename = path_basename_with_len(path, path_len);
 	if (exclude_prefix) {
 		wimlib_assert(path_len >= config->_prefix_num_tchars);

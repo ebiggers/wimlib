@@ -225,6 +225,7 @@ write_metadata_resource(WIMStruct *w)
 	struct wim_lookup_table_entry *lte;
 	u64 metadata_original_size;
 	struct wim_security_data *sd;
+	struct wim_image_metadata *imd;
 
 	wimlib_assert(w->out_fd != -1);
 	wimlib_assert(w->current_image != WIMLIB_NO_IMAGE);
@@ -232,9 +233,18 @@ write_metadata_resource(WIMStruct *w)
 	DEBUG("Writing metadata resource for image %d (offset = %"PRIu64")",
 	      w->current_image, filedes_offset(w->out_fd));
 
+	imd = w->image_metadata[w->current_image - 1];
 
-	root = wim_root_dentry(w);
-	sd = wim_security_data(w);
+	root = imd->root_dentry;
+	sd = imd->security_data;
+
+	if (!root) {
+		/* Empty image; create a dummy root. */
+		ret = new_filler_directory(T(""), &root);
+		if (ret)
+			return ret;
+		imd->root_dentry = root;
+	}
 
 	/* Offset of first child of the root dentry.  It's equal to:
 	 * - The total length of the security data, rounded to the next 8-byte
