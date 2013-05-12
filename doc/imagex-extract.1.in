@@ -56,7 +56,7 @@ present.
 .TP
 \fB--verbose\fR
 Print the path to of each file or directory within the WIM image as it is
-extracted, and some additional informational messages.
+extracted.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional split WIM parts that are part of the split WIM.  See
@@ -67,15 +67,14 @@ Restore the UNIX-specific data captured using \fB@IMAGEX_PROGNAME@ capture\fR
 with the \fB--unix-data\fR option.  This option is only available on UNIX.
 .TP
 \fB--no-acls\fR
-Do not restore security descriptors on extracted files and directories.  This
-option is only available on Windows.
+Do not restore security descriptors on extracted files and directories.
 .TP
 \fB--strict-acls\fR
 Fail immediately if the full security descriptor of any file or directory cannot
 be set exactly as specified in the WIM file.  The default behavior without this
 option is to fall back to setting a security descriptor with the SACL omitted,
 then only the default inherited security descriptor, if we do not have
-permission to set the desired one.  This option is only available on Windows.
+permission to set the desired one.
 .TP
 \fB--to-stdout\fR
 Extract the files to standard output instead of to the filesystem.  This can
@@ -89,14 +88,14 @@ extracted.
 stream it extracts and verifies that it is the same as the SHA1 message digest
 provided in the WIM file.  Thus, it should provide assurance of data integrity.
 
-Reparse-point fixups (a.k.a. changing absolute symbolic links and junction to
+Reparse-point fixups (a.k.a. changing absolute symbolic links and junctions to
 point within the extraction location) are never done by \fB@IMAGEX_PROGNAME@
 extract\fR.  Use \fB@IMAGEX_PROGNAME@ apply\fR if you want this behavior.
 
 Unlike \fB@IMAGEX_PROGNAME@ apply\fR, \fB@IMAGEX_PROGNAME@ extract\fR does not
 support extracting files directly to a NTFS volume using libntfs-3g.
 
-Not all data and metadata containing in each WIM \fIPATH\fR will necessarily be
+Not all data and metadata contained in each WIM \fIPATH\fR will necessarily be
 extracted, since \fB@IMAGEX_PROGNAME@ extract\fR does the best it can given the
 platform (UNIX or Windows) and supported features of the filesystem.  The
 documentation for \fB@IMAGEX_PROGNAME@ apply\fR (1) goes into more detail about

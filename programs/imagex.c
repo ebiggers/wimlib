@@ -180,6 +180,20 @@ IMAGEX_PROGNAME" update WIMFILE IMAGE [--check] [--rebuild]\n"
 ),
 };
 
+
+static void
+recommend_man_page(const tchar *cmd_name)
+{
+#ifdef __WIN32__
+	tprintf(T("\nSee "IMAGEX_PROGNAME"-%"TS".pdf in the "
+		  "doc directory for more details.\n"),
+		cmd_name);
+#else
+	tprintf(T("\nTry `man "IMAGEX_PROGNAME"-%"TS"' "
+		  "for more details.\n"), cmd_name);
+#endif
+}
+
 enum {
 	IMAGEX_ALLOW_OTHER_OPTION,
 	IMAGEX_BOOT_OPTION,
@@ -2989,8 +3003,9 @@ imagex_update(int argc, tchar **argv)
 	}
 
 	/* Read update commands from standard input */
-	if (isatty(STDIN_FILENO))
+	if (isatty(STDIN_FILENO)) {
 		tputs(T("Reading update commands from standard input..."));
+	}
 	cmd_file_contents = stdin_get_text_contents(&cmd_file_nchars);
 	if (!cmd_file_contents) {
 		ret = -1;
@@ -3134,8 +3149,7 @@ usage(int cmd_type)
 	tprintf(T("Usage:\n%"TS), usage_strings[cmd_type]);
 	for_imagex_command(cmd) {
 		if (cmd->cmd == cmd_type) {
-			tprintf(T("\nTry `man "IMAGEX_PROGNAME"-%"TS"' "
-				  "for more details.\n"), cmd->name);
+			recommend_man_page(cmd->name);
 		}
 	}
 }

@@ -237,6 +237,16 @@ information.
 In the NTFS capture mode, do not capture security descriptors.  This flag is
 also available in the native Win32 build of wimlib.
 .TP
+\fB--strict-acls\fR
+In the Win32 native build of wimlib, fail immediately if the full security
+descriptor of any file or directory cannot be read.  The default behavior
+without this option is to first try omitting the SACL from the security
+descriptor, then to try omitting the security descriptor entirely.  The purpose
+of this is to capture as much data as possible without always requiring
+Administrator privileges.  However, if you desire that all security descriptors
+be captured exactly, you may with to provide this option, although the
+Administrator should have permission to read everything anyway.
+.TP
 \fB--rpfix\fR, \fB--norpfix\fR
 Set whether to fix targets of absolute symbolic links (reparse points in Windows
 terminology) or not.  When enabled (\fB--rpfix\fR), absolute symbolic links that
@@ -254,16 +264,6 @@ point fixups have previously been done on \fIWIMFILE\fR, otherwise
 Links are fixed up on a per-source basis in the case of a multi-source capture
 (\fB--source-list\fR specified), so you may wish to set \fB--norpfix\fR in that
 case.
-.TP
-\fB--strict-acls\fR
-In the Win32 native build of wimlib, fail immediately if the full security
-descriptor of any file or directory cannot be read.  The default behavior
-without this option is to first try omitting the SACL from the security
-descriptor, then to try omitting the security descriptor entirely.  The purpose
-of this is to capture as much data as possible without always requiring
-Administrator privileges.  However, if you desire that all security descriptors
-be captured exactly, you may with to provide this option, although the
-Administrator should have permission to read everything anyway.
 .TP
 \fB--source-list\fR
 \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR, as of wimlib 1.3.0, support a new
@@ -324,11 +324,9 @@ type, and \fB@IMAGEX_PROGNAME@\fR always enforces this.
 stream chunk size of 32768.  The only WIMs I've seen that are different from
 this are some pre-Vista WIMs that had a different version number.
 
-Unless \fB--rebuild\fR is specified, aborting an \fB@IMAGEX_PROGNAME@ append\fR command
-mid-way through has a small chance of corrupting the WIM file.  However, a
-precaution is taken against this, so it should be very unlikely.  In the event
-of an aborted \fB@IMAGEX_PROGNAME@ append\fR, \fB@IMAGEX_PROGNAME@ optimize\fR may be run to remove
-extra data that may have been partially appended to the physical WIM file but
+It is safe to abort an \fB@IMAGEX_PROGNAME@ append\fR command partway through;
+however, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
+optimize\fR to remove any data that was appended to the physical WIM file but
 not yet incorporated into the structure of the WIM.
 
 \fISOURCE\fR may be a symbolic link to a directory rather than a directory

@@ -25,10 +25,12 @@ for fil in ./doc/wimlib-imagex-*.1; do
 	echo $fil
 	base=`basename $fil`
 	base=${base%%.1}
-	MANWIDTH=80 man $fil | col -b > $DESTDIR/doc/$base
+	#MANWIDTH=80 man $fil | col -b > $DESTDIR/doc/$base
+	man -t $fil | ps2pdf - $DESTDIR/doc/${base}.pdf
 done
 
-for fil in $DESTDIR/{README*,NEWS} $DESTDIR/doc/*; do
+#for fil in $DESTDIR/{README*,NEWS} $DESTDIR/doc/*; do
+for fil in $DESTDIR/{README*,NEWS}; do
 	sed < $fil > ${fil}.txt -e 's/$/\r/g'
 	rm $fil
 done

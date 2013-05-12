@@ -162,6 +162,7 @@ wimlib_manpages =				\
 	doc/@IMAGEX_PROGNAME@-optimize.1	\
 	doc/@IMAGEX_PROGNAME@-split.1		\
 	doc/@IMAGEX_PROGNAME@-unmount.1		\
+	doc/@IMAGEX_PROGNAME@-update.1		\
 	doc/mkwinpeimg.1
 
 man1_MANS = $(wimlib_manpages)

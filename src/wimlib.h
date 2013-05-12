@@ -743,7 +743,7 @@ struct wimlib_capture_config {
 /** Do not issue an error if the path to delete does not exist. */
 #define WIMLIB_DELETE_FLAG_FORCE			0x00000001
 
-/** Delete a file or directory tree recursively; if not specified, an error is
+/** Delete the file or directory tree recursively; if not specified, an error is
  * issued if the path to delete is a directory. */
 #define WIMLIB_DELETE_FLAG_RECURSIVE			0x00000002
 
@@ -2571,8 +2571,14 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  *	Attempted to perform an add command that conflicted with previously
  *	existing files in the WIM when an overlay was attempted.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	Attempted to perform an add command with ::WIMLIB_ADD_FLAG_NTFS set, but
- *	the same image had previously already been added from a NTFS volume.
+ *	An unknown operation type was specified in the update commands; or,
+ *	attempted to execute an add command where ::WIMLIB_ADD_FLAG_NTFS was set
+ *	in the @a add_flags, but the same image had previously already been
+ *	added from a NTFS volume; or, both ::WIMLIB_ADD_FLAG_RPFIX and
+ *	::WIMLIB_ADD_FLAG_NORPFIX were specified in the @a add_flags for one add
+ *	command; or, ::WIMLIB_ADD_FLAG_NTFS or ::WIMLIB_ADD_FLAG_RPFIX were
+ *	specified in the @a add_flags for an add command in which @a
+ *	wim_target_path was not the root directory of the WIM image.
  * @retval ::WIMLIB_ERR_INVALID_REPARSE_DATA
  *	(Windows only):  While executing an add command, tried to capture a
  *	reparse point with invalid data.
@@ -2626,7 +2632,10 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  *	directory.
  * @retval ::WIMLIB_ERR_UNSUPPORTED
  * 	::WIMLIB_ADD_FLAG_NTFS was specified in the @a add_flags for an update
- * 	command, but wimlib was configured with the @c --without-ntfs-3g flag.
+ * 	command, but wimlib was configured with the @c --without-ntfs-3g flag;
+ * 	or, the platform is Windows and either the ::WIMLIB_ADD_FLAG_UNIX_DATA
+ * 	or the ::WIMLIB_ADD_FLAG_DEREFERENCE flags were specified in the @a
+ * 	add_flags for an update command.
  */
 extern int
 wimlib_update_image(WIMStruct *wim,

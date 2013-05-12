@@ -36,6 +36,7 @@ AC_CONFIG_FILES([Makefile]
 		[doc/"$IMAGEX_PROGNAME"-optimize.1:doc/imagex-optimize.1.in]
 		[doc/"$IMAGEX_PROGNAME"-split.1:doc/imagex-split.1.in]
 		[doc/"$IMAGEX_PROGNAME"-unmount.1:doc/imagex-unmount.1.in]
+		[doc/"$IMAGEX_PROGNAME"-update.1:doc/imagex-update.1.in]
 		[doc/mkwinpeimg.1])
 
 AC_CONFIG_FILES([programs/mkwinpeimg], [chmod +x programs/mkwinpeimg])

@@ -253,9 +253,7 @@ the \fB--unix-data\fR flag.  By passing \fB--unix-data\fR to
 restored when available.
 .TP
 \fB--no-acls\fR
-In the NTFS apply mode, do not apply security descriptors.  This flag is also
-available in the native Win32 build of wimlib and may be useful when running
-\fB@IMAGEX_PROGNAME@\fR as a non-administrator.
+Do not restore security descriptors on extracted files and directories.
 .TP
 \fB--strict-acls\fR
 Fail immediately if the full security descriptor of any file or directory cannot
