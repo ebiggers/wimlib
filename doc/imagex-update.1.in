@@ -33,7 +33,8 @@ path to a file or directory on your filesystem.  \fIDESTINATION\fR must specify
 the path inside the WIM image at which to add the file or directory tree.  If
 \fIDESTINATION\fR already exists in the WIM image, then an overlay is attempted;
 this can be used to add multiple files to an existing directory in the WIM image
-in one command.
+in one command.  If \fIDESTINATION\fR does not exist, then any prerequisite
+directories are created as needed to add the \fISOURCE\fR at that location.
 
 The available options for the \fBadd\fR command are:
 
@@ -66,7 +67,7 @@ provide this option, although the Administrator should have permission to read
 everything anyway.
 
 .SS \fBdelete\fR [\fIOPTION\fR...] \fIPATH\fR
-Deletes a file or directory tree from a WIM image.  \fIPATH\fR must specify the
+Deletes a file or directory tree from the WIM image.  \fIPATH\fR must specify the
 path inside the WIM image of the file or directory tree to delete.
 
 The available options for the \fBdelete\fR command are:
@@ -80,7 +81,7 @@ Delete the file or directory tree recursively; if not specified, an error is
 issued if the path to delete is a directory.
 
 .SS \fBrename\fR \fIOLD_PATH\fR \fINEW_PATH\fR
-Renames a file or directory tree inside a WIM image.  \fIOLD_PATH\fR must
+Renames a file or directory tree inside the WIM image.  \fIOLD_PATH\fR must
 specify the old path of the file or directory tree inside the WIM image, and
 \fINEW_PATH\fR must specify the new path for the file or directory tree.  This
 command follows the semantics of the POSIX \fBrename\fR (3) function; in
@@ -91,6 +92,9 @@ non-directory, which is not allowed.
 There are no options available for the \fBrename\fR command.
 
 .SH OPTIONS
+
+The following options are accepted on the command line by \fB@IMAGEX_PROGNAME@
+update\fR itself:
 
 .TP 6
 \fB--verbose\fR
@@ -139,7 +143,7 @@ otherwise be left as a hole in the WIM.  Also see
 \fB@IMAGEX_PROGNAME@ update\fR is partly redundant with \fB@IMAGEX_PROGNAME@
 mountrw\fR, since if a WIM image can be mounted read-write, then there
 theoretically is no need for \fB@IMAGEX_PROGNAME@ update\fR.  The main advantage
-of \fB@IMAGEX_PROGNAME@ update\fR is that is works on both UNIX and Windows,
+of \fB@IMAGEX_PROGNAME@ update\fR is that it works on both UNIX and Windows,
 whereas \fB@IMAGEX_PROGNAME@ mountrw\fR only works on UNIX.
 
 Symbolic links inside a WIM image are not dereferenced when being interpreted.
@@ -147,6 +151,10 @@ So, for example, if you have a WIM image that contains a symbolic link
 "/Documents and Settings" -> "/Users" where "/Users" is a directory, then a
 subdirectory named "Public" in this directory must be specified as
 "/Users/Public" rather than "/Documents and Settings/Public".
+
+All paths to files or directories within the WIM image must be specified
+relative to the root of the image.  However, the leading slash is optional, and
+both forward slashes and backslashes are accepted.
 
 The command file (\fICMDFILE\fR) is parsed by \fB@IMAGEX_PROGNAME@ update\fR
 itself and not by the system shell.  Therefore, its syntax is limited.  However,
@@ -160,7 +168,8 @@ capture\fR supports capturing a full image this way.
 It is safe to abort an \fB@IMAGEX_PROGNAME@ update\fR command partway through;
 however, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
 optimize\fR to remove any data that was appended to the physical WIM file but
-not yet incorporated into the structure of the WIM.
+not yet incorporated into the structure of the WIM, unless \fB--rebuild\fR was
+specified, in which case you should delete the temporary file left over.
 
 .SH EXAMPLES
 
@@ -181,9 +190,10 @@ delete /sources/setup.exe
 $ @IMAGEX_PROGNAME@ update boot.wim 2 < update_commands.txt
 .RE
 
-Add some files and directories to a WIM image; note that the first paths specify
-the files to add, while the second paths specify the locations at which to to
-add them \fIinside the WIM image\fR:
+Add some files and directories to a WIM image.  Note that the first path of each
+\fBadd\fR command specifies the files to add, while the second path of each
+\fBadd\fR command specify the locations at which to to add them \fIinside the
+WIM image\fR:
 
 .RS
 \fIupdate_commands.txt\fR:
@@ -225,7 +235,7 @@ including an integrity table in the updated WIM:
 .PP
 .nf
 #
-# This file specifies some changes to make to my WIM image.
+# This file specifies some changes to make to a WIM image.
 #
 
 # Add a new directory containing files I want in the image.
