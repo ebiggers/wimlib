@@ -170,13 +170,8 @@ IMAGEX_PROGNAME" unmount DIRECTORY [--commit] [--check] [--rebuild]\n"
 [UPDATE] =
 T(
 IMAGEX_PROGNAME" update WIMFILE IMAGE [--check] [--rebuild]\n"
-"                      [--threads=NUM_THREADS] [DEFAULT_ADD_OPTIONS]\n"
-"                      [DEFAULT_DELETE_OPTIONS] [< CMDFILE]\n"
-"               ... where each CMD is:\n"
-"               add [--unix-data] [--no-acls] [--strict-acls] [--dereference]\n"
-"                   [--verbose] FILE_OR_DIRECTORY DEST_WIM_PATH\n"
-"               delete [--force] [--recursive] WIM_PATH\n"
-"               rename SRC_PATH_IN_WIM DEST_PATH_IN_WIM\n"
+"                       [--threads=NUM_THREADS] [DEFAULT_ADD_OPTIONS]\n"
+"                       [DEFAULT_DELETE_OPTIONS] < CMDFILE\n"
 ),
 };
 

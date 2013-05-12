@@ -4,21 +4,19 @@
 
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ capture\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
-[\fIDESCRIPTION\fR] [\fIOPTION\fR]...
+[\fIIMAGE_DESCRIPTION\fR] [\fIOPTION\fR]...
 .br
 \fB@IMAGEX_PROGNAME@ append\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
-[\fIDESCRIPTION\fR] [\fIOPTION\fR]...
+[\fIIMAGE_DESCRIPTION\fR] [\fIOPTION\fR]...
 
 .SH DESCRIPTION
 .PP
 
-The \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR commands create a Windows
-Imaging (WIM) image from a directory tree.  The \fB@IMAGEX_PROGNAME@ capture\fR command
-creates a new WIM file containing the captured image, while the \fB@IMAGEX_PROGNAME@
-append\fR command appends the captured image to an existing WIM file.
-
-Note: this man page primarily documents the UNIX behavior.  See \fBWINDOWS
-VERSION\fR for information specific to the Windows build of wimlib.
+The \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR commands
+create a Windows Imaging (WIM) image from a directory tree.  The
+\fB@IMAGEX_PROGNAME@ capture\fR command creates a new WIM file containing the
+captured image, while the \fB@IMAGEX_PROGNAME@ append\fR command appends the
+captured image to an existing WIM file.
 
 A WIM image is an independent directory tree in the WIM file.  A WIM file may
 contain any number of separate images.  However, files are stored only one time
@@ -26,21 +24,26 @@ in the entire WIM, regardless of how many images the file appears in.
 
 \fISOURCE\fR specifies the location of the files to create the new WIM image
 from.  If \fISOURCE\fR is a directory, the WIM image is captured from that
-directory.  Alternatively, if \fISOURCE\fR is a regular file or block device, it
-is interpreted as a NTFS volume from which a WIM image is to be captured.  Still
-alternatively, if the \fB--source-list\fR option is given, \fISOURCE\fR is
-interpreted as a file that itself provides a list of files and directories to
-include in the new WIM image.
+directory.   Alternatively, if the \fB--source-list\fR option is given,
+\fISOURCE\fR is interpreted as a file that itself provides a list of
+files and directories to include in the new WIM image.  Still
+alternatively, only on UNIX builds of wimlib  if \fISOURCE\fR is a
+regular file or block device, it is interpreted as an NTFS volume from
+which a WIM image is to be captured. 
 
-\fIIMAGE_NAME\fR and \fIDESCRIPTION\fR specify the name and description of the
-new image.  If \fIIMAGE_NAME\fR is not given, it is taken to be the same as the
-base name of \fISOURCE\fR.  If \fIDESCRIPTION\fR is not given, no description is
-given to the new image.
+\fIIMAGE_NAME\fR and \fIIMAGE_DESCRIPTION\fR specify the name and description of
+the new image.  If \fIIMAGE_NAME\fR is not given, it is taken to be the same as
+the base name of \fISOURCE\fR.  If \fIIMAGE_DESCRIPTION\fR is not given, no
+description is given to the new image.
 
-.SH NORMAL MODE
+.SH NORMAL MODE (UNIX)
 
-The normal image capture mode is entered when \fISOURCE\fR specifies a
-directory.  The WIM image will be captured from the directory tree rooted at
+This section documents how files are captured from a directory on UNIX.  See
+\fBWINDOWS VERSION\fR for the corresponding documentation for the Windows
+version.
+
+On UNIX, the "normal" image capture mode is entered when \fISOURCE\fR specifies
+a directory.  The WIM image will be captured from the directory tree rooted at
 this directory.  The directory may be on any type of filesystem.
 
 In this mode, the following information is captured from the directory tree:
@@ -59,25 +62,25 @@ However, in this mode, the following information is \fInot\fR captured from the
 directory tree:
 
 .IP \[bu] 4
-File permissions.  The resulting WIM image will not contain any security
-descriptors because the format of the security descriptors is Windows-specific,
-and they cannot contain UNIX file modes.  (Exception: see the \fB--unix-data\fR
+UNIX file owners, groups, and modes.  The resulting WIM image will contain no
+security information (file permissions).  (Exception: see the \fB--unix-data\fR
 option.)
-
 .IP \[bu]
-No alternate data streams will be captured, since these do not exist on
-POSIX-compliant filesystems.  The resulting WIM image will not contain any
-alternate data streams.  (Exception: see the \fB--unix-data\fR option.)
+Extended attributes.
 
-.SH NTFS MODE
+.SH NTFS MODE (UNIX)
 
-A special image capture mode is entered when \fISOURCE\fR is a regular file or
-block device.  \fISOURCE\fR is interpreted as an NTFS volume and opened using
-libntfs-3g.  If successful, a WIM image is captured containing the contents of
-the NTFS volume, including NTFS-specific data.
+This section documents how files are captured from an NTFS volume image on UNIX.
+See \fBWINDOWS VERSION\fR for the corresponding documentation for the Windows
+version.
+
+On UNIX, a special image capture mode is entered when \fISOURCE\fR is a regular
+file or block device.  \fISOURCE\fR is interpreted as an NTFS volume and opened
+using libntfs-3g.  If successful, a WIM image is captured containing the
+contents of the NTFS volume, including NTFS-specific data.
 
 Please note that the NTFS image capture mode is \fInot\fR entered if
-\fISOURCE\fR is a directory, even if a NTFS filesystem is mounted on
+\fISOURCE\fR is a directory, even if an NTFS filesystem is mounted on
 \fISOURCE\fR.  You must specify the NTFS volume itself (and it must be
 unmounted, and you must have permission to read from it).
 
@@ -101,36 +104,43 @@ File attribute flags.
 All names of all files, including names in the Win32 namespace, DOS namespace,
 Win32+DOS namespace, and POSIX namespace.  This includes hard links.
 
-.SH SOURCE LIST MODE
-
-Yet another capture mode is entered when the \fB--source-list\fR option is
-given.  It is essentially an extension of the \fBNORMAL MODE\fR that allows
-multiple files or directories to be incorporated into a WIM image using a single
-\fB@IMAGEX_PROGNAME@ capture\fR or \fB@IMAGEX_PROGNAME@ append\fR command.  See the documentation for
-\fB--source-list\fR below.
-
 .SH WINDOWS VERSION
 
-This section documents the differences between \fB@IMAGEX_PROGNAME@ capture\fR and
-\fB@IMAGEX_PROGNAME@ append\fR in the Windows builds of wimlib versus the rest of this man
-page, which is written to document UNIX build.
+The Windows versions of \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@
+append\fR act similarly to the corresponding commands of Microsoft's ImageX.
+For best results, the directory being captured should be on an NTFS volume and
+you should be running with Administrator privileges; however, non-NTFS
+filesystems and running without Administrator privileges are also supported.
 
-\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR do not have separate "normal" and
-"NTFS" modes on Windows.  There is simply one mode, and it uses the Windows API
-to capture NTFS-specific information, including alternate data streams, reparse
-points, hard links, and file attributes.  So, you essentially get the advantages
-of the "NTFS mode" documented above, but you can capture a WIM image from any
-directory, not just an entire NTFS volume.  This is essentially the same
-behavior as Microsoft's ImageX.
+On Windows, \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR
+try to archive as much data as possible.  This includes:
 
-The \fB--source-list\fR option is supported on Windows, but the
-\fB--dereference\fR option is not.
-
-Except for the differences documented in this section, the Windows build of
-\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR should be essentially equivalent to
-the UNIX build.  However, one additional thing to note is that wimlib's Windows
-ImageX is NOT written to be command-line compatible with Microsoft's ImageX,
-although they are very similar.
+.IP \[bu] 4
+All data streams of all files.  This includes the default file contents, as well
+as named data streams if supported by the filesystem and if the version of
+Windows is Vista or later.
+.IP \[bu]
+Reparse points, including symbolic links, junction points, and other reparse
+points, if supported by the underlying filesystem.  (Note: see
+\fB--rpfix\fR and \fB--norpfix\fR for documentation on how absolute symbolic
+links and junctions are captured.)
+.IP \[bu]
+File and directory creation, access, and modification timestamps to the nearest
+100 nanoseconds.
+.IP \[bu]
+Security descriptors, if supported by the filesystem and \fB--no-acls\fR is not
+specified.  Furthermore, unless \fB--strict-acls\fR is specified, the security
+descriptor for individual files or directories may be omitted or only partially
+captured if the user does not have permission to read them.
+.IP \[bu]
+File attributes, including hidden, sparse, compressed, encrypted, etc.
+Encrypted files will be stored in encrypted form rather than in plain text.
+.IP \[bu]
+DOS names (8.3) names of files; however, the failure to read them is not
+considered an error condition.
+.IP \[bu]
+Hard links, excluding directory hard links (which aren't supposed to exist
+anyway).
 
 .SH OPTIONS
 .TP 6
@@ -144,9 +154,9 @@ even if there was one before in the case of \fB@IMAGEX_PROGNAME@ append\fR.
 .TP
 \fB--compress\fR=\fITYPE\fR
 Specifies the compression type for the new WIM file.  This flag is only valid
-for \fB@IMAGEX_PROGNAME@ capture\fR, since the compression mode for \fB@IMAGEX_PROGNAME@ append\fR
-must be the same as that of the existing WIM.  \fITYPE\fR may be "none",
-"maximum", or "fast".  By default, it is "fast".
+for \fB@IMAGEX_PROGNAME@ capture\fR, since the compression mode for
+\fB@IMAGEX_PROGNAME@ append\fR must be the same as that of the existing WIM.
+\fITYPE\fR may be "none", "maximum", or "fast".  By default, it is "fast".
 
 You may also specify the actual names of the compression algorithms, "XPRESS"
 and "LZX", instead of "fast" and "maximum", respectively.
@@ -168,13 +178,11 @@ Specify a string to use in the <FLAGS> element of the XML data for the new
 image.
 .TP
 \fB--verbose\fR
-Print the names of files and directories as they are captured, as well as a few
-other informational messages.
+Print the names of files and directories as they are captured.
 .TP
 \fB--dereference\fR
-Follow symlinks; archive and dump the files they point to.  (The default is to
-archive the symlinks themselves.)  This flag is only valid in the normal image
-capture mode.
+(UNIX only) Follow symbolic links and archive the files they point to, rather
+than archiving the links themselves.
 .TP
 \fB--config\fR=\fIFILE\fR
 Specifies a configuration file for capturing the new image.  The configuration
@@ -212,7 +220,6 @@ used:
 
 .RS
 .RS
-.PP
 .nf
 [ExclusionList]
 \\$ntfs.log
@@ -223,29 +230,29 @@ used:
 \\Windows\\CSC
 .RE
 .RE
+.fi
 
 .TP
 \fB--unix-data\fR
-Store the UNIX owner, group, and mode of regular files, symbolic links, and
-directories.  This is done by adding a special alternate data stream to each
-directory entry that contains this information.  Please note that this flag is
-for convenience only, in case you want to use \fB@IMAGEX_PROGNAME@\fR to archive files on
-UNIX.  Microsoft's software will not understand this special
-information.
+(UNIX only) Store the UNIX owner, group, and mode of all captured files.  This
+is done by adding a special alternate data stream to each directory entry that
+contains this information.  Please note that this flag is for convenience only,
+in case you want to use \fB@IMAGEX_PROGNAME@\fR to archive files on UNIX.
+Microsoft's software will not understand this special information.
 .TP
 \fB--no-acls\fR
-In the NTFS capture mode, do not capture security descriptors.  This flag is
-also available in the native Win32 build of wimlib.
+Do not capture files' security descriptors.  This option is available in the
+Windows version, as well as on UNIX in NTFS capture mode.
 .TP
 \fB--strict-acls\fR
-In the Win32 native build of wimlib, fail immediately if the full security
-descriptor of any file or directory cannot be read.  The default behavior
-without this option is to first try omitting the SACL from the security
-descriptor, then to try omitting the security descriptor entirely.  The purpose
-of this is to capture as much data as possible without always requiring
-Administrator privileges.  However, if you desire that all security descriptors
-be captured exactly, you may with to provide this option, although the
-Administrator should have permission to read everything anyway.
+(Windows only) Fail immediately if the full security descriptor of any file
+cannot be read.  The default behavior without this option is to first try
+omitting the SACL from the security descriptor, then to try omitting the
+security descriptor entirely.  The purpose of this is to capture as much data as
+possible without always requiring Administrator privileges.  However, if you
+desire that all security descriptors be captured exactly, you may wish to
+provide this option, although the Administrator should have permission to read
+everything anyway.
 .TP
 \fB--rpfix\fR, \fB--norpfix\fR
 Set whether to fix targets of absolute symbolic links (reparse points in Windows
@@ -261,28 +268,29 @@ The default behavior for \fBimagex append\fR will be \fB--rpfix\fR if reparse
 point fixups have previously been done on \fIWIMFILE\fR, otherwise
 \fB--norpfix\fR.
 
-Links are fixed up on a per-source basis in the case of a multi-source capture
-(\fB--source-list\fR specified), so you may wish to set \fB--norpfix\fR in that
-case.
+In the case of a multi-source capture, (\fB--source-list\fR specified), passing
+\fB--norpfix\fR is recommended.  Otherwise, reparse point fixups will be
+disabled on all capture sources destined for non-root locations in the WIM
+image, while capture sources destined for the WIM root will get the default
+behavior from the previous paragraph.
 .TP
 \fB--source-list\fR
-\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR, as of wimlib 1.3.0, support a new
-option to create a WIM image from multiple files or directories.  When
+\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR support
+creating a WIM image from multiple files or directories.  When
 \fB--source-list\fR is specified, the \fISOURCE\fR argument specifies the name
-of a text file, each line of which is either 1 or 2 whitespace separated
-filenames.  The first filename, the source, specifies the path to a file or
+of a text file, each line of which is either 1 or 2 whitespace separated file
+paths.  The first file path, the source, specifies the path to a file or
 directory to capture into the WIM image.  It may be either absolute or relative
-to the current working directory.  The second filename, if provided, is the
+to the current working directory.  The second file path, if provided, is the
 target and specifies the path  in the WIM image that this file or directory will
-be saved as.  Leading and trailing slashes are ignored.  "/" indicates that
-the directory is to become the root of the WIM image.  If not specified, the
-target string defaults to the same as the source string.
+be saved as.  Leading and trailing slashes are ignored.  "/" indicates that the
+directory is to become the root of the WIM image.  If not specified, the target
+string defaults to the same as the source string.
 
-An example is as follows:
+An example source list file is as follows:
 
 .RS
 .RS
-.PP
 .nf
 # Make the WIM image from the 'winpe' directory
 winpe	/
@@ -294,12 +302,13 @@ overlay	/overlay
 # This is only legal if there are no conflicting files.
 /data/stuff	/
 .RE
+.fi
 
 Subdirectories in the WIM are created as needed.  Multiple source directories
 may share the same target, which implies an overlay; however, an error is issued
 if the same file appears in different overlays to the same directory.
 
-Filenames containing whitespace may be quoted with either single quotes or
+File paths containing whitespace may be quoted with either single quotes or
 double quotes.  Quotes may not be escaped.
 
 Lines consisting only of whitespace and lines beginning with '#' preceded by
@@ -343,7 +352,7 @@ including an integrity table:
 @IMAGEX_PROGNAME@ capture somedir mywim.wim --compress=maximum --check
 .RE
 .PP
-Append an image to the WIM we just captured, but do it from a NTFS volume on the
+Append an image to the WIM we just captured, but do it from an NTFS volume on the
 partition /dev/sda2 and name the image "Windows 7".  You do not need to specify
 the compression type, because the WIM already is using LZX compression and this
 cannot be changed.  You need to specify \fB--check\fR if you don't want the
@@ -356,4 +365,3 @@ integrity table to be discarded.
 
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
-

@@ -14,6 +14,8 @@
 .br
 \fB@IMAGEX_PROGNAME@ export\fR \fIarguments...\fR
 .br
+\fB@IMAGEX_PROGNAME@ extract\fR \fIarguments...\fR
+.br
 \fB@IMAGEX_PROGNAME@ info\fR \fIarguments...\fR
 .br
 \fB@IMAGEX_PROGNAME@ join\fR \fIarguments...\fR
@@ -27,14 +29,16 @@
 \fB@IMAGEX_PROGNAME@ split\fR \fIarguments...\fR
 .br
 \fB@IMAGEX_PROGNAME@ unmount\fR \fIarguments...\fR
+.br
+\fB@IMAGEX_PROGNAME@ update\fR \fIarguments...\fR
 
 .SH DESCRIPTION
 \fB@IMAGEX_PROGNAME@\fR is able to deal with archives in the Windows Imaging Format (.wim
 files). Its interface is meant to be similar to Microsoft's imagex.exe program.
 
-To do its work, \fB@IMAGEX_PROGNAME@\fR uses \fBwimlib\fR, a library which provides
-interfaces for manipulating WIM archives.  You could wimlib in your own programs
-if you wanted to.  wimlib's public interface is documented.
+To do its work, \fB@IMAGEX_PROGNAME@\fR uses \fBwimlib\fR, a library which
+provides interfaces for manipulating WIM archives.  You could wimlib in your own
+programs if you wanted to.  wimlib's public interface is documented.
 
 .SH COMMANDS
 
@@ -43,7 +47,8 @@ There is a separate manual page for each \fB@IMAGEX_PROGNAME@\fR command.
 .SH SUPPORTED FEATURES
 
 The following general features are currently supported (note: this is not a
-complete list):
+complete list; also, certain features, such as mounting, are supported on UNIX
+but not Windows):
 
 .IP \[bu] 3
 Create a stand-alone WIM from a directory or NTFS volume (\fB@IMAGEX_PROGNAME@ capture\fR)
@@ -57,6 +62,11 @@ Apply an image from a stand-alone or split WIM to a directory or NTFS volume
 Mount an image from a stand-alone or split WIM read-only (\fB@IMAGEX_PROGNAME@ mount\fR)
 .IP \[bu]
 Mount an image from a stand-alone WIM read-write (\fB@IMAGEX_PROGNAME@ mountrw\fR)
+.IP \[bu]
+Extract individual files or directories from a WIM without mounting it
+(\fB@IMAGEX_PROGNAME@ extract\fR)
+.IP \[bu]
+Make changes to a WIM image without mounting it (\fB@IMAGEX_PROGNAME@ update\fR)
 .IP \[bu]
 Delete image(s) from a stand-alone WIM (\fB@IMAGEX_PROGNAME@ delete\fR)
 .IP \[bu]
@@ -117,6 +127,11 @@ a WIM image is appended or mounted read-write).
 easily join the parts of a split WIM.
 
 .IP \[bu]
+\fB@IMAGEX_PROGNAME@\fR offers the extra commands \fB@IMAGEX_PROGNAME@
+extract\fR and \fB@IMAGEX_PROGNAME@ update\fR, which let you quickly extract
+files from or make changes to a WIM image without mounting it.
+
+.IP \[bu]
 \fB@IMAGEX_PROGNAME@ apply\fR supports keeping files hard-linked or symlinked
 across WIM images when extracted from a WIM.  So you can, for example, extract
 different versions of Windows from an install.wim without using much extra
@@ -135,18 +150,18 @@ create compressed WIM files.
 
 .IP \[bu]
 \fB@IMAGEX_PROGNAME@ capture\fR supports a special mode where UNIX file modes,
-owners, and groups are stored.  (Note: this functionality is only available on
+owners, and groups are stored.  (Note: this functionality is only available in
 UNIX builds.)
 
 .IP \[bu]
 \fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR are much faster than
 Microsoft's versions for some reason.  I don't know what they have their program
 do that takes so long to simply set up a mountpoint.  (Note: this functionality
-is only available on UNIX builds.)
+is only available in UNIX builds.)
 
 .IP \[bu]
 \fB@IMAGEX_PROGNAME@ mount\fR supports mounting an image from a split WIM, but
-Microsoft's software does not.  (Note: this functionality is only available on
+Microsoft's software does not.  (Note: this functionality is only available in
 UNIX builds.)
 
 .SH LOCALES AND CHARACTER ENCODINGS
@@ -178,6 +193,7 @@ Report bugs to ebiggers3@gmail.com.
 .BR @IMAGEX_PROGNAME@-delete (1),
 .BR @IMAGEX_PROGNAME@-dir (1),
 .BR @IMAGEX_PROGNAME@-export (1),
+.BR @IMAGEX_PROGNAME@-extract (1),
 .BR @IMAGEX_PROGNAME@-info (1),
 .BR @IMAGEX_PROGNAME@-join (1),
 .BR @IMAGEX_PROGNAME@-mount (1),
@@ -185,3 +201,4 @@ Report bugs to ebiggers3@gmail.com.
 .BR @IMAGEX_PROGNAME@-optimize (1),
 .BR @IMAGEX_PROGNAME@-split (1),
 .BR @IMAGEX_PROGNAME@-unmount (1),
+.BR @IMAGEX_PROGNAME@-update (1),
