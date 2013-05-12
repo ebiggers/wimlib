@@ -4,10 +4,10 @@
 
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ capture\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
-[\fIIMAGE_DESCRIPTION\fR] [\fIOPTION\fR]...
+[\fIIMAGE_DESCRIPTION\fR] [\fIOPTION\fR...]
 .br
-\fB@IMAGEX_PROGNAME@ append\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR] \
-[\fIIMAGE_DESCRIPTION\fR] [\fIOPTION\fR]...
+\fB@IMAGEX_PROGNAME@ append\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR \
+[\fIIMAGE_DESCRIPTION\fR]] [\fIOPTION\fR...]
 
 .SH DESCRIPTION
 .PP
@@ -336,7 +336,8 @@ this are some pre-Vista WIMs that had a different version number.
 It is safe to abort an \fB@IMAGEX_PROGNAME@ append\fR command partway through;
 however, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
 optimize\fR to remove any data that was appended to the physical WIM file but
-not yet incorporated into the structure of the WIM.
+not yet incorporated into the structure of the WIM, unless \fB--rebuild\fR was
+specified, in which case you should delete the temporary file left over.
 
 \fISOURCE\fR may be a symbolic link to a directory rather than a directory
 itself.  However, additional symbolic links in subdirectories, or in additional

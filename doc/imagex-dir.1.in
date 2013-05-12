@@ -12,24 +12,27 @@ Windows Imaging (WIM) file \fIWIMFILE\fR.
 
 \fIIMAGE\fR specifies the WIM image to show the files of.  It may be a 1-based
 index of an image in the WIM, the name of an image in the WIM, or the keyword
-"all" to indicate that files from all images are to be shown.  Use the \fB@IMAGEX_PROGNAME@
-info\fR (1) command to show what images a WIM file contains.
+"all" to indicate that files from all images are to be shown.  Use the
+\fB@IMAGEX_PROGNAME@ info\fR (1) command to show what images a WIM file
+contains.
 
 .SH NOTES
 
-\fB@IMAGEX_PROGNAME@ dir\fR supports split WIMs, but it will only work on the first part of
-the split WIM.
+\fB@IMAGEX_PROGNAME@ dir\fR supports split WIMs, but it will only work on the
+first part of the split WIM.
 
 The DOS names of files are not displayed.
 
+Alternate data streams are not displayed.
+
 .SH EXAMPLES
-Show all files in the first image of 'boot.wim':
+List all files in the first image of 'boot.wim':
 .RS
 .PP
-image dir boot.wim 1
+@IMAGEX_PROGNAME@ dir boot.wim 1
 .RE
 .PP
 
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
-
+.BR @IMAGEX_PROGNAME@-info (1)

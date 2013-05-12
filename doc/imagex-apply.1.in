@@ -3,7 +3,7 @@
 @IMAGEX_PROGNAME@-apply \- Extract one image, or all images, from a WIM archive
 
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ apply\fR \fIWIMFILE\fR \fIIMAGE\fR \fITARGET\fR [\fIOPTION\fR]...
+\fB@IMAGEX_PROGNAME@ apply\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fITARGET\fR [\fIOPTION\fR...]
 
 .SH DESCRIPTION
 .PP
@@ -12,14 +12,15 @@
 Imaging (WIM) file \fIWIMFILE\fR.
 
 This command is designed to extract, or "apply", one or more full WIM images.
-If you want to extract only certain files or directories contained in a WIM
-image, consider using \fB@IMAGEX_PROGNAME@ extract\fR or \fB@IMAGEX_PROGNAME@
-mount\fR instead.
+If you instead want to extract only certain files or directories contained in a
+WIM image, consider using \fB@IMAGEX_PROGNAME@ extract\fR or
+\fB@IMAGEX_PROGNAME@ mount\fR instead.
 
 \fIIMAGE\fR specifies the WIM image to extract.  It may be a 1-based index of an
 image in the WIM, the name of an image in the WIM, or the keyword "all" to
 indicate that all images are to be extracted.  Use the \fB@IMAGEX_PROGNAME@
-info\fR (1) command to show what images a WIM file contains.
+info\fR (1) command to show what images a WIM file contains.  \fIIMAGE\fR may be
+omitted if \fIWIMFILE\fR contains only one image.
 
 \fITARGET\fR specifies where to extract the WIM image(s) to.  If \fITARGET\fR
 specifies a directory, the WIM image(s) are extracted to that directory.  If
@@ -57,9 +58,9 @@ File and directory creation, access, and modification timestamps to the nearest
 100 nanoseconds, if supported by the underlying filesystem, operating system,
 and C library
 .IP \[bu]
-Symbolic links and junction points, although they will not necessarily point to
-the desired location (for example, the target of the link may contain a Windows
-drive letter).
+Symbolic links and junction points.  Drive letters will be stripped.
+(Note: see \fB--rpfix\fR and \fB--norpfix\fR for documentation on how absolute
+symbolic links and junctions are applied.)
 
 .PP
 However, in the "normal" mode of extraction on UNIX, the following information
@@ -266,10 +267,12 @@ links that are marked in the WIM image as being fixed are assumed to have
 absolute targets relative to the image root, and therefore have the actual root
 of extraction prepended to their targets.  The intention is that you can apply
 an image containing absolute symbolic links and still have them be valid after
-it's been applied to any location.
+it has been applied to any location.
 
 The default behavior is \fB--rpfix\fR if any images in \fIWIMFILE\fR have been
 captured with reparse-point fixups done.  Otherwise, it is \fB--norpfix\fR.
+
+Reparse point fixups are never done in the NTFS extraction mode on UNIX.
 .TP
 \fB--verbose\fR
 Print the path to of each file or directory within the WIM image as it is

@@ -4,8 +4,8 @@
 an image
 
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ info\fR \fIWIMFILE\fR [\fIIMAGE_NUM\fR | \fIIMAGE_NAME\fR]  \
-[\fINEW_NAME\fR] [\fINEW_DESC\fR] [\fIOPTION\fR]...
+\fB@IMAGEX_PROGNAME@ info\fR \fIWIMFILE\fR [\fIIMAGE\fR [\fINEW_NAME\fR
+[\fINEW_DESC\fR]]] [\fIOPTION\fR...]
 
 
 .SH DESCRIPTION
@@ -17,31 +17,17 @@ are.
 
 If neither an image nor any flags other than \fB--check\fR are specified, some
 basic information about the WIM archive as well as information about the images
-contained in it will be printed.  If an image is specified (as a 1-based image
-index or an image name), the printed information is restricted to that
-concerning the specified image.
+contained in it will be printed.  If an image is specified by \fIIMAGE\fR (as a
+1-based image index or an image name), the printed information is restricted to
+that concerning the specified image.
 
 Changes to the WIM are made if \fINEW_NAME\fR and/or \fB--boot\fR are specified.
-\fINEW_NAME\fR is taken to be the new name of the image specified by
-\fIIMAGE_NUM\fR or \fIIMAGE_NAME\fR, while \fINEW_DESC\fR is taken to be its new
-description.  If \fINEW_DESC\fR is not specified, the image's description is
-unchanged.
+\fINEW_NAME\fR is taken to be the new name of the image specified by \fIIMAGE\fR
+while \fINEW_DESC\fR is taken to be its new description.  If \fINEW_DESC\fR is
+not specified, the image's description is unchanged.
 
 \fB@IMAGEX_PROGNAME@ info\fR does not support modifying a split WIM, although you may
 display information about one.
-
-.SH NOTES
-
-The possible modifications to \fIWIMFILE\fR by \fB@IMAGEX_PROGNAME@ info\fR are made
-quickly without re-building the entire WIM.  \fB@IMAGEX_PROGNAME@ info\fR will only take a
-significant amount of time to complete if \fB--check\fR is specified when the
-WIM previously had no integrity table.
-
-Aborting an \fB@IMAGEX_PROGNAME@ info\fR command that modifies \fIWIMFILE\fR is unlikely to
-result in corruption of \fIWIMFILE\fR.  Even if \fB@IMAGEX_PROGNAME@ info\fR is aborted
-while the integrity table is being calculated (with \fB--check\fR), the WIM
-should be in a consistent state with any changes to the bootable index,
-name, or description of the specified image committed.
 
 .SH OPTIONS
 .TP 6
@@ -56,7 +42,7 @@ specified, include an integrity table in the modified WIM.  If this option is
 not specified and \fIWIMFILE\fR is modified, no integrity table is included in
 the modified WIM, even if there was one before.
 .TP
-\fB--extract-xml\fR \fIFILE\fR
+\fB--extract-xml\fR=\fIFILE\fR
 Extracts the raw data from the XML resource in the WIM file to \fIFILE\fR.
 Note: the XML data will be encoded using UTF-16LE, and it will begin with a
 byte-order mark.

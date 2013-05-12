@@ -28,7 +28,7 @@ etc. where each part is at most 100 MiB:
 @IMAGEX_PROGNAME@ split windows.wim windows.swm 100
 .RE
 
-.SH NOTE
+.SH LIMITATIONS
 
 It it possible for the size of the parts to exceed the \fIPART_SIZE\fR given.
 This is impossible to avoid and Microsoft's program has this problem as well

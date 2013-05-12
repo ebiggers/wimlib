@@ -51,10 +51,12 @@ has had images soft-deleted from it.
 Delete the first image from 'boot.wim':
 .RS
 .PP
-image delete boot.wim 1
+@IMAGEX_PROGNAME@ delete boot.wim 1
 .RE
 .PP
 
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
+.BR @IMAGEX_PROGNAME@-info (1)
+.BR @IMAGEX_PROGNAME@-optimize (1)
 

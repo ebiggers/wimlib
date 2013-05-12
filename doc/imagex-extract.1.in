@@ -3,7 +3,7 @@
 @IMAGEX_PROGNAME@-extract \- Extract files or directories from a WIM image
 
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ extract\fR \fIWIMFILE\fR \fIIMAGE\fR \fI[PATH\fR]... [\fIOPTION\fR]...
+\fB@IMAGEX_PROGNAME@ extract\fR \fIWIMFILE\fR \fIIMAGE\fR [\fIPATH\fR...]  [\fIOPTION\fR...]
 
 .SH DESCRIPTION
 .PP
@@ -25,7 +25,9 @@ Each \fIPATH\fR specifies a file or directory tree within the WIM image to
 extract.  See \fBPATH_SPECIFICATIONS\fR.
 
 By default, files and directories are extracted to the current directory.  Use
-\fB--dest-dir\fR to choose an alternate target directory.
+\fB--dest-dir\fR to choose an alternate target directory.  Alternatively, use
+\fB--to-stdout\fR to extract a file to standard output to pipe into another
+program.
 
 \fB@IMAGEX_PROGNAME@ extract\fR supports extracting files and directory trees
 from stand-alone WIMs as well as split WIMs.  See \fBSPLIT WIMS\fR.
@@ -54,27 +56,22 @@ way as in other commands such as \fB@IMAGEX_PROGNAME@ apply\fR.  See
 When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
 present.
 .TP
-\fB--verbose\fR
-Print the path to of each file or directory within the WIM image as it is
-extracted.
-.TP
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional split WIM parts that are part of the split WIM.  See
 \fBSPLIT_WIMS\fR.
 .TP
+\fB--verbose\fR
+Print the path to of each file or directory within the WIM image as it is
+extracted.
+.TP
 \fB--unix-data\fR
-Restore the UNIX-specific data captured using \fB@IMAGEX_PROGNAME@ capture\fR
-with the \fB--unix-data\fR option.  This option is only available on UNIX.
+See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 .TP
 \fB--no-acls\fR
-Do not restore security descriptors on extracted files and directories.
+See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 .TP
 \fB--strict-acls\fR
-Fail immediately if the full security descriptor of any file or directory cannot
-be set exactly as specified in the WIM file.  The default behavior without this
-option is to fall back to setting a security descriptor with the SACL omitted,
-then only the default inherited security descriptor, if we do not have
-permission to set the desired one.
+See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 .TP
 \fB--to-stdout\fR
 Extract the files to standard output instead of to the filesystem.  This can
@@ -84,9 +81,12 @@ extracted.
 
 .SH NOTES
 
-\fB@IMAGEX_PROGNAME@ extract\fR calculates the SHA1 message digest of every file
-stream it extracts and verifies that it is the same as the SHA1 message digest
-provided in the WIM file.  Thus, it should provide assurance of data integrity.
+See the documentation \fB@IMAGEX_PROGNAME@ apply\fR (1) for documentation about
+what data and metadata are extracted on UNIX versus on Windows.
+
+On UNIX, one can alternatively mount the WIM image with \fB@IMAGEX_PROGNAME@
+mount\fR and then extract the desired files or directories using any standard
+command-line or graphical program.
 
 Reparse-point fixups (a.k.a. changing absolute symbolic links and junctions to
 point within the extraction location) are never done by \fB@IMAGEX_PROGNAME@
@@ -94,12 +94,6 @@ extract\fR.  Use \fB@IMAGEX_PROGNAME@ apply\fR if you want this behavior.
 
 Unlike \fB@IMAGEX_PROGNAME@ apply\fR, \fB@IMAGEX_PROGNAME@ extract\fR does not
 support extracting files directly to a NTFS volume using libntfs-3g.
-
-Not all data and metadata contained in each WIM \fIPATH\fR will necessarily be
-extracted, since \fB@IMAGEX_PROGNAME@ extract\fR does the best it can given the
-platform (UNIX or Windows) and supported features of the filesystem.  The
-documentation for \fB@IMAGEX_PROGNAME@ apply\fR (1) goes into more detail about
-what data and metadata is extracted and what is not.
 
 .SH EXAMPLES
 Extract a file from the first image in "boot.wim" to the current directory:
@@ -139,3 +133,4 @@ Extract multiple files and directories in one command:
 .BR @IMAGEX_PROGNAME@-apply (1)
 .BR @IMAGEX_PROGNAME@-dir (1)
 .BR @IMAGEX_PROGNAME@-info (1)
+.BR @IMAGEX_PROGNAME@-mount (1)

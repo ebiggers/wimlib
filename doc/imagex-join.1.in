@@ -3,7 +3,7 @@
 @IMAGEX_PROGNAME@-join \- Join split WIMs into a standalone one-part WIM
 
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ join\fR [\fIOPTION...] \fIOUT_WIMFILE\fR \fISPLIT_WIM...\fR
+\fB@IMAGEX_PROGNAME@ join\fR [\fIOPTION\fR...] \fIOUT_WIMFILE\fR \fISPLIT_WIM\fR...
 
 .SH DESCRIPTION
 .PP

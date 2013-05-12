@@ -28,13 +28,14 @@ This section documents the commands that may appear in the \fICMDFILE\fR
 described above.
 
 .SS \fBadd\fR [\fIOPTION\fR...] \fISOURCE\fR \fIDESTINATION\fR
-Adds a file or directory tree to the WIM image.  \fISOURCE\fR must specify the
+Add a file or directory tree to the WIM image.  \fISOURCE\fR must specify the
 path to a file or directory on your filesystem.  \fIDESTINATION\fR must specify
 the path inside the WIM image at which to add the file or directory tree.  If
-\fIDESTINATION\fR already exists in the WIM image, then an overlay is attempted;
-this can be used to add multiple files to an existing directory in the WIM image
-in one command.  If \fIDESTINATION\fR does not exist, then any prerequisite
-directories are created as needed to add the \fISOURCE\fR at that location.
+\fIDESTINATION\fR already exists in the WIM image, then an overlay is attempted
+if it is a directory; this feature can be used to add multiple files to an
+existing directory in the WIM image in one command.  If \fIDESTINATION\fR does
+not exist in the WIM image, then any prerequisite directories are created as
+needed to add the \fISOURCE\fR at that location.
 
 The available options for the \fBadd\fR command are:
 
@@ -173,6 +174,9 @@ specified, in which case you should delete the temporary file left over.
 
 .SH EXAMPLES
 
+All the examples below show the update command file to be created as well as the
+\fB@IMAGEX_PROGNAME@ update\fR command to run to perform the updates.
+
 Delete two files from a WIM image:
 
 .RS
@@ -192,8 +196,8 @@ $ @IMAGEX_PROGNAME@ update boot.wim 2 < update_commands.txt
 
 Add some files and directories to a WIM image.  Note that the first path of each
 \fBadd\fR command specifies the files to add, while the second path of each
-\fBadd\fR command specify the locations at which to to add them \fIinside the
-WIM image\fR:
+\fBadd\fR command specify the locations at which to to add them inside the WIM
+image:
 
 .RS
 \fIupdate_commands.txt\fR:

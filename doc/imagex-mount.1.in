@@ -3,9 +3,9 @@
 @IMAGEX_PROGNAME@-mount, @IMAGEX_PROGNAME@-mountrw, @IMAGEX_PROGNAME@-unmount \- Mount and unmount an image from a WIM archive
 
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ mount\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [\fIOPTION\fR]...
+\fB@IMAGEX_PROGNAME@ mount\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fIDIRECTORY\fR [\fIOPTION\fR...]
 .br
-\fB@IMAGEX_PROGNAME@ mountrw\fR \fIWIMFILE\fR \fIIMAGE\fR \fIDIRECTORY\fR [\fIOPTION\fR]...
+\fB@IMAGEX_PROGNAME@ mountrw\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fIDIRECTORY\fR [\fIOPTION\fR...]
 .br
 \fB@IMAGEX_PROGNAME@ unmount\fR \fIDIRECTORY\fR [--commit] [--check] [--rebuild]
 
@@ -18,9 +18,10 @@ mount\fR will mount the image read-only, while \fB@IMAGEX_PROGNAME@ mountrw\fR w
 the image read-write.
 
 \fIIMAGE\fR may be a 1-based index of the image in the WIM to mount, or it may
-be the name of an image in the WIM.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1) command to
-see the available images in the WIM.  It is possible to omit \fIIMAGE\fR, but
-only if the WIM contains only one image.
+be the name of an image in the WIM.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1)
+command to see the available images in the WIM.  \fIIMAGE\fR may be omitted if
+\fIWIMFILE\fR contains only one image.
+
 
 The WIM image can be unmounted using the \fB@IMAGEX_PROGNAME@ unmount\fR command.  Changes
 made to a WIM mounted read-write will be discarded unless the \fB--commit\fR
