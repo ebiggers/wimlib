@@ -326,6 +326,10 @@ static const struct option unmount_options[] = {
 };
 
 static const struct option update_options[] = {
+	/* Careful: some of the options here set the defaults for update
+	 * commands, but the flags given to an actual update command (and not to
+	 * `imagex update' itself are also handled in
+	 * update_command_add_option().  */
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
@@ -454,36 +458,35 @@ static struct wimlib_capture_config default_capture_config = {
 };
 
 enum {
-	PARSE_FILENAME_SUCCESS = 0,
-	PARSE_FILENAME_FAILURE = 1,
-	PARSE_FILENAME_NONE = 2,
+	PARSE_STRING_SUCCESS = 0,
+	PARSE_STRING_FAILURE = 1,
+	PARSE_STRING_NONE = 2,
 };
 
 /*
- * Parses a filename in the source list file format.  (See the man page for
- * 'wimlib-imagex capture' for details on this format and the meaning.)
- * Accepted formats for filenames are an unquoted string (whitespace-delimited),
- * or a double or single-quoted string.
+ * Parses a string token from an array of characters.
+ *
+ * Tokens are either whitespace-delimited, or double or single-quoted.
  *
  * @line_p:  Pointer to the pointer to the line of data.  Will be updated
- *           to point past the filename iff the return value is
- *           PARSE_FILENAME_SUCCESS.  If *len_p > 0, (*line_p)[*len_p - 1] must
+ *           to point past the string token iff the return value is
+ *           PARSE_STRING_SUCCESS.  If *len_p > 0, (*line_p)[*len_p - 1] must
  *           be '\0'.
  *
  * @len_p:   @len_p initially stores the length of the line of data, which may
  *           be 0, and it will be updated to the number of bytes remaining in
- *           the line iff the return value is PARSE_FILENAME_SUCCESS.
+ *           the line iff the return value is PARSE_STRING_SUCCESS.
  *
- * @fn_ret:  Iff the return value is PARSE_FILENAME_SUCCESS, a pointer to the
- *           parsed filename will be returned here.
+ * @fn_ret:  Iff the return value is PARSE_STRING_SUCCESS, a pointer to the
+ *           parsed string token will be returned here.
  *
- * Returns: PARSE_FILENAME_SUCCESS if a filename was successfully parsed; or
- *          PARSE_FILENAME_FAILURE if the data was invalid due to a missing
- *          closing quote; or PARSE_FILENAME_NONE if the line ended before the
- *          beginning of a filename was found.
+ * Returns: PARSE_STRING_SUCCESS if a string token was successfully parsed; or
+ *          PARSE_STRING_FAILURE if the data was invalid due to a missing
+ *          closing quote; or PARSE_STRING_NONE if the line ended before the
+ *          beginning of a string token was found.
  */
 static int
-parse_filename(tchar **line_p, size_t *len_p, tchar **fn_ret)
+parse_string(tchar **line_p, size_t *len_p, tchar **fn_ret)
 {
 	size_t len = *len_p;
 	tchar *line = *line_p;
@@ -493,7 +496,7 @@ parse_filename(tchar **line_p, size_t *len_p, tchar **fn_ret)
 	/* Skip leading whitespace */
 	for (;;) {
 		if (len == 0)
-			return PARSE_FILENAME_NONE;
+			return PARSE_STRING_NONE;
 		if (!istspace(*line) && *line != T('\0'))
 			break;
 		line++;
@@ -501,17 +504,17 @@ parse_filename(tchar **line_p, size_t *len_p, tchar **fn_ret)
 	}
 	quote_char = *line;
 	if (quote_char == T('"') || quote_char == T('\'')) {
-		/* Quoted filename */
+		/* Quoted string */
 		line++;
 		len--;
 		fn = line;
 		line = tmemchr(line, quote_char, len);
 		if (!line) {
 			imagex_error(T("Missing closing quote: %"TS), fn - 1);
-			return PARSE_FILENAME_FAILURE;
+			return PARSE_STRING_FAILURE;
 		}
 	} else {
-		/* Unquoted filename.  Go until whitespace.  Line is terminated
+		/* Unquoted string.  Go until whitespace.  Line is terminated
 		 * by '\0', so no need to check 'len'. */
 		fn = line;
 		do {
@@ -523,7 +526,7 @@ parse_filename(tchar **line_p, size_t *len_p, tchar **fn_ret)
 	*len_p = len;
 	*line_p = line;
 	*fn_ret = fn;
-	return PARSE_FILENAME_SUCCESS;
+	return PARSE_STRING_SUCCESS;
 }
 
 /* Parses a line of data (not an empty line or comment) in the source list file
@@ -546,13 +549,13 @@ parse_source_list_line(tchar *line, size_t len,
 {
 	/* SOURCE [DEST] */
 	int ret;
-	ret = parse_filename(&line, &len, &source->fs_source_path);
-	if (ret != PARSE_FILENAME_SUCCESS)
+	ret = parse_string(&line, &len, &source->fs_source_path);
+	if (ret != PARSE_STRING_SUCCESS)
 		return false;
-	ret = parse_filename(&line, &len, &source->wim_target_path);
-	if (ret == PARSE_FILENAME_NONE)
+	ret = parse_string(&line, &len, &source->wim_target_path);
+	if (ret == PARSE_STRING_NONE)
 		source->wim_target_path = source->fs_source_path;
-	return ret != PARSE_FILENAME_FAILURE;
+	return ret != PARSE_STRING_FAILURE;
 }
 
 /* Returns %true if the given line of length @len > 0 is a comment or empty line
@@ -752,12 +755,12 @@ parse_capture_config_line(tchar *line, size_t len,
 			       "(such as [ExclusionList]"), line);
 		return false;
 	case CAPTURE_CONFIG_EXCLUSION_SECTION:
-		if (parse_filename(&line, &len, &filename) != PARSE_FILENAME_SUCCESS)
+		if (parse_string(&line, &len, &filename) != PARSE_STRING_SUCCESS)
 			return false;
 		return pattern_list_add_pattern(&config->exclusion_pats,
 						filename);
 	case CAPTURE_CONFIG_EXCLUSION_EXCEPTION_SECTION:
-		if (parse_filename(&line, &len, &filename) != PARSE_FILENAME_SUCCESS)
+		if (parse_string(&line, &len, &filename) != PARSE_STRING_SUCCESS)
 			return false;
 		return pattern_list_add_pattern(&config->exclusion_exception_pats,
 						filename);
@@ -882,8 +885,7 @@ stdin_get_contents(size_t *len_ret)
 
 
 static tchar *
-translate_text_to_tstr(char *text, size_t num_bytes,
-		       size_t *num_tchars_ret)
+translate_text_to_tstr(char *text, size_t num_bytes, size_t *num_tchars_ret)
 {
 #ifndef __WIN32__
 	/* On non-Windows, assume an ASCII-compatible encoding, such as UTF-8.
@@ -1202,6 +1204,19 @@ parse_num_threads(const tchar *optarg)
 	}
 }
 
+/*
+ * Parse an option passed to an update command.
+ *
+ * @op:		One of WIMLIB_UPDATE_OP_* that indicates the command being
+ *		parsed.
+ *
+ * @option:	Text string for the option (beginning with --)
+ *
+ * @cmd:	`struct wimlib_update_command' that is being constructed for
+ *		this command.
+ *
+ * Returns true if the option was recognized; false if not.
+ */
 static bool
 update_command_add_option(int op, const tchar *option,
 			  struct wimlib_update_command *cmd)
@@ -1235,13 +1250,14 @@ update_command_add_option(int op, const tchar *option,
 	return recognized;
 }
 
+/* How many nonoption arguments each `imagex update' command expects */
 static const unsigned update_command_num_nonoptions[] = {
 	[WIMLIB_UPDATE_OP_ADD] = 2,
 	[WIMLIB_UPDATE_OP_DELETE] = 1,
 	[WIMLIB_UPDATE_OP_RENAME] = 2,
 };
 
-static bool
+static void
 update_command_add_nonoption(int op, const tchar *nonoption,
 			     struct wimlib_update_command *cmd,
 			     unsigned num_nonoptions)
@@ -1263,9 +1279,22 @@ update_command_add_nonoption(int op, const tchar *nonoption,
 			cmd->rename.wim_target_path = (tchar*)nonoption;
 		break;
 	}
-	return true;
 }
 
+/*
+ * Parse a command passed on stdin to `imagex update'.
+ *
+ * @line:	Text of the command.
+ * @len:	Length of the line, including a null terminator
+ *		at line[len - 1].
+ *
+ * @command:	A `struct wimlib_update_command' to fill in from the parsed
+ *		line.
+ *
+ * @line_number: Line number of the command, for diagnostics.
+ *
+ * Returns true on success; returns false on parse error.
+ */
 static bool
 parse_update_command(tchar *line, size_t len,
 		     struct wimlib_update_command *command,
@@ -1276,8 +1305,9 @@ parse_update_command(tchar *line, size_t len,
 	int op;
 	size_t num_nonoptions;
 
-	ret = parse_filename(&line, &len, &command_name);
-	if (ret != PARSE_FILENAME_SUCCESS)
+	/* Get the command name ("add", "delete", "rename") */
+	ret = parse_string(&line, &len, &command_name);
+	if (ret != PARSE_STRING_SUCCESS)
 		return false;
 
 	if (!tstrcasecmp(command_name, T("add"))) {
@@ -1292,16 +1322,19 @@ parse_update_command(tchar *line, size_t len,
 		return false;
 	}
 	command->op = op;
+
+	/* Parse additional options and non-options as needed */
 	num_nonoptions = 0;
 	for (;;) {
 		tchar *next_string;
 
-		ret = parse_filename(&line, &len, &next_string);
-		if (ret == PARSE_FILENAME_NONE)
+		ret = parse_string(&line, &len, &next_string);
+		if (ret == PARSE_STRING_NONE) /* End of line */
 			break;
-		else if (ret != PARSE_FILENAME_SUCCESS)
+		else if (ret != PARSE_STRING_SUCCESS) /* Parse failure */
 			return false;
 		if (next_string[0] == T('-') && next_string[1] == T('-')) {
+			/* Option */
 			if (!update_command_add_option(op, next_string, command))
 			{
 				imagex_error(T("Unrecognized option \"%"TS"\" to "
@@ -1311,6 +1344,7 @@ parse_update_command(tchar *line, size_t len,
 				return false;
 			}
 		} else {
+			/* Nonoption */
 			if (num_nonoptions == update_command_num_nonoptions[op])
 			{
 				imagex_error(T("Unexpected argument \"%"TS"\" in "
@@ -1321,9 +1355,8 @@ parse_update_command(tchar *line, size_t len,
 					     command_name, num_nonoptions);
 				return false;
 			}
-			if (!update_command_add_nonoption(op, next_string,
-							  command, num_nonoptions))
-				return false;
+			update_command_add_nonoption(op, next_string,
+						     command, num_nonoptions);
 			num_nonoptions++;
 		}
 	}
@@ -2847,6 +2880,9 @@ imagex_unmount(int argc, tchar **argv)
 	return ret;
 }
 
+/*
+ * Add, delete, or rename files in a WIM image.
+ */
 static int
 imagex_update(int argc, tchar **argv)
 {
@@ -2934,6 +2970,7 @@ imagex_update(int argc, tchar **argv)
 	if (ret)
 		goto out_wimlib_free;
 
+	/* Parse capture configuration file if specified */
 	if (config_file) {
 		size_t config_len;
 
@@ -2951,12 +2988,16 @@ imagex_update(int argc, tchar **argv)
 		config = &default_capture_config;
 	}
 
+	/* Read update commands from standard input */
+	if (isatty(STDIN_FILENO))
+		tputs(T("Reading update commands from standard input..."));
 	cmd_file_contents = stdin_get_text_contents(&cmd_file_nchars);
 	if (!cmd_file_contents) {
 		ret = -1;
 		goto out_free_config;
 	}
 
+	/* Parse the update commands */
 	cmds = parse_update_command_file(&cmd_file_contents, cmd_file_nchars,
 					 &num_cmds);
 	if (!cmds) {
@@ -2964,6 +3005,7 @@ imagex_update(int argc, tchar **argv)
 		goto out_free_cmd_file_contents;
 	}
 
+	/* Set default flags and capture config on the update commands */
 	for (size_t i = 0; i < num_cmds; i++) {
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
@@ -2978,11 +3020,13 @@ imagex_update(int argc, tchar **argv)
 		}
 	}
 
+	/* Execute the update commands */
 	ret = wimlib_update_image(wim, image, cmds, num_cmds, update_flags,
 				  imagex_progress_func);
 	if (ret)
 		goto out_free_cmds;
 
+	/* Overwrite the updated WIM */
 	ret = wimlib_overwrite(wim, write_flags, num_threads,
 			       imagex_progress_func);
 out_free_cmds:
