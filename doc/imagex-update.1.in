@@ -1,0 +1,260 @@
+.TH IMAGEX "1" "April 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.SH NAME
+@IMAGEX_PROGNAME@-update \- Update a WIM image
+
+.SH SYNOPSIS
+\fB@IMAGEX_PROGNAME@ update\fR \fIWIMFILE\fR [\fIIMAGE\fR] [\fIOPTION\fR...] < \fICMDFILE\fR
+
+.SH DESCRIPTION
+.PP
+
+\fB@IMAGEX_PROGNAME@ update\fR modifies the specified \fIIMAGE\fR in the Windows
+Imaging (WIM) file \fIWIMFILE\fR by adding, deleting, or renaming files or
+directories in it.
+
+\fIIMAGE\fR specifies the image in \fIWIMFILE\fR to update.  It may be a 1-based
+index of an image in the WIM or the name of an image in the WIM.  Use the
+\fB@IMAGEX_PROGNAME@ info\fR (1) command to list the images a WIM file contains.
+\fIIMAGE\fR may be omitted if \fIWIMFILE\fR contains only one image.
+
+The modifications to perform on the WIM image are specified as a sequence of
+commands, one per line, read in a text file from standard input.  It is
+recommended that standard input be redirected from a file (\fICMDFILE\fR), as
+shown above, rather than typing in commands interactively.
+
+.SH AVAILABLE COMMANDS
+
+This section documents the commands that may appear in the \fICMDFILE\fR
+described above.
+
+.SS \fBadd\fR [\fIOPTION\fR...] \fISOURCE\fR \fIDESTINATION\fR
+Adds a file or directory tree to the WIM image.  \fISOURCE\fR must specify the
+path to a file or directory on your filesystem.  \fIDESTINATION\fR must specify
+the path inside the WIM image at which to add the file or directory tree.  If
+\fIDESTINATION\fR already exists in the WIM image, then an overlay is attempted;
+this can be used to add multiple files to an existing directory in the WIM image
+in one command.
+
+The available options for the \fBadd\fR command are:
+
+.TP 6
+\fB--verbose\fR
+Print the names of files as they are captured.
+.TP
+\fB--dereference\fR
+(UNIX only) Follow symbolic links and archive the files they point to, rather
+than archiving the links themselves.
+.TP
+\fB--unix-data\fR
+(UNIX only) Store the UNIX owner, group, and mode of all captured files.  This
+is done by adding a special alternate data stream to each directory entry that
+contains this information.  Please note that this flag is for convenience only,
+in case you want to use \fB@IMAGEX_PROGNAME@\fR to archive files on UNIX.
+Microsoft's software will not understand this special information.
+.TP
+\fB--no-acls\fR
+(Windows only) Do not capture files' security descriptors.
+.TP
+\fB--strict-acls\fR
+(Windows only) Fail immediately if the full security descriptor of any file
+cannot be read.  The default behavior without this option is to first try
+omitting the SACL from the security descriptor, then to try omitting the
+security descriptor entirely.  The purpose of this is to capture as much data as
+possible without always requiring Administrator privileges.  However, if you
+desire that all security descriptors be captured exactly, you may wish to
+provide this option, although the Administrator should have permission to read
+everything anyway.
+
+.SS \fBdelete\fR [\fIOPTION\fR...] \fIPATH\fR
+Deletes a file or directory tree from a WIM image.  \fIPATH\fR must specify the
+path inside the WIM image of the file or directory tree to delete.
+
+The available options for the \fBdelete\fR command are:
+
+.TP 6
+\fB--force\fR
+Do not issue an error if the path to delete does not exist.
+.TP
+\fB--recursive\fR
+Delete the file or directory tree recursively; if not specified, an error is
+issued if the path to delete is a directory.
+
+.SS \fBrename\fR \fIOLD_PATH\fR \fINEW_PATH\fR
+Renames a file or directory tree inside a WIM image.  \fIOLD_PATH\fR must
+specify the old path of the file or directory tree inside the WIM image, and
+\fINEW_PATH\fR must specify the new path for the file or directory tree.  This
+command follows the semantics of the POSIX \fBrename\fR (3) function; in
+particular, a pre-existing file at \fINEW_PATH\fR will be deleted if present,
+except in certain cases such as attempting to rename a directory to a
+non-directory, which is not allowed.
+
+There are no options available for the \fBrename\fR command.
+
+.SH OPTIONS
+
+.TP 6
+\fB--verbose\fR
+Use \fB--verbose\fR for all \fBadd\fR commands.
+.TP
+\fB--dereference\fR
+Use \fB--dereference\fR for all \fBadd\fR commands.
+.TP
+\fB--unix-data\fR
+Use \fB--unix-data\fR for all \fBadd\fR commands.
+.TP
+\fB--no-acls\fR
+Use \fB--no-acls\fR for all \fBadd\fR commands.
+.TP
+\fB--strict-acls\fR
+Use \fB--strict-acls\fR for all \fBadd\fR commands.
+.TP
+\fB--config\fR=\fIFILE\fR
+Set the capture configuration file for all \fBadd\fR commands.  See the
+description of this option in \fB@IMAGEX_PROGNAME@-capture\fR (1).
+.TP
+\fB--force\fR
+Use \fB--force\fR for all \fBdelete\fR commands.
+.TP
+\fB--recursive\fR
+Use \fB--recursive\fR for all \fBdelete\fR commands.
+.TP
+\fB--check\fR
+When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
+present; in addition, include an integrity table in the updated WIM.  If this
+option is not specified, no integrity table is included in the updated WIM, even
+if there was one in the original WIM.
+.TP
+\fB--threads\fR=\fINUM_THREADS\fR
+Number of threads to use for compressing newly added files.  Default: autodetect
+(number of processors).
+.TP
+\fB--rebuild\fR
+Rebuild the entire WIM rather than appending the updated data to the end of it.
+Rebuilding the WIM is slower, but will save a little bit of space that would
+otherwise be left as a hole in the WIM.  Also see
+\fB@IMAGEX_PROGNAME@-optimize\fR (1).
+
+.SH NOTES
+
+\fB@IMAGEX_PROGNAME@ update\fR is partly redundant with \fB@IMAGEX_PROGNAME@
+mountrw\fR, since if a WIM image can be mounted read-write, then there
+theoretically is no need for \fB@IMAGEX_PROGNAME@ update\fR.  The main advantage
+of \fB@IMAGEX_PROGNAME@ update\fR is that is works on both UNIX and Windows,
+whereas \fB@IMAGEX_PROGNAME@ mountrw\fR only works on UNIX.
+
+Symbolic links inside a WIM image are not dereferenced when being interpreted.
+So, for example, if you have a WIM image that contains a symbolic link
+"/Documents and Settings" -> "/Users" where "/Users" is a directory, then a
+subdirectory named "Public" in this directory must be specified as
+"/Users/Public" rather than "/Documents and Settings/Public".
+
+The command file (\fICMDFILE\fR) is parsed by \fB@IMAGEX_PROGNAME@ update\fR
+itself and not by the system shell.  Therefore, its syntax is limited.  However,
+comment lines beginning with '#' are allowed, and it is also possible to quote
+arguments with whitespace inside them.
+
+On UNIX, you cannot use \fB@IMAGEX_PROGNAME@ update\fR to add files to an image
+directly from a NTFS volume using libntfs-3g, even though \fB@IMAGEX_PROGNAME@
+capture\fR supports capturing a full image this way.
+
+It is safe to abort an \fB@IMAGEX_PROGNAME@ update\fR command partway through;
+however, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
+optimize\fR to remove any data that was appended to the physical WIM file but
+not yet incorporated into the structure of the WIM.
+
+.SH EXAMPLES
+
+Delete two files from a WIM image:
+
+.RS
+\fIupdate_commands.txt\fR:
+.RS
+.PP
+.nf
+delete /setup.exe
+delete /sources/setup.exe
+.fi
+.RE
+.RE
+
+.RS
+$ @IMAGEX_PROGNAME@ update boot.wim 2 < update_commands.txt
+.RE
+
+Add some files and directories to a WIM image; note that the first paths specify
+the files to add, while the second paths specify the locations at which to to
+add them \fIinside the WIM image\fR:
+
+.RS
+\fIupdate_commands.txt\fR:
+.RS
+.PP
+.nf
+add somedir     /dir
+add somefile    /dir/file
+.fi
+.RE
+.RE
+
+.RS
+$ @IMAGEX_PROGNAME@ update boot.wim 2 < update_commands.txt
+.RE
+
+Rename a file inside a WIM image.
+
+.RS
+\fIupdate_commands.txt\fR:
+.RS
+.PP
+.nf
+rename /dir_in_wim/oldfile.txt /dir_in_wim/newfile.txt
+.fi
+.RE
+.RE
+
+.RS
+$ @IMAGEX_PROGNAME@ update boot.wim 2 < update_commands.txt
+.RE
+
+Using additional features, such as comments, options, and overlays, and
+including an integrity table in the updated WIM:
+
+.RS
+\fIupdate_commands.txt\fR:
+.RS
+.PP
+.nf
+#
+# This file specifies some changes to make to my WIM image.
+#
+
+# Add a new directory containing files I want in the image.
+# The quotes are necessary because the directory name
+# contains a space.
+add "My Directory" "/My Directory"
+
+# Add the contents of "Another Directory" to the
+# "/My Directory" we just created in the WIM image.  Since
+# the destination path already exists, this performs an
+# overlay.
+add "Another Directory" "/My Directory"
+
+# Rename some file for some reason.
+rename /dir_in_wim/oldfile.txt /dir_in_wim/newfile.txt
+
+# Delete an unwanted directory.
+delete --recursive /Users/Me/Documents/Junk
+.fi
+.RE
+.RE
+
+.RS
+$ @IMAGEX_PROGNAME@ update boot.wim 2 --check < update_commands.txt
+.RE
+
+.SH SEE ALSO
+.BR @IMAGEX_PROGNAME@ (1)
+.BR @IMAGEX_PROGNAME@-capture (1)
+.BR @IMAGEX_PROGNAME@-info (1)
+.BR @IMAGEX_PROGNAME@-mountrw (1)
+.BR @IMAGEX_PROGNAME@-optimize (1)
