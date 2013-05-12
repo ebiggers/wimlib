@@ -240,7 +240,9 @@ lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
 	wimlib_assert(lte != NULL);
 	wimlib_assert(lte->refcnt != 0);
 	if (--lte->refcnt == 0) {
-		if (!lte->unhashed)
+		if (lte->unhashed)
+			list_del(&lte->unhashed_list);
+		else
 			lookup_table_unlink(table, lte);
 	#ifdef WITH_FUSE
 		if (lte->num_opened_fds == 0)

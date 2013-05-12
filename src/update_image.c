@@ -295,6 +295,8 @@ execute_delete_command(WIMStruct *wim,
 	flags = delete_cmd->delete.delete_flags;
 	wim_path = delete_cmd->delete.wim_path;
 
+	DEBUG("Deleting WIM path \"%"TS"\" (flags=%#x)", wim_path, flags);
+
 	tree = get_dentry(wim, wim_path);
 	if (!tree) {
 		/* Path to delete does not exist in the WIM. */
@@ -574,7 +576,7 @@ free_update_commands(struct wimlib_update_command *cmds, size_t num_cmds)
 {
 	if (cmds) {
 		for (size_t i = 0; i < num_cmds; i++) {
-			switch (cmds->op) {
+			switch (cmds[i].op) {
 			case WIMLIB_UPDATE_OP_ADD:
 				FREE(cmds[i].add.fs_source_path);
 				FREE(cmds[i].add.wim_target_path);
@@ -587,6 +589,8 @@ free_update_commands(struct wimlib_update_command *cmds, size_t num_cmds)
 				FREE(cmds[i].rename.wim_source_path);
 				FREE(cmds[i].rename.wim_target_path);
 				break;
+			default:
+				wimlib_assert(0);
 			}
 		}
 		FREE(cmds);

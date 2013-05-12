@@ -550,7 +550,6 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 			inode->i_ino = cur_ino++;
 		else
 			inode->i_ino = 0;
-		list_add_tail(&inode->i_list, head);
 	}
 
 	for (size_t i = 0; i < table->capacity; i++) {
