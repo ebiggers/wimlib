@@ -488,11 +488,11 @@ check_add_command(struct wimlib_update_command *cmd,
 	}
 	if (add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {
 		ERROR("Capturing UNIX-specific data is not supported on Windows");
-		return WIMLIB_ERR_INVALID_PARAM;
+		return WIMLIB_ERR_UNSUPPORTED;
 	}
 	if (add_flags & WIMLIB_ADD_FLAG_DEREFERENCE) {
 		ERROR("Dereferencing symbolic links is not supported on Windows");
-		return WIMLIB_ERR_INVALID_PARAM;
+		return WIMLIB_ERR_UNSUPPORTED;
 	}
 #endif
 
