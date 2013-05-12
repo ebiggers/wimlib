@@ -1001,13 +1001,37 @@ enum wimlib_error_code {
 };
 
 
-/** Used to indicate that no WIM image or an invalid WIM image. */
+/** Used to indicate no WIM image or an invalid WIM image. */
 #define WIMLIB_NO_IMAGE		0
 
 /** Used to specify all images in the WIM. */
 #define WIMLIB_ALL_IMAGES	(-1)
 
-/** XXX */
+/**
+ * Appends an empty image to a WIM file.  This empty image will initially
+ * contain no files or directories, although if written without further
+ * modifications, a root directory will be created automatically for it.
+ *
+ * @param wim
+ *	Pointer to the ::WIMStruct for the WIM file to which the image is to be
+ *	added.
+ * @param name
+ *	Name to give the new image.
+ * @param new_idx_ret
+ *	If non-<code>NULL</code>, the index of the newly added image is returned
+ *	in this location.
+ *
+ * @return 0 on success; nonzero on failure.  The possible error codes are:
+ *
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	@a name was @c NULL or an empty string.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ *	@a wim is part of a split WIM.
+ * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
+ *	There is already an image in @a wim named @a name.
+ * @retval ::WIMLIB_ERR_NOMEM
+ *	Failed to allocate the memory needed to add the new image.
+ */
 extern int
 wimlib_add_empty_image(WIMStruct *wim,
 		       const wimlib_tchar *name,
