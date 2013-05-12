@@ -2526,7 +2526,28 @@ wimlib_unmount_image(const wimlib_tchar *dir,
 		     int unmount_flags,
 		     wimlib_progress_func_t progress_func);
 
-/** XXX */
+/**
+ * Update a WIM image by adding, deleting, and/or renaming files or directories.
+ *
+ * @param wim
+ *	Pointer to the ::WIMStruct for the WIM file to update.
+ * @param image
+ *	The 1-based index of the image in the WIM to update.  It cannot be
+ *	::WIMLIB_ALL_IMAGES.
+ * @param cmds
+ *	An array of ::wimlib_update_command's that specify the update operations
+ *	to perform.
+ * @param num_cmds
+ *	Number of commands in @a cmds.
+ * @param update_flags
+ *	Reserved; must be 0.
+ * @param progress_func
+ *	If non-NULL, a function that will be called periodically with the
+ *	progress of the current operation.
+ *
+ * @return 0 on success; nonzero on error.  There are many possible error codes
+ * (TODO: document them.)
+ */
 extern int
 wimlib_update_image(WIMStruct *wim,
 		    int image,

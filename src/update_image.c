@@ -492,9 +492,16 @@ check_add_command(struct wimlib_update_command *cmd,
 		  const struct wim_header *hdr)
 {
 	int add_flags = cmd->add.add_flags;
+
+	/* Are we adding the entire image or not?  An empty wim_target_path
+	 * indicates that the tree we're adding is to be placed in the root of
+	 * the image.  We consider this to be capturing the entire image,
+	 * although it could potentially be an overlay on an existing root as
+	 * well. */
 	bool is_entire_image = cmd->add.wim_target_path[0] == T('\0');
-	int ret;
+
 #ifdef __WIN32__
+	/* Check for flags not supported on Windows */
 	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_NTFS) {
 		ERROR("wimlib was compiled without support for NTFS-3g, so");
 		ERROR("we cannot capture a WIM image directly from a NTFS volume");
@@ -510,9 +517,11 @@ check_add_command(struct wimlib_update_command *cmd,
 	}
 #endif
 
+	/* VERBOSE implies EXCLUDE_VERBOSE */
 	if (add_flags & WIMLIB_ADD_IMAGE_FLAG_VERBOSE)
 		add_flags |= WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
 
+	/* Check for contradictory reparse point fixup flags */
 	if ((add_flags & (WIMLIB_ADD_IMAGE_FLAG_RPFIX |
 			  WIMLIB_ADD_IMAGE_FLAG_NORPFIX)) ==
 		(WIMLIB_ADD_IMAGE_FLAG_RPFIX |
@@ -523,6 +532,7 @@ check_add_command(struct wimlib_update_command *cmd,
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
+	/* Set default behavior on reparse point fixups if requested */
 	if ((add_flags & (WIMLIB_ADD_IMAGE_FLAG_RPFIX |
 			  WIMLIB_ADD_IMAGE_FLAG_NORPFIX)) == 0)
 	{
@@ -547,9 +557,6 @@ check_add_command(struct wimlib_update_command *cmd,
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 	}
-	ret = canonicalize_capture_config(cmd->add.config);
-	if (ret)
-		return ret;
 	cmd->add.add_flags = add_flags;
 	return 0;
 }
@@ -630,10 +637,10 @@ copy_update_commands(const struct wimlib_update_command *cmds,
 			    !cmds_copy[i].add.wim_target_path)
 				goto oom;
 			if (cmds[i].add.config) {
-				cmds_copy[i].add.config =
-					copy_capture_config(cmds[i].add.config);
-				if (!cmds_copy[i].add.config)
-					goto oom;
+				ret = copy_and_canonicalize_capture_config(cmds[i].add.config,
+									   &cmds_copy[i].add.config);
+				if (ret)
+					goto err;
 			}
 			cmds_copy[i].add.add_flags = cmds[i].add.add_flags;
 			break;
@@ -670,6 +677,9 @@ err:
 	goto out;
 }
 
+/*
+ * Entry point for making a series of updates to a WIM image.
+ */
 WIMLIBAPI int
 wimlib_update_image(WIMStruct *wim,
 		    int image,
@@ -683,36 +693,48 @@ wimlib_update_image(WIMStruct *wim,
 
 	DEBUG("Updating image %d with %zu commands", image, num_cmds);
 
+	/* Refuse to update a split WIM. */
 	if (wim->hdr.total_parts != 1) {
 		ERROR("Cannot update a split WIM!");
 		ret = WIMLIB_ERR_SPLIT_UNSUPPORTED;
 		goto out;
 	}
 
+	/* Load the metadata for the image to modify (if not loaded already) */
 	ret = select_wim_image(wim, image);
 	if (ret)
 		goto out;
 
-	DEBUG("Selected image %d for update", image);
-
+	/* Short circuit a successful return if no commands were specified.
+	 * Avoids problems with trying to allocate 0 bytes of memory. */
 	if (num_cmds == 0)
 		goto out;
 
 	DEBUG("Preparing %zu update commands", num_cmds);
 
+	/* Make a copy of the update commands, in the process doing certain
+	 * canonicalizations on paths (e.g. translating backslashes to forward
+	 * slashes).  This is done to avoid modifying the caller's copy of the
+	 * commands. */
 	ret = copy_update_commands(cmds, num_cmds, &cmds_copy);
 	if (ret)
 		goto out;
 
+	/* Perform additional checks on the update commands before we execute
+	 * them. */
 	ret = check_update_commands(cmds_copy, num_cmds, &wim->hdr);
 	if (ret)
 		goto out_free_cmds_copy;
 
+	/* Actually execute the update commands. */
 	DEBUG("Executing %zu update commands", num_cmds);
-
 	ret = execute_update_commands(wim, cmds_copy, num_cmds, progress_func);
 	if (ret)
 		goto out_free_cmds_copy;
+
+	/* Statistics about the WIM image, such as the numbers of files and
+	 * directories, may have changed.  Call xml_update_image_info() to
+	 * recalculate these statistics. */
 	xml_update_image_info(wim, wim->current_image);
 out_free_cmds_copy:
 	free_update_commands(cmds_copy, num_cmds);

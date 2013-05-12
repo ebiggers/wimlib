@@ -2894,7 +2894,7 @@ imagex_update(int argc, tchar **argv)
 	int open_flags = 0;
 	int write_flags = WIMLIB_WRITE_FLAG_SOFT_DELETE;
 	int update_flags = 0;
-	int default_add_flags = 0;
+	int default_add_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
 	int default_delete_flags = 0;
 	unsigned num_threads = 0;
 	int c;

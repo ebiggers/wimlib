@@ -463,7 +463,8 @@ extern struct wimlib_capture_config *
 copy_capture_config(const struct wimlib_capture_config *config);
 
 extern int
-canonicalize_capture_config(struct wimlib_capture_config *config);
+copy_and_canonicalize_capture_config(const struct wimlib_capture_config *config,
+				     struct wimlib_capture_config **config_copy_ret);
 
 extern void
 free_capture_config(struct wimlib_capture_config *config);

@@ -28,16 +28,15 @@
 #endif
 
 static int
-canonicalize_pat(tchar **pat_p)
+canonicalize_pattern(const tchar *pat, tchar **canonical_pat_ret)
 {
-	tchar *pat = *pat_p;
+	tchar *canonical_pat;
 
-	/* Turn all backslashes in the pattern into forward slashes. */
-	zap_backslashes(pat);
-
-	if (*pat != T('/') && *pat != T('\0') && *(pat + 1) == T(':')) {
+	if (pat[0] != T('/') && pat[0] != T('\\') &&
+	    pat[0] != T('\0') && pat[1] == T(':'))
+	{
 		/* Pattern begins with drive letter */
-		if (*(pat + 2) != T('/')) {
+		if (pat[2] != T('/') && pat[2] != T('\\')) {
 			/* Something like c:file, which is actually a path
 			 * relative to the current working directory on the c:
 			 * drive.  We require paths with drive letters to be
@@ -45,7 +44,7 @@ canonicalize_pat(tchar **pat_p)
 			ERROR("Invalid path \"%"TS"\"; paths including drive letters "
 			      "must be absolute!", pat);
 			ERROR("Maybe try \"%"TC":/%"TS"\"?",
-			      *pat, pat + 2);
+			      pat[0], pat + 2);
 			return WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 		}
 
@@ -53,17 +52,26 @@ canonicalize_pat(tchar **pat_p)
 			"being removed.", pat);
 		/* Strip the drive letter */
 		pat += 2;
-		*pat_p = pat;
 	}
+	canonical_pat = canonicalize_fs_path(pat);
+	if (!canonical_pat)
+		return WIMLIB_ERR_NOMEM;
+	*canonical_pat_ret = canonical_pat;
 	return 0;
 }
 
 static int
-canonicalize_pat_list(struct wimlib_pattern_list *pat_list)
+copy_and_canonicalize_pattern_list(const struct wimlib_pattern_list *list,
+				   struct wimlib_pattern_list *copy)
 {
 	int ret = 0;
-	for (size_t i = 0; i < pat_list->num_pats; i++) {
-		ret = canonicalize_pat(&pat_list->pats[i]);
+
+	copy->pats = CALLOC(list->num_pats, sizeof(list->pats[0]));
+	if (!copy->pats)
+		return WIMLIB_ERR_NOMEM;
+	copy->num_pats = list->num_pats;
+	for (size_t i = 0; i < list->num_pats; i++) {
+		ret = canonicalize_pattern(list->pats[i], &copy->pats[i]);
 		if (ret)
 			break;
 	}
@@ -71,49 +79,31 @@ canonicalize_pat_list(struct wimlib_pattern_list *pat_list)
 }
 
 int
-canonicalize_capture_config(struct wimlib_capture_config *config)
+copy_and_canonicalize_capture_config(const struct wimlib_capture_config *config,
+				     struct wimlib_capture_config **config_copy_ret)
 {
-	int ret = canonicalize_pat_list(&config->exclusion_pats);
-	if (ret)
-		return ret;
-	return canonicalize_pat_list(&config->exclusion_exception_pats);
-}
+	struct wimlib_capture_config *config_copy;
+	int ret;
 
-static bool
-copy_pattern_list(struct wimlib_pattern_list *copy,
-		  const struct wimlib_pattern_list *list)
-{
-	copy->pats = CALLOC(list->num_pats, sizeof(list->pats[0]));
-	if (!copy->pats)
-		return false;
-	copy->num_pats = list->num_pats;
-	for (size_t i = 0; i < list->num_pats; i++) {
-		copy->pats[i] = TSTRDUP(list->pats[i]);
-		if (!copy->pats[i])
-			return false;
+	config_copy = CALLOC(1, sizeof(struct wimlib_capture_config));
+	if (!config_copy) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_capture_config;
 	}
-	return true;
-}
-
-struct wimlib_capture_config *
-copy_capture_config(const struct wimlib_capture_config *config)
-{
-	struct wimlib_capture_config *copy;
-
-	copy = CALLOC(1, sizeof(struct wimlib_capture_config));
-	if (!copy)
-		goto oom;
-	if (!copy_pattern_list(&copy->exclusion_pats, &config->exclusion_pats))
-		goto oom;
-	if (!copy_pattern_list(&copy->exclusion_exception_pats,
-			       &config->exclusion_exception_pats))
-		goto oom;
+	ret = copy_and_canonicalize_pattern_list(&config->exclusion_pats,
+						 &config_copy->exclusion_pats);
+	if (ret)
+		goto out_free_capture_config;
+	ret = copy_and_canonicalize_pattern_list(&config->exclusion_exception_pats,
+						 &config_copy->exclusion_exception_pats);
+	if (ret)
+		goto out_free_capture_config;
+	*config_copy_ret = config_copy;
 	goto out;
-oom:
-	free_capture_config(copy);
-	copy = NULL;
+out_free_capture_config:
+	free_capture_config(config_copy);
 out:
-	return copy;
+	return ret;
 }
 
 static void
