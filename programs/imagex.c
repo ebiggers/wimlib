@@ -185,11 +185,11 @@ static void
 recommend_man_page(const tchar *cmd_name)
 {
 #ifdef __WIN32__
-	tprintf(T("\nSee "IMAGEX_PROGNAME"-%"TS".pdf in the "
+	tprintf(T("See "IMAGEX_PROGNAME"-%"TS".pdf in the "
 		  "doc directory for more details.\n"),
 		cmd_name);
 #else
-	tprintf(T("\nTry `man "IMAGEX_PROGNAME"-%"TS"' "
+	tprintf(T("Try `man "IMAGEX_PROGNAME"-%"TS"' "
 		  "for more details.\n"), cmd_name);
 #endif
 }
@@ -3005,6 +3005,7 @@ imagex_update(int argc, tchar **argv)
 	/* Read update commands from standard input */
 	if (isatty(STDIN_FILENO)) {
 		tputs(T("Reading update commands from standard input..."));
+		recommend_man_page(T("update"));
 	}
 	cmd_file_contents = stdin_get_text_contents(&cmd_file_nchars);
 	if (!cmd_file_contents) {
@@ -3149,6 +3150,7 @@ usage(int cmd_type)
 	tprintf(T("Usage:\n%"TS), usage_strings[cmd_type]);
 	for_imagex_command(cmd) {
 		if (cmd->cmd == cmd_type) {
+			tputc(T('\n'), stdout);
 			recommend_man_page(cmd->name);
 		}
 	}
