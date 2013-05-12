@@ -126,7 +126,7 @@ capture_sources_to_add_cmds(const struct wimlib_capture_source *sources,
 {
 	struct wimlib_update_command *add_cmds;
 
-	DEBUG("Translating %zu capture sources to wimlib_update_command's",
+	DEBUG("Translating %zu capture sources to `struct wimlib_update_command's",
 	      num_sources);
 	add_cmds = CALLOC(num_sources, sizeof(add_cmds[0]));
 	if (add_cmds) {
@@ -146,6 +146,8 @@ capture_sources_to_add_cmds(const struct wimlib_capture_source *sources,
 	return add_cmds;
 }
 
+/* Adds an image to the WIMStruct from multiple on-disk directory trees, or a
+ * NTFS volume. */
 WIMLIBAPI int
 wimlib_add_image_multisource(WIMStruct *wim,
 			     const struct wimlib_capture_source *sources,
@@ -158,29 +160,36 @@ wimlib_add_image_multisource(WIMStruct *wim,
 	int ret;
 	struct wimlib_update_command *add_cmds;
 
-	DEBUG("Adding image \"%"TS"\" from %zu sources (add_image_flags=%x)",
+	DEBUG("Adding image \"%"TS"\" from %zu sources (add_image_flags=%#x)",
 	      name, num_sources, add_image_flags);
 
+	/* Add the new image (initially empty) */
 	ret = wimlib_add_empty_image(wim, name, NULL);
 	if (ret)
 		goto out;
 
+	/* Translate the "capture sources" into generic update commands. */
 	add_cmds = capture_sources_to_add_cmds(sources, num_sources,
 					       add_image_flags, config);
 	if (!add_cmds) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_delete_image;
 	}
+
+	/* Delegate the work to wimlib_update_image(). */
 	ret = wimlib_update_image(wim, wim->hdr.image_count, add_cmds, 
 				  num_sources, 0, progress_func);
 	FREE(add_cmds);
 	if (ret)
 		goto out_delete_image;
+
+	/* Success; set boot index if requested. */
 	if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_BOOT)
 		wim->hdr.boot_idx = wim->hdr.image_count;
 	ret = 0;
 	goto out;
 out_delete_image:
+	/* Roll back the image we added */
 	put_image_metadata(wim->image_metadata[wim->hdr.image_count - 1],
 			   wim->lookup_table);
 	xml_delete_image(&wim->wim_info, wim->hdr.image_count);
@@ -189,6 +198,7 @@ out:
 	return ret;
 }
 
+/* Adds an image to the WIMStruct from an on-disk directory tree or NTFS volume. */
 WIMLIBAPI int
 wimlib_add_image(WIMStruct *wim,
 		 const tchar *source,
@@ -197,9 +207,11 @@ wimlib_add_image(WIMStruct *wim,
 		 int add_image_flags,
 		 wimlib_progress_func_t progress_func)
 {
+	/* Delegate the work to the more general wimlib_add_image_multisource().
+	 * */
 	const struct wimlib_capture_source capture_src = {
 		.fs_source_path = (tchar*)source,
-		.wim_target_path = NULL,
+		.wim_target_path = T(""),
 		.reserved = 0,
 	};
 	return wimlib_add_image_multisource(wim, &capture_src, 1, name,
