@@ -101,19 +101,6 @@ apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 #endif
 }
 
-static bool
-dentry_is_descendent(const struct wim_dentry *dentry,
-		     const struct wim_dentry *ancestor)
-{
-	for (;;) {
-		if (dentry == ancestor)
-			return true;
-		if (dentry_is_root(dentry))
-			return false;
-		dentry = dentry->parent;
-	}
-}
-
 /* Extract a dentry if it hasn't already been extracted and either
  * WIMLIB_EXTRACT_FLAG_NO_STREAMS is not specified, or the dentry is a directory
  * and/or has no unnamed stream. */
@@ -123,10 +110,7 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 	struct apply_args *args = arg;
 	int ret;
 
-	if (dentry->is_extracted)
-		return 0;
-
-	if (!dentry_is_descendent(dentry, args->extract_root))
+	if (!dentry->needs_extraction)
 		return 0;
 
 	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_STREAMS &&
@@ -142,7 +126,7 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 	}
 	ret = args->apply_dentry(dentry, args);
 	if (ret == 0)
-		dentry->is_extracted = 1;
+		dentry->needs_extraction = 0;
 	return ret;
 }
 
@@ -183,24 +167,33 @@ maybe_add_stream_for_extraction(struct wim_lookup_table_entry *lte,
 				struct list_head *stream_list)
 {
 	if (++lte->out_refcnt == 1) {
-		INIT_LIST_HEAD(&lte->inode_list);
+		INIT_LIST_HEAD(&lte->lte_dentry_list);
 		list_add_tail(&lte->extraction_list, stream_list);
 	}
 }
 
-static void
-inode_find_streams_for_extraction(struct wim_inode *inode,
-				  struct list_head *stream_list,
-				  int extract_flags)
+struct find_streams_ctx {
+	struct list_head stream_list;
+	int extract_flags;
+};
+
+static int
+dentry_find_streams_to_extract(struct wim_dentry *dentry, void *_ctx)
 {
+	struct find_streams_ctx *ctx = _ctx;
+	struct wim_inode *inode = dentry->d_inode;
 	struct wim_lookup_table_entry *lte;
-	bool inode_added = false;
+	bool dentry_added = false;
+	struct list_head *stream_list = &ctx->stream_list;
+	int extract_flags = ctx->extract_flags;
+
+	dentry->needs_extraction = 1;
 
 	lte = inode_unnamed_lte_resolved(inode);
 	if (lte) {
 		maybe_add_stream_for_extraction(lte, stream_list);
-		list_add_tail(&inode->i_lte_inode_list, &lte->inode_list);
-		inode_added = true;
+		list_add_tail(&dentry->tmp_list, &lte->lte_dentry_list);
+		dentry_added = true;
 	}
 
 	/* Determine whether to include alternate data stream entries or not.
@@ -223,33 +216,14 @@ inode_find_streams_for_extraction(struct wim_inode *inode,
 				if (lte) {
 					maybe_add_stream_for_extraction(lte,
 									stream_list);
-					if (!inode_added) {
-						list_add_tail(&inode->i_lte_inode_list,
-							      &lte->inode_list);
-						inode_added = true;
+					if (!dentry_added) {
+						list_add_tail(&dentry->tmp_list,
+							      &lte->lte_dentry_list);
+						dentry_added = true;
 					}
 				}
 			}
 		}
-	}
-}
-
-struct find_streams_ctx {
-	struct list_head stream_list;
-	int extract_flags;
-};
-
-static int
-dentry_find_streams_to_extract(struct wim_dentry *dentry, void *_ctx)
-{
-	struct find_streams_ctx *ctx = _ctx;
-	struct wim_inode *inode = dentry->d_inode;
-
-	dentry->is_extracted = 0;
-	if (!inode->i_visited) {
-		inode_find_streams_for_extraction(inode, &ctx->stream_list,
-						  ctx->extract_flags);
-		inode->i_visited = 1;
 	}
 	return 0;
 }
@@ -286,9 +260,9 @@ find_streams_for_extraction(struct wim_dentry *root,
 }
 
 static int
-dentry_mark_inode_unvisited(struct wim_dentry *dentry, void *_ignore)
+dentry_reset_needs_extraction(struct wim_dentry *dentry, void *_ignore)
 {
-	dentry->d_inode->i_visited = 0;
+	dentry->needs_extraction = 0;
 	return 0;
 }
 
@@ -318,7 +292,6 @@ apply_stream_list(struct list_head *stream_list,
 	uint64_t bytes_per_progress = args->progress.extract.total_bytes / 100;
 	uint64_t next_progress = bytes_per_progress;
 	struct wim_lookup_table_entry *lte;
-	struct wim_inode *inode;
 	struct wim_dentry *dentry;
 	int ret;
 
@@ -332,30 +305,28 @@ apply_stream_list(struct list_head *stream_list,
 
 	/* For each distinct stream to be extracted */
 	list_for_each_entry(lte, stream_list, extraction_list) {
-		/* For each inode that contains the stream */
-		list_for_each_entry(inode, &lte->inode_list, i_lte_inode_list) {
-			/* For each dentry that points to the inode */
-			inode_for_each_dentry(dentry, inode) {
-				/* Extract the dentry if it was not already
-				 * extracted */
-				ret = maybe_apply_dentry(dentry, args);
-				if (ret)
-					return ret;
-				if (progress_func &&
-				    args->progress.extract.completed_bytes >= next_progress)
+		/* For each dentry to be extracted that is a name for an inode
+		 * containing the stream */
+		list_for_each_entry(dentry, &lte->lte_dentry_list, tmp_list) {
+			/* Extract the dentry if it was not already
+			 * extracted */
+			ret = maybe_apply_dentry(dentry, args);
+			if (ret)
+				return ret;
+			if (progress_func &&
+			    args->progress.extract.completed_bytes >= next_progress)
+			{
+				progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
+					      &args->progress);
+				if (args->progress.extract.completed_bytes >=
+				    args->progress.extract.total_bytes)
 				{
-					progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
-						      &args->progress);
-					if (args->progress.extract.completed_bytes >=
-					    args->progress.extract.total_bytes)
-					{
-						next_progress = ~0ULL;
-					} else {
-						next_progress =
-							min (args->progress.extract.completed_bytes +
-							     bytes_per_progress,
-							     args->progress.extract.total_bytes);
-					}
+					next_progress = ~0ULL;
+				} else {
+					next_progress =
+						min (args->progress.extract.completed_bytes +
+						     bytes_per_progress,
+						     args->progress.extract.total_bytes);
 				}
 			}
 		}
@@ -516,7 +487,6 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	if (ret)
 		goto out_ntfs_umount;
 
-
 	/* Build a list of the streams that need to be extracted */
 	find_streams_for_extraction(root,
 				    &stream_list,
@@ -528,7 +498,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT) {
 		ret = extract_dentry_to_stdout(root);
-		goto out_mark_inodes_unvisited;
+		goto out_dentry_reset_needs_extraction;
 	}
 
 	if (progress_func) {
@@ -559,7 +529,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	ret = for_dentry_in_tree(root, maybe_apply_dentry, &args);
 	args.extract_flags &= ~WIMLIB_EXTRACT_FLAG_NO_STREAMS;
 	if (ret)
-		goto out_mark_inodes_unvisited;
+		goto out_dentry_reset_needs_extraction;
 
 	if (progress_func) {
 		progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END,
@@ -570,7 +540,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 		args.target_realpath = realpath(target, NULL);
 		if (!args.target_realpath) {
 			ret = WIMLIB_ERR_NOMEM;
-			goto out_mark_inodes_unvisited;
+			goto out_dentry_reset_needs_extraction;
 		}
 		args.target_realpath_len = tstrlen(args.target_realpath);
 	}
@@ -598,8 +568,8 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	}
 out_free_target_realpath:
 	FREE(args.target_realpath);
-out_mark_inodes_unvisited:
-	for_dentry_in_tree(root, dentry_mark_inode_unvisited, NULL);
+out_dentry_reset_needs_extraction:
+	for_dentry_in_tree(root, dentry_reset_needs_extraction, NULL);
 out_ntfs_umount:
 #ifdef WITH_NTFS_3G
 	/* Unmount the NTFS volume */
@@ -638,7 +608,7 @@ check_extract_command(struct wimlib_extract_command *cmd, int wim_header_flags)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 #ifdef __WIN32__
-	/* Wanted UNIX data on Win32? */
+	/* Wanted UNIX data on Windows? */
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
 		ERROR("Extracting UNIX data is not supported on Windows");
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -985,11 +955,10 @@ wimlib_extract_image(WIMStruct *wim,
 	}
 
 	if (image == WIMLIB_ALL_IMAGES) {
-		extract_flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
-		ret = extract_all_images(wim, target, extract_flags,
+		ret = extract_all_images(wim, target,
+					 extract_flags | WIMLIB_EXTRACT_FLAG_MULTI_IMAGE,
 					 progress_func);
 	} else {
-		extract_flags &= ~WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
 		ret = extract_single_image(wim, image, target, extract_flags,
 					   progress_func);
 	}

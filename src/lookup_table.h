@@ -232,7 +232,7 @@ struct wim_lookup_table_entry {
 			struct list_head msg_list;
 			struct list_head being_compressed_list;
 		};
-		struct list_head inode_list;
+		struct list_head lte_dentry_list;
 
 		struct {
 			struct hlist_node hash_list_2;

@@ -147,8 +147,8 @@ struct wim_dentry {
 	 * including the terminating null character. */
 	u32 full_path_nbytes;
 
-	/* Has this dentry been extracted yet? */
-	u8 is_extracted : 1;
+	/* Does this dentry need to be extracted? */
+	u8 needs_extraction : 1;
 
 	/* Only used during NTFS capture */
 	u8 is_win32_name : 1;
@@ -232,8 +232,6 @@ struct wim_inode {
 	/* %true iff verify_inode() has run on this inode. */
 	u8 i_verified : 1;
 
-	u8 i_visited : 1;
-
 	/* Used only in NTFS-mode extraction */
 	u8 i_dos_name_extracted : 1;
 
@@ -277,6 +275,9 @@ struct wim_inode {
 	/* Inode number */
 	u64 i_ino;
 
+	/* Device number, used only during image capture */
+	u64 i_devno;
+
 	/* List of dentries that reference this inode (there should be
 	 * link_count of them) */
 	struct list_head i_dentry;
@@ -284,15 +285,6 @@ struct wim_inode {
 	union {
 		struct hlist_node i_hlist;
 		struct list_head i_list;
-	};
-
-	union {
-		/* Used during image extraction to build a list of inodes that
-		 * share a certain stream */
-		struct list_head i_lte_inode_list;
-
-		/* Device number, used only during image capture */
-		u64 i_devno;
 	};
 
 	tchar *i_extracted_file;

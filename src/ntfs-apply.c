@@ -407,7 +407,7 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 	mode_t type;
 	ntfs_inode *ni = NULL;
 	struct wim_inode *inode = dentry->d_inode;
-	dentry->is_extracted = 1;
+	dentry->needs_extraction = 0;
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		type = S_IFDIR;
