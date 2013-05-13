@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "April 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "May 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-split \- Split a WIM into multiple parts
 

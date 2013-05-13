@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "April 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "May 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-mount, @IMAGEX_PROGNAME@-mountrw, @IMAGEX_PROGNAME@-unmount \- Mount and unmount an image from a WIM archive
 

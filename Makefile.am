@@ -6,7 +6,7 @@ AM_CFLAGS	= -std=gnu99 -fno-strict-aliasing
 
 lib_LTLIBRARIES = libwim.la
 
-libwim_la_LDFLAGS = -version-info 6:0:0 $(WINDOWS_LDFLAGS)
+libwim_la_LDFLAGS = -version-info 7:0:0 $(WINDOWS_LDFLAGS)
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
@@ -190,7 +190,7 @@ dist_check_SCRIPTS += tests/test-imagex-ntfs
 endif
 
 if WINDOWS_NATIVE_BUILD
-# TODO: The tests need to be re-written for Windows builds.
+# Tests are run manually for Windows builds.
 TESTS =
 else
 TESTS = $(dist_check_SCRIPTS)
