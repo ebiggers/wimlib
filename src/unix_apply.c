@@ -65,10 +65,10 @@ path_next_part(const char *path)
 }
 
 static int
-extract_regular_file_linked(struct wim_dentry *dentry,
-			    const char *output_path,
-			    struct apply_args *args,
-			    struct wim_lookup_table_entry *lte)
+unix_extract_regular_file_linked(struct wim_dentry *dentry,
+				 const char *output_path,
+				 struct apply_args *args,
+				 struct wim_lookup_table_entry *lte)
 {
 	/* This mode overrides the normal hard-link extraction and
 	 * instead either symlinks or hardlinks *all* identical files in
@@ -200,10 +200,10 @@ dir_apply_unix_data(const char *dir, const struct wimlib_unix_data *unix_data,
 }
 
 static int
-extract_regular_file_unlinked(struct wim_dentry *dentry,
-			      struct apply_args *args,
-			      const char *output_path,
-			      struct wim_lookup_table_entry *lte)
+unix_extract_regular_file_unlinked(struct wim_dentry *dentry,
+				   struct apply_args *args,
+				   const char *output_path,
+				   struct wim_lookup_table_entry *lte)
 {
 	/* Normal mode of extraction.  Regular files and hard links are
 	 * extracted in the way that they appear in the WIM. */
@@ -292,9 +292,9 @@ out:
 }
 
 static int
-extract_regular_file(struct wim_dentry *dentry,
-		     struct apply_args *args,
-		     const char *output_path)
+unix_extract_regular_file(struct wim_dentry *dentry,
+			  struct apply_args *args,
+			  const char *output_path)
 {
 	struct wim_lookup_table_entry *lte;
 	const struct wim_inode *inode = dentry->d_inode;
@@ -305,20 +305,22 @@ extract_regular_file(struct wim_dentry *dentry,
 					   WIMLIB_EXTRACT_FLAG_HARDLINK)))
 	{
 		if (lte->extracted_file) {
-			return extract_regular_file_linked(dentry, output_path, args, lte);
+			return unix_extract_regular_file_linked(dentry,
+								output_path,
+								args, lte);
 		} else {
 			lte->extracted_file = STRDUP(output_path);
 			if (!lte->extracted_file)
 				return WIMLIB_ERR_NOMEM;
 		}
 	}
-	return extract_regular_file_unlinked(dentry, args, output_path, lte);
+	return unix_extract_regular_file_unlinked(dentry, args, output_path, lte);
 }
 
 static int
-extract_symlink(struct wim_dentry *dentry,
-		struct apply_args *args,
-		const char *output_path)
+unix_extract_symlink(struct wim_dentry *dentry,
+		     struct apply_args *args,
+		     const char *output_path)
 {
 	char target[4096 + args->target_realpath_len];
 	char *fixed_target;
@@ -372,8 +374,8 @@ extract_symlink(struct wim_dentry *dentry,
 }
 
 static int
-extract_directory(struct wim_dentry *dentry, const tchar *output_path,
-		  int extract_flags)
+unix_extract_directory(struct wim_dentry *dentry, const tchar *output_path,
+		       int extract_flags)
 {
 	int ret;
 	struct stat stbuf;
@@ -425,11 +427,11 @@ unix_do_apply_dentry(const char *output_path, size_t output_path_len,
 	const struct wim_inode *inode = dentry->d_inode;
 
 	if (inode_is_symlink(inode))
-		return extract_symlink(dentry, args, output_path);
+		return unix_extract_symlink(dentry, args, output_path);
 	else if (inode_is_directory(inode))
-		return extract_directory(dentry, output_path, args->extract_flags);
+		return unix_extract_directory(dentry, output_path, args->extract_flags);
 	else
-		return extract_regular_file(dentry, args, output_path);
+		return unix_extract_regular_file(dentry, args, output_path);
 }
 
 int
