@@ -313,7 +313,9 @@ struct WIMStruct {
 	 * image_metadata array. */
 	int current_image;
 
+	/* Have any images been deleted? */
 	u8 deletion_occurred : 1;
+
 	u8 all_images_verified : 1;
 	u8 wim_locked : 1;
 };

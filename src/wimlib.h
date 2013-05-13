@@ -1358,17 +1358,17 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  *	The 1-based number of the image in @a wim from which the files or
  *	directory trees are to be extracted.  It cannot be ::WIMLIB_ALL_IMAGES.
  *
- * @param default_extract_flags
- *	Default extraction flags; the behavior shall be as if these flags had
- *	been specified in the ::wimlib_extract_command.extract_flags member in
- *	each extraction command, in combination with any flags already present.
- *
  * @param cmds
  *	An array of ::wimlib_extract_command structures that specifies the
  *	extractions to perform.
  *
  * @param num_cmds
  *	Number of commands in the @a cmds array.
+ *
+ * @param default_extract_flags
+ *	Default extraction flags; the behavior shall be as if these flags had
+ *	been specified in the ::wimlib_extract_command.extract_flags member in
+ *	each extraction command, in combination with any flags already present.
  *
  * @param additional_swms
  * 	Array of pointers to the ::WIMStruct for each additional part in the
@@ -1408,9 +1408,9 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
 extern int
 wimlib_extract_files(WIMStruct *wim,
 		     int image,
-		     int default_extract_flags,
 		     const struct wimlib_extract_command *cmds,
 		     size_t num_cmds,
+		     int default_extract_flags,
 		     WIMStruct **additional_swms,
 		     unsigned num_additional_swms,
 		     wimlib_progress_func_t progress_func);

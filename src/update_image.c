@@ -403,20 +403,25 @@ execute_rename_command(WIMStruct *wim,
 	ret = rename_wim_path(wim, rename_cmd->rename.wim_source_path,
 			      rename_cmd->rename.wim_target_path);
 	if (ret) {
+		ret = -ret;
+		errno = ret;
+		ERROR_WITH_ERRNO("Can't rename \"%"TS"\" to \"%"TS"\"",
+				 rename_cmd->rename.wim_source_path,
+				 rename_cmd->rename.wim_target_path);
 		switch (ret) {
-		case -ENOMEM:
+		case ENOMEM:
 			ret = WIMLIB_ERR_NOMEM;
 			break;
-		case -ENOTDIR:
+		case ENOTDIR:
 			ret = WIMLIB_ERR_NOTDIR;
 			break;
-		case -ENOTEMPTY:
+		case ENOTEMPTY:
 			ret = WIMLIB_ERR_NOTEMPTY;
 			break;
-		case -EISDIR:
+		case EISDIR:
 			ret = WIMLIB_ERR_IS_DIRECTORY;
 			break;
-		case -ENOENT:
+		case ENOENT:
 		default:
 			ret = WIMLIB_ERR_PATH_DOES_NOT_EXIST;
 			break;
@@ -436,7 +441,7 @@ update_op_to_str(int op)
 	case WIMLIB_UPDATE_OP_RENAME:
 		return T("rename");
 	default:
-		return T("???");
+		wimlib_assert(0);
 	}
 }
 
@@ -456,15 +461,12 @@ execute_update_commands(WIMStruct *wim,
 			break;
 		case WIMLIB_UPDATE_OP_DELETE:
 			ret = execute_delete_command(wim, &cmds[i]);
-			if (ret == 0)
-				wim->deletion_occurred = 1;
 			break;
 		case WIMLIB_UPDATE_OP_RENAME:
 			ret = execute_rename_command(wim, &cmds[i]);
 			break;
 		default:
 			wimlib_assert(0);
-			break;
 		}
 		if (ret)
 			break;
@@ -593,8 +595,6 @@ free_update_commands(struct wimlib_update_command *cmds, size_t num_cmds)
 				FREE(cmds[i].rename.wim_source_path);
 				FREE(cmds[i].rename.wim_target_path);
 				break;
-			default:
-				wimlib_assert(0);
 			}
 		}
 		FREE(cmds);

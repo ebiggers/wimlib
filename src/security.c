@@ -501,7 +501,7 @@ insert_sd_node(struct sd_set *set, struct sd_node *new)
 		else if (cmp > 0)
 			p = &((*p)->rb_right);
 		else
-			return false; /* Duplicate SHA1 message digest */
+			return false; /* Duplicate security descriptor */
 	}
 	rb_link_node(&new->rb_node, rb_parent, p);
 	rb_insert_color(&new->rb_node, root);
@@ -596,6 +596,9 @@ out:
 	return -1;
 }
 
+/* Initialize a `struct sd_set' mapping from SHA1 message digests of security
+ * descriptors to indices into the security descriptors table of the WIM image
+ * (security IDs).  */
 int
 init_sd_set(struct sd_set *sd_set, struct wim_security_data *sd)
 {
@@ -603,6 +606,9 @@ init_sd_set(struct sd_set *sd_set, struct wim_security_data *sd)
 
 	sd_set->sd = sd;
 	sd_set->rb_root.rb_node = NULL;
+
+	/* Remember the original number of security descriptors so that newly
+	 * added ones can be rolled back if needed. */
 	sd_set->orig_num_entries = sd->num_entries;
 	for (int32_t i = 0; i < sd->num_entries; i++) {
 		struct sd_node *new;

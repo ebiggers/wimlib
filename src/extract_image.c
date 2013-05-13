@@ -736,9 +736,9 @@ do_wimlib_extract_files(WIMStruct *wim,
 WIMLIBAPI int
 wimlib_extract_files(WIMStruct *wim,
 		     int image,
-		     int default_extract_flags,
 		     const struct wimlib_extract_command *cmds,
 		     size_t num_cmds,
+		     int default_extract_flags,
 		     WIMStruct **additional_swms,
 		     unsigned num_additional_swms,
 		     wimlib_progress_func_t progress_func)

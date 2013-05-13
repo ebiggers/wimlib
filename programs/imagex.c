@@ -342,9 +342,16 @@ static const struct option update_options[] = {
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
+
+	/* Default delete options */
 	{T("force"),       no_argument,       NULL, IMAGEX_FORCE_OPTION},
 	{T("recursive"),   no_argument,       NULL, IMAGEX_RECURSIVE_OPTION},
+
+	/* Global add option */
 	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
+
+	/* Default add options */
+	{T("verbose"),     no_argument,       NULL, IMAGEX_VERBOSE_OPTION},
 	{T("dereference"), no_argument,       NULL, IMAGEX_DEREFERENCE_OPTION},
 	{T("unix-data"),   no_argument,       NULL, IMAGEX_UNIX_DATA_OPTION},
 	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
@@ -1233,7 +1240,9 @@ update_command_add_option(int op, const tchar *option,
 	bool recognized = true;
 	switch (op) {
 	case WIMLIB_UPDATE_OP_ADD:
-		if (!tstrcmp(option, T("--unix-data")))
+		if (!tstrcmp(option, T("--verbose")))
+			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
+		else if (!tstrcmp(option, T("--unix-data")))
 			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA;
 		else if (!tstrcmp(option, T("--no-acls")) || !tstrcmp(option, T("--noacls")))
 			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_NO_ACLS;
@@ -1252,7 +1261,7 @@ update_command_add_option(int op, const tchar *option,
 		else
 			recognized = false;
 		break;
-	case WIMLIB_UPDATE_OP_RENAME:
+	default:
 		recognized = false;
 		break;
 	}
@@ -1347,8 +1356,8 @@ parse_update_command(tchar *line, size_t len,
 			if (!update_command_add_option(op, next_string, command))
 			{
 				imagex_error(T("Unrecognized option \"%"TS"\" to "
-					       "update command on line %zu"),
-					     next_string, line_number);
+					       "update command \"%"TS"\" on line %zu"),
+					     next_string, command_name, line_number);
 
 				return false;
 			}
@@ -2248,7 +2257,7 @@ imagex_extract(int argc, tchar **argv)
 	win32_acquire_restore_privileges();
 #endif
 
-	ret = wimlib_extract_files(wim, image, 0, cmds, num_cmds,
+	ret = wimlib_extract_files(wim, image, cmds, num_cmds, 0,
 				   additional_swms, num_additional_swms,
 				   imagex_progress_func);
 	if (ret == 0) {
@@ -2902,7 +2911,7 @@ imagex_update(int argc, tchar **argv)
 	WIMStruct *wim;
 	int ret;
 	int open_flags = 0;
-	int write_flags = WIMLIB_WRITE_FLAG_SOFT_DELETE;
+	int write_flags = 0;
 	int update_flags = 0;
 	int default_add_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
 	int default_delete_flags = 0;
@@ -2919,6 +2928,7 @@ imagex_update(int argc, tchar **argv)
 
 	for_opt(c, update_options) {
 		switch (c) {
+		/* Generic or write options */
 		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);
 			if (num_threads == UINT_MAX) {
@@ -2933,14 +2943,23 @@ imagex_update(int argc, tchar **argv)
 		case IMAGEX_REBUILD_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
 			break;
+
+		/* Default delete options */
 		case IMAGEX_FORCE_OPTION:
 			default_delete_flags |= WIMLIB_DELETE_FLAG_FORCE;
 			break;
 		case IMAGEX_RECURSIVE_OPTION:
 			default_delete_flags |= WIMLIB_DELETE_FLAG_RECURSIVE;
 			break;
+
+		/* Global add option */
 		case IMAGEX_CONFIG_OPTION:
 			config_file = optarg;
+			break;
+
+		/* Default add options */
+		case IMAGEX_VERBOSE_OPTION:
+			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
 			break;
 		case IMAGEX_DEREFERENCE_OPTION:
 			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
