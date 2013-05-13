@@ -56,6 +56,9 @@
  * wimlib_set_print_errors().  Please note that this is for convenience only,
  * and some errors can occur without a message being printed.
  *
+ * First before calling any other functions, you should call
+ * wimlib_global_init() to initialize the library.
+ *
  * To open an existing WIM, use wimlib_open_wim().
  *
  * To create a new WIM that initially contains no images, use
@@ -96,6 +99,9 @@
  *
  * After you are done with the WIM file, use wimlib_free() to free all memory
  * associated with a ::WIMStruct and close all files associated with it.
+ *
+ * When you are completely done with using wimlib in your program, you should
+ * call wimlib_global_cleanup().
  *
  * A number of functions take a pointer to a progress function of type
  * ::wimlib_progress_func_t.  This function will be called periodically during
@@ -1461,10 +1467,14 @@ wimlib_extract_image(WIMStruct *wim, int image,
  * 	@c stdout, or a FILE* opened for writing, to extract the data to.
  *
  * @return 0 on success; nonzero on error.
- * @retval ::WIMLIB_ERR_WRITE
- * 	Failed to completely write the XML data to @a fp.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	@a wim is not a ::WIMStruct that was created by wimlib_open_wim().
+ * @retval ::WIMLIB_ERR_NOMEM
+ * 	Failed to allocate needed memory.
+ * @retval ::WIMLIB_ERR_READ
+ * 	Failed to read the XML data from the WIM.
+ * @retval ::WIMLIB_ERR_WRITE
+ * 	Failed to completely write the XML data to @a fp.
  */
 extern int
 wimlib_extract_xml_data(WIMStruct *wim, FILE *fp);
@@ -1606,24 +1616,15 @@ extern int
 wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret);
 
 /**
- * Since wimlib 1.2.6:  Initialization function for wimlib.  This is not
- * re-entrant.  If you are calling wimlib functions concurrently in different
- * threads, then you must call this function serially first.
- *
- * Since wimlib 1.3.0, you must call this function if the character encoding of
- * the current locale is not UTF-8 and you do not want wimlib to assume a UTF-8
- * encoding.
- *
- * Since wimlib 1.3.2, you must call this function if using the Windows-native
- * build of the library so that certain functions can be dynamically loaded from
- * system DLLs.
- *
- * Since wimlib 1.3.3, this function takes the @a init_flags parameter.
+ * Initialization function for wimlib.  Call before using any other wimlib
+ * function.
  *
  * @param init_flags
- * 	::WIMLIB_INIT_FLAG_ASSUME_UTF8 if wimlib should assume that all input
- * 	data, including filenames, are in UTF-8, and that UTF-8 data can be
- * 	directly printed to the console.
+ * 	On UNIX, specify ::WIMLIB_INIT_FLAG_ASSUME_UTF8 if wimlib should assume
+ * 	that all input data, including filenames, are in UTF-8 rather than the
+ * 	locale-dependent character encoding which may or may not be UTF-8, and
+ * 	that UTF-8 data can be directly printed to the console.  On Windows, use
+ * 	0 for this parameter.
  *
  * @return 0; other error codes may be returned in future releases.
  */
@@ -1766,8 +1767,10 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 /**
  * Mounts an image in a WIM file on a directory read-only or read-write.
  *
+ * This is not supported on Windows.
+ *
  * Unless ::WIMLIB_MOUNT_FLAG_DEBUG is specified or an early error occurs, the
- * process shall be daemonized.
+ * process will be daemonized.
  *
  * If the mount is read-write (::WIMLIB_MOUNT_FLAG_READWRITE specified),
  * modifications to the WIM are staged in a temporary directory.
@@ -1860,6 +1863,10 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
  * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
  * 	The WIM is a split WIM and a read-write mount was requested.  We only
  * 	support mounting a split WIM read-only.
+ * @retval ::WIMLIB_ERR_UNSUPPORTED
+ * 	Mounting is not supported, either because the platform is Windows, or
+ * 	because the platform is UNIX and wimlib was compiled with @c
+ * 	--without-fuse.
  */
 extern int
 wimlib_mount_image(WIMStruct *wim,
@@ -1969,18 +1976,18 @@ wimlib_open_wim(const wimlib_tchar *wim_file,
  * being renamed to the original WIM.
  *
  * The second way to overwrite a WIM is by appending to the end of it and
- * overwriting the header.  This can be much faster than a full rebuild, but it
- * only works if the only operations on the WIM have been to change the header
- * and/or XML data, or to add new images.  Writing a WIM in this mode begins
- * with writing any new file resources *after* everything in the old WIM, even
- * though this will leave a hole where the old lookup table, XML data, and
+ * overwriting the header.  This can be much faster than a full rebuild, but the
+ * disadvantage is that some space will be wasted.  Writing a WIM in this mode
+ * begins with writing any new file resources *after* everything in the old WIM,
+ * even though this will leave a hole where the old lookup table, XML data, and
  * integrity were.  This is done so that the WIM remains valid even if the
  * operation is aborted mid-write.  The WIM header is only overwritten at the
  * very last moment, and up until that point the WIM will be seen as the old
  * version.
  *
- * By default, the overwrite mode is determine automatically based on the past
- * operations performed on the ::WIMStruct.  Use the flag
+ * By default, wimlib_overwrite() does the append-style overwrite described
+ * above, unless resources in the WIM are arranged in an unusual way or if
+ * images have been deleted from the WIM.  Use the flag
  * ::WIMLIB_WRITE_FLAG_REBUILD to explicitly request a full rebuild, and use the
  * ::WIMLIB_WRITE_FLAG_SOFT_DELETE to request the in-place overwrite even if
  * images have been deleted from the WIM.
@@ -1992,9 +1999,9 @@ wimlib_open_wim(const wimlib_tchar *wim_file,
  * and while abnormal termination of the program will result in extra data
  * appended to the original WIM, it should still be a valid WIM.
  *
- * If this function completes successfully, no functions should be called on @a
- * wim other than wimlib_free().  You must use wimlib_open_wim() to read the WIM
- * file anew.
+ * If this function completes successfully, no more functions should be called
+ * on @a wim other than wimlib_free().  You must use wimlib_open_wim() to read
+ * the WIM file anew.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for the WIM file to write.  There may have
@@ -2430,6 +2437,10 @@ wimlib_split(WIMStruct *wim,
  * @retval ::WIMLIB_ERR_RENAME
  * 	The filesystem daemon failed to rename the newly written WIM file to the
  * 	original WIM file.
+ * @retval ::WIMLIB_ERR_UNSUPPORTED
+ * 	Mounting is not supported, either because the platform is Windows, or
+ * 	because the platform is UNIX and wimlib was compiled with @c
+ * 	--without-fuse.
  * @retval ::WIMLIB_ERR_WRITE
  * 	A write error occurred when the filesystem daemon was writing to the new
  * 	WIM file, or the filesystem daemon was unable to flush changes that had
@@ -2500,7 +2511,8 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  * @retval ::WIMLIB_ERR_NOTDIR
  *	A rename command attempted to rename a directory to a non-directory; or,
  *	an add command was executed that attempted to set the root of the WIM
- *	image as a non-directory.
+ *	image as a non-directory; or, a path component used as a directory in a
+ *	rename command was not, in fact, a directory.
  * @retval ::WIMLIB_ERR_NOTEMPTY
  *	A rename command attempted to rename a directory to a non-empty
  *	directory.
@@ -2510,12 +2522,11 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  * @retval ::WIMLIB_ERR_OPEN
  *	Failed to open a file to be captured while executing an add command.
  * @retval ::WIMLIB_ERR_OPENDIR
- *	Failed to open a file to be captured while executing an add command.
+ *	Failed to open a directory to be captured while executing an add command.
  * @retval ::WIMLIB_ERR_PATH_DOES_NOT_EXIST
  *	A delete command without ::WIMLIB_DELETE_FLAG_FORCE specified was for a
- *	WIM path that did not exist; or, a component of the path of the source
- *	or destination of a rename command was used as a directory but was not,
- *	in fact, a directory.
+ *	WIM path that did not exist; or, a rename command attempted to rename a
+ *	file that does not exist.
  * @retval ::WIMLIB_ERR_READ
  *	Failed to read the metadata resource for @a image in @a wim; or, while
  *	executing an add command, failed to read data from a file or directory
