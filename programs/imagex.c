@@ -2115,18 +2115,19 @@ free_extract_commands(struct wimlib_extract_command *cmds, size_t num_cmds,
 }
 
 static struct wimlib_extract_command *
-prepare_extract_commands(tchar **argv, int argc, int extract_flags,
-			 tchar *dest_dir, size_t *num_cmds_ret)
+prepare_extract_commands(tchar **paths, unsigned num_paths,
+			 int extract_flags, tchar *dest_dir,
+			 size_t *num_cmds_ret)
 {
 	struct wimlib_extract_command *cmds;
 	size_t num_cmds;
 	tchar *emptystr = T("");
 
-	if (argc == 0) {
-		argc = 1;
-		argv = &emptystr;
+	if (num_paths == 0) {
+		num_paths = 1;
+		paths = &emptystr;
 	}
-	num_cmds = argc;
+	num_cmds = num_paths;
 	cmds = calloc(num_cmds, sizeof(cmds[0]));
 	if (!cmds) {
 		imagex_error(T("Out of memory!"));
@@ -2135,18 +2136,18 @@ prepare_extract_commands(tchar **argv, int argc, int extract_flags,
 
 	for (size_t i = 0; i < num_cmds; i++) {
 		cmds[i].extract_flags = extract_flags;
-		cmds[i].wim_source_path = argv[i];
-		if (is_root_wim_path(argv[i])) {
+		cmds[i].wim_source_path = paths[i];
+		if (is_root_wim_path(paths[i])) {
 			cmds[i].fs_dest_path = dest_dir;
 		} else {
-			size_t len = tstrlen(dest_dir) + 1 + tstrlen(argv[i]);
+			size_t len = tstrlen(dest_dir) + 1 + tstrlen(paths[i]);
 			cmds[i].fs_dest_path = malloc((len + 1) * sizeof(tchar));
 			if (!cmds[i].fs_dest_path) {
 				free_extract_commands(cmds, num_cmds, dest_dir);
 				return NULL;
 			}
 			tsprintf(cmds[i].fs_dest_path, T("%"TS"/%"TS), dest_dir,
-				 tbasename(argv[i]));
+				 tbasename(paths[i]));
 		}
 	}
 	*num_cmds_ret = num_cmds;
@@ -2202,19 +2203,15 @@ imagex_extract(int argc, tchar **argv)
 			imagex_be_quiet = true;
 			break;
 		default:
-			usage(EXTRACT);
-			ret = -1;
-			goto out;
+			goto out_usage;
 		}
 	}
 	argc -= optind;
 	argv += optind;
 
-	if (argc < 2) {
-		usage(EXTRACT);
-		ret = -1;
-		goto out;
-	}
+	if (argc < 2)
+		goto out_usage;
+
 	wimfile = argv[0];
 	image_num_or_name = argv[1];
 
@@ -2276,6 +2273,10 @@ out_free_cmds:
 	free_extract_commands(cmds, num_cmds, dest_dir);
 out:
 	return ret;
+out_usage:
+	usage(EXTRACT);
+	ret = -1;
+	goto out;
 }
 
 /* Prints information about a WIM file; also can mark an image as bootable,
