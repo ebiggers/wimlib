@@ -1,17 +1,13 @@
 .TH IMAGEX "1" "May 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-join \- Join split WIMs into a standalone one-part WIM
-
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ join\fR [\fIOPTION\fR...] \fIOUT_WIMFILE\fR \fISPLIT_WIM\fR...
-
 .SH DESCRIPTION
-.PP
 Joins the \fISPLIT_WIMs\fR into a standalone one-part WIM \fIOUT_WIMFILE\fR.
-
+.PP
 All parts of the split WIM  must be specified.  You probably want to do so using
 a shell wildcard.
-
 .SH OPTIONS
 .TP 6
 \fB--check\fR
@@ -19,7 +15,6 @@ When reading each \fISPLIT_WIM\fR, verify its integrity if the integrity table i
 present; additionally, when writing \fIOUT_WIMFILE\fR,
 write an integrity table.  If this option is not specified, no integrity table
 is included in the new WIM file, even if there was one before.
-
 .SH EXAMPLES
 Join a split WIM, with the parts named `windows*.swm' where the * is anything
 (usually the number of the part, except for the first part which may have no
@@ -28,16 +23,12 @@ number), and write the joined WIM to the file `windows.wim'.
 .PP
 @IMAGEX_PROGNAME@ join windows.wim windows*.swm
 .RE
-
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ join\fR is roughly equivalent to:
 .RS
 .PP
 \fB@IMAGEX_PROGNAME@ export\fR \fISWM_PART_1\fR --ref="\fISWM_GLOB\fR" [--check] all \fIOUT_WIMFILE\fR
 .RE
-.PP
-
-
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
 .BR @IMAGEX_PROGNAME@-export (1)

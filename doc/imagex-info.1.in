@@ -2,33 +2,27 @@
 .SH NAME
 @IMAGEX_PROGNAME@-info \- Display information about a WIM file, or change information about
 an image
-
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ info\fR \fIWIMFILE\fR [\fIIMAGE\fR [\fINEW_NAME\fR
 [\fINEW_DESC\fR]]] [\fIOPTION\fR...]
-
-
 .SH DESCRIPTION
-.PP
-
 \fB@IMAGEX_PROGNAME@ info\fR displays information about \fIWIMFILE\fR, and optionally
 changes which image is bootable, or what the name and description of an image
 are.
-
+.PP
 If neither an image nor any flags other than \fB--check\fR are specified, some
 basic information about the WIM archive as well as information about the images
 contained in it will be printed.  If an image is specified by \fIIMAGE\fR (as a
 1-based image index or an image name), the printed information is restricted to
 that concerning the specified image.
-
+.PP
 Changes to the WIM are made if \fINEW_NAME\fR and/or \fB--boot\fR are specified.
 \fINEW_NAME\fR is taken to be the new name of the image specified by \fIIMAGE\fR
 while \fINEW_DESC\fR is taken to be its new description.  If \fINEW_DESC\fR is
 not specified, the image's description is unchanged.
-
+.PP
 \fB@IMAGEX_PROGNAME@ info\fR does not support modifying a split WIM, although you may
 display information about one.
-
 .SH OPTIONS
 .TP 6
 \fB--boot\fR
@@ -64,4 +58,3 @@ Prints the raw XML data from the WIM.  Note: the XML data will be encoded using
 UTF-16LE, and it will begin with a byte-order mark.
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
-

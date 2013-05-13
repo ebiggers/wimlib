@@ -1,19 +1,15 @@
 .TH IMAGEX "1" "May 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-optimize \- Optimize a WIM archive
-
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ optimize\fR \fIWIMFILE\fR [--check] [--recompress]
-
 .SH DESCRIPTION
-.PP
 \fB@IMAGEX_PROGNAME@ optimize\fR will rebuild the stand-alone WIM \fIWIMFILE\fR.  The new
 WIM is written to a temporary file, and it is renamed to the original file when
 it's ready.  This action will remove any holes that have been left as a result
 of appending images, so the new WIM may be slightly smaller than the old WIM.
 In addition, some errors in the original WIM may be fixed by re-writing it
 (although most cannot).
-
 .SH OPTIONS
 .TP 6
 \fB--check\fR
@@ -29,7 +25,7 @@ uncompressed, but it may result in a better compression ratio if wimlib can do a
 better job than the program that wrote the original file.  A side effect of this
 is that every stream in the original WIM will be checksummed, so this can help
 verify that the WIM is intact (equivalent to applying all the images from it).
-
+.IP ""
 Note: as mentioned in the README, wimlib generally provides a slightly better
 XPRESS compression ratio than Microsoft's software, while it generally provides
 a slightly worse LZX compression ratio than Microsoft's software.  So, you may
@@ -40,19 +36,15 @@ created on Windows with Microsoft's ImageX.
 Number of threads to use for compressing data.  Default: autodetect (number of
 processors).  This parameter is only meaningful when \fB--recompress\fR is also
 specified.
-
 .SH NOTES
-
 \fB@IMAGEX_PROGNAME@ optimize\fR does not support split WIMs.
-
+.PP
 \fB@IMAGEX_PROGNAME@ optimize\fR is roughly equivalent to:
 .RS
 .PP
 \fB@IMAGEX_PROGNAME@ export\fR \fIWIMFILE\fR all tmp.wim [--check] && mv tmp.wim \fIWIMFILE\fR
 .RE
 .PP
-
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
 .BR @IMAGEX_PROGNAME@-export (1)
-

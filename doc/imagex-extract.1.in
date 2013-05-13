@@ -1,59 +1,50 @@
 .TH IMAGEX "1" "May 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-extract \- Extract files or directories from a WIM image
-
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ extract\fR \fIWIMFILE\fR \fIIMAGE\fR [\fIPATH\fR...]  [\fIOPTION\fR...]
-
 .SH DESCRIPTION
-.PP
-
 \fB@IMAGEX_PROGNAME@ extract\fR extracts one or more files or directory trees
 from the specified \fIIMAGE\fR contained in the Windows Imaging (WIM) file
 \fIWIMFILE\fR.
-
+.PP
 \fB@IMAGEX_PROGNAME@ extract\fR is intended for extracting only a subset of a
 WIM image.  If you want to extract or "apply" a full WIM image to a directory or
 NTFS volume, use \fB@IMAGEX_PROGNAME@ apply\fR (1) instead.
-
+.PP
 \fIIMAGE\fR specifies the image in \fIWIMFILE\fR that contains the files or
 directory trees to extract.  It may be a 1-based index of an image in the WIM or
 the name of an image in the WIM.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1)
 command to show what images a WIM file contains.
-
+.PP
 Each \fIPATH\fR specifies a file or directory tree within the WIM image to
 extract.  See \fBPATH_SPECIFICATIONS\fR.
-
+.PP
 By default, files and directories are extracted to the current directory.  Use
 \fB--dest-dir\fR to choose an alternate target directory.  Alternatively, use
 \fB--to-stdout\fR to extract a file to standard output to pipe into another
 program.
-
+.PP
 \fB@IMAGEX_PROGNAME@ extract\fR supports extracting files and directory trees
 from stand-alone WIMs as well as split WIMs.  See \fBSPLIT WIMS\fR.
-
 .SH PATH SPECIFICATIONS
-
 Each \fIPATH\fR specifies a file or directory tree within the WIM image to
 extract.  Each path must be specified as an absolute path starting from the root
 of the WIM image, like those output by the \fB@IMAGEX_PROGNAME@ dir\fR (1)
 command.  Path separators may be forward slashes on UNIX, or either forward
 slashes or backward slashes on Windows.  The leading slash is optional.
-
+.PP
 If no \fIPATH\fRs are provided, the default behavior is to extract the full
 image, as if the path "/" had been provided.
-
 .SH SPLIT WIMS
-
 You may use \fB@IMAGEX_PROGNAME@ extract\fR to extract files or directory trees
 from a split WIM.  This uses the \fB--refs\fR="\fIGLOB\fR" option in the same
 way as in other commands such as \fB@IMAGEX_PROGNAME@ apply\fR.  See
 \fB@IMAGEX_PROGNAME@ apply\fR (1) for more details.
-
 .SH OPTIONS
 .TP 6
 \fB--check\fR
-When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
+When reading \fIWIMFILE\fR, verify its integrity if an integrity table is
 present.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
@@ -61,7 +52,7 @@ File glob of additional split WIM parts that are part of the split WIM.  See
 \fBSPLIT_WIMS\fR.
 .TP
 \fB--verbose\fR
-Print the path to of each file or directory within the WIM image as it is
+Print the path of each file or directory within the WIM image as it is
 extracted.
 .TP
 \fB--unix-data\fR
@@ -82,23 +73,20 @@ extracted.
 \fB--dest-dir\fR=\fIDIR\fR
 Extract the files and directories to the directory \fIDIR\fR instead of to the
 current working directory.
-
 .SH NOTES
-
 See the documentation \fB@IMAGEX_PROGNAME@ apply\fR (1) for documentation about
 what data and metadata are extracted on UNIX versus on Windows.
-
+.PP
 On UNIX, one can alternatively mount the WIM image with \fB@IMAGEX_PROGNAME@
 mount\fR and then extract the desired files or directories using any standard
 command-line or graphical program.
-
+.PP
 Reparse-point fixups (a.k.a. changing absolute symbolic links and junctions to
 point within the extraction location) are never done by \fB@IMAGEX_PROGNAME@
 extract\fR.  Use \fB@IMAGEX_PROGNAME@ apply\fR if you want this behavior.
-
+.PP
 Unlike \fB@IMAGEX_PROGNAME@ apply\fR, \fB@IMAGEX_PROGNAME@ extract\fR does not
 support extracting files directly to a NTFS volume using libntfs-3g.
-
 .SH EXAMPLES
 Extract a file from the first image in "boot.wim" to the current directory:
 .RS
@@ -131,7 +119,6 @@ Extract multiple files and directories in one command:
 @IMAGEX_PROGNAME@ extract boot.wim 1 /Windows/Fonts /sources /Windows/System32/cmd.exe
 .RE
 .PP
-
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
 .BR @IMAGEX_PROGNAME@-apply (1)

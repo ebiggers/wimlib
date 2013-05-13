@@ -1,43 +1,37 @@
 .TH IMAGEX "1" "May 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-apply \- Extract one image, or all images, from a WIM archive
-
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ apply\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fITARGET\fR [\fIOPTION\fR...]
-
 .SH DESCRIPTION
-.PP
-
 \fB@IMAGEX_PROGNAME@ apply\fR extracts an image, or all images, from the Windows
 Imaging (WIM) file \fIWIMFILE\fR.
-
+.PP
 This command is designed to extract, or "apply", one or more full WIM images.
 If you instead want to extract only certain files or directories contained in a
 WIM image, consider using \fB@IMAGEX_PROGNAME@ extract\fR or
 \fB@IMAGEX_PROGNAME@ mount\fR instead.
-
+.PP
 \fIIMAGE\fR specifies the WIM image to extract.  It may be a 1-based index of an
 image in the WIM, the name of an image in the WIM, or the keyword "all" to
 indicate that all images are to be extracted.  Use the \fB@IMAGEX_PROGNAME@
 info\fR (1) command to show what images a WIM file contains.  \fIIMAGE\fR may be
 omitted if \fIWIMFILE\fR contains only one image.
-
+.PP
 \fITARGET\fR specifies where to extract the WIM image(s) to.  If \fITARGET\fR
 specifies a directory, the WIM image(s) are extracted to that directory.  If
 \fITARGET\fR specifies a non-existent file, a directory is created in that
 location and the WIM image(s) are extracted to that directory.  Alternatively,
 on UNIX only, if \fITARGET\fR specifies a regular file or block device, it is
 interpreted as an NTFS volume to which the WIM image is to be extracted.
-
+.PP
 \fB@IMAGEX_PROGNAME@ apply\fR supports applying images from stand-alone WIMs as
 well as split WIMs.  See \fBSPLIT WIMS\fR.
-
 .SH NORMAL MODE (UNIX)
-
 This section documents how files are extracted on UNIX from the WIM image to a
 directory.  See \fBWINDOWS VERSION\fR for the corresponding documentation for
 the Windows version.
-
+.PP
 On UNIX, the "normal" extraction mode is entered when \fITARGET\fR is a
 directory or non-existent file.  If a single WIM image is being extracted, it is
 extracted with the root directory of the image corresponding to the directory
@@ -45,10 +39,9 @@ named by \fITARGET\fR; or, if the keyword \fBall\fR is given, the images are
 extracted into subdirectories of \fITARGET\fR that are be named after the image
 names, falling back to the image index for an image with no name.  \fITARGET\fR
 can specify a directory on any type of filesystem.
-
+.PP
 In the "normal" mode of extraction on UNIX, the following information is
 extracted from the WIM image(s):
-
 .IP \[bu] 4
 The default (unnamed) data stream of each file
 .IP \[bu]
@@ -61,11 +54,9 @@ and C library
 Symbolic links and junction points.  Drive letters will be stripped.
 (Note: see \fB--rpfix\fR and \fB--norpfix\fR for documentation on how absolute
 symbolic links and junctions are applied.)
-
 .PP
 However, in the "normal" mode of extraction on UNIX, the following information
 will \fInot\fR be extracted from the WIM image(s):
-
 .IP \[bu] 4
 Security descriptors (file permissions) except through the extensions available
 through the \fB--unix-data\fR option
@@ -77,35 +68,32 @@ Reparse points other than symbolic links and junction points
 Certain file attributes such as compression, encryption, and sparseness.
 .IP \[bu]
 Short (DOS) names for files
-
 .SH NTFS MODE (UNIX)
-
 This section documents how files are extracted directly to an NTFS volume image
 on UNIX.  See \fBWINDOWS VERSION\fR for the corresponding documentation for the
 Windows version.
-
+.PP
 On UNIX, a special extraction mode is entered when \fITARGET\fR is a regular
 file or block device.  If this is the case, \fITARGET\fR is interpreted as an
 NTFS volume and opened using libntfs-3g.  If successful, the WIM image is
 extracted to the root of the NTFS volume in a special mode that preserves all
 information contained in the WIM image.  \fIIMAGE\fR may not be "all" for this
 action.
-
+.PP
 The NTFS volume does not need to be empty, although it's expected that it be
 empty for the intended use cases.  A new NTFS filesystem can be created using
 the \fBmkntfs\fR (8) command.
-
+.PP
 The NTFS extraction mode is not available if wimlib was compiled using the
 \fB--without-ntfs-3g\fR option.
-
+.PP
 Please note that the NTFS extraction mode is \fInot\fR entered if \fITARGET\fR
 is a directory, even if an NTFS filesystem is mounted on \fITARGET\fR.  You must
 specify the NTFS volume itself (and it must be unmounted, and you must have
 permission to write to it).
-
+.PP
 In the NTFS extraction mode on UNIX, the following information will be extracted
 from the WIM image:
-
 .IP \[bu] 4
 The data streams of all files, including the un-named data stream as well as all
 named data streams.
@@ -126,7 +114,6 @@ File attribute flags are applied.
 Short (DOS) names for files are extracted.  The corresponding long name for each
 DOS name is made to be a Win32 name.  Any additional names for the file in the
 same directory are made to be names in the POSIX namespace.
-
 .PP
 However, the extraction of encrypted files is not supported in this mode.
 .PP
@@ -140,7 +127,6 @@ media for Windows Vista, Windows 7, and Windows 8 in the "sources" directory.
 But in order to actually boot Windows from an applied image, you must understand
 the boot process of Windows versions Vista and later.  Basically, it is the
 following:
-
 .nr step 1 1
 .IP \n[step]. 3
 The Master Boot Record loads the Volume Boot Record (also called the Boot
@@ -155,15 +141,13 @@ partition".
 Based on the information contained in the Boot Configuration Data, a loader for
 the Windows kernel is executed from the "Boot" partition, which is where Windows
 is installed.
-
 .PP
-
 So let's say you applied an image from an existing "install.wim" as in the
 example, or you've applied a custom Windows image that you've created using the
 \fB@IMAGEX_PROGNAME@ capture\fR (1) command.  You've just applied the "Boot" partition, or
 the main Windows partition, but there is no "System" partition yet (i.e.  no
 \\BOOTMGR and no \\Boot\\BCD).
-
+.PP
 A "System" partition can be created created by running the "bcdboot.exe" program
 from within Windows or Windows PE.  Alternatively, you can capture a separate
 WIM image containing the "System" partition.  Or, the "System" partition may the
@@ -172,54 +156,19 @@ image.  However, as the \\Boot\\BCD file contains the Windows bootloader
 configuration, a WIM containing it can only be used on systems where you are
 setting up the same bootloader configuration, including the same partition
 layout.
-
+.PP
 Besides setting up the files on the "System" partition, don't forget to set the
 bootable flag on it, and have a master boot record that loads the bootable
 partition (Windows' MBR does, and SYSLINUX provides an equivalent MBR).
-
-.SH SPLIT WIMS
-
-You may use \fB@IMAGEX_PROGNAME@ apply\fR to apply images from a split WIM.  The
-\fIWIMFILE\fR argument is used to specify the first part of the split WIM, and
-the \fB--refs\fR="\fIGLOB\fR" option is used to provide a shell-style file glob
-that specifies the additional parts of the split WIM.  \fIGLOB\fR is expected to
-be a single string on the command line, so \fIGLOB\fR must be quoted so that it
-is protected against shell expansion.  \fIGLOB\fR must expand to all parts of
-the split WIM, except optionally the first part which may either omitted or
-included in the glob (but the first part MUST be specified as \fIWIMFILE\fR as
-well).
-
-Here's an example.  The names for the split WIMs usually go something like:
-
-.RS
-.PP
-.nf
-mywim.swm
-mywim2.swm
-mywim3.swm
-mywim4.swm
-mywim5.swm
-.RE
-.nf
-
-To apply the first image of this split WIM to the directory "dir", run:
-.PP
-.RS
-@IMAGEX_PROGNAME@ apply mywim.swm 1 dir --ref="mywim*.swm"
-.RE
-.PP
-
 .SH WINDOWS VERSION
-
 The Windows version of \fB@IMAGEX_PROGNAME@ apply\fR acts similarly to the
 corresponding command of Microsoft's ImageX.  For best results, the target
 directory should be on an NTFS volume and you should be running with
 Administrator privileges; however, non-NTFS filesystems and running without
 Administrator privileges are also supported.
-
+.PP
 On Windows, \fB@IMAGEX_PROGNAME@ apply\fR tries to extract as much data as
 possible.  This includes:
-
 .IP \[bu] 4
 All data streams of all files.  This includes the default file contents, as well
 as named data streams if supported by the filesystem.
@@ -243,13 +192,40 @@ DOS names (8.3) names of files; however, the failure to set them is not
 considered an error condition.
 .IP \[bu]
 Hard links, if supported by the filesystem.
-
 .PP
 Note: encrypted files will be extracted as raw encrypted data if the filesystem
 does not support encryption.  Compressed files and directories (with the
 compression attribute set) will be extracted as uncompressed if the filesystem
 does not support transparent compression.
-
+.SH SPLIT WIMS
+You may use \fB@IMAGEX_PROGNAME@ apply\fR to apply images from a split WIM.  The
+\fIWIMFILE\fR argument is used to specify the first part of the split WIM, and
+the \fB--refs\fR="\fIGLOB\fR" option is used to provide a shell-style file glob
+that specifies the additional parts of the split WIM.  \fIGLOB\fR is expected to
+be a single string on the command line, so \fIGLOB\fR must be quoted so that it
+is protected against shell expansion.  \fIGLOB\fR must expand to all parts of
+the split WIM, except optionally the first part which may either omitted or
+included in the glob (but the first part MUST be specified as \fIWIMFILE\fR as
+well).
+.PP
+Here's an example.  The names for the split WIMs usually go something like:
+.RS
+.PP
+.nf
+mywim.swm
+mywim2.swm
+mywim3.swm
+mywim4.swm
+mywim5.swm
+.RE
+.nf
+.PP
+To apply the first image of this split WIM to the directory "dir", run:
+.PP
+.RS
+@IMAGEX_PROGNAME@ apply mywim.swm 1 dir --ref="mywim*.swm"
+.RE
+.PP
 .SH OPTIONS
 .TP 6
 \fB--check\fR
@@ -268,10 +244,10 @@ absolute targets relative to the image root, and therefore have the actual root
 of extraction prepended to their targets.  The intention is that you can apply
 an image containing absolute symbolic links and still have them be valid after
 it has been applied to any location.
-
+.IP "" 6
 The default behavior is \fB--rpfix\fR if any images in \fIWIMFILE\fR have been
 captured with reparse-point fixups done.  Otherwise, it is \fB--norpfix\fR.
-
+.IP "" 6
 Reparse point fixups are never done in the NTFS extraction mode on UNIX.
 .TP
 \fB--verbose\fR
@@ -313,9 +289,7 @@ with the SACL omitted, then only the default inherited security descriptor, if
 we do not have permission to set the desired one.  On UNIX: with
 \fB--unix-data\fR, fail immediately if the UNIX owner, group, or file mode on an
 extracted file cannot be set for any reason.
-
 .SH NOTES
-
 \fB@IMAGEX_PROGNAME@ apply\fR calculates the SHA1 message digest of every file stream it
 extracts and verifies that it is the same as the SHA1 message digest provided in
 the WIM file.  It is an error if the message digests don't match.  It's also
@@ -326,10 +300,9 @@ Microsoft's ImageX does.  Please note that this is separate from the integrity
 table of the WIM, which provides SHA1 message digests over raw chunks of the
 entire WIM file and is checked separately if the \fB--check\fR option is
 specified.
-
+.PP
 You cannot use \fB@IMAGEX_PROGNAME@ apply\fR to apply a WIM from a pipe (such as standard
 input) because the WIM file format is not designed for this.
-
 .SH EXAMPLES
 .SS Applying a WIM image to a directory (both UNIX and Windows)
 Extract the first image from the Windows PE image from the Windows Vista/7/8
@@ -360,8 +333,6 @@ if you want to erase everything on that partition.)
 .PP
 mkntfs /dev/sda2 && @IMAGEX_PROGNAME@ apply /media/windows/sources/install.wim 1 /dev/sda2
 .RE
-.PP
-
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
 .BR @IMAGEX_PROGNAME@-extract (1)

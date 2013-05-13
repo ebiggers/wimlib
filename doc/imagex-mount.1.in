@@ -1,37 +1,31 @@
 .TH IMAGEX "1" "May 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-mount, @IMAGEX_PROGNAME@-mountrw, @IMAGEX_PROGNAME@-unmount \- Mount and unmount an image from a WIM archive
-
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ mount\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fIDIRECTORY\fR [\fIOPTION\fR...]
 .br
 \fB@IMAGEX_PROGNAME@ mountrw\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fIDIRECTORY\fR [\fIOPTION\fR...]
 .br
 \fB@IMAGEX_PROGNAME@ unmount\fR \fIDIRECTORY\fR [--commit] [--check] [--rebuild]
-
 .SH DESCRIPTION
+The \fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR commands
+will mount the image in the Windows Imaging (WIM) file \fIWIMFILE\fR specified
+by \fIIMAGE\fR on the directory \fIDIRECTORY\fR using FUSE (Filesystem in
+Userspace).  \fB@IMAGEX_PROGNAME@ mount\fR will mount the image read-only, while
+\fB@IMAGEX_PROGNAME@ mountrw\fR will mount the image read-write.
 .PP
-The \fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR commands will mount the image in
-the Windows Imaging (WIM) file \fIWIMFILE\fR specified by \fIIMAGE\fR on the
-directory \fIDIRECTORY\fR using FUSE (Filesystem in Userspace).  \fB@IMAGEX_PROGNAME@
-mount\fR will mount the image read-only, while \fB@IMAGEX_PROGNAME@ mountrw\fR will mount
-the image read-write.
-
 \fIIMAGE\fR may be a 1-based index of the image in the WIM to mount, or it may
 be the name of an image in the WIM.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1)
 command to see the available images in the WIM.  \fIIMAGE\fR may be omitted if
 \fIWIMFILE\fR contains only one image.
-
-
+.PP
 The WIM image can be unmounted using the \fB@IMAGEX_PROGNAME@ unmount\fR command.  Changes
 made to a WIM mounted read-write will be discarded unless the \fB--commit\fR
 flag is provided to \fB@IMAGEX_PROGNAME@ unmount\fR.
-
 .SH SPLIT WIMS
-
 You may use \fB@IMAGEX_PROGNAME@ mount\fR to mount an image from a split WIM read-only.
 However, you may not mount an image from a split WIM read-write.
-
+.PP
 The \fIWIMFILE\fR argument is used to specify the first part of the split WIM, and
 the \fB--refs\fR="\fIGLOB\fR" option is used to provide a shell-style file glob
 that specifies the additional parts of the split WIM.  \fIGLOB\fR is expected to
@@ -40,9 +34,8 @@ is protected against shell expansion.  \fIGLOB\fR must expand to all parts of
 the split WIM, except optionally the first part which may either omitted or
 included in the glob (but the first part MUST be specified as \fIWIMFILE\fR as
 well).
-
+.PP
 Here's an example.  The names for the split WIMs usually go something like:
-
 .RS
 .PP
 .nf
@@ -52,23 +45,22 @@ mywim3.swm
 mywim4.swm
 mywim5.swm
 .RE
-
+.PP
 To mount the first image of this split WIM to the directory "dir", we would do:
 .PP
 .RS
 @IMAGEX_PROGNAME@ mount mywim.swm 1 dir --ref="mywim*.swm"
 .RE
 .PP
-
 .SH NOTES
-
-If wimlib was configured using the \fB--without-fuse\fR flag, then the \fB@IMAGEX_PROGNAME@
-mount\fR, \fB@IMAGEX_PROGNAME@ mountrw\fR, and \fB@IMAGEX_PROGNAME@ unmount\fR commands will not work.
-Also, these commands are not available in the Windows builds of wimlib.
-
+If wimlib was configured using the \fB--without-fuse\fR flag, then the
+\fB@IMAGEX_PROGNAME@ mount\fR, \fB@IMAGEX_PROGNAME@ mountrw\fR, and
+\fB@IMAGEX_PROGNAME@ unmount\fR commands will not work.  Also, these commands
+are not available in the Windows builds of wimlib.
+.PP
 You can mount multiple images from a WIM file read-only at the same time, but
 you can only mount one image at a time from a WIM read-write.
-
+.PP
 All files in the mounted WIM will be accessible regardless of whether there is a
 security descriptor in the WIM associated with the file or not.  New files or
 directories created in a read-write mounted WIM will be created with no security
@@ -76,17 +68,15 @@ descriptor.  Although there is support for accessing named data streams (see the
 \fB--streams-interface\fR option), it is currently not possible
 to set or get DOS names, file attributes, or security
 descriptors in a mounted WIM.
-
+.PP
 By default, changes to a read-write WIM are made in-place by appending to the
 WIM.  This is nice for big WIM files, since the entire file doesn't have to be
 rebuilt to make a small change.  But, if you are making many changes to a
 read-write mounted WIM, especially deleting large files, it is suggested to
 provide the \fB--rebuild\fR option to \fB@IMAGEX_PROGNAME@ unmount\fR to force the WIM to
 be rebuilt, or else run \fB@IMAGEX_PROGNAME@ optimize\fR on the WIM afterwards.
-
 .SH MOUNT OPTIONS
-
-.TP
+.TP 6
 \fB--check\fR
 When reading the WIM, verify its integrity if it contains an integrity table.
 .TP
@@ -94,19 +84,19 @@ When reading the WIM, verify its integrity if it contains an integrity table.
 This option is inspired by the ntfs-3g filesystem driver (see \fBntfs-3g\fR
 (8)).  It controls how alternate data streams, or named data streams, in WIM
 files are made available.
-
+.IP ""
 If "none", it will be impossible to read or write the named data streams.
-
+.IP ""
 If "xattr" (default), named data streams will be accessible through extended
 file attributes, unless this support was disabled when compiling wimlib.  The
 named data streams may be accessed through extended attributes named "user.*",
 where the * is the name of the named data stream.  See \fBsetfattr\fR (1) and
 \fBgetfattr\fR (1).
-
+.IP ""
 If "windows", the named data streams will be accessible by specifying the
 filename, then a colon, then the name of the named data stream; for example,
 "myfile:mystream".
-
+.IP ""
 Please note that named data streams are a somewhat obscure NTFS feature that
 aren't actually used much, even though they complicate the WIM file format
 considerably.  Normally, all you care about is the default or "unnamed" data
@@ -142,9 +132,7 @@ tools and functions.
 Pass the \fBallow_other\fR option to the FUSE mount.  See \fBmount.fuse\fR (8).
 Note: to do this is a non-root user, \fBuser_allow_other\fR needs to be
 specified in /etc/fuse.conf (with the FUSE implementation on Linux, at least).
-
 .SH UNMOUNT OPTIONS
-
 .TP
 \fB--commit\fR
 Update the WIM file with the changes that have been made.  Has no effect if the
@@ -161,9 +149,7 @@ otherwise be left as a hole in the WIM.  Even more space will be saved if the
 read-write mount resulted in streams being deleted from the WIM.  Also see
 \fB@IMAGEX_PROGNAME@ optimize\fR.  Has no effect if the mount is read-only or if
 \fB--commit\fR was not specified.
-
 .SH IMPLEMENTATION DETAILS
-
 Since a WIM is an archive and not a filesystem, \fB@IMAGEX_PROGNAME@ mountrw\fR creates a
 temporary staging directory to contain files that are created or modified.  This
 directory is located in the same directory as \fIWIMFILE\fR by default, but the
@@ -171,14 +157,12 @@ location can be set using the \fB--staging-dir\fR option.  When the filesystem
 is unmounted with \fB--commit\fR, the WIM is modified in-place (or rebuild
 completely with \fB--rebuild\fR), merging in the staging files as needed.  Then,
 the temporary staging directory is deleted.
-
+.PP
 \fB@IMAGEX_PROGNAME@ unmount\fR runs in a separate process from the process that previously
 ran \fB@IMAGEX_PROGNAME@ mount\fR, and these two processes communicate using POSIX message
 queues.  See \fIsrc/mount_image.c\fR in the sources for details.  Note: As of
 wimlib v1.2.1, \fB@IMAGEX_PROGNAME@ unmount\fR correctly fails with an error within a
 reasonable amount of time (1 second) if the filesystem daemon is abnormally
 terminated.
-
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
-
