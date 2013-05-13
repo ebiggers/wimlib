@@ -84,24 +84,29 @@ WIM integrity table is supported (\fB--check\fR option to many commands)
 .IP \[bu]
 WIM XML data (parsed and written using \fBlibxml\fR(3))
 .SH DIFFERENCES FROM MICROSOFT IMAGEX
-While similar to Microsoft's "imagex.exe" program, this program is designed for
-UNIX-based systems and by the nature of the platform cannot be exactly the same
-as Microsoft's version.  In addition, I have added additional useful features
-when appropriate.
-.IP \[bu] 4
-Because Microsoft designed the WIM file format to accomodate Windows-specific
-and NTFS-specific features, wimlib must have two separate image capture and
-application modes (although the \fB@IMAGEX_PROGNAME@\fR subcommands for the modes are the
-same): one for general image capture and application, and one for the capture or
-application of an image specifically from/to an NTFS volume.
+Although \fB@IMAGEX_PROGNAME@\fR is similar to Microsoft's implementation of
+ImageX, there are a number of key differences between the two programs:
+.IP \[bu] 6
+\fB@IMAGEX_PROGNAME@\fR is supported on both UNIX-based systems and Windows;
+thus, much functionality was designed around this.
+.IP \[bu]
+The command-line syntax of the two programs is similar but not exactly the same.
+.IP \[bu]
+On UNIX, because Microsoft designed the WIM file format to accomodate
+Windows-specific and NTFS-specific features, wimlib must have two separate image
+capture and application modes (although the \fB@IMAGEX_PROGNAME@\fR subcommands
+for the modes are the same): one for general image capture and application, and
+one for the capture or application of an image specifically from/to an NTFS
+volume.
 .IP ""
-Note: the above applies to UNIX builds.  On the Windows builds of wimlib, there
-is only one image capture and application mode, similar to Microsoft's ImageX.
+Note: the above applies to UNIX builds of \fB@IMAGEX_PROGNAME@\fR.  On the
+Windows build, there is only one image capture and application mode, similar to
+Microsoft's ImageX.
 .IP \[bu]
 Microsoft's version has some weird limitations, like it won't let you extract a
 WIM on a shared folder, and it requires some commands to be run only from
-Windows PE and not from regular Windows.  This version does not have these
-unusual limitations.
+Windows PE and not from regular Windows.  \fB@IMAGEX_PROGNAME@\fR does not have
+these unusual limitations.
 .IP \[bu]
 There are bugs in Microsoft's WIM library and I obviously have not included the
 same bugs in wimlib, although in some cases I have had to work around bugs for
@@ -128,6 +133,8 @@ and files together in a configurable way to create a WIM image.
 .IP \[bu]
 wimlib's XPRESS compressor is better than Microsoft's.
 .IP \[bu]
+wimlib's LZX compressor is worse than Microsoft's.
+.IP \[bu]
 wimlib supports multithreaded compression, which can make it much faster to
 create compressed WIM files.
 .IP \[bu]
@@ -144,8 +151,8 @@ is only available in UNIX builds.)
 Microsoft's software does not.  (Note: this functionality is only available in
 UNIX builds.)
 .SH LOCALES AND CHARACTER ENCODINGS
-On Windows, wimlib 1.3.2 and later works in UTF-16LE, and there should be no
-problems with character encodings.
+On Windows, wimlib works in UTF-16LE, and there should be no problems with
+character encodings.
 .PP
 On UNIX, wimlib works primarily in the locale-dependent multibyte encoding,
 which you are strongly recommended to set to UTF-8 to avoid any problems.
