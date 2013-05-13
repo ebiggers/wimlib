@@ -1,72 +1,70 @@
-				   INTRODUCTION
 
-wimlib 1.3.0 has added experimental support for Windows builds.  The support has
-been further improved in later versions.  The Windows build consists of both the
-"wimlib" library (which can be built as a DLL) and the "wimlib-imagex"
-executable.
+                                 INTRODUCTION
 
-The Windows build of wimlib uses native Win32 calls when appropriate to handle
-alternate data streams, security descriptors, reparse points, encrypted files,
-compressed files, and sparse files.
+wimlib is free and open source software that is available on both UNIX and
+Windows.  This file provides additional information specifically about the
+Windows version of wimlib and the command line tool "wimlib-imagex" that is
+distributed with it.  It does not obsolete the generic README.txt, which you
+should read too.
 
-Mounting WIM files is not supported on Windows.  Also please note that wimlib's
-"wimlib-imagex" is NOT intended to be command-line compatible with Microsoft's
-"imagex", and wimlib is NOT intended to be API compatible with Microsoft's
-WIMGAPI.  They are similar, though.
+                              WINDOWS DISTRIBUTION
 
-				 NOTES ABOUT IMAGEX
+For the convenience of Windows users, the Windows distribution of wimlib is a
+ZIP file containing the following items:
 
-"wimlib-imagex capture", "wimlib-imagex append", and "wimlib-imagex apply" will
-work on Windows and have the added advantage of saving and restoring
-NTFS-specific data, such as alternate data streams, security descriptors, and
-reparse points.
+  * wimlib-imagex.exe, a command-line tool to deal with WIM (.wim) files that is
+    similar to Microsoft's ImageX.  This is a ready-to-run executable and not an
+    installer.
 
-"wimlib-imagex delete", "wimlib-imagex dir", "wimlib-imagex export",
-"wimlib-imagex info", "wimlib-imagex join", "wimlib-imagex optimize", and
-"wimlib-imagex split" are all portable and should work the same way on Windows
-as on UNIX.
+  * The documentation, including this file, the generic README.txt, and
+    PDF documentation for wimlib-imagex in the 'doc' directory.
 
-"wimlib-imagex mount", "wimlib-imagex mountrw", and "wimlib-imagex unmount" will
-NOT work on Windows.
+  * Various DLL (.dll) files, including the wimlib library itself, which are of
+    little concern to you if you are not a developer.
 
-So on Windows, why would you want to use wimlib's ImageX instead of Microsoft's?
-Well, here are a few reasons:
+  * License files for all software included.  These are all free software
+    licenses.
 
-- wimlib offers fast multithreaded compression, so making WIM images can be much
-  faster.
+                                  WIMLIB-IMAGEX
 
-- Whenever possible I have included improved documentation and informational
-  output compared to Microsoft's software.
+wimlib-imagex is intended to provide a usable Windows-native equivalent to
+Microsoft's ImageX.  The main limitations of wimlib-imagex compared to
+Microsoft's ImageX are the following:
 
-- wimlib can correctly save and restore some combinations of data that
-  Microsoft's ImageX runs into bugs on --- for example, uncompressed files in
-  compressed directories, or files with alternate data streams and multiple
-  links.
+  * Mounting WIM files is not supported on Windows.
 
-- wimlib is free software, so you can modify and/or audit the source code.
+  * The LZX ("maximum") compression ratio is several percent worse that
+    Microsoft's implementation.
 
-See the man page for 'wimlib-imagex' for more information.
+However, wimlib-imagex provides a number of advantages compared to Microsoft's
+ImageX:
 
-				 BUILDING ON WINDOWS
+  * wimlib-imagex provides "extract" and "update" commands that can be used to
+    work around the lack of mount support.  These commands are very fast
+    compared to mounting and unmounting images with Microsoft's ImageX, so you
+    may prefer them anyway.
 
-Actually doing the Windows build is a bit tricky, and I'd recommend you download
-precompiled binaries from http://sourceforge.net/projects/wimlib/files/ instead.
-I did it using MinGW-w64 on a Linux host, with the following configuration
-command:
+  * wimlib-imagex offers fast multithreaded compression, so making WIM images
+    can be much faster.
 
-$ ./configure --host=i686-w64-mingw32
+  * wimlib-imagex provides a better XPRESS ("fast", or default compression)
+    compression ratio than Microsoft's ImageX.
 
-after having installed the required libraries:
+  * wimlib-imagex provides an easy-to-use "optimize" command to remove wasted
+    space from WIM files.
 
-* mingw-w64-gettext
-* mingw-w64-libiconv
-* mingw-w64-libxml2
-* mingw-w64-winpthreads
-* mingw-w64-zlib
+  * Whenever possible I have included improved documentation and informational
+    output compared to Microsoft's software.
 
-Note: zlib and gettext are only necessary when required by the build of libxml2.
+  * wimlib can correctly save and restore some combinations of data that
+    Microsoft's ImageX runs into bugs on --- for example, uncompressed files in
+    compressed directories, or files with alternate data streams and multiple
+    hard links.
 
-Building wimlib using Cygwin is not supported.  I was trying this for a while,
-but I ran into some issues with mixing native Win32 functions and
-Cygwin-provided functions, so I made it possible to do a native Win32 build
-instead.
+  * wimlib is free software, so you can modify and/or audit the source code.
+
+                                ADDITIONAL NOTES
+
+Currently there is no graphical user interface available for wimlib or
+wimlib-imagex and I do not plan to make one.  It's recommended to use
+wimlib-imagex in scripts to avoid having to interactively enter commands.
