@@ -31,107 +31,30 @@
  *
  * \section intro Introduction
  *
- * This is the documentation for the library interface of wimlib 1.4.0.  If you
- * have installed wimlib and want to know how to use the @b wimlib-imagex
- * program, please see the man pages instead.  Also: the actual project page
- * where you can download the source code for the library is at <a
- * href="https://sourceforge.net/projects/wimlib">https://sourceforge.net/projects/wimlib</a>.
- *
- * wimlib is a C library to read, write, and mount archive files in the Windows
- * Imaging Format (WIM files).  These files are normally created using the
- * ImageX (@a imagex.exe) utility on Windows, but this library provides a free
- * implementation of ImageX for UNIX-based systems (and, since v1.3.0, for
- * Windows systems) and an API to allow other programs to read, write, and mount
- * WIM files.  wimlib is comparable to Microsoft's WIMGAPI, but was designed
- * independently and is not a clone of it.
- *
- * \section format WIM files
- *
- * A <b>Windows Imaging (WIM)</b> file is an archive.  Like some other archive
- * formats such as ZIP, files in WIM archives may be compressed.  WIM archives
- * support two Microsoft-specific compression formats:  @b LZX and @b XPRESS.
- * Both are based on LZ77 and Huffman encoding, and both are supported by
- * wimlib.
- *
- * Unlike ZIP files, WIM files can contain multiple independent toplevel
- * directory trees known as @a images.  While each image has its own metadata,
- * files are not duplicated for each image; instead, each file is included only
- * once in the entire WIM. Microsoft did this so that in one WIM file, they
- * could do things like have 5 different versions of Windows that are almost
- * exactly the same.
- *
- * Microsoft provides documentation for the WIM file format, XPRESS compression
- * format, and LZX compression format.  The XPRESS documentation is acceptable,
- * but the LZX documentation is not entirely correct, and the WIM documentation
- * itself is incomplete.
- *
- * A WIM file may be either stand-alone or split into multiple parts.
- *
- * \section ntfs NTFS support
- *
- * As of version 1.0.0, wimlib supports capturing and applying images directly
- * to NTFS volumes.  This was made possible with the help of libntfs-3g from the
- * NTFS-3g project.  This feature supports capturing and restoring NTFS-specific
- * data such as security descriptors, alternate data streams, and reparse point
- * data.
-
- * The code for NTFS image capture and image application is complete enough that
- * it is possible to apply an image from the "install.wim" contained in recent
- * Windows installation media (Vista, Windows 7, or Windows 8) directly to a
- * NTFS volume, and then boot Windows from it after preparing the Boot
- * Configuration Data.  In addition, a Windows installation can be captured (or
- * backed up) into a WIM file, and then re-applied later.
- *
- * wimlib v1.3.0 and later also supports NTFS capture and apply in the native
- * Windows build, which works slightly differently and relies on native Win32
- * API calls rather than libntfs-3g.
- *
- * \section winpe Windows PE
- *
- * A major use for this library is to create customized images of Windows PE, the
- * Windows Preinstallation Environment, without having to rely on Windows.  Windows
- * PE is a lightweight version of Windows that can run entirely from memory and can
- * be used to install Windows from local media or a network drive or perform
- * maintenance.  Windows PE is the operating system that runs when you boot from
- * the Windows installation media.
- *
- * You can find Windows PE on the installation DVD for Windows Vista, Windows 7,
- * or Windows 8, in the file @c sources/boot.wim.  Windows PE can also be found
- * in the Windows Automated Installation Kit (WAIK), which is free to download
- * from Microsoft, inside the @c WinPE.cab file, which you can extract if you
- * install either the @c cabextract or @c p7zip programs.
- *
- * In addition, Windows installations and recovery partitions frequently contain a
- * WIM containing an image of the Windows Recovery Environment, which is similar to
- * Windows PE.
+ * This is the documentation for the library interface of wimlib 1.4.0, a C
+ * library for creating, modifying, extracting, and mounting files in the
+ * Windows Imaging Format.  This documentation is intended for developers only.
+ * If you have installed wimlib and want to know how to use the @b wimlib-imagex
+ * program, please see the README file.
  *
  * \section starting Getting Started
  *
- * wimlib uses the GNU autotools, so it should be easy to install with
- * <code>configure && make && sudo make install</code>; however, please see the
- * README for more information about installing it.  To use wimlib in a program
- * after installing it, include @c wimlib.h and link your program with @c -lwim.
+ * wimlib uses the GNU autotools, so, on UNIX systems, it should be easy to
+ * install with <code>configure && make && sudo make install</code>; however,
+ * please see the README for more information about installing it.  To use
+ * wimlib in a program after installing it, include @c wimlib.h and link your
+ * program with @c -lwim.
  *
  * wimlib wraps up a WIM file in an opaque ::WIMStruct structure.  A ::WIMStruct
  * may represent either a stand-alone WIM or one part of a split WIM.
  *
  * All functions in wimlib's public API are prefixed with @c wimlib.  Most
- * return an integer error code on failure.  Use wimlib_get_error_string() to
- * get a string that describes an error code.  wimlib also can print error
- * messages itself when an error happens, and these may be more informative than
- * the error code; to enable this, call wimlib_set_print_errors().  Please note
- * that this is for convenience only, and some errors can occur without a
- * message being printed.
- *
- * wimlib is thread-safe as long as different ::WIMStruct's are used, except for
- * the following exceptions:
- * - wimlib_set_print_errors() and wimlib_set_memory_allocator() both apply globally.
- * - You also must call wimlib_global_init() in the main thread to avoid any
- *   race conditions with one-time allocations of memory.
- * - wimlib_mount_image(), while it can be used to mount multiple WIMs
- *   concurrently in the same process, will daemonize the entire process when it
- *   does so for the first time.  This includes changing the working directory
- *   to the root directory.
+ * return 0 on success and a positive error code on failure.  Use
+ * wimlib_get_error_string() to get a string that describes an error code.
+ * wimlib also can print error messages itself when an error happens, and these
+ * may be more informative than the error code; to enable this, call
+ * wimlib_set_print_errors().  Please note that this is for convenience only,
+ * and some errors can occur without a message being printed.
  *
  * To open an existing WIM, use wimlib_open_wim().
  *
@@ -140,18 +63,22 @@
  *
  * To add an image to a WIM file from a directory tree on your filesystem, call
  * wimlib_add_image().  This can be done with a ::WIMStruct gotten from
- * wimlib_open_wim() or from wimlib_create_new_wim().  wimlib_add_image() can
- * also capture a WIM image directly from a NTFS volume if you provide the
- * ::WIMLIB_ADD_FLAG_NTFS flag, provided that wimlib was not compiled with
- * the <code>--without-ntfs-3g</code> flag.
+ * wimlib_open_wim() or from wimlib_create_new_wim().  On UNIX,
+ * wimlib_add_image() can also capture a WIM image directly from a block device
+ * containing a NTFS filesystem.
  *
- * To extract an image from a WIM file, call wimlib_extract_image().  You may
- * extract an image either to a directory or directly to a NTFS volume, the
- * latter of which will preserve NTFS-specific data such as security
- * descriptors.
+ * To extract an image from a WIM file, call wimlib_extract_image().  This can
+ * be done either to a directory, or, on UNIX, directly to a block device
+ * containing a NTFS filesystem.
  *
- * wimlib supports mounting WIM files either read-only or read-write.  Mounting
- * is done using wimlib_mount_image() and unmounting is done using
+ * To extract individual files or directories from a WIM image, rather than a
+ * full image, call wimlib_extract_files().
+ *
+ * To programatically make changes to a WIM image without mounting it, call
+ * wimlib_update_image().
+ *
+ * On UNIX, wimlib supports mounting WIM files either read-only or read-write.
+ * Mounting is done using wimlib_mount_image() and unmounting is done using
  * wimlib_unmount_image().  Mounting can be done without root privileges because
  * it is implemented using FUSE (Filesystem in Userspace).  If wimlib is
  * compiled with the <code>--without-fuse</code> flag, these functions will be
@@ -175,18 +102,16 @@
  * the WIM operation(s) to report on the progress of the operation (for example,
  * how many bytes have been written so far).
  *
- * \section imagex wimlib-imagex
- *
- * wimlib comes with a command-line interface, the @b wimlib-imagex program.  It
- * is documented with man pages.  This program was originally just called @b
- * imagex, but has been changed to @b wimlib-imagex to avoid confusion with
- * Microsoft's @a imagex.exe (which would otherwise have exactly the same
- * filename on Windows).
- *
- * \section mkwinpeimg mkwinpeimg
- *
- * wimlib also comes with the <b>mkwinpeimg</b> script, which is documented in a
- * man page.
+ * wimlib is thread-safe as long as different ::WIMStruct's are used, except for
+ * the following exceptions:
+ * - You must call wimlib_global_init() in one thread before calling any other
+ *   functions.
+ * - wimlib_set_print_errors() and wimlib_set_memory_allocator() both apply globally.
+ *   race conditions with one-time allocations of memory.
+ * - wimlib_mount_image(), while it can be used to mount multiple WIMs
+ *   concurrently in the same process, will daemonize the entire process when it
+ *   does so for the first time.  This includes changing the working directory
+ *   to the root directory.
  *
  * \section encodings Locales and character encodings
  *
@@ -197,45 +122,25 @@
  * and the encoding is UTF-16LE.
  *
  * On UNIX, each ::wimlib_tchar is 1 byte and is simply a "char", and the
-* encoding is the locale-dependent multibyte encoding.  I recommend you set your
-* locale to a UTF-8 capable locale to avoid any issues.  Also, by default,
-	* wimlib on UNIX will assume the locale is UTF-8 capable unless you call
-* wimlib_global_init() after having set your desired locale.
+ * encoding is the locale-dependent multibyte encoding.  I recommend you set
+ * your locale to a UTF-8 capable locale to avoid any issues.  Also, by default,
+ * wimlib on UNIX will assume the locale is UTF-8 capable unless you call
+ * wimlib_global_init() after having set your desired locale.
  *
  * \section Limitations
  *
- * While wimlib supports the main features of WIM files, wimlib currently has
- * the following limitations:
- * - There is no way to add, remove, modify, or extract specific files in a WIM
- *   without mounting it, other than by adding, removing, or extracting an
- *   entire image.  The FUSE mount feature should be used for this purpose.
- * - Currently, Microsoft's @a image.exe can create slightly smaller WIM files
- *   than wimlib (~2% or 3% smaller) when using maximum (LZX) compression.
- * - wimlib is experimental and likely contains bugs; use Microsoft's @a
- *   imagex.exe if you want to make sure your WIM files are made "correctly".
+ * This section documents some technical limitations of wimlib not already
+ * documented in the man page for @b wimlib-imagex.
+ *
  * - The old WIM format from Vista pre-releases is not supported.
- * - Compressed resource chunk sizes other than 32768 are not supported,
- *   although this doesn't seem to be a problem because the chunk size always
- *   seems to be this value.
- * - wimlib does not provide a clone of the @b PEImg tool that allows you to
- *   make certain Windows-specific modifications to a Windows PE image, such as
- *   adding a driver or Windows component.  Such a tool could conceivably be
- *   implemented on top of wimlib, although it likely would be hard to implement
- *   because it would have to do very Windows-specific things such as
- *   manipulating the driver store.  wimlib does provide the @b mkwinpeimg
- *   script for a similar purpose, however.  With regards to adding drivers to
- *   Windows PE, you have the option of putting them anywhere in the Windows PE
- *   image, then loading them after boot using @b drvload.exe.
- * - Although wimlib 1.3.0 and later can be used on Windows as well as UNIX, the
- *   Windows build has some limitations compared to the UNIX build.
- *   (The differences are documented better in the man pages for
- *   @b wimlib-imagex than here.)
- *
- * \section legal License
- *
- * The wimlib library, as well as the programs and scripts distributed with it
- * (@b wimlib-imagex and @b mkwinpeimg), is licensed under the GNU General
- * Public License version 3 or later.
+ * - Compressed resource chunk sizes other than 32768 are not supported.  This
+ *   doesn't seem to be a real problem because the chunk size always seems to be
+ *   this value.
+ * - wimlib does not provide a clone of the @b PEImg tool, or the @b Dism
+ *   functionality other than that already present in @b ImageX, that allows you
+ *   to make certain Windows-specific modifications to a Windows PE image, such
+ *   as adding a driver or Windows component.  Such a tool possibly could be
+ *   implemented on top of wimlib.
  */
 
 #ifndef _WIMLIB_H
