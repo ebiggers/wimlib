@@ -78,6 +78,10 @@ Extract the files to standard output instead of to the filesystem.  This can
 only be provided if all the specified \fIPATH\fRs are to regular files (not
 directories or reparse points).  If present, alternate data streams are not
 extracted.
+.TP
+\fB--dest-dir\fR=\fIDIR\fR
+Extract the files and directories to the directory \fIDIR\fR instead of to the
+current working directory.
 
 .SH NOTES
 
