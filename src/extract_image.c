@@ -897,7 +897,9 @@ static bool
 image_name_ok_as_dir(const tchar *image_name)
 {
 	return image_name && *image_name &&
-		!tstrpbrk(image_name, filename_forbidden_chars);
+		!tstrpbrk(image_name, filename_forbidden_chars) &&
+		tstrcmp(image_name, T(".")) &&
+		tstrcmp(image_name, T(".."));
 }
 
 /* Extracts all images from the WIM to the directory @target, with the images
