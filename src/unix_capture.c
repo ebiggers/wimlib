@@ -30,8 +30,9 @@
 
 #include <dirent.h>
 #include <errno.h>
-#include <unistd.h>
+#include <limits.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 static int
 unix_capture_regular_file(const char *path,
