@@ -724,17 +724,9 @@ win32_finish_extract_stream(HANDLE h, const struct wim_dentry *dentry,
 		}
 
 		if (dentry_has_short_name(dentry))
-			short_name = dentry->short_name;
-		else
-			short_name = L"";
-		/* Set short name */
-		if (!SetFileShortNameW(h, short_name)) {
-		#if 0
-			DWORD err = GetLastError();
-			ERROR("Could not set short name on \"%ls\"", stream_path);
-			win32_error(err);
-		#endif
-		}
+			SetFileShortNameW(h, short_name);
+		else if (running_on_windows_7_or_later())
+			SetFileShortNameW(h, L"");
 	} else {
 		/* Extract the data for a named data stream. */
 		if (lte != NULL) {
@@ -1042,37 +1034,83 @@ out:
 	return ret;
 }
 
+static int
+dentry_clear_inode_visited(struct wim_dentry *dentry, void *_ignore)
+{
+	dentry->d_inode->i_visited = 0;
+	return 0;
+}
+
+static int
+dentry_get_features(struct wim_dentry *dentry, void *_features_p)
+{
+	DWORD features = 0;
+	DWORD *features_p = _features_p;
+	struct wim_inode *inode = dentry->d_inode;
+
+	if (inode->i_visited) {
+		features |= FILE_SUPPORTS_HARD_LINKS;
+	} else {
+		inode->i_visited = 1;
+		if (inode->i_attributes & FILE_ATTRIBUTE_SPARSE_FILE)
+			features |= FILE_SUPPORTS_SPARSE_FILES;
+		if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+			features |= FILE_SUPPORTS_REPARSE_POINTS;
+		for (unsigned i = 0; i < inode->i_num_ads; i++)
+			if (inode->i_ads_entries[i].stream_name_nbytes)
+				features |= FILE_NAMED_STREAMS;
+		if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)
+			features |= FILE_SUPPORTS_ENCRYPTION;
+		if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED)
+			features |= FILE_FILE_COMPRESSION;
+		if (inode->i_security_id != -1)
+			features |= FILE_PERSISTENT_ACLS;
+	}
+	*features_p |= features;
+	return 0;
+}
+
 /* If not done already, load the supported feature flags for the volume onto
  * which the image is being extracted, and warn the user about any missing
  * features that could be important. */
 static int
-win32_check_vol_flags(const wchar_t *output_path, struct apply_args *args)
+win32_check_vol_flags(const wchar_t *output_path,
+		      struct wim_dentry *root, struct apply_args *args)
 {
+	DWORD dentry_features = 0;
+	DWORD missing_features;
+
 	if (args->have_vol_flags)
 		return 0;
 
+	for_dentry_in_tree(root, dentry_clear_inode_visited, NULL);
+	for_dentry_in_tree(root, dentry_get_features, &dentry_features);
+
 	win32_get_vol_flags(output_path, &args->vol_flags);
 	args->have_vol_flags = true;
+
+	missing_features = dentry_features ^ args->vol_flags;
+
 	/* Warn the user about data that may not be extracted. */
-	if (!(args->vol_flags & FILE_SUPPORTS_SPARSE_FILES))
+	if (missing_features & FILE_SUPPORTS_SPARSE_FILES)
 		WARNING("Volume does not support sparse files!\n"
 			"          Sparse files will be extracted as non-sparse.");
-	if (!(args->vol_flags & FILE_SUPPORTS_REPARSE_POINTS))
+	if (missing_features & FILE_SUPPORTS_REPARSE_POINTS)
 		WARNING("Volume does not support reparse points!\n"
 			"          Reparse point data will not be extracted.");
-	if (!(args->vol_flags & FILE_NAMED_STREAMS)) {
+	if (missing_features & FILE_NAMED_STREAMS) {
 		WARNING("Volume does not support named data streams!\n"
 			"          Named data streams will not be extracted.");
 	}
-	if (!(args->vol_flags & FILE_SUPPORTS_ENCRYPTION)) {
+	if (missing_features & FILE_SUPPORTS_ENCRYPTION) {
 		WARNING("Volume does not support encryption!\n"
 			"          Encrypted files will be extracted as raw data.");
 	}
-	if (!(args->vol_flags & FILE_FILE_COMPRESSION)) {
+	if (missing_features & FILE_FILE_COMPRESSION) {
 		WARNING("Volume does not support transparent compression!\n"
 			"          Compressed files will be extracted as non-compressed.");
 	}
-	if (!(args->vol_flags & FILE_PERSISTENT_ACLS)) {
+	if (missing_features & FILE_PERSISTENT_ACLS) {
 		if (args->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS) {
 			ERROR("Strict ACLs requested, but the volume does not "
 			      "support ACLs!");
@@ -1081,6 +1119,12 @@ win32_check_vol_flags(const wchar_t *output_path, struct apply_args *args)
 			WARNING("Volume does not support persistent ACLS!\n"
 				"          File permissions will not be extracted.");
 		}
+	}
+	if (running_on_windows_7_or_later() &&
+	    (missing_features & FILE_SUPPORTS_HARD_LINKS))
+	{
+		WARNING("Volume does not support hard links!\n"
+			"          Hard links will be extracted as duplicate files.");
 	}
 	return 0;
 }
@@ -1112,12 +1156,18 @@ win32_try_hard_link(const wchar_t *output_path, const struct wim_inode *inode,
 	DWORD err;
 
 	/* There is a volume flag for this (FILE_SUPPORTS_HARD_LINKS),
-	 * but it's only available on Windows 7 and later.  So no use
-	 * even checking it, really.  Instead, CreateHardLinkW() will
-	 * apparently return ERROR_INVALID_FUNCTION if the volume does
-	 * not support hard links. */
+	 * but it's only available on Windows 7 and later.
+	 *
+	 * Otherwise, CreateHardLinkW() will apparently return
+	 * ERROR_INVALID_FUNCTION if the volume does not support hard links. */
+
 	DEBUG("Creating hard link \"%ls => %ls\"",
 	      output_path, inode->i_extracted_file);
+
+	if (running_on_windows_7_or_later() &&
+	    !(args->vol_flags & FILE_SUPPORTS_HARD_LINKS))
+		goto hard_links_unsupported;
+
 	if (CreateHardLinkW(output_path, inode->i_extracted_file, NULL))
 		return 0;
 
@@ -1127,19 +1177,24 @@ win32_try_hard_link(const wchar_t *output_path, const struct wim_inode *inode,
 		      output_path, inode->i_extracted_file);
 		win32_error(err);
 		return WIMLIB_ERR_LINK;
-	} else {
-		args->num_hard_links_failed++;
-		if (args->num_hard_links_failed <= MAX_CREATE_HARD_LINK_WARNINGS) {
-			WARNING("Can't create hard link \"%ls => %ls\":\n"
+	}
+hard_links_unsupported:
+	args->num_hard_links_failed++;
+	if (args->num_hard_links_failed <= MAX_CREATE_HARD_LINK_WARNINGS) {
+		if (running_on_windows_7_or_later())
+		{
+			WARNING("Extracting duplicate copy of \"%ls\" "
+				"rather than hard link", output_path);
+		} else {
+			WARNING("Can't create hard link \"%ls\" => \"%ls\":\n"
 				"          Volume does not support hard links!\n"
 				"          Falling back to extracting a copy of the file.",
 				output_path, inode->i_extracted_file);
 		}
-		if (args->num_hard_links_failed == MAX_CREATE_HARD_LINK_WARNINGS) {
-			WARNING("Suppressing further hard linking warnings...");
-		}
-		return -1;
 	}
+	if (args->num_hard_links_failed == MAX_CREATE_HARD_LINK_WARNINGS)
+		WARNING("Suppressing further hard linking warnings...");
+	return -1;
 }
 
 /* Extract a file, directory, reparse point, or hard link to an
@@ -1153,7 +1208,7 @@ win32_do_apply_dentry(const wchar_t *output_path,
 	int ret;
 	struct wim_inode *inode = dentry->d_inode;
 
-	ret = win32_check_vol_flags(output_path, args);
+	ret = win32_check_vol_flags(output_path, dentry, args);
 	if (ret)
 		return ret;
 	if (inode->i_nlink > 1 && inode->i_extracted_file != NULL) {
@@ -1172,9 +1227,7 @@ win32_do_apply_dentry(const wchar_t *output_path,
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT &&
 	    !(args->vol_flags & FILE_SUPPORTS_REPARSE_POINTS))
 	{
-		WARNING("Skipping extraction of reparse point \"%ls\":\n"
-			"          Not supported by destination filesystem",
-			output_path);
+		WARNING("Not extracting reparse point \"%ls\"", output_path);
 	} else {
 		/* Create the file, directory, or reparse point, and extract the
 		 * data streams. */

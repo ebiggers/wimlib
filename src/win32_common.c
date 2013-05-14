@@ -619,7 +619,19 @@ HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
 BOOL (WINAPI *win32func_FindNextStreamW)(HANDLE hFindStream,
 					 LPVOID lpFindStreamData) = NULL;
 
+static OSVERSIONINFO windows_version_info = {
+	.dwOSVersionInfoSize = sizeof(OSVERSIONINFO),
+};
+
 static HMODULE hKernel32 = NULL;
+
+bool
+windows_version_is_at_least(unsigned major, unsigned minor)
+{
+	return windows_version_info.dwMajorVersion > major ||
+		(windows_version_info.dwMajorVersion == major &&
+		 windows_version_info.dwMinorVersion >= minor);
+}
 
 /* Try to dynamically load some functions */
 void
@@ -634,18 +646,21 @@ win32_global_init()
 			err = GetLastError();
 			WARNING("Can't load Kernel32.dll");
 			win32_error(err);
-			return;
 		}
 	}
 
-	win32func_FindFirstStreamW = (void*)GetProcAddress(hKernel32,
-							   "FindFirstStreamW");
-	if (win32func_FindFirstStreamW) {
-		win32func_FindNextStreamW = (void*)GetProcAddress(hKernel32,
-								  "FindNextStreamW");
-		if (!win32func_FindNextStreamW)
-			win32func_FindFirstStreamW = NULL;
+	if (hKernel32) {
+		win32func_FindFirstStreamW = (void*)GetProcAddress(hKernel32,
+								   "FindFirstStreamW");
+		if (win32func_FindFirstStreamW) {
+			win32func_FindNextStreamW = (void*)GetProcAddress(hKernel32,
+									  "FindNextStreamW");
+			if (!win32func_FindNextStreamW)
+				win32func_FindFirstStreamW = NULL;
+		}
 	}
+
+	GetVersionEx(&windows_version_info);
 }
 
 void

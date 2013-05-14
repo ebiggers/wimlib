@@ -44,4 +44,18 @@ extern HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
 extern BOOL (WINAPI *win32func_FindNextStreamW)(HANDLE hFindStream,
 						LPVOID lpFindStreamData);
 
+extern bool
+windows_version_is_at_least(unsigned major, unsigned minor);
+
+#define running_on_windows_xp_or_later() \
+			windows_version_is_at_least(5, 1)
+
+#define running_on_windows_vista_or_later() \
+			windows_version_is_at_least(6, 0)
+
+#define running_on_windows_7_or_later() \
+			windows_version_is_at_least(6, 1)
+
+
+
 #endif /* _WIMLIB_WIN32_COMMON_H */
