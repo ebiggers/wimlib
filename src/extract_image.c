@@ -187,7 +187,8 @@ dentry_find_streams_to_extract(struct wim_dentry *dentry, void *_ctx)
 
 	lte = inode_unnamed_lte_resolved(inode);
 	if (lte) {
-		maybe_add_stream_for_extraction(lte, stream_list);
+		if (!inode->i_visited)
+			maybe_add_stream_for_extraction(lte, stream_list);
 		list_add_tail(&dentry->tmp_list, &lte->lte_dentry_list);
 		dentry_added = true;
 	}
@@ -210,8 +211,10 @@ dentry_find_streams_to_extract(struct wim_dentry *dentry, void *_ctx)
 			if (inode->i_ads_entries[i].stream_name_nbytes != 0) {
 				lte = inode->i_ads_entries[i].lte;
 				if (lte) {
-					maybe_add_stream_for_extraction(lte,
-									stream_list);
+					if (!inode->i_visited) {
+						maybe_add_stream_for_extraction(lte,
+										stream_list);
+					}
 					if (!dentry_added) {
 						list_add_tail(&dentry->tmp_list,
 							      &lte->lte_dentry_list);
@@ -221,6 +224,7 @@ dentry_find_streams_to_extract(struct wim_dentry *dentry, void *_ctx)
 			}
 		}
 	}
+	inode->i_visited = 1;
 	return 0;
 }
 
@@ -259,6 +263,7 @@ static int
 dentry_reset_needs_extraction(struct wim_dentry *dentry, void *_ignore)
 {
 	dentry->needs_extraction = 0;
+	dentry->d_inode->i_visited = 0;
 	return 0;
 }
 

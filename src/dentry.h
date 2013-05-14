@@ -232,6 +232,8 @@ struct wim_inode {
 	/* %true iff verify_inode() has run on this inode. */
 	u8 i_verified : 1;
 
+	u8 i_visited : 1;
+
 	/* Used only in NTFS-mode extraction */
 	u8 i_dos_name_extracted : 1;
 
