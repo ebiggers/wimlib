@@ -28,6 +28,10 @@
 #include "lookup_table.h"
 #include "sha1.h"
 #include <errno.h>
+#include <stdlib.h>
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#endif
 
 static const utf16lechar volume_junction_prefix[11] = {
 	cpu_to_le16('\\'),
@@ -314,10 +318,6 @@ out_have_link:
 	FREE(link_target);
 	return ret;
 }
-
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-#endif
 
 int
 wim_inode_set_symlink(struct wim_inode *inode,
