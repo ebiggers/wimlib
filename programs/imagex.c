@@ -169,7 +169,7 @@ IMAGEX_PROGNAME" unmount DIRECTORY [--commit] [--check] [--rebuild]\n"
 ),
 [UPDATE] =
 T(
-IMAGEX_PROGNAME" update WIMFILE IMAGE [--check] [--rebuild]\n"
+IMAGEX_PROGNAME" update WIMFILE [IMAGE_NUM | IMAGE_NAME] [--check] [--rebuild]\n"
 "                       [--threads=NUM_THREADS] [DEFAULT_ADD_OPTIONS]\n"
 "                       [DEFAULT_DELETE_OPTIONS] < CMDFILE\n"
 ),
