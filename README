@@ -278,7 +278,7 @@ http://www.ultimatedeployment.org/.
 
 You can see the documentation about Microsoft's version of ImageX at
 http://technet.microsoft.com/en-us/library/cc749447(v=ws.10).aspx, so you can
-see how it compares to the version provided by this library.
+see how it compares to wimlib-imagex.
 
 If you are looking for a UNIX archive format that provides features similar to
 WIM, I recommend you take a look at SquashFS (http://squashfs.sourceforge.net/).
