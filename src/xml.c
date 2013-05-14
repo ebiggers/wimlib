@@ -1211,7 +1211,7 @@ print_image_info(const struct wim_info *wim_info, int image)
 	wim_timestamp_to_str(image_info->creation_time, buf, sizeof(buf));
 	tprintf(T("Creation Time:          %"TS"\n"), buf);
 
-	wim_timestamp_to_str(image_info->creation_time, buf, sizeof(buf));
+	wim_timestamp_to_str(image_info->last_modification_time, buf, sizeof(buf));
 	tprintf(T("Last Modification Time: %"TS"\n"), buf);
 	if (image_info->windows_info_exists)
 		print_windows_info(&image_info->windows_info);
