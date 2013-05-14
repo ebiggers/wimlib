@@ -59,7 +59,7 @@ desire that all security descriptors be captured exactly, you may wish to
 provide this option, although the Administrator should have permission to read
 everything anyway.
 .SS \fBdelete\fR [\fIOPTION\fR...] \fIPATH\fR
-Deletes a file or directory tree from the WIM image.  \fIPATH\fR must specify the
+Delete a file or directory tree from the WIM image.  \fIPATH\fR must specify the
 path inside the WIM image of the file or directory tree to delete.
 .PP
 The available options for the \fBdelete\fR command are:
@@ -71,7 +71,7 @@ Do not issue an error if the path to delete does not exist.
 Delete the file or directory tree recursively; if not specified, an error is
 issued if the path to delete is a directory.
 .SS \fBrename\fR \fIOLD_PATH\fR \fINEW_PATH\fR
-Renames a file or directory tree inside the WIM image.  \fIOLD_PATH\fR must
+Rename a file or directory tree inside the WIM image.  \fIOLD_PATH\fR must
 specify the old path of the file or directory tree inside the WIM image, and
 \fINEW_PATH\fR must specify the new path for the file or directory tree.  This
 command follows the semantics of the POSIX \fBrename\fR (3) function; in
