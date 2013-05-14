@@ -168,8 +168,6 @@ execute_add_command(WIMStruct *wim,
 	int add_flags;
 	tchar *fs_source_path;
 	tchar *wim_target_path;
-	struct wim_inode_table inode_table;
-	struct sd_set sd_set;
 	struct wim_image_metadata *imd;
 	struct list_head unhashed_streams;
 	struct add_image_params params;
@@ -217,19 +215,17 @@ execute_add_command(WIMStruct *wim,
 		extra_arg = NULL;
 	}
 
-	ret = init_inode_table(&inode_table, 9001);
+	ret = init_inode_table(&params.inode_table, 9001);
 	if (ret)
 		goto out;
 
-	ret = init_sd_set(&sd_set, imd->security_data);
+	ret = init_sd_set(&params.sd_set, imd->security_data);
 	if (ret)
 		goto out_destroy_inode_table;
 
 	INIT_LIST_HEAD(&unhashed_streams);
 	wim->lookup_table->unhashed_streams = &unhashed_streams;
 	params.lookup_table = wim->lookup_table;
-	params.inode_table = &inode_table;
-	params.sd_set = &sd_set;
 	params.config = config;
 	params.add_flags = add_flags;
 	params.progress_func = progress_func;
@@ -272,7 +268,7 @@ execute_add_command(WIMStruct *wim,
 #ifdef WITH_NTFS_3G
 	imd->ntfs_vol = ntfs_vol;
 #endif
-	inode_table_prepare_inode_list(&inode_table, &imd->inode_list);
+	inode_table_prepare_inode_list(&params.inode_table, &imd->inode_list);
 	ret = 0;
 	rollback_sd = false;
 	if (add_flags & WIMLIB_ADD_FLAG_RPFIX)
@@ -285,9 +281,9 @@ out_ntfs_umount:
 #endif
 	free_dentry_tree(branch, wim->lookup_table);
 out_destroy_sd_set:
-	destroy_sd_set(&sd_set, rollback_sd);
+	destroy_sd_set(&params.sd_set, rollback_sd);
 out_destroy_inode_table:
-	destroy_inode_table(&inode_table);
+	destroy_inode_table(&params.inode_table);
 out:
 	return ret;
 }

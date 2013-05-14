@@ -1030,7 +1030,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	 * only 1 link and refuse to hard link them.  This is because Windows
 	 * has a bug where it can return duplicate File IDs for files and
 	 * directories on the FAT filesystem. */
-	ret = inode_table_new_dentry(params->inode_table,
+	ret = inode_table_new_dentry(&params->inode_table,
 				     path_basename_with_len(path, path_num_chars),
 				     ((u64)file_info.nFileIndexHigh << 32) |
 					 (u64)file_info.nFileIndexLow,
@@ -1061,7 +1061,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (!(params->add_flags & WIMLIB_ADD_FLAG_NO_ACLS)
 	    && (vol_flags & FILE_PERSISTENT_ACLS))
 	{
-		ret = win32_get_security_descriptor(root, params->sd_set,
+		ret = win32_get_security_descriptor(root, &params->sd_set,
 						    path, state,
 						    params->add_flags);
 		if (ret)

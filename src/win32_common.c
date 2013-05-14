@@ -27,6 +27,7 @@
 
 #include <shlwapi.h> /* for PathMatchSpecW() */
 #include <errno.h>
+#include <pthread.h>
 
 #include "win32_common.h"
 

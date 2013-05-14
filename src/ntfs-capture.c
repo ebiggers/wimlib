@@ -582,7 +582,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	}
 
 	/* Create a WIM dentry with an associated inode, which may be shared */
-	ret = inode_table_new_dentry(params->inode_table,
+	ret = inode_table_new_dentry(&params->inode_table,
 				     path_basename_with_len(path, path_len),
 				     ni->mft_no, 0, false, &root);
 	if (ret)
@@ -665,7 +665,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 							 ni, dir_ni, sd, ret);
 		}
 		if (ret > 0) {
-			inode->i_security_id = sd_set_add_sd(params->sd_set,
+			inode->i_security_id = sd_set_add_sd(&params->sd_set,
 							     sd, ret);
 			if (inode->i_security_id == -1) {
 				ERROR("Out of memory");

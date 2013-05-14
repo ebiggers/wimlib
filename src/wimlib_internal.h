@@ -30,10 +30,7 @@
 #include "util.h"
 #include "list.h"
 #include "wimlib.h"
-
-#if defined(WITH_FUSE) || defined(ENABLE_MULTITHREADED_COMPRESSION)
-#include <pthread.h>
-#endif
+#include "security.h"
 
 #define WIMLIB_MAKEVERSION(major, minor, patch) \
 	((major << 20) | (minor << 10) | patch)
@@ -427,13 +424,12 @@ struct add_image_params {
 	/* Pointer to the lookup table of the WIM. */
 	struct wim_lookup_table *lookup_table;
 
-	/* Pointer to a hash table of inodes that have been captured for this
-	 * WIM image so far. */
-	struct wim_inode_table *inode_table;
+	/* Hash table of inodes that have been captured for this tree so far. */
+	struct wim_inode_table inode_table;
 
-	/* Pointer to the set of security descriptors that have been captured
-	 * for this image so far. */
-	struct sd_set *sd_set;
+	/* The set of security descriptors that have been captured for this
+	 * image so far. */
+	struct sd_set sd_set;
 
 	/* Pointer to the capture configuration, which indicates whether any
 	 * files should be excluded from capture or not. */
