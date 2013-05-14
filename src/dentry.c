@@ -1301,11 +1301,6 @@ replace_forbidden_characters(utf16lechar *name)
 		if (*p == cpu_to_le16('/'))
 	#endif
 		{
-		#ifdef __WIN32__
-			*p = cpu_to_le16(0xfffd);
-		#else
-			*p = cpu_to_le16('?');
-		#endif
 			if (name) {
 				WARNING("File, directory, or stream name \"%"WS"\"\n"
 					"          contains forbidden characters; "
@@ -1313,6 +1308,11 @@ replace_forbidden_characters(utf16lechar *name)
 					name);
 				name = NULL;
 			}
+		#ifdef __WIN32__
+			*p = cpu_to_le16(0xfffd);
+		#else
+			*p = cpu_to_le16('?');
+		#endif
 		}
 	}
 }
