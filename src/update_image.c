@@ -48,6 +48,7 @@ do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 	}
 
 	rb_root = &branch->d_inode->i_children;
+	LIST_HEAD(moved_children);
 	while (rb_root->rb_node) { /* While @branch has children... */
 		struct wim_dentry *child = rbnode_dentry(rb_root->rb_node);
 		struct wim_dentry *existing;
@@ -61,12 +62,17 @@ do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 			int ret;
 			ret = do_overlay(existing, child);
 			if (ret) {
-				/* Overlay failed.  Revert the change to avoid
-				 * leaking the directory tree rooted at @child.
-				 * */
+				/* Overlay failed.  Revert the changes. */
 				dentry_add_child(branch, child);
+				list_for_each_entry(child, &moved_children, tmp_list)
+				{
+					unlink_dentry(child);
+					dentry_add_child(branch, child);
+				}
 				return ret;
 			}
+		} else {
+			list_add(&child->tmp_list, &moved_children);
 		}
 	}
 	free_dentry(branch);
