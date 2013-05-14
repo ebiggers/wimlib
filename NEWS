@@ -16,6 +16,9 @@ Version 1.4.0:
 	Fixed a bug in the Windows build of wimlib-imagex where globbing
 	split-WIM parts could cause the program to crash.
 
+	Fixed a bug where the creation time of WIM images would be shown instead
+	of the last modification time.
+
 	With the Windows build it is now possible to restore a WIM containing
 	symbolic links as a non-Administrator; however you will receive warnings
 	about not being able to extract the symbolic links.
