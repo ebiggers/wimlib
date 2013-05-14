@@ -105,9 +105,10 @@ To export the first image of this split WIM to a new or existing WIM file
 .SH NOTES
 It is safe to abort an \fB@IMAGEX_PROGNAME@ export\fR command partway through;
 however, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
-optimize\fR to remove any data that was appended to the physical WIM file but
-not yet incorporated into the structure of the WIM, unless \fB--rebuild\fR was
-specified, in which case you should delete the temporary file left over.
+optimize\fR on the destination WIM to remove any data that was appended to the
+physical WIM file but not yet incorporated into the structure of the WIM, unless
+\fB--rebuild\fR was specified, in which case you should delete the temporary
+file left over.
 .SH EXAMPLES
 Export the second image of 'boot.wim' to the new WIM file 'new.wim', and
 change the compression type to maximum, if it wasn't maximum already:
