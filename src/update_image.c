@@ -334,6 +334,14 @@ execute_delete_command(WIMStruct *wim,
 	return 0;
 }
 
+static int
+free_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
+{
+	FREE(dentry->_full_path);
+	dentry->_full_path = NULL;
+	return 0;
+}
+
 /*
  * Rename a file or directory in the WIM.
  *
@@ -394,6 +402,8 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to)
 	}
 	unlink_dentry(src);
 	dentry_add_child(parent_of_dst, src);
+	if (src->_full_path)
+		for_dentry_in_tree(src, free_dentry_full_path, NULL);
 	return 0;
 }
 
