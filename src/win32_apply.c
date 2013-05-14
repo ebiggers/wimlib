@@ -668,7 +668,6 @@ win32_finish_extract_stream(HANDLE h, const struct wim_dentry *dentry,
 {
 	int ret = 0;
 	const struct wim_inode *inode = dentry->d_inode;
-	const wchar_t *short_name;
 	if (stream_name_utf16 == NULL) {
 		/* Unnamed stream. */
 
@@ -724,7 +723,7 @@ win32_finish_extract_stream(HANDLE h, const struct wim_dentry *dentry,
 		}
 
 		if (dentry_has_short_name(dentry))
-			SetFileShortNameW(h, short_name);
+			SetFileShortNameW(h, dentry->short_name);
 		else if (running_on_windows_7_or_later())
 			SetFileShortNameW(h, L"");
 	} else {
