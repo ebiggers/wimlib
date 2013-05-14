@@ -179,14 +179,15 @@ IMAGEX_PROGNAME" update WIMFILE [IMAGE_NUM | IMAGE_NAME] [--check] [--rebuild]\n
 static void
 recommend_man_page(const tchar *cmd_name)
 {
+	const tchar *format_str;
 #ifdef __WIN32__
-	tprintf(T("See "IMAGEX_PROGNAME"-%"TS".pdf in the "
-		  "doc directory for more details.\n"),
-		cmd_name);
+	format_str = T("See "IMAGEX_PROGNAME"%"TS"%"TS".pdf in the "
+		       "doc directory for more details.\n");
 #else
-	tprintf(T("Try `man "IMAGEX_PROGNAME"-%"TS"' "
-		  "for more details.\n"), cmd_name);
+	format_str = T("Try `man "IMAGEX_PROGNAME"%"TS"%"TS"' "
+		       "for more details.\n");
 #endif
+	tprintf(format_str, *cmd_name ? T("-") : T(""), cmd_name);
 }
 
 enum {
@@ -3184,9 +3185,9 @@ usage_all()
 "\n"
 "    The compression TYPE may be \"maximum\", \"fast\", or \"none\".\n"
 "\n"
-"    Try `man "IMAGEX_PROGNAME"' for more information.\n"
 	);
 	tfputs(extra, stdout);
+	recommend_man_page(T(""));
 }
 
 /* Entry point for wimlib's ImageX implementation.  On UNIX the command
