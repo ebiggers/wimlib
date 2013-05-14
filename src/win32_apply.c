@@ -1089,7 +1089,7 @@ win32_check_vol_flags(const wchar_t *output_path,
 	win32_get_vol_flags(output_path, &args->vol_flags);
 	args->have_vol_flags = true;
 
-	missing_features = dentry_features ^ args->vol_flags;
+	missing_features = dentry_features & ~args->vol_flags;
 
 	/* Warn the user about data that may not be extracted. */
 	if (missing_features & FILE_SUPPORTS_SPARSE_FILES)
