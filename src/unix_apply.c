@@ -383,8 +383,6 @@ unix_extract_directory(struct wim_dentry *dentry, const tchar *output_path,
 	ret = tstat(output_path, &stbuf);
 	if (ret == 0) {
 		if (S_ISDIR(stbuf.st_mode)) {
-			/*if (!is_root)*/
-				/*WARNING("`%s' already exists", output_path);*/
 			goto dir_exists;
 		} else {
 			ERROR("`%"TS"' is not a directory", output_path);

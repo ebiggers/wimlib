@@ -525,7 +525,7 @@ out:
 
 
 static u8 *
-write_lookup_table_entry(struct wim_lookup_table_entry *lte, u8 *buf_p)
+write_lookup_table_entry(const struct wim_lookup_table_entry *lte, u8 *buf_p)
 {
 	buf_p = put_resource_entry(buf_p, &lte->output_resource_entry);
 	buf_p = put_u16(buf_p, lte->part_number);

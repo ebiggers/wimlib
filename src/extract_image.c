@@ -59,10 +59,6 @@ do_apply_op(struct wim_dentry *dentry, struct apply_args *args,
 			 (full_path_nchars - args->wim_source_path_nchars) + 1];
 	p = output_path;
 
-	/*print_dentry(dentry, NULL);*/
-	/*ERROR("%"TS" %"TS, args->target, dentry->_full_path);*/
-	/*ERROR("");*/
-
 	tmemcpy(p, args->target, args->target_nchars);
 	p += args->target_nchars;
 
