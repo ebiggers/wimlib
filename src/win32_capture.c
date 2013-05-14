@@ -1138,8 +1138,7 @@ win32_do_capture_warnings(const struct win32_capture_state *state,
 "          nothing more needs to be done%ls\n",
 	(add_flags & WIMLIB_ADD_FLAG_NO_ACLS) ? L"." :
          L", although you might consider\n"
-"          passing the --no-acls flag to `wimlib-imagex capture' or\n"
-"          `wimlib-imagex append' to explicitly capture no security\n"
+"          using the --no-acls option to explicitly capture no security\n"
 "          descriptors.\n");
 }
 
