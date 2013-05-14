@@ -1155,6 +1155,10 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	struct win32_capture_state state;
 	unsigned vol_flags;
 
+	if (!win32func_FindFirstStreamW) {
+		WARNING("Running on Windows XP or earlier; "
+			"alternate data streams will not be captured.");
+	}
 
 	path_nchars = wcslen(root_disk_path);
 	if (path_nchars > 32767)

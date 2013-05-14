@@ -638,20 +638,13 @@ win32_global_init()
 		}
 	}
 
-	DEBUG("Looking for FindFirstStreamW");
-	win32func_FindFirstStreamW = (void*)GetProcAddress(hKernel32, "FindFirstStreamW");
-	if (!win32func_FindFirstStreamW) {
-		WARNING("Could not find function FindFirstStreamW() in Kernel32.dll!");
-		WARNING("Capturing alternate data streams will not be supported.");
-		return;
-	}
-
-	DEBUG("Looking for FindNextStreamW");
-	win32func_FindNextStreamW = (void*)GetProcAddress(hKernel32, "FindNextStreamW");
-	if (!win32func_FindNextStreamW) {
-		WARNING("Could not find function FindNextStreamW() in Kernel32.dll!");
-		WARNING("Capturing alternate data streams will not be supported.");
-		win32func_FindFirstStreamW = NULL;
+	win32func_FindFirstStreamW = (void*)GetProcAddress(hKernel32,
+							   "FindFirstStreamW");
+	if (win32func_FindFirstStreamW) {
+		win32func_FindNextStreamW = (void*)GetProcAddress(hKernel32,
+								  "FindNextStreamW");
+		if (!win32func_FindNextStreamW)
+			win32func_FindFirstStreamW = NULL;
 	}
 }
 
