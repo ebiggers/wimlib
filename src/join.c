@@ -29,63 +29,56 @@
 #include <stdlib.h>
 
 static int
-move_lte_to_table(struct wim_lookup_table_entry *lte, void *other_tab)
+move_lte_to_table(struct wim_lookup_table_entry *lte, void *combined_table)
 {
 	hlist_del(&lte->hash_list);
-	lookup_table_insert((struct wim_lookup_table*)other_tab, lte);
+	lookup_table_insert((struct wim_lookup_table*)combined_table, lte);
 	return 0;
 }
 
-static int
-lookup_table_join(struct wim_lookup_table *table,
-		  struct wim_lookup_table *new)
+static void
+lookup_table_join(struct wim_lookup_table *combined_table,
+		  struct wim_lookup_table *part_table)
 {
-	for_lookup_table_entry(new, move_lte_to_table, table);
-	new->num_entries = 0;
-	return 0;
+	for_lookup_table_entry(part_table, move_lte_to_table, combined_table);
+	part_table->num_entries = 0;
 }
 
 /*
- * new_joined_lookup_table: - Join lookup tables from the parts of a split WIM.
+ * merge_lookup_tables() - Merge lookup tables from the parts of a split WIM.
  *
  * @w specifies the first part, while @additional_swms and @num_additional_swms
  * specify an array of pointers to the WIMStruct's for additional split WIM parts.
  *
- * The lookup table entries are *moved* to the new table.
- *
- * On success, 0 is returned on a pointer to the joined lookup table is returned
- * in @table_ret.
- *
  * The reason we join the lookup tables is so we only have to search one lookup
  * table to find the location of a resource in the entire WIM.
  */
-int
-new_joined_lookup_table(WIMStruct *w,
-			WIMStruct **additional_swms,
-			unsigned num_additional_swms,
-			struct wim_lookup_table **table_ret)
+void
+merge_lookup_tables(WIMStruct *w,
+		    WIMStruct **additional_swms,
+		    unsigned num_additional_swms)
 {
-	struct wim_lookup_table *table;
-	int ret;
-	unsigned i;
+	for (unsigned i = 0; i < num_additional_swms; i++)
+		lookup_table_join(w->lookup_table, additional_swms[i]->lookup_table);
+}
 
-	table = new_lookup_table(9001);
-	if (!table)
-		return WIMLIB_ERR_NOMEM;
-
-	if (w)
-		lookup_table_join(table, w->lookup_table);
-
-	for (i = 0; i < num_additional_swms; i++) {
-		ret = lookup_table_join(table, additional_swms[i]->lookup_table);
-		if (ret != 0)
-			goto out_free_table;
+static int
+move_lte_to_orig_table(struct wim_lookup_table_entry *lte, void *_wim)
+{
+	WIMStruct *wim = _wim;
+	if (lte->wim != wim) {
+		move_lte_to_table(lte, lte->wim->lookup_table);
+		wim->lookup_table->num_entries--;
 	}
-	*table_ret = table;
 	return 0;
-out_free_table:
-	free_lookup_table(table);
-	return ret;
+}
+
+/* Undo merge_lookup_tables(), given the first WIM part that contains the merged
+ * lookup table. */
+void
+unmerge_lookup_table(WIMStruct *wim)
+{
+	for_lookup_table_entry(wim->lookup_table, move_lte_to_orig_table, wim);
 }
 
 

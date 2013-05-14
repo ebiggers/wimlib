@@ -2364,7 +2364,6 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	char *argv[16];
 	int ret;
 	char *dir_copy;
-	struct wim_lookup_table *joined_tab, *wim_tab_save;
 	struct wim_image_metadata *imd;
 	struct wimfs_context ctx;
 	struct wim_inode *inode;
@@ -2387,15 +2386,8 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		goto out;
 	}
 
-	if (num_additional_swms) {
-		ret = new_joined_lookup_table(wim, additional_swms,
-					      num_additional_swms,
-					      &joined_tab);
-		if (ret)
-			goto out;
-		wim_tab_save = wim->lookup_table;
-		wim->lookup_table = joined_tab;
-	}
+	if (num_additional_swms)
+		merge_lookup_tables(wim, additional_swms, num_additional_swms);
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = wim_run_full_verifications(wim);
@@ -2560,10 +2552,8 @@ out_unlock:
 out_free_message_queue_names:
 	free_message_queue_names(&ctx);
 out_restore_lookup_table:
-	if (num_additional_swms) {
-		free_lookup_table(wim->lookup_table);
-		wim->lookup_table = wim_tab_save;
-	}
+	if (num_additional_swms)
+		unmerge_lookup_table(wim);
 out:
 	return ret;
 }

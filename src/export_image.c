@@ -103,7 +103,6 @@ wimlib_export_image(WIMStruct *src_wim,
 		    wimlib_progress_func_t progress_func)
 {
 	int ret;
-	struct wim_lookup_table *joined_tab, *src_wim_tab_save;
 	struct wim_image_metadata *src_imd;
 	struct list_head lte_list_head;
 	struct wim_inode *inode;
@@ -193,15 +192,8 @@ wimlib_export_image(WIMStruct *src_wim,
 	if (ret)
 		return ret;
 
-	if (num_additional_swms) {
-		ret = new_joined_lookup_table(src_wim, additional_swms,
-					      num_additional_swms,
-					      &joined_tab);
-		if (ret)
-			return ret;
-		src_wim_tab_save = src_wim->lookup_table;
-		src_wim->lookup_table = joined_tab;
-	}
+	if (num_additional_swms)
+		merge_lookup_tables(src_wim, additional_swms, num_additional_swms);
 
 	ret = select_wim_image(src_wim, src_image);
 	if (ret) {
@@ -269,9 +261,7 @@ out_free_ltes:
 			free_lookup_table_entry(lte);
 	}
 out:
-	if (num_additional_swms) {
-		free_lookup_table(src_wim->lookup_table);
-		src_wim->lookup_table = src_wim_tab_save;
-	}
+	if (num_additional_swms)
+		unmerge_lookup_table(src_wim);
 	return ret;
 }

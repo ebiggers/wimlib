@@ -535,10 +535,12 @@ check_wim_integrity(WIMStruct *w, wimlib_progress_func_t progress_func);
 
 /* join.c */
 
-extern int
-new_joined_lookup_table(WIMStruct *w, WIMStruct **additional_swms,
-			unsigned num_additional_swms,
-			struct wim_lookup_table **table_ret);
+extern void
+merge_lookup_tables(WIMStruct *w,
+		    WIMStruct **additional_swms, unsigned num_additional_swms);
+
+extern void
+unmerge_lookup_table(WIMStruct *wim);
 
 /* metadata_resource.c */
 

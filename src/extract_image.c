@@ -746,7 +746,6 @@ wimlib_extract_files(WIMStruct *wim,
 {
 	int ret;
 	struct wimlib_extract_command *cmds_copy;
-	struct wim_lookup_table *wim_tab_save, *joined_tab;
 	int all_flags = 0;
 
 	default_extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
@@ -758,15 +757,8 @@ wimlib_extract_files(WIMStruct *wim,
 	if (num_cmds == 0)
 		goto out;
 
-	if (num_additional_swms) {
-		ret = new_joined_lookup_table(wim, additional_swms,
-					      num_additional_swms,
-					      &joined_tab);
-		if (ret)
-			goto out;
-		wim_tab_save = wim->lookup_table;
-		wim->lookup_table = joined_tab;
-	}
+	if (num_additional_swms)
+		merge_lookup_tables(wim, additional_swms, num_additional_swms);
 
 	cmds_copy = CALLOC(num_cmds, sizeof(cmds[0]));
 	if (!cmds_copy) {
@@ -810,10 +802,8 @@ out_free_cmds_copy:
 	}
 	FREE(cmds_copy);
 out_restore_lookup_table:
-	if (num_additional_swms) {
-		free_lookup_table(wim->lookup_table);
-		wim->lookup_table = wim_tab_save;
-	}
+	if (num_additional_swms)
+		unmerge_lookup_table(wim);
 out:
 	return ret;
 }
@@ -937,7 +927,6 @@ wimlib_extract_image(WIMStruct *wim,
 		     unsigned num_additional_swms,
 		     wimlib_progress_func_t progress_func)
 {
-	struct wim_lookup_table *joined_tab, *wim_tab_save;
 	int ret;
 
 	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
@@ -946,14 +935,8 @@ wimlib_extract_image(WIMStruct *wim,
 	if (ret)
 		return ret;
 
-	if (num_additional_swms) {
-		ret = new_joined_lookup_table(wim, additional_swms,
-					      num_additional_swms, &joined_tab);
-		if (ret)
-			return ret;
-		wim_tab_save = wim->lookup_table;
-		wim->lookup_table = joined_tab;
-	}
+	if (num_additional_swms)
+		merge_lookup_tables(wim, additional_swms, num_additional_swms);
 
 	if (image == WIMLIB_ALL_IMAGES) {
 		ret = extract_all_images(wim, target,
@@ -971,9 +954,7 @@ wimlib_extract_image(WIMStruct *wim,
 				       lte_free_extracted_file,
 				       NULL);
 	}
-	if (num_additional_swms) {
-		free_lookup_table(wim->lookup_table);
-		wim->lookup_table = wim_tab_save;
-	}
+	if (num_additional_swms)
+		unmerge_lookup_table(wim);
 	return ret;
 }
