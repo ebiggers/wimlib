@@ -1415,7 +1415,7 @@ write_stream_list(struct list_head *stream_list,
 	progress.write_streams._private          = 0;
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
-	if (total_compression_bytes >= 1000000 && num_threads != 1)
+	if (total_compression_bytes >= 2000000 && num_threads != 1)
 		ret = write_stream_list_parallel(stream_list,
 						 lookup_table,
 						 out_fd,
