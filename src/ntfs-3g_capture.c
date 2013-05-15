@@ -725,10 +725,10 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 
 	DEBUG("Mounting NTFS volume `%s' read-only", device);
 
-#ifdef HAVE_NTFS_MNT_RDONLY
+#if defined(NTFS_MNT_RDONLY)
 	/* NTFS-3g 2013 */
 	vol = ntfs_mount(device, NTFS_MNT_RDONLY);
-#else
+#elif defined(MS_RDONLY)
 	/* NTFS-3g 2011, 2012 */
 	vol = ntfs_mount(device, MS_RDONLY);
 #endif
