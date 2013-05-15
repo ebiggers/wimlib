@@ -1,6 +1,7 @@
 wimlib (1.4.0-1) unstable; urgency=low
 
-  * Update to v1.4.0
+  * Update to v1.4.0; moved wimlib-imagex and mkwinpeimg to "wimtools"
+    package.
 
  -- Eric Biggers <ebiggers3gmail.com>  Sun, 12 May 2013 22:59:55 -0500
 

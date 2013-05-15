@@ -14,21 +14,26 @@ Section: libdevel
 Architecture: any
 Depends: wimlib (= ${binary:Version})
 Description: Development files for wimlib
- wimlib is a library that can be used to create, extract, and modify files in
- the Windows Imaging Format. These files are normally created by the
- 'imagex.exe' program on Windows, but this library provides a free
- implementation of 'imagex' for UNIX-based systems. wimlib supports mounting
- WIM files, just like imagex.exe.
+ Development files for wimlib
 
 Package: wimlib
 Section: libs
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libfuse2, libxml2,
          libssl0.9.8 | libssl1.0.0, ntfs-3g (>= 2011.4.12), attr
+Description: Library to extract, create, modify, and mount WIM files
+ wimlib is a C library for creating, extracting, modifying, and mounting files
+ in the Windows Imaging Format (WIM files).  It is similar to Microsoft's
+ WIMGAPI but is designed for both UNIX and Windows.
+
+Package: wimtools
+Section: libs
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Suggests: genisoimage, mtools, syslinux, cabextract, ntfsprogs
-Description: Library to extract, create, and modify WIM files
- wimlib is a library that can be used to create, extract, and modify files in
- the Windows Imaging Format. These files are normally created by the
- 'imagex.exe' program on Windows, but this library provides a free
- implementation of 'imagex' for UNIX-based systems. wimlib supports mounting
- WIM files, just like imagex.exe.
+Description: Tools to create, extract, modify, and mount WIM files
+ Tools to create, extract, modify, and mount files in the Windows Imaging
+ Format (WIM files).  These files are normally created by using the
+ `imagex.exe' utility on Windows, but this package contains a free
+ implementation of ImageX called "wimlib-imagex" that is designed to work on
+ both UNIX and Windows.

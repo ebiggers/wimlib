@@ -1,3 +1,4 @@
 usr/lib/libwim.so.*
-usr/bin/*
-usr/share/man/man1/*
+README
+NEWS
+AUTHORS
