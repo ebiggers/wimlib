@@ -63,6 +63,7 @@
 
 #include "wimlib.h"
 #include "wimlib/compress.h"
+#include "wimlib/error.h"
 #include "wimlib/lzx.h"
 #include "wimlib/util.h"
 

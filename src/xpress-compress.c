@@ -32,6 +32,7 @@
 #include "wimlib.h"
 #include "wimlib/assert.h"
 #include "wimlib/compress.h"
+#include "wimlib/error.h"
 #include "wimlib/util.h"
 #include "wimlib/xpress.h"
 
@@ -245,7 +246,7 @@ wimlib_xpress_compress(const void *__uncompressed_data,
 
 	wimlib_assert(compressed_len <= uncompressed_len - 1);
 
-#if defined(ENABLE_VERIFY_COMPRESSION)
+#ifdef ENABLE_VERIFY_COMPRESSION
 	/* Verify that we really get the same thing back when decompressing. */
 	{
 		u8 buf[uncompressed_len];
