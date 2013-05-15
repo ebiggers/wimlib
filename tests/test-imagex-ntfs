@@ -30,16 +30,16 @@ do_unmount() {
 }
 
 __do_mount() {
-	options="$3"
-	if [ -z "$options" ]; then
-		options="no_def_opts,silent"
-	else
-		options="$options,no_def_opts,silent"
-	fi
-	if ! ntfs-3g -o $options $1 $2; then
-		error "Could not mount NTFS volume \"$1\" on \"$2\"!  Make sure ntfs-3g is "\
-		      "installed, and that you are either running the tests as root or have ntfs-3g "\
-		      "installed setuid root, so that we can mount a NTFS volume."
+	if ! ntfs-3g -o "no_def_opts,silent" $1 $2; then
+		if [ $UID -ne 0 ] && [ "$3" = "nofail" ]; then
+			echo "WARNING: skipping NTFS tests because we aren't able to "
+			echo "mount a NTFS volume (perhaps ntfs-3g is not installed setuid root?)"
+			exit 0
+		else
+			error "Could not mount NTFS volume \"$1\" on \"$2\"!  Make sure ntfs-3g is "\
+			      "installed, and that you are either running the tests as root or have ntfs-3g "\
+			      "installed setuid root, so that we can mount a NTFS volume."
+		fi
 	fi
 }
 
@@ -61,7 +61,7 @@ init() {
 	mkdir in.mnt out.mnt
 	do_mkntfs in.ntfs
 	do_mkntfs out.ntfs
-	do_mount in.ntfs in.mnt
+	do_mount in.ntfs in.mnt nofail
 }
 
 cleanup() {
