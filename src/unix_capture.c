@@ -23,16 +23,23 @@
 
 #ifndef __WIN32__
 
-#include "wimlib_internal.h"
-#include "dentry.h"
-#include "lookup_table.h"
-#include "timestamp.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
 
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include "wimlib/capture.h"
+#include "wimlib/dentry.h"
+#include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/paths.h"
+#include "wimlib/reparse.h"
+#include "wimlib/timestamp.h"
 
 static int
 unix_capture_regular_file(const char *path,

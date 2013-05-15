@@ -21,15 +21,22 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
 
-#include <string.h>
+#include "wimlib/assert.h"
+#include "wimlib/capture.h"
+#include "wimlib/error.h"
+#include "wimlib/paths.h"
 
 #ifdef __WIN32__
-#  include "win32.h"
+#  include "wimlib/win32.h" /* for fnmatch() equivalent */
 #else
 #  include <fnmatch.h>
 #endif
+#include <string.h>
+
 
 static int
 canonicalize_pattern(const tchar *pat, tchar **canonical_pat_ret)

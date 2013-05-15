@@ -23,10 +23,20 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "lookup_table.h"
-#include "xml.h"
-#include <stdlib.h>
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/resource.h"
+#include "wimlib/swm.h"
+#include "wimlib/wim.h"
+#include "wimlib/write.h"
+#include "wimlib/xml.h"
+
+#include <stdlib.h> /* for qsort() */
 
 static int
 move_lte_to_table(struct wim_lookup_table_entry *lte, void *combined_table)

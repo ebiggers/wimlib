@@ -1,8 +1,9 @@
 ACLOCAL_AMFLAGS = -I m4
 
-AM_CPPFLAGS	= -I$(top_srcdir)/src $(WINDOWS_CPPFLAGS) \
+AM_CPPFLAGS	= -I$(top_srcdir)/include $(WINDOWS_CPPFLAGS) \
 		  -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
-AM_CFLAGS	= -std=gnu99 -fno-strict-aliasing
+AM_CFLAGS	= -std=gnu99 -fno-strict-aliasing \
+		  -Wmissing-prototypes -Wstrict-prototypes
 
 lib_LTLIBRARIES = libwim.la
 
@@ -10,62 +11,96 @@ libwim_la_LDFLAGS = -version-info 7:0:0 $(WINDOWS_LDFLAGS)
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
-	src/buffer_io.h		\
 	src/capture_common.c	\
 	src/compress.c		\
-	src/compress.h		\
 	src/decompress.c	\
-	src/decompress.h	\
 	src/delete_image.c	\
 	src/dentry.c		\
-	src/dentry.h		\
 	src/encoding.c		\
-	src/endianness.h	\
 	src/export_image.c	\
-	src/extract_image.c	\
+	src/extract.c		\
+	src/file_io.c		\
 	src/hardlink.c		\
 	src/header.c		\
 	src/integrity.c		\
 	src/join.c		\
-	src/list.h		\
 	src/lookup_table.c	\
-	src/lookup_table.h	\
 	src/lz77.c		\
 	src/lzx-common.c	\
 	src/lzx-compress.c	\
 	src/lzx-decompress.c	\
-	src/lzx.h		\
 	src/metadata_resource.c	\
 	src/mount_image.c	\
+	src/paths.c		\
 	src/resource.c		\
 	src/rbtree.c		\
-	src/rbtree.h		\
 	src/security.c		\
-	src/security.h		\
 	src/sha1.c		\
-	src/sha1.h		\
 	src/split.c		\
 	src/reparse.c		\
-	src/timestamp.h		\
+	src/timestamp.c		\
 	src/update_image.c	\
 	src/util.c		\
-	src/util.h		\
 	src/verify.c		\
 	src/wim.c		\
-	src/wimlib.h		\
-	wimlib_tchar.h		\
-	src/wimlib_internal.h	\
 	src/write.c		\
 	src/xml.c		\
-	src/xml.h		\
 	src/xpress-compress.c	\
-	src/xpress-decompress.c	\
-	src/xpress.h
+	src/xpress-decompress.c \
+	include/wimlib/apply.h		\
+	include/wimlib/assert.h		\
+	include/wimlib/buffer_io.h	\
+	include/wimlib/callback.h	\
+	include/wimlib/capture.h	\
+	include/wimlib/compiler.h	\
+	include/wimlib/compress.h	\
+	include/wimlib/decompress.h	\
+	include/wimlib/dentry.h		\
+	include/wimlib/encoding.h	\
+	include/wimlib/endianness.h	\
+	include/wimlib/error.h		\
+	include/wimlib/file_io.h	\
+	include/wimlib/header.h		\
+	include/wimlib/integrity.h	\
+	include/wimlib/list.h		\
+	include/wimlib/lookup_table.h	\
+	include/wimlib/lzx.h		\
+	include/wimlib/metadata.h	\
+	include/wimlib/ntfs_3g.h	\
+	include/wimlib/paths.h		\
+	include/wimlib/rbtree.h		\
+	include/wimlib/reparse.h	\
+	include/wimlib/resource.h	\
+	include/wimlib/security.h	\
+	include/wimlib/sha1.h		\
+	include/wimlib/swm.h		\
+	include/wimlib/timestamp.h	\
+	include/wimlib/types.h		\
+	include/wimlib/util.h		\
+	include/wimlib/version.h	\
+	include/wimlib/wim.h		\
+	include/wimlib/write.h		\
+	include/wimlib/xml.h		\
+	include/wimlib/xpress.h
 
 if WITH_NTFS_3G
-libwim_la_SOURCES += src/ntfs-apply.c	\
-		     src/ntfs-capture.c
+libwim_la_SOURCES += src/ntfs-3g_apply.c	\
+		     src/ntfs-3g_capture.c	\
+		     include/wimlib/ntfs_3g.h
 endif
+
+if WINDOWS_NATIVE_BUILD
+libwim_la_SOURCES += src/win32_common.c			\
+		     src/win32_apply.c			\
+		     src/win32_capture.c		\
+		     src/win32_replacements.c		\
+		     include/wimlib/win32_common.h	\
+		     include/wimlib/win32.h
+else
+libwim_la_SOURCES += src/unix_apply.c		\
+		     src/unix_capture.c
+endif
+
 
 
 EXTRA_libwim_la_SOURCES = src/sha1-ssse3.asm
@@ -97,7 +132,9 @@ libwim_la_CFLAGS =		\
 
 
 bin_PROGRAMS	 = imagex
-imagex_SOURCES   = programs/imagex.c wimlib_tchar.h
+imagex_SOURCES   = programs/imagex.c	\
+		   include/wimlib.h	\
+		   include/wimlib_tchar.h
 imagex_LDADD	 = $(top_builddir)/libwim.la
 imagex_CFLAGS    = $(AM_CFLAGS) $(WINDOWS_CFLAGS)
 
@@ -106,15 +143,6 @@ imagex_SOURCES += programs/imagex-win32.c	\
 		  programs/imagex-win32.h	\
 		  programs/wgetopt.c		\
 		  programs/wgetopt.h
-
-libwim_la_SOURCES += src/win32_common.c		\
-		     src/win32_apply.c		\
-		     src/win32_capture.c	\
-		     src/win32.h		\
-		     src/win32_common.h
-else
-libwim_la_SOURCES += src/unix_apply.c		\
-		     src/unix_capture.c
 endif
 
 install-exec-hook:
@@ -129,7 +157,7 @@ uninstall-hook:
 
 dist_bin_SCRIPTS = programs/mkwinpeimg
 
-include_HEADERS = src/wimlib.h
+include_HEADERS = include/wimlib.h
 
 EXTRA_DIST =					\
 	build-aux/strip_fPIC.sh			\

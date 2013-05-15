@@ -1,7 +1,5 @@
 /*
- * reparse.c
- *
- * Handle reparse data.
+ * reparse.c - Handle reparse data.
  */
 
 /*
@@ -23,15 +21,28 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "dentry.h"
-#include "buffer_io.h"
-#include "lookup_table.h"
-#include "sha1.h"
-#include <errno.h>
-#include <stdlib.h>
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/assert.h"
+#include "wimlib/buffer_io.h"
+#include "wimlib/dentry.h"
+#include "wimlib/encoding.h"
+#include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/reparse.h"
+#include "wimlib/resource.h"
+
+#ifdef __WIN32__
+#  include "wimlib/win32.h" /* for win32_get_file_and_vol_ids() */
+#endif
+
 #ifdef HAVE_ALLOCA_H
 #  include <alloca.h>
 #endif
+#include <errno.h>
+#include <stdlib.h>
 
 static const utf16lechar volume_junction_prefix[11] = {
 	cpu_to_le16('\\'),
@@ -447,7 +458,6 @@ unix_get_ino_and_dev(const char *path, u64 *ino_ret, u64 *dev_ret)
 #endif /* !defined(__WIN32__) */
 
 #ifdef __WIN32__
-#  include "win32.h"
 #  define RP_PATH_SEPARATOR L'\\'
 #  define is_rp_path_separator(c) ((c) == L'\\' || (c) == L'/')
 #  define os_get_ino_and_dev win32_get_file_and_vol_ids

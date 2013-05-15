@@ -23,9 +23,16 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "buffer_io.h"
-#include "security.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/assert.h"
+#include "wimlib/buffer_io.h"
+#include "wimlib/error.h"
+#include "wimlib/security.h"
+#include "wimlib/sha1.h"
+#include "wimlib/util.h"
 
 /* At the start of each type of access control entry.  */
 typedef struct {
@@ -150,7 +157,7 @@ empty_sacl_fixup(u8 *descr, u64 *size_p)
 }
 
 struct wim_security_data *
-new_wim_security_data()
+new_wim_security_data(void)
 {
 	return CALLOC(1, sizeof(struct wim_security_data));
 }
@@ -471,12 +478,11 @@ free_sd_tree(struct rb_node *node)
 
 /* Frees a security descriptor index set. */
 void
-destroy_sd_set(struct sd_set *sd_set, bool rollback)
+destroy_sd_set(struct wim_sd_set *sd_set, bool rollback)
 {
 	if (rollback) {
 		struct wim_security_data *sd = sd_set->sd;
-		int32_t i;
-		for (i = sd_set->orig_num_entries; i < sd->num_entries; i++)
+		for (s32 i = sd_set->orig_num_entries; i < sd->num_entries; i++)
 			FREE(sd->descriptors[i]);
 		sd->num_entries = sd_set->orig_num_entries;
 	}
@@ -485,7 +491,7 @@ destroy_sd_set(struct sd_set *sd_set, bool rollback)
 
 /* Inserts a a new node into the security descriptor index tree. */
 static bool
-insert_sd_node(struct sd_set *set, struct sd_node *new)
+insert_sd_node(struct wim_sd_set *set, struct sd_node *new)
 {
 	struct rb_root *root = &set->rb_root;
 	struct rb_node **p = &(root->rb_node);
@@ -511,7 +517,7 @@ insert_sd_node(struct sd_set *set, struct sd_node *new)
 /* Returns the index of the security descriptor having a SHA1 message digest of
  * @hash.  If not found, return -1. */
 int
-lookup_sd(struct sd_set *set, const u8 hash[SHA1_HASH_SIZE])
+lookup_sd(struct wim_sd_set *set, const u8 hash[SHA1_HASH_SIZE])
 {
 	struct rb_node *node = set->rb_root.rb_node;
 
@@ -536,7 +542,7 @@ lookup_sd(struct sd_set *set, const u8 hash[SHA1_HASH_SIZE])
  * return -1.
  */
 int
-sd_set_add_sd(struct sd_set *sd_set, const char descriptor[], size_t size)
+sd_set_add_sd(struct wim_sd_set *sd_set, const char descriptor[], size_t size)
 {
 	u8 hash[SHA1_HASH_SIZE];
 	int security_id;
@@ -600,7 +606,7 @@ out:
  * descriptors to indices into the security descriptors table of the WIM image
  * (security IDs).  */
 int
-init_sd_set(struct sd_set *sd_set, struct wim_security_data *sd)
+init_sd_set(struct wim_sd_set *sd_set, struct wim_security_data *sd)
 {
 	int ret;
 
@@ -610,7 +616,7 @@ init_sd_set(struct sd_set *sd_set, struct wim_security_data *sd)
 	/* Remember the original number of security descriptors so that newly
 	 * added ones can be rolled back if needed. */
 	sd_set->orig_num_entries = sd->num_entries;
-	for (int32_t i = 0; i < sd->num_entries; i++) {
+	for (s32 i = 0; i < sd->num_entries; i++) {
 		struct sd_node *new;
 
 		new = MALLOC(sizeof(struct sd_node));

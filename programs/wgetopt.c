@@ -278,7 +278,7 @@ _getopt_initialize (int argc, wchar_t *const *argv, const wchar_t *optstring)
    If LONG_ONLY is nonzero, '-' as well as '--' can introduce
    long-named options.  */
 
-int
+static int
 _wgetopt_internal (int argc, wchar_t *const *argv, const wchar_t *optstring,
                   const struct woption *longopts, int *longind, int long_only)
 {

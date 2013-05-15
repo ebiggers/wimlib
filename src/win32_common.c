@@ -1,7 +1,5 @@
 /*
- * win32_common.c - Windows code common to applying and capturing images, as
- * well as replacements for various functions not available on Windows, such as
- * fsync().
+ * win32_common.c - Windows code common to applying and capturing images.
  */
 
 /*
@@ -25,11 +23,16 @@
 
 #ifdef __WIN32__
 
-#include <shlwapi.h> /* for PathMatchSpecW() */
-#include <errno.h>
-#include <pthread.h>
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
 
-#include "win32_common.h"
+#include <errno.h>
+
+#include "wimlib/win32_common.h"
+
+#include "wimlib/assert.h"
+#include "wimlib/error.h"
 
 #ifdef ENABLE_ERROR_MESSAGES
 void
@@ -321,227 +324,9 @@ win32_error_to_errno(DWORD err_code)
 }
 
 void
-set_errno_from_GetLastError()
+set_errno_from_GetLastError(void)
 {
 	errno = win32_error_to_errno(GetLastError());
-}
-
-/* Replacement for POSIX fsync() */
-int
-fsync(int fd)
-{
-	HANDLE h;
-
-	h = (HANDLE)_get_osfhandle(fd);
-	if (h == INVALID_HANDLE_VALUE)
-		goto err;
-	if (!FlushFileBuffers(h))
-		goto err_set_errno;
-	return 0;
-err_set_errno:
-	set_errno_from_GetLastError();
-err:
-	return -1;
-}
-
-/* Use the Win32 API to get the number of processors */
-unsigned
-win32_get_number_of_processors()
-{
-	SYSTEM_INFO sysinfo;
-	GetSystemInfo(&sysinfo);
-	return sysinfo.dwNumberOfProcessors;
-}
-
-/* Replacement for POSIX-2008 realpath().  Warning: partial functionality only
- * (resolved_path must be NULL).   Also I highly doubt that GetFullPathName
- * really does the right thing under all circumstances. */
-wchar_t *
-realpath(const wchar_t *path, wchar_t *resolved_path)
-{
-	DWORD ret;
-	DWORD err;
-	wimlib_assert(resolved_path == NULL);
-
-	ret = GetFullPathNameW(path, 0, NULL, NULL);
-	if (!ret) {
-		err = GetLastError();
-		goto fail_win32;
-	}
-
-	resolved_path = TMALLOC(ret);
-	if (!resolved_path)
-		goto out;
-	ret = GetFullPathNameW(path, ret, resolved_path, NULL);
-	if (!ret) {
-		err = GetLastError();
-		free(resolved_path);
-		resolved_path = NULL;
-		goto fail_win32;
-	}
-	goto out;
-fail_win32:
-	errno = win32_error_to_errno(err);
-out:
-	return resolved_path;
-}
-
-/* rename() on Windows fails if the destination file exists.  And we need to
- * make it work on wide characters.  Fix it. */
-int
-win32_rename_replacement(const wchar_t *oldpath, const wchar_t *newpath)
-{
-	if (MoveFileExW(oldpath, newpath, MOVEFILE_REPLACE_EXISTING)) {
-		return 0;
-	} else {
-		set_errno_from_GetLastError();
-		return -1;
-	}
-}
-
-/* Replacement for POSIX fnmatch() (partial functionality only) */
-int
-fnmatch(const wchar_t *pattern, const wchar_t *string, int flags)
-{
-	if (PathMatchSpecW(string, pattern))
-		return 0;
-	else
-		return FNM_NOMATCH;
-}
-
-/* truncate() replacement */
-int
-win32_truncate_replacement(const wchar_t *path, off_t size)
-{
-	DWORD err = NO_ERROR;
-	LARGE_INTEGER liOffset;
-
-	HANDLE h = win32_open_existing_file(path, GENERIC_WRITE);
-	if (h == INVALID_HANDLE_VALUE)
-		goto fail;
-
-	liOffset.QuadPart = size;
-	if (!SetFilePointerEx(h, liOffset, NULL, FILE_BEGIN))
-		goto fail_close_handle;
-
-	if (!SetEndOfFile(h))
-		goto fail_close_handle;
-	CloseHandle(h);
-	return 0;
-
-fail_close_handle:
-	err = GetLastError();
-	CloseHandle(h);
-fail:
-	if (err == NO_ERROR)
-		err = GetLastError();
-	errno = win32_error_to_errno(err);
-	return -1;
-}
-
-
-/* This really could be replaced with _wcserror_s, but this doesn't seem to
- * actually be available in MSVCRT.DLL on Windows XP (perhaps it's statically
- * linked in by Visual Studio...?). */
-extern int
-win32_strerror_r_replacement(int errnum, wchar_t *buf, size_t buflen)
-{
-	static pthread_mutex_t strerror_lock = PTHREAD_MUTEX_INITIALIZER;
-
-	pthread_mutex_lock(&strerror_lock);
-	mbstowcs(buf, strerror(errnum), buflen);
-	buf[buflen - 1] = '\0';
-	pthread_mutex_unlock(&strerror_lock);
-	return 0;
-}
-
-static int
-do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
-		   bool is_pwrite)
-{
-	HANDLE h;
-	LARGE_INTEGER orig_offset;
-	DWORD bytes_read_or_written;
-	LARGE_INTEGER relative_offset;
-	OVERLAPPED overlapped;
-	BOOL bret;
-
-	wimlib_assert(count <= 0xffffffff);
-
-	h = (HANDLE)_get_osfhandle(fd);
-	if (h == INVALID_HANDLE_VALUE)
-		goto err;
-
-	/* Get original position */
-	relative_offset.QuadPart = 0;
-	if (!SetFilePointerEx(h, relative_offset, &orig_offset, FILE_CURRENT))
-		goto err_set_errno;
-
-	memset(&overlapped, 0, sizeof(overlapped));
-	overlapped.Offset = offset;
-	overlapped.OffsetHigh = offset >> 32;
-
-	/* Do the read or write at the specified offset */
-	if (is_pwrite)
-		bret = WriteFile(h, buf, count, &bytes_read_or_written, &overlapped);
-	else
-		bret = ReadFile(h, buf, count, &bytes_read_or_written, &overlapped);
-	if (!bret)
-		goto err_set_errno;
-
-	/* Restore the original position */
-	if (!SetFilePointerEx(h, orig_offset, NULL, FILE_BEGIN))
-		goto err_set_errno;
-
-	return bytes_read_or_written;
-err_set_errno:
-	set_errno_from_GetLastError();
-err:
-	return -1;
-}
-
-/* Dumb Windows implementation of pread().  It temporarily changes the file
- * offset, so it is not safe to use with readers/writers on the same file
- * descriptor.  */
-extern ssize_t
-win32_pread(int fd, void *buf, size_t count, off_t offset)
-{
-	return do_pread_or_pwrite(fd, buf, count, offset, false);
-}
-
-/* Dumb Windows implementation of pwrite().  It temporarily changes the file
- * offset, so it is not safe to use with readers/writers on the same file
- * descriptor. */
-extern ssize_t
-win32_pwrite(int fd, const void *buf, size_t count, off_t offset)
-{
-	return do_pread_or_pwrite(fd, (void*)buf, count, offset, true);
-}
-
-/* Dumb Windows implementation of writev().  It writes the vectors one at a
- * time. */
-extern ssize_t
-win32_writev(int fd, const struct iovec *iov, int iovcnt)
-{
-	ssize_t total_bytes_written = 0;
-
-	if (iovcnt <= 0) {
-		errno = EINVAL;
-		return -1;
-	}
-	for (int i = 0; i < iovcnt; i++) {
-		ssize_t bytes_written;
-
-		bytes_written = write(fd, iov[i].iov_base, iov[i].iov_len);
-		if (bytes_written >= 0)
-			total_bytes_written += bytes_written;
-		if (bytes_written != iov[i].iov_len) {
-			if (total_bytes_written == 0)
-				total_bytes_written = -1;
-			break;
-		}
-	}
-	return total_bytes_written;
 }
 
 /* Given a path, which may not yet exist, get a set of flags that describe the
@@ -636,7 +421,7 @@ windows_version_is_at_least(unsigned major, unsigned minor)
 
 /* Try to dynamically load some functions */
 void
-win32_global_init()
+win32_global_init(void)
 {
 	DWORD err;
 
@@ -665,7 +450,7 @@ win32_global_init()
 }
 
 void
-win32_global_cleanup()
+win32_global_cleanup(void)
 {
 	if (hKernel32 != NULL) {
 		DEBUG("Closing Kernel32.dll");

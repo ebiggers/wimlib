@@ -23,18 +23,26 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "dentry.h"
-#include "lookup_table.h"
-#include "timestamp.h"
-#include "wimlib_internal.h"
-#include "xml.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
 
-#include <string.h>
+#include "wimlib/dentry.h"
+#include "wimlib/encoding.h"
+#include "wimlib/metadata.h"
+#include "wimlib/error.h"
+#include "wimlib/file_io.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/resource.h"
+#include "wimlib/timestamp.h"
+#include "wimlib/xml.h"
+
+#include <libxml/encoding.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 #include <libxml/xmlwriter.h>
-#include <libxml/encoding.h>
 #include <limits.h>
+#include <string.h>
 
 /* Structures used to form an in-memory representation of the XML data (other
  * than the raw parse tree from libxml). */
@@ -440,7 +448,7 @@ xml_read_image_info(xmlNode *image_node, struct image_info *image_info)
 	if (!image_info->name) {
 		tchar *empty_name;
 		WARNING("Image with index %d has no name", image_info->index);
-		empty_name = TMALLOC(1);
+		empty_name = MALLOC(sizeof(tchar));
 		if (!empty_name)
 			return WIMLIB_ERR_NOMEM;
 		*empty_name = T('\0');
@@ -1221,14 +1229,14 @@ print_image_info(const struct wim_info *wim_info, int image)
 }
 
 void
-libxml_global_init()
+libxml_global_init(void)
 {
 	xmlInitParser();
 	xmlInitCharEncodingHandlers();
 }
 
 void
-libxml_global_cleanup()
+libxml_global_cleanup(void)
 {
 	xmlCleanupParser();
 	xmlCleanupCharEncodingHandlers();

@@ -243,9 +243,9 @@ see the code and/or ask me if you have any questions about the WIM file format
 as it exists in reality and not as it exists in Microsoft's poorly written
 documentation.
 
-The code in ntfs-apply.c and ntfs-capture.c uses the NTFS-3g library, which is a
-library for reading and writing to NTFS filesystems (the filesystem used by
-recent versions of Windows).  See
+The code in ntfs-3g_apply.c and ntfs-3g_capture.c uses the NTFS-3g library,
+which is a library for reading and writing to NTFS filesystems (the filesystem
+used by recent versions of Windows).  See
 http://www.tuxera.com/community/ntfs-3g-download/ for more information.
 
 lzx-decompress.c, the code to decompress WIM file resources that are compressed

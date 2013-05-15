@@ -28,16 +28,16 @@ extern void globfree(glob_t *pglob);
 #define	GLOB_NOMATCH	3	/* No matches found.  */
 
 extern void
-win32_acquire_capture_privileges();
+win32_acquire_capture_privileges(void);
 
 extern void
-win32_release_capture_privileges();
+win32_release_capture_privileges(void);
 
 extern void
-win32_acquire_restore_privileges();
+win32_acquire_restore_privileges(void);
 
 extern void
-win32_release_restore_privileges();
+win32_release_restore_privileges(void);
 
 extern wchar_t *
 win32_mbs_to_wcs(const char *mbs, size_t mbs_nbytes, size_t *num_wchars_ret);

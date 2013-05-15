@@ -26,7 +26,12 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib.h"
+#include "wimlib/error.h"
 
 #ifdef WITH_FUSE
 
@@ -34,11 +39,18 @@
 #  error "FUSE mount not supported on Win32!  Please configure --without-fuse"
 #endif
 
-#include "buffer_io.h"
-#include "lookup_table.h"
-#include "sha1.h"
-#include "timestamp.h"
-#include "xml.h"
+#include "wimlib/encoding.h"
+#include "wimlib/file_io.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/paths.h"
+#include "wimlib/reparse.h"
+#include "wimlib/resource.h"
+#include "wimlib/swm.h"
+#include "wimlib/timestamp.h"
+#include "wimlib/version.h"
+#include "wimlib/write.h"
+#include "wimlib/xml.h"
 
 #include <errno.h>
 #include <ftw.h>
@@ -130,13 +142,13 @@ init_wimfs_context(struct wimfs_context *ctx)
 #define WIMFS_CTX(fuse_ctx) ((struct wimfs_context*)(fuse_ctx)->private_data)
 
 static inline struct wimfs_context *
-wimfs_get_context()
+wimfs_get_context(void)
 {
 	return WIMFS_CTX(fuse_get_context());
 }
 
 static inline WIMStruct *
-wimfs_get_WIMStruct()
+wimfs_get_WIMStruct(void)
 {
 	return wimfs_get_context()->wim;
 }
@@ -1050,7 +1062,7 @@ struct msg_daemon_info {
 
 struct msg_unmount_finished {
 	struct unmount_msg_hdr hdr;
-	int32_t status;
+	s32 status;
 } PACKED;
 
 struct msg_write_streams_progress {
@@ -2614,7 +2626,7 @@ out:
 
 
 static int
-mount_unsupported_error()
+mount_unsupported_error(void)
 {
 #if defined(__WIN32__)
 	ERROR("Sorry-- Mounting WIM images is not supported on Windows!");

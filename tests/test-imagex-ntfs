@@ -220,7 +220,7 @@ do_test 'echo 999 > file;
 	 #setfattr -v DOSNAME -n system.ntfs_dos_name file;'
 
 msg "C source code of wimlib"
-do_test 'cp $srcdir/src/*.{c,h} .'
+do_test 'cp $srcdir/src/*.c .'
 
 msg "file with security descriptor"
 do_test 'touch file;

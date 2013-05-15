@@ -25,9 +25,18 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "buffer_io.h"
-#include "sha1.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/assert.h"
+#include "wimlib/buffer_io.h"
+#include "wimlib/error.h"
+#include "wimlib/file_io.h"
+#include "wimlib/integrity.h"
+#include "wimlib/resource.h"
+#include "wimlib/sha1.h"
+#include "wimlib/wim.h"
 
 /* Size, in bytes, of each SHA1-summed chunk, when wimlib writes integrity
  * information. */

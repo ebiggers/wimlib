@@ -21,10 +21,17 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "dentry.h"
-#include "lookup_table.h"
-#include "xml.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib.h"
+#include "wimlib/dentry.h"
+#include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/swm.h"
+#include "wimlib/xml.h"
 
 static int
 inode_allocate_needed_ltes(struct wim_inode *inode,

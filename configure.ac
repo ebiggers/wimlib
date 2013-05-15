@@ -221,7 +221,7 @@ AM_CONDITIONAL([WINDOWS_NATIVE_BUILD], [test "x$WINDOWS_NATIVE_BUILD" = "xyes"])
 AC_MSG_CHECKING([whether to include support for ntfs-3g])
 AC_ARG_WITH([ntfs-3g],
 	      AS_HELP_STRING([--without-ntfs-3g], [build without NTFS-3g.
-			      This will disable the ability to use NTFS-specific
+			      On UNIX, this will disable the ability to use NTFS-specific
 			      information when capturing or applying WIMs to a
 			      NTFS filesystem.]),
 	[WITH_NTFS_3G=$withval],
@@ -229,8 +229,8 @@ AC_ARG_WITH([ntfs-3g],
 	)
 AC_MSG_RESULT([$WITH_NTFS_3G])
 if test "x$WITH_NTFS_3G" = "xyes"; then
-	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 to enable support for
-		   NTFS-specific information])
+	AC_DEFINE([WITH_NTFS_3G], [1], [On UNIX, define to 1 to enable support
+		   for NTFS-specific information])
 
 	dnl This effectively checks for NTFS-3g 2011.4.12 or later
 	AC_CHECK_LIB([ntfs-3g], [ntfs_xattr_system_setxattr], [],

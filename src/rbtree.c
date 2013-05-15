@@ -21,7 +21,12 @@
   linux/lib/rbtree.c
 */
 
-#include "rbtree.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/rbtree.h"
+#include <stdbool.h>
 
 /*
  * red-black trees properties:  http://en.wikipedia.org/wiki/Rbtree

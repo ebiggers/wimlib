@@ -23,7 +23,13 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "decompress.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/decompress.h"
+#include "wimlib/util.h"
+
 #include <string.h>
 
 /*

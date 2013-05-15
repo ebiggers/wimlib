@@ -21,11 +21,12 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "config.h"
+#ifndef __WIN32__
 
-#ifdef HAVE_UTIME_H
-#  include <utime.h>
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
 #endif
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -33,10 +34,15 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
+#ifdef HAVE_UTIME_H
+#  include <utime.h>
+#endif
 
-#include "timestamp.h"
-#include "wimlib_internal.h"
-#include "lookup_table.h"
+#include "wimlib/apply.h"
+#include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/reparse.h"
+#include "wimlib/timestamp.h"
 
 /* Returns the number of components of @path.  */
 static unsigned
@@ -491,3 +497,5 @@ unix_do_apply_dentry_timestamps(const char *output_path,
 	}
 	return 0;
 }
+
+#endif /* !__WIN32__ */

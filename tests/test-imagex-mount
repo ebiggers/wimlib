@@ -24,7 +24,7 @@ cleanup() {
 
 init() {
 	mkdir dir
-	cp $srcdir/src/*.c $srcdir/src/*.h dir
+	cp $srcdir/src/*.c dir
 	mkdir dir/subdir
 	echo 'hello' > dir/subdir/hello
 	echo 'hello' > dir/subdir/hello2

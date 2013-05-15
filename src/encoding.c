@@ -21,7 +21,15 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib.h"
+#include "wimlib/encoding.h"
+#include "wimlib/error.h"
+#include "wimlib/list.h"
+#include "wimlib/util.h"
 
 #include <errno.h>
 #include <iconv.h>
@@ -362,7 +370,7 @@ iconv_cleanup(struct iconv_list_head *head)
 }
 
 void
-iconv_global_cleanup()
+iconv_global_cleanup(void)
 {
 	iconv_cleanup(&iconv_utf8_to_tstr);
 	iconv_cleanup(&iconv_tstr_to_utf8);

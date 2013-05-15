@@ -23,11 +23,18 @@
 
 #ifdef __WIN32__
 
-#include "win32_common.h"
-#include "wimlib_internal.h"
-#include "lookup_table.h"
-#include "security.h"
-#include "endianness.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/win32_common.h"
+
+#include "wimlib/capture.h"
+#include "wimlib/endianness.h"
+#include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/paths.h"
+#include "wimlib/reparse.h"
 
 #define MAX_GET_SD_ACCESS_DENIED_WARNINGS 1
 #define MAX_GET_SACL_PRIV_NOTHELD_WARNINGS 1
@@ -254,7 +261,7 @@ win32_get_short_name(struct wim_dentry *dentry, const wchar_t *path)
 
 static int
 win32_get_security_descriptor(struct wim_dentry *dentry,
-			      struct sd_set *sd_set,
+			      struct wim_sd_set *sd_set,
 			      const wchar_t *path,
 			      struct win32_capture_state *state,
 			      int add_flags)
@@ -414,40 +421,6 @@ win32_recurse_directory(struct wim_dentry *root,
 	}
 out_find_close:
 	FindClose(hFind);
-	return ret;
-}
-
-int
-win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret)
-{
-	HANDLE hFile;
-	DWORD err;
-	BY_HANDLE_FILE_INFORMATION file_info;
-	int ret;
-
- 	hFile = win32_open_existing_file(path, FILE_READ_ATTRIBUTES);
-	if (hFile == INVALID_HANDLE_VALUE) {
-		err = GetLastError();
-		if (err != ERROR_FILE_NOT_FOUND) {
-			WARNING("Failed to open \"%ls\" to get file "
-				"and volume IDs", path);
-			win32_error(err);
-		}
-		return WIMLIB_ERR_OPEN;
-	}
-
-	if (!GetFileInformationByHandle(hFile, &file_info)) {
-		err = GetLastError();
-		ERROR("Failed to get file information for \"%ls\"", path);
-		win32_error(err);
-		ret = WIMLIB_ERR_STAT;
-	} else {
-		*ino_ret = ((u64)file_info.nFileIndexHigh << 32) |
-			    (u64)file_info.nFileIndexLow;
-		*dev_ret = file_info.dwVolumeSerialNumber;
-		ret = 0;
-	}
-	CloseHandle(hFile);
 	return ret;
 }
 

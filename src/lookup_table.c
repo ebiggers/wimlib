@@ -24,15 +24,27 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "lookup_table.h"
-#include "buffer_io.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/buffer_io.h"
+#include "wimlib/error.h"
+#include "wimlib/file_io.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/paths.h"
+#include "wimlib/resource.h"
+#include "wimlib/util.h"
+
 #include <errno.h>
 #include <stdlib.h>
-
 #ifdef WITH_FUSE
-#include <unistd.h>
+#  include <unistd.h> /* for unlink() */
 #endif
+
+/* Size of each lookup table entry in the WIM file. */
+#define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
 
 struct wim_lookup_table *
 new_lookup_table(size_t capacity)
@@ -58,7 +70,7 @@ new_lookup_table(size_t capacity)
 }
 
 struct wim_lookup_table_entry *
-new_lookup_table_entry()
+new_lookup_table_entry(void)
 {
 	struct wim_lookup_table_entry *lte;
 
@@ -823,6 +835,19 @@ out:
 	return 0;
 }
 #endif
+
+/*
+ * XXX Probably should store the compression type directly in the lookup table
+ * entry
+ */
+int
+wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
+{
+	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
+	    || lte->resource_location != RESOURCE_IN_WIM)
+		return WIMLIB_COMPRESSION_TYPE_NONE;
+	return wimlib_get_compression_type(lte->wim);
+}
 
 /* Resolve an inode's lookup table entries
  *

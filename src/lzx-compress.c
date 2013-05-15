@@ -57,9 +57,15 @@
  * blocks from one input chunk is not yet implemented.
  */
 
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
 #include "wimlib.h"
-#include "lzx.h"
-#include "compress.h"
+#include "wimlib/compress.h"
+#include "wimlib/lzx.h"
+#include "wimlib/util.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -591,10 +597,10 @@ lzx_make_huffman_codes(const struct lzx_freq_tables *freq_tabs,
 
 static void
 do_call_insn_translation(u32 *call_insn_target, int input_pos,
-			 int32_t file_size)
+			 s32 file_size)
 {
-	int32_t abs_offset;
-	int32_t rel_offset;
+	s32 abs_offset;
+	s32 rel_offset;
 
 	rel_offset = le32_to_cpu(*call_insn_target);
 	if (rel_offset >= -input_pos && rel_offset < file_size) {

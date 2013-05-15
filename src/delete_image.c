@@ -21,9 +21,16 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "xml.h"
-#include <string.h>
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib.h"
+#include "wimlib/error.h"
+#include "wimlib/metadata.h"
+#include "wimlib/util.h"
+#include "wimlib/wim.h"
+#include "wimlib/xml.h"
 
 /*
  * Deletes an image from the WIM.

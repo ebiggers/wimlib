@@ -23,8 +23,19 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "buffer_io.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib.h"
+#include "wimlib/assert.h"
+#include "wimlib/buffer_io.h"
+#include "wimlib/error.h"
+#include "wimlib/file_io.h"
+#include "wimlib/header.h"
+#include "wimlib/util.h"
+#include "wimlib/wim.h"
+
 #include <limits.h>
 
 /* First 8 bytes in every WIM file. */

@@ -26,7 +26,13 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "compress.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/compress.h"
+#include "wimlib/util.h"
+
 #include <string.h>
 
 #define LZ_MIN_MATCH 3

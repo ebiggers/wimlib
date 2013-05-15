@@ -22,7 +22,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "config.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h" /* Need for PACKAGE_VERSION, etc. */
+#endif
+
 #include "wimlib.h"
 #include "wimlib_tchar.h"
 
@@ -40,7 +43,7 @@
 #include <locale.h>
 
 #ifdef HAVE_ALLOCA_H
-#include <alloca.h>
+#  include <alloca.h>
 #endif
 
 #ifdef __WIN32__
@@ -80,7 +83,7 @@ enum imagex_op_type {
 };
 
 static void usage(int cmd_type);
-static void usage_all();
+static void usage_all(void);
 
 static bool imagex_be_quiet = false;
 
@@ -3110,7 +3113,7 @@ static const struct imagex_command imagex_commands[] = {
 };
 
 static void
-version()
+version(void)
 {
 	static const tchar *s =
 	T(
@@ -3173,7 +3176,7 @@ usage(int cmd_type)
 }
 
 static void
-usage_all()
+usage_all(void)
 {
 	tfputs(T("Usage:\n"), stdout);
 	for (int i = 0; i < ARRAY_LEN(usage_strings); i++)

@@ -23,10 +23,12 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "util.h"
-#include "wimlib.h"
-#include "sha1.h"
-#include "endianness.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/sha1.h"
+
 #include <string.h>
 
 /* The SHA1 support in wimlib can use an external libcrypto (part of openssl) or

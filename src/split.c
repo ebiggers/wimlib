@@ -23,12 +23,22 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "lookup_table.h"
-#include "xml.h"
-#include "buffer_io.h"
-#include <unistd.h>
-#include <fcntl.h>
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib.h"
+#include "wimlib/buffer_io.h"
+#include "wimlib/error.h"
+#include "wimlib/file_io.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/types.h"
+#include "wimlib/write.h"
+#include "wimlib/list.h"
+
+#include <fcntl.h> /* for open() */
+#include <unistd.h> /* for close() */
 
 struct split_args {
 	WIMStruct *w;

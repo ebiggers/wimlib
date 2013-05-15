@@ -106,10 +106,15 @@
  * succeed.
  */
 
-#include "util.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
 #include "wimlib.h"
-#include "lzx.h"
-#include "decompress.h"
+#include "wimlib/decompress.h"
+#include "wimlib/lzx.h"
+#include "wimlib/util.h"
+
 #include <string.h>
 
 /* Huffman decoding tables and maps from symbols to code lengths. */
@@ -684,10 +689,10 @@ lzx_decode_match(unsigned main_element, int block_type,
 
 static void
 undo_call_insn_translation(u32 *call_insn_target, int input_pos,
-			   int32_t file_size)
+			   s32 file_size)
 {
-	int32_t abs_offset;
-	int32_t rel_offset;
+	s32 abs_offset;
+	s32 rel_offset;
 
 	abs_offset = le32_to_cpu(*call_insn_target);
 	if (abs_offset >= -input_pos && abs_offset < file_size) {

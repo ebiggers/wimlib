@@ -71,12 +71,16 @@
  * extra symbol is there or not.
  */
 
-#include "util.h"
-#include "xpress.h"
-#include "wimlib.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
 
+#include "wimlib.h"
+#include "wimlib/assert.h"
 #define XPRESS_DECOMP
-#include "decompress.h"
+#include "wimlib/decompress.h"
+#include "wimlib/util.h"
+#include "wimlib/xpress.h"
 
 /*
  * Decodes a symbol @huffsym that begins an XPRESS match.

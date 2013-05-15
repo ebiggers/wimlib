@@ -169,25 +169,25 @@ win32_modify_restore_privileges(bool enable)
 }
 
 void
-win32_acquire_capture_privileges()
+win32_acquire_capture_privileges(void)
 {
 	win32_modify_capture_privileges(true);
 }
 
 void
-win32_release_capture_privileges()
+win32_release_capture_privileges(void)
 {
 	win32_modify_capture_privileges(false);
 }
 
 void
-win32_acquire_restore_privileges()
+win32_acquire_restore_privileges(void)
 {
 	win32_modify_restore_privileges(true);
 }
 
 void
-win32_release_restore_privileges()
+win32_release_restore_privileges(void)
 {
 	win32_modify_restore_privileges(false);
 }

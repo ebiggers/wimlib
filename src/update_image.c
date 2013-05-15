@@ -21,16 +21,22 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "dentry.h"
-#include "lookup_table.h"
-#include "security.h"
-#include "xml.h"
-#include <errno.h>
-
-#ifdef __WIN32__
-#  include "win32.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
 #endif
+
+#include "wimlib/capture.h"
+#include "wimlib/dentry.h"
+#include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#ifdef WITH_NTFS_3G
+#  include "wimlib/ntfs_3g.h" /* for do_ntfs_umount() */
+#endif
+#include "wimlib/paths.h"
+#include "wimlib/xml.h"
+
+#include <errno.h>
 
 /* Overlays @branch onto @target, both of which must be directories. */
 static int
@@ -454,6 +460,7 @@ update_op_to_str(int op)
 		return T("rename");
 	default:
 		wimlib_assert(0);
+		return NULL;
 	}
 }
 
@@ -589,7 +596,7 @@ check_update_commands(struct wimlib_update_command *cmds, size_t num_cmds,
 }
 
 
-extern void
+static void
 free_update_commands(struct wimlib_update_command *cmds, size_t num_cmds)
 {
 	if (cmds) {

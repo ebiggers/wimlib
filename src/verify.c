@@ -26,9 +26,16 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "dentry.h"
-#include "lookup_table.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/dentry.h"
+#include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/security.h"
+#include "wimlib/swm.h"
 
 static int
 verify_inode(struct wim_inode *inode, const WIMStruct *w)

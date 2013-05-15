@@ -23,7 +23,15 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "compress.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+
+#include "wimlib/assert.h"
+#include "wimlib/compress.h"
+#include "wimlib/util.h"
+
 #include <stdlib.h>
 #include <string.h>
 

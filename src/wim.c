@@ -23,26 +23,37 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "config.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/error.h"
+#include "wimlib/dentry.h"
+#include "wimlib/encoding.h"
+#include "wimlib/file_io.h"
+#include "wimlib/integrity.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#ifdef WITH_NTFS_3G
+#  include "wimlib/ntfs_3g.h" /* for do_ntfs_umount() */
+#endif
+#include "wimlib/security.h"
+#include "wimlib/wim.h"
+#include "wimlib/xml.h"
+
+#ifdef __WIN32__
+#  include "wimlib/win32.h" /* for realpath() replacement */
+#endif
 
 #include <errno.h>
 #include <fcntl.h>
+#ifndef __WIN32__
+#  include <langinfo.h>
+#endif
 #include <limits.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <unistd.h>
-
-#ifdef __WIN32__
-#  include "win32.h"
-#else
-#  include <langinfo.h>
-#endif
-
-#include "buffer_io.h"
-#include "dentry.h"
-#include "lookup_table.h"
-#include "wimlib_internal.h"
-#include "xml.h"
 
 static int
 image_print_metadata(WIMStruct *w)
@@ -62,7 +73,7 @@ image_print_files(WIMStruct *w)
 }
 
 static WIMStruct *
-new_wim_struct()
+new_wim_struct(void)
 {
 	WIMStruct *w = CALLOC(1, sizeof(WIMStruct));
 	if (w) {
@@ -599,7 +610,7 @@ append_image_metadata(WIMStruct *w, struct wim_image_metadata *imd)
 
 
 struct wim_image_metadata *
-new_image_metadata()
+new_image_metadata(void)
 {
 	struct wim_image_metadata *imd;
 
@@ -690,7 +701,7 @@ wimlib_free(WIMStruct *w)
 }
 
 static bool
-test_locale_ctype_utf8()
+test_locale_ctype_utf8(void)
 {
 #ifdef __WIN32__
 	return false;
@@ -724,7 +735,7 @@ wimlib_global_init(int init_flags)
 /* Free global memory allocations.  Not strictly necessary if the process using
  * wimlib is just about to exit (as is the case for 'imagex'). */
 WIMLIBAPI void
-wimlib_global_cleanup()
+wimlib_global_cleanup(void)
 {
 	libxml_global_cleanup();
 	iconv_global_cleanup();

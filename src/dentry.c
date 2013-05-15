@@ -26,11 +26,20 @@
  * wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "buffer_io.h"
-#include "dentry.h"
-#include "lookup_table.h"
-#include "timestamp.h"
-#include "wimlib_internal.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib.h"
+#include "wimlib/buffer_io.h"
+#include "wimlib/dentry.h"
+#include "wimlib/encoding.h"
+#include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/resource.h"
+#include "wimlib/timestamp.h"
+
 #include <errno.h>
 
 /* Calculates the unaligned length, in bytes, of an on-disk WIM dentry that has
@@ -713,7 +722,7 @@ dentry_common_init(struct wim_dentry *dentry)
 }
 
 struct wim_inode *
-new_timeless_inode()
+new_timeless_inode(void)
 {
 	struct wim_inode *inode = CALLOC(1, sizeof(struct wim_inode));
 	if (inode) {
@@ -735,7 +744,7 @@ new_timeless_inode()
 }
 
 static struct wim_inode *
-new_inode()
+new_inode(void)
 {
 	struct wim_inode *inode = new_timeless_inode();
 	if (inode) {

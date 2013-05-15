@@ -23,13 +23,22 @@
 
 #ifdef __WIN32__
 
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
 #include <aclapi.h> /* for SetSecurityInfo() */
 
-#include "win32_common.h"
-#include "wimlib_internal.h"
-#include "dentry.h"
-#include "lookup_table.h"
-#include "endianness.h"
+#include "wimlib/win32_common.h"
+
+#include "wimlib/apply.h"
+#include "wimlib/dentry.h"
+#include "wimlib/endianness.h"
+#include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/reparse.h"
+#include "wimlib/security.h"
 
 #define MAX_CREATE_HARD_LINK_WARNINGS 5
 #define MAX_CREATE_SOFT_LINK_WARNINGS 5

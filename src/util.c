@@ -21,35 +21,38 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "config.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
 
-
-#undef _GNU_SOURCE
+#ifdef _GNU_SOURCE
+#  define _GNU_SOURCE_DEFINED 1
+#  undef _GNU_SOURCE
+#endif
 /* Make sure the POSIX-compatible strerror_r() is declared, rather than the GNU
  * version, which has a different return type. */
 #include <string.h>
+#ifdef _GNU_SOURCE_DEFINED
+#  define _GNU_SOURCE
+#endif
 
-#define _GNU_SOURCE
+#include "wimlib.h"
+#include "wimlib/compiler.h"
+#include "wimlib/encoding.h"
+#include "wimlib/error.h"
+#include "wimlib/types.h"
+#include "wimlib/util.h"
+#include "wimlib/xml.h"
 
-#include "endianness.h"
-#include "timestamp.h"
-#include "wimlib_internal.h"
+#ifdef __WIN32__
+#  include "wimlib/win32.h" /* win32_strerror_r_replacement */
+#endif
 
-#include <ctype.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
-
-
-#ifdef __WIN32__
-#  include "win32.h"
-#  define pread	 win32_pread
-#  define pwrite win32_pwrite
-#  define writev win32_writev
-#else
-#  include <sys/uio.h> /* for writev() and `struct iovec' */
-#endif
 
 static size_t
 utf16le_strlen(const utf16lechar *s)
@@ -138,6 +141,11 @@ wimlib_fprintf(FILE *fp, const tchar *format, ...)
 	va_end(va);
 	return ret;
 }
+
+#endif /* __WIN32__ */
+
+#ifdef ENABLE_ERROR_MESSAGES
+static bool wimlib_print_errors = false;
 #endif
 
 #if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
@@ -175,9 +183,6 @@ wimlib_vmsg(const tchar *tag, const tchar *format,
 /* True if wimlib is to print an informational message when an error occurs.
  * This can be turned off by calling wimlib_set_print_errors(false). */
 #ifdef ENABLE_ERROR_MESSAGES
-static bool wimlib_print_errors = false;
-
-
 void
 wimlib_error(const tchar *format, ...)
 {
@@ -444,11 +449,7 @@ wimlib_wcsdup(const wchar_t *str)
 }
 #endif
 
-extern void
-xml_set_memory_allocator(void *(*malloc_func)(size_t),
-			 void (*free_func)(void *),
-			 void *(*realloc_func)(void *, size_t));
-#endif
+#endif /* ENABLE_CUSTOM_MEMORY_ALLOCATOR */
 
 WIMLIBAPI int
 wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
@@ -474,7 +475,7 @@ wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 static bool seeded = false;
 
 static void
-seed_random()
+seed_random(void)
 {
 	srand(time(NULL) * getpid());
 	seeded = true;
@@ -507,244 +508,9 @@ randomize_byte_array(u8 *p, size_t n)
 		*p++ = rand();
 }
 
-const tchar *
-path_basename_with_len(const tchar *path, size_t len)
+
+void print_byte_field(const u8 field[], size_t len, FILE *out)
 {
-	const tchar *p = &path[len] - 1;
-
-	/* Trailing slashes. */
-	while (1) {
-		if (p == path - 1)
-			return T("");
-		if (*p != T('/'))
-			break;
-		p--;
-	}
-
-	while ((p != path - 1) && *p != T('/'))
-		p--;
-
-	return p + 1;
-}
-
-/* Like the basename() function, but does not modify @path; it just returns a
- * pointer to it. */
-const tchar *
-path_basename(const tchar *path)
-{
-	return path_basename_with_len(path, tstrlen(path));
-}
-
-/*
- * Returns a pointer to the part of @path following the first colon in the last
- * path component, or NULL if the last path component does not contain a colon.
- */
-const tchar *
-path_stream_name(const tchar *path)
-{
-	const tchar *base = path_basename(path);
-	const tchar *stream_name = tstrchr(base, T(':'));
-	if (!stream_name)
-		return NULL;
-	else
-		return stream_name + 1;
-}
-
-u64
-get_wim_timestamp()
-{
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	return timeval_to_wim_timestamp(tv);
-}
-
-void
-wim_timestamp_to_str(u64 timestamp, tchar *buf, size_t len)
-{
-	struct tm tm;
-	time_t t = wim_timestamp_to_unix(timestamp);
-	gmtime_r(&t, &tm);
-	tstrftime(buf, len, T("%a %b %d %H:%M:%S %Y UTC"), &tm);
-}
-
-void
-zap_backslashes(tchar *s)
-{
-	if (s) {
-		while (*s != T('\0')) {
-			if (*s == T('\\'))
-				*s = T('/');
-			s++;
-		}
-	}
-}
-
-tchar *
-canonicalize_fs_path(const tchar *fs_path)
-{
-	tchar *canonical_path;
-
-	if (!fs_path)
-		fs_path = T("");
-	canonical_path = TSTRDUP(fs_path);
-	zap_backslashes(canonical_path);
-	return canonical_path;
-}
-
-/* Strip leading and trailing slashes from a string.  Also translates
- * backslashes into forward slashes.  */
-tchar *
-canonicalize_wim_path(const tchar *wim_path)
-{
-	tchar *p;
-	tchar *canonical_path;
-
-	if (wim_path == NULL) {
-		wim_path = T("");
-	} else {
-		while (*wim_path == T('/') || *wim_path == T('\\'))
-			wim_path++;
-	}
-	canonical_path = TSTRDUP(wim_path);
-	if (canonical_path) {
-		zap_backslashes(canonical_path);
-		for (p = tstrchr(canonical_path, T('\0')) - 1;
-		     p >= canonical_path && *p == T('/');
-		     p--)
-		{
-			*p = T('\0');
-		}
-	}
-	return canonical_path;
-}
-
-/* Like read(), but keep trying until everything has been written or we know for
- * sure that there was an error (or end-of-file). */
-size_t
-full_read(int fd, void *buf, size_t count)
-{
-	ssize_t bytes_read;
-	size_t bytes_remaining;
-
-	for (bytes_remaining = count;
-	     bytes_remaining != 0;
-	     bytes_remaining -= bytes_read, buf += bytes_read)
-	{
-		bytes_read = read(fd, buf, bytes_remaining);
-		if (bytes_read <= 0) {
-			if (bytes_read == 0)
-				errno = EIO;
-			else if (errno == EINTR)
-				continue;
-			break;
-		}
-	}
-	return count - bytes_remaining;
-}
-
-/* Like write(), but keep trying until everything has been written or we know
- * for sure that there was an error. */
-size_t
-full_write(int fd, const void *buf, size_t count)
-{
-	ssize_t bytes_written;
-	size_t bytes_remaining;
-
-	for (bytes_remaining = count;
-	     bytes_remaining != 0;
-	     bytes_remaining -= bytes_written, buf += bytes_written)
-	{
-		bytes_written = write(fd, buf, bytes_remaining);
-		if (bytes_written < 0) {
-			if (errno == EINTR)
-				continue;
-			break;
-		}
-	}
-	return count - bytes_remaining;
-}
-
-/* Like pread(), but keep trying until everything has been read or we know for
- * sure that there was an error (or end-of-file) */
-size_t
-full_pread(int fd, void *buf, size_t count, off_t offset)
-{
-	ssize_t bytes_read;
-	size_t bytes_remaining;
-
-	for (bytes_remaining = count;
-	     bytes_remaining != 0;
-	     bytes_remaining -= bytes_read, buf += bytes_read,
-	     	offset += bytes_read)
-	{
-		bytes_read = pread(fd, buf, bytes_remaining, offset);
-		if (bytes_read <= 0) {
-			if (bytes_read == 0)
-				errno = EIO;
-			else if (errno == EINTR)
-				continue;
-			break;
-		}
-	}
-	return count - bytes_remaining;
-}
-
-/* Like pwrite(), but keep trying until everything has been written or we know
- * for sure that there was an error. */
-size_t
-full_pwrite(int fd, const void *buf, size_t count, off_t offset)
-{
-	ssize_t bytes_written;
-	size_t bytes_remaining;
-
-	for (bytes_remaining = count;
-	     bytes_remaining != 0;
-	     bytes_remaining -= bytes_written, buf += bytes_written,
-	     	offset += bytes_written)
-	{
-		bytes_written = pwrite(fd, buf, bytes_remaining, offset);
-		if (bytes_written < 0) {
-			if (errno == EINTR)
-				continue;
-			break;
-		}
-	}
-	return count - bytes_remaining;
-}
-
-/* Like writev(), but keep trying until everything has been written or we know
- * for sure that there was an error. */
-size_t
-full_writev(int fd, struct iovec *iov, int iovcnt)
-{
-	size_t total_bytes_written = 0;
-	while (iovcnt > 0) {
-		ssize_t bytes_written;
-
-		bytes_written = writev(fd, iov, iovcnt);
-		if (bytes_written < 0) {
-			if (errno == EINTR)
-				continue;
-			break;
-		}
-		total_bytes_written += bytes_written;
-		while (bytes_written) {
-			if (bytes_written >= iov[0].iov_len) {
-				bytes_written -= iov[0].iov_len;
-				iov++;
-				iovcnt--;
-			} else {
-				iov[0].iov_base += bytes_written;
-				iov[0].iov_len -= bytes_written;
-				bytes_written = 0;
-			}
-		}
-	}
-	return total_bytes_written;
-}
-
-off_t
-filedes_offset(int fd)
-{
-	return lseek(fd, 0, SEEK_CUR);
+	while (len--)
+		tfprintf(out, T("%02hhx"), *field++);
 }

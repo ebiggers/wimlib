@@ -22,25 +22,37 @@
  * wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "dentry.h"
-#include "lookup_table.h"
-#include "buffer_io.h"
-#include "sha1.h"
-
-#ifdef __WIN32__
-#  include "win32.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
 #endif
 
-#include <errno.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
+#include "wimlib.h"
+#include "wimlib/buffer_io.h"
+#include "wimlib/dentry.h"
+#include "wimlib/error.h"
+#include "wimlib/file_io.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/resource.h"
+#include "wimlib/sha1.h"
+
+#ifdef __WIN32__
+/* for read_win32_file_prefix(), read_win32_encrypted_file_prefix() */
+#  include "wimlib/win32.h"
+#endif
+
+#ifdef WITH_NTFS_3G
+/* for read_ntfs_file_prefix() */
+#  include "wimlib/ntfs_3g.h"
+#endif
 
 #ifdef HAVE_ALLOCA_H
 #  include <alloca.h>
 #endif
+#include <errno.h>
+#include <fcntl.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 /*
  * Reads all or part of a compressed WIM resource.

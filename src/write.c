@@ -24,24 +24,30 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "config.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
-/* On BSD, this should be included before "list.h" so that "list.h" can
+/* On BSD, this should be included before "wimlib/list.h" so that "wimlib/list.h" can
  * overwrite the LIST_HEAD macro. */
 #  include <sys/file.h>
 #endif
 
-#ifdef __WIN32__
-#  include "win32.h"
-#endif
+#include "wimlib/endianness.h"
+#include "wimlib/error.h"
+#include "wimlib/file_io.h"
+#include "wimlib/header.h"
+#include "wimlib/integrity.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/resource.h"
+#include "wimlib/write.h"
+#include "wimlib/xml.h"
 
-#include "list.h"
-#include "wimlib_internal.h"
-#include "buffer_io.h"
-#include "dentry.h"
-#include "lookup_table.h"
-#include "xml.h"
+#ifdef __WIN32__
+#  include "wimlib/win32.h" /* win32_get_number_of_processors() */
+#endif
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 #  include <pthread.h>
@@ -1200,7 +1206,7 @@ main_thread_process_next_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 }
 
 static long
-get_default_num_threads()
+get_default_num_threads(void)
 {
 #ifdef __WIN32__
 	return win32_get_number_of_processors();

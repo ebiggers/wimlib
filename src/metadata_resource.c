@@ -20,9 +20,17 @@
  * wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#include "wimlib_internal.h"
-#include "dentry.h"
-#include "lookup_table.h"
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "wimlib/dentry.h"
+#include "wimlib/error.h"
+#include "wimlib/file_io.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/resource.h"
+#include "wimlib/security.h"
 
 /*
  * Reads a metadata resource for an image in the WIM file.  The metadata
