@@ -29,10 +29,10 @@
 
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
-#include "wimlib/metadata.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
 #include "wimlib/resource.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/xml.h"
@@ -1324,12 +1324,6 @@ out:
 	return ret;
 }
 
-#define CHECK_RET  ({ 	if (ret < 0)  { \
-				ERROR("Error writing XML data"); \
-				ret = WIMLIB_ERR_WRITE; \
-				goto out_free_text_writer; \
-			} })
-
 /*
  * Writes XML data to a WIM file.
  *
@@ -1405,11 +1399,13 @@ write_xml_data(const struct wim_info *wim_info, int image, int out_fd,
 	DEBUG("Writing <WIM> element");
 
 	ret = xmlTextWriterStartElement(writer, "WIM");
-	CHECK_RET;
+	if (ret < 0)
+		goto out_write_error;
 
 	ret = xmlTextWriterWriteFormatElement(writer, "TOTALBYTES", "%"PRIu64,
 					      total_bytes);
-	CHECK_RET;
+	if (ret < 0)
+		goto out_write_error;
 
 	if (wim_info != NULL) {
 		int first, last;
@@ -1424,17 +1420,24 @@ write_xml_data(const struct wim_info *wim_info, int image, int out_fd,
 		for (int i = first; i <= last; i++) {
 			ret = xml_write_image_info(writer, &wim_info->images[i - 1]);
 			if (ret) {
-				CHECK_RET;
+				if (ret < 0)
+					goto out_write_error;
 				goto out_free_text_writer;
 			}
 		}
 	}
 
 	ret = xmlTextWriterEndElement(writer);
-	CHECK_RET;
+	if (ret < 0)
+		goto out_write_error;
 
 	ret = xmlTextWriterEndDocument(writer);
-	CHECK_RET;
+	if (ret < 0)
+		goto out_write_error;
+
+	ret = xmlTextWriterFlush(writer);
+	if (ret < 0)
+		goto out_write_error;
 
 	DEBUG("Ended XML document");
 
@@ -1451,14 +1454,17 @@ write_xml_data(const struct wim_info *wim_info, int image, int out_fd,
 out_free_text_writer:
 	/* xmlFreeTextWriter will free the attached xmlOutputBuffer. */
 	xmlFreeTextWriter(writer);
-	out_buffer = NULL;
+	goto out;
 out_output_buffer_close:
-	if (out_buffer != NULL)
-		xmlOutputBufferClose(out_buffer);
+	xmlOutputBufferClose(out_buffer);
 out:
 	if (ret == 0)
 		DEBUG("Successfully wrote XML data");
 	return ret;
+out_write_error:
+	ERROR("Error writing XML data");
+	ret = WIMLIB_ERR_WRITE;
+	goto out_free_text_writer;
 }
 
 /* Returns the name of the specified image. */
