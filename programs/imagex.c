@@ -2784,9 +2784,13 @@ imagex_optimize(int argc, tchar **argv)
 
 	wimfile = argv[0];
 
+	ret = file_writable(wimfile);
+	if (ret)
+		return ret;
+
 	ret = wimlib_open_wim(wimfile, open_flags, &w,
 			      imagex_progress_func);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	old_size = file_get_size(argv[0]);
@@ -2987,6 +2991,11 @@ imagex_update(int argc, tchar **argv)
 	if (argc < 1 || argc > 2)
 		goto out_usage;
 	wimfile = argv[0];
+
+	ret = file_writable(wimfile);
+	if (ret)
+		goto out;
+
 	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
 	if (ret)
 		goto out;
