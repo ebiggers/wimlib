@@ -58,7 +58,8 @@
  * The AND operation guarantees that only 3 characters will affect the hash
  * value, so every identical 3-character string will have the same hash value.
  */
-static inline unsigned update_hash(unsigned hash, u8 c)
+static inline unsigned
+update_hash(unsigned hash, u8 c)
 {
 	return ((hash << HASH_SHIFT) ^ c) & HASH_MASK;
 }
@@ -76,9 +77,10 @@ static inline unsigned update_hash(unsigned hash, u8 c)
  * to walk through the hash chain, until the special index `0' is reached,
  * indicating the end of the hash chain.
  */
-static inline unsigned insert_string(u16 hash_tab[], u16 prev_tab[],
-				     const u8 window[], unsigned str_pos,
-				     unsigned hash)
+static inline unsigned
+insert_string(u16 hash_tab[], u16 prev_tab[],
+	      const u8 window[], unsigned str_pos,
+	      unsigned hash)
 {
 	hash = update_hash(hash, window[str_pos + LZ_MIN_MATCH - 1]);
 	prev_tab[str_pos] = hash_tab[hash];
@@ -108,11 +110,12 @@ static inline unsigned insert_string(u16 hash_tab[], u16 prev_tab[],
  *
  * Returns the length of the match that was found.
  */
-static unsigned longest_match(const u8 window[], unsigned bytes_remaining,
-			      unsigned strstart, const u16 prev_tab[],
-			      unsigned cur_match, unsigned prev_len,
-			      unsigned *match_start_ret,
-			      const struct lz_params *params)
+static unsigned
+longest_match(const u8 window[], unsigned bytes_remaining,
+	      unsigned strstart, const u16 prev_tab[],
+	      unsigned cur_match, unsigned prev_len,
+	      unsigned *match_start_ret,
+	      const struct lz_params *params)
 {
 	unsigned chain_len = params->max_chain_len;
 
@@ -216,15 +219,16 @@ static unsigned longest_match(const u8 window[], unsigned bytes_remaining,
  * is the number of slots in @match_tab that have been filled with the
  * intermediate representation of a match or literal byte.
  */
-unsigned lz_analyze_block(const u8 uncompressed_data[],
-			  unsigned uncompressed_len,
-			  u32 match_tab[],
-			  lz_record_match_t record_match,
-			  lz_record_literal_t record_literal,
-			  void *record_match_arg1,
-			  void *record_match_arg2,
-			  void *record_literal_arg,
-			  const struct lz_params *params)
+unsigned
+lz_analyze_block(const u8 uncompressed_data[],
+		 unsigned uncompressed_len,
+		 u32 match_tab[],
+		 lz_record_match_t record_match,
+		 lz_record_literal_t record_literal,
+		 void *record_match_arg1,
+		 void *record_match_arg2,
+		 void *record_literal_arg,
+		 const struct lz_params *params)
 {
 	unsigned cur_match_pos = 0;
 	unsigned cur_input_pos = 0;
