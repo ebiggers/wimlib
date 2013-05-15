@@ -9,10 +9,8 @@ Packager:  Eric Biggers <ebiggers3@gmail.com>
 Source:    http://downloads.sourceforge.net/wimlib/wimlib-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
-Requires: libxml2, fuse-libs, fuse, openssl
-Requires: ntfs-3g >= 2:2011.4.12
-BuildRequires: libxml2-devel, fuse, fuse-devel, openssl-devel, libattr-devel
-BuildRequires: ntfs-3g-devel >= 2:2011.4.12, ntfsprogs
+Requires: libxml2, openssl
+BuildRequires: libxml2-devel, openssl-devel
 %description
 wimlib is a C library for creating, extracting, modifying, and mounting files in
 the Windows Imaging Format (WIM files).  It is similar to Microsoft's WIMGAPI
@@ -42,9 +40,9 @@ on Windows, but this package contains a free implementation of ImageX called
 %configure --prefix=/usr		\
            --disable-rpath		\
 	   --with-libcrypto		\
-	   --with-ntfs-3g		\
-	   --with-fuse			\
-	   --enable-xattr
+	   --without-ntfs-3g		\
+	   --without-fuse		\
+	   --disable-xattr
 make %{?_smp_mflags}
 
 %check
