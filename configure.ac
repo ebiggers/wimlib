@@ -185,6 +185,7 @@ WINDOWS_CFLAGS=""
 WINDOWS_CPPFLAGS=""
 WINDOWS_LDFLAGS=""
 WINDOWS_LDADD=""
+ENABLE_XATTR_DEFAULT="autodetect"
 
 case "$host" in
 	*-*-mingw*)
@@ -197,6 +198,7 @@ case "$host" in
 		WINDOWS_CPPFLAGS="-D_POSIX -DUNICODE -D_UNICODE"
 		WINDOWS_LDFLAGS="-no-undefined"
 		WINDOWS_LDADD="-lshlwapi"
+		ENABLE_XATTR_DEFAULT="no"
 		;;
  	*-*-cygwin*)
 		# Cygwin (WARNING: not well supported)
@@ -311,15 +313,17 @@ AC_ARG_ENABLE([xattr],
 	[AS_HELP_STRING([--enable-xattr], [Enable the xattr interface to access WIM
 			alternate data streams (default: autodetect)])],
 	[ENABLE_XATTR=$enableval],
-	[AC_CHECK_FUNC([setxattr],
-		[AC_CHECK_HEADER([attr/xattr.h],
-			[ENABLE_XATTR=yes],
-			[AC_MSG_WARN([Cannot find the "attr/xattr.h" header.  You will not be
+	[if test "x$ENABLE_XATTR_DEFAULT" = "xautodetect"; then
+		AC_CHECK_FUNC([setxattr],
+			[AC_CHECK_HEADER([attr/xattr.h],
+				[ENABLE_XATTR=yes],
+				[AC_MSG_WARN([Cannot find the "attr/xattr.h" header.  You will not be
+				 able to use the xattr interface to access WIM alternate data
+				 streams.])])],
+			[AC_MSG_WARN([Cannot find the setxattr() function.  You will not be
 			 able to use the xattr interface to access WIM alternate data
-			 streams.])])],
-		[AC_MSG_WARN([Cannot find the setxattr() function.  You will not be
-		 able to use the xattr interface to access WIM alternate data
-		 streams.])])])
+			 streams.])])
+	fi])
 
 if test "x$ENABLE_XATTR" = "xyes"; then
 	AC_DEFINE([ENABLE_XATTR], [1], [Define to 1 if using the xattr
