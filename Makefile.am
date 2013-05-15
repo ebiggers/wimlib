@@ -164,6 +164,7 @@ EXTRA_DIST =					\
 	archlinux				\
 	debian					\
 	rpm					\
+	examples				\
 	README.WINDOWS				\
 	programs/install.cmd			\
 	programs/wimapply.c			\
