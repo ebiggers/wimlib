@@ -37,6 +37,7 @@ libwim_la_SOURCES =		\
 	src/security.c		\
 	src/sha1.c		\
 	src/split.c		\
+	src/swm.c		\
 	src/reparse.c		\
 	src/timestamp.c		\
 	src/update_image.c	\
@@ -66,7 +67,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/lookup_table.h	\
 	include/wimlib/lzx.h		\
 	include/wimlib/metadata.h	\
-	include/wimlib/ntfs_3g.h	\
 	include/wimlib/paths.h		\
 	include/wimlib/rbtree.h		\
 	include/wimlib/reparse.h	\

@@ -5,8 +5,6 @@
 /*
  * Copyright (C) 2012, 2013 Eric Biggers
  *
- * wimlib - Library for working with WIM files
- *
  * This file is part of wimlib, a library for working with WIM files.
  *
  * wimlib is free software; you can redistribute it and/or modify it under the

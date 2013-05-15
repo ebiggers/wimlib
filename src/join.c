@@ -32,65 +32,10 @@
 #include "wimlib/metadata.h"
 #include "wimlib/resource.h"
 #include "wimlib/swm.h"
-#include "wimlib/wim.h"
 #include "wimlib/write.h"
 #include "wimlib/xml.h"
 
 #include <stdlib.h> /* for qsort() */
-
-static int
-move_lte_to_table(struct wim_lookup_table_entry *lte, void *combined_table)
-{
-	hlist_del(&lte->hash_list);
-	lookup_table_insert((struct wim_lookup_table*)combined_table, lte);
-	return 0;
-}
-
-static void
-lookup_table_join(struct wim_lookup_table *combined_table,
-		  struct wim_lookup_table *part_table)
-{
-	for_lookup_table_entry(part_table, move_lte_to_table, combined_table);
-	part_table->num_entries = 0;
-}
-
-/*
- * merge_lookup_tables() - Merge lookup tables from the parts of a split WIM.
- *
- * @w specifies the first part, while @additional_swms and @num_additional_swms
- * specify an array of pointers to the WIMStruct's for additional split WIM parts.
- *
- * The reason we join the lookup tables is so we only have to search one lookup
- * table to find the location of a resource in the entire WIM.
- */
-void
-merge_lookup_tables(WIMStruct *w,
-		    WIMStruct **additional_swms,
-		    unsigned num_additional_swms)
-{
-	for (unsigned i = 0; i < num_additional_swms; i++)
-		lookup_table_join(w->lookup_table, additional_swms[i]->lookup_table);
-}
-
-static int
-move_lte_to_orig_table(struct wim_lookup_table_entry *lte, void *_wim)
-{
-	WIMStruct *wim = _wim;
-	if (lte->wim != wim) {
-		move_lte_to_table(lte, lte->wim->lookup_table);
-		wim->lookup_table->num_entries--;
-	}
-	return 0;
-}
-
-/* Undo merge_lookup_tables(), given the first WIM part that contains the merged
- * lookup table. */
-void
-unmerge_lookup_table(WIMStruct *wim)
-{
-	for_lookup_table_entry(wim->lookup_table, move_lte_to_orig_table, wim);
-}
-
 
 static int
 join_wims(WIMStruct **swms, unsigned num_swms,
@@ -154,9 +99,7 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 	}
 
 	/* Write lookup table, XML data, and optional integrity table */
-	for (i = 0; i < num_swms; i++)
-		lookup_table_join(joined_wim->lookup_table, swms[i]->lookup_table);
-
+	merge_lookup_tables(joined_wim, swms, num_swms);
 	free_wim_info(joined_wim->wim_info);
 	joined_wim->wim_info = swms[0]->wim_info;
 	joined_wim->image_metadata = swms[0]->image_metadata;

@@ -8,8 +8,6 @@
 /*
  * Copyright (C) 2012, 2013 Eric Biggers
  *
- * wimlib - Library for working with WIM files
- *
  * This file is part of wimlib, a library for working with WIM files.
  *
  * wimlib is free software; you can redistribute it and/or modify it under the
@@ -35,7 +33,6 @@
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/security.h"
-#include "wimlib/swm.h"
 
 static int
 verify_inode(struct wim_inode *inode, const WIMStruct *w)
@@ -238,112 +235,4 @@ wim_run_full_verifications(WIMStruct *w)
 		w->all_images_verified = 0;
 	}
 	return ret;
-}
-
-/*
- * verify_swm_set: - Sanity checks to make sure a set of WIMs correctly
- *		     correspond to a spanned set.
- *
- * @w:
- * 	Part 1 of the set.
- *
- * @additional_swms:
- * 	All parts of the set other than part 1.
- *
- * @num_additional_swms:
- * 	Number of WIMStructs in @additional_swms.  Or, the total number of parts
- * 	in the set minus 1.
- *
- * @return:
- * 	0 on success; WIMLIB_ERR_SPLIT_INVALID if the set is not valid.
- */
-int
-verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
-	       unsigned num_additional_swms)
-{
-	unsigned total_parts = w->hdr.total_parts;
-	int ctype;
-	const u8 *guid;
-
-	if (total_parts != num_additional_swms + 1) {
-		ERROR("`%"TS"' says there are %u parts in the spanned set, "
-		      "but %"TS"%u part%"TS" provided",
-		      w->filename, total_parts,
-		      (num_additional_swms + 1 < total_parts) ? T("only ") : T(""),
-		      num_additional_swms + 1,
-		      (num_additional_swms) ? T("s were") : T(" was"));
-		return WIMLIB_ERR_SPLIT_INVALID;
-	}
-	if (w->hdr.part_number != 1) {
-		ERROR("WIM `%"TS"' is not the first part of the split WIM.",
-		      w->filename);
-		return WIMLIB_ERR_SPLIT_INVALID;
-	}
-	for (unsigned i = 0; i < num_additional_swms; i++) {
-		if (additional_swms[i]->hdr.total_parts != total_parts) {
-			ERROR("WIM `%"TS"' says there are %u parts in the "
-			      "spanned set, but %u parts were provided",
-			      additional_swms[i]->filename,
-			      additional_swms[i]->hdr.total_parts,
-			      total_parts);
-			return WIMLIB_ERR_SPLIT_INVALID;
-		}
-	}
-
-	/* keep track of ctype and guid just to make sure they are the same for
-	 * all the WIMs. */
-	ctype = wimlib_get_compression_type(w);
-	guid = w->hdr.guid;
-
-	{
-		/* parts_to_swms is not allocated at function scope because it
-		 * should only be allocated after num_additional_swms was
-		 * checked to be the same as w->hdr.total_parts.  Otherwise, it
-		 * could be unexpectedly high and cause a stack overflow. */
-		WIMStruct *parts_to_swms[num_additional_swms];
-		ZERO_ARRAY(parts_to_swms);
-		for (unsigned i = 0; i < num_additional_swms; i++) {
-
-			WIMStruct *swm = additional_swms[i];
-
-			if (wimlib_get_compression_type(swm) != ctype) {
-				ERROR("The split WIMs do not all have the same "
-				      "compression type");
-				return WIMLIB_ERR_SPLIT_INVALID;
-			}
-			if (memcmp(guid, swm->hdr.guid, WIM_GID_LEN) != 0) {
-				ERROR("The split WIMs do not all have the same "
-				      "GUID");
-				return WIMLIB_ERR_SPLIT_INVALID;
-			}
-			if (swm->hdr.part_number == 1) {
-				ERROR("WIMs `%"TS"' and `%"TS"' both are marked "
-				      "as the first WIM in the spanned set",
-				      w->filename, swm->filename);
-				return WIMLIB_ERR_SPLIT_INVALID;
-			}
-			if (swm->hdr.part_number == 0 ||
-			    swm->hdr.part_number > total_parts)
-			{
-				ERROR("WIM `%"TS"' says it is part %u in the "
-				      "spanned set, but the part number must "
-				      "be in the range [1, %u]",
-				      swm->filename, swm->hdr.part_number, total_parts);
-				return WIMLIB_ERR_SPLIT_INVALID;
-			}
-			if (parts_to_swms[swm->hdr.part_number - 2])
-			{
-				ERROR("`%"TS"' and `%"TS"' are both marked as "
-				      "part %u of %u in the spanned set",
-				      parts_to_swms[swm->hdr.part_number - 2]->filename,
-				      swm->filename,
-				      swm->hdr.part_number,
-				      total_parts);
-				return WIMLIB_ERR_SPLIT_INVALID;
-			} else {
-				parts_to_swms[swm->hdr.part_number - 2] = swm;
-			}
-		}
-	}
-	return 0;
 }
