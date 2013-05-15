@@ -65,21 +65,21 @@ better than Microsoft's software, especially with multithreaded compression,
 available in wimlib v1.1.0 and later.
 
 The following tables compare the compression ratio and performance for creating
-a compressed x86_64 Windows PE image.  Note: these timings were done in a
-Windows 7 virtual machine so that the times would be fully comparable; however,
-wimlib-imagex will have even better performance on Linux.
+a compressed x86_64 Windows PE image.  Note: these timings were done on Windows
+7 so that the times would be fully comparable; however, wimlib-imagex may have
+even better performance on Linux.
 
         Table 1. WIM size
 
                                            XPRESS Compression      LZX Compression
-        wimlib-imagex (v1.4.0):            176,724,198 bytes       165,919,718 bytes
-        Microsoft imagex.exe:              178,763,991 bytes       160,138,533 bytes
+        wimlib-imagex (v1.4.0):            165,301,379 bytes       155,254,385 bytes
+        Microsoft imagex.exe:              167,212,939 bytes       149,973,212 bytes
 
         Table 2. Time to create WIM
 
                                            XPRESS Compression      LZX Compression
-        wimlib-imagex (v1.4.0, 2 threads): 44 sec                  66 sec
-        Microsoft imagex.exe:              60 sec                  115 sec
+        wimlib-imagex (v1.4.0, 2 threads): 18 sec                  51 sec
+        Microsoft imagex.exe:              25 sec                  93 sec
 
                                   NTFS SUPPORT
 
