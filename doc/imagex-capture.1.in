@@ -23,7 +23,7 @@ from.  If \fISOURCE\fR is a directory, the WIM image is captured from that
 directory.   Alternatively, if the \fB--source-list\fR option is given,
 \fISOURCE\fR is interpreted as a file that itself provides a list of
 files and directories to include in the new WIM image.  Still
-alternatively, only on UNIX builds of wimlib  if \fISOURCE\fR is a
+alternatively, only on UNIX builds of wimlib, if \fISOURCE\fR is a
 regular file or block device, it is interpreted as an NTFS volume from
 which a WIM image is to be captured. 
 .PP
