@@ -243,8 +243,10 @@ execute_add_command(WIMStruct *wim,
 		progress.scan.wim_target_path = wim_target_path;
 		progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &progress);
 	}
-	config->_prefix = fs_source_path;
-	config->_prefix_num_tchars = tstrlen(fs_source_path);
+	if (config) {
+		config->_prefix = fs_source_path;
+		config->_prefix_num_tchars = tstrlen(fs_source_path);
+	}
 
 	if (wim_target_path[0] == T('\0'))
 		add_flags |= WIMLIB_ADD_FLAG_ROOT;
