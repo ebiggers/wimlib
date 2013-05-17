@@ -26,7 +26,8 @@
 #endif
 
 #include "wimlib/assert.h"
-#include "wimlib/buffer_io.h"
+#include "wimlib/compiler.h"
+#include "wimlib/endianness.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
@@ -124,6 +125,25 @@ parse_substitute_name(const utf16lechar *substitute_name,
 	}
 }
 
+struct reparse_buffer_disk {
+	le32 rptag;
+	le16 rpdatalen;
+	le16 rpreserved;
+	le16 substitute_name_offset;
+	le16 substitute_name_nbytes;
+	le16 print_name_offset;
+	le16 print_name_nbytes;
+	union {
+		struct {
+			le32 rpflags;
+			u8 data[REPARSE_POINT_MAX_SIZE - 20];
+		} _packed_attribute symlink;
+		struct {
+			u8 data[REPARSE_POINT_MAX_SIZE - 16];
+		} _packed_attribute junction;
+	};
+} _packed_attribute;
+
 /*
  * Read the data from a symbolic link, junction, or mount point reparse point
  * buffer into a `struct reparse_data'.
@@ -132,37 +152,51 @@ parse_substitute_name(const utf16lechar *substitute_name,
  * description of the format of the reparse point buffers.
  */
 int
-parse_reparse_data(const u8 *rpbuf, u16 rpbuflen, struct reparse_data *rpdata)
+parse_reparse_data(const u8 * restrict rpbuf, u16 rpbuflen,
+		   struct reparse_data * restrict rpdata)
 {
-	const u8 *p = rpbuf;
 	u16 substitute_name_offset;
 	u16 print_name_offset;
+	const struct reparse_buffer_disk *rpbuf_disk =
+		(const struct reparse_buffer_disk*)rpbuf;
+	const u8 *data;
 
 	memset(rpdata, 0, sizeof(*rpdata));
 	if (rpbuflen < 16)
 		goto out_invalid;
-	p = get_u32(p, &rpdata->rptag);
+	rpdata->rptag = le32_to_cpu(rpbuf_disk->rptag);
 	wimlib_assert(rpdata->rptag == WIM_IO_REPARSE_TAG_SYMLINK ||
 		      rpdata->rptag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
-	p = get_u16(p, &rpdata->rpdatalen);
-	p = get_u16(p, &rpdata->rpreserved);
-	p = get_u16(p, &substitute_name_offset);
-	p = get_u16(p, &rpdata->substitute_name_nbytes);
-	p = get_u16(p, &print_name_offset);
-	p = get_u16(p, &rpdata->print_name_nbytes);
+	rpdata->rpdatalen = le16_to_cpu(rpbuf_disk->rpdatalen);
+	rpdata->rpreserved = le16_to_cpu(rpbuf_disk->rpreserved);
+	substitute_name_offset = le16_to_cpu(rpbuf_disk->substitute_name_offset);
+	rpdata->substitute_name_nbytes = le16_to_cpu(rpbuf_disk->substitute_name_nbytes);
+	print_name_offset = le16_to_cpu(rpbuf_disk->print_name_offset);
+	rpdata->print_name_nbytes = le16_to_cpu(rpbuf_disk->print_name_nbytes);
+
+	if ((substitute_name_offset & 1) | (print_name_offset & 1) |
+	    (rpdata->substitute_name_nbytes & 1) | (rpdata->print_name_nbytes & 1))
+	{
+		/* Names would be unaligned... */
+		goto out_invalid;
+	}
+
 	if (rpdata->rptag == WIM_IO_REPARSE_TAG_SYMLINK) {
 		if (rpbuflen < 20)
 			goto out_invalid;
-		p = get_u32(p, &rpdata->rpflags);
+		rpdata->rpflags = le16_to_cpu(rpbuf_disk->symlink.rpflags);
+		data = rpbuf_disk->symlink.data;
+	} else {
+		data = rpbuf_disk->junction.data;
 	}
 	if ((size_t)substitute_name_offset + rpdata->substitute_name_nbytes +
-	    (p - rpbuf) > rpbuflen)
+	    (data - rpbuf) > rpbuflen)
 		goto out_invalid;
 	if ((size_t)print_name_offset + rpdata->print_name_nbytes +
-	    (p - rpbuf) > rpbuflen)
+	    (data - rpbuf) > rpbuflen)
 		goto out_invalid;
-	rpdata->substitute_name = (utf16lechar*)&p[substitute_name_offset];
-	rpdata->print_name = (utf16lechar*)&p[print_name_offset];
+	rpdata->substitute_name = (utf16lechar*)&data[substitute_name_offset];
+	rpdata->print_name = (utf16lechar*)&data[print_name_offset];
 	return 0;
 out_invalid:
 	ERROR("Invalid reparse data");
@@ -178,34 +212,44 @@ out_invalid:
  *		at least REPARSE_POINT_MAX_SIZE bytes long.
  */
 int
-make_reparse_buffer(const struct reparse_data *rpdata, u8 *rpbuf)
+make_reparse_buffer(const struct reparse_data * restrict rpdata,
+		    u8 * restrict rpbuf)
 {
-	u8 *p = rpbuf;
+	struct reparse_buffer_disk *rpbuf_disk =
+		(struct reparse_buffer_disk*)rpbuf;
+	u8 *data;
 
-	p = put_u32(p, rpdata->rptag);
-	p += 2; /* We set ReparseDataLength later */
-	p = put_u16(p, rpdata->rpreserved);
-	p = put_u16(p, 0); /* substitute name offset */
-	p = put_u16(p, rpdata->substitute_name_nbytes); /* substitute name nbytes */
-	p = put_u16(p, rpdata->substitute_name_nbytes + 2); /* print name offset */
-	p = put_u16(p, rpdata->print_name_nbytes); /* print name nbytes */
-	if (rpdata->rptag == WIM_IO_REPARSE_TAG_SYMLINK)
-		p = put_u32(p, rpdata->rpflags);
+	rpbuf_disk->rptag = cpu_to_le32(rpdata->rptag);
+	rpbuf_disk->rpreserved = cpu_to_le16(rpdata->rpreserved);
+	rpbuf_disk->substitute_name_offset = cpu_to_le16(0);
+	rpbuf_disk->substitute_name_nbytes = cpu_to_le16(rpdata->substitute_name_nbytes);
+	rpbuf_disk->print_name_offset = cpu_to_le16(rpdata->substitute_name_nbytes + 2);
+	rpbuf_disk->print_name_nbytes = cpu_to_le16(rpdata->print_name_nbytes);
+
+	if (rpdata->rptag == WIM_IO_REPARSE_TAG_SYMLINK) {
+		rpbuf_disk->symlink.rpflags = cpu_to_le32(rpdata->rpflags);
+		data = rpbuf_disk->symlink.data;
+	} else {
+		data = rpbuf_disk->junction.data;
+	}
+
 	/* We null-terminate the substitute and print names, although this may
 	 * not be strictly necessary.  Note that the byte counts should not
 	 * include the null terminators. */
-	if (p + rpdata->substitute_name_nbytes +
+	if (data + rpdata->substitute_name_nbytes +
 	    rpdata->print_name_nbytes +
 	    2 * sizeof(utf16lechar) - rpbuf > REPARSE_POINT_MAX_SIZE)
 	{
 		ERROR("Reparse data is too long!");
 		return WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
-	p = put_bytes(p, rpdata->substitute_name_nbytes, rpdata->substitute_name);
-	p = put_u16(p, 0);
-	p = put_bytes(p, rpdata->print_name_nbytes, rpdata->print_name);
-	p = put_u16(p, 0);
-	put_u16(rpbuf + 4, p - rpbuf - 8); /* Set ReparseDataLength */
+	data = mempcpy(data, rpdata->substitute_name, rpdata->substitute_name_nbytes);
+	*(utf16lechar*)data = cpu_to_le16(0);
+	data += 2;
+	data = mempcpy(data, rpdata->print_name, rpdata->print_name_nbytes);
+	*(utf16lechar*)data = cpu_to_le16(0);
+	data += 2;
+	rpbuf_disk->rpdatalen = cpu_to_le16(data - rpbuf - 8);
 	return 0;
 }
 
@@ -222,10 +266,12 @@ make_reparse_buffer(const struct reparse_data *rpdata, u8 *rpbuf)
  * buffer returned by this function.
  */
 int
-wim_inode_get_reparse_data(const struct wim_inode *inode, u8 *rpbuf)
+wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
+			   u8 * restrict rpbuf)
 {
 	struct wim_lookup_table_entry *lte;
 	int ret;
+	struct reparse_buffer_disk *rpbuf_disk;
 
 	wimlib_assert(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT);
 
@@ -245,16 +291,17 @@ wim_inode_get_reparse_data(const struct wim_inode *inode, u8 *rpbuf)
 		return ret;
 
 	/* Reconstruct the first 8 bytes of the reparse point buffer */
+	rpbuf_disk = (struct reparse_buffer_disk*)rpbuf;
 
 	/* ReparseTag */
-	put_u32(rpbuf, inode->i_reparse_tag);
+	rpbuf_disk->rptag = cpu_to_le32(inode->i_reparse_tag);
 
 	/* ReparseDataLength */
-	put_u16(rpbuf + 4, wim_resource_size(lte));
+	rpbuf_disk->rpdatalen = cpu_to_le16(wim_resource_size(lte));
 
 	/* ReparseReserved
 	 * XXX this could be one of the unknown fields in the WIM dentry. */
-	put_u16(rpbuf + 6, 0);
+	rpbuf_disk->rpreserved = cpu_to_le16(0);
 	return 0;
 }
 
@@ -269,10 +316,11 @@ wim_inode_get_reparse_data(const struct wim_inode *inode, u8 *rpbuf)
  * argument is swapped out with the `struct wim_inode' for a reparse point, and
  * on failure a negated error code is returned rather than -1 with errno set.  */
 ssize_t
-wim_inode_readlink(const struct wim_inode *inode, char *buf, size_t bufsize)
+wim_inode_readlink(const struct wim_inode * restrict inode,
+		   char * restrict buf, size_t bufsize)
 {
 	int ret;
-	u8 rpbuf[REPARSE_POINT_MAX_SIZE];
+	struct reparse_buffer_disk rpbuf_disk _aligned_attribute(8);
 	u16 rpdatalen;
 	struct reparse_data rpdata;
 	char *link_target;
@@ -281,12 +329,11 @@ wim_inode_readlink(const struct wim_inode *inode, char *buf, size_t bufsize)
 
 	wimlib_assert(inode_is_symlink(inode));
 
-	if (wim_inode_get_reparse_data(inode, rpbuf))
+	if (wim_inode_get_reparse_data(inode, (u8*)&rpbuf_disk))
 		return -EIO;
 
-	get_u16(rpbuf + 4, &rpdatalen);
-
-	if (parse_reparse_data(rpbuf, rpdatalen + 8, &rpdata))
+	if (parse_reparse_data((const u8*)&rpbuf_disk,
+			       le16_to_cpu(rpbuf_disk.rpdatalen) + 8, &rpdata))
 		return -EIO;
 
 	ret = utf16le_to_tstr(rpdata.substitute_name,
@@ -336,8 +383,7 @@ wim_inode_set_symlink(struct wim_inode *inode,
 		      struct wim_lookup_table *lookup_table)
 
 {
-	u8 rpbuf[REPARSE_POINT_MAX_SIZE];
-	u16 rpdatalen;
+	struct reparse_buffer_disk rpbuf_disk _aligned_attribute(8);
 	struct reparse_data rpdata;
 	static const char abs_subst_name_prefix[12] = "\\\0?\0?\0\\\0C\0:\0";
 	static const char abs_print_name_prefix[4] = "C\0:\0";
@@ -426,10 +472,11 @@ wim_inode_set_symlink(struct wim_inode *inode,
 		rpdata.rpflags = SYMBOLIC_LINK_RELATIVE;
 	}
 
-	ret = make_reparse_buffer(&rpdata, rpbuf);
+	ret = make_reparse_buffer(&rpdata, (u8*)&rpbuf_disk);
 	if (ret == 0) {
-		get_u16(rpbuf + 4, &rpdatalen);
-		ret = inode_set_unnamed_stream(inode, rpbuf + 8, rpdatalen,
+		ret = inode_set_unnamed_stream(inode,
+					       (u8*)&rpbuf_disk + 8,
+					       le16_to_cpu(rpbuf_disk.rpdatalen),
 					       lookup_table);
 	}
 	FREE(name_utf16le);

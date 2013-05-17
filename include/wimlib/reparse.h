@@ -53,17 +53,21 @@ parse_substitute_name(const utf16lechar *substitute_name,
 		      u32 rptag);
 
 extern int
-parse_reparse_data(const u8 *rpbuf, u16 rpbuflen, struct reparse_data *rpdata);
+parse_reparse_data(const u8 * restrict rpbuf, u16 rpbuflen,
+		   struct reparse_data * restrict rpdata);
 
 extern int
-make_reparse_buffer(const struct reparse_data *rpdata, u8 *buf);
+make_reparse_buffer(const struct reparse_data * restrict rpdata,
+		    u8 * restrict rpbuf);
 
 extern int
-wim_inode_get_reparse_data(const struct wim_inode *inode, u8 *rpbuf);
+wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
+			   u8 * restrict rpbuf);
 
 #ifndef __WIN32__
 ssize_t
-wim_inode_readlink(const struct wim_inode *inode, char *buf, size_t buf_len);
+wim_inode_readlink(const struct wim_inode * restrict inode, char * restrict buf,
+		   size_t buf_len);
 
 extern int
 wim_inode_set_symlink(struct wim_inode *inode, const char *target,
