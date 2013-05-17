@@ -38,7 +38,7 @@
 static inline void
 flush_bits(struct output_bitstream *ostream)
 {
-	*(u16*)ostream->bit_output = cpu_to_le16(ostream->bitbuf);
+	*(le16*)ostream->bit_output = cpu_to_le16(ostream->bitbuf);
 	ostream->bit_output = ostream->next_bit_output;
 	ostream->next_bit_output = ostream->output;
 	ostream->output += 2;

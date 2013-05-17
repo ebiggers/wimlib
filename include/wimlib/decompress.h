@@ -76,7 +76,7 @@ bitstream_ensure_bits(struct input_bitstream *istream, unsigned num_bits)
 			unsigned shift = sizeof(input_bitbuf_t) * 8 - 16 -
 					 istream->bitsleft;
 			istream->bitbuf |= (input_bitbuf_t)le16_to_cpu(
-						*(u16*)istream->data) << shift;
+						*(le16*)istream->data) << shift;
 			istream->data += 2;
 			istream->bitsleft += 16;
 			istream->data_bytes_left -= 2;
