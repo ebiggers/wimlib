@@ -18,6 +18,7 @@
 #	endif
 #	define _malloc_attribute __attribute__((malloc))
 #	define _warn_unused_result_attribute __attribute__((warn_unused_result))
+#	define _aligned_attribute(size) __attribute__((aligned(size)))
 #else
 #	define WIMLIBAPI
 #	define _always_inline_attribute inline
@@ -26,6 +27,7 @@
 #	define _packed_attribute
 #	define _malloc_attribute
 #	define _warn_unused_result_attribute
+#	define _aligned_attribute(size)
 #endif /* __GNUC__ */
 
 #endif /* _WIMLIB_COMPILER_H */
