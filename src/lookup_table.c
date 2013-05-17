@@ -88,11 +88,10 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 {
 	struct wim_lookup_table_entry *new;
 
-	new = MALLOC(sizeof(*new));
+	new = memdup(old, sizeof(struct wim_lookup_table_entry));
 	if (!new)
 		return NULL;
 
-	memcpy(new, old, sizeof(*old));
 	new->extracted_file = NULL;
 	switch (new->resource_location) {
 #ifdef __WIN32__
@@ -111,32 +110,30 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 			goto out_free;
 		break;
 	case RESOURCE_IN_ATTACHED_BUFFER:
-		new->attached_buffer = MALLOC(wim_resource_size(old));
+		new->attached_buffer = memdup(old->attached_buffer,
+					      wim_resource_size(old));
 		if (!new->attached_buffer)
 			goto out_free;
-		memcpy(new->attached_buffer, old->attached_buffer,
-		       wim_resource_size(old));
 		break;
 #ifdef WITH_NTFS_3G
 	case RESOURCE_IN_NTFS_VOLUME:
 		if (old->ntfs_loc) {
 			struct ntfs_location *loc;
-			loc = MALLOC(sizeof(*loc));
+			loc = memdup(old->ntfs_loc, sizeof(struct ntfs_location));
 			if (!loc)
 				goto out_free;
-			memcpy(loc, old->ntfs_loc, sizeof(*loc));
 			loc->path = NULL;
 			loc->stream_name = NULL;
 			new->ntfs_loc = loc;
 			loc->path = STRDUP(old->ntfs_loc->path);
 			if (!loc->path)
 				goto out_free;
-			loc->stream_name = MALLOC((loc->stream_name_nchars + 1) * 2);
-			if (!loc->stream_name)
-				goto out_free;
-			memcpy(loc->stream_name,
-			       old->ntfs_loc->stream_name,
-			       (loc->stream_name_nchars + 1) * 2);
+			if (loc->stream_name_nchars) {
+				loc->stream_name = memdup(old->ntfs_loc->stream_name,
+							  loc->stream_name_nchars * 2);
+				if (!loc->stream_name)
+					goto out_free;
+			}
 		}
 		break;
 #endif

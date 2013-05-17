@@ -220,21 +220,18 @@ capture_ntfs_streams(struct wim_inode *inode,
 				goto out_put_actx;
 			}
 			ntfs_loc->ntfs_vol = vol;
-			ntfs_loc->path = MALLOC(path_len + 1);
+			ntfs_loc->path = memdup(path, path_len + 1);
 			if (!ntfs_loc->path) {
 				ret = WIMLIB_ERR_NOMEM;
 				goto out_free_ntfs_loc;
 			}
-			memcpy(ntfs_loc->path, path, path_len + 1);
 			if (name_length) {
-				ntfs_loc->stream_name = MALLOC(name_length * 2);
+				ntfs_loc->stream_name = memdup(attr_record_name(actx->attr),
+							       name_length * 2);
 				if (!ntfs_loc->stream_name) {
 					ret = WIMLIB_ERR_NOMEM;
 					goto out_free_ntfs_loc;
 				}
-				memcpy(ntfs_loc->stream_name,
-				       attr_record_name(actx->attr),
-				       actx->attr->name_length * 2);
 				ntfs_loc->stream_name_nchars = name_length;
 			}
 

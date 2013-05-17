@@ -271,10 +271,9 @@ read_wim_security_data(const u8 metadata_resource[], size_t metadata_resource_le
 		total_len += sd->sizes[i];
 		if (total_len > (u64)sd->total_length)
 			goto out_invalid_sd;
-		sd->descriptors[i] = MALLOC(sd->sizes[i]);
+		sd->descriptors[i] = memdup(p, sd->sizes[i]);
 		if (!sd->descriptors[i])
 			goto out_of_memory;
-		memcpy(sd->descriptors[i], p, sd->sizes[i]);
 		p += sd->sizes[i];
 		empty_sacl_fixup((SECURITY_DESCRIPTOR_RELATIVE*)sd->descriptors[i],
 				 &sd->sizes[i]);

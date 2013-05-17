@@ -1180,12 +1180,11 @@ add_stream_from_data_buffer(const void *buffer, size_t size,
 		lte = new_lookup_table_entry();
 		if (!lte)
 			return NULL;
-		buffer_copy = MALLOC(size);
+		buffer_copy = memdup(buffer, size);
 		if (!buffer_copy) {
 			free_lookup_table_entry(lte);
 			return NULL;
 		}
-		memcpy(buffer_copy, buffer, size);
 		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
 		lte->attached_buffer              = buffer_copy;
 		lte->resource_entry.original_size = size;
@@ -1774,14 +1773,12 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 
 		/* Not end of directory.  Allocate this child permanently and
 		 * link it to the parent and previous child. */
-		child = MALLOC(sizeof(struct wim_dentry));
+		child = memdup(&cur_child, sizeof(struct wim_dentry));
 		if (!child) {
-			ERROR("Failed to allocate %zu bytes for new dentry",
-			      sizeof(struct wim_dentry));
+			ERROR("Failed to allocate new dentry!");
 			ret = WIMLIB_ERR_NOMEM;
 			break;
 		}
-		memcpy(child, &cur_child, sizeof(struct wim_dentry));
 
 		/* Advance to the offset of the next child.  Note: We need to
 		 * advance by the TOTAL length of the dentry, not by the length
@@ -1800,7 +1797,7 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 			/* If there are children of this child, call this
 			 * procedure recursively. */
 			if (child->subdir_offset != 0) {
-				if (!dentry_is_directory(child)) {
+				if (dentry_is_directory(child)) {
 					ret = read_dentry_tree(metadata_resource,
 							       metadata_resource_len,
 							       child);

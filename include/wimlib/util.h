@@ -87,6 +87,8 @@ wimlib_strdup(const char *str) _malloc_attribute;
 #  define       WSTRDUP wcsdup
 #endif /* !ENABLE_CUSTOM_MEMORY_ALLOCATOR */
 
+extern void *
+memdup(const void *mem, size_t size) _malloc_attribute;
 
 /* util.c */
 extern void

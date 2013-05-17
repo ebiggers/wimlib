@@ -475,6 +475,15 @@ wimlib_wcsdup(const wchar_t *str)
 
 #endif /* ENABLE_CUSTOM_MEMORY_ALLOCATOR */
 
+void *
+memdup(const void *mem, size_t size)
+{
+	void *ptr = MALLOC(size);
+	if (ptr)
+		ptr = memcpy(ptr, mem, size);
+	return ptr;
+}
+
 WIMLIBAPI int
 wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 			    void (*free_func)(void *),
