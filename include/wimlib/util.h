@@ -50,17 +50,29 @@
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
 
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
-extern void *(*wimlib_malloc_func)(size_t);
-extern void (*wimlib_free_func)(void *);
-extern void *(*wimlib_realloc_func)(void *, size_t);
-extern void *wimlib_calloc(size_t nmemb, size_t size);
+extern void *
+wimlib_malloc(size_t) _malloc_attribute;
+
+extern void
+wimlib_free_memory(void *p);
+
+extern void *
+wimlib_realloc(void *, size_t) _warn_unused_result_attribute;
+
+extern void *
+wimlib_calloc(size_t nmemb, size_t size) _malloc_attribute;
+
 #ifdef __WIN32__
-extern wchar_t *wimlib_wcsdup(const wchar_t *str);
+extern wchar_t *
+wimlib_wcsdup(const wchar_t *str) _malloc_attribute;
+
 #endif
-extern char *wimlib_strdup(const char *str);
-#  define	MALLOC	wimlib_malloc_func
-#  define	FREE	wimlib_free_func
-#  define	REALLOC	wimlib_realloc_func
+extern char *
+wimlib_strdup(const char *str) _malloc_attribute;
+
+#  define	MALLOC	wimlib_malloc
+#  define	FREE	wimlib_free_memory
+#  define	REALLOC	wimlib_realloc
 #  define	CALLOC	wimlib_calloc
 #  define	STRDUP	wimlib_strdup
 #  define	WSTRDUP wimlib_wcsdup

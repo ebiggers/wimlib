@@ -189,7 +189,7 @@ read_huffsym_near_end_of_input(struct input_bitstream *istream,
  * 				directory in the decode_table, as the
  * 				decode_table contains 2**table_bits entries.
  */
-static inline int
+static _always_inline_attribute int
 read_huffsym(struct input_bitstream *istream,
 	     const u16 decode_table[],
 	     const u8 lens[],
@@ -237,8 +237,9 @@ read_huffsym(struct input_bitstream *istream,
 	return ret;
 }
 
-extern int make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
-				     unsigned num_bits, const u8 lengths[],
-				     unsigned max_codeword_len);
+extern int
+make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
+			  unsigned num_bits, const u8 lengths[],
+			  unsigned max_codeword_len);
 
 #endif /* _WIMLIB_DECOMPRESS_H */

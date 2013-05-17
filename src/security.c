@@ -35,7 +35,7 @@
 #include "wimlib/util.h"
 
 /* At the start of each type of access control entry.  */
-typedef struct {
+typedef struct _ACE_HEADER {
 	/* enum ace_type, specifies what type of ACE this is.  */
 	u8 type;
 
@@ -43,32 +43,32 @@ typedef struct {
 	u8 flags;
 
 	/* Size of the access control entry. */
-	u8 size;
-} ACEHeader;
+	u16 size;
+} _packed_attribute ACE_HEADER;
 
 /* Grants rights to a user or group */
-typedef struct {
-	ACEHeader hdr;
+typedef struct _ACCESS_ALLOWED_ACE {
+	ACE_HEADER hdr;
 	u32 mask;
 	u32 sid_start;
-} AccessAllowedACE;
+} _packed_attribute ACCESS_ALLOWED_ACE;
 
 /* Denies rights to a user or group */
-typedef struct {
-	ACEHeader hdr;
+typedef struct _ACCESS_DENIED_ACE {
+	ACE_HEADER hdr;
 	u32 mask;
 	u32 sid_start;
-} AccessDeniedACE;
+} _packed_attribute ACCESS_DENIED_ACE;
 
-typedef struct {
-	ACEHeader hdr;
+typedef struct _SYSTEM_AUDIT_ACE {
+	ACE_HEADER hdr;
 	u32 mask;
 	u32 sid_start;
-} SystemAuditACE;
+} _packed_attribute SYSTEM_AUDIT_ACE;
 
 
 /* Header of an access control list. */
-typedef struct {
+typedef struct _ACL {
 	/* ACL_REVISION or ACL_REVISION_DS */
 	u8 revision;
 
@@ -84,10 +84,10 @@ typedef struct {
 
 	/* padding */
 	u16 sbz2;
-} ACL;
+} _packed_attribute ACL;
 
 /* A structure used to identify users or groups. */
-typedef struct {
+typedef struct _SID {
 
 	/* example: 0x1 */
 	u8  revision;
@@ -98,10 +98,10 @@ typedef struct {
 	u8  identifier_authority[6];
 
 	u32 sub_authority[0];
-} SID;
+} _packed_attribute SID;
 
 
-typedef struct {
+typedef struct _SECURITY_DESCRIPTOR_RELATIVE  {
 	/* Example: 0x1 */
 	u8 revision;
 	/* Example: 0x0 */
@@ -126,7 +126,7 @@ typedef struct {
 	/* Discretionary ACL. */
 	/* Example: 0x34 */
 	u32 dacl_offset;
-} SecurityDescriptor;
+} _packed_attribute SECURITY_DESCRIPTOR_RELATIVE;
 
 /*
  * This is a hack to work around a problem in libntfs-3g.  libntfs-3g validates
@@ -145,8 +145,8 @@ empty_sacl_fixup(u8 *descr, u64 *size_p)
 	/* No-op if no NTFS-3g support, or if NTFS-3g is version 2013 or later
 	 * */
 #if defined(WITH_NTFS_3G) && !defined(HAVE_NTFS_MNT_RDONLY)
-	if (*size_p >= sizeof(SecurityDescriptor)) {
-		SecurityDescriptor *sd = (SecurityDescriptor*)descr;
+	if (*size_p >= sizeof(SECURITY_DESCRIPTOR_RELATIVE)) {
+		SECURITY_DESCRIPTOR_RELATIVE *sd = (SECURITY_DESCRIPTOR_RELATIVE*)descr;
 		u32 sacl_offset = le32_to_cpu(sd->sacl_offset);
 		if (sacl_offset == *size_p - sizeof(ACL)) {
 			sd->sacl_offset = cpu_to_le32(0);
@@ -327,7 +327,8 @@ out_free_sd:
  * Writes security data to an in-memory buffer.
  */
 u8 *
-write_security_data(const struct wim_security_data *sd, u8 *p)
+write_security_data(const struct wim_security_data * restrict sd,
+		    u8 * restrict p)
 {
 	DEBUG("Writing security data (total_length = %"PRIu32", num_entries "
 	      "= %"PRIu32")", sd->total_length, sd->num_entries);
@@ -365,12 +366,12 @@ print_acl(const void *p, const tchar *type)
 
 	p += sizeof(ACL);
 	for (u16 i = 0; i < ace_count; i++) {
-		const ACEHeader *hdr = p;
+		const ACE_HEADER *hdr = p;
 		tprintf(T("        [ACE]\n"));
 		tprintf(T("        ACE type  = %d\n"), hdr->type);
 		tprintf(T("        ACE flags = 0x%x\n"), hdr->flags);
 		tprintf(T("        ACE size  = %u\n"), hdr->size);
-		const AccessAllowedACE *aaa = (const AccessAllowedACE*)hdr;
+		const ACCESS_ALLOWED_ACE *aaa = (const ACCESS_ALLOWED_ACE*)p;
 		tprintf(T("        ACE mask = %x\n"), le32_to_cpu(aaa->mask));
 		tprintf(T("        SID start = %u\n"), le32_to_cpu(aaa->sid_start));
 		p += hdr->size;
@@ -399,7 +400,7 @@ print_sid(const void *p, const tchar *type)
 static void
 print_security_descriptor(const void *p, u64 size)
 {
-	const SecurityDescriptor *sd = p;
+	const SECURITY_DESCRIPTOR_RELATIVE *sd = p;
 
 	u8 revision      = sd->revision;
 	u16 control      = le16_to_cpu(sd->security_descriptor_control);
@@ -430,14 +431,12 @@ print_security_descriptor(const void *p, u64 size)
 void
 print_security_data(const struct wim_security_data *sd)
 {
-	wimlib_assert(sd != NULL);
-
 	tputs(T("[SECURITY DATA]"));
 	tprintf(T("Length            = %"PRIu32" bytes\n"), sd->total_length);
 	tprintf(T("Number of Entries = %"PRIu32"\n"), sd->num_entries);
 
 	for (u32 i = 0; i < sd->num_entries; i++) {
-		tprintf(T("[SecurityDescriptor %"PRIu32", length = %"PRIu64"]\n"),
+		tprintf(T("[SECURITY_DESCRIPTOR_RELATIVE %"PRIu32", length = %"PRIu64"]\n"),
 			i, sd->sizes[i]);
 		print_security_descriptor(sd->descriptors[i], sd->sizes[i]);
 		tputchar(T('\n'));
@@ -542,18 +541,18 @@ lookup_sd(struct wim_sd_set *set, const u8 hash[SHA1_HASH_SIZE])
  * return -1.
  */
 int
-sd_set_add_sd(struct wim_sd_set *sd_set, const char descriptor[], size_t size)
+sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 {
 	u8 hash[SHA1_HASH_SIZE];
 	int security_id;
 	struct sd_node *new;
 	u8 **descriptors;
 	u64 *sizes;
-	u8 *descr_copy;
+	char *descr_copy;
 	struct wim_security_data *sd;
 	bool bret;
 
-	sha1_buffer((const u8*)descriptor, size, hash);
+	sha1_buffer(descriptor, size, hash);
 
 	security_id = lookup_sd(sd_set, hash);
 	if (security_id >= 0) /* Identical descriptor already exists */

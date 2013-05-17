@@ -43,9 +43,6 @@
 #  include <unistd.h> /* for unlink() */
 #endif
 
-/* Size of each lookup table entry in the WIM file. */
-#define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
-
 struct wim_lookup_table *
 new_lookup_table(size_t capacity)
 {
@@ -353,6 +350,10 @@ for_lookup_table_entry_pos_sorted(struct wim_lookup_table *table,
 	FREE(lte_array);
 	return ret;
 }
+
+
+/* Size of each lookup table entry in the WIM file. */
+#define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
 
 /*
  * Reads the lookup table from a WIM file.

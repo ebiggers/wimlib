@@ -46,7 +46,7 @@
  * a file name and short name that take the specified numbers of bytes.  This
  * excludes any alternate data stream entries that may follow the dentry. */
 static u64
-__dentry_correct_length_unaligned(u16 file_name_nbytes, u16 short_name_nbytes)
+_dentry_correct_length_unaligned(u16 file_name_nbytes, u16 short_name_nbytes)
 {
 	u64 length = WIM_DENTRY_DISK_SIZE;
 	if (file_name_nbytes)
@@ -63,7 +63,7 @@ __dentry_correct_length_unaligned(u16 file_name_nbytes, u16 short_name_nbytes)
 static u64
 dentry_correct_length_unaligned(const struct wim_dentry *dentry)
 {
-	return __dentry_correct_length_unaligned(dentry->file_name_nbytes,
+	return _dentry_correct_length_unaligned(dentry->file_name_nbytes,
 						 dentry->short_name_nbytes);
 }
 
@@ -155,7 +155,7 @@ ads_entry_total_length(const struct wim_ads_entry *entry)
 
 
 static u64
-__dentry_total_length(const struct wim_dentry *dentry, u64 length)
+_dentry_total_length(const struct wim_dentry *dentry, u64 length)
 {
 	const struct wim_inode *inode = dentry->d_inode;
 	for (u16 i = 0; i < inode->i_num_ads; i++)
@@ -168,7 +168,7 @@ __dentry_total_length(const struct wim_dentry *dentry, u64 length)
 u64
 dentry_correct_total_length(const struct wim_dentry *dentry)
 {
-	return __dentry_total_length(dentry,
+	return _dentry_total_length(dentry,
 				     dentry_correct_length_unaligned(dentry));
 }
 
@@ -177,7 +177,7 @@ dentry_correct_total_length(const struct wim_dentry *dentry)
 static u64
 dentry_total_length(const struct wim_dentry *dentry)
 {
-	return __dentry_total_length(dentry, dentry->length);
+	return _dentry_total_length(dentry, dentry->length);
 }
 
 int
@@ -782,7 +782,7 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 
 
 static int
-__new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
+_new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
 			bool timeless)
 {
 	struct wim_dentry *dentry;
@@ -809,13 +809,13 @@ __new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
 int
 new_dentry_with_timeless_inode(const tchar *name, struct wim_dentry **dentry_ret)
 {
-	return __new_dentry_with_inode(name, dentry_ret, true);
+	return _new_dentry_with_inode(name, dentry_ret, true);
 }
 
 int
 new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret)
 {
-	return __new_dentry_with_inode(name, dentry_ret, false);
+	return _new_dentry_with_inode(name, dentry_ret, false);
 }
 
 int
@@ -926,9 +926,9 @@ free_dentry(struct wim_dentry *dentry)
 /* This function is passed as an argument to for_dentry_in_tree_depth() in order
  * to free a directory tree. */
 static int
-do_free_dentry(struct wim_dentry *dentry, void *__lookup_table)
+do_free_dentry(struct wim_dentry *dentry, void *_lookup_table)
 {
-	struct wim_lookup_table *lookup_table = __lookup_table;
+	struct wim_lookup_table *lookup_table = _lookup_table;
 	unsigned i;
 
 	if (lookup_table) {
@@ -1596,7 +1596,7 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * The calculated length here is unaligned to allow for the possibility
 	 * that the dentry->length names an unaligned length, although this
 	 * would be unexpected. */
-	calculated_size = __dentry_correct_length_unaligned(file_name_nbytes,
+	calculated_size = _dentry_correct_length_unaligned(file_name_nbytes,
 							    short_name_nbytes);
 
 	if (dentry->length < calculated_size) {
@@ -1892,7 +1892,7 @@ write_dentry(const struct wim_dentry *dentry, u8 *p)
 		}
 		p = put_zeroes(p, (8 - (p - orig_p) % 8) % 8);
 	}
-	wimlib_assert(p - orig_p == __dentry_total_length(dentry, length));
+	wimlib_assert(p - orig_p == _dentry_total_length(dentry, length));
 	return p;
 }
 

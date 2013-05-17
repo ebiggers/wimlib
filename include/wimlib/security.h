@@ -57,7 +57,8 @@ extern void
 print_security_data(const struct wim_security_data *sd);
 
 extern u8 *
-write_security_data(const struct wim_security_data *sd, u8 *p);
+write_security_data(const struct wim_security_data * restrict sd,
+		    u8 * restrict p);
 
 extern void
 free_security_data(struct wim_security_data *sd);

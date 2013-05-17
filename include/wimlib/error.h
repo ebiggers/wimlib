@@ -12,30 +12,35 @@
 #  define wimlib_printf	 wprintf
 #else /* __WIN32__ */
 extern int
-wimlib_fprintf(FILE *fp, const tchar *format, ...) FORMAT(printf, 2, 3);
+wimlib_fprintf(FILE *fp, const tchar *format, ...) _format_attribute(printf, 2, 3);
 
 extern int
-wimlib_printf(const tchar *format, ...) FORMAT(printf, 1, 2);
+wimlib_printf(const tchar *format, ...) _format_attribute(printf, 1, 2);
 #endif /* !__WIN32__ */
 
 
-static inline int dummy_tprintf(const tchar *format, ...)
+static inline int
+dummy_tprintf(const tchar *format, ...) _format_attribute(printf, 1, 2)
 {
 	return 0;
 }
 
 #ifdef ENABLE_ERROR_MESSAGES
 extern void
-wimlib_error(const tchar *format, ...) FORMAT(printf, 1, 2) COLD;
+wimlib_error(const tchar *format, ...)
+	_format_attribute(printf, 1, 2) _cold_attribute;
 
 extern void
-wimlib_error_with_errno(const tchar *format, ...) FORMAT(printf, 1, 2) COLD;
+wimlib_error_with_errno(const tchar *format, ...)
+		_format_attribute(printf, 1, 2) _cold_attribute;
 
 extern void
-wimlib_warning(const tchar *format, ...) FORMAT(printf, 1, 2) COLD;
+wimlib_warning(const tchar *format, ...)
+		_format_attribute(printf, 1, 2) _cold_attribute;
 
 extern void
-wimlib_warning_with_errno(const tchar *format, ...) FORMAT(printf, 1, 2) COLD;
+wimlib_warning_with_errno(const tchar *format, ...)
+		_format_attribute(printf, 1, 2) _cold_attribute;
 #  define ERROR(format, ...)			wimlib_error(T(format), ## __VA_ARGS__)
 #  define ERROR_WITH_ERRNO(format, ...) 	wimlib_error_with_errno(T(format), ## __VA_ARGS__)
 #  define WARNING(format, ...)			wimlib_warning(T(format), ## __VA_ARGS__)

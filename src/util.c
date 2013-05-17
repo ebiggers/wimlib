@@ -407,17 +407,35 @@ wimlib_get_error_string(enum wimlib_error_code code)
 
 
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
-void *(*wimlib_malloc_func) (size_t)	     = malloc;
-void  (*wimlib_free_func)   (void *)	     = free;
-void *(*wimlib_realloc_func)(void *, size_t) = realloc;
+static void *(*wimlib_malloc_func) (size_t)	     = malloc;
+static void  (*wimlib_free_func)   (void *)	     = free;
+static void *(*wimlib_realloc_func)(void *, size_t) = realloc;
+
+void *
+wimlib_malloc(size_t size)
+{
+	return (*wimlib_malloc_func)(size);
+}
+
+void
+wimlib_free_memory(void *ptr)
+{
+	(*wimlib_free_func)(ptr);
+}
+
+void *
+wimlib_realloc(void *ptr, size_t size)
+{
+	return (*wimlib_realloc_func)(ptr, size);
+}
 
 void *
 wimlib_calloc(size_t nmemb, size_t size)
 {
 	size_t total_size = nmemb * size;
-	void *p = MALLOC(total_size);
+	void *p = (*wimlib_malloc_func)(total_size);
 	if (p)
-		memset(p, 0, total_size);
+		p = memset(p, 0, total_size);
 	return p;
 }
 
@@ -428,7 +446,7 @@ wimlib_strdup(const char *str)
 	char *p;
 
 	size = strlen(str);
-	p = MALLOC(size + 1);
+	p = (*wimlib_malloc_func)(size + 1);
 	if (p)
 		memcpy(p, str, size + 1);
 	return p;
@@ -442,9 +460,9 @@ wimlib_wcsdup(const wchar_t *str)
 	wchar_t *p;
 
 	size = wcslen(str);
-	p = MALLOC((size + 1) * sizeof(wchar_t));
+	p = (*wimlib_malloc_func)((size + 1) * sizeof(wchar_t));
 	if (p)
-		memcpy(p, str, (size + 1) * sizeof(wchar_t));
+		p = wmemcpy(p, str, size + 1);
 	return p;
 }
 #endif

@@ -7,21 +7,25 @@
 #	else
 #		define WIMLIBAPI __attribute__((visibility("default")))
 #	endif
-#	define ALWAYS_INLINE inline __attribute__((always_inline))
-#	define PACKED __attribute__((packed))
-#	define FORMAT(type, format_str, args_start) \
+#	define _always_inline_attribute inline __attribute__((always_inline))
+#	define _packed_attribute __attribute__((packed))
+#	define _format_attribute(type, format_str, args_start) \
 			/*__attribute__((format(type, format_str, args_start))) */
 #	if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 4)
-#		define COLD     __attribute__((cold))
+#		define _cold_attribute     __attribute__((cold))
 #	else
-#		define COLD
+#		define _cold_attribute
 #	endif
+#	define _malloc_attribute __attribute__((malloc))
+#	define _warn_unused_result_attribute __attribute__((warn_unused_result))
 #else
 #	define WIMLIBAPI
-#	define ALWAYS_INLINE inline
-#	define FORMAT(type, format_str, args_start)
-#	define COLD
-#	define PACKED
+#	define _always_inline_attribute inline
+#	define _format_attribute(type, format_str, args_start)
+#	define _cold_attribute
+#	define _packed_attribute
+#	define _malloc_attribute
+#	define _warn_unused_result_attribute
 #endif /* __GNUC__ */
 
 #endif /* _WIMLIB_COMPILER_H */

@@ -87,7 +87,10 @@ struct chunk_table {
 	u64 table_disk_size;
 	u64 cur_offset;
 	u64 *cur_offset_p;
-	u64 offsets[0];
+	union {
+		u64 offsets[0];
+		u32 u32_offsets[0];
+	};
 };
 
 /*
@@ -233,8 +236,7 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 		array_cpu_to_le64(chunk_tab->offsets, chunk_tab->num_chunks);
 	} else {
 		for (u64 i = 0; i < chunk_tab->num_chunks; i++)
-			((u32*)chunk_tab->offsets)[i] =
-				cpu_to_le32(chunk_tab->offsets[i]);
+			chunk_tab->u32_offsets[i] = cpu_to_le32(chunk_tab->offsets[i]);
 	}
 	bytes_written = full_pwrite(out_fd,
 				    (u8*)chunk_tab->offsets + chunk_tab->bytes_per_chunk_entry,

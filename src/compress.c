@@ -99,34 +99,19 @@ flush_output_bitstream(struct output_bitstream *ostream)
 /* Initializes an output bit buffer to write its output to the memory location
  * pointer to by @data. */
 void
-init_output_bitstream(struct output_bitstream *ostream, void *data,
-		      unsigned num_bytes)
+init_output_bitstream(struct output_bitstream *ostream,
+		      void *data, unsigned num_bytes)
 {
 	wimlib_assert(num_bytes >= 4);
 
 	ostream->bitbuf              = 0;
 	ostream->free_bits           = 16;
-	ostream->bit_output          = (u8*)data;
-	ostream->next_bit_output     = (u8*)data + 2;
-	ostream->output              = (u8*)data + 4;
+	ostream->bit_output          = data;
+	ostream->next_bit_output     = data + 2;
+	ostream->output              = data + 4;
 	ostream->num_bytes_remaining = num_bytes - 4;
 }
 
-/* Intermediate (non-leaf) node in a Huffman tree. */
-typedef struct HuffmanNode {
-	u32 freq;
-	u16 sym;
-	union {
-		u16 path_len;
-		u16 height;
-	};
-	struct HuffmanNode *left_child;
-	struct HuffmanNode *right_child;
-} HuffmanNode;
-
-/* Leaf node in a Huffman tree.  The fields are in the same order as the
- * HuffmanNode, so it can be cast to a HuffmanNode.  There are no pointers to
- * the children in the leaf node. */
 typedef struct {
 	u32 freq;
 	u16 sym;
@@ -134,15 +119,22 @@ typedef struct {
 		u16 path_len;
 		u16 height;
 	};
-} HuffmanLeafNode;
+} HuffmanNode;
 
-/* Comparator function for HuffmanLeafNodes.  Sorts primarily by symbol
+typedef struct HuffmanIntermediateNode {
+	HuffmanNode node_base;
+	HuffmanNode *left_child;
+	HuffmanNode *right_child;
+} HuffmanIntermediateNode;
+
+
+/* Comparator function for HuffmanNodes.  Sorts primarily by symbol
  * frequency and secondarily by symbol value. */
 static int
-cmp_leaves_by_freq(const void *__leaf1, const void *__leaf2)
+cmp_nodes_by_freq(const void *_leaf1, const void *_leaf2)
 {
-	const HuffmanLeafNode *leaf1 = __leaf1;
-	const HuffmanLeafNode *leaf2 = __leaf2;
+	const HuffmanNode *leaf1 = _leaf1;
+	const HuffmanNode *leaf2 = _leaf2;
 
 	int freq_diff = (int)leaf1->freq - (int)leaf2->freq;
 
@@ -152,13 +144,13 @@ cmp_leaves_by_freq(const void *__leaf1, const void *__leaf2)
 		return freq_diff;
 }
 
-/* Comparator function for HuffmanLeafNodes.  Sorts primarily by code length and
+/* Comparator function for HuffmanNodes.  Sorts primarily by code length and
  * secondarily by symbol value. */
 static int
-cmp_leaves_by_code_len(const void *__leaf1, const void *__leaf2)
+cmp_nodes_by_code_len(const void *_leaf1, const void *_leaf2)
 {
-	const HuffmanLeafNode *leaf1 = __leaf1;
-	const HuffmanLeafNode *leaf2 = __leaf2;
+	const HuffmanNode *leaf1 = _leaf1;
+	const HuffmanNode *leaf2 = _leaf2;
 
 	int code_len_diff = (int)leaf1->path_len - (int)leaf2->path_len;
 
@@ -168,18 +160,21 @@ cmp_leaves_by_code_len(const void *__leaf1, const void *__leaf2)
 		return code_len_diff;
 }
 
+#define INVALID_SYMBOL 0xffff
+
 /* Recursive function to calculate the depth of the leaves in a Huffman tree.
  * */
 static void
-huffman_tree_compute_path_lengths(HuffmanNode *node, u16 cur_len)
+huffman_tree_compute_path_lengths(HuffmanNode *base_node, u16 cur_len)
 {
-	if (node->sym == (u16)(-1)) {
+	if (base_node->sym == INVALID_SYMBOL) {
 		/* Intermediate node. */
+		HuffmanIntermediateNode *node = (HuffmanIntermediateNode*)base_node;
 		huffman_tree_compute_path_lengths(node->left_child, cur_len + 1);
 		huffman_tree_compute_path_lengths(node->right_child, cur_len + 1);
 	} else {
 		/* Leaf node. */
-		node->path_len = cur_len;
+		base_node->path_len = cur_len;
 	}
 }
 
@@ -240,9 +235,11 @@ huffman_tree_compute_path_lengths(HuffmanNode *node, u16 cur_len)
  * 			for symbol i.
  */
 void
-make_canonical_huffman_code(unsigned num_syms, unsigned max_codeword_len,
-			    const freq_t freq_tab[], u8 lens[],
-			    u16 codewords[])
+make_canonical_huffman_code(unsigned num_syms,
+			    unsigned max_codeword_len,
+			    const freq_t * restrict freq_tab,
+			    u8 * restrict lens,
+			    u16 * restrict codewords)
 {
 	/* We require at least 2 possible symbols in the alphabet to produce a
 	 * valid Huffman decoding table. It is allowed that fewer than 2 symbols
@@ -267,7 +264,7 @@ make_canonical_huffman_code(unsigned num_syms, unsigned max_codeword_len,
 
 	/* Initialize the array of leaf nodes with the symbols and their
 	 * frequencies. */
-	HuffmanLeafNode leaves[num_used_symbols];
+	HuffmanNode leaves[num_used_symbols];
 	unsigned leaf_idx = 0;
 	for (unsigned i = 0; i < num_syms; i++) {
 		if (freq_tab[i] != 0) {
@@ -329,21 +326,21 @@ make_canonical_huffman_code(unsigned num_syms, unsigned max_codeword_len,
 	 * format constrains codes to 16 bits or less each.  However, it is
 	 * still possible for there to be more than 16 intermediate nodes, as
 	 * long as no leaf has a depth of more than 16.  */
-	HuffmanNode inodes[num_used_symbols - 1];
+	HuffmanIntermediateNode inodes[num_used_symbols - 1];
 
 
 	/* Pointer to the leaf node of lowest frequency that hasn't already been
 	 * added as the child of some intermediate note. */
-	HuffmanLeafNode *cur_leaf;
+	HuffmanNode *cur_leaf;
 
 	/* Pointer past the end of the array of leaves. */
-	HuffmanLeafNode *end_leaf = &leaves[num_used_symbols];
+	HuffmanNode *end_leaf = &leaves[num_used_symbols];
 
 	/* Pointer to the intermediate node of lowest frequency. */
-	HuffmanNode     *cur_inode;
+	HuffmanIntermediateNode     *cur_inode;
 
 	/* Pointer to the next unallocated intermediate node. */
-	HuffmanNode     *next_inode;
+	HuffmanIntermediateNode     *next_inode;
 
 	/* Only jump back to here if the maximum length of the codewords allowed
 	 * by the LZX format (16 bits) is exceeded. */
@@ -352,7 +349,7 @@ try_building_tree_again:
 	/* Sort the leaves from those that correspond to the least frequent
 	 * symbol, to those that correspond to the most frequent symbol.  If two
 	 * leaves have the same frequency, they are sorted by symbol. */
-	qsort(leaves, num_used_symbols, sizeof(leaves[0]), cmp_leaves_by_freq);
+	qsort(leaves, num_used_symbols, sizeof(leaves[0]), cmp_nodes_by_freq);
 
 	cur_leaf   = &leaves[0];
 	cur_inode  = &inodes[0];
@@ -376,17 +373,17 @@ try_building_tree_again:
 		 * remaining leaves or from the intermediate nodes. */
 
 		if (cur_leaf != end_leaf && (cur_inode == next_inode ||
-					cur_leaf->freq <= cur_inode->freq)) {
-			f1 = (HuffmanNode*)cur_leaf++;
+					cur_leaf->freq <= cur_inode->node_base.freq)) {
+			f1 = cur_leaf++;
 		} else if (cur_inode != next_inode) {
-			f1 = cur_inode++;
+			f1 = (HuffmanNode*)cur_inode++;
 		}
 
 		if (cur_leaf != end_leaf && (cur_inode == next_inode ||
-					cur_leaf->freq <= cur_inode->freq)) {
-			f2 = (HuffmanNode*)cur_leaf++;
+					cur_leaf->freq <= cur_inode->node_base.freq)) {
+			f2 = cur_leaf++;
 		} else if (cur_inode != next_inode) {
-			f2 = cur_inode++;
+			f2 = (HuffmanNode*)cur_inode++;
 		} else {
 			/* All nodes used up! */
 			break;
@@ -394,20 +391,20 @@ try_building_tree_again:
 
 		/* next_inode becomes the parent of f1 and f2. */
 
-		next_inode->freq   = f1->freq + f2->freq;
-		next_inode->sym    = (u16)(-1); /* Invalid symbol. */
-		next_inode->left_child   = f1;
-		next_inode->right_child  = f2;
+		next_inode->node_base.freq = f1->freq + f2->freq;
+		next_inode->node_base.sym  = INVALID_SYMBOL;
+		next_inode->left_child     = f1;
+		next_inode->right_child    = f2;
 
 		/* We need to keep track of the height so that we can detect if
 		 * the length of a codeword has execeed max_codeword_len.   The
 		 * parent node has a height one higher than the maximum height
 		 * of its children. */
-		next_inode->height = max(f1->height, f2->height) + 1;
+		next_inode->node_base.height = max(f1->height, f2->height) + 1;
 
 		/* Check to see if the code length of the leaf farthest away
 		 * from next_inode has exceeded the maximum code length. */
-		if (next_inode->height > max_codeword_len) {
+		if (next_inode->node_base.height > max_codeword_len) {
 			/* The code lengths can be made more uniform by making
 			 * the frequencies more uniform.  Divide all the
 			 * frequencies by 2, leaving 1 as the minimum frequency.
@@ -427,15 +424,15 @@ try_building_tree_again:
 	/* The Huffman tree is now complete, and its height is no more than
 	 * max_codeword_len.  */
 
-	HuffmanNode *root = next_inode - 1;
-	wimlib_assert(root->height <= max_codeword_len);
+	HuffmanIntermediateNode *root = next_inode - 1;
+	wimlib_assert(root->node_base.height <= max_codeword_len);
 
 	/* Compute the path lengths for the leaf nodes. */
-	huffman_tree_compute_path_lengths(root, 0);
+	huffman_tree_compute_path_lengths(&root->node_base, 0);
 
 	/* Sort the leaf nodes primarily by code length and secondarily by
 	 * symbol.  */
-	qsort(leaves, num_used_symbols, sizeof(leaves[0]), cmp_leaves_by_code_len);
+	qsort(leaves, num_used_symbols, sizeof(leaves[0]), cmp_nodes_by_code_len);
 
 	u16 cur_codeword = 0;
 	unsigned cur_codeword_len = 0;

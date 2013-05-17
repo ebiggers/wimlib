@@ -97,8 +97,8 @@
  */
 static int
 xpress_decode_match(unsigned huffsym, unsigned window_pos,
-		    unsigned window_len, u8 window[],
-		    struct input_bitstream *istream)
+		    unsigned window_len, u8 window[restrict],
+		    struct input_bitstream * restrict istream)
 {
 	unsigned match_len;
 	unsigned match_offset;
@@ -111,7 +111,7 @@ xpress_decode_match(unsigned huffsym, unsigned window_pos,
 	unsigned i;
 
 	ret = bitstream_read_bits(istream, offset_bsr, &match_offset);
-	if (ret != 0)
+	if (ret)
 		return ret;
 	match_offset |= (1 << offset_bsr);
 
@@ -168,11 +168,11 @@ xpress_decode_match(unsigned huffsym, unsigned window_pos,
 /* Decodes the Huffman-encoded matches and literal bytes in a block of
  * XPRESS-encoded data. */
 static int
-xpress_decompress_block(struct input_bitstream *istream,
-			u8 uncompressed_data[],
+xpress_decompress_block(struct input_bitstream * restrict istream,
+			u8 uncompressed_data[restrict],
 			unsigned uncompressed_len,
-			const u8 lens[],
-			const u16 decode_table[])
+			const u8 lens[restrict],
+			const u16 decode_table[restrict])
 {
 	unsigned curpos;
 	unsigned huffsym;
@@ -206,8 +206,8 @@ xpress_decompress_block(struct input_bitstream *istream,
 
 /* Documented in wimlib.h */
 WIMLIBAPI int
-wimlib_xpress_decompress(const void *__compressed_data, unsigned compressed_len,
-			 void *uncompressed_data, unsigned uncompressed_len)
+wimlib_xpress_decompress(const void * restrict _compressed_data, unsigned compressed_len,
+			 void * restrict uncompressed_data, unsigned uncompressed_len)
 {
 	u8 lens[XPRESS_NUM_SYMBOLS];
 	u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS];
@@ -217,7 +217,7 @@ wimlib_xpress_decompress(const void *__compressed_data, unsigned compressed_len,
 	unsigned i;
 	int ret;
 
-	compressed_data = __compressed_data;
+	compressed_data = _compressed_data;
 	lens_p = lens;
 
 	DEBUG2("compressed_len = %d, uncompressed_len = %d",

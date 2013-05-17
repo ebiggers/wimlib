@@ -288,7 +288,7 @@ lte_filename_valid(const struct wim_lookup_table_entry *lte)
 }
 
 extern struct wim_lookup_table *
-new_lookup_table(size_t capacity);
+new_lookup_table(size_t capacity) _malloc_attribute;
 
 extern int
 read_lookup_table(WIMStruct *w);
@@ -318,10 +318,11 @@ lookup_table_unlink(struct wim_lookup_table *table, struct wim_lookup_table_entr
 }
 
 extern struct wim_lookup_table_entry *
-new_lookup_table_entry(void);
+new_lookup_table_entry(void) _malloc_attribute;
 
 extern struct wim_lookup_table_entry *
-clone_lookup_table_entry(const struct wim_lookup_table_entry *lte);
+clone_lookup_table_entry(const struct wim_lookup_table_entry *lte)
+			_malloc_attribute;
 
 extern void
 print_lookup_table_entry(const struct wim_lookup_table_entry *entry,

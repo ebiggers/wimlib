@@ -1046,29 +1046,29 @@ struct unmount_msg_hdr {
 	u32 cur_version;
 	u32 msg_type;
 	u32 msg_size;
-} PACKED;
+} _packed_attribute;
 
 struct msg_unmount_request {
 	struct unmount_msg_hdr hdr;
 	u32 unmount_flags;
 	u8 want_progress_messages;
-} PACKED;
+} _packed_attribute;
 
 struct msg_daemon_info {
 	struct unmount_msg_hdr hdr;
 	pid_t daemon_pid;
 	u32 mount_flags;
-} PACKED;
+} _packed_attribute;
 
 struct msg_unmount_finished {
 	struct unmount_msg_hdr hdr;
 	s32 status;
-} PACKED;
+} _packed_attribute;
 
 struct msg_write_streams_progress {
 	struct unmount_msg_hdr hdr;
 	union wimlib_progress_info info;
-} PACKED;
+} _packed_attribute;
 
 enum {
 	MSG_TYPE_UNMOUNT_REQUEST,

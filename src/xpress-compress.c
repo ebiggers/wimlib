@@ -46,8 +46,10 @@
  * @codewords and @lens provide the Huffman code that is being used.
  */
 static int
-xpress_write_match(struct output_bitstream *ostream, u32 match,
-		   const u16 codewords[], const u8 lens[])
+xpress_write_match(struct output_bitstream *restrict ostream,
+		   u32 match,
+		   const u16 codewords[restrict],
+		   const u8 lens[restrict])
 {
 	u32 adjusted_match_len = match & 0xffff;
 	u32 match_offset = match >> 16;
@@ -57,17 +59,17 @@ xpress_write_match(struct output_bitstream *ostream, u32 match,
 	int ret;
 
 	ret = bitstream_put_bits(ostream, codewords[sym], lens[sym]);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	if (adjusted_match_len >= 0xf) {
 		u8 byte1 = min(adjusted_match_len - 0xf, 0xff);
 		ret = bitstream_put_byte(ostream, byte1);
-		if (ret != 0)
+		if (ret)
 			return ret;
 		if (byte1 == 0xff) {
 			ret = bitstream_put_two_bytes(ostream, adjusted_match_len);
-			if (ret != 0)
+			if (ret)
 				return ret;
 		}
 	}
@@ -77,10 +79,10 @@ xpress_write_match(struct output_bitstream *ostream, u32 match,
 
 static int
 xpress_write_compressed_literals(struct output_bitstream *ostream,
-				 const u32 match_tab[],
+				 const u32 match_tab[restrict],
 				 unsigned num_matches,
-				 const u16 codewords[],
-				 const u8 lens[])
+				 const u16 codewords[restrict],
+				 const u8 lens[restrict])
 {
 	for (unsigned i = 0; i < num_matches; i++) {
 		int ret;
@@ -92,7 +94,7 @@ xpress_write_compressed_literals(struct output_bitstream *ostream,
 		else /* literal byte */
 			ret = bitstream_put_bits(ostream, codewords[match],
 						 lens[match]);
-		if (ret != 0)
+		if (ret)
 			return ret;
 	}
 	return bitstream_put_bits(ostream, codewords[XPRESS_END_OF_DATA],
@@ -100,16 +102,16 @@ xpress_write_compressed_literals(struct output_bitstream *ostream,
 }
 
 static u32
-xpress_record_literal(u8 literal, void *__freq_tab)
+xpress_record_literal(u8 literal, void *_freq_tab)
 {
-	freq_t *freq_tab = __freq_tab;
+	freq_t *freq_tab = _freq_tab;
 	freq_tab[literal]++;
 	return literal;
 }
 
 static u32
 xpress_record_match(unsigned match_offset, unsigned match_len,
-		    void *freq_tab, void *ignore)
+		    void *freq_tab, void *_ignore)
 {
 	wimlib_assert(match_len >= XPRESS_MIN_MATCH &&
 		      match_len <= XPRESS_MAX_MATCH);
@@ -150,10 +152,11 @@ static const struct lz_params xpress_lz_params = {
 
 /* Documented in wimlib.h */
 WIMLIBAPI unsigned
-wimlib_xpress_compress(const void *__uncompressed_data,
-		       unsigned uncompressed_len, void *__compressed_data)
+wimlib_xpress_compress(const void * restrict _uncompressed_data,
+		       unsigned uncompressed_len,
+		       void * restrict _compressed_data)
 {
-	u8 *compressed_data = __compressed_data;
+	u8 *compressed_data = _compressed_data;
 	struct output_bitstream ostream;
 	u32 match_tab[uncompressed_len];
 	freq_t freq_tab[XPRESS_NUM_SYMBOLS];
@@ -165,7 +168,7 @@ wimlib_xpress_compress(const void *__uncompressed_data,
 	int ret;
 	u8 uncompressed_data[uncompressed_len + 8];
 
-	memcpy(uncompressed_data, __uncompressed_data, uncompressed_len);
+	memcpy(uncompressed_data, _uncompressed_data, uncompressed_len);
 	memset(uncompressed_data + uncompressed_len, 0, 8);
 
 	wimlib_assert(uncompressed_len <= 32768);
@@ -239,10 +242,10 @@ wimlib_xpress_compress(const void *__uncompressed_data,
 	 * the compressed data, in which case they are actually unnecessary, or
 	 * they may precede a number of bytes embedded into the bitstream.) */
 	if (ostream.bit_output >
-	    (const u8*)__compressed_data + uncompressed_len - 3)
+	    (const u8*)_compressed_data + uncompressed_len - 3)
 		return 0;
 	*(u16*)ostream.bit_output = cpu_to_le16(0);
-	compressed_len = ostream.next_bit_output - (const u8*)__compressed_data;
+	compressed_len = ostream.next_bit_output - (const u8*)_compressed_data;
 
 	wimlib_assert(compressed_len <= uncompressed_len - 1);
 
@@ -250,7 +253,7 @@ wimlib_xpress_compress(const void *__uncompressed_data,
 	/* Verify that we really get the same thing back when decompressing. */
 	{
 		u8 buf[uncompressed_len];
-		ret = wimlib_xpress_decompress(__compressed_data, compressed_len,
+		ret = wimlib_xpress_decompress(_compressed_data, compressed_len,
 					       buf, uncompressed_len);
 		if (ret) {
 			ERROR("xpress_compress(): Failed to decompress data we "

@@ -130,9 +130,9 @@ lzx_get_position_slot(unsigned formatted_offset)
 }
 
 static u32
-lzx_record_literal(u8 literal, void *__main_freq_tab)
+lzx_record_literal(u8 literal, void *_main_freq_tab)
 {
-	freq_t *main_freq_tab = __main_freq_tab;
+	freq_t *main_freq_tab = _main_freq_tab;
 	main_freq_tab[literal]++;
 	return literal;
 }
@@ -143,10 +143,10 @@ lzx_record_literal(u8 literal, void *__main_freq_tab)
  * intermediate representation documented below. */
 static u32
 lzx_record_match(unsigned match_offset, unsigned match_len,
-		 void *__freq_tabs, void *__queue)
+		 void *_freq_tabs, void *_queue)
 {
-	struct lzx_freq_tables *freq_tabs = __freq_tabs;
-	struct lru_queue *queue = __queue;
+	struct lzx_freq_tables *freq_tabs = _freq_tabs;
+	struct lru_queue *queue = _queue;
 	unsigned position_slot;
 	unsigned position_footer = 0;
 	u32 match;
@@ -648,7 +648,7 @@ static const struct lz_params lzx_lz_params = {
 
 /* Documented in wimlib.h */
 WIMLIBAPI unsigned
-wimlib_lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
+wimlib_lzx_compress(const void *_uncompressed_data, unsigned uncompressed_len,
 		    void *compressed_data)
 {
 	struct output_bitstream ostream;
@@ -675,7 +675,7 @@ wimlib_lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 
 	/* The input data must be preprocessed. To avoid changing the original
 	 * input, copy it to a temporary buffer. */
-	memcpy(uncompressed_data, __uncompressed_data, uncompressed_len);
+	memcpy(uncompressed_data, _uncompressed_data, uncompressed_len);
 	memset(uncompressed_data + uncompressed_len, 0, 8);
 
 	/* Before doing any actual compression, do the call instruction (0xe8
@@ -764,7 +764,7 @@ wimlib_lzx_compress(const void *__uncompressed_data, unsigned uncompressed_len,
 		}
 
 		for (i = 0; i < uncompressed_len; i++) {
-			if (buf[i] != *((u8*)__uncompressed_data + i)) {
+			if (buf[i] != *((u8*)_uncompressed_data + i)) {
 				ERROR("lzx_compress(): Data we compressed didn't "
 				      "decompress to the original data (difference at "
 				      "byte %u of %u)", i + 1, uncompressed_len);

@@ -70,9 +70,9 @@ finish_swm(WIMStruct *w, struct list_head *lte_list,
 }
 
 static int
-copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *__args)
+copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *_args)
 {
-	struct split_args *args = (struct split_args*)__args;
+	struct split_args *args = (struct split_args*)_args;
 	WIMStruct *w = args->w;
 	int ret;
 
