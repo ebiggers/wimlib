@@ -35,7 +35,7 @@ typedef uint64_t sle64;
 #endif
 
 /* A pointer to 'utf16lechar' indicates a UTF-16LE encoded string */
-typedef u16 utf16lechar;
+typedef le16 utf16lechar;
 
 #ifndef WIMLIB_WIMSTRUCT_DECLARED
 typedef struct WIMStruct WIMStruct;

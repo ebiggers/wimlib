@@ -31,16 +31,79 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/buffer_io.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/resource.h"
+#include "wimlib/sha1.h"
 #include "wimlib/timestamp.h"
 
 #include <errno.h>
+
+/* WIM alternate data stream entry (on-disk format) */
+struct wim_ads_entry_on_disk {
+	/*  Length of the entry, in bytes.  This apparently includes all
+	 *  fixed-length fields, plus the stream name and null terminator if
+	 *  present, and the padding up to an 8 byte boundary.  wimlib is a
+	 *  little less strict when reading the entries, and only requires that
+	 *  the number of bytes from this field is at least as large as the size
+	 *  of the fixed length fields and stream name without null terminator.
+	 *  */
+	le64  length;
+
+	le64  reserved;
+
+	/* SHA1 message digest of the uncompressed stream; or, alternatively,
+	 * can be all zeroes if the stream has zero length. */
+	u8 hash[SHA1_HASH_SIZE];
+
+	/* Length of the stream name, in bytes.  0 if the stream is unnamed.  */
+	le16 stream_name_nbytes;
+
+	/* Stream name in UTF-16LE.  It is @stream_name_nbytes bytes long,
+	 * excluding the the null terminator.  There is a null terminator
+	 * character if @stream_name_nbytes != 0; i.e., if this stream is named.
+	 * */
+	utf16lechar stream_name[];
+} _packed_attribute;
+
+/* WIM directory entry (on-disk format) */
+struct wim_dentry_on_disk {
+	le64 length;
+	le32 attributes;
+	sle32 security_id;
+	le64 subdir_offset;
+	le64 unused_1;
+	le64 unused_2;
+	le64 creation_time;
+	le64 last_access_time;
+	le64 last_write_time;
+	u8 unnamed_stream_hash[SHA1_HASH_SIZE];
+	union {
+		struct {
+			le32 rp_unknown_1;
+			le32 reparse_tag;
+			le16 rp_unknown_2;
+			le16 not_rpfixed;
+		} _packed_attribute reparse;
+		struct {
+			le32 rp_unknown_1;
+			le64 hard_link_group_id;
+		} _packed_attribute nonreparse;
+	};
+	le16 num_alternate_data_streams;
+	le16 short_name_nbytes;
+	le16 file_name_nbytes;
+
+	/* Follewed by variable length file name, if file_name_nbytes != 0 */
+	utf16lechar file_name[];
+
+	/* Followed by variable length short name, if short_name_nbytes != 0 */
+	/*utf16lechar short_name[];*/
+} _packed_attribute;
 
 /* Calculates the unaligned length, in bytes, of an on-disk WIM dentry that has
  * a file name and short name that take the specified numbers of bytes.  This
@@ -48,7 +111,7 @@
 static u64
 _dentry_correct_length_unaligned(u16 file_name_nbytes, u16 short_name_nbytes)
 {
-	u64 length = WIM_DENTRY_DISK_SIZE;
+	u64 length = sizeof(struct wim_dentry_on_disk);
 	if (file_name_nbytes)
 		length += file_name_nbytes + 2;
 	if (short_name_nbytes)
@@ -64,15 +127,7 @@ static u64
 dentry_correct_length_unaligned(const struct wim_dentry *dentry)
 {
 	return _dentry_correct_length_unaligned(dentry->file_name_nbytes,
-						 dentry->short_name_nbytes);
-}
-
-/* Return the "correct" value to write in the length field of a WIM dentry,
- * based on the file name length and short name length. */
-static u64
-dentry_correct_length(const struct wim_dentry *dentry)
-{
-	return (dentry_correct_length_unaligned(dentry) + 7) & ~7;
+						dentry->short_name_nbytes);
 }
 
 /* Return %true iff the alternate data stream entry @entry has the UTF-16LE
@@ -136,7 +191,6 @@ set_dentry_name(struct wim_dentry *dentry, const tchar *new_name)
 			dentry->short_name = NULL;
 			dentry->short_name_nbytes = 0;
 		}
-		dentry->length = dentry_correct_length(dentry);
 	}
 	return ret;
 }
@@ -147,7 +201,7 @@ set_dentry_name(struct wim_dentry *dentry, const tchar *new_name)
 static u64
 ads_entry_total_length(const struct wim_ads_entry *entry)
 {
-	u64 len = WIM_ADS_ENTRY_DISK_SIZE;
+	u64 len = sizeof(struct wim_ads_entry_on_disk);
 	if (entry->stream_name_nbytes)
 		len += entry->stream_name_nbytes + 2;
 	return (len + 7) & ~7;
@@ -169,7 +223,7 @@ u64
 dentry_correct_total_length(const struct wim_dentry *dentry)
 {
 	return _dentry_total_length(dentry,
-				     dentry_correct_length_unaligned(dentry));
+				    dentry_correct_length_unaligned(dentry));
 }
 
 /* Like dentry_correct_total_length(), but use the existing dentry->length field
@@ -501,13 +555,12 @@ get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name)
 }
 
 static struct wim_dentry *
-get_dentry_utf16le(WIMStruct *w, const utf16lechar *path,
-		   size_t path_nbytes)
+get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path)
 {
 	struct wim_dentry *cur_dentry, *parent_dentry;
 	const utf16lechar *p, *pp;
 
-	cur_dentry = parent_dentry = wim_root_dentry(w);
+	cur_dentry = parent_dentry = wim_root_dentry(wim);
 	if (!cur_dentry) {
 		errno = ENOENT;
 		return NULL;
@@ -516,7 +569,7 @@ get_dentry_utf16le(WIMStruct *w, const utf16lechar *path,
 	while (1) {
 		while (*p == cpu_to_le16('/'))
 			p++;
-		if (*p == '\0')
+		if (*p == cpu_to_le16('\0'))
 			break;
 		pp = p;
 		while (*pp != cpu_to_le16('/') && *pp != cpu_to_le16('\0'))
@@ -541,10 +594,10 @@ get_dentry_utf16le(WIMStruct *w, const utf16lechar *path,
 /* Returns the dentry corresponding to the @path, or NULL if there is no such
  * dentry. */
 struct wim_dentry *
-get_dentry(WIMStruct *w, const tchar *path)
+get_dentry(WIMStruct *wim, const tchar *path)
 {
 #if TCHAR_IS_UTF16LE
-	return get_dentry_utf16le(w, path, tstrlen(path) * sizeof(tchar));
+	return get_dentry_utf16le(wim, path);
 #else
 	utf16lechar *path_utf16le;
 	size_t path_utf16le_nbytes;
@@ -555,17 +608,17 @@ get_dentry(WIMStruct *w, const tchar *path)
 			      &path_utf16le, &path_utf16le_nbytes);
 	if (ret)
 		return NULL;
-	dentry = get_dentry_utf16le(w, path_utf16le, path_utf16le_nbytes);
+	dentry = get_dentry_utf16le(wim, path_utf16le);
 	FREE(path_utf16le);
 	return dentry;
 #endif
 }
 
 struct wim_inode *
-wim_pathname_to_inode(WIMStruct *w, const tchar *path)
+wim_pathname_to_inode(WIMStruct *wim, const tchar *path)
 {
 	struct wim_dentry *dentry;
-	dentry = get_dentry(w, path);
+	dentry = get_dentry(wim, path);
 	if (dentry)
 		return dentry->d_inode;
 	else
@@ -590,14 +643,14 @@ to_parent_name(tchar *buf, size_t len)
 /* Returns the dentry that corresponds to the parent directory of @path, or NULL
  * if the dentry is not found. */
 struct wim_dentry *
-get_parent_dentry(WIMStruct *w, const tchar *path)
+get_parent_dentry(WIMStruct *wim, const tchar *path)
 {
 	size_t path_len = tstrlen(path);
 	tchar buf[path_len + 1];
 
 	tmemcpy(buf, path, path_len + 1);
 	to_parent_name(buf, path_len);
-	return get_dentry(w, buf);
+	return get_dentry(wim, buf);
 }
 
 /* Prints the full path of a dentry. */
@@ -827,15 +880,13 @@ new_filler_directory(const tchar *name, struct wim_dentry **dentry_ret)
 	DEBUG("Creating filler directory \"%"TS"\"", name);
 	ret = new_dentry_with_inode(name, &dentry);
 	if (ret)
-		goto out;
+		return ret;
 	/* Leave the inode number as 0; this is allowed for non
 	 * hard-linked files. */
 	dentry->d_inode->i_resolved = 1;
 	dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
 	*dentry_ret = dentry;
-	ret = 0;
-out:
-	return ret;
+	return 0;
 }
 
 static int
@@ -850,7 +901,7 @@ init_ads_entry(struct wim_ads_entry *ads_entry, const void *name,
 		if (!p)
 			return WIMLIB_ERR_NOMEM;
 		memcpy(p, name, name_nbytes);
-		p[name_nbytes / 2] = 0;
+		p[name_nbytes / 2] = cpu_to_le16(0);
 		ads_entry->stream_name = p;
 		ads_entry->stream_name_nbytes = name_nbytes;
 	} else {
@@ -915,12 +966,14 @@ put_inode(struct wim_inode *inode)
 void
 free_dentry(struct wim_dentry *dentry)
 {
-	FREE(dentry->file_name);
-	FREE(dentry->short_name);
-	FREE(dentry->_full_path);
-	if (dentry->d_inode)
-		put_inode(dentry->d_inode);
-	FREE(dentry);
+	if (dentry) {
+		FREE(dentry->file_name);
+		FREE(dentry->short_name);
+		FREE(dentry->_full_path);
+		if (dentry->d_inode)
+			put_inode(dentry->d_inode);
+		FREE(dentry);
+	}
 }
 
 /* This function is passed as an argument to for_dentry_in_tree_depth() in order
@@ -929,13 +982,12 @@ static int
 do_free_dentry(struct wim_dentry *dentry, void *_lookup_table)
 {
 	struct wim_lookup_table *lookup_table = _lookup_table;
-	unsigned i;
 
 	if (lookup_table) {
-		struct wim_lookup_table_entry *lte;
 		struct wim_inode *inode = dentry->d_inode;
-		wimlib_assert(inode->i_nlink != 0);
-		for (i = 0; i <= inode->i_num_ads; i++) {
+		for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+			struct wim_lookup_table_entry *lte;
+
 			lte = inode_stream_lte(inode, i, lookup_table);
 			if (lte)
 				lte_decrement_refcnt(lte, lookup_table);
@@ -963,8 +1015,10 @@ free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
 /*
  * Links a dentry into the directory tree.
  *
- * @parent: The dentry that will be the parent of @dentry.
- * @dentry: The dentry to link.
+ * @parent: The dentry that will be the parent of @child.
+ * @child: The dentry to link.
+ *
+ * Returns non-NULL if a duplicate dentry was detected.
  */
 struct wim_dentry *
 dentry_add_child(struct wim_dentry * restrict parent,
@@ -999,10 +1053,8 @@ dentry_add_child(struct wim_dentry * restrict parent,
 void
 unlink_dentry(struct wim_dentry *dentry)
 {
-	struct wim_dentry *parent = dentry->parent;
-	if (parent == dentry)
-		return;
-	rb_erase(&dentry->rb_node, &parent->d_inode->i_children);
+	if (!dentry_is_root(dentry))
+		rb_erase(&dentry->rb_node, &dentry->parent->d_inode->i_children);
 }
 
 /*
@@ -1109,52 +1161,60 @@ inode_add_ads(struct wim_inode *inode, const tchar *stream_name)
 				TCHAR_IS_UTF16LE);
 }
 
+static struct wim_lookup_table_entry *
+add_stream_from_data_buffer(const void *buffer, size_t size,
+			    struct wim_lookup_table *lookup_table)
+{
+	u8 hash[SHA1_HASH_SIZE];
+	struct wim_lookup_table_entry *lte, *existing_lte;
+
+	sha1_buffer(buffer, size, hash);
+	existing_lte = __lookup_resource(lookup_table, hash);
+	if (existing_lte) {
+		wimlib_assert(wim_resource_size(existing_lte) == size);
+		lte = existing_lte;
+		lte->refcnt++;
+	} else {
+		void *buffer_copy;
+		lte = new_lookup_table_entry();
+		if (!lte)
+			return NULL;
+		buffer_copy = MALLOC(size);
+		if (!buffer_copy) {
+			free_lookup_table_entry(lte);
+			return NULL;
+		}
+		memcpy(buffer_copy, buffer, size);
+		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
+		lte->attached_buffer              = buffer_copy;
+		lte->resource_entry.original_size = size;
+		copy_hash(lte->hash, hash);
+		lookup_table_insert(lookup_table, lte);
+	}
+	return lte;
+}
+
 int
 inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
 			const void *value, size_t size,
 			struct wim_lookup_table *lookup_table)
 {
-	int ret = WIMLIB_ERR_NOMEM;
 	struct wim_ads_entry *new_ads_entry;
-	struct wim_lookup_table_entry *existing_lte;
-	struct wim_lookup_table_entry *lte;
-	u8 value_hash[SHA1_HASH_SIZE];
 
 	wimlib_assert(inode->i_resolved);
+
 	new_ads_entry = inode_add_ads(inode, name);
 	if (!new_ads_entry)
-		goto out;
-	sha1_buffer((const u8*)value, size, value_hash);
-	existing_lte = __lookup_resource(lookup_table, value_hash);
-	if (existing_lte) {
-		lte = existing_lte;
-		lte->refcnt++;
-	} else {
-		u8 *value_copy;
-		lte = new_lookup_table_entry();
-		if (!lte)
-			goto out_remove_ads_entry;
-		value_copy = MALLOC(size);
-		if (!value_copy) {
-			FREE(lte);
-			goto out_remove_ads_entry;
-		}
-		memcpy(value_copy, value, size);
-		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
-		lte->attached_buffer              = value_copy;
-		lte->resource_entry.original_size = size;
-		lte->resource_entry.size          = size;
-		copy_hash(lte->hash, value_hash);
-		lookup_table_insert(lookup_table, lte);
+		return WIMLIB_ERR_NOMEM;
+
+	new_ads_entry->lte = add_stream_from_data_buffer(value, size,
+							 lookup_table);
+	if (!new_ads_entry->lte) {
+		inode_remove_ads(inode, new_ads_entry - inode->i_ads_entries,
+				 lookup_table);
+		return WIMLIB_ERR_NOMEM;
 	}
-	new_ads_entry->lte = lte;
-	ret = 0;
-	goto out;
-out_remove_ads_entry:
-	inode_remove_ads(inode, new_ads_entry - inode->i_ads_entries,
-			 lookup_table);
-out:
-	return ret;
+	return 0;
 }
 
 /* Set the unnamed stream of a WIM inode, given a data buffer containing the
@@ -1163,33 +1223,9 @@ int
 inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
 			 struct wim_lookup_table *lookup_table)
 {
-	struct wim_lookup_table_entry *lte, *existing_lte;
-	u8 hash[SHA1_HASH_SIZE];
-	void *buf;
-
-	sha1_buffer(data, len, hash);
-	existing_lte = __lookup_resource(lookup_table, hash);
-	if (existing_lte) {
-		wimlib_assert(wim_resource_size(existing_lte) == len);
-		lte = existing_lte;
-		lte->refcnt++;
-	} else {
-		lte = new_lookup_table_entry();
-		if (!lte)
-			return WIMLIB_ERR_NOMEM;
-		buf = MALLOC(len);
-		if (!buf) {
-			free_lookup_table_entry(lte);
-			return WIMLIB_ERR_NOMEM;
-		}
-		memcpy(buf, data, len);
-		lte->resource_location = RESOURCE_IN_ATTACHED_BUFFER;
-		lte->attached_buffer = buf;
-		lte->resource_entry.original_size = len;
-		copy_hash(lte->hash, hash);
-		lookup_table_insert(lookup_table, lte);
-	}
-	inode->i_lte = lte;
+	inode->i_lte = add_stream_from_data_buffer(data, len, lookup_table);
+	if (!inode->i_lte)
+		return WIMLIB_ERR_NOMEM;
 	inode->i_resolved = 1;
 	return 0;
 }
@@ -1338,36 +1374,14 @@ replace_forbidden_characters(utf16lechar *name)
  * @remaining_size:	Number of bytes of data remaining in the buffer pointed
  * 				to by @p.
  *
- * The format of the on-disk alternate stream entries is as follows:
- *
- * struct wim_ads_entry_on_disk {
- * 	u64  length;          // Length of the entry, in bytes.  This includes
- *				    all fields (including the stream name and
- *				    null terminator if present, AND the padding!).
- * 	u64  reserved;        // Seems to be unused
- * 	u8   hash[20];        // SHA1 message digest of the uncompressed stream
- * 	u16  stream_name_len; // Length of the stream name, in bytes
- * 	char stream_name[];   // Stream name in UTF-16LE, @stream_name_len bytes long,
- *                                  not including null terminator
- * 	u16  zero;            // UTF-16 null terminator for the stream name, NOT
- * 	                            included in @stream_name_len.  Based on what
- * 	                            I've observed from filenames in dentries,
- * 	                            this field should not exist when
- * 	                            (@stream_name_len == 0), but you can't
- * 	                            actually tell because of the padding anyway
- * 	                            (provided that the padding is zeroed, which
- * 	                            it always seems to be).
- *	char padding[];       // Padding to make the size a multiple of 8 bytes.
- * };
- *
- * In addition, the entries are 8-byte aligned.
  *
  * Return 0 on success or nonzero on failure.  On success, inode->i_ads_entries
  * is set to an array of `struct wim_ads_entry's of length inode->i_num_ads.  On
  * failure, @inode is not modified.
  */
 static int
-read_ads_entries(const u8 *p, struct wim_inode *inode, u64 remaining_size)
+read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
+		 size_t nbytes_remaining)
 {
 	u16 num_ads;
 	struct wim_ads_entry *ads_entries;
@@ -1375,109 +1389,107 @@ read_ads_entries(const u8 *p, struct wim_inode *inode, u64 remaining_size)
 
 	num_ads = inode->i_num_ads;
 	ads_entries = CALLOC(num_ads, sizeof(inode->i_ads_entries[0]));
-	if (!ads_entries) {
-		ERROR("Could not allocate memory for %"PRIu16" "
-		      "alternate data stream entries", num_ads);
-		return WIMLIB_ERR_NOMEM;
-	}
+	if (!ads_entries)
+		goto out_of_memory;
 
 	for (u16 i = 0; i < num_ads; i++) {
-		struct wim_ads_entry *cur_entry;
 		u64 length;
-		u64 length_no_padding;
-		u64 total_length;
-		const u8 *p_save = p;
+		struct wim_ads_entry *cur_entry;
+		const struct wim_ads_entry_on_disk *disk_entry =
+			(const struct wim_ads_entry_on_disk*)p;
 
 		cur_entry = &ads_entries[i];
-
-	#ifdef WITH_FUSE
 		ads_entries[i].stream_id = i + 1;
-	#endif
 
-		/* Read the base stream entry, excluding the stream name. */
-		if (remaining_size < WIM_ADS_ENTRY_DISK_SIZE) {
-			ERROR("Stream entries go past end of metadata resource");
-			ERROR("(remaining_size = %"PRIu64")", remaining_size);
-			ret = WIMLIB_ERR_INVALID_DENTRY;
-			goto out_free_ads_entries;
-		}
+		/* Do we have at least the size of the fixed-length data we know
+		 * need? */
+		if (nbytes_remaining < sizeof(struct wim_ads_entry_on_disk))
+			goto out_invalid;
 
-		p = get_u64(p, &length);
-		p = get_u64(p, &cur_entry->unused);
-		p = get_bytes(p, SHA1_HASH_SIZE, cur_entry->hash);
-		p = get_u16(p, &cur_entry->stream_name_nbytes);
+		/* Read the length field */
+		length = le64_to_cpu(disk_entry->length);
 
-		cur_entry->stream_name = NULL;
+		/* Make sure the length field is neither so small it doesn't
+		 * include all the fixed-length data, or so large it overflows
+		 * the metadata resource buffer. */
+		if (length < sizeof(struct wim_ads_entry_on_disk) ||
+		    length > nbytes_remaining)
+			goto out_invalid;
 
-		/* Length including neither the null terminator nor the padding
-		 * */
-		length_no_padding = WIM_ADS_ENTRY_DISK_SIZE +
-				    cur_entry->stream_name_nbytes;
+		/* Read the rest of the fixed-length data. */
 
-		/* Length including the null terminator and the padding */
-		total_length = ((length_no_padding + 2) + 7) & ~7;
+		cur_entry->reserved = le64_to_cpu(disk_entry->reserved);
 
-		wimlib_assert(total_length == ads_entry_total_length(cur_entry));
+		copy_hash(cur_entry->hash, disk_entry->hash);
+		cur_entry->stream_name_nbytes = le16_to_cpu(cur_entry->stream_name_nbytes);
 
-		if (remaining_size < length_no_padding) {
-			ERROR("Stream entries go past end of metadata resource");
-			ERROR("(remaining_size = %"PRIu64" bytes, "
-			      "length_no_padding = %"PRIu64" bytes)",
-			      remaining_size, length_no_padding);
-			ret = WIMLIB_ERR_INVALID_DENTRY;
-			goto out_free_ads_entries;
-		}
-
-		/* The @length field in the on-disk ADS entry is expected to be
-		 * equal to @total_length, which includes all of the entry and
-		 * the padding that follows it to align the next ADS entry to an
-		 * 8-byte boundary.  However, to be safe, we'll accept the
-		 * length field as long as it's not less than the un-padded
-		 * total length and not more than the padded total length. */
-		if (length < length_no_padding || length > total_length) {
-			ERROR("Stream entry has unexpected length "
-			      "field (length field = %"PRIu64", "
-			      "unpadded total length = %"PRIu64", "
-			      "padded total length = %"PRIu64")",
-			      length, length_no_padding, total_length);
-			ret = WIMLIB_ERR_INVALID_DENTRY;
-			goto out_free_ads_entries;
-		}
-
+		/* If stream_name_nbytes != 0, this is a named stream.
+		 * Otherwise this is an unnamed stream, or in some cases (bugs
+		 * in Microsoft's software I guess) a meaningless entry
+		 * distinguished from the real unnamed stream entry, if any, by
+		 * the fact that the real unnamed stream entry has a nonzero
+		 * hash field. */
 		if (cur_entry->stream_name_nbytes) {
+			u64 length_no_padding;
+
+			/* The name is encoded in UTF16-LE, which uses 2-byte
+			 * coding units, so the length of the name had better be
+			 * an even number of bytes... */
+			if (cur_entry->stream_name_nbytes & 1)
+				goto out_invalid;
+
+			/* Add the length of the stream name to get the length
+			 * we actually need to read.  Make sure this isn't more
+			 * than the specified length of the entry. */
+			if (sizeof(struct wim_ads_entry_on_disk) +
+			    cur_entry->stream_name_nbytes > length)
+				goto out_invalid;
+
 			cur_entry->stream_name = MALLOC(cur_entry->stream_name_nbytes + 2);
-			if (!cur_entry->stream_name) {
-				ret = WIMLIB_ERR_NOMEM;
-				goto out_free_ads_entries;
-			}
-			get_bytes(p, cur_entry->stream_name_nbytes,
-				  cur_entry->stream_name);
+			if (!cur_entry->stream_name)
+				goto out_of_memory;
+
+			memcpy(cur_entry->stream_name,
+			       disk_entry->stream_name,
+			       cur_entry->stream_name_nbytes);
 			cur_entry->stream_name[cur_entry->stream_name_nbytes / 2] = 0;
 			replace_forbidden_characters(cur_entry->stream_name);
 		}
+
 		/* It's expected that the size of every ADS entry is a multiple
 		 * of 8.  However, to be safe, I'm allowing the possibility of
 		 * an ADS entry at the very end of the metadata resource ending
 		 * un-aligned.  So although we still need to increment the input
-		 * pointer by @total_length to reach the next ADS entry, it's
-		 * possible that less than @total_length is actually remaining
-		 * in the metadata resource. We should set the remaining size to
-		 * 0 bytes if this happens. */
-		p = p_save + total_length;
-		if (remaining_size < total_length)
-			remaining_size = 0;
+		 * pointer by @length to reach the next ADS entry, it's possible
+		 * that less than @length is actually remaining in the metadata
+		 * resource. We should set the remaining bytes to 0 if this
+		 * happens. */
+		length = (length + 7) & ~(u64)7;
+		p += length;
+		if (nbytes_remaining < length)
+			nbytes_remaining = 0;
 		else
-			remaining_size -= total_length;
+			nbytes_remaining -= length;
 	}
 	inode->i_ads_entries = ads_entries;
 #ifdef WITH_FUSE
 	inode->i_next_stream_id = inode->i_num_ads + 1;
 #endif
-	return 0;
+	ret = 0;
+	goto out;
+out_of_memory:
+	ret = WIMLIB_ERR_NOMEM;
+	goto out_free_ads_entries;
+out_invalid:
+	ERROR("An alternate data stream entry is invalid");
+	ret = WIMLIB_ERR_INVALID_DENTRY;
 out_free_ads_entries:
-	for (u16 i = 0; i < num_ads; i++)
-		destroy_ads_entry(&ads_entries[i]);
-	FREE(ads_entries);
+	if (ads_entries) {
+		for (u16 i = 0; i < num_ads; i++)
+			destroy_ads_entry(&ads_entries[i]);
+		FREE(ads_entries);
+	}
+out:
 	return ret;
 }
 
@@ -1485,9 +1497,14 @@ out_free_ads_entries:
  * Reads a WIM directory entry, including all alternate data stream entries that
  * follow it, from the WIM image's metadata resource.
  *
- * @metadata_resource:	Buffer containing the uncompressed metadata resource.
- * @metadata_resource_len:   Length of the metadata resource.
- * @offset:	Offset of this directory entry in the metadata resource.
+ * @metadata_resource:
+ *		Pointer to the metadata resource buffer.
+ *
+ * @metadata_resource_len:
+ *		Length of the metadata resource buffer, in bytes.
+ *
+ * @offset: 	Offset of the dentry within the metadata resource.
+ *
  * @dentry:	A `struct wim_dentry' that will be filled in by this function.
  *
  * Return 0 on success or nonzero on failure.  On failure, @dentry will have
@@ -1497,45 +1514,53 @@ out_free_ads_entries:
  * nonzero, this was a real dentry.
  */
 int
-read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
-	    u64 offset, struct wim_dentry *dentry)
+read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
+	    u64 offset, struct wim_dentry * restrict dentry)
 {
-	const u8 *p;
+
 	u64 calculated_size;
-	utf16lechar *file_name = NULL;
-	utf16lechar *short_name = NULL;
+	utf16lechar *file_name;
+	utf16lechar *short_name;
 	u16 short_name_nbytes;
 	u16 file_name_nbytes;
 	int ret;
-	struct wim_inode *inode = NULL;
+	struct wim_inode *inode;
+	const struct wim_dentry_on_disk *disk_dentry;
+	const u8 *p = &metadata_resource[offset];
+
+	if ((uintptr_t)p & 7)
+		WARNING("WIM dentry is not 8-byte aligned");
 
 	dentry_common_init(dentry);
 
 	/*Make sure the dentry really fits into the metadata resource.*/
-	if (offset + 8 > metadata_resource_len || offset + 8 < offset) {
+	if (offset + sizeof(u64) < offset ||
+	    offset + sizeof(u64) > metadata_resource_len)
+	{
 		ERROR("Directory entry starting at %"PRIu64" ends past the "
 		      "end of the metadata resource (size %"PRIu64")",
 		      offset, metadata_resource_len);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
+	disk_dentry = (const struct wim_dentry_on_disk*)p;
+
 	/* Before reading the whole dentry, we need to read just the length.
 	 * This is because a dentry of length 8 (that is, just the length field)
 	 * terminates the list of sibling directory entries. */
-
-	p = get_u64(&metadata_resource[offset], &dentry->length);
+	dentry->length = le64_to_cpu(disk_dentry->length);
 
 	/* A zero length field (really a length of 8, since that's how big the
 	 * directory entry is...) indicates that this is the end of directory
 	 * dentry.  We do not read it into memory as an actual dentry, so just
 	 * return successfully in that case. */
+	if (dentry->length == 8)
+		dentry->length = 0;
 	if (dentry->length == 0)
 		return 0;
 
-	/* If the dentry does not overflow the metadata resource buffer and is
-	 * not too short, read the rest of it (excluding the alternate data
-	 * streams, but including the file name and short name variable-length
-	 * fields) into memory. */
+	/* Now that we have the actual length provided in the on-disk structure,
+	 * make sure it doesn't overflow the metadata buffer. */
 	if (offset + dentry->length >= metadata_resource_len
 	    || offset + dentry->length < offset)
 	{
@@ -1546,49 +1571,60 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
-	if (dentry->length < WIM_DENTRY_DISK_SIZE) {
+	/* Make sure the dentry length is at least as large as the number of
+	 * fixed-length fields */
+	if (dentry->length < sizeof(struct wim_dentry_on_disk)) {
 		ERROR("Directory entry has invalid length of %"PRIu64" bytes",
 		      dentry->length);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
+	/* Allocate a `struct wim_inode' for this `struct wim_dentry'. */
 	inode = new_timeless_inode();
 	if (!inode)
 		return WIMLIB_ERR_NOMEM;
 
-	p = get_u32(p, &inode->i_attributes);
-	p = get_u32(p, (u32*)&inode->i_security_id);
-	p = get_u64(p, &dentry->subdir_offset);
+	/* Read more fields; some into the dentry, and some into the inode. */
 
-	p = get_u64(p, &inode->i_unused_1);
-	p = get_u64(p, &inode->i_unused_2);
-
-	p = get_u64(p, &inode->i_creation_time);
-	p = get_u64(p, &inode->i_last_access_time);
-	p = get_u64(p, &inode->i_last_write_time);
-
-	p = get_bytes(p, SHA1_HASH_SIZE, inode->i_hash);
+	inode->i_attributes = le32_to_cpu(disk_dentry->attributes);
+	inode->i_security_id = le32_to_cpu(disk_dentry->security_id);
+	dentry->subdir_offset = le64_to_cpu(disk_dentry->subdir_offset);
+	dentry->d_unused_1 = le64_to_cpu(disk_dentry->unused_1);
+	dentry->d_unused_2 = le64_to_cpu(disk_dentry->unused_2);
+	inode->i_creation_time = le64_to_cpu(disk_dentry->creation_time);
+	inode->i_last_access_time = le64_to_cpu(disk_dentry->last_access_time);
+	inode->i_last_write_time = le64_to_cpu(disk_dentry->last_write_time);
+	copy_hash(inode->i_hash, disk_dentry->unnamed_stream_hash);
 
 	/* I don't know what's going on here.  It seems like M$ screwed up the
 	 * reparse points, then put the fields in the same place and didn't
-	 * document it.  */
+	 * document it.  So we have some fields we read for reparse points, and
+	 * some fields in the same place for non-reparse-point.s */
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		p = get_u32(p, &inode->i_rp_unknown_1);
-		p = get_u32(p, &inode->i_reparse_tag);
-		p = get_u16(p, &inode->i_rp_unknown_2);
-		p = get_u16(p, &inode->i_not_rpfixed);
+		inode->i_rp_unknown_1 = le32_to_cpu(disk_dentry->reparse.rp_unknown_1);
+		inode->i_reparse_tag = le32_to_cpu(disk_dentry->reparse.reparse_tag);
+		inode->i_rp_unknown_2 = le16_to_cpu(disk_dentry->reparse.rp_unknown_2);
+		inode->i_not_rpfixed = le16_to_cpu(disk_dentry->reparse.not_rpfixed);
+		/* Leave inode->i_ino at 0.  Note that this means the WIM file
+		 * cannot archive hard-linked reparse points.  Such a thing
+		 * doesn't really make sense anyway, although I believe it's
+		 * theoretically possible to have them on NTFS. */
 	} else {
-		p = get_u32(p, &inode->i_rp_unknown_1);
-		p = get_u64(p, &inode->i_ino);
+		inode->i_rp_unknown_1 = le32_to_cpu(disk_dentry->nonreparse.rp_unknown_1);
+		inode->i_ino = le64_to_cpu(disk_dentry->nonreparse.hard_link_group_id);
 	}
 
-	/* By the way, the reparse_reserved field does not actually exist (at
-	 * least when the file is not a reparse point) */
+	inode->i_num_ads = le16_to_cpu(disk_dentry->num_alternate_data_streams);
 
-	p = get_u16(p, &inode->i_num_ads);
+	short_name_nbytes = le16_to_cpu(disk_dentry->short_name_nbytes);
+	file_name_nbytes = le16_to_cpu(disk_dentry->file_name_nbytes);
 
-	p = get_u16(p, &short_name_nbytes);
-	p = get_u16(p, &file_name_nbytes);
+	if ((short_name_nbytes & 1) | (file_name_nbytes & 1))
+	{
+		ERROR("Dentry name is not valid UTF-16LE (odd number of bytes)!");
+		ret = WIMLIB_ERR_INVALID_DENTRY;
+		goto out_free_inode;
+	}
 
 	/* We now know the length of the file name and short name.  Make sure
 	 * the length of the dentry is large enough to actually hold them.
@@ -1597,17 +1633,17 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * that the dentry->length names an unaligned length, although this
 	 * would be unexpected. */
 	calculated_size = _dentry_correct_length_unaligned(file_name_nbytes,
-							    short_name_nbytes);
+							   short_name_nbytes);
 
 	if (dentry->length < calculated_size) {
 		ERROR("Unexpected end of directory entry! (Expected "
-		      "at least %"PRIu64" bytes, got %"PRIu64" bytes. "
-		      "short_name_nbytes = %hu, file_name_nbytes = %hu)",
-		      calculated_size, dentry->length,
-		      short_name_nbytes, file_name_nbytes);
+		      "at least %"PRIu64" bytes, got %"PRIu64" bytes.)",
+		      calculated_size, dentry->length);
 		ret = WIMLIB_ERR_INVALID_DENTRY;
 		goto out_free_inode;
 	}
+
+	p += sizeof(struct wim_dentry_on_disk);
 
 	/* Read the filename if present.  Note: if the filename is empty, there
 	 * is no null terminator following it. */
@@ -1619,46 +1655,14 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_inode;
 		}
-		p = get_bytes(p, file_name_nbytes + 2, file_name);
-		if (file_name[file_name_nbytes / 2] != 0) {
-			file_name[file_name_nbytes / 2] = 0;
-			WARNING("File name in WIM dentry \"%"WS"\" is not "
-				"null-terminated!", file_name);
-		}
+		memcpy(file_name, p, file_name_nbytes);
+		p += file_name_nbytes + 2;
+		file_name[file_name_nbytes / 2] = cpu_to_le16(0);
 		replace_forbidden_characters(file_name);
+	} else {
+		file_name = NULL;
 	}
 
-	/* Align the calculated size */
-	calculated_size = (calculated_size + 7) & ~7;
-
-	if (dentry->length > calculated_size) {
-		/* Weird; the dentry says it's longer than it should be.  Note
-		 * that the length field does NOT include the size of the
-		 * alternate stream entries. */
-
-		/* Strangely, some directory entries inexplicably have a little
-		 * over 70 bytes of extra data.  The exact amount of data seems
-		 * to be 72 bytes, but it is aligned on the next 8-byte
-		 * boundary.  It does NOT seem to be alternate data stream
-		 * entries.  Here's an example of the aligned data:
-		 *
-		 * 01000000 40000000 6c786bba c58ede11 b0bb0026 1870892a b6adb76f
-		 * e63a3e46 8fca8653 0d2effa1 6c786bba c58ede11 b0bb0026 1870892a
-		 * 00000000 00000000 00000000 00000000
-		 *
-		 * Here's one interpretation of how the data is laid out.
-		 *
-		 * struct unknown {
-		 * 	u32 field1; (always 0x00000001)
-		 * 	u32 field2; (always 0x40000000)
-		 * 	u8  data[48]; (???)
-		 * 	u64 reserved1; (always 0)
-		 * 	u64 reserved2; (always 0)
-		 * };*/
-		/*DEBUG("Dentry for file or directory `%"WS"' has %"PRIu64" "*/
-		      /*"extra bytes of data", file_name,*/
-		      /*dentry->length - calculated_size);*/
-	}
 
 	/* Read the short filename if present.  Note: if there is no short
 	 * filename, there is no null terminator following it. */
@@ -1670,14 +1674,16 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_file_name;
 		}
-		p = get_bytes(p, short_name_nbytes + 2, short_name);
-		if (short_name[short_name_nbytes / 2] != 0) {
-			short_name[short_name_nbytes / 2] = 0;
-			WARNING("Short name in WIM dentry \"%"WS"\" is not "
-				"null-terminated!", file_name);
-		}
+		memcpy(short_name, p, short_name_nbytes);
+		p += short_name_nbytes + 2;
+		short_name[short_name_nbytes / 2] = cpu_to_le16(0);
 		replace_forbidden_characters(short_name);
+	} else {
+		short_name = NULL;
 	}
+
+	/* Align the dentry length */
+	dentry->length = (dentry->length + 7) & ~7;
 
 	/*
 	 * Read the alternate data streams, if present.  dentry->num_ads tells
@@ -1685,39 +1691,22 @@ read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * on-disk.
 	 *
 	 * Note that each alternate data stream entry begins on an 8-byte
-	 * aligned boundary, and the alternate data stream entries are NOT
-	 * included in the dentry->length field for some reason.
+	 * aligned boundary, and the alternate data stream entries seem to NOT
+	 * be included in the dentry->length field for some reason.
 	 */
 	if (inode->i_num_ads != 0) {
-
-		/* Trying different lengths is just a hack to make sure we have
-		 * a chance of reading the ADS entries correctly despite the
-		 * poor documentation. */
-
-		if (calculated_size != dentry->length) {
-			WARNING("Trying calculated dentry length (%"PRIu64") "
-				"instead of dentry->length field (%"PRIu64") "
-				"to read ADS entries",
-				calculated_size, dentry->length);
-		}
-		u64 lengths_to_try[3] = {calculated_size,
-					 (dentry->length + 7) & ~7,
-					 dentry->length};
 		ret = WIMLIB_ERR_INVALID_DENTRY;
-		for (size_t i = 0; i < ARRAY_LEN(lengths_to_try); i++) {
-			if (lengths_to_try[i] > metadata_resource_len - offset)
-				continue;
-			ret = read_ads_entries(&metadata_resource[offset + lengths_to_try[i]],
-					       inode,
-					       metadata_resource_len - offset - lengths_to_try[i]);
-			if (ret == 0)
-				goto out;
+		if (offset + dentry->length > metadata_resource_len ||
+		    (ret = read_ads_entries(&metadata_resource[offset + dentry->length],
+					    inode,
+					    metadata_resource_len - offset - dentry->length)))
+		{
+			ERROR("Failed to read alternate data stream "
+			      "entries of WIM dentry \"%"WS"\"", file_name);
+			goto out_free_short_name;
 		}
-		ERROR("Failed to read alternate data stream "
-		      "entries of WIM dentry \"%"WS"\"", file_name);
-		goto out_free_short_name;
 	}
-out:
+out_success:
 	/* We've read all the data for this dentry.  Set the names and their
 	 * lengths, and we've done. */
 	dentry->d_inode           = inode;
@@ -1725,13 +1714,15 @@ out:
 	dentry->short_name        = short_name;
 	dentry->file_name_nbytes  = file_name_nbytes;
 	dentry->short_name_nbytes = short_name_nbytes;
-	return 0;
+	ret = 0;
+	goto out;
 out_free_short_name:
 	FREE(short_name);
 out_free_file_name:
 	FREE(file_name);
 out_free_inode:
 	free_inode(inode);
+out:
 	return ret;
 }
 
@@ -1819,80 +1810,93 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
  *
  * @dentry:  The dentry structure.
  * @p:       The memory location to write the data to.
- * @return:  Pointer to the byte after the last byte we wrote as part of the
- * 		dentry.
+ *
+ * Returns the pointer to the byte after the last byte we wrote as part of the
+ * dentry, including any alternate data streams entry.
  */
 static u8 *
-write_dentry(const struct wim_dentry *dentry, u8 *p)
+write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 {
-	u8 *orig_p = p;
+	const struct wim_inode *inode;
+	struct wim_dentry_on_disk *disk_dentry;
+	const u8 *orig_p;
 	const u8 *hash;
-	const struct wim_inode *inode = dentry->d_inode;
+
+	wimlib_assert(((uintptr_t)p & 7) == 0); /* 8 byte aligned */
+	orig_p = p;
+
+ 	inode = dentry->d_inode;
+	disk_dentry = (struct wim_dentry_on_disk*)p;
+
+	disk_dentry->attributes = cpu_to_le32(inode->i_attributes);
+	disk_dentry->security_id = cpu_to_le32(inode->i_security_id);
+	disk_dentry->subdir_offset = cpu_to_le64(dentry->subdir_offset);
+	disk_dentry->unused_1 = cpu_to_le64(dentry->d_unused_1);
+	disk_dentry->unused_2 = cpu_to_le64(dentry->d_unused_2);
+	disk_dentry->creation_time = cpu_to_le64(inode->i_creation_time);
+	disk_dentry->last_access_time = cpu_to_le64(inode->i_last_access_time);
+	disk_dentry->last_write_time = cpu_to_le64(inode->i_last_write_time);
+
+	if (inode->i_resolved)
+		hash = inode->i_lte->hash;
+	else
+		hash = inode->i_hash;
+	copy_hash(disk_dentry->unnamed_stream_hash, inode_stream_hash(inode, 0));
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		disk_dentry->reparse.rp_unknown_1 = cpu_to_le32(inode->i_rp_unknown_1);
+		disk_dentry->reparse.reparse_tag = cpu_to_le32(inode->i_reparse_tag);
+		disk_dentry->reparse.rp_unknown_2 = cpu_to_le16(inode->i_rp_unknown_2);
+		disk_dentry->reparse.not_rpfixed = cpu_to_le16(inode->i_not_rpfixed);
+	} else {
+		disk_dentry->nonreparse.rp_unknown_1 = cpu_to_le32(inode->i_rp_unknown_1);
+		disk_dentry->nonreparse.hard_link_group_id =
+			cpu_to_le64((inode->i_nlink == 1) ? 0 : inode->i_ino);
+	}
+	disk_dentry->num_alternate_data_streams = cpu_to_le16(inode->i_num_ads);
+	disk_dentry->short_name_nbytes = cpu_to_le16(dentry->short_name_nbytes);
+	disk_dentry->file_name_nbytes = cpu_to_le16(dentry->file_name_nbytes);
+	p += sizeof(struct wim_dentry_on_disk);
+
+	if (dentry_has_long_name(dentry))
+		p = mempcpy(p, dentry->file_name, dentry->file_name_nbytes + 2);
+
+	if (dentry_has_short_name(dentry))
+		p = mempcpy(p, dentry->short_name, dentry->short_name_nbytes + 2);
+
+	/* Align to 8-byte boundary */
+	while ((uintptr_t)p & 7)
+		*p++ = 0;
 
 	/* We calculate the correct length of the dentry ourselves because the
 	 * dentry->length field may been set to an unexpected value from when we
 	 * read the dentry in (for example, there may have been unknown data
 	 * appended to the end of the dentry...) */
-	u64 length = dentry_correct_length(dentry);
+	disk_dentry->length = cpu_to_le64(p - orig_p);
 
-	p = put_u64(p, length);
-	p = put_u32(p, inode->i_attributes);
-	p = put_u32(p, inode->i_security_id);
-	p = put_u64(p, dentry->subdir_offset);
-	p = put_u64(p, inode->i_unused_1);
-	p = put_u64(p, inode->i_unused_2);
-	p = put_u64(p, inode->i_creation_time);
-	p = put_u64(p, inode->i_last_access_time);
-	p = put_u64(p, inode->i_last_write_time);
-	hash = inode_stream_hash(inode, 0);
-	p = put_bytes(p, SHA1_HASH_SIZE, hash);
-	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		p = put_u32(p, inode->i_rp_unknown_1);
-		p = put_u32(p, inode->i_reparse_tag);
-		p = put_u16(p, inode->i_rp_unknown_2);
-		p = put_u16(p, inode->i_not_rpfixed);
-	} else {
-		u64 link_group_id;
-		p = put_u32(p, inode->i_rp_unknown_1);
-		if (inode->i_nlink == 1)
-			link_group_id = 0;
-		else
-			link_group_id = inode->i_ino;
-		p = put_u64(p, link_group_id);
-	}
-	p = put_u16(p, inode->i_num_ads);
-	p = put_u16(p, dentry->short_name_nbytes);
-	p = put_u16(p, dentry->file_name_nbytes);
-	if (dentry_has_long_name(dentry)) {
-		p = put_bytes(p, dentry->file_name_nbytes + 2,
-			      dentry->file_name);
-	}
-	if (dentry_has_short_name(dentry)) {
-		p = put_bytes(p, dentry->short_name_nbytes + 2,
-			      dentry->short_name);
-	}
+	/* Write the alternate data streams entries, if there are any. */
+	for (u16 i = 0; i < inode->i_num_ads; i++)
+	{
+		const struct wim_ads_entry *ads_entry =
+			&inode->i_ads_entries[i];
+		struct wim_ads_entry_on_disk *disk_ads_entry =
+				(struct wim_ads_entry_on_disk*)p;
 
-	/* Align to 8-byte boundary */
-	wimlib_assert(length >= (p - orig_p) && length - (p - orig_p) <= 7);
-	p = put_zeroes(p, length - (p - orig_p));
+		disk_ads_entry->reserved = cpu_to_le64(ads_entry->reserved);
+		orig_p = p;
 
-	/* Write the alternate data streams, if there are any.  Please see
-	 * read_ads_entries() for comments about the format of the on-disk
-	 * alternate data stream entries. */
-	for (u16 i = 0; i < inode->i_num_ads; i++) {
-		p = put_u64(p, ads_entry_total_length(&inode->i_ads_entries[i]));
-		p = put_u64(p, inode->i_ads_entries[i].unused);
 		hash = inode_stream_hash(inode, i + 1);
-		p = put_bytes(p, SHA1_HASH_SIZE, hash);
-		p = put_u16(p, inode->i_ads_entries[i].stream_name_nbytes);
-		if (inode->i_ads_entries[i].stream_name_nbytes) {
-			p = put_bytes(p,
-				      inode->i_ads_entries[i].stream_name_nbytes + 2,
-				      inode->i_ads_entries[i].stream_name);
+		copy_hash(disk_ads_entry->hash, hash);
+		disk_ads_entry->stream_name_nbytes = cpu_to_le16(ads_entry->stream_name_nbytes);
+		p += sizeof(struct wim_ads_entry_on_disk);
+		if (ads_entry->stream_name_nbytes) {
+			p = mempcpy(p, ads_entry->stream_name,
+				    ads_entry->stream_name_nbytes + 2);
 		}
-		p = put_zeroes(p, (8 - (p - orig_p) % 8) % 8);
+		/* Align to 8-byte boundary */
+		while ((uintptr_t)p & 7)
+			*p++ = 0;
+		disk_ads_entry->length = cpu_to_le64(p - orig_p);
 	}
-	wimlib_assert(p - orig_p == _dentry_total_length(dentry, length));
 	return p;
 }
 
@@ -1933,7 +1937,8 @@ write_dentry_tree_recursive(const struct wim_dentry *parent, u8 *p)
 	for_dentry_child(parent, write_dentry_cb, &p);
 
 	/* write end of directory entry */
-	p = put_u64(p, 0);
+	*(le64*)p = cpu_to_le64(0);
+	p += 8;
 
 	/* Recurse on children. */
 	for_dentry_child(parent, write_dentry_tree_recursive_cb, &p);
@@ -1959,7 +1964,8 @@ write_dentry_tree(const struct wim_dentry *root, u8 *p)
 
 	/* Write end of directory entry after the root dentry just to be safe;
 	 * however the root dentry obviously cannot have any siblings. */
-	p = put_u64(p, 0);
+	*(le64*)p = cpu_to_le64(0);
+	p += 8;
 
 	/* Recursively write the rest of the dentry tree. */
 	return write_dentry_tree_recursive(root, p);

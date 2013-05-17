@@ -1,6 +1,7 @@
 #ifndef _WIMLIB_DENTRY_H
 #define _WIMLIB_DENTRY_H
 
+#include "wimlib/compiler.h"
 #include "wimlib/list.h"
 #include "wimlib/rbtree.h"
 #include "wimlib/sha1.h"
@@ -20,10 +21,6 @@ struct wim_inode;
 
 /* Size of the struct wim_dentry up to and including the file_name_len. */
 #define WIM_DENTRY_DISK_SIZE    102
-
-/* Size of on-disk WIM alternate data stream entry, in bytes, up to and
- * including the stream length field (see below). */
-#define WIM_ADS_ENTRY_DISK_SIZE 38
 
 /*
  * Reparse tags documented at
@@ -73,19 +70,20 @@ struct wim_ads_entry {
 	};
 
 	/* Length of UTF16-encoded stream name, in bytes, not including the
-	 * terminating null character. */
+	 * terminating null character; or 0 if the stream is unnamed. */
 	u16 stream_name_nbytes;
 
 	/* Number to identify an alternate data stream even after it's possibly
 	 * been moved or renamed. */
 	u32 stream_id;
 
-	/* Stream name (UTF-16LE) */
+	/* Stream name (UTF-16LE), null-terminated, or NULL if the stream is
+	 * unnamed.  */
 	utf16lechar *stream_name;
 
-	/* Unused field.  We read it into memory so we can write it out
+	/* Reserved field.  We read it into memory so we can write it out
 	 * unchanged. */
-	u64 unused;
+	u64 reserved;
 };
 
 
@@ -186,6 +184,9 @@ struct wim_dentry {
 	 * points. */
 	u64 subdir_offset;
 
+	u64 d_unused_1;
+	u64 d_unused_2;
+
 	/* Pointer to the UTF-16LE short filename (malloc()ed buffer) */
 	utf16lechar *short_name;
 
@@ -245,17 +246,21 @@ struct wim_inode {
 
 	/* Unused/unknown fields that we just read into memory so we can
 	 * re-write them unchanged.  */
-	u64 i_unused_1;
-	u64 i_unused_2;
 	u32 i_rp_unknown_1;
 	u16 i_rp_unknown_2;
 
-	/* A hash of the file's contents, or a pointer to the lookup table entry
-	 * for this dentry if the lookup table entries have been resolved.
+	/* If i_resolved == 0:
+	 *	SHA1 message digest of the contents of the unnamed-data stream
+	 *	of this inode, or all zeroes if this inode has no unnamed data
+	 *	stream, or optionally all zeroes if this inode has an empty
+	 *	unnamed data stream.
 	 *
-	 * More specifically, this is for the un-named default file stream, as
-	 * opposed to the alternate (named) file streams, which may have their
-	 * own lookup table entries.  */
+	 * If i_resolved == 1:
+	 *	Pointer to the lookup table entry for the unnamed data stream
+	 *	of this inode, or NULL if this inode has no unnamed data stream,
+	 *	or optionally all zeroes if this inode has an empty unnamed data
+	 *	stream.
+	 */
 	union {
 		u8 i_hash[SHA1_HASH_SIZE];
 		struct wim_lookup_table_entry *i_lte;
@@ -389,7 +394,7 @@ extern tchar *
 dentry_full_path(struct wim_dentry *dentry);
 
 extern struct wim_inode *
-new_timeless_inode(void);
+new_timeless_inode(void) _malloc_attribute;
 
 extern int
 new_dentry(const tchar *name, struct wim_dentry **dentry_ret);
@@ -484,9 +489,8 @@ inode_set_unix_data(struct wim_inode *inode, uid_t uid, gid_t gid, mode_t mode,
 #endif
 
 extern int
-read_dentry(const u8 metadata_resource[], u64 metadata_resource_len,
+read_dentry(const u8 *metadata_resource, u64 metadata_resource_len,
 	    u64 offset, struct wim_dentry *dentry);
-
 
 extern int
 read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
