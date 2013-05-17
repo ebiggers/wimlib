@@ -45,6 +45,8 @@
 #include <errno.h>
 #include <stdlib.h>
 
+/* On-disk format of a symbolic link (WIM_IO_REPARSE_TAG_SYMLINK) or junction
+ * point (WIM_IO_REPARSE_TAG_MOUNT_POINT) reparse data buffer.  */
 struct reparse_buffer_disk {
 	le32 rptag;
 	le16 rpdatalen;

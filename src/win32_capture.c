@@ -519,7 +519,7 @@ win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 						     &rpdata.substitute_name_nbytes,
 						     capture_root_ino,
 						     capture_root_dev,
-						     le32_to_cpu(*(u32*)rpbuf));
+						     le32_to_cpu(*(le32*)rpbuf));
 	if (rp_status & RP_FIXED) {
 		wimlib_assert(rpdata.substitute_name_nbytes % 2 == 0);
 		utf16lechar substitute_name_copy[rpdata.substitute_name_nbytes / 2];
@@ -612,7 +612,7 @@ win32_get_reparse_data(HANDLE hFile, const wchar_t *path,
 	}
 
 	rpbuflen = bytesReturned;
-	reparse_tag = le32_to_cpu(*(u32*)rpbuf);
+	reparse_tag = le32_to_cpu(*(le32*)rpbuf);
 	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX &&
 	    (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
 	     reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
@@ -1061,7 +1061,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		/* Reparse point: set the reparse data (which we read already)
 		 * */
 		inode->i_not_rpfixed = not_rpfixed;
-		inode->i_reparse_tag = le32_to_cpu(*(u32*)rpbuf);
+		inode->i_reparse_tag = le32_to_cpu(*(le32*)rpbuf);
 		ret = inode_set_unnamed_stream(inode, rpbuf + 8, rpbuflen - 8,
 					       params->lookup_table);
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {

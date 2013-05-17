@@ -28,7 +28,7 @@
 #endif
 
 #include "wimlib/assert.h"
-#include "wimlib/buffer_io.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/security.h"
 #include "wimlib/sha1.h"

@@ -30,7 +30,7 @@
 #endif
 
 #include "wimlib/assert.h"
-#include "wimlib/buffer_io.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/integrity.h"
@@ -51,8 +51,8 @@ struct integrity_table {
 	u32 size;
 	u32 num_entries;
 	u32 chunk_size;
-	u8  sha1sums[0][20];
-};
+	u8  sha1sums[][20];
+} _packed_attribute;
 
 static int
 calculate_chunk_sha1(int in_fd, size_t this_chunk_size,

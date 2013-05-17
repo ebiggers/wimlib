@@ -53,10 +53,10 @@
 #include <ntfs-3g/acls.h> /* This should be included last as it requires
 			     definitions from above not included by itself */
 
-#include "wimlib/buffer_io.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/ntfs_3g.h"
@@ -151,7 +151,7 @@ read_reparse_tag(ntfs_inode *ni, struct ntfs_location *loc,
 		 u32 *reparse_tag_ret)
 {
 	int ret;
-	u8 buf[8];
+	le32 reparse_tag;
 	ntfs_attr *na;
 
 	na = open_ntfs_attr(ni, loc);
@@ -160,12 +160,14 @@ read_reparse_tag(ntfs_inode *ni, struct ntfs_location *loc,
 		goto out;
 	}
 
-	if (ntfs_attr_pread(na, 0, 8, buf) != 8) {
+	if (ntfs_attr_pread(na, 0, sizeof(reparse_tag),
+			    &reparse_tag) != sizeof(reparse_tag))
+	{
 		ERROR_WITH_ERRNO("Error reading reparse data");
 		ret = WIMLIB_ERR_NTFS_3G;
 		goto out_close_ntfs_attr;
 	}
-	*reparse_tag_ret = le32_to_cpu(*(u32*)buf);
+	*reparse_tag_ret = le32_to_cpu(reparse_tag);
 	DEBUG("ReparseTag = %#x", *reparse_tag_ret);
 	ret = 0;
 out_close_ntfs_attr:
@@ -545,7 +547,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 				 ntfs_volume *vol,
 				 struct add_image_params *params)
 {
-	u32 attributes;
+	le32 attributes;
 	int ret;
 	struct wim_dentry *root;
 	struct wim_inode *inode;
@@ -573,8 +575,8 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	ctx.vol = vol;
 	ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ATTRIB,
 					 ni, dir_ni, (char *)&attributes,
-					 sizeof(u32));
-	if (ret != 4) {
+					 sizeof(attributes));
+	if (ret != sizeof(attributes)) {
 		ERROR_WITH_ERRNO("Failed to get NTFS attributes from `%s'",
 				 path);
 		return WIMLIB_ERR_NTFS_3G;

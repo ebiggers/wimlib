@@ -305,7 +305,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 {
 	int ret;
 	struct SECURITY_CONTEXT ctx;
-	u32 attributes_le32;
+	le32 attributes;
 	const struct wim_inode *inode;
 
 	inode = dentry->d_inode;
@@ -313,13 +313,13 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
 	      dentry->_full_path, inode->i_attributes);
 
-	attributes_le32 = cpu_to_le32(inode->i_attributes);
+	attributes = cpu_to_le32(inode->i_attributes);
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.vol = ni->vol;
 	ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ATTRIB,
 					 ni, dir_ni,
-					 (const char*)&attributes_le32,
-					 sizeof(u32), 0);
+					 (char*)&attributes,
+					 sizeof(attributes), 0);
 	if (ret) {
 		ERROR("Failed to set NTFS file attributes on `%s'",
 		      dentry->_full_path);
