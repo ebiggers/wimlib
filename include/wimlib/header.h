@@ -4,12 +4,10 @@
 #include "wimlib/resource.h"
 #include "wimlib/types.h"
 
-#define WIM_MAGIC_LEN  8
 #define WIM_GID_LEN    16
-#define WIM_UNUSED_LEN 60
 
 /* Length of the WIM header on disk. */
-#define WIM_HEADER_DISK_SIZE (148 + WIM_UNUSED_LEN)
+#define WIM_HEADER_DISK_SIZE 208
 
 /* Compressed resources in the WIM are divided into separated compressed chunks
  * of this size. */
@@ -19,28 +17,12 @@
  * yet.  The differences between the versions are undocumented. */
 #define WIM_VERSION 0x10d00
 
-/* Header at the very beginning of the WIM file. */
+/* Header at the very beginning of the WIM file.  This is the in-memory
+ * representation and does not include all fields; see `struct wim_header_disk'
+ * for the on-disk structure. */
 struct wim_header {
-	/* Identifies the file as WIM file. Must be exactly
-	 * {'M', 'S', 'W', 'I', 'M', 0, 0, 0}  */
-	//u8  magic[WIM_MAGIC_LEN];
-
-	/* size of WIM header in bytes. */
-	//u32 hdr_size;
-
-	/* Version of the WIM file.  Microsoft provides no documentation about
-	 * exactly what this field affects about the file format, other than the
-	 * fact that more recent versions have a higher value. */
-	//u32 version;
-
 	/* Bitwise OR of one or more of the WIM_HDR_FLAG_* defined below. */
 	u32 flags;
-
-	/* The size of the pieces that the uncompressed files were split up into
-	 * when they were compressed.  This should be the same as
-	 * WIM_CHUNK_SIZE.  Microsoft incorrectly documents this as "the size of
-	 * the compressed .wim file in bytes".*/
-	//u32 chunk_size;
 
 	/* A unique identifier for the WIM file. */
 	u8 guid[WIM_GID_LEN];
@@ -72,9 +54,6 @@ struct wim_header {
 	/* The location of the optional integrity table used to verify the
 	 * integrity WIM.  Zeroed out if there is no integrity table.*/
 	struct resource_entry integrity;
-
-	/* Reserved for future disuse */
-	//u8 unused[WIM_UNUSED_LEN];
 };
 
 /* Flags for the `flags' field of the struct wim_header: */

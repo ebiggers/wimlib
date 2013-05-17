@@ -22,17 +22,16 @@ random_hash(u8 hash[SHA1_HASH_SIZE])
 	randomize_byte_array(hash, SHA1_HASH_SIZE);
 }
 
+static inline int
+hashes_cmp(const u8 h1[SHA1_HASH_SIZE], const u8 h2[SHA1_HASH_SIZE])
+{
+	return memcmp(h1, h2, SHA1_HASH_SIZE);
+}
+
 static inline bool
 hashes_equal(const u8 h1[SHA1_HASH_SIZE], const u8 h2[SHA1_HASH_SIZE])
 {
-	return memcmp(h1, h2, SHA1_HASH_SIZE) == 0;
-}
-
-static inline int
-hashes_cmp(const u8 h1[SHA1_HASH_SIZE],
-			     const u8 h2[SHA1_HASH_SIZE])
-{
-	return memcmp(h1, h2, SHA1_HASH_SIZE);
+	return !hashes_cmp(h1, h2);
 }
 
 static inline void
@@ -42,21 +41,18 @@ print_hash(const u8 hash[SHA1_HASH_SIZE], FILE *out)
 }
 
 static inline bool
-is_zero_hash(const u8 hash[SHA1_HASH_SIZE])
+is_zero_hash(const u8 *hash)
 {
-	if (hash)
-		for (u8 i = 0; i < SHA1_HASH_SIZE / 4; i++)
-			if (((const u32*)hash)[i])
-				return false;
-	return true;
+	if (!hash)
+		return true;
+	return hashes_equal(hash, zero_hash);
 }
 
 static inline void
 zero_out_hash(u8 hash[SHA1_HASH_SIZE])
 {
-	memset(hash, 0, SHA1_HASH_SIZE);
+	copy_hash(hash, zero_hash);
 }
-
 
 #ifdef WITH_LIBCRYPTO
 

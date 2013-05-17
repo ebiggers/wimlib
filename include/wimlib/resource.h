@@ -23,6 +23,12 @@ struct resource_entry {
 	u64 original_size;
 };
 
+struct resource_entry_disk {
+	u8 size[7];
+	u8 flags;
+	le64 offset;
+	le64 original_size;
+} _packed_attribute;
 
 /* Flags for the `flags' field of the struct resource_entry structure. */
 
@@ -84,11 +90,13 @@ read_resource_prefix(const struct wim_lookup_table_entry *lte,
 		     u64 size, consume_data_callback_t cb, void *ctx_or_buf,
 		     int flags);
 
-extern const void *
-get_resource_entry(const void *p, struct resource_entry *entry);
+extern void
+get_resource_entry(const struct resource_entry_disk *disk_entry,
+		   struct resource_entry *entry);
 
-extern void *
-put_resource_entry(void *p, const struct resource_entry *entry);
+extern void
+put_resource_entry(const struct resource_entry *entry,
+		   struct resource_entry_disk *disk_entry);
 
 extern int
 read_partial_wim_resource_into_buf(const struct wim_lookup_table_entry *lte,

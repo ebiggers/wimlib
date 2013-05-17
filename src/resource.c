@@ -27,8 +27,8 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/buffer_io.h"
 #include "wimlib/dentry.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/lookup_table.h"
@@ -356,48 +356,63 @@ read_error:
 	goto out;
 }
 
-/* Reads the contents of a struct resource_entry, as represented in the on-disk
- * format, from the memory pointed to by @p, and fills in the fields of @entry.
- * A pointer to the byte after the memory read at @p is returned. */
-const void *
-get_resource_entry(const void *p, struct resource_entry *entry)
+/* Translates a WIM resource entry from the on-disk format to an in-memory
+ * format. */
+void
+get_resource_entry(const struct resource_entry_disk *disk_entry,
+		   struct resource_entry *entry)
 {
-	u64 size;
-	u8 flags;
+	/* Note: disk_entry may not be 8 byte aligned--- in that case, the
+	 * offset and original_size members will be unaligned.  (This should be
+	 * okay since `struct resource_entry_disk' is declared as packed.) */
 
-	p = get_u56(p, &size);
-	p = get_u8(p, &flags);
-	entry->size = size;
-	entry->flags = flags;
+	/* Read the size and flags into a bitfield portably... */
+	entry->size = (((u64)disk_entry->size[0] <<  0) |
+		       ((u64)disk_entry->size[1] <<  8) |
+		       ((u64)disk_entry->size[2] << 16) |
+		       ((u64)disk_entry->size[3] << 24) |
+		       ((u64)disk_entry->size[4] << 32) |
+		       ((u64)disk_entry->size[5] << 40) |
+		       ((u64)disk_entry->size[6] << 48));
+	entry->flags = disk_entry->flags;
+	entry->offset = le64_to_cpu(disk_entry->offset);
+	entry->original_size = le64_to_cpu(disk_entry->original_size);
 
 	/* offset and original_size are truncated to 62 bits to avoid possible
 	 * overflows, when converting to a signed 64-bit integer (off_t) or when
 	 * adding size or original_size.  This is okay since no one would ever
 	 * actually have a WIM bigger than 4611686018427387903 bytes... */
-	p = get_u64(p, &entry->offset);
 	if (entry->offset & 0xc000000000000000ULL) {
 		WARNING("Truncating offset in resource entry");
 		entry->offset &= 0x3fffffffffffffffULL;
 	}
-	p = get_u64(p, &entry->original_size);
 	if (entry->original_size & 0xc000000000000000ULL) {
 		WARNING("Truncating original_size in resource entry");
 		entry->original_size &= 0x3fffffffffffffffULL;
 	}
-	return p;
 }
 
-/* Copies the struct resource_entry @entry to the memory pointed to by @p in the
- * on-disk format.  A pointer to the byte after the memory written at @p is
- * returned. */
-void *
-put_resource_entry(void *p, const struct resource_entry *entry)
+/* Translates a WIM resource entry from an in-memory format into the on-disk
+ * format. */
+void
+put_resource_entry(const struct resource_entry *entry,
+		   struct resource_entry_disk *disk_entry)
 {
-	p = put_u56(p, entry->size);
-	p = put_u8(p, entry->flags);
-	p = put_u64(p, entry->offset);
-	p = put_u64(p, entry->original_size);
-	return p;
+	/* Note: disk_entry may not be 8 byte aligned--- in that case, the
+	 * offset and original_size members will be unaligned.  (This should be
+	 * okay since `struct resource_entry_disk' is declared as packed.) */
+	u64 size = entry->size;
+
+	disk_entry->size[0] = size >>  0;
+	disk_entry->size[1] = size >>  8;
+	disk_entry->size[2] = size >> 16;
+	disk_entry->size[3] = size >> 24;
+	disk_entry->size[4] = size >> 32;
+	disk_entry->size[5] = size >> 40;
+	disk_entry->size[6] = size >> 48;
+	disk_entry->flags = entry->flags;
+	disk_entry->offset = cpu_to_le64(entry->offset);
+	disk_entry->original_size = cpu_to_le64(entry->original_size);
 }
 
 static int

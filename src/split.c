@@ -28,7 +28,7 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/buffer_io.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/lookup_table.h"
@@ -224,7 +224,7 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 	for (int i = 1; i <= total_parts; i++) {
 		const tchar *part_name;
 		int part_fd;
-		u8 part_data_buf[4];
+		le16 part_data[2];
 		size_t bytes_written;
 
 		if (i == 1) {
@@ -241,13 +241,13 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 			ret = WIMLIB_ERR_OPEN;
 			goto out;
 		}
-		put_u16(&part_data_buf[0], i);
-		put_u16(&part_data_buf[2], total_parts);
+		part_data[0] = cpu_to_le16(i);
+		part_data[1] = cpu_to_le16(total_parts);
 
-		bytes_written = full_pwrite(part_fd, part_data_buf,
-					    sizeof(part_data_buf), 40);
+		bytes_written = full_pwrite(part_fd, part_data,
+					    sizeof(part_data), 40);
 		ret = close(part_fd);
-		if (bytes_written != sizeof(part_data_buf) || ret != 0) {
+		if (bytes_written != sizeof(part_data) || ret != 0) {
 			ERROR_WITH_ERRNO("Error updating header of `%"TS"'",
 					 part_name);
 			ret = WIMLIB_ERR_WRITE;

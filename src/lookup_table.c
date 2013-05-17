@@ -28,7 +28,7 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/buffer_io.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/lookup_table.h"
@@ -348,9 +348,22 @@ for_lookup_table_entry_pos_sorted(struct wim_lookup_table *table,
 	return ret;
 }
 
+/* On-disk format of a WIM lookup table entry (stream entry). */
+struct wim_lookup_table_entry_disk {
+	/* Location, offset, compression status, and metadata status of the
+	 * stream. */
+	struct resource_entry_disk resource_entry;
 
-/* Size of each lookup table entry in the WIM file. */
-#define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
+	/* Which part of the split WIM this stream is in; indexed from 1. */
+	u16 part_number;
+
+	/* Reference count of this stream over all WIM images. */
+	u32 refcnt;
+
+	/* SHA1 message digest of the uncompressed data of this stream, or
+	 * optionally all zeroes if this stream is of zero length. */
+	u8 hash[SHA1_HASH_SIZE];
+} _packed_attribute;
 
 /*
  * Reads the lookup table from a WIM file.
@@ -366,11 +379,12 @@ read_lookup_table(WIMStruct *w)
 	size_t num_entries;
 	struct wim_lookup_table *table;
 	struct wim_lookup_table_entry *cur_entry, *duplicate_entry;
-	u8 table_buf[(BUFFER_SIZE / WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE) *
-			WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
-	const u8 *p;
+	struct wim_lookup_table_entry_disk
+			table_buf[BUFFER_SIZE / sizeof(struct wim_lookup_table_entry_disk)]
+				_aligned_attribute(8);
 	off_t offset;
 	size_t buf_entries_remaining;
+	const struct wim_lookup_table_entry_disk *disk_entry;
 
 	DEBUG("Reading lookup table: offset %"PRIu64", size %"PRIu64"",
 	      w->hdr.lookup_table_res_entry.offset,
@@ -383,7 +397,7 @@ read_lookup_table(WIMStruct *w)
 	}
 
 	num_entries = w->hdr.lookup_table_res_entry.size /
-		      WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE;
+		      sizeof(struct wim_lookup_table_entry_disk);
 	table = new_lookup_table(num_entries * 2 + 1);
 	if (!table)
 		return WIMLIB_ERR_NOMEM;
@@ -391,15 +405,14 @@ read_lookup_table(WIMStruct *w)
 	w->current_image = 0;
 	offset = w->hdr.lookup_table_res_entry.offset;
 	buf_entries_remaining = 0;
-	for (; num_entries != 0; num_entries--, buf_entries_remaining--) {
+	for (; num_entries != 0;
+	     num_entries--, buf_entries_remaining--, disk_entry++)
+	{
 		if (buf_entries_remaining == 0) {
 			size_t entries_to_read, bytes_to_read;
 
-			entries_to_read = min(sizeof(table_buf) /
-						WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE,
-					      num_entries);
-			bytes_to_read = entries_to_read *
-						WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE;
+			entries_to_read = min(ARRAY_LEN(table_buf), num_entries);
+			bytes_to_read = entries_to_read * sizeof(struct wim_lookup_table_entry_disk);
 			if (full_pread(w->in_fd, table_buf,
 				       bytes_to_read, offset) != bytes_to_read)
 			{
@@ -409,7 +422,7 @@ read_lookup_table(WIMStruct *w)
 				goto out_free_lookup_table;
 			}
 			offset += bytes_to_read;
-			p = table_buf;
+			disk_entry = table_buf;
 			buf_entries_remaining = entries_to_read;
 		}
 		cur_entry = new_lookup_table_entry();
@@ -420,10 +433,10 @@ read_lookup_table(WIMStruct *w)
 
 		cur_entry->wim = w;
 		cur_entry->resource_location = RESOURCE_IN_WIM;
-		p = get_resource_entry(p, &cur_entry->resource_entry);
-		p = get_u16(p, &cur_entry->part_number);
-		p = get_u32(p, &cur_entry->refcnt);
-		p = get_bytes(p, SHA1_HASH_SIZE, cur_entry->hash);
+		get_resource_entry(&disk_entry->resource_entry, &cur_entry->resource_entry);
+		cur_entry->part_number = le16_to_cpu(disk_entry->part_number);
+		cur_entry->refcnt = le32_to_cpu(disk_entry->refcnt);
+		copy_hash(cur_entry->hash, disk_entry->hash);
 
 		if (cur_entry->part_number != w->hdr.part_number) {
 			ERROR("A lookup table entry in part %hu of the WIM "
@@ -534,14 +547,14 @@ out:
 }
 
 
-static u8 *
-write_lookup_table_entry(const struct wim_lookup_table_entry *lte, u8 *buf_p)
+static void
+write_lookup_table_entry(const struct wim_lookup_table_entry *lte,
+			 struct wim_lookup_table_entry_disk *disk_entry)
 {
-	buf_p = put_resource_entry(buf_p, &lte->output_resource_entry);
-	buf_p = put_u16(buf_p, lte->part_number);
-	buf_p = put_u32(buf_p, lte->out_refcnt);
-	buf_p = put_bytes(buf_p, SHA1_HASH_SIZE, lte->hash);
-	return buf_p;
+	put_resource_entry(&lte->output_resource_entry, &disk_entry->resource_entry);
+	disk_entry->part_number = cpu_to_le16(lte->part_number);
+	disk_entry->refcnt = cpu_to_le32(lte->out_refcnt);
+	copy_hash(disk_entry->hash, lte->hash);
 }
 
 int
@@ -551,32 +564,34 @@ write_lookup_table_from_stream_list(struct list_head *stream_list,
 {
 	int ret;
 	off_t start_offset;
-	u8 table_buf[(BUFFER_SIZE / WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE) *
-			WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE];
-	u8 *buf_p;
+	struct wim_lookup_table_entry_disk
+			table_buf[BUFFER_SIZE / sizeof(struct wim_lookup_table_entry_disk)]
+				_aligned_attribute(8);
 	size_t table_size;
 	size_t bytes_to_write;
 	struct wim_lookup_table_entry *lte;
+	size_t cur_idx;
 
 	start_offset = filedes_offset(out_fd);
 	if (start_offset == -1)
 		goto write_error;
 
-	buf_p = table_buf;
 	table_size = 0;
+	cur_idx = 0;
 	list_for_each_entry(lte, stream_list, lookup_table_list) {
-		if (buf_p == table_buf + sizeof(table_buf)) {
+		if (cur_idx == ARRAY_LEN(table_buf)) {
 			bytes_to_write = sizeof(table_buf);
 			if (full_write(out_fd, table_buf,
 				       bytes_to_write) != bytes_to_write)
 				goto write_error;
 			table_size += bytes_to_write;
-			buf_p = table_buf;
+			cur_idx = 0;
 		}
-		buf_p = write_lookup_table_entry(lte, buf_p);
+		write_lookup_table_entry(lte, &table_buf[cur_idx]);
+		cur_idx++;
 	}
-	bytes_to_write = buf_p - table_buf;
-	if (bytes_to_write != 0) {
+	if (cur_idx != 0) {
+		bytes_to_write = cur_idx * sizeof(struct wim_lookup_table_entry_disk);
 		if (full_write(out_fd, table_buf,
 			       bytes_to_write) != bytes_to_write)
 			goto write_error;
