@@ -54,32 +54,4 @@ bswap64(u64 n)
 #  endif
 #endif /* _NTFS_ENDIANS_H */
 
-static inline void
-array_cpu_to_le32(u32 *p, size_t n)
-{
-	for (size_t i = 0; i < n; i++)
-		p[i] = cpu_to_le32(p[i]);
-}
-
-static inline void
-array_le32_to_cpu(u32 *p, size_t n)
-{
-	for (size_t i = 0; i < n; i++)
-		p[i] = le32_to_cpu(p[i]);
-}
-
-static inline void
-array_cpu_to_le64(u64 *p, size_t n)
-{
-	for (size_t i = 0; i < n; i++)
-		p[i] = cpu_to_le64(p[i]);
-}
-
-static inline void
-array_le64_to_cpu(u64 *p, size_t n)
-{
-	for (size_t i = 0; i < n; i++)
-		p[i] = le64_to_cpu(p[i]);
-}
-
 #endif /* _WIMLIB_ENDIANNESS_H */

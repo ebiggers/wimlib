@@ -81,16 +81,19 @@
  * array of offsets.) */
 struct chunk_table {
 	off_t file_offset;
-	u64 num_chunks;
 	u64 original_resource_size;
-	u64 bytes_per_chunk_entry;
+	u64 num_chunks;
 	u64 table_disk_size;
-	u64 cur_offset;
-	u64 *cur_offset_p;
+	unsigned bytes_per_chunk_entry;
+	void *cur_offset_p;
 	union {
-		u64 offsets[0];
-		u32 u32_offsets[0];
+		u32 cur_offset_u32;
+		u64 cur_offset_u64;
 	};
+	/* Beginning of chunk offsets, in either 32-bit or 64-bit little endian
+	 * integers, including the first offset of 0, which will not be written.
+	 * */
+	u8 offsets[] _aligned_attribute(8);
 };
 
 /*
@@ -105,10 +108,11 @@ begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 {
 	u64 size = wim_resource_size(lte);
 	u64 num_chunks = wim_resource_chunks(lte);
+	unsigned bytes_per_chunk_entry = (size > (1ULL << 32)) ? 8 : 4;
 	size_t alloc_size = sizeof(struct chunk_table) + num_chunks * sizeof(u64);
 	struct chunk_table *chunk_tab = CALLOC(1, alloc_size);
 
-	DEBUG("Begin chunk table for stream with size %"PRIu64, size);
+	DEBUG("Beginning chunk table for stream with size %"PRIu64, size);
 
 	if (!chunk_tab) {
 		ERROR("Failed to allocate chunk table for %"PRIu64" byte "
@@ -118,13 +122,15 @@ begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 	chunk_tab->file_offset = file_offset;
 	chunk_tab->num_chunks = num_chunks;
 	chunk_tab->original_resource_size = size;
-	chunk_tab->bytes_per_chunk_entry = (size > (1ULL << 32)) ? 8 : 4;
+	chunk_tab->bytes_per_chunk_entry = bytes_per_chunk_entry;
 	chunk_tab->table_disk_size = chunk_tab->bytes_per_chunk_entry *
 				     (num_chunks - 1);
-	chunk_tab->cur_offset = 0;
 	chunk_tab->cur_offset_p = chunk_tab->offsets;
 
-	if (full_write(out_fd, chunk_tab,
+	/* We don't know the correct offsets yet; this just writes zeroes to
+	 * reserve space for the table, so we can go back to it later after
+	 * we've written the compressed chunks following it. */
+	if (full_write(out_fd, chunk_tab->offsets,
 		       chunk_tab->table_disk_size) != chunk_tab->table_disk_size)
 	{
 		ERROR_WITH_ERRNO("Failed to write chunk table in compressed "
@@ -134,6 +140,22 @@ begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 	}
 	*chunk_tab_ret = chunk_tab;
 	return 0;
+}
+
+/* Add the offset for the next chunk to the chunk table being constructed for a
+ * compressed stream. */
+static void
+chunk_tab_record_chunk(struct chunk_table *chunk_tab, unsigned out_chunk_size)
+{
+	if (chunk_tab->bytes_per_chunk_entry == 4) {
+		*(le32*)chunk_tab->cur_offset_p = cpu_to_le32(chunk_tab->cur_offset_u32);
+		chunk_tab->cur_offset_p = (le32*)chunk_tab->cur_offset_p + 1;
+		chunk_tab->cur_offset_u32 += out_chunk_size;
+	} else {
+		*(le64*)chunk_tab->cur_offset_p = cpu_to_le64(chunk_tab->cur_offset_u64);
+		chunk_tab->cur_offset_p = (le64*)chunk_tab->cur_offset_p + 1;
+		chunk_tab->cur_offset_u64 += out_chunk_size;
+	}
 }
 
 /*
@@ -205,8 +227,7 @@ write_wim_resource_chunk(const void * restrict chunk,
 			out_chunk = chunk;
 			out_chunk_size = chunk_size;
 		}
-		*chunk_tab->cur_offset_p++ = chunk_tab->cur_offset;
-		chunk_tab->cur_offset += out_chunk_size;
+		chunk_tab_record_chunk(chunk_tab, out_chunk_size);
 	} else {
 		/* Write uncompressed */
 		out_chunk = chunk;
@@ -232,14 +253,8 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 {
 	size_t bytes_written;
 
-	if (chunk_tab->bytes_per_chunk_entry == 8) {
-		array_cpu_to_le64(chunk_tab->offsets, chunk_tab->num_chunks);
-	} else {
-		for (u64 i = 0; i < chunk_tab->num_chunks; i++)
-			chunk_tab->u32_offsets[i] = cpu_to_le32(chunk_tab->offsets[i]);
-	}
 	bytes_written = full_pwrite(out_fd,
-				    (u8*)chunk_tab->offsets + chunk_tab->bytes_per_chunk_entry,
+				    chunk_tab->offsets + chunk_tab->bytes_per_chunk_entry,
 				    chunk_tab->table_disk_size,
 				    chunk_tab->file_offset);
 	if (bytes_written != chunk_tab->table_disk_size) {
@@ -247,7 +262,10 @@ finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
 				 "file resource");
 		return WIMLIB_ERR_WRITE;
 	}
-	*compressed_size_p = chunk_tab->cur_offset + chunk_tab->table_disk_size;
+	if (chunk_tab->bytes_per_chunk_entry == 4)
+		*compressed_size_p = chunk_tab->cur_offset_u32 + chunk_tab->table_disk_size;
+	else
+		*compressed_size_p = chunk_tab->cur_offset_u64 + chunk_tab->table_disk_size;
 	return 0;
 }
 
@@ -793,10 +811,8 @@ static int
 write_wim_chunks(struct message *msg, int out_fd,
 		 struct chunk_table *chunk_tab)
 {
-	for (unsigned i = 0; i < msg->num_chunks; i++) {
-		*chunk_tab->cur_offset_p++ = chunk_tab->cur_offset;
-		chunk_tab->cur_offset += msg->out_chunks[i].iov_len;
-	}
+	for (unsigned i = 0; i < msg->num_chunks; i++)
+		chunk_tab_record_chunk(chunk_tab, msg->out_chunks[i].iov_len);
 	if (full_writev(out_fd, msg->out_chunks,
 			msg->num_chunks) != msg->total_out_bytes)
 	{
