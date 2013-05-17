@@ -1368,11 +1368,11 @@ replace_forbidden_characters(utf16lechar *name)
  * @p:	Pointer to buffer that starts with the first alternate stream entry.
  *
  * @inode:	Inode to load the alternate data streams into.
- * 			@inode->i_num_ads must have been set to the number of
- * 			alternate data streams that are expected.
+ * 		@inode->i_num_ads must have been set to the number of
+ * 		alternate data streams that are expected.
  *
  * @remaining_size:	Number of bytes of data remaining in the buffer pointed
- * 				to by @p.
+ * 			to by @p.
  *
  *
  * Return 0 on success or nonzero on failure.  On success, inode->i_ads_entries
@@ -1387,11 +1387,14 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 	struct wim_ads_entry *ads_entries;
 	int ret;
 
+	/* Allocate an array for our in-memory representation of the alternate
+	 * data stream entries. */
 	num_ads = inode->i_num_ads;
 	ads_entries = CALLOC(num_ads, sizeof(inode->i_ads_entries[0]));
 	if (!ads_entries)
 		goto out_of_memory;
 
+	/* Read the entries into our newly allocated buffer. */
 	for (u16 i = 0; i < num_ads; i++) {
 		u64 length;
 		struct wim_ads_entry *cur_entry;
@@ -1410,7 +1413,7 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 		length = le64_to_cpu(disk_entry->length);
 
 		/* Make sure the length field is neither so small it doesn't
-		 * include all the fixed-length data, or so large it overflows
+		 * include all the fixed-length data nor so large it overflows
 		 * the metadata resource buffer. */
 		if (length < sizeof(struct wim_ads_entry_on_disk) ||
 		    length > nbytes_remaining)
@@ -1419,9 +1422,8 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 		/* Read the rest of the fixed-length data. */
 
 		cur_entry->reserved = le64_to_cpu(disk_entry->reserved);
-
 		copy_hash(cur_entry->hash, disk_entry->hash);
-		cur_entry->stream_name_nbytes = le16_to_cpu(cur_entry->stream_name_nbytes);
+		cur_entry->stream_name_nbytes = le16_to_cpu(disk_entry->stream_name_nbytes);
 
 		/* If stream_name_nbytes != 0, this is a named stream.
 		 * Otherwise this is an unnamed stream, or in some cases (bugs
@@ -1430,8 +1432,6 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 		 * the fact that the real unnamed stream entry has a nonzero
 		 * hash field. */
 		if (cur_entry->stream_name_nbytes) {
-			u64 length_no_padding;
-
 			/* The name is encoded in UTF16-LE, which uses 2-byte
 			 * coding units, so the length of the name had better be
 			 * an even number of bytes... */
@@ -1452,7 +1452,7 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 			memcpy(cur_entry->stream_name,
 			       disk_entry->stream_name,
 			       cur_entry->stream_name_nbytes);
-			cur_entry->stream_name[cur_entry->stream_name_nbytes / 2] = 0;
+			cur_entry->stream_name[cur_entry->stream_name_nbytes / 2] = cpu_to_le16(0);
 			replace_forbidden_characters(cur_entry->stream_name);
 		}
 
@@ -1472,9 +1472,7 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 			nbytes_remaining -= length;
 	}
 	inode->i_ads_entries = ads_entries;
-#ifdef WITH_FUSE
 	inode->i_next_stream_id = inode->i_num_ads + 1;
-#endif
 	ret = 0;
 	goto out;
 out_of_memory:
@@ -1512,6 +1510,10 @@ out:
  * buffers.  On success, the dentry->length field must be examined.  If zero,
  * this was a special "end of directory" dentry and not a real dentry.  If
  * nonzero, this was a real dentry.
+ *
+ * Possible errors include:
+ * 	WIMLIB_ERR_NOMEM
+ * 	WIMLIB_ERR_INVALID_DENTRY
  */
 int
 read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
@@ -1525,44 +1527,41 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	u16 file_name_nbytes;
 	int ret;
 	struct wim_inode *inode;
-	const struct wim_dentry_on_disk *disk_dentry;
 	const u8 *p = &metadata_resource[offset];
+	const struct wim_dentry_on_disk *disk_dentry =
+			(const struct wim_dentry_on_disk*)p;
 
 	if ((uintptr_t)p & 7)
 		WARNING("WIM dentry is not 8-byte aligned");
 
 	dentry_common_init(dentry);
 
-	/*Make sure the dentry really fits into the metadata resource.*/
-	if (offset + sizeof(u64) < offset ||
-	    offset + sizeof(u64) > metadata_resource_len)
+	/* Before reading the whole dentry, we need to read just the length.
+	 * This is because a dentry of length 8 (that is, just the length field)
+	 * terminates the list of sibling directory entries. */
+	if (offset + sizeof(u64) > metadata_resource_len ||
+	    offset + sizeof(u64) < offset)
 	{
 		ERROR("Directory entry starting at %"PRIu64" ends past the "
 		      "end of the metadata resource (size %"PRIu64")",
 		      offset, metadata_resource_len);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
-
-	disk_dentry = (const struct wim_dentry_on_disk*)p;
-
-	/* Before reading the whole dentry, we need to read just the length.
-	 * This is because a dentry of length 8 (that is, just the length field)
-	 * terminates the list of sibling directory entries. */
 	dentry->length = le64_to_cpu(disk_dentry->length);
 
 	/* A zero length field (really a length of 8, since that's how big the
 	 * directory entry is...) indicates that this is the end of directory
 	 * dentry.  We do not read it into memory as an actual dentry, so just
-	 * return successfully in that case. */
+	 * return successfully in this case. */
 	if (dentry->length == 8)
 		dentry->length = 0;
 	if (dentry->length == 0)
 		return 0;
 
 	/* Now that we have the actual length provided in the on-disk structure,
-	 * make sure it doesn't overflow the metadata buffer. */
-	if (offset + dentry->length >= metadata_resource_len
-	    || offset + dentry->length < offset)
+	 * again make sure it doesn't overflow the metadata resource buffer. */
+	if (offset + dentry->length > metadata_resource_len ||
+	    offset + dentry->length < offset)
 	{
 		ERROR("Directory entry at offset %"PRIu64" and with size "
 		      "%"PRIu64" ends past the end of the metadata resource "
@@ -1706,7 +1705,6 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 			goto out_free_short_name;
 		}
 	}
-out_success:
 	/* We've read all the data for this dentry.  Set the names and their
 	 * lengths, and we've done. */
 	dentry->d_inode           = inode;
@@ -1761,12 +1759,12 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		return 0;
 
 	/* Find and read all the children of @dentry. */
-	while (1) {
+	for (;;) {
 
 		/* Read next child of @dentry into @cur_child. */
 		ret = read_dentry(metadata_resource, metadata_resource_len,
 				  cur_offset, &cur_child);
-		if (ret != 0)
+		if (ret)
 			break;
 
 		/* Check for end of directory. */
@@ -1791,7 +1789,7 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		if (child->subdir_offset != 0) {
 			ret = read_dentry_tree(metadata_resource,
 					       metadata_resource_len, child);
-			if (ret != 0)
+			if (ret)
 				break;
 		}
 
@@ -1812,7 +1810,7 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
  * @p:       The memory location to write the data to.
  *
  * Returns the pointer to the byte after the last byte we wrote as part of the
- * dentry, including any alternate data streams entry.
+ * dentry, including any alternate data stream entries.
  */
 static u8 *
 write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
@@ -1836,12 +1834,8 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	disk_dentry->creation_time = cpu_to_le64(inode->i_creation_time);
 	disk_dentry->last_access_time = cpu_to_le64(inode->i_last_access_time);
 	disk_dentry->last_write_time = cpu_to_le64(inode->i_last_write_time);
-
-	if (inode->i_resolved)
-		hash = inode->i_lte->hash;
-	else
-		hash = inode->i_hash;
-	copy_hash(disk_dentry->unnamed_stream_hash, inode_stream_hash(inode, 0));
+	hash = inode_stream_hash(inode, 0);
+	copy_hash(disk_dentry->unnamed_stream_hash, hash);
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		disk_dentry->reparse.rp_unknown_1 = cpu_to_le32(inode->i_rp_unknown_1);
 		disk_dentry->reparse.reparse_tag = cpu_to_le32(inode->i_reparse_tag);
@@ -1870,19 +1864,19 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	/* We calculate the correct length of the dentry ourselves because the
 	 * dentry->length field may been set to an unexpected value from when we
 	 * read the dentry in (for example, there may have been unknown data
-	 * appended to the end of the dentry...) */
+	 * appended to the end of the dentry...).  Furthermore, the dentry may
+	 * have been renamed, thus changing its needed length. */
 	disk_dentry->length = cpu_to_le64(p - orig_p);
 
-	/* Write the alternate data streams entries, if there are any. */
-	for (u16 i = 0; i < inode->i_num_ads; i++)
-	{
+	/* Write the alternate data streams entries, if any. */
+	for (u16 i = 0; i < inode->i_num_ads; i++) {
 		const struct wim_ads_entry *ads_entry =
-			&inode->i_ads_entries[i];
+				&inode->i_ads_entries[i];
 		struct wim_ads_entry_on_disk *disk_ads_entry =
 				(struct wim_ads_entry_on_disk*)p;
+		orig_p = p;
 
 		disk_ads_entry->reserved = cpu_to_le64(ads_entry->reserved);
-		orig_p = p;
 
 		hash = inode_stream_hash(inode, i + 1);
 		copy_hash(disk_ads_entry->hash, hash);

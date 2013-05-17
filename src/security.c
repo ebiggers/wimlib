@@ -287,7 +287,6 @@ out_align_total_length:
 			"%u bytes, but calculated %u bytes",
 			sd->total_length, (unsigned)total_len);
 	}
-out_return_sd:
 	*sd_ret = sd;
 	ret = 0;
 	goto out;
@@ -316,23 +315,23 @@ write_wim_security_data(const struct wim_security_data * restrict sd,
 
 	u8 *orig_p = p;
 	struct wim_security_data_disk *sd_disk = (struct wim_security_data_disk*)p;
+	u32 num_entries = sd->num_entries;
 
 	sd_disk->total_length = cpu_to_le32(sd->total_length);
-	sd_disk->num_entries = cpu_to_le32(sd->num_entries);
+	sd_disk->num_entries = cpu_to_le32(num_entries);
 
-	for (u32 i = 0; i < sd->num_entries; i++)
+	for (u32 i = 0; i < num_entries; i++)
 		sd_disk->sizes[i] = cpu_to_le64(sd->sizes[i]);
 
-	p = (u8*)&sd_disk->sizes[sd_disk->num_entries];
+	p = (u8*)&sd_disk->sizes[num_entries];
 
-	for (u32 i = 0; i < sd->num_entries; i++)
+	for (u32 i = 0; i < num_entries; i++)
 		p = mempcpy(p, sd->descriptors[i], sd->sizes[i]);
 
-	while (p - orig_p < sd->total_length)
+	while ((uintptr_t)p & 7)
 		*p++ = 0;
 
 	wimlib_assert(p - orig_p == sd->total_length);
-	wimlib_assert(((uintptr_t)p & 7) == 0);
 
 	DEBUG("Successfully wrote security data.");
 	return p;
@@ -554,7 +553,7 @@ sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 	struct sd_node *new;
 	u8 **descriptors;
 	u64 *sizes;
-	char *descr_copy;
+	u8 *descr_copy;
 	struct wim_security_data *sd;
 	bool bret;
 

@@ -52,14 +52,14 @@
  * Returns:	Zero on success, nonzero on failure.
  */
 int
-read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
+read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 {
 	u8 *buf;
-	u32 dentry_offset;
 	int ret;
-	struct wim_dentry *dentry;
+	struct wim_dentry *root;
 	const struct wim_lookup_table_entry *metadata_lte;
 	u64 metadata_len;
+	struct wim_security_data *security_data;
 
 	metadata_lte = imd->metadata_lte;
 	metadata_len = wim_resource_size(metadata_lte);
@@ -73,7 +73,7 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 	/* There is no way the metadata resource could possibly be less than (8
 	 * + WIM_DENTRY_DISK_SIZE) bytes, where the 8 is for security data (with
 	 * no security descriptors) and WIM_DENTRY_DISK_SIZE is for the root
-	 * dentry. */
+	 * entry. */
 	if (metadata_len < 8 + WIM_DENTRY_DISK_SIZE) {
 		ERROR("Expected at least %u bytes for the metadata resource",
 		      8 + WIM_DENTRY_DISK_SIZE);
@@ -110,79 +110,70 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 	 * the offset of the root dentry.
 	 *
 	 * Here we read the security data into a wim_security_data structure,
-	 * and if successful, go ahead and calculate the offset in the metadata
-	 * resource of the root dentry. */
+	 * which takes case of rouding total_length.  If successful, go ahead
+	 * and calculate the offset in the metadata resource of the root dentry.
+	 * */
 
-	wimlib_assert(imd->security_data == NULL);
-	ret = read_wim_security_data(buf, metadata_len, &imd->security_data);
+	ret = read_wim_security_data(buf, metadata_len, &security_data);
 	if (ret)
 		goto out_free_buf;
-
-	dentry_offset = (imd->security_data->total_length + 7) & ~7;
-
-	if (dentry_offset == 0) {
-		ERROR("Integer overflow while reading metadata resource");
-		ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
-		goto out_free_security_data;
-	}
 
 	DEBUG("Reading root dentry");
 
 	/* Allocate memory for the root dentry and read it into memory */
-	dentry = MALLOC(sizeof(struct wim_dentry));
-	if (!dentry) {
-		ERROR("Failed to allocate %zu bytes for root dentry",
-		      sizeof(struct wim_dentry));
+	root = MALLOC(sizeof(struct wim_dentry));
+	if (!root) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_free_security_data;
 	}
 
-	ret = read_dentry(buf, metadata_len, dentry_offset, dentry);
+	ret = read_dentry(buf, metadata_len,
+			  security_data->total_length, root);
 
-	/* This is the root dentry, so set its parent to itself. */
-	dentry->parent = dentry;
-
-	if (ret == 0 && dentry->length == 0) {
+	if (ret == 0 && root->length == 0) {
 		ERROR("Metadata resource cannot begin with end-of-directory entry!");
 		ret = WIMLIB_ERR_INVALID_DENTRY;
 	}
 
-	if (ret != 0) {
-		FREE(dentry);
+	if (ret) {
+		FREE(root);
 		goto out_free_security_data;
 	}
 
-	inode_add_dentry(dentry, dentry->d_inode);
+	/* This is the root dentry, so set its parent to itself. */
+	root->parent = root;
+
+	inode_add_dentry(root, root->d_inode);
 
 	/* Now read the entire directory entry tree into memory. */
 	DEBUG("Reading dentry tree");
-	ret = read_dentry_tree(buf, metadata_len, dentry);
+	ret = read_dentry_tree(buf, metadata_len, root);
 	if (ret)
 		goto out_free_dentry_tree;
 
 	/* Build hash table that maps hard link group IDs to dentry sets */
-	ret = dentry_tree_fix_inodes(dentry, &imd->inode_list);
+	ret = dentry_tree_fix_inodes(root, &imd->inode_list);
 	if (ret)
 		goto out_free_dentry_tree;
 
-	if (!w->all_images_verified) {
+	if (!wim->all_images_verified) {
 		DEBUG("Running miscellaneous verifications on the dentry tree");
-		for_lookup_table_entry(w->lookup_table, lte_zero_real_refcnt, NULL);
-		ret = for_dentry_in_tree(dentry, verify_dentry, w);
+		for_lookup_table_entry(wim->lookup_table, lte_zero_real_refcnt, NULL);
+		ret = for_dentry_in_tree(root, verify_dentry, wim);
 		if (ret)
 			goto out_free_dentry_tree;
 	}
 
 	DEBUG("Done reading image metadata");
 
-	imd->root_dentry = dentry;
+	imd->root_dentry = root;
+	imd->security_data = security_data;
 	INIT_LIST_HEAD(&imd->unhashed_streams);
 	goto out_free_buf;
 out_free_dentry_tree:
-	free_dentry_tree(dentry, NULL);
+	free_dentry_tree(root, wim->lookup_table);
 out_free_security_data:
-	free_wim_security_data(imd->security_data);
-	imd->security_data = NULL;
+	free_wim_security_data(security_data);
 out_free_buf:
 	FREE(buf);
 	return ret;

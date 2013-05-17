@@ -41,7 +41,6 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	const struct wim_security_data *sd = wim_const_security_data(w);
 	struct wim_dentry *first_dentry = inode_first_dentry(inode);
 	struct wim_dentry *dentry;
-	int ret = WIMLIB_ERR_INVALID_DENTRY;
 
 	/* Check the security ID.  -1 is valid and means "no security
 	 * descriptor".  Anything else has to be a valid index into the WIM
@@ -49,7 +48,7 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	if (inode->i_security_id < -1) {
 		ERROR("Dentry `%"TS"' has an invalid security ID (%d)",
 		      dentry_full_path(first_dentry), inode->i_security_id);
-		goto out;
+		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
 	if (inode->i_security_id >= 0 &&
@@ -59,7 +58,7 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 		      "(there are only %u entries in the security table)",
 		      dentry_full_path(first_dentry), inode->i_security_id,
 		      sd->num_entries);
-		goto out;
+		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
 	/* Check that lookup table entries for all the inode's stream exist,
@@ -77,7 +76,7 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 				ERROR("Could not find lookup table entry for stream "
 				      "%u of dentry `%"TS"'",
 				      i, dentry_full_path(first_dentry));
-				goto out;
+				return WIMLIB_ERR_INVALID_DENTRY;
 			}
 			if (lte)
 				lte->real_refcnt += inode->i_nlink;
@@ -95,7 +94,7 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	if (num_unnamed_streams > 1) {
 		ERROR("Dentry `%"TS"' has multiple (%u) un-named streams",
 		      dentry_full_path(first_dentry), num_unnamed_streams);
-		goto out;
+		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
 	/* Files cannot have multiple DOS names, even if they have multiple
@@ -109,7 +108,7 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 				      "both `%"TS"' and `%"TS"'",
 				      dentry_full_path(dentry_with_dos_name),
 				      dentry_full_path(dentry));
-				goto out;
+				return WIMLIB_ERR_INVALID_DENTRY;
 			}
 			dentry_with_dos_name = dentry;
 		}
@@ -119,13 +118,11 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	if (inode->i_nlink > 1 && inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		ERROR("Hard-linked directory `%"TS"' is unsupported",
 		      dentry_full_path(first_dentry));
-		goto out;
+		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
 	inode->i_verified = 1;
-	ret = 0;
-out:
-	return ret;
+	return 0;
 }
 
 /* Run some miscellaneous verifications on a WIM dentry */
@@ -140,7 +137,7 @@ verify_dentry(struct wim_dentry *dentry, void *wim)
 	 * in which case we need to force the inode to be verified again.) */
 	if (!dentry->d_inode->i_verified) {
 		ret = verify_inode(dentry->d_inode, w);
-		if (ret != 0)
+		if (ret)
 			return ret;
 	}
 
