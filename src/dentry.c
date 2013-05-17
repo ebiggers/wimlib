@@ -1025,6 +1025,7 @@ dentry_add_child(struct wim_dentry * restrict parent,
 		 struct wim_dentry * restrict child)
 {
 	wimlib_assert(dentry_is_directory(parent));
+	wimlib_assert(parent != child);
 
 	struct rb_root *root = &parent->d_inode->i_children;
 	struct rb_node **new = &(root->rb_node);
@@ -1781,24 +1782,37 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 			break;
 		}
 		memcpy(child, &cur_child, sizeof(struct wim_dentry));
-		dentry_add_child(dentry, child);
-		inode_add_dentry(child, child->d_inode);
-
-		/* If there are children of this child, call this procedure
-		 * recursively. */
-		if (child->subdir_offset != 0) {
-			ret = read_dentry_tree(metadata_resource,
-					       metadata_resource_len, child);
-			if (ret)
-				break;
-		}
 
 		/* Advance to the offset of the next child.  Note: We need to
 		 * advance by the TOTAL length of the dentry, not by the length
-		 * child->length, which although it does take into account the
-		 * padding, it DOES NOT take into account alternate stream
+		 * cur_child.length, which although it does take into account
+		 * the padding, it DOES NOT take into account alternate stream
 		 * entries. */
 		cur_offset += dentry_total_length(child);
+
+		if (dentry_add_child(dentry, child)) {
+			WARNING("Ignoring duplicate dentry \"%"WS"\"",
+				child->file_name);
+			WARNING("(In directory \"%"TS"\")", dentry_full_path(dentry));
+			free_dentry(child);
+		} else {
+			inode_add_dentry(child, child->d_inode);
+			/* If there are children of this child, call this
+			 * procedure recursively. */
+			if (child->subdir_offset != 0) {
+				if (!dentry_is_directory(child)) {
+					ret = read_dentry_tree(metadata_resource,
+							       metadata_resource_len,
+							       child);
+					if (ret)
+						break;
+				} else {
+					WARNING("Ignoring children of non-directory \"%"TS"\"",
+						dentry_full_path(child));
+				}
+			}
+
+		}
 	}
 	return ret;
 }

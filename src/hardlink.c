@@ -346,6 +346,13 @@ fix_nominal_inode(struct wim_inode *inode, struct list_head *inode_list,
 
 	wimlib_assert(inode->i_nlink == inode_link_count(inode));
 
+	if (inode->i_nlink > 1 &&
+	    (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY))
+	{
+		ERROR("Found unsupported directory hard link!");
+		return WIMLIB_ERR_INVALID_DENTRY;
+	}
+
 	LIST_HEAD(dentries_with_data_streams);
 	LIST_HEAD(dentries_with_no_data_streams);
 	HLIST_HEAD(true_inodes);
