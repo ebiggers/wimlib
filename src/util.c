@@ -414,7 +414,10 @@ static void *(*wimlib_realloc_func)(void *, size_t) = realloc;
 void *
 wimlib_malloc(size_t size)
 {
-	return (*wimlib_malloc_func)(size);
+	void *ptr = (*wimlib_malloc_func)(size);
+	if (ptr == NULL && size != 0)
+		ERROR("memory exhausted");
+	return ptr;
 }
 
 void
@@ -426,7 +429,10 @@ wimlib_free_memory(void *ptr)
 void *
 wimlib_realloc(void *ptr, size_t size)
 {
-	return (*wimlib_realloc_func)(ptr, size);
+	ptr = (*wimlib_realloc_func)(ptr, size);
+	if (ptr == NULL && size != 0)
+		ERROR("memory exhausted");
+	return ptr;
 }
 
 void *
