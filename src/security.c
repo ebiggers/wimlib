@@ -43,21 +43,21 @@ typedef struct _ACE_HEADER {
 	u8 flags;
 
 	/* Size of the access control entry. */
-	u16 size;
+	le16 size;
 } _packed_attribute ACE_HEADER;
 
 /* Grants rights to a user or group */
 typedef struct _ACCESS_ALLOWED_ACE {
 	ACE_HEADER hdr;
-	u32 mask;
-	u32 sid_start;
+	le32 mask;
+	le32 sid_start;
 } _packed_attribute ACCESS_ALLOWED_ACE;
 
 /* Denies rights to a user or group */
 typedef struct _ACCESS_DENIED_ACE {
 	ACE_HEADER hdr;
-	u32 mask;
-	u32 sid_start;
+	le32 mask;
+	le32 sid_start;
 } _packed_attribute ACCESS_DENIED_ACE;
 
 typedef struct _SYSTEM_AUDIT_ACE {
@@ -97,9 +97,8 @@ typedef struct _SID {
 	 * have to be, one of enum sid_authority_value */
 	u8  identifier_authority[6];
 
-	u32 sub_authority[0];
+	u32 sub_authority[];
 } _packed_attribute SID;
-
 
 typedef struct _SECURITY_DESCRIPTOR_RELATIVE  {
 	/* Example: 0x1 */
@@ -128,6 +127,12 @@ typedef struct _SECURITY_DESCRIPTOR_RELATIVE  {
 	u32 dacl_offset;
 } _packed_attribute SECURITY_DESCRIPTOR_RELATIVE;
 
+struct wim_security_data_disk {
+	u32 total_length;
+	u32 num_entries;
+	u64 sizes[];
+} _packed_attribute;
+
 /*
  * This is a hack to work around a problem in libntfs-3g.  libntfs-3g validates
  * security descriptors with a function named ntfs_valid_descr().
@@ -140,16 +145,15 @@ typedef struct _SECURITY_DESCRIPTOR_RELATIVE  {
  * the validation in libntfs-3g.
  */
 static void
-empty_sacl_fixup(u8 *descr, u64 *size_p)
+empty_sacl_fixup(SECURITY_DESCRIPTOR_RELATIVE *descr, size_t *size_p)
 {
 	/* No-op if no NTFS-3g support, or if NTFS-3g is version 2013 or later
 	 * */
 #if defined(WITH_NTFS_3G) && !defined(HAVE_NTFS_MNT_RDONLY)
 	if (*size_p >= sizeof(SECURITY_DESCRIPTOR_RELATIVE)) {
-		SECURITY_DESCRIPTOR_RELATIVE *sd = (SECURITY_DESCRIPTOR_RELATIVE*)descr;
-		u32 sacl_offset = le32_to_cpu(sd->sacl_offset);
+		u32 sacl_offset = le32_to_cpu(descr->sacl_offset);
 		if (sacl_offset == *size_p - sizeof(ACL)) {
-			sd->sacl_offset = cpu_to_le32(0);
+			descr->sacl_offset = cpu_to_le32(0);
 			*size_p -= sizeof(ACL);
 		}
 	}
@@ -163,56 +167,60 @@ new_wim_security_data(void)
 }
 
 /*
- * Reads the security data from the metadata resource.
+ * Reads the security data from the metadata resource of a WIM image.
  *
  * @metadata_resource:	An array that contains the uncompressed metadata
- * 				resource for the WIM file.
+ * 				resource for the WIM image.
  * @metadata_resource_len:	The length of @metadata_resource.  It must be at
  *				least 8 bytes.
- * @sd_p:	A pointer to a pointer to a wim_security_data structure that
+ * @sd_ret:	A pointer to a pointer to a wim_security_data structure that
  * 		will be filled in with a pointer to a new wim_security_data
- * 		structure on success.
+ * 		structure containing the security data on success.
  *
  * Note: There is no `offset' argument because the security data is located at
  * the beginning of the metadata resource.
+ *
+ * Possible errors include:
+ * 	WIMLIB_ERR_NOMEM
+ * 	WIMLIB_ERR_INVALID_SECURITY_DATA
  */
 int
-read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
-		   struct wim_security_data **sd_p)
+read_wim_security_data(const u8 metadata_resource[], size_t metadata_resource_len,
+		       struct wim_security_data **sd_ret)
 {
 	struct wim_security_data *sd;
-	const u8 *p;
 	int ret;
 	u64 total_len;
+	u64 sizes_size;
+	u64 size_no_descriptors;
+	const struct wim_security_data_disk *sd_disk;
+	const u8 *p;
 
 	wimlib_assert(metadata_resource_len >= 8);
 
-	/*
-	 * Sorry this function is excessively complicated--- I'm just being
-	 * extremely careful about integer overflows.
-	 */
+	sd = new_wim_security_data();
+	if (!sd)
+		goto out_of_memory;
 
-	sd = MALLOC(sizeof(struct wim_security_data));
-	if (!sd) {
-		ERROR("Out of memory");
-		return WIMLIB_ERR_NOMEM;
-	}
-	sd->sizes	= NULL;
-	sd->descriptors = NULL;
+	sd_disk = (const struct wim_security_data_disk*)metadata_resource;
+	sd->total_length = le32_to_cpu(sd_disk->total_length);
+	sd->num_entries = le32_to_cpu(sd_disk->num_entries);
 
-	p = metadata_resource;
-	p = get_u32(p, &sd->total_length);
-	p = get_u32(p, (u32*)&sd->num_entries);
+	DEBUG("Reading security data: num_entries=%u, total_length=%u",
+	      sd->num_entries, sd->total_length);
+
+	/* Length field of 0 is a special case that really means length
+	 * of 8. */
+	if (sd->total_length == 0)
+		sd->total_length = 8;
 
 	/* The security_id field of each dentry is a signed 32-bit integer, so
 	 * the possible indices into the security descriptors table are 0
 	 * through 0x7fffffff.  Which means 0x80000000 security descriptors
 	 * maximum.  Not like you should ever have anywhere close to that many
 	 * security descriptors! */
-	if (sd->num_entries > 0x80000000) {
-		ERROR("Security data has too many entries!");
+	if (sd->num_entries > 0x80000000)
 		goto out_invalid_sd;
-	}
 
 	/* Verify the listed total length of the security data is big enough to
 	 * include the sizes array, verify that the file data is big enough to
@@ -222,167 +230,151 @@ read_security_data(const u8 metadata_resource[], u64 metadata_resource_len,
 	 * integer, even though each security descriptor size is a 64-bit
 	 * integer.  This is stupid, and we need to be careful not to actually
 	 * let the security descriptor sizes be over 0xffffffff.  */
-	if ((u64)sd->total_length > metadata_resource_len) {
-		ERROR("Security data total length (%u) is bigger than the "
-		      "metadata resource length (%"PRIu64")",
-		      sd->total_length, metadata_resource_len);
+	if (sd->total_length > metadata_resource_len)
 		goto out_invalid_sd;
-	}
 
-	DEBUG("Reading security data: %u entries, length = %u",
-	      sd->num_entries, sd->total_length);
-
-	if (sd->num_entries == 0) {
-		/* No security descriptors.  We allow the total_length field to
-		 * be either 8 (which is correct, since there are always 2
-		 * 32-bit integers) or 0. */
-		if (sd->total_length != 0 && sd->total_length != 8) {
-			ERROR("Invalid security data length (%u): expected 0 or 8",
-			      sd->total_length);
-			goto out_invalid_sd;
-		}
-		sd->total_length = 8;
-		goto out_return_sd;
-	}
-
-	u64 sizes_size = (u64)sd->num_entries * sizeof(u64);
-	u64 size_no_descriptors = 8 + sizes_size;
-	if (size_no_descriptors > (u64)sd->total_length) {
-		ERROR("Security data total length of %u is too short because "
-		      "there seem to be at least %"PRIu64" bytes of security data",
-		      sd->total_length, 8 + sizes_size);
+	sizes_size = (u64)sd->num_entries * sizeof(u64);
+	size_no_descriptors = 8 + sizes_size;
+	if (size_no_descriptors > sd->total_length)
 		goto out_invalid_sd;
-	}
 
-	sd->sizes = MALLOC(sizes_size);
-	if (!sd->sizes) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_sd;
-	}
-
-	/* Copy the sizes array in from the file data. */
-	p = get_bytes(p, sizes_size, sd->sizes);
-	array_le64_to_cpu(sd->sizes, sd->num_entries);
-
-	/* Allocate the array of pointers to descriptors, and read them in. */
-	sd->descriptors = CALLOC(sd->num_entries, sizeof(u8*));
-	if (!sd->descriptors) {
-		ERROR("Out of memory while allocating security "
-		      "descriptors");
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_sd;
-	}
 	total_len = size_no_descriptors;
 
+	/* Return immediately if no security descriptors. */
+	if (sd->num_entries == 0)
+		goto out_align_total_length;
+
+	/* Allocate a new buffer for the sizes array */
+	sd->sizes = MALLOC(sizes_size);
+	if (!sd->sizes)
+		goto out_of_memory;
+
+	/* Copy the sizes array into the new buffer */
 	for (u32 i = 0; i < sd->num_entries; i++) {
-		/* Watch out for huge security descriptor sizes that could
-		 * overflow the total length and wrap it around. */
-		if (total_len + sd->sizes[i] < total_len) {
-			ERROR("Caught overflow in security descriptor lengths "
-			      "(current total length = %"PRIu64", security "
-			      "descriptor size = %"PRIu64")",
-			      total_len, sd->sizes[i]);
+		sd->sizes[i] = le64_to_cpu(sd_disk->sizes[i]);
+		if (sd->sizes[i] > 0xffffffff)
 			goto out_invalid_sd;
-		}
+	}
+
+	p = (const u8*)sd_disk + size_no_descriptors;
+
+	/* Allocate the array of pointers to the security descriptors, then read
+	 * them into separate buffers. */
+	sd->descriptors = CALLOC(sd->num_entries, sizeof(sd->descriptors[0]));
+	if (!sd->descriptors)
+		goto out_of_memory;
+
+	for (u32 i = 0; i < sd->num_entries; i++) {
+		if (sd->sizes[i] == 0)
+			continue;
 		total_len += sd->sizes[i];
-		/* This check ensures that the descriptor size fits in a 32 bit
-		 * integer.  Because if it didn't, the total length would come
-		 * out bigger than sd->total_length, which is a 32 bit integer.
-		 * */
-		if (total_len > (u64)sd->total_length) {
-			ERROR("Security data total length of %u is too short "
-			      "because there seem to be at least %"PRIu64" "
-			      "bytes of security data",
-			      sd->total_length, total_len);
+		if (total_len > (u64)sd->total_length)
 			goto out_invalid_sd;
-		}
 		sd->descriptors[i] = MALLOC(sd->sizes[i]);
-		if (!sd->descriptors[i]) {
-			ERROR("Out of memory while allocating security "
-			      "descriptors");
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_sd;
-		}
-		p = get_bytes(p, sd->sizes[i], sd->descriptors[i]);
-		empty_sacl_fixup(sd->descriptors[i], &sd->sizes[i]);
+		if (!sd->descriptors[i])
+			goto out_of_memory;
+		memcpy(sd->descriptors[i], p, sd->sizes[i]);
+		p += sd->sizes[i];
+		empty_sacl_fixup((SECURITY_DESCRIPTOR_RELATIVE*)sd->descriptors[i],
+				 &sd->sizes[i]);
 	}
-	wimlib_assert(total_len <= 0xffffffff);
-	if (((total_len + 7) & ~7) != ((sd->total_length + 7) & ~7)) {
-		ERROR("Expected security data total length = %u, but "
-		      "calculated %u", sd->total_length, (unsigned)total_len);
-		goto out_invalid_sd;
+out_align_total_length:
+	total_len = (total_len + 7) & ~7;
+	sd->total_length = (sd->total_length + 7) & ~7;
+	if (total_len != sd->total_length) {
+		WARNING("Expected WIM security data total length of "
+			"%u bytes, but calculated %u bytes",
+			sd->total_length, (unsigned)total_len);
 	}
-	sd->total_length = total_len;
 out_return_sd:
-	*sd_p = sd;
-	return 0;
+	*sd_ret = sd;
+	ret = 0;
+	goto out;
 out_invalid_sd:
+	ERROR("WIM security data is invalid!");
 	ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
+	goto out_free_sd;
+out_of_memory:
+	ERROR("Out of memory while reading WIM security data!");
+	ret = WIMLIB_ERR_NOMEM;
 out_free_sd:
-	free_security_data(sd);
+	free_wim_security_data(sd);
+out:
 	return ret;
 }
 
 /*
- * Writes security data to an in-memory buffer.
+ * Writes the security data for a WIM image to an in-memory buffer.
  */
 u8 *
-write_security_data(const struct wim_security_data * restrict sd,
-		    u8 * restrict p)
+write_wim_security_data(const struct wim_security_data * restrict sd,
+			u8 * restrict p)
 {
 	DEBUG("Writing security data (total_length = %"PRIu32", num_entries "
 	      "= %"PRIu32")", sd->total_length, sd->num_entries);
 
-	u32 aligned_length = (sd->total_length + 7) & ~7;
-
 	u8 *orig_p = p;
-	p = put_u32(p, aligned_length);
-	p = put_u32(p, sd->num_entries);
+	struct wim_security_data_disk *sd_disk = (struct wim_security_data_disk*)p;
+
+	sd_disk->total_length = cpu_to_le32(sd->total_length);
+	sd_disk->num_entries = cpu_to_le32(sd->num_entries);
 
 	for (u32 i = 0; i < sd->num_entries; i++)
-		p = put_u64(p, sd->sizes[i]);
+		sd_disk->sizes[i] = cpu_to_le64(sd->sizes[i]);
+
+	p = (u8*)&sd_disk->sizes[sd_disk->num_entries];
 
 	for (u32 i = 0; i < sd->num_entries; i++)
-		p = put_bytes(p, sd->sizes[i], sd->descriptors[i]);
+		p = mempcpy(p, sd->descriptors[i], sd->sizes[i]);
+
+	while (p - orig_p < sd->total_length)
+		*p++ = 0;
 
 	wimlib_assert(p - orig_p == sd->total_length);
-	p = put_zeroes(p, aligned_length - sd->total_length);
 
 	DEBUG("Successfully wrote security data.");
 	return p;
 }
 
 static void
-print_acl(const void *p, const tchar *type)
+print_acl(const ACL *acl, const tchar *type, size_t max_size)
 {
-	const ACL *acl = p;
+	const u8 *p;
+
+	if (max_size < sizeof(ACL))
+		return;
+
 	u8 revision = acl->revision;
 	u16 acl_size = le16_to_cpu(acl->acl_size);
 	u16 ace_count = le16_to_cpu(acl->ace_count);
+
 	tprintf(T("    [%"TS" ACL]\n"), type);
 	tprintf(T("    Revision = %u\n"), revision);
 	tprintf(T("    ACL Size = %u\n"), acl_size);
 	tprintf(T("    ACE Count = %u\n"), ace_count);
 
-	p += sizeof(ACL);
+	p = (const u8*)acl + sizeof(ACL);
 	for (u16 i = 0; i < ace_count; i++) {
-		const ACE_HEADER *hdr = p;
-		tprintf(T("        [ACE]\n"));
-		tprintf(T("        ACE type  = %d\n"), hdr->type);
-		tprintf(T("        ACE flags = 0x%x\n"), hdr->flags);
-		tprintf(T("        ACE size  = %u\n"), hdr->size);
+		if (max_size < p + sizeof(ACCESS_ALLOWED_ACE) - (const u8*)acl)
+			break;
 		const ACCESS_ALLOWED_ACE *aaa = (const ACCESS_ALLOWED_ACE*)p;
+		tprintf(T("        [ACE]\n"));
+		tprintf(T("        ACE type  = %d\n"), aaa->hdr.type);
+		tprintf(T("        ACE flags = 0x%x\n"), aaa->hdr.flags);
+		tprintf(T("        ACE size  = %u\n"), le16_to_cpu(aaa->hdr.size));
 		tprintf(T("        ACE mask = %x\n"), le32_to_cpu(aaa->mask));
 		tprintf(T("        SID start = %u\n"), le32_to_cpu(aaa->sid_start));
-		p += hdr->size;
+		p += le16_to_cpu(aaa->hdr.size);
 	}
 	tputchar(T('\n'));
 }
 
 static void
-print_sid(const void *p, const tchar *type)
+print_sid(const SID *sid, const tchar *type, size_t max_size)
 {
-	const SID *sid = p;
+	if (max_size < sizeof(SID))
+		return;
+
 	tprintf(T("    [%"TS" SID]\n"), type);
 	tprintf(T("    Revision = %u\n"), sid->revision);
 	tprintf(T("    Subauthority count = %u\n"), sid->sub_authority_count);
@@ -390,6 +382,8 @@ print_sid(const void *p, const tchar *type)
 	print_byte_field(sid->identifier_authority,
 			 sizeof(sid->identifier_authority), stdout);
 	tputchar(T('\n'));
+	if (max_size < sizeof(SID) + (size_t)sid->sub_authority_count * sizeof(u32))
+		return;
 	for (u8 i = 0; i < sid->sub_authority_count; i++) {
 		tprintf(T("    Subauthority %u = %u\n"),
 			i, le32_to_cpu(sid->sub_authority[i]));
@@ -398,38 +392,45 @@ print_sid(const void *p, const tchar *type)
 }
 
 static void
-print_security_descriptor(const void *p, u64 size)
+print_security_descriptor(const SECURITY_DESCRIPTOR_RELATIVE *descr,
+			  size_t size)
 {
-	const SECURITY_DESCRIPTOR_RELATIVE *sd = p;
+	u8 revision      = descr->revision;
+	u16 control      = le16_to_cpu(descr->security_descriptor_control);
+	u32 owner_offset = le32_to_cpu(descr->owner_offset);
+	u32 group_offset = le32_to_cpu(descr->group_offset);
+	u32 dacl_offset  = le32_to_cpu(descr->dacl_offset);
+	u32 sacl_offset  = le32_to_cpu(descr->sacl_offset);
 
-	u8 revision      = sd->revision;
-	u16 control      = le16_to_cpu(sd->security_descriptor_control);
-	u32 owner_offset = le32_to_cpu(sd->owner_offset);
-	u32 group_offset = le32_to_cpu(sd->group_offset);
-	u32 sacl_offset  = le32_to_cpu(sd->sacl_offset);
-	u32 dacl_offset  = le32_to_cpu(sd->dacl_offset);
 	tprintf(T("Revision = %u\n"), revision);
 	tprintf(T("Security Descriptor Control = %#x\n"), control);
 	tprintf(T("Owner offset = %u\n"), owner_offset);
 	tprintf(T("Group offset = %u\n"), group_offset);
-	tprintf(T("System ACL offset = %u\n"), sacl_offset);
 	tprintf(T("Discretionary ACL offset = %u\n"), dacl_offset);
+	tprintf(T("System ACL offset = %u\n"), sacl_offset);
 
-	if (sd->owner_offset != 0)
-		print_sid(p + owner_offset, T("Owner"));
-	if (sd->group_offset != 0)
-		print_sid(p + group_offset, T("Group"));
-	if (sd->sacl_offset != 0)
-		print_acl(p + sacl_offset, T("System"));
-	if (sd->dacl_offset != 0)
-		print_acl(p + dacl_offset, T("Discretionary"));
+	if (owner_offset != 0 && owner_offset <= size)
+		print_sid((const SID*)((const u8*)descr + owner_offset),
+			  T("Owner"), size - owner_offset);
+
+	if (group_offset != 0 && group_offset <= size)
+		print_sid((const SID*)((const u8*)descr + group_offset),
+			  T("Group"), size - group_offset);
+
+	if (dacl_offset != 0 && dacl_offset <= size)
+		print_acl((const ACL*)((const u8*)descr + dacl_offset),
+			  T("Discretionary"), size - dacl_offset);
+
+	if (sacl_offset != 0 && sacl_offset <= size)
+		print_acl((const ACL*)((const u8*)descr + sacl_offset),
+			  T("System"), size - sacl_offset);
 }
 
 /*
  * Prints the security data for a WIM file.
  */
 void
-print_security_data(const struct wim_security_data *sd)
+print_wim_security_data(const struct wim_security_data *sd)
 {
 	tputs(T("[SECURITY DATA]"));
 	tprintf(T("Length            = %"PRIu32" bytes\n"), sd->total_length);
@@ -438,14 +439,15 @@ print_security_data(const struct wim_security_data *sd)
 	for (u32 i = 0; i < sd->num_entries; i++) {
 		tprintf(T("[SECURITY_DESCRIPTOR_RELATIVE %"PRIu32", length = %"PRIu64"]\n"),
 			i, sd->sizes[i]);
-		print_security_descriptor(sd->descriptors[i], sd->sizes[i]);
+		print_security_descriptor((const SECURITY_DESCRIPTOR_RELATIVE*)sd->descriptors[i],
+					  sd->sizes[i]);
 		tputchar(T('\n'));
 	}
 	tputchar(T('\n'));
 }
 
 void
-free_security_data(struct wim_security_data *sd)
+free_wim_security_data(struct wim_security_data *sd)
 {
 	if (sd) {
 		u8 **descriptors = sd->descriptors;
@@ -481,8 +483,10 @@ destroy_sd_set(struct wim_sd_set *sd_set, bool rollback)
 {
 	if (rollback) {
 		struct wim_security_data *sd = sd_set->sd;
-		for (s32 i = sd_set->orig_num_entries; i < sd->num_entries; i++)
-			FREE(sd->descriptors[i]);
+		u8 **descriptors = sd->descriptors + sd_set->orig_num_entries;
+		u32 num_entries  = sd->num_entries - sd_set->orig_num_entries;
+		while (num_entries--)
+			FREE(*descriptors++);
 		sd->num_entries = sd_set->orig_num_entries;
 	}
 	free_sd_tree(sd_set->rb_root.rb_node);
@@ -556,9 +560,11 @@ sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 
 	security_id = lookup_sd(sd_set, hash);
 	if (security_id >= 0) /* Identical descriptor already exists */
-		return security_id;
+		goto out;
 
 	/* Need to add a new security descriptor */
+	security_id = -1;
+
 	new = MALLOC(sizeof(*new));
 	if (!new)
 		goto out;
@@ -588,17 +594,17 @@ sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 	sd->descriptors[sd->num_entries] = descr_copy;
 	sd->sizes[sd->num_entries] = size;
 	sd->num_entries++;
-	DEBUG("There are now %d security descriptors", sd->num_entries);
-	sd->total_length += size + sizeof(sd->sizes[0]);
+	DEBUG("There are now %u security descriptors", sd->num_entries);
 	bret = insert_sd_node(sd_set, new);
 	wimlib_assert(bret);
-	return new->security_id;
+	security_id = new->security_id;
+	goto out;
 out_free_descr:
 	FREE(descr_copy);
 out_free_node:
 	FREE(new);
 out:
-	return -1;
+	return security_id;
 }
 
 /* Initialize a `struct sd_set' mapping from SHA1 message digests of security
@@ -615,7 +621,7 @@ init_sd_set(struct wim_sd_set *sd_set, struct wim_security_data *sd)
 	/* Remember the original number of security descriptors so that newly
 	 * added ones can be rolled back if needed. */
 	sd_set->orig_num_entries = sd->num_entries;
-	for (s32 i = 0; i < sd->num_entries; i++) {
+	for (u32 i = 0; i < sd->num_entries; i++) {
 		struct sd_node *new;
 
 		new = MALLOC(sizeof(struct sd_node));

@@ -18,19 +18,18 @@ struct wim_security_data {
 	/* The total length of the security data, in bytes.  If there are no
 	 * security descriptors, this field, when read from the on-disk metadata
 	 * resource, may be either 8 (which is correct) or 0 (which is
-	 * interpreted as 0). */
+	 * interpreted as 8). */
 	u32 total_length;
 
-	/* The number of security descriptors in the array @descriptors, below.
-	 * It is really an unsigned int on-disk, but it must fit into an int
-	 * because the security ID's are signed.  (Not like you would ever have
-	 * more than a few hundred security descriptors anyway.) */
-	int32_t num_entries;
+	/* The number of security descriptors in the array @descriptors. */
+	u32 num_entries;
 
-	/* Array of sizes of the descriptors in the array @descriptors. */
-	u64 *sizes;
+	/* Array of sizes of the descriptors, in bytes, in the array
+	 * @descriptors. */
+	size_t *sizes;
 
-	/* Array of descriptors. */
+	/* Array of pointers to the security descriptors in the
+	 * SECURITY_DESCRIPTOR_RELATIVE format. */
 	u8 **descriptors;
 };
 
@@ -51,16 +50,17 @@ extern struct wim_security_data *
 new_wim_security_data(void);
 
 extern int
-read_security_data(const u8 metadata_resource[],
-		   u64 metadata_resource_len, struct wim_security_data **sd_p);
-extern void
-print_security_data(const struct wim_security_data *sd);
+read_wim_security_data(const u8 metadata_resource[], size_t
+		       metadata_resource_len, struct wim_security_data **sd_p);
 
 extern u8 *
-write_security_data(const struct wim_security_data * restrict sd,
-		    u8 * restrict p);
+write_wim_security_data(const struct wim_security_data * restrict sd, u8 *
+			restrict p);
 
 extern void
-free_security_data(struct wim_security_data *sd);
+print_wim_security_data(const struct wim_security_data *sd);
+
+extern void
+free_wim_security_data(struct wim_security_data *sd);
 
 #endif /* _WIMLIB_SECURITY_H */

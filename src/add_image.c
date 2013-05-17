@@ -120,7 +120,7 @@ out_put_image_metadata:
 			   wim->lookup_table);
 	goto out;
 out_free_security_data:
-	free_security_data(sd);
+	free_wim_security_data(sd);
 out:
 	return ret;
 }

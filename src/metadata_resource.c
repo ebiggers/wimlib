@@ -114,7 +114,7 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 	 * resource of the root dentry. */
 
 	wimlib_assert(imd->security_data == NULL);
-	ret = read_security_data(buf, metadata_len, &imd->security_data);
+	ret = read_wim_security_data(buf, metadata_len, &imd->security_data);
 	if (ret)
 		goto out_free_buf;
 
@@ -181,7 +181,7 @@ read_metadata_resource(WIMStruct *w, struct wim_image_metadata *imd)
 out_free_dentry_tree:
 	free_dentry_tree(dentry, NULL);
 out_free_security_data:
-	free_security_data(imd->security_data);
+	free_wim_security_data(imd->security_data);
 	imd->security_data = NULL;
 out_free_buf:
 	FREE(buf);
@@ -194,7 +194,7 @@ recalculate_security_data_length(struct wim_security_data *sd)
 	u32 total_length = sizeof(u64) * sd->num_entries + 2 * sizeof(u32);
 	for (u32 i = 0; i < sd->num_entries; i++)
 		total_length += sd->sizes[i];
-	sd->total_length = total_length;
+	sd->total_length = (total_length + 7) & ~7;
 }
 
 /* Like write_wim_resource(), but the resource is specified by a buffer of
@@ -280,7 +280,7 @@ write_metadata_resource(WIMStruct *w)
 	}
 
 	/* Write the security data into the resource buffer */
-	p = write_security_data(sd, buf);
+	p = write_wim_security_data(sd, buf);
 
 	/* Write the dentry tree into the resource buffer */
 	p = write_dentry_tree(root, p);

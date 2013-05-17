@@ -57,7 +57,7 @@ static int
 image_print_metadata(WIMStruct *w)
 {
 	DEBUG("Printing metadata for image %d", w->current_image);
-	print_security_data(wim_security_data(w));
+	print_wim_security_data(wim_security_data(w));
 	return for_dentry_in_tree(wim_root_dentry(w), print_dentry,
 				  w->lookup_table);
 }
@@ -555,7 +555,7 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 {
 	free_dentry_tree(imd->root_dentry, table);
 	imd->root_dentry = NULL;
-	free_security_data(imd->security_data);
+	free_wim_security_data(imd->security_data);
 	imd->security_data = NULL;
 
 	if (free_metadata_lte) {

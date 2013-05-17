@@ -52,7 +52,9 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 		goto out;
 	}
 
-	if (inode->i_security_id >= sd->num_entries) {
+	if (inode->i_security_id >= 0 &&
+	    inode->i_security_id >= sd->num_entries)
+	{
 		ERROR("Dentry `%"TS"' has an invalid security ID (%d) "
 		      "(there are only %u entries in the security table)",
 		      dentry_full_path(first_dentry), inode->i_security_id,
