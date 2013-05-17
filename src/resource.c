@@ -97,8 +97,8 @@ read_compressed_resource(int in_fd,
 
 	/* Calculate how many chunks the resource consists of in its entirety.
 	 * */
-	u64 num_chunks = (resource_uncompressed_size + WIM_CHUNK_SIZE - 1) /
-								WIM_CHUNK_SIZE;
+	u64 num_chunks = DIV_ROUND_UP(resource_uncompressed_size, WIM_CHUNK_SIZE);
+
 	/* As mentioned, the first chunk has no entry in the chunk table. */
 	u64 num_chunk_entries = num_chunks - 1;
 

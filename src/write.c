@@ -104,7 +104,7 @@ begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 			     struct chunk_table **chunk_tab_ret)
 {
 	u64 size = wim_resource_size(lte);
-	u64 num_chunks = (size + WIM_CHUNK_SIZE - 1) / WIM_CHUNK_SIZE;
+	u64 num_chunks = wim_resource_chunks(lte);
 	size_t alloc_size = sizeof(struct chunk_table) + num_chunks * sizeof(u64);
 	struct chunk_table *chunk_tab = CALLOC(1, alloc_size);
 
@@ -118,7 +118,7 @@ begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 	chunk_tab->file_offset = file_offset;
 	chunk_tab->num_chunks = num_chunks;
 	chunk_tab->original_resource_size = size;
-	chunk_tab->bytes_per_chunk_entry = (size >= (1ULL << 32)) ? 8 : 4;
+	chunk_tab->bytes_per_chunk_entry = (size > (1ULL << 32)) ? 8 : 4;
 	chunk_tab->table_disk_size = chunk_tab->bytes_per_chunk_entry *
 				     (num_chunks - 1);
 	chunk_tab->cur_offset = 0;
