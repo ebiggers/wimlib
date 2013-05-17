@@ -123,11 +123,20 @@ read_compressed_resource(int in_fd,
 	if (end_chunk != num_chunks - 1)
 		num_needed_chunks++;
 
+	/* According to M$'s documentation, if the uncompressed size of
+	 * the file is greater than 4 GB, the chunk entries are 8-byte
+	 * integers.  Otherwise, they are 4-byte integers. */
+	u64 chunk_entry_size = (resource_uncompressed_size >
+				(u64)1 << 32) ?  8 : 4;
+
+	/* Size of the full chunk table in the WIM file. */
+	u64 chunk_table_size = chunk_entry_size * num_chunk_entries;
+
 	/* Allocate the chunk table.  It will only contain offsets for the
 	 * chunks that are actually needed for this read. */
 	u64 *chunk_offsets;
 	bool chunk_offsets_malloced;
-	if (num_needed_chunks < 1000) {
+	if (num_needed_chunks < 1024) {
 		chunk_offsets = alloca(num_needed_chunks * sizeof(u64));
 		chunk_offsets_malloced = false;
 	} else {
@@ -151,14 +160,6 @@ read_compressed_resource(int in_fd,
 	if (start_chunk == 0)
 		chunk_offsets[0] = 0;
 
-	/* According to M$'s documentation, if the uncompressed size of
-	 * the file is greater than 4 GB, the chunk entries are 8-byte
-	 * integers.  Otherwise, they are 4-byte integers. */
-	u64 chunk_entry_size = (resource_uncompressed_size >= (u64)1 << 32) ?
-									8 : 4;
-
-	/* Size of the full chunk table in the WIM file. */
-	u64 chunk_table_size = chunk_entry_size * num_chunk_entries;
 
 	/* Read the needed chunk offsets from the table in the WIM file. */
 
@@ -175,12 +176,30 @@ read_compressed_resource(int in_fd,
 	u64 file_offset_of_needed_chunk_entries = resource_offset +
 				start_table_idx * chunk_entry_size;
 
+	/* Allocate a buffer into which to read the raw chunk entries. */
+	void *chunk_tab_buf;
+	bool chunk_tab_buf_malloced = false;
+
 	/* Number of bytes we need to read from the chunk table. */
 	size_t size = num_needed_chunk_entries * chunk_entry_size;
+	if ((u64)size != num_needed_chunk_entries * chunk_entry_size) {
+		ERROR("Compressed read request too large to fit into memory!");
+		ret = WIMLIB_ERR_NOMEM;
+		goto out;
+	}
 
-	/* Read the raw data into the end of the chunk_offsets array to
-	 * avoid allocating another array. */
-	void *chunk_tab_buf = (void*)&chunk_offsets[num_needed_chunks] - size;
+	if (size < 4096) {
+		chunk_tab_buf = alloca(size);
+	} else {
+		chunk_tab_buf = malloc(size);
+		if (!chunk_tab_buf) {
+			ERROR("Failed to allocate chunk table buffer of "
+			      "size %zu bytes", size);
+			ret = WIMLIB_ERR_NOMEM;
+			goto out;
+		}
+		chunk_tab_buf_malloced = true;
+	}
 
 	if (full_pread(in_fd, chunk_tab_buf, size,
 		       file_offset_of_needed_chunk_entries) != size)
@@ -194,17 +213,17 @@ read_compressed_resource(int in_fd,
 		chunk_tab_p++;
 
 	if (chunk_entry_size == 4) {
-		u32 *entries = (u32*)chunk_tab_buf;
+		le32 *entries = (le32*)chunk_tab_buf;
 		while (num_needed_chunk_entries--)
 			*chunk_tab_p++ = le32_to_cpu(*entries++);
 	} else {
-		u64 *entries = (u64*)chunk_tab_buf;
+		le64 *entries = (le64*)chunk_tab_buf;
 		while (num_needed_chunk_entries--)
 			*chunk_tab_p++ = le64_to_cpu(*entries++);
 	}
 
-	/* Done with the chunk table now.  We must now seek to the first chunk
-	 * that is needed for the read. */
+	/* Done reading the chunk table now.  Now calculate the file offset for
+	 * the first byte of compressed data we need to read. */
 
 	u64 cur_read_offset = resource_offset + chunk_table_size + chunk_offsets[0];
 
@@ -348,6 +367,8 @@ read_compressed_resource(int in_fd,
 out:
 	if (chunk_offsets_malloced)
 		FREE(chunk_offsets);
+	if (chunk_tab_buf_malloced)
+		FREE(chunk_tab_buf);
 	return ret;
 
 read_error:
