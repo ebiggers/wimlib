@@ -153,10 +153,11 @@ win32_set_reparse_data(HANDLE h,
 	int ret;
 	u8 rpbuf[REPARSE_POINT_MAX_SIZE];
 	DWORD bytesReturned;
+	u16 rpbuflen;
 
 	DEBUG("Setting reparse data on \"%ls\"", path);
 
-	ret = wim_inode_get_reparse_data(inode, rpbuf);
+	ret = wim_inode_get_reparse_data(inode, rpbuf, &rpbuflen);
 	if (ret)
 		return ret;
 
@@ -194,7 +195,7 @@ win32_set_reparse_data(HANDLE h,
 	 *  "Not used with this operation; set to NULL."
 	 */
 	if (!DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, rpbuf,
-			     8 + le16_to_cpu(*(u16*)(rpbuf + 4)),
+			     rpbuflen,
 			     NULL, 0,
 			     &bytesReturned /* lpBytesReturned */,
 			     NULL /* lpOverlapped */))

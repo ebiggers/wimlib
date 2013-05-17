@@ -43,7 +43,7 @@
 #include <ntfs-3g/xattrs.h>
 
 #include "wimlib/apply.h"
-#include "wimlib/buffer_io.h"
+#include "wimlib/compiler.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
@@ -357,48 +357,25 @@ static int
 apply_reparse_data(ntfs_inode *ni, struct wim_dentry *dentry,
 		   union wimlib_progress_info *progress_info)
 {
-	struct wim_lookup_table_entry *lte;
 	int ret;
-
-	lte = inode_unnamed_lte_resolved(dentry->d_inode);
+	u8 rpbuf[REPARSE_POINT_MAX_SIZE] _aligned_attribute(8);
+	u16 rpbuflen;
 
 	DEBUG("Applying reparse data to `%s'", dentry->_full_path);
 
-	if (!lte) {
-		ERROR("Could not find reparse data for `%s'",
-		      dentry->_full_path);
-		return WIMLIB_ERR_INVALID_DENTRY;
-	}
-
-	/* "Reparse point data, including the tag and optional GUID, cannot
-	 * exceed 16 kilobytes." - MSDN  */
-	if (wim_resource_size(lte) > REPARSE_POINT_MAX_SIZE - 8) {
-		ERROR("Reparse data of `%s' is too long (%"PRIu64" bytes)",
-		      dentry->_full_path, wim_resource_size(lte));
-		return WIMLIB_ERR_INVALID_DENTRY;
-	}
-
-	u8 reparse_data_buf[8 + wim_resource_size(lte)];
-	u8 *p = reparse_data_buf;
-	p = put_u32(p, dentry->d_inode->i_reparse_tag); /* ReparseTag */
-	DEBUG("ReparseTag = %#x", dentry->d_inode->i_reparse_tag);
-	p = put_u16(p, wim_resource_size(lte)); /* ReparseDataLength */
-	p = put_u16(p, 0); /* Reserved */
-
-	ret = read_full_resource_into_buf(lte, p);
+	ret = wim_inode_get_reparse_data(dentry->d_inode, rpbuf, &rpbuflen);
 	if (ret)
 		return ret;
 
-	ret = ntfs_set_ntfs_reparse_data(ni, (char*)reparse_data_buf,
-					 wim_resource_size(lte) + 8, 0);
+	ret = ntfs_set_ntfs_reparse_data(ni, rpbuf, rpbuflen, 0);
 	if (ret) {
 		ERROR_WITH_ERRNO("Failed to set NTFS reparse data on `%s'",
 				 dentry->_full_path);
 		return WIMLIB_ERR_NTFS_3G;
-	} else {
-		progress_info->extract.completed_bytes += wim_resource_size(lte);
 	}
-	return ret;
+
+	progress_info->extract.completed_bytes += rpbuflen - 8;
+	return 0;
 }
 
 /*
@@ -647,8 +624,7 @@ apply_dentry_timestamps_ntfs(struct wim_dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
 	ntfs_volume *vol = args->vol;
-	u8 *p;
-	u8 buf[24];
+	u64 ntfs_timestamps[3];
 	ntfs_inode *ni;
 	int ret;
 
@@ -661,11 +637,13 @@ apply_dentry_timestamps_ntfs(struct wim_dentry *dentry, void *arg)
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
-	p = buf;
-	p = put_u64(p, dentry->d_inode->i_creation_time);
-	p = put_u64(p, dentry->d_inode->i_last_write_time);
-	p = put_u64(p, dentry->d_inode->i_last_access_time);
-	ret = ntfs_inode_set_times(ni, (const char*)buf, 3 * sizeof(u64), 0);
+	/* Note: ntfs_inode_set_times() expects the times in native byte order,
+	 * not little endian. */
+	ntfs_timestamps[0] = dentry->d_inode->i_creation_time;
+	ntfs_timestamps[1] = dentry->d_inode->i_last_write_time;
+	ntfs_timestamps[2] = dentry->d_inode->i_last_access_time;
+	ret = ntfs_inode_set_times(ni, (const char*)ntfs_timestamps,
+				   sizeof(ntfs_timestamps), 0);
 	if (ret != 0) {
 		ERROR_WITH_ERRNO("Failed to set NTFS timestamps on `%s'",
 				 dentry->_full_path);

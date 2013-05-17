@@ -45,6 +45,25 @@
 #include <errno.h>
 #include <stdlib.h>
 
+struct reparse_buffer_disk {
+	le32 rptag;
+	le16 rpdatalen;
+	le16 rpreserved;
+	le16 substitute_name_offset;
+	le16 substitute_name_nbytes;
+	le16 print_name_offset;
+	le16 print_name_nbytes;
+	union {
+		struct {
+			le32 rpflags;
+			u8 data[REPARSE_POINT_MAX_SIZE - 20];
+		} _packed_attribute symlink;
+		struct {
+			u8 data[REPARSE_POINT_MAX_SIZE - 16];
+		} _packed_attribute junction;
+	};
+} _packed_attribute;
+
 static const utf16lechar volume_junction_prefix[11] = {
 	cpu_to_le16('\\'),
 	cpu_to_le16('\\'),
@@ -124,25 +143,6 @@ parse_substitute_name(const utf16lechar *substitute_name,
 		return SUBST_NAME_IS_UNKNOWN;
 	}
 }
-
-struct reparse_buffer_disk {
-	le32 rptag;
-	le16 rpdatalen;
-	le16 rpreserved;
-	le16 substitute_name_offset;
-	le16 substitute_name_nbytes;
-	le16 print_name_offset;
-	le16 print_name_nbytes;
-	union {
-		struct {
-			le32 rpflags;
-			u8 data[REPARSE_POINT_MAX_SIZE - 20];
-		} _packed_attribute symlink;
-		struct {
-			u8 data[REPARSE_POINT_MAX_SIZE - 16];
-		} _packed_attribute junction;
-	};
-} _packed_attribute;
 
 /*
  * Read the data from a symbolic link, junction, or mount point reparse point
@@ -267,11 +267,13 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
  */
 int
 wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
-			   u8 * restrict rpbuf)
+			   u8 * restrict rpbuf,
+			   u16 * restrict rpbuflen_ret)
 {
 	struct wim_lookup_table_entry *lte;
 	int ret;
 	struct reparse_buffer_disk *rpbuf_disk;
+	u16 rpdatalen;
 
 	wimlib_assert(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT);
 
@@ -280,10 +282,12 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 		ERROR("Reparse point has no reparse data!");
 		return WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
+
 	if (wim_resource_size(lte) > REPARSE_POINT_MAX_SIZE - 8) {
 		ERROR("Reparse data is too long!");
 		return WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
+	rpdatalen = wim_resource_size(lte);
 
 	/* Read the data from the WIM file */
 	ret = read_full_resource_into_buf(lte, rpbuf + 8);
@@ -297,11 +301,13 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 	rpbuf_disk->rptag = cpu_to_le32(inode->i_reparse_tag);
 
 	/* ReparseDataLength */
-	rpbuf_disk->rpdatalen = cpu_to_le16(wim_resource_size(lte));
+	rpbuf_disk->rpdatalen = cpu_to_le16(rpdatalen);
 
 	/* ReparseReserved
 	 * XXX this could be one of the unknown fields in the WIM dentry. */
 	rpbuf_disk->rpreserved = cpu_to_le16(0);
+
+	*rpbuflen_ret = rpdatalen + 8;
 	return 0;
 }
 
@@ -321,19 +327,18 @@ wim_inode_readlink(const struct wim_inode * restrict inode,
 {
 	int ret;
 	struct reparse_buffer_disk rpbuf_disk _aligned_attribute(8);
-	u16 rpdatalen;
 	struct reparse_data rpdata;
 	char *link_target;
 	char *translated_target;
 	size_t link_target_len;
+	u16 rpbuflen;
 
 	wimlib_assert(inode_is_symlink(inode));
 
-	if (wim_inode_get_reparse_data(inode, (u8*)&rpbuf_disk))
+	if (wim_inode_get_reparse_data(inode, (u8*)&rpbuf_disk, &rpbuflen))
 		return -EIO;
 
-	if (parse_reparse_data((const u8*)&rpbuf_disk,
-			       le16_to_cpu(rpbuf_disk.rpdatalen) + 8, &rpdata))
+	if (parse_reparse_data((const u8*)&rpbuf_disk, rpbuflen, &rpdata))
 		return -EIO;
 
 	ret = utf16le_to_tstr(rpdata.substitute_name,
@@ -354,7 +359,8 @@ wim_inode_readlink(const struct wim_inode * restrict inode,
 	case SUBST_NAME_IS_UNKNOWN:
 		ERROR("Can't understand reparse point "
 		      "substitute name \"%s\"", link_target);
-		return -EIO;
+		ret = -EIO;
+		goto out_free_link_target;
 	default:
 		translated_target += ret;
 		link_target_len -= ret;
@@ -373,6 +379,7 @@ out_have_link:
 		ret = link_target_len;
 	}
 	memcpy(buf, translated_target, link_target_len);
+out_free_link_target:
 	FREE(link_target);
 	return ret;
 }
