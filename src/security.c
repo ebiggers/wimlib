@@ -62,8 +62,8 @@ typedef struct _ACCESS_DENIED_ACE {
 
 typedef struct _SYSTEM_AUDIT_ACE {
 	ACE_HEADER hdr;
-	u32 mask;
-	u32 sid_start;
+	le32 mask;
+	le32 sid_start;
 } _packed_attribute SYSTEM_AUDIT_ACE;
 
 
@@ -76,14 +76,14 @@ typedef struct _ACL {
 	u8 sbz1;
 
 	/* Total size of the ACL, including all access control entries */
-	u16 acl_size;
+	le16 acl_size;
 
 	/* Number of access control entry structures that follow the ACL
 	 * structure. */
-	u16 ace_count;
+	le16 ace_count;
 
 	/* padding */
-	u16 sbz2;
+	le16 sbz2;
 } _packed_attribute ACL;
 
 /* A structure used to identify users or groups. */
@@ -97,7 +97,7 @@ typedef struct _SID {
 	 * have to be, one of enum sid_authority_value */
 	u8  identifier_authority[6];
 
-	u32 sub_authority[];
+	le32 sub_authority[];
 } _packed_attribute SID;
 
 typedef struct _SECURITY_DESCRIPTOR_RELATIVE  {
@@ -105,32 +105,33 @@ typedef struct _SECURITY_DESCRIPTOR_RELATIVE  {
 	u8 revision;
 	/* Example: 0x0 */
 	u8 sbz1;
+
 	/* Example: 0x4149 */
-	u16 security_descriptor_control;
+	le16 security_descriptor_control;
 
 	/* Offset of a SID structure in the security descriptor. */
 	/* Example: 0x14 */
-	u32 owner_offset;
+	le32 owner_offset;
 
 	/* Offset of a SID structure in the security descriptor. */
 	/* Example: 0x24 */
-	u32 group_offset;
+	le32 group_offset;
 
 	/* Offset of an ACL structure in the security descriptor. */
 	/* System ACL. */
 	/* Example: 0x00 */
-	u32 sacl_offset;
+	le32 sacl_offset;
 
 	/* Offset of an ACL structure in the security descriptor. */
 	/* Discretionary ACL. */
 	/* Example: 0x34 */
-	u32 dacl_offset;
+	le32 dacl_offset;
 } _packed_attribute SECURITY_DESCRIPTOR_RELATIVE;
 
 struct wim_security_data_disk {
-	u32 total_length;
-	u32 num_entries;
-	u64 sizes[];
+	le32 total_length;
+	le32 num_entries;
+	le64 sizes[];
 } _packed_attribute;
 
 /*
@@ -331,6 +332,7 @@ write_wim_security_data(const struct wim_security_data * restrict sd,
 		*p++ = 0;
 
 	wimlib_assert(p - orig_p == sd->total_length);
+	wimlib_assert(((uintptr_t)p & 7) == 0);
 
 	DEBUG("Successfully wrote security data.");
 	return p;
