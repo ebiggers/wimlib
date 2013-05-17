@@ -19,6 +19,8 @@
 #	define _malloc_attribute __attribute__((malloc))
 #	define _warn_unused_result_attribute __attribute__((warn_unused_result))
 #	define _aligned_attribute(size) __attribute__((aligned(size)))
+#	define likely(x) __builtin_expect(!!(x), 1)
+#	define unlikely(x) __builtin_expect(!!(x), 0)
 #else
 #	define WIMLIBAPI
 #	define _always_inline_attribute inline
@@ -28,6 +30,8 @@
 #	define _malloc_attribute
 #	define _warn_unused_result_attribute
 #	define _aligned_attribute(size)
+#	define likely(x) (x)
+#	define unlikely(x) (x)
 #endif /* __GNUC__ */
 
 #endif /* _WIMLIB_COMPILER_H */
