@@ -467,7 +467,7 @@ struct wimlib_unix_data {
 	u16 uid;
 	u16 gid;
 	u16 mode;
-} PACKED;
+} _packed_attribute;
 
 #ifndef __WIN32__
 
