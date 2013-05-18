@@ -439,7 +439,7 @@ void *
 wimlib_calloc(size_t nmemb, size_t size)
 {
 	size_t total_size = nmemb * size;
-	void *p = (*wimlib_malloc_func)(total_size);
+	void *p = MALLOC(total_size);
 	if (p)
 		p = memset(p, 0, total_size);
 	return p;
@@ -452,9 +452,9 @@ wimlib_strdup(const char *str)
 	char *p;
 
 	size = strlen(str);
-	p = (*wimlib_malloc_func)(size + 1);
+	p = MALLOC(size + 1);
 	if (p)
-		memcpy(p, str, size + 1);
+		p = memcpy(p, str, size + 1);
 	return p;
 }
 
@@ -466,7 +466,7 @@ wimlib_wcsdup(const wchar_t *str)
 	wchar_t *p;
 
 	size = wcslen(str);
-	p = (*wimlib_malloc_func)((size + 1) * sizeof(wchar_t));
+	p = MALLOC((size + 1) * sizeof(wchar_t));
 	if (p)
 		p = wmemcpy(p, str, size + 1);
 	return p;

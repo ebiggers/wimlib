@@ -186,7 +186,7 @@ parse_reparse_data(const u8 * restrict rpbuf, u16 rpbuflen,
 	if (rpdata->rptag == WIM_IO_REPARSE_TAG_SYMLINK) {
 		if (rpbuflen < 20)
 			goto out_invalid;
-		rpdata->rpflags = le16_to_cpu(rpbuf_disk->symlink.rpflags);
+		rpdata->rpflags = le32_to_cpu(rpbuf_disk->symlink.rpflags);
 		data = rpbuf_disk->symlink.data;
 	} else {
 		data = rpbuf_disk->junction.data;

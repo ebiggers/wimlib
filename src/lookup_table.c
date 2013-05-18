@@ -355,10 +355,10 @@ struct wim_lookup_table_entry_disk {
 	struct resource_entry_disk resource_entry;
 
 	/* Which part of the split WIM this stream is in; indexed from 1. */
-	u16 part_number;
+	le16 part_number;
 
 	/* Reference count of this stream over all WIM images. */
-	u32 refcnt;
+	le32 refcnt;
 
 	/* SHA1 message digest of the uncompressed data of this stream, or
 	 * optionally all zeroes if this stream is of zero length. */

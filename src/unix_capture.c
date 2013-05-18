@@ -145,12 +145,9 @@ unix_capture_symlink(struct wim_dentry **root_p,
 	inode->i_attributes = FILE_ATTRIBUTE_REPARSE_POINT;
 	inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
 
-	/* The idea here is to call readlink() to get the UNIX target of
-	 * the symbolic link, then turn the target into a reparse point
-	 * data buffer that contains a relative or absolute symbolic
-	 * link (NOT a junction point or *full* path symbolic link with
-	 * drive letter).
-	 */
+	/* The idea here is to call readlink() to get the UNIX target of the
+	 * symbolic link, then turn the target into a reparse point data buffer
+	 * that contains a relative or absolute symbolic link. */
 	deref_name_len = readlink(path, deref_name_buf,
 				  sizeof(deref_name_buf) - 1);
 	if (deref_name_len >= 0) {

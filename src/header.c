@@ -72,7 +72,7 @@ struct wim_header_disk {
 	 * the only supported value).  */
 	u32 chunk_size;
 
-	/* Globally unique identifier for the WIM file.  Basically bunch of
+	/* Globally unique identifier for the WIM file.  Basically a bunch of
 	 * random bytes. */
 	u8 guid[WIM_GID_LEN];
 
@@ -102,9 +102,9 @@ struct wim_header_disk {
 	u32 boot_idx;
 
 	/* Location and size of the WIM's integrity table, or all zeroes if the
-	 * WIM has no integrity table. */
-
-	/* Note the integrity_table_res_entry here is 4-byte aligned even though
+	 * WIM has no integrity table.
+	 *
+	 * Note the integrity_table_res_entry here is 4-byte aligned even though
 	 * it would ordinarily be 8-byte aligned--- hence, the _packed_attribute
 	 * on the `struct wim_header_disk' is essential. */
 	struct resource_entry_disk integrity_table_res_entry;
