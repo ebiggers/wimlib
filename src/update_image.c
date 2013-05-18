@@ -249,7 +249,7 @@ execute_add_command(WIMStruct *wim,
 	}
 
 	if (wim_target_path[0] == T('\0'))
-		add_flags |= WIMLIB_ADD_FLAG_ROOT;
+		params.add_flags |= WIMLIB_ADD_FLAG_ROOT;
 	ret = (*capture_tree)(&branch, fs_source_path, &params);
 	if (ret) {
 		ERROR("Failed to build dentry tree for \"%"TS"\"",
