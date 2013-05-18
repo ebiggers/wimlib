@@ -48,8 +48,8 @@ init() {
 	imagex capture tmp.empty empty.wim --norpfix
 }
 
-if [ ! -r /dev/fuse ]; then
-	echo "WARNING: /dev/fuse is not readable."
+if [ ! -r /dev/fuse ] || [ ! -w /dev/fuse ]; then
+	echo "WARNING: /dev/fuse is not readable and writable."
 	echo "Skipping WIM mounting checks"
 	skip_test
 fi
