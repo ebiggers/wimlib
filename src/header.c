@@ -120,6 +120,8 @@ read_header(const tchar *filename, int in_fd,
 {
 	struct wim_header_disk disk_hdr _aligned_attribute(8);
 
+	BUILD_BUG_ON(sizeof(struct wim_header_disk) != WIM_HEADER_DISK_SIZE);
+
 	DEBUG("Reading WIM header from \"%"TS"\"", filename);
 
 	if (full_pread(in_fd, &disk_hdr, sizeof(disk_hdr), 0) != sizeof(disk_hdr)) {
@@ -132,7 +134,6 @@ read_header(const tchar *filename, int in_fd,
 		return WIMLIB_ERR_NOT_A_WIM_FILE;
 	}
 
-	BUILD_BUG_ON(sizeof(struct wim_header_disk) != WIM_HEADER_DISK_SIZE);
 	if (le32_to_cpu(disk_hdr.hdr_size) != sizeof(struct wim_header_disk)) {
 		ERROR("\"%"TS"\": Header size is invalid (%u bytes)",
 		      filename, le32_to_cpu(disk_hdr.hdr_size));

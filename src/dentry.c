@@ -70,6 +70,8 @@ struct wim_ads_entry_on_disk {
 	utf16lechar stream_name[];
 } _packed_attribute;
 
+#define WIM_ADS_ENTRY_DISK_SIZE 38
+
 /* WIM directory entry (on-disk format) */
 struct wim_dentry_on_disk {
 	le64 length;
@@ -104,6 +106,8 @@ struct wim_dentry_on_disk {
 	/* Followed by variable length short name, if short_name_nbytes != 0 */
 	/*utf16lechar short_name[];*/
 } _packed_attribute;
+
+#define WIM_DENTRY_DISK_SIZE 102
 
 /* Calculates the unaligned length, in bytes, of an on-disk WIM dentry that has
  * a file name and short name that take the specified numbers of bytes.  This
@@ -1387,6 +1391,8 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 	struct wim_ads_entry *ads_entries;
 	int ret;
 
+	BUILD_BUG_ON(sizeof(struct wim_ads_entry_on_disk) != WIM_ADS_ENTRY_DISK_SIZE);
+
 	/* Allocate an array for our in-memory representation of the alternate
 	 * data stream entries. */
 	num_ads = inode->i_num_ads;
@@ -1530,6 +1536,8 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	const u8 *p = &metadata_resource[offset];
 	const struct wim_dentry_on_disk *disk_dentry =
 			(const struct wim_dentry_on_disk*)p;
+
+	BUILD_BUG_ON(sizeof(struct wim_dentry_on_disk) != WIM_DENTRY_DISK_SIZE);
 
 	if ((uintptr_t)p & 7)
 		WARNING("WIM dentry is not 8-byte aligned");

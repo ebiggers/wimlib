@@ -365,6 +365,8 @@ struct wim_lookup_table_entry_disk {
 	u8 hash[SHA1_HASH_SIZE];
 } _packed_attribute;
 
+#define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
+
 /*
  * Reads the lookup table from a WIM file.
  *
@@ -382,6 +384,10 @@ read_lookup_table(WIMStruct *w)
 	struct wim_lookup_table_entry_disk
 			table_buf[BUFFER_SIZE / sizeof(struct wim_lookup_table_entry_disk)]
 				_aligned_attribute(8);
+
+	BUILD_BUG_ON(sizeof(struct wim_lookup_table_entry_disk) !=
+		     WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE);
+
 	off_t offset;
 	size_t buf_entries_remaining;
 	const struct wim_lookup_table_entry_disk *disk_entry;

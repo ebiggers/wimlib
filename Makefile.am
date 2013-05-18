@@ -7,6 +7,11 @@ AM_CFLAGS	= -std=gnu99 -Wmissing-prototypes -Wstrict-prototypes	\
 		  -Werror-implicit-function-declaration			\
 		  -fno-common -Wundef -Wno-pointer-sign
 
+if WINDOWS_NATIVE_BUILD
+# This option is needed to make packed structures work as expected
+# with gcc 4.7+ (mingw) on Windows.
+AM_CFLAGS += -mno-ms-bitfields
+endif
 
 lib_LTLIBRARIES = libwim.la
 
