@@ -97,7 +97,7 @@ win32_extract_try_rpfix(u8 *rpbuf,
 	stripped_nchars = ret;
 	target = rpdata.substitute_name;
 	target_nchars = rpdata.substitute_name_nbytes / sizeof(utf16lechar);
-	stripped_target = target + 6;
+	stripped_target = target + stripped_nchars;
 	stripped_target_nchars = target_nchars - stripped_nchars;
 
 	new_target = alloca((6 + extract_root_realpath_nchars +
