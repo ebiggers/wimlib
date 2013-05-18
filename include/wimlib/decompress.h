@@ -72,7 +72,7 @@ bitstream_ensure_bits(struct input_bitstream *istream, unsigned num_bits)
 #else
 	if (istream->bitsleft < num_bits) {
 #endif
-		if (istream->data_bytes_left >= 2) {
+		if (likely(istream->data_bytes_left >= 2)) {
 			unsigned shift = sizeof(input_bitbuf_t) * 8 - 16 -
 					 istream->bitsleft;
 			istream->bitbuf |= (input_bitbuf_t)le16_to_cpu(
@@ -95,7 +95,7 @@ bitstream_peek_bits(const struct input_bitstream *istream, unsigned num_bits)
 {
 	wimlib_assert2(istream->bitsleft >= num_bits);
 	int ret;
-	if (num_bits == 0)
+	if (unlikely(num_bits == 0))
 		ret = 0;
 	else
 		ret = istream->bitbuf >> (sizeof(input_bitbuf_t) * 8 - num_bits);
@@ -121,7 +121,7 @@ bitstream_read_bits(struct input_bitstream *istream,
 {
 	wimlib_assert2(num_bits <= 16);
 	int ret = bitstream_ensure_bits(istream, num_bits);
-	if (ret == 0) {
+	if (likely(ret == 0)) {
 		*n = bitstream_peek_bits(istream, num_bits);
 		bitstream_remove_bits(istream, num_bits);
 	} else {
@@ -143,7 +143,7 @@ bitstream_read_byte(struct input_bitstream *istream)
 	wimlib_assert2(istream->bitsleft < 32);
 	int ret;
 
-	if (istream->data_bytes_left == 0) {
+	if (unlikely(istream->data_bytes_left == 0)) {
 		ERROR("bitstream_read_byte(): Input buffer exhausted");
 		ret = -1;
 	} else {
@@ -189,7 +189,7 @@ read_huffsym_near_end_of_input(struct input_bitstream *istream,
  * 				directory in the decode_table, as the
  * 				decode_table contains 2**table_bits entries.
  */
-static _always_inline_attribute int
+static inline int
 read_huffsym(struct input_bitstream *istream,
 	     const u16 decode_table[],
 	     const u8 lens[],
@@ -202,7 +202,7 @@ read_huffsym(struct input_bitstream *istream,
 
 	/* In the most common case, there are at least max_codeword_len bits
 	 * remaining in the stream. */
-	if (bitstream_ensure_bits(istream, max_codeword_len) == 0) {
+	if (likely(bitstream_ensure_bits(istream, max_codeword_len) == 0)) {
 
 		/* Use the next table_bits of the input as an index into the
 		 * decode_table. */
@@ -212,7 +212,10 @@ read_huffsym(struct input_bitstream *istream,
 
 		/* If the entry in the decode table is not a valid symbol, it is
 		 * the offset of the root of its Huffman subtree. */
-		if (sym >= num_syms) {
+		if (likely(sym < num_syms)) {
+			wimlib_assert2(lens[sym] <= table_bits);
+			bitstream_remove_bits(istream, lens[sym]);
+		} else {
 			bitstream_remove_bits(istream, table_bits);
 			do {
 				key_bits = sym + bitstream_peek_bits(istream, 1);
@@ -221,9 +224,6 @@ read_huffsym(struct input_bitstream *istream,
 				wimlib_assert2(key_bits < num_syms * 2 +
 					       (1 << table_bits));
 			} while ((sym = decode_table[key_bits]) >= num_syms);
-		} else {
-			wimlib_assert2(lens[sym] <= table_bits);
-			bitstream_remove_bits(istream, lens[sym]);
 		}
 		*n = sym;
 		ret = 0;
@@ -242,6 +242,8 @@ make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
 			  unsigned num_bits, const u8 lengths[],
 			  unsigned max_codeword_len);
 
+/* Minimum alignment for the decode_table parameter to
+ * make_huffman_decode_table(). */
 #define DECODE_TABLE_ALIGNMENT 16
 
 #endif /* _WIMLIB_DECOMPRESS_H */
