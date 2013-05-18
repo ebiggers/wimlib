@@ -210,7 +210,8 @@ wimlib_xpress_decompress(const void * restrict _compressed_data, unsigned compre
 			 void * restrict uncompressed_data, unsigned uncompressed_len)
 {
 	u8 lens[XPRESS_NUM_SYMBOLS];
-	u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS];
+	u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS]
+			_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	struct input_bitstream istream;
 	u8 *lens_p;
 	const u8 *compressed_data;

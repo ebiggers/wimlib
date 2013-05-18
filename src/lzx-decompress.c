@@ -121,19 +121,22 @@
 struct lzx_tables {
 
 	u16 maintree_decode_table[(1 << LZX_MAINTREE_TABLEBITS) +
-					(LZX_MAINTREE_NUM_SYMBOLS * 2)];
+					(LZX_MAINTREE_NUM_SYMBOLS * 2)]
+					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	u8 maintree_lens[LZX_MAINTREE_NUM_SYMBOLS];
 
 
 	u16 lentree_decode_table[(1 << LZX_LENTREE_TABLEBITS) +
-					(LZX_LENTREE_NUM_SYMBOLS * 2)];
+					(LZX_LENTREE_NUM_SYMBOLS * 2)]
+					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	u8 lentree_lens[LZX_LENTREE_NUM_SYMBOLS];
 
 
 	u16 alignedtree_decode_table[(1 << LZX_ALIGNEDTREE_TABLEBITS) +
-					(LZX_ALIGNEDTREE_NUM_SYMBOLS * 2)];
+					(LZX_ALIGNEDTREE_NUM_SYMBOLS * 2)]
+					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	u8 alignedtree_lens[LZX_ALIGNEDTREE_NUM_SYMBOLS];
-};
+} _aligned_attribute(DECODE_TABLE_ALIGNMENT);
 
 
 /*

@@ -32,12 +32,23 @@
 
 #include <string.h>
 
+#ifdef __GNUC__
+#  ifdef __SSE2__
+#    define USE_SSE2_FILL
+#    include <emmintrin.h>
+#  else
+#    define USE_LONG_FILL
+#  endif
+#endif
+
 /*
  * make_huffman_decode_table: - Builds a fast huffman decoding table from an
  * array that gives the length of the codeword for each symbol in the alphabet.
  * Originally based on code written by David Tritscher (taken the original LZX
  * decompression code); also heavily modified to add some optimizations used in
- * the zlib code, as well as more comments.
+ * the zlib code, as well as more comments; also added some optimizations to
+ * make filling in the decode table entries faster (may not help significantly
+ * though).
  *
  * @decode_table:	The array in which to create the fast huffman decoding
  * 			table.  It must have a length of at least
@@ -96,14 +107,30 @@
  * pointers by the fact that values less than @num_syms must be symbol values.
  */
 int
-make_huffman_decode_table(u16 * restrict decode_table,  unsigned num_syms,
-			  unsigned table_bits, const u8 * restrict lens,
+make_huffman_decode_table(u16 *decode_table,  unsigned num_syms,
+			  unsigned table_bits, const u8 *lens,
 			  unsigned max_codeword_len)
 {
 	unsigned len_counts[max_codeword_len + 1];
 	u16 sorted_syms[num_syms];
 	unsigned offsets[max_codeword_len + 1];
 	const unsigned table_num_entries = 1 << table_bits;
+	int left;
+	unsigned decode_table_pos;
+	void *decode_table_ptr;
+	unsigned sym_idx;
+	unsigned codeword_len;
+	unsigned stores_per_loop;
+
+#ifdef USE_LONG_FILL
+	const unsigned entries_per_long = sizeof(unsigned long) / sizeof(decode_table[0]);
+#endif
+
+#ifdef USE_SSE2_FILL
+	const unsigned entries_per_xmm = sizeof(__m128i) / sizeof(decode_table[0]);
+#endif
+
+	wimlib_assert2((uintptr_t)decode_table % DECODE_TABLE_ALIGNMENT == 0);
 
 	/* accumulate lengths for codes */
 	for (unsigned i = 0; i <= max_codeword_len; i++)
@@ -115,16 +142,17 @@ make_huffman_decode_table(u16 * restrict decode_table,  unsigned num_syms,
 	}
 
 	/* check for an over-subscribed or incomplete set of lengths */
-	int left = 1;
+	left = 1;
 	for (unsigned len = 1; len <= max_codeword_len; len++) {
 		left <<= 1;
 		left -= len_counts[len];
-		if (left < 0) { /* over-subscribed */
+		if (unlikely(left < 0)) { /* over-subscribed */
 			ERROR("Invalid Huffman code (over-subscribed)");
 			return -1;
 		}
 	}
-	if (left != 0) /* incomplete set */{
+
+	if (unlikely(left != 0)) /* incomplete set */{
 		if (left == 1 << max_codeword_len) {
 			/* Empty code--- okay in XPRESS and LZX */
 			memset(decode_table, 0,
@@ -142,16 +170,10 @@ make_huffman_decode_table(u16 * restrict decode_table,  unsigned num_syms,
 		offsets[len + 1] = offsets[len] + len_counts[len];
 
 	/* Sort symbols primarily by length and secondarily by symbol order.
-	 * This is basically a count-sort over the codeword lengths.
-	 * In the process, calculate the number of symbols that have nonzero
-	 * length and are therefore used in the symbol stream. */
-	unsigned num_used_syms = 0;
-	for (unsigned sym = 0; sym < num_syms; sym++) {
-		if (lens[sym] != 0) {
+	 * This is basically a count-sort over the codeword lengths. */
+	for (unsigned sym = 0; sym < num_syms; sym++)
+		if (lens[sym] != 0)
 			sorted_syms[offsets[lens[sym]]++] = sym;
-			num_used_syms++;
-		}
-	}
 
 	/* Fill entries for codewords short enough for a direct mapping.  We can
 	 * take advantage of the ordering of the codewords, since the Huffman
@@ -160,114 +182,207 @@ make_huffman_decode_table(u16 * restrict decode_table,  unsigned num_syms,
 	 * Furthermore, if we have 2 symbols A and B with the same codeword
 	 * length but symbol A is sorted before symbol B, then then we know that
 	 * the codeword for A numerically precedes the codeword for B. */
-	unsigned decode_table_pos = 0;
-	unsigned i = 0;
+	decode_table_ptr = decode_table;
+	sym_idx = 0;
+	codeword_len = 1;
+#ifdef USE_SSE2_FILL
+	/* Fill in the Huffman decode table entries one 128-bit vector at a
+	 * time.  This is 8 entries per store. */
+	stores_per_loop = (1 << (table_bits - codeword_len)) / entries_per_xmm;
+	for (; stores_per_loop != 0; codeword_len++, stores_per_loop >>= 1) {
+		unsigned end_sym_idx = sym_idx + len_counts[codeword_len];
+		for (; sym_idx < end_sym_idx; sym_idx++) {
+			/* Note: unlike in the 'long' version below, the __m128i
+			 * type already has __attribute__((may_alias)), so using
+			 * it to access the decode table, which is an array of
+			 * unsigned shorts, will not violate strict aliasing. */
+			u16 sym;
+			__m128i v;
+			__m128i *p;
+			unsigned n;
 
-	wimlib_assert2(num_used_syms != 0);
-	while (1) {
-		unsigned sym = sorted_syms[i];
-		unsigned codeword_len = lens[sym];
-		if (codeword_len > table_bits)
-			break;
+			sym = sorted_syms[sym_idx];
 
-		unsigned num_entries = 1 << (table_bits - codeword_len);
+			v = _mm_set1_epi16(sym);
+			p = (__m128i*)decode_table_ptr;
+			n = stores_per_loop;
+			do {
+				*p++ = v;
+			} while (--n);
+			decode_table_ptr = p;
+		}
+	}
+#endif /* USE_SSE2_FILL */
 
-		/* Fill in the Huffman decode table entries one 16-bit
-		 * integer at a time. */
-		do {
-			decode_table[decode_table_pos++] = sym;
-		} while (--num_entries);
+#ifdef USE_LONG_FILL
+	/* Fill in the Huffman decode table entries one 'unsigned long' at a
+	 * time.  On 32-bit systems this is 2 entries per store, while on 64-bit
+	 * systems this is 4 entries per store. */
+	stores_per_loop = (1 << (table_bits - codeword_len)) / entries_per_long;
+	for (; stores_per_loop != 0; codeword_len++, stores_per_loop >>= 1) {
+		unsigned end_sym_idx = sym_idx + len_counts[codeword_len];
+		for (; sym_idx < end_sym_idx; sym_idx++) {
 
-		wimlib_assert2(decode_table_pos <= table_num_entries);
-		if (++i == num_used_syms) {
-			wimlib_assert2(decode_table_pos == table_num_entries);
-			/* No codewords were longer than @table_bits, so the
-			 * table is now entirely filled with the codewords. */
-			return 0;
+			/* Accessing the array of unsigned shorts as unsigned
+			 * longs would violate strict aliasing and would require
+			 * compiling the code with -fno-strict-aliasing to
+			 * guarantee correctness.  To work around this problem,
+			 * use the gcc 'may_alias' extension to define a special
+			 * unsigned long type that may alias any other in-memory
+			 * variable.  */
+			typedef unsigned long __attribute__((may_alias)) aliased_long_t;
+
+			u16 sym;
+			aliased_long_t *p;
+			aliased_long_t v;
+			unsigned n;
+
+			sym = sorted_syms[sym_idx];
+
+			BUILD_BUG_ON(sizeof(aliased_long_t) != 4 &&
+				     sizeof(aliased_long_t) != 8);
+
+			v = sym;
+			if (sizeof(aliased_long_t) >= 4)
+				v |= v << 16;
+			if (sizeof(aliased_long_t) >= 8) {
+				/* This may produce a compiler warning if an
+				 * aliased_long_t is 32 bits, but this won't be
+				 * executed unless an aliased_long_t is at least
+				 * 64 bits anyway. */
+				v |= v << 32;
+			}
+
+			p = (aliased_long_t *)decode_table_ptr;
+			n = stores_per_loop;
+
+			do {
+				*p++ = v;
+			} while (--n);
+			decode_table_ptr = p;
+		}
+	}
+#endif /* USE_LONG_FILL */
+
+	/* Fill in the Huffman decode table entries one 16-bit integer at a
+	 * time. */
+	stores_per_loop = (1 << (table_bits - codeword_len));
+	for (; stores_per_loop != 0; codeword_len++, stores_per_loop >>= 1) {
+		unsigned end_sym_idx = sym_idx + len_counts[codeword_len];
+		for (; sym_idx < end_sym_idx; sym_idx++) {
+			u16 sym;
+			u16 *p;
+			unsigned n;
+
+			sym = sorted_syms[sym_idx];
+
+			p = (u16*)decode_table_ptr;
+			n = stores_per_loop;
+
+			do {
+				*p++ = sym;
+			} while (--n);
+
+			decode_table_ptr = p;
 		}
 	}
 
-	wimlib_assert2(i < num_used_syms);
-	wimlib_assert2(decode_table_pos < table_num_entries);
+	/* If we've filled in the entire table, we are done.  Otherwise, there
+	 * are codes longer than table bits that we need to store in the
+	 * tree-like structure at the end of the table rather than directly in
+	 * the main decode table itself. */
 
-	/* Fill in the remaining entries, which correspond to codes longer than
-	 * @table_bits.
-	 *
-	 * First, zero out the rest of the entries.  This is necessary so that
-	 * the entries appear as "unallocated" in the next part. */
-	{
-		unsigned j = decode_table_pos;
+	decode_table_pos = (u16*)decode_table_ptr - decode_table;
+	if (decode_table_pos != table_num_entries) {
+		unsigned j;
+		unsigned next_free_tree_slot;
+		unsigned cur_codeword;
+
+		wimlib_assert2(decode_table_pos < table_num_entries);
+
+		/* Fill in the remaining entries, which correspond to codes
+		 * longer than @table_bits.
+		 *
+		 * First, zero out the rest of the entries.  This is necessary
+		 * so that the entries appear as "unallocated" in the next part.
+		 * */
+		j = decode_table_pos;
 		do {
 			decode_table[j] = 0;
 		} while (++j != table_num_entries);
-	}
 
-	/* Assert that 2**table_bits is at least num_syms.  If this wasn't the
-	 * case, we wouldn't be able to distinguish pointer entries from symbol
-	 * entries. */
-	wimlib_assert2(table_num_entries >= num_syms);
+		/* Assert that 2**table_bits is at least num_syms.  If this
+		 * wasn't the case, we wouldn't be able to distinguish pointer
+		 * entries from symbol entries. */
+		wimlib_assert2(table_num_entries >= num_syms);
 
-	/* The current Huffman codeword  */
-	unsigned cur_codeword = decode_table_pos;
 
-	/* The tree nodes are allocated starting at decode_table[1 <<
-	 * table_bits].  Remember that the full size of the table, including the
-	 * extra space for the tree nodes, is actually 2**table_bits + 2 *
-	 * num_syms slots, while table_num_entries is only 2**table_Bits. */
-	unsigned next_free_tree_slot = table_num_entries;
+		/* The tree nodes are allocated starting at decode_table[1 <<
+		 * table_bits].  Remember that the full size of the table,
+		 * including the extra space for the tree nodes, is actually
+		 * 2**table_bits + 2 * num_syms slots, while table_num_entries
+		 * is only 2**table_bits. */
+		next_free_tree_slot = table_num_entries;
 
-	/* Go through every codeword of length greater than @table_bits,
-	 * primarily in order of codeword length and secondarily in order of
-	 * symbol. */
-	unsigned prev_codeword_len = table_bits;
-	do {
-		unsigned sym = sorted_syms[i];
-		unsigned codeword_len = lens[sym];
-		unsigned extra_bits = codeword_len - table_bits;
+		/* The current Huffman codeword  */
+		cur_codeword = decode_table_pos << 1;
 
-		cur_codeword <<= (codeword_len - prev_codeword_len);
-		prev_codeword_len = codeword_len;
+		/* Go through every codeword of length greater than @table_bits,
+		 * primarily in order of codeword length and secondarily in
+		 * order of symbol. */
+		wimlib_assert2(codeword_len == table_bits + 1);
+		for (; codeword_len <= max_codeword_len; codeword_len++, cur_codeword <<= 1)
+		{
+			unsigned end_sym_idx = sym_idx + len_counts[codeword_len];
+			for (; sym_idx < end_sym_idx; sym_idx++, cur_codeword++) {
+				unsigned sym = sorted_syms[sym_idx];
+				unsigned extra_bits = codeword_len - table_bits;
 
-		/* index of the current node; find it from the prefix of the
-		 * current Huffman codeword. */
-		unsigned node_idx = cur_codeword >> extra_bits;
-		wimlib_assert2(node_idx < table_num_entries);
+				/* index of the current node; find it from the
+				 * prefix of the current Huffman codeword. */
+				unsigned node_idx = cur_codeword >> extra_bits;
+				wimlib_assert2(node_idx < table_num_entries);
 
-		/* Go through each bit of the current Huffman codeword beyond
-		 * the prefix of length @table_bits and walk the tree,
-		 * allocating any slots that have not yet been allocated. */
-		do {
+				/* Go through each bit of the current Huffman
+				 * codeword beyond the prefix of length
+				 * @table_bits and walk the tree, allocating any
+				 * slots that have not yet been allocated. */
+				do {
 
-			/* If the current tree node points to nowhere
-			 * but we need to follow it, allocate a new node
-			 * for it to point to. */
-			if (decode_table[node_idx] == 0) {
-				decode_table[node_idx] = next_free_tree_slot;
-				decode_table[next_free_tree_slot++] = 0;
-				decode_table[next_free_tree_slot++] = 0;
-				wimlib_assert2(next_free_tree_slot <=
-					       table_num_entries + 2 * num_syms);
+					/* If the current tree node points to
+					 * nowhere but we need to follow it,
+					 * allocate a new node for it to point
+					 * to. */
+					if (decode_table[node_idx] == 0) {
+						decode_table[node_idx] = next_free_tree_slot;
+						decode_table[next_free_tree_slot++] = 0;
+						decode_table[next_free_tree_slot++] = 0;
+						wimlib_assert2(next_free_tree_slot <=
+							       table_num_entries + 2 * num_syms);
+					}
+
+					/* Set node_idx to left child */
+					node_idx = decode_table[node_idx];
+
+					/* Is the next bit 0 or 1? If 0, go left
+					 * (already done).  If 1, go right by
+					 * incrementing node_idx. */
+					--extra_bits;
+					node_idx += (cur_codeword >> extra_bits) & 1;
+				} while (extra_bits != 0);
+
+				/* node_idx is now the index of the leaf entry
+				 * into which the actual symbol will go. */
+				decode_table[node_idx] = sym;
+
+				/* Note: cur_codeword is always incremented at
+				 * the end of this loop because this is how
+				 * canonical Huffman codes are generated (add 1
+				 * for each code, then left shift whenever the
+				 * code length increases) */
 			}
-
-			/* Set node_idx to left child */
-			node_idx = decode_table[node_idx];
-
-			/* Is the next bit 0 or 1? If 0, go left (already done).
-			 * If 1, go right by incrementing node_idx. */
-			--extra_bits;
-			node_idx += (cur_codeword >> extra_bits) & 1;
-		} while (extra_bits != 0);
-
-		/* node_idx is now the index of the leaf entry into which the
-		 * actual symbol will go. */
-		decode_table[node_idx] = sym;
-
-		/* cur_codeword is always incremented because this is
-		 * how canonical Huffman codes are generated (add 1 for
-		 * each code, then left shift whenever the code length
-		 * increases) */
-		cur_codeword++;
-	} while (++i != num_used_syms);
+		}
+	}
 	return 0;
 }
 

@@ -242,4 +242,6 @@ make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
 			  unsigned num_bits, const u8 lengths[],
 			  unsigned max_codeword_len);
 
+#define DECODE_TABLE_ALIGNMENT 16
+
 #endif /* _WIMLIB_DECOMPRESS_H */
