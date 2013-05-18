@@ -106,8 +106,7 @@ win32_extract_try_rpfix(u8 *rpbuf,
 	p = new_target;
 	if (stripped_nchars == 6) {
 		/* Include \??\ prefix if it was present before */
-		wmemcpy(p, L"\\??\\", 4);
-		p += 4;
+		p = wmempcpy(p, L"\\??\\", 4);
 	}
 
 	/* Print name excludes the \??\ if present. */

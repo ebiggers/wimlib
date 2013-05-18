@@ -154,9 +154,10 @@ win32_encrypted_export_cb(unsigned char *_data, void *_ctx, unsigned long len)
 		}
 	} else {
 		size_t len_to_copy = min(len, ctx->bytes_remaining);
-		memcpy(ctx->read_prefix_ctx_or_buf, data, len_to_copy);
+		ctx->read_prefix_ctx_or_buf = mempcpy(ctx->read_prefix_ctx_or_buf,
+						      data,
+						      len_to_copy);
 		ctx->bytes_remaining -= len_to_copy;
-		ctx->read_prefix_ctx_or_buf += len_to_copy;
 	}
 	return ERROR_SUCCESS;
 }

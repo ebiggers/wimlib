@@ -568,13 +568,12 @@ sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 	new = MALLOC(sizeof(*new));
 	if (!new)
 		goto out;
-	descr_copy = MALLOC(size);
+
+	descr_copy = memdup(descriptor, size);
 	if (!descr_copy)
 		goto out_free_node;
 
 	sd = sd_set->sd;
-
-	memcpy(descr_copy, descriptor, size);
 	new->security_id = sd->num_entries;
 	copy_hash(new->hash, hash);
 
