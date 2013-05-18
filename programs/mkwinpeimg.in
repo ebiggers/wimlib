@@ -78,9 +78,6 @@ stat_fail() {
 
 
 cleanup() {
-	if mountpoint -q "$mnt_dir" ; then
-		@IMAGEX_PROGNAME@ unmount "$mnt_dir"
-	fi
 	rm -rf "$tmp_dir"
 }
 
@@ -374,47 +371,51 @@ get_boot_wim() {
 	fi
 }
 
+# Make modifications to the WIM.
 modify_boot_wim() {
 	boot_wim="$1"
-	mnt_dir="$2"
+	tmp_dir="$2"
 
-	# Make modifications to the WIM.
-	stat_busy "Mounting "$1" read-write"
-
-	mkdir -p "$mnt_dir" || stat_fail
-	"$imagex" mountrw "$boot_wim" "$mnt_dir"|| stat_fail
-
-	stat_done
+	exec 3>"$tmp_dir/__mkwinpeimg.update.cmds"
 
 	if [ -n "$remove_setup" ]; then
 		stat_busy "Renaming setup.exe to prevent it from bothering us"
-		mv "$mnt_dir"/setup.exe{,.bkup} || stat_fail
-		mv "$mnt_dir"/sources/setup.exe{,.bkup} || stat_fail
+		cat 1>&3 <<- EOF
+			rename /setup.exe /setup.exe.orig
+			rename /sources/setup.exe /sources/setup.exe.orig
+		EOF
 		stat_done
 	fi
 
 	if [ -n "$start_script" ]; then
-		stat_busy "Setting \"$start_script\" as the script to be executed"\
-					"when Windows PE boots"
-		cp "$start_script" "$mnt_dir"|| stat_fail
-		cat > "$mnt_dir/Windows/System32/winpeshl.ini" << EOF
-[LaunchApps]
-%SYSTEMDRIVE%\\$start_script
-EOF
+		stat_busy "Setting \"$start_script\" as the script to be executed when Windows PE boots"
+		cp "$start_script" "$tmp_dir/$start_script"
+		cat > "$tmp_dir/__mkwinpeimg.winpeshl.ini" <<- EOF
+			[LaunchApps]
+			%SYSTEMDRIVE%\\$start_script
+		EOF
+		cat 1>&3 <<- EOF
+			add '$tmp_dir/$start_script' '/$start_script'
+			delete --force /Windows/System32/winpeshl.ini
+			add '$tmp_dir/__mkwinpeimg.winpeshl.ini' /Windows/System32/winpeshl.ini
+		EOF
 		stat_done
 	fi
 
 	if [ -n "$overlay" ]; then
 		stat_busy "Overlaying \"$overlay\" on the Windows PE filesystem"
-		cp -r "$overlay"/* "$mnt_dir"  || stat_fail
+		cat 1>&3 <<- EOF
+			add '$overlay' /
+		EOF
 		stat_done
 	fi
 
-	stat_busy "Rebuilding WIM with changes made"
-	"$imagex" unmount --commit "$mnt_dir" || stat_fail
-	stat_done
+	exec 3>&-
 
-	rmdir "$mnt_dir"
+	stat_busy "Rebuilding WIM with changes made"
+	"$imagex" update "$boot_wim" --rebuild \
+		< "$tmp_dir/__mkwinpeimg.update.cmds" > /dev/null || stat_fail
+	stat_done
 }
 
 make_iso_img() {
@@ -444,12 +445,12 @@ make_disk_img() {
 	dd if=/dev/zero of="$image" count=$(( (image_size + 4095) / 4096)) \
 			bs=4096 &> /dev/null
 
-	cat > "$mtool_conf" << EOF
-MTOOLS_SKIP_CHECK=1
-MTOOLS_FAT_COMPATIBILITY=1
-drive s:
-	file="$image"
-EOF
+	cat > "$mtool_conf" <<- EOF
+		MTOOLS_SKIP_CHECK=1
+		MTOOLS_FAT_COMPATIBILITY=1
+		drive s:
+			file="$image"
+	EOF
 
 	export MTOOLSRC="$mtool_conf"
 
@@ -458,19 +459,18 @@ EOF
 
 	syslinux --install "$image"
 	mcopy /usr/lib/syslinux/chain.c32 s:
-	mcopy - 's:syslinux.cfg' << EOF
-	DEFAULT winpe
-	LABEL	winpe
-	COM32	chain.c32
-	APPEND	ntldr=/bootmgr
-EOF
+	mcopy - 's:syslinux.cfg' <<- EOF
+		DEFAULT winpe
+		LABEL	winpe
+		COM32	chain.c32
+		APPEND	ntldr=/bootmgr
+	EOF
 	rm -f "$mtool_conf"
 	stat_done
 }
 
 calc_columns
 tmp_dir="$(mktemp -d)"
-mnt_dir="$tmp_dir"/.boot.wim.mount
 process_command_line "$@"
 if [ -z "$waik_dir" ]; then
 	find_windows_dir
@@ -495,7 +495,7 @@ fi
 get_boot_wim "$boot_wim"
 
 if [ -n "$modify_wim" ]; then
-	modify_boot_wim "$boot_wim" "$mnt_dir"
+	modify_boot_wim "$boot_wim" "$tmp_dir"
 fi
 
 if [ $make = iso ]; then
