@@ -215,7 +215,8 @@ out_invalid:
  */
 int
 make_reparse_buffer(const struct reparse_data * restrict rpdata,
-		    u8 * restrict rpbuf)
+		    u8 * restrict rpbuf,
+		    u16 * restrict rpbuflen_ret)
 {
 	struct reparse_buffer_disk *rpbuf_disk =
 		(struct reparse_buffer_disk*)rpbuf;
@@ -252,6 +253,7 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
 	*(utf16lechar*)data = cpu_to_le16(0);
 	data += 2;
 	rpbuf_disk->rpdatalen = cpu_to_le16(data - rpbuf - 8);
+	*rpbuflen_ret = data - rpbuf;
 	return 0;
 }
 
@@ -399,6 +401,7 @@ wim_inode_set_symlink(struct wim_inode *inode,
 	utf16lechar *name_utf16le;
 	size_t name_utf16le_nbytes;
 	int ret;
+	u16 rpbuflen;
 
 	DEBUG("Creating reparse point data buffer for UNIX "
 	      "symlink target \"%s\"", target);
@@ -481,11 +484,11 @@ wim_inode_set_symlink(struct wim_inode *inode,
 		rpdata.rpflags = SYMBOLIC_LINK_RELATIVE;
 	}
 
-	ret = make_reparse_buffer(&rpdata, (u8*)&rpbuf_disk);
+	ret = make_reparse_buffer(&rpdata, (u8*)&rpbuf_disk, &rpbuflen);
 	if (ret == 0) {
 		ret = inode_set_unnamed_stream(inode,
 					       (u8*)&rpbuf_disk + 8,
-					       le16_to_cpu(rpbuf_disk.rpdatalen),
+					       rpbuflen - 8,
 					       lookup_table);
 	}
 	FREE(name_utf16le);

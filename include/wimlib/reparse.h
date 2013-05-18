@@ -58,7 +58,8 @@ parse_reparse_data(const u8 * restrict rpbuf, u16 rpbuflen,
 
 extern int
 make_reparse_buffer(const struct reparse_data * restrict rpdata,
-		    u8 * restrict rpbuf);
+		    u8 * restrict rpbuf,
+		    u16 * restrict rpbuflen_ret);
 
 extern int
 wim_inode_get_reparse_data(const struct wim_inode * restrict inode,

@@ -57,6 +57,7 @@ L"If you are not running this program as the administrator, you may\n"
 
 static int
 win32_extract_try_rpfix(u8 *rpbuf,
+			u16 *rpbuflen_p,
 			const wchar_t *extract_root_realpath,
 			unsigned extract_root_realpath_nchars)
 {
@@ -74,8 +75,7 @@ win32_extract_try_rpfix(u8 *rpbuf,
 	size_t new_print_name_nchars;
 	utf16lechar *p;
 
-	ret = parse_reparse_data(rpbuf, 8 + le16_to_cpu(*(u16*)(rpbuf + 4)),
-				 &rpdata);
+	ret = parse_reparse_data(rpbuf, *rpbuflen_p, &rpdata);
 	if (ret)
 		return ret;
 
@@ -119,12 +119,10 @@ win32_extract_try_rpfix(u8 *rpbuf,
 		*p++ = extract_root_realpath[1];
 	}
 	/* Copy the rest of the extract root */
-	wmemcpy(p, extract_root_realpath + 2, extract_root_realpath_nchars - 2);
-	p += extract_root_realpath_nchars - 2;
+	p = wmempcpy(p, extract_root_realpath + 2, extract_root_realpath_nchars - 2);
 
 	/* Append the stripped target */
-	wmemcpy(p, stripped_target, stripped_target_nchars);
-	p += stripped_target_nchars;
+	p = wmempcpy(p, stripped_target, stripped_target_nchars);
 	new_target_nchars = p - new_target;
 	new_print_name_nchars = p - new_print_name;
 
@@ -138,7 +136,7 @@ win32_extract_try_rpfix(u8 *rpbuf,
 	rpdata.substitute_name_nbytes = new_target_nchars * sizeof(utf16lechar);
 	rpdata.print_name = new_print_name;
 	rpdata.print_name_nbytes = new_print_name_nchars * sizeof(utf16lechar);
-	return make_reparse_buffer(&rpdata, rpbuf);
+	return make_reparse_buffer(&rpdata, rpbuf, rpbuflen_p);
 }
 
 /* Wrapper around the FSCTL_SET_REPARSE_POINT ioctl to set the reparse data on
@@ -151,7 +149,7 @@ win32_set_reparse_data(HANDLE h,
 		       struct apply_args *args)
 {
 	int ret;
-	u8 rpbuf[REPARSE_POINT_MAX_SIZE];
+	u8 rpbuf[REPARSE_POINT_MAX_SIZE] _aligned_attribute(8);
 	DWORD bytesReturned;
 	u16 rpbuflen;
 
@@ -167,6 +165,7 @@ win32_set_reparse_data(HANDLE h,
 	    !inode->i_not_rpfixed)
 	{
 		ret = win32_extract_try_rpfix(rpbuf,
+					      &rpbuflen,
 					      args->target_realpath,
 					      args->target_realpath_len);
 		if (ret)

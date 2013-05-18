@@ -506,12 +506,10 @@ win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 			const wchar_t *path)
 {
 	struct reparse_data rpdata;
-	DWORD rpbuflen;
 	int ret;
 	enum rp_status rp_status;
 
-	rpbuflen = *rpbuflen_p;
-	ret = parse_reparse_data(rpbuf, rpbuflen, &rpdata);
+	ret = parse_reparse_data(rpbuf, *rpbuflen_p, &rpdata);
 	if (ret)
 		return -ret;
 
@@ -535,7 +533,7 @@ win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 			rpdata.print_name += 4;
 			rpdata.print_name_nbytes -= 8;
 		}
-		ret = make_reparse_buffer(&rpdata, rpbuf);
+		ret = make_reparse_buffer(&rpdata, rpbuf, rpbuflen_p);
 		if (ret == 0)
 			ret = rp_status;
 		else
