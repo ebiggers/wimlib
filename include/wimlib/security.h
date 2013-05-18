@@ -26,7 +26,7 @@ struct wim_security_data {
 
 	/* Array of sizes of the descriptors, in bytes, in the array
 	 * @descriptors. */
-	size_t *sizes;
+	u64 *sizes;
 
 	/* Array of pointers to the security descriptors in the
 	 * SECURITY_DESCRIPTOR_RELATIVE format. */

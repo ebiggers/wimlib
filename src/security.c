@@ -146,7 +146,7 @@ struct wim_security_data_disk {
  * the validation in libntfs-3g.
  */
 static void
-empty_sacl_fixup(SECURITY_DESCRIPTOR_RELATIVE *descr, size_t *size_p)
+empty_sacl_fixup(SECURITY_DESCRIPTOR_RELATIVE *descr, u64 *size_p)
 {
 	/* No-op if no NTFS-3g support, or if NTFS-3g is version 2013 or later
 	 * */
