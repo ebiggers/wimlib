@@ -10,11 +10,11 @@ srcdir="$(cd $srcdir; pwd)"
 
 TEST_SUBDIR=tmpdir_test-imagex-mount
 
-if [ ! -r /dev/fuse ]; then
-	echo "WARNING: /dev/fuse is not readable."
-	echo "Skipping WIM mounting checks"
-	exit 0
-fi
+skip_test() {
+	cd ..
+	cleanup
+	exit 77
+}
 
 imagex_unmount() {
 	# Give the --lazy flag to work around a problem testing on Ubuntu and
@@ -47,6 +47,12 @@ init() {
 	mkdir tmp.empty tmp.mnt tmp.apply tmp.orig
 	imagex capture tmp.empty empty.wim --norpfix
 }
+
+if [ ! -r /dev/fuse ]; then
+	echo "WARNING: /dev/fuse is not readable."
+	echo "Skipping WIM mounting checks"
+	skip_test
+fi
 
 cleanup
 mkdir $TEST_SUBDIR
