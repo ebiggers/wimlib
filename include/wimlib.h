@@ -779,6 +779,9 @@ struct wimlib_capture_config {
 /** See ::WIMLIB_WRITE_FLAG_RECOMPRESS */
 #define WIMLIB_UNMOUNT_FLAG_RECOMPRESS			0x00000008
 
+/** Do a "lazy" unmount (detach filesystem immediately, even if busy) */
+#define WIMLIB_UNMOUNT_FLAG_LAZY			0x00000010
+
 /******************************
  * WIMLIB_WRITE_FLAG_*
  ******************************/

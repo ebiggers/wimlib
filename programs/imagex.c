@@ -168,7 +168,7 @@ IMAGEX_PROGNAME" split WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n"
 ),
 [UNMOUNT] =
 T(
-IMAGEX_PROGNAME" unmount DIRECTORY [--commit] [--check] [--rebuild]\n"
+IMAGEX_PROGNAME" unmount DIRECTORY [--commit] [--check] [--rebuild] [--lazy]\n"
 ),
 [UPDATE] =
 T(
@@ -208,6 +208,7 @@ enum {
 	IMAGEX_FORCE_OPTION,
 	IMAGEX_HARDLINK_OPTION,
 	IMAGEX_HEADER_OPTION,
+	IMAGEX_LAZY_OPTION,
 	IMAGEX_LOOKUP_TABLE_OPTION,
 	IMAGEX_METADATA_OPTION,
 	IMAGEX_NORPFIX_OPTION,
@@ -335,6 +336,7 @@ static const struct option unmount_options[] = {
 	{T("commit"),  no_argument, NULL, IMAGEX_COMMIT_OPTION},
 	{T("check"),   no_argument, NULL, IMAGEX_CHECK_OPTION},
 	{T("rebuild"), no_argument, NULL, IMAGEX_REBUILD_OPTION},
+	{T("lazy"),    no_argument, NULL, IMAGEX_LAZY_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -2887,6 +2889,9 @@ imagex_unmount(int argc, tchar **argv)
 			break;
 		case IMAGEX_REBUILD_OPTION:
 			unmount_flags |= WIMLIB_UNMOUNT_FLAG_REBUILD;
+			break;
+		case IMAGEX_LAZY_OPTION:
+			unmount_flags |= WIMLIB_UNMOUNT_FLAG_LAZY;
 			break;
 		default:
 			usage(UNMOUNT);

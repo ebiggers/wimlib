@@ -1444,7 +1444,7 @@ message_loop(mqd_t mq,
  *  daemon to finish writing the WIM file.
  */
 static int
-execute_fusermount(const char *dir)
+execute_fusermount(const char *dir, bool lazy)
 {
 	pid_t pid;
 	int ret;
@@ -1457,7 +1457,15 @@ execute_fusermount(const char *dir)
 	}
 	if (pid == 0) {
 		/* Child */
-		execlp("fusermount", "fusermount", "-u", dir, NULL);
+		char *argv[10];
+		char **argp = argv;
+		*argp++ = "fusermount";
+		if (lazy)
+			*argp++ = "-z";
+		*argp++ = "-u";
+		*argp++ = (char*)dir;
+		*argp = NULL;
+		execvp("fusermount", argv);
 		ERROR_WITH_ERRNO("Failed to execute `fusermount'");
 		exit(WIMLIB_ERR_FUSERMOUNT);
 	}
@@ -1495,7 +1503,14 @@ execute_fusermount(const char *dir)
 	}
 	if (pid == 0) {
 		/* Child */
-		execlp("umount", "umount", dir, NULL);
+		char *argv[10];
+		char **argp = argv;
+		*argp++ = "umount";
+		if (lazy)
+			*argp++ = "-l";
+		*argp++ = (char*)dir;
+		*argp = NULL;
+		execvp("umount", argv);
 		ERROR_WITH_ERRNO("Failed to execute `umount'");
 		exit(WIMLIB_ERR_FUSERMOUNT);
 	}
@@ -2597,7 +2612,7 @@ wimlib_unmount_image(const char *dir, int unmount_flags,
 	if (ret != 0)
 		goto out_close_message_queues;
 
-	ret = execute_fusermount(dir);
+	ret = execute_fusermount(dir, (unmount_flags & WIMLIB_UNMOUNT_FLAG_LAZY) != 0);
 	if (ret != 0)
 		goto out_close_message_queues;
 

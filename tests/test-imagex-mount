@@ -16,6 +16,15 @@ if [ ! -r /dev/fuse ]; then
 	exit 0
 fi
 
+imagex_unmount() {
+	# Give the --lazy flag to work around a problem testing on Ubuntu and
+	# other OS's running Gnome, as they have a daemon
+	# "gvfs-gdu-volume-monitor" that apparently likes to randomly read
+	# filesystems that get mounted, thereby stopping them from being
+	# unmounted.
+	imagex unmount "$@" --lazy
+}
+
 cleanup() {
 	fusermount -u $TEST_SUBDIR/tmp &> /dev/null || true
 	fusermount -u $TEST_SUBDIR/tmp.mnt &> /dev/null || true
@@ -85,14 +94,14 @@ for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
 		error "Recursive diff of read-only mounted WIM with original directory failed"
 	fi
 	echo "Testing unmount of read-only filesystem"
-	if ! imagex unmount tmp; then
+	if ! imagex_unmount tmp; then
 		error "Unmounting read-only WIM failed"
 	fi
 	echo "Testing unmount of read-only filesystem with --commit given"
 	if ! imagex mount dir.wim dir tmp; then
 		error "Failed to re-mount WIM read-only"
 	fi
-	if ! imagex unmount tmp --commit; then
+	if ! imagex_unmount tmp --commit; then
 		error "Failed to unmount read-only WIM with --commit flag (should be ignored)"
 	fi
 	rm -rf tmp dir.wim
@@ -108,14 +117,14 @@ if ! imagex mountrw dir.wim dir tmp; then
 	error "Failed to mount test WIM read-write"
 fi
 echo "Testing unmounting WIM unmodified"
-if ! imagex unmount tmp; then
+if ! imagex_unmount tmp; then
 	error "Failed to unmount test WIM unmodified"
 fi
 echo "Testing unmounting WIM unmodified with --commit and --check"
 if ! imagex mountrw dir.wim dir tmp; then
 	error "Failed to re-mount test WIM read-write"
 fi
-if ! imagex unmount tmp --commit --check; then
+if ! imagex_unmount tmp --commit --check; then
 	error "Failed to unmount read-write mounted WIM with changes commited (no changes made)"
 fi
 echo "Testing removing file from mounted WIM"
@@ -156,7 +165,7 @@ if ! diff -q tmp/newdir/zeroes1 tmp/newdir/zeroes2; then
 	error "New files in mounted WIM not made correctly"
 fi
 echo "Unmounting WIM with changes committed and --check"
-if ! imagex unmount tmp --commit --check; then
+if ! imagex_unmount tmp --commit --check; then
 	error "Failed to unmount read-write mounted WIM"
 fi
 if test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" != "yes"; then
@@ -239,7 +248,7 @@ do_test() {
 
 	# Unmount the WIM, apply it, and diff the original tree with the applied
 	# tree
-	if ! imagex unmount tmp.mnt --commit; then
+	if ! imagex_unmount tmp.mnt --commit; then
 		error "Failed to unmount WIM mounted read-write"
 	fi
 	if ! imagex apply test.wim tmp.apply; then
