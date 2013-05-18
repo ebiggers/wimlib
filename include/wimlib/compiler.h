@@ -21,6 +21,7 @@
 #	define _aligned_attribute(size) __attribute__((aligned(size)))
 #	define likely(x) __builtin_expect(!!(x), 1)
 #	define unlikely(x) __builtin_expect(!!(x), 0)
+#	define inline inline __attribute__((always_inline))
 #else
 #	define WIMLIBAPI
 #	define _always_inline_attribute inline
