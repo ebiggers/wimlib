@@ -46,9 +46,26 @@ AM_PROG_CC_C_O
 AC_CANONICAL_HOST
 
 AC_CHECK_FUNCS([utimensat lutimes utime flock])
-AC_CHECK_HEADERS([endian.h byteswap.h sys/byteorder.h sys/endian.h \
-		  sys/param.h machine/endian.h alloca.h stdlib.h stdarg.h \
-		  errno.h attr/xattr.h utime.h sys/file.h glob.h])
+
+# Note: some of the following header checks are only to define the appropriate
+# HAVE_*_H macro so that the NTFS-3g headers don't get confused and try to skip
+# including certain headers.
+AC_CHECK_HEADERS([alloca.h		\
+		  attr/xattr.h		\
+		  byteswap.h		\
+		  endian.h		\
+		  errno.h		\
+		  glob.h		\
+		  machine/endian.h	\
+		  stdarg.h		\
+		  stdlib.h		\
+		  sys/byteorder.h	\
+		  sys/endian.h		\
+		  sys/file.h		\
+		  sys/param.h		\
+		  sys/times.h		\
+		  time.h		\
+		  utime.h])
 
 AC_CHECK_MEMBER([struct stat.st_mtim],
 		[AC_DEFINE([HAVE_STAT_NANOSECOND_PRECISION], [1],

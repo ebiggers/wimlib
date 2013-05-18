@@ -724,12 +724,22 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 
 	DEBUG("Mounting NTFS volume `%s' read-only", device);
 
-#if defined(NTFS_MNT_RDONLY)
+/* NTFS-3g 2013 renamed the "read-only" mount flag from MS_RDONLY to
+ * NTFS_MNT_RDONLY.
+ *
+ * Unfortunately we can't check for defined(NTFS_MNT_RDONLY) because
+ * NTFS_MNT_RDONLY is an enumerated constant.  Also, the NTFS-3g headers don't
+ * seem to contain any explicit version information.  So we have to rely on a
+ * test done at configure time to detect whether NTFS_MNT_RDONLY should be used.
+ * */
+#ifdef HAVE_NTFS_MNT_RDONLY
 	/* NTFS-3g 2013 */
 	vol = ntfs_mount(device, NTFS_MNT_RDONLY);
 #elif defined(MS_RDONLY)
 	/* NTFS-3g 2011, 2012 */
 	vol = ntfs_mount(device, MS_RDONLY);
+#else
+  #error "Can't find NTFS_MNT_RDONLY or MS_RDONLY flags"
 #endif
 	if (!vol) {
 		ERROR_WITH_ERRNO("Failed to mount NTFS volume `%s' read-only",
