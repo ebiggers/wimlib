@@ -487,11 +487,12 @@ compare_utf16le_names_case_sensitive(const utf16lechar *name1, size_t nbytes1,
 				     const utf16lechar *name2, size_t nbytes2)
 {
 	/* Return the result if the strings differ up to their minimum length.
-	 * Note that we cannot strcmp() or strncmp() here, as the strings are in
-	 * UTF-16LE format. */
+	 * Note that we cannot use strcmp() or strncmp() here, as the strings
+	 * are in UTF-16LE format. */
 	int result = memcmp(name1, name2, min(nbytes1, nbytes2));
 	if (result)
 		return result;
+
 	/* The strings are the same up to their minimum length, so return a
 	 * result based on their lengths. */
 	if (nbytes1 < nbytes2)
@@ -508,10 +509,13 @@ static int
 compare_utf16le_names_case_insensitive(const utf16lechar *name1, size_t nbytes1,
 				       const utf16lechar *name2, size_t nbytes2)
 {
-	/* Only call _wcsicmp() if both strings are of nonzero length; otherwise
-	 * one could be NULL. */
-	if (nbytes1 && nbytes2)
-		return _wcsicmp((const wchar_t*)name1, (const wchar_t*)name2);
+	/* Return the result if the strings differ up to their minimum length.
+	 * */
+	int result = _wcsnicmp((const wchar_t*)name1, (const wchar_t*)name2,
+			       min(nbytes1 / 2, nbytes2 / 2));
+	if (result)
+		return result;
+
 	/* The strings are the same up to their minimum length, so return a
 	 * result based on their lengths. */
 	if (nbytes1 < nbytes2)
