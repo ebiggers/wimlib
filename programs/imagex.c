@@ -1519,7 +1519,7 @@ imagex_apply(int argc, tchar **argv)
 	num_images = wimlib_get_num_images(w);
 	if (argc == 2 && num_images != 1) {
 		imagex_error(T("\"%"TS"\" contains %d images; Please select one "
-			       "(or all)"), wimfile, num_images);
+			       "(or all)."), wimfile, num_images);
 		usage(APPLY);
 		ret = -1;
 		goto out;
@@ -2934,6 +2934,7 @@ imagex_update(int argc, tchar **argv)
 	size_t cmd_file_nchars;
 	struct wimlib_update_command *cmds;
 	size_t num_cmds;
+	int num_images;
 
 	const tchar *config_file = NULL;
 	tchar *config_str;
@@ -3016,6 +3017,15 @@ imagex_update(int argc, tchar **argv)
 						wimfile);
 	if (ret)
 		goto out_wimlib_free;
+
+	num_images = wimlib_get_num_images(wim);
+	if (argc == 1 && num_images != 1) {
+		imagex_error(T("\"%"TS"\" contains %d images; Please select one."),
+			     wimfile, num_images);
+		usage(UPDATE);
+		ret = -1;
+		goto out_wimlib_free;
+	}
 
 	/* Parse capture configuration file if specified */
 	if (config_file) {
