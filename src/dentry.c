@@ -134,16 +134,6 @@ dentry_correct_length_unaligned(const struct wim_dentry *dentry)
 						dentry->short_name_nbytes);
 }
 
-/* Return %true iff the alternate data stream entry @entry has the UTF-16LE
- * stream name @name that has length @name_nbytes bytes. */
-static inline bool
-ads_entry_has_name(const struct wim_ads_entry *entry,
-		   const utf16lechar *name, size_t name_nbytes)
-{
-	return entry->stream_name_nbytes == name_nbytes &&
-	       memcmp(entry->stream_name, name, name_nbytes) == 0;
-}
-
 /* Duplicates a string of system-dependent encoding into a UTF-16LE string and
  * returns the string and its length, in bytes, in the pointer arguments.  Frees
  * any existing string at the return location before overwriting it. */
@@ -489,24 +479,95 @@ calculate_subdir_offsets(struct wim_dentry *dentry, u64 *subdir_offset_p)
 	}
 }
 
+/* UNIX: Case-sensitive UTF-16LE dentry or stream name comparison.  We call this
+ * on Windows as well to distinguish true duplicates from names differing by
+ * case only. */
 static int
-compare_utf16le_names(const utf16lechar *name1, size_t nbytes1,
-		      const utf16lechar *name2, size_t nbytes2)
+compare_utf16le_names_case_sensitive(const utf16lechar *name1, size_t nbytes1,
+				     const utf16lechar *name2, size_t nbytes2)
 {
+	/* Return the result if the strings differ up to their minimum length.
+	 * Note that we cannot strcmp() or strncmp() here, as the strings are in
+	 * UTF-16LE format. */
 	int result = memcmp(name1, name2, min(nbytes1, nbytes2));
 	if (result)
 		return result;
+	/* The strings are the same up to their minimum length, so return a
+	 * result based on their lengths. */
+	if (nbytes1 < nbytes2)
+		return -1;
+	else if (nbytes1 > nbytes2)
+		return 1;
 	else
-		return (int)nbytes1 - (int)nbytes2;
+		return 0;
 }
+
+#ifdef __WIN32__
+/* Windoze: Case-insensitive UTF-16LE dentry or stream name comparison */
+static int
+compare_utf16le_names_case_insensitive(const utf16lechar *name1, size_t nbytes1,
+				       const utf16lechar *name2, size_t nbytes2)
+{
+	/* Only call _wcsicmp() if both strings are of nonzero length; otherwise
+	 * one could be NULL. */
+	if (nbytes1 && nbytes2)
+		return _wcsicmp((const wchar_t*)name1, (const wchar_t*)name2);
+	/* The strings are the same up to their minimum length, so return a
+	 * result based on their lengths. */
+	if (nbytes1 < nbytes2)
+		return -1;
+	else if (nbytes1 > nbytes2)
+		return 1;
+	else
+		return 0;
+}
+#endif /* __WIN32__ */
+
+#ifdef __WIN32__
+#  define compare_utf16le_names compare_utf16le_names_case_insensitive
+#else
+#  define compare_utf16le_names compare_utf16le_names_case_sensitive
+#endif
+
+
+#ifdef __WIN32__
+static int
+dentry_compare_names_case_insensitive(const struct wim_dentry *d1,
+				      const struct wim_dentry *d2)
+{
+	return compare_utf16le_names_case_insensitive(d1->file_name,
+						      d1->file_name_nbytes,
+						      d2->file_name,
+						      d2->file_name_nbytes);
+}
+#endif /* __WIN32__ */
 
 static int
-dentry_compare_names(const struct wim_dentry *d1, const struct wim_dentry *d2)
+dentry_compare_names_case_sensitive(const struct wim_dentry *d1,
+				    const struct wim_dentry *d2)
 {
-	return compare_utf16le_names(d1->file_name, d1->file_name_nbytes,
-				     d2->file_name, d2->file_name_nbytes);
+	return compare_utf16le_names_case_sensitive(d1->file_name,
+						    d1->file_name_nbytes,
+						    d2->file_name,
+						    d2->file_name_nbytes);
 }
 
+#ifdef __WIN32__
+#  define dentry_compare_names dentry_compare_names_case_insensitive
+#else
+#  define dentry_compare_names dentry_compare_names_case_sensitive
+#endif
+
+/* Return %true iff the alternate data stream entry @entry has the UTF-16LE
+ * stream name @name that has length @name_nbytes bytes. */
+static inline bool
+ads_entry_has_name(const struct wim_ads_entry *entry,
+		   const utf16lechar *name, size_t name_nbytes)
+{
+	return !compare_utf16le_names(name, name_nbytes,
+				      entry->stream_name,
+				      entry->stream_name_nbytes);
+}
 
 struct wim_dentry *
 get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
@@ -1022,7 +1083,9 @@ free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
  * @parent: The dentry that will be the parent of @child.
  * @child: The dentry to link.
  *
- * Returns non-NULL if a duplicate dentry was detected.
+ * Returns NULL if successful.  If @parent already contains a dentry with the
+ * same name as @child (see compare_utf16le_names() for what names are
+ * considered the "same"), the pointer to this duplicate dentry is returned.
  */
 struct wim_dentry *
 dentry_add_child(struct wim_dentry * restrict parent,
@@ -1732,6 +1795,18 @@ out:
 	return ret;
 }
 
+static const tchar *
+dentry_get_file_type_string(const struct wim_dentry *dentry)
+{
+	const struct wim_inode *inode = dentry->d_inode;
+	if (inode_is_directory(inode))
+		return T("directory");
+	else if (inode_is_symlink(inode))
+		return T("symbolic link");
+	else
+		return T("file");
+}
+
 /* Reads the children of a dentry, and all their children, ..., etc. from the
  * metadata resource and into the dentry tree.
  *
@@ -1754,6 +1829,7 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 {
 	u64 cur_offset = dentry->subdir_offset;
 	struct wim_dentry *child;
+	struct wim_dentry *duplicate;
 	struct wim_dentry cur_child;
 	int ret;
 
@@ -1795,10 +1871,34 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		 * entries. */
 		cur_offset += dentry_total_length(child);
 
-		if (dentry_add_child(dentry, child)) {
-			WARNING("Ignoring duplicate dentry \"%"WS"\"",
-				child->file_name);
-			WARNING("(In directory \"%"TS"\")", dentry_full_path(dentry));
+		duplicate = dentry_add_child(dentry, child);
+		if (duplicate) {
+			const tchar *child_type, *duplicate_type;
+			child_type = dentry_get_file_type_string(child);
+			duplicate_type = dentry_get_file_type_string(duplicate);
+			/* On UNIX, duplicates are exact.  On Windows,
+			 * duplicates may differ by case and we wish to provide
+			 * a different warning message in this case. */
+		#ifdef __WIN32__
+			if (dentry_compare_names_case_sensitive(child, duplicate))
+			{
+				child->parent = dentry;
+				WARNING("Ignoring %ls \"%ls\", which differs "
+					"only in case from %ls \"%ls\"",
+					child_type,
+					dentry_full_path(child),
+					duplicate_type,
+					dentry_full_path(duplicate));
+			}
+			else
+		#endif
+			{
+				WARNING("Ignoring duplicate %"TS" \"%"TS"\" "
+					"(the WIM image already contains a %"TS" "
+					"at that path with the exact same name)",
+					child_type, dentry_full_path(duplicate),
+					duplicate_type);
+			}
 			free_dentry(child);
 		} else {
 			inode_add_dentry(child, child->d_inode);
