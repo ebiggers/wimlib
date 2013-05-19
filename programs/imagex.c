@@ -1928,7 +1928,7 @@ imagex_dir(int argc, tchar **argv)
 		 * choose that one; otherwise, print an error. */
 		num_images = wimlib_get_num_images(w);
 		if (num_images != 1) {
-			imagex_error(T("The file \"%"TS"\" contains %d images; Please "
+			imagex_error(T("\"%"TS"\" contains %d images; Please "
 				       "select one."), wimfile, num_images);
 			usage(DIR);
 			ret = -1;
@@ -2699,7 +2699,7 @@ imagex_mount_rw_or_ro(int argc, tchar **argv)
 		image = 1;
 		num_images = wimlib_get_num_images(w);
 		if (num_images != 1) {
-			imagex_error(T("The file \"%"TS"\" contains %d images; Please "
+			imagex_error(T("\"%"TS"\" contains %d images; Please "
 				       "select one."), wimfile, num_images);
 			usage((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 					? MOUNTRW : MOUNT);
