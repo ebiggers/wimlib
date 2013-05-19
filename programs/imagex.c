@@ -999,16 +999,41 @@ get_data_type(int ctype)
 	return NULL;
 }
 
+#define GIBIBYTE_MIN_NBYTES 10000000000ULL
+#define MEBIBYTE_MIN_NBYTES 10000000ULL
+#define KIBIBYTE_MIN_NBYTES 10000ULL
+
+static unsigned
+get_unit(uint64_t total_bytes, const tchar **name_ret)
+{
+	if (total_bytes >= GIBIBYTE_MIN_NBYTES) {
+		*name_ret = T("GiB");
+		return 30;
+	} else if (total_bytes >= MEBIBYTE_MIN_NBYTES) {
+		*name_ret = T("MiB");
+		return 20;
+	} else if (total_bytes >= KIBIBYTE_MIN_NBYTES) {
+		*name_ret = T("KiB");
+		return 10;
+	} else {
+		*name_ret = T("bytes");
+		return 0;
+	}
+}
+
 /* Progress callback function passed to various wimlib functions. */
 static int
 imagex_progress_func(enum wimlib_progress_msg msg,
 		     const union wimlib_progress_info *info)
 {
 	unsigned percent_done;
+	unsigned unit_shift;
+	const tchar *unit_name;
 	if (imagex_be_quiet)
 		return 0;
 	switch (msg) {
 	case WIMLIB_PROGRESS_MSG_WRITE_STREAMS:
+		unit_shift = get_unit(info->write_streams.total_bytes, &unit_name);
 		percent_done = TO_PERCENT(info->write_streams.completed_bytes,
 					  info->write_streams.total_bytes);
 		if (info->write_streams.completed_streams == 0) {
@@ -1019,10 +1044,12 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 				data_type, info->write_streams.num_threads,
 				(info->write_streams.num_threads == 1) ? T("") : T("s"));
 		}
-		tprintf(T("\r%"PRIu64" MiB of %"PRIu64" MiB (uncompressed) "
+		tprintf(T("\r%"PRIu64" %"TS" of %"PRIu64" %"TS" (uncompressed) "
 			"written (%u%% done)"),
-			info->write_streams.completed_bytes >> 20,
-			info->write_streams.total_bytes >> 20,
+			info->write_streams.completed_bytes >> unit_shift,
+			unit_name,
+			info->write_streams.total_bytes >> unit_shift,
+			unit_name,
 			percent_done);
 		if (info->write_streams.completed_bytes >= info->write_streams.total_bytes)
 			tputchar(T('\n'));
@@ -1045,24 +1072,30 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	/*case WIMLIB_PROGRESS_MSG_SCAN_END:*/
 		/*break;*/
 	case WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY:
+		unit_shift = get_unit(info->integrity.total_bytes, &unit_name);
 		percent_done = TO_PERCENT(info->integrity.completed_bytes,
 					  info->integrity.total_bytes);
-		tprintf(T("\rVerifying integrity of \"%"TS"\": %"PRIu64" MiB "
-			"of %"PRIu64" MiB (%u%%) done"),
+		tprintf(T("\rVerifying integrity of \"%"TS"\": %"PRIu64" "TS" "
+			"of %"PRIu64" "TS" (%u%%) done"),
 			info->integrity.filename,
-			info->integrity.completed_bytes >> 20,
-			info->integrity.total_bytes >> 20,
+			info->integrity.completed_bytes >> unit_shift,
+			unit_name,
+			info->integrity.total_bytes >> unit_shift,
+			unit_name,
 			percent_done);
 		if (info->integrity.completed_bytes == info->integrity.total_bytes)
 			tputchar(T('\n'));
 		break;
 	case WIMLIB_PROGRESS_MSG_CALC_INTEGRITY:
+		unit_shift = get_unit(info->integrity.total_bytes, &unit_name);
 		percent_done = TO_PERCENT(info->integrity.completed_bytes,
 					  info->integrity.total_bytes);
-		tprintf(T("\rCalculating integrity table for WIM: %"PRIu64" MiB "
-			  "of %"PRIu64" MiB (%u%%) done"),
-			info->integrity.completed_bytes >> 20,
-			info->integrity.total_bytes >> 20,
+		tprintf(T("\rCalculating integrity table for WIM: %"PRIu64" %"TS" "
+			  "of %"PRIu64" %"TS" (%u%%) done"),
+			info->integrity.completed_bytes >> unit_shift,
+			unit_name,
+			info->integrity.total_bytes >> unit_shift,
+			unit_name,
 			percent_done);
 		if (info->integrity.completed_bytes == info->integrity.total_bytes)
 			tputchar(T('\n'));
@@ -1093,10 +1126,13 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	case WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS:
 		percent_done = TO_PERCENT(info->extract.completed_bytes,
 					  info->extract.total_bytes);
+		unit_shift = get_unit(info->extract.total_bytes, &unit_name);
 		tprintf(T("\rExtracting files: "
-			  "%"PRIu64" MiB of %"PRIu64" MiB (%u%%) done"),
-			info->extract.completed_bytes >> 20,
-			info->extract.total_bytes >> 20,
+			  "%"PRIu64" %"TS" of %"PRIu64" %"TS" (%u%%) done"),
+			info->extract.completed_bytes >> unit_shift,
+			unit_name,
+			info->extract.total_bytes >> unit_shift,
+			unit_name,
 			percent_done);
 		if (info->extract.completed_bytes >= info->extract.total_bytes)
 			tputchar(T('\n'));
@@ -1117,23 +1153,29 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	case WIMLIB_PROGRESS_MSG_JOIN_STREAMS:
 		percent_done = TO_PERCENT(info->join.completed_bytes,
 					  info->join.total_bytes);
+		unit_shift = get_unit(info->join.total_bytes, &unit_name);
 		tprintf(T("Writing resources from part %u of %u: "
-			  "%"PRIu64 " MiB of %"PRIu64" MiB (%u%%) written\n"),
+			  "%"PRIu64 " %"TS" of %"PRIu64" %"TS" (%u%%) written\n"),
 			(info->join.completed_parts == info->join.total_parts) ?
 			info->join.completed_parts : info->join.completed_parts + 1,
 			info->join.total_parts,
-			info->join.completed_bytes >> 20,
-			info->join.total_bytes >> 20,
+			info->join.completed_bytes >> unit_shift,
+			unit_name,
+			info->join.total_bytes >> unit_shift,
+			unit_name,
 			percent_done);
 		break;
 	case WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART:
 		percent_done = TO_PERCENT(info->split.completed_bytes,
 					  info->split.total_bytes);
-		tprintf(T("Writing \"%"TS"\": %"PRIu64" MiB of "
-			  "%"PRIu64" MiB (%u%%) written\n"),
+		unit_shift = get_unit(info->split.total_bytes, &unit_name);
+		tprintf(T("Writing \"%"TS"\": %"PRIu64" %"TS" of "
+			  "%"PRIu64" %"TS" (%u%%) written\n"),
 			info->split.part_name,
-			info->split.completed_bytes >> 20,
-			info->split.total_bytes >> 20,
+			info->split.completed_bytes >> unit_shift,
+			unit_name,
+			info->split.total_bytes >> unit_shift,
+			unit_name,
 			percent_done);
 		break;
 	case WIMLIB_PROGRESS_MSG_SPLIT_END_PART:
