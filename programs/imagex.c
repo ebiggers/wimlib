@@ -3079,15 +3079,23 @@ imagex_update(int argc, tchar **argv)
 		}
 	}
 
+#ifdef __WIN32__
+	win32_acquire_capture_privileges();
+#endif
+
 	/* Execute the update commands */
 	ret = wimlib_update_image(wim, image, cmds, num_cmds, update_flags,
 				  imagex_progress_func);
 	if (ret)
-		goto out_free_cmds;
+		goto out_release_privs;
 
 	/* Overwrite the updated WIM */
 	ret = wimlib_overwrite(wim, write_flags, num_threads,
 			       imagex_progress_func);
+out_release_privs:
+#ifdef __WIN32__
+	win32_release_capture_privileges();
+#endif
 out_free_cmds:
 	free(cmds);
 out_free_cmd_file_contents:
