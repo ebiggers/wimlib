@@ -122,4 +122,10 @@ hash_u64(u64 n)
 	return n * 0x9e37fffffffc0001ULL;
 }
 
+#ifdef __WIN32__
+#  define OS_PREFERRED_PATH_SEPARATOR L'\\'
+#else
+#  define OS_PREFERRED_PATH_SEPARATOR '/'
+#endif
+
 #endif /* _WIMLIB_UTIL_H */

@@ -104,6 +104,7 @@ IMAGEX_PROGNAME" apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n"
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
+"                    [--force-all-files]\n"
 ),
 [CAPTURE] =
 T(
@@ -134,6 +135,7 @@ T(
 IMAGEX_PROGNAME" extract WIMFILE (IMAGE_NUM | IMAGE_NAME) [PATH...]\n"
 "              [--check] [--ref=\"GLOB\"] [--verbose] [--unix-data]\n"
 "              [--no-acls] [--strict-acls] [--to-stdout] [--dest-dir=DIR]\n"
+"              [--force-all-files]\n"
 ),
 [INFO] =
 T(
@@ -206,6 +208,7 @@ enum {
 	IMAGEX_EXTRACT_XML_OPTION,
 	IMAGEX_FLAGS_OPTION,
 	IMAGEX_FORCE_OPTION,
+	IMAGEX_FORCE_ALL_FILES_OPTION,
 	IMAGEX_HARDLINK_OPTION,
 	IMAGEX_HEADER_OPTION,
 	IMAGEX_LAZY_OPTION,
@@ -243,6 +246,7 @@ static const struct option apply_options[] = {
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
 	{T("rpfix"),       no_argument,       NULL, IMAGEX_RPFIX_OPTION},
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
+	{T("force-all-files"), no_argument,       NULL, IMAGEX_FORCE_ALL_FILES_OPTION},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_or_append_options[] = {
@@ -290,6 +294,7 @@ static const struct option extract_options[] = {
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
 	{T("dest-dir"),    required_argument, NULL, IMAGEX_DEST_DIR_OPTION},
 	{T("to-stdout"),   no_argument,       NULL, IMAGEX_TO_STDOUT_OPTION},
+	{T("force-all-files"), no_argument,       NULL, IMAGEX_FORCE_ALL_FILES_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1528,6 +1533,10 @@ imagex_apply(int argc, tchar **argv)
 		case IMAGEX_RPFIX_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_RPFIX;
 			break;
+		case IMAGEX_FORCE_ALL_FILES_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES;
+			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS;
+			break;
 		default:
 			usage(APPLY);
 			return -1;
@@ -2258,6 +2267,10 @@ imagex_extract(int argc, tchar **argv)
 		case IMAGEX_TO_STDOUT_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_TO_STDOUT;
 			imagex_be_quiet = true;
+			break;
+		case IMAGEX_FORCE_ALL_FILES_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES;
+			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS;
 			break;
 		default:
 			goto out_usage;

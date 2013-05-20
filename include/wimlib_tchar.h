@@ -21,6 +21,7 @@ typedef wchar_t tchar;
  * with the "wide-character" functions. */
 #  define tmemchr	wmemchr
 #  define tmemcpy	wmemcpy
+#  define tmempcpy	wmempcpy
 #  define tstrcpy	wcscpy
 #  define tprintf	wprintf
 #  define tsprintf	swprintf
@@ -77,6 +78,7 @@ typedef char tchar;
  * string functions. */
 #  define tmemchr	memchr
 #  define tmemcpy	memcpy
+#  define tmempcpy	mempcpy
 #  define tstrcpy	strcpy
 #  define tprintf	printf
 #  define tsprintf	sprintf

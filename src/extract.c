@@ -30,6 +30,8 @@
 
 #include "wimlib/apply.h"
 #include "wimlib/dentry.h"
+#include "wimlib/encoding.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/paths.h"
@@ -55,27 +57,28 @@ do_apply_op(struct wim_dentry *dentry, struct apply_args *args,
 				     struct wim_dentry *, struct apply_args *))
 {
 	tchar *p;
-	const tchar *full_path;
-	size_t full_path_nchars;
+	size_t extraction_path_nchars;
+	struct wim_dentry *d;
+	LIST_HEAD(ancestor_list);
 
-	wimlib_assert(dentry->_full_path != NULL);
- 	full_path = dentry->_full_path + 1;
- 	full_path_nchars = dentry->full_path_nbytes / sizeof(tchar) - 1;
-	tchar output_path[args->target_nchars + 1 +
-			 (full_path_nchars - args->wim_source_path_nchars) + 1];
-	p = output_path;
+	extraction_path_nchars = args->target_nchars;
 
-	tmemcpy(p, args->target, args->target_nchars);
-	p += args->target_nchars;
+	for (d = dentry; d != args->extract_root; d = d->parent) {
+		if (d->not_extracted)
+			return 0;
+		extraction_path_nchars += d->extraction_name_nchars + 1;
+		list_add(&d->tmp_list, &ancestor_list);
+	}
 
-	if (dentry != args->extract_root) {
-		*p++ = T('/');
-		tmemcpy(p, full_path + args->wim_source_path_nchars,
-			full_path_nchars - args->wim_source_path_nchars);
-		p += full_path_nchars - args->wim_source_path_nchars;
+	tchar extraction_path[extraction_path_nchars + 1];
+	p = tmempcpy(extraction_path, args->target, args->target_nchars);
+
+	list_for_each_entry(d, &ancestor_list, tmp_list) {
+		*p++ = OS_PREFERRED_PATH_SEPARATOR;
+		p = tmempcpy(p, d->extraction_name, d->extraction_name_nchars);
 	}
 	*p = T('\0');
-	return (*apply_dentry_func)(output_path, p - output_path,
+	return (*apply_dentry_func)(extraction_path, extraction_path_nchars,
 				    dentry, args);
 }
 
@@ -103,6 +106,17 @@ apply_dentry_timestamps_normal(struct wim_dentry *dentry, void *arg)
 #endif
 }
 
+static bool
+dentry_is_dot_or_dotdot(const struct wim_dentry *dentry)
+{
+	const utf16lechar *file_name = dentry->file_name;
+	return file_name != NULL &&
+		file_name[0] == cpu_to_le16('.') &&
+		(file_name[1] == cpu_to_le16('\0') ||
+		 (file_name[1] == cpu_to_le16('.') &&
+		  file_name[2] == cpu_to_le16('\0')));
+}
+
 /* Extract a dentry if it hasn't already been extracted and either
  * WIMLIB_EXTRACT_FLAG_NO_STREAMS is not specified, or the dentry is a directory
  * and/or has no unnamed stream. */
@@ -122,6 +136,9 @@ maybe_apply_dentry(struct wim_dentry *dentry, void *arg)
 
 	if ((args->extract_flags & WIMLIB_EXTRACT_FLAG_VERBOSE) &&
 	     args->progress_func) {
+		ret = calculate_dentry_full_path(dentry);
+		if (ret)
+			return ret;
 		args->progress.extract.cur_path = dentry->_full_path;
 		args->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY,
 				    &args->progress);
@@ -189,13 +206,14 @@ dentry_find_streams_to_extract(struct wim_dentry *dentry, void *_ctx)
 	struct list_head *stream_list = &ctx->stream_list;
 	int extract_flags = ctx->extract_flags;
 
-	dentry->needs_extraction = 1;
+	if (!dentry->needs_extraction)
+		return 0;
 
 	lte = inode_unnamed_lte_resolved(inode);
 	if (lte) {
 		if (!inode->i_visited)
 			maybe_add_stream_for_extraction(lte, stream_list);
-		list_add_tail(&dentry->tmp_list, &lte->lte_dentry_list);
+		list_add_tail(&dentry->extraction_stream_list, &lte->lte_dentry_list);
 		dentry_added = true;
 	}
 
@@ -222,7 +240,7 @@ dentry_find_streams_to_extract(struct wim_dentry *dentry, void *_ctx)
 										stream_list);
 					}
 					if (!dentry_added) {
-						list_add_tail(&dentry->tmp_list,
+						list_add_tail(&dentry->extraction_stream_list,
 							      &lte->lte_dentry_list);
 						dentry_added = true;
 					}
@@ -263,14 +281,6 @@ find_streams_for_extraction(struct wim_dentry *root,
 	for_dentry_in_tree(root, dentry_resolve_and_zero_lte_refcnt, lookup_table);
 	for_dentry_in_tree(root, dentry_find_streams_to_extract, &ctx);
 	list_transfer(&ctx.stream_list, stream_list);
-}
-
-static int
-dentry_reset_needs_extraction(struct wim_dentry *dentry, void *_ignore)
-{
-	dentry->needs_extraction = 0;
-	dentry->d_inode->i_visited = 0;
-	return 0;
 }
 
 struct apply_operations {
@@ -314,7 +324,7 @@ apply_stream_list(struct list_head *stream_list,
 	list_for_each_entry(lte, stream_list, extraction_list) {
 		/* For each dentry to be extracted that is a name for an inode
 		 * containing the stream */
-		list_for_each_entry(dentry, &lte->lte_dentry_list, tmp_list) {
+		list_for_each_entry(dentry, &lte->lte_dentry_list, extraction_stream_list) {
 			/* Extract the dentry if it was not already
 			 * extracted */
 			ret = maybe_apply_dentry(dentry, args);
@@ -402,6 +412,194 @@ extract_dentry_to_stdout(struct wim_dentry *dentry)
 	return ret;
 }
 
+#ifdef __WIN32__
+static const utf16lechar replacement_char = cpu_to_le16(0xfffd);
+#else
+static const utf16lechar replacement_char = cpu_to_le16('?');
+#endif
+
+static bool
+file_name_valid(utf16lechar *name, size_t num_chars, bool fix)
+{
+	size_t i;
+
+	if (num_chars == 0)
+		return true;
+	for (i = 0; i < num_chars; i++) {
+		switch (name[i]) {
+	#ifdef __WIN32__
+		case cpu_to_le16('\\'):
+		case cpu_to_le16(':'):
+		case cpu_to_le16('*'):
+		case cpu_to_le16('?'):
+		case cpu_to_le16('"'):
+		case cpu_to_le16('<'):
+		case cpu_to_le16('>'):
+		case cpu_to_le16('|'):
+	#endif
+		case cpu_to_le16('/'):
+		case cpu_to_le16('\0'):
+			if (fix)
+				name[i] = replacement_char;
+			else
+				return false;
+		}
+	}
+
+	if (name[num_chars - 1] == cpu_to_le16(' ') ||
+	    name[num_chars - 1] == cpu_to_le16('.'))
+	{
+		if (fix)
+			name[num_chars - 1] = replacement_char;
+		else
+			return false;
+	}
+	return true;
+}
+
+/*
+ * dentry_calculate_extraction_path-
+ *
+ * Calculate the actual filename component at which a WIM dentry will be
+ * extracted, handling invalid filenames "properly".
+ *
+ * dentry->extraction_name usually will be set the same as dentry->file_name (on
+ * UNIX, converted into the platform's multibyte encoding).  However, if the
+ * file name contains characters that are not valid on the current platform or
+ * has some other format that is not valid, leave dentry->extraction_name as
+ * NULL and clear dentry->needs_extraction to indicate that this dentry should
+ * not be extracted, unless the appropriate flag
+ * WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES is set in the extract flags, in
+ * which case a substitute filename will be created and set instead.
+ *
+ * Conflicts with case-insensitive names on Windows are handled similarly; see
+ * below.
+ */
+static int
+dentry_calculate_extraction_path(struct wim_dentry *dentry, void *_args)
+{
+	struct apply_args *args = _args;
+	int ret;
+
+	dentry->needs_extraction = 1;
+
+	if (dentry == args->extract_root)
+		return 0;
+
+	if (dentry_is_dot_or_dotdot(dentry)) {
+		/* WIM files shouldn't contain . or .. entries.  But if they are
+		 * there, don't attempt to extract them. */
+		WARNING("Skipping extraction of unexpected . or .. file \"%"TS"\"",
+			dentry_full_path(dentry));
+		goto skip_dentry;
+	}
+
+#ifdef __WIN32__
+	struct wim_dentry *other;
+	list_for_each_entry(other, &dentry->case_insensitive_conflict_list,
+			    case_insensitive_conflict_list)
+	{
+		if (other->needs_extraction) {
+			if (args->extract_flags & WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS)
+			{
+				WARNING("\"%"TS"\" has the same case-insensitive "
+					"name as \"%"TS"\"; extracting dummy name instead",
+					dentry_full_path(dentry),
+					dentry_full_path(other));
+				goto out_replace;
+			} else {
+				WARNING("Not extracting \"%"TS"\": has same case-insensitive "
+					"name as \"%"TS"\"",
+					dentry_full_path(dentry),
+					dentry_full_path(other));
+				goto skip_dentry;
+			}
+		}
+	}
+#endif
+
+	if (file_name_valid(dentry->file_name, dentry->file_name_nbytes / 2, false)) {
+#ifdef __WIN32__
+		dentry->extraction_name = dentry->file_name;
+		dentry->extraction_name_nchars = dentry->file_name_nbytes / 2;
+		return 0;
+#else
+		return utf16le_to_tstr(dentry->file_name,
+				       dentry->file_name_nbytes,
+				       &dentry->extraction_name,
+				       &dentry->extraction_name_nchars);
+#endif
+	} else {
+		if (args->extract_flags & WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES)
+		{
+			WARNING("\"%"TS"\" has an invalid filename "
+				"that is not supported on this platform; "
+				"extracting dummy name instead",
+				dentry_full_path(dentry));
+			goto out_replace;
+		} else {
+			WARNING("Not extracting \"%"TS"\": has an invalid filename "
+				"that is not supported on this platform",
+				dentry_full_path(dentry));
+			goto skip_dentry;
+		}
+	}
+
+out_replace:
+	{
+		utf16lechar utf16_name_copy[dentry->file_name_nbytes / 2];
+
+		memcpy(utf16_name_copy, dentry->file_name, dentry->file_name_nbytes);
+		file_name_valid(utf16_name_copy, dentry->file_name_nbytes / 2, true);
+
+		tchar *tchar_name;
+		size_t tchar_nchars;
+	#ifdef __WIN32__
+		tchar_name = utf16_name_copy;
+		tchar_nchars = dentry->file_name_nbytes / 2;
+	#else
+		ret = utf16le_to_tstr(utf16_name_copy,
+				      dentry->file_name_nbytes,
+				      &tchar_name, &tchar_nchars);
+		if (ret)
+			return ret;
+	#endif
+		size_t fixed_name_num_chars = tchar_nchars;
+		tchar fixed_name[tchar_nchars + 50];
+		size_t extraction_name_nbytes;
+
+		tmemcpy(fixed_name, tchar_name, tchar_nchars);
+		fixed_name_num_chars += tsprintf(fixed_name + tchar_nchars,
+						 T(" (invalid filename #%lu)"),
+						 ++args->invalid_sequence);
+		dentry->extraction_name = memdup(fixed_name, 2 * fixed_name_num_chars + 2);
+		if (!dentry->extraction_name)
+			return WIMLIB_ERR_NOMEM;
+		dentry->extraction_name_nchars = fixed_name_num_chars;
+	}
+	return 0;
+skip_dentry:
+	dentry->needs_extraction = 0;
+	dentry->not_extracted = 1;
+	return 0;
+}
+
+static int
+dentry_reset_needs_extraction(struct wim_dentry *dentry, void *_ignore)
+{
+	dentry->needs_extraction = 0;
+	dentry->not_extracted = 0;
+	dentry->is_win32_name = 0;
+	dentry->d_inode->i_visited = 0;
+	dentry->d_inode->i_dos_name_extracted = 0;
+	FREE(dentry->d_inode->i_extracted_file);
+	dentry->d_inode->i_extracted_file = NULL;
+	if ((void*)dentry->extraction_name != (void*)dentry->file_name)
+		FREE(dentry->extraction_name);
+	dentry->extraction_name = NULL;
+	return 0;
+}
+
 /*
  * extract_tree - Extract a file or directory tree from the currently selected
  *		  WIM image.
@@ -454,7 +652,6 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	args.extract_flags          = extract_flags;
 	args.progress_func          = progress_func;
 	args.target_nchars          = tstrlen(target);
-	args.wim_source_path_nchars = tstrlen(wim_source_path);
 
 	if (progress_func) {
 		args.progress.extract.wimfile_name = wim->filename;
@@ -490,9 +687,12 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	}
 	args.extract_root = root;
 
-	ret = calculate_dentry_tree_full_paths(root);
+	/* Calculate the actual filename component of each extracted dentry, and
+	 * in the process set the dentry->needs_extraction flag on dentries that
+	 * will be extracted. */
+	ret = for_dentry_in_tree(root, dentry_calculate_extraction_path, &args);
 	if (ret)
-		goto out_ntfs_umount;
+		goto out_dentry_reset_needs_extraction;
 
 	/* Build a list of the streams that need to be extracted */
 	find_streams_for_extraction(root,

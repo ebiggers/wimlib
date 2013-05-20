@@ -338,7 +338,7 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 
 /* Calculate the full path of @dentry.  The full path of its parent must have
  * already been calculated, or it must be the root dentry. */
-static int
+int
 calculate_dentry_full_path(struct wim_dentry *dentry)
 {
 	tchar *full_path;
@@ -589,8 +589,20 @@ get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 			node = node->rb_left;
 		else if (result > 0)
 			node = node->rb_right;
-		else
+		else {
+		#ifdef __WIN32__
+			if (!list_empty(&child->case_insensitive_conflict_list))
+			{
+				WARNING("Result of case-insensitive lookup is ambiguous "
+					"(returning \"%ls\" instead of \"%ls\")",
+					child->file_name,
+					container_of(child->case_insensitive_conflict_list.next,
+						     struct wim_dentry,
+						     case_insensitive_conflict_list)->file_name);
+			}
+		#endif
 			return child;
+		}
 	}
 	return NULL;
 }
@@ -1088,23 +1100,27 @@ free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
  * @child: The dentry to link.
  *
  * Returns NULL if successful.  If @parent already contains a dentry with the
- * same name as @child (see compare_utf16le_names() for what names are
- * considered the "same"), the pointer to this duplicate dentry is returned.
+ * same case-sensitive name as @child, the pointer to this duplicate dentry is
+ * returned.
  */
 struct wim_dentry *
 dentry_add_child(struct wim_dentry * restrict parent,
 		 struct wim_dentry * restrict child)
 {
+	struct rb_root *root;
+	struct rb_node **new;
+	struct rb_node *rb_parent;
+
 	wimlib_assert(dentry_is_directory(parent));
 	wimlib_assert(parent != child);
 
-	struct rb_root *root = &parent->d_inode->i_children;
-	struct rb_node **new = &(root->rb_node);
-	struct rb_node *rb_parent = NULL;
-
+	/* Case sensitive child dentry index */
+	root = &parent->d_inode->i_children;
+	new = &root->rb_node;
+	rb_parent = NULL;
 	while (*new) {
 		struct wim_dentry *this = rbnode_dentry(*new);
-		int result = dentry_compare_names(child, this);
+		int result = dentry_compare_names_case_sensitive(child, this);
 
 		rb_parent = *new;
 
@@ -1118,6 +1134,34 @@ dentry_add_child(struct wim_dentry * restrict parent,
 	child->parent = parent;
 	rb_link_node(&child->rb_node, rb_parent, new);
 	rb_insert_color(&child->rb_node, root);
+
+#ifdef __WIN32__
+	/* Case insensitive child dentry index */
+	root = &parent->d_inode->i_children_case_insensitive;
+	new = &root->rb_node;
+	rb_parent = NULL;
+	while (*new) {
+		struct wim_dentry *this = container_of(*new, struct wim_dentry,
+						       rb_node_case_insensitive);
+		int result = dentry_compare_names_case_insensitive(child, this);
+
+		rb_parent = *new;
+
+		if (result < 0)
+			new = &((*new)->rb_left);
+		else if (result > 0)
+			new = &((*new)->rb_right);
+		else {
+			list_add(&child->case_insensitive_conflict_list,
+				 &this->case_insensitive_conflict_list);
+			return NULL;
+
+		}
+	}
+	rb_link_node(&child->rb_node_case_insensitive, rb_parent, new);
+	rb_insert_color(&child->rb_node_case_insensitive, root);
+	INIT_LIST_HEAD(&child->case_insensitive_conflict_list);
+#endif
 	return NULL;
 }
 
@@ -1125,8 +1169,14 @@ dentry_add_child(struct wim_dentry * restrict parent,
 void
 unlink_dentry(struct wim_dentry *dentry)
 {
-	if (!dentry_is_root(dentry))
+	if (!dentry_is_root(dentry)) {
 		rb_erase(&dentry->rb_node, &dentry->parent->d_inode->i_children);
+	#ifdef __WIN32__
+		rb_erase(&dentry->rb_node_case_insensitive,
+			 &dentry->parent->d_inode->i_children_case_insensitive);
+		list_del(&dentry->case_insensitive_conflict_list);
+	#endif
+	}
 }
 
 /*
@@ -1400,39 +1450,6 @@ inode_set_unix_data(struct wim_inode *inode, uid_t uid, gid_t gid, mode_t mode,
 }
 #endif /* !__WIN32__ */
 
-/* Replace weird characters in filenames and alternate data stream names.
- *
- * In particular we do not want the path separator to appear in any names, as
- * that would make it possible for a "malicious" WIM to extract itself to any
- * location it wanted to. */
-static void
-replace_forbidden_characters(utf16lechar *name)
-{
-	utf16lechar *p;
-
-	for (p = name; *p; p++) {
-	#ifdef __WIN32__
-		if (wcschr(L"<>:\"/\\|?*", (wchar_t)*p))
-	#else
-		if (*p == cpu_to_le16('/'))
-	#endif
-		{
-			if (name) {
-				WARNING("File, directory, or stream name \"%"WS"\"\n"
-					"          contains forbidden characters; "
-					"substituting replacement characters.",
-					name);
-				name = NULL;
-			}
-		#ifdef __WIN32__
-			*p = cpu_to_le16(0xfffd);
-		#else
-			*p = cpu_to_le16('?');
-		#endif
-		}
-	}
-}
-
 /*
  * Reads the alternate data stream entries of a WIM dentry.
  *
@@ -1526,7 +1543,6 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 			       disk_entry->stream_name,
 			       cur_entry->stream_name_nbytes);
 			cur_entry->stream_name[cur_entry->stream_name_nbytes / 2] = cpu_to_le16(0);
-			replace_forbidden_characters(cur_entry->stream_name);
 		}
 
 		/* It's expected that the size of every ADS entry is a multiple
@@ -1732,7 +1748,6 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 		memcpy(file_name, p, file_name_nbytes);
 		p += file_name_nbytes + 2;
 		file_name[file_name_nbytes / 2] = cpu_to_le16(0);
-		replace_forbidden_characters(file_name);
 	} else {
 		file_name = NULL;
 	}
@@ -1751,7 +1766,6 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 		memcpy(short_name, p, short_name_nbytes);
 		p += short_name_nbytes + 2;
 		short_name[short_name_nbytes / 2] = cpu_to_le16(0);
-		replace_forbidden_characters(short_name);
 	} else {
 		short_name = NULL;
 	}
@@ -1880,30 +1894,11 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 			const tchar *child_type, *duplicate_type;
 			child_type = dentry_get_file_type_string(child);
 			duplicate_type = dentry_get_file_type_string(duplicate);
-			/* On UNIX, duplicates are exact.  On Windows,
-			 * duplicates may differ by case and we wish to provide
-			 * a different warning message in this case. */
-		#ifdef __WIN32__
-			if (dentry_compare_names_case_sensitive(child, duplicate))
-			{
-				child->parent = dentry;
-				WARNING("Ignoring %ls \"%ls\", which differs "
-					"only in case from %ls \"%ls\"",
-					child_type,
-					dentry_full_path(child),
-					duplicate_type,
-					dentry_full_path(duplicate));
-			}
-			else
-		#endif
-			{
-				WARNING("Ignoring duplicate %"TS" \"%"TS"\" "
-					"(the WIM image already contains a %"TS" "
-					"at that path with the exact same name)",
-					child_type, dentry_full_path(duplicate),
-					duplicate_type);
-			}
-			free_dentry(child);
+			WARNING("Ignoring duplicate %"TS" \"%"TS"\" "
+				"(the WIM image already contains a %"TS" "
+				"at that path with the exact same name)",
+				child_type, dentry_full_path(duplicate),
+				duplicate_type);
 		} else {
 			inode_add_dentry(child, child->d_inode);
 			/* If there are children of this child, call this

@@ -538,6 +538,10 @@ apply_dentry_ntfs(struct wim_dentry *dentry, void *arg)
 	struct wim_dentry *other;
 	int ret;
 
+	ret = calculate_dentry_full_path(dentry);
+	if (ret)
+		return ret;
+
 	/* Treat the root dentry specially. */
 	if (dentry_is_root(dentry))
 		return apply_root_dentry_ntfs(dentry, vol, w,

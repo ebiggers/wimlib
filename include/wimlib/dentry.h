@@ -128,8 +128,19 @@ struct wim_dentry {
 	/* The inode for this dentry */
 	struct wim_inode *d_inode;
 
-	/* Red-black tree of sibling dentries */
+	/* Node for the parent's red-black tree of child dentries, sorted by
+	 * case sensitive long name. */
 	struct rb_node rb_node;
+
+#ifdef __WIN32__
+	/* Node for the parent's red-black tree of child dentries, sorted by
+	 * case insensitive long name. */
+	struct rb_node rb_node_case_insensitive;
+
+	/* List of dentries in a directory that have different case sensitive
+	 * long names but share the same case insensitive long name */
+	struct list_head case_insensitive_conflict_list;
+#endif
 
 	/* Length of UTF-16LE encoded short filename, in bytes, not including
 	 * the terminating zero wide-character. */
@@ -148,6 +159,8 @@ struct wim_dentry {
 
 	/* Only used during NTFS capture */
 	u8 is_win32_name : 1;
+
+	u8 not_extracted : 1;
 
 	/* Temporary list */
 	struct list_head tmp_list;
@@ -193,8 +206,16 @@ struct wim_dentry {
 	/* Pointer to the UTF-16LE filename (malloc()ed buffer). */
 	utf16lechar *file_name;
 
-	/* Full path of this dentry */
+	/* Full path of this dentry in the WIM */
 	tchar *_full_path;
+
+	/* Actual name to extract this dentry as. */
+	tchar *extraction_name;
+	size_t extraction_name_nchars;
+
+	/* List head for building a list of dentries that contain a certain
+	 * stream. */
+	struct list_head extraction_stream_list;
 };
 
 #define rbnode_dentry(node) container_of(node, struct wim_dentry, rb_node)
@@ -299,6 +320,10 @@ struct wim_inode {
 	 * noted in the @attributes field.) */
 	struct rb_root i_children;
 
+#ifdef __WIN32__
+	struct rb_root i_children_case_insensitive;
+#endif
+
 	/* Next alternate data stream ID to be assigned */
 	u32 i_next_stream_id;
 
@@ -386,6 +411,9 @@ print_dentry(struct wim_dentry *dentry, void *lookup_table);
 
 extern int
 print_dentry_full_path(struct wim_dentry *entry, void *ignore);
+
+extern int
+calculate_dentry_full_path(struct wim_dentry *dentry);
 
 extern int
 calculate_dentry_tree_full_paths(struct wim_dentry *root);

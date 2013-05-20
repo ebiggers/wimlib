@@ -12,8 +12,8 @@ struct apply_args {
 	WIMStruct *w;
 	const tchar *target;
 	unsigned target_nchars;
-	unsigned wim_source_path_nchars;
 	struct wim_dentry *extract_root;
+	unsigned long invalid_sequence;
 	tchar *target_realpath;
 	unsigned target_realpath_len;
 	int extract_flags;

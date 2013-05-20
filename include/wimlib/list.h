@@ -111,6 +111,16 @@ static inline void list_del(struct list_head *entry)
 }
 
 /**
+ * list_del_init - deletes entry from list and reinitialize it.
+ * @entry: the element to delete from the list.
+ */
+static inline void list_del_init(struct list_head *entry)
+{
+	list_del(entry);
+	INIT_LIST_HEAD(entry);
+}
+
+/**
  * list_empty - tests whether a list is empty
  * @head: the list to test.
  */

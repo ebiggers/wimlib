@@ -95,8 +95,13 @@ unix_extract_regular_file_linked(struct wim_dentry *dentry,
 		char *p;
 		const char *p2;
 		size_t i;
+		const struct wim_dentry *d;
 
-		num_path_components = get_num_path_components(dentry->_full_path) - 1;
+		num_path_components = 0;
+		for (d = dentry; d != args->extract_root; d = d->parent)
+			num_path_components++;
+		wimlib_assert(num_path_components > 0);
+		num_path_components--;
 		num_output_dir_path_components = get_num_path_components(args->target);
 
 		if (args->extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE) {
@@ -339,7 +344,7 @@ unix_extract_symlink(struct wim_dentry *dentry,
 
 	if (ret <= 0) {
 		ERROR("Could not read the symbolic link from dentry `%s'",
-		      dentry->_full_path);
+		      dentry_full_path(dentry));
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 	target[args->target_realpath_len + ret] = '\0';
@@ -380,35 +385,33 @@ unix_extract_symlink(struct wim_dentry *dentry,
 }
 
 static int
-unix_extract_directory(struct wim_dentry *dentry, const tchar *output_path,
+unix_extract_directory(struct wim_dentry *dentry, const char *output_path,
 		       int extract_flags)
 {
 	int ret;
 	struct stat stbuf;
 
-	ret = tstat(output_path, &stbuf);
+	ret = stat(output_path, &stbuf);
 	if (ret == 0) {
 		if (S_ISDIR(stbuf.st_mode)) {
 			goto dir_exists;
 		} else {
-			ERROR("`%"TS"' is not a directory", output_path);
+			ERROR("\"%s\" is not a directory", output_path);
 			return WIMLIB_ERR_MKDIR;
 		}
 	} else {
 		if (errno != ENOENT) {
-			ERROR_WITH_ERRNO("Failed to stat `%"TS"'", output_path);
+			ERROR_WITH_ERRNO("Failed to stat \"%s\"", output_path);
 			return WIMLIB_ERR_STAT;
 		}
 	}
 
-	if (tmkdir(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH))
-	{
-		ERROR_WITH_ERRNO("Cannot create directory `%"TS"'", output_path);
+	if (mkdir(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
+		ERROR_WITH_ERRNO("Cannot create directory \"%s\"", output_path);
 		return WIMLIB_ERR_MKDIR;
 	}
 dir_exists:
 	ret = 0;
-#ifndef __WIN32__
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
 		struct wimlib_unix_data unix_data;
 		ret = inode_get_unix_data(dentry->d_inode, &unix_data, NULL);
@@ -420,7 +423,6 @@ dir_exists:
 			ret = dir_apply_unix_data(output_path, &unix_data,
 						  extract_flags);
 	}
-#endif
 	return ret;
 }
 

@@ -1235,6 +1235,7 @@ win32_do_apply_dentry(const wchar_t *output_path,
 	    !(args->vol_flags & FILE_SUPPORTS_REPARSE_POINTS))
 	{
 		WARNING("Not extracting reparse point \"%ls\"", output_path);
+		dentry->not_extracted = 1;
 	} else {
 		/* Create the file, directory, or reparse point, and extract the
 		 * data streams. */
@@ -1276,13 +1277,6 @@ win32_do_apply_dentry_timestamps(const wchar_t *path,
 	DWORD err;
 	HANDLE h;
 	const struct wim_inode *inode = dentry->d_inode;
-
-	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT &&
-	    !(args->vol_flags & FILE_SUPPORTS_REPARSE_POINTS))
-	{
-		/* Skip reparse points not extracted */
-		return 0;
-	}
 
 	/* Windows doesn't let you change the timestamps of the root directory
 	 * (at least on FAT, which is dumb but expected since FAT doesn't store

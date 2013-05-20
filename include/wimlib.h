@@ -722,6 +722,18 @@ struct wimlib_capture_config {
 /** Extract files to standard output rather than to the filesystem. */
 #define WIMLIB_EXTRACT_FLAG_TO_STDOUT			0x00000400
 
+/** Instead of ignoring files and directories with names that cannot be
+ * represented on the current platform (note: Windows has more restrictions on
+ * filenames than UNIX), try to replace characters or append junk to the names
+ * so that they can be extracted in some form. */
+#define WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES	0x00000800
+
+/** On Windows, when there exist two or more files with the same case
+ * insensitive name (but different case sensitive names), try to extract them
+ * all by appending junk to the end of them, rather than extracting an
+ * arbitrarily only one.  */
+#define WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS		0x00001000
+
 /******************************
  * WIMLIB_MOUNT_FLAG_*
  ******************************/
