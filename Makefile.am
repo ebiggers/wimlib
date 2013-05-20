@@ -155,11 +155,13 @@ endif
 install-exec-hook:
 	if [ "@IMAGEX_PROGNAME@" != imagex ]; then \
 		cd $(DESTDIR)$(bindir) && mv -f imagex "@IMAGEX_PROGNAME@"; \
+		cd $(DESTDIR)$(bindir) && ln -s "@IMAGEX_PROGNAME@" imagex; \
 	fi
 
 uninstall-hook:
 	if [ "@IMAGEX_PROGNAME@" != imagex ]; then \
 		cd $(DESTDIR)$(bindir) && rm -f "@IMAGEX_PROGNAME@"; \
+		cd $(DESTDIR)$(bindir) && rm -f imagex;	\
 	fi
 
 dist_bin_SCRIPTS = programs/mkwinpeimg
