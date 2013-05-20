@@ -1259,7 +1259,7 @@ win32_do_apply_dentry(const wchar_t *output_path,
 			/* Save extracted path for a later call to
 			 * CreateHardLinkW() if this inode has multiple links.
 			 * */
-			inode->i_extracted_file = WSTRDUP(output_path);
+			inode->i_extracted_file = WCSDUP(output_path);
 			if (!inode->i_extracted_file)
 				return WIMLIB_ERR_NOMEM;
 		}

@@ -2,7 +2,7 @@
 .SH NAME
 @IMAGEX_PROGNAME@-update \- Update a WIM image
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ update\fR \fIWIMFILE\fR [\fIIMAGE\fR] [\fIOPTION\fR...] < \fICMDFILE\fR
+\fB@IMAGEX_PROGNAME@ update\fR \fIWIMFILE\fR [\fIIMAGE\fR] [\fIOPTION\fR...] [< \fICMDFILE\fR]
 .SH DESCRIPTION
 \fB@IMAGEX_PROGNAME@ update\fR modifies the specified \fIIMAGE\fR in the Windows
 Imaging (WIM) file \fIWIMFILE\fR by adding, deleting, or renaming files or
@@ -16,7 +16,8 @@ index of an image in the WIM or the name of an image in the WIM.  Use the
 The modifications to perform on the WIM image are specified as a sequence of
 commands, one per line, read in a text file from standard input.  It is
 recommended that standard input be redirected from a file (\fICMDFILE\fR), as
-shown above, rather than typing in commands interactively.
+shown above, rather than typing in commands interactively.  Alternatively, to
+specify a command directly on the command line, see the \fB--command\fR option.
 .SH AVAILABLE COMMANDS
 This section documents the commands that may appear in the \fICMDFILE\fR
 described above.
@@ -124,6 +125,12 @@ Rebuild the entire WIM rather than appending the updated data to the end of it.
 Rebuilding the WIM is slower, but will save a little bit of space that would
 otherwise be left as a hole in the WIM.  Also see
 \fB@IMAGEX_PROGNAME@-optimize\fR (1).
+.TP
+\fB--command\fR=\fISTRING\fR
+Instead of reading update commands from standard input, read a single update
+command directly from the string \fISTRING\fR specified on the command line.
+This option cannot be provided more than one time and cannot be used to specify
+more than one update command.
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ update\fR is partly redundant with \fB@IMAGEX_PROGNAME@
 mountrw\fR, since if a WIM image can be mounted read-write, then there

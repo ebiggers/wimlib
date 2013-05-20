@@ -75,7 +75,7 @@ wimlib_strdup(const char *str) _malloc_attribute;
 #  define	REALLOC	wimlib_realloc
 #  define	CALLOC	wimlib_calloc
 #  define	STRDUP	wimlib_strdup
-#  define	WSTRDUP wimlib_wcsdup
+#  define	WCSDUP  wimlib_wcsdup
 #else /* ENABLE_CUSTOM_MEMORY_ALLOCATOR */
 #  include <stdlib.h>
 #  include <string.h>
@@ -84,7 +84,7 @@ wimlib_strdup(const char *str) _malloc_attribute;
 #  define	REALLOC	realloc
 #  define	CALLOC	calloc
 #  define	STRDUP	strdup
-#  define       WSTRDUP wcsdup
+#  define       WCSDUP  wcsdup
 #endif /* !ENABLE_CUSTOM_MEMORY_ALLOCATOR */
 
 extern void *

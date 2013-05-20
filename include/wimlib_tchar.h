@@ -50,10 +50,11 @@ typedef wchar_t tchar;
 #  define tunlink	_wunlink
 #  define tstrerror	_wcserror
 #  define taccess	_waccess
+#  define tstrdup	wcsdup
 /* The following "tchar" functions do not have exact wide-character equivalents
  * on Windows so require parameter rearrangement or redirection to a replacement
  * function defined ourselves. */
-#  define TSTRDUP	WSTRDUP
+#  define TSTRDUP	WCSDUP
 #  define tmkdir(path, mode) _wmkdir(path)
 #  define tstrerror_r   win32_strerror_r_replacement
 #  define trename	win32_rename_replacement
@@ -107,6 +108,7 @@ typedef char tchar;
 #  define tstrtod	strtod
 #  define tstrtoul	strtoul
 #  define tmkdir	mkdir
+#  define tstrdup	strdup
 #  define TSTRDUP	STRDUP
 #  define tstrerror_r	strerror_r
 #  define trename	rename

@@ -15,6 +15,9 @@ Version 1.4.1:
 	`wimlib-imagex update' will now complain if no image is specified when
 	trying to update a multi-image WIM.
 
+	`wimlib-imagex update' now supports specifying a single update command
+	directly on the command line using the --command option.
+
 	wimlib-imagex will now choose different units for progress messages,
 	depending on the amount of data that needs to be processed.
 

@@ -176,7 +176,7 @@ IMAGEX_PROGNAME" unmount DIRECTORY [--commit] [--check] [--rebuild] [--lazy]\n"
 T(
 IMAGEX_PROGNAME" update WIMFILE [IMAGE_NUM | IMAGE_NAME] [--check] [--rebuild]\n"
 "                       [--threads=NUM_THREADS] [DEFAULT_ADD_OPTIONS]\n"
-"                       [DEFAULT_DELETE_OPTIONS] < CMDFILE\n"
+"                       [DEFAULT_DELETE_OPTIONS] [--command=STRING] [< CMDFILE]\n"
 ),
 };
 
@@ -199,6 +199,7 @@ enum {
 	IMAGEX_ALLOW_OTHER_OPTION,
 	IMAGEX_BOOT_OPTION,
 	IMAGEX_CHECK_OPTION,
+	IMAGEX_COMMAND_OPTION,
 	IMAGEX_COMMIT_OPTION,
 	IMAGEX_COMPRESS_OPTION,
 	IMAGEX_CONFIG_OPTION,
@@ -353,6 +354,7 @@ static const struct option update_options[] = {
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
+	{T("command"),     required_argument, NULL, IMAGEX_COMMAND_OPTION},
 
 	/* Default delete options */
 	{T("force"),       no_argument,       NULL, IMAGEX_FORCE_OPTION},
@@ -368,6 +370,7 @@ static const struct option update_options[] = {
 	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
+
 	{NULL, 0, NULL, 0},
 };
 
@@ -2985,11 +2988,12 @@ imagex_update(int argc, tchar **argv)
 	int default_delete_flags = 0;
 	unsigned num_threads = 0;
 	int c;
-	tchar *cmd_file_contents;
+	tchar *cmd_file_contents = NULL;
 	size_t cmd_file_nchars;
 	struct wimlib_update_command *cmds;
 	size_t num_cmds;
 	int num_images;
+	tchar *command_str = NULL;
 
 	const tchar *config_file = NULL;
 	tchar *config_str;
@@ -3012,7 +3016,22 @@ imagex_update(int argc, tchar **argv)
 		case IMAGEX_REBUILD_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
 			break;
-
+		case IMAGEX_COMMAND_OPTION:
+			if (command_str) {
+				imagex_error(T("--command may only be specified "
+					       "one time.  Please provide\n"
+					       "       the update commands "
+					       "on standard input instead."));
+				ret = -1;
+				goto out;
+			}
+			command_str = tstrdup(optarg);
+			if (!command_str) {
+				imagex_error(T("Out of memory!"));
+				ret = -1;
+				goto out;
+			}
+			break;
 		/* Default delete options */
 		case IMAGEX_FORCE_OPTION:
 			default_delete_flags |= WIMLIB_DELETE_FLAG_FORCE;
@@ -3100,20 +3119,26 @@ imagex_update(int argc, tchar **argv)
 		config = &default_capture_config;
 	}
 
-	/* Read update commands from standard input */
-	if (isatty(STDIN_FILENO)) {
-		tputs(T("Reading update commands from standard input..."));
-		recommend_man_page(T("update"));
-	}
-	cmd_file_contents = stdin_get_text_contents(&cmd_file_nchars);
-	if (!cmd_file_contents) {
-		ret = -1;
-		goto out_free_config;
-	}
+	/* Read update commands from standard input, or the command string if
+	 * specified.  */
+	if (command_str) {
+		cmds = parse_update_command_file(&command_str, tstrlen(command_str),
+						 &num_cmds);
+	} else {
+		if (isatty(STDIN_FILENO)) {
+			tputs(T("Reading update commands from standard input..."));
+			recommend_man_page(T("update"));
+		}
+		cmd_file_contents = stdin_get_text_contents(&cmd_file_nchars);
+		if (!cmd_file_contents) {
+			ret = -1;
+			goto out_free_config;
+		}
 
-	/* Parse the update commands */
-	cmds = parse_update_command_file(&cmd_file_contents, cmd_file_nchars,
-					 &num_cmds);
+		/* Parse the update commands */
+		cmds = parse_update_command_file(&cmd_file_contents, cmd_file_nchars,
+						 &num_cmds);
+	}
 	if (!cmds) {
 		ret = -1;
 		goto out_free_cmd_file_contents;
@@ -3164,6 +3189,7 @@ out_free_config:
 out_wimlib_free:
 	wimlib_free(wim);
 out:
+	free(command_str);
 	return ret;
 out_usage:
 	usage(UPDATE);
