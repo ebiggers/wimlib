@@ -245,10 +245,10 @@ absolute symbolic links that point outside the directory tree being captured
 will be ignored and not be captured at all.  When disabled (\fB--norpfix\fR),
 absolute symbolic links will be captured exactly as is.
 .IP ""
-The default behavior for \fBimagex capture\fR is equivalent to \fB--rpfix\fR.
-The default behavior for \fBimagex append\fR will be \fB--rpfix\fR if reparse
-point fixups have previously been done on \fIWIMFILE\fR, otherwise
-\fB--norpfix\fR.
+The default behavior for \fB@IMAGEX_PROGNAME@ capture\fR is equivalent to
+\fB--rpfix\fR.  The default behavior for \fB@IMAGEX_PROGNAME@ append\fR will be
+\fB--rpfix\fR if reparse point fixups have previously been done on
+\fIWIMFILE\fR, otherwise \fB--norpfix\fR.
 .IP ""
 In the case of a multi-source capture, (\fB--source-list\fR specified), passing
 \fB--norpfix\fR is recommended.  Otherwise, reparse point fixups will be
@@ -323,6 +323,14 @@ itself.  However, additional symbolic links in subdirectories, or in additional
 source directories not destined for the WIM image root (with
 \fB--source-list\fR), are not dereferenced unless \fB--dereference\fR is
 specified.
+.PP
+With the UNIX version of \fB@IMAGEX_PROGNAME@\fR, it is possible to create a WIM
+image containing files with names differing only in case, or files with names
+containing the characters ':', '*', '?', '"', '<', '>', '|', or '\\', which are
+valid on POSIX-compliant filesystems but not Windows.  Be warned that such files
+will not be extracted by default by the Windows version of
+\fB@IMAGEX_PROGNAME@\fR, and Microsoft's ImageX might get confused by such
+names.
 .SH EXAMPLES
 Create a new WIM 'mywim.wim' from the directory 'somedir', using LZX compression and
 including an integrity table:

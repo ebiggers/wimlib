@@ -156,6 +156,12 @@ character encodings.
 .PP
 On UNIX, wimlib works primarily in the locale-dependent multibyte encoding,
 which you are strongly recommended to set to UTF-8 to avoid any problems.
+.SH CASE SENSITIVITY
+The case sensitivity of \fB@IMAGEX_PROGNAME@\fR differs somewhat between UNIX
+and Windows.  \fB@IMAGEX_PROGNAME@\fR internally treats filenames as
+case-sensitive, but on Windows it will treat paths actually provided by the user
+as case-insensitive in order to get the "expected" behavior.  Otherwise, options
+and non-path arguments should be specified in lower case.
 .SH WARNING
 Note: \fBwimlib\fR and \fB@IMAGEX_PROGNAME@\fR are experimental.  Use Microsoft's
 imagex.exe if you have to make sure your WIM files are made "correctly".  Feel

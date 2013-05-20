@@ -139,7 +139,9 @@ subdirectory named "Public" in this directory must be specified as
 .PP
 All paths to files or directories within the WIM image must be specified
 relative to the root of the image.  However, the leading slash is optional, and
-both forward slashes and backslashes are accepted.
+both forward slashes and backslashes are accepted.  On Windows, the paths are
+treated case-insensitively, while on UNIX, the paths are treated
+case-sensitively.
 .PP
 The command file (\fICMDFILE\fR) is parsed by \fB@IMAGEX_PROGNAME@ update\fR
 itself and not by the system shell.  Therefore, its syntax is limited.  However,
