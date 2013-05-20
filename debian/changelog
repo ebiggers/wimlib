@@ -1,3 +1,9 @@
+wimlib (1.4.1-1) unstable; urgency=low
+
+  * Update to v1.4.1
+
+ -- Eric Biggers <ebiggers3gmail.com>  Mon, 20 May 2013 14:01:44 -0500
+
 wimlib (1.4.0-1) unstable; urgency=low
 
   * Update to v1.4.0; moved wimlib-imagex and mkwinpeimg to "wimtools"

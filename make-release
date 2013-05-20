@@ -1,12 +1,12 @@
 #!/bin/bash
 
-oldver='1\.3\.3'
-oldmonth=April
+oldver='1\.4\.0'
+oldmonth=May
 oldyear=2013
 
 newmajor=1
 newminor=4
-newpatch=0
+newpatch=1
 newmonth=May
 newyear=2013
 
@@ -21,7 +21,7 @@ sed -i -e 's/\(#define WIMLIB_MAJOR_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'$newm
        -e 's/\(#define WIMLIB_MINOR_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'$newminor'/' \
        -e 's/\(#define WIMLIB_PATCH_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'$newpatch'/' \
        -e 's/\(the library interface of wimlib \)'$oldver'/\1'$newver'/' \
-	  src/wimlib.h
+	  include/wimlib.h
 
 sed -i -e "1s/$oldmonth $oldyear/$newmonth $newyear/" doc/*.1.in
 
