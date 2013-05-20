@@ -38,9 +38,12 @@
 
 #define MAX_GET_SD_ACCESS_DENIED_WARNINGS 1
 #define MAX_GET_SACL_PRIV_NOTHELD_WARNINGS 1
+#define MAX_CAPTURE_LONG_PATH_WARNINGS 5
+
 struct win32_capture_state {
 	unsigned long num_get_sd_access_denied;
 	unsigned long num_get_sacl_priv_notheld;
+	unsigned long num_long_path_warnings;
 };
 
 
@@ -368,7 +371,7 @@ win32_recurse_directory(struct wim_dentry *root,
 	 * opendir(), FindFirstFileW has file globbing built into it.  But this
 	 * isn't what we actually want, so just add a dummy glob to get all
 	 * entries. */
-	dir_path[dir_path_num_chars] = L'/';
+	dir_path[dir_path_num_chars] = OS_PREFERRED_PATH_SEPARATOR;
 	dir_path[dir_path_num_chars + 1] = L'*';
 	dir_path[dir_path_num_chars + 2] = L'\0';
 	hFind = FindFirstFileW(dir_path, &dat);
@@ -394,7 +397,7 @@ win32_recurse_directory(struct wim_dentry *root,
 			continue;
 		size_t filename_len = wcslen(dat.cFileName);
 
-		dir_path[dir_path_num_chars] = L'/';
+		dir_path[dir_path_num_chars] = OS_PREFERRED_PATH_SEPARATOR;
 		wmemcpy(dir_path + dir_path_num_chars + 1,
 			dat.cFileName,
 			filename_len + 1);
@@ -759,7 +762,9 @@ win32_capture_stream(const wchar_t *path,
 		    path[0] != L'\\')
 		{
 			spath_nchars += 2;
-			relpath_prefix = L"./";
+			static const wchar_t _relpath_prefix[] =
+				{L'.', OS_PREFERRED_PATH_SEPARATOR, L'\0'};
+			relpath_prefix = _relpath_prefix;
 		}
 	}
 
@@ -949,6 +954,18 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out;
 	}
 
+#if 0
+	if (path_num_chars >= 4 &&
+	    !wmemcmp(path, L"\\\\?\\", 4) &&
+	    path_num_chars + 1 - 4 > MAX_PATH &&
+	    state->num_long_path_warnings < MAX_CAPTURE_LONG_PATH_WARNINGS)
+	{
+		WARNING("Path \"%ls\" exceeds MAX_PATH", path);
+		if (++state->num_long_path_warnings == MAX_CAPTURE_LONG_PATH_WARNINGS)
+			WARNING("Suppressing further warnings about long paths.");
+	}
+#endif
+
 	if ((params->add_flags & WIMLIB_ADD_FLAG_VERBOSE)
 	    && params->progress_func)
 	{
@@ -1114,6 +1131,8 @@ win32_do_capture_warnings(const struct win32_capture_state *state,
 "          descriptors.\n");
 }
 
+#define WINDOWS_NT_MAX_PATH 32768
+
 /* Win32 version of capturing a directory tree */
 int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
@@ -1125,6 +1144,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	int ret;
 	struct win32_capture_state state;
 	unsigned vol_flags;
+	DWORD dret;
 
 	if (!win32func_FindFirstStreamW) {
 		WARNING("Running on Windows XP or earlier; "
@@ -1132,7 +1152,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	}
 
 	path_nchars = wcslen(root_disk_path);
-	if (path_nchars > 32767)
+	if (path_nchars > WINDOWS_NT_MAX_PATH)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (GetFileAttributesW(root_disk_path) == INVALID_FILE_ATTRIBUTES &&
@@ -1151,15 +1171,31 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 
 	win32_get_vol_flags(root_disk_path, &vol_flags);
 
-	/* There is no check for overflow later when this buffer is being used!
-	 * But the max path length on NTFS is 32767 characters, and paths need
-	 * to be written specially to even go past 260 characters, so we should
-	 * be okay with 32770 characters. */
-	path = MALLOC(32770 * sizeof(wchar_t));
+	/* WARNING: There is no check for overflow later when this buffer is
+	 * being used!  But it's as long as the maximum path length understood
+	 * by Windows NT (which is NOT the same as MAX_PATH). */
+	path = MALLOC(WINDOWS_NT_MAX_PATH * sizeof(wchar_t));
 	if (!path)
 		return WIMLIB_ERR_NOMEM;
 
-	wmemcpy(path, root_disk_path, path_nchars + 1);
+	/* Work around defective behavior in Windows where paths longer than 260
+	 * characters are not supported by default; instead they need to be
+	 * turned into absolute paths and prefixed with "\\?\".  */
+
+	if (wcsncmp(root_disk_path, L"\\\\?\\", 4)) {
+		dret = GetFullPathName(root_disk_path, WINDOWS_NT_MAX_PATH - 4,
+				       &path[4], NULL);
+
+		if (dret == 0 || dret >= WINDOWS_NT_MAX_PATH - 4) {
+			WARNING("Can't get full path name for \"%ls\"", root_disk_path);
+			wmemcpy(path, root_disk_path, path_nchars + 1);
+		} else {
+			wmemcpy(path, L"\\\\?\\", 4);
+			path_nchars = 4 + dret;
+		}
+	} else {
+		wmemcpy(path, root_disk_path, path_nchars + 1);
+	}
 
 	memset(&state, 0, sizeof(state));
 	ret = win32_build_dentry_tree_recursive(root_ret, path,

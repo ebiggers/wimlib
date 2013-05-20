@@ -43,18 +43,18 @@ canonicalize_pattern(const tchar *pat, tchar **canonical_pat_ret)
 {
 	tchar *canonical_pat;
 
-	if (pat[0] != T('/') && pat[0] != T('\\') &&
+	if (!is_any_path_separator(pat[0]) &&
 	    pat[0] != T('\0') && pat[1] == T(':'))
 	{
 		/* Pattern begins with drive letter */
-		if (pat[2] != T('/') && pat[2] != T('\\')) {
+		if (!is_any_path_separator(pat[2])) {
 			/* Something like c:file, which is actually a path
 			 * relative to the current working directory on the c:
 			 * drive.  We require paths with drive letters to be
 			 * absolute. */
 			ERROR("Invalid path \"%"TS"\"; paths including drive letters "
 			      "must be absolute!", pat);
-			ERROR("Maybe try \"%"TC":/%"TS"\"?",
+			ERROR("Maybe try \"%"TC":\\%"TS"\"?",
 			      pat[0], pat + 2);
 			return WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 		}
@@ -67,7 +67,12 @@ canonicalize_pattern(const tchar *pat, tchar **canonical_pat_ret)
 	canonical_pat = canonicalize_fs_path(pat);
 	if (!canonical_pat)
 		return WIMLIB_ERR_NOMEM;
-	zap_backslashes(canonical_pat);
+
+	/* Translate all possible path separators into the operating system's
+	 * preferred path separator. */
+	for (tchar *p = canonical_pat; *p; p++)
+		if (is_any_path_separator(*p))
+			*p = OS_PREFERRED_PATH_SEPARATOR;
 	*canonical_pat_ret = canonical_pat;
 	return 0;
 }
@@ -146,11 +151,11 @@ match_pattern(const tchar *path,
 		const tchar *pat = list->pats[i];
 		const tchar *string;
 
-		if (*pat == T('/')) {
+		if (*pat == OS_PREFERRED_PATH_SEPARATOR) {
 			/* Absolute path from root of capture */
 			string = path;
 		} else {
-			if (tstrchr(pat, T('/')))
+			if (tstrchr(pat, OS_PREFERRED_PATH_SEPARATOR))
 				/* Relative path from root of capture */
 				string = path + 1;
 			else
@@ -196,7 +201,7 @@ exclude_path(const tchar *path, size_t path_len,
 	if (exclude_prefix) {
 		wimlib_assert(path_len >= config->_prefix_num_tchars);
 		if (!tmemcmp(config->_prefix, path, config->_prefix_num_tchars) &&
-		    path[config->_prefix_num_tchars] == T('/'))
+		    path[config->_prefix_num_tchars] == OS_PREFERRED_PATH_SEPARATOR)
 		{
 			path += config->_prefix_num_tchars;
 		}

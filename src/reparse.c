@@ -516,12 +516,13 @@ unix_get_ino_and_dev(const char *path, u64 *ino_ret, u64 *dev_ret)
 
 #endif /* !defined(__WIN32__) */
 
+/* is_rp_path_separator() - characters treated as path separators in absolute
+ * symbolic link targets */
+
 #ifdef __WIN32__
-#  define RP_PATH_SEPARATOR L'\\'
 #  define is_rp_path_separator(c) ((c) == L'\\' || (c) == L'/')
 #  define os_get_ino_and_dev win32_get_file_and_vol_ids
 #else
-#  define RP_PATH_SEPARATOR '/'
 #  define is_rp_path_separator(c) ((c) == '/')
 #  define os_get_ino_and_dev unix_get_ino_and_dev
 #endif
@@ -563,7 +564,7 @@ capture_fixup_absolute_symlink(tchar *dest,
 			/* Link points inside capture root.  Return abbreviated
 			 * path. */
 			if (*p == T('\0'))
-				*(p - 1) = RP_PATH_SEPARATOR;
+				*(p - 1) = OS_PREFERRED_PATH_SEPARATOR;
 			while (p - 1 >= dest && is_rp_path_separator(*(p - 1)))
 				p--;
 		#ifdef __WIN32__

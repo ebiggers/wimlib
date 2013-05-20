@@ -134,7 +134,7 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	/* Walk the path to the branch, creating filler directories as needed.
 	 * */
 	parent = *root_p;
-	while ((slash = tstrchr(target_path, T('/')))) {
+	while ((slash = tstrchr(target_path, WIM_PATH_SEPARATOR))) {
 		*slash = T('\0');
 		dentry = get_dentry_child_with_name(parent, target_path);
 		if (!dentry) {
@@ -150,7 +150,7 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 		 * trailing slashes were tripped.  */
 		do {
 			++target_path;
-		} while (*target_path == T('/'));
+		} while (*target_path == WIM_PATH_SEPARATOR);
 	}
 
 	/* If the target path already existed, overlay the branch onto it.

@@ -1083,8 +1083,8 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		unit_shift = get_unit(info->integrity.total_bytes, &unit_name);
 		percent_done = TO_PERCENT(info->integrity.completed_bytes,
 					  info->integrity.total_bytes);
-		tprintf(T("\rVerifying integrity of \"%"TS"\": %"PRIu64" "TS" "
-			"of %"PRIu64" "TS" (%u%%) done"),
+		tprintf(T("\rVerifying integrity of \"%"TS"\": %"PRIu64" %"TS" "
+			"of %"PRIu64" %"TS" (%u%%) done"),
 			info->integrity.filename,
 			info->integrity.completed_bytes >> unit_shift,
 			unit_name,
@@ -3176,7 +3176,6 @@ out_release_privs:
 #ifdef __WIN32__
 	win32_release_capture_privileges();
 #endif
-out_free_cmds:
 	free(cmds);
 out_free_cmd_file_contents:
 	free(cmd_file_contents);

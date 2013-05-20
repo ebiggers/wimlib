@@ -122,10 +122,28 @@ hash_u64(u64 n)
 	return n * 0x9e37fffffffc0001ULL;
 }
 
+/* is_any_path_separator() - characters treated as path separators in WIM path
+ * specifications and capture configuration files (the former will be translated
+ * to WIM_PATH_SEPARATOR; the latter will be translated to
+ * OS_PREFERRED_PATH_SEPARATOR)
+ *
+ * OS_PREFERRED_PATH_SEPARATOR - preferred (or only) path separator on the
+ * operating system.  Used when constructing filesystem paths to extract or
+ * archive.
+ *
+ * WIM_PATH_SEPARATOR - character treated as path separator for WIM paths.
+ * Currently needs to be '/' on UNIX for the WIM mounting code to work properly.
+ */
+
 #ifdef __WIN32__
 #  define OS_PREFERRED_PATH_SEPARATOR L'\\'
+#  define is_any_path_separator(c) ((c) == L'/' || (c) == L'\\')
 #else
 #  define OS_PREFERRED_PATH_SEPARATOR '/'
+#  define is_any_path_separator(c) ((c) == '/' || (c) == '\\')
 #endif
+
+#define WIM_PATH_SEPARATOR OS_PREFERRED_PATH_SEPARATOR
+
 
 #endif /* _WIMLIB_UTIL_H */

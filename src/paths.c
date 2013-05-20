@@ -31,7 +31,8 @@
 #include <string.h>
 
 /* Like the basename() function, but does not modify @path; it just returns a
- * pointer to it. */
+ * pointer to it.  This assumes the path separator is the
+ * OS_PREFERRED_PATH_SEPARATOR. */
 const tchar *
 path_basename(const tchar *path)
 {
@@ -48,12 +49,12 @@ path_basename_with_len(const tchar *path, size_t len)
 	while (1) {
 		if (p == path - 1)
 			return T("");
-		if (*p != T('/'))
+		if (*p != OS_PREFERRED_PATH_SEPARATOR)
 			break;
 		p--;
 	}
 
-	while ((p != path - 1) && *p != T('/'))
+	while ((p != path - 1) && *p != OS_PREFERRED_PATH_SEPARATOR)
 		p--;
 
 	return p + 1;
@@ -76,19 +77,6 @@ path_stream_name(const tchar *path)
 }
 
 
-/* Translate backslashes to forward slashes in-place. */
-void
-zap_backslashes(tchar *s)
-{
-	if (s) {
-		while (*s != T('\0')) {
-			if (*s == T('\\'))
-				*s = T('/');
-			s++;
-		}
-	}
-}
-
 /* Duplicate a path; return empty string for NULL input. */
 tchar *
 canonicalize_fs_path(const tchar *fs_path)
@@ -98,8 +86,16 @@ canonicalize_fs_path(const tchar *fs_path)
 	return TSTRDUP(fs_path);
 }
 
-/* Duplicate a path, with backslashes translated into forward slashes; return
- * empty string for NULL input;  also strip leading and trailing slashes. */
+/* 
+ * canonicalize_wim_path - Given a user-provided path to a file within a WIM
+ * image, translate it into a "canonical" path.
+ *
+ * To do this, we translate all supported path separators
+ * (is_any_path_separator()) into the WIM_PATH_SEPARATOR, and strip any leading
+ * and trailing slashes.  The returned string is allocated.  Note that there
+ * still may be consecutive path separators within the string.  Furthermore, the
+ * string may be empty, which indicates the root dentry of the WIM image.
+ */
 tchar *
 canonicalize_wim_path(const tchar *wim_path)
 {
@@ -109,14 +105,16 @@ canonicalize_wim_path(const tchar *wim_path)
 	if (wim_path == NULL) {
 		wim_path = T("");
 	} else {
-		while (*wim_path == T('/') || *wim_path == T('\\'))
+		while (is_any_path_separator(*wim_path))
 			wim_path++;
 	}
 	canonical_path = TSTRDUP(wim_path);
 	if (canonical_path) {
-		zap_backslashes(canonical_path);
+		for (p = canonical_path; *p; p++)
+			if (is_any_path_separator(*p))
+				*p = WIM_PATH_SEPARATOR;
 		for (p = tstrchr(canonical_path, T('\0')) - 1;
-		     p >= canonical_path && *p == T('/');
+		     p >= canonical_path && *p == WIM_PATH_SEPARATOR;
 		     p--)
 		{
 			*p = T('\0');

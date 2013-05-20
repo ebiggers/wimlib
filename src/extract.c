@@ -55,7 +55,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define MAX_LONG_PATH_WARNINGS 5
+#define MAX_EXTRACT_LONG_PATH_WARNINGS 5
 
 static int
 do_apply_op(struct wim_dentry *dentry, struct apply_args *args,
@@ -105,11 +105,11 @@ do_apply_op(struct wim_dentry *dentry, struct apply_args *args,
 	/* + 1 for '\0', -4 for \\?\.  */
 	if (extraction_path_nchars + 1 - 4 > MAX_PATH) {
 		if (dentry->needs_extraction &&
-		    args->num_long_paths < MAX_LONG_PATH_WARNINGS)
+		    args->num_long_paths < MAX_EXTRACT_LONG_PATH_WARNINGS)
 		{
 			WARNING("Path \"%ls\" exceeds MAX_PATH and will not be accessible "
 				"to most Windows software", extraction_path);
-			if (++args->num_long_paths == MAX_LONG_PATH_WARNINGS)
+			if (++args->num_long_paths == MAX_EXTRACT_LONG_PATH_WARNINGS)
 				WARNING("Suppressing further warnings about long paths");
 		}
 	}
@@ -640,6 +640,8 @@ dentry_reset_needs_extraction(struct wim_dentry *dentry, void *_ignore)
 	return 0;
 }
 
+#define WINDOWS_NT_MAX_PATH 32768
+
 /*
  * extract_tree - Extract a file or directory tree from the currently selected
  *		  WIM image.
@@ -698,27 +700,24 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	/* Work around defective behavior in Windows where paths longer than 260
 	 * characters are not supported by default; instead they need to be
 	 * turned into absolute paths and prefixed with "\\?\".  */
-	args.target_lowlevel_path = MALLOC(32768 * sizeof(wchar_t));
+	args.target_lowlevel_path = MALLOC(WINDOWS_NT_MAX_PATH * sizeof(wchar_t));
 	if (!args.target_lowlevel_path)
 	{
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;
 	}
-	args.target_lowlevel_path[0] = L'\\';
-	args.target_lowlevel_path[1] = L'\\';
-	args.target_lowlevel_path[2] = L'?';
-	args.target_lowlevel_path[3] = L'\\';
 	args.target_lowlevel_path_nchars =
-		GetFullPathName(args.target, 32768 - 4,
+		GetFullPathName(args.target, WINDOWS_NT_MAX_PATH - 4,
 				&args.target_lowlevel_path[4], NULL);
 
 	if (args.target_lowlevel_path_nchars == 0 ||
-	    args.target_lowlevel_path_nchars >= 32768 - 4)
+	    args.target_lowlevel_path_nchars >= WINDOWS_NT_MAX_PATH - 4)
 	{
 		WARNING("Can't get full path name for \"%ls\"", args.target);
 		FREE(args.target_lowlevel_path);
 		args.target_lowlevel_path = NULL;
 	} else {
+		wmemcpy(args.target_lowlevel_path, L"\\\\?\\", 4);
 		args.target_lowlevel_path_nchars += 4;
 	}
 #endif
@@ -1178,7 +1177,7 @@ extract_all_images(WIMStruct *wim,
 	}
 
 	tmemcpy(buf, target, output_path_len);
-	buf[output_path_len] = T('/');
+	buf[output_path_len] = OS_PREFERRED_PATH_SEPARATOR;
 	for (image = 1; image <= wim->hdr.image_count; image++) {
 		image_name = wimlib_get_image_name(wim, image);
 		if (image_name_ok_as_dir(image_name)) {

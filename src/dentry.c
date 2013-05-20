@@ -349,7 +349,8 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 		return 0;
 
 	if (dentry_is_root(dentry)) {
-		full_path = TSTRDUP(T("/"));
+		static const tchar _root_path[] = {WIM_PATH_SEPARATOR, T('\0')};
+		full_path = TSTRDUP(_root_path);
 		if (!full_path)
 			return WIMLIB_ERR_NOMEM;
 		full_path_nbytes = 1 * sizeof(tchar);
@@ -393,7 +394,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 		if (!full_path)
 			return WIMLIB_ERR_NOMEM;
 		memcpy(full_path, parent_full_path, parent_full_path_nbytes);
-		full_path[parent_full_path_nbytes / sizeof(tchar)] = T('/');
+		full_path[parent_full_path_nbytes / sizeof(tchar)] = WIM_PATH_SEPARATOR;
 	#if TCHAR_IS_UTF16LE
 		memcpy(&full_path[parent_full_path_nbytes / sizeof(tchar) + 1],
 		       dentry->file_name,
@@ -572,15 +573,29 @@ ads_entry_has_name(const struct wim_ads_entry *entry,
 				      entry->stream_name_nbytes);
 }
 
+/* Given a UTF-16LE filename and a directory, look up the dentry for the file.
+ * Return it if found, otherwise NULL.  This is case-sensitive on UNIX and
+ * case-insensitive on Windows. */
 struct wim_dentry *
 get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 				   const utf16lechar *name,
 				   size_t name_nbytes)
 {
-	struct rb_node *node = dentry->d_inode->i_children.rb_node;
+	struct rb_node *node;
+
+#ifdef __WIN32__
+	node = dentry->d_inode->i_children_case_insensitive.rb_node;
+#else
+	node = dentry->d_inode->i_children.rb_node;
+#endif
+
 	struct wim_dentry *child;
 	while (node) {
+	#ifdef __WIN32__
+		child = rb_entry(node, struct wim_dentry, rb_node_case_insensitive);
+	#else
 		child = rbnode_dentry(node);
+	#endif
 		int result = compare_utf16le_names(name, name_nbytes,
 						   child->file_name,
 						   child->file_name_nbytes);
@@ -647,12 +662,13 @@ get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path)
 	}
 	p = path;
 	while (1) {
-		while (*p == cpu_to_le16('/'))
+		while (*p == cpu_to_le16(WIM_PATH_SEPARATOR))
 			p++;
 		if (*p == cpu_to_le16('\0'))
 			break;
 		pp = p;
-		while (*pp != cpu_to_le16('/') && *pp != cpu_to_le16('\0'))
+		while (*pp != cpu_to_le16(WIM_PATH_SEPARATOR) &&
+		       *pp != cpu_to_le16('\0'))
 			pp++;
 
 		cur_dentry = get_dentry_child_with_utf16le_name(parent_dentry, p,
@@ -711,11 +727,11 @@ static void
 to_parent_name(tchar *buf, size_t len)
 {
 	ssize_t i = (ssize_t)len - 1;
-	while (i >= 0 && buf[i] == T('/'))
+	while (i >= 0 && buf[i] == WIM_PATH_SEPARATOR)
 		i--;
-	while (i >= 0 && buf[i] != T('/'))
+	while (i >= 0 && buf[i] != WIM_PATH_SEPARATOR)
 		i--;
-	while (i >= 0 && buf[i] == T('/'))
+	while (i >= 0 && buf[i] == WIM_PATH_SEPARATOR)
 		i--;
 	buf[i + 1] = T('\0');
 }
@@ -1092,6 +1108,45 @@ free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
 	for_dentry_in_tree_depth(root, do_free_dentry, lookup_table);
 }
 
+#ifdef __WIN32__
+
+/* Insert a dentry into the case insensitive index for a directory.
+ *
+ * This is a red-black tree, but when multiple dentries share the same
+ * case-insensitive name, only one is inserted into the tree itself; the rest
+ * are connected in a list.
+ */
+static struct wim_dentry *
+dentry_add_child_case_insensitive(struct wim_dentry *parent,
+				  struct wim_dentry *child)
+{
+	struct rb_root *root;
+	struct rb_node **new;
+	struct rb_node *rb_parent;
+
+	root = &parent->d_inode->i_children_case_insensitive;
+	new = &root->rb_node;
+	rb_parent = NULL;
+	while (*new) {
+		struct wim_dentry *this = container_of(*new, struct wim_dentry,
+						       rb_node_case_insensitive);
+		int result = dentry_compare_names_case_insensitive(child, this);
+
+		rb_parent = *new;
+
+		if (result < 0)
+			new = &((*new)->rb_left);
+		else if (result > 0)
+			new = &((*new)->rb_right);
+		else
+			return this;
+	}
+	rb_link_node(&child->rb_node_case_insensitive, rb_parent, new);
+	rb_insert_color(&child->rb_node_case_insensitive, root);
+	return NULL;
+}
+#endif
+
 /*
  * Links a dentry into the directory tree.
  *
@@ -1135,31 +1190,17 @@ dentry_add_child(struct wim_dentry * restrict parent,
 	rb_insert_color(&child->rb_node, root);
 
 #ifdef __WIN32__
-	/* Case insensitive child dentry index */
-	root = &parent->d_inode->i_children_case_insensitive;
-	new = &root->rb_node;
-	rb_parent = NULL;
-	while (*new) {
-		struct wim_dentry *this = container_of(*new, struct wim_dentry,
-						       rb_node_case_insensitive);
-		int result = dentry_compare_names_case_insensitive(child, this);
-
-		rb_parent = *new;
-
-		if (result < 0)
-			new = &((*new)->rb_left);
-		else if (result > 0)
-			new = &((*new)->rb_right);
-		else {
+	{
+		struct wim_dentry *existing;
+		existing = dentry_add_child_case_insensitive(parent, child);
+		if (existing) {
 			list_add(&child->case_insensitive_conflict_list,
-				 &this->case_insensitive_conflict_list);
-			return NULL;
-
+				 &existing->case_insensitive_conflict_list);
+			child->rb_node_case_insensitive.__rb_parent_color = 0;
+		} else {
+			INIT_LIST_HEAD(&child->case_insensitive_conflict_list);
 		}
 	}
-	rb_link_node(&child->rb_node_case_insensitive, rb_parent, new);
-	rb_insert_color(&child->rb_node_case_insensitive, root);
-	INIT_LIST_HEAD(&child->case_insensitive_conflict_list);
 #endif
 	return NULL;
 }
@@ -1168,14 +1209,31 @@ dentry_add_child(struct wim_dentry * restrict parent,
 void
 unlink_dentry(struct wim_dentry *dentry)
 {
-	if (!dentry_is_root(dentry)) {
-		rb_erase(&dentry->rb_node, &dentry->parent->d_inode->i_children);
-	#ifdef __WIN32__
+	struct wim_dentry *parent = dentry->parent;
+
+	if (parent == dentry)
+		return;
+	rb_erase(&dentry->rb_node, &parent->d_inode->i_children);
+#ifdef __WIN32__
+	if (dentry->rb_node_case_insensitive.__rb_parent_color) {
+		/* This dentry was in the case-insensitive red-black tree. */
 		rb_erase(&dentry->rb_node_case_insensitive,
-			 &dentry->parent->d_inode->i_children_case_insensitive);
-		list_del(&dentry->case_insensitive_conflict_list);
-	#endif
+			 &parent->d_inode->i_children_case_insensitive);
+		if (!list_empty(&dentry->case_insensitive_conflict_list)) {
+			/* Make a different case-insensitively-the-same dentry
+			 * be the "representative" in the red-black tree. */
+			struct list_head *next;
+			struct wim_dentry *other;
+			struct wim_dentry *existing;
+
+			next = dentry->case_insensitive_conflict_list.next;
+			other = list_entry(next, struct wim_dentry, case_insensitive_conflict_list);
+			existing = dentry_add_child_case_insensitive(parent, other);
+			wimlib_assert(existing == NULL);
+		}
 	}
+	list_del(&dentry->case_insensitive_conflict_list);
+#endif
 }
 
 /*
