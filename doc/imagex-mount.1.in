@@ -150,7 +150,7 @@ read-write mount resulted in streams being deleted from the WIM.  Also see
 .TP
 \fB--lazy\fR
 Pass the \fB-z\fR option to \fBfusermount\fR, which performs a "lazy" unmount
-where the filesystme is detached immediately even if it is still busy.  However,
+where the filesystem is detached immediately even if it is still busy.  However,
 even with this option, \fB@IMAGEX_PROGNAME@ unmount\fR still waits for the
 filesystem to become unbusy; \fB--lazy\fR will only stop the unmount from
 immediately failing.
