@@ -104,7 +104,7 @@ IMAGEX_PROGNAME" apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n"
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
-"                    [--including-invalid-names]\n"
+"                    [--include-invalid-names]\n"
 ),
 [CAPTURE] =
 T(
@@ -135,7 +135,7 @@ T(
 IMAGEX_PROGNAME" extract WIMFILE (IMAGE_NUM | IMAGE_NAME) [PATH...]\n"
 "              [--check] [--ref=\"GLOB\"] [--verbose] [--unix-data]\n"
 "              [--no-acls] [--strict-acls] [--to-stdout] [--dest-dir=DIR]\n"
-"              [--including-invalid-names]\n"
+"              [--include-invalid-names]\n"
 ),
 [INFO] =
 T(
@@ -211,7 +211,7 @@ enum {
 	IMAGEX_FORCE_OPTION,
 	IMAGEX_HARDLINK_OPTION,
 	IMAGEX_HEADER_OPTION,
-	IMAGEX_INCLUDING_INVALID_NAMES_OPTION,
+	IMAGEX_INCLUDE_INVALID_NAMES_OPTION,
 	IMAGEX_LAZY_OPTION,
 	IMAGEX_LOOKUP_TABLE_OPTION,
 	IMAGEX_METADATA_OPTION,
@@ -247,7 +247,7 @@ static const struct option apply_options[] = {
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
 	{T("rpfix"),       no_argument,       NULL, IMAGEX_RPFIX_OPTION},
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
-	{T("including-invalid-names"), no_argument,       NULL, IMAGEX_INCLUDING_INVALID_NAMES_OPTION},
+	{T("include-invalid-names"), no_argument,       NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
 	{NULL, 0, NULL, 0},
 };
 static const struct option capture_or_append_options[] = {
@@ -295,7 +295,7 @@ static const struct option extract_options[] = {
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
 	{T("dest-dir"),    required_argument, NULL, IMAGEX_DEST_DIR_OPTION},
 	{T("to-stdout"),   no_argument,       NULL, IMAGEX_TO_STDOUT_OPTION},
-	{T("including-invalid-names"), no_argument, NULL, IMAGEX_INCLUDING_INVALID_NAMES_OPTION},
+	{T("include-invalid-names"), no_argument, NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1536,7 +1536,7 @@ imagex_apply(int argc, tchar **argv)
 		case IMAGEX_RPFIX_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_RPFIX;
 			break;
-		case IMAGEX_INCLUDING_INVALID_NAMES_OPTION:
+		case IMAGEX_INCLUDE_INVALID_NAMES_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES;
 			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS;
 			break;
@@ -2271,7 +2271,7 @@ imagex_extract(int argc, tchar **argv)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_TO_STDOUT;
 			imagex_be_quiet = true;
 			break;
-		case IMAGEX_INCLUDING_INVALID_NAMES_OPTION:
+		case IMAGEX_INCLUDE_INVALID_NAMES_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES;
 			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS;
 			break;
