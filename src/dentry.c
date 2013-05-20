@@ -479,9 +479,8 @@ calculate_subdir_offsets(struct wim_dentry *dentry, u64 *subdir_offset_p)
 	}
 }
 
-/* UNIX: Case-sensitive UTF-16LE dentry or stream name comparison.  We call this
- * on Windows as well to distinguish true duplicates from names differing by
- * case only. */
+/* Case-sensitive UTF-16LE dentry or stream name comparison.  Used on both UNIX
+ * (always) and Windows (sometimes) */
 static int
 compare_utf16le_names_case_sensitive(const utf16lechar *name1, size_t nbytes1,
 				     const utf16lechar *name2, size_t nbytes2)

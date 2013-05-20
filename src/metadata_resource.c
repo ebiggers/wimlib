@@ -101,8 +101,7 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 		goto out_free_buf;
 
 	sha1_buffer(buf, metadata_len, hash);
-	if (!hashes_equal(metadata_lte->hash, hash))
-	{
+	if (!hashes_equal(metadata_lte->hash, hash)) {
 		ERROR("Metadata resource is corrupted (invalid SHA-1 message digest)!");
 		ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
 		goto out_free_buf;

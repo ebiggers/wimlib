@@ -1,5 +1,23 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.4.1:
+	Paths given to wimlib-imagex on Windows are now treated case
+	insensitively.
+
+	Improved behavior regarding invalid filenames; in particular, on
+	Windows, wimlib-imagex will, when extracting, now omit (with an option
+	to override this default) filenames differing only in case, or filenames
+	containing characters not valid on Windows.
+
+	`wimlib-imagex update' now acquires proper privileges on Windows when
+	running as an Administrator.
+
+	`wimlib-imagex update' will now complain if no image is specified when
+	trying to update a multi-image WIM.
+
+	wimlib-imagex will now choose different units for progress messages,
+	depending on the amount of data that needs to be processed.
+
 Version 1.4.0:
 	Added new "extract" and "update" subcommands to wimlib-imagex, along
 	with associated APIs in the library.  These commands are intended mainly

@@ -729,9 +729,9 @@ struct wimlib_capture_config {
 #define WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES	0x00000800
 
 /** On Windows, when there exist two or more files with the same case
- * insensitive name (but different case sensitive names), try to extract them
- * all by appending junk to the end of them, rather than extracting an
- * arbitrarily only one.  */
+ * insensitive name but different case sensitive names, try to extract them all
+ * by appending junk to the end of them, rather than arbitrarily extracting only
+ * one. */
 #define WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS		0x00001000
 
 /******************************

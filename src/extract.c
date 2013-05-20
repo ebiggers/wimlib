@@ -446,6 +446,7 @@ file_name_valid(utf16lechar *name, size_t num_chars, bool fix)
 		}
 	}
 
+#ifdef __WIN32__
 	if (name[num_chars - 1] == cpu_to_le16(' ') ||
 	    name[num_chars - 1] == cpu_to_le16('.'))
 	{
@@ -454,6 +455,7 @@ file_name_valid(utf16lechar *name, size_t num_chars, bool fix)
 		else
 			return false;
 	}
+#endif
 	return true;
 }
 
@@ -566,12 +568,14 @@ out_replace:
 	#endif
 		size_t fixed_name_num_chars = tchar_nchars;
 		tchar fixed_name[tchar_nchars + 50];
-		size_t extraction_name_nbytes;
 
 		tmemcpy(fixed_name, tchar_name, tchar_nchars);
 		fixed_name_num_chars += tsprintf(fixed_name + tchar_nchars,
 						 T(" (invalid filename #%lu)"),
 						 ++args->invalid_sequence);
+	#ifndef __WIN32__
+		FREE(tchar_name);
+	#endif
 		dentry->extraction_name = memdup(fixed_name, 2 * fixed_name_num_chars + 2);
 		if (!dentry->extraction_name)
 			return WIMLIB_ERR_NOMEM;
