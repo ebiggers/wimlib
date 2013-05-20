@@ -758,9 +758,11 @@ do_print_lookup_table_entry(struct wim_lookup_table_entry *lte, void *fp)
  * Prints the lookup table of a WIM file.
  */
 WIMLIBAPI void
-wimlib_print_lookup_table(WIMStruct *w)
+wimlib_print_lookup_table(WIMStruct *wim)
 {
-	for_lookup_table_entry(w->lookup_table,
+	for (int i = 0; i < wim->hdr.image_count; i++)
+		print_lookup_table_entry(wim->image_metadata[i]->metadata_lte, stdout);
+	for_lookup_table_entry(wim->lookup_table,
 			       do_print_lookup_table_entry,
 			       stdout);
 }
