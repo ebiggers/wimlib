@@ -28,6 +28,10 @@
 #  include "config.h"
 #endif
 
+#ifdef __WIN32__
+#  include "wimlib/win32_common.h" /* For GetFullPathName() */
+#endif
+
 #include "wimlib/apply.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
@@ -51,6 +55,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#define MAX_LONG_PATH_WARNINGS 5
+
 static int
 do_apply_op(struct wim_dentry *dentry, struct apply_args *args,
 	    int (*apply_dentry_func)(const tchar *, size_t,
@@ -60,8 +66,21 @@ do_apply_op(struct wim_dentry *dentry, struct apply_args *args,
 	size_t extraction_path_nchars;
 	struct wim_dentry *d;
 	LIST_HEAD(ancestor_list);
+	const tchar *target;
+	size_t target_nchars;
 
-	extraction_path_nchars = args->target_nchars;
+#ifdef __WIN32__
+	if (args->target_lowlevel_path) {
+		target = args->target_lowlevel_path;
+		target_nchars = args->target_lowlevel_path_nchars;
+	} else
+#endif
+	{
+		target = args->target;
+		target_nchars = args->target_nchars;
+	}
+
+	extraction_path_nchars = target_nchars;
 
 	for (d = dentry; d != args->extract_root; d = d->parent) {
 		if (d->not_extracted)
@@ -71,13 +90,30 @@ do_apply_op(struct wim_dentry *dentry, struct apply_args *args,
 	}
 
 	tchar extraction_path[extraction_path_nchars + 1];
-	p = tmempcpy(extraction_path, args->target, args->target_nchars);
+	p = tmempcpy(extraction_path, target, target_nchars);
+
 
 	list_for_each_entry(d, &ancestor_list, tmp_list) {
 		*p++ = OS_PREFERRED_PATH_SEPARATOR;
 		p = tmempcpy(p, d->extraction_name, d->extraction_name_nchars);
 	}
 	*p = T('\0');
+
+#ifdef __WIN32__
+	/* Warn the user if the path exceeds MAX_PATH */
+
+	/* + 1 for '\0', -4 for \\?\.  */
+	if (extraction_path_nchars + 1 - 4 > MAX_PATH) {
+		if (dentry->needs_extraction &&
+		    args->num_long_paths < MAX_LONG_PATH_WARNINGS)
+		{
+			WARNING("Path \"%ls\" exceeds MAX_PATH and will not be accessible "
+				"to most Windows software", extraction_path);
+			if (++args->num_long_paths == MAX_LONG_PATH_WARNINGS)
+				WARNING("Suppressing further warnings about long paths");
+		}
+	}
+#endif
 	return (*apply_dentry_func)(extraction_path, extraction_path_nchars,
 				    dentry, args);
 }
@@ -651,11 +687,41 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 
 	memset(&args, 0, sizeof(args));
 
+
 	args.w                      = wim;
 	args.target                 = target;
+	args.target_nchars          = tstrlen(target);
 	args.extract_flags          = extract_flags;
 	args.progress_func          = progress_func;
-	args.target_nchars          = tstrlen(target);
+
+#ifdef __WIN32__
+	/* Work around defective behavior in Windows where paths longer than 260
+	 * characters are not supported by default; instead they need to be
+	 * turned into absolute paths and prefixed with "\\?\".  */
+	args.target_lowlevel_path = MALLOC(32768 * sizeof(wchar_t));
+	if (!args.target_lowlevel_path)
+	{
+		ret = WIMLIB_ERR_NOMEM;
+		goto out;
+	}
+	args.target_lowlevel_path[0] = L'\\';
+	args.target_lowlevel_path[1] = L'\\';
+	args.target_lowlevel_path[2] = L'?';
+	args.target_lowlevel_path[3] = L'\\';
+	args.target_lowlevel_path_nchars =
+		GetFullPathName(args.target, 32768 - 4,
+				&args.target_lowlevel_path[4], NULL);
+
+	if (args.target_lowlevel_path_nchars == 0 ||
+	    args.target_lowlevel_path_nchars >= 32768 - 4)
+	{
+		WARNING("Can't get full path name for \"%ls\"", args.target);
+		FREE(args.target_lowlevel_path);
+		args.target_lowlevel_path = NULL;
+	} else {
+		args.target_lowlevel_path_nchars += 4;
+	}
+#endif
 
 	if (progress_func) {
 		args.progress.extract.wimfile_name = wim->filename;
@@ -675,7 +741,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 			ERROR_WITH_ERRNO("Failed to mount NTFS volume `%"TS"'",
 					 target);
 			ret = WIMLIB_ERR_NTFS_3G;
-			goto out;
+			goto out_free_target_lowlevel_path;
 		}
 		ops = &ntfs_apply_operations;
 	} else
@@ -792,6 +858,10 @@ out_ntfs_umount:
 				ret = WIMLIB_ERR_NTFS_3G;
 		}
 	}
+#endif
+out_free_target_lowlevel_path:
+#ifdef __WIN32__
+	FREE(args.target_lowlevel_path);
 #endif
 out:
 	return ret;

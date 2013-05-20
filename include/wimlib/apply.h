@@ -10,12 +10,27 @@ struct _ntfs_volume;
 
 struct apply_args {
 	WIMStruct *w;
+
+	/* Directory to which we're extracting the WIM image or directory tree,
+	 * in user-specified form (may be slightly altered) */
 	const tchar *target;
 	unsigned target_nchars;
-	struct wim_dentry *extract_root;
-	unsigned long invalid_sequence;
+
+#ifdef __WIN32__
+	/* \\?\-prefixed full path to the above directory; needed to work around
+	 * lack of default support for long paths on Windoze. */
+	tchar *target_lowlevel_path;
+	unsigned target_lowlevel_path_nchars;
+#endif
+
+	/* Absolute path to the above directory; on UNIX this is simply a path
+	 * beginning with /, while on Windoze this will be a path beginning with
+	 * a drive letter followed by a backslash, but not with \\?\. */
 	tchar *target_realpath;
 	unsigned target_realpath_len;
+
+	struct wim_dentry *extract_root;
+	unsigned long invalid_sequence;
 	int extract_flags;
 	union wimlib_progress_info progress;
 	wimlib_progress_func_t progress_func;
@@ -35,6 +50,7 @@ struct apply_args {
 			unsigned vol_flags;
 			unsigned long num_hard_links_failed;
 			unsigned long num_soft_links_failed;
+			unsigned long num_long_paths;
 			bool have_vol_flags;
 		};
 	#else

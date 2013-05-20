@@ -193,13 +193,21 @@ considered an error condition.
 .IP \[bu]
 Hard links, if supported by the filesystem.
 .PP
-Note: encrypted files will be extracted as raw encrypted data if the filesystem
-does not support encryption.  Compressed files and directories (with the
-compression attribute set) will be extracted as uncompressed if the filesystem
-does not support transparent compression.
-
-Additional note: files with names that cannot be represented on Windows will not
-be extracted by default; see \fB--including-invalid-names\fR.
+Additional notes about extracting files on Windows:
+.IP \[bu] 4
+Encrypted files will be extracted as raw encrypted data if the filesystem
+does not support encryption.
+.IP \[bu]
+Compressed files and directories (with the compression attribute set) will be
+extracted as uncompressed if the filesystem does not support transparent
+compression.
+.IP \[bu]
+Files with names that cannot be represented on Windows will not
+be extracted by default; see \fB--include-invalid-names\fR.
+.IP \[bu]
+Files with full paths over 260 characters (MAX_PATH) are extracted by using the
+\\\\?\\-prefixed path hack.  But beware that such files will be inaccessible to
+most Windows software and may not be able to be deleted easily.
 .SH SPLIT WIMS
 You may use \fB@IMAGEX_PROGNAME@ apply\fR to apply images from a split WIM.  The
 \fIWIMFILE\fR argument is used to specify the first part of the split WIM, and
@@ -293,7 +301,7 @@ we do not have permission to set the desired one.  On UNIX: with
 \fB--unix-data\fR, fail immediately if the UNIX owner, group, or file mode on an
 extracted file cannot be set for any reason.
 .TP
-\fB--including-invalid-names\fR
+\fB--include-invalid-names\fR
 Extract files and directories with invalid names by replacing characters and
 appending a suffix rather than ignoring them.  The meaning of this is
 platform-dependent.
@@ -309,7 +317,7 @@ conditions as well. However, it is not guaranteed, and in particular a WIM
 image captured with \fB@IMAGEX_PROGNAME@\fR on UNIX could contain such files.
 By default, invalid names will be ignored, and if there are multiple names
 differing only in case, one will be chosen to extract arbitrarily; however,
-with \fB--including-invalid-names\fR, all names will be sanitized and
+with \fB--include-invalid-names\fR, all names will be sanitized and
 extracted in some form.
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ apply\fR calculates the SHA1 message digest of every file stream it
