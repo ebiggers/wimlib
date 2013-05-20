@@ -67,6 +67,7 @@ canonicalize_pattern(const tchar *pat, tchar **canonical_pat_ret)
 	canonical_pat = canonicalize_fs_path(pat);
 	if (!canonical_pat)
 		return WIMLIB_ERR_NOMEM;
+	zap_backslashes(canonical_pat);
 	*canonical_pat_ret = canonical_pat;
 	return 0;
 }

@@ -89,18 +89,13 @@ zap_backslashes(tchar *s)
 	}
 }
 
-/* Duplicate a path, with backslashes translated into forward slashes; return
- * empty string for NULL input. */
+/* Duplicate a path; return empty string for NULL input. */
 tchar *
 canonicalize_fs_path(const tchar *fs_path)
 {
-	tchar *canonical_path;
-
 	if (!fs_path)
 		fs_path = T("");
-	canonical_path = TSTRDUP(fs_path);
-	zap_backslashes(canonical_path);
-	return canonical_path;
+	return TSTRDUP(fs_path);
 }
 
 /* Duplicate a path, with backslashes translated into forward slashes; return
