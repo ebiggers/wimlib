@@ -476,9 +476,9 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 					     short_name_mbs_nbytes, 0);
 		FREE(short_name_mbs);
 		if (ret) {
-			ERROR_WITH_ERRNO("Could not set DOS (short) name for `%s'",
-					 dentry->_full_path);
-			ret = WIMLIB_ERR_NTFS_3G;
+			WARNING_WITH_ERRNO("Could not set DOS (short) name for `%s'",
+					   dentry->_full_path);
+			ret = 0;
 		}
 		/* inodes have been closed by ntfs_set_ntfs_dos_name(). */
 		goto out;
@@ -513,6 +513,10 @@ apply_root_dentry_ntfs(struct wim_dentry *dentry,
 	ntfs_inode *ni;
 	int ret = 0;
 
+	ret = calculate_dentry_full_path(dentry);
+	if (ret)
+		return ret;
+
 	ni = ntfs_pathname_to_inode(vol, NULL, "/");
 	if (!ni) {
 		ERROR_WITH_ERRNO("Could not find root NTFS inode");
@@ -538,10 +542,6 @@ apply_dentry_ntfs(struct wim_dentry *dentry, void *arg)
 	struct wim_dentry *orig_dentry;
 	struct wim_dentry *other;
 	int ret;
-
-	ret = calculate_dentry_full_path(dentry);
-	if (ret)
-		return ret;
 
 	/* Treat the root dentry specially. */
 	if (dentry_is_root(dentry))
@@ -598,10 +598,10 @@ apply_dentry_ntfs(struct wim_dentry *dentry, void *arg)
 again:
 	orig_dentry = NULL;
 	if (!dentry->d_inode->i_dos_name_extracted &&
-	    !dentry_has_short_name(dentry))
+	    (!dentry_has_short_name(dentry) || dentry->dos_name_invalid))
 	{
 		inode_for_each_dentry(other, dentry->d_inode) {
-			if (dentry_has_short_name(other)) {
+			if (dentry_has_short_name(other) && !other->dos_name_invalid) {
 				orig_dentry = dentry;
 				dentry = other;
 				break;
@@ -609,6 +609,11 @@ again:
 		}
 	}
 	dentry->d_inode->i_dos_name_extracted = 1;
+
+	ret = calculate_dentry_full_path(dentry);
+	if (ret)
+		return ret;
+
 	ntfs_inode *dir_ni = dentry_open_parent_ni(dentry, vol);
 	if (dir_ni) {
 		ret = do_apply_dentry_ntfs(dentry, dir_ni, arg);
