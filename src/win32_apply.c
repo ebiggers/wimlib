@@ -863,7 +863,11 @@ try_open_again:
 			requestedAccess &= ~ACCESS_SYSTEM_SECURITY;
 			goto try_open_again;
 		}
-		if (err == ERROR_SHARING_VIOLATION) {
+		if (err == ERROR_SHARING_VIOLATION &&
+		    (inode->i_attributes & (FILE_ATTRIBUTE_ENCRYPTED |
+					    FILE_ATTRIBUTE_DIRECTORY)) ==
+		    	(FILE_ATTRIBUTE_ENCRYPTED | FILE_ATTRIBUTE_DIRECTORY))
+		{
 			if (remaining_sharing_violations) {
 				--remaining_sharing_violations;
 				/* This can happen when restoring encrypted directories
@@ -875,13 +879,12 @@ try_open_again:
 			} else {
 				ERROR("Too many sharing violations; giving up...");
 			}
-		} else {
-			if (creationDisposition == OPEN_EXISTING)
-				ERROR("Failed to open \"%ls\"", stream_path);
-			else
-				ERROR("Failed to create \"%ls\"", stream_path);
-			win32_error(err);
 		}
+		if (creationDisposition == OPEN_EXISTING)
+			ERROR("Failed to open \"%ls\"", stream_path);
+		else
+			ERROR("Failed to create \"%ls\"", stream_path);
+		win32_error(err);
 		ret = WIMLIB_ERR_OPEN;
 		goto fail;
 	}
