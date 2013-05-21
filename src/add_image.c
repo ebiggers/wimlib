@@ -77,11 +77,8 @@ wimlib_add_empty_image(WIMStruct *wim, const tchar *name, int *new_idx_ret)
 
 	DEBUG("Adding empty image \"%"TS"\"", name);
 
-	if (name == NULL || name[0] == T('\0')) {
-		ERROR("Must specify a non-empty string for the image name");
-		ret = WIMLIB_ERR_INVALID_PARAM;
-		goto out;
-	}
+	if (name == NULL)
+		name = T("");
 
 	if (wim->hdr.total_parts != 1) {
 		ERROR("Cannot add an image to a split WIM");

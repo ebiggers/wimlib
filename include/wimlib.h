@@ -994,15 +994,15 @@ enum wimlib_error_code {
  *	Pointer to the ::WIMStruct for the WIM file to which the image is to be
  *	added.
  * @param name
- *	Name to give the new image.
+ *	Name to give the new image.  If @c NULL or empty, the new image is given
+ *	no name.  If nonempty, it must specify a name that does not already
+ *	exist in @a wim.
  * @param new_idx_ret
  *	If non-<code>NULL</code>, the index of the newly added image is returned
  *	in this location.
  *
  * @return 0 on success; nonzero on failure.  The possible error codes are:
  *
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	@a name was @c NULL or an empty string.
  * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
  *	@a wim is part of a split WIM.
  * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
@@ -1037,8 +1037,9 @@ wimlib_add_empty_image(WIMStruct *wim,
  * 	A path to a directory or unmounted NTFS volume that will be captured as
  * 	a WIM image.
  * @param name
- * 	The name to give the image.  It must be nonempty and must specify a name
- * 	that does not yet exist in @a wim.
+ *	Name to give the new image.  If @c NULL or empty, the new image is given
+ *	no name.  If nonempty, it must specify a name that does not already
+ *	exist in @a wim.
  * @param config
  * 	Capture configuration that specifies files, directories, or path globs
  * 	to exclude from being captured.  If @c NULL, a dummy configuration where
