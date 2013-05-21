@@ -199,7 +199,7 @@ capture_ntfs_streams(struct wim_inode *inode,
 	actx = ntfs_attr_get_search_ctx(ni, NULL);
 	if (!actx) {
 		ERROR_WITH_ERRNO("Cannot get NTFS attribute search "
-				 "context");
+				 "context for \"%s\"", path);
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
@@ -247,8 +247,8 @@ capture_ntfs_streams(struct wim_inode *inode,
 			ntfs_loc = NULL;
 			if (type == AT_REPARSE_POINT) {
 				if (data_size < 8) {
-					ERROR("Invalid reparse data (only %u bytes)!",
-					      (unsigned)data_size);
+					ERROR("Invalid reparse data on \"%s\" "
+					      "(only %u bytes)!", path, (unsigned)data_size);
 					ret = WIMLIB_ERR_NTFS_3G;
 					goto out_free_lte;
 				}
@@ -298,8 +298,7 @@ capture_ntfs_streams(struct wim_inode *inode,
 	if (errno == ENOENT) {
 		ret = 0;
 	} else {
-		ERROR_WITH_ERRNO("Error listing NTFS attributes from `%s'",
-				 path);
+		ERROR_WITH_ERRNO("Error listing NTFS attributes of \"%s\"", path);
 		ret = WIMLIB_ERR_NTFS_3G;
 	}
 	goto out_put_actx;
@@ -314,9 +313,9 @@ out_free_ntfs_loc:
 out_put_actx:
 	ntfs_attr_put_search_ctx(actx);
 	if (ret == 0)
-		DEBUG2("Successfully captured NTFS streams from `%s'", path);
+		DEBUG2("Successfully captured NTFS streams from \"%s\"", path);
 	else
-		ERROR("Failed to capture NTFS streams from `%s'", path);
+		ERROR("Failed to capture NTFS streams from \"%s\"", path);
 	return ret;
 }
 
@@ -524,12 +523,14 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	ret = build_dentry_tree_ntfs_recursive(&child, ctx->dir_ni,
 					       ni, ctx->path, path_len, name_type,
 					       ctx->vol, ctx->params);
+	path_len -= mbs_name_nbytes + 1;
 	if (child)
 		dentry_add_child(ctx->parent, child);
 	ntfs_inode_close(ni);
 out_free_mbs_name:
 	FREE(mbs_name);
 out:
+	ctx->path[ctx->path_len] = '\0';
 	return ret;
 }
 
@@ -577,8 +578,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 					 ni, dir_ni, (char *)&attributes,
 					 sizeof(attributes));
 	if (ret != sizeof(attributes)) {
-		ERROR_WITH_ERRNO("Failed to get NTFS attributes from `%s'",
-				 path);
+		ERROR_WITH_ERRNO("Failed to get NTFS attributes from \"%s\"", path);
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
@@ -644,7 +644,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		};
 		ret = ntfs_readdir(ni, &pos, &ctx, wim_ntfs_capture_filldir);
 		if (ret) {
-			ERROR_WITH_ERRNO("ntfs_readdir()");
+			ERROR_WITH_ERRNO("Error reading directory \"%s\"", path);
 			ret = WIMLIB_ERR_NTFS_3G;
 		} else {
 			ret = for_dentry_child(root, set_dentry_dos_name,
