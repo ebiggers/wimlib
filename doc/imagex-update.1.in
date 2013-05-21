@@ -130,7 +130,18 @@ otherwise be left as a hole in the WIM.  Also see
 Instead of reading update commands from standard input, read a single update
 command directly from the string \fISTRING\fR specified on the command line.
 This option cannot be provided more than one time and cannot be used to specify
-more than one update command.
+more than one update command.  Note that the \fISTRING\fR, as well as any
+paths containing spaces within the \fISTRING\fR must be appropriately quoted.
+If running from cmd.exe on Windows, you should use double quotes for the outer
+quotes and single quotes for the inner quotes.  Example:
+.RS
+.RS
+.PP
+.nf
+@IMAGEX_PROGNAME@ update boot.wim 1 --command="add 'C:\\My Dir' '\\My Dir'"
+.RE
+.RE
+.fi
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ update\fR is partly redundant with \fB@IMAGEX_PROGNAME@
 mountrw\fR, since if a WIM image can be mounted read-write, then there

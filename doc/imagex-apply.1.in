@@ -229,7 +229,7 @@ mywim3.swm
 mywim4.swm
 mywim5.swm
 .RE
-.nf
+.fi
 .PP
 To apply the first image of this split WIM to the directory "dir", run:
 .PP
