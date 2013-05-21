@@ -33,6 +33,7 @@
 
 #include "wimlib/assert.h"
 #include "wimlib/error.h"
+#include "wimlib/util.h"
 
 #ifdef ENABLE_ERROR_MESSAGES
 void
@@ -329,6 +330,58 @@ set_errno_from_GetLastError(void)
 	errno = win32_error_to_errno(GetLastError());
 }
 
+/* Given a Windows-style path, return the number of characters of the prefix
+ * that specify the path to the root directory of a drive, or return 0 if the
+ * drive is relative (or at least on the current drive, in the case of
+ * absolute-but-not-really-absolute paths like \Windows\System32) */
+static size_t
+win32_path_drive_spec_len(const wchar_t *path)
+{
+	size_t n = 0;
+
+	if (!wcsncmp(path, L"\\\\?\\", 4)) {
+		/* \\?\-prefixed path.  Check for following drive letter and
+		 * path separator. */
+		if (path[4] != L'\0' && path[5] == L':' &&
+		    is_any_path_separator(path[6]))
+			n = 7;
+	} else {
+		/* Not a \\?\-prefixed path.  Check for an initial drive letter
+		 * and path separator. */
+		if (path[0] != L'\0' && path[1] == L':' &&
+		    is_any_path_separator(path[2]))
+			n = 3;
+	}
+	/* Include any additional path separators.*/
+	if (n > 0)
+		while (is_any_path_separator(path[n]))
+			n++;
+	return n;
+}
+
+bool
+win32_path_is_root_of_drive(const wchar_t *path)
+{
+	size_t drive_spec_len;
+
+	/* Explicit drive letter and path separator? */
+	drive_spec_len = win32_path_drive_spec_len(path);
+	if (drive_spec_len > 0 && path[drive_spec_len] == L'\0')
+		return true;
+
+	/* All path separators? */
+	for (const wchar_t *p = path; *p != L'\0'; p++)
+		if (!is_any_path_separator(*p))
+			return false;
+	return true;
+
+	/* XXX This function does not handle paths like "c:" where the working
+	 * directory on "c:" is actually "c:\", or weird paths like "\.".  But
+	 * currently the capture and apply code always prefixes the paths with
+	 * \\?\ anyway so this is irrelevant... */
+}
+
+
 /* Given a path, which may not yet exist, get a set of flags that describe the
  * features of the volume the path is on. */
 int
@@ -337,20 +390,27 @@ win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret)
 	wchar_t *volume;
 	BOOL bret;
 	DWORD vol_flags;
+	size_t drive_spec_len;
 
-	if (path[0] != L'\0' && path[0] != L'\\' &&
-	    path[0] != L'/' && path[1] == L':')
-	{
-		/* Path starts with a drive letter; use it. */
-		volume = alloca(4 * sizeof(wchar_t));
-		volume[0] = path[0];
-		volume[1] = path[1];
-		volume[2] = L'\\';
-		volume[3] = L'\0';
-	} else {
+	drive_spec_len = win32_path_drive_spec_len(path);
+
+	if (drive_spec_len == 0)
+		if (path[0] != L'\0' && path[1] == L':') /* Drive-relative path? */
+			drive_spec_len = 2;
+
+	if (drive_spec_len == 0) {
 		/* Path does not start with a drive letter; use the volume of
 		 * the current working directory. */
 		volume = NULL;
+	} else {
+		/* Path starts with a drive letter (or \\?\ followed by a drive
+		 * letter); use it. */
+		volume = alloca((drive_spec_len + 2) * sizeof(wchar_t));
+		wmemcpy(volume, path, drive_spec_len);
+		/* Add trailing backslash in case this was a drive-relative
+		 * path. */
+		volume[drive_spec_len] = L'\\';
+		volume[drive_spec_len + 1] = L'\0';
 	}
 	bret = GetVolumeInformationW(volume, /* lpRootPathName */
 				     NULL,  /* lpVolumeNameBuffer */

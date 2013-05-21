@@ -757,10 +757,7 @@ win32_capture_stream(const wchar_t *path,
 	if (is_named_stream) {
 		spath_nchars += 1 + stream_name_nchars;
 		colonchar = L":";
-		if (path_num_chars == 1 &&
-		    path[0] != L'/' &&
-		    path[0] != L'\\')
-		{
+		if (path_num_chars == 1 && !is_any_path_separator(path[0])) {
 			spath_nchars += 2;
 			static const wchar_t _relpath_prefix[] =
 				{L'.', OS_PREFERRED_PATH_SEPARATOR, L'\0'};

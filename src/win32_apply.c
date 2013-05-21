@@ -479,26 +479,6 @@ do_win32_extract_encrypted_stream(const wchar_t *path,
 	return ret;
 }
 
-static bool
-path_is_root_of_drive(const wchar_t *path)
-{
-	if (*path == L'\0')
-		return false;
-
-	if (!wcsncmp(path, L"\\\\?\\", 4))
-		path += 4;
-
-	if (*path != L'/' && *path != L'\\') {
-		if (*(path + 1) == L':')
-			path += 2;
-		else
-			return false;
-	}
-	while (*path == L'/' || *path == L'\\')
-		path++;
-	return (*path == L'\0');
-}
-
 static inline DWORD
 win32_mask_attributes(DWORD i_attributes)
 {
@@ -602,7 +582,7 @@ win32_begin_extract_unnamed_stream(const struct wim_inode *inode,
 	 * to CreateFileW() will merely open the directory that was already
 	 * created rather than creating a new file. */
 	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-		if (!path_is_root_of_drive(path)) {
+		if (!win32_path_is_root_of_drive(path)) {
 			if (!CreateDirectoryW(path, NULL)) {
 				err = GetLastError();
 				if (err != ERROR_ALREADY_EXISTS) {
@@ -655,7 +635,7 @@ win32_begin_extract_unnamed_stream(const struct wim_inode *inode,
 	 * directory, so treat that as a special case and do not set attributes.
 	 * */
 	if (*creationDisposition_ret == OPEN_EXISTING &&
-	    !path_is_root_of_drive(path))
+	    !win32_path_is_root_of_drive(path))
 	{
 		if (!SetFileAttributesW(path,
 					win32_mask_attributes(inode->i_attributes)))
@@ -813,12 +793,12 @@ win32_extract_stream(const struct wim_dentry *dentry,
 
 	if (stream_name_utf16) {
 		/* Named stream.  Create a buffer that contains the UTF-16LE
-		 * string [./]path:stream_name_utf16.  This is needed to
+		 * string [.\]path:stream_name_utf16.  This is needed to
 		 * create and open the stream using CreateFileW().  I'm not
 		 * aware of any other APIs to do this.  Note: the '$DATA' suffix
-		 * seems to be unneeded.  Additional note: a "./" prefix needs
-		 * to be added when the path is not absolute to avoid ambiguity
-		 * with drive letters. */
+		 * seems to be unneeded.  Additional note: a ".\" prefix needs
+		 * to be added when the path is a 1-character long relative path
+		 * to avoid ambiguity with drive letters. */
 		size_t stream_path_nchars;
 		size_t path_nchars;
 		size_t stream_name_nchars;
@@ -827,12 +807,10 @@ win32_extract_stream(const struct wim_dentry *dentry,
 		path_nchars = wcslen(path);
 		stream_name_nchars = wcslen(stream_name_utf16);
 		stream_path_nchars = path_nchars + 1 + stream_name_nchars;
-		if (path[0] != cpu_to_le16(L'\0') &&
-		    path[0] != cpu_to_le16(L'/') &&
-		    path[0] != cpu_to_le16(L'\\') &&
-		    path[1] != cpu_to_le16(L':'))
-		{
-			prefix = L"./";
+		if (path_nchars == 1 && !is_any_path_separator(path[0])) {
+			static const wchar_t _prefix[] =
+				{L'.', OS_PREFERRED_PATH_SEPARATOR, L'\0'};
+			prefix = _prefix;
 			stream_path_nchars += 2;
 		} else {
 			prefix = L"";
@@ -871,7 +849,7 @@ try_open_again:
 	if (h == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
 		if (err == ERROR_ACCESS_DENIED &&
-		    path_is_root_of_drive(stream_path))
+		    win32_path_is_root_of_drive(stream_path))
 		{
 			ret = 0;
 			goto out;
@@ -1285,7 +1263,7 @@ win32_do_apply_dentry_timestamps(const wchar_t *path,
 	/* Windows doesn't let you change the timestamps of the root directory
 	 * (at least on FAT, which is dumb but expected since FAT doesn't store
 	 * any metadata about the root directory...) */
-	if (path_is_root_of_drive(path))
+	if (win32_path_is_root_of_drive(path))
 		return 0;
 
 	DEBUG("Opening \"%ls\" to set timestamps", path);

@@ -23,6 +23,9 @@ win32_error(DWORD err_code)
 extern void
 set_errno_from_GetLastError(void);
 
+extern bool
+win32_path_is_root_of_drive(const wchar_t *path);
+
 extern int
 win32_error_to_errno(DWORD err_code);
 
