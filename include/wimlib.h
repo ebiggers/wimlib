@@ -191,6 +191,15 @@ typedef wchar_t wimlib_tchar;
 typedef char wimlib_tchar;
 #endif
 
+#ifdef __WIN32__
+/** Path separator for WIM paths passed back to progress callbacks. */
+#  define WIMLIB_WIM_PATH_SEPARATOR '\\'
+#  define WIMLIB_WIM_PATH_SEPARATOR_STRING L"\\"
+#else
+/** Path separator for WIM paths passed back to progress callbacks. */
+#  define WIMLIB_WIM_PATH_SEPARATOR '/'
+#  define WIMLIB_WIM_PATH_SEPARATOR_STRING "/"
+#endif
 /**
  * Specifies the compression type of a WIM file.
  */
@@ -289,6 +298,18 @@ enum wimlib_progress_msg {
 	 * overwrite is not done in-place.
 	 * @a info will point to ::wimlib_progress_info.rename. */
 	WIMLIB_PROGRESS_MSG_RENAME,
+
+	/**
+	 * A WIM update command is just about to be executed; @a info will point
+	 * to ::wimlib_progress_info.update.
+	 */
+	WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND,
+
+	/**
+	 * A WIM update command is just about to be executed; @a info will point
+	 * to ::wimlib_progress_info.update.
+	 */
+	WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
 
 	/** The contents of the WIM are being checked against the integrity
 	 * table.  Only happens when wimlib_open_wim() is called with the
@@ -437,6 +458,22 @@ union wimlib_progress_info {
 		 * being renamed. */
 		const wimlib_tchar *to;
 	} rename;
+
+	/** Valid on messages ::WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND and
+	 * ::WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND. */
+	struct wimlib_progress_info_update {
+		/** Pointer to the update command that will be executed or has
+		 * just been executed. */
+		const struct wimlib_update_command *command;
+
+		/** Number of update commands that have been completed so far.
+		 */
+		size_t completed_commands;
+
+		/** Number of update commands that are being executed as part of
+		 * this call to wimlib_update_image(). */
+		size_t total_commands;
+	} update;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY and
 	 * ::WIMLIB_PROGRESS_MSG_CALC_INTEGRITY. */
@@ -793,6 +830,14 @@ struct wimlib_capture_config {
 
 /** Do a "lazy" unmount (detach filesystem immediately, even if busy) */
 #define WIMLIB_UNMOUNT_FLAG_LAZY			0x00000010
+
+/******************************
+ * WIMLIB_UPDATE_FLAG_*
+ ******************************/
+
+/** Send ::WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND and
+ * ::WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND messages. */
+#define WIMLIB_UPDATE_FLAG_SEND_PROGRESS		0x00000001
 
 /******************************
  * WIMLIB_WRITE_FLAG_*
@@ -2484,7 +2529,7 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  * @param num_cmds
  *	Number of commands in @a cmds.
  * @param update_flags
- *	Reserved; must be 0.
+ *	::WIMLIB_UPDATE_FLAG_SEND_PROGRESS or 0.
  * @param progress_func
  *	If non-NULL, a function that will be called periodically with the
  *	progress of the current operation.

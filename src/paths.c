@@ -25,6 +25,7 @@
 #  include "config.h"
 #endif
 
+#include "wimlib.h"
 #include "wimlib/paths.h"
 #include "wimlib/util.h"
 

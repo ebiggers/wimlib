@@ -470,12 +470,23 @@ static int
 execute_update_commands(WIMStruct *wim,
 			const struct wimlib_update_command *cmds,
 			size_t num_cmds,
+			int update_flags,
 			wimlib_progress_func_t progress_func)
 {
 	int ret = 0;
+	union wimlib_progress_info info;
+	info.update.completed_commands = 0;
+	info.update.total_commands = num_cmds;
 	for (size_t i = 0; i < num_cmds; i++) {
 		DEBUG("Executing update command %zu of %zu (op=%"TS")",
 		      i + 1, num_cmds, update_op_to_str(cmds[i].op));
+		if (update_flags & WIMLIB_UPDATE_FLAG_SEND_PROGRESS &&
+		    progress_func)
+		{
+			info.update.command = &cmds[i];
+			(*progress_func)(WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND,
+					 &info);
+		}
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
 			ret = execute_add_command(wim, &cmds[i], progress_func);
@@ -491,6 +502,13 @@ execute_update_commands(WIMStruct *wim,
 		}
 		if (ret)
 			break;
+		info.update.completed_commands++;
+		if (update_flags & WIMLIB_UPDATE_FLAG_SEND_PROGRESS &&
+		    progress_func)
+		{
+			(*progress_func)(WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
+					 &info);
+		}
 	}
 	return ret;
 }
@@ -737,7 +755,8 @@ wimlib_update_image(WIMStruct *wim,
 
 	/* Actually execute the update commands. */
 	DEBUG("Executing %zu update commands", num_cmds);
-	ret = execute_update_commands(wim, cmds_copy, num_cmds, progress_func);
+	ret = execute_update_commands(wim, cmds_copy, num_cmds, update_flags,
+				      progress_func);
 	if (ret)
 		goto out_free_cmds_copy;
 

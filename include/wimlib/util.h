@@ -143,7 +143,6 @@ hash_u64(u64 n)
 #  define is_any_path_separator(c) ((c) == '/' || (c) == '\\')
 #endif
 
-#define WIM_PATH_SEPARATOR OS_PREFERRED_PATH_SEPARATOR
-
+#define WIM_PATH_SEPARATOR WIMLIB_WIM_PATH_SEPARATOR
 
 #endif /* _WIMLIB_UTIL_H */

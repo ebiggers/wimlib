@@ -50,12 +50,16 @@
 #  include "imagex-win32.h"
 #  define tbasename	win32_wbasename
 #  define tglob		win32_wglob
+#  define OS_PREFERRED_PATH_SEPARATOR L'\\'
+#  define OS_PREFERRED_PATH_SEPARATOR_STRING L"\\"
 #else /* __WIN32__ */
 #  include <glob.h>
 #  include <getopt.h>
 #  include <langinfo.h>
 #  define tbasename	basename
 #  define tglob		glob
+#  define OS_PREFERRED_PATH_SEPARATOR '/'
+#  define OS_PREFERRED_PATH_SEPARATOR_STRING "/"
 #endif /* !__WIN32 */
 
 
@@ -1065,7 +1069,8 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	case WIMLIB_PROGRESS_MSG_SCAN_BEGIN:
 		tprintf(T("Scanning \"%"TS"\""), info->scan.source);
 		if (*info->scan.wim_target_path) {
-			tprintf(T(" (loading as WIM path: \"/%"TS"\")...\n"),
+			tprintf(T(" (loading as WIM path: "
+				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING"%"TS"\")...\n"),
 			       info->scan.wim_target_path);
 		} else {
 			tprintf(T(" (loading as root of WIM image)...\n"));
@@ -1119,7 +1124,8 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			info->extract.target);
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN:
-		tprintf(T("Extracting \"%"TS"\" from image %d (\"%"TS"\") "
+		tprintf(T("Extracting "
+			  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING"%"TS"\" from image %d (\"%"TS"\") "
 			  "in \"%"TS"\" to \"%"TS"\"\n"),
 			info->extract.extract_root_wim_source_path,
 			info->extract.image,
@@ -1190,6 +1196,25 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		if (info->split.completed_bytes == info->split.total_bytes) {
 			tprintf(T("Finished writing %u split WIM parts\n"),
 				info->split.cur_part_number);
+		}
+		break;
+	case WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND:
+		switch (info->update.command->op) {
+		case WIMLIB_UPDATE_OP_DELETE:
+			tprintf(T("Deleted WIM path "
+				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING "%"TS"\"\n"),
+				info->update.command->delete.wim_path);
+			break;
+		case WIMLIB_UPDATE_OP_RENAME:
+			tprintf(T("Renamed WIM path "
+				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING "%"TS"\" => "
+				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING "%"TS"\"\n"),
+				info->update.command->rename.wim_source_path,
+				info->update.command->rename.wim_target_path);
+			break;
+		case WIMLIB_UPDATE_OP_ADD:
+		default:
+			break;
 		}
 		break;
 	default:
@@ -2233,8 +2258,8 @@ prepare_extract_commands(tchar **paths, unsigned num_paths,
 				free_extract_commands(cmds, num_cmds, dest_dir);
 				return NULL;
 			}
-			tsprintf(cmds[i].fs_dest_path, T("%"TS"/%"TS), dest_dir,
-				 tbasename(paths[i]));
+			tsprintf(cmds[i].fs_dest_path, T("%"TS""OS_PREFERRED_PATH_SEPARATOR_STRING"%"TS),
+				 dest_dir, tbasename(paths[i]));
 		}
 	}
 	*num_cmds_ret = num_cmds;
@@ -3001,7 +3026,7 @@ imagex_update(int argc, tchar **argv)
 	int ret;
 	int open_flags = 0;
 	int write_flags = 0;
-	int update_flags = 0;
+	int update_flags = WIMLIB_UPDATE_FLAG_SEND_PROGRESS;
 	int default_add_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
 	int default_delete_flags = 0;
 	unsigned num_threads = 0;
