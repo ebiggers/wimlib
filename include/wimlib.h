@@ -223,7 +223,7 @@ enum wimlib_progress_msg {
 
 	/** A WIM image is about to be extracted.  @a info will point to
 	 * ::wimlib_progress_info.extract. */
-	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
+	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN = 0,
 
 	/** A file or directory tree within a WIM image (not the full image) is
 	 * about to be extracted.  @a info will point to
@@ -299,18 +299,6 @@ enum wimlib_progress_msg {
 	 * @a info will point to ::wimlib_progress_info.rename. */
 	WIMLIB_PROGRESS_MSG_RENAME,
 
-	/**
-	 * A WIM update command is just about to be executed; @a info will point
-	 * to ::wimlib_progress_info.update.
-	 */
-	WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND,
-
-	/**
-	 * A WIM update command is just about to be executed; @a info will point
-	 * to ::wimlib_progress_info.update.
-	 */
-	WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
-
 	/** The contents of the WIM are being checked against the integrity
 	 * table.  Only happens when wimlib_open_wim() is called with the
 	 * ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY flag.  @a info will point to
@@ -335,6 +323,19 @@ enum wimlib_progress_msg {
 	/** A wimlib_split() operation is in progress, and a split part has been
 	 * finished. @a info will point to ::wimlib_progress_info.split. */
 	WIMLIB_PROGRESS_MSG_SPLIT_END_PART,
+
+	/**
+	 * A WIM update command is just about to be executed; @a info will point
+	 * to ::wimlib_progress_info.update.
+	 */
+	WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND,
+
+	/**
+	 * A WIM update command is just about to be executed; @a info will point
+	 * to ::wimlib_progress_info.update.
+	 */
+	WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
+
 };
 
 /** A pointer to this union is passed to the user-supplied
