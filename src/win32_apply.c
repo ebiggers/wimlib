@@ -482,8 +482,11 @@ do_win32_extract_encrypted_stream(const wchar_t *path,
 static bool
 path_is_root_of_drive(const wchar_t *path)
 {
-	if (!*path)
+	if (*path == L'\0')
 		return false;
+
+	if (!wcsncmp(path, L"\\\\?\\", 4))
+		path += 4;
 
 	if (*path != L'/' && *path != L'\\') {
 		if (*(path + 1) == L':')
