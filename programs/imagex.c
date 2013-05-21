@@ -1659,6 +1659,7 @@ imagex_capture_or_append(int argc, tchar **argv)
 	bool capture_sources_malloced;
 	struct wimlib_capture_source *capture_sources;
 	size_t num_sources;
+	bool name_defaulted;
 
 	for_opt(c, capture_or_append_options) {
 		switch (c) {
@@ -1730,13 +1731,16 @@ imagex_capture_or_append(int argc, tchar **argv)
 
 	if (argc >= 3) {
 		name = argv[2];
+		name_defaulted = false;
 	} else {
 		/* Set default name to SOURCE argument, omitting any directory
 		 * prefixes and trailing slashes.  This requires making a copy
-		 * of @source. */
+		 * of @source.  Leave some free characters at the end in case we
+		 * append a number to keep the name unique. */
 		source_name_len = tstrlen(source);
-		source_copy = alloca((source_name_len + 1) * sizeof(tchar));
+		source_copy = alloca((source_name_len + 1 + 25) * sizeof(tchar));
 		name = tbasename(tstrcpy(source_copy, source));
+		name_defaulted = true;
 	}
 	/* Image description defaults to NULL if not given. */
 	desc = (argc >= 4) ? argv[3] : NULL;
@@ -1813,6 +1817,20 @@ imagex_capture_or_append(int argc, tchar **argv)
 				ret = -1;
 				goto out_wimlib_free;
 			}
+		}
+	}
+
+	if (cmd == APPEND && name_defaulted) {
+		/* If the user did not specify an image name, and the basename
+		 * of the source already exists as an image name in the WIM
+		 * file, append a suffix to make it unique. */
+		unsigned long conflict_idx;
+		tchar *name_end = tstrchr(name, T('\0'));
+		for (conflict_idx = 1;
+		     wimlib_image_name_in_use(w, name);
+		     conflict_idx++)
+		{
+			tsprintf(name_end, T(" (%lu)"), conflict_idx);
 		}
 	}
 #ifdef __WIN32__
