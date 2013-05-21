@@ -1,7 +1,7 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
 Version 1.4.1:
-	Paths given to wimlib-imagex on Windows are now treated case
+	On Windows, paths given to wimlib-imagex are now treated case
 	insensitively.
 
 	Improved behavior regarding invalid filenames; in particular, on
@@ -9,7 +9,10 @@ Version 1.4.1:
 	to override this default) filenames differing only in case, or filenames
 	containing characters not valid on Windows.
 
-	`wimlib-imagex update' now acquires proper privileges on Windows when
+	On Windows, wimlib now supports capturing and extracting long paths
+	(longer than the so-called MAX_PATH).
+
+	On Windows, `wimlib-imagex update' now acquires proper privileges when
 	running as an Administrator.
 
 	`wimlib-imagex update' will now complain if no image is specified when
