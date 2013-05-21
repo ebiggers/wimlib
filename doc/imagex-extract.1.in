@@ -31,10 +31,9 @@ from stand-alone WIMs as well as split WIMs.  See \fBSPLIT WIMS\fR.
 Each \fIPATH\fR specifies a file or directory tree within the WIM image to
 extract.  Each path must be specified as an absolute path starting from the root
 of the WIM image, like those output by the \fB@IMAGEX_PROGNAME@ dir\fR (1)
-command.  Path separators may be forward slashes on UNIX, or either forward
-slashes or backward slashes on Windows.  The leading slash is optional.  On
-Windows, the paths are treated case-insensitively, while on UNIX, paths are
-treated case-sensitively.
+command.  However, path separators may be either forward or backward slashes,
+and the leading slash is optional; also, on Windows, the paths are treated
+case-insensitively, while on UNIX, paths are treated case-sensitively.
 .PP
 If no \fIPATH\fRs are provided, the default behavior is to extract the full
 image, as if the path "/" had been provided.
