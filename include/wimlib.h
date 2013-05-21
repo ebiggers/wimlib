@@ -331,8 +331,8 @@ enum wimlib_progress_msg {
 	WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND,
 
 	/**
-	 * A WIM update command is just about to be executed; @a info will point
-	 * to ::wimlib_progress_info.update.
+	 * A WIM update command has just been executed; @a info will point to
+	 * ::wimlib_progress_info.update.
 	 */
 	WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
 
