@@ -66,11 +66,11 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	 * empty stream.
 	 *
 	 * This check is skipped on split WIMs. */
-	if (w->hdr.total_parts == 1) {
+	if (w->hdr.total_parts == 1 && !inode->i_resolved) {
 		for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 			struct wim_lookup_table_entry *lte;
 			const u8 *hash;
-			hash = inode_stream_hash_unresolved(inode, i);
+			hash = inode_stream_hash(inode, i);
 			lte = __lookup_resource(table, hash);
 			if (!lte && !is_zero_hash(hash)) {
 				ERROR("Could not find lookup table entry for stream "
@@ -87,7 +87,7 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	unsigned num_unnamed_streams = 0;
 	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 		const u8 *hash;
-		hash = inode_stream_hash_unresolved(inode, i);
+		hash = inode_stream_hash(inode, i);
 		if (inode_stream_name_nbytes(inode, i) == 0 && !is_zero_hash(hash))
 			num_unnamed_streams++;
 	}
