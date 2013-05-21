@@ -601,18 +601,19 @@ win32_begin_extract_unnamed_stream(const struct wim_inode *inode,
 	/* Directories must be created with CreateDirectoryW().  Then the call
 	 * to CreateFileW() will merely open the directory that was already
 	 * created rather than creating a new file. */
-	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY &&
-	    !path_is_root_of_drive(path)) {
-		if (!CreateDirectoryW(path, NULL)) {
-			err = GetLastError();
-			if (err != ERROR_ALREADY_EXISTS) {
-				ERROR("Failed to create directory \"%ls\"",
-				      path);
-				win32_error(err);
-				return WIMLIB_ERR_MKDIR;
+	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
+		if (!path_is_root_of_drive(path)) {
+			if (!CreateDirectoryW(path, NULL)) {
+				err = GetLastError();
+				if (err != ERROR_ALREADY_EXISTS) {
+					ERROR("Failed to create directory \"%ls\"",
+					      path);
+					win32_error(err);
+					return WIMLIB_ERR_MKDIR;
+				}
 			}
+			DEBUG("Created directory \"%ls\"", path);
 		}
-		DEBUG("Created directory \"%ls\"", path);
 		*creationDisposition_ret = OPEN_EXISTING;
 	}
 	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED &&
