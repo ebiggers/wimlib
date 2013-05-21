@@ -717,15 +717,21 @@ wimlib_update_image(WIMStruct *wim,
 {
 	int ret;
 	struct wimlib_update_command *cmds_copy;
+	bool deletion_requested = false;
 
 	DEBUG("Updating image %d with %zu commands", image, num_cmds);
 
-	/* Refuse to update a split WIM. */
-	if (wim->hdr.total_parts != 1) {
-		ERROR("Cannot update a split WIM!");
-		ret = WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	for (size_t i = 0; i < num_cmds; i++)
+		if (cmds[i].op == WIMLIB_UPDATE_OP_DELETE)
+			deletion_requested = true;
+
+	if (deletion_requested)
+		ret = can_delete_from_wim(wim);
+	else
+		ret = can_modify_wim(wim);
+
+	if (ret)
 		goto out;
-	}
 
 	/* Load the metadata for the image to modify (if not loaded already) */
 	ret = select_wim_image(wim, image);

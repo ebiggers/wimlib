@@ -114,11 +114,9 @@ wimlib_export_image(WIMStruct *src_wim,
 	struct list_head lte_list_head;
 	struct wim_inode *inode;
 
-	if (dest_wim->hdr.total_parts != 1) {
-		ERROR("Exporting an image to a split WIM is "
-		      "unsupported");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-	}
+	ret = can_modify_wim(dest_wim);
+	if (ret)
+		return ret;
 
 	if (src_image == WIMLIB_ALL_IMAGES) {
 		if (src_wim->hdr.image_count > 1) {

@@ -80,11 +80,9 @@ wimlib_add_empty_image(WIMStruct *wim, const tchar *name, int *new_idx_ret)
 	if (name == NULL)
 		name = T("");
 
-	if (wim->hdr.total_parts != 1) {
-		ERROR("Cannot add an image to a split WIM");
-		ret = WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	ret = can_modify_wim(wim);
+	if (ret)
 		goto out;
-	}
 
 	if (wimlib_image_name_in_use(wim, name)) {
 		ERROR("There is already an image named \"%"TS"\" in the WIM!",

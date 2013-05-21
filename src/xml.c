@@ -1542,13 +1542,16 @@ wimlib_set_image_name(WIMStruct *w, int image, const tchar *name)
 {
 	tchar *p;
 	int i;
+	int ret;
 
 	DEBUG("Setting the name of image %d to %"TS, image, name);
 
-	if (!name || !*name) {
-		ERROR("Must specify a non-empty string for the image name");
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
+	ret = can_modify_wim(w);
+	if (ret)
+		return ret;
+
+	if (name == NULL)
+		name = T("");
 
 	if (image < 1 || image > w->hdr.image_count) {
 		ERROR("%d is not a valid image", image);
@@ -1558,7 +1561,7 @@ wimlib_set_image_name(WIMStruct *w, int image, const tchar *name)
 	for (i = 1; i <= w->hdr.image_count; i++) {
 		if (i == image)
 			continue;
-		if (tstrcmp(w->wim_info->images[i - 1].name, name) == 0) {
+		if (!tstrcmp(w->wim_info->images[i - 1].name, name)) {
 			ERROR("The name \"%"TS"\" is already in use in the WIM!",
 			      name);
 			return WIMLIB_ERR_IMAGE_NAME_COLLISION;
@@ -1580,6 +1583,11 @@ do_set_image_info_str(WIMStruct *w, int image, const tchar *tstr,
 {
 	tchar *tstr_copy;
 	tchar **dest_tstr_p;
+	int ret;
+
+	ret = can_modify_wim(w);
+	if (ret)
+		return ret;
 
 	if (image < 1 || image > w->hdr.image_count) {
 		ERROR("%d is not a valid image", image);

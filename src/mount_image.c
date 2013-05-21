@@ -2407,24 +2407,14 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	if (ret)
 		goto out;
 
-	if ((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) && (wim->hdr.total_parts != 1)) {
-		ERROR("Cannot mount a split WIM read-write");
-		ret = WIMLIB_ERR_SPLIT_UNSUPPORTED;
-		goto out;
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+		ret = can_delete_from_wim(wim);
+		if (ret)
+			goto out;
 	}
 
 	if (num_additional_swms)
 		merge_lookup_tables(wim, additional_swms, num_additional_swms);
-
-	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		ret = wim_run_full_verifications(wim);
-		if (ret)
-			goto out_restore_lookup_table;
-	}
-
-	ret = wim_checksum_unhashed_streams(wim);
-	if (ret)
-		goto out_restore_lookup_table;
 
 	ret = select_wim_image(wim, image);
 	if (ret)

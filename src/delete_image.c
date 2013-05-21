@@ -36,24 +36,17 @@
  * Deletes an image from the WIM.
  */
 WIMLIBAPI int
-wimlib_delete_image(WIMStruct *w, int image)
+wimlib_delete_image(WIMStruct *wim, int image)
 {
 	int ret;
 	int first, last;
 
-	if (w->hdr.total_parts != 1) {
-		ERROR("Deleting an image from a split WIM is not supported.");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-	}
-
-	if (!w->all_images_verified) {
-		ret = wim_run_full_verifications(w);
-		if (ret)
-			return ret;
-	}
+	ret = can_delete_from_wim(wim);
+	if (ret)
+		return ret;
 
 	if (image == WIMLIB_ALL_IMAGES) {
-		last = w->hdr.image_count;
+		last = wim->hdr.image_count;
 		first = 1;
 	} else {
 		last = image;
@@ -66,34 +59,34 @@ wimlib_delete_image(WIMStruct *w, int image)
 		/* Even if the dentry tree is not allocated, we must select it (and
 		 * therefore allocate it) so that we can decrement the reference counts
 		 * in the lookup table.  */
-		ret = select_wim_image(w, image);
+		ret = select_wim_image(wim, image);
 		if (ret)
 			return ret;
 
 		/* Unless the image metadata is shared by another WIMStruct, free the
 		 * dentry tree, any lookup table entries that have their refcnt
 		 * decremented to 0, and the security data. */
-		put_image_metadata(w->image_metadata[image - 1], w->lookup_table);
+		put_image_metadata(wim->image_metadata[image - 1], wim->lookup_table);
 
 		/* Get rid of the empty slot in the image metadata array. */
-		for (int i = image - 1; i < w->hdr.image_count - 1; i++)
-			w->image_metadata[i] = w->image_metadata[i + 1];
+		for (int i = image - 1; i < wim->hdr.image_count - 1; i++)
+			wim->image_metadata[i] = wim->image_metadata[i + 1];
 
 		/* Decrement the image count. */
-		--w->hdr.image_count;
+		--wim->hdr.image_count;
 
 		/* Fix the boot index. */
-		if (w->hdr.boot_idx == image)
-			w->hdr.boot_idx = 0;
-		else if (w->hdr.boot_idx > image)
-			w->hdr.boot_idx--;
+		if (wim->hdr.boot_idx == image)
+			wim->hdr.boot_idx = 0;
+		else if (wim->hdr.boot_idx > image)
+			wim->hdr.boot_idx--;
 
-		w->current_image = WIMLIB_NO_IMAGE;
+		wim->current_image = WIMLIB_NO_IMAGE;
 
 		/* Remove the image from the XML information. */
-		xml_delete_image(&w->wim_info, image);
+		xml_delete_image(&wim->wim_info, image);
 
-		w->deletion_occurred = 1;
+		wim->deletion_occurred = 1;
 	}
 	return 0;
 }

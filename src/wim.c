@@ -366,15 +366,16 @@ wimlib_print_files(WIMStruct *w, int image)
 
 /* Sets the index of the bootable image. */
 WIMLIBAPI int
-wimlib_set_boot_idx(WIMStruct *w, int boot_idx)
+wimlib_set_boot_idx(WIMStruct *wim, int boot_idx)
 {
-	if (w->hdr.total_parts != 1) {
-		ERROR("Cannot modify the boot index of a split WIM!");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-	}
-	if (boot_idx < 0 || boot_idx > w->hdr.image_count)
+	int ret;
+
+	ret = can_modify_wim(wim);
+	if (ret)
+		return ret;
+	if (boot_idx < 0 || boot_idx > wim->hdr.image_count)
 		return WIMLIB_ERR_INVALID_IMAGE;
-	w->hdr.boot_idx = boot_idx;
+	wim->hdr.boot_idx = boot_idx;
 	return 0;
 }
 
@@ -669,6 +670,30 @@ wim_checksum_unhashed_streams(WIMStruct *w)
 		}
 	}
 	return 0;
+}
+
+int
+can_modify_wim(WIMStruct *wim)
+{
+	if (wim->hdr.total_parts != 1) {
+		if (wim->filename)
+			ERROR("Cannot modify \"%"TS"\": is a split WIM!", wim->filename);
+		else
+			ERROR("Cannot modify a split WIM!");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
+	return 0;
+}
+
+int
+can_delete_from_wim(WIMStruct *wim)
+{
+	int ret;
+
+	ret = can_modify_wim(wim);
+	if (ret == 0 && !wim->all_images_verified)
+		ret = wim_run_full_verifications(wim);
+	return ret;
 }
 
 /* Frees the memory for the WIMStruct, including all internal memory; also

@@ -83,4 +83,10 @@ reopen_wim(WIMStruct *w);
 extern int
 close_wim(WIMStruct *w);
 
+extern int
+can_modify_wim(WIMStruct *wim);
+
+extern int
+can_delete_from_wim(WIMStruct *wim);
+
 #endif /* _WIMLIB_WIM_H */

@@ -2275,8 +2275,7 @@ wimlib_resolve_image(WIMStruct *wim,
  * 	@a boot_idx does not specify an existing image in @a wim, and it was not
  * 	0.
  * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a wim is part of a split WIM.  We do not support changing the boot
- * 	index of a split WIM.
+ * 	@a wim is part of a split WIM.
  */
 extern int
 wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
@@ -2300,6 +2299,8 @@ wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @a description
  * 	string.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a wim is part of a split WIM.
  */
 extern int
 wimlib_set_image_descripton(WIMStruct *wim, int image,
@@ -2324,6 +2325,8 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  * 	@a image does not specify a single existing image in @a wim.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @a flags string.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a wim is part of a split WIM.
  */
 extern int wimlib_set_image_flags(WIMStruct *wim, int image,
 				  const wimlib_tchar *flags);
@@ -2338,17 +2341,19 @@ extern int wimlib_set_image_flags(WIMStruct *wim, int image,
  * @param image
  * 	The number of the image for which to change the name.
  * @param name
- * 	The new name to give the image.  It must be a nonempty string.
+ *	New name to give the new image.  If @c NULL or empty, the new image is
+ *	given no name.  If nonempty, it must specify a name that does not
+ *	already exist in @a wim.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
  * 	There is already an image named @a name in @a wim.
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a name was @c NULL or the empty string.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a image does not specify a single existing image in @a wim.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @a name string.
+ * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
+ * 	@a wim is part of a split WIM.
  */
 extern int wimlib_set_image_name(WIMStruct *wim, int image,
 				 const wimlib_tchar *name);
