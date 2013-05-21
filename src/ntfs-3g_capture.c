@@ -515,8 +515,12 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	 * directory tree rooted at it */
 	ntfs_inode *ni = ntfs_inode_open(ctx->dir_ni->vol, mref);
 	if (!ni) {
-		ERROR_WITH_ERRNO("Failed to open NTFS inode");
-		ret = -1;
+		/* XXX This used to be treated as an error, but NTFS-3g seemed
+		 * to be unable to read some inodes on a Windows 8 image for
+		 * some reason. */
+		WARNING_WITH_ERRNO("Failed to open NTFS file \"%s/%s\"",
+				   ctx->path, mbs_name);
+		ret = 0;
 		goto out_free_mbs_name;
 	}
 	path_len = ctx->path_len;
