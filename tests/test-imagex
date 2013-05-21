@@ -175,7 +175,7 @@ if ! test "`imagex info dir.wim | grep 'Image Count' | awk '{print $3}'`" = 2; t
 fi
 
 echo "Testing appending WIM image with existing name (this should generate errors)"
-if imagex append dir2 dir.wim; then
+if imagex append dir2 dir.wim "dir"; then
 	error "Adding duplicate image name didn't fail"
 fi
 echo "Testing appending WIM image with new name"
