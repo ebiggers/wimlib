@@ -267,13 +267,18 @@ capture_ntfs_streams(struct wim_inode *inode,
 			/* Unnamed data stream.  Put the reference to it in the
 			 * dentry's inode. */
 			if (inode->i_lte) {
-				ERROR("Found two un-named data streams for `%s'",
-				      path);
-				ret = WIMLIB_ERR_NTFS_3G;
-				goto out_free_lte;
+				if (lte) {
+					ERROR("Found two un-named data streams for \"%s\" "
+					      "(sizes = %"PRIu64", %"PRIu64")",
+					      path, wim_resource_size(inode->i_lte),
+					      wim_resource_size(lte));
+					ret = WIMLIB_ERR_NTFS_3G;
+					goto out_free_lte;
+				}
+			} else {
+				stream_id = 0;
+				inode->i_lte = lte;
 			}
-			stream_id = 0;
-			inode->i_lte = lte;
 		} else {
 			/* Named data stream.  Put the reference to it in the
 			 * alternate data stream entries */
