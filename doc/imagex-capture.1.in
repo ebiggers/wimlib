@@ -301,7 +301,7 @@ input rather than an external file.
 The NTFS capture mode cannot be used with \fB--source-list\fR, as only capturing
 a full NTFS volume is supported.
 .SH NOTES
-\fBimage append\fR does not support appending an image to a split WIM.
+\fB@IMAGEX_PROGNAME@ append\fR does not support appending an image to a split WIM.
 .PP
 The different capture modes only specify the data that is captured and don't
 specify a special WIM format.  A WIM file can contain images captured using
