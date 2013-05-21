@@ -24,6 +24,8 @@ Version 1.4.1:
 	wimlib-imagex will now choose different units for progress messages,
 	depending on the amount of data that needs to be processed.
 
+	Fixed a couple issues with using wimlib-imagex on UDF filesystems.
+
 Version 1.4.0:
 	Added new "extract" and "update" subcommands to wimlib-imagex, along
 	with associated APIs in the library.  These commands are intended mainly
