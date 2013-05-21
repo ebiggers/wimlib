@@ -447,7 +447,7 @@ xml_read_image_info(xmlNode *image_node, struct image_info *image_info)
 	}
 	if (!image_info->name) {
 		tchar *empty_name;
-		WARNING("Image with index %d has no name", image_info->index);
+		/*WARNING("Image with index %d has no name", image_info->index);*/
 		empty_name = MALLOC(sizeof(tchar));
 		if (!empty_name)
 			return WIMLIB_ERR_NOMEM;
