@@ -458,7 +458,8 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 	}
 
 	/* Set DOS (short) name if given */
-	if (dentry_has_short_name(dentry)) {
+	if (dentry_has_short_name(dentry) && !dentry->dos_name_invalid)
+	{
 		char *short_name_mbs;
 		size_t short_name_mbs_nbytes;
 		ret = utf16le_to_tstr(dentry->short_name,

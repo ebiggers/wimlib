@@ -734,7 +734,7 @@ win32_finish_extract_stream(HANDLE h, const struct wim_dentry *dentry,
 				return ret;
 		}
 
-		if (dentry_has_short_name(dentry))
+		if (dentry_has_short_name(dentry) && !dentry->dos_name_invalid)
 			SetFileShortNameW(h, dentry->short_name);
 		else if (running_on_windows_7_or_later())
 			SetFileShortNameW(h, L"");

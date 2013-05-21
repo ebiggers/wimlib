@@ -157,10 +157,13 @@ struct wim_dentry {
 	/* Does this dentry need to be extracted? */
 	u8 needs_extraction : 1;
 
+	u8 not_extracted : 1;
+
 	/* Only used during NTFS capture */
 	u8 is_win32_name : 1;
 
-	u8 not_extracted : 1;
+	/* Set to 1 if an inode has multiple DOS names. */
+	u8 dos_name_invalid : 1;
 
 	/* Temporary list */
 	struct list_head tmp_list;

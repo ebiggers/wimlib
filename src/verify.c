@@ -104,11 +104,19 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	inode_for_each_dentry(dentry, inode) {
 		if (dentry_has_short_name(dentry)) {
 			if (dentry_with_dos_name) {
+				/* This was previously an error, but if we
+				 * capture a WIM from UDF on Windows, hard links
+				 * are supported but DOS names are automatically
+				 * generated for all names for an inode.  */
+			#if 0
 				ERROR("Hard-linked file has a DOS name at "
 				      "both `%"TS"' and `%"TS"'",
 				      dentry_full_path(dentry_with_dos_name),
 				      dentry_full_path(dentry));
 				return WIMLIB_ERR_INVALID_DENTRY;
+			#else
+				dentry->dos_name_invalid = 1;
+			#endif
 			}
 			dentry_with_dos_name = dentry;
 		}
