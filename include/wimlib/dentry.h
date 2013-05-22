@@ -307,8 +307,8 @@ struct wim_inode {
 	/* Device number, used only during image capture */
 	u64 i_devno;
 
-	/* List of dentries that reference this inode (there should be
-	 * link_count of them) */
+	/* List of dentries that reference this inode (there should be i_nlink
+	 * of them) */
 	struct list_head i_dentry;
 
 	union {

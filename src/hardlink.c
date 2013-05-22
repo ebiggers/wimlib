@@ -92,10 +92,6 @@ inode_table_insert(struct wim_dentry *dentry, void *_table)
 		 * in a hard link group by itself.  Add it to the list of extra
 		 * inodes rather than inserting it into the hash lists. */
 		list_add_tail(&d_inode->i_list, &table->extra_inodes);
-
-		wimlib_assert(d_inode->i_dentry.next == &dentry->d_alias);
-		wimlib_assert(d_inode->i_dentry.prev == &dentry->d_alias);
-		wimlib_assert(d_inode->i_nlink == 1);
 	} else {
 		size_t pos;
 		struct wim_inode *inode;
@@ -115,7 +111,6 @@ inode_table_insert(struct wim_dentry *dentry, void *_table)
 					return WIMLIB_ERR_INVALID_DENTRY;
 				}
 				inode_add_dentry(dentry, inode);
-				inode->i_nlink++;
 				return 0;
 			}
 		}
@@ -123,10 +118,6 @@ inode_table_insert(struct wim_dentry *dentry, void *_table)
 		/* No inode in the table has the same number as this one, so add
 		 * it to the table. */
 		hlist_add_head(&d_inode->i_hlist, &table->array[pos]);
-
-		wimlib_assert(d_inode->i_dentry.next == &dentry->d_alias);
-		wimlib_assert(d_inode->i_dentry.prev == &dentry->d_alias);
-		wimlib_assert(d_inode->i_nlink == 1);
 
 		/* XXX Make the table grow when too many entries have been
 		 * inserted. */
@@ -189,11 +180,16 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 	int ret;
 
 	if (noshare) {
+		/* File that cannot be hardlinked--- Return a new inode with its
+		 * inode and device numbers left at 0. */
 		ret = new_dentry_with_timeless_inode(name, &dentry);
 		if (ret)
 			return ret;
 		list_add_tail(&dentry->d_inode->i_list, &table->extra_inodes);
 	} else {
+		/* File that can be hardlinked--- search the table for an
+		 * existing inode matching the inode number and device;
+		 * otherwise create a new inode. */
 		ret = new_dentry(name, &dentry);
 		if (ret)
 			return ret;
@@ -202,6 +198,8 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 			free_dentry(dentry);
 			return WIMLIB_ERR_NOMEM;
 		}
+		/* If using an existing inode, we need to gain a reference to
+		 * each of its streams. */
 		if (inode->i_nlink > 1)
 			inode_ref_streams(inode);
 		dentry->d_inode = inode;
@@ -305,7 +303,7 @@ fix_true_inode(struct wim_inode *inode, struct list_head *inode_list)
 	}
 
 	ref_inode = ref_dentry->d_inode;
-	ref_inode->i_nlink = 1;
+	wimlib_assert(ref_inode->i_nlink == 1);
 	list_add_tail(&ref_inode->i_list, inode_list);
 
 	list_del(&inode->i_dentry);
@@ -318,6 +316,7 @@ fix_true_inode(struct wim_inode *inode, struct list_head *inode_list)
 				return WIMLIB_ERR_INVALID_DENTRY;
 			}
 			/* Free the unneeded `struct wim_inode'. */
+			wimlib_assert(dentry->d_inode->i_nlink == 1);
 			free_inode(dentry->d_inode);
 			dentry->d_inode = ref_inode;
 			ref_inode->i_nlink++;
@@ -352,15 +351,7 @@ fix_nominal_inode(struct wim_inode *inode, struct list_head *inode_list,
 	struct hlist_node *cur, *tmp;
 	int ret;
 	size_t num_true_inodes;
-
-	wimlib_assert(inode->i_nlink == inode_link_count(inode));
-
-	if (inode->i_nlink > 1 &&
-	    (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY))
-	{
-		ERROR("Found unsupported directory hard link!");
-		return WIMLIB_ERR_INVALID_DENTRY;
-	}
+	unsigned nominal_group_size = inode_link_count(inode);
 
 	LIST_HEAD(dentries_with_data_streams);
 	LIST_HEAD(dentries_with_no_data_streams);
@@ -389,9 +380,9 @@ fix_nominal_inode(struct wim_inode *inode, struct list_head *inode_list,
 	 * inode to be a true inode */
 	if (list_empty(&dentries_with_data_streams)) {
 	#ifdef ENABLE_DEBUG
-		if (inode->i_nlink > 1) {
+		if (nominal_group_size > 1) {
 			DEBUG("Found link group of size %u without "
-			      "any data streams:", inode->i_nlink);
+			      "any data streams:", nominal_group_size);
 			print_inode_dentries(inode);
 			DEBUG("We are going to interpret it as true "
 			      "link group, provided that the dentries "
@@ -437,7 +428,8 @@ next_dentry_2:
 			ERROR("but dentries with no stream information remained. "
 			      "We don't know which inode");
 			ERROR("to assign them to.");
-			return WIMLIB_ERR_INVALID_DENTRY;
+			ret = WIMLIB_ERR_INVALID_DENTRY;
+			goto out_cleanup_true_inode_list;
 		}
 		inode = container_of(true_inodes.first, struct wim_inode, i_hlist);
 		/* Assign the streamless dentries to the one and only true
@@ -466,11 +458,18 @@ next_dentry_2:
         }
 
 	hlist_for_each_entry_safe(inode, cur, tmp, &true_inodes, i_hlist) {
+		hlist_del_init(&inode->i_hlist);
 		ret = fix_true_inode(inode, inode_list);
 		if (ret)
-			return ret;
+			goto out_cleanup_true_inode_list;
 	}
-	return 0;
+	ret = 0;
+	goto out;
+out_cleanup_true_inode_list:
+	hlist_for_each_entry_safe(inode, cur, tmp, &true_inodes, i_hlist)
+		hlist_del_init(&inode->i_hlist);
+out:
+	return ret;
 }
 
 static int
@@ -483,7 +482,7 @@ fix_inodes(struct wim_inode_table *table, struct list_head *inode_list,
 	INIT_LIST_HEAD(inode_list);
 	for (u64 i = 0; i < table->capacity; i++) {
 		hlist_for_each_entry_safe(inode, cur, tmp, &table->array[i], i_hlist) {
-			INIT_LIST_HEAD(&inode->i_list);
+			hlist_del_init(&inode->i_hlist);
 			ret = fix_nominal_inode(inode, inode_list, ino_changes_needed);
 			if (ret)
 				return ret;
@@ -527,6 +526,7 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list)
 	struct wim_inode_table inode_tab;
 	int ret;
 	bool ino_changes_needed;
+	struct wim_inode *inode;
 
 	DEBUG("Inserting dentries into inode table");
 	ret = init_inode_table(&inode_tab, 9001);
@@ -535,17 +535,16 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list)
 
 	ret = for_dentry_in_tree(root, inode_table_insert, &inode_tab);
 	if (ret)
-		goto out_destroy_image_table;
+		goto out_destroy_inode_table;
 
 	DEBUG("Cleaning up the hard link groups");
 	ino_changes_needed = false;
 	ret = fix_inodes(&inode_tab, inode_list, &ino_changes_needed);
 	if (ret)
-		goto out_destroy_image_table;
+		goto out_destroy_inode_table;
 
 	if (ino_changes_needed) {
 		u64 cur_ino = 1;
-		struct wim_inode *inode;
 
 		WARNING("Re-assigning inode numbers due to inode inconsistencies");
 		list_for_each_entry(inode, inode_list, i_list) {
@@ -555,15 +554,31 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list)
 				inode->i_ino = 0;
 		}
 	}
+	/* On success, all the inodes have been moved to the image inode list,
+	 * so there's no need to delete from from the hash lists in the inode
+	 * table before freeing the hash buckets array directly. */
 	ret = 0;
-out_destroy_image_table:
+	goto out_destroy_inode_table_raw;
+out_destroy_inode_table:
+	for (size_t i = 0; i < inode_tab.capacity; i++) {
+		struct hlist_node *cur, *tmp;
+		hlist_for_each_entry_safe(inode, cur, tmp, &inode_tab.array[i], i_hlist)
+			hlist_del_init(&inode->i_hlist);
+	}
+	{
+		struct wim_inode *tmp;
+		list_for_each_entry_safe(inode, tmp, &inode_tab.extra_inodes, i_list)
+			list_del_init(&inode->i_list);
+	}
+out_destroy_inode_table_raw:
 	destroy_inode_table(&inode_tab);
 out:
 	return ret;
 }
 
-/* Assign consecutive inode numbers to the inodes in the inode table, and move
- * the inodes to a single list @head. */
+/* Assign consecutive inode numbers to a new set of inodes from the inode table,
+ * and append the inodes to a single list @head that contains the inodes already
+ * existing in the WIM image.  */
 void
 inode_table_prepare_inode_list(struct wim_inode_table *table,
 			       struct list_head *head)
@@ -572,6 +587,7 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 	struct hlist_node *cur, *tmp;
 	u64 cur_ino = 1;
 
+	/* Re-assign inode numbers in the existing list to avoid duplicates. */
 	list_for_each_entry(inode, head, i_list) {
 		if (inode->i_nlink > 1)
 			inode->i_ino = cur_ino++;
@@ -579,6 +595,8 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 			inode->i_ino = 0;
 	}
 
+	/* Assign inode numbers to the new inodes and move them to the image's
+	 * inode list. */
 	for (size_t i = 0; i < table->capacity; i++) {
 		hlist_for_each_entry_safe(inode, cur, tmp, &table->array[i], i_hlist)
 		{

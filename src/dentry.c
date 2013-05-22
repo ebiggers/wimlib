@@ -1032,7 +1032,8 @@ free_inode(struct wim_inode *inode)
 	#endif
 		/* HACK: This may instead delete the inode from i_list, but the
 		 * hlist_del() behaves the same as list_del(). */
-		hlist_del(&inode->i_hlist);
+		if (!hlist_unhashed(&inode->i_hlist))
+			hlist_del(&inode->i_hlist);
 		FREE(inode->i_extracted_file);
 		FREE(inode);
 	}
