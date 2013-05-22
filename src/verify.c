@@ -114,13 +114,6 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 		}
 	}
 
-	/* Directories with multiple links have not been tested. XXX */
-	if (inode->i_nlink > 1 && inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-		ERROR("Hard-linked directory `%"TS"' is unsupported",
-		      dentry_full_path(first_dentry));
-		return WIMLIB_ERR_INVALID_DENTRY;
-	}
-
 	inode->i_verified = 1;
 	return 0;
 }

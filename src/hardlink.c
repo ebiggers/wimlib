@@ -105,6 +105,15 @@ inode_table_insert(struct wim_dentry *dentry, void *_table)
 		pos = d_inode->i_ino % table->capacity;
 		hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
 			if (inode->i_ino == d_inode->i_ino) {
+				if (unlikely((inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) ||
+					     (d_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)))
+				{
+					ERROR("Unsupported directory hard link "
+					      "\"%"TS"\" <=> \"%"TS"\"",
+					      dentry_full_path(dentry),
+					      dentry_full_path(inode_first_dentry(inode)));
+					return WIMLIB_ERR_INVALID_DENTRY;
+				}
 				inode_add_dentry(dentry, inode);
 				inode->i_nlink++;
 				return 0;
@@ -522,16 +531,19 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list)
 	DEBUG("Inserting dentries into inode table");
 	ret = init_inode_table(&inode_tab, 9001);
 	if (ret)
-		return ret;
+		goto out;
 
-	for_dentry_in_tree(root, inode_table_insert, &inode_tab);
+	ret = for_dentry_in_tree(root, inode_table_insert, &inode_tab);
+	if (ret)
+		goto out_destroy_image_table;
 
 	DEBUG("Cleaning up the hard link groups");
 	ino_changes_needed = false;
 	ret = fix_inodes(&inode_tab, inode_list, &ino_changes_needed);
-	destroy_inode_table(&inode_tab);
+	if (ret)
+		goto out_destroy_image_table;
 
-	if (ret == 0 && ino_changes_needed) {
+	if (ino_changes_needed) {
 		u64 cur_ino = 1;
 		struct wim_inode *inode;
 
@@ -543,6 +555,10 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list)
 				inode->i_ino = 0;
 		}
 	}
+	ret = 0;
+out_destroy_image_table:
+	destroy_inode_table(&inode_tab);
+out:
 	return ret;
 }
 
