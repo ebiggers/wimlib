@@ -126,7 +126,9 @@ ads_entries_have_same_name(const struct wim_ads_entry *entry_1,
  * dentry_tree_fix_inodes() in hardlink.c).
  */
 struct wim_dentry {
-	/* The inode for this dentry */
+	/* Pointer to the inode for this dentry.  This will contain some
+	 * information that was factored out of the on-disk WIM dentry as common
+	 * to all dentries in a hard link group.  */
 	struct wim_inode *d_inode;
 
 	/* Node for the parent's red-black tree of child dentries, sorted by
@@ -155,70 +157,79 @@ struct wim_dentry {
 	 * including the terminating null character. */
 	u32 full_path_nbytes;
 
-	/* Does this dentry need to be extracted? */
+	/* For extraction operations, a subtree of dentries will have this flag
+	 * set so we can keep track of which dentries still need to be
+	 * extracted.  Otherwise this will always be 0.  */
 	u8 needs_extraction : 1;
 
+	/* For extraction operations, this flag will be set when a dentry in the
+	 * tree being extracted is not being extracted for some reason (file
+	 * type not supported by target filesystem or contains invalid
+	 * characters).  Otherwise this will always be 0. */
 	u8 not_extracted : 1;
 
-	/* Only used during NTFS capture */
+	/* When capturing from a NTFS volume using NTFS-3g, this flag is set on
+	 * dentries that were created from a filename in the WIN32 or WIN32+DOS
+	 * namespaces rather than the POSIX namespace.  Otherwise this will
+	 * always be 0.  */
 	u8 is_win32_name : 1;
 
-	/* Set to 1 if an inode has multiple DOS names. */
+	/* When verifying the dentry tree after reading it into memory, this
+	 * flag will be set on all dentries in a hard link group that have a
+	 * nonempty DOS name except one.  This is because it is supposed to be
+	 * illegal (on NTFS, at least) for a single inode to have multiple DOS
+	 * names.  */
 	u8 dos_name_invalid : 1;
 
-	/* Temporary list */
+	/* Temporary list field used to make lists of dentries in a few places.
+	 * */
 	struct list_head tmp_list;
 
-	/* List of dentries in the inode (hard link set)  */
+	/* Linked list node that places this dentry in the list of aliases for
+	 * its inode (d_inode) */
 	struct list_head d_alias;
 
 	/* The parent of this directory entry. */
 	struct wim_dentry *parent;
 
-	/*
-	 * Size of directory entry on disk, in bytes.  Typical size is around
-	 * 104 to 120 bytes.
-	 *
-	 * It is possible for the length field to be 0.  This situation, which
-	 * is undocumented, indicates the end of a list of sibling nodes in a
-	 * directory.  It also means the real length is 8, because the dentry
-	 * included only the length field, but that takes up 8 bytes.
-	 *
-	 * The length here includes the base directory entry on disk as well as
-	 * the long and short filenames.  It does NOT include any alternate
-	 * stream entries that may follow the directory entry, even though the
-	 * size of those needs to be considered.  The length SHOULD be 8-byte
-	 * aligned, although we don't require it to be.  We do require the
-	 * length to be large enough to hold the file name(s) of the dentry;
-	 * additionally, a warning is issued if this field is larger than the
-	 * aligned size.
-	 */
+	/* 'length' and 'subdir_offset' are only used while reading and writing
+	 * this dentry; see the corresponding field in
+	 * `struct wim_dentry_on_disk' for explanation.  */
 	u64 length;
-
-	/* The offset, from the start of the uncompressed WIM metadata resource
-	 * for this image, of this dentry's child dentries.  0 if the directory
-	 * entry has no children, which is the case for regular files or reparse
-	 * points. */
 	u64 subdir_offset;
 
+	/* These correspond to the two unused fields in the on-disk WIM dentry;
+	 * we read them into memory so we can write them unchanged.  These
+	 * fields are set to 0 on new dentries.  */
 	u64 d_unused_1;
 	u64 d_unused_2;
 
-	/* Pointer to the UTF-16LE short filename (malloc()ed buffer) */
+	/* Pointer to the UTF-16LE short filename (malloc()ed buffer), or NULL
+	 * if this dentry has no short name.  */
 	utf16lechar *short_name;
 
-	/* Pointer to the UTF-16LE filename (malloc()ed buffer). */
+	/* Pointer to the UTF-16LE filename (malloc()ed buffer), or NULL if this
+	 * dentry has no filename.  */
 	utf16lechar *file_name;
 
-	/* Full path of this dentry in the WIM */
+	/* Full path to this dentry in the WIM, in platform-dependent "tchars"
+	 * that can be printed without convension.  By default this field will
+	 * be NULL and will only be calculated on-demand by the
+	 * calculate_dentry_full_path() or dentry_full_path() functions.  */
 	tchar *_full_path;
 
-	/* Actual name to extract this dentry as. */
+	/* (Extraction only) Actual name to extract this dentry as, along with
+	 * its length in tchars excluding the NULL terminator.  This usually
+	 * will be the same as file_name, with the character encoding converted
+	 * if needed.  But if file_name contains characters not accepted on the
+	 * current platform, then this may be set slightly differently from
+	 * file_name.  This will be either NULL or a malloc()ed buffer that may
+	 * alias file_name.  */
 	tchar *extraction_name;
 	size_t extraction_name_nchars;
 
-	/* List head for building a list of dentries that contain a certain
-	 * stream. */
+	/* (Extraction only) List head for building a list of dentries that
+	 * contain a certain stream. */
 	struct list_head extraction_stream_list;
 };
 

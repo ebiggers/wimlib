@@ -72,18 +72,108 @@ struct wim_ads_entry_on_disk {
 
 #define WIM_ADS_ENTRY_DISK_SIZE 38
 
-/* WIM directory entry (on-disk format) */
+/* On-disk format of a WIM dentry (directory entry), located in the metadata
+ * resource for a WIM image.  */
 struct wim_dentry_on_disk {
+
+	/* Length of this directory entry in bytes, not including any alternate
+	 * data stream entries.  Should be a multiple of 8 so that the following
+	 * dentry or alternate data stream entry is aligned on an 8-byte
+	 * boundary.  (If not, wimlib will round it up.)
+	 *
+	 * It is also possible for this field to be 0.  This situation, which is
+	 * undocumented, indicates the end of a list of sibling nodes in a
+	 * directory.  It also means the real length is 8, because the dentry
+	 * included only the length field, but that takes up 8 bytes.  */
 	le64 length;
+
+	/* Attributes of the file or directory.  This is a bitwise OR of the
+	 * FILE_ATTRIBUTE_* constants and should correspond to the value
+	 * retrieved by GetFileAttributes() on Windows. */
 	le32 attributes;
+
+	/* A value that specifies the security descriptor for this file or
+	 * directory.  If -1, the file or directory has no security descriptor.
+	 * Otherwise, it is a 0-based index into the WIM image's table of
+	 * security descriptors (see: `struct wim_security_data') */
 	sle32 security_id;
+
+	/* Offset from the start of the uncompressed metadata resource of this
+	 * directory's child directory entries, or 0 if this directory entry
+	 * does not correspond to a directory or otherwise does not have any
+	 * children. */
 	le64 subdir_offset;
+
+	/* Reserved fields */
 	le64 unused_1;
 	le64 unused_2;
+
+	/* The following three time fields should correspond to those gotten by
+	 * calling GetFileTime() on Windows. */
+
+	/* Creation time, in 100-nanosecond intervals since January 1, 1601. */
 	le64 creation_time;
+
+	/* Last access time, in 100-nanosecond intervals since January 1, 1601. */
 	le64 last_access_time;
+
+	/* Last write time, in 100-nanosecond intervals since January 1, 1601. */
 	le64 last_write_time;
+
+	/* Vaguely, the SHA-1 message digest ("hash") of the file's contents.
+	 * More specifically, this is for the "unnamed data stream" rather than
+	 * any "alternate data streams".  This hash value is used to look up the
+	 * corresponding entry in the WIM's stream lookup table to actually find
+	 * the file contents within the WIM.
+	 *
+	 * If the file has no unnamed data stream (e.g. is a directory), then
+	 * this field will be all zeroes.  If the unnamed data stream is empty
+	 * (i.e. an "empty file"), then this field is also expected to be all
+	 * zeroes.  (It will be if wimlib created the WIM image, at least;
+	 * otherwise it can't be ruled out that the SHA-1 message digest of 0
+	 * bytes of data is given explicitly.)
+	 *
+	 * If the file has reparse data, then this field will instead specify
+	 * the SHA-1 message digest of the reparse data.  If it is somehow
+	 * possible for a file to have both an unnamed data stream and reparse
+	 * data, then this is not handled by wimlib.
+	 *
+	 * As a further special case, if this field is all zeroes but there is
+	 * an alternate data stream entry with no name and a nonzero SHA-1
+	 * message digest field, then that hash must be used instead of this
+	 * one.  (wimlib does not use this quirk on WIM images it creates.)
+	 */
 	u8 unnamed_stream_hash[SHA1_HASH_SIZE];
+
+	/* The format of the following data is not yet completely known and they
+	 * do not correspond to Microsoft's documentation.
+	 *
+	 * If this directory entry is for a reparse point (has
+	 * FILE_ATTRIBUTE_REPARSE_POINT set in the attributes field), then the
+	 * version of the following fields containing the reparse tag is valid.
+	 * Furthermore, the field notated as not_rpfixed, as far as I can tell,
+	 * is supposed to be set to 1 if reparse point fixups (a.k.a. fixing the
+	 * targets of absolute symbolic links) were done, and otherwise 0.
+	 *
+	 * If this directory entry is not for a reparse point, then the version
+	 * of the following fields containing the hard_link_group_id is valid.
+	 * All MS says about this field is that "If this file is part of a hard
+	 * link set, all the directory entries in the set will share the same
+	 * value in this field.".  However, more specifically I have observed
+	 * the following:
+	 *    - If the file is part of a hard link set of size 1, then the
+	 *    hard_link_group_id should be set to either 0, which is treated
+	 *    specially as indicating "not hardlinked", or any unique value.
+	 *    - The specific nonzero values used to identity hard link sets do
+	 *    not matter, as long as they are unique.
+	 *    - However, due to bugs in Microsoft's software, it is actually NOT
+	 *    guaranteed that directory entries that share the same hard link
+	 *    group ID are actually hard linked to each either.  We have to
+	 *    handle this by using special code to use distinguishing features
+	 *    (possible because some information about the underlying inode is
+	 *    repeated in each dentry) to split up these fake hard link groups
+	 *    into what they actually are supposed to be.
+	 */
 	union {
 		struct {
 			le32 rp_unknown_1;
@@ -96,14 +186,28 @@ struct wim_dentry_on_disk {
 			le64 hard_link_group_id;
 		} _packed_attribute nonreparse;
 	};
+
+	/* Number of alternate data stream entries that directly follow this
+	 * dentry on-disk. */
 	le16 num_alternate_data_streams;
+
+	/* Length of this file's UTF-16LE encoded short name (8.3 DOS-compatible
+	 * name), if present, in bytes, excluding the null terminator.  If this
+	 * file has no short name, then this field should be 0.  */
 	le16 short_name_nbytes;
+
+	/* Length of this file's UTF-16LE encoded "long" name, excluding the
+	 * null terminator.  If this file has no short name, then this field
+	 * should be 0.  It's expected that only the root dentry has this field
+	 * set to 0.  */
 	le16 file_name_nbytes;
 
-	/* Follewed by variable length file name, if file_name_nbytes != 0 */
+	/* Follewed by variable length file name, in UTF16-LE, if
+	 * file_name_nbytes != 0.  Includes null terminator. */
 	utf16lechar file_name[];
 
-	/* Followed by variable length short name, if short_name_nbytes != 0 */
+	/* Followed by variable length short name, in UTF16-LE, if
+	 * short_name_nbytes != 0.  Includes null terminator. */
 	/*utf16lechar short_name[];*/
 } _packed_attribute;
 
@@ -1723,7 +1827,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	 * fixed-length fields */
 	if (dentry->length < sizeof(struct wim_dentry_on_disk)) {
 		ERROR("Directory entry has invalid length of %"PRIu64" bytes",
-		      dentry->length);
+		      entry->length);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 
