@@ -405,8 +405,11 @@ read_lookup_table(WIMStruct *w)
 	num_entries = w->hdr.lookup_table_res_entry.size /
 		      sizeof(struct wim_lookup_table_entry_disk);
 	table = new_lookup_table(num_entries * 2 + 1);
-	if (!table)
+	if (!table) {
+		ERROR("Failed to allocate stream hash table of size %zu",
+		      num_entries * 2 + 1);
 		return WIMLIB_ERR_NOMEM;
+	}
 
 	w->current_image = 0;
 	offset = w->hdr.lookup_table_res_entry.offset;
@@ -445,18 +448,18 @@ read_lookup_table(WIMStruct *w)
 		copy_hash(cur_entry->hash, disk_entry->hash);
 
 		if (cur_entry->part_number != w->hdr.part_number) {
-			ERROR("A lookup table entry in part %hu of the WIM "
-			      "points to part %hu",
-			      w->hdr.part_number, cur_entry->part_number);
-			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-			goto out_free_cur_entry;
+			WARNING("A lookup table entry in part %hu of the WIM "
+				"points to part %hu (ignoring it)",
+				w->hdr.part_number, cur_entry->part_number);
+			free_lookup_table_entry(cur_entry);
+			continue;
 		}
 
 		if (is_zero_hash(cur_entry->hash)) {
-			ERROR("The WIM lookup table contains an entry with a "
-			      "SHA1 message digest of all 0's");
-			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-			goto out_free_cur_entry;
+			WARNING("The WIM lookup table contains an entry with a "
+				"SHA1 message digest of all 0's (ignoring it)");
+			free_lookup_table_entry(cur_entry);
+			continue;
 		}
 
 		if (!(cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
@@ -464,13 +467,21 @@ read_lookup_table(WIMStruct *w)
 		        cur_entry->resource_entry.original_size))
 		{
 			if (wimlib_print_errors) {
-				ERROR("Found uncompressed resource with original size "
-				      "not the same as compressed size");
-				ERROR("The lookup table entry for the resource is as follows:");
-				print_lookup_table_entry(cur_entry, stderr);
+				WARNING("Found uncompressed resource with "
+					"original size (%"PRIu64") not the same "
+					"as compressed size (%"PRIu64")",
+					cur_entry->resource_entry.original_size,
+					cur_entry->resource_entry.size);
+				if (cur_entry->resource_entry.original_size) {
+					WARNING("Overriding compressed size with original size.");
+					cur_entry->resource_entry.size =
+						cur_entry->resource_entry.original_size;
+				} else {
+					WARNING("Overriding original size with compressed size");
+					cur_entry->resource_entry.original_size =
+						cur_entry->resource_entry.size;
+				}
 			}
-			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-			goto out_free_cur_entry;
 		}
 
 		if (cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) {
@@ -485,17 +496,18 @@ read_lookup_table(WIMStruct *w)
 			}
 
 			if (w->hdr.part_number != 1) {
-				ERROR("Found a metadata resource in a "
-				      "non-first part of the split WIM!");
-				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-				goto out_free_cur_entry;
+				WARNING("Ignoring metadata resource found in a "
+					"non-first part of the split WIM");
+				free_lookup_table_entry(cur_entry);
+				continue;
 			}
 			if (w->current_image == w->hdr.image_count) {
-				ERROR("The WIM header says there are %u images "
-				      "in the WIM, but we found more metadata "
-				      "resources than this", w->hdr.image_count);
-				ret = WIMLIB_ERR_IMAGE_COUNT;
-				goto out_free_cur_entry;
+				WARNING("The WIM header says there are %u images "
+					"in the WIM, but we found more metadata "
+					"resources than this (ignoring the extra)",
+					w->hdr.image_count);
+				free_lookup_table_entry(cur_entry);
+				continue;
 			}
 
 			/* Notice very carefully:  We are assigning the metadata
@@ -517,17 +529,18 @@ read_lookup_table(WIMStruct *w)
 			duplicate_entry = __lookup_resource(table, cur_entry->hash);
 			if (duplicate_entry) {
 				if (wimlib_print_errors) {
-					ERROR("The WIM lookup table contains two entries with the "
+					WARNING("The WIM lookup table contains two entries with the "
 					      "same SHA1 message digest!");
-					ERROR("The first entry is:");
+					WARNING("The first entry is:");
 					print_lookup_table_entry(duplicate_entry, stderr);
-					ERROR("The second entry is:");
+					WARNING("The second entry is:");
 					print_lookup_table_entry(cur_entry, stderr);
 				}
-				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-				goto out_free_cur_entry;
+				free_lookup_table_entry(cur_entry);
+				continue;
+			} else {
+				lookup_table_insert(table, cur_entry);
 			}
-			lookup_table_insert(table, cur_entry);
 		}
 	}
 
