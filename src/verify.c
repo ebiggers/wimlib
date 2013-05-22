@@ -124,7 +124,6 @@ verify_dentry(struct wim_dentry *dentry, void *wim)
 {
 	int ret;
 	WIMStruct *w = wim;
-
 	/* Verify the associated inode, but only one time no matter how many
 	 * dentries it has (unless we are doing a full verification of the WIM,
 	 * in which case we need to force the inode to be verified again.) */
@@ -133,35 +132,6 @@ verify_dentry(struct wim_dentry *dentry, void *wim)
 		if (ret)
 			return ret;
 	}
-
-	/* Make sure root dentry is unnamed, while every other dentry has at
-	 * least a long name.
-	 *
-	 * I am assuming that dentries having only a DOS name is illegal; i.e.,
-	 * Windows will always combine the Win32 name and DOS name for a file
-	 * into a single WIM dentry, even if they are stored separately on NTFS.
-	 * (This seems to be the case...) */
-	if (dentry_is_root(dentry)) {
-		if (dentry_has_long_name(dentry) || dentry_has_short_name(dentry)) {
-			WARNING("The root dentry has a nonempty name");
-			FREE(dentry->file_name);
-			FREE(dentry->short_name);
-			dentry->file_name = NULL;
-			dentry->short_name = NULL;
-			dentry->file_name_nbytes = 0;
-			dentry->short_name_nbytes = 0;
-		}
-	}
-
-#if 0
-	/* Check timestamps */
-	if (inode->i_last_access_time < inode->i_creation_time ||
-	    inode->i_last_write_time < inode->i_creation_time) {
-		WARNING("Dentry `%"TS"' was created after it was last accessed or "
-			"written to", dentry->full_path);
-	}
-#endif
-
 	return 0;
 }
 

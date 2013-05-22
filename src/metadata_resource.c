@@ -150,6 +150,16 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 		goto out_free_security_data;
 	}
 
+	if (dentry_has_long_name(root) || dentry_has_short_name(root)) {
+		WARNING("The root directory has a nonempty name (removing it)");
+		FREE(root->file_name);
+		FREE(root->short_name);
+		root->file_name = NULL;
+		root->short_name = NULL;
+		root->file_name_nbytes = 0;
+		root->short_name_nbytes = 0;
+	}
+
 	/* This is the root dentry, so set its parent to itself. */
 	root->parent = root;
 
