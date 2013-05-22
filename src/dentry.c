@@ -79,7 +79,9 @@ struct wim_dentry_on_disk {
 	/* Length of this directory entry in bytes, not including any alternate
 	 * data stream entries.  Should be a multiple of 8 so that the following
 	 * dentry or alternate data stream entry is aligned on an 8-byte
-	 * boundary.  (If not, wimlib will round it up.)
+	 * boundary.  (If not, wimlib will round it up.)  It must be at least as
+	 * long as the fixed-length fields of the dentry (WIM_DENTRY_DISK_SIZE),
+	 * plus the lengths of the file name and/or short name if present.
 	 *
 	 * It is also possible for this field to be 0.  This situation, which is
 	 * undocumented, indicates the end of a list of sibling nodes in a
@@ -98,10 +100,10 @@ struct wim_dentry_on_disk {
 	 * security descriptors (see: `struct wim_security_data') */
 	sle32 security_id;
 
-	/* Offset from the start of the uncompressed metadata resource of this
-	 * directory's child directory entries, or 0 if this directory entry
-	 * does not correspond to a directory or otherwise does not have any
-	 * children. */
+	/* Offset, in bytes, from the start of the uncompressed metadata
+	 * resource of this directory's child directory entries, or 0 if this
+	 * directory entry does not correspond to a directory or otherwise does
+	 * not have any children. */
 	le64 subdir_offset;
 
 	/* Reserved fields */
@@ -153,7 +155,7 @@ struct wim_dentry_on_disk {
 	 * version of the following fields containing the reparse tag is valid.
 	 * Furthermore, the field notated as not_rpfixed, as far as I can tell,
 	 * is supposed to be set to 1 if reparse point fixups (a.k.a. fixing the
-	 * targets of absolute symbolic links) were done, and otherwise 0.
+	 * targets of absolute symbolic links) were *not* done, and otherwise 0.
 	 *
 	 * If this directory entry is not for a reparse point, then the version
 	 * of the following fields containing the hard_link_group_id is valid.
@@ -170,9 +172,9 @@ struct wim_dentry_on_disk {
 	 *    guaranteed that directory entries that share the same hard link
 	 *    group ID are actually hard linked to each either.  We have to
 	 *    handle this by using special code to use distinguishing features
-	 *    (possible because some information about the underlying inode is
-	 *    repeated in each dentry) to split up these fake hard link groups
-	 *    into what they actually are supposed to be.
+	 *    (which is possible because some information about the underlying
+	 *    inode is repeated in each dentry) to split up these fake hard link
+	 *    groups into what they actually are supposed to be.
 	 */
 	union {
 		struct {
@@ -204,7 +206,7 @@ struct wim_dentry_on_disk {
 
 	/* Follewed by variable length file name, in UTF16-LE, if
 	 * file_name_nbytes != 0.  Includes null terminator. */
-	utf16lechar file_name[];
+	/*utf16lechar file_name[];*/
 
 	/* Followed by variable length short name, in UTF16-LE, if
 	 * short_name_nbytes != 0.  Includes null terminator. */
@@ -1827,7 +1829,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	 * fixed-length fields */
 	if (dentry->length < sizeof(struct wim_dentry_on_disk)) {
 		ERROR("Directory entry has invalid length of %"PRIu64" bytes",
-		      entry->length);
+		      dentry->length);
 		return WIMLIB_ERR_INVALID_DENTRY;
 	}
 

@@ -212,8 +212,8 @@ struct wim_dentry {
 	 * dentry has no filename.  */
 	utf16lechar *file_name;
 
-	/* Full path to this dentry in the WIM, in platform-dependent "tchars"
-	 * that can be printed without convension.  By default this field will
+	/* Full path to this dentry in the WIM, in platform-dependent tchars
+	 * that can be printed without conversion.  By default this field will
 	 * be NULL and will only be calculated on-demand by the
 	 * calculate_dentry_full_path() or dentry_full_path() functions.  */
 	tchar *_full_path;
