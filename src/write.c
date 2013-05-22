@@ -2116,14 +2116,16 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	w->hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 	ret = write_header(&w->hdr, w->out_fd);
 	w->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
-	if (ret)
-		return ret;
+	if (ret) {
+		close_wim_writable(w);
+		goto out_unlock_wim;
+	}
 
 	if (lseek(w->out_fd, old_wim_end, SEEK_SET) == -1) {
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");
 		close_wim_writable(w);
-		w->wim_locked = 0;
-		return WIMLIB_ERR_WRITE;
+		ret = WIMLIB_ERR_WRITE;
+		goto out_unlock_wim;
 	}
 
 	DEBUG("Writing newly added streams (offset = %"PRIu64")",
@@ -2158,6 +2160,7 @@ out_truncate:
 		 * an error path. */
 		(void)ttruncate(w->filename, old_wim_end);
 	}
+out_unlock_wim:
 	w->wim_locked = 0;
 	return ret;
 }
