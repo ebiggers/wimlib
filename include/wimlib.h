@@ -2025,7 +2025,7 @@ wimlib_mount_image(WIMStruct *wim,
  * 	A number other than 0x10d00 is written in the version field of the WIM
  * 	header of @a wim_file.  (Probably a pre-Vista WIM).
  * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	::WIMLIB_OPEN_FLAG_WRITE_ACCESS was specified and but the WIM file was
+ *	::WIMLIB_OPEN_FLAG_WRITE_ACCESS was specified but the WIM file was
  *	considered read-only because of any of the reasons mentioned in the
  *	documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  * @retval ::WIMLIB_ERR_XML
