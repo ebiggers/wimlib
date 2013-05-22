@@ -45,20 +45,13 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	/* Check the security ID.  -1 is valid and means "no security
 	 * descriptor".  Anything else has to be a valid index into the WIM
 	 * image's security descriptors table. */
-	if (inode->i_security_id < -1) {
-		ERROR("Dentry `%"TS"' has an invalid security ID (%d)",
-		      dentry_full_path(first_dentry), inode->i_security_id);
-		return WIMLIB_ERR_INVALID_DENTRY;
-	}
-
-	if (inode->i_security_id >= 0 &&
-	    inode->i_security_id >= sd->num_entries)
+	if (inode->i_security_id < -1 ||
+	    (inode->i_security_id >= 0 &&
+	     inode->i_security_id >= sd->num_entries))
 	{
-		ERROR("Dentry `%"TS"' has an invalid security ID (%d) "
-		      "(there are only %u entries in the security table)",
-		      dentry_full_path(first_dentry), inode->i_security_id,
-		      sd->num_entries);
-		return WIMLIB_ERR_INVALID_DENTRY;
+		WARNING("\"%"TS"\" has an invalid security ID (%d)",
+			dentry_full_path(first_dentry), inode->i_security_id);
+		inode->i_security_id = -1;
 	}
 
 	/* Check that lookup table entries for all the inode's stream exist,
