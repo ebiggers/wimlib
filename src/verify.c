@@ -151,12 +151,6 @@ verify_dentry(struct wim_dentry *dentry, void *wim)
 			dentry->file_name_nbytes = 0;
 			dentry->short_name_nbytes = 0;
 		}
-	} else {
-		if (!dentry_has_long_name(dentry)) {
-			ERROR("Dentry `%"TS"' has no long name!",
-			      dentry_full_path(dentry));
-			return WIMLIB_ERR_INVALID_DENTRY;
-		}
 	}
 
 #if 0

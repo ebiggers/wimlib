@@ -1960,6 +1960,14 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		 * entries. */
 		cur_offset += dentry_total_length(child);
 
+		if (unlikely(!dentry_has_long_name(child))) {
+			WARNING("Ignoring unnamed dentry in "
+				"directory \"%"TS"\"",
+				dentry_full_path(dentry));
+			free_dentry(child);
+			continue;
+		}
+
 		duplicate = dentry_add_child(dentry, child);
 		if (unlikely(duplicate)) {
 			const tchar *child_type, *duplicate_type;
@@ -1971,23 +1979,23 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 				child_type, dentry_full_path(duplicate),
 				duplicate_type);
 			free_dentry(child);
-		} else {
-			inode_add_dentry(child, child->d_inode);
-			/* If there are children of this child, call this
-			 * procedure recursively. */
-			if (child->subdir_offset != 0) {
-				if (likely(dentry_is_directory(child))) {
-					ret = read_dentry_tree(metadata_resource,
-							       metadata_resource_len,
-							       child);
-					if (ret)
-						break;
-				} else {
-					WARNING("Ignoring children of non-directory \"%"TS"\"",
-						dentry_full_path(child));
-				}
-			}
+			continue;
+		}
 
+		inode_add_dentry(child, child->d_inode);
+		/* If there are children of this child, call this
+		 * procedure recursively. */
+		if (child->subdir_offset != 0) {
+			if (likely(dentry_is_directory(child))) {
+				ret = read_dentry_tree(metadata_resource,
+						       metadata_resource_len,
+						       child);
+				if (ret)
+					break;
+			} else {
+				WARNING("Ignoring children of non-directory \"%"TS"\"",
+					dentry_full_path(child));
+			}
 		}
 	}
 	return ret;
@@ -2040,6 +2048,8 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	disk_dentry->short_name_nbytes = cpu_to_le16(dentry->short_name_nbytes);
 	disk_dentry->file_name_nbytes = cpu_to_le16(dentry->file_name_nbytes);
 	p += sizeof(struct wim_dentry_on_disk);
+
+	wimlib_assert(dentry_is_root(dentry) != dentry_has_long_name(dentry));
 
 	if (dentry_has_long_name(dentry))
 		p = mempcpy(p, dentry->file_name, dentry->file_name_nbytes + 2);
