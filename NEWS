@@ -34,6 +34,9 @@ Version 1.4.1:
 	WIM by providing the WIMLIB_OPEN_FLAG_WRITE_ACCESS flag to
 	wimlib_open_wim().
 
+	wimlib now respects the WIM_HDR_FLAG_READONLY flag when set in the WIM
+	header.
+
 	Progress callbacks have been added to wimlib's wimlib_update_image()
 	function.
 
