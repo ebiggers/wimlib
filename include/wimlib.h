@@ -805,11 +805,23 @@ struct wimlib_capture_config {
  * WIMLIB_OPEN_FLAG_*
  ******************************/
 
-/** Verify the WIM contents against the WIM's integrity table, if present. */
+/** Verify the WIM contents against the WIM's integrity table, if present.  This
+ * causes the raw data of the WIM file, divided into 10 MB chunks, to be
+ * checksummed and checked against the SHA1 message digests specified in the
+ * integrity table.  WIMLIB_ERR_INTEGRITY is returned if there are any
+ * mismatches.  */
 #define WIMLIB_OPEN_FLAG_CHECK_INTEGRITY		0x00000001
 
-/** Do not issue an error if the WIM is part of a split WIM. */
+/** Do not issue an error if the WIM is part of a split WIM.  */
 #define WIMLIB_OPEN_FLAG_SPLIT_OK			0x00000002
+
+/** Check if the WIM is writable and return ::WIMLIB_ERR_WIM_IS_READONLY if it
+ * is not.  A WIM is considered writable only if it is writable at the
+ * filesystem level, does not have the WIM_HDR_FLAG_READONLY flag set in its
+ * header (note: wimlib currently never sets this flag), and is not part of a
+ * spanned set.  It is not required to provide this flag to make changes to the
+ * WIM, but with this flag you get the error sooner rather than later. */
+#define WIMLIB_OPEN_FLAG_WRITE_ACCESS			0x00000004
 
 /******************************
  * WIMLIB_UNMOUNT_FLAG_*
@@ -1022,7 +1034,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_VOLUME_LACKS_FEATURES,
 	WIMLIB_ERR_WRITE,
 	WIMLIB_ERR_XML,
-	WIMLIB_ERR_WIM_IS_MARKED_READONLY,
+	WIMLIB_ERR_WIM_IS_READONLY,
 };
 
 
@@ -1050,12 +1062,14 @@ enum wimlib_error_code {
  *
  * @return 0 on success; nonzero on failure.  The possible error codes are:
  *
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- *	@a wim is part of a split WIM.
  * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
  *	There is already an image in @a wim named @a name.
  * @retval ::WIMLIB_ERR_NOMEM
  *	Failed to allocate the memory needed to add the new image.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	The WIM file is considered read-only because of any of the reasons
+ *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
+ *	flag.
  */
 extern int
 wimlib_add_empty_image(WIMStruct *wim,
@@ -1203,9 +1217,10 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
  * 	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_READ
  * 	Could not read the metadata resource for @a image from the WIM.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a wim is part of a split WIM.  Deleting an image from a split WIM is
- * 	unsupported.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	The WIM file is considered read-only because of any of the reasons
+ *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
+ *	flag.
  */
 extern int
 wimlib_delete_image(WIMStruct *wim, int image);
@@ -1306,9 +1321,10 @@ wimlib_delete_image(WIMStruct *wim, int image);
  * 	complete split WIM because they do not include all the parts of the
  * 	original WIM, there are duplicate parts, or not all the parts have the
  * 	same GUID and compression type.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a dest_wim is part of a split WIM.  Exporting an image to a split WIM
- * 	is unsupported.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	@a dest_wim is considered read-only because of any of the reasons
+ *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
+ *	flag.
  */
 extern int
 wimlib_export_image(WIMStruct *src_wim, int src_image,
@@ -1758,7 +1774,7 @@ wimlib_image_name_in_use(const WIMStruct *wim, const wimlib_tchar *name);
  *
  * @return 0 on success; nonzero on error.  This function may return any value
  * returned by wimlib_open_wim() and wimlib_write() except
- * ::WIMLIB_ERR_SPLIT_UNSUPPORTED, as well as the following error code:
+ * ::WIMLIB_ERR_WIM_IS_READONLY, as well as the following error code:
  *
  * @retval ::WIMLIB_ERR_SPLIT_INVALID
  * 	The split WIMs do not form a valid WIM because they do not include all
@@ -1926,9 +1942,10 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
  * 	split WIM because they do not include all the parts of the original WIM,
  * 	there are duplicate parts, or not all the parts have the same GUID and
  * 	compression type.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	The WIM is a split WIM and a read-write mount was requested.  We only
- * 	support mounting a split WIM read-only.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	::WIMLIB_MOUNT_FLAG_READWRITE was specified in @a mount_flags, but @a
+ *	wim is considered read-only because of any of the reasons mentioned in
+ *	the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  * @retval ::WIMLIB_ERR_UNSUPPORTED
  * 	Mounting is not supported, either because the platform is Windows, or
  * 	because the platform is UNIX and wimlib was compiled with @c
@@ -1950,18 +1967,7 @@ wimlib_mount_image(WIMStruct *wim,
  * 	The path to the WIM file to open.
  * @param open_flags
  * 	Bitwise OR of flags ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY and/or
- * 	::WIMLIB_OPEN_FLAG_SPLIT_OK.
- * 	<br/> <br/>
- * 	If ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY is given, the integrity table of
- * 	the WIM, if it exists, is checked, and this function will fail with an
- * 	::WIMLIB_ERR_INTEGRITY status if any of the computed SHA1 message
- * 	digests of the WIM do not exactly match the corresponding message
- * 	digests given in the integrity table.
- * 	<br/> <br/>
- * 	If ::WIMLIB_OPEN_FLAG_SPLIT_OK is given, no error will be issued if the
- * 	WIM is part of a split WIM; otherwise ::WIMLIB_ERR_SPLIT_UNSUPPORTED is
- * 	returned.  (This flag may be removed in the future, in which case no
- * 	error will be issued when opening a split WIM.)
+ * 	::WIMLIB_OPEN_FLAG_SPLIT_OK and/or ::WIMLIB_OPEN_FLAG_WRITE_ACCESS.
  *
  * @param progress_func
  * 	If non-NULL, a function that will be called periodically with the
@@ -2018,6 +2024,10 @@ wimlib_mount_image(WIMStruct *wim,
  * @retval ::WIMLIB_ERR_UNKNOWN_VERSION
  * 	A number other than 0x10d00 is written in the version field of the WIM
  * 	header of @a wim_file.  (Probably a pre-Vista WIM).
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	::WIMLIB_OPEN_FLAG_WRITE_ACCESS was specified and but the WIM file was
+ *	considered read-only because of any of the reasons mentioned in the
+ *	documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  * @retval ::WIMLIB_ERR_XML
  * 	The XML data for @a wim_file is invalid.
  */
@@ -2086,7 +2096,7 @@ wimlib_open_wim(const wimlib_tchar *wim_file,
  * @return 0 on success; nonzero on error.  This function may return any value
  * returned by wimlib_write() as well as the following error codes:
  * @retval ::WIMLIB_ERR_ALREADY_LOCKED
- * 	The WIM was going to be modifien in-place (with no temporary file), but
+ * 	The WIM was going to be modified in-place (with no temporary file), but
  * 	an exclusive advisory lock on the on-disk WIM file could not be acquired
  * 	because another thread or process has mounted an image from the WIM
  * 	read-write or is currently modifying the WIM in-place.
@@ -2096,6 +2106,10 @@ wimlib_open_wim(const wimlib_tchar *wim_file,
  * @retval ::WIMLIB_ERR_RENAME
  * 	The temporary file that the WIM was written to could not be renamed to
  * 	the original filename of @a wim.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	The WIM file is considered read-only because of any of the reasons
+ *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
+ *	flag.
  */
 extern int
 wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads,
@@ -2275,8 +2289,9 @@ wimlib_resolve_image(WIMStruct *wim,
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@a boot_idx does not specify an existing image in @a wim, and it was not
  * 	0.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a wim is part of a split WIM.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	@a wim is considered read-only because of any of the reasons mentioned
+ *	in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  */
 extern int
 wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
@@ -2300,8 +2315,9 @@ wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @a description
  * 	string.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a wim is part of a split WIM.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	@a wim is considered read-only because of any of the reasons mentioned
+ *	in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  */
 extern int
 wimlib_set_image_descripton(WIMStruct *wim, int image,
@@ -2326,8 +2342,9 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  * 	@a image does not specify a single existing image in @a wim.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @a flags string.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a wim is part of a split WIM.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	@a wim is considered read-only because of any of the reasons mentioned
+ *	in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  */
 extern int wimlib_set_image_flags(WIMStruct *wim, int image,
 				  const wimlib_tchar *flags);
@@ -2353,8 +2370,9 @@ extern int wimlib_set_image_flags(WIMStruct *wim, int image,
  * 	@a image does not specify a single existing image in @a wim.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @a name string.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a wim is part of a split WIM.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	@a wim is considered read-only because of any of the reasons mentioned
+ *	in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  */
 extern int wimlib_set_image_name(WIMStruct *wim, int image,
 				 const wimlib_tchar *name);
@@ -2623,6 +2641,10 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  * 	or, the platform is Windows and either the ::WIMLIB_ADD_FLAG_UNIX_DATA
  * 	or the ::WIMLIB_ADD_FLAG_DEREFERENCE flags were specified in the @a
  * 	add_flags for an update command.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	The WIM file is considered read-only because of any of the reasons
+ *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
+ *	flag.
  */
 extern int
 wimlib_update_image(WIMStruct *wim,

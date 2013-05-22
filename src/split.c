@@ -143,10 +143,6 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 
-	ret = wim_checksum_unhashed_streams(w);
-	if (ret)
-		return ret;
-
 	swm_name_len = tstrlen(swm_name);
 	tchar swm_base_name[swm_name_len + 20];
 

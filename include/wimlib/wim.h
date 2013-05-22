@@ -55,8 +55,7 @@ extern int
 wim_run_full_verifications(WIMStruct *w);
 
 extern int
-read_header(const tchar *filename, int in_fd, struct wim_header *hdr,
-	    int split_ok);
+read_header(const tchar *filename, int in_fd, struct wim_header *hdr);
 
 extern int
 write_header(const struct wim_header *hdr, int out_fd);

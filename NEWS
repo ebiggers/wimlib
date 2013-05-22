@@ -24,6 +24,22 @@ Version 1.4.1:
 	wimlib-imagex will now choose different units for progress messages,
 	depending on the amount of data that needs to be processed.
 
+	`wimlib-imagex append' will now generate a unique WIM image name if no
+	name is specified and the defaulted name already exists in the WIM.
+
+	wimlib now allows you to create unnamed WIM images, which can then only
+	be referred to by index.
+
+	wimlib now allows you to explicitly declare you want write access to a
+	WIM by providing the WIMLIB_OPEN_FLAG_WRITE_ACCESS flag to
+	wimlib_open_wim().
+
+	Progress callbacks have been added to wimlib's wimlib_update_image()
+	function.
+
+	NTFS-3g capture now only warns about two conditions previously treated
+	as errors.
+
 	Fixed a couple issues with using wimlib-imagex on UDF filesystems.
 
 Version 1.4.0:

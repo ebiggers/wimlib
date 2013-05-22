@@ -115,8 +115,7 @@ struct wim_header_disk {
 
 /* Reads the header from a WIM file.  */
 int
-read_header(const tchar *filename, int in_fd,
-	    struct wim_header *hdr, int open_flags)
+read_header(const tchar *filename, int in_fd, struct wim_header *hdr)
 {
 	struct wim_header_disk disk_hdr _aligned_attribute(8);
 
@@ -168,13 +167,6 @@ read_header(const tchar *filename, int in_fd,
 		ERROR("\"%"TS"\": Invalid WIM part number: %hu of %hu",
 		      filename, hdr->part_number, hdr->total_parts);
 		return WIMLIB_ERR_INVALID_PART_NUMBER;
-	}
-
-	if (!(open_flags & WIMLIB_OPEN_FLAG_SPLIT_OK) && hdr->total_parts != 1)
-	{
-		ERROR("\"%"TS"\": This WIM is part %u of a %u-part WIM",
-		      filename, hdr->part_number, hdr->total_parts);
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
 
 	hdr->image_count = le32_to_cpu(disk_hdr.image_count);

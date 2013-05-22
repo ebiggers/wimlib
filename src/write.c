@@ -2212,15 +2212,16 @@ wimlib_overwrite(WIMStruct *w, int write_flags,
 		 unsigned num_threads,
 		 wimlib_progress_func_t progress_func)
 {
+	int ret;
+
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 
 	if (!w->filename)
 		return WIMLIB_ERR_NO_FILENAME;
 
-	if (w->hdr.total_parts != 1) {
-		ERROR("Cannot modify a split WIM");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-	}
+	ret = can_modify_wim(w);
+	if (ret)
+		return ret;
 
 	if ((!w->deletion_occurred || (write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE))
 	    && !(write_flags & WIMLIB_WRITE_FLAG_REBUILD))

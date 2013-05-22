@@ -980,18 +980,6 @@ stdin_get_text_contents(size_t *num_tchars_ret)
 	return translate_text_to_tstr(contents, num_bytes, num_tchars_ret);
 }
 
-/* Return 0 if a path names a file to which the current user has write access;
- * -1 otherwise (and print an error message). */
-static int
-file_writable(const tchar *path)
-{
-	int ret;
-	ret = taccess(path, W_OK);
-	if (ret != 0)
-		imagex_error_with_errno(T("Can't modify \"%"TS"\""), path);
-	return ret;
-}
-
 #define TO_PERCENT(numerator, denominator) \
 	(((denominator) == 0) ? 0 : ((numerator) * 100 / (denominator)))
 
@@ -1656,7 +1644,7 @@ static int
 imagex_capture_or_append(int argc, tchar **argv)
 {
 	int c;
-	int open_flags = 0;
+	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
 	int add_image_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
@@ -1889,8 +1877,6 @@ imagex_capture_or_append(int argc, tchar **argv)
 		ret = wimlib_write(w, wimfile, WIMLIB_ALL_IMAGES, write_flags,
 				   num_threads, imagex_progress_func);
 	}
-	if (ret == WIMLIB_ERR_REOPEN)
-		ret = 0;
 	if (ret != 0)
 		imagex_error(T("Failed to write the WIM file \"%"TS"\""),
 			     wimfile);
@@ -1919,7 +1905,7 @@ static int
 imagex_delete(int argc, tchar **argv)
 {
 	int c;
-	int open_flags = 0;
+	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
 	int write_flags = 0;
 	const tchar *wimfile;
 	const tchar *image_num_or_name;
@@ -1955,10 +1941,6 @@ imagex_delete(int argc, tchar **argv)
 	wimfile = argv[0];
 	image_num_or_name = argv[1];
 
-	ret = file_writable(wimfile);
-	if (ret != 0)
-		return ret;
-
 	ret = wimlib_open_wim(wimfile, open_flags, &w,
 			      imagex_progress_func);
 	if (ret != 0)
@@ -1977,8 +1959,6 @@ imagex_delete(int argc, tchar **argv)
 	}
 
 	ret = wimlib_overwrite(w, write_flags, 0, imagex_progress_func);
-	if (ret == WIMLIB_ERR_REOPEN)
-		ret = 0;
 	if (ret != 0) {
 		imagex_error(T("Failed to write the file \"%"TS"\" with image "
 			       "deleted"), wimfile);
@@ -2130,12 +2110,8 @@ imagex_export(int argc, tchar **argv)
 			ret = -1;
 			goto out;
 		}
-		ret = wimlib_open_wim(dest_wimfile, open_flags, &dest_w,
-				      imagex_progress_func);
-		if (ret != 0)
-			goto out;
-
-		ret = file_writable(dest_wimfile);
+		ret = wimlib_open_wim(dest_wimfile, open_flags | WIMLIB_OPEN_FLAG_WRITE_ACCESS,
+				      &dest_w, imagex_progress_func);
 		if (ret != 0)
 			goto out;
 
@@ -2194,8 +2170,6 @@ imagex_export(int argc, tchar **argv)
 		ret = wimlib_overwrite(dest_w, write_flags, num_threads,
 				       imagex_progress_func);
 out:
-	if (ret == WIMLIB_ERR_REOPEN)
-		ret = 0;
 	wimlib_free(src_w);
 	wimlib_free(dest_w);
 	if (additional_swms) {
@@ -2591,11 +2565,7 @@ imagex_info(int argc, tchar **argv)
 	} else {
 
 		/* Modification operations */
-		if (total_parts != 1) {
-			imagex_error(T("Modifying a split WIM is not supported."));
-			ret = -1;
-			goto out;
-		}
+
 		if (image == WIMLIB_ALL_IMAGES)
 			image = 1;
 
@@ -2653,21 +2623,12 @@ imagex_info(int argc, tchar **argv)
 		if (boot || new_name || new_desc ||
 		    (check && !wimlib_has_integrity_table(w)))
 		{
-			int write_flags;
-
-			ret = file_writable(wimfile);
-			if (ret != 0)
-				goto out;
+			int write_flags = 0;
 
 			if (check)
-				write_flags = WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-			else
-				write_flags = 0;
-
+				write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			ret = wimlib_overwrite(w, write_flags, 1,
 					       imagex_progress_func);
-			if (ret == WIMLIB_ERR_REOPEN)
-				ret = 0;
 		} else {
 			tprintf(T("The file \"%"TS"\" was not modified because nothing "
 				  "needed to be done.\n"), wimfile);
@@ -2736,8 +2697,10 @@ imagex_mount_rw_or_ro(int argc, tchar **argv)
 	unsigned num_additional_swms = 0;
 	const tchar *staging_dir = NULL;
 
-	if (!tstrcmp(argv[0], T("mountrw")))
+	if (!tstrcmp(argv[0], T("mountrw"))) {
 		mount_flags |= WIMLIB_MOUNT_FLAG_READWRITE;
+		open_flags |= WIMLIB_OPEN_FLAG_WRITE_ACCESS;
+	}
 
 	for_opt(c, mount_options) {
 		switch (c) {
@@ -2816,12 +2779,6 @@ imagex_mount_rw_or_ro(int argc, tchar **argv)
 			goto out;
 	}
 
-	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		ret = file_writable(wimfile);
-		if (ret != 0)
-			goto out;
-	}
-
 	ret = wimlib_mount_image(w, image, dir, mount_flags, additional_swms,
 				 num_additional_swms, staging_dir);
 	if (ret != 0) {
@@ -2849,7 +2806,7 @@ static int
 imagex_optimize(int argc, tchar **argv)
 {
 	int c;
-	int open_flags = 0;
+	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
 	int write_flags = WIMLIB_WRITE_FLAG_REBUILD;
 	int ret;
 	WIMStruct *w;
@@ -2886,10 +2843,6 @@ imagex_optimize(int argc, tchar **argv)
 	}
 
 	wimfile = argv[0];
-
-	ret = file_writable(wimfile);
-	if (ret)
-		return ret;
 
 	ret = wimlib_open_wim(wimfile, open_flags, &w,
 			      imagex_progress_func);
@@ -3024,7 +2977,7 @@ imagex_update(int argc, tchar **argv)
 	int image;
 	WIMStruct *wim;
 	int ret;
-	int open_flags = 0;
+	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
 	int write_flags = 0;
 	int update_flags = WIMLIB_UPDATE_FLAG_SEND_PROGRESS;
 	int default_add_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
@@ -3115,10 +3068,6 @@ imagex_update(int argc, tchar **argv)
 		goto out_usage;
 	wimfile = argv[0];
 
-	ret = file_writable(wimfile);
-	if (ret)
-		goto out;
-
 	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
 	if (ret)
 		goto out;
@@ -3188,11 +3137,13 @@ imagex_update(int argc, tchar **argv)
 	}
 
 	/* Set default flags and capture config on the update commands */
+	bool have_add_command = false;
 	for (size_t i = 0; i < num_cmds; i++) {
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
 			cmds[i].add.add_flags |= default_add_flags;
 			cmds[i].add.config = config;
+			have_add_command = true;
 			break;
 		case WIMLIB_UPDATE_OP_DELETE:
 			cmds[i].delete.delete_flags |= default_delete_flags;
@@ -3203,7 +3154,8 @@ imagex_update(int argc, tchar **argv)
 	}
 
 #ifdef __WIN32__
-	win32_acquire_capture_privileges();
+	if (have_add_command)
+		win32_acquire_capture_privileges();
 #endif
 
 	/* Execute the update commands */
@@ -3217,7 +3169,8 @@ imagex_update(int argc, tchar **argv)
 			       imagex_progress_func);
 out_release_privs:
 #ifdef __WIN32__
-	win32_release_capture_privileges();
+	if (have_add_command)
+		win32_release_capture_privileges();
 #endif
 	free(cmds);
 out_free_cmd_file_contents:

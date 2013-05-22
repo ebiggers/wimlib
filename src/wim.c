@@ -463,9 +463,21 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 			return WIMLIB_ERR_OPEN;
 	}
 
-	ret = read_header(w->filename, w->in_fd, &w->hdr, open_flags);
+	ret = read_header(w->filename, w->in_fd, &w->hdr);
 	if (ret)
 		return ret;
+
+	if (open_flags & WIMLIB_OPEN_FLAG_WRITE_ACCESS) {
+		ret = can_modify_wim(w);
+		if (ret)
+			return ret;
+	}
+
+	if (w->hdr.total_parts != 1 && !(open_flags & WIMLIB_OPEN_FLAG_SPLIT_OK)) {
+		ERROR("\"%"TS"\": This WIM is part %u of a %u-part WIM",
+		      w->filename, w->hdr.part_number, w->hdr.total_parts);
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
 
 	DEBUG("According to header, WIM contains %u images", w->hdr.image_count);
 
@@ -528,24 +540,31 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
  */
 WIMLIBAPI int
 wimlib_open_wim(const tchar *wim_file, int open_flags,
-		WIMStruct **w_ret,
+		WIMStruct **wim_ret,
 		wimlib_progress_func_t progress_func)
 {
-	WIMStruct *w;
+	WIMStruct *wim;
 	int ret;
 
-	if (!wim_file || !w_ret)
-		return WIMLIB_ERR_INVALID_PARAM;
+	ret = WIMLIB_ERR_INVALID_PARAM;
+	if (!wim_file || !wim_ret)
+		goto out;
 
-	w = new_wim_struct();
-	if (!w)
-		return WIMLIB_ERR_NOMEM;
+	ret = WIMLIB_ERR_NOMEM;
+	wim = new_wim_struct();
+	if (!wim)
+		goto out;
 
-	ret = begin_read(w, wim_file, open_flags, progress_func);
-	if (ret == 0)
-		*w_ret = w;
-	else
-		wimlib_free(w);
+	ret = begin_read(wim, wim_file, open_flags, progress_func);
+	if (ret)
+		goto out_wimlib_free;
+
+	ret = 0;
+	*wim_ret = wim;
+	goto out;
+out_wimlib_free:
+	wimlib_free(wim);
+out:
 	return ret;
 }
 
@@ -672,22 +691,49 @@ wim_checksum_unhashed_streams(WIMStruct *w)
 	return 0;
 }
 
+/*
+ * can_modify_wim - Check if a given WIM is writeable.  This is only the case if
+ * it meets the following three conditions:
+ *
+ * 1. Write access is allowed to the underlying file (if any) at the filesystem level.
+ * 2. The WIM is not part of a spanned set.
+ * 3. The WIM_HDR_FLAG_READONLY flag is not set in the WIM header.
+ *
+ * Return value is 0 if writable; WIMLIB_ERR_WIM_IS_READONLY otherwise.
+ */
 int
 can_modify_wim(WIMStruct *wim)
 {
+	if (wim->filename) {
+		if (taccess(wim->filename, W_OK)) {
+			ERROR_WITH_ERRNO("Can't modify \"%"TS"\"", wim->filename);
+			return WIMLIB_ERR_WIM_IS_READONLY;
+		}
+	}
 	if (wim->hdr.total_parts != 1) {
 		ERROR("Cannot modify \"%"TS"\": is part of a spanned set",
 		      wim->filename);
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+		return WIMLIB_ERR_WIM_IS_READONLY;
 	}
 	if (wim->hdr.flags & WIM_HDR_FLAG_READONLY) {
 		ERROR("Cannot modify \"%"TS"\": is marked read-only",
 		      wim->filename);
-		return WIMLIB_ERR_WIM_IS_MARKED_READONLY;
+		return WIMLIB_ERR_WIM_IS_READONLY;
 	}
 	return 0;
 }
 
+/*
+ * can_delete_from_wim - Check if files or images can be deleted from a given
+ * WIM file.
+ *
+ * This theoretically should be exactly the same as can_modify_wim(), but
+ * unfortunately, due to bugs in Microsoft's software that generate incorrect
+ * reference counts for some WIM resources, we need to run expensive
+ * verifications to make sure the reference counts are correct on all WIM
+ * resources.  Otherwise we might delete a WIM resource whose reference count
+ * has fallen to 0, but is actually still referenced somewhere.
+ */
 int
 can_delete_from_wim(WIMStruct *wim)
 {
