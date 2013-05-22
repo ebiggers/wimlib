@@ -837,7 +837,9 @@ lookup_resource(WIMStruct *w,
 
 	inode = dentry->d_inode;
 
-	wimlib_assert(inode->i_resolved);
+	if (!inode->i_resolved)
+		if (inode_resolve_ltes(inode, w->lookup_table))
+			return -EIO;
 
 	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
 	      && inode_is_directory(inode))
@@ -895,7 +897,6 @@ wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
 int
 inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table)
 {
-	int ret;
 	const u8 *hash;
 
 	if (!inode->i_resolved) {
