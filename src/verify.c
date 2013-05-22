@@ -143,8 +143,13 @@ verify_dentry(struct wim_dentry *dentry, void *wim)
 	 * (This seems to be the case...) */
 	if (dentry_is_root(dentry)) {
 		if (dentry_has_long_name(dentry) || dentry_has_short_name(dentry)) {
-			ERROR("The root dentry has a nonempty name!");
-			return WIMLIB_ERR_INVALID_DENTRY;
+			WARNING("The root dentry has a nonempty name");
+			FREE(dentry->file_name);
+			FREE(dentry->short_name);
+			dentry->file_name = NULL;
+			dentry->short_name = NULL;
+			dentry->file_name_nbytes = 0;
+			dentry->short_name_nbytes = 0;
 		}
 	} else {
 		if (!dentry_has_long_name(dentry)) {
