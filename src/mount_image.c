@@ -2534,7 +2534,9 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	DEBUG("Resolving lookup table entries and assigning inode numbers");
 	ctx.next_ino = 1;
 	image_for_each_inode(inode, imd) {
-		inode_resolve_ltes(inode, wim->lookup_table);
+		ret = inode_resolve_ltes(inode, wim->lookup_table);
+		if (ret)
+			goto out_delete_staging_dir;
 		inode->i_ino = ctx.next_ino++;
 	}
 	DEBUG("(next_ino = %"PRIu64")", ctx.next_ino);
@@ -2560,6 +2562,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	/* Try to delete the staging directory if a deletion wasn't yet
 	 * attempted due to an earlier error */
+out_delete_staging_dir:
 	if (ctx.staging_dir_name)
 		delete_staging_dir(&ctx);
 out_free_dir_copy:

@@ -892,24 +892,53 @@ wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
  * This function always succeeds; unresolved lookup table entries are given a
  * NULL pointer.
  */
-void
+int
 inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table)
 {
+	int ret;
+	const u8 *hash;
 
 	if (!inode->i_resolved) {
-		struct wim_lookup_table_entry *lte;
+		struct wim_lookup_table_entry *lte, *ads_lte;
+
 		/* Resolve the default file stream */
-		lte = __lookup_resource(table, inode->i_hash);
-		inode->i_lte = lte;
-		inode->i_resolved = 1;
+		lte = NULL;
+		hash = inode->i_hash;
+		if (!is_zero_hash(hash)) {
+			lte = __lookup_resource(table, hash);
+			if (unlikely(!lte))
+				goto resource_not_found;
+		}
 
 		/* Resolve the alternate data streams */
+		struct wim_lookup_table_entry *ads_ltes[inode->i_num_ads];
 		for (u16 i = 0; i < inode->i_num_ads; i++) {
-			struct wim_ads_entry *cur_entry = &inode->i_ads_entries[i];
-			lte = __lookup_resource(table, cur_entry->hash);
-			cur_entry->lte = lte;
+			struct wim_ads_entry *cur_entry;
+
+			ads_lte = NULL;
+			cur_entry = &inode->i_ads_entries[i];
+			hash = cur_entry->hash;
+			if (!is_zero_hash(hash)) {
+				ads_lte = __lookup_resource(table, hash);
+				if (unlikely(!ads_lte))
+					goto resource_not_found;
+			}
+			ads_ltes[i] = ads_lte;
 		}
+		inode->i_lte = lte;
+		for (u16 i = 0; i < inode->i_num_ads; i++)
+			inode->i_ads_entries[i].lte = ads_ltes[i];
+		inode->i_resolved = 1;
 	}
+	return 0;
+resource_not_found:
+	if (wimlib_print_errors) {
+		ERROR("\"%"TS"\": resource not found", inode_first_full_path(inode));
+		tfprintf(stderr, T("        SHA-1 message digest of missing resource:\n        "));
+		print_hash(hash, stderr);
+		tputc(T('\n'), stderr);
+	}
+	return WIMLIB_ERR_RESOURCE_NOT_FOUND;
 }
 
 void

@@ -369,6 +369,8 @@ static const tchar *error_strings[] = {
 		= T("Could not rename a file"),
 	[WIMLIB_ERR_REPARSE_POINT_FIXUP_FAILED]
 		= T("Unable to complete reparse point fixup"),
+	[WIMLIB_ERR_RESOURCE_NOT_FOUND]
+		= T("A file resource needed to complete the operation was missing from the WIM"),
 	[WIMLIB_ERR_RESOURCE_ORDER]
 		= T("The components of the WIM were arranged in an unexpected order"),
 	[WIMLIB_ERR_SPECIAL_FILE]

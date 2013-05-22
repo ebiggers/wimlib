@@ -370,7 +370,7 @@ lte_zero_real_refcnt(struct wim_lookup_table_entry *entry, void *ignore);
 extern int
 lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *ignore);
 
-extern void
+extern int
 inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table);
 
 extern void

@@ -1035,6 +1035,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_WRITE,
 	WIMLIB_ERR_XML,
 	WIMLIB_ERR_WIM_IS_READONLY,
+	WIMLIB_ERR_RESOURCE_NOT_FOUND,
 };
 
 
@@ -1518,6 +1519,10 @@ wimlib_extract_files(WIMStruct *wim,
  * @retval ::WIMLIB_ERR_READ
  * 	A unexpected end-of-file or read error occurred when trying to read data
  * 	from the WIM file associated with @a wim.
+ * @retval ::WIMLIB_ERR_RESOURCE_NOT_FOUND
+ *	One of the dentries in the image referenced a stream not present in the
+ *	WIM's lookup table (or in any of the lookup tables of the split WIM
+ *	parts).
  * @retval ::WIMLIB_ERR_SPLIT_INVALID
  * 	The WIM is a split WIM, but the parts specified do not form a complete
  * 	split WIM because they do not include all the parts of the original WIM,
@@ -1937,6 +1942,10 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
  * @retval ::WIMLIB_ERR_READ
  * 	An unexpected end-of-file or read error occurred when trying to read
  * 	data from the WIM file associated with @a wim.
+ * @retval ::WIMLIB_ERR_RESOURCE_NOT_FOUND
+ *	One of the dentries in the image referenced a stream not present in the
+ *	WIM's lookup table (or in any of the lookup tables of the split WIM
+ *	parts).
  * @retval ::WIMLIB_ERR_SPLIT_INVALID
  * 	The WIM is a split WIM, but the parts specified do not form a complete
  * 	split WIM because they do not include all the parts of the original WIM,

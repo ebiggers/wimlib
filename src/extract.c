@@ -294,8 +294,11 @@ dentry_resolve_and_zero_lte_refcnt(struct wim_dentry *dentry, void *_lookup_tabl
 	struct wim_inode *inode = dentry->d_inode;
 	struct wim_lookup_table *lookup_table = _lookup_table;
 	struct wim_lookup_table_entry *lte;
+	int ret;
 
-	inode_resolve_ltes(inode, lookup_table);
+	ret = inode_resolve_ltes(inode, lookup_table);
+	if (ret)
+		return ret;
 	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 		lte = inode_stream_lte_resolved(inode, i);
 		if (lte)
@@ -304,19 +307,23 @@ dentry_resolve_and_zero_lte_refcnt(struct wim_dentry *dentry, void *_lookup_tabl
 	return 0;
 }
 
-static void
+static int
 find_streams_for_extraction(struct wim_dentry *root,
 			    struct list_head *stream_list,
 			    struct wim_lookup_table *lookup_table,
 			    int extract_flags)
 {
 	struct find_streams_ctx ctx;
+	int ret;
 
 	INIT_LIST_HEAD(&ctx.stream_list);
 	ctx.extract_flags = extract_flags;
-	for_dentry_in_tree(root, dentry_resolve_and_zero_lte_refcnt, lookup_table);
+	ret = for_dentry_in_tree(root, dentry_resolve_and_zero_lte_refcnt, lookup_table);
+	if (ret)
+		return ret;
 	for_dentry_in_tree(root, dentry_find_streams_to_extract, &ctx);
 	list_transfer(&ctx.stream_list, stream_list);
+	return 0;
 }
 
 struct apply_operations {
@@ -764,9 +771,11 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 		goto out_dentry_reset_needs_extraction;
 
 	/* Build a list of the streams that need to be extracted */
-	find_streams_for_extraction(root,
-				    &stream_list,
-				    wim->lookup_table, extract_flags);
+	ret = find_streams_for_extraction(root,
+					  &stream_list,
+					  wim->lookup_table, extract_flags);
+	if (ret)
+		goto out_dentry_reset_needs_extraction;
 
 	/* Calculate the number of bytes of data that will be extracted */
 	calculate_bytes_to_extract(&stream_list, extract_flags,
