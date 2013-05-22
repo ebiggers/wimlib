@@ -85,9 +85,8 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 			num_unnamed_streams++;
 	}
 	if (num_unnamed_streams > 1) {
-		ERROR("Dentry `%"TS"' has multiple (%u) un-named streams",
-		      dentry_full_path(first_dentry), num_unnamed_streams);
-		return WIMLIB_ERR_INVALID_DENTRY;
+		WARNING("\"%"TS"\" has multiple (%u) un-named streams",
+			dentry_full_path(first_dentry), num_unnamed_streams);
 	}
 
 	/* Files cannot have multiple DOS names, even if they have multiple
