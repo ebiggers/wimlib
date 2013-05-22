@@ -676,11 +676,14 @@ int
 can_modify_wim(WIMStruct *wim)
 {
 	if (wim->hdr.total_parts != 1) {
-		if (wim->filename)
-			ERROR("Cannot modify \"%"TS"\": is a split WIM!", wim->filename);
-		else
-			ERROR("Cannot modify a split WIM!");
+		ERROR("Cannot modify \"%"TS"\": is part of a spanned set",
+		      wim->filename);
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
+	if (wim->hdr.flags & WIM_HDR_FLAG_READONLY) {
+		ERROR("Cannot modify \"%"TS"\": is marked read-only",
+		      wim->filename);
+		return WIMLIB_ERR_WIM_IS_MARKED_READONLY;
 	}
 	return 0;
 }

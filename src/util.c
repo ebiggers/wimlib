@@ -389,6 +389,8 @@ static const tchar *error_strings[] = {
 		= T("The requested operation is unsupported"),
 	[WIMLIB_ERR_VOLUME_LACKS_FEATURES]
 		= T("The volume did not support a feature necessary to complete the operation"),
+	[WIMLIB_ERR_WIM_IS_MARKED_READONLY]
+		= T("The WIM is marked as read-only"),
 	[WIMLIB_ERR_WRITE]
 		= T("Failed to write data to a file"),
 	[WIMLIB_ERR_XML]
