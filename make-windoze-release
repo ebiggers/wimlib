@@ -2,19 +2,25 @@
 
 set -e -u
 
-if true; then
+WIMLIB_ARCH=i686
+if [ $# -ge 1 ]; then
+	WIMLIB_ARCH=$1
+fi
+
+if [[ $WIMLIB_ARCH = i686 ]] ; then
 	DESTDIR=/mnt/tmp/wimlib
-	ARCH=i686
+elif [[ $WIMLIB_ARCH = x86_64 ]]; then
+	DESTDIR=/mnt/tmp/x64/wimlib
 else
-	DESTDIR=/mnt/tmp/wimlib-x64
-	ARCH=x86_64
+	echo "Unknown architecture $1" 1>&2
+	exit 2
 fi
 
 VERSION=$(grep 'This is wimlib version' README | grep -o '[0-9]\+\.[0-9]\+\.[0-9]')
-ZIPFILE=wimlib-${VERSION}-windows-${ARCH}-bin.zip
+ZIPFILE=wimlib-${VERSION}-windows-${WIMLIB_ARCH}-bin.zip
 
-if ! grep -q "./configure --host=${ARCH}-w64-mingw32" config.log; then
-	./configure --host=${ARCH}-w64-mingw32
+if ! grep -q "./configure --host=${WIMLIB_ARCH}-w64-mingw32" config.log; then
+	./configure --host=${WIMLIB_ARCH}-w64-mingw32
 fi
 
 make -j2
@@ -48,4 +54,3 @@ rm -f $ZIPFILE
 	cd $(dirname $DESTDIR) &> /dev/null
 	zip -r $dir/$ZIPFILE $(basename $DESTDIR)
 )
-
