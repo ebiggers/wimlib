@@ -138,8 +138,11 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 			  imd->security_data->total_length, root);
 
 	if (ret == 0 && root->length == 0) {
-		ERROR("Metadata resource cannot begin with end-of-directory entry!");
-		ret = WIMLIB_ERR_INVALID_DENTRY;
+		WARNING("Metadata resource begins with end-of-directory entry "
+			"(treating as empty image)");
+		FREE(root);
+		root = NULL;
+		goto out_success;
 	}
 
 	if (ret) {
@@ -175,6 +178,7 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 
 	DEBUG("Done reading image metadata");
 
+out_success:
 	imd->root_dentry = root;
 	INIT_LIST_HEAD(&imd->unhashed_streams);
 	goto out_free_buf;
