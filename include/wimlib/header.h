@@ -64,7 +64,8 @@ struct wim_header {
 /* Files and metadata in the WIM are compressed. */
 #define WIM_HDR_FLAG_COMPRESSION        0x00000002
 
-/* WIM is read-only (wimlib ignores this because it's pretty much pointless) */
+/* WIM is read-only, so modifications should not be allowed even if the WIM is
+ * writable at the filesystem level. */
 #define WIM_HDR_FLAG_READONLY           0x00000004
 
 /* Resource data specified by images in this WIM may be contained in a different
@@ -79,9 +80,7 @@ struct wim_header {
  * metadata resources for a split WIM should be in the first part. */
 #define WIM_HDR_FLAG_METADATA_ONLY      0x00000020
 
-/* Lock field to prevent multiple writers from writing the WIM concurrently.
- * wimlib ignores this flag as it uses flock() to acquire a real lock on the
- * file (if supported by the underlying filesystem). */
+/* The WIM is currently being written or appended to.  */
 #define WIM_HDR_FLAG_WRITE_IN_PROGRESS  0x00000040
 
 /* Reparse point fixup flag.  See docs for --rpfix and --norpfix in imagex, or
