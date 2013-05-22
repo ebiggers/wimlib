@@ -831,9 +831,24 @@ win32_extract_stream(const struct wim_dentry *dentry,
 	}
 
 	DEBUG("Opening \"%ls\"", stream_path);
-	/* DELETE access is needed for SetFileShortNameW(), for some reason. */
-	requestedAccess = GENERIC_READ | GENERIC_WRITE | DELETE |
+	requestedAccess = GENERIC_READ | GENERIC_WRITE |
 			  ACCESS_SYSTEM_SECURITY;
+	/* DELETE access is needed for SetFileShortNameW(), for some reason.
+	 * But don't request it for the extraction root, for the following
+	 * reasons:
+	 *
+	 * - Requesting DELETE access on the extraction root will cause a
+	 *   sharing violation if the extraction root is the current working
+	 *   directory (".").
+	 * - The extraction root may be extracted to a different name than given
+	 *   in the WIM file, in which case the DOS name, if given, would not be
+	 *   meaningful.
+	 * - For full-image extractions, the root dentry is supposed to be
+	 *   unnamed anyway.
+	 * - Microsoft's ImageX does not extract the root directory.
+	 */
+	if (dentry != args->extract_root)
+		requestedAccess |= DELETE;
 try_open_again:
 	/* Open the stream to be extracted.  Depending on what we have set
 	 * creationDisposition to, we may be creating this for the first time,
