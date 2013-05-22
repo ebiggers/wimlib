@@ -691,13 +691,13 @@ extract_wim_resource(const struct wim_lookup_table_entry *lte,
 			u8 hash[SHA1_HASH_SIZE];
 			sha1_final(hash, &ctx.sha_ctx);
 			if (!hashes_equal(hash, lte->hash)) {
-			#ifdef ENABLE_ERROR_MESSAGES
-				ERROR("Invalid SHA1 message digest "
-				      "on the following WIM resource:");
-				print_lookup_table_entry(lte, stderr);
-				if (lte->resource_location == RESOURCE_IN_WIM)
-					ERROR("The WIM file appears to be corrupt!");
-			#endif
+				if (wimlib_print_errors) {
+					ERROR("Invalid SHA1 message digest "
+					      "on the following WIM resource:");
+					print_lookup_table_entry(lte, stderr);
+					if (lte->resource_location == RESOURCE_IN_WIM)
+						ERROR("The WIM file appears to be corrupt!");
+				}
 				ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
 			}
 		}

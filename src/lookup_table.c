@@ -463,12 +463,12 @@ read_lookup_table(WIMStruct *w)
 		    && (cur_entry->resource_entry.size !=
 		        cur_entry->resource_entry.original_size))
 		{
-		#ifdef ENABLE_ERROR_MESSAGES
-			ERROR("Found uncompressed resource with original size "
-			      "not the same as compressed size");
-			ERROR("The lookup table entry for the resource is as follows:");
-			print_lookup_table_entry(cur_entry, stderr);
-		#endif
+			if (wimlib_print_errors) {
+				ERROR("Found uncompressed resource with original size "
+				      "not the same as compressed size");
+				ERROR("The lookup table entry for the resource is as follows:");
+				print_lookup_table_entry(cur_entry, stderr);
+			}
 			ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 			goto out_free_cur_entry;
 		}
@@ -476,10 +476,10 @@ read_lookup_table(WIMStruct *w)
 		if (cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) {
 			/* Lookup table entry for a metadata resource */
 			if (cur_entry->refcnt != 1) {
-			#ifdef ENABLE_ERROR_MESSAGES
-				ERROR("Found metadata resource with refcnt != 1:");
-				print_lookup_table_entry(cur_entry, stderr);
-			#endif
+				if (wimlib_print_errors) {
+					ERROR("Found metadata resource with refcnt != 1:");
+					print_lookup_table_entry(cur_entry, stderr);
+				}
 				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 				goto out_free_cur_entry;
 			}
@@ -516,14 +516,14 @@ read_lookup_table(WIMStruct *w)
 			 * metadata resource */
 			duplicate_entry = __lookup_resource(table, cur_entry->hash);
 			if (duplicate_entry) {
-			#ifdef ENABLE_ERROR_MESSAGES
-				ERROR("The WIM lookup table contains two entries with the "
-				      "same SHA1 message digest!");
-				ERROR("The first entry is:");
-				print_lookup_table_entry(duplicate_entry, stderr);
-				ERROR("The second entry is:");
-				print_lookup_table_entry(cur_entry, stderr);
-			#endif
+				if (wimlib_print_errors) {
+					ERROR("The WIM lookup table contains two entries with the "
+					      "same SHA1 message digest!");
+					ERROR("The first entry is:");
+					print_lookup_table_entry(duplicate_entry, stderr);
+					ERROR("The second entry is:");
+					print_lookup_table_entry(cur_entry, stderr);
+				}
 				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 				goto out_free_cur_entry;
 			}

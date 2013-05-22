@@ -60,6 +60,8 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	const struct wim_lookup_table_entry *metadata_lte;
 	u64 metadata_len;
 	u8 hash[SHA1_HASH_SIZE];
+	struct wim_security_data *security_data;
+	struct wim_inode *inode;
 
 	metadata_lte = imd->metadata_lte;
 	metadata_len = wim_resource_size(metadata_lte);
@@ -121,7 +123,7 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	 * and calculate the offset in the metadata resource of the root dentry.
 	 * */
 
-	ret = read_wim_security_data(buf, metadata_len, &imd->security_data);
+	ret = read_wim_security_data(buf, metadata_len, &security_data);
 	if (ret)
 		goto out_free_buf;
 
@@ -135,7 +137,7 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	}
 
 	ret = read_dentry(buf, metadata_len,
-			  imd->security_data->total_length, root);
+			  security_data->total_length, root);
 
 	if (ret == 0 && root->length == 0) {
 		WARNING("Metadata resource begins with end-of-directory entry "
@@ -176,27 +178,24 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	if (ret)
 		goto out_free_dentry_tree;
 
-	if (!wim->all_images_verified) {
-		/* Note: verify_dentry() expects to access imd->security_data,
-		 * so it needs to be set before here. */
-		DEBUG("Running miscellaneous verifications on the dentry tree");
-		for_lookup_table_entry(wim->lookup_table, lte_zero_real_refcnt, NULL);
-		ret = for_dentry_in_tree(root, verify_dentry, wim);
+
+	DEBUG("Running miscellaneous verifications on the dentry tree");
+	image_for_each_inode(inode, imd) {
+		ret = verify_inode(inode, security_data);
 		if (ret)
 			goto out_free_dentry_tree;
 	}
-
 	DEBUG("Done reading image metadata");
-
 out_success:
 	imd->root_dentry = root;
+	imd->security_data = security_data;
 	INIT_LIST_HEAD(&imd->unhashed_streams);
+	ret = 0;
 	goto out_free_buf;
 out_free_dentry_tree:
 	free_dentry_tree(root, wim->lookup_table);
 out_free_security_data:
-	free_wim_security_data(imd->security_data);
-	imd->security_data = NULL;
+	free_wim_security_data(security_data);
 out_free_buf:
 	FREE(buf);
 	return ret;

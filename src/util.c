@@ -145,7 +145,7 @@ wimlib_fprintf(FILE *fp, const tchar *format, ...)
 #endif /* __WIN32__ */
 
 #ifdef ENABLE_ERROR_MESSAGES
-static bool wimlib_print_errors = false;
+bool wimlib_print_errors = false;
 #endif
 
 #if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)

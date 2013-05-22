@@ -209,25 +209,23 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 	return 0;
 }
 
-#if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
-static void
+static inline void
 print_inode_dentries(const struct wim_inode *inode)
 {
 	struct wim_dentry *dentry;
 	inode_for_each_dentry(dentry, inode)
 		tfprintf(stderr, T("%"TS"\n"), dentry_full_path(dentry));
 }
-#endif
 
 static void
 inconsistent_inode(const struct wim_inode *inode)
 {
-#ifdef ENABLE_ERROR_MESSAGES
-	ERROR("An inconsistent hard link group that cannot be corrected has "
-	      "been detected");
-	ERROR("The dentries are located at the following paths:");
-	print_inode_dentries(inode);
-#endif
+	if (wimlib_print_errors) {
+		ERROR("An inconsistent hard link group that cannot be corrected has "
+		      "been detected");
+		ERROR("The dentries are located at the following paths:");
+		print_inode_dentries(inode);
+	}
 }
 
 static bool

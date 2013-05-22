@@ -47,12 +47,18 @@ struct WIMStruct {
 	/* Have any images been deleted? */
 	u8 deletion_occurred : 1;
 
-	u8 all_images_verified : 1;
+	/* Do we know that all the stream reference counts in the WIM are
+	 * correct?  If so, this is set to 1 and deletions are safe; otherwise
+	 * this is set to 0 and deletions are not safe until reference counts
+	 * are recalculated.  (This is due to a bug in M$'s software that
+	 * generates WIMs with invalid reference counts.)  */
+	u8 refcnts_ok : 1;
+
 	u8 wim_locked : 1;
 };
 
-extern int
-wim_run_full_verifications(WIMStruct *w);
+extern void
+wim_recalculate_refcnts(WIMStruct *wim);
 
 extern int
 read_header(const tchar *filename, int in_fd, struct wim_header *hdr);

@@ -159,6 +159,7 @@ wimlib_create_new_wim(int ctype, WIMStruct **w_ret)
 		goto out_free;
 	}
 	w->lookup_table = table;
+	w->refcnts_ok = 1;
 	*w_ret = w;
 	return 0;
 out_free:
@@ -740,9 +741,11 @@ can_delete_from_wim(WIMStruct *wim)
 	int ret;
 
 	ret = can_modify_wim(wim);
-	if (ret == 0 && !wim->all_images_verified)
-		ret = wim_run_full_verifications(wim);
-	return ret;
+	if (ret)
+		return ret;
+	if (!wim->refcnts_ok)
+		wim_recalculate_refcnts(wim);
+	return 0;
 }
 
 /* Frees the memory for the WIMStruct, including all internal memory; also

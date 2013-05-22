@@ -18,6 +18,7 @@ struct wim_lookup_table;
 struct wim_lookup_table_entry;
 struct wimfs_fd;
 struct wim_inode;
+struct wim_security_data;
 
 /* Size of the struct wim_dentry up to and including the file_name_len. */
 #define WIM_DENTRY_DISK_SIZE    102
@@ -252,9 +253,6 @@ struct wim_inode {
 	 * (This is not an on-disk field.) */
 	u8 i_resolved : 1;
 
-	/* %true iff verify_inode() has run on this inode. */
-	u8 i_verified : 1;
-
 	u8 i_visited : 1;
 
 	/* Used only in NTFS-mode extraction */
@@ -350,6 +348,9 @@ struct wim_inode {
 
 #define inode_first_dentry(inode) \
 		container_of(inode->i_dentry.next, struct wim_dentry, d_alias)
+
+#define inode_first_full_path(inode) \
+		dentry_full_path(inode_first_dentry(inode))
 
 static inline bool
 dentry_is_first_in_inode(const struct wim_dentry *dentry)
@@ -601,7 +602,7 @@ inode_ref_streams(struct wim_inode *inode);
 extern int
 dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list);
 
-extern int
-verify_dentry(struct wim_dentry *dentry, void *wim);
+int
+verify_inode(struct wim_inode *inode, const struct wim_security_data *sd);
 
 #endif

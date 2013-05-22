@@ -1547,10 +1547,10 @@ lte_overwrite_prepare_2(struct wim_lookup_table_entry *lte, void *_args)
 		if (lte->resource_entry.offset +
 		    lte->resource_entry.size > args->end_offset)
 		{
-		#ifdef ENABLE_ERROR_MESSAGES
-			ERROR("The following resource is after the XML data:");
-			print_lookup_table_entry(lte, stderr);
-		#endif
+			if (wimlib_print_errors) {
+				ERROR("The following resource is after the XML data:");
+				print_lookup_table_entry(lte, stderr);
+			}
 			return WIMLIB_ERR_RESOURCE_ORDER;
 		}
 		copy_resource_entry(&lte->output_resource_entry,

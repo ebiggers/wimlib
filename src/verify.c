@@ -1,8 +1,7 @@
 /*
  * verify.c
  *
- * Some functions to verify that stuff in the WIM is valid.  Of course, not
- * *all* the verifications of the input data are in this file.
+ * Verify WIM inodes and stream reference counts.
  */
 
 /*
@@ -34,12 +33,16 @@
 #include "wimlib/metadata.h"
 #include "wimlib/security.h"
 
-static int
-verify_inode(struct wim_inode *inode, const WIMStruct *w)
+/*
+ * Verify a WIM inode:
+ *
+ * - Check to make sure the security ID is valid
+ * - Check to make sure there is at most one unnamed stream
+ * - Check to make sure there is at most one DOS name.
+ */
+int
+verify_inode(struct wim_inode *inode, const struct wim_security_data *sd)
 {
-	const struct wim_lookup_table *table = w->lookup_table;
-	const struct wim_security_data *sd = wim_const_security_data(w);
-	struct wim_dentry *first_dentry = inode_first_dentry(inode);
 	struct wim_dentry *dentry;
 
 	/* Check the security ID.  -1 is valid and means "no security
@@ -50,30 +53,8 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	     inode->i_security_id >= sd->num_entries))
 	{
 		WARNING("\"%"TS"\" has an invalid security ID (%d)",
-			dentry_full_path(first_dentry), inode->i_security_id);
+			inode_first_full_path(inode), inode->i_security_id);
 		inode->i_security_id = -1;
-	}
-
-	/* Check that lookup table entries for all the inode's stream exist,
-	 * except if the SHA1 message digest is all 0's, which indicates an
-	 * empty stream.
-	 *
-	 * This check is skipped on split WIMs. */
-	if (w->hdr.total_parts == 1 && !inode->i_resolved) {
-		for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-			struct wim_lookup_table_entry *lte;
-			const u8 *hash;
-			hash = inode_stream_hash(inode, i);
-			lte = __lookup_resource(table, hash);
-			if (!lte && !is_zero_hash(hash)) {
-				ERROR("Could not find lookup table entry for stream "
-				      "%u of dentry `%"TS"'",
-				      i, dentry_full_path(first_dentry));
-				return WIMLIB_ERR_INVALID_DENTRY;
-			}
-			if (lte)
-				lte->real_refcnt += inode->i_nlink;
-		}
 	}
 
 	/* Make sure there is only one unnamed data stream. */
@@ -86,7 +67,7 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 	}
 	if (num_unnamed_streams > 1) {
 		WARNING("\"%"TS"\" has multiple (%u) un-named streams",
-			dentry_full_path(first_dentry), num_unnamed_streams);
+			inode_first_full_path(inode), num_unnamed_streams);
 	}
 
 	/* Files cannot have multiple DOS names, even if they have multiple
@@ -113,56 +94,51 @@ verify_inode(struct wim_inode *inode, const WIMStruct *w)
 			dentry_with_dos_name = dentry;
 		}
 	}
-
-	inode->i_verified = 1;
 	return 0;
-}
-
-/* Run some miscellaneous verifications on a WIM dentry */
-int
-verify_dentry(struct wim_dentry *dentry, void *wim)
-{
-	int ret;
-	WIMStruct *w = wim;
-	/* Verify the associated inode, but only one time no matter how many
-	 * dentries it has (unless we are doing a full verification of the WIM,
-	 * in which case we need to force the inode to be verified again.) */
-	if (!dentry->d_inode->i_verified) {
-		ret = verify_inode(dentry->d_inode, w);
-		if (ret)
-			return ret;
-	}
-	return 0;
-}
-
-static int
-image_run_full_verifications(WIMStruct *w)
-{
-	struct wim_image_metadata *imd;
-	struct wim_inode *inode;
-
-	imd = wim_get_current_image_metadata(w);
-	image_for_each_inode(inode, imd) {
-		inode->i_verified = 0;
-	return for_dentry_in_tree(imd->root_dentry, verify_dentry, w);
 }
 
 static int
 lte_fix_refcnt(struct wim_lookup_table_entry *lte, void *ctr)
 {
 	if (lte->refcnt != lte->real_refcnt) {
-	#ifdef ENABLE_ERROR_MESSAGES
-		WARNING("The following lookup table entry has a reference "
-			"count of %u, but", lte->refcnt);
-		WARNING("We found %u references to it",
-			lte->real_refcnt);
-		print_lookup_table_entry(lte, stderr);
-	#endif
+		if (wimlib_print_errors) {
+			WARNING("The following lookup table entry has a reference "
+				"count of %u, but", lte->refcnt);
+			WARNING("We found %u references to it",
+				lte->real_refcnt);
+			print_lookup_table_entry(lte, stderr);
+		}
 		lte->refcnt = lte->real_refcnt;
 		++*(unsigned long *)ctr;
 	}
 	return 0;
 }
+
+static void
+tally_inode_refcnts(const struct wim_inode *inode,
+		    const struct wim_lookup_table *lookup_table)
+{
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+		struct wim_lookup_table_entry *lte;
+		lte = inode_stream_lte(inode, i, lookup_table);
+		if (lte)
+			lte->real_refcnt += inode->i_nlink;
+	}
+}
+
+
+static int
+tally_image_refcnts(WIMStruct *wim)
+{
+	const struct wim_image_metadata *imd;
+	const struct wim_inode *inode;
+
+	imd = wim_get_current_image_metadata(wim);
+	image_for_each_inode(inode, imd)
+		tally_inode_refcnts(inode, wim->lookup_table);
+	return 0;
+}
+
 
 /* Ideally this would be unnecessary... however, the WIMs for Windows 8 are
  * screwed up because some lookup table entries are referenced more times than
@@ -172,28 +148,21 @@ lte_fix_refcnt(struct wim_lookup_table_entry *lte, void *ctr)
  * problem by looking at ALL the images to re-calculate the reference count of
  * EVERY lookup table entry.  This only absolutely has to be done before an image
  * is deleted or before an image is mounted read-write. */
-int
-wim_run_full_verifications(WIMStruct *w)
+void
+wim_recalculate_refcnts(WIMStruct *wim)
 {
-	int ret;
+	unsigned long num_ltes_with_bogus_refcnt = 0;
 
-	for_lookup_table_entry(w->lookup_table, lte_zero_real_refcnt, NULL);
-
-	w->all_images_verified = 1; /* Set *before* image_run_full_verifications,
-				       because of check in read_metadata_resource() */
-	ret = for_image(w, WIMLIB_ALL_IMAGES, image_run_full_verifications);
-	if (ret == 0) {
-		unsigned long num_ltes_with_bogus_refcnt = 0;
-		for_lookup_table_entry(w->lookup_table, lte_fix_refcnt,
-				       &num_ltes_with_bogus_refcnt);
-		if (num_ltes_with_bogus_refcnt != 0) {
-			WARNING("A total of %lu entries in the WIM's stream "
-				"lookup table had to have\n"
-				"          their reference counts fixed.",
-				num_ltes_with_bogus_refcnt);
-		}
-	} else {
-		w->all_images_verified = 0;
+	for_lookup_table_entry(wim->lookup_table, lte_zero_real_refcnt, NULL);
+	for_image(wim, WIMLIB_ALL_IMAGES, tally_image_refcnts);
+	num_ltes_with_bogus_refcnt = 0;
+	for_lookup_table_entry(wim->lookup_table, lte_fix_refcnt,
+			       &num_ltes_with_bogus_refcnt);
+	if (num_ltes_with_bogus_refcnt != 0) {
+		WARNING("A total of %lu entries in the WIM's stream "
+			"lookup table had to have\n"
+			"          their reference counts fixed.",
+			num_ltes_with_bogus_refcnt);
 	}
-	return ret;
+	wim->refcnts_ok = 1;
 }
