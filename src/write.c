@@ -1825,6 +1825,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 		zero_resource_entry(&hdr.integrity);
 	}
 
+	hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 	ret = write_header(&hdr, w->out_fd);
 	if (ret)
 		goto out_close_wim;
@@ -1907,7 +1908,9 @@ begin_write(WIMStruct *w, const tchar *path, int write_flags)
 	if (ret)
 		return ret;
 	/* Write dummy header. It will be overwritten later. */
+	w->hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 	ret = write_header(&w->hdr, w->out_fd);
+	w->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 	if (ret)
 		return ret;
 	if (lseek(w->out_fd, WIM_HEADER_DISK_SIZE, SEEK_SET) == -1) {
@@ -2108,6 +2111,13 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 		close_wim_writable(w);
 		return ret;
 	}
+
+	/* Write header with write in progress flag set. */
+	w->hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+	ret = write_header(&w->hdr, w->out_fd);
+	w->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+	if (ret)
+		return ret;
 
 	if (lseek(w->out_fd, old_wim_end, SEEK_SET) == -1) {
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");

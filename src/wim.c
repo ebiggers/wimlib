@@ -468,6 +468,12 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 	if (ret)
 		return ret;
 
+	if (w->hdr.flags & WIM_HDR_FLAG_WRITE_IN_PROGRESS) {
+		WARNING("The WIM_HDR_FLAG_WRITE_IN_PROGRESS is set in the header of \"%"TS"\".\n"
+			"          It may be being changed by another process, or a process\n"
+			"          may have crashed while writing the WIM.", in_wim_path);
+	}
+
 	if (open_flags & WIMLIB_OPEN_FLAG_WRITE_ACCESS) {
 		ret = can_modify_wim(w);
 		if (ret)
@@ -476,7 +482,7 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 
 	if (w->hdr.total_parts != 1 && !(open_flags & WIMLIB_OPEN_FLAG_SPLIT_OK)) {
 		ERROR("\"%"TS"\": This WIM is part %u of a %u-part WIM",
-		      w->filename, w->hdr.part_number, w->hdr.total_parts);
+		      in_wim_path, w->hdr.part_number, w->hdr.total_parts);
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
 
