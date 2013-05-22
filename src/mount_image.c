@@ -194,8 +194,6 @@ alloc_wimfs_fd(struct wim_inode *inode,
 	static const u16 max_fds = 0xffff;
 	int ret;
 
-	pthread_mutex_lock(&inode->i_mutex);
-
 	DEBUG("Allocating fd for stream ID %u from inode %#"PRIx64" "
 	      "(open = %u, allocated = %u)",
 	      stream_id, inode->i_ino, inode->i_num_opened_fds,
@@ -247,7 +245,6 @@ alloc_wimfs_fd(struct wim_inode *inode,
 		}
 	}
 out:
-	pthread_mutex_unlock(&inode->i_mutex);
 	return ret;
 }
 
@@ -255,9 +252,6 @@ static void
 inode_put_fd(struct wim_inode *inode, struct wimfs_fd *fd)
 {
 	wimlib_assert(inode != NULL);
-
-	pthread_mutex_lock(&inode->i_mutex);
-
 	wimlib_assert(fd->f_inode == inode);
 	wimlib_assert(inode->i_num_opened_fds != 0);
 	wimlib_assert(fd->idx < inode->i_num_allocated_fds);
@@ -265,12 +259,8 @@ inode_put_fd(struct wim_inode *inode, struct wimfs_fd *fd)
 
 	inode->i_fds[fd->idx] = NULL;
 	FREE(fd);
-	if (--inode->i_num_opened_fds == 0 && inode->i_nlink == 0) {
-		pthread_mutex_unlock(&inode->i_mutex);
+	if (--inode->i_num_opened_fds == 0 && inode->i_nlink == 0)
 		free_inode(inode);
-	} else {
-		pthread_mutex_unlock(&inode->i_mutex);
-	}
 }
 
 static int
@@ -2475,12 +2465,11 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		goto out_free_message_queue_names;
 
 	argc = 0;
-	argv[argc++] = "imagex";
+	argv[argc++] = IMAGEX_PROGNAME;
 	argv[argc++] = dir_copy;
 
- 	/* disable multi-threaded operation for read-write mounts */
-	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
-		argv[argc++] = "-s";
+	/* disable multi-threaded operation */
+	argv[argc++] = "-s";
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_DEBUG)
 		argv[argc++] = "-d";

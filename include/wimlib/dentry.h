@@ -10,10 +10,6 @@
 #include <string.h>
 #include <sys/types.h> /* uid_t, gid_t */
 
-#ifdef WITH_FUSE
-#  include <pthread.h>
-#endif
-
 struct wim_lookup_table;
 struct wim_lookup_table_entry;
 struct wimfs_fd;
@@ -382,10 +378,6 @@ struct wim_inode {
 	u16 i_num_opened_fds;
 	u16 i_num_allocated_fds;
 	struct wimfs_fd **i_fds;
-	/* This mutex protects the inode's file descriptors table during
-	 * read-only mounts.  Read-write mounts are still restricted to 1
-	 * thread. */
-	pthread_mutex_t i_mutex;
 #endif
 };
 

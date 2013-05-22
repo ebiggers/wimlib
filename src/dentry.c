@@ -983,13 +983,6 @@ new_timeless_inode(void)
 		inode->i_next_stream_id = 1;
 		inode->i_not_rpfixed = 1;
 		INIT_LIST_HEAD(&inode->i_list);
-	#ifdef WITH_FUSE
-		if (pthread_mutex_init(&inode->i_mutex, NULL) != 0) {
-			ERROR_WITH_ERRNO("Error initializing mutex");
-			FREE(inode);
-			return NULL;
-		}
-	#endif
 		INIT_LIST_HEAD(&inode->i_dentry);
 	}
 	return inode;
@@ -1131,7 +1124,6 @@ free_inode(struct wim_inode *inode)
 	#ifdef WITH_FUSE
 		wimlib_assert(inode->i_num_opened_fds == 0);
 		FREE(inode->i_fds);
-		pthread_mutex_destroy(&inode->i_mutex);
 	#endif
 		/* HACK: This may instead delete the inode from i_list, but the
 		 * hlist_del() behaves the same as list_del(). */
