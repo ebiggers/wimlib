@@ -1970,6 +1970,7 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 				"at that path with the exact same name)",
 				child_type, dentry_full_path(duplicate),
 				duplicate_type);
+			free_dentry(child);
 		} else {
 			inode_add_dentry(child, child->d_inode);
 			/* If there are children of this child, call this
