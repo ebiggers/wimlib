@@ -1994,8 +1994,9 @@ dentry_get_file_type_string(const struct wim_dentry *dentry)
  * Returns zero on success; nonzero on failure.
  */
 int
-read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
-		 struct wim_dentry *dentry)
+read_dentry_tree(const u8 * restrict metadata_resource,
+		 u64 metadata_resource_len,
+		 struct wim_dentry * restrict dentry)
 {
 	u64 cur_offset = dentry->subdir_offset;
 	struct wim_dentry *child;
@@ -2241,7 +2242,7 @@ write_dentry_tree_recursive(const struct wim_dentry *parent, u8 *p)
  * Returns pointer to the byte after the last byte we wrote.
  */
 u8 *
-write_dentry_tree(const struct wim_dentry *root, u8 *p)
+write_dentry_tree(const struct wim_dentry * restrict root, u8 * restrict p)
 {
 	DEBUG("Writing dentry tree.");
 	wimlib_assert(dentry_is_root(root));

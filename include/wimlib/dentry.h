@@ -562,15 +562,18 @@ inode_set_unix_data(struct wim_inode *inode, uid_t uid, gid_t gid, mode_t mode,
 #endif
 
 extern int
-read_dentry(const u8 *metadata_resource, u64 metadata_resource_len,
-	    u64 offset, struct wim_dentry *dentry);
+read_dentry(const u8 * restrict metadata_resource,
+	    u64 metadata_resource_len, u64 offset,
+	    struct wim_dentry * restrict dentry);
 
 extern int
-read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
-		 struct wim_dentry *dentry);
+read_dentry_tree(const u8 * restrict metadata_resource,
+		 u64 metadata_resource_len,
+		 struct wim_dentry * restrict dentry);
 
 extern u8 *
-write_dentry_tree(const struct wim_dentry *tree, u8 *p);
+write_dentry_tree(const struct wim_dentry * restrict tree,
+		  u8 * restrict p);
 
 static inline bool
 dentry_is_root(const struct wim_dentry *dentry)
@@ -581,8 +584,9 @@ dentry_is_root(const struct wim_dentry *dentry)
 static inline bool
 inode_is_directory(const struct wim_inode *inode)
 {
-	return (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
-		&& !(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT);
+	return (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+				       FILE_ATTRIBUTE_REPARSE_POINT))
+			== FILE_ATTRIBUTE_DIRECTORY;
 }
 
 static inline bool
@@ -599,18 +603,6 @@ inode_is_symlink(const struct wim_inode *inode)
 	return (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
 		&& (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
 		    inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
-}
-
-static inline bool
-inode_is_regular_file(const struct wim_inode *inode)
-{
-	return !inode_is_directory(inode) && !inode_is_symlink(inode);
-}
-
-static inline bool
-dentry_is_regular_file(const struct wim_dentry *dentry)
-{
-	return inode_is_regular_file(dentry->d_inode);
 }
 
 static inline bool
@@ -643,7 +635,7 @@ inode_ref_streams(struct wim_inode *inode);
 extern int
 dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list);
 
-int
+extern int
 verify_inode(struct wim_inode *inode, const struct wim_security_data *sd);
 
-#endif
+#endif /* _WIMLIB_DENTRY_H */

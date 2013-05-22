@@ -439,9 +439,11 @@ static int
 extract_dentry_to_stdout(struct wim_dentry *dentry)
 {
 	int ret = 0;
-	if (!dentry_is_regular_file(dentry)) {
+	if (dentry->d_inode->i_attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
+					     FILE_ATTRIBUTE_DIRECTORY))
+	{
 		ERROR("\"%"TS"\" is not a regular file and therefore cannot be "
-		      "extracted to standard output", dentry->_full_path);
+		      "extracted to standard output", dentry_full_path(dentry));
 		ret = WIMLIB_ERR_NOT_A_REGULAR_FILE;
 	} else {
 		struct wim_lookup_table_entry *lte;
