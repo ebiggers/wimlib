@@ -142,7 +142,7 @@ image_run_full_verifications(WIMStruct *w)
 	struct wim_inode *inode;
 
 	imd = wim_get_current_image_metadata(w);
-	image_for_each_inode(inode, imd)
+	image_for_each_inode(inode, imd) {
 		inode->i_verified = 0;
 	return for_dentry_in_tree(imd->root_dentry, verify_dentry, w);
 }
