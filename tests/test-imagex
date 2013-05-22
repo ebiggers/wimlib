@@ -386,7 +386,7 @@ for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
 	fi
 
 	# Unsupported, should fail
-	if imagex info tmp.swm --boot 0; then
+	if imagex info tmp.swm --boot 1; then
 		error "Should not have been able to change boot index of split WIM"
 	fi
 	echo "Joining the split WIMs and applying the result"
