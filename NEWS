@@ -43,7 +43,12 @@ Version 1.4.1:
 	NTFS-3g capture now only warns about two conditions previously treated
 	as errors.
 
-	Fixed a couple issues with using wimlib-imagex on UDF filesystems.
+	Fixed a couple issues with using wimlib-imagex on UDF filesystems on
+	Windows.
+
+	wimlib now correctly detects and returns an error when reading a WIM
+	image with a cyclic directory structure.  (Fun fact: such a WIM will
+	crash Microsoft's software.)
 
 Version 1.4.0:
 	Added new "extract" and "update" subcommands to wimlib-imagex, along

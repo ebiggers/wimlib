@@ -1906,6 +1906,7 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 	u64 cur_offset = dentry->subdir_offset;
 	struct wim_dentry *child;
 	struct wim_dentry *duplicate;
+	struct wim_dentry *parent;
 	struct wim_dentry cur_child;
 	int ret;
 
@@ -1917,6 +1918,18 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 	 */
 	if (cur_offset == 0)
 		return 0;
+
+	/* Check for cyclic directory structure */
+	for (parent = dentry->parent; !dentry_is_root(parent); parent = parent->parent)
+	{
+		if (unlikely(parent->subdir_offset == cur_offset)) {
+			ERROR("Cyclic directory structure directed: children "
+			      "of \"%"TS"\" coincide with children of \"%"TS"\"",
+			      dentry_full_path(dentry),
+			      dentry_full_path(parent));
+			return WIMLIB_ERR_INVALID_DENTRY;
+		}
+	}
 
 	/* Find and read all the children of @dentry. */
 	for (;;) {
@@ -1948,7 +1961,7 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 		cur_offset += dentry_total_length(child);
 
 		duplicate = dentry_add_child(dentry, child);
-		if (duplicate) {
+		if (unlikely(duplicate)) {
 			const tchar *child_type, *duplicate_type;
 			child_type = dentry_get_file_type_string(child);
 			duplicate_type = dentry_get_file_type_string(duplicate);
@@ -1962,7 +1975,7 @@ read_dentry_tree(const u8 metadata_resource[], u64 metadata_resource_len,
 			/* If there are children of this child, call this
 			 * procedure recursively. */
 			if (child->subdir_offset != 0) {
-				if (dentry_is_directory(child)) {
+				if (likely(dentry_is_directory(child))) {
 					ret = read_dentry_tree(metadata_resource,
 							       metadata_resource_len,
 							       child);
