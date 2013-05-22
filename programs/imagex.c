@@ -2584,7 +2584,9 @@ imagex_info(int argc, tchar **argv)
 			} else {
 				tprintf(T("Marking image %d as bootable.\n"),
 					image);
-				wimlib_set_boot_idx(w, image);
+				ret = wimlib_set_boot_idx(w, image);
+				if (ret)
+					goto out;
 			}
 		}
 		if (new_name) {
