@@ -1121,10 +1121,6 @@ free_inode(struct wim_inode *inode)
 				destroy_ads_entry(&inode->i_ads_entries[i]);
 			FREE(inode->i_ads_entries);
 		}
-	#ifdef WITH_FUSE
-		wimlib_assert(inode->i_num_opened_fds == 0);
-		FREE(inode->i_fds);
-	#endif
 		/* HACK: This may instead delete the inode from i_list, but the
 		 * hlist_del() behaves the same as list_del(). */
 		if (!hlist_unhashed(&inode->i_hlist))

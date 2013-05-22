@@ -259,8 +259,13 @@ inode_put_fd(struct wim_inode *inode, struct wimfs_fd *fd)
 
 	inode->i_fds[fd->idx] = NULL;
 	FREE(fd);
-	if (--inode->i_num_opened_fds == 0 && inode->i_nlink == 0)
-		free_inode(inode);
+	if (--inode->i_num_opened_fds == 0) {
+		FREE(inode->i_fds);
+		inode->i_fds = NULL;
+		inode->i_num_allocated_fds = 0;
+		if (inode->i_nlink == 0)
+			free_inode(inode);
+	}
 }
 
 static int

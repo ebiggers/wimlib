@@ -368,17 +368,21 @@ struct wim_inode {
 		 * Freed and set to NULL after the extraction is done (either
 		 * success or failure).  */
 		tchar *i_extracted_file;
+
+#ifdef WITH_FUSE
+		/* Used only during image mount:  Table of file descriptors that
+		 * have been opened to this inode.  The table is automatically
+		 * freed when the last file descriptor is closed.  */
+		struct {
+			struct wimfs_fd **i_fds;
+			u16 i_num_opened_fds;
+			u16 i_num_allocated_fds;
+		};
+#endif
 	};
 
 	/* Next alternate data stream ID to be assigned */
 	u32 i_next_stream_id;
-
-#ifdef WITH_FUSE
-	/* wimfs file descriptors table for the inode */
-	u16 i_num_opened_fds;
-	u16 i_num_allocated_fds;
-	struct wimfs_fd **i_fds;
-#endif
 };
 
 #define inode_for_each_dentry(dentry, inode) \
