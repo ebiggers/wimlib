@@ -581,31 +581,31 @@ void
 inode_table_prepare_inode_list(struct wim_inode_table *table,
 			       struct list_head *head)
 {
-	struct wim_inode *inode;
+	struct wim_inode *inode, *tmp_inode;
 	struct hlist_node *cur, *tmp;
 	u64 cur_ino = 1;
 
 	/* Re-assign inode numbers in the existing list to avoid duplicates. */
-	list_for_each_entry(inode, head, i_list) {
-		if (inode->i_nlink > 1)
-			inode->i_ino = cur_ino++;
-		else
-			inode->i_ino = 0;
-	}
+	list_for_each_entry(inode, head, i_list)
+		inode->i_ino = cur_ino++;
 
 	/* Assign inode numbers to the new inodes and move them to the image's
 	 * inode list. */
 	for (size_t i = 0; i < table->capacity; i++) {
 		hlist_for_each_entry_safe(inode, cur, tmp, &table->array[i], i_hlist)
 		{
-			if (inode->i_nlink > 1)
-				inode->i_ino = cur_ino++;
-			else
-				inode->i_ino = 0;
+			inode->i_ino = cur_ino++;
+			inode->i_devno = 0;
 			list_add_tail(&inode->i_list, head);
 		}
 		INIT_HLIST_HEAD(&table->array[i]);
 	}
-	list_splice_tail(&table->extra_inodes, head);
+	list_for_each_entry_safe(inode, tmp_inode, &table->extra_inodes, i_list)
+	{
+		inode->i_ino = cur_ino++;
+		inode->i_devno = 0;
+		list_add_tail(&inode->i_list, head);
+	}
+	INIT_LIST_HEAD(&table->extra_inodes);
 	table->num_entries = 0;
 }

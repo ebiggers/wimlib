@@ -110,16 +110,13 @@ struct wim_dentry_on_disk {
 	le64 unused_1;
 	le64 unused_2;
 
-	/* The following three time fields should correspond to those gotten by
-	 * calling GetFileTime() on Windows. */
 
-	/* Creation time, in 100-nanosecond intervals since January 1, 1601. */
+	/* Creation time, last access time, and last write time, in
+	 * 100-nanosecond intervals since 12:00 a.m UTC January 1, 1601.  They
+	 * should correspond to the times gotten by calling GetFileTime() on
+	 * Windows. */
 	le64 creation_time;
-
-	/* Last access time, in 100-nanosecond intervals since January 1, 1601. */
 	le64 last_access_time;
-
-	/* Last write time, in 100-nanosecond intervals since January 1, 1601. */
 	le64 last_write_time;
 
 	/* Vaguely, the SHA-1 message digest ("hash") of the file's contents.
@@ -1140,7 +1137,6 @@ free_inode(struct wim_inode *inode)
 		 * hlist_del() behaves the same as list_del(). */
 		if (!hlist_unhashed(&inode->i_hlist))
 			hlist_del(&inode->i_hlist);
-		FREE(inode->i_extracted_file);
 		FREE(inode);
 	}
 }

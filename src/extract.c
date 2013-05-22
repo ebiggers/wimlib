@@ -634,13 +634,14 @@ skip_dentry:
 static int
 dentry_reset_needs_extraction(struct wim_dentry *dentry, void *_ignore)
 {
+	struct wim_inode *inode = dentry->d_inode;
+
 	dentry->needs_extraction = 0;
 	dentry->not_extracted = 0;
-	dentry->is_win32_name = 0;
-	dentry->d_inode->i_visited = 0;
-	dentry->d_inode->i_dos_name_extracted = 0;
-	FREE(dentry->d_inode->i_extracted_file);
-	dentry->d_inode->i_extracted_file = NULL;
+	inode->i_visited = 0;
+	inode->i_dos_name_extracted = 0;
+	FREE(inode->i_extracted_file);
+	inode->i_extracted_file = NULL;
 	if ((void*)dentry->extraction_name != (void*)dentry->file_name)
 		FREE(dentry->extraction_name);
 	dentry->extraction_name = NULL;

@@ -238,103 +238,141 @@ struct wim_dentry {
 /*
  * WIM inode.
  *
- * As mentioned above, in the WIM file that is no on-disk analogue of a real
- * inode, as most of these fields are duplicated in the dentries.
+ * As mentioned in the comment above `struct wim_dentry', in the WIM file that
+ * is no on-disk analogue of a real inode, as most of these fields are
+ * duplicated in the dentries.  Instead, a `struct wim_inode' is something we
+ * create ourselves to simplify the handling of hard links.
  */
 struct wim_inode {
-	/* Timestamps for the inode.  The timestamps are the number of
-	 * 100-nanosecond intervals that have elapsed since 12:00 A.M., January
-	 * 1st, 1601, UTC.  This is the same format used in NTFS inodes. */
-	u64 i_creation_time;
-	u64 i_last_access_time;
-	u64 i_last_write_time;
-
-	/* The file attributes associated with this inode.  This is a bitwise OR
-	 * of the FILE_ATTRIBUTE_* flags. */
-	u32 i_attributes;
-
-	/* The index of the security descriptor in the WIM image's table of
-	 * security descriptors that contains this file's security information.
-	 * If -1, no security information exists for this file.  */
-	int32_t i_security_id;
-
-	/* %true iff the inode's lookup table entries has been resolved (i.e.
-	 * the @lte field is valid, but the @hash field is not valid)
-	 *
-	 * (This is not an on-disk field.) */
-	u8 i_resolved : 1;
-
-	u8 i_visited : 1;
-
-	/* Used only in NTFS-mode extraction */
-	u8 i_dos_name_extracted : 1;
-
-	/* Set to 0 if reparse point fixups have been done.  Otherwise set to 1.
-	 *
-	 * Note: this actually may reflect the SYMBOLIC_LINK_RELATIVE flag.  */
-	u16 i_not_rpfixed;
-
-	/* Number of alternate data streams associated with this inode */
-	u16 i_num_ads;
-
-	/* Unused/unknown fields that we just read into memory so we can
-	 * re-write them unchanged.  */
-	u32 i_rp_unknown_1;
-	u16 i_rp_unknown_2;
-
 	/* If i_resolved == 0:
 	 *	SHA1 message digest of the contents of the unnamed-data stream
-	 *	of this inode, or all zeroes if this inode has no unnamed data
-	 *	stream, or optionally all zeroes if this inode has an empty
-	 *	unnamed data stream.
+	 *	of this inode.
 	 *
 	 * If i_resolved == 1:
 	 *	Pointer to the lookup table entry for the unnamed data stream
-	 *	of this inode, or NULL if this inode has no unnamed data stream,
-	 *	or optionally all zeroes if this inode has an empty unnamed data
-	 *	stream.
+	 *	of this inode, or NULL.
+	 *
+	 * i_hash corresponds to the 'unnamed_stream_hash' field of the `struct
+	 * wim_dentry_on_disk' and the additional caveats documented about that
+	 * field apply here (for example, the quirks regarding all-zero hashes).
 	 */
 	union {
 		u8 i_hash[SHA1_HASH_SIZE];
 		struct wim_lookup_table_entry *i_lte;
 	};
 
+	/* Corresponds to the 'attributes' field of `struct wim_dentry_on_disk';
+	 * bitwise OR of the FILE_ATTRIBUTE_* flags that give the attributes of
+	 * this inode. */
+	u32 i_attributes;
+
+	/* Root of a red-black tree storing the child dentries of this inode, if
+	 * any.  Keyed by wim_dentry->file_name, case sensitively. */
+	struct rb_root i_children;
+
+#ifdef __WIN32__
+	/* Root of a red-black tree storing the children of this inode, if any.
+	 * Keyed by wim_dentry->file_name, case insensitively. */
+	struct rb_root i_children_case_insensitive;
+#endif
+
+	/* List of dentries that are aliases for this inode.  There will be
+	 * i_nlink dentries in this list.  */
+	struct list_head i_dentry;
+
+	/* Field to place this inode into a list. */
+	union {
+		/* Hash list node- used in hardlink.c when the inodes are placed
+		 * into a hash table keyed by inode number and optionally device
+		 * number, in order to detect dentries that are aliases for the
+		 * same inode. */
+		struct hlist_node i_hlist;
+
+		/* Normal list node- used to connect all the inodes of a WIM image
+		 * into a single linked list referenced from the
+		 * `struct wim_image_metadata' for that image. */
+		struct list_head i_list;
+	};
+
+	/* Number of dentries that are aliases for this inode.  */
+	u32 i_nlink;
+
+	/* Number of alternate data streams associated with this inode */
+	u16 i_num_ads;
+
+	/* Flag that indicates whether this inode's streams have been
+	 * "resolved".  By default, the inode starts as "unresolved", meaning
+	 * that the i_hash field, along with the hash field of any associated
+	 * wim_ads_entry's, are valid and should be used as keys in the WIM
+	 * lookup table to find the associated `struct wim_lookup_table_entry'.
+	 * But if the inode has been resolved, then each of these fields is
+	 * replaced with a pointer directly to the appropriate `struct
+	 * wim_lookup_table_entry', or NULL if the stream is empty.  */
+	u8 i_resolved : 1;
+
+	/* Flag used to mark this inode as visited; this is used when visiting
+	 * all the inodes in a dentry tree exactly once.  It will be 0 by
+	 * default and must be cleared following the tree traversal, even in
+	 * error paths.  */
+	u8 i_visited : 1;
+
+	/* For NTFS-3g extraction:  Set after the DOS name for this inode has
+	 * been extracted.  */
+	u8 i_dos_name_extracted : 1;
+
+	/* Pointer to a malloc()ed array of i_num_ads alternate data stream
+	 * entries for this inode.  */
+	struct wim_ads_entry *i_ads_entries;
+
+	/* Creation time, last access time, and last write time for this inode, in
+	 * 100-nanosecond intervals since 12:00 a.m UTC January 1, 1601.  They
+	 * should correspond to the times gotten by calling GetFileTime() on
+	 * Windows. */
+	u64 i_creation_time;
+	u64 i_last_access_time;
+	u64 i_last_write_time;
+
+	/* Corresponds to 'security_id' in `struct wim_dentry_on_disk':  The
+	 * index of this inode's security descriptor in the WIM image's table of
+	 * security descriptors, or -1.  Note: in verify_inode(), called
+	 * whenever a WIM image is loaded, out-of-bounds indices are set to -1,
+	 * so the extraction code does not need to do bounds checks.  */
+	int32_t i_security_id;
+
 	/* Identity of a reparse point.  See
 	 * http://msdn.microsoft.com/en-us/library/windows/desktop/aa365503(v=vs.85).aspx
 	 * for what a reparse point is. */
 	u32 i_reparse_tag;
 
-	/* Number of dentries that reference this inode */
-	u32 i_nlink;
+	/* Unused/unknown fields that we just read into memory so we can
+	 * re-write them unchanged.  */
+	u32 i_rp_unknown_1;
+	u16 i_rp_unknown_2;
 
-	/* Alternate data stream entries. */
-	struct wim_ads_entry *i_ads_entries;
+	/* Corresponds to not_rpfixed in `struct wim_dentry_on_disk':  Set to 0
+	 * if reparse point fixups have been done.  Otherwise set to 1.  Note:
+	 * this actually may reflect the SYMBOLIC_LINK_RELATIVE flag.
+	 */
+	u16 i_not_rpfixed;
 
-	/* Inode number */
+	/* Inode number; corresponds to hard_link_group_id in the `struct
+	 * wim_dentry_on_disk'.  */
 	u64 i_ino;
 
-	/* Device number, used only during image capture */
-	u64 i_devno;
-
-	/* List of dentries that reference this inode (there should be i_nlink
-	 * of them) */
-	struct list_head i_dentry;
-
 	union {
-		struct hlist_node i_hlist;
-		struct list_head i_list;
+		/* Device number, used only during image capture, so we can
+		 * identify hard linked files by the combination of inode number
+		 * and device number (rather than just inode number, which could
+		 * be ambigious if the captured tree spans a mountpoint).  Set
+		 * to 0 otherwise.  */
+		u64 i_devno;
+
+		/* Used only during image extraction: pointer to the first path
+		 * (malloc()ed buffer) at which this inode has been extracted.
+		 * Freed and set to NULL after the extraction is done (either
+		 * success or failure).  */
+		tchar *i_extracted_file;
 	};
-
-	tchar *i_extracted_file;
-
-	/* Root of a red-black tree storing the children of this inode (if
-	 * non-empty, implies the inode is a directory, although that is also
-	 * noted in the @attributes field.) */
-	struct rb_root i_children;
-
-#ifdef __WIN32__
-	struct rb_root i_children_case_insensitive;
-#endif
 
 	/* Next alternate data stream ID to be assigned */
 	u32 i_next_stream_id;
