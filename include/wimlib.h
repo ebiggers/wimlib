@@ -156,6 +156,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <time.h>
 
 /** Major version of the library (for example, the 1 in 1.2.5). */
 #define WIMLIB_MAJOR_VERSION 1
@@ -716,6 +717,123 @@ struct wimlib_wim_info {
 	uint32_t reserved_flags : 23;
 	uint32_t reserved[9];
 };
+
+/** Iterate recursively on children rather than just on the specified path. */
+#define WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE 0x00000001
+
+/** Don't iterate on the file or directory itself; only its children (in the
+ * case of a non-empty directory) */
+#define WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN  0x00000002
+
+/** A stream of a file in the WIM.  */
+struct wimlib_stream_entry {
+	/** Name of the stream, or NULL if the stream is unnamed. */
+	const wimlib_tchar *stream_name;
+
+	/** Size of the stream (uncompressed) in bytes. */
+	uint64_t stream_size;
+
+	uint64_t reserved[10];
+};
+
+/** Roughly, the information about "file" in the WIM--- really a directory entry
+ * ("dentry") because hard links are allowed.  The hard_link_group_id field
+ * can be used to distinguish actual file inodes.  */
+struct wimlib_wim_dentry {
+	/** Name of the file, or NULL if this file is unnamed (only possible for
+	 * the root directory) */
+	const wimlib_tchar *filename;
+
+	/** 8.3 DOS name of this file, or NULL if this file has no such name.
+	 * */
+	const wimlib_tchar *dos_name;
+
+	/** Full path to this file within the WIM image.  */
+	const wimlib_tchar *full_path;
+
+	/** Depth of this directory entry, where 0 is the root, 1 is the root's
+	 * children, ..., etc. */
+	size_t depth;
+
+	/** Pointer to the security descriptor for this file, in Windows
+	 * SECURITY_DESCRIPTOR_RELATIVE format, or NULL if this file has no
+	 * security descriptor.  */
+	const char *security_descriptor;
+
+	/** Length of the above security descriptor.  */
+	size_t security_descriptor_size;
+
+#define WIMLIB_FILE_ATTRIBUTE_READONLY            0x00000001
+#define WIMLIB_FILE_ATTRIBUTE_HIDDEN              0x00000002
+#define WIMLIB_FILE_ATTRIBUTE_SYSTEM              0x00000004
+#define WIMLIB_FILE_ATTRIBUTE_DIRECTORY           0x00000010
+#define WIMLIB_FILE_ATTRIBUTE_ARCHIVE             0x00000020
+#define WIMLIB_FILE_ATTRIBUTE_DEVICE              0x00000040
+#define WIMLIB_FILE_ATTRIBUTE_NORMAL              0x00000080
+#define WIMLIB_FILE_ATTRIBUTE_TEMPORARY           0x00000100
+#define WIMLIB_FILE_ATTRIBUTE_SPARSE_FILE         0x00000200
+#define WIMLIB_FILE_ATTRIBUTE_REPARSE_POINT       0x00000400
+#define WIMLIB_FILE_ATTRIBUTE_COMPRESSED          0x00000800
+#define WIMLIB_FILE_ATTRIBUTE_OFFLINE             0x00001000
+#define WIMLIB_FILE_ATTRIBUTE_NOT_CONTENT_INDEXED 0x00002000
+#define WIMLIB_FILE_ATTRIBUTE_ENCRYPTED           0x00004000
+#define WIMLIB_FILE_ATTRIBUTE_VIRTUAL             0x00010000
+	/** File attributes, such as whether the file is a directory or not.
+	 * These are the "standard" Windows FILE_ATTRIBUTE_* values, although in
+	 * wimlib.h they are defined as WIMLIB_FILE_ATTRIBUTE_* for convenience
+	 * on other platforms.  */
+	uint32_t attributes;
+
+#define WIMLIB_REPARSE_TAG_RESERVED_ZERO	0x00000000
+#define WIMLIB_REPARSE_TAG_RESERVED_ONE		0x00000001
+#define WIMLIB_REPARSE_TAG_MOUNT_POINT		0xA0000003
+#define WIMLIB_REPARSE_TAG_HSM			0xC0000004
+#define WIMLIB_REPARSE_TAG_HSM2			0x80000006
+#define WIMLIB_REPARSE_TAG_DRIVER_EXTENDER	0x80000005
+#define WIMLIB_REPARSE_TAG_SIS			0x80000007
+#define WIMLIB_REPARSE_TAG_DFS			0x8000000A
+#define WIMLIB_REPARSE_TAG_DFSR			0x80000012
+#define WIMLIB_REPARSE_TAG_FILTER_MANAGER	0x8000000B
+#define WIMLIB_REPARSE_TAG_SYMLINK		0xA000000C
+	/** If the file is a reparse point (FILE_ATTRIBUTE_DIRECTORY set in the
+	 * attributes), this will give the reparse tag.  This tells you whether
+	 * the reparse point is a symbolic link, junction point, or some other,
+	 * more unusual kind of reparse point.  */
+	uint32_t reparse_tag;
+
+	/*  Number of (hard) links to this file.  */
+	uint32_t num_links;
+
+	/** Number of named data streams that this file has.  Normally 0.  */
+	uint32_t num_named_streams;
+
+	/** Roughly, the inode number of this file.  However, it may be 0 if
+	 * num_links == 1.  */
+	uint64_t hard_link_group_id;
+
+	/** Time this file was created.  */
+	struct timespec creation_time;
+
+	/** Time this file was last written to.  */
+	struct timespec last_write_time;
+
+	/** Time this file was last accessed.  */
+	struct timespec last_access_time;
+	uint64_t reserved[16];
+
+	/** Array of streams that make up this file.  The first entry will
+	 * always exist and will correspond to the unnamed data stream (default
+	 * file contents), so it will have stream_name == NULL.  There will then
+	 * be num_named_streams additional entries that specify the named data
+	 * streams, if any, each of which will have stream_name != NULL.  */
+	struct wimlib_stream_entry streams[];
+};
+
+/**
+ * Type of a callback function to wimlib_iterate_dir_tree().
+ */
+typedef int (*wimlib_iterate_dir_tree_callback_t)(const struct wimlib_wim_dentry *dentry,
+						  void *user_ctx);
 
 
 /*****************************
@@ -1841,6 +1959,41 @@ extern bool
 wimlib_image_name_in_use(const WIMStruct *wim, const wimlib_tchar *name);
 
 /**
+ * Iterate through a file or directory tree in the WIM image.  By specifying
+ * appropriate flags and a callback function, you can get the attributes of a
+ * file in the WIM, get a directory listing, or even get a listing of the entire
+ * WIM image.
+ *
+ * @param wim
+ *	Pointer to the ::WIMStruct for a standalone WIM file, or part 1 of a
+ *	split WIM.
+ *
+ * @param image
+ *	The 1-based number of the image in @a wim that contains the files or
+ *	directories to iterate over.
+ *
+ * @param path
+ *	Path in the WIM image at which to do the iteration.
+ *
+ * @param flags
+ *	Bitwise OR of ::WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE and/or
+ *	::WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN.
+ *
+ * @param cb
+ *	A callback function that will receive each directory entry.
+ *
+ * @param user_ctx
+ *	An extra parameter that will always be passed to the callback function
+ *	@a cb.
+ *
+ * @return 0 on success; nonzero on failure.
+ */
+extern int
+wimlib_iterate_dir_tree(WIMStruct *wim, int image, const wimlib_tchar *path,
+			int flags,
+			wimlib_iterate_dir_tree_callback_t cb, void *user_ctx);
+
+/**
  * Joins a split WIM into a stand-alone one-part WIM.
  *
  * @param swms
@@ -2228,22 +2381,22 @@ wimlib_print_available_images(const WIMStruct *wim, int image);
 /** TODO: wimlib-imagex uses this for the 'dir' command, but a better API is
  * needed for this.  */
 extern int
-wimlib_print_files(WIMStruct *wim, int image);
+wimlib_print_files(WIMStruct *wim, int image) _wimlib_deprecated;
 
 /** TODO: wimlib-imagex uses this for the 'info --header' command, but a better
  * API is needed for this.  */
 extern void
-wimlib_print_header(const WIMStruct *wim);
+wimlib_print_header(const WIMStruct *wim) _wimlib_deprecated;
 
 /** TODO: wimlib-imagex uses this for the 'info --lookup-table' command, but a
  * better API is needed for this.  */
 extern void
-wimlib_print_lookup_table(WIMStruct *wim);
+wimlib_print_lookup_table(WIMStruct *wim) _wimlib_deprecated;
 
 /** TODO: wimlib-imagex uses this for the 'info --metadata' command, but a
  * better API is needed for this.  */
 extern int
-wimlib_print_metadata(WIMStruct *wim, int image);
+wimlib_print_metadata(WIMStruct *wim, int image) _wimlib_deprecated;
 
 /**
  * Deprecated in favor of wimlib_get_wim_info(), which provides the information

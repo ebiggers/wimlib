@@ -1968,6 +1968,13 @@ out:
 	return ret;
 }
 
+static int
+print_full_path(const struct wimlib_wim_dentry *wdentry, void *_ignore)
+{
+	tprintf(T("%"TS"\n"), wdentry->full_path);
+	return 0;
+}
+
 /* Print the files contained in an image(s) in a WIM file. */
 static int
 imagex_dir(int argc, tchar **argv)
@@ -2014,7 +2021,9 @@ imagex_dir(int argc, tchar **argv)
 		image = 1;
 	}
 
-	ret = wimlib_print_files(w, image);
+	ret = wimlib_iterate_dir_tree(w, image, T(""),
+				      WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE,
+				      print_full_path, NULL);
 out:
 	wimlib_free(w);
 	return ret;
