@@ -351,7 +351,7 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 		info->total_bytes = 0;
 	info->has_integrity_table = wim->hdr.integrity.offset != 0;
 	info->opened_from_file = (wim->filename != NULL);
-	info->is_readonly == (wim->hdr.flags & WIM_HDR_FLAG_READONLY) ||
+	info->is_readonly = (wim->hdr.flags & WIM_HDR_FLAG_READONLY) ||
 			     (wim->hdr.total_parts != 1) ||
 			     (wim->filename && taccess(wim->filename, W_OK));
 	info->has_rpfix = (wim->hdr.flags & WIM_HDR_FLAG_RP_FIX) != 0;
