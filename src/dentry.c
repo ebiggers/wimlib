@@ -2380,7 +2380,6 @@ do_iterate_dir_tree(WIMStruct *wim,
 		    wimlib_iterate_dir_tree_callback_t cb,
 		    void *user_ctx)
 {
-	u32 level;
 	struct wimlib_dir_entry *wdentry;
 	int ret = WIMLIB_ERR_NOMEM;
 
@@ -2443,8 +2442,6 @@ wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *path,
 			int flags,
 			wimlib_iterate_dir_tree_callback_t cb, void *user_ctx)
 {
-	int ret;
-	struct wim_dentry *dentry;
 	struct image_iterate_dir_tree_ctx ctx = {
 		.path = path,
 		.flags = flags,

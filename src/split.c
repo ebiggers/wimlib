@@ -220,8 +220,6 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 	for (int i = 1; i <= total_parts; i++) {
 		const tchar *part_name;
 		int part_fd;
-		le16 part_data[2];
-		size_t bytes_written;
 		int ret2;
 
 		if (i == 1) {
