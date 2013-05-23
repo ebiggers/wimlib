@@ -377,7 +377,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	if (!(flags & WIMLIB_RESOURCE_FLAG_RECOMPRESS) &&
 	    lte->resource_location == RESOURCE_IN_WIM &&
 	    out_ctype != WIMLIB_COMPRESSION_TYPE_NONE &&
-	    wimlib_get_compression_type(lte->wim) == out_ctype)
+	    lte->wim->compression_type == out_ctype)
 	{
 		flags |= WIMLIB_RESOURCE_FLAG_RAW;
 		write_ctx.doing_sha = false;
@@ -1207,7 +1207,7 @@ main_thread_process_next_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 	    ctx->out_ctype == WIMLIB_COMPRESSION_TYPE_NONE ||
 	    (lte->resource_location == RESOURCE_IN_WIM &&
 	     !(ctx->write_resource_flags & WIMLIB_RESOURCE_FLAG_RECOMPRESS) &&
-	     wimlib_get_compression_type(lte->wim) == ctx->out_ctype))
+	     lte->wim->compression_type == ctx->out_ctype))
 	{
 		/* Stream is too small or isn't being compressed.  Process it by
 		 * the main thread when we have a chance.  We can't necessarily
@@ -1713,7 +1713,7 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 	return write_stream_list(&stream_list,
 				 wim->lookup_table,
 				 wim->out_fd,
-				 wimlib_get_compression_type(wim),
+				 wim->compression_type,
 				 write_flags,
 				 num_threads,
 				 progress_func);
@@ -2133,7 +2133,7 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 	ret = write_stream_list(&stream_list,
 				w->lookup_table,
 				w->out_fd,
-				wimlib_get_compression_type(w),
+				w->compression_type,
 				write_flags,
 				num_threads,
 				progress_func);

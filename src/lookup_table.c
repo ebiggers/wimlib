@@ -447,6 +447,11 @@ read_lookup_table(WIMStruct *w)
 		cur_entry->refcnt = le32_to_cpu(disk_entry->refcnt);
 		copy_hash(cur_entry->hash, disk_entry->hash);
 
+		if (cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
+			cur_entry->compression_type = w->compression_type;
+		else
+			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
+
 		if (cur_entry->part_number != w->hdr.part_number) {
 			WARNING("A lookup table entry in part %hu of the WIM "
 				"points to part %hu (ignoring it)",
@@ -871,19 +876,6 @@ out:
 	return 0;
 }
 #endif
-
-/*
- * XXX Probably should store the compression type directly in the lookup table
- * entry
- */
-int
-wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
-{
-	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
-	    || lte->resource_location != RESOURCE_IN_WIM)
-		return WIMLIB_COMPRESSION_TYPE_NONE;
-	return wimlib_get_compression_type(lte->wim);
-}
 
 /* Resolve an inode's lookup table entries
  *

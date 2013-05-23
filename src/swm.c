@@ -137,7 +137,7 @@ verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 
 	/* keep track of ctype and guid just to make sure they are the same for
 	 * all the WIMs. */
-	ctype = wimlib_get_compression_type(w);
+	ctype = w->compression_type;
 	guid = w->hdr.guid;
 
 	{
@@ -151,7 +151,7 @@ verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 
 			WIMStruct *swm = additional_swms[i];
 
-			if (wimlib_get_compression_type(swm) != ctype) {
+			if (swm->compression_type != ctype) {
 				ERROR("The split WIMs do not all have the same "
 				      "compression type");
 				return WIMLIB_ERR_SPLIT_INVALID;

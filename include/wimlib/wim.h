@@ -55,6 +55,9 @@ struct WIMStruct {
 	u8 refcnts_ok : 1;
 
 	u8 wim_locked : 1;
+
+	/* One of WIMLIB_COMPRESSION_TYPE_*, cached from the header flags. */
+	u8 compression_type : 2;
 };
 
 extern void

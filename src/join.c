@@ -158,8 +158,7 @@ wimlib_join(const tchar * const *swm_names,
 	if (ret)
 		goto out_free_wims;
 
-	ret = wimlib_create_new_wim(wimlib_get_compression_type(swms[0]),
-				    &joined_wim);
+	ret = wimlib_create_new_wim(swms[0]->compression_type, &joined_wim);
 	if (ret)
 		goto out_free_wims;
 

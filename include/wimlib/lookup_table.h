@@ -138,15 +138,21 @@ struct wim_lookup_table_entry {
 	u16 resource_location : 5;
 
 	/* 1 if this stream is a unique size (only set while writing streams). */
-	u8 unique_size : 1;
+	u16 unique_size : 1;
 
 	/* 1 if this stream has not had a SHA1 message digest calculated for it
 	 * yet */
-	u8 unhashed : 1;
+	u16 unhashed : 1;
 
-	u8 deferred : 1;
+	u16 deferred : 1;
 
-	u8 no_progress : 1;
+	u16 no_progress : 1;
+
+	/* If resource_location == RESOURCE_IN_WIM, this will be a cached value
+	 * that specifies the compression type of this stream as one of
+	 * WIMLIB_COMPRESSION_TYPE_*.  Otherwise this will be 0, which is the
+	 * same as WIMLIB_COMPRESSION_TYPE_NONE.  */
+	u16 compression_type : 2;
 
 	/* (On-disk field)
 	 * Number of times this lookup table entry is referenced by dentries.
@@ -268,8 +274,12 @@ wim_resource_compressed_size(const struct wim_lookup_table_entry *lte)
 	return lte->resource_entry.size;
 }
 
-extern int
-wim_resource_compression_type(const struct wim_lookup_table_entry *lte);
+static inline int
+wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
+{
+	BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
+	return lte->compression_type;
+}
 
 static inline bool
 lte_filename_valid(const struct wim_lookup_table_entry *lte)

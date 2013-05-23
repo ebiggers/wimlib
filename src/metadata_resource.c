@@ -311,7 +311,7 @@ write_metadata_resource(WIMStruct *w)
 	 * is updated. */
 	ret = write_wim_resource_from_buffer(buf, metadata_original_size,
 					     w->out_fd,
-					     wimlib_get_compression_type(w),
+					     w->compression_type,
 					     &lte->output_resource_entry,
 					     lte->hash);
 	/* Note that although the SHA1 message digest of the metadata resource

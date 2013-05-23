@@ -115,22 +115,6 @@ for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *))
 	return 0;
 }
 
-/* Returns the compression type given in the flags of a WIM header. */
-static int
-wim_hdr_flags_compression_type(int wim_hdr_flags)
-{
-	if (wim_hdr_flags & WIM_HDR_FLAG_COMPRESSION) {
-		if (wim_hdr_flags & WIM_HDR_FLAG_COMPRESS_LZX)
-			return WIMLIB_COMPRESSION_TYPE_LZX;
-		else if (wim_hdr_flags & WIM_HDR_FLAG_COMPRESS_XPRESS)
-			return WIMLIB_COMPRESSION_TYPE_XPRESS;
-		else
-			return WIMLIB_COMPRESSION_TYPE_INVALID;
-	} else {
-		return WIMLIB_COMPRESSION_TYPE_NONE;
-	}
-}
-
 /*
  * Creates a WIMStruct for a new WIM file.
  */
@@ -160,6 +144,7 @@ wimlib_create_new_wim(int ctype, WIMStruct **w_ret)
 	}
 	w->lookup_table = table;
 	w->refcnts_ok = 1;
+	w->compression_type = ctype;
 	*w_ret = w;
 	return 0;
 out_free:
@@ -227,7 +212,7 @@ select_wim_image(WIMStruct *w, int image)
 WIMLIBAPI int
 wimlib_get_compression_type(const WIMStruct *w)
 {
-	return wim_hdr_flags_compression_type(w->hdr.flags);
+	return w->compression_type;
 }
 
 WIMLIBAPI const tchar *
@@ -293,7 +278,7 @@ wimlib_print_wim_information(const WIMStruct *w)
 	tputchar(T('\n'));
 	tprintf(T("Image Count:    %d\n"), hdr->image_count);
 	tprintf(T("Compression:    %"TS"\n"),
-		wimlib_get_compression_type_string(wimlib_get_compression_type(w)));
+		wimlib_get_compression_type_string(w->compression_type));
 	tprintf(T("Part Number:    %d/%d\n"), hdr->part_number, hdr->total_parts);
 	tprintf(T("Boot Index:     %d\n"), hdr->boot_idx);
 	tprintf(T("Size:           %"PRIu64" bytes\n"),
@@ -496,10 +481,25 @@ begin_read(WIMStruct *w, const tchar *in_wim_path, int open_flags,
 		w->hdr.boot_idx = 0;
 	}
 
-	if (wimlib_get_compression_type(w) == WIMLIB_COMPRESSION_TYPE_INVALID) {
-		ERROR("Invalid compression type (WIM header flags = 0x%x)",
-		      w->hdr.flags);
-		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+	/* Check and cache the compression type */
+	if (w->hdr.flags & WIM_HDR_FLAG_COMPRESSION) {
+		if (w->hdr.flags & WIM_HDR_FLAG_COMPRESS_LZX) {
+			if (w->hdr.flags & WIM_HDR_FLAG_COMPRESS_XPRESS) {
+				ERROR("Multiple compression flags are set in \"%"TS"\"",
+				      in_wim_path);
+				return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+			}
+			w->compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
+		} else if (w->hdr.flags & WIM_HDR_FLAG_COMPRESS_XPRESS) {
+			w->compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
+		} else {
+			ERROR("The compression flag is set on \"%"TS"\", but "
+			      "neither the XPRESS nor LZX flag is set",
+			      in_wim_path);
+			return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+		}
+	} else {
+		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
 	}
 
 	if (open_flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY) {
