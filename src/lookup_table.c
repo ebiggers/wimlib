@@ -549,13 +549,15 @@ read_lookup_table(WIMStruct *w)
 		}
 	}
 
-	if (w->hdr.part_number == 1 && w->current_image != w->hdr.image_count)
-	{
-		ERROR("The WIM header says there are %u images "
-		      "in the WIM, but we only found %d metadata "
-		      "resources!", w->hdr.image_count, w->current_image);
-		ret = WIMLIB_ERR_IMAGE_COUNT;
-		goto out_free_lookup_table;
+	if (w->hdr.part_number == 1 && w->current_image != w->hdr.image_count) {
+		WARNING("The header of \"%"TS"\" says there are %u images in\n"
+			"          the WIM, but we only found %d metadata resources!  Acting as if\n"
+			"          the header specified only %d images instead.",
+			w->filename, w->hdr.image_count,
+			w->current_image, w->current_image);
+		for (int i = w->current_image; i < w->hdr.image_count; i++)
+			put_image_metadata(w->image_metadata[i], NULL);
+		w->hdr.image_count = w->current_image;
 	}
 	DEBUG("Done reading lookup table.");
 	w->lookup_table = table;
