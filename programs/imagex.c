@@ -2399,6 +2399,38 @@ out_usage:
 	goto out;
 }
 
+static void print_byte_field(const uint8_t field[], size_t len)
+{
+	while (len--)
+		tprintf(T("%02hhx"), *field++);
+}
+
+static void
+print_wim_information(const tchar *wimfile, WIMStruct *wim)
+{
+	struct wimlib_wim_info info;
+
+	wimlib_get_wim_info((WIMStruct*)wim, &info);
+
+	tputs(T("WIM Information:"));
+	tputs(T("----------------"));
+	tprintf(T("Path:           %"TS"\n"), wimfile);
+	tfputs(T("GUID:           0x"), stdout);
+	print_byte_field(info.guid, WIMLIB_GUID_LEN);
+	tputchar(T('\n'));
+	tprintf(T("Image Count:    %d\n"), info.image_count);
+	tprintf(T("Compression:    %"TS"\n"),
+		wimlib_get_compression_type_string(info.compression_type));
+	tprintf(T("Part Number:    %d/%d\n"), info.part_number, info.total_parts);
+	tprintf(T("Boot Index:     %d\n"), info.boot_index);
+	tprintf(T("Size:           %"PRIu64" bytes\n"), info.total_bytes);
+	tprintf(T("Integrity Info: %"TS"\n"),
+		info.has_integrity_table ? T("yes") : T("no"));
+	tprintf(T("Relative path junction: %"TS"\n"),
+		info.has_rpfix ? T("yes") : T("no"));
+	tputchar(T('\n'));
+}
+
 /* Prints information about a WIM file; also can mark an image as bootable,
  * change the name of an image, or change the description of an image. */
 static int
@@ -2542,7 +2574,7 @@ imagex_info(int argc, tchar **argv)
 		}
 
 		if (image == WIMLIB_ALL_IMAGES && short_header)
-			wimlib_print_wim_information(w);
+			print_wim_information(wimfile, w);
 
 		if (header)
 			wimlib_print_header(w);
