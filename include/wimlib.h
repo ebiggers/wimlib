@@ -709,7 +709,7 @@ struct wimlib_wim_info {
 	uint32_t write_in_progress : 1;
 	uint32_t metadata_only : 1;
 	uint32_t resource_only : 1;
-	uint32_t reserved_flags : 24;
+	uint32_t reserved_flags : 23;
 	uint32_t reserved[9];
 };
 
