@@ -2259,7 +2259,7 @@ write_dentry_tree(const struct wim_dentry * restrict root, u8 * restrict p)
 
 
 static int
-init_wimlib_dentry(struct wimlib_wim_dentry *wdentry,
+init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
 		   struct wim_dentry *dentry,
 		   const WIMStruct *wim)
 {
@@ -2312,7 +2312,7 @@ init_wimlib_dentry(struct wimlib_wim_dentry *wdentry,
 
 	lte = inode_unnamed_lte(inode, wim->lookup_table);
 	if (lte)
-		wdentry->streams[0].stream_size = wim_resource_size(lte);
+		lte_to_wimlib_resource_entry(lte, &wdentry->streams[0].resource);
 
 	for (unsigned i = 0; i < inode->i_num_ads; i++) {
 		if (inode->i_ads_entries[i].stream_name == NULL)
@@ -2320,8 +2320,8 @@ init_wimlib_dentry(struct wimlib_wim_dentry *wdentry,
 		lte = inode_stream_lte(inode, i + 1, wim->lookup_table);
 		wdentry->num_named_streams++;
 		if (lte) {
-			wdentry->streams[wdentry->num_named_streams].stream_size =
-					wim_resource_size(lte);
+			lte_to_wimlib_resource_entry(lte, &wdentry->streams[
+						     		wdentry->num_named_streams].resource);
 		}
 	#if TCHAR_IS_UTF16LE
 		wdentry->streams[wdentry->num_named_streams].stream_name =
@@ -2342,7 +2342,7 @@ init_wimlib_dentry(struct wimlib_wim_dentry *wdentry,
 }
 
 static void
-free_wimlib_dentry(struct wimlib_wim_dentry *wdentry)
+free_wimlib_dentry(struct wimlib_dir_entry *wdentry)
 {
 #if !TCHAR_IS_UTF16LE
 	FREE((tchar*)wdentry->filename);
@@ -2381,11 +2381,11 @@ do_iterate_dir_tree(WIMStruct *wim,
 		    void *user_ctx)
 {
 	u32 level;
-	struct wimlib_wim_dentry *wdentry;
+	struct wimlib_dir_entry *wdentry;
 	int ret = WIMLIB_ERR_NOMEM;
 
 
-	wdentry = CALLOC(1, sizeof(struct wimlib_wim_dentry) +
+	wdentry = CALLOC(1, sizeof(struct wimlib_dir_entry) +
 			       	  (1 + dentry->d_inode->i_num_ads) *
 				  	sizeof(struct wimlib_stream_entry));
 	if (!wdentry)

@@ -1975,7 +1975,7 @@ out:
 }
 
 static int
-print_full_path(const struct wimlib_wim_dentry *wdentry, void *_ignore)
+print_full_path(const struct wimlib_dir_entry *wdentry, void *_ignore)
 {
 	int ret = tprintf(T("%"TS"\n"), wdentry->full_path);
 	return (ret >= 0) ? 0 : -1;
@@ -2406,29 +2406,67 @@ static void print_byte_field(const uint8_t field[], size_t len)
 }
 
 static void
-print_wim_information(const tchar *wimfile, WIMStruct *wim)
+print_wim_information(const tchar *wimfile, const struct wimlib_wim_info *info)
 {
-	struct wimlib_wim_info info;
-
-	wimlib_get_wim_info((WIMStruct*)wim, &info);
-
 	tputs(T("WIM Information:"));
 	tputs(T("----------------"));
 	tprintf(T("Path:           %"TS"\n"), wimfile);
-	tfputs(T("GUID:           0x"), stdout);
-	print_byte_field(info.guid, WIMLIB_GUID_LEN);
+	tprintf(T("GUID:           0x"));
+	print_byte_field(info->guid, sizeof(info->guid));
 	tputchar(T('\n'));
-	tprintf(T("Image Count:    %d\n"), info.image_count);
+	tprintf(T("Image Count:    %d\n"), info->image_count);
 	tprintf(T("Compression:    %"TS"\n"),
-		wimlib_get_compression_type_string(info.compression_type));
-	tprintf(T("Part Number:    %d/%d\n"), info.part_number, info.total_parts);
-	tprintf(T("Boot Index:     %d\n"), info.boot_index);
-	tprintf(T("Size:           %"PRIu64" bytes\n"), info.total_bytes);
+		wimlib_get_compression_type_string(info->compression_type));
+	tprintf(T("Part Number:    %d/%d\n"), info->part_number, info->total_parts);
+	tprintf(T("Boot Index:     %d\n"), info->boot_index);
+	tprintf(T("Size:           %"PRIu64" bytes\n"), info->total_bytes);
 	tprintf(T("Integrity Info: %"TS"\n"),
-		info.has_integrity_table ? T("yes") : T("no"));
+		info->has_integrity_table ? T("yes") : T("no"));
 	tprintf(T("Relative path junction: %"TS"\n"),
-		info.has_rpfix ? T("yes") : T("no"));
+		info->has_rpfix ? T("yes") : T("no"));
 	tputchar(T('\n'));
+}
+
+static int
+print_resource(const struct wimlib_resource_entry *resource,
+	       void *_ignore)
+{
+
+	tprintf(T("Uncompressed size   = %"PRIu64" bytes\n"),
+		resource->uncompressed_size);
+
+	tprintf(T("Compressed size     = %"PRIu64" bytes\n"),
+		resource->compressed_size);
+
+	tprintf(T("Offset              = %"PRIu64" bytes\n"),
+		resource->offset);
+
+
+	tprintf(T("Part Number         = %u\n"), resource->part_number);
+	tprintf(T("Reference Count     = %u\n"), resource->reference_count);
+
+	tprintf(T("Hash                = 0x"));
+	print_byte_field(resource->sha1_hash, sizeof(resource->sha1_hash));
+	tputchar(T('\n'));
+
+	tprintf(T("Flags               = "));
+	if (resource->is_compressed)
+		tprintf(T("WIM_RESHDR_FLAG_COMPRESSED  "));
+	if (resource->is_metadata)
+		tprintf(T("WIM_RESHDR_FLAG_METADATA  "));
+	if (resource->is_free)
+		tprintf(T("WIM_RESHDR_FLAG_FREE  "));
+	if (resource->is_spanned)
+		tprintf(T("WIM_RESHDR_FLAG_SPANNED  "));
+	tputchar(T('\n'));
+	tputchar(T('\n'));
+	return 0;
+}
+
+static void
+print_lookup_table(WIMStruct *wim)
+{
+	wimlib_iterate_lookup_table(wim, 0, print_resource, NULL);
 }
 
 /* Prints information about a WIM file; also can mark an image as bootable,
@@ -2454,9 +2492,7 @@ imagex_info(int argc, tchar **argv)
 	int image;
 	int ret;
 	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
-	int part_number;
-	int total_parts;
-	int num_images;
+	struct wimlib_wim_info info;
 
 	for_opt(c, info_options) {
 		switch (c) {
@@ -2517,7 +2553,7 @@ imagex_info(int argc, tchar **argv)
 	if (ret != 0)
 		return ret;
 
-	part_number = wimlib_get_part_number(w, &total_parts);
+	wimlib_get_wim_info(w, &info);
 
 	image = wimlib_resolve_image(w, image_num_or_name);
 	if (image == WIMLIB_NO_IMAGE && tstrcmp(image_num_or_name, T("0"))) {
@@ -2532,9 +2568,7 @@ imagex_info(int argc, tchar **argv)
 		goto out;
 	}
 
-	num_images = wimlib_get_num_images(w);
-
-	if (num_images == 0) {
+	if (info.image_count == 0) {
 		if (boot) {
 			imagex_error(T("--boot is meaningless on a WIM with no "
 				       "images"));
@@ -2543,7 +2577,7 @@ imagex_info(int argc, tchar **argv)
 		}
 	}
 
-	if (image == WIMLIB_ALL_IMAGES && num_images > 1) {
+	if (image == WIMLIB_ALL_IMAGES && info.image_count > 1) {
 		if (boot) {
 			imagex_error(T("Cannot specify the --boot flag "
 				       "without specifying a specific "
@@ -2574,18 +2608,18 @@ imagex_info(int argc, tchar **argv)
 		}
 
 		if (image == WIMLIB_ALL_IMAGES && short_header)
-			print_wim_information(wimfile, w);
+			print_wim_information(wimfile, &info);
 
 		if (header)
 			wimlib_print_header(w);
 
 		if (lookup_table) {
-			if (total_parts != 1) {
-				tprintf(T("Warning: Only showing the lookup table "
-					  "for part %d of a %d-part WIM.\n"),
-					part_number, total_parts);
+			if (info.total_parts != 1) {
+				tfprintf(stderr, T("Warning: Only showing the lookup table "
+						   "for part %d of a %d-part WIM.\n"),
+					 info.part_number, info.total_parts);
 			}
-			wimlib_print_lookup_table(w);
+			print_lookup_table(w);
 		}
 
 		if (xml) {
@@ -2646,7 +2680,8 @@ imagex_info(int argc, tchar **argv)
 			} else {
 				tprintf(T("Marking image %d as bootable.\n"),
 					image);
-				ret = wimlib_set_boot_idx(w, image);
+				info.boot_index = image;
+				ret = wimlib_set_wim_info(w, &info, WIMLIB_CHANGE_BOOT_INDEX);
 				if (ret)
 					goto out;
 			}

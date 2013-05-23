@@ -718,28 +718,57 @@ struct wimlib_wim_info {
 	uint32_t reserved[9];
 };
 
-/** Iterate recursively on children rather than just on the specified path. */
-#define WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE 0x00000001
+/** Information about a unique resource in the WIM file.
+ */
+struct wimlib_resource_entry {
+	/** Uncompressed size of the resource in bytes. */
+	uint64_t uncompressed_size;
 
-/** Don't iterate on the file or directory itself; only its children (in the
- * case of a non-empty directory) */
-#define WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN  0x00000002
+	/** Compressed size of the resource in bytes.  This will be the same as
+	 * @a uncompressed_size if the resource is uncompressed.  */
+	uint64_t compressed_size;
+
+	/** Offset, in bytes, of this resource from the start of the WIM file.
+	 */
+	uint64_t offset;
+
+	/** SHA1 message digest of the resource's uncompressed contents.  */
+	uint8_t sha1_hash[20];
+
+	/** Which part number of the split WIM this resource is in.  This should
+	 * be the same as the part number provided by wimlib_get_wim_info().  */
+	uint32_t part_number;
+
+	/** Number of times this resource is referenced over all WIM images.  */
+	uint32_t reference_count;
+
+	/** 1 if this resource is compressed.  */
+	uint32_t is_compressed : 1;
+
+	/** 1 if this resource is a metadata resource rather than a file
+	 * resource.  */
+	uint32_t is_metadata : 1;
+
+	uint32_t is_free : 1;
+	uint32_t is_spanned : 1;
+	uint32_t reserved_flags : 28;
+	uint64_t reserved[4];
+};
 
 /** A stream of a file in the WIM.  */
 struct wimlib_stream_entry {
 	/** Name of the stream, or NULL if the stream is unnamed. */
 	const wimlib_tchar *stream_name;
-
-	/** Size of the stream (uncompressed) in bytes. */
-	uint64_t stream_size;
-
-	uint64_t reserved[10];
+	/** Location, size, etc. of the stream within the WIM file.  */
+	struct wimlib_resource_entry resource;
+	uint64_t reserved[4];
 };
 
-/** Roughly, the information about "file" in the WIM--- really a directory entry
- * ("dentry") because hard links are allowed.  The hard_link_group_id field
- * can be used to distinguish actual file inodes.  */
-struct wimlib_wim_dentry {
+/** Structure passed to the wimlib_iterate_dir_tree() callback function.
+ * Roughly, the information about a "file" in the WIM--- but really a directory
+ * entry ("dentry") because hard links are allowed.  The hard_link_group_id
+ * field can be used to distinguish actual file inodes.  */
+struct wimlib_dir_entry {
 	/** Name of the file, or NULL if this file is unnamed (only possible for
 	 * the root directory) */
 	const wimlib_tchar *filename;
@@ -830,10 +859,27 @@ struct wimlib_wim_dentry {
 };
 
 /**
- * Type of a callback function to wimlib_iterate_dir_tree().
+ * Type of a callback function to wimlib_iterate_dir_tree().  Must return 0 on
+ * success.
  */
-typedef int (*wimlib_iterate_dir_tree_callback_t)(const struct wimlib_wim_dentry *dentry,
+typedef int (*wimlib_iterate_dir_tree_callback_t)(const struct wimlib_dir_entry *dentry,
 						  void *user_ctx);
+
+/**
+ * Type of a callback function to wimlib_iterate_lookup_table().  Must return 0
+ * on success.
+ */
+typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resource_entry *resource,
+						      void *user_ctx);
+
+/** For wimlib_iterate_dir_tree(): Iterate recursively on children rather than
+ * just on the specified path. */
+#define WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE 0x00000001
+
+/** For wimlib_iterate_dir_tree(): Don't iterate on the file or directory
+ * itself; only its children (in the case of a non-empty directory) */
+#define WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN  0x00000002
+
 
 
 /*****************************
@@ -1986,12 +2032,47 @@ wimlib_image_name_in_use(const WIMStruct *wim, const wimlib_tchar *name);
  *	An extra parameter that will always be passed to the callback function
  *	@a cb.
  *
- * @return 0 on success; nonzero on failure.
+ * @return Normally, returns 0 if all calls to @a cb returned 0; otherwise the
+ * first nonzero value that was returned from @a cb.  However, additional error
+ * codes may be returned, including the following:
+ *
+ * @retval ::WIMLIB_ERR_PATH_DOES_NOT_EXIST
+ *	@a path did not exist in the WIM image.
+ * @retval ::WIMLIB_ERR_NOMEM
+ *	Failed to allocate memory needed to create a ::wimlib_dir_entry.
  */
 extern int
 wimlib_iterate_dir_tree(WIMStruct *wim, int image, const wimlib_tchar *path,
 			int flags,
 			wimlib_iterate_dir_tree_callback_t cb, void *user_ctx);
+
+/**
+ * Iterate through the lookup table of a WIM file.  This can be used to directly
+ * get a listing of the unique resources contained in a WIM file.  Both file
+ * resources and metadata resources are included.
+ *
+ * @param wim
+ *	Pointer to the ::WIMStruct of a standalone WIM file or a split WIM part.
+ *	Note: metadata resources will only be included if the WIM is standalone
+ *	or the first part of the split WIM.
+ *
+ * @param flags
+ *	Reserved; set to 0.
+ *
+ * @param cb
+ *	A callback function that will receive each resource.
+ *
+ * @param user_ctx
+ *	An extra parameter that will always be passed to the callback function
+ *	@a cb.
+ *
+ * @return 0 if all calls to @a cb returned 0; otherwise the first nonzero value
+ * that was returned from @a cb.
+ */
+extern int
+wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
+			    wimlib_iterate_lookup_table_callback_t cb,
+			    void *user_ctx);
 
 /**
  * Joins a split WIM into a stand-alone one-part WIM.
@@ -2378,23 +2459,31 @@ wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads,
 extern void
 wimlib_print_available_images(const WIMStruct *wim, int image);
 
-/** TODO: wimlib-imagex uses this for the 'dir' command, but a better API is
- * needed for this.  */
+/**
+ * Deprecated in favor of wimlib_iterate_dir_tree(), which provides the
+ * information in a way that can be accessed programatically.
+ */
 extern int
 wimlib_print_files(WIMStruct *wim, int image) _wimlib_deprecated;
 
-/** TODO: wimlib-imagex uses this for the 'info --header' command, but a better
- * API is needed for this.  */
+/**
+ * Deprecated in favor of wimlib_get_wim_info(), which provides the information
+ * in a way that can be accessed programatically.
+ */
 extern void
 wimlib_print_header(const WIMStruct *wim) _wimlib_deprecated;
 
-/** TODO: wimlib-imagex uses this for the 'info --lookup-table' command, but a
- * better API is needed for this.  */
+/**
+ * Deprecated in favor of wimlib_iterate_lookup_table(), which provides the
+ * information in a way that can be accessed programatically.
+ */
 extern void
 wimlib_print_lookup_table(WIMStruct *wim) _wimlib_deprecated;
 
-/** TODO: wimlib-imagex uses this for the 'info --metadata' command, but a
- * better API is needed for this.  */
+/**
+ * Deprecated in favor of wimlib_iterate_dir_tree(), which provides the
+ * information in a way that can be accessed programatically.
+ */
 extern int
 wimlib_print_metadata(WIMStruct *wim, int image) _wimlib_deprecated;
 

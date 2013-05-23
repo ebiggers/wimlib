@@ -767,6 +767,58 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 	tputc(T('\n'), out);
 }
 
+void
+lte_to_wimlib_resource_entry(const struct wim_lookup_table_entry *lte,
+			     struct wimlib_resource_entry *wentry)
+{
+	wentry->uncompressed_size = lte->resource_entry.original_size;
+	wentry->compressed_size = lte->resource_entry.size;
+	wentry->offset = lte->resource_entry.offset;
+	copy_hash(wentry->sha1_hash, lte->hash);
+	wentry->part_number = lte->part_number;
+	wentry->reference_count = lte->refcnt;
+	wentry->is_compressed = (lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED) != 0;
+	wentry->is_metadata = (lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) != 0;
+	wentry->is_free = (lte->resource_entry.flags & WIM_RESHDR_FLAG_FREE) != 0;
+	wentry->is_spanned = (lte->resource_entry.flags & WIM_RESHDR_FLAG_SPANNED) != 0;
+}
+
+struct iterate_lte_context {
+	wimlib_iterate_lookup_table_callback_t cb;
+	void *user_ctx;
+};
+
+static int
+do_iterate_lte(struct wim_lookup_table_entry *lte, void *_ctx)
+{
+	struct iterate_lte_context *ctx = _ctx;
+	struct wimlib_resource_entry entry;
+
+	lte_to_wimlib_resource_entry(lte, &entry);
+	return (*ctx->cb)(&entry, ctx->user_ctx);
+}
+
+WIMLIBAPI int
+wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
+			    wimlib_iterate_lookup_table_callback_t cb,
+			    void *user_ctx)
+{
+	struct iterate_lte_context ctx = {
+		.cb = cb,
+		.user_ctx = user_ctx,
+	};
+	if (wim->hdr.part_number == 1) {
+		int ret;
+		for (int i = 0; i < wim->hdr.image_count; i++) {
+			ret = do_iterate_lte(wim->image_metadata[i]->metadata_lte,
+					     &ctx);
+			if (ret)
+				return ret;
+		}
+	}
+	return for_lookup_table_entry(wim->lookup_table, do_iterate_lte, &ctx);
+}
+
 static int
 do_print_lookup_table_entry(struct wim_lookup_table_entry *lte, void *fp)
 {
@@ -775,7 +827,7 @@ do_print_lookup_table_entry(struct wim_lookup_table_entry *lte, void *fp)
 }
 
 /*
- * Prints the lookup table of a WIM file.
+ * Deprecated
  */
 WIMLIBAPI void
 wimlib_print_lookup_table(WIMStruct *wim)
@@ -1117,4 +1169,3 @@ hash_unhashed_stream(struct wim_lookup_table_entry *lte,
 		*lte_ret = lte;
 	return 0;
 }
-

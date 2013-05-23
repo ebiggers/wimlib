@@ -341,6 +341,10 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *entry,
 extern void
 free_lookup_table_entry(struct wim_lookup_table_entry *lte);
 
+extern void
+lte_to_wimlib_resource_entry(const struct wim_lookup_table_entry *lte,
+			     struct wimlib_resource_entry *wentry);
+
 extern int
 for_lookup_table_entry(struct wim_lookup_table *table,
 		       int (*visitor)(struct wim_lookup_table_entry *, void *),
