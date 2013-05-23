@@ -40,6 +40,8 @@ Version 1.4.1:
 	Progress callbacks have been added to wimlib's wimlib_update_image()
 	function.
 
+	Added wimlib_get_wim_info() and wimlib_set_wim_info() functions.
+
 	NTFS-3g capture now only warns about two conditions previously treated
 	as errors.
 

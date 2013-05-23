@@ -152,12 +152,6 @@ out_free:
 	return ret;
 }
 
-WIMLIBAPI int
-wimlib_get_num_images(const WIMStruct *w)
-{
-	return w->hdr.image_count;
-}
-
 int
 select_wim_image(WIMStruct *w, int image)
 {
@@ -207,13 +201,6 @@ select_wim_image(WIMStruct *w, int image)
 	return ret;
 }
 
-
-/* Returns the compression type of the WIM file. */
-WIMLIBAPI int
-wimlib_get_compression_type(const WIMStruct *w)
-{
-	return w->compression_type;
-}
 
 WIMLIBAPI const tchar *
 wimlib_get_compression_type_string(int ctype)
@@ -350,34 +337,128 @@ wimlib_print_files(WIMStruct *w, int image)
 	return for_image(w, image, image_print_files);
 }
 
-/* Sets the index of the bootable image. */
 WIMLIBAPI int
-wimlib_set_boot_idx(WIMStruct *wim, int boot_idx)
+wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
+{
+	memset(info, 0, sizeof(struct wimlib_wim_info));
+	memcpy(info->guid, wim->hdr.guid, WIMLIB_GUID_LEN);
+	info->image_count = wim->hdr.image_count;
+	info->boot_index = wim->hdr.boot_idx;
+	info->wim_version = WIM_VERSION;
+	info->chunk_size = WIM_CHUNK_SIZE;
+	info->part_number = wim->hdr.part_number;
+	info->total_parts = wim->hdr.total_parts;
+	info->compression_type = wim->compression_type;
+	if (wim->wim_info)
+		info->total_bytes = wim->wim_info->total_bytes;
+	else
+		info->total_bytes = 0;
+	info->has_integrity_table = wim->hdr.integrity.offset != 0;
+	info->opened_from_file = (wim->filename != NULL);
+	info->is_readonly == (wim->hdr.flags & WIM_HDR_FLAG_READONLY) ||
+			     (wim->hdr.total_parts != 1) ||
+			     (wim->filename && taccess(wim->filename, W_OK));
+	info->has_rpfix = (wim->hdr.flags & WIM_HDR_FLAG_RP_FIX) != 0;
+	info->is_marked_readonly = (wim->hdr.flags & WIM_HDR_FLAG_READONLY) != 0;
+	info->write_in_progress = (wim->hdr.flags & WIM_HDR_FLAG_WRITE_IN_PROGRESS) != 0;
+	info->metadata_only = (wim->hdr.flags & WIM_HDR_FLAG_METADATA_ONLY) != 0;
+	info->resource_only = (wim->hdr.flags & WIM_HDR_FLAG_RESOURCE_ONLY) != 0;
+	info->spanned = (wim->hdr.flags & WIM_HDR_FLAG_SPANNED) != 0;
+	return 0;
+}
+
+
+/* Deprecated */
+WIMLIBAPI int
+wimlib_get_boot_idx(const WIMStruct *wim)
+{
+	struct wimlib_wim_info info;
+
+	wimlib_get_wim_info((WIMStruct*)wim, &info);
+	return info.boot_index;
+}
+
+/* Deprecated */
+WIMLIBAPI int
+wimlib_get_compression_type(const WIMStruct *wim)
+{
+	struct wimlib_wim_info info;
+
+	wimlib_get_wim_info((WIMStruct*)wim, &info);
+	return info.compression_type;
+}
+
+/* Deprecated */
+WIMLIBAPI int
+wimlib_get_num_images(const WIMStruct *wim)
+{
+	struct wimlib_wim_info info;
+
+	wimlib_get_wim_info((WIMStruct*)wim, &info);
+	return info.image_count;
+}
+
+/* Deprecated */
+WIMLIBAPI int
+wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret)
+{
+	struct wimlib_wim_info info;
+
+	wimlib_get_wim_info((WIMStruct*)wim, &info);
+	if (total_parts_ret)
+		*total_parts_ret = info.total_parts;
+	return info.part_number;
+}
+
+WIMLIBAPI int
+wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int which)
 {
 	int ret;
+
+	if (which & WIMLIB_CHANGE_READONLY_FLAG) {
+		if (info->is_marked_readonly)
+			wim->hdr.flags |= WIM_HDR_FLAG_READONLY;
+		else
+			wim->hdr.flags &= ~WIM_HDR_FLAG_READONLY;
+	}
+
+	if ((which & ~WIMLIB_CHANGE_READONLY_FLAG) == 0)
+		return 0;
 
 	ret = can_modify_wim(wim);
 	if (ret)
 		return ret;
-	if (boot_idx < 0 || boot_idx > wim->hdr.image_count)
-		return WIMLIB_ERR_INVALID_IMAGE;
-	wim->hdr.boot_idx = boot_idx;
+
+	if (which & WIMLIB_CHANGE_GUID)
+		memcpy(wim->hdr.guid, info->guid, WIM_GID_LEN);
+
+	if (which & WIMLIB_CHANGE_BOOT_INDEX) {
+		if (info->boot_index < 0 || info->boot_index > wim->hdr.image_count)
+		{
+			ERROR("%u is not 0 or a valid image in the WIM to mark as bootable",
+			      info->boot_index);
+			return WIMLIB_ERR_INVALID_IMAGE;
+		}
+		wim->hdr.boot_idx = info->boot_index;
+	}
+
+	if (which & WIMLIB_CHANGE_RPFIX_FLAG) {
+		if (info->has_rpfix)
+			wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
+		else
+			wim->hdr.flags &= ~WIM_HDR_FLAG_RP_FIX;
+	}
 	return 0;
 }
 
+/* Deprecated */
 WIMLIBAPI int
-wimlib_get_part_number(const WIMStruct *w, int *total_parts_ret)
+wimlib_set_boot_idx(WIMStruct *wim, int boot_idx)
 {
-	if (total_parts_ret)
-		*total_parts_ret = w->hdr.total_parts;
-	return w->hdr.part_number;
-}
+	struct wimlib_wim_info info;
 
-
-WIMLIBAPI int
-wimlib_get_boot_idx(const WIMStruct *w)
-{
-	return w->hdr.boot_idx;
+	info.boot_index = boot_idx;
+	return wimlib_set_wim_info(wim, &info, WIMLIB_CHANGE_BOOT_INDEX);
 }
 
 static int

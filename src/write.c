@@ -2227,13 +2227,18 @@ wimlib_overwrite(WIMStruct *w, int write_flags,
 		 wimlib_progress_func_t progress_func)
 {
 	int ret;
+	u32 orig_hdr_flags;
 
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 
 	if (!w->filename)
 		return WIMLIB_ERR_NO_FILENAME;
 
+	orig_hdr_flags = w->hdr.flags;
+	if (write_flags & WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG)
+		w->hdr.flags &= ~WIM_HDR_FLAG_READONLY;
 	ret = can_modify_wim(w);
+	w->hdr.flags = orig_hdr_flags;
 	if (ret)
 		return ret;
 

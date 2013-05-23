@@ -200,6 +200,13 @@ typedef char wimlib_tchar;
 #  define WIMLIB_WIM_PATH_SEPARATOR '/'
 #  define WIMLIB_WIM_PATH_SEPARATOR_STRING "/"
 #endif
+
+#ifdef __GNUC__
+#  define _wimlib_deprecated __attribute__((deprecated))
+#else
+#  define _wimlib_deprecated
+#endif
+
 /**
  * Specifies the compression type of a WIM file.
  */
@@ -615,6 +622,97 @@ struct wimlib_capture_config {
 	size_t _prefix_num_tchars;
 };
 
+/** Set or unset the WIM header flag that marks it read-only
+ * (WIM_HDR_FLAG_READONLY in Microsoft's documentation), based on the
+ * ::wimlib_wim_info.is_marked_readonly member of the @a info parameter.  This
+ * is distinct from basic file permissions; this flag can be set on a WIM file
+ * that is physically writable.  If this flag is set, all further operations to
+ * modify the WIM will fail, except calling wimlib_overwrite() with
+ * ::WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG specified, which is a loophole that
+ * allows you to set this flag persistently on the underlying WIM file.
+ */
+#define WIMLIB_CHANGE_READONLY_FLAG		0x00000001
+
+/** Set the GUID (globally unique identifier) of the WIM file to the value
+ * specified in ::wimlib_wim_info.guid of the @a info parameter. */
+#define WIMLIB_CHANGE_GUID			0x00000002
+
+/** Change the bootable image of the WIM to the value specified in
+ * ::wimlib_wim_info.boot_index of the @a info parameter.  */
+#define WIMLIB_CHANGE_BOOT_INDEX		0x00000004
+
+/** Change the WIM_HDR_FLAG_RP_FIX flag of the WIM file to the value specified
+ * in ::wimlib_wim_info.has_rpfix of the @a info parameter.  This flag generally
+ * indicates whether an image in the WIM has been captured with reparse-point
+ * fixups enabled.  wimlib also treats this flag as specifying whether to do
+ * reparse-point fixups by default when capturing or applying WIM images.  */
+#define WIMLIB_CHANGE_RPFIX_FLAG		0x00000008
+
+#define WIMLIB_GUID_LEN 16
+
+/** General information about a WIM file. */
+struct wimlib_wim_info {
+
+	/** Globally unique identifier for the WIM file.  Note: all parts of a
+	 * split WIM should have an identical value in this field.  */
+	uint8_t  guid[WIMLIB_GUID_LEN];
+
+	/** Number of images in the WIM.  */
+	uint32_t image_count;
+
+	/** 1-based index of the bootable image in the WIM, or 0 if no image is
+	 * bootable.  */
+	uint32_t boot_index;
+
+	/** Version of the WIM file.  */
+	uint32_t wim_version;
+
+	/** Chunk size used for compression.  */
+	uint32_t chunk_size;
+
+	/** 1-based index of this part within a split WIM, or 1 if the WIM is
+	 * standalone.  */
+	uint16_t part_number;
+
+	/** Total number of parts in the split WIM, or 1 if the WIM is
+	 * standalone.  */
+	uint16_t total_parts;
+
+	/** One of the ::wimlib_compression_type values that specifies the
+	 * method used to compress resources in the WIM.  */
+	int32_t  compression_type;
+
+	/** Size of the WIM file in bytes, excluding the XML data and integrity
+	 * table.  */
+	uint64_t total_bytes;
+
+	/** 1 if the WIM has an integrity table  */
+	uint32_t has_integrity_table : 1;
+
+	/** 1 if the WIM was created via wimlib_open_wim() rather than
+	 * wimlib_create_new_wim(). */
+	uint32_t opened_from_file : 1;
+
+	/** 1 if the WIM is considered readonly for any reason. */
+	uint32_t is_readonly : 1;
+
+	/** 1 if reparse-point fixups are supposedly enabled for one or more
+	 * images in the WIM.  */
+	uint32_t has_rpfix : 1;
+
+	/** 1 if the WIM is marked as read-only.  */
+	uint32_t is_marked_readonly : 1;
+
+	/** 1 if the WIM is part of a spanned set.  */
+	uint32_t spanned : 1;
+
+	uint32_t write_in_progress : 1;
+	uint32_t metadata_only : 1;
+	uint32_t resource_only : 1;
+	uint32_t reserved_flags : 24;
+	uint32_t reserved[9];
+};
+
 
 /*****************************
  * WIMLIB_ADD_FLAG_*
@@ -881,6 +979,12 @@ struct wimlib_capture_config {
  * probably not what you want, because almost no space will be spaced by
  * deleting an image in this way. */
 #define WIMLIB_WRITE_FLAG_SOFT_DELETE			0x00000010
+
+/** With wimlib_overwrite(), allow overwriting the WIM even if the readonly flag
+ * is set in the WIM header; this can be used in combination with
+ * wimlib_set_wim_info() with the ::WIMLIB_CHANGE_READONLY_FLAG flag to actually
+ * set the readonly flag on the on-disk WIM file. */
+#define WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG		0x00000020
 
 /******************************
  * WIMLIB_INIT_FLAG_*
@@ -1579,30 +1683,16 @@ extern void
 wimlib_free(WIMStruct *wim);
 
 /**
- * Returns the index of the bootable image of the WIM.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
- *
- * @return
- * 	0 if no image is marked as bootable, or the number of the image marked
- * 	as bootable (numbered starting at 1).
+ * Deprecated in favor of wimlib_get_wim_info().
  */
 extern int
-wimlib_get_boot_idx(const WIMStruct *wim);
+wimlib_get_boot_idx(const WIMStruct *wim) _wimlib_deprecated;
 
 /**
- * Returns the compression type used in the WIM.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file
- *
- * @return
- * 	::WIMLIB_COMPRESSION_TYPE_NONE, ::WIMLIB_COMPRESSION_TYPE_LZX, or
- * 	::WIMLIB_COMPRESSION_TYPE_XPRESS.
+ * Deprecated in favor of wimlib_get_wim_info().
  */
 extern int
-wimlib_get_compression_type(const WIMStruct *wim);
+wimlib_get_compression_type(const WIMStruct *wim) _wimlib_deprecated;
 
 /**
  * Converts a ::wimlib_compression_type value into a string.
@@ -1674,33 +1764,31 @@ wimlib_get_image_name(const WIMStruct *wim, int image);
 
 
 /**
- * Returns the number of images contained in a WIM.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
- * 	standalone WIM or a split WIM part.
- *
- * @return
- * 	The number of images contained in the WIM file.
+ * Deprecated in favor of wimlib_get_wim_info().
  */
 extern int
-wimlib_get_num_images(const WIMStruct *wim);
+wimlib_get_num_images(const WIMStruct *wim) _wimlib_deprecated;
 
 /**
- * Returns the part number of a WIM in a split WIM and the total number of parts
- * of the split WIM.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
- * @param total_parts_ret
- * 	If non-@c NULL, the total number of parts in the split WIM (1 for
- * 	non-split WIMs) is written to this location.
- *
- * @return
- * 	The part number of the WIM (1 for non-split WIMs)
+ * Deprecated in favor of wimlib_get_wim_info().
  */
 extern int
-wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret);
+wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret) _wimlib_deprecated;
+
+/**
+ * Get basic information about a WIM file.
+ *
+ * @param wim
+ * 	Pointer to the ::WIMStruct for a WIM file.  It may be for either a
+ * 	standalone WIM or part of a split WIM.
+ * @param info
+ *	A ::wimlib_wim_info structure that will be filled in with information
+ *	about the WIM file.
+ * @return
+ *	0
+ */
+extern int
+wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info);
 
 /**
  * Initialization function for wimlib.  Call before using any other wimlib
@@ -2287,23 +2375,10 @@ wimlib_resolve_image(WIMStruct *wim,
 		     const wimlib_tchar *image_name_or_num);
 
 /**
- * Sets which image in the WIM is marked as bootable.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
- * @param boot_idx
- * 	The number of the image to mark as bootable, or 0 to mark no image as
- * 	bootable.
- * @return 0 on success; nonzero on error.
- * @retval ::WIMLIB_ERR_INVALID_IMAGE
- * 	@a boot_idx does not specify an existing image in @a wim, and it was not
- * 	0.
- * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	@a wim is considered read-only because of any of the reasons mentioned
- *	in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
+ * Deprecated in favor of wimlib_set_wim_info().
  */
 extern int
-wimlib_set_boot_idx(WIMStruct *wim, int boot_idx);
+wimlib_set_boot_idx(WIMStruct *wim, int boot_idx) _wimlib_deprecated;
 
 /**
  * Changes the description of an image in the WIM.
@@ -2333,6 +2408,36 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
 			    const wimlib_tchar *description);
 
 /**
+ * Set basic information about a WIM.
+ *
+ * @param wim
+ *	A WIMStruct for a standalone WIM file.
+ * @param info
+ *	A struct ::wimlib_wim_info that contains the information to set.  Only
+ *	the information explicitly specified in the @a which flags need be
+ *	valid.
+ * @param which
+ *	Flags that specify which information to set.  This is a bitwise OR of
+ *	::WIMLIB_CHANGE_READONLY_FLAG, ::WIMLIB_CHANGE_GUID,
+ *	::WIMLIB_CHANGE_BOOT_INDEX, and/or ::WIMLIB_CHANGE_RPFIX_FLAG.
+ *
+ * @return 0 on success; nonzero on failure.
+ * @retval ::WIMLIB_ERR_WIM_IS_READONLY
+ *	The WIM file is considered read-only because of any of the reasons
+ *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
+ *	flag.  However, as a special case, if you are using
+ *	::WIMLIB_CHANGE_READONLY_FLAG to unset the readonly flag, then this
+ *	function will not fail due to the readonly flag being previously set.
+ * @retval ::WIMLIB_ERR_IMAGE_COUNT
+ *	::WIMLIB_CHANGE_BOOT_INDEX was specified, but
+ *	::wimlib_wim_info.boot_index did not specify 0 or a valid 1-based image
+ *	index in the WIM.
+ */
+extern int
+wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info,
+		    int which);
+
+/**
  * Changes what is written in the \<FLAGS\> element in the WIM XML data
  * (something like "Core" or "Ultimate")
  *
@@ -2355,8 +2460,8 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  *	@a wim is considered read-only because of any of the reasons mentioned
  *	in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  */
-extern int wimlib_set_image_flags(WIMStruct *wim, int image,
-				  const wimlib_tchar *flags);
+extern int
+wimlib_set_image_flags(WIMStruct *wim, int image, const wimlib_tchar *flags);
 
 /**
  * Changes the name of an image in the WIM.
