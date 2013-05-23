@@ -916,9 +916,9 @@ struct wimlib_wim_info {
 /** Check if the WIM is writable and return ::WIMLIB_ERR_WIM_IS_READONLY if it
  * is not.  A WIM is considered writable only if it is writable at the
  * filesystem level, does not have the WIM_HDR_FLAG_READONLY flag set in its
- * header (note: wimlib currently never sets this flag), and is not part of a
- * spanned set.  It is not required to provide this flag to make changes to the
- * WIM, but with this flag you get the error sooner rather than later. */
+ * header, and is not part of a spanned set.  It is not required to provide this
+ * flag to make changes to the WIM, but with this flag you get the error sooner
+ * rather than later. */
 #define WIMLIB_OPEN_FLAG_WRITE_ACCESS			0x00000004
 
 /******************************
