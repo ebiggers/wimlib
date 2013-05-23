@@ -125,7 +125,7 @@ IMAGEX_PROGNAME" delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check] [--soft
 ),
 [DIR] =
 T(
-IMAGEX_PROGNAME" dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n"
+IMAGEX_PROGNAME" dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--path=PATH]\n"
 ),
 [EXPORT] =
 T(
@@ -221,6 +221,7 @@ enum {
 	IMAGEX_METADATA_OPTION,
 	IMAGEX_NORPFIX_OPTION,
 	IMAGEX_NO_ACLS_OPTION,
+	IMAGEX_PATH_OPTION,
 	IMAGEX_REBUILD_OPTION,
 	IMAGEX_RECOMPRESS_OPTION,
 	IMAGEX_RECURSIVE_OPTION,
@@ -276,6 +277,11 @@ static const struct option capture_or_append_options[] = {
 static const struct option delete_options[] = {
 	{T("check"), no_argument, NULL, IMAGEX_CHECK_OPTION},
 	{T("soft"),  no_argument, NULL, IMAGEX_SOFT_OPTION},
+	{NULL, 0, NULL, 0},
+};
+
+static const struct option dir_options[] = {
+	{T("path"), required_argument, NULL, IMAGEX_PATH_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1971,8 +1977,8 @@ out:
 static int
 print_full_path(const struct wimlib_wim_dentry *wdentry, void *_ignore)
 {
-	tprintf(T("%"TS"\n"), wdentry->full_path);
-	return 0;
+	int ret = tprintf(T("%"TS"\n"), wdentry->full_path);
+	return (ret >= 0) ? 0 : -1;
 }
 
 /* Print the files contained in an image(s) in a WIM file. */
@@ -1980,53 +1986,68 @@ static int
 imagex_dir(int argc, tchar **argv)
 {
 	const tchar *wimfile;
-	WIMStruct *w;
+	WIMStruct *wim = NULL;
 	int image;
 	int ret;
-	int num_images;
+	const tchar *path = T("");
+	int c;
 
-	if (argc < 2) {
+	for_opt(c, dir_options) {
+		switch (c) {
+		case IMAGEX_PATH_OPTION:
+			path = optarg;
+			break;
+		default:
+			goto out_usage;
+		}
+	}
+	argc -= optind;
+	argv += optind;
+
+	if (argc < 1) {
 		imagex_error(T("Must specify a WIM file"));
-		usage(DIR);
-		return -1;
+		goto out_usage;
 	}
-	if (argc > 3) {
+	if (argc > 2) {
 		imagex_error(T("Too many arguments"));
-		usage(DIR);
-		return -1;
+		goto out_usage;
 	}
 
-	wimfile = argv[1];
-	ret = wimlib_open_wim(wimfile, WIMLIB_OPEN_FLAG_SPLIT_OK, &w,
+	wimfile = argv[0];
+	ret = wimlib_open_wim(wimfile, WIMLIB_OPEN_FLAG_SPLIT_OK, &wim,
 			      imagex_progress_func);
-	if (ret != 0)
-		return ret;
+	if (ret)
+		goto out;
 
-	if (argc == 3) {
-		image = wimlib_resolve_image(w, argv[2]);
-		ret = verify_image_exists(image, argv[2], wimfile);
-		if (ret != 0)
-			goto out;
+	if (argc == 2) {
+		image = wimlib_resolve_image(wim, argv[1]);
+		ret = verify_image_exists(image, argv[1], wimfile);
+		if (ret)
+			goto out_wimlib_free;
 	} else {
 		/* Image was not specified.  If the WIM only contains one image,
 		 * choose that one; otherwise, print an error. */
-		num_images = wimlib_get_num_images(w);
+		int num_images = wimlib_get_num_images(wim);
 		if (num_images != 1) {
 			imagex_error(T("\"%"TS"\" contains %d images; Please "
 				       "select one."), wimfile, num_images);
-			usage(DIR);
-			ret = -1;
-			goto out;
+			wimlib_free(wim);
+			goto out_usage;
 		}
 		image = 1;
 	}
 
-	ret = wimlib_iterate_dir_tree(w, image, T(""),
+	ret = wimlib_iterate_dir_tree(wim, image, path,
 				      WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE,
 				      print_full_path, NULL);
+out_wimlib_free:
+	wimlib_free(wim);
 out:
-	wimlib_free(w);
 	return ret;
+out_usage:
+	usage(DIR);
+	ret = -1;
+	goto out;
 }
 
 /* Exports one, or all, images from a WIM file to a new WIM file or an existing
