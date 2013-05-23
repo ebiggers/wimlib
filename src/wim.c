@@ -254,28 +254,28 @@ wimlib_resolve_image(WIMStruct *w, const tchar *image_name_or_num)
 
 /* Prints some basic information about a WIM file. */
 WIMLIBAPI void
-wimlib_print_wim_information(const WIMStruct *w)
+wimlib_print_wim_information(const WIMStruct *wim)
 {
-	const struct wim_header *hdr;
+	struct wimlib_wim_info info;
 
-	hdr = &w->hdr;
+	wimlib_get_wim_info((WIMStruct*)wim, &info);
+
 	tputs(T("WIM Information:"));
 	tputs(T("----------------"));
-	tprintf(T("Path:           %"TS"\n"), w->filename);
+	tprintf(T("Path:           %"TS"\n"), wim->filename);
 	tfputs(T("GUID:           0x"), stdout);
-	print_byte_field(hdr->guid, WIM_GID_LEN, stdout);
+	print_byte_field(info.guid, WIM_GID_LEN, stdout);
 	tputchar(T('\n'));
-	tprintf(T("Image Count:    %d\n"), hdr->image_count);
+	tprintf(T("Image Count:    %d\n"), info.image_count);
 	tprintf(T("Compression:    %"TS"\n"),
-		wimlib_get_compression_type_string(w->compression_type));
-	tprintf(T("Part Number:    %d/%d\n"), hdr->part_number, hdr->total_parts);
-	tprintf(T("Boot Index:     %d\n"), hdr->boot_idx);
-	tprintf(T("Size:           %"PRIu64" bytes\n"),
-		wim_info_get_total_bytes(w->wim_info));
+		wimlib_get_compression_type_string(info.compression_type));
+	tprintf(T("Part Number:    %d/%d\n"), info.part_number, info.total_parts);
+	tprintf(T("Boot Index:     %d\n"), info.boot_index);
+	tprintf(T("Size:           %"PRIu64" bytes\n"), info.total_bytes);
 	tprintf(T("Integrity Info: %"TS"\n"),
-		(w->hdr.integrity.offset != 0) ? T("yes") : T("no"));
+		info.has_integrity_table ? T("yes") : T("no"));
 	tprintf(T("Relative path junction: %"TS"\n"),
-		(hdr->flags & WIM_HDR_FLAG_RP_FIX) ? T("yes") : T("no"));
+		info.has_rpfix ? T("yes") : T("no"));
 	tputchar(T('\n'));
 }
 

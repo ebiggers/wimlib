@@ -2327,18 +2327,11 @@ extern int
 wimlib_print_metadata(WIMStruct *wim, int image);
 
 /**
- * Prints some basic information about a WIM file.  All information printed by
- * this function is also printed by wimlib_print_header(), but
- * wimlib_print_wim_information() prints some of this information more concisely
- * and in a more readable form.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
- *
- * @return This function has no return value.
+ * Deprecated in favor of wimlib_get_wim_info(), which provides the information
+ * in a way that can be accessed programatically.
  */
 extern void
-wimlib_print_wim_information(const WIMStruct *wim);
+wimlib_print_wim_information(const WIMStruct *wim) _wimlib_deprecated;
 
 /**
  * Translates a string specifying the name or number of an image in the WIM into
