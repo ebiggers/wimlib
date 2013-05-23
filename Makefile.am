@@ -143,7 +143,7 @@ imagex_SOURCES   = programs/imagex.c	\
 		   include/wimlib.h	\
 		   include/wimlib_tchar.h
 imagex_LDADD	 = $(top_builddir)/libwim.la
-imagex_CFLAGS    = $(AM_CFLAGS) $(WINDOWS_CFLAGS)
+imagex_CFLAGS    = $(AM_CFLAGS) $(WINDOWS_CFLAGS) -Wno-deprecated-declarations
 
 if WINDOWS_NATIVE_BUILD
 imagex_SOURCES += programs/imagex-win32.c	\
