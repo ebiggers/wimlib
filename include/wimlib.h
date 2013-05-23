@@ -2225,104 +2225,23 @@ wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads,
 extern void
 wimlib_print_available_images(const WIMStruct *wim, int image);
 
-/**
- * Prints the full paths to all files contained in an image, or all images, in a
- * WIM file.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
- * @param image
- * 	Which image to print files for.  Can be the number of an image, or
- * 	::WIMLIB_ALL_IMAGES to print the files contained in all images.
- *
- * @return 0 on success; nonzero on error.
- * @retval ::WIMLIB_ERR_DECOMPRESSION
- * 	The metadata resource for one of the specified images could not be
- * 	decompressed.
- * @retval ::WIMLIB_ERR_INVALID_DENTRY
- * 	A directory entry in the metadata resource for one of the specified
- * 	images is invaled.
- * @retval ::WIMLIB_ERR_INVALID_IMAGE
- * 	@a image does not specify a valid image in @a wim, and is not
- * 	::WIMLIB_ALL_IMAGES.
- * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
- * 	The metadata resource for one of the specified images is invalid.
- * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
- *	The security data for one of the specified images is invalid.
- * @retval ::WIMLIB_ERR_NOMEM
- * 	Failed to allocate needed memory.
- * @retval ::WIMLIB_ERR_READ
- * 	An unexpected read error or end-of-file occurred when reading the
- * 	metadata resource for one of the specified images.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a wim was not a standalone WIM and was not the first part of a split
- * 	WIM.
- */
+/** TODO: wimlib-imagex uses this for the 'dir' command, but a better API is
+ * needed for this.  */
 extern int
 wimlib_print_files(WIMStruct *wim, int image);
 
-/**
- * Prints detailed information from the header of a WIM file.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
- * 	standalone WIM or part of a split WIM.
- *
- * @return This function has no return value.
- *
- */
+/** TODO: wimlib-imagex uses this for the 'info --header' command, but a better
+ * API is needed for this.  */
 extern void
 wimlib_print_header(const WIMStruct *wim);
 
-/**
- * Prints the lookup table of a WIM file.  The lookup table maps SHA1 message
- * digests, as found in the directory entry tree in the WIM file, to file
- * resources in the WIM file.  This table includes one entry for each unique
- * file in the WIM, so it can be quite long.  There is only one lookup table per
- * WIM file, but each split WIM part has its own lookup table.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
- *
- * @return This function has no return value.
- */
+/** TODO: wimlib-imagex uses this for the 'info --lookup-table' command, but a
+ * better API is needed for this.  */
 extern void
 wimlib_print_lookup_table(WIMStruct *wim);
 
-/**
- * Prints the metadata of the specified image in a WIM file.  The metadata
- * consists of the security data as well as the directory entry tree.  Each
- * image has its own metadata.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
- * @param image
- * 	Which image to print the metadata for.  Can be the number of an image,
- * 	or ::WIMLIB_ALL_IMAGES to print the metadata for all images in the WIM.
- *
- * @return 0 on success; nonzero on error.
- * @retval ::WIMLIB_ERR_DECOMPRESSION
- * 	The metadata resource for one of the specified images could not be
- * 	decompressed.
- * @retval ::WIMLIB_ERR_INVALID_DENTRY
- * 	A directory entry in the metadata resource for one of the specified
- * 	images is invaled.
- * @retval ::WIMLIB_ERR_INVALID_IMAGE
- * 	@a image does not specify a valid image in @a wim, and is not
- * 	::WIMLIB_ALL_IMAGES.
- * @retval ::WIMLIB_ERR_INVALID_RESOURCE_SIZE
- * 	The metadata resource for one of the specified images is invalid.
- * @retval ::WIMLIB_ERR_INVALID_SECURITY_DATA
- *	The security data for one of the specified images is invalid.
- * @retval ::WIMLIB_ERR_NOMEM
- * 	Failed to allocate needed memory.
- * @retval ::WIMLIB_ERR_READ
- * 	An unexpected read error or end-of-file occurred when reading the
- * 	metadata resource for one of the specified images.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a wim was not a standalone WIM and was not the first part of a split
- * 	WIM.
- */
+/** TODO: wimlib-imagex uses this for the 'info --metadata' command, but a
+ * better API is needed for this.  */
 extern int
 wimlib_print_metadata(WIMStruct *wim, int image);
 
