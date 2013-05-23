@@ -201,7 +201,7 @@ struct wim_dentry_on_disk {
 	 * set to 0.  */
 	le16 file_name_nbytes;
 
-	/* Follewed by variable length file name, in UTF16-LE, if
+	/* Followed by variable length file name, in UTF16-LE, if
 	 * file_name_nbytes != 0.  Includes null terminator. */
 	/*utf16lechar file_name[];*/
 
