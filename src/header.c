@@ -228,6 +228,38 @@ write_header(const struct wim_header *hdr, int out_fd)
 	return 0;
 }
 
+/* Update just the wim_flags field. */
+int
+write_header_flags(u32 hdr_flags, int out_fd)
+{
+	le32 flags = cpu_to_le32(hdr_flags);
+	if (full_pwrite(out_fd, &flags, sizeof(flags),
+			offsetof(struct wim_header_disk, wim_flags)) != sizeof(flags))
+	{
+		return WIMLIB_ERR_WRITE;
+	} else {
+		return 0;
+	}
+
+}
+
+/* Update just the part_number and total_parts fields. */
+int
+write_header_part_data(u16 part_number, u16 total_parts, int out_fd)
+{
+	le16 part_data[2] = {
+		cpu_to_le16(part_number),
+		cpu_to_le16(total_parts),
+	};
+	if (full_pwrite(out_fd, &part_data, sizeof(part_data),
+			offsetof(struct wim_header_disk, part_number)) != sizeof(part_data))
+	{
+		return WIMLIB_ERR_WRITE;
+	} else {
+		return 0;
+	}
+}
+
 /*
  * Initializes the header for a WIM file.
  */

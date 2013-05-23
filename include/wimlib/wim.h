@@ -72,6 +72,11 @@ write_header(const struct wim_header *hdr, int out_fd);
 extern int
 init_header(struct wim_header *hdr, int ctype);
 
+extern int
+write_header_flags(u32 hdr_flags, int out_fd);
+
+extern int
+write_header_part_data(u16 part_number, u16 total_parts, int out_fd);
 
 extern int
 rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to);

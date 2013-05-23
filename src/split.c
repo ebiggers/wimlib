@@ -222,6 +222,7 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 		int part_fd;
 		le16 part_data[2];
 		size_t bytes_written;
+		int ret2;
 
 		if (i == 1) {
 			part_name = swm_name;
@@ -237,16 +238,14 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 			ret = WIMLIB_ERR_OPEN;
 			goto out;
 		}
-		part_data[0] = cpu_to_le16(i);
-		part_data[1] = cpu_to_le16(total_parts);
 
-		bytes_written = full_pwrite(part_fd, part_data,
-					    sizeof(part_data), 40);
-		ret = close(part_fd);
-		if (bytes_written != sizeof(part_data) || ret != 0) {
+		ret = write_header_part_data(i, total_parts, part_fd);
+		ret2 = close(part_fd);
+		if (ret == 0 && ret2 != 0)
+			ret = WIMLIB_ERR_WRITE;
+		if (ret) {
 			ERROR_WITH_ERRNO("Error updating header of `%"TS"'",
 					 part_name);
-			ret = WIMLIB_ERR_WRITE;
 			goto out;
 		}
 	}

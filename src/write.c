@@ -1798,6 +1798,7 @@ finish_write(WIMStruct *w, int image, int write_flags,
 			struct wim_header checkpoint_hdr;
 			memcpy(&checkpoint_hdr, &hdr, sizeof(struct wim_header));
 			zero_resource_entry(&checkpoint_hdr.integrity);
+			checkpoint_hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 			ret = write_header(&checkpoint_hdr, w->out_fd);
 			if (ret)
 				goto out_close_wim;
@@ -2112,11 +2113,11 @@ overwrite_wim_inplace(WIMStruct *w, int write_flags,
 		return ret;
 	}
 
-	/* Write header with write in progress flag set. */
-	w->hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
-	ret = write_header(&w->hdr, w->out_fd);
-	w->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+	/* Set WIM_HDR_FLAG_WRITE_IN_PROGRESS flag in header. */
+	ret = write_header_flags(w->hdr.flags | WIM_HDR_FLAG_WRITE_IN_PROGRESS,
+				 w->out_fd);
 	if (ret) {
+		ERROR_WITH_ERRNO("Error updating WIM header flags");
 		close_wim_writable(w);
 		goto out_unlock_wim;
 	}
