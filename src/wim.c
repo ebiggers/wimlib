@@ -279,12 +279,6 @@ wimlib_print_wim_information(const WIMStruct *w)
 	tputchar(T('\n'));
 }
 
-WIMLIBAPI bool
-wimlib_has_integrity_table(const WIMStruct *w)
-{
-	return w->hdr.integrity.size != 0;
-}
-
 WIMLIBAPI void
 wimlib_print_available_images(const WIMStruct *w, int image)
 {
@@ -410,6 +404,16 @@ wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret)
 	if (total_parts_ret)
 		*total_parts_ret = info.total_parts;
 	return info.part_number;
+}
+
+/* Deprecated */
+WIMLIBAPI bool
+wimlib_has_integrity_table(const WIMStruct *wim)
+{
+	struct wimlib_wim_info info;
+
+	wimlib_get_wim_info((WIMStruct*)wim, &info);
+	return info.has_integrity_table;
 }
 
 WIMLIBAPI int

@@ -686,10 +686,14 @@ struct wimlib_wim_info {
 	 * table.  */
 	uint64_t total_bytes;
 
-	/** 1 if the WIM has an integrity table  */
+	/** 1 if the WIM has an integrity table.  Note: if the ::WIMStruct was
+	 * created via wimlib_create_new_wim() rather than wimlib_open_wim(),
+	 * this will always be 0, even if the ::WIMStruct was written to
+	 * somewhere by calling wimlib_write() with the
+	 * ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY flag specified. */
 	uint32_t has_integrity_table : 1;
 
-	/** 1 if the WIM was created via wimlib_open_wim() rather than
+	/** 1 if the ::WIMStruct was created via wimlib_open_wim() rather than
 	 * wimlib_create_new_wim(). */
 	uint32_t opened_from_file : 1;
 
@@ -1815,18 +1819,10 @@ extern void
 wimlib_global_cleanup(void);
 
 /**
- * Returns true if the WIM has an integrity table.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
- * @return
- * 	@c true if the WIM has an integrity table; @c false otherwise.  If @a
- * 	wim is a ::WIMStruct created with wimlib_create_new_wim() rather than
- * 	wimlib_open_wim(), @c false will be returned, even if wimlib_write() has
- * 	been called on @a wim with ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY set.
+ * Deprecated in favor of wimlib_get_wim_info().
  */
 extern bool
-wimlib_has_integrity_table(const WIMStruct *wim);
+wimlib_has_integrity_table(const WIMStruct *wim) _wimlib_deprecated;
 
 /**
  * Determines if an image name is already used by some image in the WIM.
