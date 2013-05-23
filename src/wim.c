@@ -125,6 +125,8 @@ wimlib_create_new_wim(int ctype, WIMStruct **w_ret)
 	struct wim_lookup_table *table;
 	int ret;
 
+	wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
+
 	DEBUG("Creating new WIM with %"TS" compression.",
 	      wimlib_get_compression_type_string(ctype));
 
@@ -634,6 +636,8 @@ wimlib_open_wim(const tchar *wim_file, int open_flags,
 	WIMStruct *wim;
 	int ret;
 
+	wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
+
 	ret = WIMLIB_ERR_INVALID_PARAM;
 	if (!wim_file || !wim_ret)
 		goto out;
@@ -880,6 +884,10 @@ test_locale_ctype_utf8(void)
 WIMLIBAPI int
 wimlib_global_init(int init_flags)
 {
+	static bool already_inited = false;
+
+	if (already_inited)
+		return 0;
 	libxml_global_init();
 	if (!(init_flags & WIMLIB_INIT_FLAG_ASSUME_UTF8)) {
 		wimlib_mbs_is_utf8 = test_locale_ctype_utf8();
@@ -891,6 +899,7 @@ wimlib_global_init(int init_flags)
 #ifdef __WIN32__
 	win32_global_init();
 #endif
+	already_inited = true;
 	return 0;
 }
 
