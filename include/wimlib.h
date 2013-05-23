@@ -837,7 +837,7 @@ struct wimlib_dir_entry {
 	uint32_t num_named_streams;
 
 	/** Roughly, the inode number of this file.  However, it may be 0 if
-	 * num_links == 1.  */
+	 * @a num_links == 1.  */
 	uint64_t hard_link_group_id;
 
 	/** Time this file was created.  */
@@ -852,9 +852,10 @@ struct wimlib_dir_entry {
 
 	/** Array of streams that make up this file.  The first entry will
 	 * always exist and will correspond to the unnamed data stream (default
-	 * file contents), so it will have stream_name == NULL.  There will then
-	 * be num_named_streams additional entries that specify the named data
-	 * streams, if any, each of which will have stream_name != NULL.  */
+	 * file contents), so it will have @a stream_name == @c NULL.  There
+	 * will then be @a num_named_streams additional entries that specify the
+	 * named data streams, if any, each of which will have @a stream_name !=
+	 * @c NULL.  */
 	struct wimlib_stream_entry streams[];
 };
 
