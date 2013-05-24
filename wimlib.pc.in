@@ -4,8 +4,9 @@ libdir=@libdir@
 includedir=@includedir@
 
 Name: wimlib
-Description: WIM library
+Description: Library to extract, create, modify, and mount Windows Imaging (WIM) files
+URL:  https://sourceforge.net/projects/wimlib
 Version: @VERSION@
 Libs: -L${libdir} -lwim
-Libs.private: @LIBXML2_LDADD@ @LIBFUSE_LDADD@ @LIBCRYPTO_LDADD@
+Libs.private: @LIBXML2_LDADD@ @LIBFUSE_LDADD@ @LIBCRYPTO_LDADD@ @LIBNTFS_3G_LDADD@
 Cflags: -I${includedir}
