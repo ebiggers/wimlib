@@ -193,7 +193,7 @@ For compatibility with Windows, the path separators in the globs may be either
 forward slashes or backslashes, and the line separators may be either UNIX-style
 or DOS-style.  Globs with spaces in them must be quoted, and leading and
 trailing whitespace is not significant.  Empty lines and lines beginning with
-'#' or whitespace followed by '#' are ignored.
+\'#' or whitespace followed by '#' are ignored.
 .IP ""
 Paths may not have drive letters in them, as they are all relative to the root
 of capture and not absolute external paths.

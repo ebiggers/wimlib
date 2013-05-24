@@ -3,9 +3,9 @@ Priority: optional
 Maintainer: Eric Biggers <ebiggers3@gmail.com>
 Build-Depends: debhelper (>= 8.9.7), autotools-dev, pkg-config,
                libfuse-dev, libxml2-dev, libssl-dev,
-               ntfs-3g-dev (>= 2011.4.12), attr-dev, bash, attr
+               ntfs-3g-dev (>= 2011.4.12), attr-dev, attr
 Build-Depends-Indep: doxygen
-Standards-Version: 3.9.2
+Standards-Version: 3.9.3
 Section: libs
 Homepage: http://sourceforge.net/projects/wimlib
 Vcs-Git: git://git.code.sf.net/p/wimlib/code

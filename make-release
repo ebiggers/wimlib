@@ -32,7 +32,7 @@ wimlib ($newver-1) unstable; urgency=low\\
 \\
   * Update to v$newver\\
 \\
- -- Eric Biggers <ebiggers3gmail.com>  $(date -R)\\
+ -- Eric Biggers <ebiggers3@gmail.com>  $(date -R)\\
 " debian/changelog
 
 sed -i 's/\(Version:[[:space:]]*\)[^[:space:]]\+/\1'"$newver"'/' \
