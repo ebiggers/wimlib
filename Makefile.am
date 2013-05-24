@@ -120,11 +120,12 @@ sha1-ssse3.lo:src/sha1-ssse3.asm
 	$<
 
 libwim_la_LIBADD =		\
-	$(LIBXML2_LDADD)	\
-	$(LIBFUSE_LDADD)	\
-	$(LIBNTFS_3G_LDADD)	\
+	$(LIBXML2_LIBS)		\
+	$(LIBFUSE_LIBS)		\
+	$(LIBRT_LIBS)		\
+	$(LIBNTFS_3G_LIBS)	\
 	$(LTLIBICONV)		\
-	$(LIBCRYPTO_LDADD)	\
+	$(LIBCRYPTO_LIBS)	\
 	$(SSSE3_SHA1_OBJ)	\
 	$(PTHREAD_LDADD)	\
 	$(WINDOWS_LDADD)

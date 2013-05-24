@@ -7,6 +7,9 @@ AC_C_BIGENDIAN
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 LT_INIT
 
+PKGCONFIG_PRIVATE_REQUIRES=""
+PKGCONFIG_PRIVATE_LIBS=""
+
 AC_ARG_WITH(imagex-progname,
             [AS_HELP_STRING([--with-imagex-progname=NAME],
 			    [Set the name of installed ImageX program (default: wimlib-imagex)])],
@@ -83,10 +86,8 @@ AC_SUBST(pkgconfigdir)
 
 AC_CHECK_LIB([xml2], [xmlParseFile], [have_libxml=true],
 	     [AC_MSG_ERROR(["cannot find libxml2"])])
-LIBXML2_LDADD=`pkg-config libxml-2.0 --libs`
-LIBXML2_CFLAGS=`pkg-config libxml-2.0 --cflags`
-AC_SUBST([LIBXML2_LDADD], [$LIBXML2_LDADD])
-AC_SUBST([LIBXML2_CFLAGS], [$LIBXML2_CFLAGS])
+PKG_CHECK_MODULES([LIBXML2], [libxml-2.0])
+PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libxml-2.0"
 
 AC_MSG_CHECKING([whether to include debugging messages])
 AC_ARG_ENABLE([debug],
@@ -260,8 +261,9 @@ if test "x$WITH_NTFS_3G" = "xyes"; then
 	streams.  You should either install libntfs-3g, or configure with
 	--without-ntfs-3g to disable support for these NTFS-specific
 	features.])])
-	LIBNTFS_3G_LDADD="`pkg-config --libs libntfs-3g`"
-	LIBNTFS_3G_CFLAGS="`pkg-config --cflags libntfs-3g`"
+
+	PKG_CHECK_MODULES([LIBNTFS_3G], [libntfs-3g])
+	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libntfs-3g"
 
 	dnl This checks for a NTFS-3g interface that was changed in the
 	dnl 2013.1.13 release
@@ -269,17 +271,10 @@ if test "x$WITH_NTFS_3G" = "xyes"; then
 		      [AC_DEFINE([HAVE_NTFS_MNT_RDONLY],
 				 [1],
 				 [Define to 1 if ntfs_mount() takes the flag NTFS_MNT_RDONLY])],
-		      ,
-		      [#include <ntfs-3g/volume.h>])
-else
-	LIBNTFS_3G_LDADD=
-	LIBNTFS_3G_CFLAGS=
-
+		      [],
+		      ,[#include <ntfs-3g/volume.h>])
 fi
 AM_CONDITIONAL([WITH_NTFS_3G], [test "x$WITH_NTFS_3G" = "xyes"])
-
-AC_SUBST([LIBNTFS_3G_LDADD], [$LIBNTFS_3G_LDADD])
-AC_SUBST([LIBNTFS_3G_CFLAGS], [$LIBNTFS_3G_CFLAGS])
 
 AM_ICONV
 if test "x$am_cv_func_iconv" != "xyes"; then
@@ -315,15 +310,12 @@ if test "x$WITH_FUSE" = "xyes"; then
 	version of glibc, or configure with --without-fuse to disable support
 	for mounting WIMs.])
 	])
-	LIBFUSE_LDADD="`pkg-config --libs fuse` -lrt"
-	LIBFUSE_CFLAGS="`pkg-config --cflags fuse`"
-else
-	LIBFUSE_LDADD=
-	LIBFUSE_CFLAGS=
+	PKG_CHECK_MODULES([LIBFUSE], [fuse])
+	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES fuse"
+	PKGCONFIG_PRIVATE_LIBS="$PKGCONFIG_PRIVATE_LIBS -lrt"
+	AC_SUBST([LIBRT_LIBS], [-lrt])
 fi
 AM_CONDITIONAL([WITH_FUSE], [test "x$WITH_FUSE" = "xyes"])
-AC_SUBST([LIBFUSE_LDADD], [$LIBFUSE_LDADD])
-AC_SUBST([LIBFUSE_CFLAGS], [$LIBFUSE_CFLAGS])
 
 ENABLE_XATTR=no
 AC_ARG_ENABLE([xattr],
@@ -387,17 +379,12 @@ AC_MSG_RESULT([$WITH_LIBCRYPTO])
 
 if test "x$WITH_LIBCRYPTO" = "xyes" -a "x$ENABLE_SSSE3_SHA1" = "xno"; then
 	AC_DEFINE([WITH_LIBCRYPTO], [1], [Define to 1 if using libcrypto SHA1])
-	LIBCRYPTO_LDADD=`pkg-config --libs libcrypto 2>/dev/null`
-	if test $? -ne 0; then
-		LIBCRYPTO_LDADD=-lcrypto;
-	fi
-	LIBCRYPTO_CFLAGS=`pkg-config --cflags libcrypto 2>/dev/null`
-else
-	LIBCRYPTO_LDADD=
-	LIBCRYPTO_CFLAGS=
+	PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
+	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libcrypto"
 fi
-AC_SUBST([LIBCRYPTO_LDADD], [$LIBCRYPTO_LDADD])
-AC_SUBST([LIBCRYPTO_CFLAGS], [$LIBCRYPTO_CFLAGS])
 AC_SUBST([SHA1_SOURCES], [$SHA1_SOURCES])
+
+AC_SUBST([PKGCONFIG_PRIVATE_REQUIRES], [$PKGCONFIG_PRIVATE_REQUIRES])
+AC_SUBST([PKGCONFIG_PRIVATE_LIBS], [$PKGCONFIG_PRIVATE_LIBS])
 
 AC_OUTPUT
