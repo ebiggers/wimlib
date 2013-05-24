@@ -176,6 +176,11 @@ select_wim_image(WIMStruct *w, int image)
 		return WIMLIB_ERR_INVALID_IMAGE;
 	}
 
+	if (w->hdr.part_number != 1) {
+		ERROR("Cannot select an image from a non-first part of a split WIM");
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	}
+
 	/* If a valid image is currently selected, it can be freed if it is not
 	 * modified.  */
 	if (w->current_image != WIMLIB_NO_IMAGE) {
