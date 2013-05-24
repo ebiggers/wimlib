@@ -1,39 +1,77 @@
 Source: wimlib
 Priority: optional
 Maintainer: Eric Biggers <ebiggers3@gmail.com>
-Build-Depends: debhelper (>= 7.0.0), autotools-dev, pkg-config,
+Build-Depends: debhelper (>= 8.9.7), autotools-dev, pkg-config,
                libfuse-dev, libxml2-dev, libssl-dev,
                ntfs-3g-dev (>= 2011.4.12), attr-dev, bash, attr
+Build-Depends-Indep: doxygen
 Standards-Version: 3.9.2
 Section: libs
 Homepage: http://sourceforge.net/projects/wimlib
 Vcs-Git: git://git.code.sf.net/p/wimlib/code
 
-Package: wimlib-dev
-Section: libdevel
-Architecture: any
-Depends: wimlib (= ${binary:Version})
-Description: Development files for wimlib
- Development files for wimlib
-
-Package: wimlib
-Section: libs
-Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libfuse2, libxml2,
-         libssl0.9.8 | libssl1.0.0, ntfs-3g (>= 2011.4.12), attr
-Description: Library to extract, create, modify, and mount WIM files
- wimlib is a C library for creating, extracting, modifying, and mounting files
- in the Windows Imaging Format (WIM files).  It is similar to Microsoft's
- WIMGAPI but is designed for both UNIX and Windows.
-
-Package: wimtools
+Package: wimlib7
 Section: libs
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Suggests: genisoimage, mtools, syslinux, cabextract, ntfsprogs
-Description: Tools to create, extract, modify, and mount WIM files
- Tools to create, extract, modify, and mount files in the Windows Imaging
- Format (WIM files).  These files are normally created by using the
- `imagex.exe' utility on Windows, but this package contains a free
- implementation of ImageX called "wimlib-imagex" that is designed to work on
- both UNIX and Windows.
+Suggests: wimtools
+Description: Library to extract, create, modify, and mount WIM files
+ wimlib is a C library for extracting, creating, modifying, and mounting WIM
+ (Windows Imaging) files.  WIM is an archive format designed primarily for
+ archiving Windows filesystems.  It features single-instancing and LZ77-based
+ compression, and is used by Microsoft to distribute and deploy Windows Vista
+ and later.  wimlib is an independent implementation of an API for handling WIM
+ files, available on both UNIX and Windows, that provides capabilities similar
+ to Microsoft's WIMGAPI.
+
+
+Package: wimtools
+Section: utils
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Suggests: genisoimage, mtools, syslinux, cabextract
+Description: Tools to extract, create, modify, and mount WIM files
+ Tools to extract, create, modify, and mount WIM (Windows Imaging) files.  WIM
+ is an archive format designed primarily for archiving Windows filesystems.  It
+ features single-instancing and LZ77-based compression and is used by Microsoft
+ to distribute and deploy Windows Vista and later.  WIM files are normally
+ created by using the `imagex.exe' utility on Windows, but this package
+ contains a free implementation of ImageX called "wimlib-imagex" that is
+ designed to work on both UNIX and Windows.
+ .
+ In addition to the usual extract/create/update support, wimlib-imagex allows
+ you to mount WIM images readonly or read-write, and it even allows you to
+ extract or create a WIM image directly to/from an unmounted NTFS volume.  This
+ makes it possible to, from Linux, back up or deploy a Windows OS directly to
+ or from a WIM file,  such as the install.wim distributed on the Windows
+ installation media.
+ .
+ This package also contains a script to make a customized Windows PE image
+ based on the capabilities provided by wimlib-imagex.
+
+Package: wimlib-dev
+Section: libdevel
+Architecture: any
+Depends: wimlib7 (= ${binary:Version}), ${misc:Depends}
+Suggests: wimlib-doc
+Description: wimlib - development files
+ Development files for wimlib, a C library for extracting, creating, modifying,
+ and mounting WIM (Windows Imaging) files.  WIM is an archive format designed
+ primarily for archiving Windows filesystems.  It features single-instancing
+ and LZ77-based compression, and is used by Microsoft to distribute and deploy
+ Windows Vista and later.  wimlib is an independent implementation of an API
+ for handling WIM files, available on both UNIX and Windows, that provides
+ capabilities similar to Microsoft's WIMGAPI.
+
+Package: wimlib-doc
+Section: doc
+Architecture: all
+Depends: ${misc:Depends}
+Description: wimlib - API documentation
+ Documentation for library API of wimlib.  wimlib is a C library for
+ extracting, creating, modifying, and mounting WIM (Windows Imaging) files.
+ WIM is an archive format designed primarily for archiving Windows filesystems.
+ It features single-instancing and LZ77-based compression, and is used by
+ Microsoft to distribute and deploy Windows Vista and later.  wimlib is an
+ independent implementation of an API for handling WIM files, available on both
+ UNIX and Windows, that provides capabilities similar to Microsoft's WIMGAPI.
