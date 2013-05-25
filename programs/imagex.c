@@ -2495,8 +2495,7 @@ imagex_info(int argc, tchar **argv)
 	const tchar *image_num_or_name = T("all");
 	const tchar *new_name = NULL;
 	const tchar *new_desc = NULL;
-	WIMStruct *w;
-	FILE *fp;
+	WIMStruct *wim;
 	int image;
 	int ret;
 	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
@@ -2531,39 +2530,34 @@ imagex_info(int argc, tchar **argv)
 			short_header = false;
 			break;
 		default:
-			usage(INFO);
-			return -1;
+			goto out_usage;
 		}
 	}
 
 	argc -= optind;
 	argv += optind;
-	if (argc == 0 || argc > 4) {
-		usage(INFO);
-		return -1;
-	}
+	if (argc < 1 || argc > 4)
+		goto out_usage;
+
 	wimfile = argv[0];
-	if (argc > 1) {
+	if (argc >= 2)
 		image_num_or_name = argv[1];
-		if (argc > 2) {
-			new_name = argv[2];
-			if (argc > 3) {
-				new_desc = argv[3];
-			}
-		}
-	}
+	if (argc >= 3)
+		new_name = argv[2];
+	if (argc >= 4)
+		new_desc = argv[3];
 
 	if (check)
 		open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 
-	ret = wimlib_open_wim(wimfile, open_flags, &w,
-			      imagex_progress_func);
-	if (ret != 0)
-		return ret;
+	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
+	if (ret)
+		goto out;
 
-	wimlib_get_wim_info(w, &info);
+	wimlib_get_wim_info(wim, &info);
 
-	image = wimlib_resolve_image(w, image_num_or_name);
+	image = wimlib_resolve_image(wim, image_num_or_name);
+	ret = WIMLIB_ERR_INVALID_IMAGE;
 	if (image == WIMLIB_NO_IMAGE && tstrcmp(image_num_or_name, T("0"))) {
 		imagex_error(T("The image \"%"TS"\" does not exist"),
 			     image_num_or_name);
@@ -2572,17 +2566,12 @@ imagex_info(int argc, tchar **argv)
 				       "index to 0, specify image \"0\" with "
 				       "the --boot flag."));
 		}
-		ret = WIMLIB_ERR_INVALID_IMAGE;
-		goto out;
+		goto out_wimlib_free;
 	}
 
-	if (info.image_count == 0) {
-		if (boot) {
-			imagex_error(T("--boot is meaningless on a WIM with no "
-				       "images"));
-			ret = WIMLIB_ERR_INVALID_IMAGE;
-			goto out;
-		}
+	if (boot && info.image_count == 0) {
+		imagex_error(T("--boot is meaningless on a WIM with no images"));
+		goto out_wimlib_free;
 	}
 
 	if (image == WIMLIB_ALL_IMAGES && info.image_count > 1) {
@@ -2590,15 +2579,13 @@ imagex_info(int argc, tchar **argv)
 			imagex_error(T("Cannot specify the --boot flag "
 				       "without specifying a specific "
 				       "image in a multi-image WIM"));
-			ret = WIMLIB_ERR_INVALID_IMAGE;
-			goto out;
+			goto out_wimlib_free;
 		}
 		if (new_name) {
 			imagex_error(T("Cannot specify the NEW_NAME "
 				       "without specifying a specific "
 				       "image in a multi-image WIM"));
-			ret = WIMLIB_ERR_INVALID_IMAGE;
-			goto out;
+			goto out_wimlib_free;
 		}
 	}
 
@@ -2611,15 +2598,14 @@ imagex_info(int argc, tchar **argv)
 		if (image == WIMLIB_NO_IMAGE) {
 			imagex_error(T("\"%"TS"\" is not a valid image"),
 				     image_num_or_name);
-			ret = WIMLIB_ERR_INVALID_IMAGE;
-			goto out;
+			goto out_wimlib_free;
 		}
 
 		if (image == WIMLIB_ALL_IMAGES && short_header)
 			print_wim_information(wimfile, &info);
 
 		if (header)
-			wimlib_print_header(w);
+			wimlib_print_header(wim);
 
 		if (lookup_table) {
 			if (info.total_parts != 1) {
@@ -2627,16 +2613,18 @@ imagex_info(int argc, tchar **argv)
 						   "for part %d of a %d-part WIM.\n"),
 					 info.part_number, info.total_parts);
 			}
-			print_lookup_table(w);
+			print_lookup_table(wim);
 		}
 
 		if (xml) {
-			ret = wimlib_extract_xml_data(w, stdout);
-			if (ret != 0)
-				goto out;
+			ret = wimlib_extract_xml_data(wim, stdout);
+			if (ret)
+				goto out_wimlib_free;
 		}
 
 		if (xml_out_file) {
+			FILE *fp;
+
 			fp = tfopen(xml_out_file, T("wb"));
 			if (!fp) {
 				imagex_error_with_errno(T("Failed to open the "
@@ -2644,28 +2632,26 @@ imagex_info(int argc, tchar **argv)
 							  "writing "),
 							xml_out_file);
 				ret = -1;
-				goto out;
+				goto out_wimlib_free;
 			}
-			ret = wimlib_extract_xml_data(w, fp);
+			ret = wimlib_extract_xml_data(wim, fp);
 			if (fclose(fp) != 0) {
 				imagex_error(T("Failed to close the file "
 					       "\"%"TS"\""),
 					     xml_out_file);
 				ret = -1;
 			}
-
-			if (ret != 0)
-				goto out;
+			if (ret)
+				goto out_wimlib_free;
 		}
 
 		if (short_header)
-			wimlib_print_available_images(w, image);
+			wimlib_print_available_images(wim, image);
 
-		if (metadata) {
-			ret = wimlib_print_metadata(w, image);
-			if (ret != 0)
-				goto out;
-		}
+		if (metadata)
+			ret = wimlib_print_metadata(wim, image);
+		else
+			ret = 0;
 	} else {
 
 		/* Modification operations */
@@ -2677,11 +2663,11 @@ imagex_info(int argc, tchar **argv)
 			imagex_error(T("Cannot specify new_name (\"%"TS"\") "
 				       "when using image 0"), new_name);
 			ret = -1;
-			goto out;
+			goto out_wimlib_free;
 		}
 
 		if (boot) {
-			if (image == wimlib_get_boot_idx(w)) {
+			if (image == info.boot_index) {
 				tprintf(T("Image %d is already marked as "
 					  "bootable.\n"), image);
 				boot = false;
@@ -2689,13 +2675,14 @@ imagex_info(int argc, tchar **argv)
 				tprintf(T("Marking image %d as bootable.\n"),
 					image);
 				info.boot_index = image;
-				ret = wimlib_set_wim_info(w, &info, WIMLIB_CHANGE_BOOT_INDEX);
+				ret = wimlib_set_wim_info(wim, &info,
+							  WIMLIB_CHANGE_BOOT_INDEX);
 				if (ret)
-					goto out;
+					goto out_wimlib_free;
 			}
 		}
 		if (new_name) {
-			if (!tstrcmp(wimlib_get_image_name(w, image), new_name))
+			if (!tstrcmp(wimlib_get_image_name(wim, image), new_name))
 			{
 				tprintf(T("Image %d is already named \"%"TS"\".\n"),
 					image, new_name);
@@ -2703,14 +2690,14 @@ imagex_info(int argc, tchar **argv)
 			} else {
 				tprintf(T("Changing the name of image %d to "
 					  "\"%"TS"\".\n"), image, new_name);
-				ret = wimlib_set_image_name(w, image, new_name);
-				if (ret != 0)
-					goto out;
+				ret = wimlib_set_image_name(wim, image, new_name);
+				if (ret)
+					goto out_wimlib_free;
 			}
 		}
 		if (new_desc) {
 			const tchar *old_desc;
-			old_desc = wimlib_get_image_description(w, image);
+			old_desc = wimlib_get_image_description(wim, image);
 			if (old_desc && !tstrcmp(old_desc, new_desc)) {
 				tprintf(T("The description of image %d is already "
 					  "\"%"TS"\".\n"), image, new_desc);
@@ -2718,23 +2705,23 @@ imagex_info(int argc, tchar **argv)
 			} else {
 				tprintf(T("Changing the description of image %d "
 					  "to \"%"TS"\".\n"), image, new_desc);
-				ret = wimlib_set_image_descripton(w, image,
+				ret = wimlib_set_image_descripton(wim, image,
 								  new_desc);
-				if (ret != 0)
-					goto out;
+				if (ret)
+					goto out_wimlib_free;
 			}
 		}
 
 		/* Only call wimlib_overwrite() if something actually needs to
 		 * be changed. */
 		if (boot || new_name || new_desc ||
-		    (check && !wimlib_has_integrity_table(w)))
+		    (check && !info.has_integrity_table))
 		{
 			int write_flags = 0;
 
 			if (check)
 				write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-			ret = wimlib_overwrite(w, write_flags, 1,
+			ret = wimlib_overwrite(wim, write_flags, 1,
 					       imagex_progress_func);
 		} else {
 			tprintf(T("The file \"%"TS"\" was not modified because nothing "
@@ -2742,9 +2729,15 @@ imagex_info(int argc, tchar **argv)
 			ret = 0;
 		}
 	}
+out_wimlib_free:
+	wimlib_free(wim);
 out:
-	wimlib_free(w);
 	return ret;
+
+out_usage:
+	usage(INFO);
+	ret = -1;
+	goto out;
 }
 
 /* Join split WIMs into one part WIM */
