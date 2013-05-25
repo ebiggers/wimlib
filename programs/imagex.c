@@ -2070,8 +2070,8 @@ imagex_export(int argc, tchar **argv)
 	const tchar *dest_wimfile;
 	const tchar *dest_name;
 	const tchar *dest_desc;
-	WIMStruct *src_w = NULL;
-	WIMStruct *dest_w = NULL;
+	WIMStruct *src_wim;
+	WIMStruct *dest_wim;
 	int ret;
 	int image;
 	struct stat stbuf;
@@ -2093,7 +2093,7 @@ imagex_export(int argc, tchar **argv)
 		case IMAGEX_COMPRESS_OPTION:
 			compression_type = get_compression_type(optarg);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
-				return -1;
+				goto out_err;
 			compression_type_specified = true;
 			break;
 		case IMAGEX_REF_OPTION:
@@ -2102,32 +2102,29 @@ imagex_export(int argc, tchar **argv)
 		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);
 			if (num_threads == UINT_MAX)
-				return -1;
+				goto out_err;
 			break;
 		case IMAGEX_REBUILD_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
 			break;
 		default:
-			usage(EXPORT);
-			return -1;
+			goto out_usage;
 		}
 	}
 	argc -= optind;
 	argv += optind;
-	if (argc < 3 || argc > 5) {
-		usage(EXPORT);
-		return -1;
-	}
+	if (argc < 3 || argc > 5)
+		goto out_usage;
 	src_wimfile           = argv[0];
 	src_image_num_or_name = argv[1];
 	dest_wimfile          = argv[2];
 	dest_name             = (argc >= 4) ? argv[3] : NULL;
 	dest_desc             = (argc >= 5) ? argv[4] : NULL;
 	ret = wimlib_open_wim(src_wimfile,
-			      open_flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &src_w,
+			      open_flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &src_wim,
 			      imagex_progress_func);
-	if (ret != 0)
-		return ret;
+	if (ret)
+		goto out;
 
 	/* Determine if the destination is an existing file or not.
 	 * If so, we try to append the exported image(s) to it; otherwise, we
@@ -2142,76 +2139,83 @@ imagex_export(int argc, tchar **argv)
 			imagex_error(T("\"%"TS"\" is not a regular file"),
 				     dest_wimfile);
 			ret = -1;
-			goto out;
+			goto out_free_src_wim;
 		}
 		ret = wimlib_open_wim(dest_wimfile, open_flags | WIMLIB_OPEN_FLAG_WRITE_ACCESS,
-				      &dest_w, imagex_progress_func);
-		if (ret != 0)
-			goto out;
+				      &dest_wim, imagex_progress_func);
+		if (ret)
+			goto out_free_src_wim;
 
-		dest_ctype = wimlib_get_compression_type(dest_w);
-		if (compression_type_specified
-		    && compression_type != dest_ctype)
-		{
+		dest_ctype = wimlib_get_compression_type(dest_wim);
+		if (compression_type_specified && compression_type != dest_ctype) {
 			imagex_error(T("Cannot specify a compression type that is "
 				       "not the same as that used in the "
 				       "destination WIM"));
 			ret = -1;
-			goto out;
+			goto out_free_dest_wim;
 		}
 	} else {
 		/* dest_wimfile is not an existing file, so create a new WIM. */
 		if (errno == ENOENT) {
 			wim_is_new = true;
 			if (!compression_type_specified)
-				compression_type = wimlib_get_compression_type(src_w);
-			ret = wimlib_create_new_wim(compression_type, &dest_w);
-			if (ret != 0)
-				goto out;
+				compression_type = wimlib_get_compression_type(src_wim);
+			ret = wimlib_create_new_wim(compression_type, &dest_wim);
+			if (ret)
+				goto out_free_src_wim;
 		} else {
 			imagex_error_with_errno(T("Cannot stat file \"%"TS"\""),
 						dest_wimfile);
 			ret = -1;
-			goto out;
+			goto out_free_src_wim;
 		}
 	}
 
-	image = wimlib_resolve_image(src_w, src_image_num_or_name);
+	image = wimlib_resolve_image(src_wim, src_image_num_or_name);
 	ret = verify_image_exists(image, src_image_num_or_name, src_wimfile);
-	if (ret != 0)
-		goto out;
+	if (ret)
+		goto out_free_dest_wim;
 
 	if (swm_glob) {
 		ret = open_swms_from_glob(swm_glob, src_wimfile, open_flags,
 					  &additional_swms,
 					  &num_additional_swms);
-		if (ret != 0)
-			goto out;
+		if (ret)
+			goto out_free_dest_wim;
 	}
 
-	ret = wimlib_export_image(src_w, image, dest_w, dest_name, dest_desc,
+	ret = wimlib_export_image(src_wim, image, dest_wim, dest_name, dest_desc,
 				  export_flags, additional_swms,
 				  num_additional_swms, imagex_progress_func);
-	if (ret != 0)
-		goto out;
+	if (ret)
+		goto out_free_swms;
 
 
 	if (wim_is_new)
-		ret = wimlib_write(dest_w, dest_wimfile, WIMLIB_ALL_IMAGES,
+		ret = wimlib_write(dest_wim, dest_wimfile, WIMLIB_ALL_IMAGES,
 				   write_flags, num_threads,
 				   imagex_progress_func);
 	else
-		ret = wimlib_overwrite(dest_w, write_flags, num_threads,
+		ret = wimlib_overwrite(dest_wim, write_flags, num_threads,
 				       imagex_progress_func);
-out:
-	wimlib_free(src_w);
-	wimlib_free(dest_w);
+out_free_swms:
 	if (additional_swms) {
 		for (unsigned i = 0; i < num_additional_swms; i++)
 			wimlib_free(additional_swms[i]);
 		free(additional_swms);
 	}
+out_free_dest_wim:
+	wimlib_free(dest_wim);
+out_free_src_wim:
+	wimlib_free(src_wim);
+out:
 	return ret;
+
+out_usage:
+	usage(EXPORT);
+out_err:
+	ret = -1;
+	goto out;
 }
 
 static bool
