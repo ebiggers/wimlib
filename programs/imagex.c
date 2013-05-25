@@ -2348,10 +2348,8 @@ imagex_extract(int argc, tchar **argv)
 
 	cmds = prepare_extract_commands(argv, argc, extract_flags, dest_dir,
 					&num_cmds);
-	if (!cmds) {
-		ret = -1;
-		goto out;
-	}
+	if (!cmds)
+		goto out_err;
 
 	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
 	if (ret)
@@ -2401,8 +2399,10 @@ out_free_cmds:
 	free_extract_commands(cmds, num_cmds, dest_dir);
 out:
 	return ret;
+
 out_usage:
 	usage(EXTRACT);
+out_err:
 	ret = -1;
 	goto out;
 }
