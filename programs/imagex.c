@@ -2156,11 +2156,11 @@ imagex_export(int argc, tchar **argv)
 			goto out;
 		}
 	} else {
-		wim_is_new = true;
 		/* dest_wimfile is not an existing file, so create a new WIM. */
-		if (!compression_type_specified)
-			compression_type = wimlib_get_compression_type(src_w);
 		if (errno == ENOENT) {
+			wim_is_new = true;
+			if (!compression_type_specified)
+				compression_type = wimlib_get_compression_type(src_w);
 			ret = wimlib_create_new_wim(compression_type, &dest_w);
 			if (ret != 0)
 				goto out;
