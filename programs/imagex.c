@@ -1915,7 +1915,7 @@ imagex_delete(int argc, tchar **argv)
 	int write_flags = 0;
 	const tchar *wimfile;
 	const tchar *image_num_or_name;
-	WIMStruct *w;
+	WIMStruct *wim;
 	int image;
 	int ret;
 
@@ -1929,8 +1929,7 @@ imagex_delete(int argc, tchar **argv)
 			write_flags |= WIMLIB_WRITE_FLAG_SOFT_DELETE;
 			break;
 		default:
-			usage(DELETE);
-			return -1;
+			goto out_usage;
 		}
 	}
 	argc -= optind;
@@ -1941,37 +1940,42 @@ imagex_delete(int argc, tchar **argv)
 			imagex_error(T("Must specify a WIM file"));
 		if (argc < 2)
 			imagex_error(T("Must specify an image"));
-		usage(DELETE);
-		return -1;
+		goto out_usage;
 	}
 	wimfile = argv[0];
 	image_num_or_name = argv[1];
 
-	ret = wimlib_open_wim(wimfile, open_flags, &w,
+	ret = wimlib_open_wim(wimfile, open_flags, &wim,
 			      imagex_progress_func);
-	if (ret != 0)
-		return ret;
+	if (ret)
+		goto out;
 
-	image = wimlib_resolve_image(w, image_num_or_name);
+	image = wimlib_resolve_image(wim, image_num_or_name);
 
 	ret = verify_image_exists(image, image_num_or_name, wimfile);
-	if (ret != 0)
-		goto out;
+	if (ret)
+		goto out_wimlib_free;
 
-	ret = wimlib_delete_image(w, image);
-	if (ret != 0) {
-		imagex_error(T("Failed to delete image from \"%"TS"\""), wimfile);
-		goto out;
+	ret = wimlib_delete_image(wim, image);
+	if (ret) {
+		imagex_error(T("Failed to delete image from \"%"TS"\""),
+			     wimfile);
+		goto out_wimlib_free;
 	}
 
-	ret = wimlib_overwrite(w, write_flags, 0, imagex_progress_func);
-	if (ret != 0) {
+	ret = wimlib_overwrite(wim, write_flags, 0, imagex_progress_func);
+	if (ret) {
 		imagex_error(T("Failed to write the file \"%"TS"\" with image "
 			       "deleted"), wimfile);
 	}
+out_wimlib_free:
+	wimlib_free(wim);
 out:
-	wimlib_free(w);
 	return ret;
+out_usage:
+	usage(DELETE);
+	ret = -1;
+	goto out;
 }
 
 static int
