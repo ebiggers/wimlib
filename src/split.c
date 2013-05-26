@@ -48,7 +48,7 @@ struct split_args {
 	struct list_head lte_list;
 	int cur_part_number;
 	int write_flags;
-	long size_remaining;
+	s64 size_remaining;
 	size_t part_size;
 	wimlib_progress_func_t progress_func;
 	union wimlib_progress_info progress;
@@ -75,10 +75,6 @@ copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *_args)
 	struct split_args *args = (struct split_args*)_args;
 	WIMStruct *wim = args->wim;
 	int ret;
-
-	/* metadata resources were already written. */
-	if (lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
-		return 0;
 
 	if (args->size_remaining < 0 ||
 			(u64)args->size_remaining < lte->resource_entry.size) {

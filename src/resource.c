@@ -754,8 +754,8 @@ sha1_resource(struct wim_lookup_table_entry *lte)
 
 /*
  * Copies the file resource specified by the lookup table entry @lte from the
- * input WIM to the output WIM that has its FILE * given by
- * ((WIMStruct*)wim)->out_fp.
+ * input WIM to the output WIM that has its output file descriptor given by
+ * ((WIMStruct*)_wim)->out_fd.
  *
  * The output_resource_entry, out_refcnt, and part_number fields of @lte are
  * updated.
@@ -763,17 +763,17 @@ sha1_resource(struct wim_lookup_table_entry *lte)
  * (This function is confusing and should be refactored somehow.)
  */
 int
-copy_resource(struct wim_lookup_table_entry *lte, void *wim)
+copy_resource(struct wim_lookup_table_entry *lte, void *_wim)
 {
-	WIMStruct *w = wim;
+	WIMStruct *wim = _wim;
 	int ret;
 
-	ret = write_wim_resource(lte, w->out_fd,
+	ret = write_wim_resource(lte, wim->out_fd,
 				 wim_resource_compression_type(lte),
 				 &lte->output_resource_entry, 0);
 	if (ret == 0) {
 		lte->out_refcnt = lte->refcnt;
-		lte->part_number = w->hdr.part_number;
+		lte->part_number = wim->hdr.part_number;
 	}
 	return ret;
 }
