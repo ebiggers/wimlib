@@ -123,13 +123,13 @@ extern int
 sha1_resource(struct wim_lookup_table_entry *lte);
 
 extern int
-copy_resource(struct wim_lookup_table_entry *lte, void *w);
+copy_resource(struct wim_lookup_table_entry *lte, void *wim);
 
 extern int
-read_metadata_resource(WIMStruct *w,
+read_metadata_resource(WIMStruct *wim,
 		       struct wim_image_metadata *image_metadata);
 
 extern int
-write_metadata_resource(WIMStruct *w);
+write_metadata_resource(WIMStruct *wim);
 
 #endif /* _WIMLIB_RESOURCE_H */

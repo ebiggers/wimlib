@@ -18,6 +18,6 @@ write_integrity_table(int fd,
 		      wimlib_progress_func_t progress_func);
 
 extern int
-check_wim_integrity(WIMStruct *w, wimlib_progress_func_t progress_func);
+check_wim_integrity(WIMStruct *wim, wimlib_progress_func_t progress_func);
 
 #endif /* _WIMLIB_INTEGRITY_H */

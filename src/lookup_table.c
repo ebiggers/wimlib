@@ -375,7 +375,7 @@ struct wim_lookup_table_entry_disk {
  * image_metadata array).
  */
 int
-read_lookup_table(WIMStruct *w)
+read_lookup_table(WIMStruct *wim)
 {
 	int ret;
 	size_t num_entries;
@@ -393,16 +393,16 @@ read_lookup_table(WIMStruct *w)
 	const struct wim_lookup_table_entry_disk *disk_entry;
 
 	DEBUG("Reading lookup table: offset %"PRIu64", size %"PRIu64"",
-	      w->hdr.lookup_table_res_entry.offset,
-	      w->hdr.lookup_table_res_entry.original_size);
+	      wim->hdr.lookup_table_res_entry.offset,
+	      wim->hdr.lookup_table_res_entry.original_size);
 
-	if (resource_is_compressed(&w->hdr.lookup_table_res_entry)) {
+	if (resource_is_compressed(&wim->hdr.lookup_table_res_entry)) {
 		ERROR("Didn't expect a compressed lookup table!");
 		ERROR("Ask the author to implement support for this.");
 		return WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE;
 	}
 
-	num_entries = w->hdr.lookup_table_res_entry.size /
+	num_entries = wim->hdr.lookup_table_res_entry.size /
 		      sizeof(struct wim_lookup_table_entry_disk);
 	table = new_lookup_table(num_entries * 2 + 1);
 	if (!table) {
@@ -411,8 +411,8 @@ read_lookup_table(WIMStruct *w)
 		return WIMLIB_ERR_NOMEM;
 	}
 
-	w->current_image = 0;
-	offset = w->hdr.lookup_table_res_entry.offset;
+	wim->current_image = 0;
+	offset = wim->hdr.lookup_table_res_entry.offset;
 	buf_entries_remaining = 0;
 	for (; num_entries != 0;
 	     num_entries--, buf_entries_remaining--, disk_entry++)
@@ -422,7 +422,7 @@ read_lookup_table(WIMStruct *w)
 
 			entries_to_read = min(ARRAY_LEN(table_buf), num_entries);
 			bytes_to_read = entries_to_read * sizeof(struct wim_lookup_table_entry_disk);
-			if (full_pread(w->in_fd, table_buf,
+			if (full_pread(wim->in_fd, table_buf,
 				       bytes_to_read, offset) != bytes_to_read)
 			{
 				ERROR_WITH_ERRNO("Error reading lookup table "
@@ -440,7 +440,7 @@ read_lookup_table(WIMStruct *w)
 			goto out_free_lookup_table;
 		}
 
-		cur_entry->wim = w;
+		cur_entry->wim = wim;
 		cur_entry->resource_location = RESOURCE_IN_WIM;
 		get_resource_entry(&disk_entry->resource_entry, &cur_entry->resource_entry);
 		cur_entry->part_number = le16_to_cpu(disk_entry->part_number);
@@ -448,14 +448,14 @@ read_lookup_table(WIMStruct *w)
 		copy_hash(cur_entry->hash, disk_entry->hash);
 
 		if (cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
-			cur_entry->compression_type = w->compression_type;
+			cur_entry->compression_type = wim->compression_type;
 		else
 			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
 
-		if (cur_entry->part_number != w->hdr.part_number) {
+		if (cur_entry->part_number != wim->hdr.part_number) {
 			WARNING("A lookup table entry in part %hu of the WIM "
 				"points to part %hu (ignoring it)",
-				w->hdr.part_number, cur_entry->part_number);
+				wim->hdr.part_number, cur_entry->part_number);
 			free_lookup_table_entry(cur_entry);
 			continue;
 		}
@@ -500,17 +500,17 @@ read_lookup_table(WIMStruct *w)
 				goto out_free_cur_entry;
 			}
 
-			if (w->hdr.part_number != 1) {
+			if (wim->hdr.part_number != 1) {
 				WARNING("Ignoring metadata resource found in a "
 					"non-first part of the split WIM");
 				free_lookup_table_entry(cur_entry);
 				continue;
 			}
-			if (w->current_image == w->hdr.image_count) {
+			if (wim->current_image == wim->hdr.image_count) {
 				WARNING("The WIM header says there are %u images "
 					"in the WIM, but we found more metadata "
 					"resources than this (ignoring the extra)",
-					w->hdr.image_count);
+					wim->hdr.image_count);
 				free_lookup_table_entry(cur_entry);
 				continue;
 			}
@@ -524,10 +524,10 @@ read_lookup_table(WIMStruct *w)
 			 * written in the XML data. */
 			DEBUG("Found metadata resource for image %u at "
 			      "offset %"PRIu64".",
-			      w->current_image + 1,
+			      wim->current_image + 1,
 			      cur_entry->resource_entry.offset);
-			w->image_metadata[
-				w->current_image++]->metadata_lte = cur_entry;
+			wim->image_metadata[
+				wim->current_image++]->metadata_lte = cur_entry;
 		} else {
 			/* Lookup table entry for a stream that is not a
 			 * metadata resource */
@@ -549,18 +549,18 @@ read_lookup_table(WIMStruct *w)
 		}
 	}
 
-	if (w->hdr.part_number == 1 && w->current_image != w->hdr.image_count) {
+	if (wim->hdr.part_number == 1 && wim->current_image != wim->hdr.image_count) {
 		WARNING("The header of \"%"TS"\" says there are %u images in\n"
 			"          the WIM, but we only found %d metadata resources!  Acting as if\n"
 			"          the header specified only %d images instead.",
-			w->filename, w->hdr.image_count,
-			w->current_image, w->current_image);
-		for (int i = w->current_image; i < w->hdr.image_count; i++)
-			put_image_metadata(w->image_metadata[i], NULL);
-		w->hdr.image_count = w->current_image;
+			wim->filename, wim->hdr.image_count,
+			wim->current_image, wim->current_image);
+		for (int i = wim->current_image; i < wim->hdr.image_count; i++)
+			put_image_metadata(wim->image_metadata[i], NULL);
+		wim->hdr.image_count = wim->current_image;
 	}
 	DEBUG("Done reading lookup table.");
-	w->lookup_table = table;
+	wim->lookup_table = table;
 	ret = 0;
 	goto out;
 out_free_cur_entry:
@@ -568,7 +568,7 @@ out_free_cur_entry:
 out_free_lookup_table:
 	free_lookup_table(table);
 out:
-	w->current_image = 0;
+	wim->current_image = 0;
 	return ret;
 }
 
@@ -646,7 +646,7 @@ append_lookup_table_entry(struct wim_lookup_table_entry *lte, void *_list)
 
 /* Writes the WIM lookup table to the output file. */
 int
-write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry)
+write_lookup_table(WIMStruct *wim, int image, struct resource_entry *out_res_entry)
 {
 	LIST_HEAD(stream_list);
 	int start_image;
@@ -654,7 +654,7 @@ write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry
 
 	if (image == WIMLIB_ALL_IMAGES) {
 		start_image = 1;
-		end_image = w->hdr.image_count;
+		end_image = wim->hdr.image_count;
 	} else {
 		start_image = image;
 		end_image = image;
@@ -663,16 +663,16 @@ write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry
 	for (int i = start_image; i <= end_image; i++) {
 		struct wim_lookup_table_entry *metadata_lte;
 
-		metadata_lte = w->image_metadata[i - 1]->metadata_lte;
+		metadata_lte = wim->image_metadata[i - 1]->metadata_lte;
 		metadata_lte->out_refcnt = 1;
 		metadata_lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
 		append_lookup_table_entry(metadata_lte, &stream_list);
 	}
-	for_lookup_table_entry(w->lookup_table,
+	for_lookup_table_entry(wim->lookup_table,
 			       append_lookup_table_entry,
 			       &stream_list);
 	return write_lookup_table_from_stream_list(&stream_list,
-						   w->out_fd,
+						   wim->out_fd,
 						   out_res_entry);
 }
 
@@ -866,7 +866,7 @@ __lookup_resource(const struct wim_lookup_table *table, const u8 hash[])
  * This is only for pre-resolved inodes.
  */
 int
-lookup_resource(WIMStruct *w,
+lookup_resource(WIMStruct *wim,
 		const tchar *path,
 		int lookup_flags,
 		struct wim_dentry **dentry_ret,
@@ -888,7 +888,7 @@ lookup_resource(WIMStruct *w,
 		}
 	}
 
-	dentry = get_dentry(w, path);
+	dentry = get_dentry(wim, path);
 	if (p)
 		*p = T(':');
 	if (!dentry)
@@ -897,7 +897,7 @@ lookup_resource(WIMStruct *w,
 	inode = dentry->d_inode;
 
 	if (!inode->i_resolved)
-		if (inode_resolve_ltes(inode, w->lookup_table))
+		if (inode_resolve_ltes(inode, wim->lookup_table))
 			return -EIO;
 
 	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)

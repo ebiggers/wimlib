@@ -23,16 +23,16 @@ xml_export_image(const struct wim_info *old_wim_info, int image,
 		 const tchar *dest_image_description);
 
 extern size_t
-xml_get_max_image_name_len(const WIMStruct *w);
+xml_get_max_image_name_len(const WIMStruct *wim);
 
 extern void
-xml_update_image_info(WIMStruct *w, int image);
+xml_update_image_info(WIMStruct *wim, int image);
 
 extern void
 xml_delete_image(struct wim_info **wim_info_p, int image);
 
 extern int
-xml_add_image(WIMStruct *w, const tchar *name);
+xml_add_image(WIMStruct *wim, const tchar *name);
 
 extern void
 free_wim_info(struct wim_info *info);

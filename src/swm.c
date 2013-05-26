@@ -51,19 +51,19 @@ lookup_table_join(struct wim_lookup_table *combined_table,
 /*
  * merge_lookup_tables() - Merge lookup tables from the parts of a split WIM.
  *
- * @w specifies the first part, while @additional_swms and @num_additional_swms
+ * @wim specifies the first part, while @additional_swms and @num_additional_swms
  * specify an array of pointers to the WIMStruct's for additional split WIM parts.
  *
  * The reason we join the lookup tables is so we only have to search one lookup
  * table to find the location of a resource in the entire WIM.
  */
 void
-merge_lookup_tables(WIMStruct *w,
+merge_lookup_tables(WIMStruct *wim,
 		    WIMStruct **additional_swms,
 		    unsigned num_additional_swms)
 {
 	for (unsigned i = 0; i < num_additional_swms; i++)
-		lookup_table_join(w->lookup_table, additional_swms[i]->lookup_table);
+		lookup_table_join(wim->lookup_table, additional_swms[i]->lookup_table);
 }
 
 static int
@@ -89,7 +89,7 @@ unmerge_lookup_table(WIMStruct *wim)
  * verify_swm_set: - Sanity checks to make sure a set of WIMs correctly
  *		     correspond to a spanned set.
  *
- * @w:
+ * @wim:
  * 	Part 1 of the set.
  *
  * @additional_swms:
@@ -103,25 +103,25 @@ unmerge_lookup_table(WIMStruct *wim)
  * 	0 on success; WIMLIB_ERR_SPLIT_INVALID if the set is not valid.
  */
 int
-verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
+verify_swm_set(WIMStruct *wim, WIMStruct **additional_swms,
 	       unsigned num_additional_swms)
 {
-	unsigned total_parts = w->hdr.total_parts;
+	unsigned total_parts = wim->hdr.total_parts;
 	int ctype;
 	const u8 *guid;
 
 	if (total_parts != num_additional_swms + 1) {
 		ERROR("`%"TS"' says there are %u parts in the spanned set, "
 		      "but %"TS"%u part%"TS" provided",
-		      w->filename, total_parts,
+		      wim->filename, total_parts,
 		      (num_additional_swms + 1 < total_parts) ? T("only ") : T(""),
 		      num_additional_swms + 1,
 		      (num_additional_swms) ? T("s were") : T(" was"));
 		return WIMLIB_ERR_SPLIT_INVALID;
 	}
-	if (w->hdr.part_number != 1) {
+	if (wim->hdr.part_number != 1) {
 		ERROR("WIM `%"TS"' is not the first part of the split WIM.",
-		      w->filename);
+		      wim->filename);
 		return WIMLIB_ERR_SPLIT_INVALID;
 	}
 	for (unsigned i = 0; i < num_additional_swms; i++) {
@@ -137,13 +137,13 @@ verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 
 	/* keep track of ctype and guid just to make sure they are the same for
 	 * all the WIMs. */
-	ctype = w->compression_type;
-	guid = w->hdr.guid;
+	ctype = wim->compression_type;
+	guid = wim->hdr.guid;
 
 	{
 		/* parts_to_swms is not allocated at function scope because it
 		 * should only be allocated after num_additional_swms was
-		 * checked to be the same as w->hdr.total_parts.  Otherwise, it
+		 * checked to be the same as wim->hdr.total_parts.  Otherwise, it
 		 * could be unexpectedly high and cause a stack overflow. */
 		WIMStruct *parts_to_swms[num_additional_swms];
 		ZERO_ARRAY(parts_to_swms);
@@ -164,7 +164,7 @@ verify_swm_set(WIMStruct *w, WIMStruct **additional_swms,
 			if (swm->hdr.part_number == 1) {
 				ERROR("WIMs `%"TS"' and `%"TS"' both are marked "
 				      "as the first WIM in the spanned set",
-				      w->filename, swm->filename);
+				      wim->filename, swm->filename);
 				return WIMLIB_ERR_SPLIT_INVALID;
 			}
 			if (swm->hdr.part_number == 0 ||

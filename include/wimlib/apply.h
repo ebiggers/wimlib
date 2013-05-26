@@ -9,7 +9,7 @@ struct _ntfs_volume;
 #endif
 
 struct apply_args {
-	WIMStruct *w;
+	WIMStruct *wim;
 
 	/* Directory to which we're extracting the WIM image or directory tree,
 	 * in user-specified form (may be slightly altered) */

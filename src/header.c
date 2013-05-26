@@ -307,11 +307,11 @@ struct hdr_flag hdr_flags[] = {
 	{WIM_HDR_FLAG_COMPRESS_XPRESS,	"COMPRESS_XPRESS"},
 };
 
-/* Prints information from the header of the WIM file associated with @w. */
+/* Prints information from the header of the WIM file associated with @wim. */
 WIMLIBAPI void
-wimlib_print_header(const WIMStruct *w)
+wimlib_print_header(const WIMStruct *wim)
 {
-	const struct wim_header *hdr = &w->hdr;
+	const struct wim_header *hdr = &wim->hdr;
 
 	tprintf(T("Magic Characters            = MSWIM\\000\\000\\000\n"));
 	tprintf(T("Header Size                 = %u\n"), WIM_HEADER_DISK_SIZE);
@@ -326,8 +326,8 @@ wimlib_print_header(const WIMStruct *w)
 	tfputs (T("GUID                        = "), stdout);
 	print_byte_field(hdr->guid, WIM_GID_LEN, stdout);
 	tputchar(T('\n'));
-	tprintf(T("Part Number                 = %hu\n"), w->hdr.part_number);
-	tprintf(T("Total Parts                 = %hu\n"), w->hdr.total_parts);
+	tprintf(T("Part Number                 = %hu\n"), wim->hdr.part_number);
+	tprintf(T("Total Parts                 = %hu\n"), wim->hdr.total_parts);
 	tprintf(T("Image Count                 = %u\n"), hdr->image_count);
 	tprintf(T("Lookup Table Size           = %"PRIu64"\n"),
 				(u64)hdr->lookup_table_res_entry.size);

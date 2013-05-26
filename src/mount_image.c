@@ -807,7 +807,7 @@ rebuild_wim(struct wimfs_context *ctx, int write_flags,
 {
 	int ret;
 	struct wim_lookup_table_entry *lte, *tmp;
-	WIMStruct *w = ctx->wim;
+	WIMStruct *wim = ctx->wim;
 	struct wim_image_metadata *imd = wim_get_current_image_metadata(ctx->wim);
 
 	DEBUG("Closing all staging file descriptors.");
@@ -829,8 +829,8 @@ rebuild_wim(struct wimfs_context *ctx, int write_flags,
 		}
 	}
 
-	xml_update_image_info(w, w->current_image);
-	ret = wimlib_overwrite(w, write_flags, 0, progress_func);
+	xml_update_image_info(wim, wim->current_image);
+	ret = wimlib_overwrite(wim, write_flags, 0, progress_func);
 	if (ret)
 		ERROR("Failed to commit changes to mounted WIM image");
 	return ret;
@@ -1676,10 +1676,10 @@ wimfs_link(const char *to, const char *from)
 	struct wim_dentry *from_dentry, *from_dentry_parent;
 	const char *link_name;
 	struct wim_inode *inode;
-	WIMStruct *w = wimfs_get_WIMStruct();
+	WIMStruct *wim = wimfs_get_WIMStruct();
 	int ret;
 
-	inode = wim_pathname_to_inode(w, to);
+	inode = wim_pathname_to_inode(wim, to);
 	if (!inode)
 		return -errno;
 
@@ -1687,7 +1687,7 @@ wimfs_link(const char *to, const char *from)
 				   FILE_ATTRIBUTE_REPARSE_POINT))
 		return -EPERM;
 
-	from_dentry_parent = get_parent_dentry(w, from);
+	from_dentry_parent = get_parent_dentry(wim, from);
 	if (!from_dentry_parent)
 		return -errno;
 	if (!dentry_is_directory(from_dentry_parent))
@@ -1877,9 +1877,9 @@ wimfs_opendir(const char *path, struct fuse_file_info *fi)
 	int ret;
 	struct wimfs_fd *fd = NULL;
 	struct wimfs_context *ctx = wimfs_get_context();
-	WIMStruct *w = ctx->wim;
+	WIMStruct *wim = ctx->wim;
 
-	inode = wim_pathname_to_inode(w, path);
+	inode = wim_pathname_to_inode(wim, path);
 	if (!inode)
 		return -errno;
 	if (!inode_is_directory(inode))
@@ -2077,9 +2077,9 @@ static int
 wimfs_rmdir(const char *path)
 {
 	struct wim_dentry *dentry;
-	WIMStruct *w = wimfs_get_WIMStruct();
+	WIMStruct *wim = wimfs_get_WIMStruct();
 
-	dentry = get_dentry(w, path);
+	dentry = get_dentry(wim, path);
 	if (!dentry)
 		return -errno;
 
@@ -2089,7 +2089,7 @@ wimfs_rmdir(const char *path)
 	if (dentry_has_children(dentry))
 		return -ENOTEMPTY;
 
-	remove_dentry(dentry, w->lookup_table);
+	remove_dentry(dentry, wim->lookup_table);
 	return 0;
 }
 
@@ -2245,9 +2245,9 @@ wimfs_utimens(const char *path, const struct timespec tv[2])
 {
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
-	WIMStruct *w = wimfs_get_WIMStruct();
+	WIMStruct *wim = wimfs_get_WIMStruct();
 
- 	dentry = get_dentry(w, path);
+ 	dentry = get_dentry(wim, path);
 	if (!dentry)
 		return -errno;
 	inode = dentry->d_inode;
@@ -2272,9 +2272,9 @@ wimfs_utime(const char *path, struct utimbuf *times)
 {
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
-	WIMStruct *w = wimfs_get_WIMStruct();
+	WIMStruct *wim = wimfs_get_WIMStruct();
 
- 	dentry = get_dentry(w, path);
+ 	dentry = get_dentry(wim, path);
 	if (!dentry)
 		return -errno;
 	inode = dentry->d_inode;

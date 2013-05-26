@@ -47,33 +47,33 @@ struct wim_image_metadata {
 };
 
 static inline struct wim_image_metadata *
-wim_get_current_image_metadata(WIMStruct *w)
+wim_get_current_image_metadata(WIMStruct *wim)
 {
-	return w->image_metadata[w->current_image - 1];
+	return wim->image_metadata[wim->current_image - 1];
 }
 
 static inline const struct wim_image_metadata *
-wim_get_const_current_image_metadata(const WIMStruct *w)
+wim_get_const_current_image_metadata(const WIMStruct *wim)
 {
-	return w->image_metadata[w->current_image - 1];
+	return wim->image_metadata[wim->current_image - 1];
 }
 
 static inline struct wim_dentry *
-wim_root_dentry(WIMStruct *w)
+wim_root_dentry(WIMStruct *wim)
 {
-	return wim_get_current_image_metadata(w)->root_dentry;
+	return wim_get_current_image_metadata(wim)->root_dentry;
 }
 
 static inline struct wim_security_data *
-wim_security_data(WIMStruct *w)
+wim_security_data(WIMStruct *wim)
 {
-	return wim_get_current_image_metadata(w)->security_data;
+	return wim_get_current_image_metadata(wim)->security_data;
 }
 
 static inline const struct wim_security_data *
-wim_const_security_data(const WIMStruct *w)
+wim_const_security_data(const WIMStruct *wim)
 {
-	return wim_get_const_current_image_metadata(w)->security_data;
+	return wim_get_const_current_image_metadata(wim)->security_data;
 }
 
 /* Iterate over each inode in a WIM image that has not yet been hashed */
@@ -99,7 +99,7 @@ put_image_metadata(struct wim_image_metadata *imd,
 		   struct wim_lookup_table *table);
 
 extern int
-append_image_metadata(WIMStruct *w, struct wim_image_metadata *imd);
+append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd);
 
 extern struct wim_image_metadata *
 new_image_metadata(void);

@@ -1014,12 +1014,12 @@ xml_delete_image(struct wim_info **wim_info_p, int image)
 }
 
 size_t
-xml_get_max_image_name_len(const WIMStruct *w)
+xml_get_max_image_name_len(const WIMStruct *wim)
 {
 	size_t max_len = 0;
-	if (w->wim_info) {
-		for (int i = 0; i < w->wim_info->num_images; i++) {
-			size_t len = tstrlen(w->wim_info->images[i].name);
+	if (wim->wim_info) {
+		for (int i = 0; i < wim->wim_info->num_images; i++) {
+			size_t len = tstrlen(wim->wim_info->images[i].name);
 			if (len > max_len)
 				max_len = len;
 		}
@@ -1116,21 +1116,21 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
  * But, see calculate_dentry_statistics().
  */
 void
-xml_update_image_info(WIMStruct *w, int image)
+xml_update_image_info(WIMStruct *wim, int image)
 {
 	struct image_info *image_info;
 
 	DEBUG("Updating the image info for image %d", image);
 
-	image_info = &w->wim_info->images[image - 1];
+	image_info = &wim->wim_info->images[image - 1];
 
 	image_info->file_count      = 0;
 	image_info->dir_count       = 0;
 	image_info->total_bytes     = 0;
 	image_info->hard_link_bytes = 0;
-	image_info->lookup_table = w->lookup_table;
+	image_info->lookup_table = wim->lookup_table;
 
-	for_dentry_in_tree(w->image_metadata[image - 1]->root_dentry,
+	for_dentry_in_tree(wim->image_metadata[image - 1]->root_dentry,
 			   calculate_dentry_statistics,
 			   image_info);
 	image_info->last_modification_time = get_wim_timestamp();
@@ -1138,7 +1138,7 @@ xml_update_image_info(WIMStruct *w, int image)
 
 /* Adds an image to the XML information. */
 int
-xml_add_image(WIMStruct *w, const tchar *name)
+xml_add_image(WIMStruct *wim, const tchar *name)
 {
 	struct wim_info *wim_info;
 	struct image_info *image_info;
@@ -1147,8 +1147,8 @@ xml_add_image(WIMStruct *w, const tchar *name)
 
 	/* If this is the first image, allocate the struct wim_info.  Otherwise
 	 * use the existing struct wim_info. */
-	if (w->wim_info) {
-		wim_info = w->wim_info;
+	if (wim->wim_info) {
+		wim_info = wim->wim_info;
 	} else {
 		wim_info = CALLOC(1, sizeof(struct wim_info));
 		if (!wim_info)
@@ -1162,17 +1162,17 @@ xml_add_image(WIMStruct *w, const tchar *name)
 	if (!(image_info->name = TSTRDUP(name)))
 		goto out_destroy_image_info;
 
-	w->wim_info = wim_info;
+	wim->wim_info = wim_info;
 	image_info->index = wim_info->num_images;
 	image_info->creation_time = get_wim_timestamp();
-	xml_update_image_info(w, image_info->index);
+	xml_update_image_info(wim, image_info->index);
 	return 0;
 
 out_destroy_image_info:
 	destroy_image_info(image_info);
 	wim_info->num_images--;
 out_free_wim_info:
-	if (wim_info != w->wim_info)
+	if (wim_info != wim->wim_info)
 		FREE(wim_info);
 	return WIMLIB_ERR_NOMEM;
 }
@@ -1469,30 +1469,30 @@ out_write_error:
 
 /* Returns the name of the specified image. */
 WIMLIBAPI const tchar *
-wimlib_get_image_name(const WIMStruct *w, int image)
+wimlib_get_image_name(const WIMStruct *wim, int image)
 {
-	if (image < 1 || image > w->hdr.image_count)
+	if (image < 1 || image > wim->hdr.image_count)
 		return NULL;
-	return w->wim_info->images[image - 1].name;
+	return wim->wim_info->images[image - 1].name;
 }
 
 /* Returns the description of the specified image. */
 WIMLIBAPI const tchar *
-wimlib_get_image_description(const WIMStruct *w, int image)
+wimlib_get_image_description(const WIMStruct *wim, int image)
 {
-	if (image < 1 || image > w->hdr.image_count)
+	if (image < 1 || image > wim->hdr.image_count)
 		return NULL;
-	return w->wim_info->images[image - 1].description;
+	return wim->wim_info->images[image - 1].description;
 }
 
 /* Determines if an image name is already used by some image in the WIM. */
 WIMLIBAPI bool
-wimlib_image_name_in_use(const WIMStruct *w, const tchar *name)
+wimlib_image_name_in_use(const WIMStruct *wim, const tchar *name)
 {
 	if (!name || !*name)
 		return false;
-	for (int i = 1; i <= w->hdr.image_count; i++)
-		if (!tstrcmp(w->wim_info->images[i - 1].name, name))
+	for (int i = 1; i <= wim->hdr.image_count; i++)
+		if (!tstrcmp(wim->wim_info->images[i - 1].name, name))
 			return true;
 	return false;
 }
@@ -1500,25 +1500,25 @@ wimlib_image_name_in_use(const WIMStruct *w, const tchar *name)
 
 /* Extracts the raw XML data to a file stream. */
 WIMLIBAPI int
-wimlib_extract_xml_data(WIMStruct *w, FILE *fp)
+wimlib_extract_xml_data(WIMStruct *wim, FILE *fp)
 {
 	size_t size;
 	void *buf;
 	int ret;
 
-	size = w->hdr.xml_res_entry.size;
+	size = wim->hdr.xml_res_entry.size;
 	if (sizeof(size_t) < sizeof(u64))
-		if (size != w->hdr.xml_res_entry.size)
+		if (size != wim->hdr.xml_res_entry.size)
 			return WIMLIB_ERR_INVALID_PARAM;
 
 	buf = MALLOC(size);
 	if (!buf)
 		return WIMLIB_ERR_NOMEM;
 
-	if (full_pread(w->in_fd,
+	if (full_pread(wim->in_fd,
 		       buf,
-		       w->hdr.xml_res_entry.size,
-		       w->hdr.xml_res_entry.offset) != w->hdr.xml_res_entry.size)
+		       wim->hdr.xml_res_entry.size,
+		       wim->hdr.xml_res_entry.offset) != wim->hdr.xml_res_entry.size)
 	{
 		ERROR_WITH_ERRNO("Error reading XML data");
 		ret = WIMLIB_ERR_READ;
@@ -1538,7 +1538,7 @@ out_free_buf:
 
 /* Sets the name of an image in the WIM. */
 WIMLIBAPI int
-wimlib_set_image_name(WIMStruct *w, int image, const tchar *name)
+wimlib_set_image_name(WIMStruct *wim, int image, const tchar *name)
 {
 	tchar *p;
 	int i;
@@ -1546,22 +1546,22 @@ wimlib_set_image_name(WIMStruct *w, int image, const tchar *name)
 
 	DEBUG("Setting the name of image %d to %"TS, image, name);
 
-	ret = can_modify_wim(w);
+	ret = can_modify_wim(wim);
 	if (ret)
 		return ret;
 
 	if (name == NULL)
 		name = T("");
 
-	if (image < 1 || image > w->hdr.image_count) {
+	if (image < 1 || image > wim->hdr.image_count) {
 		ERROR("%d is not a valid image", image);
 		return WIMLIB_ERR_INVALID_IMAGE;
 	}
 
-	for (i = 1; i <= w->hdr.image_count; i++) {
+	for (i = 1; i <= wim->hdr.image_count; i++) {
 		if (i == image)
 			continue;
-		if (!tstrcmp(w->wim_info->images[i - 1].name, name)) {
+		if (!tstrcmp(wim->wim_info->images[i - 1].name, name)) {
 			ERROR("The name \"%"TS"\" is already in use in the WIM!",
 			      name);
 			return WIMLIB_ERR_IMAGE_NAME_COLLISION;
@@ -1572,24 +1572,24 @@ wimlib_set_image_name(WIMStruct *w, int image, const tchar *name)
 	if (!p)
 		return WIMLIB_ERR_NOMEM;
 
-	FREE(w->wim_info->images[image - 1].name);
-	w->wim_info->images[image - 1].name = p;
+	FREE(wim->wim_info->images[image - 1].name);
+	wim->wim_info->images[image - 1].name = p;
 	return 0;
 }
 
 static int
-do_set_image_info_str(WIMStruct *w, int image, const tchar *tstr,
+do_set_image_info_str(WIMStruct *wim, int image, const tchar *tstr,
 		      size_t offset)
 {
 	tchar *tstr_copy;
 	tchar **dest_tstr_p;
 	int ret;
 
-	ret = can_modify_wim(w);
+	ret = can_modify_wim(wim);
 	if (ret)
 		return ret;
 
-	if (image < 1 || image > w->hdr.image_count) {
+	if (image < 1 || image > wim->hdr.image_count) {
 		ERROR("%d is not a valid image", image);
 		return WIMLIB_ERR_INVALID_IMAGE;
 	}
@@ -1600,7 +1600,7 @@ do_set_image_info_str(WIMStruct *w, int image, const tchar *tstr,
 	} else {
 		tstr_copy = NULL;
 	}
-	dest_tstr_p = (tchar**)((void*)&w->wim_info->images[image - 1] + offset);
+	dest_tstr_p = (tchar**)((void*)&wim->wim_info->images[image - 1] + offset);
 
 	FREE(*dest_tstr_p);
 	*dest_tstr_p = tstr_copy;
@@ -1609,17 +1609,17 @@ do_set_image_info_str(WIMStruct *w, int image, const tchar *tstr,
 
 /* Sets the description of an image in the WIM. */
 WIMLIBAPI int
-wimlib_set_image_descripton(WIMStruct *w, int image,
+wimlib_set_image_descripton(WIMStruct *wim, int image,
 			    const tchar *description)
 {
-	return do_set_image_info_str(w, image, description,
+	return do_set_image_info_str(wim, image, description,
 				     offsetof(struct image_info, description));
 }
 
 /* Set the <FLAGS> element of a WIM image */
 WIMLIBAPI int
-wimlib_set_image_flags(WIMStruct *w, int image, const tchar *flags)
+wimlib_set_image_flags(WIMStruct *wim, int image, const tchar *flags)
 {
-	return do_set_image_info_str(w, image, flags,
+	return do_set_image_info_str(wim, image, flags,
 				     offsetof(struct image_info, flags));
 }

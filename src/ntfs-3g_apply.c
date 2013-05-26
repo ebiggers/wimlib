@@ -291,7 +291,7 @@ apply_ntfs_hardlink(struct wim_dentry *from_dentry,
  * @ni:	     The NTFS inode to apply the metadata to.
  * @dir_ni:  The NTFS inode for a directory containing @ni.
  * @dentry:  The WIM dentry whose inode contains the metadata to apply.
- * @w:       The WIMStruct for the WIM, through which the table of security
+ * @wim:       The WIMStruct for the WIM, through which the table of security
  * 		descriptors can be accessed.
  *
  * Returns 0 on success, nonzero on failure.
@@ -300,7 +300,7 @@ static int
 apply_file_attributes_and_security_data(ntfs_inode *ni,
 					ntfs_inode *dir_ni,
 					struct wim_dentry *dentry,
-					const WIMStruct *w,
+					const WIMStruct *wim,
 					int extract_flags)
 {
 	int ret;
@@ -330,7 +330,7 @@ apply_file_attributes_and_security_data(ntfs_inode *ni,
 		const char *desc;
 		const struct wim_security_data *sd;
 
-		sd = wim_const_security_data(w);
+		sd = wim_const_security_data(wim);
 		wimlib_assert(inode->i_security_id < sd->num_entries);
 		desc = (const char *)sd->descriptors[inode->i_security_id];
 		DEBUG("Applying security descriptor %d to `%s'",
@@ -446,7 +446,7 @@ do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
 	}
 
 	ret = apply_file_attributes_and_security_data(ni, dir_ni, dentry,
-						      args->w,
+						      args->wim,
 						      args->extract_flags);
 	if (ret)
 		goto out_close_dir_ni;
@@ -507,7 +507,7 @@ out:
 
 static int
 apply_root_dentry_ntfs(struct wim_dentry *dentry,
-		       ntfs_volume *vol, const WIMStruct *w,
+		       ntfs_volume *vol, const WIMStruct *wim,
 		       int extract_flags)
 {
 	ntfs_inode *ni;
@@ -522,7 +522,7 @@ apply_root_dentry_ntfs(struct wim_dentry *dentry,
 		ERROR_WITH_ERRNO("Could not find root NTFS inode");
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	ret = apply_file_attributes_and_security_data(ni, ni, dentry, w,
+	ret = apply_file_attributes_and_security_data(ni, ni, dentry, wim,
 						      extract_flags);
 	if (ntfs_inode_close(ni) != 0) {
 		ERROR_WITH_ERRNO("Failed to close NTFS inode for root "
@@ -538,14 +538,14 @@ apply_dentry_ntfs(struct wim_dentry *dentry, void *arg)
 {
 	struct apply_args *args = arg;
 	ntfs_volume *vol = args->vol;
-	WIMStruct *w = args->w;
+	WIMStruct *wim = args->wim;
 	struct wim_dentry *orig_dentry;
 	struct wim_dentry *other;
 	int ret;
 
 	/* Treat the root dentry specially. */
 	if (dentry_is_root(dentry))
-		return apply_root_dentry_ntfs(dentry, vol, w,
+		return apply_root_dentry_ntfs(dentry, vol, wim,
 					      args->extract_flags);
 
 	/* NTFS filename namespaces need careful consideration.  A name for a

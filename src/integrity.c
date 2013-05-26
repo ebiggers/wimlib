@@ -504,7 +504,7 @@ verify_integrity(int in_fd, const tchar *filename,
  * ~10 MiB chunks of the WIM match up with the values given in the integrity
  * table.
  *
- * @w:
+ * @wim:
  * 	The WIM, opened for reading, and with the header already read.
  *
  * @progress_func
@@ -520,20 +520,20 @@ verify_integrity(int in_fd, const tchar *filename,
  * 	information.
  */
 int
-check_wim_integrity(WIMStruct *w, wimlib_progress_func_t progress_func)
+check_wim_integrity(WIMStruct *wim, wimlib_progress_func_t progress_func)
 {
 	int ret;
 	u64 bytes_to_check;
 	struct integrity_table *table;
 	u64 end_lookup_table_offset;
 
-	if (w->hdr.integrity.offset == 0) {
+	if (wim->hdr.integrity.offset == 0) {
 		DEBUG("No integrity information.");
 		return WIM_INTEGRITY_NONEXISTENT;
 	}
 
-	end_lookup_table_offset = w->hdr.lookup_table_res_entry.offset +
-				  w->hdr.lookup_table_res_entry.size;
+	end_lookup_table_offset = wim->hdr.lookup_table_res_entry.offset +
+				  wim->hdr.lookup_table_res_entry.size;
 
 	if (end_lookup_table_offset < WIM_HEADER_DISK_SIZE) {
 		ERROR("WIM lookup table ends before WIM header ends!");
@@ -542,11 +542,11 @@ check_wim_integrity(WIMStruct *w, wimlib_progress_func_t progress_func)
 
 	bytes_to_check = end_lookup_table_offset - WIM_HEADER_DISK_SIZE;
 
-	ret = read_integrity_table(&w->hdr.integrity, w->in_fd,
+	ret = read_integrity_table(&wim->hdr.integrity, wim->in_fd,
 				   bytes_to_check, &table);
 	if (ret)
 		return ret;
-	ret = verify_integrity(w->in_fd, w->filename, table,
+	ret = verify_integrity(wim->in_fd, wim->filename, table,
 			       bytes_to_check, progress_func);
 	FREE(table);
 	return ret;

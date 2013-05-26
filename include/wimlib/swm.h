@@ -4,11 +4,11 @@
 #include "wimlib/types.h"
 
 extern int
-verify_swm_set(WIMStruct *w,
+verify_swm_set(WIMStruct *wim,
 	       WIMStruct **additional_swms, unsigned num_additional_swms);
 
 extern void
-merge_lookup_tables(WIMStruct *w,
+merge_lookup_tables(WIMStruct *wim,
 		    WIMStruct **additional_swms, unsigned num_additional_swms);
 
 extern void

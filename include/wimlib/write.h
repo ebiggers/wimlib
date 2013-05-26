@@ -11,21 +11,21 @@
 #define WIMLIB_WRITE_MASK_PUBLIC		0x1fffffff
 
 extern int
-begin_write(WIMStruct *w, const tchar *path, int write_flags);
+begin_write(WIMStruct *wim, const tchar *path, int write_flags);
 
 extern void
-close_wim_writable(WIMStruct *w);
+close_wim_writable(WIMStruct *wim);
 
 extern int
-finish_write(WIMStruct *w, int image, int write_flags,
+finish_write(WIMStruct *wim, int image, int write_flags,
 	     wimlib_progress_func_t progress_func);
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
 extern int
-lock_wim(WIMStruct *w, int fd);
+lock_wim(WIMStruct *wim, int fd);
 #else
 static inline int
-lock_wim(WIMStruct *w, int fd)
+lock_wim(WIMStruct *wim, int fd)
 {
 	return 0;
 }

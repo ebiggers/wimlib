@@ -82,19 +82,19 @@ extern int
 rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to);
 
 extern int
-select_wim_image(WIMStruct *w, int image);
+select_wim_image(WIMStruct *wim, int image);
 
 extern int
-for_image(WIMStruct *w, int image, int (*visitor)(WIMStruct *));
+for_image(WIMStruct *wim, int image, int (*visitor)(WIMStruct *));
 
 extern int
-wim_checksum_unhashed_streams(WIMStruct *w);
+wim_checksum_unhashed_streams(WIMStruct *wim);
 
 extern int
-reopen_wim(WIMStruct *w);
+reopen_wim(WIMStruct *wim);
 
 extern int
-close_wim(WIMStruct *w);
+close_wim(WIMStruct *wim);
 
 extern int
 can_modify_wim(WIMStruct *wim);

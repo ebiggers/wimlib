@@ -301,10 +301,10 @@ extern struct wim_lookup_table *
 new_lookup_table(size_t capacity) _malloc_attribute;
 
 extern int
-read_lookup_table(WIMStruct *w);
+read_lookup_table(WIMStruct *wim);
 
 extern int
-write_lookup_table(WIMStruct *w, int image, struct resource_entry *out_res_entry);
+write_lookup_table(WIMStruct *wim, int image, struct resource_entry *out_res_entry);
 
 extern int
 write_lookup_table_from_stream_list(struct list_head *stream_list,
@@ -363,7 +363,7 @@ extern struct wim_lookup_table_entry *
 __lookup_resource(const struct wim_lookup_table *table, const u8 hash[]);
 
 extern int
-lookup_resource(WIMStruct *w, const tchar *path,
+lookup_resource(WIMStruct *wim, const tchar *path,
 		int lookup_flags, struct wim_dentry **dentry_ret,
 		struct wim_lookup_table_entry **lte_ret, u16 *stream_idx_ret);
 

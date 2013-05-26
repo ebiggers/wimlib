@@ -41,7 +41,7 @@
  * end-of-directory is signaled by a directory entry of length '0', really of
  * length 8, because that's how long the 'length' field is.
  *
- * @w:		Pointer to the WIMStruct for the WIM file.
+ * @wim:		Pointer to the WIMStruct for the WIM file.
  *
  * @imd:	Pointer to the image metadata structure for the image whose
  *		metadata resource we are reading.  Its `metadata_lte' member
@@ -236,7 +236,7 @@ write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 
 /* Write the metadata resource for the current WIM image. */
 int
-write_metadata_resource(WIMStruct *w)
+write_metadata_resource(WIMStruct *wim)
 {
 	u8 *buf;
 	u8 *p;
@@ -248,13 +248,13 @@ write_metadata_resource(WIMStruct *w)
 	struct wim_security_data *sd;
 	struct wim_image_metadata *imd;
 
-	wimlib_assert(w->out_fd != -1);
-	wimlib_assert(w->current_image != WIMLIB_NO_IMAGE);
+	wimlib_assert(wim->out_fd != -1);
+	wimlib_assert(wim->current_image != WIMLIB_NO_IMAGE);
 
 	DEBUG("Writing metadata resource for image %d (offset = %"PRIu64")",
-	      w->current_image, filedes_offset(w->out_fd));
+	      wim->current_image, filedes_offset(wim->out_fd));
 
-	imd = w->image_metadata[w->current_image - 1];
+	imd = wim->image_metadata[wim->current_image - 1];
 
 	root = imd->root_dentry;
 	sd = imd->security_data;
@@ -304,14 +304,14 @@ write_metadata_resource(WIMStruct *w)
 
 	/* Get the lookup table entry for the metadata resource so we can update
 	 * it. */
-	lte = wim_get_current_image_metadata(w)->metadata_lte;
+	lte = wim_get_current_image_metadata(wim)->metadata_lte;
 
 	/* Write the metadata resource to the output WIM using the proper
 	 * compression type.  The lookup table entry for the metadata resource
 	 * is updated. */
 	ret = write_wim_resource_from_buffer(buf, metadata_original_size,
-					     w->out_fd,
-					     w->compression_type,
+					     wim->out_fd,
+					     wim->compression_type,
 					     &lte->output_resource_entry,
 					     lte->hash);
 	/* Note that although the SHA1 message digest of the metadata resource

@@ -700,7 +700,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	memset(&args, 0, sizeof(args));
 
 
-	args.w                      = wim;
+	args.wim                    = wim;
 	args.target                 = target;
 	args.target_nchars          = tstrlen(target);
 	args.extract_flags          = extract_flags;

@@ -438,10 +438,10 @@ extern int
 set_dentry_name(struct wim_dentry *dentry, const tchar *new_name);
 
 extern struct wim_dentry *
-get_dentry(struct WIMStruct *w, const tchar *path);
+get_dentry(struct WIMStruct *wim, const tchar *path);
 
 extern struct wim_inode *
-wim_pathname_to_inode(struct WIMStruct *w, const tchar *path);
+wim_pathname_to_inode(struct WIMStruct *wim, const tchar *path);
 
 extern struct wim_dentry *
 get_dentry_child_with_name(const struct wim_dentry *dentry,
@@ -453,7 +453,7 @@ get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 				   size_t name_nbytes);
 
 extern struct wim_dentry *
-get_parent_dentry(struct WIMStruct *w, const tchar *path);
+get_parent_dentry(struct WIMStruct *wim, const tchar *path);
 
 extern int
 print_dentry(struct wim_dentry *dentry, void *lookup_table);
