@@ -41,7 +41,7 @@
 #include <unistd.h> /* for close() */
 
 struct split_args {
-	WIMStruct *w;
+	WIMStruct *wim;
 	tchar *swm_base_name;
 	size_t swm_base_name_len;
 	const tchar *swm_suffix;
@@ -55,16 +55,16 @@ struct split_args {
 };
 
 static int
-finish_swm(WIMStruct *w, struct list_head *lte_list,
+finish_swm(WIMStruct *wim, struct list_head *lte_list,
 	   int write_flags, wimlib_progress_func_t progress_func)
 {
 	int ret;
 
-	ret = write_lookup_table_from_stream_list(lte_list, w->out_fd,
-						  &w->hdr.lookup_table_res_entry);
+	ret = write_lookup_table_from_stream_list(lte_list, wim->out_fd,
+						  &wim->hdr.lookup_table_res_entry);
 	if (ret)
 		return ret;
-	return finish_write(w, WIMLIB_ALL_IMAGES,
+	return finish_write(wim, WIMLIB_ALL_IMAGES,
 			    write_flags | WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE,
 			    progress_func);
 }
@@ -73,7 +73,7 @@ static int
 copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *_args)
 {
 	struct split_args *args = (struct split_args*)_args;
-	WIMStruct *w = args->w;
+	WIMStruct *wim = args->wim;
 	int ret;
 
 	/* metadata resources were already written. */
@@ -86,7 +86,7 @@ copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *_args)
 		/* No space for this resource.  Finish the previous swm and
 		 * start a new one. */
 
-		ret = finish_swm(w, &args->lte_list, args->write_flags,
+		ret = finish_swm(wim, &args->lte_list, args->write_flags,
 				 args->progress_func);
 		if (ret)
 			return ret;
@@ -102,7 +102,7 @@ copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *_args)
 		tsprintf(args->swm_base_name + args->swm_base_name_len, T("%d%"TS),
 			 args->cur_part_number, args->swm_suffix);
 
-		w->hdr.part_number = args->cur_part_number;
+		wim->hdr.part_number = args->cur_part_number;
 
 		if (args->progress_func) {
 			args->progress.split.cur_part_number = args->cur_part_number;
@@ -110,7 +110,7 @@ copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *_args)
 					    &args->progress);
 		}
 
-		ret = begin_write(w, args->swm_base_name, args->write_flags);
+		ret = begin_write(wim, args->swm_base_name, args->write_flags);
 		if (ret)
 			return ret;
 		args->size_remaining = args->part_size;
@@ -118,13 +118,13 @@ copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *_args)
 	args->size_remaining -= lte->resource_entry.size;
 	args->progress.split.completed_bytes += lte->resource_entry.size;
 	list_add_tail(&lte->swm_stream_list, &args->lte_list);
-	return copy_resource(lte, w);
+	return copy_resource(lte, wim);
 }
 
-/* Splits the WIM file @w into multiple parts prefixed by @swm_name with size at
- * most @part_size bytes. */
+/* Splits the WIM file @wim into multiple parts prefixed by @swm_name with size
+ * at most @part_size bytes. */
 WIMLIBAPI int
-wimlib_split(WIMStruct *w, const tchar *swm_name,
+wimlib_split(WIMStruct *wim, const tchar *swm_name,
 	     size_t part_size, int write_flags,
 	     wimlib_progress_func_t progress_func)
 {
@@ -138,7 +138,7 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 	if (!swm_name || part_size == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (w->hdr.total_parts != 1)
+	if (wim->hdr.total_parts != 1)
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
@@ -146,11 +146,11 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 	swm_name_len = tstrlen(swm_name);
 	tchar swm_base_name[swm_name_len + 20];
 
-	memcpy(&hdr_save, &w->hdr, sizeof(struct wim_header));
-	w->hdr.flags |= WIM_HDR_FLAG_SPANNED;
-	w->hdr.boot_idx = 0;
-	randomize_byte_array(w->hdr.guid, WIM_GID_LEN);
-	ret = begin_write(w, swm_name, write_flags);
+	memcpy(&hdr_save, &wim->hdr, sizeof(struct wim_header));
+	wim->hdr.flags |= WIM_HDR_FLAG_SPANNED;
+	wim->hdr.boot_idx = 0;
+	randomize_byte_array(wim->hdr.guid, WIM_GID_LEN);
+	ret = begin_write(wim, swm_name, write_flags);
 	if (ret)
 		goto out;
 
@@ -165,7 +165,7 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 		swm_suffix = &swm_base_name[ARRAY_LEN(swm_base_name) - 1];
 	}
 
-	args.w                              = w;
+	args.wim                              = wim;
 	args.swm_base_name                  = swm_base_name;
 	args.swm_base_name_len              = swm_base_name_len;
 	args.swm_suffix                     = swm_suffix;
@@ -175,7 +175,7 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 	args.size_remaining                 = part_size;
 	args.part_size                      = part_size;
 	args.progress_func                  = progress_func;
-	args.progress.split.total_bytes     = lookup_table_total_stream_size(w->lookup_table);
+	args.progress.split.total_bytes     = lookup_table_total_stream_size(wim->lookup_table);
 	args.progress.split.cur_part_number = 1;
 	args.progress.split.completed_bytes = 0;
 	args.progress.split.part_name       = swm_base_name;
@@ -185,10 +185,10 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 			      &args.progress);
 	}
 
-	for (int i = 0; i < w->hdr.image_count; i++) {
+	for (int i = 0; i < wim->hdr.image_count; i++) {
 		struct wim_lookup_table_entry *metadata_lte;
-		metadata_lte = w->image_metadata[i]->metadata_lte;
-		ret = copy_resource(metadata_lte, w);
+		metadata_lte = wim->image_metadata[i]->metadata_lte;
+		ret = copy_resource(metadata_lte, wim);
 		if (ret)
 			goto out;
 		args.size_remaining -= metadata_lte->resource_entry.size;
@@ -198,13 +198,13 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 		list_add_tail(&metadata_lte->swm_stream_list, &args.lte_list);
 	}
 
-	ret = for_lookup_table_entry_pos_sorted(w->lookup_table,
+	ret = for_lookup_table_entry_pos_sorted(wim->lookup_table,
 						copy_resource_to_swm,
 						&args);
 	if (ret)
 		goto out;
 
-	ret = finish_swm(w, &args.lte_list, write_flags, progress_func);
+	ret = finish_swm(wim, &args.lte_list, write_flags, progress_func);
 	if (ret)
 		goto out;
 
@@ -249,7 +249,7 @@ wimlib_split(WIMStruct *w, const tchar *swm_name,
 	}
 	ret = 0;
 out:
-	close_wim_writable(w);
-	memcpy(&w->hdr, &hdr_save, sizeof(struct wim_header));
+	close_wim_writable(wim);
+	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
 	return ret;
 }
