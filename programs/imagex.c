@@ -3024,10 +3024,10 @@ imagex_optimize(int argc, tchar **argv)
 	if (ret)
 		goto out;
 
-	old_size = file_get_size(argv[0]);
+	old_size = file_get_size(wimfile);
 	tprintf(T("\"%"TS"\" original size: "), wimfile);
 	if (old_size == -1)
-		tfputs(T("Unknown\n"), stdout);
+		tputs(T("Unknown"));
 	else
 		tprintf(T("%"PRIu64" KiB\n"), old_size >> 10);
 
@@ -3036,10 +3036,10 @@ imagex_optimize(int argc, tchar **argv)
 	if (ret)
 		goto out_wimlib_free;
 
-	new_size = file_get_size(argv[0]);
+	new_size = file_get_size(wimfile);
 	tprintf(T("\"%"TS"\" optimized size: "), wimfile);
 	if (new_size == -1)
-		tfputs(T("Unknown\n"), stdout);
+		tputs(T("Unknown"));
 	else
 		tprintf(T("%"PRIu64" KiB\n"), new_size >> 10);
 
@@ -3048,7 +3048,7 @@ imagex_optimize(int argc, tchar **argv)
 		tprintf(T("%lld KiB\n"),
 		       ((long long)old_size - (long long)new_size) >> 10);
 	} else {
-		tfputs(T("Unknown\n"), stdout);
+		tputs(T("Unknown"));
 	}
 	ret = 0;
 out_wimlib_free:
@@ -3068,7 +3068,7 @@ static int
 imagex_split(int argc, tchar **argv)
 {
 	int c;
-	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int open_flags = 0;
 	int write_flags = 0;
 	unsigned long part_size;
 	tchar *tmp;
