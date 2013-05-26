@@ -98,6 +98,10 @@ join_wims(WIMStruct **swms, unsigned num_swms,
 			return ret;
 	}
 
+	/* Preserve some of the header flags */
+	joined_wim->hdr.flags |= (swms[0]->hdr.flags &
+			      (WIM_HDR_FLAG_RP_FIX | WIM_HDR_FLAG_READONLY));
+
 	/* Write lookup table, XML data, and optional integrity table */
 	merge_lookup_tables(joined_wim, swms, num_swms);
 	free_wim_info(joined_wim->wim_info);

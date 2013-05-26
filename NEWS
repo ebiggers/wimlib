@@ -7,6 +7,8 @@ Version 1.4.2:
 	Return error code rather than segfaulting when trying to list files from
 	a non-first part of a split WIM.
 
+	Joining a WIM will now preserve the RP_FIX and READONLY flags.
+
 Version 1.4.1:
 	On Windows, paths given to wimlib-imagex are now treated case
 	insensitively.
