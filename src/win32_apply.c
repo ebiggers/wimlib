@@ -302,7 +302,7 @@ win32_set_security_data(const struct wim_inode *inode,
 	BOOL sacl_present;
 	BOOL sacl_defaulted;
 
-	sd = wim_const_security_data(args->w);
+	sd = wim_const_security_data(args->wim);
 	descriptor = sd->descriptors[inode->i_security_id];
 
 	GetSecurityDescriptorOwner(descriptor, &owner, &owner_defaulted);

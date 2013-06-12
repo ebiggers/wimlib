@@ -384,7 +384,7 @@ static const struct option update_options[] = {
 	{NULL, 0, NULL, 0},
 };
 
-#ifdef __GNUC__
+#if 0
 #	define _format_attribute(type, format_str, args_start) \
 			__attribute__((format(type, format_str, args_start)))
 #else
