@@ -1647,11 +1647,9 @@ imagex_apply(int argc, tchar **argv)
 	win32_release_restore_privileges();
 #endif
 out_free_swms:
-	if (swm_glob) {
-		for (unsigned i = 0; i < num_additional_swms; i++)
-			wimlib_free(additional_swms[i]);
-		free(additional_swms);
-	}
+	for (unsigned i = 0; i < num_additional_swms; i++)
+		wimlib_free(additional_swms[i]);
+	free(additional_swms);
 out_wimlib_free:
 	wimlib_free(wim);
 out:
@@ -2264,11 +2262,9 @@ imagex_export(int argc, tchar **argv)
 		ret = wimlib_overwrite(dest_wim, write_flags, num_threads,
 				       imagex_progress_func);
 out_free_swms:
-	if (swm_glob) {
-		for (unsigned i = 0; i < num_additional_swms; i++)
-			wimlib_free(additional_swms[i]);
-		free(additional_swms);
-	}
+	for (unsigned i = 0; i < num_additional_swms; i++)
+		wimlib_free(additional_swms[i]);
+	free(additional_swms);
 out_free_dest_wim:
 	wimlib_free(dest_wim);
 out_free_src_wim:
@@ -2457,11 +2453,9 @@ imagex_extract(int argc, tchar **argv)
 #ifdef __WIN32__
 	win32_release_restore_privileges();
 #endif
-	if (swm_glob) {
-		for (unsigned i = 0; i < num_additional_swms; i++)
-			wimlib_free(additional_swms[i]);
-		free(additional_swms);
-	}
+	for (unsigned i = 0; i < num_additional_swms; i++)
+		wimlib_free(additional_swms[i]);
+	free(additional_swms);
 out_wimlib_free:
 	wimlib_free(wim);
 out_free_cmds:
@@ -2963,11 +2957,9 @@ imagex_mount_rw_or_ro(int argc, tchar **argv)
 			       "on \"%"TS"\""),
 			     image, wimfile, dir);
 	}
-	if (swm_glob) {
-		for (unsigned i = 0; i < num_additional_swms; i++)
-			wimlib_free(additional_swms[i]);
-		free(additional_swms);
-	}
+	for (unsigned i = 0; i < num_additional_swms; i++)
+		wimlib_free(additional_swms[i]);
+	free(additional_swms);
 out_free_wim:
 	wimlib_free(wim);
 out:
