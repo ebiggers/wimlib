@@ -272,7 +272,7 @@ if test "x$WITH_NTFS_3G" = "xyes"; then
 				 [1],
 				 [Define to 1 if ntfs_mount() takes the flag NTFS_MNT_RDONLY])],
 		      [],
-		      ,[#include <ntfs-3g/volume.h>])
+		      [#include <ntfs-3g/volume.h>])
 fi
 AM_CONDITIONAL([WITH_NTFS_3G], [test "x$WITH_NTFS_3G" = "xyes"])
 
