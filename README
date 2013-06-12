@@ -1,6 +1,6 @@
                                   INTRODUCTION
 
-This is wimlib version 1.4.1 (May 2013).  wimlib is a C library for creating,
+This is wimlib version 1.4.2 (June 2013).  wimlib is a C library for creating,
 modifying, extracting, and mounting files in the Windows Imaging Format (WIM
 files).  These files are normally created by using the `imagex.exe' utility on
 Windows, but wimlib is distributed with a free implementation of ImageX called
