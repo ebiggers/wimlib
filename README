@@ -229,7 +229,10 @@ you do not have libntfs-3g 2011-4-12 or later available, you must configure
 wimlib with --without-ntfs-3g.  On FreeBSD, before mounting a WIM you need to
 load the POSIX message queue module (run `kldload mqueuefs').
 
-wimlib has not been tested on big-endian CPU architectures.
+The code has primarily been tested on x86 and x86_64 CPUs, but it's written to
+be portable to other architectures and I've also tested it on ARM.  However,
+although the code is written to correctly deal with endianness, it has not yet
+actually been tested on a big-endian architecture.
 
                                    REFERENCES
 
