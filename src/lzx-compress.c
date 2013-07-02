@@ -425,7 +425,7 @@ lzx_write_compressed_tree(struct output_bitstream *out,
 	unsigned i;
 	unsigned len_in_run;
 	unsigned additional_bits;
-	char delta;
+	signed char delta;
 	u8 pretree_sym;
 
 	ZERO_ARRAY(pretree_freqs);
@@ -502,7 +502,7 @@ lzx_write_compressed_tree(struct output_bitstream *out,
 			 * */
 			while (cur_run_len >= 4) {
 				additional_bits = (cur_run_len > 4);
-				delta = -(char)len_in_run;
+				delta = -(signed char)len_in_run;
 				if (delta < 0)
 					delta += 17;
 				pretree_freqs[19]++;
@@ -518,7 +518,7 @@ lzx_write_compressed_tree(struct output_bitstream *out,
 		 * as a difference from the length of that codeword in the
 		 * previous tree. */
 		while (cur_run_len--) {
-			delta = -(char)len_in_run;
+			delta = -(signed char)len_in_run;
 			if (delta < 0)
 				delta += 17;
 

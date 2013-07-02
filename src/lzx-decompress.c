@@ -244,7 +244,7 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 		unsigned num_zeroes;
 		unsigned code;
 		unsigned num_same;
-		char value;
+		signed char value;
 
 		ret = read_huffsym_using_pretree(istream, pretree_decode_table,
 						 pretree_lens, &tree_code);
@@ -284,7 +284,7 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 							 &code);
 			if (ret != 0)
 				return ret;
-			value = (char)*lens - (char)code;
+			value = (signed char)*lens - (signed char)code;
 			if (value < 0)
 				value += 17;
 			while (num_same--) {
@@ -294,7 +294,7 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 			}
 			break;
 		default: /* Difference from old length. */
-			value = (char)*lens - (char)tree_code;
+			value = (signed char)*lens - (signed char)tree_code;
 			if (value < 0)
 				value += 17;
 			*lens = value;
