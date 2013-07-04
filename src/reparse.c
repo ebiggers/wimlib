@@ -422,8 +422,8 @@ wim_inode_set_symlink(struct wim_inode *inode,
 	 * ways to provide Windows paths.)
 	 *
 	 * To change a UNIX relative symbolic link to Windows format, we only
-	 * need to translate it to UTF-16LE and replace backslashes with forward
-	 * slashes.  We do not make any attempt to handle filename character
+	 * need to translate it to UTF-16LE and replace forward slashes with
+	 * backslashes.  We do not make any attempt to handle filename character
 	 * problems, such as a link target that itself contains backslashes on
 	 * UNIX.  Then, for these relative links, we set the reparse header
 	 * @flags field to SYMBOLIC_LINK_RELATIVE.
