@@ -27,8 +27,6 @@
 #  include "config.h"
 #endif
 
-#include <aclapi.h> /* for SetSecurityInfo() */
-
 #include "wimlib/win32_common.h"
 
 #include "wimlib/apply.h"
@@ -287,47 +285,19 @@ win32_set_security_data(const struct wim_inode *inode,
 	unsigned long n;
 	DWORD err;
 	const struct wim_security_data *sd;
+	SECURITY_INFORMATION securityInformation;
 
-	SECURITY_INFORMATION securityInformation = 0;
-
-	void *owner = NULL;
-	void *group = NULL;
-	ACL *dacl = NULL;
-	ACL *sacl = NULL;
-
-	BOOL owner_defaulted;
-	BOOL group_defaulted;
-	BOOL dacl_present;
-	BOOL dacl_defaulted;
-	BOOL sacl_present;
-	BOOL sacl_defaulted;
+	securityInformation = OWNER_SECURITY_INFORMATION |
+			      GROUP_SECURITY_INFORMATION |
+			      DACL_SECURITY_INFORMATION  |
+			      SACL_SECURITY_INFORMATION;
 
 	sd = wim_const_security_data(args->wim);
 	descriptor = sd->descriptors[inode->i_security_id];
 
-	GetSecurityDescriptorOwner(descriptor, &owner, &owner_defaulted);
-	if (owner)
-		securityInformation |= OWNER_SECURITY_INFORMATION;
-
-	GetSecurityDescriptorGroup(descriptor, &group, &group_defaulted);
-	if (group)
-		securityInformation |= GROUP_SECURITY_INFORMATION;
-
-	GetSecurityDescriptorDacl(descriptor, &dacl_present,
-				  &dacl, &dacl_defaulted);
-	if (dacl)
-		securityInformation |= DACL_SECURITY_INFORMATION;
-
-	GetSecurityDescriptorSacl(descriptor, &sacl_present,
-				  &sacl, &sacl_defaulted);
-	if (sacl)
-		securityInformation |= SACL_SECURITY_INFORMATION;
-
 again:
-	if (securityInformation == 0)
-		return 0;
-	if (SetSecurityInfo(hFile, SE_FILE_OBJECT,
-			    securityInformation, owner, group, dacl, sacl))
+	/* We could use SetSecurityInfo() here if it wasn't horribly broken.  */
+	if (SetFileSecurity(path, securityInformation, descriptor))
 		return 0;
 	err = GetLastError();
 	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
@@ -337,7 +307,6 @@ again:
 		if (securityInformation & SACL_SECURITY_INFORMATION) {
 			n = args->num_set_sacl_priv_notheld++;
 			securityInformation &= ~SACL_SECURITY_INFORMATION;
-			sacl = NULL;
 			if (n < MAX_SET_SACL_PRIV_NOTHELD_WARNINGS) {
 				WARNING(
 "We don't have enough privileges to set the full security\n"
@@ -663,19 +632,6 @@ win32_finish_extract_stream(HANDLE h, const struct wim_dentry *dentry,
 	if (stream_name_utf16 == NULL) {
 		/* Unnamed stream. */
 
-		/* Set security descriptor, unless the extract_flags indicate
-		 * not to or the volume does not supported it.  Note that this
-		 * is only done when the unnamed stream is being extracted, as
-		 * security descriptors are per-file and not per-stream. */
-		if (inode->i_security_id >= 0 &&
-		    !(args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)
-		    && (args->vol_flags & FILE_PERSISTENT_ACLS))
-		{
-			ret = win32_set_security_data(inode, h, stream_path, args);
-			if (ret)
-				return ret;
-		}
-
 		/* Handle reparse points.  The data for them needs to be set
 		 * using a special ioctl.  Note that the reparse point may have
 		 * been created using CreateFileW() in the case of
@@ -718,6 +674,19 @@ win32_finish_extract_stream(HANDLE h, const struct wim_dentry *dentry,
 			SetFileShortNameW(h, dentry->short_name);
 		else if (running_on_windows_7_or_later())
 			SetFileShortNameW(h, L"");
+
+		/* Set security descriptor, unless the extract_flags indicate
+		 * not to or the volume does not supported it.  Note that this
+		 * is only done when the unnamed stream is being extracted, as
+		 * security descriptors are per-file and not per-stream. */
+		if (inode->i_security_id >= 0 &&
+		    !(args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)
+		    && (args->vol_flags & FILE_PERSISTENT_ACLS))
+		{
+			ret = win32_set_security_data(inode, h, stream_path, args);
+			if (ret)
+				return ret;
+		}
 	} else {
 		/* Extract the data for a named data stream. */
 		if (lte != NULL) {
@@ -831,8 +800,7 @@ win32_extract_stream(const struct wim_dentry *dentry,
 	}
 
 	DEBUG("Opening \"%ls\"", stream_path);
-	requestedAccess = GENERIC_READ | GENERIC_WRITE |
-			  ACCESS_SYSTEM_SECURITY;
+	requestedAccess = GENERIC_READ | GENERIC_WRITE;
 	/* DELETE access is needed for SetFileShortNameW(), for some reason.
 	 * But don't request it for the extraction root, for the following
 	 * reasons:
@@ -849,6 +817,16 @@ win32_extract_stream(const struct wim_dentry *dentry,
 	 */
 	if (dentry != args->extract_root)
 		requestedAccess |= DELETE;
+
+	/* SetFileSecurity() opens its own handle so doesn't need the following
+	 * access rights.  */
+#if 0
+	/* If file has a security descriptor, set extra permissions needed for
+	 * SetSecurityInfo() not implied by GENERIC_WRITE.  */
+	if (inode->i_security_id != -1)
+		requestedAccess |= WRITE_OWNER | WRITE_DAC | ACCESS_SYSTEM_SECURITY;
+#endif
+
 try_open_again:
 	/* Open the stream to be extracted.  Depending on what we have set
 	 * creationDisposition to, we may be creating this for the first time,
