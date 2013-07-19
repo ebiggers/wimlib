@@ -47,7 +47,7 @@ struct add_image_params {
 
 	/* Pointer to the capture configuration, which indicates whether any
 	 * files should be excluded from capture or not. */
-	const struct wimlib_capture_config *config;
+	struct wimlib_capture_config *config;
 
 	/* Flags that affect the capture operation (WIMLIB_ADD_FLAG_*) */
 	int add_flags;

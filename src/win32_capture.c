@@ -1142,6 +1142,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	struct win32_capture_state state;
 	unsigned vol_flags;
 	DWORD dret;
+	bool need_prefix_free = false;
 
 	if (!win32func_FindFirstStreamW) {
 		WARNING("Running on Windows XP or earlier; "
@@ -1189,6 +1190,18 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		} else {
 			wmemcpy(path, L"\\\\?\\", 4);
 			path_nchars = 4 + dret;
+			/* Update pattern prefix */
+			if (params->config != NULL)
+			{
+				params->config->_prefix = TSTRDUP(path);
+				params->config->_prefix_num_tchars = path_nchars;
+				if (params->config->_prefix == NULL)
+				{
+					ret = WIMLIB_ERR_NOMEM;
+					goto out_free_path;
+				}
+				need_prefix_free = true;
+			}
 		}
 	} else {
 		wmemcpy(path, root_disk_path, path_nchars + 1);
@@ -1198,6 +1211,9 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	ret = win32_build_dentry_tree_recursive(root_ret, path,
 						path_nchars, params,
 						&state, vol_flags);
+	if (need_prefix_free)
+		FREE(params->config->_prefix);
+out_free_path:
 	FREE(path);
 	if (ret == 0)
 		win32_do_capture_warnings(&state, params->add_flags);

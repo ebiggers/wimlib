@@ -617,7 +617,7 @@ struct wimlib_capture_config {
 	struct wimlib_pattern_list reserved2;
 
 	/** Library internal use only. */
-	const wimlib_tchar *_prefix;
+	wimlib_tchar *_prefix;
 
 	/** Library internal use only. */
 	size_t _prefix_num_tchars;
