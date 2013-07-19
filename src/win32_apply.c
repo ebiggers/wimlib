@@ -296,7 +296,6 @@ win32_set_security_data(const struct wim_inode *inode,
 	descriptor = sd->descriptors[inode->i_security_id];
 
 again:
-	/* We could use SetSecurityInfo() here if it wasn't horribly broken.  */
 	if (SetFileSecurity(path, securityInformation, descriptor))
 		return 0;
 	err = GetLastError();
@@ -618,8 +617,8 @@ win32_begin_extract_unnamed_stream(const struct wim_inode *inode,
 	return 0;
 }
 
-/* Set security descriptor and extract stream data or reparse data (skip the
- * unnamed data stream of encrypted files, which was already extracted). */
+/* Extract stream data or reparse data (skip the unnamed data stream of
+ * encrypted files, which was already extracted) and set short file name. */
 static int
 win32_finish_extract_stream(HANDLE h, const struct wim_dentry *dentry,
 			    const struct wim_lookup_table_entry *lte,
@@ -674,19 +673,6 @@ win32_finish_extract_stream(HANDLE h, const struct wim_dentry *dentry,
 			SetFileShortNameW(h, dentry->short_name);
 		else if (running_on_windows_7_or_later())
 			SetFileShortNameW(h, L"");
-
-		/* Set security descriptor, unless the extract_flags indicate
-		 * not to or the volume does not supported it.  Note that this
-		 * is only done when the unnamed stream is being extracted, as
-		 * security descriptors are per-file and not per-stream. */
-		if (inode->i_security_id >= 0 &&
-		    !(args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)
-		    && (args->vol_flags & FILE_PERSISTENT_ACLS))
-		{
-			ret = win32_set_security_data(inode, h, stream_path, args);
-			if (ret)
-				return ret;
-		}
 	} else {
 		/* Extract the data for a named data stream. */
 		if (lte != NULL) {
@@ -818,15 +804,6 @@ win32_extract_stream(const struct wim_dentry *dentry,
 	if (dentry != args->extract_root)
 		requestedAccess |= DELETE;
 
-	/* SetFileSecurity() opens its own handle so doesn't need the following
-	 * access rights.  */
-#if 0
-	/* If file has a security descriptor, set extra permissions needed for
-	 * SetSecurityInfo() not implied by GENERIC_WRITE.  */
-	if (inode->i_security_id != -1)
-		requestedAccess |= WRITE_OWNER | WRITE_DAC | ACCESS_SYSTEM_SECURITY;
-#endif
-
 try_open_again:
 	/* Open the stream to be extracted.  Depending on what we have set
 	 * creationDisposition to, we may be creating this for the first time,
@@ -935,7 +912,8 @@ try_open_again:
 	 * appropriate attributes.  We have yet to set the appropriate security
 	 * descriptor and actually extract the stream data (other than for
 	 * extracted files, which were already extracted).
-	 * win32_finish_extract_stream() handles these additional steps. */
+	 * win32_finish_extract_stream() handles these additional steps, except
+	 * the security descriptor. */
 	ret = win32_finish_extract_stream(h, dentry, lte, stream_path,
 					  stream_name_utf16, args);
 	if (ret)
@@ -1255,6 +1233,22 @@ win32_do_apply_dentry_timestamps(const wchar_t *path,
 	DWORD err;
 	HANDLE h;
 	const struct wim_inode *inode = dentry->d_inode;
+
+	/* On Windows we also use the timestamps pass to apply security
+	 * descriptors.  This is because it seems we really need the depth-first
+	 * behavior: in particular, Windows contains files like
+	 * \Windows\Registration\CRMLog that have funny permissions and don't
+	 * even let the administrator with SE_RESTORE_NAME open (at least, with
+	 * privileges other than FILE_WRITE_ATTRIBUTES as we do below) after the
+	 * security descriptor has been applied.  */
+	if (inode->i_security_id >= 0 &&
+		!(args->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)
+		&& (args->vol_flags & FILE_PERSISTENT_ACLS))
+	{
+		int ret = win32_set_security_data(inode, NULL, path, args);
+		if (ret)
+			return ret;
+	}
 
 	/* Windows doesn't let you change the timestamps of the root directory
 	 * (at least on FAT, which is dumb but expected since FAT doesn't store
