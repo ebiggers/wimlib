@@ -94,13 +94,14 @@ Usage: $script_name [OPTIONS] IMAGE
   -A, --waik-dir=DIR       Get the boot files and boot.wim from the ISO of the
                               Windows Automated Installation Kit mounted on DIR
                               instead of from the Windows 7 or Windows 8 DVD.
+                              This also works if the mounted ISO is for the
+                              WAIK supplement rather than the WAIK itself.
   -s, --start-script=FILE  Add FILE to the root directory of Windows PE image
                               and adjust \Windows\System32\winpeshl.ini to
                               execute FILE when Windows PE starts up.
-  -w, --wim=WIM            Use WIM as the boot.wim file.  Defaults to
-                              sources/boot.wim in the Windows DVD directory, or
-                              F1_WINPE.WIM from the WAIK if --waik-dir is
-                              specified.
+  -w, --wim=WIM            Use WIM as the boot.wim file.  This defaults to the
+                              appropriate WIM file from the Windows DVD, WAIK,
+                              or WAIK supplement.
   -O, --overlay=DIR        Adds all the files in DIR to the Windows PE image.
   -t, --tmp-dir=DIR        Use DIR as the temporary base of the ISO filesystem.
                               Defaults to making one using "mktemp -d".
@@ -297,7 +298,7 @@ EOF
 		fi
 	fi
 
-	if [ -n "$waik_dir" ]; then
+	if [ -n "$waik_dir" ] &&  [ -f "$waik_dir"/wAIK${arch}.msi ]; then
 		if ! type -P cabextract &> /dev/null ; then
 			cat << EOF
 ERROR: The boot files in the Windows Automated Installation Kit (WAIK) are
@@ -316,7 +317,7 @@ get_primary_boot_files() {
 		# Get boot files from the WAIK.
 		stat_busy "Copying primary boot files from the Windows Automated Installation Kit ($waik_dir, $arch)"
 
-		if [ -f "$waik_dir"/WAIK${arch}.msi ]; then
+		if [ -f "$waik_dir"/wAIK${arch}.msi ]; then
 			if [ $make = iso ]; then
 				cabextract "$waik_dir"/wAIK${arch}.msi -F F_WINPE_${arch}_etfsboot.com -p \
 						> "$tmp_dir"/etfsboot.com || stat_fail
@@ -367,7 +368,7 @@ get_boot_wim() {
 						> "$boot_wim" 2>/dev/null || stat_fail
 			# WAIK supplement has different layout
 			else
-				stat_busy "Copying boot.wim from ${arch,,}/winpe.wim"
+				stat_busy "Copying boot.wim from \"${waik_dir}/${arch,,}/winpe.wim\""
 				cp "$waik_dir"/${arch,,}/winpe.wim "$boot_wim" || stat_fail
 				chmod +w "$boot_wim"
 			fi

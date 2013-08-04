@@ -7,7 +7,8 @@ mkwinpeimg \- Make a customized bootable image of Windows PE
 .SH DESCRIPTION
 \fBmkwinpeimg\fR is able to make a bootable image of Windows PE by taking files
 from a mounted Windows DVD (Windows Vista, Windows 7 or Windows 8) or the
-mounted ISO image for the Windows Automated Installation Kit (WAIK).  The
+mounted ISO image for the Windows Automated Installation Kit (WAIK) or the WAIK
+supplement.  The
 \fB--windows-dir\fR and \fB--waik-dir\fR options are used to specify the
 locations of these mounted ISOs.  You only need one or the other.  The files
 that \fBmkwinpeimg\fR will retrieve are \fIboot.wim\fR, \fIbootmgr\fR,
@@ -59,14 +60,16 @@ Use DIR as the location of the mounted Windows 7 or Windows 8 DVD.  Default is
 \fB\-A\fR, \fB\-\-waik\-dir\fR=\fIDIR\fR
 Get the boot files and boot.wim from the ISO of the Windows Automated
 Installation Kit mounted on DIR instead of from the Windows 7 or Windows 8 DVD.
+This also works if the mounted ISO is for the WAIK supplement rather than the
+WAIK itself.
 .TP
 \fB\-s\fR, \fB\-\-start\-script\fR=\fIFILE\fR
 Add FILE to the root directory of Windows PE image and adjust
 \eWindows\eSystem32\ewinpeshl.ini to execute FILE when Windows PE starts up.
 .TP
 \fB\-w\fR, \fB\-\-wim\fR=\fIWIM\fR
-Use WIM as the "boot.wim" file.  Defaults to "sources/boot.wim" in the Windows DVD
-directory, or F1_WINPE.WIM from the WAIK if \fB\-\-waik\-dir\fR is specified.
+Use WIM as the "boot.wim" file.  This defaults to the appropriate WIM file from
+the Windows DVD, WAIK, or WAIK supplement.
 .TP
 \fB\-O\fR, \fB\-\-overlay\fR=\fIDIR\fR
 Adds all the files in DIR to the Windows PE image.
@@ -75,11 +78,11 @@ Adds all the files in DIR to the Windows PE image.
 Use DIR for temporary files.  Defaults to a directory made using "mktemp -d".
 .TP
 \fB\-a\fR, \fB\-\-arch\fR=\fIARCH\fR
-Use the Windows PE version from the Windows Automated Installation Kit that has
-the CPU architecture \fIARCH\fR.  Only valid with \fB\-\-waik\-dir\fR.  Possible
-values: "x86" or "amd64".  Default is "x86".  Note: the WAIK also contains a
-Windows PE image for the ia64 (Itanium) architecture; however, this is not
-supported by this script.
+Use the Windows PE version from the Windows Automated Installation Kit (or the
+WAIK supplement) that has the CPU architecture \fIARCH\fR.  Only valid with
+\fB\-\-waik\-dir\fR.  Possible values: "x86" or "amd64".  Default is "x86".
+Note: the WAIK also contains a Windows PE image for the ia64 (Itanium)
+architecture; however, this is not supported by this script.
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Display help.
@@ -94,8 +97,9 @@ installation media mounted on /media/windows:
 mkwinpeimg --windows-dir=/media/windows winpe.img
 .RE
 .PP
-Create a bootable ISO of Windows PE from the WAIK mounted on /media/waik, and
-add all the files in "winpe_overlay" to Windows PE's filesystem:
+Create a bootable ISO of Windows PE from the WAIK (or WAIK supplement) mounted
+on /media/waik, and add all the files in "winpe_overlay" to Windows PE's
+filesystem:
 .RS
 .PP
 mkwinpeimg --iso --waik-dir=/media/waik --overlay=winpe_overlay winpe.iso
