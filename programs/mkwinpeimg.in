@@ -314,18 +314,29 @@ EOF
 get_primary_boot_files() {
 	if [ -n "$waik_dir" ]; then
 		# Get boot files from the WAIK.
-
 		stat_busy "Copying primary boot files from the Windows Automated Installation Kit ($waik_dir, $arch)"
-		if [ $make = iso ]; then
-			cabextract "$waik_dir"/wAIK${arch}.msi -F F_WINPE_${arch}_etfsboot.com -p \
-					> "$tmp_dir"/etfsboot.com || stat_fail
+
+		if [ -f "$waik_dir"/WAIK${arch}.msi ]; then
+			if [ $make = iso ]; then
+				cabextract "$waik_dir"/wAIK${arch}.msi -F F_WINPE_${arch}_etfsboot.com -p \
+						> "$tmp_dir"/etfsboot.com || stat_fail
+			fi
+			cabextract "$waik_dir"/wAIK${arch}.msi -F F${arch_id}_BOOTMGR -p \
+					> "$tmp_dir"/bootmgr || stat_fail
+			cabextract "$waik_dir"/wAIK${arch}.msi -F F_WINPE_${arch}_boot.sdi -p \
+					> "$tmp_dir"/boot/boot.sdi || stat_fail
+			cabextract "$waik_dir"/wAIK${arch}.msi -F F_WINPE_${arch}_bcd -p \
+					> "$tmp_dir"/boot/bcd || stat_fail
+		# The WAIK supplement disc has a different structure
+		else
+			# Note: fuseiso, mount default to map=normal i.e. lowercase
+			if [ $make = iso ]; then
+				cp "$waik_dir"/${arch,,}/boot/etfsboot.com $tmp_dir/etfsboot.com || stat_fail
+			fi
+			cp "$waik_dir"/${arch,,}/bootmgr $tmp_dir/bootmgr || stat_fail
+			cp "$waik_dir"/${arch,,}/boot/boot.sdi $tmp_dir/boot/boot.sdi || stat_fail
+			cp "$waik_dir"/${arch,,}/boot/bcd $tmp_dir/boot/bcd || stat_fail
 		fi
-		cabextract "$waik_dir"/wAIK${arch}.msi -F F${arch_id}_BOOTMGR -p \
-				> "$tmp_dir"/bootmgr || stat_fail
-		cabextract "$waik_dir"/wAIK${arch}.msi -F F_WINPE_${arch}_boot.sdi -p \
-				> "$tmp_dir"/boot/boot.sdi || stat_fail
-		cabextract "$waik_dir"/wAIK${arch}.msi -F F_WINPE_${arch}_bcd -p \
-				> "$tmp_dir"/boot/bcd || stat_fail
 		stat_done
 	else
 		# Get boot files from the Windows ISO
@@ -350,9 +361,16 @@ get_boot_wim() {
 		# WIM file unspecified- grab it from the WAIK or the Windows DVD
 		if [ -n "$waik_dir" ]; then
 			# WAIK
-			stat_busy "Extracting boot.wim from \"$waik_dir/WinPE.cab\""
-			cabextract "$waik_dir/WinPE.cab" -F F${arch_id}_WINPE.WIM -p \
-					> "$boot_wim" 2>/dev/null || stat_fail
+			if [ -f "$waik_dir/WinPE.cab" ]; then
+				stat_busy "Extracting boot.wim from \"$waik_dir/WinPE.cab\""
+				cabextract "$waik_dir/WinPE.cab" -F F${arch_id}_WINPE.WIM -p \
+						> "$boot_wim" 2>/dev/null || stat_fail
+			# WAIK supplement has different layout
+			else
+				stat_busy "Copying boot.wim from ${arch,,}/winpe.wim"
+				cp "$waik_dir"/${arch,,}/winpe.wim "$boot_wim" || stat_fail
+				chmod +w "$boot_wim"
+			fi
 			stat_done
 		else
 			# Windows DVD
