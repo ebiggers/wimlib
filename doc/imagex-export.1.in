@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-export \- Exports an image from a WIM archive to an existing or new WIM archive
 .SH SYNOPSIS
@@ -29,6 +29,10 @@ image being exported to \fIDEST_WIMFILE\fR.  The default is its description in
 from split WIMs.  However, you cannot export an image to a split WIM.  See
 \fBSPLIT WIMS\fR.
 .PP
+\fB@IMAGEX_PROGNAME@ export\fR also supports exporting images from a non-pipable
+WIM into a (possibly new) pipable WIM, and vice versa.  See \fB--pipable\fR and
+\fB--not-pipable\fR.
+.PP
 .SH OPTIONS
 .TP 6
 \fB--boot\fR
@@ -43,9 +47,17 @@ error.
 \fB--check\fR
 When reading \fISRC_WIMFILE\fR, and \fIDEST_WIMFILE\fR if it exists, verify the
 file's integrity if the integrity table is present; additionally, when writing
-\fIDEST_WIMFILE\fR with the new image added, write an integrity table.  If this
-option is not specified, no integrity table is included in \fIDEST_WIMFILE\fR,
-even if there was one before.
+\fIDEST_WIMFILE\fR with the new image(s) added, write an integrity table.
+If neither \fB--check\fR nor \fB--nocheck\fR is specified, an integrity
+table is included in \fIDEST_WIMFILE\fR if and only if \fIDEST_WIMFILE\fR
+already existed and it had an integrity table before.
+.TP
+\fB--nocheck\fR
+When writing \fIDEST_WIMFILE\fR with the new image(s) added, do not write an
+integrity table.
+If neither \fB--check\fR nor \fB--nocheck\fR is specified, an integrity
+table is included in \fIDEST_WIMFILE\fR if and only if \fIDEST_WIMFILE\fR
+already existed and it had an integrity table before.
 .TP
 \fB--compress\fR=\fITYPE\fR
 Specifies the compression type for \fIDEST_WIMFILE\fR.  This is only valid if
@@ -74,6 +86,18 @@ little bit of space that would otherwise be left as a hole in the WIM.  Also see
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional split WIM parts that are part of the split WIM being
 exported.  See \fBSPLIT_WIMS\fR.
+.TP
+\fB--pipable\fR
+Build, or rebuild, \fIDEST_WIMFILE\fR as a "pipable WIM" so that it can be
+applied fully sequentially, including from a pipe.  See \fB@IMAGEX_PROGNAME@
+capture\fR(1) for more details about creating pipable WIMs.  The default without
+this option is to make \fIDEST_WIMFILE\fR pipable if and only if it already
+existed and was already pipable.
+.TP
+\fB--not-pipable\fR
+Build, or rebuld, \fIDEST_WIMFILE\fR as a normal, non-pipable WIM.  This is the
+default behavior, unless \fIDEST_WIMFILE\fR already existed and was already
+pipable.
 .SH SPLIT WIMS
 You may use \fB@IMAGEX_PROGNAME@ export\fR to export images from a split WIM.  The
 \fISRC_WIMFILE\fR argument is used to specify the first part of the split WIM, and

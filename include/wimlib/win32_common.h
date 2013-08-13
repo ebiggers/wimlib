@@ -30,7 +30,8 @@ extern int
 win32_error_to_errno(DWORD err_code);
 
 extern int
-win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret);
+win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret,
+		    bool *supports_SetFileShortName_ret);
 
 extern HANDLE
 win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess);

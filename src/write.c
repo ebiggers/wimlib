@@ -57,13 +57,6 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#ifdef WITH_NTFS_3G
-#  include <time.h>
-#  include <ntfs-3g/attrib.h>
-#  include <ntfs-3g/inode.h>
-#  include <ntfs-3g/dir.h>
-#endif
-
 #ifdef HAVE_ALLOCA_H
 #  include <alloca.h>
 #else
@@ -80,7 +73,6 @@
  * the WIM.  (This is not the on-disk format; the on-disk format just has an
  * array of offsets.) */
 struct chunk_table {
-	off_t file_offset;
 	u64 original_resource_size;
 	u64 num_chunks;
 	u64 table_disk_size;
@@ -96,30 +88,32 @@ struct chunk_table {
 	u8 offsets[] _aligned_attribute(8);
 };
 
-/*
- * Allocates and initializes a chunk table, and reserves space for it in the
- * output file.
- */
+/* Allocate and initializes a chunk table, then reserve space for it in the
+ * output file unless writing a pipable resource.  */
 static int
 begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
-			     int out_fd,
-			     off_t file_offset,
-			     struct chunk_table **chunk_tab_ret)
+			     struct filedes *out_fd,
+			     struct chunk_table **chunk_tab_ret,
+			     int resource_flags)
 {
-	u64 size = wim_resource_size(lte);
-	u64 num_chunks = wim_resource_chunks(lte);
-	unsigned bytes_per_chunk_entry = (size > (1ULL << 32)) ? 8 : 4;
-	size_t alloc_size = sizeof(struct chunk_table) + num_chunks * sizeof(u64);
-	struct chunk_table *chunk_tab = CALLOC(1, alloc_size);
+	u64 size;
+	u64 num_chunks;
+	unsigned bytes_per_chunk_entry;
+	size_t alloc_size;
+	struct chunk_table *chunk_tab;
+	int ret;
 
-	DEBUG("Beginning chunk table for stream with size %"PRIu64, size);
+	size = wim_resource_size(lte);
+	num_chunks = wim_resource_chunks(lte);
+	bytes_per_chunk_entry = (size > (1ULL << 32)) ? 8 : 4;
+	alloc_size = sizeof(struct chunk_table) + num_chunks * sizeof(u64);
+	chunk_tab = CALLOC(1, alloc_size);
 
 	if (!chunk_tab) {
 		ERROR("Failed to allocate chunk table for %"PRIu64" byte "
 		      "resource", size);
 		return WIMLIB_ERR_NOMEM;
 	}
-	chunk_tab->file_offset = file_offset;
 	chunk_tab->num_chunks = num_chunks;
 	chunk_tab->original_resource_size = size;
 	chunk_tab->bytes_per_chunk_entry = bytes_per_chunk_entry;
@@ -127,16 +121,23 @@ begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 				     (num_chunks - 1);
 	chunk_tab->cur_offset_p = chunk_tab->offsets;
 
-	/* We don't know the correct offsets yet; this just writes zeroes to
+	/* We don't know the correct offsets yet; so just write zeroes to
 	 * reserve space for the table, so we can go back to it later after
-	 * we've written the compressed chunks following it. */
-	if (full_write(out_fd, chunk_tab->offsets,
-		       chunk_tab->table_disk_size) != chunk_tab->table_disk_size)
-	{
-		ERROR_WITH_ERRNO("Failed to write chunk table in compressed "
-				 "file resource");
-		FREE(chunk_tab);
-		return WIMLIB_ERR_WRITE;
+	 * we've written the compressed chunks following it.
+	 *
+	 * Special case: if writing a pipable WIM, compressed resources are in a
+	 * modified format (see comment above write_pipable_wim()) and do not
+	 * have a chunk table at the beginning, so don't reserve any space for
+	 * one.  */
+	if (!(resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE)) {
+		ret = full_write(out_fd, chunk_tab->offsets,
+				 chunk_tab->table_disk_size);
+		if (ret) {
+			ERROR_WITH_ERRNO("Failed to write chunk table in compressed "
+					 "file resource");
+			FREE(chunk_tab);
+			return ret;
+		}
 	}
 	*chunk_tab_ret = chunk_tab;
 	return 0;
@@ -193,100 +194,81 @@ get_compress_func(int out_ctype)
 		return wimlib_xpress_compress;
 }
 
-/*
- * Writes a chunk of a WIM resource to an output file.
- *
- * @chunk:	  Uncompressed data of the chunk.
- * @chunk_size:	  Size of the chunk (<= WIM_CHUNK_SIZE)
- * @out_fd:	  File descriptor to write the chunk to.
- * @compress:     Compression function to use (NULL if writing uncompressed
- *			data).
- * @chunk_tab:	  Pointer to chunk table being created.  It is updated with the
- * 			offset of the chunk we write.
- *
- * Returns 0 on success; nonzero on failure.
- */
-static int
-write_wim_resource_chunk(const void * restrict chunk,
-			 unsigned chunk_size,
-			 int out_fd,
-			 compress_func_t compress,
-			 struct chunk_table * restrict chunk_tab)
-{
-	const void *out_chunk;
-	unsigned out_chunk_size;
-	if (compress) {
-		void *compressed_chunk = alloca(chunk_size);
-
-		out_chunk_size = (*compress)(chunk, chunk_size, compressed_chunk);
-		if (out_chunk_size) {
-			/* Write compressed */
-			out_chunk = compressed_chunk;
-		} else {
-			/* Write uncompressed */
-			out_chunk = chunk;
-			out_chunk_size = chunk_size;
-		}
-		chunk_tab_record_chunk(chunk_tab, out_chunk_size);
-	} else {
-		/* Write uncompressed */
-		out_chunk = chunk;
-		out_chunk_size = chunk_size;
-	}
-	if (full_write(out_fd, out_chunk, out_chunk_size) != out_chunk_size) {
-		ERROR_WITH_ERRNO("Failed to write WIM resource chunk");
-		return WIMLIB_ERR_WRITE;
-	}
-	return 0;
-}
-
-/*
- * Finishes a WIM chunk table and writes it to the output file at the correct
- * offset.
- *
- * The final size of the full compressed resource is returned in the
- * @compressed_size_p.
- */
+/* Finishes a WIM chunk table and writes it to the output file at the correct
+ * offset.  */
 static int
 finish_wim_resource_chunk_tab(struct chunk_table *chunk_tab,
-			      int out_fd, u64 *compressed_size_p)
+			      struct filedes *out_fd,
+			      off_t res_start_offset,
+			      int write_resource_flags)
 {
-	size_t bytes_written;
+	int ret;
 
-	bytes_written = full_pwrite(out_fd,
-				    chunk_tab->offsets + chunk_tab->bytes_per_chunk_entry,
-				    chunk_tab->table_disk_size,
-				    chunk_tab->file_offset);
-	if (bytes_written != chunk_tab->table_disk_size) {
+	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
+		ret = full_write(out_fd,
+				 chunk_tab->offsets +
+					 chunk_tab->bytes_per_chunk_entry,
+				 chunk_tab->table_disk_size);
+	} else {
+		ret  = full_pwrite(out_fd,
+				   chunk_tab->offsets +
+					   chunk_tab->bytes_per_chunk_entry,
+				   chunk_tab->table_disk_size,
+				   res_start_offset);
+	}
+	if (ret) {
 		ERROR_WITH_ERRNO("Failed to write chunk table in compressed "
 				 "file resource");
-		return WIMLIB_ERR_WRITE;
 	}
-	if (chunk_tab->bytes_per_chunk_entry == 4)
-		*compressed_size_p = chunk_tab->cur_offset_u32 + chunk_tab->table_disk_size;
-	else
-		*compressed_size_p = chunk_tab->cur_offset_u64 + chunk_tab->table_disk_size;
-	return 0;
+	return ret;
+}
+
+/* Write the header for a stream in a pipable WIM.
+ */
+static int
+write_pwm_stream_header(const struct wim_lookup_table_entry *lte,
+			struct filedes *out_fd,
+			int additional_reshdr_flags)
+{
+	struct pwm_stream_hdr stream_hdr;
+	u32 reshdr_flags;
+	int ret;
+
+	stream_hdr.magic = PWM_STREAM_MAGIC;
+	stream_hdr.uncompressed_size = cpu_to_le64(lte->resource_entry.original_size);
+	if (additional_reshdr_flags & PWM_RESHDR_FLAG_UNHASHED) {
+		zero_out_hash(stream_hdr.hash);
+	} else {
+		wimlib_assert(!lte->unhashed);
+		copy_hash(stream_hdr.hash, lte->hash);
+	}
+
+	reshdr_flags = lte->resource_entry.flags & ~WIM_RESHDR_FLAG_COMPRESSED;
+	reshdr_flags |= additional_reshdr_flags;
+	stream_hdr.flags = cpu_to_le32(reshdr_flags);
+	ret = full_write(out_fd, &stream_hdr, sizeof(stream_hdr));
+	if (ret)
+		ERROR_WITH_ERRNO("Error writing stream header");
+	return ret;
 }
 
 static int
-seek_and_truncate(int out_fd, off_t offset)
+seek_and_truncate(struct filedes *out_fd, off_t offset)
 {
-	if (lseek(out_fd, offset, SEEK_SET) == -1 ||
-	    ftruncate(out_fd, offset))
+	if (filedes_seek(out_fd, offset) == -1 ||
+	    ftruncate(out_fd->fd, offset))
 	{
 		ERROR_WITH_ERRNO("Failed to truncate output WIM file");
 		return WIMLIB_ERR_WRITE;
-	} else {
-		return 0;
 	}
+	return 0;
 }
 
 static int
-finalize_and_check_sha1(SHA_CTX * restrict sha_ctx,
-			struct wim_lookup_table_entry * restrict lte)
+finalize_and_check_sha1(SHA_CTX *sha_ctx, struct wim_lookup_table_entry *lte)
 {
 	u8 md[SHA1_HASH_SIZE];
+
 	sha1_final(md, sha_ctx);
 	if (lte->unhashed) {
 		copy_hash(lte->hash, md);
@@ -302,45 +284,99 @@ finalize_and_check_sha1(SHA_CTX * restrict sha_ctx,
 	return 0;
 }
 
-
 struct write_resource_ctx {
 	compress_func_t compress;
 	struct chunk_table *chunk_tab;
-	int out_fd;
+	struct filedes *out_fd;
 	SHA_CTX sha_ctx;
 	bool doing_sha;
+	int resource_flags;
 };
 
 static int
-write_resource_cb(const void *restrict chunk, size_t chunk_size,
-		  void *restrict _ctx)
+write_resource_cb(const void *chunk, size_t chunk_size, void *_ctx)
 {
 	struct write_resource_ctx *ctx = _ctx;
+	const void *out_chunk;
+	unsigned out_chunk_size;
+	int ret;
 
 	if (ctx->doing_sha)
 		sha1_update(&ctx->sha_ctx, chunk, chunk_size);
-	return write_wim_resource_chunk(chunk, chunk_size,
-					ctx->out_fd, ctx->compress,
-					ctx->chunk_tab);
+
+	out_chunk = chunk;
+	out_chunk_size = chunk_size;
+	if (ctx->compress) {
+		void *compressed_chunk;
+		unsigned compressed_size;
+
+		/* Compress the chunk.  */
+		compressed_chunk = alloca(chunk_size);
+		compressed_size = (*ctx->compress)(chunk, chunk_size,
+						   compressed_chunk);
+
+		/* Use compressed data if compression to less than input size
+		 * was successful.  */
+		if (compressed_size) {
+			out_chunk = compressed_chunk;
+			out_chunk_size = compressed_size;
+		}
+	}
+
+	if (ctx->chunk_tab) {
+		/* Update chunk table accounting.  */
+		chunk_tab_record_chunk(ctx->chunk_tab, out_chunk_size);
+
+		/* If writing compressed chunks to a pipable WIM, before the
+		 * chunk data write a chunk header that provides the compressed
+		 * chunk size.  */
+		if (ctx->resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
+			struct pwm_chunk_hdr chunk_hdr = {
+				.compressed_size = cpu_to_le32(out_chunk_size),
+			};
+			ret = full_write(ctx->out_fd, &chunk_hdr,
+					 sizeof(chunk_hdr));
+			if (ret)
+				goto error;
+		}
+	}
+
+	/* Write the chunk data.  */
+	ret = full_write(ctx->out_fd, out_chunk, out_chunk_size);
+	if (ret)
+		goto error;
+	return 0;
+
+error:
+	ERROR_WITH_ERRNO("Failed to write WIM resource chunk");
+	return ret;
 }
 
 /*
+ * write_wim_resource()-
+ *
  * Write a resource to an output WIM.
  *
- * @lte:  Lookup table entry for the resource, which could be in another WIM,
- *        in an external file, or in another location.
+ * @lte:
+ *	Lookup table entry for the resource, which could be in another WIM, in
+ *	an external file, or in another location.
  *
- * @out_fd:  File descriptor opened to the output WIM.
+ * @out_fd:
+ *	File descriptor opened to the output WIM.
  *
- * @out_ctype:  One of the WIMLIB_COMPRESSION_TYPE_* constants to indicate
- *              which compression algorithm to use.
+ * @out_ctype:
+ *	One of the WIMLIB_COMPRESSION_TYPE_* constants to indicate which
+ *	compression algorithm to use.
  *
- * @out_res_entry:  On success, this is filled in with the offset, flags,
- *                  compressed size, and uncompressed size of the resource
- *                  in the output WIM.
+ * @out_res_entry:
+ *	On success, this is filled in with the offset, flags, compressed size,
+ *	and uncompressed size of the resource in the output WIM.
  *
- * @flags:  WIMLIB_RESOURCE_FLAG_RECOMPRESS to force data to be recompressed
- *          even if it could otherwise be copied directly from the input.
+ * @write_resource_flags:
+ *	* WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS to force data to be recompressed even
+ *	  if it could otherwise be copied directly from the input;
+ *	* WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE if writing a resource for a pipable WIM
+ *	  (and the output file descriptor may be a pipe).
  *
  * Additional notes:  The SHA1 message digest of the uncompressed data is
  * calculated (except when doing a raw copy --- see below).  If the @unhashed
@@ -350,36 +386,43 @@ write_resource_cb(const void *restrict chunk, size_t chunk_size,
  */
 int
 write_wim_resource(struct wim_lookup_table_entry *lte,
-		   int out_fd, int out_ctype,
+		   struct filedes *out_fd, int out_ctype,
 		   struct resource_entry *out_res_entry,
-		   int flags)
+		   int resource_flags)
 {
 	struct write_resource_ctx write_ctx;
+	off_t res_start_offset;
 	u64 read_size;
-	u64 new_size;
-	off_t offset;
 	int ret;
 
-	flags &= ~WIMLIB_RESOURCE_FLAG_RECOMPRESS;
+	/* Mask out any irrelevant flags, since this function also uses this
+	 * variable to store WIMLIB_READ_RESOURCE flags.  */
+	resource_flags &= WIMLIB_WRITE_RESOURCE_MASK;
 
-	/* Get current position in output WIM */
-	offset = filedes_offset(out_fd);
-	if (offset == -1) {
-		ERROR_WITH_ERRNO("Can't get position in output WIM");
-		return WIMLIB_ERR_WRITE;
-	}
+	/* Get current position in output WIM.  */
+	res_start_offset = out_fd->offset;
 
 	/* If we are not forcing the data to be recompressed, and the input
 	 * resource is located in a WIM with the same compression type as that
 	 * desired other than no compression, we can simply copy the compressed
 	 * data without recompressing it.  This also means we must skip
-	 * calculating the SHA1, as we never will see the uncompressed data. */
-	if (!(flags & WIMLIB_RESOURCE_FLAG_RECOMPRESS) &&
-	    lte->resource_location == RESOURCE_IN_WIM &&
+	 * calculating the SHA1, as we never will see the uncompressed data.  */
+	if (lte->resource_location == RESOURCE_IN_WIM &&
+	    out_ctype == wim_resource_compression_type(lte) &&
 	    out_ctype != WIMLIB_COMPRESSION_TYPE_NONE &&
-	    lte->wim->compression_type == out_ctype)
+	    !(resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS))
 	{
-		flags |= WIMLIB_RESOURCE_FLAG_RAW;
+		/* Normally we can request a RAW_FULL read, but if we're reading
+		 * from a pipable resource and writing a non-pipable resource or
+		 * vice versa, then a RAW_CHUNKS read needs to be requested so
+		 * that the written resource can be appropriately formatted.
+		 * However, in neither case is any actual decompression needed.
+		 */
+		if (lte->is_pipable == !!(resource_flags &
+					  WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE))
+			resource_flags |= WIMLIB_READ_RESOURCE_FLAG_RAW_FULL;
+		else
+			resource_flags |= WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS;
 		write_ctx.doing_sha = false;
 		read_size = lte->resource_entry.size;
 	} else {
@@ -388,27 +431,43 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 		read_size = lte->resource_entry.original_size;
 	}
 
-	/* Initialize the chunk table and set the compression function if
-	 * compressing the resource. */
-	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE ||
-	    (flags & WIMLIB_RESOURCE_FLAG_RAW)) {
-		write_ctx.compress = NULL;
-		write_ctx.chunk_tab = NULL;
-	} else {
-		write_ctx.compress = get_compress_func(out_ctype);
-		ret = begin_wim_resource_chunk_tab(lte, out_fd,
-						   offset,
-						   &write_ctx.chunk_tab);
+	/* If the output resource is to be compressed, initialize the chunk
+	 * table and set the function to use for chunk compression.  Exceptions:
+	 * no compression function is needed if doing a raw copy; also, no chunk
+	 * table is needed if doing a *full* (not per-chunk) raw copy.  */
+	write_ctx.compress = NULL;
+	write_ctx.chunk_tab = NULL;
+	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
+		if (!(resource_flags & WIMLIB_READ_RESOURCE_FLAG_RAW))
+			write_ctx.compress = get_compress_func(out_ctype);
+		if (!(resource_flags & WIMLIB_READ_RESOURCE_FLAG_RAW_FULL)) {
+			ret = begin_wim_resource_chunk_tab(lte, out_fd,
+							   &write_ctx.chunk_tab,
+							   resource_flags);
+			if (ret)
+				goto out;
+		}
+	}
+
+	/* If writing a pipable resource, write the stream header and update
+	 * @res_start_offset to be the end of the stream header.  */
+	if (resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
+		int reshdr_flags = 0;
+		if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE)
+			reshdr_flags |= WIM_RESHDR_FLAG_COMPRESSED;
+		ret = write_pwm_stream_header(lte, out_fd, reshdr_flags);
 		if (ret)
-			return ret;
+			goto out_free_chunk_tab;
+		res_start_offset = out_fd->offset;
 	}
 
 	/* Write the entire resource by reading the entire resource and feeding
 	 * the data through the write_resource_cb function. */
 	write_ctx.out_fd = out_fd;
+	write_ctx.resource_flags = resource_flags;
 try_write_again:
 	ret = read_resource_prefix(lte, read_size,
-				   write_resource_cb, &write_ctx, flags);
+				   write_resource_cb, &write_ctx, resource_flags);
 	if (ret)
 		goto out_free_chunk_tab;
 
@@ -420,48 +479,106 @@ try_write_again:
 			goto out_free_chunk_tab;
 	}
 
-	out_res_entry->flags = lte->resource_entry.flags;
-	out_res_entry->original_size = wim_resource_size(lte);
-	out_res_entry->offset = offset;
-	if (flags & WIMLIB_RESOURCE_FLAG_RAW) {
-		/* Doing a raw write:  The new compressed size is the same as
-		 * the compressed size in the other WIM. */
-		new_size = lte->resource_entry.size;
-	} else if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE) {
-		/* Using WIMLIB_COMPRESSION_TYPE_NONE:  The new compressed size
-		 * is the original size. */
-		new_size = lte->resource_entry.original_size;
-		out_res_entry->flags &= ~WIM_RESHDR_FLAG_COMPRESSED;
-	} else {
-		/* Using a different compression type:  Call
-		 * finish_wim_resource_chunk_tab() and it will provide the new
-		 * compressed size. */
-		ret = finish_wim_resource_chunk_tab(write_ctx.chunk_tab, out_fd,
-						    &new_size);
+	/* Write chunk table if needed.  */
+	if (write_ctx.chunk_tab) {
+		ret = finish_wim_resource_chunk_tab(write_ctx.chunk_tab,
+						    out_fd,
+						    res_start_offset,
+						    resource_flags);
 		if (ret)
 			goto out_free_chunk_tab;
-		if (new_size >= wim_resource_size(lte)) {
-			/* Oops!  We compressed the resource to larger than the original
-			 * size.  Write the resource uncompressed instead. */
-			DEBUG("Compressed %"PRIu64" => %"PRIu64" bytes; "
-			      "writing uncompressed instead",
-			      wim_resource_size(lte), new_size);
-			ret = seek_and_truncate(out_fd, offset);
-			if (ret)
-				goto out_free_chunk_tab;
-			write_ctx.compress = NULL;
-			write_ctx.doing_sha = false;
-			out_ctype = WIMLIB_COMPRESSION_TYPE_NONE;
-			goto try_write_again;
-		}
-		out_res_entry->flags |= WIM_RESHDR_FLAG_COMPRESSED;
 	}
-	out_res_entry->size = new_size;
+
+	/* Fill in out_res_entry with information about the newly written
+	 * resource.  */
+	out_res_entry->size          = out_fd->offset - res_start_offset;
+	out_res_entry->flags         = lte->resource_entry.flags;
+	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
+		out_res_entry->flags &= ~WIM_RESHDR_FLAG_COMPRESSED;
+	else
+		out_res_entry->flags |= WIM_RESHDR_FLAG_COMPRESSED;
+	out_res_entry->offset        = res_start_offset;
+	out_res_entry->original_size = wim_resource_size(lte);
+
+	/* Check for resources compressed to greater than their original size
+	 * and write them uncompressed instead.  (But never do this if writing
+	 * to a pipe, and don't bother if we did a raw copy.)  */
+	if (out_res_entry->size > out_res_entry->original_size &&
+	    !(resource_flags & (WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE |
+				WIMLIB_READ_RESOURCE_FLAG_RAW)))
+	{
+		DEBUG("Compressed %"PRIu64" => %"PRIu64" bytes; "
+		      "writing uncompressed instead",
+		      out_res_entry->original_size, out_res_entry->size);
+		ret = seek_and_truncate(out_fd, res_start_offset);
+		if (ret)
+			goto out_free_chunk_tab;
+		out_ctype = WIMLIB_COMPRESSION_TYPE_NONE;
+		FREE(write_ctx.chunk_tab);
+		write_ctx.compress = NULL;
+		write_ctx.chunk_tab = NULL;
+		write_ctx.doing_sha = false;
+		goto try_write_again;
+	}
+	if (resource_flags & (WIMLIB_READ_RESOURCE_FLAG_RAW)) {
+		DEBUG("Copied raw compressed data "
+		      "(%"PRIu64" => %"PRIu64" bytes @ +%"PRIu64", flags=0x%02x)",
+		      out_res_entry->original_size, out_res_entry->size,
+		      out_res_entry->offset, out_res_entry->flags);
+	} else if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
+		DEBUG("Wrote compressed resource "
+		      "(%"PRIu64" => %"PRIu64" bytes @ +%"PRIu64", flags=0x%02x)",
+		      out_res_entry->original_size, out_res_entry->size,
+		      out_res_entry->offset, out_res_entry->flags);
+	} else {
+		DEBUG("Wrote uncompressed resource "
+		      "(%"PRIu64" bytes @ +%"PRIu64", flags=0x%02x)",
+		      out_res_entry->original_size,
+		      out_res_entry->offset, out_res_entry->flags);
+	}
 	ret = 0;
 out_free_chunk_tab:
 	FREE(write_ctx.chunk_tab);
+out:
 	return ret;
 }
+
+/* Like write_wim_resource(), but the resource is specified by a buffer of
+ * uncompressed data rather a lookup table entry; also writes the SHA1 hash of
+ * the buffer to @hash_ret.  */
+int
+write_wim_resource_from_buffer(const void *buf, size_t buf_size,
+			       int reshdr_flags, struct filedes *out_fd,
+			       int out_ctype,
+			       struct resource_entry *out_res_entry,
+			       u8 *hash_ret, int write_resource_flags)
+{
+	/* Set up a temporary lookup table entry to provide to
+	 * write_wim_resource(). */
+	struct wim_lookup_table_entry lte;
+	int ret;
+
+	lte.resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
+	lte.attached_buffer              = (void*)buf;
+	lte.resource_entry.original_size = buf_size;
+	lte.resource_entry.flags         = reshdr_flags;
+
+	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
+		sha1_buffer(buf, buf_size, lte.hash);
+		lte.unhashed = 0;
+	} else {
+		lte.unhashed = 1;
+	}
+
+	ret = write_wim_resource(&lte, out_fd, out_ctype, out_res_entry,
+				 write_resource_flags);
+	if (ret)
+		return ret;
+	if (hash_ret)
+		copy_hash(hash_ret, lte.hash);
+	return 0;
+}
+
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 
@@ -656,7 +773,7 @@ do_write_streams_progress(union wimlib_progress_info *progress,
 }
 
 struct serial_write_stream_ctx {
-	int out_fd;
+	struct filedes *out_fd;
 	int out_ctype;
 	int write_resource_flags;
 };
@@ -755,7 +872,7 @@ do_write_stream_list(struct list_head *stream_list,
 static int
 do_write_stream_list_serial(struct list_head *stream_list,
 			    struct wim_lookup_table *lookup_table,
-			    int out_fd,
+			    struct filedes *out_fd,
 			    int out_ctype,
 			    int write_resource_flags,
 			    wimlib_progress_func_t progress_func,
@@ -780,20 +897,23 @@ write_flags_to_resource_flags(int write_flags)
 	int resource_flags = 0;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
-		resource_flags |= WIMLIB_RESOURCE_FLAG_RECOMPRESS;
+		resource_flags |= WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS;
+	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
+		resource_flags |= WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE;
 	return resource_flags;
 }
 
 static int
 write_stream_list_serial(struct list_head *stream_list,
 			 struct wim_lookup_table *lookup_table,
-			 int out_fd,
+			 struct filedes *out_fd,
 			 int out_ctype,
 			 int write_resource_flags,
 			 wimlib_progress_func_t progress_func,
 			 union wimlib_progress_info *progress)
 {
-	DEBUG("Writing stream list (serial version)");
+	DEBUG("Writing stream list of size %"PRIu64" (serial version)",
+	      progress->write_streams.total_streams);
 	progress->write_streams.num_threads = 1;
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS, progress);
@@ -808,24 +928,51 @@ write_stream_list_serial(struct list_head *stream_list,
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 static int
-write_wim_chunks(struct message *msg, int out_fd,
-		 struct chunk_table *chunk_tab)
+write_wim_chunks(struct message *msg, struct filedes *out_fd,
+		 struct chunk_table *chunk_tab,
+		 int write_resource_flags)
 {
+	struct iovec *vecs;
+	struct pwm_chunk_hdr *chunk_hdrs;
+	unsigned nvecs;
+	size_t nbytes;
+	int ret;
+
 	for (unsigned i = 0; i < msg->num_chunks; i++)
 		chunk_tab_record_chunk(chunk_tab, msg->out_chunks[i].iov_len);
-	if (full_writev(out_fd, msg->out_chunks,
-			msg->num_chunks) != msg->total_out_bytes)
-	{
-		ERROR_WITH_ERRNO("Failed to write WIM chunks");
-		return WIMLIB_ERR_WRITE;
+
+	if (!(write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE)) {
+		nvecs = msg->num_chunks;
+		vecs = msg->out_chunks;
+		nbytes = msg->total_out_bytes;
+	} else {
+		/* Special case:  If writing a compressed resource to a pipable
+		 * WIM, prefix each compressed chunk with a header that gives
+		 * its compressed size.  */
+		nvecs = msg->num_chunks * 2;
+		vecs = alloca(nvecs * sizeof(vecs[0]));
+		chunk_hdrs = alloca(msg->num_chunks * sizeof(chunk_hdrs[0]));
+
+		for (unsigned i = 0; i < msg->num_chunks; i++) {
+			chunk_hdrs[i].compressed_size = cpu_to_le32(msg->out_chunks[i].iov_len);
+			vecs[i * 2].iov_base = &chunk_hdrs[i];
+			vecs[i * 2].iov_len = sizeof(chunk_hdrs[i]);
+			vecs[i * 2 + 1].iov_base = msg->out_chunks[i].iov_base;
+			vecs[i * 2 + 1].iov_len = msg->out_chunks[i].iov_len;
+		}
+		nbytes = msg->total_out_bytes + msg->num_chunks * sizeof(chunk_hdrs[0]);
 	}
-	return 0;
+	ret = full_writev(out_fd, vecs, nvecs);
+	if (ret)
+		ERROR_WITH_ERRNO("Failed to write WIM chunks");
+	return ret;
 }
 
 struct main_writer_thread_ctx {
 	struct list_head *stream_list;
 	struct wim_lookup_table *lookup_table;
-	int out_fd;
+	struct filedes *out_fd;
+	off_t res_start_offset;
 	int out_ctype;
 	int write_resource_flags;
 	struct shared_queue *res_to_compress_queue;
@@ -979,21 +1126,35 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 	{
 		list_move(&msg->list, &ctx->available_msgs);
 		if (msg->begin_chunk == 0) {
-			/* This is the first set of chunks.  Leave space
-			 * for the chunk table in the output file. */
-			off_t cur_offset = filedes_offset(ctx->out_fd);
-			if (cur_offset == -1)
-				return WIMLIB_ERR_WRITE;
+			/* First set of chunks.  */
+
+			/* Write pipable WIM stream header if needed.  */
+			if (ctx->write_resource_flags &
+			    WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE)
+			{
+				ret = write_pwm_stream_header(cur_lte, ctx->out_fd,
+							      WIM_RESHDR_FLAG_COMPRESSED);
+				if (ret)
+					return ret;
+			}
+
+			/* Save current offset.  */
+			ctx->res_start_offset = ctx->out_fd->offset;
+
+			/* Begin building the chunk table, and leave space for
+			 * it if needed.  */
 			ret = begin_wim_resource_chunk_tab(cur_lte,
 							   ctx->out_fd,
-							   cur_offset,
-							   &ctx->cur_chunk_tab);
+							   &ctx->cur_chunk_tab,
+							   ctx->write_resource_flags);
 			if (ret)
 				return ret;
+
 		}
 
 		/* Write the compressed chunks from the message. */
-		ret = write_wim_chunks(msg, ctx->out_fd, ctx->cur_chunk_tab);
+		ret = write_wim_chunks(msg, ctx->out_fd, ctx->cur_chunk_tab,
+				       ctx->write_resource_flags);
 		if (ret)
 			return ret;
 
@@ -1003,31 +1164,32 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 		    msg->begin_chunk + msg->num_chunks == ctx->cur_chunk_tab->num_chunks)
 		{
 			u64 res_csize;
-			off_t offset;
 
 			ret = finish_wim_resource_chunk_tab(ctx->cur_chunk_tab,
 							    ctx->out_fd,
-							    &res_csize);
+							    ctx->res_start_offset,
+							    ctx->write_resource_flags);
 			if (ret)
 				return ret;
 
 			list_del(&cur_lte->being_compressed_list);
 
-			/* Grab the offset of this stream in the output file
-			 * from the chunk table before we free it. */
-			offset = ctx->cur_chunk_tab->file_offset;
+			res_csize = ctx->out_fd->offset - ctx->res_start_offset;
 
 			FREE(ctx->cur_chunk_tab);
 			ctx->cur_chunk_tab = NULL;
 
-			if (res_csize >= wim_resource_size(cur_lte)) {
-				/* Oops!  We compressed the resource to
-				 * larger than the original size.  Write
-				 * the resource uncompressed instead. */
+			/* Check for resources compressed to greater than or
+			 * equal to their original size and write them
+			 * uncompressed instead.  (But never do this if writing
+			 * to a pipe.)  */
+			if (res_csize >= wim_resource_size(cur_lte) &&
+			    !(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE))
+			{
 				DEBUG("Compressed %"PRIu64" => %"PRIu64" bytes; "
 				      "writing uncompressed instead",
 				      wim_resource_size(cur_lte), res_csize);
-				ret = seek_and_truncate(ctx->out_fd, offset);
+				ret = seek_and_truncate(ctx->out_fd, ctx->res_start_offset);
 				if (ret)
 					return ret;
 				ret = write_wim_resource(cur_lte,
@@ -1045,11 +1207,18 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 					cur_lte->resource_entry.original_size;
 
 				cur_lte->output_resource_entry.offset =
-					offset;
+					ctx->res_start_offset;
 
 				cur_lte->output_resource_entry.flags =
 					cur_lte->resource_entry.flags |
 						WIM_RESHDR_FLAG_COMPRESSED;
+
+				DEBUG("Wrote compressed resource "
+				      "(%"PRIu64" => %"PRIu64" bytes @ +%"PRIu64", flags=0x%02x)",
+				      cur_lte->output_resource_entry.original_size,
+				      cur_lte->output_resource_entry.size,
+				      cur_lte->output_resource_entry.offset,
+				      cur_lte->output_resource_entry.flags);
 			}
 
 			do_write_streams_progress(ctx->progress,
@@ -1190,11 +1359,10 @@ submit_stream_for_compression(struct wim_lookup_table_entry *lte,
 	list_add_tail(&lte->being_compressed_list, &ctx->outstanding_streams);
 	ret = read_resource_prefix(lte, wim_resource_size(lte),
 				   main_writer_thread_cb, ctx, 0);
-	if (ret == 0) {
-		wimlib_assert(ctx->next_chunk == ctx->next_num_chunks);
-		ret = finalize_and_check_sha1(&ctx->next_sha_ctx, lte);
-	}
-	return ret;
+	if (ret)
+		return ret;
+	wimlib_assert(ctx->next_chunk == ctx->next_num_chunks);
+	return finalize_and_check_sha1(&ctx->next_sha_ctx, lte);
 }
 
 static int
@@ -1206,7 +1374,7 @@ main_thread_process_next_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 	if (wim_resource_size(lte) < 1000 ||
 	    ctx->out_ctype == WIMLIB_COMPRESSION_TYPE_NONE ||
 	    (lte->resource_location == RESOURCE_IN_WIM &&
-	     !(ctx->write_resource_flags & WIMLIB_RESOURCE_FLAG_RECOMPRESS) &&
+	     !(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS) &&
 	     lte->wim->compression_type == ctx->out_ctype))
 	{
 		/* Stream is too small or isn't being compressed.  Process it by
@@ -1262,7 +1430,7 @@ get_default_num_threads(void)
 static int
 write_stream_list_parallel(struct list_head *stream_list,
 			   struct wim_lookup_table *lookup_table,
-			   int out_fd,
+			   struct filedes *out_fd,
 			   int out_ctype,
 			   int write_resource_flags,
 			   wimlib_progress_func_t progress_func,
@@ -1286,8 +1454,9 @@ write_stream_list_parallel(struct list_head *stream_list,
 		}
 	}
 
-	DEBUG("Writing stream list (parallel version, num_threads=%u)",
-	      num_threads);
+	DEBUG("Writing stream list of size %"PRIu64" "
+	      "(parallel version, num_threads=%u)",
+	      progress->write_streams.total_streams, num_threads);
 
 	progress->write_streams.num_threads = num_threads;
 
@@ -1400,7 +1569,7 @@ out_serial_quiet:
 static int
 write_stream_list(struct list_head *stream_list,
 		  struct wim_lookup_table *lookup_table,
-		  int out_fd, int out_ctype, int write_flags,
+		  struct filedes *out_fd, int out_ctype, int write_flags,
 		  unsigned num_threads, wimlib_progress_func_t progress_func)
 {
 	struct wim_lookup_table_entry *lte;
@@ -1416,6 +1585,8 @@ write_stream_list(struct list_head *stream_list,
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
+	DEBUG("write_resource_flags=0x%08x", write_resource_flags);
+
 	/* Calculate the total size of the streams to be written.  Note: this
 	 * will be the uncompressed size, as we may not know the compressed size
 	 * yet, and also this will assume that every unhashed stream will be
@@ -1425,7 +1596,7 @@ write_stream_list(struct list_head *stream_list,
 		total_bytes += wim_resource_size(lte);
 		if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE
 		       && (wim_resource_compression_type(lte) != out_ctype ||
-			   (write_resource_flags & WIMLIB_RESOURCE_FLAG_RECOMPRESS)))
+			   (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS)))
 		{
 			total_compression_bytes += wim_resource_size(lte);
 		}
@@ -1457,6 +1628,10 @@ write_stream_list(struct list_head *stream_list,
 					       write_resource_flags,
 					       progress_func,
 					       &progress);
+	if (ret == 0)
+		DEBUG("Successfully wrote stream list.");
+	else
+		DEBUG("Failed to write stream list.");
 	return ret;
 }
 
@@ -1491,7 +1666,7 @@ stream_size_table_insert(struct wim_lookup_table_entry *lte, void *_tab)
 	struct wim_lookup_table_entry *same_size_lte;
 	struct hlist_node *tmp;
 
- 	pos = hash_u64(wim_resource_size(lte)) % tab->capacity;
+	pos = hash_u64(wim_resource_size(lte)) % tab->capacity;
 	lte->unique_size = 1;
 	hlist_for_each_entry(same_size_lte, tmp, &tab->array[pos], hash_list_2) {
 		if (wim_resource_size(same_size_lte) == wim_resource_size(lte)) {
@@ -1592,7 +1767,7 @@ prepare_streams_for_overwrite(WIMStruct *wim, off_t end_offset,
 		struct wim_image_metadata *imd;
 		struct wim_lookup_table_entry *lte;
 
- 		imd = wim->image_metadata[i];
+		imd = wim->image_metadata[i];
 		image_for_each_unhashed_stream(lte, imd)
 			lte_overwrite_prepare(lte, &args);
 	}
@@ -1647,7 +1822,7 @@ image_find_streams_to_write(WIMStruct *wim)
 	struct wim_lookup_table_entry *lte;
 
 	ctx = wim->private;
- 	imd = wim_get_current_image_metadata(wim);
+	imd = wim_get_current_image_metadata(wim);
 
 	image_for_each_unhashed_stream(lte, imd)
 		lte->out_refcnt = 0;
@@ -1681,6 +1856,8 @@ prepare_stream_list(WIMStruct *wim, int image, struct list_head *stream_list)
 	int ret;
 	struct find_streams_ctx ctx;
 
+	DEBUG("Preparing list of streams to write for image %d.", image);
+
 	for_lookup_table_entry(wim->lookup_table, lte_zero_out_refcnt, NULL);
 	ret = init_stream_size_table(&ctx.stream_size_tab,
 				     wim->lookup_table->capacity);
@@ -1692,158 +1869,243 @@ prepare_stream_list(WIMStruct *wim, int image, struct list_head *stream_list)
 	wim->private = &ctx;
 	ret = for_image(wim, image, image_find_streams_to_write);
 	destroy_stream_size_table(&ctx.stream_size_tab);
-	if (ret == 0)
-		list_transfer(&ctx.stream_list, stream_list);
-	return ret;
+	if (ret)
+		return ret;
+	list_transfer(&ctx.stream_list, stream_list);
+	return 0;
 }
 
 /* Writes the streams for the specified @image in @wim to @wim->out_fd.
- */
+ * Alternatively, if @stream_list_override is specified, it is taken to be the
+ * list of streams to write (connected with 'write_streams_list') and @image is
+ * ignored.  */
 static int
 write_wim_streams(WIMStruct *wim, int image, int write_flags,
 		  unsigned num_threads,
-		  wimlib_progress_func_t progress_func)
+		  wimlib_progress_func_t progress_func,
+		  struct list_head *stream_list_override)
 {
 	int ret;
-	struct list_head stream_list;
+	struct list_head _stream_list;
+	struct list_head *stream_list;
+	struct wim_lookup_table_entry *lte;
 
-	ret = prepare_stream_list(wim, image, &stream_list);
-	if (ret)
-		return ret;
-	return write_stream_list(&stream_list,
+	if (stream_list_override) {
+		stream_list = stream_list_override;
+		list_for_each_entry(lte, stream_list, write_streams_list) {
+			if (lte->refcnt)
+				lte->out_refcnt = lte->refcnt;
+			else
+				lte->out_refcnt = 1;
+		}
+	} else {
+		stream_list = &_stream_list;
+		ret = prepare_stream_list(wim, image, stream_list);
+		if (ret)
+			return ret;
+	}
+	list_for_each_entry(lte, stream_list, write_streams_list)
+		lte->part_number = wim->hdr.part_number;
+	return write_stream_list(stream_list,
 				 wim->lookup_table,
-				 wim->out_fd,
+				 &wim->out_fd,
 				 wim->compression_type,
 				 write_flags,
 				 num_threads,
 				 progress_func);
 }
 
+static int
+write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
+			     wimlib_progress_func_t progress_func)
+{
+	int ret;
+	int start_image;
+	int end_image;
+	int write_resource_flags;
+
+	if (write_flags & WIMLIB_WRITE_FLAG_NO_METADATA)
+		return 0;
+
+	write_resource_flags = write_flags_to_resource_flags(write_flags);
+
+	DEBUG("Writing metadata resources (offset=%"PRIu64")",
+	      wim->out_fd.offset);
+
+	if (progress_func)
+		progress_func(WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN, NULL);
+
+	if (image == WIMLIB_ALL_IMAGES) {
+		start_image = 1;
+		end_image = wim->hdr.image_count;
+	} else {
+		start_image = image;
+		end_image = image;
+	}
+
+	for (int i = start_image; i <= end_image; i++) {
+		struct wim_image_metadata *imd;
+
+		imd = wim->image_metadata[i - 1];
+		if (imd->modified) {
+			ret = write_metadata_resource(wim, i,
+						      write_resource_flags);
+		} else {
+			ret = write_wim_resource(imd->metadata_lte,
+						 &wim->out_fd,
+						 wim->compression_type,
+						 &imd->metadata_lte->output_resource_entry,
+						 write_resource_flags);
+		}
+		if (ret)
+			return ret;
+	}
+	if (progress_func)
+		progress_func(WIMLIB_PROGRESS_MSG_WRITE_METADATA_END, NULL);
+	return 0;
+}
+
 /*
  * Finish writing a WIM file: write the lookup table, xml data, and integrity
- * table (optional), then overwrite the WIM header.
+ * table, then overwrite the WIM header.  Always closes the WIM file descriptor
+ * (wim->out_fd).
  *
  * write_flags is a bitwise OR of the following:
  *
- * 	(public)  WIMLIB_WRITE_FLAG_CHECK_INTEGRITY:
- * 		Include an integrity table.
+ *	(public) WIMLIB_WRITE_FLAG_CHECK_INTEGRITY:
+ *		Include an integrity table.
  *
- * 	(private) WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE:
- * 		Don't write the lookup table.
+ *	(public) WIMLIB_WRITE_FLAG_FSYNC:
+ *		fsync() the output file before closing it.
  *
- * 	(private) WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE:
- * 		When (if) writing the integrity table, re-use entries from the
- * 		existing integrity table, if possible.
+ *	(public)  WIMLIB_WRITE_FLAG_PIPABLE:
+ *		Writing a pipable WIM, possibly to a pipe; include pipable WIM
+ *		stream headers before the lookup table and XML data, and also
+ *		write the WIM header at the end instead of seeking to the
+ *		beginning.  Can't be combined with
+ *		WIMLIB_WRITE_FLAG_CHECK_INTEGRITY.
  *
- * 	(private) WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML:
- * 		After writing the XML data but before writing the integrity
- * 		table, write a temporary WIM header and flush the stream so that
- * 		the WIM is less likely to become corrupted upon abrupt program
- * 		termination.
+ *	(private) WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE:
+ *		Don't write the lookup table.
  *
- * 	(private) WIMLIB_WRITE_FLAG_FSYNC:
- * 		fsync() the output file before closing it.
+ *	(private) WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE:
+ *		When (if) writing the integrity table, re-use entries from the
+ *		existing integrity table, if possible.
  *
+ *	(private) WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML:
+ *		After writing the XML data but before writing the integrity
+ *		table, write a temporary WIM header and flush the stream so that
+ *		the WIM is less likely to become corrupted upon abrupt program
+ *		termination.
+ *	(private) WIMLIB_WRITE_FLAG_HEADER_AT_END:
+ *		Instead of overwriting the WIM header at the beginning of the
+ *		file, simply append it to the end of the file.  (Used when
+ *		writing to pipe.)
+ *	(private) WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES:
+ *		Use the existing <TOTALBYTES> stored in the in-memory XML
+ *		information, rather than setting it to the offset of the XML
+ *		data being written.
  */
-int
+static int
 finish_write(WIMStruct *wim, int image, int write_flags,
-	     wimlib_progress_func_t progress_func)
+	     wimlib_progress_func_t progress_func,
+	     struct list_head *stream_list_override)
 {
 	int ret;
-	struct wim_header hdr;
+	off_t hdr_offset;
+	int write_resource_flags;
+	off_t old_lookup_table_end;
+	off_t new_lookup_table_end;
+	u64 xml_totalbytes;
 
-	/* @hdr will be the header for the new WIM.  First copy all the data
-	 * from the header in the WIMStruct; then set all the fields that may
-	 * have changed, including the resource entries, boot index, and image
-	 * count.  */
-	memcpy(&hdr, &wim->hdr, sizeof(struct wim_header));
-
-	/* Set image count and boot index correctly for single image writes */
-	if (image != WIMLIB_ALL_IMAGES) {
-		hdr.image_count = 1;
-		if (hdr.boot_idx == image)
-			hdr.boot_idx = 1;
-		else
-			hdr.boot_idx = 0;
-	}
+	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
 	/* In the WIM header, there is room for the resource entry for a
 	 * metadata resource labeled as the "boot metadata".  This entry should
 	 * be zeroed out if there is no bootable image (boot_idx 0).  Otherwise,
 	 * it should be a copy of the resource entry for the image that is
 	 * marked as bootable.  This is not well documented...  */
-	if (hdr.boot_idx == 0) {
-		zero_resource_entry(&hdr.boot_metadata_res_entry);
+	if (wim->hdr.boot_idx == 0) {
+		zero_resource_entry(&wim->hdr.boot_metadata_res_entry);
 	} else {
-		copy_resource_entry(&hdr.boot_metadata_res_entry,
-			    &wim->image_metadata[ hdr.boot_idx- 1
+		copy_resource_entry(&wim->hdr.boot_metadata_res_entry,
+			    &wim->image_metadata[wim->hdr.boot_idx- 1
 					]->metadata_lte->output_resource_entry);
 	}
 
+	/* Write lookup table.  (Save old position first.)  */
+	old_lookup_table_end = wim->hdr.lookup_table_res_entry.offset +
+			       wim->hdr.lookup_table_res_entry.size;
 	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
-		ret = write_lookup_table(wim, image, &hdr.lookup_table_res_entry);
+		ret = write_wim_lookup_table(wim, image, write_flags,
+					     &wim->hdr.lookup_table_res_entry,
+					     stream_list_override);
 		if (ret)
 			goto out_close_wim;
 	}
 
-	ret = write_xml_data(wim->wim_info, image, wim->out_fd,
-			     (write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE) ?
-			      wim_info_get_total_bytes(wim->wim_info) : 0,
-			     &hdr.xml_res_entry);
+	/* Write XML data.  */
+	xml_totalbytes = wim->out_fd.offset;
+	if (write_flags & WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES)
+		xml_totalbytes = WIM_TOTALBYTES_USE_EXISTING;
+	ret = write_wim_xml_data(wim, image, xml_totalbytes,
+				 &wim->hdr.xml_res_entry,
+				 write_resource_flags);
 	if (ret)
 		goto out_close_wim;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
 		if (write_flags & WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML) {
 			struct wim_header checkpoint_hdr;
-			memcpy(&checkpoint_hdr, &hdr, sizeof(struct wim_header));
+			memcpy(&checkpoint_hdr, &wim->hdr, sizeof(struct wim_header));
 			zero_resource_entry(&checkpoint_hdr.integrity);
 			checkpoint_hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
-			ret = write_header(&checkpoint_hdr, wim->out_fd);
+			ret = write_wim_header_at_offset(&checkpoint_hdr,
+							 &wim->out_fd, 0);
 			if (ret)
 				goto out_close_wim;
 		}
 
-		off_t old_lookup_table_end;
-		off_t new_lookup_table_end;
-		if (write_flags & WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE) {
-			old_lookup_table_end = wim->hdr.lookup_table_res_entry.offset +
-					       wim->hdr.lookup_table_res_entry.size;
-		} else {
+		if (!(write_flags & WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE))
 			old_lookup_table_end = 0;
-		}
-		new_lookup_table_end = hdr.lookup_table_res_entry.offset +
-				       hdr.lookup_table_res_entry.size;
 
-		ret = write_integrity_table(wim->out_fd,
-					    &hdr.integrity,
+		new_lookup_table_end = wim->hdr.lookup_table_res_entry.offset +
+				       wim->hdr.lookup_table_res_entry.size;
+
+		ret = write_integrity_table(wim,
 					    new_lookup_table_end,
 					    old_lookup_table_end,
 					    progress_func);
 		if (ret)
 			goto out_close_wim;
 	} else {
-		zero_resource_entry(&hdr.integrity);
+		zero_resource_entry(&wim->hdr.integrity);
 	}
 
-	hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
-	ret = write_header(&hdr, wim->out_fd);
+	wim->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+	hdr_offset = 0;
+	if (write_flags & WIMLIB_WRITE_FLAG_HEADER_AT_END)
+		hdr_offset = wim->out_fd.offset;
+	ret = write_wim_header_at_offset(&wim->hdr, &wim->out_fd, hdr_offset);
 	if (ret)
 		goto out_close_wim;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
-		if (fsync(wim->out_fd)) {
+		if (fsync(wim->out_fd.fd)) {
 			ERROR_WITH_ERRNO("Error syncing data to WIM file");
 			ret = WIMLIB_ERR_WRITE;
+			goto out_close_wim;
 		}
 	}
+
+	ret = 0;
 out_close_wim:
-	if (close(wim->out_fd)) {
+	if (filedes_close(&wim->out_fd)) {
 		ERROR_WITH_ERRNO("Failed to close the output WIM file");
 		if (ret == 0)
 			ret = WIMLIB_ERR_WRITE;
 	}
-	wim->out_fd = -1;
+	filedes_invalidate(&wim->out_fd);
 	return ret;
 }
 
@@ -1876,100 +2138,413 @@ lock_wim(WIMStruct *wim, int fd)
 static int
 open_wim_writable(WIMStruct *wim, const tchar *path, int open_flags)
 {
-	wim->out_fd = topen(path, open_flags | O_BINARY, 0644);
-	if (wim->out_fd == -1) {
-		ERROR_WITH_ERRNO("Failed to open `%"TS"' for writing", path);
+	int raw_fd;
+	DEBUG("Opening \"%"TS"\" for writing.", path);
+
+	raw_fd = topen(path, open_flags | O_BINARY, 0644);
+	if (raw_fd < 0) { 
+		ERROR_WITH_ERRNO("Failed to open \"%"TS"\" for writing", path);
 		return WIMLIB_ERR_OPEN;
 	}
+	filedes_init(&wim->out_fd, raw_fd);
 	return 0;
 }
 
 
-void
+static void
 close_wim_writable(WIMStruct *wim)
 {
-	if (wim->out_fd != -1) {
-		if (close(wim->out_fd))
+	if (filedes_valid(&wim->out_fd)) {
+		if (filedes_close(&wim->out_fd))
 			WARNING_WITH_ERRNO("Failed to close output WIM");
-		wim->out_fd = -1;
+		filedes_invalidate(&wim->out_fd);
 	}
 }
 
-/* Open file stream and write dummy header for WIM. */
-int
-begin_write(WIMStruct *wim, const tchar *path, int write_flags)
+/*
+ * Perform the intermediate stages of creating a "pipable" WIM (i.e. a WIM
+ * capable of being applied from a pipe).  Such a WIM looks like:
+ *
+ * Pipable WIMs are a wimlib-specific modification of the WIM format such that
+ * images can be applied from them sequentially when the file data is sent over
+ * a pipe.  In addition, a pipable WIM can be written sequentially to a pipe.
+ * The modifications made to the WIM format for pipable WIMs are:
+ *
+ * - Magic characters in header are "WLPWM\0\0\0" (wimlib pipable WIM) instead
+ *   of "MSWIM\0\0\0".  This lets wimlib know that the WIM is pipable and also
+ *   should stop other software from trying to read the file as a normal WIM.
+ *
+ * - The header at the beginning of the file does not contain all the normal
+ *   information; in particular it will have all 0's for the lookup table and
+ *   XML data resource entries.  This is because this information cannot be
+ *   determined until the lookup table and XML data have been written.
+ *   Consequently, wimlib will write the full header at the very end of the
+ *   file.  The header at the end, however, is only used when reading the WIM
+ *   from a seekable file (not a pipe).
+ *
+ * - An extra copy of the XML data is placed directly after the header.  This
+ *   allows image names and sizes to be determined at an appropriate time when
+ *   reading the WIM from a pipe.  This copy of the XML data is ignored if the
+ *   WIM is read from a seekable file (not a pipe).
+ *
+ * - The format of resources, or streams, has been modified to allow them to be
+ *   used before the "lookup table" has been read.  Each stream is prefixed with
+ *   a `struct pwm_stream_hdr' that is basically an abbreviated form of `struct
+ *   wim_lookup_table_entry_disk' that only contains the SHA1 message digest,
+ *   uncompressed stream size, and flags that indicate whether the stream is
+ *   compressed.  The data of uncompressed streams then follows literally, while
+ *   the data of compressed streams follows in a modified format.  Compressed
+ *   streams have no chunk table, since the chunk table cannot be written until
+ *   all chunks have been compressed; instead, each compressed chunk is prefixed
+ *   by a `struct pwm_chunk_hdr' that gives its size.  However, the offsets are
+ *   given in the chunk table as if these chunk headers were not present.
+ *
+ * - Metadata resources always come before other file resources (streams).
+ *   (This does not by itself constitute an incompatibility with normal WIMs,
+ *   since this is valid in normal WIMs.)
+ *
+ * - At least up to the end of the file resources, all components must be packed
+ *   as tightly as possible; there cannot be any "holes" in the WIM.  (This does
+ *   not by itself consititute an incompatibility with normal WIMs, since this
+ *   is valid in normal WIMs.)
+ *
+ * Note: the lookup table, XML data, and header at the end are not used when
+ * applying from a pipe.  They exist to support functionality such as image
+ * application and export when the WIM is *not* read from a pipe.
+ *
+ *   Layout of pipable WIM:
+ *
+ * ----------+----------+--------------------+----------------+--------------+------------+--------+
+ * | Header  | XML data | Metadata resources | File resources | Lookup table | XML data   | Header |
+ * ----------+----------+--------------------+----------------+--------------+------------+--------+
+ *
+ *   Layout of normal WIM:
+ *
+ * +---------+--------------------+----------------+--------------+----------+
+ * | Header  | Metadata resources | File resources | Lookup table | XML data |
+ * +---------+--------------------+----------------+--------------+----------+
+ *
+ * Do note that since pipable WIMs are not supported by Microsoft's software,
+ * wimlib does not create them unless explicitly requested (with
+ * WIMLIB_WRITE_FLAG_PIPABLE) and as stated above they use different magic
+ * characters to identify the file.
+ */
+static int
+write_pipable_wim(WIMStruct *wim, int image, int write_flags,
+		  unsigned num_threads, wimlib_progress_func_t progress_func,
+		  struct list_head *stream_list_override)
 {
 	int ret;
-	int open_flags = O_TRUNC | O_CREAT;
-	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
-		open_flags |= O_RDWR;
-	else
-		open_flags |= O_WRONLY;
-	ret = open_wim_writable(wim, path, open_flags);
+	struct resource_entry xml_res_entry;
+
+	WARNING("Creating a pipable WIM, which will "
+		"be incompatible\n"
+		"          with Microsoft's software (wimgapi/imagex/Dism).");
+
+	/* At this point, the header at the beginning of the file has already
+	 * been written.  */
+
+	/* For efficiency, when wimlib adds an image to the WIM with
+	 * wimlib_add_image(), the SHA1 message digests of files is not
+	 * calculated; instead, they are calculated while the files are being
+	 * written.  However, this does not work when writing a pipable WIM,
+	 * since when writing a stream to a pipable WIM, its SHA1 message digest
+	 * needs to be known before the stream data is written.  Therefore,
+	 * before getting much farther, we need to pre-calculate the SHA1
+	 * message digests of all streams that will be written.  */
+	ret = wim_checksum_unhashed_streams(wim);
 	if (ret)
 		return ret;
-	/* Write dummy header. It will be overwritten later. */
-	wim->hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
-	ret = write_header(&wim->hdr, wim->out_fd);
-	wim->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+
+	/* Write extra copy of the XML data.  */
+	ret = write_wim_xml_data(wim, image, WIM_TOTALBYTES_OMIT,
+				 &xml_res_entry,
+				 WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE);
 	if (ret)
 		return ret;
-	if (lseek(wim->out_fd, WIM_HEADER_DISK_SIZE, SEEK_SET) == -1) {
-		ERROR_WITH_ERRNO("Failed to seek to end of WIM header");
-		return WIMLIB_ERR_WRITE;
-	}
-	return 0;
+
+	/* Write metadata resources for the image(s) being included in the
+	 * output WIM.  */
+	ret = write_wim_metadata_resources(wim, image, write_flags,
+					   progress_func);
+	if (ret)
+		return ret;
+
+	/* Write streams needed for the image(s) being included in the output
+	 * WIM, or streams needed for the split WIM part.  */
+	return write_wim_streams(wim, image, write_flags, num_threads,
+				 progress_func, stream_list_override);
+
+	/* The lookup table, XML data, and header at end are handled by
+	 * finish_write().  */
 }
 
-/* Writes a stand-alone WIM to a file.  */
+/* Write a standalone WIM or split WIM (SWM) part to a new file or to a file
+ * descriptor.  */
+int
+write_wim_part(WIMStruct *wim,
+	       const void *path_or_fd,
+	       int image,
+	       int write_flags,
+	       unsigned num_threads,
+	       wimlib_progress_func_t progress_func,
+	       unsigned part_number,
+	       unsigned total_parts,
+	       struct list_head *stream_list_override,
+	       const u8 *guid)
+{
+	int ret;
+	struct wim_header hdr_save;
+	struct list_head lt_stream_list_override;
+
+	if (total_parts == 1)
+		DEBUG("Writing standalone WIM.");
+	else
+		DEBUG("Writing split WIM part %u/%u", part_number, total_parts);
+	if (image == WIMLIB_ALL_IMAGES)
+		DEBUG("Including all images.");
+	else
+		DEBUG("Including image %d only.", image);
+	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR)
+		DEBUG("File descriptor: %d", *(const int*)path_or_fd);
+	else
+		DEBUG("Path: \"%"TS"\"", (const tchar*)path_or_fd);
+	DEBUG("Write flags: 0x%08x", write_flags);
+	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
+		DEBUG("\tCHECK_INTEGRITY");
+	if (write_flags & WIMLIB_WRITE_FLAG_REBUILD)
+		DEBUG("\tREBUILD");
+	if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
+		DEBUG("\tRECOMPRESS");
+	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC)
+		DEBUG("\tFSYNC");
+	if (write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE)
+		DEBUG("\tFSYNC");
+	if (write_flags & WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG)
+		DEBUG("\tIGNORE_READONLY_FLAG");
+	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
+		DEBUG("\tPIPABLE");
+	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR)
+		DEBUG("\tFILE_DESCRIPTOR");
+	if (write_flags & WIMLIB_WRITE_FLAG_NO_METADATA)
+		DEBUG("\tNO_METADATA");
+	if (write_flags & WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES)
+		DEBUG("\tUSE_EXISTING_TOTALBYTES");
+	if (num_threads == 0)
+		DEBUG("Number of threads: autodetect");
+	else
+		DEBUG("Number of threads: %u", num_threads);
+	DEBUG("Progress function: %s", (progress_func ? "yes" : "no"));
+	DEBUG("Stream list:       %s", (stream_list_override ? "specified" : "autodetect"));
+	DEBUG("GUID:              %s", (guid ? "specified" : "generate new"));
+
+	/* Internally, this is always called with a valid part number and total
+	 * parts.  */
+	wimlib_assert(total_parts >= 1);
+	wimlib_assert(part_number >= 1 && part_number <= total_parts);
+
+	/* A valid image (or all images) must be specified.  */
+	if (image != WIMLIB_ALL_IMAGES &&
+	     (image < 1 || image > wim->hdr.image_count))
+		return WIMLIB_ERR_INVALID_IMAGE;
+
+	/* @wim must specify a standalone WIM.  */
+	if (wim->hdr.total_parts != 1)
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+
+	/* Check for contradictory flags.  */
+	if ((write_flags & (WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
+			    WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY))
+				== (WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
+				    WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY))
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if ((write_flags & (WIMLIB_WRITE_FLAG_PIPABLE |
+			    WIMLIB_WRITE_FLAG_NOT_PIPABLE))
+				== (WIMLIB_WRITE_FLAG_PIPABLE |
+				    WIMLIB_WRITE_FLAG_NOT_PIPABLE))
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	/* Save previous header, then start initializing the new one.  */
+	memcpy(&hdr_save, &wim->hdr, sizeof(struct wim_header));
+
+	/* Set default integrity and pipable flags.  */
+	if (!(write_flags & (WIMLIB_WRITE_FLAG_PIPABLE |
+			     WIMLIB_WRITE_FLAG_NOT_PIPABLE)))
+		if (wim_is_pipable(wim))
+			write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
+
+	if (!(write_flags & (WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
+			     WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY)))
+		if (wim_has_integrity_table(wim))
+			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+
+	/* Set appropriate magic number.  */
+	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
+		wim->hdr.magic = PWM_MAGIC;
+	else
+		wim->hdr.magic = WIM_MAGIC;
+
+	/* Clear header flags that will be set automatically.  */
+	wim->hdr.flags &= ~(WIM_HDR_FLAG_METADATA_ONLY		|
+			    WIM_HDR_FLAG_RESOURCE_ONLY		|
+			    WIM_HDR_FLAG_SPANNED		|
+			    WIM_HDR_FLAG_WRITE_IN_PROGRESS);
+
+	/* Set SPANNED header flag if writing part of a split WIM.  */
+	if (total_parts != 1)
+		wim->hdr.flags |= WIM_HDR_FLAG_SPANNED;
+
+	/* Set part number and total parts of split WIM.  This will be 1 and 1
+	 * if the WIM is standalone.  */
+	wim->hdr.part_number = part_number;
+	wim->hdr.total_parts = total_parts;
+
+	/* Use GUID if specified; otherwise generate a new one.  */
+	if (guid)
+		memcpy(wim->hdr.guid, guid, WIMLIB_GUID_LEN);
+	else
+		randomize_byte_array(wim->hdr.guid, WIMLIB_GUID_LEN);
+
+	/* Clear references to resources that have not been written yet.  */
+	zero_resource_entry(&wim->hdr.lookup_table_res_entry);
+	zero_resource_entry(&wim->hdr.xml_res_entry);
+	zero_resource_entry(&wim->hdr.boot_metadata_res_entry);
+	zero_resource_entry(&wim->hdr.integrity);
+
+	/* Set image count and boot index correctly for single image writes.  */
+	if (image != WIMLIB_ALL_IMAGES) {
+		wim->hdr.image_count = 1;
+		if (wim->hdr.boot_idx == image)
+			wim->hdr.boot_idx = 1;
+		else
+			wim->hdr.boot_idx = 0;
+	}
+
+	/* Split WIMs can't be bootable.  */
+	if (total_parts != 1)
+		wim->hdr.boot_idx = 0;
+
+	/* Initialize output file descriptor.  */
+	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR) {
+		/* File descriptor was explicitly provided.  Return error if
+		 * file descriptor is not seekable, unless writing a pipable WIM
+		 * was requested.  */
+		wim->out_fd.fd = *(const int*)path_or_fd;
+		wim->out_fd.offset = 0;
+		if (!filedes_is_seekable(&wim->out_fd)) {
+			ret = WIMLIB_ERR_INVALID_PARAM;
+			if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE))
+				goto out_restore_hdr;
+			if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
+				ERROR("Can't include integrity check when "
+				      "writing pipable WIM to pipe!");
+				goto out_restore_hdr;
+			}
+		}
+
+	} else {
+		/* Filename of WIM to write was provided; open file descriptor
+		 * to it.  */
+		ret = open_wim_writable(wim, (const tchar*)path_or_fd,
+					O_TRUNC | O_CREAT | O_RDWR);
+		if (ret)
+			goto out_restore_hdr;
+	}
+
+	/* Write initial header.  This is merely a "dummy" header since it
+	 * doesn't have all the information yet, so it will be overwritten later
+	 * (unless writing a pipable WIM).  */
+	if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE))
+		wim->hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+	ret = write_wim_header(&wim->hdr, &wim->out_fd);
+	wim->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+	if (ret)
+		goto out_restore_hdr;
+
+	if (stream_list_override) {
+		struct wim_lookup_table_entry *lte;
+		INIT_LIST_HEAD(&lt_stream_list_override);
+		list_for_each_entry(lte, stream_list_override,
+				    write_streams_list)
+		{
+			list_add_tail(&lte->lookup_table_list,
+				      &lt_stream_list_override);
+		}
+	}
+
+	/* Write metadata resources and streams.  */
+	if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE)) {
+		/* Default case: create a normal (non-pipable) WIM.  */
+		ret = write_wim_streams(wim, image, write_flags, num_threads,
+					progress_func, stream_list_override);
+		if (ret)
+			goto out_restore_hdr;
+
+		ret = write_wim_metadata_resources(wim, image, write_flags,
+						   progress_func);
+		if (ret)
+			goto out_restore_hdr;
+	} else {
+		/* Non-default case: create pipable WIM.  */
+		ret = write_pipable_wim(wim, image, write_flags, num_threads,
+					progress_func, stream_list_override);
+		if (ret)
+			goto out_restore_hdr;
+		write_flags |= WIMLIB_WRITE_FLAG_HEADER_AT_END;
+	}
+
+	if (stream_list_override)
+		stream_list_override = &lt_stream_list_override;
+
+	/* Write lookup table, XML data, and (optional) integrity table.  */
+	ret = finish_write(wim, image, write_flags, progress_func,
+			   stream_list_override);
+out_restore_hdr:
+	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
+	close_wim_writable(wim);
+	return ret;
+}
+
+/* Write a standalone WIM to a file or file descriptor.  */
+static int
+write_standalone_wim(WIMStruct *wim, const void *path_or_fd,
+		     int image, int write_flags, unsigned num_threads,
+		     wimlib_progress_func_t progress_func)
+{
+	return write_wim_part(wim, path_or_fd, image, write_flags,
+			      num_threads, progress_func, 1, 1, NULL, NULL);
+}
+
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_write(WIMStruct *wim, const tchar *path,
 	     int image, int write_flags, unsigned num_threads,
 	     wimlib_progress_func_t progress_func)
 {
-	int ret;
-
 	if (!path)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 
-	if (image != WIMLIB_ALL_IMAGES &&
-	     (image < 1 || image > wim->hdr.image_count))
-		return WIMLIB_ERR_INVALID_IMAGE;
+	return write_standalone_wim(wim, path, image, write_flags,
+				    num_threads, progress_func);
+}
 
-	if (wim->hdr.total_parts != 1) {
-		ERROR("Cannot call wimlib_write() on part of a split WIM");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-	}
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_write_to_fd(WIMStruct *wim, int fd,
+		   int image, int write_flags, unsigned num_threads,
+		   wimlib_progress_func_t progress_func)
+{
+	if (fd < 0)
+		return WIMLIB_ERR_INVALID_PARAM;
 
-	ret = begin_write(wim, path, write_flags);
-	if (ret)
-		goto out_close_wim;
+	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
+	write_flags |= WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR;
 
-	ret = write_wim_streams(wim, image, write_flags, num_threads,
-				progress_func);
-	if (ret)
-		goto out_close_wim;
-
-	if (progress_func)
-		progress_func(WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN, NULL);
-
-	ret = for_image(wim, image, write_metadata_resource);
-	if (ret)
-		goto out_close_wim;
-
-	if (progress_func)
-		progress_func(WIMLIB_PROGRESS_MSG_WRITE_METADATA_END, NULL);
-
-	ret = finish_write(wim, image, write_flags, progress_func);
-	/* finish_write() closed the WIM for us */
-	goto out;
-out_close_wim:
-	close_wim_writable(wim);
-out:
-	DEBUG("wimlib_write(path=%"TS") = %d", path, ret);
-	return ret;
+	return write_standalone_wim(wim, &fd, image, write_flags,
+				    num_threads, progress_func);
 }
 
 static bool
@@ -2047,9 +2622,15 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	struct list_head stream_list;
 	off_t old_wim_end;
 	u64 old_lookup_table_end, old_xml_begin, old_xml_end;
-	int open_flags;
+
 
 	DEBUG("Overwriting `%"TS"' in-place", wim->filename);
+
+	/* Set default integrity flag.  */
+	if (!(write_flags & (WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
+			     WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY)))
+		if (wim_has_integrity_table(wim))
+			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 
 	/* Make sure that the integrity table (if present) is after the XML
 	 * data, and that there are no stream resources, metadata resources, or
@@ -2098,31 +2679,26 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	if (ret)
 		return ret;
 
-	open_flags = 0;
-	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
-		open_flags |= O_RDWR;
-	else
-		open_flags |= O_WRONLY;
-	ret = open_wim_writable(wim, wim->filename, open_flags);
+	ret = open_wim_writable(wim, wim->filename, O_RDWR);
 	if (ret)
 		return ret;
 
-	ret = lock_wim(wim, wim->out_fd);
+	ret = lock_wim(wim, wim->out_fd.fd);
 	if (ret) {
 		close_wim_writable(wim);
 		return ret;
 	}
 
 	/* Set WIM_HDR_FLAG_WRITE_IN_PROGRESS flag in header. */
-	ret = write_header_flags(wim->hdr.flags | WIM_HDR_FLAG_WRITE_IN_PROGRESS,
-				 wim->out_fd);
+	ret = write_wim_header_flags(wim->hdr.flags | WIM_HDR_FLAG_WRITE_IN_PROGRESS,
+				     &wim->out_fd);
 	if (ret) {
 		ERROR_WITH_ERRNO("Error updating WIM header flags");
 		close_wim_writable(wim);
 		goto out_unlock_wim;
 	}
 
-	if (lseek(wim->out_fd, old_wim_end, SEEK_SET) == -1) {
+	if (filedes_seek(&wim->out_fd, old_wim_end) == -1) {
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");
 		close_wim_writable(wim);
 		ret = WIMLIB_ERR_WRITE;
@@ -2133,7 +2709,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	      old_wim_end);
 	ret = write_stream_list(&stream_list,
 				wim->lookup_table,
-				wim->out_fd,
+				&wim->out_fd,
 				wim->compression_type,
 				write_flags,
 				num_threads,
@@ -2141,17 +2717,16 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	if (ret)
 		goto out_truncate;
 
-	for (int i = 0; i < wim->hdr.image_count; i++) {
-		if (wim->image_metadata[i]->modified) {
-			select_wim_image(wim, i + 1);
-			ret = write_metadata_resource(wim);
+	for (unsigned i = 1; i <= wim->hdr.image_count; i++) {
+		if (wim->image_metadata[i - 1]->modified) {
+			ret = write_metadata_resource(wim, i, 0);
 			if (ret)
 				goto out_truncate;
 		}
 	}
 	write_flags |= WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE;
 	ret = finish_write(wim, WIMLIB_ALL_IMAGES, write_flags,
-			   progress_func);
+			   progress_func, NULL);
 out_truncate:
 	close_wim_writable(wim);
 	if (ret != 0 && !(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
@@ -2187,10 +2762,8 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags,
 	ret = wimlib_write(wim, tmpfile, WIMLIB_ALL_IMAGES,
 			   write_flags | WIMLIB_WRITE_FLAG_FSYNC,
 			   num_threads, progress_func);
-	if (ret) {
-		ERROR("Failed to write the WIM file `%"TS"'", tmpfile);
+	if (ret)
 		goto out_unlink;
-	}
 
 	close_wim(wim);
 
@@ -2209,18 +2782,15 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags,
 		progress.rename.to = wim->filename;
 		progress_func(WIMLIB_PROGRESS_MSG_RENAME, &progress);
 	}
-	goto out;
+	return 0;
+
 out_unlink:
 	/* Remove temporary file. */
-	if (tunlink(tmpfile) != 0)
-		WARNING_WITH_ERRNO("Failed to remove `%"TS"'", tmpfile);
-out:
+	tunlink(tmpfile);
 	return ret;
 }
 
-/*
- * Writes a WIM file to the original file that it was read from, overwriting it.
- */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_overwrite(WIMStruct *wim, int write_flags,
 		 unsigned num_threads,
@@ -2230,6 +2800,9 @@ wimlib_overwrite(WIMStruct *wim, int write_flags,
 	u32 orig_hdr_flags;
 
 	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
+
+	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR)
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (!wim->filename)
 		return WIMLIB_ERR_NO_FILENAME;
@@ -2243,15 +2816,15 @@ wimlib_overwrite(WIMStruct *wim, int write_flags,
 		return ret;
 
 	if ((!wim->deletion_occurred || (write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE))
-	    && !(write_flags & WIMLIB_WRITE_FLAG_REBUILD))
+	    && !(write_flags & (WIMLIB_WRITE_FLAG_REBUILD |
+				WIMLIB_WRITE_FLAG_PIPABLE))
+	    && !(wim_is_pipable(wim)))
 	{
-		int ret;
 		ret = overwrite_wim_inplace(wim, write_flags, num_threads,
 					    progress_func);
-		if (ret == WIMLIB_ERR_RESOURCE_ORDER)
-			WARNING("Falling back to re-building entire WIM");
-		else
+		if (ret != WIMLIB_ERR_RESOURCE_ORDER)
 			return ret;
+		WARNING("Falling back to re-building entire WIM");
 	}
 	return overwrite_wim_via_tmpfile(wim, write_flags, num_threads,
 					 progress_func);

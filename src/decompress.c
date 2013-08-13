@@ -147,7 +147,7 @@ make_huffman_decode_table(u16 *decode_table,  unsigned num_syms,
 		left <<= 1;
 		left -= len_counts[len];
 		if (unlikely(left < 0)) { /* over-subscribed */
-			ERROR("Invalid Huffman code (over-subscribed)");
+			DEBUG("Invalid Huffman code (over-subscribed)");
 			return -1;
 		}
 	}
@@ -159,7 +159,7 @@ make_huffman_decode_table(u16 *decode_table,  unsigned num_syms,
 			       table_num_entries * sizeof(decode_table[0]));
 			return 0;
 		} else {
-			ERROR("Invalid Huffman code (incomplete set)");
+			DEBUG("Invalid Huffman code (incomplete set)");
 			return -1;
 		}
 	}
@@ -417,7 +417,7 @@ read_huffsym_near_end_of_input(struct input_bitstream *istream,
 		bitstream_remove_bits(istream, key_size);
 		do {
 			if (bitsleft == 0) {
-				ERROR("Input stream exhausted");
+				DEBUG("Input stream exhausted");
 				return -1;
 			}
 			key_bits = sym + bitstream_peek_bits(istream, 1);

@@ -153,16 +153,11 @@ struct wim_dentry {
 	 * including the terminating null character. */
 	u32 full_path_nbytes;
 
-	/* For extraction operations, a subtree of dentries will have this flag
-	 * set so we can keep track of which dentries still need to be
-	 * extracted.  Otherwise this will always be 0.  */
-	u8 needs_extraction : 1;
-
 	/* For extraction operations, this flag will be set when a dentry in the
 	 * tree being extracted is not being extracted for some reason (file
 	 * type not supported by target filesystem or contains invalid
 	 * characters).  Otherwise this will always be 0. */
-	u8 not_extracted : 1;
+	u8 extraction_skipped : 1;
 
 	/* When capturing from a NTFS volume using NTFS-3g, this flag is set on
 	 * dentries that were created from a filename in the WIN32 or WIN32+DOS
@@ -176,6 +171,10 @@ struct wim_dentry {
 	 * illegal (on NTFS, at least) for a single inode to have multiple DOS
 	 * names.  */
 	u8 dos_name_invalid : 1;
+
+	u8 tmp_flag : 1;
+
+	u8 was_hardlinked : 1;
 
 	/* Temporary list field used to make lists of dentries in a few places.
 	 * */
@@ -311,10 +310,6 @@ struct wim_inode {
 	 * default and must be cleared following the tree traversal, even in
 	 * error paths.  */
 	u8 i_visited : 1;
-
-	/* For NTFS-3g extraction:  Set after the DOS name for this inode has
-	 * been extracted.  */
-	u8 i_dos_name_extracted : 1;
 
 	/* Pointer to a malloc()ed array of i_num_ads alternate data stream
 	 * entries for this inode.  */
@@ -522,6 +517,9 @@ inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
 			const void *value, size_t size,
 			struct wim_lookup_table *lookup_table);
 
+bool
+inode_has_named_stream(const struct wim_inode *inode);
+
 extern int
 inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
 			 struct wim_lookup_table *lookup_table);
@@ -537,6 +535,22 @@ inode_remove_ads(struct wim_inode *inode, u16 idx,
 #define WIMLIB_UNIX_DATA_TAG_UTF16LE "$\0$\0_\0_\0w\0i\0m\0l\0i\0b\0_\0U\0N\0I\0X\0_\0d\0a\0t\0a\0"
 #define WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES (sizeof(WIMLIB_UNIX_DATA_TAG_UTF16LE) - 1)
 
+static inline bool
+ads_entry_is_unix_data(const struct wim_ads_entry *entry)
+{
+	return (entry->stream_name_nbytes ==
+			WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES) &&
+		!memcmp(entry->stream_name, WIMLIB_UNIX_DATA_TAG_UTF16LE,
+			WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES);
+}
+
+static inline bool
+ads_entry_is_named_stream(const struct wim_ads_entry *entry)
+{
+	return entry->stream_name_nbytes != 0 && !ads_entry_is_unix_data(entry);
+}
+
+#ifndef __WIN32__
 /* Format for special alternate data stream entries to store UNIX data for files
  * and directories (see: WIMLIB_ADD_FLAG_UNIX_DATA) */
 struct wimlib_unix_data {
@@ -545,8 +559,6 @@ struct wimlib_unix_data {
 	u16 gid;
 	u16 mode;
 } _packed_attribute;
-
-#ifndef __WIN32__
 
 #define NO_UNIX_DATA (-1)
 #define BAD_UNIX_DATA (-2)
@@ -563,7 +575,10 @@ inode_get_unix_data(const struct wim_inode *inode,
 extern int
 inode_set_unix_data(struct wim_inode *inode, uid_t uid, gid_t gid, mode_t mode,
 		    struct wim_lookup_table *lookup_table, int which);
-#endif
+#endif /* __WIN32__ */
+
+extern bool
+inode_has_unix_data(const struct wim_inode *inode);
 
 extern int
 read_dentry(const u8 * restrict metadata_resource,
@@ -591,6 +606,14 @@ inode_is_directory(const struct wim_inode *inode)
 	return (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
 				       FILE_ATTRIBUTE_REPARSE_POINT))
 			== FILE_ATTRIBUTE_DIRECTORY;
+}
+
+static inline bool
+inode_is_encrypted_directory(const struct wim_inode *inode)
+{
+	return ((inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+					FILE_ATTRIBUTE_ENCRYPTED))
+		== (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_ENCRYPTED));
 }
 
 static inline bool

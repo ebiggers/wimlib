@@ -27,427 +27,117 @@
 #  include "config.h"
 #endif
 
-#include <dirent.h>
+#include "wimlib/apply.h"
+#include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/resource.h"
+#include "wimlib/timestamp.h"
+
 #include <errno.h>
 #include <fcntl.h>
-#include <string.h>
+#include <limits.h>
 #include <sys/stat.h>
-#include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
+
 #ifdef HAVE_UTIME_H
 #  include <utime.h>
 #endif
 
-#include "wimlib/apply.h"
-#include "wimlib/error.h"
-#include "wimlib/lookup_table.h"
-#include "wimlib/reparse.h"
-#include "wimlib/timestamp.h"
-
-/* Returns the number of components of @path.  */
-static unsigned
-get_num_path_components(const char *path)
-{
-	unsigned num_components = 0;
-	while (*path) {
-		while (*path == '/')
-			path++;
-		if (*path)
-			num_components++;
-		while (*path && *path != '/')
-			path++;
-	}
-	return num_components;
-}
-
-static const char *
-path_next_part(const char *path)
-{
-	while (*path && *path != '/')
-		path++;
-	while (*path && *path == '/')
-		path++;
-	return path;
-}
-
 static int
-unix_extract_regular_file_linked(struct wim_dentry *dentry,
-				 const char *output_path,
-				 struct apply_args *args,
-				 struct wim_lookup_table_entry *lte)
+unix_start_extract(const char *target, struct apply_ctx *ctx)
 {
-	/* This mode overrides the normal hard-link extraction and
-	 * instead either symlinks or hardlinks *all* identical files in
-	 * the WIM, even if they are in a different image (in the case
-	 * of a multi-image extraction) */
-
-	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) {
-		if (link(lte->extracted_file, output_path) != 0) {
-			ERROR_WITH_ERRNO("Failed to hard link "
-					 "`%s' to `%s'",
-					 output_path, lte->extracted_file);
-			return WIMLIB_ERR_LINK;
-		}
-	} else {
-		int num_path_components;
-		int num_output_dir_path_components;
-		size_t extracted_file_len;
-		char *p;
-		const char *p2;
-		size_t i;
-		const struct wim_dentry *d;
-
-		num_path_components = 0;
-		for (d = dentry; d != args->extract_root; d = d->parent)
-			num_path_components++;
-		wimlib_assert(num_path_components > 0);
-		num_path_components--;
-		num_output_dir_path_components = get_num_path_components(args->target);
-
-		if (args->extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE) {
-			num_path_components++;
-			num_output_dir_path_components--;
-		}
-		extracted_file_len = strlen(lte->extracted_file);
-
-		char buf[extracted_file_len + 3 * num_path_components + 1];
-		p = &buf[0];
-
-		for (i = 0; i < num_path_components; i++) {
-			*p++ = '.';
-			*p++ = '.';
-			*p++ = '/';
-		}
-		p2 = lte->extracted_file;
-		while (*p2 == '/')
-			p2++;
-		while (num_output_dir_path_components > 0) {
-			p2 = path_next_part(p2);
-			num_output_dir_path_components--;
-		}
-		strcpy(p, p2);
-		if (symlink(buf, output_path) != 0) {
-			ERROR_WITH_ERRNO("Failed to symlink `%s' to `%s'",
-					 buf, lte->extracted_file);
-			return WIMLIB_ERR_LINK;
-		}
-	}
+	ctx->supported_features.hard_links = 1;
+	ctx->supported_features.symlink_reparse_points = 1;
+	ctx->supported_features.unix_data = 1;
 	return 0;
 }
 
 static int
-symlink_apply_unix_data(const char *link,
-			const struct wimlib_unix_data *unix_data)
+unix_create_file(const char *path, struct apply_ctx *ctx)
 {
-	if (lchown(link, unix_data->uid, unix_data->gid)) {
-		if (errno == EPERM) {
-			/* Ignore */
-			WARNING_WITH_ERRNO("failed to set symlink UNIX "
-					   "owner/group on \"%s\"", link);
-		} else {
-			ERROR_WITH_ERRNO("failed to set symlink UNIX "
-					 "owner/group on \"%s\"", link);
-			return WIMLIB_ERR_INVALID_DENTRY;
-		}
-	}
-	return 0;
-}
-
-static int
-fd_apply_unix_data(int fd, const char *path,
-		   const struct wimlib_unix_data *unix_data,
-		   int extract_flags)
-{
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)
-		return 0;
-
-	if (fchown(fd, unix_data->uid, unix_data->gid)) {
-		if (errno == EPERM &&
-		    !(extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS))
-		{
-			WARNING_WITH_ERRNO("failed to set file UNIX "
-					   "owner/group on \"%s\"", path);
-		} else {
-			ERROR_WITH_ERRNO("failed to set file UNIX "
-					 "owner/group on \"%s\"", path);
-			return (errno == EPERM) ? WIMLIB_ERR_INSUFFICIENT_PRIVILEGES_TO_EXTRACT :
-				WIMLIB_ERR_WRITE;
-		}
-	}
-
-	if (fchmod(fd, unix_data->mode)) {
-		if (errno == EPERM &&
-		    !(extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS))
-		{
-			WARNING_WITH_ERRNO("failed to set UNIX file mode "
-					   "on \"%s\"", path);
-		} else {
-			ERROR_WITH_ERRNO("failed to set UNIX file mode "
-					 "on \"%s\"", path);
-			return (errno == EPERM) ? WIMLIB_ERR_INSUFFICIENT_PRIVILEGES_TO_EXTRACT :
-				WIMLIB_ERR_WRITE;
-		}
-	}
-	return 0;
-}
-
-static int
-dir_apply_unix_data(const char *dir, const struct wimlib_unix_data *unix_data,
-		    int extract_flags)
-{
-	int dfd = open(dir, O_RDONLY);
-	int ret;
-	if (dfd >= 0) {
-		ret = fd_apply_unix_data(dfd, dir, unix_data, extract_flags);
-		if (close(dfd) && ret == 0) {
-			ERROR_WITH_ERRNO("can't close directory `%s'", dir);
-			ret = WIMLIB_ERR_WRITE;
-		}
-	} else {
-		ERROR_WITH_ERRNO("can't open directory `%s'", dir);
-		ret = WIMLIB_ERR_OPENDIR;
-	}
-	return ret;
-}
-
-static int
-unix_extract_regular_file_unlinked(struct wim_dentry *dentry,
-				   struct apply_args *args,
-				   const char *output_path,
-				   struct wim_lookup_table_entry *lte)
-{
-	/* Normal mode of extraction.  Regular files and hard links are
-	 * extracted in the way that they appear in the WIM. */
-
-	int out_fd;
-	int ret;
-	struct wim_inode *inode = dentry->d_inode;
-
-	if (!((args->extract_flags & WIMLIB_EXTRACT_FLAG_MULTI_IMAGE)
-		&& (args->extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
-				     WIMLIB_EXTRACT_FLAG_HARDLINK))))
-	{
-		/* If the dentry is part of a hard link set of at least 2
-		 * dentries and one of the other dentries has already been
-		 * extracted, make a hard link to the file corresponding to this
-		 * already-extracted directory.  Otherwise, extract the file and
-		 * set the inode->i_extracted_file field so that other dentries
-		 * in the hard link group can link to it. */
-		if (inode->i_nlink > 1) {
-			if (inode->i_extracted_file) {
-				DEBUG("Extracting hard link `%s' => `%s'",
-				      output_path, inode->i_extracted_file);
-				if (link(inode->i_extracted_file, output_path) != 0) {
-					ERROR_WITH_ERRNO("Failed to hard link "
-							 "`%s' to `%s'",
-							 output_path,
-							 inode->i_extracted_file);
-					return WIMLIB_ERR_LINK;
-				}
-				return 0;
-			}
-			FREE(inode->i_extracted_file);
-			inode->i_extracted_file = STRDUP(output_path);
-			if (!inode->i_extracted_file) {
-				ERROR("Failed to allocate memory for filename");
-				return WIMLIB_ERR_NOMEM;
-			}
-		}
-	}
-
-	/* Extract the contents of the file to @output_path. */
-
-	out_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (out_fd == -1) {
-		ERROR_WITH_ERRNO("Failed to open the file `%s' for writing",
-				 output_path);
+	int fd = open(path, O_TRUNC | O_CREAT | O_WRONLY, 0644);
+	if (fd < 0)
 		return WIMLIB_ERR_OPEN;
-	}
-
-	if (!lte) {
-		/* Empty file with no lookup table entry */
-		DEBUG("Empty file `%s'.", output_path);
-		ret = 0;
-		goto out_extract_unix_data;
-	}
-
-	ret = extract_wim_resource_to_fd(lte, out_fd, wim_resource_size(lte));
-	if (ret) {
-		ERROR("Failed to extract resource to `%s'", output_path);
-		goto out;
-	}
-
-out_extract_unix_data:
-	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
-		struct wimlib_unix_data unix_data;
-		ret = inode_get_unix_data(inode, &unix_data, NULL);
-		if (ret > 0)
-			;
-		else if (ret < 0)
-			ret = 0;
-		else
-			ret = fd_apply_unix_data(out_fd, output_path, &unix_data,
-						 args->extract_flags);
-		if (ret)
-			goto out;
-	}
-	if (lte)
-		args->progress.extract.completed_bytes += wim_resource_size(lte);
-out:
-	if (close(out_fd) != 0) {
-		ERROR_WITH_ERRNO("Failed to close file `%s'", output_path);
-		if (ret == 0)
-			ret = WIMLIB_ERR_WRITE;
-	}
-	return ret;
-}
-
-static int
-unix_extract_regular_file(struct wim_dentry *dentry,
-			  struct apply_args *args,
-			  const char *output_path)
-{
-	struct wim_lookup_table_entry *lte;
-	const struct wim_inode *inode = dentry->d_inode;
-
-	lte = inode_unnamed_lte_resolved(inode);
-
-	if (lte && (args->extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
-					   WIMLIB_EXTRACT_FLAG_HARDLINK)))
-	{
-		if (lte->extracted_file) {
-			return unix_extract_regular_file_linked(dentry,
-								output_path,
-								args, lte);
-		} else {
-			lte->extracted_file = STRDUP(output_path);
-			if (!lte->extracted_file)
-				return WIMLIB_ERR_NOMEM;
-		}
-	}
-	return unix_extract_regular_file_unlinked(dentry, args, output_path, lte);
-}
-
-static int
-unix_extract_symlink(struct wim_dentry *dentry,
-		     struct apply_args *args,
-		     const char *output_path)
-{
-	char target[4096 + args->target_realpath_len];
-	char *fixed_target;
-	const struct wim_inode *inode = dentry->d_inode;
-
-	ssize_t ret = wim_inode_readlink(inode,
-					 target + args->target_realpath_len,
-					 sizeof(target) - args->target_realpath_len - 1);
-	struct wim_lookup_table_entry *lte;
-
-	if (ret <= 0) {
-		ERROR("Could not read the symbolic link from dentry `%s'",
-		      dentry_full_path(dentry));
-		return WIMLIB_ERR_INVALID_DENTRY;
-	}
-	target[args->target_realpath_len + ret] = '\0';
-	if (target[args->target_realpath_len] == '/' &&
-	    args->extract_flags & WIMLIB_EXTRACT_FLAG_RPFIX)
-	{
-		/* Fix absolute symbolic link target to point into the actual
-		 * extraction destination */
-		memcpy(target, args->target_realpath,
-		       args->target_realpath_len);
-		fixed_target = target;
-	} else {
-		/* Keep same link target */
-		fixed_target = target + args->target_realpath_len;
-	}
-	ret = symlink(fixed_target, output_path);
-	if (ret) {
-		ERROR_WITH_ERRNO("Failed to symlink `%s' to `%s'",
-				 output_path, fixed_target);
-		return WIMLIB_ERR_LINK;
-	}
-	if (args->extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
-		struct wimlib_unix_data unix_data;
-		ret = inode_get_unix_data(inode, &unix_data, NULL);
-		if (ret > 0)
-			;
-		else if (ret < 0)
-			ret = 0;
-		else
-			ret = symlink_apply_unix_data(output_path, &unix_data);
-		if (ret)
-			return ret;
-	}
-	lte = inode_unnamed_lte_resolved(inode);
-	wimlib_assert(lte != NULL);
-	args->progress.extract.completed_bytes += wim_resource_size(lte);
+	close(fd);
 	return 0;
 }
 
 static int
-unix_extract_directory(struct wim_dentry *dentry, const char *output_path,
-		       int extract_flags)
+unix_create_directory(const tchar *path, struct apply_ctx *ctx)
 {
-	int ret;
 	struct stat stbuf;
 
-	ret = stat(output_path, &stbuf);
-	if (ret == 0) {
-		if (S_ISDIR(stbuf.st_mode)) {
-			goto dir_exists;
-		} else {
-			ERROR("\"%s\" is not a directory", output_path);
+	if (mkdir(path, 0755)) {
+		if (errno != EEXIST)
 			return WIMLIB_ERR_MKDIR;
-		}
-	} else {
-		if (errno != ENOENT) {
-			ERROR_WITH_ERRNO("Failed to stat \"%s\"", output_path);
+		if (lstat(path, &stbuf))
 			return WIMLIB_ERR_STAT;
-		}
+		errno = EEXIST;
+		if (!S_ISDIR(stbuf.st_mode))
+			return WIMLIB_ERR_NOTDIR;
 	}
+	return 0;
+}
 
-	if (mkdir(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
-		ERROR_WITH_ERRNO("Cannot create directory \"%s\"", output_path);
-		return WIMLIB_ERR_MKDIR;
-	}
-dir_exists:
-	ret = 0;
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
-		struct wimlib_unix_data unix_data;
-		ret = inode_get_unix_data(dentry->d_inode, &unix_data, NULL);
-		if (ret > 0)
-			;
-		else if (ret < 0)
-			ret = 0;
-		else
-			ret = dir_apply_unix_data(output_path, &unix_data,
-						  extract_flags);
-	}
+static int
+unix_create_hardlink(const tchar *oldpath, const tchar *newpath,
+		     struct apply_ctx *ctx)
+{
+	if (link(oldpath, newpath))
+		return WIMLIB_ERR_LINK;
+	return 0;
+}
+
+static int
+unix_create_symlink(const tchar *oldpath, const tchar *newpath,
+		    struct apply_ctx *ctx)
+{
+	if (symlink(oldpath, newpath))
+		return WIMLIB_ERR_LINK;
+	return 0;
+}
+
+static int
+unix_extract_unnamed_stream(const tchar *path,
+			    struct wim_lookup_table_entry *lte,
+			    struct apply_ctx *ctx)
+{
+	struct filedes fd;
+	int raw_fd;
+	int ret;
+
+	raw_fd = open(path, O_WRONLY | O_TRUNC);
+	if (raw_fd < 0)
+		return WIMLIB_ERR_OPEN;
+	filedes_init(&fd, raw_fd);
+	ret = extract_wim_resource_to_fd(lte, &fd, wim_resource_size(lte));
+	if (filedes_close(&fd) && !ret)
+		ret = WIMLIB_ERR_WRITE;
 	return ret;
 }
 
-int
-unix_do_apply_dentry(const char *output_path, size_t output_path_len,
-		     struct wim_dentry *dentry, struct apply_args *args)
+static int
+unix_set_unix_data(const tchar *path, const struct wimlib_unix_data *data,
+		   struct apply_ctx *ctx)
 {
-	const struct wim_inode *inode = dentry->d_inode;
+	struct stat stbuf;
 
-	if (inode_is_symlink(inode))
-		return unix_extract_symlink(dentry, args, output_path);
-	else if (inode_is_directory(inode))
-		return unix_extract_directory(dentry, output_path, args->extract_flags);
-	else
-		return unix_extract_regular_file(dentry, args, output_path);
+	if (lstat(path, &stbuf))
+		return WIMLIB_ERR_STAT;
+	if (!S_ISLNK(stbuf.st_mode))
+		if (chmod(path, data->mode))
+			return WIMLIB_ERR_SET_SECURITY;
+	if (lchown(path, data->uid, data->gid))
+		return WIMLIB_ERR_SET_SECURITY;
+	return 0;
 }
 
-int
-unix_do_apply_dentry_timestamps(const char *output_path,
-				size_t output_path_len,
-				struct wim_dentry *dentry,
-				struct apply_args *args)
+static int
+unix_set_timestamps(const tchar *path, u64 creation_time, u64 last_write_time,
+		    u64 last_access_time, struct apply_ctx *ctx)
 {
 	int ret;
-	const struct wim_inode *inode = dentry->d_inode;
 
 #ifdef HAVE_UTIMENSAT
 	/* Convert the WIM timestamps, which are accurate to 100 nanoseconds,
@@ -455,9 +145,9 @@ unix_do_apply_dentry_timestamps(const char *output_path,
 	 * to 1 nanosecond. */
 
 	struct timespec ts[2];
-	ts[0] = wim_timestamp_to_timespec(inode->i_last_access_time);
-	ts[1] = wim_timestamp_to_timespec(inode->i_last_write_time);
-	ret = utimensat(AT_FDCWD, output_path, ts, AT_SYMLINK_NOFOLLOW);
+	ts[0] = wim_timestamp_to_timespec(last_access_time);
+	ts[1] = wim_timestamp_to_timespec(last_write_time);
+	ret = utimensat(AT_FDCWD, path, ts, AT_SYMLINK_NOFOLLOW);
 	if (ret)
 		ret = errno;
 #else
@@ -471,9 +161,9 @@ unix_do_apply_dentry_timestamps(const char *output_path,
 		 * nanoseconds, into `struct timeval's for passing to lutimes(),
 		 * which is accurate to 1 microsecond. */
 		struct timeval tv[2];
-		tv[0] = wim_timestamp_to_timeval(inode->i_last_access_time);
-		tv[1] = wim_timestamp_to_timeval(inode->i_last_write_time);
-		ret = lutimes(output_path, tv);
+		tv[0] = wim_timestamp_to_timeval(last_access_time);
+		tv[1] = wim_timestamp_to_timeval(last_write_time);
+		ret = lutimes(path, tv);
 		if (ret)
 			ret = errno;
 	#endif
@@ -487,17 +177,33 @@ unix_do_apply_dentry_timestamps(const char *output_path,
 		 * nanoseconds, into a `struct utimbuf's for passing to
 		 * utime(), which is accurate to 1 second. */
 		struct utimbuf buf;
-		buf.actime = wim_timestamp_to_unix(inode->i_last_access_time);
-		buf.modtime = wim_timestamp_to_unix(inode->i_last_write_time);
-		ret = utime(output_path, &buf);
+		buf.actime = wim_timestamp_to_unix(last_access_time);
+		buf.modtime = wim_timestamp_to_unix(last_write_time);
+		ret = utime(path, &buf);
 	#endif
 	}
-	if (ret && args->num_utime_warnings < 10) {
-		WARNING_WITH_ERRNO("Failed to set timestamp on file `%s'",
-				    output_path);
-		args->num_utime_warnings++;
-	}
+	if (ret)
+		return WIMLIB_ERR_SET_TIMESTAMPS;
 	return 0;
 }
+
+const struct apply_operations unix_apply_ops = {
+	.name = "UNIX",
+
+	.start_extract          = unix_start_extract,
+	.create_file            = unix_create_file,
+	.create_directory       = unix_create_directory,
+	.create_hardlink        = unix_create_hardlink,
+	.create_symlink         = unix_create_symlink,
+	.extract_unnamed_stream = unix_extract_unnamed_stream,
+	.set_unix_data          = unix_set_unix_data,
+	.set_timestamps         = unix_set_timestamps,
+
+	.path_separator = '/',
+	.path_max = PATH_MAX,
+
+	.requires_target_in_paths = 1,
+	.supports_case_sensitive_filenames = 1,
+};
 
 #endif /* !__WIN32__ */

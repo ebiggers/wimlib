@@ -28,224 +28,203 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/endianness.h"
 #include "wimlib/error.h"
-#include "wimlib/file_io.h"
+#include "wimlib/list.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
-#include "wimlib/types.h"
+#include "wimlib/resource.h"
+#include "wimlib/wim.h"
 #include "wimlib/write.h"
-#include "wimlib/list.h"
 
-#include <fcntl.h> /* for open() */
-#include <unistd.h> /* for close() */
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#else
+#  include <stdlib.h>
+#endif
 
-struct split_args {
-	WIMStruct *wim;
-	tchar *swm_base_name;
-	size_t swm_base_name_len;
-	const tchar *swm_suffix;
-	struct list_head lte_list;
-	int cur_part_number;
-	int write_flags;
-	s64 size_remaining;
-	size_t part_size;
-	wimlib_progress_func_t progress_func;
-	union wimlib_progress_info progress;
+struct swm_part_info {
+	struct list_head stream_list;
+	u64 size;
+};
+
+static void
+copy_part_info(struct swm_part_info *dst, struct swm_part_info *src)
+{
+	list_transfer(&src->stream_list, &dst->stream_list);
+	dst->size = src->size;
+}
+
+struct swm_info {
+	struct swm_part_info *parts;
+	unsigned num_parts;
+	unsigned num_alloc_parts;
+	u64 total_bytes;
+	u64 max_part_size;
 };
 
 static int
-finish_swm(WIMStruct *wim, struct list_head *lte_list,
-	   int write_flags, wimlib_progress_func_t progress_func)
+write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
+		struct swm_info *swm_info, int write_flags,
+		wimlib_progress_func_t progress_func)
 {
-	int ret;
+	size_t swm_name_len;
+	tchar *swm_name_buf;
+	const tchar *dot;
+	tchar *swm_suffix;
+	size_t swm_base_name_len;
 
-	ret = write_lookup_table_from_stream_list(lte_list, wim->out_fd,
-						  &wim->hdr.lookup_table_res_entry);
-	if (ret)
-		return ret;
-	return finish_write(wim, WIMLIB_ALL_IMAGES,
-			    write_flags | WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE,
-			    progress_func);
+	union wimlib_progress_info progress;
+	unsigned part_number;
+	int ret;
+	u8 guid[WIMLIB_GUID_LEN];
+
+	swm_name_len = tstrlen(swm_name);
+	swm_name_buf = alloca((swm_name_len + 20) * sizeof(tchar));
+	tstrcpy(swm_name_buf, swm_name);
+	dot = tstrchr(swm_name_buf, T('.'));
+	if (dot) {
+		swm_base_name_len = dot - swm_name_buf;
+		swm_suffix = alloca((tstrlen(dot) + 1) * sizeof(tchar));
+		tstrcpy(swm_suffix, dot);
+	} else {
+		swm_base_name_len = swm_name_len;
+		swm_suffix = alloca(1 * sizeof(tchar));
+		swm_suffix[0] = T('\0');
+	}
+
+	progress.split.completed_bytes = 0;
+	progress.split.total_bytes = 0;
+	for (part_number = 1; part_number <= swm_info->num_parts; part_number++)
+		progress.split.total_bytes += swm_info->parts[part_number - 1].size;
+	progress.split.total_parts = swm_info->num_parts;
+	progress.split.part_name = swm_name_buf;
+
+	randomize_byte_array(guid, WIMLIB_GUID_LEN);
+
+	for (part_number = 1; part_number <= swm_info->num_parts; part_number++) {
+		int part_write_flags;
+
+		if (part_number != 1) {
+			tsprintf(swm_name_buf + swm_base_name_len,
+				 T("%u%"TS), part_number, swm_suffix);
+		}
+
+		progress.split.cur_part_number = part_number;
+		if (progress_func) {
+			progress_func(WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART,
+				      &progress);
+		}
+
+		part_write_flags = write_flags & WIMLIB_WRITE_MASK_PUBLIC;
+		part_write_flags |= WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES;
+		if (part_number != 1)
+			part_write_flags |= WIMLIB_WRITE_FLAG_NO_METADATA;
+
+		ret = write_wim_part(orig_wim,
+				     swm_name_buf,
+				     WIMLIB_ALL_IMAGES,
+				     part_write_flags,
+				     1,
+				     NULL,
+				     part_number,
+				     swm_info->num_parts,
+				     &swm_info->parts[part_number - 1].stream_list,
+				     guid);
+		if (ret)
+			return ret;
+
+		progress.split.completed_bytes += swm_info->parts[part_number - 1].size;
+		if (progress_func) {
+			progress_func(WIMLIB_PROGRESS_MSG_SPLIT_END_PART,
+				      &progress);
+		}
+	}
+	return 0;
 }
 
 static int
-copy_resource_to_swm(struct wim_lookup_table_entry *lte, void *_args)
+add_stream_to_swm(struct wim_lookup_table_entry *lte, void *_swm_info)
 {
-	struct split_args *args = (struct split_args*)_args;
-	WIMStruct *wim = args->wim;
-	int ret;
+	struct swm_info *swm_info = _swm_info;
+	u64 stream_size;
 
-	if (args->size_remaining < 0 ||
-			(u64)args->size_remaining < lte->resource_entry.size) {
+	stream_size = lte->resource_entry.size;
 
-		/* No space for this resource.  Finish the previous swm and
-		 * start a new one. */
+	/* - Start first part if no parts have been started so far;
+	 * - Start next part if adding this stream exceeds maximum part size,
+	 *   UNLESS the stream is metadata or if no streams at all have been
+	 *   added to the current part.
+	 */
+	if (swm_info->num_parts == 0 ||
+	    ((swm_info->parts[swm_info->num_parts - 1].size +
+			stream_size >= swm_info->max_part_size)
+	     && !((lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) ||
+		   swm_info->parts[swm_info->num_parts - 1].size == 0)))
+	{
+		if (swm_info->num_parts == swm_info->num_alloc_parts) {
+			struct swm_part_info *parts;
+			size_t num_alloc_parts = swm_info->num_alloc_parts;
 
-		ret = finish_swm(wim, &args->lte_list, args->write_flags,
-				 args->progress_func);
-		if (ret)
-			return ret;
+			num_alloc_parts += 8;
+			parts = MALLOC(num_alloc_parts * sizeof(parts[0]));
+			if (!parts)
+				return WIMLIB_ERR_NOMEM;
 
-		if (args->progress_func) {
-			args->progress_func(WIMLIB_PROGRESS_MSG_SPLIT_END_PART,
-					    &args->progress);
+			for (unsigned i = 0; i < swm_info->num_parts; i++)
+				copy_part_info(&parts[i], &swm_info->parts[i]);
+
+			FREE(swm_info->parts);
+			swm_info->parts = parts;
+			swm_info->num_alloc_parts = num_alloc_parts;
 		}
-
-		INIT_LIST_HEAD(&args->lte_list);
-		args->cur_part_number++;
-
-		tsprintf(args->swm_base_name + args->swm_base_name_len, T("%d%"TS),
-			 args->cur_part_number, args->swm_suffix);
-
-		wim->hdr.part_number = args->cur_part_number;
-
-		if (args->progress_func) {
-			args->progress.split.cur_part_number = args->cur_part_number;
-			args->progress_func(WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART,
-					    &args->progress);
-		}
-
-		ret = begin_write(wim, args->swm_base_name, args->write_flags);
-		if (ret)
-			return ret;
-		args->size_remaining = args->part_size;
+		swm_info->num_parts++;
+		INIT_LIST_HEAD(&swm_info->parts[swm_info->num_parts - 1].stream_list);
+		swm_info->parts[swm_info->num_parts - 1].size = 0;
 	}
-	args->size_remaining -= lte->resource_entry.size;
-	args->progress.split.completed_bytes += lte->resource_entry.size;
-	list_add_tail(&lte->swm_stream_list, &args->lte_list);
-	return copy_resource(lte, wim);
+	swm_info->parts[swm_info->num_parts - 1].size += stream_size;
+	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)) {
+		list_add_tail(&lte->write_streams_list,
+			      &swm_info->parts[swm_info->num_parts - 1].stream_list);
+	}
+	swm_info->total_bytes += stream_size;
+	return 0;
 }
 
-/* Splits the WIM file @wim into multiple parts prefixed by @swm_name with size
- * at most @part_size bytes. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_split(WIMStruct *wim, const tchar *swm_name,
-	     size_t part_size, int write_flags,
+	     u64 part_size, int write_flags,
 	     wimlib_progress_func_t progress_func)
 {
+	struct swm_info swm_info;
+	unsigned i;
 	int ret;
-	struct wim_header hdr_save;
-	struct split_args args;
-	const tchar *swm_suffix;
-	size_t swm_name_len;
-	size_t swm_base_name_len;
 
-	if (!swm_name || part_size == 0)
+	if (swm_name == NULL || swm_name[0] == T('\0') || part_size == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (wim->hdr.total_parts != 1)
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 
-	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
+	memset(&swm_info, 0, sizeof(swm_info));
+	swm_info.max_part_size = part_size;
 
-	swm_name_len = tstrlen(swm_name);
-	tchar swm_base_name[swm_name_len + 20];
-
-	memcpy(&hdr_save, &wim->hdr, sizeof(struct wim_header));
-	wim->hdr.flags |= WIM_HDR_FLAG_SPANNED;
-	wim->hdr.boot_idx = 0;
-	randomize_byte_array(wim->hdr.guid, WIM_GID_LEN);
-	ret = begin_write(wim, swm_name, write_flags);
-	if (ret)
-		goto out;
-
-	tmemcpy(swm_base_name, swm_name, swm_name_len + 1);
-
-	swm_suffix = tstrchr(swm_name, T('.'));
-	if (swm_suffix) {
-		swm_base_name_len = swm_suffix - swm_name;
-	} else {
-		swm_base_name_len = swm_name_len;
-		swm_base_name[ARRAY_LEN(swm_base_name) - 1] = T('\0');
-		swm_suffix = &swm_base_name[ARRAY_LEN(swm_base_name) - 1];
-	}
-
-	args.wim                              = wim;
-	args.swm_base_name                  = swm_base_name;
-	args.swm_base_name_len              = swm_base_name_len;
-	args.swm_suffix                     = swm_suffix;
-	INIT_LIST_HEAD(&args.lte_list);
-	args.cur_part_number                = 1;
-	args.write_flags                    = write_flags;
-	args.size_remaining                 = part_size;
-	args.part_size                      = part_size;
-	args.progress_func                  = progress_func;
-	args.progress.split.total_bytes     = lookup_table_total_stream_size(wim->lookup_table);
-	args.progress.split.cur_part_number = 1;
-	args.progress.split.completed_bytes = 0;
-	args.progress.split.part_name       = swm_base_name;
-
-	if (progress_func) {
-		progress_func(WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART,
-			      &args.progress);
-	}
-
-	for (int i = 0; i < wim->hdr.image_count; i++) {
-		struct wim_lookup_table_entry *metadata_lte;
-		metadata_lte = wim->image_metadata[i]->metadata_lte;
-		ret = copy_resource(metadata_lte, wim);
+	for (i = 0; i < wim->hdr.image_count; i++) {
+		ret = add_stream_to_swm(wim->image_metadata[i]->metadata_lte,
+					&swm_info);
 		if (ret)
-			goto out;
-		args.size_remaining -= metadata_lte->resource_entry.size;
-		args.progress.split.completed_bytes += metadata_lte->resource_entry.size;
-		/* Careful: The metadata lookup table entries must be added in
-		 * order of the images. */
-		list_add_tail(&metadata_lte->swm_stream_list, &args.lte_list);
+			goto out_free_swm_info;
 	}
 
 	ret = for_lookup_table_entry_pos_sorted(wim->lookup_table,
-						copy_resource_to_swm,
-						&args);
+						add_stream_to_swm,
+						&swm_info);
 	if (ret)
-		goto out;
+		goto out_free_swm_info;
 
-	ret = finish_swm(wim, &args.lte_list, write_flags, progress_func);
-	if (ret)
-		goto out;
-
-	if (progress_func) {
-		progress_func(WIMLIB_PROGRESS_MSG_SPLIT_END_PART,
-			      &args.progress);
-	}
-
-	/* The swms are all ready now, except the total_parts and part_number
-	 * fields in their headers are wrong (since we don't know the total
-	 * parts until they are all written).  Fix them. */
-	int total_parts = args.cur_part_number;
-	for (int i = 1; i <= total_parts; i++) {
-		const tchar *part_name;
-		int part_fd;
-		int ret2;
-
-		if (i == 1) {
-			part_name = swm_name;
-		} else {
-			tsprintf(swm_base_name + swm_base_name_len, T("%d%"TS),
-				 i, swm_suffix);
-			part_name = swm_base_name;
-		}
-
-		part_fd = topen(part_name, O_WRONLY | O_BINARY);
-		if (part_fd == -1) {
-			ERROR_WITH_ERRNO("Failed to open `%"TS"'", part_name);
-			ret = WIMLIB_ERR_OPEN;
-			goto out;
-		}
-
-		ret = write_header_part_data(i, total_parts, part_fd);
-		ret2 = close(part_fd);
-		if (ret == 0 && ret2 != 0)
-			ret = WIMLIB_ERR_WRITE;
-		if (ret) {
-			ERROR_WITH_ERRNO("Error updating header of `%"TS"'",
-					 part_name);
-			goto out;
-		}
-	}
-	ret = 0;
-out:
-	close_wim_writable(wim);
-	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
+	ret = write_split_wim(wim, swm_name, &swm_info, write_flags,
+			      progress_func);
+out_free_swm_info:
+	FREE(swm_info.parts);
 	return ret;
 }

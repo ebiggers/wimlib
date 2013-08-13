@@ -68,7 +68,7 @@ add_new_dentry_tree(WIMStruct *wim, struct wim_dentry *root_dentry,
 	return ret;
 }
 
-/* Append an empty image to the WIMStruct. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_add_empty_image(WIMStruct *wim, const tchar *name, int *new_idx_ret)
 {
@@ -148,8 +148,7 @@ capture_sources_to_add_cmds(const struct wimlib_capture_source *sources,
 	return add_cmds;
 }
 
-/* Adds an image to the WIMStruct from multiple on-disk directory trees, or a
- * NTFS volume. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_add_image_multisource(WIMStruct *wim,
 			     const struct wimlib_capture_source *sources,
@@ -200,7 +199,7 @@ out:
 	return ret;
 }
 
-/* Adds an image to the WIMStruct from an on-disk directory tree or NTFS volume. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_add_image(WIMStruct *wim,
 		 const tchar *source,

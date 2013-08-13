@@ -13,6 +13,8 @@
 #include <string.h>
 #include <assert.h>
 #include <stdio.h>
+#include <fcntl.h>
+#include <io.h>
 
 /* Replacement for glob() in Windows native builds that operates on wide
  * characters. */
@@ -260,3 +262,7 @@ win32_wbasename(wchar_t *path)
 	return p;
 }
 
+void set_fd_to_binary_mode(int fd)
+{
+	_setmode(fd, _O_BINARY);
+}

@@ -1,19 +1,21 @@
-.TH IMAGEX "1" "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-split \- Split a WIM into multiple parts
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ split\fR \fIWIMFILE\fR \fISPLIT_WIMFILE\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
+\fB@IMAGEX_PROGNAME@ split\fR \fIWIMFILE\fR \fISPLIT_WIM_PART\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
 .SH DESCRIPTION
 Splits \fIWIMFILE\fR into parts with size at most \fIPART_SIZE\fR mebibytes,
-with the first part having the name \fISPLIT_WIMFILE\fR and the other parts
+with the first part having the name \fISPLIT_WIM_PART\fR and the other parts
 having names numbered in order of the parts.
+.PP
+\fB@IMAGEX_PROGNAME@ split\fR can split both non-pipable and pipable WIMs.
 .SH OPTIONS
 .TP 6
 \fB--check\fR
 When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
-present; additionally, when writing each \fISPLIT_WIMFILE\fR, write an integrity
-table.  If this option is not specified, no integrity tables are included in the
-split WIM files, even if there was one in the original WIM.
+present; additionally, when writing each \fISPLIT_WIM_PART\fR, write an integrity
+table.  If this option is not specified, integrity tables will be included in
+the split WIMs if and only if one was present in \fIWIMFILE\fR.
 .SH EXAMPLES
 Splits the WIM 'windows.wim' into 'windows.swm', 'windows2.swm', 'windows3.swm',
 etc. where each part is at most 100 MiB:

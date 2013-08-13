@@ -95,9 +95,7 @@ inode_move_ltes_to_table(struct wim_inode *inode,
 	}
 }
 
-/*
- * Exports an image, or all the images, from a WIM file, into another WIM file.
- */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_export_image(WIMStruct *src_wim,
 		    int src_image,
@@ -255,6 +253,7 @@ wimlib_export_image(WIMStruct *src_wim,
 		 * the flag is set on the source WIM. */
 		dest_wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
 	}
+	DEBUG("Successfully exported image.");
 	ret = 0;
 	goto out;
 out_xml_delete_image:

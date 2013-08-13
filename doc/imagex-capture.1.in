@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-capture, @IMAGEX_PROGNAME@-append \- Create or append a WIM image
 .SH SYNOPSIS
@@ -31,6 +31,10 @@ which a WIM image is to be captured.
 the new image.  If \fIIMAGE_NAME\fR is not given, it is taken to be the same as
 the base name of \fISOURCE\fR.  If \fIIMAGE_DESCRIPTION\fR is not given, no
 description is given to the new image.
+.PP
+As a special case, if \fIWIMFILE\fR is "-", the \fB--pipable\fR option is
+assumed and the WIM file is written to standard output in a special pipable
+format.   See the documentation for \fB--pipable\fR for more details.
 .SH NORMAL MODE (UNIX)
 This section documents how files are captured from a directory on UNIX.  See
 \fBWINDOWS VERSION\fR for the corresponding documentation for the Windows
@@ -131,9 +135,13 @@ anyway).
 Specifies that the new image is to be made the bootable image of the WIM archive.
 .TP
 \fB--check\fR
-Include an integrity table in the new WIM file or the modified WIM file.  If
-this option is not specified, no integrity table is included in \fIWIMFILE\fR,
-even if there was one before in the case of \fB@IMAGEX_PROGNAME@ append\fR.
+For \fB@IMAGEX_PROGNAME@ append\fR, check the integrity of \fIWIMFILE\fR if an
+integrity was present.  Furthermore, include an integrity table in the new WIM
+file (\fB@IMAGEX_PROGNAME@ capture\fR) or the modified WIM file
+(\fB@IMAGEX_PROGNAME@ append\fR).  If this option is not specified, no integrity
+table is included in a WIM file created with \fB@IMAGEX_PROGNAME@ capture\fR,
+while a WIM file updated with \fB@IMAGEX_PROGNAME@ append\fR will be written
+with an integrity table if and only if one was present before.
 .TP
 \fB--compress\fR=\fITYPE\fR
 Specifies the compression type for the new WIM file.  This flag is only valid
@@ -220,7 +228,8 @@ used:
 is done by adding a special alternate data stream to each directory entry that
 contains this information.  Please note that this flag is for convenience only,
 in case you want to use \fB@IMAGEX_PROGNAME@\fR to archive files on UNIX.
-Microsoft's software will not understand this special information.
+Microsoft's software will not understand this special information.  You also may
+run into problems when applying an image with UNIX data from a pipable WIM.
 .TP
 \fB--no-acls\fR
 Do not capture files' security descriptors.  This option is available in the
@@ -300,6 +309,43 @@ input rather than an external file.
 .IP ""
 The NTFS capture mode cannot be used with \fB--source-list\fR, as only capturing
 a full NTFS volume is supported.
+.TP
+\fB--pipable\fR
+Create a "pipable" WIM, which can be applied fully sequentially, including from
+a pipe.  An image in the resulting WIM can be applied with \fB@IMAGEX_PROGNAME@
+apply\fR, either normally by specifying the WIM file name, or with
+\fB@IMAGEX_PROGNAME@ apply -\fR to read the WIM from standard input.  See
+\fB@IMAGEX_PROGNAME@ apply\fR(1) for more details.
+.IP ""
+For append operations, this option will result in a full rebuild of the WIM to
+make it pipable.  For capture operations, the captured WIM is simply created as
+pipable.  Beware that the more images you add to a pipable WIM, the less
+efficient piping it will be, since more unneeded data will be sent through the
+pipe.
+.IP ""
+When wimlib creates a pipable WIM, it carefully re-arranges the components of
+the WIM so that they can be read sequentially, and also makes several other
+modifications.  As a result, these "pipable" WIMs are \fInot compatible with
+Microsoft's software\fR, so keep this in mind if you're going to use them.  If
+desired, you can use \fB@IMAGEX_PROGNAME@ optimize --not-pipable\fR to re-write
+a pipable WIM as a regular WIM.  (\fB@IMAGEX_PROGNAME@ export\fR also provides
+the capability to export images from a pipable WIM into a non-pipable WIM, or
+vice versa.)
+.IP ""
+For the most part, wimlib operates on pipable WIMs transparently.  You can
+modify them, add or delete images, export images, and even create split pipable
+WIMs.  The main disadvantages are that appending is (currently) less efficient,
+and also they aren't compatible with Microsoft's software.
+.IP ""
+\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR can both
+write a pipable WIM directly to standard output; this is done automatically if
+\fIWIMFILE\fR is specified as "-".  (In that case, \fB--pipable\fR is assumed.)
+.TP
+\fB--not-pipable\fR
+Ensure the resulting WIM is in the normal, non-pipable WIM format.  This is the
+default for \fB@IMAGEX_PROGNAME@ capture\fR, except when writing to standard
+output, and for \fB@IMAGEX_PROGNAME@ append\fR, except when appending to a WIM
+that is already pipable.
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ append\fR does not support appending an image to a split WIM.
 .PP
@@ -308,9 +354,9 @@ specify a special WIM format.  A WIM file can contain images captured using
 different modes.  However, all images in a WIM must have the same compression
 type, and \fB@IMAGEX_PROGNAME@\fR always enforces this.
 .PP
-\fB@IMAGEX_PROGNAME@\fR writes WIMs having the version number 0x10d00 and a compressed
-stream chunk size of 32768.  The only WIMs I've seen that are different from
-this are some pre-Vista WIMs that had a different version number.
+\fB@IMAGEX_PROGNAME@\fR writes WIMs having the version number 0x10d00 and a
+compressed stream chunk size of 32768.  The only WIMs I've seen that are
+different from this are some pre-Vista WIMs that had a different version number.
 .PP
 It is safe to abort an \fB@IMAGEX_PROGNAME@ append\fR command partway through;
 however, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
@@ -347,6 +393,13 @@ integrity table to be discarded.
 .RS
 .PP
 @IMAGEX_PROGNAME@ append /dev/sda2 mywim.wim --check "Windows 7"
+.RE
+.PP
+Capture a WIM from a NTFS volume and write it directly to standard output, using
+the wimlib-specific pipable WIM format:
+.RS
+.PP
+@IMAGEX_PROGNAME@ capture /dev/sda1 -
 .RE
 .PP
 .SH SEE ALSO

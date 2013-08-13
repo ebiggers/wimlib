@@ -75,8 +75,8 @@ new_wim_struct(void)
 {
 	WIMStruct *wim = CALLOC(1, sizeof(WIMStruct));
 	if (wim) {
-		wim->in_fd = -1;
-		wim->out_fd = -1;
+		wim->in_fd.fd = -1;
+		wim->out_fd.fd = -1;
 	}
 	return wim;
 }
@@ -115,9 +115,7 @@ for_image(WIMStruct *wim, int image, int (*visitor)(WIMStruct *))
 	return 0;
 }
 
-/*
- * Creates a WIMStruct for a new WIM file.
- */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 {
@@ -135,7 +133,7 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 	if (!wim)
 		return WIMLIB_ERR_NOMEM;
 
-	ret = init_header(&wim->hdr, ctype);
+	ret = init_wim_header(&wim->hdr, ctype);
 	if (ret != 0)
 		goto out_free;
 
@@ -209,6 +207,7 @@ select_wim_image(WIMStruct *wim, int image)
 }
 
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI const tchar *
 wimlib_get_compression_type_string(int ctype)
 {
@@ -224,11 +223,7 @@ wimlib_get_compression_type_string(int ctype)
 	}
 }
 
-/*
- * Returns the number of an image in the WIM file, given a string that is either
- * the number of the image, or the name of the image.  The images are numbered
- * starting at 1.
- */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_resolve_image(WIMStruct *wim, const tchar *image_name_or_num)
 {
@@ -257,7 +252,7 @@ wimlib_resolve_image(WIMStruct *wim, const tchar *image_name_or_num)
 	}
 }
 
-/* Prints some basic information about a WIM file. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI void
 wimlib_print_wim_information(const WIMStruct *wim)
 {
@@ -284,6 +279,7 @@ wimlib_print_wim_information(const WIMStruct *wim)
 	tputchar(T('\n'));
 }
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI void
 wimlib_print_available_images(const WIMStruct *wim, int image)
 {
@@ -312,8 +308,7 @@ wimlib_print_available_images(const WIMStruct *wim, int image)
 }
 
 
-/* Prints the metadata for the specified image, which may be WIMLIB_ALL_IMAGES, but
- * not WIMLIB_NO_IMAGE. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_print_metadata(WIMStruct *wim, int image)
 {
@@ -326,6 +321,7 @@ wimlib_print_metadata(WIMStruct *wim, int image)
 	return for_image(wim, image, image_print_metadata);
 }
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_print_files(WIMStruct *wim, int image)
 {
@@ -338,6 +334,7 @@ wimlib_print_files(WIMStruct *wim, int image)
 	return for_image(wim, image, image_print_files);
 }
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 {
@@ -350,11 +347,8 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 	info->part_number = wim->hdr.part_number;
 	info->total_parts = wim->hdr.total_parts;
 	info->compression_type = wim->compression_type;
-	if (wim->wim_info)
-		info->total_bytes = wim->wim_info->total_bytes;
-	else
-		info->total_bytes = 0;
-	info->has_integrity_table = wim->hdr.integrity.offset != 0;
+	info->total_bytes = wim_info_get_total_bytes(wim->wim_info);
+	info->has_integrity_table = wim_has_integrity_table(wim);
 	info->opened_from_file = (wim->filename != NULL);
 	info->is_readonly = (wim->hdr.flags & WIM_HDR_FLAG_READONLY) ||
 			     (wim->hdr.total_parts != 1) ||
@@ -365,11 +359,12 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 	info->metadata_only = (wim->hdr.flags & WIM_HDR_FLAG_METADATA_ONLY) != 0;
 	info->resource_only = (wim->hdr.flags & WIM_HDR_FLAG_RESOURCE_ONLY) != 0;
 	info->spanned = (wim->hdr.flags & WIM_HDR_FLAG_SPANNED) != 0;
+	info->pipable = wim_is_pipable(wim);
 	return 0;
 }
 
 
-/* Deprecated */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_get_boot_idx(const WIMStruct *wim)
 {
@@ -379,7 +374,7 @@ wimlib_get_boot_idx(const WIMStruct *wim)
 	return info.boot_index;
 }
 
-/* Deprecated */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_get_compression_type(const WIMStruct *wim)
 {
@@ -389,7 +384,7 @@ wimlib_get_compression_type(const WIMStruct *wim)
 	return info.compression_type;
 }
 
-/* Deprecated */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_get_num_images(const WIMStruct *wim)
 {
@@ -399,7 +394,7 @@ wimlib_get_num_images(const WIMStruct *wim)
 	return info.image_count;
 }
 
-/* Deprecated */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret)
 {
@@ -411,7 +406,7 @@ wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret)
 	return info.part_number;
 }
 
-/* Deprecated */
+/* API function documented in wimlib.h  */
 WIMLIBAPI bool
 wimlib_has_integrity_table(const WIMStruct *wim)
 {
@@ -421,6 +416,7 @@ wimlib_has_integrity_table(const WIMStruct *wim)
 	return info.has_integrity_table;
 }
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int which)
 {
@@ -444,8 +440,7 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int whic
 		memcpy(wim->hdr.guid, info->guid, WIM_GID_LEN);
 
 	if (which & WIMLIB_CHANGE_BOOT_INDEX) {
-		if (info->boot_index < 0 || info->boot_index > wim->hdr.image_count)
-		{
+		if (info->boot_index > wim->hdr.image_count) {
 			ERROR("%u is not 0 or a valid image in the WIM to mark as bootable",
 			      info->boot_index);
 			return WIMLIB_ERR_INVALID_IMAGE;
@@ -462,7 +457,7 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int whic
 	return 0;
 }
 
-/* Deprecated */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_set_boot_idx(WIMStruct *wim, int boot_idx)
 {
@@ -473,32 +468,32 @@ wimlib_set_boot_idx(WIMStruct *wim, int boot_idx)
 }
 
 static int
-do_open_wim(const tchar *filename, int *fd_ret)
+do_open_wim(const tchar *filename, struct filedes *fd_ret)
 {
-	int fd;
+	int raw_fd;
 
-	fd = topen(filename, O_RDONLY | O_BINARY);
-	if (fd == -1) {
+	raw_fd = topen(filename, O_RDONLY | O_BINARY);
+	if (raw_fd < 0) {
 		ERROR_WITH_ERRNO("Can't open \"%"TS"\" read-only", filename);
 		return WIMLIB_ERR_OPEN;
 	}
-	*fd_ret = fd;
+	filedes_init(fd_ret, raw_fd);
 	return 0;
 }
 
 int
 reopen_wim(WIMStruct *wim)
 {
-	wimlib_assert(wim->in_fd == -1);
+	wimlib_assert(!filedes_valid(&wim->in_fd));
 	return do_open_wim(wim->filename, &wim->in_fd);
 }
 
 int
 close_wim(WIMStruct *wim)
 {
-	if (wim->in_fd != -1) {
-		close(wim->in_fd);
-		wim->in_fd = -1;
+	if (filedes_valid(&wim->in_fd)) {
+		filedes_close(&wim->in_fd);
+		filedes_invalidate(&wim->in_fd);
 	}
 	return 0;
 }
@@ -508,47 +503,54 @@ close_wim(WIMStruct *wim)
  * lookup table, and optionally checks the integrity.
  */
 static int
-begin_read(WIMStruct *wim, const tchar *in_wim_path, int open_flags,
-	   wimlib_progress_func_t progress_func)
+begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
+	   int open_flags, wimlib_progress_func_t progress_func)
 {
 	int ret;
 	int xml_num_images;
+	const tchar *wimfile;
 
-	DEBUG("Reading the WIM file `%"TS"'", in_wim_path);
+	if (open_flags & WIMLIB_OPEN_FLAG_FROM_PIPE) {
+		wimfile = NULL;
+		filedes_init(&wim->in_fd, *(const int*)wim_filename_or_fd);
+		wim->in_fd.is_pipe = 1;
+	} else {
+		wimfile = wim_filename_or_fd;
+		DEBUG("Reading the WIM file `%"TS"'", wimfile);
+		ret = do_open_wim(wimfile, &wim->in_fd);
+		if (ret)
+			return ret;
 
-	ret = do_open_wim(in_wim_path, &wim->in_fd);
-	if (ret)
-		return ret;
-
-	/* The absolute path to the WIM is requested so that wimlib_overwrite()
-	 * still works even if the process changes its working directory.  This
-	 * actually happens if a WIM is mounted read-write, since the FUSE
-	 * thread changes directory to "/", and it needs to be able to find the
-	 * WIM file again.
-	 *
-	 * This will break if the full path to the WIM changes in the
-	 * intervening time...
-	 *
-	 * Warning: in Windows native builds, realpath() calls the replacement
-	 * function in win32.c.
-	 */
-	wim->filename = realpath(in_wim_path, NULL);
-	if (!wim->filename) {
-		ERROR_WITH_ERRNO("Failed to resolve WIM filename");
-		if (errno == ENOMEM)
-			return WIMLIB_ERR_NOMEM;
-		else
-			return WIMLIB_ERR_OPEN;
+		/* The absolute path to the WIM is requested so that
+		 * wimlib_overwrite() still works even if the process changes
+		 * its working directory.  This actually happens if a WIM is
+		 * mounted read-write, since the FUSE thread changes directory
+		 * to "/", and it needs to be able to find the WIM file again.
+		 *
+		 * This will break if the full path to the WIM changes in the
+		 * intervening time...
+		 *
+		 * Warning: in Windows native builds, realpath() calls the
+		 * replacement function in win32.c.
+		 */
+		wim->filename = realpath(wimfile, NULL);
+		if (!wim->filename) {
+			ERROR_WITH_ERRNO("Failed to resolve WIM filename");
+			if (errno == ENOMEM)
+				return WIMLIB_ERR_NOMEM;
+			else
+				return WIMLIB_ERR_OPEN;
+		}
 	}
 
-	ret = read_header(wim->filename, wim->in_fd, &wim->hdr);
+	ret = read_wim_header(wim->filename, &wim->in_fd, &wim->hdr);
 	if (ret)
 		return ret;
 
 	if (wim->hdr.flags & WIM_HDR_FLAG_WRITE_IN_PROGRESS) {
 		WARNING("The WIM_HDR_FLAG_WRITE_IN_PROGRESS is set in the header of \"%"TS"\".\n"
 			"          It may be being changed by another process, or a process\n"
-			"          may have crashed while writing the WIM.", in_wim_path);
+			"          may have crashed while writing the WIM.", wimfile);
 	}
 
 	if (open_flags & WIMLIB_OPEN_FLAG_WRITE_ACCESS) {
@@ -559,7 +561,7 @@ begin_read(WIMStruct *wim, const tchar *in_wim_path, int open_flags,
 
 	if (wim->hdr.total_parts != 1 && !(open_flags & WIMLIB_OPEN_FLAG_SPLIT_OK)) {
 		ERROR("\"%"TS"\": This WIM is part %u of a %u-part WIM",
-		      in_wim_path, wim->hdr.part_number, wim->hdr.total_parts);
+		      wimfile, wim->hdr.part_number, wim->hdr.total_parts);
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 	}
 
@@ -569,7 +571,7 @@ begin_read(WIMStruct *wim, const tchar *in_wim_path, int open_flags,
 	if (wim->hdr.boot_idx > wim->hdr.image_count) {
 		WARNING("In `%"TS"', image %u is marked as bootable, "
 			"but there are only %u images in the WIM",
-			in_wim_path, wim->hdr.boot_idx, wim->hdr.image_count);
+			wimfile, wim->hdr.boot_idx, wim->hdr.image_count);
 		wim->hdr.boot_idx = 0;
 	}
 
@@ -578,7 +580,7 @@ begin_read(WIMStruct *wim, const tchar *in_wim_path, int open_flags,
 		if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_LZX) {
 			if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_XPRESS) {
 				ERROR("Multiple compression flags are set in \"%"TS"\"",
-				      in_wim_path);
+				      wimfile);
 				return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 			}
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
@@ -587,18 +589,18 @@ begin_read(WIMStruct *wim, const tchar *in_wim_path, int open_flags,
 		} else {
 			ERROR("The compression flag is set on \"%"TS"\", but "
 			      "neither the XPRESS nor LZX flag is set",
-			      in_wim_path);
+			      wimfile);
 			return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 		}
 	} else {
-		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
+		wim->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
 	}
 
 	if (open_flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY) {
 		ret = check_wim_integrity(wim, progress_func);
 		if (ret == WIM_INTEGRITY_NONEXISTENT) {
 			WARNING("No integrity information for `%"TS"'; skipping "
-				"integrity check.", in_wim_path);
+				"integrity check.", wimfile);
 		} else if (ret == WIM_INTEGRITY_NOT_OK) {
 			ERROR("WIM is not intact! (Failed integrity check)");
 			return WIMLIB_ERR_INTEGRITY;
@@ -613,34 +615,35 @@ begin_read(WIMStruct *wim, const tchar *in_wim_path, int open_flags,
 			return WIMLIB_ERR_NOMEM;
 	}
 
-	ret = read_lookup_table(wim);
-	if (ret)
-		return ret;
+	if (open_flags & WIMLIB_OPEN_FLAG_FROM_PIPE) {
+		wim->lookup_table = new_lookup_table(9001);
+		if (!wim->lookup_table)
+			return WIMLIB_ERR_NOMEM;
+	} else {
+		ret = read_wim_lookup_table(wim);
+		if (ret)
+			return ret;
 
-	ret = read_xml_data(wim->in_fd, &wim->hdr.xml_res_entry, &wim->wim_info);
-	if (ret)
-		return ret;
+		ret = read_wim_xml_data(wim);
+		if (ret)
+			return ret;
 
-	xml_num_images = wim_info_get_num_images(wim->wim_info);
-	if (xml_num_images != wim->hdr.image_count) {
-		ERROR("In the file `%"TS"', there are %u <IMAGE> elements "
-		      "in the XML data,", in_wim_path, xml_num_images);
-		ERROR("but %u images in the WIM!  There must be exactly one "
-		      "<IMAGE> element per image.", wim->hdr.image_count);
-		return WIMLIB_ERR_IMAGE_COUNT;
+		xml_num_images = wim_info_get_num_images(wim->wim_info);
+		if (xml_num_images != wim->hdr.image_count) {
+			ERROR("In the file `%"TS"', there are %u <IMAGE> elements "
+			      "in the XML data,", wimfile, xml_num_images);
+			ERROR("but %u images in the WIM!  There must be exactly one "
+			      "<IMAGE> element per image.", wim->hdr.image_count);
+			return WIMLIB_ERR_IMAGE_COUNT;
+		}
+		DEBUG("Done beginning read of WIM file `%"TS"'.", wimfile);
 	}
-
-	DEBUG("Done beginning read of WIM file `%"TS"'.", in_wim_path);
 	return 0;
 }
 
-/*
- * Opens a WIM file and creates a WIMStruct for it.
- */
-WIMLIBAPI int
-wimlib_open_wim(const tchar *wim_file, int open_flags,
-		WIMStruct **wim_ret,
-		wimlib_progress_func_t progress_func)
+int
+open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
+		      WIMStruct **wim_ret, wimlib_progress_func_t progress_func)
 {
 	WIMStruct *wim;
 	int ret;
@@ -648,7 +651,7 @@ wimlib_open_wim(const tchar *wim_file, int open_flags,
 	wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
 
 	ret = WIMLIB_ERR_INVALID_PARAM;
-	if (!wim_file || !wim_ret)
+	if (!wim_ret)
 		goto out;
 
 	ret = WIMLIB_ERR_NOMEM;
@@ -656,7 +659,7 @@ wimlib_open_wim(const tchar *wim_file, int open_flags,
 	if (!wim)
 		goto out;
 
-	ret = begin_read(wim, wim_file, open_flags, progress_func);
+	ret = begin_read(wim, wim_filename_or_fd, open_flags, progress_func);
 	if (ret)
 		goto out_wimlib_free;
 
@@ -667,6 +670,16 @@ out_wimlib_free:
 	wimlib_free(wim);
 out:
 	return ret;
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_open_wim(const tchar *wimfile, int open_flags,
+		WIMStruct **wim_ret, wimlib_progress_func_t progress_func)
+{
+	open_flags &= WIMLIB_OPEN_MASK_PUBLIC;
+	return open_wim_as_WIMStruct(wimfile, open_flags, wim_ret,
+				     progress_func);
 }
 
 void
@@ -848,8 +861,7 @@ can_delete_from_wim(WIMStruct *wim)
 	return 0;
 }
 
-/* Frees the memory for the WIMStruct, including all internal memory; also
- * closes all files associated with the WIMStruct.  */
+/* API function documented in wimlib.h  */
 WIMLIBAPI void
 wimlib_free(WIMStruct *wim)
 {
@@ -857,10 +869,10 @@ wimlib_free(WIMStruct *wim)
 
 	if (!wim)
 		return;
-	if (wim->in_fd != -1)
-		close(wim->in_fd);
-	if (wim->out_fd != -1)
-		close(wim->out_fd);
+	if (wim->in_fd.fd != -1)
+		close(wim->in_fd.fd);
+	if (wim->out_fd.fd != -1)
+		close(wim->out_fd.fd);
 
 	free_lookup_table(wim->lookup_table);
 
@@ -890,6 +902,7 @@ test_locale_ctype_utf8(void)
 #endif
 }
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_global_init(int init_flags)
 {
@@ -912,8 +925,7 @@ wimlib_global_init(int init_flags)
 	return 0;
 }
 
-/* Free global memory allocations.  Not strictly necessary if the process using
- * wimlib is just about to exit (as is the case for 'imagex'). */
+/* API function documented in wimlib.h  */
 WIMLIBAPI void
 wimlib_global_cleanup(void)
 {

@@ -80,7 +80,7 @@
 struct wimfs_fd {
 	struct wim_inode *f_inode;
 	struct wim_lookup_table_entry *f_lte;
-	int staging_fd;
+	struct filedes staging_fd;
 	u16 idx;
 	u32 stream_id;
 };
@@ -229,13 +229,13 @@ alloc_wimfs_fd(struct wim_inode *inode,
 				ret = -ENOMEM;
 				break;
 			}
-			fd->f_inode    = inode;
-			fd->f_lte      = lte;
-			fd->staging_fd = -1;
-			fd->idx        = i;
-			fd->stream_id  = stream_id;
-			*fd_ret        = fd;
-			inode->i_fds[i]  = fd;
+			fd->f_inode     = inode;
+			fd->f_lte       = lte;
+			filedes_invalidate(&fd->staging_fd);
+			fd->idx         = i;
+			fd->stream_id   = stream_id;
+			*fd_ret         = fd;
+			inode->i_fds[i] = fd;
 			inode->i_num_opened_fds++;
 			if (lte && !readonly)
 				lte->num_opened_fds++;
@@ -279,9 +279,9 @@ lte_put_fd(struct wim_lookup_table_entry *lte, struct wimfs_fd *fd)
 	/* Close staging file descriptor if needed. */
 
 	if (lte->resource_location == RESOURCE_IN_STAGING_FILE
-	     && fd->staging_fd != -1)
+	     && filedes_valid(&fd->staging_fd))
 	{
-		if (close(fd->staging_fd) != 0) {
+		if (filedes_close(&fd->staging_fd)) {
 			ERROR_WITH_ERRNO("Failed to close staging file");
 			return -errno;
 		}
@@ -567,8 +567,10 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 
 	/* Extract the stream to the staging file (possibly truncated) */
 	if (old_lte) {
+		struct filedes wimlib_fd = {.fd = fd};
 		extract_size = min(wim_resource_size(old_lte), size);
-		ret = extract_wim_resource_to_fd(old_lte, fd, extract_size);
+		ret = extract_wim_resource_to_fd(old_lte, &wimlib_fd,
+						 extract_size);
 	} else {
 		ret = 0;
 		extract_size = 0;
@@ -637,15 +639,18 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 			struct wimfs_fd *fd = inode->i_fds[i];
 			if (fd) {
 				if (fd->stream_id == stream_id) {
+					int raw_fd;
+
 					wimlib_assert(fd->f_lte == old_lte);
-					wimlib_assert(fd->staging_fd == -1);
+					wimlib_assert(!filedes_valid(&fd->staging_fd));
 					fd->f_lte = new_lte;
 					new_lte->num_opened_fds++;
-					fd->staging_fd = open(staging_file_name, O_RDONLY);
-					if (fd->staging_fd == -1) {
+					raw_fd = open(staging_file_name, O_RDONLY);
+					if (raw_fd < 0) {
 						ret = -errno;
 						goto out_revert_fd_changes;
 					}
+					filedes_init(&fd->staging_fd, raw_fd);
 				}
 				j++;
 			}
@@ -673,9 +678,9 @@ out_revert_fd_changes:
 		struct wimfs_fd *fd = inode->i_fds[i];
 		if (fd && fd->stream_id == stream_id && fd->f_lte == new_lte) {
 			fd->f_lte = old_lte;
-			if (fd->staging_fd != -1) {
-				close(fd->staging_fd);
-				fd->staging_fd = -1;
+			if (filedes_valid(&fd->staging_fd)) {
+				filedes_close(&fd->staging_fd);
+				filedes_invalidate(&fd->staging_fd);
 			}
 			j++;
 		}
@@ -1597,7 +1602,7 @@ static int
 wimfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
-	int ret = ftruncate(fd->staging_fd, size);
+	int ret = ftruncate(fd->staging_fd.fd, size);
 	if (ret)
 		return -errno;
 	touch_inode(fd->f_inode);
@@ -1663,7 +1668,7 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 
 	ret = read_full_resource_into_buf(lte, value);
 	if (ret)
-		return -EIO;
+		return -errno;
 
 	return res_size;
 }
@@ -1858,12 +1863,15 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 		return ret;
 
 	if (lte && lte->resource_location == RESOURCE_IN_STAGING_FILE) {
-		fd->staging_fd = open(lte->staging_file_name, fi->flags);
-		if (fd->staging_fd == -1) {
+		int raw_fd;
+
+		raw_fd = open(lte->staging_file_name, fi->flags);
+		if (raw_fd < 0) {
 			int errno_save = errno;
 			close_wimfs_fd(fd);
 			return -errno_save;
 		}
+		filedes_init(&fd->staging_fd, raw_fd);
 	}
 	fi->fh = (uintptr_t)fd;
 	return 0;
@@ -1921,8 +1929,8 @@ wimfs_read(const char *path, char *buf, size_t size,
 
 	switch (fd->f_lte->resource_location) {
 	case RESOURCE_IN_STAGING_FILE:
-		ret = full_pread(fd->staging_fd, buf, size, offset);
-		if (ret != size)
+		ret = raw_pread(&fd->staging_fd, buf, size, offset);
+		if (ret == -1)
 			ret = -errno;
 		break;
 	case RESOURCE_IN_WIM:
@@ -2009,7 +2017,7 @@ wimfs_readlink(const char *path, char *buf, size_t buf_len)
 		return -EINVAL;
 	if (buf_len == 0)
 		return -ENAMETOOLONG;
-	ret = wim_inode_readlink(inode, buf, buf_len - 1);
+	ret = wim_inode_readlink(inode, buf, buf_len - 1, NULL);
 	if (ret >= 0) {
 		wimlib_assert(ret <= buf_len - 1);
 		buf[ret] = '\0';
@@ -2300,12 +2308,12 @@ wimfs_write(const char *path, const char *buf, size_t size,
 
 	wimlib_assert(fd->f_lte != NULL);
 	wimlib_assert(fd->f_lte->staging_file_name != NULL);
-	wimlib_assert(fd->staging_fd != -1);
+	wimlib_assert(filedes_valid(&fd->staging_fd));
 	wimlib_assert(fd->f_inode != NULL);
 
 	/* Write the data. */
-	ret = full_pwrite(fd->staging_fd, buf, size, offset);
-	if (ret != size)
+	ret = raw_pwrite(&fd->staging_fd, buf, size, offset);
+	if (ret == -1)
 		return -errno;
 
 	/* Update file size */
@@ -2375,7 +2383,7 @@ static struct fuse_operations wimfs_operations = {
 };
 
 
-/* Mounts an image from a WIM file. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		   int mount_flags, WIMStruct **additional_swms,
@@ -2434,7 +2442,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	}
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		ret = lock_wim(wim, wim->in_fd);
+		ret = lock_wim(wim, wim->in_fd.fd);
 		if (ret)
 			goto out_restore_lookup_table;
 	}
@@ -2567,10 +2575,7 @@ out:
 	return ret;
 }
 
-/*
- * Unmounts the WIM file that was previously mounted on @dir by using
- * wimlib_mount_image().
- */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_unmount_image(const char *dir, int unmount_flags,
 		     wimlib_progress_func_t progress_func)

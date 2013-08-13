@@ -55,28 +55,28 @@ struct integrity_table {
 } _packed_attribute;
 
 static int
-calculate_chunk_sha1(int in_fd, size_t this_chunk_size,
+calculate_chunk_sha1(struct filedes *in_fd, size_t this_chunk_size,
 		     off_t offset, u8 sha1_md[])
 {
 	u8 buf[BUFFER_SIZE];
 	SHA_CTX ctx;
 	size_t bytes_remaining;
 	size_t bytes_to_read;
-	size_t bytes_read;
+	int ret;
 
 	bytes_remaining = this_chunk_size;
 	sha1_init(&ctx);
 	do {
 		bytes_to_read = min(bytes_remaining, sizeof(buf));
-		bytes_read = full_pread(in_fd, buf, bytes_to_read, offset);
-		if (bytes_read != bytes_to_read) {
+		ret = full_pread(in_fd, buf, bytes_to_read, offset);
+		if (ret) {
 			ERROR_WITH_ERRNO("Read error while calculating "
 					 "integrity checksums");
-			return WIMLIB_ERR_READ;
+			return ret;
 		}
-		sha1_update(&ctx, buf, bytes_read);
-		bytes_remaining -= bytes_read;
-		offset += bytes_read;
+		sha1_update(&ctx, buf, bytes_to_read);
+		bytes_remaining -= bytes_to_read;
+		offset += bytes_to_read;
 	} while (bytes_remaining);
 	sha1_final(sha1_md, &ctx);
 	return 0;
@@ -86,118 +86,67 @@ calculate_chunk_sha1(int in_fd, size_t this_chunk_size,
 /*
  * read_integrity_table: -  Reads the integrity table from a WIM file.
  *
- * @res_entry:
- * 	The resource entry that specifies the location of the integrity table.
- * 	The integrity table must exist (i.e. res_entry->offset must not be 0).
- *
- * @in_fd:
- * 	File descriptor to the WIM file, opened for reading.
+ * @wim:
+ *	WIMStruct for the WIM file; @wim->hdr.integrity specifies the location
+ *	of the integrity table.  The integrity table must exist (i.e.
+ *	res_entry->offset must not be 0).  @wim->in_fd is expected to be a
+ *	seekable file descriptor to the WIM file opened for reading.
  *
  * @num_checked_bytes:
- * 	Number of bytes of data that should be checked by the integrity table.
+ *	Number of bytes of data that should be checked by the integrity table.
  *
- * @table ret:
- * 	On success, a pointer to an in-memory structure containing the integrity
- * 	information is written to this location.
+ * @table_ret:
+ *	On success, a pointer to an in-memory structure containing the integrity
+ *	information is written to this location.
  *
- * Returns 0 on success; nonzero on failure.  The possible error codes are:
- *
- *     * WIMLIB_ERR_INVALID_INTEGRITY_TABLE:  The integrity table is invalid.
- *     * WIMLIB_ERR_NOMEM:  Could not allocate memory to store the integrity
- *     			    data.
- *     * WIMLIB_ERR_READ:   Could not read the integrity data from the WIM file.
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ *	WIMLIB_ERR_INVALID_INTEGRITY_TABLE
+ *	WIMLIB_ERR_NOMEM
+ *	WIMLIB_ERR_READ
+ *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE
  */
 static int
-read_integrity_table(const struct resource_entry *res_entry,
-		     int in_fd,
-		     u64 num_checked_bytes,
+read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 		     struct integrity_table **table_ret)
 {
 	struct integrity_table *table;
 	int ret;
-	u64 expected_size;
-	u64 expected_num_entries;
 
-	if (resource_is_compressed(res_entry)) {
-		ERROR("Didn't expect a compressed integrity table");
-		return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-	}
+	if (wim->hdr.integrity.size < 8)
+		goto invalid;
 
-	if (res_entry->size < 8 || res_entry->size  > 0xffffffff) {
-		ERROR("Integrity table resource header is invalid");
-		return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-	}
+	DEBUG("Reading integrity table (offset %"PRIu64", "
+	      "original_size %"PRIu64")",
+	      wim->hdr.integrity.offset, wim->hdr.integrity.original_size);
 
-	/* Read the integrity table into memory. */
-	table = MALLOC((size_t)res_entry->size);
-	if (table == NULL) {
-		ERROR("Can't allocate %zu bytes for integrity table",
-		      (size_t)res_entry->size);
-		return WIMLIB_ERR_NOMEM;
-	}
-
-	if (full_pread(in_fd, table, res_entry->size,
-		       res_entry->offset) != res_entry->size)
-	{
-		ERROR("Failed to read integrity table (size = %zu, "
-		      " offset = %"PRIu64")",
-		      (size_t)res_entry->size, res_entry->offset);
-		ret = WIMLIB_ERR_READ;
-		goto out_free_table;
-	}
+	ret = res_entry_to_data(&wim->hdr.integrity, wim, (void**)&table);
+	if (ret)
+		return ret;
 
 	table->size        = le32_to_cpu(table->size);
 	table->num_entries = le32_to_cpu(table->num_entries);
 	table->chunk_size  = le32_to_cpu(table->chunk_size);
 
-	if (table->size != res_entry->size) {
-		ERROR("Inconsistent integrity table sizes: Table header says "
-		      "%u bytes but resource entry says %u bytes",
-		      table->size, (unsigned)res_entry->size);
-		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-		goto out_free_table;
-	}
-
 	DEBUG("table->size = %u, table->num_entries = %u, "
 	      "table->chunk_size = %u",
 	      table->size, table->num_entries, table->chunk_size);
 
-	expected_size = (u64)table->num_entries * SHA1_HASH_SIZE + 12;
-
-	if (table->size != expected_size) {
-		ERROR("Integrity table is %u bytes, but expected %"PRIu64" "
-		      "bytes to hold %u entries",
-		      table->size, expected_size, table->num_entries);
-		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-		goto out_free_table;
+	if (table->size != wim->hdr.integrity.original_size ||
+	    table->size != (u64)table->num_entries * SHA1_HASH_SIZE + 12 ||
+	    table->chunk_size == 0 ||
+	    table->num_entries != DIV_ROUND_UP(num_checked_bytes, table->chunk_size))
+	{
+		FREE(table);
+		goto invalid;
 	}
 
-	if (table->chunk_size == 0) {
-		ERROR("Cannot use integrity chunk size of 0");
-		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-		goto out_free_table;
-	}
-
-	expected_num_entries = DIV_ROUND_UP(num_checked_bytes, table->chunk_size);
-
-	if (table->num_entries != expected_num_entries) {
-		ERROR("%"PRIu64" integrity table entries would be required "
-		      "to checksum the %"PRIu64" bytes from the end of the "
-		      "header to the",
-		      expected_num_entries, num_checked_bytes);
-		ERROR("end of the lookup table with a chunk size of %u, but "
-		      "there were only %u entries",
-		      table->chunk_size, table->num_entries);
-		ret = WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
-		goto out_free_table;
-	}
 	*table_ret = table;
-	ret = 0;
-	goto out;
-out_free_table:
-	FREE(table);
-out:
-	return ret;
+	return 0;
+
+invalid:
+	ERROR("Integrity table is invalid");
+	return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 }
 
 /*
@@ -207,32 +156,36 @@ out:
  * (WIM_HEADER_DISK_SIZE).
  *
  * @in_fd:
- * 	File descriptor for the file to be checked, opened for reading.  Does
- * 	not need to be at any specific location in the file.
+ *	File descriptor for the file to be checked, opened for reading.  Does
+ *	not need to be at any specific location in the file.
  *
  * @new_check_end:
- * 	Offset of byte after the last byte to be checked.
+ *	Offset of byte after the last byte to be checked.
  *
  * @old_table:
- * 	If non-NULL, a pointer to the table containing the previously calculated
- * 	integrity data for a prefix of this file.
+ *	If non-NULL, a pointer to the table containing the previously calculated
+ *	integrity data for a prefix of this file.
  *
  * @old_check_end:
- * 	If @old_table is non-NULL, the byte after the last byte that was checked
- * 	in the old table.  Must be less than or equal to new_check_end.
+ *	If @old_table is non-NULL, the byte after the last byte that was checked
+ *	in the old table.  Must be less than or equal to new_check_end.
  *
  * @progress_func:
- * 	If non-NULL, a progress function that will be called after every
- * 	calculated chunk.
+ *	If non-NULL, a progress function that will be called after every
+ *	calculated chunk.
  *
  * @integrity_table_ret:
- * 	On success, a pointer to the calculated integrity table is written into
- * 	this location.
+ *	On success, a pointer to the calculated integrity table is written into
+ *	this location.
  *
- * Returns 0 on success; nonzero on failure.
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ *	WIMLIB_ERR_NOMEM
+ *	WIMLIB_ERR_READ
+ *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE
  */
 static int
-calculate_integrity_table(int in_fd,
+calculate_integrity_table(struct filedes *in_fd,
 			  off_t new_check_end,
 			  const struct integrity_table *old_table,
 			  off_t old_check_end,
@@ -334,37 +287,38 @@ calculate_integrity_table(int in_fd,
  * cannot be read, a warning is printed and the integrity information is
  * re-calculated.
  *
- * @fd:
- * 	File descriptor to the WIM file, opened read-write, positioned at the
- * 	location at which the integrity table is to be written.
- *
- * @integrity_res_entry:
- * 	Resource entry which will be set to point to the integrity table on
- * 	success.  In addition, if @old_lookup_table_end != 0, this initially
- * 	must point to the resource entry for the old integrity table for the
- * 	WIM.
+ * @wim:
+ *	WIMStruct for the WIM file.  @wim->out_fd must be a seekable descriptor
+ *	to the new WIM file, opened read-write, positioned at the location at
+ *	which the integrity table is to be written.  Furthermore,
+ *	@wim->hdr.integrity is expected to be a resource entry which will be set
+ *	to the integrity table information on success.  In addition, if
+ *	@old_lookup_table_end != 0, @wim->hdr.integrity must initially contain
+ *	information about the old integrity table, and @wim->in_fd must be a
+ *	seekable descriptor to the original WIM file opened for reading.
  *
  * @new_lookup_table_end:
- * 	The offset of the byte directly following the lookup table in the WIM
- * 	being written.
+ *	The offset of the byte directly following the lookup table in the WIM
+ *	being written.
  *
  * @old_lookup_table_end:
- * 	If nonzero, the offset of the byte directly following the old lookup
- * 	table in the WIM.
+ *	If nonzero, the offset of the byte directly following the old lookup
+ *	table in the WIM.
  *
  * @progress_func
- * 	If non-NULL, a progress function that will be called after every
- * 	calculated chunk.
+ *	If non-NULL, a progress function that will be called after every
+ *	calculated chunk.
  *
- * Returns:
- * 	0 on success, nonzero on failure.  The possible error codes are:
- * 	   * WIMLIB_ERR_WRITE:  Could not write the integrity table.
- * 	   * WIMLIB_ERR_READ:   Could not read a chunk of data that needed
- * 				to be checked.
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ *	WIMLIB_ERR_INVALID_INTEGRITY_TABLE
+ *	WIMLIB_ERR_NOMEM
+ *	WIMLIB_ERR_READ
+ *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE
+ *	WIMLIB_ERR_WRITE
  */
 int
-write_integrity_table(int fd,
-		      struct resource_entry *integrity_res_entry,
+write_integrity_table(WIMStruct *wim,
 		      off_t new_lookup_table_end,
 		      off_t old_lookup_table_end,
 		      wimlib_progress_func_t progress_func)
@@ -377,14 +331,12 @@ write_integrity_table(int fd,
 
 	wimlib_assert(old_lookup_table_end <= new_lookup_table_end);
 
-	cur_offset = filedes_offset(fd);
-	if (cur_offset == -1)
-		return WIMLIB_ERR_WRITE;
+	cur_offset = wim->out_fd.offset;
 
-	if (integrity_res_entry->offset == 0 || old_lookup_table_end == 0) {
+	if (wim->hdr.integrity.offset == 0 || old_lookup_table_end == 0) {
 		old_table = NULL;
 	} else {
-		ret = read_integrity_table(integrity_res_entry, fd,
+		ret = read_integrity_table(wim,
 					   old_lookup_table_end - WIM_HEADER_DISK_SIZE,
 					   &old_table);
 		if (ret == WIMLIB_ERR_INVALID_INTEGRITY_TABLE) {
@@ -396,7 +348,7 @@ write_integrity_table(int fd,
 		}
 	}
 
-	ret = calculate_integrity_table(fd, new_lookup_table_end,
+	ret = calculate_integrity_table(&wim->out_fd, new_lookup_table_end,
 					old_table, old_lookup_table_end,
 					progress_func, &new_table);
 	if (ret)
@@ -408,16 +360,14 @@ write_integrity_table(int fd,
 	new_table->num_entries = cpu_to_le32(new_table->num_entries);
 	new_table->chunk_size  = cpu_to_le32(new_table->chunk_size);
 
-	if (full_write(fd, new_table, new_table_size) != new_table_size) {
-		ERROR_WITH_ERRNO("Failed to write WIM integrity table");
-		ret = WIMLIB_ERR_WRITE;
-	} else {
-		integrity_res_entry->offset        = cur_offset;
-		integrity_res_entry->size          = new_table_size;
-		integrity_res_entry->original_size = new_table_size;
-		integrity_res_entry->flags         = 0;
-		ret = 0;
-	}
+	ret = write_wim_resource_from_buffer(new_table,
+					     new_table_size,
+					     0,
+					     &wim->out_fd,
+					     WIMLIB_COMPRESSION_TYPE_NONE,
+					     &wim->hdr.integrity,
+					     NULL,
+					     0);
 	FREE(new_table);
 out_free_old_table:
 	FREE(old_table);
@@ -430,27 +380,27 @@ out_free_old_table:
  * Checks a WIM for consistency with the integrity table.
  *
  * @in_fd:
- * 	File descriptor to the WIM file, opened for reading.
+ *	File descriptor to the WIM file, opened for reading.
  *
  * @table:
- * 	The integrity table for the WIM, read into memory.
+ *	The integrity table for the WIM, read into memory.
  *
  * @bytes_to_check:
- * 	Number of bytes in the WIM that need to be checked (offset of end of the
- * 	lookup table minus offset of end of the header).
+ *	Number of bytes in the WIM that need to be checked (offset of end of the
+ *	lookup table minus offset of end of the header).
  *
  * @progress_func
- * 	If non-NULL, a progress function that will be called after every
- * 	verified chunk.
+ *	If non-NULL, a progress function that will be called after every
+ *	verified chunk.
  *
  * Returns:
- * 	> 0 (WIMLIB_ERR_*) on error
- * 	0 (WIM_INTEGRITY_OK) if the integrity was checked successfully and there
- * 	were no inconsistencies.
- * 	-1 (WIM_INTEGRITY_NOT_OK) if the WIM failed the integrity check.
+ *	> 0 (WIMLIB_ERR_READ, WIMLIB_ERR_UNEXPECTED_END_OF_FILE) on error
+ *	0 (WIM_INTEGRITY_OK) if the integrity was checked successfully and there
+ *	were no inconsistencies.
+ *	-1 (WIM_INTEGRITY_NOT_OK) if the WIM failed the integrity check.
  */
 static int
-verify_integrity(int in_fd, const tchar *filename,
+verify_integrity(struct filedes *in_fd, const tchar *filename,
 		 const struct integrity_table *table,
 		 u64 bytes_to_check,
 		 wimlib_progress_func_t progress_func)
@@ -505,19 +455,20 @@ verify_integrity(int in_fd, const tchar *filename,
  * table.
  *
  * @wim:
- * 	The WIM, opened for reading, and with the header already read.
+ *	The WIM, opened for reading.
  *
  * @progress_func
- * 	If non-NULL, a progress function that will be called after every
- * 	verified chunk.
+ *	If non-NULL, a progress function that will be called after every
+ *	verified chunk.
  *
  * Returns:
- * 	> 0 (WIMLIB_ERR_*) on error
- * 	0 (WIM_INTEGRITY_OK) if the integrity was checked successfully and there
- * 	were no inconsistencies.
- * 	-1 (WIM_INTEGRITY_NOT_OK) if the WIM failed the integrity check.
- * 	-2 (WIM_INTEGRITY_NONEXISTENT) if the WIM contains no integrity
- * 	information.
+ *	> 0 (WIMLIB_ERR_INVALID_INTEGRITY_TABLE, WIMLIB_ERR_READ,
+ *	     WIMLIB_ERR_UNEXPECTED_END_OF_FILE) on error
+ *	0 (WIM_INTEGRITY_OK) if the integrity was checked successfully and there
+ *	were no inconsistencies.
+ *	-1 (WIM_INTEGRITY_NOT_OK) if the WIM failed the integrity check.
+ *	-2 (WIM_INTEGRITY_NONEXISTENT) if the WIM contains no integrity
+ *	information.
  */
 int
 check_wim_integrity(WIMStruct *wim, wimlib_progress_func_t progress_func)
@@ -542,11 +493,10 @@ check_wim_integrity(WIMStruct *wim, wimlib_progress_func_t progress_func)
 
 	bytes_to_check = end_lookup_table_offset - WIM_HEADER_DISK_SIZE;
 
-	ret = read_integrity_table(&wim->hdr.integrity, wim->in_fd,
-				   bytes_to_check, &table);
+	ret = read_integrity_table(wim, bytes_to_check, &table);
 	if (ret)
 		return ret;
-	ret = verify_integrity(wim->in_fd, wim->filename, table,
+	ret = verify_integrity(&wim->in_fd, wim->filename, table,
 			       bytes_to_check, progress_func);
 	FREE(table);
 	return ret;

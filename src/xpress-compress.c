@@ -150,7 +150,7 @@ static const struct lz_params xpress_lz_params = {
 	.too_far        = 4096,
 };
 
-/* Documented in wimlib.h */
+/* API function documented in wimlib.h  */
 WIMLIBAPI unsigned
 wimlib_xpress_compress(const void * restrict _uncompressed_data,
 		       unsigned uncompressed_len,

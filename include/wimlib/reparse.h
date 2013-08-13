@@ -64,12 +64,13 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
 extern int
 wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 			   u8 * restrict rpbuf,
-			   u16 * restrict rpbuflen_ret);
+			   u16 * restrict rpbuflen_ret,
+			   struct wim_lookup_table_entry *lte_override);
 
 #ifndef __WIN32__
 ssize_t
 wim_inode_readlink(const struct wim_inode * restrict inode, char * restrict buf,
-		   size_t buf_len);
+		   size_t buf_len, struct wim_lookup_table_entry *lte);
 
 extern int
 wim_inode_set_symlink(struct wim_inode *inode, const char *target,

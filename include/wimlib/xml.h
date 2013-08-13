@@ -2,20 +2,20 @@
 #define _WIMLIB_XML_H
 
 #include "wimlib/types.h"
+#include "wimlib/file_io.h"
 
-struct image_info;
+struct wim_info;
 struct resource_entry;
 
-/* A struct wim_info structure corresponds to the entire XML data for a WIM file. */
-struct wim_info {
-	u64 total_bytes;
-	int num_images;
-	/* Array of `struct image_info's, one for each image in the WIM that is
-	 * mentioned in the XML data. */
-	struct image_info *images;
-};
+extern u64
+wim_info_get_total_bytes(const struct wim_info *info);
 
-/* xml.c */
+extern u64
+wim_info_get_image_total_bytes(const struct wim_info *info, int image);
+
+extern unsigned
+wim_info_get_num_images(const struct wim_info *info);
+
 extern int
 xml_export_image(const struct wim_info *old_wim_info, int image,
 		 struct wim_info **new_wim_info_p,
@@ -40,31 +40,22 @@ free_wim_info(struct wim_info *info);
 extern void
 print_image_info(const struct wim_info *wim_info, int image);
 
-extern int
-read_xml_data(int in_fd, const struct resource_entry *res,
-	      struct wim_info **info_ret);
+#define WIM_TOTALBYTES_USE_EXISTING  ((u64)0 - 1)
+#define WIM_TOTALBYTES_OMIT          ((u64)0 - 2)
 
 extern int
-write_xml_data(const struct wim_info *wim_info, int image, int out_fd,
-	       u64 total_bytes, struct resource_entry *out_res_entry);
+read_wim_xml_data(WIMStruct *wim);
+
+extern int
+write_wim_xml_data(WIMStruct *wim, int image,
+		   u64 total_bytes, struct resource_entry *out_res_entry,
+		   int write_resource_flags);
 
 extern void
 libxml_global_init(void);
 
 extern void
 libxml_global_cleanup(void);
-
-static inline u64
-wim_info_get_total_bytes(const struct wim_info *info)
-{
-	return info->total_bytes;
-}
-
-static inline unsigned
-wim_info_get_num_images(const struct wim_info *info)
-{
-	return info->num_images;
-}
 
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 extern void

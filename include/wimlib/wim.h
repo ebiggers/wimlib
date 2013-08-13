@@ -3,6 +3,7 @@
 
 #include "wimlib/header.h"
 #include "wimlib/types.h"
+#include "wimlib/file_io.h"
 
 struct wim_info;
 struct wim_lookup_table;
@@ -11,14 +12,15 @@ struct wim_image_metadata;
 /* The opaque structure exposed to the wimlib API. */
 struct WIMStruct {
 
-	/* File descriptor for the WIM file, opened for reading, or -1 if it has
-	 * not been opened or there is no associated file backing it yet. */
-	int in_fd;
+	/* File descriptor for the WIM file, opened for reading.  in_fd.fd is -1
+	 * if the WIM file has not been opened or there is no associated file
+	 * backing it yet. */
+	struct filedes in_fd;
 
 	/* File descriptor, opened either for writing only or for
 	 * reading+writing, for the WIM file (if any) currently being written.
 	 * */
-	int out_fd;
+	struct filedes out_fd;
 
 	/* The name of the WIM file (if any) that has been opened. */
 	tchar *filename;
@@ -60,23 +62,35 @@ struct WIMStruct {
 	u8 compression_type : 2;
 };
 
+static inline bool wim_is_pipable(const WIMStruct *wim)
+{
+	return (wim->hdr.magic == PWM_MAGIC);
+}
+
+static inline bool wim_has_integrity_table(const WIMStruct *wim)
+{
+	return (wim->hdr.integrity.offset != 0);
+}
+
 extern void
 wim_recalculate_refcnts(WIMStruct *wim);
 
 extern int
-read_header(const tchar *filename, int in_fd, struct wim_header *hdr);
+init_wim_header(struct wim_header *hdr, int ctype);
 
 extern int
-write_header(const struct wim_header *hdr, int out_fd);
+read_wim_header(const tchar *filename, struct filedes *in_fd,
+		struct wim_header *hdr);
 
 extern int
-init_header(struct wim_header *hdr, int ctype);
+write_wim_header(const struct wim_header *hdr, struct filedes *out_fd);
 
 extern int
-write_header_flags(u32 hdr_flags, int out_fd);
+write_wim_header_at_offset(const struct wim_header *hdr, struct filedes *out_fd,
+			   off_t offset);
 
 extern int
-write_header_part_data(u16 part_number, u16 total_parts, int out_fd);
+write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd);
 
 extern int
 rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to);
@@ -92,6 +106,16 @@ wim_checksum_unhashed_streams(WIMStruct *wim);
 
 extern int
 reopen_wim(WIMStruct *wim);
+
+/* Internal open flags (pass to open_wim_as_WIMStruct(), not wimlib_open_wim())
+ */
+#define WIMLIB_OPEN_FLAG_FROM_PIPE	0x80000000
+#define WIMLIB_OPEN_MASK_PUBLIC		0x7fffffff
+
+extern int
+open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
+		      WIMStruct **wim_ret,
+		      wimlib_progress_func_t progress_func);
 
 extern int
 close_wim(WIMStruct *wim);

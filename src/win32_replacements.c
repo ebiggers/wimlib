@@ -177,11 +177,14 @@ do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
 	OVERLAPPED overlapped;
 	BOOL bret;
 
-	wimlib_assert(count <= 0xffffffff);
-
 	h = (HANDLE)_get_osfhandle(fd);
 	if (h == INVALID_HANDLE_VALUE)
 		goto err;
+
+	if (GetFileType(h) == FILE_TYPE_PIPE) {
+		errno = ESPIPE;
+		goto err;
+	}
 
 	/* Get original position */
 	relative_offset.QuadPart = 0;

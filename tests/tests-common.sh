@@ -41,6 +41,11 @@ imagex()
 	fi
 }
 
+imagex_raw()
+{
+	../../imagex "$@"
+}
+
 wim_ctype()
 {
 	imagex info $1 | grep Compression | awk '{print $2}'

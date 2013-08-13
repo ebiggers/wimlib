@@ -1,8 +1,8 @@
-.TH IMAGEX "1" "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-optimize \- Optimize a WIM archive
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ optimize\fR \fIWIMFILE\fR [--check] [--recompress]
+\fB@IMAGEX_PROGNAME@ optimize\fR \fIWIMFILE\fR [\fIOPTION\fR...]
 .SH DESCRIPTION
 \fB@IMAGEX_PROGNAME@ optimize\fR will rebuild the stand-alone WIM \fIWIMFILE\fR.  The new
 WIM is written to a temporary file, and it is renamed to the original file when
@@ -13,10 +13,15 @@ In addition, some errors in the original WIM may be fixed by re-writing it
 .SH OPTIONS
 .TP 6
 \fB--check\fR
-When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
-present; in addition, include an integrity table in the optimized WIM.  If this
-option is not specified, no integrity table is included in the optimized WIM,
-even if there was one in the original WIM.
+When reading \fIWIMFILE\fR, verify its integrity if an integrity table is
+present.  In addition, include an integrity table in the optimized WIM.  If this
+option is not specified, by default the integrity table (if present) is not
+checked, but an integrity table is included in the new WIM if there was one in
+the old WIM.
+.TP
+\fB--nocheck\fR
+Neither verify the integrity of \fIWIMFILE\fR using the integrity table, nor
+include an integrity table in the rebuilt WIM file.
 .TP
 \fB--recompress\fR
 Recompress all compressed streams in \fIWIMFILE\fR when rebuilding it.  This
@@ -36,13 +41,24 @@ created on Windows with Microsoft's ImageX.
 Number of threads to use for compressing data.  Default: autodetect (number of
 processors).  This parameter is only meaningful when \fB--recompress\fR is also
 specified.
+.TP
+\fB--pipable\fR
+Rebuild the WIM that it can be applied fully sequentially, including from a
+pipe.  See \fB@IMAGEX_PROGNAME@ capture\fR(1) for more details about creating
+pipable WIMs.  By default, when neither \fB--pipable\fR or \fB--not-pipable\fR
+is specified, the rebuilt WIM will be pipable if and only if it was already
+pipable.
+.TP
+\fB--not-pipable\fR
+Rebuild the WIM in the non-pipable format.  (This is the default if
+\fIWIMFILE\fR is not pipable.)
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ optimize\fR does not support split WIMs.
 .PP
 \fB@IMAGEX_PROGNAME@ optimize\fR is roughly equivalent to:
 .RS
 .PP
-\fB@IMAGEX_PROGNAME@ export\fR \fIWIMFILE\fR all tmp.wim [--check] && mv tmp.wim \fIWIMFILE\fR
+\fB@IMAGEX_PROGNAME@ export\fR \fIWIMFILE\fR all tmp.wim && mv tmp.wim \fIWIMFILE\fR
 .RE
 .PP
 .SH SEE ALSO

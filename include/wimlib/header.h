@@ -3,24 +3,54 @@
 
 #include "wimlib/resource.h"
 #include "wimlib/types.h"
+#include "wimlib/endianness.h"
 
+/* Length of "Globally Unique ID" field in WIM header.  */
 #define WIM_GID_LEN    16
 
-/* Length of the WIM header on disk. */
+/* Length of the WIM header on disk.  */
 #define WIM_HEADER_DISK_SIZE 208
 
 /* Compressed resources in the WIM are divided into separated compressed chunks
- * of this size. */
+ * of this size.  This value is unfortunately not configurable (at least when
+ * compatibility with Microsoft's software is desired).  */
 #define WIM_CHUNK_SIZE 32768
 
-/* Version of the WIM file.  There is an older version, but we don't support it
- * yet.  The differences between the versions are undocumented. */
+/* Version of the WIM file.  There is an older version, but wimlib doesn't
+ * support it.  The differences between the versions are undocumented.  */
 #define WIM_VERSION 0x10d00
+
+/* WIM magic characters, translated to a single 64-bit little endian number.  */
+#define WIM_MAGIC \
+		cpu_to_le64(((u64)'M' << 0) |		\
+			    ((u64)'S' << 8) |		\
+			    ((u64)'W' << 16) |		\
+			    ((u64)'I' << 24) |		\
+			    ((u64)'M' << 32) |		\
+			    ((u64)'\0' << 40) |		\
+			    ((u64)'\0' << 48) |		\
+			    ((u64)'\0' << 54))
+
+/* wimlib pipable WIM magic characters, translated to a single 64-bit little
+ * endian number.  */
+#define PWM_MAGIC \
+		cpu_to_le64(((u64)'W' << 0) |		\
+			    ((u64)'L' << 8) |		\
+			    ((u64)'P' << 16) |		\
+			    ((u64)'W' << 24) |		\
+			    ((u64)'M' << 32) |		\
+			    ((u64)'\0' << 40) |		\
+			    ((u64)'\0' << 48) |		\
+			    ((u64)'\0' << 54))
 
 /* Header at the very beginning of the WIM file.  This is the in-memory
  * representation and does not include all fields; see `struct wim_header_disk'
- * for the on-disk structure. */
+ * for the on-disk structure.  */
 struct wim_header {
+
+	/* Magic characters: either WIM_MAGIC or PWM_MAGIC.  */
+	le64 magic;
+
 	/* Bitwise OR of one or more of the WIM_HDR_FLAG_* defined below. */
 	u32 flags;
 

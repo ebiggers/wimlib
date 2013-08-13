@@ -32,9 +32,7 @@
 #include "wimlib/wim.h"
 #include "wimlib/xml.h"
 
-/*
- * Deletes an image from the WIM.
- */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_delete_image(WIMStruct *wim, int image)
 {

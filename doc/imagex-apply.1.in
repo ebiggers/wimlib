@@ -1,11 +1,12 @@
-.TH IMAGEX "1" "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-apply \- Extract one image, or all images, from a WIM archive
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ apply\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fITARGET\fR [\fIOPTION\fR...]
 .SH DESCRIPTION
 \fB@IMAGEX_PROGNAME@ apply\fR extracts an image, or all images, from the Windows
-Imaging (WIM) file \fIWIMFILE\fR.
+Imaging (WIM) file \fIWIMFILE\fR.  \fIWIMFILE\fR may be "-" to read the WIM from
+standard input, but see \fBPIPABLE WIMS\fR.
 .PP
 This command is designed to extract, or "apply", one or more full WIM images.
 If you instead want to extract only certain files or directories contained in a
@@ -237,6 +238,29 @@ To apply the first image of this split WIM to the directory "dir", run:
 @IMAGEX_PROGNAME@ apply mywim.swm 1 dir --ref="mywim*.swm"
 .RE
 .PP
+As a special case, if you are applying an image from standard input from a split
+WIM that is also pipable (as described in \fBPIPABLE WIMS\fR), the \fB--ref\fR
+option is unneeded; instead you must ensure that all the split WIM parts are
+concatenated together on standard input.  They can be provided in any other,
+with the exception of the first part, which must be first.
+.SH PIPABLE WIMS
+As of wimlib 1.5.0, \fB@IMAGEX_PROGNAME@ apply\fR supports applying a WIM from a
+nonseekable file, such as a pipe, provided that the WIM was captured with
+\fB--pipable\fR (see \fB@IMAGEX_PROGNAME@ capture\fR(1)).  To use standard input
+as the WIM, specify "-" as \fIWIMFILE\fR.  A useful use of this ability is to
+apply an image from a WIM while streaming it from a webserver; for example, to
+apply the first image from a WIM file to a NTFS volume on /dev/sda1:
+.PP
+.RS
+wget -O - http://myserver/mywim.wim | @IMAGEX_PROGNAME@ apply - 1 /dev/sda1
+.RE
+.PP
+Note: WIM files are \fInot\fR pipable by default; you have to explicitly capture
+them with \fB--pipable\fR, and they are \fInot\fR compatible with Microsoft's
+software.  See \fB@IMAGEX_PROGNAME@ capture\fR(1) for more information.
+.PP
+It is possible to apply an image from a pipable WIM split into multiple parts;
+see \fBSPLIT WIMS\fR.
 .SH OPTIONS
 .TP 6
 \fB--check\fR
@@ -266,12 +290,12 @@ Print the path to of each file or directory within the WIM image as it is
 extracted.
 .TP
 \fB--hardlink\fR
-(UNIX only) When extracting a file from the WIM that is identical to a file that
-has already extracted, create a hard link rather than creating a separate file.
-This option causes all identical files to be hard-linked, overriding the hard
-link groups that are specified in the WIM image(s).  In the case of extracting
-all images from the WIM, files may be hard-linked even if they are in different
-WIM images.  This option is not available in the NTFS extraction mode.
+When extracting a file from the WIM that is identical to a file that has already
+extracted, create a hard link rather than creating a separate file.  This option
+causes all identical files to be hard-linked, overriding the hard link groups
+that are specified in the WIM image(s).  In the case of extracting all images
+from the WIM, files may be hard-linked even if they are in different WIM images.
+This option is not available in the NTFS extraction mode.
 .TP
 \fB--symlink\fR
 (UNIX only) This option is similar to \fB--hardlink\fR, except symbolic links are created
@@ -330,9 +354,6 @@ Microsoft's ImageX does.  Please note that this is separate from the integrity
 table of the WIM, which provides SHA1 message digests over raw chunks of the
 entire WIM file and is checked separately if the \fB--check\fR option is
 specified.
-.PP
-You cannot use \fB@IMAGEX_PROGNAME@ apply\fR to apply a WIM from a pipe (such as standard
-input) because the WIM file format is not designed for this.
 .SH EXAMPLES
 .SS Applying a WIM image to a directory (both UNIX and Windows)
 Extract the first image from the Windows PE image from the Windows Vista/7/8

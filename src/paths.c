@@ -87,7 +87,7 @@ canonicalize_fs_path(const tchar *fs_path)
 	return TSTRDUP(fs_path);
 }
 
-/* 
+/*
  * canonicalize_wim_path - Given a user-provided path to a file within a WIM
  * image, translate it into a "canonical" path.
  *

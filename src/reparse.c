@@ -272,7 +272,8 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
 int
 wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 			   u8 * restrict rpbuf,
-			   u16 * restrict rpbuflen_ret)
+			   u16 * restrict rpbuflen_ret,
+			   struct wim_lookup_table_entry *lte_override)
 {
 	struct wim_lookup_table_entry *lte;
 	int ret;
@@ -281,10 +282,14 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 
 	wimlib_assert(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT);
 
-	lte = inode_unnamed_lte_resolved(inode);
-	if (!lte) {
-		ERROR("Reparse point has no reparse data!");
-		return WIMLIB_ERR_INVALID_REPARSE_DATA;
+	if (!lte_override) {
+		lte = inode_unnamed_lte_resolved(inode);
+		if (!lte) {
+			ERROR("Reparse point has no reparse data!");
+			return WIMLIB_ERR_INVALID_REPARSE_DATA;
+		}
+	} else {
+		lte = lte_override;
 	}
 
 	if (wim_resource_size(lte) > REPARSE_POINT_MAX_SIZE - 8) {
@@ -327,7 +332,8 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
  * on failure a negated error code is returned rather than -1 with errno set.  */
 ssize_t
 wim_inode_readlink(const struct wim_inode * restrict inode,
-		   char * restrict buf, size_t bufsize)
+		   char * restrict buf, size_t bufsize,
+		   struct wim_lookup_table_entry *lte_override)
 {
 	int ret;
 	struct reparse_buffer_disk rpbuf_disk _aligned_attribute(8);
@@ -339,7 +345,8 @@ wim_inode_readlink(const struct wim_inode * restrict inode,
 
 	wimlib_assert(inode_is_symlink(inode));
 
-	if (wim_inode_get_reparse_data(inode, (u8*)&rpbuf_disk, &rpbuflen))
+	if (wim_inode_get_reparse_data(inode, (u8*)&rpbuf_disk, &rpbuflen,
+				       lte_override))
 		return -EIO;
 
 	if (parse_reparse_data((const u8*)&rpbuf_disk, rpbuflen, &rpdata))

@@ -232,6 +232,15 @@ void wimlib_debug(const tchar *file, int line, const char *func,
 	va_list va;
 	tchar buf[tstrlen(file) + strlen(func) + 30];
 
+	static bool debug_enabled = false;
+	if (!debug_enabled) {
+		char *value = getenv("WIMLIB_DEBUG");
+		if (!value || strcmp(value, "0"))
+			debug_enabled = true;
+		else
+			return;
+	}
+
 	tsprintf(buf, T("[%"TS" %d] %s(): "), file, line, func);
 
 	va_start(va, format);
@@ -240,6 +249,7 @@ void wimlib_debug(const tchar *file, int line, const char *func,
 }
 #endif
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_set_print_errors(bool show_error_messages)
 {
@@ -259,8 +269,6 @@ static const tchar *error_strings[] = {
 		= T("Success"),
 	[WIMLIB_ERR_ALREADY_LOCKED]
 		= T("The WIM is already locked for writing"),
-	[WIMLIB_ERR_COMPRESSED_LOOKUP_TABLE]
-		= T("Lookup table is compressed"),
 	[WIMLIB_ERR_DECOMPRESSION]
 		= T("Failed to decompress compressed data"),
 	[WIMLIB_ERR_DELETE_STAGING_DIR]
@@ -280,8 +288,6 @@ static const tchar *error_strings[] = {
 	[WIMLIB_ERR_IMAGE_COUNT]
 		= T("Inconsistent image count among the metadata "
 			"resources, the WIM header, and/or the XML data"),
-	[WIMLIB_ERR_INSUFFICIENT_PRIVILEGES_TO_EXTRACT]
-		= T("User does not have sufficient privileges to correctly extract the data"),
 	[WIMLIB_ERR_IMAGE_NAME_COLLISION]
 		= T("Tried to add an image with a name that is already in use"),
 	[WIMLIB_ERR_INTEGRITY]
@@ -294,10 +300,8 @@ static const tchar *error_strings[] = {
 	[WIMLIB_ERR_INVALID_COMPRESSION_TYPE]
 		= T("The WIM is compressed, but is not marked as having LZX or "
 			"XPRESS compression"),
-	[WIMLIB_ERR_INVALID_DENTRY]
-		= T("A directory entry in the WIM was invalid"),
-	[WIMLIB_ERR_INVALID_HEADER_SIZE]
-		= T("The WIM header was not 208 bytes"),
+	[WIMLIB_ERR_INVALID_HEADER]
+		= T("The WIM header was invalid"),
 	[WIMLIB_ERR_INVALID_IMAGE]
 		= T("Tried to select an image that does not exist in the WIM"),
 	[WIMLIB_ERR_INVALID_INTEGRITY_TABLE]
@@ -312,14 +316,14 @@ static const tchar *error_strings[] = {
 		= T("An invalid parameter was given"),
 	[WIMLIB_ERR_INVALID_PART_NUMBER]
 		= T("The part number or total parts of the WIM is invalid"),
+	[WIMLIB_ERR_INVALID_PIPABLE_WIM]
+		= T("The pipable WIM is invalid"),
 	[WIMLIB_ERR_INVALID_REPARSE_DATA]
 		= T("The reparse data of a reparse point was invalid"),
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
 		= T("The SHA1 message digest of a WIM resource did not match the expected value"),
-	[WIMLIB_ERR_INVALID_RESOURCE_SIZE]
-		= T("A resource entry in the WIM has an invalid size"),
-	[WIMLIB_ERR_INVALID_SECURITY_DATA]
-		= T("The table of security descriptors in the WIM is invalid"),
+	[WIMLIB_ERR_INVALID_METADATA_RESOURCE]
+		= T("The metadata resource is invalid"),
 	[WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE]
 		= T("The version of wimlib that has mounted a WIM image is incompatible with the "
 		  "version being used to unmount it"),
@@ -353,6 +357,9 @@ static const tchar *error_strings[] = {
 		    "correspond to a regular file"),
 	[WIMLIB_ERR_NO_FILENAME]
 		= T("The WIM is not identified with a filename"),
+	[WIMLIB_ERR_NOT_PIPABLE]
+		= T("The WIM was not captured such that it can be "
+		    "applied from a pipe"),
 	[WIMLIB_ERR_NTFS_3G]
 		= T("NTFS-3g encountered an error (check errno)"),
 	[WIMLIB_ERR_OPEN]
@@ -373,6 +380,12 @@ static const tchar *error_strings[] = {
 		= T("A file resource needed to complete the operation was missing from the WIM"),
 	[WIMLIB_ERR_RESOURCE_ORDER]
 		= T("The components of the WIM were arranged in an unexpected order"),
+	[WIMLIB_ERR_SET_ATTRIBUTES]
+		= T("Failed to set file attributes"),
+	[WIMLIB_ERR_SET_SECURITY]
+		= T("Failed to set file owner, group, or other permissions"),
+	[WIMLIB_ERR_SET_TIMESTAMPS]
+		= T("Failed to set file timestamps"),
 	[WIMLIB_ERR_SPECIAL_FILE]
 		= T("Encountered a special file that cannot be archived"),
 	[WIMLIB_ERR_SPLIT_INVALID]
@@ -383,6 +396,8 @@ static const tchar *error_strings[] = {
 		= T("Could not read the metadata for a file or directory"),
 	[WIMLIB_ERR_TIMEOUT]
 		= T("Timed out while waiting for a message to arrive from another process"),
+	[WIMLIB_ERR_UNEXPECTED_END_OF_FILE]
+		= T("Unexpectedly reached the end of the file"),
 	[WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE]
 		= T("A Unicode string could not be represented in the current locale's encoding"),
 	[WIMLIB_ERR_UNKNOWN_VERSION]
@@ -399,10 +414,11 @@ static const tchar *error_strings[] = {
 		= T("The XML data of the WIM is invalid"),
 };
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI const tchar *
 wimlib_get_error_string(enum wimlib_error_code code)
 {
-	if (code < 0 || code >= ARRAY_LEN(error_strings))
+	if ((int)code < 0 || code >= ARRAY_LEN(error_strings))
 		return NULL;
 	else
 		return error_strings[code];
@@ -418,8 +434,10 @@ static void *(*wimlib_realloc_func)(void *, size_t) = realloc;
 void *
 wimlib_malloc(size_t size)
 {
+	if (size == 0)
+		size = 1;
 	void *ptr = (*wimlib_malloc_func)(size);
-	if (ptr == NULL && size != 0)
+	if (ptr == NULL)
 		ERROR("memory exhausted");
 	return ptr;
 }
@@ -433,8 +451,10 @@ wimlib_free_memory(void *ptr)
 void *
 wimlib_realloc(void *ptr, size_t size)
 {
+	if (size == 0)
+		size = 1;
 	ptr = (*wimlib_realloc_func)(ptr, size);
-	if (ptr == NULL && size != 0)
+	if (ptr == NULL)
 		ERROR("memory exhausted");
 	return ptr;
 }
@@ -488,6 +508,7 @@ memdup(const void *mem, size_t size)
 	return ptr;
 }
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 			    void (*free_func)(void *),

@@ -704,9 +704,7 @@ err:
 	goto out;
 }
 
-/*
- * Entry point for making a series of updates to a WIM image.
- */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_update_image(WIMStruct *wim,
 		    int image,

@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-delete \- Delete an image from a WIM archive
 .SH SYNOPSIS
@@ -25,9 +25,11 @@ WIM and have a WIM with 0 images, although such a file wouldn't be very useful.
 .TP 6
 \fB--check\fR
 When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
-present; additionally, when rewriting \fIWIMFILE\fR after the specified image was
-deleted, write an integrity table.  If this option is not specified, no integrity
-table is included in the new WIM file, even if there was one before.
+present; additionally, when rewriting \fIWIMFILE\fR after the specified image
+was deleted, always write an integrity table.  If this option is not specified,
+the integrity of \fIWIMFILE\fR will not be checked when it's opened, but an
+integrity table will be written in the updated WIM if and only if one was
+present before.
 .TP 6
 \fB--soft\fR
 Perform a "soft delete".  Specifying this flag overrides the default behavior of

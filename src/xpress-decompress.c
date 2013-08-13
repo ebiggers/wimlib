@@ -147,13 +147,13 @@ xpress_decode_match(unsigned huffsym, unsigned window_pos,
 	match_src = match_dest - match_offset;
 
 	if (window_pos + match_len > window_len) {
-		ERROR("XPRESS decompression error: match of length %u "
+		DEBUG("XPRESS decompression error: match of length %u "
 		      "bytes overflows window", match_len);
 		return -1;
 	}
 
 	if (match_src < window) {
-		ERROR("XPRESS decompression error: match of length %u bytes "
+		DEBUG("XPRESS decompression error: match of length %u bytes "
 		      "references data before window (match_offset = %u, "
 		      "window_pos = %u)", match_len, match_offset, window_pos);
 		return -1;
@@ -204,7 +204,7 @@ xpress_decompress_block(struct input_bitstream * restrict istream,
 }
 
 
-/* Documented in wimlib.h */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_xpress_decompress(const void * restrict _compressed_data, unsigned compressed_len,
 			 void * restrict uncompressed_data, unsigned uncompressed_len)
@@ -229,7 +229,7 @@ wimlib_xpress_decompress(const void * restrict _compressed_data, unsigned compre
 	 * in the first 256 bytes of the compressed data.
 	 */
 	if (compressed_len < XPRESS_NUM_SYMBOLS / 2) {
-		ERROR("xpress_decompress(): Compressed length too short!");
+		DEBUG("xpress_decompress(): Compressed length too short!");
 		return -1;
 	}
 

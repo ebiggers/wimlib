@@ -787,7 +787,7 @@ win32_capture_stream(const wchar_t *path,
 			goto out_free_spath;
 		lte->resource_entry.original_size = encrypted_size;
 	} else {
-		lte->resource_location = RESOURCE_WIN32;
+		lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
 		lte->resource_entry.original_size = (u64)dat->StreamSize.QuadPart;
 	}
 
@@ -1167,7 +1167,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	if (ret)
 		return ret;
 
-	win32_get_vol_flags(root_disk_path, &vol_flags);
+	win32_get_vol_flags(root_disk_path, &vol_flags, NULL);
 
 	/* WARNING: There is no check for overflow later when this buffer is
 	 * being used!  But it's as long as the maximum path length understood

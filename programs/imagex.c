@@ -60,6 +60,9 @@
 #  define tglob		glob
 #  define OS_PREFERRED_PATH_SEPARATOR '/'
 #  define OS_PREFERRED_PATH_SEPARATOR_STRING "/"
+static inline void set_fd_to_binary_mode(int fd)
+{
+}
 #endif /* !__WIN32 */
 
 
@@ -90,17 +93,22 @@ static void usage(int cmd_type);
 static void usage_all(void);
 
 static bool imagex_be_quiet = false;
+static FILE *imagex_info_file;
+
+#define imagex_printf(format, ...) \
+		tfprintf(imagex_info_file, format, ##__VA_ARGS__)
 
 
 static const tchar *usage_strings[] = {
 [APPEND] =
 T(
 IMAGEX_PROGNAME" append (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
-"                     [DESCRIPTION] [--boot] [--check] [--flags EDITION_ID]\n"
-"                     [--verbose] [--dereference] [--config=FILE]\n"
-"                     [--threads=NUM_THREADS] [--rebuild] [--unix-data]\n"
-"                     [--source-list] [--no-acls] [--strict-acls]\n"
-"                     [--rpfix] [--norpfix]\n"
+"                    [DESCRIPTION] [--boot] [--check] [--nocheck]\n"
+"                    [--flags EDITION_ID] [--verbose] [--dereference]\n"
+"                    [--config=FILE] [--threads=NUM_THREADS] [--rebuild]\n"
+"                    [--unix-data] [--source-list] [--no-acls]\n"
+"                    [--strict-acls] [--rpfix] [--norpfix] [--pipable]\n"
+"                    [--not-pipable]\n"
 ),
 [APPLY] =
 T(
@@ -113,15 +121,17 @@ IMAGEX_PROGNAME" apply WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
 [CAPTURE] =
 T(
 IMAGEX_PROGNAME" capture (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
-"                      [DESCRIPTION] [--boot] [--check] [--compress=TYPE]\n"
-"                      [--flags EDITION_ID] [--verbose] [--dereference]\n"
-"                      [--config=FILE] [--threads=NUM_THREADS] [--unix-data]\n"
-"                      [--source-list] [--no-acls] [--strict-acls]\n"
-"                      [--rpfix] [--norpfix]\n"
+"                    [DESCRIPTION] [--boot] [--check] [--nocheck]\n"
+"                    [--compress=TYPE] [--flags EDITION_ID] [--verbose]\n"
+"                    [--dereference] [--config=FILE]\n"
+"                    [--threads=NUM_THREADS] [--unix-data] [--source-list]\n"
+"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
+"                    [--pipable] [--not-pipable]\n"
 ),
 [DELETE] =
 T(
-IMAGEX_PROGNAME" delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check] [--soft]\n"
+IMAGEX_PROGNAME" delete WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n"
+"                    [--soft]\n"
 ),
 [DIR] =
 T(
@@ -130,22 +140,24 @@ IMAGEX_PROGNAME" dir WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--path=PATH]\n"
 [EXPORT] =
 T(
 IMAGEX_PROGNAME" export SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
-"              DEST_WIMFILE [DEST_IMAGE_NAME] [DEST_IMAGE_DESCRIPTION]\n"
-"              [--boot] [--check] [--compress=TYPE] [--ref=\"GLOB\"]\n"
-"              [--threads=NUM_THREADS] [--rebuild]\n"
+"                    DEST_WIMFILE [DEST_IMAGE_NAME] [DEST_IMAGE_DESCRIPTION]\n"
+"                    [--boot] [--check] [--nocheck] [--compress=TYPE]\n"
+"                    [--ref=\"GLOB\"] [--threads=NUM_THREADS] [--rebuild]\n"
+"                    [--pipable] [--not-pipable]\n"
 ),
 [EXTRACT] =
 T(
 IMAGEX_PROGNAME" extract WIMFILE (IMAGE_NUM | IMAGE_NAME) [PATH...]\n"
-"              [--check] [--ref=\"GLOB\"] [--verbose] [--unix-data]\n"
-"              [--no-acls] [--strict-acls] [--to-stdout] [--dest-dir=DIR]\n"
-"              [--include-invalid-names]\n"
+"                    [--check] [--ref=\"GLOB\"] [--verbose] [--unix-data]\n"
+"                    [--no-acls] [--strict-acls] [--to-stdout] [--dest-dir=DIR]\n"
+"                    [--include-invalid-names]\n"
 ),
 [INFO] =
 T(
 IMAGEX_PROGNAME" info WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
-"                   [NEW_DESC] [--boot] [--check] [--header] [--lookup-table]\n"
-"                   [--xml] [--extract-xml FILE] [--metadata]\n"
+"                    [NEW_DESC] [--boot] [--check] [--nocheck] [--header]\n"
+"                    [--lookup-table] [--xml] [--extract-xml FILE]\n"
+"                    [--metadata]\n"
 ),
 [JOIN] =
 T(
@@ -160,13 +172,13 @@ IMAGEX_PROGNAME" mount WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
 [MOUNTRW] =
 T(
 IMAGEX_PROGNAME" mountrw WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
-"                      [--check] [--debug] [--streams-interface=INTERFACE]\n"
-"                      [--staging-dir=DIR] [--unix-data] [--allow-other]\n"
+"                    [--check] [--debug] [--streams-interface=INTERFACE]\n"
+"                    [--staging-dir=DIR] [--unix-data] [--allow-other]\n"
 ),
 [OPTIMIZE] =
 T(
-IMAGEX_PROGNAME" optimize WIMFILE [--check] [--recompress]\n"
-"                      [--threads=NUM_THREADS]\n"
+IMAGEX_PROGNAME" optimize WIMFILE [--check] [--nocheck] [--recompress]\n"
+"                    [--threads=NUM_THREADS] [--pipable] [--not-pipable]\n"
 ),
 [SPLIT] =
 T(
@@ -179,8 +191,8 @@ IMAGEX_PROGNAME" unmount DIRECTORY [--commit] [--check] [--rebuild] [--lazy]\n"
 [UPDATE] =
 T(
 IMAGEX_PROGNAME" update WIMFILE [IMAGE_NUM | IMAGE_NAME] [--check] [--rebuild]\n"
-"                       [--threads=NUM_THREADS] [DEFAULT_ADD_OPTIONS]\n"
-"                       [DEFAULT_DELETE_OPTIONS] [--command=STRING] [< CMDFILE]\n"
+"                    [--threads=NUM_THREADS] [DEFAULT_ADD_OPTIONS]\n"
+"                    [DEFAULT_DELETE_OPTIONS] [--command=STRING] [< CMDFILE]\n"
 ),
 };
 
@@ -220,8 +232,11 @@ enum {
 	IMAGEX_LOOKUP_TABLE_OPTION,
 	IMAGEX_METADATA_OPTION,
 	IMAGEX_NORPFIX_OPTION,
+	IMAGEX_NOCHECK_OPTION,
 	IMAGEX_NO_ACLS_OPTION,
+	IMAGEX_NOT_PIPABLE_OPTION,
 	IMAGEX_PATH_OPTION,
+	IMAGEX_PIPABLE_OPTION,
 	IMAGEX_REBUILD_OPTION,
 	IMAGEX_RECOMPRESS_OPTION,
 	IMAGEX_RECURSIVE_OPTION,
@@ -258,6 +273,8 @@ static const struct option apply_options[] = {
 static const struct option capture_or_append_options[] = {
 	{T("boot"),        no_argument,       NULL, IMAGEX_BOOT_OPTION},
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
 	{T("dereference"), no_argument,       NULL, IMAGEX_DEREFERENCE_OPTION},
@@ -272,6 +289,8 @@ static const struct option capture_or_append_options[] = {
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
 	{T("rpfix"),       no_argument,       NULL, IMAGEX_RPFIX_OPTION},
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
+	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
+	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
 	{NULL, 0, NULL, 0},
 };
 static const struct option delete_options[] = {
@@ -286,12 +305,16 @@ static const struct option dir_options[] = {
 };
 
 static const struct option export_options[] = {
-	{T("boot"),       no_argument,       NULL, IMAGEX_BOOT_OPTION},
-	{T("check"),      no_argument,       NULL, IMAGEX_CHECK_OPTION},
-	{T("compress"),   required_argument, NULL, IMAGEX_COMPRESS_OPTION},
-	{T("ref"),        required_argument, NULL, IMAGEX_REF_OPTION},
-	{T("threads"),    required_argument, NULL, IMAGEX_THREADS_OPTION},
-	{T("rebuild"),    no_argument,       NULL, IMAGEX_REBUILD_OPTION},
+	{T("boot"),        no_argument,       NULL, IMAGEX_BOOT_OPTION},
+	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
+	{T("ref"),         required_argument, NULL, IMAGEX_REF_OPTION},
+	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
+	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
+	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
+	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -312,6 +335,8 @@ static const struct option extract_options[] = {
 static const struct option info_options[] = {
 	{T("boot"),         no_argument,       NULL, IMAGEX_BOOT_OPTION},
 	{T("check"),        no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("nocheck"),      no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("no-check"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("extract-xml"),  required_argument, NULL, IMAGEX_EXTRACT_XML_OPTION},
 	{T("header"),       no_argument,       NULL, IMAGEX_HEADER_OPTION},
 	{T("lookup-table"), no_argument,       NULL, IMAGEX_LOOKUP_TABLE_OPTION},
@@ -337,9 +362,13 @@ static const struct option mount_options[] = {
 };
 
 static const struct option optimize_options[] = {
-	{T("check"),      no_argument, NULL, IMAGEX_CHECK_OPTION},
-	{T("recompress"), no_argument, NULL, IMAGEX_RECOMPRESS_OPTION},
-	{T("threads"),    required_argument, NULL, IMAGEX_THREADS_OPTION},
+	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
+	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
+	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
+	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1053,11 +1082,11 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			const tchar *data_type;
 
 			data_type = get_data_type(info->write_streams.compression_type);
-			tprintf(T("Writing %"TS" data using %u thread%"TS"\n"),
+			imagex_printf(T("Writing %"TS" data using %u thread%"TS"\n"),
 				data_type, info->write_streams.num_threads,
 				(info->write_streams.num_threads == 1) ? T("") : T("s"));
 		}
-		tprintf(T("\r%"PRIu64" %"TS" of %"PRIu64" %"TS" (uncompressed) "
+		imagex_printf(T("\r%"PRIu64" %"TS" of %"PRIu64" %"TS" (uncompressed) "
 			"written (%u%% done)"),
 			info->write_streams.completed_bytes >> unit_shift,
 			unit_name,
@@ -1065,23 +1094,23 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			unit_name,
 			percent_done);
 		if (info->write_streams.completed_bytes >= info->write_streams.total_bytes)
-			tputchar(T('\n'));
+			imagex_printf(T("\n"));
 		break;
 	case WIMLIB_PROGRESS_MSG_SCAN_BEGIN:
-		tprintf(T("Scanning \"%"TS"\""), info->scan.source);
+		imagex_printf(T("Scanning \"%"TS"\""), info->scan.source);
 		if (*info->scan.wim_target_path) {
-			tprintf(T(" (loading as WIM path: "
+			imagex_printf(T(" (loading as WIM path: "
 				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING"%"TS"\")...\n"),
 			       info->scan.wim_target_path);
 		} else {
-			tprintf(T(" (loading as root of WIM image)...\n"));
+			imagex_printf(T(" (loading as root of WIM image)...\n"));
 		}
 		break;
 	case WIMLIB_PROGRESS_MSG_SCAN_DENTRY:
 		if (info->scan.excluded)
-			tprintf(T("Excluding \"%"TS"\" from capture\n"), info->scan.cur_path);
+			imagex_printf(T("Excluding \"%"TS"\" from capture\n"), info->scan.cur_path);
 		else
-			tprintf(T("Scanning \"%"TS"\"\n"), info->scan.cur_path);
+			imagex_printf(T("Scanning \"%"TS"\"\n"), info->scan.cur_path);
 		break;
 	/*case WIMLIB_PROGRESS_MSG_SCAN_END:*/
 		/*break;*/
@@ -1089,7 +1118,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		unit_shift = get_unit(info->integrity.total_bytes, &unit_name);
 		percent_done = TO_PERCENT(info->integrity.completed_bytes,
 					  info->integrity.total_bytes);
-		tprintf(T("\rVerifying integrity of \"%"TS"\": %"PRIu64" %"TS" "
+		imagex_printf(T("\rVerifying integrity of \"%"TS"\": %"PRIu64" %"TS" "
 			"of %"PRIu64" %"TS" (%u%%) done"),
 			info->integrity.filename,
 			info->integrity.completed_bytes >> unit_shift,
@@ -1098,13 +1127,13 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			unit_name,
 			percent_done);
 		if (info->integrity.completed_bytes == info->integrity.total_bytes)
-			tputchar(T('\n'));
+			imagex_printf(T("\n"));
 		break;
 	case WIMLIB_PROGRESS_MSG_CALC_INTEGRITY:
 		unit_shift = get_unit(info->integrity.total_bytes, &unit_name);
 		percent_done = TO_PERCENT(info->integrity.completed_bytes,
 					  info->integrity.total_bytes);
-		tprintf(T("\rCalculating integrity table for WIM: %"PRIu64" %"TS" "
+		imagex_printf(T("\rCalculating integrity table for WIM: %"PRIu64" %"TS" "
 			  "of %"PRIu64" %"TS" (%u%%) done"),
 			info->integrity.completed_bytes >> unit_shift,
 			unit_name,
@@ -1112,10 +1141,10 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			unit_name,
 			percent_done);
 		if (info->integrity.completed_bytes == info->integrity.total_bytes)
-			tputchar(T('\n'));
+			imagex_printf(T("\n"));
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN:
-		tprintf(T("Applying image %d (\"%"TS"\") from \"%"TS"\" "
+		imagex_printf(T("Applying image %d (\"%"TS"\") from \"%"TS"\" "
 			  "to %"TS" \"%"TS"\"\n"),
 			info->extract.image,
 			info->extract.image_name,
@@ -1125,7 +1154,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			info->extract.target);
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN:
-		tprintf(T("Extracting "
+		imagex_printf(T("Extracting "
 			  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING"%"TS"\" from image %d (\"%"TS"\") "
 			  "in \"%"TS"\" to \"%"TS"\"\n"),
 			info->extract.extract_root_wim_source_path,
@@ -1135,14 +1164,14 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			info->extract.target);
 		break;
 	/*case WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN:*/
-		/*tprintf(T("Applying directory structure to %"TS"\n"),*/
+		/*imagex_printf(T("Applying directory structure to %"TS"\n"),*/
 			/*info->extract.target);*/
 		/*break;*/
 	case WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS:
 		percent_done = TO_PERCENT(info->extract.completed_bytes,
 					  info->extract.total_bytes);
 		unit_shift = get_unit(info->extract.total_bytes, &unit_name);
-		tprintf(T("\rExtracting files: "
+		imagex_printf(T("\rExtracting files: "
 			  "%"PRIu64" %"TS" of %"PRIu64" %"TS" (%u%%) done"),
 			info->extract.completed_bytes >> unit_shift,
 			unit_name,
@@ -1150,18 +1179,15 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			unit_name,
 			percent_done);
 		if (info->extract.completed_bytes >= info->extract.total_bytes)
-			tputchar(T('\n'));
-		break;
-	case WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY:
-		tprintf(T("%"TS"\n"), info->extract.cur_path);
+			imagex_printf(T("\n"));
 		break;
 	case WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS:
 		if (info->extract.extract_root_wim_source_path[0] == T('\0'))
-			tprintf(T("Setting timestamps on all extracted files...\n"));
+			imagex_printf(T("Setting timestamps on all extracted files...\n"));
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:
 		if (info->extract.extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
-			tprintf(T("Unmounting NTFS volume \"%"TS"\"...\n"),
+			imagex_printf(T("Unmounting NTFS volume \"%"TS"\"...\n"),
 				info->extract.target);
 		}
 		break;
@@ -1169,7 +1195,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		percent_done = TO_PERCENT(info->join.completed_bytes,
 					  info->join.total_bytes);
 		unit_shift = get_unit(info->join.total_bytes, &unit_name);
-		tprintf(T("Writing resources from part %u of %u: "
+		imagex_printf(T("Writing resources from part %u of %u: "
 			  "%"PRIu64 " %"TS" of %"PRIu64" %"TS" (%u%%) written\n"),
 			(info->join.completed_parts == info->join.total_parts) ?
 			info->join.completed_parts : info->join.completed_parts + 1,
@@ -1184,9 +1210,11 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		percent_done = TO_PERCENT(info->split.completed_bytes,
 					  info->split.total_bytes);
 		unit_shift = get_unit(info->split.total_bytes, &unit_name);
-		tprintf(T("Writing \"%"TS"\": %"PRIu64" %"TS" of "
+		imagex_printf(T("Writing \"%"TS"\" (part %u of %u): %"PRIu64" %"TS" of "
 			  "%"PRIu64" %"TS" (%u%%) written\n"),
 			info->split.part_name,
+			info->split.cur_part_number,
+			info->split.total_parts,
 			info->split.completed_bytes >> unit_shift,
 			unit_name,
 			info->split.total_bytes >> unit_shift,
@@ -1195,19 +1223,20 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		break;
 	case WIMLIB_PROGRESS_MSG_SPLIT_END_PART:
 		if (info->split.completed_bytes == info->split.total_bytes) {
-			tprintf(T("Finished writing %u split WIM parts\n"),
-				info->split.cur_part_number);
+			imagex_printf(T("Finished writing part %u of %u WIM parts\n"),
+				info->split.cur_part_number,
+				info->split.total_parts);
 		}
 		break;
 	case WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND:
 		switch (info->update.command->op) {
 		case WIMLIB_UPDATE_OP_DELETE:
-			tprintf(T("Deleted WIM path "
+			imagex_printf(T("Deleted WIM path "
 				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING "%"TS"\"\n"),
 				info->update.command->delete.wim_path);
 			break;
 		case WIMLIB_UPDATE_OP_RENAME:
-			tprintf(T("Renamed WIM path "
+			imagex_printf(T("Renamed WIM path "
 				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING "%"TS"\" => "
 				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING "%"TS"\"\n"),
 				info->update.command->rename.wim_source_path,
@@ -1511,7 +1540,7 @@ parse_update_command_file(tchar **cmd_file_contents_p, size_t cmd_file_nchars,
 }
 
 /* Apply one image, or all images, from a WIM file into a directory, OR apply
- * one image from a WIM file to a NTFS volume. */
+ * one image from a WIM file to a NTFS volume.  */
 static int
 imagex_apply(int argc, tchar **argv)
 {
@@ -1522,6 +1551,7 @@ imagex_apply(int argc, tchar **argv)
 	int ret;
 	const tchar *wimfile;
 	const tchar *target;
+	const tchar *image_num_or_name;
 	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
 
 	const tchar *swm_glob = NULL;
@@ -1575,45 +1605,61 @@ imagex_apply(int argc, tchar **argv)
 
 	wimfile = argv[0];
 
-	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
-	if (ret)
-		goto out;
-
-	if (argc >= 3) {
-		/* Image explicitly specified.  */
-		image = wimlib_resolve_image(wim, argv[1]);
-		ret = verify_image_exists(image, argv[1], wimfile);
-		if (ret)
-			goto out_wimlib_free;
-		target = argv[2];
-	} else {
-		/* No image specified; default to image 1, but only if the WIM
-		 * contains exactly one image.  */
-		struct wimlib_wim_info info;
-
-		wimlib_get_wim_info(wim, &info);
-		if (info.image_count != 1) {
-			imagex_error(T("\"%"TS"\" contains %d images; "
-				       "Please select one (or all)."),
-				     wimfile, info.image_count);
-			wimlib_free(wim);
+	if (!tstrcmp(wimfile, T("-"))) {
+		/* Attempt to apply pipable WIM from standard input.  */
+		if (argc < 3) {
+			imagex_error(T("Imagex index or name must be explicitly "
+				       "specified when applying pipable WIM on "
+				       "standard input."));
 			goto out_usage;
 		}
-		image = 1;
-		target = argv[1];
-	}
-
-	if (swm_glob) {
-		ret = open_swms_from_glob(swm_glob, wimfile, open_flags,
-					  &additional_swms,
-					  &num_additional_swms);
-		if (ret)
-			goto out_wimlib_free;
-	} else {
-		additional_swms = NULL;
+		image_num_or_name = argv[1];
+		target = argv[2];
+		wim = NULL;
 		num_additional_swms = 0;
-	}
+		additional_swms = NULL;
+	} else {
+		ret = wimlib_open_wim(wimfile, open_flags, &wim,
+				      imagex_progress_func);
+		if (ret)
+			goto out;
 
+		if (argc >= 3) {
+			/* Image explicitly specified.  */
+			image_num_or_name = argv[1];
+			image = wimlib_resolve_image(wim, image_num_or_name);
+			ret = verify_image_exists(image, image_num_or_name, wimfile);
+			if (ret)
+				goto out_wimlib_free;
+			target = argv[2];
+		} else {
+			/* No image specified; default to image 1, but only if the WIM
+			 * contains exactly one image.  */
+			struct wimlib_wim_info info;
+
+			wimlib_get_wim_info(wim, &info);
+			if (info.image_count != 1) {
+				imagex_error(T("\"%"TS"\" contains %d images; "
+					       "Please select one (or all)."),
+					     wimfile, info.image_count);
+				wimlib_free(wim);
+				goto out_usage;
+			}
+			image = 1;
+			target = argv[1];
+		}
+
+		if (swm_glob) {
+			ret = open_swms_from_glob(swm_glob, wimfile, open_flags,
+						  &additional_swms,
+						  &num_additional_swms);
+			if (ret)
+				goto out_wimlib_free;
+		} else {
+			additional_swms = NULL;
+			num_additional_swms = 0;
+		}
+	}
 
 #ifndef __WIN32__
 	{
@@ -1638,11 +1684,19 @@ imagex_apply(int argc, tchar **argv)
 #ifdef __WIN32__
 	win32_acquire_restore_privileges();
 #endif
-	ret = wimlib_extract_image(wim, image, target, extract_flags,
-				   additional_swms, num_additional_swms,
-				   imagex_progress_func);
+	if (wim) {
+		ret = wimlib_extract_image(wim, image, target, extract_flags,
+					   additional_swms, num_additional_swms,
+					   imagex_progress_func);
+	} else {
+		set_fd_to_binary_mode(STDIN_FILENO);
+		ret = wimlib_extract_image_from_pipe(STDIN_FILENO,
+						     image_num_or_name,
+						     target, extract_flags,
+						     imagex_progress_func);
+	}
 	if (ret == 0)
-		tprintf(T("Done applying WIM image.\n"));
+		imagex_printf(T("Done applying WIM image.\n"));
 #ifdef __WIN32__
 	win32_release_restore_privileges();
 #endif
@@ -1674,6 +1728,7 @@ imagex_capture_or_append(int argc, tchar **argv)
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
 	const tchar *wimfile;
+	int wim_fd;
 	const tchar *name;
 	const tchar *desc;
 	const tchar *flags_element = NULL;
@@ -1705,6 +1760,9 @@ imagex_capture_or_append(int argc, tchar **argv)
 		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+			break;
+		case IMAGEX_NOCHECK_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY;
 			break;
 		case IMAGEX_CONFIG_OPTION:
 			config_file = optarg;
@@ -1749,6 +1807,12 @@ imagex_capture_or_append(int argc, tchar **argv)
 		case IMAGEX_NORPFIX_OPTION:
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NORPFIX;
 			break;
+		case IMAGEX_PIPABLE_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
+			break;
+		case IMAGEX_NOT_PIPABLE_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_NOT_PIPABLE;
+			break;
 		default:
 			goto out_usage;
 		}
@@ -1761,6 +1825,28 @@ imagex_capture_or_append(int argc, tchar **argv)
 
 	source = argv[0];
 	wimfile = argv[1];
+
+	if (!tstrcmp(wimfile, T("-"))) {
+	#if 0
+		if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE)) {
+			imagex_error("Can't write a non-pipable WIM to "
+				     "standard output!  Specify --pipable\n"
+				     "       if you want to create a pipable WIM "
+				     "(but read the docs first).");
+			goto out_err;
+		}
+	#else
+		write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
+	#endif
+		if (cmd == APPEND) {
+			imagex_error(T("Using standard output for append does "
+				       "not make sense."));
+			goto out_err;
+		}
+		wim_fd = STDOUT_FILENO;
+		wimfile = NULL;
+		imagex_info_file = stderr;
+	}
 
 	if (argc >= 3) {
 		name = argv[2];
@@ -1845,7 +1931,7 @@ imagex_capture_or_append(int argc, tchar **argv)
 
 		if (tstat(source, &stbuf) == 0) {
 			if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
-				tprintf(T("Capturing WIM image from NTFS "
+				imagex_printf(T("Capturing WIM image from NTFS "
 					  "filesystem on \"%"TS"\"\n"), source);
 				add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NTFS;
 			}
@@ -1911,16 +1997,20 @@ imagex_capture_or_append(int argc, tchar **argv)
 		}
 	}
 
+	/* Write the new WIM or overwrite the existing WIM with the new image
+	 * appended.  */
 	if (cmd == APPEND) {
 		ret = wimlib_overwrite(wim, write_flags, num_threads,
 				       imagex_progress_func);
+	} else if (wimfile) {
+		ret = wimlib_write(wim, wimfile, WIMLIB_ALL_IMAGES,
+				   write_flags, num_threads,
+				   imagex_progress_func);
 	} else {
-		ret = wimlib_write(wim, wimfile, WIMLIB_ALL_IMAGES, write_flags,
-				   num_threads, imagex_progress_func);
+		ret = wimlib_write_to_fd(wim, wim_fd, WIMLIB_ALL_IMAGES,
+					 write_flags, num_threads,
+					 imagex_progress_func);
 	}
-	if (ret)
-		imagex_error(T("Failed to write the WIM file \"%"TS"\""),
-			     wimfile);
 out_release_privs:
 #ifdef __WIN32__
 	win32_release_capture_privileges();
@@ -2115,6 +2205,7 @@ imagex_export(int argc, tchar **argv)
 	const tchar *src_wimfile;
 	const tchar *src_image_num_or_name;
 	const tchar *dest_wimfile;
+	int dest_wim_fd;
 	const tchar *dest_name;
 	const tchar *dest_desc;
 	WIMStruct *src_wim;
@@ -2137,6 +2228,9 @@ imagex_export(int argc, tchar **argv)
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
+		case IMAGEX_NOCHECK_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY;
+			break;
 		case IMAGEX_COMPRESS_OPTION:
 			compression_type = get_compression_type(optarg);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
@@ -2152,6 +2246,12 @@ imagex_export(int argc, tchar **argv)
 			break;
 		case IMAGEX_REBUILD_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
+			break;
+		case IMAGEX_PIPABLE_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
+			break;
+		case IMAGEX_NOT_PIPABLE_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_NOT_PIPABLE;
 			break;
 		default:
 			goto out_usage;
@@ -2172,10 +2272,30 @@ imagex_export(int argc, tchar **argv)
 	if (ret)
 		goto out;
 
-	/* Determine if the destination is an existing file or not.
-	 * If so, we try to append the exported image(s) to it; otherwise, we
-	 * create a new WIM containing the exported image(s). */
-	if (tstat(dest_wimfile, &stbuf) == 0) {
+	/* Determine if the destination is an existing file or not.  If so, we
+	 * try to append the exported image(s) to it; otherwise, we create a new
+	 * WIM containing the exported image(s).  Furthermore, determine if we
+	 * need to write a pipable WIM directly to standard output.  */
+
+	if (tstrcmp(dest_wimfile, T("-")) == 0) {
+	#if 0
+		if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE)) {
+			imagex_error("Can't write a non-pipable WIM to "
+				     "standard output!  Specify --pipable\n"
+				     "       if you want to create a pipable WIM "
+				     "(but read the docs first).");
+			ret = -1;
+			goto out_free_src_wim;
+		}
+	#else
+		write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
+	#endif
+		dest_wimfile = NULL;
+		dest_wim_fd = STDOUT_FILENO;
+		imagex_info_file = stderr;
+	}
+	errno = ENOENT;
+	if (dest_wimfile != NULL && tstat(dest_wimfile, &stbuf) == 0) {
 		wim_is_new = false;
 		/* Destination file exists. */
 
@@ -2254,13 +2374,19 @@ imagex_export(int argc, tchar **argv)
 	if (ret)
 		goto out_free_swms;
 
-	if (wim_is_new)
+	if (!wim_is_new)
+		ret = wimlib_overwrite(dest_wim, write_flags, num_threads,
+				       imagex_progress_func);
+	else if (dest_wimfile)
 		ret = wimlib_write(dest_wim, dest_wimfile, WIMLIB_ALL_IMAGES,
 				   write_flags, num_threads,
 				   imagex_progress_func);
 	else
-		ret = wimlib_overwrite(dest_wim, write_flags, num_threads,
-				       imagex_progress_func);
+		ret = wimlib_write_to_fd(dest_wim, dest_wim_fd,
+					 WIMLIB_ALL_IMAGES, write_flags,
+					 num_threads, imagex_progress_func);
+	if (ret)
+		imagex_error(T("Export failed."));
 out_free_swms:
 	for (unsigned i = 0; i < num_additional_swms; i++)
 		wimlib_free(additional_swms[i]);
@@ -2386,6 +2512,7 @@ imagex_extract(int argc, tchar **argv)
 			break;
 		case IMAGEX_TO_STDOUT_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_TO_STDOUT;
+			imagex_info_file = stderr;
 			imagex_be_quiet = true;
 			break;
 		case IMAGEX_INCLUDE_INVALID_NAMES_OPTION:
@@ -2444,7 +2571,7 @@ imagex_extract(int argc, tchar **argv)
 				   imagex_progress_func);
 	if (ret == 0) {
 		if (!imagex_be_quiet)
-			tprintf(T("Done extracting files.\n"));
+			imagex_printf(T("Done extracting files.\n"));
 	} else if (ret == WIMLIB_ERR_PATH_DOES_NOT_EXIST) {
 		tfprintf(stderr, T("Note: You can use `"IMAGEX_PROGNAME" dir' to see what "
 				   "files and directories\n"
@@ -2495,6 +2622,8 @@ print_wim_information(const tchar *wimfile, const struct wimlib_wim_info *info)
 		info->has_integrity_table ? T("yes") : T("no"));
 	tprintf(T("Relative path junction: %"TS"\n"),
 		info->has_rpfix ? T("yes") : T("no"));
+	tprintf(T("Pipable:        %"TS"\n"),
+		info->pipable ? T("yes") : T("no"));
 	tputchar(T('\n'));
 }
 
@@ -2548,6 +2677,7 @@ imagex_info(int argc, tchar **argv)
 	int c;
 	bool boot         = false;
 	bool check        = false;
+	bool nocheck      = false;
 	bool header       = false;
 	bool lookup_table = false;
 	bool xml          = false;
@@ -2571,6 +2701,9 @@ imagex_info(int argc, tchar **argv)
 			break;
 		case IMAGEX_CHECK_OPTION:
 			check = true;
+			break;
+		case IMAGEX_NOCHECK_OPTION:
+			nocheck = true;
 			break;
 		case IMAGEX_HEADER_OPTION:
 			header = true;
@@ -2606,6 +2739,11 @@ imagex_info(int argc, tchar **argv)
 	image_num_or_name = (argc >= 2) ? argv[1] : T("all");
 	new_name	  = (argc >= 3) ? argv[2] : NULL;
 	new_desc	  = (argc >= 4) ? argv[3] : NULL;
+
+	if (check && nocheck) {
+		imagex_error(T("Can't specify both --check and --nocheck"));
+		goto out_err;
+	}
 
 	if (check)
 		open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
@@ -2730,11 +2868,11 @@ imagex_info(int argc, tchar **argv)
 
 		if (boot) {
 			if (image == info.boot_index) {
-				tprintf(T("Image %d is already marked as "
+				imagex_printf(T("Image %d is already marked as "
 					  "bootable.\n"), image);
 				boot = false;
 			} else {
-				tprintf(T("Marking image %d as bootable.\n"),
+				imagex_printf(T("Marking image %d as bootable.\n"),
 					image);
 				info.boot_index = image;
 				ret = wimlib_set_wim_info(wim, &info,
@@ -2746,11 +2884,11 @@ imagex_info(int argc, tchar **argv)
 		if (new_name) {
 			if (!tstrcmp(wimlib_get_image_name(wim, image), new_name))
 			{
-				tprintf(T("Image %d is already named \"%"TS"\".\n"),
+				imagex_printf(T("Image %d is already named \"%"TS"\".\n"),
 					image, new_name);
 				new_name = NULL;
 			} else {
-				tprintf(T("Changing the name of image %d to "
+				imagex_printf(T("Changing the name of image %d to "
 					  "\"%"TS"\".\n"), image, new_name);
 				ret = wimlib_set_image_name(wim, image, new_name);
 				if (ret)
@@ -2761,11 +2899,11 @@ imagex_info(int argc, tchar **argv)
 			const tchar *old_desc;
 			old_desc = wimlib_get_image_description(wim, image);
 			if (old_desc && !tstrcmp(old_desc, new_desc)) {
-				tprintf(T("The description of image %d is already "
+				imagex_printf(T("The description of image %d is already "
 					  "\"%"TS"\".\n"), image, new_desc);
 				new_desc = NULL;
 			} else {
-				tprintf(T("Changing the description of image %d "
+				imagex_printf(T("Changing the description of image %d "
 					  "to \"%"TS"\".\n"), image, new_desc);
 				ret = wimlib_set_image_descripton(wim, image,
 								  new_desc);
@@ -2775,19 +2913,23 @@ imagex_info(int argc, tchar **argv)
 		}
 
 		/* Only call wimlib_overwrite() if something actually needs to
-		 * be changed. */
+		 * be changed.  */
 		if (boot || new_name || new_desc ||
-		    (check && !info.has_integrity_table))
+		    (check && !info.has_integrity_table) ||
+		    (nocheck && info.has_integrity_table))
 		{
 			int write_flags = 0;
 
 			if (check)
 				write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+			if (nocheck)
+				write_flags |= WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY;
 			ret = wimlib_overwrite(wim, write_flags, 1,
 					       imagex_progress_func);
 		} else {
-			tprintf(T("The file \"%"TS"\" was not modified because nothing "
-				  "needed to be done.\n"), wimfile);
+			imagex_printf(T("The file \"%"TS"\" was not modified "
+					"because nothing needed to be done.\n"),
+				      wimfile);
 			ret = 0;
 		}
 	}
@@ -2798,6 +2940,7 @@ out:
 
 out_usage:
 	usage(INFO);
+out_err:
 	ret = -1;
 	goto out;
 }
@@ -2992,6 +3135,9 @@ imagex_optimize(int argc, tchar **argv)
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
+		case IMAGEX_NOCHECK_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY;
+			break;
 		case IMAGEX_RECOMPRESS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
@@ -2999,6 +3145,12 @@ imagex_optimize(int argc, tchar **argv)
 			num_threads = parse_num_threads(optarg);
 			if (num_threads == UINT_MAX)
 				goto out_err;
+			break;
+		case IMAGEX_PIPABLE_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
+			break;
+		case IMAGEX_NOT_PIPABLE_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_NOT_PIPABLE;
 			break;
 		default:
 			goto out_usage;
@@ -3025,8 +3177,10 @@ imagex_optimize(int argc, tchar **argv)
 
 	ret = wimlib_overwrite(wim, write_flags, num_threads,
 			       imagex_progress_func);
-	if (ret)
+	if (ret) {
+		imagex_error(T("Optimization of \"%"TS"\" failed."), wimfile);
 		goto out_wimlib_free;
+	}
 
 	new_size = file_get_size(wimfile);
 	tprintf(T("\"%"TS"\" optimized size: "), wimfile);
@@ -3470,7 +3624,7 @@ usage_all(void)
 {
 	tfputs(T("Usage:\n"), stdout);
 	for (int i = 0; i < ARRAY_LEN(usage_strings); i++)
-		tprintf(T("    %"TS), usage_strings[i]);
+		tprintf(T("    %"TS"\n"), usage_strings[i]);
 	static const tchar *extra =
 	T(
 "    "IMAGEX_PROGNAME" --help\n"
@@ -3497,6 +3651,8 @@ main(int argc, char **argv)
 	const struct imagex_command *cmd;
 	int ret;
 	int init_flags = 0;
+
+	imagex_info_file = stdout;
 
 #ifndef __WIN32__
 	if (getenv("WIMLIB_IMAGEX_USE_UTF8")) {

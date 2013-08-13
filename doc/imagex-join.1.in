@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-join \- Join split WIMs into a standalone one-part WIM
 .SH SYNOPSIS
@@ -8,13 +8,16 @@ Joins the \fISPLIT_WIMs\fR into a standalone one-part WIM \fIOUT_WIMFILE\fR.
 .PP
 All parts of the split WIM  must be specified.  You probably want to do so using
 a shell wildcard.
+.PP
+\fB@IMAGEX_PROGNAME@ join\fR can join both non-pipable and pipable split WIMs.
 .SH OPTIONS
 .TP 6
 \fB--check\fR
-When reading each \fISPLIT_WIM\fR, verify its integrity if the integrity table is
-present; additionally, when writing \fIOUT_WIMFILE\fR,
-write an integrity table.  If this option is not specified, no integrity table
-is included in the new WIM file, even if there was one before.
+When reading each \fISPLIT_WIM\fR, verify its integrity if the integrity table
+is present; additionally, when writing \fIOUT_WIMFILE\fR, write an integrity
+table.  If this option is not specified, an integrity table will be included in
+\fIOUT_WIMFILE\fR if and only if one was present in the first part of the split
+WIM.
 .SH EXAMPLES
 Join a split WIM, with the parts named `windows*.swm' where the * is anything
 (usually the number of the part, except for the first part which may have no

@@ -108,7 +108,7 @@ inode_table_insert(struct wim_dentry *dentry, void *_table)
 					      "\"%"TS"\" <=> \"%"TS"\"",
 					      dentry_full_path(dentry),
 					      dentry_full_path(inode_first_dentry(inode)));
-					return WIMLIB_ERR_INVALID_DENTRY;
+					return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 				}
 				inode_add_dentry(dentry, inode);
 				return 0;
@@ -311,7 +311,7 @@ fix_true_inode(struct wim_inode *inode, struct list_head *inode_list)
 		if (dentry != ref_dentry) {
 			if (!inodes_consistent(ref_inode, dentry->d_inode)) {
 				inconsistent_inode(ref_inode);
-				return WIMLIB_ERR_INVALID_DENTRY;
+				return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 			}
 			/* Free the unneeded `struct wim_inode'. */
 			wimlib_assert(dentry->d_inode->i_nlink == 1);
@@ -349,7 +349,6 @@ fix_nominal_inode(struct wim_inode *inode, struct list_head *inode_list,
 	struct hlist_node *cur, *tmp;
 	int ret;
 	size_t num_true_inodes;
-	unsigned nominal_group_size = inode_link_count(inode);
 
 	LIST_HEAD(dentries_with_data_streams);
 	LIST_HEAD(dentries_with_no_data_streams);
@@ -378,6 +377,7 @@ fix_nominal_inode(struct wim_inode *inode, struct list_head *inode_list,
 	 * inode to be a true inode */
 	if (list_empty(&dentries_with_data_streams)) {
 	#ifdef ENABLE_DEBUG
+		unsigned nominal_group_size = inode_link_count(inode);
 		if (nominal_group_size > 1) {
 			DEBUG("Found link group of size %u without "
 			      "any data streams:", nominal_group_size);
@@ -420,13 +420,13 @@ next_dentry_2:
          * streamless dentries to. */
 	if (!list_empty(&dentries_with_no_data_streams)) {
 		if (num_true_inodes != 1) {
-			ERROR("Hard inode ambiguity detected!");
+			ERROR("Hard link ambiguity detected!");
 			ERROR("We split up inode 0x%"PRIx64" due to "
 			      "inconsistencies,", inode->i_ino);
 			ERROR("but dentries with no stream information remained. "
 			      "We don't know which inode");
 			ERROR("to assign them to.");
-			ret = WIMLIB_ERR_INVALID_DENTRY;
+			ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 			goto out_cleanup_true_inode_list;
 		}
 		inode = container_of(true_inodes.first, struct wim_inode, i_hlist);
@@ -514,9 +514,13 @@ fix_inodes(struct wim_inode_table *table, struct list_head *inode_list,
  * WIM) is examined for consistency and may be split into multiple "true" inodes
  * that are maximally sized consistent sets of dentries.
  *
- * Return 0 on success; WIMLIB_ERR_NOMEM or WIMLIB_ERR_INVALID_DENTRY on
- * failure.  On success, the list of "true" inodes, linked by the i_hlist field,
+ * On success, the list of "true" inodes, linked by the i_hlist field,
  * is returned in the hlist @inode_list.
+ *
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
+ *	WIMLIB_ERR_NOMEM
  */
 int
 dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list)

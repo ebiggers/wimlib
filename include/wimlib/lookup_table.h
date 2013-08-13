@@ -59,17 +59,20 @@ enum resource_location {
 	RESOURCE_NONEXISTENT = 0,
 
 	/* The stream resource is located in a WIM file.  The WIMStruct for the
-	 * WIM file will be pointed to by the @wim member. */
+	 * WIM file will be pointed to by the @wim member.  The compression type
+	 * of the resource will be cached in @compression_type, and the pipable
+	 * status of the resource will be cached in @pipable.  */
 	RESOURCE_IN_WIM,
 
-#ifndef __WIN32__
 	/* The stream resource is located in an external file.  The name of the
-	 * file will be provided by @file_on_disk member. */
+	 * file will be provided by @file_on_disk member.
+	 *
+	 * Note: On Windows @file_on_disk may actually specify a named data
+	 * stream.  */
 	RESOURCE_IN_FILE_ON_DISK,
-#endif
 
 	/* The stream resource is directly attached in an in-memory buffer
-	 * pointed to by @attached_buffer. */
+	 * pointed to by @attached_buffer.  */
 	RESOURCE_IN_ATTACHED_BUFFER,
 
 #ifdef WITH_FUSE
@@ -82,15 +85,11 @@ enum resource_location {
 	/* The stream resource is located in an NTFS volume.  It is identified
 	 * by volume, filename, data stream name, and by whether it is a reparse
 	 * point or not. @ntfs_loc points to a structure containing this
-	 * information. */
+	 * information.  */
 	RESOURCE_IN_NTFS_VOLUME,
 #endif
 
 #ifdef __WIN32__
-	/* Resource must be accessed using Win32 API (may be a named data
-	 * stream) */
-	RESOURCE_WIN32,
-
 	/* Windows only: the file is on disk in the file named @file_on_disk,
 	 * but the file is encrypted and must be read using special functions.
 	 * */
@@ -154,23 +153,33 @@ struct wim_lookup_table_entry {
 	 * same as WIMLIB_COMPRESSION_TYPE_NONE.  */
 	u16 compression_type : 2;
 
+	/* If resource_location == RESOURCE_IN_WIM, this flag will be set if the
+	 * WIM is pipable and therefore the stream is in a slightly different
+	 * format.  See comment above write_pipable_wim().  */
+	u16 is_pipable : 1;
+
+	/* Set to 1 when a metadata entry has its checksum changed; in such
+	 * cases the hash is no longer valid to verify the data if the metadata
+	 * resource is read again.  */
+	u16 dont_check_metadata_hash : 1;
+
 	/* (On-disk field)
 	 * Number of times this lookup table entry is referenced by dentries.
 	 * Unfortunately, this field is not always set correctly in Microsoft's
 	 * WIMs, so we have no choice but to fix it if more references to the
-	 * lookup table entry are found than stated here. */
+	 * lookup table entry are found than stated here.  */
 	u32 refcnt;
 
 	union {
 		/* (On-disk field) SHA1 message digest of the stream referenced
-		 * by this lookup table entry */
+		 * by this lookup table entry.  */
 		u8  hash[SHA1_HASH_SIZE];
 
 		/* First 4 or 8 bytes of the SHA1 message digest, used for
 		 * inserting the entry into the hash table.  Since the SHA1
 		 * message digest can be considered random, we don't really need
 		 * the full 20 byte hash just to insert the entry in a hash
-		 * table. */
+		 * table.  */
 		size_t hash_short;
 
 		/* Unhashed entries only (unhashed == 1): these variables make
@@ -223,7 +232,19 @@ struct wim_lookup_table_entry {
 		tchar *extracted_file;
 	};
 
+	/* Temporary fields  */
 	union {
+		/* Used temporarily during WIM file writing  */
+		struct {
+			struct hlist_node hash_list_2;
+		};
+
+		/* Used temporarily during WIM file writing (after above)  */
+		struct {
+			struct list_head msg_list;
+			struct list_head being_compressed_list;
+		};
+
 		/* When a WIM file is written, @output_resource_entry is filled
 		 * in with the resource entry for the output WIM.  This will not
 		 * necessarily be the same as the @resource_entry since:
@@ -233,27 +254,36 @@ struct wim_lookup_table_entry {
 		 */
 		struct resource_entry output_resource_entry;
 
-		struct {
-			struct list_head msg_list;
-			struct list_head being_compressed_list;
-		};
-		struct list_head lte_dentry_list;
 
-		struct {
-			struct hlist_node hash_list_2;
-
-			struct list_head write_streams_list;
+		/* Used temporarily during extraction  */
+		union {
+			/* out_refcnt tracks number of slots filled */
+			struct wim_dentry *inline_lte_dentries[4];
+			struct {
+				struct wim_dentry **lte_dentries;
+				unsigned long alloc_lte_dentries;
+			};
 		};
 	};
 
 	/* Temporary list fields */
 	union {
-		struct list_head unhashed_list;
-		struct list_head swm_stream_list;
+		/* Links streams when writing lookup table.  */
 		struct list_head lookup_table_list;
+
+		/* Links streams being extracted.  */
 		struct list_head extraction_list;
+
+		/* Links streams being exported.  */
 		struct list_head export_stream_list;
 	};
+
+	/* Links streams that are still unhashed after being been added
+	 * to a WIM.  */
+	struct list_head unhashed_list;
+
+	/* Links streams being written to the WIM.  */
+	struct list_head write_streams_list;
 };
 
 static inline u64
@@ -284,12 +314,9 @@ wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
 static inline bool
 lte_filename_valid(const struct wim_lookup_table_entry *lte)
 {
-	return 0
+	return     lte->resource_location == RESOURCE_IN_FILE_ON_DISK
 	#ifdef __WIN32__
-		|| lte->resource_location == RESOURCE_WIN32
 		|| lte->resource_location == RESOURCE_WIN32_ENCRYPTED
-	#else
-		|| lte->resource_location == RESOURCE_IN_FILE_ON_DISK
 	#endif
 	#ifdef WITH_FUSE
 		|| lte->resource_location == RESOURCE_IN_STAGING_FILE
@@ -301,15 +328,12 @@ extern struct wim_lookup_table *
 new_lookup_table(size_t capacity) _malloc_attribute;
 
 extern int
-read_lookup_table(WIMStruct *wim);
+read_wim_lookup_table(WIMStruct *wim);
 
 extern int
-write_lookup_table(WIMStruct *wim, int image, struct resource_entry *out_res_entry);
-
-extern int
-write_lookup_table_from_stream_list(struct list_head *stream_list,
-				    int out_fd,
-				    struct resource_entry *out_res_entry);
+write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
+		       struct resource_entry *out_res_entry,
+		       struct list_head *stream_list_override);
 
 extern void
 free_lookup_table(struct wim_lookup_table *table);
@@ -384,8 +408,12 @@ lte_zero_real_refcnt(struct wim_lookup_table_entry *entry, void *ignore);
 extern int
 lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *ignore);
 
+extern void
+lte_init_wim(struct wim_lookup_table_entry *lte, WIMStruct *wim);
+
 extern int
-inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table);
+inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table,
+		   bool force);
 
 extern void
 inode_unresolve_ltes(struct wim_inode *inode);

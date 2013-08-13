@@ -1,5 +1,35 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.5.0:
+	Added support for "pipable" WIMs.  This support allows capturing images
+	to standard output or applying images from standard input, but they are
+	not compatible with Microsoft's software and are not created by default.
+	See documentation for --pipable flag of `wimlib-imagex capture' for more
+	information.  Two new functions have been added to the library to fully
+	support this: wimlib_write_to_fd() and wimlib_extract_image_from_pipe().
+
+	wimlib now preserve WIM integrity tables by default, even if
+	WIMLIB_WRITE_FLAG_CHECK_INTEGRITY is not specified.  This affects
+	wimlib-imagex's behavior when --check is not specified.
+
+	Security descriptors are now extracted correctly on Windows.
+
+	`mkwinpeimg' now supports grabbing files from the WAIK supplement rather
+	than the WAIK itself.
+
+	The test suite no longer fails when run in a locale where the decimal
+	separator is not a period.
+
+	WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY has been removed and
+	WIMLIB_EXTRACT_FLAG_VERBOSE re-reserved for future use.
+
+	The extraction code has been rewritten and it will now be easier to
+	support new features on all supported backends (currently Win32, UNIX,
+	and NTFS-3g).  For example, hard-linked extraction mode (--hardlink) is
+	now supported on all backends, not just UNIX.
+
+	A few changes were made to the error codes returned by library routines.
+
 Version 1.4.2:
 	Fixed bug in `wimlib-imagex export' that made it impossible to export an
 	image from a WIM that is readonly at the filesystem level.

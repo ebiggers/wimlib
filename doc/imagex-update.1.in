@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-update \- Update a WIM image
 .SH SYNOPSIS
@@ -113,8 +113,8 @@ Use \fB--recursive\fR for all \fBdelete\fR commands.
 \fB--check\fR
 When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
 present; in addition, include an integrity table in the updated WIM.  If this
-option is not specified, no integrity table is included in the updated WIM, even
-if there was one in the original WIM.
+option is not specified, an integrity table will be included in the updated WIM
+if and only if one was present before.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing newly added files.  Default: autodetect

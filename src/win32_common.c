@@ -363,6 +363,12 @@ bool
 win32_path_is_root_of_drive(const wchar_t *path)
 {
 	size_t drive_spec_len;
+	wchar_t full_path[32768];
+	DWORD ret;
+
+	ret = GetFullPathName(path, ARRAY_LEN(full_path), full_path, NULL);
+	if (ret > 0 && ret < ARRAY_LEN(full_path))
+		path = full_path;
 
 	/* Explicit drive letter and path separator? */
 	drive_spec_len = win32_path_drive_spec_len(path);
@@ -374,23 +380,23 @@ win32_path_is_root_of_drive(const wchar_t *path)
 		if (!is_any_path_separator(*p))
 			return false;
 	return true;
-
-	/* XXX This function does not handle paths like "c:" where the working
-	 * directory on "c:" is actually "c:\", or weird paths like "\.".  But
-	 * currently the capture and apply code always prefixes the paths with
-	 * \\?\ anyway so this is irrelevant... */
 }
 
 
 /* Given a path, which may not yet exist, get a set of flags that describe the
  * features of the volume the path is on. */
 int
-win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret)
+win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret,
+		    bool *supports_SetFileShortName_ret)
 {
 	wchar_t *volume;
 	BOOL bret;
 	DWORD vol_flags;
 	size_t drive_spec_len;
+	wchar_t filesystem_name[MAX_PATH + 1];
+
+	if (supports_SetFileShortName_ret)
+		*supports_SetFileShortName_ret = false;
 
 	drive_spec_len = win32_path_drive_spec_len(path);
 
@@ -412,21 +418,33 @@ win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret)
 		volume[drive_spec_len] = L'\\';
 		volume[drive_spec_len + 1] = L'\0';
 	}
-	bret = GetVolumeInformationW(volume, /* lpRootPathName */
-				     NULL,  /* lpVolumeNameBuffer */
-				     0,     /* nVolumeNameSize */
-				     NULL,  /* lpVolumeSerialNumber */
-				     NULL,  /* lpMaximumComponentLength */
-				     &vol_flags, /* lpFileSystemFlags */
-				     NULL,  /* lpFileSystemNameBuffer */
-				     0);    /* nFileSystemNameSize */
+	bret = GetVolumeInformation(
+			volume,				/* lpRootPathName */
+			NULL,				/* lpVolumeNameBuffer */
+			0,				/* nVolumeNameSize */
+			NULL,				/* lpVolumeSerialNumber */
+			NULL,				/* lpMaximumComponentLength */
+			&vol_flags,			/* lpFileSystemFlags */
+			filesystem_name,		/* lpFileSystemNameBuffer */
+			ARRAY_LEN(filesystem_name));    /* nFileSystemNameSize */
 	if (!bret) {
 		DWORD err = GetLastError();
 		WARNING("Failed to get volume information for path \"%ls\"", path);
 		win32_error(err);
 		vol_flags = 0xffffffff;
+		goto out;
 	}
 
+	if (wcsstr(filesystem_name, L"NTFS")) {
+		/* FILE_SUPPORTS_HARD_LINKS is only supported on Windows 7 and later.
+		 * Force it on anyway if filesystem is NTFS.  */
+		vol_flags |= FILE_SUPPORTS_HARD_LINKS;
+
+		if (supports_SetFileShortName_ret)
+			*supports_SetFileShortName_ret = true;
+	}
+
+out:
 	DEBUG("using vol_flags = %x", vol_flags);
 	*vol_flags_ret = vol_flags;
 	return 0;

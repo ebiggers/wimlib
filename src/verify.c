@@ -39,6 +39,9 @@
  * - Check to make sure the security ID is valid
  * - Check to make sure there is at most one unnamed stream
  * - Check to make sure there is at most one DOS name.
+ *
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
  */
 int
 verify_inode(struct wim_inode *inode, const struct wim_security_data *sd)
@@ -86,7 +89,7 @@ verify_inode(struct wim_inode *inode, const struct wim_security_data *sd)
 				      "both `%"TS"' and `%"TS"'",
 				      dentry_full_path(dentry_with_dos_name),
 				      dentry_full_path(dentry));
-				return WIMLIB_ERR_INVALID_DENTRY;
+				return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 			#else
 				dentry->dos_name_invalid = 1;
 			#endif

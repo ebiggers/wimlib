@@ -84,6 +84,41 @@ do_test() {
 			error "Failed to apply exported WIM image"
 		fi
 		do_tree_cmp
+		rm -rf out.dir/*
+
+		# Try pipable WIM (don't bother testing all compression types
+		# though, it shouldn't make a difference).
+		if [ "$ctype" = "None" ]; then
+			# Capture pipable WIM (not writing to pipe)
+			if ! imagex capture in.dir test.wim \
+					--compress=$ctype --norpfix --pipable; then
+				error "Failed to capture directory tree into a pipable WIM"
+			fi
+
+			# Apply pipable WIM (reading from pipe)
+			if ! cat test.wim | imagex apply - 1 out.dir; then
+				error "Failed to apply pipable WIM to directory (from pipe)"
+			fi
+			do_tree_cmp
+			rm -rf out.dir/*
+
+			# Apply pipable WIM (not reading from pipe)
+			if ! imagex apply test.wim 1 out.dir; then
+				error "Failed to apply pipable WIM to directory (not from pipe)"
+			fi
+			do_tree_cmp
+			rm -rf out.dir/*
+
+			# Capture pipable WIM (writing to pipe) and read pipable
+			# WIM (reading from pipe)
+			if ! imagex_raw capture --pipable --compress=$ctype \
+						--norpfix --pipable         \
+					    in.dir - | imagex apply - 1 out.dir; then
+				error "Failed to capture directory tree into a pipable WIM"
+			fi
+			do_tree_cmp
+			rm -rf out.dir/*
+		fi
 
 		rm -rf out.dir/* in.dir/* test.wim test*.swm
 

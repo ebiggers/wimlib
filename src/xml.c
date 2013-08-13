@@ -43,6 +43,7 @@
 #include <libxml/xmlwriter.h>
 #include <limits.h>
 #include <string.h>
+#include <unistd.h>
 
 /* Structures used to form an in-memory representation of the XML data (other
  * than the raw parse tree from libxml). */
@@ -89,6 +90,15 @@ struct image_info {
 	struct wim_lookup_table *lookup_table; /* temporary field */
 };
 
+/* A struct wim_info structure corresponds to the entire XML data for a WIM file. */
+struct wim_info {
+	u64 total_bytes;
+	int num_images;
+	/* Array of `struct image_info's, one for each image in the WIM that is
+	 * mentioned in the XML data. */
+	struct image_info *images;
+};
+
 struct xml_string_spec {
 	const char *name;
 	size_t offset;
@@ -119,6 +129,25 @@ windows_info_xml_string_specs[] = {
 };
 #undef ELEM
 
+u64
+wim_info_get_total_bytes(const struct wim_info *info)
+{
+	if (!info)
+		return 0;
+	return info->total_bytes;
+}
+
+u64
+wim_info_get_image_total_bytes(const struct wim_info *info, int image)
+{
+	return info->images[image - 1].total_bytes;
+}
+
+unsigned
+wim_info_get_num_images(const struct wim_info *info)
+{
+	return info->num_images;
+}
 
 /* Returns a statically allocated string that is a string representation of the
  * architecture number. */
@@ -1017,13 +1046,8 @@ size_t
 xml_get_max_image_name_len(const WIMStruct *wim)
 {
 	size_t max_len = 0;
-	if (wim->wim_info) {
-		for (int i = 0; i < wim->wim_info->num_images; i++) {
-			size_t len = tstrlen(wim->wim_info->images[i].name);
-			if (len > max_len)
-				max_len = len;
-		}
-	}
+	for (u32 i = 0; i < wim->hdr.image_count; i++)
+		max_len = max(max_len, tstrlen(wim->wim_info->images[i].name));
 	return max_len;
 }
 
@@ -1242,81 +1266,42 @@ libxml_global_cleanup(void)
 	xmlCleanupCharEncodingHandlers();
 }
 
-/*
- * Reads the XML data from a WIM file.
- */
+/* Reads the XML data from a WIM file.  */
 int
-read_xml_data(int in_fd,
-	      const struct resource_entry *res_entry,
-	      struct wim_info **info_ret)
+read_wim_xml_data(WIMStruct *wim)
 {
-	utf16lechar *xml_data;
+	u8 *xml_data;
 	xmlDoc *doc;
 	xmlNode *root;
 	int ret;
+	const struct resource_entry *res_entry;
 
-	DEBUG("XML data is %"PRIu64" bytes at offset %"PRIu64"",
+	res_entry = &wim->hdr.xml_res_entry;
+
+	DEBUG("Reading XML data: %"PRIu64" bytes at offset %"PRIu64"",
 	      (u64)res_entry->size, res_entry->offset);
 
-	if (resource_is_compressed(res_entry)) {
-		ERROR("XML data is supposed to be uncompressed");
-		ret = WIMLIB_ERR_XML;
+	ret = res_entry_to_data(res_entry, wim, (void**)&xml_data);
+	if (ret)
 		goto out;
-	}
 
-	if (res_entry->size < 2) {
-		ERROR("XML data must be at least 2 bytes long");
-		ret = WIMLIB_ERR_XML;
-		goto out;
-	}
-
-	xml_data = MALLOC(res_entry->size + 3);
-	if (!xml_data) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out;
-	}
-
-	if (full_pread(in_fd, xml_data,
-		       res_entry->size, res_entry->offset) != res_entry->size)
-	{
-		ERROR_WITH_ERRNO("Error reading XML data");
-		ret = WIMLIB_ERR_READ;
-		goto out_free_xml_data;
-	}
-
-	/* Null-terminate just in case */
-	((u8*)xml_data)[res_entry->size] = 0;
-	((u8*)xml_data)[res_entry->size + 1] = 0;
-	((u8*)xml_data)[res_entry->size + 2] = 0;
-
-	DEBUG("Parsing XML using libxml2 to create XML tree");
-
-	doc = xmlReadMemory((const char *)xml_data,
-			    res_entry->size, "noname.xml", "UTF-16", 0);
-
+	doc = xmlReadMemory((const char *)xml_data, res_entry->original_size,
+			    NULL, "UTF-16LE", 0);
 	if (!doc) {
 		ERROR("Failed to parse XML data");
 		ret = WIMLIB_ERR_XML;
 		goto out_free_xml_data;
 	}
 
-	DEBUG("Constructing WIM information structure from XML tree.");
-
 	root = xmlDocGetRootElement(doc);
-	if (!root) {
-		ERROR("WIM XML data is an empty XML document");
+	if (!root || !node_is_element(root) || !node_name_is(root, "WIM")) {
+		ERROR("WIM XML data is invalid");
 		ret = WIMLIB_ERR_XML;
 		goto out_free_doc;
 	}
 
-	if (!node_is_element(root) || !node_name_is(root, "WIM")) {
-		ERROR("Expected <WIM> for the root XML element");
-		ret = WIMLIB_ERR_XML;
-		goto out_free_doc;
-	}
-	ret = xml_read_wim_info(root, info_ret);
+	ret = xml_read_wim_info(root, &wim->wim_info);
 out_free_doc:
-	DEBUG("Freeing XML tree.");
 	xmlFreeDoc(doc);
 out_free_xml_data:
 	FREE(xml_data);
@@ -1324,57 +1309,30 @@ out:
 	return ret;
 }
 
-/*
- * Writes XML data to a WIM file.
+/* Prepares an in-memory buffer containing the UTF-16LE XML data for a WIM file.
  *
- * If @total_bytes is non-zero, it specifies what to write to the TOTALBYTES
- * element in the XML data.  If zero, TOTALBYTES is given the default value of
- * the offset of the XML data.
+ * total_bytes is the number to write in <TOTALBYTES>, or
+ * WIM_TOTALBYTES_USE_EXISTING to use the existing value in memory, or
+ * WIM_TOTALBYTES_OMIT to omit <TOTALBYTES> entirely.
  */
-int
-write_xml_data(const struct wim_info *wim_info, int image, int out_fd,
-	       u64 total_bytes, struct resource_entry *out_res_entry)
+static int
+prepare_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
+		     u8 **xml_data_ret, size_t *xml_len_ret)
 {
 	xmlCharEncodingHandler *encoding_handler;
-	xmlOutputBuffer *out_buffer;
+	xmlBuffer *buf;
+	xmlOutputBuffer *outbuf;
 	xmlTextWriter *writer;
 	int ret;
-	off_t start_offset;
-	off_t end_offset;
+	int first, last;
+	const xmlChar *content;
+	int len;
+	u8 *xml_data;
+	size_t xml_len;
 
-	wimlib_assert(image == WIMLIB_ALL_IMAGES ||
-			(wim_info != NULL && image >= 1 &&
-			 image <= wim_info->num_images));
+	/* Open an xmlTextWriter that writes to an in-memory buffer using
+	 * UTF-16LE encoding.  */
 
-	start_offset = filedes_offset(out_fd);
-	if (start_offset == -1)
-		return WIMLIB_ERR_WRITE;
-
-	DEBUG("Writing XML data for image %d at offset %"PRIu64,
-	      image, start_offset);
-
-	/* 2 bytes endianness marker for UTF-16LE.  This is _required_ for WIM
-	 * XML data. */
-	static u8 bom[2] = {0xff, 0xfe};
-	if (full_write(out_fd, bom, 2) != 2) {
-		ERROR_WITH_ERRNO("Error writing XML data");
-		return WIMLIB_ERR_WRITE;
-	}
-
-	/* The contents of the <TOTALBYTES> element in the XML data, under the
-	 * <WIM> element (not the <IMAGE> element), is for non-split WIMs the
-	 * size of the WIM file excluding the XML data and integrity table.
-	 * This should be equal to the current position in the output stream,
-	 * since the XML data and integrity table are the last elements of the
-	 * WIM.
-	 *
-	 * For split WIMs, <TOTALBYTES> takes into account the entire WIM, not
-	 * just the current part.  In that case, @total_bytes should be passed
-	 * in to this function. */
-	if (total_bytes == 0)
-		total_bytes = start_offset;
-
-	/* The encoding of the XML data must be UTF-16LE. */
 	encoding_handler = xmlGetCharEncodingHandler(XML_CHAR_ENCODING_UTF16LE);
 	if (!encoding_handler) {
 		ERROR("Failed to get XML character encoding handler for UTF-16LE");
@@ -1382,48 +1340,65 @@ write_xml_data(const struct wim_info *wim_info, int image, int out_fd,
 		goto out;
 	}
 
-	out_buffer = xmlOutputBufferCreateFd(out_fd, encoding_handler);
-	if (!out_buffer) {
-		ERROR("Failed to allocate xmlOutputBuffer");
+	buf = xmlBufferCreate();
+	if (!buf) {
+		ERROR("Failed to create xmlBuffer");
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;
 	}
 
-	writer = xmlNewTextWriter(out_buffer);
+	outbuf = xmlOutputBufferCreateBuffer(buf, encoding_handler);
+	if (!outbuf) {
+		ERROR("Failed to allocate xmlOutputBuffer");
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_buffer_free;
+	}
+
+	writer = xmlNewTextWriter(outbuf);
 	if (!writer) {
 		ERROR("Failed to allocate xmlTextWriter");
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_output_buffer_close;
 	}
 
-	DEBUG("Writing <WIM> element");
+	/* Write the XML document.  */
 
 	ret = xmlTextWriterStartElement(writer, "WIM");
 	if (ret < 0)
 		goto out_write_error;
 
-	ret = xmlTextWriterWriteFormatElement(writer, "TOTALBYTES", "%"PRIu64,
-					      total_bytes);
-	if (ret < 0)
-		goto out_write_error;
-
-	if (wim_info != NULL) {
-		int first, last;
-		if (image == WIMLIB_ALL_IMAGES) {
-			first = 1;
-			last = wim_info->num_images;
-		} else {
-			first = image;
-			last = image;
+	/* The contents of the <TOTALBYTES> element in the XML data, under the
+	 * <WIM> element (not the <IMAGE> element), is for non-split WIMs the
+	 * size of the WIM file excluding the XML data and integrity table.
+	 * For split WIMs, <TOTALBYTES> takes into account the entire WIM, not
+	 * just the current part.  */
+	if (total_bytes != WIM_TOTALBYTES_OMIT) {
+		if (total_bytes == WIM_TOTALBYTES_USE_EXISTING) {
+			if (wim->wim_info)
+				total_bytes = wim->wim_info->total_bytes;
+			else
+				total_bytes = 0;
 		}
-		DEBUG("Writing %d <IMAGE> elements", last - first + 1);
-		for (int i = first; i <= last; i++) {
-			ret = xml_write_image_info(writer, &wim_info->images[i - 1]);
-			if (ret) {
-				if (ret < 0)
-					goto out_write_error;
-				goto out_free_text_writer;
-			}
+		ret = xmlTextWriterWriteFormatElement(writer, "TOTALBYTES",
+						      "%"PRIu64, total_bytes);
+		if (ret < 0)
+			goto out_write_error;
+	}
+
+	if (image == WIMLIB_ALL_IMAGES) {
+		first = 1;
+		last = wim->hdr.image_count;
+	} else {
+		first = image;
+		last = image;
+	}
+
+	for (int i = first; i <= last; i++) {
+		ret = xml_write_image_info(writer, &wim->wim_info->images[i - 1]);
+		if (ret) {
+			if (ret < 0)
+				goto out_write_error;
+			goto out_free_text_writer;
 		}
 	}
 
@@ -1439,35 +1414,79 @@ write_xml_data(const struct wim_info *wim_info, int image, int out_fd,
 	if (ret < 0)
 		goto out_write_error;
 
-	DEBUG("Ended XML document");
+	/* Retrieve the buffer into which the document was written.  */
 
-	end_offset = filedes_offset(out_fd);
-	if (end_offset == -1) {
-		ret = WIMLIB_ERR_WRITE;
-	} else {
-		ret = 0;
-		out_res_entry->offset        = start_offset;
-		out_res_entry->size          = end_offset - start_offset;
-		out_res_entry->original_size = end_offset - start_offset;
-		out_res_entry->flags         = WIM_RESHDR_FLAG_METADATA;
+	content = xmlBufferContent(buf);
+	len = xmlBufferLength(buf);
+
+	/* Copy the data into a new buffer, and prefix it with the UTF-16LE BOM
+	 * (byte order mark), which is required by MS's software to understand
+	 * the data.  */
+
+	xml_len = len + 2;
+	xml_data = MALLOC(xml_len);
+	if (!xml_data) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_text_writer;
 	}
+	xml_data[0] = 0xff;
+	xml_data[1] = 0xfe;
+	memcpy(&xml_data[2], content, len);
+
+	/* Clean up libxml objects and return success.  */
+	*xml_data_ret = xml_data;
+	*xml_len_ret = xml_len;
+	ret = 0;
 out_free_text_writer:
-	/* xmlFreeTextWriter will free the attached xmlOutputBuffer. */
+	/* xmlFreeTextWriter will free the attached xmlOutputBuffer.  */
 	xmlFreeTextWriter(writer);
-	goto out;
+	goto out_buffer_free;
 out_output_buffer_close:
-	xmlOutputBufferClose(out_buffer);
+	xmlOutputBufferClose(outbuf);
+out_buffer_free:
+	xmlBufferFree(buf);
 out:
-	if (ret == 0)
-		DEBUG("Successfully wrote XML data");
 	return ret;
+
 out_write_error:
 	ERROR("Error writing XML data");
 	ret = WIMLIB_ERR_WRITE;
 	goto out_free_text_writer;
 }
 
-/* Returns the name of the specified image. */
+/* Writes the XML data to a WIM file.  */
+int
+write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
+		   struct resource_entry *out_res_entry,
+		   int write_resource_flags)
+{
+	int ret;
+	u8 *xml_data;
+	size_t xml_len;
+
+	DEBUG("Writing WIM XML data (image=%d, offset=%"PRIu64")",
+	      image, total_bytes, wim->out_fd.offset);
+
+	ret = prepare_wim_xml_data(wim, image, total_bytes,
+				   &xml_data, &xml_len);
+	if (ret)
+		return ret;
+
+	/* Write the XML data uncompressed.  Although wimlib can handle
+	 * compressed XML data, MS software cannot.  */
+	ret = write_wim_resource_from_buffer(xml_data,
+					     xml_len,
+					     WIM_RESHDR_FLAG_METADATA,
+					     &wim->out_fd,
+					     WIMLIB_COMPRESSION_TYPE_NONE,
+					     out_res_entry,
+					     NULL,
+					     write_resource_flags);
+	FREE(xml_data);
+	return ret;
+}
+
+/* API function documented in wimlib.h  */
 WIMLIBAPI const tchar *
 wimlib_get_image_name(const WIMStruct *wim, int image)
 {
@@ -1476,7 +1495,7 @@ wimlib_get_image_name(const WIMStruct *wim, int image)
 	return wim->wim_info->images[image - 1].name;
 }
 
-/* Returns the description of the specified image. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI const tchar *
 wimlib_get_image_description(const WIMStruct *wim, int image)
 {
@@ -1485,7 +1504,7 @@ wimlib_get_image_description(const WIMStruct *wim, int image)
 	return wim->wim_info->images[image - 1].description;
 }
 
-/* Determines if an image name is already used by some image in the WIM. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI bool
 wimlib_image_name_in_use(const WIMStruct *wim, const tchar *name)
 {
@@ -1498,7 +1517,7 @@ wimlib_image_name_in_use(const WIMStruct *wim, const tchar *name)
 }
 
 
-/* Extracts the raw XML data to a file stream. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_extract_xml_data(WIMStruct *wim, FILE *fp)
 {
@@ -1506,37 +1525,25 @@ wimlib_extract_xml_data(WIMStruct *wim, FILE *fp)
 	void *buf;
 	int ret;
 
-	size = wim->hdr.xml_res_entry.size;
-	if (sizeof(size_t) < sizeof(u64))
-		if (size != wim->hdr.xml_res_entry.size)
-			return WIMLIB_ERR_INVALID_PARAM;
+	ret = res_entry_to_data(&wim->hdr.xml_res_entry, wim, &buf);
+	if (ret)
+		goto out;
 
-	buf = MALLOC(size);
-	if (!buf)
-		return WIMLIB_ERR_NOMEM;
-
-	if (full_pread(wim->in_fd,
-		       buf,
-		       wim->hdr.xml_res_entry.size,
-		       wim->hdr.xml_res_entry.offset) != wim->hdr.xml_res_entry.size)
-	{
-		ERROR_WITH_ERRNO("Error reading XML data");
-		ret = WIMLIB_ERR_READ;
-		goto out_free_buf;
-	}
-
+	size = wim->hdr.xml_res_entry.original_size;
 	if (fwrite(buf, 1, size, fp) != size) {
 		ERROR_WITH_ERRNO("Failed to extract XML data");
 		ret = WIMLIB_ERR_WRITE;
-	} else {
-		ret = 0;
+		goto out_free_buf;
 	}
+
+	ret = 0;
 out_free_buf:
 	FREE(buf);
+out:
 	return ret;
 }
 
-/* Sets the name of an image in the WIM. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_set_image_name(WIMStruct *wim, int image, const tchar *name)
 {
@@ -1607,7 +1614,7 @@ do_set_image_info_str(WIMStruct *wim, int image, const tchar *tstr,
 	return 0;
 }
 
-/* Sets the description of an image in the WIM. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_set_image_descripton(WIMStruct *wim, int image,
 			    const tchar *description)
@@ -1616,7 +1623,7 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
 				     offsetof(struct image_info, description));
 }
 
-/* Set the <FLAGS> element of a WIM image */
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_set_image_flags(WIMStruct *wim, int image, const tchar *flags)
 {

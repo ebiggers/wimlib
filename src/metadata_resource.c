@@ -41,15 +41,19 @@
  * end-of-directory is signaled by a directory entry of length '0', really of
  * length 8, because that's how long the 'length' field is.
  *
- * @wim:		Pointer to the WIMStruct for the WIM file.
+ * @wim:
+ *	Pointer to the WIMStruct for the WIM file.
  *
- * @imd:	Pointer to the image metadata structure for the image whose
- *		metadata resource we are reading.  Its `metadata_lte' member
- *		specifies the lookup table entry for the metadata resource.  The
- *		rest of the image metadata entry will be filled in by this
- *		function.
+ * @imd:
+ *	Pointer to the image metadata structure for the image whose metadata
+ *	resource we are reading.  Its `metadata_lte' member specifies the lookup
+ *	table entry for the metadata resource.  The rest of the image metadata
+ *	entry will be filled in by this function.
  *
- * Returns:	Zero on success, nonzero on failure.
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
+ *	WIMLIB_ERR_NOMEM
  */
 int
 read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
@@ -79,49 +83,25 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	if (metadata_len < 8 + WIM_DENTRY_DISK_SIZE) {
 		ERROR("Expected at least %u bytes for the metadata resource",
 		      8 + WIM_DENTRY_DISK_SIZE);
-		return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
-	}
-
-	if (sizeof(size_t) < 8 && metadata_len > 0xffffffff) {
-		ERROR("Metadata resource is too large (%"PRIu64" bytes",
-		      metadata_len);
-		return WIMLIB_ERR_INVALID_RESOURCE_SIZE;
-	}
-
-	/* Allocate memory for the uncompressed metadata resource. */
-	buf = MALLOC(metadata_len);
-
-	if (!buf) {
-		ERROR("Failed to allocate %"PRIu64" bytes for uncompressed "
-		      "metadata resource", metadata_len);
-		return WIMLIB_ERR_NOMEM;
+		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 	}
 
 	/* Read the metadata resource into memory.  (It may be compressed.) */
-	ret = read_full_resource_into_buf(metadata_lte, buf);
+	ret = read_full_resource_into_alloc_buf(metadata_lte, (void**)&buf);
 	if (ret)
-		goto out_free_buf;
+		return ret;
 
-	sha1_buffer(buf, metadata_len, hash);
-	if (!hashes_equal(metadata_lte->hash, hash)) {
-		ERROR("Metadata resource is corrupted (invalid SHA-1 message digest)!");
-		ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
-		goto out_free_buf;
+	if (!metadata_lte->dont_check_metadata_hash) {
+		sha1_buffer(buf, metadata_len, hash);
+		if (!hashes_equal(metadata_lte->hash, hash)) {
+			ERROR("Metadata resource is corrupted "
+			      "(invalid SHA-1 message digest)!");
+			ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
+			goto out_free_buf;
+		}
 	}
 
 	DEBUG("Finished reading metadata resource into memory.");
-
-	/* The root directory entry starts after security data, aligned on an
-	 * 8-byte boundary within the metadata resource.
-	 *
-	 * The security data starts with a 4-byte integer giving its total
-	 * length, so if we round that up to an 8-byte boundary that gives us
-	 * the offset of the root dentry.
-	 *
-	 * Here we read the security data into a wim_security_data structure,
-	 * which takes case of rouding total_length.  If successful, go ahead
-	 * and calculate the offset in the metadata resource of the root dentry.
-	 * */
 
 	ret = read_wim_security_data(buf, metadata_len, &security_data);
 	if (ret)
@@ -136,6 +116,11 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 		goto out_free_security_data;
 	}
 
+	/* The root directory entry starts after security data, aligned on an
+	 * 8-byte boundary within the metadata resource.  Since
+	 * security_data->total_length was already rounded up to an 8-byte
+	 * boundary, its value can be used as the offset of the root directory
+	 * entry.  */
 	ret = read_dentry(buf, metadata_len,
 			  security_data->total_length, root);
 
@@ -160,6 +145,13 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 		root->short_name = NULL;
 		root->file_name_nbytes = 0;
 		root->short_name_nbytes = 0;
+	}
+
+	if (!dentry_is_directory(root)) {
+		ERROR("Root of the WIM image must be a directory!");
+		FREE(root);
+		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
+		goto out_free_security_data;
 	}
 
 	/* This is the root dentry, so set its parent to itself. */
@@ -210,57 +202,32 @@ recalculate_security_data_length(struct wim_security_data *sd)
 	sd->total_length = (total_length + 7) & ~7;
 }
 
-/* Like write_wim_resource(), but the resource is specified by a buffer of
- * uncompressed data rather a lookup table entry; also writes the SHA1 hash of
- * the buffer to @hash.  */
 static int
-write_wim_resource_from_buffer(const void *buf, size_t buf_size,
-			       int out_fd, int out_ctype,
-			       struct resource_entry *out_res_entry,
-			       u8 hash[SHA1_HASH_SIZE])
-{
-	/* Set up a temporary lookup table entry to provide to
-	 * write_wim_resource(). */
-	struct wim_lookup_table_entry lte;
-	int ret;
-	lte.resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
-	lte.attached_buffer              = (void*)buf;
-	lte.resource_entry.original_size = buf_size;
-	lte.resource_entry.flags         = 0;
-	lte.unhashed                     = 1;
-	ret = write_wim_resource(&lte, out_fd, out_ctype, out_res_entry, 0);
-	if (ret == 0)
-		copy_hash(hash, lte.hash);
-	return ret;
-}
-
-/* Write the metadata resource for the current WIM image. */
-int
-write_metadata_resource(WIMStruct *wim)
+prepare_metadata_resource(WIMStruct *wim, int image,
+			  u8 **buf_ret, size_t *len_ret)
 {
 	u8 *buf;
 	u8 *p;
 	int ret;
 	u64 subdir_offset;
 	struct wim_dentry *root;
-	struct wim_lookup_table_entry *lte;
-	u64 metadata_original_size;
+	u64 len;
 	struct wim_security_data *sd;
 	struct wim_image_metadata *imd;
 
-	wimlib_assert(wim->out_fd != -1);
-	wimlib_assert(wim->current_image != WIMLIB_NO_IMAGE);
+	DEBUG("Preparing metadata resource for image %d", image);
 
-	DEBUG("Writing metadata resource for image %d (offset = %"PRIu64")",
-	      wim->current_image, filedes_offset(wim->out_fd));
+	ret = select_wim_image(wim, image);
+	if (ret)
+		return ret;
 
-	imd = wim->image_metadata[wim->current_image - 1];
+	imd = wim->image_metadata[image - 1];
 
 	root = imd->root_dentry;
 	sd = imd->security_data;
 
 	if (!root) {
-		/* Empty image; create a dummy root. */
+		/* Empty image; create a dummy root.  */
 		ret = new_filler_directory(T(""), &root);
 		if (ret)
 			return ret;
@@ -278,49 +245,62 @@ write_metadata_resource(WIMStruct *wim)
 	subdir_offset = (((u64)sd->total_length + 7) & ~7) +
 			dentry_correct_total_length(root) + 8;
 
-	/* Calculate the subdirectory offsets for the entire dentry tree. */
+	/* Calculate the subdirectory offsets for the entire dentry tree.  */
 	calculate_subdir_offsets(root, &subdir_offset);
 
-	/* Total length of the metadata resource (uncompressed) */
-	metadata_original_size = subdir_offset;
+	/* Total length of the metadata resource (uncompressed).  */
+	len = subdir_offset;
 
-	/* Allocate a buffer to contain the uncompressed metadata resource */
-	buf = MALLOC(metadata_original_size);
+	/* Allocate a buffer to contain the uncompressed metadata resource.  */
+	buf = MALLOC(len);
 	if (!buf) {
 		ERROR("Failed to allocate %"PRIu64" bytes for "
-		      "metadata resource", metadata_original_size);
+		      "metadata resource", len);
 		return WIMLIB_ERR_NOMEM;
 	}
 
-	/* Write the security data into the resource buffer */
+	/* Write the security data into the resource buffer.  */
 	p = write_wim_security_data(sd, buf);
 
-	/* Write the dentry tree into the resource buffer */
+	/* Write the dentry tree into the resource buffer.  */
 	p = write_dentry_tree(root, p);
 
 	/* We MUST have exactly filled the buffer; otherwise we calculated its
-	 * size incorrectly or wrote the data incorrectly. */
-	wimlib_assert(p - buf == metadata_original_size);
+	 * size incorrectly or wrote the data incorrectly.  */
+	wimlib_assert(p - buf == len);
 
-	/* Get the lookup table entry for the metadata resource so we can update
-	 * it. */
-	lte = wim_get_current_image_metadata(wim)->metadata_lte;
+	*buf_ret = buf;
+	*len_ret = len;
+	return 0;
+}
+
+int
+write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags)
+{
+	int ret;
+	u8 *buf;
+	size_t len;
+	struct wim_image_metadata *imd;
+
+	ret = prepare_metadata_resource(wim, image, &buf, &len);
+	if (ret)
+		return ret;
+
+	imd = wim->image_metadata[image - 1];
 
 	/* Write the metadata resource to the output WIM using the proper
-	 * compression type.  The lookup table entry for the metadata resource
-	 * is updated. */
-	ret = write_wim_resource_from_buffer(buf, metadata_original_size,
-					     wim->out_fd,
+	 * compression type, in the process updating the lookup table entry for
+	 * the metadata resource.  */
+	ret = write_wim_resource_from_buffer(buf, len, WIM_RESHDR_FLAG_METADATA,
+					     &wim->out_fd,
 					     wim->compression_type,
-					     &lte->output_resource_entry,
-					     lte->hash);
-	/* Note that although the SHA1 message digest of the metadata resource
-	 * is very likely to have changed, the corresponding lookup table entry
-	 * is not actually located in the hash table, so it need not be
-	 * re-inserted in the hash table. */
+					     &imd->metadata_lte->output_resource_entry,
+					     imd->metadata_lte->hash,
+					     write_resource_flags);
 
-	/* All the data has been written to the new WIM; no need for the buffer
-	 * anymore */
+	/* Original checksum was overridden; set a flag so it isn't used.  */
+	imd->metadata_lte->dont_check_metadata_hash = 1;
+
 	FREE(buf);
 	return ret;
 }

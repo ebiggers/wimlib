@@ -791,8 +791,12 @@ get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path)
 	return cur_dentry;
 }
 
-/* Returns the dentry corresponding to the @path, or NULL if there is no such
- * dentry. */
+/*
+ * Returns the dentry in the currently selected WIM image named by @path
+ * starting from the root of the WIM image, or NULL if there is no such dentry.
+ *
+ * On Windows, the search is done case-insensitively.
+ */
 struct wim_dentry *
 get_dentry(WIMStruct *wim, const tchar *path)
 {
@@ -1188,11 +1192,13 @@ do_free_dentry(struct wim_dentry *dentry, void *_lookup_table)
 /*
  * Unlinks and frees a dentry tree.
  *
- * @root: 		The root of the tree.
- * @lookup_table:  	The lookup table for dentries.  If non-NULL, the
- * 			reference counts in the lookup table for the lookup
- * 			table entries corresponding to the dentries will be
- * 			decremented.
+ * @root:
+ *	The root of the tree.
+ *
+ * @lookup_table:
+ *	The lookup table for dentries.  If non-NULL, the reference counts in the
+ *	lookup table for the lookup table entries corresponding to the dentries
+ *	will be decremented.
  */
 void
 free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
@@ -1487,6 +1493,15 @@ inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
 	return 0;
 }
 
+bool
+inode_has_named_stream(const struct wim_inode *inode)
+{
+	for (u16 i = 0; i < inode->i_num_ads; i++)
+		if (ads_entry_is_named_stream(&inode->i_ads_entries[i]))
+			return true;
+	return false;
+}
+
 /* Set the unnamed stream of a WIM inode, given a data buffer containing the
  * stream contents. */
 int
@@ -1525,6 +1540,15 @@ inode_remove_ads(struct wim_inode *inode, u16 idx,
 		&inode->i_ads_entries[idx + 1],
 		(inode->i_num_ads - idx - 1) * sizeof(inode->i_ads_entries[0]));
 	inode->i_num_ads--;
+}
+
+bool
+inode_has_unix_data(const struct wim_inode *inode)
+{
+	for (u16 i = 0; i < inode->i_num_ads; i++)
+		if (ads_entry_is_unix_data(&inode->i_ads_entries[i]))
+			return true;
+	return false;
 }
 
 #ifndef __WIN32__
@@ -1602,19 +1626,24 @@ inode_set_unix_data(struct wim_inode *inode, uid_t uid, gid_t gid, mode_t mode,
 /*
  * Reads the alternate data stream entries of a WIM dentry.
  *
- * @p:	Pointer to buffer that starts with the first alternate stream entry.
+ * @p:
+ *	Pointer to buffer that starts with the first alternate stream entry.
  *
- * @inode:	Inode to load the alternate data streams into.
- * 		@inode->i_num_ads must have been set to the number of
- * 		alternate data streams that are expected.
+ * @inode:
+ *	Inode to load the alternate data streams into.  @inode->i_num_ads must
+ *	have been set to the number of alternate data streams that are expected.
  *
- * @remaining_size:	Number of bytes of data remaining in the buffer pointed
- * 			to by @p.
+ * @remaining_size:
+ *	Number of bytes of data remaining in the buffer pointed to by @p.
  *
+ * On success, inode->i_ads_entries is set to an array of `struct
+ * wim_ads_entry's of length inode->i_num_ads.  On failure, @inode is not
+ * modified.
  *
- * Return 0 on success or nonzero on failure.  On success, inode->i_ads_entries
- * is set to an array of `struct wim_ads_entry's of length inode->i_num_ads.  On
- * failure, @inode is not modified.
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
+ *	WIMLIB_ERR_NOMEM
  */
 static int
 read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
@@ -1718,7 +1747,7 @@ out_of_memory:
 	goto out_free_ads_entries;
 out_invalid:
 	ERROR("An alternate data stream entry is invalid");
-	ret = WIMLIB_ERR_INVALID_DENTRY;
+	ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 out_free_ads_entries:
 	if (ads_entries) {
 		for (u16 i = 0; i < num_ads; i++)
@@ -1739,7 +1768,7 @@ out:
  * @metadata_resource_len:
  *		Length of the metadata resource buffer, in bytes.
  *
- * @offset: 	Offset of the dentry within the metadata resource.
+ * @offset:	Offset of the dentry within the metadata resource.
  *
  * @dentry:	A `struct wim_dentry' that will be filled in by this function.
  *
@@ -1749,9 +1778,10 @@ out:
  * this was a special "end of directory" dentry and not a real dentry.  If
  * nonzero, this was a real dentry.
  *
- * Possible errors include:
- * 	WIMLIB_ERR_NOMEM
- * 	WIMLIB_ERR_INVALID_DENTRY
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
+ *	WIMLIB_ERR_NOMEM
  */
 int
 read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
@@ -1785,7 +1815,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 		ERROR("Directory entry starting at %"PRIu64" ends past the "
 		      "end of the metadata resource (size %"PRIu64")",
 		      offset, metadata_resource_len);
-		return WIMLIB_ERR_INVALID_DENTRY;
+		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 	}
 	dentry->length = le64_to_cpu(disk_dentry->length);
 
@@ -1807,7 +1837,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 		      "%"PRIu64" ends past the end of the metadata resource "
 		      "(size %"PRIu64")",
 		      offset, dentry->length, metadata_resource_len);
-		return WIMLIB_ERR_INVALID_DENTRY;
+		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 	}
 
 	/* Make sure the dentry length is at least as large as the number of
@@ -1815,7 +1845,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	if (dentry->length < sizeof(struct wim_dentry_on_disk)) {
 		ERROR("Directory entry has invalid length of %"PRIu64" bytes",
 		      dentry->length);
-		return WIMLIB_ERR_INVALID_DENTRY;
+		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 	}
 
 	/* Allocate a `struct wim_inode' for this `struct wim_dentry'. */
@@ -1861,7 +1891,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	if ((short_name_nbytes & 1) | (file_name_nbytes & 1))
 	{
 		ERROR("Dentry name is not valid UTF-16LE (odd number of bytes)!");
-		ret = WIMLIB_ERR_INVALID_DENTRY;
+		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 		goto out_free_inode;
 	}
 
@@ -1878,7 +1908,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 		ERROR("Unexpected end of directory entry! (Expected "
 		      "at least %"PRIu64" bytes, got %"PRIu64" bytes.)",
 		      calculated_size, dentry->length);
-		ret = WIMLIB_ERR_INVALID_DENTRY;
+		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 		goto out_free_inode;
 	}
 
@@ -1932,7 +1962,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	 * be included in the dentry->length field for some reason.
 	 */
 	if (inode->i_num_ads != 0) {
-		ret = WIMLIB_ERR_INVALID_DENTRY;
+		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 		if (offset + dentry->length > metadata_resource_len ||
 		    (ret = read_ads_entries(&metadata_resource[offset + dentry->length],
 					    inode,
@@ -1977,18 +2007,22 @@ dentry_get_file_type_string(const struct wim_dentry *dentry)
 /* Reads the children of a dentry, and all their children, ..., etc. from the
  * metadata resource and into the dentry tree.
  *
- * @metadata_resource:	An array that contains the uncompressed metadata
- * 			resource for the WIM file.
+ * @metadata_resource:
+ *	An array that contains the uncompressed metadata resource for the WIM
+ *	file.
  *
- * @metadata_resource_len:  The length of the uncompressed metadata resource, in
- * 			    bytes.
+ * @metadata_resource_len:
+ *	The length of the uncompressed metadata resource, in bytes.
  *
- * @dentry:	A pointer to a `struct wim_dentry' that is the root of the directory
- *		tree and has already been read from the metadata resource.  It
- *		does not need to be the real root because this procedure is
- *		called recursively.
+ * @dentry:
+ *	A pointer to a `struct wim_dentry' that is the root of the directory
+ *	tree and has already been read from the metadata resource.  It does not
+ *	need to be the real root because this procedure is called recursively.
  *
- * Returns zero on success; nonzero on failure.
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
+ *	WIMLIB_ERR_NOMEM
  */
 int
 read_dentry_tree(const u8 * restrict metadata_resource,
@@ -2019,7 +2053,7 @@ read_dentry_tree(const u8 * restrict metadata_resource,
 			      "of \"%"TS"\" coincide with children of \"%"TS"\"",
 			      dentry_full_path(dentry),
 			      dentry_full_path(parent));
-			return WIMLIB_ERR_INVALID_DENTRY;
+			return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 		}
 	}
 
@@ -2113,7 +2147,7 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	wimlib_assert(((uintptr_t)p & 7) == 0); /* 8 byte aligned */
 	orig_p = p;
 
- 	inode = dentry->d_inode;
+	inode = dentry->d_inode;
 	disk_dentry = (struct wim_dentry_on_disk*)p;
 
 	disk_dentry->attributes = cpu_to_le32(inode->i_attributes);
@@ -2321,7 +2355,7 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
 		wdentry->num_named_streams++;
 		if (lte) {
 			lte_to_wimlib_resource_entry(lte, &wdentry->streams[
-						     		wdentry->num_named_streams].resource);
+								wdentry->num_named_streams].resource);
 		}
 	#if TCHAR_IS_UTF16LE
 		wdentry->streams[wdentry->num_named_streams].stream_name =
@@ -2332,7 +2366,7 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
 		ret = utf16le_to_tstr(inode->i_ads_entries[i].stream_name,
 				      inode->i_ads_entries[i].stream_name_nbytes,
 				      (tchar**)&wdentry->streams[
-				      		wdentry->num_named_streams].stream_name,
+						wdentry->num_named_streams].stream_name,
 				      &dummy);
 		if (ret)
 			return ret;
@@ -2385,8 +2419,8 @@ do_iterate_dir_tree(WIMStruct *wim,
 
 
 	wdentry = CALLOC(1, sizeof(struct wimlib_dir_entry) +
-			       	  (1 + dentry->d_inode->i_num_ads) *
-				  	sizeof(struct wimlib_stream_entry));
+				  (1 + dentry->d_inode->i_num_ads) *
+					sizeof(struct wimlib_stream_entry));
 	if (!wdentry)
 		goto out;
 
@@ -2437,6 +2471,7 @@ image_do_iterate_dir_tree(WIMStruct *wim)
 	return do_iterate_dir_tree(wim, dentry, ctx->flags, ctx->cb, ctx->user_ctx);
 }
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *path,
 			int flags,

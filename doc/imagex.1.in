@@ -1,4 +1,4 @@
-.TH IMAGEX 1 "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX 1 "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@ \- Create, modify, extract, mount, or unmount a WIM (Windows Imaging Format) archive
 .SH SYNOPSIS
@@ -48,10 +48,16 @@ but not Windows):
 .IP \[bu] 4
 Create a stand-alone WIM from a directory or NTFS volume (\fB@IMAGEX_PROGNAME@ capture\fR)
 .IP \[bu]
+Capture a WIM image directly to standard output in a special pipable format
+(\fB@IMAGEX_PROGNAME@ capture\fR)
+.IP \[bu]
 Append a directory or NTFS volume onto a stand-alone WIM as a new image (\fB@IMAGEX_PROGNAME@
 append\fR)
 .IP \[bu]
 Apply an image from a stand-alone or split WIM to a directory or NTFS volume
+(\fB@IMAGEX_PROGNAME@ apply\fR)
+.IP \[bu]
+Apply an image from a special pipable WIM format sent over standard input
 (\fB@IMAGEX_PROGNAME@ apply\fR)
 .IP \[bu]
 Mount an image from a stand-alone or split WIM read-only (\fB@IMAGEX_PROGNAME@ mount\fR)
@@ -91,6 +97,16 @@ ImageX, there are a number of key differences between the two programs:
 thus, much functionality was designed around this.
 .IP \[bu]
 The command-line syntax of the two programs is similar but not exactly the same.
+.IP \[bu]
+As of wimlib v1.5.0, for convenience \fB@IMAGEX_PROGNAME@\fR automatically
+preserves the integrity table in WIMs that have one, even when \fB--check\fR is
+not specified.
+.IP \[bu]
+As of wimlib v1.5.0, a special "pipable" WIM format that is not compatible with
+Microsoft's software is supported.  This allows capturing and applying images
+directly to standard output or from standard input, respectively; this can be
+used to pipe images to or from a server over the network to implement fast
+filesystem imaging and restore.
 .IP \[bu]
 On UNIX, because Microsoft designed the WIM file format to accomodate
 Windows-specific and NTFS-specific features, wimlib must have two separate image

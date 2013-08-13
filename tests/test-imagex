@@ -190,7 +190,7 @@ if ! test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" = "yes"; t
 	error "Integrity table not set correctly on image append"
 fi
 echo "Testing appending WIM image with no integrity check"
-if ! imagex append dir2 dir.wim "newname3"; then
+if ! imagex append dir2 dir.wim "newname3" --nocheck; then
 	error "Appending WIM image failed"
 fi
 if ! test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" = "no"; then

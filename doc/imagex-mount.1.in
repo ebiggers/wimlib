@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-mount, @IMAGEX_PROGNAME@-mountrw, @IMAGEX_PROGNAME@-unmount \- Mount and unmount an image from a WIM archive
 .SH SYNOPSIS
@@ -140,7 +140,8 @@ mount is read-only.
 .TP
 \fB--check\fR
 When writing \fIWIMFILE\fR, include an integrity table.  Has no effect if the
-mount is read-only or if \fB--commit\fR was not specified.
+mount is read-only or if \fB--commit\fR was not specified.  The default behavior
+is to include an integrity table if and only if there was one present before.
 .TP
 \fB--rebuild\fR
 Rebuild the entire WIM rather than appending any new data to the end of it.

@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "June 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-info \- Display information about a WIM file, or change information about
 an image
@@ -33,8 +33,14 @@ archive.
 When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
 present; additionally if an action that requires modifying the WIM archive is
 specified, include an integrity table in the modified WIM.  If this option is
-not specified and \fIWIMFILE\fR is modified, no integrity table is included in
-the modified WIM, even if there was one before.
+not specified and \fIWIMFILE\fR is modified, an integrity table will be included
+in the modified WIM if and only if there was one before.
+.TP
+\fB--nocheck\fR
+If an action that requires modifying the WIM archive is specified, do not
+include an integrity table in the modified WIM.  If this option is not specified
+and \fIWIMFILE\fR is modified, an integrity table will be included in the
+modified WIM if and only if there was one before.
 .TP
 \fB--extract-xml\fR=\fIFILE\fR
 Extracts the raw data from the XML resource in the WIM file to \fIFILE\fR.

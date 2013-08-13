@@ -38,17 +38,12 @@
 
 #include <limits.h>
 #include <string.h>
-
-/* WIM magic characters, translated to a single 64-bit little endian number. */
-#define WIM_MAGIC \
-		cpu_to_le64(((u64)'M' << 0) |		\
-			    ((u64)'S' << 8) |		\
-			    ((u64)'W' << 16) |		\
-			    ((u64)'I' << 24) |		\
-			    ((u64)'M' << 32) |		\
-			    ((u64)'\0' << 40) |		\
-			    ((u64)'\0' << 48) |		\
-			    ((u64)'\0' << 54))
+#include <unistd.h>
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#else
+#  include <stdlib.h>
+#endif
 
 /* On-disk format of the WIM header. */
 struct wim_header_disk {
@@ -113,30 +108,72 @@ struct wim_header_disk {
 	u8 unused[60];
 } _packed_attribute;
 
-/* Reads the header from a WIM file.  */
+/*
+ * Reads the header from a WIM file.
+ *
+ * @filename
+ *	Name of the WIM file (for error/debug messages only), or NULL if reading
+ *	directly from file descriptor.
+ * @in_fd
+ *	File descriptor, positioned at offset 0, to read the header from.
+ * @hdr
+ *	Structure to read the header into.
+ *
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ *	WIMLIB_ERR_IMAGE_COUNT
+ *	WIMLIB_ERR_INVALID_CHUNK_SIZE
+ *	WIMLIB_ERR_INVALID_PART_NUMBER
+ *	WIMLIB_ERR_NOT_A_WIM_FILE
+ *	WIMLIB_ERR_READ
+ *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE
+ *	WIMLIB_ERR_UNKNOWN_VERSION
+ */
 int
-read_header(const tchar *filename, int in_fd, struct wim_header *hdr)
+read_wim_header(const tchar *filename, struct filedes *in_fd,
+		struct wim_header *hdr)
 {
 	struct wim_header_disk disk_hdr _aligned_attribute(8);
+	int ret;
+	tchar *pipe_str;
+
+	wimlib_assert(in_fd->offset == 0);
+
+	if (!filename) {
+		pipe_str = alloca(40);
+		tsprintf(pipe_str, "[fd %d]", in_fd->fd);
+		filename = pipe_str;
+	}
 
 	BUILD_BUG_ON(sizeof(struct wim_header_disk) != WIM_HEADER_DISK_SIZE);
 
 	DEBUG("Reading WIM header from \"%"TS"\"", filename);
 
-	if (full_pread(in_fd, &disk_hdr, sizeof(disk_hdr), 0) != sizeof(disk_hdr)) {
-		ERROR_WITH_ERRNO("\"%"TS"\": Error reading header", filename);
-		return WIMLIB_ERR_READ;
-	}
+	ret = full_read(in_fd, &disk_hdr, sizeof(disk_hdr));
+	if (ret)
+		goto read_error;
 
 	if (disk_hdr.magic != WIM_MAGIC) {
-		ERROR("\"%"TS"\": Invalid magic characters in header", filename);
-		return WIMLIB_ERR_NOT_A_WIM_FILE;
+		if (disk_hdr.magic == PWM_MAGIC) {
+			/* Pipable WIM:  Use header at end instead, unless
+			 * actually reading from a pipe.  */
+			if (!in_fd->is_pipe) {
+				lseek(in_fd->fd, -WIM_HEADER_DISK_SIZE, SEEK_END);
+				ret = full_read(in_fd, &disk_hdr, sizeof(disk_hdr));
+				if (ret)
+					goto read_error;
+			}
+		} else {
+			ERROR("\"%"TS"\": Invalid magic characters in header", filename);
+			return WIMLIB_ERR_NOT_A_WIM_FILE;
+		}
 	}
+	hdr->magic = disk_hdr.magic;
 
 	if (le32_to_cpu(disk_hdr.hdr_size) != sizeof(struct wim_header_disk)) {
 		ERROR("\"%"TS"\": Header size is invalid (%u bytes)",
 		      filename, le32_to_cpu(disk_hdr.hdr_size));
-		return WIMLIB_ERR_INVALID_HEADER_SIZE;
+		return WIMLIB_ERR_INVALID_HEADER;
 	}
 
 	if (le32_to_cpu(disk_hdr.wim_version) != WIM_VERSION) {
@@ -186,23 +223,27 @@ read_header(const tchar *filename, int in_fd, struct wim_header *hdr)
 	hdr->boot_idx = le32_to_cpu(disk_hdr.boot_idx);
 	get_resource_entry(&disk_hdr.integrity_table_res_entry, &hdr->integrity);
 	return 0;
+
+read_error:
+	ERROR_WITH_ERRNO("\"%"TS"\": Error reading header", filename);
+	return ret;
 }
 
-/*
- * Writes the header for a WIM file.
- *
- * @hdr: 	A pointer to a struct wim_header structure that describes the header.
- * @out_fd:	The file descriptor to the WIM file, opened for writing.
- *
- * Returns zero on success, nonzero on failure.
- */
+/* Writes the header for a WIM file at the specified offset.  If the offset
+ * specified is the current one, the position is advanced by the size of the
+ * header.  */
 int
-write_header(const struct wim_header *hdr, int out_fd)
+write_wim_header_at_offset(const struct wim_header *hdr, struct filedes *out_fd,
+			   off_t offset)
 {
 	struct wim_header_disk disk_hdr _aligned_attribute(8);
-	DEBUG("Writing WIM header.");
+	int ret;
 
-	disk_hdr.magic = WIM_MAGIC;
+	DEBUG("Writing %sWIM header at offset %"PRIu64,
+	      ((hdr->magic == PWM_MAGIC) ? "pipable " : ""),
+	      offset);
+
+	disk_hdr.magic = hdr->magic;
 	disk_hdr.hdr_size = cpu_to_le32(sizeof(struct wim_header_disk));
 	disk_hdr.wim_version = cpu_to_le32(WIM_VERSION);
 	disk_hdr.wim_flags = cpu_to_le32(hdr->flags);
@@ -220,51 +261,38 @@ write_header(const struct wim_header *hdr, int out_fd)
 	put_resource_entry(&hdr->integrity, &disk_hdr.integrity_table_res_entry);
 	memset(disk_hdr.unused, 0, sizeof(disk_hdr.unused));
 
-	if (full_pwrite(out_fd, &disk_hdr, sizeof(disk_hdr), 0) != sizeof(disk_hdr)) {
+	if (offset == out_fd->offset)
+		ret = full_write(out_fd, &disk_hdr, sizeof(disk_hdr));
+	else
+		ret = full_pwrite(out_fd, &disk_hdr, sizeof(disk_hdr), offset);
+	if (ret)
 		ERROR_WITH_ERRNO("Failed to write WIM header");
-		return WIMLIB_ERR_WRITE;
-	}
-	DEBUG("Done writing WIM header");
-	return 0;
+	return ret;
+}
+
+/* Writes the header for a WIM file at the output file descriptor's current
+ * offset.  */
+int
+write_wim_header(const struct wim_header *hdr, struct filedes *out_fd)
+{
+	return write_wim_header_at_offset(hdr, out_fd, out_fd->offset);
 }
 
 /* Update just the wim_flags field. */
 int
-write_header_flags(u32 hdr_flags, int out_fd)
+write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd)
 {
 	le32 flags = cpu_to_le32(hdr_flags);
-	if (full_pwrite(out_fd, &flags, sizeof(flags),
-			offsetof(struct wim_header_disk, wim_flags)) != sizeof(flags))
-	{
-		return WIMLIB_ERR_WRITE;
-	} else {
-		return 0;
-	}
 
-}
-
-/* Update just the part_number and total_parts fields. */
-int
-write_header_part_data(u16 part_number, u16 total_parts, int out_fd)
-{
-	le16 part_data[2] = {
-		cpu_to_le16(part_number),
-		cpu_to_le16(total_parts),
-	};
-	if (full_pwrite(out_fd, &part_data, sizeof(part_data),
-			offsetof(struct wim_header_disk, part_number)) != sizeof(part_data))
-	{
-		return WIMLIB_ERR_WRITE;
-	} else {
-		return 0;
-	}
+	return full_pwrite(out_fd, &flags, sizeof(flags),
+			   offsetof(struct wim_header_disk, wim_flags));
 }
 
 /*
  * Initializes the header for a WIM file.
  */
 int
-init_header(struct wim_header *hdr, int ctype)
+init_wim_header(struct wim_header *hdr, int ctype)
 {
 	memset(hdr, 0, sizeof(struct wim_header));
 	switch (ctype) {
@@ -286,6 +314,7 @@ init_header(struct wim_header *hdr, int ctype)
 	hdr->total_parts = 1;
 	hdr->part_number = 1;
 	randomize_byte_array(hdr->guid, sizeof(hdr->guid));
+	hdr->magic = WIM_MAGIC;
 	return 0;
 }
 
@@ -307,7 +336,7 @@ struct hdr_flag hdr_flags[] = {
 	{WIM_HDR_FLAG_COMPRESS_XPRESS,	"COMPRESS_XPRESS"},
 };
 
-/* Prints information from the header of the WIM file associated with @wim. */
+/* API function documented in wimlib.h  */
 WIMLIBAPI void
 wimlib_print_header(const WIMStruct *wim)
 {

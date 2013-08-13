@@ -36,22 +36,36 @@
 #include <time.h> /* NTFS-3g headers are missing <time.h> include */
 
 #include <ntfs-3g/attrib.h>
-#include <ntfs-3g/endians.h>
 #include <ntfs-3g/reparse.h>
 #include <ntfs-3g/security.h>
-#include <ntfs-3g/types.h>
-#include <ntfs-3g/xattrs.h>
+#include <errno.h>
 
 #include "wimlib/apply.h"
-#include "wimlib/compiler.h"
-#include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
-#include "wimlib/metadata.h"
 #include "wimlib/ntfs_3g.h"
-#include "wimlib/reparse.h"
-#include "wimlib/security.h"
+#include "wimlib/paths.h"
+#include "wimlib/resource.h"
+
+static ntfs_volume *
+ntfs_3g_apply_ctx_get_volume(struct apply_ctx *ctx)
+{
+	return (ntfs_volume*)ctx->private[0];
+}
+
+static void
+ntfs_3g_apply_ctx_set_volume(struct apply_ctx *ctx, ntfs_volume *vol)
+{
+	ctx->private[0] = (intptr_t)vol;
+}
+
+static ntfs_inode *
+ntfs_3g_apply_pathname_to_inode(const char *path, struct apply_ctx *ctx)
+{
+	ntfs_volume *vol = ntfs_3g_apply_ctx_get_volume(ctx);
+	return ntfs_pathname_to_inode(vol, NULL, path);
+}
 
 struct ntfs_attr_extract_ctx {
 	u64 offset;
@@ -59,614 +73,390 @@ struct ntfs_attr_extract_ctx {
 };
 
 static int
-extract_wim_chunk_to_ntfs_attr(const void *buf, size_t len, void *_ctx)
+ntfs_3g_extract_wim_chunk(const void *buf, size_t len, void *_ctx)
 {
 	struct ntfs_attr_extract_ctx *ctx = _ctx;
-	if (ntfs_attr_pwrite(ctx->na, ctx->offset, len, buf) == len) {
-		ctx->offset += len;
-		return 0;
-	} else {
-		ERROR_WITH_ERRNO("Error extracting WIM resource to NTFS attribute");
+
+	if (ntfs_attr_pwrite(ctx->na, ctx->offset, len, buf) != len)
 		return WIMLIB_ERR_WRITE;
-	}
+	ctx->offset += len;
+	return 0;
 }
 
-/*
- * Extracts a WIM resource to a NTFS attribute.
- */
-static int
-extract_wim_resource_to_ntfs_attr(const struct wim_lookup_table_entry *lte,
-			          ntfs_attr *na)
-{
-	struct ntfs_attr_extract_ctx ctx;
-	ctx.na = na;
-	ctx.offset = 0;
-	return extract_wim_resource(lte, wim_resource_size(lte),
-				    extract_wim_chunk_to_ntfs_attr, &ctx);
-}
-
-/* Writes the data streams of a WIM inode to the data attributes of a NTFS
- * inode.
- *
- * @ni:	     The NTFS inode to which the streams are to be extracted.
- *
- * @dentry:  The WIM dentry being extracted.  The @d_inode member points to the
- *	     corresponding WIM inode that contains the streams being extracted.
- *	     The WIM dentry itself is only needed to provide a file path for
- *	     better error messages.
- *
- * @progress_info:  Progress information for the image application.  The number
- * 		    of extracted bytes will be incremented by the uncompressed
- * 		    size of each stream extracted.
- *
- * Returns 0 on success, nonzero on failure.
- */
-static int
-write_ntfs_data_streams(ntfs_inode *ni, struct wim_dentry *dentry,
-			union wimlib_progress_info *progress_info)
-{
-	int ret = 0;
-	unsigned stream_idx = 0;
-	ntfschar *stream_name = AT_UNNAMED;
-	u32 stream_name_nbytes = 0;
-	const struct wim_inode *inode = dentry->d_inode;
-	struct wim_lookup_table_entry *lte;
-
-	lte = inode->i_lte;
-
-	/* For directories, skip unnamed streams; just extract alternate data
-	 * streams. */
-	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
-		goto cont;
-
-	DEBUG("Writing %u NTFS data stream%s for `%s'",
-	      inode->i_num_ads + 1,
-	      (inode->i_num_ads == 0 ? "" : "s"),
-	      dentry->_full_path);
-
-	for (;;) {
-		if (stream_name_nbytes) {
-			/* Skip special UNIX data entries (see documentation for
-			 * WIMLIB_ADD_FLAG_UNIX_DATA) */
-			if (stream_name_nbytes == WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES
-			    && !memcmp(stream_name,
-				       WIMLIB_UNIX_DATA_TAG_UTF16LE,
-				       WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES))
-				goto cont;
-
-			/* Create an empty named stream. */
-			ret = ntfs_attr_add(ni, AT_DATA, stream_name,
-					    stream_name_nbytes / 2, NULL, 0);
-			if (ret) {
-				ERROR_WITH_ERRNO("Failed to create named data "
-						 "stream for extracted file "
-						 "`%s'",
-						 dentry->_full_path);
-				ret = WIMLIB_ERR_NTFS_3G;
-				break;
-
-			}
-		}
-
-		/* If there's no lookup table entry, it's an empty stream.
-		 * Otherwise, open the attribute and extract the data. */
-		if (lte) {
-			ntfs_attr *na;
-
-			na = ntfs_attr_open(ni, AT_DATA, stream_name,
-					    stream_name_nbytes / 2);
-			if (!na) {
-				ERROR_WITH_ERRNO("Failed to open a data stream of "
-						 "extracted file `%s'",
-						 dentry->_full_path);
-				ret = WIMLIB_ERR_NTFS_3G;
-				break;
-			}
-
-			/* The WIM lookup table entry provides the stream
-			 * length, so the NTFS attribute should be resized to
-			 * this length before starting to extract the data. */
-			ret = ntfs_attr_truncate_solid(na, wim_resource_size(lte));
-			if (ret) {
-				ntfs_attr_close(na);
-				break;
-			}
-
-			/* Actually extract the stream */
-			ret = extract_wim_resource_to_ntfs_attr(lte, na);
-
-			/* Close the attribute */
-			ntfs_attr_close(na);
-			if (ret)
-				break;
-
-			/* Record the number of bytes of uncompressed data that
-			 * have been extracted. */
-			progress_info->extract.completed_bytes += wim_resource_size(lte);
-		}
-	cont:
-		if (stream_idx == inode->i_num_ads) /* Has the last stream been extracted? */
-			break;
-
-		/* Get the name and lookup table entry for the next stream. */
-		stream_name = inode->i_ads_entries[stream_idx].stream_name;
-		stream_name_nbytes = inode->i_ads_entries[stream_idx].stream_name_nbytes;
-		lte = inode->i_ads_entries[stream_idx].lte;
-		stream_idx++;
-	}
-	return ret;
-}
-
-/* Open the NTFS inode that corresponds to the parent of a WIM dentry.  Returns
- * the opened inode, or NULL on failure. */
 static ntfs_inode *
-dentry_open_parent_ni(struct wim_dentry *dentry, ntfs_volume *vol)
+ntfs_3g_open_parent_inode(const char *path, ntfs_volume *vol)
 {
-	char *p;
-	const char *dir_name;
+	char orig, *p;
 	ntfs_inode *dir_ni;
-	char orig;
 
-	p = dentry->_full_path + dentry->full_path_nbytes;
+	p = strchr(path, '\0');
 	do {
 		p--;
 	} while (*p != '/');
 
 	orig = *p;
 	*p = '\0';
-	dir_name = dentry->_full_path;
-	dir_ni = ntfs_pathname_to_inode(vol, NULL, dir_name);
-	if (!dir_ni) {
-		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
-				 dir_name);
-	}
+	dir_ni = ntfs_pathname_to_inode(vol, NULL, path);
 	*p = orig;
 	return dir_ni;
 }
 
-/*
- * Makes a NTFS hard link.
- *
- * The hard link is named @from_dentry->file_name and is located under the
- * directory specified by @dir_ni, and it is made to point to the previously
- * extracted file located at @inode->i_extracted_file.
- *
- * Or, in other words, this adds a new name @from_dentry->full_path to an
- * existing NTFS inode which already has a name @inode->i_extracted_file.
- *
- * The new name is made in the POSIX namespace (this is the behavior of
- * ntfs_link()).
- *
- * Return 0 on success, nonzero on failure.  dir_ni is closed either way.
- */
 static int
-apply_ntfs_hardlink(struct wim_dentry *from_dentry,
-		    const struct wim_inode *inode,
-		    ntfs_inode *dir_ni)
+ntfs_3g_create(const char *path, struct apply_ctx *ctx, mode_t mode)
 {
-	int ret;
-	ntfs_inode *to_ni;
 	ntfs_volume *vol;
-
-	vol = dir_ni->vol;
-	ret = ntfs_inode_close(dir_ni);
-	if (ret != 0) {
-		ERROR_WITH_ERRNO("Error closing directory");
-		return WIMLIB_ERR_NTFS_3G;
-	}
-
-	DEBUG("Extracting NTFS hard link `%s' => `%s'",
-	      from_dentry->_full_path, inode->i_extracted_file);
-
-	to_ni = ntfs_pathname_to_inode(vol, NULL, inode->i_extracted_file);
-	if (!to_ni) {
-		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
-				 inode->i_extracted_file);
-		return WIMLIB_ERR_NTFS_3G;
-	}
-
-	dir_ni = dentry_open_parent_ni(from_dentry, vol);
-	if (!dir_ni) {
-		ntfs_inode_close(to_ni);
-		return WIMLIB_ERR_NTFS_3G;
-	}
-
-	ret = ntfs_link(to_ni, dir_ni,
-			from_dentry->file_name,
-			from_dentry->file_name_nbytes / 2);
-	ret |= ntfs_inode_close(dir_ni);
-	ret |= ntfs_inode_close(to_ni);
-	if (ret) {
-		ERROR_WITH_ERRNO("Could not create hard link `%s' => `%s'",
-				 from_dentry->_full_path,
-				 inode->i_extracted_file);
-		ret = WIMLIB_ERR_NTFS_3G;
-	}
-	return ret;
-}
-
-/* Transfers file attributes and possibly a security descriptor from a WIM inode
- * to a NTFS inode.
- *
- * @ni:	     The NTFS inode to apply the metadata to.
- * @dir_ni:  The NTFS inode for a directory containing @ni.
- * @dentry:  The WIM dentry whose inode contains the metadata to apply.
- * @wim:       The WIMStruct for the WIM, through which the table of security
- * 		descriptors can be accessed.
- *
- * Returns 0 on success, nonzero on failure.
- */
-static int
-apply_file_attributes_and_security_data(ntfs_inode *ni,
-					ntfs_inode *dir_ni,
-					struct wim_dentry *dentry,
-					const WIMStruct *wim,
-					int extract_flags)
-{
+	ntfs_inode *dir_ni, *ni;
+	const char *name;
+	utf16lechar *name_utf16le;
+	size_t name_utf16le_nbytes;
 	int ret;
-	struct SECURITY_CONTEXT ctx;
-	le32 attributes;
-	const struct wim_inode *inode;
 
-	inode = dentry->d_inode;
+	vol = ntfs_3g_apply_ctx_get_volume(ctx);
 
-	DEBUG("Setting NTFS file attributes on `%s' to %#"PRIx32,
-	      dentry->_full_path, inode->i_attributes);
-
-	attributes = cpu_to_le32(inode->i_attributes);
-	memset(&ctx, 0, sizeof(ctx));
-	ctx.vol = ni->vol;
-	ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ATTRIB,
-					 ni, dir_ni,
-					 (char*)&attributes,
-					 sizeof(attributes), 0);
-	if (ret) {
-		ERROR("Failed to set NTFS file attributes on `%s'",
-		      dentry->_full_path);
-		ret = WIMLIB_ERR_NTFS_3G;
-	} else if (inode->i_security_id != -1 &&
-		   !(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS))
-	{
-		const char *desc;
-		const struct wim_security_data *sd;
-
-		sd = wim_const_security_data(wim);
-		wimlib_assert(inode->i_security_id < sd->num_entries);
-		desc = (const char *)sd->descriptors[inode->i_security_id];
-		DEBUG("Applying security descriptor %d to `%s'",
-		      inode->i_security_id, dentry->_full_path);
-
-		ret = ntfs_xattr_system_setxattr(&ctx, XATTR_NTFS_ACL,
-						 ni, dir_ni, desc,
-						 sd->sizes[inode->i_security_id], 0);
-
-		if (ret) {
-			ERROR_WITH_ERRNO("Failed to set security data on `%s'",
-					dentry->_full_path);
-			ret = WIMLIB_ERR_NTFS_3G;
-		}
-	}
-	return ret;
-}
-
-/*
- * Transfers the reparse data from a WIM inode (which must represent a reparse
- * point) to a NTFS inode.
- */
-static int
-apply_reparse_data(ntfs_inode *ni, struct wim_dentry *dentry,
-		   union wimlib_progress_info *progress_info)
-{
-	int ret;
-	u8 rpbuf[REPARSE_POINT_MAX_SIZE] _aligned_attribute(8);
-	u16 rpbuflen;
-
-	DEBUG("Applying reparse data to `%s'", dentry->_full_path);
-
-	ret = wim_inode_get_reparse_data(dentry->d_inode, rpbuf, &rpbuflen);
-	if (ret)
-		return ret;
-
-	ret = ntfs_set_ntfs_reparse_data(ni, rpbuf, rpbuflen, 0);
-	if (ret) {
-		ERROR_WITH_ERRNO("Failed to set NTFS reparse data on `%s'",
-				 dentry->_full_path);
-		return WIMLIB_ERR_NTFS_3G;
-	}
-
-	progress_info->extract.completed_bytes += rpbuflen - 8;
-	return 0;
-}
-
-/*
- * Applies a WIM dentry to a NTFS filesystem.
- *
- * @dentry:  The WIM dentry to apply
- * @dir_ni:  The NTFS inode for the parent directory
- *
- * @return:  0 on success; nonzero on failure.
- */
-static int
-do_apply_dentry_ntfs(struct wim_dentry *dentry, ntfs_inode *dir_ni,
-		     struct apply_args *args)
-{
-	int ret;
-	mode_t type;
-	ntfs_inode *ni = NULL;
-	struct wim_inode *inode = dentry->d_inode;
-	dentry->needs_extraction = 0;
-
-	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-		type = S_IFDIR;
-	} else {
-		type = S_IFREG;
-		if (inode->i_nlink > 1) {
-			/* Inode has multiple dentries referencing it. */
-			if (inode->i_extracted_file) {
-				/* Already extracted another dentry in the hard
-				 * link group.  Make a hard link instead of
-				 * extracting the file data. */
-				ret = apply_ntfs_hardlink(dentry, inode, dir_ni);
-				/* dir_ni was closed */
-				goto out;
-			} else {
-				/* None of the dentries of this inode have been
-				 * extracted yet, so go ahead and extract the
-				 * first one. */
-				FREE(inode->i_extracted_file);
-				if (!(inode->i_extracted_file = STRDUP(dentry->_full_path)))
-				{
-					ret = WIMLIB_ERR_NOMEM;
-					goto out_close_dir_ni;
-				}
-			}
-		}
-	}
-
-	/* Create a NTFS directory or file.
-	 *
-	 * Note: For symbolic links that are not directory junctions, S_IFREG is
-	 * passed here, since the reparse data and file attributes are set
-	 * later. */
-	ni = ntfs_create(dir_ni, 0, dentry->file_name,
-			 dentry->file_name_nbytes / 2, type);
-
-	if (!ni) {
-		ERROR_WITH_ERRNO("Could not create NTFS inode for `%s'",
-				 dentry->_full_path);
-		ret = WIMLIB_ERR_NTFS_3G;
-		goto out_close_dir_ni;
-	}
-
-	/* Write the data streams, unless this is reparse point. */
-	if (!(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-		ret = write_ntfs_data_streams(ni, dentry, &args->progress);
-		if (ret)
-			goto out_close_dir_ni;
-	}
-
-	ret = apply_file_attributes_and_security_data(ni, dir_ni, dentry,
-						      args->wim,
-						      args->extract_flags);
-	if (ret)
-		goto out_close_dir_ni;
-
-	if (inode->i_attributes & FILE_ATTR_REPARSE_POINT) {
-		ret = apply_reparse_data(ni, dentry, &args->progress);
-		if (ret)
-			goto out_close_dir_ni;
-	}
-
-	/* Set DOS (short) name if given */
-	if (dentry_has_short_name(dentry) && !dentry->dos_name_invalid)
-	{
-		char *short_name_mbs;
-		size_t short_name_mbs_nbytes;
-		ret = utf16le_to_tstr(dentry->short_name,
-				      dentry->short_name_nbytes,
-				      &short_name_mbs,
-				      &short_name_mbs_nbytes);
-		if (ret)
-			goto out_close_dir_ni;
-
-		DEBUG("Setting short (DOS) name of `%s' to %s",
-		      dentry->_full_path, short_name_mbs);
-
-		ret = ntfs_set_ntfs_dos_name(ni, dir_ni, short_name_mbs,
-					     short_name_mbs_nbytes, 0);
-		FREE(short_name_mbs);
-		if (ret) {
-			WARNING_WITH_ERRNO("Could not set DOS (short) name for `%s'",
-					   dentry->_full_path);
-			ret = 0;
-		}
-		/* inodes have been closed by ntfs_set_ntfs_dos_name(). */
+	ret = WIMLIB_ERR_NTFS_3G;
+	dir_ni = ntfs_3g_open_parent_inode(path, vol);
+	if (!dir_ni)
 		goto out;
-	}
+
+	name = path_basename(path);
+	ret = tstr_to_utf16le(name, strlen(name),
+			      &name_utf16le, &name_utf16le_nbytes);
+	if (ret)
+		goto out_close_dir_ni;
+
+	ret = 0;
+	ni = ntfs_create(dir_ni, 0, name_utf16le,
+			 name_utf16le_nbytes / 2, mode);
+	if (!ni || ntfs_inode_close_in_dir(ni, dir_ni))
+		ret = WIMLIB_ERR_NTFS_3G;
+	FREE(name_utf16le);
 out_close_dir_ni:
-	if (dir_ni) {
-		if (ni) {
-			if (ntfs_inode_close_in_dir(ni, dir_ni)) {
-				if (ret == 0)
-					ret = WIMLIB_ERR_NTFS_3G;
-				ERROR_WITH_ERRNO("Failed to close inode for `%s'",
-						 dentry->_full_path);
-			}
-		}
-		if (ntfs_inode_close(dir_ni)) {
-			if (ret == 0)
-				ret = WIMLIB_ERR_NTFS_3G;
-			ERROR_WITH_ERRNO("Failed to close inode of directory "
-					 "containing `%s'",
-					 dentry->_full_path);
-		}
-	}
+	if (ntfs_inode_close(dir_ni))
+		ret = WIMLIB_ERR_NTFS_3G;
 out:
 	return ret;
 }
 
 static int
-apply_root_dentry_ntfs(struct wim_dentry *dentry,
-		       ntfs_volume *vol, const WIMStruct *wim,
-		       int extract_flags)
+ntfs_3g_create_file(const char *path, struct apply_ctx *ctx)
+{
+	return ntfs_3g_create(path, ctx, S_IFREG);
+}
+
+static int
+ntfs_3g_create_directory(const char *path, struct apply_ctx *ctx)
+{
+	return ntfs_3g_create(path, ctx, S_IFDIR);
+}
+
+static int
+ntfs_3g_create_hardlink(const char *oldpath, const char *newpath,
+			struct apply_ctx *ctx)
+{
+	ntfs_volume *vol;
+	ntfs_inode *dir_ni, *ni;
+	const char *name;
+	utf16lechar *name_utf16le;
+	size_t name_utf16le_nbytes;
+	int ret;
+
+	vol = ntfs_3g_apply_ctx_get_volume(ctx);
+
+	ret = WIMLIB_ERR_NTFS_3G;
+	ni = ntfs_pathname_to_inode(vol, NULL, oldpath);
+	if (!ni)
+		goto out;
+
+	ret = WIMLIB_ERR_NTFS_3G;
+	dir_ni = ntfs_3g_open_parent_inode(newpath, vol);
+	if (!dir_ni)
+		goto out_close_ni;
+
+	name = path_basename(newpath);
+	ret = tstr_to_utf16le(name, strlen(name),
+			      &name_utf16le, &name_utf16le_nbytes);
+	if (ret)
+		goto out_close_dir_ni;
+
+	ret = 0;
+	if (ntfs_link(ni, dir_ni, name_utf16le, name_utf16le_nbytes / 2))
+		ret = WIMLIB_ERR_NTFS_3G;
+	FREE(name_utf16le);
+out_close_dir_ni:
+	if (ntfs_inode_close(dir_ni))
+		ret = WIMLIB_ERR_NTFS_3G;
+out_close_ni:
+	if (ntfs_inode_close(ni))
+		ret = WIMLIB_ERR_NTFS_3G;
+out:
+	return ret;
+}
+
+/*
+ * Extract a stream (default or alternate data) to an attribute of a NTFS file.
+ */
+static int
+ntfs_3g_extract_stream(const char *path, const utf16lechar *stream_name,
+		       size_t stream_name_nchars,
+		       struct wim_lookup_table_entry *lte, struct apply_ctx *ctx)
+{
+	ntfs_inode *ni;
+	ntfs_attr *na;
+	int ret;
+	struct ntfs_attr_extract_ctx extract_ctx;
+	utf16lechar stream_name_copy[stream_name_nchars + 1];
+
+	memcpy(stream_name_copy, stream_name,
+	       stream_name_nchars * sizeof(utf16lechar));
+	stream_name_copy[stream_name_nchars] = 0;
+
+	ret = 0;
+	if (!stream_name_nchars && !lte)
+		goto out;
+
+	/* Look up NTFS inode to which to extract the stream.  */
+	ret = WIMLIB_ERR_NTFS_3G;
+	ni = ntfs_3g_apply_pathname_to_inode(path, ctx);
+	if (!ni)
+		goto out;
+
+	/* Add the stream if it's not the default (unnamed) stream.  */
+	ret = WIMLIB_ERR_NTFS_3G;
+	if (stream_name_nchars)
+		if (ntfs_attr_add(ni, AT_DATA, stream_name_copy,
+				  stream_name_nchars, NULL, 0))
+			goto out_close;
+
+	/* If stream is empty, no need to open and extract it.  */
+	ret = 0;
+	if (!lte)
+		goto out_close;
+
+	/* Open the stream (NTFS attribute).  */
+	ret = WIMLIB_ERR_NTFS_3G;
+	na = ntfs_attr_open(ni, AT_DATA, stream_name_copy, stream_name_nchars);
+	if (!na)
+		goto out_close;
+
+	/* (Optional) Immediately resize attribute to size of stream.  */
+	ret = WIMLIB_ERR_NTFS_3G;
+	if (ntfs_attr_truncate_solid(na, wim_resource_size(lte)))
+		goto out_attr_close;
+
+	/* Extract stream data to the NTFS attribute.  */
+	extract_ctx.na = na;
+	extract_ctx.offset = 0;
+	ret = extract_wim_resource(lte, wim_resource_size(lte),
+				   ntfs_3g_extract_wim_chunk, &extract_ctx);
+	/* Clean up and return.  */
+out_attr_close:
+	ntfs_attr_close(na);
+out_close:
+	if (ntfs_inode_close(ni))
+		ret = WIMLIB_ERR_NTFS_3G;
+out:
+	if (ret && !errno)
+		errno = -1;
+	return ret;
+}
+
+static int
+ntfs_3g_extract_unnamed_stream(const char *path,
+			       struct wim_lookup_table_entry *lte,
+			       struct apply_ctx *ctx)
+{
+	return ntfs_3g_extract_stream(path, NULL, 0, lte, ctx);
+}
+
+static int
+ntfs_3g_extract_named_stream(const char *path, const utf16lechar *stream_name,
+			     size_t stream_name_nchars,
+			     struct wim_lookup_table_entry *lte, struct apply_ctx *ctx)
+{
+	return ntfs_3g_extract_stream(path, stream_name,
+				      stream_name_nchars, lte, ctx);
+}
+
+static int
+ntfs_3g_set_file_attributes(const char *path, u32 attributes,
+			    struct apply_ctx *ctx)
 {
 	ntfs_inode *ni;
 	int ret = 0;
 
-	ret = calculate_dentry_full_path(dentry);
-	if (ret)
-		return ret;
-
-	ni = ntfs_pathname_to_inode(vol, NULL, "/");
-	if (!ni) {
-		ERROR_WITH_ERRNO("Could not find root NTFS inode");
+	ni = ntfs_3g_apply_pathname_to_inode(path, ctx);
+	if (!ni)
 		return WIMLIB_ERR_NTFS_3G;
-	}
-	ret = apply_file_attributes_and_security_data(ni, ni, dentry, wim,
-						      extract_flags);
-	if (ntfs_inode_close(ni) != 0) {
-		ERROR_WITH_ERRNO("Failed to close NTFS inode for root "
-				 "directory");
+	if (ntfs_set_ntfs_attrib(ni, (const char*)&attributes, sizeof(u32), 0))
 		ret = WIMLIB_ERR_NTFS_3G;
-	}
+	if (ntfs_inode_close(ni))
+		ret = WIMLIB_ERR_NTFS_3G;
 	return ret;
 }
 
-/* Applies a WIM dentry to the NTFS volume */
-int
-apply_dentry_ntfs(struct wim_dentry *dentry, void *arg)
+static int
+ntfs_3g_set_reparse_data(const char *path, const u8 *rpbuf, u16 rpbuflen,
+			 struct apply_ctx *ctx)
 {
-	struct apply_args *args = arg;
-	ntfs_volume *vol = args->vol;
-	WIMStruct *wim = args->wim;
-	struct wim_dentry *orig_dentry;
-	struct wim_dentry *other;
+	ntfs_inode *ni;
+	int ret = 0;
+
+	ni = ntfs_3g_apply_pathname_to_inode(path, ctx);
+	if (!ni)
+		return WIMLIB_ERR_NTFS_3G;
+	if (ntfs_set_ntfs_reparse_data(ni, rpbuf, rpbuflen, 0))
+		ret = WIMLIB_ERR_NTFS_3G;
+	if (ntfs_inode_close(ni))
+		ret = WIMLIB_ERR_NTFS_3G;
+	return ret;
+}
+
+static int
+ntfs_3g_set_short_name(const char *path, const utf16lechar *short_name,
+		       size_t short_name_nchars, struct apply_ctx *ctx)
+{
+	ntfs_inode *ni, *dir_ni;
+	ntfs_volume *vol;
 	int ret;
+	char *dosname = NULL;
+	size_t dosname_nbytes;
 
-	/* Treat the root dentry specially. */
-	if (dentry_is_root(dentry))
-		return apply_root_dentry_ntfs(dentry, vol, wim,
-					      args->extract_flags);
+	ret = 0;
+	if (short_name_nchars == 0)
+		goto out;
 
-	/* NTFS filename namespaces need careful consideration.  A name for a
-	 * NTFS file may be in either the POSIX, Win32, DOS, or Win32+DOS
-	 * namespaces.  A NTFS file (a.k.a. inode) may have multiple names in
-	 * multiple directories (i.e. hard links); however, a NTFS file can have
-	 * at most 1 DOS name total.  Furthermore, a Win32 name is always
-	 * associated with a DOS name (either as a Win32+DOS name, or a Win32
-	 * name and a DOS name separately), which implies that a NTFS file can
-	 * have at most 1 Win32 name.
-	 *
-	 * A WIM dentry just contains a "long name", which wimlib makes sure is
-	 * non-empty, and a "short name", which may be empty.  So, wimlib must
-	 * map these to the correct NTFS names.  wimlib collects all WIM
-	 * dentries that map to the same NTFS inode and factors out the common
-	 * information into a 'struct wim_inode', so this should make the
-	 * mapping a little more obvious.  As a NTFS file can have at most 1 DOS
-	 * name, a WIM inode cannot have more than 1 dentry with a non-empty
-	 * short name, and this is checked in the verify_inode() function in
-	 * verify.c.  Furthermore, a WIM dentry, if any, that has a DOS name
-	 * must have a long name that corresponds to a Win32 name or Win32+DOS
-	 * name.
-	 *
-	 * WIM dentries that have a long name but no associated short name are
-	 * assumed to be in the POSIX namespace.
-	 *
-	 * So, given a WIM inode that is to map to a NTFS inode, we must apply
-	 * the Win32 and DOS or Win32+DOS names, if they exist, then any
-	 * additional (POSIX) names.  A caveat when actually doing this:  as
-	 * confirmed by the libntfs-3g authors, ntfs_set_ntfs_dos_name() is only
-	 * guaranteed to associate a DOS name with the appropriate long name if
-	 * it's called when that long name is the only one in existence for that
-	 * file.  So, this implies that the correct ordering of function calls
-	 * to extract a NTFS file are:
-	 *
-	 *	if (file has a DOS name) {
-	 * 		- Call ntfs_create() to create long name associated with
-	 * 		the DOS name (this initially creates a POSIX name)
-	 * 		- Call ntfs_set_ntfs_dos_name() to associate a DOS name
-	 * 		with the long name just created.  This either changes
-	 * 		the POSIX name to Win32+DOS, or changes the POSIX name
-	 * 		to Win32 and creates a separate DOS name.
-	 * 	} else {
-	 * 		- Call ntfs_create() to create the first link to the
-	 * 		file in the POSIX namespace
-	 * 	}
-	 * 	- Call ntfs_link() to create the other names of the file, in the
-	 * 	POSIX namespace.
-	 */
-again:
-	orig_dentry = NULL;
-	if (!dentry->d_inode->i_dos_name_extracted &&
-	    (!dentry_has_short_name(dentry) || dentry->dos_name_invalid))
-	{
-		inode_for_each_dentry(other, dentry->d_inode) {
-			if (dentry_has_short_name(other) && !other->dos_name_invalid) {
-				orig_dentry = dentry;
-				dentry = other;
-				break;
-			}
-		}
-	}
-	dentry->d_inode->i_dos_name_extracted = 1;
+	vol = ntfs_3g_apply_ctx_get_volume(ctx);
 
-	ret = calculate_dentry_full_path(dentry);
+	ret = WIMLIB_ERR_NTFS_3G;
+	dir_ni = ntfs_3g_open_parent_inode(path, vol);
+	if (!dir_ni)
+		goto out;
+
+	ret = WIMLIB_ERR_NTFS_3G;
+	ni = ntfs_pathname_to_inode(vol, NULL, path);
+	if (!ni)
+		goto out_close_dir_ni;
+
+	ret = utf16le_to_tstr(short_name, short_name_nchars * 2,
+			      &dosname, &dosname_nbytes);
 	if (ret)
-		return ret;
+		goto out_close_ni;
 
-	ntfs_inode *dir_ni = dentry_open_parent_ni(dentry, vol);
-	if (dir_ni) {
-		ret = do_apply_dentry_ntfs(dentry, dir_ni, arg);
-		if (ret == 0 && orig_dentry != NULL) {
-			dentry = orig_dentry;
-			goto again;
-		}
-	} else {
+	ret = 0;
+	if (ntfs_set_ntfs_dos_name(ni, dir_ni, dosname,
+				   dosname_nbytes, 0))
 		ret = WIMLIB_ERR_NTFS_3G;
-	}
+	/* ntfs_set_ntfs_dos_name() always closes the inodes.  */
+	FREE(dosname);
+	goto out;
+out_close_ni:
+	if (ntfs_inode_close_in_dir(ni, dir_ni))
+		ret = WIMLIB_ERR_NTFS_3G;
+out_close_dir_ni:
+	if (ntfs_inode_close(dir_ni))
+		ret = WIMLIB_ERR_NTFS_3G;
+out:
 	return ret;
 }
 
-/* Transfers the 100-nanosecond precision timestamps from a WIM dentry to a NTFS
- * inode */
-int
-apply_dentry_timestamps_ntfs(struct wim_dentry *dentry, void *arg)
+static int
+ntfs_3g_set_security_descriptor(const char *path, const u8 *desc, size_t desc_size,
+				struct apply_ctx *ctx, bool strict)
 {
-	struct apply_args *args = arg;
-	ntfs_volume *vol = args->vol;
+	ntfs_volume *vol;
+	ntfs_inode *ni;
+	struct SECURITY_CONTEXT sec_ctx;
+	int ret = 0;
+
+	vol = ntfs_3g_apply_ctx_get_volume(ctx);
+
+	ni = ntfs_pathname_to_inode(vol, NULL, path);
+	if (!ni)
+		return WIMLIB_ERR_NTFS_3G;
+
+	memset(&sec_ctx, 0, sizeof(sec_ctx));
+	sec_ctx.vol = vol;
+
+	if (ntfs_set_ntfs_acl(&sec_ctx, ni, desc, desc_size, 0))
+		ret = WIMLIB_ERR_NTFS_3G;
+	if (ntfs_inode_close(ni))
+		ret = WIMLIB_ERR_NTFS_3G;
+	return ret;
+}
+
+static int
+ntfs_3g_set_timestamps(const char *path, u64 creation_time,
+		       u64 last_write_time, u64 last_access_time,
+		       struct apply_ctx *ctx)
+{
 	u64 ntfs_timestamps[3];
 	ntfs_inode *ni;
-	int ret;
+	int ret = 0;
 
-	DEBUG("Setting timestamps on `%s'", dentry->_full_path);
-
-	ni = ntfs_pathname_to_inode(vol, NULL, dentry->_full_path);
-	if (!ni) {
-		ERROR_WITH_ERRNO("Could not find NTFS inode for `%s'",
-				 dentry->_full_path);
+	ni = ntfs_3g_apply_pathname_to_inode(path, ctx);
+	if (!ni)
 		return WIMLIB_ERR_NTFS_3G;
-	}
 
 	/* Note: ntfs_inode_set_times() expects the times in native byte order,
 	 * not little endian. */
-	ntfs_timestamps[0] = dentry->d_inode->i_creation_time;
-	ntfs_timestamps[1] = dentry->d_inode->i_last_write_time;
-	ntfs_timestamps[2] = dentry->d_inode->i_last_access_time;
-	ret = ntfs_inode_set_times(ni, (const char*)ntfs_timestamps,
-				   sizeof(ntfs_timestamps), 0);
-	if (ret != 0) {
-		ERROR_WITH_ERRNO("Failed to set NTFS timestamps on `%s'",
-				 dentry->_full_path);
-		ret = WIMLIB_ERR_NTFS_3G;
-	}
+	ntfs_timestamps[0] = creation_time;
+	ntfs_timestamps[1] = last_write_time;
+	ntfs_timestamps[2] = last_access_time;
 
-	if (ntfs_inode_close(ni) != 0) {
-		if (ret == 0)
-			ret = WIMLIB_ERR_NTFS_3G;
-		ERROR_WITH_ERRNO("Failed to close NTFS inode for `%s'",
-				 dentry->_full_path);
-	}
+	if (ntfs_inode_set_times(ni, (const char*)ntfs_timestamps,
+				 sizeof(ntfs_timestamps), 0))
+		ret = WIMLIB_ERR_NTFS_3G;
+	if (ntfs_inode_close(ni))
+		ret = WIMLIB_ERR_NTFS_3G;
 	return ret;
+}
+
+static bool
+ntfs_3g_target_is_root(const char *target)
+{
+	/* We always extract to the root of the NTFS volume.  */
+	return true;
+}
+
+static int
+ntfs_3g_start_extract(const char *path, struct apply_ctx *ctx)
+{
+	ntfs_volume *vol;
+
+	vol = ntfs_mount(ctx->target, 0);
+	if (!vol) {
+		ERROR_WITH_ERRNO("Failed to mount \"%"TS"\" with NTFS-3g", ctx->target);
+		return WIMLIB_ERR_NTFS_3G;
+	}
+	ntfs_3g_apply_ctx_set_volume(ctx, vol);
+
+	ctx->supported_features.archive_files             = 1;
+	ctx->supported_features.hidden_files              = 1;
+	ctx->supported_features.system_files              = 1;
+	ctx->supported_features.compressed_files          = 1;
+	ctx->supported_features.encrypted_files           = 0;
+	ctx->supported_features.not_context_indexed_files = 1;
+	ctx->supported_features.sparse_files              = 1;
+	ctx->supported_features.named_data_streams        = 1;
+	ctx->supported_features.hard_links                = 1;
+	ctx->supported_features.reparse_points            = 1;
+	ctx->supported_features.security_descriptors      = 1;
+	ctx->supported_features.short_names               = 1;
+	return 0;
+}
+
+static int
+ntfs_3g_finish_or_abort_extract(struct apply_ctx *ctx)
+{
+	ntfs_volume *vol;
+
+	vol = ntfs_3g_apply_ctx_get_volume(ctx);
+	if (ntfs_umount(vol, FALSE)) {
+		ERROR_WITH_ERRNO("Failed to unmount \"%"TS"\" with NTFS-3g",
+				 ctx->target);
+		return WIMLIB_ERR_NTFS_3G;
+	}
+	return 0;
 }
 
 void
@@ -674,5 +464,32 @@ libntfs3g_global_init(void)
 {
 	ntfs_set_char_encoding(setlocale(LC_ALL, ""));
 }
+
+const struct apply_operations ntfs_3g_apply_ops = {
+	.name = "NTFS-3g",
+
+	.target_is_root          = ntfs_3g_target_is_root,
+	.start_extract           = ntfs_3g_start_extract,
+	.create_file             = ntfs_3g_create_file,
+	.create_directory        = ntfs_3g_create_directory,
+	.create_hardlink         = ntfs_3g_create_hardlink,
+	.extract_unnamed_stream  = ntfs_3g_extract_unnamed_stream,
+	.extract_named_stream    = ntfs_3g_extract_named_stream,
+	.set_file_attributes     = ntfs_3g_set_file_attributes,
+	.set_reparse_data        = ntfs_3g_set_reparse_data,
+	.set_short_name          = ntfs_3g_set_short_name,
+	.set_security_descriptor = ntfs_3g_set_security_descriptor,
+	.set_timestamps          = ntfs_3g_set_timestamps,
+	.abort_extract           = ntfs_3g_finish_or_abort_extract,
+	.finish_extract          = ntfs_3g_finish_or_abort_extract,
+
+	.path_prefix = "/",
+	.path_prefix_nchars = 1,
+	.path_separator = '/',
+	.path_max = 32768,
+
+	.supports_case_sensitive_filenames = 1,
+	.root_directory_is_special = 1,
+};
 
 #endif /* WITH_NTFS_3G */

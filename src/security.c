@@ -181,9 +181,10 @@ new_wim_security_data(void)
  * Note: There is no `offset' argument because the security data is located at
  * the beginning of the metadata resource.
  *
- * Possible errors include:
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ * 	WIMLIB_ERR_INVALID_METADATA_RESOURCE
  * 	WIMLIB_ERR_NOMEM
- * 	WIMLIB_ERR_INVALID_SECURITY_DATA
  */
 int
 read_wim_security_data(const u8 metadata_resource[], size_t metadata_resource_len,
@@ -291,7 +292,7 @@ out_align_total_length:
 	goto out;
 out_invalid_sd:
 	ERROR("WIM security data is invalid!");
-	ret = WIMLIB_ERR_INVALID_SECURITY_DATA;
+	ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 	goto out_free_sd;
 out_of_memory:
 	ERROR("Out of memory while reading WIM security data!");
