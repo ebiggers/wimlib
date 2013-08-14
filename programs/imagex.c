@@ -3767,8 +3767,8 @@ main(int argc, char **argv)
 		exit(2);
 	}
 
-	/* Enable warning and error messages in the library to be more
-	 * user-friendly.  */
+	/* Enable warning and error messages in wimlib be more user-friendly.
+	 * */
 	wimlib_set_print_errors(true);
 
 	/* Initialize wimlib.  */

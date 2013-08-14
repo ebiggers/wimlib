@@ -127,30 +127,34 @@ win32_modify_privilege(const wchar_t *privilege, bool enable)
 	HANDLE hToken;
 	LUID luid;
 	TOKEN_PRIVILEGES newState;
-	bool ret = false;
+	bool ret = FALSE;
 
 	if (!OpenProcessToken(GetCurrentProcess(),
 			      TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
 			      &hToken))
 		goto out;
 
-	if (!LookupPrivilegeValueW(NULL, privilege, &luid))
-		goto out;
+	if (!LookupPrivilegeValue(NULL, privilege, &luid))
+		goto out_close_handle;
 
 	newState.PrivilegeCount = 1;
 	newState.Privileges[0].Luid = luid;
 	newState.Privileges[0].Attributes = (enable ? SE_PRIVILEGE_ENABLED : 0);
+	SetLastError(ERROR_SUCCESS);
 	ret = AdjustTokenPrivileges(hToken, FALSE, &newState, 0, NULL, NULL);
+	if (ret && GetLastError() == ERROR_NOT_ALL_ASSIGNED)
+		ret = FALSE;
+out_close_handle:
 	CloseHandle(hToken);
 out:
-	if (!ret) {
-		fwprintf(stderr, L"WARNING: Failed to %ls privilege %s\n",
-			enable ? L"enable" : L"disable", privilege);
+	if (!ret && enable) {
 		fwprintf(stderr,
-			L"WARNING: The program will continue, "
-			L"but if permission issues are\n"
-			L"encountered, you may need to run "
-			L"this program as the administrator\n");
+			 L"WARNING: Failed to enable %ls!\n"
+			 "          The program will continue, but if "
+			 "permission issues are\n"
+			 "         encountered, you may need to run "
+			 "this program as the Administrator.\n",
+			 privilege);
 	}
 	return ret;
 }
