@@ -1872,7 +1872,8 @@ wimlib_extract_image(WIMStruct *wim, int image,
 		     wimlib_progress_func_t progress_func);
 
 /**
- * Extract one or more images from a pipe on which a pipable WIM is being sent.
+ * Since wimlib v1.5.0:  Extract one or more images from a pipe on which a
+ * pipable WIM is being sent.
  *
  * See the documentation for ::WIMLIB_WRITE_FLAG_PIPABLE for more information
  * about pipable WIMs.
@@ -2061,7 +2062,9 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info);
 
 /**
  * Initialization function for wimlib.  Call before using any other wimlib
- * function.
+ * function except wimlib_set_print_errors().  (However, currently this is not
+ * strictly necessary and it will be called automatically if not done manually,
+ * but you should not rely on this behavior.)
  *
  * @param init_flags
  * 	On UNIX, specify ::WIMLIB_INIT_FLAG_ASSUME_UTF8 if wimlib should assume
@@ -2078,7 +2081,7 @@ wimlib_global_init(int init_flags);
 /**
  * Since wimlib 1.2.6:  Cleanup function for wimlib.  This is not re-entrant.
  * You are not required to call this function, but it will release any global
- * memory allocated by the library.
+ * resources allocated by the library.
  */
 extern void
 wimlib_global_cleanup(void);
@@ -2784,6 +2787,8 @@ wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
  *
  * By default, error messages are not printed.
  *
+ * This can be called before wimlib_global_init().
+ *
  * @param show_messages
  * 	@c true if error messages are to be printed; @c false if error messages
  * 	are not to be printed.
@@ -3089,12 +3094,15 @@ wimlib_write(WIMStruct *wim,
 	     wimlib_progress_func_t progress_func);
 
 /**
- * Same as wimlib_write(), but write the WIM directly to a file descriptor,
- * which need not be seekable if the write is done in a special pipable WIM
- * format by providing ::WIMLIB_WRITE_FLAG_PIPABLE in @p write_flags.  This can,
- * for example, allow capturing a WIM image and streaming it over the network.
- * See the documentation for ::WIMLIB_WRITE_FLAG_PIPABLE for more information
- * about pipable WIMs.
+ * Since wimlib v1.5.0:  Same as wimlib_write(), but write the WIM directly to a
+ * file descriptor, which need not be seekable if the write is done in a special
+ * pipable WIM format by providing ::WIMLIB_WRITE_FLAG_PIPABLE in @p
+ * write_flags.  This can, for example, allow capturing a WIM image and
+ * streaming it over the network.  See the documentation for
+ * ::WIMLIB_WRITE_FLAG_PIPABLE for more information about pipable WIMs.
+ *
+ * The file descriptor @p fd will not be closed when the write is complete; the
+ * calling code is responsible for this.
  *
  * Return values are mostly the same as wimlib_write(), but also:
  *

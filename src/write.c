@@ -1965,6 +1965,34 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 	return 0;
 }
 
+static int
+open_wim_writable(WIMStruct *wim, const tchar *path, int open_flags)
+{
+	int raw_fd;
+	DEBUG("Opening \"%"TS"\" for writing.", path);
+
+	raw_fd = topen(path, open_flags | O_BINARY, 0644);
+	if (raw_fd < 0) {
+		ERROR_WITH_ERRNO("Failed to open \"%"TS"\" for writing", path);
+		return WIMLIB_ERR_OPEN;
+	}
+	filedes_init(&wim->out_fd, raw_fd);
+	return 0;
+}
+
+static int
+close_wim_writable(WIMStruct *wim, int write_flags)
+{
+	int ret = 0;
+
+	if (!(write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR))
+		if (filedes_valid(&wim->out_fd))
+			if (filedes_close(&wim->out_fd))
+				ret = WIMLIB_ERR_WRITE;
+	filedes_invalidate(&wim->out_fd);
+	return ret;
+}
+
 /*
  * Finish writing a WIM file: write the lookup table, xml data, and integrity
  * table, then overwrite the WIM header.  Always closes the WIM file descriptor
@@ -2100,12 +2128,12 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 
 	ret = 0;
 out_close_wim:
-	if (filedes_close(&wim->out_fd)) {
-		ERROR_WITH_ERRNO("Failed to close the output WIM file");
-		if (ret == 0)
+	if (close_wim_writable(wim, write_flags)) {
+		if (ret == 0) {
+			ERROR_WITH_ERRNO("Failed to close the output WIM file");
 			ret = WIMLIB_ERR_WRITE;
+		}
 	}
-	filedes_invalidate(&wim->out_fd);
 	return ret;
 }
 
@@ -2134,32 +2162,6 @@ lock_wim(WIMStruct *wim, int fd)
 	return ret;
 }
 #endif
-
-static int
-open_wim_writable(WIMStruct *wim, const tchar *path, int open_flags)
-{
-	int raw_fd;
-	DEBUG("Opening \"%"TS"\" for writing.", path);
-
-	raw_fd = topen(path, open_flags | O_BINARY, 0644);
-	if (raw_fd < 0) { 
-		ERROR_WITH_ERRNO("Failed to open \"%"TS"\" for writing", path);
-		return WIMLIB_ERR_OPEN;
-	}
-	filedes_init(&wim->out_fd, raw_fd);
-	return 0;
-}
-
-
-static void
-close_wim_writable(WIMStruct *wim)
-{
-	if (filedes_valid(&wim->out_fd)) {
-		if (filedes_close(&wim->out_fd))
-			WARNING_WITH_ERRNO("Failed to close output WIM");
-		filedes_invalidate(&wim->out_fd);
-	}
-}
 
 /*
  * Perform the intermediate stages of creating a "pipable" WIM (i.e. a WIM
@@ -2502,7 +2504,7 @@ write_wim_part(WIMStruct *wim,
 			   stream_list_override);
 out_restore_hdr:
 	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
-	close_wim_writable(wim);
+	close_wim_writable(wim, write_flags);
 	return ret;
 }
 
@@ -2685,7 +2687,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 
 	ret = lock_wim(wim, wim->out_fd.fd);
 	if (ret) {
-		close_wim_writable(wim);
+		close_wim_writable(wim, write_flags);
 		return ret;
 	}
 
@@ -2694,13 +2696,13 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 				     &wim->out_fd);
 	if (ret) {
 		ERROR_WITH_ERRNO("Error updating WIM header flags");
-		close_wim_writable(wim);
+		close_wim_writable(wim, write_flags);
 		goto out_unlock_wim;
 	}
 
 	if (filedes_seek(&wim->out_fd, old_wim_end) == -1) {
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");
-		close_wim_writable(wim);
+		close_wim_writable(wim, write_flags);
 		ret = WIMLIB_ERR_WRITE;
 		goto out_unlock_wim;
 	}
@@ -2728,8 +2730,8 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	ret = finish_write(wim, WIMLIB_ALL_IMAGES, write_flags,
 			   progress_func, NULL);
 out_truncate:
-	close_wim_writable(wim);
-	if (ret != 0 && !(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
+	close_wim_writable(wim, write_flags);
+	if (ret && !(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
 		WARNING("Truncating `%"TS"' to its original size (%"PRIu64" bytes)",
 			wim->filename, old_wim_end);
 		/* Return value of truncate() is ignored because this is already

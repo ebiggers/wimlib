@@ -3734,8 +3734,8 @@ main(int argc, char **argv)
 		}
 	}
 
-	/* Unless already known from the invocation name, search for the
-	 * function to handle the specified subcommand.  */
+	/* Unless already known from the invocation name, determine which
+	 * command was specified.  */
 	if (cmd == CMD_NONE) {
 		if (argc < 2) {
 			imagex_error(T("No command specified!\n"));
@@ -3754,20 +3754,24 @@ main(int argc, char **argv)
 		}
 	}
 
-	/* Handle --help and --version for all commands.  Note that this will
-	 * not return if either of these arguments are present. */
+	/* Handle --help and --version.  --help can be either for the program as
+	 * a whole (cmd == CMD_NONE) or just for a specific command (cmd !=
+	 * CMD_NONE).  Note: help_or_version() will not return if a --help or
+	 * --version argument was found.  */
 	help_or_version(argc, argv, cmd);
 
+	/* Bail if a valid command was not specified.  */
 	if (cmd == CMD_NONE) {
 		imagex_error(T("Unrecognized command: `%"TS"'\n"), argv[1]);
 		usage_all(stderr);
 		exit(2);
 	}
 
-	/* The user may like to see more informative error messages.  */
+	/* Enable warning and error messages in the library to be more
+	 * user-friendly.  */
 	wimlib_set_print_errors(true);
 
-	/* Initialize the library.  */
+	/* Initialize wimlib.  */
 	ret = wimlib_global_init(init_flags);
 	if (ret)
 		goto out_check_status;
@@ -3785,9 +3789,8 @@ main(int argc, char **argv)
 	}
 out_check_status:
 	/* Exit status (ret):  -1 indicates an error found by 'wimlib-imagex'
-	 * outside of the wimlib library code.  0 indicates success.  > 0
-	 * indicates a wimlib error code from which an error message can be
-	 * printed.  */
+	 * itself (not by wimlib).  0 indicates success.  > 0 indicates a wimlib
+	 * error code from which an error message can be printed.  */
 	if (ret > 0) {
 		imagex_error(T("Exiting with error code %d:\n"
 			       "       %"TS"."), ret,
@@ -3795,8 +3798,8 @@ out_check_status:
 		if (ret == WIMLIB_ERR_NTFS_3G && errno != 0)
 			imagex_error_with_errno(T("errno"));
 	}
-	/* Make the library free any resources it's holding (not strictly
-	 * necessary because the process is ending anyway).  */
+	/* Make wimlib free any resources it's holding (although this is not
+	 * strictly necessary because the process is ending anyway).  */
 	wimlib_global_cleanup();
 	return ret;
 }
