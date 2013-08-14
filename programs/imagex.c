@@ -1587,9 +1587,6 @@ imagex_apply(int argc, tchar **argv, int cmd)
 	}
 #endif
 
-#ifdef __WIN32__
-	win32_acquire_restore_privileges();
-#endif
 	if (wim) {
 		ret = wimlib_extract_image(wim, image, target, extract_flags,
 					   additional_swms, num_additional_swms,
@@ -1603,9 +1600,6 @@ imagex_apply(int argc, tchar **argv, int cmd)
 	}
 	if (ret == 0)
 		imagex_printf(T("Done applying WIM image.\n"));
-#ifdef __WIN32__
-	win32_release_restore_privileges();
-#endif
 out_free_swms:
 	for (unsigned i = 0; i < num_additional_swms; i++)
 		wimlib_free(additional_swms[i]);
@@ -1864,10 +1858,6 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			tsprintf(name_end, T(" (%lu)"), conflict_idx);
 		}
 	}
-#ifdef __WIN32__
-	win32_acquire_capture_privileges();
-#endif
-
 	ret = wimlib_add_image_multisource(wim,
 					   capture_sources,
 					   num_sources,
@@ -1876,7 +1866,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 					   add_image_flags,
 					   imagex_progress_func);
 	if (ret)
-		goto out_release_privs;
+		goto out_wimlib_free;
 
 	if (desc || flags_element) {
 		/* User provided <DESCRIPTION> or <FLAGS> element.  Get the
@@ -1891,14 +1881,14 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 							  info.image_count,
 							  desc);
 			if (ret)
-				goto out_release_privs;
+				goto out_wimlib_free;
 		}
 
 		if (flags_element) {
 			ret = wimlib_set_image_flags(wim, info.image_count,
 						     flags_element);
 			if (ret)
-				goto out_release_privs;
+				goto out_wimlib_free;
 		}
 	}
 
@@ -1916,10 +1906,6 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 					 write_flags, num_threads,
 					 imagex_progress_func);
 	}
-out_release_privs:
-#ifdef __WIN32__
-	win32_release_capture_privileges();
-#endif
 out_wimlib_free:
 	wimlib_free(wim);
 out_free_config:
@@ -2467,10 +2453,6 @@ imagex_extract(int argc, tchar **argv, int cmd)
 		num_additional_swms = 0;
 	}
 
-#ifdef __WIN32__
-	win32_acquire_restore_privileges();
-#endif
-
 	ret = wimlib_extract_files(wim, image, cmds, num_cmds, 0,
 				   additional_swms, num_additional_swms,
 				   imagex_progress_func);
@@ -2483,9 +2465,6 @@ imagex_extract(int argc, tchar **argv, int cmd)
 				   "      are in the WIM image.\n"),
 				get_cmd_string(CMD_INFO, false));
 	}
-#ifdef __WIN32__
-	win32_release_restore_privileges();
-#endif
 	for (unsigned i = 0; i < num_additional_swms; i++)
 		wimlib_free(additional_swms[i]);
 	free(additional_swms);
@@ -3397,25 +3376,16 @@ imagex_update(int argc, tchar **argv, int cmd)
 		}
 	}
 
-#ifdef __WIN32__
-	if (have_add_command)
-		win32_acquire_capture_privileges();
-#endif
-
 	/* Execute the update commands */
 	ret = wimlib_update_image(wim, image, cmds, num_cmds, update_flags,
 				  imagex_progress_func);
 	if (ret)
-		goto out_release_privs;
+		goto out_free_cmds;
 
 	/* Overwrite the updated WIM */
 	ret = wimlib_overwrite(wim, write_flags, num_threads,
 			       imagex_progress_func);
-out_release_privs:
-#ifdef __WIN32__
-	if (have_add_command)
-		win32_release_capture_privileges();
-#endif
+out_free_cmds:
 	free(cmds);
 out_free_cmd_file_contents:
 	free(cmd_file_contents);

@@ -919,7 +919,7 @@ wimlib_global_init(int init_flags)
 	#endif
 	}
 #ifdef __WIN32__
-	win32_global_init();
+	win32_global_init(init_flags);
 #endif
 	already_inited = true;
 	return 0;

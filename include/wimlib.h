@@ -1207,8 +1207,17 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  ******************************/
 
 /** Assume that strings are represented in UTF-8, even if this is not the
- * locale's character encoding. */
+ * locale's character encoding.  Not used on Windows.  */
 #define WIMLIB_INIT_FLAG_ASSUME_UTF8			0x00000001
+
+/** Windows-only: do not attempt to acquire additional privileges (currently
+ * SeBackupPrivilege, SeRestorePrivilege, SeSecurityPrivilege, and
+ * SeTakeOwnershipPrivilege) when initializing the library.  This is intended
+ * for the case where the calling program manages these privileges itself.
+ * Note: no error is issued if privileges cannot be acquired, although related
+ * errors may be reported later, depending on if the operations performed
+ * actually require additional privileges or not.  */
+#define WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES	0x00000002
 
 /** Specification of an update to perform on a WIM image. */
 struct wimlib_update_command {
@@ -2067,11 +2076,8 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info);
  * but you should not rely on this behavior.)
  *
  * @param init_flags
- * 	On UNIX, specify ::WIMLIB_INIT_FLAG_ASSUME_UTF8 if wimlib should assume
- * 	that all input data, including filenames, are in UTF-8 rather than the
- * 	locale-dependent character encoding which may or may not be UTF-8, and
- * 	that UTF-8 data can be directly printed to the console.  On Windows, use
- * 	0 for this parameter.
+ *	Bitwise OR of ::WIMLIB_INIT_FLAG_ASSUME_UTF8 and/or
+ *	::WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES.
  *
  * @return 0; other error codes may be returned in future releases.
  */

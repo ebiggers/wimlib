@@ -27,7 +27,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 
 
 extern void
-win32_global_init(void);
+win32_global_init(int init_flags);
 
 extern void
 win32_global_cleanup(void);
@@ -62,7 +62,6 @@ win32_strerror_r_replacement(int errnum, tchar *buf, size_t buflen);
 
 extern int
 win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret);
-
 
 extern ssize_t
 pread(int fd, void *buf, size_t count, off_t offset);

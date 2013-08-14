@@ -450,6 +450,69 @@ out:
 	return 0;
 }
 
+static bool
+win32_modify_privilege(const wchar_t *privilege, bool enable)
+{
+	HANDLE hToken;
+	LUID luid;
+	TOKEN_PRIVILEGES newState;
+	bool ret = FALSE;
+
+	if (!OpenProcessToken(GetCurrentProcess(),
+			      TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+			      &hToken))
+		goto out;
+
+	if (!LookupPrivilegeValue(NULL, privilege, &luid))
+		goto out_close_handle;
+
+	newState.PrivilegeCount = 1;
+	newState.Privileges[0].Luid = luid;
+	newState.Privileges[0].Attributes = (enable ? SE_PRIVILEGE_ENABLED : 0);
+	SetLastError(ERROR_SUCCESS);
+	ret = AdjustTokenPrivileges(hToken, FALSE, &newState, 0, NULL, NULL);
+	if (ret && GetLastError() == ERROR_NOT_ALL_ASSIGNED)
+		ret = FALSE;
+out_close_handle:
+	CloseHandle(hToken);
+out:
+	return ret;
+}
+
+static void
+win32_modify_capture_privileges(bool enable)
+{
+	win32_modify_privilege(SE_BACKUP_NAME, enable);
+	win32_modify_privilege(SE_SECURITY_NAME, enable);
+}
+
+static void
+win32_modify_apply_privileges(bool enable)
+{
+	win32_modify_privilege(SE_RESTORE_NAME, enable);
+	win32_modify_privilege(SE_SECURITY_NAME, enable);
+	win32_modify_privilege(SE_TAKE_OWNERSHIP_NAME, enable);
+}
+
+static void
+win32_modify_capture_and_apply_privileges(bool enable)
+{
+	win32_modify_capture_privileges(enable);
+	win32_modify_apply_privileges(enable);
+}
+
+static void
+win32_acquire_capture_and_apply_privileges(void)
+{
+	win32_modify_capture_privileges(true);
+}
+
+static void
+win32_release_capture_and_apply_privileges(void)
+{
+	win32_modify_capture_privileges(false);
+}
+
 HANDLE
 win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess)
 {
@@ -489,6 +552,8 @@ static OSVERSIONINFO windows_version_info = {
 
 static HMODULE hKernel32 = NULL;
 
+static bool acquired_privileges = false;
+
 bool
 windows_version_is_at_least(unsigned major, unsigned minor)
 {
@@ -497,21 +562,24 @@ windows_version_is_at_least(unsigned major, unsigned minor)
 		 windows_version_info.dwMinorVersion >= minor);
 }
 
-/* Try to dynamically load some functions */
+/* One-time initialization for Windows capture/apply code.  */
 void
-win32_global_init(void)
+win32_global_init(int init_flags)
 {
 	DWORD err;
 
-	if (hKernel32 == NULL) {
-		DEBUG("Loading Kernel32.dll");
-		hKernel32 = LoadLibraryW(L"Kernel32.dll");
-		if (hKernel32 == NULL) {
-			err = GetLastError();
-			WARNING("Can't load Kernel32.dll");
-			win32_error(err);
-		}
+	/* Try to acquire useful privileges.  */
+	if (!(init_flags & WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES)) {
+		win32_acquire_capture_and_apply_privileges();
+		acquired_privileges = true;
 	}
+
+	/* Get Windows version information.  */
+	GetVersionEx(&windows_version_info);
+
+	/* Try to dynamically load some functions.  */
+	if (hKernel32 == NULL)
+		hKernel32 = LoadLibrary(L"Kernel32.dll");
 
 	if (hKernel32) {
 		win32func_FindFirstStreamW = (void*)GetProcAddress(hKernel32,
@@ -524,14 +592,14 @@ win32_global_init(void)
 		}
 	}
 
-	GetVersionEx(&windows_version_info);
 }
 
 void
 win32_global_cleanup(void)
 {
+	if (acquired_privileges)
+		win32_release_capture_and_apply_privileges();
 	if (hKernel32 != NULL) {
-		DEBUG("Closing Kernel32.dll");
 		FreeLibrary(hKernel32);
 		hKernel32 = NULL;
 	}

@@ -46,8 +46,13 @@ Version 1.5.0:
 
 	A few changes were made to the error codes returned by library routines.
 
+	To make wimlib easier to use on Windows, wimlib_global_init() now
+	automatically attempts to acquire additional privileges on Windows, so
+	library clients need not do this (although they can provide a flag to
+	get the old behavior and manage privileges themselves).
+
 	This update bumps the shared library version number up to 9, since it
-	doesn't quite not maintain binary compatibility with previous releases.
+	doesn't quite maintain binary compatibility with previous releases.
 
 Version 1.4.2:
 	Fixed bug in `wimlib-imagex export' that made it impossible to export an

@@ -141,7 +141,7 @@ read_wim_header(const tchar *filename, struct filedes *in_fd,
 
 	if (!filename) {
 		pipe_str = alloca(40);
-		tsprintf(pipe_str, "[fd %d]", in_fd->fd);
+		tsprintf(pipe_str, T("[fd %d]"), in_fd->fd);
 		filename = pipe_str;
 	}
 
