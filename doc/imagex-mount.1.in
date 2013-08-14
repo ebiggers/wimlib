@@ -13,6 +13,8 @@ will mount the image in the Windows Imaging (WIM) file \fIWIMFILE\fR specified
 by \fIIMAGE\fR on the directory \fIDIRECTORY\fR using FUSE (Filesystem in
 Userspace).  \fB@IMAGEX_PROGNAME@ mount\fR will mount the image read-only, while
 \fB@IMAGEX_PROGNAME@ mountrw\fR will mount the image read-write.
+These commands are also available as simply \fBwimmount\fR, \fBwimmountrw\fR,
+and \fBwimunmount\fR if the appropriate hard links are installed.
 .PP
 \fIIMAGE\fR may be a 1-based index of the image in the WIM to mount, or it may
 be the name of an image in the WIM.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1)

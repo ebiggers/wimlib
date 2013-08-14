@@ -5,6 +5,8 @@
 \fB@IMAGEX_PROGNAME@ join\fR [\fIOPTION\fR...] \fIOUT_WIMFILE\fR \fISPLIT_WIM\fR...
 .SH DESCRIPTION
 Joins the \fISPLIT_WIMs\fR into a standalone one-part WIM \fIOUT_WIMFILE\fR.
+This command is also available as simply \fBwimjoin\fR if the appropriate hard
+link is installed.
 .PP
 All parts of the split WIM  must be specified.  You probably want to do so using
 a shell wildcard.

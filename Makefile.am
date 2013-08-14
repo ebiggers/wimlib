@@ -153,17 +153,49 @@ imagex_SOURCES += programs/imagex-win32.c	\
 		  programs/wgetopt.h
 endif
 
+imagex_cmds =	append	\
+		apply	\
+		capture	\
+		delete	\
+		dir	\
+		export	\
+		extract	\
+		info	\
+		join	\
+		mount	\
+		mountrw	\
+		optimize\
+		split	\
+		unmount	\
+		update
+
 install-exec-hook:
-	if [ "@IMAGEX_PROGNAME@" != imagex ]; then \
+	if [ "@IMAGEX_PROGNAME@" != imagex ]; then			    \
 		cd $(DESTDIR)$(bindir) && mv -f imagex "@IMAGEX_PROGNAME@"; \
-		cd $(DESTDIR)$(bindir) && ln -s "@IMAGEX_PROGNAME@" imagex; \
 	fi
+	for cmd in $(imagex_cmds); do				\
+		cd $(DESTDIR)$(bindir) &&			\
+			ln -f "@IMAGEX_PROGNAME@" wim$${cmd};	\
+	done
+
+install-data-hook:
+	for cmd in $(imagex_cmds); do					    \
+		cd $(DESTDIR)$(mandir)/man1 &&				    \
+			ln -sf "@IMAGEX_PROGNAME@-$${cmd}.1" wim$${cmd}.1;  \
+	done
 
 uninstall-hook:
-	if [ "@IMAGEX_PROGNAME@" != imagex ]; then \
-		cd $(DESTDIR)$(bindir) && rm -f "@IMAGEX_PROGNAME@"; \
-		cd $(DESTDIR)$(bindir) && rm -f imagex;	\
+	if [ "@IMAGEX_PROGNAME@" != imagex ]; then		\
+		rm -f $(DESTDIR)$(bindir)/"@IMAGEX_PROGNAME@"	\
+		rm -f $(DESTDIR)$(bindir)/imagex		\
 	fi
+	for cmd in $(imagex_cmds); do				\
+		rm -f $(DESTDIR)$(bindir)/wim$${cmd};		\
+	done
+	for cmd in $(imagex_cmds); do				\
+		rm -f $(DESTDIR)$(mandir)/man1/wim$${cmd}.1; 	\
+	done
+
 
 dist_bin_SCRIPTS = programs/mkwinpeimg
 

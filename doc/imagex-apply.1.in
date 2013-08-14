@@ -7,6 +7,8 @@
 \fB@IMAGEX_PROGNAME@ apply\fR extracts an image, or all images, from the Windows
 Imaging (WIM) file \fIWIMFILE\fR.  \fIWIMFILE\fR may be "-" to read the WIM from
 standard input, but see \fBPIPABLE WIMS\fR.
+This command is also available as simply \fBwimapply\fR if the appropriate hard
+link is installed.
 .PP
 This command is designed to extract, or "apply", one or more full WIM images.
 If you instead want to extract only certain files or directories contained in a

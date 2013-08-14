@@ -7,6 +7,8 @@
 \fB@IMAGEX_PROGNAME@ update\fR modifies the specified \fIIMAGE\fR in the Windows
 Imaging (WIM) file \fIWIMFILE\fR by adding, deleting, or renaming files or
 directories in it.
+This command is also available as simply \fBwimupdate\fR if the appropriate
+hard link is installed.
 .PP
 \fIIMAGE\fR specifies the image in \fIWIMFILE\fR to update.  It may be a 1-based
 index of an image in the WIM or the name of an image in the WIM.  Use the

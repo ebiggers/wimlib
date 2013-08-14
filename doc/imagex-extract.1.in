@@ -7,6 +7,8 @@
 \fB@IMAGEX_PROGNAME@ extract\fR extracts one or more files or directory trees
 from the specified \fIIMAGE\fR contained in the Windows Imaging (WIM) file
 \fIWIMFILE\fR.
+This command is also available as simply \fBwimextract\fR if the appropriate hard
+link is installed.
 .PP
 \fB@IMAGEX_PROGNAME@ extract\fR is intended for extracting only a subset of a
 WIM image.  If you want to extract or "apply" a full WIM image to a directory or

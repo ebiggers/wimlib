@@ -116,9 +116,9 @@ struct wimfs_context {
 	/* Name and message queue descriptors for message queues between the
 	 * filesystem daemon process and the unmount process.  These are used
 	 * when the filesystem is unmounted and the process running
-	 * wimlib_unmount_image() (i.e. the `imagex unmount' command) needs to
-	 * communicate with the filesystem daemon running fuse_main() (i.e. the
-	 * daemon created by the `imagex mount' or `imagex mountrw' commands */
+	 * wimlib_unmount_image() needs to communicate with the filesystem
+	 * daemon running fuse_main() (i.e. the process created by a call to
+	 * wimlib_mount_image().  */
 	char *unmount_to_daemon_mq_name;
 	char *daemon_to_unmount_mq_name;
 	mqd_t unmount_to_daemon_mq;
@@ -2478,7 +2478,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		goto out_free_message_queue_names;
 
 	argc = 0;
-	argv[argc++] = IMAGEX_PROGNAME;
+	argv[argc++] = "wimlib";
 	argv[argc++] = dir_copy;
 
 	/* disable multi-threaded operation */

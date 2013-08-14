@@ -10,6 +10,8 @@ it's ready.  This action will remove any holes that have been left as a result
 of appending images, so the new WIM may be slightly smaller than the old WIM.
 In addition, some errors in the original WIM may be fixed by re-writing it
 (although most cannot).
+This command is also available as simply \fBwimoptimize\fR if the appropriate
+hard link is installed.
 .SH OPTIONS
 .TP 6
 \fB--check\fR

@@ -9,6 +9,8 @@ an image
 \fB@IMAGEX_PROGNAME@ info\fR displays information about \fIWIMFILE\fR, and optionally
 changes which image is bootable, or what the name and description of an image
 are.
+This command is also available as simply \fBwiminfo\fR if the appropriate hard
+link is installed.
 .PP
 If neither an image nor any flags other than \fB--check\fR are specified, some
 basic information about the WIM archive as well as information about the images

@@ -40,7 +40,11 @@ To do its work, \fB@IMAGEX_PROGNAME@\fR uses \fBwimlib\fR, a library which
 provides interfaces for manipulating WIM archives.  You could wimlib in your own
 programs if you wanted to.  wimlib's public interface is documented.
 .SH COMMANDS
-There is a separate manual page for each \fB@IMAGEX_PROGNAME@\fR command.
+The available commands were listed above, and there is a separate manual page
+for each.  Note: to save typing, if the appropriate hard links are installed, a
+command \fB@IMAGEX_PROGNAME@ \fICOMMAND\fR can be accessed as simply
+\fBwim\fICOMMAND\fR; for example, \fBwimapply\fR for
+\fB@IMAGEX_PROGNAME@ apply\fR.
 .SH SUPPORTED FEATURES
 The following general features are currently supported (note: this is not a
 complete list; also, certain features, such as mounting, are supported on UNIX

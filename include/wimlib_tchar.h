@@ -30,6 +30,7 @@ typedef wchar_t tchar;
 #  define istalpha	iswalpha
 #  define istspace	iswspace
 #  define tstrcmp	wcscmp
+#  define tstrncmp	wcsncmp
 #  define tstrchr	wcschr
 #  define tstrpbrk	wcspbrk
 #  define tstrrchr	wcsrchr
@@ -89,6 +90,7 @@ typedef char tchar;
 #  define istalpha	isalpha
 #  define istspace	isspace
 #  define tstrcmp	strcmp
+#  define tstrncmp	strncmp
 #  define tstrchr	strchr
 #  define tstrpbrk	strpbrk
 #  define tstrrchr	strrchr

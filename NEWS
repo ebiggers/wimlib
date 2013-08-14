@@ -9,8 +9,14 @@ Version 1.5.0:
 	support this: wimlib_write_to_fd() and wimlib_extract_image_from_pipe().
 
 	wimlib now preserve WIM integrity tables by default, even if
-	WIMLIB_WRITE_FLAG_CHECK_INTEGRITY is not specified.  This affects
-	wimlib-imagex's behavior when --check is not specified.
+	WIMLIB_WRITE_FLAG_CHECK_INTEGRITY is not specified.  This changes the
+	behavior of `wimlib-imagex' whenever the WIM being operated on contains
+	an integrity table and the '--check' option is not specified.
+
+	`wimlib-imagex capture' now creates LZX-compressed WIMs by default
+	(when --compress is not specified).  This provides the best compression
+	ratio by default, which is usually what is desired, at a cost of some
+	speed.
 
 	Security descriptors are now extracted correctly on Windows.
 

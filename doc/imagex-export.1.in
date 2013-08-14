@@ -11,6 +11,8 @@ optionally changing its name and/or description and/or compression type.
 If \fIDEST_WIMFILE\fR exists, it is taken be be a WIM archive to which the image
 will be appended.  Otherwise, it is created as a new WIM archive containing only
 the exported image.
+This command is also available as simply \fBwimexport\fR if the appropriate hard
+link is installed.
 .PP
 \fISRC_IMAGE\fR specifies the image in \fISRC_WIMFILE\fR to export.  It may be a
 1-based index of an image in the WIM, the name of an image in the WIM, or the

@@ -6,6 +6,8 @@
 .SH DESCRIPTION
 Lists all the files and directories contained in the specified image of the
 Windows Imaging (WIM) file \fIWIMFILE\fR.
+This command is also available as simply \fBwiminfo\fR if the appropriate hard
+link is installed.
 .PP
 \fIIMAGE\fR specifies the WIM image to show the files of.  It may be a 1-based
 index of an image in the WIM, the name of an image in the WIM, or the keyword
