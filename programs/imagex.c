@@ -3471,17 +3471,17 @@ static const struct imagex_command imagex_commands[] = {
 static const tchar *usage_strings[] = {
 [CMD_APPEND] =
 T(
-"    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
-"                    [DESCRIPTION] [--boot] [--check] [--nocheck]\n"
-"                    [--flags EDITION_ID] [--verbose] [--dereference]\n"
-"                    [--config=FILE] [--threads=NUM_THREADS] [--rebuild]\n"
-"                    [--unix-data] [--source-list] [--no-acls]\n"
+"    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
+"                    [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot] [--check]\n"
+"                    [--nocheck] [--flags EDITION_ID] [--verbose]\n"
+"                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
+"                    [--rebuild] [--unix-data] [--source-list] [--no-acls]\n"
 "                    [--strict-acls] [--rpfix] [--norpfix] [--pipable]\n"
 "                    [--not-pipable]\n"
 ),
 [CMD_APPLY] =
 T(
-"    %"TS" WIMFILE [IMAGE_NUM | IMAGE_NAME | all]\n"
+"    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME | all)]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n"
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
@@ -3489,10 +3489,10 @@ T(
 ),
 [CMD_CAPTURE] =
 T(
-"    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE [IMAGE_NAME]\n"
-"                    [DESCRIPTION] [--boot] [--check] [--nocheck]\n"
-"                    [--compress=TYPE] [--flags EDITION_ID] [--verbose]\n"
-"                    [--dereference] [--config=FILE]\n"
+"    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
+"		     [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot] [--check]\n"
+"                    [--nocheck] [--compress=TYPE] [--flags EDITION_ID]\n"
+"                    [--verbose] [--dereference] [--config=FILE]\n"
 "                    [--threads=NUM_THREADS] [--unix-data] [--source-list]\n"
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
 "                    [--pipable] [--not-pipable]\n"
@@ -3509,7 +3509,7 @@ T(
 [CMD_EXPORT] =
 T(
 "    %"TS" SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
-"                    DEST_WIMFILE [DEST_IMAGE_NAME] [DEST_IMAGE_DESCRIPTION]\n"
+"                    DEST_WIMFILE [DEST_IMAGE_NAME [DEST_IMAGE_DESCRIPTION]]\n"
 "                    [--boot] [--check] [--nocheck] [--compress=TYPE]\n"
 "                    [--ref=\"GLOB\"] [--threads=NUM_THREADS] [--rebuild]\n"
 "                    [--pipable] [--not-pipable]\n"
@@ -3518,30 +3518,30 @@ T(
 T(
 "    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) [PATH...]\n"
 "                    [--check] [--ref=\"GLOB\"] [--verbose] [--unix-data]\n"
-"                    [--no-acls] [--strict-acls] [--to-stdout] [--dest-dir=CMD_DIR]\n"
-"                    [--include-invalid-names]\n"
+"                    [--no-acls] [--strict-acls] [--to-stdout]\n"
+"                    [--dest-dir=CMD_DIR] [--include-invalid-names]\n"
 ),
 [CMD_INFO] =
 T(
-"    %"TS" WIMFILE [IMAGE_NUM | IMAGE_NAME] [NEW_NAME]\n"
-"                    [NEW_DESC] [--boot] [--check] [--nocheck] [--header]\n"
+"    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME) [NEW_NAME\n"
+"                    [NEW_DESC]]] [--boot] [--check] [--nocheck] [--header]\n"
 "                    [--lookup-table] [--xml] [--extract-xml FILE]\n"
 "                    [--metadata]\n"
 ),
 [CMD_JOIN] =
 T(
-"    %"TS" [--check] WIMFILE SPLIT_WIM...\n"
+"    %"TS" OUT_WIMFILE SPLIT_WIM_PART... [--check]\n"
 ),
 #if WIM_MOUNTING_SUPPORTED
 [CMD_MOUNT] =
 T(
-"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
+"    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME)] DIRECTORY\n"
 "                    [--check] [--debug] [--streams-interface=INTERFACE]\n"
 "                    [--ref=\"GLOB\"] [--unix-data] [--allow-other]\n"
 ),
 [CMD_MOUNTRW] =
 T(
-"    %"TS" WIMFILE [IMAGE_NUM | IMAGE_NAME] DIRECTORY\n"
+"    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME)] DIRECTORY\n"
 "                    [--check] [--debug] [--streams-interface=INTERFACE]\n"
 "                    [--staging-dir=CMD_DIR] [--unix-data] [--allow-other]\n"
 ),
@@ -3553,7 +3553,7 @@ T(
 ),
 [CMD_SPLIT] =
 T(
-"    %"TS" WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n"
+"    %"TS" WIMFILE SPLIT_WIM_PART_1 PART_SIZE_MB [--check]\n"
 ),
 #if WIM_MOUNTING_SUPPORTED
 [CMD_UNMOUNT] =

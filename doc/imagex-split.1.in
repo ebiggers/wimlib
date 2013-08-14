@@ -2,10 +2,10 @@
 .SH NAME
 @IMAGEX_PROGNAME@-split \- Split a WIM into multiple parts
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ split\fR \fIWIMFILE\fR \fISPLIT_WIM_PART\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
+\fB@IMAGEX_PROGNAME@ split\fR \fIWIMFILE\fR \fISPLIT_WIM_PART_1\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
 .SH DESCRIPTION
 Splits \fIWIMFILE\fR into parts with size at most \fIPART_SIZE\fR mebibytes,
-with the first part having the name \fISPLIT_WIM_PART\fR and the other parts
+with the first part having the name \fISPLIT_WIM_PART_1\fR and the other parts
 having names numbered in order of the parts.
 This command is also available as simply \fBwimsplit\fR if the appropriate
 hard link or batch file has been installed.
@@ -15,7 +15,7 @@ hard link or batch file has been installed.
 .TP 6
 \fB--check\fR
 When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
-present; additionally, when writing each \fISPLIT_WIM_PART\fR, write an integrity
+present; additionally, when writing each split WIM part, write an integrity
 table.  If this option is not specified, integrity tables will be included in
 the split WIMs if and only if one was present in \fIWIMFILE\fR.
 .SH EXAMPLES

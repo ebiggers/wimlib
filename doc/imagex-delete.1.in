@@ -2,7 +2,7 @@
 .SH NAME
 @IMAGEX_PROGNAME@-delete \- Delete an image from a WIM archive
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ delete\fR \fIWIMFILE\fR \fIIMAGE\fR [--check]
+\fB@IMAGEX_PROGNAME@ delete\fR \fIWIMFILE\fR \fIIMAGE\fR [\fIOPTION\fR...]
 .SH DESCRIPTION
 \fB@IMAGEX_PROGNAME@ delete\fR deletes the specified image from the Windows Imaging (WIM)
 file \fIWIMFILE\fR.
