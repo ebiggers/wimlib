@@ -2629,16 +2629,26 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 
 	/* Get image index (this may use the XML data that was just read to
 	 * resolve an image name).  */
-	image = wimlib_resolve_image(pwm, image_num_or_name);
-	if (image == WIMLIB_NO_IMAGE) {
-		ERROR("\"%"TS"\" is not a valid image in the pipable WIM!",
-		      image_num_or_name);
-		ret = WIMLIB_ERR_INVALID_IMAGE;
-		goto out_wimlib_free;
-	} else if (image == WIMLIB_ALL_IMAGES) {
-		ERROR("Applying all images from a pipe is not supported.");
-		ret = WIMLIB_ERR_INVALID_IMAGE;
-		goto out_wimlib_free;
+	if (image_num_or_name) {
+		image = wimlib_resolve_image(pwm, image_num_or_name);
+		if (image == WIMLIB_NO_IMAGE) {
+			ERROR("\"%"TS"\" is not a valid image in the pipable WIM!",
+			      image_num_or_name);
+			ret = WIMLIB_ERR_INVALID_IMAGE;
+			goto out_wimlib_free;
+		} else if (image == WIMLIB_ALL_IMAGES) {
+			ERROR("Applying all images from a pipe is not supported.");
+			ret = WIMLIB_ERR_INVALID_IMAGE;
+			goto out_wimlib_free;
+		}
+	} else {
+		if (pwm->hdr.image_count != 1) {
+			ERROR("No image was specified, but the pipable WIM "
+			      "did not contain exactly 1 image");
+			ret = WIMLIB_ERR_INVALID_IMAGE;
+			goto out_wimlib_free;
+		}
+		image = 1;
 	}
 
 	/* Load the needed metadata resource.  */

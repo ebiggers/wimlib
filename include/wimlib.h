@@ -1890,7 +1890,9 @@ wimlib_extract_image(WIMStruct *wim, int image,
  *	String that specifies the 1-based index or name of the image to extract.
  *	It is translated to an image index using the same rules that
  *	wimlib_resolve_image() uses.  However, unlike wimlib_extract_image(),
- *	only a single image (not all images) can be specified.
+ *	only a single image (not all images) can be specified.  Alternatively,
+ *	specify @p NULL here to use the first image in the WIM if it contains
+ *	exactly one image but otherwise return @p WIMLIB_ERR_INVALID_IMAGE.
  * @param target
  *	Same as the corresponding parameter to wimlib_extract_image().
  * @param extract_flags

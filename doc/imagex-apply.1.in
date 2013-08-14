@@ -428,7 +428,7 @@ platform and filesystem-dependent, of the capture and apply functionality of
 \fB@IMAGEX_PROGNAME@\fR):
 .RS
 .PP
-@IMAGEX_PROGNAME@ capture src - | @IMAGEX_PROGNAME@ apply - 1 dst
+@IMAGEX_PROGNAME@ capture src - | @IMAGEX_PROGNAME@ apply - dst
 .RE
 .PP
 .SH SEE ALSO

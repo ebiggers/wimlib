@@ -1514,14 +1514,13 @@ imagex_apply(int argc, tchar **argv, int cmd)
 
 	if (!tstrcmp(wimfile, T("-"))) {
 		/* Attempt to apply pipable WIM from standard input.  */
-		if (argc < 3) {
-			imagex_error(T("Imagex index or name must be explicitly "
-				       "specified when applying pipable WIM on "
-				       "standard input."));
-			goto out_usage;
+		if (argc == 2) {
+			image_num_or_name = NULL;
+			target = argv[1];
+		} else {
+			image_num_or_name = argv[1];
+			target = argv[2];
 		}
-		image_num_or_name = argv[1];
-		target = argv[2];
 		wim = NULL;
 		num_additional_swms = 0;
 		additional_swms = NULL;
