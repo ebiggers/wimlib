@@ -1,12 +1,13 @@
-.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-join \- Join split WIMs into a standalone one-part WIM
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ join\fR [\fIOPTION\fR...] \fIOUT_WIMFILE\fR \fISPLIT_WIM\fR...
+\fB@IMAGEX_PROGNAME@ join\fR [\fIOPTION\fR...] \fIOUT_WIMFILE\fR
+\fISPLIT_WIM_PART\fR...
 .SH DESCRIPTION
-Joins the \fISPLIT_WIMs\fR into a standalone one-part WIM \fIOUT_WIMFILE\fR.
+Joins the \fISPLIT_WIM_PARTs\fR into a standalone one-part WIM \fIOUT_WIMFILE\fR.
 This command is also available as simply \fBwimjoin\fR if the appropriate hard
-link is installed.
+link or batch file has been installed.
 .PP
 All parts of the split WIM  must be specified.  You probably want to do so using
 a shell wildcard.
@@ -15,7 +16,7 @@ a shell wildcard.
 .SH OPTIONS
 .TP 6
 \fB--check\fR
-When reading each \fISPLIT_WIM\fR, verify its integrity if the integrity table
+When reading each \fISPLIT_WIM_PART\fR, verify its integrity if the integrity table
 is present; additionally, when writing \fIOUT_WIMFILE\fR, write an integrity
 table.  If this option is not specified, an integrity table will be included in
 \fIOUT_WIMFILE\fR if and only if one was present in the first part of the split
@@ -32,7 +33,7 @@ number), and write the joined WIM to the file `windows.wim'.
 \fB@IMAGEX_PROGNAME@ join\fR is roughly equivalent to:
 .RS
 .PP
-\fB@IMAGEX_PROGNAME@ export\fR \fISWM_PART_1\fR --ref="\fISWM_GLOB\fR" [--check] all \fIOUT_WIMFILE\fR
+\fB@IMAGEX_PROGNAME@ export\fR \fISWM_PART_1\fR --ref="\fISWM_GLOB\fR" all \fIOUT_WIMFILE\fR
 .RE
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)

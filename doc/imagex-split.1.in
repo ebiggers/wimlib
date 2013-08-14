@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-split \- Split a WIM into multiple parts
 .SH SYNOPSIS
@@ -8,7 +8,7 @@ Splits \fIWIMFILE\fR into parts with size at most \fIPART_SIZE\fR mebibytes,
 with the first part having the name \fISPLIT_WIM_PART\fR and the other parts
 having names numbered in order of the parts.
 This command is also available as simply \fBwimsplit\fR if the appropriate
-hard link is installed.
+hard link or batch file has been installed.
 .PP
 \fB@IMAGEX_PROGNAME@ split\fR can split both non-pipable and pipable WIMs.
 .SH OPTIONS

@@ -1,19 +1,19 @@
-.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-dir \- Show the files contained in a WIM archive
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ dir\fR \fIWIMFILE\fR \fIIMAGE\fR [\fIOPTIONS\fR]
 .SH DESCRIPTION
-Lists all the files and directories contained in the specified image of the
-Windows Imaging (WIM) file \fIWIMFILE\fR.
-This command is also available as simply \fBwiminfo\fR if the appropriate hard
-link is installed.
+Lists the files and directories contained in the specified image of the Windows
+Imaging (WIM) file \fIWIMFILE\fR.
+This command is also available as simply \fBwimdir\fR if the appropriate hard
+link or batch file has been installed.
 .PP
-\fIIMAGE\fR specifies the WIM image to show the files of.  It may be a 1-based
-index of an image in the WIM, the name of an image in the WIM, or the keyword
-"all" to indicate that files from all images are to be shown.  Use the
-\fB@IMAGEX_PROGNAME@ info\fR (1) command to show what images a WIM file
-contains.
+\fIIMAGE\fR specifies the image in \fIWIMFILE\fR to show the files of.  It may
+be a 1-based index of an image in \fIWIMFILE\fR, the name of an image in
+\fIWIMFILE\fR, or the keyword "all" to indicate that files from all images in
+\fIWIMFILE\fR are to be shown.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1) command
+to show what images a WIM file contains.
 .SH OPTIONS
 .TP 6
 \fB--path\fR=\fIPATH\fR
@@ -25,7 +25,7 @@ first part of the split WIM.
 .PP
 The DOS names of files are not displayed.
 .PP
-Alternate data streams are not displayed.
+Alternate (named) data streams are not displayed.
 .SH EXAMPLES
 List all files in the first image of 'boot.wim':
 .RS

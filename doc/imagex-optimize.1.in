@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-optimize \- Optimize a WIM archive
 .SH SYNOPSIS
@@ -11,15 +11,15 @@ of appending images, so the new WIM may be slightly smaller than the old WIM.
 In addition, some errors in the original WIM may be fixed by re-writing it
 (although most cannot).
 This command is also available as simply \fBwimoptimize\fR if the appropriate
-hard link is installed.
+hard link or batch file has been installed.
 .SH OPTIONS
 .TP 6
 \fB--check\fR
 When reading \fIWIMFILE\fR, verify its integrity if an integrity table is
 present.  In addition, include an integrity table in the optimized WIM.  If this
 option is not specified, by default the integrity table (if present) is not
-checked, but an integrity table is included in the new WIM if there was one in
-the old WIM.
+checked, and an integrity table is included in the rebuilt WIM if and only if
+one was present in the original WIM.
 .TP
 \fB--nocheck\fR
 Neither verify the integrity of \fIWIMFILE\fR using the integrity table, nor
@@ -45,7 +45,7 @@ processors).  This parameter is only meaningful when \fB--recompress\fR is also
 specified.
 .TP
 \fB--pipable\fR
-Rebuild the WIM that it can be applied fully sequentially, including from a
+Rebuild the WIM so that it can be applied fully sequentially, including from a
 pipe.  See \fB@IMAGEX_PROGNAME@ capture\fR(1) for more details about creating
 pipable WIMs.  By default, when neither \fB--pipable\fR or \fB--not-pipable\fR
 is specified, the rebuilt WIM will be pipable if and only if it was already

@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-delete \- Delete an image from a WIM archive
 .SH SYNOPSIS
@@ -6,13 +6,14 @@
 .SH DESCRIPTION
 \fB@IMAGEX_PROGNAME@ delete\fR deletes the specified image from the Windows Imaging (WIM)
 file \fIWIMFILE\fR.
-.PP
-\fIIMAGE\fR specifies the WIM image to deleted.  It may be a 1-based index of an
-image in the WIM, the name of an image in the WIM, or the keyword "all" to
-indicate that all images are to be deleted.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1)
-command to show what images a WIM file contains.
 This command is also available as simply \fBwimdelete\fR if the appropriate hard
-link is installed.
+link or batch file has been installed.
+.PP
+\fIIMAGE\fR specifies the WIM image in \fIWIMFILE\fR to deleted.  It may be a
+1-based index of an image in the WIM, the name of an image in the WIM, or the
+keyword "all" to indicate that all images are to be deleted.  Use the
+\fB@IMAGEX_PROGNAME@ info\fR (1) command to show what images a WIM file
+contains.
 .SH NOTES
 By default, the WIM file is rebuilt with all unnecessary file data removed.
 This is different from Microsoft's imagex.exe, which only will delete the
@@ -38,7 +39,7 @@ Perform a "soft delete".  Specifying this flag overrides the default behavior of
 rebuilding the entire WIM after deleting an image.  Instead, only minimal
 changes to correctly remove the image from the WIM will be taken.  In
 particular, all streams will be left alone, even if they are no longer
-referenced.  This is probably not what you want, because almost no space will be
+referenced.  This is probably not what you want, because no space will be
 saved by deleting an image in this way.
 .IP ""
 You may use \fB@IMAGEX_PROGNAME@ optimize\fR to delete unreferenced streams from a WIM that

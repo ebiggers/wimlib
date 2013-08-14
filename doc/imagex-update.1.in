@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-update \- Update a WIM image
 .SH SYNOPSIS
@@ -8,7 +8,7 @@
 Imaging (WIM) file \fIWIMFILE\fR by adding, deleting, or renaming files or
 directories in it.
 This command is also available as simply \fBwimupdate\fR if the appropriate
-hard link is installed.
+hard link or batch file has been installed.
 .PP
 \fIIMAGE\fR specifies the image in \fIWIMFILE\fR to update.  It may be a 1-based
 index of an image in the WIM or the name of an image in the WIM.  Use the
@@ -33,34 +33,10 @@ existing directory in the WIM image in one command.  If \fIDESTINATION\fR does
 not exist in the WIM image, then any prerequisite directories are created as
 needed to add the \fISOURCE\fR at that location.
 .PP
-The available options for the \fBadd\fR command are:
-.TP 6
-\fB--verbose\fR
-Print the names of files as they are captured.
-.TP
-\fB--dereference\fR
-(UNIX only) Follow symbolic links and archive the files they point to, rather
-than archiving the links themselves.
-.TP
-\fB--unix-data\fR
-(UNIX only) Store the UNIX owner, group, and mode of all captured files.  This
-is done by adding a special alternate data stream to each directory entry that
-contains this information.  Please note that this flag is for convenience only,
-in case you want to use \fB@IMAGEX_PROGNAME@\fR to archive files on UNIX.
-Microsoft's software will not understand this special information.
-.TP
-\fB--no-acls\fR
-(Windows only) Do not capture files' security descriptors.
-.TP
-\fB--strict-acls\fR
-(Windows only) Fail immediately if the full security descriptor of any file
-cannot be read.  The default behavior without this option is to first try
-omitting the SACL from the security descriptor, then to try omitting the
-security descriptor entirely.  The purpose of this is to capture as much data as
-possible without always requiring Administrator privileges.  However, if you
-desire that all security descriptors be captured exactly, you may wish to
-provide this option, although the Administrator should have permission to read
-everything anyway.
+The \fBadd\fR command supports a subset of the options accepted by
+\fB@IMAGEX_PROGNAME@-capture\fR; namely, \fB--verbose\fR, \fB--dereference\fR,
+\fB--unix-data\fR, \fB--no-acls\fR, and \fB--strict-acls\fR.  See
+\fB@IMAGEX_PROGNAME@-capture\fR (1) for explanations of these options.
 .SS \fBdelete\fR [\fIOPTION\fR...] \fIPATH\fR
 Delete a file or directory tree from the WIM image.  \fIPATH\fR must specify the
 path inside the WIM image of the file or directory tree to delete.
@@ -140,7 +116,11 @@ quotes and single quotes for the inner quotes.  Example:
 .RS
 .PP
 .nf
-@IMAGEX_PROGNAME@ update boot.wim 1 --command="add 'C:\\My Dir' '\\My Dir'"
+@IMAGEX_PROGNAME@ update boot.wim 1 \\
+.br
+.RS
+--command="add 'C:\\My Dir' '\\My Dir'"
+.RE
 .RE
 .RE
 .fi
@@ -148,8 +128,9 @@ quotes and single quotes for the inner quotes.  Example:
 \fB@IMAGEX_PROGNAME@ update\fR is partly redundant with \fB@IMAGEX_PROGNAME@
 mountrw\fR, since if a WIM image can be mounted read-write, then there
 theoretically is no need for \fB@IMAGEX_PROGNAME@ update\fR.  The main advantage
-of \fB@IMAGEX_PROGNAME@ update\fR is that it works on both UNIX and Windows,
-whereas \fB@IMAGEX_PROGNAME@ mountrw\fR only works on UNIX.
+of \fB@IMAGEX_PROGNAME@ update\fR is that it works on both UNIX-like systems and
+Windows, whereas \fB@IMAGEX_PROGNAME@ mountrw\fR only works on UNIX-like
+systems, and even then just those with a compatible FUSE implementation.
 .PP
 Symbolic links inside a WIM image are not dereferenced when being interpreted.
 So, for example, if you have a WIM image that contains a symbolic link
@@ -160,17 +141,17 @@ subdirectory named "Public" in this directory must be specified as
 All paths to files or directories within the WIM image must be specified
 relative to the root of the image.  However, the leading slash is optional, and
 both forward slashes and backslashes are accepted.  In addition, on Windows, the
-paths are treated case-insensitively, while on UNIX, the paths are treated
-case-sensitively.
+paths are treated case-insensitively, while on UNIX-like systems, the paths are
+treated case-sensitively.
 .PP
 The command file (\fICMDFILE\fR) is parsed by \fB@IMAGEX_PROGNAME@ update\fR
 itself and not by the system shell.  Therefore, its syntax is limited.  However,
 comment lines beginning with '#' are allowed, and it is also possible to quote
 arguments with whitespace inside them.
 .PP
-On UNIX, you cannot use \fB@IMAGEX_PROGNAME@ update\fR to add files to an image
-directly from a NTFS volume using libntfs-3g, even though \fB@IMAGEX_PROGNAME@
-capture\fR supports capturing a full image this way.
+On UNIX-like systems, you cannot use \fB@IMAGEX_PROGNAME@ update\fR to add files
+to an image directly from a NTFS volume using libntfs-3g, even though
+\fB@IMAGEX_PROGNAME@ capture\fR supports capturing a full image this way.
 .PP
 It is safe to abort an \fB@IMAGEX_PROGNAME@ update\fR command partway through;
 however, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@

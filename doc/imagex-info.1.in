@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-info \- Display information about a WIM file, or change information about
 an image
@@ -10,7 +10,7 @@ an image
 changes which image is bootable, or what the name and description of an image
 are.
 This command is also available as simply \fBwiminfo\fR if the appropriate hard
-link is installed.
+link or batch file has been installed.
 .PP
 If neither an image nor any flags other than \fB--check\fR are specified, some
 basic information about the WIM archive as well as information about the images

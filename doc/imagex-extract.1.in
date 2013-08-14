@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-extract \- Extract files or directories from a WIM image
 .SH SYNOPSIS
@@ -8,7 +8,7 @@
 from the specified \fIIMAGE\fR contained in the Windows Imaging (WIM) file
 \fIWIMFILE\fR.
 This command is also available as simply \fBwimextract\fR if the appropriate hard
-link is installed.
+link or batch file has been installed.
 .PP
 \fB@IMAGEX_PROGNAME@ extract\fR is intended for extracting only a subset of a
 WIM image.  If you want to extract or "apply" a full WIM image to a directory or
@@ -55,8 +55,7 @@ File glob of additional split WIM parts that are part of the split WIM.  See
 \fBSPLIT_WIMS\fR.
 .TP
 \fB--verbose\fR
-Print the path of each file or directory within the WIM image as it is
-extracted.
+This option no longer does anything but is reserved for future use.
 .TP
 \fB--unix-data\fR
 See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
@@ -81,11 +80,12 @@ Extract the files and directories to the directory \fIDIR\fR instead of to the
 current working directory.
 .SH NOTES
 See the documentation \fB@IMAGEX_PROGNAME@ apply\fR (1) for documentation about
-what data and metadata are extracted on UNIX versus on Windows.
+what data and metadata are extracted on UNIX-like systems versus on Windows.
 .PP
-On UNIX, one can alternatively mount the WIM image with \fB@IMAGEX_PROGNAME@
-mount\fR and then extract the desired files or directories using any standard
-command-line or graphical program.
+On UNIX-like systems that support userspace filesystems with FUSE (e.g. Linux),
+one can alternatively mount the WIM image with \fB@IMAGEX_PROGNAME@ mount\fR and
+then extract the desired files or directories using any standard command-line or
+graphical program.
 .PP
 Reparse-point fixups (a.k.a. changing absolute symbolic links and junctions to
 point within the extraction location) are never done by \fB@IMAGEX_PROGNAME@
@@ -103,13 +103,21 @@ Extract a file from the first image in "boot.wim" to the current directory:
 Extract a file from the first image in "boot.wim" to standard output:
 .RS
 .PP
-@IMAGEX_PROGNAME@ extract boot.wim 1 /Windows/System32/notepad.exe --to-stdout
+@IMAGEX_PROGNAME@ extract boot.wim 1 /Windows/System32/notepad.exe \\
+.br
+.RS
+--to-stdout
+.RE
 .RE
 .PP
 Extract a file from the first image in "boot.wim" to the specified directory:
 .RS
 .PP
-@IMAGEX_PROGNAME@ extract boot.wim 1 /Windows/System32/notepad.exe --dest-dir=somedir
+@IMAGEX_PROGNAME@ extract boot.wim 1 /Windows/System32/notepad.exe \\
+.br
+.RS
+--dest-dir=somedir
+.RE
 .RE
 .PP
 Extract the "sources" directory from the first image in "boot.wim" to the
@@ -122,7 +130,11 @@ current directory:
 Extract multiple files and directories in one command:
 .RS
 .PP
-@IMAGEX_PROGNAME@ extract boot.wim 1 /Windows/Fonts /sources /Windows/System32/cmd.exe
+@IMAGEX_PROGNAME@ extract boot.wim 1 /Windows/Fonts \\
+.br
+.RS
+/sources /Windows/System32/cmd.exe
+.RE
 .RE
 .PP
 .SH SEE ALSO

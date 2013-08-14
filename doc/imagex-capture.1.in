@@ -1,4 +1,4 @@
-.TH IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "August 2013" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-capture, @IMAGEX_PROGNAME@-append \- Create or append a WIM image
 .SH SYNOPSIS
@@ -73,13 +73,13 @@ links via reparse points; this process is reversible, e.g. automatically by
 granularity and include last modification time (mtime) and last access time
 (atime), but not last status change time (ctime).
 .SH NTFS VOLUME CAPTURE (UNIX)
-This section documents how \fB@IMAGEX_PROGNAME@\fR captures files from an NTFS
-volume image on UNIX-like systems.  See \fBDIRECTORY CAPTURE (WINDOWS)\fR for
-the corresponding documentation for Windows.
+This section documents how \fB@IMAGEX_PROGNAME@\fR captures files directly from
+an NTFS volume image on UNIX-like systems.  See \fBDIRECTORY CAPTURE
+(WINDOWS)\fR for the corresponding documentation for Windows.
 .PP
 On UNIX-like systems, a special image capture mode is entered when \fISOURCE\fR
 is a regular file or block device.  In this mode, \fISOURCE\fR is assumed to be
-a NTFS volume or volume image, and wimlib will capture a WIM image containing a
+an NTFS volume or volume image, and wimlib will capture a WIM image containing a
 full contents of the NTFS volume, including NTFS-specific data.  This is done
 using libntfs-3g.
 .PP
@@ -111,12 +111,13 @@ Win32+DOS namespace, and POSIX namespace.  This includes hard links.
 On Windows, \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR
 natively support Windows-specific and NTFS-specific data.  They therefore act
 similarly to the corresponding commands of Microsoft's ImageX.  For best
-results, the directory being captured should be on an NTFS volume and you should
-be running with Administrator privileges; however, non-NTFS filesystems and
-running without Administrator privileges are also supported.
+results, the directory being captured should be on an NTFS volume and
+\fB@IMAGEX_PROGNAME@\fR should be run with Administrator privileges; however,
+non-NTFS filesystems and running without Administrator privileges are also
+supported.
 .PP
 On Windows, \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR
-try to archive as much data as possible, including:
+try to archive as much data and metadata as possible, including:
 .IP \[bu] 4
 All data streams of all files, unless running on a version of Windows prior to
 Vista, in which case named data streams (if supported by the source filesystem)
@@ -132,9 +133,9 @@ stored with Windows NT's native timestamp resolution of 100 nanoseconds.
 .IP \[bu]
 Security descriptors, if supported by the source filesystem and \fB--no-acls\fR
 is not specified.  However, beware that unless \fB--strict-acls\fR is specified,
-the security descriptor for individual files or directories may be omitted or
-only partially captured if the user does not have permission to read it, which
-is mainly a problem if \fB@IMAGEX_PROGNAME@\fR is run as a non-Administrator.
+the security descriptors for individual files or directories may be omitted or
+only partially captured if the user does not have permission to read them, which
+can be a problem if \fB@IMAGEX_PROGNAME@\fR is run as a non-Administrator.
 .IP \[bu]
 File attributes, including hidden, sparse, compressed, encrypted, etc.
 Encrypted files will be stored in encrypted form rather than in plain text.
@@ -418,7 +419,7 @@ name need not be specified and will default to 'somedir':
 @IMAGEX_PROGNAME@ capture somedir mywim.wim
 .RE
 .PP
-or, if the \fBwimcapture\fR hard link or batch file is installed, the
+or, if the \fBwimcapture\fR hard link or batch file has been installed, the
 abbreviated form can be used:
 .RS
 .PP
@@ -447,7 +448,7 @@ with absolute symbolic links, and an image name and description:
 Capture an entire NTFS volume into a new WIM file and name the image "Windows
 7".  On UNIX-like systems, this requires using the special mode described in
 \fBNTFS VOLUME CAPTURE (UNIX)\fR where \fISOURCE\fR is a file or block device
-containing a NTFS filesystem:
+containing an NTFS filesystem:
 .RS
 .PP
 @IMAGEX_PROGNAME@ capture /dev/sda2 windows7.wim "Windows 7"
@@ -460,7 +461,7 @@ root directory of the mounted volume, for example:
 @IMAGEX_PROGNAME@ capture E:\\ windows7.wim "Windows 7"
 .RE
 .PP
-Same as above example with capturing a NTFS volume from \fB@IMAGEX_PROGNAME@\fR
+Same as above example with capturing an NTFS volume from \fB@IMAGEX_PROGNAME@\fR
 running on a UNIX-like system, but capture the WIM in the wimlib-specific
 "pipable" format that can be piped to \fB@IMAGEX_PROGNAME@ apply\fR:
 .RS
