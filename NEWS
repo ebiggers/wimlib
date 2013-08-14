@@ -18,6 +18,16 @@ Version 1.5.0:
 	ratio by default, which is usually what is desired, at a cost of some
 	speed.
 
+	For convenience, `wimlib-imagex' now supports being invoked as
+	wimCOMMAND, where COMMAND is the command as in `wimlib-imagex COMMAND';
+	for example, it can be invoked as `wimapply' as an alternative to
+	`wimlib-imagex apply'.  The appropriate hard links are created in UNIX
+	installations of `wimlib-imagex', while for the Windows distribution of
+	`wimlib-imagex', batch files that emulate this behavior are generated.
+
+	`wimlib-imagex' no longer recognizes the 'mount', 'mountrw', and
+	'unmount' commands on Windows, since they didn't work on Windows anyway.
+
 	Security descriptors are now extracted correctly on Windows.
 
 	`mkwinpeimg' now supports grabbing files from the WAIK supplement rather
@@ -35,6 +45,9 @@ Version 1.5.0:
 	now supported on all backends, not just UNIX.
 
 	A few changes were made to the error codes returned by library routines.
+
+	This update bumps the shared library version number up to 9, since it
+	doesn't quite not maintain binary compatibility with previous releases.
 
 Version 1.4.2:
 	Fixed bug in `wimlib-imagex export' that made it impossible to export an

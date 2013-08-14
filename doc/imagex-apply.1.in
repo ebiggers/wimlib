@@ -11,7 +11,8 @@ Imaging (WIM) file \fIWIMFILE\fR.  This command is also available as simply
 This command is designed to extract, or "apply", one or more full WIM images.
 If you instead want to extract only certain files or directories contained in a
 WIM image, consider using \fB@IMAGEX_PROGNAME@ extract\fR or
-\fB@IMAGEX_PROGNAME@ mount\fR instead.
+\fB@IMAGEX_PROGNAME@ mount\fR instead.  (\fB@IMAGEX_PROGNAME@ mount\fR is not
+supported on Windows.)
 .PP
 \fIIMAGE\fR specifies the WIM image in \fIWIMFILE\fR to extract.  It may be a
 1-based index of an image in \fIWIMFILE\fR, the name of an image in

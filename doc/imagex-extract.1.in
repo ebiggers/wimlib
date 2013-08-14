@@ -83,9 +83,9 @@ See the documentation \fB@IMAGEX_PROGNAME@ apply\fR (1) for documentation about
 what data and metadata are extracted on UNIX-like systems versus on Windows.
 .PP
 On UNIX-like systems that support userspace filesystems with FUSE (e.g. Linux),
-one can alternatively mount the WIM image with \fB@IMAGEX_PROGNAME@ mount\fR and
-then extract the desired files or directories using any standard command-line or
-graphical program.
+one can alternatively mount the WIM image with \fB@IMAGEX_PROGNAME@ mount\fR (1)
+and then extract the desired files or directories using any standard
+command-line or graphical program.
 .PP
 Reparse-point fixups (a.k.a. changing absolute symbolic links and junctions to
 point within the extraction location) are never done by \fB@IMAGEX_PROGNAME@

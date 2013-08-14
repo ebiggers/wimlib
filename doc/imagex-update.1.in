@@ -129,8 +129,9 @@ quotes and single quotes for the inner quotes.  Example:
 mountrw\fR, since if a WIM image can be mounted read-write, then there
 theoretically is no need for \fB@IMAGEX_PROGNAME@ update\fR.  The main advantage
 of \fB@IMAGEX_PROGNAME@ update\fR is that it works on both UNIX-like systems and
-Windows, whereas \fB@IMAGEX_PROGNAME@ mountrw\fR only works on UNIX-like
-systems, and even then just those with a compatible FUSE implementation.
+Windows, whereas \fB@IMAGEX_PROGNAME@ mountrw\fR is only available on UNIX-like
+systems, and even then it only works on those with a compatible FUSE
+implementation.
 .PP
 Symbolic links inside a WIM image are not dereferenced when being interpreted.
 So, for example, if you have a WIM image that contains a symbolic link
