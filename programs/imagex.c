@@ -65,11 +65,21 @@ static inline void set_fd_to_binary_mode(int fd)
 }
 #endif /* !__WIN32 */
 
+/* Don't confuse the user by presenting the mounting commands on Windows when
+ * they will never work.  However on UNIX-like systems we always present them,
+ * even if WITH_FUSE is not defined at this point, as to not tie the build of
+ * wimlib-imagex to a specific build of wimlib.  */
+#ifdef __WIN32__
+#  define WIM_MOUNTING_SUPPORTED 0
+#else
+#  define WIM_MOUNTING_SUPPORTED 1
+#endif
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
 
 #define for_opt(c, opts) while ((c = getopt_long_only(argc, (tchar**)argv, T(""), \
 				opts, NULL)) != -1)
+
 
 enum {
 	CMD_NONE = -1,
@@ -82,11 +92,15 @@ enum {
 	CMD_EXTRACT,
 	CMD_INFO,
 	CMD_JOIN,
+#if WIM_MOUNTING_SUPPORTED
 	CMD_MOUNT,
 	CMD_MOUNTRW,
+#endif
 	CMD_OPTIMIZE,
 	CMD_SPLIT,
+#if WIM_MOUNTING_SUPPORTED
 	CMD_UNMOUNT,
+#endif
 	CMD_UPDATE,
 	CMD_MAX,
 };
@@ -2882,7 +2896,9 @@ out_usage:
 	goto out;
 }
 
-/* Mounts an image using a FUSE mount. */
+#if WIM_MOUNTING_SUPPORTED
+
+/* Mounts a WIM image.  */
 static int
 imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 {
@@ -3006,6 +3022,7 @@ out_usage:
 	ret = -1;
 	goto out;
 }
+#endif /* WIM_MOUNTING_SUPPORTED */
 
 /* Rebuild a WIM file */
 static int
@@ -3152,6 +3169,7 @@ out_err:
 	goto out;
 }
 
+#if WIM_MOUNTING_SUPPORTED
 /* Unmounts a mounted WIM image. */
 static int
 imagex_unmount(int argc, tchar **argv, int cmd)
@@ -3195,6 +3213,7 @@ out_usage:
 	ret = -1;
 	goto out;
 }
+#endif /* WIM_MOUNTING_SUPPORTED */
 
 /*
  * Add, delete, or rename files in a WIM image.
@@ -3437,11 +3456,15 @@ static const struct imagex_command imagex_commands[] = {
 	[CMD_EXTRACT]  = {T("extract"),  imagex_extract},
 	[CMD_INFO]     = {T("info"),     imagex_info},
 	[CMD_JOIN]     = {T("join"),     imagex_join},
+#if WIM_MOUNTING_SUPPORTED
 	[CMD_MOUNT]    = {T("mount"),    imagex_mount_rw_or_ro},
 	[CMD_MOUNTRW]  = {T("mountrw"),  imagex_mount_rw_or_ro},
+#endif
 	[CMD_OPTIMIZE] = {T("optimize"), imagex_optimize},
 	[CMD_SPLIT]    = {T("split"),    imagex_split},
+#if WIM_MOUNTING_SUPPORTED
 	[CMD_UNMOUNT]  = {T("unmount"),  imagex_unmount},
+#endif
 	[CMD_UPDATE]   = {T("update"),   imagex_update},
 };
 
@@ -3509,6 +3532,7 @@ T(
 T(
 "    %"TS" [--check] WIMFILE SPLIT_WIM...\n"
 ),
+#if WIM_MOUNTING_SUPPORTED
 [CMD_MOUNT] =
 T(
 "    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) DIRECTORY\n"
@@ -3521,6 +3545,7 @@ T(
 "                    [--check] [--debug] [--streams-interface=INTERFACE]\n"
 "                    [--staging-dir=CMD_DIR] [--unix-data] [--allow-other]\n"
 ),
+#endif
 [CMD_OPTIMIZE] =
 T(
 "    %"TS" WIMFILE [--check] [--nocheck] [--recompress]\n"
@@ -3530,10 +3555,12 @@ T(
 T(
 "    %"TS" WIMFILE SPLIT_WIMFILE PART_SIZE_MB [--check]\n"
 ),
+#if WIM_MOUNTING_SUPPORTED
 [CMD_UNMOUNT] =
 T(
 "    %"TS" DIRECTORY [--commit] [--check] [--rebuild] [--lazy]\n"
 ),
+#endif
 [CMD_UPDATE] =
 T(
 "    %"TS" WIMFILE [IMAGE_NUM | IMAGE_NAME] [--check] [--rebuild]\n"
@@ -3667,7 +3694,7 @@ main(int argc, char **argv)
 	int cmd;
 
 	imagex_info_file = stdout;
-	invocation_name = basename(argv[0]);
+	invocation_name = tbasename(argv[0]);
 
 #ifndef __WIN32__
 	if (getenv("WIMLIB_IMAGEX_USE_UTF8")) {
