@@ -1,23 +1,20 @@
-
-/* Replacements for functions needed specifically by the 'imagex' program in
- * Windows native builds; also, Windows-specific code to acquire and release
- * privileges needed to backup and restore files */
+/* Windows-specific code for wimlib-imagex.  */
 
 #ifndef __WIN32__
 #  error "This file contains Windows code"
 #endif
 
 #include "imagex-win32.h"
-#include <windows.h>
-#include <errno.h>
-#include <string.h>
 #include <assert.h>
-#include <stdio.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <io.h>
+#include <stdio.h>
+#include <string.h>
+#include <windows.h>
 
 /* Replacement for glob() in Windows native builds that operates on wide
- * characters. */
+ * characters.  */
 int
 win32_wglob(const wchar_t *pattern, int flags,
 	    int (*errfunc)(const wchar_t *epath, int eerrno),
@@ -121,7 +118,7 @@ globfree(glob_t *pglob)
 	free(pglob->gl_pathv);
 }
 
-/* Convert a string from the "current Windows codepage" to UTF-16LE. */
+/* Convert a string from the "current Windows codepage" to UTF-16LE.  */
 wchar_t *
 win32_mbs_to_wcs(const char *mbs, size_t mbs_nbytes, size_t *num_wchars_ret)
 {
@@ -174,7 +171,7 @@ is_path_separator(wchar_t c)
 }
 
 /* basename() (modifying, trailing-slash stripping version) for wide-character
- * strings. */
+ * strings.  Understands both forward and backward slashes.  */
 wchar_t *
 win32_wbasename(wchar_t *path)
 {
@@ -189,6 +186,7 @@ win32_wbasename(wchar_t *path)
 	return p;
 }
 
+/* Set a file descriptor to binary mode.  */
 void set_fd_to_binary_mode(int fd)
 {
 	_setmode(fd, _O_BINARY);
