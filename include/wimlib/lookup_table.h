@@ -237,6 +237,9 @@ struct wim_lookup_table_entry {
 		/* Used temporarily during WIM file writing  */
 		struct {
 			struct hlist_node hash_list_2;
+
+			/* Links streams being written to the WIM.  */
+			struct list_head write_streams_list;
 		};
 
 		/* Used temporarily during WIM file writing (after above)  */
@@ -281,9 +284,6 @@ struct wim_lookup_table_entry {
 	/* Links streams that are still unhashed after being been added
 	 * to a WIM.  */
 	struct list_head unhashed_list;
-
-	/* Links streams being written to the WIM.  */
-	struct list_head write_streams_list;
 };
 
 static inline u64

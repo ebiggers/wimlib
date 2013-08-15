@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include <sys/types.h>
 
+/* Wrapper around a file descriptor that keeps track of offset (including in
+ * pipes, which don't support lseek()) and a cached flag that tells whether the
+ * file descriptor is a pipe or not.  */
 struct filedes {
 	int fd;
 	unsigned int is_pipe : 1;

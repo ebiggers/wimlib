@@ -186,8 +186,8 @@ install-data-hook:
 
 uninstall-hook:
 	if [ "@IMAGEX_PROGNAME@" != imagex ]; then		\
-		rm -f $(DESTDIR)$(bindir)/"@IMAGEX_PROGNAME@"	\
-		rm -f $(DESTDIR)$(bindir)/imagex		\
+		rm -f $(DESTDIR)$(bindir)/"@IMAGEX_PROGNAME@";	\
+		rm -f $(DESTDIR)$(bindir)/imagex;		\
 	fi
 	for cmd in $(imagex_cmds); do				\
 		rm -f $(DESTDIR)$(bindir)/wim$${cmd};		\

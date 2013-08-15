@@ -575,7 +575,7 @@ inode_get_unix_data(const struct wim_inode *inode,
 extern int
 inode_set_unix_data(struct wim_inode *inode, uid_t uid, gid_t gid, mode_t mode,
 		    struct wim_lookup_table *lookup_table, int which);
-#endif /* __WIN32__ */
+#endif /* !__WIN32__ */
 
 extern bool
 inode_has_unix_data(const struct wim_inode *inode);

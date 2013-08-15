@@ -1,12 +1,13 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
 Version 1.5.0:
-	Added support for "pipable" WIMs.  This support allows capturing images
-	to standard output or applying images from standard input, but they are
+	Added support for "pipable" WIMs.  Pipable WIMs allow capturing images
+	to standard output and applying images from standard input, but they are
 	not compatible with Microsoft's software and are not created by default.
-	See documentation for --pipable flag of `wimlib-imagex capture' for more
-	information.  Two new functions have been added to the library to fully
-	support this: wimlib_write_to_fd() and wimlib_extract_image_from_pipe().
+	See the documentation for --pipable flag of `wimlib-imagex capture' for
+	more information.  Two new functions have been added to the library to
+	fully support this: wimlib_write_to_fd() and
+	wimlib_extract_image_from_pipe().
 
 	wimlib now preserve WIM integrity tables by default, even if
 	WIMLIB_WRITE_FLAG_CHECK_INTEGRITY is not specified.  This changes the
@@ -43,6 +44,12 @@ Version 1.5.0:
 	support new features on all supported backends (currently Win32, UNIX,
 	and NTFS-3g).  For example, hard-linked extraction mode (--hardlink) is
 	now supported on all backends, not just UNIX.
+
+	The LZX compression and decompression code now compiles correctly on the
+	ARM architecture (where 'char' is unsigned).
+
+	wimlib_split() progress messages now report the total number of parts
+	being written.
 
 	A few changes were made to the error codes returned by library routines.
 

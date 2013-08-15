@@ -429,7 +429,7 @@ if test "`imagex info new.wim | grep 'Image Count' | awk '{print $3}'`" != 2; th
 	error "Exporting single image to existing WIM wasn't done correctly"
 fi
 echo "Testing export of single image to existing WIM using wrong compression type"
-if imagex export dir.wim dir2 new.wim newname --compress=maximum; then
+if imagex export dir.wim dir2 new.wim newname --compress=xpress; then
 	error "Successfully exported image using wrong compression type"
 fi
 rm -f new.wim

@@ -869,10 +869,10 @@ wimlib_free(WIMStruct *wim)
 
 	if (!wim)
 		return;
-	if (wim->in_fd.fd != -1)
-		close(wim->in_fd.fd);
-	if (wim->out_fd.fd != -1)
-		close(wim->out_fd.fd);
+	if (filedes_valid(&wim->in_fd))
+		filedes_close(&wim->in_fd);
+	if (filedes_valid(&wim->out_fd))
+		filedes_close(&wim->out_fd);
 
 	free_lookup_table(wim->lookup_table);
 

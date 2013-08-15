@@ -1203,8 +1203,7 @@ extract_stream_list(struct apply_ctx *ctx)
 	bool can_seek;
 	int ret;
 
-	can_seek = !(lseek(ctx->wim->in_fd.fd, 0, SEEK_CUR) == (off_t)-1 &&
-		     errno == ESPIPE);
+	can_seek = (lseek(ctx->wim->in_fd.fd, 0, SEEK_CUR) != -1);
 	list_for_each_entry(lte, &ctx->stream_list, extraction_list) {
 		ret = extract_stream_instances(lte, ctx, can_seek);
 		if (ret)
@@ -2022,8 +2021,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	 * output.  In that case, "root" should be a single file, not a
 	 * directory tree.  (If not, extract_dentry_to_stdout() will
 	 * return an error.)  */
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT &&
-	    !(extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE)) {
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT) {
 		ret = extract_dentry_to_stdout(root);
 		goto out_teardown_stream_list;
 	}
@@ -2276,8 +2274,7 @@ do_wimlib_extract_files(WIMStruct *wim,
 		return ret;
 
 	/* Make sure there are no streams in the WIM that have not been
-	 * checksummed yet.  Needed at least because 'unhashed_list' aliases
-	 * 'extraction_list' in `struct wim_lookup_table_entry'.  */
+	 * checksummed yet.  */
 	ret = wim_checksum_unhashed_streams(wim);
 	if (ret)
 		return ret;
@@ -2461,12 +2458,10 @@ extract_all_images(WIMStruct *wim,
 
 	extract_flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
 
-#ifdef WITH_NTFS_3G
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 		ERROR("Cannot extract multiple images in NTFS extraction mode.");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
-#endif
 
 	if (tstat(target, &stbuf)) {
 		if (errno == ENOENT) {

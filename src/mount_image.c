@@ -567,7 +567,8 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 
 	/* Extract the stream to the staging file (possibly truncated) */
 	if (old_lte) {
-		struct filedes wimlib_fd = {.fd = fd};
+		struct filedes wimlib_fd;
+		filedes_init(&wimlib_fd, fd);
 		extract_size = min(wim_resource_size(old_lte), size);
 		ret = extract_wim_resource_to_fd(old_lte, &wimlib_fd,
 						 extract_size);
@@ -1667,9 +1668,12 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 		return -ERANGE;
 
 	ret = read_full_resource_into_buf(lte, value);
-	if (ret)
-		return -errno;
-
+	if (ret) {
+		if (errno)
+			return -errno;
+		else
+			return -EIO;
+	}
 	return res_size;
 }
 #endif
@@ -2192,7 +2196,7 @@ wimfs_truncate(const char *path, off_t size)
 	if (lte == NULL && size == 0)
 		return 0;
 
-	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
+	if (lte != NULL && lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		ret = truncate(lte->staging_file_name, size);
 		if (ret)
 			ret = -errno;

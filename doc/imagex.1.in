@@ -51,31 +51,31 @@ or if you invoke it incorrectly, the full documentation for each
 \fB@IMAGEX_PROGNAME@\fR command can be found in the appropriate manual page.
 .PP
 Note: to save typing, if appropriate hard links or batch files have been
-installed, a command \fB@IMAGEX_PROGNAME@ \fICOMMAND\fR can be accessed as
+installed, a command \fB@IMAGEX_PROGNAME@ \fICOMMAND\fR can also be accessed as
 simply \fBwim\fICOMMAND\fR; for example, \fBwimapply\fR for \fB@IMAGEX_PROGNAME@
 apply\fR.
 .SH SUPPORTED FEATURES
 The following are some of the main features currently supported by
 \fB@IMAGEX_PROGNAME@\fR, and pointers to the relevant commands:
 .IP \[bu] 4
-Create a stand-alone WIM from a directory or NTFS volume (\fB@IMAGEX_PROGNAME@ capture\fR)
+Create a standalone WIM from a directory or NTFS volume (\fB@IMAGEX_PROGNAME@ capture\fR)
 .IP \[bu]
 Capture a WIM image directly to standard output in a special pipable format
 (\fB@IMAGEX_PROGNAME@ capture\fR)
 .IP \[bu]
-Append a directory or NTFS volume onto a stand-alone WIM as a new image (\fB@IMAGEX_PROGNAME@
+Append a directory or NTFS volume onto a standalone WIM as a new image (\fB@IMAGEX_PROGNAME@
 append\fR)
 .IP \[bu]
-Apply an image from a stand-alone or split WIM to a directory or NTFS volume
+Apply an image from a standalone or split WIM to a directory or NTFS volume
 (\fB@IMAGEX_PROGNAME@ apply\fR)
 .IP \[bu]
 Apply an image from a special pipable WIM format sent over standard input
 (\fB@IMAGEX_PROGNAME@ apply\fR)
 .IP \[bu]
-Mount an image from a stand-alone or split WIM read-only (\fB@IMAGEX_PROGNAME@
+Mount an image from a standalone or split WIM read-only (\fB@IMAGEX_PROGNAME@
 mount\fR) (not available on Windows)
 .IP \[bu]
-Mount an image from a stand-alone WIM read-write (\fB@IMAGEX_PROGNAME@
+Mount an image from a standalone WIM read-write (\fB@IMAGEX_PROGNAME@
 mountrw\fR) (not available on Windows)
 .IP \[bu]
 Extract individual files or directories from a WIM without mounting it
@@ -83,9 +83,9 @@ Extract individual files or directories from a WIM without mounting it
 .IP \[bu]
 Make changes to a WIM image without mounting it (\fB@IMAGEX_PROGNAME@ update\fR)
 .IP \[bu]
-Delete image(s) from a stand-alone WIM (\fB@IMAGEX_PROGNAME@ delete\fR)
+Delete image(s) from a standalone WIM (\fB@IMAGEX_PROGNAME@ delete\fR)
 .IP \[bu]
-Export image(s) from a stand-alone or split WIM (\fB@IMAGEX_PROGNAME@ export\fR)
+Export image(s) from a standalone or split WIM (\fB@IMAGEX_PROGNAME@ export\fR)
 .IP \[bu]
 Display information about a WIM file (\fB@IMAGEX_PROGNAME@ info\fR, \fB@IMAGEX_PROGNAME@ dir\fR)
 .IP \[bu]
@@ -93,9 +93,9 @@ Change the name or description of an image in the WIM (\fB@IMAGEX_PROGNAME@ info
 .IP \[bu]
 Change which image in a WIM is bootable (\fB@IMAGEX_PROGNAME@ info\fR)
 .IP \[bu]
-Combine split WIMs into one stand-alone WIM (\fB@IMAGEX_PROGNAME@ join\fR)
+Combine split WIMs into one standalone WIM (\fB@IMAGEX_PROGNAME@ join\fR)
 .IP \[bu]
-Split a stand-alone WIM into multiple parts (\fB@IMAGEX_PROGNAME@ split\fR)
+Split a standalone WIM into multiple parts (\fB@IMAGEX_PROGNAME@ split\fR)
 .IP \[bu]
 Support for all WIM compression types, both compression and decompression (LZX,
 XPRESS, and none)

@@ -16,8 +16,9 @@
  * compatibility with Microsoft's software is desired).  */
 #define WIM_CHUNK_SIZE 32768
 
-/* Version of the WIM file.  There is an older version, but wimlib doesn't
- * support it.  The differences between the versions are undocumented.  */
+/* Version of the WIM file.  There is an older version (used for prerelease
+ * versions of Windows Vista), but wimlib doesn't support it.  The differences
+ * between the versions are undocumented.  */
 #define WIM_VERSION 0x10d00
 
 /* WIM magic characters, translated to a single 64-bit little endian number.  */

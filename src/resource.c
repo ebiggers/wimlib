@@ -400,6 +400,7 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 						    uncompressed_buf,
 						    uncompressed_chunk_size);
 				if (ret) {
+					ERROR("Failed to decompress data.");
 					ret = WIMLIB_ERR_DECOMPRESSION;
 					errno = EINVAL;
 					goto out_free_chunk_offsets;
@@ -412,6 +413,7 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 						    out_p,
 						    uncompressed_chunk_size);
 				if (ret) {
+					ERROR("Failed to decompress data.");
 					ret = WIMLIB_ERR_DECOMPRESSION;
 					errno = EINVAL;
 					goto out_free_chunk_offsets;
@@ -618,10 +620,11 @@ invalid:
  *
  * Return values:
  *	WIMLIB_ERR_SUCCESS (0)
- *	WIMLIB_ERR_READ			(errno set)
- *	WIMLIB_ERR_NOMEM		(errno set to ENOMEM)
- *	WIMLIB_ERR_DECOMPRESSION	(errno set to EINVAL)
- *	WIMLIB_ERR_INVALID_PIPABLE_WIM  (errno set to EINVAL)
+ *	WIMLIB_ERR_READ			  (errno set)
+ *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE (errno set to 0)
+ *	WIMLIB_ERR_NOMEM		  (errno set to ENOMEM)
+ *	WIMLIB_ERR_DECOMPRESSION	  (errno set to EINVAL)
+ *	WIMLIB_ERR_INVALID_PIPABLE_WIM    (errno set to EINVAL)
  *	
  *	or other error code returned by the @cb function.
  */

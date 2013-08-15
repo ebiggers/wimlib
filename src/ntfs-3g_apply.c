@@ -40,6 +40,12 @@
 #include <ntfs-3g/security.h>
 #include <errno.h>
 
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#else
+#  include <stdlib.h>
+#endif
+
 #include "wimlib/apply.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
@@ -86,18 +92,13 @@ ntfs_3g_extract_wim_chunk(const void *buf, size_t len, void *_ctx)
 static ntfs_inode *
 ntfs_3g_open_parent_inode(const char *path, ntfs_volume *vol)
 {
-	char orig, *p;
+	char *p;
 	ntfs_inode *dir_ni;
 
-	p = strchr(path, '\0');
-	do {
-		p--;
-	} while (*p != '/');
-
-	orig = *p;
+	p = strrchr(path, '/');
 	*p = '\0';
 	dir_ni = ntfs_pathname_to_inode(vol, NULL, path);
-	*p = orig;
+	*p = '/';
 	return dir_ni;
 }
 
@@ -177,7 +178,6 @@ ntfs_3g_create_hardlink(const char *oldpath, const char *newpath,
 			      &name_utf16le, &name_utf16le_nbytes);
 	if (ret)
 		goto out_close_dir_ni;
-
 	ret = 0;
 	if (ntfs_link(ni, dir_ni, name_utf16le, name_utf16le_nbytes / 2))
 		ret = WIMLIB_ERR_NTFS_3G;
@@ -196,7 +196,7 @@ out:
  * Extract a stream (default or alternate data) to an attribute of a NTFS file.
  */
 static int
-ntfs_3g_extract_stream(const char *path, const utf16lechar *stream_name,
+ntfs_3g_extract_stream(const char *path, const utf16lechar *raw_stream_name,
 		       size_t stream_name_nchars,
 		       struct wim_lookup_table_entry *lte, struct apply_ctx *ctx)
 {
@@ -204,11 +204,16 @@ ntfs_3g_extract_stream(const char *path, const utf16lechar *stream_name,
 	ntfs_attr *na;
 	int ret;
 	struct ntfs_attr_extract_ctx extract_ctx;
-	utf16lechar stream_name_copy[stream_name_nchars + 1];
+	utf16lechar *stream_name;
 
-	memcpy(stream_name_copy, stream_name,
-	       stream_name_nchars * sizeof(utf16lechar));
-	stream_name_copy[stream_name_nchars] = 0;
+	if (stream_name_nchars == 0) {
+		stream_name = AT_UNNAMED;
+	} else {
+		stream_name = alloca((stream_name_nchars + 1) * sizeof(utf16lechar));
+		memcpy(stream_name, raw_stream_name,
+		       stream_name_nchars * sizeof(utf16lechar));
+		stream_name[stream_name_nchars] = 0;
+	}
 
 	ret = 0;
 	if (!stream_name_nchars && !lte)
@@ -223,7 +228,7 @@ ntfs_3g_extract_stream(const char *path, const utf16lechar *stream_name,
 	/* Add the stream if it's not the default (unnamed) stream.  */
 	ret = WIMLIB_ERR_NTFS_3G;
 	if (stream_name_nchars)
-		if (ntfs_attr_add(ni, AT_DATA, stream_name_copy,
+		if (ntfs_attr_add(ni, AT_DATA, stream_name,
 				  stream_name_nchars, NULL, 0))
 			goto out_close;
 
@@ -234,7 +239,7 @@ ntfs_3g_extract_stream(const char *path, const utf16lechar *stream_name,
 
 	/* Open the stream (NTFS attribute).  */
 	ret = WIMLIB_ERR_NTFS_3G;
-	na = ntfs_attr_open(ni, AT_DATA, stream_name_copy, stream_name_nchars);
+	na = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_nchars);
 	if (!na)
 		goto out_close;
 

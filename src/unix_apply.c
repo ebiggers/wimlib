@@ -124,7 +124,7 @@ unix_set_unix_data(const tchar *path, const struct wimlib_unix_data *data,
 	struct stat stbuf;
 
 	if (lstat(path, &stbuf))
-		return WIMLIB_ERR_STAT;
+		return WIMLIB_ERR_SET_SECURITY;
 	if (!S_ISLNK(stbuf.st_mode))
 		if (chmod(path, data->mode))
 			return WIMLIB_ERR_SET_SECURITY;

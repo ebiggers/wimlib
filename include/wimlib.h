@@ -1856,10 +1856,9 @@ wimlib_extract_files(WIMStruct *wim,
  *	Failed to set security descriptor on a file
  *	(only if ::WIMLIB_EXTRACT_FLAG_STRICT_ACLS) specified in @p
  *	extract_flags.
- * @retval ::WIMLIB_ERR_SET_SECURITY
- *	Failed to set security descriptor on a file
- *	(only if ::WIMLIB_EXTRACT_FLAG_STRICT_ACLS) specified in @p
- *	extract_flags.
+ * @retval ::WIMLIB_ERR_SET_TIMESTAMPS
+ *	Failed to set timestamps on a file (only if
+ *	::WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS) specified in @p extract_flags.
  * @retval ::WIMLIB_ERR_SPLIT_INVALID
  * 	The WIM is a split WIM, but the parts specified do not form a complete
  * 	split WIM because they do not include all the parts of the original WIM,

@@ -3562,9 +3562,9 @@ static const tchar *get_cmd_string(int cmd, bool nospace)
 static void
 version(void)
 {
-	static const tchar *format =
+	static const tchar *s =
 	T(
-"%"TS" (" PACKAGE ") " PACKAGE_VERSION "\n"
+IMAGEX_PROGNAME " (" PACKAGE ") " PACKAGE_VERSION "\n"
 "Copyright (C) 2012, 2013 Eric Biggers\n"
 "License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
 "This is free software: you are free to change and redistribute it.\n"
@@ -3572,7 +3572,7 @@ version(void)
 "\n"
 "Report bugs to "PACKAGE_BUGREPORT".\n"
 	);
-	tprintf(format, invocation_name);
+	tfputs(s, stdout);
 }
 
 
