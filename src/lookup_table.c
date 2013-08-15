@@ -288,19 +288,106 @@ for_lookup_table_entry(struct wim_lookup_table *table,
 	return 0;
 }
 
-int
-cmp_streams_by_wim_position(const void *p1, const void *p2)
+/* qsort() callback that sorts streams (represented by `struct
+ * wim_lookup_table_entry's) into an order optimized for reading and writing.
+ *
+ * Sorting is done primarily by resource location, then secondarily by a
+ * per-resource location order.  For example, resources in WIM files are sorted
+ * primarily by part number, then secondarily by offset, as to implement optimal
+ * reading of either a standalone or split WIM.  */
+static int
+cmp_streams_by_sequential_order(const void *p1, const void *p2)
 {
 	const struct wim_lookup_table_entry *lte1, *lte2;
+	int v;
+
 	lte1 = *(const struct wim_lookup_table_entry**)p1;
 	lte2 = *(const struct wim_lookup_table_entry**)p2;
-	if (lte1->resource_entry.offset < lte2->resource_entry.offset)
-		return -1;
-	else if (lte1->resource_entry.offset > lte2->resource_entry.offset)
-		return 1;
-	else
+
+	v = (int)lte1->resource_location - (int)lte2->resource_location;
+
+	/* Different resource locations?  */
+	if (v)
+		return v;
+
+	switch (lte1->resource_location) {
+	case RESOURCE_IN_WIM:
+
+		/* Different (possibly split) WIMs?  */
+		if (lte1->wim != lte2->wim) {
+			v = memcmp(lte1->wim->hdr.guid, lte2->wim->hdr.guid,
+				   WIM_GID_LEN);
+			if (v)
+				return v;
+		}
+
+		/* Different part numbers in the same WIM?  */
+		v = (int)lte1->wim->hdr.part_number - (int)lte2->wim->hdr.part_number;
+		if (v)
+			return v;
+
+		/* Compare by offset.  */
+		if (lte1->resource_entry.offset < lte2->resource_entry.offset)
+			return -1;
+		else if (lte1->resource_entry.offset > lte2->resource_entry.offset)
+			return 1;
 		return 0;
+	case RESOURCE_IN_FILE_ON_DISK:
+#ifdef __WIN32__
+	case RESOURCE_WIN32_ENCRYPTED:
+#endif
+		/* Compare files by path: just a heuristic that will place files
+		 * in the same directory next to each other.  */
+		return tstrcmp(lte1->file_on_disk, lte2->file_on_disk);
+#ifdef WITH_NTFS_3G
+	case RESOURCE_IN_NTFS_VOLUME:
+		return tstrcmp(lte1->ntfs_loc->path, lte2->ntfs_loc->path);
+#endif
+	default:
+		/* No additional sorting order defined for this resource
+		 * location (e.g. RESOURCE_IN_ATTACHED_BUFFER); simply compare
+		 * everything equal to each other.  */
+		return 0;
+	}
 }
+
+int
+sort_stream_list_by_sequential_order(struct list_head *stream_list,
+				     size_t list_head_offset)
+{
+	struct list_head *cur;
+	struct wim_lookup_table_entry **array;
+	size_t i;
+	size_t array_size;
+	size_t num_streams = 0;
+
+	list_for_each(cur, stream_list)
+		num_streams++;
+
+	array_size = num_streams * sizeof(array[0]);
+	array = MALLOC(array_size);
+	if (!array)
+		return WIMLIB_ERR_NOMEM;
+	cur = stream_list->next;
+	for (i = 0; i < num_streams; i++) {
+		array[i] = (struct wim_lookup_table_entry*)((u8*)cur -
+							    list_head_offset);
+		cur = cur->next;
+	}
+
+	qsort(array, num_streams, sizeof(array[0]),
+	      cmp_streams_by_sequential_order);
+
+	INIT_LIST_HEAD(stream_list);
+	for (i = 0; i < num_streams; i++) {
+		list_add_tail((struct list_head*)
+			       ((u8*)array[i] + list_head_offset),
+			      stream_list);
+	}
+	FREE(array);
+	return 0;
+}
+
 
 static int
 add_lte_to_array(struct wim_lookup_table_entry *lte,
@@ -333,7 +420,7 @@ for_lookup_table_entry_pos_sorted(struct wim_lookup_table *table,
 	wimlib_assert(p == lte_array + num_streams);
 
 	qsort(lte_array, num_streams, sizeof(lte_array[0]),
-	      cmp_streams_by_wim_position);
+	      cmp_streams_by_sequential_order);
 	ret = 0;
 	for (size_t i = 0; i < num_streams; i++) {
 		ret = visitor(lte_array[i], arg);

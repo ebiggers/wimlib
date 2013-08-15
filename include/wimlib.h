@@ -327,9 +327,10 @@ enum wimlib_progress_msg {
 	 * ::wimlib_progress_info.integrity. */
 	WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
 
-	/** A wimlib_join() operation is in progress.  @a info will point to
-	 * ::wimlib_progress_info.join. */
-	WIMLIB_PROGRESS_MSG_JOIN_STREAMS,
+	/** Reserved.  (Previously used for WIMLIB_PROGRESS_MSG_JOIN_STREAMS,
+	 * but in wimlib v1.5.0 this was removed to simplify the code and now
+	 * you'll get ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages instead.)  */
+	WIMLIB_PROGRESS_MSG_RESERVED,
 
 	/** A wimlib_split() operation is in progress, and a new split part is
 	 * about to be started.  @a info will point to
@@ -371,6 +372,7 @@ union wimlib_progress_info {
 		 * (The actual number of bytes will be less if the data is being
 		 * written compressed.) */
 		uint64_t total_bytes;
+
 		/** Number of streams that are going to be written. */
 		uint64_t total_streams;
 
@@ -384,7 +386,7 @@ union wimlib_progress_info {
 		uint64_t completed_streams;
 
 		/** Number of threads that are being used to compress resources
-		 * (if applicable). */
+		 * (if applicable).  */
 		unsigned num_threads;
 
 		/** The compression type being used to write the streams; either
@@ -393,8 +395,13 @@ union wimlib_progress_info {
 		 * ::WIMLIB_COMPRESSION_TYPE_LZX. */
 		int	 compression_type;
 
-		/** Library internal use only. */
-		uint64_t _private;
+		/** Number of split WIM parts from which streams are being
+		 * written (may be 0 if irrelevant).  */
+		unsigned total_parts;
+
+		/** Number of split WIM parts from which streams have been
+		 * written (may be 0 if irrelevant).  */
+		unsigned completed_parts;
 	} write_streams;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN and
@@ -517,25 +524,6 @@ union wimlib_progress_info {
 		 * ::WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY). */
 		const wimlib_tchar *filename;
 	} integrity;
-
-	/** Valid on messages ::WIMLIB_PROGRESS_MSG_JOIN_STREAMS. */
-	struct wimlib_progress_info_join {
-		/** Total number of bytes of compressed data contained in all
-		 * the split WIM part's file and metadata resources. */
-		uint64_t total_bytes;
-
-		/** Number of bytes that have been copied to the joined WIM so
-		 * far.  Will be 0 initially, and equal to @a total_bytes at the
-		 * end. */
-		uint64_t completed_bytes;
-
-		/** Number of split WIM parts that have had all their file and
-		 * metadata resources copied over to the joined WIM so far. */
-		unsigned completed_parts;
-
-		/** Number of split WIM parts. */
-		unsigned total_parts;
-	} join;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART and
 	 * ::WIMLIB_PROGRESS_MSG_SPLIT_END_PART. */

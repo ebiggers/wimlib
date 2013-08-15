@@ -1337,42 +1337,6 @@ dentry_extract_final(struct wim_dentry *dentry, void *_ctx)
 	return extract_timestamps(path, ctx, dentry);
 }
 
-/* Sorts a list of streams in ascending order of their offset in the WIM file in
- * order to prepare for sequential extraction.  */
-static int
-sort_stream_list_by_wim_position(struct list_head *stream_list)
-{
-	struct list_head *cur;
-	size_t num_streams;
-	struct wim_lookup_table_entry **array;
-	size_t i;
-	size_t array_size;
-
-	num_streams = 0;
-	list_for_each(cur, stream_list)
-		num_streams++;
-	array_size = num_streams * sizeof(array[0]);
-	array = MALLOC(array_size);
-	if (!array) {
-		ERROR("Failed to allocate %zu bytes to sort stream entries",
-		      array_size);
-		return WIMLIB_ERR_NOMEM;
-	}
-	cur = stream_list->next;
-	for (i = 0; i < num_streams; i++) {
-		array[i] = container_of(cur, struct wim_lookup_table_entry, extraction_list);
-		cur = cur->next;
-	}
-
-	qsort(array, num_streams, sizeof(array[0]), cmp_streams_by_wim_position);
-
-	INIT_LIST_HEAD(stream_list);
-	for (i = 0; i < num_streams; i++)
-		list_add_tail(&array[i]->extraction_list, stream_list);
-	FREE(array);
-	return 0;
-}
-
 /*
  * Extract a WIM dentry to standard output.
  *
@@ -2033,7 +1997,10 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 			      WIMLIB_EXTRACT_FLAG_FROM_PIPE))
 					== WIMLIB_EXTRACT_FLAG_SEQUENTIAL)
 	{
-		ret = sort_stream_list_by_wim_position(&ctx.stream_list);
+		ret = sort_stream_list_by_sequential_order(
+				&ctx.stream_list,
+				offsetof(struct wim_lookup_table_entry,
+					 extraction_list));
 		if (ret)
 			goto out_teardown_stream_list;
 	}

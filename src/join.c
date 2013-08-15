@@ -82,10 +82,8 @@ wimlib_join(const tchar * const *swm_names,
 	if (ret)
 		goto out_free_swms;
 
-	ret = wimlib_export_image(swm0, WIMLIB_ALL_IMAGES,
-				  wim, NULL, NULL, 0,
-				  swms, num_additional_swms,
-				  progress_func);
+	ret = wimlib_export_image(swm0, WIMLIB_ALL_IMAGES, wim, NULL, NULL, 0,
+				  swms, num_additional_swms, progress_func);
 	if (ret)
 		goto out_free_wim;
 

@@ -375,7 +375,8 @@ for_lookup_table_entry(struct wim_lookup_table *table,
 		       void *arg);
 
 extern int
-cmp_streams_by_wim_position(const void *p1, const void *p2);
+sort_stream_list_by_sequential_order(struct list_head *stream_list,
+				     size_t list_head_offset);
 
 extern int
 for_lookup_table_entry_pos_sorted(struct wim_lookup_table *table,

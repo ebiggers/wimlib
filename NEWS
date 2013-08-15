@@ -37,8 +37,11 @@ Version 1.5.0:
 	The test suite no longer fails when run in a locale where the decimal
 	separator is not a period.
 
-	WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY has been removed and
-	WIMLIB_EXTRACT_FLAG_VERBOSE re-reserved for future use.
+	From the library, WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY has been removed
+	and WIMLIB_EXTRACT_FLAG_VERBOSE re-reserved for future use.  Also,
+	WIMLIB_PROGRESS_MSG_JOIN_STREAMS has been removed, but
+	WIMLIB_PROGRESS_MSG_WRITE_STREAMS will be received instead and now
+	provides WIM part numbers.
 
 	The extraction code has been rewritten and it will now be easier to
 	support new features on all supported backends (currently Win32, UNIX,
