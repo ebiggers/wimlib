@@ -70,11 +70,11 @@ Short (DOS) names for files.
 File creation timestamps.
 .PP
 Notes: Unsupported data and metadata is simply not extracted, but
-\fB@IMAGEX_PROGNAME@\fR always warns you when the contents of the WIM image
-can't be exactly represented when extracted.  Last access and last modification
-timestamps are specified to 100 nanosecond granularity in the WIM file, but will
-only be extracted to the highest precision supported by the underlying operating
-system, C library, and filesystem.
+\fB@IMAGEX_PROGNAME@\fR will attempt to warn you when the contents of the WIM
+image can't be exactly represented when extracted.  Last access and last
+modification timestamps are specified to 100 nanosecond granularity in the WIM
+file, but will only be extracted to the highest precision supported by the
+underlying operating system, C library, and filesystem.
 .SH NTFS VOLUME EXTRACTION (UNIX)
 This section documents how \fB@IMAGEX_PROGNAME@ apply\fR extracts a WIM image
 directly to an NTFS volume image on UNIX-like systems.  See \fBDIRECTORY EXTRACTION
@@ -209,9 +209,9 @@ Hard links, if supported by the filesystem.
 .PP
 Additional notes about extracting files on Windows:
 .IP \[bu] 4
-\fB@IMAGEX_PROGNAME@\fR will always issue a warning when it is unable to extract
-the exact metadata and data of the WIM image, for example due to features
-mentioned above not being supported by the target filesystem.
+\fB@IMAGEX_PROGNAME@\fR will issue a warning when it is unable to extract the
+exact metadata and data of the WIM image, for example due to features mentioned
+above not being supported by the target filesystem.
 .IP \[bu]
 Since encrypted files (with FILE_ATTRIBUTE_ENCRYPTED) are not stored in
 plaintext in the WIM image, \fB@IMAGEX_PROGNAME@\fR cannot restore encrypted

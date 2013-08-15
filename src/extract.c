@@ -1649,76 +1649,90 @@ static int
 do_feature_check(const struct wim_features *required_features,
 		 const struct wim_features *supported_features,
 		 int extract_flags,
-		 const struct apply_operations *ops)
+		 const struct apply_operations *ops,
+		 const tchar *wim_source_path)
 {
+	const tchar *loc;
+	const tchar *mode = "this extraction mode";
+
+	if (wim_source_path[0] == '\0')
+		loc = "the WIM image";
+	else
+		loc = wim_source_path;
+
+	/* We're an archive program, so theoretically we can do what we want
+	 * with FILE_ATTRIBUTE_ARCHIVE (which is a dumb flag anyway).  Don't
+	 * bother the user about it.  */
+#if 0
 	if (required_features->archive_files && !supported_features->archive_files)
 	{
 		WARNING(
-          "%lu files are marked as archived, but this attribute\n"
-"          is not supported in this extraction mode or volume.",
-			required_features->archive_files);
+          "%lu files in %"TS" are marked as archived, but this attribute\n"
+"          is not supported in %"TS".",
+			required_features->archive_files, loc, mode);
 	}
+#endif
 
 	if (required_features->hidden_files && !supported_features->hidden_files)
 	{
 		WARNING(
-          "%lu files are marked as hidden, but this attribute\n"
-"          is not supported in this extraction mode or volume.",
-			required_features->hidden_files);
+          "%lu files in %"TS" are marked as hidden, but this\n"
+"          attribute is not supported in %"TS".",
+			required_features->hidden_files, loc, mode);
 	}
 
 	if (required_features->system_files && !supported_features->system_files)
 	{
 		WARNING(
-          "%lu files are marked as system files, but this attribute\n"
-"          is not supported in this extraction mode or volume.",
-			required_features->system_files);
+          "%lu files in %"TS" are marked as system files,\n"
+"          but this attribute is not supported in %"TS".",
+			required_features->system_files, loc, mode);
 	}
 
 	if (required_features->compressed_files && !supported_features->compressed_files)
 	{
 		WARNING(
-          "%lu files are marked as being transparently compressed, but\n"
-"          transparent compression is not supported in this extraction\n"
-"          mode or volume.  These files will be extracted as uncompressed.",
-			required_features->compressed_files);
+          "%lu files in %"TS" are marked as being transparently\n"
+"          compressed, but transparent compression is not supported in\n"
+"          %"TS".  These files will be extracted as uncompressed.",
+			required_features->compressed_files, loc, mode);
 	}
 
 	if (required_features->encrypted_files && !supported_features->encrypted_files)
 	{
 		WARNING(
-          "%lu files are marked as being encrypted, but encryption is not\n"
-"          supported in this extraction mode or volume.  These files will be\n"
-"          extracted as raw encrypted data instead.",
-			required_features->encrypted_files);
+          "%lu files in %"TS" are marked as being encrypted,\n"
+"           but encryption is not supported in %"TS".  These files\n"
+"           will be extracted as raw encrypted data instead.",
+			required_features->encrypted_files, loc, mode);
 	}
 
 	if (required_features->not_context_indexed_files &&
 	    !supported_features->not_context_indexed_files)
 	{
 		WARNING(
-          "%lu files are marked as not content indexed, but this attribute\n"
-"          is not supported in this extraction mode or volume.",
-			required_features->not_context_indexed_files);
+          "%lu files in %"TS" are marked as not content indexed,\n"
+"          but this attribute is not supported in %"TS".",
+			required_features->not_context_indexed_files, loc, mode);
 	}
 
 	if (required_features->sparse_files && !supported_features->sparse_files)
 	{
 		WARNING(
-          "%lu files are marked as sparse, but creating sparse files is not\n"
-"          supported in this extraction mode or volume.  These files will be\n"
-"          extracted as non-sparse.",
-			required_features->not_context_indexed_files);
+          "%lu files in %"TS" are marked as sparse, but creating\n"
+"           sparse files is not supported in %"TS".  These files\n"
+"           will be extracted as non-sparse.",
+			required_features->sparse_files, loc, mode);
 	}
 
 	if (required_features->named_data_streams &&
 	    !supported_features->named_data_streams)
 	{
 		WARNING(
-          "%lu files contain one or more alternate (named) data streams,\n"
-"          which are not supported in this extraction mode or volume.\n"
+          "%lu files in %"TS" contain one or more alternate (named)\n"
+"          data streams, which are not supported in %"TS".\n"
 "          Alternate data streams will NOT be extracted.",
-			required_features->named_data_streams);
+			required_features->named_data_streams, loc, mode);
 	}
 
 	if (unlikely(extract_flags & (WIMLIB_EXTRACT_FLAG_HARDLINK |
@@ -1727,19 +1741,19 @@ do_feature_check(const struct wim_features *required_features,
 	    supported_features->named_data_streams)
 	{
 		WARNING(
-          "%lu files contain one or more alternate (named) data streams,\n"
-"          which are not supported in linked extraction mode.\n"
+          "%lu files in %"TS" contain one or more alternate (named)\n"
+"          data streams, which are not supported in linked extraction mode.\n"
 "          Alternate data streams will NOT be extracted.",
-			required_features->named_data_streams);
+			required_features->named_data_streams, loc);
 	}
 
 	if (required_features->hard_links && !supported_features->hard_links)
 	{
 		WARNING(
-          "%lu files are hard links, but hard links are not supported in\n"
-"          this extraction mode or volume.  Hard links will be extracted as\n"
+          "%lu files in %"TS" are hard links, but hard links are\n"
+"          not supported in %"TS".  Hard links will be extracted as\n"
 "          duplicate copies of the linked files.",
-			required_features->hard_links);
+			required_features->hard_links, loc, mode);
 	}
 
 	if (required_features->reparse_points && !supported_features->reparse_points)
@@ -1747,16 +1761,17 @@ do_feature_check(const struct wim_features *required_features,
 		if (supported_features->symlink_reparse_points) {
 			if (required_features->other_reparse_points) {
 				WARNING(
-          "%lu files are reparse points that are neither symbolic links\n"
-"          nor junction points and are not supported in this extraction mode\n"
-"          or volume.  These reparse points will not be extracted.",
-					required_features->other_reparse_points);
+          "%lu files in %"TS" are reparse points that are neither\n"
+"          symbolic links nor junction points and are not supported in\n"
+"          %"TS".  These reparse points will not be extracted.",
+					required_features->other_reparse_points, loc,
+					mode);
 			}
 		} else {
 			WARNING(
-          "%lu files are reparse points, which are not supported in this\n"
-"          extraction mode or volume and will not be extracted.",
-				required_features->reparse_points);
+          "%lu files in %"TS" are reparse points, which are\n"
+"          not supported in %"TS" and will not be extracted.",
+				required_features->reparse_points, loc, mode);
 		}
 	}
 
@@ -1764,40 +1779,37 @@ do_feature_check(const struct wim_features *required_features,
 	    !supported_features->security_descriptors)
 	{
 		WARNING(
-          "%lu files have Windows NT security descriptors, but extracting\n"
-"          security descriptors is not supported in this extraction mode\n"
-"          or volume.  No security descriptors will be extracted.",
-			required_features->security_descriptors);
+          "%lu files in %"TS" have Windows NT security descriptors,\n"
+"          but extracting security descriptors is not supported in\n"
+"          %"TS".  No security descriptors will be extracted.",
+			required_features->security_descriptors, loc, mode);
 	}
 
 	if (required_features->short_names && !supported_features->short_names)
 	{
 		WARNING(
-          "%lu files have short (DOS) names, but extracting short names\n"
-"          is not supported in this extraction mode or volume.  Short names\n"
-"          will not be extracted.\n",
-			required_features->short_names);
+          "%lu files in %"TS" have short (DOS) names, but\n"
+"          extracting short names is not supported in %"TS".\n"
+"          Short names will not be extracted.\n",
+			required_features->short_names, loc, mode);
 	}
 
 	if ((extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) &&
 	    required_features->unix_data && !supported_features->unix_data)
 	{
-		ERROR("UNIX data not supported in this extraction mode "
-		      "or volume", ops->name);
+		ERROR("Extracting UNIX data is not supported in %"TS, mode);
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 	if ((extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES) &&
 	    required_features->short_names && !supported_features->short_names)
 	{
-		ERROR("Short names are not supported in this extraction "
-		      "mode or volume", ops->name);
+		ERROR("Extracting short names is not supported in %"TS"", mode);
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 	if ((extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS) &&
 	    !ops->set_timestamps)
 	{
-		ERROR("Timestamps are not supported in this extraction "
-		      "mode or volume", ops->name);
+		ERROR("Extracting timestamps is not supported in %"TS"", mode);
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 	if (((extract_flags & (WIMLIB_EXTRACT_FLAG_STRICT_ACLS |
@@ -1806,8 +1818,7 @@ do_feature_check(const struct wim_features *required_features,
 	    required_features->security_descriptors &&
 	    !supported_features->security_descriptors)
 	{
-		ERROR("Security descriptors not supported in this extraction "
-		      "mode or volume.");
+		ERROR("Extracting security descriptors is not supported in %"TS, mode);
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
@@ -1815,7 +1826,7 @@ do_feature_check(const struct wim_features *required_features,
 	    !supported_features->hard_links)
 	{
 		ERROR("Hard link extraction mode requested, but "
-		      "extraction mode or volume does not support hard links!");
+		      "%"TS" does not support hard links!", mode);
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
@@ -1823,8 +1834,8 @@ do_feature_check(const struct wim_features *required_features,
 	    !supported_features->symlink_reparse_points)
 	{
 		ERROR("Symbolic link extraction mode requested, but "
-		      "extraction mode or volume does not support symbolic "
-		      "links!");
+		      "%"TS" does not support symbolic "
+		      "links!", mode);
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 	return 0;
@@ -1938,7 +1949,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 
 	dentry_tree_get_features(root, &required_features);
 	ret = do_feature_check(&required_features, &ctx.supported_features,
-			       extract_flags, ctx.ops);
+			       extract_flags, ctx.ops, wim_source_path);
 	if (ret)
 		goto out_finish_or_abort_extract;
 
