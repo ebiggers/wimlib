@@ -81,21 +81,33 @@ unix_create_directory(const tchar *path, struct apply_ctx *ctx)
 }
 
 static int
+unix_makelink(const tchar *oldpath, const tchar *newpath,
+	      int (*makelink)(const tchar *oldpath, const tchar *newpath))
+{
+	if ((*makelink)(oldpath, newpath)) {
+		if (errno == EEXIST) {
+			if (unlink(newpath))
+				return WIMLIB_ERR_LINK;
+			if ((*makelink)(oldpath, newpath))
+				return WIMLIB_ERR_LINK;
+			return 0;
+		}
+		return WIMLIB_ERR_LINK;
+	}
+	return 0;
+}
+static int
 unix_create_hardlink(const tchar *oldpath, const tchar *newpath,
 		     struct apply_ctx *ctx)
 {
-	if (link(oldpath, newpath))
-		return WIMLIB_ERR_LINK;
-	return 0;
+	return unix_makelink(oldpath, newpath, link);
 }
 
 static int
 unix_create_symlink(const tchar *oldpath, const tchar *newpath,
 		    struct apply_ctx *ctx)
 {
-	if (symlink(oldpath, newpath))
-		return WIMLIB_ERR_LINK;
-	return 0;
+	return unix_makelink(oldpath, newpath, symlink);
 }
 
 static int
