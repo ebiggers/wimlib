@@ -159,6 +159,8 @@ struct wim_dentry {
 	 * characters).  Otherwise this will always be 0. */
 	u8 extraction_skipped : 1;
 
+	u8 skeleton_extracted : 1;
+
 	/* When capturing from a NTFS volume using NTFS-3g, this flag is set on
 	 * dentries that were created from a filename in the WIN32 or WIN32+DOS
 	 * namespaces rather than the POSIX namespace.  Otherwise this will
@@ -310,6 +312,9 @@ struct wim_inode {
 	 * default and must be cleared following the tree traversal, even in
 	 * error paths.  */
 	u8 i_visited : 1;
+
+	/* Set if the DOS name of an inode has already been extracted.  */
+	u8 i_dos_name_extracted : 1;
 
 	/* Pointer to a malloc()ed array of i_num_ads alternate data stream
 	 * entries for this inode.  */

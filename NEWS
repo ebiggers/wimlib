@@ -54,6 +54,8 @@ Version 1.5.0:
 	wimlib_split() progress messages now report the total number of parts
 	being written.
 
+	Fixed storing DOS names in NTFS-3g capture mode.
+
 	A few changes were made to the error codes returned by library routines.
 
 	To make wimlib easier to use on Windows, wimlib_global_init() now

@@ -1067,10 +1067,63 @@ dentry_extract_skeleton(struct wim_dentry *dentry, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
 	tchar path[ctx->ops->path_max];
+	struct wim_dentry *orig_dentry;
+	struct wim_dentry *other_dentry;
+	int ret;
 
+	/* Here we may re-order the extraction of multiple names (hard links)
+	 * for the same file in the same directory in order to ensure the short
+	 * (DOS) name is set correctly.  A short name is always associated with
+	 * exactly one long name, and at least on NTFS, only one long name for a
+	 * file can have a short name associated with it.  (More specifically,
+	 * there can be unlimited names in the POSIX namespace, but only one
+	 * name can be in the Win32+DOS namespace, or one name in the Win32
+	 * namespace with a corresponding name in the DOS namespace.) To ensure
+	 * the short name of a file is associated with the correct long name in
+	 * a directory, we extract the long name with a corresponding short name
+	 * before any additional names.  This can affect NTFS-3g extraction
+	 * (which uses ntfs_set_ntfs_dos_name(), which doesn't allow specifying
+	 * the long name to associate with a short name) and may affect Win32
+	 * extraction as well (which uses SetFileShortName()).  */
+
+	if (dentry->skeleton_extracted)
+		return 0;
+	orig_dentry = NULL;
+	if (ctx->supported_features.short_names
+	    && !dentry_has_short_name(dentry)
+	    && !dentry->d_inode->i_dos_name_extracted)
+	{
+		inode_for_each_dentry(other_dentry, dentry->d_inode) {
+			if (dentry_has_short_name(other_dentry)
+			    && !other_dentry->skeleton_extracted
+			    && other_dentry->parent == dentry->parent)
+			{
+				DEBUG("Creating %"TS" before %"TS" "
+				      "to guarantee correct DOS name extraction",
+				      dentry_full_path(other_dentry),
+				      dentry_full_path(dentry));
+				orig_dentry = dentry;
+				dentry = other_dentry;
+				break;
+			}
+		}
+	}
+again:
 	if (!build_extraction_path(path, dentry, ctx))
 		return 0;
-	return do_dentry_extract_skeleton(path, dentry, ctx);
+	ret = do_dentry_extract_skeleton(path, dentry, ctx);
+	if (ret)
+		return ret;
+
+	dentry->skeleton_extracted = 1;
+
+	if (orig_dentry) {
+		dentry = orig_dentry;
+		orig_dentry = NULL;
+		goto again;
+	}
+	dentry->d_inode->i_dos_name_extracted = 1;
+	return 0;
 }
 
 /* Create a file or directory, then immediately extract all streams.  This
@@ -1083,12 +1136,12 @@ dentry_extract(struct wim_dentry *dentry, void *_ctx)
 	tchar path[ctx->ops->path_max];
 	int ret;
 
-	if (!build_extraction_path(path, dentry, ctx))
-		return 0;
-
-	ret = do_dentry_extract_skeleton(path, dentry, ctx);
+	ret = dentry_extract_skeleton(dentry, ctx);
 	if (ret)
 		return ret;
+
+	if (!build_extraction_path(path, dentry, ctx))
+		return 0;
 
 	return extract_streams(path, ctx, dentry, NULL, NULL);
 }
@@ -1578,9 +1631,11 @@ dentry_reset_needs_extraction(struct wim_dentry *dentry, void *_ignore)
 
 	dentry->extraction_skipped = 0;
 	dentry->was_hardlinked = 0;
+	dentry->skeleton_extracted = 0;
 	inode->i_visited = 0;
 	FREE(inode->i_extracted_file);
 	inode->i_extracted_file = NULL;
+	inode->i_dos_name_extracted = 0;
 	if ((void*)dentry->extraction_name != (void*)dentry->file_name)
 		FREE(dentry->extraction_name);
 	dentry->extraction_name = NULL;

@@ -24,34 +24,23 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
 
 #ifdef WITH_NTFS_3G
 
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-
-#endif
 #include <errno.h>
 #include <stdlib.h>
-#include <time.h> /* NTFS-3g headers are missing <time.h> include */
-#include <unistd.h>
+
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#endif
 
 #include <ntfs-3g/attrib.h>
-#include <ntfs-3g/endians.h>
-#include <ntfs-3g/layout.h>
-#include <ntfs-3g/misc.h>
 #include <ntfs-3g/reparse.h>
-#include <ntfs-3g/security.h> /* ntfs-3g/security.h before ntfs-3g/xattrs.h */
-#include <ntfs-3g/types.h>
+#include <ntfs-3g/security.h>
 #include <ntfs-3g/volume.h>
-#include <ntfs-3g/xattrs.h>
-
-#include <ntfs-3g/acls.h> /* This should be included last as it requires
-			     definitions from above not included by itself */
 
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
@@ -333,13 +322,13 @@ struct dos_name_node {
 	struct rb_node rb_node;
 	char dos_name[24];
 	int name_nbytes;
-	u64 ntfs_ino;
+	le64 ntfs_ino;
 };
 
 /* Inserts a new DOS name into the map */
 static int
 insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
-		size_t name_nbytes, u64 ntfs_ino)
+		size_t name_nbytes, le64 ntfs_ino)
 {
 	struct dos_name_node *new_node;
 	struct rb_node **p;
@@ -379,13 +368,13 @@ insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
 			 * have multiple DOS names, and we only should get each
 			 * DOS name entry once from the ntfs_readdir() calls. */
 			ERROR("NTFS inode %"PRIu64" has multiple DOS names",
-			      ntfs_ino);
+				le64_to_cpu(ntfs_ino));
 			return -1;
 		}
 	}
 	rb_link_node(&new_node->rb_node, rb_parent, p);
 	rb_insert_color(&new_node->rb_node, root);
-	DEBUG("Inserted DOS name for inode %"PRIu64, ntfs_ino);
+	DEBUG("Inserted DOS name for inode %"PRIu64, le64_to_cpu(ntfs_ino));
 	return 0;
 }
 
@@ -452,7 +441,6 @@ destroy_dos_name_map(struct dos_name_map *map)
 
 struct readdir_ctx {
 	struct wim_dentry *parent;
-	ntfs_inode *dir_ni;
 	char *path;
 	size_t path_len;
 	struct dos_name_map *dos_name_map;
@@ -462,7 +450,6 @@ struct readdir_ctx {
 
 static int
 build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
-				 ntfs_inode *dir_ni,
 				 ntfs_inode *ni,
 				 char *path,
 				 size_t path_len,
@@ -513,7 +500,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 
 	/* Open the inode for this directory entry and recursively capture the
 	 * directory tree rooted at it */
-	ntfs_inode *ni = ntfs_inode_open(ctx->dir_ni->vol, mref);
+	ntfs_inode *ni = ntfs_inode_open(ctx->vol, mref);
 	if (!ni) {
 		/* XXX This used to be treated as an error, but NTFS-3g seemed
 		 * to be unable to read some inodes on a Windows 8 image for
@@ -529,8 +516,8 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	memcpy(ctx->path + path_len, mbs_name, mbs_name_nbytes + 1);
 	path_len += mbs_name_nbytes;
 	child = NULL;
-	ret = build_dentry_tree_ntfs_recursive(&child, ctx->dir_ni,
-					       ni, ctx->path, path_len, name_type,
+	ret = build_dentry_tree_ntfs_recursive(&child, ni, ctx->path,
+					       path_len, name_type,
 					       ctx->vol, ctx->params);
 	path_len -= mbs_name_nbytes + 1;
 	if (child)
@@ -549,7 +536,6 @@ out:
  */
 static int
 build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
-				 ntfs_inode *dir_ni,
 				 ntfs_inode *ni,
 				 char *path,
 				 size_t path_len,
@@ -580,12 +566,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	}
 
 	/* Get file attributes */
-	struct SECURITY_CONTEXT ctx;
-	memset(&ctx, 0, sizeof(ctx));
-	ctx.vol = vol;
-	ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ATTRIB,
-					 ni, dir_ni, (char *)&attributes,
-					 sizeof(attributes));
+	ret = ntfs_get_ntfs_attrib(ni, (char*)&attributes, sizeof(attributes));
 	if (ret != sizeof(attributes)) {
 		ERROR_WITH_ERRNO("Failed to get NTFS attributes from \"%s\"", path);
 		return WIMLIB_ERR_NTFS_3G;
@@ -607,13 +588,14 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	if (ret)
 		return ret;
 
+	if (name_type & FILE_NAME_WIN32) /* Win32 or Win32+DOS name (rather than POSIX) */
+		root->is_win32_name = 1;
+
 	inode = root->d_inode;
 
 	if (inode->i_nlink > 1) /* Shared inode; nothing more to do */
 		goto out;
 
-	if (name_type & FILE_NAME_WIN32) /* Win32 or Win32+DOS name (rather than POSIX) */
-		root->is_win32_name = 1;
 	inode->i_creation_time    = le64_to_cpu(ni->creation_time);
 	inode->i_last_write_time  = le64_to_cpu(ni->last_data_change_time);
 	inode->i_last_access_time = le64_to_cpu(ni->last_access_time);
@@ -644,7 +626,6 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		struct dos_name_map dos_name_map = { .rb_root = {.rb_node = NULL} };
 		struct readdir_ctx ctx = {
 			.parent          = root,
-			.dir_ni          = ni,
 			.path            = path,
 			.path_len        = path_len,
 			.dos_name_map    = &dos_name_map,
@@ -671,17 +652,19 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		inode->i_not_rpfixed = 0;
 
 	if (!(params->add_flags & WIMLIB_ADD_FLAG_NO_ACLS)) {
-		/* Get security descriptor */
+		struct SECURITY_CONTEXT sec_ctx;
 		char _sd[1];
-		char *sd = _sd;
+		char *sd;
+
+		/* Get security descriptor */
+		memset(&sec_ctx, 0, sizeof(sec_ctx));
+		sec_ctx.vol = vol;
+
 		errno = 0;
-		ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ACL,
-						 ni, dir_ni, sd,
-						 sizeof(sd));
-		if (ret > sizeof(sd)) {
+		ret = ntfs_get_ntfs_acl(&sec_ctx, ni, _sd, sizeof(_sd));
+		if (ret > sizeof(_sd)) {
 			sd = alloca(ret);
-			ret = ntfs_xattr_system_getxattr(&ctx, XATTR_NTFS_ACL,
-							 ni, dir_ni, sd, ret);
+			ret = ntfs_get_ntfs_acl(&sec_ctx, ni, sd, ret);
 		}
 		if (ret > 0) {
 			inode->i_security_id = sd_set_add_sd(&params->sd_set,
@@ -782,7 +765,7 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 
 	path[0] = '/';
 	path[1] = '\0';
-	ret = build_dentry_tree_ntfs_recursive(root_p, NULL, root_ni, path, 1,
+	ret = build_dentry_tree_ntfs_recursive(root_p, root_ni, path, 1,
 					       FILE_NAME_POSIX, vol, params);
 out_cleanup:
 	FREE(path);
