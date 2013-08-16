@@ -110,6 +110,7 @@ static int
 read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 		     struct integrity_table **table_ret)
 {
+	void *buf;
 	struct integrity_table *table;
 	int ret;
 
@@ -120,9 +121,10 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 	      "original_size %"PRIu64")",
 	      wim->hdr.integrity.offset, wim->hdr.integrity.original_size);
 
-	ret = res_entry_to_data(&wim->hdr.integrity, wim, (void**)&table);
+	ret = res_entry_to_data(&wim->hdr.integrity, wim, &buf);
 	if (ret)
 		return ret;
+	table = buf;
 
 	table->size        = le32_to_cpu(table->size);
 	table->num_entries = le32_to_cpu(table->num_entries);

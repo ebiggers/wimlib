@@ -1276,6 +1276,7 @@ libxml_global_cleanup(void)
 int
 read_wim_xml_data(WIMStruct *wim)
 {
+	void *buf;
 	u8 *xml_data;
 	xmlDoc *doc;
 	xmlNode *root;
@@ -1287,9 +1288,10 @@ read_wim_xml_data(WIMStruct *wim)
 	DEBUG("Reading XML data: %"PRIu64" bytes at offset %"PRIu64"",
 	      (u64)res_entry->size, res_entry->offset);
 
-	ret = res_entry_to_data(res_entry, wim, (void**)&xml_data);
+	ret = res_entry_to_data(res_entry, wim, &buf);
 	if (ret)
 		goto out;
+	xml_data = buf;
 
 	doc = xmlReadMemory((const char *)xml_data, res_entry->original_size,
 			    NULL, "UTF-16LE", 0);

@@ -61,7 +61,7 @@
 int
 read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 {
-	u8 *buf;
+	void *buf;
 	int ret;
 	struct wim_dentry *root;
 	const struct wim_lookup_table_entry *metadata_lte;
@@ -90,7 +90,7 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	}
 
 	/* Read the metadata resource into memory.  (It may be compressed.) */
-	ret = read_full_resource_into_alloc_buf(metadata_lte, (void**)&buf);
+	ret = read_full_resource_into_alloc_buf(metadata_lte, &buf);
 	if (ret)
 		return ret;
 

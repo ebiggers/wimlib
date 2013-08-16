@@ -484,7 +484,7 @@ read_wim_lookup_table(WIMStruct *wim)
 	size_t num_entries;
 	struct wim_lookup_table *table;
 	struct wim_lookup_table_entry *cur_entry, *duplicate_entry;
-	struct wim_lookup_table_entry_disk *buf;
+	void *buf;
 
 	BUILD_BUG_ON(sizeof(struct wim_lookup_table_entry_disk) !=
 		     WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE);
@@ -499,8 +499,7 @@ read_wim_lookup_table(WIMStruct *wim)
 
 
 	/* Read the lookup table into a buffer.  */
-	ret = res_entry_to_data(&wim->hdr.lookup_table_res_entry, wim,
-				(void**)&buf);
+	ret = res_entry_to_data(&wim->hdr.lookup_table_res_entry, wim, &buf);
 	if (ret)
 		goto out;
 
@@ -516,7 +515,8 @@ read_wim_lookup_table(WIMStruct *wim)
 	 * on-disk lookup table.  */
 	wim->current_image = 0;
 	for (i = 0; i < num_entries; i++) {
-		const struct wim_lookup_table_entry_disk *disk_entry = &buf[i];
+		const struct wim_lookup_table_entry_disk *disk_entry =
+			&((const struct wim_lookup_table_entry_disk*)buf)[i];
 
 		cur_entry = new_lookup_table_entry();
 		if (!cur_entry) {
