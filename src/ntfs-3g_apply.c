@@ -31,20 +31,17 @@
 
 #ifdef WITH_NTFS_3G
 
+#include <errno.h>
 #include <locale.h>
+#include <stdlib.h>
 #include <string.h>
-#include <time.h> /* NTFS-3g headers are missing <time.h> include */
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#endif
 
 #include <ntfs-3g/attrib.h>
 #include <ntfs-3g/reparse.h>
 #include <ntfs-3g/security.h>
-#include <errno.h>
-
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-#else
-#  include <stdlib.h>
-#endif
 
 #include "wimlib/apply.h"
 #include "wimlib/encoding.h"
@@ -115,7 +112,7 @@ ntfs_3g_create(const char *path, struct apply_ctx *ctx, u64 *cookie_ret,
 
 	vol = ntfs_3g_apply_ctx_get_volume(ctx);
 
-	ret = WIMLIB_ERR_NTFS_3G;
+	ret = WIMLIB_ERR_OPEN;
 	dir_ni = ntfs_3g_open_parent_inode(path, vol);
 	if (!dir_ni)
 		goto out;
@@ -126,7 +123,7 @@ ntfs_3g_create(const char *path, struct apply_ctx *ctx, u64 *cookie_ret,
 	if (ret)
 		goto out_close_dir_ni;
 
-	ret = WIMLIB_ERR_NTFS_3G;
+	ret = WIMLIB_ERR_OPEN;
 	ni = ntfs_create(dir_ni, 0, name_utf16le,
 			 name_utf16le_nbytes / 2, mode);
 	if (!ni)
@@ -139,7 +136,7 @@ out_free_name_utf16le:
 	FREE(name_utf16le);
 out_close_dir_ni:
 	if (ntfs_inode_close(dir_ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_WRITE;
 out:
 	return ret;
 }
@@ -171,12 +168,12 @@ ntfs_3g_create_hardlink(const char *oldpath, const char *newpath,
 
 	vol = ntfs_3g_apply_ctx_get_volume(ctx);
 
-	ret = WIMLIB_ERR_NTFS_3G;
+	ret = WIMLIB_ERR_OPEN;
 	ni = ntfs_pathname_to_inode(vol, NULL, oldpath);
 	if (!ni)
 		goto out;
 
-	ret = WIMLIB_ERR_NTFS_3G;
+	ret = WIMLIB_ERR_OPEN;
 	dir_ni = ntfs_3g_open_parent_inode(newpath, vol);
 	if (!dir_ni)
 		goto out_close_ni;
@@ -188,14 +185,14 @@ ntfs_3g_create_hardlink(const char *oldpath, const char *newpath,
 		goto out_close_dir_ni;
 	ret = 0;
 	if (ntfs_link(ni, dir_ni, name_utf16le, name_utf16le_nbytes / 2))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_LINK;
 	FREE(name_utf16le);
 out_close_dir_ni:
 	if (ntfs_inode_close(dir_ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_WRITE;
 out_close_ni:
 	if (ntfs_inode_close(ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_WRITE;
 out:
 	return ret;
 }
@@ -228,13 +225,13 @@ ntfs_3g_extract_stream(file_spec_t file, const utf16lechar *raw_stream_name,
 		goto out;
 
 	/* Open NTFS inode to which to extract the stream.  */
-	ret = WIMLIB_ERR_NTFS_3G;
+	ret = WIMLIB_ERR_OPEN;
 	ni = ntfs_inode_open(ntfs_3g_apply_ctx_get_volume(ctx), file.cookie);
 	if (!ni)
 		goto out;
 
 	/* Add the stream if it's not the default (unnamed) stream.  */
-	ret = WIMLIB_ERR_NTFS_3G;
+	ret = WIMLIB_ERR_OPEN;
 	if (stream_name_nchars)
 		if (ntfs_attr_add(ni, AT_DATA, stream_name,
 				  stream_name_nchars, NULL, 0))
@@ -246,13 +243,23 @@ ntfs_3g_extract_stream(file_spec_t file, const utf16lechar *raw_stream_name,
 		goto out_close;
 
 	/* Open the stream (NTFS attribute).  */
-	ret = WIMLIB_ERR_NTFS_3G;
+	ret = WIMLIB_ERR_OPEN;
 	na = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_nchars);
 	if (!na)
 		goto out_close;
 
-	/* (Optional) Immediately resize attribute to size of stream.  */
-	ret = WIMLIB_ERR_NTFS_3G;
+	/* (Optional) Immediately resize attribute to size of stream.
+	 *
+	 * This dramatically speeds up extraction, as demonstrated with the
+	 * following timing results:
+	 *
+	 * 18 mins. 27 sec. to apply Windows 7 image (with resize)
+	 * 32 mins. 45 sec. to apply Windows 7 image (no resize)
+	 *
+	 * It probably would speed things up even more if we could get NTFS-3g
+	 * to skip even more useless work (for example it fills resized
+	 * attributes with 0's, then we just override it.)  */
+	ret = WIMLIB_ERR_WRITE;
 	if (ntfs_attr_truncate_solid(na, wim_resource_size(lte)))
 		goto out_attr_close;
 
@@ -266,7 +273,7 @@ out_attr_close:
 	ntfs_attr_close(na);
 out_close:
 	if (ntfs_inode_close(ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_WRITE;
 out:
 	if (ret && !errno)
 		errno = -1;
@@ -299,11 +306,11 @@ ntfs_3g_set_file_attributes(const char *path, u32 attributes,
 
 	ni = ntfs_3g_apply_pathname_to_inode(path, ctx);
 	if (!ni)
-		return WIMLIB_ERR_NTFS_3G;
+		return WIMLIB_ERR_OPEN;
 	if (ntfs_set_ntfs_attrib(ni, (const char*)&attributes, sizeof(u32), 0))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_SET_ATTRIBUTES;
 	if (ntfs_inode_close(ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_WRITE;
 	return ret;
 }
 
@@ -316,11 +323,11 @@ ntfs_3g_set_reparse_data(const char *path, const u8 *rpbuf, u16 rpbuflen,
 
 	ni = ntfs_3g_apply_pathname_to_inode(path, ctx);
 	if (!ni)
-		return WIMLIB_ERR_NTFS_3G;
+		return WIMLIB_ERR_OPEN;
 	if (ntfs_set_ntfs_reparse_data(ni, rpbuf, rpbuflen, 0))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_SET_REPARSE_DATA;
 	if (ntfs_inode_close(ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_WRITE;
 	return ret;
 }
 
@@ -340,12 +347,12 @@ ntfs_3g_set_short_name(const char *path, const utf16lechar *short_name,
 
 	vol = ntfs_3g_apply_ctx_get_volume(ctx);
 
-	ret = WIMLIB_ERR_NTFS_3G;
+	ret = WIMLIB_ERR_OPEN;
 	dir_ni = ntfs_3g_open_parent_inode(path, vol);
 	if (!dir_ni)
 		goto out;
 
-	ret = WIMLIB_ERR_NTFS_3G;
+	ret = WIMLIB_ERR_OPEN;
 	ni = ntfs_pathname_to_inode(vol, NULL, path);
 	if (!ni)
 		goto out_close_dir_ni;
@@ -358,16 +365,16 @@ ntfs_3g_set_short_name(const char *path, const utf16lechar *short_name,
 	ret = 0;
 	if (ntfs_set_ntfs_dos_name(ni, dir_ni, dosname,
 				   dosname_nbytes, 0))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_SET_SHORT_NAME;
 	/* ntfs_set_ntfs_dos_name() always closes the inodes.  */
 	FREE(dosname);
 	goto out;
 out_close_ni:
 	if (ntfs_inode_close_in_dir(ni, dir_ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_WRITE;
 out_close_dir_ni:
 	if (ntfs_inode_close(dir_ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_WRITE;
 out:
 	return ret;
 }
@@ -385,15 +392,15 @@ ntfs_3g_set_security_descriptor(const char *path, const u8 *desc, size_t desc_si
 
 	ni = ntfs_pathname_to_inode(vol, NULL, path);
 	if (!ni)
-		return WIMLIB_ERR_NTFS_3G;
+		return WIMLIB_ERR_OPEN;
 
 	memset(&sec_ctx, 0, sizeof(sec_ctx));
 	sec_ctx.vol = vol;
 
 	if (ntfs_set_ntfs_acl(&sec_ctx, ni, desc, desc_size, 0))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_SET_SECURITY;
 	if (ntfs_inode_close(ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_WRITE;
 	return ret;
 }
 
@@ -408,7 +415,7 @@ ntfs_3g_set_timestamps(const char *path, u64 creation_time,
 
 	ni = ntfs_3g_apply_pathname_to_inode(path, ctx);
 	if (!ni)
-		return WIMLIB_ERR_NTFS_3G;
+		return WIMLIB_ERR_OPEN;
 
 	/* Note: ntfs_inode_set_times() expects the times in native byte order,
 	 * not little endian. */
@@ -418,9 +425,9 @@ ntfs_3g_set_timestamps(const char *path, u64 creation_time,
 
 	if (ntfs_inode_set_times(ni, (const char*)ntfs_timestamps,
 				 sizeof(ntfs_timestamps), 0))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_SET_TIMESTAMPS;
 	if (ntfs_inode_close(ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_WRITE;
 	return ret;
 }
 
@@ -439,7 +446,7 @@ ntfs_3g_start_extract(const char *path, struct apply_ctx *ctx)
 	vol = ntfs_mount(ctx->target, 0);
 	if (!vol) {
 		ERROR_WITH_ERRNO("Failed to mount \"%"TS"\" with NTFS-3g", ctx->target);
-		return WIMLIB_ERR_NTFS_3G;
+		return WIMLIB_ERR_OPEN;
 	}
 	ntfs_3g_apply_ctx_set_volume(ctx, vol);
 
@@ -467,7 +474,7 @@ ntfs_3g_finish_or_abort_extract(struct apply_ctx *ctx)
 	if (ntfs_umount(vol, FALSE)) {
 		ERROR_WITH_ERRNO("Failed to unmount \"%"TS"\" with NTFS-3g",
 				 ctx->target);
-		return WIMLIB_ERR_NTFS_3G;
+		return WIMLIB_ERR_WRITE;
 	}
 	return 0;
 }

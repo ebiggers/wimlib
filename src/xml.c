@@ -1531,6 +1531,9 @@ wimlib_extract_xml_data(WIMStruct *wim, FILE *fp)
 	void *buf;
 	int ret;
 
+	if (!wim->filename)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	ret = res_entry_to_data(&wim->hdr.xml_res_entry, wim, &buf);
 	if (ret)
 		goto out;

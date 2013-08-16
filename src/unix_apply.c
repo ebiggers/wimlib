@@ -72,10 +72,10 @@ unix_create_directory(const tchar *path, struct apply_ctx *ctx, u64 *cookie_ret)
 		if (errno != EEXIST)
 			return WIMLIB_ERR_MKDIR;
 		if (lstat(path, &stbuf))
-			return WIMLIB_ERR_STAT;
+			return WIMLIB_ERR_MKDIR;
 		errno = EEXIST;
 		if (!S_ISDIR(stbuf.st_mode))
-			return WIMLIB_ERR_NOTDIR;
+			return WIMLIB_ERR_MKDIR;
 	}
 	return 0;
 }

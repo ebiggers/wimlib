@@ -1945,6 +1945,15 @@ do_feature_check(const struct wim_features *required_features,
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
+	if ((extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS) &&
+	    required_features->symlink_reparse_points &&
+	    !(supported_features->symlink_reparse_points ||
+	      supported_features->reparse_points))
+	{
+		ERROR("Extracting symbolic links is not supported in %"TS, mode);
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+
 	if ((extract_flags & WIMLIB_EXTRACT_FLAG_SYMLINK) &&
 	    !supported_features->symlink_reparse_points)
 	{

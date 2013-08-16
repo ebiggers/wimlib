@@ -54,6 +54,9 @@
  *	WIMLIB_ERR_SUCCESS (0)
  *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
  *	WIMLIB_ERR_NOMEM
+ *	WIMLIB_ERR_READ
+ *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE
+ *	WIMLIB_ERR_DECOMPRESSION
  */
 int
 read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)

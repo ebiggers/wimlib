@@ -925,17 +925,6 @@ do_print_lookup_table_entry(struct wim_lookup_table_entry *lte, void *fp)
 	return 0;
 }
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI void
-wimlib_print_lookup_table(WIMStruct *wim)
-{
-	for (int i = 0; i < wim->hdr.image_count; i++)
-		print_lookup_table_entry(wim->image_metadata[i]->metadata_lte, stdout);
-	for_lookup_table_entry(wim->lookup_table,
-			       do_print_lookup_table_entry,
-			       stdout);
-}
-
 /* Given a SHA1 message digest, return the corresponding entry in the WIM's
  * lookup table, or NULL if there is none.  */
 struct wim_lookup_table_entry *

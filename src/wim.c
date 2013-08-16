@@ -63,13 +63,6 @@ image_print_metadata(WIMStruct *wim)
 }
 
 
-static int
-image_print_files(WIMStruct *wim)
-{
-	return for_dentry_in_tree(wim_root_dentry(wim), print_dentry_full_path,
-				  NULL);
-}
-
 static WIMStruct *
 new_wim_struct(void)
 {
@@ -254,33 +247,6 @@ wimlib_resolve_image(WIMStruct *wim, const tchar *image_name_or_num)
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI void
-wimlib_print_wim_information(const WIMStruct *wim)
-{
-	struct wimlib_wim_info info;
-
-	wimlib_get_wim_info((WIMStruct*)wim, &info);
-
-	tputs(T("WIM Information:"));
-	tputs(T("----------------"));
-	tprintf(T("Path:           %"TS"\n"), wim->filename);
-	tfputs(T("GUID:           0x"), stdout);
-	print_byte_field(info.guid, WIM_GID_LEN, stdout);
-	tputchar(T('\n'));
-	tprintf(T("Image Count:    %d\n"), info.image_count);
-	tprintf(T("Compression:    %"TS"\n"),
-		wimlib_get_compression_type_string(info.compression_type));
-	tprintf(T("Part Number:    %d/%d\n"), info.part_number, info.total_parts);
-	tprintf(T("Boot Index:     %d\n"), info.boot_index);
-	tprintf(T("Size:           %"PRIu64" bytes\n"), info.total_bytes);
-	tprintf(T("Integrity Info: %"TS"\n"),
-		info.has_integrity_table ? T("yes") : T("no"));
-	tprintf(T("Relative path junction: %"TS"\n"),
-		info.has_rpfix ? T("yes") : T("no"));
-	tputchar(T('\n'));
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI void
 wimlib_print_available_images(const WIMStruct *wim, int image)
 {
 	int first;
@@ -323,19 +289,6 @@ wimlib_print_metadata(WIMStruct *wim, int image)
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_print_files(WIMStruct *wim, int image)
-{
-	if (wim->hdr.part_number != 1) {
-		ERROR("Cannot list the files from part %hu of a %hu-part split WIM!",
-		       wim->hdr.part_number, wim->hdr.total_parts);
-		ERROR("Select the first part of the split WIM if you'd like to list the files.");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-	}
-	return for_image(wim, image, image_print_files);
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
 wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 {
 	memset(info, 0, sizeof(struct wimlib_wim_info));
@@ -361,59 +314,6 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 	info->spanned = (wim->hdr.flags & WIM_HDR_FLAG_SPANNED) != 0;
 	info->pipable = wim_is_pipable(wim);
 	return 0;
-}
-
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_get_boot_idx(const WIMStruct *wim)
-{
-	struct wimlib_wim_info info;
-
-	wimlib_get_wim_info((WIMStruct*)wim, &info);
-	return info.boot_index;
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_get_compression_type(const WIMStruct *wim)
-{
-	struct wimlib_wim_info info;
-
-	wimlib_get_wim_info((WIMStruct*)wim, &info);
-	return info.compression_type;
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_get_num_images(const WIMStruct *wim)
-{
-	struct wimlib_wim_info info;
-
-	wimlib_get_wim_info((WIMStruct*)wim, &info);
-	return info.image_count;
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_get_part_number(const WIMStruct *wim, int *total_parts_ret)
-{
-	struct wimlib_wim_info info;
-
-	wimlib_get_wim_info((WIMStruct*)wim, &info);
-	if (total_parts_ret)
-		*total_parts_ret = info.total_parts;
-	return info.part_number;
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI bool
-wimlib_has_integrity_table(const WIMStruct *wim)
-{
-	struct wimlib_wim_info info;
-
-	wimlib_get_wim_info((WIMStruct*)wim, &info);
-	return info.has_integrity_table;
 }
 
 /* API function documented in wimlib.h  */
@@ -455,16 +355,6 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int whic
 			wim->hdr.flags &= ~WIM_HDR_FLAG_RP_FIX;
 	}
 	return 0;
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_set_boot_idx(WIMStruct *wim, int boot_idx)
-{
-	struct wimlib_wim_info info;
-
-	info.boot_index = boot_idx;
-	return wimlib_set_wim_info(wim, &info, WIMLIB_CHANGE_BOOT_INDEX);
 }
 
 static int

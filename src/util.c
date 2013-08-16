@@ -381,11 +381,15 @@ static const tchar *error_strings[] = {
 	[WIMLIB_ERR_RESOURCE_ORDER]
 		= T("The components of the WIM were arranged in an unexpected order"),
 	[WIMLIB_ERR_SET_ATTRIBUTES]
-		= T("Failed to set file attributes"),
+		= T("Failed to set attributes on extracted file"),
+	[WIMLIB_ERR_SET_REPARSE_DATA]
+		= T("Failed to set reparse data on extracted file"),
 	[WIMLIB_ERR_SET_SECURITY]
-		= T("Failed to set file owner, group, or other permissions"),
+		= T("Failed to set file owner, group, or other permissions on extracted file"),
+	[WIMLIB_ERR_SET_SHORT_NAME]
+		= T("Failed to set short name on extracted file"),
 	[WIMLIB_ERR_SET_TIMESTAMPS]
-		= T("Failed to set file timestamps"),
+		= T("Failed to set timestamps on extracted file"),
 	[WIMLIB_ERR_SPECIAL_FILE]
 		= T("Encountered a special file that cannot be archived"),
 	[WIMLIB_ERR_SPLIT_INVALID]
