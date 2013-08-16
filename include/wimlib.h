@@ -218,6 +218,8 @@ typedef char wimlib_tchar;
 #  define _wimlib_deprecated
 #endif
 
+#define WIMLIB_GUID_LEN 16
+
 /**
  * Specifies the compression type of a WIM file.
  */
@@ -260,8 +262,9 @@ enum wimlib_progress_msg {
 	 * info will point to ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
 
-	/** Reserved.  */
-	WIMLIB_PROGRESS_MSG_EXTRACT_RESERVED,
+	/** Starting to read a new part of a split pipable WIM over the pipe.
+	 * @a info will point to ::wimlib_progress_info.extract.  */
+	WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
 
 	/** All the WIM files and directories have been extracted, and
 	 * timestamps are about to be applied.  @a info will point to
@@ -469,6 +472,19 @@ union wimlib_progress_info {
 		 * being extracted.  Will be the empty string when extracting a
 		 * full image. */
 		const wimlib_tchar *extract_root_wim_source_path;
+
+		/** Currently only used for
+		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.  */
+
+		unsigned part_number;
+
+		/** Currently only used for
+		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.  */
+		unsigned total_parts;
+
+		/** Currently only used for
+		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.  */
+		uint8_t guid[WIMLIB_GUID_LEN];
 	} extract;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_RENAME. */
@@ -645,8 +661,6 @@ struct wimlib_capture_config {
  * fixups enabled.  wimlib also treats this flag as specifying whether to do
  * reparse-point fixups by default when capturing or applying WIM images.  */
 #define WIMLIB_CHANGE_RPFIX_FLAG		0x00000008
-
-#define WIMLIB_GUID_LEN 16
 
 /** General information about a WIM file. */
 struct wimlib_wim_info {
@@ -1902,7 +1916,9 @@ wimlib_extract_image(WIMStruct *wim, int image,
  *	in this mode; also, ::WIMLIB_EXTRACT_FLAG_TO_STDOUT is invalid and will
  *	result in ::WIMLIB_ERR_INVALID_PARAM being returned.
  * @param progress_func
- *	Same as the corresponding parameter to wimlib_extract_image().
+ *	Same as the corresponding parameter to wimlib_extract_image(), except
+ *	::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN messages will also be
+ *	received.
  *
  * @return 0 on success; nonzero on error.  The possible error codes include
  * those returned by wimlib_extract_image() as well as the following:
@@ -2814,23 +2830,27 @@ wimlib_set_print_errors(bool show_messages);
  * 	the WIM may be larger than this size, and the WIM file format provides
  * 	no way to split up file resources among multiple WIMs.
  * @param write_flags
- * 	::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY if integrity tables are to be
- * 	included in the split WIM parts.
+ * 	Bitwise OR of relevant flags prefixed with @c WIMLIB_WRITE_FLAG.  These
+ * 	flags will be used to write each split WIM part.  Specify 0 here to get
+ * 	the default behavior.
  * @param progress_func
  * 	If non-NULL, a function that will be called periodically with the
- * 	progress of the current operation.
+ * 	progress of the current operation
+ * 	(::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART and
+ * 	::WIMLIB_PROGRESS_MSG_SPLIT_END_PART).
  *
  * @return 0 on success; nonzero on error.  This function may return any value
  * returned by wimlib_write() as well as the following error codes:
  *
  * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@a wim is not part 1 of a stand-alone WIM.
+ * 	@a wim was not part 1 of a stand-alone WIM.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@a swm_name was @c NULL, or @a part_size was 0.
+ * 	@a swm_name was not a nonempty string, or @a part_size was 0.
  *
  * Note: the WIM's uncompressed and compressed resources are not checksummed
  * when they are copied from the joined WIM to the split WIM parts, nor are
- * compressed resources re-compressed.
+ * compressed resources re-compressed (unless explicitly requested with
+ * ::WIMLIB_WRITE_FLAG_RECOMPRESS).
  */
 extern int
 wimlib_split(WIMStruct *wim,

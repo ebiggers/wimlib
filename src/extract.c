@@ -1269,32 +1269,38 @@ extract_stream_list(struct apply_ctx *ctx)
 /* Read the header from a stream in a pipable WIM.  */
 static int
 read_pwm_stream_header(WIMStruct *pwm, struct wim_lookup_table_entry *lte,
-		       int flags)
+		       int flags, struct wim_header_disk *hdr_ret)
 {
-	struct pwm_stream_hdr stream_hdr;
+	union {
+		struct pwm_stream_hdr stream_hdr;
+		struct wim_header_disk pwm_hdr;
+	} buf;
 	int ret;
 
-	ret = full_read(&pwm->in_fd, &stream_hdr, sizeof(stream_hdr));
+	ret = full_read(&pwm->in_fd, &buf.stream_hdr, sizeof(buf.stream_hdr));
 	if (ret)
 		goto read_error;
 
-	if ((flags & PWM_ALLOW_WIM_HDR) && stream_hdr.magic == PWM_MAGIC) {
-		u8 buf[WIM_HEADER_DISK_SIZE - sizeof(stream_hdr)];
-		ret = full_read(&pwm->in_fd, buf, sizeof(buf));
+	if ((flags & PWM_ALLOW_WIM_HDR) && buf.stream_hdr.magic == PWM_MAGIC) {
+		BUILD_BUG_ON(sizeof(buf.pwm_hdr) < sizeof(buf.stream_hdr));
+		ret = full_read(&pwm->in_fd, &buf.stream_hdr + 1,
+				sizeof(buf.pwm_hdr) - sizeof(buf.stream_hdr));
+
 		if (ret)
 			goto read_error;
 		lte->resource_location = RESOURCE_NONEXISTENT;
+		memcpy(hdr_ret, &buf.pwm_hdr, sizeof(buf.pwm_hdr));
 		return 0;
 	}
 
-	if (stream_hdr.magic != PWM_STREAM_MAGIC) {
+	if (buf.stream_hdr.magic != PWM_STREAM_MAGIC) {
 		ERROR("Data read on pipe is invalid (expected stream header).");
 		return WIMLIB_ERR_INVALID_PIPABLE_WIM;
 	}
 
-	lte->resource_entry.original_size = le64_to_cpu(stream_hdr.uncompressed_size);
-	copy_hash(lte->hash, stream_hdr.hash);
-	lte->resource_entry.flags = le32_to_cpu(stream_hdr.flags);
+	lte->resource_entry.original_size = le64_to_cpu(buf.stream_hdr.uncompressed_size);
+	copy_hash(lte->hash, buf.stream_hdr.hash);
+	lte->resource_entry.flags = le32_to_cpu(buf.stream_hdr.flags);
 	lte->resource_entry.offset = pwm->in_fd.offset;
 	lte->resource_location = RESOURCE_IN_WIM;
 	lte->wim = pwm;
@@ -1330,6 +1336,7 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 	struct wim_lookup_table_entry *found_lte;
 	struct wim_lookup_table_entry *needed_lte;
 	struct wim_lookup_table *lookup_table;
+	struct wim_header_disk pwm_hdr;
 	int ret;
 	int pwm_flags;
 
@@ -1342,8 +1349,15 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 	pwm_flags = PWM_ALLOW_WIM_HDR;
 	if ((ctx->extract_flags & WIMLIB_EXTRACT_FLAG_RESUME))
 		pwm_flags |= PWM_SILENT_EOF;
+	memcpy(ctx->progress.extract.guid, ctx->wim->hdr.guid, WIM_GID_LEN);
+	ctx->progress.extract.part_number = ctx->wim->hdr.part_number;
+	ctx->progress.extract.total_parts = ctx->wim->hdr.total_parts;
+	if (ctx->progress_func)
+		ctx->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
+				   &ctx->progress);
 	while (ctx->num_streams_remaining) {
-		ret = read_pwm_stream_header(ctx->wim, found_lte, pwm_flags);
+		ret = read_pwm_stream_header(ctx->wim, found_lte, pwm_flags,
+					     &pwm_hdr);
 		if (ret) {
 			if (ret == WIMLIB_ERR_UNEXPECTED_END_OF_FILE &&
 			    (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_RESUME))
@@ -1373,6 +1387,26 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 			ret = skip_pwm_stream(found_lte);
 			if (ret)
 				goto out_free_found_lte;
+		} else {
+			u16 part_number = le16_to_cpu(pwm_hdr.part_number);
+			u16 total_parts = le16_to_cpu(pwm_hdr.total_parts);
+
+			if (part_number != ctx->progress.extract.part_number ||
+			    total_parts != ctx->progress.extract.total_parts ||
+			    memcmp(pwm_hdr.guid, ctx->progress.extract.guid,
+				   WIM_GID_LEN))
+			{
+				ctx->progress.extract.part_number = part_number;
+				ctx->progress.extract.total_parts = total_parts;
+				memcpy(ctx->progress.extract.guid,
+				       pwm_hdr.guid, WIM_GID_LEN);
+				if (ctx->progress_func) {
+					ctx->progress_func(
+						WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
+							   &ctx->progress);
+				}
+
+			}
 		}
 	}
 	ret = 0;
@@ -2660,7 +2694,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 	 * WIMs.)  */
 	{
 		struct wim_lookup_table_entry xml_lte;
-		ret = read_pwm_stream_header(pwm, &xml_lte, 0);
+		ret = read_pwm_stream_header(pwm, &xml_lte, 0, NULL);
 		if (ret)
 			goto out_wimlib_free;
 
@@ -2720,7 +2754,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 			goto out_wimlib_free;
 		}
 
-		ret = read_pwm_stream_header(pwm, metadata_lte, 0);
+		ret = read_pwm_stream_header(pwm, metadata_lte, 0, NULL);
 		imd = pwm->image_metadata[i - 1];
 		imd->metadata_lte = metadata_lte;
 		if (ret)

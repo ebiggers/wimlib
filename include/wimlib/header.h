@@ -44,6 +44,70 @@
 			    ((u64)'\0' << 48) |		\
 			    ((u64)'\0' << 54))
 
+/* On-disk format of the WIM header. */
+struct wim_header_disk {
+
+	/* Magic characters "MSWIM\0\0\0" */
+	le64 magic;
+
+	/* Size of the WIM header, in bytes; WIM_HEADER_DISK_SIZE expected
+	 * (currently the only supported value). */
+	u32 hdr_size;
+
+	/* Version of the WIM file; WIM_VERSION expected (currently the only
+	 * supported value). */
+	u32 wim_version;
+
+	/* Flags for the WIM file (WIM_HDR_FLAG_*) */
+	u32 wim_flags;
+
+	/* Uncompressed chunk size of resources in the WIM.  0 if the WIM is
+	 * uncompressed.  If compressed, WIM_CHUNK_SIZE is expected (currently
+	 * the only supported value).  */
+	u32 chunk_size;
+
+	/* Globally unique identifier for the WIM file.  Basically a bunch of
+	 * random bytes. */
+	u8 guid[WIM_GID_LEN];
+
+	/* Number of this WIM part in the split WIM file, indexed from 1, or 1
+	 * if the WIM is not split. */
+	u16 part_number;
+
+	/* Total number of parts of the split WIM file, or 1 if the WIM is not
+	 * split. */
+	u16 total_parts;
+
+	/* Number of images in the WIM. */
+	u32 image_count;
+
+	/* Location and size of the WIM's lookup table. */
+	struct resource_entry_disk lookup_table_res_entry;
+
+	/* Location and size of the WIM's XML data. */
+	struct resource_entry_disk xml_data_res_entry;
+
+	/* Location and size of metadata resource for the bootable image of the
+	 * WIM, or all zeroes if no image is bootable. */
+	struct resource_entry_disk boot_metadata_res_entry;
+
+	/* 1-based index of the bootable image of the WIM, or 0 if no image is
+	 * bootable. */
+	u32 boot_idx;
+
+	/* Location and size of the WIM's integrity table, or all zeroes if the
+	 * WIM has no integrity table.
+	 *
+	 * Note the integrity_table_res_entry here is 4-byte aligned even though
+	 * it would ordinarily be 8-byte aligned--- hence, the _packed_attribute
+	 * on the `struct wim_header_disk' is essential. */
+	struct resource_entry_disk integrity_table_res_entry;
+
+	/* Unused bytes. */
+	u8 unused[60];
+} _packed_attribute;
+
+
 /* Header at the very beginning of the WIM file.  This is the in-memory
  * representation and does not include all fields; see `struct wim_header_disk'
  * for the on-disk structure.  */

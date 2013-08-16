@@ -1100,6 +1100,11 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		if (info->extract.completed_bytes >= info->extract.total_bytes)
 			imagex_printf(T("\n"));
 		break;
+	case WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN:
+		imagex_printf(T("\nReading split pipable WIM part %u of %u\n"),
+			      info->extract.part_number,
+			      info->extract.total_parts);
+		break;
 	case WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS:
 		if (info->extract.extract_root_wim_source_path[0] == T('\0'))
 			imagex_printf(T("Setting timestamps on all extracted files...\n"));
@@ -1127,7 +1132,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		break;
 	case WIMLIB_PROGRESS_MSG_SPLIT_END_PART:
 		if (info->split.completed_bytes == info->split.total_bytes) {
-			imagex_printf(T("Finished writing part %u of %u WIM parts\n"),
+			imagex_printf(T("Finished writing split WIM part %u of %u\n"),
 				info->split.cur_part_number,
 				info->split.total_parts);
 		}
