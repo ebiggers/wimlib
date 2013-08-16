@@ -146,6 +146,7 @@ enum {
 	IMAGEX_RECOMPRESS_OPTION,
 	IMAGEX_RECURSIVE_OPTION,
 	IMAGEX_REF_OPTION,
+	IMAGEX_RESUME_OPTION,
 	IMAGEX_RPFIX_OPTION,
 	IMAGEX_SOFT_OPTION,
 	IMAGEX_SOURCE_LIST_OPTION,
@@ -173,6 +174,7 @@ static const struct option apply_options[] = {
 	{T("rpfix"),       no_argument,       NULL, IMAGEX_RPFIX_OPTION},
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
 	{T("include-invalid-names"), no_argument,       NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
+	{T("resume"),      no_argument,       NULL, IMAGEX_RESUME_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1495,6 +1497,9 @@ imagex_apply(int argc, tchar **argv, int cmd)
 		case IMAGEX_INCLUDE_INVALID_NAMES_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES;
 			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS;
+			break;
+		case IMAGEX_RESUME_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_RESUME;
 			break;
 		default:
 			goto out_usage;
@@ -3449,7 +3454,7 @@ T(
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n"
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
-"                    [--include-invalid-names]\n"
+"                    [--include-invalid-names] [--resume]\n"
 ),
 [CMD_CAPTURE] =
 T(

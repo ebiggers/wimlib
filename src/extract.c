@@ -1265,10 +1265,13 @@ extract_stream_list(struct apply_ctx *ctx)
 	return 0;
 }
 
+#define PWM_ALLOW_WIM_HDR 0x00001
+#define PWM_SILENT_EOF	  0x00002
+
 /* Read the header from a stream in a pipable WIM.  */
 static int
 read_pwm_stream_header(WIMStruct *pwm, struct wim_lookup_table_entry *lte,
-		       bool allow_header)
+		       int flags)
 {
 	struct pwm_stream_hdr stream_hdr;
 	int ret;
@@ -1277,7 +1280,7 @@ read_pwm_stream_header(WIMStruct *pwm, struct wim_lookup_table_entry *lte,
 	if (ret)
 		goto read_error;
 
-	if (allow_header && stream_hdr.magic == PWM_MAGIC) {
+	if ((flags & PWM_ALLOW_WIM_HDR) && stream_hdr.magic == PWM_MAGIC) {
 		u8 buf[WIM_HEADER_DISK_SIZE - sizeof(stream_hdr)];
 		ret = full_read(&pwm->in_fd, buf, sizeof(buf));
 		if (ret)
@@ -1308,7 +1311,8 @@ read_pwm_stream_header(WIMStruct *pwm, struct wim_lookup_table_entry *lte,
 	return 0;
 
 read_error:
-	ERROR_WITH_ERRNO("Error reading pipable WIM from pipe");
+	if (ret != WIMLIB_ERR_UNEXPECTED_END_OF_FILE || !(flags & PWM_SILENT_EOF))
+		ERROR_WITH_ERRNO("Error reading pipable WIM from pipe");
 	return ret;
 }
 
@@ -1329,6 +1333,7 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 	struct wim_lookup_table_entry *needed_lte;
 	struct wim_lookup_table *lookup_table;
 	int ret;
+	int pwm_flags;
 
 	ret = WIMLIB_ERR_NOMEM;
 	found_lte = new_lookup_table_entry();
@@ -1336,11 +1341,19 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 		goto out;
 
 	lookup_table = ctx->wim->lookup_table;
-
+	pwm_flags = PWM_ALLOW_WIM_HDR;
+	if ((ctx->extract_flags & WIMLIB_EXTRACT_FLAG_RESUME))
+		pwm_flags |= PWM_SILENT_EOF;
 	while (ctx->num_streams_remaining) {
-		ret = read_pwm_stream_header(ctx->wim, found_lte, true);
-		if (ret)
+		ret = read_pwm_stream_header(ctx->wim, found_lte, pwm_flags);
+		if (ret) {
+			if (ret == WIMLIB_ERR_UNEXPECTED_END_OF_FILE &&
+			    (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_RESUME))
+			{
+				goto resume_done;
+			}
 			goto out_free_found_lte;
+		}
 
 		if ((found_lte->resource_location != RESOURCE_NONEXISTENT)
 		    && !(found_lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
@@ -1369,6 +1382,10 @@ out_free_found_lte:
 	free_lookup_table_entry(found_lte);
 out:
 	return ret;
+
+resume_done:
+	/* TODO */
+	return 0;
 }
 
 /* Finish extracting a file, directory, or symbolic link by setting file
@@ -2128,9 +2145,12 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 		if (progress_func)
 			progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
 				      &ctx.progress);
-		ret = for_dentry_in_tree(root, dentry_extract_skeleton, &ctx);
-		if (ret)
-			goto out_free_realtarget;
+
+		if (!(extract_flags & WIMLIB_EXTRACT_FLAG_RESUME)) {
+			ret = for_dentry_in_tree(root, dentry_extract_skeleton, &ctx);
+			if (ret)
+				goto out_free_realtarget;
+		}
 		if (progress_func)
 			progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END,
 				      &ctx.progress);
@@ -2243,6 +2263,11 @@ check_extract_command(struct wimlib_extract_command *cmd, int wim_header_flags)
 	     (WIMLIB_EXTRACT_FLAG_RPFIX |
 	      WIMLIB_EXTRACT_FLAG_NORPFIX)) == (WIMLIB_EXTRACT_FLAG_RPFIX |
 						WIMLIB_EXTRACT_FLAG_NORPFIX))
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if ((extract_flags &
+	     (WIMLIB_EXTRACT_FLAG_RESUME |
+	      WIMLIB_EXTRACT_FLAG_FROM_PIPE)) == WIMLIB_EXTRACT_FLAG_RESUME)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
@@ -2630,7 +2655,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 	 * WIMs.)  */
 	{
 		struct wim_lookup_table_entry xml_lte;
-		ret = read_pwm_stream_header(pwm, &xml_lte, false);
+		ret = read_pwm_stream_header(pwm, &xml_lte, 0);
 		if (ret)
 			goto out_wimlib_free;
 
@@ -2690,7 +2715,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 			goto out_wimlib_free;
 		}
 
-		ret = read_pwm_stream_header(pwm, metadata_lte, false);
+		ret = read_pwm_stream_header(pwm, metadata_lte, 0);
 		imd = pwm->image_metadata[i - 1];
 		imd->metadata_lte = metadata_lte;
 		if (ret)

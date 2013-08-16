@@ -1048,6 +1048,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * create symbolic links.  */
 #define WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS             0x00008000
 
+/** TODO */
+#define WIMLIB_EXTRACT_FLAG_RESUME			0x00010000
+
 
 /******************************
  * WIMLIB_MOUNT_FLAG_*
