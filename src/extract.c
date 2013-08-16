@@ -2056,10 +2056,17 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 		 * However, we can get a reasonably accurate estimate by taking
 		 * <TOTALBYTES> from the corresponding <IMAGE> in the WIM XML
 		 * data.  This does assume that a full image is being extracted,
-		 * but currently there is no API for doing otherwise.  */
+		 * but currently there is no API for doing otherwise.  (Also,
+		 * subtract <HARDLINKBYTES> from this if hard links are
+		 * supported by the extraction mode.)  */
 		ctx.progress.extract.total_bytes =
 			wim_info_get_image_total_bytes(wim->wim_info,
 						       wim->current_image);
+		if (ctx.supported_features.hard_links) {
+			ctx.progress.extract.total_bytes -=
+				wim_info_get_image_hard_link_bytes(wim->wim_info,
+								   wim->current_image);
+		}
 	}
 
 	/* Handle the special case of extracting a file to standard

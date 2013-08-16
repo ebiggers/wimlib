@@ -138,6 +138,12 @@ wim_info_get_total_bytes(const struct wim_info *info)
 }
 
 u64
+wim_info_get_image_hard_link_bytes(const struct wim_info *info, int image)
+{
+	return info->images[image - 1].hard_link_bytes;
+}
+
+u64
 wim_info_get_image_total_bytes(const struct wim_info *info, int image)
 {
 	return info->images[image - 1].total_bytes;

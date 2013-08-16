@@ -11,6 +11,9 @@ extern u64
 wim_info_get_total_bytes(const struct wim_info *info);
 
 extern u64
+wim_info_get_image_hard_link_bytes(const struct wim_info *info, int image);
+
+extern u64
 wim_info_get_image_total_bytes(const struct wim_info *info, int image);
 
 extern unsigned
