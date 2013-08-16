@@ -422,7 +422,7 @@ error:
 
 static int
 win32_set_security_descriptor(const wchar_t *path, const u8 *desc, size_t desc_size,
-			      struct apply_ctx *ctx, bool strict)
+			      struct apply_ctx *ctx)
 {
 	SECURITY_INFORMATION info;
 
@@ -432,7 +432,8 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc, size_t desc_s
 		SACL_SECURITY_INFORMATION;
 retry:
 	if (!SetFileSecurity(path, info, (PSECURITY_DESCRIPTOR)desc)) {
-		if (!strict && GetLastError() == ERROR_PRIVILEGE_NOT_HELD &&
+		if (!(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS) &&
+		    GetLastError() == ERROR_PRIVILEGE_NOT_HELD &&
 		    (info & SACL_SECURITY_INFORMATION))
 		{
 			info &= ~SACL_SECURITY_INFORMATION;

@@ -366,7 +366,7 @@ out:
 
 static int
 ntfs_3g_set_security_descriptor(const char *path, const u8 *desc, size_t desc_size,
-				struct apply_ctx *ctx, bool strict)
+				struct apply_ctx *ctx)
 {
 	ntfs_volume *vol;
 	ntfs_inode *ni;

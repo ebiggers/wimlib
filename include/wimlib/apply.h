@@ -100,7 +100,7 @@ struct apply_operations {
 	 * set ctx->supported_features.security_descriptors if supported.  */
 	int (*set_security_descriptor)
 		(const tchar *path, const u8 *desc, size_t desc_size,
-		 struct apply_ctx *ctx, bool strict);
+		 struct apply_ctx *ctx);
 
 	/* OPTIONAL:  Set wimlib-specific UNIX data.  In start_extract(), set
 	 * ctx->supported_features.unix_data if supported.  */

@@ -740,9 +740,7 @@ extract_security(const tchar *path, struct apply_ctx *ctx,
 		desc_size = sd->sizes[inode->i_security_id];
 
 		ret = ctx->ops->set_security_descriptor(path, desc,
-							desc_size, ctx,
-							!!(ctx->extract_flags &
-							   WIMLIB_EXTRACT_FLAG_STRICT_ACLS));
+							desc_size, ctx);
 		if (ret) {
 			if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS) {
 				ERROR_WITH_ERRNO("Failed to set security "
