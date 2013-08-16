@@ -162,19 +162,19 @@ error:
 }
 
 static int
-win32_extract_unnamed_stream(const wchar_t *path,
+win32_extract_unnamed_stream(file_spec_t file,
 			     struct wim_lookup_table_entry *lte,
 			     struct apply_ctx *ctx)
 {
-	return win32_extract_stream(path, NULL, 0, lte, ctx);
+	return win32_extract_stream(file.path, NULL, 0, lte, ctx);
 }
 
 static int
-win32_extract_named_stream(const wchar_t *path, const wchar_t *stream_name,
+win32_extract_named_stream(file_spec_t file, const wchar_t *stream_name,
 			   size_t stream_name_nchars,
 			   struct wim_lookup_table_entry *lte, struct apply_ctx *ctx)
 {
-	return win32_extract_stream(path, stream_name,
+	return win32_extract_stream(file.path, stream_name,
 				    stream_name_nchars, lte, ctx);
 }
 

@@ -103,7 +103,8 @@ ntfs_3g_open_parent_inode(const char *path, ntfs_volume *vol)
 }
 
 static int
-ntfs_3g_create(const char *path, struct apply_ctx *ctx, mode_t mode)
+ntfs_3g_create(const char *path, struct apply_ctx *ctx, u64 *cookie_ret,
+	       mode_t mode)
 {
 	ntfs_volume *vol;
 	ntfs_inode *dir_ni, *ni;
@@ -125,11 +126,16 @@ ntfs_3g_create(const char *path, struct apply_ctx *ctx, mode_t mode)
 	if (ret)
 		goto out_close_dir_ni;
 
-	ret = 0;
+	ret = WIMLIB_ERR_NTFS_3G;
 	ni = ntfs_create(dir_ni, 0, name_utf16le,
 			 name_utf16le_nbytes / 2, mode);
-	if (!ni || ntfs_inode_close_in_dir(ni, dir_ni))
-		ret = WIMLIB_ERR_NTFS_3G;
+	if (!ni)
+		goto out_free_name_utf16le;
+	*cookie_ret = MK_MREF(ni->mft_no, le16_to_cpu(ni->mrec->sequence_number));
+	if (ntfs_inode_close_in_dir(ni, dir_ni))
+		goto out_free_name_utf16le;
+	ret = 0;
+out_free_name_utf16le:
 	FREE(name_utf16le);
 out_close_dir_ni:
 	if (ntfs_inode_close(dir_ni))
@@ -139,15 +145,17 @@ out:
 }
 
 static int
-ntfs_3g_create_file(const char *path, struct apply_ctx *ctx)
+ntfs_3g_create_file(const char *path, struct apply_ctx *ctx,
+		    u64 *cookie_ret)
 {
-	return ntfs_3g_create(path, ctx, S_IFREG);
+	return ntfs_3g_create(path, ctx, cookie_ret, S_IFREG);
 }
 
 static int
-ntfs_3g_create_directory(const char *path, struct apply_ctx *ctx)
+ntfs_3g_create_directory(const char *path, struct apply_ctx *ctx,
+			 u64 *cookie_ret)
 {
-	return ntfs_3g_create(path, ctx, S_IFDIR);
+	return ntfs_3g_create(path, ctx, cookie_ret, S_IFDIR);
 }
 
 static int
@@ -196,7 +204,7 @@ out:
  * Extract a stream (default or alternate data) to an attribute of a NTFS file.
  */
 static int
-ntfs_3g_extract_stream(const char *path, const utf16lechar *raw_stream_name,
+ntfs_3g_extract_stream(file_spec_t file, const utf16lechar *raw_stream_name,
 		       size_t stream_name_nchars,
 		       struct wim_lookup_table_entry *lte, struct apply_ctx *ctx)
 {
@@ -219,9 +227,9 @@ ntfs_3g_extract_stream(const char *path, const utf16lechar *raw_stream_name,
 	if (!stream_name_nchars && !lte)
 		goto out;
 
-	/* Look up NTFS inode to which to extract the stream.  */
+	/* Open NTFS inode to which to extract the stream.  */
 	ret = WIMLIB_ERR_NTFS_3G;
-	ni = ntfs_3g_apply_pathname_to_inode(path, ctx);
+	ni = ntfs_inode_open(ntfs_3g_apply_ctx_get_volume(ctx), file.cookie);
 	if (!ni)
 		goto out;
 
@@ -266,19 +274,19 @@ out:
 }
 
 static int
-ntfs_3g_extract_unnamed_stream(const char *path,
+ntfs_3g_extract_unnamed_stream(file_spec_t file,
 			       struct wim_lookup_table_entry *lte,
 			       struct apply_ctx *ctx)
 {
-	return ntfs_3g_extract_stream(path, NULL, 0, lte, ctx);
+	return ntfs_3g_extract_stream(file, NULL, 0, lte, ctx);
 }
 
 static int
-ntfs_3g_extract_named_stream(const char *path, const utf16lechar *stream_name,
+ntfs_3g_extract_named_stream(file_spec_t file, const utf16lechar *stream_name,
 			     size_t stream_name_nchars,
 			     struct wim_lookup_table_entry *lte, struct apply_ctx *ctx)
 {
-	return ntfs_3g_extract_stream(path, stream_name,
+	return ntfs_3g_extract_stream(file, stream_name,
 				      stream_name_nchars, lte, ctx);
 }
 
@@ -495,6 +503,7 @@ const struct apply_operations ntfs_3g_apply_ops = {
 
 	.supports_case_sensitive_filenames = 1,
 	.root_directory_is_special = 1,
+	.uses_cookies = 1,
 };
 
 #endif /* WITH_NTFS_3G */

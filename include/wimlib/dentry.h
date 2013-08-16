@@ -363,11 +363,20 @@ struct wim_inode {
 		 * to 0 otherwise.  */
 		u64 i_devno;
 
-		/* Used only during image extraction: pointer to the first path
-		 * (malloc()ed buffer) at which this inode has been extracted.
-		 * Freed and set to NULL after the extraction is done (either
-		 * success or failure).  */
-		tchar *i_extracted_file;
+		struct {
+
+			/* Used only during image extraction: pointer to the first path
+			 * (malloc()ed buffer) at which this inode has been extracted.
+			 * Freed and set to NULL after the extraction is done (either
+			 * success or failure).  */
+			tchar *i_extracted_file;
+
+			/** Used only during image extraction: "cookie" that
+			 * identifies this extracted file (inode), for example
+			 * an inode number.  Only used if supported by the
+			 * extraction mode.  */
+			u64 extract_cookie;
+		};
 
 #ifdef WITH_FUSE
 		/* Used only during image mount:  Table of file descriptors that

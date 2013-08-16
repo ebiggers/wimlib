@@ -10,6 +10,13 @@ struct wimlib_unix_data;
 struct wim_dentry;
 struct apply_ctx;
 
+/* Path to extracted file, or "cookie" identifying the file (e.g. inode number).
+ * */
+typedef union {
+	const char *path;
+	u64 cookie;
+} file_spec_t;
+
 /*
  * struct apply_operations -  Callback functions for a specific extraction
  * mode/backend.  These are lower-level functions that are called by the generic
@@ -43,11 +50,11 @@ struct apply_operations {
 
 	/* REQUIRED:  Create a file.  */
 	int (*create_file)
-		(const tchar *path, struct apply_ctx *ctx);
+		(const tchar *path, struct apply_ctx *ctx, u64 *cookie_ret);
 
 	/* REQUIRED:  Create a directory.  */
 	int (*create_directory)
-		(const tchar *path, struct apply_ctx *ctx);
+		(const tchar *path, struct apply_ctx *ctx, u64 *cookie_ret);
 
 	/* OPTIONAL:  Create a hard link.  In start_extract(), set
 	 * ctx->supported_features.hard_links if supported.  */
@@ -63,20 +70,20 @@ struct apply_operations {
 
 	/* REQUIRED:  Extract unnamed data stream.  */
 	int (*extract_unnamed_stream)
-		(const tchar *path, struct wim_lookup_table_entry *lte,
+		(file_spec_t file, struct wim_lookup_table_entry *lte,
 		 struct apply_ctx *ctx);
 
 	/* OPTIONAL:  Extracted named data stream.  In start_extract(), set
 	 * ctx->supported_features.alternate_data_streams if supported.  */
 	int (*extract_named_stream)
-		(const tchar *path, const utf16lechar *stream_name,
+		(file_spec_t file, const utf16lechar *stream_name,
 		 size_t stream_name_nchars, struct wim_lookup_table_entry *lte,
 		 struct apply_ctx *ctx);
 
 	/* OPTIONAL:  Extracted encrypted stream.  In start_extract(), set
 	 * ctx->supported_features.encrypted_files if supported.  */
 	int (*extract_encrypted_stream)
-		(const tchar *path, struct wim_lookup_table_entry *lte,
+		(file_spec_t file, struct wim_lookup_table_entry *lte,
 		 struct apply_ctx *ctx);
 
 	/* OPTIONAL:  Set file attributes.  Calling code calls this if non-NULL.
@@ -154,6 +161,12 @@ struct apply_operations {
 	/* OPTIONAL:  Set to 1 if the root directory of the volume (see
 	 * target_is_root() callback) should not be explicitly extracted.  */
 	unsigned root_directory_is_special : 1;
+
+	/* OPTIONAL:  Set to 1 if extraction cookie, or inode number, is stored
+	 * in create_file() and create_directory() callbacks.  This cookie will
+	 * then be passed to callbacks taking a 'file_spec_t', rather than the
+	 * path.  */
+	unsigned uses_cookies : 1;
 };
 
 struct wim_features {

@@ -54,7 +54,7 @@ unix_start_extract(const char *target, struct apply_ctx *ctx)
 }
 
 static int
-unix_create_file(const char *path, struct apply_ctx *ctx)
+unix_create_file(const char *path, struct apply_ctx *ctx, u64 *cookie_ret)
 {
 	int fd = open(path, O_TRUNC | O_CREAT | O_WRONLY, 0644);
 	if (fd < 0)
@@ -64,7 +64,7 @@ unix_create_file(const char *path, struct apply_ctx *ctx)
 }
 
 static int
-unix_create_directory(const tchar *path, struct apply_ctx *ctx)
+unix_create_directory(const tchar *path, struct apply_ctx *ctx, u64 *cookie_ret)
 {
 	struct stat stbuf;
 
@@ -111,10 +111,11 @@ unix_create_symlink(const tchar *oldpath, const tchar *newpath,
 }
 
 static int
-unix_extract_unnamed_stream(const tchar *path,
+unix_extract_unnamed_stream(file_spec_t file,
 			    struct wim_lookup_table_entry *lte,
 			    struct apply_ctx *ctx)
 {
+	const char *path = file.path;
 	struct filedes fd;
 	int raw_fd;
 	int ret;

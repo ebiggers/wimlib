@@ -333,13 +333,13 @@ extract_inode(const tchar *path, struct apply_ctx *ctx, struct wim_inode *inode)
 	} else
 #endif /* !__WIN32__ */
 	if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-		ret = ctx->ops->create_directory(path, ctx);
+		ret = ctx->ops->create_directory(path, ctx, &inode->extract_cookie);
 		if (ret) {
 			ERROR_WITH_ERRNO("Failed to create the directory "
 					 "\"%"TS"\"", path);
 		}
 	} else {
-		ret = ctx->ops->create_file(path, ctx);
+		ret = ctx->ops->create_file(path, ctx, &inode->extract_cookie);
 		if (ret) {
 			ERROR_WITH_ERRNO("Failed to create the file "
 					 "\"%"TS"\"", path);
@@ -553,6 +553,7 @@ extract_streams(const tchar *path, struct apply_ctx *ctx,
 {
 	struct wim_inode *inode = dentry->d_inode;
 	struct wim_lookup_table_entry *lte;
+	file_spec_t file_spec;
 	int ret;
 
 	if (dentry->was_hardlinked)
@@ -571,6 +572,11 @@ extract_streams(const tchar *path, struct apply_ctx *ctx,
 	}
 #endif
 
+	if (ctx->ops->uses_cookies)
+		file_spec.cookie = inode->extract_cookie;
+	else
+		file_spec.path = path;
+
 	/* Unnamed data stream.  */
 	lte = inode_unnamed_lte_resolved(inode);
 	if (lte && (!lte_spec || lte == lte_spec)) {
@@ -581,9 +587,9 @@ extract_streams(const tchar *path, struct apply_ctx *ctx,
 		{
 			if ((inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) &&
 			    ctx->supported_features.encrypted_files)
-				ret = ctx->ops->extract_encrypted_stream(path, lte, ctx);
+				ret = ctx->ops->extract_encrypted_stream(file_spec, lte, ctx);
 			else
-				ret = ctx->ops->extract_unnamed_stream(path, lte, ctx);
+				ret = ctx->ops->extract_unnamed_stream(file_spec, lte, ctx);
 			if (ret)
 				goto error;
 			update_extract_progress(ctx, lte);
@@ -617,7 +623,7 @@ extract_streams(const tchar *path, struct apply_ctx *ctx,
 				continue;
 			if (lte_spec)
 				lte = lte_override;
-			ret = ctx->ops->extract_named_stream(path, entry->stream_name,
+			ret = ctx->ops->extract_named_stream(file_spec, entry->stream_name,
 							     entry->stream_name_nbytes / 2,
 							     lte, ctx);
 			if (ret)
@@ -997,13 +1003,18 @@ do_dentry_extract_skeleton(tchar path[], struct wim_dentry *dentry,
 	/* Create empty named data streams.  */
 	if (can_extract_named_data_streams(ctx)) {
 		for (u16 i = 0; i < inode->i_num_ads; i++) {
+			file_spec_t file_spec;
 			struct wim_ads_entry *entry = &inode->i_ads_entries[i];
 
 			if (!ads_entry_is_named_stream(entry))
 				continue;
 			if (entry->lte)
 				continue;
-			ret = ctx->ops->extract_named_stream(path,
+			if (ctx->ops->uses_cookies)
+				file_spec.cookie = inode->extract_cookie;
+			else
+				file_spec.path = path;
+			ret = ctx->ops->extract_named_stream(file_spec,
 							     entry->stream_name,
 							     entry->stream_name_nbytes / 2,
 							     entry->lte, ctx);
