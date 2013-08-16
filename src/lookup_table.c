@@ -918,13 +918,6 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
 	return for_lookup_table_entry(wim->lookup_table, do_iterate_lte, &ctx);
 }
 
-static int
-do_print_lookup_table_entry(struct wim_lookup_table_entry *lte, void *fp)
-{
-	print_lookup_table_entry(lte, (FILE*)fp);
-	return 0;
-}
-
 /* Given a SHA1 message digest, return the corresponding entry in the WIM's
  * lookup table, or NULL if there is none.  */
 struct wim_lookup_table_entry *

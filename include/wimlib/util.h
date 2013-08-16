@@ -90,6 +90,11 @@ wimlib_strdup(const char *str) _malloc_attribute;
 extern void *
 memdup(const void *mem, size_t size) _malloc_attribute;
 
+#ifndef HAVE_MEMPCPY
+extern void *
+mempcpy(void *dst, const void *src, size_t n);
+#endif
+
 /* util.c */
 extern void
 randomize_byte_array(u8 *p, size_t n);

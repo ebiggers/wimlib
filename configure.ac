@@ -48,7 +48,7 @@ AC_PROG_CC
 AM_PROG_CC_C_O
 AC_CANONICAL_HOST
 
-AC_CHECK_FUNCS([utimensat lutimes utime flock])
+AC_CHECK_FUNCS([utimensat lutimes utime flock mempcpy])
 
 # Note: some of the following header checks are only to define the appropriate
 # HAVE_*_H macro so that the NTFS-3g headers don't get confused and try to skip

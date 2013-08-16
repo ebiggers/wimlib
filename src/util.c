@@ -576,3 +576,10 @@ void print_byte_field(const u8 field[], size_t len, FILE *out)
 	while (len--)
 		tfprintf(out, T("%02hhx"), *field++);
 }
+
+#ifndef HAVE_MEMPCPY
+void *mempcpy(void *dst, const void *src, size_t n)
+{
+	return memcpy(dst, src, n) + n;
+}
+#endif
