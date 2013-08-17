@@ -1,43 +1,47 @@
 
-                                 INTRODUCTION
+                                  INTRODUCTION
 
-wimlib is free and open source software that is available on both UNIX and
-Windows.  This file provides additional information specifically about the
-Windows version of wimlib and the command line tool "wimlib-imagex" that is
-distributed with it.  It does not obsolete the generic README.txt, which you
-should read too.
+wimlib is free and open source software that is available on both UNIX-like
+systems and Windows.  This file provides additional information specifically
+about the Windows version of wimlib and the command line tool "wimlib-imagex"
+that is distributed with it.  It does not obsolete the generic README.txt, which
+you should read too.
 
                               WINDOWS DISTRIBUTION
 
 For the convenience of Windows users, the Windows distribution of wimlib is a
 ZIP file containing the following items:
 
-  * wimlib-imagex.exe, a command-line tool to deal with WIM (.wim) files that is
-    similar to Microsoft's ImageX.  This is a ready-to-run executable and not an
-    installer.
+  * wimlib-imagex.exe, a command-line tool to deal with WIM (.wim) and split WIM
+    (.swm) files that is similar to Microsoft's ImageX.  This is a ready-to-run
+    executable and not an installer.
+
+  * Very short batch scripts (e.g. wimapply.cmd) which are shortcuts to the
+    corresponding wimlib-imagex commands (e.g. `wimlib-imagex apply').
 
   * The documentation, including this file, the generic README.txt, and
     PDF documentation for wimlib-imagex in the 'doc' directory.
 
-  * Various DLL (.dll) files, including the wimlib library itself, which are of
-    little concern to you if you are not a developer.
+  * Various DLL (.dll) files, including the wimlib library itself
+    (libwim-9.dll).  The C header wimlib.h is not included; download the source
+    if you want it.
 
   * License files for all software included.  These are all free software
     licenses.
 
-                                  WIMLIB-IMAGEX
+                                 WIMLIB-IMAGEX
 
-wimlib-imagex is intended to provide a usable Windows-native equivalent to
-Microsoft's ImageX.  The main limitations of wimlib-imagex compared to
-Microsoft's ImageX are the following:
+wimlib-imagex provides most features of Microsoft's ImageX, plus additional
+features.  First, the main limitations of wimlib-imagex compared to Microsoft's
+ImageX are the following:
 
-  * Mounting WIM files is not supported on Windows.
+  * Mounting images from a WIM file is not supported on Windows.
 
-  * The LZX ("maximum") compression ratio is several percent worse that
+  * The LZX ("maximum") compression ratio is several percent worse than
     Microsoft's implementation.
 
 However, wimlib-imagex provides a number of advantages compared to Microsoft's
-ImageX:
+ImageX, including but not limited to the following:
 
   * wimlib-imagex provides "extract" and "update" commands that can be used to
     work around the lack of mount support.  These commands are very fast
@@ -47,24 +51,32 @@ ImageX:
   * wimlib-imagex offers fast multithreaded compression, so making WIM images
     can be much faster.
 
-  * wimlib-imagex provides a better XPRESS ("fast", or default compression)
-    compression ratio than Microsoft's ImageX.
+  * wimlib-imagex provides a better XPRESS ("fast") compression ratio than
+    Microsoft's ImageX.
 
   * wimlib-imagex provides an easy-to-use "optimize" command to remove wasted
     space from WIM files.
 
-  * Whenever possible I have included improved documentation and informational
-    output compared to Microsoft's software.
+  * In some cases, wimlib-imagex uses simpler command-line syntax.  For
+    example, `wimlib-imagex capture' (or simply `wimcapture') defaults to
+    maximum compression by default, integrity tables are treated as persistent,
+    and in some cases image names need not be explicitly specified.
 
-  * wimlib can correctly save and restore some combinations of data that
-    Microsoft's ImageX runs into bugs on --- for example, uncompressed files in
-    compressed directories, or files with alternate data streams and multiple
-    hard links.
+  * Whenever possible, wimlib-imagex includes improved documentation and
+    informational output compared to Microsoft's software.
 
-  * wimlib is free software, so you can modify and/or audit the source code.
+  * On Windows, wimlib-imagex can correctly save and restore some combinations
+    of data that Microsoft's ImageX runs into bugs on --- for example,
+    uncompressed files in compressed directories, or files with alternate data
+    streams and multiple hard links.
+
+  * wimlib and wimlib-imagex are free software, so you can modify and/or audit
+    the source code.
 
                                 ADDITIONAL NOTES
 
 Currently there is no graphical user interface available for wimlib or
-wimlib-imagex and I do not plan to make one.  It's recommended to use
-wimlib-imagex in scripts to avoid having to interactively enter commands.
+wimlib-imagex.  It's recommended to use wimlib-imagex in scripts to avoid having
+to interactively enter commands.  However, note that wimlib-imagex is largely
+just a command-line front-end for wimlib, and it's possible to use wimlib's API
+in other front-ends or applications.
