@@ -479,38 +479,26 @@ out:
 	return ret;
 }
 
-static void
+static bool
 win32_modify_capture_privileges(bool enable)
 {
-	win32_modify_privilege(SE_BACKUP_NAME, enable);
-	win32_modify_privilege(SE_SECURITY_NAME, enable);
+	return win32_modify_privilege(SE_BACKUP_NAME, enable)
+	    && win32_modify_privilege(SE_SECURITY_NAME, enable);
 }
 
-static void
+static bool
 win32_modify_apply_privileges(bool enable)
 {
-	win32_modify_privilege(SE_RESTORE_NAME, enable);
-	win32_modify_privilege(SE_SECURITY_NAME, enable);
-	win32_modify_privilege(SE_TAKE_OWNERSHIP_NAME, enable);
-}
-
-static void
-win32_modify_capture_and_apply_privileges(bool enable)
-{
-	win32_modify_capture_privileges(enable);
-	win32_modify_apply_privileges(enable);
-}
-
-static void
-win32_acquire_capture_and_apply_privileges(void)
-{
-	win32_modify_capture_and_apply_privileges(true);
+	return win32_modify_privilege(SE_RESTORE_NAME, enable)
+	    && win32_modify_privilege(SE_SECURITY_NAME, enable)
+	    && win32_modify_privilege(SE_TAKE_OWNERSHIP_NAME, enable);
 }
 
 static void
 win32_release_capture_and_apply_privileges(void)
 {
-	win32_modify_capture_and_apply_privileges(false);
+	win32_modify_capture_privileges(false);
+	win32_modify_apply_privileges(false);
 }
 
 HANDLE
@@ -563,12 +551,17 @@ windows_version_is_at_least(unsigned major, unsigned minor)
 }
 
 /* One-time initialization for Windows capture/apply code.  */
-void
+int
 win32_global_init(int init_flags)
 {
 	/* Try to acquire useful privileges.  */
 	if (!(init_flags & WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES)) {
-		win32_acquire_capture_and_apply_privileges();
+		if (!win32_modify_capture_privileges(true))
+			if (init_flags & WIMLIB_INIT_FLAG_STRICT_CAPTURE_PRIVILEGES)
+				goto insufficient_privileges;
+		if (!win32_modify_apply_privileges(true))
+			if (init_flags & WIMLIB_INIT_FLAG_STRICT_APPLY_PRIVILEGES)
+				goto insufficient_privileges;
 		acquired_privileges = true;
 	}
 
@@ -589,6 +582,11 @@ win32_global_init(int init_flags)
 				win32func_FindFirstStreamW = NULL;
 		}
 	}
+	return 0;
+
+insufficient_privileges:
+	win32_release_capture_and_apply_privileges();
+	return WIMLIB_ERR_INSUFFICIENT_PRIVILEGES;
 }
 
 void

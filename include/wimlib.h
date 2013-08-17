@@ -936,7 +936,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * contain this information.  Please note that this flag is for convenience
  * only; Microsoft's @a imagex.exe will not understand this special information.
  * This flag cannot be combined with ::WIMLIB_ADD_FLAG_NTFS.  */
-#define WIMLIB_ADD_FLAG_UNIX_DATA			0x00000010
+#define WIMLIB_ADD_FLAG_UNIX_DATA		0x00000010
 
 /** Do not capture security descriptors.  Only has an effect in NTFS capture
  * mode, or in Win32 native builds. */
@@ -971,10 +971,10 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * documentation for ::WIMLIB_ADD_FLAG_RPFIX. */
 #define WIMLIB_ADD_FLAG_NORPFIX			0x00000200
 
-/** Do not exclude unsupported files or directories from capture; e.g. encrypted
- * directories in NTFS-3g capture mode, or device files and FIFOs on UNIX-like
- * systems.  Instead, fail with ::WIMLIB_ERR_UNSUPPORTED_FILE when such a file
- * is encountered.  */
+/** Do not automatically exclude unsupported files or directories from capture;
+ * e.g. encrypted directories in NTFS-3g capture mode, or device files and FIFOs
+ * on UNIX-like systems.  Instead, fail with ::WIMLIB_ERR_UNSUPPORTED_FILE when
+ * such a file is encountered.  */
 #define WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE	0x00000400
 
 /** Automatically select a capture configuration appropriate for capturing
@@ -1057,8 +1057,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** Read the WIM file sequentially while extracting the image.  */
 #define WIMLIB_EXTRACT_FLAG_SEQUENTIAL			0x00000010
 
-/** Extract special UNIX data captured with ::WIMLIB_ADD_FLAG_UNIX_DATA.
- * Cannot be used with ::WIMLIB_EXTRACT_FLAG_NTFS.  */
+/** Extract special UNIX data captured with ::WIMLIB_ADD_FLAG_UNIX_DATA.  Only
+ * valid on UNIX-like platforms, and when ::WIMLIB_EXTRACT_FLAG_NTFS was not
+ * specified.  */
 #define WIMLIB_EXTRACT_FLAG_UNIX_DATA			0x00000020
 
 /** Do not extract security descriptors.  */
@@ -1112,9 +1113,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * create symbolic links.  */
 #define WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS             0x00008000
 
-/** TODO */
+/** TODO: this flag is intended to allow resuming an aborted extraction, but the
+ * behavior is currently less than satisfactory.  Do not use (yet).  */
 #define WIMLIB_EXTRACT_FLAG_RESUME			0x00010000
-
 
 /******************************
  * WIMLIB_MOUNT_FLAG_*
@@ -1153,39 +1154,41 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * causes the raw data of the WIM file, divided into 10 MB chunks, to be
  * checksummed and checked against the SHA1 message digests specified in the
  * integrity table.  ::WIMLIB_ERR_INTEGRITY is returned if there are any
- * mismatches.  */
+ * mismatches (or, ::WIMLIB_ERR_INVALID_INTEGRITY_TABLE is returned if the
+ * integrity table is invalid).  */
 #define WIMLIB_OPEN_FLAG_CHECK_INTEGRITY		0x00000001
 
-/** Do not issue an error if the WIM is part of a split WIM.  */
+/** Do not issue an error if the WIM is part of a split WIM.  Programs must
+ * specify this flag if they intend to open part of a split WIM, rather than
+ * only supporting standalone WIMs.  */
 #define WIMLIB_OPEN_FLAG_SPLIT_OK			0x00000002
 
 /** Check if the WIM is writable and return ::WIMLIB_ERR_WIM_IS_READONLY if it
  * is not.  A WIM is considered writable only if it is writable at the
  * filesystem level, does not have the WIM_HDR_FLAG_READONLY flag set in its
  * header, and is not part of a spanned set.  It is not required to provide this
- * flag to make changes to the WIM, but with this flag you get the error sooner
- * rather than later. */
+ * flag before attempting to make changes to the WIM, but with this flag you get
+ * an error sooner rather than later. */
 #define WIMLIB_OPEN_FLAG_WRITE_ACCESS			0x00000004
 
 /******************************
  * WIMLIB_UNMOUNT_FLAG_*
  ******************************/
 
-/** Include an integrity table in the WIM after it's been unmounted.  Ignored
- * for read-only mounts. */
+/** See ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY.  */
 #define WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY		0x00000001
 
 /** Unless this flag is given, changes to a read-write mounted WIM are
- * discarded.  Ignored for read-only mounts. */
+ * discarded.  Ignored for read-only mounts.  */
 #define WIMLIB_UNMOUNT_FLAG_COMMIT			0x00000002
 
-/** See ::WIMLIB_WRITE_FLAG_REBUILD */
+/** See ::WIMLIB_WRITE_FLAG_REBUILD.  */
 #define WIMLIB_UNMOUNT_FLAG_REBUILD			0x00000004
 
 /** See ::WIMLIB_WRITE_FLAG_RECOMPRESS */
 #define WIMLIB_UNMOUNT_FLAG_RECOMPRESS			0x00000008
 
-/** Do a "lazy" unmount (detach filesystem immediately, even if busy) */
+/** Do a "lazy" unmount (detach filesystem immediately, even if busy).  */
 #define WIMLIB_UNMOUNT_FLAG_LAZY			0x00000010
 
 /******************************
@@ -1193,7 +1196,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  ******************************/
 
 /** Send ::WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND and
- * ::WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND messages. */
+ * ::WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND messages.  */
 #define WIMLIB_UPDATE_FLAG_SEND_PROGRESS		0x00000001
 
 /******************************
@@ -1248,7 +1251,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * only minimal changes to correctly remove the image from the WIM will be
  * taken.  In particular, all streams will be left alone, even if they are no
  * longer referenced.  This is probably not what you want, because almost no
- * space will be saved by deleting an image in this way. */
+ * space will be saved by deleting an image in this way.  */
 #define WIMLIB_WRITE_FLAG_SOFT_DELETE			0x00000080
 
 /** wimlib_overwrite() only:  Allow overwriting the WIM even if the readonly
@@ -1262,7 +1265,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  ******************************/
 
 /** Assume that strings are represented in UTF-8, even if this is not the
- * locale's character encoding.  Not used on Windows.  */
+ * locale's character encoding.  This flag is ignored on Windows, where wimlib
+ * always uses UTF-16LE.  */
 #define WIMLIB_INIT_FLAG_ASSUME_UTF8			0x00000001
 
 /** Windows-only: do not attempt to acquire additional privileges (currently
@@ -1273,6 +1277,20 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * errors may be reported later, depending on if the operations performed
  * actually require additional privileges or not.  */
 #define WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES	0x00000002
+
+/** Windows only:  If ::WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES not specified,
+ * return ::WIMLIB_ERR_INSUFFICIENT_PRIVILEGES if privileges that may be needed
+ * to read all possible data and metadata for a capture operation could not be
+ * acquired.  Can be combined with ::WIMLIB_INIT_FLAG_STRICT_APPLY_PRIVILEGES.
+ */
+#define WIMLIB_INIT_FLAG_STRICT_CAPTURE_PRIVILEGES	0x00000004
+
+/** Windows only:  If ::WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES not specified,
+ * return ::WIMLIB_ERR_INSUFFICIENT_PRIVILEGES if privileges that may be needed
+ * to restore all possible data and metadata for an apply operation could not be
+ * acquired.  Can be combined with ::WIMLIB_INIT_FLAG_STRICT_CAPTURE_PRIVILEGES.
+ */
+#define WIMLIB_INIT_FLAG_STRICT_APPLY_PRIVILEGES	0x00000008
 
 /** Specification of an update to perform on a WIM image. */
 struct wimlib_update_command {
@@ -1366,6 +1384,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_ICONV_NOT_AVAILABLE,
 	WIMLIB_ERR_IMAGE_COUNT,
 	WIMLIB_ERR_IMAGE_NAME_COLLISION,
+	WIMLIB_ERR_INSUFFICIENT_PRIVILEGES,
 	WIMLIB_ERR_INTEGRITY,
 	WIMLIB_ERR_INVALID_CAPTURE_CONFIG,
 	WIMLIB_ERR_INVALID_CHUNK_SIZE,
@@ -2103,10 +2122,15 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info);
  * but you should not rely on this behavior.)
  *
  * @param init_flags
- *	Bitwise OR of ::WIMLIB_INIT_FLAG_ASSUME_UTF8 and/or
- *	::WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES.
+ *	Bitwise OR of flags prefixed with WIMLIB_INIT_FLAG.
  *
- * @return 0; other error codes may be returned in future releases.
+ * @return 0 on success; nonzero on failure.  Currently, only the following
+ * error code is defined:
+ *
+ * @retval ::WIMLIB_ERR_INSUFFICIENT_PRIVILEGES
+ *	::WIMLIB_INIT_FLAG_STRICT_APPLY_PRIVILEGES and/or
+ *	::WIMLIB_INIT_FLAG_STRICT_CAPTURE_PRIVILEGES were specified in @p
+ *	init_flags, but the corresponding privileges could not be acquired.
  */
 extern int
 wimlib_global_init(int init_flags);

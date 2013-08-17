@@ -174,6 +174,8 @@ static const struct option apply_options[] = {
 	{T("rpfix"),       no_argument,       NULL, IMAGEX_RPFIX_OPTION},
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
 	{T("include-invalid-names"), no_argument,       NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
+
+	/* --resume is undocumented for now as it needs improvement.  */
 	{T("resume"),      no_argument,       NULL, IMAGEX_RESUME_OPTION},
 	{NULL, 0, NULL, 0},
 };
@@ -3446,7 +3448,7 @@ T(
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
 "                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n"
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
-"                    [--include-invalid-names] [--resume]\n"
+"                    [--include-invalid-names]\n"
 ),
 [CMD_CAPTURE] =
 T(

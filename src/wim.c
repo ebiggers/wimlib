@@ -797,6 +797,7 @@ WIMLIBAPI int
 wimlib_global_init(int init_flags)
 {
 	static bool already_inited = false;
+	int ret;
 
 	if (already_inited)
 		return 0;
@@ -809,10 +810,14 @@ wimlib_global_init(int init_flags)
 	#endif
 	}
 #ifdef __WIN32__
-	win32_global_init(init_flags);
+	ret = win32_global_init(init_flags);
+	if (ret)
+		return ret;
+#else
+	ret = 0;
 #endif
 	already_inited = true;
-	return 0;
+	return ret;
 }
 
 /* API function documented in wimlib.h  */

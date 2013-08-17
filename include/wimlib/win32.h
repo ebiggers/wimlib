@@ -26,7 +26,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 				 int _ignored_flags);
 
 
-extern void
+extern int
 win32_global_init(int init_flags);
 
 extern void

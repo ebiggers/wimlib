@@ -374,9 +374,6 @@ default, invalid names will be ignored, and if there are multiple names
 differing only in case, one will be chosen to extract arbitrarily; however, with
 \fB--include-invalid-names\fR, all names will be sanitized and extracted in some
 form.
-.TP
-\fB--resume\fR
-TODO
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ apply\fR calculates the SHA1 message digest of every file
 stream it extracts and verifies that it is the same as the SHA1 message digest

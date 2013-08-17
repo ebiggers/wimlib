@@ -290,6 +290,8 @@ static const tchar *error_strings[] = {
 			"resources, the WIM header, and/or the XML data"),
 	[WIMLIB_ERR_IMAGE_NAME_COLLISION]
 		= T("Tried to add an image with a name that is already in use"),
+	[WIMLIB_ERR_INSUFFICIENT_PRIVILEGES]
+		= T("The user does not have sufficient privileges"),
 	[WIMLIB_ERR_INTEGRITY]
 		= T("The WIM failed an integrity check"),
 	[WIMLIB_ERR_INVALID_CAPTURE_CONFIG]
