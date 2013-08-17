@@ -925,7 +925,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 
 /** Call the progress function with the message
  * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY when each directory or file is starting to
- * be scanned. */
+ * be scanned, or when a directory or file is being excluded from capture.  */
 #define WIMLIB_ADD_FLAG_VERBOSE			0x00000004
 
 /** Mark the image being added as the bootable image of the WIM. */
@@ -2975,9 +2975,11 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  * @retval ::WIMLIB_ERR_REPARSE_POINT_FIXUP_FAILED
  *	(Windows only) Failed to perform a reparse point fixup because of
  *	problems with the data of a reparse point.
- * @retval ::WIMLIB_ERR_SPECIAL_FILE
+ * @retval ::WIMLIB_ERR_UNSUPPORTED_FILE
  *	While executing an add command, attempted to capture a file that was not
- *	a supported file type (e.g. a device file).
+ *	a supported file type (e.g. a device file).  Only if
+ *	::WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE specified in @p the add_flags
+ *	for an update command.
  * @retval ::WIMLIB_ERR_STAT
  *	While executing an add command, failed to get attributes for a file or
  *	directory.

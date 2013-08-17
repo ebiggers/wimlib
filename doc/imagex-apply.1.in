@@ -74,7 +74,9 @@ Notes: Unsupported data and metadata is simply not extracted, but
 image can't be exactly represented when extracted.  Last access and last
 modification timestamps are specified to 100 nanosecond granularity in the WIM
 file, but will only be extracted to the highest precision supported by the
-underlying operating system, C library, and filesystem.
+underlying operating system, C library, and filesystem.  Compressed files will
+be extracted as uncompressed, while encrypted files will not be extracted at
+all.
 .SH NTFS VOLUME EXTRACTION (UNIX)
 This section documents how \fB@IMAGEX_PROGNAME@ apply\fR extracts a WIM image
 directly to an NTFS volume image on UNIX-like systems.  See \fBDIRECTORY EXTRACTION
@@ -118,11 +120,16 @@ DOS/Windows file attribute flags.
 All names of all files, including names in the Win32 namespace, DOS namespace,
 Win32+DOS namespace, and POSIX namespace.  This includes hard links.
 .PP
-Currently, the only known limitation (in terms of exactly extracting all data
-and metadata) is that the extraction of encrypted files is not expected to work
-properly.
+However, there are also several known limitations of the NTFS volume extraction
+mode:
+.IP \[bu] 4
+Encrypted files will not be extracted.
+.IP \[bu]
+Although sparse file attributes will be applied, the full data will be extracted
+to each sparse file, so extracted "sparse" files may not actually contain any
+sparse regions.
 .PP
-Since all (or almost all) information from the WIM image is restored in this
+Regardless, since almost all information from the WIM image is restored in this
 mode, it is possible to restore an image of an actual Windows installation using
 \fB@IMAGEX_PROGNAME@\fR on UNIX-like systems in addition to with
 \fB@IMAGEX_PROGNAME@\fR on Windows.  In the examples at the end of this manual
@@ -215,10 +222,10 @@ above not being supported by the target filesystem.
 .IP \[bu]
 Since encrypted files (with FILE_ATTRIBUTE_ENCRYPTED) are not stored in
 plaintext in the WIM image, \fB@IMAGEX_PROGNAME@\fR cannot restore encrypted
-files to filesystems not supporting encryption.  (The current behavior is to
-just extract the encrypted data anyway.)  Furthermore, even if encrypted files
-are restored to a filesystem that supports encryption, they will only be
-decryptable if the decryption key is available.
+files to filesystems not supporting encryption.  Therefore, such files are not
+extracted.  Furthermore, even if encrypted files are restored to a filesystem
+that supports encryption, they will only be decryptable if the decryption key is
+available.
 .IP \[bu]
 Files with names that cannot be represented on Windows will not
 be extracted by default; see \fB--include-invalid-names\fR.
