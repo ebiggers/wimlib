@@ -65,6 +65,9 @@ FIFOs, cannot be captured.
 Extended attributes.  This mainly includes extensions to the traditional UNIX
 security model, such as SELinux security labels, POSIX ACLs, and capabilities
 labels.
+.IP \[bu]
+Files that are neither regular files, directories, nor symbolic links, such as
+device files and FIFOs.  These will be excluded by default.
 .PP
 Notes: hard links and symbolic links are supported by the WIM format and
 \fIare\fR stored.  (Symbolic links are turned into "native" Windows symbolic
@@ -88,11 +91,11 @@ Please note that the NTFS volume capture mode is \fInot\fR entered if
 \fISOURCE\fR using ntfs-3g.  You must specify the NTFS volume itself (and it
 must be unmounted, and you must have permission to read from it).
 .PP
-The NTFS volume capture mode attempts to capture as much data as
+The NTFS volume capture mode attempts to capture as much data and metadata as
 possible, including:
 .IP \[bu] 4
-All data streams of all files, including the unnamed data stream as well as all
-named data streams.
+All data streams of all unencrypted files, including the unnamed data stream as
+well as all named data streams.
 .IP \[bu]
 Reparse points, including symbolic links, junction points, and other reparse
 points.
@@ -107,6 +110,17 @@ DOS/Windows file attribute flags.
 .IP \[bu]
 All names of all files, including names in the Win32 namespace, DOS namespace,
 Win32+DOS namespace, and POSIX namespace.  This includes hard links.
+.PP
+However, the main limitations of this NTFS volume capture mode are:
+.IP \[bu] 4
+Encrypted files are excluded by default.  Although ntfs-3g can read their data,
+they need to be stored in the WIM file in a special format that wimlib does not
+yet support (except on Windows, where wimlib can treat the data as opaque and
+hand it off to the appropriate API function).
+.IP \[bu]
+The sparse attribute on sparse files will be saved, but the data stored will be
+the full data of the file rather than the "sparse" data.  (The data is, however,
+subject to the WIM format's compression.)
 .SH DIRECTORY CAPTURE (WINDOWS)
 On Windows, \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR
 natively support Windows-specific and NTFS-specific data.  They therefore act
