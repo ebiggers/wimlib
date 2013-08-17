@@ -534,6 +534,11 @@ HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
 BOOL (WINAPI *win32func_FindNextStreamW)(HANDLE hFindStream,
 					 LPVOID lpFindStreamData) = NULL;
 
+/* Vista and later */
+BOOL (WINAPI *win32func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
+					     const wchar_t *lpTargetFileName,
+					     DWORD dwFlags) = NULL;
+
 static OSVERSIONINFO windows_version_info = {
 	.dwOSVersionInfoSize = sizeof(OSVERSIONINFO),
 };
@@ -581,6 +586,8 @@ win32_global_init(int init_flags)
 			if (!win32func_FindNextStreamW)
 				win32func_FindFirstStreamW = NULL;
 		}
+		win32func_CreateSymbolicLinkW = (void*)GetProcAddress(hKernel32,
+								      "CreateSymbolicLinkW");
 	}
 	return 0;
 

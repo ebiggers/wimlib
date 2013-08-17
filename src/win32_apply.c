@@ -44,19 +44,40 @@ win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 	if (ret)
 		return ret;
 
-	ctx->supported_features.archive_files             = 1;
-	ctx->supported_features.hidden_files              = 1;
-	ctx->supported_features.system_files              = 1;
-	ctx->supported_features.compressed_files          = !!(vol_flags & FILE_FILE_COMPRESSION);
-	ctx->supported_features.encrypted_files           = !!(vol_flags & FILE_SUPPORTS_ENCRYPTION);
-	ctx->supported_features.encrypted_directories	  = !!(vol_flags & FILE_SUPPORTS_ENCRYPTION);
+	ctx->supported_features.archive_files = 1;
+	ctx->supported_features.hidden_files = 1;
+	ctx->supported_features.system_files = 1;
+
+	if (vol_flags & FILE_FILE_COMPRESSION)
+		ctx->supported_features.compressed_files = 1;
+
+	if (vol_flags & FILE_SUPPORTS_ENCRYPTION) {
+		ctx->supported_features.encrypted_files = 1;
+		ctx->supported_features.encrypted_directories = 1;
+	}
+
 	ctx->supported_features.not_context_indexed_files = 1;
-	ctx->supported_features.sparse_files              = !!(vol_flags & FILE_SUPPORTS_SPARSE_FILES);
-	ctx->supported_features.named_data_streams        = !!(vol_flags & FILE_NAMED_STREAMS);
-	ctx->supported_features.hard_links                = !!(vol_flags & FILE_SUPPORTS_HARD_LINKS);
-	ctx->supported_features.reparse_points            = !!(vol_flags & FILE_SUPPORTS_REPARSE_POINTS);
-	ctx->supported_features.security_descriptors      = !!(vol_flags & FILE_PERSISTENT_ACLS);
-	ctx->supported_features.short_names               = !!supports_SetFileShortName;
+
+	if (vol_flags & FILE_SUPPORTS_SPARSE_FILES)
+		ctx->supported_features.sparse_files = 1;
+
+	if (vol_flags & FILE_NAMED_STREAMS)
+		ctx->supported_features.named_data_streams = 1;
+
+	if (vol_flags & FILE_SUPPORTS_HARD_LINKS)
+		ctx->supported_features.hard_links = 1;
+
+	if (vol_flags & FILE_SUPPORTS_REPARSE_POINTS) {
+		ctx->supported_features.reparse_points = 1;
+		if (win32func_CreateSymbolicLinkW)
+			ctx->supported_features.symlink_reparse_points = 1;
+	}
+
+	if (vol_flags & FILE_PERSISTENT_ACLS)
+		ctx->supported_features.security_descriptors = 1;
+
+	if (supports_SetFileShortName)
+		ctx->supported_features.short_names = 1;
 	return 0;
 }
 
@@ -95,8 +116,33 @@ static int
 win32_create_hardlink(const wchar_t *oldpath, const wchar_t *newpath,
 		      struct apply_ctx *ctx)
 {
-	if (!CreateHardLink(newpath, oldpath, NULL))
-		goto error;
+	if (!CreateHardLink(newpath, oldpath, NULL)) {
+		if (GetLastError() != ERROR_ALREADY_EXISTS)
+			goto error;
+		if (!DeleteFile(newpath))
+			goto error;
+		if (!CreateHardLink(newpath, oldpath, NULL))
+			goto error;
+	}
+	return 0;
+
+error:
+	set_errno_from_GetLastError();
+	return WIMLIB_ERR_LINK;
+}
+
+static int
+win32_create_symlink(const wchar_t *oldpath, const wchar_t *newpath,
+		     struct apply_ctx *ctx)
+{
+	if (!(*win32func_CreateSymbolicLinkW)(newpath, oldpath, 0)) {
+		if (GetLastError() != ERROR_ALREADY_EXISTS)
+			goto error;
+		if (!DeleteFile(newpath))
+			goto error;
+		if (!(*win32func_CreateSymbolicLinkW)(newpath, oldpath, 0))
+			goto error;
+	}
 	return 0;
 
 error:
@@ -496,6 +542,7 @@ const struct apply_operations win32_apply_ops = {
 	.create_file              = win32_create_file,
 	.create_directory         = win32_create_directory,
 	.create_hardlink          = win32_create_hardlink,
+	.create_symlink		  = win32_create_symlink,
 	.extract_unnamed_stream   = win32_extract_unnamed_stream,
 	.extract_named_stream     = win32_extract_named_stream,
 	.extract_encrypted_stream = win32_extract_encrypted_stream,

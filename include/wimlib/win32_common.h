@@ -39,6 +39,7 @@ win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess);
 extern HANDLE
 win32_open_file_data_only(const wchar_t *path);
 
+/* Vista and later */
 extern HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
 						   STREAM_INFO_LEVELS InfoLevel,
 						   LPVOID lpFindStreamData,
@@ -47,6 +48,11 @@ extern HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
 /* Vista and later */
 extern BOOL (WINAPI *win32func_FindNextStreamW)(HANDLE hFindStream,
 						LPVOID lpFindStreamData);
+
+/* Vista and later */
+extern BOOL (WINAPI *win32func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
+						    const wchar_t *lpTargetFileName,
+						    DWORD dwFlags);
 
 extern bool
 windows_version_is_at_least(unsigned major, unsigned minor);

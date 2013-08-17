@@ -898,6 +898,11 @@ static unsigned
 get_num_path_components(const tchar *path, tchar path_separator)
 {
 	unsigned num_components = 0;
+#ifdef __WIN32__
+	/* Ignore drive letter.  */
+	if (path[0] != L'\0' && path[1] == L':')
+		path += 2;
+#endif
 
 	while (*path) {
 		while (*path == path_separator)
@@ -940,7 +945,11 @@ extract_multiimage_symlink(const tchar *oldpath, const tchar *newpath,
 		num_target_path_components--;
 	}
 
-	p_old = oldpath;
+	p_old = oldpath + ctx->ops->path_prefix_nchars;
+#ifdef __WIN32__
+	if (p_old[0] != L'\0' && p_old[1] == ':')
+		p_old += 2;
+#endif
 	while (*p_old == ctx->ops->path_separator)
 		p_old++;
 	while (--num_target_path_components) {

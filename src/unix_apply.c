@@ -85,14 +85,12 @@ unix_makelink(const tchar *oldpath, const tchar *newpath,
 	      int (*makelink)(const tchar *oldpath, const tchar *newpath))
 {
 	if ((*makelink)(oldpath, newpath)) {
-		if (errno == EEXIST) {
-			if (unlink(newpath))
-				return WIMLIB_ERR_LINK;
-			if ((*makelink)(oldpath, newpath))
-				return WIMLIB_ERR_LINK;
-			return 0;
-		}
-		return WIMLIB_ERR_LINK;
+		if (errno != EEXIST)
+			return WIMLIB_ERR_LINK;
+		if (unlink(newpath))
+			return WIMLIB_ERR_LINK;
+		if ((*makelink)(oldpath, newpath))
+			return WIMLIB_ERR_LINK;
 	}
 	return 0;
 }
