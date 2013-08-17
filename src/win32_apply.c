@@ -61,7 +61,7 @@ win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 }
 
 static int
-win32_create_file(const wchar_t *path, struct apply_ctx *ctx)
+win32_create_file(const wchar_t *path, struct apply_ctx *ctx, u64 *cookie_ret)
 {
 	HANDLE h;
 
@@ -78,7 +78,8 @@ error:
 }
 
 static int
-win32_create_directory(const wchar_t *path, struct apply_ctx *ctx)
+win32_create_directory(const wchar_t *path, struct apply_ctx *ctx,
+		       u64 *cookie_ret)
 {
 	if (!CreateDirectory(path, NULL))
 		if (GetLastError() != ERROR_ALREADY_EXISTS)
@@ -203,10 +204,11 @@ win32_encrypted_import_cb(unsigned char *data, void *_import_ctx,
 }
 
 static int
-win32_extract_encrypted_stream(const wchar_t *path,
+win32_extract_encrypted_stream(file_spec_t file,
 			       struct wim_lookup_table_entry *lte,
 			       struct apply_ctx *ctx)
 {
+	const tchar *path = file.path;
 	void *file_ctx;
 	DWORD err;
 	int ret;
@@ -343,7 +345,6 @@ win32_set_file_attributes(const wchar_t *path, u32 attributes,
 			goto error;
 	}
 
-success:
 	return 0;
 
 error:

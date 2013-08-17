@@ -3373,13 +3373,11 @@ imagex_update(int argc, tchar **argv, int cmd)
 	}
 
 	/* Set default flags and capture config on the update commands */
-	bool have_add_command = false;
 	for (size_t i = 0; i < num_cmds; i++) {
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
 			cmds[i].add.add_flags |= default_add_flags;
 			cmds[i].add.config = config;
-			have_add_command = true;
 			break;
 		case WIMLIB_UPDATE_OP_DELETE:
 			cmds[i].delete.delete_flags |= default_delete_flags;

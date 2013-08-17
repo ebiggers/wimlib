@@ -1817,10 +1817,10 @@ do_feature_check(const struct wim_features *required_features,
 		 const tchar *wim_source_path)
 {
 	const tchar *loc;
-	const tchar *mode = "this extraction mode";
+	const tchar *mode = T("this extraction mode");
 
 	if (wim_source_path[0] == '\0')
-		loc = "the WIM image";
+		loc = T("the WIM image");
 	else
 		loc = wim_source_path;
 

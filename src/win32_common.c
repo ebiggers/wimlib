@@ -504,13 +504,13 @@ win32_modify_capture_and_apply_privileges(bool enable)
 static void
 win32_acquire_capture_and_apply_privileges(void)
 {
-	win32_modify_capture_privileges(true);
+	win32_modify_capture_and_apply_privileges(true);
 }
 
 static void
 win32_release_capture_and_apply_privileges(void)
 {
-	win32_modify_capture_privileges(false);
+	win32_modify_capture_and_apply_privileges(false);
 }
 
 HANDLE
@@ -566,8 +566,6 @@ windows_version_is_at_least(unsigned major, unsigned minor)
 void
 win32_global_init(int init_flags)
 {
-	DWORD err;
-
 	/* Try to acquire useful privileges.  */
 	if (!(init_flags & WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES)) {
 		win32_acquire_capture_and_apply_privileges();
@@ -591,7 +589,6 @@ win32_global_init(int init_flags)
 				win32func_FindFirstStreamW = NULL;
 		}
 	}
-
 }
 
 void

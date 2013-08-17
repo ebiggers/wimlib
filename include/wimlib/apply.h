@@ -13,7 +13,7 @@ struct apply_ctx;
 /* Path to extracted file, or "cookie" identifying the file (e.g. inode number).
  * */
 typedef union {
-	const char *path;
+	const tchar *path;
 	u64 cookie;
 } file_spec_t;
 
