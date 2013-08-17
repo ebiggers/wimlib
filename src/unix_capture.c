@@ -241,6 +241,11 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	}
 	if (!S_ISREG(stbuf.st_mode) && !S_ISDIR(stbuf.st_mode)
 	    && !S_ISLNK(stbuf.st_mode)) {
+		if (params->add_flags & WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE)
+		{
+			ERROR("Can't archive unsupported file \"%s\"", path);
+			return WIMLIB_ERR_UNSUPPORTED_FILE;
+		}
 		if ((params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE)
 		    && params->progress_func)
 		{

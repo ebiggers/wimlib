@@ -971,6 +971,13 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * documentation for ::WIMLIB_ADD_FLAG_RPFIX. */
 #define WIMLIB_ADD_FLAG_NORPFIX			0x00000200
 
+/** Do not exclude unsupported files or directories from capture; e.g. encrypted
+ * directories in NTFS-3g capture mode, or device files and FIFOs on UNIX-like
+ * systems.  Instead, fail with ::WIMLIB_ERR_UNSUPPORTED_FILE when such a file
+ * is encountered.  */
+#define WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE	0x00000400
+
+
 #define WIMLIB_ADD_IMAGE_FLAG_NTFS		WIMLIB_ADD_FLAG_NTFS
 #define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	WIMLIB_ADD_FLAG_DEREFERENCE
 #define WIMLIB_ADD_IMAGE_FLAG_VERBOSE		WIMLIB_ADD_FLAG_VERBOSE
@@ -981,6 +988,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE	WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE
 #define WIMLIB_ADD_IMAGE_FLAG_RPFIX		WIMLIB_ADD_FLAG_RPFIX
 #define WIMLIB_ADD_IMAGE_FLAG_NORPFIX		WIMLIB_ADD_FLAG_NORPFIX
+#define WIMLIB_ADD_IMAGE_FLAG_NO_UNSUPPORTED_EXCLUDE \
+						WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE
 
 /******************************
  * WIMLIB_DELETE_FLAG_*
@@ -1391,6 +1400,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE,
 	WIMLIB_ERR_UNKNOWN_VERSION,
 	WIMLIB_ERR_UNSUPPORTED,
+	WIMLIB_ERR_UNSUPPORTED_FILE,
 	WIMLIB_ERR_VOLUME_LACKS_FEATURES,
 	WIMLIB_ERR_WIM_IS_READONLY,
 	WIMLIB_ERR_WRITE,

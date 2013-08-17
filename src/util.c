@@ -406,6 +406,8 @@ static const tchar *error_strings[] = {
 		= T("The WIM file is marked with an unknown version number"),
 	[WIMLIB_ERR_UNSUPPORTED]
 		= T("The requested operation is unsupported"),
+	[WIMLIB_ERR_UNSUPPORTED_FILE]
+		= T("A file in the directory tree to archive was not of a supported type"),
 	[WIMLIB_ERR_VOLUME_LACKS_FEATURES]
 		= T("The volume did not support a feature necessary to complete the operation"),
 	[WIMLIB_ERR_WIM_IS_READONLY]

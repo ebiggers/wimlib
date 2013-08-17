@@ -575,6 +575,11 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	if ((attributes & (FILE_ATTRIBUTE_DIRECTORY |
 			   FILE_ATTRIBUTE_ENCRYPTED)) == FILE_ATTRIBUTE_ENCRYPTED)
 	{
+		if (params->add_flags & WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE)
+		{
+			ERROR("Can't archive unsupported encrypted file \"%s\"", path);
+			return WIMLIB_ERR_UNSUPPORTED_FILE;
+		}
 		if ((params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE)
 		    && params->progress_func)
 		{
