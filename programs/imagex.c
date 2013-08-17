@@ -1032,10 +1032,18 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		}
 		break;
 	case WIMLIB_PROGRESS_MSG_SCAN_DENTRY:
-		if (info->scan.excluded)
-			imagex_printf(T("Excluding \"%"TS"\" from capture\n"), info->scan.cur_path);
-		else
+		switch (info->scan.status) {
+		case WIMLIB_SCAN_DENTRY_OK:
 			imagex_printf(T("Scanning \"%"TS"\"\n"), info->scan.cur_path);
+			break;
+		case WIMLIB_SCAN_DENTRY_EXCLUDED:
+			imagex_printf(T("Excluding \"%"TS"\" from capture\n"), info->scan.cur_path);
+			break;
+		case WIMLIB_SCAN_DENTRY_UNSUPPORTED:
+			imagex_printf(T("WARNING: Excluding unsupported file or directory\n"
+					"         \"%"TS"\" from capture\n"), info->scan.cur_path);
+			break;
+		}
 		break;
 	case WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY:
 		unit_shift = get_unit(info->integrity.total_bytes, &unit_name);

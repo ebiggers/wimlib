@@ -421,9 +421,19 @@ union wimlib_progress_info {
 		 * */
 		const wimlib_tchar *cur_path;
 
-		/** True iff @p cur_path is being excluded from the image
-		 * capture due to the capture configuration file. */
-		bool excluded;
+		enum {
+			/** File or directory looks okay and will be captured.  */
+			WIMLIB_SCAN_DENTRY_OK = 0,
+
+			/** File or directory is being excluded from capture due
+			 * to the capture configuration file.  */
+			WIMLIB_SCAN_DENTRY_EXCLUDED,
+
+			/** File or directory is being excluded from capture due
+			 * to being unsupported (e.g. an encrypted or device
+			 * file).  */
+			WIMLIB_SCAN_DENTRY_UNSUPPORTED,
+		} status;
 
 		/** Target path in the WIM.  Only valid on messages
 		 * ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN and
@@ -1373,7 +1383,6 @@ enum wimlib_error_code {
 	WIMLIB_ERR_SET_SECURITY,
 	WIMLIB_ERR_SET_SHORT_NAME,
 	WIMLIB_ERR_SET_TIMESTAMPS,
-	WIMLIB_ERR_SPECIAL_FILE,
 	WIMLIB_ERR_SPLIT_INVALID,
 	WIMLIB_ERR_SPLIT_UNSUPPORTED,
 	WIMLIB_ERR_STAT,

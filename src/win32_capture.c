@@ -944,7 +944,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		{
 			union wimlib_progress_info info;
 			info.scan.cur_path = path;
-			info.scan.excluded = true;
+			info.scan.status = WIMLIB_SCAN_DENTRY_EXCLUDED;
 			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 		}
 		ret = 0;
@@ -968,7 +968,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	{
 		union wimlib_progress_info info;
 		info.scan.cur_path = path;
-		info.scan.excluded = false;
+		info.scan.status = WIMLIB_SCAN_DENTRY_OK;
 		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 	}
 

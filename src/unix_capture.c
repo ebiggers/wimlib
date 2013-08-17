@@ -210,7 +210,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		{
 			union wimlib_progress_info info;
 			info.scan.cur_path = path;
-			info.scan.excluded = true;
+			info.scan.status = WIMLIB_SCAN_DENTRY_EXCLUDED;
 			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 		}
 		goto out;
@@ -221,7 +221,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	{
 		union wimlib_progress_info info;
 		info.scan.cur_path = path;
-		info.scan.excluded = false;
+		info.scan.status = WIMLIB_SCAN_DENTRY_OK;
 		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 	}
 
@@ -241,9 +241,14 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	}
 	if (!S_ISREG(stbuf.st_mode) && !S_ISDIR(stbuf.st_mode)
 	    && !S_ISLNK(stbuf.st_mode)) {
-		ERROR("`%s' is not a regular file, directory, or symbolic link.",
-		      path);
-		ret = WIMLIB_ERR_SPECIAL_FILE;
+		if ((params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE)
+		    && params->progress_func)
+		{
+			union wimlib_progress_info info;
+			info.scan.cur_path = path;
+			info.scan.status = WIMLIB_SCAN_DENTRY_UNSUPPORTED;
+			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+		}
 		goto out;
 	}
 

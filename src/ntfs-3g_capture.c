@@ -557,7 +557,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		{
 			union wimlib_progress_info info;
 			info.scan.cur_path = path;
-			info.scan.excluded = true;
+			info.scan.status = WIMLIB_SCAN_DENTRY_EXCLUDED;
 			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 		}
 		root = NULL;
@@ -572,12 +572,28 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
+	if ((attributes & (FILE_ATTRIBUTE_DIRECTORY |
+			   FILE_ATTRIBUTE_ENCRYPTED)) == FILE_ATTRIBUTE_ENCRYPTED)
+	{
+		if ((params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE)
+		    && params->progress_func)
+		{
+			union wimlib_progress_info info;
+			info.scan.cur_path = path;
+			info.scan.status = WIMLIB_SCAN_DENTRY_UNSUPPORTED;
+			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
+		}
+		root = NULL;
+		ret = 0;
+		goto out;
+	}
+
 	if ((params->add_flags & WIMLIB_ADD_FLAG_VERBOSE)
 	    && params->progress_func)
 	{
 		union wimlib_progress_info info;
 		info.scan.cur_path = path;
-		info.scan.excluded = false;
+		info.scan.status = WIMLIB_SCAN_DENTRY_OK;
 		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
 	}
 

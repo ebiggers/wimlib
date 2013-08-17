@@ -390,8 +390,6 @@ static const tchar *error_strings[] = {
 		= T("Failed to set short name on extracted file"),
 	[WIMLIB_ERR_SET_TIMESTAMPS]
 		= T("Failed to set timestamps on extracted file"),
-	[WIMLIB_ERR_SPECIAL_FILE]
-		= T("Encountered a special file that cannot be archived"),
 	[WIMLIB_ERR_SPLIT_INVALID]
 		= T("The WIM is part of an invalid split WIM"),
 	[WIMLIB_ERR_SPLIT_UNSUPPORTED]
