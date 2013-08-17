@@ -52,19 +52,25 @@ struct add_image_params {
 	/* Flags that affect the capture operation (WIMLIB_ADD_FLAG_*) */
 	int add_flags;
 
-	/* If non-NULL, the user-supplied progress function. */
-	wimlib_progress_func_t progress_func;
-
 	/* Extra argument; set to point to a pointer to the ntfs_volume for
 	 * libntfs-3g capture.  */
 	void *extra_arg;
 
 	u64 capture_root_ino;
 	u64 capture_root_dev;
+
+	/* If non-NULL, the user-supplied progress function. */
+	wimlib_progress_func_t progress_func;
+
+	/* Progress data.  */
+	union wimlib_progress_info progress;
 };
 
 
 /* capture_common.c */
+
+extern void
+do_capture_progress(struct add_image_params *params, int status);
 
 extern bool
 exclude_path(const tchar *path, size_t path_len,

@@ -180,7 +180,6 @@ execute_add_command(WIMStruct *wim,
 	int (*capture_tree)(struct wim_dentry **,
 			    const tchar *,
 			    struct add_image_params *);
-	union wimlib_progress_info progress;
 	struct wimlib_capture_config *config;
 #ifdef WITH_NTFS_3G
 	struct _ntfs_volume *ntfs_vol = NULL;
@@ -190,12 +189,15 @@ execute_add_command(WIMStruct *wim,
 	bool rollback_sd = true;
 
 	wimlib_assert(add_cmd->op == WIMLIB_UPDATE_OP_ADD);
+
 	add_flags = add_cmd->add.add_flags;
 	fs_source_path = add_cmd->add.fs_source_path;
 	wim_target_path = add_cmd->add.wim_target_path;
 	config = add_cmd->add.config;
 	DEBUG("fs_source_path=\"%"TS"\", wim_target_path=\"%"TS"\", add_flags=%#x",
 	      fs_source_path, wim_target_path, add_flags);
+
+	memset(&params, 0, sizeof(params));
 
 	imd = wim->image_metadata[wim->current_image - 1];
 
@@ -221,6 +223,7 @@ execute_add_command(WIMStruct *wim,
 		extra_arg = NULL;
 	}
 
+
 	ret = init_inode_table(&params.inode_table, 9001);
 	if (ret)
 		goto out;
@@ -234,15 +237,13 @@ execute_add_command(WIMStruct *wim,
 	params.lookup_table = wim->lookup_table;
 	params.config = config;
 	params.add_flags = add_flags;
-	params.progress_func = progress_func;
 	params.extra_arg = extra_arg;
 
-	if (progress_func) {
-		memset(&progress, 0, sizeof(progress));
-		progress.scan.source = fs_source_path;
-		progress.scan.wim_target_path = wim_target_path;
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &progress);
-	}
+	params.progress_func = progress_func;
+	params.progress.scan.source = fs_source_path;
+	params.progress.scan.wim_target_path = wim_target_path;
+	if (progress_func)
+		progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &params.progress);
 	if (config) {
 		config->_prefix = fs_source_path;
 		config->_prefix_num_tchars = tstrlen(fs_source_path);
@@ -271,7 +272,7 @@ execute_add_command(WIMStruct *wim,
 			goto out_ntfs_umount;
 	}
 	if (progress_func)
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &progress);
+		progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &params.progress);
 	list_splice_tail(&unhashed_streams, &imd->unhashed_streams);
 #ifdef WITH_NTFS_3G
 	imd->ntfs_vol = ntfs_vol;

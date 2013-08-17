@@ -182,6 +182,25 @@ match_pattern(const tchar *path,
 	return false;
 }
 
+void
+do_capture_progress(struct add_image_params *params, int status)
+{
+	switch (status) {
+	case WIMLIB_SCAN_DENTRY_OK:
+		if (!(params->add_flags & WIMLIB_ADD_FLAG_VERBOSE))
+			return;
+	case WIMLIB_SCAN_DENTRY_UNSUPPORTED:
+	case WIMLIB_SCAN_DENTRY_EXCLUDED:
+		if (!(params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE))
+			return;
+	}
+	params->progress.scan.status = status;
+	if (params->progress_func) {
+		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
+				      &params->progress);
+	}
+}
+
 /* Return true if the image capture configuration file indicates we should
  * exclude the filename @path from capture.
  *

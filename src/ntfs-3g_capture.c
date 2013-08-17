@@ -545,22 +545,16 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 {
 	le32 attributes;
 	int ret;
-	struct wim_dentry *root;
+	struct wim_dentry *root = NULL;
 	struct wim_inode *inode;
 	ATTR_TYPES stream_type;
+
+	params->progress.scan.cur_path = path;
 
 	if (exclude_path(path, path_len, params->config, false)) {
 		/* Exclude a file or directory tree based on the capture
 		 * configuration file */
-		if ((params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE)
-		    && params->progress_func)
-		{
-			union wimlib_progress_info info;
-			info.scan.cur_path = path;
-			info.scan.status = WIMLIB_SCAN_DENTRY_EXCLUDED;
-			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
-		}
-		root = NULL;
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED);
 		ret = 0;
 		goto out;
 	}
@@ -569,7 +563,8 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	ret = ntfs_get_ntfs_attrib(ni, (char*)&attributes, sizeof(attributes));
 	if (ret != sizeof(attributes)) {
 		ERROR_WITH_ERRNO("Failed to get NTFS attributes from \"%s\"", path);
-		return WIMLIB_ERR_NTFS_3G;
+		ret = WIMLIB_ERR_NTFS_3G;
+		goto out;
 	}
 
 	if ((attributes & (FILE_ATTRIBUTE_DIRECTORY |
@@ -578,44 +573,33 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		if (params->add_flags & WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE)
 		{
 			ERROR("Can't archive unsupported encrypted file \"%s\"", path);
-			return WIMLIB_ERR_UNSUPPORTED_FILE;
+			ret = WIMLIB_ERR_UNSUPPORTED_FILE;
+			goto out;
 		}
-		if ((params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE)
-		    && params->progress_func)
-		{
-			union wimlib_progress_info info;
-			info.scan.cur_path = path;
-			info.scan.status = WIMLIB_SCAN_DENTRY_UNSUPPORTED;
-			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
-		}
-		root = NULL;
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED);
 		ret = 0;
 		goto out;
 	}
 
-	if ((params->add_flags & WIMLIB_ADD_FLAG_VERBOSE)
-	    && params->progress_func)
-	{
-		union wimlib_progress_info info;
-		info.scan.cur_path = path;
-		info.scan.status = WIMLIB_SCAN_DENTRY_OK;
-		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
-	}
+	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK);
 
 	/* Create a WIM dentry with an associated inode, which may be shared */
 	ret = inode_table_new_dentry(&params->inode_table,
 				     path_basename_with_len(path, path_len),
 				     ni->mft_no, 0, false, &root);
 	if (ret)
-		return ret;
+		goto out;
 
 	if (name_type & FILE_NAME_WIN32) /* Win32 or Win32+DOS name (rather than POSIX) */
 		root->is_win32_name = 1;
 
 	inode = root->d_inode;
 
-	if (inode->i_nlink > 1) /* Shared inode; nothing more to do */
+	if (inode->i_nlink > 1) {
+		/* Shared inode; nothing more to do */
+		ret = 0;
 		goto out;
+	}
 
 	inode->i_creation_time    = le64_to_cpu(ni->creation_time);
 	inode->i_last_write_time  = le64_to_cpu(ni->last_data_change_time);

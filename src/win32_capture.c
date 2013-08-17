@@ -933,20 +933,15 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	u16 rpbuflen;
 	u16 not_rpfixed;
 
+	params->progress.scan.cur_path = path;
+
 	if (exclude_path(path, path_num_chars, params->config, true)) {
 		if (params->add_flags & WIMLIB_ADD_FLAG_ROOT) {
 			ERROR("Cannot exclude the root directory from capture");
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 			goto out;
 		}
-		if ((params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE)
-		    && params->progress_func)
-		{
-			union wimlib_progress_info info;
-			info.scan.cur_path = path;
-			info.scan.status = WIMLIB_SCAN_DENTRY_EXCLUDED;
-			params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
-		}
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED);
 		ret = 0;
 		goto out;
 	}
@@ -963,14 +958,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	}
 #endif
 
-	if ((params->add_flags & WIMLIB_ADD_FLAG_VERBOSE)
-	    && params->progress_func)
-	{
-		union wimlib_progress_info info;
-		info.scan.cur_path = path;
-		info.scan.status = WIMLIB_SCAN_DENTRY_OK;
-		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY, &info);
-	}
+	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK);
 
 	HANDLE hFile = win32_open_existing_file(path,
 						FILE_READ_DATA | FILE_READ_ATTRIBUTES);
