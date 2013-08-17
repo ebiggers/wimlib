@@ -175,6 +175,7 @@ struct wim_features {
 	unsigned long system_files;
 	unsigned long compressed_files;
 	unsigned long encrypted_files;
+	unsigned long encrypted_directories;
 	unsigned long not_context_indexed_files;
 	unsigned long sparse_files;
 	unsigned long named_data_streams;
@@ -198,6 +199,7 @@ struct apply_ctx {
 	struct wim_dentry *extract_root;
 	const struct apply_operations *ops;
 	struct wim_features supported_features;
+	u32 supported_attributes_mask;
 	struct list_head stream_list;
 	tchar *realtarget;
 	size_t realtarget_nchars;

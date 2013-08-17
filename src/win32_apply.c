@@ -49,6 +49,7 @@ win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 	ctx->supported_features.system_files              = 1;
 	ctx->supported_features.compressed_files          = !!(vol_flags & FILE_FILE_COMPRESSION);
 	ctx->supported_features.encrypted_files           = !!(vol_flags & FILE_SUPPORTS_ENCRYPTION);
+	ctx->supported_features.encrypted_directories	  = !!(vol_flags & FILE_SUPPORTS_ENCRYPTION);
 	ctx->supported_features.not_context_indexed_files = 1;
 	ctx->supported_features.sparse_files              = !!(vol_flags & FILE_SUPPORTS_SPARSE_FILES);
 	ctx->supported_features.named_data_streams        = !!(vol_flags & FILE_NAMED_STREAMS);

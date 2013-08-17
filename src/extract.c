@@ -646,12 +646,25 @@ extract_file_attributes(const tchar *path, struct apply_ctx *ctx,
 {
 	int ret;
 
-	if (ctx->ops->set_file_attributes) {
-		if (dentry == ctx->extract_root && ctx->root_dentry_is_special)
-			return 0;
-		ret = ctx->ops->set_file_attributes(path,
-						    dentry->d_inode->i_attributes,
-						    ctx);
+	if (ctx->ops->set_file_attributes &&
+	    !(dentry == ctx->extract_root && ctx->root_dentry_is_special)) {
+		u32 attributes = dentry->d_inode->i_attributes;
+
+		/* Clear unsupported attributes.  */
+		attributes &= ctx->supported_attributes_mask;
+
+		if ((attributes & FILE_ATTRIBUTE_DIRECTORY &&
+		     !ctx->supported_features.encrypted_directories) ||
+		    (!(attributes & FILE_ATTRIBUTE_DIRECTORY) &&
+		     !ctx->supported_features.encrypted_files))
+		{
+			attributes &= ~FILE_ATTRIBUTE_ENCRYPTED;
+		}
+
+		if (attributes == 0)
+			attributes = FILE_ATTRIBUTE_NORMAL;
+
+		ret = ctx->ops->set_file_attributes(path, attributes, ctx);
 		if (ret) {
 			ERROR_WITH_ERRNO("Failed to set attributes on "
 					 "\"%"TS"\"", path);
@@ -804,12 +817,15 @@ dentry_is_supported(struct wim_dentry *dentry,
 	struct wim_inode *inode = dentry->d_inode;
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		if (supported_features->reparse_points)
-			return true;
-		if (supported_features->symlink_reparse_points &&
-		    inode_is_symlink(inode))
-			return true;
-		return false;
+		return supported_features->reparse_points ||
+			(inode_is_symlink(inode) &&
+			 supported_features->symlink_reparse_points);
+	}
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
+		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+			return supported_features->encrypted_directories != 0;
+		else
+			return supported_features->encrypted_files != 0;
 	}
 	return true;
 }
@@ -1717,8 +1733,12 @@ dentry_tally_features(struct wim_dentry *dentry, void *_features)
 		features->system_files++;
 	if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED)
 		features->compressed_files++;
-	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)
-		features->encrypted_files++;
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
+		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+			features->encrypted_directories++;
+		else
+			features->encrypted_files++;
+	}
 	if (inode->i_attributes & FILE_ATTRIBUTE_NOT_CONTENT_INDEXED)
 		features->not_context_indexed_files++;
 	if (inode->i_attributes & FILE_ATTRIBUTE_SPARSE_FILE)
@@ -1758,6 +1778,35 @@ dentry_tree_get_features(struct wim_dentry *root, struct wim_features *features)
 	memset(features, 0, sizeof(struct wim_features));
 	for_dentry_in_tree(root, dentry_tally_features, features);
 	for_dentry_in_tree(root, dentry_clear_inode_visited, NULL);
+}
+
+static u32
+compute_supported_attributes_mask(const struct wim_features *supported_features)
+{
+	u32 mask = ~(u32)0;
+
+	if (!supported_features->archive_files)
+		mask &= ~FILE_ATTRIBUTE_ARCHIVE;
+
+	if (!supported_features->hidden_files)
+		mask &= ~FILE_ATTRIBUTE_HIDDEN;
+
+	if (!supported_features->system_files)
+		mask &= ~FILE_ATTRIBUTE_SYSTEM;
+
+	if (!supported_features->not_context_indexed_files)
+		mask &= ~FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+
+	if (!supported_features->compressed_files)
+		mask &= ~FILE_ATTRIBUTE_COMPRESSED;
+
+	if (!supported_features->sparse_files)
+		mask &= ~FILE_ATTRIBUTE_SPARSE_FILE;
+
+	if (!supported_features->reparse_points)
+		mask &= ~FILE_ATTRIBUTE_REPARSE_POINT;
+
+	return mask;
 }
 
 static int
@@ -1818,8 +1867,18 @@ do_feature_check(const struct wim_features *required_features,
 		WARNING(
           "%lu files in %"TS" are marked as being encrypted,\n"
 "           but encryption is not supported in %"TS".  These files\n"
-"           will be extracted as raw encrypted data instead.",
+"           will not be extracted.",
 			required_features->encrypted_files, loc, mode);
+	}
+
+	if (required_features->encrypted_directories &&
+	    !supported_features->encrypted_directories)
+	{
+		WARNING(
+          "%lu directories in %"TS" are marked as being encrypted,\n"
+"           but encryption is not supported in %"TS".\n"
+"           These directories will be extracted as unencrypted.",
+			required_features->encrypted_directories, loc, mode);
 	}
 
 	if (required_features->not_context_indexed_files &&
@@ -2076,6 +2135,9 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 			       extract_flags, ctx.ops, wim_source_path);
 	if (ret)
 		goto out_finish_or_abort_extract;
+
+	ctx.supported_attributes_mask =
+		compute_supported_attributes_mask(&ctx.supported_features);
 
 	/* Figure out whether the root dentry is being extracted to the root of
 	 * a volume and therefore needs to be treated "specially", for example
