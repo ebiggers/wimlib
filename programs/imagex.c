@@ -419,29 +419,6 @@ file_get_size(const tchar *filename)
 		return (off_t)-1;
 }
 
-tchar pat_ntfs_log[]                  = T("/$ntfs.log");
-tchar pat_hiberfil_sys[]              = T("/hiberfil.sys");
-tchar pat_pagefile_sys[]              = T("/pagefile.sys");
-tchar pat_system_volume_information[] = T("/System Volume Information");
-tchar pat_recycler[]                  = T("/RECYCLER");
-tchar pat_windows_csc[]               = T("/Windows/CSC");
-
-tchar *default_pats[] = {
-	pat_ntfs_log,
-	pat_hiberfil_sys,
-	pat_pagefile_sys,
-	pat_system_volume_information,
-	pat_recycler,
-	pat_windows_csc,
-};
-
-static struct wimlib_capture_config default_capture_config = {
-	.exclusion_pats = {
-		.num_pats = sizeof(default_pats) / sizeof(default_pats[0]),
-		.pats = default_pats,
-	},
-};
-
 enum {
 	PARSE_STRING_SUCCESS = 0,
 	PARSE_STRING_FAILURE = 1,
@@ -1269,15 +1246,15 @@ update_command_add_option(int op, const tchar *option,
 	switch (op) {
 	case WIMLIB_UPDATE_OP_ADD:
 		if (!tstrcmp(option, T("--verbose")))
-			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
+			cmd->add.add_flags |= WIMLIB_ADD_FLAG_VERBOSE;
 		else if (!tstrcmp(option, T("--unix-data")))
-			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA;
+			cmd->add.add_flags |= WIMLIB_ADD_FLAG_UNIX_DATA;
 		else if (!tstrcmp(option, T("--no-acls")) || !tstrcmp(option, T("--noacls")))
-			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_NO_ACLS;
+			cmd->add.add_flags |= WIMLIB_ADD_FLAG_NO_ACLS;
 		else if (!tstrcmp(option, T("--strict-acls")))
-			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS;
+			cmd->add.add_flags |= WIMLIB_ADD_FLAG_STRICT_ACLS;
 		else if (!tstrcmp(option, T("--dereference")))
-			cmd->add.add_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
+			cmd->add.add_flags |= WIMLIB_ADD_FLAG_DEREFERENCE;
 		else
 			recognized = false;
 		break;
@@ -1637,7 +1614,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 {
 	int c;
 	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
-	int add_image_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
+	int add_image_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE |
+			      WIMLIB_ADD_IMAGE_FLAG_WINCONFIG;
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
 	const tchar *wimfile;
@@ -1678,6 +1656,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_CONFIG_OPTION:
 			config_file = optarg;
+			add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_WINCONFIG;
 			break;
 		case IMAGEX_COMPRESS_OPTION:
 			compression_type = get_compression_type(optarg);
@@ -1826,7 +1805,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		if (ret)
 			goto out_free_config;
 	} else {
-		config = &default_capture_config;
+		config = NULL;
 	}
 
 	if (cmd == CMD_APPEND)
@@ -1922,7 +1901,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 out_wimlib_free:
 	wimlib_free(wim);
 out_free_config:
-	if (config != &default_capture_config) {
+	if (config) {
 		free(config->exclusion_pats.pats);
 		free(config->exclusion_exception_pats.pats);
 		free(config_str);
@@ -3219,7 +3198,8 @@ imagex_update(int argc, tchar **argv, int cmd)
 	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
 	int write_flags = 0;
 	int update_flags = WIMLIB_UPDATE_FLAG_SEND_PROGRESS;
-	int default_add_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE;
+	int default_add_flags = WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE |
+				WIMLIB_ADD_FLAG_WINCONFIG;
 	int default_delete_flags = 0;
 	unsigned num_threads = 0;
 	int c;
@@ -3272,24 +3252,25 @@ imagex_update(int argc, tchar **argv, int cmd)
 
 		/* Global add option */
 		case IMAGEX_CONFIG_OPTION:
+			default_add_flags &= ~WIMLIB_ADD_FLAG_WINCONFIG;
 			config_file = optarg;
 			break;
 
 		/* Default add options */
 		case IMAGEX_VERBOSE_OPTION:
-			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
+			default_add_flags |= WIMLIB_ADD_FLAG_VERBOSE;
 			break;
 		case IMAGEX_DEREFERENCE_OPTION:
-			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
+			default_add_flags |= WIMLIB_ADD_FLAG_DEREFERENCE;
 			break;
 		case IMAGEX_UNIX_DATA_OPTION:
-			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA;
+			default_add_flags |= WIMLIB_ADD_FLAG_UNIX_DATA;
 			break;
 		case IMAGEX_NO_ACLS_OPTION:
-			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_NO_ACLS;
+			default_add_flags |= WIMLIB_ADD_FLAG_NO_ACLS;
 			break;
 		case IMAGEX_STRICT_ACLS_OPTION:
-			default_add_flags |= WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS;
+			default_add_flags |= WIMLIB_ADD_FLAG_STRICT_ACLS;
 			break;
 		default:
 			goto out_usage;
@@ -3343,7 +3324,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 		if (ret)
 			goto out_free_config;
 	} else {
-		config = &default_capture_config;
+		config = NULL;
 	}
 
 	/* Read update commands from standard input, or the command string if
@@ -3401,7 +3382,7 @@ out_free_cmds:
 out_free_cmd_file_contents:
 	free(cmd_file_contents);
 out_free_config:
-	if (config != &default_capture_config) {
+	if (config) {
 		free(config->exclusion_pats.pats);
 		free(config->exclusion_exception_pats.pats);
 		free(config_str);

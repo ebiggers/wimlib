@@ -977,6 +977,25 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * is encountered.  */
 #define WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE	0x00000400
 
+/** Automatically select a capture configuration appropriate for capturing
+ * filesystems containing Windows operating systems.  When this flag is
+ * specified, the corresponding @p config parameter or member must be @c NULL.
+ *
+ * Currently, selecting this capture configuration will cause the following
+ * files and directories to be excluded from capture:
+ *
+ * - "\$ntfs.log"
+ * - "\hiberfil.sys"
+ * - "\pagefile.sys"
+ * - "\System Volume Information"
+ * - "\RECYCLER"
+ * - "\Windows\CSC"
+ *
+ * Note that the default behavior--- that is, when this flag is not specified
+ * and @p config is @c NULL--- is to use no capture configuration, meaning that
+ * no files are excluded from capture.
+ */
+#define WIMLIB_ADD_FLAG_WINCONFIG		0x00000800
 
 #define WIMLIB_ADD_IMAGE_FLAG_NTFS		WIMLIB_ADD_FLAG_NTFS
 #define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	WIMLIB_ADD_FLAG_DEREFERENCE
@@ -990,6 +1009,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_ADD_IMAGE_FLAG_NORPFIX		WIMLIB_ADD_FLAG_NORPFIX
 #define WIMLIB_ADD_IMAGE_FLAG_NO_UNSUPPORTED_EXCLUDE \
 						WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE
+#define WIMLIB_ADD_IMAGE_FLAG_WINCONFIG		WIMLIB_ADD_FLAG_WINCONFIG
 
 /******************************
  * WIMLIB_DELETE_FLAG_*
@@ -1281,7 +1301,9 @@ struct wimlib_update_command {
 			wimlib_tchar *wim_target_path;
 
 			/** Configuration for excluded files.  @c NULL means
-			 * exclude no files. */
+			 * exclude no files (use no configuration), unless
+			 * ::WIMLIB_ADD_FLAG_WINCONFIG is specified in @p
+			 * add_flags.  */
 			struct wimlib_capture_config *config;
 
 			/** Bitwise OR of WIMLIB_ADD_FLAG_* flags. */

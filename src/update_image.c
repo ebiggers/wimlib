@@ -514,6 +514,23 @@ execute_update_commands(WIMStruct *wim,
 	return ret;
 }
 
+
+tchar *winpats[] = {
+	T("/$ntfs.log"),
+	T("/hiberfil.sys"),
+	T("/pagefile.sys"),
+	T("/System Volume Information"),
+	T("/RECYCLER"),
+	T("/Windows/CSC"),
+};
+
+static const struct wimlib_capture_config winconfig = {
+	.exclusion_pats = {
+		.num_pats = ARRAY_LEN(winpats),
+		.pats = winpats,
+	},
+};
+
 static int
 check_add_command(struct wimlib_update_command *cmd,
 		  const struct wim_header *hdr)
@@ -648,6 +665,7 @@ copy_update_commands(const struct wimlib_update_command *cmds,
 {
 	int ret;
 	struct wimlib_update_command *cmds_copy;
+	const struct wimlib_capture_config *config;
 
 	cmds_copy = CALLOC(num_cmds, sizeof(cmds[0]));
 	if (!cmds_copy)
@@ -664,8 +682,11 @@ copy_update_commands(const struct wimlib_update_command *cmds,
 			if (!cmds_copy[i].add.fs_source_path ||
 			    !cmds_copy[i].add.wim_target_path)
 				goto oom;
-			if (cmds[i].add.config) {
-				ret = copy_and_canonicalize_capture_config(cmds[i].add.config,
+			config = cmds[i].add.config;
+			if (cmds[i].add.add_flags & WIMLIB_ADD_FLAG_WINCONFIG)
+				config = &winconfig;
+			if (config) {
+				ret = copy_and_canonicalize_capture_config(config,
 									   &cmds_copy[i].add.config);
 				if (ret)
 					goto err;
