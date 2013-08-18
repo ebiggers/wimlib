@@ -382,13 +382,14 @@ struct wim_inode {
 		/* Used only during image mount:  Table of file descriptors that
 		 * have been opened to this inode.  The table is automatically
 		 * freed when the last file descriptor is closed.  */
-		struct {
-			struct wimfs_fd **i_fds;
-			u16 i_num_opened_fds;
-			u16 i_num_allocated_fds;
-		};
+		struct wimfs_fd **i_fds;
 #endif
 	};
+
+#ifdef WITH_FUSE
+	u16 i_num_opened_fds;
+	u16 i_num_allocated_fds;
+#endif
 
 	/* Next alternate data stream ID to be assigned */
 	u32 i_next_stream_id;
