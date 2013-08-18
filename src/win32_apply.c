@@ -342,10 +342,10 @@ win32_set_file_attributes(const wchar_t *path, u32 attributes,
 		FILE_ATTRIBUTE_ENCRYPTED;
 	u32 actual_attributes;
 
-	/* On FAT filesystems we can't set FILE_ATTRIBUTE_READONLY on the
-	 * initial pass (when files are created, but data not extracted);
-	 * otherwise the system will refuse access to the file even if the
-	 * process has SeRestorePrivilege.  */
+	/* Delay setting FILE_ATTRIBUTE_READONLY on the initial pass (when files
+	 * are created, but data not extracted); otherwise the system will
+	 * refuse access to the file even if the process has SeRestorePrivilege.
+	 */
 	if (pass == 0)
 		attributes &= ~FILE_ATTRIBUTE_READONLY;
 
