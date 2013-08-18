@@ -30,9 +30,6 @@ win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret,
 extern HANDLE
 win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess);
 
-extern HANDLE
-win32_open_file_data_only(const wchar_t *path);
-
 /* Vista and later */
 extern HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
 						   STREAM_INFO_LEVELS InfoLevel,

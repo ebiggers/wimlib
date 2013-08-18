@@ -512,12 +512,6 @@ win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess)
 			   NULL /* hTemplateFile */);
 }
 
-HANDLE
-win32_open_file_data_only(const wchar_t *path)
-{
-	return win32_open_existing_file(path, FILE_READ_DATA);
-}
-
 #ifndef WITH_NTDLL
 /* Pointers to functions that are not available on all targetted versions of
  * Windows (XP and later).  NOTE: The WINAPI annotations seem to be important; I

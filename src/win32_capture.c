@@ -90,7 +90,8 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 	DWORD err;
 	u64 bytes_remaining;
 
-	HANDLE hFile = win32_open_file_data_only(lte->file_on_disk);
+	HANDLE hFile = win32_open_existing_file(lte->file_on_disk,
+						FILE_READ_DATA);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		set_errno_from_GetLastError();
 		ERROR_WITH_ERRNO("Failed to open \"%ls\"", lte->file_on_disk);

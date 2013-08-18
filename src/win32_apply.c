@@ -301,10 +301,7 @@ win32_set_special_file_attributes(const wchar_t *path, u32 attributes)
 	USHORT compression_format = COMPRESSION_FORMAT_DEFAULT;
 	DWORD bytes_returned;
 
-	h = CreateFile(path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
-		       OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS |
-				      FILE_FLAG_OPEN_REPARSE_POINT,
-		       NULL);
+	h = win32_open_existing_file(path, GENERIC_READ | GENERIC_WRITE);
 	if (h == INVALID_HANDLE_VALUE)
 		goto error;
 
@@ -388,10 +385,7 @@ win32_set_file_attributes(const wchar_t *path, u32 attributes,
 		DWORD bytes_returned;
 		USHORT compression_format = COMPRESSION_FORMAT_NONE;
 
-		h = CreateFile(path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
-			       OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS |
-					      FILE_FLAG_OPEN_REPARSE_POINT,
-			       NULL);
+		h = win32_open_existing_file(path, GENERIC_READ | GENERIC_WRITE);
 		if (h == INVALID_HANDLE_VALUE)
 			goto error;
 
@@ -425,10 +419,7 @@ win32_set_reparse_data(const wchar_t *path, const u8 *rpbuf, u16 rpbuflen,
 	DWORD err;
 	DWORD bytes_returned;
 
-	h = CreateFile(path, GENERIC_WRITE, 0, NULL,
-		       OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS |
-				      FILE_FLAG_OPEN_REPARSE_POINT,
-		       NULL);
+	h = win32_open_existing_file(path, GENERIC_WRITE);
 	if (h == INVALID_HANDLE_VALUE)
 		goto error;
 
@@ -458,10 +449,7 @@ win32_set_short_name(const wchar_t *path, const wchar_t *short_name,
 	HANDLE h;
 	DWORD err;
 
-	h = CreateFile(path, GENERIC_WRITE | DELETE, 0, NULL,
-		       OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS |
-				      FILE_FLAG_OPEN_REPARSE_POINT,
-		       NULL);
+	h = win32_open_existing_file(path, GENERIC_WRITE | DELETE);
 	if (h == INVALID_HANDLE_VALUE)
 		goto error;
 
@@ -516,10 +504,7 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 	h = INVALID_HANDLE_VALUE;
 
 #ifdef WITH_NTDLL
-	h = CreateFile(path, MAXIMUM_ALLOWED, 0, NULL, OPEN_EXISTING,
-		       FILE_FLAG_BACKUP_SEMANTICS |
-			       FILE_FLAG_OPEN_REPARSE_POINT,
-		       NULL);
+	h = win32_open_existing_file(path, MAXIMUM_ALLOWED);
 	if (h == INVALID_HANDLE_VALUE) {
 		ERROR_WITH_ERRNO("Can't open %ls (%u)", path, GetLastError());
 		goto error;
@@ -581,10 +566,7 @@ win32_set_timestamps(const wchar_t *path, u64 creation_time,
 	FILETIME lastWriteTime = {.dwLowDateTime = last_write_time & 0xffffffff,
 				  .dwHighDateTime = last_write_time >> 32};
 
-	h = CreateFile(path, FILE_WRITE_ATTRIBUTES, 0, NULL,
-		       OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS |
-				      FILE_FLAG_OPEN_REPARSE_POINT,
-		       NULL);
+	h = win32_open_existing_file(path, FILE_WRITE_ATTRIBUTES);
 	if (h == INVALID_HANDLE_VALUE)
 		goto error;
 
