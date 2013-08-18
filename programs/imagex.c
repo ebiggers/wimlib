@@ -1720,6 +1720,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	wimfile = argv[1];
 
 	if (!tstrcmp(wimfile, T("-"))) {
+		/* Writing captured WIM to standard output.  */
 	#if 0
 		if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE)) {
 			imagex_error("Can't write a non-pipable WIM to "
@@ -1739,6 +1740,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		wim_fd = STDOUT_FILENO;
 		wimfile = NULL;
 		imagex_info_file = stderr;
+		set_fd_to_binary_mode(wim_fd);
 	}
 
 	if (argc >= 3) {
@@ -2178,6 +2180,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 		dest_wimfile = NULL;
 		dest_wim_fd = STDOUT_FILENO;
 		imagex_info_file = stderr;
+		set_fd_to_binary_mode(dest_wim_fd);
 	}
 	errno = ENOENT;
 	if (dest_wimfile != NULL && tstat(dest_wimfile, &stbuf) == 0) {
