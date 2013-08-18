@@ -176,6 +176,11 @@ struct apply_operations {
 	/* OPTIONAL:  Set to 1 if extract_encrypted_stream() must be used to
 	 * create encrypted files.  */
 	unsigned extract_encrypted_stream_creates_file : 1;
+
+	/* OPTIONAL:  Set to 1 if a link to a file with corresponding short name
+	 * must be created before all links to the same file without
+	 * corresponding short names.  */
+	unsigned requires_short_name_reordering : 1;
 };
 
 struct wim_features {

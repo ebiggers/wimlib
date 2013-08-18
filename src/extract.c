@@ -1119,6 +1119,11 @@ hardlink:
 	return 0;
 }
 
+/* This is a wrapper around do_dentry_extract_skeleton() that handles building
+ * the path, doing short name reordering.  This is also idempotent; dentries
+ * already processed have skeleton_extracted set and no action is taken.  See
+ * apply_operations.requires_short_name_reordering for more details about short
+ * name reordering.  */
 static int
 dentry_extract_skeleton(struct wim_dentry *dentry, void *_ctx)
 {
@@ -1128,32 +1133,18 @@ dentry_extract_skeleton(struct wim_dentry *dentry, void *_ctx)
 	struct wim_dentry *other_dentry;
 	int ret;
 
-	/* Here we may re-order the extraction of multiple names (hard links)
-	 * for the same file in the same directory in order to ensure the short
-	 * (DOS) name is set correctly.  A short name is always associated with
-	 * exactly one long name, and at least on NTFS, only one long name for a
-	 * file can have a short name associated with it.  (More specifically,
-	 * there can be unlimited names in the POSIX namespace, but only one
-	 * name can be in the Win32+DOS namespace, or one name in the Win32
-	 * namespace with a corresponding name in the DOS namespace.) To ensure
-	 * the short name of a file is associated with the correct long name in
-	 * a directory, we extract the long name with a corresponding short name
-	 * before any additional names.  This can affect NTFS-3g extraction
-	 * (which uses ntfs_set_ntfs_dos_name(), which doesn't allow specifying
-	 * the long name to associate with a short name) and may affect Win32
-	 * extraction as well (which uses SetFileShortName()).  */
-
 	if (dentry->skeleton_extracted)
 		return 0;
+
 	orig_dentry = NULL;
 	if (ctx->supported_features.short_names
+	    && ctx->ops->requires_short_name_reordering
 	    && !dentry_has_short_name(dentry)
 	    && !dentry->d_inode->i_dos_name_extracted)
 	{
 		inode_for_each_dentry(other_dentry, dentry->d_inode) {
 			if (dentry_has_short_name(other_dentry)
-			    && !other_dentry->skeleton_extracted
-			    && other_dentry->parent == dentry->parent)
+			    && !other_dentry->skeleton_extracted)
 			{
 				DEBUG("Creating %"TS" before %"TS" "
 				      "to guarantee correct DOS name extraction",
@@ -1180,6 +1171,14 @@ again:
 		goto again;
 	}
 	dentry->d_inode->i_dos_name_extracted = 1;
+	return 0;
+}
+
+static int
+dentry_extract_dir_skeleton(struct wim_dentry *dentry, void *_ctx)
+{
+	if (dentry->d_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+		return dentry_extract_skeleton(dentry, _ctx);
 	return 0;
 }
 
@@ -2320,6 +2319,13 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 			goto out_free_realtarget;
 		}
 		ctx.realtarget_nchars = tstrlen(ctx.realtarget);
+	}
+
+	if (ctx.ops->requires_short_name_reordering) {
+		ret = for_dentry_in_tree(root, dentry_extract_dir_skeleton,
+					 &ctx);
+		if (ret)
+			goto out_free_realtarget;
 	}
 
 	/* Finally, the important part: extract the tree of files.  */

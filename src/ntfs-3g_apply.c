@@ -508,9 +508,42 @@ const struct apply_operations ntfs_3g_apply_ops = {
 	.path_separator = '/',
 	.path_max = 32768,
 
+	/* By default, NTFS-3g creates names in the NTFS POSIX namespace, which
+	 * is case-sensitive.  */
 	.supports_case_sensitive_filenames = 1,
+
+	/* The root directory of the NTFS volume should not be created
+	 * explicitly.  */
 	.root_directory_is_special = 1,
+
+	/* NTFS-3g can open files by MFT reference.  */
 	.uses_cookies = 1,
+
+	/*
+	 * With NTFS-3g, the extraction order of the names of a file that has a
+	 * short name needs to be:
+	 *
+	 * 1. Create file using the long name that has an associated short name.
+	 *    This long name is temporarily placed in the POSIX namespace.
+	 * 2. Set the short name on the file.  This will either change the POSIX
+	 *    name to Win32 and create a new DOS name, or replace the POSIX name
+	 *    with a Win32+DOS name.
+	 * 3. Create additional long names (links) of the file, which are placed
+	 *    in the POSIX namespace.
+	 *
+	 * The reason for this is that two issues can come up when the
+	 * extraction is done otherwise:
+	 *
+	 * - If a DOS name is set on a file in a directory with several long
+	 *   names, it is ambiguous which long name to use (at least with the
+	 *   exported ntfs_set_ntfs_dos_name() function).
+	 * - NTFS-3g 2013.1.13 will no longer allow even setting the DOS name on
+	 *   a file with multiple existing long names, even if those long names
+	 *   are in different directories and the ntfs_set_ntfs_dos_name() call
+	 *   is therefore unambiguous.  (This was apparently changed with the
+	 *   FUSE interface in mind.)
+	 */
+	.requires_short_name_reordering    = 1,
 };
 
 #endif /* WITH_NTFS_3G */

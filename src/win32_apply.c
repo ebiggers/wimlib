@@ -614,6 +614,7 @@ const struct apply_operations win32_apply_ops = {
 	.root_directory_is_special = 1,
 	.requires_final_set_attributes_pass = 1,
 	.extract_encrypted_stream_creates_file = 1,
+	.requires_short_name_reordering = 1, /* TODO: check if this is really needed  */
 };
 
 #endif /* __WIN32__ */
