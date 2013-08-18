@@ -46,6 +46,18 @@ NtQuerySecurityObject(HANDLE handle,
 		      PSECURITY_DESCRIPTOR SecurityDescriptor,
 		      ULONG Length,
 		      PULONG LengthNeeded);
+NTSTATUS WINAPI
+NtQueryDirectoryFile(HANDLE FileHandle,
+		     HANDLE Event,
+		     PIO_APC_ROUTINE ApcRoutine,
+		     PVOID ApcContext,
+		     PIO_STATUS_BLOCK IoStatusBlock,
+		     PVOID FileInformation,
+		     ULONG Length,
+		     FILE_INFORMATION_CLASS FileInformationClass,
+		     BOOLEAN ReturnSingleEntry,
+		     PUNICODE_STRING FileName,
+		     BOOLEAN RestartScan);
 #endif
 
 #define MAX_GET_SD_ACCESS_DENIED_WARNINGS 1
@@ -244,18 +256,44 @@ FILETIME_to_u64(const FILETIME *ft)
 	return ((u64)ft->dwHighDateTime << 32) | (u64)ft->dwLowDateTime;
 }
 
+/* Load the short name of a file into a WIM dentry.
+ *
+ * If we can't read the short filename for some reason, we just ignore the error
+ * and assume the file has no short name.  This shouldn't be an issue, since the
+ * short names are essentially obsolete anyway.
+ */
 static int
-win32_get_short_name(struct wim_dentry *dentry, const wchar_t *path)
+win32_get_short_name(HANDLE hFile, const wchar_t *path, struct wim_dentry *dentry)
 {
+
+	/* It's not any harder to just make the NtQueryInformationFile() system
+	 * call ourselves, and it saves a dumb call to FindFirstFile() which of
+	 * course has to create its own handle.  */
+#ifdef WITH_NTDLL
+	NTSTATUS status;
+	IO_STATUS_BLOCK io_status;
+	u8 buf[128] _aligned_attribute(8);
+	const FILE_NAME_INFORMATION *info;
+
+	status = NtQueryInformationFile(hFile, &io_status, buf, sizeof(buf),
+					FileAlternateNameInformation);
+	info = (const FILE_NAME_INFORMATION*)buf;
+	if (status == STATUS_SUCCESS && info->FileNameLength != 0) {
+		dentry->short_name = MALLOC(info->FileNameLength + 2);
+		if (!dentry->short_name)
+			return WIMLIB_ERR_NOMEM;
+		memcpy(dentry->short_name, info->FileName,
+		       info->FileNameLength);
+		dentry->short_name[info->FileNameLength / 2] = L'\0';
+		dentry->short_name_nbytes = info->FileNameLength;
+	}
+	return 0;
+#else
 	WIN32_FIND_DATAW dat;
 	HANDLE hFind;
 	int ret = 0;
 
-	/* If we can't read the short filename for some reason, we just ignore
-	 * the error and assume the file has no short name.  I don't think this
-	 * should be an issue, since the short names are essentially obsolete
-	 * anyway. */
-	hFind = FindFirstFileW(path, &dat);
+	hFind = FindFirstFile(path, &dat);
 	if (hFind != INVALID_HANDLE_VALUE) {
 		if (dat.cAlternateFileName[0] != L'\0') {
 			DEBUG("\"%ls\": short name \"%ls\"", path, dat.cAlternateFileName);
@@ -273,6 +311,7 @@ win32_get_short_name(struct wim_dentry *dentry, const wchar_t *path)
 		FindClose(hFind);
 	}
 	return ret;
+#endif
 }
 
 /*
@@ -392,11 +431,10 @@ win32_get_security_descriptor(HANDLE hFile,
 
 have_descriptor:
 	inode->i_security_id = sd_set_add_sd(sd_set, buf, lenNeeded);
-	if (inode->i_security_id < 0) {
+	if (inode->i_security_id < 0)
 		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_buf;
-	}
-	ret = 0;
+	else
+		ret = 0;
 out_free_buf:
 	if (buf != _buf)
 		FREE(buf);
@@ -411,22 +449,99 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  struct win32_capture_state *state,
 				  unsigned vol_flags);
 
-/* Reads the directory entries of directory using a Win32 API and recursively
- * calls win32_build_dentry_tree() on them. */
+/* Reads the directory entries of directory and recursively calls
+ * win32_build_dentry_tree() on them.  */
 static int
-win32_recurse_directory(struct wim_dentry *root,
+win32_recurse_directory(HANDLE hDir,
 			wchar_t *dir_path,
 			size_t dir_path_num_chars,
+			struct wim_dentry *root,
 			struct add_image_params *params,
 			struct win32_capture_state *state,
 			unsigned vol_flags)
 {
-	WIN32_FIND_DATAW dat;
-	HANDLE hFind;
-	DWORD err;
 	int ret;
 
 	DEBUG("Recurse to directory \"%ls\"", dir_path);
+
+	/* Using NtQueryDirectoryFile() we can re-use the same open handle,
+	 * which we opened with FILE_FLAG_BACKUP_SEMANTICS (probably not the
+	 * case for the FindFirstFile() API; it's not documented).  */
+#ifdef WITH_NTDLL
+	NTSTATUS status;
+	IO_STATUS_BLOCK io_status;
+	const size_t bufsize = 8192;
+	u8 *buf;
+	BOOL restartScan = TRUE;
+	const FILE_NAMES_INFORMATION *info;
+
+	buf = MALLOC(bufsize);
+	if (!buf)
+		return WIMLIB_ERR_NOMEM;
+	for (;;) {
+		status = NtQueryDirectoryFile(hDir, NULL, NULL, NULL,
+					      &io_status, buf, bufsize,
+					      FileNamesInformation,
+					      FALSE, NULL, restartScan);
+		restartScan = FALSE;
+		if (status != STATUS_SUCCESS) {
+			if (status == STATUS_NO_MORE_FILES ||
+			    status == STATUS_NO_MORE_ENTRIES ||
+			    status == STATUS_NO_MORE_MATCHES) {
+				ret = 0;
+			} else {
+				errno = win32_error_to_errno(
+						RtlNtStatusToDosError(status));
+				ERROR_WITH_ERRNO("Failed to read directory "
+						 "\"%ls\"", dir_path);
+				ret = WIMLIB_ERR_READ;
+			}
+			goto out_free_buf;
+		}
+		wimlib_assert(io_status.Information != 0);
+		info = (const FILE_NAMES_INFORMATION*)buf;
+		for (;;) {
+			if (!(info->FileNameLength == 2 && info->FileName[0] == L'.') &&
+			    !(info->FileNameLength == 4 && info->FileName[0] == L'.' &&
+			     				   info->FileName[1] == L'.'))
+			{
+				wchar_t *p;
+				struct wim_dentry *child;
+
+				p = dir_path + dir_path_num_chars;
+				*p++ = L'\\';
+				p = wmempcpy(p, info->FileName,
+					     info->FileNameLength / 2);
+				*p = '\0';
+
+				ret = win32_build_dentry_tree_recursive(
+								&child,
+								dir_path,
+								p - dir_path,
+								params,
+								state,
+								vol_flags);
+
+				dir_path[dir_path_num_chars] = L'\0';
+
+				if (ret)
+					goto out_free_buf;
+				if (child)
+					dentry_add_child(root, child);
+			}
+			if (info->NextEntryOffset == 0)
+				break;
+			info = (const FILE_NAMES_INFORMATION*)
+					((const u8*)info + info->NextEntryOffset);
+		}
+	}
+out_free_buf:
+	FREE(buf);
+	return ret;
+#else
+	WIN32_FIND_DATAW dat;
+	HANDLE hFind;
+	DWORD err;
 
 	/* Begin reading the directory by calling FindFirstFileW.  Unlike UNIX
 	 * opendir(), FindFirstFileW has file globbing built into it.  But this
@@ -487,6 +602,7 @@ win32_recurse_directory(struct wim_dentry *root,
 out_find_close:
 	FindClose(hFind);
 	return ret;
+#endif
 }
 
 /* Reparse point fixup status code */
@@ -1163,7 +1279,7 @@ again:
 	if (ret)
 		goto out_close_handle;
 
-	ret = win32_get_short_name(root, path);
+	ret = win32_get_short_name(hFile, path, root);
 	if (ret)
 		goto out_close_handle;
 
@@ -1206,8 +1322,6 @@ again:
 	if (ret)
 		goto out_close_handle;
 
-	CloseHandle(hFile);
-
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Reparse point: set the reparse data (which we read already)
 		 * */
@@ -1217,14 +1331,14 @@ again:
 					       params->lookup_table);
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		/* Directory (not a reparse point) --- recurse to children */
-		ret = win32_recurse_directory(root,
+		ret = win32_recurse_directory(hFile,
 					      path,
 					      path_num_chars,
+					      root,
 					      params,
 					      state,
 					      vol_flags);
 	}
-	goto out;
 out_close_handle:
 	CloseHandle(hFile);
 out:
