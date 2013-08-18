@@ -279,7 +279,6 @@ win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret)
 		*dev_ret = file_info.dwVolumeSerialNumber;
 		ret = 0;
 	}
-out_close_handle:
 	err = GetLastError();
 	CloseHandle(h);
 	SetLastError(err);

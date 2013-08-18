@@ -87,7 +87,6 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 {
 	int ret = 0;
 	void *out_buf;
-	DWORD err;
 	u64 bytes_remaining;
 
 	HANDLE hFile = win32_open_existing_file(lte->file_on_disk,
