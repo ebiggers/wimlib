@@ -29,33 +29,16 @@
 
 #include <errno.h>
 
-#include "wimlib/win32_common.h"
+#ifdef WITH_NTDLL
+#  include <winternl.h>
+#endif
 
+#include "wimlib/win32_common.h"
 #include "wimlib/assert.h"
 #include "wimlib/error.h"
 #include "wimlib/util.h"
 
-#ifdef ENABLE_ERROR_MESSAGES
-void
-win32_error(DWORD err_code)
-{
-	wchar_t *buffer;
-	DWORD nchars;
-	nchars = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM |
-				    FORMAT_MESSAGE_ALLOCATE_BUFFER,
-				NULL, err_code, 0,
-				(wchar_t*)&buffer, 0, NULL);
-	if (nchars == 0) {
-		ERROR("Error printing error message! "
-		      "Computer will self-destruct in 3 seconds.");
-	} else {
-		ERROR("Win32 error: %ls", buffer);
-		LocalFree(buffer);
-	}
-}
-#endif /* ENABLE_ERROR_MESSAGES */
-
-int
+static int
 win32_error_to_errno(DWORD err_code)
 {
 	/* This mapping is that used in Cygwin.
@@ -324,11 +307,26 @@ win32_error_to_errno(DWORD err_code)
 	}
 }
 
+
+void
+set_errno_from_win32_error(DWORD err)
+{
+	errno = win32_error_to_errno(err);
+}
+
 void
 set_errno_from_GetLastError(void)
 {
-	errno = win32_error_to_errno(GetLastError());
+	set_errno_from_win32_error(GetLastError());
 }
+
+#ifdef WITH_NTDLL
+void
+set_errno_from_nt_status(DWORD status)
+{
+	set_errno_from_win32_error(RtlNtStatusToDosError(status));
+}
+#endif
 
 /* Given a Windows-style path, return the number of characters of the prefix
  * that specify the path to the root directory of a drive, or return 0 if the
@@ -428,9 +426,9 @@ win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret,
 			filesystem_name,		/* lpFileSystemNameBuffer */
 			ARRAY_LEN(filesystem_name));    /* nFileSystemNameSize */
 	if (!bret) {
-		DWORD err = GetLastError();
-		WARNING("Failed to get volume information for path \"%ls\"", path);
-		win32_error(err);
+		set_errno_from_GetLastError();
+		WARNING_WITH_ERRNO("Failed to get volume information for "
+				   "path \"%ls\"", path);
 		vol_flags = 0xffffffff;
 		goto out;
 	}

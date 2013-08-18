@@ -9,25 +9,19 @@
 #include "wimlib/types.h"
 #include "wimlib/win32.h"
 
-
-#ifdef ENABLE_ERROR_MESSAGES
-extern void
-win32_error(DWORD err_code);
-#else
-static inline void
-win32_error(DWORD err_code)
-{
-}
-#endif
-
 extern void
 set_errno_from_GetLastError(void);
 
+extern void
+set_errno_from_win32_error(DWORD err);
+
+#ifdef WITH_NTDLL
+extern void
+set_errno_from_nt_status(DWORD status);
+#endif
+
 extern bool
 win32_path_is_root_of_drive(const wchar_t *path);
-
-extern int
-win32_error_to_errno(DWORD err_code);
 
 extern int
 win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret,

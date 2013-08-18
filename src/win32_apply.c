@@ -271,7 +271,7 @@ win32_extract_encrypted_stream(file_spec_t file,
 
 	err = OpenEncryptedFileRaw(path, CREATE_FOR_IMPORT, &file_ctx);
 	if (err != ERROR_SUCCESS) {
-		errno = win32_error_to_errno(err);
+		set_errno_from_win32_error(err);
 		ret = WIMLIB_ERR_OPEN;
 		goto out;
 	}
@@ -281,7 +281,7 @@ win32_extract_encrypted_stream(file_spec_t file,
 	err = WriteEncryptedFileRaw(win32_encrypted_import_cb, &extract_ctx,
 				    file_ctx);
 	if (err != ERROR_SUCCESS) {
-		errno = win32_error_to_errno(err);
+		set_errno_from_win32_error(err);
 		ret = WIMLIB_ERR_WRITE;
 		goto out_close;
 	}

@@ -252,11 +252,9 @@ execute_add_command(WIMStruct *wim,
 	if (wim_target_path[0] == T('\0'))
 		params.add_flags |= WIMLIB_ADD_FLAG_ROOT;
 	ret = (*capture_tree)(&branch, fs_source_path, &params);
-	if (ret) {
-		ERROR("Failed to build dentry tree for \"%"TS"\"",
-		      fs_source_path);
+	if (ret)
 		goto out_destroy_sd_set;
-	}
+
 	if (branch) {
 		/* Use the target name, not the source name, for
 		 * the root of each branch from a capture

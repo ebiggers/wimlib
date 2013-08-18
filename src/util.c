@@ -169,6 +169,10 @@ wimlib_vmsg(const tchar *tag, const tchar *format,
 					 T("unknown error (errno=%d)"),
 					 errno_save);
 			}
+		#ifdef WIN32
+			if (errno_save == EBUSY)
+				tstrcpy(buf, T("Resource busy"));
+		#endif
 			tfprintf(stderr, T(": %"TS), buf);
 		}
 		tputc(T('\n'), stderr);

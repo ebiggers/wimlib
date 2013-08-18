@@ -92,9 +92,8 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 
 	HANDLE hFile = win32_open_file_data_only(lte->file_on_disk);
 	if (hFile == INVALID_HANDLE_VALUE) {
-		err = GetLastError();
-		ERROR("Failed to open \"%ls\"", lte->file_on_disk);
-		win32_error(err);
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("Failed to open \"%ls\"", lte->file_on_disk);
 		return WIMLIB_ERR_OPEN;
 	}
 
@@ -111,9 +110,9 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 		if (!ReadFile(hFile, out_buf, bytesToRead, &bytesRead, NULL) ||
 		    bytesRead != bytesToRead)
 		{
-			err = GetLastError();
-			ERROR("Failed to read data from \"%ls\"", lte->file_on_disk);
-			win32_error(err);
+			set_errno_from_GetLastError();
+			ERROR_WITH_ERRNO("Failed to read data from \"%ls\"",
+					 lte->file_on_disk);
 			ret = WIMLIB_ERR_READ;
 			break;
 		}
@@ -219,18 +218,18 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 
 	err = OpenEncryptedFileRawW(lte->file_on_disk, 0, &file_ctx);
 	if (err != ERROR_SUCCESS) {
-		ERROR("Failed to open encrypted file \"%ls\" for raw read",
-		      lte->file_on_disk);
-		win32_error(err);
+		set_errno_from_win32_error(err);
+		ERROR_WITH_ERRNO("Failed to open encrypted file \"%ls\" "
+				 "for raw read", lte->file_on_disk);
 		ret = WIMLIB_ERR_OPEN;
 		goto out_free_buf;
 	}
 	err = ReadEncryptedFileRaw(win32_encrypted_export_cb,
 				   &export_ctx, file_ctx);
 	if (err != ERROR_SUCCESS) {
-		ERROR("Failed to read encrypted file \"%ls\"",
-		      lte->file_on_disk);
-		win32_error(err);
+		set_errno_from_win32_error(err);
+		ERROR_WITH_ERRNO("Failed to read encrypted file \"%ls\"",
+				 lte->file_on_disk);
 		ret = export_ctx.wimlib_err_code;
 		if (ret == 0)
 			ret = WIMLIB_ERR_READ;
@@ -422,7 +421,7 @@ win32_get_security_descriptor(HANDLE hFile,
 			goto out_free_buf;
 		default:
 		fail:
-			errno = win32_error_to_errno(err);
+			set_errno_from_win32_error(err);
 			ERROR("Failed to read security descriptor of \"%ls\"", path);
 			ret = WIMLIB_ERR_READ;
 			goto out_free_buf;
@@ -490,8 +489,7 @@ win32_recurse_directory(HANDLE hDir,
 			    status == STATUS_NO_MORE_MATCHES) {
 				ret = 0;
 			} else {
-				errno = win32_error_to_errno(
-						RtlNtStatusToDosError(status));
+				set_errno_from_nt_status(status);
 				ERROR_WITH_ERRNO("Failed to read directory "
 						 "\"%ls\"", dir_path);
 				ret = WIMLIB_ERR_READ;
@@ -503,7 +501,7 @@ win32_recurse_directory(HANDLE hDir,
 		for (;;) {
 			if (!(info->FileNameLength == 2 && info->FileName[0] == L'.') &&
 			    !(info->FileNameLength == 4 && info->FileName[0] == L'.' &&
-			     				   info->FileName[1] == L'.'))
+							   info->FileName[1] == L'.'))
 			{
 				wchar_t *p;
 				struct wim_dentry *child;
@@ -558,8 +556,9 @@ out_free_buf:
 		if (err == ERROR_FILE_NOT_FOUND) {
 			return 0;
 		} else {
-			ERROR("Failed to read directory \"%ls\"", dir_path);
-			win32_error(err);
+			set_errno_from_win32_error(err);
+			ERROR_WITH_ERRNO("Failed to read directory \"%ls\"",
+					 dir_path);
 			return WIMLIB_ERR_READ;
 		}
 	}
@@ -594,8 +593,8 @@ out_free_buf:
 	} while (FindNextFileW(hFind, &dat));
 	err = GetLastError();
 	if (err != ERROR_NO_MORE_FILES) {
-		ERROR("Failed to read directory \"%ls\"", dir_path);
-		win32_error(err);
+		set_errno_from_win32_error(err);
+		ERROR_WITH_ERRNO("Failed to read directory \"%ls\"", dir_path);
 		if (ret == 0)
 			ret = WIMLIB_ERR_READ;
 	}
@@ -780,9 +779,8 @@ win32_get_reparse_data(HANDLE hFile, const wchar_t *path,
 			     &bytesReturned,
 			     NULL))
 	{
-		DWORD err = GetLastError();
-		ERROR("Failed to get reparse data of \"%ls\"", path);
-		win32_error(err);
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("Failed to get reparse data of \"%ls\"", path);
 		return -WIMLIB_ERR_READ;
 	}
 	if (bytesReturned < 8 || bytesReturned > REPARSE_POINT_MAX_SIZE) {
@@ -827,15 +825,17 @@ win32_get_encrypted_file_size(const wchar_t *path, u64 *size_ret)
 	*size_ret = 0;
 	err = OpenEncryptedFileRawW(path, 0, &file_ctx);
 	if (err != ERROR_SUCCESS) {
-		ERROR("Failed to open encrypted file \"%ls\" for raw read", path);
-		win32_error(err);
+		set_errno_from_win32_error(err);
+		ERROR_WITH_ERRNO("Failed to open encrypted file \"%ls\" "
+				 "for raw read", path);
 		return WIMLIB_ERR_OPEN;
 	}
 	err = ReadEncryptedFileRaw(win32_tally_encrypted_size_cb,
 				   size_ret, file_ctx);
 	if (err != ERROR_SUCCESS) {
-		ERROR("Failed to read raw encrypted data from \"%ls\"", path);
-		win32_error(err);
+		set_errno_from_win32_error(err);
+		ERROR_WITH_ERRNO("Failed to read raw encrypted data from "
+				 "\"%ls\"", path);
 		ret = WIMLIB_ERR_READ;
 	} else {
 		ret = 0;
@@ -1058,7 +1058,7 @@ win32_capture_streams(HANDLE hFile,
 			}
 			buf = newbuf;
 		} else {
-			errno = win32_error_to_errno(RtlNtStatusToDosError(status));
+			set_errno_from_nt_status(status);
 			ERROR_WITH_ERRNO("Failed to read streams of %ls", path);
 			ret = WIMLIB_ERR_READ;
 			goto out_free_buf;
@@ -1122,9 +1122,9 @@ out_free_buf:
 					path, capture_access_denied_msg);
 				return 0;
 			} else {
-				ERROR("Failed to look up data streams "
-				      "of \"%ls\"", path);
-				win32_error(err);
+				set_errno_from_win32_error(err);
+				ERROR_WITH_ERRNO("Failed to look up data streams "
+						 "of \"%ls\"", path);
 				return WIMLIB_ERR_READ;
 			}
 		}
@@ -1139,8 +1139,9 @@ out_free_buf:
 	} while (win32func_FindNextStreamW(hFind, &dat));
 	err = GetLastError();
 	if (err != ERROR_HANDLE_EOF) {
-		ERROR("Win32 API: Error reading data streams from \"%ls\"", path);
-		win32_error(err);
+		set_errno_from_win32_error(err);
+		ERROR_WITH_ERRNO("Error reading data streams from "
+				 "\"%ls\"", path);
 		ret = WIMLIB_ERR_READ;
 	}
 out_find_close:
@@ -1400,19 +1401,13 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	if (path_nchars > WINDOWS_NT_MAX_PATH)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (GetFileAttributesW(root_disk_path) == INVALID_FILE_ATTRIBUTES &&
-	    GetLastError() == ERROR_FILE_NOT_FOUND)
-	{
-		ERROR("Capture directory \"%ls\" does not exist!",
-		      root_disk_path);
-		return WIMLIB_ERR_OPENDIR;
-	}
-
 	ret = win32_get_file_and_vol_ids(root_disk_path,
 					 &params->capture_root_ino,
 					 &params->capture_root_dev);
-	if (ret)
+	if (ret) {
+		ERROR_WITH_ERRNO("Can't open %ls", root_disk_path);
 		return ret;
+	}
 
 	win32_get_vol_flags(root_disk_path, &vol_flags, NULL);
 

@@ -92,7 +92,7 @@ realpath(const wchar_t *path, wchar_t *resolved_path)
 	}
 	goto out;
 fail_win32:
-	errno = win32_error_to_errno(err);
+	set_errno_from_win32_error(err);
 out:
 	return resolved_path;
 }
@@ -146,7 +146,7 @@ fail_close_handle:
 fail:
 	if (err == NO_ERROR)
 		err = GetLastError();
-	errno = win32_error_to_errno(err);
+	set_errno_from_win32_error(err);
 	return -1;
 }
 
@@ -260,26 +260,18 @@ ssize_t writev(int fd, const struct iovec *iov, int iovcnt)
 int
 win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret)
 {
-	HANDLE hFile;
-	DWORD err;
+	HANDLE h;
 	BY_HANDLE_FILE_INFORMATION file_info;
 	int ret;
+	DWORD err;
 
- 	hFile = win32_open_existing_file(path, FILE_READ_ATTRIBUTES);
-	if (hFile == INVALID_HANDLE_VALUE) {
-		err = GetLastError();
-		if (err != ERROR_FILE_NOT_FOUND) {
-			WARNING("Failed to open \"%ls\" to get file "
-				"and volume IDs", path);
-			win32_error(err);
-		}
-		return WIMLIB_ERR_OPEN;
+	h = win32_open_existing_file(path, FILE_READ_ATTRIBUTES);
+	if (h == INVALID_HANDLE_VALUE) {
+		ret = WIMLIB_ERR_OPEN;
+		goto out;
 	}
 
-	if (!GetFileInformationByHandle(hFile, &file_info)) {
-		err = GetLastError();
-		ERROR("Failed to get file information for \"%ls\"", path);
-		win32_error(err);
+	if (!GetFileInformationByHandle(h, &file_info)) {
 		ret = WIMLIB_ERR_STAT;
 	} else {
 		*ino_ret = ((u64)file_info.nFileIndexHigh << 32) |
@@ -287,7 +279,12 @@ win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret)
 		*dev_ret = file_info.dwVolumeSerialNumber;
 		ret = 0;
 	}
-	CloseHandle(hFile);
+out_close_handle:
+	err = GetLastError();
+	CloseHandle(h);
+	SetLastError(err);
+out:
+	set_errno_from_GetLastError();
 	return ret;
 }
 

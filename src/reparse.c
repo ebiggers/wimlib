@@ -86,15 +86,15 @@ static const utf16lechar volume_junction_prefix[11] = {
  * Return value is:
  *
  * Non-negative integer:
- * 	The name is an absolute symbolic link in one of several formats,
- * 	and the return value is the number of UTF-16LE characters that need to
- * 	be advanced to reach a simple "absolute" path starting with a backslash
- * 	(i.e. skip over \??\ and/or drive letter)
+ *	The name is an absolute symbolic link in one of several formats,
+ *	and the return value is the number of UTF-16LE characters that need to
+ *	be advanced to reach a simple "absolute" path starting with a backslash
+ *	(i.e. skip over \??\ and/or drive letter)
  * Negative integer:
  *	SUBST_NAME_IS_VOLUME_JUNCTION:
- * 		The name is a volume junction.
+ *		The name is a volume junction.
  *	SUBST_NAME_IS_RELATIVE_LINK:
- * 		The name is a relative symbolic link.
+ *		The name is a relative symbolic link.
  *	SUBST_NAME_IS_UNKNOWN:
  *		The name does not appear to be a valid symbolic link, junction,
  *		or mount point.
