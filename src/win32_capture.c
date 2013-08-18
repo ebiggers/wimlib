@@ -36,6 +36,11 @@
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 
+#ifdef WITH_NTDLL
+#  include <winternl.h>
+#  include <ntstatus.h>
+#endif
+
 #define MAX_GET_SD_ACCESS_DENIED_WARNINGS 1
 #define MAX_GET_SACL_PRIV_NOTHELD_WARNINGS 1
 #define MAX_CAPTURE_LONG_PATH_WARNINGS 5
@@ -811,27 +816,22 @@ out_invalid_stream_name:
 	goto out;
 }
 
-/* Scans a Win32 file for unnamed and named data streams (not reparse point
- * streams).
+/* Load information about the streams of an open file into a WIM inode.
  *
- * @path:               Path to the file (UTF-16LE).
+ * By default, we use the NtQueryInformationFile() system call instead of
+ * FindFirstStream() and FindNextStream().  This is done for two reasons:
  *
- * @path_num_chars:     Number of 2-byte characters in @path.
- *
- * @inode:              WIM inode to save the stream into.
- *
- * @lookup_table:       Stream lookup table for the WIM.
- *
- * @file_size:		Size of unnamed data stream.  (Used only if alternate
- *                      data streams API appears to be unavailable.)
- *
- * @vol_flags:          Flags that specify features of the volume being
- *			captured.
- *
- * Returns 0 on success; nonzero on failure.
+ * - FindFirstStream() opens its own handle to the file or directory and
+ *   apparently does so without specifying FILE_FLAG_BACKUP_SEMANTICS, thereby
+ *   causing access denied errors on certain files (even when running as the
+ *   Administrator).
+ * - FindFirstStream() and FindNextStream() is only available on Windows Vista
+ *   and later, whereas the stream support in NtQueryInformationFile() was
+ *   already present in Windows XP.
  */
 static int
-win32_capture_streams(const wchar_t *path,
+win32_capture_streams(HANDLE hFile,
+		      const wchar_t *path,
 		      size_t path_num_chars,
 		      struct wim_inode *inode,
 		      struct wim_lookup_table *lookup_table,
@@ -840,15 +840,95 @@ win32_capture_streams(const wchar_t *path,
 {
 	WIN32_FIND_STREAM_DATA dat;
 	int ret;
+#ifdef WITH_NTDLL
+	u8 _buf[8192] _aligned_attribute(8);
+	u8 *buf;
+	size_t bufsize;
+	IO_STATUS_BLOCK io_status;
+	NTSTATUS status;
+	const FILE_STREAM_INFORMATION *info;
+#else
 	HANDLE hFind;
 	DWORD err;
+#endif
 
 	DEBUG("Capturing streams from \"%ls\"", path);
 
-	if (win32func_FindFirstStreamW == NULL ||
-	    !(vol_flags & FILE_NAMED_STREAMS))
+	if (!(vol_flags & FILE_NAMED_STREAMS))
 		goto unnamed_only;
+#ifndef WITH_NTDLL
+	if (win32func_FindFirstStreamW == NULL)
+		goto unnamed_only;
+#endif
 
+#ifdef WITH_NTDLL
+	buf = _buf;
+	bufsize = sizeof(_buf);
+
+	/* Get a buffer containing the stream information.  */
+	for (;;) {
+		status = NtQueryInformationFile(hFile, &io_status, buf, bufsize,
+						FileStreamInformation);
+		if (status == STATUS_SUCCESS) {
+			break;
+		} else if (status == STATUS_BUFFER_OVERFLOW) {
+			u8 *newbuf;
+
+			bufsize *= 2;
+			if (buf == _buf)
+				newbuf = MALLOC(bufsize);
+			else
+				newbuf = REALLOC(buf, bufsize);
+
+			if (!newbuf) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_free_buf;
+			}
+			buf = newbuf;
+		} else {
+			errno = win32_error_to_errno(RtlNtStatusToDosError(status));
+			ERROR_WITH_ERRNO("Failed to read streams of %ls", path);
+			ret = WIMLIB_ERR_READ;
+			goto out_free_buf;
+		}
+	}
+
+	if (io_status.Information == 0) {
+		/* No stream information.  */
+		ret = 0;
+		goto out_free_buf;
+	}
+
+	/* Parse one or more stream information structures.  */
+	info = (const FILE_STREAM_INFORMATION*)buf;
+	for (;;) {
+		if (info->StreamNameLength <= sizeof(dat.cStreamName) - 2) {
+			dat.StreamSize = info->StreamSize;
+			memcpy(dat.cStreamName, info->StreamName, info->StreamNameLength);
+			dat.cStreamName[info->StreamNameLength / 2] = L'\0';
+
+			/* Capture the stream.  */
+			ret = win32_capture_stream(path, path_num_chars, inode,
+						   lookup_table, &dat);
+			if (ret)
+				goto out_free_buf;
+		}
+		if (info->NextEntryOffset == 0) {
+			/* No more stream information.  */
+			ret = 0;
+			break;
+		}
+		/* Advance to next stream information.  */
+		info = (const FILE_STREAM_INFORMATION*)
+				((const u8*)info + info->NextEntryOffset);
+	}
+out_free_buf:
+	/* Free buffer if allocated on heap.  */
+	if (buf != _buf)
+		FREE(buf);
+	return ret;
+
+#else /* WITH_NTDLL */
 	hFind = win32func_FindFirstStreamW(path, FindStreamInfoStandard, &dat, 0);
 	if (hFind == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
@@ -894,24 +974,23 @@ win32_capture_streams(const wchar_t *path,
 out_find_close:
 	FindClose(hFind);
 	return ret;
+#endif /* !WITH_NTDLL */
+
 unnamed_only:
 	/* FindFirstStreamW() API is not available, or the volume does not
 	 * support named streams.  Only capture the unnamed data stream. */
 	DEBUG("Only capturing unnamed data stream");
-	if (inode->i_attributes &
-	     (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
+	if (!(inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+				     FILE_ATTRIBUTE_REPARSE_POINT)))
 	{
-		ret = 0;
-	} else {
-		/* Just create our own WIN32_FIND_STREAM_DATA for an unnamed
-		 * stream to reduce the code to a call to the
-		 * already-implemented win32_capture_stream() */
 		wcscpy(dat.cStreamName, L"::$DATA");
 		dat.StreamSize.QuadPart = file_size;
 		ret = win32_capture_stream(path,
 					   path_num_chars,
 					   inode, lookup_table,
 					   &dat);
+		if (ret)
+			return ret;
 	}
 	return ret;
 }
@@ -1045,18 +1124,20 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	file_size = ((u64)file_info.nFileSizeHigh << 32) |
 		     (u64)file_info.nFileSizeLow;
 
-	CloseHandle(hFile);
 
 	/* Capture the unnamed data stream (only should be present for regular
 	 * files) and any alternate data streams. */
-	ret = win32_capture_streams(path,
+	ret = win32_capture_streams(hFile,
+				    path,
 				    path_num_chars,
 				    inode,
 				    params->lookup_table,
 				    file_size,
 				    vol_flags);
 	if (ret)
-		goto out;
+		goto out_close_handle;
+
+	CloseHandle(hFile);
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Reparse point: set the reparse data (which we read already)
@@ -1132,10 +1213,12 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	DWORD dret;
 	bool need_prefix_free = false;
 
+#ifndef WITH_NTDLL
 	if (!win32func_FindFirstStreamW) {
 		WARNING("Running on Windows XP or earlier; "
 			"alternate data streams will not be captured.");
 	}
+#endif
 
 	path_nchars = wcslen(root_disk_path);
 	if (path_nchars > WINDOWS_NT_MAX_PATH)

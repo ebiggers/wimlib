@@ -520,6 +520,7 @@ win32_open_file_data_only(const wchar_t *path)
 	return win32_open_existing_file(path, FILE_READ_DATA);
 }
 
+#ifndef WITH_NTDLL
 /* Pointers to functions that are not available on all targetted versions of
  * Windows (XP and later).  NOTE: The WINAPI annotations seem to be important; I
  * assume it specifies a certain calling convention. */
@@ -533,6 +534,7 @@ HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
 /* Vista and later */
 BOOL (WINAPI *win32func_FindNextStreamW)(HANDLE hFindStream,
 					 LPVOID lpFindStreamData) = NULL;
+#endif /* !WITH_NTDLL */
 
 /* Vista and later */
 BOOL (WINAPI *win32func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
@@ -578,6 +580,7 @@ win32_global_init(int init_flags)
 		hKernel32 = LoadLibrary(L"Kernel32.dll");
 
 	if (hKernel32) {
+	#ifndef WITH_NTDLL
 		win32func_FindFirstStreamW = (void*)GetProcAddress(hKernel32,
 								   "FindFirstStreamW");
 		if (win32func_FindFirstStreamW) {
@@ -586,6 +589,7 @@ win32_global_init(int init_flags)
 			if (!win32func_FindNextStreamW)
 				win32func_FindFirstStreamW = NULL;
 		}
+	#endif /* !WITH_NTDLL */
 		win32func_CreateSymbolicLinkW = (void*)GetProcAddress(hKernel32,
 								      "CreateSymbolicLinkW");
 	}
