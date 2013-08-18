@@ -3,6 +3,7 @@
  */
 
 #include <windows.h>
+#include <sddl.h>
 #include <wchar.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -476,18 +477,39 @@ err:
 	win32_error(L"Can't read security descriptor of %ls", path);
 }
 
+static wchar_t *
+get_security_descriptor_string(PSECURITY_DESCRIPTOR desc)
+{
+	wchar_t *str;
+	ULONG len;
+	ConvertSecurityDescriptorToStringSecurityDescriptor(desc,
+							    SDDL_REVISION_1,
+							    OWNER_SECURITY_INFORMATION |
+								    GROUP_SECURITY_INFORMATION |
+								    DACL_SECURITY_INFORMATION |
+								    SACL_SECURITY_INFORMATION,
+							    &str,
+							    NULL);
+	return str;
+}
+
 static void
 cmp_security(const wchar_t *path_1, const wchar_t *path_2)
 {
 	void *descr_1, *descr_2;
 	size_t len_1, len_2;
+	const wchar_t *str_1, *str_2;
 
 	descr_1 = get_security(path_1, &len_1);
 	descr_2 = get_security(path_2, &len_2);
 
-	if (len_1 != len_2 || memcmp(descr_1, descr_2, len_1))
-		error(L"%ls and %ls do not have the same security descriptor",
-		      path_1, path_2);
+	if (len_1 != len_2 || memcmp(descr_1, descr_2, len_1)) {
+		str_1 = get_security_descriptor_string(descr_1);
+		str_2 = get_security_descriptor_string(descr_2);
+		error(L"%ls and %ls do not have the same security "
+		      "descriptor:\n\t%ls\nvs.\n\t%ls",
+		      path_1, path_2, str_1, str_2);
+	}
 	free(descr_1);
 	free(descr_2);
 }
