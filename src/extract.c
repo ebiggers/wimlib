@@ -642,7 +642,7 @@ error:
  * extraction mode.  */
 static int
 extract_file_attributes(const tchar *path, struct apply_ctx *ctx,
-			struct wim_dentry *dentry)
+			struct wim_dentry *dentry, unsigned pass)
 {
 	int ret;
 
@@ -664,7 +664,7 @@ extract_file_attributes(const tchar *path, struct apply_ctx *ctx,
 		if (attributes == 0)
 			attributes = FILE_ATTRIBUTE_NORMAL;
 
-		ret = ctx->ops->set_file_attributes(path, attributes, ctx);
+		ret = ctx->ops->set_file_attributes(path, attributes, ctx, pass);
 		if (ret) {
 			ERROR_WITH_ERRNO("Failed to set attributes on "
 					 "\"%"TS"\"", path);
@@ -1053,7 +1053,7 @@ do_dentry_extract_skeleton(tchar path[], struct wim_dentry *dentry,
 	}
 
 	/* Set file attributes (if supported).  */
-	ret = extract_file_attributes(path, ctx, dentry);
+	ret = extract_file_attributes(path, ctx, dentry, 0);
 	if (ret)
 		return ret;
 
@@ -1471,6 +1471,13 @@ dentry_extract_final(struct wim_dentry *dentry, void *_ctx)
 	ret = extract_security(path, ctx, dentry);
 	if (ret)
 		return ret;
+
+	if (ctx->ops->requires_final_set_attributes_pass) {
+		/* Set file attributes (if supported).  */
+		ret = extract_file_attributes(path, ctx, dentry, 1);
+		if (ret)
+			return ret;
+	}
 
 	return extract_timestamps(path, ctx, dentry);
 }

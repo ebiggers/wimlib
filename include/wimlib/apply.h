@@ -89,7 +89,8 @@ struct apply_operations {
 	/* OPTIONAL:  Set file attributes.  Calling code calls this if non-NULL.
 	 */
 	int (*set_file_attributes)
-		(const tchar *path, u32 attributes, struct apply_ctx *ctx);
+		(const tchar *path, u32 attributes, struct apply_ctx *ctx,
+		 unsigned pass);
 
 	/* OPTIONAL:  Set reparse data.  In start_extract(), set
 	 * ctx->supported_features.reparse_data if supported.  */
@@ -167,6 +168,10 @@ struct apply_operations {
 	 * then be passed to callbacks taking a 'file_spec_t', rather than the
 	 * path.  */
 	unsigned uses_cookies : 1;
+
+	/* OPTIONAL:  Set to 1 if set_file_attributes() needs to be called a
+	 * second time towards the end of the extraction.  */
+	unsigned requires_final_set_attributes_pass : 1;
 };
 
 struct wim_features {

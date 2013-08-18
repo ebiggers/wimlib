@@ -332,7 +332,7 @@ error:
 
 static int
 win32_set_file_attributes(const wchar_t *path, u32 attributes,
-			  struct apply_ctx *ctx)
+			  struct apply_ctx *ctx, unsigned pass)
 {
 	u32 special_attributes =
 		FILE_ATTRIBUTE_REPARSE_POINT |
@@ -342,8 +342,18 @@ win32_set_file_attributes(const wchar_t *path, u32 attributes,
 		FILE_ATTRIBUTE_ENCRYPTED;
 	u32 actual_attributes;
 
+	/* On FAT filesystems we can't set FILE_ATTRIBUTE_READONLY on the
+	 * initial pass (when files are created, but data not extracted);
+	 * otherwise the system will refuse access to the file even if the
+	 * process has SeRestorePrivilege.  */
+	if (pass == 0)
+		attributes &= ~FILE_ATTRIBUTE_READONLY;
+
 	if (!SetFileAttributes(path, attributes & ~special_attributes))
 		goto error;
+
+	if (pass != 0)
+		return 0;
 
 	if (attributes & (FILE_ATTRIBUTE_SPARSE_FILE |
 			  FILE_ATTRIBUTE_ENCRYPTED |
@@ -560,6 +570,7 @@ const struct apply_operations win32_apply_ops = {
 	.requires_realtarget_in_paths = 1,
 	.realpath_works_on_nonexisting_files = 1,
 	.root_directory_is_special = 1,
+	.requires_final_set_attributes_pass = 1,
 };
 
 #endif /* __WIN32__ */

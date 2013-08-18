@@ -299,7 +299,7 @@ ntfs_3g_extract_named_stream(file_spec_t file, const utf16lechar *stream_name,
 
 static int
 ntfs_3g_set_file_attributes(const char *path, u32 attributes,
-			    struct apply_ctx *ctx)
+			    struct apply_ctx *ctx, unsigned pass)
 {
 	ntfs_inode *ni;
 	int ret = 0;
