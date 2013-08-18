@@ -318,7 +318,7 @@ win32_get_short_name(HANDLE hFile, const wchar_t *path, struct wim_dentry *dentr
  * win32_query_security_descriptor() - Query a file's security descriptor
  *
  * We need the file's security descriptor in SECURITY_DESCRIPTOR_RELATIVE
- * relative format, and we currently have a handle opened with as many relevant
+ * format, and we currently have a handle opened with as many relevant
  * permissions as possible.  At this point, on Windows there are a number of
  * options for reading a file's security descriptor:
  *
@@ -344,7 +344,7 @@ win32_get_short_name(HANDLE hFile, const wchar_t *path, struct wim_dentry *dentr
 static DWORD
 win32_query_security_descriptor(HANDLE hFile, const wchar_t *path,
 				SECURITY_INFORMATION requestedInformation,
-				PSECURITY_DESCRIPTOR *buf,
+				SECURITY_DESCRIPTOR *buf,
 				DWORD bufsize, DWORD *lengthNeeded)
 {
 #ifdef WITH_NTDLL
@@ -377,7 +377,7 @@ win32_get_security_descriptor(HANDLE hFile,
 			      int add_flags)
 {
 	SECURITY_INFORMATION requestedInformation;
-	u8 _buf[1];
+	u8 _buf[4096];
 	u8 *buf;
 	size_t bufsize;
 	DWORD lenNeeded;
@@ -393,7 +393,7 @@ win32_get_security_descriptor(HANDLE hFile,
 	for (;;) {
 		err = win32_query_security_descriptor(hFile, path,
 						      requestedInformation,
-						      (PSECURITY_DESCRIPTOR)buf,
+						      (SECURITY_DESCRIPTOR*)buf,
 						      bufsize, &lenNeeded);
 		switch (err) {
 		case ERROR_SUCCESS:
