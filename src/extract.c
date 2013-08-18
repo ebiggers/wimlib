@@ -123,13 +123,19 @@ ref_stream_to_extract(struct wim_lookup_table_entry *lte,
 	if (!lte)
 		return 0;
 
-	if (likely(!is_linked_extraction(ctx)) || (lte->out_refcnt == 0 &&
-						   lte->extracted_file == NULL))
+	/* Tally the size only for each extraction of the stream (not hard
+	 * links).  */
+	if (!(dentry->d_inode->i_visited &&
+	      ctx->supported_features.hard_links) &&
+	    (!is_linked_extraction(ctx) || (lte->out_refcnt == 0 &&
+					    lte->extracted_file == NULL)))
 	{
 		ctx->progress.extract.total_bytes += wim_resource_size(lte);
 		ctx->progress.extract.num_streams++;
 	}
 
+	/* Add stream to the extraction_list only one time, even if it's going
+	 * to be extracted to multiple locations.  */
 	if (lte->out_refcnt == 0) {
 		list_add_tail(&lte->extraction_list, &ctx->stream_list);
 		ctx->num_streams_remaining++;
@@ -183,7 +189,9 @@ ref_stream_to_extract(struct wim_lookup_table_entry *lte,
  * extracted (ctx->stream_list) if not already done so, and also update the
  * progress information (ctx->progress) with the stream.  Furthermore, if doing
  * a sequential extraction, build a mapping from each the stream to the dentries
- * referencing it.  */
+ * referencing it.
+ *
+ * This uses the i_visited member of the inodes (assumed to be 0 initially).  */
 static int
 dentry_add_streams_to_extract(struct wim_dentry *dentry, void *_ctx)
 {
@@ -193,10 +201,6 @@ dentry_add_streams_to_extract(struct wim_dentry *dentry, void *_ctx)
 
 	/* Don't process dentries marked as skipped.  */
 	if (dentry->extraction_skipped)
-		return 0;
-
-	/* Don't process additional hard links.  */
-	if (inode->i_visited && ctx->supported_features.hard_links)
 		return 0;
 
 	/* The unnamed data stream will always be extracted, except in an
