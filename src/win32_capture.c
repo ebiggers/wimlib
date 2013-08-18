@@ -39,6 +39,13 @@
 #ifdef WITH_NTDLL
 #  include <winternl.h>
 #  include <ntstatus.h>
+
+NTSTATUS WINAPI
+NtQuerySecurityObject(HANDLE handle,
+		      SECURITY_INFORMATION SecurityInformation,
+		      PSECURITY_DESCRIPTOR SecurityDescriptor,
+		      ULONG Length,
+		      PULONG LengthNeeded);
 #endif
 
 #define MAX_GET_SD_ACCESS_DENIED_WARNINGS 1
@@ -268,83 +275,132 @@ win32_get_short_name(struct wim_dentry *dentry, const wchar_t *path)
 	return ret;
 }
 
+/*
+ * win32_query_security_descriptor() - Query a file's security descriptor
+ *
+ * We need the file's security descriptor in SECURITY_DESCRIPTOR_RELATIVE
+ * relative format, and we currently have a handle opened with as many relevant
+ * permissions as possible.  At this point, on Windows there are a number of
+ * options for reading a file's security descriptor:
+ *
+ * GetFileSecurity():  This takes in a path and returns the
+ * SECURITY_DESCRIPTOR_RELATIVE.  Problem: this uses an internal handle, not
+ * ours, and the handle created internally doesn't specify
+ * FILE_FLAG_BACKUP_SEMANTICS.  Therefore there can be access denied errors on
+ * some files and directories, even when running as the Administrator.
+ *
+ * GetSecurityInfo():  This takes in a handle and returns the security
+ * descriptor split into a bunch of different parts.  This should work, but it's
+ * dumb because we have to put the security descriptor back together again.
+ *
+ * BackupRead():  This can read the security descriptor, but this is a
+ * difficult-to-use API, probably only works as the Administrator, and the
+ * format of the returned data is not well documented.
+ *
+ * NtQuerySecurityObject():  This is exactly what we need, as it takes in a
+ * handle and returns the security descriptor in SECURITY_DESCRIPTOR_RELATIVE
+ * format.  Only problem is that it's a ntdll function and therefore not
+ * officially part of the Win32 API.  Oh well.
+ */
+static DWORD
+win32_query_security_descriptor(HANDLE hFile, const wchar_t *path,
+				SECURITY_INFORMATION requestedInformation,
+				PSECURITY_DESCRIPTOR *buf,
+				DWORD bufsize, DWORD *lengthNeeded)
+{
+#ifdef WITH_NTDLL
+	NTSTATUS status;
+
+	status = NtQuerySecurityObject(hFile, requestedInformation, buf,
+				       bufsize, lengthNeeded);
+	/* Since it queries an already-open handle, NtQuerySecurityObject()
+	 * apparently returns STATUS_ACCESS_DENIED rather than
+	 * STATUS_PRIVILEGE_NOT_HELD.  */
+	if (status == STATUS_ACCESS_DENIED)
+		return ERROR_PRIVILEGE_NOT_HELD;
+	else
+		return RtlNtStatusToDosError(status);
+#else
+	if (GetFileSecurity(path, requestedInformation, buf,
+			    bufsize, lengthNeeded))
+		return ERROR_SUCCESS;
+	else
+		return GetLastError();
+#endif
+}
+
 static int
-win32_get_security_descriptor(struct wim_dentry *dentry,
-			      struct wim_sd_set *sd_set,
+win32_get_security_descriptor(HANDLE hFile,
 			      const wchar_t *path,
+			      struct wim_inode *inode,
+			      struct wim_sd_set *sd_set,
 			      struct win32_capture_state *state,
 			      int add_flags)
 {
 	SECURITY_INFORMATION requestedInformation;
-	DWORD lenNeeded = 0;
-	BOOL status;
+	u8 _buf[1];
+	u8 *buf;
+	size_t bufsize;
+	DWORD lenNeeded;
 	DWORD err;
-	unsigned long n;
+	int ret;
 
 	requestedInformation = DACL_SECURITY_INFORMATION |
 			       SACL_SECURITY_INFORMATION |
 			       OWNER_SECURITY_INFORMATION |
 			       GROUP_SECURITY_INFORMATION;
-again:
-	/* Request length of security descriptor */
-	status = GetFileSecurityW(path, requestedInformation,
-				  NULL, 0, &lenNeeded);
-	err = GetLastError();
-	if (!status && err == ERROR_INSUFFICIENT_BUFFER) {
-		DWORD len = lenNeeded;
-		char buf[len];
-		if (GetFileSecurityW(path, requestedInformation,
-				     (PSECURITY_DESCRIPTOR)buf, len, &lenNeeded))
-		{
-			int security_id = sd_set_add_sd(sd_set, buf, len);
-			if (security_id < 0)
+	buf = _buf;
+	bufsize = sizeof(_buf);
+	for (;;) {
+		err = win32_query_security_descriptor(hFile, path,
+						      requestedInformation,
+						      (PSECURITY_DESCRIPTOR)buf,
+						      bufsize, &lenNeeded);
+		switch (err) {
+		case ERROR_SUCCESS:
+			goto have_descriptor;
+		case ERROR_INSUFFICIENT_BUFFER:
+			wimlib_assert(buf == _buf);
+			buf = MALLOC(lenNeeded);
+			if (!buf)
 				return WIMLIB_ERR_NOMEM;
-			else {
-				dentry->d_inode->i_security_id = security_id;
-				return 0;
+			bufsize = lenNeeded;
+			break;
+		case ERROR_PRIVILEGE_NOT_HELD:
+			if (add_flags & WIMLIB_ADD_FLAG_STRICT_ACLS)
+				goto fail;
+			if (requestedInformation & SACL_SECURITY_INFORMATION) {
+				state->num_get_sacl_priv_notheld++;
+				requestedInformation &= ~SACL_SECURITY_INFORMATION;
+				break;
 			}
-		} else {
-			err = GetLastError();
+			/* Fall through */
+		case ERROR_ACCESS_DENIED:
+			if (add_flags & WIMLIB_ADD_FLAG_STRICT_ACLS)
+				goto fail;
+			state->num_get_sd_access_denied++;
+			ret = 0;
+			goto out_free_buf;
+		default:
+		fail:
+			errno = win32_error_to_errno(err);
+			ERROR("Failed to read security descriptor of \"%ls\"", path);
+			ret = WIMLIB_ERR_READ;
+			goto out_free_buf;
 		}
 	}
 
-	if (add_flags & WIMLIB_ADD_FLAG_STRICT_ACLS)
-		goto fail;
-
-	switch (err) {
-	case ERROR_PRIVILEGE_NOT_HELD:
-		if (requestedInformation & SACL_SECURITY_INFORMATION) {
-			n = state->num_get_sacl_priv_notheld++;
-			requestedInformation &= ~SACL_SECURITY_INFORMATION;
-			if (n < MAX_GET_SACL_PRIV_NOTHELD_WARNINGS) {
-				WARNING(
-"We don't have enough privileges to read the full security\n"
-"          descriptor of \"%ls\"!\n"
-"          Re-trying with SACL omitted.\n", path);
-			} else if (n == MAX_GET_SACL_PRIV_NOTHELD_WARNINGS) {
-				WARNING(
-"Suppressing further privileges not held error messages when reading\n"
-"          security descriptors.");
-			}
-			goto again;
-		}
-		/* Fall through */
-	case ERROR_ACCESS_DENIED:
-		n = state->num_get_sd_access_denied++;
-		if (n < MAX_GET_SD_ACCESS_DENIED_WARNINGS) {
-			WARNING("Failed to read security descriptor of \"%ls\": "
-				"Access denied!\n%ls", path, capture_access_denied_msg);
-		} else if (n == MAX_GET_SD_ACCESS_DENIED_WARNINGS) {
-			WARNING("Suppressing further access denied errors messages i"
-				"when reading security descriptors");
-		}
-		return 0;
-	default:
-fail:
-		ERROR("Failed to read security descriptor of \"%ls\"", path);
-		win32_error(err);
-		return WIMLIB_ERR_READ;
+have_descriptor:
+	inode->i_security_id = sd_set_add_sd(sd_set, buf, lenNeeded);
+	if (inode->i_security_id < 0) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_buf;
 	}
+	ret = 0;
+out_free_buf:
+	if (buf != _buf)
+		FREE(buf);
+	return ret;
 }
 
 static int
@@ -1011,6 +1067,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	u8 *rpbuf;
 	u16 rpbuflen;
 	u16 not_rpfixed;
+	HANDLE hFile;
+	DWORD desiredAccess;
 
 	params->progress.scan.cur_path = path;
 
@@ -1039,22 +1097,33 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 
 	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK);
 
-	HANDLE hFile = win32_open_existing_file(path,
-						FILE_READ_DATA | FILE_READ_ATTRIBUTES);
+	desiredAccess = FILE_READ_DATA | FILE_READ_ATTRIBUTES |
+			READ_CONTROL | ACCESS_SYSTEM_SECURITY;
+again:
+	hFile = win32_open_existing_file(path, desiredAccess);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
-		ERROR("Win32 API: Failed to open \"%ls\"", path);
-		win32_error(err);
+		if (err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD) {
+			if (desiredAccess & ACCESS_SYSTEM_SECURITY) {
+				desiredAccess &= ~ACCESS_SYSTEM_SECURITY;
+				goto again;
+			}
+			if (desiredAccess & READ_CONTROL) {
+				desiredAccess &= ~READ_CONTROL;
+				goto again;
+			}
+		}
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("Failed to open \"%ls\" for reading", path);
 		ret = WIMLIB_ERR_OPEN;
 		goto out;
 	}
 
 	BY_HANDLE_FILE_INFORMATION file_info;
 	if (!GetFileInformationByHandle(hFile, &file_info)) {
-		err = GetLastError();
-		ERROR("Win32 API: Failed to get file information for \"%ls\"",
-		      path);
-		win32_error(err);
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("Failed to get file information for \"%ls\"",
+				 path);
 		ret = WIMLIB_ERR_STAT;
 		goto out_close_handle;
 	}
@@ -1114,8 +1183,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (!(params->add_flags & WIMLIB_ADD_FLAG_NO_ACLS)
 	    && (vol_flags & FILE_PERSISTENT_ACLS))
 	{
-		ret = win32_get_security_descriptor(root, &params->sd_set,
-						    path, state,
+		ret = win32_get_security_descriptor(hFile, path, inode,
+						    &params->sd_set, state,
 						    params->add_flags);
 		if (ret)
 			goto out_close_handle;
@@ -1167,34 +1236,27 @@ out:
 }
 
 static void
-win32_do_capture_warnings(const struct win32_capture_state *state,
+win32_do_capture_warnings(const wchar_t *path,
+			  const struct win32_capture_state *state,
 			  int add_flags)
 {
 	if (state->num_get_sacl_priv_notheld == 0 &&
 	    state->num_get_sd_access_denied == 0)
 		return;
 
-	WARNING("");
-	WARNING("Built dentry tree successfully, but with the following problem(s):");
+	WARNING("Scan of \"%ls\" complete, but with one or more warnings:", path);
 	if (state->num_get_sacl_priv_notheld != 0) {
-		WARNING("Could not capture SACL (System Access Control List)\n"
-			"          on %lu files or directories.",
+		WARNING("- Could not capture SACL (System Access Control List)\n"
+			"            on %lu files or directories.",
 			state->num_get_sacl_priv_notheld);
 	}
 	if (state->num_get_sd_access_denied != 0) {
-		WARNING("Could not capture security descriptor at all\n"
-			"          on %lu files or directories.",
+		WARNING("- Could not capture security descriptor at all\n"
+			"            on %lu files or directories.",
 			state->num_get_sd_access_denied);
 	}
-	WARNING(
-          "Try running the program as the Administrator to make sure all the\n"
-"          desired metadata has been captured exactly.  However, if you\n"
-"          do not care about capturing security descriptors correctly, then\n"
-"          nothing more needs to be done%ls\n",
-	(add_flags & WIMLIB_ADD_FLAG_NO_ACLS) ? L"." :
-         L", although you might consider\n"
-"          using the --no-acls option to explicitly capture no security\n"
-"          descriptors.\n");
+	WARNING("To fully capture all security descriptors, run the program\n"
+		"          with Administrator rights.");
 }
 
 #define WINDOWS_NT_MAX_PATH 32768
@@ -1287,7 +1349,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 out_free_path:
 	FREE(path);
 	if (ret == 0)
-		win32_do_capture_warnings(&state, params->add_flags);
+		win32_do_capture_warnings(root_disk_path, &state, params->add_flags);
 	return ret;
 }
 
