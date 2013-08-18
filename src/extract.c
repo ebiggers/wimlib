@@ -766,11 +766,14 @@ extract_security(const tchar *path, struct apply_ctx *ctx,
 						 "descriptor on \"%"TS"\"", path);
 				return ret;
 			} else {
+			#if 0
 				if (errno != EACCES) {
 					WARNING_WITH_ERRNO("Failed to set "
 							   "security descriptor "
 							   "on \"%"TS"\"", path);
 				}
+			#endif
+				ctx->no_security_descriptors++;
 			}
 		}
 	}
@@ -2040,6 +2043,31 @@ do_feature_check(const struct wim_features *required_features,
 	return 0;
 }
 
+static void
+do_extract_warnings(struct apply_ctx *ctx)
+{
+	if (ctx->partial_security_descriptors == 0 &&
+	    ctx->no_security_descriptors == 0)
+		return;
+
+	WARNING("Extraction of \"%"TS"\" complete, but with one or more warnings:",
+		ctx->target);
+	if (ctx->partial_security_descriptors != 0) {
+		WARNING("- Could only partially set the security descriptor\n"
+			"            on %lu files or directories.",
+			ctx->partial_security_descriptors);
+	}
+	if (ctx->no_security_descriptors != 0) {
+		WARNING("- Could not set security descriptor at all\n"
+			"            on %lu files or directories.",
+			ctx->no_security_descriptors);
+	}
+#ifdef __WIN32__
+	WARNING("To fully restore all security descriptors, run the program\n"
+		"          with Administrator rights.");
+#endif
+}
+
 /*
  * extract_tree - Extract a file or directory tree from the currently selected
  *		  WIM image.
@@ -2345,6 +2373,8 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 			      WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END,
 			      &ctx.progress);
 	}
+
+	do_extract_warnings(&ctx);
 
 	ret = 0;
 out_free_realtarget:

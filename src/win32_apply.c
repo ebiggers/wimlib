@@ -33,6 +33,15 @@
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 
+#ifdef WITH_NTDLL
+#  include <winternl.h>
+#  include <ntstatus.h>
+NTSTATUS WINAPI
+NtSetSecurityObject(HANDLE Handle,
+		    SECURITY_INFORMATION SecurityInformation,
+		    PSECURITY_DESCRIPTOR SecurityDescriptor);
+#endif
+
 static int
 win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 {
@@ -478,32 +487,84 @@ error:
 	return WIMLIB_ERR_WRITE; /* XXX: need better error code */
 }
 
+static DWORD
+do_win32_set_security_descriptor(HANDLE h, const wchar_t *path,
+				 SECURITY_INFORMATION info,
+				 PSECURITY_DESCRIPTOR desc)
+{
+#ifdef WITH_NTDLL
+	return RtlNtStatusToDosError(NtSetSecurityObject(h, info, desc));
+#else
+	if (SetFileSecurity(path, info, desc))
+		return ERROR_SUCCESS;
+	else
+		return GetLastError();
+#endif
+}
+
 static int
-win32_set_security_descriptor(const wchar_t *path, const u8 *desc, size_t desc_size,
-			      struct apply_ctx *ctx)
+win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
+			      size_t desc_size, struct apply_ctx *ctx)
 {
 	SECURITY_INFORMATION info;
+	HANDLE h;
+	DWORD err;
+	int ret;
 
-	info = OWNER_SECURITY_INFORMATION |
-		GROUP_SECURITY_INFORMATION |
-		DACL_SECURITY_INFORMATION  |
-		SACL_SECURITY_INFORMATION;
-retry:
-	if (!SetFileSecurity(path, info, (PSECURITY_DESCRIPTOR)desc)) {
-		if (!(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS) &&
-		    GetLastError() == ERROR_PRIVILEGE_NOT_HELD &&
-		    (info & SACL_SECURITY_INFORMATION))
+	info = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
+	       DACL_SECURITY_INFORMATION  | SACL_SECURITY_INFORMATION;
+	h = INVALID_HANDLE_VALUE;
+
+#ifdef WITH_NTDLL
+	h = CreateFile(path, MAXIMUM_ALLOWED, 0, NULL, OPEN_EXISTING,
+		       FILE_FLAG_BACKUP_SEMANTICS |
+			       FILE_FLAG_OPEN_REPARSE_POINT,
+		       NULL);
+	if (h == INVALID_HANDLE_VALUE) {
+		ERROR_WITH_ERRNO("Can't open %ls (%u)", path, GetLastError());
+		goto error;
+	}
+#endif
+
+	for (;;) {
+		err = do_win32_set_security_descriptor(h, path, info,
+						       (PSECURITY_DESCRIPTOR)desc);
+		if (err == ERROR_SUCCESS)
+			break;
+		if ((err == ERROR_PRIVILEGE_NOT_HELD ||
+		     err == ERROR_ACCESS_DENIED) &&
+		    !(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS))
 		{
-			info &= ~SACL_SECURITY_INFORMATION;
-			goto retry;
+			if (info & SACL_SECURITY_INFORMATION) {
+				info &= ~SACL_SECURITY_INFORMATION;
+				ctx->partial_security_descriptors++;
+				continue;
+			}
+			if (info & DACL_SECURITY_INFORMATION) {
+				info &= ~DACL_SECURITY_INFORMATION;
+				continue;
+			}
+			if (info & OWNER_SECURITY_INFORMATION) {
+				info &= ~OWNER_SECURITY_INFORMATION;
+				continue;
+			}
+			ctx->partial_security_descriptors--;
+			ctx->no_security_descriptors++;
+			break;
 		}
 		goto error;
 	}
-	return 0;
+	ret = 0;
+out_close:
+#ifdef WITH_NTDLL
+	CloseHandle(h);
+#endif
+	return ret;
 
 error:
 	set_errno_from_GetLastError();
-	return WIMLIB_ERR_SET_SECURITY;
+	ret = WIMLIB_ERR_SET_SECURITY;
+	goto out_close;
 }
 
 static int

@@ -209,6 +209,8 @@ struct apply_ctx {
 	tchar *realtarget;
 	size_t realtarget_nchars;
 	unsigned long invalid_sequence;
+	unsigned long partial_security_descriptors;
+	unsigned long no_security_descriptors;
 	u64 num_streams_remaining;
 	bool root_dentry_is_special;
 	uint64_t next_progress;
