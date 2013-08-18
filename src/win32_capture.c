@@ -217,7 +217,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	export_ctx.buf_filled = 0;
 	export_ctx.bytes_remaining = size;
 
-	err = OpenEncryptedFileRawW(lte->file_on_disk, 0, &file_ctx);
+	err = OpenEncryptedFileRaw(lte->file_on_disk, 0, &file_ctx);
 	if (err != ERROR_SUCCESS) {
 		set_errno_from_win32_error(err);
 		ERROR_WITH_ERRNO("Failed to open encrypted file \"%ls\" "
@@ -549,7 +549,7 @@ out_free_buf:
 	dir_path[dir_path_num_chars] = OS_PREFERRED_PATH_SEPARATOR;
 	dir_path[dir_path_num_chars + 1] = L'*';
 	dir_path[dir_path_num_chars + 2] = L'\0';
-	hFind = FindFirstFileW(dir_path, &dat);
+	hFind = FindFirstFile(dir_path, &dat);
 	dir_path[dir_path_num_chars] = L'\0';
 
 	if (hFind == INVALID_HANDLE_VALUE) {
@@ -591,7 +591,7 @@ out_free_buf:
 			goto out_find_close;
 		if (child)
 			dentry_add_child(root, child);
-	} while (FindNextFileW(hFind, &dat));
+	} while (FindNextFile(hFind, &dat));
 	err = GetLastError();
 	if (err != ERROR_NO_MORE_FILES) {
 		set_errno_from_win32_error(err);
@@ -809,10 +809,10 @@ win32_get_reparse_data(HANDLE hFile, const wchar_t *path,
 }
 
 static DWORD WINAPI
-win32_tally_encrypted_size_cb(unsigned char *_data, void *_ctx,
+win32_tally_encrypted_size_cb(unsigned char *_data, void *_size_ret,
 			      unsigned long len)
 {
-	*(u64*)_ctx += len;
+	*(u64*)_size_ret += len;
 	return ERROR_SUCCESS;
 }
 
@@ -823,14 +823,14 @@ win32_get_encrypted_file_size(const wchar_t *path, u64 *size_ret)
 	void *file_ctx;
 	int ret;
 
-	*size_ret = 0;
-	err = OpenEncryptedFileRawW(path, 0, &file_ctx);
+	err = OpenEncryptedFileRaw(path, 0, &file_ctx);
 	if (err != ERROR_SUCCESS) {
 		set_errno_from_win32_error(err);
 		ERROR_WITH_ERRNO("Failed to open encrypted file \"%ls\" "
 				 "for raw read", path);
 		return WIMLIB_ERR_OPEN;
 	}
+	*size_ret = 0;
 	err = ReadEncryptedFileRaw(win32_tally_encrypted_size_cb,
 				   size_ret, file_ctx);
 	if (err != ERROR_SUCCESS) {
@@ -1003,7 +1003,7 @@ out_invalid_stream_name:
  *   already present in Windows XP.
  */
 static int
-win32_capture_streams(HANDLE hFile,
+win32_capture_streams(HANDLE *hFile_p,
 		      const wchar_t *path,
 		      size_t path_num_chars,
 		      struct wim_inode *inode,
@@ -1040,7 +1040,7 @@ win32_capture_streams(HANDLE hFile,
 
 	/* Get a buffer containing the stream information.  */
 	for (;;) {
-		status = NtQueryInformationFile(hFile, &io_status, buf, bufsize,
+		status = NtQueryInformationFile(*hFile_p, &io_status, buf, bufsize,
 						FileStreamInformation);
 		if (status == STATUS_SUCCESS) {
 			break;
@@ -1070,6 +1070,14 @@ win32_capture_streams(HANDLE hFile,
 		/* No stream information.  */
 		ret = 0;
 		goto out_free_buf;
+	}
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
+		/* OpenEncryptedFileRaw() seems to fail with
+		 * ERROR_SHARING_VIOLATION if there are any handles opened to
+		 * the file.  */
+		CloseHandle(*hFile_p);
+		*hFile_p = INVALID_HANDLE_VALUE;
 	}
 
 	/* Parse one or more stream information structures.  */
@@ -1151,7 +1159,7 @@ out_find_close:
 #endif /* !WITH_NTDLL */
 
 unnamed_only:
-	/* FindFirstStreamW() API is not available, or the volume does not
+	/* FindFirstStream() API is not available, or the volume does not
 	 * support named streams.  Only capture the unnamed data stream. */
 	DEBUG("Only capturing unnamed data stream");
 	if (!(inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
@@ -1314,7 +1322,7 @@ again:
 
 	/* Capture the unnamed data stream (only should be present for regular
 	 * files) and any alternate data streams. */
-	ret = win32_capture_streams(hFile,
+	ret = win32_capture_streams(&hFile,
 				    path,
 				    path_num_chars,
 				    inode,
@@ -1333,6 +1341,19 @@ again:
 					       params->lookup_table);
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		/* Directory (not a reparse point) --- recurse to children */
+
+		if (hFile == INVALID_HANDLE_VALUE) {
+			/* Re-open handle that was closed to read raw encrypted
+			 * data.  */
+			hFile = win32_open_existing_file(path, FILE_READ_DATA);
+			if (hFile == INVALID_HANDLE_VALUE) {
+				set_errno_from_GetLastError();
+				ERROR_WITH_ERRNO("Failed to reopen \"%ls\"",
+						 path);
+				ret = WIMLIB_ERR_OPEN;
+				goto out_close_handle;
+			}
+		}
 		ret = win32_recurse_directory(hFile,
 					      path,
 					      path_num_chars,
