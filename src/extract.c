@@ -338,6 +338,15 @@ extract_inode(const tchar *path, struct apply_ctx *ctx, struct wim_inode *inode)
 			ERROR_WITH_ERRNO("Failed to create the directory "
 					 "\"%"TS"\"", path);
 		}
+	} else if ((inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) &&
+		    ctx->ops->extract_encrypted_stream_creates_file &&
+		    ctx->supported_features.encrypted_files) {
+		ret = ctx->ops->extract_encrypted_stream(
+				path, inode_unnamed_lte_resolved(inode), ctx);
+		if (ret) {
+			ERROR_WITH_ERRNO("Failed to create and extract "
+					 "encrypted file \"%"TS"\"", path);
+		}
 	} else {
 		ret = ctx->ops->create_file(path, ctx, &inode->extract_cookie);
 		if (ret) {
@@ -585,13 +594,20 @@ extract_streams(const tchar *path, struct apply_ctx *ctx,
 		if (!(inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
 					     FILE_ATTRIBUTE_REPARSE_POINT)))
 		{
-			if ((inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) &&
-			    ctx->supported_features.encrypted_files)
-				ret = ctx->ops->extract_encrypted_stream(file_spec, lte, ctx);
-			else
-				ret = ctx->ops->extract_unnamed_stream(file_spec, lte, ctx);
-			if (ret)
-				goto error;
+			if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED &&
+			    ctx->supported_features.encrypted_files) {
+				if (!ctx->ops->extract_encrypted_stream_creates_file) {
+					ret = ctx->ops->extract_encrypted_stream(
+								path, lte, ctx);
+					if (ret)
+						goto error;
+				}
+			} else {
+				ret = ctx->ops->extract_unnamed_stream(
+							file_spec, lte, ctx);
+				if (ret)
+					goto error;
+			}
 			update_extract_progress(ctx, lte);
 		}
 		else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)

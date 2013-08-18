@@ -83,7 +83,7 @@ struct apply_operations {
 	/* OPTIONAL:  Extracted encrypted stream.  In start_extract(), set
 	 * ctx->supported_features.encrypted_files if supported.  */
 	int (*extract_encrypted_stream)
-		(file_spec_t file, struct wim_lookup_table_entry *lte,
+		(const tchar *path, struct wim_lookup_table_entry *lte,
 		 struct apply_ctx *ctx);
 
 	/* OPTIONAL:  Set file attributes.  Calling code calls this if non-NULL.
@@ -172,6 +172,10 @@ struct apply_operations {
 	/* OPTIONAL:  Set to 1 if set_file_attributes() needs to be called a
 	 * second time towards the end of the extraction.  */
 	unsigned requires_final_set_attributes_pass : 1;
+
+	/* OPTIONAL:  Set to 1 if extract_encrypted_stream() must be used to
+	 * create encrypted files.  */
+	unsigned extract_encrypted_stream_creates_file : 1;
 };
 
 struct wim_features {

@@ -259,11 +259,10 @@ win32_encrypted_import_cb(unsigned char *data, void *_import_ctx,
 }
 
 static int
-win32_extract_encrypted_stream(file_spec_t file,
+win32_extract_encrypted_stream(const wchar_t *path,
 			       struct wim_lookup_table_entry *lte,
 			       struct apply_ctx *ctx)
 {
-	const tchar *path = file.path;
 	void *file_ctx;
 	DWORD err;
 	int ret;
@@ -614,6 +613,7 @@ const struct apply_operations win32_apply_ops = {
 	.realpath_works_on_nonexisting_files = 1,
 	.root_directory_is_special = 1,
 	.requires_final_set_attributes_pass = 1,
+	.extract_encrypted_stream_creates_file = 1,
 };
 
 #endif /* __WIN32__ */
