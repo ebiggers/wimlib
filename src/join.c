@@ -29,6 +29,7 @@
 
 #include "wimlib.h"
 #include "wimlib/types.h"
+#include "wimlib/swm.h"
 #include "wimlib/util.h"
 #include "wimlib/wim.h"
 
@@ -45,9 +46,8 @@ wimlib_join(const tchar * const *swm_names,
 	unsigned i;
 	unsigned j;
 	WIMStruct *swm0;
-	WIMStruct **swms;
+	WIMStruct **additional_swms;
 	unsigned num_additional_swms;
-	WIMStruct *wim;
 
 	swm_open_flags |= WIMLIB_OPEN_FLAG_SPLIT_OK;
 
@@ -55,8 +55,8 @@ wimlib_join(const tchar * const *swm_names,
 		return WIMLIB_ERR_INVALID_PARAM;
 	num_additional_swms = num_swms - 1;
 
-	swms = CALLOC(num_additional_swms, sizeof(swms[0]));
-	if (!swms)
+	additional_swms = CALLOC(num_additional_swms, sizeof(additional_swms[0]));
+	if (!additional_swms)
 		return WIMLIB_ERR_NOMEM;
 
 	swm0 = NULL;
@@ -70,7 +70,7 @@ wimlib_join(const tchar * const *swm_names,
 		if (swm->hdr.part_number == 1 && swm0 == NULL)
 			swm0 = swm;
 		else
-			swms[j++] = swm;
+			additional_swms[j++] = swm;
 	}
 
 	if (!swm0) {
@@ -78,39 +78,18 @@ wimlib_join(const tchar * const *swm_names,
 		goto out_free_swms;
 	}
 
-	ret = wimlib_create_new_wim(swm0->compression_type, &wim);
+	ret = verify_swm_set(swm0, additional_swms, num_additional_swms);
 	if (ret)
 		goto out_free_swms;
 
-	ret = wimlib_export_image(swm0, WIMLIB_ALL_IMAGES, wim, NULL, NULL, 0,
-				  swms, num_additional_swms, progress_func);
-	if (ret)
-		goto out_free_wim;
+	merge_lookup_tables(swm0, additional_swms, num_additional_swms);
 
-	wim->hdr.flags |= swm0->hdr.flags & (WIM_HDR_FLAG_RP_FIX |
-					     WIM_HDR_FLAG_READONLY);
-	if (!(wim_write_flags & (WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
-				 WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY)))
-	{
-		if (wim_has_integrity_table(swm0))
-			wim_write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-	}
-	if (!(wim_write_flags & (WIMLIB_WRITE_FLAG_PIPABLE |
-				 WIMLIB_WRITE_FLAG_NOT_PIPABLE)))
-	{
-		if (wim_is_pipable(swm0))
-			wim_write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
-	}
-
-
-	ret = wimlib_write(wim, output_path, WIMLIB_ALL_IMAGES,
+	ret = wimlib_write(swm0, output_path, WIMLIB_ALL_IMAGES,
 			   wim_write_flags, 1, progress_func);
-out_free_wim:
-	wimlib_free(wim);
 out_free_swms:
 	for (i = 0; i < num_additional_swms; i++)
-		wimlib_free(swms[i]);
-	FREE(swms);
+		wimlib_free(additional_swms[i]);
+	FREE(additional_swms);
 	wimlib_free(swm0);
 	return ret;
 }

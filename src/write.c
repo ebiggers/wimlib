@@ -1818,22 +1818,39 @@ struct find_streams_ctx {
 };
 
 static void
+lte_reference_for_write(struct wim_lookup_table_entry *lte,
+			struct find_streams_ctx *ctx,
+			unsigned nref)
+{
+	if (lte->out_refcnt == 0) {
+		if (lte->unhashed)
+			stream_size_table_insert(lte, &ctx->stream_size_tab);
+		list_add_tail(&lte->write_streams_list, &ctx->stream_list);
+	}
+	lte->out_refcnt += nref;
+}
+
+static int
+do_lte_reference_for_write(struct wim_lookup_table_entry *lte, void *_ctx)
+{
+	struct find_streams_ctx *ctx = _ctx;
+	lte->out_refcnt = 0;
+	lte_reference_for_write(lte, ctx, lte->refcnt);
+	return 0;
+}
+
+static void
 inode_find_streams_to_write(struct wim_inode *inode,
 			    struct wim_lookup_table *table,
-			    struct list_head *stream_list,
-			    struct stream_size_table *tab)
+			    struct find_streams_ctx *ctx)
 {
 	struct wim_lookup_table_entry *lte;
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+	unsigned i;
+
+	for (i = 0; i <= inode->i_num_ads; i++) {
 		lte = inode_stream_lte(inode, i, table);
-		if (lte) {
-			if (lte->out_refcnt == 0) {
-				if (lte->unhashed)
-					stream_size_table_insert(lte, tab);
-				list_add_tail(&lte->write_streams_list, stream_list);
-			}
-			lte->out_refcnt += inode->i_nlink;
-		}
+		if (lte)
+			lte_reference_for_write(lte, ctx, inode->i_nlink);
 	}
 }
 
@@ -1853,11 +1870,8 @@ image_find_streams_to_write(WIMStruct *wim)
 
 	/* Go through this image's inodes to find any streams that have not been
 	 * found yet. */
-	image_for_each_inode(inode, imd) {
-		inode_find_streams_to_write(inode, wim->lookup_table,
-					    &ctx->stream_list,
-					    &ctx->stream_size_tab);
-	}
+	image_for_each_inode(inode, imd)
+		inode_find_streams_to_write(inode, wim->lookup_table, ctx);
 	return 0;
 }
 
@@ -1891,7 +1905,32 @@ prepare_stream_list(WIMStruct *wim, int image, struct list_head *stream_list)
 			       &ctx.stream_size_tab);
 	INIT_LIST_HEAD(&ctx.stream_list);
 	wim->private = &ctx;
-	ret = for_image(wim, image, image_find_streams_to_write);
+
+#if 1
+	/* Optimization enabled by default:  if we're writing all the images,
+	 * it's not strictly necessary to decompress, parse, and go through the
+	 * dentry tree in each image's metadata resource.  Instead, include all
+	 * the hashed streams referenced from the lookup table as well as all
+	 * unhashed streams referenced in the per-image list.  For 'out_refcnt'
+	 * for each stream, just copy the value from 'refcnt', which is the
+	 * reference count of that stream in the entire WIM.  */
+	if (image == WIMLIB_ALL_IMAGES) {
+		struct wim_lookup_table_entry *lte;
+		struct wim_image_metadata *imd;
+		unsigned i;
+
+		for_lookup_table_entry(wim->lookup_table,
+				       do_lte_reference_for_write, &ctx);
+		for (i = 0; i < wim->hdr.image_count; i++) {
+			imd = wim->image_metadata[i];
+			image_for_each_unhashed_stream(lte, imd)
+				do_lte_reference_for_write(lte, &ctx);
+		}
+		ret = 0;
+	} else
+#endif
+		ret = for_image(wim, image, image_find_streams_to_write);
+
 	destroy_stream_size_table(&ctx.stream_size_tab);
 	if (ret)
 		return ret;
@@ -1971,6 +2010,9 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 		struct wim_image_metadata *imd;
 
 		imd = wim->image_metadata[i - 1];
+		/* Build a new metadata resource only if image was modified from
+		 * the original (or was newly added).  Otherwise just copy the
+		 * existing one.  */
 		if (imd->modified) {
 			ret = write_metadata_resource(wim, i,
 						      write_resource_flags);
@@ -2374,8 +2416,9 @@ write_wim_part(WIMStruct *wim,
 	     (image < 1 || image > wim->hdr.image_count))
 		return WIMLIB_ERR_INVALID_IMAGE;
 
-	/* @wim must specify a standalone WIM.  */
-	if (wim->hdr.total_parts != 1)
+	/* @wim must specify a standalone WIM, or at least the first part of a
+	 * split WIM.  */
+	if (wim->hdr.part_number != 1)
 		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
 
 	/* Check for contradictory flags.  */

@@ -2267,8 +2267,9 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
  * 	parts have the same GUID and compression type.
  *
  * Note: wimlib_export_image() can provide similar functionality to
- * wimlib_join(), since it is possible to export all images from a split WIM.
- * Actually, wimlib_join() currently calls wimlib_export_image internally.
+ * wimlib_join(), since it is possible to export all images from a split WIM
+ * into a new ::WIMStruct, then write it.  However, wimlib_join() may have
+ * better performance than this method.
  */
 extern int
 wimlib_join(const wimlib_tchar * const *swms,
@@ -3170,8 +3171,6 @@ wimlib_update_image(WIMStruct *wim,
  * 	with @p wim, or some file resources in @p wim refer to files in the
  * 	outside filesystem, and a read error occurred when reading one of these
  * 	files.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@p wim is part of a split WIM, not a standalone WIM.
  * @retval ::WIMLIB_ERR_WRITE
  * 	An error occurred when trying to write data to the new WIM file.
  */
