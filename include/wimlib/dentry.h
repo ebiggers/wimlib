@@ -492,6 +492,9 @@ new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret);
 extern int
 new_dentry_with_timeless_inode(const tchar *name, struct wim_dentry **dentry_ret);
 
+extern void
+dentry_tree_clear_inode_visited(struct wim_dentry *root);
+
 extern int
 new_filler_directory(const tchar *name, struct wim_dentry **dentry_ret);
 

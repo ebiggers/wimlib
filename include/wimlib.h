@@ -2625,6 +2625,70 @@ extern int
 wimlib_print_metadata(WIMStruct *wim, int image) _wimlib_deprecated;
 
 /**
+ * Declares that a newly added image is mostly the same as a prior image, but
+ * captured at a later point in time, possibly with some modifications in the
+ * intervening time.  This is designed to be used in incremental backups of the
+ * same filesystem or directory tree.
+ *
+ * This function compares the directory tree of the newly added image against
+ * that of the old image.  Any files that are present in both the newly added
+ * image and the old image and have timestamps that indicate they haven't been
+ * modified are deemed not to have been modified.  Such files will not be read
+ * from the filesystem when the WIM is being written or overwritten.  Note that
+ * these unchanged files will still be "archived" and will be logically present
+ * in the new image; the optimization is that they don't need to actually be
+ * read from the filesystem because the WIM already contains them.
+ *
+ * This function is provided to optimize incremental backups.  The resulting WIM
+ * file will still be the same regardless of whether this function is called.
+ * (This is, however, assuming that timestamps have not been manipulated or
+ * unmaintained as to trick this function into thinking a file has not been
+ * modified when really it has.  To partly guard against such cases, other
+ * metadata such as file sizes will be checked as well.)
+ *
+ * This function must be called after adding the new image (e.g. with
+ * wimlib_add_image()), but before writing the updated WIM file (e.g. with
+ * wimlib_overwrite()).
+ *
+ * @p wim
+ *	Pointer to the ::WIMStruct for a WIM.
+ * @p new_image
+ *	1-based index in the WIM of the newly added image.  This image can have
+ *	been added with wimlib_add_image() or wimlib_add_image_multisource(), or
+ *	wimlib_add_empty_image() followed by wimlib_update_image().
+ * @p template_image
+ *	1-based index in the WIM of a template image that reflects a prior state
+ *	of the directory tree being captured.
+ * @p flags
+ *	Reserved; must be 0.
+ * @p progress_func
+ *	Currently ignored, but reserved for a function that will be called with
+ *	information about the operation.  Use NULL if no additional information
+ *	is desired.
+ *
+ * @return 0 on success; nonzero on error.
+ *
+ * @retval ::WIMLIB_ERR_INVALID_IMAGE
+ *	@p new_image and/or @p template_image were not a valid image indices in
+ *	the WIM.
+ * @retval ::WIMLIB_ERR_NOMEM
+ *	Failed to allocate needed memory.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	@p new_image was equal to @p template_image, or @p new_image specified
+ *	an image that had not been modified since opening the WIM.
+ *
+ * This function can additionally return ::WIMLIB_ERR_DECOMPRESSION,
+ * ::WIMLIB_ERR_INVALID_METADATA_RESOURCE, ::WIMLIB_ERR_NOMEM,
+ * ::WIMLIB_ERR_READ, or ::WIMLIB_ERR_UNEXPECTED_END_OF_FILE, all of which
+ * indicate failure (for different reasons) to read the metadata resource for
+ * the template image.
+ */
+extern int
+wimlib_reference_template_image(WIMStruct *wim, int new_image,
+				int template_image, int flags,
+				wimlib_progress_func_t progress_func);
+
+/**
  * Translates a string specifying the name or number of an image in the WIM into
  * the number of the image.  The images are numbered starting at 1.
  *

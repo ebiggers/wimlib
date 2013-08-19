@@ -125,6 +125,7 @@ enum {
 	IMAGEX_COMPRESS_OPTION,
 	IMAGEX_CONFIG_OPTION,
 	IMAGEX_DEBUG_OPTION,
+	IMAGEX_DELTA_FROM_OPTION,
 	IMAGEX_DEREFERENCE_OPTION,
 	IMAGEX_DEST_DIR_OPTION,
 	IMAGEX_EXTRACT_XML_OPTION,
@@ -201,6 +202,7 @@ static const struct option capture_or_append_options[] = {
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
+	{T("delta-from"),  required_argument, NULL, IMAGEX_DELTA_FROM_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1625,6 +1627,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	const tchar *name;
 	const tchar *desc;
 	const tchar *flags_element = NULL;
+	const tchar *template_image_name_or_num = NULL;
+	int template_image;
 	WIMStruct *wim;
 	int ret;
 	unsigned num_threads = 0;
@@ -1705,6 +1709,14 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_NOT_PIPABLE_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_NOT_PIPABLE;
+			break;
+		case IMAGEX_DELTA_FROM_OPTION:
+			if (cmd == CMD_CAPTURE) {
+				imagex_error(T("--delta-from=IMAGE is only "
+					       "valid for append."));
+				goto out_usage;
+			}
+			template_image_name_or_num = optarg;
 			break;
 		default:
 			goto out_usage;
@@ -1854,6 +1866,30 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			tsprintf(name_end, T(" (%lu)"), conflict_idx);
 		}
 	}
+
+	if (template_image_name_or_num) {
+		template_image = wimlib_resolve_image(wim, template_image_name_or_num);
+		if (template_image_name_or_num[0] == T('-')) {
+			tchar *tmp;
+			unsigned long n;
+			struct wimlib_wim_info info;
+
+			wimlib_get_wim_info(wim, &info);
+			n = tstrtoul(template_image_name_or_num + 1, &tmp, 10);
+			if (n >= 1 && n <= info.image_count &&
+			    *tmp == T('\0') &&
+			    tmp != template_image_name_or_num + 1)
+			{
+				template_image = info.image_count - (n - 1);
+			}
+		}
+		ret = verify_image_exists_and_is_single(template_image,
+							template_image_name_or_num,
+							wimfile);
+		if (ret)
+			goto out_wimlib_free;
+	}
+
 	ret = wimlib_add_image_multisource(wim,
 					   capture_sources,
 					   num_sources,
@@ -1864,10 +1900,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	if (ret)
 		goto out_wimlib_free;
 
-	if (desc || flags_element) {
-		/* User provided <DESCRIPTION> or <FLAGS> element.  Get the
-		 * index of the image we just added, then use it to call the
-		 * appropriate functions.  */
+	if (desc || flags_element || template_image_name_or_num) {
+		/* User provided <DESCRIPTION> or <FLAGS> element, or an image
+		 * on which the added one is to be based has been specified with
+		 * --delta-from=IMAGE.  Get the index of the image we just
+		 *  added, then use it to call the appropriate functions.  */
 		struct wimlib_wim_info info;
 
 		wimlib_get_wim_info(wim, &info);
@@ -1883,6 +1920,15 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		if (flags_element) {
 			ret = wimlib_set_image_flags(wim, info.image_count,
 						     flags_element);
+			if (ret)
+				goto out_wimlib_free;
+		}
+
+		if (template_image_name_or_num) {
+			ret = wimlib_reference_template_image(wim,
+							      info.image_count,
+							      template_image,
+							      0, NULL);
 			if (ret)
 				goto out_wimlib_free;
 		}
@@ -3443,7 +3489,7 @@ T(
 "                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
 "                    [--rebuild] [--unix-data] [--source-list] [--no-acls]\n"
 "                    [--strict-acls] [--rpfix] [--norpfix] [--pipable]\n"
-"                    [--not-pipable]\n"
+"                    [--not-pipable] [--delta-from=IMAGE]\n"
 ),
 [CMD_APPLY] =
 T(
@@ -3460,8 +3506,7 @@ T(
 "                    [--nocheck] [--compress=TYPE] [--flags EDITION_ID]\n"
 "                    [--verbose] [--dereference] [--config=FILE]\n"
 "                    [--threads=NUM_THREADS] [--unix-data] [--source-list]\n"
-"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
-"                    [--pipable] [--not-pipable]\n"
+"                    [--no-acls] [--strict-acls] [--norpfix] [--pipable]\n"
 ),
 [CMD_DELETE] =
 T(
@@ -3536,24 +3581,25 @@ T(
 };
 
 static const tchar *invocation_name;
-static bool using_cmd_from_invocation_name = false;
+static int invocation_cmd = CMD_NONE;
 
 static const tchar *get_cmd_string(int cmd, bool nospace)
 {
-
-	if (using_cmd_from_invocation_name || cmd == CMD_NONE) {
-		return invocation_name;
+	static tchar buf[50];
+	if (cmd == CMD_NONE) {
+		tsprintf(buf, T("%"TS), T(IMAGEX_PROGNAME));
+	} else if (invocation_cmd != CMD_NONE) {
+		tsprintf(buf, T("wim%"TS), imagex_commands[cmd].name);
 	} else {
 		const tchar *format;
-		static tchar buf[50];
 
 		if (nospace)
 			format = T("%"TS"-%"TS"");
 		else
 			format = T("%"TS" %"TS"");
 		tsprintf(buf, format, invocation_name, imagex_commands[cmd].name);
-		return buf;
 	}
+	return buf;
 }
 
 static void
@@ -3694,7 +3740,7 @@ main(int argc, char **argv)
 			if (!tstrcmp(invocation_name + 3,
 				     imagex_commands[i].name))
 			{
-				using_cmd_from_invocation_name = true;
+				invocation_cmd = i;
 				cmd = i;
 				break;
 			}

@@ -1802,20 +1802,13 @@ dentry_tally_features(struct wim_dentry *dentry, void *_features)
 	return 0;
 }
 
-static int
-dentry_clear_inode_visited(struct wim_dentry *dentry, void *_ignore)
-{
-	dentry->d_inode->i_visited = 0;
-	return 0;
-}
-
 /* Tally the features necessary to extract a dentry tree.  */
 static void
 dentry_tree_get_features(struct wim_dentry *root, struct wim_features *features)
 {
 	memset(features, 0, sizeof(struct wim_features));
 	for_dentry_in_tree(root, dentry_tally_features, features);
-	for_dentry_in_tree(root, dentry_clear_inode_visited, NULL);
+	dentry_tree_clear_inode_visited(root);
 }
 
 static u32

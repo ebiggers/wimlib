@@ -1087,6 +1087,19 @@ new_filler_directory(const tchar *name, struct wim_dentry **dentry_ret)
 }
 
 static int
+dentry_clear_inode_visited(struct wim_dentry *dentry, void *_ignore)
+{
+	dentry->d_inode->i_visited = 0;
+	return 0;
+}
+
+void
+dentry_tree_clear_inode_visited(struct wim_dentry *root)
+{
+	for_dentry_in_tree(root, dentry_clear_inode_visited, NULL);
+}
+
+static int
 init_ads_entry(struct wim_ads_entry *ads_entry, const void *name,
 	       size_t name_nbytes, bool is_utf16le)
 {
@@ -2485,4 +2498,126 @@ wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *path,
 	};
 	wim->private = &ctx;
 	return for_image(wim, image, image_do_iterate_dir_tree);
+}
+
+static bool
+inode_stream_sizes_consistent(const struct wim_inode *inode_1,
+			      const struct wim_inode *inode_2,
+			      const struct wim_lookup_table *lookup_table)
+{
+	if (inode_1->i_num_ads != inode_2->i_num_ads)
+		return false;
+	for (unsigned i = 0; i <= inode_1->i_num_ads; i++) {
+		const struct wim_lookup_table_entry *lte_1, *lte_2;
+
+		lte_1 = inode_stream_lte(inode_1, i, lookup_table);
+		lte_2 = inode_stream_lte(inode_2, i, lookup_table);
+		if (lte_1 && lte_2) {
+			if (wim_resource_size(lte_1) != wim_resource_size(lte_2))
+				return false;
+		} else if (lte_1 && wim_resource_size(lte_1)) {
+			return false;
+		} else if (lte_2 && wim_resource_size(lte_2)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static void
+inode_replace_ltes(struct wim_inode *inode,
+		   struct wim_inode *template_inode,
+		   struct wim_lookup_table *lookup_table)
+{
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+		struct wim_lookup_table_entry *lte, *lte_template;
+
+		lte = inode_stream_lte(inode, i, lookup_table);
+		if (lte) {
+			for (unsigned j = 0; j < inode->i_nlink; j++)
+				lte_decrement_refcnt(lte, lookup_table);
+			lte_template = inode_stream_lte(template_inode, i,
+							lookup_table);
+			if (i == 0)
+				inode->i_lte = lte_template;
+			else
+				inode->i_ads_entries[i - 1].lte = lte_template;
+			if (lte_template)
+				lte_template->refcnt += inode->i_nlink;
+		}
+	}
+	inode->i_resolved = 1;
+}
+
+static int
+dentry_reference_template(struct wim_dentry *dentry, void *_wim)
+{
+	int ret;
+	struct wim_dentry *template_dentry;
+	struct wim_inode *inode, *template_inode;
+	WIMStruct *wim = _wim;
+
+	if (dentry->d_inode->i_visited)
+		return 0;
+
+	ret = calculate_dentry_full_path(dentry);
+	if (ret)
+		return ret;
+
+	template_dentry = get_dentry(wim, dentry->_full_path);
+	if (!template_dentry) {
+		DEBUG("\"%"TS"\": newly added file", dentry->_full_path);
+		return 0;
+	}
+
+	inode = dentry->d_inode;
+	template_inode = template_dentry->d_inode;
+
+	if (inode->i_last_write_time == template_inode->i_last_write_time
+	    && inode->i_creation_time == template_inode->i_creation_time
+	    && inode->i_last_access_time >= template_inode->i_last_access_time
+	    && inode_stream_sizes_consistent(inode, template_inode,
+					     wim->lookup_table))
+	{
+		/*DEBUG("\"%"TS"\": No change detected", dentry->_full_path);*/
+		inode_replace_ltes(inode, template_inode, wim->lookup_table);
+		inode->i_visited = 1;
+	} else {
+		DEBUG("\"%"TS"\": change detected!", dentry->_full_path);
+	}
+	return 0;
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_reference_template_image(WIMStruct *wim, int new_image, int template_image,
+				int flags, wimlib_progress_func_t progress_func)
+{
+	int ret;
+	struct wim_image_metadata *new_imd;
+
+	if (wim->hdr.part_number != 1)
+		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+
+	if (new_image < 1 || new_image > wim->hdr.image_count)
+		return WIMLIB_ERR_INVALID_IMAGE;
+
+	if (template_image < 1 || template_image > wim->hdr.image_count)
+		return WIMLIB_ERR_INVALID_IMAGE;
+
+	if (new_image == template_image)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	new_imd = wim->image_metadata[new_image - 1];
+	if (!new_imd->modified)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	ret = select_wim_image(wim, template_image);
+	if (ret)
+		return ret;
+
+	ret = for_dentry_in_tree(new_imd->root_dentry,
+				 dentry_reference_template, wim);
+	dentry_tree_clear_inode_visited(new_imd->root_dentry);
+	return ret;
 }
