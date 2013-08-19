@@ -1090,9 +1090,11 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			imagex_printf(T("\n"));
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN:
-		imagex_printf(T("\nReading split pipable WIM part %u of %u\n"),
-			      info->extract.part_number,
-			      info->extract.total_parts);
+		if (info->extract.total_parts != 1) {
+			imagex_printf(T("\nReading split pipable WIM part %u of %u\n"),
+				      info->extract.part_number,
+				      info->extract.total_parts);
+		}
 		break;
 	case WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS:
 		if (info->extract.extract_root_wim_source_path[0] == T('\0'))
