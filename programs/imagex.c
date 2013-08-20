@@ -118,8 +118,6 @@ static FILE *imagex_info_file;
 
 enum {
 	IMAGEX_ALLOW_OTHER_OPTION,
-	IMAGEX_AS_DELTA_FROM_OPTION,
-	IMAGEX_AS_UPDATE_OF_OPTION,
 	IMAGEX_BOOT_OPTION,
 	IMAGEX_CHECK_OPTION,
 	IMAGEX_COMMAND_OPTION,
@@ -127,6 +125,7 @@ enum {
 	IMAGEX_COMPRESS_OPTION,
 	IMAGEX_CONFIG_OPTION,
 	IMAGEX_DEBUG_OPTION,
+	IMAGEX_DELTA_FROM_OPTION,
 	IMAGEX_DEREFERENCE_OPTION,
 	IMAGEX_DEST_DIR_OPTION,
 	IMAGEX_EXTRACT_XML_OPTION,
@@ -159,6 +158,7 @@ enum {
 	IMAGEX_THREADS_OPTION,
 	IMAGEX_TO_STDOUT_OPTION,
 	IMAGEX_UNIX_DATA_OPTION,
+	IMAGEX_UPDATE_OF_OPTION,
 	IMAGEX_VERBOSE_OPTION,
 	IMAGEX_XML_OPTION,
 };
@@ -203,9 +203,8 @@ static const struct option capture_or_append_options[] = {
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
-	{T("as-update-of"),  required_argument, NULL, IMAGEX_AS_UPDATE_OF_OPTION},
-	{T("as-update-from"), required_argument, NULL, IMAGEX_AS_UPDATE_OF_OPTION},
-	{T("as-delta-from"),   required_argument, NULL, IMAGEX_AS_DELTA_FROM_OPTION},
+	{T("update-of"),   required_argument, NULL, IMAGEX_UPDATE_OF_OPTION},
+	{T("delta-from"),  required_argument, NULL, IMAGEX_DELTA_FROM_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1731,9 +1730,9 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		case IMAGEX_NOT_PIPABLE_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_NOT_PIPABLE;
 			break;
-		case IMAGEX_AS_UPDATE_OF_OPTION:
+		case IMAGEX_UPDATE_OF_OPTION:
 			if (template_image_name_or_num) {
-				imagex_error(T("'--as-update-of' can only be "
+				imagex_error(T("'--update-of' can only be "
 					       "specified one time!"));
 				goto out_err;
 			} else {
@@ -1750,14 +1749,14 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 				}
 			}
 			break;
-		case IMAGEX_AS_DELTA_FROM_OPTION:
+		case IMAGEX_DELTA_FROM_OPTION:
 			if (cmd != CMD_CAPTURE) {
-				imagex_error(T("'--as-delta-from' is only "
+				imagex_error(T("'--delta-from' is only "
 					       "valid for capture!"));
 				goto out_usage;
 			}
 			if (base_wimfile) {
-				imagex_error(T("'--as-delta-from' can only be "
+				imagex_error(T("'--delta-from' can only be "
 					       "specified one time!"));
 				goto out_err;
 			}
@@ -1801,8 +1800,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		set_fd_to_binary_mode(wim_fd);
 	}
 
-	/* If template image was specified using --as-update-of=IMAGE rather
-	 * than --as-update-of=WIMFILE:IMAGE, set the default WIMFILE.  */
+	/* If template image was specified using --update-of=IMAGE rather
+	 * than --update-of=WIMFILE:IMAGE, set the default WIMFILE.  */
 	if (template_image_name_or_num && !template_wimfile) {
 		if (base_wimfile) {
 			/* Capturing delta WIM:  default to base WIM.  */
@@ -1815,7 +1814,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			/* Capturing a normal (non-delta) WIM, so the WIM file
 			 * *must* be explicitly specified.  */
 			imagex_error(T("For capture of non-delta WIM, "
-				       "'--as-update-of' must specify "
+				       "'--update-of' must specify "
 				       "WIMFILE:IMAGE!"));
 			goto out_usage;
 		}
@@ -2012,7 +2011,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	if (desc || flags_element || template_image_name_or_num) {
 		/* User provided <DESCRIPTION> or <FLAGS> element, or an image
 		 * on which the added one is to be based has been specified with
-		 * --as-update-of.  Get the index of the image we just
+		 * --update-of.  Get the index of the image we just
 		 *  added, then use it to call the appropriate functions.  */
 		struct wimlib_wim_info info;
 
@@ -3603,7 +3602,7 @@ T(
 "                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
 "                    [--rebuild] [--unix-data] [--source-list] [--no-acls]\n"
 "                    [--strict-acls] [--rpfix] [--norpfix] [--pipable]\n"
-"                    [--not-pipable] [--as-update-of=[WIMFILE:]IMAGE]\n"
+"                    [--not-pipable] [--update-of=[WIMFILE:]IMAGE]\n"
 ),
 [CMD_APPLY] =
 T(
@@ -3621,7 +3620,7 @@ T(
 "                    [--verbose] [--dereference] [--config=FILE]\n"
 "                    [--threads=NUM_THREADS] [--unix-data] [--source-list]\n"
 "                    [--no-acls] [--strict-acls] [--norpfix] [--pipable]\n"
-"                    [--as-update-of=[WIMFILE:]IMAGE] [--as-delta-from=WIMFILE]\n"
+"                    [--update-of=[WIMFILE:]IMAGE] [--delta-from=WIMFILE]\n"
 ),
 [CMD_DELETE] =
 T(

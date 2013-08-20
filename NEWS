@@ -9,11 +9,11 @@ Version 1.5.0:
 
 	To better support incremental backups, added support for declaring an
 	image as a modified form of another image.  See the documentation for
-	the '--as-update-of' option of `wimlib-imagex append' and `wimlib-imagex
+	the '--update-of' option of `wimlib-imagex append' and `wimlib-imagex
 	capture'.
 
 	Added supported for "delta" WIMs.  See the documentation for the
-	'--as-delta-from' option of `wimlib-imagex capture'.
+	'--delta-from' option of `wimlib-imagex capture'.
 
 	The library support for managing split WIMs has been changed to support
 	other arrangements, such as delta WIMs, and be easier to use.  This
