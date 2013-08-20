@@ -2743,8 +2743,9 @@ wimlib_reference_resource_files(WIMStruct *wim,
  *
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  *	@p wim was @c NULL, or @p num_resource_wims was nonzero but @p
- *	resource_wims was @c NULL, or @p wim did not contain metadata resources,
- *	or an entry in @p resource_wims was @p NULL.
+ *	resource_wims was @c NULL, or an entry in @p resource_wims was @p NULL.
+ * @retval ::WIMLIB_ERR_NOMEM
+ *	Failed to allocate memory.
  */
 extern int
 wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
