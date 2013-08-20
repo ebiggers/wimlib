@@ -45,7 +45,6 @@ libwim_la_SOURCES =		\
 	src/security.c		\
 	src/sha1.c		\
 	src/split.c		\
-	src/swm.c		\
 	src/reparse.c		\
 	src/timestamp.c		\
 	src/update_image.c	\
@@ -68,6 +67,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/endianness.h	\
 	include/wimlib/error.h		\
 	include/wimlib/file_io.h	\
+	include/wimlib/glob.h		\
 	include/wimlib/header.h		\
 	include/wimlib/integrity.h	\
 	include/wimlib/list.h		\
@@ -80,7 +80,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/resource.h	\
 	include/wimlib/security.h	\
 	include/wimlib/sha1.h		\
-	include/wimlib/swm.h		\
 	include/wimlib/timestamp.h	\
 	include/wimlib/types.h		\
 	include/wimlib/util.h		\

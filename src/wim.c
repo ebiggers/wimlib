@@ -71,6 +71,7 @@ new_wim_struct(void)
 		wim->in_fd.fd = -1;
 		wim->out_fd.fd = -1;
 	}
+	INIT_LIST_HEAD(&wim->resource_wims);
 	return wim;
 }
 
@@ -167,9 +168,11 @@ select_wim_image(WIMStruct *wim, int image)
 		return WIMLIB_ERR_INVALID_IMAGE;
 	}
 
-	if (wim->hdr.part_number != 1) {
-		ERROR("Cannot select an image from a non-first part of a split WIM");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	if (!wim_has_metadata(wim)) {
+		ERROR("\"%"TS"\" does not contain metadata resources!", wim->filename);
+		if (wim->hdr.part_number != 1)
+			ERROR("Specify the first part of the split WIM instead.");
+		return WIMLIB_ERR_METADATA_NOT_FOUND;
 	}
 
 	/* If a valid image is currently selected, it can be freed if it is not
@@ -278,12 +281,6 @@ wimlib_print_available_images(const WIMStruct *wim, int image)
 WIMLIBAPI int
 wimlib_print_metadata(WIMStruct *wim, int image)
 {
-	if (wim->hdr.part_number != 1) {
-		ERROR("Cannot show the metadata from part %hu of a %hu-part split WIM!",
-		       wim->hdr.part_number, wim->hdr.total_parts);
-		ERROR("Select the first part of the split WIM to see the metadata.");
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-	}
 	return for_image(wim, image, image_print_metadata);
 }
 
@@ -759,10 +756,25 @@ wimlib_free(WIMStruct *wim)
 
 	if (!wim)
 		return;
+
+	while (!list_empty(&wim->resource_wims)) {
+		WIMStruct *resource_wim;
+
+		resource_wim = list_entry(wim->resource_wims.next,
+					  WIMStruct, resource_wim_node);
+		if (resource_wim->is_owned_by_master) {
+			list_del(&resource_wim->resource_wim_node);
+			wimlib_free(resource_wim);
+		} else {
+			wimlib_unreference_resources(wim, &resource_wim, 1);
+		}
+	}
+
 	if (filedes_valid(&wim->in_fd))
 		filedes_close(&wim->in_fd);
 	if (filedes_valid(&wim->out_fd))
 		filedes_close(&wim->out_fd);
+
 
 	free_lookup_table(wim->lookup_table);
 

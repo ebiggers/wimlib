@@ -945,7 +945,7 @@ win32_capture_stream(const wchar_t *path,
 	spath_buf_nbytes = (spath_nchars + 1) * sizeof(wchar_t);
 	spath = MALLOC(spath_buf_nbytes);
 
-	swprintf(spath, L"%ls%ls%ls%ls",
+	tsprintf(spath, L"%ls%ls%ls%ls",
 		 relpath_prefix, path, colonchar, stream_name);
 
 	/* Make a new wim_lookup_table_entry */

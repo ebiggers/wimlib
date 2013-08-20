@@ -235,16 +235,11 @@ Files with full paths over 260 characters (MAX_PATH) are extracted by using the
 most Windows software and may not be able to be deleted easily.
 .SH SPLIT WIMS
 You may use \fB@IMAGEX_PROGNAME@ apply\fR to apply images from a split WIM.  The
-\fIWIMFILE\fR argument is used to specify the first part of the split WIM, and
-the \fB--refs\fR="\fIGLOB\fR" option is used to provide a shell-style file glob
-that specifies the additional parts of the split WIM.  \fIGLOB\fR is expected to
-be a single string on the command line, so \fIGLOB\fR must be quoted so that it
-is protected against shell expansion.  \fIGLOB\fR must expand to all parts of
-the split WIM, except optionally the first part which may either omitted or
-included in the glob (but the first part MUST be specified as \fIWIMFILE\fR as
-well).
-.PP
-Here's an example.  The names for the split WIMs usually go something like:
+\fIWIMFILE\fR argument must specify the first part of the split WIM, while the
+additional parts of the split WIM must be specified in one or more
+\fB--ref\fR="\fIGLOB\fR" options.  Since globbing is built into the \fB--ref\fR
+option, typically only one \fB--ref\fR option is necessary.  For example, the
+names for the split WIM parts usually go something like:
 .RS
 .PP
 .nf
@@ -294,8 +289,11 @@ When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
 present.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
-File glob of additional split WIM parts that are part of the split WIM being
-applied.  See \fBSPLIT_WIMS\fR.
+File glob of additional WIMs or split WIM parts to reference resources from.
+See \fBSPLIT_WIMS\fR.  This option can be specified multiple times.  Note:
+\fIGLOB\fR is listed in quotes because it is interpreted by
+\fB@IMAGEX_PROGNAME@\fR and may need to be quoted to protect against shell
+expansion.
 .TP
 \fB--rpfix\fR, \fB--norpfix\fR
 Set whether to fix targets of absolute symbolic links (reparse points in Windows

@@ -51,8 +51,10 @@ When reading \fIWIMFILE\fR, verify its integrity if an integrity table is
 present.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
-File glob of additional split WIM parts that are part of the split WIM.  See
-\fBSPLIT_WIMS\fR.
+File glob of additional WIMs or split WIM parts to reference resources from.
+See \fBSPLIT_WIMS\fR.  Note: since \fIGLOB\fR is listed in quotes because it is
+interpreted by \fB@IMAGEX_PROGNAME@\fR and may need to be quoted to protect
+against shell expansion.
 .TP
 \fB--verbose\fR
 This option no longer does anything but is reserved for future use.

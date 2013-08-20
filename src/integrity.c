@@ -328,12 +328,9 @@ write_integrity_table(WIMStruct *wim,
 	struct integrity_table *old_table;
 	struct integrity_table *new_table;
 	int ret;
-	off_t cur_offset;
 	u32 new_table_size;
 
 	wimlib_assert(old_lookup_table_end <= new_lookup_table_end);
-
-	cur_offset = wim->out_fd.offset;
 
 	if (wim->hdr.integrity.offset == 0 || old_lookup_table_end == 0) {
 		old_table = NULL;

@@ -132,27 +132,37 @@ windows_info_xml_string_specs[] = {
 u64
 wim_info_get_total_bytes(const struct wim_info *info)
 {
-	if (!info)
+	if (info)
+		return info->total_bytes;
+	else
 		return 0;
-	return info->total_bytes;
 }
 
 u64
 wim_info_get_image_hard_link_bytes(const struct wim_info *info, int image)
 {
-	return info->images[image - 1].hard_link_bytes;
+	if (info)
+		return info->images[image - 1].hard_link_bytes;
+	else
+		return 0;
 }
 
 u64
 wim_info_get_image_total_bytes(const struct wim_info *info, int image)
 {
-	return info->images[image - 1].total_bytes;
+	if (info)
+		return info->images[image - 1].total_bytes;
+	else
+		return 0;
 }
 
 unsigned
 wim_info_get_num_images(const struct wim_info *info)
 {
-	return info->num_images;
+	if (info)
+		return info->num_images;
+	else
+		return 0;
 }
 
 /* Returns a statically allocated string that is a string representation of the

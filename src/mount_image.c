@@ -46,7 +46,6 @@
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
-#include "wimlib/swm.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/version.h"
 #include "wimlib/write.h"
@@ -2390,9 +2389,7 @@ static struct fuse_operations wimfs_operations = {
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
-		   int mount_flags, WIMStruct **additional_swms,
-		   unsigned num_additional_swms,
-		   const char *staging_dir)
+		   int mount_flags, const char *staging_dir)
 {
 	int argc;
 	char *argv[16];
@@ -2405,27 +2402,18 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	DEBUG("Mount: wim = %p, image = %d, dir = %s, flags = %d, ",
 	      wim, image, dir, mount_flags);
 
-	if (!wim || !dir) {
-		ret = WIMLIB_ERR_INVALID_PARAM;
-		goto out;
-	}
-
-	ret = verify_swm_set(wim, additional_swms, num_additional_swms);
-	if (ret)
-		goto out;
+	if (!wim || !dir)
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = can_delete_from_wim(wim);
 		if (ret)
-			goto out;
+			return ret;
 	}
-
-	if (num_additional_swms)
-		merge_lookup_tables(wim, additional_swms, num_additional_swms);
 
 	ret = select_wim_image(wim, image);
 	if (ret)
-		goto out_restore_lookup_table;
+		return ret;
 
 	DEBUG("Selected image %d", image);
 
@@ -2434,21 +2422,19 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	if (imd->refcnt != 1) {
 		ERROR("Cannot mount image that was just exported with "
 		      "wimlib_export_image()");
-		ret = WIMLIB_ERR_INVALID_PARAM;
-		goto out_restore_lookup_table;
+		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
 	if (imd->modified) {
 		ERROR("Cannot mount image that was added "
 		      "with wimlib_add_image()");
-		ret = WIMLIB_ERR_INVALID_PARAM;
-		goto out_restore_lookup_table;
+		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = lock_wim(wim, wim->in_fd.fd);
 		if (ret)
-			goto out_restore_lookup_table;
+			return ret;
 	}
 
 	/* Use default stream interface if one was not specified */
@@ -2572,10 +2558,6 @@ out_unlock:
 	wim->wim_locked = 0;
 out_free_message_queue_names:
 	free_message_queue_names(&ctx);
-out_restore_lookup_table:
-	if (num_additional_swms)
-		unmerge_lookup_table(wim);
-out:
 	return ret;
 }
 
@@ -2652,9 +2634,7 @@ wimlib_unmount_image(const tchar *dir, int unmount_flags,
 
 WIMLIBAPI int
 wimlib_mount_image(WIMStruct *wim, int image, const tchar *dir,
-		   int mount_flags, WIMStruct **additional_swms,
-		   unsigned num_additional_swms,
-		   const tchar *staging_dir)
+		   int mount_flags, const tchar *staging_dir)
 {
 	return mount_unsupported_error();
 }

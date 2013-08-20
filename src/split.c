@@ -203,8 +203,8 @@ wimlib_split(WIMStruct *wim, const tchar *swm_name,
 	if (swm_name == NULL || swm_name[0] == T('\0') || part_size == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (wim->hdr.total_parts != 1)
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	if (!wim_has_metadata(wim))
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	memset(&swm_info, 0, sizeof(swm_info));
 	swm_info.max_part_size = part_size;

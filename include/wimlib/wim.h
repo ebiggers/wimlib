@@ -4,6 +4,7 @@
 #include "wimlib/header.h"
 #include "wimlib/types.h"
 #include "wimlib/file_io.h"
+#include "wimlib/list.h"
 
 struct wim_info;
 struct wim_lookup_table;
@@ -41,6 +42,12 @@ struct WIMStruct {
 	/* Temporary field */
 	void *private;
 
+	WIMStruct *master_wim;
+
+	struct list_head resource_wims;
+
+	struct list_head resource_wim_node;
+
 	/* The currently selected image, indexed starting at 1.  If not 0,
 	 * subtract 1 from this to get the index of the current image in the
 	 * image_metadata array. */
@@ -58,6 +65,10 @@ struct WIMStruct {
 
 	u8 wim_locked : 1;
 
+	u8 being_unmerged : 1;
+
+	u8 is_owned_by_master : 1;
+
 	/* One of WIMLIB_COMPRESSION_TYPE_*, cached from the header flags. */
 	u8 compression_type : 2;
 };
@@ -70,6 +81,11 @@ static inline bool wim_is_pipable(const WIMStruct *wim)
 static inline bool wim_has_integrity_table(const WIMStruct *wim)
 {
 	return (wim->hdr.integrity.offset != 0);
+}
+
+static inline bool wim_has_metadata(const WIMStruct *wim)
+{
+	return (wim->image_metadata != NULL || wim->hdr.image_count == 0);
 }
 
 extern void

@@ -191,7 +191,7 @@ win32_extract_stream(const wchar_t *path, const wchar_t *stream_name,
 		stream_path = alloca(sizeof(wchar_t) *
 				     (wcslen(path) + 1 +
 				      wcslen(stream_name) + 1));
-		swprintf(stream_path, L"%ls:%ls", path, stream_name);
+		tsprintf(stream_path, L"%ls:%ls", path, stream_name);
 	}
 
 	h = CreateFile(stream_path, FILE_WRITE_DATA, 0, NULL,

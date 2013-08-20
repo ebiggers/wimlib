@@ -286,6 +286,8 @@ static const tchar *error_strings[] = {
 	[WIMLIB_ERR_FUSERMOUNT]
 		= T("Could not execute the `fusermount' program, or it exited "
 			"with a failure status"),
+	[WIMLIB_ERR_GLOB_HAD_NO_MATCHES]
+		= T("The provided file glob did not match any files"),
 	[WIMLIB_ERR_ICONV_NOT_AVAILABLE]
 		= T("The iconv() function does not seem to work. "
 		  "Maybe check to make sure the directory /usr/lib/gconv exists"),
@@ -345,6 +347,8 @@ static const tchar *error_strings[] = {
 	[WIMLIB_ERR_LINK]
 		= T("Failed to create a hard or symbolic link when extracting "
 			"a file from the WIM"),
+	[WIMLIB_ERR_METADATA_NOT_FOUND]
+		= T("A required metadata resource could not be located"),
 	[WIMLIB_ERR_MKDIR]
 		= T("Failed to create a directory"),
 	[WIMLIB_ERR_MQUEUE]

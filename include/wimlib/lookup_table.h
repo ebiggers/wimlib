@@ -416,6 +416,9 @@ extern int
 inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table,
 		   bool force);
 
+extern int
+resource_not_found_error(struct wim_inode *inode, const u8 *hash);
+
 extern void
 inode_unresolve_ltes(struct wim_inode *inode);
 

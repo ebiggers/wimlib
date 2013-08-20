@@ -30,69 +30,68 @@
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
-#include "wimlib/swm.h"
 #include "wimlib/xml.h"
+#include <stdlib.h>
 
 static int
-inode_allocate_needed_ltes(struct wim_inode *inode,
-			   struct wim_lookup_table *src_lookup_table,
-			   struct wim_lookup_table *dest_lookup_table,
-			   struct list_head *lte_list_head)
+inode_export_streams(struct wim_inode *inode,
+		     const struct wim_lookup_table *src_lookup_table,
+		     struct wim_lookup_table *dest_lookup_table)
 {
-	struct wim_lookup_table_entry *src_lte, *dest_lte;
 	unsigned i;
+	const u8 *hash;
+	struct wim_lookup_table_entry *src_lte, *dest_lte;
 
 	inode_unresolve_ltes(inode);
 	for (i = 0; i <= inode->i_num_ads; i++) {
-		src_lte = inode_stream_lte_unresolved(inode, i,
-						      src_lookup_table);
-		if (src_lte && src_lte->out_refcnt == 0) {
-			src_lte->out_refcnt = 1;
-			dest_lte = inode_stream_lte_unresolved(inode, i,
-							       dest_lookup_table);
-			if (!dest_lte) {
-				dest_lte = clone_lookup_table_entry(src_lte);
-				if (!dest_lte)
-					return WIMLIB_ERR_NOMEM;
-				list_add_tail(&dest_lte->export_stream_list,
-					      lte_list_head);
-			}
+
+		/* Retrieve SHA1 message digest of stream to export.  */
+		hash = inode_stream_hash(inode, i);
+		if (is_zero_hash(hash))  /* Empty stream?  */
+			continue;
+
+		/* Search for the stream (via SHA1 message digest) in the
+		 * destination WIM.  */
+		dest_lte = __lookup_resource(dest_lookup_table, hash);
+		if (!dest_lte) {
+			/* Stream not yet present in destination WIM.  Search
+			 * for it in the source WIM, then export it into the
+			 * destination WIM.  */
+			src_lte = __lookup_resource(src_lookup_table, hash);
+			if (!src_lte)
+				return resource_not_found_error(inode, hash);
+
+			dest_lte = clone_lookup_table_entry(src_lte);
+			if (!dest_lte)
+				return WIMLIB_ERR_NOMEM;
+			dest_lte->refcnt = 0;
+			dest_lte->out_refcnt = 0;
+			lookup_table_insert(dest_lookup_table, dest_lte);
 		}
+
+		/* Stream is present in destination WIM (either pre-existing,
+		 * already exported, or just exported above).  Increment its
+		 * reference count appropriately.   Note: we use 'refcnt' for
+		 * the raw reference count, but 'out_refcnt' for references
+		 * arising just from the export operation; this is used to roll
+		 * back a failed export if needed.  */
+		dest_lte->refcnt += inode->i_nlink;
+		dest_lte->out_refcnt += inode->i_nlink;
 	}
 	return 0;
 }
 
-static void
-inode_move_ltes_to_table(struct wim_inode *inode,
-			 struct wim_lookup_table *src_lookup_table,
-			 struct wim_lookup_table *dest_lookup_table,
-			 struct list_head *lte_list_head)
+static int
+lte_unexport(struct wim_lookup_table_entry *lte, void *_lookup_table)
 {
-	struct wim_lookup_table_entry *src_lte, *dest_lte;
-	unsigned i;
+	struct wim_lookup_table *lookup_table = _lookup_table;
 
-	for (i = 0; i <= inode->i_num_ads; i++) {
-		src_lte = inode_stream_lte_unresolved(inode, i, src_lookup_table);
-		if (src_lte) {
-			dest_lte = inode_stream_lte_unresolved(inode, i,
-							       dest_lookup_table);
-			if (!dest_lte) {
-				struct list_head *next;
-
-				wimlib_assert(!list_empty(lte_list_head));
-				next = lte_list_head->next;
-				list_del(next);
-				dest_lte = container_of(next,
-							struct wim_lookup_table_entry,
-							export_stream_list);
-				dest_lte->part_number = 1;
-				dest_lte->refcnt = 0;
-				wimlib_assert(hashes_equal(dest_lte->hash, src_lte->hash));
-				lookup_table_insert(dest_lookup_table, dest_lte);
-			}
-			dest_lte->refcnt += inode->i_nlink;
-		}
+	lte->refcnt -= lte->out_refcnt;
+	if (lte->refcnt == 0) {
+		lookup_table_unlink(lookup_table, lte);
+		free_lookup_table_entry(lte);
 	}
+	return 0;
 }
 
 /* API function documented in wimlib.h  */
@@ -103,91 +102,47 @@ wimlib_export_image(WIMStruct *src_wim,
 		    const tchar *dest_name,
 		    const tchar *dest_description,
 		    int export_flags,
-		    WIMStruct **additional_swms,
-		    unsigned num_additional_swms,
 		    wimlib_progress_func_t progress_func)
 {
 	int ret;
-	struct wim_image_metadata *src_imd;
-	struct list_head lte_list_head;
-	struct wim_inode *inode;
+	int start_image;
+	int end_image;
+	int image;
+	u32 orig_dest_boot_idx;
+	u32 orig_dest_image_count;
 
+	/* Check for sane parameters.  */
+	if (src_wim == NULL || dest_wim == NULL)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (!wim_has_metadata(src_wim) || !wim_has_metadata(dest_wim))
+		return WIMLIB_ERR_METADATA_NOT_FOUND;
+
+	/* Destination WIM must be writable.  */
 	ret = can_modify_wim(dest_wim);
 	if (ret)
 		return ret;
 
 	if (src_image == WIMLIB_ALL_IMAGES) {
-		if (src_wim->hdr.image_count > 1) {
-
-			/* multi-image export. */
-
-			if ((export_flags & WIMLIB_EXPORT_FLAG_BOOT) &&
-			      (src_wim->hdr.boot_idx == 0))
-			{
-				/* Specifying the boot flag on a multi-image
-				 * source WIM makes the boot index default to
-				 * the bootable image in the source WIM.  It is
-				 * an error if there is no such bootable image.
-				 * */
-				ERROR("Cannot specify `boot' flag when "
-				      "exporting multiple images from a WIM "
-				      "with no bootable images");
-				return WIMLIB_ERR_INVALID_PARAM;
-			}
-			if (dest_name || dest_description) {
-				ERROR("Image name or image description was "
-				      "specified, but we are exporting "
-				      "multiple images");
-				return WIMLIB_ERR_INVALID_PARAM;
-			}
-			for (int i = 1; i <= src_wim->hdr.image_count; i++) {
-				int new_flags = export_flags;
-
-				if (i != src_wim->hdr.boot_idx)
-					new_flags &= ~WIMLIB_EXPORT_FLAG_BOOT;
-
-				ret = wimlib_export_image(src_wim, i, dest_wim,
-							  NULL, NULL,
-							  new_flags,
-							  additional_swms,
-							  num_additional_swms,
-							  progress_func);
-				if (ret)
-					return ret;
-			}
-			return 0;
-		} else if (src_wim->hdr.image_count == 1) {
-			src_image = 1;
-		} else {
-			return 0;
+		/* Multi-image export.  */
+		if ((!(export_flags & WIMLIB_EXPORT_FLAG_NO_NAMES) &&
+			dest_name) ||
+		    (!(export_flags & WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS) &&
+			dest_description))
+		{
+			ERROR("Image name or image description was "
+			      "specified, but we are exporting "
+			      "multiple images");
+			return WIMLIB_ERR_INVALID_PARAM;
 		}
+		start_image = 1;
+		end_image = src_wim->hdr.image_count;
+	} else {
+		start_image = src_image;
+		end_image = src_image;
 	}
 
-	if (!dest_name) {
-		dest_name = wimlib_get_image_name(src_wim, src_image);
-		DEBUG("Using name `%"TS"' for source image %d",
-		      dest_name, src_image);
-	}
-
-	if (!dest_description) {
-		dest_description = wimlib_get_image_description(src_wim,
-								src_image);
-		DEBUG("Using description `%"TS"' for source image %d",
-		      dest_description, src_image);
-	}
-
-	DEBUG("Exporting image %d from `%"TS"'", src_image, src_wim->filename);
-
-	if (wimlib_image_name_in_use(dest_wim, dest_name)) {
-		ERROR("There is already an image named `%"TS"' in the "
-		      "destination WIM", dest_name);
-		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
-	}
-
-	ret = verify_swm_set(src_wim, additional_swms, num_additional_swms);
-	if (ret)
-		return ret;
-
+	/* Stream checksums must be known before proceeding.  */
 	ret = wim_checksum_unhashed_streams(src_wim);
 	if (ret)
 		return ret;
@@ -195,77 +150,124 @@ wimlib_export_image(WIMStruct *src_wim,
 	if (ret)
 		return ret;
 
-	if (num_additional_swms)
-		merge_lookup_tables(src_wim, additional_swms, num_additional_swms);
+	/* Zero 'out_refcnt' in all lookup table entries in the destination WIM;
+	 * this tracks the number of references found from the source WIM
+	 * image(s).  */
+	for_lookup_table_entry(dest_wim->lookup_table, lte_zero_out_refcnt,
+			       NULL);
 
-	ret = select_wim_image(src_wim, src_image);
-	if (ret) {
-		ERROR("Could not select image %d from the WIM `%"TS"' "
-		      "to export it", src_image, src_wim->filename);
-		goto out;
-	}
+	/* Save the original count of images in the destination WIM and the boot
+	 * index (used if rollback necessary).  */
+	orig_dest_image_count = dest_wim->hdr.image_count;
+	orig_dest_boot_idx = dest_wim->hdr.boot_idx;
 
-	/* Pre-allocate the new lookup table entries that will be needed.  This
-	 * way, it's not possible to run out of memory part-way through
-	 * modifying the lookup table of the destination WIM. */
-	for_lookup_table_entry(src_wim->lookup_table, lte_zero_out_refcnt, NULL);
-	src_imd = wim_get_current_image_metadata(src_wim);
-	INIT_LIST_HEAD(&lte_list_head);
-	image_for_each_inode(inode, src_imd) {
-		ret = inode_allocate_needed_ltes(inode,
-						 src_wim->lookup_table,
-						 dest_wim->lookup_table,
-						 &lte_list_head);
+	/* Export each requested image.  */
+	for (image = start_image; image <= end_image; image++) {
+		const tchar *next_dest_name, *next_dest_description;
+		struct wim_image_metadata *src_imd;
+		struct wim_inode *inode;
+
+		DEBUG("Exporting image %d from \"%"TS"\"",
+		      image, src_wim->filename);
+
+		/* Determine destination image name and description.  */
+
+		if (export_flags & WIMLIB_EXPORT_FLAG_NO_NAMES) {
+			next_dest_name = NULL;
+		} else if (dest_name) {
+			next_dest_name = dest_name;
+		} else {
+			next_dest_name = wimlib_get_image_name(src_wim,
+							       image);
+		}
+
+		DEBUG("Using name \"%"TS"\"", next_dest_name);
+
+		if (export_flags & WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS) {
+			next_dest_description = NULL;
+		} if (dest_description) {
+			next_dest_description = dest_description;
+		} else {
+			next_dest_description = wimlib_get_image_description(
+							src_wim, image);
+		}
+
+		DEBUG("Using description \"%"TS"\"", next_dest_description);
+
+		/* Check for name conflict.  */
+		if (wimlib_image_name_in_use(dest_wim, next_dest_name)) {
+			ERROR("There is already an image named \"%"TS"\" "
+			      "in the destination WIM", next_dest_name);
+			ret = WIMLIB_ERR_IMAGE_NAME_COLLISION;
+			goto out_rollback;
+		}
+
+		/* Load metadata for source image into memory.  */
+		ret = select_wim_image(src_wim, image);
 		if (ret)
-			goto out_free_ltes;
+			goto out_rollback;
+
+		src_imd = wim_get_current_image_metadata(src_wim);
+
+		/* Iterate through inodes in the source image and export their
+		 * streams into the destination WIM.  */
+		image_for_each_inode(inode, src_imd) {
+			ret = inode_export_streams(inode,
+						   src_wim->lookup_table,
+						   dest_wim->lookup_table);
+			if (ret)
+				goto out_rollback;
+		}
+
+		/* Export XML information into the destination WIM.  */
+		ret = xml_export_image(src_wim->wim_info, image,
+				       &dest_wim->wim_info, next_dest_name,
+				       next_dest_description);
+		if (ret)
+			goto out_rollback;
+
+		/* Reference the source image metadata from the destination WIM.
+		 */
+		ret = append_image_metadata(dest_wim, src_imd);
+		if (ret)
+			goto out_rollback;
+		src_imd->refcnt++;
+
+		/* Lock the metadata into memory.  XXX: need better solution for
+		 * this.  */
+		src_imd->modified = 1;
+
+		/* Set boot index in destination WIM.  */
+		if ((export_flags & WIMLIB_EXPORT_FLAG_BOOT) &&
+		    (src_image != WIMLIB_ALL_IMAGES ||
+		     image == src_wim->hdr.boot_idx))
+		{
+			DEBUG("Marking destination image %u as bootable.",
+			      dest_wim->hdr.image_count);
+			dest_wim->hdr.boot_idx = dest_wim->hdr.image_count;
+		}
+
 	}
-
-	ret = xml_export_image(src_wim->wim_info, src_image,
-			       &dest_wim->wim_info, dest_name,
-			       dest_description);
-	if (ret)
-		goto out_free_ltes;
-
-	ret = append_image_metadata(dest_wim, src_imd);
-	if (ret)
-		goto out_xml_delete_image;
-
-	/* The `struct image_metadata' is now referenced by both the @src_wim
-	 * and the @dest_wim. */
-	src_imd->refcnt++;
-	src_imd->modified = 1;
-
-	/* All memory allocations have been taken care of, so it's no longer
-	 * possible for this function to fail.  Go ahead and update the lookup
-	 * table of the destination WIM and the boot index, if needed. */
-	image_for_each_inode(inode, src_imd) {
-		inode_move_ltes_to_table(inode,
-					 src_wim->lookup_table,
-					 dest_wim->lookup_table,
-					 &lte_list_head);
-	}
-
-	if (export_flags & WIMLIB_EXPORT_FLAG_BOOT)
-		dest_wim->hdr.boot_idx = dest_wim->hdr.image_count;
+	/* Set the reparse point fixup flag on the destination WIM if the flag
+	 * is set on the source WIM. */
 	if (src_wim->hdr.flags & WIM_HDR_FLAG_RP_FIX)
-	{
-		/* Set the reparse point fixup flag on the destination WIM if
-		 * the flag is set on the source WIM. */
 		dest_wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
-	}
-	DEBUG("Successfully exported image.");
-	ret = 0;
-	goto out;
-out_xml_delete_image:
-	xml_delete_image(&dest_wim->wim_info, dest_wim->hdr.image_count + 1);
-out_free_ltes:
+	DEBUG("Export operation successful.");
+	return 0;
+
+out_rollback:
+	while ((image = wim_info_get_num_images(dest_wim->wim_info))
+	       > orig_dest_image_count)
 	{
-		struct wim_lookup_table_entry *lte, *tmp;
-		list_for_each_entry_safe(lte, tmp, &lte_list_head, export_stream_list)
-			free_lookup_table_entry(lte);
+		xml_delete_image(&dest_wim->wim_info, image);
 	}
-out:
-	if (num_additional_swms)
-		unmerge_lookup_table(src_wim);
+	while (dest_wim->hdr.image_count > orig_dest_image_count)
+	{
+		put_image_metadata(dest_wim->image_metadata[
+					--dest_wim->hdr.image_count], NULL);
+	}
+	for_lookup_table_entry(dest_wim->lookup_table, lte_unexport,
+			       dest_wim->lookup_table);
+	dest_wim->hdr.boot_idx = orig_dest_boot_idx;
 	return ret;
 }

@@ -53,7 +53,6 @@
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
 #include "wimlib/security.h"
-#include "wimlib/swm.h"
 #ifdef __WIN32__
 #  include "wimlib/win32.h" /* for realpath() equivalent */
 #endif
@@ -2561,8 +2560,6 @@ wimlib_extract_files(WIMStruct *wim,
 		     const struct wimlib_extract_command *cmds,
 		     size_t num_cmds,
 		     int default_extract_flags,
-		     WIMStruct **additional_swms,
-		     unsigned num_additional_swms,
 		     wimlib_progress_func_t progress_func)
 {
 	int ret;
@@ -2571,21 +2568,12 @@ wimlib_extract_files(WIMStruct *wim,
 
 	default_extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
 
-	ret = verify_swm_set(wim, additional_swms, num_additional_swms);
-	if (ret)
-		goto out;
-
 	if (num_cmds == 0)
-		goto out;
-
-	if (num_additional_swms)
-		merge_lookup_tables(wim, additional_swms, num_additional_swms);
+		return 0;
 
 	cmds_copy = CALLOC(num_cmds, sizeof(cmds[0]));
-	if (!cmds_copy) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_restore_lookup_table;
-	}
+	if (!cmds_copy)
+		return WIMLIB_ERR_NOMEM;
 
 	for (size_t i = 0; i < num_cmds; i++) {
 		cmds_copy[i].extract_flags = (default_extract_flags |
@@ -2622,10 +2610,6 @@ out_free_cmds_copy:
 		FREE(cmds_copy[i].fs_dest_path);
 	}
 	FREE(cmds_copy);
-out_restore_lookup_table:
-	if (num_additional_swms)
-		unmerge_lookup_table(wim);
-out:
 	return ret;
 }
 
@@ -2746,23 +2730,9 @@ do_wimlib_extract_image(WIMStruct *wim,
 			int image,
 			const tchar *target,
 			int extract_flags,
-			WIMStruct **additional_swms,
-			unsigned num_additional_swms,
 			wimlib_progress_func_t progress_func)
 {
 	int ret;
-
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE) {
-		wimlib_assert(wim->hdr.part_number == 1);
-		wimlib_assert(num_additional_swms == 0);
-	} else {
-		ret = verify_swm_set(wim, additional_swms, num_additional_swms);
-		if (ret)
-			return ret;
-
-		if (num_additional_swms)
-			merge_lookup_tables(wim, additional_swms, num_additional_swms);
-	}
 
 	if (image == WIMLIB_ALL_IMAGES) {
 		ret = extract_all_images(wim, target, extract_flags,
@@ -2779,8 +2749,6 @@ do_wimlib_extract_image(WIMStruct *wim,
 				       lte_free_extracted_file,
 				       NULL);
 	}
-	if (num_additional_swms)
-		unmerge_lookup_table(wim);
 	return ret;
 }
 
@@ -2934,7 +2902,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 	/* Extract the image.  */
 	extract_flags |= WIMLIB_EXTRACT_FLAG_FROM_PIPE;
 	ret = do_wimlib_extract_image(pwm, image, target,
-				      extract_flags, NULL, 0, progress_func);
+				      extract_flags, progress_func);
 	/* Clean up and return.  */
 out_wimlib_free:
 	wimlib_free(pwm);
@@ -2947,12 +2915,9 @@ wimlib_extract_image(WIMStruct *wim,
 		     int image,
 		     const tchar *target,
 		     int extract_flags,
-		     WIMStruct **additional_swms,
-		     unsigned num_additional_swms,
 		     wimlib_progress_func_t progress_func)
 {
 	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
 	return do_wimlib_extract_image(wim, image, target, extract_flags,
-				       additional_swms, num_additional_swms,
 				       progress_func);
 }

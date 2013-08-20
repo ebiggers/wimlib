@@ -24,7 +24,7 @@ typedef wchar_t tchar;
 #  define tmempcpy	wmempcpy
 #  define tstrcpy	wcscpy
 #  define tprintf	wprintf
-#  define tsprintf	swprintf
+#  define tsprintf	_swprintf
 #  define tfprintf	fwprintf
 #  define tvfprintf	vfwprintf
 #  define istalpha	iswalpha
@@ -61,6 +61,7 @@ typedef wchar_t tchar;
 #  define tstrerror_r   win32_strerror_r_replacement
 #  define trename	win32_rename_replacement
 #  define ttruncate	win32_truncate_replacement
+#  define tglob		win32_wglob
 #else /* __WIN32__ */
 /* For non-Windows builds, the "tchar" type will be one byte and will specify a
  * string in the locale-dependent multibyte encoding.  However, only UTF-8 is
@@ -118,6 +119,7 @@ typedef char tchar;
 #  define trename	rename
 #  define ttruncate	truncate
 #  define taccess	access
+#  define tglob		glob
 #endif /* !__WIN32__ */
 
 #endif /* _WIMLIB_TCHAR_H */

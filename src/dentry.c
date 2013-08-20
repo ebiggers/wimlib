@@ -2596,9 +2596,6 @@ wimlib_reference_template_image(WIMStruct *wim, int new_image, int template_imag
 	int ret;
 	struct wim_image_metadata *new_imd;
 
-	if (wim->hdr.part_number != 1)
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-
 	if (new_image < 1 || new_image > wim->hdr.image_count)
 		return WIMLIB_ERR_INVALID_IMAGE;
 
@@ -2607,6 +2604,9 @@ wimlib_reference_template_image(WIMStruct *wim, int new_image, int template_imag
 
 	if (new_image == template_image)
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (!wim_has_metadata(wim))
+		return WIMLIB_ERR_METADATA_NOT_FOUND;
 
 	new_imd = wim->image_metadata[new_image - 1];
 	if (!new_imd->modified)

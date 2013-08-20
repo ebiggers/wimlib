@@ -31,6 +31,7 @@
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
+#include "wimlib/glob.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
@@ -1010,6 +1011,18 @@ out:
 }
 #endif
 
+int
+resource_not_found_error(struct wim_inode *inode, const u8 *hash)
+{
+	if (wimlib_print_errors) {
+		ERROR("\"%"TS"\": resource not found", inode_first_full_path(inode));
+		tfprintf(stderr, T("        SHA-1 message digest of missing resource:\n        "));
+		print_hash(hash, stderr);
+		tputc(T('\n'), stderr);
+	}
+	return WIMLIB_ERR_RESOURCE_NOT_FOUND;
+}
+
 /*
  * Resolve an inode's lookup table entries.
  *
@@ -1081,14 +1094,9 @@ inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table,
 		inode->i_resolved = 1;
 	}
 	return 0;
+
 resource_not_found:
-	if (wimlib_print_errors) {
-		ERROR("\"%"TS"\": resource not found", inode_first_full_path(inode));
-		tfprintf(stderr, T("        SHA-1 message digest of missing resource:\n        "));
-		print_hash(hash, stderr);
-		tputc(T('\n'), stderr);
-	}
-	return WIMLIB_ERR_RESOURCE_NOT_FOUND;
+	return resource_not_found_error(inode, hash);
 }
 
 void
@@ -1270,5 +1278,229 @@ hash_unhashed_stream(struct wim_lookup_table_entry *lte,
 	}
 	if (lte_ret)
 		*lte_ret = lte;
+	return 0;
+}
+
+static int
+move_lte_to_table(struct wim_lookup_table_entry *lte, void *_combined_table)
+{
+	struct wim_lookup_table *combined_table = _combined_table;
+
+	hlist_del(&lte->hash_list);
+	lookup_table_insert(combined_table, lte);
+	return 0;
+}
+
+static void
+lookup_table_join(struct wim_lookup_table *combined_table,
+		  struct wim_lookup_table *part_table)
+{
+	for_lookup_table_entry(part_table, move_lte_to_table, combined_table);
+	part_table->num_entries = 0;
+}
+
+static void
+merge_lookup_tables(WIMStruct *wim, WIMStruct **resource_wims,
+		    unsigned num_resource_wims)
+{
+	for (unsigned i = 0; i < num_resource_wims; i++) {
+		lookup_table_join(wim->lookup_table, resource_wims[i]->lookup_table);
+		list_add(&resource_wims[i]->resource_wim_node, &wim->resource_wims);
+		resource_wims[i]->master_wim = wim;
+	}
+}
+
+static int
+move_lte_to_orig_table(struct wim_lookup_table_entry *lte, void *_wim)
+{
+	WIMStruct *wim = _wim;
+
+	if (lte->resource_location == RESOURCE_IN_WIM &&
+	    lte->wim->being_unmerged)
+	{
+		move_lte_to_table(lte, lte->wim->lookup_table);
+		wim->lookup_table->num_entries--;
+	}
+	return 0;
+}
+
+static int
+check_reference_params(WIMStruct *wim,
+		       WIMStruct **resource_wims, unsigned num_resource_wims,
+		       WIMStruct *expected_master)
+{
+	if (wim == NULL)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (wim->hdr.part_number != 1)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (num_resource_wims != 0 && resource_wims == NULL)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	for (unsigned i = 0; i < num_resource_wims; i++) {
+		if (resource_wims[i] == NULL)
+			return WIMLIB_ERR_INVALID_PARAM;
+		if (resource_wims[i]->master_wim != expected_master)
+			return WIMLIB_ERR_INVALID_PARAM;
+	}
+	return 0;
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_reference_resources(WIMStruct *wim,
+			   WIMStruct **resource_wims, unsigned num_resource_wims,
+			   int ref_flags)
+{
+	int ret;
+
+	ret = check_reference_params(wim, resource_wims,
+				     num_resource_wims, NULL);
+	if (ret)
+		return ret;
+
+	merge_lookup_tables(wim, resource_wims, num_resource_wims);
+	return 0;
+}
+
+static int
+reference_resource_paths(WIMStruct *wim,
+			 const tchar * const *resource_wimfiles,
+			 unsigned num_resource_wimfiles,
+			 int ref_flags,
+			 int open_flags,
+			 wimlib_progress_func_t progress_func)
+{
+	WIMStruct **resource_wims;
+	unsigned i;
+	int ret;
+
+	open_flags |= WIMLIB_OPEN_FLAG_SPLIT_OK;
+
+	resource_wims = CALLOC(num_resource_wimfiles, sizeof(resource_wims[0]));
+	if (!resource_wims)
+		return WIMLIB_ERR_NOMEM;
+
+	for (i = 0; i < num_resource_wimfiles; i++) {
+		ret = wimlib_open_wim(resource_wimfiles[i], open_flags,
+				      &resource_wims[i], progress_func);
+		if (ret)
+			goto out_free_resource_wims;
+	}
+
+	ret = wimlib_reference_resources(wim, resource_wims,
+					 num_resource_wimfiles, ref_flags);
+	if (ret)
+		goto out_free_resource_wims;
+
+	for (i = 0; i < num_resource_wimfiles; i++)
+		resource_wims[i]->is_owned_by_master = 1;
+
+	ret = 0;
+	goto out_free_array;
+
+out_free_resource_wims:
+	for (i = 0; i < num_resource_wimfiles; i++)
+		wimlib_free(resource_wims[i]);
+out_free_array:
+	FREE(resource_wims);
+	return ret;
+}
+
+static int
+reference_resource_glob(WIMStruct *wim, const tchar *refglob,
+			int ref_flags, int open_flags,
+			wimlib_progress_func_t progress_func)
+{
+	glob_t globbuf;
+	int ret;
+
+	/* Note: glob() is replaced in Windows native builds.  */
+	ret = tglob(refglob, GLOB_ERR | GLOB_NOSORT, NULL, &globbuf);
+	if (ret) {
+		if (ret == GLOB_NOMATCH) {
+			if (ref_flags & WIMLIB_REF_FLAG_GLOB_ERR_ON_NOMATCH) {
+				ERROR("Found no files for glob \"%"TS"\"", refglob);
+				return WIMLIB_ERR_GLOB_HAD_NO_MATCHES;
+			} else {
+				return reference_resource_paths(wim,
+								&refglob,
+								1,
+								ref_flags,
+								open_flags,
+								progress_func);
+			}
+		} else {
+			ERROR_WITH_ERRNO("Failed to process glob \"%"TS"\"", refglob);
+			if (ret == GLOB_NOSPACE)
+				return WIMLIB_ERR_NOMEM;
+			else
+				return WIMLIB_ERR_READ;
+		}
+	}
+
+	ret = reference_resource_paths(wim,
+				       (const tchar * const *)globbuf.gl_pathv,
+				       globbuf.gl_pathc,
+				       ref_flags,
+				       open_flags,
+				       progress_func);
+	globfree(&globbuf);
+	return ret;
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_reference_resource_files(WIMStruct *wim,
+				const tchar * const * resource_wimfiles_or_globs,
+				unsigned count,
+				int ref_flags,
+				int open_flags,
+				wimlib_progress_func_t progress_func)
+{
+	unsigned i;
+	int ret;
+
+	if (ref_flags & WIMLIB_REF_FLAG_GLOB_ENABLE) {
+		for (i = 0; i < count; i++) {
+			ret = reference_resource_glob(wim,
+						      resource_wimfiles_or_globs[i],
+						      ref_flags,
+						      open_flags,
+						      progress_func);
+			if (ret)
+				return ret;
+		}
+		return 0;
+	} else {
+		return reference_resource_paths(wim, resource_wimfiles_or_globs,
+						count, ref_flags,
+						open_flags, progress_func);
+	}
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_unreference_resources(WIMStruct *wim,
+			     WIMStruct **resource_wims, unsigned num_resource_wims)
+{
+	int ret;
+	unsigned i;
+
+	ret = check_reference_params(wim, resource_wims, num_resource_wims, wim);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < num_resource_wims; i++)
+		resource_wims[i]->being_unmerged = 1;
+
+	for_lookup_table_entry(wim->lookup_table, move_lte_to_orig_table, wim);
+
+	for (i = 0; i < num_resource_wims; i++) {
+		resource_wims[i]->being_unmerged = 0;
+		list_del(&resource_wims[i]->resource_wim_node);
+		resource_wims[i]->master_wim = NULL;
+	}
 	return 0;
 }

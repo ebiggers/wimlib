@@ -88,8 +88,11 @@ little bit of space that would otherwise be left as a hole in the WIM.  Also see
 \fB@IMAGEX_PROGNAME@ optimize\fR.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
-File glob of additional split WIM parts that are part of the split WIM being
-exported.  See \fBSPLIT_WIMS\fR.
+File glob of additional WIMs or split WIM parts to reference resources from.
+See \fBSPLIT_WIMS\fR.  This option can be specified multiple times.  Note:
+\fIGLOB\fR is listed in quotes because it is interpreted by
+\fB@IMAGEX_PROGNAME@\fR and may need to be quoted to protect against shell
+expansion.
 .TP
 \fB--pipable\fR
 Build, or rebuild, \fIDEST_WIMFILE\fR as a "pipable WIM" so that it can be
@@ -103,17 +106,12 @@ Build, or rebuld, \fIDEST_WIMFILE\fR as a normal, non-pipable WIM.  This is the
 default behavior, unless \fIDEST_WIMFILE\fR already existed and was already
 pipable, or if \fIDEST_WIMFILE\fR was "-" (standard output).
 .SH SPLIT WIMS
-You may use \fB@IMAGEX_PROGNAME@ export\fR to export images from a split WIM.  The
-\fISRC_WIMFILE\fR argument is used to specify the first part of the split WIM, and
-the \fB--refs\fR="\fIGLOB\fR" option is used to provide a shell-style file glob
-that specifies the additional parts of the split WIM.  \fIGLOB\fR is expected to
-be a single string on the command line, so \fIGLOB\fR must be quoted so that it
-is protected against shell expansion.  \fIGLOB\fR must expand to all parts of
-the split WIM, except optionally the first part which may either omitted or
-included in the glob (but the first part MUST be specified as \fISRC_WIMFILE\fR as
-well).
-.PP
-Here's an example.  The names for the split WIMs usually go something like:
+You may use \fB@IMAGEX_PROGNAME@ export\fR to export images from a split WIM.
+The \fISRC_WIMFILE\fR argument must specify the first part of the split WIM,
+while the additional parts of the split WIM must be specified in one or more
+\fB--ref\fR="\fIGLOB\fR" options.  Since globbing is built into the \fB--ref\fR
+option, typically only one \fB--ref\fR option is necessary.  For example, the
+names for the split WIM parts usually go something like:
 .PP
 .RS
 .nf

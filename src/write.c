@@ -2416,10 +2416,12 @@ write_wim_part(WIMStruct *wim,
 	     (image < 1 || image > wim->hdr.image_count))
 		return WIMLIB_ERR_INVALID_IMAGE;
 
-	/* @wim must specify a standalone WIM, or at least the first part of a
-	 * split WIM.  */
-	if (wim->hdr.part_number != 1)
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
+	/* If we need to write metadata resources, make sure the ::WIMStruct has
+	 * the needed information attached (e.g. is not a resource-only WIM,
+	 * such as a non-first part of a split WIM).  */
+	if (!wim_has_metadata(wim) &&
+	    !(write_flags & WIMLIB_WRITE_FLAG_NO_METADATA))
+		return WIMLIB_ERR_METADATA_NOT_FOUND;
 
 	/* Check for contradictory flags.  */
 	if ((write_flags & (WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
