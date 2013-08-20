@@ -118,6 +118,8 @@ static FILE *imagex_info_file;
 
 enum {
 	IMAGEX_ALLOW_OTHER_OPTION,
+	IMAGEX_AS_DELTA_FROM_OPTION,
+	IMAGEX_AS_UPDATE_OF_OPTION,
 	IMAGEX_BOOT_OPTION,
 	IMAGEX_CHECK_OPTION,
 	IMAGEX_COMMAND_OPTION,
@@ -125,7 +127,6 @@ enum {
 	IMAGEX_COMPRESS_OPTION,
 	IMAGEX_CONFIG_OPTION,
 	IMAGEX_DEBUG_OPTION,
-	IMAGEX_DELTA_FROM_OPTION,
 	IMAGEX_DEREFERENCE_OPTION,
 	IMAGEX_DEST_DIR_OPTION,
 	IMAGEX_EXTRACT_XML_OPTION,
@@ -202,7 +203,9 @@ static const struct option capture_or_append_options[] = {
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
-	{T("delta-from"),  required_argument, NULL, IMAGEX_DELTA_FROM_OPTION},
+	{T("as-update-of"),  required_argument, NULL, IMAGEX_AS_UPDATE_OF_OPTION},
+	{T("as-update-from"), required_argument, NULL, IMAGEX_AS_UPDATE_OF_OPTION},
+	{T("as-delta-from"),   required_argument, NULL, IMAGEX_AS_DELTA_FROM_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1451,13 +1454,13 @@ imagex_apply(int argc, tchar **argv, int cmd)
 {
 	int c;
 	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
-	int image;
+	int image = WIMLIB_NO_IMAGE;
 	WIMStruct *wim;
 	struct wimlib_wim_info info;
 	int ret;
 	const tchar *wimfile;
 	const tchar *target;
-	const tchar *image_num_or_name;
+	const tchar *image_num_or_name = NULL;
 	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
 
 	REFGLOB_SET(refglobs);
@@ -1639,9 +1642,15 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	const tchar *name;
 	const tchar *desc;
 	const tchar *flags_element = NULL;
-	const tchar *template_image_name_or_num = NULL;
-	int template_image;
+
 	WIMStruct *wim;
+	WIMStruct *base_wim;
+	const tchar *base_wimfile = NULL;
+	WIMStruct *template_wim;
+	const tchar *template_wimfile = NULL;
+	const tchar *template_image_name_or_num = NULL;
+	int template_image = WIMLIB_NO_IMAGE;
+
 	int ret;
 	unsigned num_threads = 0;
 
@@ -1653,7 +1662,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	struct wimlib_capture_config *config;
 
 	bool source_list = false;
-	size_t source_list_nchars;
+	size_t source_list_nchars = 0;
 	tchar *source_list_contents;
 	bool capture_sources_malloced;
 	struct wimlib_capture_source *capture_sources;
@@ -1722,13 +1731,38 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		case IMAGEX_NOT_PIPABLE_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_NOT_PIPABLE;
 			break;
-		case IMAGEX_DELTA_FROM_OPTION:
-			if (cmd == CMD_CAPTURE) {
-				imagex_error(T("--delta-from=IMAGE is only "
-					       "valid for append."));
+		case IMAGEX_AS_UPDATE_OF_OPTION:
+			if (template_image_name_or_num) {
+				imagex_error(T("'--as-update-of' can only be "
+					       "specified one time!"));
+				goto out_err;
+			} else {
+				tchar *colon;
+				colon = tstrrchr(optarg, T(':'));
+
+				if (colon) {
+					template_wimfile = optarg;
+					*colon = T('\0');
+					template_image_name_or_num = colon + 1;
+				} else {
+					template_wimfile = NULL;
+					template_image_name_or_num = optarg;
+				}
+			}
+			break;
+		case IMAGEX_AS_DELTA_FROM_OPTION:
+			if (cmd != CMD_CAPTURE) {
+				imagex_error(T("'--as-delta-from' is only "
+					       "valid for capture!"));
 				goto out_usage;
 			}
-			template_image_name_or_num = optarg;
+			if (base_wimfile) {
+				imagex_error(T("'--as-delta-from' can only be "
+					       "specified one time!"));
+				goto out_err;
+			}
+			base_wimfile = optarg;
+			write_flags |= WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS;
 			break;
 		default:
 			goto out_usage;
@@ -1765,6 +1799,26 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		wimfile = NULL;
 		imagex_info_file = stderr;
 		set_fd_to_binary_mode(wim_fd);
+	}
+
+	/* If template image was specified using --as-update-of=IMAGE rather
+	 * than --as-update-of=WIMFILE:IMAGE, set the default WIMFILE.  */
+	if (template_image_name_or_num && !template_wimfile) {
+		if (base_wimfile) {
+			/* Capturing delta WIM:  default to base WIM.  */
+			template_wimfile = base_wimfile;
+		} else if (cmd == CMD_APPEND) {
+			/* Appending to WIM:  default to WIM being appended to.
+			 */
+			template_wimfile = wimfile;
+		} else {
+			/* Capturing a normal (non-delta) WIM, so the WIM file
+			 * *must* be explicitly specified.  */
+			imagex_error(T("For capture of non-delta WIM, "
+				       "'--as-update-of' must specify "
+				       "WIMFILE:IMAGE!"));
+			goto out_usage;
+		}
 	}
 
 	if (argc >= 3) {
@@ -1808,8 +1862,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		}
 		capture_sources_malloced = true;
 	} else {
-		/* Set up capture source in non-source-list mode (could be
-		 * either "normal" mode or "NTFS mode"--- see the man page). */
+		/* Set up capture source in non-source-list mode.  */
 		capture_sources = alloca(sizeof(struct wimlib_capture_source));
 		capture_sources[0].fs_source_path = source;
 		capture_sources[0].wim_target_path = NULL;
@@ -1820,6 +1873,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	}
 
 	if (config_file) {
+		/* Read and parse capture configuration file.  */
 		size_t config_len;
 
 		config_str = file_get_text_contents(config_file, &config_len);
@@ -1833,9 +1887,13 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		if (ret)
 			goto out_free_config;
 	} else {
+		/* No capture configuration file specified; use default
+		 * configuration for capturing Windows operating systems.  */
 		config = NULL;
+		add_image_flags |= WIMLIB_ADD_FLAG_WINCONFIG;
 	}
 
+	/* Open the existing WIM, or create a new one.  */
 	if (cmd == CMD_APPEND)
 		ret = wimlib_open_wim(wimfile, open_flags, &wim,
 				      imagex_progress_func);
@@ -1845,6 +1903,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		goto out_free_config;
 
 #ifndef __WIN32__
+	/* Detect if source is regular file or block device and set NTFS volume
+	 * capture mode.  */
 	if (!source_list) {
 		struct stat stbuf;
 
@@ -1859,16 +1919,16 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 				imagex_error_with_errno(T("Failed to stat "
 							  "\"%"TS"\""), source);
 				ret = -1;
-				goto out_wimlib_free;
+				goto out_free_wim;
 			}
 		}
 	}
 #endif
 
+	/* If the user did not specify an image name, and the basename of the
+	 * source already exists as an image name in the WIM file, append a
+	 * suffix to make it unique. */
 	if (cmd == CMD_APPEND && name_defaulted) {
-		/* If the user did not specify an image name, and the basename
-		 * of the source already exists as an image name in the WIM
-		 * file, append a suffix to make it unique. */
 		unsigned long conflict_idx;
 		tchar *name_end = tstrchr(name, T('\0'));
 		for (conflict_idx = 1;
@@ -1879,8 +1939,43 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		}
 	}
 
+	/* If capturing a delta WIM, reference resources from the base WIM
+	 * before adding the new image.  */
+	if (base_wimfile) {
+		ret = wimlib_open_wim(base_wimfile, open_flags,
+				      &base_wim, imagex_progress_func);
+		if (ret)
+			goto out_free_wim;
+
+		imagex_printf(T("Capturing delta WIM based on \"%"TS"\"\n"),
+			      base_wimfile);
+
+		ret = wimlib_reference_resources(wim, &base_wim, 1, 0);
+		if (ret)
+			goto out_free_base_wim;
+	} else {
+		base_wim = NULL;
+	}
+
+	/* If capturing or appending as an update of an existing (template) image,
+	 * open the WIM if needed and parse the image index.  */
 	if (template_image_name_or_num) {
-		template_image = wimlib_resolve_image(wim, template_image_name_or_num);
+
+
+		if (template_wimfile == base_wimfile) {
+			template_wim = base_wim;
+		} else if (template_wimfile == wimfile) {
+			template_wim = wim;
+		} else {
+			ret = wimlib_open_wim(template_wimfile, open_flags,
+					      &template_wim, imagex_progress_func);
+			if (ret)
+				goto out_free_base_wim;
+		}
+
+		template_image = wimlib_resolve_image(template_wim,
+						      template_image_name_or_num);
+
 		if (template_image_name_or_num[0] == T('-')) {
 			tchar *tmp;
 			unsigned long n;
@@ -1897,9 +1992,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		}
 		ret = verify_image_exists_and_is_single(template_image,
 							template_image_name_or_num,
-							wimfile);
+							template_wimfile);
 		if (ret)
-			goto out_wimlib_free;
+			goto out_free_template_wim;
+	} else {
+		template_wim = NULL;
 	}
 
 	ret = wimlib_add_image_multisource(wim,
@@ -1910,12 +2007,12 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 					   add_image_flags,
 					   imagex_progress_func);
 	if (ret)
-		goto out_wimlib_free;
+		goto out_free_template_wim;
 
 	if (desc || flags_element || template_image_name_or_num) {
 		/* User provided <DESCRIPTION> or <FLAGS> element, or an image
 		 * on which the added one is to be based has been specified with
-		 * --delta-from=IMAGE.  Get the index of the image we just
+		 * --as-update-of.  Get the index of the image we just
 		 *  added, then use it to call the appropriate functions.  */
 		struct wimlib_wim_info info;
 
@@ -1926,23 +2023,28 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 							  info.image_count,
 							  desc);
 			if (ret)
-				goto out_wimlib_free;
+				goto out_free_template_wim;
 		}
 
 		if (flags_element) {
 			ret = wimlib_set_image_flags(wim, info.image_count,
 						     flags_element);
 			if (ret)
-				goto out_wimlib_free;
+				goto out_free_template_wim;
 		}
 
+		/* Reference template image if the user provided one.  */
 		if (template_image_name_or_num) {
+			imagex_printf(T("Using image %d "
+					"from \"%"TS"\" as template\n"),
+					template_image, template_wimfile);
 			ret = wimlib_reference_template_image(wim,
 							      info.image_count,
+							      template_wim,
 							      template_image,
 							      0, NULL);
 			if (ret)
-				goto out_wimlib_free;
+				goto out_free_template_wim;
 		}
 	}
 
@@ -1960,7 +2062,13 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 					 write_flags, num_threads,
 					 imagex_progress_func);
 	}
-out_wimlib_free:
+out_free_template_wim:
+	/* template_wim may alias base_wim or wim.  */
+	if (template_wim != base_wim && template_wim != wim)
+		wimlib_free(template_wim);
+out_free_base_wim:
+	wimlib_free(base_wim);
+out_free_wim:
 	wimlib_free(wim);
 out_free_config:
 	if (config) {
@@ -3255,8 +3363,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
 	int write_flags = 0;
 	int update_flags = WIMLIB_UPDATE_FLAG_SEND_PROGRESS;
-	int default_add_flags = WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE |
-				WIMLIB_ADD_FLAG_WINCONFIG;
+	int default_add_flags = WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE;
 	int default_delete_flags = 0;
 	unsigned num_threads = 0;
 	int c;
@@ -3382,6 +3489,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 			goto out_free_config;
 	} else {
 		config = NULL;
+		default_add_flags |= WIMLIB_ADD_FLAG_WINCONFIG;
 	}
 
 	/* Read update commands from standard input, or the command string if
@@ -3495,7 +3603,7 @@ T(
 "                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
 "                    [--rebuild] [--unix-data] [--source-list] [--no-acls]\n"
 "                    [--strict-acls] [--rpfix] [--norpfix] [--pipable]\n"
-"                    [--not-pipable] [--delta-from=IMAGE]\n"
+"                    [--not-pipable] [--as-update-of=[WIMFILE:]IMAGE]\n"
 ),
 [CMD_APPLY] =
 T(
@@ -3513,6 +3621,7 @@ T(
 "                    [--verbose] [--dereference] [--config=FILE]\n"
 "                    [--threads=NUM_THREADS] [--unix-data] [--source-list]\n"
 "                    [--no-acls] [--strict-acls] [--norpfix] [--pipable]\n"
+"                    [--as-update-of=[WIMFILE:]IMAGE] [--as-delta-from=WIMFILE]\n"
 ),
 [CMD_DELETE] =
 T(

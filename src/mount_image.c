@@ -482,7 +482,7 @@ create_staging_file(char **name_ret, struct wimfs_context *ctx)
 	static const size_t STAGING_FILE_NAME_LEN = 20;
 
 	name_len = ctx->staging_dir_name_len + 1 + STAGING_FILE_NAME_LEN;
- 	name = MALLOC(name_len + 1);
+	name = MALLOC(name_len + 1);
 	if (!name) {
 		errno = ENOMEM;
 		return -1;
@@ -864,7 +864,7 @@ set_message_queue_names(struct wimfs_context *ctx, const char *mount_dir)
 	char *p;
 	int ret;
 
- 	dir_path = realpath(mount_dir, NULL);
+	dir_path = realpath(mount_dir, NULL);
 	if (!dir_path) {
 		ERROR_WITH_ERRNO("Failed to resolve path \"%s\"", mount_dir);
 		if (errno == ENOMEM)
@@ -1539,8 +1539,8 @@ wimfs_chmod(const char *path, mode_t mask)
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
 		return -EPERM;
 
-	ret = lookup_resource(ctx->wim, path, LOOKUP_FLAG_DIRECTORY_OK,
-			      &dentry, NULL, NULL);
+	ret = wim_pathname_to_stream(ctx->wim, path, LOOKUP_FLAG_DIRECTORY_OK,
+				     &dentry, NULL, NULL);
 	if (ret)
 		return ret;
 
@@ -1560,8 +1560,8 @@ wimfs_chown(const char *path, uid_t uid, gid_t gid)
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
 		return -EPERM;
 
-	ret = lookup_resource(ctx->wim, path, LOOKUP_FLAG_DIRECTORY_OK,
-			      &dentry, NULL, NULL);
+	ret = wim_pathname_to_stream(ctx->wim, path, LOOKUP_FLAG_DIRECTORY_OK,
+				     &dentry, NULL, NULL);
 	if (ret)
 		return ret;
 
@@ -1621,9 +1621,10 @@ wimfs_getattr(const char *path, struct stat *stbuf)
 	int ret;
 	struct wimfs_context *ctx = wimfs_get_context();
 
-	ret = lookup_resource(ctx->wim, path,
-			      get_lookup_flags(ctx) | LOOKUP_FLAG_DIRECTORY_OK,
-			      &dentry, &lte, NULL);
+	ret = wim_pathname_to_stream(ctx->wim, path,
+				     get_lookup_flags(ctx) |
+					LOOKUP_FLAG_DIRECTORY_OK,
+				     &dentry, &lte, NULL);
 	if (ret != 0)
 		return ret;
 	return inode_to_stbuf(dentry->d_inode, lte, stbuf);
@@ -1828,8 +1829,8 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 	struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_lookup_table_entry **back_ptr;
 
-	ret = lookup_resource(ctx->wim, path, get_lookup_flags(ctx),
-			      &dentry, &lte, &stream_idx);
+	ret = wim_pathname_to_stream(ctx->wim, path, get_lookup_flags(ctx),
+				     &dentry, &lte, &stream_idx);
 	if (ret)
 		return ret;
 
@@ -2186,8 +2187,8 @@ wimfs_truncate(const char *path, off_t size)
 	struct wim_inode *inode;
 	struct wimfs_context *ctx = wimfs_get_context();
 
-	ret = lookup_resource(ctx->wim, path, get_lookup_flags(ctx),
-			      &dentry, &lte, &stream_idx);
+	ret = wim_pathname_to_stream(ctx->wim, path, get_lookup_flags(ctx),
+				     &dentry, &lte, &stream_idx);
 
 	if (ret != 0)
 		return ret;
@@ -2231,8 +2232,8 @@ wimfs_unlink(const char *path)
 	u16 stream_idx;
 	struct wimfs_context *ctx = wimfs_get_context();
 
-	ret = lookup_resource(ctx->wim, path, get_lookup_flags(ctx),
-			      &dentry, &lte, &stream_idx);
+	ret = wim_pathname_to_stream(ctx->wim, path, get_lookup_flags(ctx),
+				     &dentry, &lte, &stream_idx);
 
 	if (ret != 0)
 		return ret;
@@ -2258,7 +2259,7 @@ wimfs_utimens(const char *path, const struct timespec tv[2])
 	struct wim_inode *inode;
 	WIMStruct *wim = wimfs_get_WIMStruct();
 
- 	dentry = get_dentry(wim, path);
+	dentry = get_dentry(wim, path);
 	if (!dentry)
 		return -errno;
 	inode = dentry->d_inode;
@@ -2285,7 +2286,7 @@ wimfs_utime(const char *path, struct utimbuf *times)
 	struct wim_inode *inode;
 	WIMStruct *wim = wimfs_get_WIMStruct();
 
- 	dentry = get_dentry(wim, path);
+	dentry = get_dentry(wim, path);
 	if (!dentry)
 		return -errno;
 	inode = dentry->d_inode;

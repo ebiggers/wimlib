@@ -195,10 +195,12 @@ wimlib_join(const tchar * const *swm_names,
 	if (ret)
 		goto out_free_swms;
 
+	/* It is reasonably safe to provide, WIMLIB_WRITE_FLAG_STREAMS_OK, as we
+	 * have verified that the specified split WIM parts form a spanned set.
+	 */
 	ret = wimlib_write(swm0, output_path, WIMLIB_ALL_IMAGES,
-			   wim_write_flags, 1, progress_func);
-	wimlib_unreference_resources(swm0, additional_swms,
-				     num_additional_swms);
+			   wim_write_flags | WIMLIB_WRITE_FLAG_STREAMS_OK,
+			   1, progress_func);
 out_free_swms:
 	for (i = 0; i < num_additional_swms; i++)
 		wimlib_free(additional_swms[i]);

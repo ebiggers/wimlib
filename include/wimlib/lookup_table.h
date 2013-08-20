@@ -163,6 +163,12 @@ struct wim_lookup_table_entry {
 	 * resource is read again.  */
 	u16 dont_check_metadata_hash : 1;
 
+	/* Only used during WIM write.  Normal value is 0 (resource not
+	 * filtered).  */
+	u16 filtered : 2;
+#define FILTERED_SAME_WIM	0x1  /* Resource already in same WIM  */
+#define FILTERED_EXTERNAL_WIM	0x2  /* Resource already in external WIM  */
+
 	/* (On-disk field)
 	 * Number of times this lookup table entry is referenced by dentries.
 	 * Unfortunately, this field is not always set correctly in Microsoft's
@@ -298,12 +304,6 @@ wim_resource_chunks(const struct wim_lookup_table_entry *lte)
 	return DIV_ROUND_UP(wim_resource_size(lte), WIM_CHUNK_SIZE);
 }
 
-static inline u64
-wim_resource_compressed_size(const struct wim_lookup_table_entry *lte)
-{
-	return lte->resource_entry.size;
-}
-
 static inline int
 wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
 {
@@ -385,12 +385,14 @@ for_lookup_table_entry_pos_sorted(struct wim_lookup_table *table,
 				  void *arg);
 
 extern struct wim_lookup_table_entry *
-__lookup_resource(const struct wim_lookup_table *table, const u8 hash[]);
+lookup_resource(const struct wim_lookup_table *table, const u8 hash[]);
 
 extern int
-lookup_resource(WIMStruct *wim, const tchar *path,
-		int lookup_flags, struct wim_dentry **dentry_ret,
-		struct wim_lookup_table_entry **lte_ret, u16 *stream_idx_ret);
+wim_pathname_to_stream(WIMStruct *wim, const tchar *path,
+		       int lookup_flags,
+		       struct wim_dentry **dentry_ret,
+		       struct wim_lookup_table_entry **lte_ret,
+		       u16 *stream_idx_ret);
 
 extern void
 lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
@@ -442,9 +444,9 @@ inode_stream_lte_unresolved(const struct wim_inode *inode, unsigned stream_idx,
 	if (!table)
 		return NULL;
 	if (stream_idx == 0)
-		return __lookup_resource(table, inode->i_hash);
+		return lookup_resource(table, inode->i_hash);
 	else
-		return __lookup_resource(table,
+		return lookup_resource(table,
 					 inode->i_ads_entries[
 						stream_idx - 1].hash);
 }

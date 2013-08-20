@@ -1459,7 +1459,7 @@ add_stream_from_data_buffer(const void *buffer, size_t size,
 	struct wim_lookup_table_entry *lte, *existing_lte;
 
 	sha1_buffer(buffer, size, hash);
-	existing_lte = __lookup_resource(lookup_table, hash);
+	existing_lte = lookup_resource(lookup_table, hash);
 	if (existing_lte) {
 		wimlib_assert(wim_resource_size(existing_lte) == size);
 		lte = existing_lte;
@@ -2500,62 +2500,145 @@ wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *path,
 	return for_image(wim, image, image_do_iterate_dir_tree);
 }
 
+/* Returns %true iff the metadata of @inode and @template_inode are reasonably
+ * consistent with them being the same, unmodified file.  */
 static bool
-inode_stream_sizes_consistent(const struct wim_inode *inode_1,
-			      const struct wim_inode *inode_2,
-			      const struct wim_lookup_table *lookup_table)
+inode_metadata_consistent(const struct wim_inode *inode,
+			  const struct wim_inode *template_inode,
+			  const struct wim_lookup_table *template_lookup_table)
 {
-	if (inode_1->i_num_ads != inode_2->i_num_ads)
+	/* Must have exact same creation time and last write time.  */
+	if (inode->i_creation_time != template_inode->i_creation_time ||
+	    inode->i_last_write_time != template_inode->i_last_write_time)
 		return false;
-	for (unsigned i = 0; i <= inode_1->i_num_ads; i++) {
-		const struct wim_lookup_table_entry *lte_1, *lte_2;
 
-		lte_1 = inode_stream_lte(inode_1, i, lookup_table);
-		lte_2 = inode_stream_lte(inode_2, i, lookup_table);
-		if (lte_1 && lte_2) {
-			if (wim_resource_size(lte_1) != wim_resource_size(lte_2))
+	/* Last access time may have stayed the same or increased, but certainly
+	 * shouldn't have decreased.  */
+	if (inode->i_last_access_time < template_inode->i_last_access_time)
+		return false;
+
+	/* Must have same number of alternate data stream entries.  */
+	if (inode->i_num_ads != template_inode->i_num_ads)
+		return false;
+
+	/* If the stream entries for the inode are for some reason not resolved,
+	 * then the hashes are already available and the point of this function
+	 * is defeated.  */
+	if (!inode->i_resolved)
+		return false;
+
+	/* Iterate through each stream and do some more checks.  */
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+		const struct wim_lookup_table_entry *lte, *template_lte;
+
+		lte = inode_stream_lte_resolved(inode, i);
+		template_lte = inode_stream_lte(template_inode, i,
+						template_lookup_table);
+
+		/* Compare stream sizes.  */
+		if (lte && template_lte) {
+			if (wim_resource_size(lte) != wim_resource_size(template_lte))
 				return false;
-		} else if (lte_1 && wim_resource_size(lte_1)) {
+
+			/* If hash happens to be available, compare with template.  */
+			if (!lte->unhashed && !template_lte->unhashed &&
+			    !hashes_equal(lte->hash, template_lte->hash))
+				return false;
+
+		} else if (lte && wim_resource_size(lte)) {
 			return false;
-		} else if (lte_2 && wim_resource_size(lte_2)) {
+		} else if (template_lte && wim_resource_size(template_lte)) {
 			return false;
 		}
+
 	}
+
+	/* All right, barring a full checksum and given that the inodes share a
+	 * path and the user isn't trying to trick us, these inodes most likely
+	 * refer to the same file.  */
 	return true;
 }
 
-static void
-inode_replace_ltes(struct wim_inode *inode,
-		   struct wim_inode *template_inode,
-		   struct wim_lookup_table *lookup_table)
+/**
+ * Given an inode @inode that has been determined to be "the same" as another
+ * inode @template_inode in either the same WIM or another WIM, retrieve some
+ * useful stream information (e.g. checksums) from @template_inode.
+ *
+ * This assumes that the streams for @inode have been resolved (to point
+ * directly to the appropriate `struct wim_lookup_table_entry')  but do not
+ * necessarily have checksum information filled in.
+ */
+static int
+inode_copy_checksums(struct wim_inode *inode,
+		     struct wim_inode *template_inode,
+		     WIMStruct *wim,
+		     WIMStruct *template_wim)
 {
 	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		struct wim_lookup_table_entry *lte, *lte_template;
+		struct wim_lookup_table_entry *lte, *template_lte;
+		struct wim_lookup_table_entry *replace_lte;
 
-		lte = inode_stream_lte(inode, i, lookup_table);
-		if (lte) {
-			for (unsigned j = 0; j < inode->i_nlink; j++)
-				lte_decrement_refcnt(lte, lookup_table);
-			lte_template = inode_stream_lte(template_inode, i,
-							lookup_table);
-			if (i == 0)
-				inode->i_lte = lte_template;
-			else
-				inode->i_ads_entries[i - 1].lte = lte_template;
-			if (lte_template)
-				lte_template->refcnt += inode->i_nlink;
+		lte = inode_stream_lte_resolved(inode, i);
+		template_lte = inode_stream_lte(template_inode, i,
+						template_wim->lookup_table);
+
+		/* Only take action if both entries exist, the entry for @inode
+		 * has no checksum calculated, but the entry for @template_inode
+		 * does.  */
+		if (!lte || !template_lte ||
+		    !lte->unhashed || template_lte->unhashed)
+			continue;
+
+		wimlib_assert(lte->refcnt == inode->i_nlink);
+
+		/* If the WIM of the template image is the same as the WIM of
+		 * the new image, then @template_lte can be used directly.
+		 *
+		 * Otherwise, look for a stream with the same hash in the WIM of
+		 * the new image.  If found, use it; otherwise re-use the entry
+		 * being discarded, filling in the hash.  */
+
+		if (wim == template_wim)
+			replace_lte = template_lte;
+		else
+			replace_lte = lookup_resource(wim->lookup_table,
+						      template_lte->hash);
+
+		list_del(&lte->unhashed_list);
+		if (replace_lte) {
+			free_lookup_table_entry(lte);
+		} else {
+			copy_hash(lte->hash, template_lte->hash);
+			lte->unhashed = 0;
+			lookup_table_insert(wim->lookup_table, lte);
+			lte->refcnt = 0;
+			replace_lte = lte;
 		}
+
+		if (i == 0)
+			inode->i_lte = replace_lte;
+		else
+			inode->i_ads_entries[i - 1].lte = replace_lte;
+
+		replace_lte->refcnt += inode->i_nlink;
 	}
-	inode->i_resolved = 1;
+	return 0;
 }
 
+struct reference_template_args {
+	WIMStruct *wim;
+	WIMStruct *template_wim;
+};
+
 static int
-dentry_reference_template(struct wim_dentry *dentry, void *_wim)
+dentry_reference_template(struct wim_dentry *dentry, void *_args)
 {
 	int ret;
 	struct wim_dentry *template_dentry;
 	struct wim_inode *inode, *template_inode;
-	WIMStruct *wim = _wim;
+	struct reference_template_args *args = _args;
+	WIMStruct *wim = args->wim;
+	WIMStruct *template_wim = args->template_wim;
 
 	if (dentry->d_inode->i_visited)
 		return 0;
@@ -2564,7 +2647,7 @@ dentry_reference_template(struct wim_dentry *dentry, void *_wim)
 	if (ret)
 		return ret;
 
-	template_dentry = get_dentry(wim, dentry->_full_path);
+	template_dentry = get_dentry(template_wim, dentry->_full_path);
 	if (!template_dentry) {
 		DEBUG("\"%"TS"\": newly added file", dentry->_full_path);
 		return 0;
@@ -2573,37 +2656,36 @@ dentry_reference_template(struct wim_dentry *dentry, void *_wim)
 	inode = dentry->d_inode;
 	template_inode = template_dentry->d_inode;
 
-	if (inode->i_last_write_time == template_inode->i_last_write_time
-	    && inode->i_creation_time == template_inode->i_creation_time
-	    && inode->i_last_access_time >= template_inode->i_last_access_time
-	    && inode_stream_sizes_consistent(inode, template_inode,
-					     wim->lookup_table))
-	{
+	if (inode_metadata_consistent(inode, template_inode,
+				      template_wim->lookup_table)) {
 		/*DEBUG("\"%"TS"\": No change detected", dentry->_full_path);*/
-		inode_replace_ltes(inode, template_inode, wim->lookup_table);
+		ret = inode_copy_checksums(inode, template_inode,
+					   wim, template_wim);
 		inode->i_visited = 1;
 	} else {
 		DEBUG("\"%"TS"\": change detected!", dentry->_full_path);
+		ret = 0;
 	}
-	return 0;
+	return ret;
 }
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_reference_template_image(WIMStruct *wim, int new_image, int template_image,
+wimlib_reference_template_image(WIMStruct *wim, int new_image,
+				WIMStruct *template_wim, int template_image,
 				int flags, wimlib_progress_func_t progress_func)
 {
 	int ret;
 	struct wim_image_metadata *new_imd;
 
+	if (wim == NULL || template_wim == NULL)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (wim == template_wim && new_image == template_image)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if (new_image < 1 || new_image > wim->hdr.image_count)
 		return WIMLIB_ERR_INVALID_IMAGE;
-
-	if (template_image < 1 || template_image > wim->hdr.image_count)
-		return WIMLIB_ERR_INVALID_IMAGE;
-
-	if (new_image == template_image)
-		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (!wim_has_metadata(wim))
 		return WIMLIB_ERR_METADATA_NOT_FOUND;
@@ -2612,12 +2694,17 @@ wimlib_reference_template_image(WIMStruct *wim, int new_image, int template_imag
 	if (!new_imd->modified)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	ret = select_wim_image(wim, template_image);
+	ret = select_wim_image(template_wim, template_image);
 	if (ret)
 		return ret;
 
+	struct reference_template_args args = {
+		.wim = wim,
+		.template_wim = template_wim,
+	};
+
 	ret = for_dentry_in_tree(new_imd->root_dentry,
-				 dentry_reference_template, wim);
+				 dentry_reference_template, &args);
 	dentry_tree_clear_inode_visited(new_imd->root_dentry);
 	return ret;
 }

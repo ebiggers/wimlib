@@ -42,11 +42,9 @@ struct WIMStruct {
 	/* Temporary field */
 	void *private;
 
-	WIMStruct *master_wim;
+	struct list_head subwims;
 
-	struct list_head resource_wims;
-
-	struct list_head resource_wim_node;
+	struct list_head subwim_node;
 
 	/* The currently selected image, indexed starting at 1.  If not 0,
 	 * subtract 1 from this to get the index of the current image in the
@@ -67,7 +65,7 @@ struct WIMStruct {
 
 	u8 being_unmerged : 1;
 
-	u8 is_owned_by_master : 1;
+	u8 guid_set_explicitly : 1;
 
 	/* One of WIMLIB_COMPRESSION_TYPE_*, cached from the header flags. */
 	u8 compression_type : 2;

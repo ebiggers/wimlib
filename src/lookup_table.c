@@ -613,7 +613,7 @@ read_wim_lookup_table(WIMStruct *wim)
 		} else {
 			/* Lookup table entry for a stream that is not a
 			 * metadata resource */
-			duplicate_entry = __lookup_resource(table, cur_entry->hash);
+			duplicate_entry = lookup_resource(table, cur_entry->hash);
 			if (duplicate_entry) {
 				if (wimlib_print_errors) {
 					WARNING("The WIM lookup table contains two entries with the "
@@ -713,8 +713,29 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 static int
 append_lookup_table_entry(struct wim_lookup_table_entry *lte, void *_list)
 {
-	if (lte->out_refcnt != 0)
+	/* Lookup table entries with 'out_refcnt' == 0 correspond to streams not
+	 * written and not present in the resulting WIM file, and should not be
+	 * included in the lookup table.
+	 *
+	 * Lookup table entries marked as filtered (EXTERNAL_WIM) with
+	 * 'out_refcnt != 0' were referenced as part of the logical write but
+	 * correspond to streams that were not in fact written, and should not
+	 * be included in the lookup table.
+	 *
+	 * Lookup table entries marked as filtered (SAME_WIM) with 'out_refcnt
+	 * != 0' were referenced as part of the logical write but correspond to
+	 * streams that were not in fact written, but nevertheless were already
+	 * present in the WIM being overwritten in-place.  These entries must be
+	 * included in the lookup table, and the resource information to write
+	 * needs to be copied from the resource information read originally.
+	 */
+	if (lte->out_refcnt != 0 && !(lte->filtered & FILTERED_EXTERNAL_WIM)) {
+		if (lte->filtered & FILTERED_SAME_WIM) {
+			copy_resource_entry(&lte->output_resource_entry,
+					    &lte->resource_entry);
+		}
 		list_add_tail(&lte->lookup_table_list, (struct list_head*)_list);
+	}
 	return 0;
 }
 
@@ -761,7 +782,9 @@ write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
 		}
 	}
 
-	/* Append additional lookup table entries that have out_refcnt != 0.  */
+	/* Append additional lookup table entries that need to be written, with
+	 * some special handling for streams that have been marked as filtered.
+	 */
 	if (!stream_list_override) {
 		for_lookup_table_entry(wim->lookup_table,
 				       append_lookup_table_entry, stream_list);
@@ -922,7 +945,7 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
 /* Given a SHA1 message digest, return the corresponding entry in the WIM's
  * lookup table, or NULL if there is none.  */
 struct wim_lookup_table_entry *
-__lookup_resource(const struct wim_lookup_table *table, const u8 hash[])
+lookup_resource(const struct wim_lookup_table *table, const u8 hash[])
 {
 	size_t i;
 	struct wim_lookup_table_entry *lte;
@@ -946,12 +969,12 @@ __lookup_resource(const struct wim_lookup_table *table, const u8 hash[])
  * This is only for pre-resolved inodes.
  */
 int
-lookup_resource(WIMStruct *wim,
-		const tchar *path,
-		int lookup_flags,
-		struct wim_dentry **dentry_ret,
-		struct wim_lookup_table_entry **lte_ret,
-		u16 *stream_idx_ret)
+wim_pathname_to_stream(WIMStruct *wim,
+		       const tchar *path,
+		       int lookup_flags,
+		       struct wim_dentry **dentry_ret,
+		       struct wim_lookup_table_entry **lte_ret,
+		       u16 *stream_idx_ret)
 {
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
@@ -1050,7 +1073,7 @@ inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table,
 		lte = NULL;
 		hash = inode->i_hash;
 		if (!is_zero_hash(hash)) {
-			lte = __lookup_resource(table, hash);
+			lte = lookup_resource(table, hash);
 			if (!lte) {
 				if (force) {
 					lte = new_lookup_table_entry();
@@ -1073,7 +1096,7 @@ inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table,
 			cur_entry = &inode->i_ads_entries[i];
 			hash = cur_entry->hash;
 			if (!is_zero_hash(hash)) {
-				ads_lte = __lookup_resource(table, hash);
+				ads_lte = lookup_resource(table, hash);
 				if (!ads_lte) {
 					if (force) {
 						ads_lte = new_lookup_table_entry();
@@ -1256,7 +1279,7 @@ hash_unhashed_stream(struct wim_lookup_table_entry *lte,
 		return ret;
 
 	/* Look for a duplicate stream */
-	duplicate_lte = __lookup_resource(lookup_table, lte->hash);
+	duplicate_lte = lookup_resource(lookup_table, lte->hash);
 	list_del(&lte->unhashed_list);
 	if (duplicate_lte) {
 		/* We have a duplicate stream.  Transfer the reference counts
@@ -1265,7 +1288,7 @@ hash_unhashed_stream(struct wim_lookup_table_entry *lte,
 		 * duplicate, then free this stream. */
 		wimlib_assert(!(duplicate_lte->unhashed));
 		duplicate_lte->refcnt += lte->refcnt;
-		duplicate_lte->out_refcnt += lte->refcnt;
+		duplicate_lte->out_refcnt += lte->out_refcnt;
 		*back_ptr = duplicate_lte;
 		free_lookup_table_entry(lte);
 		lte = duplicate_lte;
@@ -1282,67 +1305,29 @@ hash_unhashed_stream(struct wim_lookup_table_entry *lte,
 }
 
 static int
-move_lte_to_table(struct wim_lookup_table_entry *lte, void *_combined_table)
+lte_clone_if_new(struct wim_lookup_table_entry *lte, void *_lookup_table)
 {
-	struct wim_lookup_table *combined_table = _combined_table;
+	struct wim_lookup_table *lookup_table = _lookup_table;
 
-	hlist_del(&lte->hash_list);
-	lookup_table_insert(combined_table, lte);
-	return 0;
-}
+	if (lookup_resource(lookup_table, lte->hash))
+		return 0;  /*  Resource already present.  */
 
-static void
-lookup_table_join(struct wim_lookup_table *combined_table,
-		  struct wim_lookup_table *part_table)
-{
-	for_lookup_table_entry(part_table, move_lte_to_table, combined_table);
-	part_table->num_entries = 0;
-}
-
-static void
-merge_lookup_tables(WIMStruct *wim, WIMStruct **resource_wims,
-		    unsigned num_resource_wims)
-{
-	for (unsigned i = 0; i < num_resource_wims; i++) {
-		lookup_table_join(wim->lookup_table, resource_wims[i]->lookup_table);
-		list_add(&resource_wims[i]->resource_wim_node, &wim->resource_wims);
-		resource_wims[i]->master_wim = wim;
-	}
-}
-
-static int
-move_lte_to_orig_table(struct wim_lookup_table_entry *lte, void *_wim)
-{
-	WIMStruct *wim = _wim;
-
-	if (lte->resource_location == RESOURCE_IN_WIM &&
-	    lte->wim->being_unmerged)
-	{
-		move_lte_to_table(lte, lte->wim->lookup_table);
-		wim->lookup_table->num_entries--;
-	}
+	lte = clone_lookup_table_entry(lte);
+	if (!lte)
+		return WIMLIB_ERR_NOMEM;
+	lte->out_refcnt = 1;
+	lookup_table_insert(lookup_table, lte);
 	return 0;
 }
 
 static int
-check_reference_params(WIMStruct *wim,
-		       WIMStruct **resource_wims, unsigned num_resource_wims,
-		       WIMStruct *expected_master)
+lte_delete_if_new(struct wim_lookup_table_entry *lte, void *_lookup_table)
 {
-	if (wim == NULL)
-		return WIMLIB_ERR_INVALID_PARAM;
+	struct wim_lookup_table *lookup_table = _lookup_table;
 
-	if (wim->hdr.part_number != 1)
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	if (num_resource_wims != 0 && resource_wims == NULL)
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	for (unsigned i = 0; i < num_resource_wims; i++) {
-		if (resource_wims[i] == NULL)
-			return WIMLIB_ERR_INVALID_PARAM;
-		if (resource_wims[i]->master_wim != expected_master)
-			return WIMLIB_ERR_INVALID_PARAM;
+	if (lte->out_refcnt) {
+		lookup_table_unlink(lookup_table, lte);
+		free_lookup_table_entry(lte);
 	}
 	return 0;
 }
@@ -1354,14 +1339,33 @@ wimlib_reference_resources(WIMStruct *wim,
 			   int ref_flags)
 {
 	int ret;
+	unsigned i;
 
-	ret = check_reference_params(wim, resource_wims,
-				     num_resource_wims, NULL);
-	if (ret)
-		return ret;
+	if (wim == NULL)
+		return WIMLIB_ERR_INVALID_PARAM;
 
-	merge_lookup_tables(wim, resource_wims, num_resource_wims);
+	if (num_resource_wims != 0 && resource_wims == NULL)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	for (i = 0; i < num_resource_wims; i++)
+		if (resource_wims[i] == NULL)
+			return WIMLIB_ERR_INVALID_PARAM;
+
+	for_lookup_table_entry(wim->lookup_table, lte_zero_out_refcnt, NULL);
+
+	for (i = 0; i < num_resource_wims; i++) {
+		ret = for_lookup_table_entry(resource_wims[i]->lookup_table,
+					     lte_clone_if_new,
+					     wim->lookup_table);
+		if (ret)
+			goto out_rollback;
+	}
 	return 0;
+
+out_rollback:
+	for_lookup_table_entry(wim->lookup_table, lte_delete_if_new,
+			       wim->lookup_table);
+	return ret;
 }
 
 static int
@@ -1383,6 +1387,8 @@ reference_resource_paths(WIMStruct *wim,
 		return WIMLIB_ERR_NOMEM;
 
 	for (i = 0; i < num_resource_wimfiles; i++) {
+		DEBUG("Referencing resources from path \"%"TS"\"",
+		      resource_wimfiles[i]);
 		ret = wimlib_open_wim(resource_wimfiles[i], open_flags,
 				      &resource_wims[i], progress_func);
 		if (ret)
@@ -1395,7 +1401,7 @@ reference_resource_paths(WIMStruct *wim,
 		goto out_free_resource_wims;
 
 	for (i = 0; i < num_resource_wimfiles; i++)
-		resource_wims[i]->is_owned_by_master = 1;
+		list_add_tail(&resource_wims[i]->subwim_node, &wim->subwims);
 
 	ret = 0;
 	goto out_free_array;
@@ -1478,29 +1484,4 @@ wimlib_reference_resource_files(WIMStruct *wim,
 						count, ref_flags,
 						open_flags, progress_func);
 	}
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_unreference_resources(WIMStruct *wim,
-			     WIMStruct **resource_wims, unsigned num_resource_wims)
-{
-	int ret;
-	unsigned i;
-
-	ret = check_reference_params(wim, resource_wims, num_resource_wims, wim);
-	if (ret)
-		return ret;
-
-	for (i = 0; i < num_resource_wims; i++)
-		resource_wims[i]->being_unmerged = 1;
-
-	for_lookup_table_entry(wim->lookup_table, move_lte_to_orig_table, wim);
-
-	for (i = 0; i < num_resource_wims; i++) {
-		resource_wims[i]->being_unmerged = 0;
-		list_del(&resource_wims[i]->resource_wim_node);
-		resource_wims[i]->master_wim = NULL;
-	}
-	return 0;
 }

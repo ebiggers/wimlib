@@ -625,7 +625,7 @@ invalid:
  *	WIMLIB_ERR_NOMEM		  (errno set to ENOMEM)
  *	WIMLIB_ERR_DECOMPRESSION	  (errno set to EINVAL)
  *	WIMLIB_ERR_INVALID_PIPABLE_WIM    (errno set to EINVAL)
- *	
+ *
  *	or other error code returned by the @cb function.
  */
 int

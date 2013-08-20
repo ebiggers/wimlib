@@ -394,21 +394,69 @@ default for \fB@IMAGEX_PROGNAME@ capture\fR, except when writing to standard
 output (\fIWIMFILE\fR specified as "-"), and also for \fB@IMAGEX_PROGNAME@
 append\fR, except when appending to a WIM that is already pipable.
 .TP
-\fB--delta-from\fR=\fIIMAGE\fR
-Only for \fB@IMAGEX_PROGNAME@ append\fR: declares that the new image being added
-from \fISOURCE\fR is mostly the same as the existing image \fIIMAGE\fR in
-\fIWIMFILE\fR, but captured at a later point in time, possibly with some
-modifications in the intervening time.  This is designed to be used in
-incremental backups of the same filesystem or directory tree.  \fIIMAGE\fR can
-be a 1-based index or name of an existing image in \fIWIMFILE\fR.  It can also
-be a negative integer to index backwards into the images (e.g.  -1 means the
-last existing image).
+\fB--as-update-of\fR=[\fIWIMFILE\fR]:\fIIMAGE\fR
+Declares that the image being captured from \fISOURCE\fR is mostly the same as
+the existing image \fIIMAGE\fR in \fIWIMFILE\fR, but captured at a later point
+in time, possibly with some modifications in the intervening time.  This is
+designed to be used in incremental backups of the same filesystem or directory
+tree.  \fIIMAGE\fR can be a 1-based index or name of an existing image in
+\fIWIMFILE\fR.  It can also be a negative integer to index backwards into the
+images (e.g.  -1 means the last existing image).
 .IP ""
-When this option is provided, the append of the new image will be optimized by
-not reading files that, based on metadata such as timestamps, appear not to have
-been modified since they were archived in the existing \fIIMAGE\fR.  Barring
-manipulation of timestamps, this option only affects performance and does not
-change the resulting WIM file.
+When this option is provided, the capture or append of the new image will be
+optimized by not reading files that, based on metadata such as timestamps,
+appear not to have been modified since they were archived in the existing
+\fIIMAGE\fR.  Barring manipulation of timestamps, this option only affects
+performance and does not change the resulting WIM file.
+.IP ""
+As shown, the full syntax for the argument to this option is to specify the WIM
+file, a colon, and the image; for example, "--as-update-of mywim.wim:1".
+However, the WIM file may be omitted, in which case it will default to the WIM
+file being appended to for append operations, or the WIM file from which a delta
+is being taken (with \fB--as-delta-from\fR, if specified) for capture operations.
+.TP
+\fB--as-delta-from\fR=\fIWIMFILE\fR
+For \fB@IMAGEX_PROGNAME@ capture\fR only: capture the new WIM as a "delta" from
+\fIWIMFILE\fR.  Any streams that would ordinarily need to be archived in the new
+WIM are omitted if they are already present in the \fIWIMFILE\fR on which the
+delta is being based.  The new WIM will still contain a full copy of the image
+metadata, but this is typically only a small fraction of a WIM's total size.
+.IP ""
+To operate on the resulting delta WIM using other commands such as
+\fB@IMAGEX_PROGNAME@ apply\fR, you must specify the delta WIM as the WIM file to
+operate on, but also reference the base WIM using the \fB--ref\fR option.
+Beware to retain the proper functioning of the delta WIM, you can only add, not
+delete, files and images to the base WIM following the capture of a delta from
+it.
+.IP ""
+\fB--as-delta-from\fR may be combined with \fB--as-update-of\fR to increase the
+speed of capturing a delta WIM.
+.IP ""
+As an example, consider the following backup and restore sequence:
+.IP ""
+.RS
+.nf
+(initial backup)
+
+$ wimcapture /some/directory bkup-base.wim
+
+(some days later, create second backup as delta from first)
+
+$ wimcapture /some/directory bkup-2013-08-20.dwm \\
+	--as-update-of=winbkup.wim:-1 --as-delta-from=winbkup.wim
+
+(restoring the second backup)
+
+$ wimapply bkup-2013-08-20.dwm --ref=bkup-base.wim 1 \\
+	/some/directory
+.RE
+.fi
+.IP ""
+However, note that as an alternative to the above sequence that used a delta
+WIM, the second backup could have simply been appended to the WIM as new image
+using \fB@IMAGEX_PROGNAME@ append\fR.  Delta WIMs should be used only if it's
+desired to base the backups or images on a separate, large file that is rarely
+modified.
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ append\fR does not support appending an image to a split WIM.
 .PP

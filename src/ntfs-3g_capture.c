@@ -658,7 +658,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 
 	if (!(params->add_flags & WIMLIB_ADD_FLAG_NO_ACLS)) {
 		struct SECURITY_CONTEXT sec_ctx;
-		char _sd[1];
+		char _sd[4096];
 		char *sd;
 
 		/* Get security descriptor */
@@ -666,7 +666,8 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		sec_ctx.vol = vol;
 
 		errno = 0;
-		ret = ntfs_get_ntfs_acl(&sec_ctx, ni, _sd, sizeof(_sd));
+		sd = _sd;
+		ret = ntfs_get_ntfs_acl(&sec_ctx, ni, sd, sizeof(_sd));
 		if (ret > sizeof(_sd)) {
 			sd = alloca(ret);
 			ret = ntfs_get_ntfs_acl(&sec_ctx, ni, sd, ret);

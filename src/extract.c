@@ -1426,7 +1426,7 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 
 		if ((found_lte->resource_location != RESOURCE_NONEXISTENT)
 		    && !(found_lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
-		    && (needed_lte = __lookup_resource(lookup_table, found_lte->hash))
+		    && (needed_lte = lookup_resource(lookup_table, found_lte->hash))
 		    && (needed_lte->out_refcnt))
 		{
 			copy_resource_entry(&needed_lte->resource_entry,

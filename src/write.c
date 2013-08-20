@@ -831,19 +831,29 @@ do_write_stream_list(struct list_head *stream_list,
 			 * stream in the WIM we are writing.  The stream must be
 			 * checksummed to know if we need to write it or not. */
 			struct wim_lookup_table_entry *tmp;
-			u32 orig_refcnt = lte->out_refcnt;
+			u32 orig_out_refcnt = lte->out_refcnt;
 
 			ret = hash_unhashed_stream(lte, lookup_table, &tmp);
 			if (ret)
 				break;
 			if (tmp != lte) {
+				/* We found a duplicate stream.  'lte' was
+				 * freed, so replace it with the duplicate.  */
 				lte = tmp;
-				/* We found a duplicate stream. */
-				if (orig_refcnt != tmp->out_refcnt) {
-					/* We have already written, or are going
-					 * to write, the duplicate stream.  So
-					 * just skip to the next stream. */
-					DEBUG("Discarding duplicate stream of length %"PRIu64,
+
+				/* 'out_refcnt' was transferred to the
+				 * duplicate, and we can detect if the duplicate
+				 * stream was already referenced for writing by
+				 * checking if its 'out_refcnt' is higher than
+				 * that of the original stream.  In such cases,
+				 * the current stream can be discarded.  We can
+				 * also discard the current stream if it was
+				 * previously marked as filtered (e.g. already
+				 * present in the WIM being written).  */
+				if (lte->out_refcnt > orig_out_refcnt ||
+				    lte->filtered) {
+					DEBUG("Discarding duplicate stream of "
+					      "length %"PRIu64,
 					      wim_resource_size(lte));
 					lte->no_progress = 0;
 					stream_discarded = true;
@@ -1587,12 +1597,15 @@ write_stream_list(struct list_head *stream_list,
 	unsigned total_parts = 0;
 	WIMStruct *prev_wim_part = NULL;
 
-	if (list_empty(stream_list))
+	if (list_empty(stream_list)) {
+		DEBUG("No streams to write.");
 		return 0;
+	}
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
-	DEBUG("write_resource_flags=0x%08x", write_resource_flags);
+	DEBUG("Writing stream list (offset = %"PRIu64", write_resource_flags=0x%08x)",
+	      out_fd->offset, write_resource_flags);
 
 	sort_stream_list_by_sequential_order(stream_list,
 					     offsetof(struct wim_lookup_table_entry,
@@ -1617,7 +1630,6 @@ write_stream_list(struct list_head *stream_list,
 				total_parts++;
 			}
 		}
-
 	}
 
 	memset(&progress_data, 0, sizeof(progress_data));
@@ -1705,141 +1717,37 @@ stream_size_table_insert(struct wim_lookup_table_entry *lte, void *_tab)
 	return 0;
 }
 
-
-struct lte_overwrite_prepare_args {
-	WIMStruct *wim;
-	off_t end_offset;
-	struct list_head stream_list;
-	struct stream_size_table stream_size_tab;
-};
-
-/* First phase of preparing streams for an in-place overwrite.  This is called
- * on all streams, both hashed and unhashed, except the metadata resources. */
-static int
-lte_overwrite_prepare(struct wim_lookup_table_entry *lte, void *_args)
-{
-	struct lte_overwrite_prepare_args *args = _args;
-
-	wimlib_assert(!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA));
-	if (lte->resource_location != RESOURCE_IN_WIM || lte->wim != args->wim)
-		list_add_tail(&lte->write_streams_list, &args->stream_list);
-	lte->out_refcnt = lte->refcnt;
-	stream_size_table_insert(lte, &args->stream_size_tab);
-	return 0;
-}
-
-/* Second phase of preparing streams for an in-place overwrite.  This is called
- * on existing metadata resources and hashed streams, but not unhashed streams.
- *
- * NOTE: lte->output_resource_entry is in union with lte->hash_list_2, so
- * lte_overwrite_prepare_2() must be called after lte_overwrite_prepare(), as
- * the latter uses lte->hash_list_2, while the former expects to set
- * lte->output_resource_entry. */
-static int
-lte_overwrite_prepare_2(struct wim_lookup_table_entry *lte, void *_args)
-{
-	struct lte_overwrite_prepare_args *args = _args;
-
-	if (lte->resource_location == RESOURCE_IN_WIM && lte->wim == args->wim) {
-		/* We can't do an in place overwrite on the WIM if there are
-		 * streams after the XML data. */
-		if (lte->resource_entry.offset +
-		    lte->resource_entry.size > args->end_offset)
-		{
-			if (wimlib_print_errors) {
-				ERROR("The following resource is after the XML data:");
-				print_lookup_table_entry(lte, stderr);
-			}
-			return WIMLIB_ERR_RESOURCE_ORDER;
-		}
-		copy_resource_entry(&lte->output_resource_entry,
-				    &lte->resource_entry);
-	}
-	return 0;
-}
-
-/* Given a WIM that we are going to overwrite in place with zero or more
- * additional streams added, construct a list the list of new unique streams
- * ('struct wim_lookup_table_entry's) that must be written, plus any unhashed
- * streams that need to be added but may be identical to other hashed or
- * unhashed streams.  These unhashed streams are checksummed while the streams
- * are being written.  To aid this process, the member @unique_size is set to 1
- * on streams that have a unique size and therefore must be written.
- *
- * The out_refcnt member of each 'struct wim_lookup_table_entry' is set to
- * indicate the number of times the stream is referenced in only the streams
- * that are being written; this may still be adjusted later when unhashed
- * streams are being resolved.
- */
-static int
-prepare_streams_for_overwrite(WIMStruct *wim, off_t end_offset,
-			      struct list_head *stream_list)
-{
-	int ret;
-	struct lte_overwrite_prepare_args args;
-	unsigned i;
-
-	args.wim = wim;
-	args.end_offset = end_offset;
-	ret = init_stream_size_table(&args.stream_size_tab,
-				     wim->lookup_table->capacity);
-	if (ret)
-		return ret;
-
-	INIT_LIST_HEAD(&args.stream_list);
-	for (i = 0; i < wim->hdr.image_count; i++) {
-		struct wim_image_metadata *imd;
-		struct wim_lookup_table_entry *lte;
-
-		imd = wim->image_metadata[i];
-		image_for_each_unhashed_stream(lte, imd)
-			lte_overwrite_prepare(lte, &args);
-	}
-	for_lookup_table_entry(wim->lookup_table, lte_overwrite_prepare, &args);
-	list_transfer(&args.stream_list, stream_list);
-
-	for (i = 0; i < wim->hdr.image_count; i++) {
-		ret = lte_overwrite_prepare_2(wim->image_metadata[i]->metadata_lte,
-					      &args);
-		if (ret)
-			goto out_destroy_stream_size_table;
-	}
-	ret = for_lookup_table_entry(wim->lookup_table,
-				     lte_overwrite_prepare_2, &args);
-out_destroy_stream_size_table:
-	destroy_stream_size_table(&args.stream_size_tab);
-	return ret;
-}
-
-
 struct find_streams_ctx {
+	WIMStruct *wim;
+	int write_flags;
 	struct list_head stream_list;
 	struct stream_size_table stream_size_tab;
 };
 
 static void
-lte_reference_for_write(struct wim_lookup_table_entry *lte,
-			struct find_streams_ctx *ctx,
-			unsigned nref)
+lte_reference_for_logical_write(struct wim_lookup_table_entry *lte,
+				struct find_streams_ctx *ctx,
+				unsigned nref)
 {
 	if (lte->out_refcnt == 0) {
-		if (lte->unhashed)
-			stream_size_table_insert(lte, &ctx->stream_size_tab);
+		stream_size_table_insert(lte, &ctx->stream_size_tab);
 		list_add_tail(&lte->write_streams_list, &ctx->stream_list);
 	}
 	lte->out_refcnt += nref;
 }
 
 static int
-do_lte_reference_for_write(struct wim_lookup_table_entry *lte, void *_ctx)
+do_lte_full_reference_for_logical_write(struct wim_lookup_table_entry *lte,
+					void *_ctx)
 {
 	struct find_streams_ctx *ctx = _ctx;
 	lte->out_refcnt = 0;
-	lte_reference_for_write(lte, ctx, lte->refcnt);
+	lte_reference_for_logical_write(lte, ctx,
+					(lte->refcnt ? lte->refcnt : 1));
 	return 0;
 }
 
-static void
+static int
 inode_find_streams_to_write(struct wim_inode *inode,
 			    struct wim_lookup_table *table,
 			    struct find_streams_ctx *ctx)
@@ -1850,8 +1758,11 @@ inode_find_streams_to_write(struct wim_inode *inode,
 	for (i = 0; i <= inode->i_num_ads; i++) {
 		lte = inode_stream_lte(inode, i, table);
 		if (lte)
-			lte_reference_for_write(lte, ctx, inode->i_nlink);
+			lte_reference_for_logical_write(lte, ctx, inode->i_nlink);
+		else if (!is_zero_hash(inode_stream_hash(inode, i)))
+			return WIMLIB_ERR_RESOURCE_NOT_FOUND;
 	}
+	return 0;
 }
 
 static int
@@ -1861,6 +1772,7 @@ image_find_streams_to_write(WIMStruct *wim)
 	struct wim_image_metadata *imd;
 	struct wim_inode *inode;
 	struct wim_lookup_table_entry *lte;
+	int ret;
 
 	ctx = wim->private;
 	imd = wim_get_current_image_metadata(wim);
@@ -1870,78 +1782,175 @@ image_find_streams_to_write(WIMStruct *wim)
 
 	/* Go through this image's inodes to find any streams that have not been
 	 * found yet. */
-	image_for_each_inode(inode, imd)
-		inode_find_streams_to_write(inode, wim->lookup_table, ctx);
+	image_for_each_inode(inode, imd) {
+		ret = inode_find_streams_to_write(inode, wim->lookup_table, ctx);
+		if (ret)
+			return ret;
+	}
 	return 0;
 }
 
-/* Given a WIM that from which one or all of the images is being written, build
- * the list of unique streams ('struct wim_lookup_table_entry's) that must be
- * written, plus any unhashed streams that need to be written but may be
- * identical to other hashed or unhashed streams being written.  These unhashed
- * streams are checksummed while the streams are being written.  To aid this
- * process, the member @unique_size is set to 1 on streams that have a unique
- * size and therefore must be written.
+/*
+ * Build a list of streams (via `struct wim_lookup_table_entry's) included in
+ * the "logical write" of the WIM, meaning all streams that are referenced at
+ * least once by dentries in the the image(s) being written.  'out_refcnt' on
+ * each stream being included in the logical write is set to the number of
+ * references from dentries in the image(s).  Furthermore, 'unique_size' on each
+ * stream being included in the logical write is set to indicate whether that
+ * stream has a unique size relative to the streams being included in the
+ * logical write.  Still furthermore, 'part_number' on each stream being
+ * included in the logical write is set to the part number given in the
+ * in-memory header of @p wim.
  *
- * The out_refcnt member of each 'struct wim_lookup_table_entry' is set to
- * indicate the number of times the stream is referenced in only the streams
- * that are being written; this may still be adjusted later when unhashed
- * streams are being resolved.
+ * This is considered a "logical write" because it does not take into account
+ * filtering out streams already present in the WIM (in the case of an in place
+ * overwrite) or present in other WIMs (in case of creating delta WIM).
  */
 static int
-prepare_stream_list(WIMStruct *wim, int image, struct list_head *stream_list)
+prepare_logical_stream_list(WIMStruct *wim, int image, bool streams_ok,
+			    struct find_streams_ctx *ctx)
 {
 	int ret;
-	struct find_streams_ctx ctx;
+	struct wim_lookup_table_entry *lte;
 
-	DEBUG("Preparing list of streams to write for image %d.", image);
-
-	for_lookup_table_entry(wim->lookup_table, lte_zero_out_refcnt, NULL);
-	ret = init_stream_size_table(&ctx.stream_size_tab,
-				     wim->lookup_table->capacity);
-	if (ret)
-		return ret;
-	for_lookup_table_entry(wim->lookup_table, stream_size_table_insert,
-			       &ctx.stream_size_tab);
-	INIT_LIST_HEAD(&ctx.stream_list);
-	wim->private = &ctx;
-
-#if 1
-	/* Optimization enabled by default:  if we're writing all the images,
-	 * it's not strictly necessary to decompress, parse, and go through the
-	 * dentry tree in each image's metadata resource.  Instead, include all
-	 * the hashed streams referenced from the lookup table as well as all
-	 * unhashed streams referenced in the per-image list.  For 'out_refcnt'
-	 * for each stream, just copy the value from 'refcnt', which is the
-	 * reference count of that stream in the entire WIM.  */
-	if (image == WIMLIB_ALL_IMAGES) {
+	if (streams_ok && (image == WIMLIB_ALL_IMAGES ||
+			   (image == 1 && wim->hdr.image_count == 1)))
+	{
+		/* Fast case:  Assume that all streams are being written and
+		 * that the reference counts are correct.  */
 		struct wim_lookup_table_entry *lte;
 		struct wim_image_metadata *imd;
 		unsigned i;
 
 		for_lookup_table_entry(wim->lookup_table,
-				       do_lte_reference_for_write, &ctx);
+				       do_lte_full_reference_for_logical_write, ctx);
 		for (i = 0; i < wim->hdr.image_count; i++) {
 			imd = wim->image_metadata[i];
 			image_for_each_unhashed_stream(lte, imd)
-				do_lte_reference_for_write(lte, &ctx);
+				do_lte_full_reference_for_logical_write(lte, ctx);
 		}
-		ret = 0;
-	} else
-#endif
+	} else {
+		/* Slow case:  Walk through the images being written and
+		 * determine the streams referenced.  */
+		for_lookup_table_entry(wim->lookup_table, lte_zero_out_refcnt, NULL);
+		wim->private = ctx;
 		ret = for_image(wim, image, image_find_streams_to_write);
+		if (ret)
+			return ret;
+	}
 
-	destroy_stream_size_table(&ctx.stream_size_tab);
-	if (ret)
-		return ret;
-	list_transfer(&ctx.stream_list, stream_list);
+	list_for_each_entry(lte, &ctx->stream_list, write_streams_list)
+		lte->part_number = wim->hdr.part_number;
 	return 0;
 }
 
-/* Writes the streams for the specified @image in @wim to @wim->out_fd.
- * Alternatively, if @stream_list_override is specified, it is taken to be the
- * list of streams to write (connected with 'write_streams_list') and @image is
- * ignored.  */
+static int
+process_filtered_stream(struct wim_lookup_table_entry *lte, void *_ctx)
+{
+	struct find_streams_ctx *ctx = _ctx;
+	u16 filtered = 0;
+
+	/* Calculate and set lte->filtered.  */
+	if (lte->resource_location == RESOURCE_IN_WIM) {
+		if (lte->wim == ctx->wim &&
+		    (ctx->write_flags & WIMLIB_WRITE_FLAG_OVERWRITE))
+			filtered |= FILTERED_SAME_WIM;
+		if (lte->wim != ctx->wim &&
+		    (ctx->write_flags & WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS))
+			filtered |= FILTERED_EXTERNAL_WIM;
+	}
+	lte->filtered = filtered;
+
+	/* Filtered streams get inserted into the stream size table too, unless
+	 * they already were.  This is because streams that are checksummed
+	 * on-the-fly during the write should not be written if they are
+	 * duplicates of filtered stream.  */
+	if (lte->filtered && lte->out_refcnt == 0)
+		stream_size_table_insert(lte, &ctx->stream_size_tab);
+	return 0;
+}
+
+static int
+mark_stream_not_filtered(struct wim_lookup_table_entry *lte, void *_ignore)
+{
+	lte->filtered = 0;
+	return 0;
+}
+
+/* Given the list of streams to include in a logical write of a WIM, handle
+ * filtering out streams already present in the WIM or already present in
+ * external WIMs, depending on the write flags provided.  */
+static void
+handle_stream_filtering(struct find_streams_ctx *ctx)
+{
+	struct wim_lookup_table_entry *lte, *tmp;
+
+	if (!(ctx->write_flags & (WIMLIB_WRITE_FLAG_OVERWRITE |
+				  WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS)))
+	{
+		for_lookup_table_entry(ctx->wim->lookup_table,
+				       mark_stream_not_filtered, ctx);
+		return;
+	}
+
+	for_lookup_table_entry(ctx->wim->lookup_table,
+			       process_filtered_stream, ctx);
+
+	/* Streams in logical write list that were filtered can be removed.  */
+	list_for_each_entry_safe(lte, tmp, &ctx->stream_list,
+				 write_streams_list)
+		if (lte->filtered)
+			list_del(&lte->write_streams_list);
+}
+
+/* Prepares list of streams to write for the specified WIM image(s).  This wraps
+ * around prepare_logical_stream_list() to handle filtering out streams already
+ * present in the WIM or already present in external WIMs, depending on the
+ * write flags provided.
+ *
+ * Note: some additional data is stored in each `struct wim_lookup_table_entry':
+ *
+ * - 'out_refcnt' is set to the number of references found for the logical write.
+ *    This will be nonzero on all streams in the list returned by this function,
+ *    but will also be nonzero on streams not in the list that were included in
+ *    the logical write list, but filtered out from the returned list.
+ * - 'filtered' is set to nonzero if the stream was filtered.  Filtered streams
+ *   are not included in the list of streams returned by this function.
+ * - 'unique_size' is set if the stream has a unique size among all streams in
+ *   the logical write plus any filtered streams in the entire WIM that could
+ *   potentially turn out to have the same checksum as a yet-to-be-checksummed
+ *   stream being written.
+ */
+static int
+prepare_stream_list(WIMStruct *wim, int image, int write_flags,
+		    struct list_head *stream_list)
+{
+	int ret;
+	bool streams_ok;
+	struct find_streams_ctx ctx;
+
+	INIT_LIST_HEAD(&ctx.stream_list);
+	ret = init_stream_size_table(&ctx.stream_size_tab,
+				     wim->lookup_table->capacity);
+	if (ret)
+		return ret;
+	ctx.write_flags = write_flags;
+	ctx.wim = wim;
+
+	streams_ok = ((write_flags & WIMLIB_WRITE_FLAG_STREAMS_OK) != 0);
+
+	ret = prepare_logical_stream_list(wim, image, streams_ok, &ctx);
+	if (ret)
+		goto out_destroy_table;
+
+	handle_stream_filtering(&ctx);
+	list_transfer(&ctx.stream_list, stream_list);
+	ret = 0;
+out_destroy_table:
+	destroy_stream_size_table(&ctx.stream_size_tab);
+	return ret;
+}
+
 static int
 write_wim_streams(WIMStruct *wim, int image, int write_flags,
 		  unsigned num_threads,
@@ -1953,22 +1962,24 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 	struct list_head *stream_list;
 	struct wim_lookup_table_entry *lte;
 
-	if (stream_list_override) {
-		stream_list = stream_list_override;
-		list_for_each_entry(lte, stream_list, write_streams_list) {
-			if (lte->refcnt)
-				lte->out_refcnt = lte->refcnt;
-			else
-				lte->out_refcnt = 1;
-		}
-	} else {
+	if (stream_list_override == NULL) {
+		/* Normal case: prepare stream list from image(s) being written.
+		 */
 		stream_list = &_stream_list;
-		ret = prepare_stream_list(wim, image, stream_list);
+		ret = prepare_stream_list(wim, image, write_flags, stream_list);
 		if (ret)
 			return ret;
+	} else {
+		/* Currently only as a result of wimlib_split() being called:
+		 * use stream list already explicitly provided.  Use existing
+		 * reference counts.  */
+		stream_list = stream_list_override;
+		list_for_each_entry(lte, stream_list, write_streams_list) {
+			lte->out_refcnt = (lte->refcnt ? lte->refcnt : 1);
+			lte->part_number = wim->hdr.part_number;
+		}
 	}
-	list_for_each_entry(lte, stream_list, write_streams_list)
-		lte->part_number = wim->hdr.part_number;
+
 	return write_stream_list(stream_list,
 				 wim->lookup_table,
 				 &wim->out_fd,
@@ -1987,8 +1998,10 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 	int end_image;
 	int write_resource_flags;
 
-	if (write_flags & WIMLIB_WRITE_FLAG_NO_METADATA)
+	if (write_flags & WIMLIB_WRITE_FLAG_NO_METADATA) {
+		DEBUG("Not writing any metadata resources.");
 		return 0;
+	}
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
@@ -2014,9 +2027,19 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 		 * the original (or was newly added).  Otherwise just copy the
 		 * existing one.  */
 		if (imd->modified) {
+			DEBUG("Image %u was modified; building and writing new "
+			      "metadata resource", i);
 			ret = write_metadata_resource(wim, i,
 						      write_resource_flags);
+		} else if (write_flags & WIMLIB_WRITE_FLAG_OVERWRITE) {
+			DEBUG("Image %u was not modified; re-using existing "
+			      "metadata resource.", i);
+			copy_resource_entry(&imd->metadata_lte->output_resource_entry,
+					    &imd->metadata_lte->resource_entry);
+			ret = 0;
 		} else {
+			DEBUG("Image %u was not modified; copying existing "
+			      "metadata resource.", i);
 			ret = write_wim_resource(imd->metadata_lte,
 						 &wim->out_fd,
 						 wim->compression_type,
@@ -2404,7 +2427,8 @@ write_wim_part(WIMStruct *wim,
 		DEBUG("Number of threads: %u", num_threads);
 	DEBUG("Progress function: %s", (progress_func ? "yes" : "no"));
 	DEBUG("Stream list:       %s", (stream_list_override ? "specified" : "autodetect"));
-	DEBUG("GUID:              %s", (guid ? "specified" : "generate new"));
+	DEBUG("GUID:              %s", ((guid || wim->guid_set_explicitly) ?
+					"specified" : "generate new"));
 
 	/* Internally, this is always called with a valid part number and total
 	 * parts.  */
@@ -2474,7 +2498,7 @@ write_wim_part(WIMStruct *wim,
 	/* Use GUID if specified; otherwise generate a new one.  */
 	if (guid)
 		memcpy(wim->hdr.guid, guid, WIMLIB_GUID_LEN);
-	else
+	else if (!wim->guid_set_explicitly)
 		randomize_byte_array(wim->hdr.guid, WIMLIB_GUID_LEN);
 
 	/* Clear references to resources that have not been written yet.  */
@@ -2627,6 +2651,40 @@ any_images_modified(WIMStruct *wim)
 	return false;
 }
 
+static int
+check_resource_offset(struct wim_lookup_table_entry *lte, void *_wim)
+{
+	const WIMStruct *wim = _wim;
+	off_t end_offset = *(const off_t*)wim->private;
+
+	if (lte->resource_location == RESOURCE_IN_WIM && lte->wim == wim &&
+	    lte->resource_entry.offset + lte->resource_entry.size > end_offset)
+		return WIMLIB_ERR_RESOURCE_ORDER;
+	return 0;
+}
+
+/* Make sure no file or metadata resources are located after the XML data (or
+ * integrity table if present)--- otherwise we can't safely overwrite the WIM in
+ * place and we return WIMLIB_ERR_RESOURCE_ORDER.  */
+static int
+check_resource_offsets(WIMStruct *wim, off_t end_offset)
+{
+	int ret;
+	unsigned i;
+
+	wim->private = &end_offset;
+	ret = for_lookup_table_entry(wim->lookup_table, check_resource_offset, wim);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < wim->hdr.image_count; i++) {
+		ret = check_resource_offset(wim->image_metadata[i]->metadata_lte, wim);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
 /*
  * Overwrite a WIM, possibly appending streams to it.
  *
@@ -2703,6 +2761,10 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 		if (wim_has_integrity_table(wim))
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 
+	/* Set additional flags for overwrite.  */
+	write_flags |= WIMLIB_WRITE_FLAG_OVERWRITE |
+		       WIMLIB_WRITE_FLAG_STREAMS_OK;
+
 	/* Make sure that the integrity table (if present) is after the XML
 	 * data, and that there are no stream resources, metadata resources, or
 	 * lookup tables after the XML data.  Otherwise, these data would be
@@ -2712,12 +2774,12 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	old_lookup_table_end = wim->hdr.lookup_table_res_entry.offset +
 			       wim->hdr.lookup_table_res_entry.size;
 	if (wim->hdr.integrity.offset != 0 && wim->hdr.integrity.offset < old_xml_end) {
-		ERROR("Didn't expect the integrity table to be before the XML data");
+		WARNING("Didn't expect the integrity table to be before the XML data");
 		return WIMLIB_ERR_RESOURCE_ORDER;
 	}
 
 	if (old_lookup_table_end > old_xml_begin) {
-		ERROR("Didn't expect the lookup table to be after the XML data");
+		WARNING("Didn't expect the lookup table to be after the XML data");
 		return WIMLIB_ERR_RESOURCE_ORDER;
 	}
 
@@ -2746,7 +2808,12 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 		old_wim_end = old_xml_end;
 	}
 
-	ret = prepare_streams_for_overwrite(wim, old_wim_end, &stream_list);
+	ret = check_resource_offsets(wim, old_wim_end);
+	if (ret)
+		return ret;
+
+	ret = prepare_stream_list(wim, WIMLIB_ALL_IMAGES, write_flags,
+				  &stream_list);
 	if (ret)
 		return ret;
 
@@ -2776,8 +2843,6 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 		goto out_unlock_wim;
 	}
 
-	DEBUG("Writing newly added streams (offset = %"PRIu64")",
-	      old_wim_end);
 	ret = write_stream_list(&stream_list,
 				wim->lookup_table,
 				&wim->out_fd,
@@ -2788,13 +2853,11 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	if (ret)
 		goto out_truncate;
 
-	for (unsigned i = 1; i <= wim->hdr.image_count; i++) {
-		if (wim->image_metadata[i - 1]->modified) {
-			ret = write_metadata_resource(wim, i, 0);
-			if (ret)
-				goto out_truncate;
-		}
-	}
+	ret = write_wim_metadata_resources(wim, WIMLIB_ALL_IMAGES,
+					   write_flags, progress_func);
+	if (ret)
+		goto out_truncate;
+
 	write_flags |= WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE;
 	ret = finish_write(wim, WIMLIB_ALL_IMAGES, write_flags,
 			   progress_func, NULL);

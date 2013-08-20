@@ -8,13 +8,18 @@ Version 1.5.0:
 	more information.
 
 	To better support incremental backups, added support for declaring an
-	image as a modified form of a prior image.  See the documentation for
-	the '--delta-from' option of `wimlib-imagex append'.
+	image as a modified form of another image.  See the documentation for
+	the '--as-update-of' option of `wimlib-imagex append' and `wimlib-imagex
+	capture'.
+
+	Added supported for "delta" WIMs.  See the documentation for the
+	'--as-delta-from' option of `wimlib-imagex capture'.
 
 	The library support for managing split WIMs has been changed to support
 	other arrangements, such as delta WIMs, and be easier to use.  This
 	change is visible in `wimlib-imagex', which also can now accept the
-	'--ref' option multiple times.
+	'--ref' option multiple times, and also now supports "delta" WIMs as
+	mentioned above.
 
 	wimlib now preserves WIM integrity tables by default, even if
 	WIMLIB_WRITE_FLAG_CHECK_INTEGRITY is not specified.  This changes the

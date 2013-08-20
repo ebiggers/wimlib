@@ -52,12 +52,12 @@ inode_export_streams(struct wim_inode *inode,
 
 		/* Search for the stream (via SHA1 message digest) in the
 		 * destination WIM.  */
-		dest_lte = __lookup_resource(dest_lookup_table, hash);
+		dest_lte = lookup_resource(dest_lookup_table, hash);
 		if (!dest_lte) {
 			/* Stream not yet present in destination WIM.  Search
 			 * for it in the source WIM, then export it into the
 			 * destination WIM.  */
-			src_lte = __lookup_resource(src_lookup_table, hash);
+			src_lte = lookup_resource(src_lookup_table, hash);
 			if (!src_lte)
 				return resource_not_found_error(inode, hash);
 

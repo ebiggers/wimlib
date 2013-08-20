@@ -71,7 +71,7 @@ new_wim_struct(void)
 		wim->in_fd.fd = -1;
 		wim->out_fd.fd = -1;
 	}
-	INIT_LIST_HEAD(&wim->resource_wims);
+	INIT_LIST_HEAD(&wim->subwims);
 	return wim;
 }
 
@@ -333,8 +333,10 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int whic
 	if (ret)
 		return ret;
 
-	if (which & WIMLIB_CHANGE_GUID)
+	if (which & WIMLIB_CHANGE_GUID) {
 		memcpy(wim->hdr.guid, info->guid, WIM_GID_LEN);
+		wim->guid_set_explicitly = 1;
+	}
 
 	if (which & WIMLIB_CHANGE_BOOT_INDEX) {
 		if (info->boot_index > wim->hdr.image_count) {
@@ -752,22 +754,19 @@ can_delete_from_wim(WIMStruct *wim)
 WIMLIBAPI void
 wimlib_free(WIMStruct *wim)
 {
-	DEBUG("Freeing WIMStruct");
-
 	if (!wim)
 		return;
 
-	while (!list_empty(&wim->resource_wims)) {
-		WIMStruct *resource_wim;
+	DEBUG("Freeing WIMStruct (filename=\"%"TS"\", image_count=%u)",
+	      wim->filename, wim->hdr.image_count);
 
-		resource_wim = list_entry(wim->resource_wims.next,
-					  WIMStruct, resource_wim_node);
-		if (resource_wim->is_owned_by_master) {
-			list_del(&resource_wim->resource_wim_node);
-			wimlib_free(resource_wim);
-		} else {
-			wimlib_unreference_resources(wim, &resource_wim, 1);
-		}
+	while (!list_empty(&wim->subwims)) {
+		WIMStruct *subwim;
+
+		subwim = list_entry(wim->subwims.next, WIMStruct, subwim_node);
+		list_del(&subwim->subwim_node);
+		DEBUG("Freeing subwim.");
+		wimlib_free(subwim);
 	}
 
 	if (filedes_valid(&wim->in_fd))
@@ -786,7 +785,6 @@ wimlib_free(WIMStruct *wim)
 		FREE(wim->image_metadata);
 	}
 	FREE(wim);
-	DEBUG("Freed WIMStruct");
 }
 
 static bool

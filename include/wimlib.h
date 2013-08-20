@@ -1319,6 +1319,22 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * set the readonly flag on the on-disk WIM file.  */
 #define WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG		0x00000100
 
+/** Do not include non-metadata resources already present in other WIMs.  This
+ * flag can be used to write a "delta" WIM after resources from the WIM on which
+ * the delta is to be based were referenced with
+ * wimlib_reference_resource_files() or wimlib_reference_resources().  */
+#define WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS		0x00000200
+
+/** Asserts that for writes of all WIM images, all streams needed for the WIM
+ * are already present (not in external resource WIMs) and their reference
+ * counts are correct, so the code does not need to recalculate which streams
+ * are referenced.  This is for optimization purposes only, since with this flag
+ * specified, the metadata resources may not need to be decompressed and parsed.
+ *
+ * This flag can be passed to wimlib_write() and wimlib_write_to_fd(), but is
+ * already implied for wimlib_overwrite().  */
+#define WIMLIB_WRITE_FLAG_STREAMS_OK			0x00000400
+
 /**
  * @name Init flags
  *
@@ -1787,9 +1803,10 @@ wimlib_delete_image(WIMStruct *wim, int image);
  * @retval ::WIMLIB_ERR_RESOURCE_NOT_FOUND
  *	A resource that needed to be exported could not be found in either the
  *	source or destination WIMs.  This error can occur if, for example, @p
- *	src_wim is part of a split WIM but resources from the other split WIM
- *	parts were not referenced with wimlib_reference_resources() or
- *	wimlib_reference_resource_files().
+ *	src_wim is part of a split WIM but needed resources from the other split
+ *	WIM parts were not referenced with wimlib_reference_resources() or
+ *	wimlib_reference_resource_files() before the call to
+ *	wimlib_export_image().
  * @retval ::WIMLIB_ERR_WIM_IS_READONLY
  *	@p dest_wim is considered read-only because of any of the reasons
  *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
@@ -2594,8 +2611,9 @@ wimlib_open_wim(const wimlib_tchar *wim_file,
  * 	If non-NULL, a function that will be called periodically with the
  * 	progress of the current operation.
  *
- * @return 0 on success; nonzero on error.  This function may return any value
- * returned by wimlib_write() as well as the following error codes:
+ * @return 0 on success; nonzero on error.  This function may return most error
+ * codes returned by wimlib_write() as well as the following error codes:
+ *
  * @retval ::WIMLIB_ERR_ALREADY_LOCKED
  * 	The WIM was going to be modified in-place (with no temporary file), but
  * 	an exclusive advisory lock on the on-disk WIM file could not be acquired
@@ -2717,18 +2735,16 @@ wimlib_reference_resource_files(WIMStruct *wim,
  * @param ref_flags
  *	Currently ignored (set to 0).
  *
- * @return 0 on success; nonzero on error.  On success, the ::WIMStruct's
- * specified in @p resource_wims should be considered "don't touch" until either
- * wimlib_free() is called on @p wim, or wimlib_unreference_resources() is
- * called to unreference them.
+ * @return 0 on success; nonzero on error.  On success, the ::WIMStruct's of the
+ * @p resource_wims are referenced internally by @p wim and must not be freed
+ * with wimlib_free() or overwritten with wimlib_overwrite() until @p wim has
+ * been freed with wimlib_free(), or immediately before freeing @p wim with
+ * wimlib_free().
  *
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  *	@p wim was @c NULL, or @p num_resource_wims was nonzero but @p
  *	resource_wims was @c NULL, or @p wim did not contain metadata resources,
- *	or an entry in @p resource_wims was @p NULL, or an entry in @p
- *	resource_wims was already referenced by a call to this function without
- *	a corresponding call to wimlib_free() on the metadata WIM, or
- *	wimlib_unreference_resources().
+ *	or an entry in @p resource_wims was @p NULL.
  */
 extern int
 wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
@@ -2740,14 +2756,16 @@ wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
  * intervening time.  This is designed to be used in incremental backups of the
  * same filesystem or directory tree.
  *
- * This function compares the directory tree of the newly added image against
- * that of the old image.  Any files that are present in both the newly added
- * image and the old image and have timestamps that indicate they haven't been
- * modified are deemed not to have been modified.  Such files will not be read
- * from the filesystem when the WIM is being written or overwritten.  Note that
- * these unchanged files will still be "archived" and will be logically present
- * in the new image; the optimization is that they don't need to actually be
- * read from the filesystem because the WIM already contains them.
+ * This function compares the metadata of the directory tree of the newly added
+ * image against that of the old image.  Any files that are present in both the
+ * newly added image and the old image and have timestamps that indicate they
+ * haven't been modified are deemed not to have been modified and have their
+ * SHA1 message digest copied from the old image.  Because of this and because
+ * WIM uses single-instance streams, such files need not be read from the
+ * filesystem when the WIM is being written or overwritten.  Note that these
+ * unchanged files will still be "archived" and will be logically present in the
+ * new image; the optimization is that they don't need to actually be read from
+ * the filesystem because the WIM already contains them.
  *
  * This function is provided to optimize incremental backups.  The resulting WIM
  * file will still be the same regardless of whether this function is called.
@@ -2766,6 +2784,9 @@ wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
  *	1-based index in the WIM of the newly added image.  This image can have
  *	been added with wimlib_add_image() or wimlib_add_image_multisource(), or
  *	wimlib_add_empty_image() followed by wimlib_update_image().
+ * @param template_wim
+ *	The ::WIMStruct for the WIM containing the template image.  This can be
+ *	the same as @p wim, or it can be a different ::WIMStruct.
  * @param template_image
  *	1-based index in the WIM of a template image that reflects a prior state
  *	of the directory tree being captured.
@@ -2799,8 +2820,8 @@ wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
  */
 extern int
 wimlib_reference_template_image(WIMStruct *wim, int new_image,
-				int template_image, int flags,
-				wimlib_progress_func_t progress_func);
+				WIMStruct *template_wim, int template_image,
+				int flags, wimlib_progress_func_t progress_func);
 
 /**
  * Translates a string specifying the name or number of an image in the WIM into
@@ -3114,30 +3135,6 @@ wimlib_unmount_image(const wimlib_tchar *dir,
 		     wimlib_progress_func_t progress_func);
 
 /**
- * Unreferences resources previously referenced with
- * wimlib_reference_resources().
- *
- * Calling this is not necessary (or even possible) if the higher-level function
- * wimlib_reference_resource_files() is used.
- *
- * @param wim
- *	See corresponding parameter to wimlib_reference_resources().
- * @param resource_wims
- *	See corresponding parameter to wimlib_reference_resources().
- * @param num_resource_wims
- *	See corresponding parameter to wimlib_reference_resources().
- *
- * @return 0 on success; nonzero on error.
- *
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	Not all entries in @p resource_wims specify valid ::WIMStruct's that are
- *	referenced by @p wim.
- */
-extern int
-wimlib_unreference_resources(WIMStruct *wim, WIMStruct **resource_wims,
-			     unsigned num_resource_wims);
-
-/**
  * Update a WIM image by adding, deleting, and/or renaming files or directories.
  *
  * @param wim
@@ -3302,6 +3299,12 @@ wimlib_update_image(WIMStruct *wim,
  * 	with @p wim, or some file resources in @p wim refer to files in the
  * 	outside filesystem, and a read error occurred when reading one of these
  * 	files.
+ * @retval ::WIMLIB_ERR_RESOURCE_NOT_FOUND
+ *	A stream that needed to be written could not be found in the stream
+ *	lookup table of @p wim.  This error can occur if, for example, @p wim is
+ *	part of a split WIM but needed resources from the other split WIM parts
+ *	were not referenced with wimlib_reference_resources() or
+ *	wimlib_reference_resource_files() before the call to wimlib_write().
  * @retval ::WIMLIB_ERR_WRITE
  * 	An error occurred when trying to write data to the new WIM file.
  *
