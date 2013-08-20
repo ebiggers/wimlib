@@ -425,7 +425,7 @@ metadata, but this is typically only a small fraction of a WIM's total size.
 To operate on the resulting delta WIM using other commands such as
 \fB@IMAGEX_PROGNAME@ apply\fR, you must specify the delta WIM as the WIM file to
 operate on, but also reference the base WIM using the \fB--ref\fR option.
-Beware to retain the proper functioning of the delta WIM, you can only add, not
+Beware: to retain the proper functioning of the delta WIM, you can only add, not
 delete, files and images to the base WIM following the capture of a delta from
 it.
 .IP ""
@@ -457,6 +457,17 @@ WIM, the second backup could have simply been appended to the WIM as new image
 using \fB@IMAGEX_PROGNAME@ append\fR.  Delta WIMs should be used only if it's
 desired to base the backups or images on a separate, large file that is rarely
 modified.
+.IP ""
+Note: unlike "pipable" WIMs (created with the \fB--pipable\fR option), "delta"
+WIMs (created with the \fB--delta-from\fR option) are compatible with
+Microsoft's software.  You can use the /ref option of imagex.exe to reference
+the base WIM, similar to above.
+.IP ""
+Additional note:  \fB@IMAGEX_PROGNAME@\fR is generalized enough that you can in
+fact combine \fB--pipable\fR and \fB--delta-from\fR to create pipable delta
+WIMs.  In such cases, the base WIM must be captured as pipable as well as the
+delta WIM, and when applying an image, the base WIM must be sent over the pipe
+after the delta WIM.
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ append\fR does not support appending an image to a split WIM.
 .PP

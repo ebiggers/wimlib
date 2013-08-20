@@ -155,6 +155,9 @@ output or from standard input, respectively; this can be used to pipe images to
 or from a server over the network to implement fast filesystem imaging and
 restore.
 .IP \[bu]
+\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR support
+options to optimize incremental backups and to create "delta" WIM files.
+.IP \[bu]
 wimlib (and \fB@IMAGEX_PROGNAME@\fR via \fB@IMAGEX_PROGNAME@ capture\fR)
 supports combining multiple separate directories and files together in a
 configurable way to create a WIM image.
