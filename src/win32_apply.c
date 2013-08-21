@@ -33,15 +33,6 @@
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 
-#ifdef WITH_NTDLL
-#  include <winternl.h>
-#  include <ntstatus.h>
-NTSTATUS WINAPI
-NtSetSecurityObject(HANDLE Handle,
-		    SECURITY_INFORMATION SecurityInformation,
-		    PSECURITY_DESCRIPTOR SecurityDescriptor);
-#endif
-
 static int
 win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 {
@@ -480,13 +471,15 @@ do_win32_set_security_descriptor(HANDLE h, const wchar_t *path,
 				 PSECURITY_DESCRIPTOR desc)
 {
 #ifdef WITH_NTDLL
-	return RtlNtStatusToDosError(NtSetSecurityObject(h, info, desc));
-#else
+	if (func_NtSetSecurityObject) {
+		return (*func_RtlNtStatusToDosError)(
+				(*func_NtSetSecurityObject)(h, info, desc));
+	}
+#endif
 	if (SetFileSecurity(path, info, desc))
 		return ERROR_SUCCESS;
 	else
 		return GetLastError();
-#endif
 }
 
 static int
@@ -503,10 +496,12 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 	h = INVALID_HANDLE_VALUE;
 
 #ifdef WITH_NTDLL
-	h = win32_open_existing_file(path, MAXIMUM_ALLOWED);
-	if (h == INVALID_HANDLE_VALUE) {
-		ERROR_WITH_ERRNO("Can't open %ls (%u)", path, GetLastError());
-		goto error;
+	if (func_NtSetSecurityObject) {
+		h = win32_open_existing_file(path, MAXIMUM_ALLOWED);
+		if (h == INVALID_HANDLE_VALUE) {
+			ERROR_WITH_ERRNO("Can't open %ls (%u)", path, GetLastError());
+			goto error;
+		}
 	}
 #endif
 
@@ -541,7 +536,8 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 	ret = 0;
 out_close:
 #ifdef WITH_NTDLL
-	CloseHandle(h);
+	if (func_NtSetSecurityObject)
+		CloseHandle(h);
 #endif
 	return ret;
 

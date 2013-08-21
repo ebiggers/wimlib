@@ -98,33 +98,33 @@ AC_ARG_ENABLE([debug],
 AC_MSG_RESULT([$ENABLE_DEBUG])
 if test "x$ENABLE_DEBUG" = "xyes"; then
 	AC_DEFINE([ENABLE_DEBUG], [1],
-		  	[Define to 1 if including lots of debug messages.])
+			[Define to 1 if including lots of debug messages.])
 fi
 
 AC_MSG_CHECKING([whether to include more debugging messages])
 AC_ARG_ENABLE([more_debug],
 	AS_HELP_STRING([--enable-more-debug],
-		       	[include even more debugging messages]),
+			[include even more debugging messages]),
 	[ENABLE_MORE_DEBUG=$enableval],
 	[ENABLE_MORE_DEBUG=no]
 	)
 AC_MSG_RESULT([$ENABLE_MORE_DEBUG])
 if test "x$ENABLE_MORE_DEBUG" = "xyes"; then
 	AC_DEFINE([ENABLE_MORE_DEBUG], [1],
-		  	[Define to 1 if including even more debug messages.])
+			[Define to 1 if including even more debug messages.])
 fi
 
 AC_MSG_CHECKING([whether to include error messages])
 AC_ARG_ENABLE([error_messages],
 	AS_HELP_STRING([--disable-error-messages],
-		       	[do not compile in error messsages]),
+			[do not compile in error messsages]),
 	[ENABLE_ERROR_MESSAGES=$enableval],
 	[ENABLE_ERROR_MESSAGES=yes]
 	)
 AC_MSG_RESULT([$ENABLE_ERROR_MESSAGES])
 if test "x$ENABLE_ERROR_MESSAGES" = "xyes"; then
 	AC_DEFINE([ENABLE_ERROR_MESSAGES], [1],
-		  	[Define to 1 if including error messages])
+			[Define to 1 if including error messages])
 fi
 
 AC_MSG_CHECKING([whether to support custom memory allocation functions])
@@ -181,14 +181,14 @@ fi
 AC_MSG_CHECKING([whether to include support for multi-threaded compression])
 AC_ARG_ENABLE([multithreaded-compression],
 	AS_HELP_STRING([--disable-multithreaded-compression],
-		       	[do not compile in the code for multi-threaded compression]),
+			[do not compile in the code for multi-threaded compression]),
 	[ENABLE_MULTITHREADED_COMPRESSION=$enableval],
 	[ENABLE_MULTITHREADED_COMPRESSION=yes]
 	)
 AC_MSG_RESULT([$ENABLE_MULTITHREADED_COMPRESSION])
 if test "x$ENABLE_MULTITHREADED_COMPRESSION" = "xyes"; then
 	AC_DEFINE([ENABLE_MULTITHREADED_COMPRESSION], [1],
-		  	[Define to 1 if including support for multithreaded
+			[Define to 1 if including support for multithreaded
 			 compression])
 fi
 
@@ -218,7 +218,7 @@ case "$host" in
 		WINDOWS_LDADD="-lshlwapi"
 		ENABLE_XATTR_DEFAULT="no"
 		;;
- 	*-*-cygwin*)
+	*-*-cygwin*)
 		# Cygwin (WARNING: not well supported)
 		AC_MSG_WARN([wimlib has not been tested with Cygwin!  Please do
 			     a Windows-native build with MinGW-w64 instead])
@@ -232,20 +232,21 @@ case "$host" in
 esac
 
 AC_ARG_WITH([ntdll],
-	    AS_HELP_STRING([--without-ntdll], [Windows only:  do not link with
-			    ntdll.  By default, in some parts of its code,
-			    wimlib uses Windows NT system calls to work around
-			    flaws in the Win32 API.  This support can be omitted
-			    if needed, but some annoying bugs will surface (e.g.
-			    permission denied errors even when running as the
-			    Administrator).]),
+	    AS_HELP_STRING([--without-ntdll], [Windows only:  do not try to
+			    use functions from ntdll.  By default, in some parts
+			    of its code, wimlib uses Windows NT system calls to
+			    work around flaws in the Win32 API.  This support
+			    can be omitted if needed, but some annoying bugs
+			    will surface (e.g.  permission denied errors even
+					  when running as the Administrator).]),
 	[WITH_NTDLL=$withval],
 	[WITH_NTDLL=yes])
 
 if test "x$WINDOWS_NATIVE_BUILD" = "xyes"; then
 	if test "x$WITH_NTDLL" = "xyes"; then
-		WINDOWS_LDADD="$WINDOWS_LDADD -lntdll"
-		AC_DEFINE([WITH_NTDLL], [1], [Define to 1 if linking with ntdll])
+		WINDOWS_LDADD="$WINDOWS_LDADD"
+		AC_DEFINE([WITH_NTDLL], [1], [Define to 1 to try to use ntdll
+						functions])
 	fi
 fi
 
@@ -360,7 +361,7 @@ fi
 AC_MSG_CHECKING([whether to use SSSE3-accelerated SHA1 ])
 AC_ARG_ENABLE([ssse3-sha1],
 	    AS_HELP_STRING([--enable-ssse3-sha1], [use assembly language implementation
-			    	of SHA1 from Intel, accelerated with vector
+				of SHA1 from Intel, accelerated with vector
 				instructions (SSSE3-enabled CPU required)]),
 	[ENABLE_SSSE3_SHA1=$enableval],
 	[ENABLE_SSSE3_SHA1=no]
@@ -369,7 +370,7 @@ AC_ARG_ENABLE([ssse3-sha1],
 AC_MSG_RESULT([$ENABLE_SSSE3_SHA1])
 if test "x$ENABLE_SSSE3_SHA1" = "xyes"; then
 	AC_DEFINE([ENABLE_SSSE3_SHA1], [1],
-		  	[Define to 1 if using vectorized implementation of SHA1])
+			[Define to 1 if using vectorized implementation of SHA1])
 	SSSE3_SHA1_OBJ=sha1-ssse3.lo
 	AX_PROG_NASM
 	AC_SUBST([NASM], [$nasm])
@@ -383,7 +384,7 @@ if test "x$ENABLE_SSSE3_SHA1" = "xyes"; then
 else
 	AC_ARG_WITH([libcrypto],
 	    AS_HELP_STRING([--without-libcrypto], [build in the SHA1 algorithm,
-			    		rather than use external libcrypto from
+					rather than use external libcrypto from
 					OpenSSL (default is autodetect)]),
 	[WITH_LIBCRYPTO=$withval],
 	[AC_CHECK_LIB([crypto], [SHA1],

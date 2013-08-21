@@ -133,9 +133,7 @@ supported.
 On Windows, \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR
 try to archive as much data and metadata as possible, including:
 .IP \[bu] 4
-All data streams of all files, unless running on a version of Windows prior to
-Vista, in which case named data streams (if supported by the source filesystem)
-will not be captured.
+All data streams of all files.
 .IP \[bu]
 Reparse points, including symbolic links, junction points, and other reparse
 points, if supported by the source filesystem.  (Note: see \fB--rpfix\fR and

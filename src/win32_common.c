@@ -322,9 +322,9 @@ set_errno_from_GetLastError(void)
 
 #ifdef WITH_NTDLL
 void
-set_errno_from_nt_status(DWORD status)
+set_errno_from_nt_status(NTSTATUS status)
 {
-	set_errno_from_win32_error(RtlNtStatusToDosError(status));
+	set_errno_from_win32_error((*func_RtlNtStatusToDosError)(status));
 }
 #endif
 
@@ -512,7 +512,6 @@ win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess)
 			   NULL /* hTemplateFile */);
 }
 
-#ifndef WITH_NTDLL
 /* Pointers to functions that are not available on all targetted versions of
  * Windows (XP and later).  NOTE: The WINAPI annotations seem to be important; I
  * assume it specifies a certain calling convention. */
@@ -526,18 +525,55 @@ HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
 /* Vista and later */
 BOOL (WINAPI *win32func_FindNextStreamW)(HANDLE hFindStream,
 					 LPVOID lpFindStreamData) = NULL;
-#endif /* !WITH_NTDLL */
 
 /* Vista and later */
 BOOL (WINAPI *win32func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
 					     const wchar_t *lpTargetFileName,
 					     DWORD dwFlags) = NULL;
 
+#ifdef WITH_NTDLL
+
+DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
+
+NTSTATUS (WINAPI *func_NtQueryInformationFile)(HANDLE FileHandle,
+					       PIO_STATUS_BLOCK IoStatusBlock,
+					       PVOID FileInformation,
+					       ULONG Length,
+					       FILE_INFORMATION_CLASS FileInformationClass);
+
+NTSTATUS (WINAPI *func_NtQuerySecurityObject)(HANDLE handle,
+					      SECURITY_INFORMATION SecurityInformation,
+					      PSECURITY_DESCRIPTOR SecurityDescriptor,
+					      ULONG Length,
+					      PULONG LengthNeeded);
+
+NTSTATUS (WINAPI *func_NtQueryDirectoryFile) (HANDLE FileHandle,
+					      HANDLE Event,
+					      PIO_APC_ROUTINE ApcRoutine,
+					      PVOID ApcContext,
+					      PIO_STATUS_BLOCK IoStatusBlock,
+					      PVOID FileInformation,
+					      ULONG Length,
+					      FILE_INFORMATION_CLASS FileInformationClass,
+					      BOOLEAN ReturnSingleEntry,
+					      PUNICODE_STRING FileName,
+					      BOOLEAN RestartScan);
+
+NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
+					    SECURITY_INFORMATION SecurityInformation,
+					    PSECURITY_DESCRIPTOR SecurityDescriptor);
+
+#endif /* WITH_NTDLL */
+
 static OSVERSIONINFO windows_version_info = {
 	.dwOSVersionInfoSize = sizeof(OSVERSIONINFO),
 };
 
 static HMODULE hKernel32 = NULL;
+
+#ifdef WITH_NTDLL
+static HMODULE hNtdll = NULL;
+#endif
 
 static bool acquired_privileges = false;
 
@@ -572,7 +608,6 @@ win32_global_init(int init_flags)
 		hKernel32 = LoadLibrary(L"Kernel32.dll");
 
 	if (hKernel32) {
-	#ifndef WITH_NTDLL
 		win32func_FindFirstStreamW = (void*)GetProcAddress(hKernel32,
 								   "FindFirstStreamW");
 		if (win32func_FindFirstStreamW) {
@@ -581,10 +616,43 @@ win32_global_init(int init_flags)
 			if (!win32func_FindNextStreamW)
 				win32func_FindFirstStreamW = NULL;
 		}
-	#endif /* !WITH_NTDLL */
 		win32func_CreateSymbolicLinkW = (void*)GetProcAddress(hKernel32,
 								      "CreateSymbolicLinkW");
 	}
+
+#ifdef WITH_NTDLL
+	if (hNtdll == NULL)
+		hNtdll = LoadLibrary(L"ntdll.dll");
+
+	if (hNtdll) {
+		func_RtlNtStatusToDosError  =
+			(void*)GetProcAddress(hNtdll, "RtlNtStatusToDosError");
+		if (func_RtlNtStatusToDosError) {
+
+			func_NtQuerySecurityObject  =
+				(void*)GetProcAddress(hNtdll, "NtQuerySecurityObject");
+
+			func_NtQueryDirectoryFile   =
+				(void*)GetProcAddress(hNtdll, "NtQueryDirectoryFile");
+
+			func_NtQueryInformationFile =
+				(void*)GetProcAddress(hNtdll, "NtQueryInformationFile");
+
+			func_NtSetSecurityObject    =
+				(void*)GetProcAddress(hNtdll, "NtSetSecurityObject");
+		}
+	}
+
+	DEBUG("FindFirstStreamW       @ %p", win32func_FindFirstStreamW);
+	DEBUG("FindNextStreamW        @ %p", win32func_FindNextStreamW);
+	DEBUG("CreateSymbolicLinkW    @ %p", win32func_CreateSymbolicLinkW);
+	DEBUG("RtlNtStatusToDosError  @ %p", func_RtlNtStatusToDosError);
+	DEBUG("NtQuerySecurityObject  @ %p", func_NtQuerySecurityObject);
+	DEBUG("NtQueryDirectoryFile   @ %p", func_NtQueryDirectoryFile);
+	DEBUG("NtQueryInformationFile @ %p", func_NtQueryInformationFile);
+	DEBUG("NtSetSecurityObject    @ %p", func_NtSetSecurityObject);
+#endif
+
 	return 0;
 
 insufficient_privileges:
@@ -601,6 +669,12 @@ win32_global_cleanup(void)
 		FreeLibrary(hKernel32);
 		hKernel32 = NULL;
 	}
+#ifdef WITH_NTDLL
+	if (hNtdll != NULL) {
+		FreeLibrary(hNtdll);
+		hNtdll = NULL;
+	}
+#endif
 }
 
 #endif /* __WIN32__ */
