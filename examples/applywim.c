@@ -28,8 +28,7 @@ int main(int argc, char **argv)
 		goto out_wimlib_global_cleanup;
 
 	/* Extract all the images. */
-	ret = wimlib_extract_image(wim, WIMLIB_ALL_IMAGES, argv[2], 0,
-				   NULL, 0, NULL);
+	ret = wimlib_extract_image(wim, WIMLIB_ALL_IMAGES, argv[2], 0, NULL);
 
 	/* Free the WIM file */
 	wimlib_free(wim);

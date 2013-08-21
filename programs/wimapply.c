@@ -75,8 +75,7 @@ int main(int argc, char **argv)
 		return ret;
 	}
 
-	ret = wimlib_extract_image(w, image, target, extract_flags,
-				   NULL, 0, NULL);
+	ret = wimlib_extract_image(w, image, target, extract_flags, NULL);
 	if (ret != 0) {
 		fputs("Failed to apply WIM image\n", stderr);
 		fprintf(stderr, "Error code: %s\n", wimlib_get_error_string(ret));
