@@ -4,7 +4,7 @@ This is wimlib version 1.5.0 (August 2013).  wimlib is a C library for creating,
 modifying, extracting, and mounting files in the Windows Imaging Format (WIM
 files).  These files are normally created by using the `imagex.exe' utility on
 Windows, but wimlib is distributed with a free implementation of ImageX called
-"wimlib-imagex" for both UNIX and Windows.
+"wimlib-imagex" for both UNIX-like systems and Windows.
 
                                   INSTALLATION
 
@@ -12,9 +12,11 @@ To install wimlib and wimlib-imagex on Windows you simply need to download and
 extract the ZIP file containing the latest binaries from the SourceForge page
 (http://sourceforge.net/projects/wimlib/), which you may have already done.
 
-To install wimlib and wimlib-imagex on UNIX (with Linux being the primary
-supported and tested platform), you must compile it from the source code.  At
-some point I might start posting RPMs and Debian packages for convenience.
+To install wimlib and wimlib-imagex on UNIX-like systems (with Linux being the
+primary supported and tested platform), you must compile the source code, which
+is also available at http://sourceforge.net/projects/wimlib/.  Alternatively,
+check if a package has been prepared for your Linux distribution.  Example files
+for Debian and RPM packaging are in the debian/ and rpm/ directories.
 
                                     WIM FILES
 
@@ -40,14 +42,15 @@ http://wimlib.sourceforge.net) for other programs to use.  However, it is also
 distributed with a command-line program called "wimlib-imagex" that uses this
 library to implement an imaging tool similar to Microsoft's ImageX.
 wimlib-imagex supports almost all the capabilities of Microsoft's ImageX as well
-as additional capabilities.  wimlib-imagex works on both UNIX and Windows,
-although some features differ between the platforms.
+as additional capabilities.  wimlib-imagex works on both UNIX-like systems and
+Windows, although some features differ between the platforms.
 
 Run `wimlib-imagex' with no arguments to see an overview of the available
 commands and their syntax.  For additional documentation:
 
-  * If you have installed wimlib-imagex on UNIX, you will find further
-    documentation in the man pages; run `man wimlib-imagex' to get started.
+  * If you have installed wimlib-imagex on a UNIX-like system, you will find
+    further documentation in the man pages; run `man wimlib-imagex' to get
+    started.
 
   * If you have downloaded the Windows binary distribution, you will find the
     documentation for wimlib-imagex in PDF format in the "doc" directory,
@@ -109,9 +112,9 @@ WIM file, and then re-applied later.
                                    WINDOWS PE
 
 A major use for wimlib and wimlib-imagex is to create customized images of
-Windows PE, the Windows Preinstallation Environment, on either UNIX or Windows
-without having to rely on Microsoft's software and its restrictions and
-limitations.
+Windows PE, the Windows Preinstallation Environment, on either UNIX-like systems
+or Windows without having to rely on Microsoft's software and its restrictions
+and limitations.
 
 Windows PE is a lightweight version of Windows that can run entirely from memory
 and can be used to install Windows from local media or a network drive or
@@ -122,21 +125,22 @@ You can find Windows PE on the installation DVD for Windows Vista, Windows 7, or
 Windows 8, in the file `sources/boot.wim'.  Windows PE can also be found in the
 Windows Automated Installation Kit (WAIK), which is free to download from
 Microsoft, inside the `WinPE.cab' file, which you can extract natively on
-Windows, or on UNIX if you install either the `cabextract' or `p7zip' programs.
+Windows, or on UNIX-like systems if you install either the `cabextract' or
+`p7zip' programs.
 
 In addition, Windows installations and recovery partitions frequently contain a
 WIM containing an image of the Windows Recovery Environment, which is similar to
 Windows PE.
 
-A shell script `mkwinpeimg' is distributed with wimlib on UNIX to ease the
-process of creating and customizing a bootable Windows PE image.
+A shell script `mkwinpeimg' is distributed with wimlib on UNIX-like systems to
+ease the process of creating and customizing a bootable Windows PE image.
 
                                   DEPENDENCIES
 
 This section documents the dependencies of wimlib and the programs distributed
-with it, when building for UNIX from source.  If you have downloaded the Windows
-binary distribution of wimlib and wimlib-imagex then all dependencies were
-already included and this section is irrelevant.
+with it, when building for a UNIX-like system from source.  If you have
+downloaded the Windows binary distribution of wimlib and wimlib-imagex then all
+dependencies were already included and this section is irrelevant.
 
 * libxml2 (required)
 	This is a commonly used free library to read and write XML files.  You
@@ -181,7 +185,7 @@ already included and this section is irrelevant.
                                  CONFIGURATION
 
 This section documents the most important options that may be passed to the
-"configure" script when building the UNIX version from source:
+"configure" script when building from source:
 
 --without-ntfs-3g
 	If libntfs-3g is not available or is not version 2011-4-12 or later,
@@ -295,8 +299,8 @@ released under the GNU GPL version 3.0 or later.
 wimlib is independently developed and does not contain any code, data, or files
 copyrighted by Microsoft.  It is not known to be affected by any patents.
 
-On UNIX, if you do not want wimlib to be dynamically linked with libcrypto
-(OpenSSL), configure with --without-libcrypto.  This replaces the SHA1
+On UNIX-like systems, if you do not want wimlib to be dynamically linked with
+libcrypto (OpenSSL), configure with --without-libcrypto.  This replaces the SHA1
 implementation with built-in code and there will be no difference in
 functionality.
 

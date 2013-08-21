@@ -54,10 +54,11 @@ for fil in $DESTDIR/{README*,NEWS}; do
 	rm $fil
 done
 
+${WIMLIB_ARCH}-w64-mingw32-strip $DESTDIR/*.{dll,exe}
 
 rm -f $ZIPFILE
 (
 	dir=$PWD
-	cd $(dirname $DESTDIR) &> /dev/null
-	zip -r $dir/$ZIPFILE $(basename $DESTDIR)
+	cd $DESTDIR
+	zip -r $dir/$ZIPFILE .
 )
