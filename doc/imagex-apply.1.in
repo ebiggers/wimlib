@@ -79,8 +79,7 @@ be extracted as uncompressed, while encrypted files will not be extracted at
 all.
 .SH NTFS VOLUME EXTRACTION (UNIX)
 This section documents how \fB@IMAGEX_PROGNAME@ apply\fR extracts a WIM image
-directly to an NTFS volume image on UNIX-like systems.  See \fBDIRECTORY EXTRACTION
-(WINDOWS)\fR for the corresponding documentation for Windows.
+directly to an NTFS volume image on UNIX-like systems.
 .PP
 As mentioned, \fB@IMAGEX_PROGNAME@\fR running on a UNIX-like system can apply a
 WIM image directly to an NTFS volume by specifying \fITARGET\fR as a regular file
@@ -103,8 +102,8 @@ unmounted, and you must have permission to write to it).
 This NTFS volume extraction mode attempts to extract as much information as
 possible, including:
 .IP \[bu] 4
-All data streams of all files, including the unnamed data stream as well as all
-named data streams.
+All data streams of all files except encrypted files, including the unnamed data
+stream as well as all named data streams.
 .IP \[bu]
 Reparse points, including symbolic links, junction points, and other reparse
 points.
@@ -222,17 +221,17 @@ above not being supported by the target filesystem.
 .IP \[bu]
 Since encrypted files (with FILE_ATTRIBUTE_ENCRYPTED) are not stored in
 plaintext in the WIM image, \fB@IMAGEX_PROGNAME@\fR cannot restore encrypted
-files to filesystems not supporting encryption.  Therefore, such files are not
-extracted.  Furthermore, even if encrypted files are restored to a filesystem
-that supports encryption, they will only be decryptable if the decryption key is
-available.
+files to filesystems not supporting encryption.  Therefore, on such filesystems,
+encrypted files will not be extracted.  Furthermore, even if encrypted
+files are restored to a filesystem that supports encryption, they will only be
+decryptable if the decryption key is available.
 .IP \[bu]
 Files with names that cannot be represented on Windows will not
 be extracted by default; see \fB--include-invalid-names\fR.
 .IP \[bu]
-Files with full paths over 260 characters (MAX_PATH) are extracted by using the
-\\\\?\\-prefixed path hack.  But beware that such files will be inaccessible to
-most Windows software and may not be able to be deleted easily.
+Files with full paths over 260 characters (the so-called MAX_PATH) will be
+extracted, but beware that such files will be inaccessible to most Windows
+software and may not be able to be deleted easily.
 .SH SPLIT WIMS
 You may use \fB@IMAGEX_PROGNAME@ apply\fR to apply images from a split WIM.  The
 \fIWIMFILE\fR argument must specify the first part of the split WIM, while the
@@ -267,8 +266,9 @@ As of wimlib 1.5.0, \fB@IMAGEX_PROGNAME@ apply\fR supports applying a WIM from a
 nonseekable file, such as a pipe, provided that the WIM was captured with
 \fB--pipable\fR (see \fB@IMAGEX_PROGNAME@ capture\fR(1)).  To use standard input
 as the WIM, specify "-" as \fIWIMFILE\fR.  A useful use of this ability is to
-apply an image from a WIM while streaming it from a webserver; for example, to
-apply the first image from a WIM file to an NTFS volume on /dev/sda1:
+apply an image from a WIM while streaming it from a server.  For example, to
+apply the first image from a WIM file available on a HTTP server to an NTFS
+volume on /dev/sda1, run something like:
 .PP
 .RS
 wget -O - http://myserver/mywim.wim | wimapply - 1 /dev/sda1
@@ -299,20 +299,17 @@ expansion.
 Set whether to fix targets of absolute symbolic links (reparse points in Windows
 terminology) or not.  When enabled (\fB--rpfix\fR), extracted absolute symbolic
 links that are marked in the WIM image as being fixed are assumed to have
-absolute targets relative to the image root, and therefore have the actual root
-of extraction prepended to their targets.  The intention is that you can apply
-an image containing absolute symbolic links and still have them be valid after
-it has been applied to any location.
+absolute targets relative to the image root, and therefore \fB@IMAGEX_PROGNAME@
+apply\fR prepends the absolute path to the extraction target directory to their
+targets.  The intention is that you can apply an image containing absolute
+symbolic links and still have them be valid after it has been applied to any
+location.
 .IP ""
 The default behavior is \fB--rpfix\fR if any images in \fIWIMFILE\fR have been
 captured with reparse-point fixups done.  Otherwise, it is \fB--norpfix\fR.
 .IP ""
 Reparse point fixups are never done in the NTFS volume extraction mode on
 UNIX-like systems.
-.IP ""
-\fB--verbose\fR
-Print the path to of each file or directory within the WIM image as it is
-extracted.
 .TP
 \fB--hardlink\fR
 When extracting a file from the WIM that is identical to a file that has already
@@ -345,24 +342,26 @@ Do not restore security descriptors on extracted files and directories.
 .TP
 \fB--strict-acls\fR
 Fail immediately if the full security descriptor of any file or directory cannot
-be set exactly as specified in the WIM file.  On Windows, the default behavior
-without this option is to fall back to setting a security descriptor with the
-SACL omitted, then only the default inherited security descriptor, if
-\fB@IMAGEX_PROGNAME@\fR does not have permission to set the desired one.  Also,
-on UNIX-like systems, this flag can also be combined with \fB--unix-data\fR to
-cause \fB@IMAGEX_PROGNAME@\fR to fail immediately if the UNIX owner, group, or
-mode on an extracted file cannot be set for any reason.
+be set exactly as specified in the WIM file.  If this option is not specified,
+when \fB@IMAGEX_PROGNAME@\fR on Windows does not have permission to set a
+security descriptor on an extracted file, it falls back to setting it only
+partially (e.g. with SACL omitted), and in the worst case omits it entirely.
+However, this should only be a problem when running \fB@IMAGEX_PROGNAME@\fR
+without Administrator rights.  Also, on UNIX-like systems, this flag can also be
+combined with \fB--unix-data\fR to cause \fB@IMAGEX_PROGNAME@\fR to fail
+immediately if the UNIX owner, group, or mode on an extracted file cannot be set
+for any reason.
 .TP
 \fB--include-invalid-names\fR
 Extract files and directories with invalid names by replacing characters and
-appending a suffix rather than ignoring them.  The meaning of this is
-platform-dependent.
-.IP "" 6
+appending a suffix rather than ignoring them.  Exactly what is considered an
+"invalid" name is platform-dependent.
+.IP ""
 On POSIX-compliant systems, filenames are case-sensitive and may contain any
 byte except '\\0' and \'/', so on a POSIX-compliant system this option will only
 have an effect in the unlikely case that the WIM image for some reason has a
 filename containing one of these characters.
-.IP "" 6
+.IP ""
 On Windows, filenames are case-insensitive, cannot include the characters '/',
 \'\\0', '\\', ':', '*', '?', '"', '<', '>', or '|', and cannot end with a space
 or period.  Ordinarily, files in WIM images should meet these conditions as

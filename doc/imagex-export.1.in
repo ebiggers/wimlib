@@ -102,7 +102,7 @@ this option is to make \fIDEST_WIMFILE\fR pipable if and only if it already
 existed and was already pipable, or was "-" (standard output).
 .TP
 \fB--not-pipable\fR
-Build, or rebuld, \fIDEST_WIMFILE\fR as a normal, non-pipable WIM.  This is the
+Build, or rebuild, \fIDEST_WIMFILE\fR as a normal, non-pipable WIM.  This is the
 default behavior, unless \fIDEST_WIMFILE\fR already existed and was already
 pipable, or if \fIDEST_WIMFILE\fR was "-" (standard output).
 .SH SPLIT WIMS

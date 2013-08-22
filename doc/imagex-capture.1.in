@@ -24,13 +24,13 @@ in the entire WIM, regardless of how many images the file appears in.
 \fISOURCE\fR specifies the location of the files to create the new WIM image
 from.  If \fISOURCE\fR is a directory, the WIM image is captured from that
 directory (see \fBDIRECTORY CAPTURE (UNIX)\fR or \fBDIRECTORY CAPTURE
-(WINDOWS)\fR.   Alternatively, if the \fB--source-list\fR option is specified,
+(WINDOWS)\fR).   Alternatively, if the \fB--source-list\fR option is specified,
 \fISOURCE\fR is interpreted as a file that itself provides a list of
 files and directories to include in the new WIM image.  Still
 alternatively, only on UNIX-like systems, if \fISOURCE\fR is a
 regular file or block device, it is interpreted as an NTFS volume from
 which a WIM image is to be captured using libntfs-3g (see \fBNTFS VOLUME CAPTURE
-(UNIX)\fR.
+(UNIX)\fR).
 .PP
 \fIIMAGE_NAME\fR and \fIIMAGE_DESCRIPTION\fR specify the name and description to
 give the new WIM image.  If \fIIMAGE_NAME\fR is not specified, it defaults to
@@ -60,14 +60,11 @@ will \fInot\fR be stored is:
 UNIX file owners, groups, and modes.  (Exception: see the \fB--unix-data\fR
 option.)  As a result, file permissions will not be stored, and files that are
 neither regular files, directories, nor symbolic links, such as device files and
-FIFOs, cannot be captured.
+FIFOs, cannot be captured and will be excluded by default.
 .IP \[bu]
 Extended attributes.  This mainly includes extensions to the traditional UNIX
 security model, such as SELinux security labels, POSIX ACLs, and capabilities
 labels.
-.IP \[bu]
-Files that are neither regular files, directories, nor symbolic links, such as
-device files and FIFOs.  These will be excluded by default.
 .PP
 Notes: hard links and symbolic links are supported by the WIM format and
 \fIare\fR stored.  (Symbolic links are turned into "native" Windows symbolic
@@ -77,14 +74,13 @@ granularity and include last modification time (mtime) and last access time
 (atime), but not last status change time (ctime).
 .SH NTFS VOLUME CAPTURE (UNIX)
 This section documents how \fB@IMAGEX_PROGNAME@\fR captures files directly from
-an NTFS volume image on UNIX-like systems.  See \fBDIRECTORY CAPTURE
-(WINDOWS)\fR for the corresponding documentation for Windows.
+an NTFS volume image on UNIX-like systems.
 .PP
 On UNIX-like systems, a special image capture mode is entered when \fISOURCE\fR
 is a regular file or block device.  In this mode, \fISOURCE\fR is assumed to be
-an NTFS volume or volume image, and wimlib will capture a WIM image containing a
-full contents of the NTFS volume, including NTFS-specific data.  This is done
-using libntfs-3g.
+an NTFS volume or volume image, and \fB@IMAGEX_PROGNAME@\fR will capture a WIM
+image containing the full contents of the NTFS volume, including NTFS-specific
+data.  This is done using libntfs-3g.
 .PP
 Please note that the NTFS volume capture mode is \fInot\fR entered if
 \fISOURCE\fR is a directory, even if an NTFS filesystem is mounted on
@@ -164,7 +160,7 @@ Note: the capture process is reversible, since when \fB@IMAGEX_PROGNAME@
 apply\fR (on Windows) extracts the captured WIM image, it will extract all of
 the above information, at least to the extent supported by the destination
 filesystem.  One exception is that since encrypted files are stored as
-unencrypted, their data will not be available if restored on a Windows system
+encrypted, their data will not be available if restored on a Windows system
 that does not have the decryption key.
 .SH OPTIONS
 .TP 6

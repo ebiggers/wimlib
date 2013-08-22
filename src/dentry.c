@@ -2550,7 +2550,6 @@ inode_metadata_consistent(const struct wim_inode *inode,
 		} else if (template_lte && wim_resource_size(template_lte)) {
 			return false;
 		}
-
 	}
 
 	/* All right, barring a full checksum and given that the inodes share a
@@ -2565,7 +2564,7 @@ inode_metadata_consistent(const struct wim_inode *inode,
  * useful stream information (e.g. checksums) from @template_inode.
  *
  * This assumes that the streams for @inode have been resolved (to point
- * directly to the appropriate `struct wim_lookup_table_entry')  but do not
+ * directly to the appropriate `struct wim_lookup_table_entry's)  but do not
  * necessarily have checksum information filled in.
  */
 static int

@@ -531,6 +531,7 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 			ctx->no_security_descriptors++;
 			break;
 		}
+		SetLastError(err);
 		goto error;
 	}
 	ret = 0;

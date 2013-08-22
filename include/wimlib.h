@@ -1339,6 +1339,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * @name Init flags
  *
  * The following flags can be passed to wimlib_global_init().
+ * @{
  */
 
 /** Assume that strings are represented in UTF-8, even if this is not the
@@ -1374,6 +1375,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  *
  * The following flags can be passed to wimlib_reference_resource_files() and
  * wimlib_reference_resources().
+ * @{
  */
 
 /** wimlib_reference_resource_files() only:  Enable shell-style filename
@@ -2031,7 +2033,7 @@ wimlib_extract_image(WIMStruct *wim, int image,
  *	wimlib_resolve_image() uses.  However, unlike wimlib_extract_image(),
  *	only a single image (not all images) can be specified.  Alternatively,
  *	specify @p NULL here to use the first image in the WIM if it contains
- *	exactly one image but otherwise return @p WIMLIB_ERR_INVALID_IMAGE.
+ *	exactly one image but otherwise return ::WIMLIB_ERR_INVALID_IMAGE.
  * @param target
  *	Same as the corresponding parameter to wimlib_extract_image().
  * @param extract_flags
@@ -2307,8 +2309,8 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
  * 	Number of filenames in @p swms.
  * @param swm_open_flags
  *	Open flags for the split WIM parts (e.g.
- *	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY).  Note: WIMLIB_OPEN_FLAG_SPLIT_OK is
- *	automatically added to the value specified here.
+ *	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY).  Note: ::WIMLIB_OPEN_FLAG_SPLIT_OK
+ *	is automatically added to the value specified here.
  * @param wim_write_flags
  * 	Bitwise OR of relevant flags prefixed with WIMLIB_WRITE_FLAG, which will
  * 	be used to write the joined WIM.

@@ -502,14 +502,14 @@ win32_release_capture_and_apply_privileges(void)
 HANDLE
 win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess)
 {
-	return CreateFileW(path,
-			   dwDesiredAccess,
-			   FILE_SHARE_READ,
-			   NULL, /* lpSecurityAttributes */
-			   OPEN_EXISTING,
-			   FILE_FLAG_BACKUP_SEMANTICS |
-			       FILE_FLAG_OPEN_REPARSE_POINT,
-			   NULL /* hTemplateFile */);
+	return CreateFile(path,
+			  dwDesiredAccess,
+			  FILE_SHARE_READ,
+			  NULL, /* lpSecurityAttributes */
+			  OPEN_EXISTING,
+			  FILE_FLAG_BACKUP_SEMANTICS |
+				FILE_FLAG_OPEN_REPARSE_POINT,
+			  NULL /* hTemplateFile */);
 }
 
 /* Pointers to functions that are not available on all targetted versions of
