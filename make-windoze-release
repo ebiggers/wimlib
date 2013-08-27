@@ -25,7 +25,7 @@ fi
 
 make -j2
 
-rm -f $DESTDIR/{libwim-*.dll,doc/*,README*,NEWS*,wim*.bat}
+rm -f $DESTDIR/{libwim-*.dll,doc/*,README*,NEWS*,wim*.bat,wim*.cmd}
 
 cp .libs/imagex.exe $DESTDIR/wimlib-imagex.exe
 cp .libs/libwim-*.dll $DESTDIR
@@ -42,7 +42,7 @@ for fil in ./doc/wimlib-imagex-*.1; do
 	echo $fil
 	#MANWIDTH=80 man $fil | col -b > $DESTDIR/doc/$base
 	man -t $fil | ps2pdf - $DESTDIR/doc/${base}.pdf
-	sed 's/$/\r/g' > $DESTDIR/wim${cmd}.bat <<- EOF
+	sed 's/$/\r/g' > $DESTDIR/wim${cmd}.cmd <<- EOF
 		@echo off
 		%~dp0\\wimlib-imagex $cmd %*
 	EOF
