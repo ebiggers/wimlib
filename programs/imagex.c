@@ -366,11 +366,13 @@ verify_image_exists(int image, const tchar *image_name, const tchar *wim_name)
 	if (image == WIMLIB_NO_IMAGE) {
 		imagex_error(T("\"%"TS"\" is not a valid image in \"%"TS"\"!\n"
 			     "       Please specify a 1-based image index or "
-			     "image name.\n"
-			     "       You may use `%"TS"' to list the images "
-			     "contained in a WIM."),
-			     image_name, wim_name, get_cmd_string(CMD_INFO, false));
-		return -1;
+			     "image name.  To list the images\n"
+			     "       contained in the WIM archive, run\n"
+			     "\n"
+			     "           %"TS" \"%"TS"\"\n"),
+			     image_name, wim_name,
+			     get_cmd_string(CMD_INFO, false), wim_name);
+		return WIMLIB_ERR_INVALID_IMAGE;
 	}
 	return 0;
 }
@@ -380,7 +382,7 @@ verify_image_is_single(int image)
 {
 	if (image == WIMLIB_ALL_IMAGES) {
 		imagex_error(T("Cannot specify all images for this action!"));
-		return -1;
+		return WIMLIB_ERR_INVALID_IMAGE;
 	}
 	return 0;
 }
@@ -2804,8 +2806,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 	image = wimlib_resolve_image(wim, image_num_or_name);
 	ret = WIMLIB_ERR_INVALID_IMAGE;
 	if (image == WIMLIB_NO_IMAGE && tstrcmp(image_num_or_name, T("0"))) {
-		imagex_error(T("The image \"%"TS"\" does not exist in \"%"TS"\""),
-			     image_num_or_name, wimfile);
+		verify_image_exists(image, image_num_or_name, wimfile);
 		if (boot) {
 			imagex_error(T("If you would like to set the boot "
 				       "index to 0, specify image \"0\" with "
