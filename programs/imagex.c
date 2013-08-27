@@ -1204,7 +1204,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		case WIMLIB_UPDATE_OP_DELETE:
 			imagex_printf(T("Deleted WIM path "
 				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING "%"TS"\"\n"),
-				info->update.command->delete.wim_path);
+				info->update.command->delete_.wim_path);
 			break;
 		case WIMLIB_UPDATE_OP_RENAME:
 			imagex_printf(T("Renamed WIM path "
@@ -1273,9 +1273,9 @@ update_command_add_option(int op, const tchar *option,
 		break;
 	case WIMLIB_UPDATE_OP_DELETE:
 		if (!tstrcmp(option, T("--force")))
-			cmd->delete.delete_flags |= WIMLIB_DELETE_FLAG_FORCE;
+			cmd->delete_.delete_flags |= WIMLIB_DELETE_FLAG_FORCE;
 		else if (!tstrcmp(option, T("--recursive")))
-			cmd->delete.delete_flags |= WIMLIB_DELETE_FLAG_RECURSIVE;
+			cmd->delete_.delete_flags |= WIMLIB_DELETE_FLAG_RECURSIVE;
 		else
 			recognized = false;
 		break;
@@ -1306,7 +1306,7 @@ update_command_add_nonoption(int op, const tchar *nonoption,
 			cmd->add.wim_target_path = (tchar*)nonoption;
 		break;
 	case WIMLIB_UPDATE_OP_DELETE:
-		cmd->delete.wim_path = (tchar*)nonoption;
+		cmd->delete_.wim_path = (tchar*)nonoption;
 		break;
 	case WIMLIB_UPDATE_OP_RENAME:
 		if (num_nonoptions == 0)
@@ -3525,7 +3525,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 			cmds[i].add.config = config;
 			break;
 		case WIMLIB_UPDATE_OP_DELETE:
-			cmds[i].delete.delete_flags |= default_delete_flags;
+			cmds[i].delete_.delete_flags |= default_delete_flags;
 			break;
 		default:
 			break;

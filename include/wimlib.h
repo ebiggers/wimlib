@@ -180,6 +180,10 @@
 /** Patch version of the library (for example, the 5 in 1.2.5). */
 #define WIMLIB_PATCH_VERSION 0
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Opaque structure that represents a WIM file.  This is an in-memory structure
  * and need not correspond to a specific on-disk file.  However, a ::WIMStruct
@@ -1394,6 +1398,50 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * @}
  */
 
+/** Data for a ::WIMLIB_UPDATE_OP_ADD operation. */
+struct wimlib_add_command {
+	/** Filesystem path to the file or directory tree to
+	 * add. */
+	wimlib_tchar *fs_source_path;
+	/** Path, specified from the root of the WIM image, at
+	 * which to add the file or directory tree within the
+	 * WIM image. */
+	wimlib_tchar *wim_target_path;
+
+	/** Configuration for excluded files.  @c NULL means
+	 * exclude no files (use no configuration), unless
+	 * ::WIMLIB_ADD_FLAG_WINCONFIG is specified in @p
+	 * add_flags.  */
+	struct wimlib_capture_config *config;
+
+	/** Bitwise OR of WIMLIB_ADD_FLAG_* flags. */
+	int add_flags;
+};
+
+/** Data for a ::WIMLIB_UPDATE_OP_DELETE operation. */
+struct wimlib_delete_command {
+	/** Path, specified from the root of the WIM image, for
+	 * the file or directory tree within the WIM image to be
+	 * deleted. */
+	wimlib_tchar *wim_path;
+	/** Bitwise OR of WIMLIB_DELETE_FLAG_* flags. */
+	int delete_flags;
+};
+
+/** Data for a ::WIMLIB_UPDATE_OP_RENAME operation. */
+struct wimlib_rename_command {
+	/** Path, specified from the root of the WIM image, for
+	 * the source file or directory tree within the WIM
+	 * image. */
+	wimlib_tchar *wim_source_path;
+	/** Path, specified from the root of the WIM image, for
+	 * the destination file or directory tree within the WIM
+	 * image. */
+	wimlib_tchar *wim_target_path;
+	/** Reserved; set to 0. */
+	int rename_flags;
+};
+
 /** Specification of an update to perform on a WIM image. */
 struct wimlib_update_command {
 
@@ -1410,47 +1458,10 @@ struct wimlib_update_command {
 		WIMLIB_UPDATE_OP_RENAME,
 	} op;
 	union {
-		/** Data for a ::WIMLIB_UPDATE_OP_ADD operation. */
-		struct wimlib_add_command {
-			/** Filesystem path to the file or directory tree to
-			 * add. */
-			wimlib_tchar *fs_source_path;
-			/** Path, specified from the root of the WIM image, at
-			 * which to add the file or directory tree within the
-			 * WIM image. */
-			wimlib_tchar *wim_target_path;
-
-			/** Configuration for excluded files.  @c NULL means
-			 * exclude no files (use no configuration), unless
-			 * ::WIMLIB_ADD_FLAG_WINCONFIG is specified in @p
-			 * add_flags.  */
-			struct wimlib_capture_config *config;
-
-			/** Bitwise OR of WIMLIB_ADD_FLAG_* flags. */
-			int add_flags;
-		} add;
-		/** Data for a ::WIMLIB_UPDATE_OP_DELETE operation. */
-		struct wimlib_delete_command {
-			/** Path, specified from the root of the WIM image, for
-			 * the file or directory tree within the WIM image to be
-			 * deleted. */
-			wimlib_tchar *wim_path;
-			/** Bitwise OR of WIMLIB_DELETE_FLAG_* flags. */
-			int delete_flags;
-		} delete;
-		/** Data for a ::WIMLIB_UPDATE_OP_RENAME operation. */
-		struct wimlib_rename_command {
-			/** Path, specified from the root of the WIM image, for
-			 * the source file or directory tree within the WIM
-			 * image. */
-			wimlib_tchar *wim_source_path;
-			/** Path, specified from the root of the WIM image, for
-			 * the destination file or directory tree within the WIM
-			 * image. */
-			wimlib_tchar *wim_target_path;
-			/** Reserved; set to 0. */
-			int rename_flags;
-		} rename;
+		struct wimlib_add_command add;
+		struct wimlib_delete_command delete_; /* Underscore is for C++
+							 compatibility.  */
+		struct wimlib_rename_command rename;
 	};
 };
 
@@ -3366,5 +3377,9 @@ wimlib_xpress_compress(const void *chunk, unsigned chunk_size, void *out);
 extern int
 wimlib_xpress_decompress(const void *compressed_data, unsigned compressed_len,
 			 void *uncompressed_data, unsigned uncompressed_len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _WIMLIB_H */

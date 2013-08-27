@@ -305,8 +305,8 @@ execute_delete_command(WIMStruct *wim,
 	bool is_root;
 
 	wimlib_assert(delete_cmd->op == WIMLIB_UPDATE_OP_DELETE);
-	flags = delete_cmd->delete.delete_flags;
-	wim_path = delete_cmd->delete.wim_path;
+	flags = delete_cmd->delete_.delete_flags;
+	wim_path = delete_cmd->delete_.wim_path;
 
 	DEBUG("Deleting WIM path \"%"TS"\" (flags=%#x)", wim_path, flags);
 
@@ -644,7 +644,7 @@ free_update_commands(struct wimlib_update_command *cmds, size_t num_cmds)
 				free_capture_config(cmds[i].add.config);
 				break;
 			case WIMLIB_UPDATE_OP_DELETE:
-				FREE(cmds[i].delete.wim_path);
+				FREE(cmds[i].delete_.wim_path);
 				break;
 			case WIMLIB_UPDATE_OP_RENAME:
 				FREE(cmds[i].rename.wim_source_path);
@@ -692,11 +692,11 @@ copy_update_commands(const struct wimlib_update_command *cmds,
 			cmds_copy[i].add.add_flags = cmds[i].add.add_flags;
 			break;
 		case WIMLIB_UPDATE_OP_DELETE:
-			cmds_copy[i].delete.wim_path =
-				canonicalize_wim_path(cmds[i].delete.wim_path);
-			if (!cmds_copy[i].delete.wim_path)
+			cmds_copy[i].delete_.wim_path =
+				canonicalize_wim_path(cmds[i].delete_.wim_path);
+			if (!cmds_copy[i].delete_.wim_path)
 				goto oom;
-			cmds_copy[i].delete.delete_flags = cmds[i].delete.delete_flags;
+			cmds_copy[i].delete_.delete_flags = cmds[i].delete_.delete_flags;
 			break;
 		case WIMLIB_UPDATE_OP_RENAME:
 			cmds_copy[i].rename.wim_source_path =
