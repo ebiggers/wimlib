@@ -1141,19 +1141,14 @@ unnamed_only:
 	/* FindFirstStream() API is not available, or the volume does not
 	 * support named streams.  Only capture the unnamed data stream. */
 	DEBUG("Only capturing unnamed data stream");
-	if (!(inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
-				     FILE_ATTRIBUTE_REPARSE_POINT)))
-	{
-		wcscpy(dat.cStreamName, L"::$DATA");
-		dat.StreamSize.QuadPart = file_size;
-		ret = win32_capture_stream(path,
-					   path_num_chars,
-					   inode, lookup_table,
-					   &dat);
-		if (ret)
-			return ret;
-	}
-	return ret;
+	if (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+				   FILE_ATTRIBUTE_REPARSE_POINT))
+		return 0;
+
+	wcscpy(dat.cStreamName, L"::$DATA");
+	dat.StreamSize.QuadPart = file_size;
+	return win32_capture_stream(path, path_num_chars,
+				    inode, lookup_table, &dat);
 }
 
 static int
