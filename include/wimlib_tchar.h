@@ -24,7 +24,7 @@ typedef wchar_t tchar;
 #  define tmempcpy	wmempcpy
 #  define tstrcpy	wcscpy
 #  define tprintf	wprintf
-#  define tsprintf	_swprintf
+#  define tsprintf	swprintf
 #  define tfprintf	fwprintf
 #  define tvfprintf	vfwprintf
 #  define istalpha	iswalpha
