@@ -7,6 +7,12 @@ if [ $# -ge 1 ]; then
 	WIMLIB_ARCH=$1
 fi
 
+if [ $# -ge 2 ]; then
+	CONF_EXTRA_ARGS="$2"
+else
+	CONF_EXTRA_ARGS=
+fi
+
 if [[ $WIMLIB_ARCH = i686 ]] ; then
 	DESTDIR=/mnt/tmp/wimlib
 elif [[ $WIMLIB_ARCH = x86_64 ]]; then
@@ -20,7 +26,8 @@ VERSION=$(grep 'This is wimlib version' README | grep -o '[0-9]\+\.[0-9]\+\.[0-9
 ZIPFILE=wimlib-${VERSION}-windows-${WIMLIB_ARCH}-bin.zip
 
 if ! grep -q "./configure --host=${WIMLIB_ARCH}-w64-mingw32" config.log; then
-	./configure --host=${WIMLIB_ARCH}-w64-mingw32
+	./configure --host=${WIMLIB_ARCH}-w64-mingw32 $CONF_EXTRA_ARGS
+	make clean
 fi
 
 make -j2
