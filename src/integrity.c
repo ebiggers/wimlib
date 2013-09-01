@@ -332,9 +332,8 @@ write_integrity_table(WIMStruct *wim,
 
 	wimlib_assert(old_lookup_table_end <= new_lookup_table_end);
 
-	if (wim->hdr.integrity.offset == 0 || old_lookup_table_end == 0) {
-		old_table = NULL;
-	} else {
+	old_table = NULL;
+	if (wim_has_integrity_table(wim) && old_lookup_table_end != 0) {
 		ret = read_integrity_table(wim,
 					   old_lookup_table_end - WIM_HEADER_DISK_SIZE,
 					   &old_table);
@@ -477,7 +476,7 @@ check_wim_integrity(WIMStruct *wim, wimlib_progress_func_t progress_func)
 	struct integrity_table *table;
 	u64 end_lookup_table_offset;
 
-	if (wim->hdr.integrity.offset == 0) {
+	if (!wim_has_integrity_table(wim)) {
 		DEBUG("No integrity information.");
 		return WIM_INTEGRITY_NONEXISTENT;
 	}
