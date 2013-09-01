@@ -2083,9 +2083,11 @@ close_wim_writable(WIMStruct *wim, int write_flags)
 }
 
 /*
+ * finish_write():
+ *
  * Finish writing a WIM file: write the lookup table, xml data, and integrity
- * table, then overwrite the WIM header.  Always closes the WIM file descriptor
- * (wim->out_fd).
+ * table, then overwrite the WIM header.  By default, closes the WIM file
+ * descriptor (@wim->out_fd) in both success and error cases.
  *
  * write_flags is a bitwise OR of the following:
  *
@@ -2095,7 +2097,7 @@ close_wim_writable(WIMStruct *wim, int write_flags)
  *	(public) WIMLIB_WRITE_FLAG_FSYNC:
  *		fsync() the output file before closing it.
  *
- *	(public)  WIMLIB_WRITE_FLAG_PIPABLE:
+ *	(public) WIMLIB_WRITE_FLAG_PIPABLE:
  *		Writing a pipable WIM, possibly to a pipe; include pipable WIM
  *		stream headers before the lookup table and XML data, and also
  *		write the WIM header at the end instead of seeking to the
@@ -2118,6 +2120,9 @@ close_wim_writable(WIMStruct *wim, int write_flags)
  *		Instead of overwriting the WIM header at the beginning of the
  *		file, simply append it to the end of the file.  (Used when
  *		writing to pipe.)
+ *	(private) WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR:
+ *		Do not close the file descriptor @wim->out_fd on either success
+ *		on failure.
  *	(private) WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES:
  *		Use the existing <TOTALBYTES> stored in the in-memory XML
  *		information, rather than setting it to the offset of the XML
