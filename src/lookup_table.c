@@ -1035,7 +1035,7 @@ out:
 #endif
 
 int
-resource_not_found_error(struct wim_inode *inode, const u8 *hash)
+resource_not_found_error(const struct wim_inode *inode, const u8 *hash)
 {
 	if (wimlib_print_errors) {
 		ERROR("\"%"TS"\": resource not found", inode_first_full_path(inode));
@@ -1213,6 +1213,22 @@ inode_unnamed_lte(const struct wim_inode *inode,
 	else
 		return inode_unnamed_lte_unresolved(inode, table);
 }
+
+const u8 *
+inode_unnamed_stream_hash(const struct wim_inode *inode)
+{
+	const u8 *hash;
+
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+		if (inode_stream_name_nbytes(inode, i) == 0) {
+			hash = inode_stream_hash(inode, i);
+			if (!is_zero_hash(hash))
+				return hash;
+		}
+	}
+	return NULL;
+}
+
 
 static int
 lte_add_stream_size(struct wim_lookup_table_entry *lte, void *total_bytes_p)

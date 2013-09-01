@@ -1,7 +1,6 @@
-/*
- * wimlib.h
- *
- * External header for wimlib.
+/**
+ * @file wimlib.h
+ * @brief External header for wimlib.
  *
  * This file contains extensive comments for generating documentation with
  * Doxygen.  The built HTML documentation can be viewed at
@@ -870,7 +869,14 @@ struct wimlib_resource_entry {
 
 	uint32_t is_free : 1;
 	uint32_t is_spanned : 1;
-	uint32_t reserved_flags : 28;
+
+	/** 1 if this resource was not found in the lookup table of the
+	 * ::WIMStruct.  This normally implies a missing call to
+	 * wimlib_reference_resource_files() or wimlib_reference_resources().
+	 */
+	uint32_t is_missing : 1;
+
+	uint32_t reserved_flags : 27;
 	uint64_t reserved[4];
 };
 
@@ -1008,6 +1014,12 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * itself; only its children (in the case of a non-empty directory) */
 #define WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN  0x00000002
 
+/** Return ::WIMLIB_ERR_RESOURCE_NOT_FOUND if any resources needed to fill in
+ * the ::wimlib_resource_entry's for the iteration cannot be found in the lookup
+ * table of the ::WIMStruct.  The default behavior without this flag is to fill
+ * in the SHA1 message digest of the ::wimlib_resource_entry and set the @ref
+ * wimlib_resource_entry::is_missing "is_missing" flag.  */
+#define WIMLIB_ITERATE_DIR_TREE_FLAG_RESOURCES_NEEDED  0x00000004
 
 
 /**
@@ -2342,9 +2354,11 @@ wimlib_image_name_in_use(const WIMStruct *wim, const wimlib_tchar *name);
  *	The WIM containing the image(s) over which to iterate, specified as a
  *	pointer to the ::WIMStruct for a standalone WIM file, a delta WIM file,
  *	or part 1 of a split WIM.  In the case of a WIM file that is not
- *	standalone, this ::WIMStruct must have had any needed external resources
- *	previously referenced using wimlib_reference_resources() or
- *	wimlib_reference_resource_files().
+ *	standalone, this ::WIMStruct should have had any needed external
+ *	resources previously referenced using wimlib_reference_resources() or
+ *	wimlib_reference_resource_files().  If not, see
+ *	::WIMLIB_ITERATE_DIR_TREE_FLAG_RESOURCES_NEEDED for information about
+ *	the behavior when resources are missing.
  *
  * @param image
  *	The 1-based number of the image in @p wim that contains the files or
@@ -2355,8 +2369,7 @@ wimlib_image_name_in_use(const WIMStruct *wim, const wimlib_tchar *name);
  *	Path in the WIM image at which to do the iteration.
  *
  * @param flags
- *	Bitwise OR of ::WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE and/or
- *	::WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN.
+ *	Bitwise OR of flags prefixed with WIMLIB_ITERATE_DIR_TREE_FLAG.
  *
  * @param cb
  *	A callback function that will receive each directory entry.

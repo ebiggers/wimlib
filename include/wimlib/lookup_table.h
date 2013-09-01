@@ -419,7 +419,7 @@ inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table,
 		   bool force);
 
 extern int
-resource_not_found_error(struct wim_inode *inode, const u8 *hash);
+resource_not_found_error(const struct wim_inode *inode, const u8 *hash);
 
 extern void
 inode_unresolve_ltes(struct wim_inode *inode);
@@ -513,6 +513,9 @@ inode_unnamed_lte_unresolved(const struct wim_inode *inode,
 
 extern struct wim_lookup_table_entry *
 inode_unnamed_lte(const struct wim_inode *inode, const struct wim_lookup_table *table);
+
+extern const u8 *
+inode_unnamed_stream_hash(const struct wim_inode *inode);
 
 extern u64
 lookup_table_total_stream_size(struct wim_lookup_table *table);

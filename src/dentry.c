@@ -2308,12 +2308,14 @@ write_dentry_tree(const struct wim_dentry * restrict root, u8 * restrict p)
 static int
 init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
 		   struct wim_dentry *dentry,
-		   const WIMStruct *wim)
+		   const WIMStruct *wim,
+		   int flags)
 {
 	int ret;
 	size_t dummy;
 	const struct wim_inode *inode = dentry->d_inode;
 	struct wim_lookup_table_entry *lte;
+	const u8 *hash;
 
 #if TCHAR_IS_UTF16LE
 	wdentry->filename = dentry->file_name;
@@ -2358,17 +2360,30 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
 	wdentry->last_access_time = wim_timestamp_to_timespec(inode->i_last_access_time);
 
 	lte = inode_unnamed_lte(inode, wim->lookup_table);
-	if (lte)
+	if (lte) {
 		lte_to_wimlib_resource_entry(lte, &wdentry->streams[0].resource);
+	} else if (!is_zero_hash(hash = inode_unnamed_stream_hash(inode))) {
+		if (flags & WIMLIB_ITERATE_DIR_TREE_FLAG_RESOURCES_NEEDED)
+			return resource_not_found_error(inode, hash);
+		copy_hash(wdentry->streams[0].resource.sha1_hash, hash);
+		wdentry->streams[0].resource.is_missing = 1;
+	}
 
 	for (unsigned i = 0; i < inode->i_num_ads; i++) {
-		if (inode->i_ads_entries[i].stream_name == NULL)
+		if (!ads_entry_is_named_stream(&inode->i_ads_entries[i]))
 			continue;
 		lte = inode_stream_lte(inode, i + 1, wim->lookup_table);
 		wdentry->num_named_streams++;
 		if (lte) {
 			lte_to_wimlib_resource_entry(lte, &wdentry->streams[
 								wdentry->num_named_streams].resource);
+		} else if (!is_zero_hash(hash = inode_stream_hash(inode, i + 1))) {
+			if (flags & WIMLIB_ITERATE_DIR_TREE_FLAG_RESOURCES_NEEDED)
+				return resource_not_found_error(inode, hash);
+			copy_hash(wdentry->streams[
+				  wdentry->num_named_streams].resource.sha1_hash, hash);
+			wdentry->streams[
+				wdentry->num_named_streams].resource.is_missing = 1;
 		}
 	#if TCHAR_IS_UTF16LE
 		wdentry->streams[wdentry->num_named_streams].stream_name =
@@ -2437,7 +2452,7 @@ do_iterate_dir_tree(WIMStruct *wim,
 	if (!wdentry)
 		goto out;
 
-	ret = init_wimlib_dentry(wdentry, dentry, wim);
+	ret = init_wimlib_dentry(wdentry, dentry, wim, flags);
 	if (ret)
 		goto out_free_wimlib_dentry;
 
