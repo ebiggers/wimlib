@@ -2253,8 +2253,10 @@ lock_wim(WIMStruct *wim, int fd)
 #endif
 
 /*
+ * write_pipable_wim():
+ *
  * Perform the intermediate stages of creating a "pipable" WIM (i.e. a WIM
- * capable of being applied from a pipe).  Such a WIM looks like:
+ * capable of being applied from a pipe).
  *
  * Pipable WIMs are a wimlib-specific modification of the WIM format such that
  * images can be applied from them sequentially when the file data is sent over
@@ -2263,7 +2265,7 @@ lock_wim(WIMStruct *wim, int fd)
  *
  * - Magic characters in header are "WLPWM\0\0\0" (wimlib pipable WIM) instead
  *   of "MSWIM\0\0\0".  This lets wimlib know that the WIM is pipable and also
- *   should stop other software from trying to read the file as a normal WIM.
+ *   stops other software from trying to read the file as a normal WIM.
  *
  * - The header at the beginning of the file does not contain all the normal
  *   information; in particular it will have all 0's for the lookup table and
@@ -2285,10 +2287,13 @@ lock_wim(WIMStruct *wim, int fd)
  *   uncompressed stream size, and flags that indicate whether the stream is
  *   compressed.  The data of uncompressed streams then follows literally, while
  *   the data of compressed streams follows in a modified format.  Compressed
- *   streams have no chunk table, since the chunk table cannot be written until
- *   all chunks have been compressed; instead, each compressed chunk is prefixed
- *   by a `struct pwm_chunk_hdr' that gives its size.  However, the offsets are
- *   given in the chunk table as if these chunk headers were not present.
+ *   streams do not begin with a chunk table, since the chunk table cannot be
+ *   written until all chunks have been compressed.  Instead, each compressed
+ *   chunk is prefixed by a `struct pwm_chunk_hdr' that gives its size.
+ *   Furthermore, the chunk table is written at the end of the resource instead
+ *   of the start.  Note: chunk offsets are given in the chunk table as if the
+ *   `struct pwm_chunk_hdr's were not present; also, the chunk table is only
+ *   used if the WIM is being read from a seekable file (not a pipe).
  *
  * - Metadata resources always come before other file resources (streams).
  *   (This does not by itself constitute an incompatibility with normal WIMs,
@@ -2305,15 +2310,20 @@ lock_wim(WIMStruct *wim, int fd)
  *
  *   Layout of pipable WIM:
  *
- * ----------+----------+--------------------+----------------+--------------+------------+--------+
- * | Header  | XML data | Metadata resources | File resources | Lookup table | XML data   | Header |
- * ----------+----------+--------------------+----------------+--------------+------------+--------+
+ * ---------+----------+--------------------+----------------+--------------+-----------+--------+
+ * | Header | XML data | Metadata resources | File resources | Lookup table | XML data  | Header |
+ * ---------+----------+--------------------+----------------+--------------+-----------+--------+
  *
  *   Layout of normal WIM:
  *
- * +---------+--------------------+----------------+--------------+----------+
- * | Header  | Metadata resources | File resources | Lookup table | XML data |
- * +---------+--------------------+----------------+--------------+----------+
+ * +--------+-----------------------------+-------------------------+
+ * | Header | File and metadata resources | Lookup table | XML data |
+ * +--------+-----------------------------+-------------------------+
+ *
+ * An optional integrity table can follow the final XML data in both normal and
+ * pipable WIMs.  However, due to implementation details, wimlib currently can
+ * only include an integrity table in a pipable WIM when writing it to a
+ * seekable file (not a pipe).
  *
  * Do note that since pipable WIMs are not supported by Microsoft's software,
  * wimlib does not create them unless explicitly requested (with
