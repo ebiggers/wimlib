@@ -937,8 +937,8 @@ translate_text_to_tstr(char *text, size_t num_bytes, size_t *num_tchars_ret)
 	size_t num_wchars;
 
 	if (num_bytes >= 2 &&
-	    ((text[0] == 0xff && text[1] == 0xfe) ||
-	     (text[0] <= 0x7f && text[1] == 0x00)))
+	    (((unsigned char)text[0] == 0xff && (unsigned char)text[1] == 0xfe) ||
+	     ((unsigned char)text[0] <= 0x7f && (unsigned char)text[1] == 0x00)))
 	{
 		/* File begins with 0xfeff, the BOM for UTF-16LE, or it begins
 		 * with something that looks like an ASCII character encoded as
