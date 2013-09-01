@@ -447,78 +447,87 @@ win32_recurse_directory(HANDLE hDir,
 	 * which we opened with FILE_FLAG_BACKUP_SEMANTICS (probably not the
 	 * case for the FindFirstFile() API; it's not documented).  */
 #ifdef WITH_NTDLL
-	if (func_NtQueryDirectoryFile) {
-		NTSTATUS status;
-		IO_STATUS_BLOCK io_status;
-		const size_t bufsize = 8192;
-		u8 *buf;
-		BOOL restartScan = TRUE;
-		const FILE_NAMES_INFORMATION *info;
+	if (!func_NtQueryDirectoryFile)
+		goto use_FindFirstFile;
 
-		buf = MALLOC(bufsize);
-		if (!buf)
-			return WIMLIB_ERR_NOMEM;
-		for (;;) {
-			status = (*func_NtQueryDirectoryFile)(hDir, NULL, NULL, NULL,
-							      &io_status, buf, bufsize,
-							      FileNamesInformation,
-							      FALSE, NULL, restartScan);
-			restartScan = FALSE;
-			if (status != STATUS_SUCCESS) {
-				if (status == STATUS_NO_MORE_FILES ||
-				    status == STATUS_NO_MORE_ENTRIES ||
-				    status == STATUS_NO_MORE_MATCHES) {
-					ret = 0;
-				} else {
-					set_errno_from_nt_status(status);
-					ERROR_WITH_ERRNO("Failed to read directory "
-							 "\"%ls\"", dir_path);
-					ret = WIMLIB_ERR_READ;
-				}
-				goto out_free_buf;
+	NTSTATUS status;
+	IO_STATUS_BLOCK io_status;
+	const size_t bufsize = 8192;
+	u8 *buf;
+	BOOL restartScan = TRUE;
+	const FILE_NAMES_INFORMATION *info;
+
+	buf = MALLOC(bufsize);
+	if (!buf)
+		return WIMLIB_ERR_NOMEM;
+	for (;;) {
+		status = (*func_NtQueryDirectoryFile)(hDir, NULL, NULL, NULL,
+						      &io_status, buf, bufsize,
+						      FileNamesInformation,
+						      FALSE, NULL, restartScan);
+		restartScan = FALSE;
+		if (status != STATUS_SUCCESS) {
+			if (status == STATUS_NO_MORE_FILES ||
+			    status == STATUS_NO_MORE_ENTRIES ||
+			    status == STATUS_NO_MORE_MATCHES) {
+				ret = 0;
+			} else if (status == STATUS_NOT_IMPLEMENTED ||
+				   status == STATUS_NOT_SUPPORTED ||
+				   status == STATUS_INVALID_INFO_CLASS) {
+				FREE(buf);
+				goto use_FindFirstFile;
+			} else {
+				set_errno_from_nt_status(status);
+				ERROR_WITH_ERRNO("Failed to read directory "
+						 "\"%ls\"", dir_path);
+				ret = WIMLIB_ERR_READ;
 			}
-			wimlib_assert(io_status.Information != 0);
-			info = (const FILE_NAMES_INFORMATION*)buf;
-			for (;;) {
-				if (!(info->FileNameLength == 2 && info->FileName[0] == L'.') &&
-				    !(info->FileNameLength == 4 && info->FileName[0] == L'.' &&
-								   info->FileName[1] == L'.'))
-				{
-					wchar_t *p;
-					struct wim_dentry *child;
-
-					p = dir_path + dir_path_num_chars;
-					*p++ = L'\\';
-					p = wmempcpy(p, info->FileName,
-						     info->FileNameLength / 2);
-					*p = '\0';
-
-					ret = win32_build_dentry_tree_recursive(
-									&child,
-									dir_path,
-									p - dir_path,
-									params,
-									state,
-									vol_flags);
-
-					dir_path[dir_path_num_chars] = L'\0';
-
-					if (ret)
-						goto out_free_buf;
-					if (child)
-						dentry_add_child(root, child);
-				}
-				if (info->NextEntryOffset == 0)
-					break;
-				info = (const FILE_NAMES_INFORMATION*)
-						((const u8*)info + info->NextEntryOffset);
-			}
+			goto out_free_buf;
 		}
-	out_free_buf:
-		FREE(buf);
-		return ret;
+		wimlib_assert(io_status.Information != 0);
+		info = (const FILE_NAMES_INFORMATION*)buf;
+		for (;;) {
+			if (!(info->FileNameLength == 2 && info->FileName[0] == L'.') &&
+			    !(info->FileNameLength == 4 && info->FileName[0] == L'.' &&
+							   info->FileName[1] == L'.'))
+			{
+				wchar_t *p;
+				struct wim_dentry *child;
+
+				p = dir_path + dir_path_num_chars;
+				*p++ = L'\\';
+				p = wmempcpy(p, info->FileName,
+					     info->FileNameLength / 2);
+				*p = '\0';
+
+				ret = win32_build_dentry_tree_recursive(
+								&child,
+								dir_path,
+								p - dir_path,
+								params,
+								state,
+								vol_flags);
+
+				dir_path[dir_path_num_chars] = L'\0';
+
+				if (ret)
+					goto out_free_buf;
+				if (child)
+					dentry_add_child(root, child);
+			}
+			if (info->NextEntryOffset == 0)
+				break;
+			info = (const FILE_NAMES_INFORMATION*)
+					((const u8*)info + info->NextEntryOffset);
+		}
 	}
+out_free_buf:
+	FREE(buf);
+	return ret;
 #endif
+
+use_FindFirstFile:
+	;
 	WIN32_FIND_DATAW dat;
 	HANDLE hFind;
 	DWORD err;
