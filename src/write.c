@@ -2176,6 +2176,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	if (ret)
 		goto out_close_wim;
 
+	/* Write integrity table (optional).  */
 	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
 		if (write_flags & WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML) {
 			struct wim_header checkpoint_hdr;
@@ -2201,9 +2202,14 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 		if (ret)
 			goto out_close_wim;
 	} else {
+		/* No integrity table.  */
 		zero_resource_entry(&wim->hdr.integrity);
 	}
 
+	/* Now that all information in the WIM header has been determined, the
+	 * preliminary header written earlier can be overwritten, the header of
+	 * the existing WIM file can be overwritten, or the final header can be
+	 * written to the end of the pipable WIM.  */
 	wim->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 	hdr_offset = 0;
 	if (write_flags & WIMLIB_WRITE_FLAG_HEADER_AT_END)
@@ -2212,6 +2218,12 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	if (ret)
 		goto out_close_wim;
 
+	/* Possibly sync file data to disk before closing.  On POSIX systems, it
+	 * is necessary to do this before using rename() to overwrite an
+	 * existing file with a new file.  Otherwise, data loss would occur if
+	 * the system is abruptly terminated when the metadata for the rename
+	 * operation has been written to disk, but the new file data has not.
+	 */
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
 		if (fsync(wim->out_fd.fd)) {
 			ERROR_WITH_ERRNO("Error syncing data to WIM file");
