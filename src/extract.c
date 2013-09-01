@@ -2776,8 +2776,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 	 * wimlib_open_wim(), getting a WIMStruct in this way will result in
 	 * an empty lookup table, no XML data read, and no filename set.  */
 	ret = open_wim_as_WIMStruct(&pipe_fd,
-				    WIMLIB_OPEN_FLAG_FROM_PIPE |
-						WIMLIB_OPEN_FLAG_SPLIT_OK,
+				    WIMLIB_OPEN_FLAG_FROM_PIPE,
 				    &pwm, progress_func);
 	if (ret)
 		return ret;

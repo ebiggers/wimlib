@@ -1454,7 +1454,7 @@ static int
 imagex_apply(int argc, tchar **argv, int cmd)
 {
 	int c;
-	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int open_flags = 0;
 	int image = WIMLIB_NO_IMAGE;
 	WIMStruct *wim;
 	struct wimlib_wim_info info;
@@ -2205,8 +2205,7 @@ imagex_dir(int argc, tchar **argv, int cmd)
 	}
 
 	wimfile = argv[0];
-	ret = wimlib_open_wim(wimfile, WIMLIB_OPEN_FLAG_SPLIT_OK, &wim,
-			      imagex_progress_func);
+	ret = wimlib_open_wim(wimfile, 0, &wim, imagex_progress_func);
 	if (ret)
 		goto out;
 
@@ -2321,8 +2320,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	dest_wimfile          = argv[2];
 	dest_name             = (argc >= 4) ? argv[3] : NULL;
 	dest_desc             = (argc >= 5) ? argv[4] : NULL;
-	ret = wimlib_open_wim(src_wimfile,
-			      open_flags | WIMLIB_OPEN_FLAG_SPLIT_OK, &src_wim,
+	ret = wimlib_open_wim(src_wimfile, open_flags, &src_wim,
 			      imagex_progress_func);
 	if (ret)
 		goto out_free_refglobs;
@@ -2363,7 +2361,8 @@ imagex_export(int argc, tchar **argv, int cmd)
 			ret = -1;
 			goto out_free_src_wim;
 		}
-		ret = wimlib_open_wim(dest_wimfile, open_flags | WIMLIB_OPEN_FLAG_WRITE_ACCESS,
+		ret = wimlib_open_wim(dest_wimfile,
+				      open_flags | WIMLIB_OPEN_FLAG_WRITE_ACCESS,
 				      &dest_wim, imagex_progress_func);
 		if (ret)
 			goto out_free_src_wim;
@@ -2529,7 +2528,7 @@ static int
 imagex_extract(int argc, tchar **argv, int cmd)
 {
 	int c;
-	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int open_flags = 0;
 	int image;
 	WIMStruct *wim;
 	int ret;
@@ -2740,7 +2739,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 	WIMStruct *wim;
 	int image;
 	int ret;
-	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int open_flags = 0;
 	struct wimlib_wim_info info;
 
 	for_opt(c, info_options) {
@@ -2998,7 +2997,7 @@ static int
 imagex_join(int argc, tchar **argv, int cmd)
 {
 	int c;
-	int swm_open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int swm_open_flags = 0;
 	int wim_write_flags = 0;
 	const tchar *output_path;
 	int ret;
@@ -3045,7 +3044,7 @@ imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 {
 	int c;
 	int mount_flags = 0;
-	int open_flags = WIMLIB_OPEN_FLAG_SPLIT_OK;
+	int open_flags = 0;
 	const tchar *staging_dir = NULL;
 	const tchar *wimfile;
 	const tchar *dir;

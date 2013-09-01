@@ -448,11 +448,9 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 			return ret;
 	}
 
-	if (wim->hdr.total_parts != 1 && !(open_flags & WIMLIB_OPEN_FLAG_SPLIT_OK)) {
-		ERROR("\"%"TS"\": This WIM is part %u of a %u-part WIM",
-		      wimfile, wim->hdr.part_number, wim->hdr.total_parts);
-		return WIMLIB_ERR_SPLIT_UNSUPPORTED;
-	}
+	if ((open_flags & WIMLIB_OPEN_FLAG_ERROR_IF_SPLIT) &&
+	    (wim->hdr.total_parts != 1))
+		return WIMLIB_ERR_IS_SPLIT_WIM;
 
 	DEBUG("According to header, WIM contains %u images", wim->hdr.image_count);
 
@@ -682,6 +680,9 @@ int
 wim_checksum_unhashed_streams(WIMStruct *wim)
 {
 	int ret;
+
+	if (!wim_has_metadata(wim))
+		return 0;
 	for (int i = 0; i < wim->hdr.image_count; i++) {
 		struct wim_lookup_table_entry *lte, *tmp;
 		struct wim_image_metadata *imd = wim->image_metadata[i];
@@ -714,7 +715,7 @@ can_modify_wim(WIMStruct *wim)
 		}
 	}
 	if (wim->hdr.total_parts != 1) {
-		ERROR("Cannot modify \"%"TS"\": is part of a spanned set",
+		ERROR("Cannot modify \"%"TS"\": is part of a split WIM",
 		      wim->filename);
 		return WIMLIB_ERR_WIM_IS_READONLY;
 	}

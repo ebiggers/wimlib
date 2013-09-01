@@ -204,7 +204,7 @@ wimlib_split(WIMStruct *wim, const tchar *swm_name,
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (!wim_has_metadata(wim))
-		return WIMLIB_ERR_INVALID_PARAM;
+		return WIMLIB_ERR_METADATA_NOT_FOUND;
 
 	memset(&swm_info, 0, sizeof(swm_info));
 	swm_info.max_part_size = part_size;

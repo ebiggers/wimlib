@@ -1380,8 +1380,6 @@ reference_resource_paths(WIMStruct *wim,
 	unsigned i;
 	int ret;
 
-	open_flags |= WIMLIB_OPEN_FLAG_SPLIT_OK;
-
 	resource_wims = CALLOC(num_resource_wimfiles, sizeof(resource_wims[0]));
 	if (!resource_wims)
 		return WIMLIB_ERR_NOMEM;

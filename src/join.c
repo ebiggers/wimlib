@@ -157,8 +157,6 @@ wimlib_join(const tchar * const *swm_names,
 	WIMStruct **additional_swms;
 	unsigned num_additional_swms;
 
-	swm_open_flags |= WIMLIB_OPEN_FLAG_SPLIT_OK;
-
 	if (num_swms < 1 || num_swms > 0xffff)
 		return WIMLIB_ERR_INVALID_PARAM;
 	num_additional_swms = num_swms - 1;

@@ -37,99 +37,70 @@
  * If you have installed wimlib and want to know how to use the @b wimlib-imagex
  * program, please see the README file or manual pages.
  *
- * \section starting Getting Started
+ * \section installing_and_compiling Installing and Compiling
  *
  * wimlib uses the GNU autotools, so, on UNIX-like systems, it should be easy to
  * install with <code>configure && make && sudo make install</code>; however,
- * please see the README for more information about installing it.  To use
- * wimlib in a program after installing it, include @c wimlib.h and link your
- * program with @c -lwim.
+ * please see the README for more information about installing it.
  *
- * wimlib wraps up a WIM file in an opaque ::WIMStruct structure.  A ::WIMStruct
- * may represent either a stand-alone WIM or one part of a split WIM.
+ * To use wimlib in your program after installing it, include wimlib.h and link
+ * your program with @c -lwim.
  *
- * All functions in wimlib's public API are prefixed with @c wimlib.  Most
- * return 0 on success and a positive error code on failure.  Use
- * wimlib_get_error_string() to get a string that describes an error code.
- * wimlib also can print error messages itself when an error happens, and these
- * may be more informative than the error code; to enable this, call
- * wimlib_set_print_errors().  Please note that this is for convenience only,
- * and some errors can occur without a message being printed.
+ * As of wimlib 1.5.0, wimlib.h is also compatible with C++.
  *
- * First before calling any other functions, you should call
- * wimlib_global_init() to initialize the library.
+ * Note: before calling any other function declared in wimlib.h,
+ * wimlib_global_init() can (and in some cases, must) be called.  See its
+ * documentation for more details.
  *
- * To open an existing WIM, use wimlib_open_wim().
+ * \section basic_wim_handling_concepts Basic WIM handling concepts
  *
- * To create a new WIM that initially contains no images, use
- * wimlib_create_new_wim().
+ * wimlib wraps up a WIM file in an opaque ::WIMStruct structure.   There are
+ * two ways to create such a structure: wimlib_open_wim(), which opens a WIM
+ * file and creates a ::WIMStruct representing it, and wimlib_create_new_wim(),
+ * which creates a new ::WIMStruct that initially contains no images and does
+ * not yet have a backing on-disk file.
  *
- * To add an image to a WIM file from a directory tree on your filesystem, call
- * wimlib_add_image().  This can be done with a ::WIMStruct gotten from
- * wimlib_open_wim() or from wimlib_create_new_wim().  On UNIX-like systems,
- * wimlib_add_image() can also capture a WIM image directly from a block device
- * containing a NTFS filesystem.
+ * A WIM file, represented by a ::WIMStruct, contains zero or more images.
+ * Images can be extracted (or "applied") using wimlib_extract_image(), added
+ * (or "captured" or "appended") using wimlib_add_image(), deleted using
+ * wimlib_delete_image(), exported using wimlib_export_image(), and updated or
+ * modified using wimlib_update_image().  However, changes made to a WIM
+ * represented by a ::WIMStruct have no persistent effect until the WIM is
+ * actually written to an on-disk file.  This can be done using wimlib_write(),
+ * but if the WIM was originally opened using wimlib_open_wim(), then
+ * wimlib_overwrite() can be used instead.
  *
- * To extract an image from a WIM file, call wimlib_extract_image().  This can
- * be done either to a directory, or, on UNIX-like systems, directly to a block
- * device containing a NTFS filesystem.
+ * Note that with this ::WIMStruct abstraction, performing many tasks on WIM
+ * files is a multi-step process.  For example, to add, or "append" an image to
+ * an existing stand-alone WIM file in a way similar to <b>wimlib-imagex
+ * append</b>, you must call the following functions:
  *
- * To extract individual files or directories from a WIM image, rather than a
- * full image, call wimlib_extract_files().
+ * 1. wimlib_open_wim()
+ * 2. wimlib_add_image()
+ * 3. wimlib_overwrite()
  *
- * To programatically make changes to a WIM image without mounting it, call
- * wimlib_update_image().
+ * This design is very much on purpose as it makes the library more useful in
+ * general by allowing functions to be composed in different ways.  For example,
+ * you can make multiple changes to a WIM and commit them all to the underlying
+ * file in only one overwrite operation, which is more efficient.
  *
- * On UNIX-like systems supporting FUSE (such as Linux), wimlib supports
- * mounting WIM files either read-only or read-write.  Mounting is done using
- * wimlib_mount_image() and unmounting is done using wimlib_unmount_image().
- * Mounting can be done without root privileges because it is implemented using
- * FUSE (Filesystem in Userspace).  If wimlib is compiled with the
- * <code>--without-fuse</code> flag, these functions will be available but will
- * fail with ::WIMLIB_ERR_UNSUPPORTED.
+ * \section cleaning_up Cleaning up
  *
- * After creating or modifying a WIM file, you can write it to a file using
- * wimlib_write().  Alternatively,  if the WIM was originally read from a file
- * (using wimlib_open_wim() rather than wimlib_create_new_wim()), you can use
- * wimlib_overwrite() to overwrite the original file.  Still alternatively, you
- * can write a WIM directly to a file descriptor by calling wimlib_write_to_fd()
- * instead.
+ * After you are done with any ::WIMStruct, you can call wimlib_free() to free
+ * all resources associated with it.  Also, when you are completely done with
+ * using wimlib in your program, you can call wimlib_global_cleanup() to free
+ * any other resources allocated by the library.
  *
- * wimlib supports a special "pipable" WIM format (which unfortunately is @b not
- * compatible with Microsoft's software).  To create a pipable WIM, call
- * wimlib_write(), wimlib_write_to_fd(), or wimlib_overwrite() with
- * ::WIMLIB_WRITE_FLAG_PIPABLE specified.  Pipable WIMs are pipable in both
- * directions, so wimlib_write_to_fd() can be used to write a pipable WIM to a
- * pipe, and wimlib_extract_image_from_pipe() can be used to apply an image from
- * a pipable WIM.  wimlib can also transparently open and operate on pipable WIM
- * s using a seekable file descriptor using the regular function calls (e.g.
- * wimlib_open_wim(), wimlib_extract_image()).
+ * \section error_handling Error Handling
  *
- * Please note: merely by calling wimlib_add_image() or many of the other
- * functions in this library that operate on ::WIMStruct's, you are @b not
- * modifying the WIM file on disk.  Changes are not saved until you explicitly
- * call wimlib_write() or wimlib_overwrite().
- *
- * After you are done with the WIM file, use wimlib_free() to free all memory
- * associated with a ::WIMStruct and close all files associated with it.
- *
- * When you are completely done with using wimlib in your program, you should
- * call wimlib_global_cleanup().
- *
- * A number of functions take a pointer to a progress function of type
- * ::wimlib_progress_func_t.  This function will be called periodically during
- * the WIM operation(s) to report on the progress of the operation (for example,
- * how many bytes have been written so far).
- *
- * wimlib is thread-safe as long as different ::WIMStruct's are used, except for
- * the following exceptions:
- * - You must call wimlib_global_init() in one thread before calling any other
- *   functions.
- * - wimlib_set_print_errors() and wimlib_set_memory_allocator() both apply globally.
- * - wimlib_mount_image(), while it can be used to mount multiple WIMs
- *   concurrently in the same process, will daemonize the entire process when it
- *   does so for the first time.  This includes changing the working directory
- *   to the root directory.
+ * Most functions in wimlib return 0 on success and a positive error code on
+ * failure.  Use wimlib_get_error_string() to get a string that describes an
+ * error code.  wimlib also can print error messages to standard error itself
+ * when an error happens, and these may be more informative than the error code;
+ * to enable this, call wimlib_set_print_errors().  Please note that this is for
+ * convenience only, and some errors can occur without a message being printed.
+ * Currently, error messages and strings (as well as all documentation, for that
+ * matter) are only available in English.
  *
  * \section encodings Locales and character encodings
  *
@@ -146,7 +117,118 @@
  * default, wimlib on UNIX will assume the locale is UTF-8 capable unless you
  * call wimlib_global_init() after having set your desired locale.
  *
- * \section Limitations
+ * \section advanced Additional information and features
+ *
+ * \subsection image_addition Image addition/capture
+ *
+ * As described in \ref basic_wim_handling_concepts, capturing a new WIM or
+ * appending an image to an existing WIM is a multi-step process, but at its
+ * core is wimlib_add_image() or an equivalent function.  Normally,
+ * wimlib_add_image() takes an on-disk directory tree and logically adds it to a
+ * ::WIMStruct as a new image.  However, when supported by the build of the
+ * library, there is also a special NTFS volume capture mode (entered when
+ * ::WIMLIB_ADD_FLAG_NTFS is specified) that allows adding the image directly
+ * from an unmounted NTFS volume.
+ *
+ * Another function, wimlib_add_image_multisource() is also provided.  It
+ * generalizes wimlib_add_image() to allow combining multiple files or directory
+ * trees into a single WIM image in a configurable way.
+ *
+ * For maximum customization of WIM image creation, it is also possible to add a
+ * completely empty WIM image with wimlib_add_empty_image(), then update it with
+ * wimlib_update_image().  (This is in fact what wimlib_add_image() and
+ * wimlib_add_image_multisource() do internally.)
+ *
+ * Note that some details of how image addition/capture works are documented
+ * more fully in the manual page for <b>wimlib-imagex capture</b>.
+ *
+ * \subsection extraction Image extraction/application
+ *
+ * wimlib_extract_image() extracts, or "applies", an image from a WIM
+ * (represented, as usual, by a ::WIMStruct).  This normally extracts the image
+ * to a directory, but when supported by the build of the library there is also
+ * a special NTFS volume extraction mode (entered when
+ * ::WIMLIB_EXTRACT_FLAG_NTFS is specified) that allows extracting a WIM image
+ * directly to an unmounted NTFS volume.  Various other flags allow further
+ * customization of image extraction.
+ *
+ * Another function, wimlib_extract_files(), is also provided.  It can extract
+ * certain files or directories from a WIM image, instead of a full image.
+ *
+ * A third function, wimlib_extract_image_from_pipe(), allows an image to be
+ * extracted from a pipable WIM sent over a pipe; see \ref pipable_wims.
+ *
+ * Note that some details of how image extraction/application works are
+ * documented more fully in the manual pages for <b>wimlib-imagex apply</b> and
+ * <b>wimlib-imagex extract</b>.
+ *
+ * \subsection non_standalone_wims Non-standalone WIMs
+ *
+ * Earlier it was stated that a ::WIMStruct represents a WIM file, but there's a
+ * bit more to it than that.  Normally, WIM files are "standalone".  However,
+ * WIM files can also be arranged in non-standalone ways, such as a set of
+ * on-disk files that together form a single "split WIM" or "delta WIM".  Such
+ * arrangements are fully supported by wimlib.  However, as a result, in such
+ * cases a ::WIMStruct created from one of these on-disk files initially only
+ * partially represents the full WIM and needs to, in effect, be logically
+ * combined with other ::WIMStruct's before performing certain operations, such
+ * as extracting files with wimlib_extract_image() or wimlib_extract_files().
+ * This is done by calling wimlib_reference_resource_files() or
+ * wimlib_reference_resources().
+ *
+ * wimlib_write() can create delta WIMs as well as standalone WIMs, but a
+ * specialized function (wimlib_split()) is needed to create a split WIM.
+ *
+ * \subsection mounting_wim_images Mounting WIM images
+ *
+ * On UNIX-like systems supporting FUSE (such as Linux), wimlib supports
+ * mounting images from WIM files either read-only or read-write.  To mount an
+ * image, call wimlib_mount_image().  To unmount an image, call
+ * wimlib_unmount_image().  Mounting can be done without root privileges because
+ * it is implemented using FUSE (Filesystem in Userspace).  If wimlib is
+ * compiled with the <code>--without-fuse</code> flag, these functions will be
+ * available but will fail with ::WIMLIB_ERR_UNSUPPORTED.  Note that mounting an
+ * image read-write is an alternative to calling wimlib_update_image().
+ *
+ * \subsection progress_functions Progress Functions
+ *
+ * When operating on large archives, operations such as extraction will
+ * naturally take a while to complete.  Because of this and to improve the
+ * potential user-friendliness of library clients, a number of functions take a
+ * pointer to a progress function of type ::wimlib_progress_func_t.  This
+ * function will be called periodically during the WIM operation(s) to report on
+ * the progress of the operation (for example, how many bytes have been written
+ * so far).
+ *
+ * \subsection pipable_wims Pipable WIMs
+ *
+ * wimlib supports a special "pipable" WIM format which unfortunately is @b not
+ * compatible with Microsoft's software.  To create a pipable WIM, call
+ * wimlib_write(), wimlib_write_to_fd(), or wimlib_overwrite() with
+ * ::WIMLIB_WRITE_FLAG_PIPABLE specified.  Pipable WIMs are pipable in both
+ * directions, so wimlib_write_to_fd() can be used to write a pipable WIM to a
+ * pipe, and wimlib_extract_image_from_pipe() can be used to apply an image from
+ * a pipable WIM.  wimlib can also transparently open and operate on pipable WIM
+ * s using a seekable file descriptor using the regular function calls (e.g.
+ * wimlib_open_wim(), wimlib_extract_image()).
+ *
+ * See the documentation for the <b>--pipable</b> flag of <b>wimlib-imagex
+ * capture</b> for more information about pipable WIMs.
+ *
+ * \subsection thread_safety Thread Safety
+ *
+ * wimlib is thread-safe, with the following exceptions:
+ * - Different threads cannot operate on the same ::WIMStruct at the same time;
+ *   they must use different ::WIMStruct's.
+ * - You must call wimlib_global_init() in one thread before calling any other
+ *   functions.
+ * - wimlib_set_print_errors() and wimlib_set_memory_allocator() both apply globally.
+ * - wimlib_mount_image(), while it can be used to mount multiple WIMs
+ *   concurrently in the same process, will daemonize the entire process when it
+ *   does so for the first time.  This includes changing the working directory
+ *   to the root directory.
+ *
+ * \subsection limitations Limitations
  *
  * This section documents some technical limitations of wimlib not already
  * documented in the man page for @b wimlib-imagex.
@@ -158,8 +240,14 @@
  * - wimlib does not provide a clone of the @b PEImg tool, or the @b Dism
  *   functionality other than that already present in @b ImageX, that allows you
  *   to make certain Windows-specific modifications to a Windows PE image, such
- *   as adding a driver or Windows component.  Such a tool possibly could be
- *   implemented on top of wimlib.
+ *   as adding a driver or Windows component.  Such a tool could be implemented
+ *   on top of wimlib.
+ *
+ * \subsection more_info More information
+ *
+ * You are advised to read the README as well as the manual pages for
+ * <b>wimlib-imagex</b>, since not all relevant information is repeated here in
+ * the API documentation.
  */
 
 #ifndef _WIMLIB_H
@@ -699,12 +787,12 @@ struct wimlib_wim_info {
 	/** Chunk size used for compression.  */
 	uint32_t chunk_size;
 
-	/** 1-based index of this part within a split WIM, or 1 if the WIM is
-	 * standalone.  */
+	/** For split WIMs, the 1-based index of this part within the split WIM;
+	 * otherwise 1.  */
 	uint16_t part_number;
 
-	/** Total number of parts in the split WIM, or 1 if the WIM is
-	 * standalone.  */
+	/** For split WIMs, the total number of parts in the split WIM;
+	 * otherwise 1.  */
 	uint16_t total_parts;
 
 	/** One of the ::wimlib_compression_type values that specifies the
@@ -1211,10 +1299,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * integrity table is invalid).  */
 #define WIMLIB_OPEN_FLAG_CHECK_INTEGRITY		0x00000001
 
-/** Do not issue an error if the WIM is part of a split WIM.  Programs must
- * specify this flag if they intend to open part of a split WIM, rather than
- * only supporting standalone WIMs.  */
-#define WIMLIB_OPEN_FLAG_SPLIT_OK			0x00000002
+/** Issue an error if the WIM is part of a split WIM.  */
+#define WIMLIB_OPEN_FLAG_ERROR_IF_SPLIT			0x00000002
 
 /** Check if the WIM is writable and return ::WIMLIB_ERR_WIM_IS_READONLY if it
  * is not.  A WIM is considered writable only if it is writable at the
@@ -1522,6 +1608,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_INVALID_UTF16_STRING,
 	WIMLIB_ERR_INVALID_UTF8_STRING,
 	WIMLIB_ERR_IS_DIRECTORY,
+	WIMLIB_ERR_IS_SPLIT_WIM,
 	WIMLIB_ERR_LIBXML_UTF16_HANDLER_NOT_AVAILABLE,
 	WIMLIB_ERR_LINK,
 	WIMLIB_ERR_METADATA_NOT_FOUND,
@@ -1551,7 +1638,6 @@ enum wimlib_error_code {
 	WIMLIB_ERR_SET_SHORT_NAME,
 	WIMLIB_ERR_SET_TIMESTAMPS,
 	WIMLIB_ERR_SPLIT_INVALID,
-	WIMLIB_ERR_SPLIT_UNSUPPORTED,
 	WIMLIB_ERR_STAT,
 	WIMLIB_ERR_TIMEOUT,
 	WIMLIB_ERR_UNEXPECTED_END_OF_FILE,
@@ -1773,8 +1859,12 @@ wimlib_delete_image(WIMStruct *wim, int image);
  * dest_wim (if any) until wimlib_write() or wimlib_overwrite() is called.
  *
  * @param src_wim
- * 	Pointer to the ::WIMStruct for a stand-alone WIM or part 1 of a split
- * 	WIM that contains the image(s) being exported.
+ *	The WIM from which to export the images, specified as a pointer to the
+ *	::WIMStruct for a standalone WIM file, a delta WIM file, or part 1 of a
+ *	split WIM.  In the case of a WIM file that is not standalone, this
+ *	::WIMStruct must have had any needed external resources previously
+ *	referenced using wimlib_reference_resources() or
+ *	wimlib_reference_resource_files().
  * @param src_image
  * 	The image to export from @p src_wim, as either a 1-based image index to
  * 	export a single image, or ::WIMLIB_ALL_IMAGES to export all images.
@@ -1851,8 +1941,12 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  * image.
  *
  * @param wim
- *	Pointer to the ::WIMStruct for a standalone WIM file, or part 1 of a
- *	split WIM.
+ *	The WIM from which to extract the files, specified as a pointer to the
+ *	::WIMStruct for a standalone WIM file, a delta WIM file, or part 1 of a
+ *	split WIM.  In the case of a WIM file that is not standalone, this
+ *	::WIMStruct must have had any needed external resources previously
+ *	referenced using wimlib_reference_resources() or
+ *	wimlib_reference_resource_files().
  *
  * @param image
  *	The 1-based number of the image in @p wim from which the files or
@@ -1905,8 +1999,8 @@ wimlib_extract_files(WIMStruct *wim,
 		     wimlib_progress_func_t progress_func);
 
 /**
- * Extracts an image, or all images, from a standalone or split WIM file to a
- * directory or directly to a NTFS volume image.
+ * Extracts an image, or all images, from a WIM to a directory or directly to a
+ * NTFS volume image.
  *
  * The exact behavior of how wimlib extracts files from a WIM image is
  * controllable by the @p extract_flags parameter, but there also are
@@ -1922,8 +2016,12 @@ wimlib_extract_files(WIMStruct *wim,
  * correctly.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a standalone WIM file, or part 1 of a
- * 	split WIM.
+ *	The WIM from which to extract the image(s), specified as a pointer to
+ *	the ::WIMStruct for a standalone WIM file, a delta WIM file, or part 1
+ *	of a split WIM.  In the case of a WIM file that is not standalone, this
+ *	::WIMStruct must have had any needed external resources previously
+ *	referenced using wimlib_reference_resources() or
+ *	wimlib_reference_resource_files().
  * @param image
  * 	The image to extract.  Can be the number of an image, or ::WIMLIB_ALL_IMAGES
  * 	to specify that all images are to be extracted.  ::WIMLIB_ALL_IMAGES cannot
@@ -2078,10 +2176,10 @@ wimlib_extract_image_from_pipe(int pipe_fd,
 /**
  * Extracts the XML data of a WIM file to a file stream.  Every WIM file
  * includes a string of XML that describes the images contained in the WIM.
- * This function works on standalone WIMs as well as split WIM parts.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
+ * 	Pointer to the ::WIMStruct for a WIM file, which does not necessarily
+ * 	have to be standalone (e.g. it could be part of a split WIM).
  * @param fp
  * 	@c stdout, or a FILE* opened for writing, to extract the data to.
  *
@@ -2141,8 +2239,8 @@ wimlib_get_error_string(enum wimlib_error_code code);
  * Returns the description of the specified image.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
- * 	standalone WIM or a split WIM part.
+ * 	Pointer to the ::WIMStruct for a WIM file that does not necessarily have
+ * 	to be standalone (e.g. it could be part of a split WIM).
  * @param image
  * 	The number of the image, numbered starting at 1.
  *
@@ -2160,8 +2258,8 @@ wimlib_get_image_description(const WIMStruct *wim, int image);
  * Returns the name of the specified image.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
- * 	standalone WIM or a split WIM part.
+ * 	Pointer to the ::WIMStruct for a WIM file that does not necessarily have
+ * 	to be standalone (e.g. it could be part of a split WIM).
  * @param image
  * 	The number of the image, numbered starting at 1.
  *
@@ -2180,8 +2278,8 @@ wimlib_get_image_name(const WIMStruct *wim, int image);
  * Get basic information about a WIM file.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.  It may be for either a
- * 	standalone WIM or part of a split WIM.
+ * 	Pointer to the ::WIMStruct for a WIM file that does not necessarily have
+ * 	to be standalone (e.g. it could be part of a split WIM).
  * @param info
  *	A ::wimlib_wim_info structure that will be filled in with information
  *	about the WIM file.
@@ -2193,9 +2291,9 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info);
 
 /**
  * Initialization function for wimlib.  Call before using any other wimlib
- * function except wimlib_set_print_errors().  (However, currently this is not
- * strictly necessary and it will be called automatically if not done manually,
- * but you should not rely on this behavior.)
+ * function except wimlib_set_print_errors().  If not done manually, this
+ * function will be called automatically with @p init_flags set to
+ * ::WIMLIB_INIT_FLAG_ASSUME_UTF8.
  *
  * @param init_flags
  *	Bitwise OR of flags prefixed with WIMLIB_INIT_FLAG.
@@ -2241,8 +2339,12 @@ wimlib_image_name_in_use(const WIMStruct *wim, const wimlib_tchar *name);
  * WIM image.
  *
  * @param wim
- *	Pointer to the ::WIMStruct for a standalone WIM file, or part 1 of a
- *	split WIM.
+ *	The WIM containing the image(s) over which to iterate, specified as a
+ *	pointer to the ::WIMStruct for a standalone WIM file, a delta WIM file,
+ *	or part 1 of a split WIM.  In the case of a WIM file that is not
+ *	standalone, this ::WIMStruct must have had any needed external resources
+ *	previously referenced using wimlib_reference_resources() or
+ *	wimlib_reference_resource_files().
  *
  * @param image
  *	The 1-based number of the image in @p wim that contains the files or
@@ -2286,13 +2388,18 @@ wimlib_iterate_dir_tree(WIMStruct *wim, int image, const wimlib_tchar *path,
 
 /**
  * Iterate through the lookup table of a WIM file.  This can be used to directly
- * get a listing of the unique resources contained in a WIM file.  Both file
- * resources and metadata resources are included.
+ * get a listing of the unique resources contained in a WIM file over all
+ * images.  Both file resources and metadata resources are included.  However,
+ * only resources actually included in the file represented by @a wim, plus
+ * explicitly referenced external resources (via wimlib_reference_resources() or
+ * wimlib_reference_resource_files()) are included in the iteration.  For
+ * example, if @p wim represents just one part of a split WIM, then only
+ * resources in that part will be included, unless other resources were
+ * explicitly referenced.
  *
  * @param wim
- *	Pointer to the ::WIMStruct of a standalone WIM file or a split WIM part.
- *	Note: metadata resources will only be included if the WIM is standalone
- *	or the first part of the split WIM.
+ * 	Pointer to the ::WIMStruct for a WIM file that does not necessarily have
+ * 	to be standalone (e.g. it could be part of a split WIM).
  *
  * @param flags
  *	Reserved; set to 0.
@@ -2323,8 +2430,7 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
  * 	Number of filenames in @p swms.
  * @param swm_open_flags
  *	Open flags for the split WIM parts (e.g.
- *	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY).  Note: ::WIMLIB_OPEN_FLAG_SPLIT_OK
- *	is automatically added to the value specified here.
+ *	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY).
  * @param wim_write_flags
  * 	Bitwise OR of relevant flags prefixed with WIMLIB_WRITE_FLAG, which will
  * 	be used to write the joined WIM.
@@ -2343,10 +2449,12 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
  * 	the parts of the original WIM, there are duplicate parts, or not all the
  * 	parts have the same GUID and compression type.
  *
- * Note: wimlib_export_image() can provide similar functionality to
- * wimlib_join(), since it is possible to export all images from a split WIM
- * into a new ::WIMStruct, then write it.  However, wimlib_join() may have
- * better performance than this method.
+ * Note: wimlib is generalized enough that this function is not actually needed
+ * to join a split WIM; instead, you could open the first part of the split WIM,
+ * then reference the other parts with wimlib_reference_resource_files(), then
+ * write the joined WIM using wimlib_write().  However, wimlib_join() provides
+ * an easy-to-use wrapper around this that has some advantages (e.g.  extra
+ * sanity checks).
  */
 extern int
 wimlib_join(const wimlib_tchar * const *swms,
@@ -2544,6 +2652,9 @@ wimlib_mount_image(WIMStruct *wim,
  * 	digest of all 0's.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  *	@p wim_ret was @c NULL.
+ * @retval ::WIMLIB_ERR_IS_SPLIT_WIM
+ * 	@p wim_file is a split WIM and ::WIMLIB_OPEN_FLAG_ERROR_IF_SPLIT was
+ * 	specified in @p open_flags.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocated needed memory.
  * @retval ::WIMLIB_ERR_NOT_A_WIM_FILE
@@ -2552,9 +2663,6 @@ wimlib_mount_image(WIMStruct *wim,
  * 	Failed to open the file @p wim_file for reading.
  * @retval ::WIMLIB_ERR_READ
  * 	Failed to read data from @p wim_file.
- * @retval ::WIMLIB_ERR_SPLIT_UNSUPPORTED
- * 	@p wim_file is a split WIM, but ::WIMLIB_OPEN_FLAG_SPLIT_OK was not
- * 	specified in @p open_flags.
  * @retval ::WIMLIB_ERR_UNEXPECTED_END_OF_FILE
  *	Unexpected end-of-file while reading data from @p wim_file.
  * @retval ::WIMLIB_ERR_UNKNOWN_VERSION
@@ -2708,8 +2816,6 @@ wimlib_print_metadata(WIMStruct *wim, int image) _wimlib_deprecated;
  * @param open_flags
  *	Additional open flags, such as ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY, to
  *	pass to internal calls to wimlib_open_wim() on the reference files.
- *	Note: ::WIMLIB_OPEN_FLAG_SPLIT_OK will be supplied regardless of this
- *	parameter.
  * @param progress_func
  *	Passed to internal calls to wimlib_open_wim() on the reference files.
  *
@@ -2845,7 +2951,7 @@ wimlib_reference_template_image(WIMStruct *wim, int new_image,
  * the number of the image.  The images are numbered starting at 1.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.
+ * 	Pointer to the ::WIMStruct for a WIM.
  * @param image_name_or_num
  * 	A string specifying the name or number of an image in the WIM.  If it
  * 	parses to a positive integer, this integer is taken to specify the
@@ -2874,9 +2980,7 @@ wimlib_resolve_image(WIMStruct *wim,
  * Changes the description of an image in the WIM.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
- * 	standalone WIM or part of a split WIM; however, you should set the same
- * 	description on all parts of a split WIM.
+ * 	Pointer to the ::WIMStruct for a WIM.
  * @param image
  * 	The number of the image for which to change the description.
  * @param description
@@ -2901,7 +3005,7 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  * Set basic information about a WIM.
  *
  * @param wim
- *	A WIMStruct for a standalone WIM file.
+ * 	Pointer to the ::WIMStruct for a WIM.
  * @param info
  *	A struct ::wimlib_wim_info that contains the information to set.  Only
  *	the information explicitly specified in the @p which flags need be
@@ -2932,9 +3036,7 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info,
  * (something like "Core" or "Ultimate")
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
- * 	standalone WIM or part of a split WIM; however, you should set the same
- * 	\<FLAGS\> element on all parts of a split WIM.
+ * 	Pointer to the ::WIMStruct for a WIM.
  * @param image
  * 	The number of the image for which to change the description.
  * @param flags
@@ -2957,9 +3059,7 @@ wimlib_set_image_flags(WIMStruct *wim, int image, const wimlib_tchar *flags);
  * Changes the name of an image in the WIM.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct for a WIM file.  It may be either a
- * 	standalone WIM or part of a split WIM; however, you should set the same
- * 	name on all parts of a split WIM.
+ * 	Pointer to the ::WIMStruct for a WIM.
  * @param image
  * 	The number of the image for which to change the name.
  * @param name
@@ -3043,8 +3143,7 @@ wimlib_set_print_errors(bool show_messages);
  * Splits a WIM into multiple parts.
  *
  * @param wim
- * 	The ::WIMStruct for the WIM to split.  It must be a standalone, one-part
- * 	WIM.
+ * 	The ::WIMStruct for the WIM to split.
  * @param swm_name
  * 	Name of the SWM file to create.  This will be the name of the first
  * 	part.  The other parts will have the same name with 2, 3, 4, ..., etc.
@@ -3091,8 +3190,8 @@ wimlib_split(WIMStruct *wim,
  * original ::WIMStruct passed to wimlib_mount_image(), which should not be
  * touched and also may have been allocated in a different process.
  *
- * To unmount the image, the thread calling this function communicates with the
- * thread that is managing the mounted WIM image.  This function blocks until it
+ * To unmount the image, the process calling this function communicates with the
+ * process that is managing the mounted WIM image.  This function blocks until it
  * is known whether the unmount succeeded or failed.  In the case of a
  * read-write mounted WIM, the unmount is not considered to have succeeded until
  * all changes have been saved to the underlying WIM file.
@@ -3263,11 +3362,16 @@ wimlib_update_image(WIMStruct *wim,
 		    wimlib_progress_func_t progress_func);
 
 /**
- * Writes a standalone WIM to a file.
+ * Writes a WIM to a file.
  *
  * This brings in resources from any external locations, such as directory trees
  * or NTFS volumes scanned with wimlib_add_image(), or other WIM files via
  * wimlib_export_image(), and incorporates them into a new on-disk WIM file.
+ *
+ * By default, the new WIM file is written as stand-alone.  Using the
+ * ::WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS flag, a "delta" WIM can be written
+ * instead.  However, this function cannot directly write a "split" WIM; use
+ * wimlib_split() for that.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct for a WIM.  There may have been in-memory
@@ -3275,8 +3379,10 @@ wimlib_update_image(WIMStruct *wim,
  * @param path
  * 	The path to the file to write the WIM to.
  * @param image
- * 	The 1-based index of the image inside the WIM to write.  Use
- * 	::WIMLIB_ALL_IMAGES to include all images.
+ * 	Normally, specify ::WIMLIB_ALL_IMAGES here.  This indicates that all
+ * 	images are to be included in the new on-disk WIM file.  If for some
+ * 	reason you only want to include a single image, specify the index of
+ * 	that image instead.
  * @param write_flags
  * 	Bitwise OR of any of the flags prefixed with @c WIMLIB_WRITE_FLAG.
  * @param num_threads

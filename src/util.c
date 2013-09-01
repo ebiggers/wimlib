@@ -341,6 +341,8 @@ static const tchar *error_strings[] = {
 		= T("A string in a WIM dentry is not a valid UTF-16LE string"),
 	[WIMLIB_ERR_IS_DIRECTORY]
 		= T("One of the specified paths to delete was a directory"),
+	[WIMLIB_ERR_IS_SPLIT_WIM]
+		= T("The WIM is part of a split WIM, which is not supported for this operation"),
 	[WIMLIB_ERR_LIBXML_UTF16_HANDLER_NOT_AVAILABLE]
 		= T("libxml2 was unable to find a character encoding conversion handler "
 		  "for UTF-16LE"),
@@ -402,8 +404,6 @@ static const tchar *error_strings[] = {
 		= T("Failed to set timestamps on extracted file"),
 	[WIMLIB_ERR_SPLIT_INVALID]
 		= T("The WIM is part of an invalid split WIM"),
-	[WIMLIB_ERR_SPLIT_UNSUPPORTED]
-		= T("The WIM is part of a split WIM, which is not supported for this operation"),
 	[WIMLIB_ERR_STAT]
 		= T("Could not read the metadata for a file or directory"),
 	[WIMLIB_ERR_TIMEOUT]

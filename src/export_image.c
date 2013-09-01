@@ -115,7 +115,7 @@ wimlib_export_image(WIMStruct *src_wim,
 	if (src_wim == NULL || dest_wim == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (!wim_has_metadata(src_wim) || !wim_has_metadata(dest_wim))
+	if (!wim_has_metadata(dest_wim))
 		return WIMLIB_ERR_METADATA_NOT_FOUND;
 
 	/* Destination WIM must be writable.  */
