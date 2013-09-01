@@ -1010,90 +1010,99 @@ win32_capture_streams(HANDLE *hFile_p,
 		goto unnamed_only;
 
 #ifdef WITH_NTDLL
-	if (func_NtQueryInformationFile) {
-		buf = _buf;
-		bufsize = sizeof(_buf);
+	if (!func_NtQueryInformationFile)
+		goto use_FindFirstStream;
 
-		/* Get a buffer containing the stream information.  */
-		for (;;) {
-			status = (*func_NtQueryInformationFile)(*hFile_p, &io_status,
-								buf, bufsize,
-								FileStreamInformation);
-			if (status == STATUS_SUCCESS) {
-				break;
-			} else if (status == STATUS_BUFFER_OVERFLOW) {
-				u8 *newbuf;
+	buf = _buf;
+	bufsize = sizeof(_buf);
 
-				bufsize *= 2;
-				if (buf == _buf)
-					newbuf = MALLOC(bufsize);
-				else
-					newbuf = REALLOC(buf, bufsize);
+	/* Get a buffer containing the stream information.  */
+	for (;;) {
+		status = (*func_NtQueryInformationFile)(*hFile_p, &io_status,
+							buf, bufsize,
+							FileStreamInformation);
+		if (status == STATUS_SUCCESS) {
+			break;
+		} else if (status == STATUS_BUFFER_OVERFLOW) {
+			u8 *newbuf;
 
-				if (!newbuf) {
-					ret = WIMLIB_ERR_NOMEM;
-					goto out_free_buf;
-				}
-				buf = newbuf;
-			} else {
-				set_errno_from_nt_status(status);
-				ERROR_WITH_ERRNO("Failed to read streams of %ls", path);
-				ret = WIMLIB_ERR_READ;
+			bufsize *= 2;
+			if (buf == _buf)
+				newbuf = MALLOC(bufsize);
+			else
+				newbuf = REALLOC(buf, bufsize);
+
+			if (!newbuf) {
+				ret = WIMLIB_ERR_NOMEM;
 				goto out_free_buf;
 			}
-		}
-
-		if (io_status.Information == 0) {
-			/* No stream information.  */
-			ret = 0;
+			buf = newbuf;
+		} else if (status == STATUS_NOT_IMPLEMENTED ||
+			   status == STATUS_NOT_SUPPORTED ||
+			   status == STATUS_INVALID_INFO_CLASS) {
+			goto use_FindFirstStream;
+		} else {
+			set_errno_from_nt_status(status);
+			ERROR_WITH_ERRNO("Failed to read streams of %ls", path);
+			ret = WIMLIB_ERR_READ;
 			goto out_free_buf;
 		}
-
-		if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
-			/* OpenEncryptedFileRaw() seems to fail with
-			 * ERROR_SHARING_VIOLATION if there are any handles opened to
-			 * the file.  */
-			CloseHandle(*hFile_p);
-			*hFile_p = INVALID_HANDLE_VALUE;
-		}
-
-		/* Parse one or more stream information structures.  */
-		info = (const FILE_STREAM_INFORMATION*)buf;
-		for (;;) {
-			if (info->StreamNameLength <= sizeof(dat.cStreamName) - 2) {
-				dat.StreamSize = info->StreamSize;
-				memcpy(dat.cStreamName, info->StreamName, info->StreamNameLength);
-				dat.cStreamName[info->StreamNameLength / 2] = L'\0';
-
-				/* Capture the stream.  */
-				ret = win32_capture_stream(path, path_num_chars, inode,
-							   lookup_table, &dat);
-				if (ret)
-					goto out_free_buf;
-			}
-			if (info->NextEntryOffset == 0) {
-				/* No more stream information.  */
-				ret = 0;
-				break;
-			}
-			/* Advance to next stream information.  */
-			info = (const FILE_STREAM_INFORMATION*)
-					((const u8*)info + info->NextEntryOffset);
-		}
-	out_free_buf:
-		/* Free buffer if allocated on heap.  */
-		if (buf != _buf)
-			FREE(buf);
-		return ret;
 	}
+
+	if (io_status.Information == 0) {
+		/* No stream information.  */
+		ret = 0;
+		goto out_free_buf;
+	}
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
+		/* OpenEncryptedFileRaw() seems to fail with
+		 * ERROR_SHARING_VIOLATION if there are any handles opened to
+		 * the file.  */
+		CloseHandle(*hFile_p);
+		*hFile_p = INVALID_HANDLE_VALUE;
+	}
+
+	/* Parse one or more stream information structures.  */
+	info = (const FILE_STREAM_INFORMATION*)buf;
+	for (;;) {
+		if (info->StreamNameLength <= sizeof(dat.cStreamName) - 2) {
+			dat.StreamSize = info->StreamSize;
+			memcpy(dat.cStreamName, info->StreamName, info->StreamNameLength);
+			dat.cStreamName[info->StreamNameLength / 2] = L'\0';
+
+			/* Capture the stream.  */
+			ret = win32_capture_stream(path, path_num_chars, inode,
+						   lookup_table, &dat);
+			if (ret)
+				goto out_free_buf;
+		}
+		if (info->NextEntryOffset == 0) {
+			/* No more stream information.  */
+			ret = 0;
+			break;
+		}
+		/* Advance to next stream information.  */
+		info = (const FILE_STREAM_INFORMATION*)
+				((const u8*)info + info->NextEntryOffset);
+	}
+out_free_buf:
+	/* Free buffer if allocated on heap.  */
+	if (buf != _buf)
+		FREE(buf);
+	return ret;
 #endif /* WITH_NTDLL */
 
+use_FindFirstStream:
 	if (win32func_FindFirstStreamW == NULL)
 		goto unnamed_only;
 	hFind = win32func_FindFirstStreamW(path, FindStreamInfoStandard, &dat, 0);
 	if (hFind == INVALID_HANDLE_VALUE) {
 		err = GetLastError();
-		if (err == ERROR_CALL_NOT_IMPLEMENTED)
+		if (err == ERROR_CALL_NOT_IMPLEMENTED ||
+		    err == ERROR_NOT_SUPPORTED ||
+		    err == ERROR_INVALID_FUNCTION ||
+		    err == ERROR_INVALID_PARAMETER)
 			goto unnamed_only;
 
 		/* Seems legal for this to return ERROR_HANDLE_EOF on reparse
