@@ -1398,6 +1398,19 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * @}
  */
 
+/** The specific type of update to perform. */
+enum wimlib_update_op {
+	/** Add a new file or directory tree to the WIM image in a
+	 * certain location. */
+	WIMLIB_UPDATE_OP_ADD = 0,
+
+	/** Delete a file or directory tree from the WIM image. */
+	WIMLIB_UPDATE_OP_DELETE,
+
+	/** Rename a file or directory tree in the WIM image. */
+	WIMLIB_UPDATE_OP_RENAME,
+};
+
 /** Data for a ::WIMLIB_UPDATE_OP_ADD operation. */
 struct wimlib_add_command {
 	/** Filesystem path to the file or directory tree to
@@ -1445,18 +1458,8 @@ struct wimlib_rename_command {
 /** Specification of an update to perform on a WIM image. */
 struct wimlib_update_command {
 
-	/** The specific type of update to perform. */
-	enum wimlib_update_op {
-		/** Add a new file or directory tree to the WIM image in a
-		 * certain location. */
-		WIMLIB_UPDATE_OP_ADD = 0,
+	enum wimlib_update_op op;
 
-		/** Delete a file or directory tree from the WIM image. */
-		WIMLIB_UPDATE_OP_DELETE,
-
-		/** Rename a file or directory tree in the WIM image. */
-		WIMLIB_UPDATE_OP_RENAME,
-	} op;
 	union {
 		struct wimlib_add_command add;
 		struct wimlib_delete_command delete_; /* Underscore is for C++
