@@ -389,19 +389,19 @@ output (\fIWIMFILE\fR specified as "-"), and also for \fB@IMAGEX_PROGNAME@
 append\fR, except when appending to a WIM that is already pipable.
 .TP
 \fB--update-of\fR=[\fIWIMFILE\fR]:\fIIMAGE\fR
-Declares that the image being captured from \fISOURCE\fR is mostly the same as
+Declares that the image being captured or appended from \fISOURCE\fR is mostly the same as
 the existing image \fIIMAGE\fR in \fIWIMFILE\fR, but captured at a later point
 in time, possibly with some modifications in the intervening time.  This is
 designed to be used in incremental backups of the same filesystem or directory
 tree.  \fIIMAGE\fR can be a 1-based index or name of an existing image in
 \fIWIMFILE\fR.  It can also be a negative integer to index backwards into the
-images (e.g.  -1 means the last existing image).
+images (e.g.  -1 means the last existing image in \fIWIMFILE\fR).
 .IP ""
 When this option is provided, the capture or append of the new image will be
 optimized by not reading files that, based on metadata such as timestamps,
 appear not to have been modified since they were archived in the existing
 \fIIMAGE\fR.  Barring manipulation of timestamps, this option only affects
-performance and does not change the resulting WIM file.
+performance and does not change the resulting WIM image.
 .IP ""
 As shown, the full syntax for the argument to this option is to specify the WIM
 file, a colon, and the image; for example, "--update-of mywim.wim:1".
