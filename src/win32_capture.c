@@ -402,7 +402,7 @@ win32_get_security_descriptor(HANDLE hFile,
 		default:
 		fail:
 			set_errno_from_win32_error(err);
-			ERROR("Failed to read security descriptor of \"%ls\"", path);
+			ERROR_WITH_ERRNO("Failed to read security descriptor of \"%ls\"", path);
 			ret = WIMLIB_ERR_READ;
 			goto out_free_buf;
 		}
