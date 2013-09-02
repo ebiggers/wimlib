@@ -159,6 +159,12 @@ struct wim_dentry {
 	 * characters).  Otherwise this will always be 0. */
 	u8 extraction_skipped : 1;
 
+	/* For extraction operations, this flag will be set on dentries in the
+	 * tree being extracted.  */
+	u8 in_extraction_tree : 1;
+
+	/* During extraction extractions, this flag will be set after the
+	 * "skeleton" of the dentry has been extracted.  */
 	u8 skeleton_extracted : 1;
 
 	/* When capturing from a NTFS volume using NTFS-3g, this flag is set on

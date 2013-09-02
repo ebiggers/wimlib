@@ -1143,7 +1143,8 @@ dentry_extract_skeleton(struct wim_dentry *dentry, void *_ctx)
 	{
 		inode_for_each_dentry(other_dentry, dentry->d_inode) {
 			if (dentry_has_short_name(other_dentry)
-			    && !other_dentry->skeleton_extracted)
+			    && !other_dentry->skeleton_extracted
+			    && other_dentry->in_extraction_tree)
 			{
 				DEBUG("Creating %"TS" before %"TS" "
 				      "to guarantee correct DOS name extraction",
@@ -1623,6 +1624,8 @@ dentry_calculate_extraction_path(struct wim_dentry *dentry, void *_args)
 	struct apply_ctx *ctx = _args;
 	int ret;
 
+	dentry->in_extraction_tree = 1;
+
 	if (dentry == ctx->extract_root || dentry->extraction_skipped)
 		return 0;
 
@@ -1742,6 +1745,7 @@ dentry_reset_needs_extraction(struct wim_dentry *dentry, void *_ignore)
 {
 	struct wim_inode *inode = dentry->d_inode;
 
+	dentry->in_extraction_tree = 0;
 	dentry->extraction_skipped = 0;
 	dentry->was_hardlinked = 0;
 	dentry->skeleton_extracted = 0;
