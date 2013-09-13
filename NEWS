@@ -1,5 +1,9 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.5.1:
+	wimlib can now open WinPE WIMs from WAIK v2.1, which had a quirk that
+	needed to be handled.
+
 Version 1.5.0:
 	Added support for "pipable" WIMs.  Pipable WIMs allow capturing images
 	to standard output and applying images from standard input, but they are

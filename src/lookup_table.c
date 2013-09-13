@@ -574,6 +574,13 @@ read_wim_lookup_table(WIMStruct *wim)
 		if (cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) {
 			/* Lookup table entry for a metadata resource */
 			if (cur_entry->refcnt != 1) {
+				/* Metadata entries with no references must be
+				 * ignored.  See for example the WinPE WIMs from
+				 * WAIK v2.1.  */
+				if (cur_entry->refcnt == 0) {
+					free_lookup_table_entry(cur_entry);
+					continue;
+				}
 				if (wimlib_print_errors) {
 					ERROR("Found metadata resource with refcnt != 1:");
 					print_lookup_table_entry(cur_entry, stderr);
