@@ -420,7 +420,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 		 * intervening time...
 		 *
 		 * Warning: in Windows native builds, realpath() calls the
-		 * replacement function in win32.c.
+		 * replacement function in win32_replacements.c.
 		 */
 		wim->filename = realpath(wimfile, NULL);
 		if (!wim->filename) {
