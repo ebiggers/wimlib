@@ -165,19 +165,35 @@ wim_info_get_num_images(const struct wim_info *info)
 		return 0;
 }
 
+/* Architecture constants are from w64 mingw winnt.h  */
+#define PROCESSOR_ARCHITECTURE_INTEL 0
+#define PROCESSOR_ARCHITECTURE_MIPS 1
+#define PROCESSOR_ARCHITECTURE_ALPHA 2
+#define PROCESSOR_ARCHITECTURE_PPC 3
+#define PROCESSOR_ARCHITECTURE_SHX 4
+#define PROCESSOR_ARCHITECTURE_ARM 5
+#define PROCESSOR_ARCHITECTURE_IA64 6
+#define PROCESSOR_ARCHITECTURE_ALPHA64 7
+#define PROCESSOR_ARCHITECTURE_MSIL 8
+#define PROCESSOR_ARCHITECTURE_AMD64 9
+#define PROCESSOR_ARCHITECTURE_IA32_ON_WIN64 10
+
 /* Returns a statically allocated string that is a string representation of the
  * architecture number. */
 static const tchar *
 get_arch(int arch)
 {
 	switch (arch) {
-	case 0:
+	case PROCESSOR_ARCHITECTURE_INTEL:
 		return T("x86");
-	case 6:
+	case PROCESSOR_ARCHITECTURE_MIPS:
+		return T("MIPS");
+	case PROCESSOR_ARCHITECTURE_ARM:
+		return T("ARM");
+	case PROCESSOR_ARCHITECTURE_IA64:
 		return T("ia64");
-	case 9:
+	case PROCESSOR_ARCHITECTURE_AMD64:
 		return T("x86_64");
-	/* XXX Are there other arch values? */
 	default:
 		return T("unknown");
 	}
