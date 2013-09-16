@@ -1982,7 +1982,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			unsigned long n;
 			struct wimlib_wim_info info;
 
-			wimlib_get_wim_info(wim, &info);
+			wimlib_get_wim_info(template_wim, &info);
 			n = tstrtoul(template_image_name_or_num + 1, &tmp, 10);
 			if (n >= 1 && n <= info.image_count &&
 			    *tmp == T('\0') &&
