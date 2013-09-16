@@ -388,7 +388,7 @@ default for \fB@IMAGEX_PROGNAME@ capture\fR, except when writing to standard
 output (\fIWIMFILE\fR specified as "-"), and also for \fB@IMAGEX_PROGNAME@
 append\fR, except when appending to a WIM that is already pipable.
 .TP
-\fB--update-of\fR=[\fIWIMFILE\fR]:\fIIMAGE\fR
+\fB--update-of\fR=[\fIWIMFILE\fR:]\fIIMAGE\fR
 Declares that the image being captured or appended from \fISOURCE\fR is mostly the same as
 the existing image \fIIMAGE\fR in \fIWIMFILE\fR, but captured at a later point
 in time, possibly with some modifications in the intervening time.  This is
@@ -405,9 +405,10 @@ performance and does not change the resulting WIM image.
 .IP ""
 As shown, the full syntax for the argument to this option is to specify the WIM
 file, a colon, and the image; for example, "--update-of mywim.wim:1".
-However, the WIM file may be omitted, in which case it will default to the WIM
-file being appended to for append operations, or the WIM file from which a delta
-is being taken (with \fB--delta-from\fR, if specified) for capture operations.
+However, the WIM file and colon may be omitted, in which case the WIM file will
+default to the WIM file being appended to for append operations, or the WIM file
+from which a delta is being taken (with \fB--delta-from\fR, if specified) for
+capture operations.
 .TP
 \fB--delta-from\fR=\fIWIMFILE\fR
 For \fB@IMAGEX_PROGNAME@ capture\fR only: capture the new WIM as a "delta" from

@@ -5,7 +5,7 @@ Version 1.5.1:
 	needed to be handled.
 
 	A bug related to the interpretation of the IMAGE in the
-	--update-of=[WIMFILE:]IMAGE argument to `wimlib-imagex capture' and
+	--update-of=[WIMFILE:]IMAGE option to `wimlib-imagex capture' and
 	`wimlib-imagex append' has been fixed.
 
 Version 1.5.0:
