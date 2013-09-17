@@ -2065,7 +2065,7 @@ do_extract_warnings(struct apply_ctx *ctx)
 	    ctx->no_security_descriptors == 0)
 		return;
 
-	WARNING("Extraction of \"%"TS"\" complete, but with one or more warnings:",
+	WARNING("Extraction to \"%"TS"\" complete, but with one or more warnings:",
 		ctx->target);
 	if (ctx->partial_security_descriptors != 0) {
 		WARNING("- Could only partially set the security descriptor\n"
