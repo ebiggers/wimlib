@@ -4,7 +4,7 @@ Version 1.5.1:
 	wimlib can now open WinPE WIMs from WAIK v2.1, which had a quirk that
 	needed to be handled.
 
-	A bug related to the interpretation of the IMAGE in the
+	A bug in the interpretation of negative IMAGE indices in the
 	--update-of=[WIMFILE:]IMAGE option to `wimlib-imagex capture' and
 	`wimlib-imagex append' has been fixed.
 
