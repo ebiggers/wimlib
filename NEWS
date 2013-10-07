@@ -8,6 +8,10 @@ Version 1.5.1:
 	--update-of=[WIMFILE:]IMAGE option to `wimlib-imagex capture' and
 	`wimlib-imagex append' has been fixed.
 
+	A workaround has been added to successfully apply security descriptors
+	with empty DACLs when the NTFS-3g apply mode is being used with NTFS-3g
+	2013.1.13 or earlier.
+
 Version 1.5.0:
 	Added support for "pipable" WIMs.  Pipable WIMs allow capturing images
 	to standard output and applying images from standard input, but they are
