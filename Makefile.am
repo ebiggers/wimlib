@@ -79,6 +79,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/reparse.h	\
 	include/wimlib/resource.h	\
 	include/wimlib/security.h	\
+	include/wimlib/security_descriptor.h	\
 	include/wimlib/sha1.h		\
 	include/wimlib/timestamp.h	\
 	include/wimlib/types.h		\

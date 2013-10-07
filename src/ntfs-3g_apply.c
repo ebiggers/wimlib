@@ -50,6 +50,7 @@
 #include "wimlib/ntfs_3g.h"
 #include "wimlib/paths.h"
 #include "wimlib/resource.h"
+#include "wimlib/security_descriptor.h"
 
 static ntfs_volume *
 ntfs_3g_apply_ctx_get_volume(struct apply_ctx *ctx)
@@ -379,6 +380,114 @@ out:
 	return ret;
 }
 
+static size_t
+sid_size(const wimlib_SID *sid)
+{
+	return offsetof(wimlib_SID, sub_authority) +
+		sizeof(le32) * sid->sub_authority_count;
+}
+
+/*
+ * sd_fixup - Fix up a Windows NT security descriptor for libntfs-3g.
+ *
+ * libntfs-3g validates security descriptors before setting them, but old
+ * versions contain bugs causing it to reject unusual but valid security
+ * descriptors:
+ *
+ * - Versions before 2013.1.13 reject security descriptors ending with an empty
+ *   SACL (System Access Control List).  This bug can be worked around either by
+ *   moving the empty SACL earlier in the security descriptor or by removing the
+ *   SACL entirely.  The latter work-around is valid because an empty SACL is
+ *   equivalent to a "null", or non-existent, SACL.
+ * - Versions up to and including 2013.1.13 reject security descriptors ending
+ *   with an empty DACL (Discretionary Access Control List).  This is very
+ *   similar to the SACL bug and should be fixed in the next release after
+ *   2013.1.13.  However, removing the DACL is not a valid workaround because
+ *   this changes the meaning of the security descriptor--- an empty DACL allows
+ *   no access, whereas a "null" DACL allows all access.
+ *
+ * If the security descriptor was fixed, this function returns an allocated
+ * buffer containing the fixed security descriptor, and its size is updated.
+ * Otherwise (or if no memory is available) the original descriptor is returned.
+ */
+static u8 *
+sd_fixup(const u8 *_desc, size_t *size_p)
+{
+	u32 owner_offset, group_offset, dacl_offset, sacl_offset;
+	bool owner_valid, group_valid;
+	size_t size = *size_p;
+	const wimlib_SECURITY_DESCRIPTOR_RELATIVE *desc =
+			(const wimlib_SECURITY_DESCRIPTOR_RELATIVE*)_desc;
+	wimlib_SECURITY_DESCRIPTOR_RELATIVE *desc_new;
+	u32 sid_offset;
+	const wimlib_SID *owner, *group, *sid;
+
+	/* Don't attempt to fix clearly invalid security descriptors.  */
+	if (size < sizeof(wimlib_SECURITY_DESCRIPTOR_RELATIVE))
+		return (u8*)_desc;
+
+	if (le16_to_cpu(desc->control) & wimlib_SE_DACL_PRESENT)
+		dacl_offset = le32_to_cpu(desc->dacl_offset);
+	else
+		dacl_offset = 0;
+
+	if (le16_to_cpu(desc->control) & wimlib_SE_SACL_PRESENT)
+		sacl_offset = le32_to_cpu(desc->sacl_offset);
+	else
+		sacl_offset = 0;
+
+	/* Check if the security descriptor will be affected by one of the bugs.
+	 * If not, do nothing and return.
+	 *
+	 * Note: HAVE_NTFS_MNT_RDONLY is defined if libntfs-3g is
+	 * version 2013.1.13 or later.  */
+	if (!(
+	#if !defined(HAVE_NTFS_MNT_RDONLY)
+	    (sacl_offset != 0 && sacl_offset == size - sizeof(wimlib_ACL)) ||
+	#endif
+	    (dacl_offset != 0 && dacl_offset == size - sizeof(wimlib_ACL))))
+		return (u8*)_desc;
+
+	owner_offset = le32_to_cpu(desc->owner_offset);
+	group_offset = le32_to_cpu(desc->group_offset);
+	owner = (const wimlib_SID*)((const u8*)desc + owner_offset);
+	group = (const wimlib_SID*)((const u8*)desc + group_offset);
+
+	/* We'll try to move the owner or group SID to the end of the security
+	 * descriptor to avoid the bug.  This is only possible if at least one
+	 * is valid.  */
+	owner_valid = (owner_offset != 0) &&
+			(owner_offset % 4 == 0) &&
+			(owner_offset <= size - sizeof(SID)) &&
+			(owner_offset + sid_size(owner) <= size) &&
+			(owner_offset >= sizeof(wimlib_SECURITY_DESCRIPTOR_RELATIVE));
+	group_valid = (group_offset != 0) &&
+			(group_offset % 4 == 0) &&
+			(group_offset <= size - sizeof(SID)) &&
+			(group_offset + sid_size(group) <= size) &&
+			(group_offset >= sizeof(wimlib_SECURITY_DESCRIPTOR_RELATIVE));
+	if (owner_valid) {
+		sid = owner;
+	} else if (group_valid) {
+		sid = group;
+	} else {
+		return (u8*)_desc;
+	}
+
+	desc_new = MALLOC(size + sid_size(sid));
+	if (desc_new == NULL)
+		return (u8*)_desc;
+
+	memcpy(desc_new, desc, size);
+	if (owner_valid)
+		desc_new->owner_offset = cpu_to_le32(size);
+	else if (group_valid)
+		desc_new->group_offset = cpu_to_le32(size);
+	memcpy((u8*)desc_new + size, sid, sid_size(sid));
+	*size_p = size + sid_size(sid);
+	return (u8*)desc_new;
+}
+
 static int
 ntfs_3g_set_security_descriptor(const char *path, const u8 *desc, size_t desc_size,
 				struct apply_ctx *ctx)
@@ -386,7 +495,8 @@ ntfs_3g_set_security_descriptor(const char *path, const u8 *desc, size_t desc_si
 	ntfs_volume *vol;
 	ntfs_inode *ni;
 	struct SECURITY_CONTEXT sec_ctx;
-	int ret = 0;
+	u8 *desc_fixed;
+	int ret;
 
 	vol = ntfs_3g_apply_ctx_get_volume(ctx);
 
@@ -397,10 +507,19 @@ ntfs_3g_set_security_descriptor(const char *path, const u8 *desc, size_t desc_si
 	memset(&sec_ctx, 0, sizeof(sec_ctx));
 	sec_ctx.vol = vol;
 
-	if (ntfs_set_ntfs_acl(&sec_ctx, ni, desc, desc_size, 0))
+	desc_fixed = sd_fixup(desc, &desc_size);
+
+	ret = 0;
+
+	if (ntfs_set_ntfs_acl(&sec_ctx, ni, desc_fixed, desc_size, 0))
 		ret = WIMLIB_ERR_SET_SECURITY;
+
+	if (desc_fixed != desc)
+		FREE(desc_fixed);
+
 	if (ntfs_inode_close(ni))
 		ret = WIMLIB_ERR_WRITE;
+
 	return ret;
 }
 

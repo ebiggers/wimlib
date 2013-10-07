@@ -31,135 +31,15 @@
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/security.h"
+#include "wimlib/security_descriptor.h"
 #include "wimlib/sha1.h"
 #include "wimlib/util.h"
-
-/* At the start of each type of access control entry.  */
-typedef struct _ACE_HEADER {
-	/* enum ace_type, specifies what type of ACE this is.  */
-	u8 type;
-
-	/* bitwise OR of the inherit ACE flags #defined above */
-	u8 flags;
-
-	/* Size of the access control entry. */
-	le16 size;
-} _packed_attribute ACE_HEADER;
-
-/* Grants rights to a user or group */
-typedef struct _ACCESS_ALLOWED_ACE {
-	ACE_HEADER hdr;
-	le32 mask;
-	le32 sid_start;
-} _packed_attribute ACCESS_ALLOWED_ACE;
-
-/* Denies rights to a user or group */
-typedef struct _ACCESS_DENIED_ACE {
-	ACE_HEADER hdr;
-	le32 mask;
-	le32 sid_start;
-} _packed_attribute ACCESS_DENIED_ACE;
-
-typedef struct _SYSTEM_AUDIT_ACE {
-	ACE_HEADER hdr;
-	le32 mask;
-	le32 sid_start;
-} _packed_attribute SYSTEM_AUDIT_ACE;
-
-
-/* Header of an access control list. */
-typedef struct _ACL {
-	/* ACL_REVISION or ACL_REVISION_DS */
-	u8 revision;
-
-	/* padding */
-	u8 sbz1;
-
-	/* Total size of the ACL, including all access control entries */
-	le16 acl_size;
-
-	/* Number of access control entry structures that follow the ACL
-	 * structure. */
-	le16 ace_count;
-
-	/* padding */
-	le16 sbz2;
-} _packed_attribute ACL;
-
-/* A structure used to identify users or groups. */
-typedef struct _SID {
-
-	/* example: 0x1 */
-	u8  revision;
-	u8  sub_authority_count;
-
-	/* Identifies the authority that issued the SID.  Can be, but does not
-	 * have to be, one of enum sid_authority_value */
-	u8  identifier_authority[6];
-
-	le32 sub_authority[];
-} _packed_attribute SID;
-
-typedef struct _SECURITY_DESCRIPTOR_RELATIVE  {
-	/* Example: 0x1 */
-	u8 revision;
-	/* Example: 0x0 */
-	u8 sbz1;
-
-	/* Example: 0x4149 */
-	le16 security_descriptor_control;
-
-	/* Offset of a SID structure in the security descriptor. */
-	/* Example: 0x14 */
-	le32 owner_offset;
-
-	/* Offset of a SID structure in the security descriptor. */
-	/* Example: 0x24 */
-	le32 group_offset;
-
-	/* Offset of an ACL structure in the security descriptor. */
-	/* System ACL. */
-	/* Example: 0x00 */
-	le32 sacl_offset;
-
-	/* Offset of an ACL structure in the security descriptor. */
-	/* Discretionary ACL. */
-	/* Example: 0x34 */
-	le32 dacl_offset;
-} _packed_attribute SECURITY_DESCRIPTOR_RELATIVE;
 
 struct wim_security_data_disk {
 	le32 total_length;
 	le32 num_entries;
 	le64 sizes[];
 } _packed_attribute;
-
-/*
- * This is a hack to work around a problem in libntfs-3g.  libntfs-3g validates
- * security descriptors with a function named ntfs_valid_descr().
- * ntfs_valid_descr() considers a security descriptor that ends in a SACL
- * (Sysetm Access Control List) with no ACE's (Access Control Entries) to be
- * invalid.  However, a security descriptor like this exists in the Windows 7
- * install.wim.  Here, security descriptors matching this pattern are modified
- * to have no SACL.  This should make no difference since the SACL had no
- * entries anyway; however this ensures that that the security descriptors pass
- * the validation in libntfs-3g.
- */
-static void
-empty_sacl_fixup(SECURITY_DESCRIPTOR_RELATIVE *descr, u64 *size_p)
-{
-	/* No-op if no NTFS-3g support, or if NTFS-3g is version 2013 or later
-	 * */
-#if defined(WITH_NTFS_3G) && !defined(HAVE_NTFS_MNT_RDONLY)
-	if (*size_p >= sizeof(SECURITY_DESCRIPTOR_RELATIVE)) {
-		u32 sacl_offset = le32_to_cpu(descr->sacl_offset);
-		if (sacl_offset == *size_p - sizeof(ACL)) {
-			descr->sacl_offset = cpu_to_le32(0);
-			*size_p -= sizeof(ACL);
-		}
-	}
-#endif
-}
 
 struct wim_security_data *
 new_wim_security_data(void)
@@ -276,8 +156,6 @@ read_wim_security_data(const u8 metadata_resource[], size_t metadata_resource_le
 		if (!sd->descriptors[i])
 			goto out_of_memory;
 		p += sd->sizes[i];
-		empty_sacl_fixup((SECURITY_DESCRIPTOR_RELATIVE*)sd->descriptors[i],
-				 &sd->sizes[i]);
 	}
 out_align_total_length:
 	total_len = (total_len + 7) & ~7;
@@ -338,11 +216,11 @@ write_wim_security_data(const struct wim_security_data * restrict sd,
 }
 
 static void
-print_acl(const ACL *acl, const tchar *type, size_t max_size)
+print_acl(const wimlib_ACL *acl, const tchar *type, size_t max_size)
 {
 	const u8 *p;
 
-	if (max_size < sizeof(ACL))
+	if (max_size < sizeof(wimlib_ACL))
 		return;
 
 	u8 revision = acl->revision;
@@ -354,11 +232,11 @@ print_acl(const ACL *acl, const tchar *type, size_t max_size)
 	tprintf(T("    ACL Size = %u\n"), acl_size);
 	tprintf(T("    ACE Count = %u\n"), ace_count);
 
-	p = (const u8*)acl + sizeof(ACL);
+	p = (const u8*)acl + sizeof(wimlib_ACL);
 	for (u16 i = 0; i < ace_count; i++) {
-		if (max_size < p + sizeof(ACCESS_ALLOWED_ACE) - (const u8*)acl)
+		if (max_size < p + sizeof(wimlib_ACCESS_ALLOWED_ACE) - (const u8*)acl)
 			break;
-		const ACCESS_ALLOWED_ACE *aaa = (const ACCESS_ALLOWED_ACE*)p;
+		const wimlib_ACCESS_ALLOWED_ACE *aaa = (const wimlib_ACCESS_ALLOWED_ACE*)p;
 		tprintf(T("        [ACE]\n"));
 		tprintf(T("        ACE type  = %d\n"), aaa->hdr.type);
 		tprintf(T("        ACE flags = 0x%x\n"), aaa->hdr.flags);
@@ -371,9 +249,9 @@ print_acl(const ACL *acl, const tchar *type, size_t max_size)
 }
 
 static void
-print_sid(const SID *sid, const tchar *type, size_t max_size)
+print_sid(const wimlib_SID *sid, const tchar *type, size_t max_size)
 {
-	if (max_size < sizeof(SID))
+	if (max_size < sizeof(wimlib_SID))
 		return;
 
 	tprintf(T("    [%"TS" SID]\n"), type);
@@ -383,7 +261,7 @@ print_sid(const SID *sid, const tchar *type, size_t max_size)
 	print_byte_field(sid->identifier_authority,
 			 sizeof(sid->identifier_authority), stdout);
 	tputchar(T('\n'));
-	if (max_size < sizeof(SID) + (size_t)sid->sub_authority_count * sizeof(u32))
+	if (max_size < sizeof(wimlib_SID) + (size_t)sid->sub_authority_count * sizeof(u32))
 		return;
 	for (u8 i = 0; i < sid->sub_authority_count; i++) {
 		tprintf(T("    Subauthority %u = %u\n"),
@@ -393,11 +271,11 @@ print_sid(const SID *sid, const tchar *type, size_t max_size)
 }
 
 static void
-print_security_descriptor(const SECURITY_DESCRIPTOR_RELATIVE *descr,
+print_security_descriptor(const wimlib_SECURITY_DESCRIPTOR_RELATIVE *descr,
 			  size_t size)
 {
 	u8 revision      = descr->revision;
-	u16 control      = le16_to_cpu(descr->security_descriptor_control);
+	u16 control      = le16_to_cpu(descr->control);
 	u32 owner_offset = le32_to_cpu(descr->owner_offset);
 	u32 group_offset = le32_to_cpu(descr->group_offset);
 	u32 dacl_offset  = le32_to_cpu(descr->dacl_offset);
@@ -411,19 +289,19 @@ print_security_descriptor(const SECURITY_DESCRIPTOR_RELATIVE *descr,
 	tprintf(T("System ACL offset = %u\n"), sacl_offset);
 
 	if (owner_offset != 0 && owner_offset <= size)
-		print_sid((const SID*)((const u8*)descr + owner_offset),
+		print_sid((const wimlib_SID*)((const u8*)descr + owner_offset),
 			  T("Owner"), size - owner_offset);
 
 	if (group_offset != 0 && group_offset <= size)
-		print_sid((const SID*)((const u8*)descr + group_offset),
+		print_sid((const wimlib_SID*)((const u8*)descr + group_offset),
 			  T("Group"), size - group_offset);
 
 	if (dacl_offset != 0 && dacl_offset <= size)
-		print_acl((const ACL*)((const u8*)descr + dacl_offset),
+		print_acl((const wimlib_ACL*)((const u8*)descr + dacl_offset),
 			  T("Discretionary"), size - dacl_offset);
 
 	if (sacl_offset != 0 && sacl_offset <= size)
-		print_acl((const ACL*)((const u8*)descr + sacl_offset),
+		print_acl((const wimlib_ACL*)((const u8*)descr + sacl_offset),
 			  T("System"), size - sacl_offset);
 }
 
@@ -440,7 +318,7 @@ print_wim_security_data(const struct wim_security_data *sd)
 	for (u32 i = 0; i < sd->num_entries; i++) {
 		tprintf(T("[SECURITY_DESCRIPTOR_RELATIVE %"PRIu32", length = %"PRIu64"]\n"),
 			i, sd->sizes[i]);
-		print_security_descriptor((const SECURITY_DESCRIPTOR_RELATIVE*)sd->descriptors[i],
+		print_security_descriptor((const wimlib_SECURITY_DESCRIPTOR_RELATIVE*)sd->descriptors[i],
 					  sd->sizes[i]);
 		tputchar(T('\n'));
 	}
