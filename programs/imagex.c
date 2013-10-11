@@ -415,61 +415,63 @@ get_compression_type(const tchar *optarg)
 	}
 }
 
-struct refglob_set {
-	const tchar **globs;
-	unsigned num_globs;
-	unsigned num_alloc_globs;
+struct string_set {
+	const tchar **strings;
+	unsigned num_strings;
+	unsigned num_alloc_strings;
 };
 
-#define REFGLOB_SET_INITIALIZER \
-	{ .globs = NULL, .num_globs = 0, .num_alloc_globs = 0, }
+#define STRING_SET_INITIALIZER \
+	{ .strings = NULL, .num_strings = 0, .num_alloc_strings = 0, }
 
-#define REFGLOB_SET(_refglobs) \
-	struct refglob_set _refglobs = REFGLOB_SET_INITIALIZER
+#define STRING_SET(_strings) \
+	struct string_set _strings = STRING_SET_INITIALIZER
 
 static int
-refglob_set_append(struct refglob_set *set, const tchar *glob)
+string_set_append(struct string_set *set, const tchar *glob)
 {
-	unsigned num_alloc_globs = set->num_alloc_globs;
+	unsigned num_alloc_strings = set->num_alloc_strings;
 
-	if (set->num_globs == num_alloc_globs) {
-		const tchar **new_globs;
+	if (set->num_strings == num_alloc_strings) {
+		const tchar **new_strings;
 
-		num_alloc_globs += 4;
-		new_globs = realloc(set->globs, sizeof(set->globs[0]) * num_alloc_globs);
-		if (!new_globs) {
+		num_alloc_strings += 4;
+		new_strings = realloc(set->strings,
+				      sizeof(set->strings[0]) * num_alloc_strings);
+		if (!new_strings) {
 			imagex_error(T("Out of memory!"));
 			return -1;
 		}
-		set->globs = new_globs;
-		set->num_alloc_globs = num_alloc_globs;
+		set->strings = new_strings;
+		set->num_alloc_strings = num_alloc_strings;
 	}
-	set->globs[set->num_globs++] = glob;
+	set->strings[set->num_strings++] = glob;
 	return 0;
 }
 
-static int
-wim_reference_globs(WIMStruct *wim, struct refglob_set *set, int open_flags)
+static void
+string_set_destroy(struct string_set *set)
 {
-	return wimlib_reference_resource_files(wim, set->globs, set->num_globs,
+	free(set->strings);
+}
+
+static int
+wim_reference_globs(WIMStruct *wim, struct string_set *set, int open_flags)
+{
+	return wimlib_reference_resource_files(wim, set->strings,
+					       set->num_strings,
 					       WIMLIB_REF_FLAG_GLOB_ENABLE,
 					       open_flags,
 					       imagex_progress_func);
 }
 
 static void
-refglob_set_destroy(struct refglob_set *set)
-{
-	free(set->globs);
-}
-
-static void
 do_resource_not_found_warning(const tchar *wimfile,
 			      const struct wimlib_wim_info *info,
-			      const struct refglob_set *refglobs)
+			      const struct string_set *refglobs)
 {
 	if (info->total_parts > 1) {
-		if (refglobs->num_globs == 0) {
+		if (refglobs->num_strings == 0) {
 			imagex_error(T("\"%"TS"\" is part of a split WIM. "
 				       "Use --ref to specify the other parts."),
 				     wimfile);
@@ -1464,7 +1466,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 	const tchar *image_num_or_name = NULL;
 	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
 
-	REFGLOB_SET(refglobs);
+	STRING_SET(refglobs);
 
 	for_opt(c, apply_options) {
 		switch (c) {
@@ -1481,7 +1483,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_VERBOSE;
 			break;
 		case IMAGEX_REF_OPTION:
-			ret = refglob_set_append(&refglobs, optarg);
+			ret = string_set_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
 			break;
@@ -1560,7 +1562,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 		}
 	}
 
-	if (refglobs.num_globs) {
+	if (refglobs.num_strings) {
 		if (wim == NULL) {
 			imagex_error(T("Can't specify --ref when applying from stdin!"));
 			ret = -1;
@@ -1616,7 +1618,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 out_wimlib_free:
 	wimlib_free(wim);
 out_free_refglobs:
-	refglob_set_destroy(&refglobs);
+	string_set_destroy(&refglobs);
 	return ret;
 
 out_usage:
@@ -2268,7 +2270,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	int image;
 	struct stat stbuf;
 	bool wim_is_new;
-	REFGLOB_SET(refglobs);
+	STRING_SET(refglobs);
 	unsigned num_threads = 0;
 
 	for_opt(c, export_options) {
@@ -2289,7 +2291,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_REF_OPTION:
-			ret = refglob_set_append(&refglobs, optarg);
+			ret = string_set_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
 			break;
@@ -2411,7 +2413,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	if (ret)
 		goto out_free_dest_wim;
 
-	if (refglobs.num_globs) {
+	if (refglobs.num_strings) {
 		ret = wim_reference_globs(src_wim, &refglobs, open_flags);
 		if (ret)
 			goto out_free_dest_wim;
@@ -2452,7 +2454,7 @@ out_free_dest_wim:
 out_free_src_wim:
 	wimlib_free(src_wim);
 out_free_refglobs:
-	refglob_set_destroy(&refglobs);
+	string_set_destroy(&refglobs);
 	return ret;
 
 out_usage:
@@ -2537,7 +2539,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 	tchar *dest_dir = T(".");
 	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL | WIMLIB_EXTRACT_FLAG_NORPFIX;
 
-	REFGLOB_SET(refglobs);
+	STRING_SET(refglobs);
 
 	struct wimlib_extract_command *cmds;
 	size_t num_cmds;
@@ -2551,7 +2553,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_VERBOSE;
 			break;
 		case IMAGEX_REF_OPTION:
-			ret = refglob_set_append(&refglobs, optarg);
+			ret = string_set_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
 			break;
@@ -2608,7 +2610,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 	if (ret)
 		goto out_wimlib_free;
 
-	if (refglobs.num_globs) {
+	if (refglobs.num_strings) {
 		ret = wim_reference_globs(wim, &refglobs, open_flags);
 		if (ret)
 			goto out_wimlib_free;
@@ -2635,7 +2637,7 @@ out_wimlib_free:
 out_free_cmds:
 	free_extract_commands(cmds, num_cmds, dest_dir);
 out_free_refglobs:
-	refglob_set_destroy(&refglobs);
+	string_set_destroy(&refglobs);
 	return ret;
 
 out_usage:
@@ -3053,7 +3055,7 @@ imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 	int image;
 	int ret;
 
-	REFGLOB_SET(refglobs);
+	STRING_SET(refglobs);
 
 	if (cmd == CMD_MOUNTRW) {
 		mount_flags |= WIMLIB_MOUNT_FLAG_READWRITE;
@@ -3085,7 +3087,7 @@ imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 			}
 			break;
 		case IMAGEX_REF_OPTION:
-			ret = refglob_set_append(&refglobs, optarg);
+			ret = string_set_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
 			break;
@@ -3133,7 +3135,7 @@ imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 		dir = argv[1];
 	}
 
-	if (refglobs.num_globs) {
+	if (refglobs.num_strings) {
 		ret = wim_reference_globs(wim, &refglobs, open_flags);
 		if (ret)
 			goto out_free_wim;
@@ -3148,7 +3150,7 @@ imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 out_free_wim:
 	wimlib_free(wim);
 out_free_refglobs:
-	refglob_set_destroy(&refglobs);
+	string_set_destroy(&refglobs);
 	return ret;
 
 out_usage:
