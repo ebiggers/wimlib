@@ -3,7 +3,7 @@
 pkgname=wimlib
 pkgver=1.5.1
 pkgrel=1
-pkgdesc="A library to extract, create, and modify WIM files"
+pkgdesc="A library and program to extract, create, and modify WIM files"
 arch=("i686" "x86_64")
 url="http://sourceforge.net/projects/wimlib"
 license=("GPL3")
