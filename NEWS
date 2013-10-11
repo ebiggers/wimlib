@@ -12,6 +12,9 @@ Version 1.5.1:
 	with empty DACLs when the NTFS-3g apply mode is being used with NTFS-3g
 	2013.1.13 or earlier.
 
+	`wimlib-imagex capture' can now accept the '--delta-from' option
+	multiple times.
+
 Version 1.5.0:
 	Added support for "pipable" WIMs.  Pipable WIMs allow capturing images
 	to standard output and applying images from standard input, but they are

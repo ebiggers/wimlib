@@ -404,11 +404,11 @@ appear not to have been modified since they were archived in the existing
 performance and does not change the resulting WIM image.
 .IP ""
 As shown, the full syntax for the argument to this option is to specify the WIM
-file, a colon, and the image; for example, "--update-of mywim.wim:1".
-However, the WIM file and colon may be omitted, in which case the WIM file will
-default to the WIM file being appended to for append operations, or the WIM file
-from which a delta is being taken (with \fB--delta-from\fR, if specified) for
-capture operations.
+file, a colon, and the image; for example, "--update-of mywim.wim:1".  However,
+the WIM file and colon may be omitted, in which case the WIM file will default
+to the WIM file being appended to for append operations, or the WIM file from
+which a delta is being taken (only if \fB--delta-from\fR is specified exactly
+once) for capture operations.
 .TP
 \fB--delta-from\fR=\fIWIMFILE\fR
 For \fB@IMAGEX_PROGNAME@ capture\fR only: capture the new WIM as a "delta" from
@@ -417,12 +417,16 @@ WIM are omitted if they are already present in the \fIWIMFILE\fR on which the
 delta is being based.  The new WIM will still contain a full copy of the image
 metadata, but this is typically only a small fraction of a WIM's total size.
 .IP ""
+This option can be specified multiple times, in which case the resulting delta
+WIM will only contain streams not present in any of the specified base
+\fIWIMFILE\fRs.
+.IP ""
 To operate on the resulting delta WIM using other commands such as
 \fB@IMAGEX_PROGNAME@ apply\fR, you must specify the delta WIM as the WIM file to
-operate on, but also reference the base WIM using the \fB--ref\fR option.
+operate on, but also reference the base WIM(s) using the \fB--ref\fR option.
 Beware: to retain the proper functioning of the delta WIM, you can only add, not
-delete, files and images to the base WIM following the capture of a delta from
-it.
+delete, files and images to the base WIM(s) following the capture of a delta
+from it.
 .IP ""
 \fB--delta-from\fR may be combined with \fB--update-of\fR to increase the
 speed of capturing a delta WIM.
@@ -456,13 +460,13 @@ modified.
 Note: unlike "pipable" WIMs (created with the \fB--pipable\fR option), "delta"
 WIMs (created with the \fB--delta-from\fR option) are compatible with
 Microsoft's software.  You can use the /ref option of imagex.exe to reference
-the base WIM, similar to above.
+the base WIM(s), similar to above.
 .IP ""
 Additional note:  \fB@IMAGEX_PROGNAME@\fR is generalized enough that you can in
 fact combine \fB--pipable\fR and \fB--delta-from\fR to create pipable delta
-WIMs.  In such cases, the base WIM must be captured as pipable as well as the
-delta WIM, and when applying an image, the base WIM must be sent over the pipe
-after the delta WIM.
+WIMs.  In such cases, the base WIM(s) must be captured as pipable as well as the
+delta WIM, and when applying an image, the base WIM(s) must be sent over the
+pipe after the delta WIM.
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ append\fR does not support appending an image to a split WIM.
 .PP
