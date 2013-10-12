@@ -204,7 +204,8 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 {
 	/* Declare the decoding table and length table for the pretree. */
 	u16 pretree_decode_table[(1 << LZX_PRETREE_TABLEBITS) +
-					(LZX_PRETREE_NUM_SYMBOLS * 2)];
+					(LZX_PRETREE_NUM_SYMBOLS * 2)]
+					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	u8 pretree_lens[LZX_PRETREE_NUM_SYMBOLS];
 	unsigned i;
 	unsigned len;

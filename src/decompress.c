@@ -53,7 +53,8 @@
  * @decode_table:	The array in which to create the fast huffman decoding
  * 			table.  It must have a length of at least
  * 			(2**table_bits) + 2 * num_syms to guarantee
- * 			that there is enough space.
+ * 			that there is enough space.  Also must be 16-byte
+ * 			aligned (at least when USE_SSE2_FILL gets defined).
  *
  * @num_syms: 		Number of symbols in the alphabet, including symbols
  *			that do not appear in this particular input chunk.
