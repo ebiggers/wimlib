@@ -70,8 +70,8 @@ new_wim_struct(void)
 	if (wim) {
 		wim->in_fd.fd = -1;
 		wim->out_fd.fd = -1;
+		INIT_LIST_HEAD(&wim->subwims);
 	}
-	INIT_LIST_HEAD(&wim->subwims);
 	return wim;
 }
 
