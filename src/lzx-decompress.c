@@ -656,8 +656,6 @@ lzx_decode_match(unsigned main_element, int block_type,
 	/* Verify that the match is in the bounds of the part of the window
 	 * currently in use, then copy the source of the match to the current
 	 * position. */
-	match_dest = window + window_pos;
-	match_src = match_dest - match_offset;
 
 	if (match_len > bytes_remaining) {
 		DEBUG("lzx_decode_match(): Match of length %u bytes overflows "
@@ -665,12 +663,15 @@ lzx_decode_match(unsigned main_element, int block_type,
 		return -1;
 	}
 
-	if (match_src < window) {
+	if (match_offset > window_pos) {
 		DEBUG("lzx_decode_match(): Match of length %u bytes references "
 		      "data before window (match_offset = %u, window_pos = %u)",
 		      match_len, match_offset, window_pos);
 		return -1;
 	}
+
+	match_dest = window + window_pos;
+	match_src = match_dest - match_offset;
 
 #if 0
 	printf("Match: src %u, dst %u, len %u\n", match_src - window,

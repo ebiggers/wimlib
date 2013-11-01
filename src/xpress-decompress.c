@@ -143,21 +143,21 @@ xpress_decode_match(unsigned huffsym, unsigned window_pos,
 	 * currently in use, then copy the source of the match to the current
 	 * position. */
 
-	match_dest = window + window_pos;
-	match_src = match_dest - match_offset;
-
 	if (window_pos + match_len > window_len) {
 		DEBUG("XPRESS decompression error: match of length %u "
 		      "bytes overflows window", match_len);
 		return -1;
 	}
 
-	if (match_src < window) {
+	if (match_offset > window_pos) {
 		DEBUG("XPRESS decompression error: match of length %u bytes "
 		      "references data before window (match_offset = %u, "
 		      "window_pos = %u)", match_len, match_offset, window_pos);
 		return -1;
 	}
+
+	match_dest = window + window_pos;
+	match_src = match_dest - match_offset;
 
 	for (i = 0; i < match_len; i++)
 		match_dest[i] = match_src[i];
