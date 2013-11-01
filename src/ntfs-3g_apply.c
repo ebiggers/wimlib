@@ -419,7 +419,6 @@ sd_fixup(const u8 *_desc, size_t *size_p)
 	const wimlib_SECURITY_DESCRIPTOR_RELATIVE *desc =
 			(const wimlib_SECURITY_DESCRIPTOR_RELATIVE*)_desc;
 	wimlib_SECURITY_DESCRIPTOR_RELATIVE *desc_new;
-	u32 sid_offset;
 	const wimlib_SID *owner, *group, *sid;
 
 	/* Don't attempt to fix clearly invalid security descriptors.  */
