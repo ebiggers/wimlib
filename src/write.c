@@ -2087,7 +2087,7 @@ close_wim_writable(WIMStruct *wim, int write_flags)
  *
  * Finish writing a WIM file: write the lookup table, xml data, and integrity
  * table, then overwrite the WIM header.  By default, closes the WIM file
- * descriptor (@wim->out_fd) in both success and error cases.
+ * descriptor (@wim->out_fd) if successful.
  *
  * write_flags is a bitwise OR of the following:
  *
@@ -2163,7 +2163,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 					     &wim->hdr.lookup_table_res_entry,
 					     stream_list_override);
 		if (ret)
-			goto out_close_wim;
+			return ret;
 	}
 
 	/* Write XML data.  */
@@ -2174,7 +2174,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 				 &wim->hdr.xml_res_entry,
 				 write_resource_flags);
 	if (ret)
-		goto out_close_wim;
+		return ret;
 
 	/* Write integrity table (optional).  */
 	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
@@ -2186,7 +2186,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 			ret = write_wim_header_at_offset(&checkpoint_hdr,
 							 &wim->out_fd, 0);
 			if (ret)
-				goto out_close_wim;
+				return ret;
 		}
 
 		if (!(write_flags & WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE))
@@ -2200,7 +2200,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 					    old_lookup_table_end,
 					    progress_func);
 		if (ret)
-			goto out_close_wim;
+			return ret;
 	} else {
 		/* No integrity table.  */
 		zero_resource_entry(&wim->hdr.integrity);
@@ -2216,7 +2216,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 		hdr_offset = wim->out_fd.offset;
 	ret = write_wim_header_at_offset(&wim->hdr, &wim->out_fd, hdr_offset);
 	if (ret)
-		goto out_close_wim;
+		return ret;
 
 	/* Possibly sync file data to disk before closing.  On POSIX systems, it
 	 * is necessary to do this before using rename() to overwrite an
@@ -2227,20 +2227,16 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
 		if (fsync(wim->out_fd.fd)) {
 			ERROR_WITH_ERRNO("Error syncing data to WIM file");
-			ret = WIMLIB_ERR_WRITE;
-			goto out_close_wim;
+			return WIMLIB_ERR_WRITE;
 		}
 	}
 
-	ret = 0;
-out_close_wim:
 	if (close_wim_writable(wim, write_flags)) {
-		if (ret == 0) {
-			ERROR_WITH_ERRNO("Failed to close the output WIM file");
-			ret = WIMLIB_ERR_WRITE;
-		}
+		ERROR_WITH_ERRNO("Failed to close the output WIM file");
+		return WIMLIB_ERR_WRITE;
 	}
-	return ret;
+
+	return 0;
 }
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
@@ -2624,7 +2620,7 @@ write_wim_part(WIMStruct *wim,
 			   stream_list_override);
 out_restore_hdr:
 	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
-	close_wim_writable(wim, write_flags);
+	(void)close_wim_writable(wim, write_flags);
 	return ret;
 }
 
@@ -2778,7 +2774,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	struct list_head stream_list;
 	off_t old_wim_end;
 	u64 old_lookup_table_end, old_xml_begin, old_xml_end;
-
+	struct wim_header hdr_save;
 
 	DEBUG("Overwriting `%"TS"' in-place", wim->filename);
 
@@ -2849,25 +2845,24 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 		return ret;
 
 	ret = lock_wim(wim, wim->out_fd.fd);
-	if (ret) {
-		close_wim_writable(wim, write_flags);
-		return ret;
-	}
+	if (ret)
+		goto out_close_wim;
+
+	/* Save original header so it can be restored in case of error  */
+	memcpy(&hdr_save, &wim->hdr, sizeof(struct wim_header));
 
 	/* Set WIM_HDR_FLAG_WRITE_IN_PROGRESS flag in header. */
-	ret = write_wim_header_flags(wim->hdr.flags | WIM_HDR_FLAG_WRITE_IN_PROGRESS,
-				     &wim->out_fd);
+	wim->hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+	ret = write_wim_header_flags(wim->hdr.flags, &wim->out_fd);
 	if (ret) {
 		ERROR_WITH_ERRNO("Error updating WIM header flags");
-		close_wim_writable(wim, write_flags);
-		goto out_unlock_wim;
+		goto out_restore_memory_hdr;
 	}
 
 	if (filedes_seek(&wim->out_fd, old_wim_end) == -1) {
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");
-		close_wim_writable(wim, write_flags);
 		ret = WIMLIB_ERR_WRITE;
-		goto out_unlock_wim;
+		goto out_restore_physical_hdr;
 	}
 
 	ret = write_stream_list(&stream_list,
@@ -2888,15 +2883,25 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	write_flags |= WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE;
 	ret = finish_write(wim, WIMLIB_ALL_IMAGES, write_flags,
 			   progress_func, NULL);
+	if (ret)
+		goto out_truncate;
+
+	goto out_unlock_wim;
+
 out_truncate:
-	close_wim_writable(wim, write_flags);
-	if (ret && !(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
+	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
 		WARNING("Truncating `%"TS"' to its original size (%"PRIu64" bytes)",
 			wim->filename, old_wim_end);
-		/* Return value of truncate() is ignored because this is already
-		 * an error path. */
-		(void)ttruncate(wim->filename, old_wim_end);
+		/* Return value of ftruncate() is ignored because this is
+		 * already an error path.  */
+		(void)ftruncate(wim->out_fd.fd, old_wim_end);
 	}
+out_restore_physical_hdr:
+	(void)write_wim_header_flags(hdr_save.flags, &wim->out_fd);
+out_restore_memory_hdr:
+	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
+out_close_wim:
+	(void)close_wim_writable(wim, write_flags);
 out_unlock_wim:
 	wim->wim_locked = 0;
 	return ret;
