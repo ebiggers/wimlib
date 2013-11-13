@@ -1,5 +1,17 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.5.2:
+	An alignment bug that caused a crash in the LZX decompressor on some
+	builds was fixed.
+
+	wimlib now attempts to clear the WIM_HDR_FLAG_WRITE_IN_PROGRESS flag in
+	the WIM header when restoring the previous state of a WIM it failed to
+	successfully update.
+
+	A workaround has been added for compatibility with versions of WinPE
+	that interpret alternate data stream entries in the boot WIM
+	incorrectly.
+
 Version 1.5.1:
 	wimlib can now open WinPE WIMs from WAIK v2.1, which had a quirk that
 	needed to be handled.
