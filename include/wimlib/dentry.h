@@ -300,7 +300,7 @@ struct wim_inode {
 	/* Number of dentries that are aliases for this inode.  */
 	u32 i_nlink;
 
-	/* Number of alternate data streams associated with this inode */
+	/* Number of alternate data streams (ADS) associated with this inode */
 	u16 i_num_ads;
 
 	/* Flag that indicates whether this inode's streams have been
@@ -321,6 +321,10 @@ struct wim_inode {
 
 	/* Set if the DOS name of an inode has already been extracted.  */
 	u8 i_dos_name_extracted : 1;
+
+	/* 1 iff all ADS entries of this inode are named or if this inode
+	 * has no ADS entries  */
+	u8 i_canonical_streams : 1;
 
 	/* Pointer to a malloc()ed array of i_num_ads alternate data stream
 	 * entries for this inode.  */
@@ -420,7 +424,7 @@ dentry_is_first_in_inode(const struct wim_dentry *dentry)
 }
 
 extern u64
-dentry_correct_total_length(const struct wim_dentry *dentry);
+dentry_out_total_length(const struct wim_dentry *dentry);
 
 extern int
 for_dentry_in_tree(struct wim_dentry *root,

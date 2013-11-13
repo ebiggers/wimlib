@@ -246,7 +246,7 @@ prepare_metadata_resource(WIMStruct *wim, int image,
 	 */
 	recalculate_security_data_length(sd);
 	subdir_offset = (((u64)sd->total_length + 7) & ~7) +
-			dentry_correct_total_length(root) + 8;
+			dentry_out_total_length(root) + 8;
 
 	/* Calculate the subdirectory offsets for the entire dentry tree.  */
 	calculate_subdir_offsets(root, &subdir_offset);

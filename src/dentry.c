@@ -217,7 +217,7 @@ struct wim_dentry_on_disk {
  * a file name and short name that take the specified numbers of bytes.  This
  * excludes any alternate data stream entries that may follow the dentry. */
 static u64
-_dentry_correct_length_unaligned(u16 file_name_nbytes, u16 short_name_nbytes)
+dentry_correct_length_unaligned(u16 file_name_nbytes, u16 short_name_nbytes)
 {
 	u64 length = sizeof(struct wim_dentry_on_disk);
 	if (file_name_nbytes)
@@ -232,10 +232,13 @@ _dentry_correct_length_unaligned(u16 file_name_nbytes, u16 short_name_nbytes)
  * ignored; also, this excludes any alternate data stream entries that may
  * follow the dentry. */
 static u64
-dentry_correct_length_unaligned(const struct wim_dentry *dentry)
+dentry_correct_length_aligned(const struct wim_dentry *dentry)
 {
-	return _dentry_correct_length_unaligned(dentry->file_name_nbytes,
-						dentry->short_name_nbytes);
+	u64 len;
+
+	len = dentry_correct_length_unaligned(dentry->file_name_nbytes,
+					      dentry->short_name_nbytes);
+	return (len + 7) & ~7;
 }
 
 /* Duplicates a string of system-dependent encoding into a UTF-16LE string and
@@ -305,31 +308,58 @@ ads_entry_total_length(const struct wim_ads_entry *entry)
 	return (len + 7) & ~7;
 }
 
-
-static u64
-_dentry_total_length(const struct wim_dentry *dentry, u64 length)
+/*
+ * Determine whether to include a "dummy" stream when writing a WIM dentry:
+ *
+ * Some versions of Microsoft's WIM software (the boot driver(s) in WinPE 3.0,
+ * for example) contain a bug where they assume the first alternate data stream
+ * (ADS) entry of a dentry with a nonzero ADS count specifies the unnamed
+ * stream, even if it has a name and the unnamed stream is already specified in
+ * the hash field of the dentry itself.
+ *
+ * wimlib has to work around this behavior by carefully emulating the behavior
+ * of (most versions of) ImageX/WIMGAPI, which move the unnamed stream reference
+ * into the alternate stream entries whenever there are named data streams, even
+ * though there is already a field in the dentry itself for the unnamed stream
+ * reference, which then goes to waste.
+ */
+static inline bool inode_needs_dummy_stream(const struct wim_inode *inode)
 {
+	return (inode->i_num_ads > 0 &&
+		inode->i_num_ads < 0xffff && /* overflow check */
+		inode->i_canonical_streams); /* assume the dentry is okay if it
+						already had an unnamed ADS entry
+						when it was read in  */
+}
+
+/* Calculate the total number of bytes that will be consumed when a WIM dentry
+ * is written.  This includes base dentry and name fields as well as all
+ * alternate data stream entries and alignment bytes.  */
+u64
+dentry_out_total_length(const struct wim_dentry *dentry)
+{
+	u64 length = dentry_correct_length_aligned(dentry);
+	const struct wim_inode *inode = dentry->d_inode;
+
+	if (inode_needs_dummy_stream(inode))
+		length += ads_entry_total_length(&(struct wim_ads_entry){});
+
+	for (u16 i = 0; i < inode->i_num_ads; i++)
+		length += ads_entry_total_length(&inode->i_ads_entries[i]);
+
+	return length;
+}
+
+/* Calculate the aligned, total length of a dentry, including all alternate data
+ * stream entries.  Uses dentry->length.  */
+static u64
+dentry_in_total_length(const struct wim_dentry *dentry)
+{
+	u64 length = dentry->length;
 	const struct wim_inode *inode = dentry->d_inode;
 	for (u16 i = 0; i < inode->i_num_ads; i++)
 		length += ads_entry_total_length(&inode->i_ads_entries[i]);
 	return (length + 7) & ~7;
-}
-
-/* Calculate the aligned *total* length of an on-disk WIM dentry.  This includes
- * all alternate data streams. */
-u64
-dentry_correct_total_length(const struct wim_dentry *dentry)
-{
-	return _dentry_total_length(dentry,
-				    dentry_correct_length_unaligned(dentry));
-}
-
-/* Like dentry_correct_total_length(), but use the existing dentry->length field
- * instead of calculating its "correct" value. */
-static u64
-dentry_total_length(const struct wim_dentry *dentry)
-{
-	return _dentry_total_length(dentry, dentry->length);
 }
 
 int
@@ -537,7 +567,7 @@ dentry_full_path(struct wim_dentry *dentry)
 static int
 increment_subdir_offset(struct wim_dentry *dentry, void *subdir_offset_p)
 {
-	*(u64*)subdir_offset_p += dentry_correct_total_length(dentry);
+	*(u64*)subdir_offset_p += dentry_out_total_length(dentry);
 	return 0;
 }
 
@@ -987,6 +1017,7 @@ new_timeless_inode(void)
 		inode->i_nlink = 1;
 		inode->i_next_stream_id = 1;
 		inode->i_not_rpfixed = 1;
+		inode->i_canonical_streams = 1;
 		INIT_LIST_HEAD(&inode->i_list);
 		INIT_LIST_HEAD(&inode->i_dentry);
 	}
@@ -1349,7 +1380,11 @@ unlink_dentry(struct wim_dentry *dentry)
 
 /*
  * Returns the alternate data stream entry belonging to @inode that has the
- * stream name @stream_name.
+ * stream name @stream_name, or NULL if the inode has no alternate data stream
+ * with that name.
+ *
+ * If @p stream_name is the empty string, NULL is returned --- that is, this
+ * function will not return "unnamed" alternate data stream entries.
  */
 struct wim_ads_entry *
 inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
@@ -1361,6 +1396,9 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 		size_t stream_name_utf16le_nbytes;
 		u16 i;
 		struct wim_ads_entry *result;
+
+		if (stream_name[0] == T('\0'))
+			return NULL;
 
 	#if TCHAR_IS_UTF16LE
 		const utf16lechar *stream_name_utf16le;
@@ -1408,6 +1446,8 @@ do_inode_add_ads(struct wim_inode *inode, const void *stream_name,
 	struct wim_ads_entry *ads_entries;
 	struct wim_ads_entry *new_entry;
 
+	wimlib_assert(stream_name_nbytes != 0);
+
 	if (inode->i_num_ads >= 0xfffe) {
 		ERROR("Too many alternate data streams in one inode!");
 		return NULL;
@@ -1439,8 +1479,10 @@ inode_add_ads_utf16le(struct wim_inode *inode,
 }
 
 /*
- * Add an alternate stream entry to a WIM inode and return a pointer to it, or
- * NULL if memory could not be allocated.
+ * Add an alternate stream entry to a WIM inode.  On success, returns a pointer
+ * to the new entry; on failure, returns NULL.
+ *
+ * @stream_name must be a nonempty string.
  */
 struct wim_ads_entry *
 inode_add_ads(struct wim_inode *inode, const tchar *stream_name)
@@ -1734,6 +1776,9 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 			       disk_entry->stream_name,
 			       cur_entry->stream_name_nbytes);
 			cur_entry->stream_name[cur_entry->stream_name_nbytes / 2] = cpu_to_le16(0);
+		} else {
+			/* Mark inode as having weird stream entries.  */
+			inode->i_canonical_streams = 0;
 		}
 
 		/* It's expected that the size of every ADS entry is a multiple
@@ -1914,8 +1959,8 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	 * The calculated length here is unaligned to allow for the possibility
 	 * that the dentry->length names an unaligned length, although this
 	 * would be unexpected. */
-	calculated_size = _dentry_correct_length_unaligned(file_name_nbytes,
-							   short_name_nbytes);
+	calculated_size = dentry_correct_length_unaligned(file_name_nbytes,
+							  short_name_nbytes);
 
 	if (dentry->length < calculated_size) {
 		ERROR("Unexpected end of directory entry! (Expected "
@@ -2097,7 +2142,7 @@ read_dentry_tree(const u8 * restrict metadata_resource,
 		 * cur_child.length, which although it does take into account
 		 * the padding, it DOES NOT take into account alternate stream
 		 * entries. */
-		cur_offset += dentry_total_length(child);
+		cur_offset += dentry_in_total_length(child);
 
 		if (unlikely(!dentry_has_long_name(child))) {
 			WARNING("Ignoring unnamed dentry in "
@@ -2141,6 +2186,38 @@ read_dentry_tree(const u8 * restrict metadata_resource,
 }
 
 /*
+ * Writes a WIM alternate data stream (ADS) entry to an output buffer.
+ *
+ * @ads_entry:  The ADS entry structure.
+ * @hash:       The hash field to use (instead of the one in the ADS entry).
+ * @p:          The memory location to write the data to.
+ *
+ * Returns a pointer to the byte after the last byte written.
+ */
+static u8 *
+write_ads_entry(const struct wim_ads_entry *ads_entry,
+		const u8 *hash, u8 * restrict p)
+{
+	struct wim_ads_entry_on_disk *disk_ads_entry =
+			(struct wim_ads_entry_on_disk*)p;
+	u8 *orig_p = p;
+
+	disk_ads_entry->reserved = cpu_to_le64(ads_entry->reserved);
+	copy_hash(disk_ads_entry->hash, hash);
+	disk_ads_entry->stream_name_nbytes = cpu_to_le16(ads_entry->stream_name_nbytes);
+	p += sizeof(struct wim_ads_entry_on_disk);
+	if (ads_entry->stream_name_nbytes) {
+		p = mempcpy(p, ads_entry->stream_name,
+			    ads_entry->stream_name_nbytes + 2);
+	}
+	/* Align to 8-byte boundary */
+	while ((uintptr_t)p & 7)
+		*p++ = 0;
+	disk_ads_entry->length = cpu_to_le64(p - orig_p);
+	return p;
+}
+
+/*
  * Writes a WIM dentry to an output buffer.
  *
  * @dentry:  The dentry structure.
@@ -2156,11 +2233,14 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	struct wim_dentry_on_disk *disk_dentry;
 	const u8 *orig_p;
 	const u8 *hash;
+	bool use_dummy_stream;
+	u16 num_ads;
 
 	wimlib_assert(((uintptr_t)p & 7) == 0); /* 8 byte aligned */
 	orig_p = p;
 
 	inode = dentry->d_inode;
+	use_dummy_stream = inode_needs_dummy_stream(inode);
 	disk_dentry = (struct wim_dentry_on_disk*)p;
 
 	disk_dentry->attributes = cpu_to_le32(inode->i_attributes);
@@ -2171,7 +2251,10 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	disk_dentry->creation_time = cpu_to_le64(inode->i_creation_time);
 	disk_dentry->last_access_time = cpu_to_le64(inode->i_last_access_time);
 	disk_dentry->last_write_time = cpu_to_le64(inode->i_last_write_time);
-	hash = inode_stream_hash(inode, 0);
+	if (use_dummy_stream)
+		hash = zero_hash;
+	else
+		hash = inode_stream_hash(inode, 0);
 	copy_hash(disk_dentry->unnamed_stream_hash, hash);
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		disk_dentry->reparse.rp_unknown_1 = cpu_to_le32(inode->i_rp_unknown_1);
@@ -2183,7 +2266,10 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 		disk_dentry->nonreparse.hard_link_group_id =
 			cpu_to_le64((inode->i_nlink == 1) ? 0 : inode->i_ino);
 	}
-	disk_dentry->num_alternate_data_streams = cpu_to_le16(inode->i_num_ads);
+	num_ads = inode->i_num_ads;
+	if (use_dummy_stream)
+		num_ads++;
+	disk_dentry->num_alternate_data_streams = cpu_to_le16(num_ads);
 	disk_dentry->short_name_nbytes = cpu_to_le16(dentry->short_name_nbytes);
 	disk_dentry->file_name_nbytes = cpu_to_le16(dentry->file_name_nbytes);
 	p += sizeof(struct wim_dentry_on_disk);
@@ -2207,29 +2293,17 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	 * have been renamed, thus changing its needed length. */
 	disk_dentry->length = cpu_to_le64(p - orig_p);
 
+	if (use_dummy_stream) {
+		hash = inode_unnamed_stream_hash(inode);
+		p = write_ads_entry(&(struct wim_ads_entry){}, hash, p);
+	}
+
 	/* Write the alternate data streams entries, if any. */
 	for (u16 i = 0; i < inode->i_num_ads; i++) {
-		const struct wim_ads_entry *ads_entry =
-				&inode->i_ads_entries[i];
-		struct wim_ads_entry_on_disk *disk_ads_entry =
-				(struct wim_ads_entry_on_disk*)p;
-		orig_p = p;
-
-		disk_ads_entry->reserved = cpu_to_le64(ads_entry->reserved);
-
 		hash = inode_stream_hash(inode, i + 1);
-		copy_hash(disk_ads_entry->hash, hash);
-		disk_ads_entry->stream_name_nbytes = cpu_to_le16(ads_entry->stream_name_nbytes);
-		p += sizeof(struct wim_ads_entry_on_disk);
-		if (ads_entry->stream_name_nbytes) {
-			p = mempcpy(p, ads_entry->stream_name,
-				    ads_entry->stream_name_nbytes + 2);
-		}
-		/* Align to 8-byte boundary */
-		while ((uintptr_t)p & 7)
-			*p++ = 0;
-		disk_ads_entry->length = cpu_to_le64(p - orig_p);
+		p = write_ads_entry(&inode->i_ads_entries[i], hash, p);
 	}
+
 	return p;
 }
 

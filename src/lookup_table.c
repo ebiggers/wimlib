@@ -1221,6 +1221,9 @@ inode_unnamed_lte(const struct wim_inode *inode,
 		return inode_unnamed_lte_unresolved(inode, table);
 }
 
+/* Returns the SHA1 message digest of the unnamed data stream of a WIM inode, or
+ * 'zero_hash' if the unnamed data stream is missing has all zeroes in its SHA1
+ * message digest field.  */
 const u8 *
 inode_unnamed_stream_hash(const struct wim_inode *inode)
 {
@@ -1233,7 +1236,7 @@ inode_unnamed_stream_hash(const struct wim_inode *inode)
 				return hash;
 		}
 	}
-	return NULL;
+	return zero_hash;
 }
 
 

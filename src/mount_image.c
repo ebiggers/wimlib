@@ -1646,7 +1646,7 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
-	if (strlen(name) < 5 || memcmp(name, "user.", 5) != 0)
+	if (strlen(name) <= 5 || memcmp(name, "user.", 5) != 0)
 		return -ENOATTR;
 	name += 5;
 
@@ -1740,6 +1740,10 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 
 	p = list;
 	for (i = 0; i < inode->i_num_ads; i++) {
+
+		if (!ads_entry_is_named_stream(&inode->i_ads_entries[i]))
+			continue;
+
 		char *stream_name_mbs;
 		size_t stream_name_mbs_nbytes;
 		int ret;
@@ -2120,7 +2124,7 @@ wimfs_setxattr(const char *path, const char *name,
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
-	if (strlen(name) < 5 || memcmp(name, "user.", 5) != 0)
+	if (strlen(name) <= 5 || memcmp(name, "user.", 5) != 0)
 		return -ENOATTR;
 	name += 5;
 

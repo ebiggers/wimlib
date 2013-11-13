@@ -43,9 +43,7 @@ print_hash(const u8 hash[SHA1_HASH_SIZE], FILE *out)
 static inline bool
 is_zero_hash(const u8 *hash)
 {
-	if (!hash)
-		return true;
-	return hashes_equal(hash, zero_hash);
+	return (hash == zero_hash || hashes_equal(hash, zero_hash));
 }
 
 static inline void
