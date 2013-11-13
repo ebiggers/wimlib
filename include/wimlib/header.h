@@ -21,6 +21,14 @@
  * between the versions are undocumented.  */
 #define WIM_VERSION 0x10d00
 
+/* Version number used for a different WIM format, which as of Windows 8 can be
+ * created by passing 0x20000000 in dwFlagsAndAttributes to WIMGAPI's
+ * WIMCreateFile() and specifying either NONE, XPRESS, or LZMS compression.
+ * This format is, however, currently undocumented by Microsoft and is seemingly
+ * incompatible with their own ImageX and Dism programs.  wimlib does not yet
+ * support this format.  */
+#define WIM_MYSTERY_VERSION 0xe00
+
 /* WIM magic characters, translated to a single 64-bit little endian number.  */
 #define WIM_MAGIC \
 		cpu_to_le64(((u64)'M' << 0) |		\
@@ -189,11 +197,19 @@ struct wim_header {
 #define WIM_HDR_FLAG_COMPRESS_RESERVED  0x00010000
 
 /* Resources within the WIM are compressed using "XPRESS" compression, which is
- * a LZ77-based compression algorithm. */
+ * a LZ77-based compression algorithm.  */
 #define WIM_HDR_FLAG_COMPRESS_XPRESS    0x00020000
 
 /* Resources within the WIM are compressed using "LZX" compression.  This is also
  * a LZ77-based algorithm. */
 #define WIM_HDR_FLAG_COMPRESS_LZX       0x00040000
+
+/* Starting in Windows 8, WIMGAPI can create WIMs using LZMS compression, and
+ * this flag is set on such WIMs.  However, an additional undocumented flag
+ * needs to be provided to WIMCreateFile() to create such WIMs, and the version
+ * number in the header of the resulting WIMs is different (3584).  None of this
+ * is actually documented, and wimlib does not yet support this compression
+ * format.  */
+#define WIM_HDR_FLAG_COMPRESS_LZMS      0x00080000
 
 #endif /* _WIMLIB_HEADER_H */

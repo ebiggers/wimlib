@@ -117,6 +117,10 @@ read_wim_header(const tchar *filename, struct filedes *in_fd,
 		ERROR("\"%"TS"\": The WIM header says the WIM version is %u, "
 		      "but wimlib only knows about version %u",
 		      filename, le32_to_cpu(disk_hdr.wim_version), WIM_VERSION);
+		if (le32_to_cpu(disk_hdr.wim_flags) & WIM_HDR_FLAG_COMPRESS_LZMS) {
+			ERROR("\"%"TS"\": This WIM uses LZMS compression, "
+			      "which is not supported by wimlib.", filename);
+		}
 		return WIMLIB_ERR_UNKNOWN_VERSION;
 	}
 
