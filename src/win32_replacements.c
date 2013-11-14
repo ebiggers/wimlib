@@ -99,17 +99,82 @@ out:
 	return resolved_path;
 }
 
-/* rename() on Windows fails if the destination file exists.  And we need to
- * make it work on wide characters.  Fix it. */
+/* A quick hack to get reasonable rename() semantics on Windows, in particular
+ * deleting the destination file instead of failing with ERROR_FILE_EXISTS and
+ * working around any processes that may have the destination file open.
+ *
+ * Note: This is intended to be called when overwriting a regular file with an
+ * updated copy and is *not* a fully POSIX compliant rename().  For that you may
+ * wish to take a look at Cygwin's implementation, but be prepared...
+ *
+ * Return 0 on success, -1 on regular error, or 1 if the destination file was
+ * deleted but the source could not be renamed and therefore should not be
+ * deleted.
+ */
 int
-win32_rename_replacement(const wchar_t *oldpath, const wchar_t *newpath)
+win32_rename_replacement(const wchar_t *srcpath, const wchar_t *dstpath)
 {
-	if (MoveFileExW(oldpath, newpath, MOVEFILE_REPLACE_EXISTING)) {
+	wchar_t *tmpname;
+
+	/* Normally, MoveFileExW() with the MOVEFILE_REPLACE_EXISTING flag does
+	 * what we want.  */
+
+	if (MoveFileExW(srcpath, dstpath, MOVEFILE_REPLACE_EXISTING))
 		return 0;
-	} else {
-		set_errno_from_GetLastError();
-		return -1;
+
+	/* MoveFileExW() failed.  One way this can happen is if any process has
+	 * the destination file open, in which case ERROR_ACCESS_DENIED is
+	 * produced.  This can commonly happen if there is a backup or antivirus
+	 * program monitoring or scanning the files.  This behavior is very
+	 * different from the behavior of POSIX rename(), which simply unlinks
+	 * the destination file and allows other processes to keep it open!  */
+
+	if (GetLastError() != ERROR_ACCESS_DENIED)
+		goto err_set_errno;
+
+	/* We can work around the above-mentioned problem by renaming the
+	 * destination file to yet another temporary file, then "deleting" it,
+	 * which on Windows will in fact not actually delete it immediately but
+	 * rather mark it for deletion when the last handle to it is closed.  */
+	{
+		static const wchar_t orig_suffix[5] = L".orig";
+		const size_t num_rand_chars = 9;
+		wchar_t *p;
+
+		size_t dstlen = wcslen(dstpath);
+
+		tmpname = alloca(sizeof(wchar_t) *
+				 (dstlen + ARRAY_LEN(orig_suffix) + num_rand_chars + 1));
+		p = tmpname;
+		p = wmempcpy(p, dstpath, dstlen);
+		p = wmempcpy(p, orig_suffix, ARRAY_LEN(orig_suffix));
+		randomize_char_array_with_alnum(p, num_rand_chars);
+		p += num_rand_chars;
+		*p = L'\0';
 	}
+
+	if (!MoveFile(dstpath, tmpname))
+		goto err_set_errno;
+
+	if (!DeleteFile(tmpname)) {
+		set_errno_from_GetLastError();
+		WARNING_WITH_ERRNO("Failed to delete original file "
+				   "(moved to \"%ls\")", tmpname);
+	}
+
+	if (!MoveFile(srcpath, dstpath)) {
+		set_errno_from_GetLastError();
+		WARNING_WITH_ERRNO("Atomic semantics not respected in "
+				   "failed rename() (new file is at \"%ls\")",
+				   srcpath);
+		return 1;
+	}
+
+	return 0;
+
+err_set_errno:
+	set_errno_from_GetLastError();
+	return -1;
 }
 
 /* Replacement for POSIX fnmatch() (partial functionality only) */

@@ -2928,18 +2928,28 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags,
 	ret = wimlib_write(wim, tmpfile, WIMLIB_ALL_IMAGES,
 			   write_flags | WIMLIB_WRITE_FLAG_FSYNC,
 			   num_threads, progress_func);
-	if (ret)
-		goto out_unlink;
+	if (ret) {
+		tunlink(tmpfile);
+		return ret;
+	}
 
 	close_wim(wim);
 
+	/* Rename the new WIM file to the original WIM file.  Note: on Windows
+	 * this actually calls win32_rename_replacement(), not _wrename(), so
+	 * that removing the existing destination file can be handled.  */
 	DEBUG("Renaming `%"TS"' to `%"TS"'", tmpfile, wim->filename);
-	/* Rename the new file to the old file .*/
-	if (trename(tmpfile, wim->filename) != 0) {
+	ret = trename(tmpfile, wim->filename);
+	if (ret) {
 		ERROR_WITH_ERRNO("Failed to rename `%"TS"' to `%"TS"'",
 				 tmpfile, wim->filename);
-		ret = WIMLIB_ERR_RENAME;
-		goto out_unlink;
+	#ifdef __WIN32__
+		if (ret < 0)
+	#endif
+		{
+			tunlink(tmpfile);
+		}
+		return WIMLIB_ERR_RENAME;
 	}
 
 	if (progress_func) {
@@ -2949,11 +2959,6 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags,
 		progress_func(WIMLIB_PROGRESS_MSG_RENAME, &progress);
 	}
 	return 0;
-
-out_unlink:
-	/* Remove temporary file. */
-	tunlink(tmpfile);
-	return ret;
 }
 
 /* API function documented in wimlib.h  */
