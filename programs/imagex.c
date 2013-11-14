@@ -1955,7 +1955,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		base_wims = calloc(base_wimfiles.num_strings,
 				   sizeof(base_wims[0]));
 		if (base_wims == NULL) {
-			imagex_error("Out of memory!");
+			imagex_error(T("Out of memory!"));
 			ret = -1;
 			goto out_free_wim;
 		}
