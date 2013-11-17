@@ -9,6 +9,10 @@ Version 1.5.2:
 	more --- currently usually to within a fraction of a percent of the
 	results from WIMGAPI/ImageX.
 
+	A workaround has been added for compatibility with versions of WinPE
+	that interpret alternate data stream entries in the boot WIM
+	incorrectly.
+
 	An alignment bug that caused a crash in the LZX decompressor on some
 	builds was fixed.
 
@@ -16,9 +20,8 @@ Version 1.5.2:
 	the WIM header when restoring the previous state of a WIM it failed to
 	successfully update.
 
-	A workaround has been added for compatibility with versions of WinPE
-	that interpret alternate data stream entries in the boot WIM
-	incorrectly.
+	Added a workaround to avoid an access denied error on Windows when
+	replacing a WIM file that another process has opened.
 
 Version 1.5.1:
 	wimlib can now open WinPE WIMs from WAIK v2.1, which had a quirk that
