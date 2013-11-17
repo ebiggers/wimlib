@@ -123,6 +123,7 @@ enum {
 	IMAGEX_COMMAND_OPTION,
 	IMAGEX_COMMIT_OPTION,
 	IMAGEX_COMPRESS_OPTION,
+	IMAGEX_COMPRESS_SLOW_OPTION,
 	IMAGEX_CONFIG_OPTION,
 	IMAGEX_DEBUG_OPTION,
 	IMAGEX_DELTA_FROM_OPTION,
@@ -188,6 +189,7 @@ static const struct option capture_or_append_options[] = {
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
+	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
 	{T("dereference"), no_argument,       NULL, IMAGEX_DEREFERENCE_OPTION},
 	{T("flags"),       required_argument, NULL, IMAGEX_FLAGS_OPTION},
@@ -281,6 +283,7 @@ static const struct option optimize_options[] = {
 	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
+	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
@@ -1693,6 +1696,9 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			compression_type = get_compression_type(optarg);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
+			break;
+		case IMAGEX_COMPRESS_SLOW_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_COMPRESS_SLOW;
 			break;
 		case IMAGEX_FLAGS_OPTION:
 			flags_element = optarg;
@@ -3217,6 +3223,9 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		case IMAGEX_RECOMPRESS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
+		case IMAGEX_COMPRESS_SLOW_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_COMPRESS_SLOW;
+			break;
 		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);
 			if (num_threads == UINT_MAX)
@@ -3630,12 +3639,12 @@ static const tchar *usage_strings[] = {
 [CMD_APPEND] =
 T(
 "    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
-"                    [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot] [--check]\n"
-"                    [--nocheck] [--flags EDITION_ID] [--verbose]\n"
-"                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
-"                    [--rebuild] [--unix-data] [--source-list] [--no-acls]\n"
-"                    [--strict-acls] [--rpfix] [--norpfix] [--pipable]\n"
-"                    [--not-pipable] [--update-of=[WIMFILE:]IMAGE]\n"
+"                    [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot]\n"
+"                    [--check] [--nocheck] [--compress-slow]\n"
+"                    [--flags EDITION_ID] [--verbose] [--dereference]\n"
+"                    [--config=FILE] [--threads=NUM_THREADS] [--source-list]\n"
+"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
+"                    [--unix-data] [--pipable] [--update-of=[WIMFILE:]IMAGE]\n"
 ),
 [CMD_APPLY] =
 T(
@@ -3648,12 +3657,13 @@ T(
 [CMD_CAPTURE] =
 T(
 "    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
-"		     [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot] [--check]\n"
-"                    [--nocheck] [--compress=TYPE] [--flags EDITION_ID]\n"
-"                    [--verbose] [--dereference] [--config=FILE]\n"
-"                    [--threads=NUM_THREADS] [--unix-data] [--source-list]\n"
-"                    [--no-acls] [--strict-acls] [--norpfix] [--pipable]\n"
-"                    [--update-of=[WIMFILE:]IMAGE] [--delta-from=WIMFILE]\n"
+"		     [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot]\n"
+"                    [--check] [--nocheck] [--compress=TYPE] [--compress-slow]\n"
+"                    [--flags EDITION_ID] [--verbose] [--dereference]\n"
+"                    [--config=FILE] [--threads=NUM_THREADS] [--source-list]\n"
+"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
+"                    [--unix-data] [--pipable] [--update-of=[WIMFILE:]IMAGE]\n"
+"                    [--delta-from=WIMFILE]\n"
 ),
 [CMD_DELETE] =
 T(
@@ -3707,7 +3717,8 @@ T(
 [CMD_OPTIMIZE] =
 T(
 "    %"TS" WIMFILE [--check] [--nocheck] [--recompress]\n"
-"                    [--threads=NUM_THREADS] [--pipable] [--not-pipable]\n"
+"                    [--compress-slow] [--threads=NUM_THREADS]\n"
+"                    [--pipable] [--not-pipable]\n"
 ),
 [CMD_SPLIT] =
 T(

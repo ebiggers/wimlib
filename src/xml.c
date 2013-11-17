@@ -1515,7 +1515,8 @@ write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 					     WIMLIB_COMPRESSION_TYPE_NONE,
 					     out_res_entry,
 					     NULL,
-					     write_resource_flags);
+					     write_resource_flags,
+					     &wim->lzx_context);
 	FREE(xml_data);
 	return ret;
 }

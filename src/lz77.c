@@ -1,5 +1,5 @@
 /*
- * lz.c
+ * lz77.c
  *
  * This file provides the code to analyze a buffer of uncompressed data for
  * matches, as per the LZ77 algorithm.  It uses a hash table to accelerate the

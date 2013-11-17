@@ -326,7 +326,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 		      unsigned *block_size_ret,
 		      unsigned *block_type_ret,
 		      struct lzx_tables *tables,
-		      struct lru_queue *queue)
+		      struct lzx_lru_queue *queue)
 {
 	int ret;
 	unsigned block_type;
@@ -335,15 +335,15 @@ lzx_read_block_header(struct input_bitstream *istream,
 	unsigned i;
 	unsigned len;
 
-	ret = bitstream_ensure_bits(istream, 4);
+	ret = bitstream_ensure_bits(istream, LZX_BLOCKTYPE_NBITS + 1);
 	if (ret) {
-		DEBUG("LZX input stream overrun");
+		LZX_DEBUG("LZX input stream overrun");
 		return ret;
 	}
 
 	/* The first three bits tell us what kind of block it is, and are one
 	 * of the LZX_BLOCKTYPE_* values.  */
-	block_type = bitstream_read_bits_nocheck(istream, 3);
+	block_type = bitstream_read_bits_nocheck(istream, LZX_BLOCKTYPE_NBITS);
 
 	/* The next bit indicates whether the block size is the default (32768),
 	 * indicated by a 1 bit, or whether the block size is given by the next
@@ -353,7 +353,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 	if (s) {
 		block_size = 32768;
 	} else {
-		ret = bitstream_read_bits(istream, 16, &block_size);
+		ret = bitstream_read_bits(istream, LZX_BLOCKSIZE_NBITS, &block_size);
 		if (ret)
 			return ret;
 		block_size = le16_to_cpu(block_size);
@@ -380,8 +380,8 @@ lzx_read_block_header(struct input_bitstream *istream,
 						tables->alignedtree_lens,
 						8);
 		if (ret) {
-			DEBUG("lzx_decompress(): Failed to make the decode "
-			      "table for the aligned offset tree");
+			LZX_DEBUG("Failed to make the decode table for the "
+				  "aligned offset tree");
 			return ret;
 		}
 
@@ -398,9 +398,8 @@ lzx_read_block_header(struct input_bitstream *istream,
 		ret = lzx_read_code_lens(istream, tables->maintree_lens,
 					 LZX_NUM_CHARS);
 		if (ret) {
-			DEBUG("lzx_decompress(): Failed to read the code "
-			      "lengths for the first 256 elements of the "
-			      "main tree");
+			LZX_DEBUG("Failed to read the code lengths for the "
+				  "first 256 elements of the main tree");
 			return ret;
 		}
 
@@ -413,9 +412,8 @@ lzx_read_block_header(struct input_bitstream *istream,
 					 tables->maintree_lens + LZX_NUM_CHARS,
 					 LZX_MAINTREE_NUM_SYMBOLS - LZX_NUM_CHARS);
 		if (ret) {
-			DEBUG("lzx_decompress(): Failed to read the path "
-			      "lengths for the remaining elements of the main "
-			      "tree");
+			LZX_DEBUG("Failed to read the path lengths for the "
+				  "remaining elements of the main tree");
 			return ret;
 		}
 
@@ -428,8 +426,8 @@ lzx_read_block_header(struct input_bitstream *istream,
 						tables->maintree_lens,
 						LZX_MAX_CODEWORD_LEN);
 		if (ret) {
-			DEBUG("lzx_decompress(): Failed to make the decode "
-			      "table for the main tree");
+			LZX_DEBUG("Failed to make the decode "
+				  "table for the main tree");
 			return ret;
 		}
 
@@ -437,8 +435,8 @@ lzx_read_block_header(struct input_bitstream *istream,
 		ret = lzx_read_code_lens(istream, tables->lentree_lens,
 					 LZX_LENTREE_NUM_SYMBOLS);
 		if (ret) {
-			DEBUG("lzx_decompress(): Failed to read the path "
-			      "lengths for the length tree");
+			LZX_DEBUG("Failed to read the path "
+				  "lengths for the length tree");
 			return ret;
 		}
 
@@ -449,8 +447,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 						tables->lentree_lens,
 						LZX_MAX_CODEWORD_LEN);
 		if (ret) {
-			DEBUG("lzx_decompress(): Failed to build the length "
-			      "Huffman tree");
+			LZX_DEBUG("Failed to build the length Huffman tree");
 			return ret;
 		}
 		/* The bitstream of compressed literals and matches for this
@@ -466,16 +463,16 @@ lzx_read_block_header(struct input_bitstream *istream,
 		 * the next 16 bits. */
 		if (istream->bitsleft == 0) {
 			if (istream->data_bytes_left < 14) {
-				DEBUG("lzx_decompress(): Insufficient length in "
-				      "uncompressed block");
+				LZX_DEBUG("Insufficient length in "
+					  "uncompressed block");
 				return -1;
 			}
 			istream->data += 2;
 			istream->data_bytes_left -= 2;
 		} else {
 			if (istream->data_bytes_left < 12) {
-				DEBUG("lzx_decompress(): Insufficient length in "
-				      "uncompressed block");
+				LZX_DEBUG("Insufficient length in "
+					  "uncompressed block");
 				return -1;
 			}
 			istream->bitsleft = 0;
@@ -490,7 +487,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 		 * be read in lzx_decompress(). */
 		break;
 	default:
-		DEBUG("lzx_decompress(): Found invalid block");
+		LZX_DEBUG("Found invalid block");
 		return -1;
 	}
 	*block_type_ret = block_type;
@@ -538,7 +535,7 @@ lzx_decode_match(unsigned main_element, int block_type,
 		 unsigned bytes_remaining, u8 *window,
 		 unsigned window_pos,
 		 const struct lzx_tables *tables,
-		 struct lru_queue *queue,
+		 struct lzx_lru_queue *queue,
 		 struct input_bitstream *istream)
 {
 	unsigned length_header;
@@ -658,15 +655,16 @@ lzx_decode_match(unsigned main_element, int block_type,
 	 * position. */
 
 	if (match_len > bytes_remaining) {
-		DEBUG("lzx_decode_match(): Match of length %u bytes overflows "
-		      "uncompressed block size", match_len);
+		LZX_DEBUG("Match of length %u bytes overflows "
+			  "uncompressed block size", match_len);
 		return -1;
 	}
 
 	if (match_offset > window_pos) {
-		DEBUG("lzx_decode_match(): Match of length %u bytes references "
-		      "data before window (match_offset = %u, window_pos = %u)",
-		      match_len, match_offset, window_pos);
+		LZX_DEBUG("Match of length %u bytes references "
+			  "data before window (match_offset = %u, "
+			  "window_pos = %u)",
+			  match_len, match_offset, window_pos);
 		return -1;
 	}
 
@@ -767,7 +765,7 @@ lzx_decompress_block(int block_type, unsigned block_size,
 		     u8 *window,
 		     unsigned window_pos,
 		     const struct lzx_tables *tables,
-		     struct lru_queue *queue,
+		     struct lzx_lru_queue *queue,
 		     struct input_bitstream *istream)
 {
 	unsigned main_element;
@@ -810,7 +808,7 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 {
 	struct lzx_tables tables;
 	struct input_bitstream istream;
-	struct lru_queue queue;
+	struct lzx_lru_queue queue;
 	unsigned window_pos;
 	unsigned block_size;
 	unsigned block_type;
@@ -853,9 +851,9 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 			  block_size, window_pos);
 
 		if (block_size > uncompressed_len - window_pos) {
-			DEBUG("lzx_decompress(): Expected a block size of at "
-			      "most %u bytes (found %u bytes)",
-			      uncompressed_len - window_pos, block_size);
+			LZX_DEBUG("Expected a block size of at "
+				  "most %u bytes (found %u bytes)",
+				  uncompressed_len - window_pos, block_size);
 			return -1;
 		}
 
@@ -881,10 +879,10 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 		case LZX_BLOCKTYPE_UNCOMPRESSED:
 			LZX_DEBUG("LZX_BLOCKTYPE_UNCOMPRESSED");
 			if (istream.data_bytes_left < block_size) {
-				DEBUG("Unexpected end of input when "
-				      "reading %u bytes from LZX bitstream "
-				      "(only have %u bytes left)",
-				      block_size, istream.data_bytes_left);
+				LZX_DEBUG("Unexpected end of input when "
+					  "reading %u bytes from LZX bitstream "
+					  "(only have %u bytes left)",
+					  block_size, istream.data_bytes_left);
 				return -1;
 			}
 			memcpy(&((u8*)uncompressed_data)[window_pos], istream.data,

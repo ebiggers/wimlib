@@ -775,6 +775,7 @@ wimlib_free(WIMStruct *wim)
 	if (filedes_valid(&wim->out_fd))
 		filedes_close(&wim->out_fd);
 
+	wimlib_lzx_free_context(wim->lzx_context);
 
 	free_lookup_table(wim->lookup_table);
 

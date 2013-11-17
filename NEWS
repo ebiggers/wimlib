@@ -1,6 +1,14 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
 Version 1.5.2:
+	Added a new experimental LZX compressor which can be enabled by passing
+	'--compress-slow' to `wimlib-imagex capture' or `wimlib-imagex
+	optimize'.  (The latter is only applicable if the WIM is already
+	LZX-compressed and the '--recompress' option is also given.)  The
+	experimental compressor is much slower but compresses the data slightly
+	more --- currently usually to within a fraction of a percent of the
+	results from WIMGAPI/ImageX.
+
 	An alignment bug that caused a crash in the LZX decompressor on some
 	builds was fixed.
 

@@ -42,6 +42,9 @@ struct WIMStruct {
 	/* Temporary field */
 	void *private;
 
+	/* LZX compression context for default thread  */
+	struct wimlib_lzx_context *lzx_context;
+
 	struct list_head subwims;
 
 	struct list_head subwim_node;

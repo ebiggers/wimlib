@@ -678,7 +678,8 @@ static int
 write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					struct filedes *out_fd,
 					struct resource_entry *out_res_entry,
-					int write_resource_flags)
+					int write_resource_flags,
+					struct wimlib_lzx_context **comp_ctx)
 {
 	size_t table_size;
 	struct wim_lookup_table_entry *lte;
@@ -712,7 +713,8 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					     WIMLIB_COMPRESSION_TYPE_NONE,
 					     out_res_entry,
 					     NULL,
-					     write_resource_flags);
+					     write_resource_flags,
+					     comp_ctx);
 	FREE(table_buf);
 	return ret;
 }
@@ -803,7 +805,8 @@ write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
 	return write_wim_lookup_table_from_stream_list(stream_list,
 						       &wim->out_fd,
 						       out_res_entry,
-						       write_resource_flags);
+						       write_resource_flags,
+						       &wim->lzx_context);
 }
 
 

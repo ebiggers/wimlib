@@ -299,7 +299,8 @@ write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags)
 					     wim->compression_type,
 					     &imd->metadata_lte->output_resource_entry,
 					     imd->metadata_lte->hash,
-					     write_resource_flags);
+					     write_resource_flags,
+					     &wim->lzx_context);
 
 	/* Original checksum was overridden; set a flag so it isn't used.  */
 	imd->metadata_lte->dont_check_metadata_hash = 1;

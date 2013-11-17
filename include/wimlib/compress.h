@@ -69,8 +69,8 @@ struct lz_params {
 	unsigned too_far;
 };
 
-typedef unsigned (*lz_record_match_t)(unsigned, unsigned, void *, void *);
-typedef unsigned (*lz_record_literal_t)(u8, void *);
+typedef u32 (*lz_record_match_t)(unsigned, unsigned, void *, void *);
+typedef u32 (*lz_record_literal_t)(u8, void *);
 
 extern unsigned
 lz_analyze_block(const u8 uncompressed_data[],
@@ -96,8 +96,8 @@ flush_output_bitstream(struct output_bitstream *ostream);
 extern void
 make_canonical_huffman_code(unsigned num_syms,
 			    unsigned max_codeword_len,
-			    const freq_t freq_tab[],
-			    u8 lens[],
-			    u16 codewords[]);
+			    const freq_t freq_tab[restrict],
+			    u8 lens[restrict],
+			    u16 codewords[restrict]);
 
 #endif /* _WIMLIB_COMPRESS_H */

@@ -94,7 +94,8 @@ put_resource_entry(const struct resource_entry *entry,
 
 /* wimlib internal flags used when reading or writing resources.  */
 #define WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS		0x00000001
-#define WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE		0x00000002
+#define WIMLIB_WRITE_RESOURCE_FLAG_COMPRESS_SLOW	0x00000002
+#define WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE		0x00000004
 #define WIMLIB_WRITE_RESOURCE_MASK			0x0000ffff
 
 #define WIMLIB_READ_RESOURCE_FLAG_RAW_FULL		0x80000000
@@ -136,14 +137,16 @@ read_resource_prefix(const struct wim_lookup_table_entry *lte,
 extern int
 write_wim_resource(struct wim_lookup_table_entry *lte, struct filedes *out_fd,
 		   int out_ctype, struct resource_entry *out_res_entry,
-		   int write_resource_flags);
+		   int write_resource_flags,
+		   struct wimlib_lzx_context **comp_ctx);
 
 extern int
 write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 			       int reshdr_flags, struct filedes *out_fd,
 			       int out_ctype,
 			       struct resource_entry *out_res_entry,
-			       u8 *hash_ret, int write_resource_flags);
+			       u8 *hash_ret, int write_resource_flags,
+			       struct wimlib_lzx_context **comp_ctx);
 
 /* Functions to extract a resource.  */
 

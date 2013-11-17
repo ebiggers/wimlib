@@ -7,8 +7,10 @@
 //#define ENABLE_LZX_DEBUG
 #ifdef ENABLE_LZX_DEBUG
 #	define LZX_DEBUG DEBUG
+#       define LZX_ASSERT wimlib_assert
 #else
 #	define LZX_DEBUG(format, ...)
+#	define LZX_ASSERT(...)
 #endif
 
 /* Constants, most of which are defined by the LZX specification: */
@@ -73,6 +75,9 @@
  * different as well.  */
 #define LZX_WIM_MAGIC_FILESIZE		12000000
 
+#define LZX_BLOCKTYPE_NBITS	3
+#define LZX_BLOCKSIZE_NBITS	16
+
 #define USE_LZX_EXTRA_BITS_ARRAY
 
 #ifdef USE_LZX_EXTRA_BITS_ARRAY
@@ -97,7 +102,7 @@ lzx_get_num_extra_bits(unsigned position_slot)
 extern const u32 lzx_position_base[LZX_NUM_POSITION_SLOTS];
 
 /* Least-recently used queue for match offsets. */
-struct lru_queue {
+struct lzx_lru_queue {
 	u32 R0;
 	u32 R1;
 	u32 R2;

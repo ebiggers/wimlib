@@ -125,12 +125,6 @@ mode, similar to Microsoft's ImageX.
 wimlib supports multithreaded compression, which can make it much faster to
 create compressed WIM files.
 .IP \[bu]
-wimlib's XPRESS compressor is slightly better than Microsoft's (in terms of
-compression ratio).
-.IP \[bu]
-wimlib's LZX compressor is slightly worse than Microsoft's (in terms of
-compression ratio), but it's still better than XPRESS compression.
-.IP \[bu]
 \fB@IMAGEX_PROGNAME@ capture\fR defaults to LZX ("maximum") compression for new
 WIMs, as opposed to Microsoft's software which defaults to XPRESS ("fast")
 compression.

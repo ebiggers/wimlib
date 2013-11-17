@@ -24,7 +24,7 @@ A Windows Imaging (WIM) file is an archive designed primarily for archiving
 Windows filesystems.  However, it can be used on other platforms as well, with
 some limitations.  Like some other archive formats such as ZIP, files in WIM
 archives may be compressed.  WIM files support two compression formats: LZX and
-XPRESS.  Both are supported by wimlib.
+XPRESS *.  Both are supported by wimlib.
 
 A WIM file consists of one or more "images".  Each image is an independent
 top-level directory structure and is logically separate from all other images in
@@ -34,6 +34,10 @@ images.
 
 A WIM file may be either stand-alone or split into multiple parts.  Split WIMs
 are read-only and cannot be modified.
+
+* Note: The Windows 8 WIMGAPI apparently adds a third format, LZMS, but it is
+  not documented and is incompatible with ImageX and Dism.  It is unclear if
+  this new format is actually being used for anything.
 
                              IMAGEX IMPLEMENTATION
 
@@ -62,10 +66,10 @@ commands and their syntax.  For additional documentation:
 
 wimlib (and wimlib-imagex) can create XPRESS or LZX compressed WIM archives.
 Currently, the XPRESS compression ratio is slightly better than that provided by
-Microsoft's software, while the LZX compression ratio is approaching that of
-Microsoft's software but is not quite there yet.  Running time is as good as or
-better than Microsoft's software, especially with multithreaded compression,
-available in wimlib v1.1.0 and later.
+Microsoft's software, while by default the LZX compression ratio is approaching
+that of Microsoft's software but is not quite there yet.  Running time is as
+good as or better than Microsoft's software, especially with multithreaded
+compression, available in wimlib v1.1.0 and later.
 
 The following tables compare the compression ratio and performance for creating
 a compressed x86_64 Windows PE image.  Note: these timings were done on Windows
@@ -83,6 +87,12 @@ even better performance on Linux.
                                            XPRESS Compression      LZX Compression
         wimlib-imagex (v1.4.0, 2 threads): 18 sec                  51 sec
         Microsoft imagex.exe:              25 sec                  93 sec
+
+The above LZX values are using the default LZX compressor.  wimlib v1.5.2
+introduced a new experimental LZX compressor which can be enabled by passing
+'--compress-slow' to `wimlib-imagex capture' or `wimlib-imagex optimize'.  This
+compressor is much slower but compresses the data slightly more --- currently
+usually to within a fraction of a percent of the results from imagex.exe.
 
                                   NTFS SUPPORT
 

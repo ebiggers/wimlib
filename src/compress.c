@@ -237,9 +237,9 @@ huffman_tree_compute_path_lengths(HuffmanNode *base_node, u16 cur_len)
 void
 make_canonical_huffman_code(unsigned num_syms,
 			    unsigned max_codeword_len,
-			    const freq_t * restrict freq_tab,
-			    u8 * restrict lens,
-			    u16 * restrict codewords)
+			    const freq_t freq_tab[restrict],
+			    u8 lens[restrict],
+			    u16 codewords[restrict])
 {
 	/* We require at least 2 possible symbols in the alphabet to produce a
 	 * valid Huffman decoding table. It is allowed that fewer than 2 symbols
