@@ -383,6 +383,10 @@ error:
  *	* WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE if writing a resource for a pipable WIM
  *	  (and the output file descriptor may be a pipe).
  *
+ * @comp_ctx:
+ *	Location of LZX compression context pointer, which will be allocated or
+ *	updated if needed.  (Initialize to NULL.)
+ *
  * Additional notes:  The SHA1 message digest of the uncompressed data is
  * calculated (except when doing a raw copy --- see below).  If the @unhashed
  * flag is set on the lookup table entry, this message digest is simply copied

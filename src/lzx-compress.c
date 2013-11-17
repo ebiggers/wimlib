@@ -174,7 +174,8 @@
 #define LZX_PARAM_USE_EMPIRICAL_DEFAULT_COSTS 1
 
 /* Currently, this constant can't simply be changed because the code currently
- * uses a static number of position slots.  */
+ * uses a static number of position slots (and may make other assumptions as
+ * well).  */
 #define LZX_MAX_WINDOW_SIZE	32768
 
 /* This may be WIM-specific  */
@@ -235,7 +236,8 @@ struct lzx_match {
  * The length is the number of bytes of the match, and the offset is the number
  * of bytes back in the input the match is from the matched text.
  *
- * If @len < LZX_MIN_MATCH, then it's really just a literal byte.  */
+ * If @len < LZX_MIN_MATCH, then it's really just a literal byte and @offset is
+ * meaningless.  */
 struct raw_match {
 	u16 len;
 	u16 offset;
@@ -295,7 +297,7 @@ struct lzx_optimal {
 			 * minimum-cost parse.  */
 			u16 link;
 
-			/* Offset, relative to its starting position, of the
+			/* Offset (as in a LZ (length, offset) pair) of the
 			 * match or literal that was taken to get to this
 			 * position in the approximate minimum-cost parse.  */
 			u16 match_offset;
@@ -305,7 +307,7 @@ struct lzx_optimal {
 			 * this position ends in the minimum-cost parse.  */
 			u16 link;
 
-			/* Offset, relative to its starting position, of the
+			/* Offset (as in a LZ (length, offset) pair) of the
 			 * match or literal starting at this position in the
 			 * approximate minimum-cost parse.  */
 			u16 match_offset;
@@ -805,60 +807,21 @@ lzx_write_compressed_code(struct output_bitstream *out,
 	}
 }
 
-static unsigned
-lzx_huffman_code_output_cost(const u8 lens[restrict],
-			     const freq_t freqs[restrict],
-			     unsigned num_syms)
-{
-	unsigned cost = 0;
-
-	for (unsigned i = 0; i < num_syms; i++)
-		cost += (unsigned)lens[i] * (unsigned)freqs[i];
-
-	return cost;
-}
-
-/* Return the number of bits required to output the lengths for the specified
- * Huffman code in compressed format (encoded with a precode).  */
-static unsigned
-lzx_code_cost(const u8 lens[], const u8 prev_lens[], unsigned num_syms)
-{
-	u8 output_syms[num_syms];
-	freq_t precode_freqs[LZX_PRETREE_NUM_SYMBOLS];
-	u8 precode_lens[LZX_PRETREE_NUM_SYMBOLS];
-	u16 precode_codewords[LZX_PRETREE_NUM_SYMBOLS];
-	unsigned cost = 0;
-	unsigned num_additional_bits;
-
-	/* Acount for the lengths of the precode itself.  */
-	cost += LZX_PRETREE_NUM_SYMBOLS * LZX_PRETREE_ELEMENT_SIZE;
-
-	lzx_build_precode(lens, prev_lens, num_syms,
-			  precode_freqs, output_syms,
-			  precode_lens, precode_codewords,
-			  &num_additional_bits);
-
-	/* Account for all precode symbols output.  */
-	cost += lzx_huffman_code_output_cost(precode_lens, precode_freqs,
-					     LZX_PRETREE_NUM_SYMBOLS);
-
-	/* Account for additional bits.  */
-	cost += num_additional_bits;
-
-	return cost;
-}
-
 /*
  * Writes all compressed matches and literal bytes in a LZX block to the the
  * output bitstream.
  *
- * @out:         The output bitstream.
- * @block_type:  The type of the block (LZX_BLOCKTYPE_ALIGNED or LZX_BLOCKTYPE_VERBATIM)
- * @match_tab[]:   The array of matches that will be output.  It has length
- *			of @num_compressed_literals.
- * @num_compressed_literals:  Number of compressed literals to be output.
- * @codes:	Pointer to a structure that contains the codewords for the
- *			main, length, and aligned offset Huffman codes.
+ * @ostream
+ *	The output bitstream.
+ * @block_type
+ *	The type of the block (LZX_BLOCKTYPE_ALIGNED or LZX_BLOCKTYPE_VERBATIM).
+ * @match_tab
+ *	The array of matches/literals that will be output (length @match_count).
+ * @match_count
+ *	Number of matches/literals to be output.
+ * @codes
+ *	Pointer to a structure that contains the codewords for the main, length,
+ *	and aligned offset Huffman codes.
  */
 static void
 lzx_write_matches_and_literals(struct output_bitstream *ostream,
@@ -998,11 +961,13 @@ lzx_write_compressed_block(int block_type,
 	LZX_DEBUG("Done writing block.");
 }
 
-/* Write the LZX block of index @block_number, or recurse to its children
- * recursively if it is a split block.
+/* Write the LZX block of index @block_number, or write its children recursively
+ * if it is a split block.
  *
- * Return a pointer to the Huffman codes for the last block written.
- */
+ * @prev_codes is a pointer to the Huffman codes for the most recent block
+ * written, or all zeroes if this is the first block.
+ *
+ * Return a pointer to the Huffman codes for the last block written.  */
 static struct lzx_codes *
 lzx_write_block_recursive(struct lzx_compressor *ctx,
 			  unsigned block_number,
@@ -1153,11 +1118,11 @@ lzx_record_match(unsigned match_offset, unsigned match_len,
 /* Set the cost model @ctx->costs from the Huffman codeword lengths specified in
  * @lens.
  *
- * These are basically the same thing, except that Huffman codewords with length
- * 0 corresponds to symbols with zero frequency.  These need to be assigned
- * actual costs.  The specific values assigned are arbitrary, but they should be
- * fairly high (near the maximum codeword length) to take into account the fact
- * that uses of these symbols are expected to be rare.
+ * These are basically the same thing, except that the Huffman codewords with
+ * length 0 correspond to symbols with zero frequency that still need to be
+ * assigned actual costs.  The specific values assigned are arbitrary, but they
+ * should be fairly high (near the maximum codeword length) to take into account
+ * the fact that uses of these symbols are expected to be rare.
  */
 static void
 lzx_set_costs(struct lzx_compressor * ctx, const struct lzx_lens * lens)
@@ -1240,7 +1205,8 @@ lzx_match_cost(unsigned length, unsigned offset, const struct lzx_lens *costs
 
 /* This procedure effectively creates a new binary tree corresponding to the
  * current string at the same time that it searches the existing tree nodes for
- * matches.  */
+ * matches.  This is the same algorithm as that used in GetMatchesSpec1() in
+ * 7-Zip, but it is hopefully explained a little more clearly below.  */
 static unsigned
 lzx_lz_get_matches(const u8 window[restrict],
 		   const unsigned bytes_remaining,
@@ -1288,14 +1254,19 @@ lzx_lz_get_matches(const u8 window[restrict],
 		const u8 * const matchptr = &window[cur_match];
 		const u8 * const strptr = &window[strstart];
 
+		/* Determine position at which to start comparing  */
 		u16 len = min(longest_lt_match_len,
 			      longest_gt_match_len);
 
 		if (matchptr[len] == strptr[len]) {
+
+			/* Extend the match as far as possible.  */
 			while (++len != len_limit)
 				if (matchptr[len] != strptr[len])
 					break;
 
+			/* Record this match if it is the longest found so far.
+			 */
 			if (len > longest_match_len) {
 				longest_match_len = len;
 				matches[num_matches].len = len;
@@ -1440,8 +1411,9 @@ lzx_lz_skip_bytes(struct lzx_compressor *ctx, unsigned n)
 	while (n--)
 		lzx_lz_get_matches_caching(ctx, &matches);
 #else
-	/* Option 2: Simply mark the positions skipped as having no matches
-	 * available.  */
+	/* Option 2: Mark the positions skipped as having no matches available,
+	 * but we still need to update the binary tree in case subsequent
+	 * positions have matches at the current position.  */
 	LZX_ASSERT(n <= ctx->match_window_end - ctx->match_window_pos);
 	if (ctx->matches_already_found) {
 		while (n--) {
@@ -1666,7 +1638,7 @@ lzx_lz_reverse_near_optimal_match_list(struct lzx_compressor *ctx,
  * time is wasting considering many different alternatives that are unlikely to
  * be better.
  *
- * This algorithm is based on that used in 7-Zip's deflate encoder.
+ * This algorithm is based on that used in 7-Zip's DEFLATE encoder.
  *
  * Each call to this function does one of two things:
  *
@@ -1698,7 +1670,7 @@ lzx_lz_reverse_near_optimal_match_list(struct lzx_compressor *ctx,
  *			       subsequent calls use the same limit)
  *
  * The return value is a (length, offset) pair specifying the match or literal
- * chosen.
+ * chosen.  For literals, length is either 0 or 1 and offset is meaningless.
  */
 static struct raw_match
 lzx_lz_get_near_optimal_match(struct lzx_compressor * ctx)
@@ -1753,7 +1725,7 @@ lzx_lz_get_near_optimal_match(struct lzx_compressor * ctx)
 	longest_match_len = possible_matches[num_possible_matches - 1].len;
 
 	/* Greedy heuristic:  if the longest match that was found is greater
-	 * than LZX_PARAM_NUM_FAST_BYTES, return it immediately; don't both
+	 * than the number of fast bytes, return it immediately; don't both
 	 * doing more work.  */
 	if (longest_match_len > ctx->params.slow.num_fast_bytes) {
 		lzx_lz_skip_bytes(ctx, longest_match_len - 1);
@@ -1819,7 +1791,7 @@ lzx_lz_get_near_optimal_match(struct lzx_compressor * ctx)
 			new_len = possible_matches[num_possible_matches - 1].len;
 
 			/* Greedy heuristic:  if we found a match greater than
-			 * LZX_PARAM_NUM_FAST_BYTES, stop immediately.  */
+			 * the number of fast bytes, stop immediately.  */
 			if (new_len > ctx->params.slow.num_fast_bytes) {
 
 				/* Build the list of matches to return and get
@@ -1892,6 +1864,49 @@ lzx_lz_get_near_optimal_match(struct lzx_compressor * ctx)
 #endif
 }
 
+static unsigned
+lzx_huffman_code_output_cost(const u8 lens[restrict],
+			     const freq_t freqs[restrict],
+			     unsigned num_syms)
+{
+	unsigned cost = 0;
+
+	for (unsigned i = 0; i < num_syms; i++)
+		cost += (unsigned)lens[i] * (unsigned)freqs[i];
+
+	return cost;
+}
+
+/* Return the number of bits required to output the lengths for the specified
+ * Huffman code in compressed format (encoded with a precode).  */
+static unsigned
+lzx_code_cost(const u8 lens[], const u8 prev_lens[], unsigned num_syms)
+{
+	u8 output_syms[num_syms];
+	freq_t precode_freqs[LZX_PRETREE_NUM_SYMBOLS];
+	u8 precode_lens[LZX_PRETREE_NUM_SYMBOLS];
+	u16 precode_codewords[LZX_PRETREE_NUM_SYMBOLS];
+	unsigned cost = 0;
+	unsigned num_additional_bits;
+
+	/* Acount for the lengths of the precode itself.  */
+	cost += LZX_PRETREE_NUM_SYMBOLS * LZX_PRETREE_ELEMENT_SIZE;
+
+	lzx_build_precode(lens, prev_lens, num_syms,
+			  precode_freqs, output_syms,
+			  precode_lens, precode_codewords,
+			  &num_additional_bits);
+
+	/* Account for all precode symbols output.  */
+	cost += lzx_huffman_code_output_cost(precode_lens, precode_freqs,
+					     LZX_PRETREE_NUM_SYMBOLS);
+
+	/* Account for additional bits.  */
+	cost += num_additional_bits;
+
+	return cost;
+}
+
 /* Account for extra bits in the main symbols.  */
 static void
 lzx_update_mainsym_match_costs(int block_type,
@@ -1924,14 +1939,14 @@ lzx_update_mainsym_match_costs(int block_type,
  * and verbatim.
  *
  * @block_size
- *	Number of bytes of uncompressed data this block represents.
+ *	Number of bytes of uncompressed data the block represents.
  * @codes
- *	Huffman codes that will be used to output the block.
+ *	Huffman codes that will be used when outputting the block.
  * @prev_codes
  *	Huffman codes for the previous block, or all zeroes if this is the first
  *	block.
  * @freqs
- *	Frequencies of Huffman symbol that will be output in the block.
+ *	Frequencies of Huffman symbols that will be output in the block.
  * @aligned_cost_ret
  *	Cost of aligned block will be returned here.
  * @verbatim_cost_ret
@@ -2144,7 +2159,7 @@ lzx_prepare_compressed_block(struct lzx_compressor *ctx, unsigned block_number,
  * and the corresponding Huffman codes for the block are produced and saved.
  *
  * The return value is the approximate number of bits the block (or all
- * subblocks, in the case that the split block had lower cast), will take up
+ * subblocks, in the case that the split block had lower cost), will take up
  * when written to the compressed output.
  */
 static unsigned
@@ -2388,9 +2403,10 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
 }
 
 /*
- * This is the fast version of lzx_prepare_blocks(), which "quickly" prepares a
- * single compressed block containing the entire input.  See the description of
- * the "Fast algorithm" at the beginning of this file for more information.
+ * This is the fast version of lzx_prepare_blocks().  This version "quickly"
+ * prepares a single compressed block containing the entire input.  See the
+ * description of the "Fast algorithm" at the beginning of this file for more
+ * information.
  *
  * Input ---  the preprocessed data:
  *
