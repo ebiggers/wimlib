@@ -1133,15 +1133,15 @@ lzx_set_costs(struct lzx_compressor * ctx, const struct lzx_lens * lens)
 
 	for (i = 0; i < LZX_MAINTREE_NUM_SYMBOLS; i++)
 		if (ctx->costs.main[i] == 0)
-			ctx->costs.main[i] = ctx->params.slow.main_nostat_cost;
+			ctx->costs.main[i] = ctx->params.alg_params.slow.main_nostat_cost;
 
 	for (i = 0; i < LZX_LENTREE_NUM_SYMBOLS; i++)
 		if (ctx->costs.len[i] == 0)
-			ctx->costs.len[i] = ctx->params.slow.len_nostat_cost;
+			ctx->costs.len[i] = ctx->params.alg_params.slow.len_nostat_cost;
 
 	for (i = 0; i < LZX_ALIGNEDTREE_NUM_SYMBOLS; i++)
 		if (ctx->costs.aligned[i] == 0)
-			ctx->costs.aligned[i] = ctx->params.slow.aligned_nostat_cost;
+			ctx->costs.aligned[i] = ctx->params.alg_params.slow.aligned_nostat_cost;
 }
 
 static u32
@@ -1424,7 +1424,7 @@ lzx_lz_skip_bytes(struct lzx_compressor *ctx, unsigned n)
 		}
 	} else {
 		while (n--) {
-			if (ctx->params.slow.use_len2_matches &&
+			if (ctx->params.alg_params.slow.use_len2_matches &&
 			    ctx->match_window_end - ctx->match_window_pos >= 2) {
 				unsigned c1 = ctx->window[ctx->match_window_pos];
 				unsigned c2 = ctx->window[ctx->match_window_pos + 1];
@@ -1443,7 +1443,7 @@ lzx_lz_skip_bytes(struct lzx_compressor *ctx, unsigned n)
 				lzx_lz_skip_matches(ctx->window,
 						    ctx->match_window_end - ctx->match_window_pos,
 						    ctx->match_window_pos,
-						    ctx->params.slow.num_fast_bytes,
+						    ctx->params.alg_params.slow.num_fast_bytes,
 						    ctx->child_tab,
 						    cur_match, 1);
 			}
@@ -1490,7 +1490,7 @@ lzx_lz_get_matches_caching(struct lzx_compressor *ctx,
 		struct raw_match * matches_ret = &ctx->cached_matches[ctx->cached_matches_pos + 1];
 		num_matches = 0;
 
-		if (ctx->params.slow.use_len2_matches &&
+		if (ctx->params.alg_params.slow.use_len2_matches &&
 		    ctx->match_window_end - ctx->match_window_pos >= 3) {
 			unsigned c1 = ctx->window[ctx->match_window_pos];
 			unsigned c2 = ctx->window[ctx->match_window_pos + 1];
@@ -1520,7 +1520,7 @@ lzx_lz_get_matches_caching(struct lzx_compressor *ctx,
 			num_matches += lzx_lz_get_matches(ctx->window,
 							  ctx->match_window_end - ctx->match_window_pos,
 							  ctx->match_window_pos,
-							  ctx->params.slow.num_fast_bytes,
+							  ctx->params.alg_params.slow.num_fast_bytes,
 							  ctx->child_tab,
 							  cur_match,
 							  prev_len,
@@ -1539,7 +1539,7 @@ lzx_lz_get_matches_caching(struct lzx_compressor *ctx,
 			/* If the longest match returned by the match-finder
 			 * reached the number of fast bytes, extend it as much
 			 * as possible.  */
-			if (len == ctx->params.slow.num_fast_bytes) {
+			if (len == ctx->params.alg_params.slow.num_fast_bytes) {
 				const unsigned maxlen =
 					min(ctx->match_window_end - ctx->match_window_pos,
 					    LZX_MAX_MATCH);
@@ -1727,7 +1727,7 @@ lzx_lz_get_near_optimal_match(struct lzx_compressor * ctx)
 	/* Greedy heuristic:  if the longest match that was found is greater
 	 * than the number of fast bytes, return it immediately; don't both
 	 * doing more work.  */
-	if (longest_match_len > ctx->params.slow.num_fast_bytes) {
+	if (longest_match_len > ctx->params.alg_params.slow.num_fast_bytes) {
 		lzx_lz_skip_bytes(ctx, longest_match_len - 1);
 		return possible_matches[num_possible_matches - 1];
 	}
@@ -1792,7 +1792,7 @@ lzx_lz_get_near_optimal_match(struct lzx_compressor * ctx)
 
 			/* Greedy heuristic:  if we found a match greater than
 			 * the number of fast bytes, stop immediately.  */
-			if (new_len > ctx->params.slow.num_fast_bytes) {
+			if (new_len > ctx->params.alg_params.slow.num_fast_bytes) {
 
 				/* Build the list of matches to return and get
 				 * the first one.  */
@@ -2030,13 +2030,13 @@ lzx_prepare_compressed_block(struct lzx_compressor *ctx, unsigned block_number,
 	 * default model).  Each iteration of the loop uses a heuristic
 	 * algorithm to divide the block into near-optimal matches/literals from
 	 * beginning to end.  */
-	LZX_ASSERT(ctx->params.slow.num_optim_passes >= 1);
+	LZX_ASSERT(ctx->params.alg_params.slow.num_optim_passes >= 1);
 	spec->num_chosen_matches = 0;
-	for (unsigned pass = 0; pass < ctx->params.slow.num_optim_passes; pass++)
+	for (unsigned pass = 0; pass < ctx->params.alg_params.slow.num_optim_passes; pass++)
 	{
 		LZX_DEBUG("Block %u: Match-choosing pass %u of %u",
 			  block_number, pass + 1,
-			  ctx->params.slow.num_optim_passes);
+			  ctx->params.alg_params.slow.num_optim_passes);
 
 		/* Reset frequency tables.  */
 		memset(&freqs, 0, sizeof(freqs));
@@ -2089,7 +2089,7 @@ lzx_prepare_compressed_block(struct lzx_compressor *ctx, unsigned block_number,
 
 			/* If it's the last pass, save the match/literal in
 			 * intermediate form.  */
-			if (pass == ctx->params.slow.num_optim_passes - 1) {
+			if (pass == ctx->params.alg_params.slow.num_optim_passes - 1) {
 				ctx->chosen_matches[spec->chosen_matches_start_pos +
 						    spec->num_chosen_matches] = lzx_match;
 
@@ -2370,7 +2370,7 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
 	/* Zero all entries in the hash table, indicating that no length-3
 	 * character sequences have been discovered in the input yet.  */
 	memset(ctx->hash_tab, 0, LZX_LZ_HASH_SIZE * 2 * sizeof(ctx->hash_tab[0]));
-	if (ctx->params.slow.use_len2_matches)
+	if (ctx->params.alg_params.slow.use_len2_matches)
 		memset(ctx->digram_tab, 0, 256 * 256 * sizeof(ctx->digram_tab[0]));
 	/* Note: ctx->child_tab need not be initialized.  */
 
@@ -2398,7 +2398,7 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
 	/* 6. Pass control to recursive procedure.  */
 	struct lzx_codes * prev_codes = &ctx->zero_codes;
 	return lzx_prepare_block_recursive(ctx, 1,
-					   ctx->params.slow.num_split_passes,
+					   ctx->params.alg_params.slow.num_split_passes,
 					   &prev_codes);
 }
 
@@ -2629,21 +2629,25 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 		.size_of_this = sizeof(struct wimlib_lzx_params),
 		.algorithm = WIMLIB_LZX_ALGORITHM_FAST,
 		.use_defaults = 0,
-		.fast = {
+		.alg_params = {
+			.fast = {
+			},
 		},
 	};
 	static const struct wimlib_lzx_params slow_default = {
 		.size_of_this = sizeof(struct wimlib_lzx_params),
 		.algorithm = WIMLIB_LZX_ALGORITHM_SLOW,
 		.use_defaults = 0,
-		.slow = {
-			.use_len2_matches = 1,
-			.num_fast_bytes = 32,
-			.num_optim_passes = 3,
-			.num_split_passes = 3,
-			.main_nostat_cost = 15,
-			.len_nostat_cost = 15,
-			.aligned_nostat_cost = 7,
+		.alg_params = {
+			.slow = {
+				.use_len2_matches = 1,
+				.num_fast_bytes = 32,
+				.num_optim_passes = 3,
+				.num_split_passes = 3,
+				.main_nostat_cost = 15,
+				.len_nostat_cost = 15,
+				.aligned_nostat_cost = 7,
+			},
 		},
 	};
 
@@ -2672,35 +2676,35 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 	}
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
-		if (params->slow.num_fast_bytes < 3 ||
-		    params->slow.num_fast_bytes > 257)
+		if (params->alg_params.slow.num_fast_bytes < 3 ||
+		    params->alg_params.slow.num_fast_bytes > 257)
 		{
 			LZX_DEBUG("Invalid number of fast bytes!");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 
-		if (params->slow.num_optim_passes < 1)
+		if (params->alg_params.slow.num_optim_passes < 1)
 		{
 			LZX_DEBUG("Invalid number of optimization passes!");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 
-		if (params->slow.main_nostat_cost < 1 ||
-		    params->slow.main_nostat_cost > 16)
+		if (params->alg_params.slow.main_nostat_cost < 1 ||
+		    params->alg_params.slow.main_nostat_cost > 16)
 		{
 			LZX_DEBUG("Invalid main_nostat_cost!");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 
-		if (params->slow.len_nostat_cost < 1 ||
-		    params->slow.len_nostat_cost > 16)
+		if (params->alg_params.slow.len_nostat_cost < 1 ||
+		    params->alg_params.slow.len_nostat_cost > 16)
 		{
 			LZX_DEBUG("Invalid len_nostat_cost!");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 
-		if (params->slow.aligned_nostat_cost < 1 ||
-		    params->slow.aligned_nostat_cost > 8)
+		if (params->alg_params.slow.aligned_nostat_cost < 1 ||
+		    params->alg_params.slow.aligned_nostat_cost > 8)
 		{
 			LZX_DEBUG("Invalid aligned_nostat_cost!");
 			return WIMLIB_ERR_INVALID_PARAM;
@@ -2726,7 +2730,7 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 	size_t block_specs_length;
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW)
-		block_specs_length = ((1 << (params->slow.num_split_passes + 1)) - 1);
+		block_specs_length = ((1 << (params->alg_params.slow.num_split_passes + 1)) - 1);
 	else
 		block_specs_length = 1;
 	ctx->block_specs = MALLOC(block_specs_length * sizeof(ctx->block_specs[0]));
@@ -2745,7 +2749,7 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 	}
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW &&
-	    params->slow.use_len2_matches)
+	    params->alg_params.slow.use_len2_matches)
 	{
 		ctx->digram_tab = MALLOC(256 * 256 * sizeof(ctx->digram_tab[0]));
 		if (ctx->digram_tab == NULL)
@@ -2775,7 +2779,7 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 	size_t chosen_matches_length;
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW)
 		chosen_matches_length = LZX_MAX_WINDOW_SIZE *
-					(params->slow.num_split_passes + 1);
+					(params->alg_params.slow.num_split_passes + 1);
 	else
 		chosen_matches_length = LZX_MAX_WINDOW_SIZE;
 

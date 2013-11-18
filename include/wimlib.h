@@ -1734,7 +1734,7 @@ struct wimlib_lzx_params {
 
 			uint8_t slow_reserved3[5];
 		} slow;
-	};
+	} alg_params;
 };
 
 /** Opaque LZX compression context.  */
