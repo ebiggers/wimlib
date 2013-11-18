@@ -1030,8 +1030,7 @@ wim_pathname_to_stream(WIMStruct *wim,
 			return -ENOENT;
 		}
 	} else {
-		lte = inode->i_lte;
-		stream_idx = 0;
+		lte = inode_unnamed_stream_resolved(inode, &stream_idx);
 	}
 out:
 	if (dentry_ret)
@@ -1170,17 +1169,26 @@ inode_stream_lte(const struct wim_inode *inode, unsigned stream_idx,
 }
 
 struct wim_lookup_table_entry *
-inode_unnamed_lte_resolved(const struct wim_inode *inode)
+inode_unnamed_stream_resolved(const struct wim_inode *inode, u16 *stream_idx_ret)
 {
 	wimlib_assert(inode->i_resolved);
 	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 		if (inode_stream_name_nbytes(inode, i) == 0 &&
 		    !is_zero_hash(inode_stream_hash_resolved(inode, i)))
 		{
+			*stream_idx_ret = i;
 			return inode_stream_lte_resolved(inode, i);
 		}
 	}
+	*stream_idx_ret = 0;
 	return NULL;
+}
+
+struct wim_lookup_table_entry *
+inode_unnamed_lte_resolved(const struct wim_inode *inode)
+{
+	u16 stream_idx;
+	return inode_unnamed_stream_resolved(inode, &stream_idx);
 }
 
 struct wim_lookup_table_entry *

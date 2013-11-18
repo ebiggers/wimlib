@@ -505,6 +505,9 @@ inode_stream_name_nbytes(const struct wim_inode *inode, unsigned stream_idx)
 }
 
 extern struct wim_lookup_table_entry *
+inode_unnamed_stream_resolved(const struct wim_inode *inode, u16 *stream_idx_ret);
+
+extern struct wim_lookup_table_entry *
 inode_unnamed_lte_resolved(const struct wim_inode *inode);
 
 extern struct wim_lookup_table_entry *

@@ -2242,7 +2242,7 @@ wimfs_unlink(const char *path)
 	if (ret != 0)
 		return ret;
 
-	if (stream_idx == 0)
+	if (inode_stream_name_nbytes(dentry->d_inode, stream_idx) == 0)
 		remove_dentry(dentry, ctx->wim->lookup_table);
 	else
 		inode_remove_ads(dentry->d_inode, stream_idx - 1,
