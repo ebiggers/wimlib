@@ -2653,7 +2653,7 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 
 	if (params == NULL) {
 		LZX_DEBUG("Using default algorithm and parameters.");
-		params = &slow_default;
+		params = &fast_default;
 	}
 
 	if (params->algorithm != WIMLIB_LZX_ALGORITHM_SLOW &&
@@ -2838,7 +2838,7 @@ wimlib_lzx_compress(const void * const restrict uncompressed_data,
 		    void       * const restrict compressed_data)
 {
 	int ret;
-	struct wimlib_lzx_context *ctx;
+	struct wimlib_lzx_context *ctx = NULL;
 	unsigned compressed_len;
 
 	ret = wimlib_lzx_alloc_context(NULL, &ctx);

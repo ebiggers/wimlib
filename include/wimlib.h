@@ -2710,7 +2710,8 @@ wimlib_join(const wimlib_tchar * const *swms,
  * format and therefore requires (@p chunk_size <= 32768).
  */
 extern unsigned
-wimlib_lzx_compress(const void *chunk, unsigned chunk_size, void *out);
+wimlib_lzx_compress(const void *chunk, unsigned chunk_size, void *out)
+			_wimlib_deprecated;
 
 /**
  * @ingroup G_compression
