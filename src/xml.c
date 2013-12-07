@@ -1564,30 +1564,34 @@ wimlib_image_name_in_use(const WIMStruct *wim, const tchar *name)
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_extract_xml_data(WIMStruct *wim, FILE *fp)
+wimlib_get_xml_data(WIMStruct *wim, void **buf_ret, size_t *bufsize_ret)
 {
-	size_t size;
-	void *buf;
-	int ret;
-
-	if (!wim->filename)
+	if (wim->filename == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	ret = res_entry_to_data(&wim->hdr.xml_res_entry, wim, &buf);
-	if (ret)
-		goto out;
+	if (buf_ret == NULL || bufsize_ret == NULL)
+		return WIMLIB_ERR_INVALID_PARAM;
 
-	size = wim->hdr.xml_res_entry.original_size;
-	if (fwrite(buf, 1, size, fp) != size) {
+	*bufsize_ret = wim->hdr.xml_res_entry.original_size;
+	return res_entry_to_data(&wim->hdr.xml_res_entry, wim, buf_ret);
+}
+
+WIMLIBAPI int
+wimlib_extract_xml_data(WIMStruct *wim, FILE *fp)
+{
+	int ret;
+	void *buf;
+	size_t bufsize;
+
+	ret = wimlib_get_xml_data(wim, &buf, &bufsize);
+	if (ret)
+		return ret;
+
+	if (fwrite(buf, 1, bufsize, fp) != bufsize) {
 		ERROR_WITH_ERRNO("Failed to extract XML data");
 		ret = WIMLIB_ERR_WRITE;
-		goto out_free_buf;
 	}
-
-	ret = 0;
-out_free_buf:
 	FREE(buf);
-out:
 	return ret;
 }
 

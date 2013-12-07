@@ -2374,6 +2374,8 @@ wimlib_extract_image_from_pipe(int pipe_fd,
  * Extracts the XML data of a WIM file to a file stream.  Every WIM file
  * includes a string of XML that describes the images contained in the WIM.
  *
+ * See wimlib_get_xml_data() to read the XML data into memory instead.
+ *
  * @param wim
  * 	Pointer to the ::WIMStruct for a WIM file, which does not necessarily
  * 	have to be standalone (e.g. it could be part of a split WIM).
@@ -2497,6 +2499,36 @@ wimlib_get_image_name(const WIMStruct *wim, int image);
  */
 extern int
 wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info);
+
+/**
+ * @ingroup G_wim_information
+ *
+ * Read the XML data of a WIM file into an in-memory buffer.  Every WIM file
+ * includes a string of XML that describes the images contained in the WIM.
+ *
+ * See wimlib_extract_xml_data() to extract the XML data to a file stream
+ * instead.
+ *
+ * @param wim
+ * 	Pointer to the ::WIMStruct for a WIM file, which does not necessarily
+ * 	have to be standalone (e.g. it could be part of a split WIM).
+ * @param buf_ret
+ *	On success, a pointer to an allocated buffer containing the raw UTF16-LE
+ *	XML data is written to this location.
+ * @param bufsize_ret
+ *	The size of the XML data in bytes is written to this location.
+ *
+ * @return 0 on success; nonzero on error.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ * 	@p wim is not a ::WIMStruct that was created by wimlib_open_wim(), or
+ * 	@p buf_ret or @p bufsize_ret was @c NULL.
+ * @retval ::WIMLIB_ERR_NOMEM
+ * @retval ::WIMLIB_ERR_READ
+ * @retval ::WIMLIB_ERR_UNEXPECTED_END_OF_FILE
+ * 	Failed to read the XML data from the WIM.
+ */
+extern int
+wimlib_get_xml_data(WIMStruct *wim, void **buf_ret, size_t *bufsize_ret);
 
 /**
  * @ingroup G_general
