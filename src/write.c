@@ -2140,10 +2140,12 @@ close_wim_writable(WIMStruct *wim, int write_flags)
 {
 	int ret = 0;
 
-	if (!(write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR))
+	if (!(write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR)) {
+		DEBUG("Closing WIM file.");
 		if (filedes_valid(&wim->out_fd))
 			if (filedes_close(&wim->out_fd))
 				ret = WIMLIB_ERR_WRITE;
+	}
 	filedes_invalidate(&wim->out_fd);
 	return ret;
 }
@@ -2205,6 +2207,8 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	off_t old_lookup_table_end;
 	off_t new_lookup_table_end;
 	u64 xml_totalbytes;
+
+	DEBUG("image=%d, write_flags=%08x", image, write_flags);
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
@@ -2280,6 +2284,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	hdr_offset = 0;
 	if (write_flags & WIMLIB_WRITE_FLAG_HEADER_AT_END)
 		hdr_offset = wim->out_fd.offset;
+	DEBUG("Writing new header @ %"PRIu64".", hdr_offset);
 	ret = write_wim_header_at_offset(&wim->hdr, &wim->out_fd, hdr_offset);
 	if (ret)
 		return ret;
@@ -2291,6 +2296,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	 * operation has been written to disk, but the new file data has not.
 	 */
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
+		DEBUG("Syncing WIM file.");
 		if (fsync(wim->out_fd.fd)) {
 			ERROR_WITH_ERRNO("Error syncing data to WIM file");
 			return WIMLIB_ERR_WRITE;
@@ -2687,6 +2693,7 @@ write_wim_part(WIMStruct *wim,
 out_restore_hdr:
 	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
 	(void)close_wim_writable(wim, write_flags);
+	DEBUG("ret=%d", ret);
 	return ret;
 }
 

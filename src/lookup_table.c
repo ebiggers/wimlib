@@ -716,6 +716,7 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					     write_resource_flags,
 					     comp_ctx);
 	FREE(table_buf);
+	DEBUG("ret=%d", ret);
 	return ret;
 }
 

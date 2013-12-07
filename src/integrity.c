@@ -328,6 +328,10 @@ write_integrity_table(WIMStruct *wim,
 	int ret;
 	u32 new_table_size;
 
+	DEBUG("Writing integrity table "
+	      "(new_lookup_table_end=%"PRIu64", old_lookup_table_end=%"PRIu64")",
+	      new_lookup_table_end, old_lookup_table_end);
+
 	wimlib_assert(old_lookup_table_end <= new_lookup_table_end);
 
 	old_table = NULL;
@@ -368,6 +372,7 @@ write_integrity_table(WIMStruct *wim,
 	FREE(new_table);
 out_free_old_table:
 	FREE(old_table);
+	DEBUG("ret=%d", ret);
 	return ret;
 }
 

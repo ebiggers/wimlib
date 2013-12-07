@@ -752,7 +752,11 @@ xml_write_windows_version(xmlTextWriter *writer,
 	if (rc < 0)
 		return rc;
 
-	return xmlTextWriterEndElement(writer); /* </VERSION> */
+	rc = xmlTextWriterEndElement(writer); /* </VERSION> */
+	if (rc < 0)
+		return rc;
+
+	return 0;
 }
 
 /* Writes the information contained in a `struct windows_info' to the XML
@@ -802,16 +806,19 @@ xml_write_windows_info(xmlTextWriter *writer,
 
 	if (windows_info->windows_version_exists) {
 		rc = xml_write_windows_version(writer, &windows_info->windows_version);
-		if (rc < 0)
+		if (rc)
 			return rc;
 	}
 
-	rc = xml_write_string(writer, "SYSTEMROOT",
-			      windows_info->system_root);
+	rc = xml_write_string(writer, "SYSTEMROOT", windows_info->system_root);
 	if (rc)
 		return rc;
 
-	return xmlTextWriterEndElement(writer); /* </WINDOWS> */
+	rc = xmlTextWriterEndElement(writer); /* </WINDOWS> */
+	if (rc < 0)
+		return rc;
+
+	return 0;
 }
 
 /* Writes a time element to the XML document being constructed in memory. */
@@ -897,6 +904,7 @@ xml_write_image_info(xmlTextWriter *writer, const struct image_info *image_info)
 	rc = xmlTextWriterEndElement(writer); /* </IMAGE> */
 	if (rc < 0)
 		return rc;
+
 	return 0;
 }
 
@@ -1480,6 +1488,7 @@ out_output_buffer_close:
 out_buffer_free:
 	xmlBufferFree(buf);
 out:
+	DEBUG("ret=%d", ret);
 	return ret;
 
 out_write_error:
@@ -1518,6 +1527,7 @@ write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 					     write_resource_flags,
 					     &wim->lzx_context);
 	FREE(xml_data);
+	DEBUG("ret=%d");
 	return ret;
 }
 
