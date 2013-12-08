@@ -41,7 +41,7 @@ Spend even more time compressing the data in order to achieve a more optimal
 compression ratio.  Compared to the default \fB--recompress\fR, this will make
 compression about twice as slow and will increase the compression ratio by maybe
 1%, depending on the data.  This option implies \fB--recompress\fR and
-\fB--compress\fR="maximum" (recompress using LZX compression).
+\fB--compress\fR=\fImaximum\fR (recompress using LZX compression).
 .TP
 \fB--compress\fR=\fITYPE\fR
 Recompress the WIM file using the specified compression type.  \fITYPE\fR may be
