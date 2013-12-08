@@ -42,7 +42,8 @@
  * and certain other details are quite similar, such as the method for storing
  * Huffman codes.  However, some of the main differences are:
  *
- * - LZX preprocesses the data before attempting to compress it.
+ * - LZX preprocesses the data to attempt to make x86 machine code slightly more
+ *   compressible before attempting to compress it further.
  * - LZX uses a "main" alphabet which combines literals and matches, with the
  *   match symbols containing a "length header" (giving all or part of the match
  *   length) and a "position slot" (giving, roughly speaking, the order of
@@ -51,7 +52,8 @@
  *   dynamic Huffman blocks ("aligned offset" and "verbatim").
  * - LZX has a minimum match length of 2 rather than 3.
  * - In LZX, match offsets 0 through 2 actually represent entries in an LRU
- *   queue of match offsets.
+ *   queue of match offsets.  This is very useful for certain types of files,
+ *   such as binary files that have repeating records.
  *
  * Algorithms
  * ==========
@@ -69,16 +71,20 @@
  * 1. Preprocess the input data to translate the targets of x86 call instructions
  *    to absolute offsets.
  *
- * 2. Build the suffix array and inverse suffix array for the input data.
+ * 2. Build the suffix array and inverse suffix array for the input data.  The
+ *    suffix array contains the indices of all suffixes of the input data,
+ *    sorted lexcographically by the corresponding suffixes.  The "position" of
+ *    a suffix is the index of that suffix in the original string, whereas the
+ *    "rank" of a suffix is the index at which that suffix's position is found
+ *    in the suffix array.
  *
  * 3. Build the longest common prefix array corresponding to the suffix array.
  *
- * 4. For each suffix rank, find the highest lower suffix rank that has a
- *    lower position, the lowest higher suffix rank that has a lower position,
- *    and the length of the common prefix shared between each.  (Position =
- *    index of suffix in original string, rank = index of suffix in suffix
- *    array.)  This information is later used to link suffix ranks into a
- *    doubly-linked list for searching the suffix array.
+ * 4. For each suffix, find the highest lower ranked suffix that has a
+ *    lower position, the lowest higher ranked suffix that has a lower position,
+ *    and the length of the common prefix shared between each.   This
+ *    information is later used to link suffix ranks into a doubly-linked list
+ *    for searching the suffix array.
  *
  * 5. Set a default cost model for matches/literals.
  *
@@ -86,14 +92,15 @@
  *    and literal bytes to divide the input into.  Raw match-finding is done by
  *    searching the suffix array using a linked list to avoid considering any
  *    suffixes that start after the current position.  Each run of the
- *    match-finder returns the lowest-cost longest match as well as any shorter
- *    matches that have even lower costs.  Each such run also adds the suffix
- *    rank of the current position into the linked list being used to search the
- *    suffix array.  Parsing, or match-choosing, is solved as a minimum-cost
- *    path problem using a forward "optimal parsing" algorithm based on the
- *    Deflate encoder from 7-Zip.  This algorithm moves forward calculating the
- *    minimum cost to reach each byte until either a very long match is found or
- *    until a position is found at which no matches start or overlap.
+ *    match-finder returns the approximate lowest-cost longest match as well as
+ *    any shorter matches that have even lower approximate costs.  Each such run
+ *    also adds the suffix rank of the current position into the linked list
+ *    being used to search the suffix array.  Parsing, or match-choosing, is
+ *    solved as a minimum-cost path problem using a forward "optimal parsing"
+ *    algorithm based on the Deflate encoder from 7-Zip.  This algorithm moves
+ *    forward calculating the minimum cost to reach each byte until either a
+ *    very long match is found or until a position is found at which no matches
+ *    start or overlap.
  *
  * 7. Build the Huffman codes needed to output the matches/literals.
  *
@@ -104,15 +111,18 @@
  * 9. Output the resulting block using the match/literal sequences and the
  *    Huffman codes that were computed for the block.
  *
+ * Note: the algorithm does not yet attempt to split the input into multiple LZX
+ * blocks.
+ *
  * Fast algorithm
  * --------------
  *
  * The fast algorithm (and the only one available in wimlib v1.5.1 and earlier)
  * spends much less time on the main bottlenecks of the compression process ---
- * that is the match finding, match choosing, and block splitting.  Matches are
- * found and chosen with hash chains using a greedy parse with one position of
- * look-ahead.  No block splitting is done; only compressing the full input into
- * an aligned offset block is considered.
+ * that is, the match finding and match choosing.  Matches are found and chosen
+ * with hash chains using a greedy parse with one position of look-ahead.  No
+ * block splitting is done; only compressing the full input into an aligned
+ * offset block is considered.
  *
  * API
  * ===
@@ -128,6 +138,7 @@
  *	wimlib_lzx_alloc_context()
  *	wimlib_lzx_compress2()
  *	wimlib_lzx_free_context()
+ *	wimlib_lzx_set_default_params()
  *
  * Both wimlib_lzx_compress() and wimlib_lzx_compress2() are designed to
  * compress an in-memory buffer of up to 32768 bytes.  There is no sliding
@@ -140,8 +151,9 @@
  * Again, this is suitable for the WIM format, which stores such data chunks
  * uncompressed.
  *
- * The functions in this API are exported from the library, although this is
- * only in case other programs happen to have uses for it other than WIM
+ * The functions in this LZX compression API are exported from the library,
+ * although with the possible exception of wimlib_lzx_set_default_params(), this
+ * is only in case other programs happen to have uses for it other than WIM
  * reading/writing as already handled through the rest of the library.
  *
  * Acknowledgments
@@ -150,7 +162,8 @@
  * Acknowledgments to several open-source projects and research papers that made
  * it possible to implement this code:
  *
- * - divsufsort (author: Yuta Mori), for the suffix array construction code.
+ * - divsufsort (author: Yuta Mori), for the suffix array construction code,
+ *   located in a separate directory (divsufsort/).
  *
  * - "Linear-Time Longest-Common-Prefix Computation in Suffix Arrays and Its
  *   Applications" (Kasai et al. 2001), for the LCP array computation.
@@ -162,7 +175,7 @@
  *   (match-choosing).
  *
  * - zlib (author: Jean-loup Gailly and Mark Adler), for the hash table
- *   match-finding algorithm.
+ *   match-finding algorithm (used in lz77.c).
  *
  * - lzx-compress (author: Matthew T. Russotto), on which some parts of this
  *   code were originally based.
@@ -188,9 +201,7 @@
 #include "divsufsort/divsufsort.h"
 
 typedef freq_t input_idx_t;
-typedef u32 sym_cost_t;
 typedef u32 block_cost_t;
-#define INFINITE_SYM_COST	((sym_cost_t)~0U)
 #define INFINITE_BLOCK_COST	((block_cost_t)~0U)
 
 #define LZX_OPTIM_ARRAY_SIZE	4096
@@ -229,9 +240,9 @@ struct lzx_lens {
  * --- generally a high cost, since even if it gets used in the next iteration,
  * it probably will not be used very times.  */
 struct lzx_costs {
-	sym_cost_t main[LZX_MAINCODE_NUM_SYMBOLS];
-	sym_cost_t len[LZX_LENCODE_NUM_SYMBOLS];
-	sym_cost_t aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
+	u8 main[LZX_MAINCODE_NUM_SYMBOLS];
+	u8 len[LZX_LENCODE_NUM_SYMBOLS];
+	u8 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
 
 /* The LZX main, length, and aligned offset Huffman codes  */
@@ -406,10 +417,6 @@ struct lzx_compressor {
 	 * block.  */
 	struct lzx_match *chosen_matches;
 
-	struct raw_match *cached_matches;
-	unsigned cached_matches_pos;
-	bool matches_cached;
-
 	/* Information about the LZX blocks the preprocessed input was divided
 	 * into.  */
 	struct lzx_block_spec *block_specs;
@@ -424,29 +431,19 @@ struct lzx_compressor {
 	 * codewords.  */
 	struct lzx_codes zero_codes;
 
-	/* Slow algorithm only: The current cost model.  */
+	/* The current cost model.  */
 	struct lzx_costs costs;
 
-	/* Slow algorithm only: Suffix array for window.
-	 * This is a mapping from suffix rank to suffix position.
-	 *
-	 * Suffix rank means the index of the suffix in the sorted list of
-	 * suffixes, whereas suffix position means the index in the string at
-	 * which the suffix starts.
-	 */
+	/* Suffix array for window.
+	 * This is a mapping from suffix rank to suffix position.  */
 	input_idx_t *SA;
 
-	/* Slow algorithm only: Inverse suffix array for window.
+	/* Inverse suffix array for window.
 	 * This is a mapping from suffix position to suffix rank.
-	 * In other words, if 0 <= r < window_size, then ISA[SA[r]] == r.  */
+	 * If 0 <= r < window_size, then ISA[SA[r]] == r.  */
 	input_idx_t *ISA;
 
-	/* Slow algorithm only: Longest Common Prefix array.  LCP[i] is the
-	 * number of initial bytes that the suffixes at positions SA[i - 1] and
-	 * SA[i] share.  LCP[0] is undefined.  */
-	input_idx_t *LCP;
-
-	/* Slow algorithm only: Suffix array links.
+	/* Suffix array links.
 	 *
 	 * During a linear scan of the input string to find matches, this array
 	 * used to keep track of which rank suffixes in the suffix array appear
@@ -455,16 +452,25 @@ struct lzx_compressor {
 	 * list containing only suffixes that appear before that position.  */
 	struct salink *salink;
 
-	/* Slow algorithm only: Position in window of next match to return.
-	 * This cannot simply be modified, as the match-finder must still be
-	 * synchronized on the same position.  To seek forwards or backwards,
+	/* Position in window of next match to return.
+	 * Note: This cannot simply be modified, as the match-finder must still
+	 * be synchronized on the same position.  To seek forwards or backwards,
 	 * use lzx_lz_skip_bytes() or lzx_lz_rewind_matchfinder(), respectively.
 	 */
 	input_idx_t match_window_pos;
 
-	/* Slow algorithm only: The match-finder shall ensure the length of
-	 * matches does not exceed this position in the input.  */
+	/* The match-finder shall ensure the length of matches does not exceed
+	 * this position in the input.  */
 	input_idx_t match_window_end;
+
+	/* Matches found by the match-finder are cached in the following array
+	 * to achieve a slight speedup when the same matches are needed on
+	 * subsequent passes.  This is suboptimal because different matches may
+	 * be preferred with different cost models, but seems to be a worthwhile
+	 * speedup.  */
+	struct raw_match *cached_matches;
+	unsigned cached_matches_pos;
+	bool matches_cached;
 
 	/* Slow algorithm only: Temporary space used for match-choosing
 	 * algorithm.
@@ -494,7 +500,7 @@ struct lzx_compressor {
  * numbers in the lzx_position_base array to calculate the slot directly from
  * the formatted offset without actually looking at the array.
  */
-static _always_inline_attribute unsigned
+static unsigned
 lzx_get_position_slot_raw(unsigned formatted_offset)
 {
 #if 0
@@ -526,8 +532,9 @@ lzx_get_position_slot_raw(unsigned formatted_offset)
 
 
 /* Returns the LZX position slot that corresponds to a given match offset,
- * taking into account the recent offset queue (and optionally updating it).  */
-static _always_inline_attribute unsigned
+ * taking into account the recent offset queue and updating it if the offset is
+ * found in it.  */
+static unsigned
 lzx_get_position_slot(unsigned offset, struct lzx_lru_queue *queue)
 {
 	unsigned position_slot;
@@ -542,9 +549,9 @@ lzx_get_position_slot(unsigned offset, struct lzx_lru_queue *queue)
 			 * LRU queue because repeat matches are simply
 			 * swapped to the front.  */
 			swap(queue->R[0], queue->R[i]);
-			/* For recent offsets, the position slot is simply the
-			 * index of the entry in the queue.  */
 
+			/* The resulting position slot is simply the first index
+			 * at which the offset was found in the queue.  */
 			return i;
 		}
 	}
@@ -1161,7 +1168,7 @@ lzx_record_match(unsigned match_offset, unsigned match_len,
 
 /* Returns the cost, in bits, to output a literal byte using the specified cost
  * model.  */
-static sym_cost_t
+static unsigned
 lzx_literal_cost(u8 c, const struct lzx_costs * costs)
 {
 	return costs->main[c];
@@ -1172,18 +1179,18 @@ lzx_literal_cost(u8 c, const struct lzx_costs * costs)
  * codes, return the approximate number of bits it will take to represent this
  * match in the compressed output.  Take into account the match offset LRU
  * queue and optionally update it.  */
-static sym_cost_t
+static unsigned
 lzx_match_cost(unsigned length, unsigned offset, const struct lzx_costs *costs,
 	       struct lzx_lru_queue *queue)
 {
 	unsigned position_slot;
 	unsigned len_header, main_symbol;
-	sym_cost_t cost = 0;
+	unsigned cost = 0;
 
 	position_slot = lzx_get_position_slot(offset, queue);
 
 	len_header = min(length - LZX_MIN_MATCH_LEN, LZX_NUM_PRIMARY_LENS);
-	main_symbol = (position_slot << 3) | len_header | LZX_NUM_CHARS;
+	main_symbol = ((position_slot << 3) | len_header) + LZX_NUM_CHARS;
 
 	/* Account for main symbol.  */
 	cost += costs->main[main_symbol];
@@ -1205,16 +1212,19 @@ lzx_match_cost(unsigned length, unsigned offset, const struct lzx_costs *costs,
 
 }
 
-/* Very fast heuristic cost evaluation to use in the inner loop of the
- * match-finder.  */
-static sym_cost_t
+/* Fast heuristic cost evaluation to use in the inner loop of the match-finder.
+ * Unlike lzx_match_cost() which does a true cost evaluation, this simply
+ * prioritize matches based on their offset.  */
+static block_cost_t
 lzx_match_cost_fast(unsigned offset, const struct lzx_lru_queue *queue)
 {
+	/* It seems well worth it to take the time to give priority to recently
+	 * used offsets.  */
 	for (unsigned i = 0; i < LZX_NUM_RECENT_OFFSETS; i++)
 		if (offset == queue->R[i])
 			return i;
 
-	BUILD_BUG_ON(LZX_MAX_WINDOW_SIZE >= (sym_cost_t)~0U);
+	BUILD_BUG_ON(LZX_MAX_WINDOW_SIZE >= (block_cost_t)~0U);
 	return offset;
 }
 
@@ -1303,6 +1313,14 @@ lzx_lz_rewind_matchfinder(struct lzx_compressor *ctx,
 	if (ctx->match_window_pos == orig_pos)
 		return;
 
+	/* NOTE: this has been optimized for the current algorithm where no
+	 * block-splitting is done and matches are cached, so that the suffix
+	 * array match-finder only runs through the input one time.  Generalized
+	 * rewinds of the suffix array match-finder are possible, but require
+	 * incrementally saving fields being overwritten in
+	 * lzx_lz_update_salink(), then restoring them here in reverse order.
+	 */
+
 	LZX_ASSERT(ctx->match_window_pos > orig_pos);
 	LZX_ASSERT(orig_pos == 0);
 	ctx->matches_cached = true;
@@ -1373,7 +1391,7 @@ lzx_lz_get_matches(const input_idx_t i,
 	 * We keep track of this so that we can ignore shorter matches that do
 	 * not have lower costs than a longer matches already found.
 	 */
-	sym_cost_t best_cost = INFINITE_SYM_COST;
+	block_cost_t best_cost = INFINITE_BLOCK_COST;
 
 	/* count_remaining = maximum number of possible matches remaining to be
 	 * considered.  */
@@ -1381,13 +1399,13 @@ lzx_lz_get_matches(const input_idx_t i,
 
 	/* pending = match currently being considered for a specific length.  */
 	struct raw_match pending;
+	block_cost_t pending_cost;
 
 	while (lenL >= min_match_len || lenR >= min_match_len)
 	{
 		pending.len = lenL;
-		pending.offset = (input_idx_t)~0U;
-		sym_cost_t pending_cost = INFINITE_SYM_COST;
-		sym_cost_t cost;
+		pending_cost = INFINITE_BLOCK_COST;
+		block_cost_t cost;
 
 		/* Extend left.  */
 		if (lenL >= min_match_len && lenL >= lenR) {
@@ -1423,8 +1441,7 @@ lzx_lz_get_matches(const input_idx_t i,
 								return nmatches;
 						}
 						pending.len = lenL;
-						pending.offset = (input_idx_t)~0U;
-						pending_cost = INFINITE_SYM_COST;
+						pending_cost = INFINITE_BLOCK_COST;
 					}
 					if (lenL < min_match_len || lenL < lenR)
 						break;
@@ -1470,8 +1487,7 @@ lzx_lz_get_matches(const input_idx_t i,
 						break;
 
 					pending.len = lenR;
-					pending.offset = (input_idx_t)~0U;
-					pending_cost = INFINITE_SYM_COST;
+					pending_cost = INFINITE_BLOCK_COST;
 				}
 				R = link[R].next;
 			}
@@ -1480,7 +1496,7 @@ lzx_lz_get_matches(const input_idx_t i,
 	goto out;
 
 out_save_pending:
-	if (pending.offset != (input_idx_t)~0U)
+	if (pending_cost != INFINITE_BLOCK_COST)
 		matches[nmatches++] = pending;
 
 out:
@@ -1529,8 +1545,8 @@ lzx_lz_get_matches_caching(struct lzx_compressor *ctx,
 		num_matches = matches[-1].len;
 	} else {
 		unsigned min_match_len = LZX_MIN_MATCH_LEN;
-		if (min_match_len <= 2 && !ctx->params.alg_params.slow.use_len2_matches)
-			min_match_len = 3;
+		if (!ctx->params.alg_params.slow.use_len2_matches)
+			min_match_len = max(min_match_len, 3);
 		const uint32_t max_search_depth = ctx->params.alg_params.slow.max_search_depth;
 		const uint32_t max_matches_per_pos = ctx->params.alg_params.slow.max_matches_per_pos;
 
@@ -1636,8 +1652,9 @@ lzx_lz_reverse_near_optimal_match_list(struct lzx_compressor *ctx,
  * model rather than simply assuming that longer is better.
  *
  * Still, this is not truly an optimal parser because very long matches are
- * taken immediately.  This is done to avoid considering many different
- * alternatives that are unlikely to significantly be better.
+ * taken immediately, and the raw match-finder takes some shortcuts.  This is
+ * done to avoid considering many different alternatives that are unlikely to
+ * be significantly better.
  *
  * This algorithm is based on that used in 7-Zip's DEFLATE encoder.
  *
@@ -1659,14 +1676,8 @@ lzx_lz_reverse_near_optimal_match_list(struct lzx_compressor *ctx,
  *	ctx->optimum	     (internal state; leave uninitialized)
  *	ctx->optimum_cur_idx (must set to 0 before first call)
  *	ctx->optimum_end_idx (must set to 0 before first call)
- *	ctx->SA		     (must be built before first call)
- *	ctx->ISA	     (must be built before first call)
- *	ctx->salink	     (must be built before first call)
- *	ctx->match_window_pos (must initialize to position of next match to
- *			       return; subsequent calls return subsequent
- *			       matches)
- *	ctx->match_window_end (must initialize to limit of match-finding region;
- *			       subsequent calls use the same limit)
+ *
+ *	Plus any state used by the raw match-finder.
  *
  * The return value is a (length, offset) pair specifying the match or literal
  * chosen.  For literals, the length is less than LZX_MIN_MATCH_LEN and the
@@ -1880,13 +1891,13 @@ lzx_choose_verbatim_or_aligned(const struct lzx_freqs * freqs,
 }
 
 /* Find a near-optimal sequence of matches/literals with which to output the
- * specified LZX block, and set its type to that which has the minimum cost to
+ * specified LZX block, then set its type to that which has the minimum cost to
  * output.  */
 static void
 lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 		   unsigned num_passes)
 {
-	struct lzx_lru_queue orig_queue = ctx->queue;
+	const struct lzx_lru_queue orig_queue = ctx->queue;
 	struct lzx_freqs freqs;
 
 	ctx->match_window_end = spec->window_pos + spec->block_size;
@@ -1947,7 +1958,6 @@ lzx_lz_init_matchfinder(const u8 T[const restrict],
 			const input_idx_t n,
 			input_idx_t SA[const restrict],
 			input_idx_t ISA[const restrict],
-			input_idx_t LCP[const restrict],
 			struct salink link[const restrict],
 			const unsigned max_match_len)
 {
@@ -1996,98 +2006,101 @@ lzx_lz_init_matchfinder(const u8 T[const restrict],
 	for (input_idx_t r = 0; r < n; r++)
 		ISA[SA[r]] = r;
 
-	/* Compute LCP (longest common prefix) array.
-	 *
-	 * Algorithm adapted from Kasai et al. 2001: "Linear-Time
-	 * Longest-Common-Prefix Computation in Suffix Arrays and Its
-	 * Applications".  */
 	{
-		input_idx_t h = 0;
-		for (input_idx_t i = 0; i < n; i++) {
-			input_idx_t r = ISA[i];
-			if (r > 0) {
-				input_idx_t j = SA[r - 1];
+		input_idx_t LCP[n];
+		/* Compute LCP (longest common prefix) array.
+		 *
+		 * Algorithm adapted from Kasai et al. 2001: "Linear-Time
+		 * Longest-Common-Prefix Computation in Suffix Arrays and Its
+		 * Applications".  */
+		{
+			input_idx_t h = 0;
+			for (input_idx_t i = 0; i < n; i++) {
+				input_idx_t r = ISA[i];
+				if (r > 0) {
+					input_idx_t j = SA[r - 1];
 
-				input_idx_t lim = min(n - i, n - j);
+					input_idx_t lim = min(n - i, n - j);
 
-				while (h < lim && T[i + h] == T[j + h])
-					h++;
-				LCP[r] = h;
-				if (h > 0)
-					h--;
+					while (h < lim && T[i + h] == T[j + h])
+						h++;
+					LCP[r] = h;
+					if (h > 0)
+						h--;
+				}
 			}
 		}
-	}
 
-#ifdef ENABLE_LZX_DEBUG
-	/* Verify LCP array.  */
-	for (input_idx_t r = 0; r < n - 1; r++) {
-		LZX_ASSERT(ISA[SA[r]] == r);
-		LZX_ASSERT(ISA[SA[r + 1]] == r + 1);
+	#ifdef ENABLE_LZX_DEBUG
+		/* Verify LCP array.  */
+		for (input_idx_t r = 0; r < n - 1; r++) {
+			LZX_ASSERT(ISA[SA[r]] == r);
+			LZX_ASSERT(ISA[SA[r + 1]] == r + 1);
 
-		input_idx_t i1 = SA[r];
-		input_idx_t i2 = SA[r + 1];
-		input_idx_t lcp = LCP[r + 1];
+			input_idx_t i1 = SA[r];
+			input_idx_t i2 = SA[r + 1];
+			input_idx_t lcp = LCP[r + 1];
 
-		input_idx_t n1 = n - i1;
-		input_idx_t n2 = n - i2;
+			input_idx_t n1 = n - i1;
+			input_idx_t n2 = n - i2;
 
-		LZX_ASSERT(lcp <= min(n1, n2));
+			LZX_ASSERT(lcp <= min(n1, n2));
 
-		LZX_ASSERT(memcmp(&T[i1], &T[i2], lcp) == 0);
-		if (lcp < min(n1, n2))
-			LZX_ASSERT(T[i1 + lcp] != T[i2 + lcp]);
-	}
-#endif /* ENABLE_LZX_DEBUG */
-
-	/* Compute salink.next and salink.lcpnext.
-	 *
-	 * Algorithm adapted from Crochemore et al. 2009:
-	 * "LPF computation revisited".
-	 *
-	 * Note: we cap lcpnext to the maximum match length so that the
-	 * match-finder need not worry about it later.  */
-	link[n - 1].next = (input_idx_t)~0U;
-	link[n - 1].prev = (input_idx_t)~0U;
-	link[n - 1].lcpnext = 0;
-	link[n - 1].lcpprev = 0;
-	for (input_idx_t r = n - 2; r != (input_idx_t)~0U; r--) {
-		input_idx_t t = r + 1;
-		input_idx_t l = LCP[t];
-		while (t != (input_idx_t)~0 && SA[t] > SA[r]) {
-			l = min(l, link[t].lcpnext);
-			t = link[t].next;
+			LZX_ASSERT(memcmp(&T[i1], &T[i2], lcp) == 0);
+			if (lcp < min(n1, n2))
+				LZX_ASSERT(T[i1 + lcp] != T[i2 + lcp]);
 		}
-		link[r].next = t;
-		link[r].lcpnext = min(l, max_match_len);
-		LZX_ASSERT(t == (input_idx_t)~0 || l <= n - SA[t]);
-		LZX_ASSERT(l <= n - SA[r]);
-		LZX_ASSERT(memcmp(&T[SA[r]], &T[SA[t]], l) == 0);
-	}
+	#endif /* ENABLE_LZX_DEBUG */
 
-	/* Compute salink.prev and salink.lcpprev.
-	 *
-	 * Algorithm adapted from Crochemore et al. 2009:
-	 * "LPF computation revisited".
-	 *
-	 * Note: we cap lcpprev to the maximum match length so that the
-	 * match-finder need not worry about it later.  */
-	link[0].prev = (input_idx_t)~0;
-	link[0].next = (input_idx_t)~0;
-	link[0].lcpprev = 0;
-	link[0].lcpnext = 0;
-	for (input_idx_t r = 1; r < n; r++) {
-		input_idx_t t = r - 1;
-		input_idx_t l = LCP[r];
-		while (t != (input_idx_t)~0 && SA[t] > SA[r]) {
-			l = min(l, link[t].lcpprev);
-			t = link[t].prev;
+		/* Compute salink.next and salink.lcpnext.
+		 *
+		 * Algorithm adapted from Crochemore et al. 2009:
+		 * "LPF computation revisited".
+		 *
+		 * Note: we cap lcpnext to the maximum match length so that the
+		 * match-finder need not worry about it later.  */
+		link[n - 1].next = (input_idx_t)~0U;
+		link[n - 1].prev = (input_idx_t)~0U;
+		link[n - 1].lcpnext = 0;
+		link[n - 1].lcpprev = 0;
+		for (input_idx_t r = n - 2; r != (input_idx_t)~0U; r--) {
+			input_idx_t t = r + 1;
+			input_idx_t l = LCP[t];
+			while (t != (input_idx_t)~0 && SA[t] > SA[r]) {
+				l = min(l, link[t].lcpnext);
+				t = link[t].next;
+			}
+			link[r].next = t;
+			link[r].lcpnext = min(l, max_match_len);
+			LZX_ASSERT(t == (input_idx_t)~0U || l <= n - SA[t]);
+			LZX_ASSERT(l <= n - SA[r]);
+			LZX_ASSERT(memcmp(&T[SA[r]], &T[SA[t]], l) == 0);
 		}
-		link[r].prev = t;
-		link[r].lcpprev = min(l, max_match_len);
-		LZX_ASSERT(t == (input_idx_t)~0 || l <= n - SA[t]);
-		LZX_ASSERT(l <= n - SA[r]);
-		LZX_ASSERT(memcmp(&T[SA[r]], &T[SA[t]], l) == 0);
+
+		/* Compute salink.prev and salink.lcpprev.
+		 *
+		 * Algorithm adapted from Crochemore et al. 2009:
+		 * "LPF computation revisited".
+		 *
+		 * Note: we cap lcpprev to the maximum match length so that the
+		 * match-finder need not worry about it later.  */
+		link[0].prev = (input_idx_t)~0;
+		link[0].next = (input_idx_t)~0;
+		link[0].lcpprev = 0;
+		link[0].lcpnext = 0;
+		for (input_idx_t r = 1; r < n; r++) {
+			input_idx_t t = r - 1;
+			input_idx_t l = LCP[r];
+			while (t != (input_idx_t)~0 && SA[t] > SA[r]) {
+				l = min(l, link[t].lcpprev);
+				t = link[t].prev;
+			}
+			link[r].prev = t;
+			link[r].lcpprev = min(l, max_match_len);
+			LZX_ASSERT(t == (input_idx_t)~0 || l <= n - SA[t]);
+			LZX_ASSERT(l <= n - SA[r]);
+			LZX_ASSERT(memcmp(&T[SA[r]], &T[SA[t]], l) == 0);
+		}
 	}
 }
 
@@ -2097,7 +2110,7 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
 {
 	/* Initialize the match-finder.  */
 	lzx_lz_init_matchfinder(ctx->window, ctx->window_size,
-				ctx->SA, ctx->ISA, ctx->LCP, ctx->salink,
+				ctx->SA, ctx->ISA, ctx->salink,
 				LZX_MAX_MATCH_LEN);
 	ctx->cached_matches_pos = 0;
 	ctx->matches_cached = false;
@@ -2106,13 +2119,12 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
 	/* Set up a default cost model.  */
 	lzx_set_default_costs(&ctx->costs);
 
-	/* Initially assume that the entire input will be one LZX block.  */
-	ctx->block_specs[0].block_type = LZX_BLOCKTYPE_ALIGNED;
+	/* Assume that the entire input will be one LZX block.  */
 	ctx->block_specs[0].window_pos = 0;
 	ctx->block_specs[0].block_size = ctx->window_size;
 	ctx->num_blocks = 1;
 
-	/* Perform near-optimal LZ parsing.  */
+	/* Determine sequence of matches/literals to output for each block.  */
 	lzx_optimize_blocks(ctx);
 }
 
@@ -2288,7 +2300,9 @@ wimlib_lzx_compress2(const void			* const restrict uncompressed_data,
 		  uncompressed_len, compressed_len);
 
 	/* Verify that we really get the same thing back when decompressing.
-	 * TODO: Disable this check by default on the slow algorithm.  */
+	 * Although this could be disabled by default in all cases, it only
+	 * takes around 2-3% of the running time of the slow algorithm to do the
+	 * verification.  */
 	if (ctx->params.algorithm == WIMLIB_LZX_ALGORITHM_SLOW
 	#if defined(ENABLE_LZX_DEBUG) || defined(ENABLE_VERIFY_COMPRESSION)
 	    || 1
@@ -2476,14 +2490,12 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 		if (ctx->SA == NULL)
 			goto err_free_block_specs;
 		ctx->ISA = ctx->SA + LZX_MAX_WINDOW_SIZE;
-		ctx->LCP = ctx->ISA + LZX_MAX_WINDOW_SIZE;
 		ctx->salink = MALLOC(LZX_MAX_WINDOW_SIZE * sizeof(ctx->salink[0]));
 		if (ctx->salink == NULL)
 			goto err_free_SA;
 	} else {
 		ctx->SA = NULL;
 		ctx->ISA = NULL;
-		ctx->LCP = NULL;
 		ctx->salink = NULL;
 	}
 
@@ -2549,11 +2561,11 @@ wimlib_lzx_free_context(struct wimlib_lzx_context *_ctx)
 	struct lzx_compressor *ctx = (struct lzx_compressor*)_ctx;
 
 	if (ctx) {
-		FREE(ctx->cached_matches);
 		FREE(ctx->chosen_matches);
+		FREE(ctx->cached_matches);
 		FREE(ctx->optimum);
-		FREE(ctx->SA);
 		FREE(ctx->salink);
+		FREE(ctx->SA);
 		FREE(ctx->block_specs);
 		FREE(ctx);
 	}
