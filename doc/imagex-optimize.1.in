@@ -36,11 +36,11 @@ verify that the WIM is intact (equivalent to applying all the images from it).
 Note: as of wimlib v1.5.3, wimlib's LZX compressor usually achieves the same or
 better compression than Microsoft's, but is slightly slower.
 .TP
-\fB--compress-slow
-For LZX compression only: spend even more time compressing the data in order to
-achieve a more optimal compression ratio.  This will make compression about
-twice as slow and will increase the compression ratio by maybe 1%, if you're
-lucky.
+\fB--recompress-slow\fR, \fB--compress-slow\fR
+Spend even more time compressing the data in order to achieve a more optimal
+compression ratio.  This only affects LZX-compressed WIM files.  Compared to the
+default \fB--recompress\fR, this will make compression about twice as slow and
+will increase the compression ratio by maybe 1%, depending on the data.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of

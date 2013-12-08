@@ -284,6 +284,7 @@ static const struct option optimize_options[] = {
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
+	{T("recompress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
@@ -3259,6 +3260,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
 		case IMAGEX_COMPRESS_SLOW_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			set_compress_slow();
 			break;
 		case IMAGEX_THREADS_OPTION:
@@ -3752,7 +3754,7 @@ T(
 [CMD_OPTIMIZE] =
 T(
 "    %"TS" WIMFILE [--check] [--nocheck] [--recompress]\n"
-"                    [--compress-slow] [--threads=NUM_THREADS] [--pipable]\n"
+"                    [--recompress-slow] [--threads=NUM_THREADS] [--pipable]\n"
 "                    [--not-pipable]\n"
 ),
 [CMD_SPLIT] =
