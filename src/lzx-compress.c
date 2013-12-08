@@ -1622,101 +1622,6 @@ lzx_lz_reverse_near_optimal_match_list(struct lzx_compressor *ctx,
 		};
 }
 
-#if 0
-static struct raw_match
-lzx_lz_get_greedy_match(struct lzx_compressor * ctx)
-{
-	struct raw_match *matches;
-
-	if (!lzx_lz_get_matches_caching(ctx, &ctx->queue, &matches))
-		return (struct raw_match) {.len = 0};
-
-	lzx_lz_skip_bytes(ctx, matches[0].len - 1);
-	return matches[0];
-}
-#endif
-
-#if 0
-static struct raw_match
-lzx_lz_get_lazy_match(struct lzx_compressor * ctx)
-{
-	unsigned num_matches;
-	struct raw_match *matches;
-	struct raw_match prev_match;
-	struct lzx_lru_queue queue;
-
-	if (ctx->optimum_cur_idx != ctx->optimum_end_idx)
-		goto retopt;
-
-	/* Check for matches at first position.  */
-	num_matches = lzx_lz_get_matches_caching(ctx, &ctx->queue, &matches);
-
-	/* Return literal if no matches were found.  */
-	if (num_matches == 0)
-		return (struct raw_match) { .len = 0 };
-
-	/* Immediately choose match if longer than threshold.  */
-	if (matches[0].len > ctx->params.alg_params.slow.num_fast_bytes)
-		goto savecur;
-
-	ctx->optimum_cur_idx = ctx->optimum_end_idx = 0;
-	for (;;) {
-		prev_match = matches[0];
-
-		/* Check for matches at next position.  */
-		num_matches = lzx_lz_get_matches_caching(ctx, &ctx->queue, &matches);
-
-		/* Choose previous match if there is not a match at this
-		 * position.  */
-		if (num_matches == 0)
-			goto saveprev;
-
-		/* Choose previous match the longest match at the next position
-		 * is the same place, just one character shifted over.  */
-		if (matches[0].offset == prev_match.offset ||
-		    matches[0].len < prev_match.len)
-			goto saveprev;
-
-		struct lzx_lru_queue q1 = ctx->queue, q2 = ctx->queue;
-		double lazycost = lzx_literal_cost(ctx->window[ctx->match_window_pos - 2],
-						     &ctx->costs) +
-				    lzx_match_cost(matches[0].len, matches[0].offset,
-						   &ctx->costs, &q1);
-		double greedycost = lzx_match_cost(prev_match.len, prev_match.offset,
-						     &ctx->costs, &q2);
-		lazycost *= (double)prev_match.len / (1 + matches[0].len);
-
-		/* Choose previous match if greedy cost was lower.  */
-		if (greedycost <= lazycost)
-			goto saveprev;
-
-		/* Choose literal at the previous position.  */
-		ctx->optimum[ctx->optimum_end_idx++].next.link = 0;
-
-
-		/* Immediately choose match if longer than threshold.  */
-		if (matches[0].len > ctx->params.alg_params.slow.num_fast_bytes)
-			goto savecur;
-	}
-
-savecur:
-	lzx_lz_skip_bytes(ctx, 1);
-	prev_match = matches[0];
-
-saveprev:
-	lzx_lz_skip_bytes(ctx, prev_match.len - 2);
-	ctx->optimum[ctx->optimum_end_idx].next.link = prev_match.len;
-	ctx->optimum[ctx->optimum_end_idx].next.match_offset = prev_match.offset;
-	ctx->optimum_end_idx++;
-retopt:
-	prev_match.len = ctx->optimum[ctx->optimum_cur_idx].next.link;
-	prev_match.offset = ctx->optimum[ctx->optimum_cur_idx].next.match_offset;
-	ctx->optimum_cur_idx++;
-	return prev_match;
-}
-#endif
-
-
 /*
  * lzx_lz_get_near_optimal_match() -
  *
@@ -2036,288 +1941,6 @@ lzx_optimize_blocks(struct lzx_compressor *ctx)
 		lzx_optimize_block(ctx, &ctx->block_specs[i], num_passes);
 }
 
-static bool entropy_val_tab_inited = false;
-static double entropy_val_tab[LZX_MAX_WINDOW_SIZE];
-static pthread_mutex_t entropy_val_tab_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-static double entropy_val(unsigned count)
-{
-	/*return count * log(count);*/
-	return entropy_val_tab[count];
-}
-
-/* Split a LZX block into several if it is advantageous to do so.
- *
- * TODO:  This doesn't work very well yet.  Should optimal parsing be done
- * before or after splitting?  */
-static void
-lzx_block_split(const u32 matches[restrict],
-		const input_idx_t n,
-		const double epsilon,
-		const unsigned max_num_blocks,
-		const unsigned min_block_len,
-		struct lzx_block_spec block_specs[restrict],
-		unsigned * const restrict num_blocks_ret)
-{
-	const double block_overhead = 1500;
-
-	if (!entropy_val_tab_inited) {
-		pthread_mutex_lock(&entropy_val_tab_mutex);
-		if (!entropy_val_tab_inited) {
-			entropy_val_tab[0] = 0;
-			for (input_idx_t i = 1; i < LZX_MAX_WINDOW_SIZE; i++)
-				entropy_val_tab[i] = i * log2(i);
-			entropy_val_tab_inited = true;
-		}
-		pthread_mutex_unlock(&entropy_val_tab_mutex);
-	}
-
-	u16 main_syms[n];
-	u8 len_syms[n];
-	u8 aligned_syms[n];
-	input_idx_t orig_input_indices[n + 1];
-
-	LZX_ASSERT(epsilon >= 0);
-	LZX_ASSERT(max_num_blocks >= 1);
-
-	/* For convenience, extract the main, length, and aligned symbols from
-	 * the matches.  Every position will have a main symbol, but not every
-	 * position will have a length and aligned symbol.  Special values
-	 * larger than the valid symbols are used to indicate the absense of a
-	 * symbol. */
-	orig_input_indices[0] = 0;
-	for (input_idx_t i = 0, orig_input_idx = 0; i < n; i++) {
-		u32 match = matches[i];
-		u16 main_sym;
-		u8 len_sym = LZX_LENCODE_NUM_SYMBOLS;
-		u8 aligned_sym = LZX_ALIGNEDCODE_NUM_SYMBOLS;
-		if (match & 0x80000000) {
-			unsigned match_len_minus_2 = match & 0xff;
-			unsigned position_footer = (match >> 8) & 0x1ffff;
-			unsigned position_slot = (match >> 25) & 0x3f;
-			unsigned len_header;
-
-			if (match_len_minus_2 < LZX_NUM_PRIMARY_LENS) {
-				len_header = match_len_minus_2;
-			} else {
-				len_header = LZX_NUM_PRIMARY_LENS;
-				len_sym = match_len_minus_2 - LZX_NUM_PRIMARY_LENS;
-			}
-			main_sym = ((position_slot << 3) | len_header) + LZX_NUM_CHARS;
-			if (position_slot >= 8)
-				aligned_sym = position_footer & 7;
-			orig_input_idx += match_len_minus_2 + 2;
-		} else {
-			main_sym = match;
-			orig_input_idx++;
-		}
-		main_syms[i] = main_sym;
-		len_syms[i] = len_sym;
-		aligned_syms[i] = aligned_sym;
-		orig_input_indices[i + 1] = orig_input_idx;
-	}
-
-	/* Compute the number of sliding windows that will be used for the
-	 * entropy calculations. */
-	int num_windows = 0;
-	unsigned window_len;
-	{
-		double e = min_block_len;
-		do {
-			window_len = e;
-			num_windows++;
-			e *= epsilon + 1;
-		} while (window_len < n);
-	}
-
-	/* Compute the length of each sliding window. */
-	unsigned window_lens[num_windows];
-	{
-		double e = min_block_len;
-		unsigned window_idx = 0;
-		do {
-			window_len = e;
-			window_lens[window_idx++] = min(window_len, n);
-			e *= epsilon + 1;
-		} while (window_len < n);
-	}
-
-	/* Best estimated compression size, in bits, found so far for the input
-	 * matches up to each position. */
-	unsigned shortest_paths[n + 1];
-
-	/* Pointers to follow to get the sequence of blocks that represents the
-	 * shortest path (in terms of estimated compressed size) up to each
-	 * position in the input matches. */
-	input_idx_t back_ptrs[n + 1];
-
-	for (input_idx_t i = 0; i < n + 1; i++) {
-		shortest_paths[i] = ~0U;
-		back_ptrs[i] = 0;
-	}
-	shortest_paths[0] = 0;
-
-	{
-		/* Initialize the per-window symbol and entropy counters */
-		input_idx_t mainsym_ctrs[num_windows][LZX_MAINCODE_NUM_SYMBOLS];
-		input_idx_t lensym_ctrs[num_windows][LZX_LENCODE_NUM_SYMBOLS + 1];
-		input_idx_t alignedsym_ctrs[num_windows][LZX_ALIGNEDCODE_NUM_SYMBOLS + 1];
-		ZERO_ARRAY(mainsym_ctrs);
-		ZERO_ARRAY(lensym_ctrs);
-		ZERO_ARRAY(alignedsym_ctrs);
-
-		{
-			int start_win_idx = 0;
-			for (input_idx_t i = 0; i < n; i++) {
-				while (i >= window_lens[start_win_idx])
-					start_win_idx++;
-				for (int j = start_win_idx; j < num_windows; j++) {
-					mainsym_ctrs[j][main_syms[i]]++;
-					lensym_ctrs[j][len_syms[i]]++;
-					alignedsym_ctrs[j][aligned_syms[i]]++;
-				}
-			}
-		}
-
-		double entropy_ctrs[num_windows];
-		for (int i = 0; i < num_windows; i++) {
-			entropy_ctrs[i] = 0;
-			for (unsigned j = 0; j < LZX_MAINCODE_NUM_SYMBOLS; j++)
-				entropy_ctrs[i] += entropy_val(mainsym_ctrs[i][j]);
-			for (unsigned j = 0; j < LZX_LENCODE_NUM_SYMBOLS; j++)
-				entropy_ctrs[i] += entropy_val(lensym_ctrs[i][j]);
-			for (unsigned j = 0; j < LZX_ALIGNEDCODE_NUM_SYMBOLS; j++)
-				entropy_ctrs[i] += entropy_val(alignedsym_ctrs[i][j]);
-		}
-
-		/* Slide the windows along the input and compute the shortest
-		 * path to each position in the matches. */
-		int end_window_idx = (int)num_windows - 1;
-		for (input_idx_t i = 0; i < n; i++) {
-			for (int j = 0; j <= end_window_idx; j++) {
-				if (shortest_paths[i] == ~0U)
-					continue;
-				unsigned num_mainsyms = window_lens[j];
-				unsigned num_lensyms = window_lens[j] -
-						       lensym_ctrs[j][LZX_LENCODE_NUM_SYMBOLS];
-				unsigned num_alignedsyms = window_lens[j] -
-							   alignedsym_ctrs[j][LZX_ALIGNEDCODE_NUM_SYMBOLS];
-				unsigned entropy = entropy_val(num_mainsyms) +
-						   entropy_val(num_lensyms) +
-						   entropy_val(num_alignedsyms) -
-						   entropy_ctrs[j];
-				unsigned est_csize = entropy + block_overhead;
-
-				unsigned end_idx = i + window_lens[j];
-				if (est_csize + shortest_paths[i] < shortest_paths[end_idx]) {
-					shortest_paths[end_idx] = est_csize + shortest_paths[i];
-					back_ptrs[end_idx] = i;
-				}
-			}
-			/* Remove left symbol from windows */
-			for (int j = 0; j <= end_window_idx; j++) {
-				input_idx_t orig_maincnt = mainsym_ctrs[j][main_syms[i]]--;
-				entropy_ctrs[j] -= entropy_val(orig_maincnt);
-				entropy_ctrs[j] += entropy_val(orig_maincnt - 1);
-
-				input_idx_t orig_lencnt =
-						lensym_ctrs[j][len_syms[i]]--;
-				if (len_syms[i] != LZX_LENCODE_NUM_SYMBOLS) {
-					entropy_ctrs[j] -= entropy_val(orig_lencnt);
-					entropy_ctrs[j] += entropy_val(orig_lencnt - 1);
-				}
-
-				input_idx_t orig_alignedcnt =
-						alignedsym_ctrs[j][aligned_syms[i]]--;
-				if (aligned_syms[i] != LZX_ALIGNEDCODE_NUM_SYMBOLS) {
-					entropy_ctrs[j] -= entropy_val(orig_alignedcnt);
-					entropy_ctrs[j] += entropy_val(orig_alignedcnt - 1);
-				}
-			}
-
-			/* Calculate index of longest window remaining */
-			while (end_window_idx >= 0 && window_lens[end_window_idx] >= n - i)
-				end_window_idx--;
-
-			/* Append right symbol to windows */
-			for (int j = 0; j <= end_window_idx; j++) {
-				input_idx_t orig_maincnt = mainsym_ctrs[j][
-								main_syms[i + window_lens[j]]]++;
-				entropy_ctrs[j] -= entropy_val(orig_maincnt);
-				entropy_ctrs[j] += entropy_val(orig_maincnt + 1);
-
-				input_idx_t orig_lencnt =
-					lensym_ctrs[j][len_syms[i + window_lens[j]]]++;
-				if (len_syms[i + window_lens[j]] != LZX_LENCODE_NUM_SYMBOLS) {
-					entropy_ctrs[j] -= entropy_val(orig_lencnt);
-					entropy_ctrs[j] += entropy_val(orig_lencnt + 1);
-				}
-
-				input_idx_t orig_alignedcnt =
-					alignedsym_ctrs[j][aligned_syms[i + window_lens[j]]]++;
-				if (aligned_syms[i + window_lens[j]] != LZX_ALIGNEDCODE_NUM_SYMBOLS) {
-					entropy_ctrs[j] -= entropy_val(orig_alignedcnt);
-					entropy_ctrs[j] += entropy_val(orig_alignedcnt + 1);
-				}
-			}
-		}
-	}
-
-#if 0
-	/* If no cost was computed for the first block (due to it being shorter
-	 * than all the windows), merge it with the second block. */
-	for (input_idx_t i = n; i != 0; i = back_ptrs[i])
-		if (back_ptrs[i] != 0 && shortest_paths[back_ptrs[i]] == ~0U)
-			back_ptrs[i] = 0;
-#endif
-
-	/* Calculate number of blocks */
-	input_idx_t num_blocks = 0;
-	for (input_idx_t i = n; i != 0; i = back_ptrs[i])
-		num_blocks++;
-
-	while (num_blocks > max_num_blocks) {
-		LZX_DEBUG("Joining blocks to bring total under max_num_blucks=%u",
-			  max_num_blocks);
-		back_ptrs[n] = back_ptrs[back_ptrs[n]];
-		num_blocks--;
-	}
-
-	LZX_ASSERT(num_blocks != 0);
-
-	/* fill in the 'struct lzx_block_spec' for each block */
-	for (input_idx_t i = n, j = num_blocks - 1; i != 0; i = back_ptrs[i], j--) {
-
-		block_specs[j].chosen_matches_start_pos = back_ptrs[i];
-		block_specs[j].num_chosen_matches = i - back_ptrs[i];
-		block_specs[j].window_pos = orig_input_indices[back_ptrs[i]];
-		block_specs[j].block_size = orig_input_indices[i] -
-					    orig_input_indices[back_ptrs[i]];
-		/*block_specs[j].est_csize = (shortest_paths[i] -*/
-					   /*shortest_paths[back_ptrs[i]]) / 8;*/
-
-		LZX_DEBUG("block match_indices [%u, %u) est_csize %u bits\n",
-			  back_ptrs[i], i,
-			  shortest_paths[i] - shortest_paths[back_ptrs[i]]);
-
-		struct lzx_freqs freqs = {};
-
-		for (input_idx_t k = back_ptrs[i]; k < i; k++) {
-			freqs.main[main_syms[k]]++;
-			if (len_syms[k] != LZX_LENCODE_NUM_SYMBOLS)
-				freqs.len[len_syms[k]]++;
-			if (aligned_syms[k] != LZX_LENCODE_NUM_SYMBOLS)
-				freqs.aligned[aligned_syms[k]]++;
-		}
-		lzx_make_huffman_codes(&freqs, &block_specs[j].codes);
-
-		block_specs[j].block_type = lzx_choose_verbatim_or_aligned(&freqs,
-									   &block_specs[j].codes);
-	}
-	*num_blocks_ret = num_blocks;
-}
-
-
 /* Initialize the suffix array match-finder for the specified input.  */
 static void
 lzx_lz_init_matchfinder(const u8 T[const restrict],
@@ -2491,18 +2114,6 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
 
 	/* Perform near-optimal LZ parsing.  */
 	lzx_optimize_blocks(ctx);
-
-	/* Possibly divide up the LZX block.  */
-	const unsigned max_num_blocks = 1U << ctx->params.alg_params.slow.num_split_passes;
-	if (max_num_blocks > 1) {
-		const double epsilon = 0.2;
-		const unsigned min_block_len = 500;
-
-		lzx_block_split((const u32*)ctx->chosen_matches,
-				ctx->block_specs[0].num_chosen_matches,
-				epsilon, max_num_blocks, min_block_len,
-				ctx->block_specs, &ctx->num_blocks);
-	}
 }
 
 /*
@@ -2759,11 +2370,6 @@ lzx_params_valid(const struct wimlib_lzx_params *params)
 			LZX_DEBUG("Invalid aligned_nostat_cost!");
 			return false;
 		}
-
-		if (params->alg_params.slow.num_split_passes > 31) {
-			LZX_DEBUG("Invalid num_split_passes!");
-			return false;
-		}
 	}
 	return true;
 }
@@ -2810,7 +2416,6 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 				.use_len2_matches = 1,
 				.num_fast_bytes = 32,
 				.num_optim_passes = 2,
-				.num_split_passes = 0,
 				.max_search_depth = 50,
 				.max_matches_per_pos = 3,
 				.main_nostat_cost = 15,
@@ -2856,9 +2461,11 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 
 	size_t block_specs_length;
 
+#if 0
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW)
 		block_specs_length = 1U << params->alg_params.slow.num_split_passes;
 	else
+#endif
 		block_specs_length = 1U;
 	ctx->block_specs = MALLOC(block_specs_length * sizeof(ctx->block_specs[0]));
 	if (ctx->block_specs == NULL)

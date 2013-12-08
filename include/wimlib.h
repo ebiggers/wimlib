@@ -1700,13 +1700,8 @@ struct wimlib_lzx_params {
 			 * Suggested value: 2.  */
 			uint32_t num_optim_passes;
 
-			/** The number of times to attempt to recursively split
-			 * each LZX block.  Up to (2**(num_split_passes)
-			 * sub-blocks can be created for a given input.  This
-			 * parameter can be 0, in which case the full input is
-			 * always output as one block.  Suggested value: 0.
-			 */
-			uint32_t num_split_passes;
+			/** Reserved; set to 0.  */
+			uint32_t slow_reserved_blocksplit;
 
 			/** Maximum depth to search for matches at each
 			 * position.  Suggested value: 50.  */

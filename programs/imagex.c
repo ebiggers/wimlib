@@ -429,7 +429,6 @@ set_compress_slow(void)
 				.use_len2_matches = 1,
 				.num_fast_bytes = 96,
 				.num_optim_passes = 4,
-				.num_split_passes = 0,
 				.max_search_depth = 100,
 				.max_matches_per_pos = 10,
 				.main_nostat_cost = 15,
