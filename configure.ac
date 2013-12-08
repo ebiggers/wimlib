@@ -1,4 +1,4 @@
-AC_INIT([wimlib], [1.5.2], [ebiggers3@gmail.com])
+AC_INIT([wimlib], [1.5.3], [ebiggers3@gmail.com])
 AC_CONFIG_SRCDIR([src/wim.c])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
