@@ -3751,8 +3751,9 @@ T(
 #endif
 [CMD_OPTIMIZE] =
 T(
-"    %"TS" WIMFILE [--check] [--nocheck] [--recompress] [--compress-slow]\n"
-"                    [--threads=NUM_THREADS] [--pipable] [--not-pipable]\n"
+"    %"TS" WIMFILE [--check] [--nocheck] [--recompress]\n"
+"                    [--compress-slow] [--threads=NUM_THREADS] [--pipable]\n"
+"                    [--not-pipable]\n"
 ),
 [CMD_SPLIT] =
 T(
