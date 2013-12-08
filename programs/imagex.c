@@ -282,6 +282,7 @@ static const struct option optimize_options[] = {
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("recompress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
@@ -419,9 +420,10 @@ get_compression_type(const tchar *optarg)
 	}
 }
 
-static void
+static int
 set_compress_slow(void)
 {
+	int ret;
 	static const struct wimlib_lzx_params slow_params = {
 		.size_of_this = sizeof(struct wimlib_lzx_params),
 		.algorithm = WIMLIB_LZX_ALGORITHM_SLOW,
@@ -438,8 +440,10 @@ set_compress_slow(void)
 			},
 		},
 	};
-	if (wimlib_lzx_set_default_params(&slow_params))
+	ret = wimlib_lzx_set_default_params(&slow_params);
+	if (ret)
 		imagex_error(T("Couldn't set slow compression parameters.!"));
+	return ret;
 }
 
 struct string_set {
@@ -1722,7 +1726,10 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_COMPRESS_SLOW_OPTION:
-			set_compress_slow();
+			ret = set_compress_slow();
+			if (ret)
+				goto out_err;
+			compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
 			break;
 		case IMAGEX_FLAGS_OPTION:
 			flags_element = optarg;
@@ -3240,6 +3247,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	int c;
 	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
 	int write_flags = WIMLIB_WRITE_FLAG_REBUILD;
+	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	int ret;
 	WIMStruct *wim;
 	const tchar *wimfile;
@@ -3256,12 +3264,20 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		case IMAGEX_NOCHECK_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY;
 			break;
+		case IMAGEX_COMPRESS_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
+			compression_type = get_compression_type(optarg);
+			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
+				goto out_err;
+			break;
 		case IMAGEX_RECOMPRESS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
 		case IMAGEX_COMPRESS_SLOW_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
-			set_compress_slow();
+			ret = set_compress_slow();
+			if (ret)
+				goto out_err;
 			break;
 		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);
@@ -3289,6 +3305,12 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
 	if (ret)
 		goto out;
+
+	if (compression_type != WIMLIB_COMPRESSION_TYPE_INVALID) {
+		ret = wimlib_set_output_compression_type(wim, compression_type);
+		if (ret)
+			goto out_wimlib_free;
+	}
 
 	old_size = file_get_size(wimfile);
 	tprintf(T("\"%"TS"\" original size: "), wimfile);
@@ -3754,8 +3776,8 @@ T(
 [CMD_OPTIMIZE] =
 T(
 "    %"TS" WIMFILE [--check] [--nocheck] [--recompress]\n"
-"                    [--recompress-slow] [--threads=NUM_THREADS] [--pipable]\n"
-"                    [--not-pipable]\n"
+"                    [--recompress-slow] [--compress=TYPE]\n"
+"                    [--threads=NUM_THREADS] [--pipable] [--not-pipable]\n"
 ),
 [CMD_SPLIT] =
 T(

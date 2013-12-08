@@ -2388,6 +2388,7 @@ lzx_params_valid(const struct wimlib_lzx_params *params)
 	return true;
 }
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_lzx_set_default_params(const struct wimlib_lzx_params * params)
 {

@@ -139,6 +139,7 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 	wim->lookup_table = table;
 	wim->refcnts_ok = 1;
 	wim->compression_type = ctype;
+	wim->out_compression_type = ctype;
 	*wim_ret = wim;
 	return 0;
 out_free:
@@ -482,6 +483,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 	} else {
 		wim->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
 	}
+	wim->out_compression_type = wim->compression_type;
 
 	if (open_flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY) {
 		ret = check_wim_integrity(wim, progress_func);

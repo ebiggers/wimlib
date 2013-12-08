@@ -42,6 +42,10 @@ compression ratio.  This only affects LZX-compressed WIM files.  Compared to the
 default \fB--recompress\fR, this will make compression about twice as slow and
 will increase the compression ratio by maybe 1%, depending on the data.
 .TP
+\fB--compress\fR=\fITYPE\fR
+Recompress the WIM file using the specified compression type.  \fITYPE\fR may be
+"none", "fast", or "maximum".  This implies \fB--recompress\fR.
+.TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of
 processors).  This parameter is only meaningful when \fB--recompress\fR is also

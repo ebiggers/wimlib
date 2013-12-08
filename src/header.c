@@ -229,6 +229,22 @@ write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd)
 			   offsetof(struct wim_header_disk, wim_flags));
 }
 
+u32
+get_wim_hdr_cflags(int ctype)
+{
+	switch (ctype) {
+	case WIMLIB_COMPRESSION_TYPE_NONE:
+		return 0;
+	case WIMLIB_COMPRESSION_TYPE_LZX:
+		return WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_LZX;
+	case WIMLIB_COMPRESSION_TYPE_XPRESS:
+		return WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_XPRESS;
+	case WIMLIB_COMPRESSION_TYPE_INVALID:
+		break;
+	}
+	return (u32)~0U;
+}
+
 /*
  * Initializes the header for a WIM file.
  */
@@ -236,19 +252,8 @@ int
 init_wim_header(struct wim_header *hdr, int ctype)
 {
 	memset(hdr, 0, sizeof(struct wim_header));
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_NONE:
-		hdr->flags = 0;
-		break;
-	case WIMLIB_COMPRESSION_TYPE_LZX:
-		hdr->flags = WIM_HDR_FLAG_COMPRESSION |
-			     WIM_HDR_FLAG_COMPRESS_LZX;
-		break;
-	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		hdr->flags = WIM_HDR_FLAG_COMPRESSION |
-			     WIM_HDR_FLAG_COMPRESS_XPRESS;
-		break;
-	default:
+	hdr->flags = get_wim_hdr_cflags(ctype);
+	if (hdr->flags == (u32)~0U) {
 		ERROR("Invalid compression type specified (%d)", ctype);
 		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 	}

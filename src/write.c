@@ -2029,7 +2029,7 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 	return write_stream_list(stream_list,
 				 wim->lookup_table,
 				 &wim->out_fd,
-				 wim->compression_type,
+				 wim->out_compression_type,
 				 &wim->lzx_context,
 				 write_flags,
 				 num_threads,
@@ -2089,7 +2089,7 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 			      "metadata resource.", i);
 			ret = write_wim_resource(imd->metadata_lte,
 						 &wim->out_fd,
-						 wim->compression_type,
+						 wim->out_compression_type,
 						 &imd->metadata_lte->output_resource_entry,
 						 write_resource_flags,
 						 &wim->lzx_context);
@@ -2447,6 +2447,22 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 	 * finish_write().  */
 }
 
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_set_output_compression_type(WIMStruct *wim, int ctype)
+{
+	switch (ctype) {
+	case WIMLIB_COMPRESSION_TYPE_INVALID:
+		break;
+	case WIMLIB_COMPRESSION_TYPE_NONE:
+	case WIMLIB_COMPRESSION_TYPE_LZX:
+	case WIMLIB_COMPRESSION_TYPE_XPRESS:
+		wim->out_compression_type = ctype;
+		return 0;
+	}
+	return WIMLIB_ERR_INVALID_PARAM;
+}
+
 /* Write a standalone WIM or split WIM (SWM) part to a new file or to a file
  * descriptor.  */
 int
@@ -2571,6 +2587,10 @@ write_wim_part(WIMStruct *wim,
 	 * if the WIM is standalone.  */
 	wim->hdr.part_number = part_number;
 	wim->hdr.total_parts = total_parts;
+
+	/* Set compression type if different.  */
+	if (wim->compression_type != wim->out_compression_type)
+		wim->hdr.flags = get_wim_hdr_cflags(wim->out_compression_type);
 
 	/* Use GUID if specified; otherwise generate a new one.  */
 	if (guid)
@@ -3045,7 +3065,8 @@ wimlib_overwrite(WIMStruct *wim, int write_flags,
 	if ((!wim->deletion_occurred || (write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE))
 	    && !(write_flags & (WIMLIB_WRITE_FLAG_REBUILD |
 				WIMLIB_WRITE_FLAG_PIPABLE))
-	    && !(wim_is_pipable(wim)))
+	    && !(wim_is_pipable(wim))
+	    && wim->compression_type == wim->out_compression_type)
 	{
 		ret = overwrite_wim_inplace(wim, write_flags, num_threads,
 					    progress_func);

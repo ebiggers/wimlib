@@ -70,6 +70,12 @@ struct WIMStruct {
 
 	/* One of WIMLIB_COMPRESSION_TYPE_*, cached from the header flags. */
 	u8 compression_type : 2;
+
+	/* Overwritten compression type for wimlib_overwrite() or
+	 * wimlib_write().  Can be changed by
+	 * wimlib_set_output_compression_type(); otherwise is the same as
+	 * compression_type.  */
+	u8 out_compression_type : 2;
 };
 
 static inline bool wim_is_pipable(const WIMStruct *wim)
@@ -89,6 +95,9 @@ static inline bool wim_has_metadata(const WIMStruct *wim)
 
 extern void
 wim_recalculate_refcnts(WIMStruct *wim);
+
+extern u32
+get_wim_hdr_cflags(int ctype);
 
 extern int
 init_wim_header(struct wim_header *hdr, int ctype);

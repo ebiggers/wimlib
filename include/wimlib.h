@@ -3357,6 +3357,27 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
 			    const wimlib_tchar *description);
 
 /**
+ * @ingroup G_writing_and_overwriting_wims
+ *
+ * Set the compression type of a WIM to use in subsequent calls to
+ * wimlib_write() or wimlib_overwrite().
+ *
+ * @return 0 on success; nonzero on error.
+ *
+ * @param wim
+ *	::WIMStruct for a WIM.
+ * @param ctype
+ *	The compression type to set (one of ::wimlib_compression_type).
+ *
+ * @return 0 on success; nonzero on error.
+ *
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	@p ctype did not specify a valid compression type.
+ */
+extern int
+wimlib_set_output_compression_type(WIMStruct *wim, int ctype);
+
+/**
  * @ingroup G_modifying_wims
  *
  * Set basic information about a WIM.

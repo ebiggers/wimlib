@@ -97,14 +97,17 @@ Combine split WIMs into one standalone WIM (\fB@IMAGEX_PROGNAME@ join\fR)
 .IP \[bu]
 Split a standalone WIM into multiple parts (\fB@IMAGEX_PROGNAME@ split\fR)
 .IP \[bu]
+Easily remove wasted space in a WIM file and optionally recompress it (\fB
+@IMAGEX_PROGNAME@ optimize\fR)
+.IP \[bu]
 Support for all WIM compression types, both compression and decompression (LZX,
 XPRESS, and none)
 .IP \[bu]
 WIM integrity table is supported (\fB--check\fR option to many commands)
 .SH DIFFERENCES FROM MICROSOFT IMAGEX
 Although \fB@IMAGEX_PROGNAME@\fR shares some similarities with Microsoft's
-implementation of ImageX, this section lists some noteworthy differences between
-the two programs:
+implementation of ImageX, this section lists some of the many noteworthy
+differences between the two programs:
 .IP \[bu] 4
 \fB@IMAGEX_PROGNAME@\fR is supported on both UNIX-like systems and Windows;
 thus, some functionality was designed around this.
@@ -131,7 +134,8 @@ files from or make changes to a WIM image without mounting it.
 .IP \[bu]
 \fB@IMAGEX_PROGNAME@\fR offers the extra command \fB@IMAGEX_PROGNAME@
 optimize\fR, which lets you easily remove wasted space in a WIM (which can arise
-after a WIM image is appended or mounted read-write).
+after a WIM image is appended or mounted read-write).  It also makes it easy to
+recompress a WIM file at the highest compression level.
 .IP \[bu]
 \fB@IMAGEX_PROGNAME@\fR also offers the command \fB@IMAGEX_PROGNAME@ join\fR,
 which lets you easily join the parts of a split WIM.
@@ -165,10 +169,6 @@ wimlib (and \fB@IMAGEX_PROGNAME@\fR via \fB@IMAGEX_PROGNAME@ mount\fR) support
 mounting an image from a split WIM, but Microsoft's software does not.  (Note:
 this functionality is not available in Windows builds of wimlib and
 \fB@IMAGEX_PROGNAME@\fR.)
-.IP \[bu]
-\fB@IMAGEX_PROGNAME@ capture\fR supports a special mode where UNIX file modes,
-owners, and groups are stored.  (Note: this functionality is only available in
-builds of wimlib for UNIX-like systems.)
 .SH LOCALES AND CHARACTER ENCODINGS
 On Windows, wimlib works in UTF-16LE, and there should be no problems with
 character encodings.

@@ -14,6 +14,11 @@ Version 1.5.3:
 	produce an even better compression ratio at the cost of more time spent
 	compressing.
 
+	`wimlib-imagex optimize' now supports the '--compress=TYPE' option,
+	which recompresses the WIM file using the specified compression TYPE.
+	The new library API function used for this is
+	wimlib_set_output_compression_type().
+
 	Added the wimlib_get_xml_data() function to allow library clients to
 	easily retrieve the raw XML data from a WIM file if needed.
 
