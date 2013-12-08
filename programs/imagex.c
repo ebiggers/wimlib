@@ -3275,6 +3275,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_COMPRESS_SLOW_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
+			compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
 			ret = set_compress_slow();
 			if (ret)
 				goto out_err;
