@@ -48,19 +48,12 @@ ImageX, including but not limited to the following:
     compared to mounting and unmounting images with Microsoft's ImageX, so you
     may prefer them anyway.
 
-  * wimlib-imagex offers fast multithreaded compression, so making WIM images
-    can be much faster.
-
-  * wimlib-imagex provides a better XPRESS ("fast") compression ratio than
-    Microsoft's ImageX.
-
   * wimlib-imagex provides an easy-to-use "optimize" command to remove wasted
     space from WIM files.
 
   * In some cases, wimlib-imagex uses simpler command-line syntax.  For
-    example, `wimlib-imagex capture' (or simply `wimcapture') defaults to
-    maximum compression by default, integrity tables are treated as persistent,
-    and in some cases image names need not be explicitly specified.
+    example, integrity tables are treated as persistent, and in some cases image
+    names need not be explicitly specified.
 
   * Whenever possible, wimlib-imagex includes improved documentation and
     informational output compared to Microsoft's software.

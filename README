@@ -1,10 +1,11 @@
                                   INTRODUCTION
 
-This is wimlib version 1.5.2 (November 2013).  wimlib is a C library for creating,
-modifying, extracting, and mounting files in the Windows Imaging Format (WIM
-files).  These files are normally created by using the `imagex.exe' utility on
-Windows, but wimlib is distributed with a free implementation of ImageX called
-"wimlib-imagex" for both UNIX-like systems and Windows.
+This is wimlib version 1.5.2 (November 2013).  wimlib is a C library for
+creating, modifying, extracting, and mounting files in the Windows Imaging
+Format (WIM files).  These files are normally created using the ImageX
+(imagex.exe) or Dism (Dism.exe) utilities on Windows, but wimlib is distributed
+with a free implementation of ImageX called "wimlib-imagex" for both UNIX-like
+systems and Windows.
 
                                   INSTALLATION
 
@@ -65,34 +66,34 @@ commands and their syntax.  For additional documentation:
                                 COMPRESSION RATIO
 
 wimlib (and wimlib-imagex) can create XPRESS or LZX compressed WIM archives.
-Currently, the XPRESS compression ratio is slightly better than that provided by
-Microsoft's software, while by default the LZX compression ratio is approaching
-that of Microsoft's software but is not quite there yet.  Running time is as
-good as or better than Microsoft's software, especially with multithreaded
-compression, available in wimlib v1.1.0 and later.
-
 The following tables compare the compression ratio and performance for creating
 a compressed x86_64 Windows PE image.  Note: these timings were done on Windows
-7 so that the times would be fully comparable; however, wimlib-imagex may have
-even better performance on Linux.
+so that the times would be fully comparable; however, wimlib may have even
+better performance on other operating systems such as Linux.  Timings were done
+with 2 CPUs available, both of which automatically are used by wimlib for both
+XPRESS and LZX, and also by imagex.exe but apparently only for LZX.
 
         Table 1. WIM size
 
                                            XPRESS Compression      LZX Compression
-        wimlib-imagex (v1.4.0):            165,301,379 bytes       155,254,385 bytes
-        Microsoft imagex.exe:              167,212,939 bytes       149,973,212 bytes
+        wimlib-imagex (v1.5.3):            207,444,390 bytes       188,106,091 bytes
+        Microsoft imagex.exe (Windows 7):  209,960,209 bytes       188,224,481 bytes
 
         Table 2. Time to create WIM
 
                                            XPRESS Compression      LZX Compression
-        wimlib-imagex (v1.4.0, 2 threads): 18 sec                  51 sec
-        Microsoft imagex.exe:              25 sec                  93 sec
+        wimlib-imagex (v1.5.3):            73 sec                  202 sec
+        Microsoft imagex.exe (Windows 7):  90 sec                  149 sec
 
-The above LZX values are using the default LZX compressor.  wimlib v1.5.2
-introduced a new experimental LZX compressor which can be enabled by passing
-'--compress-slow' to `wimlib-imagex capture' or `wimlib-imagex optimize'.  This
-compressor is much slower but compresses the data slightly more --- currently
-usually to within a fraction of a percent of the results from imagex.exe.
+The above LZX data are using explicitly specified maximum compression
+('--compress=maximum') as of wimlib v1.5.3.  If `wimlib-imagex capture' or
+`wimlib-imagex capture' is instead run with no '--compress' argument, then a
+faster LZX compressor is used; it will produce results in between those given
+for XPRESS and LZX above.
+
+Note: if the absolute maximum compression ratio is desired, `wimlib-imagex
+optimize WIMFILE --recompress --compress-slow' on one of the above
+LZX-compressed WIMs produces a WIM of 187,089,943 bytes in about 400 seconds.
 
                                   NTFS SUPPORT
 

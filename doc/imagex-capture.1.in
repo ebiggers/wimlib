@@ -180,26 +180,15 @@ table if and only if one was present before.
 \fB--compress\fR=\fITYPE\fR
 Specifies the compression type for the new WIM file.  This flag is only valid
 for \fB@IMAGEX_PROGNAME@ capture\fR, since the compression mode for
-\fB@IMAGEX_PROGNAME@ append\fR must be the same as that of the existing WIM (and
-is automatically set as such).
-\fITYPE\fR may be "none", "fast", or "maximum".  By default, it is "maximum".
-This default behavior is different from Microsoft's ImageX, where the default is
-"fast". \fB@IMAGEX_PROGNAME@ capture\fR instead gives you the better compression
-ratio by default and makes up for the slightly slower compression by being
-faster than Microsoft's software in the first place and using multiple CPUs when
-available.
+\fB@IMAGEX_PROGNAME@ append\fR must be the same as that of the existing
+WIM (and is automatically set as such).  \fITYPE\fR may be "none",
+"fast", or "maximum".  As of wimlib v1.5.3, the default is LZX compression, but
+in a special mode that is somewhere in between "fast" and "maximum" in terms of
+speed and compression ratio.  Use \fB--compress\fR=\fImaximum\fR to explicitly
+request a better compression ratio at the cost of more time spent compressing.
 .IP ""
 You may also specify the actual names of the compression algorithms, "XPRESS"
 and "LZX", instead of "fast" and "maximum", respectively.
-.TP
-\fB--compress-slow\fR
-Spend even more time compressing the data in order to achieve a higher
-compression ratio.  Currently, this only has an effect with LZX ("maximum")
-compression.  Depending on the data, compressing with this option will take
-around 10 to 15 times longer and produce a LZX-compressed WIM about 1% to 5%
-smaller than one produced with the default LZX compressor.  Depending on the
-data, the resulting WIM may be approximately the same size (typically no more
-than 0.4% different) as a LZX-compressed WIM produced by WIMGAPI.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of
@@ -508,12 +497,10 @@ the \fB--pipable\fR flag was specified.
 .SH EXAMPLES
 First example:  Create a new WIM 'mywim.wim' with "maximum" (LZX) compression
 that will contain a captured image of the directory tree 'somedir'.  Note that
-\fB@IMAGEX_PROGNAME@\fR uses "maximum" (LZX) compression by default, so
-\fB--compress\fR does \fInot\fR need to be specified; furthermore, the image
-name need not be specified and will default to 'somedir':
+the image name need not be specified and will default to 'somedir':
 .RS
 .PP
-@IMAGEX_PROGNAME@ capture somedir mywim.wim
+@IMAGEX_PROGNAME@ capture somedir mywim.wim --compress=maximum
 .RE
 .PP
 or, if the \fBwimcapture\fR hard link or batch file has been installed, the

@@ -16,8 +16,8 @@
 /* Constants, most of which are defined by the LZX specification: */
 
 /* The smallest and largest allowed match lengths. */
-#define LZX_MIN_MATCH                2
-#define LZX_MAX_MATCH                257
+#define LZX_MIN_MATCH_LEN            2
+#define LZX_MAX_MATCH_LEN            257
 
 /* Number of values an uncompressed literal byte can represent. */
 #define LZX_NUM_CHARS                256
@@ -47,26 +47,29 @@
  *
  * The ALIGNED tree is only present on ALIGNED blocks.
  *
- * A PRETREE is used to encode the code lengths for the main tree and the length
+ * A PRECODE is used to encode the code lengths for the main tree and the length
  * tree.  There is a separate pretree for each half of the main tree.  */
 
-#define LZX_MAINTREE_NUM_SYMBOLS	 (LZX_NUM_CHARS + \
+#define LZX_MAINCODE_NUM_SYMBOLS	 (LZX_NUM_CHARS + \
 					(LZX_NUM_POSITION_SLOTS << 3))
-#define LZX_MAINTREE_TABLEBITS		11
+#define LZX_MAINCODE_TABLEBITS		11
 
-#define LZX_LENTREE_NUM_SYMBOLS		249
-#define LZX_LENTREE_TABLEBITS		10
+#define LZX_LENCODE_NUM_SYMBOLS		249
+#define LZX_LENCODE_TABLEBITS		10
 
-#define LZX_PRETREE_NUM_SYMBOLS		20
-#define LZX_PRETREE_TABLEBITS		6
-#define LZX_PRETREE_ELEMENT_SIZE	4
+#define LZX_PRECODE_NUM_SYMBOLS		20
+#define LZX_PRECODE_TABLEBITS		6
+#define LZX_PRECODE_ELEMENT_SIZE	4
 
-#define LZX_ALIGNEDTREE_NUM_SYMBOLS	8
-#define LZX_ALIGNEDTREE_TABLEBITS	7
-#define LZX_ALIGNEDTREE_ELEMENT_SIZE 	3
+#define LZX_ALIGNEDCODE_NUM_SYMBOLS	8
+#define LZX_ALIGNEDCODE_TABLEBITS	7
+#define LZX_ALIGNEDCODE_ELEMENT_SIZE 	3
 
-/* Maximum allowed length of a Huffman code. */
-#define LZX_MAX_CODEWORD_LEN		16
+/* Maximum allowed length of Huffman codewords.  */
+#define LZX_MAX_MAIN_CODEWORD_LEN	16
+#define LZX_MAX_LEN_CODEWORD_LEN	16
+#define LZX_MAX_PRE_CODEWORD_LEN	16
+#define LZX_MAX_ALIGNED_CODEWORD_LEN	8
 
 /* For the LZX-compressed blocks in WIM files, this value is always used as the
  * filesize parameter for the call instruction (0xe8 byte) preprocessing, even
@@ -81,7 +84,7 @@
 #define USE_LZX_EXTRA_BITS_ARRAY
 
 #ifdef USE_LZX_EXTRA_BITS_ARRAY
-extern const u8 lzx_extra_bits[LZX_NUM_POSITION_SLOTS];
+extern const u8 lzx_extra_bits[];
 #endif
 
 /* Given the number of a LZX position slot, return the number of extra bits that
@@ -94,18 +97,29 @@ lzx_get_num_extra_bits(unsigned position_slot)
 	return lzx_extra_bits[position_slot];
 #else
 	/* Calculate directly using a shift and subtraction. */
-	wimlib_assert(position_slot >= 2 && position_slot <= 37);
+	LZX_ASSERT(position_slot >= 2 && position_slot <= 37);
 	return (position_slot >> 1) - 1;
 #endif
 }
 
-extern const u32 lzx_position_base[LZX_NUM_POSITION_SLOTS];
+extern const u32 lzx_position_base[];
 
-/* Least-recently used queue for match offsets. */
+#define LZX_NUM_RECENT_OFFSETS	3
+
+/* Least-recently used queue for match offsets.  */
 struct lzx_lru_queue {
-	u32 R0;
-	u32 R1;
-	u32 R2;
+	u32 R[LZX_NUM_RECENT_OFFSETS];
 };
+
+/* In the LZX format, an offset of n bytes is actually encoded
+ * as (n + LZX_OFFSET_OFFSET).  */
+#define LZX_OFFSET_OFFSET	(LZX_NUM_RECENT_OFFSETS - 1)
+
+static inline void
+lzx_lru_queue_init(struct lzx_lru_queue *queue)
+{
+	for (unsigned i = 0; i < LZX_NUM_RECENT_OFFSETS; i++)
+		queue->R[i] = 1;
+}
 
 #endif /* _WIMLIB_LZX_H */

@@ -418,6 +418,30 @@ get_compression_type(const tchar *optarg)
 	}
 }
 
+static void
+set_compress_slow(void)
+{
+	static const struct wimlib_lzx_params slow_params = {
+		.size_of_this = sizeof(struct wimlib_lzx_params),
+		.algorithm = WIMLIB_LZX_ALGORITHM_SLOW,
+		.alg_params = {
+			.slow = {
+				.use_len2_matches = 1,
+				.num_fast_bytes = 96,
+				.num_optim_passes = 4,
+				.num_split_passes = 0,
+				.max_search_depth = 100,
+				.max_matches_per_pos = 10,
+				.main_nostat_cost = 15,
+				.len_nostat_cost = 15,
+				.aligned_nostat_cost = 7,
+			},
+		},
+	};
+	if (wimlib_lzx_set_default_params(&slow_params))
+		imagex_error(T("Couldn't set slow compression parameters.!"));
+}
+
 struct string_set {
 	const tchar **strings;
 	unsigned num_strings;
@@ -1642,7 +1666,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	int add_image_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE |
 			      WIMLIB_ADD_IMAGE_FLAG_WINCONFIG;
 	int write_flags = 0;
-	int compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
+	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	const tchar *wimfile;
 	int wim_fd;
 	const tchar *name;
@@ -1698,7 +1722,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_COMPRESS_SLOW_OPTION:
-			write_flags |= WIMLIB_WRITE_FLAG_COMPRESS_SLOW;
+			set_compress_slow();
 			break;
 		case IMAGEX_FLAGS_OPTION:
 			flags_element = optarg;
@@ -1783,6 +1807,18 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 
 	source = argv[0];
 	wimfile = argv[1];
+
+	/* Set default compression type.  */
+	if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID) {
+		struct wimlib_lzx_params params;
+		memset(&params, 0, sizeof(params));
+		params.size_of_this = sizeof(params);
+		params.algorithm = WIMLIB_LZX_ALGORITHM_FAST;
+		params.use_defaults = 1;
+
+		wimlib_lzx_set_default_params(&params);
+		compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
+	}
 
 	if (!tstrcmp(wimfile, T("-"))) {
 		/* Writing captured WIM to standard output.  */
@@ -3224,7 +3260,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
 		case IMAGEX_COMPRESS_SLOW_OPTION:
-			write_flags |= WIMLIB_WRITE_FLAG_COMPRESS_SLOW;
+			set_compress_slow();
 			break;
 		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);
@@ -3640,11 +3676,11 @@ static const tchar *usage_strings[] = {
 T(
 "    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
 "                    [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot]\n"
-"                    [--check] [--nocheck] [--compress-slow]\n"
-"                    [--flags EDITION_ID] [--verbose] [--dereference]\n"
-"                    [--config=FILE] [--threads=NUM_THREADS] [--source-list]\n"
-"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
-"                    [--unix-data] [--pipable] [--update-of=[WIMFILE:]IMAGE]\n"
+"                    [--check] [--nocheck] [--flags EDITION_ID] [--verbose]\n"
+"                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
+"                    [--source-list] [--no-acls] [--strict-acls] [--rpfix]\n"
+"                    [--norpfix] [--unix-data] [--pipable]\n"
+"                    [--update-of=[WIMFILE:]IMAGE]\n"
 ),
 [CMD_APPLY] =
 T(
@@ -3658,7 +3694,7 @@ T(
 T(
 "    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
 "		     [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot]\n"
-"                    [--check] [--nocheck] [--compress=TYPE] [--compress-slow]\n"
+"                    [--check] [--nocheck] [--compress=TYPE]\n"
 "                    [--flags EDITION_ID] [--verbose] [--dereference]\n"
 "                    [--config=FILE] [--threads=NUM_THREADS] [--source-list]\n"
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
@@ -3717,8 +3753,7 @@ T(
 [CMD_OPTIMIZE] =
 T(
 "    %"TS" WIMFILE [--check] [--nocheck] [--recompress]\n"
-"                    [--compress-slow] [--threads=NUM_THREADS]\n"
-"                    [--pipable] [--not-pipable]\n"
+"                    [--threads=NUM_THREADS] [--pipable] [--not-pipable]\n"
 ),
 [CMD_SPLIT] =
 T(

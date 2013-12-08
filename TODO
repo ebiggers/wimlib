@@ -1,4 +1,0 @@
-- Find and fix bugs
-- Add more test cases (including for Win32 builds)
-- Improve LZX compression ratio, possibly by implementing LZX block splitting
-  and/or by improving the LZ77 match-finding code.

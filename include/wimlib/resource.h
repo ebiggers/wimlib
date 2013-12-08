@@ -94,8 +94,7 @@ put_resource_entry(const struct resource_entry *entry,
 
 /* wimlib internal flags used when reading or writing resources.  */
 #define WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS		0x00000001
-#define WIMLIB_WRITE_RESOURCE_FLAG_COMPRESS_SLOW	0x00000002
-#define WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE		0x00000004
+#define WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE		0x00000002
 #define WIMLIB_WRITE_RESOURCE_MASK			0x0000ffff
 
 #define WIMLIB_READ_RESOURCE_FLAG_RAW_FULL		0x80000000

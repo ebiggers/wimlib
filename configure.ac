@@ -61,6 +61,7 @@ AC_CHECK_HEADERS([alloca.h		\
 		  glob.h		\
 		  machine/endian.h	\
 		  stdarg.h		\
+		  stddef.h		\
 		  stdlib.h		\
 		  sys/byteorder.h	\
 		  sys/endian.h		\

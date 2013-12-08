@@ -68,19 +68,6 @@
 #  include <sys/uio.h> /* for `struct iovec' */
 #endif
 
-static int
-alloc_lzx_context(int write_resource_flags, struct wimlib_lzx_context **ctx_pp)
-{
-	struct wimlib_lzx_params params;
-	params.size_of_this = sizeof(params);
-	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_COMPRESS_SLOW)
-		params.algorithm = WIMLIB_LZX_ALGORITHM_SLOW;
-	else
-		params.algorithm = WIMLIB_LZX_ALGORITHM_FAST;
-	params.use_defaults = 1;
-	return wimlib_lzx_alloc_context(&params, ctx_pp);
-}
-
 static unsigned
 compress_chunk(const void * uncompressed_data,
 	       unsigned uncompressed_len,
@@ -378,8 +365,6 @@ error:
  * @resource_flags:
  *	* WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS to force data to be recompressed even
  *	  if it could otherwise be copied directly from the input;
- *	* WIMLIB_WRITE_RESOURCE_FLAG_COMPRESS_SLOW to compress the data as much
- *	  as possible;
  *	* WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE if writing a resource for a pipable WIM
  *	  (and the output file descriptor may be a pipe).
  *
@@ -452,7 +437,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 		if (!(resource_flags & WIMLIB_READ_RESOURCE_FLAG_RAW)) {
 			write_ctx.out_ctype = out_ctype;
 			if (out_ctype == WIMLIB_COMPRESSION_TYPE_LZX) {
-				ret = alloc_lzx_context(resource_flags, comp_ctx);
+				ret = wimlib_lzx_alloc_context(NULL, comp_ctx);
 				if (ret)
 					goto out;
 			}
@@ -950,8 +935,6 @@ write_flags_to_resource_flags(int write_flags)
 
 	if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
 		resource_flags |= WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS;
-	if (write_flags & WIMLIB_WRITE_FLAG_COMPRESS_SLOW)
-		resource_flags |= WIMLIB_WRITE_RESOURCE_FLAG_COMPRESS_SLOW;
 	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
 		resource_flags |= WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE;
 	return resource_flags;
@@ -1540,8 +1523,7 @@ write_stream_list_parallel(struct list_head *stream_list,
 		params[i].compressed_res_queue = &compressed_res_queue;
 		params[i].out_ctype = out_ctype;
 		if (out_ctype == WIMLIB_COMPRESSION_TYPE_LZX) {
-			ret = alloc_lzx_context(write_resource_flags,
-						&params[i].comp_ctx);
+			ret = wimlib_lzx_alloc_context(NULL, &params[i].comp_ctx);
 			if (ret)
 				goto out_free_params;
 		}

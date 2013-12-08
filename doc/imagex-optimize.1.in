@@ -33,20 +33,14 @@ better job than the program that wrote the original file.  A side effect of this
 is that every stream in the original WIM will be checksummed, so this can help
 verify that the WIM is intact (equivalent to applying all the images from it).
 .IP ""
-Note: as mentioned in the README, wimlib generally provides a slightly better
-XPRESS compression ratio than Microsoft's software, while it generally provides
-a slightly worse LZX compression ratio than Microsoft's software.  So, you may
-not want to specify \fB--recompress\fR when optimizing a LZX-compressed WIM
-created on Windows with Microsoft's ImageX.
+Note: as of wimlib v1.5.3, wimlib's LZX compressor usually achieves the same or
+better compression than Microsoft's, but is slightly slower.
 .TP
-\fB--compress-slow\fR
-With \fB--recompress\fR: Spend even more time compressing the data in order to
-achieve a higher compression ratio.  Currently, this only has an effect with LZX
-("maximum") compression.  Depending on the data, compressing with this option
-will take around 10 to 15 times longer and produce a LZX-compressed WIM about 1%
-to 5% smaller than one produced with the default LZX compressor.  Depending on
-the data, the resulting WIM may be approximately the same size (typically no
-more than 0.4% different) as a LZX-compressed WIM produced by WIMGAPI.
+\fB--compress-slow
+For LZX compression only: spend even more time compressing the data in order to
+achieve a more optimal compression ratio.  This will make compression about
+twice as slow and will increase the compression ratio by maybe 1%, if you're
+lucky.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of

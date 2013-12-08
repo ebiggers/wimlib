@@ -34,6 +34,11 @@ libwim_la_SOURCES =		\
 	src/join.c		\
 	src/lookup_table.c	\
 	src/lz77.c		\
+	src/divsufsort/divsufsort.c		\
+	src/divsufsort/divsufsort.h		\
+	src/divsufsort/divsufsort_private.h	\
+	src/divsufsort/sssort.c	\
+	src/divsufsort/trsort.c	\
 	src/lzx-common.c	\
 	src/lzx-compress.c	\
 	src/lzx-decompress.c	\

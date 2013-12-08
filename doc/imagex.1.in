@@ -125,10 +125,6 @@ mode, similar to Microsoft's ImageX.
 wimlib supports multithreaded compression, which can make it much faster to
 create compressed WIM files.
 .IP \[bu]
-\fB@IMAGEX_PROGNAME@ capture\fR defaults to LZX ("maximum") compression for new
-WIMs, as opposed to Microsoft's software which defaults to XPRESS ("fast")
-compression.
-.IP \[bu]
 \fB@IMAGEX_PROGNAME@\fR offers the extra commands \fB@IMAGEX_PROGNAME@
 extract\fR and \fB@IMAGEX_PROGNAME@ update\fR, which let you quickly extract
 files from or make changes to a WIM image without mounting it.

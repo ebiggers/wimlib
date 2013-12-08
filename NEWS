@@ -1,5 +1,29 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.5.3:
+	The new LZX compressor added in v1.5.2 has been improved and is now
+	enabled by default, except when `wimcapture' or `wimappend' is run
+	*without* the '--compress' option, in which case the faster LZX
+	compressor is used (the same as before).  This behavior is reasonably
+	consistent with ImageX which actually uses "fast" (XPRESS) compression
+	by default.  In those cases, use '--compress=maximum' to explicitly
+	capture a WIM image using the new (slower but better) LZX compressor.
+
+	The '--compress-slow' option still exists to `wimlib-imagex optimize',
+	but its new behavior is to tweak the new LZX compressor even more to
+	produce an even better compression ratio at the cost of more time spent
+	compressing.
+
+	Added the wimlib_get_xml_data() function to allow library clients to
+	easily retrieve the raw XML data from a WIM file if needed.
+
+	Fixed a bug that could cause an error code to be incorrectly returned
+	when writing XML data containing a <WINDOWS> element.
+
+	Mounted WIM images will now correctly show the default file stream even
+	if appears in the alternate data stream entries of the corresponding WIM
+	directory entry.
+
 Version 1.5.2:
 	Added a new experimental LZX compressor which can be enabled by passing
 	'--compress-slow' to `wimlib-imagex capture' or `wimlib-imagex

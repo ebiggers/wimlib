@@ -1501,12 +1501,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * already implied for wimlib_overwrite().  */
 #define WIMLIB_WRITE_FLAG_STREAMS_OK			0x00000400
 
-/** Use the slow LZX compression algorithm (rather than the default fast LZX
- * compression algorithm) to try to achieve a higher compression ratio.  Only
- * has an effect if the WIM uses LZX compression; not to be confused with "fast"
- * (XPRESS) compression.  This can be combined with
- * ::WIMLIB_WRITE_FLAG_RECOMPRESS.  */
-#define WIMLIB_WRITE_FLAG_COMPRESS_SLOW			0x00000800
+#define WIMLIB_WRITE_FLAG_RESERVED			0x00000800
 
 /** @} */
 /** @ingroup G_general
@@ -1692,11 +1687,9 @@ struct wimlib_lzx_params {
 
 			uint32_t slow_reserved1 : 31;
 
-			/** This is the maximum match length to return from the
-			 * binary tree match-finder.  Any match reaching this
-			 * limit is still extended as far as possible.  Must be
-			 * at least 3 and no more than 257.  Suggested value:
-			 * 32.  */
+			/** Matches with length (in bytes) longer than this
+			 * value are immediately taken without spending time on
+			 * minimum-cost measurements.  Suggested value: 32.  */
 			uint32_t num_fast_bytes;
 
 			/** Number of passes to compute a match/literal sequence
@@ -1704,18 +1697,26 @@ struct wimlib_lzx_params {
 			 * algorithm that attempts to minimize the cost of the
 			 * match/literal sequence by using a cost model provided
 			 * by the previous iteration.  Must be at least 1.
-			 * Suggested value: 3.  */
+			 * Suggested value: 2.  */
 			uint32_t num_optim_passes;
 
 			/** The number of times to attempt to recursively split
 			 * each LZX block.  Up to (2**(num_split_passes)
 			 * sub-blocks can be created for a given input.  This
 			 * parameter can be 0, in which case the full input is
-			 * always output as one block.  Suggested value: 3.
+			 * always output as one block.  Suggested value: 0.
 			 */
 			uint32_t num_split_passes;
 
-			uint32_t slow_reserved2[4];
+			/** Maximum depth to search for matches at each
+			 * position.  Suggested value: 50.  */
+			uint32_t max_search_depth;
+
+			/** Maximum number of potentially good matches to
+			 * consider for each position.  Suggested value: 3.  */
+			uint32_t max_matches_per_pos;
+
+			uint32_t slow_reserved2[2];
 
 			/** Assumed cost of a main symbol with zero frequency.
 			 * Must be at least 1 and no more than 16.  Suggested
@@ -2765,8 +2766,7 @@ wimlib_lzx_compress2(const void *chunk, unsigned chunk_size, void *out,
  * purpose.
  *
  * @param params
- *	Compression parameters to use, or @c NULL to use the default algorithm
- *	and parameters.
+ *	Compression parameters to use, or @c NULL to use the default parameters.
  *
  * @param ctx_ret
  *	A pointer to either @c NULL or an existing ::wimlib_lzx_context.  If
@@ -2785,15 +2785,6 @@ wimlib_lzx_compress2(const void *chunk, unsigned chunk_size, void *out,
 extern int
 wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 			 struct wimlib_lzx_context **ctx_pp);
-
-/**
- * @ingroup G_compression
- *
- * Free the specified LZX compression context, allocated with
- * wimlib_lzx_alloc_context().
- */
-extern void
-wimlib_lzx_free_context(struct wimlib_lzx_context *ctx);
 
 /**
  * @ingroup G_compression
@@ -2825,6 +2816,44 @@ wimlib_lzx_free_context(struct wimlib_lzx_context *ctx);
 extern int
 wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 		      void *uncompressed_data, unsigned uncompressed_len);
+
+/**
+ * @ingroup G_compression
+ *
+ * Free the specified LZX compression context, allocated with
+ * wimlib_lzx_alloc_context().
+ */
+extern void
+wimlib_lzx_free_context(struct wimlib_lzx_context *ctx);
+
+/**
+ * @ingroup G_compression
+ *
+ * Set the global default LZX compression parameters.
+ *
+ * @param params
+ *	The LZX compression parameters to set.  These default parameters will be
+ *	used by any calls to wimlib_lzx_alloc_context() with @c NULL LZX
+ *	parameters specified, as well as by any future compression performed by
+ *	the library itself.  Passing @p NULL here resets the default LZX
+ *	parameters to their original value.
+ *
+ * @return 0 on success; nonzero on error.
+ *
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	The compression parameters were invalid.
+ */
+extern int
+wimlib_lzx_set_default_params(const struct wimlib_lzx_params *params);
+
+/**
+ * @ingroup G_compression
+ *
+ * Free the specified LZX compression context, allocated with
+ * wimlib_lzx_alloc_context().
+ */
+extern void
+wimlib_lzx_free_context(struct wimlib_lzx_context *ctx);
 
 
 /**
