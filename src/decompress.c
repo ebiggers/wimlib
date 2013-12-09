@@ -28,6 +28,7 @@
 #endif
 
 #include "wimlib/decompress.h"
+#include "wimlib/error.h"
 #include "wimlib/util.h"
 
 #include <string.h>
@@ -417,10 +418,8 @@ read_huffsym_near_end_of_input(struct input_bitstream *istream,
 	if (sym >= num_syms) {
 		bitstream_remove_bits(istream, key_size);
 		do {
-			if (bitsleft == 0) {
-				DEBUG("Input stream exhausted");
+			if (bitsleft == 0)
 				return -1;
-			}
 			key_bits = sym + bitstream_peek_bits(istream, 1);
 			bitstream_remove_bits(istream, 1);
 			bitsleft--;

@@ -27,7 +27,7 @@
  */
 
 #ifdef HAVE_CONFIG_H
-#  include "config.h"
+#  include <config.h>
 #endif
 
 #include "wimlib/compress.h"
@@ -78,7 +78,7 @@ update_hash(unsigned hash, u8 c)
  * indicating the end of the hash chain.
  */
 static inline unsigned
-insert_string(u16 hash_tab[], u16 prev_tab[],
+insert_string(input_idx_t hash_tab[], input_idx_t prev_tab[],
 	      const u8 window[], unsigned str_pos,
 	      unsigned hash)
 {
@@ -112,7 +112,7 @@ insert_string(u16 hash_tab[], u16 prev_tab[],
  */
 static unsigned
 longest_match(const u8 window[], unsigned bytes_remaining,
-	      unsigned strstart, const u16 prev_tab[],
+	      unsigned strstart, const input_idx_t prev_tab[],
 	      unsigned cur_match, unsigned prev_len,
 	      unsigned *match_start_ret,
 	      const struct lz_params *params)
@@ -193,44 +193,23 @@ longest_match(const u8 window[], unsigned bytes_remaining,
  * Determines the sequence of matches and literals that a block of data will be
  * compressed to.
  *
- * @uncompressed_data:	The data that is to be compressed.
- * @uncompressed_len:	The length of @uncompressed_data, in bytes.
- * @match_tab:		An array for the intermediate representation of matches.
- * @record_match:	A function that will be called to produce the
- * 				intermediate representation of a match, given
- * 				the offset and length.  This function should also
- * 				update the appropriate symbol frequency counts
- * 				so that any needed Huffman codes can be made
- * 				later.
- * @record_literal:	A function that will be called to produce the
- * 				intermediate representation of a literal, given
- * 				the character of the literal.  This function
- * 				should also update the appropriate symbol
- * 				frequency counts so that any needed Huffman
- * 				codes can be made later.
- * @record_match_arg_1:
- * @record_match_arg_2:	Extra arguments to be passed to @record_match.
- * @record_literal_arg:	Extra arguments to be passed to @record_literal.
+ * @window:		The data that is to be compressed.
+ * @window_size:	The length of @window, in bytes.
+ * @record_match:	Consumer for matches.
+ * @record_literal:	Consumer for literals.
+ * @record_ctx:		Context passed to @record_match and @record_literal.
  * @params:		Structure that contains parameters that affect how the
  * 				analysis proceeds (mainly how good the matches
  * 				have to be).
- *
- * Returns the total number of matches and literal bytes that were found; this
- * is the number of slots in @match_tab that have been filled with the
- * intermediate representation of a match or literal byte.
  */
-unsigned
-lz_analyze_block(const u8 uncompressed_data[],
-		 unsigned uncompressed_len,
-		 u32 match_tab[],
+void
+lz_analyze_block(const u8 window[],
+		 input_idx_t window_size,
 		 lz_record_match_t record_match,
 		 lz_record_literal_t record_literal,
-		 void *record_match_arg1,
-		 void *record_match_arg2,
-		 void *record_literal_arg,
+		 void *record_ctx,
 		 const struct lz_params *params)
 {
-	unsigned cur_match_pos = 0;
 	unsigned cur_input_pos = 0;
 	unsigned hash          = 0;
 	unsigned hash_head     = 0;
@@ -239,23 +218,21 @@ lz_analyze_block(const u8 uncompressed_data[],
 	unsigned match_len     = params->min_match - 1;
 	unsigned match_start   = 0;
 	bool match_available = false;
-	u16 hash_tab[HASH_SIZE];
-	u32 match;
-	u16 prev_tab[uncompressed_len];
+	input_idx_t hash_tab[HASH_SIZE];
+	input_idx_t prev_tab[window_size];
 
 	ZERO_ARRAY(hash_tab);
-	ZERO_ARRAY(prev_tab);
 
 	do {
 		/* If there are at least 3 characters remaining in the input,
 		 * insert the 3-character string beginning at
-		 * uncompressed_data[cur_input_pos] into the hash table.
+		 * window[cur_input_pos] into the hash table.
 		 *
 		 * hash_head is set to the index of the previous string in the
 		 * hash bucket, or 0 if there is no such string */
-		if (uncompressed_len - cur_input_pos >= params->min_match) {
+		if (window_size - cur_input_pos >= params->min_match) {
 			hash = insert_string(hash_tab, prev_tab,
-					     uncompressed_data,
+					     window,
 					     cur_input_pos, hash);
 			hash_head = prev_tab[cur_input_pos];
 		} else {
@@ -273,8 +250,8 @@ lz_analyze_block(const u8 uncompressed_data[],
 			 * string of window index 0 (in particular we have to
 			 * avoid a match of the string with itself at the start
 			 * of the input file).  */
-			match_len = longest_match(uncompressed_data,
-						  uncompressed_len - cur_input_pos,
+			match_len = longest_match(window,
+						  window_size - cur_input_pos,
 						  cur_input_pos, prev_tab,
 						  hash_head, prev_len,
 						  &match_start, params);
@@ -289,26 +266,18 @@ lz_analyze_block(const u8 uncompressed_data[],
 		 */
 		if (prev_len >= params->min_match && match_len <= prev_len) {
 
+
+			(*record_match)(prev_len,
+					cur_input_pos - 1 - prev_start,
+					record_ctx);
+
+			/* Insert in hash table all strings up to the end of the
+			 * match.  strstart-1 and strstart are already inserted.
+			 * If there is not enough lookahead, the last two
+			 * strings are not inserted in the hash table.  */
+
 			/* Do not insert strings in hash table beyond this. */
-			unsigned max_insert = uncompressed_len - params->min_match;
-
-			/*DEBUG("Recording match (pos = %u, offset = %u, len = %u)\n",*/
-					/*cur_input_pos - 1, */
-					/*cur_input_pos - 1 - prev_start,*/
-					/*prev_len);*/
-
-			match = (*record_match)(cur_input_pos - 1 - prev_start,
-						prev_len,
-						record_match_arg1,
-						record_match_arg2);
-
-			match_tab[cur_match_pos++] = match;
-
-			/* Insert in hash table all strings up to the end of the match.
-			 * strstart-1 and strstart are already inserted. If there is not
-			 * enough lookahead, the last two strings are not inserted in
-			 * the hash table.
-			 */
+			unsigned max_insert = window_size - params->min_match;
 #if LZ_MIN_MATCH == 2
 			if (prev_len >= 3)
 #endif
@@ -318,7 +287,7 @@ lz_analyze_block(const u8 uncompressed_data[],
 				do {
 					if (++cur_input_pos <= max_insert) {
 						hash = insert_string(hash_tab, prev_tab,
-								     uncompressed_data,
+								     window,
 								     cur_input_pos,
 								     hash);
 					}
@@ -327,30 +296,18 @@ lz_analyze_block(const u8 uncompressed_data[],
 			match_available = false;
 			match_len = params->min_match - 1;
 		} else if (match_available) {
-			/* If there was no match at the previous position, output a
-			 * single literal. If there was a match but the current match
-			 * is longer, truncate the previous match to a single literal.
-			 */
-
-			/*DEBUG("Recording litrl (pos = %u, value = %u)\n",*/
-					/*cur_input_pos - 1, */
-					/*uncompressed_data[cur_input_pos - 1]);*/
-
-			match = (*record_literal)(
-					uncompressed_data[cur_input_pos - 1],
-							record_literal_arg);
-			match_tab[cur_match_pos++] = match;
+			/* If there was no match at the previous position,
+			 * output a single literal. If there was a match but the
+			 * current match is longer, truncate the previous match
+			 * to a single literal.  */
+			(*record_literal)(window[cur_input_pos - 1], record_ctx);
 		} else {
 			/* There is no previous match to compare with, wait for
 			 * the next step to decide.  */
 			match_available = true;
 		}
-	} while (++cur_input_pos < uncompressed_len);
+	} while (++cur_input_pos < window_size);
 
-	if (match_available) {
-		match = (*record_literal)(uncompressed_data[cur_input_pos - 1],
-						record_literal_arg);
-		match_tab[cur_match_pos++] = match;
-	}
-	return cur_match_pos;
+	if (match_available)
+		(*record_literal)(window[cur_input_pos - 1], record_ctx);
 }

@@ -36,8 +36,14 @@
 #include "wimlib/util.h"
 #include "wimlib/xpress.h"
 
-#include <stdlib.h>
 #include <string.h>
+
+/* Intermediate XPRESS match/literal representation.  */
+struct xpress_match {
+	u16 adjusted_len;  /* Match length minus XPRESS_MIN_MATCH_LEN */
+	u16 offset;        /* Match offset */
+	/* For literals, offset == 0 and adjusted_len is the literal.  */
+};
 
 /*
  * Writes @match, which is a match given in the intermediate representation for
@@ -45,104 +51,87 @@
  *
  * @codewords and @lens provide the Huffman code that is being used.
  */
-static int
-xpress_write_match(struct output_bitstream *restrict ostream,
-		   u32 match,
+static void
+xpress_write_match(struct xpress_match match,
+		   struct output_bitstream *restrict ostream,
 		   const u16 codewords[restrict],
 		   const u8 lens[restrict])
 {
-	u32 adjusted_match_len = match & 0xffff;
-	u32 match_offset = match >> 16;
-	u32 len_hdr = min(adjusted_match_len, 0xf);
-	u32 offset_bsr = bsr32(match_offset);
-	u32 sym = len_hdr | (offset_bsr << 4) | XPRESS_NUM_CHARS;
-	int ret;
+	u8 len_hdr = min(match.adjusted_len, 0xf);
+	u8 offset_bsr = bsr32(match.offset);
+	unsigned sym = XPRESS_NUM_CHARS + ((offset_bsr << 4) | len_hdr);
 
-	ret = bitstream_put_bits(ostream, codewords[sym], lens[sym]);
-	if (ret)
-		return ret;
+	bitstream_put_bits(ostream, codewords[sym], lens[sym]);
 
-	if (adjusted_match_len >= 0xf) {
-		u8 byte1 = min(adjusted_match_len - 0xf, 0xff);
-		ret = bitstream_put_byte(ostream, byte1);
-		if (ret)
-			return ret;
+	if (match.adjusted_len >= 0xf) {
+		u8 byte1 = min(match.adjusted_len - 0xf, 0xff);
+		bitstream_put_byte(ostream, byte1);
 		if (byte1 == 0xff) {
-			ret = bitstream_put_two_bytes(ostream, adjusted_match_len);
-			if (ret)
-				return ret;
+			bitstream_put_byte(ostream, match.adjusted_len & 0xff);
+			bitstream_put_byte(ostream, match.adjusted_len >> 8);
 		}
 	}
-	return bitstream_put_bits(ostream,
-				  match_offset ^ (1 << offset_bsr), offset_bsr);
+	bitstream_put_bits(ostream, match.offset ^ (1U << offset_bsr), offset_bsr);
 }
 
-static int
-xpress_write_compressed_literals(struct output_bitstream *ostream,
-				 const u32 match_tab[restrict],
-				 unsigned num_matches,
-				 const u16 codewords[restrict],
-				 const u8 lens[restrict])
+static void
+xpress_write_matches_and_literals(struct output_bitstream *ostream,
+				  const struct xpress_match matches[restrict],
+				  input_idx_t num_matches,
+				  const u16 codewords[restrict],
+				  const u8 lens[restrict])
 {
-	for (unsigned i = 0; i < num_matches; i++) {
-		int ret;
-		u32 match = match_tab[i];
-
-		if (match >= XPRESS_NUM_CHARS) /* match */
-			ret = xpress_write_match(ostream, match, codewords,
-						 lens);
-		else /* literal byte */
-			ret = bitstream_put_bits(ostream, codewords[match],
-						 lens[match]);
-		if (ret)
-			return ret;
+	for (input_idx_t i = 0; i < num_matches; i++) {
+		if (matches[i].offset) {
+			/* Real match  */
+			xpress_write_match(matches[i], ostream, codewords, lens);
+		} else {
+			/* Literal byte  */
+			u8 lit = matches[i].adjusted_len;
+			bitstream_put_bits(ostream, codewords[lit], lens[lit]);
+		}
 	}
-	return bitstream_put_bits(ostream, codewords[XPRESS_END_OF_DATA],
-				  lens[XPRESS_END_OF_DATA]);
+	bitstream_put_bits(ostream, codewords[XPRESS_END_OF_DATA], lens[XPRESS_END_OF_DATA]);
 }
 
-static u32
-xpress_record_literal(u8 literal, void *_freq_tab)
+struct xpress_record_ctx {
+	freq_t freqs[XPRESS_NUM_SYMBOLS];
+	struct xpress_match *matches;
+};
+
+static void
+xpress_record_literal(u8 lit, void *_ctx)
 {
-	freq_t *freq_tab = _freq_tab;
-	freq_tab[literal]++;
-	return literal;
+	struct xpress_record_ctx *ctx = _ctx;
+	ctx->freqs[lit]++;
+	*(ctx->matches++) = (struct xpress_match) { .offset = 0, .adjusted_len = lit };
 }
 
-static u32
-xpress_record_match(unsigned match_offset, unsigned match_len,
-		    void *freq_tab, void *_ignore)
+static void
+xpress_record_match(unsigned len, unsigned offset, void *_ctx)
 {
-	wimlib_assert(match_len >= XPRESS_MIN_MATCH &&
-		      match_len <= XPRESS_MAX_MATCH);
-	wimlib_assert(match_offset >= XPRESS_MIN_OFFSET &&
-		      match_offset <= XPRESS_MAX_OFFSET);
+	struct xpress_record_ctx *ctx = _ctx;
 
-	/*
-	 * The intermediate representation of XPRESS matches is as follows:
-	 *
-	 * bits    description
-	 * ----    -----------------------------------------------------------
-	 *
-	 * 16-31   match offset (XPRESS_MIN_OFFSET < x < XPRESS_MAX_OFFSET)
-	 *
-	 * 0-15    adjusted match length (0 <= x <= XPRESS_MAX_MATCH - XPRESS_MIN_MATCH)
-	 *
-	 * Literals are simply represented as themselves and can be
-	 * distinguished from matches by the fact that only literals will have
-	 * the upper three bytes completely clear. */
+	XPRESS_ASSERT(len >= XPRESS_MIN_MATCH_LEN);
+	XPRESS_ASSERT(len <= XPRESS_MAX_MATCH_LEN);
+	XPRESS_ASSERT(offset >= XPRESS_MIN_OFFSET);
+	XPRESS_ASSERT(offset <= XPRESS_MAX_OFFSET);
 
-	u32 adjusted_match_len = match_len - XPRESS_MIN_MATCH;
-	u32 len_hdr = min(adjusted_match_len, 0xf);
-	u32 offset_bsr = bsr32(match_offset);
-	u32 sym = len_hdr | (offset_bsr << 4) | XPRESS_NUM_CHARS;
-	((freq_t*)freq_tab)[sym]++;
-	return adjusted_match_len | (match_offset << 16);
+	unsigned adjusted_len = len - XPRESS_MIN_MATCH_LEN;
+	unsigned len_hdr = min(adjusted_len, 0xf);
+	unsigned sym = XPRESS_NUM_CHARS + ((bsr32(offset) << 4) | len_hdr);
+
+	XPRESS_ASSERT(sym >= XPRESS_NUM_CHARS);
+	XPRESS_ASSERT(sym < XPRESS_NUM_SYMBOLS);
+
+	ctx->freqs[sym]++;
+	*(ctx->matches++) = (struct xpress_match) { .offset = offset,
+						    .adjusted_len = adjusted_len };
 }
 
 static const struct lz_params xpress_lz_params = {
-	.min_match      = XPRESS_MIN_MATCH,
-	.max_match      = XPRESS_MAX_MATCH,
+	.min_match      = XPRESS_MIN_MATCH_LEN,
+	.max_match      = XPRESS_MAX_MATCH_LEN,
 	.good_match	= 16,
 	.nice_match     = 32,
 	.max_chain_len  = 16,
@@ -152,122 +141,91 @@ static const struct lz_params xpress_lz_params = {
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI unsigned
-wimlib_xpress_compress(const void * restrict _uncompressed_data,
+wimlib_xpress_compress(const void * restrict uncompressed_data,
 		       unsigned uncompressed_len,
-		       void * restrict _compressed_data)
+		       void * restrict compressed_data)
 {
-	u8 *compressed_data = _compressed_data;
+	u8 *cptr = compressed_data;
 	struct output_bitstream ostream;
-	u32 match_tab[uncompressed_len];
-	freq_t freq_tab[XPRESS_NUM_SYMBOLS];
+
+	struct xpress_record_ctx record_ctx;
+	struct xpress_match matches[uncompressed_len];
+	u8 udata[uncompressed_len + 8];
 	u16 codewords[XPRESS_NUM_SYMBOLS];
 	u8 lens[XPRESS_NUM_SYMBOLS];
-	unsigned num_matches;
-	unsigned compressed_len;
-	unsigned i;
-	int ret;
-	u8 uncompressed_data[uncompressed_len + 8];
+	input_idx_t num_matches;
+	input_idx_t compressed_len;
+	input_idx_t i;
 
-	memcpy(uncompressed_data, _uncompressed_data, uncompressed_len);
-	memset(uncompressed_data + uncompressed_len, 0, 8);
-
-	wimlib_assert(uncompressed_len <= 32768);
-
-	/* XPRESS requires 256 bytes of overhead for the Huffman tables, so it's
-	 * impossible cannot compress 256 bytes or less of data to less than the
+	/* XPRESS requires 256 bytes of overhead for the Huffman code, so it's
+	 * impossible to compress 256 bytes or less of data to less than the
 	 * input size.
 	 *
 	 * +1 to take into account that the buffer for compressed data is 1 byte
 	 * smaller than the buffer for uncompressed data.
 	 *
 	 * +4 to take into account that init_output_bitstream() requires at
-	 * least 4 bytes of data. */
+	 * least 4 bytes of data.  */
 	if (uncompressed_len < XPRESS_NUM_SYMBOLS / 2 + 1 + 4)
 		return 0;
 
-	ZERO_ARRAY(freq_tab);
-	num_matches = lz_analyze_block(uncompressed_data, uncompressed_len,
-				       match_tab, xpress_record_match,
-				       xpress_record_literal, freq_tab,
-				       NULL, freq_tab,
-				       &xpress_lz_params);
+	/* Copy the data to a temporary buffer, but only to avoid
+	 * inconsequential accesses of uninitialized memory in
+	 * lz_analyze_block().  */
+	memcpy(udata, uncompressed_data, uncompressed_len);
+	memset(udata + uncompressed_len, 0, 8);
 
-	freq_tab[XPRESS_END_OF_DATA]++;
+	/* Determine match/literal sequence to divide the data into.  */
+	ZERO_ARRAY(record_ctx.freqs);
+	record_ctx.matches = matches;
+	lz_analyze_block(udata,
+			 uncompressed_len,
+			 xpress_record_match,
+			 xpress_record_literal,
+			 &record_ctx,
+			 &xpress_lz_params);
 
+	num_matches = (record_ctx.matches - matches);
+
+	/* Account for end of data symbol.  */
+	record_ctx.freqs[XPRESS_END_OF_DATA]++;
+
+	/* Build the Huffman code.  */
 	make_canonical_huffman_code(XPRESS_NUM_SYMBOLS, XPRESS_MAX_CODEWORD_LEN,
-				    freq_tab, lens, codewords);
+				    record_ctx.freqs, lens, codewords);
 
-	/* IMPORTANT NOTE:
-	 *
-	 * It's tempting to output the 512 Huffman codeword lengths using the
-	 * bitstream_put_bits() function.  However, this is NOT correct because
-	 * bitstream_put_bits() will output 2 bytes at a time in little-endian
-	 * order, which is the order that is needed for the compressed literals.
-	 * However, the bytes in the lengths table are in order, so they need to
-	 * be written one at a time without using bitstream_put_bits().
-	 *
-	 * Because of this, init_output_bitstream() is not called until after
-	 * the lengths table is output.
-	 */
+	/* Output the Huffman code as a series of 512 4-bit lengths.  */
 	for (i = 0; i < XPRESS_NUM_SYMBOLS; i += 2)
-		*compressed_data++ = (lens[i] & 0xf) | (lens[i + 1] << 4);
+		*cptr++ = (lens[i] & 0xf) | (lens[i + 1] << 4);
 
-	init_output_bitstream(&ostream, compressed_data,
+	/* Output the encoded matches/literals.  */
+	init_output_bitstream(&ostream, cptr,
 			      uncompressed_len - XPRESS_NUM_SYMBOLS / 2 - 1);
+	xpress_write_matches_and_literals(&ostream, matches,
+					  num_matches, codewords, lens);
 
-	ret = xpress_write_compressed_literals(&ostream, match_tab,
-					       num_matches, codewords, lens);
-	if (ret)
+	/* Flush any pending data and get the length of the compressed data.  */
+	compressed_len = flush_output_bitstream(&ostream);
+	if (compressed_len == ~(input_idx_t)0)
 		return 0;
+	compressed_len += XPRESS_NUM_SYMBOLS / 2;
 
-	/* Flush any bits that are buffered. */
-	ret = flush_output_bitstream(&ostream);
-	if (ret)
-		return 0;
-
-	/* Assert that there are no output bytes between the ostream.output
-	 * pointer and the ostream.next_bit_output pointer.  This can only
-	 * happen if bytes had been written at the ostream.output pointer before
-	 * the last bit word was written to the stream.  But, this does not
-	 * occur since xpress_write_match() always finishes by writing some bits
-	 * (a Huffman symbol), and the bitstream was just flushed. */
-	wimlib_assert(ostream.output - ostream.next_bit_output == 2);
-
-	/* The length of the compressed data is supposed to be the value of the
-	 * ostream.output pointer before flushing, which is now the
-	 * output.next_bit_output pointer after flushing.
-	 *
-	 * There will be an extra 2 bytes at the ostream.bit_output pointer,
-	 * which is zeroed out.  (These 2 bytes may be either the last bytes in
-	 * the compressed data, in which case they are actually unnecessary, or
-	 * they may precede a number of bytes embedded into the bitstream.) */
-	if (ostream.bit_output >
-	    (const u8*)_compressed_data + uncompressed_len - 3)
-		return 0;
-	*(u16*)ostream.bit_output = cpu_to_le16(0);
-	compressed_len = ostream.next_bit_output - (const u8*)_compressed_data;
-
-	wimlib_assert(compressed_len <= uncompressed_len - 1);
-
-#ifdef ENABLE_VERIFY_COMPRESSION
-	/* Verify that we really get the same thing back when decompressing. */
+#if defined(ENABLE_XPRESS_DEBUG) || defined(ENABLE_VERIFY_COMPRESSION) || 1
+	/* Verify that we really get the same thing back when decompressing.  */
+	if (wimlib_xpress_decompress(compressed_data, compressed_len,
+				     udata, uncompressed_len))
 	{
-		u8 buf[uncompressed_len];
-		ret = wimlib_xpress_decompress(_compressed_data, compressed_len,
-					       buf, uncompressed_len);
-		if (ret) {
-			ERROR("xpress_compress(): Failed to decompress data we "
-			      "compressed");
-			abort();
-		}
-		for (i = 0; i < uncompressed_len; i++) {
-			if (buf[i] != uncompressed_data[i]) {
-				ERROR("xpress_compress(): Data we compressed didn't "
-				      "decompress to the original data (difference at "
-				      "byte %u of %u)", i + 1, uncompressed_len);
-				abort();
-			}
-		}
+		ERROR("Failed to decompress data we "
+		      "compressed using XPRESS algorithm");
+		wimlib_assert(0);
+		return 0;
+	}
+
+	if (memcmp(uncompressed_data, udata, uncompressed_len)) {
+		ERROR("Data we compressed using XPRESS algorithm "
+		      "didn't decompress to original");
+		wimlib_assert(0);
+		return 0;
 	}
 #endif
 	return compressed_len;

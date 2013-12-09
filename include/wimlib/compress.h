@@ -1,7 +1,7 @@
 /*
  * compress.h
  *
- * Functions useful for compression, mainly bitstreams.
+ * Header for compression code shared by multiple compression formats.
  */
 
 #ifndef _WIMLIB_COMPRESS_H
@@ -12,9 +12,12 @@
 
 typedef u16 output_bitbuf_t;
 
-/* Assuming that WIM chunks are at most 32768 bytes, 16 bits is enough for any
- * symbol frequency. */
-typedef u16 freq_t;
+/* Variable type that can represent all possible window positions.  */
+typedef u32 freq_t;
+#ifndef INPUT_IDX_T_DEFINED
+#define INPUT_IDX_T_DEFINED
+typedef u32 input_idx_t;
+#endif
 
 /* Structure to keep track of the current position in the compressed output. */
 struct output_bitstream {
@@ -26,38 +29,42 @@ struct output_bitstream {
 	/* Number of free bits in @bitbuf */
 	unsigned free_bits;
 
+	/* Pointer to the start of the output buffer.  */
+	u8 *output_start;
+
+	/* Position at which to write the next 16 bits.  */
 	u8 *bit_output;
+
+	/* Next position to write 16 bits, after they are written to bit_output.
+	 * This is after @next_bit_output and may be separated from @bit_output
+	 * by literal bytes.  */
 	u8 *next_bit_output;
 
-	/* Pointer to the next byte in the compressed output. */
+	/* Next position to write literal bytes.  This is after @bit_output and
+	 * @next_bit_output, and may be separated from them by literal bytes.
+	 */
 	u8 *output;
 
+	/* Bytes remaining in @output buffer.  */
+	input_idx_t bytes_remaining;
 
-	/* Number of bytes left in the memory pointed to by @output. */
-	int num_bytes_remaining;
+	/* Set to true if the buffer has been exhausted.  */
+	bool overrun;
 };
 
-static inline int
-bitstream_put_byte(struct output_bitstream *ostream, u8 n)
-{
-	if (ostream->num_bytes_remaining < 1)
-		return 1;
-	*ostream->output = n;
-	ostream->output++;
-	ostream->num_bytes_remaining--;
-	return 0;
-}
+extern void
+init_output_bitstream(struct output_bitstream *ostream,
+		      void *data, unsigned num_bytes);
 
-static inline int
-bitstream_put_two_bytes(struct output_bitstream *ostream, u16 n)
-{
-	if (ostream->num_bytes_remaining < 2)
-		return 1;
-	*(u16*)ostream->output = cpu_to_le16(n);
-	ostream->output += 2;
-	ostream->num_bytes_remaining -= 2;
-	return 0;
-}
+extern input_idx_t
+flush_output_bitstream(struct output_bitstream *ostream);
+
+extern void
+bitstream_put_bits(struct output_bitstream *ostream,
+		   output_bitbuf_t bits, unsigned num_bits);
+
+extern void
+bitstream_put_byte(struct output_bitstream *ostream, u8 n);
 
 struct lz_params {
 	unsigned min_match;
@@ -69,29 +76,16 @@ struct lz_params {
 	unsigned too_far;
 };
 
-typedef u32 (*lz_record_match_t)(unsigned, unsigned, void *, void *);
-typedef u32 (*lz_record_literal_t)(u8, void *);
-
-extern unsigned
-lz_analyze_block(const u8 uncompressed_data[],
-		 unsigned uncompressed_len,
-		 u32 match_tab[],
-		 lz_record_match_t record_match,
-		 lz_record_literal_t record_literal,
-		 void *record_match_arg1,
-		 void *record_match_arg2,
-		 void *record_literal_arg,
-		 const struct lz_params *params);
-
-extern int bitstream_put_bits(struct output_bitstream *ostream,
-			      output_bitbuf_t bits, unsigned num_bits);
+typedef void (*lz_record_match_t)(unsigned len, unsigned offset, void *ctx);
+typedef void (*lz_record_literal_t)(u8 lit, void *ctx);
 
 extern void
-init_output_bitstream(struct output_bitstream *ostream,
-		      void *data, unsigned num_bytes);
-
-extern int
-flush_output_bitstream(struct output_bitstream *ostream);
+lz_analyze_block(const u8 window[],
+		 input_idx_t window_size,
+		 lz_record_match_t record_match,
+		 lz_record_literal_t record_literal,
+		 void *record_ctx,
+		 const struct lz_params *params);
 
 extern void
 make_canonical_huffman_code(unsigned num_syms,

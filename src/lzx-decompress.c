@@ -38,13 +38,13 @@
  *
  * A compressed WIM resource consists of a table of chunk offsets followed by
  * the compressed chunks themselves.  All compressed chunks except possibly the
- * last decompress to WIM_CHUNK_SIZE (= 32768) bytes.  This is quite similar to
- * the cabinet (.cab) file format, but they are not the same.  According to the
- * cabinet format documentation, the LZX block size is independent from the
- * CFDATA blocks, and a LZX block may span several CFDATA blocks.  However, in
- * WIMs, LZX blocks do not appear to ever span multiple WIM chunks.  Note that
- * this means any WIM chunk may be decompressed or compressed independently from
- * any other chunk, which is convenient.
+ * last decompress to 32768 bytes.  This is quite similar to the cabinet (.cab)
+ * file format, but they are not the same.  According to the cabinet format
+ * documentation, the LZX block size is independent from the CFDATA blocks, and
+ * a LZX block may span several CFDATA blocks.  However, in WIMs, LZX blocks do
+ * not appear to ever span multiple WIM chunks.  Note that this means any WIM
+ * chunk may be decompressed or compressed independently from any other chunk,
+ * which is convenient.
  *
  * A LZX compressed WIM chunk contains one or more LZX blocks of the aligned,
  * verbatim, or uncompressed block types.  For aligned and verbatim blocks, the

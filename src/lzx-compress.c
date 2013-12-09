@@ -195,12 +195,11 @@
 #include <string.h>
 
 #ifdef ENABLE_LZX_DEBUG
-#  include <wimlib/decompress.h>
+#  include "wimlib/decompress.h"
 #endif
 
 #include "divsufsort/divsufsort.h"
 
-typedef freq_t input_idx_t;
 typedef u32 block_cost_t;
 #define INFINITE_BLOCK_COST	((block_cost_t)~0U)
 
@@ -1074,13 +1073,10 @@ lzx_write_all_blocks(struct lzx_compressor *ctx, struct output_bitstream *ostrea
 /* Constructs an LZX match from a literal byte and updates the main code symbol
  * frequencies.  */
 static u32
-lzx_record_literal(u8 literal, void *_freqs)
+lzx_tally_literal(u8 lit, struct lzx_freqs *freqs)
 {
-	struct lzx_freqs *freqs = _freqs;
-
-	freqs->main[literal]++;
-
-	return (u32)literal;
+	freqs->main[lit]++;
+	return (u32)lit;
 }
 
 /* Constructs an LZX match from an offset and a length, and updates the LRU
@@ -1088,11 +1084,9 @@ lzx_record_literal(u8 literal, void *_freqs)
  * alphabets.  The return value is a 32-bit number that provides the match in an
  * intermediate representation documented below.  */
 static u32
-lzx_record_match(unsigned match_offset, unsigned match_len,
-		 void *_freqs, void *_queue)
+lzx_tally_match(unsigned match_len, unsigned match_offset,
+		struct lzx_freqs *freqs, struct lzx_lru_queue *queue)
 {
-	struct lzx_freqs *freqs = _freqs;
-	struct lzx_lru_queue *queue = _queue;
 	unsigned position_slot;
 	unsigned position_footer;
 	u32 len_header;
@@ -1164,6 +1158,28 @@ lzx_record_match(unsigned match_offset, unsigned match_len,
 		(position_slot << 25) |
 		(position_footer << 8) |
 		(adjusted_match_len);
+}
+
+struct lzx_record_ctx {
+	struct lzx_freqs freqs;
+	struct lzx_lru_queue queue;
+	struct lzx_match *matches;
+};
+
+static void
+lzx_record_match(unsigned len, unsigned offset, void *_ctx)
+{
+	struct lzx_record_ctx *ctx = _ctx;
+
+	(ctx->matches++)->data = lzx_tally_match(len, offset, &ctx->freqs, &ctx->queue);
+}
+
+static void
+lzx_record_literal(u8 lit, void *_ctx)
+{
+	struct lzx_record_ctx *ctx = _ctx;
+
+	(ctx->matches++)->data = lzx_tally_literal(lit, &ctx->freqs);
 }
 
 /* Returns the cost, in bits, to output a literal byte using the specified cost
@@ -1921,11 +1937,11 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 
 			raw_match = lzx_lz_get_near_optimal_match(ctx);
 			if (raw_match.len >= LZX_MIN_MATCH_LEN) {
-				lzx_match.data = lzx_record_match(raw_match.offset, raw_match.len,
-								  &freqs, &ctx->queue);
+				lzx_match.data = lzx_tally_match(raw_match.len, raw_match.offset,
+								 &freqs, &ctx->queue);
 				i += raw_match.len;
 			} else {
-				lzx_match.data = lzx_record_literal(ctx->window[i], &freqs);
+				lzx_match.data = lzx_tally_literal(ctx->window[i], &freqs);
 				i += 1;
 			}
 			ctx->chosen_matches[spec->chosen_matches_start_pos +
@@ -2139,9 +2155,6 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
  *	ctx->window[]
  *	ctx->window_size
  *
- * Working space:
- *	ctx->queue
- *
  * Output --- the block specification and the corresponding match/literal data:
  *
  *	ctx->block_specs[]
@@ -2151,8 +2164,7 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
 static void
 lzx_prepare_block_fast(struct lzx_compressor * ctx)
 {
-	unsigned num_matches;
-	struct lzx_freqs freqs;
+	struct lzx_record_ctx record_ctx;
 	struct lzx_block_spec *spec;
 
 	/* Parameters to hash chain LZ match finder
@@ -2170,19 +2182,17 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 	};
 
 	/* Initialize symbol frequencies and match offset LRU queue.  */
-	memset(&freqs, 0, sizeof(struct lzx_freqs));
-	lzx_lru_queue_init(&ctx->queue);
+	memset(&record_ctx.freqs, 0, sizeof(struct lzx_freqs));
+	lzx_lru_queue_init(&record_ctx.queue);
+	record_ctx.matches = ctx->chosen_matches;
 
 	/* Determine series of matches/literals to output.  */
-	num_matches = lz_analyze_block(ctx->window,
-				       ctx->window_size,
-				       (u32*)ctx->chosen_matches,
-				       lzx_record_match,
-				       lzx_record_literal,
-				       &freqs,
-				       &ctx->queue,
-				       &freqs,
-				       &lzx_lz_params);
+	lz_analyze_block(ctx->window,
+			 ctx->window_size,
+			 lzx_record_match,
+			 lzx_record_literal,
+			 &record_ctx,
+			 &lzx_lz_params);
 
 
 	/* Set up block specification.  */
@@ -2190,9 +2200,9 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 	spec->block_type = LZX_BLOCKTYPE_ALIGNED;
 	spec->window_pos = 0;
 	spec->block_size = ctx->window_size;
-	spec->num_chosen_matches = num_matches;
+	spec->num_chosen_matches = (record_ctx.matches - ctx->chosen_matches);
 	spec->chosen_matches_start_pos = 0;
-	lzx_make_huffman_codes(&freqs, &spec->codes);
+	lzx_make_huffman_codes(&record_ctx.freqs, &spec->codes);
 	ctx->num_blocks = 1;
 }
 
@@ -2239,7 +2249,7 @@ wimlib_lzx_compress2(const void			* const restrict uncompressed_data,
 {
 	struct lzx_compressor *ctx = (struct lzx_compressor*)lzx_ctx;
 	struct output_bitstream ostream;
-	unsigned compressed_len;
+	input_idx_t compressed_len;
 
 	if (uncompressed_len < 100) {
 		LZX_DEBUG("Too small to bother compressing.");
@@ -2286,15 +2296,11 @@ wimlib_lzx_compress2(const void			* const restrict uncompressed_data,
 	lzx_write_all_blocks(ctx, &ostream);
 
 	LZX_DEBUG("Flushing bitstream...");
-	if (flush_output_bitstream(&ostream)) {
-		/* If the bitstream cannot be flushed, then the output space was
-		 * exhausted.  */
+	compressed_len = flush_output_bitstream(&ostream);
+	if (compressed_len == ~(input_idx_t)0) {
 		LZX_DEBUG("Data did not compress to less than original length!");
 		return 0;
 	}
-
-	/* Compute the length of the compressed data.  */
-	compressed_len = ostream.bit_output - (u8*)compressed_data;
 
 	LZX_DEBUG("Done: compressed %u => %u bytes.",
 		  uncompressed_len, compressed_len);
@@ -2310,11 +2316,10 @@ wimlib_lzx_compress2(const void			* const restrict uncompressed_data,
 	    )
 	{
 		u8 buf[uncompressed_len];
-		int ret;
 
-		ret = wimlib_lzx_decompress(compressed_data, compressed_len,
-					    buf, uncompressed_len);
-		if (ret) {
+		if (wimlib_lzx_decompress(compressed_data, compressed_len,
+					  buf, uncompressed_len))
+		{
 			ERROR("Failed to decompress data we "
 			      "compressed using LZX algorithm");
 			wimlib_assert(0);

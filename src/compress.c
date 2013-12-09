@@ -27,73 +27,85 @@
 #  include "config.h"
 #endif
 
-
 #include "wimlib/assert.h"
+#include "wimlib/compiler.h"
 #include "wimlib/compress.h"
 #include "wimlib/util.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-static inline void
-flush_bits(struct output_bitstream *ostream)
-{
-	*(le16*)ostream->bit_output = cpu_to_le16(ostream->bitbuf);
-	ostream->bit_output = ostream->next_bit_output;
-	ostream->next_bit_output = ostream->output;
-	ostream->output += 2;
-	ostream->num_bytes_remaining -= 2;
-}
-
 /* Writes @num_bits bits, given by the @num_bits least significant bits of
  * @bits, to the output @ostream. */
-int
+void
 bitstream_put_bits(struct output_bitstream *ostream, output_bitbuf_t bits,
 		   unsigned num_bits)
 {
 	unsigned rem_bits;
 
-	wimlib_assert(num_bits <= 16);
 	if (num_bits <= ostream->free_bits) {
+		/* Buffer variable had space for the new bits.  */
 		ostream->bitbuf = (ostream->bitbuf << num_bits) | bits;
 		ostream->free_bits -= num_bits;
-	} else {
-
-		if (ostream->num_bytes_remaining + (ostream->output -
-						ostream->bit_output) < 2)
-			return 1;
-
-		/* It is tricky to output the bits correctly.  The correct way
-		 * is to output little-endian 2-byte words, such that the bits
-		 * in the SECOND byte logically precede those in the FIRST byte.
-		 * While the byte order is little-endian, the bit order is
-		 * big-endian; the first bit in a byte is the high-order one.
-		 * Any multi-bit numbers are in bit-big-endian form, so the
-		 * low-order bit of a multi-bit number is the LAST bit to be
-		 * output. */
-		rem_bits = num_bits - ostream->free_bits;
-		ostream->bitbuf <<= ostream->free_bits;
-		ostream->bitbuf |= bits >> rem_bits;
-		flush_bits(ostream);
-		ostream->free_bits = 16 - rem_bits;
-		ostream->bitbuf = bits;
-
+		return;
 	}
-	return 0;
+
+	/* Buffer variable does not have space for the new bits.  It needs to be
+	 * flushed as a 16-bit integer.  Bits in the second byte logically
+	 * precede those in the first byte (little-endian), but within each byte
+	 * the bits are ordered from high to low.  This is true for both XPRESS
+	 * and LZX compression.  */
+
+	wimlib_assert(num_bits <= 16);
+
+	/* There must be at least 2 bytes of space remaining.  */
+	if (unlikely(ostream->bytes_remaining < 2)) {
+		ostream->overrun = true;
+		return;
+	}
+
+	/* Fill the buffer with as many bits that fit.  */
+	rem_bits = num_bits - ostream->free_bits;
+	ostream->bitbuf <<= ostream->free_bits;
+	ostream->bitbuf |= bits >> rem_bits;
+
+	*(le16*)ostream->bit_output = cpu_to_le16(ostream->bitbuf);
+	ostream->bit_output = ostream->next_bit_output;
+	ostream->next_bit_output = ostream->output;
+	ostream->output += 2;
+	ostream->bytes_remaining -= 2;
+
+	ostream->free_bits = 16 - rem_bits;
+	ostream->bitbuf = bits;
 }
 
-/* Flushes any remaining bits in the output buffer to the output byte stream. */
-int
+void
+bitstream_put_byte(struct output_bitstream *ostream, u8 n)
+{
+	if (unlikely(ostream->bytes_remaining < 1)) {
+		ostream->overrun = true;
+		return;
+	}
+	*ostream->output++ = n;
+	ostream->bytes_remaining--;
+}
+
+/* Flushes any remaining bits to the output bitstream.
+ *
+ * Returns -1 if the stream has overrun; otherwise returns the total number of
+ * bytes in the output.  */
+input_idx_t
 flush_output_bitstream(struct output_bitstream *ostream)
 {
-	if (ostream->num_bytes_remaining + (ostream->output -
-					ostream->bit_output) < 2)
-		return 1;
-	if (ostream->free_bits != 16) {
-		ostream->bitbuf <<= ostream->free_bits;
-		flush_bits(ostream);
-	}
-	return 0;
+	if (unlikely(ostream->overrun))
+		return ~(input_idx_t)0;
+
+	*(le16*)ostream->bit_output =
+		cpu_to_le16((u16)((u32)ostream->bitbuf << ostream->free_bits));
+	*(le16*)ostream->next_bit_output =
+		cpu_to_le16(0);
+
+	return ostream->output - ostream->output_start;
 }
 
 /* Initializes an output bit buffer to write its output to the memory location
@@ -106,10 +118,12 @@ init_output_bitstream(struct output_bitstream *ostream,
 
 	ostream->bitbuf              = 0;
 	ostream->free_bits           = 16;
+	ostream->output_start        = data;
 	ostream->bit_output          = data;
 	ostream->next_bit_output     = data + 2;
 	ostream->output              = data + 4;
-	ostream->num_bytes_remaining = num_bytes - 4;
+	ostream->bytes_remaining     = num_bytes;
+	ostream->overrun             = false;
 }
 
 typedef struct {

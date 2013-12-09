@@ -1,6 +1,10 @@
 #ifndef _WIMLIB_LZX_H
 #define _WIMLIB_LZX_H
 
+/* Constants for the LZX data compression format.  See the comments in
+ * lzx-compress.c and lzx-decompress.c for more information about this format.
+ * */
+
 #include "wimlib/assert.h"
 #include "wimlib/types.h"
 
