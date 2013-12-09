@@ -110,7 +110,8 @@ put_resource_entry(const struct resource_entry *entry,
 extern int
 read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 			  u64 size, consume_data_callback_t cb,
-			  void *ctx_or_buf, int flags, u64 offset);
+			  u32 in_chunk_size, void *ctx_or_buf,
+			  int flags, u64 offset);
 
 extern int
 read_partial_wim_resource_into_buf(const struct wim_lookup_table_entry *lte,
@@ -128,14 +129,16 @@ res_entry_to_data(const struct resource_entry *res_entry,
 
 extern int
 read_resource_prefix(const struct wim_lookup_table_entry *lte,
-		     u64 size, consume_data_callback_t cb, void *ctx_or_buf,
-		     int flags);
+		     u64 size, consume_data_callback_t cb,
+		     u32 in_chunk_size, void *ctx_or_buf, int flags);
 
 /* Functions to write a resource.  */
 
 extern int
 write_wim_resource(struct wim_lookup_table_entry *lte, struct filedes *out_fd,
-		   int out_ctype, struct resource_entry *out_res_entry,
+		   int out_ctype,
+		   u32 out_chunk_size,
+		   struct resource_entry *out_res_entry,
 		   int write_resource_flags,
 		   struct wimlib_lzx_context **comp_ctx);
 
@@ -143,6 +146,7 @@ extern int
 write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 			       int reshdr_flags, struct filedes *out_fd,
 			       int out_ctype,
+			       u32 out_chunk_size,
 			       struct resource_entry *out_res_entry,
 			       u8 *hash_ret, int write_resource_flags,
 			       struct wimlib_lzx_context **comp_ctx);

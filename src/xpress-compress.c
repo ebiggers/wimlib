@@ -36,6 +36,10 @@
 #include "wimlib/util.h"
 #include "wimlib/xpress.h"
 
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#endif
+
 #include <string.h>
 
 /* Intermediate XPRESS match/literal representation.  */
@@ -132,6 +136,7 @@ xpress_record_match(unsigned len, unsigned offset, void *_ctx)
 static const struct lz_params xpress_lz_params = {
 	.min_match      = XPRESS_MIN_MATCH_LEN,
 	.max_match      = XPRESS_MAX_MATCH_LEN,
+	.max_offset	= XPRESS_MAX_OFFSET,
 	.good_match	= 16,
 	.nice_match     = 32,
 	.max_chain_len  = 16,
@@ -149,13 +154,17 @@ wimlib_xpress_compress(const void * restrict uncompressed_data,
 	struct output_bitstream ostream;
 
 	struct xpress_record_ctx record_ctx;
-	struct xpress_match matches[uncompressed_len];
-	u8 udata[uncompressed_len + 8];
+
+	struct xpress_match *matches;
+	input_idx_t *prev_tab;
+	u8 *udata;
+
 	u16 codewords[XPRESS_NUM_SYMBOLS];
 	u8 lens[XPRESS_NUM_SYMBOLS];
 	input_idx_t num_matches;
 	input_idx_t compressed_len;
 	input_idx_t i;
+	const size_t stack_max = 65536;
 
 	/* XPRESS requires 256 bytes of overhead for the Huffman code, so it's
 	 * impossible to compress 256 bytes or less of data to less than the
@@ -168,6 +177,21 @@ wimlib_xpress_compress(const void * restrict uncompressed_data,
 	 * least 4 bytes of data.  */
 	if (uncompressed_len < XPRESS_NUM_SYMBOLS / 2 + 1 + 4)
 		return 0;
+
+	if (uncompressed_len <= stack_max) {
+		matches = alloca(uncompressed_len * sizeof(matches[0]));
+		udata = alloca(uncompressed_len + 8);
+		prev_tab = alloca(uncompressed_len * sizeof(prev_tab[0]));
+	} else {
+		matches = MALLOC(uncompressed_len * sizeof(matches[0]));
+		udata = MALLOC(uncompressed_len + 8);
+		prev_tab = MALLOC(uncompressed_len * sizeof(prev_tab[0]));
+		if (matches == NULL || udata == NULL || prev_tab == NULL) {
+			WARNING("Failed to allocate memory for compression...");
+			compressed_len = 0;
+			goto out_free;
+		}
+	}
 
 	/* Copy the data to a temporary buffer, but only to avoid
 	 * inconsequential accesses of uninitialized memory in
@@ -183,7 +207,8 @@ wimlib_xpress_compress(const void * restrict uncompressed_data,
 			 xpress_record_match,
 			 xpress_record_literal,
 			 &record_ctx,
-			 &xpress_lz_params);
+			 &xpress_lz_params,
+			 prev_tab);
 
 	num_matches = (record_ctx.matches - matches);
 
@@ -206,8 +231,10 @@ wimlib_xpress_compress(const void * restrict uncompressed_data,
 
 	/* Flush any pending data and get the length of the compressed data.  */
 	compressed_len = flush_output_bitstream(&ostream);
-	if (compressed_len == ~(input_idx_t)0)
-		return 0;
+	if (compressed_len == ~(input_idx_t)0) {
+		compressed_len = 0;
+		goto out_free;
+	}
 	compressed_len += XPRESS_NUM_SYMBOLS / 2;
 
 #if defined(ENABLE_XPRESS_DEBUG) || defined(ENABLE_VERIFY_COMPRESSION) || 1
@@ -218,15 +245,24 @@ wimlib_xpress_compress(const void * restrict uncompressed_data,
 		ERROR("Failed to decompress data we "
 		      "compressed using XPRESS algorithm");
 		wimlib_assert(0);
-		return 0;
+		compressed_len = 0;
+		goto out_free;
 	}
 
 	if (memcmp(uncompressed_data, udata, uncompressed_len)) {
 		ERROR("Data we compressed using XPRESS algorithm "
 		      "didn't decompress to original");
 		wimlib_assert(0);
-		return 0;
+		compressed_len = 0;
+		goto out_free;
 	}
 #endif
+
+out_free:
+	if (uncompressed_len > stack_max) {
+		FREE(matches);
+		FREE(udata);
+		FREE(prev_tab);
+	}
 	return compressed_len;
 }

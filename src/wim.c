@@ -75,6 +75,62 @@ new_wim_struct(void)
 	return wim;
 }
 
+static bool
+wim_chunk_size_valid(u32 chunk_size, int ctype)
+{
+	u32 order;
+
+	/* Chunk size is meaningless for uncompressed WIMs --- any value is
+	 * okay.  */
+	if (ctype == WIMLIB_COMPRESSION_TYPE_NONE)
+		return true;
+
+	/* Chunk size must be power of 2.  */
+	if (chunk_size == 0)
+		return false;
+	order = bsr32(chunk_size);
+	if (chunk_size != 1U << order)
+		return false;
+
+	/* Order	Size
+	 * =====	====
+	 * 15		32768
+	 * 16		65536
+	 * 17		131072
+	 * 18		262144
+	 * 19		524288
+	 * 20		1048576
+	 * 21		2097152
+	 * 22		4194304
+	 * 23		8388608
+	 * 24		16777216
+	 * 25		33554432
+	 * 26		67108864
+	 */
+	switch (ctype) {
+	case WIMLIB_COMPRESSION_TYPE_LZX:
+		/* TODO: Allow other chunk sizes when supported by the LZX
+		 * compressor and decompressor.  */
+		return order == 15;
+
+	case WIMLIB_COMPRESSION_TYPE_XPRESS:
+		/* WIMGAPI (Windows 7) didn't seem to support XPRESS chunk size
+		 * below 32768 bytes, but larger power-of-two sizes appear to be
+		 * supported.  67108864 was the largest size that worked.
+		 * (Note, however, that the offsets of XPRESS matches are still
+		 * limited to 65535 bytes even when a much larger chunk size is
+		 * used!)  */
+		return order >= 15 && order <= 26;
+	}
+	return false;
+}
+
+static u32
+wim_default_chunk_size(int ctype)
+{
+	return 32768;
+}
+
 /*
  * Calls a function on images in the WIM.  If @image is WIMLIB_ALL_IMAGES, @visitor
  * is called on the WIM once for each image, with each image selected as the
@@ -127,7 +183,7 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 	if (!wim)
 		return WIMLIB_ERR_NOMEM;
 
-	ret = init_wim_header(&wim->hdr, ctype);
+	ret = init_wim_header(&wim->hdr, ctype, wim_default_chunk_size(ctype));
 	if (ret != 0)
 		goto out_free;
 
@@ -140,6 +196,8 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 	wim->refcnts_ok = 1;
 	wim->compression_type = ctype;
 	wim->out_compression_type = ctype;
+	wim->chunk_size = wim->hdr.chunk_size;
+	wim->out_chunk_size = wim->hdr.chunk_size;
 	*wim_ret = wim;
 	return 0;
 out_free:
@@ -294,7 +352,7 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 	info->image_count = wim->hdr.image_count;
 	info->boot_index = wim->hdr.boot_idx;
 	info->wim_version = WIM_VERSION;
-	info->chunk_size = WIM_CHUNK_SIZE;
+	info->chunk_size = wim->hdr.chunk_size;
 	info->part_number = wim->hdr.part_number;
 	info->total_parts = wim->hdr.total_parts;
 	info->compression_type = wim->compression_type;
@@ -354,6 +412,50 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int whic
 		else
 			wim->hdr.flags &= ~WIM_HDR_FLAG_RP_FIX;
 	}
+	return 0;
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_set_output_compression_type(WIMStruct *wim, int ctype)
+{
+	switch (ctype) {
+	case WIMLIB_COMPRESSION_TYPE_INVALID:
+		break;
+	case WIMLIB_COMPRESSION_TYPE_NONE:
+	case WIMLIB_COMPRESSION_TYPE_LZX:
+	case WIMLIB_COMPRESSION_TYPE_XPRESS:
+		wim->out_compression_type = ctype;
+
+		/* Reset the chunk size if it's no longer valid.  */
+		if (!wim_chunk_size_valid(wim->out_chunk_size,
+					  wim->out_compression_type))
+			wim->out_chunk_size = wim_default_chunk_size(wim->out_compression_type);
+		return 0;
+	}
+	return WIMLIB_ERR_INVALID_PARAM;
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size)
+{
+	if (!wim_chunk_size_valid(chunk_size, wim->out_compression_type)) {
+		ERROR("Invalid chunk size (%"PRIu32" bytes) "
+		      "for compression type %"TS"!",
+		      chunk_size,
+		      wimlib_get_compression_type_string(wim->out_compression_type));
+		switch (wim->out_compression_type) {
+		case WIMLIB_COMPRESSION_TYPE_XPRESS:
+			ERROR("Valid chunk sizes for XPRESS are 32768, 65536, 131072, ..., 67108864.");
+			break;
+		case WIMLIB_COMPRESSION_TYPE_LZX:
+			ERROR("Valid chunk sizes for XPRESS are 65536.");
+			break;
+		}
+		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
+	}
+	wim->out_chunk_size = chunk_size;
 	return 0;
 }
 
@@ -484,6 +586,16 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 		wim->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
 	}
 	wim->out_compression_type = wim->compression_type;
+
+	/* Check and cache the chunk size.  */
+	wim->chunk_size = wim->out_chunk_size = wim->hdr.chunk_size;
+	if (!wim_chunk_size_valid(wim->chunk_size, wim->compression_type)) {
+		ERROR("Invalid chunk size (%"PRIu32" bytes) "
+		      "for compression type %"TS"!",
+		      wim->chunk_size,
+		      wimlib_get_compression_type_string(wim->compression_type));
+		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
+	}
 
 	if (open_flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY) {
 		ret = check_wim_integrity(wim, progress_func);

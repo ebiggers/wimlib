@@ -96,10 +96,15 @@ typedef int (*decompress_func_t)(const void *, unsigned, void *, unsigned);
 static decompress_func_t
 get_decompress_func(int ctype)
 {
-	if (ctype == WIMLIB_COMPRESSION_TYPE_LZX)
+	switch (ctype) {
+	case WIMLIB_COMPRESSION_TYPE_LZX:
 		return wimlib_lzx_decompress;
-	else
+	case WIMLIB_COMPRESSION_TYPE_XPRESS:
 		return wimlib_xpress_decompress;
+	default:
+		wimlib_assert(0);
+		return NULL;
+	}
 }
 
 /*
@@ -122,11 +127,18 @@ get_decompress_func(int ctype)
  *	stream and chunk headers.
  */
 static int
-read_compressed_resource(const struct wim_lookup_table_entry *lte,
-			 u64 size, consume_data_callback_t cb,
-			 void *ctx_or_buf, int flags, u64 offset)
+read_compressed_resource(const struct wim_lookup_table_entry * const lte,
+			 u64 size, const consume_data_callback_t cb,
+			 const u32 in_chunk_size, void * const ctx_or_buf,
+			 const int flags, const u64 offset)
 {
 	int ret;
+
+	const u32 orig_chunk_size = wim_resource_chunk_size(lte);
+	const u32 orig_chunk_order = bsr32(orig_chunk_size);
+
+	wimlib_assert(is_power_of_2(orig_chunk_size));
+	wimlib_assert(cb == NULL || is_power_of_2(in_chunk_size));
 
 	/* Currently, reading raw compressed chunks is only guaranteed to work
 	 * correctly when the full resource is requested.  Furthermore, in such
@@ -136,6 +148,7 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 	if (flags & WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS) {
 		wimlib_assert(offset == 0);
 		wimlib_assert(size == lte->resource_entry.size);
+		wimlib_assert(wim_resource_chunk_size(lte) == in_chunk_size);
 		size = wim_resource_size(lte);
 	}
 
@@ -145,35 +158,45 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 	if (size == 0)
 		return 0;
 
+	u64 *chunk_offsets = NULL;
+	u8 *out_buf = NULL;
+	u8 *tmp_buf = NULL;
+	void *compressed_buf = NULL;
+	bool chunk_offsets_malloced = false;
+	bool out_buf_malloced = false;
+	bool tmp_buf_malloced = false;
+	bool compressed_buf_malloced = false;
+	const size_t stack_max = 32768;
+
 	/* Get the appropriate decompression function.  */
-	decompress_func_t decompress =
+	const decompress_func_t decompress =
 			get_decompress_func(wim_resource_compression_type(lte));
 
 	/* Get the file descriptor for the WIM.  */
-	struct filedes *in_fd = &lte->wim->in_fd;
+	struct filedes * const in_fd = &lte->wim->in_fd;
 
 	/* Calculate the number of chunks the resource is divided into.  */
-	u64 num_chunks = wim_resource_chunks(lte);
+	const u64 num_chunks = wim_resource_chunks(lte);
 
 	/* Calculate the number of entries in the chunk table; it's one less
 	 * than the number of chunks, since the first chunk has no entry.  */
-	u64 num_chunk_entries = num_chunks - 1;
+	const u64 num_chunk_entries = num_chunks - 1;
 
 	/* Calculate the 0-based index of the chunk at which the read starts.
 	 */
-	u64 start_chunk = offset / WIM_CHUNK_SIZE;
+	const u64 start_chunk = offset >> orig_chunk_order;
 
 	/* Calculate the offset, within the start chunk, of the first byte of
 	 * the read.  */
-	u64 start_offset_in_chunk = offset % WIM_CHUNK_SIZE;
+	const u32 start_offset_in_chunk = offset & (orig_chunk_size - 1);
 
 	/* Calculate the index of the chunk that contains the last byte of the
 	 * read.  */
-	u64 end_chunk = (offset + size - 1) / WIM_CHUNK_SIZE;
+	const u64 end_chunk = (offset + size - 1) >> orig_chunk_order;
 
 	/* Calculate the offset, within the end chunk, of the last byte of the
 	 * read.  */
-	u64 end_offset_in_chunk = (offset + size - 1) % WIM_CHUNK_SIZE;
+	const u32 end_offset_in_chunk = (offset + size - 1) & (orig_chunk_size - 1);
 
 	/* Calculate the number of chunk entries are actually needed to read the
 	 * requested part of the resource.  Include an entry for the first chunk
@@ -181,28 +204,25 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 	 * account that if the last chunk required for the read is not the last
 	 * chunk of the resource, an extra chunk entry is needed so that the
 	 * compressed size of the last chunk of the read can be determined.  */
-	u64 num_alloc_chunk_entries = end_chunk - start_chunk + 1;
-	if (end_chunk != num_chunks - 1)
-		num_alloc_chunk_entries++;
+	const u64 num_alloc_chunk_entries = end_chunk - start_chunk +
+					    1 + (end_chunk != num_chunks - 1);
 
 	/* Set the size of each chunk table entry based on the resource's
 	 * uncompressed size.  */
-	u64 chunk_entry_size = (wim_resource_size(lte) > ((u64)1 << 32)) ? 8 : 4;
+	const u64 chunk_entry_size = (wim_resource_size(lte) > ((u64)1 << 32)) ? 8 : 4;
 
 	/* Calculate the size, in bytes, of the full chunk table.  */
-	u64 chunk_table_size = num_chunk_entries * chunk_entry_size;
+	const u64 chunk_table_size = num_chunk_entries * chunk_entry_size;
 
 	/* Allocate a buffer to hold a subset of the chunk table.  It will only
 	 * contain offsets for the chunks that are actually needed for this
 	 * read.  For speed, allocate the buffer on the stack unless it's too
 	 * large.  */
-	u64 *chunk_offsets;
-	bool chunk_offsets_malloced;
-	if (num_alloc_chunk_entries < 1024) {
+	if (num_alloc_chunk_entries <= stack_max) {
 		chunk_offsets = alloca(num_alloc_chunk_entries * sizeof(u64));
 		chunk_offsets_malloced = false;
 	} else {
-		chunk_offsets = malloc(num_alloc_chunk_entries * sizeof(u64));
+		chunk_offsets = MALLOC(num_alloc_chunk_entries * sizeof(u64));
 		if (!chunk_offsets) {
 			ERROR("Failed to allocate chunk table "
 			      "with %"PRIu64" entries", num_alloc_chunk_entries);
@@ -217,40 +237,38 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 		chunk_offsets[0] = 0;
 
 	/* Calculate the index of the first needed entry in the chunk table.  */
-	u64 start_table_idx = (start_chunk == 0) ? 0 : start_chunk - 1;
+	const u64 start_table_idx = (start_chunk == 0) ? 0 : start_chunk - 1;
 
 	/* Calculate the number of entries that need to be read from the chunk
 	 * table.  */
-	u64 num_needed_chunk_entries = (start_chunk == 0) ?
+	const u64 num_needed_chunk_entries = (start_chunk == 0) ?
 				num_alloc_chunk_entries - 1 : num_alloc_chunk_entries;
 
 	/* Calculate the number of bytes of data that need to be read from the
 	 * chunk table.  */
-	size_t chunk_table_needed_size =
+	const size_t chunk_table_needed_size =
 				num_needed_chunk_entries * chunk_entry_size;
 	if ((u64)chunk_table_needed_size !=
 	    num_needed_chunk_entries * chunk_entry_size)
 	{
 		ERROR("Compressed read request too large to fit into memory!");
 		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_chunk_offsets;
+		goto out_free_memory;
 	}
 
 	/* Calculate the byte offset, in the WIM file, of the first chunk table
 	 * entry to read.  Take into account that if the WIM file is in the
 	 * special "pipable" format, then the chunk table is at the end of the
 	 * resource, not the beginning.  */
-	u64 file_offset_of_needed_chunk_entries =
-			lte->resource_entry.offset + (start_table_idx *
-						      chunk_entry_size);
-	if (lte->is_pipable)
-		file_offset_of_needed_chunk_entries += lte->resource_entry.size -
-						       chunk_table_size;
+	const u64 file_offset_of_needed_chunk_entries =
+		lte->resource_entry.offset
+		+ (start_table_idx * chunk_entry_size)
+		+ (lte->is_pipable ? (lte->resource_entry.size - chunk_table_size) : 0);
 
 	/* Read the needed chunk table entries into the end of the chunk_offsets
 	 * buffer.  */
-	void *chunk_tab_data = (u8*)&chunk_offsets[num_alloc_chunk_entries] -
-				chunk_table_needed_size;
+	void * const chunk_tab_data = (u8*)&chunk_offsets[num_alloc_chunk_entries] -
+				      chunk_table_needed_size;
 	ret = full_pread(in_fd, chunk_tab_data, chunk_table_needed_size,
 			 file_offset_of_needed_chunk_entries);
 	if (ret)
@@ -266,11 +284,8 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 	{
 		typedef le64 __attribute__((may_alias)) aliased_le64_t;
 		typedef le32 __attribute__((may_alias)) aliased_le32_t;
-		u64 *chunk_offsets_p = chunk_offsets;
+		u64 * const chunk_offsets_p = chunk_offsets + (start_chunk == 0);
 		u64 i;
-
-		if (start_chunk == 0)
-			chunk_offsets_p++;
 
 		if (chunk_entry_size == 4) {
 			aliased_le32_t *raw_entries = (aliased_le32_t*)chunk_tab_data;
@@ -283,32 +298,74 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 		}
 	}
 
-	/* Calculate file offset of the first chunk that needs to be read.  N.B.
-	 * if the resource is pipable, the entries in the chunk table do *not*
-	 * include the chunk headers.  */
+	/* Calculate file offset of the first chunk that needs to be read.
+	 * Note: if the resource is pipable, the entries in the chunk table do
+	 * *not* include the chunk headers.  */
 	u64 cur_read_offset = lte->resource_entry.offset + chunk_offsets[0];
 	if (!lte->is_pipable)
 		cur_read_offset += chunk_table_size;
 	else
-		cur_read_offset += start_chunk *
-				   sizeof(struct pwm_chunk_hdr);
+		cur_read_offset += start_chunk * sizeof(struct pwm_chunk_hdr);
 
 	/* If using a callback function, allocate a temporary buffer that will
 	 * be used to pass data to it.  If writing directly to a buffer instead,
 	 * arrange to write data directly into it.  */
-	u8 *out_p;
-	if (cb)
-		out_p = alloca(WIM_CHUNK_SIZE);
-	else
-		out_p = ctx_or_buf;
+	size_t out_buf_size;
+	u8 *out_buf_end, *out_p;
+	if (cb) {
+		out_buf_size = max(in_chunk_size, orig_chunk_size);
+		if (out_buf_size <= stack_max) {
+			out_buf = alloca(out_buf_size);
+		} else {
+			out_buf = MALLOC(out_buf_size);
+			if (out_buf == NULL) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_free_memory;
+			}
+			out_buf_malloced = true;
+		}
+	} else {
+		out_buf_size = size;
+		out_buf = ctx_or_buf;
+	}
+	out_buf_end = out_buf + out_buf_size;
+	out_p = out_buf;
 
 	/* Unless the raw compressed data was requested, allocate a temporary
 	 * buffer for reading compressed chunks, each of which can be at most
-	 * WIM_CHUNK_SIZE - 1 bytes.  This excludes compressed chunks that are a
-	 * full WIM_CHUNK_SIZE bytes, which are handled separately.  */
-	void *compressed_buf;
-	if (!(flags & WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS))
-		compressed_buf = alloca(WIM_CHUNK_SIZE - 1);
+	 * orig_chunk_size - 1 bytes.  This excludes compressed chunks that are
+	 * a full orig_chunk_size bytes, which are actually stored uncompressed.
+	 */
+	if (!(flags & WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS)) {
+		if (orig_chunk_size - 1 <= stack_max) {
+			compressed_buf = alloca(orig_chunk_size - 1);
+		} else {
+			compressed_buf = MALLOC(orig_chunk_size - 1);
+			if (compressed_buf == NULL) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_free_memory;
+			}
+			compressed_buf_malloced = true;
+		}
+	}
+
+	/* Allocate yet another temporary buffer, this one for reading partial
+	 * chunks.  */
+	if (start_offset_in_chunk != 0 ||
+	    (end_offset_in_chunk != orig_chunk_size - 1 &&
+	     offset + size != wim_resource_size(lte)))
+	{
+		if (orig_chunk_size <= stack_max) {
+			tmp_buf = alloca(orig_chunk_size);
+		} else {
+			tmp_buf = MALLOC(orig_chunk_size);
+			if (tmp_buf == NULL) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_free_memory;
+			}
+			tmp_buf_malloced = true;
+		}
+	}
 
 	/* Read, and possibly decompress, each needed chunk, either writing the
 	 * data directly into the @ctx_or_buf buffer or passing it to the @cb
@@ -321,15 +378,15 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 
 		/* Calculate the sizes of the compressed chunk and of the
 		 * uncompressed chunk.  */
-		unsigned compressed_chunk_size;
-		unsigned uncompressed_chunk_size;
+		u32 compressed_chunk_size;
+		u32 uncompressed_chunk_size;
 		if (i != num_chunks - 1) {
 			/* Not the last chunk.  Compressed size is given by
 			 * difference of chunk table entries; uncompressed size
-			 * is always 32768 bytes.  */
+			 * is always the WIM chunk size.  */
 			compressed_chunk_size = chunk_offsets[i + 1 - start_chunk] -
 						chunk_offsets[i - start_chunk];
-			uncompressed_chunk_size = WIM_CHUNK_SIZE;
+			uncompressed_chunk_size = orig_chunk_size;
 		} else {
 			/* Last chunk.  Compressed size is the remaining size in
 			 * the compressed resource; uncompressed size is the
@@ -341,18 +398,18 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 				compressed_chunk_size -= num_chunks *
 							 sizeof(struct pwm_chunk_hdr);
 
-			if (wim_resource_size(lte) % WIM_CHUNK_SIZE == 0)
-				uncompressed_chunk_size = WIM_CHUNK_SIZE;
+			if ((wim_resource_size(lte) & (orig_chunk_size - 1)) == 0)
+				uncompressed_chunk_size = orig_chunk_size;
 			else
-				uncompressed_chunk_size = wim_resource_size(lte) %
-							  WIM_CHUNK_SIZE;
+				uncompressed_chunk_size = wim_resource_size(lte) &
+							  (orig_chunk_size - 1);
 		}
 
 		/* Calculate how much of this chunk needs to be read.  */
 
-		unsigned partial_chunk_size;
-		u64 start_offset = 0;
-		u64 end_offset = WIM_CHUNK_SIZE - 1;
+		u32 partial_chunk_size;
+		u32 start_offset = 0;
+		u32 end_offset = orig_chunk_size - 1;
 
 		if (flags & WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS) {
 			partial_chunk_size = compressed_chunk_size;
@@ -371,13 +428,14 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 		{
 			/* Chunk stored uncompressed, or reading raw chunk data.  */
 			ret = full_pread(in_fd,
-					 cb ? out_p + start_offset : out_p,
+					 out_p,
 					 partial_chunk_size,
 					 cur_read_offset + start_offset);
 			if (ret)
 				goto read_error;
 		} else {
 			/* Compressed chunk and not doing raw read.  */
+			u8 *target;
 
 			/* Read the compressed data into compressed_buf.  */
 			ret = full_pread(in_fd,
@@ -387,64 +445,72 @@ read_compressed_resource(const struct wim_lookup_table_entry *lte,
 			if (ret)
 				goto read_error;
 
-			/* For partial chunks and when writing directly to a
-			 * buffer, we must buffer the uncompressed data because
-			 * we don't need all of it.  */
-			if (partial_chunk_size != uncompressed_chunk_size &&
-			    cb == NULL)
-			{
-				u8 uncompressed_buf[uncompressed_chunk_size];
+			/* For partial chunks we must buffer the uncompressed
+			 * data because we don't need all of it.  */
+			if (partial_chunk_size == uncompressed_chunk_size)
+				target = out_p;
+			else
+				target = tmp_buf;
 
-				ret = (*decompress)(compressed_buf,
-						    compressed_chunk_size,
-						    uncompressed_buf,
-						    uncompressed_chunk_size);
-				if (ret) {
-					ERROR("Failed to decompress data.");
-					ret = WIMLIB_ERR_DECOMPRESSION;
-					errno = EINVAL;
-					goto out_free_chunk_offsets;
-				}
-				memcpy(out_p, uncompressed_buf + start_offset,
-				       partial_chunk_size);
-			} else {
-				ret = (*decompress)(compressed_buf,
-						    compressed_chunk_size,
-						    out_p,
-						    uncompressed_chunk_size);
-				if (ret) {
-					ERROR("Failed to decompress data.");
-					ret = WIMLIB_ERR_DECOMPRESSION;
-					errno = EINVAL;
-					goto out_free_chunk_offsets;
-				}
+			/* Decompress the chunk.  */
+			ret = (*decompress)(compressed_buf,
+					    compressed_chunk_size,
+					    target,
+					    uncompressed_chunk_size);
+			if (ret) {
+				ERROR("Failed to decompress data.");
+				ret = WIMLIB_ERR_DECOMPRESSION;
+				errno = EINVAL;
+				goto out_free_memory;
 			}
+			if (partial_chunk_size != uncompressed_chunk_size)
+				memcpy(out_p, tmp_buf + start_offset,
+				       partial_chunk_size);
 		}
+
+		out_p += partial_chunk_size;
+
 		if (cb) {
 			/* Feed the data to the callback function.  */
-			ret = cb(out_p + start_offset,
-				 partial_chunk_size, ctx_or_buf);
-			if (ret)
-				goto out_free_chunk_offsets;
-		} else {
-			/* No callback function provided; we are writing
-			 * directly to a buffer.  Advance the pointer into this
-			 * buffer by the number of uncompressed bytes that were
-			 * written.  */
-			out_p += partial_chunk_size;
+			wimlib_assert(offset == 0);
+
+			if (flags & WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS) {
+				ret = cb(out_buf, out_p - out_buf, ctx_or_buf);
+				if (ret)
+					goto out_free_memory;
+				out_p = out_buf;
+
+			} else if (i == end_chunk || out_p == out_buf_end) {
+				size_t bytes_sent;
+				const u8 *p;
+
+				for (p = out_buf; p != out_p; p += bytes_sent) {
+					bytes_sent = min(in_chunk_size, out_p - p);
+					ret = cb(p, bytes_sent, ctx_or_buf);
+					if (ret)
+						goto out_free_memory;
+				}
+				out_p = out_buf;
+			}
 		}
 		cur_read_offset += compressed_chunk_size;
 	}
 
 	ret = 0;
-out_free_chunk_offsets:
+out_free_memory:
 	if (chunk_offsets_malloced)
 		FREE(chunk_offsets);
+	if (out_buf_malloced)
+		FREE(out_buf);
+	if (compressed_buf_malloced)
+		FREE(compressed_buf);
+	if (tmp_buf_malloced)
+		FREE(tmp_buf);
 	return ret;
 
 read_error:
 	ERROR_WITH_ERRNO("Error reading compressed file resource");
-	goto out_free_chunk_offsets;
+	goto out_free_memory;
 }
 
 /* Skip over the chunk table at the end of pipable, compressed resource being
@@ -473,13 +539,26 @@ skip_chunk_table(const struct wim_lookup_table_entry *lte,
 static int
 read_pipable_resource(const struct wim_lookup_table_entry *lte,
 		      u64 size, consume_data_callback_t cb,
-		      void *ctx_or_buf, int flags, u64 offset)
+		      u32 in_chunk_size, void *ctx_or_buf,
+		      int flags, u64 offset)
 {
 	struct filedes *in_fd;
 	decompress_func_t decompress;
 	int ret;
-	u8 chunk[WIM_CHUNK_SIZE];
-	u8 cchunk[WIM_CHUNK_SIZE - 1];
+	const u32 orig_chunk_size = wim_resource_chunk_size(lte);
+	u8 cchunk[orig_chunk_size - 1];
+
+	size_t out_buf_size;
+	u8 *out_buf, *out_buf_end, *out_p;
+	if (cb) {
+		out_buf_size = max(in_chunk_size, orig_chunk_size);
+		out_buf = alloca(out_buf_size);
+	} else {
+		out_buf_size = size;
+		out_buf = ctx_or_buf;
+	}
+	out_buf_end = out_buf + out_buf_size;
+	out_p = out_buf;
 
 	/* Get pointers to appropriate decompression function and the input file
 	 * descriptor.  */
@@ -495,15 +574,13 @@ read_pipable_resource(const struct wim_lookup_table_entry *lte,
 	wimlib_assert(size == wim_resource_size(lte));
 	wimlib_assert(in_fd->offset == lte->resource_entry.offset);
 
-	for (offset = 0; offset < size; offset += WIM_CHUNK_SIZE) {
+	u32 chunk_usize;
+	for (offset = 0; offset < size; offset += chunk_usize) {
 		struct pwm_chunk_hdr chunk_hdr;
-		u32 chunk_size;
-		u32 cchunk_size;
-		u8 *res_chunk;
-		u32 res_chunk_size;
+		u32 chunk_csize;
 
 		/* Calculate uncompressed size of next chunk.  */
-		chunk_size = min(WIM_CHUNK_SIZE, size - offset);
+		chunk_usize = min(orig_chunk_size, size - offset);
 
 		/* Read the compressed size of the next chunk from the chunk
 		 * header.  */
@@ -511,16 +588,16 @@ read_pipable_resource(const struct wim_lookup_table_entry *lte,
 		if (ret)
 			goto read_error;
 
-		cchunk_size = le32_to_cpu(chunk_hdr.compressed_size);
+		chunk_csize = le32_to_cpu(chunk_hdr.compressed_size);
 
-		if (cchunk_size > WIM_CHUNK_SIZE) {
+		if (chunk_csize > orig_chunk_size) {
 			errno = EINVAL;
 			ret = WIMLIB_ERR_INVALID_PIPABLE_WIM;
 			goto invalid;
 		}
 
 		/* Read chunk data.  */
-		ret = full_read(in_fd, cchunk, cchunk_size);
+		ret = full_read(in_fd, cchunk, chunk_csize);
 		if (ret)
 			goto read_error;
 
@@ -530,29 +607,34 @@ read_pipable_resource(const struct wim_lookup_table_entry *lte,
 		/* Decompress chunk if needed.  Uncompressed size same
 		 * as compressed size means the chunk is uncompressed.
 		 */
-		res_chunk_size = chunk_size;
-		if (cchunk_size == chunk_size) {
-			res_chunk = cchunk;
+		if (chunk_csize == chunk_usize) {
+			memcpy(out_p, cchunk, chunk_usize);
 		} else {
-			ret = (*decompress)(cchunk, cchunk_size,
-					    chunk, chunk_size);
+			ret = (*decompress)(cchunk, chunk_csize,
+					    out_p, chunk_usize);
 			if (ret) {
 				errno = EINVAL;
 				ret = WIMLIB_ERR_DECOMPRESSION;
 				goto invalid;
 			}
-			res_chunk = chunk;
 		}
+		out_p += chunk_usize;
 
 		/* Feed the uncompressed data into the callback function or copy
 		 * it into the provided buffer.  */
-		if (cb) {
-			ret = cb(res_chunk, res_chunk_size, ctx_or_buf);
-			if (ret)
-				return ret;
-		} else {
-			ctx_or_buf = mempcpy(ctx_or_buf, res_chunk,
-					     res_chunk_size);
+		if (cb && (out_p == out_buf_end ||
+			   offset + chunk_usize == size))
+		{
+			size_t bytes_sent;
+			const u8 *p;
+
+			for (p = out_buf; p != out_p; p += bytes_sent) {
+				bytes_sent = min(in_chunk_size, out_p - p);
+				ret = cb(p, bytes_sent, ctx_or_buf);
+				if (ret)
+					return ret;
+			}
+			out_p = out_buf;
 		}
 	}
 
@@ -631,6 +713,7 @@ invalid:
 int
 read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 			  u64 size, consume_data_callback_t cb,
+			  u32 in_chunk_size,
 			  void *ctx_or_buf, int flags, u64 offset)
 {
 	struct filedes *in_fd;
@@ -639,6 +722,13 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 	/* Make sure the resource is actually located in a WIM file and is not
 	 * somewhere else.  */
 	wimlib_assert(lte->resource_location == RESOURCE_IN_WIM);
+
+	/* If a callback was specified, in_chunk_size must be a power of 2 (and
+	 * not 0).  */
+	wimlib_assert(cb == NULL || is_power_of_2(in_chunk_size));
+
+	/* If a callback was specified, offset must be zero.  */
+	wimlib_assert(cb == NULL || offset == 0);
 
 	/* Retrieve input file descriptor for the WIM file.  */
 	in_fd = &lte->wim->in_fd;
@@ -678,10 +768,9 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 			}
 		} else if (cb) {
 			/* Send data to callback function */
-			u8 buf[min(WIM_CHUNK_SIZE, size)];
+			u8 buf[min(in_chunk_size, size)];
 			while (size) {
-				size_t bytes_to_read = min(WIM_CHUNK_SIZE,
-							   size);
+				size_t bytes_to_read = min(in_chunk_size, size);
 				ret = full_pread(in_fd, buf, bytes_to_read,
 						 offset);
 				if (ret)
@@ -702,11 +791,13 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 	} else if (lte->is_pipable && !filedes_is_seekable(in_fd)) {
 		/* Reading compressed, pipable resource from pipe.  */
 		ret = read_pipable_resource(lte, size, cb,
+					    in_chunk_size,
 					    ctx_or_buf, flags, offset);
 	} else {
 		/* Reading compressed, possibly pipable resource from seekable
 		 * file.  */
 		ret = read_compressed_resource(lte, size, cb,
+					       in_chunk_size,
 					       ctx_or_buf, flags, offset);
 	}
 	goto out;
@@ -722,17 +813,19 @@ int
 read_partial_wim_resource_into_buf(const struct wim_lookup_table_entry *lte,
 				   size_t size, u64 offset, void *buf)
 {
-	return read_partial_wim_resource(lte, size, NULL, buf, 0, offset);
+	return read_partial_wim_resource(lte, size, NULL, 0, buf, 0, offset);
 }
 
 static int
 read_wim_resource_prefix(const struct wim_lookup_table_entry *lte,
 			 u64 size,
 			 consume_data_callback_t cb,
+			 u32 in_chunk_size,
 			 void *ctx_or_buf,
 			 int flags)
 {
-	return read_partial_wim_resource(lte, size, cb, ctx_or_buf, flags, 0);
+	return read_partial_wim_resource(lte, size, cb, in_chunk_size,
+					 ctx_or_buf, flags, 0);
 }
 
 
@@ -741,6 +834,7 @@ static int
 read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte,
 			 u64 size,
 			 consume_data_callback_t cb,
+			 u32 in_chunk_size,
 			 void *ctx_or_buf,
 			 int _ignored_flags)
 {
@@ -748,6 +842,9 @@ read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte,
 	int ret;
 	struct filedes fd;
 	int raw_fd;
+	u8 *out_buf;
+	bool out_buf_malloced;
+	const size_t stack_max = 32768;
 
 	DEBUG("Reading %"PRIu64" bytes from \"%"TS"\"",
 	      size, lte->file_on_disk);
@@ -758,16 +855,27 @@ read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte,
 		return WIMLIB_ERR_OPEN;
 	}
 	filedes_init(&fd, raw_fd);
+	out_buf_malloced = false;
 	if (cb) {
 		/* Send data to callback function */
-		u8 buf[min(WIM_CHUNK_SIZE, size)];
+		if (in_chunk_size <= stack_max) {
+			out_buf = alloca(in_chunk_size);
+		} else {
+			out_buf = MALLOC(in_chunk_size);
+			if (out_buf == NULL) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_close;
+			}
+			out_buf_malloced = true;
+		}
+
 		size_t bytes_to_read;
 		while (size) {
-			bytes_to_read = min(WIM_CHUNK_SIZE, size);
-			ret = full_read(&fd, buf, bytes_to_read);
+			bytes_to_read = min(in_chunk_size, size);
+			ret = full_read(&fd, out_buf, bytes_to_read);
 			if (ret)
 				goto read_error;
-			ret = cb(buf, bytes_to_read, ctx_or_buf);
+			ret = cb(out_buf, bytes_to_read, ctx_or_buf);
 			if (ret)
 				goto out_close;
 			size -= bytes_to_read;
@@ -785,6 +893,8 @@ read_error:
 	ERROR_WITH_ERRNO("Error reading \"%"TS"\"", filename);
 out_close:
 	filedes_close(&fd);
+	if (out_buf_malloced)
+		FREE(out_buf);
 	return ret;
 }
 #endif /* !__WIN32__ */
@@ -792,22 +902,23 @@ out_close:
 static int
 read_buffer_prefix(const struct wim_lookup_table_entry *lte,
 		   u64 size, consume_data_callback_t cb,
+		   u32 in_chunk_size,
 		   void *ctx_or_buf, int _ignored_flags)
 {
-	const void *inbuf = lte->attached_buffer;
-	int ret;
 
 	if (cb) {
-		while (size) {
-			size_t chunk_size = min(WIM_CHUNK_SIZE, size);
-			ret = cb(inbuf, chunk_size, ctx_or_buf);
+		int ret;
+		u32 chunk_size;
+
+		for (u64 offset = 0; offset < size; offset += chunk_size) {
+			chunk_size = min(in_chunk_size, size - offset);
+			ret = cb((const u8*)lte->attached_buffer + offset,
+				 chunk_size, ctx_or_buf);
 			if (ret)
 				return ret;
-			size -= chunk_size;
-			inbuf += chunk_size;
 		}
 	} else {
-		memcpy(ctx_or_buf, inbuf, size);
+		memcpy(ctx_or_buf, lte->attached_buffer, size);
 	}
 	return 0;
 }
@@ -815,6 +926,7 @@ read_buffer_prefix(const struct wim_lookup_table_entry *lte,
 typedef int (*read_resource_prefix_handler_t)(const struct wim_lookup_table_entry *lte,
 					      u64 size,
 					      consume_data_callback_t cb,
+					      u32 in_chunk_size,
 					      void *ctx_or_buf,
 					      int flags);
 
@@ -837,8 +949,8 @@ typedef int (*read_resource_prefix_handler_t)(const struct wim_lookup_table_entr
  */
 int
 read_resource_prefix(const struct wim_lookup_table_entry *lte,
-		     u64 size, consume_data_callback_t cb, void *ctx_or_buf,
-		     int flags)
+		     u64 size, consume_data_callback_t cb, u32 in_chunk_size,
+		     void *ctx_or_buf, int flags)
 {
 	static const read_resource_prefix_handler_t handlers[] = {
 		[RESOURCE_IN_WIM]             = read_wim_resource_prefix,
@@ -860,14 +972,15 @@ read_resource_prefix(const struct wim_lookup_table_entry *lte,
 	};
 	wimlib_assert(lte->resource_location < ARRAY_LEN(handlers)
 		      && handlers[lte->resource_location] != NULL);
-	return handlers[lte->resource_location](lte, size, cb, ctx_or_buf, flags);
+	wimlib_assert(cb == NULL || in_chunk_size > 0);
+	return handlers[lte->resource_location](lte, size, cb, in_chunk_size, ctx_or_buf, flags);
 }
 
 int
 read_full_resource_into_buf(const struct wim_lookup_table_entry *lte,
 			    void *buf)
 {
-	return read_resource_prefix(lte, wim_resource_size(lte), NULL, buf, 0);
+	return read_resource_prefix(lte, wim_resource_size(lte), NULL, 0, buf, 0);
 }
 
 int
@@ -957,6 +1070,7 @@ extract_wim_resource(const struct wim_lookup_table_entry *lte,
 		sha1_init(&ctx.sha_ctx);
 		ret = read_resource_prefix(lte, size,
 					   extract_chunk_sha1_wrapper,
+					   wim_resource_chunk_size(lte),
 					   &ctx, 0);
 		if (ret == 0) {
 			u8 hash[SHA1_HASH_SIZE];
@@ -975,6 +1089,7 @@ extract_wim_resource(const struct wim_lookup_table_entry *lte,
 	} else {
 		/* Don't do SHA1 */
 		ret = read_resource_prefix(lte, size, extract_chunk,
+					   wim_resource_chunk_size(lte),
 					   extract_chunk_arg, 0);
 	}
 	return ret;
@@ -1014,7 +1129,8 @@ sha1_resource(struct wim_lookup_table_entry *lte)
 
 	sha1_init(&sha_ctx);
 	ret = read_resource_prefix(lte, wim_resource_size(lte),
-				   sha1_chunk, &sha_ctx, 0);
+				   sha1_chunk, wim_resource_chunk_size(lte),
+				   &sha_ctx, 0);
 	if (ret == 0)
 		sha1_final(lte->hash, &sha_ctx);
 	return ret;

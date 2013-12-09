@@ -1382,8 +1382,11 @@ read_error:
 static int
 skip_pwm_stream(struct wim_lookup_table_entry *lte)
 {
-	return read_partial_wim_resource(lte, wim_resource_size(lte),
-					 NULL, NULL,
+	return read_partial_wim_resource(lte,
+					 wim_resource_size(lte),
+					 NULL,
+					 wim_resource_chunk_size(lte),
+					 NULL,
 					 WIMLIB_READ_RESOURCE_FLAG_SEEK_ONLY,
 					 0);
 }

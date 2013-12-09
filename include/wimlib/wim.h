@@ -76,6 +76,15 @@ struct WIMStruct {
 	 * wimlib_set_output_compression_type(); otherwise is the same as
 	 * compression_type.  */
 	u8 out_compression_type : 2;
+
+	/* Uncompressed size of compressed chunks in this WIM (cached from
+	 * header).  */
+	u32 chunk_size;
+
+	/* Overridden chunk size for wimlib_overwrite() or wimlib_write().  Can
+	 * be changed by wimlib_set_output_chunk_size(); otherwise is the same
+	 * as chunk_size.  */
+	u32 out_chunk_size;
 };
 
 static inline bool wim_is_pipable(const WIMStruct *wim)
@@ -100,7 +109,7 @@ extern u32
 get_wim_hdr_cflags(int ctype);
 
 extern int
-init_wim_header(struct wim_header *hdr, int ctype);
+init_wim_header(struct wim_header *hdr, int ctype, u32 chunk_size);
 
 extern int
 read_wim_header(const tchar *filename, struct filedes *in_fd,

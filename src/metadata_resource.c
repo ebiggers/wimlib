@@ -297,6 +297,7 @@ write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags)
 	ret = write_wim_resource_from_buffer(buf, len, WIM_RESHDR_FLAG_METADATA,
 					     &wim->out_fd,
 					     wim->out_compression_type,
+					     wim->out_chunk_size,
 					     &imd->metadata_lte->output_resource_entry,
 					     imd->metadata_lte->hash,
 					     write_resource_flags,

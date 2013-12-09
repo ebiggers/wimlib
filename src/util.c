@@ -303,8 +303,7 @@ static const tchar *error_strings[] = {
 	[WIMLIB_ERR_INVALID_CAPTURE_CONFIG]
 		= T("The capture configuration string was invalid"),
 	[WIMLIB_ERR_INVALID_CHUNK_SIZE]
-		= T("The WIM is compressed but does not have a chunk "
-			"size of 32768"),
+		= T("The WIM chunk size was invalid"),
 	[WIMLIB_ERR_INVALID_COMPRESSION_TYPE]
 		= T("The WIM is compressed, but is not marked as having LZX or "
 			"XPRESS compression"),

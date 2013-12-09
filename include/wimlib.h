@@ -3359,15 +3359,39 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
 /**
  * @ingroup G_writing_and_overwriting_wims
  *
- * Set the compression type of a WIM to use in subsequent calls to
+ * Set the compression chunk size of a WIM to use in subsequent calls to
  * wimlib_write() or wimlib_overwrite().
  *
+ * @param wim
+ *	::WIMStruct for a WIM.
+ * @param out_chunk_size
+ *	The chunk size (in bytes) to set.  The valid chunk sizes are dependent
+ *	on the compression format.  The XPRESS compression format supports chunk
+ *	sizes that are powers of 2 with exponents between 15 and 26 inclusively,
+ *	whereas the LZX compression format currently only supports a chunk size
+ *	of 32768.
+ *
  * @return 0 on success; nonzero on error.
+ *
+ * @retval ::WIMLIB_ERR_INVALID_CHUNK_SIZE
+ *	@p ctype is not a supported chunk size.
+ */
+extern int
+wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size);
+
+/**
+ * @ingroup G_writing_and_overwriting_wims
+ *
+ * Set the compression type of a WIM to use in subsequent calls to
+ * wimlib_write() or wimlib_overwrite().
  *
  * @param wim
  *	::WIMStruct for a WIM.
  * @param ctype
- *	The compression type to set (one of ::wimlib_compression_type).
+ *	The compression type to set (one of ::wimlib_compression_type).  If this
+ *	compression type is incompatible with the current output chunk size
+ *	(either the default or as set with wimlib_set_output_chunk_size()), the
+ *	output chunk size is reset to the default for that compression type.
  *
  * @return 0 on success; nonzero on error.
  *
@@ -3871,8 +3895,28 @@ wimlib_write_to_fd(WIMStruct *wim,
 /**
  * @ingroup G_compression
  *
- * This function is equivalent to wimlib_lzx_compress(), but instead compresses
- * the data using "XPRESS" compression.
+ * Compress a chunk of data using XPRESS compression.
+ *
+ * This function is exported for convenience only and should only be used by
+ * library clients looking to make use of wimlib's compression code for another
+ * purpose.
+ *
+ * As of wimlib v1.5.4, this function can be used with @p chunk_size greater
+ * than 32768 bytes and is only limited by available memory.  However, the
+ * XPRESS format itself still caps match offsets to 65535, so if a larger chunk
+ * size is chosen, then the matching will effectively occur in a sliding window
+ * over it.
+ *
+ * @param chunk
+ * 	Uncompressed data of the chunk.
+ * @param chunk_size
+ * 	Size of the uncompressed chunk, in bytes.
+ * @param out
+ * 	Pointer to output buffer of size at least (@p chunk_size - 1) bytes.
+ *
+ * @return
+ * 	The size of the compressed data written to @p out in bytes, or 0 if the
+ * 	data could not be compressed to (@p chunk_size - 1) bytes or fewer.
  */
 extern unsigned
 wimlib_xpress_compress(const void *chunk, unsigned chunk_size, void *out);
@@ -3880,8 +3924,26 @@ wimlib_xpress_compress(const void *chunk, unsigned chunk_size, void *out);
 /**
  * @ingroup G_compression
  *
- * This function is equivalent to wimlib_lzx_decompress(), but instead assumes
- * the data is compressed using "XPRESS" compression.
+ * Decompresses a chunk of XPRESS-compressed data.
+ *
+ * This function is exported for convenience only and should only be used by
+ * library clients looking to make use of wimlib's compression code for another
+ * purpose.
+ *
+ * @param compressed_data
+ * 	Pointer to the compressed data.
+ *
+ * @param compressed_len
+ * 	Length of the compressed data, in bytes.
+ *
+ * @param uncompressed_data
+ * 	Pointer to the buffer into which to write the uncompressed data.
+ *
+ * @param uncompressed_len
+ * 	Length of the uncompressed data.
+ *
+ * @return
+ * 	0 on success; non-zero on failure.
  */
 extern int
 wimlib_xpress_decompress(const void *compressed_data, unsigned compressed_len,

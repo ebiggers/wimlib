@@ -68,6 +68,30 @@
 #  include <sys/uio.h> /* for `struct iovec' */
 #endif
 
+/* Return true if the specified resource is compressed and the compressed data
+ * can be reused with the specified output parameters.  */
+static bool
+can_raw_copy(const struct wim_lookup_table_entry *lte,
+	     int write_resource_flags, int out_ctype, u32 out_chunk_size)
+{
+	return (out_ctype == wim_resource_compression_type(lte)
+		&& out_chunk_size == wim_resource_chunk_size(lte)
+		&& out_ctype != WIMLIB_COMPRESSION_TYPE_NONE);
+}
+
+
+/* Return true if the specified resource must be recompressed when the specified
+ * output parameters are used.  */
+static bool
+must_compress_stream(const struct wim_lookup_table_entry *lte,
+		     int write_resource_flags, int out_ctype, u32 out_chunk_size)
+{
+	return (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE
+	        && ((write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS)
+		    || !can_raw_copy(lte, write_resource_flags,
+				     out_ctype, out_chunk_size)));
+}
+
 static unsigned
 compress_chunk(const void * uncompressed_data,
 	       unsigned uncompressed_len,
@@ -115,6 +139,7 @@ struct chunk_table {
 static int
 begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 			     struct filedes *out_fd,
+			     u32 out_chunk_size,
 			     struct chunk_table **chunk_tab_ret,
 			     int resource_flags)
 {
@@ -126,7 +151,7 @@ begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 	int ret;
 
 	size = wim_resource_size(lte);
-	num_chunks = wim_resource_chunks(lte);
+	num_chunks = DIV_ROUND_UP(size, out_chunk_size);
 	bytes_per_chunk_entry = (size > (1ULL << 32)) ? 8 : 4;
 	alloc_size = sizeof(struct chunk_table) + num_chunks * sizeof(u64);
 	chunk_tab = CALLOC(1, alloc_size);
@@ -273,6 +298,7 @@ finalize_and_check_sha1(SHA_CTX *sha_ctx, struct wim_lookup_table_entry *lte)
 
 struct write_resource_ctx {
 	int out_ctype;
+	u32 out_chunk_size;
 	struct wimlib_lzx_context *comp_ctx;
 	struct chunk_table *chunk_tab;
 	struct filedes *out_fd;
@@ -288,6 +314,10 @@ write_resource_cb(const void *chunk, size_t chunk_size, void *_ctx)
 	const void *out_chunk;
 	unsigned out_chunk_size;
 	int ret;
+	void *compressed_chunk = NULL;
+	unsigned compressed_size;
+	bool compressed_chunk_malloced = false;
+	size_t stack_max = 32768;
 
 	if (ctx->doing_sha)
 		sha1_update(&ctx->sha_ctx, chunk, chunk_size);
@@ -295,11 +325,16 @@ write_resource_cb(const void *chunk, size_t chunk_size, void *_ctx)
 	out_chunk = chunk;
 	out_chunk_size = chunk_size;
 	if (ctx->out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
-		void *compressed_chunk;
-		unsigned compressed_size;
 
 		/* Compress the chunk.  */
-		compressed_chunk = alloca(chunk_size);
+		if (chunk_size <= stack_max) {
+			compressed_chunk = alloca(chunk_size);
+		} else {
+			compressed_chunk = MALLOC(chunk_size);
+			if (compressed_chunk == NULL)
+				return WIMLIB_ERR_NOMEM;
+			compressed_chunk_malloced = true;
+		}
 
 		compressed_size = compress_chunk(chunk, chunk_size,
 						 compressed_chunk,
@@ -335,11 +370,15 @@ write_resource_cb(const void *chunk, size_t chunk_size, void *_ctx)
 	ret = full_write(ctx->out_fd, out_chunk, out_chunk_size);
 	if (ret)
 		goto error;
-	return 0;
+
+out_free_memory:
+	if (compressed_chunk_malloced)
+		FREE(compressed_chunk);
+	return ret;
 
 error:
 	ERROR_WITH_ERRNO("Failed to write WIM resource chunk");
-	return ret;
+	goto out_free_memory;
 }
 
 /*
@@ -381,12 +420,14 @@ error:
 int
 write_wim_resource(struct wim_lookup_table_entry *lte,
 		   struct filedes *out_fd, int out_ctype,
+		   u32 out_chunk_size,
 		   struct resource_entry *out_res_entry,
 		   int resource_flags,
 		   struct wimlib_lzx_context **comp_ctx)
 {
 	struct write_resource_ctx write_ctx;
 	off_t res_start_offset;
+	u32 in_chunk_size;
 	u64 read_size;
 	int ret;
 
@@ -402,11 +443,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	 * desired other than no compression, we can simply copy the compressed
 	 * data without recompressing it.  This also means we must skip
 	 * calculating the SHA1, as we never will see the uncompressed data.  */
-	if (lte->resource_location == RESOURCE_IN_WIM &&
-	    out_ctype == wim_resource_compression_type(lte) &&
-	    out_ctype != WIMLIB_COMPRESSION_TYPE_NONE &&
-	    !(resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS))
-	{
+	if (can_raw_copy(lte, resource_flags, out_ctype, out_chunk_size)) {
 		/* Normally we can request a RAW_FULL read, but if we're reading
 		 * from a pipable resource and writing a non-pipable resource or
 		 * vice versa, then a RAW_CHUNKS read needs to be requested so
@@ -418,22 +455,23 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 			resource_flags |= WIMLIB_READ_RESOURCE_FLAG_RAW_FULL;
 		else
 			resource_flags |= WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS;
-		write_ctx.doing_sha = false;
 		read_size = lte->resource_entry.size;
+		write_ctx.doing_sha = false;
 	} else {
 		write_ctx.doing_sha = true;
 		sha1_init(&write_ctx.sha_ctx);
 		read_size = lte->resource_entry.original_size;
 	}
 
-
 	/* If the output resource is to be compressed, initialize the chunk
 	 * table and set the function to use for chunk compression.  Exceptions:
 	 * no compression function is needed if doing a raw copy; also, no chunk
 	 * table is needed if doing a *full* (not per-chunk) raw copy.  */
 	write_ctx.out_ctype = WIMLIB_COMPRESSION_TYPE_NONE;
+	write_ctx.out_chunk_size = out_chunk_size;
 	write_ctx.chunk_tab = NULL;
 	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
+		wimlib_assert(out_chunk_size > 0);
 		if (!(resource_flags & WIMLIB_READ_RESOURCE_FLAG_RAW)) {
 			write_ctx.out_ctype = out_ctype;
 			if (out_ctype == WIMLIB_COMPRESSION_TYPE_LZX) {
@@ -445,6 +483,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 		}
 		if (!(resource_flags & WIMLIB_READ_RESOURCE_FLAG_RAW_FULL)) {
 			ret = begin_wim_resource_chunk_tab(lte, out_fd,
+							   out_chunk_size,
 							   &write_ctx.chunk_tab,
 							   resource_flags);
 			if (ret)
@@ -469,8 +508,13 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	write_ctx.out_fd = out_fd;
 	write_ctx.resource_flags = resource_flags;
 try_write_again:
+	if (write_ctx.out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
+		in_chunk_size = wim_resource_chunk_size(lte);
+	else
+		in_chunk_size = out_chunk_size;
 	ret = read_resource_prefix(lte, read_size,
-				   write_resource_cb, &write_ctx, resource_flags);
+				   write_resource_cb,
+				   in_chunk_size, &write_ctx, resource_flags);
 	if (ret)
 		goto out_free_chunk_tab;
 
@@ -553,6 +597,7 @@ int
 write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 			       int reshdr_flags, struct filedes *out_fd,
 			       int out_ctype,
+			       u32 out_chunk_size,
 			       struct resource_entry *out_res_entry,
 			       u8 *hash_ret, int write_resource_flags,
 			       struct wimlib_lzx_context **comp_ctx)
@@ -566,6 +611,7 @@ write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 	lte.attached_buffer              = (void*)buf;
 	lte.resource_entry.original_size = buf_size;
 	lte.resource_entry.flags         = reshdr_flags;
+	lte.compression_type		 = WIMLIB_COMPRESSION_TYPE_NONE;
 
 	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
 		sha1_buffer(buf, buf_size, lte.hash);
@@ -574,8 +620,8 @@ write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 		lte.unhashed = 1;
 	}
 
-	ret = write_wim_resource(&lte, out_fd, out_ctype, out_res_entry,
-				 write_resource_flags, comp_ctx);
+	ret = write_wim_resource(&lte, out_fd, out_ctype, out_chunk_size,
+				 out_res_entry, write_resource_flags, comp_ctx);
 	if (ret)
 		return ret;
 	if (hash_ret)
@@ -684,6 +730,7 @@ struct compressor_thread_params {
 
 struct message {
 	struct wim_lookup_table_entry *lte;
+	u32 out_chunk_size;
 	u8 *uncompressed_chunks[MAX_CHUNKS_PER_MSG];
 	u8 *compressed_chunks[MAX_CHUNKS_PER_MSG];
 	unsigned uncompressed_chunk_sizes[MAX_CHUNKS_PER_MSG];
@@ -802,6 +849,7 @@ do_write_streams_progress(struct write_streams_progress_data *progress_data,
 struct serial_write_stream_ctx {
 	struct filedes *out_fd;
 	int out_ctype;
+	u32 out_chunk_size;
 	struct wimlib_lzx_context **comp_ctx;
 	int write_resource_flags;
 };
@@ -811,7 +859,9 @@ serial_write_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 {
 	struct serial_write_stream_ctx *ctx = _ctx;
 	return write_wim_resource(lte, ctx->out_fd,
-				  ctx->out_ctype, &lte->output_resource_entry,
+				  ctx->out_ctype,
+				  ctx->out_chunk_size,
+				  &lte->output_resource_entry,
 				  ctx->write_resource_flags,
 				  ctx->comp_ctx);
 }
@@ -911,6 +961,7 @@ do_write_stream_list_serial(struct list_head *stream_list,
 			    struct wim_lookup_table *lookup_table,
 			    struct filedes *out_fd,
 			    int out_ctype,
+			    u32 out_chunk_size,
 			    struct wimlib_lzx_context **comp_ctx,
 			    int write_resource_flags,
 			    struct write_streams_progress_data *progress_data)
@@ -918,6 +969,7 @@ do_write_stream_list_serial(struct list_head *stream_list,
 	struct serial_write_stream_ctx ctx = {
 		.out_fd = out_fd,
 		.out_ctype = out_ctype,
+		.out_chunk_size = out_chunk_size,
 		.write_resource_flags = write_resource_flags,
 		.comp_ctx = comp_ctx,
 	};
@@ -945,6 +997,7 @@ write_stream_list_serial(struct list_head *stream_list,
 			 struct wim_lookup_table *lookup_table,
 			 struct filedes *out_fd,
 			 int out_ctype,
+			 u32 out_chunk_size,
 			 struct wimlib_lzx_context **comp_ctx,
 			 int write_resource_flags,
 			 struct write_streams_progress_data *progress_data)
@@ -961,6 +1014,7 @@ write_stream_list_serial(struct list_head *stream_list,
 					   lookup_table,
 					   out_fd,
 					   out_ctype,
+					   out_chunk_size,
 					   comp_ctx,
 					   write_resource_flags,
 					   progress_data);
@@ -1011,6 +1065,7 @@ struct main_writer_thread_ctx {
 	struct filedes *out_fd;
 	off_t res_start_offset;
 	int out_ctype;
+	u32 out_chunk_size;
 	struct wimlib_lzx_context **comp_ctx;
 	int write_resource_flags;
 	struct shared_queue *res_to_compress_queue;
@@ -1034,11 +1089,12 @@ struct main_writer_thread_ctx {
 };
 
 static int
-init_message(struct message *msg)
+init_message(struct message *msg, u32 out_chunk_size)
 {
+	msg->out_chunk_size = out_chunk_size;
 	for (size_t i = 0; i < MAX_CHUNKS_PER_MSG; i++) {
-		msg->compressed_chunks[i] = MALLOC(WIM_CHUNK_SIZE);
-		msg->uncompressed_chunks[i] = MALLOC(WIM_CHUNK_SIZE);
+		msg->compressed_chunks[i] = MALLOC(out_chunk_size);
+		msg->uncompressed_chunks[i] = MALLOC(out_chunk_size);
 		if (msg->compressed_chunks[i] == NULL ||
 		    msg->uncompressed_chunks[i] == NULL)
 			return WIMLIB_ERR_NOMEM;
@@ -1066,7 +1122,7 @@ free_messages(struct message *msgs, size_t num_messages)
 }
 
 static struct message *
-allocate_messages(size_t num_messages)
+allocate_messages(size_t num_messages, u32 out_chunk_size)
 {
 	struct message *msgs;
 
@@ -1074,7 +1130,7 @@ allocate_messages(size_t num_messages)
 	if (!msgs)
 		return NULL;
 	for (size_t i = 0; i < num_messages; i++) {
-		if (init_message(&msgs[i])) {
+		if (init_message(&msgs[i], out_chunk_size)) {
 			free_messages(msgs, num_messages);
 			return NULL;
 		}
@@ -1096,7 +1152,7 @@ main_writer_thread_init_ctx(struct main_writer_thread_ctx *ctx)
 {
 	/* Pre-allocate all the buffers that will be needed to do the chunk
 	 * compression. */
-	ctx->msgs = allocate_messages(ctx->num_messages);
+	ctx->msgs = allocate_messages(ctx->num_messages, ctx->out_chunk_size);
 	if (!ctx->msgs)
 		return WIMLIB_ERR_NOMEM;
 
@@ -1182,6 +1238,7 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 			 * it if needed.  */
 			ret = begin_wim_resource_chunk_tab(cur_lte,
 							   ctx->out_fd,
+							   ctx->out_chunk_size,
 							   &ctx->cur_chunk_tab,
 							   ctx->write_resource_flags);
 			if (ret)
@@ -1232,6 +1289,7 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 				ret = write_wim_resource(cur_lte,
 							 ctx->out_fd,
 							 WIMLIB_COMPRESSION_TYPE_NONE,
+							 0,
 							 &cur_lte->output_resource_entry,
 							 ctx->write_resource_flags,
 							 ctx->comp_ctx);
@@ -1273,6 +1331,7 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 								  ctx->lookup_table,
 								  ctx->out_fd,
 								  ctx->out_ctype,
+								  ctx->out_chunk_size,
 								  ctx->comp_ctx,
 								  ctx->write_resource_flags,
 								  ctx->progress_data);
@@ -1372,6 +1431,7 @@ main_writer_thread_finish(void *_ctx)
 					   ctx->lookup_table,
 					   ctx->out_fd,
 					   ctx->out_ctype,
+					   ctx->out_chunk_size,
 					   ctx->comp_ctx,
 					   ctx->write_resource_flags,
 					   ctx->progress_data);
@@ -1389,12 +1449,14 @@ submit_stream_for_compression(struct wim_lookup_table_entry *lte,
 	 * when @lte is already hashed. */
 	sha1_init(&ctx->next_sha_ctx);
 	ctx->next_chunk = 0;
-	ctx->next_num_chunks = wim_resource_chunks(lte);
+	ctx->next_num_chunks = DIV_ROUND_UP(wim_resource_size(lte),
+					    ctx->out_chunk_size);
 	ctx->next_lte = lte;
 	INIT_LIST_HEAD(&lte->msg_list);
 	list_add_tail(&lte->being_compressed_list, &ctx->outstanding_streams);
 	ret = read_resource_prefix(lte, wim_resource_size(lte),
-				   main_writer_thread_cb, ctx, 0);
+				   main_writer_thread_cb,
+				   ctx->out_chunk_size, ctx, 0);
 	if (ret)
 		return ret;
 	wimlib_assert(ctx->next_chunk == ctx->next_num_chunks);
@@ -1408,10 +1470,8 @@ main_thread_process_next_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 	int ret;
 
 	if (wim_resource_size(lte) < 1000 ||
-	    ctx->out_ctype == WIMLIB_COMPRESSION_TYPE_NONE ||
-	    (lte->resource_location == RESOURCE_IN_WIM &&
-	     !(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS) &&
-	     lte->wim->compression_type == ctx->out_ctype))
+	    !must_compress_stream(lte, ctx->write_resource_flags,
+				  ctx->out_ctype, ctx->out_chunk_size))
 	{
 		/* Stream is too small or isn't being compressed.  Process it by
 		 * the main thread when we have a chance.  We can't necessarily
@@ -1443,15 +1503,15 @@ get_default_num_threads(void)
  * create the number of threads requested.
  *
  * High level description of the algorithm for writing compressed streams in
- * parallel:  We perform compression on chunks of size WIM_CHUNK_SIZE bytes
- * rather than on full files.  The currently executing thread becomes the main
- * thread and is entirely in charge of reading the data to compress (which may
- * be in any location understood by the resource code--- such as in an external
- * file being captured, or in another WIM file from which an image is being
- * exported) and actually writing the compressed data to the output file.
- * Additional threads are "compressor threads" and all execute the
- * compressor_thread_proc, where they repeatedly retrieve buffers of data from
- * the main thread, compress them, and hand them back to the main thread.
+ * parallel:  We perform compression on chunks rather than on full files.  The
+ * currently executing thread becomes the main thread and is entirely in charge
+ * of reading the data to compress (which may be in any location understood by
+ * the resource code--- such as in an external file being captured, or in
+ * another WIM file from which an image is being exported) and actually writing
+ * the compressed data to the output file.  Additional threads are "compressor
+ * threads" and all execute the compressor_thread_proc, where they repeatedly
+ * retrieve buffers of data from the main thread, compress them, and hand them
+ * back to the main thread.
  *
  * Certain streams, such as streams that do not need to be compressed (e.g.
  * input compression type same as output compression type) or streams of very
@@ -1468,6 +1528,7 @@ write_stream_list_parallel(struct list_head *stream_list,
 			   struct wim_lookup_table *lookup_table,
 			   struct filedes *out_fd,
 			   int out_ctype,
+			   u32 out_chunk_size,
 			   struct wimlib_lzx_context **comp_ctx,
 			   int write_resource_flags,
 			   struct write_streams_progress_data *progress_data,
@@ -1559,6 +1620,7 @@ write_stream_list_parallel(struct list_head *stream_list,
 	ctx.lookup_table          = lookup_table;
 	ctx.out_fd                = out_fd;
 	ctx.out_ctype             = out_ctype;
+	ctx.out_chunk_size	  = out_chunk_size;
 	ctx.comp_ctx		  = comp_ctx;
 	ctx.res_to_compress_queue = &res_to_compress_queue;
 	ctx.compressed_res_queue  = &compressed_res_queue;
@@ -1612,6 +1674,7 @@ out_serial_quiet:
 					lookup_table,
 					out_fd,
 					out_ctype,
+					out_chunk_size,
 					comp_ctx,
 					write_resource_flags,
 					progress_data);
@@ -1627,6 +1690,7 @@ static int
 write_stream_list(struct list_head *stream_list,
 		  struct wim_lookup_table *lookup_table,
 		  struct filedes *out_fd, int out_ctype,
+		  u32 out_chunk_size,
 		  struct wimlib_lzx_context **comp_ctx,
 		  int write_flags,
 		  unsigned num_threads, wimlib_progress_func_t progress_func)
@@ -1662,12 +1726,9 @@ write_stream_list(struct list_head *stream_list,
 	list_for_each_entry(lte, stream_list, write_streams_list) {
 		num_streams++;
 		total_bytes += wim_resource_size(lte);
-		if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE
-		       && (wim_resource_compression_type(lte) != out_ctype ||
-			   (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS)))
-		{
+		if (must_compress_stream(lte, write_resource_flags,
+					 out_ctype, out_chunk_size))
 			total_compression_bytes += wim_resource_size(lte);
-		}
 		if (lte->resource_location == RESOURCE_IN_WIM) {
 			if (prev_wim_part != lte->wim) {
 				prev_wim_part = lte->wim;
@@ -1697,6 +1758,7 @@ write_stream_list(struct list_head *stream_list,
 						 lookup_table,
 						 out_fd,
 						 out_ctype,
+						 out_chunk_size,
 						 comp_ctx,
 						 write_resource_flags,
 						 &progress_data,
@@ -1707,6 +1769,7 @@ write_stream_list(struct list_head *stream_list,
 					       lookup_table,
 					       out_fd,
 					       out_ctype,
+					       out_chunk_size,
 					       comp_ctx,
 					       write_resource_flags,
 					       &progress_data);
@@ -2030,6 +2093,7 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 				 wim->lookup_table,
 				 &wim->out_fd,
 				 wim->out_compression_type,
+				 wim->out_chunk_size,
 				 &wim->lzx_context,
 				 write_flags,
 				 num_threads,
@@ -2090,6 +2154,7 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 			ret = write_wim_resource(imd->metadata_lte,
 						 &wim->out_fd,
 						 wim->out_compression_type,
+						 wim->out_chunk_size,
 						 &imd->metadata_lte->output_resource_entry,
 						 write_resource_flags,
 						 &wim->lzx_context);
@@ -2447,22 +2512,6 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 	 * finish_write().  */
 }
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_set_output_compression_type(WIMStruct *wim, int ctype)
-{
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_INVALID:
-		break;
-	case WIMLIB_COMPRESSION_TYPE_NONE:
-	case WIMLIB_COMPRESSION_TYPE_LZX:
-	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		wim->out_compression_type = ctype;
-		return 0;
-	}
-	return WIMLIB_ERR_INVALID_PARAM;
-}
-
 /* Write a standalone WIM or split WIM (SWM) part to a new file or to a file
  * descriptor.  */
 int
@@ -2591,6 +2640,9 @@ write_wim_part(WIMStruct *wim,
 	/* Set compression type if different.  */
 	if (wim->compression_type != wim->out_compression_type)
 		wim->hdr.flags = get_wim_hdr_cflags(wim->out_compression_type);
+
+	/* Set chunk size if different.  */
+	wim->hdr.chunk_size = wim->out_chunk_size;
 
 	/* Use GUID if specified; otherwise generate a new one.  */
 	if (guid)
@@ -2944,6 +2996,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 				wim->lookup_table,
 				&wim->out_fd,
 				wim->compression_type,
+				wim->chunk_size,
 				&wim->lzx_context,
 				write_flags,
 				num_threads,
@@ -3066,7 +3119,8 @@ wimlib_overwrite(WIMStruct *wim, int write_flags,
 	    && !(write_flags & (WIMLIB_WRITE_FLAG_REBUILD |
 				WIMLIB_WRITE_FLAG_PIPABLE))
 	    && !(wim_is_pipable(wim))
-	    && wim->compression_type == wim->out_compression_type)
+	    && wim->compression_type == wim->out_compression_type
+	    && wim->chunk_size == wim->out_chunk_size)
 	{
 		ret = overwrite_wim_inplace(wim, write_flags, num_threads,
 					    progress_func);

@@ -2174,6 +2174,7 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 		 * aren't worth choosing when using greedy or lazy parsing.  */
 		.min_match      = 3,
 		.max_match      = LZX_MAX_MATCH_LEN,
+		.max_offset	= 32768,
 		.good_match     = LZX_MAX_MATCH_LEN,
 		.nice_match     = LZX_MAX_MATCH_LEN,
 		.max_chain_len  = LZX_MAX_MATCH_LEN,
@@ -2187,12 +2188,16 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 	record_ctx.matches = ctx->chosen_matches;
 
 	/* Determine series of matches/literals to output.  */
-	lz_analyze_block(ctx->window,
-			 ctx->window_size,
-			 lzx_record_match,
-			 lzx_record_literal,
-			 &record_ctx,
-			 &lzx_lz_params);
+	{
+		input_idx_t prev_tab[ctx->window_size];
+		lz_analyze_block(ctx->window,
+				 ctx->window_size,
+				 lzx_record_match,
+				 lzx_record_literal,
+				 &record_ctx,
+				 &lzx_lz_params,
+				 prev_tab);
+	}
 
 
 	/* Set up block specification.  */

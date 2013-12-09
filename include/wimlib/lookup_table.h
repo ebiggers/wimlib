@@ -298,16 +298,26 @@ wim_resource_size(const struct wim_lookup_table_entry *lte)
 	return lte->resource_entry.original_size;
 }
 
+static inline u32
+wim_resource_chunk_size(const struct wim_lookup_table_entry * lte)
+{
+	if (lte->resource_location == RESOURCE_IN_WIM &&
+	    lte->compression_type != WIMLIB_COMPRESSION_TYPE_NONE)
+		return lte->wim->chunk_size;
+	else
+		return 32768;
+}
+
+
 static inline u64
 wim_resource_chunks(const struct wim_lookup_table_entry *lte)
 {
-	return DIV_ROUND_UP(wim_resource_size(lte), WIM_CHUNK_SIZE);
+	return DIV_ROUND_UP(wim_resource_size(lte), wim_resource_chunk_size(lte));
 }
 
 static inline int
 wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
 {
-	BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
 	return lte->compression_type;
 }
 

@@ -121,6 +121,13 @@ bsr32(u32 n)
 #endif
 }
 
+static inline bool
+is_power_of_2(unsigned long n)
+{
+	return (n != 0 && (n & (n - 1)) == 0);
+
+}
+
 static inline u64
 hash_u64(u64 n)
 {

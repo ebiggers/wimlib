@@ -125,14 +125,8 @@ read_wim_header(const tchar *filename, struct filedes *in_fd,
 	}
 
 	hdr->flags = le32_to_cpu(disk_hdr.wim_flags);
-	if (le32_to_cpu(disk_hdr.chunk_size) != WIM_CHUNK_SIZE &&
-	    (hdr->flags & WIM_HDR_FLAG_COMPRESSION)) {
-		ERROR("\"%"TS"\": Unexpected chunk size of %u! Ask the author to "
-		      "implement support for other chunk sizes.",
-		      filename, le32_to_cpu(disk_hdr.chunk_size));
-		ERROR("(Or it might just be that the WIM header is invalid.)");
-		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
-	}
+
+	hdr->chunk_size = le32_to_cpu(disk_hdr.chunk_size);
 
 	memcpy(hdr->guid, disk_hdr.guid, WIM_GID_LEN);
 
@@ -188,8 +182,10 @@ write_wim_header_at_offset(const struct wim_header *hdr, struct filedes *out_fd,
 	disk_hdr.hdr_size = cpu_to_le32(sizeof(struct wim_header_disk));
 	disk_hdr.wim_version = cpu_to_le32(WIM_VERSION);
 	disk_hdr.wim_flags = cpu_to_le32(hdr->flags);
-	disk_hdr.chunk_size = cpu_to_le32((hdr->flags & WIM_HDR_FLAG_COMPRESSION) ?
-					  	WIM_CHUNK_SIZE : 0);
+	if (hdr->flags & WIM_HDR_FLAG_COMPRESSION)
+		disk_hdr.chunk_size = cpu_to_le32(hdr->chunk_size);
+	else
+		disk_hdr.chunk_size = 0;
 	memcpy(disk_hdr.guid, hdr->guid, WIM_GID_LEN);
 
 	disk_hdr.part_number = cpu_to_le16(hdr->part_number);
@@ -249,7 +245,7 @@ get_wim_hdr_cflags(int ctype)
  * Initializes the header for a WIM file.
  */
 int
-init_wim_header(struct wim_header *hdr, int ctype)
+init_wim_header(struct wim_header *hdr, int ctype, u32 chunk_size)
 {
 	memset(hdr, 0, sizeof(struct wim_header));
 	hdr->flags = get_wim_hdr_cflags(ctype);
@@ -257,6 +253,7 @@ init_wim_header(struct wim_header *hdr, int ctype)
 		ERROR("Invalid compression type specified (%d)", ctype);
 		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 	}
+	hdr->chunk_size = chunk_size;
 	hdr->total_parts = 1;
 	hdr->part_number = 1;
 	randomize_byte_array(hdr->guid, sizeof(hdr->guid));
@@ -297,7 +294,7 @@ wimlib_print_header(const WIMStruct *wim)
 		if (hdr_flags[i].flag & hdr->flags)
 			tprintf(T("    WIM_HDR_FLAG_%s is set\n"), hdr_flags[i].name);
 
-	tprintf(T("Chunk Size                  = %u\n"), WIM_CHUNK_SIZE);
+	tprintf(T("Chunk Size                  = %u\n"), wim->hdr.chunk_size);
 	tfputs (T("GUID                        = "), stdout);
 	print_byte_field(hdr->guid, WIM_GID_LEN, stdout);
 	tputchar(T('\n'));

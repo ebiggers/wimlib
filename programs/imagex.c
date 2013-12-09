@@ -120,6 +120,7 @@ enum {
 	IMAGEX_ALLOW_OTHER_OPTION,
 	IMAGEX_BOOT_OPTION,
 	IMAGEX_CHECK_OPTION,
+	IMAGEX_CHUNK_SIZE_OPTION,
 	IMAGEX_COMMAND_OPTION,
 	IMAGEX_COMMIT_OPTION,
 	IMAGEX_COMPRESS_OPTION,
@@ -190,6 +191,7 @@ static const struct option capture_or_append_options[] = {
 	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
+	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
 	{T("dereference"), no_argument,       NULL, IMAGEX_DEREFERENCE_OPTION},
 	{T("flags"),       required_argument, NULL, IMAGEX_FLAGS_OPTION},
@@ -286,6 +288,7 @@ static const struct option optimize_options[] = {
 	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("recompress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
+	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
@@ -1273,6 +1276,19 @@ parse_num_threads(const tchar *optarg)
 	}
 }
 
+static uint32_t parse_chunk_size(const char *optarg)
+{
+       char *tmp;
+       unsigned long chunk_size = strtoul(optarg, &tmp, 10);
+       if (chunk_size >= UINT32_MAX || *tmp || tmp == optarg) {
+               imagex_error(T("Chunk size must be a non-negative integer!"));
+               return UINT32_MAX;
+       } else {
+               return chunk_size;
+       }
+}
+
+
 /*
  * Parse an option passed to an update command.
  *
@@ -1671,6 +1687,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			      WIMLIB_ADD_IMAGE_FLAG_WINCONFIG;
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
+	uint32_t chunk_size = UINT32_MAX;
 	const tchar *wimfile;
 	int wim_fd;
 	const tchar *name;
@@ -1730,6 +1747,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			if (ret)
 				goto out_err;
 			compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
+			break;
+		case IMAGEX_CHUNK_SIZE_OPTION:
+			chunk_size = parse_chunk_size(optarg);
+			if (chunk_size == UINT32_MAX)
+				goto out_err;
 			break;
 		case IMAGEX_FLAGS_OPTION:
 			flags_element = optarg;
@@ -1960,6 +1982,13 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		ret = wimlib_create_new_wim(compression_type, &wim);
 	if (ret)
 		goto out_free_config;
+
+	/* Set chunk size if non-default.  */
+	if (chunk_size != UINT32_MAX) {
+		ret = wimlib_set_output_chunk_size(wim, chunk_size);
+		if (ret)
+			goto out_free_wim;
+	}
 
 #ifndef __WIN32__
 	/* Detect if source is regular file or block device and set NTFS volume
@@ -2486,6 +2515,8 @@ imagex_export(int argc, tchar **argv, int cmd)
 		ret = wimlib_create_new_wim(compression_type, &dest_wim);
 		if (ret)
 			goto out_free_src_wim;
+
+		wimlib_set_output_chunk_size(dest_wim, src_info.chunk_size);
 	}
 
 	image = wimlib_resolve_image(src_wim, src_image_num_or_name);
@@ -2745,6 +2776,8 @@ print_wim_information(const tchar *wimfile, const struct wimlib_wim_info *info)
 	tprintf(T("Image Count:    %d\n"), info->image_count);
 	tprintf(T("Compression:    %"TS"\n"),
 		wimlib_get_compression_type_string(info->compression_type));
+	tprintf(T("Chunk Size:     %"PRIu32" bytes\n"),
+		info->chunk_size);
 	tprintf(T("Part Number:    %d/%d\n"), info->part_number, info->total_parts);
 	tprintf(T("Boot Index:     %d\n"), info->boot_index);
 	tprintf(T("Size:           %"PRIu64" bytes\n"), info->total_bytes);
@@ -3248,6 +3281,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
 	int write_flags = WIMLIB_WRITE_FLAG_REBUILD;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
+	uint32_t chunk_size = UINT32_MAX;
 	int ret;
 	WIMStruct *wim;
 	const tchar *wimfile;
@@ -3280,6 +3314,11 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 			if (ret)
 				goto out_err;
 			break;
+		case IMAGEX_CHUNK_SIZE_OPTION:
+			chunk_size = parse_chunk_size(optarg);
+			if (chunk_size == UINT32_MAX)
+				goto out_err;
+			break;
 		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);
 			if (num_threads == UINT_MAX)
@@ -3308,7 +3347,15 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		goto out;
 
 	if (compression_type != WIMLIB_COMPRESSION_TYPE_INVALID) {
+		/* Change compression type.  */
 		ret = wimlib_set_output_compression_type(wim, compression_type);
+		if (ret)
+			goto out_wimlib_free;
+	}
+
+	if (chunk_size != UINT32_MAX) {
+		/* Change chunk size.  */
+		ret = wimlib_set_output_chunk_size(wim, chunk_size);
 		if (ret)
 			goto out_wimlib_free;
 	}

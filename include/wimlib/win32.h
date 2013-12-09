@@ -15,6 +15,7 @@ extern int
 read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 		       u64 size,
 		       consume_data_callback_t cb,
+		       u32 in_chunk_size,
 		       void *ctx_or_buf,
 		       int _ignored_flags);
 
@@ -22,6 +23,7 @@ extern int
 read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 				 u64 size,
 				 consume_data_callback_t cb,
+				 u32 in_chunk_size,
 				 void *ctx_or_buf,
 				 int _ignored_flags);
 

@@ -58,12 +58,15 @@ int
 read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 		       u64 size,
 		       consume_data_callback_t cb,
+		       u32 in_chunk_size,
 		       void *ctx_or_buf,
 		       int _ignored_flags)
 {
 	int ret = 0;
 	void *out_buf;
+	bool out_buf_malloced;
 	u64 bytes_remaining;
+	const size_t stack_max = 32768;
 
 	HANDLE hFile = win32_open_existing_file(lte->file_on_disk,
 						FILE_READ_DATA);
@@ -73,16 +76,27 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 		return WIMLIB_ERR_OPEN;
 	}
 
-	if (cb)
-		out_buf = alloca(WIM_CHUNK_SIZE);
-	else
+	out_buf_malloced = false;
+	if (cb) {
+		if (in_chunk_size <= stack_max) {
+			out_buf = alloca(in_chunk_size);
+		} else {
+			out_buf = MALLOC(in_chunk_size);
+			if (out_buf == NULL) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_close_handle;
+			}
+			out_buf_malloced = true;
+		}
+	} else {
 		out_buf = ctx_or_buf;
+	}
 
 	bytes_remaining = size;
 	while (bytes_remaining) {
 		DWORD bytesToRead, bytesRead;
 
-		bytesToRead = min(WIM_CHUNK_SIZE, bytes_remaining);
+		bytesToRead = min(in_chunk_size, bytes_remaining);
 		if (!ReadFile(hFile, out_buf, bytesToRead, &bytesRead, NULL) ||
 		    bytesRead != bytesToRead)
 		{
@@ -101,6 +115,9 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 			out_buf += bytesRead;
 		}
 	}
+	if (out_buf_malloced)
+		FREE(out_buf);
+out_close_handle:
 	CloseHandle(hFile);
 	return ret;
 }
@@ -112,6 +129,7 @@ struct win32_encrypted_read_ctx {
 	void *buf;
 	size_t buf_filled;
 	u64 bytes_remaining;
+	u32 in_chunk_size;
 };
 
 static DWORD WINAPI
@@ -119,6 +137,7 @@ win32_encrypted_export_cb(unsigned char *_data, void *_ctx, unsigned long len)
 {
 	const void *data = _data;
 	struct win32_encrypted_read_ctx *ctx = _ctx;
+	u32 in_chunk_size = ctx->in_chunk_size;
 	int ret;
 
 	DEBUG("len = %lu", len);
@@ -130,7 +149,7 @@ win32_encrypted_export_cb(unsigned char *_data, void *_ctx, unsigned long len)
 					     len);
 		while (bytes_to_buffer) {
 			size_t bytes_to_copy_to_buf =
-				min(bytes_to_buffer, WIM_CHUNK_SIZE - ctx->buf_filled);
+				min(bytes_to_buffer, in_chunk_size - ctx->buf_filled);
 
 			memcpy(ctx->buf + ctx->buf_filled, data,
 			       bytes_to_copy_to_buf);
@@ -138,7 +157,7 @@ win32_encrypted_export_cb(unsigned char *_data, void *_ctx, unsigned long len)
 			data += bytes_to_copy_to_buf;
 			bytes_to_buffer -= bytes_to_copy_to_buf;
 
-			if (ctx->buf_filled == WIM_CHUNK_SIZE ||
+			if (ctx->buf_filled == in_chunk_size ||
 			    ctx->buf_filled == ctx->bytes_remaining)
 			{
 				ret = (*ctx->read_prefix_cb)(ctx->buf,
@@ -168,6 +187,7 @@ int
 read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 				 u64 size,
 				 consume_data_callback_t cb,
+				 u32 in_chunk_size,
 				 void *ctx_or_buf,
 				 int _ignored_flags)
 {
@@ -183,7 +203,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	export_ctx.read_prefix_ctx_or_buf = ctx_or_buf;
 	export_ctx.wimlib_err_code = 0;
 	if (cb) {
-		export_ctx.buf = MALLOC(WIM_CHUNK_SIZE);
+		export_ctx.buf = MALLOC(in_chunk_size);
 		if (!export_ctx.buf)
 			return WIMLIB_ERR_NOMEM;
 	} else {

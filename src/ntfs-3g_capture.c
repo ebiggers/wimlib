@@ -78,6 +78,7 @@ int
 read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
 		      u64 size,
 		      consume_data_callback_t cb,
+		      u32 in_chunk_size,
 		      void *ctx_or_buf,
 		      int _ignored_flags)
 {
@@ -88,7 +89,9 @@ read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
 	s64 pos;
 	s64 bytes_remaining;
 	void *out_buf;
+	bool out_buf_malloced;
 	int ret;
+	size_t stack_max = 32768;
 
  	ni = ntfs_pathname_to_inode(vol, NULL, loc->path);
 	if (!ni) {
@@ -103,30 +106,44 @@ read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
 		goto out_close_ntfs_inode;
 	}
 
-	if (cb)
-		out_buf = alloca(WIM_CHUNK_SIZE);
-	else
+	out_buf_malloced = false;
+	if (cb) {
+		if (in_chunk_size <= stack_max) {
+			out_buf = alloca(in_chunk_size);
+		} else {
+			out_buf = MALLOC(in_chunk_size);
+			if (out_buf == NULL) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_close_ntfs_attr;
+			}
+			out_buf_malloced = true;
+		}
+	} else {
 		out_buf = ctx_or_buf;
+	}
 	pos = (loc->is_reparse_point) ? 8 : 0;
 	bytes_remaining = size;
 	while (bytes_remaining) {
-		s64 to_read = min(bytes_remaining, WIM_CHUNK_SIZE);
+		s64 to_read = min(bytes_remaining, in_chunk_size);
 		if (ntfs_attr_pread(na, pos, to_read, out_buf) != to_read) {
 			ERROR_WITH_ERRNO("Error reading \"%"TS"\"", loc->path);
 			ret = WIMLIB_ERR_NTFS_3G;
-			goto out_close_ntfs_attr;
+			goto out_free_memory;
 		}
 		pos += to_read;
 		bytes_remaining -= to_read;
 		if (cb) {
 			ret = cb(out_buf, to_read, ctx_or_buf);
 			if (ret)
-				goto out_close_ntfs_attr;
+				goto out_free_memory;
 		} else {
 			out_buf += to_read;
 		}
 	}
 	ret = 0;
+out_free_memory:
+	if (out_buf_malloced)
+		FREE(out_buf);
 out_close_ntfs_attr:
 	ntfs_attr_close(na);
 out_close_ntfs_inode:

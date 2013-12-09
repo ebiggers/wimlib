@@ -69,6 +69,7 @@ bitstream_put_byte(struct output_bitstream *ostream, u8 n);
 struct lz_params {
 	unsigned min_match;
 	unsigned max_match;
+	unsigned max_offset;
 	unsigned nice_match;
 	unsigned good_match;
 	unsigned max_chain_len;
@@ -85,7 +86,8 @@ lz_analyze_block(const u8 window[],
 		 lz_record_match_t record_match,
 		 lz_record_literal_t record_literal,
 		 void *record_ctx,
-		 const struct lz_params *params);
+		 const struct lz_params *params,
+		 input_idx_t prev_tab[]);
 
 extern void
 make_canonical_huffman_code(unsigned num_syms,

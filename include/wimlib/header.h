@@ -11,11 +11,6 @@
 /* Length of the WIM header on disk.  */
 #define WIM_HEADER_DISK_SIZE 208
 
-/* Compressed resources in the WIM are divided into separated compressed chunks
- * of this size.  This value is unfortunately not configurable (at least when
- * compatibility with Microsoft's software is desired).  */
-#define WIM_CHUNK_SIZE 32768
-
 /* Version of the WIM file.  There is an older version (used for prerelease
  * versions of Windows Vista), but wimlib doesn't support it.  The differences
  * between the versions are undocumented.  */
@@ -69,9 +64,8 @@ struct wim_header_disk {
 	/* Flags for the WIM file (WIM_HDR_FLAG_*) */
 	u32 wim_flags;
 
-	/* Uncompressed chunk size of resources in the WIM.  0 if the WIM is
-	 * uncompressed.  If compressed, WIM_CHUNK_SIZE is expected (currently
-	 * the only supported value).  */
+	/* Chunk size for compressed resources in the WIM, or 0 if the WIM is
+	 * uncompressed.  */
 	u32 chunk_size;
 
 	/* Globally unique identifier for the WIM file.  Basically a bunch of
@@ -126,6 +120,9 @@ struct wim_header {
 
 	/* Bitwise OR of one or more of the WIM_HDR_FLAG_* defined below. */
 	u32 flags;
+
+	/* Compressed resource chunk size  */
+	u32 chunk_size;
 
 	/* A unique identifier for the WIM file. */
 	u8 guid[WIM_GID_LEN];

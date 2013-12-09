@@ -75,8 +75,10 @@ new_lookup_table_entry(void)
 
 	lte = CALLOC(1, sizeof(struct wim_lookup_table_entry));
 	if (lte) {
-		lte->part_number  = 1;
-		lte->refcnt       = 1;
+		lte->part_number = 1;
+		lte->refcnt = 1;
+		BUILD_BUG_ON(RESOURCE_NONEXISTENT != 0);
+		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
 	} else {
 		ERROR("Out of memory (tried to allocate %zu bytes for "
 		      "lookup table entry)",
@@ -711,6 +713,7 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					     WIM_RESHDR_FLAG_METADATA,
 					     out_fd,
 					     WIMLIB_COMPRESSION_TYPE_NONE,
+					     0,
 					     out_res_entry,
 					     NULL,
 					     write_resource_flags,

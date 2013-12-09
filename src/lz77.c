@@ -107,6 +107,9 @@ insert_string(input_idx_t hash_tab[], input_idx_t prev_tab[],
  * @params:		Parameters that affect how long the search will proceed
  * 				before going with the best that has been found
  * 				so far.
+ * @min_start_pos:	If the chain reaches a match starting before this
+ *			position (including the end-of-chain 0), the search will
+ *			be terminated.
  *
  * Returns the length of the match that was found.
  */
@@ -115,7 +118,8 @@ longest_match(const u8 window[], unsigned bytes_remaining,
 	      unsigned strstart, const input_idx_t prev_tab[],
 	      unsigned cur_match, unsigned prev_len,
 	      unsigned *match_start_ret,
-	      const struct lz_params *params)
+	      const struct lz_params *params,
+	      unsigned min_start_pos)
 {
 	unsigned chain_len = params->max_chain_len;
 
@@ -146,9 +150,8 @@ longest_match(const u8 window[], unsigned bytes_remaining,
 		 * performance reasons.  Therefore uninitialized memory will be
 		 * accessed, and conditional jumps will be made that depend on
 		 * those values.  However the length of the match is limited to
-		 * the lookahead, so the output of deflate is not affected by
-		 * the uninitialized values.
-		 */
+		 * the lookahead, so the output of lz_analyze_block() is not
+		 * affected by the uninitialized values.  */
 
 		if (match[best_len] != scan_end
 		    || match[best_len - 1] != scan_end1
@@ -182,7 +185,7 @@ longest_match(const u8 window[], unsigned bytes_remaining,
 			scan_end1  = scan[best_len - 1];
 			scan_end   = scan[best_len];
 		}
-	} while (--chain_len != 0 && (cur_match = prev_tab[cur_match]) != 0);
+	} while (--chain_len != 0 && (cur_match = prev_tab[cur_match]) >= min_start_pos);
 	*match_start_ret = match_start;
 	return min(min(best_len, bytes_remaining), params->max_match);
 }
@@ -201,6 +204,7 @@ longest_match(const u8 window[], unsigned bytes_remaining,
  * @params:		Structure that contains parameters that affect how the
  * 				analysis proceeds (mainly how good the matches
  * 				have to be).
+ * @prev_tab:		Temporary space containing least @window_size elements.
  */
 void
 lz_analyze_block(const u8 window[],
@@ -208,7 +212,8 @@ lz_analyze_block(const u8 window[],
 		 lz_record_match_t record_match,
 		 lz_record_literal_t record_literal,
 		 void *record_ctx,
-		 const struct lz_params *params)
+		 const struct lz_params *params,
+		 input_idx_t prev_tab[])
 {
 	unsigned cur_input_pos = 0;
 	unsigned hash          = 0;
@@ -219,7 +224,7 @@ lz_analyze_block(const u8 window[],
 	unsigned match_start   = 0;
 	bool match_available = false;
 	input_idx_t hash_tab[HASH_SIZE];
-	input_idx_t prev_tab[window_size];
+	unsigned min_start_pos = 1;
 
 	ZERO_ARRAY(hash_tab);
 
@@ -245,7 +250,14 @@ lz_analyze_block(const u8 window[],
 		prev_start = match_start;
 		match_len = params->min_match - 1;
 
-		if (hash_head != 0 && prev_len < params->max_lazy_match) {
+		if (cur_input_pos > params->max_offset)
+			min_start_pos = cur_input_pos - params->max_offset;
+		else
+			min_start_pos = 1;
+
+		if (hash_head >= min_start_pos &&
+		    prev_len < params->max_lazy_match)
+		{
 			/* To simplify the code, we prevent matches with the
 			 * string of window index 0 (in particular we have to
 			 * avoid a match of the string with itself at the start
@@ -254,7 +266,8 @@ lz_analyze_block(const u8 window[],
 						  window_size - cur_input_pos,
 						  cur_input_pos, prev_tab,
 						  hash_head, prev_len,
-						  &match_start, params);
+						  &match_start, params,
+						  min_start_pos);
 
 			if (match_len == params->min_match &&
 			     cur_input_pos - match_start > params->too_far)
