@@ -153,9 +153,10 @@ static void
 wimlib_vmsg(const tchar *tag, const tchar *format,
 	    va_list va, bool perror)
 {
-#ifndef DEBUG
-	if (wimlib_print_errors) {
+#if !defined(ENABLE_DEBUG)
+	if (wimlib_print_errors)
 #endif
+	{
 		int errno_save = errno;
 		fflush(stdout);
 		tfputs(tag, stderr);
@@ -178,9 +179,7 @@ wimlib_vmsg(const tchar *tag, const tchar *format,
 		tputc(T('\n'), stderr);
 		fflush(stderr);
 		errno = errno_save;
-#ifndef DEBUG
 	}
-#endif
 }
 #endif
 
