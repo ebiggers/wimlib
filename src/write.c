@@ -475,7 +475,8 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 		if (!(resource_flags & WIMLIB_READ_RESOURCE_FLAG_RAW)) {
 			write_ctx.out_ctype = out_ctype;
 			if (out_ctype == WIMLIB_COMPRESSION_TYPE_LZX) {
-				ret = wimlib_lzx_alloc_context(NULL, comp_ctx);
+				ret = wimlib_lzx_alloc_context(out_chunk_size,
+							       NULL, comp_ctx);
 				if (ret)
 					goto out;
 			}
@@ -1584,7 +1585,8 @@ write_stream_list_parallel(struct list_head *stream_list,
 		params[i].compressed_res_queue = &compressed_res_queue;
 		params[i].out_ctype = out_ctype;
 		if (out_ctype == WIMLIB_COMPRESSION_TYPE_LZX) {
-			ret = wimlib_lzx_alloc_context(NULL, &params[i].comp_ctx);
+			ret = wimlib_lzx_alloc_context(out_chunk_size,
+						       NULL, &params[i].comp_ctx);
 			if (ret)
 				goto out_free_params;
 		}

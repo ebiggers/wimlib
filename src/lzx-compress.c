@@ -68,8 +68,8 @@
  *
  * The "slow" algorithm to generate LZX-compressed data is roughly as follows:
  *
- * 1. Preprocess the input data to translate the targets of x86 call instructions
- *    to absolute offsets.
+ * 1. Preprocess the input data to translate the targets of x86 call
+ *    instructions to absolute offsets.
  *
  * 2. Build the suffix array and inverse suffix array for the input data.  The
  *    suffix array contains the indices of all suffixes of the input data,
@@ -80,23 +80,23 @@
  *
  * 3. Build the longest common prefix array corresponding to the suffix array.
  *
- * 4. For each suffix, find the highest lower ranked suffix that has a
- *    lower position, the lowest higher ranked suffix that has a lower position,
- *    and the length of the common prefix shared between each.   This
- *    information is later used to link suffix ranks into a doubly-linked list
- *    for searching the suffix array.
+ * 4. For each suffix, find the highest lower ranked suffix that has a lower
+ *    position, the lowest higher ranked suffix that has a lower position, and
+ *    the length of the common prefix shared between each.   This information is
+ *    later used to link suffix ranks into a doubly-linked list for searching
+ *    the suffix array.
  *
  * 5. Set a default cost model for matches/literals.
  *
- * 6. Determine the lowest cost sequence of LZ77 matches ((offset, length) pairs)
- *    and literal bytes to divide the input into.  Raw match-finding is done by
- *    searching the suffix array using a linked list to avoid considering any
- *    suffixes that start after the current position.  Each run of the
- *    match-finder returns the approximate lowest-cost longest match as well as
- *    any shorter matches that have even lower approximate costs.  Each such run
- *    also adds the suffix rank of the current position into the linked list
- *    being used to search the suffix array.  Parsing, or match-choosing, is
- *    solved as a minimum-cost path problem using a forward "optimal parsing"
+ * 6. Determine the lowest cost sequence of LZ77 matches ((offset, length)
+ *    pairs) and literal bytes to divide the input into.  Raw match-finding is
+ *    done by searching the suffix array using a linked list to avoid
+ *    considering any suffixes that start after the current position.  Each run
+ *    of the match-finder returns the approximate lowest-cost longest match as
+ *    well as any shorter matches that have even lower approximate costs.  Each
+ *    such run also adds the suffix rank of the current position into the linked
+ *    list being used to search the suffix array.  Parsing, or match-choosing,
+ *    is solved as a minimum-cost path problem using a forward "optimal parsing"
  *    algorithm based on the Deflate encoder from 7-Zip.  This algorithm moves
  *    forward calculating the minimum cost to reach each byte until either a
  *    very long match is found or until a position is found at which no matches
@@ -112,7 +112,7 @@
  *    Huffman codes that were computed for the block.
  *
  * Note: the algorithm does not yet attempt to split the input into multiple LZX
- * blocks.
+ * blocks, instead using a series of blocks of LZX_DIV_BLOCK_SIZE bytes.
  *
  * Fast algorithm
  * --------------
@@ -127,7 +127,8 @@
  * API
  * ===
  *
- * The old API (retained for backward compatibility) consists of just one function:
+ * The old API (retained for backward compatibility) consists of just one
+ * function:
  *
  *	wimlib_lzx_compress()
  *
@@ -141,10 +142,12 @@
  *	wimlib_lzx_set_default_params()
  *
  * Both wimlib_lzx_compress() and wimlib_lzx_compress2() are designed to
- * compress an in-memory buffer of up to 32768 bytes.  There is no sliding
- * window.  This is suitable for the WIM format, which uses fixed-size chunks
- * that are seemingly always 32768 bytes.  If needed, the compressor potentially
- * could be extended to support a larger and/or sliding window.
+ * compress an in-memory buffer of up to the window size, which can be any power
+ * of two between 2^15 and 2^21 inclusively.  However, by default, the WIM
+ * format uses 2^15, and this is seemingly the only value that is compatible
+ * with WIMGAPI.  In any case, the window is not a true "sliding window" since
+ * no data is ever "slid out" of the window.  This is needed for the WIM format,
+ * which is designed such that chunks may be randomly accessed.
  *
  * Both wimlib_lzx_compress() and wimlib_lzx_compress2() return 0 if the data
  * could not be compressed to less than the size of the uncompressed data.
@@ -205,19 +208,13 @@ typedef u32 block_cost_t;
 
 #define LZX_OPTIM_ARRAY_SIZE	4096
 
-/* Currently, this constant can't simply be changed because the code currently
- * uses a static number of position slots (and may make other assumptions as
- * well).  */
-#define LZX_MAX_WINDOW_SIZE	32768
-
-/* This may be WIM-specific  */
-#define LZX_DEFAULT_BLOCK_SIZE  32768
+#define LZX_DIV_BLOCK_SIZE	32768
 
 #define LZX_MAX_CACHE_PER_POS	10
 
 /* Codewords for the LZX main, length, and aligned offset Huffman codes  */
 struct lzx_codewords {
-	u16 main[LZX_MAINCODE_NUM_SYMBOLS];
+	u16 main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
 	u16 len[LZX_LENCODE_NUM_SYMBOLS];
 	u16 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
@@ -228,7 +225,7 @@ struct lzx_codewords {
  * A 0 length means the codeword has zero frequency.
  */
 struct lzx_lens {
-	u8 main[LZX_MAINCODE_NUM_SYMBOLS];
+	u8 main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
 	u8 len[LZX_LENCODE_NUM_SYMBOLS];
 	u8 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
@@ -239,7 +236,7 @@ struct lzx_lens {
  * --- generally a high cost, since even if it gets used in the next iteration,
  * it probably will not be used very times.  */
 struct lzx_costs {
-	u8 main[LZX_MAINCODE_NUM_SYMBOLS];
+	u8 main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
 	u8 len[LZX_LENCODE_NUM_SYMBOLS];
 	u8 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
@@ -252,7 +249,7 @@ struct lzx_codes {
 
 /* Tables for tallying symbol frequencies in the three LZX alphabets  */
 struct lzx_freqs {
-	freq_t main[LZX_MAINCODE_NUM_SYMBOLS];
+	freq_t main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
 	freq_t len[LZX_LENCODE_NUM_SYMBOLS];
 	freq_t aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
@@ -268,7 +265,7 @@ struct lzx_match {
 	 *
 	 * 8-24    position footer.  This is the offset of the real formatted
 	 *         offset from the position base.  This can be at most 17 bits
-	 *         (since lzx_extra_bits[LZX_NUM_POSITION_SLOTS - 1] is 17).
+	 *         (since lzx_extra_bits[LZX_MAX_POSITION_SLOTS - 1] is 17).
 	 *
 	 * 0-7     length of match, minus 2.  This can be at most
 	 *         (LZX_MAX_MATCH_LEN - 2) == 255, so it will fit in 8 bits.  */
@@ -395,19 +392,26 @@ struct lzx_compressor {
 	 * 0xe8 byte preprocessing is done directly on the data here before
 	 * further compression.
 	 *
-	 * Note that this compressor does *not* use a sliding window!!!!  It's
-	 * not needed in the WIM format, since every chunk is compressed
+	 * Note that this compressor does *not* use a real sliding window!!!!
+	 * It's not needed in the WIM format, since every chunk is compressed
 	 * independently.  This is by design, to allow random access to the
 	 * chunks.
 	 *
 	 * We reserve a few extra bytes to potentially allow reading off the end
 	 * of the array in the match-finding code for optimization purposes.
 	 */
-	u8 window[LZX_MAX_WINDOW_SIZE + 12];
+	u8 *window;
 
 	/* Number of bytes of data to be compressed, which is the number of
 	 * bytes of data in @window that are actually valid.  */
 	input_idx_t window_size;
+
+	/* Allocated size of the @window.  */
+	input_idx_t max_window_size;
+
+	/* Number of symbols in the main alphabet (depends on the
+	 * @max_window_size since it determines the maximum allowed offset).  */
+	unsigned num_main_syms;
 
 	/* The current match offset LRU queue.  */
 	struct lzx_lru_queue queue;
@@ -433,6 +437,9 @@ struct lzx_compressor {
 	/* The current cost model.  */
 	struct lzx_costs costs;
 
+	/* Fast algorithm only:  Array of hash table links.  */
+	input_idx_t *prev_tab;
+
 	/* Suffix array for window.
 	 * This is a mapping from suffix rank to suffix position.  */
 	input_idx_t *SA;
@@ -441,6 +448,12 @@ struct lzx_compressor {
 	 * This is a mapping from suffix position to suffix rank.
 	 * If 0 <= r < window_size, then ISA[SA[r]] == r.  */
 	input_idx_t *ISA;
+
+	/* Longest common prefix array corresponding to the suffix array SA.
+	 * LCP[i] is the length of the longest common prefix between the
+	 * suffixes with positions SA[i - 1] and  SA[i].  LCP[0] is undefined.
+	 */
+	input_idx_t *LCP;
 
 	/* Suffix array links.
 	 *
@@ -451,11 +464,7 @@ struct lzx_compressor {
 	 * list containing only suffixes that appear before that position.  */
 	struct salink *salink;
 
-	/* Position in window of next match to return.
-	 * Note: This cannot simply be modified, as the match-finder must still
-	 * be synchronized on the same position.  To seek forwards or backwards,
-	 * use lzx_lz_skip_bytes() or lzx_lz_rewind_matchfinder(), respectively.
-	 */
+	/* Position in window of next match to return.  */
 	input_idx_t match_window_pos;
 
 	/* The match-finder shall ensure the length of matches does not exceed
@@ -489,46 +498,6 @@ struct lzx_compressor {
 	u32 optimum_cur_idx;
 	u32 optimum_end_idx;
 };
-
-/* Returns the LZX position slot that corresponds to a given formatted offset.
- *
- * Logically, this returns the smallest i such that
- * formatted_offset >= lzx_position_base[i].
- *
- * The actual implementation below takes advantage of the regularity of the
- * numbers in the lzx_position_base array to calculate the slot directly from
- * the formatted offset without actually looking at the array.
- */
-static unsigned
-lzx_get_position_slot_raw(unsigned formatted_offset)
-{
-#if 0
-	/*
-	 * Slots 36-49 (formatted_offset >= 262144) can be found by
-	 * (formatted_offset/131072) + 34 == (formatted_offset >> 17) + 34;
-	 * however, this check for formatted_offset >= 262144 is commented out
-	 * because WIM chunks cannot be that large.
-	 */
-	if (formatted_offset >= 262144) {
-		return (formatted_offset >> 17) + 34;
-	} else
-#endif
-	{
-		/* Note: this part here only works if:
-		 *
-		 *    2 <= formatted_offset < 655360
-		 *
-		 * It is < 655360 because the frequency of the position bases
-		 * increases starting at the 655360 entry, and it is >= 2
-		 * because the below calculation fails if the most significant
-		 * bit is lower than the 2's place. */
-		LZX_ASSERT(2 <= formatted_offset && formatted_offset < 655360);
-		unsigned mssb_idx = bsr32(formatted_offset);
-		return (mssb_idx << 1) |
-			((formatted_offset >> (mssb_idx - 1)) & 1);
-	}
-}
-
 
 /* Returns the LZX position slot that corresponds to a given match offset,
  * taking into account the recent offset queue and updating it if the offset is
@@ -572,9 +541,10 @@ lzx_get_position_slot(unsigned offset, struct lzx_lru_queue *queue)
  * a set of tables that map symbols to codewords and codeword lengths.  */
 static void
 lzx_make_huffman_codes(const struct lzx_freqs *freqs,
-		       struct lzx_codes *codes)
+		       struct lzx_codes *codes,
+		       unsigned num_main_syms)
 {
-	make_canonical_huffman_code(LZX_MAINCODE_NUM_SYMBOLS,
+	make_canonical_huffman_code(num_main_syms,
 				    LZX_MAX_MAIN_CODEWORD_LEN,
 				    freqs->main,
 				    codes->lens.main,
@@ -639,7 +609,7 @@ lzx_write_match(struct output_bitstream *out, int block_type,
 	}
 
 	/* Combine the position slot with the length header into a single symbol
-	 * that will be encoded with the main tree.
+	 * that will be encoded with the main code.
 	 *
 	 * The actual main symbol is offset by LZX_NUM_CHARS because values
 	 * under LZX_NUM_CHARS are used to indicate a literal byte rather than a
@@ -661,7 +631,7 @@ lzx_write_match(struct output_bitstream *out, int block_type,
 
 	/* For aligned offset blocks with at least 3 extra bits, output the
 	 * verbatim bits literally, then the aligned bits encoded using the
-	 * aligned offset tree.  Otherwise, only the verbatim bits need to be
+	 * aligned offset code.  Otherwise, only the verbatim bits need to be
 	 * output. */
 	if ((block_type == LZX_BLOCKTYPE_ALIGNED) && (num_extra_bits >= 3)) {
 
@@ -700,7 +670,7 @@ lzx_build_precode(const u8 lens[restrict],
 	 * literally.
 	 *
 	 * output_syms[] will be filled in with the length symbols that will be
-	 * output, including RLE codes, not yet encoded using the pre-tree.
+	 * output, including RLE codes, not yet encoded using the precode.
 	 *
 	 * cur_run_len keeps track of how many code word lengths are in the
 	 * current run of identical lengths.  */
@@ -766,7 +736,7 @@ lzx_build_precode(const u8 lens[restrict],
 			 *
 			 * The extra length symbol is encoded as a difference
 			 * from the length of the codeword for the first symbol
-			 * in the run in the previous tree.
+			 * in the run in the previous code.
 			 * */
 			while (cur_run_len >= 4) {
 				unsigned additional_bits;
@@ -789,7 +759,7 @@ lzx_build_precode(const u8 lens[restrict],
 
 		/* Any remaining lengths in the run are outputted without RLE,
 		 * as a difference from the length of that codeword in the
-		 * previous tree. */
+		 * previous code. */
 		while (cur_run_len > 0) {
 			signed char delta;
 
@@ -935,12 +905,12 @@ lzx_write_matches_and_literals(struct output_bitstream *ostream,
 }
 
 static void
-lzx_assert_codes_valid(const struct lzx_codes * codes)
+lzx_assert_codes_valid(const struct lzx_codes * codes, unsigned num_main_syms)
 {
 #ifdef ENABLE_LZX_DEBUG
 	unsigned i;
 
-	for (i = 0; i < LZX_MAINCODE_NUM_SYMBOLS; i++)
+	for (i = 0; i < num_main_syms; i++)
 		LZX_ASSERT(codes->lens.main[i] <= LZX_MAX_MAIN_CODEWORD_LEN);
 
 	for (i = 0; i < LZX_LENCODE_NUM_SYMBOLS; i++)
@@ -951,10 +921,10 @@ lzx_assert_codes_valid(const struct lzx_codes * codes)
 
 	const unsigned tablebits = 10;
 	u16 decode_table[(1 << tablebits) +
-			 (2 * max(LZX_MAINCODE_NUM_SYMBOLS, LZX_LENCODE_NUM_SYMBOLS))]
+			 (2 * max(num_main_syms, LZX_LENCODE_NUM_SYMBOLS))]
 			 _aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	LZX_ASSERT(0 == make_huffman_decode_table(decode_table,
-						  LZX_MAINCODE_NUM_SYMBOLS,
+						  num_main_syms,
 						  min(tablebits, LZX_MAINCODE_TABLEBITS),
 						  codes->lens.main,
 						  LZX_MAX_MAIN_CODEWORD_LEN));
@@ -975,6 +945,8 @@ lzx_assert_codes_valid(const struct lzx_codes * codes)
 static void
 lzx_write_compressed_block(int block_type,
 			   unsigned block_size,
+			   unsigned max_window_size,
+			   unsigned num_main_syms,
 			   struct lzx_match * chosen_matches,
 			   unsigned num_chosen_matches,
 			   const struct lzx_codes * codes,
@@ -985,27 +957,41 @@ lzx_write_compressed_block(int block_type,
 
 	LZX_ASSERT(block_type == LZX_BLOCKTYPE_ALIGNED ||
 		   block_type == LZX_BLOCKTYPE_VERBATIM);
-	LZX_ASSERT(block_size <= LZX_MAX_WINDOW_SIZE);
-	LZX_ASSERT(num_chosen_matches <= LZX_MAX_WINDOW_SIZE);
-	lzx_assert_codes_valid(codes);
+	lzx_assert_codes_valid(codes, num_main_syms);
 
 	/* The first three bits indicate the type of block and are one of the
 	 * LZX_BLOCKTYPE_* constants.  */
-	bitstream_put_bits(ostream, block_type, LZX_BLOCKTYPE_NBITS);
+	bitstream_put_bits(ostream, block_type, 3);
 
-	/* The next bit indicates whether the block size is the default (32768),
-	 * indicated by a 1 bit, or whether the block size is given by the next
-	 * 16 bits, indicated by a 0 bit.  */
+	/* Output the block size.
+	 *
+	 * The original LZX format seemed to always encode the block size in 3
+	 * bytes.  However, the implementation in WIMGAPI, as used in WIM files,
+	 * uses the first bit to indicate whether the block is the default size
+	 * (32768) or a different size given explicitly by the next 16 bits.
+	 *
+	 * By default, this compressor uses a window size of 32768 and therefore
+	 * follows the WIMGAPI behavior.  However, this compressor also supports
+	 * window sizes greater than 32768 bytes, which do not appear to be
+	 * supported by WIMGAPI.  In such cases, we retain the default size bit
+	 * to mean a size of 32768 bytes but output non-default block size in 24
+	 * bits rather than 16.  The compatibility of this behavior is unknown
+	 * because WIMs created with chunk size greater than 32768 can seemingly
+	 * only be opened by wimlib anyway.  */
 	if (block_size == LZX_DEFAULT_BLOCK_SIZE) {
 		bitstream_put_bits(ostream, 1, 1);
 	} else {
 		bitstream_put_bits(ostream, 0, 1);
-		bitstream_put_bits(ostream, block_size, LZX_BLOCKSIZE_NBITS);
+
+		if (max_window_size >= 65536)
+			bitstream_put_bits(ostream, (block_size >> 16) & 0xff, 8);
+
+		bitstream_put_bits(ostream, block_size & 0xffff, 16);
 	}
 
 	/* Write out lengths of the main code. Note that the LZX specification
 	 * incorrectly states that the aligned offset code comes after the
-	 * length code, but in fact it is the very first tree to be written
+	 * length code, but in fact it is the very first code to be written
 	 * (before the main code).  */
 	if (block_type == LZX_BLOCKTYPE_ALIGNED)
 		for (i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++)
@@ -1014,23 +1000,23 @@ lzx_write_compressed_block(int block_type,
 
 	LZX_DEBUG("Writing main code...");
 
-	/* Write the pre-tree and lengths for the first LZX_NUM_CHARS symbols in
+	/* Write the precode and lengths for the first LZX_NUM_CHARS symbols in
 	 * the main code, which are the codewords for literal bytes.  */
 	lzx_write_compressed_code(ostream,
 				  codes->lens.main,
 				  prev_codes->lens.main,
 				  LZX_NUM_CHARS);
 
-	/* Write the pre-tree and lengths for the rest of the main code, which
+	/* Write the precode and lengths for the rest of the main code, which
 	 * are the codewords for match headers.  */
 	lzx_write_compressed_code(ostream,
 				  codes->lens.main + LZX_NUM_CHARS,
 				  prev_codes->lens.main + LZX_NUM_CHARS,
-				  LZX_MAINCODE_NUM_SYMBOLS - LZX_NUM_CHARS);
+				  num_main_syms - LZX_NUM_CHARS);
 
 	LZX_DEBUG("Writing length code...");
 
-	/* Write the pre-tree and lengths for the length code.  */
+	/* Write the precode and lengths for the length code.  */
 	lzx_write_compressed_code(ostream,
 				  codes->lens.len,
 				  prev_codes->lens.len,
@@ -1050,6 +1036,7 @@ lzx_write_compressed_block(int block_type,
 static void
 lzx_write_all_blocks(struct lzx_compressor *ctx, struct output_bitstream *ostream)
 {
+
 	const struct lzx_codes *prev_codes = &ctx->zero_codes;
 	for (unsigned i = 0; i < ctx->num_blocks; i++) {
 		const struct lzx_block_spec *spec = &ctx->block_specs[i];
@@ -1061,11 +1048,14 @@ lzx_write_all_blocks(struct lzx_compressor *ctx, struct output_bitstream *ostrea
 
 		lzx_write_compressed_block(spec->block_type,
 					   spec->block_size,
+					   ctx->max_window_size,
+					   ctx->num_main_syms,
 					   &ctx->chosen_matches[spec->chosen_matches_start_pos],
 					   spec->num_chosen_matches,
 					   &spec->codes,
 					   prev_codes,
 					   ostream);
+
 		prev_codes = &spec->codes;
 	}
 }
@@ -1135,25 +1125,15 @@ lzx_tally_match(unsigned match_len, unsigned match_offset,
 		freqs->aligned[position_footer & 7]++;
 
 	/* Pack the position slot, position footer, and match length into an
-	 * intermediate representation.
-	 *
-	 * bits    description
-	 * ----    -----------------------------------------------------------
-	 *
-	 * 31      1 if a match, 0 if a literal.
-	 *
-	 * 30-25   position slot.  This can be at most 50, so it will fit in 6
-	 *         bits.
-	 *
-	 * 8-24    position footer.  This is the offset of the real formatted
-	 *         offset from the position base.  This can be at most 17 bits
-	 *         (since lzx_extra_bits[LZX_NUM_POSITION_SLOTS - 1] is 17).
-	 *
-	 * 0-7     length of match, offset by 2.  This can be at most
-	 *         (LZX_MAX_MATCH_LEN - 2) == 255, so it will fit in 8 bits.  */
-	BUILD_BUG_ON(LZX_NUM_POSITION_SLOTS > 64);
-	LZX_ASSERT(lzx_get_num_extra_bits(LZX_NUM_POSITION_SLOTS - 1) <= 17);
-	BUILD_BUG_ON(LZX_MAX_MATCH_LEN - LZX_MIN_MATCH_LEN + 1 > 256);
+	 * intermediate representation.  See `struct lzx_match' for details.
+	 */
+	LZX_ASSERT(LZX_MAX_POSITION_SLOTS <= 64);
+	LZX_ASSERT(lzx_get_num_extra_bits(LZX_MAX_POSITION_SLOTS - 1) <= 17);
+	LZX_ASSERT(LZX_MAX_MATCH_LEN - LZX_MIN_MATCH_LEN + 1 <= 256);
+
+	LZX_ASSERT(position_slot      <= (1U << (31 - 25)) - 1);
+	LZX_ASSERT(position_footer    <= (1U << (25 -  8)) - 1);
+	LZX_ASSERT(adjusted_match_len <= (1U << (8  -  0)) - 1);
 	return 0x80000000 |
 		(position_slot << 25) |
 		(position_footer << 8) |
@@ -1257,9 +1237,10 @@ static void
 lzx_set_costs(struct lzx_compressor * ctx, const struct lzx_lens * lens)
 {
 	unsigned i;
+	unsigned num_main_syms = ctx->num_main_syms;
 
 	/* Main code  */
-	for (i = 0; i < LZX_MAINCODE_NUM_SYMBOLS; i++) {
+	for (i = 0; i < num_main_syms; i++) {
 		ctx->costs.main[i] = lens->main[i];
 		if (ctx->costs.main[i] == 0)
 			ctx->costs.main[i] = ctx->params.alg_params.slow.main_nostat_cost;
@@ -1317,33 +1298,6 @@ lzx_lz_update_salink(input_idx_t i,
 	}
 }
 
-/* Rewind the suffix array match-finder to the specified position.
- *
- * This undoes a series of updates by lzx_lz_update_salink().  */
-static void
-lzx_lz_rewind_matchfinder(struct lzx_compressor *ctx,
-			  const unsigned orig_pos)
-{
-	LZX_DEBUG("Rewind match-finder %u => %u", ctx->match_window_pos, orig_pos);
-
-	if (ctx->match_window_pos == orig_pos)
-		return;
-
-	/* NOTE: this has been optimized for the current algorithm where no
-	 * block-splitting is done and matches are cached, so that the suffix
-	 * array match-finder only runs through the input one time.  Generalized
-	 * rewinds of the suffix array match-finder are possible, but require
-	 * incrementally saving fields being overwritten in
-	 * lzx_lz_update_salink(), then restoring them here in reverse order.
-	 */
-
-	LZX_ASSERT(ctx->match_window_pos > orig_pos);
-	LZX_ASSERT(orig_pos == 0);
-	ctx->matches_cached = true;
-	ctx->cached_matches_pos = 0;
-	ctx->match_window_pos = orig_pos;
-}
-
 /*
  * Use the suffix array match-finder to retrieve a list of LZ matches at the
  * current position.
@@ -1372,8 +1326,8 @@ lzx_lz_get_matches(const input_idx_t i,
 		   struct raw_match matches[const restrict],
 		   const struct lzx_lru_queue * const restrict queue,
 		   const unsigned min_match_len,
-		   const uint32_t max_matches_to_consider,
-		   const uint32_t max_matches_to_return)
+		   const u32 max_matches_to_consider,
+		   const u32 max_matches_to_return)
 {
 	/* r = Rank of the suffix at the current position.  */
 	const input_idx_t r = ISA[i];
@@ -1411,7 +1365,7 @@ lzx_lz_get_matches(const input_idx_t i,
 
 	/* count_remaining = maximum number of possible matches remaining to be
 	 * considered.  */
-	uint32_t count_remaining = max_matches_to_consider;
+	u32 count_remaining = max_matches_to_consider;
 
 	/* pending = match currently being considered for a specific length.  */
 	struct raw_match pending;
@@ -1563,8 +1517,8 @@ lzx_lz_get_matches_caching(struct lzx_compressor *ctx,
 		unsigned min_match_len = LZX_MIN_MATCH_LEN;
 		if (!ctx->params.alg_params.slow.use_len2_matches)
 			min_match_len = max(min_match_len, 3);
-		const uint32_t max_search_depth = ctx->params.alg_params.slow.max_search_depth;
-		const uint32_t max_matches_per_pos = ctx->params.alg_params.slow.max_matches_per_pos;
+		const u32 max_search_depth = ctx->params.alg_params.slow.max_search_depth;
+		const u32 max_matches_per_pos = ctx->params.alg_params.slow.max_matches_per_pos;
 
 		if (unlikely(max_search_depth == 0 || max_matches_per_pos == 0))
 			num_matches = 0;
@@ -1859,7 +1813,7 @@ lzx_lz_get_near_optimal_match(struct lzx_compressor * ctx)
  * Set default symbol costs.
  */
 static void
-lzx_set_default_costs(struct lzx_costs * costs)
+lzx_set_default_costs(struct lzx_costs * costs, unsigned num_main_syms)
 {
 	unsigned i;
 
@@ -1868,7 +1822,7 @@ lzx_set_default_costs(struct lzx_costs * costs)
 		costs->main[i] = 8;
 
 	/* Match header symbols  */
-	for (; i < LZX_MAINCODE_NUM_SYMBOLS; i++)
+	for (; i < num_main_syms; i++)
 		costs->main[i] = 10;
 
 	/* Length symbols  */
@@ -1916,6 +1870,11 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 	const struct lzx_lru_queue orig_queue = ctx->queue;
 	struct lzx_freqs freqs;
 
+	unsigned orig_window_pos = spec->window_pos;
+	unsigned orig_cached_pos = ctx->cached_matches_pos;
+
+	LZX_ASSERT(ctx->match_window_pos == spec->window_pos);
+
 	ctx->match_window_end = spec->window_pos + spec->block_size;
 	spec->chosen_matches_start_pos = spec->window_pos;
 
@@ -1926,7 +1885,8 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 	 * computed from the previous pass.  */
 	for (unsigned pass = 0; pass < num_passes; pass++) {
 
-		lzx_lz_rewind_matchfinder(ctx, spec->window_pos);
+		ctx->match_window_pos = orig_window_pos;
+		ctx->cached_matches_pos = orig_cached_pos;
 		ctx->queue = orig_queue;
 		spec->num_chosen_matches = 0;
 		memset(&freqs, 0, sizeof(freqs));
@@ -1948,11 +1908,14 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 					    spec->num_chosen_matches++] = lzx_match;
 		}
 
-		lzx_make_huffman_codes(&freqs, &spec->codes);
+		lzx_make_huffman_codes(&freqs, &spec->codes,
+				       ctx->num_main_syms);
 		if (pass < num_passes - 1)
 			lzx_set_costs(ctx, &spec->codes.lens);
+		ctx->matches_cached = true;
 	}
 	spec->block_type = lzx_choose_verbatim_or_aligned(&freqs, &spec->codes);
+	ctx->matches_cached = false;
 }
 
 static void
@@ -1974,19 +1937,25 @@ lzx_lz_init_matchfinder(const u8 T[const restrict],
 			const input_idx_t n,
 			input_idx_t SA[const restrict],
 			input_idx_t ISA[const restrict],
+			input_idx_t LCP[const restrict],
 			struct salink link[const restrict],
 			const unsigned max_match_len)
 {
 	/* Compute SA (Suffix Array).  */
 
 	{
-		saidx_t sa[n];
 		/* ISA and link are used as temporary space.  */
-		BUILD_BUG_ON(LZX_MAX_WINDOW_SIZE * sizeof(ISA[0]) < 256 * sizeof(saidx_t));
-		BUILD_BUG_ON(LZX_MAX_WINDOW_SIZE * 2 * sizeof(link[0]) < 256 * 256 * sizeof(saidx_t));
-		divsufsort(T, sa, n, (saidx_t*)ISA, (saidx_t*)link);
-		for (input_idx_t i = 0; i < n; i++)
-			SA[i] = sa[i];
+		BUILD_BUG_ON(LZX_MIN_WINDOW_SIZE * sizeof(ISA[0]) < 256 * sizeof(saidx_t));
+		BUILD_BUG_ON(LZX_MIN_WINDOW_SIZE * 2 * sizeof(link[0]) < 256 * 256 * sizeof(saidx_t));
+
+		if (sizeof(input_idx_t) == sizeof(saidx_t)) {
+			divsufsort(T, SA, n, (saidx_t*)ISA, (saidx_t*)link);
+		} else {
+			saidx_t sa[n];
+			divsufsort(T, sa, n, (saidx_t*)ISA, (saidx_t*)link);
+			for (input_idx_t i = 0; i < n; i++)
+				SA[i] = sa[i];
+		}
 	}
 
 #ifdef ENABLE_LZX_DEBUG
@@ -2022,101 +1991,98 @@ lzx_lz_init_matchfinder(const u8 T[const restrict],
 	for (input_idx_t r = 0; r < n; r++)
 		ISA[SA[r]] = r;
 
+	/* Compute LCP (longest common prefix) array.
+	 *
+	 * Algorithm adapted from Kasai et al. 2001: "Linear-Time
+	 * Longest-Common-Prefix Computation in Suffix Arrays and Its
+	 * Applications".  */
 	{
-		input_idx_t LCP[n];
-		/* Compute LCP (longest common prefix) array.
-		 *
-		 * Algorithm adapted from Kasai et al. 2001: "Linear-Time
-		 * Longest-Common-Prefix Computation in Suffix Arrays and Its
-		 * Applications".  */
-		{
-			input_idx_t h = 0;
-			for (input_idx_t i = 0; i < n; i++) {
-				input_idx_t r = ISA[i];
-				if (r > 0) {
-					input_idx_t j = SA[r - 1];
+		input_idx_t h = 0;
+		for (input_idx_t i = 0; i < n; i++) {
+			input_idx_t r = ISA[i];
+			if (r > 0) {
+				input_idx_t j = SA[r - 1];
 
-					input_idx_t lim = min(n - i, n - j);
+				input_idx_t lim = min(n - i, n - j);
 
-					while (h < lim && T[i + h] == T[j + h])
-						h++;
-					LCP[r] = h;
-					if (h > 0)
-						h--;
-				}
+				while (h < lim && T[i + h] == T[j + h])
+					h++;
+				LCP[r] = h;
+				if (h > 0)
+					h--;
 			}
 		}
+	}
 
-	#ifdef ENABLE_LZX_DEBUG
-		/* Verify LCP array.  */
-		for (input_idx_t r = 0; r < n - 1; r++) {
-			LZX_ASSERT(ISA[SA[r]] == r);
-			LZX_ASSERT(ISA[SA[r + 1]] == r + 1);
+#ifdef ENABLE_LZX_DEBUG
+	/* Verify LCP array.  */
+	for (input_idx_t r = 0; r < n - 1; r++) {
+		LZX_ASSERT(ISA[SA[r]] == r);
+		LZX_ASSERT(ISA[SA[r + 1]] == r + 1);
 
-			input_idx_t i1 = SA[r];
-			input_idx_t i2 = SA[r + 1];
-			input_idx_t lcp = LCP[r + 1];
+		input_idx_t i1 = SA[r];
+		input_idx_t i2 = SA[r + 1];
+		input_idx_t lcp = LCP[r + 1];
 
-			input_idx_t n1 = n - i1;
-			input_idx_t n2 = n - i2;
+		input_idx_t n1 = n - i1;
+		input_idx_t n2 = n - i2;
 
-			LZX_ASSERT(lcp <= min(n1, n2));
+		LZX_ASSERT(lcp <= min(n1, n2));
 
-			LZX_ASSERT(memcmp(&T[i1], &T[i2], lcp) == 0);
-			if (lcp < min(n1, n2))
-				LZX_ASSERT(T[i1 + lcp] != T[i2 + lcp]);
+		LZX_ASSERT(memcmp(&T[i1], &T[i2], lcp) == 0);
+		if (lcp < min(n1, n2))
+			LZX_ASSERT(T[i1 + lcp] != T[i2 + lcp]);
+	}
+#endif /* ENABLE_LZX_DEBUG */
+
+	/* Compute salink.next and salink.lcpnext.
+	 *
+	 * Algorithm adapted from Crochemore et al. 2009:
+	 * "LPF computation revisited".
+	 *
+	 * Note: we cap lcpnext to the maximum match length so that the
+	 * match-finder need not worry about it later.  */
+	link[n - 1].next = (input_idx_t)~0U;
+	link[n - 1].prev = (input_idx_t)~0U;
+	link[n - 1].lcpnext = 0;
+	link[n - 1].lcpprev = 0;
+	for (input_idx_t r = n - 2; r != (input_idx_t)~0U; r--) {
+		input_idx_t t = r + 1;
+		input_idx_t l = LCP[t];
+		while (t != (input_idx_t)~0 && SA[t] > SA[r]) {
+			l = min(l, link[t].lcpnext);
+			t = link[t].next;
 		}
-	#endif /* ENABLE_LZX_DEBUG */
+		link[r].next = t;
+		link[r].lcpnext = min(l, max_match_len);
+		LZX_ASSERT(t == (input_idx_t)~0U || l <= n - SA[t]);
+		LZX_ASSERT(l <= n - SA[r]);
+		LZX_ASSERT(memcmp(&T[SA[r]], &T[SA[t]], l) == 0);
+	}
 
-		/* Compute salink.next and salink.lcpnext.
-		 *
-		 * Algorithm adapted from Crochemore et al. 2009:
-		 * "LPF computation revisited".
-		 *
-		 * Note: we cap lcpnext to the maximum match length so that the
-		 * match-finder need not worry about it later.  */
-		link[n - 1].next = (input_idx_t)~0U;
-		link[n - 1].prev = (input_idx_t)~0U;
-		link[n - 1].lcpnext = 0;
-		link[n - 1].lcpprev = 0;
-		for (input_idx_t r = n - 2; r != (input_idx_t)~0U; r--) {
-			input_idx_t t = r + 1;
-			input_idx_t l = LCP[t];
-			while (t != (input_idx_t)~0 && SA[t] > SA[r]) {
-				l = min(l, link[t].lcpnext);
-				t = link[t].next;
-			}
-			link[r].next = t;
-			link[r].lcpnext = min(l, max_match_len);
-			LZX_ASSERT(t == (input_idx_t)~0U || l <= n - SA[t]);
-			LZX_ASSERT(l <= n - SA[r]);
-			LZX_ASSERT(memcmp(&T[SA[r]], &T[SA[t]], l) == 0);
+	/* Compute salink.prev and salink.lcpprev.
+	 *
+	 * Algorithm adapted from Crochemore et al. 2009:
+	 * "LPF computation revisited".
+	 *
+	 * Note: we cap lcpprev to the maximum match length so that the
+	 * match-finder need not worry about it later.  */
+	link[0].prev = (input_idx_t)~0;
+	link[0].next = (input_idx_t)~0;
+	link[0].lcpprev = 0;
+	link[0].lcpnext = 0;
+	for (input_idx_t r = 1; r < n; r++) {
+		input_idx_t t = r - 1;
+		input_idx_t l = LCP[r];
+		while (t != (input_idx_t)~0 && SA[t] > SA[r]) {
+			l = min(l, link[t].lcpprev);
+			t = link[t].prev;
 		}
-
-		/* Compute salink.prev and salink.lcpprev.
-		 *
-		 * Algorithm adapted from Crochemore et al. 2009:
-		 * "LPF computation revisited".
-		 *
-		 * Note: we cap lcpprev to the maximum match length so that the
-		 * match-finder need not worry about it later.  */
-		link[0].prev = (input_idx_t)~0;
-		link[0].next = (input_idx_t)~0;
-		link[0].lcpprev = 0;
-		link[0].lcpnext = 0;
-		for (input_idx_t r = 1; r < n; r++) {
-			input_idx_t t = r - 1;
-			input_idx_t l = LCP[r];
-			while (t != (input_idx_t)~0 && SA[t] > SA[r]) {
-				l = min(l, link[t].lcpprev);
-				t = link[t].prev;
-			}
-			link[r].prev = t;
-			link[r].lcpprev = min(l, max_match_len);
-			LZX_ASSERT(t == (input_idx_t)~0 || l <= n - SA[t]);
-			LZX_ASSERT(l <= n - SA[r]);
-			LZX_ASSERT(memcmp(&T[SA[r]], &T[SA[t]], l) == 0);
-		}
+		link[r].prev = t;
+		link[r].lcpprev = min(l, max_match_len);
+		LZX_ASSERT(t == (input_idx_t)~0 || l <= n - SA[t]);
+		LZX_ASSERT(l <= n - SA[r]);
+		LZX_ASSERT(memcmp(&T[SA[r]], &T[SA[t]], l) == 0);
 	}
 }
 
@@ -2126,19 +2092,21 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
 {
 	/* Initialize the match-finder.  */
 	lzx_lz_init_matchfinder(ctx->window, ctx->window_size,
-				ctx->SA, ctx->ISA, ctx->salink,
+				ctx->SA, ctx->ISA, ctx->LCP, ctx->salink,
 				LZX_MAX_MATCH_LEN);
 	ctx->cached_matches_pos = 0;
 	ctx->matches_cached = false;
 	ctx->match_window_pos = 0;
 
 	/* Set up a default cost model.  */
-	lzx_set_default_costs(&ctx->costs);
+	lzx_set_default_costs(&ctx->costs, ctx->num_main_syms);
 
-	/* Assume that the entire input will be one LZX block.  */
-	ctx->block_specs[0].window_pos = 0;
-	ctx->block_specs[0].block_size = ctx->window_size;
-	ctx->num_blocks = 1;
+	ctx->num_blocks = DIV_ROUND_UP(ctx->window_size, LZX_DIV_BLOCK_SIZE);
+	for (unsigned i = 0; i < ctx->num_blocks; i++) {
+		unsigned pos = LZX_DIV_BLOCK_SIZE * i;
+		ctx->block_specs[i].window_pos = pos;
+		ctx->block_specs[i].block_size = min(ctx->window_size - pos, LZX_DIV_BLOCK_SIZE);
+	}
 
 	/* Determine sequence of matches/literals to output for each block.  */
 	lzx_optimize_blocks(ctx);
@@ -2188,17 +2156,13 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 	record_ctx.matches = ctx->chosen_matches;
 
 	/* Determine series of matches/literals to output.  */
-	{
-		input_idx_t prev_tab[ctx->window_size];
-		lz_analyze_block(ctx->window,
-				 ctx->window_size,
-				 lzx_record_match,
-				 lzx_record_literal,
-				 &record_ctx,
-				 &lzx_lz_params,
-				 prev_tab);
-	}
-
+	lz_analyze_block(ctx->window,
+			 ctx->window_size,
+			 lzx_record_match,
+			 lzx_record_literal,
+			 &record_ctx,
+			 &lzx_lz_params,
+			 ctx->prev_tab);
 
 	/* Set up block specification.  */
 	spec = &ctx->block_specs[0];
@@ -2207,7 +2171,8 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 	spec->block_size = ctx->window_size;
 	spec->num_chosen_matches = (record_ctx.matches - ctx->chosen_matches);
 	spec->chosen_matches_start_pos = 0;
-	lzx_make_huffman_codes(&record_ctx.freqs, &spec->codes);
+	lzx_make_huffman_codes(&record_ctx.freqs, &spec->codes,
+			       ctx->num_main_syms);
 	ctx->num_blocks = 1;
 }
 
@@ -2261,12 +2226,11 @@ wimlib_lzx_compress2(const void			* const restrict uncompressed_data,
 		return 0;
 	}
 
-	if (uncompressed_len > 32768) {
-		LZX_DEBUG("Only up to 32768 bytes of uncompressed data are supported.");
+	if (uncompressed_len > ctx->max_window_size) {
+		LZX_DEBUG("Can't compress %u bytes using window of %u bytes!",
+			  uncompressed_len, ctx->max_window_size);
 		return 0;
 	}
-
-	wimlib_assert(lzx_ctx != NULL);
 
 	LZX_DEBUG("Attempting to compress %u bytes...", uncompressed_len);
 
@@ -2320,10 +2284,12 @@ wimlib_lzx_compress2(const void			* const restrict uncompressed_data,
 	#endif
 	    )
 	{
-		u8 buf[uncompressed_len];
+		/* The decompression buffer can be any temporary space that's no
+		 * longer needed.  */
+		u8 *buf = (u8*)(ctx->SA ? ctx->SA : ctx->prev_tab);
 
-		if (wimlib_lzx_decompress(compressed_data, compressed_len,
-					  buf, uncompressed_len))
+		if (wimlib_lzx_decompress2(compressed_data, compressed_len,
+					   buf, uncompressed_len, ctx->max_window_size))
 		{
 			ERROR("Failed to decompress data we "
 			      "compressed using LZX algorithm");
@@ -2415,11 +2381,15 @@ wimlib_lzx_set_default_params(const struct wimlib_lzx_params * params)
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
+wimlib_lzx_alloc_context(u32 window_size,
+			 const struct wimlib_lzx_params *params,
 			 struct wimlib_lzx_context **ctx_pp)
 {
 
 	LZX_DEBUG("Allocating LZX context...");
+
+	if (!lzx_window_size_valid(window_size))
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	struct lzx_compressor *ctx;
 
@@ -2471,7 +2441,9 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 	if (ctx_pp) {
 		ctx = *(struct lzx_compressor**)ctx_pp;
 
-		if (ctx && lzx_params_compatible(&ctx->params, params))
+		if (ctx &&
+		    lzx_params_compatible(&ctx->params, params) &&
+		    ctx->max_window_size == window_size)
 			return 0;
 	} else {
 		LZX_DEBUG("Check parameters only.");
@@ -2480,64 +2452,62 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 
 	LZX_DEBUG("Allocating memory.");
 
-	ctx = MALLOC(sizeof(struct lzx_compressor));
+	ctx = CALLOC(1, sizeof(struct lzx_compressor));
 	if (ctx == NULL)
 		goto err;
 
-	size_t block_specs_length;
+	ctx->num_main_syms = lzx_get_num_main_syms(window_size);
+	ctx->max_window_size = window_size;
+	ctx->window = MALLOC(window_size + 12);
+	if (ctx->window == NULL)
+		goto err;
 
-#if 0
-	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW)
-		block_specs_length = 1U << params->alg_params.slow.num_split_passes;
-	else
-#endif
-		block_specs_length = 1U;
+	if (params->algorithm == WIMLIB_LZX_ALGORITHM_FAST) {
+		ctx->prev_tab = MALLOC(window_size * sizeof(ctx->prev_tab[0]));
+		if (ctx->prev_tab == NULL)
+			goto err;
+	}
+
+	size_t block_specs_length = DIV_ROUND_UP(window_size, LZX_DIV_BLOCK_SIZE);
 	ctx->block_specs = MALLOC(block_specs_length * sizeof(ctx->block_specs[0]));
 	if (ctx->block_specs == NULL)
-		goto err_free_ctx;
+		goto err;
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
-		ctx->SA = MALLOC(3U * LZX_MAX_WINDOW_SIZE * sizeof(ctx->SA[0]));
+		ctx->SA = MALLOC(3U * window_size * sizeof(ctx->SA[0]));
 		if (ctx->SA == NULL)
-			goto err_free_block_specs;
-		ctx->ISA = ctx->SA + LZX_MAX_WINDOW_SIZE;
-		ctx->salink = MALLOC(LZX_MAX_WINDOW_SIZE * sizeof(ctx->salink[0]));
+			goto err;
+		ctx->ISA = ctx->SA + window_size;
+		ctx->LCP = ctx->ISA + window_size;
+
+		ctx->salink = MALLOC(window_size * sizeof(ctx->salink[0]));
 		if (ctx->salink == NULL)
-			goto err_free_SA;
-	} else {
-		ctx->SA = NULL;
-		ctx->ISA = NULL;
-		ctx->salink = NULL;
+			goto err;
 	}
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
 		ctx->optimum = MALLOC((LZX_OPTIM_ARRAY_SIZE + LZX_MAX_MATCH_LEN) *
 				       sizeof(ctx->optimum[0]));
 		if (ctx->optimum == NULL)
-			goto err_free_salink;
-	} else {
-		ctx->optimum = NULL;
+			goto err;
 	}
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
-		uint32_t cache_per_pos;
+		u32 cache_per_pos;
 
 		cache_per_pos = params->alg_params.slow.max_matches_per_pos;
 		if (cache_per_pos > LZX_MAX_CACHE_PER_POS)
 			cache_per_pos = LZX_MAX_CACHE_PER_POS;
 
-		ctx->cached_matches = MALLOC(LZX_MAX_WINDOW_SIZE * (cache_per_pos + 1) *
+		ctx->cached_matches = MALLOC(window_size * (cache_per_pos + 1) *
 					     sizeof(ctx->cached_matches[0]));
 		if (ctx->cached_matches == NULL)
-			goto err_free_optimum;
-	} else {
-		ctx->cached_matches = NULL;
+			goto err;
 	}
 
-	ctx->chosen_matches = MALLOC(LZX_MAX_WINDOW_SIZE *
-				     sizeof(ctx->chosen_matches[0]));
+	ctx->chosen_matches = MALLOC(window_size * sizeof(ctx->chosen_matches[0]));
 	if (ctx->chosen_matches == NULL)
-		goto err_free_cached_matches;
+		goto err;
 
 	memcpy(&ctx->params, params, sizeof(struct wimlib_lzx_params));
 	memset(&ctx->zero_codes, 0, sizeof(ctx->zero_codes));
@@ -2548,19 +2518,8 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 	*ctx_pp = (struct wimlib_lzx_context*)ctx;
 	return 0;
 
-err_free_cached_matches:
-	FREE(ctx->cached_matches);
-err_free_optimum:
-	FREE(ctx->optimum);
-err_free_salink:
-	FREE(ctx->salink);
-err_free_SA:
-	FREE(ctx->SA);
-err_free_block_specs:
-	FREE(ctx->block_specs);
-err_free_ctx:
-	FREE(ctx);
 err:
+	wimlib_lzx_free_context((struct wimlib_lzx_context*)ctx);
 	LZX_DEBUG("Ran out of memory.");
 	return WIMLIB_ERR_NOMEM;
 }
@@ -2578,6 +2537,8 @@ wimlib_lzx_free_context(struct wimlib_lzx_context *_ctx)
 		FREE(ctx->salink);
 		FREE(ctx->SA);
 		FREE(ctx->block_specs);
+		FREE(ctx->prev_tab);
+		FREE(ctx->window);
 		FREE(ctx);
 	}
 }
@@ -2592,7 +2553,7 @@ wimlib_lzx_compress(const void * const restrict uncompressed_data,
 	struct wimlib_lzx_context *ctx = NULL;
 	unsigned compressed_len;
 
-	ret = wimlib_lzx_alloc_context(NULL, &ctx);
+	ret = wimlib_lzx_alloc_context(32768, NULL, &ctx);
 	if (ret) {
 		wimlib_assert(ret != WIMLIB_ERR_INVALID_PARAM);
 		WARNING("Couldn't allocate LZX compression context: %"TS"",

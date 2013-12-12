@@ -75,6 +75,7 @@ new_wim_struct(void)
 	return wim;
 }
 
+/* Determine if the chunk size is valid for the specified compression type.  */
 static bool
 wim_chunk_size_valid(u32 chunk_size, int ctype)
 {
@@ -109,9 +110,19 @@ wim_chunk_size_valid(u32 chunk_size, int ctype)
 	 */
 	switch (ctype) {
 	case WIMLIB_COMPRESSION_TYPE_LZX:
-		/* TODO: Allow other chunk sizes when supported by the LZX
-		 * compressor and decompressor.  */
-		return order == 15;
+		/* For LZX compression, the chunk size corresponds to the LZX
+		 * window size, which according the LZX specification can be any
+		 * power of 2 between 2^15 and 2^21, inclusively.  All these are
+		 * supported by wimlib; however, unfortunately only 2^15 is
+		 * supported by WIMGAPI[1] so this value is used by default.
+		 *
+		 * [1] WIMGAPI (Windows 7) attempts to decompress LZX chunk
+		 * sizes > 2^15 but seems to have bug(s) that cause it to fail
+		 * or crash.  (I tried several tweaks to the LZX data but none
+		 * resulted in successful decompression.)  WIMGAPI (Windows 8)
+		 * appears to refuse to open WIMs with chunk size > 2^15
+		 * entirely.  */
+		return order >= 15 && order <= 21;
 
 	case WIMLIB_COMPRESSION_TYPE_XPRESS:
 		/* WIMGAPI (Windows 7) didn't seem to support XPRESS chunk size
@@ -119,12 +130,21 @@ wim_chunk_size_valid(u32 chunk_size, int ctype)
 		 * supported.  67108864 was the largest size that worked.
 		 * (Note, however, that the offsets of XPRESS matches are still
 		 * limited to 65535 bytes even when a much larger chunk size is
-		 * used!)  */
+		 * used!)
+		 *
+		 * WIMGAPI (Windows 8) seemed to have removed the support for
+		 * larger XPRESS chunk sizes and will refuse to open such WIMs.
+		 *
+		 * 2^15 = 32768 is the default value used for compatibility, but
+		 * wimlib can actually use up to 2^26.  */
 		return order >= 15 && order <= 26;
 	}
 	return false;
 }
 
+/* Return the default chunk size to use for the specified compression type.
+ *
+ * See notes above in wim_chunk_size_valid().  */
 static u32
 wim_default_chunk_size(int ctype)
 {
@@ -447,13 +467,20 @@ wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size)
 		      wimlib_get_compression_type_string(wim->out_compression_type));
 		switch (wim->out_compression_type) {
 		case WIMLIB_COMPRESSION_TYPE_XPRESS:
-			ERROR("Valid chunk sizes for XPRESS are 32768, 65536, 131072, ..., 67108864.");
+			ERROR("Valid chunk sizes for XPRESS are "
+			      "32768, 65536, 131072, ..., 67108864.");
 			break;
 		case WIMLIB_COMPRESSION_TYPE_LZX:
-			ERROR("Valid chunk sizes for XPRESS are 65536.");
+			ERROR("Valid chunk sizes for LZX are "
+			      "32768, 65536, 131072, ..., 2097152.");
 			break;
 		}
 		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
+	}
+	if (chunk_size != 32768) {
+		WARNING  ("Changing the compression chunk size to any value other than\n"
+		"          the default of 32768 bytes eliminates compatibility with\n"
+		"          Microsoft's software!");
 	}
 	wim->out_chunk_size = chunk_size;
 	return 0;

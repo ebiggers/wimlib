@@ -91,19 +91,25 @@
  * equal to 32768).  Otherwise the details are the same.
  */
 
-typedef int (*decompress_func_t)(const void *, unsigned, void *, unsigned);
-
-static decompress_func_t
-get_decompress_func(int ctype)
+static int decompress(const void *cchunk, unsigned clen,
+		      void *uchunk, unsigned ulen,
+		      int ctype, u32 wim_chunk_size)
 {
 	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_LZX:
-		return wimlib_lzx_decompress;
 	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		return wimlib_xpress_decompress;
+		return wimlib_xpress_decompress(cchunk,
+						clen,
+						uchunk,
+						ulen);
+	case WIMLIB_COMPRESSION_TYPE_LZX:
+		return wimlib_lzx_decompress2(cchunk,
+					      clen,
+					      uchunk,
+					      ulen,
+					      wim_chunk_size);
 	default:
 		wimlib_assert(0);
-		return NULL;
+		return -1;
 	}
 }
 
@@ -167,10 +173,6 @@ read_compressed_resource(const struct wim_lookup_table_entry * const lte,
 	bool tmp_buf_malloced = false;
 	bool compressed_buf_malloced = false;
 	const size_t stack_max = 32768;
-
-	/* Get the appropriate decompression function.  */
-	const decompress_func_t decompress =
-			get_decompress_func(wim_resource_compression_type(lte));
 
 	/* Get the file descriptor for the WIM.  */
 	struct filedes * const in_fd = &lte->wim->in_fd;
@@ -453,10 +455,12 @@ read_compressed_resource(const struct wim_lookup_table_entry * const lte,
 				target = tmp_buf;
 
 			/* Decompress the chunk.  */
-			ret = (*decompress)(compressed_buf,
-					    compressed_chunk_size,
-					    target,
-					    uncompressed_chunk_size);
+			ret = decompress(compressed_buf,
+					 compressed_chunk_size,
+					 target,
+					 uncompressed_chunk_size,
+					 wim_resource_compression_type(lte),
+					 orig_chunk_size);
 			if (ret) {
 				ERROR("Failed to decompress data.");
 				ret = WIMLIB_ERR_DECOMPRESSION;
@@ -543,7 +547,6 @@ read_pipable_resource(const struct wim_lookup_table_entry *lte,
 		      int flags, u64 offset)
 {
 	struct filedes *in_fd;
-	decompress_func_t decompress;
 	int ret;
 	const u32 orig_chunk_size = wim_resource_chunk_size(lte);
 	u8 cchunk[orig_chunk_size - 1];
@@ -562,7 +565,6 @@ read_pipable_resource(const struct wim_lookup_table_entry *lte,
 
 	/* Get pointers to appropriate decompression function and the input file
 	 * descriptor.  */
-	decompress = get_decompress_func(wim_resource_compression_type(lte));
 	in_fd = &lte->wim->in_fd;
 
 	/* This function currently assumes the entire resource is being read at
@@ -611,7 +613,9 @@ read_pipable_resource(const struct wim_lookup_table_entry *lte,
 			memcpy(out_p, cchunk, chunk_usize);
 		} else {
 			ret = (*decompress)(cchunk, chunk_csize,
-					    out_p, chunk_usize);
+					    out_p, chunk_usize,
+					    wim_resource_compression_type(lte),
+					    orig_chunk_size);
 			if (ret) {
 				errno = EINVAL;
 				ret = WIMLIB_ERR_DECOMPRESSION;

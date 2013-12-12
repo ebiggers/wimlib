@@ -6,6 +6,7 @@
  * */
 
 #include "wimlib/assert.h"
+#include "wimlib/util.h"
 #include "wimlib/types.h"
 
 //#define ENABLE_LZX_DEBUG
@@ -32,12 +33,16 @@
 #define LZX_BLOCKTYPE_ALIGNED        2
 #define LZX_BLOCKTYPE_UNCOMPRESSED   3
 
-#define LZX_NUM_PRIMARY_LENS         7	/* this one missing from spec! */
+#define LZX_NUM_PRIMARY_LENS         7
 
-/* NOTE: There are really 51 position slots in the LZX format as a whole, but
- * only 30 are needed to allow for the window to be up to 32768 bytes long,
- * which is the maximum in the WIM format. */
-#define LZX_NUM_POSITION_SLOTS       30
+/* The number of position slots varies from 30 to 51 depending on the window
+ * size (see comment in lzx-decompress.c).  */
+#define LZX_MAX_POSITION_SLOTS		51
+
+#define LZX_MIN_WINDOW_ORDER	15
+#define LZX_MAX_WINDOW_ORDER	21
+#define LZX_MIN_WINDOW_SIZE	(1U << LZX_MIN_WINDOW_ORDER)  /* 32768   */
+#define LZX_MAX_WINDOW_SIZE	(1U << LZX_MAX_WINDOW_ORDER)  /* 2097152 */
 
 /* Read the LZX specification for information about the Huffman trees used in
  * the LZX compression format.  Basically there are 4 of them: The main tree,
@@ -54,8 +59,7 @@
  * A PRECODE is used to encode the code lengths for the main tree and the length
  * tree.  There is a separate pretree for each half of the main tree.  */
 
-#define LZX_MAINCODE_NUM_SYMBOLS	 (LZX_NUM_CHARS + \
-					(LZX_NUM_POSITION_SLOTS << 3))
+#define LZX_MAINCODE_MAX_NUM_SYMBOLS	(LZX_NUM_CHARS + (LZX_MAX_POSITION_SLOTS << 3))
 #define LZX_MAINCODE_TABLEBITS		11
 
 #define LZX_LENCODE_NUM_SYMBOLS		249
@@ -82,13 +86,13 @@
  * different as well.  */
 #define LZX_WIM_MAGIC_FILESIZE		12000000
 
-#define LZX_BLOCKTYPE_NBITS	3
-#define LZX_BLOCKSIZE_NBITS	16
+/* Assumed LZX block size when the encoded block size begins with a 0 bit.  */
+#define LZX_DEFAULT_BLOCK_SIZE		32768
 
 #define USE_LZX_EXTRA_BITS_ARRAY
 
 #ifdef USE_LZX_EXTRA_BITS_ARRAY
-extern const u8 lzx_extra_bits[];
+extern const u8 lzx_extra_bits[LZX_MAX_POSITION_SLOTS];
 #endif
 
 /* Given the number of a LZX position slot, return the number of extra bits that
@@ -106,7 +110,32 @@ lzx_get_num_extra_bits(unsigned position_slot)
 #endif
 }
 
-extern const u32 lzx_position_base[];
+extern const u32 lzx_position_base[LZX_MAX_POSITION_SLOTS];
+
+/* Returns the LZX position slot that corresponds to a given formatted offset.
+ *
+ * Logically, this returns the smallest i such that
+ * formatted_offset >= lzx_position_base[i].
+ *
+ * The actual implementation below takes advantage of the regularity of the
+ * numbers in the lzx_position_base array to calculate the slot directly from
+ * the formatted offset without actually looking at the array.
+ */
+static inline unsigned
+lzx_get_position_slot_raw(unsigned formatted_offset)
+{
+	if (formatted_offset >= 196608) {
+		return (formatted_offset >> 17) + 34;
+	} else {
+		LZX_ASSERT(2 <= formatted_offset && formatted_offset < 655360);
+		unsigned mssb_idx = bsr32(formatted_offset);
+		return (mssb_idx << 1) |
+			((formatted_offset >> (mssb_idx - 1)) & 1);
+	}
+}
+
+extern bool lzx_window_size_valid(u32 window_size);
+extern unsigned lzx_get_num_main_syms(u32 window_size);
 
 #define LZX_NUM_RECENT_OFFSETS	3
 

@@ -91,9 +91,10 @@ The above LZX data are using explicitly specified maximum compression
 faster LZX compressor is used; it will produce results in between those given
 for XPRESS and LZX above.
 
-Note: if the absolute maximum compression ratio is desired, `wimlib-imagex
-optimize WIMFILE --recompress --compress-slow' on one of the above
-LZX-compressed WIMs produces a WIM of 187,089,943 bytes in about 400 seconds.
+Note: if the absolute maximum (but still compatible) compression ratio is
+desired, `wimlib-imagex optimize WIMFILE --recompress --compress-slow' on one of
+the above LZX-compressed WIMs produces a WIM of 187,089,943 bytes in about 400
+seconds.
 
                                   NTFS SUPPORT
 

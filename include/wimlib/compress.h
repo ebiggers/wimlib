@@ -61,7 +61,7 @@ flush_output_bitstream(struct output_bitstream *ostream);
 
 extern void
 bitstream_put_bits(struct output_bitstream *ostream,
-		   output_bitbuf_t bits, unsigned num_bits);
+		   u32 bits, unsigned num_bits);
 
 extern void
 bitstream_put_byte(struct output_bitstream *ostream, u8 n);

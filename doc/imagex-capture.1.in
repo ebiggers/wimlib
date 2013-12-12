@@ -194,6 +194,16 @@ and "LZX", instead of "fast" and "maximum", respectively.
 Like \fB--compress\fR=\fImaximum\fR, but spend even more time compressing the
 data to achieve a very slightly better compression ratio.
 .TP
+\fB--chunk-size\fR=\fISIZE\fR
+Set the WIM compression chunk size to \fISIZE\fR.  Using this option is not
+recommended because WIM chunk sizes other than the default of 32768 are not
+supported by Microsoft's software.  But if you decide to use this option
+regardless, you can choose a chunk size that is any power of 2 greater than or
+equal to 2^15 (32768) up to 2^21 (2097152) for LZX ("maximum") compression or
+2^26 (67108864) for XPRESS ("fast") compression.  Larger chunks mean larger LZ77
+dictionaries and better compression ratios on sufficiently large files, but
+slower random access.
+.TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of
 available CPUs).

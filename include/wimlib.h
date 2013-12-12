@@ -2760,6 +2760,10 @@ wimlib_lzx_compress2(const void *chunk, unsigned chunk_size, void *out,
  * library clients looking to make use of wimlib's compression code for another
  * purpose.
  *
+ * @param window_size
+ *	Size of the LZX window.  Must be a power of 2 between 2^15 and 2^21,
+ *	inclusively.
+ *
  * @param params
  *	Compression parameters to use, or @c NULL to use the default parameters.
  *
@@ -2773,12 +2777,13 @@ wimlib_lzx_compress2(const void *chunk, unsigned chunk_size, void *out,
  * @return 0 on success; nonzero on error.
  *
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	The compression parameters were invalid.
+ *	The window size or compression parameters were invalid.
  * @retval ::WIMLIB_ERR_NOMEM
  *	Not enough memory to allocate the compression context.
  */
 extern int
-wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
+wimlib_lzx_alloc_context(uint32_t window_size,
+			 const struct wimlib_lzx_params *params,
 			 struct wimlib_lzx_context **ctx_pp);
 
 /**
@@ -2811,6 +2816,11 @@ wimlib_lzx_alloc_context(const struct wimlib_lzx_params *params,
 extern int
 wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 		      void *uncompressed_data, unsigned uncompressed_len);
+
+extern int
+wimlib_lzx_decompress2(const void *compressed_data, unsigned compressed_len,
+		       void *uncompressed_data, unsigned uncompressed_len,
+		       uint32_t max_window_size);
 
 /**
  * @ingroup G_compression
@@ -3362,14 +3372,23 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  * Set the compression chunk size of a WIM to use in subsequent calls to
  * wimlib_write() or wimlib_overwrite().
  *
+ * A compression chunk size will result in a greater compression ratio, but the
+ * speed of random access to the WIM will be reduced, and the effect of an
+ * increased compression chunk size is limited by the size of each file being
+ * compressed.
+ *
+ * <b>WARNING: Changing the compression chunk size to any value other than the
+ * default of 32768 bytes eliminates compatibility with Microsoft's software,
+ * except when increasing the XPRESS chunk size before Windows 8.</b>
+ *
  * @param wim
  *	::WIMStruct for a WIM.
  * @param out_chunk_size
  *	The chunk size (in bytes) to set.  The valid chunk sizes are dependent
  *	on the compression format.  The XPRESS compression format supports chunk
  *	sizes that are powers of 2 with exponents between 15 and 26 inclusively,
- *	whereas the LZX compression format currently only supports a chunk size
- *	of 32768.
+ *	whereas the LZX compression format supports chunk sizes that are powers
+ *	of 2 with exponents between 15 and 21 inclusively.
  *
  * @return 0 on success; nonzero on error.
  *

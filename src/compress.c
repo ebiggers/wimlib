@@ -38,45 +38,43 @@
 /* Writes @num_bits bits, given by the @num_bits least significant bits of
  * @bits, to the output @ostream. */
 void
-bitstream_put_bits(struct output_bitstream *ostream, output_bitbuf_t bits,
+bitstream_put_bits(struct output_bitstream *ostream, u32 bits,
 		   unsigned num_bits)
 {
-	unsigned rem_bits;
+	while (num_bits > ostream->free_bits) {
+		/* Buffer variable does not have space for the new bits.  It
+		 * needs to be flushed as a 16-bit integer.  Bits in the second
+		 * byte logically precede those in the first byte
+		 * (little-endian), but within each byte the bits are ordered
+		 * from high to low.  This is true for both XPRESS and LZX
+		 * compression.  */
 
-	if (num_bits <= ostream->free_bits) {
-		/* Buffer variable had space for the new bits.  */
-		ostream->bitbuf = (ostream->bitbuf << num_bits) | bits;
-		ostream->free_bits -= num_bits;
-		return;
+		/* There must be at least 2 bytes of space remaining.  */
+		if (unlikely(ostream->bytes_remaining < 2)) {
+			ostream->overrun = true;
+			return;
+		}
+
+		/* Fill the buffer with as many bits that fit.  */
+		unsigned fill_bits = ostream->free_bits;
+
+		ostream->bitbuf <<= fill_bits;
+		ostream->bitbuf |= bits >> (num_bits - fill_bits);
+
+		*(le16*)ostream->bit_output = cpu_to_le16(ostream->bitbuf);
+		ostream->bit_output = ostream->next_bit_output;
+		ostream->next_bit_output = ostream->output;
+		ostream->output += 2;
+		ostream->bytes_remaining -= 2;
+
+		ostream->free_bits = 16;
+		num_bits -= fill_bits;
+		bits &= (1U << num_bits) - 1;
 	}
 
-	/* Buffer variable does not have space for the new bits.  It needs to be
-	 * flushed as a 16-bit integer.  Bits in the second byte logically
-	 * precede those in the first byte (little-endian), but within each byte
-	 * the bits are ordered from high to low.  This is true for both XPRESS
-	 * and LZX compression.  */
-
-	wimlib_assert(num_bits <= 16);
-
-	/* There must be at least 2 bytes of space remaining.  */
-	if (unlikely(ostream->bytes_remaining < 2)) {
-		ostream->overrun = true;
-		return;
-	}
-
-	/* Fill the buffer with as many bits that fit.  */
-	rem_bits = num_bits - ostream->free_bits;
-	ostream->bitbuf <<= ostream->free_bits;
-	ostream->bitbuf |= bits >> rem_bits;
-
-	*(le16*)ostream->bit_output = cpu_to_le16(ostream->bitbuf);
-	ostream->bit_output = ostream->next_bit_output;
-	ostream->next_bit_output = ostream->output;
-	ostream->output += 2;
-	ostream->bytes_remaining -= 2;
-
-	ostream->free_bits = 16 - rem_bits;
-	ostream->bitbuf = bits;
+	/* Buffer variable has space for the new bits.  */
+	ostream->bitbuf = (ostream->bitbuf << num_bits) | bits;
+	ostream->free_bits -= num_bits;
 }
 
 void

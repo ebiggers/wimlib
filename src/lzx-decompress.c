@@ -121,9 +121,9 @@
 struct lzx_tables {
 
 	u16 maintree_decode_table[(1 << LZX_MAINCODE_TABLEBITS) +
-					(LZX_MAINCODE_NUM_SYMBOLS * 2)]
+					(LZX_MAINCODE_MAX_NUM_SYMBOLS * 2)]
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u8 maintree_lens[LZX_MAINCODE_NUM_SYMBOLS];
+	u8 maintree_lens[LZX_MAINCODE_MAX_NUM_SYMBOLS];
 
 
 	u16 lentree_decode_table[(1 << LZX_LENCODE_TABLEBITS) +
@@ -156,10 +156,11 @@ read_huffsym_using_pretree(struct input_bitstream *istream,
 static inline int
 read_huffsym_using_maintree(struct input_bitstream *istream,
 			    const struct lzx_tables *tables,
-			    unsigned *n)
+			    unsigned *n,
+			    unsigned num_main_syms)
 {
 	return read_huffsym(istream, tables->maintree_decode_table,
-			    tables->maintree_lens, LZX_MAINCODE_NUM_SYMBOLS,
+			    tables->maintree_lens, num_main_syms,
 			    LZX_MAINCODE_TABLEBITS, n, LZX_MAX_MAIN_CODEWORD_LEN);
 }
 
@@ -324,6 +325,8 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
  */
 static int
 lzx_read_block_header(struct input_bitstream *istream,
+		      unsigned num_main_syms,
+		      unsigned max_window_size,
 		      unsigned *block_size_ret,
 		      unsigned *block_type_ret,
 		      struct lzx_tables *tables,
@@ -336,7 +339,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 	unsigned i;
 	unsigned len;
 
-	ret = bitstream_ensure_bits(istream, LZX_BLOCKTYPE_NBITS + 1);
+	ret = bitstream_ensure_bits(istream, 4);
 	if (ret) {
 		LZX_DEBUG("LZX input stream overrun");
 		return ret;
@@ -344,20 +347,36 @@ lzx_read_block_header(struct input_bitstream *istream,
 
 	/* The first three bits tell us what kind of block it is, and are one
 	 * of the LZX_BLOCKTYPE_* values.  */
-	block_type = bitstream_read_bits_nocheck(istream, LZX_BLOCKTYPE_NBITS);
+	block_type = bitstream_read_bits_nocheck(istream, 3);
 
-	/* The next bit indicates whether the block size is the default (32768),
-	 * indicated by a 1 bit, or whether the block size is given by the next
-	 * 16 bits, indicated by a 0 bit. */
+	/* Read the block size.  This mirrors the behavior
+	 * lzx_write_compressed_block() in lzx-compress.c; see that for more
+	 * details.  */
 	s = bitstream_read_bits_nocheck(istream, 1);
-
 	if (s) {
-		block_size = 32768;
+		block_size = LZX_DEFAULT_BLOCK_SIZE;
 	} else {
-		ret = bitstream_read_bits(istream, LZX_BLOCKSIZE_NBITS, &block_size);
+		unsigned tmp;
+		block_size = 0;
+
+		ret = bitstream_read_bits(istream, 8, &tmp);
 		if (ret)
 			return ret;
-		block_size = le16_to_cpu(block_size);
+		block_size |= tmp;
+
+		ret = bitstream_read_bits(istream, 8, &tmp);
+		if (ret)
+			return ret;
+		block_size <<= 8;
+		block_size |= tmp;
+
+		if (max_window_size >= 65536) {
+			ret = bitstream_read_bits(istream, 8, &tmp);
+			if (ret)
+				return ret;
+			block_size <<= 8;
+			block_size |= tmp;
+		}
 	}
 
 	switch (block_type) {
@@ -408,10 +427,10 @@ lzx_read_block_header(struct input_bitstream *istream,
 		 * tree. */
 		LZX_DEBUG("Reading path lengths for remaining elements of "
 			  "main tree (%d elements).",
-			  LZX_MAINCODE_NUM_SYMBOLS - LZX_NUM_CHARS);
+			  num_main_syms - LZX_NUM_CHARS);
 		ret = lzx_read_code_lens(istream,
 					 tables->maintree_lens + LZX_NUM_CHARS,
-					 LZX_MAINCODE_NUM_SYMBOLS - LZX_NUM_CHARS);
+					 num_main_syms - LZX_NUM_CHARS);
 		if (ret) {
 			LZX_DEBUG("Failed to read the path lengths for the "
 				  "remaining elements of the main tree");
@@ -422,7 +441,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 			  "table for the main tree.");
 
 		ret = make_huffman_decode_table(tables->maintree_decode_table,
-						LZX_MAINCODE_NUM_SYMBOLS,
+						num_main_syms,
 						LZX_MAINCODE_TABLEBITS,
 						tables->maintree_lens,
 						LZX_MAX_MAIN_CODEWORD_LEN);
@@ -754,6 +773,7 @@ undo_call_insn_preprocessing(u8 uncompressed_data[], int uncompressed_data_len)
  * @block_type:	The type of the block (LZX_BLOCKTYPE_VERBATIM or
  * 		LZX_BLOCKTYPE_ALIGNED)
  * @block_size:	The size of the block, in bytes.
+ * @num_main_syms:	Number of symbols in the main alphabet.
  * @window:	Pointer to the decompression window.
  * @window_pos:	The current position in the window.  Will be 0 for the first
  * 			block.
@@ -764,6 +784,7 @@ undo_call_insn_preprocessing(u8 uncompressed_data[], int uncompressed_data_len)
  */
 static int
 lzx_decompress_block(int block_type, unsigned block_size,
+		     unsigned num_main_syms,
 		     u8 *window,
 		     unsigned window_pos,
 		     const struct lzx_tables *tables,
@@ -778,7 +799,8 @@ lzx_decompress_block(int block_type, unsigned block_size,
 	end = window_pos + block_size;
 	while (window_pos < end) {
 		ret = read_huffsym_using_maintree(istream, tables,
-						  &main_element);
+						  &main_element,
+						  num_main_syms);
 		if (ret)
 			return ret;
 
@@ -786,7 +808,7 @@ lzx_decompress_block(int block_type, unsigned block_size,
 			/* literal: 0 to LZX_NUM_CHARS - 1 */
 			window[window_pos++] = main_element;
 		} else {
-			/* match: LZX_NUM_CHARS to LZX_MAINCODE_NUM_SYMBOLS - 1 */
+			/* match: LZX_NUM_CHARS to num_main_syms - 1 */
 			match_len = lzx_decode_match(main_element,
 						     block_type,
 						     end - window_pos,
@@ -803,10 +825,10 @@ lzx_decompress_block(int block_type, unsigned block_size,
 	return 0;
 }
 
-/* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
-		      void *uncompressed_data, unsigned uncompressed_len)
+wimlib_lzx_decompress2(const void *compressed_data, unsigned compressed_len,
+		       void *uncompressed_data, unsigned uncompressed_len,
+		       u32 max_window_size)
 {
 	struct lzx_tables tables;
 	struct input_bitstream istream;
@@ -814,15 +836,30 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 	unsigned window_pos;
 	unsigned block_size;
 	unsigned block_type;
+	unsigned num_main_syms;
 	int ret;
 	bool e8_preprocessing_done;
 
-	LZX_DEBUG("lzx_decompress (compressed_data = %p, compressed_len = %d, "
-		  "uncompressed_data = %p, uncompressed_len = %d).",
+	LZX_DEBUG("compressed_data = %p, compressed_len = %u, "
+		  "uncompressed_data = %p, uncompressed_len = %u, "
+		  "max_window_size=%u).",
 		  compressed_data, compressed_len,
-		  uncompressed_data, uncompressed_len);
+		  uncompressed_data, uncompressed_len, max_window_size);
 
-	wimlib_assert(uncompressed_len <= 32768);
+	if (!lzx_window_size_valid(max_window_size)) {
+		LZX_DEBUG("Window size of %u is invalid!",
+			  max_window_size);
+		return -1;
+	}
+
+	num_main_syms = lzx_get_num_main_syms(max_window_size);
+
+	if (uncompressed_len > max_window_size) {
+		LZX_DEBUG("Uncompressed chunk size of %u exceeds "
+			  "window size of %u!",
+			  uncompressed_len, max_window_size);
+		return -1;
+	}
 
 	memset(tables.maintree_lens, 0, sizeof(tables.maintree_lens));
 	memset(tables.lentree_lens, 0, sizeof(tables.lentree_lens));
@@ -842,7 +879,8 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 	     window_pos += block_size)
 	{
 		LZX_DEBUG("Reading block header.");
-		ret = lzx_read_block_header(&istream, &block_size,
+		ret = lzx_read_block_header(&istream, num_main_syms,
+					    max_window_size, &block_size,
 					    &block_type, &tables, &queue);
 		if (ret)
 			return ret;
@@ -866,6 +904,7 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 				LZX_DEBUG("LZX_BLOCKTYPE_ALIGNED");
 			ret = lzx_decompress_block(block_type,
 						   block_size,
+						   num_main_syms,
 						   uncompressed_data,
 						   window_pos,
 						   &tables,
@@ -873,6 +912,7 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 						   &istream);
 			if (ret)
 				return ret;
+
 			if (tables.maintree_lens[0xe8] != 0)
 				e8_preprocessing_done = true;
 			break;
@@ -902,4 +942,14 @@ wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 	if (e8_preprocessing_done)
 		undo_call_insn_preprocessing(uncompressed_data, uncompressed_len);
 	return 0;
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
+		      void *uncompressed_data, unsigned uncompressed_len)
+{
+	return wimlib_lzx_decompress2(compressed_data, compressed_len,
+				      uncompressed_data, uncompressed_len,
+				      32768);
 }

@@ -35,19 +35,10 @@
 
 #include <string.h>
 
-#define LZ_MIN_MATCH 3
-
 #define HASH_BITS	15
 #define HASH_SIZE	(1 << HASH_BITS)
 #define HASH_MASK	(HASH_SIZE - 1)
-
-#if LZ_MIN_MATCH == 2
-#	define HASH_SHIFT	8
-#elif LZ_MIN_MATCH == 3
-#	define HASH_SHIFT	5
-#else
-#error "Invalid LZ_MIN_MATCH"
-#endif
+#define HASH_SHIFT	5
 
 /* Hash function, based on code from zlib.  This function will update and return
  * the hash value @hash for the string ending on the additional input character
@@ -82,7 +73,7 @@ insert_string(input_idx_t hash_tab[], input_idx_t prev_tab[],
 	      const u8 window[], unsigned str_pos,
 	      unsigned hash)
 {
-	hash = update_hash(hash, window[str_pos + LZ_MIN_MATCH - 1]);
+	hash = update_hash(hash, window[str_pos + 2]);
 	prev_tab[str_pos] = hash_tab[hash];
 	hash_tab[hash] = str_pos;
 	return hash;
@@ -291,21 +282,17 @@ lz_analyze_block(const u8 window[],
 
 			/* Do not insert strings in hash table beyond this. */
 			unsigned max_insert = window_size - params->min_match;
-#if LZ_MIN_MATCH == 2
-			if (prev_len >= 3)
-#endif
-			{
-				prev_len -= 2;
 
-				do {
-					if (++cur_input_pos <= max_insert) {
-						hash = insert_string(hash_tab, prev_tab,
-								     window,
-								     cur_input_pos,
-								     hash);
-					}
-				} while (--prev_len != 0);
-			}
+			prev_len -= 2;
+
+			do {
+				if (++cur_input_pos <= max_insert) {
+					hash = insert_string(hash_tab, prev_tab,
+							     window,
+							     cur_input_pos,
+							     hash);
+				}
+			} while (--prev_len != 0);
 			match_available = false;
 			match_len = params->min_match - 1;
 		} else if (match_available) {

@@ -237,7 +237,7 @@ wimlib_xpress_compress(const void * restrict uncompressed_data,
 	}
 	compressed_len += XPRESS_NUM_SYMBOLS / 2;
 
-#if defined(ENABLE_XPRESS_DEBUG) || defined(ENABLE_VERIFY_COMPRESSION) || 1
+#if defined(ENABLE_XPRESS_DEBUG) || defined(ENABLE_VERIFY_COMPRESSION)
 	/* Verify that we really get the same thing back when decompressing.  */
 	if (wimlib_xpress_decompress(compressed_data, compressed_len,
 				     udata, uncompressed_len))
