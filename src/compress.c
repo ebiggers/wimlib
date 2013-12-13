@@ -125,7 +125,7 @@ init_output_bitstream(struct output_bitstream *ostream,
 }
 
 typedef struct {
-	u32 freq;
+	freq_t freq;
 	u16 sym;
 	union {
 		u16 path_len;
@@ -148,12 +148,12 @@ cmp_nodes_by_freq(const void *_leaf1, const void *_leaf2)
 	const HuffmanNode *leaf1 = _leaf1;
 	const HuffmanNode *leaf2 = _leaf2;
 
-	int freq_diff = (int)leaf1->freq - (int)leaf2->freq;
-
-	if (freq_diff == 0)
-		return (int)leaf1->sym - (int)leaf2->sym;
+	if (leaf1->freq > leaf2->freq)
+		return 1;
+	else if (leaf1->freq < leaf2->freq)
+		return -1;
 	else
-		return freq_diff;
+		return (int)leaf1->sym - (int)leaf2->sym;
 }
 
 /* Comparator function for HuffmanNodes.  Sorts primarily by code length and
@@ -256,7 +256,7 @@ make_canonical_huffman_code(unsigned num_syms,
 	/* We require at least 2 possible symbols in the alphabet to produce a
 	 * valid Huffman decoding table. It is allowed that fewer than 2 symbols
 	 * are actually used, though. */
-	wimlib_assert(num_syms >= 2);
+	wimlib_assert(num_syms >= 2 && num_syms < INVALID_SYMBOL);
 
 	/* Initialize the lengths and codewords to 0 */
 	memset(lens, 0, num_syms * sizeof(lens[0]));
