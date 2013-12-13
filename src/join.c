@@ -56,6 +56,7 @@ verify_swm_set(WIMStruct *wim, WIMStruct **additional_swms,
 {
 	unsigned total_parts = wim->hdr.total_parts;
 	int ctype;
+	u32 chunk_size;
 	const u8 *guid;
 
 	if (total_parts != num_additional_swms + 1) {
@@ -83,9 +84,10 @@ verify_swm_set(WIMStruct *wim, WIMStruct **additional_swms,
 		}
 	}
 
-	/* keep track of ctype and guid just to make sure they are the same for
-	 * all the WIMs. */
+	/* Keep track of the compression type, chunk size, and GUID to make sure
+	 * they are the same for all the WIMs.  */
 	ctype = wim->compression_type;
+	chunk_size = wim->chunk_size;
 	guid = wim->hdr.guid;
 
 	{
@@ -102,6 +104,12 @@ verify_swm_set(WIMStruct *wim, WIMStruct **additional_swms,
 			if (swm->compression_type != ctype) {
 				ERROR("The split WIMs do not all have the same "
 				      "compression type");
+				return WIMLIB_ERR_SPLIT_INVALID;
+			}
+			if (swm->chunk_size != chunk_size &&
+			    ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
+				ERROR("The split WIMs do not all have the same "
+				      "chunk size");
 				return WIMLIB_ERR_SPLIT_INVALID;
 			}
 			if (memcmp(guid, swm->hdr.guid, WIM_GID_LEN) != 0) {
