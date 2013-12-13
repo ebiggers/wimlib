@@ -224,17 +224,18 @@ read_compressed_wim_resource(const struct wim_lookup_table_entry * const lte,
 
 		/* Calculate the index of the first needed entry in the chunk
 		 * table.  */
-		const u64 start_table_idx = (start_chunk == 0) ? 0 : start_chunk - 1;
+		const u64 start_table_idx = (start_chunk == 0) ?
+				0 : start_chunk - 1;
 
 		/* Calculate the number of entries that need to be read from the
 		 * chunk table.  */
 		const u64 num_needed_chunk_entries = (start_chunk == 0) ?
-					num_alloc_chunk_entries - 1 : num_alloc_chunk_entries;
+				num_alloc_chunk_entries - 1 : num_alloc_chunk_entries;
 
 		/* Calculate the number of bytes of data that need to be read
 		 * from the chunk table.  */
 		const size_t chunk_table_needed_size =
-					num_needed_chunk_entries * chunk_entry_size;
+				num_needed_chunk_entries * chunk_entry_size;
 
 		/* Calculate the byte offset, in the WIM file, of the first
 		 * chunk table entry to read.  Take into account that if the WIM
@@ -288,8 +289,8 @@ read_compressed_wim_resource(const struct wim_lookup_table_entry * const lte,
 	}
 
 	/* If using a callback function, allocate a temporary buffer that will
-	 * be used to pass data to it.  If writing directly to a buffer instead,
-	 * arrange to write data directly into it.  */
+	 * hold data being passed to it.  If writing directly to a buffer
+	 * instead, arrange to write data directly into it.  */
 	size_t out_buf_size;
 	u8 *out_buf_end, *out_p;
 	if (cb) {
@@ -375,10 +376,10 @@ read_compressed_wim_resource(const struct wim_lookup_table_entry * const lte,
 					      chunk_offsets[i - start_chunk];
 			}
 		}
-		if (chunk_csize == 0 || chunk_csize > orig_chunk_size) {
+		if (chunk_csize == 0 || chunk_csize > chunk_usize) {
 			ERROR("Invalid chunk size in compressed resource!");
 			errno = EINVAL;
-			ret = WIMLIB_ERR_INVALID_CHUNK_SIZE;
+			ret = WIMLIB_ERR_DECOMPRESSION;
 			goto out_free_memory;
 		}
 		if (lte->is_pipable)
@@ -578,13 +579,14 @@ out:
 /*
  * read_partial_wim_resource()-
  *
- * Read a range of data from a uncompressed or compressed resource in a WIM
+ * Read a range of data from an uncompressed or compressed resource in a WIM
  * file.  Data is written into a buffer or fed into a callback function, as
  * documented in read_resource_prefix().
  *
  * By default, this function provides the uncompressed data of the resource, and
  * @size and @offset and interpreted relative to the uncompressed contents of
- * the resource.  The behavior can be modified by any of the following flags:
+ * the resource.  This behavior can be modified by either of the following
+ * flags:
  *
  * WIMLIB_READ_RESOURCE_FLAG_RAW_FULL:
  *	Read @size bytes at @offset of the raw contents of the compressed
@@ -602,7 +604,6 @@ out:
  *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE (errno set to 0)
  *	WIMLIB_ERR_NOMEM		  (errno set to ENOMEM)
  *	WIMLIB_ERR_DECOMPRESSION	  (errno set to EINVAL)
- *	WIMLIB_ERR_INVALID_CHUNK_SIZE    (errno set to EINVAL)
  *
  *	or other error code returned by the @cb function.
  */
