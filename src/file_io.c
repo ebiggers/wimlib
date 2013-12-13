@@ -25,7 +25,6 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/assert.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/util.h"
@@ -39,8 +38,8 @@
 #include <unistd.h>
 
 
-/* Wrapper around read() that keeps retrying until all requested bytes have been
- * read or until end-of file has occurred.
+/* Wrapper around read() that checks for errors keeps retrying until all
+ * requested bytes have been read or until end-of file has occurred.
  *
  * Return values:
  *	WIMLIB_ERR_SUCCESS			(0)
@@ -79,15 +78,17 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
 {
 	int ret;
 
+	/* Verify the offset.  */
 	if (offset < fd->offset) {
 		ERROR("Can't seek backwards in pipe "
 		      "(offset %"PRIu64" => %"PRIu64").\n"
-		      "      Make sure the WIM was captured as "
-		      "pipable.",
-			fd->offset, offset);
+		      "        Make sure the WIM was captured as "
+		      "pipable.", fd->offset, offset);
 		errno = ESPIPE;
 		return WIMLIB_ERR_RESOURCE_ORDER;
 	}
+
+	/* Manually seek to the requested position.  */
 	while (fd->offset != offset) {
 		size_t bytes_to_read = min(offset - fd->offset, BUFFER_SIZE);
 		u8 dummy[bytes_to_read];
@@ -96,13 +97,15 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
 		if (ret)
 			return ret;
 	}
+
+	/* Do the actual read.  */
 	return full_read(fd, buf, count);
 }
 
-/* Wrapper around pread() that keep retrying until all requested bytes have been
- * read or until end-of file has occurred.  This also transparently handle
- * reading from pipe files, but the caller needs to be sure the requested offset
- * is greater than or equal to the current offset, or else
+/* Wrapper around pread() that checks for errors and keeps retrying until all
+ * requested bytes have been read or until end-of file has occurred.  This also
+ * transparently handle reading from pipe files, but the caller needs to be sure
+ * the requested offset is greater than or equal to the current offset, or else
  * WIMLIB_ERR_RESOURCE_ORDER will be returned.
  *
  * Return values:
@@ -110,7 +113,7 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
  *	WIMLIB_ERR_READ				(errno set)
  *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE	(errno set to 0)
  *	WIMLIB_ERR_RESOURCE_ORDER		(errno set to ESPIPE)
- * */
+ */
 int
 full_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
 {
@@ -133,7 +136,6 @@ full_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
 			} else if (errno == EINTR) {
 				continue;
 			} else if (errno == ESPIPE) {
-				wimlib_assert(count == bytes_remaining);
 				fd->is_pipe = 1;
 				goto is_pipe;
 			} else {
@@ -147,8 +149,8 @@ is_pipe:
 	return pipe_read(fd, buf, count, offset);
 }
 
-/* Wrapper around write() that keeps retrying until all requested bytes have
- * been written.
+/* Wrapper around write() that checks for errors and keeps retrying until all
+ * requested bytes have been written.
  *
  * Return values:
  *	WIMLIB_ERR_SUCCESS			(0)
@@ -176,8 +178,8 @@ full_write(struct filedes *fd, const void *buf, size_t count)
 }
 
 
-/* Wrapper around pwrite() that keep retrying until all requested bytes have been
- * written.
+/* Wrapper around pwrite() that checks for errors and keeps retrying until all
+ * requested bytes have been written.
  *
  * Return values:
  *	WIMLIB_ERR_SUCCESS	(0)
@@ -204,8 +206,8 @@ full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
 	return 0;
 }
 
-/* Wrapper around writev() that keep retrying until all requested bytes have been
- * written.
+/* Wrapper around writev() that checks for errors and keep retrying until all
+ * requested bytes have been written.
  *
  * Return values:
  *	WIMLIB_ERR_SUCCESS	(0)
@@ -219,7 +221,7 @@ full_writev(struct filedes *fd, struct iovec *iov, int iovcnt)
 		ssize_t bytes_written;
 
 		bytes_written = writev(fd->fd, iov, iovcnt);
-		if (bytes_written < 0) {
+		if (unlikely(bytes_written < 0)) {
 			if (errno == EINTR)
 				continue;
 			return WIMLIB_ERR_WRITE;
