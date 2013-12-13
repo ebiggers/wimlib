@@ -102,7 +102,7 @@ static inline bool wim_has_metadata(const WIMStruct *wim)
 	return (wim->image_metadata != NULL || wim->hdr.image_count == 0);
 }
 
-extern void
+extern int
 wim_recalculate_refcnts(WIMStruct *wim);
 
 extern u32

@@ -151,13 +151,16 @@ tally_image_refcnts(WIMStruct *wim)
  * problem by looking at ALL the images to re-calculate the reference count of
  * EVERY lookup table entry.  This only absolutely has to be done before an image
  * is deleted or before an image is mounted read-write. */
-void
+int
 wim_recalculate_refcnts(WIMStruct *wim)
 {
 	unsigned long num_ltes_with_bogus_refcnt = 0;
+	int ret;
 
 	for_lookup_table_entry(wim->lookup_table, lte_zero_real_refcnt, NULL);
-	for_image(wim, WIMLIB_ALL_IMAGES, tally_image_refcnts);
+	ret = for_image(wim, WIMLIB_ALL_IMAGES, tally_image_refcnts);
+	if (ret)
+		return ret;
 	num_ltes_with_bogus_refcnt = 0;
 	for_lookup_table_entry(wim->lookup_table, lte_fix_refcnt,
 			       &num_ltes_with_bogus_refcnt);
@@ -168,4 +171,5 @@ wim_recalculate_refcnts(WIMStruct *wim)
 			num_ltes_with_bogus_refcnt);
 	}
 	wim->refcnts_ok = 1;
+	return 0;
 }

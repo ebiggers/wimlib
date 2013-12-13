@@ -887,8 +887,11 @@ can_delete_from_wim(WIMStruct *wim)
 	ret = can_modify_wim(wim);
 	if (ret)
 		return ret;
-	if (!wim->refcnts_ok)
-		wim_recalculate_refcnts(wim);
+	if (!wim->refcnts_ok) {
+		ret = wim_recalculate_refcnts(wim);
+		if (ret)
+			return ret;
+	}
 	return 0;
 }
 
