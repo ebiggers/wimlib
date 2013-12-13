@@ -452,10 +452,13 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 		 */
 		if (lte->is_pipable == !!(resource_flags &
 					  WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE))
+		{
 			resource_flags |= WIMLIB_READ_RESOURCE_FLAG_RAW_FULL;
-		else
+			read_size = lte->resource_entry.size;
+		} else {
 			resource_flags |= WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS;
-		read_size = lte->resource_entry.size;
+			read_size = lte->resource_entry.original_size;
+		}
 		write_ctx.doing_sha = false;
 	} else {
 		write_ctx.doing_sha = true;

@@ -1378,16 +1378,22 @@ read_error:
 	return ret;
 }
 
+static int
+skip_pwm_chunk_cb(const void *chunk, size_t chunk_size, void *_ctx)
+{
+	return 0;
+}
+
 /* Skip over an unneeded stream in a pipable WIM being read from a pipe.  */
 static int
 skip_pwm_stream(struct wim_lookup_table_entry *lte)
 {
 	return read_partial_wim_resource(lte,
 					 wim_resource_size(lte),
-					 NULL,
+					 skip_pwm_chunk_cb,
 					 wim_resource_chunk_size(lte),
 					 NULL,
-					 WIMLIB_READ_RESOURCE_FLAG_SEEK_ONLY,
+					 WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS,
 					 0);
 }
 

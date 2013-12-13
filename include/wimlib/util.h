@@ -49,6 +49,10 @@
 
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
 
+/* Maximum number of array elements to allocate on the stack (used in various
+ * places when large temporary buffers are needed).  */
+#define STACK_MAX 32768
+
 #ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 extern void *
 wimlib_malloc(size_t) _malloc_attribute;

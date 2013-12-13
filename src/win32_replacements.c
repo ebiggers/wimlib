@@ -88,7 +88,7 @@ realpath(const wchar_t *path, wchar_t *resolved_path)
 	ret = GetFullPathNameW(path, ret, resolved_path, NULL);
 	if (!ret) {
 		err = GetLastError();
-		free(resolved_path);
+		FREE(resolved_path);
 		resolved_path = NULL;
 		goto fail_win32;
 	}
@@ -455,8 +455,8 @@ globfree(glob_t *pglob)
 {
 	size_t i;
 	for (i = 0; i < pglob->gl_pathc; i++)
-		free(pglob->gl_pathv[i]);
-	free(pglob->gl_pathv);
+		FREE(pglob->gl_pathv[i]);
+	FREE(pglob->gl_pathv);
 }
 
 #endif /* __WIN32__ */

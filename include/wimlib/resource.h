@@ -73,13 +73,15 @@ resource_is_compressed(const struct resource_entry *entry)
 	return (entry->flags & WIM_RESHDR_FLAG_COMPRESSED);
 }
 
-static inline void copy_resource_entry(struct resource_entry *dst,
-				       const struct resource_entry *src)
+static inline void
+copy_resource_entry(struct resource_entry *dst,
+		    const struct resource_entry *src)
 {
 	memcpy(dst, src, sizeof(struct resource_entry));
 }
 
-static inline void zero_resource_entry(struct resource_entry *entry)
+static inline void
+zero_resource_entry(struct resource_entry *entry)
 {
 	memset(entry, 0, sizeof(struct resource_entry));
 }
@@ -99,7 +101,6 @@ put_resource_entry(const struct resource_entry *entry,
 
 #define WIMLIB_READ_RESOURCE_FLAG_RAW_FULL		0x80000000
 #define WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS		0x40000000
-#define WIMLIB_READ_RESOURCE_FLAG_SEEK_ONLY		0x20000000
 #define WIMLIB_READ_RESOURCE_FLAG_RAW		(WIMLIB_READ_RESOURCE_FLAG_RAW_FULL |  \
 						 WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS)
 #define WIMLIB_READ_RESOURCE_MASK			0xffff0000
