@@ -2817,6 +2817,13 @@ extern int
 wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
 		      void *uncompressed_data, unsigned uncompressed_len);
 
+/**
+ * @ingroup G_compression
+ *
+ * Equivalent to wimlib_lzx_decompress(), except the window size is specified in
+ * @p max_window_size as any power of 2 between 2^15 and 2^21, inclusively, and
+ * @p uncompressed_len may be any size less than or equal to @p max_window_size.
+ */
 extern int
 wimlib_lzx_decompress2(const void *compressed_data, unsigned compressed_len,
 		       void *uncompressed_data, unsigned uncompressed_len,

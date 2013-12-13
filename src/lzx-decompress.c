@@ -28,31 +28,28 @@
 /*
  * LZX is a LZ77 and Huffman-code based compression format that has many
  * similarities to the DEFLATE format used in zlib.  The compression ratio is as
- * good or better than DEFLATE.  However, in WIM files only up to 32768 bytes of
- * data can ever compressed be in the same LZX block, so a .tar.gz file could
- * potentially be smaller than a WIM file that uses LZX compression because it
- * can use a larger LZ77 window size.
+ * good or better than DEFLATE.
  *
  * Some notes on the LZX compression format as used in Windows Imaging (WIM)
  * files:
  *
  * A compressed WIM resource consists of a table of chunk offsets followed by
  * the compressed chunks themselves.  All compressed chunks except possibly the
- * last decompress to 32768 bytes.  This is quite similar to the cabinet (.cab)
- * file format, but they are not the same.  According to the cabinet format
- * documentation, the LZX block size is independent from the CFDATA blocks, and
- * a LZX block may span several CFDATA blocks.  However, in WIMs, LZX blocks do
- * not appear to ever span multiple WIM chunks.  Note that this means any WIM
- * chunk may be decompressed or compressed independently from any other chunk,
- * which is convenient.
+ * last decompress to a fixed number of bytes, by default 32768.  This is quite
+ * similar to the cabinet (.cab) file format, but they are not the same.
+ * According to the cabinet format documentation, the LZX block size is
+ * independent from the CFDATA blocks, and a LZX block may span several CFDATA
+ * blocks.  However, in WIMs, LZX blocks do not appear to ever span multiple WIM
+ * chunks.  Note that this means any WIM chunk may be decompressed or compressed
+ * independently from any other chunk, which allows random access.
  *
  * A LZX compressed WIM chunk contains one or more LZX blocks of the aligned,
  * verbatim, or uncompressed block types.  For aligned and verbatim blocks, the
  * size of the block in uncompressed bytes is specified by a bit following the 3
  * bits that specify the block type, possibly followed by an additional 16 bits.
- * '1' means to use the default block size (equal to 32768, the size of a WIM
- * chunk--- and this seems to only be valid for the first LZX block in a WIM
- * chunk), while '0' means that the block size is provided by the next 16 bits.
+ * '1' means to use the default block size (equal to 32768, the default size of
+ * a WIM chunk), while '0' means that the block size is provided by the next 16
+ * bits.
  *
  * The cabinet format, as documented, allows for the possibility that a
  * compressed CFDATA chunk is up to 6144 bytes larger than the data it
@@ -85,13 +82,13 @@
  * defined in the specification.
  *
  * The LZX document states that aligned offset blocks have their aligned offset
- * huffman tree AFTER the main and length trees. The implementation suggests
+ * Huffman tree AFTER the main and length trees. The implementation suggests
  * that the aligned offset tree is BEFORE the main and length trees.
  *
  * The LZX document decoding algorithm states that, in an aligned offset block,
  * if an extra_bits value is 1, 2 or 3, then that number of bits should be read
  * and the result added to the match offset. This is correct for 1 and 2, but
- * not 3, where just a huffman symbol (using the aligned tree) should be read.
+ * not 3, where just a Huffman symbol (using the aligned tree) should be read.
  *
  * Regarding the E8 preprocessing, the LZX document states 'No translation may
  * be performed on the last 6 bytes of the input block'. This is correct.
@@ -100,7 +97,7 @@
  * would cause the next four bytes to be modified, at least one of which would
  * be in the last 6 bytes, which is not allowed according to the spec.
  *
- * The specification states that the huffman trees must always contain at least
+ * The specification states that the Huffman trees must always contain at least
  * one element. However, many CAB files contain blocks where the length tree is
  * completely empty (because there are no matches), and this is expected to
  * succeed.
@@ -494,9 +491,9 @@ lzx_read_block_header(struct input_bitstream *istream,
 			istream->bitsleft = 0;
 			istream->bitbuf = 0;
 		}
-		queue->R[0] = le32_to_cpu(*(u32*)(istream->data + 0));
-		queue->R[1] = le32_to_cpu(*(u32*)(istream->data + 4));
-		queue->R[2] = le32_to_cpu(*(u32*)(istream->data + 8));
+		queue->R[0] = le32_to_cpu(*(le32*)(istream->data + 0));
+		queue->R[1] = le32_to_cpu(*(le32*)(istream->data + 4));
+		queue->R[2] = le32_to_cpu(*(le32*)(istream->data + 8));
 		istream->data += 12;
 		istream->data_bytes_left -= 12;
 		/* The uncompressed data of this block directly follows and will
@@ -821,6 +818,7 @@ lzx_decompress_block(int block_type, unsigned block_size,
 	return 0;
 }
 
+/* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_lzx_decompress2(const void *compressed_data, unsigned compressed_len,
 		       void *uncompressed_data, unsigned uncompressed_len,
