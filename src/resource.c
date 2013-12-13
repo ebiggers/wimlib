@@ -614,7 +614,6 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 			  void *ctx_or_buf, int flags, u64 offset)
 {
 	struct filedes *in_fd;
-	int ret;
 
 	/* Verify parameters.  */
 	wimlib_assert(lte->resource_location == RESOURCE_IN_WIM);

@@ -336,6 +336,9 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 			return 1;
 		return 0;
 	case RESOURCE_IN_FILE_ON_DISK:
+#ifdef WITH_FUSE
+	case RESOURCE_IN_STAGING_FILE:
+#endif
 #ifdef __WIN32__
 	case RESOURCE_WIN32_ENCRYPTED:
 #endif

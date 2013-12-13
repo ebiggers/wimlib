@@ -136,14 +136,6 @@ read_resource_prefix(const struct wim_lookup_table_entry *lte,
 /* Functions to write a resource.  */
 
 extern int
-write_wim_resource(struct wim_lookup_table_entry *lte, struct filedes *out_fd,
-		   int out_ctype,
-		   u32 out_chunk_size,
-		   struct resource_entry *out_res_entry,
-		   int write_resource_flags,
-		   struct wimlib_lzx_context **comp_ctx);
-
-extern int
 write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 			       int reshdr_flags, struct filedes *out_fd,
 			       int out_ctype,
