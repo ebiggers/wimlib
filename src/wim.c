@@ -200,15 +200,15 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 
 	/* Allocate the WIMStruct. */
 	wim = new_wim_struct();
-	if (!wim)
+	if (wim == NULL)
 		return WIMLIB_ERR_NOMEM;
 
 	ret = init_wim_header(&wim->hdr, ctype, wim_default_chunk_size(ctype));
-	if (ret != 0)
+	if (ret)
 		goto out_free;
 
 	table = new_lookup_table(9001);
-	if (!table) {
+	if (table == NULL) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_free;
 	}
@@ -553,7 +553,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 		 * replacement function in win32_replacements.c.
 		 */
 		wim->filename = realpath(wimfile, NULL);
-		if (!wim->filename) {
+		if (wim->filename == NULL) {
 			ERROR_WITH_ERRNO("Failed to resolve WIM filename");
 			if (errno == ENOMEM)
 				return WIMLIB_ERR_NOMEM;
@@ -567,9 +567,10 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 		return ret;
 
 	if (wim->hdr.flags & WIM_HDR_FLAG_WRITE_IN_PROGRESS) {
-		WARNING("The WIM_HDR_FLAG_WRITE_IN_PROGRESS is set in the header of \"%"TS"\".\n"
-			"          It may be being changed by another process, or a process\n"
-			"          may have crashed while writing the WIM.", wimfile);
+		WARNING("The WIM_HDR_FLAG_WRITE_IN_PROGRESS flag is set in the header of\n"
+			"          \"%"TS"\".  It may be being changed by another process,\n"
+			"          or a process may have crashed while writing the WIM.",
+			wimfile);
 	}
 
 	if (open_flags & WIMLIB_OPEN_FLAG_WRITE_ACCESS) {
@@ -639,13 +640,13 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 
 	if (wim->hdr.image_count != 0 && wim->hdr.part_number == 1) {
 		wim->image_metadata = new_image_metadata_array(wim->hdr.image_count);
-		if (!wim->image_metadata)
+		if (wim->image_metadata == NULL)
 			return WIMLIB_ERR_NOMEM;
 	}
 
 	if (open_flags & WIMLIB_OPEN_FLAG_FROM_PIPE) {
 		wim->lookup_table = new_lookup_table(9001);
-		if (!wim->lookup_table)
+		if (wim->lookup_table == NULL)
 			return WIMLIB_ERR_NOMEM;
 	} else {
 		ret = read_wim_lookup_table(wim);
@@ -678,26 +679,21 @@ open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 
 	wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
 
-	ret = WIMLIB_ERR_INVALID_PARAM;
-	if (!wim_ret)
-		goto out;
+	if (wim_ret == NULL)
+		return WIMLIB_ERR_INVALID_PARAM;
 
-	ret = WIMLIB_ERR_NOMEM;
 	wim = new_wim_struct();
-	if (!wim)
-		goto out;
+	if (wim == NULL)
+		return WIMLIB_ERR_NOMEM;
 
 	ret = begin_read(wim, wim_filename_or_fd, open_flags, progress_func);
-	if (ret)
-		goto out_wimlib_free;
+	if (ret) {
+		wimlib_free(wim);
+		return ret;
+	}
 
-	ret = 0;
 	*wim_ret = wim;
-	goto out;
-out_wimlib_free:
-	wimlib_free(wim);
-out:
-	return ret;
+	return 0;
 }
 
 /* API function documented in wimlib.h  */
@@ -724,7 +720,7 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 		free_lookup_table_entry(imd->metadata_lte);
 		imd->metadata_lte = NULL;
 	}
-	if (!table) {
+	if (table == NULL) {
 		struct wim_lookup_table_entry *lte, *tmp;
 		list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, unhashed_list)
 			free_lookup_table_entry(lte);
@@ -761,7 +757,7 @@ append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd)
 	imd_array = REALLOC(wim->image_metadata,
 			    sizeof(wim->image_metadata[0]) * (wim->hdr.image_count + 1));
 
-	if (!imd_array)
+	if (imd_array == NULL)
 		return WIMLIB_ERR_NOMEM;
 	wim->image_metadata = imd_array;
 	imd_array[wim->hdr.image_count++] = imd;
@@ -796,14 +792,14 @@ new_image_metadata_array(unsigned num_images)
 
 	imd_array = CALLOC(num_images, sizeof(imd_array[0]));
 
-	if (!imd_array) {
+	if (imd_array == NULL) {
 		ERROR("Failed to allocate memory for %u image metadata structures",
 		      num_images);
 		return NULL;
 	}
 	for (unsigned i = 0; i < num_images; i++) {
 		imd_array[i] = new_image_metadata();
-		if (!imd_array[i]) {
+		if (imd_array[i] == NULL) {
 			for (unsigned j = 0; j < i; j++)
 				put_image_metadata(imd_array[j], NULL);
 			FREE(imd_array);
@@ -899,7 +895,7 @@ can_delete_from_wim(WIMStruct *wim)
 WIMLIBAPI void
 wimlib_free(WIMStruct *wim)
 {
-	if (!wim)
+	if (wim == NULL)
 		return;
 
 	DEBUG("Freeing WIMStruct (filename=\"%"TS"\", image_count=%u)",

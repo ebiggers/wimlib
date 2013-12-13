@@ -76,7 +76,7 @@ read_wim_header(const tchar *filename, struct filedes *in_fd,
 
 	wimlib_assert(in_fd->offset == 0);
 
-	if (!filename) {
+	if (filename == NULL) {
 		pipe_str = alloca(40);
 		tsprintf(pipe_str, T("[fd %d]"), in_fd->fd);
 		filename = pipe_str;
@@ -125,11 +125,8 @@ read_wim_header(const tchar *filename, struct filedes *in_fd,
 	}
 
 	hdr->flags = le32_to_cpu(disk_hdr.wim_flags);
-
 	hdr->chunk_size = le32_to_cpu(disk_hdr.chunk_size);
-
 	memcpy(hdr->guid, disk_hdr.guid, WIM_GID_LEN);
-
 	hdr->part_number = le16_to_cpu(disk_hdr.part_number);
 	hdr->total_parts = le16_to_cpu(disk_hdr.total_parts);
 
@@ -225,20 +222,30 @@ write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd)
 			   offsetof(struct wim_header_disk, wim_flags));
 }
 
-u32
-get_wim_hdr_cflags(int ctype)
+int
+set_wim_hdr_cflags(int ctype, struct wim_header *hdr)
 {
+	hdr->flags &= ~(WIM_HDR_FLAG_COMPRESSION |
+			WIM_HDR_FLAG_COMPRESS_LZX |
+			WIM_HDR_FLAG_COMPRESS_RESERVED |
+			WIM_HDR_FLAG_COMPRESS_XPRESS |
+			WIM_HDR_FLAG_COMPRESS_LZMS);
 	switch (ctype) {
+
 	case WIMLIB_COMPRESSION_TYPE_NONE:
 		return 0;
+
 	case WIMLIB_COMPRESSION_TYPE_LZX:
-		return WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_LZX;
+		hdr->flags |= WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_LZX;
+		return 0;
+
 	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		return WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_XPRESS;
-	case WIMLIB_COMPRESSION_TYPE_INVALID:
-		break;
+		hdr->flags |= WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_XPRESS;
+		return 0;
+
+	default:
+		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 	}
-	return (u32)~0U;
 }
 
 /*
@@ -248,8 +255,8 @@ int
 init_wim_header(struct wim_header *hdr, int ctype, u32 chunk_size)
 {
 	memset(hdr, 0, sizeof(struct wim_header));
-	hdr->flags = get_wim_hdr_cflags(ctype);
-	if (hdr->flags == (u32)~0U) {
+	hdr->magic = WIM_MAGIC;
+	if (set_wim_hdr_cflags(ctype, hdr)) {
 		ERROR("Invalid compression type specified (%d)", ctype);
 		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 	}
@@ -257,7 +264,6 @@ init_wim_header(struct wim_header *hdr, int ctype, u32 chunk_size)
 	hdr->total_parts = 1;
 	hdr->part_number = 1;
 	randomize_byte_array(hdr->guid, sizeof(hdr->guid));
-	hdr->magic = WIM_MAGIC;
 	return 0;
 }
 

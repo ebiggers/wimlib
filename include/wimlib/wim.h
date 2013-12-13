@@ -105,8 +105,8 @@ static inline bool wim_has_metadata(const WIMStruct *wim)
 extern int
 wim_recalculate_refcnts(WIMStruct *wim);
 
-extern u32
-get_wim_hdr_cflags(int ctype);
+extern int
+set_wim_hdr_cflags(int ctype, struct wim_header *hdr);
 
 extern int
 init_wim_header(struct wim_header *hdr, int ctype, u32 chunk_size);
