@@ -99,7 +99,7 @@ xpress_write_matches_and_literals(struct output_bitstream *ostream,
 }
 
 struct xpress_record_ctx {
-	freq_t freqs[XPRESS_NUM_SYMBOLS];
+	input_idx_t freqs[XPRESS_NUM_SYMBOLS];
 	struct xpress_match *matches;
 };
 

@@ -210,7 +210,7 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	u8 pretree_lens[LZX_PRECODE_NUM_SYMBOLS];
 	unsigned i;
-	unsigned len;
+	u32 len;
 	int ret;
 
 	/* Read the code lengths of the pretree codes.  There are 20 lengths of
@@ -244,9 +244,9 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 		 * the next lengths are all equal to the next symbol in the
 		 * input. */
 		unsigned tree_code;
-		unsigned num_zeroes;
+		u32 num_zeroes;
 		unsigned code;
-		unsigned num_same;
+		u32 num_same;
 		signed char value;
 
 		ret = read_huffsym_using_pretree(istream, pretree_decode_table,
@@ -335,15 +335,10 @@ lzx_read_block_header(struct input_bitstream *istream,
 	int ret;
 	unsigned block_type;
 	unsigned block_size;
-	unsigned s;
-	unsigned i;
-	unsigned len;
 
 	ret = bitstream_ensure_bits(istream, 4);
-	if (ret) {
-		LZX_DEBUG("LZX input stream overrun");
+	if (ret)
 		return ret;
-	}
 
 	/* The first three bits tell us what kind of block it is, and are one
 	 * of the LZX_BLOCKTYPE_* values.  */
@@ -352,11 +347,10 @@ lzx_read_block_header(struct input_bitstream *istream,
 	/* Read the block size.  This mirrors the behavior
 	 * lzx_write_compressed_block() in lzx-compress.c; see that for more
 	 * details.  */
-	s = bitstream_read_bits_nocheck(istream, 1);
-	if (s) {
+	if (bitstream_read_bits_nocheck(istream, 1)) {
 		block_size = LZX_DEFAULT_BLOCK_SIZE;
 	} else {
-		unsigned tmp;
+		u32 tmp;
 		block_size = 0;
 
 		ret = bitstream_read_bits(istream, 8, &tmp);
@@ -384,7 +378,9 @@ lzx_read_block_header(struct input_bitstream *istream,
 		/* Read the path lengths for the elements of the aligned tree,
 		 * then build it. */
 
-		for (i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++) {
+		for (unsigned i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++) {
+			u32 len;
+
 			ret = bitstream_read_bits(istream,
 						  LZX_ALIGNEDCODE_ELEMENT_SIZE,
 						  &len);
@@ -564,8 +560,8 @@ lzx_decode_match(unsigned main_element, int block_type,
 	unsigned match_offset;
 	unsigned additional_len;
 	unsigned num_extra_bits;
-	unsigned verbatim_bits;
-	unsigned aligned_bits;
+	u32 verbatim_bits;
+	u32 aligned_bits;
 	unsigned i;
 	int ret;
 	u8 *match_dest;

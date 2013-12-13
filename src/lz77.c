@@ -198,13 +198,13 @@ longest_match(const u8 window[], unsigned bytes_remaining,
  * @prev_tab:		Temporary space containing least @window_size elements.
  */
 void
-lz_analyze_block(const u8 window[],
+lz_analyze_block(const u8 window[restrict],
 		 input_idx_t window_size,
 		 lz_record_match_t record_match,
 		 lz_record_literal_t record_literal,
 		 void *record_ctx,
 		 const struct lz_params *params,
-		 input_idx_t prev_tab[])
+		 input_idx_t prev_tab[restrict])
 {
 	unsigned cur_input_pos = 0;
 	unsigned hash          = 0;

@@ -190,6 +190,7 @@
 
 #include "wimlib.h"
 #include "wimlib/compress.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lzx.h"
 #include "wimlib/util.h"
@@ -249,9 +250,9 @@ struct lzx_codes {
 
 /* Tables for tallying symbol frequencies in the three LZX alphabets  */
 struct lzx_freqs {
-	freq_t main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
-	freq_t len[LZX_LENCODE_NUM_SYMBOLS];
-	freq_t aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
+	input_idx_t main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
+	input_idx_t len[LZX_LENCODE_NUM_SYMBOLS];
+	input_idx_t aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
 
 /* LZX intermediate match/literal format  */
@@ -654,7 +655,7 @@ static unsigned
 lzx_build_precode(const u8 lens[restrict],
 		  const u8 prev_lens[restrict],
 		  const unsigned num_syms,
-		  freq_t precode_freqs[restrict LZX_PRECODE_NUM_SYMBOLS],
+		  input_idx_t precode_freqs[restrict LZX_PRECODE_NUM_SYMBOLS],
 		  u8 output_syms[restrict num_syms],
 		  u8 precode_lens[restrict LZX_PRECODE_NUM_SYMBOLS],
 		  u16 precode_codewords[restrict LZX_PRECODE_NUM_SYMBOLS],
@@ -813,7 +814,7 @@ lzx_write_compressed_code(struct output_bitstream *out,
 			  const u8 prev_lens[restrict],
 			  unsigned num_syms)
 {
-	freq_t precode_freqs[LZX_PRECODE_NUM_SYMBOLS];
+	input_idx_t precode_freqs[LZX_PRECODE_NUM_SYMBOLS];
 	u8 output_syms[num_syms];
 	u8 precode_lens[LZX_PRECODE_NUM_SYMBOLS];
 	u16 precode_codewords[LZX_PRECODE_NUM_SYMBOLS];

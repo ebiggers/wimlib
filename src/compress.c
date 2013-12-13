@@ -28,6 +28,7 @@
 #endif
 
 #include "wimlib/assert.h"
+#include "wimlib/endianness.h"
 #include "wimlib/compiler.h"
 #include "wimlib/compress.h"
 #include "wimlib/util.h"
@@ -126,7 +127,7 @@ init_output_bitstream(struct output_bitstream *ostream,
 }
 
 typedef struct {
-	freq_t freq;
+	input_idx_t freq;
 	u16 sym;
 	union {
 		u16 path_len;
@@ -250,7 +251,7 @@ huffman_tree_compute_path_lengths(HuffmanNode *base_node, u16 cur_len)
 void
 make_canonical_huffman_code(unsigned num_syms,
 			    unsigned max_codeword_len,
-			    const freq_t freq_tab[restrict],
+			    const input_idx_t freq_tab[restrict],
 			    u8 lens[restrict],
 			    u16 codewords[restrict])
 {
