@@ -2143,7 +2143,7 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 		 * aren't worth choosing when using greedy or lazy parsing.  */
 		.min_match      = 3,
 		.max_match      = LZX_MAX_MATCH_LEN,
-		.max_offset	= 32768,
+		.max_offset	= LZX_MAX_WINDOW_SIZE,
 		.good_match     = LZX_MAX_MATCH_LEN,
 		.nice_match     = LZX_MAX_MATCH_LEN,
 		.max_chain_len  = LZX_MAX_MATCH_LEN,
