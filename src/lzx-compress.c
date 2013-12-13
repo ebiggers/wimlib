@@ -984,9 +984,9 @@ lzx_write_compressed_block(int block_type,
 		bitstream_put_bits(ostream, 0, 1);
 
 		if (max_window_size >= 65536)
-			bitstream_put_bits(ostream, (block_size >> 16) & 0xff, 8);
+			bitstream_put_bits(ostream, block_size >> 16, 8);
 
-		bitstream_put_bits(ostream, block_size & 0xffff, 16);
+		bitstream_put_bits(ostream, block_size, 16);
 	}
 
 	/* Write out lengths of the main code. Note that the LZX specification

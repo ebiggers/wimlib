@@ -41,6 +41,7 @@ void
 bitstream_put_bits(struct output_bitstream *ostream, u32 bits,
 		   unsigned num_bits)
 {
+	bits &= (1U << num_bits) - 1;
 	while (num_bits > ostream->free_bits) {
 		/* Buffer variable does not have space for the new bits.  It
 		 * needs to be flushed as a 16-bit integer.  Bits in the second
