@@ -91,7 +91,6 @@ read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
 	void *out_buf;
 	bool out_buf_malloced;
 	int ret;
-	size_t stack_max = 32768;
 
  	ni = ntfs_pathname_to_inode(vol, NULL, loc->path);
 	if (!ni) {
@@ -108,7 +107,7 @@ read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
 
 	out_buf_malloced = false;
 	if (cb) {
-		if (in_chunk_size <= stack_max) {
+		if (in_chunk_size <= STACK_MAX) {
 			out_buf = alloca(in_chunk_size);
 		} else {
 			out_buf = MALLOC(in_chunk_size);

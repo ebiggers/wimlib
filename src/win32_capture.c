@@ -66,7 +66,6 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 	void *out_buf;
 	bool out_buf_malloced;
 	u64 bytes_remaining;
-	const size_t stack_max = 32768;
 
 	HANDLE hFile = win32_open_existing_file(lte->file_on_disk,
 						FILE_READ_DATA);
@@ -78,7 +77,7 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 
 	out_buf_malloced = false;
 	if (cb) {
-		if (in_chunk_size <= stack_max) {
+		if (in_chunk_size <= STACK_MAX) {
 			out_buf = alloca(in_chunk_size);
 		} else {
 			out_buf = MALLOC(in_chunk_size);

@@ -315,7 +315,6 @@ write_resource_cb(const void *chunk, size_t chunk_size, void *_ctx)
 	void *compressed_chunk = NULL;
 	unsigned compressed_size;
 	bool compressed_chunk_malloced = false;
-	size_t stack_max = 32768;
 
 	if (ctx->doing_sha)
 		sha1_update(&ctx->sha_ctx, chunk, chunk_size);
@@ -325,7 +324,7 @@ write_resource_cb(const void *chunk, size_t chunk_size, void *_ctx)
 	if (ctx->out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
 
 		/* Compress the chunk.  */
-		if (chunk_size <= stack_max) {
+		if (chunk_size <= STACK_MAX) {
 			compressed_chunk = alloca(chunk_size);
 		} else {
 			compressed_chunk = MALLOC(chunk_size);

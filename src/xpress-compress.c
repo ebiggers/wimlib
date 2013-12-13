@@ -164,7 +164,6 @@ wimlib_xpress_compress(const void * restrict uncompressed_data,
 	input_idx_t num_matches;
 	input_idx_t compressed_len;
 	input_idx_t i;
-	const size_t stack_max = 65536;
 
 	/* XPRESS requires 256 bytes of overhead for the Huffman code, so it's
 	 * impossible to compress 256 bytes or less of data to less than the
@@ -178,7 +177,7 @@ wimlib_xpress_compress(const void * restrict uncompressed_data,
 	if (uncompressed_len < XPRESS_NUM_SYMBOLS / 2 + 1 + 4)
 		return 0;
 
-	if (uncompressed_len <= stack_max) {
+	if (uncompressed_len <= STACK_MAX) {
 		matches = alloca(uncompressed_len * sizeof(matches[0]));
 		udata = alloca(uncompressed_len + 8);
 		prev_tab = alloca(uncompressed_len * sizeof(prev_tab[0]));
@@ -259,7 +258,7 @@ wimlib_xpress_compress(const void * restrict uncompressed_data,
 #endif
 
 out_free:
-	if (uncompressed_len > stack_max) {
+	if (uncompressed_len > STACK_MAX) {
 		FREE(matches);
 		FREE(udata);
 		FREE(prev_tab);
