@@ -280,7 +280,11 @@ read_compressed_wim_resource(const struct wim_lookup_table_entry * const lte,
 		}
 
 		/* Set offset to beginning of first chunk to read.  */
-		cur_read_offset += chunk_table_size + chunk_offsets[0];
+		cur_read_offset += chunk_offsets[0];
+		if (lte->is_pipable)
+			cur_read_offset += start_chunk * sizeof(struct pwm_chunk_hdr);
+		else
+			cur_read_offset += chunk_table_size;
 	}
 
 	/* If using a callback function, allocate a temporary buffer that will
