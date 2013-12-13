@@ -33,40 +33,36 @@
 
 /* Like the basename() function, but does not modify @path; it just returns a
  * pointer to it.  This assumes the path separator is the
- * OS_PREFERRED_PATH_SEPARATOR. */
+ * OS_PREFERRED_PATH_SEPARATOR.  */
 const tchar *
 path_basename(const tchar *path)
 {
 	return path_basename_with_len(path, tstrlen(path));
 }
 
-/* Like path_basename(), but take an explicit string length. */
+/* Like path_basename(), but take an explicit string length.  */
 const tchar *
 path_basename_with_len(const tchar *path, size_t len)
 {
-	const tchar *p = &path[len] - 1;
+	const tchar *p = &path[len];
 
-	/* Trailing slashes. */
-	while (1) {
-		if (p == path - 1)
-			return T("");
-		if (*p != OS_PREFERRED_PATH_SEPARATOR)
-			break;
-		p--;
-	}
+	do {
+		if (p == path)
+			return &path[len];
+	} while (*--p == OS_PREFERRED_PATH_SEPARATOR);
 
-	while ((p != path - 1) && *p != OS_PREFERRED_PATH_SEPARATOR)
-		p--;
+	do {
+		if (p == path)
+			return &path[0];
+	} while (*--p != OS_PREFERRED_PATH_SEPARATOR);
 
-	return p + 1;
+	return ++p;
 }
 
 
-/*
- * Returns a pointer to the part of @path following the first colon in the last
+/* Returns a pointer to the part of @path following the first colon in the last
  * path component, or NULL if the last path component does not contain a colon
- * or has no characters following the first colon.
- */
+ * or has no characters following the first colon.  */
 const tchar *
 path_stream_name(const tchar *path)
 {
@@ -78,49 +74,51 @@ path_stream_name(const tchar *path)
 		return stream_name + 1;
 }
 
-
-/* Duplicate a path; return empty string for NULL input. */
+/* Duplicate a path; return empty string for NULL input.  */
 tchar *
 canonicalize_fs_path(const tchar *fs_path)
 {
-	if (!fs_path)
+	if (fs_path == NULL)
 		fs_path = T("");
 	return TSTRDUP(fs_path);
 }
 
 /*
- * canonicalize_wim_path - Given a user-provided path to a file within a WIM
+ * canonicalize_wim_path() - Given a user-provided path to a file within a WIM
  * image, translate it into a "canonical" path.
  *
- * To do this, we translate all supported path separators
- * (is_any_path_separator()) into the WIM_PATH_SEPARATOR, and strip any leading
- * and trailing slashes.  The returned string is allocated.  Note that there
- * still may be consecutive path separators within the string.  Furthermore, the
- * string may be empty, which indicates the root dentry of the WIM image.
+ * To do this, translate all supported path separators (is_any_path_separator())
+ * into the WIM_PATH_SEPARATOR, and strip any leading and trailing slashes.  The
+ * returned string is allocated.  Note that there still may be consecutive path
+ * separators within the string.  Furthermore, the string may be empty, which
+ * indicates the root dentry of the WIM image.
  */
 tchar *
 canonicalize_wim_path(const tchar *wim_path)
 {
-	tchar *p;
 	tchar *canonical_path;
+	tchar *p;
 
 	if (wim_path == NULL) {
 		wim_path = T("");
 	} else {
+		/* Strip leading path separators.  */
 		while (is_any_path_separator(*wim_path))
 			wim_path++;
 	}
+
 	canonical_path = TSTRDUP(wim_path);
-	if (canonical_path) {
-		for (p = canonical_path; *p; p++)
-			if (is_any_path_separator(*p))
-				*p = WIM_PATH_SEPARATOR;
-		for (p = tstrchr(canonical_path, T('\0')) - 1;
-		     p >= canonical_path && *p == WIM_PATH_SEPARATOR;
-		     p--)
-		{
-			*p = T('\0');
-		}
-	}
+	if (canonical_path == NULL)
+		return NULL;
+
+	/* Translate all path separators to WIM_PATH_SEPARATOR.  */
+	for (p = canonical_path; *p; p++)
+		if (is_any_path_separator(*p))
+			*p = WIM_PATH_SEPARATOR;
+
+	/* Strip trailing path separators.  */
+	while (p > canonical_path && *--p == WIM_PATH_SEPARATOR)
+		*p = T('\0');
+
 	return canonical_path;
 }

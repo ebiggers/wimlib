@@ -382,7 +382,7 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to)
 			 * directory */
 			if (!dentry_is_directory(dst))
 				return -ENOTDIR;
-			if (inode_has_children(dst->d_inode))
+			if (dentry_has_children(dst))
 				return -ENOTEMPTY;
 		}
 		parent_of_dst = dst->parent;
