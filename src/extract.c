@@ -1365,6 +1365,9 @@ read_pwm_stream_header(WIMStruct *pwm, struct wim_lookup_table_entry *lte,
 	reshdr.uncompressed_size = le64_to_cpu(buf.stream_hdr.uncompressed_size);
 	wim_res_hdr_to_spec(&reshdr, pwm, rspec);
 	lte_bind_wim_resource_spec(lte, rspec);
+	lte->flags = rspec->flags;
+	lte->size = rspec->uncompressed_size;
+	lte->offset_in_res = 0;
 	return 0;
 
 read_error:

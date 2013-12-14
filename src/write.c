@@ -74,9 +74,19 @@ static bool
 can_raw_copy(const struct wim_lookup_table_entry *lte,
 	     int write_resource_flags, int out_ctype, u32 out_chunk_size)
 {
-	return (out_ctype == lte_ctype(lte)
-		&& out_chunk_size == lte_cchunk_size(lte)
-		&& out_ctype != WIMLIB_COMPRESSION_TYPE_NONE);
+	if (lte->resource_location != RESOURCE_IN_WIM)
+		return false;
+	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
+		return false;
+	if (lte->rspec->ctype != out_ctype)
+		return false;
+	if (out_chunk_size != lte->rspec->cchunk_size)
+		return false;
+	if (lte->offset_in_res != 0)
+		return false;
+	if (lte->size != lte->rspec->uncompressed_size)
+		return false;
+	return true;
 }
 
 
@@ -253,7 +263,7 @@ write_pwm_stream_header(const struct wim_lookup_table_entry *lte,
 		copy_hash(stream_hdr.hash, lte->hash);
 	}
 
-	reshdr_flags = lte->flags & ~WIM_RESHDR_FLAG_COMPRESSED;
+	reshdr_flags = lte->flags & ~(WIM_RESHDR_FLAG_COMPRESSED | WIM_RESHDR_FLAG_CONCAT);
 	reshdr_flags |= additional_reshdr_flags;
 	stream_hdr.flags = cpu_to_le32(reshdr_flags);
 	ret = full_write(out_fd, &stream_hdr, sizeof(stream_hdr));
@@ -543,7 +553,7 @@ try_write_again:
 	/* Fill in out_reshdr with information about the newly written
 	 * resource.  */
 	out_reshdr->size_in_wim   = out_fd->offset - res_start_offset;
-	out_reshdr->flags         = lte->flags;
+	out_reshdr->flags         = lte->flags & ~WIM_RESHDR_FLAG_CONCAT;
 	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
 		out_reshdr->flags &= ~WIM_RESHDR_FLAG_COMPRESSED;
 	else

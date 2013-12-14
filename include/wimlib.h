@@ -987,8 +987,15 @@ struct wimlib_resource_entry {
 	 */
 	uint32_t is_missing : 1;
 
-	uint32_t reserved_flags : 27;
-	uint64_t reserved[4];
+	uint32_t is_partial : 1;
+
+	uint32_t reserved_flags : 26;
+
+	uint64_t raw_resource_offset_in_wim;
+	uint64_t raw_resource_uncompressed_size;
+	uint64_t raw_resource_compressed_size;
+
+	uint64_t reserved[1];
 };
 
 /** A stream of a file in the WIM.  */

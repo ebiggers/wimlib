@@ -185,7 +185,10 @@ struct wim_lookup_table_entry {
 	/* Pointers to somewhere where the stream is actually located.  See the
 	 * comments for the @resource_location field above. */
 	union {
-		struct wim_resource_spec *rspec;
+		struct {
+			struct wim_resource_spec *rspec;
+			u64 offset_in_res;
+		};
 		tchar *file_on_disk;
 		void *attached_buffer;
 	#ifdef WITH_FUSE
@@ -281,6 +284,13 @@ lte_cchunk_size(const struct wim_lookup_table_entry * lte)
 		return lte->rspec->cchunk_size;
 	else
 		return 32768;
+}
+
+static inline bool
+lte_is_partial(const struct wim_lookup_table_entry * lte)
+{
+	return lte->resource_location == RESOURCE_IN_WIM &&
+	       lte->size != lte->rspec->uncompressed_size;
 }
 
 static inline bool
@@ -388,9 +398,7 @@ lte_bind_wim_resource_spec(struct wim_lookup_table_entry *lte,
 {
 	lte->resource_location = RESOURCE_IN_WIM;
 	lte->rspec = rspec;
-	list_add(&lte->wim_resource_list, &rspec->lte_list);
-	lte->flags = rspec->flags;
-	lte->size = rspec->uncompressed_size;
+	list_add_tail(&lte->wim_resource_list, &rspec->lte_list);
 }
 
 static inline void

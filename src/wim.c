@@ -602,7 +602,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
 		} else if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_XPRESS) {
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
-	#if 0
+	#if 1
 		/* TODO */
 		} else if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_LZMS) {
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;

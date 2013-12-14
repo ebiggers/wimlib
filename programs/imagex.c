@@ -2794,25 +2794,37 @@ static int
 print_resource(const struct wimlib_resource_entry *resource,
 	       void *_ignore)
 {
-
-	tprintf(T("Uncompressed size   = %"PRIu64" bytes\n"),
+	tprintf(T("Uncompressed size     = %"PRIu64" bytes\n"),
 		resource->uncompressed_size);
+	if (resource->is_partial) {
+		tprintf(T("Raw uncompressed size = %"PRIu64" bytes\n"),
+			resource->raw_resource_uncompressed_size);
 
-	tprintf(T("Compressed size     = %"PRIu64" bytes\n"),
-		resource->compressed_size);
+		tprintf(T("Raw compressed size   = %"PRIu64" bytes\n"),
+			resource->raw_resource_compressed_size);
 
-	tprintf(T("Offset              = %"PRIu64" bytes\n"),
-		resource->offset);
+		tprintf(T("Raw offset in WIM     = %"PRIu64" bytes\n"),
+			resource->raw_resource_offset_in_wim);
+
+		tprintf(T("Offset in raw         = %"PRIu64" bytes\n"),
+			resource->offset);
+	} else {
+		tprintf(T("Compressed size       = %"PRIu64" bytes\n"),
+			resource->compressed_size);
+
+		tprintf(T("Offset in WIM         = %"PRIu64" bytes\n"),
+			resource->offset);
+	}
 
 
-	tprintf(T("Part Number         = %u\n"), resource->part_number);
-	tprintf(T("Reference Count     = %u\n"), resource->reference_count);
+	tprintf(T("Part Number           = %u\n"), resource->part_number);
+	tprintf(T("Reference Count       = %u\n"), resource->reference_count);
 
-	tprintf(T("Hash                = 0x"));
+	tprintf(T("Hash                  = 0x"));
 	print_byte_field(resource->sha1_hash, sizeof(resource->sha1_hash));
 	tputchar(T('\n'));
 
-	tprintf(T("Flags               = "));
+	tprintf(T("Flags                 = "));
 	if (resource->is_compressed)
 		tprintf(T("WIM_RESHDR_FLAG_COMPRESSED  "));
 	if (resource->is_metadata)

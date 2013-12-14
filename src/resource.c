@@ -624,12 +624,14 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 		wimlib_assert(is_power_of_2(cb_chunk_size));
 	if (flags & WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS) {
 		/* Raw chunks mode is subject to the restrictions noted.  */
+		wimlib_assert(!lte_is_partial(lte));
 		wimlib_assert(!(flags & WIMLIB_READ_RESOURCE_FLAG_RAW_FULL));
 		wimlib_assert(cb_chunk_size == rspec->cchunk_size);
 		wimlib_assert(size == rspec->uncompressed_size);
 		wimlib_assert(offset == 0);
 	} else if (flags & WIMLIB_READ_RESOURCE_FLAG_RAW_FULL) {
 		/* Raw full mode:  read must not overrun end of store size.  */
+		wimlib_assert(!lte_is_partial(lte));
 		wimlib_assert(offset + size >= size &&
 			      offset + size <= rspec->size_in_wim);
 	} else {
@@ -638,10 +640,10 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 			      offset + size <= rspec->uncompressed_size);
 	}
 
-	DEBUG("Reading WIM resource: %"PRIu64" @ +%"PRIu64" "
+	DEBUG("Reading WIM resource: %"PRIu64" @ +%"PRIu64"[+%"PRIu64"] "
 	      "from %"PRIu64"(%"PRIu64") @ +%"PRIu64" "
 	      "(readflags 0x%08x, resflags 0x%02x%s)",
-	      size, offset,
+	      size, offset, lte->offset_in_res,
 	      rspec->size_in_wim,
 	      rspec->uncompressed_size,
 	      rspec->offset_in_wim,
@@ -660,7 +662,7 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 	} else {
 		return read_compressed_wim_resource(rspec, size, cb,
 						    cb_chunk_size,
-						    ctx_or_buf, flags, offset);
+						    ctx_or_buf, flags, offset + lte->offset_in_res);
 	}
 }
 
@@ -869,6 +871,9 @@ wim_resource_spec_to_data(struct wim_resource_spec *rspec, void **buf_ret)
 
 	lte->unhashed = 1;
 	lte_bind_wim_resource_spec(lte, rspec);
+	lte->flags = rspec->flags;
+	lte->size = rspec->uncompressed_size;
+	lte->offset_in_res = 0;
 
 	ret = read_full_resource_into_alloc_buf(lte, buf_ret);
 
@@ -1008,7 +1013,7 @@ wim_res_hdr_to_spec(const struct wim_reshdr *reshdr, WIMStruct *wim,
 	INIT_LIST_HEAD(&spec->lte_list);
 	spec->flags = reshdr->flags;
 	spec->is_pipable = wim_is_pipable(wim);
-	if (spec->flags & WIM_RESHDR_FLAG_COMPRESSED) {
+	if (spec->flags & (WIM_RESHDR_FLAG_COMPRESSED | WIM_RESHDR_FLAG_CONCAT)) {
 		spec->ctype = wim->compression_type;
 		spec->cchunk_size = wim->chunk_size;
 	} else {
