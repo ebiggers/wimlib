@@ -135,6 +135,51 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 	if (size == 0)
 		return 0;
 
+	if (rspec->ctype == WIMLIB_COMPRESSION_TYPE_LZMS) {
+		/* TODO */
+
+		unsigned clen = rspec->size_in_wim;
+		unsigned ulen = rspec->uncompressed_size;
+
+		fprintf(stderr, "clen=%u, ulen=%u, offset=%lu\n", clen, ulen,
+			rspec->offset_in_wim);
+
+		u8 *cbuf = MALLOC(clen);
+		u8 *ubuf = MALLOC(ulen);
+
+		ret = full_pread(&rspec->wim->in_fd,
+				 cbuf, clen, rspec->offset_in_wim);
+		if (ret) {
+			ERROR_WITH_ERRNO("Can't read compressed data");
+			goto out_free_bufs;
+		}
+
+		ret = lzms_decompress(cbuf, clen, ubuf, ulen,
+				      orig_chunk_size);
+		if (ret) {
+			ERROR("LZMS decompression error.");
+			errno = EINVAL;
+			ret = WIMLIB_ERR_DECOMPRESSION;
+			goto out_free_bufs;
+		}
+		if (cb) {
+			u32 chunk_size;
+			for (u64 i = offset; i < offset + size; i += chunk_size) {
+				chunk_size = min(offset + size - i, cb_chunk_size);
+				ret = cb(&ubuf[i], chunk_size, ctx_or_buf);
+				if (ret)
+					goto out_free_bufs;
+			}
+		} else {
+			memcpy(ctx_or_buf, &ubuf[offset], size);
+		}
+		ret = 0;
+	out_free_bufs:
+		FREE(ubuf);
+		FREE(cbuf);
+		return ret;
+	}
+
 	u64 *chunk_offsets = NULL;
 	u8 *out_buf = NULL;
 	u8 *tmp_buf = NULL;
@@ -631,7 +676,7 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 	} else {
 		/* Normal mode:  read must not overrun end of original size.  */
 		wimlib_assert(offset + size >= size &&
-			      offset + size <= rspec->uncompressed_size);
+			      lte->offset_in_res + offset + size <= rspec->uncompressed_size);
 	}
 
 	DEBUG("Reading WIM resource: %"PRIu64" @ +%"PRIu64"[+%"PRIu64"] "
