@@ -94,7 +94,7 @@ static inline bool wim_is_pipable(const WIMStruct *wim)
 
 static inline bool wim_has_integrity_table(const WIMStruct *wim)
 {
-	return (wim->hdr.integrity.offset != 0);
+	return (wim->hdr.integrity_table_reshdr.offset_in_wim != 0);
 }
 
 static inline bool wim_has_metadata(const WIMStruct *wim)
@@ -112,8 +112,7 @@ extern int
 init_wim_header(struct wim_header *hdr, int ctype, u32 chunk_size);
 
 extern int
-read_wim_header(const tchar *filename, struct filedes *in_fd,
-		struct wim_header *hdr);
+read_wim_header(WIMStruct *wim, struct wim_header *hdr);
 
 extern int
 write_wim_header(const struct wim_header *hdr, struct filedes *out_fd);

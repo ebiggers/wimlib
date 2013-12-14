@@ -129,7 +129,7 @@ ref_stream_to_extract(struct wim_lookup_table_entry *lte,
 	    (!is_linked_extraction(ctx) || (lte->out_refcnt == 0 &&
 					    lte->extracted_file == NULL)))
 	{
-		ctx->progress.extract.total_bytes += wim_resource_size(lte);
+		ctx->progress.extract.total_bytes += lte->size;
 		ctx->progress.extract.num_streams++;
 	}
 
@@ -237,7 +237,7 @@ update_extract_progress(struct apply_ctx *ctx,
 	wimlib_progress_func_t progress_func = ctx->progress_func;
 	union wimlib_progress_info *progress = &ctx->progress;
 
-	progress->extract.completed_bytes += wim_resource_size(lte);
+	progress->extract.completed_bytes += lte->size;
 	if (progress_func &&
 	    progress->extract.completed_bytes >= ctx->next_progress)
 	{
@@ -1257,8 +1257,7 @@ extract_stream_instances(struct wim_lookup_table_entry *lte,
 			goto out_free_lte_tmp;
 		}
 		filedes_init(&fd, raw_fd);
-		ret = extract_wim_resource_to_fd(lte, &fd,
-						 wim_resource_size(lte));
+		ret = extract_wim_resource_to_fd(lte, &fd, lte->size);
 		if (filedes_close(&fd) && !ret)
 			ret = WIMLIB_ERR_WRITE;
 		if (ret)
@@ -1327,12 +1326,14 @@ extract_stream_list(struct apply_ctx *ctx)
 /* Read the header from a stream in a pipable WIM.  */
 static int
 read_pwm_stream_header(WIMStruct *pwm, struct wim_lookup_table_entry *lte,
+		       struct wim_resource_spec *rspec,
 		       int flags, struct wim_header_disk *hdr_ret)
 {
 	union {
 		struct pwm_stream_hdr stream_hdr;
 		struct wim_header_disk pwm_hdr;
 	} buf;
+	struct wim_reshdr reshdr;
 	int ret;
 
 	ret = full_read(&pwm->in_fd, &buf.stream_hdr, sizeof(buf.stream_hdr));
@@ -1356,20 +1357,14 @@ read_pwm_stream_header(WIMStruct *pwm, struct wim_lookup_table_entry *lte,
 		return WIMLIB_ERR_INVALID_PIPABLE_WIM;
 	}
 
-	lte->resource_entry.original_size = le64_to_cpu(buf.stream_hdr.uncompressed_size);
 	copy_hash(lte->hash, buf.stream_hdr.hash);
-	lte->resource_entry.flags = le32_to_cpu(buf.stream_hdr.flags);
-	lte->resource_entry.offset = pwm->in_fd.offset;
-	lte->resource_location = RESOURCE_IN_WIM;
-	lte->wim = pwm;
-	if (lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED) {
-		lte->compression_type = pwm->compression_type;
-		lte->resource_entry.size = 0;
-	} else {
-		lte->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
-		lte->resource_entry.size = lte->resource_entry.original_size;
-	}
-	lte->is_pipable = 1;
+
+	reshdr.size_in_wim = 0;
+	reshdr.flags = le32_to_cpu(buf.stream_hdr.flags);
+	reshdr.offset_in_wim = pwm->in_fd.offset;
+	reshdr.uncompressed_size = le64_to_cpu(buf.stream_hdr.uncompressed_size);
+	wim_res_hdr_to_spec(&reshdr, pwm, rspec);
+	lte_bind_wim_resource_spec(lte, rspec);
 	return 0;
 
 read_error:
@@ -1389,9 +1384,9 @@ static int
 skip_pwm_stream(struct wim_lookup_table_entry *lte)
 {
 	return read_partial_wim_resource(lte,
-					 wim_resource_size(lte),
+					 lte->size,
 					 skip_pwm_chunk_cb,
-					 wim_resource_chunk_size(lte),
+					 lte_cchunk_size(lte),
 					 NULL,
 					 WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS,
 					 0);
@@ -1401,6 +1396,7 @@ static int
 extract_streams_from_pipe(struct apply_ctx *ctx)
 {
 	struct wim_lookup_table_entry *found_lte;
+	struct wim_resource_spec *rspec;
 	struct wim_lookup_table_entry *needed_lte;
 	struct wim_lookup_table *lookup_table;
 	struct wim_header_disk pwm_hdr;
@@ -1409,8 +1405,12 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 
 	ret = WIMLIB_ERR_NOMEM;
 	found_lte = new_lookup_table_entry();
-	if (!found_lte)
+	if (found_lte == NULL)
 		goto out;
+
+	rspec = MALLOC(sizeof(struct wim_resource_spec));
+	if (rspec == NULL)
+		goto out_free_found_lte;
 
 	lookup_table = ctx->wim->lookup_table;
 	pwm_flags = PWM_ALLOW_WIM_HDR;
@@ -1423,8 +1423,10 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 		ctx->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
 				   &ctx->progress);
 	while (ctx->num_streams_remaining) {
-		ret = read_pwm_stream_header(ctx->wim, found_lte, pwm_flags,
-					     &pwm_hdr);
+		if (found_lte->resource_location != RESOURCE_NONEXISTENT)
+			lte_unbind_wim_resource_spec(found_lte);
+		ret = read_pwm_stream_header(ctx->wim, found_lte, rspec,
+					     pwm_flags, &pwm_hdr);
 		if (ret) {
 			if (ret == WIMLIB_ERR_UNEXPECTED_END_OF_FILE &&
 			    (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_RESUME))
@@ -1435,18 +1437,15 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 		}
 
 		if ((found_lte->resource_location != RESOURCE_NONEXISTENT)
-		    && !(found_lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)
+		    && !(found_lte->flags & WIM_RESHDR_FLAG_METADATA)
 		    && (needed_lte = lookup_resource(lookup_table, found_lte->hash))
 		    && (needed_lte->out_refcnt))
 		{
-			copy_resource_entry(&needed_lte->resource_entry,
-					    &found_lte->resource_entry);
-			needed_lte->resource_location = found_lte->resource_location;
-			needed_lte->wim               = found_lte->wim;
-			needed_lte->compression_type  = found_lte->compression_type;
-			needed_lte->is_pipable        = found_lte->is_pipable;
-
+			lte_unbind_wim_resource_spec(found_lte);
+			lte_bind_wim_resource_spec(needed_lte, rspec);
 			ret = extract_stream_instances(needed_lte, ctx, false);
+			lte_unbind_wim_resource_spec(needed_lte);
+
 			if (ret)
 				goto out_free_found_lte;
 			ctx->num_streams_remaining--;
@@ -1478,6 +1477,8 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 	}
 	ret = 0;
 out_free_found_lte:
+	if (found_lte->resource_location != RESOURCE_IN_WIM)
+		FREE(rspec);
 	free_lookup_table_entry(found_lte);
 out:
 	return ret;
@@ -1537,8 +1538,7 @@ extract_dentry_to_stdout(struct wim_dentry *dentry)
 		if (lte) {
 			struct filedes _stdout;
 			filedes_init(&_stdout, STDOUT_FILENO);
-			ret = extract_wim_resource_to_fd(lte, &_stdout,
-							 wim_resource_size(lte));
+			ret = extract_wim_resource_to_fd(lte, &_stdout, lte->size);
 		}
 	}
 	return ret;
@@ -2649,7 +2649,7 @@ extract_single_image(WIMStruct *wim, int image,
 {
 	int ret;
 	tchar *target_copy = canonicalize_fs_path(target);
-	if (!target_copy)
+	if (target_copy == NULL)
 		return WIMLIB_ERR_NOMEM;
 	struct wimlib_extract_command cmd = {
 		.wim_source_path = T(""),
@@ -2821,11 +2821,12 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 	 * WIMs.)  */
 	{
 		struct wim_lookup_table_entry xml_lte;
-		ret = read_pwm_stream_header(pwm, &xml_lte, 0, NULL);
+		struct wim_resource_spec xml_rspec;
+		ret = read_pwm_stream_header(pwm, &xml_lte, &xml_rspec, 0, NULL);
 		if (ret)
 			goto out_wimlib_free;
 
-		if (!(xml_lte.resource_entry.flags & WIM_RESHDR_FLAG_METADATA))
+		if (!(xml_lte.flags & WIM_RESHDR_FLAG_METADATA))
 		{
 			ERROR("Expected XML data, but found non-metadata "
 			      "stream.");
@@ -2833,12 +2834,12 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 			goto out_wimlib_free;
 		}
 
-		copy_resource_entry(&pwm->hdr.xml_res_entry,
-				    &xml_lte.resource_entry);
+		wim_res_spec_to_hdr(&xml_rspec, &pwm->hdr.xml_data_reshdr);
 
 		ret = read_wim_xml_data(pwm);
 		if (ret)
 			goto out_wimlib_free;
+
 		if (wim_info_get_num_images(pwm->wim_info) != pwm->hdr.image_count) {
 			ERROR("Image count in XML data is not the same as in WIM header.");
 			ret = WIMLIB_ERR_XML;
@@ -2874,22 +2875,29 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 	for (i = 1; i <= pwm->hdr.image_count; i++) {
 		struct wim_lookup_table_entry *metadata_lte;
 		struct wim_image_metadata *imd;
+		struct wim_resource_spec *metadata_rspec;
 
 		metadata_lte = new_lookup_table_entry();
-		if (!metadata_lte) {
+		if (metadata_lte == NULL) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_wimlib_free;
 		}
+		metadata_rspec = MALLOC(sizeof(struct wim_resource_spec));
+		if (metadata_rspec == NULL) {
+			ret = WIMLIB_ERR_NOMEM;
+			free_lookup_table_entry(metadata_lte);
+			goto out_wimlib_free;
+		}
 
-		ret = read_pwm_stream_header(pwm, metadata_lte, 0, NULL);
+		ret = read_pwm_stream_header(pwm, metadata_lte, metadata_rspec, 0, NULL);
 		imd = pwm->image_metadata[i - 1];
 		imd->metadata_lte = metadata_lte;
-		if (ret)
+		if (ret) {
+			FREE(metadata_rspec);
 			goto out_wimlib_free;
+		}
 
-		if (!(metadata_lte->resource_entry.flags &
-		      WIM_RESHDR_FLAG_METADATA))
-		{
+		if (!(metadata_lte->flags & WIM_RESHDR_FLAG_METADATA)) {
 			ERROR("Expected metadata resource, but found "
 			      "non-metadata stream.");
 			ret = WIMLIB_ERR_INVALID_PIPABLE_WIM;

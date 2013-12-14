@@ -258,14 +258,14 @@ capture_ntfs_streams(struct wim_inode *inode,
 					goto out_free_lte;
 				}
 				lte->ntfs_loc->is_reparse_point = true;
-				lte->resource_entry.original_size = data_size - 8;
+				lte->size = data_size - 8;
 				ret = read_reparse_tag(ni, lte->ntfs_loc,
 						       &inode->i_reparse_tag);
 				if (ret)
 					goto out_free_lte;
 			} else {
 				lte->ntfs_loc->is_reparse_point = false;
-				lte->resource_entry.original_size = data_size;
+				lte->size = data_size;
 			}
 		}
 		if (name_length == 0) {
@@ -275,8 +275,8 @@ capture_ntfs_streams(struct wim_inode *inode,
 				if (lte) {
 					ERROR("Found two un-named data streams for \"%s\" "
 					      "(sizes = %"PRIu64", %"PRIu64")",
-					      path, wim_resource_size(inode->i_lte),
-					      wim_resource_size(lte));
+					      path, inode->i_lte->size,
+					      lte->size);
 					ret = WIMLIB_ERR_NTFS_3G;
 					goto out_free_lte;
 				}

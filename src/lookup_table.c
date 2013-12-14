@@ -74,16 +74,15 @@ new_lookup_table_entry(void)
 	struct wim_lookup_table_entry *lte;
 
 	lte = CALLOC(1, sizeof(struct wim_lookup_table_entry));
-	if (lte) {
-		lte->part_number = 1;
-		lte->refcnt = 1;
-		BUILD_BUG_ON(RESOURCE_NONEXISTENT != 0);
-		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
-	} else {
+	if (lte == NULL) {
 		ERROR("Out of memory (tried to allocate %zu bytes for "
 		      "lookup table entry)",
 		      sizeof(struct wim_lookup_table_entry));
+		return NULL;
 	}
+	lte->refcnt = 1;
+	BUILD_BUG_ON(RESOURCE_NONEXISTENT != 0);
+	BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
 	return lte;
 }
 
@@ -98,6 +97,10 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 
 	new->extracted_file = NULL;
 	switch (new->resource_location) {
+	case RESOURCE_IN_WIM:
+		list_add(&new->wim_resource_list, &new->rspec->lte_list);
+		break;
+
 	case RESOURCE_IN_FILE_ON_DISK:
 #ifdef __WIN32__
 	case RESOURCE_WIN32_ENCRYPTED:
@@ -112,8 +115,7 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 			goto out_free;
 		break;
 	case RESOURCE_IN_ATTACHED_BUFFER:
-		new->attached_buffer = memdup(old->attached_buffer,
-					      wim_resource_size(old));
+		new->attached_buffer = memdup(old->attached_buffer, old->size);
 		if (!new->attached_buffer)
 			goto out_free;
 		break;
@@ -153,6 +155,11 @@ free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 {
 	if (lte) {
 		switch (lte->resource_location) {
+		case RESOURCE_IN_WIM:
+			list_del(&lte->wim_resource_list);
+			if (list_empty(&lte->rspec->lte_list))
+				FREE(lte->rspec);
+			break;
 		case RESOURCE_IN_FILE_ON_DISK:
 	#ifdef __WIN32__
 		case RESOURCE_WIN32_ENCRYPTED:
@@ -303,6 +310,7 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 {
 	const struct wim_lookup_table_entry *lte1, *lte2;
 	int v;
+	WIMStruct *wim1, *wim2;
 
 	lte1 = *(const struct wim_lookup_table_entry**)p1;
 	lte2 = *(const struct wim_lookup_table_entry**)p2;
@@ -315,24 +323,25 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 
 	switch (lte1->resource_location) {
 	case RESOURCE_IN_WIM:
+		wim1 = lte1->rspec->wim;
+		wim2 = lte2->rspec->wim;
 
 		/* Different (possibly split) WIMs?  */
-		if (lte1->wim != lte2->wim) {
-			v = memcmp(lte1->wim->hdr.guid, lte2->wim->hdr.guid,
-				   WIM_GID_LEN);
+		if (wim1 != wim2) {
+			v = memcmp(wim1->hdr.guid, wim2->hdr.guid, WIM_GID_LEN);
 			if (v)
 				return v;
 		}
 
 		/* Different part numbers in the same WIM?  */
-		v = (int)lte1->wim->hdr.part_number - (int)lte2->wim->hdr.part_number;
+		v = (int)wim1->hdr.part_number - (int)wim2->hdr.part_number;
 		if (v)
 			return v;
 
 		/* Compare by offset.  */
-		if (lte1->resource_entry.offset < lte2->resource_entry.offset)
+		if (lte1->rspec->offset_in_wim < lte2->rspec->offset_in_wim)
 			return -1;
-		else if (lte1->resource_entry.offset > lte2->resource_entry.offset)
+		if (lte1->rspec->offset_in_wim > lte2->rspec->offset_in_wim)
 			return 1;
 		return 0;
 	case RESOURCE_IN_FILE_ON_DISK:
@@ -439,9 +448,8 @@ for_lookup_table_entry_pos_sorted(struct wim_lookup_table *table,
 
 /* On-disk format of a WIM lookup table entry (stream entry). */
 struct wim_lookup_table_entry_disk {
-	/* Location, offset, compression status, and metadata status of the
-	 * stream. */
-	struct resource_entry_disk resource_entry;
+	/* Size, offset, and flags of the stream.  */
+	struct wim_reshdr_disk reshdr;
 
 	/* Which part of the split WIM this stream is in; indexed from 1. */
 	le16 part_number;
@@ -455,20 +463,6 @@ struct wim_lookup_table_entry_disk {
 } _packed_attribute;
 
 #define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
-
-void
-lte_init_wim(struct wim_lookup_table_entry *lte, WIMStruct *wim)
-{
-	lte->resource_location = RESOURCE_IN_WIM;
-	lte->wim = wim;
-	if (lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
-		lte->compression_type = wim->compression_type;
-	else
-		lte->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
-
-	if (wim_is_pipable(wim))
-		lte->is_pipable = 1;
-}
 
 /*
  * Reads the lookup table from a WIM file.
@@ -491,21 +485,19 @@ read_wim_lookup_table(WIMStruct *wim)
 	struct wim_lookup_table *table;
 	struct wim_lookup_table_entry *cur_entry, *duplicate_entry;
 	void *buf;
+	bool in_concat_run;
 
 	BUILD_BUG_ON(sizeof(struct wim_lookup_table_entry_disk) !=
 		     WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE);
 
-	DEBUG("Reading lookup table: offset %"PRIu64", size %"PRIu64"",
-	      wim->hdr.lookup_table_res_entry.offset,
-	      wim->hdr.lookup_table_res_entry.size);
+	DEBUG("Reading lookup table.");
 
 	/* Calculate number of entries in the lookup table.  */
-	num_entries = wim->hdr.lookup_table_res_entry.size /
+	num_entries = wim->hdr.lookup_table_reshdr.uncompressed_size /
 		      sizeof(struct wim_lookup_table_entry_disk);
 
-
 	/* Read the lookup table into a buffer.  */
-	ret = res_entry_to_data(&wim->hdr.lookup_table_res_entry, wim, &buf);
+	ret = wim_reshdr_to_data(&wim->hdr.lookup_table_reshdr, wim, &buf);
 	if (ret)
 		goto out;
 
@@ -520,33 +512,32 @@ read_wim_lookup_table(WIMStruct *wim)
 	/* Allocate and initalize `struct wim_lookup_table_entry's from the
 	 * on-disk lookup table.  */
 	wim->current_image = 0;
+	in_concat_run = false;
 	for (i = 0; i < num_entries; i++) {
 		const struct wim_lookup_table_entry_disk *disk_entry =
 			&((const struct wim_lookup_table_entry_disk*)buf)[i];
+		u16 part_number;
+		struct wim_reshdr reshdr;
+		struct wim_resource_spec *cur_rspec;
 
 		cur_entry = new_lookup_table_entry();
-		if (!cur_entry) {
+		if (cur_entry == NULL) {
 			ERROR("Not enough memory to read lookup table.");
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_lookup_table;
 		}
 
-		cur_entry->wim = wim;
-		cur_entry->resource_location = RESOURCE_IN_WIM;
-		get_resource_entry(&disk_entry->resource_entry, &cur_entry->resource_entry);
-		cur_entry->part_number = le16_to_cpu(disk_entry->part_number);
+		part_number = le16_to_cpu(disk_entry->part_number);
 		cur_entry->refcnt = le32_to_cpu(disk_entry->refcnt);
 		copy_hash(cur_entry->hash, disk_entry->hash);
-		lte_init_wim(cur_entry, wim);
 
-		if (cur_entry->part_number != wim->hdr.part_number) {
+		if (part_number != wim->hdr.part_number) {
 			WARNING("A lookup table entry in part %hu of the WIM "
 				"points to part %hu (ignoring it)",
-				wim->hdr.part_number, cur_entry->part_number);
+				wim->hdr.part_number, part_number);
 			free_lookup_table_entry(cur_entry);
 			continue;
 		}
-
 		if (is_zero_hash(cur_entry->hash)) {
 			WARNING("The WIM lookup table contains an entry with a "
 				"SHA1 message digest of all 0's (ignoring it)");
@@ -554,29 +545,18 @@ read_wim_lookup_table(WIMStruct *wim)
 			continue;
 		}
 
-		if (!(cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED)
-		    && (cur_entry->resource_entry.size !=
-		        cur_entry->resource_entry.original_size))
-		{
-			if (wimlib_print_errors) {
-				WARNING("Found uncompressed resource with "
-					"original size (%"PRIu64") not the same "
-					"as compressed size (%"PRIu64")",
-					cur_entry->resource_entry.original_size,
-					cur_entry->resource_entry.size);
-				if (cur_entry->resource_entry.original_size) {
-					WARNING("Overriding compressed size with original size.");
-					cur_entry->resource_entry.size =
-						cur_entry->resource_entry.original_size;
-				} else {
-					WARNING("Overriding original size with compressed size");
-					cur_entry->resource_entry.original_size =
-						cur_entry->resource_entry.size;
-				}
-			}
+		cur_rspec = MALLOC(sizeof(struct wim_resource_spec));
+		if (cur_rspec == NULL) {
+			ERROR("Not enough memory to read lookup table.");
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_cur_entry;
 		}
 
-		if (cur_entry->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) {
+		get_wim_reshdr(&disk_entry->reshdr, &reshdr);
+		wim_res_hdr_to_spec(&reshdr, wim, cur_rspec);
+		lte_bind_wim_resource_spec(cur_entry, cur_rspec);
+
+		if (cur_entry->flags & WIM_RESHDR_FLAG_METADATA) {
 			/* Lookup table entry for a metadata resource */
 			if (cur_entry->refcnt != 1) {
 				/* Metadata entries with no references must be
@@ -619,7 +599,7 @@ read_wim_lookup_table(WIMStruct *wim)
 			DEBUG("Found metadata resource for image %u at "
 			      "offset %"PRIu64".",
 			      wim->current_image + 1,
-			      cur_entry->resource_entry.offset);
+			      cur_entry->rspec->offset_in_wim);
 			wim->image_metadata[
 				wim->current_image++]->metadata_lte = cur_entry;
 		} else {
@@ -657,6 +637,7 @@ read_wim_lookup_table(WIMStruct *wim)
 	wim->lookup_table = table;
 	ret = 0;
 	goto out_free_buf;
+
 out_free_cur_entry:
 	FREE(cur_entry);
 out_free_lookup_table:
@@ -671,10 +652,11 @@ out:
 
 static void
 write_wim_lookup_table_entry(const struct wim_lookup_table_entry *lte,
-			     struct wim_lookup_table_entry_disk *disk_entry)
+			     struct wim_lookup_table_entry_disk *disk_entry,
+			     u16 part_number)
 {
-	put_resource_entry(&lte->output_resource_entry, &disk_entry->resource_entry);
-	disk_entry->part_number = cpu_to_le16(lte->part_number);
+	put_wim_reshdr(&lte->out_reshdr, &disk_entry->reshdr);
+	disk_entry->part_number = cpu_to_le16(part_number);
 	disk_entry->refcnt = cpu_to_le32(lte->out_refcnt);
 	copy_hash(disk_entry->hash, lte->hash);
 }
@@ -682,7 +664,8 @@ write_wim_lookup_table_entry(const struct wim_lookup_table_entry *lte,
 static int
 write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					struct filedes *out_fd,
-					struct resource_entry *out_res_entry,
+					u16 part_number,
+					struct wim_reshdr *out_reshdr,
 					int write_resource_flags,
 					struct wimlib_lzx_context **comp_ctx)
 {
@@ -707,7 +690,7 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 	}
 	table_buf_ptr = table_buf;
 	list_for_each_entry(lte, stream_list, lookup_table_list)
-		write_wim_lookup_table_entry(lte, table_buf_ptr++);
+		write_wim_lookup_table_entry(lte, table_buf_ptr++, part_number);
 
 	/* Write the lookup table uncompressed.  Although wimlib can handle a
 	 * compressed lookup table, MS software cannot.  */
@@ -717,7 +700,7 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					     out_fd,
 					     WIMLIB_COMPRESSION_TYPE_NONE,
 					     0,
-					     out_res_entry,
+					     out_reshdr,
 					     NULL,
 					     write_resource_flags,
 					     comp_ctx);
@@ -746,10 +729,8 @@ append_lookup_table_entry(struct wim_lookup_table_entry *lte, void *_list)
 	 * needs to be copied from the resource information read originally.
 	 */
 	if (lte->out_refcnt != 0 && !(lte->filtered & FILTERED_EXTERNAL_WIM)) {
-		if (lte->filtered & FILTERED_SAME_WIM) {
-			copy_resource_entry(&lte->output_resource_entry,
-					    &lte->resource_entry);
-		}
+		if (lte->filtered & FILTERED_SAME_WIM)
+			wim_res_spec_to_hdr(lte->rspec, &lte->out_reshdr);
 		list_add_tail(&lte->lookup_table_list, (struct list_head*)_list);
 	}
 	return 0;
@@ -757,7 +738,7 @@ append_lookup_table_entry(struct wim_lookup_table_entry *lte, void *_list)
 
 int
 write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
-		       struct resource_entry *out_res_entry,
+		       struct wim_reshdr *out_reshdr,
 		       struct list_head *stream_list_override)
 {
 	int write_resource_flags;
@@ -791,9 +772,7 @@ write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
 
 			metadata_lte = wim->image_metadata[i - 1]->metadata_lte;
 			metadata_lte->out_refcnt = 1;
-			metadata_lte->part_number = wim->hdr.part_number;
-			metadata_lte->output_resource_entry.flags |= WIM_RESHDR_FLAG_METADATA;
-
+			metadata_lte->out_reshdr.flags |= WIM_RESHDR_FLAG_METADATA;
 			list_add(&metadata_lte->lookup_table_list, stream_list);
 		}
 	}
@@ -811,7 +790,8 @@ write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
 		write_resource_flags |= WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE;
 	return write_wim_lookup_table_from_stream_list(stream_list,
 						       &wim->out_fd,
-						       out_res_entry,
+						       wim->hdr.part_number,
+						       out_reshdr,
 						       write_resource_flags,
 						       &wim->lzx_context);
 }
@@ -844,21 +824,21 @@ lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *_ignore)
 void
 print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 {
-	if (!lte) {
+	if (lte == NULL) {
 		tputc(T('\n'), out);
 		return;
 	}
-	tfprintf(out, T("Offset            = %"PRIu64" bytes\n"),
-		 lte->resource_entry.offset);
 
-	tfprintf(out, T("Size              = %"PRIu64" bytes\n"),
-		 (u64)lte->resource_entry.size);
+	tfprintf(out, T("Reference Count    = %u\n"), lte->refcnt);
+	tfprintf(out, T("Uncompressed Size  = %"PRIu64" bytes\n"), lte->size);
 
-	tfprintf(out, T("Original size     = %"PRIu64" bytes\n"),
-		 lte->resource_entry.original_size);
+	if (lte->resource_location == RESOURCE_IN_WIM) {
+		tfprintf(out, T("Offset in WIM    = %"PRIu64" bytes\n"),
+			 lte->rspec->offset_in_wim);
 
-	tfprintf(out, T("Part Number       = %hu\n"), lte->part_number);
-	tfprintf(out, T("Reference Count   = %u\n"), lte->refcnt);
+		tfprintf(out, T("Size in WIM      = %"PRIu64" bytes\n"),
+			 lte->rspec->size_in_wim);
+	}
 
 	if (lte->unhashed) {
 		tfprintf(out, T("(Unhashed: inode %p, stream_id = %u)\n"),
@@ -870,7 +850,7 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 	}
 
 	tfprintf(out, T("Flags             = "));
-	u8 flags = lte->resource_entry.flags;
+	u8 flags = lte->flags;
 	if (flags & WIM_RESHDR_FLAG_COMPRESSED)
 		tfputs(T("WIM_RESHDR_FLAG_COMPRESSED, "), out);
 	if (flags & WIM_RESHDR_FLAG_FREE)
@@ -879,12 +859,14 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 		tfputs(T("WIM_RESHDR_FLAG_METADATA, "), out);
 	if (flags & WIM_RESHDR_FLAG_SPANNED)
 		tfputs(T("WIM_RESHDR_FLAG_SPANNED, "), out);
+	if (flags & WIM_RESHDR_FLAG_CONCAT)
+		tfputs(T("WIM_RESHDR_FLAG_CONCAT, "), out);
 	tputc(T('\n'), out);
 	switch (lte->resource_location) {
 	case RESOURCE_IN_WIM:
-		if (lte->wim->filename) {
+		if (lte->rspec->wim->filename) {
 			tfprintf(out, T("WIM file          = `%"TS"'\n"),
-				 lte->wim->filename);
+				 lte->rspec->wim->filename);
 		}
 		break;
 #ifdef __WIN32__
@@ -910,16 +892,23 @@ void
 lte_to_wimlib_resource_entry(const struct wim_lookup_table_entry *lte,
 			     struct wimlib_resource_entry *wentry)
 {
-	wentry->uncompressed_size = lte->resource_entry.original_size;
-	wentry->compressed_size = lte->resource_entry.size;
-	wentry->offset = lte->resource_entry.offset;
+	wentry->uncompressed_size = lte->size;
+
+	if (lte->resource_location == RESOURCE_IN_WIM) {
+		wentry->compressed_size = lte->rspec->size_in_wim;
+		wentry->offset = lte->rspec->offset_in_wim;
+		wentry->part_number = lte->rspec->wim->hdr.part_number;
+	} else {
+		wentry->compressed_size = 0;
+		wentry->offset = 0;
+		wentry->part_number = 0;
+	}
 	copy_hash(wentry->sha1_hash, lte->hash);
-	wentry->part_number = lte->part_number;
 	wentry->reference_count = lte->refcnt;
-	wentry->is_compressed = (lte->resource_entry.flags & WIM_RESHDR_FLAG_COMPRESSED) != 0;
-	wentry->is_metadata = (lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) != 0;
-	wentry->is_free = (lte->resource_entry.flags & WIM_RESHDR_FLAG_FREE) != 0;
-	wentry->is_spanned = (lte->resource_entry.flags & WIM_RESHDR_FLAG_SPANNED) != 0;
+	wentry->is_compressed = (lte->flags & WIM_RESHDR_FLAG_COMPRESSED) != 0;
+	wentry->is_metadata = (lte->flags & WIM_RESHDR_FLAG_METADATA) != 0;
+	wentry->is_free = (lte->flags & WIM_RESHDR_FLAG_FREE) != 0;
+	wentry->is_spanned = (lte->flags & WIM_RESHDR_FLAG_SPANNED) != 0;
 }
 
 struct iterate_lte_context {
@@ -1255,22 +1244,6 @@ inode_unnamed_stream_hash(const struct wim_inode *inode)
 		}
 	}
 	return zero_hash;
-}
-
-
-static int
-lte_add_stream_size(struct wim_lookup_table_entry *lte, void *total_bytes_p)
-{
-	*(u64*)total_bytes_p += lte->resource_entry.size;
-	return 0;
-}
-
-u64
-lookup_table_total_stream_size(struct wim_lookup_table *table)
-{
-	u64 total_size = 0;
-	for_lookup_table_entry(table, lte_add_stream_size, &total_size);
-	return total_size;
 }
 
 struct wim_lookup_table_entry **

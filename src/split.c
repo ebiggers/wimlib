@@ -148,7 +148,8 @@ add_stream_to_swm(struct wim_lookup_table_entry *lte, void *_swm_info)
 	struct swm_info *swm_info = _swm_info;
 	u64 stream_size;
 
-	stream_size = lte->resource_entry.size;
+	/* TODO */
+	stream_size = lte->rspec->size_in_wim;
 
 	/* - Start first part if no parts have been started so far;
 	 * - Start next part if adding this stream exceeds maximum part size,
@@ -158,7 +159,7 @@ add_stream_to_swm(struct wim_lookup_table_entry *lte, void *_swm_info)
 	if (swm_info->num_parts == 0 ||
 	    ((swm_info->parts[swm_info->num_parts - 1].size +
 			stream_size >= swm_info->max_part_size)
-	     && !((lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA) ||
+	     && !((lte->flags & WIM_RESHDR_FLAG_METADATA) ||
 		   swm_info->parts[swm_info->num_parts - 1].size == 0)))
 	{
 		if (swm_info->num_parts == swm_info->num_alloc_parts) {
@@ -182,7 +183,7 @@ add_stream_to_swm(struct wim_lookup_table_entry *lte, void *_swm_info)
 		swm_info->parts[swm_info->num_parts - 1].size = 0;
 	}
 	swm_info->parts[swm_info->num_parts - 1].size += stream_size;
-	if (!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA)) {
+	if (!(lte->flags & WIM_RESHDR_FLAG_METADATA)) {
 		list_add_tail(&lte->write_streams_list,
 			      &swm_info->parts[swm_info->num_parts - 1].stream_list);
 	}

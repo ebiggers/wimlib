@@ -434,7 +434,7 @@ inode_to_stbuf(const struct wim_inode *inode,
 	stbuf->st_ino = (ino_t)inode->i_ino;
 	stbuf->st_nlink = inode->i_nlink;
 	if (lte)
-		stbuf->st_size = wim_resource_size(lte);
+		stbuf->st_size = lte->size;
 	else
 		stbuf->st_size = 0;
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
@@ -568,7 +568,7 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 	if (old_lte) {
 		struct filedes wimlib_fd;
 		filedes_init(&wimlib_fd, fd);
-		extract_size = min(wim_resource_size(old_lte), size);
+		extract_size = min(old_lte->size, size);
 		ret = extract_wim_resource_to_fd(old_lte, &wimlib_fd,
 						 extract_size);
 	} else {
@@ -663,10 +663,10 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 		}
 	}
 
-	new_lte->refcnt                       = inode->i_nlink;
-	new_lte->resource_location            = RESOURCE_IN_STAGING_FILE;
-	new_lte->staging_file_name            = staging_file_name;
-	new_lte->resource_entry.original_size = size;
+	new_lte->refcnt              = inode->i_nlink;
+	new_lte->resource_location   = RESOURCE_IN_STAGING_FILE;
+	new_lte->staging_file_name   = staging_file_name;
+	new_lte->size                = size;
 
 	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte,
 				     inode, stream_id);
@@ -825,7 +825,7 @@ rebuild_wim(struct wimfs_context *ctx, int write_flags,
 	DEBUG("Freeing entries for zero-length streams");
 	image_for_each_unhashed_stream_safe(lte, tmp, imd) {
 		wimlib_assert(lte->unhashed);
-		if (wim_resource_size(lte) == 0) {
+		if (lte->size == 0) {
 			struct wim_lookup_table_entry **back_ptr;
 			back_ptr = retrieve_lte_pointer(lte);
 			*back_ptr = NULL;
@@ -1606,7 +1606,7 @@ wimfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi)
 	if (ret)
 		return -errno;
 	touch_inode(fd->f_inode);
-	fd->f_lte->resource_entry.original_size = size;
+	fd->f_lte->size = size;
 	return 0;
 }
 
@@ -1639,7 +1639,7 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 	int ret;
 	struct wim_inode *inode;
 	struct wim_ads_entry *ads_entry;
-	size_t res_size;
+	u64 stream_size;
 	struct wim_lookup_table_entry *lte;
 	struct wimfs_context *ctx = wimfs_get_context();
 
@@ -1659,12 +1659,12 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 		return -ENOATTR;
 
 	lte = ads_entry->lte;
-	res_size = wim_resource_size(lte);
+	stream_size = lte->size;
 
 	if (size == 0)
-		return res_size;
+		return stream_size;
 
-	if (res_size > size)
+	if (stream_size > size)
 		return -ERANGE;
 
 	ret = read_full_resource_into_buf(lte, value);
@@ -1674,7 +1674,7 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 		else
 			return -EIO;
 	}
-	return res_size;
+	return stream_size;
 }
 #endif
 
@@ -1857,7 +1857,7 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 
 	if (flags_writable(fi->flags) &&
             (!lte || lte->resource_location != RESOURCE_IN_STAGING_FILE)) {
-		u64 size = (lte) ? wim_resource_size(lte) : 0;
+		u64 size = (lte) ? lte->size : 0;
 		ret = extract_resource_to_staging_dir(inode, stream_id,
 						      &lte, size, ctx);
 		if (ret)
@@ -1915,7 +1915,7 @@ wimfs_read(const char *path, char *buf, size_t size,
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	ssize_t ret;
-	u64 res_size;
+	u64 stream_size;
 
 	if (!fd)
 		return -EBADF;
@@ -1924,14 +1924,14 @@ wimfs_read(const char *path, char *buf, size_t size,
 		return 0;
 
 	if (fd->f_lte)
-		res_size = wim_resource_size(fd->f_lte);
+		stream_size = fd->f_lte->size;
 	else
-		res_size = 0;
+		stream_size = 0;
 
-	if (offset > res_size)
+	if (offset > stream_size)
 		return -EOVERFLOW;
 
-	size = min(size, res_size - offset);
+	size = min(size, stream_size - offset);
 	if (size == 0)
 		return 0;
 
@@ -2205,7 +2205,7 @@ wimfs_truncate(const char *path, off_t size)
 		if (ret)
 			ret = -errno;
 		else
-			lte->resource_entry.original_size = size;
+			lte->size = size;
 	} else {
 		/* File in WIM.  Extract it to the staging directory, but only
 		 * the first @size bytes of it. */
@@ -2325,11 +2325,10 @@ wimfs_write(const char *path, const char *buf, size_t size,
 		return -errno;
 
 	/* Update file size */
-	if (offset + size > fd->f_lte->resource_entry.original_size) {
+	if (offset + size > fd->f_lte->size) {
 		DEBUG("Update file size %"PRIu64 " => %"PRIu64"",
-		      fd->f_lte->resource_entry.original_size,
-		      offset + size);
-		fd->f_lte->resource_entry.original_size = offset + size;
+		      fd->f_lte->size, offset + size);
+		fd->f_lte->size = offset + size;
 	}
 
 	/* Update timestamps */

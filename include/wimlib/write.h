@@ -40,4 +40,13 @@ write_wim_part(WIMStruct *wim,
 	       struct list_head *stream_list_override,
 	       const u8 *guid);
 
+int
+write_wim_resource_from_buffer(const void *buf, size_t buf_size,
+			       int reshdr_flags, struct filedes *out_fd,
+			       int out_ctype,
+			       u32 out_chunk_size,
+			       struct wim_reshdr *out_reshdr,
+			       u8 *hash_ret, int write_resource_flags,
+			       struct wimlib_lzx_context **comp_ctx);
+
 #endif /* _WIMLIB_WRITE_H */

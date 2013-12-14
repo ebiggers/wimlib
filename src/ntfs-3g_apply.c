@@ -261,13 +261,13 @@ ntfs_3g_extract_stream(file_spec_t file, const utf16lechar *raw_stream_name,
 	 * to skip even more useless work (for example it fills resized
 	 * attributes with 0's, then we just override it.)  */
 	ret = WIMLIB_ERR_WRITE;
-	if (ntfs_attr_truncate_solid(na, wim_resource_size(lte)))
+	if (ntfs_attr_truncate_solid(na, lte->size))
 		goto out_attr_close;
 
 	/* Extract stream data to the NTFS attribute.  */
 	extract_ctx.na = na;
 	extract_ctx.offset = 0;
-	ret = extract_wim_resource(lte, wim_resource_size(lte),
+	ret = extract_wim_resource(lte, lte->size,
 				   ntfs_3g_extract_wim_chunk, &extract_ctx);
 	/* Clean up and return.  */
 out_attr_close:

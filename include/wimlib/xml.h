@@ -5,7 +5,7 @@
 #include "wimlib/file_io.h"
 
 struct wim_info;
-struct resource_entry;
+struct wim_reshdr;
 
 extern u64
 wim_info_get_total_bytes(const struct wim_info *info);
@@ -51,7 +51,7 @@ read_wim_xml_data(WIMStruct *wim);
 
 extern int
 write_wim_xml_data(WIMStruct *wim, int image,
-		   u64 total_bytes, struct resource_entry *out_res_entry,
+		   u64 total_bytes, struct wim_reshdr *out_reshdr,
 		   int write_resource_flags);
 
 extern void

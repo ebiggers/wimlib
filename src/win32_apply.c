@@ -195,8 +195,7 @@ win32_extract_stream(const wchar_t *path, const wchar_t *stream_name,
 	ret = 0;
 	if (!lte)
 		goto out_close_handle;
-	ret = extract_wim_resource(lte, wim_resource_size(lte),
-				   win32_extract_wim_chunk, h);
+	ret = extract_wim_resource(lte, lte->size, win32_extract_wim_chunk, h);
 out_close_handle:
 	if (!CloseHandle(h))
 		goto error;
@@ -239,7 +238,7 @@ win32_encrypted_import_cb(unsigned char *data, void *_import_ctx,
 	unsigned long len = *len_p;
 	const struct wim_lookup_table_entry *lte = import_ctx->lte;
 
-	len = min(len, wim_resource_size(lte) - import_ctx->offset);
+	len = min(len, lte->size - import_ctx->offset);
 
 	if (read_partial_wim_resource_into_buf(lte, len, import_ctx->offset, data))
 		return ERROR_READ_FAULT;

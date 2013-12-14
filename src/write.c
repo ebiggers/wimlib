@@ -74,8 +74,8 @@ static bool
 can_raw_copy(const struct wim_lookup_table_entry *lte,
 	     int write_resource_flags, int out_ctype, u32 out_chunk_size)
 {
-	return (out_ctype == wim_resource_compression_type(lte)
-		&& out_chunk_size == wim_resource_chunk_size(lte)
+	return (out_ctype == lte_ctype(lte)
+		&& out_chunk_size == lte_cchunk_size(lte)
 		&& out_ctype != WIMLIB_COMPRESSION_TYPE_NONE);
 }
 
@@ -150,7 +150,7 @@ begin_wim_resource_chunk_tab(const struct wim_lookup_table_entry *lte,
 	struct chunk_table *chunk_tab;
 	int ret;
 
-	size = wim_resource_size(lte);
+	size = lte->size;
 	num_chunks = DIV_ROUND_UP(size, out_chunk_size);
 	bytes_per_chunk_entry = (size > (1ULL << 32)) ? 8 : 4;
 	alloc_size = sizeof(struct chunk_table) + num_chunks * sizeof(u64);
@@ -245,7 +245,7 @@ write_pwm_stream_header(const struct wim_lookup_table_entry *lte,
 	int ret;
 
 	stream_hdr.magic = PWM_STREAM_MAGIC;
-	stream_hdr.uncompressed_size = cpu_to_le64(lte->resource_entry.original_size);
+	stream_hdr.uncompressed_size = cpu_to_le64(lte->size);
 	if (additional_reshdr_flags & PWM_RESHDR_FLAG_UNHASHED) {
 		zero_out_hash(stream_hdr.hash);
 	} else {
@@ -253,7 +253,7 @@ write_pwm_stream_header(const struct wim_lookup_table_entry *lte,
 		copy_hash(stream_hdr.hash, lte->hash);
 	}
 
-	reshdr_flags = lte->resource_entry.flags & ~WIM_RESHDR_FLAG_COMPRESSED;
+	reshdr_flags = lte->flags & ~WIM_RESHDR_FLAG_COMPRESSED;
 	reshdr_flags |= additional_reshdr_flags;
 	stream_hdr.flags = cpu_to_le32(reshdr_flags);
 	ret = full_write(out_fd, &stream_hdr, sizeof(stream_hdr));
@@ -397,7 +397,7 @@ error:
  * @out_chunk_size:
  *	Compressed chunk size to use.
  *
- * @out_res_entry:
+ * @out_reshdr:
  *	On success, this is filled in with the offset, flags, compressed size,
  *	and uncompressed size of the resource in the output WIM.
  *
@@ -421,7 +421,7 @@ static int
 write_wim_resource(struct wim_lookup_table_entry *lte,
 		   struct filedes *out_fd, int out_ctype,
 		   u32 out_chunk_size,
-		   struct resource_entry *out_res_entry,
+		   struct wim_reshdr *out_reshdr,
 		   int resource_flags,
 		   struct wimlib_lzx_context **comp_ctx)
 {
@@ -450,20 +450,20 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 		 * needs to be requested so that the written resource can be
 		 * appropriately formatted.  However, in neither case is any
 		 * actual decompression needed.  */
-		if (lte->is_pipable == !!(resource_flags &
-					  WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE))
+		if (lte->rspec->is_pipable == !!(resource_flags &
+						 WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE))
 		{
 			resource_flags |= WIMLIB_READ_RESOURCE_FLAG_RAW_FULL;
-			read_size = lte->resource_entry.size;
+			read_size = lte->rspec->size_in_wim;
 		} else {
 			resource_flags |= WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS;
-			read_size = lte->resource_entry.original_size;
+			read_size = lte->size;
 		}
 		write_ctx.doing_sha = false;
 	} else {
 		write_ctx.doing_sha = true;
 		sha1_init(&write_ctx.sha_ctx);
-		read_size = lte->resource_entry.original_size;
+		read_size = lte->size;
 	}
 
 	/* Set the output compression mode and initialize chunk table if needed.
@@ -513,7 +513,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	write_ctx.resource_flags = resource_flags;
 try_write_again:
 	if (write_ctx.out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
-		in_chunk_size = wim_resource_chunk_size(lte);
+		in_chunk_size = lte_cchunk_size(lte);
 	else
 		in_chunk_size = out_chunk_size;
 	ret = read_resource_prefix(lte, read_size,
@@ -540,27 +540,27 @@ try_write_again:
 			goto out_free_chunk_tab;
 	}
 
-	/* Fill in out_res_entry with information about the newly written
+	/* Fill in out_reshdr with information about the newly written
 	 * resource.  */
-	out_res_entry->size          = out_fd->offset - res_start_offset;
-	out_res_entry->flags         = lte->resource_entry.flags;
+	out_reshdr->size_in_wim   = out_fd->offset - res_start_offset;
+	out_reshdr->flags         = lte->flags;
 	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
-		out_res_entry->flags &= ~WIM_RESHDR_FLAG_COMPRESSED;
+		out_reshdr->flags &= ~WIM_RESHDR_FLAG_COMPRESSED;
 	else
-		out_res_entry->flags |= WIM_RESHDR_FLAG_COMPRESSED;
-	out_res_entry->offset        = res_start_offset;
-	out_res_entry->original_size = wim_resource_size(lte);
+		out_reshdr->flags |= WIM_RESHDR_FLAG_COMPRESSED;
+	out_reshdr->offset_in_wim  = res_start_offset;
+	out_reshdr->uncompressed_size = lte->size;
 
 	/* Check for resources compressed to greater than their original size
 	 * and write them uncompressed instead.  (But never do this if writing
 	 * to a pipe, and don't bother if we did a raw copy.)  */
-	if (out_res_entry->size > out_res_entry->original_size &&
+	if (out_reshdr->size_in_wim > out_reshdr->uncompressed_size &&
 	    !(resource_flags & (WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE |
 				WIMLIB_READ_RESOURCE_FLAG_RAW)))
 	{
 		DEBUG("Compressed %"PRIu64" => %"PRIu64" bytes; "
 		      "writing uncompressed instead",
-		      out_res_entry->original_size, out_res_entry->size);
+		      out_reshdr->uncompressed_size, out_reshdr->size_in_wim);
 		ret = seek_and_truncate(out_fd, res_start_offset);
 		if (ret)
 			goto out_free_chunk_tab;
@@ -574,18 +574,18 @@ try_write_again:
 	if (resource_flags & WIMLIB_READ_RESOURCE_FLAG_RAW) {
 		DEBUG("Copied raw compressed data "
 		      "(%"PRIu64" => %"PRIu64" bytes @ +%"PRIu64", flags=0x%02x)",
-		      out_res_entry->original_size, out_res_entry->size,
-		      out_res_entry->offset, out_res_entry->flags);
+		      out_reshdr->uncompressed_size, out_reshdr->size_in_wim,
+		      out_reshdr->offset_in_wim, out_reshdr->flags);
 	} else if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
 		DEBUG("Wrote compressed resource "
 		      "(%"PRIu64" => %"PRIu64" bytes @ +%"PRIu64", flags=0x%02x)",
-		      out_res_entry->original_size, out_res_entry->size,
-		      out_res_entry->offset, out_res_entry->flags);
+		      out_reshdr->uncompressed_size, out_reshdr->size_in_wim,
+		      out_reshdr->offset_in_wim, out_reshdr->flags);
 	} else {
 		DEBUG("Wrote uncompressed resource "
 		      "(%"PRIu64" bytes @ +%"PRIu64", flags=0x%02x)",
-		      out_res_entry->original_size,
-		      out_res_entry->offset, out_res_entry->flags);
+		      out_reshdr->uncompressed_size,
+		      out_reshdr->offset_in_wim, out_reshdr->flags);
 	}
 	ret = 0;
 out_free_chunk_tab:
@@ -602,7 +602,7 @@ write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 			       int reshdr_flags, struct filedes *out_fd,
 			       int out_ctype,
 			       u32 out_chunk_size,
-			       struct resource_entry *out_res_entry,
+			       struct wim_reshdr *out_reshdr,
 			       u8 *hash_ret, int write_resource_flags,
 			       struct wimlib_lzx_context **comp_ctx)
 {
@@ -616,10 +616,10 @@ write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 	if (lte == NULL)
 		return WIMLIB_ERR_NOMEM;
 
-	lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
-	lte->attached_buffer              = (void*)buf;
-	lte->resource_entry.original_size = buf_size;
-	lte->resource_entry.flags         = reshdr_flags;
+	lte->resource_location  = RESOURCE_IN_ATTACHED_BUFFER;
+	lte->attached_buffer    = (void*)buf;
+	lte->size               = buf_size;
+	lte->flags              = reshdr_flags;
 
 	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
 		sha1_buffer(buf, buf_size, lte->hash);
@@ -629,7 +629,7 @@ write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 	}
 
 	ret = write_wim_resource(lte, out_fd, out_ctype, out_chunk_size,
-				 out_res_entry, write_resource_flags, comp_ctx);
+				 out_reshdr, write_resource_flags, comp_ctx);
 	if (ret)
 		goto out_free_lte;
 	if (hash_ret)
@@ -821,24 +821,24 @@ do_write_streams_progress(struct write_streams_progress_data *progress_data,
 	bool new_wim_part;
 
 	if (stream_discarded) {
-		progress->write_streams.total_bytes -= wim_resource_size(lte);
+		progress->write_streams.total_bytes -= lte->size;
 		if (progress_data->next_progress != ~(uint64_t)0 &&
 		    progress_data->next_progress > progress->write_streams.total_bytes)
 		{
 			progress_data->next_progress = progress->write_streams.total_bytes;
 		}
 	} else {
-		progress->write_streams.completed_bytes += wim_resource_size(lte);
+		progress->write_streams.completed_bytes += lte->size;
 	}
 	new_wim_part = false;
 	if (lte->resource_location == RESOURCE_IN_WIM &&
-	    lte->wim != progress_data->prev_wim_part)
+	    lte->rspec->wim != progress_data->prev_wim_part)
 	{
 		if (progress_data->prev_wim_part) {
 			new_wim_part = true;
 			progress->write_streams.completed_parts++;
 		}
-		progress_data->prev_wim_part = lte->wim;
+		progress_data->prev_wim_part = lte->rspec->wim;
 	}
 	progress->write_streams.completed_streams++;
 	if (progress_data->progress_func
@@ -873,7 +873,7 @@ serial_write_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 	return write_wim_resource(lte, ctx->out_fd,
 				  ctx->out_ctype,
 				  ctx->out_chunk_size,
-				  &lte->output_resource_entry,
+				  &lte->out_reshdr,
 				  ctx->write_resource_flags,
 				  ctx->comp_ctx);
 }
@@ -929,7 +929,7 @@ do_write_stream_list(struct list_head *stream_list,
 				    lte->filtered) {
 					DEBUG("Discarding duplicate stream of "
 					      "length %"PRIu64,
-					      wim_resource_size(lte));
+					      lte->size);
 					lte->no_progress = 0;
 					stream_discarded = true;
 					goto skip_to_progress;
@@ -1290,12 +1290,12 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 			 * equal to their original size and write them
 			 * uncompressed instead.  (But never do this if writing
 			 * to a pipe.)  */
-			if (res_csize >= wim_resource_size(cur_lte) &&
+			if (res_csize >= cur_lte->size &&
 			    !(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE))
 			{
 				DEBUG("Compressed %"PRIu64" => %"PRIu64" bytes; "
 				      "writing uncompressed instead",
-				      wim_resource_size(cur_lte), res_csize);
+				      cur_lte->size, res_csize);
 				ret = seek_and_truncate(ctx->out_fd, ctx->res_start_offset);
 				if (ret)
 					return ret;
@@ -1303,31 +1303,31 @@ receive_compressed_chunks(struct main_writer_thread_ctx *ctx)
 							 ctx->out_fd,
 							 WIMLIB_COMPRESSION_TYPE_NONE,
 							 0,
-							 &cur_lte->output_resource_entry,
+							 &cur_lte->out_reshdr,
 							 ctx->write_resource_flags,
 							 ctx->comp_ctx);
 				if (ret)
 					return ret;
 			} else {
-				cur_lte->output_resource_entry.size =
+				cur_lte->out_reshdr.size_in_wim =
 					res_csize;
 
-				cur_lte->output_resource_entry.original_size =
-					cur_lte->resource_entry.original_size;
+				cur_lte->out_reshdr.uncompressed_size =
+					cur_lte->size;
 
-				cur_lte->output_resource_entry.offset =
+				cur_lte->out_reshdr.offset_in_wim =
 					ctx->res_start_offset;
 
-				cur_lte->output_resource_entry.flags =
-					cur_lte->resource_entry.flags |
+				cur_lte->out_reshdr.flags =
+					cur_lte->flags |
 						WIM_RESHDR_FLAG_COMPRESSED;
 
 				DEBUG("Wrote compressed resource "
 				      "(%"PRIu64" => %"PRIu64" bytes @ +%"PRIu64", flags=0x%02x)",
-				      cur_lte->output_resource_entry.original_size,
-				      cur_lte->output_resource_entry.size,
-				      cur_lte->output_resource_entry.offset,
-				      cur_lte->output_resource_entry.flags);
+				      cur_lte->out_reshdr.uncompressed_size,
+				      cur_lte->out_reshdr.size_in_wim,
+				      cur_lte->out_reshdr.offset_in_wim,
+				      cur_lte->out_reshdr.flags);
 			}
 
 			do_write_streams_progress(ctx->progress_data,
@@ -1462,12 +1462,11 @@ submit_stream_for_compression(struct wim_lookup_table_entry *lte,
 	 * when @lte is already hashed.  */
 	sha1_init(&ctx->next_sha_ctx);
 	ctx->next_chunk = 0;
-	ctx->next_num_chunks = DIV_ROUND_UP(wim_resource_size(lte),
-					    ctx->out_chunk_size);
+	ctx->next_num_chunks = DIV_ROUND_UP(lte->size, ctx->out_chunk_size);
 	ctx->next_lte = lte;
 	INIT_LIST_HEAD(&lte->msg_list);
 	list_add_tail(&lte->being_compressed_list, &ctx->outstanding_streams);
-	ret = read_resource_prefix(lte, wim_resource_size(lte),
+	ret = read_resource_prefix(lte, lte->size,
 				   main_writer_thread_cb,
 				   ctx->out_chunk_size, ctx, 0);
 	if (ret)
@@ -1482,7 +1481,7 @@ main_thread_process_next_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 	struct main_writer_thread_ctx *ctx = _ctx;
 	int ret;
 
-	if (wim_resource_size(lte) < 1000 ||
+	if (lte->size < 1000 ||
 	    !must_compress_stream(lte, ctx->write_resource_flags,
 				  ctx->out_ctype, ctx->out_chunk_size))
 	{
@@ -1754,13 +1753,13 @@ write_stream_list(struct list_head *stream_list,
 	prev_wim_part = NULL;
 	list_for_each_entry(lte, stream_list, write_streams_list) {
 		num_streams++;
-		total_bytes += wim_resource_size(lte);
+		total_bytes += lte->size;
 		if (must_compress_stream(lte, write_resource_flags,
 					 out_ctype, out_chunk_size))
-			total_compression_bytes += wim_resource_size(lte);
+			total_compression_bytes += lte->size;
 		if (lte->resource_location == RESOURCE_IN_WIM) {
-			if (prev_wim_part != lte->wim) {
-				prev_wim_part = lte->wim;
+			if (prev_wim_part != lte->rspec->wim) {
+				prev_wim_part = lte->rspec->wim;
 				total_parts++;
 			}
 		}
@@ -1840,10 +1839,10 @@ stream_size_table_insert(struct wim_lookup_table_entry *lte, void *_tab)
 	struct wim_lookup_table_entry *same_size_lte;
 	struct hlist_node *tmp;
 
-	pos = hash_u64(wim_resource_size(lte)) % tab->capacity;
+	pos = hash_u64(lte->size) % tab->capacity;
 	lte->unique_size = 1;
 	hlist_for_each_entry(same_size_lte, tmp, &tab->array[pos], hash_list_2) {
-		if (wim_resource_size(same_size_lte) == wim_resource_size(lte)) {
+		if (same_size_lte->size == lte->size) {
 			lte->unique_size = 0;
 			same_size_lte->unique_size = 0;
 			break;
@@ -1949,7 +1948,6 @@ prepare_logical_stream_list(WIMStruct *wim, int image, bool streams_ok,
 			    struct find_streams_ctx *ctx)
 {
 	int ret;
-	struct wim_lookup_table_entry *lte;
 
 	if (streams_ok && (image == WIMLIB_ALL_IMAGES ||
 			   (image == 1 && wim->hdr.image_count == 1)))
@@ -1977,8 +1975,6 @@ prepare_logical_stream_list(WIMStruct *wim, int image, bool streams_ok,
 			return ret;
 	}
 
-	list_for_each_entry(lte, &ctx->stream_list, write_streams_list)
-		lte->part_number = wim->hdr.part_number;
 	return 0;
 }
 
@@ -1990,10 +1986,10 @@ process_filtered_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 
 	/* Calculate and set lte->filtered.  */
 	if (lte->resource_location == RESOURCE_IN_WIM) {
-		if (lte->wim == ctx->wim &&
+		if (lte->rspec->wim == ctx->wim &&
 		    (ctx->write_flags & WIMLIB_WRITE_FLAG_OVERWRITE))
 			filtered |= FILTERED_SAME_WIM;
-		if (lte->wim != ctx->wim &&
+		if (lte->rspec->wim != ctx->wim &&
 		    (ctx->write_flags & WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS))
 			filtered |= FILTERED_EXTERNAL_WIM;
 	}
@@ -2112,10 +2108,8 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 		 * use stream list already explicitly provided.  Use existing
 		 * reference counts.  */
 		stream_list = stream_list_override;
-		list_for_each_entry(lte, stream_list, write_streams_list) {
+		list_for_each_entry(lte, stream_list, write_streams_list)
 			lte->out_refcnt = (lte->refcnt ? lte->refcnt : 1);
-			lte->part_number = wim->hdr.part_number;
-		}
 	}
 
 	return write_stream_list(stream_list,
@@ -2174,8 +2168,8 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 		} else if (write_flags & WIMLIB_WRITE_FLAG_OVERWRITE) {
 			DEBUG("Image %u was not modified; re-using existing "
 			      "metadata resource.", i);
-			copy_resource_entry(&imd->metadata_lte->output_resource_entry,
-					    &imd->metadata_lte->resource_entry);
+			wim_res_spec_to_hdr(imd->metadata_lte->rspec,
+					    &imd->metadata_lte->out_reshdr);
 			ret = 0;
 		} else {
 			DEBUG("Image %u was not modified; copying existing "
@@ -2184,7 +2178,7 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 						 &wim->out_fd,
 						 wim->out_compression_type,
 						 wim->out_chunk_size,
-						 &imd->metadata_lte->output_resource_entry,
+						 &imd->metadata_lte->out_reshdr,
 						 write_resource_flags,
 						 &wim->lzx_context);
 		}
@@ -2294,19 +2288,19 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	 * it should be a copy of the resource entry for the image that is
 	 * marked as bootable.  This is not well documented...  */
 	if (wim->hdr.boot_idx == 0) {
-		zero_resource_entry(&wim->hdr.boot_metadata_res_entry);
+		zero_reshdr(&wim->hdr.boot_metadata_reshdr);
 	} else {
-		copy_resource_entry(&wim->hdr.boot_metadata_res_entry,
+		copy_reshdr(&wim->hdr.boot_metadata_reshdr,
 			    &wim->image_metadata[wim->hdr.boot_idx- 1
-					]->metadata_lte->output_resource_entry);
+					]->metadata_lte->out_reshdr);
 	}
 
 	/* Write lookup table.  (Save old position first.)  */
-	old_lookup_table_end = wim->hdr.lookup_table_res_entry.offset +
-			       wim->hdr.lookup_table_res_entry.size;
+	old_lookup_table_end = wim->hdr.lookup_table_reshdr.offset_in_wim +
+			       wim->hdr.lookup_table_reshdr.size_in_wim;
 	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
 		ret = write_wim_lookup_table(wim, image, write_flags,
-					     &wim->hdr.lookup_table_res_entry,
+					     &wim->hdr.lookup_table_reshdr,
 					     stream_list_override);
 		if (ret)
 			return ret;
@@ -2317,7 +2311,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	if (write_flags & WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES)
 		xml_totalbytes = WIM_TOTALBYTES_USE_EXISTING;
 	ret = write_wim_xml_data(wim, image, xml_totalbytes,
-				 &wim->hdr.xml_res_entry,
+				 &wim->hdr.xml_data_reshdr,
 				 write_resource_flags);
 	if (ret)
 		return ret;
@@ -2327,7 +2321,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 		if (write_flags & WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML) {
 			struct wim_header checkpoint_hdr;
 			memcpy(&checkpoint_hdr, &wim->hdr, sizeof(struct wim_header));
-			zero_resource_entry(&checkpoint_hdr.integrity);
+			zero_reshdr(&checkpoint_hdr.integrity_table_reshdr);
 			checkpoint_hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 			ret = write_wim_header_at_offset(&checkpoint_hdr,
 							 &wim->out_fd, 0);
@@ -2338,8 +2332,8 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 		if (!(write_flags & WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE))
 			old_lookup_table_end = 0;
 
-		new_lookup_table_end = wim->hdr.lookup_table_res_entry.offset +
-				       wim->hdr.lookup_table_res_entry.size;
+		new_lookup_table_end = wim->hdr.lookup_table_reshdr.offset_in_wim +
+				       wim->hdr.lookup_table_reshdr.size_in_wim;
 
 		ret = write_integrity_table(wim,
 					    new_lookup_table_end,
@@ -2349,7 +2343,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 			return ret;
 	} else {
 		/* No integrity table.  */
-		zero_resource_entry(&wim->hdr.integrity);
+		zero_reshdr(&wim->hdr.integrity_table_reshdr);
 	}
 
 	/* Now that all information in the WIM header has been determined, the
@@ -2497,7 +2491,7 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 		  struct list_head *stream_list_override)
 {
 	int ret;
-	struct resource_entry xml_res_entry;
+	struct wim_reshdr xml_reshdr;
 
 	WARNING("Creating a pipable WIM, which will "
 		"be incompatible\n"
@@ -2520,7 +2514,7 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 
 	/* Write extra copy of the XML data.  */
 	ret = write_wim_xml_data(wim, image, WIM_TOTALBYTES_OMIT,
-				 &xml_res_entry,
+				 &xml_reshdr,
 				 WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE);
 	if (ret)
 		return ret;
@@ -2682,10 +2676,10 @@ write_wim_part(WIMStruct *wim,
 		randomize_byte_array(wim->hdr.guid, WIMLIB_GUID_LEN);
 
 	/* Clear references to resources that have not been written yet.  */
-	zero_resource_entry(&wim->hdr.lookup_table_res_entry);
-	zero_resource_entry(&wim->hdr.xml_res_entry);
-	zero_resource_entry(&wim->hdr.boot_metadata_res_entry);
-	zero_resource_entry(&wim->hdr.integrity);
+	zero_reshdr(&wim->hdr.lookup_table_reshdr);
+	zero_reshdr(&wim->hdr.xml_data_reshdr);
+	zero_reshdr(&wim->hdr.boot_metadata_reshdr);
+	zero_reshdr(&wim->hdr.integrity_table_reshdr);
 
 	/* Set image count and boot index correctly for single image writes.  */
 	if (image != WIMLIB_ALL_IMAGES) {
@@ -2838,8 +2832,8 @@ check_resource_offset(struct wim_lookup_table_entry *lte, void *_wim)
 	const WIMStruct *wim = _wim;
 	off_t end_offset = *(const off_t*)wim->private;
 
-	if (lte->resource_location == RESOURCE_IN_WIM && lte->wim == wim &&
-	    lte->resource_entry.offset + lte->resource_entry.size > end_offset)
+	if (lte->resource_location == RESOURCE_IN_WIM && lte->rspec->wim == wim &&
+	    lte->rspec->offset_in_wim + lte->rspec->size_in_wim > end_offset)
 		return WIMLIB_ERR_RESOURCE_ORDER;
 	return 0;
 }
@@ -2950,11 +2944,12 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	 * data, and that there are no stream resources, metadata resources, or
 	 * lookup tables after the XML data.  Otherwise, these data would be
 	 * overwritten. */
-	old_xml_begin = wim->hdr.xml_res_entry.offset;
-	old_xml_end = old_xml_begin + wim->hdr.xml_res_entry.size;
-	old_lookup_table_end = wim->hdr.lookup_table_res_entry.offset +
-			       wim->hdr.lookup_table_res_entry.size;
-	if (wim->hdr.integrity.offset != 0 && wim->hdr.integrity.offset < old_xml_end) {
+	old_xml_begin = wim->hdr.xml_data_reshdr.offset_in_wim;
+	old_xml_end = old_xml_begin + wim->hdr.xml_data_reshdr.size_in_wim;
+	old_lookup_table_end = wim->hdr.lookup_table_reshdr.offset_in_wim +
+			       wim->hdr.lookup_table_reshdr.size_in_wim;
+	if (wim->hdr.integrity_table_reshdr.offset_in_wim != 0 &&
+	    wim->hdr.integrity_table_reshdr.offset_in_wim < old_xml_end) {
 		WARNING("Didn't expect the integrity table to be before the XML data");
 		return WIMLIB_ERR_RESOURCE_ORDER;
 	}
@@ -2979,10 +2974,11 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 		old_wim_end = old_lookup_table_end;
 		write_flags |= WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE |
 			       WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML;
-	} else if (wim->hdr.integrity.offset) {
+	} else if (wim->hdr.integrity_table_reshdr.offset_in_wim != 0) {
 		/* Old WIM has an integrity table; begin writing new streams
 		 * after it. */
-		old_wim_end = wim->hdr.integrity.offset + wim->hdr.integrity.size;
+		old_wim_end = wim->hdr.integrity_table_reshdr.offset_in_wim +
+			      wim->hdr.integrity_table_reshdr.size_in_wim;
 	} else {
 		/* No existing integrity table; begin writing new streams after
 		 * the old XML data. */

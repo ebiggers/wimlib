@@ -31,6 +31,7 @@
 #include "wimlib/metadata.h"
 #include "wimlib/resource.h"
 #include "wimlib/security.h"
+#include "wimlib/write.h"
 
 /*
  * Reads a metadata resource for an image in the WIM file.  The metadata
@@ -71,13 +72,13 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	struct wim_inode *inode;
 
 	metadata_lte = imd->metadata_lte;
-	metadata_len = wim_resource_size(metadata_lte);
+	metadata_len = metadata_lte->size;
 
 	DEBUG("Reading metadata resource: original_size = %"PRIu64", "
 	      "size = %"PRIu64", offset = %"PRIu64"",
-	      metadata_lte->resource_entry.original_size,
-	      metadata_lte->resource_entry.size,
-	      metadata_lte->resource_entry.offset);
+	      metadata_lte->rspec->uncompressed_size,
+	      metadata_lte->rspec->size_in_wim,
+	      metadata_lte->rspec->offset_in_wim);
 
 	/* There is no way the metadata resource could possibly be less than (8
 	 * + WIM_DENTRY_DISK_SIZE) bytes, where the 8 is for security data (with
@@ -298,7 +299,7 @@ write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags)
 					     &wim->out_fd,
 					     wim->out_compression_type,
 					     wim->out_chunk_size,
-					     &imd->metadata_lte->output_resource_entry,
+					     &imd->metadata_lte->out_reshdr,
 					     imd->metadata_lte->hash,
 					     write_resource_flags,
 					     &wim->lzx_context);

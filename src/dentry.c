@@ -254,7 +254,7 @@ get_utf16le_name(const tchar *name, utf16lechar **name_utf16le_ret,
 #if TCHAR_IS_UTF16LE
 	name_utf16le_nbytes = tstrlen(name) * sizeof(utf16lechar);
 	name_utf16le = MALLOC(name_utf16le_nbytes + sizeof(utf16lechar));
-	if (!name_utf16le)
+	if (name_utf16le == NULL)
 		return WIMLIB_ERR_NOMEM;
 	memcpy(name_utf16le, name, name_utf16le_nbytes + sizeof(utf16lechar));
 	ret = 0;
@@ -443,7 +443,7 @@ for_dentry_in_tree(struct wim_dentry *root,
 {
 	int ret;
 
-	if (!root)
+	if (root == NULL)
 		return 0;
 	ret = (*visitor)(root, arg);
 	if (ret)
@@ -461,7 +461,7 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 {
 	int ret;
 
-	if (!root)
+	if (root == NULL)
 		return 0;
 	ret = for_dentry_tree_in_rbtree_depth(root->d_inode->i_children.rb_node,
 					      visitor, arg);
@@ -485,7 +485,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 	if (dentry_is_root(dentry)) {
 		static const tchar _root_path[] = {WIM_PATH_SEPARATOR, T('\0')};
 		full_path = TSTRDUP(_root_path);
-		if (!full_path)
+		if (full_path == NULL)
 			return WIMLIB_ERR_NOMEM;
 		full_path_nbytes = 1 * sizeof(tchar);
 	} else {
@@ -499,7 +499,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 			parent_full_path = T("");
 			parent_full_path_nbytes = 0;
 		} else {
-			if (!parent->_full_path) {
+			if (parent->_full_path == NULL) {
 				ret = calculate_dentry_full_path(parent);
 				if (ret)
 					return ret;
@@ -525,7 +525,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 		full_path_nbytes = parent_full_path_nbytes + sizeof(tchar) +
 				   filename_nbytes;
 		full_path = MALLOC(full_path_nbytes + sizeof(tchar));
-		if (!full_path)
+		if (full_path == NULL)
 			return WIMLIB_ERR_NOMEM;
 		memcpy(full_path, parent_full_path, parent_full_path_nbytes);
 		full_path[parent_full_path_nbytes / sizeof(tchar)] = WIM_PATH_SEPARATOR;
@@ -790,7 +790,7 @@ get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path)
 	const utf16lechar *p, *pp;
 
 	cur_dentry = parent_dentry = wim_root_dentry(wim);
-	if (!cur_dentry) {
+	if (cur_dentry == NULL) {
 		errno = ENOENT;
 		return NULL;
 	}
@@ -1045,7 +1045,7 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 	int ret;
 
 	dentry = MALLOC(sizeof(struct wim_dentry));
-	if (!dentry)
+	if (dentry == NULL)
 		return WIMLIB_ERR_NOMEM;
 
 	dentry_common_init(dentry);
@@ -1077,7 +1077,7 @@ _new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
 		dentry->d_inode = new_timeless_inode();
 	else
 		dentry->d_inode = new_inode();
-	if (!dentry->d_inode) {
+	if (dentry->d_inode == NULL) {
 		free_dentry(dentry);
 		return WIMLIB_ERR_NOMEM;
 	}
@@ -1139,7 +1139,7 @@ init_ads_entry(struct wim_ads_entry *ads_entry, const void *name,
 
 	if (is_utf16le) {
 		utf16lechar *p = MALLOC(name_nbytes + sizeof(utf16lechar));
-		if (!p)
+		if (p == NULL)
 			return WIMLIB_ERR_NOMEM;
 		memcpy(p, name, name_nbytes);
 		p[name_nbytes / 2] = cpu_to_le16(0);
@@ -1455,7 +1455,7 @@ do_inode_add_ads(struct wim_inode *inode, const void *stream_name,
 	num_ads = inode->i_num_ads + 1;
 	ads_entries = REALLOC(inode->i_ads_entries,
 			      num_ads * sizeof(inode->i_ads_entries[0]));
-	if (!ads_entries) {
+	if (ads_entries == NULL) {
 		ERROR("Failed to allocate memory for new alternate data stream");
 		return NULL;
 	}
@@ -1503,22 +1503,22 @@ add_stream_from_data_buffer(const void *buffer, size_t size,
 	sha1_buffer(buffer, size, hash);
 	existing_lte = lookup_resource(lookup_table, hash);
 	if (existing_lte) {
-		wimlib_assert(wim_resource_size(existing_lte) == size);
+		wimlib_assert(existing_lte->size == size);
 		lte = existing_lte;
 		lte->refcnt++;
 	} else {
 		void *buffer_copy;
 		lte = new_lookup_table_entry();
-		if (!lte)
+		if (lte == NULL)
 			return NULL;
 		buffer_copy = memdup(buffer, size);
-		if (!buffer_copy) {
+		if (buffer_copy == NULL) {
 			free_lookup_table_entry(lte);
 			return NULL;
 		}
-		lte->resource_location            = RESOURCE_IN_ATTACHED_BUFFER;
-		lte->attached_buffer              = buffer_copy;
-		lte->resource_entry.original_size = size;
+		lte->resource_location  = RESOURCE_IN_ATTACHED_BUFFER;
+		lte->attached_buffer    = buffer_copy;
+		lte->size               = size;
 		copy_hash(lte->hash, hash);
 		lookup_table_insert(lookup_table, lte);
 	}
@@ -1535,12 +1535,12 @@ inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
 	wimlib_assert(inode->i_resolved);
 
 	new_ads_entry = inode_add_ads(inode, name);
-	if (!new_ads_entry)
+	if (new_ads_entry == NULL)
 		return WIMLIB_ERR_NOMEM;
 
 	new_ads_entry->lte = add_stream_from_data_buffer(value, size,
 							 lookup_table);
-	if (!new_ads_entry->lte) {
+	if (new_ads_entry->lte == NULL) {
 		inode_remove_ads(inode, new_ads_entry - inode->i_ads_entries,
 				 lookup_table);
 		return WIMLIB_ERR_NOMEM;
@@ -1564,7 +1564,7 @@ inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
 			 struct wim_lookup_table *lookup_table)
 {
 	inode->i_lte = add_stream_from_data_buffer(data, len, lookup_table);
-	if (!inode->i_lte)
+	if (inode->i_lte == NULL)
 		return WIMLIB_ERR_NOMEM;
 	inode->i_resolved = 1;
 	return 0;
@@ -1621,17 +1621,17 @@ inode_get_unix_data(const struct wim_inode *inode,
 
 	ads_entry = inode_get_ads_entry((struct wim_inode*)inode,
 					WIMLIB_UNIX_DATA_TAG, NULL);
-	if (!ads_entry)
+	if (ads_entry == NULL)
 		return NO_UNIX_DATA;
 
 	if (stream_idx_ret)
 		*stream_idx_ret = ads_entry - inode->i_ads_entries;
 
 	lte = ads_entry->lte;
-	if (!lte)
+	if (lte == NULL)
 		return NO_UNIX_DATA;
 
-	size = wim_resource_size(lte);
+	size = lte->size;
 	if (size != sizeof(struct wimlib_unix_data))
 		return BAD_UNIX_DATA;
 
@@ -1714,7 +1714,7 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 	 * data stream entries. */
 	num_ads = inode->i_num_ads;
 	ads_entries = CALLOC(num_ads, sizeof(inode->i_ads_entries[0]));
-	if (!ads_entries)
+	if (ads_entries == NULL)
 		goto out_of_memory;
 
 	/* Read the entries into our newly allocated buffer. */
@@ -1769,7 +1769,7 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 				goto out_invalid;
 
 			cur_entry->stream_name = MALLOC(cur_entry->stream_name_nbytes + 2);
-			if (!cur_entry->stream_name)
+			if (cur_entry->stream_name == NULL)
 				goto out_of_memory;
 
 			memcpy(cur_entry->stream_name,
@@ -1908,7 +1908,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 
 	/* Allocate a `struct wim_inode' for this `struct wim_dentry'. */
 	inode = new_timeless_inode();
-	if (!inode)
+	if (inode == NULL)
 		return WIMLIB_ERR_NOMEM;
 
 	/* Read more fields; some into the dentry, and some into the inode. */
@@ -1976,7 +1976,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	 * is no null terminator following it. */
 	if (file_name_nbytes) {
 		file_name = MALLOC(file_name_nbytes + 2);
-		if (!file_name) {
+		if (file_name == NULL) {
 			ERROR("Failed to allocate %d bytes for dentry file name",
 			      file_name_nbytes + 2);
 			ret = WIMLIB_ERR_NOMEM;
@@ -1994,7 +1994,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	 * filename, there is no null terminator following it. */
 	if (short_name_nbytes) {
 		short_name = MALLOC(short_name_nbytes + 2);
-		if (!short_name) {
+		if (short_name == NULL) {
 			ERROR("Failed to allocate %d bytes for dentry short name",
 			      short_name_nbytes + 2);
 			ret = WIMLIB_ERR_NOMEM;
@@ -2131,7 +2131,7 @@ read_dentry_tree(const u8 * restrict metadata_resource,
 		/* Not end of directory.  Allocate this child permanently and
 		 * link it to the parent and previous child. */
 		child = memdup(&cur_child, sizeof(struct wim_dentry));
-		if (!child) {
+		if (child == NULL) {
 			ERROR("Failed to allocate new dentry!");
 			ret = WIMLIB_ERR_NOMEM;
 			break;
@@ -2523,7 +2523,7 @@ do_iterate_dir_tree(WIMStruct *wim,
 	wdentry = CALLOC(1, sizeof(struct wimlib_dir_entry) +
 				  (1 + dentry->d_inode->i_num_ads) *
 					sizeof(struct wimlib_stream_entry));
-	if (!wdentry)
+	if (wdentry == NULL)
 		goto out;
 
 	ret = init_wimlib_dentry(wdentry, dentry, wim, flags);
@@ -2568,7 +2568,7 @@ image_do_iterate_dir_tree(WIMStruct *wim)
 	struct wim_dentry *dentry;
 
 	dentry = get_dentry(wim, ctx->path);
-	if (!dentry)
+	if (dentry == NULL)
 		return WIMLIB_ERR_PATH_DOES_NOT_EXIST;
 	return do_iterate_dir_tree(wim, dentry, ctx->flags, ctx->cb, ctx->user_ctx);
 }
@@ -2626,7 +2626,7 @@ inode_metadata_consistent(const struct wim_inode *inode,
 
 		/* Compare stream sizes.  */
 		if (lte && template_lte) {
-			if (wim_resource_size(lte) != wim_resource_size(template_lte))
+			if (lte->size != template_lte->size)
 				return false;
 
 			/* If hash happens to be available, compare with template.  */
@@ -2634,9 +2634,9 @@ inode_metadata_consistent(const struct wim_inode *inode,
 			    !hashes_equal(lte->hash, template_lte->hash))
 				return false;
 
-		} else if (lte && wim_resource_size(lte)) {
+		} else if (lte && lte->size) {
 			return false;
-		} else if (template_lte && wim_resource_size(template_lte)) {
+		} else if (template_lte && template_lte->size) {
 			return false;
 		}
 	}
@@ -2673,7 +2673,7 @@ inode_copy_checksums(struct wim_inode *inode,
 		/* Only take action if both entries exist, the entry for @inode
 		 * has no checksum calculated, but the entry for @template_inode
 		 * does.  */
-		if (!lte || !template_lte ||
+		if (lte == NULL || template_lte == NULL ||
 		    !lte->unhashed || template_lte->unhashed)
 			continue;
 
@@ -2736,7 +2736,7 @@ dentry_reference_template(struct wim_dentry *dentry, void *_args)
 		return ret;
 
 	template_dentry = get_dentry(template_wim, dentry->_full_path);
-	if (!template_dentry) {
+	if (template_dentry == NULL) {
 		DEBUG("\"%"TS"\": newly added file", dentry->_full_path);
 		return 0;
 	}

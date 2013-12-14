@@ -425,6 +425,9 @@ enum wimlib_compression_type {
 
 	/** Compressed resources in the WIM use XPRESS compression. */
 	WIMLIB_COMPRESSION_TYPE_XPRESS = 2,
+
+	/** TODO  */
+	WIMLIB_COMPRESSION_TYPE_LZMS = 3,
 };
 
 /** @} */

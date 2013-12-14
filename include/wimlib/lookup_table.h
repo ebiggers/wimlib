@@ -114,24 +114,11 @@ struct wim_lookup_table_entry {
 	/* List of lookup table entries in this hash bucket */
 	struct hlist_node hash_list;
 
-	/* Location and size of the stream in the WIM, whether it is compressed
-	 * or not, and whether it's a metadata resource or not.  This is an
-	 * on-disk field. */
-	struct resource_entry resource_entry;
+	/* Uncompressed size of the stream.  */
+	u64 size : 56;
 
-	/* Specifies which part of the split WIM the resource is located in.
-	 * This is on on-disk field.
-	 *
-	 * In stand-alone WIMs, this must be 1.
-	 *
-	 * In split WIMs, every split WIM part has its own lookup table, and in
-	 * read_lookup_table() it's currently expected that the part number of
-	 * each lookup table entry in a split WIM part's lookup table is the
-	 * same as the part number of that split WIM part.  So this makes this
-	 * field redundant since we store a pointer to the corresponding
-	 * WIMStruct in the lookup table entry anyway.
-	 */
-	u16 part_number;
+	/* Stream flags (WIM_RESHDR_FLAG_*).  */
+	u64 flags : 8;
 
 	/* One of the `enum resource_location' values documented above. */
 	u16 resource_location : 5;
@@ -146,17 +133,6 @@ struct wim_lookup_table_entry {
 	u16 deferred : 1;
 
 	u16 no_progress : 1;
-
-	/* If resource_location == RESOURCE_IN_WIM, this will be a cached value
-	 * that specifies the compression type of this stream as one of
-	 * WIMLIB_COMPRESSION_TYPE_*.  Otherwise this will be 0, which is the
-	 * same as WIMLIB_COMPRESSION_TYPE_NONE.  */
-	u16 compression_type : 2;
-
-	/* If resource_location == RESOURCE_IN_WIM, this flag will be set if the
-	 * WIM is pipable and therefore the stream is in a slightly different
-	 * format.  See comment above write_pipable_wim().  */
-	u16 is_pipable : 1;
 
 	/* Set to 1 when a metadata entry has its checksum changed; in such
 	 * cases the hash is no longer valid to verify the data if the metadata
@@ -209,7 +185,7 @@ struct wim_lookup_table_entry {
 	/* Pointers to somewhere where the stream is actually located.  See the
 	 * comments for the @resource_location field above. */
 	union {
-		WIMStruct *wim;
+		struct wim_resource_spec *rspec;
 		tchar *file_on_disk;
 		void *attached_buffer;
 	#ifdef WITH_FUSE
@@ -254,15 +230,9 @@ struct wim_lookup_table_entry {
 			struct list_head being_compressed_list;
 		};
 
-		/* When a WIM file is written, @output_resource_entry is filled
-		 * in with the resource entry for the output WIM.  This will not
-		 * necessarily be the same as the @resource_entry since:
-		 * - The stream may have a different offset in the new WIM
-		 * - The stream may have a different compressed size in the new
-		 *   WIM if the compression type changed
-		 */
-		struct resource_entry output_resource_entry;
-
+		/* When a WIM file is written, @output_reshdr is filled in with
+		 * the resource header for the output WIM.  */
+		struct wim_reshdr out_reshdr;
 
 		/* Used temporarily during extraction  */
 		union {
@@ -290,35 +260,27 @@ struct wim_lookup_table_entry {
 	/* Links streams that are still unhashed after being been added
 	 * to a WIM.  */
 	struct list_head unhashed_list;
+
+	struct list_head wim_resource_list;
 };
 
-static inline u64
-wim_resource_size(const struct wim_lookup_table_entry *lte)
+static inline int
+lte_ctype(const struct wim_lookup_table_entry *lte)
 {
-	return lte->resource_entry.original_size;
+	if (lte->resource_location == RESOURCE_IN_WIM)
+		return lte->rspec->ctype;
+	else
+		return WIMLIB_COMPRESSION_TYPE_NONE;
 }
 
 static inline u32
-wim_resource_chunk_size(const struct wim_lookup_table_entry * lte)
+lte_cchunk_size(const struct wim_lookup_table_entry * lte)
 {
 	if (lte->resource_location == RESOURCE_IN_WIM &&
-	    lte->compression_type != WIMLIB_COMPRESSION_TYPE_NONE)
-		return lte->wim->chunk_size;
+	    lte->rspec->ctype != WIMLIB_COMPRESSION_TYPE_NONE)
+		return lte->rspec->cchunk_size;
 	else
 		return 32768;
-}
-
-
-static inline u64
-wim_resource_chunks(const struct wim_lookup_table_entry *lte)
-{
-	return DIV_ROUND_UP(wim_resource_size(lte), wim_resource_chunk_size(lte));
-}
-
-static inline int
-wim_resource_compression_type(const struct wim_lookup_table_entry *lte)
-{
-	return lte->compression_type;
 }
 
 static inline bool
@@ -342,7 +304,7 @@ read_wim_lookup_table(WIMStruct *wim);
 
 extern int
 write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
-		       struct resource_entry *out_res_entry,
+		       struct wim_reshdr *out_reshdr,
 		       struct list_head *stream_list_override);
 
 extern void
@@ -369,8 +331,7 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *lte)
 			_malloc_attribute;
 
 extern void
-print_lookup_table_entry(const struct wim_lookup_table_entry *entry,
-			 FILE *out);
+print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out);
 
 extern void
 free_lookup_table_entry(struct wim_lookup_table_entry *lte);
@@ -413,16 +374,32 @@ lte_decrement_num_opened_fds(struct wim_lookup_table_entry *lte);
 #endif
 
 extern int
-lte_zero_out_refcnt(struct wim_lookup_table_entry *entry, void *ignore);
+lte_zero_out_refcnt(struct wim_lookup_table_entry *lte, void *ignore);
 
 extern int
-lte_zero_real_refcnt(struct wim_lookup_table_entry *entry, void *ignore);
+lte_zero_real_refcnt(struct wim_lookup_table_entry *lte, void *ignore);
 
 extern int
 lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *ignore);
 
-extern void
-lte_init_wim(struct wim_lookup_table_entry *lte, WIMStruct *wim);
+static inline void
+lte_bind_wim_resource_spec(struct wim_lookup_table_entry *lte,
+			   struct wim_resource_spec *rspec)
+{
+	lte->resource_location = RESOURCE_IN_WIM;
+	lte->rspec = rspec;
+	list_add(&lte->wim_resource_list, &rspec->lte_list);
+	lte->flags = rspec->flags;
+	lte->size = rspec->uncompressed_size;
+}
+
+static inline void
+lte_unbind_wim_resource_spec(struct wim_lookup_table_entry *lte)
+{
+	list_del(&lte->wim_resource_list);
+	lte->rspec = NULL;
+	lte->resource_location = RESOURCE_NONEXISTENT;
+}
 
 extern int
 inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table,
@@ -529,10 +506,6 @@ inode_unnamed_lte(const struct wim_inode *inode, const struct wim_lookup_table *
 
 extern const u8 *
 inode_unnamed_stream_hash(const struct wim_inode *inode);
-
-extern u64
-lookup_table_total_stream_size(struct wim_lookup_table *table);
-
 
 static inline void
 lookup_table_insert_unhashed(struct wim_lookup_table *table,

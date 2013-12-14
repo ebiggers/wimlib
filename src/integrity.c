@@ -37,6 +37,7 @@
 #include "wimlib/resource.h"
 #include "wimlib/sha1.h"
 #include "wimlib/wim.h"
+#include "wimlib/write.h"
 
 /* Size, in bytes, of each SHA1-summed chunk, when wimlib writes integrity
  * information. */
@@ -87,9 +88,8 @@ calculate_chunk_sha1(struct filedes *in_fd, size_t this_chunk_size,
  * read_integrity_table: -  Reads the integrity table from a WIM file.
  *
  * @wim:
- *	WIMStruct for the WIM file; @wim->hdr.integrity specifies the location
- *	of the integrity table.  The integrity table must exist (i.e.
- *	res_entry->offset must not be 0).  @wim->in_fd is expected to be a
+ *	WIMStruct for the WIM file; @wim->hdr.integrity_table_reshdr specifies
+ *	the location of the integrity table.  @wim->in_fd is expected to be a
  *	seekable file descriptor to the WIM file opened for reading.
  *
  * @num_checked_bytes:
@@ -114,14 +114,12 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 	struct integrity_table *table;
 	int ret;
 
-	if (wim->hdr.integrity.size < 8)
+	if (wim->hdr.integrity_table_reshdr.uncompressed_size < 8)
 		goto invalid;
 
-	DEBUG("Reading integrity table (offset %"PRIu64", "
-	      "original_size %"PRIu64")",
-	      wim->hdr.integrity.offset, wim->hdr.integrity.original_size);
+	DEBUG("Reading integrity table.");
 
-	ret = res_entry_to_data(&wim->hdr.integrity, wim, &buf);
+	ret = wim_reshdr_to_data(&wim->hdr.integrity_table_reshdr, wim, &buf);
 	if (ret)
 		return ret;
 	table = buf;
@@ -134,7 +132,7 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 	      "table->chunk_size = %u",
 	      table->size, table->num_entries, table->chunk_size);
 
-	if (table->size != wim->hdr.integrity.original_size ||
+	if (table->size != wim->hdr.integrity_table_reshdr.uncompressed_size ||
 	    table->size != (u64)table->num_entries * SHA1_HASH_SIZE + 12 ||
 	    table->chunk_size == 0 ||
 	    table->num_entries != DIV_ROUND_UP(num_checked_bytes, table->chunk_size))
@@ -282,8 +280,8 @@ calculate_integrity_table(struct filedes *in_fd,
  * chunks of the file).
  *
  * This function can optionally re-use entries from an older integrity table.
- * To do this, make @integrity_res_entry point to the resource entry for the
- * older table (note: this is an input-output parameter), and set
+ * To do this, ensure that @wim->hdr.integrity_table_reshdr is the resource
+ * header for the older table (note: this is an input-output parameter), and set
  * @old_lookup_table_end to the offset of the byte directly following the last
  * byte checked by the old table.  If the old integrity table is invalid or
  * cannot be read, a warning is printed and the integrity information is
@@ -366,7 +364,7 @@ write_integrity_table(WIMStruct *wim,
 					     &wim->out_fd,
 					     WIMLIB_COMPRESSION_TYPE_NONE,
 					     0,
-					     &wim->hdr.integrity,
+					     &wim->hdr.integrity_table_reshdr,
 					     NULL,
 					     0,
 					     &wim->lzx_context);
@@ -486,8 +484,8 @@ check_wim_integrity(WIMStruct *wim, wimlib_progress_func_t progress_func)
 		return WIM_INTEGRITY_NONEXISTENT;
 	}
 
-	end_lookup_table_offset = wim->hdr.lookup_table_res_entry.offset +
-				  wim->hdr.lookup_table_res_entry.size;
+	end_lookup_table_offset = wim->hdr.lookup_table_reshdr.offset_in_wim +
+				  wim->hdr.lookup_table_reshdr.size_in_wim;
 
 	if (end_lookup_table_offset < WIM_HEADER_DISK_SIZE) {
 		ERROR("WIM lookup table ends before WIM header ends!");

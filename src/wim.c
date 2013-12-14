@@ -138,6 +138,10 @@ wim_chunk_size_valid(u32 chunk_size, int ctype)
 		 * 2^15 = 32768 is the default value used for compatibility, but
 		 * wimlib can actually use up to 2^26.  */
 		return order >= 15 && order <= 26;
+
+	case WIMLIB_COMPRESSION_TYPE_LZMS:
+		/* TODO */
+		return 131072;
 	}
 	return false;
 }
@@ -371,7 +375,7 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 	memcpy(info->guid, wim->hdr.guid, WIMLIB_GUID_LEN);
 	info->image_count = wim->hdr.image_count;
 	info->boot_index = wim->hdr.boot_idx;
-	info->wim_version = WIM_VERSION;
+	info->wim_version = wim->hdr.wim_version;
 	info->chunk_size = wim->hdr.chunk_size;
 	info->part_number = wim->hdr.part_number;
 	info->total_parts = wim->hdr.total_parts;
@@ -535,7 +539,6 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 		wim->in_fd.is_pipe = 1;
 	} else {
 		wimfile = wim_filename_or_fd;
-		DEBUG("Reading the WIM file `%"TS"'", wimfile);
 		ret = do_open_wim(wimfile, &wim->in_fd);
 		if (ret)
 			return ret;
@@ -562,7 +565,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 		}
 	}
 
-	ret = read_wim_header(wim->filename, &wim->in_fd, &wim->hdr);
+	ret = read_wim_header(wim, &wim->hdr);
 	if (ret)
 		return ret;
 
@@ -596,17 +599,17 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 	/* Check and cache the compression type */
 	if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESSION) {
 		if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_LZX) {
-			if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_XPRESS) {
-				ERROR("Multiple compression flags are set in \"%"TS"\"",
-				      wimfile);
-				return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
-			}
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
 		} else if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_XPRESS) {
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
+	#if 0
+		/* TODO */
+		} else if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_LZMS) {
+			wim->compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
+	#endif
 		} else {
 			ERROR("The compression flag is set on \"%"TS"\", but "
-			      "neither the XPRESS nor LZX flag is set",
+			      "a flag for a recognized format is not",
 			      wimfile);
 			return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 		}
@@ -677,6 +680,11 @@ open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 	WIMStruct *wim;
 	int ret;
 
+	if (open_flags & WIMLIB_OPEN_FLAG_FROM_PIPE)
+		DEBUG("Opening pipable WIM from file descriptor %d.", *(const int*)wim_filename_or_fd);
+	else
+		DEBUG("Opening WIM file \"%"TS"\"", (const tchar*)wim_filename_or_fd);
+
 	wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
 
 	if (wim_ret == NULL)
@@ -692,6 +700,7 @@ open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 		return ret;
 	}
 
+	DEBUG("Successfully opened WIM and created WIMStruct.");
 	*wim_ret = wim;
 	return 0;
 }

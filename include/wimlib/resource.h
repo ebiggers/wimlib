@@ -5,42 +5,84 @@
 #include "wimlib/endianness.h"
 #include "wimlib/callback.h"
 #include "wimlib/file_io.h"
+#include "wimlib/list.h"
 #include "wimlib/sha1.h"
 
 struct wim_lookup_table_entry;
 struct wim_image_metadata;
 
-/* Description of the location, size, and compression status of a WIM resource
- * (stream).  This is the in-memory version of `struct resource_entry_disk'.  */
-struct resource_entry {
-	/* Size, in bytes, of the resource as it appears in the WIM file.  If
-	 * the resource is uncompressed, this will be the same as
-	 * @original_size.  If the resource is compressed, this will be the
-	 * compressed size of the resource, including all compressed chunks as
-	 * well as the chunk table.
-	 *
-	 * Note: if the WIM is "pipable", this value does not include the stream
-	 * header.  */
-	u64 size  : 56;
+/* Specification of a resource in a WIM file.
+ *
+ * If a `struct wim_lookup_table_entry' lte has
+ * (lte->resource_location == RESOURCE_IN_WIM), then lte->wim_res_spec points to
+ * an instance of this structure.
+ *
+ * Normally, there is a one-to-one correspondence between WIM lookup table
+ * entries ("streams") and WIM resources.  However, the flag
+ * WIM_RESHDR_FLAG_CONCAT can be used to specify that two streams be combined
+ * into the same resource and compressed together.  Caveats about this flag are
+ * noted in the comment above the definition of WIM_VERSION_STREAM_CONCAT.  */
+struct wim_resource_spec {
+	/* The WIM file containing this resource.  */
+	WIMStruct *wim;
 
-	/* Bitwise OR of one or more of the WIM_RESHDR_FLAG_* flags.  */
-	u64 flags : 8;
+	/* Offset, in bytes, from the start of WIM file at which this resource
+	 * starts.  */
+	u64 offset_in_wim;
 
-	/* Offset, in bytes, of the resource from the start of the WIM file.  */
-	u64 offset;
+	/* The size of this resource in the WIM file.  For compressed resources
+	 * this is the compressed size.  */
+	u64 size_in_wim;
 
-	/* Uncompressed size, in bytes, of the resource (stream).  */
-	u64 original_size;
+	/* Number of bytes of uncompressed data this resource uncompresses to.
+	 */
+	u64 uncompressed_size;
+
+	/* List of streams this resource contains.  */
+	struct list_head lte_list;
+
+	/* Resource flags.  */
+	u32 flags : 8;
+
+	/* This flag will be set if the WIM is pipable and therefore the
+	 * resource will be in a slightly different format if it is compressed
+	 * (wimlib extension).  */
+	u32 is_pipable : 1;
+
+	/* Compression type of this resource as one of WIMLIB_COMPRESSION_TYPE_*
+	 * constants.  */
+	u32 ctype : 3;
+
+	/* Compression chunk size.  */
+	u32 cchunk_size;
 };
 
-/* On-disk version of `struct resource_entry'.  See `struct resource_entry' for
- * description of fields.  */
-struct resource_entry_disk {
-	u8 size[7];
+
+/* On-disk version of a WIM resource header:  This structure specifies the
+ * location, size, and flags (e.g. compressed or not compressed) for a resource
+ * in the WIM file.  */
+struct wim_reshdr_disk {
+	/* Size of the resource as it appears in the WIM file (possibly
+	 * compressed).  */
+	u8 size_in_wim[7];
+
+	/* WIM_RESHDR_FLAG_* flags.  */
 	u8 flags;
-	le64 offset;
-	le64 original_size;
+
+	/* Offset of the resource from the start of the WIM file.  */
+	le64 offset_in_wim;
+
+	/* Uncompressed size of the resource.  */
+	le64 uncompressed_size;
 } _packed_attribute;
+
+/* In-memory version of wim_reshdr_disk.  */
+struct wim_reshdr {
+	u64 size_in_wim : 56;
+	u64 flags : 8;
+	u64 offset_in_wim;
+	u64 uncompressed_size;
+};
 
 /* Flags for the `flags' field of the struct resource_entry structure. */
 
@@ -65,34 +107,37 @@ struct resource_entry_disk {
  * Either way, wimlib doesn't actually use this flag for anything.  */
 #define WIM_RESHDR_FLAG_SPANNED         0x08
 
-/* Functions that operate directly on `struct resource_entry's.  */
+/* TODO  */
+#define WIM_RESHDR_FLAG_CONCAT		0x10
 
-static inline int
-resource_is_compressed(const struct resource_entry *entry)
+static inline void
+copy_reshdr(struct wim_reshdr *dest, const struct wim_reshdr *src)
 {
-	return (entry->flags & WIM_RESHDR_FLAG_COMPRESSED);
+	memcpy(dest, src, sizeof(struct wim_reshdr));
 }
 
 static inline void
-copy_resource_entry(struct resource_entry *dst,
-		    const struct resource_entry *src)
+zero_reshdr(struct wim_reshdr *reshdr)
 {
-	memcpy(dst, src, sizeof(struct resource_entry));
+	memset(reshdr, 0, sizeof(struct wim_reshdr));
 }
 
-static inline void
-zero_resource_entry(struct resource_entry *entry)
-{
-	memset(entry, 0, sizeof(struct resource_entry));
-}
 
 extern void
-get_resource_entry(const struct resource_entry_disk *disk_entry,
-		   struct resource_entry *entry);
+wim_res_hdr_to_spec(const struct wim_reshdr *reshdr, WIMStruct *wim,
+		    struct wim_resource_spec *rspec);
 
 extern void
-put_resource_entry(const struct resource_entry *entry,
-		   struct resource_entry_disk *disk_entry);
+wim_res_spec_to_hdr(const struct wim_resource_spec *rspec,
+		    struct wim_reshdr *reshdr);
+
+extern void
+get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
+	       struct wim_reshdr *reshdr);
+
+void
+put_wim_reshdr(const struct wim_reshdr *reshdr,
+	       struct wim_reshdr_disk *disk_reshdr);
 
 /* wimlib internal flags used when reading or writing resources.  */
 #define WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS		0x00000001
@@ -125,24 +170,13 @@ read_full_resource_into_alloc_buf(const struct wim_lookup_table_entry *lte,
 				  void **buf_ret);
 
 extern int
-res_entry_to_data(const struct resource_entry *res_entry,
-		  WIMStruct *wim, void **buf_ret);
+wim_reshdr_to_data(const struct wim_reshdr *reshdr,
+		   WIMStruct *wim, void **buf_ret);
 
 extern int
 read_resource_prefix(const struct wim_lookup_table_entry *lte,
 		     u64 size, consume_data_callback_t cb,
 		     u32 in_chunk_size, void *ctx_or_buf, int flags);
-
-/* Functions to write a resource.  */
-
-extern int
-write_wim_resource_from_buffer(const void *buf, size_t buf_size,
-			       int reshdr_flags, struct filedes *out_fd,
-			       int out_ctype,
-			       u32 out_chunk_size,
-			       struct resource_entry *out_res_entry,
-			       u8 *hash_ret, int write_resource_flags,
-			       struct wimlib_lzx_context **comp_ctx);
 
 /* Functions to extract a resource.  */
 

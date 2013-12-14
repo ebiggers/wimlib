@@ -45,14 +45,14 @@ add_new_dentry_tree(WIMStruct *wim, struct wim_dentry *root_dentry,
 	int ret;
 
 	metadata_lte = new_lookup_table_entry();
-	if (!metadata_lte)
+	if (metadata_lte == NULL)
 		return WIMLIB_ERR_NOMEM;
 
-	metadata_lte->resource_entry.flags = WIM_RESHDR_FLAG_METADATA;
+	metadata_lte->flags = WIM_RESHDR_FLAG_METADATA;
 	metadata_lte->unhashed = 1;
 
 	new_imd = new_image_metadata();
-	if (!new_imd) {
+	if (new_imd == NULL) {
 		free_lookup_table_entry(metadata_lte);
 		return WIMLIB_ERR_NOMEM;
 	}
@@ -92,7 +92,7 @@ wimlib_add_empty_image(WIMStruct *wim, const tchar *name, int *new_idx_ret)
 	}
 
 	sd = new_wim_security_data();
-	if (!sd) {
+	if (sd == NULL) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;
 	}
@@ -172,7 +172,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 	/* Translate the "capture sources" into generic update commands. */
 	add_cmds = capture_sources_to_add_cmds(sources, num_sources,
 					       add_flags, config);
-	if (!add_cmds) {
+	if (add_cmds == NULL) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_delete_image;
 	}

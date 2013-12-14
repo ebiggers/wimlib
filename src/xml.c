@@ -36,6 +36,7 @@
 #include "wimlib/resource.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/xml.h"
+#include "wimlib/write.h"
 
 #include <libxml/encoding.h>
 #include <libxml/parser.h>
@@ -1153,9 +1154,9 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 	 */
 	lte = inode_unnamed_lte(inode, info->lookup_table);
 	if (lte) {
-		info->total_bytes += wim_resource_size(lte);
+		info->total_bytes += lte->size;
 		if (!dentry_is_first_in_inode(dentry))
-			info->hard_link_bytes += wim_resource_size(lte);
+			info->hard_link_bytes += lte->size;
 	}
 
 	if (inode->i_nlink >= 2 && dentry_is_first_in_inode(dentry)) {
@@ -1164,7 +1165,7 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 				lte = inode_stream_lte(inode, i + 1, info->lookup_table);
 				if (lte) {
 					info->hard_link_bytes += inode->i_nlink *
-								 wim_resource_size(lte);
+								 lte->size;
 				}
 			}
 		}
@@ -1311,23 +1312,18 @@ int
 read_wim_xml_data(WIMStruct *wim)
 {
 	void *buf;
+	size_t bufsize;
 	u8 *xml_data;
 	xmlDoc *doc;
 	xmlNode *root;
 	int ret;
-	const struct resource_entry *res_entry;
 
-	res_entry = &wim->hdr.xml_res_entry;
-
-	DEBUG("Reading XML data: %"PRIu64" bytes at offset %"PRIu64"",
-	      (u64)res_entry->size, res_entry->offset);
-
-	ret = res_entry_to_data(res_entry, wim, &buf);
+	ret = wimlib_get_xml_data(wim, &buf, &bufsize);
 	if (ret)
 		goto out;
 	xml_data = buf;
 
-	doc = xmlReadMemory((const char *)xml_data, res_entry->original_size,
+	doc = xmlReadMemory((const char *)xml_data, bufsize,
 			    NULL, "UTF-16LE", 0);
 	if (!doc) {
 		ERROR("Failed to parse XML data");
@@ -1500,7 +1496,7 @@ out_write_error:
 /* Writes the XML data to a WIM file.  */
 int
 write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
-		   struct resource_entry *out_res_entry,
+		   struct wim_reshdr *out_reshdr,
 		   int write_resource_flags)
 {
 	int ret;
@@ -1523,7 +1519,7 @@ write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 					     &wim->out_fd,
 					     WIMLIB_COMPRESSION_TYPE_NONE,
 					     0,
-					     out_res_entry,
+					     out_reshdr,
 					     NULL,
 					     write_resource_flags,
 					     &wim->lzx_context);
@@ -1567,14 +1563,19 @@ wimlib_image_name_in_use(const WIMStruct *wim, const tchar *name)
 WIMLIBAPI int
 wimlib_get_xml_data(WIMStruct *wim, void **buf_ret, size_t *bufsize_ret)
 {
-	if (wim->filename == NULL)
+	const struct wim_reshdr *xml_reshdr;
+
+	if (wim->filename == NULL && filedes_is_seekable(&wim->in_fd))
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (buf_ret == NULL || bufsize_ret == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	*bufsize_ret = wim->hdr.xml_res_entry.original_size;
-	return res_entry_to_data(&wim->hdr.xml_res_entry, wim, buf_ret);
+	xml_reshdr = &wim->hdr.xml_data_reshdr;
+
+	DEBUG("Reading XML data.");
+	*bufsize_ret = xml_reshdr->uncompressed_size;
+	return wim_reshdr_to_data(xml_reshdr, wim, buf_ret);
 }
 
 WIMLIBAPI int

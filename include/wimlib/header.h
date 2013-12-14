@@ -14,15 +14,16 @@
 /* Version of the WIM file.  There is an older version (used for prerelease
  * versions of Windows Vista), but wimlib doesn't support it.  The differences
  * between the versions are undocumented.  */
-#define WIM_VERSION 0x10d00
+#define WIM_VERSION_DEFAULT 0x10d00
 
 /* Version number used for a different WIM format, which as of Windows 8 can be
  * created by passing 0x20000000 in dwFlagsAndAttributes to WIMGAPI's
  * WIMCreateFile() and specifying either NONE, XPRESS, or LZMS compression.
- * This format is, however, currently undocumented by Microsoft and is seemingly
- * incompatible with their own ImageX and Dism programs.  wimlib does not yet
- * support this format.  */
-#define WIM_MYSTERY_VERSION 0xe00
+ * This format is currently undocumented by Microsoft and is seemingly
+ * incompatible with their own ImageX and Dism programs; however, it seems to be
+ * used for Windows 8 updates.  The format appears to feature a new flag (0x10)
+ * in resource entries, which I've named WIM_RESHDR_FLAG_CONCAT.  */
+#define WIM_VERSION_STREAM_CONCAT 0xe00
 
 /* WIM magic characters, translated to a single 64-bit little endian number.  */
 #define WIM_MAGIC \
@@ -57,8 +58,8 @@ struct wim_header_disk {
 	 * (currently the only supported value). */
 	u32 hdr_size;
 
-	/* Version of the WIM file; WIM_VERSION expected (currently the only
-	 * supported value). */
+	/* Version of the WIM file
+	 * TODO  */
 	u32 wim_version;
 
 	/* Flags for the WIM file (WIM_HDR_FLAG_*) */
@@ -84,14 +85,14 @@ struct wim_header_disk {
 	u32 image_count;
 
 	/* Location and size of the WIM's lookup table. */
-	struct resource_entry_disk lookup_table_res_entry;
+	struct wim_reshdr_disk lookup_table_reshdr;
 
 	/* Location and size of the WIM's XML data. */
-	struct resource_entry_disk xml_data_res_entry;
+	struct wim_reshdr_disk xml_data_reshdr;
 
 	/* Location and size of metadata resource for the bootable image of the
 	 * WIM, or all zeroes if no image is bootable. */
-	struct resource_entry_disk boot_metadata_res_entry;
+	struct wim_reshdr_disk boot_metadata_reshdr;
 
 	/* 1-based index of the bootable image of the WIM, or 0 if no image is
 	 * bootable. */
@@ -100,10 +101,10 @@ struct wim_header_disk {
 	/* Location and size of the WIM's integrity table, or all zeroes if the
 	 * WIM has no integrity table.
 	 *
-	 * Note the integrity_table_res_entry here is 4-byte aligned even though
+	 * Note the integrity_table_reshdr here is 4-byte aligned even though
 	 * it would ordinarily be 8-byte aligned--- hence, the _packed_attribute
 	 * on the `struct wim_header_disk' is essential. */
-	struct resource_entry_disk integrity_table_res_entry;
+	struct wim_reshdr_disk integrity_table_reshdr;
 
 	/* Unused bytes. */
 	u8 unused[60];
@@ -117,6 +118,9 @@ struct wim_header {
 
 	/* Magic characters: either WIM_MAGIC or PWM_MAGIC.  */
 	le64 magic;
+
+	/* Version of the WIM file  */
+	u32 wim_version;
 
 	/* Bitwise OR of one or more of the WIM_HDR_FLAG_* defined below. */
 	u32 flags;
@@ -137,15 +141,15 @@ struct wim_header {
 	u32 image_count;
 
 	/* Location, size, and flags of the lookup table of the WIM. */
-	struct resource_entry lookup_table_res_entry;
+	struct wim_reshdr lookup_table_reshdr;
 
 	/* Location, size, and flags for the XML data of the WIM. */
-	struct resource_entry xml_res_entry;
+	struct wim_reshdr xml_data_reshdr;
 
 	/* Location, size, and flags for the boot metadata.  This means the
 	 * metadata resource for the image specified by boot_idx below.  Should
 	 * be zeroed out if boot_idx is 0. */
-	struct resource_entry boot_metadata_res_entry;
+	struct wim_reshdr boot_metadata_reshdr;
 
 	/* The index of the bootable image in the WIM file. If 0, there are no
 	 * bootable images available. */
@@ -153,7 +157,7 @@ struct wim_header {
 
 	/* The location of the optional integrity table used to verify the
 	 * integrity WIM.  Zeroed out if there is no integrity table.*/
-	struct resource_entry integrity;
+	struct wim_reshdr integrity_table_reshdr;
 };
 
 /* Flags for the `flags' field of the struct wim_header: */
