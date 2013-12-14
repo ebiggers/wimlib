@@ -1446,6 +1446,9 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 		{
 			lte_unbind_wim_resource_spec(found_lte);
 			lte_bind_wim_resource_spec(needed_lte, rspec);
+			needed_lte->offset_in_res = found_lte->offset_in_res;
+			needed_lte->flags = found_lte->flags;
+			needed_lte->size = found_lte->size;
 			ret = extract_stream_instances(needed_lte, ctx, false);
 			lte_unbind_wim_resource_spec(needed_lte);
 
