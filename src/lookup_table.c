@@ -465,8 +465,7 @@ struct wim_lookup_table_entry_disk {
 #define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
 
 static int
-validate_resource(const struct wim_resource_spec *rspec,
-		  u64 offset_save, u64 size_save)
+validate_resource(const struct wim_resource_spec *rspec)
 {
 	struct wim_lookup_table_entry *lte;
 	if (!list_is_singular(&rspec->lte_list)) {
@@ -475,11 +474,6 @@ validate_resource(const struct wim_resource_spec *rspec,
 				lte->flags |= WIM_RESHDR_FLAG_COMPRESSED;
 			else
 				lte->flags &= ~WIM_RESHDR_FLAG_COMPRESSED;
-
-			if (!(lte->flags & WIM_RESHDR_FLAG_CONCAT)) {
-				lte->offset_in_res = offset_save;
-				lte->size = size_save;
-			}
 
 			if (lte->offset_in_res + lte->size < lte->size ||
 			    lte->offset_in_res + lte->size > rspec->uncompressed_size)
@@ -512,8 +506,6 @@ read_wim_lookup_table(WIMStruct *wim)
 	struct wim_lookup_table *table;
 	struct wim_lookup_table_entry *cur_entry, *duplicate_entry;
 	struct wim_resource_spec *cur_rspec;
-	u64 size_save;
-	u64 offset_save;
 	void *buf;
 
 	BUILD_BUG_ON(sizeof(struct wim_lookup_table_entry_disk) !=
@@ -588,8 +580,7 @@ read_wim_lookup_table(WIMStruct *wim)
 			 * simply a single normal entry by itself.  */
 
 			if (cur_rspec != NULL) {
-				ret = validate_resource(cur_rspec, offset_save,
-							size_save);
+				ret = validate_resource(cur_rspec);
 				if (ret)
 					goto out_free_cur_entry;
 			}
@@ -600,9 +591,11 @@ read_wim_lookup_table(WIMStruct *wim)
 				ret = WIMLIB_ERR_NOMEM;
 				goto out_free_cur_entry;
 			}
-			offset_save = reshdr.offset_in_wim;
-			size_save = reshdr.size_in_wim;
 			wim_res_hdr_to_spec(&reshdr, wim, cur_rspec);
+			if (reshdr.flags & WIM_RESHDR_FLAG_CONCAT) {
+				cur_rspec->size_in_wim = 0;
+				cur_rspec->uncompressed_size = 0;
+			}
 		} else if (is_zero_hash(cur_entry->hash)) {
 			/* Found the resource specification for the run.  */
 			cur_rspec->offset_in_wim = reshdr.offset_in_wim;
@@ -615,7 +608,9 @@ read_wim_lookup_table(WIMStruct *wim)
 			      cur_rspec->flags);
 			free_lookup_table_entry(cur_entry);
 			continue;
-		} else {
+		}
+
+		if (reshdr.flags & WIM_RESHDR_FLAG_CONCAT) {
 			/* Continuing the run with another stream.  */
 			DEBUG("Continuing concat run with stream: "
 			      "%"PRIu64" uncompressed bytes @ resource offset %"PRIu64")",
@@ -633,11 +628,10 @@ read_wim_lookup_table(WIMStruct *wim)
 			cur_entry->size = reshdr.size_in_wim;
 			cur_entry->flags = reshdr.flags;
 		} else {
-			/* These may be overwritten in validate_resource() if
-			 * the run turns out to be a concatenation.  */
 			cur_entry->offset_in_res = 0;
 			cur_entry->size = reshdr.uncompressed_size;
 			cur_entry->flags = reshdr.flags;
+			cur_rspec = NULL;
 		}
 
 		if (is_zero_hash(cur_entry->hash)) {
@@ -715,7 +709,7 @@ read_wim_lookup_table(WIMStruct *wim)
 	}
 
 	if (cur_rspec != NULL) {
-		ret = validate_resource(cur_rspec, offset_save, size_save);
+		ret = validate_resource(cur_rspec);
 		if (ret)
 			goto out_free_cur_entry;
 	}
