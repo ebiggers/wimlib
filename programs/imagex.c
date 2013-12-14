@@ -1276,10 +1276,10 @@ parse_num_threads(const tchar *optarg)
 	}
 }
 
-static uint32_t parse_chunk_size(const char *optarg)
+static uint32_t parse_chunk_size(const tchar *optarg)
 {
-       char *tmp;
-       unsigned long chunk_size = strtoul(optarg, &tmp, 10);
+       tchar *tmp;
+       unsigned long chunk_size = tstrtoul(optarg, &tmp, 10);
        if (chunk_size >= UINT32_MAX || *tmp || tmp == optarg) {
                imagex_error(T("Chunk size must be a non-negative integer!"));
                return UINT32_MAX;

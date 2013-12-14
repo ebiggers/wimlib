@@ -240,7 +240,7 @@ win32_encrypted_import_cb(unsigned char *data, void *_import_ctx,
 
 	len = min(len, lte->size - import_ctx->offset);
 
-	if (read_partial_wim_resource_into_buf(lte, len, import_ctx->offset, data))
+	if (read_partial_wim_stream_into_buf(lte, len, import_ctx->offset, data))
 		return ERROR_READ_FAULT;
 
 	import_ctx->offset += len;
