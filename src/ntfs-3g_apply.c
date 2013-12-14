@@ -267,8 +267,8 @@ ntfs_3g_extract_stream(file_spec_t file, const utf16lechar *raw_stream_name,
 	/* Extract stream data to the NTFS attribute.  */
 	extract_ctx.na = na;
 	extract_ctx.offset = 0;
-	ret = extract_wim_resource(lte, lte->size,
-				   ntfs_3g_extract_wim_chunk, &extract_ctx);
+	ret = extract_stream(lte, lte->size,
+			     ntfs_3g_extract_wim_chunk, &extract_ctx);
 	/* Clean up and return.  */
 out_attr_close:
 	ntfs_attr_close(na);

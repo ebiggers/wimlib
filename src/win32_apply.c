@@ -195,7 +195,7 @@ win32_extract_stream(const wchar_t *path, const wchar_t *stream_name,
 	ret = 0;
 	if (!lte)
 		goto out_close_handle;
-	ret = extract_wim_resource(lte, lte->size, win32_extract_wim_chunk, h);
+	ret = extract_stream(lte, lte->size, win32_extract_wim_chunk, h);
 out_close_handle:
 	if (!CloseHandle(h))
 		goto error;

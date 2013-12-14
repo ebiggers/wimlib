@@ -239,6 +239,10 @@ set_wim_hdr_cflags(int ctype, struct wim_header *hdr)
 		hdr->flags |= WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_XPRESS;
 		return 0;
 
+	case WIMLIB_COMPRESSION_TYPE_LZMS:
+		hdr->flags |= WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_LZMS;
+		return 0;
+
 	default:
 		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 	}

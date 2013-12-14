@@ -299,7 +299,7 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 	rpdatalen = lte->size;
 
 	/* Read the data from the WIM file */
-	ret = read_full_resource_into_buf(lte, rpbuf + 8);
+	ret = read_full_stream_into_buf(lte, rpbuf + 8);
 	if (ret)
 		return ret;
 

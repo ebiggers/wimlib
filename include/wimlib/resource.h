@@ -131,7 +131,7 @@ extern void
 wim_res_spec_to_hdr(const struct wim_resource_spec *rspec,
 		    struct wim_reshdr *reshdr);
 
-extern void
+extern int
 get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 	       struct wim_reshdr *reshdr);
 
@@ -160,40 +160,40 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 			  int flags, u64 offset);
 
 extern int
-read_partial_wim_resource_into_buf(const struct wim_lookup_table_entry *lte,
-				   size_t size, u64 offset, void *buf);
+read_partial_wim_stream_into_buf(const struct wim_lookup_table_entry *lte,
+				 size_t size, u64 offset, void *buf);
 extern int
-read_full_resource_into_buf(const struct wim_lookup_table_entry *lte, void *buf);
+read_full_stream_into_buf(const struct wim_lookup_table_entry *lte, void *buf);
 
 extern int
-read_full_resource_into_alloc_buf(const struct wim_lookup_table_entry *lte,
-				  void **buf_ret);
+read_full_stream_into_alloc_buf(const struct wim_lookup_table_entry *lte,
+				void **buf_ret);
 
 extern int
 wim_reshdr_to_data(const struct wim_reshdr *reshdr,
 		   WIMStruct *wim, void **buf_ret);
 
 extern int
-read_resource_prefix(const struct wim_lookup_table_entry *lte,
-		     u64 size, consume_data_callback_t cb,
-		     u32 in_chunk_size, void *ctx_or_buf, int flags);
+read_stream_prefix(const struct wim_lookup_table_entry *lte,
+		   u64 size, consume_data_callback_t cb,
+		   u32 in_chunk_size, void *ctx_or_buf, int flags);
 
 /* Functions to extract a resource.  */
 
 extern int
-extract_wim_resource(const struct wim_lookup_table_entry *lte,
-		     u64 size,
-		     consume_data_callback_t extract_chunk,
-		     void *extract_chunk_arg);
+extract_stream(const struct wim_lookup_table_entry *lte,
+	       u64 size,
+	       consume_data_callback_t extract_chunk,
+	       void *extract_chunk_arg);
 
 extern int
-extract_wim_resource_to_fd(const struct wim_lookup_table_entry *lte,
-			   struct filedes *fd, u64 size);
+extract_stream_to_fd(const struct wim_lookup_table_entry *lte,
+		     struct filedes *fd, u64 size);
 
 /* Miscellaneous resource functions.  */
 
 extern int
-sha1_resource(struct wim_lookup_table_entry *lte);
+sha1_stream(struct wim_lookup_table_entry *lte);
 
 /* Functions to read/write metadata resources.  */
 

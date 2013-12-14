@@ -74,11 +74,7 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	metadata_lte = imd->metadata_lte;
 	metadata_len = metadata_lte->size;
 
-	DEBUG("Reading metadata resource: original_size = %"PRIu64", "
-	      "size = %"PRIu64", offset = %"PRIu64"",
-	      metadata_lte->rspec->uncompressed_size,
-	      metadata_lte->rspec->size_in_wim,
-	      metadata_lte->rspec->offset_in_wim);
+	DEBUG("Reading metadata resource.");
 
 	/* There is no way the metadata resource could possibly be less than (8
 	 * + WIM_DENTRY_DISK_SIZE) bytes, where the 8 is for security data (with
@@ -91,7 +87,7 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	}
 
 	/* Read the metadata resource into memory.  (It may be compressed.) */
-	ret = read_full_resource_into_alloc_buf(metadata_lte, &buf);
+	ret = read_full_stream_into_alloc_buf(metadata_lte, &buf);
 	if (ret)
 		return ret;
 

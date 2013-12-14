@@ -297,6 +297,8 @@ wimlib_get_compression_type_string(int ctype)
 			return T("LZX");
 		case WIMLIB_COMPRESSION_TYPE_XPRESS:
 			return T("XPRESS");
+		case WIMLIB_COMPRESSION_TYPE_LZMS:
+			return T("LZMS");
 		default:
 			return T("Invalid");
 	}
@@ -449,6 +451,7 @@ wimlib_set_output_compression_type(WIMStruct *wim, int ctype)
 	case WIMLIB_COMPRESSION_TYPE_NONE:
 	case WIMLIB_COMPRESSION_TYPE_LZX:
 	case WIMLIB_COMPRESSION_TYPE_XPRESS:
+	case WIMLIB_COMPRESSION_TYPE_LZMS:
 		wim->out_compression_type = ctype;
 
 		/* Reset the chunk size if it's no longer valid.  */
@@ -477,6 +480,9 @@ wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size)
 		case WIMLIB_COMPRESSION_TYPE_LZX:
 			ERROR("Valid chunk sizes for LZX are "
 			      "32768, 65536, 131072, ..., 2097152.");
+			break;
+		case WIMLIB_COMPRESSION_TYPE_LZMS:
+			ERROR("Valid chunk sizes for LZMS are 131072.");
 			break;
 		}
 		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
@@ -602,11 +608,8 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
 		} else if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_XPRESS) {
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
-	#if 1
-		/* TODO */
 		} else if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_LZMS) {
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
-	#endif
 		} else {
 			ERROR("The compression flag is set on \"%"TS"\", but "
 			      "a flag for a recognized format is not",

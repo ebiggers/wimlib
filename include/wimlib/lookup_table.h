@@ -115,10 +115,10 @@ struct wim_lookup_table_entry {
 	struct hlist_node hash_list;
 
 	/* Uncompressed size of the stream.  */
-	u64 size : 56;
+	u64 size;
 
 	/* Stream flags (WIM_RESHDR_FLAG_*).  */
-	u64 flags : 8;
+	u16 flags : 8;
 
 	/* One of the `enum resource_location' values documented above. */
 	u16 resource_location : 5;

@@ -1257,7 +1257,7 @@ extract_stream_instances(struct wim_lookup_table_entry *lte,
 			goto out_free_lte_tmp;
 		}
 		filedes_init(&fd, raw_fd);
-		ret = extract_wim_resource_to_fd(lte, &fd, lte->size);
+		ret = extract_stream_to_fd(lte, &fd, lte->size);
 		if (filedes_close(&fd) && !ret)
 			ret = WIMLIB_ERR_WRITE;
 		if (ret)
@@ -1541,7 +1541,7 @@ extract_dentry_to_stdout(struct wim_dentry *dentry)
 		if (lte) {
 			struct filedes _stdout;
 			filedes_init(&_stdout, STDOUT_FILENO);
-			ret = extract_wim_resource_to_fd(lte, &_stdout, lte->size);
+			ret = extract_stream_to_fd(lte, &_stdout, lte->size);
 		}
 	}
 	return ret;

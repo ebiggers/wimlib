@@ -569,8 +569,7 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 		struct filedes wimlib_fd;
 		filedes_init(&wimlib_fd, fd);
 		extract_size = min(old_lte->size, size);
-		ret = extract_wim_resource_to_fd(old_lte, &wimlib_fd,
-						 extract_size);
+		ret = extract_stream_to_fd(old_lte, &wimlib_fd, extract_size);
 	} else {
 		ret = 0;
 		extract_size = 0;
@@ -1667,7 +1666,7 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 	if (stream_size > size)
 		return -ERANGE;
 
-	ret = read_full_resource_into_buf(lte, value);
+	ret = read_full_stream_into_buf(lte, value);
 	if (ret) {
 		if (errno)
 			return -errno;
@@ -1942,8 +1941,8 @@ wimfs_read(const char *path, char *buf, size_t size,
 			ret = -errno;
 		break;
 	case RESOURCE_IN_WIM:
-		if (read_partial_wim_resource_into_buf(fd->f_lte, size,
-						       offset, buf))
+		if (read_partial_wim_stream_into_buf(fd->f_lte, size,
+						     offset, buf))
 			ret = -errno;
 		else
 			ret = size;

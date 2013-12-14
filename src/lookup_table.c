@@ -469,24 +469,24 @@ validate_resource(const struct wim_resource_spec *rspec,
 		  u64 offset_save, u64 size_save)
 {
 	struct wim_lookup_table_entry *lte;
-	list_for_each_entry(lte, &rspec->lte_list, wim_resource_list) {
-		if (rspec->flags & WIM_RESHDR_FLAG_COMPRESSED)
-			lte->flags |= WIM_RESHDR_FLAG_COMPRESSED;
-		else
-			lte->flags &= ~WIM_RESHDR_FLAG_COMPRESSED;
+	if (!list_is_singular(&rspec->lte_list)) {
+		list_for_each_entry(lte, &rspec->lte_list, wim_resource_list) {
+			if (rspec->flags & WIM_RESHDR_FLAG_COMPRESSED)
+				lte->flags |= WIM_RESHDR_FLAG_COMPRESSED;
+			else
+				lte->flags &= ~WIM_RESHDR_FLAG_COMPRESSED;
 
-		if (!(lte->flags & WIM_RESHDR_FLAG_CONCAT)) {
-			lte->offset_in_res = offset_save;
-			lte->size = size_save;
+			if (!(lte->flags & WIM_RESHDR_FLAG_CONCAT)) {
+				lte->offset_in_res = offset_save;
+				lte->size = size_save;
+			}
+
+			if (lte->offset_in_res + lte->size < lte->size ||
+			    lte->offset_in_res + lte->size > rspec->uncompressed_size)
+			{
+				return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+			}
 		}
-
-
-		if (lte->offset_in_res + lte->size < lte->size ||
-		    lte->offset_in_res + lte->size > rspec->uncompressed_size)
-		{
-			return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-		}
-		print_lookup_table_entry(lte, stderr);
 	}
 	return 0;
 }
@@ -548,16 +548,22 @@ read_wim_lookup_table(WIMStruct *wim)
 		u16 part_number;
 		struct wim_reshdr reshdr;
 
-		get_wim_reshdr(&disk_entry->reshdr, &reshdr);
+		ret = get_wim_reshdr(&disk_entry->reshdr, &reshdr);
+		if (ret) {
+			ERROR("Resource header is invalid!");
+			goto out_free_lookup_table;
+		}
 
-		DEBUG("reshdr: size=%"PRIu64", original_size=%"PRIu64", "
-		      "offset=%"PRIu64", flags=0x%02x",
+		DEBUG("reshdr: size_in_wim=%"PRIu64", "
+		      "uncompressed_size=%"PRIu64", "
+		      "offset_in_wim=%"PRIu64", "
+		      "flags=0x%02x",
 		      reshdr.size_in_wim, reshdr.uncompressed_size,
 		      reshdr.offset_in_wim, reshdr.flags);
 
 		cur_entry = new_lookup_table_entry();
 		if (cur_entry == NULL) {
-			ERROR("Not enough memory to read lookup table.");
+			ERROR("Not enough memory to read lookup table!");
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_lookup_table;
 		}
@@ -590,7 +596,7 @@ read_wim_lookup_table(WIMStruct *wim)
 
 			cur_rspec = MALLOC(sizeof(struct wim_resource_spec));
 			if (cur_rspec == NULL) {
-				ERROR("Not enough memory to read lookup table.");
+				ERROR("Not enough memory to read lookup table!");
 				ret = WIMLIB_ERR_NOMEM;
 				goto out_free_cur_entry;
 			}
@@ -1402,7 +1408,7 @@ hash_unhashed_stream(struct wim_lookup_table_entry *lte,
 	 * the SHA1 has been calculated. */
 	back_ptr = retrieve_lte_pointer(lte);
 
-	ret = sha1_resource(lte);
+	ret = sha1_stream(lte);
 	if (ret)
 		return ret;
 

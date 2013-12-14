@@ -971,10 +971,10 @@ win32_capture_stream(const wchar_t *path,
 		ret = win32_get_encrypted_file_size(path, &encrypted_size);
 		if (ret)
 			goto out_free_spath;
-		lte->resource_entry.original_size = encrypted_size;
+		lte->size = encrypted_size;
 	} else {
 		lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
-		lte->resource_entry.original_size = (u64)dat->StreamSize.QuadPart;
+		lte->size = (u64)dat->StreamSize.QuadPart;
 	}
 
 	u32 stream_id;

@@ -31,6 +31,7 @@
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/lookup_table.h"
+#include "wimlib/lzms.h"
 #include "wimlib/resource.h"
 #include "wimlib/sha1.h"
 
@@ -95,22 +96,19 @@
  * separate @wim_chunk_size is needed because it determines the window size used
  * for LZX compression.  */
 static int
-decompress(const void *cchunk, unsigned clen,
-	   void *uchunk, unsigned ulen,
+decompress(const void *cchunk, unsigned clen, void *uchunk, unsigned ulen,
 	   int ctype, u32 wim_chunk_size)
 {
 	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		return wimlib_xpress_decompress(cchunk,
-						clen,
-						uchunk,
-						ulen);
 	case WIMLIB_COMPRESSION_TYPE_LZX:
-		return wimlib_lzx_decompress2(cchunk,
-					      clen,
-					      uchunk,
-					      ulen,
-					      wim_chunk_size);
+		return wimlib_lzx_decompress2(cchunk, clen,
+					      uchunk, ulen, wim_chunk_size);
+	case WIMLIB_COMPRESSION_TYPE_XPRESS:
+		return wimlib_xpress_decompress(cchunk, clen,
+						uchunk, ulen);
+	case WIMLIB_COMPRESSION_TYPE_LZMS:
+		return lzms_decompress(cchunk, clen,
+				       uchunk, ulen, wim_chunk_size);
 	default:
 		wimlib_assert(0);
 		return -1;
@@ -523,12 +521,8 @@ read_error:
 
 /* Read raw data from a file descriptor at the specified offset.  */
 static int
-read_raw_file_data(struct filedes *in_fd,
-		   u64 size,
-		   consume_data_callback_t cb,
-		   u32 cb_chunk_size,
-		   void *ctx_or_buf,
-		   u64 offset)
+read_raw_file_data(struct filedes *in_fd, u64 size, consume_data_callback_t cb,
+		   u32 cb_chunk_size, void *ctx_or_buf, u64 offset)
 {
 	int ret;
 	u8 *tmp_buf;
@@ -581,7 +575,7 @@ out:
  *
  * Read a range of data from an uncompressed or compressed resource in a WIM
  * file.  Data is written into a buffer or fed into a callback function, as
- * documented in read_resource_prefix().
+ * documented in read_stream_prefix().
  *
  * By default, this function provides the uncompressed data of the resource, and
  * @size and @offset and interpreted relative to the uncompressed contents of
@@ -610,8 +604,8 @@ out:
 int
 read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 			  u64 size, consume_data_callback_t cb,
-			  u32 cb_chunk_size,
-			  void *ctx_or_buf, int flags, u64 offset)
+			  u32 cb_chunk_size, void *ctx_or_buf,
+			  int flags, u64 offset)
 {
 	const struct wim_resource_spec *rspec;
 	struct filedes *in_fd;
@@ -667,26 +661,23 @@ read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
 }
 
 int
-read_partial_wim_resource_into_buf(const struct wim_lookup_table_entry *lte,
-				   size_t size, u64 offset, void *buf)
+read_partial_wim_stream_into_buf(const struct wim_lookup_table_entry *lte,
+				 size_t size, u64 offset, void *buf)
 {
 	return read_partial_wim_resource(lte, size, NULL, 0, buf, 0, offset);
 }
 
 static int
-read_wim_resource_prefix(const struct wim_lookup_table_entry *lte,
-			 u64 size,
-			 consume_data_callback_t cb,
-			 u32 cb_chunk_size,
-			 void *ctx_or_buf,
-			 int flags)
+read_wim_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
+		       consume_data_callback_t cb, u32 cb_chunk_size,
+		       void *ctx_or_buf, int flags)
 {
 	return read_partial_wim_resource(lte, size, cb, cb_chunk_size,
 					 ctx_or_buf, flags, 0);
 }
 
 #ifndef __WIN32__
-/* This function handles reading resource data that is located in an external
+/* This function handles reading stream data that is located in an external
  * file,  such as a file that has been added to the WIM image through execution
  * of a wimlib_add_command.
  *
@@ -696,12 +687,9 @@ read_wim_resource_prefix(const struct wim_lookup_table_entry *lte,
  * encrypted), so Windows uses its own code for its equivalent case.
  */
 static int
-read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte,
-			 u64 size,
-			 consume_data_callback_t cb,
-			 u32 cb_chunk_size,
-			 void *ctx_or_buf,
-			 int _ignored_flags)
+read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte, u64 size,
+			 consume_data_callback_t cb, u32 cb_chunk_size,
+			 void *ctx_or_buf, int _ignored_flags)
 {
 	int ret;
 	int raw_fd;
@@ -722,13 +710,12 @@ read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte,
 }
 #endif /* !__WIN32__ */
 
-/* This function handles the trivial case of reading resource data that is, in
+/* This function handles the trivial case of reading stream data that is, in
  * fact, already located in an in-memory buffer.  */
 static int
 read_buffer_prefix(const struct wim_lookup_table_entry *lte,
 		   u64 size, consume_data_callback_t cb,
-		   u32 cb_chunk_size,
-		   void *ctx_or_buf, int _ignored_flags)
+		   u32 cb_chunk_size, void *ctx_or_buf, int _ignored_flags)
 {
 	wimlib_assert(size <= lte->size);
 
@@ -752,18 +739,16 @@ read_buffer_prefix(const struct wim_lookup_table_entry *lte,
 	return 0;
 }
 
-typedef int (*read_resource_prefix_handler_t)(const struct wim_lookup_table_entry *lte,
-					      u64 size,
-					      consume_data_callback_t cb,
-					      u32 cb_chunk_size,
-					      void *ctx_or_buf,
-					      int flags);
+typedef int (*read_stream_prefix_handler_t)(const struct wim_lookup_table_entry *lte,
+					    u64 size, consume_data_callback_t cb,
+					    u32 cb_chunk_size, void *ctx_or_buf,
+					    int flags);
 
 /*
- * read_resource_prefix()-
+ * read_stream_prefix()-
  *
- * Reads the first @size bytes from a generic "resource", which may be located
- * in any one of several locations, such as in a WIM file (compressed or
+ * Reads the first @size bytes from a generic "stream", which may be located in
+ * any one of several locations, such as in a WIM file (compressed or
  * uncompressed), in an external file, or directly in an in-memory buffer.
  *
  * This function feeds the data either to a callback function (@cb != NULL,
@@ -773,28 +758,28 @@ typedef int (*read_resource_prefix_handler_t)(const struct wim_lookup_table_entr
  *
  * When (@cb != NULL), @cb_chunk_size specifies the maximum size of data chunks
  * to feed the callback function.  @cb_chunk_size must be positive, and if the
- * resource is in a WIM file, must be a power of 2.  All chunks, except possibly
+ * stream is in a WIM file, must be a power of 2.  All chunks, except possibly
  * the last one, will be this size.  If (@cb == NULL), @cb_chunk_size is
  * ignored.
  *
- * If the resource is located in a WIM file, @flags can be set as documented in
+ * If the stream is located in a WIM file, @flags can be set as documented in
  * read_partial_wim_resource().  Otherwise @flags are ignored.
  *
  * Returns 0 on success; nonzero on error.  A nonzero value will be returned if
- * the resource data cannot be successfully read (for a number of different
- * reasons, depending on the resource location), or if a callback function was
+ * the stream data cannot be successfully read (for a number of different
+ * reasons, depending on the stream location), or if a callback function was
  * specified and it returned nonzero.
  */
 int
-read_resource_prefix(const struct wim_lookup_table_entry *lte,
-		     u64 size, consume_data_callback_t cb, u32 cb_chunk_size,
-		     void *ctx_or_buf, int flags)
+read_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
+		   consume_data_callback_t cb, u32 cb_chunk_size,
+		   void *ctx_or_buf, int flags)
 {
 	/* This function merely verifies several preconditions, then passes
 	 * control to an appropriate function for understanding each possible
-	 * resource location.  */
-	static const read_resource_prefix_handler_t handlers[] = {
-		[RESOURCE_IN_WIM]             = read_wim_resource_prefix,
+	 * stream location.  */
+	static const read_stream_prefix_handler_t handlers[] = {
+		[RESOURCE_IN_WIM]             = read_wim_stream_prefix,
 	#ifdef __WIN32__
 		[RESOURCE_IN_FILE_ON_DISK]    = read_win32_file_prefix,
 	#else
@@ -818,27 +803,25 @@ read_resource_prefix(const struct wim_lookup_table_entry *lte,
 						ctx_or_buf, flags);
 }
 
-/* Read the full uncompressed data of the specified resource into the specified
- * buffer, which must have space for at least lte->resource_entry.original_size
- * bytes.  */
+/* Read the full uncompressed data of the specified stream into the specified
+ * buffer, which must have space for at least lte->size bytes.  */
 int
-read_full_resource_into_buf(const struct wim_lookup_table_entry *lte,
-			    void *buf)
+read_full_stream_into_buf(const struct wim_lookup_table_entry *lte, void *buf)
 {
-	return read_resource_prefix(lte, lte->size, NULL, 0, buf, 0);
+	return read_stream_prefix(lte, lte->size, NULL, 0, buf, 0);
 }
 
-/* Read the full uncompressed data of the specified resource.  A buffer
- * sufficient to hold the data is allocated and returned in @buf_ret.  */
+/* Read the full uncompressed data of the specified stream.  A buffer sufficient
+ * to hold the data is allocated and returned in @buf_ret.  */
 int
-read_full_resource_into_alloc_buf(const struct wim_lookup_table_entry *lte,
-				  void **buf_ret)
+read_full_stream_into_alloc_buf(const struct wim_lookup_table_entry *lte,
+				void **buf_ret)
 {
 	int ret;
 	void *buf;
 
 	if ((size_t)lte->size != lte->size) {
-		ERROR("Can't read %"PRIu64" byte resource into "
+		ERROR("Can't read %"PRIu64" byte stream into "
 		      "memory", lte->size);
 		return WIMLIB_ERR_NOMEM;
 	}
@@ -847,7 +830,7 @@ read_full_resource_into_alloc_buf(const struct wim_lookup_table_entry *lte,
 	if (buf == NULL)
 		return WIMLIB_ERR_NOMEM;
 
-	ret = read_full_resource_into_buf(lte, buf);
+	ret = read_full_stream_into_buf(lte, buf);
 	if (ret) {
 		FREE(buf);
 		return ret;
@@ -857,8 +840,7 @@ read_full_resource_into_alloc_buf(const struct wim_lookup_table_entry *lte,
 	return 0;
 }
 
-/* Retrieve the full uncompressed data of the specified WIM resource, provided
- * as a raw `struct resource_entry'.  */
+/* Retrieve the full uncompressed data of the specified WIM resource.  */
 static int
 wim_resource_spec_to_data(struct wim_resource_spec *rspec, void **buf_ret)
 {
@@ -875,13 +857,14 @@ wim_resource_spec_to_data(struct wim_resource_spec *rspec, void **buf_ret)
 	lte->size = rspec->uncompressed_size;
 	lte->offset_in_res = 0;
 
-	ret = read_full_resource_into_alloc_buf(lte, buf_ret);
+	ret = read_full_stream_into_alloc_buf(lte, buf_ret);
 
 	lte_unbind_wim_resource_spec(lte);
 	free_lookup_table_entry(lte);
 	return ret;
 }
 
+/* Retrieve the full uncompressed data of the specified WIM resource.  */
 int
 wim_reshdr_to_data(const struct wim_reshdr *reshdr, WIMStruct *wim, void **buf_ret)
 {
@@ -901,8 +884,7 @@ struct extract_ctx {
 };
 
 static int
-extract_chunk_sha1_wrapper(const void *chunk, size_t chunk_size,
-			   void *_ctx)
+extract_chunk_sha1_wrapper(const void *chunk, size_t chunk_size, void *_ctx)
 {
 	struct extract_ctx *ctx = _ctx;
 
@@ -910,17 +892,15 @@ extract_chunk_sha1_wrapper(const void *chunk, size_t chunk_size,
 	return ctx->extract_chunk(chunk, chunk_size, ctx->extract_chunk_arg);
 }
 
-/* Extracts the first @size bytes of a resource to somewhere.  In the process,
- * the SHA1 message digest of the uncompressed resource is checked if the full
- * resource is being extracted.
+/* Extracts the first @size bytes of a stream to somewhere.  In the process, the
+ * SHA1 message digest of the uncompressed stream is checked if the full stream
+ * is being extracted.
  *
  * @extract_chunk is a function that will be called to extract each chunk of the
- * resource.  */
+ * stream.  */
 int
-extract_wim_resource(const struct wim_lookup_table_entry *lte,
-		     u64 size,
-		     consume_data_callback_t extract_chunk,
-		     void *extract_chunk_arg)
+extract_stream(const struct wim_lookup_table_entry *lte, u64 size,
+	       consume_data_callback_t extract_chunk, void *extract_chunk_arg)
 {
 	int ret;
 	if (size == lte->size) {
@@ -929,17 +909,17 @@ extract_wim_resource(const struct wim_lookup_table_entry *lte,
 		ctx.extract_chunk = extract_chunk;
 		ctx.extract_chunk_arg = extract_chunk_arg;
 		sha1_init(&ctx.sha_ctx);
-		ret = read_resource_prefix(lte, size,
-					   extract_chunk_sha1_wrapper,
-					   lte_cchunk_size(lte),
-					   &ctx, 0);
+		ret = read_stream_prefix(lte, size,
+					 extract_chunk_sha1_wrapper,
+					 lte_cchunk_size(lte),
+					 &ctx, 0);
 		if (ret == 0) {
 			u8 hash[SHA1_HASH_SIZE];
 			sha1_final(hash, &ctx.sha_ctx);
 			if (!hashes_equal(hash, lte->hash)) {
 				if (wimlib_print_errors) {
 					ERROR("Invalid SHA1 message digest "
-					      "on the following WIM resource:");
+					      "on the following WIM stream:");
 					print_lookup_table_entry(lte, stderr);
 					if (lte->resource_location == RESOURCE_IN_WIM)
 						ERROR("The WIM file appears to be corrupt!");
@@ -949,9 +929,9 @@ extract_wim_resource(const struct wim_lookup_table_entry *lte,
 		}
 	} else {
 		/* Don't do SHA1 */
-		ret = read_resource_prefix(lte, size, extract_chunk,
-					   lte_cchunk_size(lte),
-					   extract_chunk_arg, 0);
+		ret = read_stream_prefix(lte, size, extract_chunk,
+					 lte_cchunk_size(lte),
+					 extract_chunk_arg, 0);
 	}
 	return ret;
 }
@@ -966,14 +946,14 @@ extract_wim_chunk_to_fd(const void *buf, size_t len, void *_fd_p)
 	return ret;
 }
 
-/* Extract the first @size bytes of the specified resource to the specified file
- * descriptor.  If @size is the full size of the resource, its SHA1 message
- * digest is also checked.  */
+/* Extract the first @size bytes of the specified stream to the specified file
+ * descriptor.  If @size is the full size of the stream, its SHA1 message digest
+ * is also checked.  */
 int
-extract_wim_resource_to_fd(const struct wim_lookup_table_entry *lte,
-			   struct filedes *fd, u64 size)
+extract_stream_to_fd(const struct wim_lookup_table_entry *lte,
+		     struct filedes *fd, u64 size)
 {
-	return extract_wim_resource(lte, size, extract_wim_chunk_to_fd, fd);
+	return extract_stream(lte, size, extract_wim_chunk_to_fd, fd);
 }
 
 
@@ -984,17 +964,17 @@ sha1_chunk(const void *buf, size_t len, void *ctx)
 	return 0;
 }
 
-/* Calculate the SHA1 message digest of a resource, storing it in @lte->hash.  */
+/* Calculate the SHA1 message digest of a stream, storing it in @lte->hash.  */
 int
-sha1_resource(struct wim_lookup_table_entry *lte)
+sha1_stream(struct wim_lookup_table_entry *lte)
 {
 	int ret;
 	SHA_CTX sha_ctx;
 
 	sha1_init(&sha_ctx);
-	ret = read_resource_prefix(lte, lte->size,
-				   sha1_chunk, lte_cchunk_size(lte),
-				   &sha_ctx, 0);
+	ret = read_stream_prefix(lte, lte->size,
+				 sha1_chunk, lte_cchunk_size(lte),
+				 &sha_ctx, 0);
 	if (ret == 0)
 		sha1_final(lte->hash, &sha_ctx);
 
@@ -1035,14 +1015,10 @@ wim_res_spec_to_hdr(const struct wim_resource_spec *rspec,
 
 /* Translates a WIM resource header from the on-disk format into an in-memory
  * format.  */
-void
+int
 get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 	       struct wim_reshdr *reshdr)
 {
-	/* Note: disk_reshdr may not be 8 byte aligned--- in that case, the
-	 * offset and original_size members will be unaligned.  (This is okay
-	 * since `struct resource_reshdr_disk' is declared as packed.)  */
-
 	reshdr->offset_in_wim = le64_to_cpu(disk_reshdr->offset_in_wim);
 	reshdr->size_in_wim = (((u64)disk_reshdr->size_in_wim[0] <<  0) |
 			      ((u64)disk_reshdr->size_in_wim[1] <<  8) |
@@ -1055,14 +1031,13 @@ get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 	reshdr->flags = disk_reshdr->flags;
 
 	/* Truncate numbers to 62 bits to avoid possible overflows.  */
-	if (reshdr->offset_in_wim & 0xc000000000000000ULL) {
-		WARNING("Truncating offset in resource reshdr");
-		reshdr->offset_in_wim &= 0x3fffffffffffffffULL;
-	}
-	if (reshdr->uncompressed_size & 0xc000000000000000ULL) {
-		WARNING("Truncating original_size in resource reshdr");
-		reshdr->uncompressed_size &= 0x3fffffffffffffffULL;
-	}
+	if (reshdr->offset_in_wim & 0xc000000000000000ULL)
+		return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+
+	if (reshdr->uncompressed_size & 0xc000000000000000ULL)
+		return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+
+	return 0;
 }
 
 /* Translates a WIM resource header from an in-memory format into the on-disk
@@ -1071,9 +1046,6 @@ void
 put_wim_reshdr(const struct wim_reshdr *reshdr,
 	       struct wim_reshdr_disk *disk_reshdr)
 {
-	/* Note: disk_reshdr may not be 8 byte aligned--- in that case, the
-	 * offset and original_size members will be unaligned.  (This is okay
-	 * since `struct resource_reshdr_disk' is declared as packed.)  */
 	disk_reshdr->size_in_wim[0] = reshdr->size_in_wim  >>  0;
 	disk_reshdr->size_in_wim[1] = reshdr->size_in_wim  >>  8;
 	disk_reshdr->size_in_wim[2] = reshdr->size_in_wim  >> 16;

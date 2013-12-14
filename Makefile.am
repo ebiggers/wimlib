@@ -33,6 +33,7 @@ libwim_la_SOURCES =		\
 	src/integrity.c		\
 	src/join.c		\
 	src/lookup_table.c	\
+	src/lzms-decompress.c	\
 	src/lz77.c		\
 	src/divsufsort/divsufsort.c		\
 	src/divsufsort/divsufsort.h		\
@@ -77,6 +78,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/integrity.h	\
 	include/wimlib/list.h		\
 	include/wimlib/lookup_table.h	\
+	include/wimlib/lzms.h		\
 	include/wimlib/lzx.h		\
 	include/wimlib/metadata.h	\
 	include/wimlib/paths.h		\

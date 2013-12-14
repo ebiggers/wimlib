@@ -122,7 +122,7 @@ unix_extract_unnamed_stream(file_spec_t file,
 	if (raw_fd < 0)
 		return WIMLIB_ERR_OPEN;
 	filedes_init(&fd, raw_fd);
-	ret = extract_wim_resource_to_fd(lte, &fd, lte->size);
+	ret = extract_stream_to_fd(lte, &fd, lte->size);
 	if (filedes_close(&fd) && !ret)
 		ret = WIMLIB_ERR_WRITE;
 	return ret;
