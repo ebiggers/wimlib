@@ -31,7 +31,6 @@
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/lookup_table.h"
-#include "wimlib/lzms.h"
 #include "wimlib/resource.h"
 #include "wimlib/sha1.h"
 
@@ -107,8 +106,7 @@ decompress(const void *cchunk, unsigned clen, void *uchunk, unsigned ulen,
 		return wimlib_xpress_decompress(cchunk, clen,
 						uchunk, ulen);
 	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		return lzms_decompress(cchunk, clen,
-				       uchunk, ulen, wim_chunk_size);
+		return wimlib_lzms_decompress(cchunk, clen, uchunk, ulen);
 	default:
 		wimlib_assert(0);
 		return -1;
@@ -140,12 +138,14 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 
 		unsigned clen = rspec->size_in_wim;
 		unsigned ulen = rspec->uncompressed_size;
+		unsigned lzms_offset;
 
 		fprintf(stderr, "clen=%u, ulen=%u, offset=%lu\n", clen, ulen,
 			rspec->offset_in_wim);
 
 		u8 *cbuf = MALLOC(clen);
 		u8 *ubuf = MALLOC(ulen);
+
 
 		ret = full_pread(&rspec->wim->in_fd,
 				 cbuf, clen, rspec->offset_in_wim);
@@ -154,8 +154,14 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 			goto out_free_bufs;
 		}
 
-		ret = lzms_decompress(cbuf, clen, ubuf, ulen,
-				      orig_chunk_size);
+		if (clen <= rspec->cchunk_size)
+			lzms_offset = 0;
+		else
+			lzms_offset = 20;
+
+		ret = wimlib_lzms_decompress(cbuf + lzms_offset,
+					     clen - lzms_offset,
+					     ubuf, ulen);
 		if (ret) {
 			ERROR("LZMS decompression error.");
 			errno = EINVAL;

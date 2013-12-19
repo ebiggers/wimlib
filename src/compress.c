@@ -428,8 +428,8 @@ try_building_tree_again:
 			 * log_2(num_used_symbols).
 			 * */
 			for (unsigned i = 0; i < num_used_symbols; i++)
-				if (leaves[i].freq > 1)
-					leaves[i].freq >>= 1;
+				leaves[i].freq = (leaves[i].freq + 1) >> 1;
+
 			goto try_building_tree_again;
 		}
 		next_inode++;

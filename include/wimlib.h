@@ -2727,6 +2727,45 @@ wimlib_join(const wimlib_tchar * const *swms,
 /**
  * @ingroup G_compression
  *
+ * Decompresses a block of LZMS-compressed data.
+ *
+ * This function is exported for convenience only and should only be used by
+ * library clients looking to make use of wimlib's compression code for another
+ * purpose.
+ *
+ * This decompressor only implements "raw" decompression, which decompresses a
+ * single LZMS-compressed block.  This behavior is the same as that of
+ * Decompress() in the Windows 8 compression API when using a compression handle
+ * created with CreateDecompressor() with the Algorithm parameter specified as
+ * COMPRESS_ALGORITHM_LZMS | COMPRESS_RAW.  Presumably, non-raw LZMS data
+ * is a container format from which the locations and sizes (both compressed and
+ * uncompressed) of the constituent blocks can be determined.
+ *
+ * This function should not be called for blocks with compressed size equal to
+ * uncompressed size, since such blocks are actually stored uncompressed.
+ *
+ * @param compressed_data
+ * 	Pointer to the compressed data.
+ *
+ * @param compressed_len
+ * 	Length of the compressed data, in bytes.
+ *
+ * @param uncompressed_data
+ * 	Pointer to the buffer into which to write the uncompressed data.
+ *
+ * @param uncompressed_len
+ * 	Length of the uncompressed data.
+ *
+ * @return
+ * 	0 on success; non-zero on failure.
+ */
+extern int
+wimlib_lzms_decompress(const void *compressed_data, unsigned compressed_len,
+		       void *uncompressed_data, unsigned uncompressed_len);
+
+/**
+ * @ingroup G_compression
+ *
  * Compress a chunk of a WIM resource using LZX compression.
  *
  * This function is exported for convenience only and should only be used by
