@@ -1,6 +1,7 @@
 #ifndef _WIMLIB_APPLY_H
 #define _WIMLIB_APPLY_H
 
+#include "wimlib/file_io.h"
 #include "wimlib/types.h"
 #include "wimlib/list.h"
 #include "wimlib.h"
@@ -220,6 +221,8 @@ struct apply_ctx {
 	unsigned long invalid_sequence;
 	unsigned long partial_security_descriptors;
 	unsigned long no_security_descriptors;
+	struct filedes tmpfile_fd;
+	tchar *tmpfile_name;
 	u64 num_streams_remaining;
 	bool root_dentry_is_special;
 	uint64_t next_progress;

@@ -165,7 +165,7 @@ ref_stream_to_extract(struct wim_lookup_table_entry *lte,
 				lte_dentries = REALLOC(prev_lte_dentries,
 						       alloc_lte_dentries *
 							sizeof(lte_dentries[0]));
-				if (!lte_dentries)
+				if (lte_dentries == NULL)
 					return WIMLIB_ERR_NOMEM;
 				if (prev_lte_dentries == NULL) {
 					memcpy(lte_dentries,
@@ -1202,23 +1202,49 @@ dentry_extract(struct wim_dentry *dentry, void *_ctx)
 	return extract_streams(path, ctx, dentry, NULL, NULL);
 }
 
+/* Creates a temporary file opened for writing.  The open file descriptor is
+ * returned in @fd_ret and its name is returned in @name_ret (dynamically
+ * allocated).  */
+static int
+create_temporary_file(struct filedes *fd_ret, tchar **name_ret)
+{
+	tchar *name;
+	int raw_fd;
+
+retry:
+	name = ttempnam(NULL, T("wimlib"));
+	if (name == NULL) {
+		ERROR_WITH_ERRNO("Failed to create temporary filename");
+		return WIMLIB_ERR_NOMEM;
+	}
+
+	raw_fd = topen(name, O_WRONLY | O_CREAT | O_EXCL | O_BINARY, 0600);
+
+	if (raw_fd < 0) {
+		int errno_save = errno;
+		FREE(name);
+		if (errno_save == EEXIST)
+			goto retry;
+		ERROR_WITH_ERRNO("Failed to open temporary file \"%"TS"\"", name);
+		return WIMLIB_ERR_OPEN;
+	}
+
+	filedes_init(fd_ret, raw_fd);
+	*name_ret = name;
+	return 0;
+}
+
 /* Extract all instances of the stream @lte that are being extracted in this
- * call of extract_tree().  @can_seek specifies whether the WIM file descriptor
- * is seekable or not (e.g. is a pipe).  If not and the stream needs to be
- * extracted multiple times, it is extracted to a temporary file first.
- *
- * This is intended for use with sequential extraction of a WIM image
- * (WIMLIB_EXTRACT_FLAG_SEQUENTIAL specified).  */
+ * call of extract_tree(), but actually read the stream data from @lte_override.
+ */
 static int
 extract_stream_instances(struct wim_lookup_table_entry *lte,
-			 struct apply_ctx *ctx, bool can_seek)
+			 struct wim_lookup_table_entry *lte_override,
+			 struct apply_ctx *ctx)
 {
 	struct wim_dentry **lte_dentries;
-	struct wim_lookup_table_entry *lte_tmp = NULL;
-	struct wim_lookup_table_entry *lte_override;
-	tchar *stream_tmp_filename = NULL;
 	tchar path[ctx->ops->path_max];
-	unsigned i;
+	size_t i;
 	int ret;
 
 	if (lte->out_refcnt <= ARRAY_LEN(lte->inline_lte_dentries))
@@ -1226,49 +1252,6 @@ extract_stream_instances(struct wim_lookup_table_entry *lte,
 	else
 		lte_dentries = lte->lte_dentries;
 
-	if (likely(can_seek || lte->out_refcnt < 2)) {
-		lte_override = lte;
-	} else {
-		/* Need to extract stream to temporary file.  */
-		struct filedes fd;
-		int raw_fd;
-
-		stream_tmp_filename = ttempnam(NULL, T("wimlib"));
-		if (!stream_tmp_filename) {
-			ERROR_WITH_ERRNO("Failed to create temporary filename");
-			ret = WIMLIB_ERR_OPEN;
-			goto out;
-		}
-
-		lte_tmp = memdup(lte, sizeof(struct wim_lookup_table_entry));
-		if (!lte_tmp) {
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_stream_tmp_filename;
-		}
-		lte_tmp->resource_location = RESOURCE_IN_FILE_ON_DISK;
-		lte_tmp->file_on_disk = stream_tmp_filename;
-		lte_override = lte_tmp;
-
-		raw_fd = topen(stream_tmp_filename,
-			       O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0600);
-		if (raw_fd < 0) {
-			ERROR_WITH_ERRNO("Failed to open temporary file");
-			ret = WIMLIB_ERR_OPEN;
-			goto out_free_lte_tmp;
-		}
-		filedes_init(&fd, raw_fd);
-		ret = extract_stream_to_fd(lte, &fd, lte->size);
-		if (filedes_close(&fd) && !ret)
-			ret = WIMLIB_ERR_WRITE;
-		if (ret)
-			goto out_unlink_stream_tmp_file;
-	}
-
-	/* Extract all instances of the stream, reading either from the stream
-	 * in the WIM file or from the temporary file containing the stream.
-	 * dentry->tmp_flag is used to ensure that each dentry is processed only
-	 * once regardless of how many times this stream appears in the streams
-	 * of the corresponding inode.  */
 	for (i = 0; i < lte->out_refcnt; i++) {
 		struct wim_dentry *dentry = lte_dentries[i];
 
@@ -1276,8 +1259,7 @@ extract_stream_instances(struct wim_lookup_table_entry *lte,
 			continue;
 		if (!build_extraction_path(path, dentry, ctx))
 			continue;
-		ret = extract_streams(path, ctx, dentry,
-				      lte, lte_override);
+		ret = extract_streams(path, ctx, dentry, lte, lte_override);
 		if (ret)
 			goto out_clear_tmp_flags;
 		dentry->tmp_flag = 1;
@@ -1286,38 +1268,140 @@ extract_stream_instances(struct wim_lookup_table_entry *lte,
 out_clear_tmp_flags:
 	for (i = 0; i < lte->out_refcnt; i++)
 		lte_dentries[i]->tmp_flag = 0;
-out_unlink_stream_tmp_file:
-	if (stream_tmp_filename)
-		tunlink(stream_tmp_filename);
-out_free_lte_tmp:
-	FREE(lte_tmp);
-out_free_stream_tmp_filename:
-	FREE(stream_tmp_filename);
-out:
+	return ret;
+}
+
+/* Determine whether the specified stream needs to be extracted to a temporary
+ * file or not.
+ *
+ * @lte->out_refcnt specifies the number of instances of this stream that must
+ * be extracted.
+ *
+ * @is_partial_res is %true if this stream is just one of multiple in a single
+ * WIM resource being extracted.  */
+static bool
+need_tmpfile_to_extract(struct wim_lookup_table_entry *lte,
+			bool is_partial_res)
+{
+	/* Temporary file is always required when reading a partial resource,
+	 * since in that case we retrieve all the contained streams in one pass.
+	 * */
+	if (is_partial_res)
+		return true;
+
+	/* Otherwise we don't need a temporary file if only a single instance of
+	 * the stream is needed.  */
+	if (lte->out_refcnt == 1)
+		return false;
+
+	wimlib_assert(lte->out_refcnt >= 2);
+
+	/* We also don't need a temporary file if random access to the stream is
+	 * allowed.  */
+	if (lte->resource_location != RESOURCE_IN_WIM ||
+	    filedes_is_seekable(&lte->rspec->wim->in_fd))
+		return false;
+
+	return true;
+}
+
+static int
+begin_extract_stream_to_tmpfile(struct wim_lookup_table_entry *lte,
+				bool is_partial_res, void *_ctx)
+{
+	struct apply_ctx *ctx = _ctx;
+	int ret;
+
+	if (!need_tmpfile_to_extract(lte, is_partial_res)) {
+		DEBUG("Temporary file not needed "
+		      "for stream (size=%"PRIu64")", lte->size);
+		ret = extract_stream_instances(lte, lte, ctx);
+		if (ret)
+			return ret;
+
+		/* Negative return value here means the function was successful,
+		 * but the consume_chunk and end_chunk callbacks need not be
+		 * called.  */
+		return -1;
+	}
+
+	DEBUG("Temporary file needed for stream (size=%"PRIu64")", lte->size);
+	return create_temporary_file(&ctx->tmpfile_fd, &ctx->tmpfile_name);
+}
+
+static int
+end_extract_stream_to_tmpfile(struct wim_lookup_table_entry *lte,
+			      int status, void *_ctx)
+{
+	struct apply_ctx *ctx = _ctx;
+	struct wim_lookup_table_entry lte_override;
+	int ret;
+	int errno_save = errno;
+
+	ret = filedes_close(&ctx->tmpfile_fd);
+
+	if (status) {
+		ret = status;
+		errno = errno_save;
+		goto out_delete_tmpfile;
+	}
+
+	if (ret) {
+		ERROR_WITH_ERRNO("Error writing temporary file %"TS, ctx->tmpfile_name);
+		ret = WIMLIB_ERR_WRITE;
+		goto out_delete_tmpfile;
+	}
+
+	/* Now that a full stream has been extracted to a temporary file,
+	 * extract all instances of it to the actual target.  */
+
+	memcpy(&lte_override, lte, sizeof(struct wim_lookup_table_entry));
+	lte_override.resource_location = RESOURCE_IN_FILE_ON_DISK;
+	lte_override.file_on_disk = ctx->tmpfile_name;
+
+	ret = extract_stream_instances(lte, &lte_override, ctx);
+
+out_delete_tmpfile:
+	errno_save = errno;
+	tunlink(ctx->tmpfile_name);
+	FREE(ctx->tmpfile_name);
+	errno = errno_save;
 	return ret;
 }
 
 /* Extracts a list of streams (ctx.stream_list), assuming that the directory
  * structure and empty files were already created.  This relies on the
  * per-`struct wim_lookup_table_entry' list of dentries that reference each
- * stream that was constructed earlier.  Streams are extracted exactly in the
- * order of the stream list; however, unless the WIM's file descriptor is
- * detected to be non-seekable, streams may be read from the WIM file more than
- * one time if multiple copies need to be extracted.  */
+ * stream that was constructed earlier.  */
 static int
 extract_stream_list(struct apply_ctx *ctx)
 {
-	struct wim_lookup_table_entry *lte;
-	bool can_seek;
-	int ret;
+	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL) {
+		/* Sequential extraction: read the streams in the order in which
+		 * they appear in the WIM file.  */
+		struct read_stream_list_callbacks cbs = {
+			.begin_stream		= begin_extract_stream_to_tmpfile,
+			.begin_stream_ctx	= ctx,
+			.consume_chunk		= extract_chunk_to_fd,
+			.consume_chunk_ctx	= &ctx->tmpfile_fd,
+			.end_stream		= end_extract_stream_to_tmpfile,
+			.end_stream_ctx		= ctx,
+		};
+		return read_stream_list(&ctx->stream_list,
+					offsetof(struct wim_lookup_table_entry, extraction_list),
+					0, &cbs);
+	} else {
+		/* Extract the streams in unsorted order.  */
+		struct wim_lookup_table_entry *lte;
+		int ret;
 
-	can_seek = (lseek(ctx->wim->in_fd.fd, 0, SEEK_CUR) != -1);
-	list_for_each_entry(lte, &ctx->stream_list, extraction_list) {
-		ret = extract_stream_instances(lte, ctx, can_seek);
-		if (ret)
-			return ret;
+		list_for_each_entry(lte, &ctx->stream_list, extraction_list) {
+			ret = extract_stream_instances(lte, lte, ctx);
+			if (ret)
+				return ret;
+		}
+		return 0;
 	}
-	return 0;
 }
 
 #define PWM_ALLOW_WIM_HDR 0x00001
@@ -1377,25 +1461,6 @@ read_error:
 }
 
 static int
-skip_pwm_chunk_cb(const void *chunk, size_t chunk_size, void *_ctx)
-{
-	return 0;
-}
-
-/* Skip over an unneeded stream in a pipable WIM being read from a pipe.  */
-static int
-skip_pwm_stream(struct wim_lookup_table_entry *lte)
-{
-	return read_partial_wim_resource(lte,
-					 lte->size,
-					 skip_pwm_chunk_cb,
-					 lte_cchunk_size(lte),
-					 NULL,
-					 WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS,
-					 0);
-}
-
-static int
 extract_streams_from_pipe(struct apply_ctx *ctx)
 {
 	struct wim_lookup_table_entry *found_lte;
@@ -1444,19 +1509,60 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 		    && (needed_lte = lookup_resource(lookup_table, found_lte->hash))
 		    && (needed_lte->out_refcnt))
 		{
-			lte_unbind_wim_resource_spec(found_lte);
-			lte_bind_wim_resource_spec(needed_lte, rspec);
+			char *tmpfile_name = NULL;
+			struct wim_lookup_table_entry *lte_override;
+			struct wim_lookup_table_entry tmpfile_lte;
+
 			needed_lte->offset_in_res = found_lte->offset_in_res;
 			needed_lte->flags = found_lte->flags;
 			needed_lte->size = found_lte->size;
-			ret = extract_stream_instances(needed_lte, ctx, false);
-			lte_unbind_wim_resource_spec(needed_lte);
 
+			lte_unbind_wim_resource_spec(found_lte);
+			lte_bind_wim_resource_spec(needed_lte, rspec);
+
+			if (needed_lte->out_refcnt > 1) {
+
+				struct filedes tmpfile_fd;
+
+				/* Extract stream to temporary file.  */
+				ret = create_temporary_file(&tmpfile_fd, &tmpfile_name);
+				if (ret)
+					goto out_free_found_lte;
+
+				ret = extract_stream_to_fd(needed_lte, &tmpfile_fd,
+							   needed_lte->size);
+				if (ret) {
+					filedes_close(&tmpfile_fd);
+					goto delete_tmpfile;
+				}
+
+				if (filedes_close(&tmpfile_fd)) {
+					ERROR_WITH_ERRNO("Error writing to temporary "
+							 "file \"%"TS"\"", tmpfile_name);
+					ret = WIMLIB_ERR_WRITE;
+					goto delete_tmpfile;
+				}
+				memcpy(&tmpfile_lte, needed_lte,
+				       sizeof(struct wim_lookup_table_entry));
+				tmpfile_lte.resource_location = RESOURCE_IN_FILE_ON_DISK;
+				tmpfile_lte.file_on_disk = tmpfile_name;
+				lte_override = &tmpfile_lte;
+			} else {
+				lte_override = needed_lte;
+			}
+
+			ret = extract_stream_instances(needed_lte, lte_override, ctx);
+		delete_tmpfile:
+			lte_unbind_wim_resource_spec(needed_lte);
+			if (tmpfile_name) {
+				tunlink(tmpfile_name);
+				FREE(tmpfile_name);
+			}
 			if (ret)
 				goto out_free_found_lte;
 			ctx->num_streams_remaining--;
 		} else if (found_lte->resource_location != RESOURCE_NONEXISTENT) {
-			ret = skip_pwm_stream(found_lte);
+			ret = skip_wim_stream(found_lte);
 			if (ret)
 				goto out_free_found_lte;
 		} else {
@@ -2268,21 +2374,6 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 		goto out_teardown_stream_list;
 	}
 
-	/* If a sequential extraction was specified, sort the streams to be
-	 * extracted by their position in the WIM file so that the WIM file can
-	 * be read sequentially.  */
-	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_SEQUENTIAL |
-			      WIMLIB_EXTRACT_FLAG_FROM_PIPE))
-					== WIMLIB_EXTRACT_FLAG_SEQUENTIAL)
-	{
-		ret = sort_stream_list_by_sequential_order(
-				&ctx.stream_list,
-				offsetof(struct wim_lookup_table_entry,
-					 extraction_list));
-		if (ret)
-			goto out_teardown_stream_list;
-	}
-
 	if (ctx.ops->realpath_works_on_nonexisting_files &&
 	    ((extract_flags & WIMLIB_EXTRACT_FLAG_RPFIX) ||
 	     ctx.ops->requires_realtarget_in_paths))
@@ -2920,7 +3011,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 		} else {
 			/* Metadata resource is not for the image being
 			 * extracted.  Skip over it.  */
-			ret = skip_pwm_stream(metadata_lte);
+			ret = skip_wim_stream(metadata_lte);
 			if (ret)
 				goto out_wimlib_free;
 		}

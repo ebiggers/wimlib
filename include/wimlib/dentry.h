@@ -230,10 +230,6 @@ struct wim_dentry {
 	 * alias file_name.  */
 	tchar *extraction_name;
 	size_t extraction_name_nchars;
-
-	/* (Extraction only) List head for building a list of dentries that
-	 * contain a certain stream. */
-	struct list_head extraction_stream_list;
 };
 
 #define rbnode_dentry(node) container_of(node, struct wim_dentry, rb_node)

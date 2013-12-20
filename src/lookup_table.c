@@ -82,7 +82,6 @@ new_lookup_table_entry(void)
 	}
 	lte->refcnt = 1;
 	BUILD_BUG_ON(RESOURCE_NONEXISTENT != 0);
-	BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
 	return lte;
 }
 
@@ -311,6 +310,7 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 	const struct wim_lookup_table_entry *lte1, *lte2;
 	int v;
 	WIMStruct *wim1, *wim2;
+	u64 offset1, offset2;
 
 	lte1 = *(const struct wim_lookup_table_entry**)p1;
 	lte2 = *(const struct wim_lookup_table_entry**)p2;
@@ -339,9 +339,12 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 			return v;
 
 		/* Compare by offset.  */
-		if (lte1->rspec->offset_in_wim < lte2->rspec->offset_in_wim)
+		offset1 = lte1->rspec->offset_in_wim + lte1->offset_in_res;
+		offset2 = lte2->rspec->offset_in_wim + lte2->offset_in_res;
+
+		if (offset1 < offset2)
 			return -1;
-		if (lte1->rspec->offset_in_wim > lte2->rspec->offset_in_wim)
+		if (offset1 > offset2)
 			return 1;
 		return 0;
 	case RESOURCE_IN_FILE_ON_DISK:

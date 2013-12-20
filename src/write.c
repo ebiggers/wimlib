@@ -532,7 +532,7 @@ try_write_again:
 	else
 		in_chunk_size = out_chunk_size;
 	ret = read_stream_prefix(lte, read_size, write_resource_cb,
-				 in_chunk_size, &write_ctx, resource_flags);
+				 &write_ctx, resource_flags);
 	if (ret)
 		goto out_free_chunk_tab;
 
@@ -1480,8 +1480,7 @@ submit_stream_for_compression(struct wim_lookup_table_entry *lte,
 	ctx->next_lte = lte;
 	INIT_LIST_HEAD(&lte->msg_list);
 	list_add_tail(&lte->being_compressed_list, &ctx->outstanding_streams);
-	ret = read_stream_prefix(lte, lte->size, main_writer_thread_cb,
-				 ctx->out_chunk_size, ctx, 0);
+	ret = read_stream_prefix(lte, lte->size, main_writer_thread_cb, ctx, 0);
 	if (ret)
 		return ret;
 	wimlib_assert(ctx->next_chunk == ctx->next_num_chunks);

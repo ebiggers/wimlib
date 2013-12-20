@@ -151,17 +151,15 @@ put_wim_reshdr(const struct wim_reshdr *reshdr,
 #define WIMLIB_READ_RESOURCE_MASK			0xffff0000
 
 
-/* Functions to read a resource.  */
-
-extern int
-read_partial_wim_resource(const struct wim_lookup_table_entry *lte,
-			  u64 size, consume_data_callback_t cb,
-			  u32 in_chunk_size, void *ctx_or_buf,
-			  int flags, u64 offset);
+/* Functions to read streams  */
 
 extern int
 read_partial_wim_stream_into_buf(const struct wim_lookup_table_entry *lte,
 				 size_t size, u64 offset, void *buf);
+
+extern int
+skip_wim_stream(struct wim_lookup_table_entry *lte);
+
 extern int
 read_full_stream_into_buf(const struct wim_lookup_table_entry *lte, void *buf);
 
@@ -176,35 +174,59 @@ wim_reshdr_to_data(const struct wim_reshdr *reshdr,
 extern int
 read_stream_prefix(const struct wim_lookup_table_entry *lte,
 		   u64 size, consume_data_callback_t cb,
-		   u32 in_chunk_size, void *ctx_or_buf, int flags);
+		   void *cb_ctx, int flags);
 
-/* Functions to read a list of resources.  */
+typedef int (*read_stream_list_begin_stream_t)(struct wim_lookup_table_entry *lte,
+					       bool is_partial_res,
+					       void *ctx);
+typedef int (*read_stream_list_end_stream_t)(struct wim_lookup_table_entry *lte,
+					     int status,
+					     void *ctx);
 
-typedef int (*read_stream_list_begin_stream_t)(struct wim_lookup_table_entry *lte, void *ctx);
-typedef int (*read_stream_list_end_stream_t)(struct wim_lookup_table_entry *lte, void *ctx);
+/* Callbacks for read_stream_list().  */
+struct read_stream_list_callbacks {
+
+	/* Called when a stream is about to be read.  */
+	read_stream_list_begin_stream_t begin_stream;
+
+	/* Called when a chunk of data has been read.  */
+	consume_data_callback_t consume_chunk;
+
+	/* Called when a stream has been fully read.  */
+	read_stream_list_end_stream_t end_stream;
+
+	/* Parameter passed to @begin_stream.  */
+	void *begin_stream_ctx;
+
+	/* Parameter passed to @consume_chunk.  */
+	void *consume_chunk_ctx;
+
+	/* Parameter passed to @end_stream.  */
+	void *end_stream_ctx;
+};
 
 extern int
 read_stream_list(struct list_head *stream_list,
 		 size_t list_head_offset,
-		 read_stream_list_begin_stream_t begin_stream,
-		 consume_data_callback_t consume_chunk,
-		 read_stream_list_end_stream_t end_stream,
 		 u32 cb_chunk_size,
-		 void *cb_ctx);
+		 const struct read_stream_list_callbacks *cbs);
 
-/* Functions to extract a resource.  */
+/* Functions for stream extraction.  */
 
 extern int
-extract_stream(const struct wim_lookup_table_entry *lte,
+extract_stream(struct wim_lookup_table_entry *lte,
 	       u64 size,
 	       consume_data_callback_t extract_chunk,
 	       void *extract_chunk_arg);
 
 extern int
-extract_stream_to_fd(const struct wim_lookup_table_entry *lte,
+extract_stream_to_fd(struct wim_lookup_table_entry *lte,
 		     struct filedes *fd, u64 size);
 
-/* Miscellaneous resource functions.  */
+extern int
+extract_chunk_to_fd(const void *chunk, size_t size, void *_fd_p);
+
+/* Miscellaneous stream functions.  */
 
 extern int
 sha1_stream(struct wim_lookup_table_entry *lte);
