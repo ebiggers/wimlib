@@ -511,16 +511,21 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 
 			/* Read the chunk and feed data to the callback
 			 * function.  */
-			u8 *cb_buf;
+			u8 *read_buf;
+
+			if (chunk_csize == chunk_usize || raw_chunks_mode)
+				read_buf = ubuf;
+			else
+				read_buf = cbuf;
 
 			ret = full_pread(in_fd,
-					 cbuf,
+					 read_buf,
 					 chunk_csize,
 					 cur_read_offset);
 			if (ret)
 				goto read_error;
 
-			if (chunk_csize != chunk_usize && !raw_chunks_mode) {
+			if (read_buf == cbuf) {
 				DEBUG("Decompressing chunk %"PRIu64" "
 				      "(csize=%"PRIu64" usize=%"PRIu64"",
 				      i, chunk_csize, chunk_usize);
@@ -536,11 +541,6 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 					errno = EINVAL;
 					goto out_free_memory;
 				}
-				cb_buf = ubuf;
-			} else {
-				/* Raw chunks requested, or data stored
-				 * uncompressed.  */
-				cb_buf = cbuf;
 			}
 			cur_read_offset += chunk_csize;
 
@@ -558,9 +558,9 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 				size = end - start;
 
 				if (raw_chunks_mode)
-					ret = (*cb)(&cb_buf[0], chunk_csize, cb_ctx);
+					ret = (*cb)(&ubuf[0], chunk_csize, cb_ctx);
 				else
-					ret = (*cb)(&cb_buf[start], size, cb_ctx);
+					ret = (*cb)(&ubuf[start], size, cb_ctx);
 
 				if (ret)
 					goto out_free_memory;
@@ -698,7 +698,7 @@ read_partial_wim_resource(const struct wim_resource_spec *rspec,
 		wimlib_assert(offset + size <= rspec->size_in_wim);
 	} else if (flags & WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS) {
 		wimlib_assert(offset == 0);
-		wimlib_assert(offset == rspec->uncompressed_size);
+		wimlib_assert(size == rspec->uncompressed_size);
 	} else {
 		wimlib_assert(offset + size >= offset);
 		wimlib_assert(offset + size <= rspec->uncompressed_size);
