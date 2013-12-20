@@ -1,12 +1,11 @@
 #ifndef _WIMLIB_RESOURCE_H
 #define _WIMLIB_RESOURCE_H
 
-#include "wimlib/types.h"
-#include "wimlib/endianness.h"
 #include "wimlib/callback.h"
 #include "wimlib/file_io.h"
 #include "wimlib/list.h"
 #include "wimlib/sha1.h"
+#include "wimlib/types.h"
 
 struct wim_lookup_table_entry;
 struct wim_image_metadata;
@@ -18,65 +17,57 @@ struct wim_image_metadata;
  * an instance of this structure.
  *
  * Normally, there is a one-to-one correspondence between WIM lookup table
- * entries ("streams") and WIM resources.  However, the flag
- * WIM_RESHDR_FLAG_CONCAT can be used to specify that two streams be combined
- * into the same resource and compressed together.  Caveats about this flag are
- * noted in the comment above the definition of WIM_VERSION_STREAM_CONCAT.  */
+ * entries ("streams", each of which may be the contents of a file, for example)
+ * and WIM resources.  However, WIM resources with the
+ * WIM_RESHDR_FLAG_PACKED_STREAMS flag set may actually contain multiple streams
+ * compressed together.  */
 struct wim_resource_spec {
-	/* The WIM file containing this resource.  */
+	/* The WIM containing this resource.  @wim->in_fd is expected to be a
+	 * file descriptor to the underlying WIM file, opened for reading.  */
 	WIMStruct *wim;
 
-	/* Offset, in bytes, from the start of WIM file at which this resource
-	 * starts.  */
+	/* The offset, in bytes, from the start of WIM file at which this
+	 * resource starts.  */
 	u64 offset_in_wim;
 
 	/* The size of this resource in the WIM file.  For compressed resources
 	 * this is the compressed size.  */
 	u64 size_in_wim;
 
-	/* Number of bytes of uncompressed data this resource uncompresses to.
-	 */
+	/* The number of bytes of uncompressed data this resource decompresses
+	 * to.  */
 	u64 uncompressed_size;
 
-	/* List of streams this resource contains.  */
-	struct list_head lte_list;
+	/* The list of streams this resource contains.  */
+	struct list_head stream_list;
 
-	/* Resource flags.  */
+	/* Flags for this resource (WIM_RESHDR_FLAG_*)  */
 	u32 flags : 8;
 
-	/* This flag will be set if the WIM is pipable and therefore the
-	 * resource will be in a slightly different format if it is compressed
-	 * (wimlib extension).  */
+	/* This flag will be set if the WIM is pipable.  In such cases, the
+	 * resource will be in a slightly different format if it is compressed.
+	 * This is a wimlib extension.  */
 	u32 is_pipable : 1;
-
-	/* Compression type of this resource as one of WIMLIB_COMPRESSION_TYPE_*
-	 * constants.  */
-	u32 ctype : 3;
-
-	/* Compression chunk size.  */
-	u32 cchunk_size;
 };
 
-
-/* On-disk version of a WIM resource header:  This structure specifies the
- * location, size, and flags (e.g. compressed or not compressed) for a resource
- * in the WIM file.  */
+/* On-disk version of a WIM resource header.  */
 struct wim_reshdr_disk {
 	/* Size of the resource as it appears in the WIM file (possibly
 	 * compressed).  */
 	u8 size_in_wim[7];
 
-	/* WIM_RESHDR_FLAG_* flags.  */
+	/* Zero or more of the WIM_RESHDR_FLAG_* flags.  These indicate, for
+	 * example, whether the resource is compressed or not.  */
 	u8 flags;
 
-	/* Offset of the resource from the start of the WIM file.  */
+	/* Offset of the resource from the start of the WIM file, in bytes.  */
 	le64 offset_in_wim;
 
-	/* Uncompressed size of the resource.  */
+	/* Uncompressed size of the resource, in bytes.  */
 	le64 uncompressed_size;
 } _packed_attribute;
 
-/* In-memory version of wim_reshdr_disk.  */
+/* In-memory version of a WIM resource header.  */
 struct wim_reshdr {
 	u64 size_in_wim : 56;
 	u64 flags : 8;
@@ -84,31 +75,39 @@ struct wim_reshdr {
 	u64 uncompressed_size;
 };
 
-/* Flags for the `flags' field of the struct resource_entry structure. */
+/* Flags for the `flags' field of WIM resource headers.  */
 
-/* I haven't seen this flag used in any of the WIMs I have examined.  I assume
- * it means that there are no references to the stream, so the space is free.
- * However, even after deleting files from a WIM mounted with `imagex.exe
- * /mountrw', I could not see this flag being used.  Either way, wimlib doesn't
- * actually use this flag for anything. */
+/* Unknown meaning; may be intended to indicate spaces in the WIM that are free
+ * to overwrite.  Currently ignored by wimlib.  */
 #define WIM_RESHDR_FLAG_FREE            0x01
 
-/* Indicates that the stream is a metadata resource for a WIM image.  This flag
- * is also set in the resource entry for the lookup table in the WIM header.  */
+/* The resource is a metadata resource for a WIM image, or is the lookup table
+ * or XML data for the WIM.  */
 #define WIM_RESHDR_FLAG_METADATA        0x02
 
-/* Indicates that the stream is compressed (using the WIM's set compression
- * type).  */
+/* The resource is compressed using the WIM's default compression type and uses
+ * the regular chunk table format.  */
 #define WIM_RESHDR_FLAG_COMPRESSED	0x04
 
-/* I haven't seen this flag used in any of the WIMs I have examined.  Perhaps it
- * means that a stream could possibly be split among multiple split WIM parts.
- * However, `imagex.exe /split' does not seem to create any WIMs like this.
- * Either way, wimlib doesn't actually use this flag for anything.  */
+/* Unknown meaning; may be intended to indicate a partial stream.  Currently
+ * ignored by wimlib.  */
 #define WIM_RESHDR_FLAG_SPANNED         0x08
 
-/* TODO  */
-#define WIM_RESHDR_FLAG_CONCAT		0x10
+/* The resource is packed in a special format that may contain multiple
+ * underlying streams, or this resource entry represents a stream packed into
+ * one such resource.  When resources have this flag set, the WIM version number
+ * should be WIM_VERSION_PACKED_STREAMS.  */
+#define WIM_RESHDR_FLAG_PACKED_STREAMS	0x10
+
+/* Returns true if the specified WIM resource is compressed, using either the
+ * original chunk table layout or the alternate layout for resources that may
+ * contain multiple packed streams.  */
+static inline bool
+resource_is_compressed(const struct wim_resource_spec *rspec)
+{
+	return (rspec->flags & (WIM_RESHDR_FLAG_COMPRESSED |
+				WIM_RESHDR_FLAG_PACKED_STREAMS));
+}
 
 static inline void
 copy_reshdr(struct wim_reshdr *dest, const struct wim_reshdr *src)
@@ -121,7 +120,6 @@ zero_reshdr(struct wim_reshdr *reshdr)
 {
 	memset(reshdr, 0, sizeof(struct wim_reshdr));
 }
-
 
 extern void
 wim_res_hdr_to_spec(const struct wim_reshdr *reshdr, WIMStruct *wim,
@@ -158,9 +156,6 @@ read_partial_wim_stream_into_buf(const struct wim_lookup_table_entry *lte,
 				 size_t size, u64 offset, void *buf);
 
 extern int
-skip_wim_stream(struct wim_lookup_table_entry *lte);
-
-extern int
 read_full_stream_into_buf(const struct wim_lookup_table_entry *lte, void *buf);
 
 extern int
@@ -170,6 +165,9 @@ read_full_stream_into_alloc_buf(const struct wim_lookup_table_entry *lte,
 extern int
 wim_reshdr_to_data(const struct wim_reshdr *reshdr,
 		   WIMStruct *wim, void **buf_ret);
+
+extern int
+skip_wim_stream(struct wim_lookup_table_entry *lte);
 
 extern int
 read_stream_prefix(const struct wim_lookup_table_entry *lte,
@@ -183,7 +181,7 @@ typedef int (*read_stream_list_end_stream_t)(struct wim_lookup_table_entry *lte,
 					     int status,
 					     void *ctx);
 
-/* Callbacks for read_stream_list().  */
+/* Callback functions and contexts for read_stream_list().  */
 struct read_stream_list_callbacks {
 
 	/* Called when a stream is about to be read.  */
@@ -211,7 +209,7 @@ read_stream_list(struct list_head *stream_list,
 		 u32 cb_chunk_size,
 		 const struct read_stream_list_callbacks *cbs);
 
-/* Functions for stream extraction.  */
+/* Functions to extract streams.  */
 
 extern int
 extract_stream(struct wim_lookup_table_entry *lte,
@@ -265,6 +263,5 @@ struct pwm_stream_hdr {
 struct pwm_chunk_hdr {
 	le32 compressed_size;
 } _packed_attribute;
-
 
 #endif /* _WIMLIB_RESOURCE_H */

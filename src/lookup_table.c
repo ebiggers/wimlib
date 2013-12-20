@@ -97,7 +97,7 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 	new->extracted_file = NULL;
 	switch (new->resource_location) {
 	case RESOURCE_IN_WIM:
-		list_add(&new->wim_resource_list, &new->rspec->lte_list);
+		list_add(&new->wim_resource_list, &new->rspec->stream_list);
 		break;
 
 	case RESOURCE_IN_FILE_ON_DISK:
@@ -156,7 +156,7 @@ free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 		switch (lte->resource_location) {
 		case RESOURCE_IN_WIM:
 			list_del(&lte->wim_resource_list);
-			if (list_empty(&lte->rspec->lte_list))
+			if (list_empty(&lte->rspec->stream_list))
 				FREE(lte->rspec);
 			break;
 		case RESOURCE_IN_FILE_ON_DISK:
@@ -471,8 +471,8 @@ static int
 validate_resource(const struct wim_resource_spec *rspec)
 {
 	struct wim_lookup_table_entry *lte;
-	if (!list_is_singular(&rspec->lte_list)) {
-		list_for_each_entry(lte, &rspec->lte_list, wim_resource_list) {
+	if (!list_is_singular(&rspec->stream_list)) {
+		list_for_each_entry(lte, &rspec->stream_list, wim_resource_list) {
 			if (rspec->flags & WIM_RESHDR_FLAG_COMPRESSED)
 				lte->flags |= WIM_RESHDR_FLAG_COMPRESSED;
 			else
@@ -576,7 +576,7 @@ read_wim_lookup_table(WIMStruct *wim)
 		}
 
 		if (cur_rspec == NULL ||
-		    !(reshdr.flags & WIM_RESHDR_FLAG_CONCAT))
+		    !(reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS))
 		{
 			/* Starting new run of stream entries that all share the
 			 * same WIM resource (streams concatenated together); or
@@ -595,7 +595,7 @@ read_wim_lookup_table(WIMStruct *wim)
 				goto out_free_cur_entry;
 			}
 			wim_res_hdr_to_spec(&reshdr, wim, cur_rspec);
-			if (reshdr.flags & WIM_RESHDR_FLAG_CONCAT) {
+			if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 				cur_rspec->size_in_wim = 0;
 				cur_rspec->uncompressed_size = 0;
 			}
@@ -613,7 +613,7 @@ read_wim_lookup_table(WIMStruct *wim)
 			continue;
 		}
 
-		if (reshdr.flags & WIM_RESHDR_FLAG_CONCAT) {
+		if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 			/* Continuing the run with another stream.  */
 			DEBUG("Continuing concat run with stream: "
 			      "%"PRIu64" uncompressed bytes @ resource offset %"PRIu64")",
@@ -622,7 +622,7 @@ read_wim_lookup_table(WIMStruct *wim)
 		}
 
 		lte_bind_wim_resource_spec(cur_entry, cur_rspec);
-		if (reshdr.flags & WIM_RESHDR_FLAG_CONCAT) {
+		if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 			/* In concatenation runs, the offset field is used for
 			 * in-resource offset, not the in-WIM offset, and the
 			 * size field is used for the uncompressed size, not the
@@ -967,8 +967,8 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 		tfputs(T("WIM_RESHDR_FLAG_METADATA, "), out);
 	if (flags & WIM_RESHDR_FLAG_SPANNED)
 		tfputs(T("WIM_RESHDR_FLAG_SPANNED, "), out);
-	if (flags & WIM_RESHDR_FLAG_CONCAT)
-		tfputs(T("WIM_RESHDR_FLAG_CONCAT, "), out);
+	if (flags & WIM_RESHDR_FLAG_PACKED_STREAMS)
+		tfputs(T("WIM_RESHDR_FLAG_PACKED_STREAMS, "), out);
 	tputc(T('\n'), out);
 	switch (lte->resource_location) {
 	case RESOURCE_IN_WIM:

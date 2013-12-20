@@ -114,7 +114,7 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 
 	hdr->wim_version = le32_to_cpu(disk_hdr.wim_version);
 	if (hdr->wim_version != WIM_VERSION_DEFAULT &&
-	    hdr->wim_version != WIM_VERSION_STREAM_CONCAT)
+	    hdr->wim_version != WIM_VERSION_PACKED_STREAMS)
 	{
 		ERROR("\"%"TS"\": Unknown WIM version: %u", hdr->wim_version);
 		return WIMLIB_ERR_UNKNOWN_VERSION;

@@ -267,25 +267,6 @@ struct wim_lookup_table_entry {
 	struct list_head wim_resource_list;
 };
 
-static inline int
-lte_ctype(const struct wim_lookup_table_entry *lte)
-{
-	if (lte->resource_location == RESOURCE_IN_WIM)
-		return lte->rspec->ctype;
-	else
-		return WIMLIB_COMPRESSION_TYPE_NONE;
-}
-
-static inline u32
-lte_cchunk_size(const struct wim_lookup_table_entry * lte)
-{
-	if (lte->resource_location == RESOURCE_IN_WIM &&
-	    lte->rspec->ctype != WIMLIB_COMPRESSION_TYPE_NONE)
-		return lte->rspec->cchunk_size;
-	else
-		return 32768;
-}
-
 static inline bool
 lte_is_partial(const struct wim_lookup_table_entry * lte)
 {
@@ -398,7 +379,7 @@ lte_bind_wim_resource_spec(struct wim_lookup_table_entry *lte,
 {
 	lte->resource_location = RESOURCE_IN_WIM;
 	lte->rspec = rspec;
-	list_add_tail(&lte->wim_resource_list, &rspec->lte_list);
+	list_add_tail(&lte->wim_resource_list, &rspec->stream_list);
 }
 
 static inline void

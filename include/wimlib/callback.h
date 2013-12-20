@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 
-typedef int (*consume_data_callback_t)(const void *buf, size_t len, void *ctx);
+/* Callback for processing a chunk of data.  Returns 0 on success, or an error
+ * code on failure.  */
+typedef int (*consume_data_callback_t)(const void *chunk, size_t size, void *ctx);
 
 #endif

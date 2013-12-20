@@ -2414,11 +2414,6 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 			return ret;
 	}
 
-	if (wim->hdr.wim_version == WIM_VERSION_STREAM_CONCAT) {
-		WARNING("WIM contains streams not compressed independently; "
-			"access may be slow.");
-	}
-
 	ret = select_wim_image(wim, image);
 	if (ret)
 		return ret;

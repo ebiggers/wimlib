@@ -11,19 +11,17 @@
 /* Length of the WIM header on disk.  */
 #define WIM_HEADER_DISK_SIZE 208
 
-/* Version of the WIM file.  There is an older version (used for prerelease
- * versions of Windows Vista), but wimlib doesn't support it.  The differences
- * between the versions are undocumented.  */
+/* Default WIM version number.  Streams are always compressed independently.  */
 #define WIM_VERSION_DEFAULT 0x10d00
 
-/* Version number used for a different WIM format, which as of Windows 8 can be
- * created by passing 0x20000000 in dwFlagsAndAttributes to WIMGAPI's
- * WIMCreateFile() and specifying either NONE, XPRESS, or LZMS compression.
- * This format is currently undocumented by Microsoft and is seemingly
- * incompatible with their own ImageX and Dism programs; however, it seems to be
- * used for Windows 8 updates.  The format appears to feature a new flag (0x10)
- * in resource entries, which I've named WIM_RESHDR_FLAG_CONCAT.  */
-#define WIM_VERSION_STREAM_CONCAT 0xe00
+/* Version number used for WIMs that allow multiple streams packed into one
+ * resource (WIM_RESHDR_FLAG_PACKED_STREAMS).  New as of Windows 8 WIMGAPI; used
+ * for the Windows 8 web downloader, but yet properly documented by Microsoft.
+ */
+#define WIM_VERSION_PACKED_STREAMS 0xe00
+
+/* Note: there is another WIM version from Vista pre-releases, but it is not
+ * supported by wimlib.  */
 
 /* WIM magic characters, translated to a single 64-bit little endian number.  */
 #define WIM_MAGIC \
