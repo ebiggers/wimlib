@@ -178,6 +178,20 @@ read_stream_prefix(const struct wim_lookup_table_entry *lte,
 		   u64 size, consume_data_callback_t cb,
 		   u32 in_chunk_size, void *ctx_or_buf, int flags);
 
+/* Functions to read a list of resources.  */
+
+typedef int (*read_stream_list_begin_stream_t)(struct wim_lookup_table_entry *lte, void *ctx);
+typedef int (*read_stream_list_end_stream_t)(struct wim_lookup_table_entry *lte, void *ctx);
+
+extern int
+read_stream_list(struct list_head *stream_list,
+		 size_t list_head_offset,
+		 read_stream_list_begin_stream_t begin_stream,
+		 consume_data_callback_t consume_chunk,
+		 read_stream_list_end_stream_t end_stream,
+		 u32 cb_chunk_size,
+		 void *cb_ctx);
+
 /* Functions to extract a resource.  */
 
 extern int

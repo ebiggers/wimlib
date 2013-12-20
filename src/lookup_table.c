@@ -381,7 +381,7 @@ sort_stream_list_by_sequential_order(struct list_head *stream_list,
 
 	array_size = num_streams * sizeof(array[0]);
 	array = MALLOC(array_size);
-	if (!array)
+	if (array == NULL)
 		return WIMLIB_ERR_NOMEM;
 	cur = stream_list->next;
 	for (i = 0; i < num_streams; i++) {

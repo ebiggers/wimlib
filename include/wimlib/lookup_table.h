@@ -49,50 +49,50 @@ struct ntfs_location {
  *
  * If we open a WIM and read its lookup table, the location is set to
  * RESOURCE_IN_WIM since all the streams will initially be located in the WIM.
- * However, to deal with problems such as image capture and image mount, we
- * allow the actual location of the stream to be somewhere else, such as an
- * external file.
+ * However, to handle situations such as image capture and image mount, we allow
+ * the actual location of the stream to be somewhere else, such as an external
+ * file.
  */
 enum resource_location {
-	/* The lookup table entry does not correspond to a stream (this state
-	 * should exist only temporarily) */
+	/* The lookup table entry does not yet correspond to a stream; this is a
+	 * temporary state only.  */
 	RESOURCE_NONEXISTENT = 0,
 
-	/* The stream resource is located in a WIM file.  The WIMStruct for the
-	 * WIM file will be pointed to by the @wim member.  The compression type
-	 * of the resource will be cached in @compression_type, and the pipable
-	 * status of the resource will be cached in @pipable.  */
+	/* The stream is located in a resource in a WIM file identified by the
+	 * `struct wim_resource_spec' pointed to by @rspec.  @offset_in_res
+	 * identifies the offset at which this particular stream begins in the
+	 * uncompressed data of the resource; this is normally 0, but in general
+	 * a WIM resource may contain multiple streams.  */
 	RESOURCE_IN_WIM,
 
-	/* The stream resource is located in an external file.  The name of the
-	 * file will be provided by @file_on_disk member.
-	 *
-	 * Note: On Windows @file_on_disk may actually specify a named data
-	 * stream.  */
+	/* The stream is located in the external file named by @file_on_disk.
+	 * On Windows, @file_on_disk may actually specify a named data stream.
+	 */
 	RESOURCE_IN_FILE_ON_DISK,
 
-	/* The stream resource is directly attached in an in-memory buffer
-	 * pointed to by @attached_buffer.  */
+	/* The stream is directly attached in the in-memory buffer pointed to by
+	 * @attached_buffer.  */
 	RESOURCE_IN_ATTACHED_BUFFER,
 
 #ifdef WITH_FUSE
-	/* The stream resource is located in an external file in the staging
-	 * directory for a read-write mount.  */
+	/* The stream is located in the external file named by
+	 * @staging_file_name, located in the staging directory for a read-write
+	 * mount.  */
 	RESOURCE_IN_STAGING_FILE,
 #endif
 
 #ifdef WITH_NTFS_3G
-	/* The stream resource is located in an NTFS volume.  It is identified
-	 * by volume, filename, data stream name, and by whether it is a reparse
-	 * point or not. @ntfs_loc points to a structure containing this
-	 * information.  */
+	/* The stream is located in an NTFS volume.  It is identified by volume,
+	 * filename, data stream name, and by whether it is a reparse point or
+	 * not.  @ntfs_loc points to a structure containing this information.
+	 * */
 	RESOURCE_IN_NTFS_VOLUME,
 #endif
 
 #ifdef __WIN32__
-	/* Windows only: the file is on disk in the file named @file_on_disk,
-	 * but the file is encrypted and must be read using special functions.
-	 * */
+	/* Windows only: the stream is located in the external file named by
+	 * @file_on_disk, but the file is encrypted and must be read using the
+	 * appropriate Windows API.  */
 	RESOURCE_WIN32_ENCRYPTED,
 #endif
 
