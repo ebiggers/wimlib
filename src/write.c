@@ -74,11 +74,15 @@ static bool
 can_raw_copy(const struct wim_lookup_table_entry *lte,
 	     int write_resource_flags, int out_ctype, u32 out_chunk_size)
 {
+	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS)
+		return false;
 	if (lte->resource_location != RESOURCE_IN_WIM)
+		return false;
+	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
 		return false;
 	if (lte->rspec->flags & WIM_RESHDR_FLAG_PACKED_STREAMS)
 		return false;
-	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
+	if (!(lte->rspec->flags & WIM_RESHDR_FLAG_COMPRESSED))
 		return false;
 	if (lte->rspec->wim->compression_type != out_ctype)
 		return false;
@@ -440,7 +444,6 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 {
 	struct write_resource_ctx write_ctx;
 	off_t res_start_offset;
-	u32 in_chunk_size;
 	u64 read_size;
 	int ret;
 
@@ -525,10 +528,6 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	write_ctx.out_fd = out_fd;
 	write_ctx.resource_flags = resource_flags;
 try_write_again:
-	if (write_ctx.out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
-		in_chunk_size = 0;
-	else
-		in_chunk_size = out_chunk_size;
 	ret = read_stream_prefix(lte, read_size, write_resource_cb,
 				 &write_ctx, resource_flags);
 	if (ret)
