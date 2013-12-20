@@ -122,7 +122,7 @@ init_output_bitstream(struct output_bitstream *ostream,
 	ostream->bit_output          = data;
 	ostream->next_bit_output     = data + 2;
 	ostream->output              = data + 4;
-	ostream->bytes_remaining     = num_bytes;
+	ostream->bytes_remaining     = num_bytes - 4;
 	ostream->overrun             = false;
 }
 
