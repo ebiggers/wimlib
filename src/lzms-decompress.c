@@ -46,7 +46,7 @@
  * of the bits within the 16-bit coding units is such that the first bit is the
  * high-order bit and the last bit is the low-order bit.
  *
- * From these two logical bitstreams, a LZMS decompressor can reconstitute the
+ * From these two logical bitstreams, an LZMS decompressor can reconstitute the
  * series of items that make up the LZMS data representation.  Each such item
  * may be a literal byte or a match.  Matches may be either traditional LZ77
  * matches or "delta" matches, either of which can have its offset encoded
@@ -56,7 +56,7 @@
  * sequence of bytes beginning at the current position and extending for the
  * length is exactly equal to the equal-length sequence of bytes at the offset
  * back in the window.  On the other hand, a delta match consists of a length,
- * raw offset, and power.  It asserts that the sequence of bytes of beginning at
+ * raw offset, and power.  It asserts that the sequence of bytes beginning at
  * the current position and extending for the length is equal to the bytewise
  * sum of the two equal-length sequences of bytes (2**power) and (raw_offset *
  * 2**power) bytes before the current position, minus bytewise the sequence of
@@ -88,17 +88,17 @@
  * filled in with the next 16 bits from the forwards bitstream.
  *
  * To decode each bit, the range decoder requires a probability that is
- * logically a real  number between 0 and 1.  Multiplying this
- * probability by the current range and taking the floor gives the bound between
- * the 0-bit region of the range and the 1-bit region of the range.  However, in
- * LZMS, probabilities are restricted to values of n/64 where n is an integer is
+ * logically a real number between 0 and 1.  Multiplying this probability by the
+ * current range and taking the floor gives the bound between the 0-bit region
+ * of the range and the 1-bit region of the range.  However, in LZMS,
+ * probabilities are restricted to values of n/64 where n is an integer is
  * between 1 and 63 inclusively, so the implementation may use integer
  * operations instead.  Following calculation of the bound, if the current code
  * is in the 0-bit region, the new range becomes the current code and the
  * decoded bit is 0; otherwise, the bound must be subtracted from both the range
  * and the code, and the decoded bit is 1.  More information about range coding
- * can be found https://en.wikipedia.org/wiki/Range_encoding.  Furthermore, note
- * that the LZMA format also uses range coding and has public domain code
+ * can be found at https://en.wikipedia.org/wiki/Range_encoding.  Furthermore,
+ * note that the LZMA format also uses range coding and has public domain code
  * available for it.
  *
  * The probability used to range-decode each bit must be taken from a table, of
@@ -129,8 +129,8 @@
  * bitstream.  For this, there are 5 different Huffman codes used:
  *
  *  - The literal code, used for decoding literal bytes.  Each of the 256
- *    symbols represents literal byte.  This code must be rebuilt whenever 1024
- *    symbols have been decoded with it.
+ *    symbols represents a literal byte.  This code must be rebuilt whenever
+ *    1024 symbols have been decoded with it.
  *
  *  - The LZ offset code, used for decoding the offsets of standard LZ77
  *    matches.  Each symbol represents a position slot, which corresponds to a
@@ -172,11 +172,11 @@
  *
  * Codewords in all the LZMS Huffman codes are limited to 15 bits.  If the
  * canonical code for a given set of symbol frequencies has any codewords longer
- * than 15 bits, all frequencies must be divided by 2, rounding up, and the code
- * construction must be attempted again.
+ * than 15 bits, then all frequencies must be divided by 2, rounding up, and the
+ * code construction must be attempted again.
  *
- * A LZMS-compressed block seemingly cannot have a size greater than or equal to
- * the original uncompressed size.  In such cases the block must be stored
+ * A LZMS-compressed block seemingly cannot have a compressed size greater than
+ * or equal to the uncompressed size.  In such cases the block must be stored
  * uncompressed.
  *
  * After all LZMS items have been decoded, the data must be postprocessed to
@@ -660,8 +660,8 @@ lzms_rebuild_adaptive_huffman_code(struct lzms_huffman_decoder *dec)
 {
 	int ret;
 
-	/* XXX:  This implementation that makes use of code already implemented
-	 * for the XPRESS and LZX compression formats.  However, since for the
+	/* XXX:  This implementation makes use of code already implemented for
+	 * the XPRESS and LZX compression formats.  However, since for the
 	 * adaptive codes used in LZMS we don't actually need the explicit codes
 	 * themselves, only the decode tables, it may be possible to optimize
 	 * this by somehow directly building or updating the Huffman decode
@@ -768,7 +768,7 @@ lzms_copy_literal(struct lzms_decompressor *ctx, u8 literal)
 	return 0;
 }
 
-/* Validate a LZ match and copy it to the output buffer.  */
+/* Validate an LZ match and copy it to the output buffer.  */
 static int
 lzms_copy_lz_match(struct lzms_decompressor *ctx, u32 length, u32 offset)
 {
@@ -951,7 +951,6 @@ lzms_decode_item(struct lzms_decompressor *ctx)
 		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--)
 			ctx->recent_lz_offsets[i + 1] = ctx->recent_lz_offsets[i];
 		ctx->recent_lz_offsets[0] = ctx->prev_lz_offset;
-
 	}
 
 	if (ctx->prev_delta_offset != 0) {
@@ -997,7 +996,7 @@ lzms_init_huffman_decoder(struct lzms_huffman_decoder *dec,
 		dec->sym_freqs[i] = 1;
 }
 
-/* Prepare to decode items from a LZMS-compressed block.  */
+/* Prepare to decode items from an LZMS-compressed block.  */
 static void
 lzms_init_decompressor(struct lzms_decompressor *ctx,
 		       const void *cdata, unsigned clen,
@@ -1022,14 +1021,8 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 	/* Initialize position and length slot bases if not done already.  */
 	lzms_init_slot_bases();
 
-	/* Like in other compression formats such as LZX and DEFLATE, match
-	 * offsets in LZMS are represented as a position slot, which corresponds
-	 * to a fixed lesser or equal match offset, followed by a
-	 * position-slot-dependent number of extra bits that gives an additional
-	 * offset from that position slot.  Because the full number of position
-	 * slots may exceed the length of the compressed block, here we
-	 * calculate the number of position slots that will actually be used in
-	 * the compressed representation.  */
+	/* Calculate the number of position slots needed for this compressed
+	 * block.  */
 	num_position_slots = lzms_get_position_slot_raw(ulen - 1) + 1;
 
 	LZMS_DEBUG("Using %u position slots", num_position_slots);
@@ -1057,8 +1050,8 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 				  LZMS_DELTA_POWER_CODE_REBUILD_FREQ);
 
 
-	/* Initialize range decoders (all of which wrap around the same
-	 * lzms_range_decoder_raw).  */
+	/* Initialize range decoders, all of which wrap around the same
+	 * lzms_range_decoder_raw.  */
 	lzms_init_range_decoder(&ctx->main_range_decoder,
 				&ctx->rd, LZMS_NUM_MAIN_STATES);
 
@@ -1078,7 +1071,6 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 	for (size_t i = 0; i < ARRAY_LEN(ctx->delta_repeat_match_range_decoders); i++)
 		lzms_init_range_decoder(&ctx->delta_repeat_match_range_decoders[i],
 					&ctx->rd, LZMS_NUM_DELTA_REPEAT_MATCH_STATES);
-
 
 	/* Initialize the LRU queue for recent match offsets.  */
 	for (size_t i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++)
