@@ -1221,11 +1221,12 @@ retry:
 	raw_fd = topen(name, O_WRONLY | O_CREAT | O_EXCL | O_BINARY, 0600);
 
 	if (raw_fd < 0) {
-		int errno_save = errno;
-		FREE(name);
-		if (errno_save == EEXIST)
+		if (errno == EEXIST) {
+			FREE(name);
 			goto retry;
+		}
 		ERROR_WITH_ERRNO("Failed to open temporary file \"%"TS"\"", name);
+		FREE(name);
 		return WIMLIB_ERR_OPEN;
 	}
 
