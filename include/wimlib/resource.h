@@ -129,7 +129,7 @@ extern void
 wim_res_spec_to_hdr(const struct wim_resource_spec *rspec,
 		    struct wim_reshdr *reshdr);
 
-extern int
+extern void
 get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 	       struct wim_reshdr *reshdr);
 

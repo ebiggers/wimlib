@@ -1485,7 +1485,7 @@ wim_res_spec_to_hdr(const struct wim_resource_spec *rspec,
 
 /* Translates a WIM resource header from the on-disk format into an in-memory
  * format.  */
-int
+void
 get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 	       struct wim_reshdr *reshdr)
 {
@@ -1499,14 +1499,6 @@ get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 			       ((u64)disk_reshdr->size_in_wim[6] << 48));
 	reshdr->uncompressed_size = le64_to_cpu(disk_reshdr->uncompressed_size);
 	reshdr->flags = disk_reshdr->flags;
-
-	/* Avoid possible overflows.  */
-	if (reshdr->offset_in_wim & 0xc000000000000000ULL)
-		return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-
-	if (reshdr->uncompressed_size & 0xc000000000000000ULL)
-		return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-
 	return 0;
 }
 
