@@ -31,7 +31,8 @@ struct wim_resource_spec {
 	u64 offset_in_wim;
 
 	/* The size of this resource in the WIM file.  For compressed resources
-	 * this is the compressed size.  */
+	 * this is the compressed size, including overhead such as the chunk
+	 * table.  */
 	u64 size_in_wim;
 
 	/* The number of bytes of uncompressed data this resource decompresses
@@ -41,12 +42,12 @@ struct wim_resource_spec {
 	/* The list of streams this resource contains.  */
 	struct list_head stream_list;
 
-	/* Flags for this resource (WIM_RESHDR_FLAG_*)  */
+	/* Flags for this resource (WIM_RESHDR_FLAG_*).  */
 	u32 flags : 8;
 
-	/* This flag will be set if the WIM is pipable.  In such cases, the
-	 * resource will be in a slightly different format if it is compressed.
-	 * This is a wimlib extension.  */
+	/* [wimlib extension] This flag will be set if the WIM is pipable.  In
+	 * such cases, the resource will be in a slightly different format if it
+	 * is compressed.  */
 	u32 is_pipable : 1;
 
 	/* Temporary flag.  */
@@ -70,7 +71,7 @@ struct wim_reshdr_disk {
 	le64 uncompressed_size;
 } _packed_attribute;
 
-/* In-memory version of a WIM resource header.  */
+/* In-memory version of a WIM resource header (`struct wim_reshdr_disk').  */
 struct wim_reshdr {
 	u64 size_in_wim : 56;
 	u64 flags : 8;
@@ -78,7 +79,8 @@ struct wim_reshdr {
 	u64 uncompressed_size;
 };
 
-/* Flags for the `flags' field of WIM resource headers.  */
+/* Flags for the `flags' field of WIM resource headers (`struct wim_reshdr').
+ */
 
 /* Unknown meaning; may be intended to indicate spaces in the WIM that are free
  * to overwrite.  Currently ignored by wimlib.  */
@@ -151,18 +153,21 @@ struct alt_chunk_table_header_disk {
 	le64 res_usize;
 
 	/* Number of bytes each compressed chunk decompresses into, except
-	 * possibly the last which decompresses into the remainder.  */
+	 * possibly the last which decompresses into the remainder.  This
+	 * overrides the chunk size specified by the WIM header.  */
 	le32 chunk_size;
 
 	/* Compression format used for compressed chunks:
 	 * 0 = None
 	 * 1 = LZX
 	 * 2 = XPRESS
-	 * 3 = LZMS  */
+	 * 3 = LZMS
+	 *
+	 * This overrides the compression type specified by the WIM header.  */
 	le32 compression_format;
 
 	/* This header is directly followed by a table of compressed sizes of
-	 * the chunks.  */
+	 * the chunks (4 bytes per entry).  */
 } _packed_attribute;
 
 /* wimlib internal flags used when writing resources.  */
@@ -190,22 +195,49 @@ wim_reshdr_to_data(const struct wim_reshdr *reshdr,
 extern int
 skip_wim_stream(struct wim_lookup_table_entry *lte);
 
-extern int
-read_stream_prefix(const struct wim_lookup_table_entry *lte,
-		   u64 size, consume_data_callback_t cb,
-		   void *cb_ctx);
-
+/*
+ * Type of callback function for beginning to read a stream.
+ *
+ * @lte:
+ *	Stream that is about to be read.
+ *
+ * @is_partial_res:
+ *	Set to true if the stream is just one of several being read from a
+ *	single pack and therefore would be extra expensive to read
+ *	independently.
+ *
+ * @ctx:
+ *	User-provided context.
+ *
+ * Must return 0 on success, a positive error code on failure, or the special
+ * value BEGIN_STREAM_STATUS_SKIP_STREAM to indicate that the stream should not
+ * be read, and read_stream_list() should continue on to the next stream
+ * (without calling @consume_chunk or @end_stream).
+ */
 typedef int (*read_stream_list_begin_stream_t)(struct wim_lookup_table_entry *lte,
 					       bool is_partial_res,
 					       void *ctx);
+
+#define BEGIN_STREAM_STATUS_SKIP_STREAM	-1
+
+/*
+ * Type of callback function for finishing reading a stream.
+ *
+ * @lte:
+ *	Stream that has been fully read, or stream that started being read but
+ *	could not be fully read due to a read error.
+ *
+ * @status:
+ *	0 if reading the stream was successful; otherwise a nonzero error code
+ *	that specifies the return status.
+ *
+ * @ctx:
+ *	User-provided context.
+ */
 typedef int (*read_stream_list_end_stream_t)(struct wim_lookup_table_entry *lte,
 					     int status,
 					     void *ctx);
 
-#define VERIFY_STREAM_HASHES		0x1
-#define COMPUTE_MISSING_STREAM_HASHES	0x2
-#define STREAM_LIST_ALREADY_SORTED	0x4
-#define BEGIN_STREAM_STATUS_SKIP_STREAM		-1
 
 /* Callback functions and contexts for read_stream_list().  */
 struct read_stream_list_callbacks {
@@ -216,7 +248,8 @@ struct read_stream_list_callbacks {
 	/* Called when a chunk of data has been read.  */
 	consume_data_callback_t consume_chunk;
 
-	/* Called when a stream has been fully read.  */
+	/* Called when a stream has been fully read.  A successful call to
+	 * @begin_stream will always be matched by a call to @end_stream.  */
 	read_stream_list_end_stream_t end_stream;
 
 	/* Parameter passed to @begin_stream.  */
@@ -228,6 +261,11 @@ struct read_stream_list_callbacks {
 	/* Parameter passed to @end_stream.  */
 	void *end_stream_ctx;
 };
+
+/* Flags for read_stream_list()  */
+#define VERIFY_STREAM_HASHES		0x1
+#define COMPUTE_MISSING_STREAM_HASHES	0x2
+#define STREAM_LIST_ALREADY_SORTED	0x4
 
 extern int
 read_stream_list(struct list_head *stream_list,

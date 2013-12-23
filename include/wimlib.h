@@ -426,7 +426,11 @@ enum wimlib_compression_type {
 	/** Compressed resources in the WIM use XPRESS compression. */
 	WIMLIB_COMPRESSION_TYPE_XPRESS = 2,
 
-	/** TODO  */
+	/** Compressed resources in the WIM use LZMS compression.  Currently,
+	 * wimlib has a decompressor for this format but not a compressor.  LZMS
+	 * compression is only compatible with wimlib v1.6.0 and later and with
+	 * WIMGAPI Windows 8 and later (and some restrictions apply on the
+	 * latter).  */
 	WIMLIB_COMPRESSION_TYPE_LZMS = 3,
 };
 
@@ -947,55 +951,64 @@ struct wimlib_wim_info {
 	uint32_t reserved[9];
 };
 
-/** Information about a unique resource in the WIM file.
- */
+/** Information about a unique stream in the WIM file.  (A stream is the same
+ * thing as a "resource", except in the case of packed resources.)  */
 struct wimlib_resource_entry {
-	/** Uncompressed size of the resource in bytes. */
+	/** Uncompressed size of the stream in bytes. */
 	uint64_t uncompressed_size;
 
-	/** Compressed size of the resource in bytes.  This will be the same as
-	 * @p uncompressed_size if the resource is uncompressed.  */
+	/** Compressed size of the stream in bytes.  This will be the same as @p
+	 * uncompressed_size if the stream is uncompressed.  Or, if @p
+	 * is_packed_streams is 1, this will be 0.  */
 	uint64_t compressed_size;
 
-	/** Offset, in bytes, of this resource from the start of the WIM file.
+	/** Offset, in bytes, of this stream from the start of the WIM file.  Or
+	 * if @p packed is 1, then this is actually the offset at which this
+	 * stream begins in the uncompressed contents of the packed resource.
 	 */
 	uint64_t offset;
 
-	/** SHA1 message digest of the resource's uncompressed contents.  */
+	/** SHA1 message digest of the stream's uncompressed contents.  */
 	uint8_t sha1_hash[20];
 
-	/** Which part number of the split WIM this resource is in.  This should
+	/** Which part number of the split WIM this stream is in.  This should
 	 * be the same as the part number provided by wimlib_get_wim_info().  */
 	uint32_t part_number;
 
-	/** Number of times this resource is referenced over all WIM images.  */
+	/** Number of times this stream is referenced over all WIM images.  */
 	uint32_t reference_count;
 
-	/** 1 if this resource is compressed.  */
+	/** 1 if this stream is compressed.  */
 	uint32_t is_compressed : 1;
 
-	/** 1 if this resource is a metadata resource rather than a file
-	 * resource.  */
+	/** 1 if this stream is a metadata resource rather than a file resource.
+	 * */
 	uint32_t is_metadata : 1;
 
 	uint32_t is_free : 1;
 	uint32_t is_spanned : 1;
 
-	/** 1 if this resource was not found in the lookup table of the
+	/** 1 if this stream was not found in the lookup table of the
 	 * ::WIMStruct.  This normally implies a missing call to
 	 * wimlib_reference_resource_files() or wimlib_reference_resources().
-	 */
+	 * */
 	uint32_t is_missing : 1;
 
-	uint32_t is_packed_streams : 1;
+	/** 1 if this stream is located in a packed resource which may contain
+	 * other streams (all compressed together) as well.  */
+	uint32_t packed : 1;
 
 	uint32_t reserved_flags : 26;
 
+	/** If @p packed is 1, then this will specify the offset of the packed
+	 * resource in the WIM.  */
 	uint64_t raw_resource_offset_in_wim;
-	uint64_t raw_resource_uncompressed_size;
+
+	/** If @p is_packed_streams is 1, then this will specify the compressed
+	 * size of the packed resource in the WIM.  */
 	uint64_t raw_resource_compressed_size;
 
-	uint64_t reserved[1];
+	uint64_t reserved[2];
 };
 
 /** A stream of a file in the WIM.  */
@@ -3045,7 +3058,8 @@ wimlib_mount_image(WIMStruct *wim,
  * 	chunk of the WIM does not match the corresponding message digest given
  * 	in the integrity table.
  * @retval ::WIMLIB_ERR_INVALID_CHUNK_SIZE
- * 	Resources in @p wim_file are compressed, but the chunk size is not 32768.
+ * 	Resources in @p wim_file are compressed, but the chunk size was invalid
+ * 	for the WIM's compression format.
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  * 	The header of @p wim_file says that resources in the WIM are compressed,
  * 	but the header flag indicating LZX or XPRESS compression is not set.
@@ -3441,7 +3455,8 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  *
  * <b>WARNING: Changing the compression chunk size to any value other than the
  * default of 32768 bytes eliminates compatibility with Microsoft's software,
- * except when increasing the XPRESS chunk size before Windows 8.</b>
+ * except when increasing the XPRESS chunk size before Windows 8.  Chunk sizes
+ * other than 32768 are also incompatible with wimlib v1.5.3 and earlier.</b>
  *
  * @param wim
  *	::WIMStruct for a WIM.
@@ -3982,7 +3997,7 @@ wimlib_write_to_fd(WIMStruct *wim,
  * library clients looking to make use of wimlib's compression code for another
  * purpose.
  *
- * As of wimlib v1.5.4, this function can be used with @p chunk_size greater
+ * As of wimlib v1.6.0, this function can be used with @p chunk_size greater
  * than 32768 bytes and is only limited by available memory.  However, the
  * XPRESS format itself still caps match offsets to 65535, so if a larger chunk
  * size is chosen, then the matching will effectively occur in a sliding window

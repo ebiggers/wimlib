@@ -38,17 +38,17 @@
  *		     correspond to a spanned set.
  *
  * @wim:
- * 	Part 1 of the set.
+ *	Part 1 of the set.
  *
  * @additional_swms:
- * 	All parts of the set other than part 1.
+ *	All parts of the set other than part 1.
  *
  * @num_additional_swms:
- * 	Number of WIMStructs in @additional_swms.  Or, the total number of parts
- * 	in the set minus 1.
+ *	Number of WIMStructs in @additional_swms.  Or, the total number of parts
+ *	in the set minus 1.
  *
  * @return:
- * 	0 on success; WIMLIB_ERR_SPLIT_INVALID if the set is not valid.
+ *	0 on success; WIMLIB_ERR_SPLIT_INVALID if the set is not valid.
  */
 static int
 verify_swm_set(WIMStruct *wim, WIMStruct **additional_swms,

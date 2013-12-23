@@ -167,7 +167,7 @@ match_pattern(const tchar *path,
 		 * replacement function in win32.c. */
 		if (fnmatch(pat, string, FNM_PATHNAME | FNM_NOESCAPE
 				#ifdef FNM_CASEFOLD
-			    		| FNM_CASEFOLD
+					| FNM_CASEFOLD
 				#endif
 			    ) == 0)
 		{

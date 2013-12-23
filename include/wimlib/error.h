@@ -42,7 +42,7 @@ extern void
 wimlib_warning_with_errno(const tchar *format, ...)
 		_format_attribute(printf, 1, 2) _cold_attribute;
 #  define ERROR(format, ...)			wimlib_error(T(format), ## __VA_ARGS__)
-#  define ERROR_WITH_ERRNO(format, ...) 	wimlib_error_with_errno(T(format), ## __VA_ARGS__)
+#  define ERROR_WITH_ERRNO(format, ...)		wimlib_error_with_errno(T(format), ## __VA_ARGS__)
 #  define WARNING(format, ...)			wimlib_warning(T(format), ## __VA_ARGS__)
 #  define WARNING_WITH_ERRNO(format, ...)	wimlib_warning_with_errno(T(format), ## __VA_ARGS__)
 extern bool wimlib_print_errors;
@@ -68,7 +68,7 @@ extern void
 wimlib_debug(const tchar *file, int line, const char *func,
 	     const tchar *format, ...);
 #  define DEBUG(format, ...) \
-	 	wimlib_debug(T(__FILE__), __LINE__, __func__, T(format), ## __VA_ARGS__)
+		wimlib_debug(T(__FILE__), __LINE__, __func__, T(format), ## __VA_ARGS__)
 
 #else
 #  define DEBUG(format, ...) dummy_tprintf(T(format), ## __VA_ARGS__)

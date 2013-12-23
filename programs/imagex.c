@@ -2785,10 +2785,7 @@ print_resource(const struct wimlib_resource_entry *resource,
 {
 	tprintf(T("Uncompressed size     = %"PRIu64" bytes\n"),
 		resource->uncompressed_size);
-	if (resource->is_packed_streams) {
-		tprintf(T("Raw uncompressed size = %"PRIu64" bytes\n"),
-			resource->raw_resource_uncompressed_size);
-
+	if (resource->packed) {
 		tprintf(T("Raw compressed size   = %"PRIu64" bytes\n"),
 			resource->raw_resource_compressed_size);
 
@@ -2804,7 +2801,6 @@ print_resource(const struct wimlib_resource_entry *resource,
 		tprintf(T("Offset in WIM         = %"PRIu64" bytes\n"),
 			resource->offset);
 	}
-
 
 	tprintf(T("Part Number           = %u\n"), resource->part_number);
 	tprintf(T("Reference Count       = %u\n"), resource->reference_count);
@@ -2822,7 +2818,7 @@ print_resource(const struct wimlib_resource_entry *resource,
 		tprintf(T("WIM_RESHDR_FLAG_FREE  "));
 	if (resource->is_spanned)
 		tprintf(T("WIM_RESHDR_FLAG_SPANNED  "));
-	if (resource->is_packed_streams)
+	if (resource->packed)
 		tprintf(T("WIM_RESHDR_FLAG_PACKED_STREAMS  "));
 	tputchar(T('\n'));
 	tputchar(T('\n'));

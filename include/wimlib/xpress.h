@@ -7,7 +7,7 @@
 //#define ENABLE_XPRESS_DEBUG
 #ifdef ENABLE_XPRESS_DEBUG
 #	define XPRESS_DEBUG DEBUG
-#       define XPRESS_ASSERT wimlib_assert
+#	define XPRESS_ASSERT wimlib_assert
 #else
 #	define XPRESS_DEBUG(format, ...)
 #	define XPRESS_ASSERT(...)

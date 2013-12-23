@@ -55,10 +55,10 @@
  *
  * Also, a caveat--- according to Microsoft's documentation for XPRESS,
  *
- * 	"Some implementation of the decompression algorithm expect an extra
- * 	symbol to mark the end of the data.  Specifically, some implementations
- * 	fail during decompression if the Huffman symbol 256 is not found after
- * 	the actual data."
+ *	"Some implementation of the decompression algorithm expect an extra
+ *	symbol to mark the end of the data.  Specifically, some implementations
+ *	fail during decompression if the Huffman symbol 256 is not found after
+ *	the actual data."
  *
  * This is the case for the implementation in WIMGAPI.  However, wimlib's
  * decompressor in this file currently does not care if this extra symbol is

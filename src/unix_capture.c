@@ -296,8 +296,8 @@ out:
 
 /*
  * unix_build_dentry_tree():
- * 	Builds a tree of WIM dentries from an on-disk directory tree (UNIX
- * 	version; no NTFS-specific data is captured).
+ *	Builds a tree of WIM dentries from an on-disk directory tree (UNIX
+ *	version; no NTFS-specific data is captured).
  *
  * @root_ret:   Place to return a pointer to the root of the dentry tree.  Only
  *		modified if successful.  Set to NULL if the file or directory was
@@ -348,7 +348,7 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 	if (path_len >= path_bufsz)
 		return WIMLIB_ERR_INVALID_PARAM;
 
- 	path_buf = MALLOC(path_bufsz);
+	path_buf = MALLOC(path_bufsz);
 	if (!path_buf)
 		return WIMLIB_ERR_NOMEM;
 	memcpy(path_buf, root_disk_path, path_len + 1);

@@ -43,6 +43,7 @@
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/resource.h"
+#include "wimlib/win32.h"
 #include "wimlib/write.h"
 #include "wimlib/xml.h"
 
@@ -220,7 +221,7 @@ stream_set_out_reshdr_for_reuse(struct wim_lookup_table_entry *lte)
 
 		lte->out_res_offset_in_wim = rspec->offset_in_wim;
 		lte->out_res_size_in_wim = rspec->size_in_wim;
-		lte->out_res_uncompressed_size = rspec->uncompressed_size;
+		/*lte->out_res_uncompressed_size = rspec->uncompressed_size;*/
 	} else {
 		wimlib_assert(!(lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS));
 
@@ -242,7 +243,7 @@ write_pwm_stream_header(const struct wim_lookup_table_entry *lte,
 	u32 reshdr_flags;
 	int ret;
 
-	stream_hdr.magic = PWM_STREAM_MAGIC;
+	stream_hdr.magic = cpu_to_le64(PWM_STREAM_MAGIC);
 	stream_hdr.uncompressed_size = cpu_to_le64(lte->size);
 	if (additional_reshdr_flags & PWM_RESHDR_FLAG_UNHASHED) {
 		zero_out_hash(stream_hdr.hash);
@@ -402,9 +403,10 @@ struct write_streams_ctx {
 };
 
 static u64
-get_chunk_entry_size(u64 res_size)
+get_chunk_entry_size(u64 res_size, int write_resource_flags)
 {
-	if (res_size <= UINT32_MAX)
+	if (res_size <= UINT32_MAX ||
+	    (write_resource_flags & WIM_RESHDR_FLAG_PACKED_STREAMS))
 		return 4;
 	else
 		return 8;
@@ -459,7 +461,9 @@ begin_chunk_table(struct write_streams_ctx *ctx, u64 res_expected_size)
 		 * prove to be needed.  At this point, we just use @chunk_csizes
 		 * for a buffer of 0's because the actual compressed chunk sizes
 		 * are unknown.  */
-		reserve_size = expected_num_chunk_entries * get_chunk_entry_size(res_expected_size);
+		reserve_size = expected_num_chunk_entries *
+			       get_chunk_entry_size(res_expected_size,
+						    ctx->write_resource_flags);
 		if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS)
 			reserve_size += sizeof(struct alt_chunk_table_header_disk);
 		memset(ctx->chunk_csizes, 0, reserve_size);
@@ -505,7 +509,8 @@ end_chunk_table(struct write_streams_ctx *ctx, u64 res_actual_size,
 	if (!(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS))
 		actual_num_chunk_entries--;
 
-	chunk_entry_size = get_chunk_entry_size(res_actual_size);
+	chunk_entry_size = get_chunk_entry_size(res_actual_size,
+						ctx->write_resource_flags);
 
 	typedef le64 __attribute__((may_alias)) aliased_le64_t;
 	typedef le32 __attribute__((may_alias)) aliased_le32_t;
@@ -1296,7 +1301,7 @@ write_stream_list(struct list_head *stream_list,
 			lte->out_reshdr.offset_in_wim = offset_in_res;
 			lte->out_res_offset_in_wim = reshdr.offset_in_wim;
 			lte->out_res_size_in_wim = reshdr.size_in_wim;
-			lte->out_res_uncompressed_size = reshdr.uncompressed_size;
+			/*lte->out_res_uncompressed_size = reshdr.uncompressed_size;*/
 			offset_in_res += lte->size;
 		}
 		wimlib_assert(offset_in_res == reshdr.uncompressed_size);
@@ -1901,7 +1906,7 @@ cmp_streams_by_out_rspec(const void *p1, const void *p2)
 		if (lte2->out_reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS)
 			return -1;
 	}
-	return cmp_u64(lte1->out_reshdr.offset_in_wim, 
+	return cmp_u64(lte1->out_reshdr.offset_in_wim,
 		       lte2->out_reshdr.offset_in_wim);
 }
 
@@ -2928,6 +2933,9 @@ can_overwrite_wim_inplace(const WIMStruct *wim, int write_flags)
 		if (wim->compression_type != wim->out_compression_type)
 			return false;
 		if (wim->chunk_size != wim->out_chunk_size)
+			return false;
+	} else {
+		if (write_flags & WIMLIB_WRITE_FLAG_NO_PACK_STREAMS)
 			return false;
 	}
 

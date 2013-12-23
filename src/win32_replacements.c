@@ -57,13 +57,24 @@ err:
 	return -1;
 }
 
-/* Use the Win32 API to get the number of processors */
+/* Use the Win32 API to get the number of processors.  */
 unsigned
 win32_get_number_of_processors(void)
 {
 	SYSTEM_INFO sysinfo;
 	GetSystemInfo(&sysinfo);
 	return sysinfo.dwNumberOfProcessors;
+}
+
+/* Use the Win32 API to get the amount of available memory.  */
+u64
+win32_get_avail_memory(void)
+{
+	MEMORYSTATUSEX status = {
+		.dwLength = sizeof(status),
+	};
+	GlobalMemoryStatusEx(&status);
+	return status.ullTotalPhys;
 }
 
 /* Replacement for POSIX-2008 realpath().  Warning: partial functionality only
@@ -299,6 +310,7 @@ pwrite(int fd, const void *buf, size_t count, off_t offset)
 	return do_pread_or_pwrite(fd, (void*)buf, count, offset, true);
 }
 
+#if 0
 /* Dumb Windows implementation of writev().  It writes the vectors one at a
  * time. */
 ssize_t writev(int fd, const struct iovec *iov, int iovcnt)
@@ -323,6 +335,7 @@ ssize_t writev(int fd, const struct iovec *iov, int iovcnt)
 	}
 	return total_bytes_written;
 }
+#endif
 
 int
 win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret)

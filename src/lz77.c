@@ -86,18 +86,18 @@ insert_string(input_idx_t hash_tab[], input_idx_t prev_tab[],
  * @window:		The window of uncompressed data.
  * @bytes_remaining:	The number of bytes remaining in the window.
  * @strstart:		The index of the start of the string in the window that
- * 				we are trying to find a match for.
+ *				we are trying to find a match for.
  * @prev_tab:		The array of prev pointers for the hash table.
  * @cur_match:		The index of the head of the hash chain for matches
- * 				having the hash value of the string beginning
- * 				at index @strstart.
+ *				having the hash value of the string beginning
+ *				at index @strstart.
  * @prev_len:		The length of the match that was found for the string
- * 				beginning at (@strstart - 1).
+ *				beginning at (@strstart - 1).
  * @match_start_ret:	A location into which the index of the start of the
- * 				match will be returned.
+ *				match will be returned.
  * @params:		Parameters that affect how long the search will proceed
- * 				before going with the best that has been found
- * 				so far.
+ *				before going with the best that has been found
+ *				so far.
  * @min_start_pos:	If the chain reaches a match starting before this
  *			position (including the end-of-chain 0), the search will
  *			be terminated.
@@ -193,8 +193,8 @@ longest_match(const u8 window[], unsigned bytes_remaining,
  * @record_literal:	Consumer for literals.
  * @record_ctx:		Context passed to @record_match and @record_literal.
  * @params:		Structure that contains parameters that affect how the
- * 				analysis proceeds (mainly how good the matches
- * 				have to be).
+ *				analysis proceeds (mainly how good the matches
+ *				have to be).
  * @prev_tab:		Temporary space containing least @window_size elements.
  */
 void

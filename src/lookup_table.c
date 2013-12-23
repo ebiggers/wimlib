@@ -337,8 +337,11 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 		if (v)
 			return v;
 
-		return cmp_u64(lte1->rspec->offset_in_wim + lte1->offset_in_res,
-			       lte2->rspec->offset_in_wim + lte2->offset_in_res);
+		if (lte1->rspec->offset_in_wim != lte2->rspec->offset_in_wim)
+			return cmp_u64(lte1->rspec->offset_in_wim,
+				       lte2->rspec->offset_in_wim);
+
+		return cmp_u64(lte1->offset_in_res, lte2->offset_in_res);
 
 	case RESOURCE_IN_FILE_ON_DISK:
 #ifdef WITH_FUSE
@@ -486,7 +489,8 @@ validate_resource(const struct wim_resource_spec *rspec)
 		goto invalid;
 
 	/* Verify that each stream in the resource has a valid offset and size,
-	 * and that no streams overlap.  */
+	 * and that no streams overlap, and that the streams were added in order
+	 * of increasing offset.  */
 	cur_offset = 0;
 	list_for_each_entry(lte, &rspec->stream_list, rspec_node) {
 		if (lte->offset_in_res + lte->size < lte->size ||
@@ -645,7 +649,7 @@ read_wim_lookup_table(WIMStruct *wim)
 			if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 				cur_rspec->size_in_wim = 0;
 				cur_rspec->uncompressed_size = 0;
-				cur_rspec->flags = WIM_RESHDR_FLAG_PACKED_STREAMS;
+				cur_rspec->offset_in_wim = 0;
 			}
 
 			if (prev_entry) {
@@ -1037,7 +1041,7 @@ lte_to_wimlib_resource_entry(const struct wim_lookup_table_entry *lte,
 			wentry->offset = lte->rspec->offset_in_wim;
 		}
 		wentry->raw_resource_offset_in_wim = lte->rspec->offset_in_wim;
-		wentry->raw_resource_uncompressed_size = lte->rspec->uncompressed_size;
+		/*wentry->raw_resource_uncompressed_size = lte->rspec->uncompressed_size;*/
 		wentry->raw_resource_compressed_size = lte->rspec->size_in_wim;
 	}
 	copy_hash(wentry->sha1_hash, lte->hash);
@@ -1046,7 +1050,7 @@ lte_to_wimlib_resource_entry(const struct wim_lookup_table_entry *lte,
 	wentry->is_metadata = (lte->flags & WIM_RESHDR_FLAG_METADATA) != 0;
 	wentry->is_free = (lte->flags & WIM_RESHDR_FLAG_FREE) != 0;
 	wentry->is_spanned = (lte->flags & WIM_RESHDR_FLAG_SPANNED) != 0;
-	wentry->is_packed_streams = (lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) != 0;
+	wentry->packed = (lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) != 0;
 }
 
 struct iterate_lte_context {

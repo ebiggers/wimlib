@@ -52,29 +52,29 @@
  * though).
  *
  * @decode_table:	The array in which to create the fast huffman decoding
- * 			table.  It must have a length of at least
- * 			(2**table_bits) + 2 * num_syms to guarantee
- * 			that there is enough space.  Also must be 16-byte
- * 			aligned (at least when USE_SSE2_FILL gets defined).
+ *			table.  It must have a length of at least
+ *			(2**table_bits) + 2 * num_syms to guarantee
+ *			that there is enough space.  Also must be 16-byte
+ *			aligned (at least when USE_SSE2_FILL gets defined).
  *
- * @num_syms: 		Number of symbols in the alphabet, including symbols
+ * @num_syms:		Number of symbols in the alphabet, including symbols
  *			that do not appear in this particular input chunk.
  *
  * @table_bits:		Any symbols with a code length of table_bits or less can
- * 			be decoded in one lookup of the table.  2**table_bits
- * 			must be greater than or equal to @num_syms if there are
- * 			any Huffman codes longer than @table_bits.
+ *			be decoded in one lookup of the table.  2**table_bits
+ *			must be greater than or equal to @num_syms if there are
+ *			any Huffman codes longer than @table_bits.
  *
  * @lens:		An array of length @num_syms, indexable by symbol, that
- * 			gives the length of the Huffman codeword for that
- * 			symbol.  Because the Huffman tree is in canonical form,
- * 			it can be reconstructed by only knowing the length of
- * 			the codeword for each symbol.  It is assumed, but not
- * 			checked, that every length is less than
- * 			@max_codeword_len.
+ *			gives the length of the Huffman codeword for that
+ *			symbol.  Because the Huffman tree is in canonical form,
+ *			it can be reconstructed by only knowing the length of
+ *			the codeword for each symbol.  It is assumed, but not
+ *			checked, that every length is less than
+ *			@max_codeword_len.
  *
  * @max_codeword_len:	The longest codeword length allowed in the compression
- * 			format.
+ *			format.
  *
  * Returns 0 on success; returns -1 if the length values do not correspond to a
  * valid Huffman tree.

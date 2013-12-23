@@ -151,7 +151,12 @@ wim_chunk_size_valid(u32 chunk_size, int ctype)
 static u32
 wim_default_chunk_size(int ctype)
 {
-	return 32768;
+	switch (ctype) {
+	case WIMLIB_COMPRESSION_TYPE_LZMS:
+		return 131072;
+	default:
+		return 32768;
+	}
 }
 
 /*
@@ -481,12 +486,15 @@ wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size)
 			      "32768, 65536, 131072, ..., 2097152.");
 			break;
 		case WIMLIB_COMPRESSION_TYPE_LZMS:
-			ERROR("Valid chunk sizes for LZMS are 131072.");
+			ERROR("Valid chunk sizes for LZMS are "
+			      "32768, 65536, 131072, ..., 67108864.");
 			break;
 		}
 		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
 	}
-	if (chunk_size != 32768) {
+	if (chunk_size != 32768 &&
+	    wim->out_compression_type != WIMLIB_COMPRESSION_TYPE_LZMS)
+	{
 		WARNING  ("Changing the compression chunk size to any value other than\n"
 		"          the default of 32768 bytes eliminates compatibility with\n"
 		"          Microsoft's software!");

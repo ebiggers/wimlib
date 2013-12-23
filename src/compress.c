@@ -232,21 +232,21 @@ huffman_tree_compute_path_lengths(HuffmanNode *base_node, u16 cur_len)
  * @num_syms:  The number of symbols in the alphabet.
  *
  * @max_codeword_len:  The maximum allowed length of a codeword in the code.
- * 			Note that if the code being created runs up against
- * 			this restriction, the code ultimately created will be
- * 			suboptimal, although there are some advantages for
- * 			limiting the length of the codewords.
+ *			Note that if the code being created runs up against
+ *			this restriction, the code ultimately created will be
+ *			suboptimal, although there are some advantages for
+ *			limiting the length of the codewords.
  *
  * @freq_tab:  An array of length @num_syms that contains the frequencies
- * 			of each symbol in the uncompressed data.
+ *			of each symbol in the uncompressed data.
  *
  * @lens:	   An array of length @num_syms into which the lengths of the
- * 			codewords for each symbol will be written.
+ *			codewords for each symbol will be written.
  *
  * @codewords:	   An array of @num_syms short integers into which the
- * 			codewords for each symbol will be written.  The first
- * 			lens[i] bits of codewords[i] will contain the codeword
- * 			for symbol i.
+ *			codewords for each symbol will be written.  The first
+ *			lens[i] bits of codewords[i] will contain the codeword
+ *			for symbol i.
  */
 void
 make_canonical_huffman_code(unsigned num_syms,

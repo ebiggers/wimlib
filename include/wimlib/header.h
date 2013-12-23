@@ -16,55 +16,55 @@
 
 /* Version number used for WIMs that allow multiple streams packed into one
  * resource (WIM_RESHDR_FLAG_PACKED_STREAMS).  New as of Windows 8 WIMGAPI; used
- * for the Windows 8 web downloader, but yet properly documented by Microsoft.
- */
+ * for the Windows 8 web downloader, but yet not yet properly documented by
+ * Microsoft.  */
 #define WIM_VERSION_PACKED_STREAMS 0xe00
 
 /* Note: there is another WIM version from Vista pre-releases, but it is not
  * supported by wimlib.  */
 
-/* WIM magic characters, translated to a single 64-bit little endian number.  */
-#define WIM_MAGIC \
-		cpu_to_le64(((u64)'M' << 0) |		\
-			    ((u64)'S' << 8) |		\
-			    ((u64)'W' << 16) |		\
-			    ((u64)'I' << 24) |		\
-			    ((u64)'M' << 32) |		\
-			    ((u64)'\0' << 40) |		\
-			    ((u64)'\0' << 48) |		\
-			    ((u64)'\0' << 54))
+/* WIM magic characters, translated to a single 64-bit number.  */
+#define WIM_MAGIC				\
+		(((u64)'M'  <<  0) |		\
+		 ((u64)'S'  <<  8) |		\
+		 ((u64)'W'  << 16) |		\
+		 ((u64)'I'  << 24) |		\
+		 ((u64)'M'  << 32) |		\
+		 ((u64)'\0' << 40) |		\
+		 ((u64)'\0' << 48) |		\
+		 ((u64)'\0' << 54))
 
-/* wimlib pipable WIM magic characters, translated to a single 64-bit little
- * endian number.  */
-#define PWM_MAGIC \
-		cpu_to_le64(((u64)'W' << 0) |		\
-			    ((u64)'L' << 8) |		\
-			    ((u64)'P' << 16) |		\
-			    ((u64)'W' << 24) |		\
-			    ((u64)'M' << 32) |		\
-			    ((u64)'\0' << 40) |		\
-			    ((u64)'\0' << 48) |		\
-			    ((u64)'\0' << 54))
+/* wimlib pipable WIM magic characters, translated to a single 64-bit number.
+ * */
+#define PWM_MAGIC				\
+		(((u64)'W'  <<  0) |		\
+		 ((u64)'L'  <<  8) |		\
+		 ((u64)'P'  << 16) |		\
+		 ((u64)'W'  << 24) |		\
+		 ((u64)'M'  << 32) |		\
+		 ((u64)'\0' << 40) |		\
+		 ((u64)'\0' << 48) |		\
+		 ((u64)'\0' << 54))
 
 /* On-disk format of the WIM header. */
 struct wim_header_disk {
 
-	/* +0x00: Magic characters "MSWIM\0\0\0" */
+	/* +0x00: Magic characters "MSWIM\0\0\0".  */
 	le64 magic;
 
 	/* +0x08: Size of the WIM header, in bytes; WIM_HEADER_DISK_SIZE
-	 * expected (currently the only supported value). */
+	 * expected (currently the only supported value).  */
 	u32 hdr_size;
 
-	/* +0x0c: Version of the WIM file
-	 * TODO  */
+	/* +0x0c: Version of the WIM file.  Recognized values are the
+	 * WIM_VERSION_* constants from above.  */
 	u32 wim_version;
 
-	/* +0x10: Flags for the WIM file (WIM_HDR_FLAG_*) */
+	/* +0x10: Flags for the WIM file (WIM_HDR_FLAG_*).  */
 	u32 wim_flags;
 
-	/* +0x14: Chunk size for compressed resources in the WIM, or 0 if the
-	 * WIM is uncompressed.  */
+	/* +0x14: Uncompressed chunk size for compressed resources in the WIM
+	 * other than packed resources, or 0 if the WIM is uncompressed.  */
 	u32 chunk_size;
 
 	/* +0x18: Globally unique identifier for the WIM file.  Basically a
@@ -79,84 +79,53 @@ struct wim_header_disk {
 	 * is not split. */
 	u16 total_parts;
 
-	/* +0x2c: Number of images in the WIM. */
+	/* +0x2c: Number of images in the WIM.  */
 	u32 image_count;
 
-	/* +0x30: Location and size of the WIM's lookup table. */
+	/* +0x30: Location and size of the WIM's lookup table.  */
 	struct wim_reshdr_disk lookup_table_reshdr;
 
-	/* +0x48: Location and size of the WIM's XML data. */
+	/* +0x48: Location and size of the WIM's XML data.  */
 	struct wim_reshdr_disk xml_data_reshdr;
 
 	/* +0x60: Location and size of metadata resource for the bootable image
-	 * of the WIM, or all zeroes if no image is bootable. */
+	 * of the WIM, or all zeroes if no image is bootable.  */
 	struct wim_reshdr_disk boot_metadata_reshdr;
 
 	/* +0x78: 1-based index of the bootable image of the WIM, or 0 if no
-	 * image is bootable. */
+	 * image is bootable.  */
 	u32 boot_idx;
 
 	/* +0x7c: Location and size of the WIM's integrity table, or all zeroes
 	 * if the WIM has no integrity table.
 	 *
-	 * Note the integrity_table_reshdr here is 4-byte aligned even though
-	 * it would ordinarily be 8-byte aligned--- hence, the _packed_attribute
-	 * on the `struct wim_header_disk' is essential. */
+	 * Note the integrity_table_reshdr here is 4-byte aligned even though it
+	 * would ordinarily be 8-byte aligned--- hence, the _packed_attribute on
+	 * this structure is essential.  */
 	struct wim_reshdr_disk integrity_table_reshdr;
 
-	/* +0x94: Unused bytes. */
+	/* +0x94: Unused bytes.  */
 	u8 unused[60];
 
 	/* +0xd0 (208)  */
 } _packed_attribute;
 
 
-/* Header at the very beginning of the WIM file.  This is the in-memory
- * representation and does not include all fields; see `struct wim_header_disk'
- * for the on-disk structure.  */
+/* In-memory representation of a WIM header.  See `struct wim_header_disk' for
+ * field descriptions.  */
 struct wim_header {
-
-	/* Magic characters: either WIM_MAGIC or PWM_MAGIC.  */
-	le64 magic;
-
-	/* Version of the WIM file  */
+	u64 magic;
 	u32 wim_version;
-
-	/* Bitwise OR of one or more of the WIM_HDR_FLAG_* defined below. */
 	u32 flags;
-
-	/* Compressed resource chunk size  */
 	u32 chunk_size;
-
-	/* A unique identifier for the WIM file. */
 	u8 guid[WIM_GID_LEN];
-
-	/* Part number of the WIM file in a spanned set. */
 	u16 part_number;
-
-	/* Total number of parts in a spanned set. */
 	u16 total_parts;
-
-	/* Number of images in the WIM file. */
 	u32 image_count;
-
-	/* Location, size, and flags of the lookup table of the WIM. */
 	struct wim_reshdr lookup_table_reshdr;
-
-	/* Location, size, and flags for the XML data of the WIM. */
 	struct wim_reshdr xml_data_reshdr;
-
-	/* Location, size, and flags for the boot metadata.  This means the
-	 * metadata resource for the image specified by boot_idx below.  Should
-	 * be zeroed out if boot_idx is 0. */
 	struct wim_reshdr boot_metadata_reshdr;
-
-	/* The index of the bootable image in the WIM file. If 0, there are no
-	 * bootable images available. */
 	u32 boot_idx;
-
-	/* The location of the optional integrity table used to verify the
-	 * integrity WIM.  Zeroed out if there is no integrity table.*/
 	struct wim_reshdr integrity_table_reshdr;
 };
 

@@ -51,20 +51,20 @@ new_wim_security_data(void)
  * Reads the security data from the metadata resource of a WIM image.
  *
  * @metadata_resource:	An array that contains the uncompressed metadata
- * 				resource for the WIM image.
+ *				resource for the WIM image.
  * @metadata_resource_len:	The length of @metadata_resource.  It must be at
  *				least 8 bytes.
  * @sd_ret:	A pointer to a pointer to a wim_security_data structure that
- * 		will be filled in with a pointer to a new wim_security_data
- * 		structure containing the security data on success.
+ *		will be filled in with a pointer to a new wim_security_data
+ *		structure containing the security data on success.
  *
  * Note: There is no `offset' argument because the security data is located at
  * the beginning of the metadata resource.
  *
  * Return values:
  *	WIMLIB_ERR_SUCCESS (0)
- * 	WIMLIB_ERR_INVALID_METADATA_RESOURCE
- * 	WIMLIB_ERR_NOMEM
+ *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
+ *	WIMLIB_ERR_NOMEM
  */
 int
 read_wim_security_data(const u8 metadata_resource[], size_t metadata_resource_len,

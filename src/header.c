@@ -89,8 +89,10 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 	if (ret)
 		goto read_error;
 
-	if (disk_hdr.magic != WIM_MAGIC) {
-		if (disk_hdr.magic == PWM_MAGIC) {
+	hdr->magic = le64_to_cpu(disk_hdr.magic);
+
+	if (hdr->magic != WIM_MAGIC) {
+		if (hdr->magic == PWM_MAGIC) {
 			/* Pipable WIM:  Use header at end instead, unless
 			 * actually reading from a pipe.  */
 			if (!in_fd->is_pipe) {
@@ -104,7 +106,6 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 			return WIMLIB_ERR_NOT_A_WIM_FILE;
 		}
 	}
-	hdr->magic = disk_hdr.magic;
 
 	if (le32_to_cpu(disk_hdr.hdr_size) != sizeof(struct wim_header_disk)) {
 		ERROR("\"%"TS"\": Header size is invalid (%u bytes)",
@@ -171,7 +172,7 @@ write_wim_header_at_offset(const struct wim_header *hdr, struct filedes *out_fd,
 	      ((hdr->magic == PWM_MAGIC) ? "pipable " : ""),
 	      offset);
 
-	disk_hdr.magic = hdr->magic;
+	disk_hdr.magic = cpu_to_le64(hdr->magic);
 	disk_hdr.hdr_size = cpu_to_le32(sizeof(struct wim_header_disk));
 	disk_hdr.wim_version = cpu_to_le32(hdr->wim_version);
 	disk_hdr.wim_flags = cpu_to_le32(hdr->flags);
@@ -273,7 +274,7 @@ struct hdr_flag {
 	const char *name;
 };
 struct hdr_flag hdr_flags[] = {
-	{WIM_HDR_FLAG_RESERVED, 	"RESERVED"},
+	{WIM_HDR_FLAG_RESERVED,		"RESERVED"},
 	{WIM_HDR_FLAG_COMPRESSION,	"COMPRESSION"},
 	{WIM_HDR_FLAG_READONLY,		"READONLY"},
 	{WIM_HDR_FLAG_SPANNED,		"SPANNED"},

@@ -58,14 +58,11 @@ int
 read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 		       u64 size,
 		       consume_data_callback_t cb,
-		       u32 in_chunk_size,
-		       void *ctx_or_buf,
-		       int _ignored_flags)
+		       void *cb_ctx)
 {
 	int ret = 0;
-	void *out_buf;
-	bool out_buf_malloced;
 	u64 bytes_remaining;
+	u8 buf[BUFFER_SIZE];
 
 	HANDLE hFile = win32_open_existing_file(lte->file_on_disk,
 						FILE_READ_DATA);
@@ -75,28 +72,12 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 		return WIMLIB_ERR_OPEN;
 	}
 
-	out_buf_malloced = false;
-	if (cb) {
-		if (in_chunk_size <= STACK_MAX) {
-			out_buf = alloca(in_chunk_size);
-		} else {
-			out_buf = MALLOC(in_chunk_size);
-			if (out_buf == NULL) {
-				ret = WIMLIB_ERR_NOMEM;
-				goto out_close_handle;
-			}
-			out_buf_malloced = true;
-		}
-	} else {
-		out_buf = ctx_or_buf;
-	}
-
 	bytes_remaining = size;
 	while (bytes_remaining) {
 		DWORD bytesToRead, bytesRead;
 
-		bytesToRead = min(in_chunk_size, bytes_remaining);
-		if (!ReadFile(hFile, out_buf, bytesToRead, &bytesRead, NULL) ||
+		bytesToRead = min(sizeof(buf), bytes_remaining);
+		if (!ReadFile(hFile, buf, bytesToRead, &bytesRead, NULL) ||
 		    bytesRead != bytesToRead)
 		{
 			set_errno_from_GetLastError();
@@ -106,16 +87,10 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 			break;
 		}
 		bytes_remaining -= bytesRead;
-		if (cb) {
-			ret = (*cb)(out_buf, bytesRead, ctx_or_buf);
-			if (ret)
-				break;
-		} else {
-			out_buf += bytesRead;
-		}
+		ret = (*cb)(buf, bytesRead, cb_ctx);
+		if (ret)
+			break;
 	}
-	if (out_buf_malloced)
-		FREE(out_buf);
 out_close_handle:
 	CloseHandle(hFile);
 	return ret;
@@ -123,62 +98,26 @@ out_close_handle:
 
 struct win32_encrypted_read_ctx {
 	consume_data_callback_t read_prefix_cb;
-	void *read_prefix_ctx_or_buf;
+	void *read_prefix_ctx;
 	int wimlib_err_code;
-	void *buf;
-	size_t buf_filled;
 	u64 bytes_remaining;
-	u32 in_chunk_size;
 };
 
 static DWORD WINAPI
-win32_encrypted_export_cb(unsigned char *_data, void *_ctx, unsigned long len)
+win32_encrypted_export_cb(unsigned char *data, void *_ctx, unsigned long len)
 {
-	const void *data = _data;
 	struct win32_encrypted_read_ctx *ctx = _ctx;
-	u32 in_chunk_size = ctx->in_chunk_size;
 	int ret;
+	size_t bytes_to_consume = min(len, ctx->bytes_remaining);
 
-	DEBUG("len = %lu", len);
-	if (ctx->read_prefix_cb) {
-		/* The length of the buffer passed to the ReadEncryptedFileRaw()
-		 * export callback is undocumented, so we assume it may be of
-		 * arbitrary size. */
-		size_t bytes_to_buffer = min(ctx->bytes_remaining - ctx->buf_filled,
-					     len);
-		while (bytes_to_buffer) {
-			size_t bytes_to_copy_to_buf =
-				min(bytes_to_buffer, in_chunk_size - ctx->buf_filled);
-
-			memcpy(ctx->buf + ctx->buf_filled, data,
-			       bytes_to_copy_to_buf);
-			ctx->buf_filled += bytes_to_copy_to_buf;
-			data += bytes_to_copy_to_buf;
-			bytes_to_buffer -= bytes_to_copy_to_buf;
-
-			if (ctx->buf_filled == in_chunk_size ||
-			    ctx->buf_filled == ctx->bytes_remaining)
-			{
-				ret = (*ctx->read_prefix_cb)(ctx->buf,
-							     ctx->buf_filled,
-							     ctx->read_prefix_ctx_or_buf);
-				if (ret) {
-					ctx->wimlib_err_code = ret;
-					/* Shouldn't matter what error code is returned
-					 * here, as long as it isn't ERROR_SUCCESS. */
-					return ERROR_READ_FAULT;
-				}
-				ctx->bytes_remaining -= ctx->buf_filled;
-				ctx->buf_filled = 0;
-			}
-		}
-	} else {
-		size_t len_to_copy = min(len, ctx->bytes_remaining);
-		ctx->read_prefix_ctx_or_buf = mempcpy(ctx->read_prefix_ctx_or_buf,
-						      data,
-						      len_to_copy);
-		ctx->bytes_remaining -= len_to_copy;
+	ret = (*ctx->read_prefix_cb)(data, bytes_to_consume, ctx->read_prefix_ctx);
+	if (ret) {
+		ctx->wimlib_err_code = ret;
+		/* Shouldn't matter what error code is returned here, as long as
+		 * it isn't ERROR_SUCCESS.  */
+		return ERROR_READ_FAULT;
 	}
+	ctx->bytes_remaining -= bytes_to_consume;
 	return ERROR_SUCCESS;
 }
 
@@ -186,9 +125,7 @@ int
 read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 				 u64 size,
 				 consume_data_callback_t cb,
-				 u32 in_chunk_size,
-				 void *ctx_or_buf,
-				 int _ignored_flags)
+				 void *cb_ctx)
 {
 	struct win32_encrypted_read_ctx export_ctx;
 	DWORD err;
@@ -199,16 +136,8 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	      size, lte->file_on_disk);
 
 	export_ctx.read_prefix_cb = cb;
-	export_ctx.read_prefix_ctx_or_buf = ctx_or_buf;
+	export_ctx.read_prefix_ctx = cb_ctx;
 	export_ctx.wimlib_err_code = 0;
-	if (cb) {
-		export_ctx.buf = MALLOC(in_chunk_size);
-		if (!export_ctx.buf)
-			return WIMLIB_ERR_NOMEM;
-	} else {
-		export_ctx.buf = NULL;
-	}
-	export_ctx.buf_filled = 0;
 	export_ctx.bytes_remaining = size;
 
 	err = OpenEncryptedFileRaw(lte->file_on_disk, 0, &file_ctx);
@@ -216,8 +145,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 		set_errno_from_win32_error(err);
 		ERROR_WITH_ERRNO("Failed to open encrypted file \"%ls\" "
 				 "for raw read", lte->file_on_disk);
-		ret = WIMLIB_ERR_OPEN;
-		goto out_free_buf;
+		return WIMLIB_ERR_OPEN;
 	}
 	err = ReadEncryptedFileRaw(win32_encrypted_export_cb,
 				   &export_ctx, file_ctx);
@@ -238,8 +166,6 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 		ret = 0;
 	}
 	CloseEncryptedFileRaw(file_ctx);
-out_free_buf:
-	FREE(export_ctx.buf);
 	return ret;
 }
 

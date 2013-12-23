@@ -1435,7 +1435,7 @@ read_pwm_stream_header(WIMStruct *pwm, struct wim_lookup_table_entry *lte,
 		return 0;
 	}
 
-	if (buf.stream_hdr.magic != PWM_STREAM_MAGIC) {
+	if (le64_to_cpu(buf.stream_hdr.magic) != PWM_STREAM_MAGIC) {
 		ERROR("Data read on pipe is invalid (expected stream header).");
 		return WIMLIB_ERR_INVALID_PIPABLE_WIM;
 	}
@@ -1508,7 +1508,7 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 		    && (needed_lte = lookup_resource(lookup_table, found_lte->hash))
 		    && (needed_lte->out_refcnt))
 		{
-			char *tmpfile_name = NULL;
+			tchar *tmpfile_name = NULL;
 			struct wim_lookup_table_entry *lte_override;
 			struct wim_lookup_table_entry tmpfile_lte;
 

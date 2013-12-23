@@ -88,13 +88,13 @@ do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 /* Attach or overlay a branch onto the WIM image.
  *
  * @root_p:
- * 	Pointer to the root of the WIM image, or pointer to NULL if it has not
- * 	been created yet.
+ *	Pointer to the root of the WIM image, or pointer to NULL if it has not
+ *	been created yet.
  * @branch
- * 	Branch to add.
+ *	Branch to add.
  * @target_path:
- * 	Path in the WIM image to add the branch, with leading and trailing
- * 	slashes stripped.
+ *	Path in the WIM image to add the branch, with leading and trailing
+ *	slashes stripped.
  */
 static int
 attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,

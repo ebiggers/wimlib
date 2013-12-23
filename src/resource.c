@@ -582,8 +582,8 @@ read_error:
 /* Read raw data from a file descriptor at the specified offset, feeding the
  * data it in chunks into the specified callback function.  */
 static int
-read_raw_file_data(struct filedes *in_fd, u64 size,
-		   consume_data_callback_t cb, void *cb_ctx, u64 offset)
+read_raw_file_data(struct filedes *in_fd, u64 offset, u64 size,
+		   consume_data_callback_t cb, void *cb_ctx)
 {
 	u8 buf[BUFFER_SIZE];
 	size_t bytes_to_read;
@@ -672,10 +672,10 @@ read_partial_wim_resource(const struct wim_resource_spec *rspec,
 						    cb, cb_ctx);
 	} else {
 		return read_raw_file_data(&rspec->wim->in_fd,
+					  rspec->offset_in_wim + offset,
 					  size,
 					  cb,
-					  cb_ctx,
-					  rspec->offset_in_wim + offset);
+					  cb_ctx);
 	}
 }
 
@@ -754,7 +754,7 @@ read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 		return WIMLIB_ERR_OPEN;
 	}
 	filedes_init(&fd, raw_fd);
-	ret = read_raw_file_data(&fd, size, cb, cb_ctx, 0);
+	ret = read_raw_file_data(&fd, 0, size, cb, cb_ctx);
 	filedes_close(&fd);
 	return ret;
 }
@@ -790,7 +790,7 @@ typedef int (*read_stream_prefix_handler_t)(const struct wim_lookup_table_entry 
  * reasons, depending on the stream location), or if @cb returned nonzero in
  * which case that error code will be returned.
  */
-int
+static int
 read_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 		   consume_data_callback_t cb, void *cb_ctx)
 {
@@ -1109,7 +1109,21 @@ read_full_stream_with_sha1(struct wim_lookup_table_entry *lte,
  * @cbs
  *	Callback functions to accept the stream data.
  * @flags
+ *	Bitwise OR of zero or more of the following flags:
  *
+ *	VERIFY_STREAM_HASHES:
+ *		For all streams being read that have already had SHA1 message
+ *		digests computed, calculate the SHA1 message digest of the read
+ *		data and compare it with the previously computed value.  If they
+ *		do not match, return WIMLIB_ERR_INVALID_RESOURCE_HASH.
+ *
+ *	COMPUTE_MISSING_STREAM_HASHES
+ *		For all streams being read that have not yet had their SHA1
+ *		message digests computed, calculate and save their SHA1 message
+ *		digests.
+ *
+ *	STREAM_LIST_ALREADY_SORTED
+ *		@stream_list is already sorted in sequential order for reading.
  *
  * Returns 0 on success; a nonzero error code on failure.  Failure can occur due
  * to an error reading the data or due to an error status being returned by any
@@ -1261,6 +1275,7 @@ int
 extract_stream(struct wim_lookup_table_entry *lte, u64 size,
 	       consume_data_callback_t extract_chunk, void *extract_chunk_arg)
 {
+	wimlib_assert(size <= lte->size);
 	if (size == lte->size) {
 		/* Do SHA1.  */
 		struct read_stream_list_callbacks cbs = {
@@ -1313,15 +1328,15 @@ sha1_stream(struct wim_lookup_table_entry *lte)
  * specification.  */
 void
 wim_res_hdr_to_spec(const struct wim_reshdr *reshdr, WIMStruct *wim,
-		    struct wim_resource_spec *spec)
+		    struct wim_resource_spec *rspec)
 {
-	spec->wim = wim;
-	spec->offset_in_wim = reshdr->offset_in_wim;
-	spec->size_in_wim = reshdr->size_in_wim;
-	spec->uncompressed_size = reshdr->uncompressed_size;
-	INIT_LIST_HEAD(&spec->stream_list);
-	spec->flags = reshdr->flags;
-	spec->is_pipable = wim_is_pipable(wim);
+	rspec->wim = wim;
+	rspec->offset_in_wim = reshdr->offset_in_wim;
+	rspec->size_in_wim = reshdr->size_in_wim;
+	rspec->uncompressed_size = reshdr->uncompressed_size;
+	INIT_LIST_HEAD(&rspec->stream_list);
+	rspec->flags = reshdr->flags;
+	rspec->is_pipable = wim_is_pipable(wim);
 }
 
 /* Convert a stand-alone resource specification to a WIM resource header.  */

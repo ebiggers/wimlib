@@ -62,12 +62,13 @@ enum resource_location {
 	 * `struct wim_resource_spec' pointed to by @rspec.  @offset_in_res
 	 * identifies the offset at which this particular stream begins in the
 	 * uncompressed data of the resource; this is normally 0, but in general
-	 * a WIM resource may contain multiple streams.  */
+	 * a WIM resource may be "packed" and potentially contain multiple
+	 * streams.  */
 	RESOURCE_IN_WIM,
 
 	/* The stream is located in the external file named by @file_on_disk.
-	 * On Windows, @file_on_disk may actually specify a named data stream.
-	 */
+	 * On Windows, @file_on_disk may actually specify a named data stream
+	 * (file path, then colon, then name of the stream).  */
 	RESOURCE_IN_FILE_ON_DISK,
 
 	/* The stream is directly attached in the in-memory buffer pointed to by
@@ -98,43 +99,42 @@ enum resource_location {
 
 };
 
-/*
- * An entry in the lookup table in the WIM file.
+/* Specification for a stream, which may be the contents of a file (unnamed data
+ * stream), a named data stream, reparse point data, or a WIM metadata resource.
  *
- * It is used to find data streams for files in the WIM.
- *
- * Metadata resources and reparse point data buffers will also have lookup table
- * entries associated with the data.
- *
- * The lookup_table_entry for a given dentry or alternate stream entry in the
- * WIM is found using the SHA1 message digest field.
- */
+ * One instance of this structure is created for each entry in the WIM's lookup
+ * table, hence the name of the struct.  Each of these entries contains the SHA1
+ * message digest of a stream and the location of the stream data in the WIM
+ * file (size, location, flags).  The in-memory lookup table is a map from SHA1
+ * message digests to stream locations.  */
 struct wim_lookup_table_entry {
 
-	/* List of lookup table entries in this hash bucket */
+	/* List node for a hash bucket of the lookup table.  */
 	struct hlist_node hash_list;
 
-	/* Uncompressed size of the stream.  */
+	/* Uncompressed size of this stream.  */
 	u64 size;
 
 	/* Stream flags (WIM_RESHDR_FLAG_*).  */
 	u32 flags : 8;
 
-	/* One of the `enum resource_location' values documented above. */
-	u32 resource_location : 5;
+	/* One of the `enum resource_location' values documented above.  */
+	u32 resource_location : 4;
 
 	/* 1 if this stream has not had a SHA1 message digest calculated for it
-	 * yet */
+	 * yet.  */
 	u32 unhashed : 1;
 
-	/* Temoorary files used for writing; set as documented for
+	/* Temoorary fields used when writing streams; set as documented for
 	 * prepare_stream_list_for_write().  */
 	u32 unique_size : 1;
 	u32 will_be_in_output_wim : 1;
 
 	/* Set to 1 when a metadata entry has its checksum changed; in such
-	 * cases the hash is no longer valid to verify the data if the metadata
-	 * resource is read again.  */
+	 * cases the hash cannot be used to verify the data if the metadata
+	 * resource is read again.  (This could be avoided if we used separate
+	 * fields for input/output checksum, but most stream entries wouldn't
+	 * need this.)  */
 	u32 dont_check_metadata_hash : 1;
 
 	union {
@@ -162,27 +162,31 @@ struct wim_lookup_table_entry {
 	};
 
 	/* Number of times this lookup table entry is referenced by dentries in
-	 * the WIM.  */
+	 * the WIM.  When a WIM's lookup table is read, this field is
+	 * initialized from a corresponding entry; while it should be correct,
+	 * in general it may not be.  wim_recalculate_refcnts() recalculates the
+	 * reference counts for all streams and is run before doing any
+	 * deletions.  */
 	u32 refcnt;
 
-	/* Actual reference count to this stream (only used while verifying an
-	 * image). */
-	u32 real_refcnt;
-
-	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
-	 * whenever the stream pointed to by this lookup table entry needs to be
-	 * written.  The stream only need to be written when out_refcnt is
-	 * nonzero, since otherwise it is not referenced by any dentries. */
+	/* When a WIM file is written, this is set to the number of references
+	 * (by dentries) to this stream in the output WIM file.
+	 *
+	 * During extraction, this is set to the number of times the stream must
+	 * be extracted.
+	 *
+	 * During image export, this is set to the number of references of this
+	 * stream that originated from the source WIM.  */
 	u32 out_refcnt;
 
 #ifdef WITH_FUSE
-	/* Number of times this stream has been opened (used only during
-	 * mounting) */
+	/* Number of times this stream has been opened; used only during
+	 * mounting.  */
 	u16 num_opened_fds;
 #endif
 
-	/* Pointers to somewhere where the stream is actually located.  See the
-	 * comments for the @resource_location field above. */
+	/* Specification of where this stream is actually located.  Which member
+	 * is valid is determined by the @resource_location field.  */
 	union {
 		struct {
 			struct wim_resource_spec *rspec;
@@ -199,45 +203,59 @@ struct wim_lookup_table_entry {
 	};
 
 	/* Links together streams that share the same underlying WIM resource.
-	 * The head is wim_resource_spec.stream_list.  */
+	 * The head is the `stream_list' member of `struct wim_resource_spec'.
+	 */
 	struct list_head rspec_node;
 
-	/* This field is used for the special hardlink or symlink image
-	 * extraction mode.   In these mode, all identical files are linked
-	 * together, and @extracted_file will be set to the filename of the
-	 * first extracted file containing this stream.  */
+	/* This field is used during the hardlink and symlink image extraction
+	 * modes.   In these modes, all identical files are linked together, and
+	 * @extracted_file will be set to the filename of the first extracted
+	 * file containing this stream.  */
 	tchar *extracted_file;
 
 	/* Temporary fields  */
 	union {
-		/* Used temporarily during WIM file writing  */
+		/* Fields used temporarily during WIM file writing.  */
 		struct {
 			union {
+				/* List node used for stream size table.  */
 				struct hlist_node hash_list_2;
+
+				/* Metadata for the underlying packed resource
+				 * in the WIM being written (only valid if
+				 * WIM_RESHDR_FLAG_PACKED_STREAMS set in
+				 * out_reshdr.flags).  */
 				struct {
 					u64 out_res_offset_in_wim;
 					u64 out_res_size_in_wim;
-					u64 out_res_uncompressed_size;
 				};
 			};
+
 			/* Links streams being written to the WIM.  */
 			struct list_head write_streams_list;
 
+			/* Metadata for this stream in the WIM being written.
+			 */
 			struct wim_reshdr out_reshdr;
 		};
 
 		/* Used temporarily during extraction  */
 		union {
-			/* out_refcnt tracks number of slots filled */
-			struct wim_dentry *inline_lte_dentries[8];
+			/* Dentries to extract that reference this stream.
+			 * out_refcnt tracks the number of slots filled.  */
+			struct wim_dentry *inline_lte_dentries[7];
 			struct {
 				struct wim_dentry **lte_dentries;
-				unsigned long alloc_lte_dentries;
+				size_t alloc_lte_dentries;
 			};
 		};
+
+		/* Actual reference count to this stream (only used while
+		 * verifying an image).  */
+		u32 real_refcnt;
 	};
 
-	/* Temporary list fields */
+	/* Temporary list fields.  */
 	union {
 		/* Links streams for writing lookup table.  */
 		struct list_head lookup_table_list;
@@ -294,7 +312,7 @@ free_lookup_table(struct wim_lookup_table *table);
 extern void
 lookup_table_insert(struct wim_lookup_table *table, struct wim_lookup_table_entry *lte);
 
-/* Unlinks a lookup table entry from the table; does not free it. */
+/* Unlinks a lookup table entry from the table; does not free it.  */
 static inline void
 lookup_table_unlink(struct wim_lookup_table *table, struct wim_lookup_table_entry *lte)
 {
@@ -381,7 +399,6 @@ static inline void
 lte_unbind_wim_resource_spec(struct wim_lookup_table_entry *lte)
 {
 	list_del(&lte->rspec_node);
-	lte->rspec = NULL;
 	lte->resource_location = RESOURCE_NONEXISTENT;
 }
 

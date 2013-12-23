@@ -126,7 +126,7 @@ full_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
 	for (bytes_remaining = count;
 	     bytes_remaining != 0;
 	     bytes_remaining -= bytes_read, buf += bytes_read,
-	     	offset += bytes_read)
+		offset += bytes_read)
 	{
 		bytes_read = pread(fd->fd, buf, bytes_remaining, offset);
 		if (unlikely(bytes_read <= 0)) {
@@ -194,7 +194,7 @@ full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
 	for (bytes_remaining = count;
 	     bytes_remaining != 0;
 	     bytes_remaining -= bytes_written, buf += bytes_written,
-	     	offset += bytes_written)
+		offset += bytes_written)
 	{
 		bytes_written = pwrite(fd->fd, buf, bytes_remaining, offset);
 		if (unlikely(bytes_written < 0)) {
@@ -206,6 +206,7 @@ full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
 	return 0;
 }
 
+#if 0
 /* Wrapper around writev() that checks for errors and keep retrying until all
  * requested bytes have been written.
  *
@@ -242,6 +243,7 @@ full_writev(struct filedes *fd, struct iovec *iov, int iovcnt)
 	fd->offset += total_bytes_written;
 	return 0;
 }
+#endif
 
 ssize_t
 raw_pread(struct filedes *fd, void *buf, size_t count, off_t offset)

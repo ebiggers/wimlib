@@ -1943,7 +1943,7 @@ wimfs_read(const char *path, char *buf, size_t size,
 	case RESOURCE_IN_WIM:
 		if (read_partial_wim_stream_into_buf(fd->f_lte, size,
 						     offset, buf))
-			ret = -errno;
+			ret = errno ? -errno : -EIO;
 		else
 			ret = size;
 		break;

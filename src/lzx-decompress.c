@@ -190,10 +190,10 @@ read_huffsym_using_alignedtree(struct input_bitstream *istream,
  * code length values from the input.
  *
  * @istream:	The bit stream for the input.  It is positioned on the beginning
- * 			of the pretree for the code length values.
+ *			of the pretree for the code length values.
  * @lens:	An array that contains the length values from the previous time
- * 			the code lengths for this Huffman tree were read, or all
- * 			0's if this is the first time.
+ *			the code lengths for this Huffman tree were read, or all
+ *			0's if this is the first time.
  * @num_lens:	Number of length values to decode and return.
  *
  */
@@ -310,15 +310,15 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
  *
  * @istream:		The input bitstream.
  * @block_size_ret:	A pointer to an int into which the size of the block,
- * 				in bytes, will be returned.
+ *				in bytes, will be returned.
  * @block_type_ret:	A pointer to an int into which the type of the block
- * 				(LZX_BLOCKTYPE_*) will be returned.
+ *				(LZX_BLOCKTYPE_*) will be returned.
  * @tables:		A pointer to a lzx_tables structure in which the
- * 				main tree, the length tree, and possibly the
- * 				aligned offset tree will be constructed.
+ *				main tree, the length tree, and possibly the
+ *				aligned offset tree will be constructed.
  * @queue:	A pointer to the least-recently-used queue into which
- * 			R0, R1, and R2 will be written (only for uncompressed
- * 			blocks, which contain this information in the header)
+ *			R0, R1, and R2 will be written (only for uncompressed
+ *			blocks, which contain this information in the header)
  */
 static int
 lzx_read_block_header(struct input_bitstream *istream,
@@ -518,14 +518,14 @@ lzx_read_block_header(struct input_bitstream *istream,
  *			tree.
  *
  * @block_type:		The type of the block (LZX_BLOCKTYPE_ALIGNED or
- * 			LZX_BLOCKTYPE_VERBATIM)
+ *			LZX_BLOCKTYPE_VERBATIM)
  *
  * @bytes_remaining:	The amount of uncompressed data remaining to be
- * 			uncompressed in this block.  It is an error if the match
- * 			is longer than this number.
+ *			uncompressed in this block.  It is an error if the match
+ *			is longer than this number.
  *
  * @window:		A pointer to the window into which the uncompressed
- * 			data is being written.
+ *			data is being written.
  *
  * @window_pos:		The current byte offset in the window.
  *
@@ -539,9 +539,9 @@ lzx_read_block_header(struct input_bitstream *istream,
  *
  * Returns the length of the match, or a negative number on error.  The possible
  * error cases are:
- * 	- Match would exceed the amount of data remaining to be uncompressed.
- * 	- Match refers to data before the window.
- * 	- The input bitstream ended unexpectedly.
+ *	- Match would exceed the amount of data remaining to be uncompressed.
+ *	- Match refers to data before the window.
+ *	- The input bitstream ended unexpectedly.
  */
 static int
 lzx_decode_match(unsigned main_element, int block_type,
@@ -764,14 +764,14 @@ undo_call_insn_preprocessing(u8 uncompressed_data[], int uncompressed_data_len)
  * been read.
  *
  * @block_type:	The type of the block (LZX_BLOCKTYPE_VERBATIM or
- * 		LZX_BLOCKTYPE_ALIGNED)
+ *		LZX_BLOCKTYPE_ALIGNED)
  * @block_size:	The size of the block, in bytes.
  * @num_main_syms:	Number of symbols in the main alphabet.
  * @window:	Pointer to the decompression window.
  * @window_pos:	The current position in the window.  Will be 0 for the first
- * 			block.
+ *			block.
  * @tables:	The Huffman decoding tables for the block (main, length, and
- * 			aligned offset, the latter only for LZX_BLOCKTYPE_ALIGNED)
+ *			aligned offset, the latter only for LZX_BLOCKTYPE_ALIGNED)
  * @queue:	The least-recently-used queue for match offsets.
  * @istream:	The input bitstream for the compressed literals.
  */

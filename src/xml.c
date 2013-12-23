@@ -690,7 +690,7 @@ xml_write_strings_from_specs(xmlTextWriter *writer,
 	for (size_t i = 0; i < num_specs; i++) {
 		int rc = xml_write_string(writer, specs[i].name,
 				      *(const tchar * const *)
-				      	(struct_with_strings + specs[i].offset));
+					(struct_with_strings + specs[i].offset));
 		if (rc)
 			return rc;
 	}

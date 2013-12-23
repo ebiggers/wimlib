@@ -71,7 +71,7 @@
 
 #define LZX_ALIGNEDCODE_NUM_SYMBOLS	8
 #define LZX_ALIGNEDCODE_TABLEBITS	7
-#define LZX_ALIGNEDCODE_ELEMENT_SIZE 	3
+#define LZX_ALIGNEDCODE_ELEMENT_SIZE	3
 
 /* Maximum allowed length of Huffman codewords.  */
 #define LZX_MAX_MAIN_CODEWORD_LEN	16

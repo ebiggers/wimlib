@@ -87,7 +87,7 @@ read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 	int ret;
 	u8 buf[BUFFER_SIZE];
 
- 	ni = ntfs_pathname_to_inode(vol, NULL, loc->path);
+	ni = ntfs_pathname_to_inode(vol, NULL, loc->path);
 	if (!ni) {
 		ERROR_WITH_ERRNO("Can't find NTFS inode for \"%"TS"\"", loc->path);
 		ret = WIMLIB_ERR_NTFS_3G;
