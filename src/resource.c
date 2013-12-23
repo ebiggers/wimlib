@@ -338,7 +338,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 			chunk_offsets_alloc_size -
 			chunk_table_size_to_read;
 
-		ret = full_pread(in_fd, chunk_table_data, chunk_table_size,
+		ret = full_pread(in_fd, chunk_table_data, chunk_table_size_to_read,
 				 file_offset_of_needed_chunk_entries);
 		if (ret)
 			goto read_error;
