@@ -43,7 +43,9 @@
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/resource.h"
-#include "wimlib/win32.h"
+#ifdef __WIN32__
+#  include "wimlib/win32.h" /* win32_rename_replacement() */
+#endif
 #include "wimlib/write.h"
 #include "wimlib/xml.h"
 
