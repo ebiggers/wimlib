@@ -48,6 +48,9 @@ struct wim_resource_spec {
 	 * resource will be in a slightly different format if it is compressed.
 	 * This is a wimlib extension.  */
 	u32 is_pipable : 1;
+
+	/* Temporary flag.  */
+	u32 raw_copy_ok : 1;
 };
 
 /* On-disk version of a WIM resource header.  */
@@ -99,6 +102,10 @@ struct wim_reshdr {
  * should be WIM_VERSION_PACKED_STREAMS.  */
 #define WIM_RESHDR_FLAG_PACKED_STREAMS	0x10
 
+/* Magic number in the 'uncompressed_size' field of the resource header that
+ * identifies the main entry for a pack.  */
+#define WIM_PACK_MAGIC_NUMBER		0x100000000ULL
+
 /* Returns true if the specified WIM resource is compressed, using either the
  * original chunk table layout or the alternate layout for resources that may
  * contain multiple packed streams.  */
@@ -137,17 +144,31 @@ void
 put_wim_reshdr(const struct wim_reshdr *reshdr,
 	       struct wim_reshdr_disk *disk_reshdr);
 
-/* wimlib internal flags used when reading or writing resources.  */
+/* Alternate chunk table format for resources with
+ * WIM_RESHDR_FLAG_PACKED_STREAMS set.  */
+struct alt_chunk_table_header_disk {
+	/* Uncompressed size of the resource in bytes.  */
+	le64 res_usize;
+
+	/* Number of bytes each compressed chunk decompresses into, except
+	 * possibly the last which decompresses into the remainder.  */
+	le32 chunk_size;
+
+	/* Compression format used for compressed chunks:
+	 * 0 = None
+	 * 1 = LZX
+	 * 2 = XPRESS
+	 * 3 = LZMS  */
+	le32 compression_format;
+
+	/* This header is directly followed by a table of compressed sizes of
+	 * the chunks.  */
+} _packed_attribute;
+
+/* wimlib internal flags used when writing resources.  */
 #define WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS		0x00000001
 #define WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE		0x00000002
-#define WIMLIB_WRITE_RESOURCE_MASK			0x0000ffff
-
-#define WIMLIB_READ_RESOURCE_FLAG_RAW_FULL		0x80000000
-#define WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS		0x40000000
-#define WIMLIB_READ_RESOURCE_FLAG_RAW		(WIMLIB_READ_RESOURCE_FLAG_RAW_FULL |  \
-						 WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS)
-#define WIMLIB_READ_RESOURCE_MASK			0xffff0000
-
+#define WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS		0x00000004
 
 /* Functions to read streams  */
 
@@ -172,7 +193,7 @@ skip_wim_stream(struct wim_lookup_table_entry *lte);
 extern int
 read_stream_prefix(const struct wim_lookup_table_entry *lte,
 		   u64 size, consume_data_callback_t cb,
-		   void *cb_ctx, int flags);
+		   void *cb_ctx);
 
 typedef int (*read_stream_list_begin_stream_t)(struct wim_lookup_table_entry *lte,
 					       bool is_partial_res,
@@ -180,6 +201,11 @@ typedef int (*read_stream_list_begin_stream_t)(struct wim_lookup_table_entry *lt
 typedef int (*read_stream_list_end_stream_t)(struct wim_lookup_table_entry *lte,
 					     int status,
 					     void *ctx);
+
+#define VERIFY_STREAM_HASHES		0x1
+#define COMPUTE_MISSING_STREAM_HASHES	0x2
+#define STREAM_LIST_ALREADY_SORTED	0x4
+#define BEGIN_STREAM_STATUS_SKIP_STREAM		-1
 
 /* Callback functions and contexts for read_stream_list().  */
 struct read_stream_list_callbacks {
@@ -206,8 +232,8 @@ struct read_stream_list_callbacks {
 extern int
 read_stream_list(struct list_head *stream_list,
 		 size_t list_head_offset,
-		 u32 cb_chunk_size,
-		 const struct read_stream_list_callbacks *cbs);
+		 const struct read_stream_list_callbacks *cbs,
+		 int flags);
 
 /* Functions to extract streams.  */
 

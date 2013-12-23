@@ -91,13 +91,13 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 	struct wim_lookup_table_entry *new;
 
 	new = memdup(old, sizeof(struct wim_lookup_table_entry));
-	if (!new)
+	if (new == NULL)
 		return NULL;
 
 	new->extracted_file = NULL;
 	switch (new->resource_location) {
 	case RESOURCE_IN_WIM:
-		list_add(&new->wim_resource_list, &new->rspec->stream_list);
+		list_add(&new->rspec_node, &new->rspec->stream_list);
 		break;
 
 	case RESOURCE_IN_FILE_ON_DISK:
@@ -110,12 +110,12 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 			     (void*)&old->staging_file_name);
 #endif
 		new->file_on_disk = TSTRDUP(old->file_on_disk);
-		if (!new->file_on_disk)
+		if (new->file_on_disk == NULL)
 			goto out_free;
 		break;
 	case RESOURCE_IN_ATTACHED_BUFFER:
 		new->attached_buffer = memdup(old->attached_buffer, old->size);
-		if (!new->attached_buffer)
+		if (new->attached_buffer == NULL)
 			goto out_free;
 		break;
 #ifdef WITH_NTFS_3G
@@ -123,18 +123,18 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 		if (old->ntfs_loc) {
 			struct ntfs_location *loc;
 			loc = memdup(old->ntfs_loc, sizeof(struct ntfs_location));
-			if (!loc)
+			if (loc == NULL)
 				goto out_free;
 			loc->path = NULL;
 			loc->stream_name = NULL;
 			new->ntfs_loc = loc;
 			loc->path = STRDUP(old->ntfs_loc->path);
-			if (!loc->path)
+			if (loc->path == NULL)
 				goto out_free;
-			if (loc->stream_name_nchars) {
+			if (loc->stream_name_nchars != 0) {
 				loc->stream_name = memdup(old->ntfs_loc->stream_name,
 							  loc->stream_name_nchars * 2);
-				if (!loc->stream_name)
+				if (loc->stream_name == NULL)
 					goto out_free;
 			}
 		}
@@ -155,7 +155,7 @@ free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 	if (lte) {
 		switch (lte->resource_location) {
 		case RESOURCE_IN_WIM:
-			list_del(&lte->wim_resource_list);
+			list_del(&lte->rspec_node);
 			if (list_empty(&lte->rspec->stream_list))
 				FREE(lte->rspec);
 			break;
@@ -298,7 +298,7 @@ for_lookup_table_entry(struct wim_lookup_table *table,
 }
 
 /* qsort() callback that sorts streams (represented by `struct
- * wim_lookup_table_entry's) into an order optimized for reading and writing.
+ * wim_lookup_table_entry's) into an order optimized for reading.
  *
  * Sorting is done primarily by resource location, then secondarily by a
  * per-resource location order.  For example, resources in WIM files are sorted
@@ -310,7 +310,6 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 	const struct wim_lookup_table_entry *lte1, *lte2;
 	int v;
 	WIMStruct *wim1, *wim2;
-	u64 offset1, offset2;
 
 	lte1 = *(const struct wim_lookup_table_entry**)p1;
 	lte2 = *(const struct wim_lookup_table_entry**)p2;
@@ -338,15 +337,9 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 		if (v)
 			return v;
 
-		/* Compare by offset.  */
-		offset1 = lte1->rspec->offset_in_wim + lte1->offset_in_res;
-		offset2 = lte2->rspec->offset_in_wim + lte2->offset_in_res;
+		return cmp_u64(lte1->rspec->offset_in_wim + lte1->offset_in_res,
+			       lte2->rspec->offset_in_wim + lte2->offset_in_res);
 
-		if (offset1 < offset2)
-			return -1;
-		if (offset1 > offset2)
-			return 1;
-		return 0;
 	case RESOURCE_IN_FILE_ON_DISK:
 #ifdef WITH_FUSE
 	case RESOURCE_IN_STAGING_FILE:
@@ -370,8 +363,9 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 }
 
 int
-sort_stream_list_by_sequential_order(struct list_head *stream_list,
-				     size_t list_head_offset)
+sort_stream_list(struct list_head *stream_list,
+		 size_t list_head_offset,
+		 int (*compar)(const void *, const void*))
 {
 	struct list_head *cur;
 	struct wim_lookup_table_entry **array;
@@ -382,10 +376,14 @@ sort_stream_list_by_sequential_order(struct list_head *stream_list,
 	list_for_each(cur, stream_list)
 		num_streams++;
 
+	if (num_streams <= 1)
+		return 0;
+
 	array_size = num_streams * sizeof(array[0]);
 	array = MALLOC(array_size);
 	if (array == NULL)
 		return WIMLIB_ERR_NOMEM;
+
 	cur = stream_list->next;
 	for (i = 0; i < num_streams; i++) {
 		array[i] = (struct wim_lookup_table_entry*)((u8*)cur -
@@ -393,8 +391,7 @@ sort_stream_list_by_sequential_order(struct list_head *stream_list,
 		cur = cur->next;
 	}
 
-	qsort(array, num_streams, sizeof(array[0]),
-	      cmp_streams_by_sequential_order);
+	qsort(array, num_streams, sizeof(array[0]), compar);
 
 	INIT_LIST_HEAD(stream_list);
 	for (i = 0; i < num_streams; i++) {
@@ -404,6 +401,15 @@ sort_stream_list_by_sequential_order(struct list_head *stream_list,
 	}
 	FREE(array);
 	return 0;
+}
+
+/* Sort the specified list of streams in an order optimized for reading.  */
+int
+sort_stream_list_by_sequential_order(struct list_head *stream_list,
+				     size_t list_head_offset)
+{
+	return sort_stream_list(stream_list, list_head_offset,
+				cmp_streams_by_sequential_order);
 }
 
 
@@ -482,13 +488,13 @@ validate_resource(const struct wim_resource_spec *rspec)
 	/* Verify that each stream in the resource has a valid offset and size,
 	 * and that no streams overlap.  */
 	cur_offset = 0;
-	list_for_each_entry(lte, &rspec->stream_list, wim_resource_list) {
+	list_for_each_entry(lte, &rspec->stream_list, rspec_node) {
 		if (lte->offset_in_res + lte->size < lte->size ||
 		    lte->offset_in_res + lte->size > rspec->uncompressed_size ||
 		    lte->offset_in_res < cur_offset)
 			goto invalid;
 
-		cur_offset = lte->offset_in_res;
+		cur_offset = lte->offset_in_res + lte->size;
 	}
 	return 0;
 
@@ -523,6 +529,7 @@ read_wim_lookup_table(WIMStruct *wim)
 	struct wim_lookup_table_entry *cur_entry, *duplicate_entry;
 	struct wim_resource_spec *cur_rspec;
 	void *buf;
+	bool back_to_back_pack;
 
 	DEBUG("Reading lookup table.");
 
@@ -586,11 +593,35 @@ read_wim_lookup_table(WIMStruct *wim)
 			continue;
 		}
 
+		if (!(reshdr.flags & (WIM_RESHDR_FLAG_PACKED_STREAMS |
+				      WIM_RESHDR_FLAG_COMPRESSED))) {
+			if (reshdr.uncompressed_size != reshdr.size_in_wim) {
+				ERROR("Invalid resource entry!");
+				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+				goto out_free_cur_entry;
+			}
+		}
+
+		back_to_back_pack = false;
 		if (!(reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) ||
-		    cur_rspec == NULL)
+		    cur_rspec == NULL ||
+		    (back_to_back_pack =
+		     ((reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
+		      reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER &&
+		      cur_rspec != NULL &&
+		      cur_rspec->size_in_wim != 0)))
 		{
 			/* Starting new run of streams that share the same WIM
 			 * resource.  */
+			struct wim_lookup_table_entry *prev_entry = NULL;
+
+			if (back_to_back_pack) {
+				prev_entry = list_entry(cur_rspec->stream_list.prev,
+							struct wim_lookup_table_entry,
+							rspec_node);
+				lte_unbind_wim_resource_spec(prev_entry);
+				cur_rspec->uncompressed_size -= prev_entry->size;
+			}
 			if (cur_rspec != NULL) {
 				ret = validate_resource(cur_rspec);
 				if (ret)
@@ -614,32 +645,43 @@ read_wim_lookup_table(WIMStruct *wim)
 			if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 				cur_rspec->size_in_wim = 0;
 				cur_rspec->uncompressed_size = 0;
-				cur_rspec->flags = 0;
+				cur_rspec->flags = WIM_RESHDR_FLAG_PACKED_STREAMS;
+			}
+
+			if (prev_entry) {
+				lte_bind_wim_resource_spec(prev_entry, cur_rspec);
+				cur_rspec->uncompressed_size = prev_entry->size;
 			}
 		}
 
+		if ((reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
+		    reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER)
+		{
+			/* Found the specification for the packed resource.
+			 * Transfer the values to the `struct
+			 * wim_resource_spec', and discard the current stream
+			 * since this lookup table entry did not, in fact,
+			 * correspond to a "stream".  */
+
+			cur_rspec->offset_in_wim = reshdr.offset_in_wim;
+			cur_rspec->size_in_wim = reshdr.size_in_wim;
+			cur_rspec->flags = reshdr.flags;
+			DEBUG("Full pack is %"PRIu64" compressed bytes "
+			      "at file offset %"PRIu64" (flags 0x%02x)",
+			      cur_rspec->size_in_wim,
+			      cur_rspec->offset_in_wim,
+			      cur_rspec->flags);
+			free_lookup_table_entry(cur_entry);
+			continue;
+		}
+
 		if (is_zero_hash(cur_entry->hash)) {
-			if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
-				/* Found the specification for the packed resource.
-				 * Transfer the values to the `struct
-				 * wim_resource_spec', and discard the current stream
-				 * since this lookup table entry did not, in fact,
-				 * correspond to a "stream".  */
-				cur_rspec->offset_in_wim = reshdr.offset_in_wim;
-				cur_rspec->size_in_wim = reshdr.size_in_wim;
-				cur_rspec->flags = reshdr.flags;
-				DEBUG("Full run is %"PRIu64" compressed bytes "
-				      "at file offset %"PRIu64" (flags 0x%02x)",
-				      cur_rspec->size_in_wim,
-				      cur_rspec->offset_in_wim,
-				      cur_rspec->flags);
-			}
 			free_lookup_table_entry(cur_entry);
 			continue;
 		}
 
 		if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
-			/* Continuing the run with another stream.  */
+			/* Continuing the pack with another stream.  */
 			DEBUG("Continuing packed run with stream: "
 			      "%"PRIu64" uncompressed bytes @ resource offset %"PRIu64")",
 			      reshdr.size_in_wim, reshdr.offset_in_wim);
@@ -666,14 +708,16 @@ read_wim_lookup_table(WIMStruct *wim)
 
 		if (cur_entry->flags & WIM_RESHDR_FLAG_METADATA) {
 			/* Lookup table entry for a metadata resource */
+
+			/* Metadata entries with no references must be ignored;
+			 * see for example the WinPE WIMs from the WAIK v2.1.
+			 * */
+			if (cur_entry->refcnt == 0) {
+				free_lookup_table_entry(cur_entry);
+				continue;
+			}
+
 			if (cur_entry->refcnt != 1) {
-				/* Metadata entries with no references must be
-				 * ignored.  See for example the WinPE WIMs from
-				 * WAIK v2.1.  */
-				if (cur_entry->refcnt == 0) {
-					free_lookup_table_entry(cur_entry);
-					continue;
-				}
 				if (wimlib_print_errors) {
 					ERROR("Found metadata resource with refcnt != 1:");
 					print_lookup_table_entry(cur_entry, stderr);
@@ -738,7 +782,7 @@ read_wim_lookup_table(WIMStruct *wim)
 	if (cur_rspec != NULL) {
 		ret = validate_resource(cur_rspec);
 		if (ret)
-			goto out_free_cur_entry;
+			goto out_free_lookup_table;
 	}
 
 	if (wim->hdr.part_number == 1 && wim->current_image != wim->hdr.image_count) {
@@ -767,19 +811,18 @@ out:
 	return ret;
 }
 
-
 static void
-write_wim_lookup_table_entry(const struct wim_lookup_table_entry *lte,
-			     struct wim_lookup_table_entry_disk *disk_entry,
-			     u16 part_number)
+put_wim_lookup_table_entry(struct wim_lookup_table_entry_disk *disk_entry,
+			   const struct wim_reshdr *out_reshdr,
+			   u16 part_number, u32 refcnt, const u8 *hash)
 {
-	put_wim_reshdr(&lte->out_reshdr, &disk_entry->reshdr);
+	put_wim_reshdr(out_reshdr, &disk_entry->reshdr);
 	disk_entry->part_number = cpu_to_le16(part_number);
-	disk_entry->refcnt = cpu_to_le32(lte->out_refcnt);
-	copy_hash(disk_entry->hash, lte->hash);
+	disk_entry->refcnt = cpu_to_le32(refcnt);
+	copy_hash(disk_entry->hash, hash);
 }
 
-static int
+int
 write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					struct filedes *out_fd,
 					u16 part_number,
@@ -792,23 +835,68 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 	struct wim_lookup_table_entry_disk *table_buf;
 	struct wim_lookup_table_entry_disk *table_buf_ptr;
 	int ret;
+	u64 prev_res_offset_in_wim = ~0ULL;
 
 	table_size = 0;
-	list_for_each_entry(lte, stream_list, lookup_table_list)
+	list_for_each_entry(lte, stream_list, lookup_table_list) {
 		table_size += sizeof(struct wim_lookup_table_entry_disk);
+
+		if (lte->out_reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS &&
+		    lte->out_res_offset_in_wim != prev_res_offset_in_wim)
+		{
+			table_size += sizeof(struct wim_lookup_table_entry_disk);
+			prev_res_offset_in_wim = lte->out_res_offset_in_wim;
+		}
+	}
 
 	DEBUG("Writing WIM lookup table (size=%zu, offset=%"PRIu64")",
 	      table_size, out_fd->offset);
 
 	table_buf = MALLOC(table_size);
-	if (!table_buf) {
+	if (table_buf == NULL) {
 		ERROR("Failed to allocate %zu bytes for temporary lookup table",
 		      table_size);
 		return WIMLIB_ERR_NOMEM;
 	}
 	table_buf_ptr = table_buf;
-	list_for_each_entry(lte, stream_list, lookup_table_list)
-		write_wim_lookup_table_entry(lte, table_buf_ptr++, part_number);
+
+	prev_res_offset_in_wim = ~0ULL;
+	list_for_each_entry(lte, stream_list, lookup_table_list) {
+
+		put_wim_lookup_table_entry(table_buf_ptr++,
+					   &lte->out_reshdr,
+					   part_number,
+					   lte->out_refcnt,
+					   lte->hash);
+		if (lte->out_reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS &&
+		    lte->out_res_offset_in_wim != prev_res_offset_in_wim)
+		{
+			/* Put the main resource entry for the pack.  */
+
+			struct wim_reshdr reshdr;
+
+			reshdr.offset_in_wim = lte->out_res_offset_in_wim;
+			reshdr.size_in_wim = lte->out_res_size_in_wim;
+			reshdr.uncompressed_size = WIM_PACK_MAGIC_NUMBER;
+			reshdr.flags = WIM_RESHDR_FLAG_PACKED_STREAMS;
+
+			DEBUG("Putting main entry for pack: "
+			      "size_in_wim=%"PRIu64", "
+			      "offset_in_wim=%"PRIu64", "
+			      "uncompressed_size=%"PRIu64,
+			      reshdr.size_in_wim,
+			      reshdr.offset_in_wim,
+			      reshdr.uncompressed_size);
+
+			put_wim_lookup_table_entry(table_buf_ptr++,
+						   &reshdr,
+						   part_number,
+						   1, zero_hash);
+			prev_res_offset_in_wim = lte->out_res_offset_in_wim;
+		}
+
+	}
+	wimlib_assert((u8*)table_buf_ptr - (u8*)table_buf == table_size);
 
 	/* Write the lookup table uncompressed.  Although wimlib can handle a
 	 * compressed lookup table, MS software cannot.  */
@@ -826,94 +914,6 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 	DEBUG("ret=%d", ret);
 	return ret;
 }
-
-static int
-append_lookup_table_entry(struct wim_lookup_table_entry *lte, void *_list)
-{
-	/* Lookup table entries with 'out_refcnt' == 0 correspond to streams not
-	 * written and not present in the resulting WIM file, and should not be
-	 * included in the lookup table.
-	 *
-	 * Lookup table entries marked as filtered (EXTERNAL_WIM) with
-	 * 'out_refcnt != 0' were referenced as part of the logical write but
-	 * correspond to streams that were not in fact written, and should not
-	 * be included in the lookup table.
-	 *
-	 * Lookup table entries marked as filtered (SAME_WIM) with 'out_refcnt
-	 * != 0' were referenced as part of the logical write but correspond to
-	 * streams that were not in fact written, but nevertheless were already
-	 * present in the WIM being overwritten in-place.  These entries must be
-	 * included in the lookup table, and the resource information to write
-	 * needs to be copied from the resource information read originally.
-	 */
-	if (lte->out_refcnt != 0 && !(lte->filtered & FILTERED_EXTERNAL_WIM)) {
-		if (lte->filtered & FILTERED_SAME_WIM)
-			wim_res_spec_to_hdr(lte->rspec, &lte->out_reshdr);
-		list_add_tail(&lte->lookup_table_list, (struct list_head*)_list);
-	}
-	return 0;
-}
-
-int
-write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
-		       struct wim_reshdr *out_reshdr,
-		       struct list_head *stream_list_override)
-{
-	int write_resource_flags;
-	struct list_head _stream_list;
-	struct list_head *stream_list;
-
-	if (stream_list_override) {
-		stream_list = stream_list_override;
-	} else {
-		stream_list = &_stream_list;
-		INIT_LIST_HEAD(stream_list);
-	}
-
-	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_METADATA)) {
-		int start_image;
-		int end_image;
-
-		if (image == WIMLIB_ALL_IMAGES) {
-			start_image = 1;
-			end_image = wim->hdr.image_count;
-		} else {
-			start_image = image;
-			end_image = image;
-		}
-
-		/* Push metadata resource lookup table entries onto the front of
-		 * the list in reverse order, so that they're written in order.
-		 */
-		for (int i = end_image; i >= start_image; i--) {
-			struct wim_lookup_table_entry *metadata_lte;
-
-			metadata_lte = wim->image_metadata[i - 1]->metadata_lte;
-			metadata_lte->out_refcnt = 1;
-			metadata_lte->out_reshdr.flags |= WIM_RESHDR_FLAG_METADATA;
-			list_add(&metadata_lte->lookup_table_list, stream_list);
-		}
-	}
-
-	/* Append additional lookup table entries that need to be written, with
-	 * some special handling for streams that have been marked as filtered.
-	 */
-	if (!stream_list_override) {
-		for_lookup_table_entry(wim->lookup_table,
-				       append_lookup_table_entry, stream_list);
-	}
-
-	write_resource_flags = 0;
-	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
-		write_resource_flags |= WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE;
-	return write_wim_lookup_table_from_stream_list(stream_list,
-						       &wim->out_fd,
-						       wim->hdr.part_number,
-						       out_reshdr,
-						       write_resource_flags,
-						       &wim->lzx_context);
-}
-
 
 int
 lte_zero_real_refcnt(struct wim_lookup_table_entry *lte, void *_ignore)
@@ -950,7 +950,7 @@ print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 
 	tprintf(T("Uncompressed size     = %"PRIu64" bytes\n"),
 		lte->size);
-	if (lte_is_partial(lte)) {
+	if (lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 		tprintf(T("Offset                = %"PRIu64" bytes\n"),
 			lte->offset_in_res);
 
@@ -1029,7 +1029,7 @@ lte_to_wimlib_resource_entry(const struct wim_lookup_table_entry *lte,
 	wentry->uncompressed_size = lte->size;
 	if (lte->resource_location == RESOURCE_IN_WIM) {
 		wentry->part_number = lte->rspec->wim->hdr.part_number;
-		if (lte_is_partial(lte)) {
+		if (lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 			wentry->compressed_size = 0;
 			wentry->offset = lte->offset_in_res;
 		} else {
@@ -1046,7 +1046,7 @@ lte_to_wimlib_resource_entry(const struct wim_lookup_table_entry *lte,
 	wentry->is_metadata = (lte->flags & WIM_RESHDR_FLAG_METADATA) != 0;
 	wentry->is_free = (lte->flags & WIM_RESHDR_FLAG_FREE) != 0;
 	wentry->is_spanned = (lte->flags & WIM_RESHDR_FLAG_SPANNED) != 0;
-	wentry->is_partial = lte_is_partial(lte);
+	wentry->is_packed_streams = (lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) != 0;
 }
 
 struct iterate_lte_context {
@@ -1438,24 +1438,23 @@ hash_unhashed_stream(struct wim_lookup_table_entry *lte,
 	list_del(&lte->unhashed_list);
 	if (duplicate_lte) {
 		/* We have a duplicate stream.  Transfer the reference counts
-		 * from this stream to the duplicate, update the reference to
+		 * from this stream to the duplicate and update the reference to
 		 * this stream (in an inode or ads_entry) to point to the
-		 * duplicate, then free this stream. */
+		 * duplicate.  The caller is responsible for freeing @lte if
+		 * needed.  */
 		wimlib_assert(!(duplicate_lte->unhashed));
+		wimlib_assert(duplicate_lte->size == lte->size);
 		duplicate_lte->refcnt += lte->refcnt;
-		duplicate_lte->out_refcnt += lte->out_refcnt;
+		lte->refcnt = 0;
 		*back_ptr = duplicate_lte;
-		free_lookup_table_entry(lte);
 		lte = duplicate_lte;
 	} else {
-		/* No duplicate stream, so we need to insert
-		 * this stream into the lookup table and treat
-		 * it as a hashed stream. */
+		/* No duplicate stream, so we need to insert this stream into
+		 * the lookup table and treat it as a hashed stream. */
 		lookup_table_insert(lookup_table, lte);
 		lte->unhashed = 0;
 	}
-	if (lte_ret)
-		*lte_ret = lte;
+	*lte_ret = lte;
 	return 0;
 }
 
@@ -1468,7 +1467,7 @@ lte_clone_if_new(struct wim_lookup_table_entry *lte, void *_lookup_table)
 		return 0;  /*  Resource already present.  */
 
 	lte = clone_lookup_table_entry(lte);
-	if (!lte)
+	if (lte == NULL)
 		return WIMLIB_ERR_NOMEM;
 	lte->out_refcnt = 1;
 	lookup_table_insert(lookup_table, lte);

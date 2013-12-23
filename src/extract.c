@@ -1308,7 +1308,8 @@ need_tmpfile_to_extract(struct wim_lookup_table_entry *lte,
 
 static int
 begin_extract_stream_to_tmpfile(struct wim_lookup_table_entry *lte,
-				bool is_partial_res, void *_ctx)
+				bool is_partial_res,
+				void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
 	int ret;
@@ -1320,10 +1321,7 @@ begin_extract_stream_to_tmpfile(struct wim_lookup_table_entry *lte,
 		if (ret)
 			return ret;
 
-		/* Negative return value here means the function was successful,
-		 * but the consume_chunk and end_chunk callbacks need not be
-		 * called.  */
-		return -1;
+		return BEGIN_STREAM_STATUS_SKIP_STREAM;
 	}
 
 	DEBUG("Temporary file needed for stream (size=%"PRIu64")", lte->size);
@@ -1390,7 +1388,7 @@ extract_stream_list(struct apply_ctx *ctx)
 		};
 		return read_stream_list(&ctx->stream_list,
 					offsetof(struct wim_lookup_table_entry, extraction_list),
-					0, &cbs);
+					&cbs, VERIFY_STREAM_HASHES);
 	} else {
 		/* Extract the streams in unsorted order.  */
 		struct wim_lookup_table_entry *lte;

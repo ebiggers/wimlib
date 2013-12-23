@@ -138,6 +138,17 @@ hash_u64(u64 n)
 	return n * 0x9e37fffffffc0001ULL;
 }
 
+static inline int
+cmp_u64(u64 n1, u64 n2)
+{
+	if (n1 < n2)
+		return -1;
+	else if (n1 > n2)
+		return 1;
+	else
+		return 0;
+}
+
 /* is_any_path_separator() - characters treated as path separators in WIM path
  * specifications and capture configuration files (the former will be translated
  * to WIM_PATH_SEPARATOR; the latter will be translated to

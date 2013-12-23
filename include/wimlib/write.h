@@ -46,7 +46,8 @@ write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 			       int out_ctype,
 			       u32 out_chunk_size,
 			       struct wim_reshdr *out_reshdr,
-			       u8 *hash_ret, int write_resource_flags,
+			       u8 *hash,
+			       int write_resource_flags,
 			       struct wimlib_lzx_context **comp_ctx);
 
 #endif /* _WIMLIB_WRITE_H */

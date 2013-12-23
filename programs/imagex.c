@@ -142,7 +142,9 @@ enum {
 	IMAGEX_NORPFIX_OPTION,
 	IMAGEX_NOCHECK_OPTION,
 	IMAGEX_NO_ACLS_OPTION,
+	IMAGEX_NO_PACK_STREAMS_OPTION,
 	IMAGEX_NOT_PIPABLE_OPTION,
+	IMAGEX_PACK_STREAMS_OPTION,
 	IMAGEX_PATH_OPTION,
 	IMAGEX_PIPABLE_OPTION,
 	IMAGEX_REBUILD_OPTION,
@@ -192,6 +194,7 @@ static const struct option capture_or_append_options[] = {
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
+	{T("pack-streams"), no_argument,      NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
 	{T("dereference"), no_argument,       NULL, IMAGEX_DEREFERENCE_OPTION},
 	{T("flags"),       required_argument, NULL, IMAGEX_FLAGS_OPTION},
@@ -1024,22 +1027,6 @@ stdin_get_text_contents(size_t *num_tchars_ret)
 #define TO_PERCENT(numerator, denominator) \
 	(((denominator) == 0) ? 0 : ((numerator) * 100 / (denominator)))
 
-/* Given an enumerated value for WIM compression type, return a descriptive
- * string. */
-static const tchar *
-get_data_type(int ctype)
-{
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_NONE:
-		return T("uncompressed");
-	case WIMLIB_COMPRESSION_TYPE_LZX:
-		return T("LZX-compressed");
-	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		return T("XPRESS-compressed");
-	}
-	return NULL;
-}
-
 #define GIBIBYTE_MIN_NBYTES 10000000000ULL
 #define MEBIBYTE_MIN_NBYTES 10000000ULL
 #define KIBIBYTE_MIN_NBYTES 10000ULL
@@ -1079,11 +1066,9 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 					  info->write_streams.total_bytes);
 
 		if (info->write_streams.completed_streams == 0) {
-			const tchar *data_type;
-
-			data_type = get_data_type(info->write_streams.compression_type);
-			imagex_printf(T("Writing %"TS" data using %u thread%"TS"\n"),
-				data_type, info->write_streams.num_threads,
+			imagex_printf(T("Writing %"TS"-compressed data using %u thread%"TS"\n"),
+				wimlib_get_compression_type_string(info->write_streams.compression_type),
+				info->write_streams.num_threads,
 				(info->write_streams.num_threads == 1) ? T("") : T("s"));
 		}
 		if (info->write_streams.total_parts <= 1) {
@@ -1752,6 +1737,9 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			chunk_size = parse_chunk_size(optarg);
 			if (chunk_size == UINT32_MAX)
 				goto out_err;
+			break;
+		case IMAGEX_PACK_STREAMS_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
 			break;
 		case IMAGEX_FLAGS_OPTION:
 			flags_element = optarg;
@@ -2773,6 +2761,7 @@ print_wim_information(const tchar *wimfile, const struct wimlib_wim_info *info)
 	tprintf(T("GUID:           0x"));
 	print_byte_field(info->guid, sizeof(info->guid));
 	tputchar(T('\n'));
+	tprintf(T("Version:        %u\n"), info->wim_version);
 	tprintf(T("Image Count:    %d\n"), info->image_count);
 	tprintf(T("Compression:    %"TS"\n"),
 		wimlib_get_compression_type_string(info->compression_type));
@@ -2796,7 +2785,7 @@ print_resource(const struct wimlib_resource_entry *resource,
 {
 	tprintf(T("Uncompressed size     = %"PRIu64" bytes\n"),
 		resource->uncompressed_size);
-	if (resource->is_partial) {
+	if (resource->is_packed_streams) {
 		tprintf(T("Raw uncompressed size = %"PRIu64" bytes\n"),
 			resource->raw_resource_uncompressed_size);
 
@@ -2833,6 +2822,8 @@ print_resource(const struct wimlib_resource_entry *resource,
 		tprintf(T("WIM_RESHDR_FLAG_FREE  "));
 	if (resource->is_spanned)
 		tprintf(T("WIM_RESHDR_FLAG_SPANNED  "));
+	if (resource->is_packed_streams)
+		tprintf(T("WIM_RESHDR_FLAG_PACKED_STREAMS  "));
 	tputchar(T('\n'));
 	tputchar(T('\n'));
 	return 0;

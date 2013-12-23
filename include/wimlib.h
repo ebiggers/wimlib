@@ -987,7 +987,7 @@ struct wimlib_resource_entry {
 	 */
 	uint32_t is_missing : 1;
 
-	uint32_t is_partial : 1;
+	uint32_t is_packed_streams : 1;
 
 	uint32_t reserved_flags : 26;
 
@@ -1512,6 +1512,12 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_WRITE_FLAG_STREAMS_OK			0x00000400
 
 #define WIMLIB_WRITE_FLAG_RESERVED			0x00000800
+
+/** TODO */
+#define WIMLIB_WRITE_FLAG_PACK_STREAMS			0x00001000
+
+/** TODO */
+#define WIMLIB_WRITE_FLAG_NO_PACK_STREAMS		0x00002000
 
 /** @} */
 /** @ingroup G_general

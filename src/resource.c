@@ -118,27 +118,6 @@ struct data_range {
 	u64 size;
 };
 
-/* Alternate chunk table format for resources with
- * WIM_RESHDR_FLAG_PACKED_STREAMS set.  */
-struct alt_chunk_table_header_disk {
-	/* Uncompressed size of the resource in bytes.  */
-	le64 res_usize;
-
-	/* Number of bytes each compressed chunk decompresses into, except
-	 * possibly the last which decompresses into the remainder.  */
-	le32 chunk_size;
-
-	/* Compression format used for compressed chunks:
-	 * 0 = None
-	 * 1 = LZX
-	 * 2 = XPRESS
-	 * 3 = LZMS  */
-	le32 compression_format;
-
-	/* This header is directly followed by a table of compressed sizes of
-	 * the chunks.  */
-} _packed_attribute;
-
 /*
  * read_compressed_wim_resource() -
  *
@@ -153,16 +132,11 @@ struct alt_chunk_table_header_disk {
  *	Number of ranges in @ranges; must be at least 1.
  * @cb
  *	Callback function to feed the data being read.  Each call provides the
- *	next chunk of the requested data.  Each chunk will be of nonzero size
- *	and will not cross range boundaries, but otherwise is of unspecified
- *	size.
+ *	next chunk of the requested data, uncompressed.  Each chunk will be of
+ *	nonzero size and will not cross range boundaries, but otherwise will be
+ *	of unspecified size.
  * @cb_ctx
  *	Parameter to pass to @cb_ctx.
- * @raw_chunks_mode
- *	If %true, this function will provide the raw compressed chunks of the
- *	resource rather than the uncompressed data.  In this mode, only a single
- *	data range can be requested, and it must cover the entire uncompressed
- *	resource.
  *
  * Possible return values:
  *
@@ -179,8 +153,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 			     const struct data_range * const ranges,
 			     const size_t num_ranges,
 			     const consume_data_callback_t cb,
-			     void * const cb_ctx,
-			     const bool raw_chunks_mode)
+			     void * const cb_ctx)
 {
 	int ret;
 	int errno_save;
@@ -207,12 +180,6 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 	}
 	for (size_t i = 0; i < num_ranges - 1; i++)
 		wimlib_assert(ranges[i].offset + ranges[i].size <= ranges[i + 1].offset);
-
-	if (raw_chunks_mode) {
-		wimlib_assert(num_ranges == 1);
-		wimlib_assert(ranges[0].offset == 0);
-		wimlib_assert(ranges[0].size == rspec->uncompressed_size);
-	}
 
 	/* Get the offsets of the first and last bytes of the read.  */
 	const u64 first_offset = ranges[0].offset;
@@ -428,19 +395,17 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 		ubuf_malloced = true;
 	}
 
-	/* Unless the raw compressed data was requested, allocate a temporary
-	 * buffer for reading compressed chunks, each of which can be at most
-	 * @chunk_size - 1 bytes.  This excludes compressed chunks that are a
-	 * full @chunk_size bytes, which are actually stored uncompressed.  */
-	if (!raw_chunks_mode) {
-		if (chunk_size - 1 <= STACK_MAX) {
-			cbuf = alloca(chunk_size - 1);
-		} else {
-			cbuf = MALLOC(chunk_size - 1);
-			if (cbuf == NULL)
-				goto oom;
-			cbuf_malloced = true;
-		}
+	/* Allocate a temporary buffer for reading compressed chunks, each of
+	 * which can be at most @chunk_size - 1 bytes.  This excludes compressed
+	 * chunks that are a full @chunk_size bytes, which are actually stored
+	 * uncompressed.  */
+	if (chunk_size - 1 <= STACK_MAX) {
+		cbuf = alloca(chunk_size - 1);
+	} else {
+		cbuf = MALLOC(chunk_size - 1);
+		if (cbuf == NULL)
+			goto oom;
+		cbuf_malloced = true;
 	}
 
 	/* Set current data range.  */
@@ -513,7 +478,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 			 * function.  */
 			u8 *read_buf;
 
-			if (chunk_csize == chunk_usize || raw_chunks_mode)
+			if (chunk_csize == chunk_usize)
 				read_buf = ubuf;
 			else
 				read_buf = cbuf;
@@ -527,7 +492,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 
 			if (read_buf == cbuf) {
 				DEBUG("Decompressing chunk %"PRIu64" "
-				      "(csize=%"PRIu64" usize=%"PRIu64"",
+				      "(csize=%"PRIu32" usize=%"PRIu32")",
 				      i, chunk_csize, chunk_usize);
 				ret = decompress(cbuf,
 						 chunk_csize,
@@ -557,10 +522,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 				end = min(cur_range_end, chunk_end_offset) - chunk_start_offset;
 				size = end - start;
 
-				if (raw_chunks_mode)
-					ret = (*cb)(&ubuf[0], chunk_csize, cb_ctx);
-				else
-					ret = (*cb)(&ubuf[start], size, cb_ctx);
+				ret = (*cb)(&ubuf[start], size, cb_ctx);
 
 				if (ret)
 					goto out_free_memory;
@@ -658,24 +620,21 @@ bufferer_cb(const void *chunk, size_t size, void *_ctx)
  * read_partial_wim_resource()-
  *
  * Read a range of data from an uncompressed or compressed resource in a WIM
- * file.  Data is fed chunk-by-chunk into the callback function @cb, passing it
- * the argument @cb_ctx.  The chunks are of unspecified size unless the
- * RAW_CHUNKS mode is requested.
+ * file.
  *
- * By default, this function provides the uncompressed data of the resource, and
- * @offset and @size and interpreted relative to the uncompressed contents of
- * the resource.  This behavior can be modified by either of the following
- * flags:
- *
- * WIMLIB_READ_RESOURCE_FLAG_RAW_FULL:
- *	Read @size bytes at @offset of the raw contents of the compressed
- *	resource.  In the case of pipable resources, this excludes the stream
- *	header.  Exclusive with WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS.
- *
- * WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS:
- *	Read the raw compressed chunks of the compressed resource.  @size must
- *	be the full uncompressed size, @offset must be 0, and @cb_chunk_size
- *	must be the resource chunk size.
+ * @rspec
+ *	Specification of the WIM resource to read from.
+ * @offset
+ *	Offset within the uncompressed resource at which to start reading.
+ * @size
+ *	Number of bytes to read.
+ * @cb
+ *	Callback function to feed the data being read.  Each call provides the
+ *	next chunk of the requested data, uncompressed.  Each chunk will be of
+ *	nonzero size and will not cross range boundaries, but otherwise will be
+ *	of unspecified size.
+ * @cb_ctx
+ *	Parameter to pass to @cb_ctx.
  *
  * Return values:
  *	WIMLIB_ERR_SUCCESS (0)
@@ -688,47 +647,35 @@ bufferer_cb(const void *chunk, size_t size, void *_ctx)
  */
 static int
 read_partial_wim_resource(const struct wim_resource_spec *rspec,
-			  u64 offset, u64 size, consume_data_callback_t cb,
-			  void *cb_ctx, int flags)
+			  u64 offset, u64 size,
+			  consume_data_callback_t cb, void *cb_ctx)
 {
 	/* Sanity checks.  */
-	if (flags & WIMLIB_READ_RESOURCE_FLAG_RAW_FULL) {
-		wimlib_assert(!(flags & WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS));
-		wimlib_assert(offset + size >= offset);
-		wimlib_assert(offset + size <= rspec->size_in_wim);
-	} else if (flags & WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS) {
-		wimlib_assert(offset == 0);
-		wimlib_assert(size == rspec->uncompressed_size);
-	} else {
-		wimlib_assert(offset + size >= offset);
-		wimlib_assert(offset + size <= rspec->uncompressed_size);
-	}
+	wimlib_assert(offset + size >= offset);
+	wimlib_assert(offset + size <= rspec->uncompressed_size);
 
 	DEBUG("Reading %"PRIu64" @ %"PRIu64" from WIM resource  "
-	      "%"PRIu64" => %"PRIu64" @ %"PRIu64" (flags 0x%08x)",
+	      "%"PRIu64" => %"PRIu64" @ %"PRIu64,
 	      size, offset, rspec->uncompressed_size,
-	      rspec->size_in_wim, rspec->offset_in_wim, flags);
+	      rspec->size_in_wim, rspec->offset_in_wim);
 
 	/* Trivial case.  */
 	if (size == 0)
 		return 0;
 
-	if ((flags & WIMLIB_READ_RESOURCE_FLAG_RAW_FULL) ||
-	    !resource_is_compressed(rspec))
-	{
-		return read_raw_file_data(&rspec->wim->in_fd,
-					  size,
-					  cb,
-					  cb_ctx,
-					  rspec->offset_in_wim + offset);
-	} else {
-		bool raw_chunks = (flags & WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS);
+	if (resource_is_compressed(rspec)) {
 		struct data_range range = {
 			.offset = offset,
 			.size = size,
 		};
 		return read_compressed_wim_resource(rspec, &range, 1,
-						    cb, cb_ctx, raw_chunks);
+						    cb, cb_ctx);
+	} else {
+		return read_raw_file_data(&rspec->wim->in_fd,
+					  size,
+					  cb,
+					  cb_ctx,
+					  rspec->offset_in_wim + offset);
 	}
 }
 
@@ -746,8 +693,7 @@ read_partial_wim_stream_into_buf(const struct wim_lookup_table_entry *lte,
 					 lte->offset_in_res + offset,
 					 size,
 					 bufferer_cb,
-					 &buf,
-					 0);
+					 &buf);
 }
 
 /* A consume_data_callback_t implementation that simply ignores the data
@@ -764,25 +710,21 @@ int
 skip_wim_stream(struct wim_lookup_table_entry *lte)
 {
 	wimlib_assert(lte->resource_location == RESOURCE_IN_WIM);
-	wimlib_assert(!lte_is_partial(lte));
+	wimlib_assert(!(lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS));
+	DEBUG("Skipping stream (size=%"PRIu64")", lte->size);
 	return read_partial_wim_resource(lte->rspec,
 					 0,
 					 lte->rspec->uncompressed_size,
 					 skip_chunk_cb,
-					 NULL,
-					 WIMLIB_READ_RESOURCE_FLAG_RAW_CHUNKS);
+					 NULL);
 }
 
 static int
 read_wim_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
-		       consume_data_callback_t cb, void *cb_ctx, int flags)
+		       consume_data_callback_t cb, void *cb_ctx)
 {
-	return read_partial_wim_resource(lte->rspec,
-					 lte->offset_in_res,
-					 size,
-					 cb,
-					 cb_ctx,
-					 flags);
+	return read_partial_wim_resource(lte->rspec, lte->offset_in_res, size,
+					 cb, cb_ctx);
 }
 
 #ifndef __WIN32__
@@ -796,8 +738,7 @@ read_wim_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
  * encrypted), so Windows uses its own code for its equivalent case.  */
 static int
 read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte, u64 size,
-			 consume_data_callback_t cb, void *cb_ctx,
-			 int _ignored_flags)
+			 consume_data_callback_t cb, void *cb_ctx)
 {
 	int ret;
 	int raw_fd;
@@ -823,8 +764,7 @@ read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte, u64 size,
  * fact, already located in an in-memory buffer.  */
 static int
 read_buffer_prefix(const struct wim_lookup_table_entry *lte,
-		   u64 size, consume_data_callback_t cb,
-		   void *cb_ctx, int _ignored_flags)
+		   u64 size, consume_data_callback_t cb, void *cb_ctx)
 {
 	wimlib_assert(size <= lte->size);
 	return (*cb)(lte->attached_buffer, size, cb_ctx);
@@ -833,7 +773,7 @@ read_buffer_prefix(const struct wim_lookup_table_entry *lte,
 typedef int (*read_stream_prefix_handler_t)(const struct wim_lookup_table_entry *lte,
 					    u64 size,
 					    consume_data_callback_t cb,
-					    void *cb_ctx, int flags);
+					    void *cb_ctx);
 
 /*
  * read_stream_prefix()-
@@ -845,9 +785,6 @@ typedef int (*read_stream_prefix_handler_t)(const struct wim_lookup_table_entry 
  * This function feeds the data to a callback function @cb in chunks of
  * unspecified size.
  *
- * If the stream is located in a WIM file, @flags can be set as documented in
- * read_partial_wim_resource().  Otherwise @flags are ignored.
- *
  * Returns 0 on success; nonzero on error.  A nonzero value will be returned if
  * the stream data cannot be successfully read (for a number of different
  * reasons, depending on the stream location), or if @cb returned nonzero in
@@ -855,7 +792,7 @@ typedef int (*read_stream_prefix_handler_t)(const struct wim_lookup_table_entry 
  */
 int
 read_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
-		   consume_data_callback_t cb, void *cb_ctx, int flags)
+		   consume_data_callback_t cb, void *cb_ctx)
 {
 	static const read_stream_prefix_handler_t handlers[] = {
 		[RESOURCE_IN_WIM]             = read_wim_stream_prefix,
@@ -877,7 +814,7 @@ read_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 	};
 	wimlib_assert(lte->resource_location < ARRAY_LEN(handlers)
 		      && handlers[lte->resource_location] != NULL);
-	return handlers[lte->resource_location](lte, size, cb, cb_ctx, flags);
+	return handlers[lte->resource_location](lte, size, cb, cb_ctx);
 }
 
 /* Read the full uncompressed data of the specified stream into the specified
@@ -886,7 +823,7 @@ int
 read_full_stream_into_buf(const struct wim_lookup_table_entry *lte, void *_buf)
 {
 	u8 *buf = _buf;
-	return read_stream_prefix(lte, lte->size, bufferer_cb, &buf, 0);
+	return read_stream_prefix(lte, lte->size, bufferer_cb, &buf);
 }
 
 /* Retrieve the full uncompressed data of the specified stream.  A buffer large
@@ -930,7 +867,6 @@ wim_resource_spec_to_data(struct wim_resource_spec *rspec, void **buf_ret)
 	if (lte == NULL)
 		return WIMLIB_ERR_NOMEM;
 
-	lte->unhashed = 1;
 	lte_bind_wim_resource_spec(lte, rspec);
 	lte->flags = rspec->flags;
 	lte->size = rspec->uncompressed_size;
@@ -1000,6 +936,13 @@ streamifier_cb(const void *chunk, size_t size, void *_ctx)
 
 	if (ctx->cur_stream_offset == ctx->cur_stream->size) {
 		/* Finished reading all the data for a stream.  */
+
+		struct list_head *cur, *next;
+
+		cur = (struct list_head *)
+			((u8*)ctx->cur_stream + ctx->list_head_offset);
+		next = cur->next;
+
 		DEBUG("End stream (size=%"PRIu64").", ctx->cur_stream->size);
 		ret = (*ctx->cbs.end_stream)(ctx->cur_stream, 0,
 					     ctx->cbs.end_stream_ctx);
@@ -1008,12 +951,6 @@ streamifier_cb(const void *chunk, size_t size, void *_ctx)
 
 		if (ctx->cur_stream != ctx->final_stream) {
 			/* Advance to next stream.  */
-			struct list_head *cur, *next;
-
-			cur = (struct list_head *)
-				((u8*)ctx->cur_stream + ctx->list_head_offset);
-			next = cur->next;
-
 			ctx->cur_stream = (struct wim_lookup_table_entry *)
 					((u8*)next - ctx->list_head_offset);
 
@@ -1028,6 +965,7 @@ streamifier_cb(const void *chunk, size_t size, void *_ctx)
 
 struct hasher_context {
 	SHA_CTX sha_ctx;
+	int flags;
 	struct read_stream_list_callbacks cbs;
 };
 
@@ -1083,26 +1021,30 @@ hasher_end_stream(struct wim_lookup_table_entry *lte, int status, void *_ctx)
 	sha1_final(hash, &ctx->sha_ctx);
 
 	if (lte->unhashed) {
-		/* No SHA1 message digest was previously present for the stream.
-		 * Set it to the one just calculated.  */
-		DEBUG("Set SHA1 message digest for stream (size=%"PRIu64").", lte->size);
-		copy_hash(lte->hash, hash);
-	} else {
-		/* The stream already had a SHA1 message digest present.  Verify
-		 * that it is the same as the calculated value.  */
-		if (!hashes_equal(hash, lte->hash)) {
-			if (wimlib_print_errors) {
-				ERROR("Invalid SHA1 message digest "
-				      "on the following WIM stream:");
-				print_lookup_table_entry(lte, stderr);
-				if (lte->resource_location == RESOURCE_IN_WIM)
-					ERROR("The WIM file appears to be corrupt!");
-			}
-			ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
-			errno = EINVAL;
-			goto out_next_cb;
+		if (ctx->flags & COMPUTE_MISSING_STREAM_HASHES) {
+			/* No SHA1 message digest was previously present for the
+			 * stream.  Set it to the one just calculated.  */
+			DEBUG("Set SHA1 message digest for stream "
+			      "(size=%"PRIu64").", lte->size);
+			copy_hash(lte->hash, hash);
 		}
-		DEBUG("SHA1 message digest okay for stream (size=%"PRIu64").", lte->size);
+	} else {
+		if (ctx->flags & VERIFY_STREAM_HASHES) {
+			/* The stream already had a SHA1 message digest present.  Verify
+			 * that it is the same as the calculated value.  */
+			if (!hashes_equal(hash, lte->hash)) {
+				if (wimlib_print_errors) {
+					ERROR("Invalid SHA1 message digest "
+					      "on the following WIM stream:");
+					print_lookup_table_entry(lte, stderr);
+				}
+				ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
+				errno = EINVAL;
+				goto out_next_cb;
+			}
+			DEBUG("SHA1 message digest okay for "
+			      "stream (size=%"PRIu64").", lte->size);
+		}
 	}
 	ret = 0;
 out_next_cb:
@@ -1112,6 +1054,22 @@ out_next_cb:
 		return (*ctx->cbs.end_stream)(lte, ret, ctx->cbs.end_stream_ctx);
 }
 
+static int
+read_full_stream_with_cbs(struct wim_lookup_table_entry *lte,
+			  const struct read_stream_list_callbacks *cbs)
+{
+	int ret;
+
+	ret = (*cbs->begin_stream)(lte, false, cbs->begin_stream_ctx);
+	if (ret)
+		return ret;
+
+	ret = read_stream_prefix(lte, lte->size, cbs->consume_chunk,
+				 cbs->consume_chunk_ctx);
+
+	return (*cbs->end_stream)(lte, ret, cbs->end_stream_ctx);
+}
+
 /* Read the full data of the specified stream, passing the data into the
  * specified callbacks (all of which are optional) and either checking or
  * computing the SHA1 message digest of the stream.  */
@@ -1119,82 +1077,20 @@ static int
 read_full_stream_with_sha1(struct wim_lookup_table_entry *lte,
 			   const struct read_stream_list_callbacks *cbs)
 {
-	int ret;
-
 	struct hasher_context hasher_ctx = {
+		.flags = VERIFY_STREAM_HASHES | COMPUTE_MISSING_STREAM_HASHES,
 		.cbs = *cbs,
 	};
+	struct read_stream_list_callbacks hasher_cbs = {
+		.begin_stream		= hasher_begin_stream,
+		.begin_stream_ctx	= &hasher_ctx,
+		.consume_chunk		= hasher_consume_chunk,
+		.consume_chunk_ctx	= &hasher_ctx,
+		.end_stream		= hasher_end_stream,
+		.end_stream_ctx		= &hasher_ctx,
 
-	ret = hasher_begin_stream(lte, false, &hasher_ctx);
-	if (ret)
-		return ret;
-
-	ret = read_stream_prefix(lte, lte->size, hasher_consume_chunk,
-				 &hasher_ctx, 0);
-
-	return hasher_end_stream(lte, ret, &hasher_ctx);
-}
-
-struct rechunkifier_context {
-	u8 *buffer;
-	u32 buffer_filled;
-	u32 cb_chunk_size;
-
-	const struct data_range *ranges;
-	size_t num_ranges;
-	size_t cur_range;
-	u64 range_bytes_remaining;
-
-	consume_data_callback_t cb;
-	void *cb_ctx;
-};
-
-/* Wrapper callback for adjusting the data chunk size.  */
-static int
-rechunkifier_cb(const void *chunk, size_t size, void *_ctx)
-{
-	struct rechunkifier_context *ctx = _ctx;
-	const u8 *chunkptr = chunk;
-	size_t bytes_to_copy;
-	int ret;
-
-	wimlib_assert(ctx->cur_range != ctx->num_ranges);
-
-	while (size) {
-
-		/* Append more data to the buffer.  */
-		bytes_to_copy = size;
-
-		if (bytes_to_copy > ctx->cb_chunk_size - ctx->buffer_filled)
-			bytes_to_copy = ctx->cb_chunk_size - ctx->buffer_filled;
-
-		if (bytes_to_copy > ctx->range_bytes_remaining - ctx->buffer_filled)
-			bytes_to_copy = ctx->range_bytes_remaining - ctx->buffer_filled;
-
-		memcpy(&ctx->buffer[ctx->buffer_filled], chunkptr, bytes_to_copy);
-
-		ctx->buffer_filled += bytes_to_copy;
-		chunkptr += bytes_to_copy;
-		size -= bytes_to_copy;
-		ctx->range_bytes_remaining -= bytes_to_copy;
-
-		if (ctx->buffer_filled == ctx->cb_chunk_size ||
-		    ctx->range_bytes_remaining == 0)
-		{
-			/* Maximum chunk size reached, or current range ended.
-			 * Call the next consume_data_callback_t and empty the
-			 * buffer  */
-			ret = (*ctx->cb)(ctx->buffer, ctx->buffer_filled, ctx->cb_ctx);
-			if (ret)
-				return ret;
-			ctx->buffer_filled = 0;
-
-			if (ctx->range_bytes_remaining == 0 &&
-			    ++ctx->cur_range != ctx->num_ranges)
-				ctx->range_bytes_remaining = ctx->ranges[ctx->cur_range].size;
-		}
-	}
-	return 0;
+	};
+	return read_full_stream_with_cbs(lte, &hasher_cbs);
 }
 
 /*
@@ -1210,11 +1106,10 @@ rechunkifier_cb(const void *chunk, size_t size, void *_ctx)
  * @list_head_offset
  *	Offset of the `struct list_head' within each `struct
  *	wim_lookup_table_entry' that makes up the @stream_list.
- * @cb_chunk_size
- *	Size of chunks to provide to @consume_chunk.  For a given stream, all
- *	the chunks will be this size, except possibly the last which will be the
- *	remainder.  If @
- * @cbs TODO
+ * @cbs
+ *	Callback functions to accept the stream data.
+ * @flags
+ *
  *
  * Returns 0 on success; a nonzero error code on failure.  Failure can occur due
  * to an error reading the data or due to an error status being returned by any
@@ -1223,16 +1118,39 @@ rechunkifier_cb(const void *chunk, size_t size, void *_ctx)
 int
 read_stream_list(struct list_head *stream_list,
 		 size_t list_head_offset,
-		 u32 cb_chunk_size,
-		 const struct read_stream_list_callbacks *cbs)
+		 const struct read_stream_list_callbacks *cbs,
+		 int flags)
 {
 	int ret;
 	struct list_head *cur, *next;
 	struct wim_lookup_table_entry *lte;
+	struct hasher_context *hasher_ctx;
+	struct read_stream_list_callbacks *sink_cbs;
 
-	ret = sort_stream_list_by_sequential_order(stream_list, list_head_offset);
-	if (ret)
-		return ret;
+	if (!(flags & STREAM_LIST_ALREADY_SORTED)) {
+		ret = sort_stream_list_by_sequential_order(stream_list, list_head_offset);
+		if (ret)
+			return ret;
+	}
+
+	if (flags & (VERIFY_STREAM_HASHES | COMPUTE_MISSING_STREAM_HASHES)) {
+		hasher_ctx = alloca(sizeof(*hasher_ctx));
+		*hasher_ctx = (struct hasher_context) {
+			.flags	= flags,
+			.cbs	= *cbs,
+		};
+		sink_cbs = alloca(sizeof(*sink_cbs));
+		*sink_cbs = (struct read_stream_list_callbacks) {
+			.begin_stream		= hasher_begin_stream,
+			.begin_stream_ctx	= hasher_ctx,
+			.consume_chunk		= hasher_consume_chunk,
+			.consume_chunk_ctx	= hasher_ctx,
+			.end_stream		= hasher_end_stream,
+			.end_stream_ctx		= hasher_ctx,
+		};
+	} else {
+		sink_cbs = (struct read_stream_list_callbacks*)cbs;
+	}
 
 	for (cur = stream_list->next, next = cur->next;
 	     cur != stream_list;
@@ -1240,7 +1158,9 @@ read_stream_list(struct list_head *stream_list,
 	{
 		lte = (struct wim_lookup_table_entry*)((u8*)cur - list_head_offset);
 
-		if (lte_is_partial(lte)) {
+		if (lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS &&
+		    lte->size != lte->rspec->uncompressed_size)
+		{
 
 			struct wim_lookup_table_entry *lte_next, *lte_last;
 			struct list_head *next2;
@@ -1296,73 +1216,8 @@ read_stream_list(struct list_head *stream_list,
 					}
 				}
 
-				/* Set up a chain of callbacks.
-				 *
-				 * The first level is the
-				 * streamifier_cb,
-				 * which takes in chunks of data and divides
-				 * them into the constituent streams.
-				 *
-				 * The second level are the SHA1 message digest
-				 * callbacks, which checksum each stream.
-				 *
-				 * rechunkifier_cb handles dividing the read
-				 * data into chunks of maximum size
-				 * @cb_chunk_size.  If @cb_chunk_size is 0, then
-				 * this callback is not needed.
-				 *
-				 * Finally, the last level of callbacks are
-				 * @cbs, passed as arguments to this function.
-				 */
-
-				struct rechunkifier_context *rechunkifier_ctx = NULL;
-				consume_data_callback_t last_cb;
-				void *last_cb_ctx;
-
-				if (cb_chunk_size != 0) {
-					rechunkifier_ctx = alloca(sizeof(*rechunkifier_ctx));
-					*rechunkifier_ctx = (struct rechunkifier_context) {
-						.buffer			= MALLOC(cb_chunk_size),
-						.buffer_filled		= 0,
-						.cb_chunk_size		= cb_chunk_size,
-						.ranges			= ranges,
-						.num_ranges		= stream_count,
-						.cur_range		= 0,
-						.range_bytes_remaining	= ranges[0].size,
-						.cb			= cbs->consume_chunk,
-						.cb_ctx			= cbs->consume_chunk_ctx,
-					};
-
-					if (rechunkifier_ctx->buffer == NULL)
-						return WIMLIB_ERR_NOMEM;
-					last_cb = rechunkifier_cb;
-					last_cb_ctx = rechunkifier_ctx;
-				} else {
-					rechunkifier_ctx = NULL;
-					last_cb = cbs->consume_chunk;
-					last_cb_ctx = cbs->consume_chunk_ctx;
-				}
-
-				struct hasher_context hasher_ctx = {
-					.cbs = {
-						.begin_stream		= cbs->begin_stream,
-						.begin_stream_ctx	= cbs->begin_stream_ctx,
-						.consume_chunk		= last_cb,
-						.consume_chunk_ctx	= last_cb_ctx,
-						.end_stream		= cbs->end_stream,
-						.end_stream_ctx		= cbs->end_stream_ctx,
-					},
-				};
-
 				struct streamifier_context streamifier_ctx = {
-					.cbs = {
-						.begin_stream		= hasher_begin_stream,
-						.begin_stream_ctx	= &hasher_ctx,
-						.consume_chunk		= hasher_consume_chunk,
-						.consume_chunk_ctx	= &hasher_ctx,
-						.end_stream		= hasher_end_stream,
-						.end_stream_ctx		= &hasher_ctx,
-					},
+					.cbs			= *sink_cbs,
 					.cur_stream		= lte,
 					.cur_stream_offset	= 0,
 					.final_stream		= lte_last,
@@ -1373,10 +1228,7 @@ read_stream_list(struct list_head *stream_list,
 								   ranges,
 								   stream_count,
 								   streamifier_cb,
-								   &streamifier_ctx,
-								   false);
-				if (rechunkifier_ctx != NULL)
-					FREE(rechunkifier_ctx->buffer);
+								   &streamifier_ctx);
 
 				if (ret) {
 					if (streamifier_ctx.cur_stream_offset != 0) {
@@ -1391,8 +1243,8 @@ read_stream_list(struct list_head *stream_list,
 			}
 		}
 
-		ret = read_full_stream_with_sha1(lte, cbs);
-		if (ret > 0)
+		ret = read_full_stream_with_cbs(lte, sink_cbs);
+		if (ret && ret != BEGIN_STREAM_STATUS_SKIP_STREAM)
 			return ret;
 	}
 	return 0;
@@ -1419,7 +1271,7 @@ extract_stream(struct wim_lookup_table_entry *lte, u64 size,
 	} else {
 		/* Don't do SHA1.  */
 		return read_stream_prefix(lte, size, extract_chunk,
-					  extract_chunk_arg, 0);
+					  extract_chunk_arg);
 	}
 }
 
@@ -1499,7 +1351,6 @@ get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 			       ((u64)disk_reshdr->size_in_wim[6] << 48));
 	reshdr->uncompressed_size = le64_to_cpu(disk_reshdr->uncompressed_size);
 	reshdr->flags = disk_reshdr->flags;
-	return 0;
 }
 
 /* Translates a WIM resource header from an in-memory format into the on-disk

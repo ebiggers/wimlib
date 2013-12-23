@@ -14,8 +14,7 @@ extern int
 read_ntfs_file_prefix(const struct wim_lookup_table_entry *lte,
 		      u64 size,
 		      consume_data_callback_t cb,
-		      void *cb_ctx,
-		      int _ignored_flags);
+		      void *cb_ctx);
 
 
 extern int

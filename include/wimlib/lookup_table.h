@@ -118,39 +118,24 @@ struct wim_lookup_table_entry {
 	u64 size;
 
 	/* Stream flags (WIM_RESHDR_FLAG_*).  */
-	u16 flags : 8;
+	u32 flags : 8;
 
 	/* One of the `enum resource_location' values documented above. */
-	u16 resource_location : 5;
-
-	/* 1 if this stream is a unique size (only set while writing streams). */
-	u16 unique_size : 1;
+	u32 resource_location : 5;
 
 	/* 1 if this stream has not had a SHA1 message digest calculated for it
 	 * yet */
-	u16 unhashed : 1;
+	u32 unhashed : 1;
 
-	u16 deferred : 1;
-
-	u16 no_progress : 1;
+	/* Temoorary files used for writing; set as documented for
+	 * prepare_stream_list_for_write().  */
+	u32 unique_size : 1;
+	u32 will_be_in_output_wim : 1;
 
 	/* Set to 1 when a metadata entry has its checksum changed; in such
 	 * cases the hash is no longer valid to verify the data if the metadata
 	 * resource is read again.  */
-	u16 dont_check_metadata_hash : 1;
-
-	/* Only used during WIM write.  Normal value is 0 (resource not
-	 * filtered).  */
-	u16 filtered : 2;
-#define FILTERED_SAME_WIM	0x1  /* Resource already in same WIM  */
-#define FILTERED_EXTERNAL_WIM	0x2  /* Resource already in external WIM  */
-
-	/* (On-disk field)
-	 * Number of times this lookup table entry is referenced by dentries.
-	 * Unfortunately, this field is not always set correctly in Microsoft's
-	 * WIMs, so we have no choice but to fix it if more references to the
-	 * lookup table entry are found than stated here.  */
-	u32 refcnt;
+	u32 dont_check_metadata_hash : 1;
 
 	union {
 		/* (On-disk field) SHA1 message digest of the stream referenced
@@ -176,11 +161,25 @@ struct wim_lookup_table_entry {
 		};
 	};
 
+	/* Number of times this lookup table entry is referenced by dentries in
+	 * the WIM.  */
+	u32 refcnt;
+
+	/* Actual reference count to this stream (only used while verifying an
+	 * image). */
+	u32 real_refcnt;
+
 	/* When a WIM file is written, out_refcnt starts at 0 and is incremented
 	 * whenever the stream pointed to by this lookup table entry needs to be
 	 * written.  The stream only need to be written when out_refcnt is
 	 * nonzero, since otherwise it is not referenced by any dentries. */
 	u32 out_refcnt;
+
+#ifdef WITH_FUSE
+	/* Number of times this stream has been opened (used only during
+	 * mounting) */
+	u16 num_opened_fds;
+#endif
 
 	/* Pointers to somewhere where the stream is actually located.  See the
 	 * comments for the @resource_location field above. */
@@ -199,48 +198,38 @@ struct wim_lookup_table_entry {
 	#endif
 	};
 
-	/* Actual reference count to this stream (only used while
-	 * verifying an image). */
-	u32 real_refcnt;
+	/* Links together streams that share the same underlying WIM resource.
+	 * The head is wim_resource_spec.stream_list.  */
+	struct list_head rspec_node;
 
-	union {
-	#ifdef WITH_FUSE
-		/* Number of times this stream has been opened (used only during
-		 * mounting) */
-		u16 num_opened_fds;
-	#endif
-
-		/* This field is used for the special hardlink or symlink image
-		 * extraction mode.   In these mode, all identical files are linked
-		 * together, and @extracted_file will be set to the filename of the
-		 * first extracted file containing this stream.  */
-		tchar *extracted_file;
-	};
+	/* This field is used for the special hardlink or symlink image
+	 * extraction mode.   In these mode, all identical files are linked
+	 * together, and @extracted_file will be set to the filename of the
+	 * first extracted file containing this stream.  */
+	tchar *extracted_file;
 
 	/* Temporary fields  */
 	union {
 		/* Used temporarily during WIM file writing  */
 		struct {
-			struct hlist_node hash_list_2;
-
+			union {
+				struct hlist_node hash_list_2;
+				struct {
+					u64 out_res_offset_in_wim;
+					u64 out_res_size_in_wim;
+					u64 out_res_uncompressed_size;
+				};
+			};
 			/* Links streams being written to the WIM.  */
 			struct list_head write_streams_list;
-		};
 
-		/* Used temporarily during WIM file writing (after above)  */
-		struct {
-			struct list_head msg_list;
-			struct list_head being_compressed_list;
+			struct wim_reshdr out_reshdr;
 		};
-
-		/* When a WIM file is written, @output_reshdr is filled in with
-		 * the resource header for the output WIM.  */
-		struct wim_reshdr out_reshdr;
 
 		/* Used temporarily during extraction  */
 		union {
 			/* out_refcnt tracks number of slots filled */
-			struct wim_dentry *inline_lte_dentries[4];
+			struct wim_dentry *inline_lte_dentries[8];
 			struct {
 				struct wim_dentry **lte_dentries;
 				unsigned long alloc_lte_dentries;
@@ -250,7 +239,7 @@ struct wim_lookup_table_entry {
 
 	/* Temporary list fields */
 	union {
-		/* Links streams when writing lookup table.  */
+		/* Links streams for writing lookup table.  */
 		struct list_head lookup_table_list;
 
 		/* Links streams being extracted.  */
@@ -260,11 +249,9 @@ struct wim_lookup_table_entry {
 		struct list_head export_stream_list;
 	};
 
-	/* Links streams that are still unhashed after being been added
-	 * to a WIM.  */
+	/* Links streams that are still unhashed after being been added to a
+	 * WIM.  */
 	struct list_head unhashed_list;
-
-	struct list_head wim_resource_list;
 };
 
 static inline bool
@@ -294,9 +281,12 @@ extern int
 read_wim_lookup_table(WIMStruct *wim);
 
 extern int
-write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
-		       struct wim_reshdr *out_reshdr,
-		       struct list_head *stream_list_override);
+write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
+					struct filedes *out_fd,
+					u16 part_number,
+					struct wim_reshdr *out_reshdr,
+					int write_resource_flags,
+					struct wimlib_lzx_context **comp_ctx);
 
 extern void
 free_lookup_table(struct wim_lookup_table *table);
@@ -335,6 +325,11 @@ extern int
 for_lookup_table_entry(struct wim_lookup_table *table,
 		       int (*visitor)(struct wim_lookup_table_entry *, void *),
 		       void *arg);
+
+extern int
+sort_stream_list(struct list_head *stream_list,
+		 size_t list_head_offset,
+		 int (*compar)(const void *, const void*));
 
 extern int
 sort_stream_list_by_sequential_order(struct list_head *stream_list,
@@ -379,13 +374,13 @@ lte_bind_wim_resource_spec(struct wim_lookup_table_entry *lte,
 {
 	lte->resource_location = RESOURCE_IN_WIM;
 	lte->rspec = rspec;
-	list_add_tail(&lte->wim_resource_list, &rspec->stream_list);
+	list_add_tail(&lte->rspec_node, &rspec->stream_list);
 }
 
 static inline void
 lte_unbind_wim_resource_spec(struct wim_lookup_table_entry *lte)
 {
-	list_del(&lte->wim_resource_list);
+	list_del(&lte->rspec_node);
 	lte->rspec = NULL;
 	lte->resource_location = RESOURCE_NONEXISTENT;
 }

@@ -21,6 +21,9 @@ libwim_la_SOURCES =		\
 	src/add_image.c		\
 	src/capture_common.c	\
 	src/compress.c		\
+	src/compress_chunk.c	\
+	src/compress_parallel.c	\
+	src/compress_serial.c	\
 	src/decompress.c	\
 	src/delete_image.c	\
 	src/dentry.c		\
@@ -67,6 +70,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/capture.h	\
 	include/wimlib/compiler.h	\
 	include/wimlib/compress.h	\
+	include/wimlib/compress_chunks.h \
 	include/wimlib/decompress.h	\
 	include/wimlib/dentry.h		\
 	include/wimlib/encoding.h	\

@@ -140,8 +140,7 @@ wim_chunk_size_valid(u32 chunk_size, int ctype)
 		return order >= 15 && order <= 26;
 
 	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		/* TODO */
-		return 131072;
+		return order >= 15 && order <= 26;
 	}
 	return false;
 }
@@ -836,9 +835,12 @@ wim_checksum_unhashed_streams(WIMStruct *wim)
 		struct wim_lookup_table_entry *lte, *tmp;
 		struct wim_image_metadata *imd = wim->image_metadata[i];
 		image_for_each_unhashed_stream_safe(lte, tmp, imd) {
-			ret = hash_unhashed_stream(lte, wim->lookup_table, NULL);
+			struct wim_lookup_table_entry *new_lte;
+			ret = hash_unhashed_stream(lte, wim->lookup_table, &new_lte);
 			if (ret)
 				return ret;
+			if (new_lte != lte)
+				free_lookup_table_entry(lte);
 		}
 	}
 	return 0;
