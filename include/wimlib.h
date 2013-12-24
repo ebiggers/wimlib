@@ -1302,7 +1302,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** This flag no longer does anything but is reserved for future use.  */
 #define WIMLIB_EXTRACT_FLAG_VERBOSE			0x00000008
 
-/** Read the WIM file sequentially while extracting the image.  */
+/** Read the WIM file sequentially while extracting the image.  As of wimlib
+ * v1.6.0 this is the default behavior, and this flag no longer does anything.
+ */
 #define WIMLIB_EXTRACT_FLAG_SEQUENTIAL			0x00000010
 
 /** Extract special UNIX data captured with ::WIMLIB_ADD_FLAG_UNIX_DATA.  Only
@@ -1364,6 +1366,13 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** TODO: this flag is intended to allow resuming an aborted extraction, but the
  * behavior is currently less than satisfactory.  Do not use (yet).  */
 #define WIMLIB_EXTRACT_FLAG_RESUME			0x00010000
+
+/** Perform the extraction ordered by the tree of files to extract rather than
+ * how the underlying streams are arranged in the WIM file.  For regular WIM
+ * files this may decrease or increase performance, depending on various
+ * factors.  For WIM files containing packed streams this will decrease
+ * performance.  */
+#define WIMLIB_EXTRACT_FLAG_FILE_ORDER			0x00020000
 
 /** @} */
 /** @ingroup G_mounting_wim_images

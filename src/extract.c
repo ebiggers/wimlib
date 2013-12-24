@@ -140,7 +140,7 @@ ref_stream_to_extract(struct wim_lookup_table_entry *lte,
 		ctx->num_streams_remaining++;
 	}
 
-	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL) {
+	if (!(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER)) {
 		struct wim_dentry **lte_dentries;
 
 		/* Append dentry to this stream's array of dentries referencing
@@ -1182,8 +1182,7 @@ dentry_extract_dir_skeleton(struct wim_dentry *dentry, void *_ctx)
 	return 0;
 }
 
-/* Create a file or directory, then immediately extract all streams.  This
- * assumes that WIMLIB_EXTRACT_FLAG_SEQUENTIAL is not specified, since the WIM
+/* Create a file or directory, then immediately extract all streams.  The WIM
  * may not be read sequentially by this function.  */
 static int
 dentry_extract(struct wim_dentry *dentry, void *_ctx)
@@ -1375,7 +1374,7 @@ out_delete_tmpfile:
 static int
 extract_stream_list(struct apply_ctx *ctx)
 {
-	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL) {
+	if (!(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER)) {
 		/* Sequential extraction: read the streams in the order in which
 		 * they appear in the WIM file.  */
 		struct read_stream_list_callbacks cbs = {
@@ -2430,8 +2429,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	}
 
 	/* Finally, the important part: extract the tree of files.  */
-	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SEQUENTIAL |
-			     WIMLIB_EXTRACT_FLAG_FROM_PIPE)) {
+	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER)) {
 		/* Sequential extraction requested, so two passes are needed
 		 * (one for directory structure, one for streams.)  */
 		if (progress_func)
@@ -2509,7 +2507,7 @@ out_free_realtarget:
 out_teardown_stream_list:
 	/* Free memory allocated as part of the mapping from each
 	 * wim_lookup_table_entry to the dentries that reference it.  */
-	if (ctx.extract_flags & WIMLIB_EXTRACT_FLAG_SEQUENTIAL)
+	if (!(ctx.extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER))
 		list_for_each_entry(lte, &ctx.stream_list, extraction_list)
 			if (lte->out_refcnt > ARRAY_LEN(lte->inline_lte_dentries))
 				FREE(lte->lte_dentries);
@@ -2586,9 +2584,8 @@ check_extract_command(struct wimlib_extract_command *cmd, int wim_header_flags)
 	 * corresponding file or symbolic link data.  This needs to be handled
 	 * better.  */
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_UNIX_DATA |
-			      WIMLIB_EXTRACT_FLAG_SEQUENTIAL))
-				    == (WIMLIB_EXTRACT_FLAG_UNIX_DATA |
-					WIMLIB_EXTRACT_FLAG_SEQUENTIAL))
+			      WIMLIB_EXTRACT_FLAG_FILE_ORDER))
+				    == WIMLIB_EXTRACT_FLAG_UNIX_DATA)
 	{
 		if (extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE) {
 			WARNING("Setting UNIX file/owner group may "
@@ -2596,7 +2593,7 @@ check_extract_command(struct wimlib_extract_command *cmd, int wim_header_flags)
 				"          symbolic links "
 				"when applying from a pipe.");
 		} else {
-			extract_flags &= ~WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
+			extract_flags |= WIMLIB_EXTRACT_FLAG_FILE_ORDER;
 			WARNING("Disabling sequential extraction for "
 				"UNIX data mode");
 		}
@@ -2877,8 +2874,6 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT)
 		return WIMLIB_ERR_INVALID_PARAM;
-
-	extract_flags |= WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
 
 	/* Read the WIM header from the pipe and get a WIMStruct to represent
 	 * the pipable WIM.  Caveats:  Unlike getting a WIMStruct with
