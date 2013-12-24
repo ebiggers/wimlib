@@ -578,6 +578,9 @@ read_wim_lookup_table(WIMStruct *wim)
 		      reshdr.size_in_wim, reshdr.uncompressed_size,
 		      reshdr.offset_in_wim, reshdr.flags);
 
+		if (wim->hdr.wim_version == WIM_VERSION_DEFAULT)
+			reshdr.flags &= ~WIM_RESHDR_FLAG_PACKED_STREAMS;
+
 		cur_entry = new_lookup_table_entry();
 		if (cur_entry == NULL) {
 			ERROR("Not enough memory to read lookup table!");
