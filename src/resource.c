@@ -898,10 +898,21 @@ wim_reshdr_to_data(const struct wim_reshdr *reshdr, WIMStruct *wim, void **buf_r
 struct streamifier_context {
 	struct read_stream_list_callbacks cbs;
 	struct wim_lookup_table_entry *cur_stream;
+	struct wim_lookup_table_entry *next_stream;
 	u64 cur_stream_offset;
 	struct wim_lookup_table_entry *final_stream;
 	size_t list_head_offset;
 };
+
+static struct wim_lookup_table_entry *
+next_stream(struct wim_lookup_table_entry *lte, size_t list_head_offset)
+{
+	struct list_head *cur;
+
+	cur = (struct list_head*)((u8*)lte + list_head_offset);
+
+	return (struct wim_lookup_table_entry*)((u8*)cur->next - list_head_offset);
+}
 
 /* A consume_data_callback_t implementation that translates raw resource data
  * into streams, calling the begin_stream, consume_chunk, and end_stream
@@ -937,28 +948,22 @@ streamifier_cb(const void *chunk, size_t size, void *_ctx)
 	if (ctx->cur_stream_offset == ctx->cur_stream->size) {
 		/* Finished reading all the data for a stream.  */
 
-		struct list_head *cur, *next;
-
-		cur = (struct list_head *)
-			((u8*)ctx->cur_stream + ctx->list_head_offset);
-		next = cur->next;
-
 		DEBUG("End stream (size=%"PRIu64").", ctx->cur_stream->size);
 		ret = (*ctx->cbs.end_stream)(ctx->cur_stream, 0,
 					     ctx->cbs.end_stream_ctx);
 		if (ret)
 			return ret;
 
-		if (ctx->cur_stream != ctx->final_stream) {
-			/* Advance to next stream.  */
-			ctx->cur_stream = (struct wim_lookup_table_entry *)
-					((u8*)next - ctx->list_head_offset);
-
-			ctx->cur_stream_offset = 0;
-		} else {
-			/* No more streams.  */
-			ctx->cur_stream = NULL;
+		/* Advance to next stream.  */
+		ctx->cur_stream = ctx->next_stream;
+		if (ctx->cur_stream != NULL) {
+			if (ctx->cur_stream != ctx->final_stream)
+				ctx->next_stream = next_stream(ctx->cur_stream,
+							       ctx->list_head_offset);
+			else
+				ctx->next_stream = NULL;
 		}
+		ctx->cur_stream_offset = 0;
 	}
 	return 0;
 }
@@ -1125,6 +1130,9 @@ read_full_stream_with_sha1(struct wim_lookup_table_entry *lte,
  *	STREAM_LIST_ALREADY_SORTED
  *		@stream_list is already sorted in sequential order for reading.
  *
+ * The callback functions are allowed to delete the current stream from the list
+ * if necessary.
+ *
  * Returns 0 on success; a nonzero error code on failure.  Failure can occur due
  * to an error reading the data or due to an error status being returned by any
  * of the callback functions.
@@ -1233,6 +1241,7 @@ read_stream_list(struct list_head *stream_list,
 				struct streamifier_context streamifier_ctx = {
 					.cbs			= *sink_cbs,
 					.cur_stream		= lte,
+					.next_stream            = next_stream(lte, list_head_offset),
 					.cur_stream_offset	= 0,
 					.final_stream		= lte_last,
 					.list_head_offset	= list_head_offset,

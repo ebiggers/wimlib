@@ -549,7 +549,7 @@ end_chunk_table(struct write_streams_ctx *ctx, u64 res_actual_size,
 
 	size_t chunk_table_size = actual_num_chunk_entries * chunk_entry_size;
 	u64 res_start_offset;
-	u64 res_end_offset = ctx->out_fd->offset;
+	u64 res_end_offset;
 
 	if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
 		ret = full_write(ctx->out_fd, ctx->chunk_csizes, chunk_table_size);
@@ -658,7 +658,6 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 	if (ctx->lookup_table != NULL && lte->unhashed && !lte->unique_size) {
 
 		wimlib_assert(!is_partial_res);
-		wimlib_assert(ctx->lookup_table != NULL);
 
 		struct wim_lookup_table_entry *lte_new;
 
