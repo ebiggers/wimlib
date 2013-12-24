@@ -212,6 +212,43 @@ free_lookup_table(struct wim_lookup_table *table)
 	}
 }
 
+static void
+lookup_table_insert_raw(struct wim_lookup_table *table,
+			struct wim_lookup_table_entry *lte)
+{
+	size_t i = lte->hash_short % table->capacity;
+
+	hlist_add_head(&lte->hash_list, &table->array[i]);
+}
+
+static void
+enlarge_lookup_table(struct wim_lookup_table *table)
+{
+	size_t old_capacity, new_capacity;
+	struct hlist_head *old_array, *new_array;
+	struct wim_lookup_table_entry *lte;
+	struct hlist_node *cur, *tmp;
+	size_t i;
+
+	old_capacity = table->capacity;
+	new_capacity = old_capacity * 2;
+	new_array = CALLOC(new_capacity, sizeof(struct hlist_head));
+	if (new_array == NULL)
+		return;
+	old_array = table->array;
+	table->array = new_array;
+	table->capacity = new_capacity;
+
+	for (i = 0; i < old_capacity; i++) {
+		hlist_for_each_entry_safe(lte, cur, tmp, &old_array[i], hash_list) {
+			hlist_del(&lte->hash_list);
+			lookup_table_insert_raw(table, lte);
+		}
+	}
+	FREE(old_array);
+}
+
+
 /*
  * Inserts an entry into the lookup table.
  *
@@ -222,11 +259,9 @@ void
 lookup_table_insert(struct wim_lookup_table *table,
 		    struct wim_lookup_table_entry *lte)
 {
-	size_t i = lte->hash_short % table->capacity;
-	hlist_add_head(&lte->hash_list, &table->array[i]);
-
-	/* XXX Make the table grow when too many entries have been inserted. */
-	table->num_entries++;
+	lookup_table_insert_raw(table, lte);
+	if (++table->num_entries > table->capacity)
+		enlarge_lookup_table(table);
 }
 
 static void
