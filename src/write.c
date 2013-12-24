@@ -286,31 +286,32 @@ struct write_streams_progress_data {
 
 static void
 do_write_streams_progress(struct write_streams_progress_data *progress_data,
-			  struct wim_lookup_table_entry *lte,
-			  bool stream_discarded)
+			  u64 size,
+			  bool discarded,
+			  struct wim_lookup_table_entry *cur_stream)
 {
 	union wimlib_progress_info *progress = &progress_data->progress;
 	bool new_wim_part;
 
-	if (stream_discarded) {
-		progress->write_streams.total_bytes -= lte->size;
+	if (discarded) {
+		progress->write_streams.total_bytes -= size;
 		if (progress_data->next_progress != ~(uint64_t)0 &&
 		    progress_data->next_progress > progress->write_streams.total_bytes)
 		{
 			progress_data->next_progress = progress->write_streams.total_bytes;
 		}
 	} else {
-		progress->write_streams.completed_bytes += lte->size;
+		progress->write_streams.completed_bytes += size;
 	}
 	new_wim_part = false;
-	if (lte->resource_location == RESOURCE_IN_WIM &&
-	    lte->rspec->wim != progress_data->prev_wim_part)
+	if (cur_stream->resource_location == RESOURCE_IN_WIM &&
+	    cur_stream->rspec->wim != progress_data->prev_wim_part)
 	{
 		if (progress_data->prev_wim_part) {
 			new_wim_part = true;
 			progress->write_streams.completed_parts++;
 		}
-		progress_data->prev_wim_part = lte->rspec->wim;
+		progress_data->prev_wim_part = cur_stream->rspec->wim;
 	}
 	progress->write_streams.completed_streams++;
 	if (progress_data->progress_func
@@ -679,7 +680,7 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 				DEBUG("Discarding duplicate stream of "
 				      "length %"PRIu64, lte->size);
 				do_write_streams_progress(&ctx->progress_data,
-							  lte, true);
+							  lte->size, true, lte);
 				list_del(&lte->write_streams_list);
 				list_del(&lte->lookup_table_list);
 				if (lte_new->will_be_in_output_wim)
@@ -720,15 +721,15 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 {
 	int ret;
 
+	struct wim_lookup_table_entry *lte;
+
+	lte = list_entry(ctx->pending_streams.next,
+			 struct wim_lookup_table_entry, write_streams_list);
+
 	if (ctx->cur_write_res_offset == 0 &&
 	    !(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS))
 	{
 		/* Starting to write a new stream in non-packed mode.  */
-
-		struct wim_lookup_table_entry *lte;
-
-		lte = list_entry(ctx->pending_streams.next,
-				 struct wim_lookup_table_entry, write_streams_list);
 
 		if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
 			int additional_reshdr_flags = 0;
@@ -774,6 +775,9 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 
 	ctx->cur_write_res_offset += usize;
 
+	do_write_streams_progress(&ctx->progress_data,
+				  usize, false, lte);
+
 	if (ctx->cur_write_res_offset == ctx->cur_write_res_size &&
 	    !(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS))
 	{
@@ -784,8 +788,6 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 		wimlib_assert(ctx->cur_write_res_offset == lte->size);
 
 		/* Finished writing a stream in non-packed mode.  */
-
-		do_write_streams_progress(&ctx->progress_data, lte, false);
 
 		ret = end_write_resource(ctx, &lte->out_reshdr);
 		if (ret)
@@ -1246,6 +1248,11 @@ write_stream_list(struct list_head *stream_list,
 	      ctx.progress_data.progress.write_streams.num_threads);
 
 	INIT_LIST_HEAD(&ctx.pending_streams);
+
+	if (ctx.progress_data.progress_func) {
+		(*ctx.progress_data.progress_func)(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
+						   &ctx.progress_data.progress);
+	}
 
 	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS) {
 		ret = begin_write_resource(&ctx, ctx.num_bytes_to_compress);
