@@ -25,7 +25,6 @@ compress_chunk(const void * uncompressed_data,
 					    compressed_data,
 					    comp_ctx);
 	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		WARNING("LZMS compression not implemented!  Writing uncompressed data.");
 		return 0;
 
 	default:

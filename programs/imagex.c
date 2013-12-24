@@ -418,6 +418,8 @@ get_compression_type(const tchar *optarg)
 		return WIMLIB_COMPRESSION_TYPE_LZX;
 	else if (!tstrcasecmp(optarg, T("fast")) || !tstrcasecmp(optarg, T("xpress")))
 		return WIMLIB_COMPRESSION_TYPE_XPRESS;
+	else if (!tstrcasecmp(optarg, T("recovery")) || !tstrcasecmp(optarg, T("lzms")))
+		return WIMLIB_COMPRESSION_TYPE_LZMS;
 	else if (!tstrcasecmp(optarg, T("none")))
 		return WIMLIB_COMPRESSION_TYPE_NONE;
 	else {

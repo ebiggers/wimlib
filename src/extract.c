@@ -534,10 +534,10 @@ error:
  * This function operates slightly differently depending on whether @lte_spec is
  * NULL or not.  When @lte_spec is NULL, the behavior is to extract the default
  * file contents (unnamed stream), and, if named data streams are supported in
- * the extract mode and volume, any named data streams.  When @lte_spec is NULL,
- * the behavior is to extract only all copies of the stream @lte_spec, and in
- * addition use @lte_spec to set the reparse data or create the symbolic link if
- * appropriate.
+ * the extract mode and volume, any named data streams.  When @lte_spec is not
+ * NULL, the behavior is to extract only all copies of the stream @lte_spec, and
+ * in addition use @lte_spec to set the reparse data or create the symbolic link
+ * if appropriate.
  *
  * @path
  *	Path to file to extract (as can be passed to apply_operations
