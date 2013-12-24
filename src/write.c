@@ -1047,7 +1047,8 @@ write_raw_copy_resource(struct wim_resource_spec *in_rspec,
 		out_offset_in_wim += sizeof(struct pwm_stream_hdr);
 	}
 	in_fd = &in_rspec->wim->in_fd;
-	while (cur_read_offset != end_read_offset) {
+	wimlib_assert(cur_read_offset != end_read_offset);
+	do {
 
 		bytes_to_read = min(sizeof(buf), end_read_offset - cur_read_offset);
 
@@ -1060,7 +1061,8 @@ write_raw_copy_resource(struct wim_resource_spec *in_rspec,
 			return ret;
 
 		cur_read_offset += bytes_to_read;
-	}
+
+	} while (cur_read_offset != end_read_offset);
 
 	list_for_each_entry(lte, &in_rspec->stream_list, rspec_node) {
 		if (lte->will_be_in_output_wim) {
@@ -1079,7 +1081,8 @@ write_raw_copy_resource(struct wim_resource_spec *in_rspec,
  * file being written.  */
 static int
 write_raw_copy_resources(struct list_head *raw_copy_resources,
-			 struct filedes *out_fd)
+			 struct filedes *out_fd,
+			 struct write_streams_progress_data *progress_data)
 {
 	struct wim_lookup_table_entry *lte;
 	int ret;
@@ -1088,6 +1091,7 @@ write_raw_copy_resources(struct list_head *raw_copy_resources,
 		ret = write_raw_copy_resource(lte->rspec, out_fd);
 		if (ret)
 			return ret;
+		do_write_streams_progress(progress_data, lte->size, false, lte);
 	}
 	return 0;
 }
@@ -1456,7 +1460,8 @@ write_stream_list(struct list_head *stream_list,
 out_write_raw_copy_resources:
 	/* Copy any compressed resources for which the raw data can be reused
 	 * without decompression.  */
-	ret = write_raw_copy_resources(&raw_copy_resources, ctx.out_fd);
+	ret = write_raw_copy_resources(&raw_copy_resources, ctx.out_fd,
+				       &ctx.progress_data);
 
 out_destroy_context:
 	if (out_chunk_size > STACK_MAX)
