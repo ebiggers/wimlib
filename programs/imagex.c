@@ -292,6 +292,7 @@ static const struct option optimize_options[] = {
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("recompress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
+	{T("pack-streams"),no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
@@ -3317,6 +3318,10 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 			chunk_size = parse_chunk_size(optarg);
 			if (chunk_size == UINT32_MAX)
 				goto out_err;
+			break;
+		case IMAGEX_PACK_STREAMS_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
+			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
 		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);
