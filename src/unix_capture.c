@@ -128,6 +128,7 @@ unix_capture_directory(struct wim_dentry *dir_dentry,
 		if (child)
 			dentry_add_child(dir_dentry, child);
 	}
+	path[path_len] = '\0';
 	closedir(dir);
 	return ret;
 }
@@ -203,43 +204,42 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	struct wim_dentry *root = NULL;
 	int ret;
 	struct wim_inode *inode;
-
-	params->progress.scan.cur_path = path;
+	struct stat stbuf;
 
 	if (exclude_path(path, path_len, params->config, true)) {
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED);
+		params->progress.scan.cur_path = path;
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 		ret = 0;
 		goto out;
 	}
 
-	struct stat stbuf;
-	int (*stat_fn)(const char *restrict, struct stat *restrict);
 	if ((params->add_flags & WIMLIB_ADD_FLAG_DEREFERENCE) ||
 	    (params->add_flags & WIMLIB_ADD_FLAG_ROOT))
-		stat_fn = stat;
+		ret = stat(path, &stbuf);
 	else
-		stat_fn = lstat;
+		ret = lstat(path, &stbuf);
 
-	ret = (*stat_fn)(path, &stbuf);
 	if (ret) {
-		ERROR_WITH_ERRNO("Failed to stat `%s'", path);
+		ERROR_WITH_ERRNO("Failed to stat \"%s\"", path);
 		ret = WIMLIB_ERR_STAT;
 		goto out;
 	}
-	if (!S_ISREG(stbuf.st_mode) && !S_ISDIR(stbuf.st_mode)
-	    && !S_ISLNK(stbuf.st_mode)) {
+
+	if (!S_ISREG(stbuf.st_mode) &&
+	    !S_ISDIR(stbuf.st_mode) &&
+	    !S_ISLNK(stbuf.st_mode))
+	{
 		if (params->add_flags & WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE)
 		{
 			ERROR("Can't archive unsupported file \"%s\"", path);
 			ret = WIMLIB_ERR_UNSUPPORTED_FILE;
 			goto out;
 		}
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED);
+		params->progress.scan.cur_path = path;
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
 		ret = 0;
 		goto out;
 	}
-
-	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK);
 
 	ret = inode_table_new_dentry(&params->inode_table,
 				     path_basename_with_len(path, path_len),
@@ -252,7 +252,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (inode->i_nlink > 1) {
 		/* Already captured this inode? */
 		ret = 0;
-		goto out;
+		goto out_progress_ok;
 	}
 
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
@@ -286,6 +286,9 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (ret)
 		goto out;
 
+out_progress_ok:
+	params->progress.scan.cur_path = path;
+	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 out:
 	if (ret)
 		free_dentry_tree(root, params->lookup_table);

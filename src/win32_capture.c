@@ -1133,7 +1133,6 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	HANDLE hFile;
 	DWORD desiredAccess;
 
-	params->progress.scan.cur_path = path;
 
 	if (exclude_path(path, path_num_chars, params->config, true)) {
 		if (params->add_flags & WIMLIB_ADD_FLAG_ROOT) {
@@ -1141,7 +1140,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 			goto out;
 		}
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED);
+		params->progress.scan.cur_path = path;
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 		ret = 0;
 		goto out;
 	}
@@ -1157,8 +1157,6 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			WARNING("Suppressing further warnings about long paths.");
 	}
 #endif
-
-	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK);
 
 	desiredAccess = FILE_READ_DATA | FILE_READ_ATTRIBUTES |
 			READ_CONTROL | ACCESS_SYSTEM_SECURITY;
@@ -1232,8 +1230,10 @@ again:
 
 	inode = root->d_inode;
 
-	if (inode->i_nlink > 1) /* Shared inode; nothing more to do */
-		goto out_close_handle;
+	if (inode->i_nlink > 1) {
+		/* Shared inode; nothing more to do */
+		goto out_progress_ok;
+	}
 
 	inode->i_attributes = file_info.dwFileAttributes;
 	inode->i_creation_time = FILETIME_to_u64(&file_info.ftCreationTime);
@@ -1299,6 +1299,10 @@ again:
 					      state,
 					      vol_flags);
 	}
+	path[path_num_chars] = '\0';
+out_progress_ok:
+	params->progress.scan.cur_path = path;
+	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 out_close_handle:
 	CloseHandle(hFile);
 out:

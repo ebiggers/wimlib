@@ -1053,6 +1053,34 @@ get_unit(uint64_t total_bytes, const tchar **name_ret)
 	}
 }
 
+static struct wimlib_progress_info_scan last_scan_progress;
+
+static void
+report_scan_progress(const struct wimlib_progress_info_scan *scan, bool done)
+{
+	uint64_t prev_count, cur_count;
+
+	prev_count = last_scan_progress.num_nondirs_scanned +
+		     last_scan_progress.num_dirs_scanned;
+	cur_count = scan->num_nondirs_scanned + scan->num_dirs_scanned;
+
+	if (done || prev_count == 0 || cur_count >= prev_count + 100 ||
+	    cur_count % 128 == 0)
+	{
+		unsigned unit_shift;
+		const tchar *unit_name;
+
+		unit_shift = get_unit(scan->num_bytes_scanned, &unit_name);
+		imagex_printf(T("\r%"PRIu64" %"TS" scanned (%"PRIu64" files, "
+				"%"PRIu64" directories)"),
+			      scan->num_bytes_scanned >> unit_shift,
+			      unit_name,
+			      scan->num_nondirs_scanned,
+			      scan->num_dirs_scanned);
+		last_scan_progress = *scan;
+	}
+}
+
 /* Progress callback function passed to various wimlib functions. */
 static int
 imagex_progress_func(enum wimlib_progress_msg msg,
@@ -1061,6 +1089,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	unsigned percent_done;
 	unsigned unit_shift;
 	const tchar *unit_name;
+
 	if (imagex_be_quiet)
 		return 0;
 	switch (msg) {
@@ -1107,22 +1136,27 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING"%"TS"\")...\n"),
 			       info->scan.wim_target_path);
 		} else {
-			imagex_printf(T(" (loading as root of WIM image)...\n"));
+			imagex_printf(T("\n"));
 		}
+		memset(&last_scan_progress, 0, sizeof(last_scan_progress));
 		break;
 	case WIMLIB_PROGRESS_MSG_SCAN_DENTRY:
 		switch (info->scan.status) {
 		case WIMLIB_SCAN_DENTRY_OK:
-			imagex_printf(T("Scanning \"%"TS"\"\n"), info->scan.cur_path);
+			report_scan_progress(&info->scan, false);
 			break;
 		case WIMLIB_SCAN_DENTRY_EXCLUDED:
-			imagex_printf(T("Excluding \"%"TS"\" from capture\n"), info->scan.cur_path);
+			imagex_printf(T("\nExcluding \"%"TS"\" from capture\n"), info->scan.cur_path);
 			break;
 		case WIMLIB_SCAN_DENTRY_UNSUPPORTED:
-			imagex_printf(T("WARNING: Excluding unsupported file or directory\n"
+			imagex_printf(T("\nWARNING: Excluding unsupported file or directory\n"
 					"         \"%"TS"\" from capture\n"), info->scan.cur_path);
 			break;
 		}
+		break;
+	case WIMLIB_PROGRESS_MSG_SCAN_END:
+		report_scan_progress(&info->scan, true);
+		imagex_printf(T("\n"));
 		break;
 	case WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY:
 		unit_shift = get_unit(info->integrity.total_bytes, &unit_name);
@@ -1516,7 +1550,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_SYMLINK;
 			break;
 		case IMAGEX_VERBOSE_OPTION:
-			extract_flags |= WIMLIB_EXTRACT_FLAG_VERBOSE;
+			/* No longer does anything.  */
 			break;
 		case IMAGEX_REF_OPTION:
 			ret = string_set_append(&refglobs, optarg);
@@ -1673,7 +1707,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	int c;
 	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
 	int add_image_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE |
-			      WIMLIB_ADD_IMAGE_FLAG_WINCONFIG;
+			      WIMLIB_ADD_IMAGE_FLAG_WINCONFIG |
+			      WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	uint32_t chunk_size = UINT32_MAX;
@@ -1752,7 +1787,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
 			break;
 		case IMAGEX_VERBOSE_OPTION:
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
+			/* No longer does anything.  */
 			break;
 		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);
@@ -2653,7 +2688,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			break;
 		case IMAGEX_VERBOSE_OPTION:
-			extract_flags |= WIMLIB_EXTRACT_FLAG_VERBOSE;
+			/* No longer does anything.  */
 			break;
 		case IMAGEX_REF_OPTION:
 			ret = string_set_append(&refglobs, optarg);
@@ -3521,7 +3556,8 @@ imagex_update(int argc, tchar **argv, int cmd)
 	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
 	int write_flags = 0;
 	int update_flags = WIMLIB_UPDATE_FLAG_SEND_PROGRESS;
-	int default_add_flags = WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE;
+	int default_add_flags = WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE |
+				WIMLIB_ADD_FLAG_VERBOSE;
 	int default_delete_flags = 0;
 	unsigned num_threads = 0;
 	int c;
@@ -3580,7 +3616,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 
 		/* Default add options */
 		case IMAGEX_VERBOSE_OPTION:
-			default_add_flags |= WIMLIB_ADD_FLAG_VERBOSE;
+			/* No longer does anything.  */
 			break;
 		case IMAGEX_DEREFERENCE_OPTION:
 			default_add_flags |= WIMLIB_ADD_FLAG_DEREFERENCE;
@@ -3757,7 +3793,7 @@ static const tchar *usage_strings[] = {
 T(
 "    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
 "                    [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot]\n"
-"                    [--check] [--nocheck] [--flags EDITION_ID] [--verbose]\n"
+"                    [--check] [--nocheck] [--flags EDITION_ID]\n"
 "                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
 "                    [--source-list] [--no-acls] [--strict-acls] [--rpfix]\n"
 "                    [--norpfix] [--unix-data] [--pipable]\n"
@@ -3767,7 +3803,7 @@ T(
 T(
 "    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME | all)]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
-"                    [--symlink] [--verbose] [--ref=\"GLOB\"] [--unix-data]\n"
+"                    [--symlink] [--ref=\"GLOB\"] [--unix-data]\n"
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
 "                    [--include-invalid-names]\n"
 ),
@@ -3776,7 +3812,7 @@ T(
 "    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
 "		     [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot]\n"
 "                    [--check] [--nocheck] [--compress=TYPE]\n"
-"                    [--flags EDITION_ID] [--verbose] [--dereference]\n"
+"                    [--flags EDITION_ID] [--dereference]\n"
 "                    [--config=FILE] [--threads=NUM_THREADS] [--source-list]\n"
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
 "                    [--unix-data] [--pipable] [--update-of=[WIMFILE:]IMAGE]\n"
@@ -3802,7 +3838,7 @@ T(
 [CMD_EXTRACT] =
 T(
 "    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) [PATH...]\n"
-"                    [--check] [--ref=\"GLOB\"] [--verbose] [--unix-data]\n"
+"                    [--check] [--ref=\"GLOB\"] [--unix-data]\n"
 "                    [--no-acls] [--strict-acls] [--to-stdout]\n"
 "                    [--dest-dir=CMD_DIR] [--include-invalid-names]\n"
 ),

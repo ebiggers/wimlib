@@ -8,6 +8,7 @@
 
 struct wim_lookup_table;
 struct wim_dentry;
+struct wim_inode;
 
 /* Hash table to find inodes, given an inode number (in the case of reading
  * a WIM images), or both an inode number and a device number (in the case of
@@ -70,7 +71,8 @@ struct add_image_params {
 /* capture_common.c */
 
 extern void
-do_capture_progress(struct add_image_params *params, int status);
+do_capture_progress(struct add_image_params *params, int status,
+		    const struct wim_inode *inode);
 
 extern bool
 exclude_path(const tchar *path, size_t path_len,

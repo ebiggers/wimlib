@@ -637,6 +637,21 @@ union wimlib_progress_info {
 		 * ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN and
 		 * ::WIMLIB_PROGRESS_MSG_SCAN_END. */
 		const wimlib_tchar *wim_target_path;
+
+		/** Number of directories scanned so far, including the root
+		 * directory but excluding any unsupported/excluded directories.
+		 * */
+		uint64_t num_dirs_scanned;
+
+		/** Number of non-directories scanned so far, excluding any
+		 * unsupported/excluded files.  */
+		uint64_t num_nondirs_scanned;
+
+		/** Number of bytes of file data that have been detected so far.
+		 * This data may not actually have been read yet, and it will
+		 * not actually be written to the WIM file until wimlib_write()
+		 * or wimlib_overwrite() has been called.  */
+		uint64_t num_bytes_scanned;
 	} scan;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,

@@ -34,7 +34,7 @@ not exist in the WIM image, then any prerequisite directories are created as
 needed to add the \fISOURCE\fR at that location.
 .PP
 The \fBadd\fR command supports a subset of the options accepted by
-\fB@IMAGEX_PROGNAME@-capture\fR; namely, \fB--verbose\fR, \fB--dereference\fR,
+\fB@IMAGEX_PROGNAME@-capture\fR; namely, \fB--dereference\fR,
 \fB--unix-data\fR, \fB--no-acls\fR, and \fB--strict-acls\fR.  See
 \fB@IMAGEX_PROGNAME@-capture\fR (1) for explanations of these options.
 .SS \fBdelete\fR [\fIOPTION\fR...] \fIPATH\fR
@@ -63,9 +63,6 @@ There are no options available for the \fBrename\fR command.
 The following options are accepted on the command line by \fB@IMAGEX_PROGNAME@
 update\fR itself:
 .TP 6
-\fB--verbose\fR
-Use \fB--verbose\fR for all \fBadd\fR commands.
-.TP
 \fB--dereference\fR
 Use \fB--dereference\fR for all \fBadd\fR commands.
 .TP

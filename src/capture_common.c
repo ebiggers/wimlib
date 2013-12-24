@@ -27,7 +27,9 @@
 
 #include "wimlib/assert.h"
 #include "wimlib/capture.h"
+#include "wimlib/dentry.h"
 #include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
 #include "wimlib/paths.h"
 
 #ifdef __WIN32__
@@ -183,7 +185,8 @@ match_pattern(const tchar *path,
 }
 
 void
-do_capture_progress(struct add_image_params *params, int status)
+do_capture_progress(struct add_image_params *params, int status,
+		    const struct wim_inode *inode)
 {
 	switch (status) {
 	case WIMLIB_SCAN_DENTRY_OK:
@@ -195,6 +198,18 @@ do_capture_progress(struct add_image_params *params, int status)
 			return;
 	}
 	params->progress.scan.status = status;
+	if (status == WIMLIB_SCAN_DENTRY_OK && inode->i_nlink == 1) {
+		const struct wim_lookup_table_entry *lte;
+		for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+			lte = inode_stream_lte_resolved(inode, i);
+			if (lte != NULL)
+				params->progress.scan.num_bytes_scanned += lte->size;
+		}
+		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+			params->progress.scan.num_dirs_scanned++;
+		else
+			params->progress.scan.num_nondirs_scanned++;
+	}
 	if (params->progress_func) {
 		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
 				      &params->progress);

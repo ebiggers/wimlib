@@ -56,9 +56,6 @@ See \fBSPLIT_WIMS\fR.  Note: since \fIGLOB\fR is listed in quotes because it is
 interpreted by \fB@IMAGEX_PROGNAME@\fR and may need to be quoted to protect
 against shell expansion.
 .TP
-\fB--verbose\fR
-This option no longer does anything but is reserved for future use.
-.TP
 \fB--unix-data\fR
 See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 .TP

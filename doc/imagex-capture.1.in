@@ -218,9 +218,6 @@ optimize\fR(1).
 Specify a string to use in the <FLAGS> element of the XML data for the new
 image.
 .TP
-\fB--verbose\fR
-Print the names of files and directories as they are captured.
-.TP
 \fB--dereference\fR
 (UNIX-like systems only) Follow symbolic links and archive the files they point
 to, rather than archiving the links themselves.

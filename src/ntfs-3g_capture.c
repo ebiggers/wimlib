@@ -538,12 +538,11 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	struct wim_inode *inode;
 	ATTR_TYPES stream_type;
 
-	params->progress.scan.cur_path = path;
-
 	if (exclude_path(path, path_len, params->config, false)) {
 		/* Exclude a file or directory tree based on the capture
-		 * configuration file */
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED);
+		 * configuration file.  */
+		params->progress.scan.cur_path = path;
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 		ret = 0;
 		goto out;
 	}
@@ -565,12 +564,11 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			ret = WIMLIB_ERR_UNSUPPORTED_FILE;
 			goto out;
 		}
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED);
+		params->progress.scan.cur_path = path;
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
 		ret = 0;
 		goto out;
 	}
-
-	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK);
 
 	/* Create a WIM dentry with an associated inode, which may be shared */
 	ret = inode_table_new_dentry(&params->inode_table,
@@ -587,7 +585,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	if (inode->i_nlink > 1) {
 		/* Shared inode; nothing more to do */
 		ret = 0;
-		goto out;
+		goto out_progress_ok;
 	}
 
 	inode->i_creation_time    = le64_to_cpu(ni->creation_time);
@@ -638,6 +636,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		if (ret)
 			goto out;
 	}
+	path[path_len] = '\0';
 
 	/* Reparse-point fixups are a no-op because in NTFS-3g capture mode we
 	 * only allow capturing an entire volume. */
@@ -681,6 +680,10 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			DEBUG("No security ID for `%s'", path);
 		}
 	}
+
+out_progress_ok:
+	params->progress.scan.cur_path = path;
+	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 out:
 	if (ret == 0)
 		*root_ret = root;
