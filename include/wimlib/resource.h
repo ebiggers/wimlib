@@ -170,11 +170,6 @@ struct alt_chunk_table_header_disk {
 	 * the chunks (4 bytes per entry).  */
 } _packed_attribute;
 
-/* wimlib internal flags used when writing resources.  */
-#define WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS		0x00000001
-#define WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE		0x00000002
-#define WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS		0x00000004
-
 /* Functions to read streams  */
 
 extern int

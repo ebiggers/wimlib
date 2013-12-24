@@ -58,17 +58,22 @@
 #  include <alloca.h>
 #endif
 
+/* wimlib internal flags used when writing resources.  */
+#define WRITE_RESOURCE_FLAG_RECOMPRESS		0x00000001
+#define WRITE_RESOURCE_FLAG_PIPABLE		0x00000002
+#define WRITE_RESOURCE_FLAG_PACK_STREAMS	0x00000004
+
 static inline int
 write_flags_to_resource_flags(int write_flags)
 {
 	int write_resource_flags = 0;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
-		write_resource_flags |= WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS;
+		write_resource_flags |= WRITE_RESOURCE_FLAG_RECOMPRESS;
 	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
-		write_resource_flags |= WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE;
+		write_resource_flags |= WRITE_RESOURCE_FLAG_PIPABLE;
 	if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
-		write_resource_flags |= WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS;
+		write_resource_flags |= WRITE_RESOURCE_FLAG_PACK_STREAMS;
 	return write_resource_flags;
 }
 
@@ -149,7 +154,7 @@ can_raw_copy(const struct wim_lookup_table_entry *lte,
 {
 	const struct wim_resource_spec *rspec;
 
-	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_RECOMPRESS)
+	if (write_resource_flags & WRITE_RESOURCE_FLAG_RECOMPRESS)
 		return false;
 
 	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
@@ -160,7 +165,7 @@ can_raw_copy(const struct wim_lookup_table_entry *lte,
 
 	rspec = lte->rspec;
 
-	if (rspec->is_pipable != !!(write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE))
+	if (rspec->is_pipable != !!(write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE))
 		return false;
 
 
@@ -172,7 +177,7 @@ can_raw_copy(const struct wim_lookup_table_entry *lte,
 	}
 
 	if ((rspec->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
-	    (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS))
+	    (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS))
 	{
 		/* Packed resource: Such resources may contain multiple streams,
 		 * and in general only a subset of them need to be written.  As
@@ -432,7 +437,7 @@ begin_chunk_table(struct write_streams_ctx *ctx, u64 res_expected_size)
 	 * potentially decreasing the number of chunk entries needed.  */
 	expected_num_chunks = DIV_ROUND_UP(res_expected_size, ctx->out_chunk_size);
 	expected_num_chunk_entries = expected_num_chunks;
-	if (!(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS))
+	if (!(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS))
 		expected_num_chunk_entries--;
 
 	/* Make sure the chunk_csizes array is long enough to store the
@@ -457,7 +462,7 @@ begin_chunk_table(struct write_streams_ctx *ctx, u64 res_expected_size)
 
 	ctx->chunk_index = 0;
 
-	if (!(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE)) {
+	if (!(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE)) {
 		/* Reserve space for the chunk table in the output file.  In the
 		 * case of packed resources this reserves the upper bound for
 		 * the needed space, not necessarily the exact space which will
@@ -467,7 +472,7 @@ begin_chunk_table(struct write_streams_ctx *ctx, u64 res_expected_size)
 		reserve_size = expected_num_chunk_entries *
 			       get_chunk_entry_size(res_expected_size,
 						    ctx->write_resource_flags);
-		if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS)
+		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS)
 			reserve_size += sizeof(struct alt_chunk_table_header_disk);
 		memset(ctx->chunk_csizes, 0, reserve_size);
 		ret = full_write(ctx->out_fd, ctx->chunk_csizes, reserve_size);
@@ -509,7 +514,7 @@ end_chunk_table(struct write_streams_ctx *ctx, u64 res_actual_size,
 
 	actual_num_chunks = ctx->chunk_index;
 	actual_num_chunk_entries = actual_num_chunks;
-	if (!(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS))
+	if (!(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS))
 		actual_num_chunk_entries--;
 
 	chunk_entry_size = get_chunk_entry_size(res_actual_size,
@@ -521,7 +526,7 @@ end_chunk_table(struct write_streams_ctx *ctx, u64 res_actual_size,
 	if (chunk_entry_size == 4) {
 		aliased_le32_t *entries = (aliased_le32_t*)ctx->chunk_csizes;
 
-		if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS) {
+		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
 			for (size_t i = 0; i < actual_num_chunk_entries; i++)
 				entries[i] = cpu_to_le32(ctx->chunk_csizes[i]);
 		} else {
@@ -535,7 +540,7 @@ end_chunk_table(struct write_streams_ctx *ctx, u64 res_actual_size,
 	} else {
 		aliased_le64_t *entries = (aliased_le64_t*)ctx->chunk_csizes;
 
-		if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS) {
+		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
 			for (size_t i = 0; i < actual_num_chunk_entries; i++)
 				entries[i] = cpu_to_le64(ctx->chunk_csizes[i]);
 		} else {
@@ -552,7 +557,7 @@ end_chunk_table(struct write_streams_ctx *ctx, u64 res_actual_size,
 	u64 res_start_offset;
 	u64 res_end_offset;
 
-	if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
+	if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) {
 		ret = full_write(ctx->out_fd, ctx->chunk_csizes, chunk_table_size);
 		if (ret)
 			goto error;
@@ -565,7 +570,7 @@ end_chunk_table(struct write_streams_ctx *ctx, u64 res_actual_size,
 
 		chunk_table_offset = ctx->chunks_start_offset - chunk_table_size;
 
-		if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS) {
+		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
 			struct alt_chunk_table_header_disk hdr;
 
 			hdr.res_usize = cpu_to_le64(res_actual_size);
@@ -685,7 +690,7 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 				list_del(&lte->lookup_table_list);
 				if (lte_new->will_be_in_output_wim)
 					lte_new->out_refcnt += lte->out_refcnt;
-				if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS)
+				if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS)
 					ctx->cur_write_res_size -= lte->size;
 				free_lookup_table_entry(lte);
 				return BEGIN_STREAM_STATUS_SKIP_STREAM;
@@ -727,11 +732,11 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 			 struct wim_lookup_table_entry, write_streams_list);
 
 	if (ctx->cur_write_res_offset == 0 &&
-	    !(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS))
+	    !(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS))
 	{
 		/* Starting to write a new stream in non-packed mode.  */
 
-		if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
+		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) {
 			int additional_reshdr_flags = 0;
 			if (ctx->compressor != NULL)
 				additional_reshdr_flags |= WIM_RESHDR_FLAG_COMPRESSED;
@@ -757,7 +762,7 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 
 	       /* If writing a pipable WIM, before the chunk data write a chunk
 		* header that provides the compressed chunk size.  */
-		if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
+		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) {
 			struct pwm_chunk_hdr chunk_hdr = {
 				.compressed_size = cpu_to_le32(csize),
 			};
@@ -779,7 +784,7 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 				  usize, false, lte);
 
 	if (ctx->cur_write_res_offset == ctx->cur_write_res_size &&
-	    !(ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS))
+	    !(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS))
 	{
 		struct wim_lookup_table_entry *lte;
 
@@ -864,7 +869,7 @@ write_stream_process_chunk(const void *chunk, size_t size, void *_ctx)
 		const u8 *resized_chunk;
 		size_t needed_chunk_size;
 
-		if (ctx->write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS) {
+		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
 			needed_chunk_size = ctx->out_chunk_size;
 		} else {
 			u64 res_bytes_remaining;
@@ -1131,6 +1136,125 @@ remove_zero_length_streams(struct list_head *stream_list)
 	}
 }
 
+/*
+ * Write a list of streams to the output WIM file.
+ *
+ * @stream_list
+ *	The list of streams to write, specifies a list of `struct
+ *	wim_lookup_table_entry's linked by the 'write_streams_list' member.
+ *
+ * @out_fd
+ *	The file descriptor, opened for writing, to which to write the streams.
+ *
+ * @write_resource_flags
+ *	Flags to modify how the streams are written:
+ *
+ *	WRITE_RESOURCE_FLAG_RECOMPRESS:
+ *		Force compression of all resources, even if they could otherwise
+ *		be re-used by caping the raw data, due to being located in a WIM
+ *		file with compatible compression parameters.
+ *
+ *	WRITE_RESOURCE_FLAG_PIPABLE:
+ *		Write the resources in the wimlib-specific pipable format, and
+ *		furthermore do so in such a way that no seeking backwards in
+ *		@out_fd will be performed (so it may be a pipe, contrary to the
+ *		default behavior).
+ *
+ *	WRITE_RESOURCE_FLAG_PACK_STREAMS:
+ *		Pack all the streams into a single resource rather than writing
+ *		them in separate resources.  This format is only valid if the
+ *		WIM version number is WIM_VERSION_PACKED_STREAMS.  This flag
+ *		currently may not be combined with WRITE_RESOURCE_FLAG_PIPABLE.
+ *
+ * @out_ctype
+ *	Compression format to use to write the output streams, specified as one
+ *	of the WIMLIB_COMPRESSION_TYPE_* constants, excepting
+ *	WIMLIB_COMPRESSION_TYPE_INVALID but including
+ *	WIMLIB_COMPRESSION_TYPE_NONE.
+ *
+ * @out_chunk_size
+ *	Chunk size to use to write the streams.  It must be a valid chunk size
+ *	for the specified compression format @out_ctype, unless @out_ctype is
+ *	WIMLIB_COMPRESSION_TYPE_NONE, in which case this parameter is ignored.
+ *
+ * @num_threads
+ *	Number of threads to use to compress data.  If 0, a default number of
+ *	threads will be chosen.  The number of threads still may be decreased
+ *	from the specified value if insufficient memory is detected.
+ *
+ * @lookup_table
+ *	If on-the-fly deduplication of unhashed streams is desired, this
+ *	parameter must be pointer to the lookup table for the WIMStruct on whose
+ *	behalf the streams are being written.  Otherwise, this parameter can be
+ *	NULL.
+ *
+ * @filter_ctx
+ *	If on-the-fly deduplication of unhashed streams is desired, this
+ *	parameter can be a pointer to a context for stream filtering used to
+ *	detect whether the duplicate stream has been hard-filtered or not.  If
+ *	no streams are hard-filtered or no streams are unhashed, this parameter
+ *	can be NULL.
+ *
+ * @comp_ctx
+ *	A location in which to allocate the pointer to the default LZX
+ *	compression context.  This will only be used if @out_ctype is
+ *	WIMLIB_COMPRESSION_TYPE_LZX.
+ *
+ * @progress_func
+ *	If non-NULL, a progress function that will be called periodically with
+ *	WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages.  Note that on-the-fly
+ *	deduplication of unhashed streams may result in the total bytes provided
+ *	in the progress data to decrease from one message to the next.
+ *
+ * This function will write the streams in @stream_list to resources in
+ * consecutive positions in the output WIM file, or to a single packed resource
+ * if WRITE_RESOURCE_FLAG_PACK_STREAMS was specified in @write_resource_flags.
+ * In both cases, the @out_reshdr of the `struct wim_lookup_table_entry' for
+ * each stream written will be updated to specify its location, size, and flags
+ * in the output WIM.  In the packed resource case,
+ * WIM_RESHDR_FLAG_PACKED_STREAMS shall be set in the @flags field of the
+ * @out_reshdr, and @out_res_offset_in_wim and @out_res_size_in_wim will also
+ * be set to the offset and size, respectively, in the output WIM of the full
+ * packed resource containing the corresponding stream.
+ *
+ * Each of the streams to write may be in any location supported by the
+ * resource-handling code (specifically, read_stream_list()), such as the
+ * contents of external file that has been logically added to the output WIM, or
+ * a stream in another WIM file that has been imported, or even stream in the
+ * "same" WIM file of which a modified copy is being written.  In the case that
+ * a stream is already in a WIM file and uses compatible compression parameters,
+ * by default this function will re-use the raw data instead of decompressing
+ * it, then recompressing it; however, with WRITE_RESOURCE_FLAG_RECOMPRESS
+ * specified in @write_resource_flags, this is not done.
+ *
+ * As a further requirement, this function requires that the
+ * @will_be_in_output_wim member be set on all streams in @stream_list as well
+ * as any other streams not in @stream_list that will be in the output WIM file,
+ * but not on any other streams in the output WIM's lookup table or sharing a
+ * packed resource with a stream in @stream_list.  Still furthermore, if
+ * on-the-fly deduplication of streams is possible, then all streams in
+ * @stream_list must also be linked by @lookup_table_list along with any other
+ * streams that have @will_be_in_output_wim set.
+ *
+ * This function handles on-the-fly deduplication of streams for which SHA1
+ * message digests have not yet been calculated and it is therefore known
+ * whether such streams are already in @stream_list or in the WIM's lookup table
+ * at all.  If @lookup_table is non-NULL, then each stream in @stream_list that
+ * has @unhashed set but not @unique_size set is checksummed immediately before
+ * it would otherwise be read for writing in order to determine if it is
+ * identical to another stream already being written or one that would be
+ * filtered out of the output WIM using stream_filtered() with the context
+ * @filter_ctx.  Each such duplicate stream will be removed from @stream_list, its
+ * reference count transfered to the pre-existing duplicate stream, its memory
+ * freed, and will not be written.  Alternatively, if a stream in @stream_list
+ * is a duplicate with any stream in @lookup_table that has not been marked for
+ * writing or would not be hard-filtered, it is freed and the pre-existing
+ * duplicate is written instead, taking ownership of the reference count and
+ * slot in the @lookup_table_list.
+ *
+ * Returns 0 if all streams were written successfully (or did not need to be
+ * written); otherwise a non-zero error code.
+ */
 static int
 write_stream_list(struct list_head *stream_list,
 		  struct filedes *out_fd,
@@ -1146,6 +1270,12 @@ write_stream_list(struct list_head *stream_list,
 	int ret;
 	struct write_streams_ctx ctx;
 	struct list_head raw_copy_resources;
+
+	wimlib_assert((write_resource_flags &
+		       (WRITE_RESOURCE_FLAG_PACK_STREAMS |
+			WRITE_RESOURCE_FLAG_PIPABLE)) !=
+				(WRITE_RESOURCE_FLAG_PACK_STREAMS |
+				 WRITE_RESOURCE_FLAG_PIPABLE));
 
 	remove_zero_length_streams(stream_list);
 
@@ -1171,13 +1301,15 @@ write_stream_list(struct list_head *stream_list,
 	ctx.write_resource_flags = write_resource_flags;
 	ctx.filter_ctx = filter_ctx;
 
-	if (out_chunk_size <= STACK_MAX) {
-		ctx.chunk_buf = alloca(out_chunk_size);
-	} else {
-		ctx.chunk_buf = MALLOC(out_chunk_size);
-		if (ctx.chunk_buf == NULL) {
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_destroy_context;
+	if (out_chunk_size != 0) {
+		if (out_chunk_size <= STACK_MAX) {
+			ctx.chunk_buf = alloca(out_chunk_size);
+		} else {
+			ctx.chunk_buf = MALLOC(out_chunk_size);
+			if (ctx.chunk_buf == NULL) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_destroy_context;
+			}
 		}
 	}
 	ctx.chunk_buf_filled = 0;
@@ -1260,7 +1392,7 @@ write_stream_list(struct list_head *stream_list,
 						   &ctx.progress_data.progress);
 	}
 
-	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS) {
+	if (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
 		ret = begin_write_resource(&ctx, ctx.num_bytes_to_compress);
 		if (ret)
 			goto out_destroy_context;
@@ -1292,7 +1424,7 @@ write_stream_list(struct list_head *stream_list,
 	if (ret)
 		goto out_destroy_context;
 
-	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS) {
+	if (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
 		struct wim_reshdr reshdr;
 		struct wim_lookup_table_entry *lte;
 		u64 offset_in_res;
@@ -1349,7 +1481,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 	lte->will_be_in_output_wim = 1;
 	return write_stream_list(&stream_list,
 				 out_fd,
-				 write_resource_flags & ~WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS,
+				 write_resource_flags & ~WRITE_RESOURCE_FLAG_PACK_STREAMS,
 				 out_ctype,
 				 out_chunk_size,
 				 1,
@@ -1384,7 +1516,7 @@ write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 	lte->size               = buf_size;
 	lte->flags              = reshdr_flags;
 
-	if (write_resource_flags & WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE) {
+	if (write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) {
 		sha1_buffer(buf, buf_size, lte->hash);
 		lte->unhashed = 0;
 	} else {
@@ -1819,7 +1951,7 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
-	write_resource_flags &= ~WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS;
+	write_resource_flags &= ~WRITE_RESOURCE_FLAG_PACK_STREAMS;
 
 	DEBUG("Writing metadata resources (offset=%"PRIu64")",
 	      wim->out_fd.offset);
@@ -2280,7 +2412,7 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 	/* Write extra copy of the XML data.  */
 	ret = write_wim_xml_data(wim, image, WIM_TOTALBYTES_OMIT,
 				 &xml_reshdr,
-				 WIMLIB_WRITE_RESOURCE_FLAG_PIPABLE);
+				 WRITE_RESOURCE_FLAG_PIPABLE);
 	if (ret)
 		return ret;
 
