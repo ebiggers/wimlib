@@ -408,13 +408,13 @@ modify_boot_wim() {
 
 	if [ -n "$start_script" ]; then
 		stat_busy "Setting \"$start_script\" as the script to be executed when Windows PE boots"
-		cp "$start_script" "$tmp_dir/$start_script"
+		start_script_base="$(basename "$start_script")"
 		cat > "$tmp_dir/__mkwinpeimg.winpeshl.ini" <<- EOF
 			[LaunchApps]
-			%SYSTEMDRIVE%\\$start_script
+			%SYSTEMDRIVE%\\$start_script_base
 		EOF
 		cat 1>&3 <<- EOF
-			add '$tmp_dir/$start_script' '/$start_script'
+			add '$start_script' '/$start_script_base'
 			delete --force /Windows/System32/winpeshl.ini
 			add '$tmp_dir/__mkwinpeimg.winpeshl.ini' /Windows/System32/winpeshl.ini
 		EOF
