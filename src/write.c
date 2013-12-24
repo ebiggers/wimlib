@@ -2583,7 +2583,10 @@ write_wim_part(WIMStruct *wim,
 			    WIMLIB_WRITE_FLAG_PACK_STREAMS))
 				    == (WIMLIB_WRITE_FLAG_PIPABLE |
 					WIMLIB_WRITE_FLAG_PACK_STREAMS))
+	{
+		ERROR("Cannot specify both PIPABLE and PACK_STREAMS!");
 		return WIMLIB_ERR_INVALID_PARAM;
+	}
 
 	/* Set appropriate magic number.  */
 	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
@@ -2886,8 +2889,13 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	if (!(write_flags & (WIMLIB_WRITE_FLAG_PACK_STREAMS |
 			     WIMLIB_WRITE_FLAG_NO_PACK_STREAMS)))
 	{
+	#if 0
 		if (wim->hdr.wim_version == WIM_VERSION_PACKED_STREAMS)
 			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
+	#endif
+		/* wimlib allows multiple packs in a single WIM, but they don't
+		 * seem to be compatible with WIMGAPI.  Write new streams
+		 * unpacked.  */
 	} else if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS) {
 		wim->hdr.wim_version = WIM_VERSION_PACKED_STREAMS;
 	}
@@ -3075,18 +3083,35 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags,
 	return 0;
 }
 
+/* Determine if the specified WIM file may be updated by appending in-place
+ * rather than writing and replacing it with an entirely new file.  */
 static bool
 can_overwrite_wim_inplace(const WIMStruct *wim, int write_flags)
 {
+	/* REBUILD flag forces full rebuild.  */
 	if (write_flags & WIMLIB_WRITE_FLAG_REBUILD)
 		return false;
 
+	/* Deletions cause full rebuild by default.  */
 	if (wim->deletion_occurred && !(write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE))
 		return false;
 
+	/* Pipable WIMs cannot be updated in place, nor can a non-pipable WIM be
+	 * turned into a pipable WIM in-place.  */
 	if (wim_is_pipable(wim) || (write_flags & WIMLIB_WRITE_FLAG_PIPABLE))
 		return false;
 
+	/* wimlib allows multiple packs in a single WIM, but they don't seem to
+	 * be compatible with WIMGAPI, so force all streams to be repacked if
+	 * the WIM already may have contained a pack and PACK_STREAMS was
+	 * requested.  */
+	if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS &&
+	    wim->hdr.wim_version == WIM_VERSION_PACKED_STREAMS)
+		return false;
+
+	/* The default compression type and compression chunk size selected for
+	 * the output WIM must be the same as those currently used for the WIM.
+	 */
 	if (wim->compression_type != wim->out_compression_type)
 		return false;
 	if (wim->chunk_size != wim->out_chunk_size)
