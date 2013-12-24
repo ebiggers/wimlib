@@ -624,7 +624,10 @@ union wimlib_progress_info {
 			WIMLIB_SCAN_DENTRY_OK = 0,
 
 			/** File or directory is being excluded from capture due
-			 * to the capture configuration file.  */
+			 * to the capture configuration file, or being an
+			 * absolute symbolic link that points outside of the
+			 * capture directory without ::WIMLIB_ADD_FLAG_NORPFIX.
+			 */
 			WIMLIB_SCAN_DENTRY_EXCLUDED,
 
 			/** File or directory is being excluded from capture due

@@ -207,10 +207,8 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	struct stat stbuf;
 
 	if (exclude_path(path, path_len, params->config, true)) {
-		params->progress.scan.cur_path = path;
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 		ret = 0;
-		goto out;
+		goto out_progress;
 	}
 
 	if ((params->add_flags & WIMLIB_ADD_FLAG_DEREFERENCE) ||
@@ -252,7 +250,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (inode->i_nlink > 1) {
 		/* Already captured this inode? */
 		ret = 0;
-		goto out_progress_ok;
+		goto out_progress;
 	}
 
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
@@ -286,9 +284,12 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (ret)
 		goto out;
 
-out_progress_ok:
+out_progress:
 	params->progress.scan.cur_path = path;
-	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
+	if (root == NULL)
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+	else
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 out:
 	if (ret)
 		free_dentry_tree(root, params->lookup_table);

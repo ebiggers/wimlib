@@ -1130,7 +1130,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	u8 *rpbuf;
 	u16 rpbuflen;
 	u16 not_rpfixed;
-	HANDLE hFile;
+	HANDLE hFile = INVALID_HANDLE_VALUE;
 	DWORD desiredAccess;
 
 
@@ -1140,10 +1140,8 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 			goto out;
 		}
-		params->progress.scan.cur_path = path;
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 		ret = 0;
-		goto out;
+		goto out_progress;
 	}
 
 #if 0
@@ -1186,7 +1184,7 @@ again:
 		ERROR_WITH_ERRNO("Failed to get file information for \"%ls\"",
 				 path);
 		ret = WIMLIB_ERR_STAT;
-		goto out_close_handle;
+		goto out;
 	}
 
 	if (file_info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
@@ -1196,12 +1194,12 @@ again:
 		if (ret < 0) {
 			/* WIMLIB_ERR_* (inverted) */
 			ret = -ret;
-			goto out_close_handle;
+			goto out;
 		} else if (ret & RP_FIXED) {
 			not_rpfixed = 0;
 		} else if (ret == RP_EXCLUDED) {
 			ret = 0;
-			goto out_close_handle;
+			goto out_progress;
 		} else {
 			not_rpfixed = 1;
 		}
@@ -1222,17 +1220,17 @@ again:
 				        (file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)),
 				     &root);
 	if (ret)
-		goto out_close_handle;
+		goto out;
 
 	ret = win32_get_short_name(hFile, path, root);
 	if (ret)
-		goto out_close_handle;
+		goto out;
 
 	inode = root->d_inode;
 
 	if (inode->i_nlink > 1) {
 		/* Shared inode; nothing more to do */
-		goto out_progress_ok;
+		goto out_progress;
 	}
 
 	inode->i_attributes = file_info.dwFileAttributes;
@@ -1250,7 +1248,7 @@ again:
 						    &params->sd_set, state,
 						    params->add_flags);
 		if (ret)
-			goto out_close_handle;
+			goto out;
 	}
 
 	file_size = ((u64)file_info.nFileSizeHigh << 32) |
@@ -1267,7 +1265,7 @@ again:
 				    file_size,
 				    vol_flags);
 	if (ret)
-		goto out_close_handle;
+		goto out;
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Reparse point: set the reparse data (which we read already)
@@ -1288,7 +1286,7 @@ again:
 				ERROR_WITH_ERRNO("Failed to reopen \"%ls\"",
 						 path);
 				ret = WIMLIB_ERR_OPEN;
-				goto out_close_handle;
+				goto out;
 			}
 		}
 		ret = win32_recurse_directory(hFile,
@@ -1299,13 +1297,19 @@ again:
 					      state,
 					      vol_flags);
 	}
+	if (ret)
+		goto out;
+
 	path[path_num_chars] = '\0';
-out_progress_ok:
+out_progress:
 	params->progress.scan.cur_path = path;
-	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
-out_close_handle:
-	CloseHandle(hFile);
+	if (root == NULL)
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+	else
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 out:
+	if (hFile != INVALID_HANDLE_VALUE)
+		CloseHandle(hFile);
 	if (ret == 0)
 		*root_ret = root;
 	else

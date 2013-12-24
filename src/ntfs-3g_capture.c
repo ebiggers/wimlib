@@ -541,10 +541,8 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	if (exclude_path(path, path_len, params->config, false)) {
 		/* Exclude a file or directory tree based on the capture
 		 * configuration file.  */
-		params->progress.scan.cur_path = path;
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 		ret = 0;
-		goto out;
+		goto out_progress;
 	}
 
 	/* Get file attributes */
@@ -585,7 +583,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	if (inode->i_nlink > 1) {
 		/* Shared inode; nothing more to do */
 		ret = 0;
-		goto out_progress_ok;
+		goto out_progress;
 	}
 
 	inode->i_creation_time    = le64_to_cpu(ni->creation_time);
@@ -680,10 +678,15 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			DEBUG("No security ID for `%s'", path);
 		}
 	}
+	if (ret)
+		goto out;
 
-out_progress_ok:
+out_progress:
 	params->progress.scan.cur_path = path;
-	do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
+	if (root == NULL)
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+	else
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 out:
 	if (ret == 0)
 		*root_ret = root;
