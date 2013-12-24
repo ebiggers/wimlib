@@ -2736,6 +2736,9 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 
 	DEBUG("Overwriting `%"TS"' in-place", wim->filename);
 
+	/* Save original header so it can be restored in case of error  */
+	memcpy(&hdr_save, &wim->hdr, sizeof(struct wim_header));
+
 	/* Set default integrity flag.  */
 	if (!(write_flags & (WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
 			     WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY)))
@@ -2745,8 +2748,12 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	/* Set default packed flag.  */
 	if (!(write_flags & (WIMLIB_WRITE_FLAG_PACK_STREAMS |
 			     WIMLIB_WRITE_FLAG_NO_PACK_STREAMS)))
+	{
 		if (wim->hdr.wim_version == WIM_VERSION_PACKED_STREAMS)
 			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
+	} else if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS) {
+		wim->hdr.wim_version = WIM_VERSION_PACKED_STREAMS;
+	}
 
 	/* Set additional flags for overwrite.  */
 	write_flags |= WIMLIB_WRITE_FLAG_OVERWRITE |
@@ -2763,12 +2770,14 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	if (wim->hdr.integrity_table_reshdr.offset_in_wim != 0 &&
 	    wim->hdr.integrity_table_reshdr.offset_in_wim < old_xml_end) {
 		WARNING("Didn't expect the integrity table to be before the XML data");
-		return WIMLIB_ERR_RESOURCE_ORDER;
+		ret = WIMLIB_ERR_RESOURCE_ORDER;
+		goto out_restore_memory_hdr;
 	}
 
 	if (old_lookup_table_end > old_xml_begin) {
 		WARNING("Didn't expect the lookup table to be after the XML data");
-		return WIMLIB_ERR_RESOURCE_ORDER;
+		ret = WIMLIB_ERR_RESOURCE_ORDER;
+		goto out_restore_memory_hdr;
 	}
 
 	/* Set @old_wim_end, which indicates the point beyond which we don't
@@ -2799,31 +2808,28 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 
 	ret = check_resource_offsets(wim, old_wim_end);
 	if (ret)
-		return ret;
+		goto out_restore_memory_hdr;
 
 	ret = prepare_stream_list_for_write(wim, WIMLIB_ALL_IMAGES, write_flags,
 					    &stream_list, &lookup_table_list,
 					    &filter_ctx);
 	if (ret)
-		return ret;
+		goto out_restore_memory_hdr;
 
 	ret = open_wim_writable(wim, wim->filename, O_RDWR);
 	if (ret)
-		return ret;
+		goto out_restore_memory_hdr;
 
 	ret = lock_wim(wim, wim->out_fd.fd);
 	if (ret)
 		goto out_close_wim;
-
-	/* Save original header so it can be restored in case of error  */
-	memcpy(&hdr_save, &wim->hdr, sizeof(struct wim_header));
 
 	/* Set WIM_HDR_FLAG_WRITE_IN_PROGRESS flag in header. */
 	wim->hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 	ret = write_wim_header_flags(wim->hdr.flags, &wim->out_fd);
 	if (ret) {
 		ERROR_WITH_ERRNO("Error updating WIM header flags");
-		goto out_restore_memory_hdr;
+		goto out_unlock_wim;
 	}
 
 	if (filedes_seek(&wim->out_fd, old_wim_end) == -1) {
@@ -2856,7 +2862,8 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 	if (ret)
 		goto out_truncate;
 
-	goto out_unlock_wim;
+	wim->wim_locked = 0;
+	return 0;
 
 out_truncate:
 	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
@@ -2868,12 +2875,12 @@ out_truncate:
 	}
 out_restore_physical_hdr:
 	(void)write_wim_header_flags(hdr_save.flags, &wim->out_fd);
-out_restore_memory_hdr:
-	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
-out_close_wim:
-	(void)close_wim_writable(wim, write_flags);
 out_unlock_wim:
 	wim->wim_locked = 0;
+out_close_wim:
+	(void)close_wim_writable(wim, write_flags);
+out_restore_memory_hdr:
+	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
 	return ret;
 }
 
