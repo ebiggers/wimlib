@@ -1535,10 +1535,27 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 
 #define WIMLIB_WRITE_FLAG_RESERVED			0x00000800
 
-/** TODO */
+/** When writing streams in the resulting WIM file, pack multiple streams into a
+ * single WIM resource instead of compressing them independently.  This tends to
+ * produce a better compression ratio at the cost of less random access.
+ * Furthermore, WIMs created with this flag are only compatible with wimlib
+ * v1.6.0 or later and WIMGAPI Windows 8 or later, seemingly for Windows Setup
+ * only and <b>not including ImageX and Dism</b>.  WIMs created with this flag
+ * use version number 3584 in their header instead of 68864.  If this flag is
+ * passed to wimlib_overwrite() and the WIM did not previously contain packed
+ * streams, the WIM's version number will be changed to 3584 and the new streams
+ * will be written packed.  */
 #define WIMLIB_WRITE_FLAG_PACK_STREAMS			0x00001000
 
-/** TODO */
+/** Compress all streams independently.  This produces a WIM optimized for
+ * random access and compatibility, as noted in the documentation for
+ * ::WIMLIB_WRITE_RESOURCE_FLAG_PACK_STREAMS.  For wimlib_write(), this is the
+ * default behavior. For wimlib_overwrite(), this is the default if the WIM file
+ * did not already contain packed streams.  Also, for wimlib_overwrite(), if the
+ * WIM already contained packed streams, specifying this flag but not
+ * ::WIMLIB_WRITE_FLAG_REBUILD will cause new streams to be written unpacked,
+ * but the WIM itself will not be rebuilt and may still contain packed streams.
+ */
 #define WIMLIB_WRITE_FLAG_NO_PACK_STREAMS		0x00002000
 
 /** @} */
