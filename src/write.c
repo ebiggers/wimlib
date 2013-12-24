@@ -2943,15 +2943,10 @@ can_overwrite_wim_inplace(const WIMStruct *wim, int write_flags)
 	if (wim_is_pipable(wim) || (write_flags & WIMLIB_WRITE_FLAG_PIPABLE))
 		return false;
 
-	if (wim->hdr.wim_version != WIM_VERSION_PACKED_STREAMS) {
-		if (wim->compression_type != wim->out_compression_type)
-			return false;
-		if (wim->chunk_size != wim->out_chunk_size)
-			return false;
-	} else {
-		if (write_flags & WIMLIB_WRITE_FLAG_NO_PACK_STREAMS)
-			return false;
-	}
+	if (wim->compression_type != wim->out_compression_type)
+		return false;
+	if (wim->chunk_size != wim->out_chunk_size)
+		return false;
 
 	return true;
 }
