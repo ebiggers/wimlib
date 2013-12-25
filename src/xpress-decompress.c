@@ -195,7 +195,6 @@ xpress_lz_decode(struct input_bitstream * restrict istream,
 }
 
 
-/* API function documented in wimlib.h  */
 static int
 xpress_decompress(const void *compressed_data, size_t compressed_size,
 		  void *uncompressed_data, size_t uncompressed_size, void *_ctx)
