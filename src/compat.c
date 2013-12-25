@@ -43,7 +43,7 @@ do_compress(const void *udata, unsigned ulen, void *cdata, int ctype)
 	unsigned clen;
 
 	if (wimlib_create_compressor(ctype, 32768, NULL, &c))
-		return -1;
+		return 0;
 	clen = wimlib_compress(udata, ulen, cdata, ulen - 1, c);
 	wimlib_free_compressor(c);
 	return clen;
