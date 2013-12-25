@@ -1349,6 +1349,7 @@ write_stream_list(struct list_head *stream_list,
 				"actually be written uncompressed.");
 		}
 
+	#ifdef ENABLE_MULTITHREADED_COMPRESSION
 		if (ctx.num_bytes_to_compress >= 2000000) {
 			ret = new_parallel_chunk_compressor(out_ctype,
 							    out_chunk_size,
@@ -1359,6 +1360,7 @@ write_stream_list(struct list_head *stream_list,
 				      "(status %d)", ret);
 			}
 		}
+	#endif
 
 		if (ctx.compressor == NULL) {
 			ret = new_serial_chunk_compressor(out_ctype, out_chunk_size,

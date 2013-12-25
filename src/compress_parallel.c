@@ -26,6 +26,8 @@
 #  include "config.h"
 #endif
 
+#ifdef ENABLE_MULTITHREADED_COMPRESSION
+
 #include "wimlib/assert.h"
 #include "wimlib/chunk_compressor.h"
 #include "wimlib/error.h"
@@ -534,3 +536,5 @@ err:
 	parallel_chunk_compressor_destroy(&ctx->base);
 	return ret;
 }
+
+#endif /* ENABLE_MULTITHREADED_COMPRESSION */
