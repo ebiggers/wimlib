@@ -148,10 +148,12 @@ add_stream_to_swm(struct wim_lookup_table_entry *lte, void *_swm_info)
 	struct swm_info *swm_info = _swm_info;
 	u64 stream_size;
 
-	/* We want the compressed size of the stream, but use the uncompressed
-	 * size if the compressed size is not available or not relevant.  */
-	if (lte->resource_location == RESOURCE_IN_WIM &&
-	    (!lte_is_partial(lte) || lte->rspec->size_in_wim < lte->size))
+	if (lte_is_partial(lte)) {
+		ERROR("Splitting of WIM containing packed streams is not supported.\n"
+		      "        Export it in the default format first.");
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+	if (lte->resource_location == RESOURCE_IN_WIM)
 		stream_size = lte->rspec->size_in_wim;
 	else
 		stream_size = lte->size;
