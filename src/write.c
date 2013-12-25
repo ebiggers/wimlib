@@ -268,20 +268,6 @@ write_pwm_stream_header(const struct wim_lookup_table_entry *lte,
 	return ret;
 }
 
-#if 0
-static int
-seek_and_truncate(struct filedes *out_fd, off_t offset)
-{
-	if (filedes_seek(out_fd, offset) == -1 ||
-	    ftruncate(out_fd->fd, offset))
-	{
-		ERROR_WITH_ERRNO("Failed to truncate output WIM file");
-		return WIMLIB_ERR_WRITE;
-	}
-	return 0;
-}
-#endif
-
 struct write_streams_progress_data {
 	wimlib_progress_func_t progress_func;
 	union wimlib_progress_info progress;
@@ -718,6 +704,33 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 	return 0;
 }
 
+static int
+write_stream_uncompressed(struct wim_lookup_table_entry *lte,
+			  struct filedes *out_fd)
+{
+	int ret;
+
+	if (-1 == lseek(out_fd->fd, lte->out_reshdr.offset_in_wim, SEEK_SET) ||
+	    0 != ftruncate(out_fd->fd, lte->out_reshdr.offset_in_wim))
+	{
+		ERROR_WITH_ERRNO("Can't truncate output file to "
+				 "offset %"PRIu64, lte->out_reshdr.offset_in_wim);
+		return WIMLIB_ERR_WRITE;
+	}
+
+	out_fd->offset = lte->out_reshdr.offset_in_wim;
+
+	ret = extract_stream_to_fd(lte, out_fd, lte->size);
+	if (ret)
+		return ret;
+
+	wimlib_assert(out_fd->offset - lte->out_reshdr.offset_in_wim == lte->size);
+	lte->out_reshdr.size_in_wim = lte->size;
+	lte->out_reshdr.flags &= ~(WIM_RESHDR_FLAG_COMPRESSED |
+				   WIM_RESHDR_FLAG_PACKED_STREAMS);
+	return 0;
+}
+
 /* Write the next chunk of (typically compressed) data to the output WIM,
  * handling the writing of the chunk table.  */
 static int
@@ -798,11 +811,31 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 		if (ret)
 			return ret;
 
-		wimlib_assert(lte->out_reshdr.uncompressed_size == lte->size);
-
 		lte->out_reshdr.flags = filter_resource_flags(lte->flags);
 		if (ctx->compressor != NULL)
 			lte->out_reshdr.flags |= WIM_RESHDR_FLAG_COMPRESSED;
+
+		if (ctx->compressor != NULL &&
+		    lte->out_reshdr.size_in_wim >= lte->out_reshdr.uncompressed_size &&
+		    !(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) &&
+		    !(lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS))
+		{
+			/* Stream did not compress to less than its original
+			 * size.  If we're not writing a pipable WIM (which
+			 * could mean the output file descriptor is
+			 * non-seekable), and the stream isn't located in a
+			 * resource pack (which would make reading it again
+			 * costly), truncate the file to the start of the stream
+			 * and write it uncompressed instead.  */
+			DEBUG("Stream of size %"PRIu64" did not compress to "
+			      "less than original size; writing uncompressed.",
+			      lte->size);
+			ret = write_stream_uncompressed(lte, ctx->out_fd);
+			if (ret)
+				return ret;
+		}
+
+		wimlib_assert(lte->out_reshdr.uncompressed_size == lte->size);
 
 		list_del(&lte->write_streams_list);
 		ctx->cur_write_res_offset = 0;
