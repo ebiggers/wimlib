@@ -21,10 +21,11 @@ libwim_la_SOURCES =		\
 	src/add_image.c		\
 	src/capture_common.c	\
 	src/compress.c		\
-	src/compress_chunk.c	\
+	src/compress_common.c	\
 	src/compress_parallel.c	\
 	src/compress_serial.c	\
 	src/decompress.c	\
+	src/decompress_common.c	\
 	src/delete_image.c	\
 	src/dentry.c		\
 	src/encoding.c		\
@@ -36,6 +37,7 @@ libwim_la_SOURCES =		\
 	src/integrity.c		\
 	src/join.c		\
 	src/lookup_table.c	\
+	src/lzms-compress.c	\
 	src/lzms-decompress.c	\
 	src/lz77.c		\
 	src/divsufsort/divsufsort.c		\
@@ -69,9 +71,11 @@ libwim_la_SOURCES =		\
 	include/wimlib/callback.h	\
 	include/wimlib/capture.h	\
 	include/wimlib/compiler.h	\
-	include/wimlib/compress.h	\
-	include/wimlib/compress_chunks.h \
-	include/wimlib/decompress.h	\
+	include/wimlib/compressor_ops.h	\
+	include/wimlib/compress_common.h	\
+	include/wimlib/chunk_compressor.h	\
+	include/wimlib/decompressor_ops.h	\
+	include/wimlib/decompress_common.h	\
 	include/wimlib/dentry.h		\
 	include/wimlib/encoding.h	\
 	include/wimlib/endianness.h	\

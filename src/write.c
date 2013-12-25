@@ -34,7 +34,7 @@
 #  include <sys/file.h>
 #endif
 
-#include "wimlib/compress_chunks.h"
+#include "wimlib/chunk_compressor.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
@@ -1199,11 +1199,6 @@ remove_zero_length_streams(struct list_head *stream_list)
  *	no streams are hard-filtered or no streams are unhashed, this parameter
  *	can be NULL.
  *
- * @comp_ctx
- *	A location in which to allocate the pointer to the default LZX
- *	compression context.  This will only be used if @out_ctype is
- *	WIMLIB_COMPRESSION_TYPE_LZX.
- *
  * @progress_func
  *	If non-NULL, a progress function that will be called periodically with
  *	WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages.  Note that on-the-fly
@@ -1268,7 +1263,6 @@ write_stream_list(struct list_head *stream_list,
 		  unsigned num_threads,
 		  struct wim_lookup_table *lookup_table,
 		  struct filter_context *filter_ctx,
-		  struct wimlib_lzx_context **comp_ctx,
 		  wimlib_progress_func_t progress_func)
 {
 	int ret;
@@ -1367,15 +1361,8 @@ write_stream_list(struct list_head *stream_list,
 		}
 
 		if (ctx.compressor == NULL) {
-			if (out_ctype == WIMLIB_COMPRESSION_TYPE_LZX) {
-				ret = wimlib_lzx_alloc_context(out_chunk_size,
-							       NULL,
-							       comp_ctx);
-				if (ret)
-					goto out_destroy_context;
-			}
 			ret = new_serial_chunk_compressor(out_ctype, out_chunk_size,
-							  *comp_ctx, &ctx.compressor);
+							  &ctx.compressor);
 			if (ret)
 				goto out_destroy_context;
 		}
@@ -1478,8 +1465,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 		   struct filedes *out_fd,
 		   int out_ctype,
 		   u32 out_chunk_size,
-		   int write_resource_flags,
-		   struct wimlib_lzx_context **comp_ctx)
+		   int write_resource_flags)
 {
 	LIST_HEAD(stream_list);
 	list_add(&lte->write_streams_list, &stream_list);
@@ -1492,7 +1478,6 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 				 1,
 				 NULL,
 				 NULL,
-				 comp_ctx,
 				 NULL);
 }
 
@@ -1503,8 +1488,7 @@ write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 			       u32 out_chunk_size,
 			       struct wim_reshdr *out_reshdr,
 			       u8 *hash,
-			       int write_resource_flags,
-			       struct wimlib_lzx_context **comp_ctx)
+			       int write_resource_flags)
 {
 	int ret;
 	struct wim_lookup_table_entry *lte;
@@ -1529,7 +1513,7 @@ write_wim_resource_from_buffer(const void *buf, size_t buf_size,
 	}
 
 	ret = write_wim_resource(lte, out_fd, out_ctype, out_chunk_size,
-				 write_resource_flags, comp_ctx);
+				 write_resource_flags);
 	if (ret)
 		goto out_free_lte;
 
@@ -1936,7 +1920,6 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 				 num_threads,
 				 wim->lookup_table,
 				 filter_ctx,
-				 &wim->lzx_context,
 				 progress_func);
 }
 
@@ -1996,8 +1979,7 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 						 &wim->out_fd,
 						 wim->out_compression_type,
 						 wim->out_chunk_size,
-						 write_resource_flags,
-						 &wim->lzx_context);
+						 write_resource_flags);
 		}
 		if (ret)
 			return ret;
@@ -2117,8 +2099,7 @@ write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
 						       &wim->out_fd,
 						       wim->hdr.part_number,
 						       out_reshdr,
-						       write_flags_to_resource_flags(write_flags),
-						       &wim->lzx_context);
+						       write_flags_to_resource_flags(write_flags));
 }
 
 /*
@@ -2991,7 +2972,6 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 				num_threads,
 				wim->lookup_table,
 				&filter_ctx,
-				&wim->lzx_context,
 				progress_func);
 	if (ret)
 		goto out_truncate;

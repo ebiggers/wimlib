@@ -434,8 +434,10 @@ static int
 set_compress_slow(void)
 {
 	int ret;
-	static const struct wimlib_lzx_params slow_params = {
-		.size_of_this = sizeof(struct wimlib_lzx_params),
+	static const struct wimlib_lzx_compressor_params slow_params = {
+		.hdr = {
+			.size = sizeof(struct wimlib_lzx_compressor_params),
+		},
 		.algorithm = WIMLIB_LZX_ALGORITHM_SLOW,
 		.alg_params = {
 			.slow = {
@@ -450,7 +452,8 @@ set_compress_slow(void)
 			},
 		},
 	};
-	ret = wimlib_lzx_set_default_params(&slow_params);
+	ret = wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZX,
+						   &slow_params.hdr);
 	if (ret)
 		imagex_error(T("Couldn't set slow compression parameters.!"));
 	return ret;
@@ -1866,13 +1869,14 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 
 	/* Set default compression type.  */
 	if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID) {
-		struct wimlib_lzx_params params;
+		struct wimlib_lzx_compressor_params params;
 		memset(&params, 0, sizeof(params));
-		params.size_of_this = sizeof(params);
+		params.hdr.size = sizeof(params);
 		params.algorithm = WIMLIB_LZX_ALGORITHM_FAST;
 		params.use_defaults = 1;
 
-		wimlib_lzx_set_default_params(&params);
+		wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZX,
+						     &params.hdr);
 		compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
 	}
 

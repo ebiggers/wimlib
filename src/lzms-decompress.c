@@ -193,8 +193,9 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/compress.h"
-#include "wimlib/decompress.h"
+#include "wimlib/compress_common.h"
+#include "wimlib/decompressor_ops.h"
+#include "wimlib/decompress_common.h"
 #include "wimlib/error.h"
 #include "wimlib/lzms.h"
 #include "wimlib/util.h"
@@ -381,6 +382,9 @@ struct lzms_decompressor {
 	u32 upcoming_lz_offset;
 	u32 upcoming_delta_power;
 	u32 upcoming_delta_offset;
+
+	/* Used for postprocessing  */
+	s32 last_target_usages[65536];
 };
 
 /* A table that maps position slots to their base values.  These are constants
@@ -1093,18 +1097,16 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 /* Decode the series of literals and matches from the LZMS-compressed data.
  * Returns 0 on success; nonzero if the compressed data is invalid.  */
 static int
-lzms_decode_items(const u8 *cdata, size_t clen, u8 *ubuf, size_t ulen)
+lzms_decode_items(const u8 *cdata, size_t clen, u8 *ubuf, size_t ulen,
+		  struct lzms_decompressor *ctx)
 {
-	/* XXX: The context could be allocated on the heap.  */
-	struct lzms_decompressor ctx;
-
 	/* Initialize the LZMS decompressor.  */
-	lzms_init_decompressor(&ctx, cdata, clen, ubuf, ulen);
+	lzms_init_decompressor(ctx, cdata, clen, ubuf, ulen);
 
 	/* Decode the sequence of items.  */
-	while (ctx.out_next != ctx.out_end) {
-		LZMS_DEBUG("Position %u", ctx.out_next - ctx.out_begin);
-		if (lzms_decode_item(&ctx))
+	while (ctx->out_next != ctx->out_end) {
+		LZMS_DEBUG("Position %u", ctx->out_next - ctx->out_begin);
+		if (lzms_decode_item(ctx))
 			return -1;
 	}
 	return 0;
@@ -1216,17 +1218,15 @@ lzms_process_x86_translation(u8 *ubuf, s32 i, s32 *closest_target_usage_p,
  * actually needs to be done (or to plug in alternate filters, like in LZMA),
  * and the corresponding preprocessing seems to be done unconditionally.  */
 static void
-lzms_postprocess_data(u8 *ubuf, s32 ulen)
+lzms_postprocess_data(u8 *ubuf, s32 ulen, s32 *last_target_usages)
 {
 	/* Offset (from beginning of buffer) of the most recent reference to a
 	 * seemingly valid target address.  */
 	s32 closest_target_usage = -LZMS_X86_MAX_TRANSLATION_OFFSET - 1;
 
-	/* Offset (from beginning of buffer) of the most recently used target
-	 * address beginning with two bytes equal to the array index.
-	 *
-	 * XXX: This array could be allocated on the heap.  */
-	s32 last_target_usages[65536];
+	/* Initialize the last_target_usages array.  Each entry will contain the
+	 * offset (from beginning of buffer) of the most recently used target
+	 * address beginning with two bytes equal to the array index.  */
 	for (s32 i = 0; i < 65536; i++)
 		last_target_usages[i] = -LZMS_X86_MAX_GOOD_TARGET_OFFSET - 1;
 
@@ -1238,48 +1238,81 @@ lzms_postprocess_data(u8 *ubuf, s32 ulen)
 						 last_target_usages);
 }
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_lzms_decompress(const void *cdata, unsigned clen,
-		       void *ubuf, unsigned ulen)
+static int
+lzms_decompress(const void *compressed_data, size_t compressed_size,
+		void *uncompressed_data, size_t uncompressed_size, void *_ctx)
 {
+	struct lzms_decompressor *ctx = _ctx;
+
 	/* The range decoder requires that a minimum of 4 bytes of compressed
 	 * data be initially available.  */
-	if (clen < 4) {
-		LZMS_DEBUG("Compressed length too small (got %u, expected >= 4)",
-			   clen);
+	if (compressed_size < 4) {
+		LZMS_DEBUG("Compressed size too small (got %zu, expected >= 4)",
+			   compressed_size);
 		return -1;
 	}
 
 	/* A LZMS-compressed data block should be evenly divisible into 16-bit
 	 * integers.  */
-	if (clen % 2 != 0) {
-		LZMS_DEBUG("Compressed length not divisible by 2 (got %u)", clen);
+	if (compressed_size % 2 != 0) {
+		LZMS_DEBUG("Compressed size not divisible by 2 (got %zu)",
+			   compressed_size);
 		return -1;
 	}
 
 	/* Handle the trivial case where nothing needs to be decompressed.
 	 * (Necessary because a window of size 0 does not have a valid position
 	 * slot.)  */
-	if (ulen == 0)
+	if (uncompressed_size == 0)
 		return 0;
 
 	/* The x86 post-processor requires that the uncompressed length fit into
 	 * a signed 32-bit integer.  Also, the position slot table cannot be
 	 * searched for a position of INT32_MAX or greater.  */
-	if (ulen >= INT32_MAX) {
+	if (uncompressed_size >= INT32_MAX) {
 		LZMS_DEBUG("Uncompressed length too large "
 			   "(got %u, expected < INT32_MAX)", ulen);
 		return -1;
 	}
 
 	/* Decode the literals and matches.  */
-	if (lzms_decode_items(cdata, clen, ubuf, ulen))
+	if (lzms_decode_items(compressed_data, compressed_size,
+			      uncompressed_data, uncompressed_size, ctx))
 		return -1;
 
 	/* Postprocess the data.  */
-	lzms_postprocess_data(ubuf, ulen);
+	lzms_postprocess_data(uncompressed_data, uncompressed_size,
+			      ctx->last_target_usages);
 
 	LZMS_DEBUG("Decompression successful.");
 	return 0;
 }
+
+static void
+lzms_free_decompressor(void *_ctx)
+{
+	struct lzms_decompressor *ctx = _ctx;
+
+	FREE(ctx);
+}
+
+static int
+lzms_create_decompressor(size_t max_block_size,
+			 const struct wimlib_decompressor_params_header *params,
+			 void **ctx_ret)
+{
+	struct lzms_decompressor *ctx;
+
+	ctx = MALLOC(sizeof(struct lzms_decompressor));
+	if (ctx == NULL)
+		return WIMLIB_ERR_NOMEM;
+
+	*ctx_ret = ctx;
+	return 0;
+}
+
+const struct decompressor_ops lzms_decompressor_ops = {
+	.create_decompressor  = lzms_create_decompressor,
+	.decompress	      = lzms_decompress,
+	.free_decompressor    = lzms_free_decompressor,
+};

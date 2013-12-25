@@ -1,11 +1,11 @@
 /*
- * compress.h
+ * compress_common.h
  *
  * Header for compression code shared by multiple compression formats.
  */
 
-#ifndef _WIMLIB_COMPRESS_H
-#define _WIMLIB_COMPRESS_H
+#ifndef _WIMLIB_COMPRESS_COMMON_H
+#define _WIMLIB_COMPRESS_COMMON_H
 
 #include "wimlib/types.h"
 

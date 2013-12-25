@@ -189,7 +189,8 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/compress.h"
+#include "wimlib/compressor_ops.h"
+#include "wimlib/compress_common.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lzx.h"
@@ -199,7 +200,7 @@
 #include <string.h>
 
 #ifdef ENABLE_LZX_DEBUG
-#  include "wimlib/decompress.h"
+#  include "wimlib/decompress_common.h"
 #endif
 
 #include "divsufsort/divsufsort.h"
@@ -386,7 +387,7 @@ struct salink {
 struct lzx_compressor {
 
 	/* The parameters that were used to create the compressor.  */
-	struct wimlib_lzx_params params;
+	struct wimlib_lzx_compressor_params params;
 
 	/* The buffer of data to be compressed.
 	 *
@@ -2211,34 +2212,32 @@ do_call_insn_preprocessing(u8 data[], int size)
 	}
 }
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI unsigned
-wimlib_lzx_compress2(const void			* const restrict uncompressed_data,
-		     unsigned			  const          uncompressed_len,
-		     void			* const restrict compressed_data,
-		     struct wimlib_lzx_context	* const restrict lzx_ctx)
+static size_t
+lzx_compress(const void *uncompressed_data, size_t uncompressed_size,
+	     void *compressed_data, size_t compressed_size_avail, void *_ctx)
 {
-	struct lzx_compressor *ctx = (struct lzx_compressor*)lzx_ctx;
+	struct lzx_compressor *ctx = _ctx;
 	struct output_bitstream ostream;
-	input_idx_t compressed_len;
+	size_t compressed_size;
 
-	if (uncompressed_len < 100) {
+	if (uncompressed_size < 100) {
 		LZX_DEBUG("Too small to bother compressing.");
 		return 0;
 	}
 
-	if (uncompressed_len > ctx->max_window_size) {
-		LZX_DEBUG("Can't compress %u bytes using window of %u bytes!",
-			  uncompressed_len, ctx->max_window_size);
+	if (uncompressed_size > ctx->max_window_size) {
+		LZX_DEBUG("Can't compress %zu bytes using window of %u bytes!",
+			  uncompressed_size, ctx->max_window_size);
 		return 0;
 	}
 
-	LZX_DEBUG("Attempting to compress %u bytes...", uncompressed_len);
+	LZX_DEBUG("Attempting to compress %zu bytes...",
+		  uncompressed_size);
 
 	/* The input data must be preprocessed.  To avoid changing the original
 	 * input, copy it to a temporary buffer.  */
-	memcpy(ctx->window, uncompressed_data, uncompressed_len);
-	ctx->window_size = uncompressed_len;
+	memcpy(ctx->window, uncompressed_data, uncompressed_size);
+	ctx->window_size = uncompressed_size;
 
 	/* This line is unnecessary; it just avoids inconsequential accesses of
 	 * uninitialized memory that would show up in memory-checking tools such
@@ -2262,18 +2261,19 @@ wimlib_lzx_compress2(const void			* const restrict uncompressed_data,
 	LZX_DEBUG("Writing compressed blocks...");
 
 	/* Generate the compressed data.  */
-	init_output_bitstream(&ostream, compressed_data, ctx->window_size - 1);
+	init_output_bitstream(&ostream, compressed_data, compressed_size_avail);
 	lzx_write_all_blocks(ctx, &ostream);
 
 	LZX_DEBUG("Flushing bitstream...");
-	compressed_len = flush_output_bitstream(&ostream);
-	if (compressed_len == ~(input_idx_t)0) {
-		LZX_DEBUG("Data did not compress to less than original length!");
+	compressed_size = flush_output_bitstream(&ostream);
+	if (compressed_size == ~(input_idx_t)0) {
+		LZX_DEBUG("Data did not compress to %zu bytes or less!",
+			  compressed_size_avail);
 		return 0;
 	}
 
-	LZX_DEBUG("Done: compressed %u => %u bytes.",
-		  uncompressed_len, compressed_len);
+	LZX_DEBUG("Done: compressed %zu => %zu bytes.",
+		  uncompressed_size, compressed_size);
 
 	/* Verify that we really get the same thing back when decompressing.
 	 * Although this could be disabled by default in all cases, it only
@@ -2285,44 +2285,46 @@ wimlib_lzx_compress2(const void			* const restrict uncompressed_data,
 	#endif
 	    )
 	{
-		/* The decompression buffer can be any temporary space that's no
-		 * longer needed.  */
-		u8 *buf = (u8*)(ctx->SA ? ctx->SA : ctx->prev_tab);
+		struct wimlib_decompressor *decompressor;
 
-		if (wimlib_lzx_decompress2(compressed_data, compressed_len,
-					   buf, uncompressed_len, ctx->max_window_size))
+		if (0 == wimlib_create_decompressor(WIMLIB_COMPRESSION_TYPE_LZX,
+						    ctx->max_window_size,
+						    NULL,
+						    &decompressor))
 		{
-			ERROR("Failed to decompress data we "
-			      "compressed using LZX algorithm");
-			wimlib_assert(0);
-			return 0;
-		}
+			int ret;
+			ret = wimlib_decompress(compressed_data,
+						compressed_size,
+						ctx->window,
+						uncompressed_size,
+						decompressor);
+			wimlib_free_decompressor(decompressor);
 
-		if (memcmp(uncompressed_data, buf, uncompressed_len)) {
-			ERROR("Data we compressed using LZX algorithm "
-			      "didn't decompress to original");
-			wimlib_assert(0);
-			return 0;
+			if (ret) {
+				ERROR("Failed to decompress data we "
+				      "compressed using LZX algorithm");
+				wimlib_assert(0);
+				return 0;
+			}
+			if (memcmp(uncompressed_data, ctx->window, uncompressed_size)) {
+				ERROR("Data we compressed using LZX algorithm "
+				      "didn't decompress to original");
+				wimlib_assert(0);
+				return 0;
+			}
+		} else {
+			WARNING("Failed to create decompressor for "
+				"data verification!");
 		}
 	}
-	return compressed_len;
+	return compressed_size;
 }
 
 static bool
-lzx_params_compatible(const struct wimlib_lzx_params *oldparams,
-		      const struct wimlib_lzx_params *newparams)
-{
-	return 0 == memcmp(oldparams, newparams, sizeof(struct wimlib_lzx_params));
-}
-
-static struct wimlib_lzx_params lzx_user_default_params;
-static struct wimlib_lzx_params *lzx_user_default_params_ptr;
-
-static bool
-lzx_params_valid(const struct wimlib_lzx_params *params)
+lzx_params_valid(const struct wimlib_lzx_compressor_params *params)
 {
 	/* Validate parameters.  */
-	if (params->size_of_this != sizeof(struct wimlib_lzx_params)) {
+	if (params->hdr.size != sizeof(struct wimlib_lzx_compressor_params)) {
 		LZX_DEBUG("Invalid parameter structure size!");
 		return false;
 	}
@@ -2365,37 +2367,42 @@ lzx_params_valid(const struct wimlib_lzx_params *params)
 	return true;
 }
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_lzx_set_default_params(const struct wimlib_lzx_params * params)
+static void
+lzx_free_compressor(void *_ctx)
 {
-	if (params) {
-		if (!lzx_params_valid(params))
-			return WIMLIB_ERR_INVALID_PARAM;
-		lzx_user_default_params = *params;
-		lzx_user_default_params_ptr = &lzx_user_default_params;
-	} else {
-		lzx_user_default_params_ptr = NULL;
+	struct lzx_compressor *ctx = _ctx;
+
+	if (ctx) {
+		FREE(ctx->chosen_matches);
+		FREE(ctx->cached_matches);
+		FREE(ctx->optimum);
+		FREE(ctx->salink);
+		FREE(ctx->SA);
+		FREE(ctx->block_specs);
+		FREE(ctx->prev_tab);
+		FREE(ctx->window);
+		FREE(ctx);
 	}
-	return 0;
 }
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_lzx_alloc_context(u32 window_size,
-			 const struct wimlib_lzx_params *params,
-			 struct wimlib_lzx_context **ctx_pp)
+static int
+lzx_create_compressor(size_t window_size,
+		      const struct wimlib_compressor_params_header *_params,
+		      void **ctx_ret)
 {
+	const struct wimlib_lzx_compressor_params *params =
+		(const struct wimlib_lzx_compressor_params*)_params;
+	struct lzx_compressor *ctx;
 
 	LZX_DEBUG("Allocating LZX context...");
 
 	if (!lzx_window_size_valid(window_size))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	struct lzx_compressor *ctx;
-
-	static const struct wimlib_lzx_params fast_default = {
-		.size_of_this = sizeof(struct wimlib_lzx_params),
+	static const struct wimlib_lzx_compressor_params fast_default = {
+		.hdr = {
+			.size = sizeof(struct wimlib_lzx_compressor_params),
+		},
 		.algorithm = WIMLIB_LZX_ALGORITHM_FAST,
 		.use_defaults = 0,
 		.alg_params = {
@@ -2403,8 +2410,10 @@ wimlib_lzx_alloc_context(u32 window_size,
 			},
 		},
 	};
-	static const struct wimlib_lzx_params slow_default = {
-		.size_of_this = sizeof(struct wimlib_lzx_params),
+	static const struct wimlib_lzx_compressor_params slow_default = {
+		.hdr = {
+			.size = sizeof(struct wimlib_lzx_compressor_params),
+		},
 		.algorithm = WIMLIB_LZX_ALGORITHM_SLOW,
 		.use_defaults = 0,
 		.alg_params = {
@@ -2426,10 +2435,7 @@ wimlib_lzx_alloc_context(u32 window_size,
 			return WIMLIB_ERR_INVALID_PARAM;
 	} else {
 		LZX_DEBUG("Using default algorithm and parameters.");
-		if (lzx_user_default_params_ptr)
-			params = lzx_user_default_params_ptr;
-		else
-			params = &slow_default;
+		params = &slow_default;
 	}
 
 	if (params->use_defaults) {
@@ -2439,58 +2445,46 @@ wimlib_lzx_alloc_context(u32 window_size,
 			params = &fast_default;
 	}
 
-	if (ctx_pp) {
-		ctx = *(struct lzx_compressor**)ctx_pp;
-
-		if (ctx &&
-		    lzx_params_compatible(&ctx->params, params) &&
-		    ctx->max_window_size == window_size)
-			return 0;
-	} else {
-		LZX_DEBUG("Check parameters only.");
-		return 0;
-	}
-
 	LZX_DEBUG("Allocating memory.");
 
 	ctx = CALLOC(1, sizeof(struct lzx_compressor));
 	if (ctx == NULL)
-		goto err;
+		goto oom;
 
 	ctx->num_main_syms = lzx_get_num_main_syms(window_size);
 	ctx->max_window_size = window_size;
 	ctx->window = MALLOC(window_size + 12);
 	if (ctx->window == NULL)
-		goto err;
+		goto oom;
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_FAST) {
 		ctx->prev_tab = MALLOC(window_size * sizeof(ctx->prev_tab[0]));
 		if (ctx->prev_tab == NULL)
-			goto err;
+			goto oom;
 	}
 
 	size_t block_specs_length = DIV_ROUND_UP(window_size, LZX_DIV_BLOCK_SIZE);
 	ctx->block_specs = MALLOC(block_specs_length * sizeof(ctx->block_specs[0]));
 	if (ctx->block_specs == NULL)
-		goto err;
+		goto oom;
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
 		ctx->SA = MALLOC(3U * window_size * sizeof(ctx->SA[0]));
 		if (ctx->SA == NULL)
-			goto err;
+			goto oom;
 		ctx->ISA = ctx->SA + window_size;
 		ctx->LCP = ctx->ISA + window_size;
 
 		ctx->salink = MALLOC(window_size * sizeof(ctx->salink[0]));
 		if (ctx->salink == NULL)
-			goto err;
+			goto oom;
 	}
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
 		ctx->optimum = MALLOC((LZX_OPTIM_ARRAY_SIZE + LZX_MAX_MATCH_LEN) *
 				       sizeof(ctx->optimum[0]));
 		if (ctx->optimum == NULL)
-			goto err;
+			goto oom;
 	}
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
@@ -2503,71 +2497,28 @@ wimlib_lzx_alloc_context(u32 window_size,
 		ctx->cached_matches = MALLOC(window_size * (cache_per_pos + 1) *
 					     sizeof(ctx->cached_matches[0]));
 		if (ctx->cached_matches == NULL)
-			goto err;
+			goto oom;
 	}
 
 	ctx->chosen_matches = MALLOC(window_size * sizeof(ctx->chosen_matches[0]));
 	if (ctx->chosen_matches == NULL)
-		goto err;
+		goto oom;
 
-	memcpy(&ctx->params, params, sizeof(struct wimlib_lzx_params));
+	memcpy(&ctx->params, params, sizeof(struct wimlib_lzx_compressor_params));
 	memset(&ctx->zero_codes, 0, sizeof(ctx->zero_codes));
 
 	LZX_DEBUG("Successfully allocated new LZX context.");
 
-	wimlib_lzx_free_context(*ctx_pp);
-	*ctx_pp = (struct wimlib_lzx_context*)ctx;
+	*ctx_ret = ctx;
 	return 0;
 
-err:
-	wimlib_lzx_free_context((struct wimlib_lzx_context*)ctx);
-	LZX_DEBUG("Ran out of memory.");
+oom:
+	lzx_free_compressor(ctx);
 	return WIMLIB_ERR_NOMEM;
 }
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI void
-wimlib_lzx_free_context(struct wimlib_lzx_context *_ctx)
-{
-	struct lzx_compressor *ctx = (struct lzx_compressor*)_ctx;
-
-	if (ctx) {
-		FREE(ctx->chosen_matches);
-		FREE(ctx->cached_matches);
-		FREE(ctx->optimum);
-		FREE(ctx->salink);
-		FREE(ctx->SA);
-		FREE(ctx->block_specs);
-		FREE(ctx->prev_tab);
-		FREE(ctx->window);
-		FREE(ctx);
-	}
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI unsigned
-wimlib_lzx_compress(const void * const restrict uncompressed_data,
-		    unsigned	 const		uncompressed_len,
-		    void       * const restrict compressed_data)
-{
-	int ret;
-	struct wimlib_lzx_context *ctx = NULL;
-	unsigned compressed_len;
-
-	ret = wimlib_lzx_alloc_context(32768, NULL, &ctx);
-	if (ret) {
-		wimlib_assert(ret != WIMLIB_ERR_INVALID_PARAM);
-		WARNING("Couldn't allocate LZX compression context: %"TS"",
-			wimlib_get_error_string(ret));
-		return 0;
-	}
-
-	compressed_len = wimlib_lzx_compress2(uncompressed_data,
-					      uncompressed_len,
-					      compressed_data,
-					      ctx);
-
-	wimlib_lzx_free_context(ctx);
-
-	return compressed_len;
-}
+const struct compressor_ops lzx_compressor_ops = {
+	.create_compressor  = lzx_create_compressor,
+	.compress	    = lzx_compress,
+	.free_compressor    = lzx_free_compressor,
+};

@@ -366,8 +366,7 @@ write_integrity_table(WIMStruct *wim,
 					     0,
 					     &wim->hdr.integrity_table_reshdr,
 					     NULL,
-					     0,
-					     &wim->lzx_context);
+					     0);
 	FREE(new_table);
 out_free_old_table:
 	FREE(old_table);

@@ -134,7 +134,7 @@ lzx_get_position_slot_raw(unsigned formatted_offset)
 	}
 }
 
-extern bool lzx_window_size_valid(u32 window_size);
+extern bool lzx_window_size_valid(size_t window_size);
 extern unsigned lzx_get_num_main_syms(u32 window_size);
 
 #define LZX_NUM_RECENT_OFFSETS	3

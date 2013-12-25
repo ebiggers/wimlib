@@ -297,8 +297,7 @@ write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags)
 					     wim->out_chunk_size,
 					     &imd->metadata_lte->out_reshdr,
 					     imd->metadata_lte->hash,
-					     write_resource_flags,
-					     &wim->lzx_context);
+					     write_resource_flags);
 
 	/* Original checksum was overridden; set a flag so it isn't used.  */
 	imd->metadata_lte->dont_check_metadata_hash = 1;

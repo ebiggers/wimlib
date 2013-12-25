@@ -1,16 +1,13 @@
-#ifndef _WIMLIB_COMPRESS_CHUNK_H
-#define _WIMLIB_COMPRESS_CHUNK_H
+/*
+ * chunk_compressor.h
+ *
+ * Interface for serial/parallel chunk compression.
+ */
+
+#ifndef _WIMLIB_CHUNK_COMPRESSOR_H
+#define _WIMLIB_CHUNK_COMPRESSOR_H
 
 #include <wimlib/types.h>
-
-struct wimlib_lzx_context;
-
-unsigned
-compress_chunk(const void * uncompressed_data,
-	       unsigned uncompressed_len,
-	       void *compressed_data,
-	       int out_ctype,
-	       struct wimlib_lzx_context *comp_ctx);
 
 /* Interface for chunk compression.  Users can submit chunks of data to be
  * compressed, then retrieve them later in order.  This interface can be
@@ -69,7 +66,6 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 
 int
 new_serial_chunk_compressor(int out_ctype, u32 out_chunk_size,
-			    struct wimlib_lzx_context *comp_ctx,
 			    struct chunk_compressor **compressor_ret);
 
-#endif
+#endif /* _WIMLIB_CHUNK_COMPRESSOR_H  */

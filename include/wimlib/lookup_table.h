@@ -303,8 +303,7 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					struct filedes *out_fd,
 					u16 part_number,
 					struct wim_reshdr *out_reshdr,
-					int write_resource_flags,
-					struct wimlib_lzx_context **comp_ctx);
+					int write_resource_flags);
 
 extern void
 free_lookup_table(struct wim_lookup_table *table);

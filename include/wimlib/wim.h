@@ -42,8 +42,9 @@ struct WIMStruct {
 	/* Temporary field */
 	void *private;
 
-	/* LZX compression context for default thread  */
-	struct wimlib_lzx_context *lzx_context;
+	struct wimlib_decompressor *decompressor;
+	enum wimlib_compression_type decompressor_ctype;
+	u32 decompressor_max_block_size;
 
 	struct list_head subwims;
 

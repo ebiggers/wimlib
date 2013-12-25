@@ -38,6 +38,8 @@
 #include "wimlib/security.h"
 #include "wimlib/wim.h"
 #include "wimlib/xml.h"
+#include "wimlib/compressor_ops.h"
+#include "wimlib/decompressor_ops.h"
 
 #ifdef __WIN32__
 #  include "wimlib/win32.h" /* for realpath() replacement */
@@ -937,9 +939,9 @@ wimlib_free(WIMStruct *wim)
 	if (filedes_valid(&wim->out_fd))
 		filedes_close(&wim->out_fd);
 
-	wimlib_lzx_free_context(wim->lzx_context);
-
 	free_lookup_table(wim->lookup_table);
+
+	wimlib_free_decompressor(wim->decompressor);
 
 	FREE(wim->filename);
 	free_wim_info(wim->wim_info);
@@ -1003,4 +1005,6 @@ wimlib_global_cleanup(void)
 #ifdef __WIN32__
 	win32_global_cleanup();
 #endif
+	cleanup_decompressor_params();
+	cleanup_compressor_params();
 }

@@ -108,7 +108,8 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/decompress.h"
+#include "wimlib/decompressor_ops.h"
+#include "wimlib/decompress_common.h"
 #include "wimlib/lzx.h"
 #include "wimlib/util.h"
 
@@ -135,6 +136,11 @@ struct lzx_tables {
 	u8 alignedtree_lens[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 } _aligned_attribute(DECODE_TABLE_ALIGNMENT);
 
+struct lzx_decompressor {
+	u32 max_window_size;
+	unsigned num_main_syms;
+	struct lzx_tables tables;
+};
 
 /*
  * Reads a Huffman-encoded symbol using the pre-tree.
@@ -705,7 +711,7 @@ lzx_decode_match(unsigned main_element, int block_type,
 }
 
 static void
-undo_call_insn_translation(u32 *call_insn_target, int input_pos,
+undo_call_insn_translation(u32 *call_insn_target, s32 input_pos,
 			   s32 file_size)
 {
 	s32 abs_offset;
@@ -747,9 +753,9 @@ undo_call_insn_translation(u32 *call_insn_target, int input_pos,
  * as it is used in calculating the translated jump targets.  But in WIM files,
  * this file size is always the same (LZX_WIM_MAGIC_FILESIZE == 12000000).*/
 static void
-undo_call_insn_preprocessing(u8 uncompressed_data[], int uncompressed_data_len)
+undo_call_insn_preprocessing(u8 *uncompressed_data, s32 uncompressed_size)
 {
-	for (int i = 0; i < uncompressed_data_len - 10; i++) {
+	for (s32 i = 0; i < uncompressed_size - 10; i++) {
 		if (uncompressed_data[i] == 0xe8) {
 			undo_call_insn_translation((u32*)&uncompressed_data[i + 1],
 						   i,
@@ -818,47 +824,38 @@ lzx_decompress_block(int block_type, unsigned block_size,
 	return 0;
 }
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_lzx_decompress2(const void *compressed_data, unsigned compressed_len,
-		       void *uncompressed_data, unsigned uncompressed_len,
-		       u32 max_window_size)
+static int
+lzx_decompress(const void *compressed_data, size_t compressed_size,
+	       void *uncompressed_data, size_t uncompressed_size,
+	       void *_ctx)
 {
-	struct lzx_tables tables;
+	struct lzx_decompressor *ctx = _ctx;
 	struct input_bitstream istream;
 	struct lzx_lru_queue queue;
 	unsigned window_pos;
 	unsigned block_size;
 	unsigned block_type;
-	unsigned num_main_syms;
 	int ret;
 	bool e8_preprocessing_done;
 
-	LZX_DEBUG("compressed_data = %p, compressed_len = %u, "
-		  "uncompressed_data = %p, uncompressed_len = %u, "
+	LZX_DEBUG("compressed_data = %p, compressed_size = %zu, "
+		  "uncompressed_data = %p, uncompressed_size = %zu, "
 		  "max_window_size=%u).",
-		  compressed_data, compressed_len,
-		  uncompressed_data, uncompressed_len, max_window_size);
+		  compressed_data, compressed_size,
+		  uncompressed_data, uncompressed_size,
+		  ctx->max_window_size);
 
-	if (!lzx_window_size_valid(max_window_size)) {
-		LZX_DEBUG("Window size of %u is invalid!",
-			  max_window_size);
-		return -1;
-	}
-
-	num_main_syms = lzx_get_num_main_syms(max_window_size);
-
-	if (uncompressed_len > max_window_size) {
-		LZX_DEBUG("Uncompressed chunk size of %u exceeds "
+	if (uncompressed_size > ctx->max_window_size) {
+		LZX_DEBUG("Uncompressed size of %zu exceeds "
 			  "window size of %u!",
-			  uncompressed_len, max_window_size);
+			  uncompressed_size, ctx->max_window_size);
 		return -1;
 	}
 
-	memset(tables.maintree_lens, 0, sizeof(tables.maintree_lens));
-	memset(tables.lentree_lens, 0, sizeof(tables.lentree_lens));
+	memset(ctx->tables.maintree_lens, 0, sizeof(ctx->tables.maintree_lens));
+	memset(ctx->tables.lentree_lens, 0, sizeof(ctx->tables.lentree_lens));
 	lzx_lru_queue_init(&queue);
-	init_input_bitstream(&istream, compressed_data, compressed_len);
+	init_input_bitstream(&istream, compressed_data, compressed_size);
 
 	e8_preprocessing_done = false; /* Set to true if there may be 0xe8 bytes
 					  in the uncompressed data. */
@@ -869,23 +866,23 @@ wimlib_lzx_decompress2(const void *compressed_data, unsigned compressed_len,
 	 * blocks.  */
 
 	for (window_pos = 0;
-	     window_pos < uncompressed_len;
+	     window_pos < uncompressed_size;
 	     window_pos += block_size)
 	{
 		LZX_DEBUG("Reading block header.");
-		ret = lzx_read_block_header(&istream, num_main_syms,
-					    max_window_size, &block_size,
-					    &block_type, &tables, &queue);
+		ret = lzx_read_block_header(&istream, ctx->num_main_syms,
+					    ctx->max_window_size, &block_size,
+					    &block_type, &ctx->tables, &queue);
 		if (ret)
 			return ret;
 
 		LZX_DEBUG("block_size = %u, window_pos = %u",
 			  block_size, window_pos);
 
-		if (block_size > uncompressed_len - window_pos) {
+		if (block_size > uncompressed_size - window_pos) {
 			LZX_DEBUG("Expected a block size of at "
-				  "most %u bytes (found %u bytes)",
-				  uncompressed_len - window_pos, block_size);
+				  "most %zu bytes (found %u bytes)",
+				  uncompressed_size - window_pos, block_size);
 			return -1;
 		}
 
@@ -898,16 +895,16 @@ wimlib_lzx_decompress2(const void *compressed_data, unsigned compressed_len,
 				LZX_DEBUG("LZX_BLOCKTYPE_ALIGNED");
 			ret = lzx_decompress_block(block_type,
 						   block_size,
-						   num_main_syms,
+						   ctx->num_main_syms,
 						   uncompressed_data,
 						   window_pos,
-						   &tables,
+						   &ctx->tables,
 						   &queue,
 						   &istream);
 			if (ret)
 				return ret;
 
-			if (tables.maintree_lens[0xe8] != 0)
+			if (ctx->tables.maintree_lens[0xe8] != 0)
 				e8_preprocessing_done = true;
 			break;
 		case LZX_BLOCKTYPE_UNCOMPRESSED:
@@ -934,16 +931,41 @@ wimlib_lzx_decompress2(const void *compressed_data, unsigned compressed_len,
 		}
 	}
 	if (e8_preprocessing_done)
-		undo_call_insn_preprocessing(uncompressed_data, uncompressed_len);
+		undo_call_insn_preprocessing(uncompressed_data, uncompressed_size);
 	return 0;
 }
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
-		      void *uncompressed_data, unsigned uncompressed_len)
+static void
+lzx_free_decompressor(void *_ctx)
 {
-	return wimlib_lzx_decompress2(compressed_data, compressed_len,
-				      uncompressed_data, uncompressed_len,
-				      32768);
+	struct lzx_decompressor *ctx = _ctx;
+
+	FREE(ctx);
 }
+
+static int
+lzx_create_decompressor(size_t max_window_size,
+			const struct wimlib_decompressor_params_header *params,
+			void **ctx_ret)
+{
+	struct lzx_decompressor *ctx;
+
+	if (!lzx_window_size_valid(max_window_size))
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	ctx = MALLOC(sizeof(struct lzx_decompressor));
+	if (ctx == NULL)
+		return WIMLIB_ERR_NOMEM;
+
+	ctx->max_window_size = max_window_size;
+	ctx->num_main_syms = lzx_get_num_main_syms(max_window_size);
+
+	*ctx_ret = ctx;
+	return 0;
+}
+
+const struct decompressor_ops lzx_decompressor_ops = {
+	.create_decompressor = lzx_create_decompressor,
+	.decompress	     = lzx_decompress,
+	.free_decompressor   = lzx_free_decompressor,
+};

@@ -31,7 +31,8 @@
 
 #include "wimlib.h"
 #include "wimlib/assert.h"
-#include "wimlib/compress.h"
+#include "wimlib/compressor_ops.h"
+#include "wimlib/compress_common.h"
 #include "wimlib/error.h"
 #include "wimlib/util.h"
 #include "wimlib/xpress.h"
@@ -41,6 +42,21 @@
 #endif
 #include <stdlib.h>
 #include <string.h>
+
+struct xpress_record_ctx {
+	input_idx_t freqs[XPRESS_NUM_SYMBOLS];
+	struct xpress_match *matches;
+};
+
+struct xpress_compressor {
+	u8 *window;
+	u32 max_window_size;
+	struct xpress_match *matches;
+	input_idx_t *prev_tab;
+	u16 codewords[XPRESS_NUM_SYMBOLS];
+	u8 lens[XPRESS_NUM_SYMBOLS];
+	struct xpress_record_ctx record_ctx;
+};
 
 /* Intermediate XPRESS match/literal representation.  */
 struct xpress_match {
@@ -98,11 +114,6 @@ xpress_write_matches_and_literals(struct output_bitstream *ostream,
 	bitstream_put_bits(ostream, codewords[XPRESS_END_OF_DATA], lens[XPRESS_END_OF_DATA]);
 }
 
-struct xpress_record_ctx {
-	input_idx_t freqs[XPRESS_NUM_SYMBOLS];
-	struct xpress_match *matches;
-};
-
 static void
 xpress_record_literal(u8 lit, void *_ctx)
 {
@@ -144,26 +155,16 @@ static const struct lz_params xpress_lz_params = {
 	.too_far        = 4096,
 };
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI unsigned
-wimlib_xpress_compress(const void * restrict uncompressed_data,
-		       unsigned uncompressed_len,
-		       void * restrict compressed_data)
+static size_t
+xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
+		void *compressed_data, size_t compressed_size_avail, void *_c)
 {
+	struct xpress_compressor *c = _c;
 	u8 *cptr = compressed_data;
 	struct output_bitstream ostream;
-
-	struct xpress_record_ctx record_ctx;
-
-	struct xpress_match *matches;
-	input_idx_t *prev_tab;
-	u8 *udata;
-
-	u16 codewords[XPRESS_NUM_SYMBOLS];
-	u8 lens[XPRESS_NUM_SYMBOLS];
 	input_idx_t num_matches;
-	input_idx_t compressed_len;
 	input_idx_t i;
+	size_t compressed_size;
 
 	/* XPRESS requires 256 bytes of overhead for the Huffman code, so it's
 	 * impossible to compress 256 bytes or less of data to less than the
@@ -174,94 +175,146 @@ wimlib_xpress_compress(const void * restrict uncompressed_data,
 	 *
 	 * +4 to take into account that init_output_bitstream() requires at
 	 * least 4 bytes of data.  */
-	if (uncompressed_len < XPRESS_NUM_SYMBOLS / 2 + 1 + 4)
+	if (compressed_size_avail < XPRESS_NUM_SYMBOLS / 2 + 1 + 4)
 		return 0;
-
-	if (uncompressed_len <= STACK_MAX) {
-		matches = alloca(uncompressed_len * sizeof(matches[0]));
-		udata = alloca(uncompressed_len + 8);
-		prev_tab = alloca(uncompressed_len * sizeof(prev_tab[0]));
-	} else {
-		matches = MALLOC(uncompressed_len * sizeof(matches[0]));
-		udata = MALLOC(uncompressed_len + 8);
-		prev_tab = MALLOC(uncompressed_len * sizeof(prev_tab[0]));
-		if (matches == NULL || udata == NULL || prev_tab == NULL) {
-			WARNING("Failed to allocate memory for compression...");
-			compressed_len = 0;
-			goto out_free;
-		}
-	}
 
 	/* Copy the data to a temporary buffer, but only to avoid
 	 * inconsequential accesses of uninitialized memory in
 	 * lz_analyze_block().  */
-	memcpy(udata, uncompressed_data, uncompressed_len);
-	memset(udata + uncompressed_len, 0, 8);
+	memcpy(c->window, uncompressed_data, uncompressed_size);
+	memset(c->window + uncompressed_size, 0, 8);
 
 	/* Determine match/literal sequence to divide the data into.  */
-	ZERO_ARRAY(record_ctx.freqs);
-	record_ctx.matches = matches;
-	lz_analyze_block(udata,
-			 uncompressed_len,
+	memset(c->record_ctx.freqs, 0, sizeof(c->record_ctx.freqs));
+	c->record_ctx.matches = c->matches;
+	lz_analyze_block(c->window,
+			 uncompressed_size,
 			 xpress_record_match,
 			 xpress_record_literal,
-			 &record_ctx,
+			 &c->record_ctx,
 			 &xpress_lz_params,
-			 prev_tab);
+			 c->prev_tab);
 
-	num_matches = (record_ctx.matches - matches);
+	num_matches = (c->record_ctx.matches - c->matches);
 
 	/* Account for end of data symbol.  */
-	record_ctx.freqs[XPRESS_END_OF_DATA]++;
+	c->record_ctx.freqs[XPRESS_END_OF_DATA]++;
 
 	/* Build the Huffman code.  */
 	make_canonical_huffman_code(XPRESS_NUM_SYMBOLS, XPRESS_MAX_CODEWORD_LEN,
-				    record_ctx.freqs, lens, codewords);
+				    c->record_ctx.freqs, c->lens, c->codewords);
 
 	/* Output the Huffman code as a series of 512 4-bit lengths.  */
 	for (i = 0; i < XPRESS_NUM_SYMBOLS; i += 2)
-		*cptr++ = (lens[i] & 0xf) | (lens[i + 1] << 4);
+		*cptr++ = (c->lens[i] & 0xf) | (c->lens[i + 1] << 4);
 
 	/* Output the encoded matches/literals.  */
 	init_output_bitstream(&ostream, cptr,
-			      uncompressed_len - XPRESS_NUM_SYMBOLS / 2 - 1);
-	xpress_write_matches_and_literals(&ostream, matches,
-					  num_matches, codewords, lens);
+			      compressed_size_avail - XPRESS_NUM_SYMBOLS / 2 - 1);
+
+	xpress_write_matches_and_literals(&ostream, c->matches,
+					  num_matches, c->codewords, c->lens);
 
 	/* Flush any pending data and get the length of the compressed data.  */
-	compressed_len = flush_output_bitstream(&ostream);
-	if (compressed_len == ~(input_idx_t)0) {
-		compressed_len = 0;
-		goto out_free;
-	}
-	compressed_len += XPRESS_NUM_SYMBOLS / 2;
+	compressed_size = flush_output_bitstream(&ostream);
+	if (compressed_size == ~(input_idx_t)0)
+		return 0;
+
+	compressed_size += XPRESS_NUM_SYMBOLS / 2;
 
 #if defined(ENABLE_XPRESS_DEBUG) || defined(ENABLE_VERIFY_COMPRESSION)
 	/* Verify that we really get the same thing back when decompressing.  */
-	if (wimlib_xpress_decompress(compressed_data, compressed_len,
-				     udata, uncompressed_len))
 	{
-		ERROR("Failed to decompress data we "
-		      "compressed using XPRESS algorithm");
-		wimlib_assert(0);
-		compressed_len = 0;
-		goto out_free;
-	}
+		struct wimlib_decompressor *decompressor;
 
-	if (memcmp(uncompressed_data, udata, uncompressed_len)) {
-		ERROR("Data we compressed using XPRESS algorithm "
-		      "didn't decompress to original");
-		wimlib_assert(0);
-		compressed_len = 0;
-		goto out_free;
+		if (0 == wimlib_create_decompressor(WIMLIB_COMPRESSION_TYPE_XPRESS,
+						    c->max_window_size,
+						    NULL,
+						    &decompressor))
+		{
+			int ret;
+			ret = wimlib_decompress(compressed_data,
+						compressed_size,
+						c->window,
+						uncompressed_size,
+						decompressor);
+			wimlib_free_decompressor(decompressor);
+
+			if (ret) {
+				ERROR("Failed to decompress data we "
+				      "compressed using XPRESS algorithm");
+				wimlib_assert(0);
+				return 0;
+			}
+			if (memcmp(uncompressed_data, c->window,
+				   uncompressed_size))
+			{
+				ERROR("Data we compressed using XPRESS algorithm "
+				      "didn't decompress to original");
+				wimlib_assert(0);
+				return 0;
+			}
+		} else {
+			WARNING("Failed to create decompressor for "
+				"data verification!");
+		}
 	}
 #endif
 
-out_free:
-	if (uncompressed_len > STACK_MAX) {
-		FREE(matches);
-		FREE(udata);
-		FREE(prev_tab);
-	}
-	return compressed_len;
+	return compressed_size;
 }
+
+static void
+xpress_free_compressor(void *_c)
+{
+	struct xpress_compressor *c = _c;
+
+	if (c) {
+		FREE(c->window);
+		FREE(c->matches);
+		FREE(c->prev_tab);
+		FREE(c);
+	}
+}
+
+static int
+xpress_create_compressor(size_t max_window_size,
+			 const struct wimlib_compressor_params_header *params,
+			 void **c_ret)
+{
+	struct xpress_compressor *c;
+
+	if (max_window_size == 0 || max_window_size > (1U << 26))
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	c = CALLOC(1, sizeof(struct xpress_compressor));
+	if (c == NULL)
+		goto oom;
+
+	c->window = MALLOC(max_window_size + 8);
+	if (c->window == NULL)
+		goto oom;
+
+	c->max_window_size = max_window_size;
+
+	c->matches = MALLOC(max_window_size * sizeof(c->matches[0]));
+	if (c->matches == NULL)
+		goto oom;
+
+	c->prev_tab = MALLOC(max_window_size * sizeof(c->prev_tab[0]));
+	if (c->prev_tab == NULL)
+		goto oom;
+
+	*c_ret = c;
+	return 0;
+
+oom:
+	xpress_free_compressor(c);
+	return WIMLIB_ERR_NOMEM;
+}
+
+const struct compressor_ops xpress_compressor_ops = {
+	.create_compressor  = xpress_create_compressor,
+	.compress	    = xpress_compress,
+	.free_compressor    = xpress_free_compressor,
+};

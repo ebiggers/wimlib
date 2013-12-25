@@ -28,14 +28,14 @@
 
 #include "wimlib.h"
 #include "wimlib/assert.h"
-#include "wimlib/compress_chunks.h"
+#include "wimlib/chunk_compressor.h"
 #include "wimlib/util.h"
 
 #include <string.h>
 
 struct serial_chunk_compressor {
 	struct chunk_compressor base;
-	struct wimlib_lzx_context *comp_ctx;
+	struct wimlib_compressor *compressor;
 	u8 *udata;
 	u8 *cdata;
 	unsigned ulen;
@@ -50,6 +50,7 @@ serial_chunk_compressor_destroy(struct chunk_compressor *_ctx)
 	if (ctx == NULL)
 		return;
 
+	wimlib_free_compressor(ctx->compressor);
 	FREE(ctx->udata);
 	FREE(ctx->cdata);
 	FREE(ctx);
@@ -82,9 +83,9 @@ serial_chunk_compressor_get_chunk(struct chunk_compressor *_ctx,
 	if (ctx->ulen == 0)
 		return false;
 
-	ctx->clen = compress_chunk(ctx->udata, ctx->ulen,
-				   ctx->cdata, ctx->base.out_ctype,
-				   ctx->comp_ctx);
+	ctx->clen = wimlib_compress(ctx->udata, ctx->ulen,
+				    ctx->cdata, ctx->ulen - 1,
+				    ctx->compressor);
 
 	if (ctx->clen) {
 		*cdata_ret = ctx->cdata;
@@ -101,14 +102,14 @@ serial_chunk_compressor_get_chunk(struct chunk_compressor *_ctx,
 
 int
 new_serial_chunk_compressor(int out_ctype, u32 out_chunk_size,
-			    struct wimlib_lzx_context *comp_ctx,
 			    struct chunk_compressor **compressor_ret)
 {
 	struct serial_chunk_compressor *ctx;
+	int ret;
 
 	ctx = CALLOC(1, sizeof(*ctx));
 	if (ctx == NULL)
-		goto err;
+		return WIMLIB_ERR_NOMEM;
 
 	ctx->base.out_ctype = out_ctype;
 	ctx->base.out_chunk_size = out_chunk_size;
@@ -117,17 +118,24 @@ new_serial_chunk_compressor(int out_ctype, u32 out_chunk_size,
 	ctx->base.submit_chunk = serial_chunk_compressor_submit_chunk;
 	ctx->base.get_chunk = serial_chunk_compressor_get_chunk;
 
-	ctx->comp_ctx = comp_ctx;
+
+	ret = wimlib_create_compressor(out_ctype, out_chunk_size,
+				       NULL, &ctx->compressor);
+	if (ret)
+		goto err;
+
 	ctx->udata = MALLOC(out_chunk_size);
 	ctx->cdata = MALLOC(out_chunk_size - 1);
 	ctx->ulen = 0;
-	if (ctx->udata == NULL || ctx->cdata == NULL)
+	if (ctx->udata == NULL || ctx->cdata == NULL) {
+		ret = WIMLIB_ERR_NOMEM;
 		goto err;
+	}
 
 	*compressor_ret = &ctx->base;
 	return 0;
 
 err:
 	serial_chunk_compressor_destroy(&ctx->base);
-	return WIMLIB_ERR_NOMEM;
+	return ret;
 }

@@ -1,11 +1,11 @@
 /*
- * decompress.h
+ * decompress_common.h
  *
  * Header for decompression code shared by multiple compression formats.
  */
 
-#ifndef _WIMLIB_DECOMPRESS_H
-#define _WIMLIB_DECOMPRESS_H
+#ifndef _WIMLIB_DECOMPRESS_COMMON_H
+#define _WIMLIB_DECOMPRESS_COMMON_H
 
 #include "wimlib/assert.h"
 #include "wimlib/compiler.h"

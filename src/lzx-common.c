@@ -66,11 +66,11 @@ const u8 lzx_extra_bits[LZX_MAX_POSITION_SLOTS] = {
 };
 #endif
 
-/* LZX window size can be between 2^15 and 2^21, inclusively.  */
+/* LZX window size must be a power of 2 between 2^15 and 2^21, inclusively.  */
 bool
-lzx_window_size_valid(u32 window_size)
+lzx_window_size_valid(size_t window_size)
 {
-	if (window_size == 0)
+	if (window_size == 0 || (u32)window_size != window_size)
 		return false;
 	u32 order = bsr32(window_size);
 	if (window_size != 1U << order)

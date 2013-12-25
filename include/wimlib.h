@@ -330,12 +330,6 @@
  * specialized function (wimlib_split()) is needed to create a split WIM.
  */
 
-/** @defgroup G_compression Compression and decompression functions
- *
- * @brief Functions for LZX and XPRESS compression and decompression, exported
- * for convenience only.  These functions normally do not need to be used.
- */
-
 #ifndef _WIMLIB_H
 #define _WIMLIB_H
 
@@ -1717,97 +1711,6 @@ struct wimlib_extract_command {
 	int extract_flags;
 };
 
-/** @} */
-/** @ingroup G_compression
- * @{ */
-
-/** LZX compression parameters to pass to wimlib_lzx_alloc_context().  */
-struct wimlib_lzx_params {
-	/** Must be set to the size of this structure, in bytes.  */
-	uint32_t size_of_this;
-
-	/** Relatively fast LZX compression algorithm with a decent compression
-	 * ratio; the suggested default.  */
-#define WIMLIB_LZX_ALGORITHM_FAST 0
-
-	/** Slower LZX compression algorithm that provides a better compression
-	 * ratio.  */
-#define WIMLIB_LZX_ALGORITHM_SLOW 1
-
-	/** Algorithm to use to perform the compression: either
-	 * ::WIMLIB_LZX_ALGORITHM_FAST or ::WIMLIB_LZX_ALGORITHM_SLOW.  The
-	 * format is still LZX; this refers to the method the code will use to
-	 * perform LZX-compatible compression.  */
-	uint32_t algorithm : 3;
-
-	/** If set to 1, the default parameters for the specified algorithm are
-	 * used rather than the ones specified in the following union.  */
-	uint32_t use_defaults : 1;
-
-	union {
-		/** Parameters for the fast algorithm.  */
-		struct wimlib_lzx_fast_params {
-			uint32_t fast_reserved1[10];
-		} fast;
-
-		/** Parameters for the slow algorithm.  */
-		struct wimlib_lzx_slow_params {
-			/** If set to 1, the compressor can output length 2
-			 * matches.  If set 0, the compressor only outputs
-			 * matches of length 3 or greater.  Suggested value: 1
-			 */
-			uint32_t use_len2_matches : 1;
-
-			uint32_t slow_reserved1 : 31;
-
-			/** Matches with length (in bytes) longer than this
-			 * value are immediately taken without spending time on
-			 * minimum-cost measurements.  Suggested value: 32.  */
-			uint32_t num_fast_bytes;
-
-			/** Number of passes to compute a match/literal sequence
-			 * for each LZX block.  This is for an iterative
-			 * algorithm that attempts to minimize the cost of the
-			 * match/literal sequence by using a cost model provided
-			 * by the previous iteration.  Must be at least 1.
-			 * Suggested value: 2.  */
-			uint32_t num_optim_passes;
-
-			/** Reserved; set to 0.  */
-			uint32_t slow_reserved_blocksplit;
-
-			/** Maximum depth to search for matches at each
-			 * position.  Suggested value: 50.  */
-			uint32_t max_search_depth;
-
-			/** Maximum number of potentially good matches to
-			 * consider for each position.  Suggested value: 3.  */
-			uint32_t max_matches_per_pos;
-
-			uint32_t slow_reserved2[2];
-
-			/** Assumed cost of a main symbol with zero frequency.
-			 * Must be at least 1 and no more than 16.  Suggested
-			 * value: 15.  */
-			uint8_t main_nostat_cost;
-
-			/** Assumed cost of a length symbol with zero frequency.
-			 * Must be at least 1 and no more than 16.  Suggested
-			 * value: 15.  */
-			uint8_t len_nostat_cost;
-
-			/** Assumed cost of an aligned symbol with zero
-			 * frequency.  Must be at least 1 and no more than 8.
-			 * Suggested value: 7.  */
-			uint8_t aligned_nostat_cost;
-
-			uint8_t slow_reserved3[5];
-		} slow;
-	} alg_params;
-};
-
-/** Opaque LZX compression context.  */
-struct wimlib_lzx_context;
 
 /** @} */
 /** @ingroup G_general
@@ -2786,198 +2689,6 @@ wimlib_join(const wimlib_tchar * const *swms,
 	    int swm_open_flags,
 	    int wim_write_flags,
 	    wimlib_progress_func_t progress_func);
-
-/**
- * @ingroup G_compression
- *
- * Decompresses a block of LZMS-compressed data.
- *
- * This function is exported for convenience only and should only be used by
- * library clients looking to make use of wimlib's compression code for another
- * purpose.
- *
- * This decompressor only implements "raw" decompression, which decompresses a
- * single LZMS-compressed block.  This behavior is the same as that of
- * Decompress() in the Windows 8 compression API when using a compression handle
- * created with CreateDecompressor() with the Algorithm parameter specified as
- * COMPRESS_ALGORITHM_LZMS | COMPRESS_RAW.  Presumably, non-raw LZMS data
- * is a container format from which the locations and sizes (both compressed and
- * uncompressed) of the constituent blocks can be determined.
- *
- * This function should not be called for blocks with compressed size equal to
- * uncompressed size, since such blocks are actually stored uncompressed.
- *
- * @param compressed_data
- * 	Pointer to the compressed data.
- *
- * @param compressed_len
- * 	Length of the compressed data, in bytes.
- *
- * @param uncompressed_data
- * 	Pointer to the buffer into which to write the uncompressed data.
- *
- * @param uncompressed_len
- * 	Length of the uncompressed data.
- *
- * @return
- * 	0 on success; non-zero on failure.
- */
-extern int
-wimlib_lzms_decompress(const void *compressed_data, unsigned compressed_len,
-		       void *uncompressed_data, unsigned uncompressed_len);
-
-/**
- * @ingroup G_compression
- *
- * Compress a chunk of a WIM resource using LZX compression.
- *
- * This function is exported for convenience only and should only be used by
- * library clients looking to make use of wimlib's compression code for another
- * purpose.
- *
- * @param chunk
- * 	Uncompressed data of the chunk.
- * @param chunk_size
- * 	Size of the uncompressed chunk, in bytes.
- * @param out
- * 	Pointer to output buffer of size at least (@p chunk_size - 1) bytes.
- *
- * @return
- * 	The size of the compressed data written to @p out in bytes, or 0 if the
- * 	data could not be compressed to (@p chunk_size - 1) bytes or fewer.
- *
- * As a special requirement, the compression code is optimized for the WIM
- * format and therefore requires (@p chunk_size <= 32768).
- */
-extern unsigned
-wimlib_lzx_compress(const void *chunk, unsigned chunk_size, void *out)
-			_wimlib_deprecated;
-
-/**
- * @ingroup G_compression
- *
- * Equivalent to wimlib_lzx_compress(), but uses the specified compression
- * context, allocated by wimlib_lzx_alloc_context().
- */
-extern unsigned
-wimlib_lzx_compress2(const void *chunk, unsigned chunk_size, void *out,
-		     struct wimlib_lzx_context *ctx);
-
-/**
- * @ingroup G_compression
- *
- * Allocate a LZX compression context using the specified parameters.
- *
- * This function is exported for convenience only and should only be used by
- * library clients looking to make use of wimlib's compression code for another
- * purpose.
- *
- * @param window_size
- *	Size of the LZX window.  Must be a power of 2 between 2^15 and 2^21,
- *	inclusively.
- *
- * @param params
- *	Compression parameters to use, or @c NULL to use the default parameters.
- *
- * @param ctx_ret
- *	A pointer to either @c NULL or an existing ::wimlib_lzx_context.  If
- *	<code>*ctx_ret == NULL</code>, the new context is allocated.  If
- *	<code>*ctx_ret != NULL</code>, the existing context is re-used if
- *	possible.  Alternatively, this argument can itself be @c NULL to
- *	indicate that only parameter validation is to be performed.
- *
- * @return 0 on success; nonzero on error.
- *
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	The window size or compression parameters were invalid.
- * @retval ::WIMLIB_ERR_NOMEM
- *	Not enough memory to allocate the compression context.
- */
-extern int
-wimlib_lzx_alloc_context(uint32_t window_size,
-			 const struct wimlib_lzx_params *params,
-			 struct wimlib_lzx_context **ctx_pp);
-
-/**
- * @ingroup G_compression
- *
- * Decompresses a block of LZX-compressed data as used in the WIM file format.
- *
- * Note that this will NOT work unmodified for LZX as used in the cabinet
- * format, which is not the same as in the WIM format!
- *
- * This function is exported for convenience only and should only be used by
- * library clients looking to make use of wimlib's compression code for another
- * purpose.
- *
- * @param compressed_data
- * 	Pointer to the compressed data.
- *
- * @param compressed_len
- * 	Length of the compressed data, in bytes.
- *
- * @param uncompressed_data
- * 	Pointer to the buffer into which to write the uncompressed data.
- *
- * @param uncompressed_len
- * 	Length of the uncompressed data.  It must be 32768 bytes or less.
- *
- * @return
- * 	0 on success; non-zero on failure.
- */
-extern int
-wimlib_lzx_decompress(const void *compressed_data, unsigned compressed_len,
-		      void *uncompressed_data, unsigned uncompressed_len);
-
-/**
- * @ingroup G_compression
- *
- * Equivalent to wimlib_lzx_decompress(), except the window size is specified in
- * @p max_window_size as any power of 2 between 2^15 and 2^21, inclusively, and
- * @p uncompressed_len may be any size less than or equal to @p max_window_size.
- */
-extern int
-wimlib_lzx_decompress2(const void *compressed_data, unsigned compressed_len,
-		       void *uncompressed_data, unsigned uncompressed_len,
-		       uint32_t max_window_size);
-
-/**
- * @ingroup G_compression
- *
- * Free the specified LZX compression context, allocated with
- * wimlib_lzx_alloc_context().
- */
-extern void
-wimlib_lzx_free_context(struct wimlib_lzx_context *ctx);
-
-/**
- * @ingroup G_compression
- *
- * Set the global default LZX compression parameters.
- *
- * @param params
- *	The LZX compression parameters to set.  These default parameters will be
- *	used by any calls to wimlib_lzx_alloc_context() with @c NULL LZX
- *	parameters specified, as well as by any future compression performed by
- *	the library itself.  Passing @p NULL here resets the default LZX
- *	parameters to their original value.
- *
- * @return 0 on success; nonzero on error.
- *
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	The compression parameters were invalid.
- */
-extern int
-wimlib_lzx_set_default_params(const struct wimlib_lzx_params *params);
-
-/**
- * @ingroup G_compression
- *
- * Free the specified LZX compression context, allocated with
- * wimlib_lzx_alloc_context().
- */
-extern void
-wimlib_lzx_free_context(struct wimlib_lzx_context *ctx);
 
 
 /**
@@ -4033,61 +3744,321 @@ wimlib_write_to_fd(WIMStruct *wim,
 		   wimlib_progress_func_t progress_func);
 
 /**
- * @ingroup G_compression
+ * @defgroup G_compression Compression and decompression functions
  *
- * Compress a chunk of data using XPRESS compression.
+ * @brief Functions for LZX, XPRESS, and LZMS compression and decompression,
+ * exported for convenience only, as they are already used by wimlib internally
+ * when appropriate.
  *
- * This function is exported for convenience only and should only be used by
- * library clients looking to make use of wimlib's compression code for another
- * purpose.
+ * These functions can be used for general-purpose lossless data compression,
+ * but some limitations apply; for example, none of the compressors or
+ * decompressors currently support sliding windows, and there also exist
+ * slightly different variants of these formats that are not supported
+ * unmodified.
  *
- * As of wimlib v1.6.0, this function can be used with @p chunk_size greater
- * than 32768 bytes and is only limited by available memory.  However, the
- * XPRESS format itself still caps match offsets to 65535, so if a larger chunk
- * size is chosen, then the matching will effectively occur in a sliding window
- * over it.
- *
- * @param chunk
- * 	Uncompressed data of the chunk.
- * @param chunk_size
- * 	Size of the uncompressed chunk, in bytes.
- * @param out
- * 	Pointer to output buffer of size at least (@p chunk_size - 1) bytes.
- *
- * @return
- * 	The size of the compressed data written to @p out in bytes, or 0 if the
- * 	data could not be compressed to (@p chunk_size - 1) bytes or fewer.
+ * @{
  */
-extern unsigned
-wimlib_xpress_compress(const void *chunk, unsigned chunk_size, void *out);
+
+/** Header for compression parameters to pass to wimlib_create_compressor() or
+ * wimlib_set_default_compressor_params().  */
+struct wimlib_compressor_params_header {
+	/** Size of the parameters, in bytes.  */
+	uint32_t size;
+
+	uint32_t reserved;
+};
+
+/** Header for decompression parameters to pass to wimlib_create_decompressor()
+ * or wimlib_set_default_decompressor_params() */
+struct wimlib_decompressor_params_header {
+	/** Size of the parameters, in bytes.  */
+	uint32_t size;
+
+	uint32_t reserved;
+};
+
+/** LZX compression parameters that can optionally be passed to
+ * wimlib_create_compressor() with the compression type
+ * ::WIMLIB_COMPRESSION_TYPE_LZX.  */
+struct wimlib_lzx_compressor_params {
+	/** hdr.size Must be set to the size of this structure, in bytes.  */
+	struct wimlib_compressor_params_header hdr;
+
+	/** Relatively fast LZX compression algorithm with a decent compression
+	 * ratio; the suggested default.  */
+#define WIMLIB_LZX_ALGORITHM_FAST 0
+
+	/** Slower LZX compression algorithm that provides a better compression
+	 * ratio.  */
+#define WIMLIB_LZX_ALGORITHM_SLOW 1
+
+	/** Algorithm to use to perform the compression: either
+	 * ::WIMLIB_LZX_ALGORITHM_FAST or ::WIMLIB_LZX_ALGORITHM_SLOW.  The
+	 * format is still LZX; this refers to the method the code will use to
+	 * perform LZX-compatible compression.  */
+	uint32_t algorithm : 3;
+
+	/** If set to 1, the default parameters for the specified algorithm are
+	 * used rather than the ones specified in the following union.  */
+	uint32_t use_defaults : 1;
+
+	union {
+		/** Parameters for the fast algorithm.  */
+		struct wimlib_lzx_fast_params {
+			uint32_t fast_reserved1[10];
+		} fast;
+
+		/** Parameters for the slow algorithm.  */
+		struct wimlib_lzx_slow_params {
+			/** If set to 1, the compressor can output length 2
+			 * matches.  If set 0, the compressor only outputs
+			 * matches of length 3 or greater.  Suggested value: 1
+			 */
+			uint32_t use_len2_matches : 1;
+
+			uint32_t slow_reserved1 : 31;
+
+			/** Matches with length (in bytes) longer than this
+			 * value are immediately taken without spending time on
+			 * minimum-cost measurements.  Suggested value: 32.  */
+			uint32_t num_fast_bytes;
+
+			/** Number of passes to compute a match/literal sequence
+			 * for each LZX block.  This is for an iterative
+			 * algorithm that attempts to minimize the cost of the
+			 * match/literal sequence by using a cost model provided
+			 * by the previous iteration.  Must be at least 1.
+			 * Suggested value: 2.  */
+			uint32_t num_optim_passes;
+
+			/** Reserved; set to 0.  */
+			uint32_t slow_reserved_blocksplit;
+
+			/** Maximum depth to search for matches at each
+			 * position.  Suggested value: 50.  */
+			uint32_t max_search_depth;
+
+			/** Maximum number of potentially good matches to
+			 * consider for each position.  Suggested value: 3.  */
+			uint32_t max_matches_per_pos;
+
+			uint32_t slow_reserved2[2];
+
+			/** Assumed cost of a main symbol with zero frequency.
+			 * Must be at least 1 and no more than 16.  Suggested
+			 * value: 15.  */
+			uint8_t main_nostat_cost;
+
+			/** Assumed cost of a length symbol with zero frequency.
+			 * Must be at least 1 and no more than 16.  Suggested
+			 * value: 15.  */
+			uint8_t len_nostat_cost;
+
+			/** Assumed cost of an aligned symbol with zero
+			 * frequency.  Must be at least 1 and no more than 8.
+			 * Suggested value: 7.  */
+			uint8_t aligned_nostat_cost;
+
+			uint8_t slow_reserved3[5];
+		} slow;
+	} alg_params;
+};
+
+/** Opaque compressor handle.  */
+struct wimlib_compressor;
+
+/** Opaque decompressor handle.  */
+struct wimlib_decompressor;
 
 /**
  * @ingroup G_compression
  *
- * Decompresses a chunk of XPRESS-compressed data.
+ * Set the default compression parameters for the specified compression type.
+ * This will affect both explicit and wimlib-internal calls to
+ * wimlib_create_compressor().
  *
- * This function is exported for convenience only and should only be used by
- * library clients looking to make use of wimlib's compression code for another
- * purpose.
+ * @param ctype
+ *	Compression type for which to set the default compression parameters.
+ * @param params
+ *	Compression-type specific parameters.  This may be @ NULL, in which case
+ *	the "default default" parameters are restored.
  *
- * @param compressed_data
- * 	Pointer to the compressed data.
+ * @return 0 on success; nonzero on error.
  *
- * @param compressed_len
- * 	Length of the compressed data, in bytes.
- *
- * @param uncompressed_data
- * 	Pointer to the buffer into which to write the uncompressed data.
- *
- * @param uncompressed_len
- * 	Length of the uncompressed data.
- *
- * @return
- * 	0 on success; non-zero on failure.
+ * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
+ *	@p ctype was not a supported compression type.
  */
 extern int
-wimlib_xpress_decompress(const void *compressed_data, unsigned compressed_len,
-			 void *uncompressed_data, unsigned uncompressed_len);
+wimlib_set_default_compressor_params(enum wimlib_compression_type ctype,
+				     const struct wimlib_compressor_params_header *params);
+
+/**
+ * @ingroup G_compression
+ *
+ * Allocate a compressor for the specified compression type using the specified
+ * parameters.
+ *
+ * @param ctype
+ *	Compression type for which to create the compressor.
+ * @param max_block_size
+ *	Maximum block size to support.  The exact meaning and allowed values for
+ *	this parameter depend on the compression type, but it at least specifies
+ *	the maximum allowed value for @p uncompressed_size to wimlib_compress().
+ * @param extra_params
+ *	An optional pointer to extra compressor parameters for the specified
+ *	compression type.  For LZX, a pointer to ::wimlib_lzx_compressor_params
+ *	may be specified here.  If left @c NULL, the default parameters are
+ *	used.
+ * @param compressor_ret
+ *	A location into which to return the pointer to the allocated compressor,
+ *	which can be used for any number of calls to wimlib_compress() before
+ *	being freed with wimlib_free_compressor().
+ *
+ * @return 0 on success; nonzero on error.
+ *
+ * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
+ *	@p ctype was not a supported compression type.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	The compression parameters were invalid.
+ * @retval ::WIMLIB_ERR_NOMEM
+ *	Insufficient memory to allocate the compressor.
+ */
+extern int
+wimlib_create_compressor(enum wimlib_compression_type ctype,
+			 size_t max_block_size,
+			 const struct wimlib_compressor_params_header *extra_params,
+			 struct wimlib_compressor **compressor_ret);
+
+/**
+ * @ingroup G_compression
+ *
+ * Losslessly compress a block of data using a compressor previously created
+ * with wimlib_create_compressor().
+ *
+ * @param uncompressed_data
+ *	Buffer containing the data to compress.
+ * @param uncompressed_size
+ *	Size, in bytes, of the data to compress.
+ * @param compressed_data
+ *	Buffer into which to write the compressed data.
+ * @param compressed_size_avail
+ *	Number of bytes available in @compressed_data.
+ * @param compressor
+ *	A compressor previously allocated with wimlib_create_compressor().
+ *
+ * @return
+ *	The size of the compressed data, in bytes, or 0 if the input data could
+ *	not be compressed to @compressed_size_avail or fewer bytes.
+ */
+extern size_t
+wimlib_compress(const void *uncompressed_data, size_t uncompressed_size,
+		void *compressed_data, size_t compressed_size_avail,
+		struct wimlib_compressor *compressor);
+
+/**
+ * @ingroup G_compression
+ *
+ * Free a compressor previously allocated with wimlib_create_compressor().
+ *
+ * @param compressor
+ *	The compressor to free.
+ */
+extern void
+wimlib_free_compressor(struct wimlib_compressor *compressor);
+
+/**
+ * @ingroup G_compression
+ *
+ * Set the default decompression parameters for the specified compression type.
+ * This will affect both explicit and wimlib-internal calls to
+ * wimlib_create_decompressor().
+ *
+ * @param ctype
+ *	Compression type for which to set the default decompression parameters.
+ * @param params
+ *	Compression-type specific parameters.  This may be @ NULL, in which case
+ *	the "default default" parameters are restored.
+ *
+ * @return 0 on success; nonzero on error.
+ *
+ * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
+ *	@p ctype was not a supported compression type.
+ */
+extern int
+wimlib_set_default_decompressor_params(enum wimlib_compression_type ctype,
+				       const struct wimlib_decompressor_params_header *params);
+
+/**
+ * @ingroup G_compression
+ *
+ * Allocate a decompressor for the specified compression type using the
+ * specified parameters.
+ *
+ * @param ctype
+ *	Compression type for which to create the decompressor.
+ * @param max_block_size
+ *	Maximum block size to support.  The exact meaning and allowed values for
+ *	this parameter depend on the compression type, but it at least specifies
+ *	the maximum allowed value for @p uncompressed_size to
+ *	wimlib_decompress().
+ * @param extra_params
+ *	An optional pointer to extra decompressor parameters for the specified
+ *	compression type.  If @c NULL, the default parameters are used.
+ * @param decompressor_ret
+ *	A location into which to return the pointer to the allocated
+ *	decompressor, which can be used for any number of calls to
+ *	wimlib_decompress() before being freed with wimlib_free_decompressor().
+ *
+ * @return 0 on success; nonzero on error.
+ *
+ * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
+ *	@p ctype was not a supported compression type.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	The decompression parameters were invalid.
+ * @retval ::WIMLIB_ERR_NOMEM
+ *	Insufficient memory to allocate the decompressor.
+ */
+extern int
+wimlib_create_decompressor(enum wimlib_compression_type ctype,
+			   size_t max_block_size,
+			   const struct wimlib_decompressor_params_header *extra_params,
+			   struct wimlib_decompressor **decompressor_ret);
+
+/**
+ * @ingroup G_compression
+ *
+ * Decompress a block of data using a decompressor previously created with
+ * wimlib_create_decompressor().
+ *
+ * @param compressed_data
+ *	Buffer containing the data to decompress.
+ * @param compressed_size
+ *	Size, in bytes, of the data to decompress.
+ * @param uncompressed_data
+ *	Buffer into which to write the uncompressed data.
+ * @param uncompressed_size
+ *	Size, in bytes, of the data when uncompressed.
+ * @param decompressor
+ *	A decompressor previously allocated with wimlib_create_decompressor().
+ *
+ * @return 0 on success; nonzero on error.
+ */
+extern int
+wimlib_decompress(const void *compressed_data, size_t compressed_size,
+		  void *uncompressed_data, size_t uncompressed_size,
+		  struct wimlib_decompressor *decompressor);
+
+/**
+ * @ingroup G_compression
+ *
+ * Free a decompressor previously allocated with wimlib_create_decompressor().
+ *
+ * @param decompressor
+ *	The decompressor to free.
+ */
+extern void
+wimlib_free_decompressor(struct wimlib_decompressor *decompressor);
+
 
 #ifdef __cplusplus
 }

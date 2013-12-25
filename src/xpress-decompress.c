@@ -70,7 +70,8 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/decompress.h"
+#include "wimlib/decompressor_ops.h"
+#include "wimlib/decompress_common.h"
 #include "wimlib/xpress.h"
 
 /*
@@ -195,13 +196,11 @@ xpress_lz_decode(struct input_bitstream * restrict istream,
 
 
 /* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_xpress_decompress(const void * const restrict _compressed_data,
-			 const unsigned compressed_len,
-			 void * const restrict uncompressed_data,
-			 const unsigned uncompressed_len)
+static int
+xpress_decompress(const void *compressed_data, size_t compressed_size,
+		  void *uncompressed_data, size_t uncompressed_size, void *_ctx)
 {
-	const u8 *compressed_data = _compressed_data;
+	const u8 *cdata = compressed_data;
 	u8 lens[XPRESS_NUM_SYMBOLS];
 	u8 *lens_p;
 	u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS]
@@ -211,13 +210,13 @@ wimlib_xpress_decompress(const void * const restrict _compressed_data,
 	/* XPRESS uses only one Huffman code.  It contains 512 symbols, and the
 	 * code lengths of these symbols are given literally as 4-bit integers
 	 * in the first 256 bytes of the compressed data.  */
-	if (compressed_len < XPRESS_NUM_SYMBOLS / 2)
+	if (compressed_size < XPRESS_NUM_SYMBOLS / 2)
 		return -1;
 
 	lens_p = lens;
 	for (unsigned i = 0; i < XPRESS_NUM_SYMBOLS / 2; i++) {
-		*lens_p++ = compressed_data[i] & 0xf;
-		*lens_p++ = compressed_data[i] >> 4;
+		*lens_p++ = cdata[i] & 0xf;
+		*lens_p++ = cdata[i] >> 4;
 	}
 
 	if (make_huffman_decode_table(decode_table, XPRESS_NUM_SYMBOLS,
@@ -225,9 +224,13 @@ wimlib_xpress_decompress(const void * const restrict _compressed_data,
 				      XPRESS_MAX_CODEWORD_LEN))
 		return -1;
 
-	init_input_bitstream(&istream, compressed_data + XPRESS_NUM_SYMBOLS / 2,
-			     compressed_len - XPRESS_NUM_SYMBOLS / 2);
+	init_input_bitstream(&istream, cdata + XPRESS_NUM_SYMBOLS / 2,
+			     compressed_size - XPRESS_NUM_SYMBOLS / 2);
 
 	return xpress_lz_decode(&istream, uncompressed_data,
-				uncompressed_len, lens, decode_table);
+				uncompressed_size, lens, decode_table);
 }
+
+const struct decompressor_ops xpress_decompressor_ops = {
+	.decompress = xpress_decompress,
+};

@@ -323,7 +323,6 @@ for_lookup_table_entry(struct wim_lookup_table *table,
 		hlist_for_each_entry_safe(lte, pos, tmp, &table->array[i],
 					  hash_list)
 		{
-			wimlib_assert2(!(lte->resource_entry.flags & WIM_RESHDR_FLAG_METADATA));
 			ret = visitor(lte, arg);
 			if (ret)
 				return ret;
@@ -869,8 +868,7 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					struct filedes *out_fd,
 					u16 part_number,
 					struct wim_reshdr *out_reshdr,
-					int write_resource_flags,
-					struct wimlib_lzx_context **comp_ctx)
+					int write_resource_flags)
 {
 	size_t table_size;
 	struct wim_lookup_table_entry *lte;
@@ -950,8 +948,7 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					     0,
 					     out_reshdr,
 					     NULL,
-					     write_resource_flags,
-					     comp_ctx);
+					     write_resource_flags);
 	FREE(table_buf);
 	DEBUG("ret=%d", ret);
 	return ret;

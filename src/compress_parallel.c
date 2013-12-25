@@ -27,7 +27,7 @@
 #endif
 
 #include "wimlib/assert.h"
-#include "wimlib/compress_chunks.h"
+#include "wimlib/chunk_compressor.h"
 #include "wimlib/error.h"
 #include "wimlib/list.h"
 #include "wimlib/util.h"
@@ -54,9 +54,7 @@ struct compressor_thread_data {
 	pthread_t thread;
 	struct message_queue *chunks_to_compress_queue;
 	struct message_queue *compressed_chunks_queue;
-	int out_ctype;
-	u32 out_chunk_size;
-	struct wimlib_lzx_context *comp_ctx;
+	struct wimlib_compressor *compressor;
 };
 
 #define MAX_CHUNKS_PER_MSG 2
@@ -251,17 +249,17 @@ allocate_messages(size_t count, size_t chunks_per_msg, u32 out_chunk_size)
 }
 
 static void
-compress_chunks(struct message *msg, int out_ctype,
-		struct wimlib_lzx_context *comp_ctx)
+compress_chunks(struct message *msg, struct wimlib_compressor *compressor)
 {
 
 	for (size_t i = 0; i < msg->num_filled_chunks; i++) {
+		wimlib_assert(msg->uncompressed_chunk_sizes[i] != 0);
 		msg->compressed_chunk_sizes[i] =
-			compress_chunk(msg->uncompressed_chunks[i],
-				       msg->uncompressed_chunk_sizes[i],
-				       msg->compressed_chunks[i],
-				       out_ctype,
-				       comp_ctx);
+			wimlib_compress(msg->uncompressed_chunks[i],
+					msg->uncompressed_chunk_sizes[i],
+					msg->compressed_chunks[i],
+					msg->uncompressed_chunk_sizes[i] - 1,
+					compressor);
 	}
 }
 
@@ -272,7 +270,7 @@ compressor_thread_proc(void *arg)
 	struct message *msg;
 
 	while ((msg = message_queue_get(params->chunks_to_compress_queue)) != NULL) {
-		compress_chunks(msg, params->out_ctype, params->comp_ctx);
+		compress_chunks(msg, params->compressor);
 		message_queue_put(params->compressed_chunks_queue, msg);
 	}
 	return NULL;
@@ -298,10 +296,9 @@ parallel_chunk_compressor_destroy(struct chunk_compressor *_ctx)
 	message_queue_destroy(&ctx->chunks_to_compress_queue);
 	message_queue_destroy(&ctx->compressed_chunks_queue);
 
-	if (ctx->base.out_ctype == WIMLIB_COMPRESSION_TYPE_LZX &&
-	    ctx->thread_data != NULL)
+	if (ctx->thread_data != NULL)
 		for (i = 0; i < ctx->num_threads; i++)
-			wimlib_lzx_free_context(ctx->thread_data[i].comp_ctx);
+			wimlib_free_compressor(ctx->thread_data[i].compressor);
 
 	FREE(ctx->thread_data);
 
@@ -493,14 +490,10 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 
 		dat->chunks_to_compress_queue = &ctx->chunks_to_compress_queue;
 		dat->compressed_chunks_queue = &ctx->compressed_chunks_queue;
-		dat->out_ctype = out_ctype;
-		dat->out_chunk_size = out_chunk_size;
-		if (out_ctype == WIMLIB_COMPRESSION_TYPE_LZX) {
-			ret = wimlib_lzx_alloc_context(out_chunk_size, NULL,
-						       &dat->comp_ctx);
-			if (ret)
-				goto err;
-		}
+		ret = wimlib_create_compressor(out_ctype, out_chunk_size,
+					       NULL, &dat->compressor);
+		if (ret)
+			goto err;
 	}
 
 	for (ctx->num_started_threads = 0;

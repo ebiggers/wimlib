@@ -90,29 +90,6 @@
  */
 
 
-/* Decompress the specified chunk that uses the specified compression type
- * @ctype, part of a WIM with default chunk size @wim_chunk_size.  For LZX the
- * separate @wim_chunk_size is needed because it determines the window size used
- * for LZX compression.  */
-static int
-decompress(const void *cchunk, unsigned clen, void *uchunk, unsigned ulen,
-	   int ctype, u32 wim_chunk_size)
-{
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_LZX:
-		return wimlib_lzx_decompress2(cchunk, clen,
-					      uchunk, ulen, wim_chunk_size);
-	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		return wimlib_xpress_decompress(cchunk, clen,
-						uchunk, ulen);
-	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		return wimlib_lzms_decompress(cchunk, clen, uchunk, ulen);
-	default:
-		ERROR("Invalid compression format (%d)", ctype);
-		return -1;
-	}
-}
-
 struct data_range {
 	u64 offset;
 	u64 size;
@@ -164,6 +141,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 	bool chunk_offsets_malloced = false;
 	bool ubuf_malloced = false;
 	bool cbuf_malloced = false;
+	struct wimlib_decompressor *decompressor;
 
 	/* Sanity checks  */
 	wimlib_assert(rspec != NULL);
@@ -230,6 +208,21 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 		      "expected power-of-2 chunk size (got %u)", chunk_size);
 		ret = WIMLIB_ERR_INVALID_CHUNK_SIZE;
 		goto out_free_memory;
+	}
+
+	/* Get valid decompressor.  */
+	if (ctype == rspec->wim->decompressor_ctype &&
+	    chunk_size == rspec->wim->decompressor_max_block_size)
+	{
+		/* Cached decompressor.  */
+		decompressor = rspec->wim->decompressor;
+		rspec->wim->decompressor_ctype = WIMLIB_COMPRESSION_TYPE_NONE;
+		rspec->wim->decompressor = NULL;
+	} else {
+		ret = wimlib_create_decompressor(ctype, chunk_size, NULL,
+						 &decompressor);
+		if (ret)
+			goto out_free_memory;
 	}
 
 	const u32 chunk_order = bsr32(chunk_size);
@@ -450,7 +443,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 			ERROR("Invalid chunk size in compressed resource!");
 			errno = EINVAL;
 			ret = WIMLIB_ERR_DECOMPRESSION;
-			goto out_free_memory;
+			goto out_save_decompressor;
 		}
 		if (rspec->is_pipable)
 			cur_read_offset += sizeof(struct pwm_chunk_hdr);
@@ -494,17 +487,16 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 				DEBUG("Decompressing chunk %"PRIu64" "
 				      "(csize=%"PRIu32" usize=%"PRIu32")",
 				      i, chunk_csize, chunk_usize);
-				ret = decompress(cbuf,
-						 chunk_csize,
-						 ubuf,
-						 chunk_usize,
-						 ctype,
-						 chunk_size);
+				ret = wimlib_decompress(cbuf,
+							chunk_csize,
+							ubuf,
+							chunk_usize,
+							decompressor);
 				if (ret) {
 					ERROR("Failed to decompress data!");
 					ret = WIMLIB_ERR_DECOMPRESSION;
 					errno = EINVAL;
-					goto out_free_memory;
+					goto out_save_decompressor;
 				}
 			}
 			cur_read_offset += chunk_csize;
@@ -525,7 +517,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 				ret = (*cb)(&ubuf[start], size, cb_ctx);
 
 				if (ret)
-					goto out_free_memory;
+					goto out_save_decompressor;
 
 				cur_range_pos += size;
 				if (cur_range_pos == cur_range_end) {
@@ -556,6 +548,11 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 			goto read_error;
 	}
 	ret = 0;
+out_save_decompressor:
+	wimlib_free_decompressor(rspec->wim->decompressor);
+	rspec->wim->decompressor = decompressor;
+	rspec->wim->decompressor_ctype = ctype;
+	rspec->wim->decompressor_max_block_size = chunk_size;
 out_free_memory:
 	errno_save = errno;
 	if (chunk_offsets_malloced)
