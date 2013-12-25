@@ -170,9 +170,6 @@
  * documented in the man page for @b wimlib-imagex.
  *
  * - The old WIM format from Vista pre-releases is not supported.
- * - Compressed resource chunk sizes other than 32768 are not supported.  This
- *   doesn't seem to be a real problem because the chunk size always seems to be
- *   this value.
  * - wimlib does not provide a clone of the @b PEImg tool, or the @b Dism
  *   functionality other than that already present in @b ImageX, that allows you
  *   to make certain Windows-specific modifications to a Windows PE image, such
@@ -3208,10 +3205,9 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  * increased compression chunk size is limited by the size of each file being
  * compressed.
  *
- * <b>WARNING: Changing the compression chunk size to any value other than the
- * default of 32768 bytes eliminates compatibility with Microsoft's software,
- * except when increasing the XPRESS chunk size before Windows 8.  Chunk sizes
- * other than 32768 are also incompatible with wimlib v1.5.3 and earlier.</b>
+ * <b>WARNING: Microsoft's software is seemingly incompatible with LZX chunk
+ * sizes other than 32768.  Chunk sizes other than 32768 (for any format) are
+ * also incompatible with wimlib v1.5.3 and earlier.</b>
  *
  * @param wim
  *	::WIMStruct for a WIM.
@@ -3755,7 +3751,10 @@ wimlib_write_to_fd(WIMStruct *wim,
  * decompressors currently support sliding windows, and there also exist
  * slightly different variants of these formats that are not supported
  * unmodified.
- *
+ */
+
+/**
+ * @ingroup G_compression
  * @{
  */
 
@@ -3870,6 +3869,8 @@ struct wimlib_compressor;
 /** Opaque decompressor handle.  */
 struct wimlib_decompressor;
 
+/** @} */
+
 /**
  * @ingroup G_compression
  *
@@ -3880,13 +3881,16 @@ struct wimlib_decompressor;
  * @param ctype
  *	Compression type for which to set the default compression parameters.
  * @param params
- *	Compression-type specific parameters.  This may be @ NULL, in which case
- *	the "default default" parameters are restored.
+ *	Compression-type specific parameters.  This may be @c NULL, in which
+ *	case the "default default" parameters are restored.
  *
  * @return 0 on success; nonzero on error.
  *
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  *	@p ctype was not a supported compression type.
+ * @retval ::WIMLIB_ERR_NOMEM
+ *	Not enough memory to duplicate the parameters (perhaps @c params->size
+ *	was invalid).
  */
 extern int
 wimlib_set_default_compressor_params(enum wimlib_compression_type ctype,
@@ -3942,13 +3946,13 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
  * @param compressed_data
  *	Buffer into which to write the compressed data.
  * @param compressed_size_avail
- *	Number of bytes available in @compressed_data.
+ *	Number of bytes available in @p compressed_data.
  * @param compressor
  *	A compressor previously allocated with wimlib_create_compressor().
  *
  * @return
  *	The size of the compressed data, in bytes, or 0 if the input data could
- *	not be compressed to @compressed_size_avail or fewer bytes.
+ *	not be compressed to @p compressed_size_avail or fewer bytes.
  */
 extern size_t
 wimlib_compress(const void *uncompressed_data, size_t uncompressed_size,
@@ -3976,13 +3980,16 @@ wimlib_free_compressor(struct wimlib_compressor *compressor);
  * @param ctype
  *	Compression type for which to set the default decompression parameters.
  * @param params
- *	Compression-type specific parameters.  This may be @ NULL, in which case
- *	the "default default" parameters are restored.
+ *	Compression-type specific parameters.  This may be @c NULL, in which
+ *	case the "default default" parameters are restored.
  *
  * @return 0 on success; nonzero on error.
  *
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  *	@p ctype was not a supported compression type.
+ * @retval ::WIMLIB_ERR_NOMEM
+ *	Not enough memory to duplicate the parameters (perhaps @c params->size
+ *	was invalid).
  */
 extern int
 wimlib_set_default_decompressor_params(enum wimlib_compression_type ctype,

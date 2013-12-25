@@ -141,7 +141,9 @@ struct wim_dentry_on_disk {
 	 * As a further special case, if this field is all zeroes but there is
 	 * an alternate data stream entry with no name and a nonzero SHA-1
 	 * message digest field, then that hash must be used instead of this
-	 * one.  (wimlib does not use this quirk on WIM images it creates.)
+	 * one.  In fact, when named data streams are present, some versions of
+	 * Windows PE contain a bug where they only look in the alternate data
+	 * stream entries for the unnamed data stream, not here.
 	 */
 	u8 unnamed_stream_hash[SHA1_HASH_SIZE];
 
