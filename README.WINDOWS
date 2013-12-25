@@ -37,9 +37,6 @@ ImageX are the following:
 
   * Mounting images from a WIM file is not supported on Windows.
 
-  * The LZX ("maximum") compression ratio is several percent worse than
-    Microsoft's implementation.
-
 However, wimlib-imagex provides a number of advantages compared to Microsoft's
 ImageX, including but not limited to the following:
 

@@ -1,5 +1,40 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.6.0:
+	Support for extracting and updating the new version 3584 WIMs has been
+	added.  These WIMs typically pack many streams ("files") together into a
+	single compressed resource, thereby saving space.  This degrades the
+	performance of random access (such as that which occurs on a mounted
+	image), but optimizations have been implemented for extraction.  These
+	new WIM files also typically use a new compression format (LZMS), which
+	is similar to LZMA.  These new WIM files can be created with Dism using
+	"/compress recovery".  Note: this format is used by the Windows 8 web
+	downloader, but important segments of the raw '.esd' files are
+	encrypted, so wimlib will not be able to extract such files until they
+	are first decrypted.
+
+	Support for compression chunk sizes greater than the default of 32768
+	bytes has been added.  A larger chunk size typically results in a better
+	compression ratio.  However, this is currently disabled for LZX
+	compression due to lack of interoperability with the MS implementation.
+
+	The compression/decompression API exported by wimlib has been changed.
+	Now one set of functions support all supported compression formats.
+
+	`wimcapture' and `wimappend' will now display the progress of scanning
+	the directory tree to capture, in addition to the progress of writing
+	data to the WIM.  The '--verbose' option no longer does anything.  The
+	library API change for this is the addition of several members to
+	`struct wimlib_progress_info_scan' available to progress callbacks.
+
+	`mkwinpeimg' now correctly handles the '--start-script' option when the
+	start script is not in the working directory.
+
+	Sequential extraction, previously required by using
+	WIMLIB_EXTRACT_FLAG_SEQUENTIAL, is now the default.
+	WIMLIB_EXTRACT_FLAG_FILE_ORDER can be used to get the old behavior
+	(extract in file order).
+
 Version 1.5.3:
 	The new LZX compressor added in v1.5.2 has been improved and is now
 	enabled by default, except when `wimcapture' or `wimappend' is run
