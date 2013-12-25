@@ -3760,8 +3760,6 @@ wimlib_write_to_fd(WIMStruct *wim,
 struct wimlib_compressor_params_header {
 	/** Size of the parameters, in bytes.  */
 	uint32_t size;
-
-	uint32_t reserved;
 };
 
 /** Header for decompression parameters to pass to wimlib_create_decompressor()
@@ -3769,8 +3767,6 @@ struct wimlib_compressor_params_header {
 struct wimlib_decompressor_params_header {
 	/** Size of the parameters, in bytes.  */
 	uint32_t size;
-
-	uint32_t reserved;
 };
 
 /** LZX compression parameters that can optionally be passed to
@@ -3866,11 +3862,7 @@ struct wimlib_compressor;
 /** Opaque decompressor handle.  */
 struct wimlib_decompressor;
 
-/** @} */
-
 /**
- * @ingroup G_compression
- *
  * Set the default compression parameters for the specified compression type.
  * This will affect both explicit and wimlib-internal calls to
  * wimlib_create_compressor().
@@ -3894,8 +3886,6 @@ wimlib_set_default_compressor_params(enum wimlib_compression_type ctype,
 				     const struct wimlib_compressor_params_header *params);
 
 /**
- * @ingroup G_compression
- *
  * Allocate a compressor for the specified compression type using the specified
  * parameters.
  *
@@ -3931,8 +3921,6 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 			 struct wimlib_compressor **compressor_ret);
 
 /**
- * @ingroup G_compression
- *
  * Losslessly compress a block of data using a compressor previously created
  * with wimlib_create_compressor().
  *
@@ -3957,8 +3945,6 @@ wimlib_compress(const void *uncompressed_data, size_t uncompressed_size,
 		struct wimlib_compressor *compressor);
 
 /**
- * @ingroup G_compression
- *
  * Free a compressor previously allocated with wimlib_create_compressor().
  *
  * @param compressor
@@ -3968,8 +3954,6 @@ extern void
 wimlib_free_compressor(struct wimlib_compressor *compressor);
 
 /**
- * @ingroup G_compression
- *
  * Set the default decompression parameters for the specified compression type.
  * This will affect both explicit and wimlib-internal calls to
  * wimlib_create_decompressor().
@@ -3993,8 +3977,6 @@ wimlib_set_default_decompressor_params(enum wimlib_compression_type ctype,
 				       const struct wimlib_decompressor_params_header *params);
 
 /**
- * @ingroup G_compression
- *
  * Allocate a decompressor for the specified compression type using the
  * specified parameters.
  *
@@ -4029,8 +4011,6 @@ wimlib_create_decompressor(enum wimlib_compression_type ctype,
 			   struct wimlib_decompressor **decompressor_ret);
 
 /**
- * @ingroup G_compression
- *
  * Decompress a block of data using a decompressor previously created with
  * wimlib_create_decompressor().
  *
@@ -4053,8 +4033,6 @@ wimlib_decompress(const void *compressed_data, size_t compressed_size,
 		  struct wimlib_decompressor *decompressor);
 
 /**
- * @ingroup G_compression
- *
  * Free a decompressor previously allocated with wimlib_create_decompressor().
  *
  * @param decompressor
@@ -4062,6 +4040,57 @@ wimlib_decompress(const void *compressed_data, size_t compressed_size,
  */
 extern void
 wimlib_free_decompressor(struct wimlib_decompressor *decompressor);
+
+
+struct wimlib_lzx_params_old;
+struct wimlib_lzx_context_old;
+
+/** Deprecated; do not use.  */
+extern int
+wimlib_lzx_set_default_params(const struct wimlib_lzx_params_old *params)
+		_wimlib_deprecated;
+
+/** Deprecated; do not use.  */
+extern int
+wimlib_lzx_alloc_context(const struct wimlib_lzx_params_old *params,
+			 struct wimlib_lzx_context_old **ctx_pp)
+		_wimlib_deprecated;
+
+/** Deprecated; do not use.  */
+extern void
+wimlib_lzx_free_context(struct wimlib_lzx_context_old *ctx)
+		_wimlib_deprecated;
+
+/** Deprecated; do not use.  */
+extern unsigned
+wimlib_lzx_compress2(const void *udata, unsigned ulen, void *cdata,
+		     struct wimlib_lzx_context_old *ctx)
+		_wimlib_deprecated;
+
+/** Deprecated; do not use.  */
+extern unsigned
+wimlib_lzx_compress(const void *udata, unsigned ulen, void *cdata)
+		_wimlib_deprecated;
+
+/** Deprecated; do not use.  */
+extern unsigned
+wimlib_xpress_compress(const void *udata, unsigned ulen, void *cdata)
+		_wimlib_deprecated;
+
+/** Deprecated; do not use.  */
+extern int
+wimlib_lzx_decompress(const void *cdata, unsigned clen,
+		      void *udata, unsigned ulen)
+		_wimlib_deprecated;
+
+/** Deprecated; do not use.  */
+extern int
+wimlib_xpress_decompress(const void *cdata, unsigned clen,
+			 void *udata, unsigned ulen)
+		_wimlib_deprecated;
+
+/** @} */
+
 
 
 #ifdef __cplusplus

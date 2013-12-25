@@ -20,6 +20,7 @@ libwim_la_LDFLAGS = -version-info 11:0:2 $(WINDOWS_LDFLAGS)
 libwim_la_SOURCES =		\
 	src/add_image.c		\
 	src/capture_common.c	\
+	src/compat.c		\
 	src/compress.c		\
 	src/compress_common.c	\
 	src/compress_parallel.c	\
