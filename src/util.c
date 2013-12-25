@@ -438,7 +438,6 @@ wimlib_get_error_string(enum wimlib_error_code code)
 
 
 
-#ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 static void *(*wimlib_malloc_func) (size_t)	     = malloc;
 static void  (*wimlib_free_func)   (void *)	     = free;
 static void *(*wimlib_realloc_func)(void *, size_t) = realloc;
@@ -509,8 +508,6 @@ wimlib_wcsdup(const wchar_t *str)
 }
 #endif
 
-#endif /* ENABLE_CUSTOM_MEMORY_ALLOCATOR */
-
 void *
 memdup(const void *mem, size_t size)
 {
@@ -526,7 +523,6 @@ wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 			    void (*free_func)(void *),
 			    void *(*realloc_func)(void *, size_t))
 {
-#ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 	wimlib_malloc_func  = malloc_func  ? malloc_func  : malloc;
 	wimlib_free_func    = free_func    ? free_func    : free;
 	wimlib_realloc_func = realloc_func ? realloc_func : realloc;
@@ -534,12 +530,6 @@ wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 	xml_set_memory_allocator(wimlib_malloc_func, wimlib_free_func,
 				 wimlib_realloc_func);
 	return 0;
-#else
-	ERROR("Cannot set custom memory allocator functions:");
-	ERROR("wimlib was compiled with the --without-custom-memory-allocator "
-	      "flag");
-	return WIMLIB_ERR_UNSUPPORTED;
-#endif
 }
 
 static bool seeded = false;

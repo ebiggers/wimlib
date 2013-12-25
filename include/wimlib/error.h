@@ -74,10 +74,4 @@ wimlib_debug(const tchar *file, int line, const char *func,
 #  define DEBUG(format, ...) dummy_tprintf(T(format), ## __VA_ARGS__)
 #endif /* !ENABLE_DEBUG */
 
-#ifdef ENABLE_MORE_DEBUG
-#  define DEBUG2(format, ...) DEBUG(format, ## __VA_ARGS__)
-#else
-#  define DEBUG2(format, ...) dummy_tprintf(T(format), ## __VA_ARGS__)
-#endif /* !ENABLE_MORE_DEBUG */
-
 #endif /* _WIMLIB_ERROR_H */

@@ -177,8 +177,8 @@ match_pattern(const tchar *path,
 			      string, pat);
 			return true;
 		} else {
-			DEBUG2("\"%"TS"\" does not match the pattern \"%"TS"\"",
-			       string, pat);
+			DEBUG("\"%"TS"\" does not match the pattern \"%"TS"\"",
+			      string, pat);
 		}
 	}
 	return false;

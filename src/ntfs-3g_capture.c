@@ -171,7 +171,7 @@ capture_ntfs_streams(struct wim_inode *inode,
 	int ret;
 	struct wim_lookup_table_entry *lte;
 
-	DEBUG2("Capturing NTFS data streams from `%s'", path);
+	DEBUG("Capturing NTFS data streams from `%s'", path);
 
 	/* Get context to search the streams of the NTFS file. */
 	actx = ntfs_attr_get_search_ctx(ni, NULL);
@@ -296,7 +296,7 @@ out_free_ntfs_loc:
 out_put_actx:
 	ntfs_attr_put_search_ctx(actx);
 	if (ret == 0)
-		DEBUG2("Successfully captured NTFS streams from \"%s\"", path);
+		DEBUG("Successfully captured NTFS streams from \"%s\"", path);
 	else
 		ERROR("Failed to capture NTFS streams from \"%s\"", path);
 	return ret;

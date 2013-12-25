@@ -53,7 +53,6 @@
  * places when large temporary buffers are needed).  */
 #define STACK_MAX 32768
 
-#ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 extern void *
 wimlib_malloc(size_t) _malloc_attribute;
 
@@ -74,22 +73,12 @@ wimlib_wcsdup(const wchar_t *str) _malloc_attribute;
 extern char *
 wimlib_strdup(const char *str) _malloc_attribute;
 
-#  define	MALLOC	wimlib_malloc
-#  define	FREE	wimlib_free_memory
-#  define	REALLOC	wimlib_realloc
-#  define	CALLOC	wimlib_calloc
-#  define	STRDUP	wimlib_strdup
-#  define	WCSDUP  wimlib_wcsdup
-#else /* ENABLE_CUSTOM_MEMORY_ALLOCATOR */
-#  include <stdlib.h>
-#  include <string.h>
-#  define	MALLOC	malloc
-#  define	FREE	free
-#  define	REALLOC	realloc
-#  define	CALLOC	calloc
-#  define	STRDUP	strdup
-#  define       WCSDUP  wcsdup
-#endif /* !ENABLE_CUSTOM_MEMORY_ALLOCATOR */
+#define	MALLOC	wimlib_malloc
+#define	FREE	wimlib_free_memory
+#define	REALLOC	wimlib_realloc
+#define	CALLOC	wimlib_calloc
+#define	STRDUP	wimlib_strdup
+#define	WCSDUP  wimlib_wcsdup
 
 extern void *
 memdup(const void *mem, size_t size) _malloc_attribute;

@@ -60,11 +60,9 @@ libxml_global_init(void);
 extern void
 libxml_global_cleanup(void);
 
-#ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 extern void
 xml_set_memory_allocator(void *(*malloc_func)(size_t),
 			 void (*free_func)(void *),
 			 void *(*realloc_func)(void *, size_t));
-#endif
 
 #endif

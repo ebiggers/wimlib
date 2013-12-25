@@ -1092,7 +1092,6 @@ xml_get_max_image_name_len(const WIMStruct *wim)
 	return max_len;
 }
 
-#ifdef ENABLE_CUSTOM_MEMORY_ALLOCATOR
 void
 xml_set_memory_allocator(void *(*malloc_func)(size_t),
 			 void (*free_func)(void *),
@@ -1100,7 +1099,6 @@ xml_set_memory_allocator(void *(*malloc_func)(size_t),
 {
 	xmlMemSetup(free_func, malloc_func, realloc_func, STRDUP);
 }
-#endif
 
 static int
 calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)

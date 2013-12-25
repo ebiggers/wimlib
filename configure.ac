@@ -2,7 +2,7 @@ AC_INIT([wimlib], [1.5.3], [ebiggers3@gmail.com])
 AC_CONFIG_SRCDIR([src/wim.c])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
-AM_INIT_AUTOMAKE([-Wall -Werror subdir-objects])
+AM_INIT_AUTOMAKE([-Wall -Werror subdir-objects foreign])
 AC_C_BIGENDIAN
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 LT_INIT
@@ -102,19 +102,6 @@ if test "x$ENABLE_DEBUG" = "xyes"; then
 			[Define to 1 if including lots of debug messages.])
 fi
 
-AC_MSG_CHECKING([whether to include more debugging messages])
-AC_ARG_ENABLE([more_debug],
-	AS_HELP_STRING([--enable-more-debug],
-			[include even more debugging messages]),
-	[ENABLE_MORE_DEBUG=$enableval],
-	[ENABLE_MORE_DEBUG=no]
-	)
-AC_MSG_RESULT([$ENABLE_MORE_DEBUG])
-if test "x$ENABLE_MORE_DEBUG" = "xyes"; then
-	AC_DEFINE([ENABLE_MORE_DEBUG], [1],
-			[Define to 1 if including even more debug messages.])
-fi
-
 AC_MSG_CHECKING([whether to include error messages])
 AC_ARG_ENABLE([error_messages],
 	AS_HELP_STRING([--disable-error-messages],
@@ -126,20 +113,6 @@ AC_MSG_RESULT([$ENABLE_ERROR_MESSAGES])
 if test "x$ENABLE_ERROR_MESSAGES" = "xyes"; then
 	AC_DEFINE([ENABLE_ERROR_MESSAGES], [1],
 			[Define to 1 if including error messages])
-fi
-
-AC_MSG_CHECKING([whether to support custom memory allocation functions])
-AC_ARG_ENABLE([custom_memory_allocator],
-	AS_HELP_STRING([--disable-custom-memory-allocator],
-		       [do not support the use of custom memory allocation
-			functions]),
-	[ENABLE_CUSTOM_MEMORY_ALLOCATOR=$enableval],
-	[ENABLE_CUSTOM_MEMORY_ALLOCATOR=yes]
-	)
-AC_MSG_RESULT([$ENABLE_CUSTOM_MEMORY_ALLOCATOR])
-if test "x$ENABLE_CUSTOM_MEMORY_ALLOCATOR" = "xyes"; then
-	AC_DEFINE([ENABLE_CUSTOM_MEMORY_ALLOCATOR], [1],
-		[Define to 1 if supporting custom memory allocation functions])
 fi
 
 AC_MSG_CHECKING([whether to include assertions])

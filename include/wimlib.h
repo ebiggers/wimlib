@@ -3359,10 +3359,7 @@ wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
  * 	A function equivalent to @c realloc() that wimlib will use to reallocate
  * 	memory.  If @c NULL, the free function is set back to the default @c
  * 	realloc() from the C library.
- * @return 0 on success; nonzero on error.
- * @retval ::WIMLIB_ERR_UNSUPPORTED
- * 	wimlib was compiled with the @c --without-custom-memory-allocator flag,
- * 	so custom memory allocators are unsupported.
+ * @return 0
  */
 extern int
 wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
