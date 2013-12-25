@@ -45,9 +45,6 @@ static const struct decompressor_ops *decompressor_ops[] = {
 
 static struct wimlib_decompressor_params_header *
 decompressor_default_params[ARRAY_LEN(decompressor_ops)] = {
-	[WIMLIB_COMPRESSION_TYPE_LZX]    = NULL,
-	[WIMLIB_COMPRESSION_TYPE_XPRESS] = NULL,
-	[WIMLIB_COMPRESSION_TYPE_LZMS]   = NULL,
 };
 
 static bool
