@@ -141,7 +141,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 	bool chunk_offsets_malloced = false;
 	bool ubuf_malloced = false;
 	bool cbuf_malloced = false;
-	struct wimlib_decompressor *decompressor;
+	struct wimlib_decompressor *decompressor = NULL;
 
 	/* Sanity checks  */
 	wimlib_assert(rspec != NULL);
@@ -443,7 +443,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 			ERROR("Invalid chunk size in compressed resource!");
 			errno = EINVAL;
 			ret = WIMLIB_ERR_DECOMPRESSION;
-			goto out_save_decompressor;
+			goto out_free_memory;
 		}
 		if (rspec->is_pipable)
 			cur_read_offset += sizeof(struct pwm_chunk_hdr);
@@ -496,7 +496,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 					ERROR("Failed to decompress data!");
 					ret = WIMLIB_ERR_DECOMPRESSION;
 					errno = EINVAL;
-					goto out_save_decompressor;
+					goto out_free_memory;
 				}
 			}
 			cur_read_offset += chunk_csize;
@@ -517,7 +517,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 				ret = (*cb)(&ubuf[start], size, cb_ctx);
 
 				if (ret)
-					goto out_save_decompressor;
+					goto out_free_memory;
 
 				cur_range_pos += size;
 				if (cur_range_pos == cur_range_end) {
@@ -548,13 +548,15 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 			goto read_error;
 	}
 	ret = 0;
-out_save_decompressor:
-	wimlib_free_decompressor(rspec->wim->decompressor);
-	rspec->wim->decompressor = decompressor;
-	rspec->wim->decompressor_ctype = ctype;
-	rspec->wim->decompressor_max_block_size = chunk_size;
+
 out_free_memory:
 	errno_save = errno;
+	if (decompressor) {
+		wimlib_free_decompressor(rspec->wim->decompressor);
+		rspec->wim->decompressor = decompressor;
+		rspec->wim->decompressor_ctype = ctype;
+		rspec->wim->decompressor_max_block_size = chunk_size;
+	}
 	if (chunk_offsets_malloced)
 		FREE(chunk_offsets);
 	if (ubuf_malloced)
