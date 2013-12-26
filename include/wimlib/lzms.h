@@ -45,4 +45,9 @@
 #define LZMS_X86_MAX_GOOD_TARGET_OFFSET		65535
 #define LZMS_X86_MAX_TRANSLATION_OFFSET		1023
 
+#include <wimlib/types.h>
+
+extern void
+lzms_x86_filter(u8 data[], s32 size, s32 last_target_usages[], bool undo);
+
 #endif /* _WIMLIB_LZMS_H  */

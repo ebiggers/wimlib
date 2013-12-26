@@ -38,6 +38,7 @@ libwim_la_SOURCES =		\
 	src/integrity.c		\
 	src/join.c		\
 	src/lookup_table.c	\
+	src/lzms-common.c	\
 	src/lzms-compress.c	\
 	src/lzms-decompress.c	\
 	src/lz77.c		\

@@ -1112,132 +1112,6 @@ lzms_decode_items(const u8 *cdata, size_t clen, u8 *ubuf, size_t ulen,
 	return 0;
 }
 
-static s32
-lzms_try_x86_translation(u8 *ubuf, s32 i, s32 num_op_bytes,
-			 s32 *closest_target_usage_p, s32 last_target_usages[],
-			 s32 max_trans_offset)
-{
-	u16 pos;
-
-	if (i - *closest_target_usage_p <= max_trans_offset) {
-		LZMS_DEBUG("Performed x86 translation at position %d "
-			   "(opcode 0x%02x)", i, ubuf[i]);
-		le32 *p32 = (le32*)&ubuf[i + num_op_bytes];
-		u32 n = le32_to_cpu(*p32);
-		*p32 = cpu_to_le32(n - i);
-	}
-
-	pos = i + le16_to_cpu(*(const le16*)&ubuf[i + num_op_bytes]);
-
-	i += num_op_bytes + sizeof(le32) - 1;
-
-	if (i - last_target_usages[pos] <= LZMS_X86_MAX_GOOD_TARGET_OFFSET)
-		*closest_target_usage_p = i;
-
-	last_target_usages[pos] = i;
-
-	return i + 1;
-}
-
-static s32
-lzms_process_x86_translation(u8 *ubuf, s32 i, s32 *closest_target_usage_p,
-			     s32 last_target_usages[])
-{
-	/* Switch on first byte of the opcode, assuming it is really an x86
-	 * instruction.  */
-	switch (ubuf[i]) {
-	case 0x48:
-		if (ubuf[i + 1] == 0x8b) {
-			if (ubuf[i + 2] == 0x5 || ubuf[i + 2] == 0xd) {
-				/* Load relative (x86_64)  */
-				return lzms_try_x86_translation(ubuf, i, 3,
-								closest_target_usage_p,
-								last_target_usages,
-								LZMS_X86_MAX_TRANSLATION_OFFSET);
-			}
-		} else if (ubuf[i + 1] == 0x8d) {
-			if ((ubuf[i + 2] & 0x7) == 0x5) {
-				/* Load effective address relative (x86_64)  */
-				return lzms_try_x86_translation(ubuf, i, 3,
-								closest_target_usage_p,
-								last_target_usages,
-								LZMS_X86_MAX_TRANSLATION_OFFSET);
-			}
-		}
-		break;
-
-	case 0x4c:
-		if (ubuf[i + 1] == 0x8d) {
-			if ((ubuf[i + 2] & 0x7) == 0x5) {
-				/* Load effective address relative (x86_64)  */
-				return lzms_try_x86_translation(ubuf, i, 3,
-								closest_target_usage_p,
-								last_target_usages,
-								LZMS_X86_MAX_TRANSLATION_OFFSET);
-			}
-		}
-		break;
-
-	case 0xe8:
-		/* Call relative  */
-		return lzms_try_x86_translation(ubuf, i, 1, closest_target_usage_p,
-						last_target_usages,
-						LZMS_X86_MAX_TRANSLATION_OFFSET / 2);
-
-	case 0xe9:
-		/* Jump relative  */
-		return i + 5;
-
-	case 0xf0:
-		if (ubuf[i + 1] == 0x83 && ubuf[i + 2] == 0x05) {
-			/* Lock add relative  */
-			return lzms_try_x86_translation(ubuf, i, 3,
-							closest_target_usage_p,
-							last_target_usages,
-							LZMS_X86_MAX_TRANSLATION_OFFSET);
-		}
-		break;
-
-	case 0xff:
-		if (ubuf[i + 1] == 0x15) {
-			/* Call indirect  */
-			return lzms_try_x86_translation(ubuf, i, 2,
-							closest_target_usage_p,
-							last_target_usages,
-							LZMS_X86_MAX_TRANSLATION_OFFSET);
-		}
-		break;
-	}
-	return i + 1;
-}
-
-/* Postprocess the uncompressed data by undoing the translation of relative
- * addresses embedded in x86 instructions into absolute addresses.
- *
- * There does not appear to be any way to check to see if this postprocessing
- * actually needs to be done (or to plug in alternate filters, like in LZMA),
- * and the corresponding preprocessing seems to be done unconditionally.  */
-static void
-lzms_postprocess_data(u8 *ubuf, s32 ulen, s32 *last_target_usages)
-{
-	/* Offset (from beginning of buffer) of the most recent reference to a
-	 * seemingly valid target address.  */
-	s32 closest_target_usage = -LZMS_X86_MAX_TRANSLATION_OFFSET - 1;
-
-	/* Initialize the last_target_usages array.  Each entry will contain the
-	 * offset (from beginning of buffer) of the most recently used target
-	 * address beginning with two bytes equal to the array index.  */
-	for (s32 i = 0; i < 65536; i++)
-		last_target_usages[i] = -LZMS_X86_MAX_GOOD_TARGET_OFFSET - 1;
-
-	/* Check each byte in the buffer for an x86 opcode for which a
-	 * translation may be possible.  No translations are done on any
-	 * instructions starting in the last 11 bytes of the buffer.  */
-	for (s32 i = 0; i < ulen - 11; )
-		i = lzms_process_x86_translation(ubuf, i, &closest_target_usage,
-						 last_target_usages);
-}
-
 static int
 lzms_decompress(const void *compressed_data, size_t compressed_size,
 		void *uncompressed_data, size_t uncompressed_size, void *_ctx)
@@ -1281,8 +1155,8 @@ lzms_decompress(const void *compressed_data, size_t compressed_size,
 		return -1;
 
 	/* Postprocess the data.  */
-	lzms_postprocess_data(uncompressed_data, uncompressed_size,
-			      ctx->last_target_usages);
+	lzms_x86_filter(uncompressed_data, uncompressed_size,
+			ctx->last_target_usages, true);
 
 	LZMS_DEBUG("Decompression successful.");
 	return 0;

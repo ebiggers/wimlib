@@ -34,6 +34,7 @@
 #include "wimlib/assert.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/compress_common.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lzms.h"
 #include "wimlib/util.h"
@@ -44,16 +45,8 @@ struct lzms_compressor {
 	u8 *window;
 	u32 window_size;
 	u32 max_block_size;
-
 	s32 *last_target_usages;
 };
-
-static void
-lzms_preprocess_data(u8 *data, s32 size, s32 *last_target_usages)
-{
-	for (s32 i = 0; i < size - 11; i++) {
-	}
-}
 
 static size_t
 lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
@@ -71,8 +64,8 @@ lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 	memcpy(ctx->window, uncompressed_data, uncompressed_size);
 	ctx->window_size = uncompressed_size;
 
-	lzms_preprocess_data(ctx->window, ctx->window_size,
-			     ctx->last_target_usages);
+	lzms_x86_filter(ctx->window, ctx->window_size,
+			ctx->last_target_usages, false);
 
 	return 0;
 }
