@@ -43,6 +43,7 @@
 #include "wimlib/util.h"
 
 #include <string.h>
+#include <limits.h>
 
 /* Stucture used for writing raw bits to the end of the LZMS-compressed data as
  * a series of 16-bit little endian coding units.  */
@@ -167,6 +168,10 @@ struct lzms_compressor {
 
 	/* Size of the data in @buffer.  */
 	u32 window_size;
+
+	/* Temporary array used by lz_analyze_block(); must be at least as long
+	 * as the window.  */
+	u32 *prev_tab;
 
 	/* Maximum block size this compressor instantiation allows.  This is the
 	 * allocated size of @window.  */
@@ -476,6 +481,41 @@ lzms_encode_value(struct lzms_huffman_encoder *enc, u32 value)
 	lzms_output_bitstream_put_bits(enc->os, extra_bits, num_extra_bits);
 }
 
+static void
+lzms_begin_encode_item(struct lzms_compressor *ctx)
+{
+	ctx->upcoming_delta_offset = 0;
+	ctx->upcoming_lz_offset = 0;
+	ctx->upcoming_delta_power = 0;
+}
+
+static void
+lzms_end_encode_item(struct lzms_compressor *ctx, u32 length)
+{
+	LZMS_ASSERT(ctx->window_size - ctx->cur_window_pos >= length);
+	ctx->cur_window_pos += length;
+
+	/* Update LRU queues  */
+	if (ctx->prev_lz_offset != 0) {
+		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--)
+			ctx->recent_lz_offsets[i + 1] = ctx->recent_lz_offsets[i];
+		ctx->recent_lz_offsets[0] = ctx->prev_lz_offset;
+	}
+
+	if (ctx->prev_delta_offset != 0) {
+		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--) {
+			ctx->recent_delta_powers[i + 1] = ctx->recent_delta_powers[i];
+			ctx->recent_delta_offsets[i + 1] = ctx->recent_delta_offsets[i];
+		}
+		ctx->recent_delta_powers[0] = ctx->prev_delta_power;
+		ctx->recent_delta_offsets[0] = ctx->prev_delta_offset;
+	}
+
+	ctx->prev_lz_offset = ctx->upcoming_lz_offset;
+	ctx->prev_delta_offset = ctx->upcoming_delta_offset;
+	ctx->prev_delta_power = ctx->upcoming_delta_power;
+}
+
 /* Encode a literal byte.  */
 static void
 lzms_encode_literal(struct lzms_compressor *ctx, u8 literal)
@@ -483,11 +523,15 @@ lzms_encode_literal(struct lzms_compressor *ctx, u8 literal)
 	LZMS_DEBUG("Position %u: Encoding literal 0x%02x ('%c')",
 		   ctx->cur_window_pos, literal, literal);
 
+	lzms_begin_encode_item(ctx);
+
 	/* Main bit: 0 = a literal, not a match.  */
 	lzms_range_encode_bit(&ctx->main_range_encoder, 0);
 
 	/* Encode the literal using the current literal Huffman code.  */
 	lzms_huffman_encode_symbol(&ctx->literal_encoder, literal);
+
+	lzms_end_encode_item(ctx, 1);
 }
 
 /* Encode a (length, offset) pair (LZ match).  */
@@ -495,6 +539,8 @@ static void
 lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 {
 	int recent_offset_idx;
+
+	lzms_begin_encode_item(ctx);
 
 	LZMS_DEBUG("Position %u: Encoding LZ match {length=%u, offset=%u}",
 		   ctx->cur_window_pos, length, offset);
@@ -525,22 +571,21 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 
 		/* Repeat offset.  */
 
-
-		/* LZ match bit: 0 = repeat offset, not an explicit offset.  */
+		/* LZ match bit: 1 = repeat offset, not an explicit offset.  */
 		lzms_range_encode_bit(&ctx->lz_match_range_encoder, 1);
 
 		/* Encode the recent offset index.  A 1 bit is encoded for each
 		 * index passed up.  This sequence of 1 bits is terminated by a
 		 * 0 bit, or automatically when (LZMS_NUM_RECENT_OFFSETS - 1) 1
 		 * bits have been encoded.  */
-		for (i = 0; i < recent_offset_idx - 1; i++)
+		for (i = 0; i < recent_offset_idx; i++)
 			lzms_range_encode_bit(&ctx->lz_repeat_match_range_encoders[i], 1);
 
 		if (i < LZMS_NUM_RECENT_OFFSETS - 1)
 			lzms_range_encode_bit(&ctx->lz_repeat_match_range_encoders[i], 0);
 
 		/* Initial update of the LZ match offset LRU queue.  */
-		for (i = recent_offset_idx; i < LZMS_NUM_RECENT_OFFSETS; i++)
+		for (; i < LZMS_NUM_RECENT_OFFSETS; i++)
 			ctx->recent_lz_offsets[i] = ctx->recent_lz_offsets[i + 1];
 	}
 
@@ -550,6 +595,8 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 	/* Save the match offset for later insertion at the front of the LZ
 	 * match offset LRU queue.  */
 	ctx->upcoming_lz_offset = offset;
+
+	lzms_end_encode_item(ctx, length);
 }
 
 static struct lzms_match
@@ -563,6 +610,66 @@ lzms_get_best_match(struct lzms_compressor *ctx)
 
 	return match;
 }
+
+static void
+lzms_record_literal(u8 literal, void *_ctx)
+{
+	struct lzms_compressor *ctx = _ctx;
+
+	lzms_encode_literal(ctx, literal);
+}
+
+static void
+lzms_record_match(unsigned length, unsigned offset, void *_ctx)
+{
+	struct lzms_compressor *ctx = _ctx;
+
+	lzms_encode_lz_match(ctx, length, offset);
+}
+
+static void
+lzms_fast_encode(struct lzms_compressor *ctx)
+{
+	static const struct lz_params lzms_lz_params = {
+		.min_match	= 3,
+		.max_match	= UINT_MAX,
+		.max_offset	= UINT_MAX,
+		.nice_match	= 64,
+		.good_match	= 32,
+		.max_chain_len	= 64,
+		.max_lazy_match = 258,
+		.too_far	= 4096,
+	};
+
+	lz_analyze_block(ctx->window,
+			 ctx->window_size,
+			 lzms_record_match,
+			 lzms_record_literal,
+			 ctx,
+			 &lzms_lz_params,
+			 ctx->prev_tab);
+
+}
+
+#if 0
+static void
+lzms_slow_encode(struct lzms_compressor *ctx)
+{
+	struct lzms_match match;
+
+	/* TODO */
+	while (ctx->cur_window_pos != ctx->window_size) {
+		match = lzms_get_best_match(ctx);
+		if (match.length == 0) {
+			/* Literal  */
+			lzms_encode_literal(ctx, ctx->window[ctx->cur_window_pos]);
+		} else {
+			/* LZ match  */
+			lzms_encode_lz_match(ctx, match.length, match.offset);
+		}
+	}
+}
+#endif
 
 static void
 lzms_init_range_encoder(struct lzms_range_encoder *enc,
@@ -733,7 +840,6 @@ lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 	      void *compressed_data, size_t compressed_size_avail, void *_ctx)
 {
 	struct lzms_compressor *ctx = _ctx;
-	struct lzms_match match;
 	size_t compressed_size;
 
 	LZMS_DEBUG("uncompressed_size=%zu, compressed_size_avail=%zu",
@@ -769,18 +875,7 @@ lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 
 	/* Determine and output a literal/match sequence that decompresses to
 	 * the preprocessed data.  */
-	while (ctx->cur_window_pos != ctx->window_size) {
-		match = lzms_get_best_match(ctx);
-		if (match.length == 0) {
-			/* Literal  */
-			lzms_encode_literal(ctx, ctx->window[ctx->cur_window_pos]);
-			ctx->cur_window_pos++;
-		} else {
-			/* LZ match  */
-			lzms_encode_lz_match(ctx, match.length, match.offset);
-			ctx->cur_window_pos += match.length;
-		}
-	}
+	lzms_fast_encode(ctx);
 
 	/* Get and return the compressed data size.  */
 	compressed_size = lzms_finalize(ctx, compressed_data,
@@ -816,14 +911,14 @@ lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 
 			if (ret) {
 				ERROR("Failed to decompress data we "
-				      "compressed using LZMN algorithm");
+				      "compressed using LZMS algorithm");
 				wimlib_assert(0);
 				return 0;
 			}
 			if (memcmp(uncompressed_data, ctx->window,
 				   uncompressed_size))
 			{
-				ERROR("Data we compressed using LZMN algorithm "
+				ERROR("Data we compressed using LZMS algorithm "
 				      "didn't decompress to original");
 				wimlib_assert(0);
 				return 0;
@@ -845,6 +940,7 @@ lzms_free_compressor(void *_ctx)
 
 	if (ctx) {
 		FREE(ctx->window);
+		FREE(ctx->prev_tab);
 		FREE(ctx);
 	}
 }
@@ -868,6 +964,11 @@ lzms_create_compressor(size_t max_block_size,
 	ctx->window = MALLOC(max_block_size);
 	if (ctx->window == NULL)
 		goto oom;
+
+	ctx->prev_tab = MALLOC(max_block_size * sizeof(ctx->prev_tab[0]));
+	if (ctx->prev_tab == NULL)
+		goto oom;
+
 	ctx->max_block_size = max_block_size;
 
 	*ctx_ret = ctx;

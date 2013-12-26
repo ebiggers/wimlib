@@ -1308,6 +1308,9 @@ write_stream_list(struct list_head *stream_list,
 				(WRITE_RESOURCE_FLAG_PACK_STREAMS |
 				 WRITE_RESOURCE_FLAG_PIPABLE));
 
+	if (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS)
+		out_chunk_size = 1U << 26;
+
 	remove_zero_length_streams(stream_list);
 
 	if (list_empty(stream_list)) {
