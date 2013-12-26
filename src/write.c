@@ -176,6 +176,9 @@ can_raw_copy(const struct wim_lookup_table_entry *lte,
 			rspec->wim->chunk_size == out_chunk_size);
 	}
 
+	/* XXX: For compatibility, we can't allow multiple packed resources per
+	 * WIM.  */
+#if 0
 	if ((rspec->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
 	    (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS))
 	{
@@ -198,6 +201,8 @@ can_raw_copy(const struct wim_lookup_table_entry *lte,
 
 		return (write_size > rspec->uncompressed_size / 2);
 	}
+#endif
+
 	return false;
 }
 
