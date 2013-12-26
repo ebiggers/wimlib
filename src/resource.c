@@ -947,6 +947,8 @@ streamifier_cb(const void *chunk, size_t size, void *_ctx)
 	if (ctx->cur_stream_offset == ctx->cur_stream->size) {
 		/* Finished reading all the data for a stream.  */
 
+		ctx->cur_stream_offset = 0;
+
 		DEBUG("End stream (size=%"PRIu64").", ctx->cur_stream->size);
 		ret = (*ctx->cbs.end_stream)(ctx->cur_stream, 0,
 					     ctx->cbs.end_stream_ctx);
@@ -962,7 +964,6 @@ streamifier_cb(const void *chunk, size_t size, void *_ctx)
 			else
 				ctx->next_stream = NULL;
 		}
-		ctx->cur_stream_offset = 0;
 	}
 	return 0;
 }
