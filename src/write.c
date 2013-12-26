@@ -1376,12 +1376,6 @@ write_stream_list(struct list_head *stream_list,
 	 * bytes needing to be compressed is less 2000000 (heuristic value).  */
 	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
 
-		if (out_ctype == WIMLIB_COMPRESSION_TYPE_LZMS &&
-		    ctx.lookup_table != NULL) {
-			WARNING("LZMS compression not implemented; data will "
-				"actually be written uncompressed.");
-		}
-
 	#ifdef ENABLE_MULTITHREADED_COMPRESSION
 		if (ctx.num_bytes_to_compress >= 2000000) {
 			ret = new_parallel_chunk_compressor(out_ctype,

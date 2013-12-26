@@ -1,7 +1,5 @@
 /*
  * lzms-decompress.c
- *
- * A decompressor for the LZMS compression format.
  */
 
 /*
@@ -201,7 +199,6 @@
 #include "wimlib/util.h"
 
 #include <limits.h>
-#include <pthread.h>
 
 #define LZMS_DECODE_TABLE_BITS	10
 
@@ -246,22 +243,6 @@ struct lzms_input_bitstream {
 	/* Number of 16-bit integers remaining in the compressed input data
 	 * (reading backwards).  */
 	size_t num_le16_remaining;
-};
-
-/* Probability entry for use by the range decoder when in a specific state.  */
-struct lzms_probability_entry {
-
-	/* Number of zeroes in the most recent LZMS_PROBABILITY_MAX bits that
-	 * have been decoded using this probability entry.  This is a cached
-	 * value because it can be computed as LZMS_PROBABILITY_MAX minus the
-	 * Hamming weight of the low-order LZMS_PROBABILITY_MAX bits of
-	 * @recent_bits.  */
-	u32 num_recent_zero_bits;
-
-	/* The most recent LZMS_PROBABILITY_MAX bits that have been decoded
-	 * using this probability entry.  The size of this variable, in bits,
-	 * must be at least LZMS_PROBABILITY_MAX.  */
-	u64 recent_bits;
 };
 
 /* Structure used for range decoding.  This wraps around `struct
@@ -383,96 +364,9 @@ struct lzms_decompressor {
 	u32 upcoming_delta_power;
 	u32 upcoming_delta_offset;
 
-	/* Used for postprocessing  */
+	/* Used for postprocessing.  */
 	s32 last_target_usages[65536];
 };
-
-/* A table that maps position slots to their base values.  These are constants
- * computed at runtime by lzms_compute_slot_bases().  */
-static u32 lzms_position_slot_base[LZMS_MAX_NUM_OFFSET_SYMS + 1];
-
-/* A table that maps length slots to their base values.  These are constants
- * computed at runtime by lzms_compute_slot_bases().  */
-static u32 lzms_length_slot_base[LZMS_NUM_LEN_SYMS + 1];
-
-static void
-lzms_decode_delta_rle_slot_bases(u32 slot_bases[],
-				 const u8 delta_run_lens[], size_t num_run_lens)
-{
-	u32 delta = 1;
-	u32 base = 0;
-	size_t slot = 0;
-	for (size_t i = 0; i < num_run_lens; i++) {
-		u8 run_len = delta_run_lens[i];
-		while (run_len--) {
-			base += delta;
-			slot_bases[slot++] = base;
-		}
-		delta <<= 1;
-	}
-}
-
-/* Initialize the global position and length slot tables.  */
-static void
-lzms_compute_slot_bases(void)
-{
-	/* If an explicit formula that maps LZMS position and length slots to
-	 * slot bases exists, then it could be used here.  But until one is
-	 * found, the following code fills in the slots using the observation
-	 * that the increase from one slot base to the next is an increasing
-	 * power of 2.  Therefore, run-length encoding of the delta of adjacent
-	 * entries can be used.  */
-	static const u8 position_slot_delta_run_lens[] = {
-		9,   0,   9,   7,   10,  15,  15,  20,
-		20,  30,  33,  40,  42,  45,  60,  73,
-		80,  85,  95,  105, 6,
-	};
-
-	static const u8 length_slot_delta_run_lens[] = {
-		27,  4,   6,   4,   5,   2,   1,   1,
-		1,   1,   1,   0,   0,   0,   0,   0,
-		1,
-	};
-
-	lzms_decode_delta_rle_slot_bases(lzms_position_slot_base,
-					 position_slot_delta_run_lens,
-					 ARRAY_LEN(position_slot_delta_run_lens));
-
-	lzms_position_slot_base[LZMS_MAX_NUM_OFFSET_SYMS] = 0x7fffffff;
-
-	lzms_decode_delta_rle_slot_bases(lzms_length_slot_base,
-					 length_slot_delta_run_lens,
-					 ARRAY_LEN(length_slot_delta_run_lens));
-
-	lzms_length_slot_base[LZMS_NUM_LEN_SYMS] = 0x400108ab;
-}
-
-/* Initialize the global position length slot tables if not done so already.  */
-static void
-lzms_init_slot_bases(void)
-{
-	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	static bool already_computed = false;
-
-	if (unlikely(!already_computed)) {
-		pthread_mutex_lock(&mutex);
-		if (!already_computed) {
-			lzms_compute_slot_bases();
-			already_computed = true;
-		}
-		pthread_mutex_unlock(&mutex);
-	}
-}
-
-/* Return the position slot for the specified offset.  */
-static u32
-lzms_get_position_slot_raw(u32 offset)
-{
-	u32 position_slot = 0;
-	while (lzms_position_slot_base[position_slot + 1] <= offset)
-		position_slot++;
-	return position_slot;
-}
 
 /* Initialize the input bitstream @is to read forwards from the specified
  * compressed data buffer @in that is @in_limit 16-bit integers long.  */
@@ -684,7 +578,7 @@ lzms_rebuild_adaptive_huffman_code(struct lzms_huffman_decoder *dec)
 /* Decode and return the next Huffman-encoded symbol from the LZMS-compressed
  * block using the specified Huffman decoder.  */
 static u32
-lzms_decode_huffman_symbol(struct lzms_huffman_decoder *dec)
+lzms_huffman_decode_symbol(struct lzms_huffman_decoder *dec)
 {
 	const u8 *lens = dec->lens;
 	const u16 *decode_table = dec->decode_table;
@@ -749,7 +643,7 @@ lzms_decode_value(struct lzms_huffman_decoder *dec)
 
 	/* Read the slot (position slot, length slot, etc.), which is encoded as
 	 * a Huffman symbol.  */
-	slot = lzms_decode_huffman_symbol(dec);
+	slot = lzms_huffman_decode_symbol(dec);
 
 	LZMS_ASSERT(dec->slot_base_tab != NULL);
 
@@ -884,7 +778,7 @@ lzms_decode_delta_match(struct lzms_decompressor *ctx)
 
 	bit = lzms_range_decode_bit(&ctx->delta_match_range_decoder);
 	if (bit == 0) {
-		power = lzms_decode_huffman_symbol(&ctx->delta_power_decoder);
+		power = lzms_huffman_decode_symbol(&ctx->delta_power_decoder);
 		raw_offset = lzms_decode_value(&ctx->delta_offset_decoder);
 	} else {
 		int i;
@@ -927,7 +821,7 @@ lzms_decode_match(struct lzms_decompressor *ctx)
 static int
 lzms_decode_literal(struct lzms_decompressor *ctx)
 {
-	u8 literal = lzms_decode_huffman_symbol(&ctx->literal_decoder);
+	u8 literal = lzms_huffman_decode_symbol(&ctx->literal_decoder);
 	LZMS_DEBUG("Decoded literal: 0x%02x", literal);
 	return lzms_copy_literal(ctx, literal);
 }
@@ -1027,7 +921,7 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 
 	/* Calculate the number of position slots needed for this compressed
 	 * block.  */
-	num_position_slots = lzms_get_position_slot_raw(ulen - 1) + 1;
+	num_position_slots = lzms_get_position_slot(ulen - 1) + 1;
 
 	LZMS_DEBUG("Using %u position slots", num_position_slots);
 
@@ -1145,7 +1039,8 @@ lzms_decompress(const void *compressed_data, size_t compressed_size,
 	 * searched for a position of INT32_MAX or greater.  */
 	if (uncompressed_size >= INT32_MAX) {
 		LZMS_DEBUG("Uncompressed length too large "
-			   "(got %u, expected < INT32_MAX)", ulen);
+			   "(got %zu, expected < INT32_MAX)",
+			   uncompressed_size);
 		return -1;
 	}
 

@@ -28,14 +28,108 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/lzms.h"
 #include "wimlib/endianness.h"
+#include "wimlib/error.h"
+#include "wimlib/lzms.h"
+#include "wimlib/util.h"
+
+#include <pthread.h>
+
+/* A table that maps position slots to their base values.  These are constants
+ * computed at runtime by lzms_compute_slot_bases().  */
+u32 lzms_position_slot_base[LZMS_MAX_NUM_OFFSET_SYMS + 1];
+
+/* A table that maps length slots to their base values.  These are constants
+ * computed at runtime by lzms_compute_slot_bases().  */
+u32 lzms_length_slot_base[LZMS_NUM_LEN_SYMS + 1];
+
+/* Return the slot for the specified value.  */
+unsigned
+lzms_get_slot(u32 value, const u32 slot_base_tab[], unsigned num_slots)
+{
+	unsigned slot = 0;
+
+	while (slot_base_tab[slot + 1] <= value)
+		slot++;
+
+	return slot;
+}
+
+
+static void
+lzms_decode_delta_rle_slot_bases(u32 slot_bases[],
+				 const u8 delta_run_lens[], size_t num_run_lens)
+{
+	u32 delta = 1;
+	u32 base = 0;
+	size_t slot = 0;
+	for (size_t i = 0; i < num_run_lens; i++) {
+		u8 run_len = delta_run_lens[i];
+		while (run_len--) {
+			base += delta;
+			slot_bases[slot++] = base;
+		}
+		delta <<= 1;
+	}
+}
+
+/* Initialize the global position and length slot tables.  */
+static void
+lzms_compute_slot_bases(void)
+{
+	/* If an explicit formula that maps LZMS position and length slots to
+	 * slot bases exists, then it could be used here.  But until one is
+	 * found, the following code fills in the slots using the observation
+	 * that the increase from one slot base to the next is an increasing
+	 * power of 2.  Therefore, run-length encoding of the delta of adjacent
+	 * entries can be used.  */
+	static const u8 position_slot_delta_run_lens[] = {
+		9,   0,   9,   7,   10,  15,  15,  20,
+		20,  30,  33,  40,  42,  45,  60,  73,
+		80,  85,  95,  105, 6,
+	};
+
+	static const u8 length_slot_delta_run_lens[] = {
+		27,  4,   6,   4,   5,   2,   1,   1,
+		1,   1,   1,   0,   0,   0,   0,   0,
+		1,
+	};
+
+	lzms_decode_delta_rle_slot_bases(lzms_position_slot_base,
+					 position_slot_delta_run_lens,
+					 ARRAY_LEN(position_slot_delta_run_lens));
+
+	lzms_position_slot_base[LZMS_MAX_NUM_OFFSET_SYMS] = 0x7fffffff;
+
+	lzms_decode_delta_rle_slot_bases(lzms_length_slot_base,
+					 length_slot_delta_run_lens,
+					 ARRAY_LEN(length_slot_delta_run_lens));
+
+	lzms_length_slot_base[LZMS_NUM_LEN_SYMS] = 0x400108ab;
+}
+
+/* Initialize the global position length slot tables if not done so already.  */
+void
+lzms_init_slot_bases(void)
+{
+	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+	static bool already_computed = false;
+
+	if (unlikely(!already_computed)) {
+		pthread_mutex_lock(&mutex);
+		if (!already_computed) {
+			lzms_compute_slot_bases();
+			already_computed = true;
+		}
+		pthread_mutex_unlock(&mutex);
+	}
+}
 
 static s32
-lzms_maybe_do_x86_translation(u8 data[], s32 i, s32 num_op_bytes,
-			      s32 *closest_target_usage_p,
-			      s32 last_target_usages[], s32 max_trans_offset,
-			      bool undo)
+lzms_maybe_do_x86_translation(u8 data[restrict], s32 i, s32 num_op_bytes,
+			      s32 * restrict closest_target_usage_p,
+			      s32 last_target_usages[restrict],
+			      s32 max_trans_offset, bool undo)
 {
 	u16 pos;
 
@@ -71,7 +165,8 @@ lzms_maybe_do_x86_translation(u8 data[], s32 i, s32 num_op_bytes,
 }
 
 static s32
-lzms_may_x86_translate(const u8 p[], s32 *max_offset_ret)
+lzms_may_x86_translate(const u8 p[restrict],
+		       s32 *restrict max_offset_ret)
 {
 	/* Switch on first byte of the opcode, assuming it is really an x86
 	 * instruction.  */
@@ -135,7 +230,10 @@ lzms_may_x86_translate(const u8 p[], s32 *max_offset_ret)
  * @last_target_usages is a temporary array of length >= 65536.
  */
 void
-lzms_x86_filter(u8 data[], s32 size, s32 last_target_usages[], bool undo)
+lzms_x86_filter(u8 data[restrict],
+		s32 size,
+		s32 last_target_usages[restrict],
+		bool undo)
 {
 	s32 closest_target_usage = -LZMS_X86_MAX_TRANSLATION_OFFSET - 1;
 
