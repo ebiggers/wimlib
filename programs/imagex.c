@@ -2547,7 +2547,9 @@ imagex_export(int argc, tchar **argv, int cmd)
 		if (ret)
 			goto out_free_src_wim;
 
-		wimlib_set_output_chunk_size(dest_wim, src_info.chunk_size);
+		/* Use same chunk size if compression type is the same.  */
+		if (compression_type == src_info.compression_type)
+			wimlib_set_output_chunk_size(dest_wim, src_info.chunk_size);
 	}
 
 	image = wimlib_resolve_image(src_wim, src_image_num_or_name);
