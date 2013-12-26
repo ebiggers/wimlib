@@ -62,8 +62,8 @@ do_mkntfs() {
 
 init() {
 	echo "Creating NTFS volumes and empty directories to use as mountpoints"
-	dd if=/dev/zero of=in.ntfs bs=4096 count=500 &> /dev/null
-	dd if=/dev/zero of=out.ntfs bs=4096 count=500 &> /dev/null
+	dd if=/dev/zero of=in.ntfs bs=4096 count=1000 &> /dev/null
+	dd if=/dev/zero of=out.ntfs bs=4096 count=1000 &> /dev/null
 	mkdir in.mnt out.mnt
 	do_mkntfs in.ntfs
 	do_mkntfs out.ntfs
