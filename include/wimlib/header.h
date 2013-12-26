@@ -17,7 +17,7 @@
 /* Version number used for WIMs that allow multiple streams packed into one
  * resource (WIM_RESHDR_FLAG_PACKED_STREAMS).  New as of Windows 8 WIMGAPI; used
  * for the Windows 8 web downloader, but yet not yet properly documented by
- * Microsoft.  */
+ * Microsoft.  This WIM format also allows a new compression format (LZMS).  */
 #define WIM_VERSION_PACKED_STREAMS 0xe00
 
 /* Note: there is another WIM version from Vista pre-releases, but it is not

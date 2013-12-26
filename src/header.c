@@ -257,7 +257,11 @@ init_wim_header(struct wim_header *hdr, int ctype, u32 chunk_size)
 {
 	memset(hdr, 0, sizeof(struct wim_header));
 	hdr->magic = WIM_MAGIC;
-	hdr->wim_version = WIM_VERSION_DEFAULT;
+
+	if (ctype == WIMLIB_COMPRESSION_TYPE_LZMS)
+		hdr->wim_version = WIM_VERSION_PACKED_STREAMS;
+	else
+		hdr->wim_version = WIM_VERSION_DEFAULT;
 	if (set_wim_hdr_cflags(ctype, hdr)) {
 		ERROR("Invalid compression type specified (%d)", ctype);
 		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;

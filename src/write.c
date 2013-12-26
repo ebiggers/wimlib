@@ -1308,9 +1308,6 @@ write_stream_list(struct list_head *stream_list,
 				(WRITE_RESOURCE_FLAG_PACK_STREAMS |
 				 WRITE_RESOURCE_FLAG_PIPABLE));
 
-	if (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS)
-		out_chunk_size = 1U << 26;
-
 	remove_zero_length_streams(stream_list);
 
 	if (list_empty(stream_list)) {
@@ -1490,6 +1487,39 @@ out_destroy_context:
 		ctx.compressor->destroy(ctx.compressor);
 	DEBUG("Done (ret=%d)", ret);
 	return ret;
+}
+
+static int
+wim_write_stream_list(WIMStruct *wim,
+		      struct list_head *stream_list,
+		      int write_flags,
+		      unsigned num_threads,
+		      struct filter_context *filter_ctx,
+		      wimlib_progress_func_t progress_func)
+{
+	int out_ctype;
+	u32 out_chunk_size;
+	int write_resource_flags;
+
+	write_resource_flags = write_flags_to_resource_flags(write_flags);
+
+	if (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
+		out_chunk_size = wim->out_pack_chunk_size;
+		out_ctype = wim->out_pack_compression_type;
+	} else {
+		out_chunk_size = wim->out_chunk_size;
+		out_ctype = wim->out_compression_type;
+	}
+
+	return write_stream_list(stream_list,
+				 &wim->out_fd,
+				 write_resource_flags,
+				 out_ctype,
+				 out_chunk_size,
+				 num_threads,
+				 wim->lookup_table,
+				 filter_ctx,
+				 progress_func);
 }
 
 static int
@@ -1944,15 +1974,12 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 		}
 	}
 
-	return write_stream_list(stream_list,
-				 &wim->out_fd,
-				 write_flags_to_resource_flags(write_flags),
-				 wim->out_compression_type,
-				 wim->out_chunk_size,
-				 num_threads,
-				 wim->lookup_table,
-				 filter_ctx,
-				 progress_func);
+	return wim_write_stream_list(wim,
+				     stream_list,
+				     write_flags,
+				     num_threads,
+				     filter_ctx,
+				     progress_func);
 }
 
 static int
@@ -2608,7 +2635,8 @@ write_wim_part(WIMStruct *wim,
 		wim->hdr.magic = WIM_MAGIC;
 
 	/* Set appropriate version number.  */
-	if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
+	if ((write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS) ||
+	    wim->out_compression_type == WIMLIB_COMPRESSION_TYPE_LZMS)
 		wim->hdr.wim_version = WIM_VERSION_PACKED_STREAMS;
 	else
 		wim->hdr.wim_version = WIM_VERSION_DEFAULT;
@@ -2996,15 +3024,12 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 		goto out_restore_physical_hdr;
 	}
 
-	ret = write_stream_list(&stream_list,
-				&wim->out_fd,
-				write_flags_to_resource_flags(write_flags),
-				wim->compression_type,
-				wim->chunk_size,
-				num_threads,
-				wim->lookup_table,
-				&filter_ctx,
-				progress_func);
+	ret = wim_write_stream_list(wim,
+				    &stream_list,
+				    write_flags,
+				    num_threads,
+				    &filter_ctx,
+				    progress_func);
 	if (ret)
 		goto out_truncate;
 

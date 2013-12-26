@@ -70,13 +70,16 @@ struct WIMStruct {
 	u8 guid_set_explicitly : 1;
 
 	/* One of WIMLIB_COMPRESSION_TYPE_*, cached from the header flags. */
-	u8 compression_type : 2;
+	u8 compression_type;
 
-	/* Overwritten compression type for wimlib_overwrite() or
-	 * wimlib_write().  Can be changed by
-	 * wimlib_set_output_compression_type(); otherwise is the same as
-	 * compression_type.  */
-	u8 out_compression_type : 2;
+	/* Overridden compression type for wimlib_overwrite() or wimlib_write().
+	 * Can be changed by wimlib_set_output_compression_type(); otherwise is
+	 * the same as compression_type.  */
+	u8 out_compression_type;
+
+	/* Compression type for writing packed streams; can be set with
+	 * wimlib_set_output_pack_compression_type().  */
+	u8 out_pack_compression_type;
 
 	/* Uncompressed size of compressed chunks in this WIM (cached from
 	 * header).  */
@@ -86,6 +89,10 @@ struct WIMStruct {
 	 * be changed by wimlib_set_output_chunk_size(); otherwise is the same
 	 * as chunk_size.  */
 	u32 out_chunk_size;
+
+	/* Chunk size for writing packed streams; can be set with
+	 * wimlib_set_output_pack_chunk_size().  */
+	u32 out_pack_chunk_size;
 };
 
 static inline bool wim_is_pipable(const WIMStruct *wim)

@@ -417,8 +417,7 @@ enum wimlib_compression_type {
 	/** Compressed resources in the WIM use XPRESS compression. */
 	WIMLIB_COMPRESSION_TYPE_XPRESS = 2,
 
-	/** Compressed resources in the WIM use LZMS compression.  Currently,
-	 * wimlib has a decompressor for this format but not a compressor.  LZMS
+	/** Compressed resources in the WIM use LZMS compression.  Note: LZMS
 	 * compression is only compatible with wimlib v1.6.0 and later and with
 	 * WIMGAPI Windows 8 and later (and some restrictions apply on the
 	 * latter).  */
@@ -3216,7 +3215,9 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  *	on the compression format.  The XPRESS compression format supports chunk
  *	sizes that are powers of 2 with exponents between 15 and 26 inclusively,
  *	whereas the LZX compression format supports chunk sizes that are powers
- *	of 2 with exponents between 15 and 21 inclusively.
+ *	of 2 with exponents between 15 and 21 inclusively.  As a special case,
+ *	if @p out_chunk_size is specified as 0, the chunk size is set to the
+ *	default for the currently selected output compression type.
  *
  * @return 0 on success; nonzero on error.
  *
@@ -3225,6 +3226,15 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  */
 extern int
 wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size);
+
+/**
+ * @ingroup G_writing_and_overwriting_wims
+ *
+ * Similar to wimlib_set_output_chunk_size(), but set the chunk size for writing
+ * packed streams.
+ */
+extern int
+wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size);
 
 /**
  * @ingroup G_writing_and_overwriting_wims
@@ -3242,11 +3252,20 @@ wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size);
  *
  * @return 0 on success; nonzero on error.
  *
- * @retval ::WIMLIB_ERR_INVALID_PARAM
+ * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  *	@p ctype did not specify a valid compression type.
  */
 extern int
 wimlib_set_output_compression_type(WIMStruct *wim, int ctype);
+
+/**
+ * @ingroup G_writing_and_overwriting_wims
+ *
+ * Similar to wimlib_set_output_compression_type(), but set the compression type
+ * for writing packed streams.
+ */
+extern int
+wimlib_set_output_pack_compression_type(WIMStruct *wim, int ctype);
 
 /**
  * @ingroup G_modifying_wims
