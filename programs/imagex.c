@@ -231,6 +231,8 @@ static const struct option export_options[] = {
 	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
+	{T("pack-streams"),no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
+	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("ref"),         required_argument, NULL, IMAGEX_REF_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
@@ -2410,6 +2412,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	bool wim_is_new;
 	STRING_SET(refglobs);
 	unsigned num_threads = 0;
+	uint32_t chunk_size = UINT32_MAX;
 
 	for_opt(c, export_options) {
 		switch (c) {
@@ -2426,6 +2429,14 @@ imagex_export(int argc, tchar **argv, int cmd)
 		case IMAGEX_COMPRESS_OPTION:
 			compression_type = get_compression_type(optarg);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
+				goto out_err;
+			break;
+		case IMAGEX_PACK_STREAMS_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
+			break;
+		case IMAGEX_CHUNK_SIZE_OPTION:
+			chunk_size = parse_chunk_size(optarg);
+			if (chunk_size == UINT32_MAX)
 				goto out_err;
 			break;
 		case IMAGEX_REF_OPTION:
@@ -2546,8 +2557,16 @@ imagex_export(int argc, tchar **argv, int cmd)
 			goto out_free_src_wim;
 
 		/* Use same chunk size if compression type is the same.  */
-		if (compression_type == src_info.compression_type)
+		if (compression_type == src_info.compression_type &&
+		    chunk_size == UINT32_MAX)
 			wimlib_set_output_chunk_size(dest_wim, src_info.chunk_size);
+	}
+
+	if (chunk_size != UINT32_MAX) {
+		/* Set destination chunk size.  */
+		ret = wimlib_set_output_chunk_size(dest_wim, chunk_size);
+		if (ret)
+			goto out_free_dest_wim;
 	}
 
 	image = wimlib_resolve_image(src_wim, src_image_num_or_name);
