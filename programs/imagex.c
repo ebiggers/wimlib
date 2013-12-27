@@ -142,7 +142,6 @@ enum {
 	IMAGEX_NORPFIX_OPTION,
 	IMAGEX_NOCHECK_OPTION,
 	IMAGEX_NO_ACLS_OPTION,
-	IMAGEX_NO_PACK_STREAMS_OPTION,
 	IMAGEX_NOT_PIPABLE_OPTION,
 	IMAGEX_PACK_STREAMS_OPTION,
 	IMAGEX_PATH_OPTION,
@@ -293,7 +292,6 @@ static const struct option optimize_options[] = {
 	{T("recompress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("pack-streams"),no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
-	{T("no-pack-streams"), no_argument,   NULL, IMAGEX_NO_PACK_STREAMS_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
@@ -3366,9 +3364,6 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		case IMAGEX_PACK_STREAMS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
-			break;
-		case IMAGEX_NO_PACK_STREAMS_OPTION:
-			write_flags |= WIMLIB_WRITE_FLAG_NO_PACK_STREAMS;
 			break;
 		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);

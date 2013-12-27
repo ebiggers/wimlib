@@ -64,6 +64,23 @@ image_print_metadata(WIMStruct *wim)
 				  wim->lookup_table);
 }
 
+static int
+wim_default_pack_compression_type(void)
+{
+	return WIMLIB_COMPRESSION_TYPE_LZMS;
+}
+
+static u32
+wim_default_pack_chunk_size(int ctype) {
+	switch (ctype) {
+	case WIMLIB_COMPRESSION_TYPE_LZMS:
+		/* Note: WIMGAPI uses 1 << 26, but lower sizes are compatible.
+		 * */
+		return 1U << 25; /* 33554432  */
+	default:
+		return 1U << 15; /* 32768     */
+	}
+}
 
 static WIMStruct *
 new_wim_struct(void)
@@ -72,6 +89,9 @@ new_wim_struct(void)
 	if (wim) {
 		wim->in_fd.fd = -1;
 		wim->out_fd.fd = -1;
+		wim->out_pack_compression_type = wim_default_pack_compression_type();
+		wim->out_pack_chunk_size = wim_default_pack_chunk_size(
+						wim->out_pack_compression_type);
 		INIT_LIST_HEAD(&wim->subwims);
 	}
 	return wim;
@@ -154,18 +174,6 @@ wim_default_chunk_size(int ctype)
 	}
 }
 
-static u32
-wim_default_pack_chunk_size(int ctype) {
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		/* Note: WIMGAPI uses 1 << 26, but lower sizes are compatible.
-		 * */
-		return 1U << 25; /* 33554432  */
-	default:
-		return 1U << 15; /* 32768     */
-	}
-}
-
 /*
  * Calls a function on images in the WIM.  If @image is WIMLIB_ALL_IMAGES, @visitor
  * is called on the WIM once for each image, with each image selected as the
@@ -231,10 +239,8 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 	wim->refcnts_ok = 1;
 	wim->compression_type = ctype;
 	wim->out_compression_type = ctype;
-	wim->out_pack_compression_type = ctype;
 	wim->chunk_size = wim->hdr.chunk_size;
 	wim->out_chunk_size = wim->hdr.chunk_size;
-	wim->out_pack_chunk_size = wim_default_pack_chunk_size(ctype);
 	*wim_ret = wim;
 	return 0;
 out_free:
@@ -667,12 +673,10 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 		wim->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
 	}
 	wim->out_compression_type = wim->compression_type;
-	wim->out_pack_compression_type = wim->compression_type;
 
 	/* Check and cache the chunk size.  */
 	wim->chunk_size = wim->hdr.chunk_size;
 	wim->out_chunk_size = wim->chunk_size;
-	wim->out_pack_chunk_size = wim_default_pack_chunk_size(wim->out_pack_compression_type);
 	if (!wim_chunk_size_valid(wim->chunk_size, wim->compression_type)) {
 		ERROR("Invalid chunk size (%"PRIu32" bytes) "
 		      "for compression type %"TS"!",

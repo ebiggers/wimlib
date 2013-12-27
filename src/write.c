@@ -2542,9 +2542,6 @@ write_wim_part(WIMStruct *wim,
 	if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
 		DEBUG("\tPACK_STREAMS");
 
-	if (write_flags & WIMLIB_WRITE_FLAG_NO_PACK_STREAMS)
-		DEBUG("\tNO_PACK_STREAMS");
-
 	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR)
 		DEBUG("\tFILE_DESCRIPTOR");
 
@@ -2593,12 +2590,6 @@ write_wim_part(WIMStruct *wim,
 				    WIMLIB_WRITE_FLAG_NOT_PIPABLE))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if ((write_flags & (WIMLIB_WRITE_FLAG_PACK_STREAMS |
-			    WIMLIB_WRITE_FLAG_NO_PACK_STREAMS))
-				== (WIMLIB_WRITE_FLAG_PACK_STREAMS |
-				    WIMLIB_WRITE_FLAG_NO_PACK_STREAMS))
-		return WIMLIB_ERR_INVALID_PARAM;
-
 	/* Save previous header, then start initializing the new one.  */
 	memcpy(&hdr_save, &wim->hdr, sizeof(struct wim_header));
 
@@ -2615,13 +2606,6 @@ write_wim_part(WIMStruct *wim,
 		if (wim_has_integrity_table(wim)) {
 			DEBUG("Integrity table present; default to CHECK_INTEGRITY.");
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-		}
-
-	if (!(write_flags & (WIMLIB_WRITE_FLAG_PACK_STREAMS |
-			     WIMLIB_WRITE_FLAG_NO_PACK_STREAMS)))
-		if (wim->hdr.wim_version == WIM_VERSION_PACKED_STREAMS) {
-			DEBUG("WIM version 3584; default to PACK_STREAMS.");
-			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
 		}
 
 	if ((write_flags & (WIMLIB_WRITE_FLAG_PIPABLE |
@@ -2931,20 +2915,9 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 		if (wim_has_integrity_table(wim))
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 
-	/* Set default packed flag.  */
-	if (!(write_flags & (WIMLIB_WRITE_FLAG_PACK_STREAMS |
-			     WIMLIB_WRITE_FLAG_NO_PACK_STREAMS)))
-	{
-	#if 0
-		if (wim->hdr.wim_version == WIM_VERSION_PACKED_STREAMS)
-			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
-	#endif
-		/* wimlib allows multiple packs in a single WIM, but they don't
-		 * seem to be compatible with WIMGAPI.  Write new streams
-		 * unpacked.  */
-	} else if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS) {
+	/* Set WIM version if adding packed streams.  */
+	if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
 		wim->hdr.wim_version = WIM_VERSION_PACKED_STREAMS;
-	}
 
 	/* Set additional flags for overwrite.  */
 	write_flags |= WIMLIB_WRITE_FLAG_OVERWRITE |
