@@ -3812,36 +3812,33 @@ static const tchar *usage_strings[] = {
 [CMD_APPEND] =
 T(
 "    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
-"                    [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot]\n"
-"                    [--check] [--nocheck] [--flags EDITION_ID]\n"
-"                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
-"                    [--source-list] [--no-acls] [--strict-acls] [--rpfix]\n"
-"                    [--norpfix] [--unix-data] [--pipable]\n"
+"                    [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot] [--check]\n"
+"                    [--nocheck] [--flags EDITION_ID] [--dereference]\n"
+"                    [--config=FILE] [--threads=NUM_THREADS] [--source-list]\n"
+"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
 "                    [--update-of=[WIMFILE:]IMAGE]\n"
 ),
 [CMD_APPLY] =
 T(
 "    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME | all)]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
-"                    [--symlink] [--ref=\"GLOB\"] [--unix-data]\n"
-"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
-"                    [--include-invalid-names]\n"
+"                    [--symlink] [--ref=\"GLOB\"] [--no-acls] [--strict-acls]\n"
+"                    [--rpfix] [--norpfix] [--include-invalid-names]\n"
 ),
 [CMD_CAPTURE] =
 T(
 "    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
-"		     [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot]\n"
-"                    [--check] [--nocheck] [--compress=TYPE]\n"
-"                    [--flags EDITION_ID] [--dereference]\n"
-"                    [--config=FILE] [--threads=NUM_THREADS] [--source-list]\n"
-"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
-"                    [--unix-data] [--pipable] [--update-of=[WIMFILE:]IMAGE]\n"
+"		     [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot] [--check]\n"
+"                    [--nocheck] [--compress=TYPE] [--flags EDITION_ID]\n"
+"                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
+"                    [--source-list] [--no-acls] [--strict-acls] [--rpfix]\n"
+"                    [--norpfix] [--update-of=[WIMFILE:]IMAGE]\n"
 "                    [--delta-from=WIMFILE]\n"
 ),
 [CMD_DELETE] =
 T(
-"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--check]\n"
-"                    [--soft]\n"
+"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n"
+"                    [--check] [--soft]\n"
 ),
 [CMD_DIR] =
 T(
@@ -3853,21 +3850,19 @@ T(
 "                    DEST_WIMFILE [DEST_IMAGE_NAME [DEST_IMAGE_DESCRIPTION]]\n"
 "                    [--boot] [--check] [--nocheck] [--compress=TYPE]\n"
 "                    [--ref=\"GLOB\"] [--threads=NUM_THREADS] [--rebuild]\n"
-"                    [--pipable] [--not-pipable]\n"
 ),
 [CMD_EXTRACT] =
 T(
 "    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) [PATH...]\n"
-"                    [--check] [--ref=\"GLOB\"] [--unix-data]\n"
-"                    [--no-acls] [--strict-acls] [--to-stdout]\n"
-"                    [--dest-dir=CMD_DIR] [--include-invalid-names]\n"
+"                    [--check] [--ref=\"GLOB\"] [--no-acls] [--strict-acls]\n"
+"                    [--to-stdout] [--dest-dir=CMD_DIR]\n"
+"                    [--include-invalid-names]\n"
 ),
 [CMD_INFO] =
 T(
 "    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME) [NEW_NAME\n"
-"                    [NEW_DESC]]] [--boot] [--check] [--nocheck] [--header]\n"
-"                    [--lookup-table] [--xml] [--extract-xml FILE]\n"
-"                    [--metadata]\n"
+"                    [NEW_DESC]]] [--boot] [--check] [--nocheck] [--xml]\n"
+"                    [--extract-xml FILE] [--header] [--lookup-table]\n"
 ),
 [CMD_JOIN] =
 T(
@@ -3877,21 +3872,21 @@ T(
 [CMD_MOUNT] =
 T(
 "    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME)] DIRECTORY\n"
-"                    [--check] [--debug] [--streams-interface=INTERFACE]\n"
-"                    [--ref=\"GLOB\"] [--unix-data] [--allow-other]\n"
+"                    [--check] [--streams-interface=INTERFACE]\n"
+"                    [--ref=\"GLOB\"] [--allow-other]\n"
 ),
 [CMD_MOUNTRW] =
 T(
 "    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME)] DIRECTORY\n"
-"                    [--check] [--debug] [--streams-interface=INTERFACE]\n"
-"                    [--staging-dir=CMD_DIR] [--unix-data] [--allow-other]\n"
+"                    [--check] [--streams-interface=INTERFACE]\n"
+"                    [--staging-dir=CMD_DIR] [--allow-other]\n"
 ),
 #endif
 [CMD_OPTIMIZE] =
 T(
 "    %"TS" WIMFILE [--check] [--nocheck] [--recompress]\n"
 "                    [--recompress-slow] [--compress=TYPE]\n"
-"                    [--threads=NUM_THREADS] [--pipable] [--not-pipable]\n"
+"                    [--threads=NUM_THREADS]\n"
 ),
 [CMD_SPLIT] =
 T(
@@ -4015,6 +4010,7 @@ usage_all(FILE *fp)
 "    %"TS" --version\n"
 "\n"
 "    The compression TYPE may be \"maximum\", \"fast\", or \"none\".\n"
+"    Uncommon options are not listed; see the documentation for full details.\n"
 "\n"
 	);
 	tfprintf(fp, extra, invocation_name, invocation_name);
