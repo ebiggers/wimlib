@@ -3821,9 +3821,9 @@ T(
 [CMD_APPLY] =
 T(
 "    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME | all)]\n"
-"                    (DIRECTORY | NTFS_VOLUME) [--check] [--hardlink]\n"
-"                    [--symlink] [--ref=\"GLOB\"] [--no-acls] [--strict-acls]\n"
-"                    [--rpfix] [--norpfix] [--include-invalid-names]\n"
+"                    (DIRECTORY | NTFS_VOLUME) [--check] [--ref=\"GLOB\"]\n"
+"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
+"                    [--hardlink] [--symlink] [--include-invalid-names]\n"
 ),
 [CMD_CAPTURE] =
 T(
@@ -3980,9 +3980,11 @@ recommend_man_page(int cmd, FILE *fp)
 {
 	const tchar *format_str;
 #ifdef __WIN32__
-	format_str = T("See %"TS".pdf in the doc directory for more details.\n");
+	format_str = T("Uncommon options are not listed;\n"
+		       "See %"TS".pdf in the doc directory for more details.\n");
 #else
-	format_str = T("Try `man %"TS"' for more details.\n");
+	format_str = T("Uncommon options are not listed;\n"
+		       "Try `man %"TS"' for more details.\n");
 #endif
 	tfprintf(fp, format_str, get_cmd_string(cmd, true));
 }
@@ -4010,7 +4012,6 @@ usage_all(FILE *fp)
 "    %"TS" --version\n"
 "\n"
 "    The compression TYPE may be \"maximum\", \"fast\", or \"none\".\n"
-"    Uncommon options are not listed; see the documentation for full details.\n"
 "\n"
 	);
 	tfprintf(fp, extra, invocation_name, invocation_name);

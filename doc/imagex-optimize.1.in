@@ -46,16 +46,20 @@ compression about twice as slow and will increase the compression ratio by maybe
 \fB--compress\fR=\fITYPE\fR
 Recompress the WIM file using the specified compression type.  \fITYPE\fR may be
 "none", "fast", or "maximum".  This implies \fB--recompress\fR.
+.IP ""
+\fITYPE\fR may also be "recovery" (or "LZMS"); however, this will result in
+reduced compatibility.  See the documentation for this option to
+\fB@IMAGEX_PROGNAME@ capture\fR (1) for more details.
 .TP
 \fB--chunk-size\fR=\fISIZE\fR
-Set the WIM compression chunk size to \fISIZE\fR.  Using this option is not
-recommended because WIM chunk sizes other than the default of 32768 are not
-supported by Microsoft's software.  But if you decide to use this option
-regardless, you can choose a chunk size that is any power of 2 greater than or
-equal to 2^15 (32768) up to 2^21 (2097152) for LZX ("maximum") compression or
-2^26 (67108864) for XPRESS ("fast") compression.  Larger chunks mean larger LZ77
-dictionaries and better compression ratios on sufficiently large files, but
-slower random access.
+Set the WIM compression chunk size to \fISIZE\fR.  See the documentation for
+this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for more details.
+.TP
+\fB--pack-streams\fR
+Create a "solid" archive that compresses multiple files together.  This can
+result in a higher compression ratio, but has disadvantages such as reduced
+compatibility; see the documentation for this option to
+\fB@IMAGEX_PROGNAME@-capture\fR (1) for more details.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of

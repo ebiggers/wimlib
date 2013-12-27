@@ -92,6 +92,13 @@ extract\fR.  Use \fB@IMAGEX_PROGNAME@ apply\fR if you want this behavior.
 .PP
 Unlike \fB@IMAGEX_PROGNAME@ apply\fR, \fB@IMAGEX_PROGNAME@ extract\fR does not
 support extracting files directly to a NTFS volume using libntfs-3g.
+.PP
+wimlib v1.6.0 and later can extract files from version 3584 WIMs, which usually
+use packed, LZMS-compressed streams and may carry the \fI.esd\fR file extension
+rather than \fI.wim\fR.  However, \fI.esd\fR files downloaded directly by the
+Windows 8 web downloader have encrypted segments, and wimlib cannot extract such
+files until they are first decrypted.  Furthermore, such files are not designed
+for random access, so extracting individual files from them may be slow.
 .SH EXAMPLES
 Extract a file from the first image in "boot.wim" to the current directory:
 .RS

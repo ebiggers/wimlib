@@ -72,6 +72,13 @@ rebuilt to make a small change.  But, if you are making many changes to a
 read-write mounted WIM, especially deleting large files, it is suggested to
 provide the \fB--rebuild\fR option to \fB@IMAGEX_PROGNAME@ unmount\fR to force the WIM to
 be rebuilt, or else run \fB@IMAGEX_PROGNAME@ optimize\fR on the WIM afterwards.
+.PP
+wimlib v1.6.0 and later can mount version 3584 WIMs, which usually use packed,
+LZMS-compressed streams and may carry the \fI.esd\fR file extension rather than
+\fI.wim\fR.  However, such files are not designed for random access, so reading
+data from them when mounted may be very slow.  In addition, \fI.esd\fR files
+downloaded directly by the Windows 8 web downloader have encrypted segments, and
+wimlib cannot mount such files until they are first decrypted.
 .SH MOUNT OPTIONS
 .TP 6
 \fB--check\fR
