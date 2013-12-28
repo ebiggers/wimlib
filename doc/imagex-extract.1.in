@@ -55,12 +55,12 @@ the ';' character and otherwise empty lines are ignored.  Each path must be
 unquoted and must specify a full path in the WIM image, as described above.
 However, unless \fB--no-wildcards\fR is specified, each path in the list file
 may also contain the wildcard characters '?' and '*', and therefore may expand
-to multiple actual files or directories.  By default, paths or wildcards that
-match no wildcards only produce a warning; use \fB--strict-wildcards\fR if you
-want an error instead.  Also, when using a list file, files and directories not
-located at the root of the WIM image will be extracted to a corresponding
-subdirectory of the destination directory rather than directly to the
-destination directory itself.
+to multiple actual files or directories.  By default, a path or wildcard glob
+that matches no files or directories in the WIM image only produces a warning;
+use \fB--strict-wildcards\fR if you want an error instead.  Also, when using a
+list file, files and directories not located at the root of the WIM image will
+be extracted to a corresponding subdirectory of the destination directory rather
+than directly to the destination directory itself.
 .SH SPLIT WIMS
 You may use \fB@IMAGEX_PROGNAME@ extract\fR to extract files or directory trees
 from a split WIM.  This uses the \fB--refs\fR="\fIGLOB\fR" option in the same
