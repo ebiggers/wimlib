@@ -211,11 +211,13 @@ struct apply_ctx {
 	size_t target_nchars;
 	wimlib_progress_func_t progress_func;
 	union wimlib_progress_info progress;
-	struct wim_dentry *extract_root;
 	const struct apply_operations *ops;
-	struct wim_features supported_features;
-	u32 supported_attributes_mask;
 	struct list_head stream_list;
+	struct wim_features supported_features;
+	bool root_dentry_is_special;
+	u32 supported_attributes_mask;
+
+	struct wim_dentry *extract_root;
 	tchar *realtarget;
 	size_t realtarget_nchars;
 	unsigned long invalid_sequence;
@@ -224,7 +226,6 @@ struct apply_ctx {
 	struct filedes tmpfile_fd;
 	tchar *tmpfile_name;
 	u64 num_streams_remaining;
-	bool root_dentry_is_special;
 	uint64_t next_progress;
 	intptr_t private[8];
 };

@@ -34,12 +34,9 @@
 #include "wimlib/wildcard.h"
 
 struct match_dentry_ctx {
-	int (*consume_path)(const tchar *, void *, bool);
-	void *consume_path_ctx;
-	size_t consume_path_count;
-	tchar *expanded_path;
-	size_t expanded_path_len;
-	size_t expanded_path_alloc_len;
+	int (*consume_dentry)(struct wim_dentry *, void *);
+	void *consume_dentry_ctx;
+	size_t consume_dentry_count;
 	tchar *wildcard_path;
 	size_t cur_component_offset;
 	size_t cur_component_len;
@@ -60,32 +57,32 @@ match_wildcard_case_sensitive(const tchar *string, size_t string_len,
 			return (wildcard_len == 0);
 		} else if (wildcard_len == 0) {
 			return false;
-		} else if (*string == *wildcard || *wildcard == '?') {
+		} else if (*string == *wildcard || *wildcard == T('?')) {
 			string++;
 			string_len--;
 			wildcard_len--;
 			wildcard++;
 			continue;
-		} else if (*wildcard == '*') {
+		} else if (*wildcard == T('*')) {
 			return match_wildcard_case_sensitive(
 					      string, string_len,
 					      wildcard + 1, wildcard_len - 1) ||
-				match_wildcard_case_sensitive(
-					       string + 1, string_len - 1,
-					       wildcard, wildcard_len);
+			       match_wildcard_case_sensitive(
+					      string + 1, string_len - 1,
+					      wildcard, wildcard_len);
 		} else {
 			return false;
 		}
 	}
 }
-#endif
+#endif /* __WIN32__ */
 
 static bool
 match_wildcard(const tchar *string, tchar *wildcard,
 	       size_t wildcard_len, bool case_insensitive)
 {
-	/* Note: in Windows builds fnmatch() calls a replacement function.
-	 * It does support case-sensitive globbing.  */
+	/* Note: in Windows builds fnmatch() calls a replacement function.  It
+	 * does not support case-sensitive globbing.  */
 #ifdef __WIN32__
 	if (case_insensitive)
 #endif
@@ -166,29 +163,6 @@ match_dentry(struct wim_dentry *cur_dentry, void *_ctx)
 			   ctx->cur_component_len,
 			   ctx->case_insensitive))
 	{
-		size_t len_needed = ctx->expanded_path_len + 1 + name_len + 1;
-		size_t expanded_path_len_save;
-
-		if (len_needed > ctx->expanded_path_alloc_len) {
-			tchar *expanded_path;
-
-			expanded_path = REALLOC(ctx->expanded_path,
-						len_needed * sizeof(ctx->expanded_path[0]));
-			if (expanded_path == NULL) {
-				ret = WIMLIB_ERR_NOMEM;
-				goto out_free_name;
-			}
-			ctx->expanded_path = expanded_path;
-			ctx->expanded_path_alloc_len = len_needed;
-		}
-		expanded_path_len_save = ctx->expanded_path_len;
-
-		ctx->expanded_path[ctx->expanded_path_len++] = WIM_PATH_SEPARATOR;
-		tmemcpy(&ctx->expanded_path[ctx->expanded_path_len],
-			name, name_len);
-		ctx->expanded_path_len += name_len;
-		ctx->expanded_path[ctx->expanded_path_len] = T('\0');
-
 		switch (wildcard_status(&ctx->wildcard_path[
 				ctx->cur_component_offset +
 				ctx->cur_component_len]))
@@ -200,22 +174,18 @@ match_dentry(struct wim_dentry *cur_dentry, void *_ctx)
 			}
 			/* Fall through  */
 		case WILDCARD_STATUS_DONE_FULLY:
-			ret = (*ctx->consume_path)(ctx->expanded_path,
-						   ctx->consume_path_ctx,
-						   false);
-			ctx->consume_path_count++;
+			ret = (*ctx->consume_dentry)(cur_dentry,
+						     ctx->consume_dentry_ctx);
+			ctx->consume_dentry_count++;
 			break;
 		case WILDCARD_STATUS_NOT_DONE:
 			ret = expand_wildcard_recursive(cur_dentry, ctx);
 			break;
 		}
-		ctx->expanded_path_len = expanded_path_len_save;
-		ctx->expanded_path[expanded_path_len_save] = T('\0');
 	} else {
 		ret = 0;
 	}
 
-out_free_name:
 #if !TCHAR_IS_UTF16LE
 	FREE(name);
 #endif
@@ -264,11 +234,47 @@ expand_wildcard_recursive(struct wim_dentry *cur_dentry,
 	return ret;
 }
 
-static int
+/* Expand a wildcard relative to the current WIM image.
+ *
+ * @wim
+ *	WIMStruct whose currently selected image is searched to expand the
+ *	wildcard.
+ * @wildcard_path
+ *	Wildcard path to expand, which may contain the '?' and '*' characters.
+ *      Path separators may be either forward slashes, and leading path
+ *      separators are ignored.  Trailing path separators indicate that the
+ *      wildcard can only match directories.
+ * @consume_dentry
+ *	Callback function which will receive each directory entry matched by the
+ *	wildcard.
+ * @consume_dentry_ctx
+ *	Argument to pass to @consume_dentry.
+ * @flags
+ *	Zero or more of the following flags:
+ *
+ *	WILDCARD_FLAG_WARN_IF_NO_MATCH:
+ *		Issue a warning if the wildcard does not match any dentries.
+ *
+ *	WILDCARD_FLAG_ERROR_IF_NO_MATCH:
+ *		Issue an error and return WIMLIB_ERR_PATH_DOES_NOT_EXIST if the
+ *		wildcard does not match any dentries.
+ *
+ *	WILDCARD_FLAG_CASE_INSENSITIVE:
+ *		Perform the matching case insensitively.  Note that this may
+ *		cause @wildcard to match multiple dentries, even if it does not
+ *		contain wildcard characters.
+ *
+ * @return 0 on success; a positive error code on error; or the first nonzero
+ * value returned by @consume_dentry.
+ *
+ * Note: this function uses the @tmp_list field of dentries it attempts to
+ * match.
+ */
+int
 expand_wildcard(WIMStruct *wim,
 		const tchar *wildcard_path,
-		int (*consume_path)(const tchar *, void *, bool),
-		void *consume_path_ctx,
+		int (*consume_dentry)(struct wim_dentry *, void *),
+		void *consume_dentry_ctx,
 		u32 flags)
 {
 	struct wim_dentry *root;
@@ -279,36 +285,26 @@ expand_wildcard(WIMStruct *wim,
 		goto no_match;
 
 	struct match_dentry_ctx ctx = {
-		.consume_path = consume_path,
-		.consume_path_ctx = consume_path_ctx,
-		.consume_path_count = 0,
-		.expanded_path = MALLOC(256 * sizeof(ctx.expanded_path[0])),
-		.expanded_path_len = 0,
-		.expanded_path_alloc_len = 256,
+		.consume_dentry = consume_dentry,
+		.consume_dentry_ctx = consume_dentry_ctx,
+		.consume_dentry_count = 0,
 		.wildcard_path = TSTRDUP(wildcard_path),
 		.cur_component_offset = 0,
 		.cur_component_len = 0,
 		.case_insensitive = ((flags & WILDCARD_FLAG_CASE_INSENSITIVE) != 0),
 	};
 
-	if (ctx.expanded_path == NULL || ctx.wildcard_path == NULL) {
-		FREE(ctx.expanded_path);
-		FREE(ctx.wildcard_path);
+	if (ctx.wildcard_path == NULL)
 		return WIMLIB_ERR_NOMEM;
-	}
 
 	ret = expand_wildcard_recursive(root, &ctx);
-	FREE(ctx.expanded_path);
 	FREE(ctx.wildcard_path);
-	if (ret == 0 && ctx.consume_path_count == 0)
+	if (ret == 0 && ctx.consume_dentry_count == 0)
 		goto no_match;
 	return ret;
 
 no_match:
 	ret = 0;
-	if (flags & WILDCARD_FLAG_USE_LITERAL_IF_NO_MATCHES)
-		ret = (*consume_path)(wildcard_path, consume_path_ctx, true);
-
 	if (flags & WILDCARD_FLAG_WARN_IF_NO_MATCH)
 		WARNING("No matches for wildcard path \"%"TS"\"", wildcard_path);
 
@@ -316,72 +312,5 @@ no_match:
 		ERROR("No matches for wildcard path \"%"TS"\"", wildcard_path);
 		ret = WIMLIB_ERR_PATH_DOES_NOT_EXIST;
 	}
-	return ret;
-}
-
-struct expanded_paths_ctx {
-	tchar **expanded_paths;
-	size_t num_expanded_paths;
-	size_t alloc_length;
-};
-
-static int
-append_path_cb(const tchar *path, void *_ctx, bool may_need_trans)
-{
-	struct expanded_paths_ctx *ctx = _ctx;
-	tchar *path_dup;
-
-	if (ctx->num_expanded_paths == ctx->alloc_length) {
-		tchar **new_paths;
-		size_t new_alloc_length = max(ctx->alloc_length + 8,
-					      ctx->alloc_length * 3 / 2);
-
-		new_paths = REALLOC(ctx->expanded_paths,
-				    new_alloc_length * sizeof(new_paths[0]));
-		if (new_paths == NULL)
-			return WIMLIB_ERR_NOMEM;
-		ctx->expanded_paths = new_paths;
-		ctx->alloc_length = new_alloc_length;
-	}
-	path_dup = TSTRDUP(path);
-	if (path_dup == NULL)
-		return WIMLIB_ERR_NOMEM;
-	if (may_need_trans) {
-		for (tchar *p = path_dup; *p; p++)
-			if (is_any_path_separator(*p))
-				*p = WIM_PATH_SEPARATOR;
-	}
-	ctx->expanded_paths[ctx->num_expanded_paths++] = path_dup;
-	return 0;
-}
-
-int
-expand_wildcard_wim_paths(WIMStruct *wim,
-			  const tchar * const *wildcards,
-			  size_t num_wildcards,
-			  tchar ***expanded_paths_ret,
-			  size_t *num_expanded_paths_ret,
-			  u32 flags)
-{
-	int ret;
-	struct expanded_paths_ctx ctx = {
-		.expanded_paths = NULL,
-		.num_expanded_paths = 0,
-		.alloc_length = 0,
-	};
-	for (size_t i = 0; i < num_wildcards; i++) {
-		ret = expand_wildcard(wim, wildcards[i], append_path_cb, &ctx,
-				      flags);
-		if (ret)
-			goto out_free;
-	}
-	*expanded_paths_ret = ctx.expanded_paths;
-	*num_expanded_paths_ret = ctx.num_expanded_paths;
-	return 0;
-
-out_free:
-	for (size_t i = 0; i < ctx.num_expanded_paths; i++)
-		FREE(ctx.expanded_paths[i]);
-	FREE(ctx.expanded_paths);
 	return ret;
 }

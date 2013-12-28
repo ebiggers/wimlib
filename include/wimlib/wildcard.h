@@ -3,18 +3,16 @@
 
 #include <wimlib/types.h>
 
-#define WILDCARD_FLAG_USE_LITERAL_IF_NO_MATCHES	0x00000001
-#define WILDCARD_FLAG_WARN_IF_NO_MATCH		0x00000002
-#define WILDCARD_FLAG_ERROR_IF_NO_MATCH		0x00000004
-#define WILDCARD_FLAG_CASE_INSENSITIVE		0x00000008
+#define WILDCARD_FLAG_WARN_IF_NO_MATCH		0x00000001
+#define WILDCARD_FLAG_ERROR_IF_NO_MATCH		0x00000002
+#define WILDCARD_FLAG_CASE_INSENSITIVE		0x00000004
 
 extern int
-expand_wildcard_wim_paths(WIMStruct *wim,
-			  const tchar * const *wildcards,
-			  size_t num_wildcards,
-			  tchar ***expanded_paths_ret,
-			  size_t *num_expanded_paths_ret,
-			  u32 flags);
+expand_wildcard(WIMStruct *wim,
+		const tchar *wildcard_path,
+		int (*consume_dentry)(struct wim_dentry *, void *),
+		void *consume_dentry_ctx,
+		u32 flags);
 
 #ifdef __WIN32__
 extern int

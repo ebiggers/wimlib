@@ -151,15 +151,16 @@ struct wim_dentry {
 	 * including the terminating null character. */
 	u32 full_path_nbytes;
 
+	/* For extraction operations, this flag will be set on dentries in the
+	 * tree being extracted.  Otherwise this will always be 0.  */
+	u8 in_extraction_tree : 1;
+
 	/* For extraction operations, this flag will be set when a dentry in the
 	 * tree being extracted is not being extracted for some reason (file
-	 * type not supported by target filesystem or contains invalid
-	 * characters).  Otherwise this will always be 0. */
+	 * type not supported by target filesystem, contains invalid characters,
+	 * or not in one of the multiple sub-trees being extracted).  Otherwise
+	 * this will always be 0.  */
 	u8 extraction_skipped : 1;
-
-	/* For extraction operations, this flag will be set on dentries in the
-	 * tree being extracted.  */
-	u8 in_extraction_tree : 1;
 
 	/* During extraction extractions, this flag will be set after the
 	 * "skeleton" of the dentry has been extracted.  */
@@ -445,10 +446,16 @@ extern int
 set_dentry_name(struct wim_dentry *dentry, const tchar *new_name);
 
 
+/* Note: the NTFS-3g headers define CASE_SENSITIVE, hence the WIMLIB prefix.  */
 typedef enum {
-	/* NTFS-3g headers define CASE_SENSITIVE...  */
+	/* Use either case-sensitive or case-insensitive search, depending on
+	 * the variable @default_ignore_case.  */
 	WIMLIB_CASE_PLATFORM_DEFAULT = 0,
+
+	/* Use case-sensitive search.  */
 	WIMLIB_CASE_SENSITIVE = 1,
+
+	/* Use case-insensitive search.  */
 	WIMLIB_CASE_INSENSITIVE = 2,
 } CASE_SENSITIVITY_TYPE;
 

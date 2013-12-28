@@ -69,7 +69,8 @@
 
 #define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE 0x80000000
 #define WIMLIB_EXTRACT_FLAG_FROM_PIPE   0x40000000
-#define WIMLIB_EXTRACT_MASK_PUBLIC      0x3fffffff
+#define WIMLIB_EXTRACT_FLAG_PATHMODE    0x20000000
+#define WIMLIB_EXTRACT_MASK_PUBLIC      0x1fffffff
 
 /* Given a WIM dentry in the tree to be extracted, resolve all streams in the
  * corresponding inode and set 'out_refcnt' in each to 0.  */
@@ -1745,8 +1746,6 @@ dentry_calculate_extraction_path(struct wim_dentry *dentry, void *_args)
 	struct apply_ctx *ctx = _args;
 	int ret;
 
-	dentry->in_extraction_tree = 1;
-
 	if (dentry == ctx->extract_root || dentry->extraction_skipped)
 		return 0;
 
@@ -1761,38 +1760,36 @@ dentry_calculate_extraction_path(struct wim_dentry *dentry, void *_args)
 		goto skip_dentry;
 	}
 
-#ifdef __WIN32__
 	if (!ctx->ops->supports_case_sensitive_filenames)
 	{
 		struct wim_dentry *other;
 		list_for_each_entry(other, &dentry->case_insensitive_conflict_list,
 				    case_insensitive_conflict_list)
 		{
-			if (ctx->extract_flags &
-			    WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS) {
-				WARNING("\"%"TS"\" has the same "
-					"case-insensitive name as "
-					"\"%"TS"\"; extracting "
-					"dummy name instead",
-					dentry_full_path(dentry),
-					dentry_full_path(other));
-				goto out_replace;
-			} else {
-				WARNING("Not extracting \"%"TS"\": "
-					"has same case-insensitive "
-					"name as \"%"TS"\"",
-					dentry_full_path(dentry),
-					dentry_full_path(other));
-				goto skip_dentry;
+			if (!other->extraction_skipped) {
+				if (ctx->extract_flags &
+				    WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS) {
+					WARNING("\"%"TS"\" has the same "
+						"case-insensitive name as "
+						"\"%"TS"\"; extracting "
+						"dummy name instead",
+						dentry_full_path(dentry),
+						dentry_full_path(other));
+					goto out_replace;
+				} else {
+					WARNING("Not extracting \"%"TS"\": "
+						"has same case-insensitive "
+						"name as \"%"TS"\"",
+						dentry_full_path(dentry),
+						dentry_full_path(other));
+					goto skip_dentry;
+				}
 			}
 		}
 	}
-#else	/* __WIN32__ */
-	wimlib_assert(ctx->ops->supports_case_sensitive_filenames);
-#endif	/* !__WIN32__ */
 
 	if (file_name_valid(dentry->file_name, dentry->file_name_nbytes / 2, false)) {
-#ifdef __WIN32__
+#if TCHAR_IS_UTF16LE
 		dentry->extraction_name = dentry->file_name;
 		dentry->extraction_name_nchars = dentry->file_name_nbytes / 2;
 		return 0;
@@ -1827,7 +1824,7 @@ out_replace:
 
 		tchar *tchar_name;
 		size_t tchar_nchars;
-	#ifdef __WIN32__
+	#if TCHAR_IS_UTF16LE
 		tchar_name = utf16_name_copy;
 		tchar_nchars = dentry->file_name_nbytes / 2;
 	#else
@@ -1844,7 +1841,7 @@ out_replace:
 		fixed_name_num_chars += tsprintf(fixed_name + tchar_nchars,
 						 T(" (invalid filename #%lu)"),
 						 ++ctx->invalid_sequence);
-	#ifndef __WIN32__
+	#if !TCHAR_IS_UTF16LE
 		FREE(tchar_name);
 	#endif
 		dentry->extraction_name = memdup(fixed_name,
@@ -1886,6 +1883,9 @@ dentry_tally_features(struct wim_dentry *dentry, void *_features)
 {
 	struct wim_features *features = _features;
 	struct wim_inode *inode = dentry->d_inode;
+
+	if (dentry->extraction_skipped)
+		return 0;
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_ARCHIVE)
 		features->archive_files++;
@@ -1969,7 +1969,8 @@ do_feature_check(const struct wim_features *required_features,
 		 const struct wim_features *supported_features,
 		 int extract_flags,
 		 const struct apply_operations *ops,
-		 const tchar *wim_source_path)
+		 const tchar *wim_source_path,
+		 bool warn)
 {
 	const tchar *loc;
 	const tchar *mode = T("this extraction mode");
@@ -1979,148 +1980,150 @@ do_feature_check(const struct wim_features *required_features,
 	else
 		loc = wim_source_path;
 
-	/* We're an archive program, so theoretically we can do what we want
-	 * with FILE_ATTRIBUTE_ARCHIVE (which is a dumb flag anyway).  Don't
-	 * bother the user about it.  */
+	if (warn) {
+		/* We're an archive program, so theoretically we can do what we want
+		 * with FILE_ATTRIBUTE_ARCHIVE (which is a dumb flag anyway).  Don't
+		 * bother the user about it.  */
 #if 0
-	if (required_features->archive_files && !supported_features->archive_files)
-	{
-		WARNING(
-          "%lu files in %"TS" are marked as archived, but this attribute\n"
-"          is not supported in %"TS".",
-			required_features->archive_files, loc, mode);
-	}
+		if (required_features->archive_files && !supported_features->archive_files)
+		{
+			WARNING(
+		  "%lu files in %"TS" are marked as archived, but this attribute\n"
+	"          is not supported in %"TS".",
+				required_features->archive_files, loc, mode);
+		}
 #endif
 
-	if (required_features->hidden_files && !supported_features->hidden_files)
-	{
-		WARNING(
-          "%lu files in %"TS" are marked as hidden, but this\n"
-"          attribute is not supported in %"TS".",
-			required_features->hidden_files, loc, mode);
-	}
-
-	if (required_features->system_files && !supported_features->system_files)
-	{
-		WARNING(
-          "%lu files in %"TS" are marked as system files,\n"
-"          but this attribute is not supported in %"TS".",
-			required_features->system_files, loc, mode);
-	}
-
-	if (required_features->compressed_files && !supported_features->compressed_files)
-	{
-		WARNING(
-          "%lu files in %"TS" are marked as being transparently\n"
-"          compressed, but transparent compression is not supported in\n"
-"          %"TS".  These files will be extracted as uncompressed.",
-			required_features->compressed_files, loc, mode);
-	}
-
-	if (required_features->encrypted_files && !supported_features->encrypted_files)
-	{
-		WARNING(
-          "%lu files in %"TS" are marked as being encrypted,\n"
-"           but encryption is not supported in %"TS".  These files\n"
-"           will not be extracted.",
-			required_features->encrypted_files, loc, mode);
-	}
-
-	if (required_features->encrypted_directories &&
-	    !supported_features->encrypted_directories)
-	{
-		WARNING(
-          "%lu directories in %"TS" are marked as being encrypted,\n"
-"           but encryption is not supported in %"TS".\n"
-"           These directories will be extracted as unencrypted.",
-			required_features->encrypted_directories, loc, mode);
-	}
-
-	if (required_features->not_context_indexed_files &&
-	    !supported_features->not_context_indexed_files)
-	{
-		WARNING(
-          "%lu files in %"TS" are marked as not content indexed,\n"
-"          but this attribute is not supported in %"TS".",
-			required_features->not_context_indexed_files, loc, mode);
-	}
-
-	if (required_features->sparse_files && !supported_features->sparse_files)
-	{
-		WARNING(
-          "%lu files in %"TS" are marked as sparse, but creating\n"
-"           sparse files is not supported in %"TS".  These files\n"
-"           will be extracted as non-sparse.",
-			required_features->sparse_files, loc, mode);
-	}
-
-	if (required_features->named_data_streams &&
-	    !supported_features->named_data_streams)
-	{
-		WARNING(
-          "%lu files in %"TS" contain one or more alternate (named)\n"
-"          data streams, which are not supported in %"TS".\n"
-"          Alternate data streams will NOT be extracted.",
-			required_features->named_data_streams, loc, mode);
-	}
-
-	if (unlikely(extract_flags & (WIMLIB_EXTRACT_FLAG_HARDLINK |
-				      WIMLIB_EXTRACT_FLAG_SYMLINK)) &&
-	    required_features->named_data_streams &&
-	    supported_features->named_data_streams)
-	{
-		WARNING(
-          "%lu files in %"TS" contain one or more alternate (named)\n"
-"          data streams, which are not supported in linked extraction mode.\n"
-"          Alternate data streams will NOT be extracted.",
-			required_features->named_data_streams, loc);
-	}
-
-	if (required_features->hard_links && !supported_features->hard_links)
-	{
-		WARNING(
-          "%lu files in %"TS" are hard links, but hard links are\n"
-"          not supported in %"TS".  Hard links will be extracted as\n"
-"          duplicate copies of the linked files.",
-			required_features->hard_links, loc, mode);
-	}
-
-	if (required_features->reparse_points && !supported_features->reparse_points)
-	{
-		if (supported_features->symlink_reparse_points) {
-			if (required_features->other_reparse_points) {
-				WARNING(
-          "%lu files in %"TS" are reparse points that are neither\n"
-"          symbolic links nor junction points and are not supported in\n"
-"          %"TS".  These reparse points will not be extracted.",
-					required_features->other_reparse_points, loc,
-					mode);
-			}
-		} else {
+		if (required_features->hidden_files && !supported_features->hidden_files)
+		{
 			WARNING(
-          "%lu files in %"TS" are reparse points, which are\n"
-"          not supported in %"TS" and will not be extracted.",
-				required_features->reparse_points, loc, mode);
+		  "%lu files in %"TS" are marked as hidden, but this\n"
+	"          attribute is not supported in %"TS".",
+				required_features->hidden_files, loc, mode);
 		}
-	}
 
-	if (required_features->security_descriptors &&
-	    !supported_features->security_descriptors)
-	{
-		WARNING(
-          "%lu files in %"TS" have Windows NT security descriptors,\n"
-"          but extracting security descriptors is not supported in\n"
-"          %"TS".  No security descriptors will be extracted.",
-			required_features->security_descriptors, loc, mode);
-	}
+		if (required_features->system_files && !supported_features->system_files)
+		{
+			WARNING(
+		  "%lu files in %"TS" are marked as system files,\n"
+	"          but this attribute is not supported in %"TS".",
+				required_features->system_files, loc, mode);
+		}
 
-	if (required_features->short_names && !supported_features->short_names)
-	{
-		WARNING(
-          "%lu files in %"TS" have short (DOS) names, but\n"
-"          extracting short names is not supported in %"TS".\n"
-"          Short names will not be extracted.\n",
-			required_features->short_names, loc, mode);
+		if (required_features->compressed_files && !supported_features->compressed_files)
+		{
+			WARNING(
+		  "%lu files in %"TS" are marked as being transparently\n"
+	"          compressed, but transparent compression is not supported in\n"
+	"          %"TS".  These files will be extracted as uncompressed.",
+				required_features->compressed_files, loc, mode);
+		}
+
+		if (required_features->encrypted_files && !supported_features->encrypted_files)
+		{
+			WARNING(
+		  "%lu files in %"TS" are marked as being encrypted,\n"
+	"           but encryption is not supported in %"TS".  These files\n"
+	"           will not be extracted.",
+				required_features->encrypted_files, loc, mode);
+		}
+
+		if (required_features->encrypted_directories &&
+		    !supported_features->encrypted_directories)
+		{
+			WARNING(
+		  "%lu directories in %"TS" are marked as being encrypted,\n"
+	"           but encryption is not supported in %"TS".\n"
+	"           These directories will be extracted as unencrypted.",
+				required_features->encrypted_directories, loc, mode);
+		}
+
+		if (required_features->not_context_indexed_files &&
+		    !supported_features->not_context_indexed_files)
+		{
+			WARNING(
+		  "%lu files in %"TS" are marked as not content indexed,\n"
+	"          but this attribute is not supported in %"TS".",
+				required_features->not_context_indexed_files, loc, mode);
+		}
+
+		if (required_features->sparse_files && !supported_features->sparse_files)
+		{
+			WARNING(
+		  "%lu files in %"TS" are marked as sparse, but creating\n"
+	"           sparse files is not supported in %"TS".  These files\n"
+	"           will be extracted as non-sparse.",
+				required_features->sparse_files, loc, mode);
+		}
+
+		if (required_features->named_data_streams &&
+		    !supported_features->named_data_streams)
+		{
+			WARNING(
+		  "%lu files in %"TS" contain one or more alternate (named)\n"
+	"          data streams, which are not supported in %"TS".\n"
+	"          Alternate data streams will NOT be extracted.",
+				required_features->named_data_streams, loc, mode);
+		}
+
+		if (unlikely(extract_flags & (WIMLIB_EXTRACT_FLAG_HARDLINK |
+					      WIMLIB_EXTRACT_FLAG_SYMLINK)) &&
+		    required_features->named_data_streams &&
+		    supported_features->named_data_streams)
+		{
+			WARNING(
+		  "%lu files in %"TS" contain one or more alternate (named)\n"
+	"          data streams, which are not supported in linked extraction mode.\n"
+	"          Alternate data streams will NOT be extracted.",
+				required_features->named_data_streams, loc);
+		}
+
+		if (required_features->hard_links && !supported_features->hard_links)
+		{
+			WARNING(
+		  "%lu files in %"TS" are hard links, but hard links are\n"
+	"          not supported in %"TS".  Hard links will be extracted as\n"
+	"          duplicate copies of the linked files.",
+				required_features->hard_links, loc, mode);
+		}
+
+		if (required_features->reparse_points && !supported_features->reparse_points)
+		{
+			if (supported_features->symlink_reparse_points) {
+				if (required_features->other_reparse_points) {
+					WARNING(
+		  "%lu files in %"TS" are reparse points that are neither\n"
+	"          symbolic links nor junction points and are not supported in\n"
+	"          %"TS".  These reparse points will not be extracted.",
+						required_features->other_reparse_points, loc,
+						mode);
+				}
+			} else {
+				WARNING(
+		  "%lu files in %"TS" are reparse points, which are\n"
+	"          not supported in %"TS" and will not be extracted.",
+					required_features->reparse_points, loc, mode);
+			}
+		}
+
+		if (required_features->security_descriptors &&
+		    !supported_features->security_descriptors)
+		{
+			WARNING(
+		  "%lu files in %"TS" have Windows NT security descriptors,\n"
+	"          but extracting security descriptors is not supported in\n"
+	"          %"TS".  No security descriptors will be extracted.",
+				required_features->security_descriptors, loc, mode);
+		}
+
+		if (required_features->short_names && !supported_features->short_names)
+		{
+			WARNING(
+		  "%lu files in %"TS" have short (DOS) names, but\n"
+	"          extracting short names is not supported in %"TS".\n"
+	"          Short names will not be extracted.\n",
+				required_features->short_names, loc, mode);
+		}
 	}
 
 	if ((extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) &&
@@ -2204,53 +2207,37 @@ do_extract_warnings(struct apply_ctx *ctx)
 #endif
 }
 
-/*
- * extract_tree - Extract a file or directory tree from the currently selected
- *		  WIM image.
- *
- * @wim:	WIMStruct for the WIM file, with the desired image selected
- *		(as wim->current_image).
- *
- * @wim_source_path:
- *		"Canonical" (i.e. no leading or trailing slashes, path
- *		separators WIM_PATH_SEPARATOR) path inside the WIM image to
- *		extract.  An empty string means the full image.
- *
- * @target:
- *		Filesystem path to extract the file or directory tree to.
- *		(Or, with WIMLIB_EXTRACT_FLAG_NTFS: the name of a NTFS volume.)
- *
- * @extract_flags:
- *		WIMLIB_EXTRACT_FLAG_*.  Also, the private flag
- *		WIMLIB_EXTRACT_FLAG_MULTI_IMAGE will be set if this is being
- *		called through wimlib_extract_image() with WIMLIB_ALL_IMAGES as
- *		the image.
- *
- * @progress_func:
- *		If non-NULL, progress function for the extraction.  The messages
- *		that may be sent in this function are:
- *
- *		WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN or
- *			WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN;
- *		WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN;
- *		WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END;
- *		WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY;
- *		WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS;
- *		WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS;
- *		WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END or
- *			WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END.
- *
- * Returns 0 on success; a positive WIMLIB_ERR_* code on failure.
- */
 static int
-extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
-	     int extract_flags, wimlib_progress_func_t progress_func)
+dentry_set_skipped(struct wim_dentry *dentry, void *_ignore)
 {
-	struct wim_dentry *root;
+	dentry->in_extraction_tree = 1;
+	dentry->extraction_skipped = 1;
+	return 0;
+}
+
+static int
+dentry_set_not_skipped(struct wim_dentry *dentry, void *_ignore)
+{
+	dentry->in_extraction_tree = 1;
+	dentry->extraction_skipped = 0;
+	return 0;
+}
+
+static int
+extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
+	      const tchar *wim_source_path, const tchar *target,
+	      int extract_flags, wimlib_progress_func_t progress_func)
+{
 	struct wim_features required_features;
 	struct apply_ctx ctx;
 	int ret;
 	struct wim_lookup_table_entry *lte;
+
+	wimlib_assert(num_trees != 0);
+	wimlib_assert(target != NULL);
+
+	if (num_trees > 1)
+		wimlib_assert((extract_flags & WIMLIB_EXTRACT_FLAG_PATHMODE));
 
 	/* Start initializing the apply_ctx.  */
 	memset(&ctx, 0, sizeof(struct apply_ctx));
@@ -2271,18 +2258,31 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	}
 	INIT_LIST_HEAD(&ctx.stream_list);
 
-	/* Translate the path to extract into the corresponding
-	 * `struct wim_dentry', which will be the root of the
-	 * "dentry tree" to extract.  */
-	root = get_dentry(wim, wim_source_path, WIMLIB_CASE_PLATFORM_DEFAULT);
-	if (!root) {
-		ERROR("Path \"%"TS"\" does not exist in WIM image %d",
-		      wim_source_path, wim->current_image);
-		ret = WIMLIB_ERR_PATH_DOES_NOT_EXIST;
-		goto out;
-	}
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_PATHMODE) {
+		/* Path mode --- there may be multiple trees, and targets are
+		 * set relative to the root of the image.
+		 *
+		 * Consider all dentries to be in the extraction tree, but
+		 * assume all to be skipped unless in one of the subtrees being
+		 * extracted or one of the ancestors of the subtrees up to the
+		 * image root.  */
+		ctx.extract_root = wim_root_dentry(wim);
+		for_dentry_in_tree(ctx.extract_root, dentry_set_skipped, NULL);
 
-	ctx.extract_root = root;
+		for (size_t i = 0; i < num_trees; i++) {
+			struct wim_dentry *d;
+
+			for_dentry_in_tree(trees[i], dentry_set_not_skipped, NULL);
+			d = trees[i];
+			while (d != ctx.extract_root) {
+				d = d->parent;
+				dentry_set_not_skipped(d, NULL);
+			}
+		}
+	} else {
+		ctx.extract_root = trees[0];
+		for_dentry_in_tree(ctx.extract_root, dentry_set_not_skipped, NULL);
+	}
 
 	/* Select the appropriate apply_operations based on the
 	 * platform and extract_flags.  */
@@ -2308,11 +2308,14 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	 */
 	ret = ctx.ops->start_extract(target, &ctx);
 	if (ret)
-		goto out;
+		goto out_dentry_reset_needs_extraction;
 
-	dentry_tree_get_features(root, &required_features);
+	/* Get and check the features required to extract the dentry tree.  */
+	dentry_tree_get_features(ctx.extract_root, &required_features);
 	ret = do_feature_check(&required_features, &ctx.supported_features,
-			       extract_flags, ctx.ops, wim_source_path);
+			       extract_flags, ctx.ops,
+			       wim_source_path,
+			       !(extract_flags & WIMLIB_EXTRACT_FLAG_PATHMODE));
 	if (ret)
 		goto out_finish_or_abort_extract;
 
@@ -2327,8 +2330,9 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 
 	/* Calculate the actual filename component of each extracted dentry.  In
 	 * the process, set the dentry->extraction_skipped flag on dentries that
-	 * are being skipped for some reason (e.g. invalid filename).  */
-	ret = for_dentry_in_tree(root, dentry_calculate_extraction_path, &ctx);
+	 * are being skipped because of filename or supported features problems.  */
+	ret = for_dentry_in_tree(ctx.extract_root,
+				 dentry_calculate_extraction_path, &ctx);
 	if (ret)
 		goto out_dentry_reset_needs_extraction;
 
@@ -2370,7 +2374,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	 * directory tree.  (If not, extract_dentry_to_stdout() will
 	 * return an error.)  */
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT) {
-		ret = extract_dentry_to_stdout(root);
+		ret = extract_dentry_to_stdout(ctx.extract_root);
 		goto out_teardown_stream_list;
 	}
 
@@ -2395,9 +2399,9 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	if (!ctx.root_dentry_is_special)
 	{
 		tchar path[ctx.ops->path_max];
-		if (build_extraction_path(path, root, &ctx))
+		if (build_extraction_path(path, ctx.extract_root, &ctx))
 		{
-			ret = extract_inode(path, &ctx, root->d_inode);
+			ret = extract_inode(path, &ctx, ctx.extract_root->d_inode);
 			if (ret)
 				goto out_free_realtarget;
 		}
@@ -2424,7 +2428,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	}
 
 	if (ctx.ops->requires_short_name_reordering) {
-		ret = for_dentry_in_tree(root, dentry_extract_dir_skeleton,
+		ret = for_dentry_in_tree(ctx.extract_root, dentry_extract_dir_skeleton,
 					 &ctx);
 		if (ret)
 			goto out_free_realtarget;
@@ -2439,7 +2443,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 				      &ctx.progress);
 
 		if (!(extract_flags & WIMLIB_EXTRACT_FLAG_RESUME)) {
-			ret = for_dentry_in_tree(root, dentry_extract_skeleton, &ctx);
+			ret = for_dentry_in_tree(ctx.extract_root, dentry_extract_skeleton, &ctx);
 			if (ret)
 				goto out_free_realtarget;
 		}
@@ -2459,7 +2463,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 		if (progress_func)
 			progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
 				      &ctx.progress);
-		ret = for_dentry_in_tree(root, dentry_extract, &ctx);
+		ret = for_dentry_in_tree(ctx.extract_root, dentry_extract, &ctx);
 		if (ret)
 			goto out_free_realtarget;
 		if (progress_func)
@@ -2491,7 +2495,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS,
 			      &ctx.progress);
-	ret = for_dentry_in_tree_depth(root, dentry_extract_final, &ctx);
+	ret = for_dentry_in_tree_depth(ctx.extract_root, dentry_extract_final, &ctx);
 	if (ret)
 		goto out_free_realtarget;
 
@@ -2513,8 +2517,6 @@ out_teardown_stream_list:
 		list_for_each_entry(lte, &ctx.stream_list, extraction_list)
 			if (lte->out_refcnt > ARRAY_LEN(lte->inline_lte_dentries))
 				FREE(lte->lte_dentries);
-out_dentry_reset_needs_extraction:
-	for_dentry_in_tree(root, dentry_reset_needs_extraction, NULL);
 out_finish_or_abort_extract:
 	if (ret) {
 		if (ctx.ops->abort_extract)
@@ -2523,8 +2525,65 @@ out_finish_or_abort_extract:
 		if (ctx.ops->finish_extract)
 			ret = ctx.ops->finish_extract(&ctx);
 	}
-out:
+out_dentry_reset_needs_extraction:
+	for_dentry_in_tree(ctx.extract_root, dentry_reset_needs_extraction, NULL);
 	return ret;
+}
+
+/*
+ * extract_tree - Extract a file or directory tree from the currently selected
+ *		  WIM image.
+ *
+ * @wim:	WIMStruct for the WIM file, with the desired image selected
+ *		(as wim->current_image).
+ *
+ * @wim_source_path:
+ *		"Canonical" (i.e. no leading or trailing slashes, path
+ *		separators WIM_PATH_SEPARATOR) path inside the WIM image to
+ *		extract.  An empty string means the full image.
+ *
+ * @target:
+ *		Filesystem path to extract the file or directory tree to.
+ *		(Or, with WIMLIB_EXTRACT_FLAG_NTFS: the name of a NTFS volume.)
+ *
+ * @extract_flags:
+ *		WIMLIB_EXTRACT_FLAG_*.  Also, the private flag
+ *		WIMLIB_EXTRACT_FLAG_MULTI_IMAGE will be set if this is being
+ *		called through wimlib_extract_image() with WIMLIB_ALL_IMAGES as
+ *		the image.
+ *
+ * @progress_func:
+ *		If non-NULL, progress function for the extraction.  The messages
+ *		that may be sent in this function are:
+ *
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN or
+ *			WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN;
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN;
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END;
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_DENTRY;
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS;
+ *		WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS;
+ *		WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END or
+ *			WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END.
+ *
+ * Returns 0 on success; a positive WIMLIB_ERR_* code on failure.
+ */
+static int
+extract_tree(WIMStruct *wim, const tchar *wim_source_path,
+	     const tchar *target, int extract_flags,
+	     wimlib_progress_func_t progress_func)
+{
+	struct wim_dentry *root;
+
+	root = get_dentry(wim, wim_source_path, WIMLIB_CASE_PLATFORM_DEFAULT);
+
+	if (root == NULL) {
+		  ERROR("Path \"%"TS"\" does not exist in WIM image %d",
+			wim_source_path, wim->current_image);
+		  return WIMLIB_ERR_PATH_DOES_NOT_EXIST;
+	}
+	return extract_trees(wim, &root, 1, wim_source_path,
+			     target, extract_flags, progress_func);
 }
 
 /* Validates a single wimlib_extract_command, mostly checking to make sure the
@@ -3063,6 +3122,34 @@ wimlib_extract_pathlist(WIMStruct *wim, int image,
 	return ret;
 }
 
+struct append_dentry_ctx {
+	struct wim_dentry **dentries;
+	size_t num_dentries;
+	size_t num_alloc_dentries;
+};
+
+static int
+append_dentry_cb(struct wim_dentry *dentry, void *_ctx)
+{
+	struct append_dentry_ctx *ctx = _ctx;
+
+	if (ctx->num_dentries == ctx->num_alloc_dentries) {
+		struct wim_dentry **new_dentries;
+		size_t new_length;
+
+		new_length = max(ctx->num_alloc_dentries + 8,
+				 ctx->num_alloc_dentries * 3 / 2);
+		new_dentries = REALLOC(ctx->dentries,
+				       new_length * sizeof(ctx->dentries[0]));
+		if (new_dentries == NULL)
+			return WIMLIB_ERR_NOMEM;
+		ctx->dentries = new_dentries;
+		ctx->num_alloc_dentries = new_length;
+	}
+	ctx->dentries[ctx->num_dentries++] = dentry;
+	return 0;
+}
+
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_extract_paths(WIMStruct *wim,
@@ -3074,16 +3161,25 @@ wimlib_extract_paths(WIMStruct *wim,
 		     wimlib_progress_func_t progress_func)
 {
 	int ret;
-	tchar **expanded_paths;
-	size_t num_expanded_paths;
-	struct wimlib_extract_command *cmds;
+	struct append_dentry_ctx append_dentry_ctx = {
+		.dentries = NULL,
+		.num_dentries = 0,
+		.num_alloc_dentries = 0,
+	};
+	struct wim_dentry **trees;
+	size_t num_trees;
+
+	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
+
+	if (target == NULL || (num_paths != 0 && paths == NULL))
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	ret = select_wim_image(wim, image);
 	if (ret)
 		return ret;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_GLOB_PATHS) {
-		int wildcard_flags = 0;
+		u32 wildcard_flags = 0;
 
 		if (extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_GLOB)
 			wildcard_flags |= WILDCARD_FLAG_ERROR_IF_NO_MATCH;
@@ -3093,66 +3189,49 @@ wimlib_extract_paths(WIMStruct *wim,
 		if (default_ignore_case)
 			wildcard_flags |= WILDCARD_FLAG_CASE_INSENSITIVE;
 
-		ret = expand_wildcard_wim_paths(wim, paths, num_paths,
-						&expanded_paths,
-						&num_expanded_paths,
-						wildcard_flags);
-		if (ret)
-			return ret;
+		for (size_t i = 0; i < num_paths; i++) {
+			ret = expand_wildcard(wim, paths[i],
+					      append_dentry_cb,
+					      &append_dentry_ctx,
+					      wildcard_flags);
+			if (ret) {
+				trees = append_dentry_ctx.dentries;
+				goto out_free_trees;
+			}
+		}
+		trees = append_dentry_ctx.dentries;
+		num_trees = append_dentry_ctx.num_dentries;
 	} else {
-		expanded_paths = (tchar**)paths;
-		num_expanded_paths = num_paths;
-	}
+		trees = MALLOC(num_paths * sizeof(trees[0]));
+		if (trees == NULL)
+			return WIMLIB_ERR_NOMEM;
 
-	cmds = CALLOC(num_expanded_paths, sizeof(cmds[0]));
-	if (cmds == NULL) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_expanded_paths;
-	}
-
-	for (size_t i = 0; i < num_expanded_paths; i++) {
-		cmds[i].wim_source_path = expanded_paths[i];
-		cmds[i].extract_flags = 0;
-
-		tchar *dest_path;
-		size_t dest_len = 0;
-		dest_len += tstrlen(target);
-		dest_len += 1;
-		dest_len += tstrlen(expanded_paths[i]);
-		dest_len += 1;
-
-		dest_path = MALLOC(dest_len * sizeof(tchar));
-		if (dest_path == NULL) {
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_extraction_cmds;
+		for (size_t i = 0; i < num_paths; i++) {
+			trees[i] = get_dentry(wim, paths[i],
+					      WIMLIB_CASE_PLATFORM_DEFAULT);
+			if (trees[i] == NULL) {
+				  ERROR("Path \"%"TS"\" does not exist "
+					"in WIM image %d",
+					paths[i], wim->current_image);
+				  ret = WIMLIB_ERR_PATH_DOES_NOT_EXIST;
+				  goto out_free_trees;
+			}
 		}
-		tchar *p = dest_path;
-		p = tmempcpy(p, target, tstrlen(target));
-		*p++ = OS_PREFERRED_PATH_SEPARATOR;
-		for (tchar *path_p = expanded_paths[i]; *path_p != '\0'; path_p++) {
-			if (is_any_path_separator(*path_p))
-				*p++ = OS_PREFERRED_PATH_SEPARATOR;
-			else
-				*p++ = *path_p;
-		}
-		*p++ = T('\0');
-		wimlib_assert(p - dest_path == dest_len);
-		cmds[i].fs_dest_path = dest_path;
+		num_trees = num_paths;
 	}
 
-	ret = wimlib_extract_files(wim, image,
-				   cmds, num_expanded_paths,
-				   extract_flags & ~WIMLIB_EXTRACT_FLAG_GLOB_PATHS,
-				   progress_func);
-out_free_extraction_cmds:
-	for (size_t i = 0; i < num_expanded_paths; i++)
-		FREE(cmds[i].fs_dest_path);
-	FREE(cmds);
-out_free_expanded_paths:
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_GLOB_PATHS) {
-		for (size_t i = 0; i < num_expanded_paths; i++)
-			FREE(expanded_paths[i]);
-		FREE(expanded_paths);
+	if (num_trees == 0) {
+		ret = 0;
+		goto out_free_trees;
 	}
+
+	ret = extract_trees(wim, trees, num_trees,
+			    T(""), target,
+			    ((extract_flags &
+				~WIMLIB_EXTRACT_FLAG_GLOB_PATHS)
+				| WIMLIB_EXTRACT_FLAG_PATHMODE),
+			    progress_func);
+out_free_trees:
+	FREE(trees);
 	return ret;
 }

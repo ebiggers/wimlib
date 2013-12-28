@@ -671,6 +671,9 @@ ads_entry_has_name(const struct wim_ads_entry *entry,
 					ignore_case);
 }
 
+/* Default case sensitivity behavior for searches with
+ * WIMLIB_CASE_PLATFORM_DEFAULT specified.  This can be modified by
+ * wimlib_global_init().  */
 bool default_ignore_case =
 #ifdef __WIN32__
 	true
