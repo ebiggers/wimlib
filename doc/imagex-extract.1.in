@@ -54,12 +54,16 @@ each line, leading and trailing whitespace is ignored, and lines beginning with
 the ';' character and otherwise empty lines are ignored.  Each path must be
 unquoted and must specify a full path in the WIM image, as described above.
 However, unless \fB--no-wildcards\fR is specified, each path in the list file
-may also contain the wildcard characters '?' and '*', and therefore may expand
-to multiple actual files or directories.  By default, a path or wildcard glob
-that matches no files or directories in the WIM image only produces a warning;
-use \fB--strict-wildcards\fR if you want an error instead.  Also, when using a
-list file, files and directories not located at the root of the WIM image will
-be extracted to a corresponding subdirectory of the destination directory rather
+may also contain the wildcard characters '?' and '*'.  The '?' character matches
+any character other than a path separator, whereas the '*' character matches
+zero or more non-path-separator characters.  Consequently, a single wildcard
+pattern may expand to multiple actual files or directories.
+.PP
+In the \fILISTFILE\fR mode, by default a wildcard pattern that matches no files
+or directories in the WIM image only produces a warning; use
+\fB--strict-wildcards\fR if you want an error instead.  Also, when using a list
+file, files and directories not located at the root of the WIM image will be
+extracted to a corresponding subdirectory of the destination directory rather
 than directly to the destination directory itself.
 .SH SPLIT WIMS
 You may use \fB@IMAGEX_PROGNAME@ extract\fR to extract files or directory trees
@@ -104,8 +108,11 @@ current working directory.
 Do not interpret wildcard characters in paths in the \fILISTFILE\fR.
 .TP
 \fB--strict-wildcards\fR
-Fail if any wildcards or paths in \fILISTFILE\fR do not match any files in the
-WIM image.  The default behavior is to warn only.
+Fail if any wildcard patterns in \fILISTFILE\fR do not match any files or
+directories in the WIM image.  The default behavior is to warn only.  This
+option has no effect if \fB--no-wildcards\fR is also specified or if \fIPATH\fRs
+are specified instead of a \fILISTFILE\fR; in those cases, an error is issued if
+any file to extract does not exist.
 .SH NOTES
 See the documentation \fB@IMAGEX_PROGNAME@ apply\fR (1) for documentation about
 what data and metadata are extracted on UNIX-like systems versus on Windows.

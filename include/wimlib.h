@@ -1388,9 +1388,16 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_EXTRACT_FLAG_FILE_ORDER			0x00020000
 
 /** For wimlib_extract_paths() and wimlib_extract_pathlist() only:  Treat the
- * paths in the WIM as case-insensitive globs which may contain the characters
- * '?' and '*'.  The '?' character matches any character, whereas the '*'
- * character matches zero or more characters in the same path component.  */
+ * paths in the WIM as "glob" patterns which may contain the wildcard characters
+ * '?' and '*'.  The '?' character matches any character except a path
+ * separator, whereas the '*' character matches zero or more non-path-separator
+ * characters.  Each glob pattern may match zero or more paths in the WIM file.
+ * If a glob pattern ends in a path separator, it will only match directories
+ * (including reparse points with FILE_ATTRIBUTE_DIRECTORY set).  By default, if
+ * a glob pattern does not match any files, a warning but not an error will be
+ * issued, even if the glob pattern did not actually contain wildcard
+ * characters.  Use ::WIMLIB_EXTRACT_FLAG_STRICT_GLOB to get an error instead.
+ */
 #define WIMLIB_EXTRACT_FLAG_GLOB_PATHS			0x00040000
 
 /** In combination with ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS, causes an error
@@ -2354,8 +2361,8 @@ wimlib_extract_image_from_pipe(int pipe_fd,
 
 /**
  * Similar to wimlib_extract_paths(), but the paths to extract from the WIM
- * image specified in the UTF-8 text file @p path_list_file which itself
- * contains the list of paths to use, one per line.  Leading and trailing
+ * image specified in the UTF-8 text file named by @p path_list_file which
+ * itself contains the list of paths to use, one per line.  Leading and trailing
  * whitespace, and otherwise empty lines and lines beginning with the ';'
  * character are ignored.  No quotes are needed as paths are otherwise delimited
  * by the newline character.
@@ -2369,9 +2376,25 @@ wimlib_extract_pathlist(WIMStruct *wim, int image,
 
 /**
  * Similar to wimlib_extract_files(), but the files or directories to extract
- * from the WIM image are specified as an array of paths.  Each path will be
- * extracted to a corresponding location in @p target based on its location in
- * the WIM image.
+ * from the WIM image are specified as an array of paths.
+ *
+ * Each path will be extracted to a corresponding subdirectory of the @p target
+ * based on its location in the WIM image.  For example, if one of the paths to
+ * extract is "/Windows/explorer.exe" and the target is "outdir", the file will
+ * be extracted to "outdir/Windows/explorer.exe".  Each path to extract must be
+ * specified as the absolute path to a directory within the WIM image.
+ * Separators in the paths to extract may be either forwards or backwards
+ * slashes, and leading path separators are optional.  Symbolic links are not
+ * dereferenced when interpreting paths to extract.  Paths to extract will be
+ * interpreted either case-sensitively (UNIX default) or case-insensitively
+ * (Windows default); this can be changed by wimlib_global_init().
+ *
+ * The @p target path, on the other hand, is expected to be a native path.  On
+ * UNIX-like systems it may not contain backslashes, for example.
+ *
+ * By default, if any paths to extract do not exist,
+ * ::WIMLIB_ERR_PATH_DOES_NOT_EXIST is issued.  This behavior changes if
+ * ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS is specified.
  *
  * With ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS specified in @p extract_flags, this
  * function additionally allows paths to be globs using the wildcard characters
@@ -2554,7 +2577,8 @@ wimlib_get_xml_data(WIMStruct *wim, void **buf_ret, size_t *bufsize_ret);
  * Initialization function for wimlib.  Call before using any other wimlib
  * function except wimlib_set_print_errors().  If not done manually, this
  * function will be called automatically with @p init_flags set to
- * ::WIMLIB_INIT_FLAG_ASSUME_UTF8.
+ * ::WIMLIB_INIT_FLAG_ASSUME_UTF8.  This function does nothing if called again
+ * after it has already successfully run.
  *
  * @param init_flags
  *	Bitwise OR of flags prefixed with WIMLIB_INIT_FLAG.
