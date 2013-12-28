@@ -709,27 +709,48 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 	return 0;
 }
 
+/* Rewrite a stream that was just written compressed as uncompressed instead.
+ * This function is optional, but if a stream did not compress to less than its
+ * original size, it might as well be written uncompressed.  */
 static int
 write_stream_uncompressed(struct wim_lookup_table_entry *lte,
 			  struct filedes *out_fd)
 {
 	int ret;
+	u64 begin_offset = lte->out_reshdr.offset_in_wim;
+	u64 end_offset = out_fd->offset;
 
-	if (-1 == lseek(out_fd->fd, lte->out_reshdr.offset_in_wim, SEEK_SET) ||
-	    0 != ftruncate(out_fd->fd, lte->out_reshdr.offset_in_wim))
+	if (filedes_seek(out_fd, begin_offset) == -1)
+		return 0;
+
+	ret = extract_stream_to_fd(lte, out_fd, lte->size);
+	if (ret) {
+		/* Error reading the uncompressed data.  */
+		if (out_fd->offset == begin_offset &&
+		    filedes_seek(out_fd, end_offset) != -1)
+		{
+			/* Nothing was actually written yet, and we successfully
+			 * seeked to the end of the compressed resource, so
+			 * don't issue a hard error; just keep the compressed
+			 * resource instead.  */
+			WARNING("Recovered compressed stream of "
+				"size %"PRIu64", continuing on.",
+				lte->size);
+			return 0;
+		}
+		return ret;
+	}
+
+	wimlib_assert(out_fd->offset - begin_offset == lte->size);
+
+	if (out_fd->offset < end_offset &&
+	    0 != ftruncate(out_fd->fd, out_fd->offset))
 	{
 		ERROR_WITH_ERRNO("Can't truncate output file to "
-				 "offset %"PRIu64, lte->out_reshdr.offset_in_wim);
+				 "offset %"PRIu64, out_fd->offset);
 		return WIMLIB_ERR_WRITE;
 	}
 
-	out_fd->offset = lte->out_reshdr.offset_in_wim;
-
-	ret = extract_stream_to_fd(lte, out_fd, lte->size);
-	if (ret)
-		return ret;
-
-	wimlib_assert(out_fd->offset - lte->out_reshdr.offset_in_wim == lte->size);
 	lte->out_reshdr.size_in_wim = lte->size;
 	lte->out_reshdr.flags &= ~(WIM_RESHDR_FLAG_COMPRESSED |
 				   WIM_RESHDR_FLAG_PACKED_STREAMS);
