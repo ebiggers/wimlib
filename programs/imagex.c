@@ -1079,7 +1079,7 @@ report_scan_progress(const struct wimlib_progress_info_scan *scan, bool done)
 
 		unit_shift = get_unit(scan->num_bytes_scanned, &unit_name);
 		imagex_printf(T("\r%"PRIu64" %"TS" scanned (%"PRIu64" files, "
-				"%"PRIu64" directories)"),
+				"%"PRIu64" directories)    "),
 			      scan->num_bytes_scanned >> unit_shift,
 			      unit_name,
 			      scan->num_nondirs_scanned,
@@ -1205,14 +1205,17 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			info->extract.target);
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN:
-		imagex_printf(T("Extracting "
-			  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING"%"TS"\" from image %d (\"%"TS"\") "
-			  "in \"%"TS"\" to \"%"TS"\"\n"),
-			info->extract.extract_root_wim_source_path,
-			info->extract.image,
-			info->extract.image_name,
-			info->extract.wimfile_name,
-			info->extract.target);
+		if (info->extract.extract_root_wim_source_path[0] != T('\0')) {
+			imagex_printf(T("Extracting "
+				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING"%"TS"\" "
+				  "from image %d (\"%"TS"\") "
+				  "in \"%"TS"\" to \"%"TS"\"\n"),
+				info->extract.extract_root_wim_source_path,
+				info->extract.image,
+				info->extract.image_name,
+				info->extract.wimfile_name,
+				info->extract.target);
+		}
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS:
 		percent_done = TO_PERCENT(info->extract.completed_bytes,

@@ -440,8 +440,8 @@ enum wimlib_progress_msg {
 	 * ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN = 0,
 
-	/** A file or directory tree within a WIM image (not the full image) is
-	 * about to be extracted.  @p info will point to
+	/** One or more file or directory trees within a WIM image (not the full
+	 * image) is about to be extracted.  @p info will point to
 	 * ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN,
 
@@ -693,7 +693,8 @@ union wimlib_progress_info {
 
 		/** Path to the root dentry within the WIM for the tree that is
 		 * being extracted.  Will be the empty string when extracting a
-		 * full image. */
+		 * full image, or when extracting a set of paths using
+		 * wimlib_extract_paths() or wimlib_extract_pathlist().  */
 		const wimlib_tchar *extract_root_wim_source_path;
 
 		/** Currently only used for

@@ -2391,9 +2391,12 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	}
 
 	if (progress_func) {
-		progress_func(*wim_source_path ? WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN :
-						 WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
-			      &ctx.progress);
+		int msg;
+		if (*wim_source_path || (extract_flags & WIMLIB_EXTRACT_FLAG_PATHMODE))
+			msg = WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN;
+		else
+			msg = WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN;
+		progress_func(msg, &ctx.progress);
 	}
 
 	if (!ctx.root_dentry_is_special)
