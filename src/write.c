@@ -1354,7 +1354,8 @@ write_stream_list(struct list_head *stream_list,
 	ctx.write_resource_flags = write_resource_flags;
 	ctx.filter_ctx = filter_ctx;
 
-	if (out_chunk_size != 0) {
+	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
+		wimlib_assert(out_chunk_size != 0);
 		if (out_chunk_size <= STACK_MAX) {
 			ctx.chunk_buf = alloca(out_chunk_size);
 		} else {
@@ -1502,7 +1503,7 @@ out_write_raw_copy_resources:
 				       &ctx.progress_data);
 
 out_destroy_context:
-	if (out_chunk_size > STACK_MAX)
+	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE && out_chunk_size > STACK_MAX)
 		FREE(ctx.chunk_buf);
 	FREE(ctx.chunk_csizes);
 	if (ctx.compressor)
