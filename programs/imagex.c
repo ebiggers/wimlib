@@ -3881,7 +3881,7 @@ T(
 ),
 [CMD_EXTRACT] =
 T(
-"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) [PATH...]\n"
+"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) ([PATH...] | @LISTFILE)\n"
 "                    [--check] [--ref=\"GLOB\"] [--no-acls] [--strict-acls]\n"
 "                    [--to-stdout] [--dest-dir=CMD_DIR]\n"
 "                    [--include-invalid-names]\n"
