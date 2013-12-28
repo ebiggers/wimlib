@@ -29,7 +29,7 @@ trap fail exit
 prepare_empty_wim() {
 	rm -rf in.dir
 	mkdir in.dir
-	imagex capture in.dir test.wim
+	imagex capture in.dir test.wim --compress=none
 }
 
 do_apply() {
@@ -192,6 +192,85 @@ EOF
 rm -rf out.dir
 imagex apply test.wim 1 out.dir
 ../tree-cmp "Some File" out.dir/"Some Destination"
+
+msg "Testing path list extract"
+echo hello1 > hello1
+echo hello2 > hello2
+echo otherfile > otherfile
+prepare_empty_wim
+imagex update test.wim 1 << EOF
+	add hello1 /hello1
+	add hello2 /hello2
+	add otherfile /otherfile
+EOF
+cat > pathlist << EOF
+hello1
+hello2
+EOF
+rm -rf out.dir
+imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+../tree-cmp hello1 out.dir/hello1
+../tree-cmp hello2 out.dir/hello2
+[ ! -e out.dir/otherfile ]
+
+msg "Testing path list extract (w/ wildcard)"
+cat > pathlist << EOF
+hello*
+EOF
+rm -rf out.dir
+imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+../tree-cmp hello1 out.dir/hello1
+../tree-cmp hello2 out.dir/hello2
+[ ! -e out.dir/otherfile ]
+
+msg "Testing path list extract (no match w/ strict; error expected)"
+cat > pathlist << EOF
+hello*
+EOF
+rm -rf out.dir
+! imagex extract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards --strict-wildcards
+
+msg "Testing path list extract (w/ wildcard)"
+cat > pathlist << EOF
+*
+EOF
+rm -rf out.dir
+imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+../tree-cmp hello1 out.dir/hello1
+../tree-cmp hello2 out.dir/hello2
+../tree-cmp otherfile out.dir/otherfile
+
+msg "Testing path list extract (subdir files)"
+prepare_empty_wim
+imagex update test.wim 1 << EOF
+	add hello1 /topdir/subdir1/hello1
+	add hello2 /topdir/subdir2/hello2
+	add hello1 /topdir/hello1
+EOF
+cat > pathlist << EOF
+/topdir/subdir?/hello*
+EOF
+rm -rf out.dir
+imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+../tree-cmp hello1 out.dir/topdir/subdir1/hello1
+../tree-cmp hello2 out.dir/topdir/subdir2/hello2
+[ ! -e out.dir/topdir/hello1 ]
+
+msg "Testing case insensitivity"
+prepare_empty_wim
+imagex update test.wim 1 << EOF
+	add hello1 /HELLO1
+EOF
+cat > pathlist << EOF
+hello1
+EOF
+rm -rf out.dir
+! WIMLIB_IMAGEX_IGNORE_CASE=0 imagex extract test.wim 1 @pathlist \
+				--dest-dir=out.dir --strict-wildcards
+WIMLIB_IMAGEX_IGNORE_CASE=1 imagex extract test.wim 1 @pathlist \
+				--dest-dir=out.dir --strict-wildcards
+../tree-cmp hello1 out.dir/HELLO1
+[ ! -e out.dir/topdir/hello1 ]
 
 
 echo "**********************************************************"
