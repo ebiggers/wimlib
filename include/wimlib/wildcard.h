@@ -3,6 +3,8 @@
 
 #include <wimlib/types.h>
 
+struct wim_dentry;
+
 #define WILDCARD_FLAG_WARN_IF_NO_MATCH		0x00000001
 #define WILDCARD_FLAG_ERROR_IF_NO_MATCH		0x00000002
 #define WILDCARD_FLAG_CASE_INSENSITIVE		0x00000004

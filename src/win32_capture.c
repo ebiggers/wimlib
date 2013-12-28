@@ -110,6 +110,9 @@ win32_encrypted_export_cb(unsigned char *data, void *_ctx, unsigned long len)
 	int ret;
 	size_t bytes_to_consume = min(len, ctx->bytes_remaining);
 
+	if (bytes_to_consume == 0)
+		return ERROR_SUCCESS;
+
 	ret = (*ctx->read_prefix_cb)(data, bytes_to_consume, ctx->read_prefix_ctx);
 	if (ret) {
 		ctx->wimlib_err_code = ret;
