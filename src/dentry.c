@@ -37,6 +37,7 @@
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
+#include "wimlib/paths.h"
 #include "wimlib/resource.h"
 #include "wimlib/security.h"
 #include "wimlib/sha1.h"
@@ -634,98 +635,61 @@ calculate_subdir_offsets(struct wim_dentry *dentry, u64 *subdir_offset_p)
 	}
 }
 
-/* Case-sensitive UTF-16LE dentry or stream name comparison.  Used on both UNIX
- * (always) and Windows (sometimes) */
-static int
-compare_utf16le_names_case_sensitive(const utf16lechar *name1, size_t nbytes1,
-				     const utf16lechar *name2, size_t nbytes2)
-{
-	/* Return the result if the strings differ up to their minimum length.
-	 * Note that we cannot use strcmp() or strncmp() here, as the strings
-	 * are in UTF-16LE format. */
-	int result = memcmp(name1, name2, min(nbytes1, nbytes2));
-	if (result)
-		return result;
-
-	/* The strings are the same up to their minimum length, so return a
-	 * result based on their lengths. */
-	if (nbytes1 < nbytes2)
-		return -1;
-	else if (nbytes1 > nbytes2)
-		return 1;
-	else
-		return 0;
-}
-
-#ifdef __WIN32__
-/* Windoze: Case-insensitive UTF-16LE dentry or stream name comparison */
-static int
-compare_utf16le_names_case_insensitive(const utf16lechar *name1, size_t nbytes1,
-				       const utf16lechar *name2, size_t nbytes2)
-{
-	/* Return the result if the strings differ up to their minimum length.
-	 * */
-	int result = _wcsnicmp((const wchar_t*)name1, (const wchar_t*)name2,
-			       min(nbytes1 / 2, nbytes2 / 2));
-	if (result)
-		return result;
-
-	/* The strings are the same up to their minimum length, so return a
-	 * result based on their lengths. */
-	if (nbytes1 < nbytes2)
-		return -1;
-	else if (nbytes1 > nbytes2)
-		return 1;
-	else
-		return 0;
-}
-#endif /* __WIN32__ */
-
-#ifdef __WIN32__
-#  define compare_utf16le_names compare_utf16le_names_case_insensitive
-#else
-#  define compare_utf16le_names compare_utf16le_names_case_sensitive
-#endif
-
-
-#ifdef __WIN32__
 static int
 dentry_compare_names_case_insensitive(const struct wim_dentry *d1,
 				      const struct wim_dentry *d2)
 {
-	return compare_utf16le_names_case_insensitive(d1->file_name,
-						      d1->file_name_nbytes,
-						      d2->file_name,
-						      d2->file_name_nbytes);
+	return cmp_utf16le_strings(d1->file_name,
+				   d1->file_name_nbytes / 2,
+				   d2->file_name,
+				   d2->file_name_nbytes / 2,
+				   true);
 }
-#endif /* __WIN32__ */
 
 static int
 dentry_compare_names_case_sensitive(const struct wim_dentry *d1,
 				    const struct wim_dentry *d2)
 {
-	return compare_utf16le_names_case_sensitive(d1->file_name,
-						    d1->file_name_nbytes,
-						    d2->file_name,
-						    d2->file_name_nbytes);
+	return cmp_utf16le_strings(d1->file_name,
+				   d1->file_name_nbytes / 2,
+				   d2->file_name,
+				   d2->file_name_nbytes / 2,
+				   false);
 }
-
-#ifdef __WIN32__
-#  define dentry_compare_names dentry_compare_names_case_insensitive
-#else
-#  define dentry_compare_names dentry_compare_names_case_sensitive
-#endif
 
 /* Return %true iff the alternate data stream entry @entry has the UTF-16LE
  * stream name @name that has length @name_nbytes bytes. */
 static inline bool
 ads_entry_has_name(const struct wim_ads_entry *entry,
-		   const utf16lechar *name, size_t name_nbytes)
+		   const utf16lechar *name, size_t name_nbytes,
+		   bool ignore_case)
 {
-	return !compare_utf16le_names(name, name_nbytes,
-				      entry->stream_name,
-				      entry->stream_name_nbytes);
+	return 0 == cmp_utf16le_strings(name,
+					name_nbytes / 2,
+					entry->stream_name,
+					entry->stream_name_nbytes / 2,
+					ignore_case);
 }
+
+bool default_ignore_case =
+#ifdef __WIN32__
+	true
+#else
+	false
+#endif
+;
+
+static bool
+will_ignore_case(CASE_SENSITIVITY_TYPE case_type)
+{
+	if (case_type == WIMLIB_CASE_SENSITIVE)
+		return false;
+	if (case_type == WIMLIB_CASE_INSENSITIVE)
+		return true;
+
+	return default_ignore_case;
+}
+
 
 /* Given a UTF-16LE filename and a directory, look up the dentry for the file.
  * Return it if found, otherwise NULL.  This is case-sensitive on UNIX and
@@ -733,42 +697,67 @@ ads_entry_has_name(const struct wim_ads_entry *entry,
 struct wim_dentry *
 get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 				   const utf16lechar *name,
-				   size_t name_nbytes)
+				   size_t name_nbytes,
+				   CASE_SENSITIVITY_TYPE case_ctype)
 {
 	struct rb_node *node;
 
-#ifdef __WIN32__
-	node = dentry->d_inode->i_children_case_insensitive.rb_node;
-#else
-	node = dentry->d_inode->i_children.rb_node;
-#endif
+	bool ignore_case = will_ignore_case(case_ctype);
+
+	if (ignore_case)
+		node = dentry->d_inode->i_children_case_insensitive.rb_node;
+	else
+		node = dentry->d_inode->i_children.rb_node;
 
 	struct wim_dentry *child;
 	while (node) {
-	#ifdef __WIN32__
-		child = rb_entry(node, struct wim_dentry, rb_node_case_insensitive);
-	#else
-		child = rbnode_dentry(node);
-	#endif
-		int result = compare_utf16le_names(name, name_nbytes,
-						   child->file_name,
-						   child->file_name_nbytes);
-		if (result < 0)
+		if (ignore_case)
+			child = rb_entry(node, struct wim_dentry, rb_node_case_insensitive);
+		else
+			child = rb_entry(node, struct wim_dentry, rb_node);
+
+		int result = cmp_utf16le_strings(name,
+						 name_nbytes / 2,
+						 child->file_name,
+						 child->file_name_nbytes / 2,
+						 ignore_case);
+		if (result < 0) {
 			node = node->rb_left;
-		else if (result > 0)
+		} else if (result > 0) {
 			node = node->rb_right;
-		else {
-		#ifdef __WIN32__
-			if (!list_empty(&child->case_insensitive_conflict_list))
-			{
-				WARNING("Result of case-insensitive lookup is ambiguous "
-					"(returning \"%ls\" instead of \"%ls\")",
-					child->file_name,
-					container_of(child->case_insensitive_conflict_list.next,
-						     struct wim_dentry,
-						     case_insensitive_conflict_list)->file_name);
-			}
-		#endif
+		} else if (!ignore_case ||
+			list_empty(&child->case_insensitive_conflict_list)) {
+			return child;
+		} else {
+			/* Multiple dentries have the same case-insensitive
+			 * name, and a case-insensitive lookup is being
+			 * performed.  Choose the dentry with the same
+			 * case-sensitive name, if one exists; otherwise print a
+			 * warning and choose one arbitrarily.  */
+			struct wim_dentry *alt = child;
+			size_t num_alts = 0;
+
+			do {
+				num_alts++;
+				if (0 == cmp_utf16le_strings(name,
+							     name_nbytes / 2,
+							     alt->file_name,
+							     alt->file_name_nbytes / 2,
+							     false))
+					return alt;
+				alt = list_entry(alt->case_insensitive_conflict_list.next,
+						 struct wim_dentry,
+						 case_insensitive_conflict_list);
+			} while (alt != child);
+
+			WARNING("Result of case-insensitive lookup is ambiguous\n"
+				"          (returning \"%"TS"\" of %zu "
+				"possible files, including \"%"TS"\")",
+				dentry_full_path(child),
+				num_alts,
+				dentry_full_path(list_entry(child->case_insensitive_conflict_list.next,
+							    struct wim_dentry,
+							    case_insensitive_conflict_list)));
 			return child;
 		}
 	}
@@ -778,11 +767,13 @@ get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 /* Returns the child of @dentry that has the file name @name.  Returns NULL if
  * no child has the name. */
 struct wim_dentry *
-get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name)
+get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name,
+			   CASE_SENSITIVITY_TYPE case_type)
 {
 #if TCHAR_IS_UTF16LE
 	return get_dentry_child_with_utf16le_name(dentry, name,
-						  tstrlen(name) * sizeof(tchar));
+						  tstrlen(name) * sizeof(tchar),
+						  case_type);
 #else
 	utf16lechar *utf16le_name;
 	size_t utf16le_name_nbytes;
@@ -796,7 +787,8 @@ get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name)
 	} else {
 		child = get_dentry_child_with_utf16le_name(dentry,
 							   utf16le_name,
-							   utf16le_name_nbytes);
+							   utf16le_name_nbytes,
+							   case_type);
 		FREE(utf16le_name);
 	}
 	return child;
@@ -804,7 +796,8 @@ get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name)
 }
 
 static struct wim_dentry *
-get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path)
+get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path,
+		   CASE_SENSITIVITY_TYPE case_type)
 {
 	struct wim_dentry *cur_dentry, *parent_dentry;
 	const utf16lechar *p, *pp;
@@ -826,7 +819,8 @@ get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path)
 			pp++;
 
 		cur_dentry = get_dentry_child_with_utf16le_name(parent_dentry, p,
-								(void*)pp - (void*)p);
+								(u8*)pp - (u8*)p,
+								case_type);
 		if (cur_dentry == NULL)
 			break;
 		p = pp;
@@ -844,14 +838,12 @@ get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path)
 /*
  * Returns the dentry in the currently selected WIM image named by @path
  * starting from the root of the WIM image, or NULL if there is no such dentry.
- *
- * On Windows, the search is done case-insensitively.
  */
 struct wim_dentry *
-get_dentry(WIMStruct *wim, const tchar *path)
+get_dentry(WIMStruct *wim, const tchar *path, CASE_SENSITIVITY_TYPE case_type)
 {
 #if TCHAR_IS_UTF16LE
-	return get_dentry_utf16le(wim, path);
+	return get_dentry_utf16le(wim, path, case_type);
 #else
 	utf16lechar *path_utf16le;
 	size_t path_utf16le_nbytes;
@@ -862,21 +854,10 @@ get_dentry(WIMStruct *wim, const tchar *path)
 			      &path_utf16le, &path_utf16le_nbytes);
 	if (ret)
 		return NULL;
-	dentry = get_dentry_utf16le(wim, path_utf16le);
+	dentry = get_dentry_utf16le(wim, path_utf16le, case_type);
 	FREE(path_utf16le);
 	return dentry;
 #endif
-}
-
-struct wim_inode *
-wim_pathname_to_inode(WIMStruct *wim, const tchar *path)
-{
-	struct wim_dentry *dentry;
-	dentry = get_dentry(wim, path);
-	if (dentry)
-		return dentry->d_inode;
-	else
-		return NULL;
 }
 
 /* Takes in a path of length @len in @buf, and transforms it into a string for
@@ -897,14 +878,15 @@ to_parent_name(tchar *buf, size_t len)
 /* Returns the dentry that corresponds to the parent directory of @path, or NULL
  * if the dentry is not found. */
 struct wim_dentry *
-get_parent_dentry(WIMStruct *wim, const tchar *path)
+get_parent_dentry(WIMStruct *wim, const tchar *path,
+		  CASE_SENSITIVITY_TYPE case_type)
 {
 	size_t path_len = tstrlen(path);
 	tchar buf[path_len + 1];
 
 	tmemcpy(buf, path, path_len + 1);
 	to_parent_name(buf, path_len);
-	return get_dentry(wim, buf);
+	return get_dentry(wim, buf, case_type);
 }
 
 /* Prints the full path of a dentry. */
@@ -1270,8 +1252,6 @@ free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
 	for_dentry_in_tree_depth(root, do_free_dentry, lookup_table);
 }
 
-#ifdef __WIN32__
-
 /* Insert a dentry into the case insensitive index for a directory.
  *
  * This is a red-black tree, but when multiple dentries share the same
@@ -1307,7 +1287,6 @@ dentry_add_child_case_insensitive(struct wim_dentry *parent,
 	rb_insert_color(&child->rb_node_case_insensitive, root);
 	return NULL;
 }
-#endif
 
 /*
  * Links a dentry into the directory tree.
@@ -1351,7 +1330,7 @@ dentry_add_child(struct wim_dentry * restrict parent,
 	rb_link_node(&child->rb_node, rb_parent, new);
 	rb_insert_color(&child->rb_node, root);
 
-#ifdef __WIN32__
+	/* Case insensitive child dentry index */
 	{
 		struct wim_dentry *existing;
 		existing = dentry_add_child_case_insensitive(parent, child);
@@ -1363,7 +1342,6 @@ dentry_add_child(struct wim_dentry * restrict parent,
 			INIT_LIST_HEAD(&child->case_insensitive_conflict_list);
 		}
 	}
-#endif
 	return NULL;
 }
 
@@ -1376,7 +1354,7 @@ unlink_dentry(struct wim_dentry *dentry)
 	if (parent == dentry)
 		return;
 	rb_erase(&dentry->rb_node, &parent->d_inode->i_children);
-#ifdef __WIN32__
+
 	if (dentry->rb_node_case_insensitive.__rb_parent_color) {
 		/* This dentry was in the case-insensitive red-black tree. */
 		rb_erase(&dentry->rb_node_case_insensitive,
@@ -1395,7 +1373,76 @@ unlink_dentry(struct wim_dentry *dentry)
 		}
 	}
 	list_del(&dentry->case_insensitive_conflict_list);
-#endif
+}
+
+static int
+free_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
+{
+	FREE(dentry->_full_path);
+	dentry->_full_path = NULL;
+	return 0;
+}
+
+/* Rename a file or directory in the WIM.  */
+int
+rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
+		CASE_SENSITIVITY_TYPE case_type)
+{
+	struct wim_dentry *src;
+	struct wim_dentry *dst;
+	struct wim_dentry *parent_of_dst;
+	int ret;
+
+	/* This rename() implementation currently only supports actual files
+	 * (not alternate data streams) */
+
+	src = get_dentry(wim, from, case_type);
+	if (!src)
+		return -errno;
+
+	dst = get_dentry(wim, to, case_type);
+
+	if (dst) {
+		/* Destination file exists */
+
+		if (src == dst) /* Same file */
+			return 0;
+
+		if (!dentry_is_directory(src)) {
+			/* Cannot rename non-directory to directory. */
+			if (dentry_is_directory(dst))
+				return -EISDIR;
+		} else {
+			/* Cannot rename directory to a non-directory or a non-empty
+			 * directory */
+			if (!dentry_is_directory(dst))
+				return -ENOTDIR;
+			if (dentry_has_children(dst))
+				return -ENOTEMPTY;
+		}
+		parent_of_dst = dst->parent;
+	} else {
+		/* Destination does not exist */
+		parent_of_dst = get_parent_dentry(wim, to, case_type);
+		if (!parent_of_dst)
+			return -errno;
+
+		if (!dentry_is_directory(parent_of_dst))
+			return -ENOTDIR;
+	}
+
+	ret = set_dentry_name(src, path_basename(to));
+	if (ret)
+		return -ENOMEM;
+	if (dst) {
+		unlink_dentry(dst);
+		free_dentry_tree(dst, wim->lookup_table);
+	}
+	unlink_dentry(src);
+	dentry_add_child(parent_of_dst, src);
+	if (src->_full_path)
+		for_dentry_in_tree(src, free_dentry_full_path, NULL);
+	return 0;
 }
 
 /*
@@ -1443,7 +1490,8 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 		do {
 			if (ads_entry_has_name(&inode->i_ads_entries[i],
 					       stream_name_utf16le,
-					       stream_name_utf16le_nbytes))
+					       stream_name_utf16le_nbytes,
+					       false))
 			{
 				if (idx_ret)
 					*idx_ret = i;
@@ -2587,7 +2635,7 @@ image_do_iterate_dir_tree(WIMStruct *wim)
 	struct image_iterate_dir_tree_ctx *ctx = wim->private;
 	struct wim_dentry *dentry;
 
-	dentry = get_dentry(wim, ctx->path);
+	dentry = get_dentry(wim, ctx->path, WIMLIB_CASE_PLATFORM_DEFAULT);
 	if (dentry == NULL)
 		return WIMLIB_ERR_PATH_DOES_NOT_EXIST;
 	return do_iterate_dir_tree(wim, dentry, ctx->flags, ctx->cb, ctx->user_ctx);
@@ -2755,7 +2803,8 @@ dentry_reference_template(struct wim_dentry *dentry, void *_args)
 	if (ret)
 		return ret;
 
-	template_dentry = get_dentry(template_wim, dentry->_full_path);
+	template_dentry = get_dentry(template_wim, dentry->_full_path,
+				     WIMLIB_CASE_SENSITIVE);
 	if (template_dentry == NULL) {
 		DEBUG("\"%"TS"\": newly added file", dentry->_full_path);
 		return 0;

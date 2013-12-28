@@ -183,7 +183,7 @@ capture_ntfs_streams(struct wim_inode *inode,
 
 	/* Capture each data stream or reparse data stream. */
 	while (!ntfs_attr_lookup(type, NULL, 0,
-				 CASE_SENSITIVE, 0, NULL, 0, actx))
+				 WIMLIB_CASE_SENSITIVE, 0, NULL, 0, actx))
 	{
 		u64 data_size = ntfs_get_attribute_value_length(actx->attr);
 		u64 name_length = actx->attr->name_length;
@@ -535,7 +535,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	le32 attributes;
 	int ret;
 	struct wim_dentry *root = NULL;
-	struct wim_inode *inode;
+	struct wim_inode *inode = NULL;
 	ATTR_TYPES stream_type;
 
 	if (exclude_path(path, path_len, params->config, false)) {

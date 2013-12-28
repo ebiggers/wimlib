@@ -46,27 +46,73 @@ struct match_dentry_ctx {
 	bool case_insensitive;
 };
 
+#ifdef __WIN32__
+static bool
+match_wildcard_case_sensitive(const tchar *string, size_t string_len,
+			      const tchar *wildcard, size_t wildcard_len)
+{
+	for (;;) {
+		if (string_len == 0) {
+			while (wildcard_len != 0 && *wildcard == T('*')) {
+				wildcard++;
+				wildcard_len--;
+			}
+			return (wildcard_len == 0);
+		} else if (wildcard_len == 0) {
+			return false;
+		} else if (*string == *wildcard || *wildcard == '?') {
+			string++;
+			string_len--;
+			wildcard_len--;
+			wildcard++;
+			continue;
+		} else if (*wildcard == '*') {
+			return match_wildcard_case_sensitive(
+					      string, string_len,
+					      wildcard + 1, wildcard_len - 1) ||
+				match_wildcard_case_sensitive(
+					       string + 1, string_len - 1,
+					       wildcard, wildcard_len);
+		} else {
+			return false;
+		}
+	}
+}
+#endif
+
 static bool
 match_wildcard(const tchar *string, tchar *wildcard,
 	       size_t wildcard_len, bool case_insensitive)
 {
-	char orig;
-	int flags;
-	int ret;
-
-	orig = wildcard[wildcard_len];
-	wildcard[wildcard_len] = T('\0');
-
-	/* Warning: in Windows builds fnmatch() calls a replacement function.
-	 * Also, FNM_CASEFOLD is a GNU extension and it is defined to 0 if not
-	 * available.  */
-	flags = FNM_NOESCAPE;
+	/* Note: in Windows builds fnmatch() calls a replacement function.
+	 * It does support case-sensitive globbing.  */
+#ifdef __WIN32__
 	if (case_insensitive)
-		flags |= FNM_CASEFOLD;
-	ret = fnmatch(wildcard, string, flags);
+#endif
+	{
+		char orig;
+		int ret;
+		int flags = FNM_NOESCAPE;
+		if (case_insensitive)
+			flags |= FNM_CASEFOLD;
 
-	wildcard[wildcard_len] = orig;
-	return (ret == 0);
+		orig = wildcard[wildcard_len];
+		wildcard[wildcard_len] = T('\0');
+
+		ret = fnmatch(wildcard, string, flags);
+
+		wildcard[wildcard_len] = orig;
+		return (ret == 0);
+	}
+#ifdef __WIN32__
+	else
+	{
+		return match_wildcard_case_sensitive(string,
+						     tstrlen(string),
+						     wildcard,
+						     wildcard_len);
+	}
+#endif
 }
 
 static int
@@ -311,7 +357,7 @@ append_path_cb(const tchar *path, void *_ctx, bool may_need_trans)
 
 int
 expand_wildcard_wim_paths(WIMStruct *wim,
-			  const char * const *wildcards,
+			  const tchar * const *wildcards,
 			  size_t num_wildcards,
 			  tchar ***expanded_paths_ret,
 			  size_t *num_expanded_paths_ret,

@@ -599,18 +599,6 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 	lzms_end_encode_item(ctx, length);
 }
 
-static struct lzms_match
-lzms_get_best_match(struct lzms_compressor *ctx)
-{
-	struct lzms_match match;
-
-	/* TODO */
-
-	match.length = 0;
-
-	return match;
-}
-
 static void
 lzms_record_literal(u8 literal, void *_ctx)
 {
@@ -652,6 +640,19 @@ lzms_fast_encode(struct lzms_compressor *ctx)
 }
 
 #if 0
+
+static struct lzms_match
+lzms_get_best_match(struct lzms_compressor *ctx)
+{
+	struct lzms_match match;
+
+	/* TODO */
+
+	match.length = 0;
+
+	return match;
+}
+
 static void
 lzms_slow_encode(struct lzms_compressor *ctx)
 {

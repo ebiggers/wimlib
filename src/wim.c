@@ -1018,7 +1018,6 @@ WIMLIBAPI int
 wimlib_global_init(int init_flags)
 {
 	static bool already_inited = false;
-	int ret;
 
 	if (already_inited)
 		return 0;
@@ -1031,14 +1030,19 @@ wimlib_global_init(int init_flags)
 	#endif
 	}
 #ifdef __WIN32__
-	ret = win32_global_init(init_flags);
-	if (ret)
-		return ret;
-#else
-	ret = 0;
+	{
+		int ret = win32_global_init(init_flags);
+		if (ret)
+			return ret;
+	}
 #endif
+	init_upcase();
+	if (init_flags & WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE)
+		default_ignore_case = false;
+	else if (init_flags & WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE)
+		default_ignore_case = true;
 	already_inited = true;
-	return ret;
+	return 0;
 }
 
 /* API function documented in wimlib.h  */

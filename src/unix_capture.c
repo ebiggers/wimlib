@@ -203,7 +203,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 {
 	struct wim_dentry *root = NULL;
 	int ret;
-	struct wim_inode *inode;
+	struct wim_inode *inode = NULL;
 	struct stat stbuf;
 
 	if (exclude_path(path, path_len, params->config, true)) {

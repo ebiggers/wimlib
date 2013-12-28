@@ -10,7 +10,7 @@
 
 extern int
 expand_wildcard_wim_paths(WIMStruct *wim,
-			  const char * const *wildcards,
+			  const tchar * const *wildcards,
 			  size_t num_wildcards,
 			  tchar ***expanded_paths_ret,
 			  size_t *num_expanded_paths_ret,
@@ -19,7 +19,10 @@ expand_wildcard_wim_paths(WIMStruct *wim,
 #ifdef __WIN32__
 extern int
 fnmatch(const tchar *pattern, const tchar *string, int flags);
-#  define FNM_CASEFOLD 0
+#  define FNM_CASEFOLD 0x1
+#  define FNM_PATHNAME 0x2
+#  define FNM_NOESCAPE 0x4
+#  define FNM_NOMATCH 1
 #else
 #  include <fnmatch.h>
 #  ifndef FNM_CASEFOLD

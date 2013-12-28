@@ -6,6 +6,9 @@
 extern void
 iconv_global_cleanup(void);
 
+extern void
+init_upcase(void);
+
 extern bool wimlib_mbs_is_utf8;
 
 #define DECLARE_CHAR_CONVERSION_FUNCTIONS(varname1, varname2,		\
@@ -38,5 +41,10 @@ utf8_to_tstr_simple(const char *utf8str, tchar **out);
 
 extern int
 tstr_to_utf8_simple(const tchar *tstr, char **out);
+
+extern int
+cmp_utf16le_strings(const utf16lechar *s1, size_t n1,
+		    const utf16lechar *s2, size_t n2,
+		    bool ignore_case);
 
 #endif /* _WIMLIB_ENCODING_H */

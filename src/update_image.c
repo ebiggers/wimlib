@@ -98,7 +98,7 @@ do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
  */
 static int
 attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
-	      tchar *target_path)
+	      tchar *target_path, CASE_SENSITIVITY_TYPE case_type)
 {
 	tchar *slash;
 	struct wim_dentry *dentry, *parent, *target;
@@ -136,7 +136,8 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	parent = *root_p;
 	while ((slash = tstrchr(target_path, WIM_PATH_SEPARATOR))) {
 		*slash = T('\0');
-		dentry = get_dentry_child_with_name(parent, target_path);
+		dentry = get_dentry_child_with_name(parent, target_path,
+						    case_type);
 		if (!dentry) {
 			ret = new_filler_directory(target_path, &dentry);
 			if (ret)
@@ -156,7 +157,8 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	/* If the target path already existed, overlay the branch onto it.
 	 * Otherwise, set the branch as the target path. */
 	target = get_dentry_child_with_utf16le_name(parent, branch->file_name,
-						    branch->file_name_nbytes);
+						    branch->file_name_nbytes,
+						    case_type);
 	if (target) {
 		return do_overlay(target, branch);
 	} else {
@@ -265,7 +267,8 @@ execute_add_command(WIMStruct *wim,
 		if (ret)
 			goto out_ntfs_umount;
 
-		ret = attach_branch(&imd->root_dentry, branch, wim_target_path);
+		ret = attach_branch(&imd->root_dentry, branch, wim_target_path,
+				    WIMLIB_CASE_PLATFORM_DEFAULT);
 		if (ret)
 			goto out_ntfs_umount;
 	}
@@ -310,7 +313,7 @@ execute_delete_command(WIMStruct *wim,
 
 	DEBUG("Deleting WIM path \"%"TS"\" (flags=%#x)", wim_path, flags);
 
-	tree = get_dentry(wim, wim_path);
+	tree = get_dentry(wim, wim_path, WIMLIB_CASE_PLATFORM_DEFAULT);
 	if (!tree) {
 		/* Path to delete does not exist in the WIM. */
 		if (flags & WIMLIB_DELETE_FLAG_FORCE) {
@@ -338,80 +341,6 @@ execute_delete_command(WIMStruct *wim,
 }
 
 static int
-free_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
-{
-	FREE(dentry->_full_path);
-	dentry->_full_path = NULL;
-	return 0;
-}
-
-/*
- * Rename a file or directory in the WIM.
- *
- * This is also called from wimfs_rename() in the FUSE mount code.
- */
-int
-rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to)
-{
-	struct wim_dentry *src;
-	struct wim_dentry *dst;
-	struct wim_dentry *parent_of_dst;
-	int ret;
-
-	/* This rename() implementation currently only supports actual files
-	 * (not alternate data streams) */
-
-	src = get_dentry(wim, from);
-	if (!src)
-		return -errno;
-
-	dst = get_dentry(wim, to);
-
-	if (dst) {
-		/* Destination file exists */
-
-		if (src == dst) /* Same file */
-			return 0;
-
-		if (!dentry_is_directory(src)) {
-			/* Cannot rename non-directory to directory. */
-			if (dentry_is_directory(dst))
-				return -EISDIR;
-		} else {
-			/* Cannot rename directory to a non-directory or a non-empty
-			 * directory */
-			if (!dentry_is_directory(dst))
-				return -ENOTDIR;
-			if (dentry_has_children(dst))
-				return -ENOTEMPTY;
-		}
-		parent_of_dst = dst->parent;
-	} else {
-		/* Destination does not exist */
-		parent_of_dst = get_parent_dentry(wim, to);
-		if (!parent_of_dst)
-			return -errno;
-
-		if (!dentry_is_directory(parent_of_dst))
-			return -ENOTDIR;
-	}
-
-	ret = set_dentry_name(src, path_basename(to));
-	if (ret)
-		return -ENOMEM;
-	if (dst) {
-		unlink_dentry(dst);
-		free_dentry_tree(dst, wim->lookup_table);
-	}
-	unlink_dentry(src);
-	dentry_add_child(parent_of_dst, src);
-	if (src->_full_path)
-		for_dentry_in_tree(src, free_dentry_full_path, NULL);
-	return 0;
-}
-
-
-static int
 execute_rename_command(WIMStruct *wim,
 		       const struct wimlib_update_command *rename_cmd)
 {
@@ -420,7 +349,8 @@ execute_rename_command(WIMStruct *wim,
 	wimlib_assert(rename_cmd->op == WIMLIB_UPDATE_OP_RENAME);
 
 	ret = rename_wim_path(wim, rename_cmd->rename.wim_source_path,
-			      rename_cmd->rename.wim_target_path);
+			      rename_cmd->rename.wim_target_path,
+			      WIMLIB_CASE_PLATFORM_DEFAULT);
 	if (ret) {
 		ret = -ret;
 		errno = ret;

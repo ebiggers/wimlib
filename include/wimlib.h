@@ -1397,11 +1397,6 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * one of the provided globs did not match a file.  */
 #define WIMLIB_EXTRACT_FLAG_STRICT_GLOB			0x00080000
 
-/** In combination with ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS, causes the globbing to
- * be performed case insensitively.  On Windows this is already the default
- * behavior but on UNIX-like systems it is not.  */
-#define WIMLIB_EXTRACT_FLAG_CASE_INSENSITIVE_GLOB	0x00100000
-
 /** @} */
 /** @ingroup G_mounting_wim_images
  * @{ */
@@ -1609,6 +1604,14 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * acquired.  Can be combined with ::WIMLIB_INIT_FLAG_STRICT_CAPTURE_PRIVILEGES.
  */
 #define WIMLIB_INIT_FLAG_STRICT_APPLY_PRIVILEGES	0x00000008
+
+/** Default to interpreting WIM paths case sensitively (default on UNIX-like
+ * systems).  */
+#define WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE		0x00000010
+
+/** Default to interpreting WIM paths case insensitively (default on Windows).
+ * This does not apply to mounted images.  */
+#define WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE	0x00000020
 
 /** @} */
 /** @ingroup G_nonstandalone_wims

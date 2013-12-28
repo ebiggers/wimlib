@@ -119,7 +119,6 @@ static FILE *imagex_info_file;
 enum {
 	IMAGEX_ALLOW_OTHER_OPTION,
 	IMAGEX_BOOT_OPTION,
-	IMAGEX_CASE_INSENSITIVE_WILDCARDS_OPTION,
 	IMAGEX_CHECK_OPTION,
 	IMAGEX_CHUNK_SIZE_OPTION,
 	IMAGEX_COMMAND_OPTION,
@@ -257,7 +256,6 @@ static const struct option extract_options[] = {
 	{T("include-invalid-names"), no_argument, NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
 	{T("strict-wildcards"), no_argument,  NULL, IMAGEX_STRICT_WILDCARDS_OPTION},
 	{T("no-wildcards"), no_argument,      NULL, IMAGEX_NO_WILDCARDS_OPTION},
-	{T("case-insensitive-wildcards"), no_argument, NULL, IMAGEX_CASE_INSENSITIVE_WILDCARDS_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -2750,9 +2748,6 @@ imagex_extract(int argc, tchar **argv, int cmd)
 		case IMAGEX_NO_WILDCARDS_OPTION:
 			listfile_extract_flags &= ~WIMLIB_EXTRACT_FLAG_GLOB_PATHS;
 			break;
-		case IMAGEX_CASE_INSENSITIVE_WILDCARDS_OPTION:
-			listfile_extract_flags |= WIMLIB_EXTRACT_FLAG_CASE_INSENSITIVE_GLOB;
-			break;
 		case IMAGEX_STRICT_WILDCARDS_OPTION:
 			listfile_extract_flags |= WIMLIB_EXTRACT_FLAG_STRICT_GLOB;
 			break;
@@ -4091,7 +4086,25 @@ main(int argc, char **argv)
 
 		}
 	}
+
 #endif /* !__WIN32__ */
+
+	{
+		tchar *igcase = tgetenv(T("WIMLIB_IMAGEX_IGNORE_CASE"));
+		if (igcase != NULL) {
+			if (!tstrcmp(igcase, T("no")) ||
+			    !tstrcmp(igcase, T("0")))
+				init_flags |= WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE;
+			else if (!tstrcmp(igcase, T("yes")) ||
+				 !tstrcmp(igcase, T("1")))
+				init_flags |= WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE;
+			else {
+				fprintf(stderr,
+					"WARNING: Ignoring unknown setting of "
+					"WIMLIB_IMAGEX_IGNORE_CASE\n");
+			}
+		}
+	}
 
 	/* Allow being invoked as wimCOMMAND (e.g. wimapply).  */
 	cmd = CMD_NONE;

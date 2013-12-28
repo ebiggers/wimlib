@@ -131,7 +131,6 @@ struct wim_dentry {
 	 * case sensitive long name. */
 	struct rb_node rb_node;
 
-#ifdef __WIN32__
 	/* Node for the parent's red-black tree of child dentries, sorted by
 	 * case insensitive long name. */
 	struct rb_node rb_node_case_insensitive;
@@ -139,7 +138,6 @@ struct wim_dentry {
 	/* List of dentries in a directory that have different case sensitive
 	 * long names but share the same case insensitive long name */
 	struct list_head case_insensitive_conflict_list;
-#endif
 
 	/* Length of UTF-16LE encoded short filename, in bytes, not including
 	 * the terminating zero wide-character. */
@@ -269,11 +267,9 @@ struct wim_inode {
 	 * any.  Keyed by wim_dentry->file_name, case sensitively. */
 	struct rb_root i_children;
 
-#ifdef __WIN32__
 	/* Root of a red-black tree storing the children of this inode, if any.
 	 * Keyed by wim_dentry->file_name, case insensitively. */
 	struct rb_root i_children_case_insensitive;
-#endif
 
 	/* List of dentries that are aliases for this inode.  There will be
 	 * i_nlink dentries in this list.  */
@@ -448,23 +444,34 @@ calculate_subdir_offsets(struct wim_dentry *dentry, u64 *subdir_offset_p);
 extern int
 set_dentry_name(struct wim_dentry *dentry, const tchar *new_name);
 
-extern struct wim_dentry *
-get_dentry(struct WIMStruct *wim, const tchar *path);
 
-extern struct wim_inode *
-wim_pathname_to_inode(struct WIMStruct *wim, const tchar *path);
+typedef enum {
+	/* NTFS-3g headers define CASE_SENSITIVE...  */
+	WIMLIB_CASE_PLATFORM_DEFAULT = 0,
+	WIMLIB_CASE_SENSITIVE = 1,
+	WIMLIB_CASE_INSENSITIVE = 2,
+} CASE_SENSITIVITY_TYPE;
+
+extern bool default_ignore_case;
+
+extern struct wim_dentry *
+get_dentry(struct WIMStruct *wim, const tchar *path,
+	   CASE_SENSITIVITY_TYPE case_type);
 
 extern struct wim_dentry *
 get_dentry_child_with_name(const struct wim_dentry *dentry,
-			   const tchar *name);
+			   const tchar *name,
+			   CASE_SENSITIVITY_TYPE case_type);
 
 extern struct wim_dentry *
 get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 				   const utf16lechar *name,
-				   size_t name_nbytes);
+				   size_t name_nbytes,
+				   CASE_SENSITIVITY_TYPE case_type);
 
 extern struct wim_dentry *
-get_parent_dentry(struct WIMStruct *wim, const tchar *path);
+get_parent_dentry(struct WIMStruct *wim, const tchar *path,
+		  CASE_SENSITIVITY_TYPE case_type);
 
 extern int
 print_dentry(struct wim_dentry *dentry, void *lookup_table);
@@ -518,6 +525,10 @@ unlink_dentry(struct wim_dentry *dentry);
 extern struct wim_dentry *
 dentry_add_child(struct wim_dentry * restrict parent,
 		 struct wim_dentry * restrict child);
+
+extern int
+rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
+		CASE_SENSITIVITY_TYPE case_type);
 
 extern struct wim_ads_entry *
 inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,

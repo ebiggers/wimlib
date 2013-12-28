@@ -37,6 +37,7 @@
 #include "wimlib/file_io.h"
 #include "wimlib/glob.h"
 #include "wimlib/error.h"
+#include "wimlib/wildcard.h"
 #include "wimlib/util.h"
 
 /* Replacement for POSIX fsync() */

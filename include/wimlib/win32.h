@@ -30,12 +30,6 @@ win32_global_init(int init_flags);
 extern void
 win32_global_cleanup(void);
 
-#define FNM_PATHNAME 0x1
-#define FNM_NOESCAPE 0x2
-#define FNM_NOMATCH 1
-extern int
-fnmatch(const tchar *pattern, const tchar *string, int flags);
-
 extern int
 fsync(int fd);
 

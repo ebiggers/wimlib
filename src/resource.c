@@ -175,9 +175,9 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 
 	/* Get the maximum size of uncompressed chunks in this resource, which
 	 * we require be a power of 2.  */
-	u32 chunk_size;
+	u32 chunk_size = 0;
 	u64 cur_read_offset = rspec->offset_in_wim;
-	int ctype;
+	int ctype = WIMLIB_COMPRESSION_TYPE_NONE;
 	if (alt_chunk_table) {
 		/* Alternate chunk table format.  Its header specifies the chunk
 		 * size and compression format.  */

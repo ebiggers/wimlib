@@ -2274,7 +2274,7 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path, const tchar *target,
 	/* Translate the path to extract into the corresponding
 	 * `struct wim_dentry', which will be the root of the
 	 * "dentry tree" to extract.  */
-	root = get_dentry(wim, wim_source_path);
+	root = get_dentry(wim, wim_source_path, WIMLIB_CASE_PLATFORM_DEFAULT);
 	if (!root) {
 		ERROR("Path \"%"TS"\" does not exist in WIM image %d",
 		      wim_source_path, wim->current_image);
@@ -3090,7 +3090,7 @@ wimlib_extract_paths(WIMStruct *wim,
 		else
 			wildcard_flags |= WILDCARD_FLAG_WARN_IF_NO_MATCH;
 
-		if (extract_flags & WIMLIB_EXTRACT_FLAG_CASE_INSENSITIVE_GLOB)
+		if (default_ignore_case)
 			wildcard_flags |= WILDCARD_FLAG_CASE_INSENSITIVE;
 
 		ret = expand_wildcard_wim_paths(wim, paths, num_paths,

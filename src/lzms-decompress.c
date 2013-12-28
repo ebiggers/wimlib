@@ -556,7 +556,6 @@ lzms_range_decode_bit(struct lzms_range_decoder *dec)
 static void
 lzms_rebuild_adaptive_huffman_code(struct lzms_huffman_decoder *dec)
 {
-	int ret;
 
 	/* XXX:  This implementation makes use of code already implemented for
 	 * the XPRESS and LZX compression formats.  However, since for the
@@ -569,9 +568,12 @@ lzms_rebuild_adaptive_huffman_code(struct lzms_huffman_decoder *dec)
 		   dec->num_syms);
 	make_canonical_huffman_code(dec->num_syms, LZMS_MAX_CODEWORD_LEN,
 				    dec->sym_freqs, dec->lens, dec->codewords);
-	ret = make_huffman_decode_table(dec->decode_table, dec->num_syms,
-					LZMS_DECODE_TABLE_BITS, dec->lens,
-					LZMS_MAX_CODEWORD_LEN);
+#if defined(ENABLE_LZMS_DEBUG)
+	int ret =
+#endif
+	make_huffman_decode_table(dec->decode_table, dec->num_syms,
+				  LZMS_DECODE_TABLE_BITS, dec->lens,
+				  LZMS_MAX_CODEWORD_LEN);
 	LZMS_ASSERT(ret == 0);
 }
 

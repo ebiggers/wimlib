@@ -40,7 +40,9 @@ Each such path must be specified as an absolute path starting from the root of
 the WIM image, like those output by the \fB@IMAGEX_PROGNAME@ dir\fR (1) command.
 However, path separators may be either forward or backward slashes, and the
 leading slash is optional; also, on Windows, the paths are treated
-case-insensitively, while on UNIX, paths are treated case-sensitively.
+case-insensitively, while on UNIX, paths are treated case-sensitively, except
+when overwritten through the \fBWIMLIB_IMAGEX_IGNORE_CASE\fR environmental
+variable, as documented in \fB@IMAGEX_PROGNAME@\fR (1).
 .PP
 If no \fIPATH\fRs are provided, the default behavior is to extract the full
 image, as if the path "/" had been provided.
@@ -104,10 +106,6 @@ Do not interpret wildcard characters in paths in the \fILISTFILE\fR.
 \fB--strict-wildcards\fR
 Fail if any wildcards or paths in \fILISTFILE\fR do not match any files in the
 WIM image.  The default behavior is to warn only.
-.TP
-\fB--case-insensitive-wildcards\fR
-Treat the wildcards or paths in \fILISTFILE\fR as case-insensitive.  On Windows
-this is already the default behavior, but on UNIX-like systems it is not.
 .SH NOTES
 See the documentation \fB@IMAGEX_PROGNAME@ apply\fR (1) for documentation about
 what data and metadata are extracted on UNIX-like systems versus on Windows.

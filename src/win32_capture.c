@@ -1123,7 +1123,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  unsigned vol_flags)
 {
 	struct wim_dentry *root = NULL;
-	struct wim_inode *inode;
+	struct wim_inode *inode = NULL;
 	DWORD err;
 	u64 file_size;
 	int ret;

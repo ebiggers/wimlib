@@ -1174,7 +1174,7 @@ wim_pathname_to_stream(WIMStruct *wim,
 		}
 	}
 
-	dentry = get_dentry(wim, path);
+	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
 	if (p)
 		*p = T(':');
 	if (!dentry)

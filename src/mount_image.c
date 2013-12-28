@@ -329,7 +329,7 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
 	int ret;
 
-	parent = get_parent_dentry(wimfs_ctx->wim, path);
+	parent = get_parent_dentry(wimfs_ctx->wim, path, WIMLIB_CASE_SENSITIVE);
 	if (!parent)
 		return -errno;
 
@@ -337,7 +337,7 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 		return -ENOTDIR;
 
 	basename = path_basename(path);
-	if (get_dentry_child_with_name(parent, basename))
+	if (get_dentry_child_with_name(parent, basename, WIMLIB_CASE_SENSITIVE))
 		return -EEXIST;
 
 	ret = new_dentry_with_inode(basename, &new);
@@ -365,6 +365,17 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 	if (dentry_ret)
 		*dentry_ret = new;
 	return 0;
+}
+
+static struct wim_inode *
+wim_pathname_to_inode(WIMStruct *wim, const tchar *path)
+{
+	struct wim_dentry *dentry;
+	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
+	if (dentry)
+		return dentry->d_inode;
+	else
+		return NULL;
 }
 
 /* Remove a dentry from a mounted WIM image; i.e. remove an alias for the
@@ -1695,14 +1706,15 @@ wimfs_link(const char *to, const char *from)
 				   FILE_ATTRIBUTE_REPARSE_POINT))
 		return -EPERM;
 
-	from_dentry_parent = get_parent_dentry(wim, from);
+	from_dentry_parent = get_parent_dentry(wim, from, WIMLIB_CASE_SENSITIVE);
 	if (!from_dentry_parent)
 		return -errno;
 	if (!dentry_is_directory(from_dentry_parent))
 		return -ENOTDIR;
 
 	link_name = path_basename(from);
-	if (get_dentry_child_with_name(from_dentry_parent, link_name))
+	if (get_dentry_child_with_name(from_dentry_parent, link_name,
+				       WIMLIB_CASE_SENSITIVE))
 		return -EEXIST;
 
 	ret = new_dentry(link_name, &from_dentry);
@@ -2084,7 +2096,8 @@ wimfs_removexattr(const char *path, const char *name)
 static int
 wimfs_rename(const char *from, const char *to)
 {
-	return rename_wim_path(wimfs_get_WIMStruct(), from, to);
+	return rename_wim_path(wimfs_get_WIMStruct(), from, to,
+			       WIMLIB_CASE_SENSITIVE);
 }
 
 /* Remove a directory */
@@ -2094,7 +2107,7 @@ wimfs_rmdir(const char *path)
 	struct wim_dentry *dentry;
 	WIMStruct *wim = wimfs_get_WIMStruct();
 
-	dentry = get_dentry(wim, path);
+	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
 	if (!dentry)
 		return -errno;
 
@@ -2262,7 +2275,7 @@ wimfs_utimens(const char *path, const struct timespec tv[2])
 	struct wim_inode *inode;
 	WIMStruct *wim = wimfs_get_WIMStruct();
 
-	dentry = get_dentry(wim, path);
+	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
 	if (!dentry)
 		return -errno;
 	inode = dentry->d_inode;
@@ -2289,7 +2302,7 @@ wimfs_utime(const char *path, struct utimbuf *times)
 	struct wim_inode *inode;
 	WIMStruct *wim = wimfs_get_WIMStruct();
 
-	dentry = get_dentry(wim, path);
+	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
 	if (!dentry)
 		return -errno;
 	inode = dentry->d_inode;

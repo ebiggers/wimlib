@@ -134,9 +134,6 @@ extern int
 write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd);
 
 extern int
-rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to);
-
-extern int
 select_wim_image(WIMStruct *wim, int image);
 
 extern int
