@@ -32,13 +32,10 @@ ZIP file containing the following items:
                                  WIMLIB-IMAGEX
 
 wimlib-imagex provides most features of Microsoft's ImageX, plus additional
-features.  First, the main limitations of wimlib-imagex compared to Microsoft's
-ImageX are the following:
-
-  * Mounting images from a WIM file is not supported on Windows.
-
-However, wimlib-imagex provides a number of advantages compared to Microsoft's
-ImageX, including but not limited to the following:
+features.  Perhaps the main limitation is that mounting images from a WIM file
+is not supported on Windows.  However, wimlib-imagex provides a number of
+advantages compared to Microsoft's ImageX, including but not limited to the
+following:
 
   * wimlib-imagex provides "extract" and "update" commands that can be used to
     work around the lack of mount support.  These commands are very fast

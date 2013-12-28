@@ -24,8 +24,8 @@ for Debian and RPM packaging are in the debian/ and rpm/ directories.
 A Windows Imaging (WIM) file is an archive designed primarily for archiving
 Windows filesystems.  However, it can be used on other platforms as well, with
 some limitations.  Like some other archive formats such as ZIP, files in WIM
-archives may be compressed.  WIM files support two compression formats: LZX and
-XPRESS *.  Both are supported by wimlib.
+archives may be compressed.  WIM files support multiple compression formats,
+including LZX, XPRESS, and LZMS.  All these formats are supported by wimlib.
 
 A WIM file consists of one or more "images".  Each image is an independent
 top-level directory structure and is logically separate from all other images in
@@ -35,10 +35,6 @@ images.
 
 A WIM file may be either stand-alone or split into multiple parts.  Split WIMs
 are read-only and cannot be modified.
-
-* Note: The Windows 8 WIMGAPI apparently adds a third format, LZMS, but it is
-  not documented and is incompatible with ImageX and Dism.  It is unclear if
-  this new format is actually being used for anything.
 
                              IMAGEX IMPLEMENTATION
 
@@ -65,13 +61,15 @@ commands and their syntax.  For additional documentation:
 
                                 COMPRESSION RATIO
 
-wimlib (and wimlib-imagex) can create XPRESS or LZX compressed WIM archives.
+wimlib (and wimlib-imagex) can create XPRESS, LZX, or LZMS compressed WIM archives.
 The following tables compare the compression ratio and performance for creating
 a compressed x86_64 Windows PE image.  Note: these timings were done on Windows
 so that the times would be fully comparable; however, wimlib may have even
 better performance on other operating systems such as Linux.  Timings were done
 with 2 CPUs available, both of which automatically are used by wimlib for both
-XPRESS and LZX, and also by imagex.exe but apparently only for LZX.
+XPRESS and LZX, and also by imagex.exe but apparently only for LZX.  Results for
+LZMS compression are excluded because the creation of LZMS compressed WIM
+archives is not yet recommended.
 
         Table 1. WIM size
 
@@ -91,10 +89,10 @@ The above LZX data are using explicitly specified maximum compression
 faster LZX compressor is used; it will produce results in between those given
 for XPRESS and LZX above.
 
-Note: if the absolute maximum (but still compatible) compression ratio is
-desired, `wimlib-imagex optimize WIMFILE --recompress --compress-slow' on one of
-the above LZX-compressed WIMs produces a WIM of 187,089,943 bytes in about 400
-seconds.
+Note: if the absolute maximum (but still compatible; i.e. not changing the
+compression chunk size) LZX compression ratio is desired, `wimlib-imagex
+optimize WIMFILE --recompress --compress-slow' on one of the above
+LZX-compressed WIMs produces a WIM of 187,089,943 bytes in about 400 seconds.
 
                                   NTFS SUPPORT
 
@@ -252,31 +250,35 @@ actually been tested on a big-endian architecture.
 
                                    REFERENCES
 
-The WIM file format is specified in a document that can be found in the
-Microsoft Download Center.  There is a similar document that specifies the LZX
-compression format, and a document that specifies the XPRESS compression format.
-However, many parts of these formats are poorly documented, and some parts have
-no documentation whatsoever.  Some particularly poorly documented parts of the
-formats have had comments added in various places in the library code.  Please
-see the code and/or ask me if you have any questions about the WIM file format
-as it exists in reality and not as it exists in Microsoft's poorly written
-documentation.
+The WIM file format is partially specified in a document that can be found in
+the Microsoft Download Center.  However, this document really only provides an
+overview of the format and is not a formal specification.
+
+With regards to the supported compression formats:
+
+- Microsoft has official documentation for XPRESS that is of reasonable quality.
+- Microsoft has official documentation for LZX but it contains errors.
+- There does not seem to be any official documentation for LZMS, so my comments
+  and code in src/lzms-decompress.c may in fact be the best documentation
+  available for this particular compression format.
 
 The code in ntfs-3g_apply.c and ntfs-3g_capture.c uses the NTFS-3g library,
 which is a library for reading and writing to NTFS filesystems (the filesystem
 used by recent versions of Windows).  See
 http://www.tuxera.com/community/ntfs-3g-download/ for more information.
 
-lzx-decompress.c, the code to decompress WIM file resources that are compressed
-using LZX compression, was originally based on code from the cabextract project
-(http://www.cabextract.org.uk) but has been rewritten.
+The LZX decompressor (lzx-decompress.c) was originally based on code from the
+cabextract project (http://www.cabextract.org.uk) but has been rewritten.
 
-lzx-compress.c, the code to compress WIM file resources using LZX compression,
-was originally based on code written by Matthew Russotto (www.russotto.net/chm/)
-but has been rewritten.
+The LZX compressor (lzx-compress.c) was originally based on code written by
+Matthew Russotto (www.russotto.net/chm/) but has been rewritten.  It now uses
+suffix array construction code from divsufsort
+(https://code.google.com/p/libdivsufsort/) and algorithms from 7-Zip as well as
+several published papers.
 
-lz77.c, the code to find LZ77 matches (used for both XPRESS and LZX
-compression), is based on code from zlib but has been rewritten.
+lz77.c contains a hash-table-based LZ77 matchfinder that is based on code from
+zlib but has been rewritten.  This code is applicable to XPRESS, LZX, and LZMS,
+all of which are partly based on LZ77 compression.
 
 A limited number of other free programs can handle some parts of the WIM
 file format:
@@ -284,7 +286,7 @@ file format:
   * 7-zip is able to extract and create WIMs (as well as files in many
     other archive formats).  However, wimlib is designed specifically to handle
     WIM files and provides features previously only available in Microsoft's
-    imagex.exe, such as the ability to mount WIMs read-write as well as
+    implementation, such as the ability to mount WIMs read-write as well as
     read-only, the ability to create LZX or XPRESS compressed WIMs, and the
     correct handling of security descriptors and hard links.
   * ImagePyX (https://github.com/maxpat78/ImagePyX) is a Python program that
@@ -295,10 +297,6 @@ file format:
 A very early version of wimlib is being used to deploy Windows 7 from the
 Ultimate Deployment Appliance.  For more information see
 http://www.ultimatedeployment.org/.
-
-You can see the documentation about Microsoft's version of ImageX at
-http://technet.microsoft.com/en-us/library/cc749447(v=ws.10).aspx, so you can
-see how it compares to wimlib-imagex.
 
 If you are looking for a UNIX archive format that provides features similar to
 WIM, I recommend you take a look at SquashFS (http://squashfs.sourceforge.net/).
@@ -318,12 +316,8 @@ functionality.
 
                                    DISCLAIMER
 
-wimlib comes with no warranty whatsoever.  Use Microsoft's `imagex.exe' if you
-want to make sure your WIM files are made "correctly" (but beware: Microsoft's
-version contains some bugs).
-
-Please submit a bug report (to ebiggers3@gmail.com) if you find a bug in wimlib
-and/or wimlib-imagex.
+wimlib comes with no warranty whatsoever.  Please submit a bug report (to
+ebiggers3@gmail.com) if you find a bug in wimlib and/or wimlib-imagex.
 
 Be aware that some parts of the WIM file format are poorly documented or even
 completely undocumented, so I've just had to do the best I can to read and write
