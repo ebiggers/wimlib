@@ -3,6 +3,8 @@
 @IMAGEX_PROGNAME@-extract \- Extract files or directories from a WIM image
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ extract\fR \fIWIMFILE\fR \fIIMAGE\fR [\fIPATH\fR...]  [\fIOPTION\fR...]
+.br
+\fB@IMAGEX_PROGNAME@ extract\fR \fIWIMFILE\fR \fIIMAGE\fR @\fILISTFILE\fR  [\fIOPTION\fR...]
 .SH DESCRIPTION
 \fB@IMAGEX_PROGNAME@ extract\fR extracts one or more files or directory trees
 from the specified \fIIMAGE\fR contained in the Windows Imaging (WIM) file
@@ -20,7 +22,9 @@ the name of an image in the WIM.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1)
 command to show what images a WIM file contains.
 .PP
 Each \fIPATH\fR specifies a file or directory tree within the WIM image to
-extract.  See \fBPATH_SPECIFICATIONS\fR.
+extract.  Alternatively, a single \fILISTFILE\fR beginning with the '@'
+character is taken as a file that itself contains a list of files or directory
+trees to extract.  See \fBPATH_SPECIFICATIONS\fR.
 .PP
 By default, files and directories are extracted to the current directory.  Use
 \fB--dest-dir\fR to choose an alternate target directory.  Alternatively, use
@@ -30,15 +34,31 @@ program.
 \fB@IMAGEX_PROGNAME@ extract\fR supports extracting files and directory trees
 from stand-alone WIMs as well as split WIMs.  See \fBSPLIT WIMS\fR.
 .SH PATH SPECIFICATIONS
-Each \fIPATH\fR specifies a file or directory tree within the WIM image to
-extract.  Each path must be specified as an absolute path starting from the root
-of the WIM image, like those output by the \fB@IMAGEX_PROGNAME@ dir\fR (1)
-command.  However, path separators may be either forward or backward slashes,
-and the leading slash is optional; also, on Windows, the paths are treated
+Except when a single path is specified and prefixd by the '@' character, each
+\fIPATH\fR specifies a file or directory tree within the WIM image to extract.
+Each such path must be specified as an absolute path starting from the root of
+the WIM image, like those output by the \fB@IMAGEX_PROGNAME@ dir\fR (1) command.
+However, path separators may be either forward or backward slashes, and the
+leading slash is optional; also, on Windows, the paths are treated
 case-insensitively, while on UNIX, paths are treated case-sensitively.
 .PP
 If no \fIPATH\fRs are provided, the default behavior is to extract the full
 image, as if the path "/" had been provided.
+.PP
+If a single \fIPATH\fR is provided and is prefixed with the '@' character, it is
+interpreted as the path to a \fILISTFILE\fR which must be a UTF-8 text file that
+contains a list of paths (files or directories) to extract, one per line.  In
+each line, leading and trailing whitespace is ignored, and lines beginning with
+the ';' character and otherwise empty lines are ignored.  Each path must be
+unquoted and must specify a full path in the WIM image, as described above.
+However, unless \fB--no-wildcards\fR is specified, each path in the list file
+may also contain the wildcard characters '?' and '*', and therefore may expand
+to multiple actual files or directories.  By default, paths or wildcards that
+match no wildcards only produce a warning; use \fB--strict-wildcards\fR if you
+want an error instead.  Also, when using a list file, files and directories not
+located at the root of the WIM image will be extracted to a corresponding
+subdirectory of the destination directory rather than directly to the
+destination directory itself.
 .SH SPLIT WIMS
 You may use \fB@IMAGEX_PROGNAME@ extract\fR to extract files or directory trees
 from a split WIM.  This uses the \fB--refs\fR="\fIGLOB\fR" option in the same
@@ -52,7 +72,7 @@ present.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional WIMs or split WIM parts to reference resources from.
-See \fBSPLIT_WIMS\fR.  Note: since \fIGLOB\fR is listed in quotes because it is
+See \fBSPLIT_WIMS\fR.  Note: \fIGLOB\fR is listed in quotes because it is
 interpreted by \fB@IMAGEX_PROGNAME@\fR and may need to be quoted to protect
 against shell expansion.
 .TP
@@ -77,6 +97,17 @@ extracted.
 \fB--dest-dir\fR=\fIDIR\fR
 Extract the files and directories to the directory \fIDIR\fR instead of to the
 current working directory.
+.TP
+\fB--no-wildcards\fR
+Do not interpret wildcard characters in paths in the \fILISTFILE\fR.
+.TP
+\fB--strict-wildcards\fR
+Fail if any wildcards or paths in \fILISTFILE\fR do not match any files in the
+WIM image.  The default behavior is to warn only.
+.TP
+\fB--case-insensitive-wildcards\fR
+Treat the wildcards or paths in \fILISTFILE\fR as case-insensitive.  On Windows
+this is already the default behavior, but on UNIX-like systems it is not.
 .SH NOTES
 See the documentation \fB@IMAGEX_PROGNAME@ apply\fR (1) for documentation about
 what data and metadata are extracted on UNIX-like systems versus on Windows.
@@ -143,6 +174,23 @@ Extract multiple files and directories in one command:
 .RE
 .RE
 .PP
+Extract files using a list file:
+.RS
+.PP
+@IMAGEX_PROGNAME@ extract install.wim 1 @files.txt
+.RE
+.PP
+ ...  where files.txt could be something like:
+.PP
+.RS
+.RS
+.nf
+Windows\\System32\\*.*
+Windows\\System32\\??-??\\*.*
+Windows\\System32\\en-US\\*.*
+.RE
+.RE
+.fi
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
 .BR @IMAGEX_PROGNAME@-apply (1)

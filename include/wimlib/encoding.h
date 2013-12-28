@@ -30,6 +30,9 @@ DECLARE_CHAR_CONVERSION_FUNCTIONS(utf16le, tstr, utf16lechar, tchar);
 DECLARE_CHAR_CONVERSION_FUNCTIONS(tstr, utf16le, tchar, utf16lechar);
 #endif
 
+DECLARE_CHAR_CONVERSION_FUNCTIONS(utf8, tstr, char, tchar);
+DECLARE_CHAR_CONVERSION_FUNCTIONS(tstr, utf8, tchar, char);
+
 extern int
 utf8_to_tstr_simple(const char *utf8str, tchar **out);
 

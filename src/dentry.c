@@ -435,6 +435,24 @@ for_dentry_tree_in_rbtree(struct rb_node *node,
 	return 0;
 }
 
+/*
+ * Iterate over all children of @dentry, calling the function @visitor, passing
+ * it a child dentry and the extra argument @arg.
+ *
+ * Note: this function iterates over ALL child dentries, even those with the
+ * same case-insensitive name.
+ *
+ * Note: this function clobbers the tmp_list field of the child dentries.  */
+int
+for_dentry_child(const struct wim_dentry *dentry,
+		 int (*visitor)(struct wim_dentry *, void *),
+		 void *arg)
+{
+	return for_dentry_in_rbtree(dentry->d_inode->i_children.rb_node,
+				    visitor,
+				    arg);
+}
+
 /* Calls a function on all directory entries in a WIM dentry tree.  Logically,
  * this is a pre-order traversal (the function is called on a parent dentry
  * before its children), but sibling dentries will be visited in order as well.

@@ -49,6 +49,7 @@
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
+#include "wimlib/pathlist.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
@@ -57,6 +58,7 @@
 #  include "wimlib/win32.h" /* for realpath() equivalent */
 #endif
 #include "wimlib/xml.h"
+#include "wimlib/wildcard.h"
 #include "wimlib/wim.h"
 
 #include <errno.h>
@@ -2545,6 +2547,9 @@ check_extract_command(struct wimlib_extract_command *cmd, int wim_header_flags)
 						 WIMLIB_EXTRACT_FLAG_HARDLINK))
 		return WIMLIB_ERR_INVALID_PARAM;
 
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_GLOB_PATHS)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if ((extract_flags &
 	     (WIMLIB_EXTRACT_FLAG_NO_ACLS |
 	      WIMLIB_EXTRACT_FLAG_STRICT_ACLS)) == (WIMLIB_EXTRACT_FLAG_NO_ACLS |
@@ -3031,4 +3036,123 @@ wimlib_extract_image(WIMStruct *wim,
 	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
 	return do_wimlib_extract_image(wim, image, target, extract_flags,
 				       progress_func);
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_extract_pathlist(WIMStruct *wim, int image,
+			const tchar *target,
+			const tchar *path_list_file,
+			int extract_flags,
+			wimlib_progress_func_t progress_func)
+{
+	int ret;
+	tchar **paths;
+	size_t num_paths;
+	void *mem;
+
+	ret = read_path_list_file(path_list_file, &paths, &num_paths, &mem);
+	if (ret)
+		return ret;
+
+	ret = wimlib_extract_paths(wim, image, target,
+				   (const tchar * const *)paths, num_paths,
+				   extract_flags, progress_func);
+	FREE(paths);
+	FREE(mem);
+	return ret;
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_extract_paths(WIMStruct *wim,
+		     int image,
+		     const tchar *target,
+		     const tchar * const *paths,
+		     size_t num_paths,
+		     int extract_flags,
+		     wimlib_progress_func_t progress_func)
+{
+	int ret;
+	tchar **expanded_paths;
+	size_t num_expanded_paths;
+	struct wimlib_extract_command *cmds;
+
+	ret = select_wim_image(wim, image);
+	if (ret)
+		return ret;
+
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_GLOB_PATHS) {
+		int wildcard_flags = 0;
+
+		if (extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_GLOB)
+			wildcard_flags |= WILDCARD_FLAG_ERROR_IF_NO_MATCH;
+		else
+			wildcard_flags |= WILDCARD_FLAG_WARN_IF_NO_MATCH;
+
+		if (extract_flags & WIMLIB_EXTRACT_FLAG_CASE_INSENSITIVE_GLOB)
+			wildcard_flags |= WILDCARD_FLAG_CASE_INSENSITIVE;
+
+		ret = expand_wildcard_wim_paths(wim, paths, num_paths,
+						&expanded_paths,
+						&num_expanded_paths,
+						wildcard_flags);
+		if (ret)
+			return ret;
+	} else {
+		expanded_paths = (tchar**)paths;
+		num_expanded_paths = num_paths;
+	}
+
+	cmds = CALLOC(num_expanded_paths, sizeof(cmds[0]));
+	if (cmds == NULL) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_expanded_paths;
+	}
+
+	for (size_t i = 0; i < num_expanded_paths; i++) {
+		cmds[i].wim_source_path = expanded_paths[i];
+		cmds[i].extract_flags = 0;
+
+		tchar *dest_path;
+		size_t dest_len = 0;
+		dest_len += tstrlen(target);
+		dest_len += 1;
+		dest_len += tstrlen(expanded_paths[i]);
+		dest_len += 1;
+
+		dest_path = MALLOC(dest_len * sizeof(tchar));
+		if (dest_path == NULL) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_extraction_cmds;
+		}
+		tchar *p = dest_path;
+		p = tmempcpy(p, target, tstrlen(target));
+		*p++ = OS_PREFERRED_PATH_SEPARATOR;
+		for (tchar *path_p = expanded_paths[i]; *path_p != '\0'; path_p++) {
+			if (is_any_path_separator(*path_p))
+				*p++ = OS_PREFERRED_PATH_SEPARATOR;
+			else
+				*p++ = *path_p;
+		}
+		*p++ = T('\0');
+		wimlib_assert(p - dest_path == dest_len);
+		cmds[i].fs_dest_path = dest_path;
+	}
+
+	ret = wimlib_extract_files(wim, image,
+				   cmds, num_expanded_paths,
+				   extract_flags & ~WIMLIB_EXTRACT_FLAG_GLOB_PATHS,
+				   progress_func);
+out_free_extraction_cmds:
+	for (size_t i = 0; i < num_expanded_paths; i++)
+		FREE(cmds[i].fs_dest_path);
+	FREE(cmds);
+out_free_expanded_paths:
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_GLOB_PATHS) {
+		for (size_t i = 0; i < num_expanded_paths; i++)
+			FREE(expanded_paths[i]);
+		FREE(expanded_paths);
+	}
+	return ret;
 }

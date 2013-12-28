@@ -432,15 +432,10 @@ for_dentry_in_rbtree(struct rb_node *node,
 		     int (*visitor)(struct wim_dentry *, void *),
 		     void *arg);
 
-static inline int
+extern int
 for_dentry_child(const struct wim_dentry *dentry,
 		 int (*visitor)(struct wim_dentry *, void *),
-		 void *arg)
-{
-	return for_dentry_in_rbtree(dentry->d_inode->i_children.rb_node,
-				    visitor,
-				    arg);
-}
+		 void *arg);
 
 extern int
 for_dentry_in_tree_depth(struct wim_dentry *root,

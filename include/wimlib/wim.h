@@ -1,6 +1,7 @@
 #ifndef _WIMLIB_WIM_H
 #define _WIMLIB_WIM_H
 
+#include "wimlib.h"
 #include "wimlib/header.h"
 #include "wimlib/types.h"
 #include "wimlib/file_io.h"
@@ -43,7 +44,7 @@ struct WIMStruct {
 	void *private;
 
 	struct wimlib_decompressor *decompressor;
-	enum wimlib_compression_type decompressor_ctype;
+	u8 decompressor_ctype;
 	u32 decompressor_max_block_size;
 
 	struct list_head subwims;

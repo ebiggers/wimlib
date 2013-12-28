@@ -52,6 +52,7 @@ libwim_la_SOURCES =		\
 	src/lzx-decompress.c	\
 	src/metadata_resource.c	\
 	src/mount_image.c	\
+	src/pathlist.c		\
 	src/paths.c		\
 	src/resource.c		\
 	src/rbtree.c		\
@@ -63,6 +64,7 @@ libwim_la_SOURCES =		\
 	src/update_image.c	\
 	src/util.c		\
 	src/verify.c		\
+	src/wildcard.c		\
 	src/wim.c		\
 	src/write.c		\
 	src/xml.c		\
@@ -91,6 +93,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/lzms.h		\
 	include/wimlib/lzx.h		\
 	include/wimlib/metadata.h	\
+	include/wimlib/pathlist.h	\
 	include/wimlib/paths.h		\
 	include/wimlib/rbtree.h		\
 	include/wimlib/reparse.h	\
@@ -102,6 +105,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/types.h		\
 	include/wimlib/util.h		\
 	include/wimlib/version.h	\
+	include/wimlib/wildcard.h	\
 	include/wimlib/wim.h		\
 	include/wimlib/write.h		\
 	include/wimlib/xml.h		\

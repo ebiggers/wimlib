@@ -31,14 +31,9 @@
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/paths.h"
+#include "wimlib/wildcard.h"
 
-#ifdef __WIN32__
-#  include "wimlib/win32.h" /* for fnmatch() equivalent */
-#else
-#  include <fnmatch.h>
-#endif
 #include <string.h>
-
 
 static int
 canonicalize_pattern(const tchar *pat, tchar **canonical_pat_ret)

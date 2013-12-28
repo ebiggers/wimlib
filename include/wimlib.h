@@ -262,8 +262,12 @@
  * Another function, wimlib_extract_files(), is also provided.  It can extract
  * certain files or directories from a WIM image, instead of a full image.
  *
- * A third function, wimlib_extract_image_from_pipe(), allows an image to be
- * extracted from a pipable WIM sent over a pipe; see @ref subsec_pipable_wims.
+ * wimlib_extract_paths() and wimlib_extract_pathlist() allow extracting a set
+ * of paths from a WIM image in a manner that may be easier to use than
+ * wimlib_extract_files(), and also can wildcard characters.
+ *
+ * wimlib_extract_image_from_pipe() allows an image to be extracted from a
+ * pipable WIM sent over a pipe; see @ref subsec_pipable_wims.
  *
  * Note that some details of how image extraction/application works are
  * documented more fully in the manual pages for <b>wimlib-imagex apply</b> and
@@ -1382,6 +1386,22 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * performance.  */
 #define WIMLIB_EXTRACT_FLAG_FILE_ORDER			0x00020000
 
+/** For wimlib_extract_paths() and wimlib_extract_pathlist() only:  Treat the
+ * paths in the WIM as case-insensitive globs which may contain the characters
+ * '?' and '*'.  The '?' character matches any character, whereas the '*'
+ * character matches zero or more characters in the same path component.  */
+#define WIMLIB_EXTRACT_FLAG_GLOB_PATHS			0x00040000
+
+/** In combination with ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS, causes an error
+ * (::WIMLIB_ERR_PATH_DOES_NOT_EXIST) rather than a warning to be issued when
+ * one of the provided globs did not match a file.  */
+#define WIMLIB_EXTRACT_FLAG_STRICT_GLOB			0x00080000
+
+/** In combination with ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS, causes the globbing to
+ * be performed case insensitively.  On Windows this is already the default
+ * behavior but on UNIX-like systems it is not.  */
+#define WIMLIB_EXTRACT_FLAG_CASE_INSENSITIVE_GLOB	0x00100000
+
 /** @} */
 /** @ingroup G_mounting_wim_images
  * @{ */
@@ -2327,6 +2347,40 @@ wimlib_extract_image_from_pipe(int pipe_fd,
 			       const wimlib_tchar *image_num_or_name,
 			       const wimlib_tchar *target, int extract_flags,
 			       wimlib_progress_func_t progress_func);
+
+/**
+ * Similar to wimlib_extract_paths(), but the paths to extract from the WIM
+ * image specified in the UTF-8 text file @p path_list_file which itself
+ * contains the list of paths to use, one per line.  Leading and trailing
+ * whitespace, and otherwise empty lines and lines beginning with the ';'
+ * character are ignored.  No quotes are needed as paths are otherwise delimited
+ * by the newline character.
+ */
+extern int
+wimlib_extract_pathlist(WIMStruct *wim, int image,
+			const wimlib_tchar *target,
+			const wimlib_tchar *path_list_file,
+			int extract_flags,
+			wimlib_progress_func_t progress_func);
+
+/**
+ * Similar to wimlib_extract_files(), but the files or directories to extract
+ * from the WIM image are specified as an array of paths.  Each path will be
+ * extracted to a corresponding location in @p target based on its location in
+ * the WIM image.
+ *
+ * With ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS specified in @p extract_flags, this
+ * function additionally allows paths to be globs using the wildcard characters
+ * '*' and '?'.
+ */
+extern int
+wimlib_extract_paths(WIMStruct *wim,
+		     int image,
+		     const wimlib_tchar *target,
+		     const wimlib_tchar * const *paths,
+		     size_t num_paths,
+		     int extract_flags,
+		     wimlib_progress_func_t progress_func);
 
 /**
  * @ingroup G_wim_information

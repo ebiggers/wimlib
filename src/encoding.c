@@ -298,7 +298,7 @@ DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "UTF-16LE", tchar,
 				 WIMLIB_ERR_INVALID_UTF16_STRING,
 				 ERROR_WITH_ERRNO("Failed to convert UTF-16LE "
 						  "string \"%"TS"\" to UTF-8 string!", in),
-				 static)
+				 )
 
 DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", char,
 				 tstr, "UTF-16LE", tchar,
@@ -308,7 +308,7 @@ DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", char,
 				 WIMLIB_ERR_INVALID_UTF8_STRING,
 				 ERROR_WITH_ERRNO("Failed to convert UTF-8 string "
 						  "to UTF-16LE string!"),
-				 static)
+				 )
 #else
 
 /* UNIX */
@@ -324,7 +324,7 @@ DEFINE_CHAR_CONVERSION_FUNCTIONS(tstr, "", tchar,
 				 ERROR("If the data you provided was UTF-8, please make sure "
 				       "the character\n"
 				       "        encoding of your current locale is UTF-8."),
-				 static)
+				 )
 
 DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", char,
 				 tstr, "", tchar,
@@ -337,7 +337,7 @@ DEFINE_CHAR_CONVERSION_FUNCTIONS(utf8, "UTF-8", char,
 				 ERROR("This may be because the UTF-8 data "
 				       "could not be represented\n"
 				       "        in your locale's character encoding."),
-				 static)
+				 )
 #endif
 
 int
