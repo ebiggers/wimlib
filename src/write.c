@@ -804,10 +804,6 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 	if (ctx->cur_write_res_offset == ctx->cur_write_res_size &&
 	    !(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS))
 	{
-		struct wim_lookup_table_entry *lte;
-
-		lte = list_entry(ctx->pending_streams.next,
-				 struct wim_lookup_table_entry, write_streams_list);
 		wimlib_assert(ctx->cur_write_res_offset == lte->size);
 
 		/* Finished writing a stream in non-packed mode.  */
