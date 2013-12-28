@@ -1387,8 +1387,8 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	/* WARNING: There is no check for overflow later when this buffer is
 	 * being used!  But it's as long as the maximum path length understood
 	 * by Windows NT (which is NOT the same as MAX_PATH). */
-	path = MALLOC(WINDOWS_NT_MAX_PATH * sizeof(wchar_t));
-	if (!path)
+	path = MALLOC((WINDOWS_NT_MAX_PATH + 1) * sizeof(wchar_t));
+	if (path == NULL)
 		return WIMLIB_ERR_NOMEM;
 
 	/* Work around defective behavior in Windows where paths longer than 260
@@ -1396,10 +1396,10 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	 * turned into absolute paths and prefixed with "\\?\".  */
 
 	if (wcsncmp(root_disk_path, L"\\\\?\\", 4)) {
-		dret = GetFullPathName(root_disk_path, WINDOWS_NT_MAX_PATH - 4,
+		dret = GetFullPathName(root_disk_path, WINDOWS_NT_MAX_PATH - 3,
 				       &path[4], NULL);
 
-		if (dret == 0 || dret >= WINDOWS_NT_MAX_PATH - 4) {
+		if (dret == 0 || dret >= WINDOWS_NT_MAX_PATH - 3) {
 			WARNING("Can't get full path name for \"%ls\"", root_disk_path);
 			wmemcpy(path, root_disk_path, path_nchars + 1);
 		} else {
