@@ -7,16 +7,35 @@ Version 1.6.0:
 	performance of random access (such as that which occurs on a mounted
 	image), but optimizations have been implemented for extraction.  These
 	new WIM files also typically use a new compression format (LZMS), which
-	is similar to LZMA.  These new WIM files can be created with Dism using
-	"/compress recovery".  Note: this format is used by the Windows 8 web
-	downloader, but important segments of the raw '.esd' files are
-	encrypted, so wimlib will not be able to extract such files until they
-	are first decrypted.
+	is similar to LZMA and can offer a better compression ratio than LZX.
+	These new WIM files can be created with Dism using '/compress recovery',
+	or using `wimcapture' using '--pack-streams', although wimlib's LZMS
+	compressor is not yet very good, the latter is not recommended.  Note:
+	this new WIM format is used by the Windows 8 web downloader, but
+	important segments of the raw '.esd' files are encrypted, so wimlib will
+	not be able to extract such files until they are first decrypted.
+
+	wimlib now supports extracting files and directories from a WIM image
+	based on a "listfile" that itself contains the list of paths to extract.
+	For `wimextract', the syntax is to specify @LISTFILE instead of a PATH,
+	and for the library itself, the new APIs are wimlib_extract_pathlist()
+	and wimlib_extract_paths().  Path globs containing wildcard characters
+	are supported.
+
+	For searching WIM files, wimlib now has configurable case sensitivity.
+	The default on Windows is still case-insensitive and the default on
+	UNIX-like systems is still case-sensitive, but this can be overwridden
+	on either platform through flags to wimlib_global_init().  For
+	`wimlib-imagex', the environmental variable WIMLIB_IMAGEX_IGNORE_CASE
+	can be set to 1 or 0 for case-insensitive or case-sensitive behavior,
+	respectively.
 
 	Support for compression chunk sizes greater than the default of 32768
 	bytes has been added.  A larger chunk size typically results in a better
-	compression ratio.  However, this is currently disabled for LZX
-	compression due to lack of interoperability with the MS implementation.
+	compression ratio.  However, the MS implementation is seemingly not
+	compatible with all chunk sizes, especially for LZX compression, so the
+	defaults remain unchanged, with the exception of the new LZMS-compressed
+	WIMs, which use a larger chunk size by default.
 
 	The compression/decompression API exported by wimlib has been changed.
 	Now one set of functions support all supported compression formats.
