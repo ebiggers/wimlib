@@ -424,6 +424,8 @@ static const tchar *error_strings[] = {
 		= T("Failed to write data to a file"),
 	[WIMLIB_ERR_XML]
 		= T("The XML data of the WIM is invalid"),
+	[WIMLIB_ERR_WIM_IS_ENCRYPTED]
+		= T("The WIM file (or parts of it) is encrypted"),
 };
 
 /* API function documented in wimlib.h  */

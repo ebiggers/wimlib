@@ -709,9 +709,6 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 		if (wim->lookup_table == NULL)
 			return WIMLIB_ERR_NOMEM;
 	} else {
-		ret = read_wim_lookup_table(wim);
-		if (ret)
-			return ret;
 
 		ret = read_wim_xml_data(wim);
 		if (ret)
@@ -725,6 +722,11 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 			      "<IMAGE> element per image.", wim->hdr.image_count);
 			return WIMLIB_ERR_IMAGE_COUNT;
 		}
+
+		ret = read_wim_lookup_table(wim);
+		if (ret)
+			return ret;
+
 		DEBUG("Done beginning read of WIM file `%"TS"'.", wimfile);
 	}
 	return 0;

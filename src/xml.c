@@ -566,6 +566,16 @@ xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info_ret)
 				i++;
 			} else if (node_name_is(child, "TOTALBYTES")) {
 				wim_info->total_bytes = node_get_u64(child);
+			} else if (node_name_is(child, "ESD")) {
+				xmlNode *esdchild;
+				for_node_child(child, esdchild) {
+					if (node_is_element(esdchild) &&
+					    node_name_is(esdchild, "ENCRYPTED"))
+					{
+						ret = WIMLIB_ERR_WIM_IS_ENCRYPTED;
+						goto err;
+					}
+				}
 			}
 		}
 
