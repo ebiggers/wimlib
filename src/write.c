@@ -953,8 +953,6 @@ write_stream_process_chunk(const void *chunk, size_t size, void *_ctx)
 			memcpy(&ctx->chunk_buf[ctx->chunk_buf_filled],
 			       chunkptr, bytes_consumed);
 
-			resized_chunk = ctx->chunk_buf;
-
 			chunkptr += bytes_consumed;
 			ctx->cur_read_res_offset += bytes_consumed;
 			ctx->chunk_buf_filled += bytes_consumed;
