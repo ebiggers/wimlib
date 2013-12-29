@@ -62,6 +62,7 @@ struct windows_info {
 	tchar   *product_name;
 	tchar   *edition_id;
 	tchar   *installation_type;
+	tchar   *pkeyconfigversion;
 	tchar   *hal;
 	tchar   *product_type;
 	tchar   *product_suite;
@@ -314,6 +315,7 @@ destroy_windows_info(struct windows_info *windows_info)
 	FREE(windows_info->hal);
 	FREE(windows_info->product_type);
 	FREE(windows_info->product_suite);
+	FREE(windows_info->pkeyconfigversion);
 	for (size_t i = 0; i < windows_info->num_languages; i++)
 		FREE(windows_info->languages[i]);
 	FREE(windows_info->languages);
@@ -449,7 +451,19 @@ xml_read_windows_info(const xmlNode *windows_node,
 			ret = node_get_string(child, &windows_info->system_root);
 		} else if (node_name_is(child, "HAL")) {
 			ret = node_get_string(child, &windows_info->hal);
+		} else if (node_name_is(child, "SERVICINGDATA")) {
+			xmlNode *grandchild;
+
+			for_node_child(child, grandchild) {
+				if (node_is_element(grandchild) &&
+				    node_name_is(grandchild, "PKEYCONFIGVERSION"))
+				{
+					ret = node_get_string(grandchild,
+							      &windows_info->pkeyconfigversion);
+				}
+			}
 		}
+
 		if (ret != 0)
 			return ret;
 	}
@@ -815,6 +829,21 @@ xml_write_windows_info(xmlTextWriter *writer,
 			return rc;
 	}
 
+	if (windows_info->pkeyconfigversion) {
+		rc = xmlTextWriterStartElement(writer, "SERVICINGDATA");
+		if (rc < 0)
+			return rc;
+
+		rc = xml_write_string(writer, "PKEYCONFIGVERSION",
+				      windows_info->pkeyconfigversion);
+		if (rc)
+			return rc;
+
+		rc = xmlTextWriterEndElement(writer);
+		if (rc < 0)
+			return rc;
+	}
+
 	if (windows_info->windows_version_exists) {
 		rc = xml_write_windows_version(writer, &windows_info->windows_version);
 		if (rc)
@@ -948,6 +977,12 @@ clone_windows_info(const struct windows_info *old, struct windows_info *new)
 				     ARRAY_LEN(windows_info_xml_string_specs));
 	if (ret)
 		return ret;
+
+	if (old->pkeyconfigversion) {
+		new->pkeyconfigversion = TSTRDUP(old->pkeyconfigversion);
+		if (new->pkeyconfigversion == NULL)
+			return WIMLIB_ERR_NOMEM;
+	}
 
 	if (old->languages) {
 		new->languages = CALLOC(old->num_languages, sizeof(new->languages[0]));
