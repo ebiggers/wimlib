@@ -2592,27 +2592,17 @@ extract_tree(WIMStruct *wim, const tchar *wim_source_path,
 			     target, extract_flags, progress_func);
 }
 
-/* Validates a single wimlib_extract_command, mostly checking to make sure the
- * extract flags make sense. */
+/* Make sure the extraction flags make sense, and update them if needed.  */
 static int
-check_extract_command(struct wimlib_extract_command *cmd, int wim_header_flags)
+check_extract_flags(int extract_flags,
+		    const u32 wim_header_flags,
+		    int *updated_extract_flags_ret)
 {
-	int extract_flags;
-
-	/* Empty destination path? */
-	if (cmd->fs_dest_path[0] == T('\0'))
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	extract_flags = cmd->extract_flags;
-
 	/* Check for invalid flag combinations  */
 	if ((extract_flags &
 	     (WIMLIB_EXTRACT_FLAG_SYMLINK |
 	      WIMLIB_EXTRACT_FLAG_HARDLINK)) == (WIMLIB_EXTRACT_FLAG_SYMLINK |
 						 WIMLIB_EXTRACT_FLAG_HARDLINK))
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_GLOB_PATHS)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if ((extract_flags &
@@ -2632,13 +2622,13 @@ check_extract_command(struct wimlib_extract_command *cmd, int wim_header_flags)
 	      WIMLIB_EXTRACT_FLAG_FROM_PIPE)) == WIMLIB_EXTRACT_FLAG_RESUME)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 #ifndef WITH_NTFS_3G
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 		ERROR("wimlib was compiled without support for NTFS-3g, so\n"
 		      "        we cannot apply a WIM image directly to a NTFS volume.");
 		return WIMLIB_ERR_UNSUPPORTED;
-#endif
 	}
+#endif
 
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_RPFIX |
 			      WIMLIB_EXTRACT_FLAG_NORPFIX)) == 0)
@@ -2669,7 +2659,8 @@ check_extract_command(struct wimlib_extract_command *cmd, int wim_header_flags)
 		}
 	}
 
-	cmd->extract_flags = extract_flags;
+	if (updated_extract_flags_ret)
+		*updated_extract_flags_ret = extract_flags;
 	return 0;
 }
 
@@ -2700,7 +2691,16 @@ do_wimlib_extract_files(WIMStruct *wim,
 
 	/* Check for problems with the extraction commands */
 	for (size_t i = 0; i < num_cmds; i++) {
-		ret = check_extract_command(&cmds[i], wim->hdr.flags);
+
+		if (cmds[i].fs_dest_path[0] == T('\0'))
+			return WIMLIB_ERR_INVALID_PARAM;
+
+		if (cmds[i].extract_flags & WIMLIB_EXTRACT_FLAG_GLOB_PATHS)
+			return WIMLIB_ERR_INVALID_PARAM;
+
+		ret = check_extract_flags(cmds[i].extract_flags,
+					  wim->hdr.flags,
+					  &cmds[i].extract_flags);
 		if (ret)
 			return ret;
 		if (cmds[i].extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
@@ -3117,8 +3117,11 @@ wimlib_extract_pathlist(WIMStruct *wim, int image,
 	void *mem;
 
 	ret = read_path_list_file(path_list_file, &paths, &num_paths, &mem);
-	if (ret)
+	if (ret) {
+		ERROR("Failed to read path list file \"%"TS"\"",
+		      path_list_file);
 		return ret;
+	}
 
 	ret = wimlib_extract_paths(wim, image, target,
 				   (const tchar * const *)paths, num_paths,
@@ -3177,8 +3180,14 @@ wimlib_extract_paths(WIMStruct *wim,
 
 	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
 
-	if (target == NULL || (num_paths != 0 && paths == NULL))
+	if (wim == NULL || target == NULL || target[0] == T('\0') ||
+	    (num_paths != 0 && paths == NULL))
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	ret = check_extract_flags(extract_flags, wim->hdr.flags,
+				  &extract_flags);
+	if (ret)
+		return ret;
 
 	ret = select_wim_image(wim, image);
 	if (ret)
