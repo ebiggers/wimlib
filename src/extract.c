@@ -1530,8 +1530,8 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 				if (ret)
 					goto out_free_found_lte;
 
-				ret = extract_stream_to_fd(needed_lte, &tmpfile_fd,
-							   needed_lte->size);
+				ret = extract_full_stream_to_fd(needed_lte,
+								&tmpfile_fd);
 				if (ret) {
 					filedes_close(&tmpfile_fd);
 					goto delete_tmpfile;
@@ -1651,7 +1651,7 @@ extract_dentry_to_stdout(struct wim_dentry *dentry)
 		if (lte) {
 			struct filedes _stdout;
 			filedes_init(&_stdout, STDOUT_FILENO);
-			ret = extract_stream_to_fd(lte, &_stdout, lte->size);
+			ret = extract_full_stream_to_fd(lte, &_stdout);
 		}
 	}
 	return ret;

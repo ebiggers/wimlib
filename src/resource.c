@@ -1323,6 +1323,15 @@ extract_stream_to_fd(struct wim_lookup_table_entry *lte,
 	return extract_stream(lte, size, extract_chunk_to_fd, fd);
 }
 
+/* Extract the full uncompressed contents of the specified stream to the
+ * specified file descriptor.  */
+int
+extract_full_stream_to_fd(struct wim_lookup_table_entry *lte,
+			  struct filedes *fd)
+{
+	return extract_stream_to_fd(lte, fd, lte->size);
+}
+
 /* Calculate the SHA1 message digest of a stream and store it in @lte->hash.  */
 int
 sha1_stream(struct wim_lookup_table_entry *lte)

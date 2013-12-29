@@ -723,7 +723,7 @@ write_stream_uncompressed(struct wim_lookup_table_entry *lte,
 	if (filedes_seek(out_fd, begin_offset) == -1)
 		return 0;
 
-	ret = extract_stream_to_fd(lte, out_fd, lte->size);
+	ret = extract_full_stream_to_fd(lte, out_fd);
 	if (ret) {
 		/* Error reading the uncompressed data.  */
 		if (out_fd->offset == begin_offset &&

@@ -281,6 +281,10 @@ extract_stream_to_fd(struct wim_lookup_table_entry *lte,
 		     struct filedes *fd, u64 size);
 
 extern int
+extract_full_stream_to_fd(struct wim_lookup_table_entry *lte,
+			  struct filedes *fd);
+
+extern int
 extract_chunk_to_fd(const void *chunk, size_t size, void *_fd_p);
 
 /* Miscellaneous stream functions.  */
