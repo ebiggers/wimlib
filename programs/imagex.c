@@ -1159,6 +1159,14 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			imagex_printf(T("\nWARNING: Excluding unsupported file or directory\n"
 					"         \"%"TS"\" from capture\n"), info->scan.cur_path);
 			break;
+		case WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK:
+			imagex_printf(T("\nWARNING: Ignoring absolute symbolic link "
+					"with out-of-tree target:\n"
+					"           \"%"TS"\" => \"%"TS"\"\n"
+					"           (Use --norpfix to capture "
+					"absolute symbolic links as-is)\n"),
+				        info->scan.cur_path, info->scan.symlink_target);
+			break;
 		}
 		break;
 	case WIMLIB_PROGRESS_MSG_SCAN_END:

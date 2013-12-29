@@ -602,52 +602,99 @@ union wimlib_progress_info {
 		unsigned completed_parts;
 	} write_streams;
 
-	/** Valid on messages ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN and
-	 * ::WIMLIB_PROGRESS_MSG_SCAN_END. */
+	/** Valid on messages ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN,
+	 * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY, and
+	 * ::WIMLIB_PROGRESS_MSG_SCAN_END.  */
 	struct wimlib_progress_info_scan {
-		/** Directory or NTFS volume that is being scanned. */
+		/** Top-level directory being scanned; or, when capturing a NTFS
+		 * volume with ::WIMLIB_ADD_FLAG_NTFS, this is instead the path
+		 * to the file or block device that contains the NTFS volume
+		 * being scanned.  */
 		const wimlib_tchar *source;
 
-		/** Path to the file or directory that is about to be scanned,
-		 * relative to the root of the image capture or the NTFS volume.
-		 * */
+		/** Path to the file (or directory) that has been scanned, valid
+		 * on ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY.  When capturing a NTFS
+		 * volume with ::WIMLIB_ADD_FLAG_NTFS, this path will be
+		 * relative to the root of the NTFS volume.  */
 		const wimlib_tchar *cur_path;
 
+		/** Dentry scan status, valid on
+		 * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY.  */
 		enum {
-			/** File or directory looks okay and will be captured.  */
+			/** The file looks okay and will be captured.  */
 			WIMLIB_SCAN_DENTRY_OK = 0,
 
-			/** File or directory is being excluded from capture due
-			 * to the capture configuration file, or being an
-			 * absolute symbolic link that points outside of the
-			 * capture directory without ::WIMLIB_ADD_FLAG_NORPFIX.
-			 */
+			/** File is being excluded from capture due to the
+			 * capture configuration.  */
 			WIMLIB_SCAN_DENTRY_EXCLUDED,
 
-			/** File or directory is being excluded from capture due
-			 * to being unsupported (e.g. an encrypted or device
-			 * file).  */
+			/** File is being excluded from capture due to being
+			 * unsupported (e.g. an encrypted or device file).  */
 			WIMLIB_SCAN_DENTRY_UNSUPPORTED,
+
+			/** The file is an absolute symbolic link or junction
+			 * point and it is being excluded from capture because
+			 * it points outside of the capture directory and
+			 * reparse-point fixups are enabled.  (Reparse point
+			 * fixups can be disabled by using the flag
+			 * ::WIMLIB_ADD_FLAG_NORPFIX.)  */
+			WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
 		} status;
 
-		/** Target path in the WIM.  Only valid on messages
-		 * ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN and
-		 * ::WIMLIB_PROGRESS_MSG_SCAN_END. */
-		const wimlib_tchar *wim_target_path;
+		union {
+			/** Target path in the WIM image.  Only valid on
+			 * messages ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN and
+			 * ::WIMLIB_PROGRESS_MSG_SCAN_END.  If capturing a full
+			 * image, this will be the empty string; otherwise it
+			 * will name the place in the WIM image at which the
+			 * directory tree is being added.  */
+			const wimlib_tchar *wim_target_path;
+
+			/** For ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY and a status
+			 * of ::WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK, this is the
+			 * target of the absolute symbolic link or junction
+			 * point.  */
+			const wimlib_tchar *symlink_target;
+		};
 
 		/** Number of directories scanned so far, including the root
 		 * directory but excluding any unsupported/excluded directories.
-		 * */
+		 *
+		 * Details: On Windows and in NTFS capture mode, a reparse point
+		 * counts as a directory if and only if it has
+		 * FILE_ATTRIBUTE_DIRECTORY set.  Otherwise, a symbolic link
+		 * counts as a directory if and only if when fully dereferenced
+		 * it points to an accessible directory.  If a file has multiple
+		 * names (hard links), it is only counted one time.  */
 		uint64_t num_dirs_scanned;
 
 		/** Number of non-directories scanned so far, excluding any
-		 * unsupported/excluded files.  */
+		 * unsupported/excluded files.
+		 *
+		 * Details: On Windows and in NTFS capture mode, a reparse point
+		 * counts as a non-directory if and only if it does not have
+		 * FILE_ATTRIBUTE_DIRECTORY set.  Otherwise, a symbolic link
+		 * counts as a non-directory if and only if when fully
+		 * dereferenced it points to a non-directory or its target is
+		 * inaccessible.  If a file has multiple names (hard links), it
+		 * is only counted one time.  */
 		uint64_t num_nondirs_scanned;
 
 		/** Number of bytes of file data that have been detected so far.
-		 * This data may not actually have been read yet, and it will
-		 * not actually be written to the WIM file until wimlib_write()
-		 * or wimlib_overwrite() has been called.  */
+		 *
+		 * Details: This data may not actually have been read yet, and
+		 * it will not actually be written to the WIM file until
+		 * wimlib_write() or wimlib_overwrite() has been called.  Data
+		 * from excluded files is not counted.  This number includes
+		 * default file contents as well as named data streams and
+		 * reparse point data.  The size of reparse point data is
+		 * tallied after any reparse-point fixups, and in the case of
+		 * capturing a symbolic link on a UNIX-like system, the creation
+		 * of the reparse point data itself.  If a file has multiple
+		 * names (hard links), its size(s) are only counted one time.
+		 * On Windows, encrypted files have their encrypted size
+		 * counted, not their unencrypted size; however, compressed
+		 * files have their uncompressed size counted.  */
 		uint64_t num_bytes_scanned;
 	} scan;
 
@@ -1172,8 +1219,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_ADD_FLAG_DEREFERENCE		0x00000002
 
 /** Call the progress function with the message
- * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY when each directory or file is starting to
- * be scanned, or when a directory or file is being excluded from capture.  */
+ * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY when each directory or file has been
+ * scanned.  */
 #define WIMLIB_ADD_FLAG_VERBOSE			0x00000004
 
 /** Mark the image being added as the bootable image of the WIM. */
@@ -1182,17 +1229,17 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** Store the UNIX owner, group, and mode.  This is done by adding a special
  * alternate data stream to each regular file, symbolic link, and directory to
  * contain this information.  Please note that this flag is for convenience
- * only; Microsoft's @a imagex.exe will not understand this special information.
- * This flag cannot be combined with ::WIMLIB_ADD_FLAG_NTFS.  */
+ * only; Microsoft's implementation will not understand this special
+ * information.  This flag cannot be combined with ::WIMLIB_ADD_FLAG_NTFS.  */
 #define WIMLIB_ADD_FLAG_UNIX_DATA		0x00000010
 
 /** Do not capture security descriptors.  Only has an effect in NTFS capture
- * mode, or in Win32 native builds. */
+ * mode, or in Windows native builds. */
 #define WIMLIB_ADD_FLAG_NO_ACLS			0x00000020
 
 /** Fail immediately if the full security descriptor of any file or directory
- * cannot be accessed.  Only has an effect in Win32 native builds.  The default
- * behavior without this flag is to first try omitting the SACL from the
+ * cannot be accessed.  Only has an effect in Windows native builds.  The
+ * default behavior without this flag is to first try omitting the SACL from the
  * security descriptor, then to try omitting the security descriptor entirely.
  * */
 #define WIMLIB_ADD_FLAG_STRICT_ACLS		0x00000040

@@ -163,14 +163,17 @@ unix_capture_symlink(struct wim_dentry **root_p,
 			dest = capture_fixup_absolute_symlink(dest,
 							      params->capture_root_ino,
 							      params->capture_root_dev);
-			if (!dest) {
-				WARNING("Ignoring out of tree absolute symlink "
-					"\"%s\" -> \"%s\"\n"
-					"          (Use --norpfix to capture "
-					"absolute symlinks as-is)",
-					path, deref_name_buf);
+			if (dest == NULL) {
+				/* RPFIX (reparse point fixup) mode:  Ignore
+				 * absolute symbolic link that points out of the
+				 * tree to be captured.  */
 				free_dentry(*root_p);
 				*root_p = NULL;
+				params->progress.scan.cur_path = path;
+				params->progress.scan.symlink_target = deref_name_buf;
+				do_capture_progress(params,
+						    WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
+						    NULL);
 				return 0;
 			}
 			inode->i_not_rpfixed = 0;
@@ -278,8 +281,11 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 						inode, params->lookup_table);
 	else if (S_ISDIR(stbuf.st_mode))
 		ret = unix_capture_directory(root, path, path_len, params);
-	else
+	else {
 		ret = unix_capture_symlink(&root, path, inode, params);
+		if (root == NULL)
+			goto out;
+	}
 
 	if (ret)
 		goto out;

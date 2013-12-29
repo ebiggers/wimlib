@@ -189,6 +189,7 @@ do_capture_progress(struct add_image_params *params, int status,
 			return;
 	case WIMLIB_SCAN_DENTRY_UNSUPPORTED:
 	case WIMLIB_SCAN_DENTRY_EXCLUDED:
+	case WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK:
 		if (!(params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE))
 			return;
 	}
