@@ -183,7 +183,7 @@ capture_ntfs_streams(struct wim_inode *inode,
 
 	/* Capture each data stream or reparse data stream. */
 	while (!ntfs_attr_lookup(type, NULL, 0,
-				 WIMLIB_CASE_SENSITIVE, 0, NULL, 0, actx))
+				 CASE_SENSITIVE, 0, NULL, 0, actx))
 	{
 		u64 data_size = ntfs_get_attribute_value_length(actx->attr);
 		u64 name_length = actx->attr->name_length;
