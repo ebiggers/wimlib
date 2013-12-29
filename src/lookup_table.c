@@ -656,7 +656,9 @@ read_wim_lookup_table(WIMStruct *wim)
 			 * resource.  */
 			struct wim_lookup_table_entry *prev_entry = NULL;
 
-			if (back_to_back_pack) {
+			if (back_to_back_pack &&
+			    !list_empty(&cur_rspec->stream_list))
+			{
 				prev_entry = list_entry(cur_rspec->stream_list.prev,
 							struct wim_lookup_table_entry,
 							rspec_node);
@@ -842,7 +844,7 @@ read_wim_lookup_table(WIMStruct *wim)
 	goto out_free_buf;
 
 out_free_cur_entry:
-	FREE(cur_entry);
+	free_lookup_table_entry(cur_entry);
 out_free_lookup_table:
 	free_lookup_table(table);
 out_free_buf:
