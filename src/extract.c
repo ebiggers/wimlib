@@ -1147,7 +1147,8 @@ dentry_extract_skeleton(struct wim_dentry *dentry, void *_ctx)
 		inode_for_each_dentry(other_dentry, dentry->d_inode) {
 			if (dentry_has_short_name(other_dentry)
 			    && !other_dentry->skeleton_extracted
-			    && other_dentry->in_extraction_tree)
+			    && other_dentry->in_extraction_tree
+			    && !other_dentry->extraction_skipped)
 			{
 				DEBUG("Creating %"TS" before %"TS" "
 				      "to guarantee correct DOS name extraction",
