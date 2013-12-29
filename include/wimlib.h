@@ -2432,7 +2432,7 @@ wimlib_extract_image_from_pipe(int pipe_fd,
 
 /**
  * Similar to wimlib_extract_paths(), but the paths to extract from the WIM
- * image specified in the UTF-8 text file named by @p path_list_file which
+ * image are specified in the UTF-8 text file named by @p path_list_file which
  * itself contains the list of paths to use, one per line.  Leading and trailing
  * whitespace, and otherwise empty lines and lines beginning with the ';'
  * character are ignored.  No quotes are needed as paths are otherwise delimited
@@ -3357,17 +3357,18 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  *	::WIMStruct for a WIM.
  * @param out_chunk_size
  *	The chunk size (in bytes) to set.  The valid chunk sizes are dependent
- *	on the compression format.  The XPRESS compression format supports chunk
- *	sizes that are powers of 2 with exponents between 15 and 26 inclusively,
- *	whereas the LZX compression format supports chunk sizes that are powers
- *	of 2 with exponents between 15 and 21 inclusively.  As a special case,
- *	if @p out_chunk_size is specified as 0, the chunk size is set to the
- *	default for the currently selected output compression type.
+ *	on the compression format.  The XPRESS and LZMS compression formats
+ *	support chunk sizes that are powers of 2 with exponents between 15 and
+ *	26 inclusively, whereas the LZX compression format supports chunk sizes
+ *	that are powers of 2 with exponents between 15 and 21 inclusively.  As a
+ *	special case, if @p out_chunk_size is specified as 0, the chunk size is
+ *	set to the default for the currently selected output compression type.
  *
  * @return 0 on success; nonzero on error.
  *
  * @retval ::WIMLIB_ERR_INVALID_CHUNK_SIZE
- *	@p ctype is not a supported chunk size.
+ *	@p chunk_size is not a supported chunk size for the currently selected
+ *	output compression type.
  */
 extern int
 wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size);

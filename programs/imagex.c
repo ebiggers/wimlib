@@ -1552,7 +1552,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 	const tchar *wimfile;
 	const tchar *target;
 	const tchar *image_num_or_name = NULL;
-	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL;
+	int extract_flags = 0;
 
 	STRING_SET(refglobs);
 
@@ -2714,7 +2714,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 	const tchar *image_num_or_name;
 	const tchar *pathlist;
 	tchar *dest_dir = T(".");
-	int extract_flags = WIMLIB_EXTRACT_FLAG_SEQUENTIAL | WIMLIB_EXTRACT_FLAG_NORPFIX;
+	int extract_flags = WIMLIB_EXTRACT_FLAG_NORPFIX;
 	int listfile_extract_flags = WIMLIB_EXTRACT_FLAG_GLOB_PATHS;
 
 	STRING_SET(refglobs);

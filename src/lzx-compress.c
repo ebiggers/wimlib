@@ -124,41 +124,6 @@
  * block splitting is done; only compressing the full input into an aligned
  * offset block is considered.
  *
- * API
- * ===
- *
- * The old API (retained for backward compatibility) consists of just one
- * function:
- *
- *	wimlib_lzx_compress()
- *
- * The new compressor has more potential parameters and needs more memory, so
- * the new API ties up memory allocations and compression parameters into a
- * context:
- *
- *	wimlib_lzx_alloc_context()
- *	wimlib_lzx_compress2()
- *	wimlib_lzx_free_context()
- *	wimlib_lzx_set_default_params()
- *
- * Both wimlib_lzx_compress() and wimlib_lzx_compress2() are designed to
- * compress an in-memory buffer of up to the window size, which can be any power
- * of two between 2^15 and 2^21 inclusively.  However, by default, the WIM
- * format uses 2^15, and this is seemingly the only value that is compatible
- * with WIMGAPI.  In any case, the window is not a true "sliding window" since
- * no data is ever "slid out" of the window.  This is needed for the WIM format,
- * which is designed such that chunks may be randomly accessed.
- *
- * Both wimlib_lzx_compress() and wimlib_lzx_compress2() return 0 if the data
- * could not be compressed to less than the size of the uncompressed data.
- * Again, this is suitable for the WIM format, which stores such data chunks
- * uncompressed.
- *
- * The functions in this LZX compression API are exported from the library,
- * although with the possible exception of wimlib_lzx_set_default_params(), this
- * is only in case other programs happen to have uses for it other than WIM
- * reading/writing as already handled through the rest of the library.
- *
  * Acknowledgments
  * ===============
  *

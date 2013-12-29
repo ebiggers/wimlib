@@ -1527,8 +1527,10 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 
 				/* Extract stream to temporary file.  */
 				ret = create_temporary_file(&tmpfile_fd, &tmpfile_name);
-				if (ret)
+				if (ret) {
+					lte_unbind_wim_resource_spec(needed_lte);
 					goto out_free_found_lte;
+				}
 
 				ret = extract_full_stream_to_fd(needed_lte,
 								&tmpfile_fd);

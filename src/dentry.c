@@ -1494,7 +1494,7 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 			if (ads_entry_has_name(&inode->i_ads_entries[i],
 					       stream_name_utf16le,
 					       stream_name_utf16le_nbytes,
-					       false))
+					       default_ignore_case))
 			{
 				if (idx_ret)
 					*idx_ret = i;

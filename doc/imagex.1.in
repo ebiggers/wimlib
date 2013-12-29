@@ -170,10 +170,9 @@ mounting an image from a split WIM, but Microsoft's software does not.  (Note:
 this functionality is not available in Windows builds of wimlib and
 \fB@IMAGEX_PROGNAME@\fR.)
 .SH LOCALES AND CHARACTER ENCODINGS
-WIM files themselves store file and stream names using the UTF16-LE.  On
-Windows, wimlib works in UTF-16LE, so conversions are usually necessary and
-there should be no problems with character encodings, except possibly in the XML
-data.
+WIM files themselves store file and stream names using UTF-16LE.  On Windows,
+wimlib works in UTF-16LE, so conversions are usually not necessary and there
+should be no problems with character encodings.
 .PP
 On UNIX-like systems, wimlib works primarily in the locale-dependent multibyte
 encoding, which you are strongly recommended to set to UTF-8 to avoid any
@@ -187,19 +186,19 @@ between UNIX-like systems and Windows.  WIM images may (but usually do not) have
 multiple files with the same case-insensitive name.  Internally, wimlib
 stores filenames as case-sensitive, but on Windows paths
 actually provided by the user for use in a WIM image (e.g. for extracting,
-adding, renaming, or deleting files) will be treated as case-insensitive in
-order to get the "expected" behavior. This differs from the default behavior on
-UNIX-like systems, where such paths will be treated as case-sensitive.  Note
-that with case insensitively, a path component may in general be ambiguous due
-to multiple files or directories having the same case-insensitive name.  In such
-cases, if there is a file or directory with an exactly matching name, it is
-chosen; otherwise, one of the case-insensitively matching file or directories is
-chosen arbitrarily.
+adding, renaming, or deleting files) will by default be treated as
+case-insensitive in order to get the "expected" behavior. This differs from the
+default behavior on UNIX-like systems, where such paths will be treated as
+case-sensitive.  Note that with case insensitivity, a path component may in
+general be ambiguous due to multiple files or directories having the same
+case-insensitive name.  In such cases, if there is a file or directory with an
+exactly matching name, it is chosen; otherwise, one of the case-insensitively
+matching file or directories is chosen arbitrarily.
 .PP
 The default behavior can be overwritten by explicitly setting the environmental
 variable \fBWIMLIB_IMAGEX_IGNORE_CASE\fR to 1, in which case such paths will be
 treated case insensitively, or 0, in which such paths will be treated case
-sensitsively.
+sensitively.
 .PP
 Regardless of these settings, options and non-path arguments must be specified
 in lower case.

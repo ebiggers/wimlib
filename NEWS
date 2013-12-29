@@ -38,7 +38,7 @@ Version 1.6.0:
 	WIMs, which use a larger chunk size by default.
 
 	The compression/decompression API exported by wimlib has been changed.
-	Now one set of functions support all supported compression formats.
+	Now one set of functions handles all supported compression formats.
 
 	`wimcapture' and `wimappend' will now display the progress of scanning
 	the directory tree to capture, in addition to the progress of writing
@@ -49,10 +49,10 @@ Version 1.6.0:
 	`mkwinpeimg' now correctly handles the '--start-script' option when the
 	start script is not in the working directory.
 
-	Sequential extraction, previously required by using
+	Sequential extraction, previously requested by using
 	WIMLIB_EXTRACT_FLAG_SEQUENTIAL, is now the default.
-	WIMLIB_EXTRACT_FLAG_FILE_ORDER can be used to get the old behavior
-	(extract in file order).
+	WIMLIB_EXTRACT_FLAG_FILE_ORDER can be used to get the old default
+	behavior (extract in file order).
 
 Version 1.5.3:
 	The new LZX compressor added in v1.5.2 has been improved and is now

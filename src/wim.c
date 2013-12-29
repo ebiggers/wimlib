@@ -397,7 +397,7 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 	info->image_count = wim->hdr.image_count;
 	info->boot_index = wim->hdr.boot_idx;
 	info->wim_version = wim->hdr.wim_version;
-	info->chunk_size = wim->hdr.chunk_size;
+	info->chunk_size = wim->chunk_size;
 	info->part_number = wim->hdr.part_number;
 	info->total_parts = wim->hdr.total_parts;
 	info->compression_type = wim->compression_type;
