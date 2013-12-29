@@ -181,6 +181,8 @@ read_path_list_file(const tchar *listfile,
 	if (ret)
 		return ret;
 
+	buf[buflen++] = T('\n');
+
 	ret = parse_path_list_file(buf, buflen, paths_ret, num_paths_ret);
 	if (ret) {
 		FREE(buf);
