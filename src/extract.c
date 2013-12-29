@@ -2374,7 +2374,12 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	 * directory tree.  (If not, extract_dentry_to_stdout() will
 	 * return an error.)  */
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT) {
-		ret = extract_dentry_to_stdout(ctx.extract_root);
+		ret = 0;
+		for (size_t i = 0; i < num_trees; i++) {
+			ret = extract_dentry_to_stdout(trees[i]);
+			if (ret)
+				break;
+		}
 		goto out_teardown_stream_list;
 	}
 
