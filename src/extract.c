@@ -3246,6 +3246,14 @@ wimlib_extract_paths(WIMStruct *wim,
 				~WIMLIB_EXTRACT_FLAG_GLOB_PATHS)
 				| WIMLIB_EXTRACT_FLAG_PATHMODE),
 			    progress_func);
+
+	if (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
+			     WIMLIB_EXTRACT_FLAG_HARDLINK))
+	{
+		for_lookup_table_entry(wim->lookup_table,
+				       lte_free_extracted_file,
+				       NULL);
+	}
 out_free_trees:
 	FREE(trees);
 	return ret;
