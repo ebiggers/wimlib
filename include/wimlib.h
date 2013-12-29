@@ -264,7 +264,7 @@
  *
  * wimlib_extract_paths() and wimlib_extract_pathlist() allow extracting a set
  * of paths from a WIM image in a manner that may be easier to use than
- * wimlib_extract_files(), and also can wildcard characters.
+ * wimlib_extract_files(), and also allow wildcard patterns.
  *
  * wimlib_extract_image_from_pipe() allows an image to be extracted from a
  * pipable WIM sent over a pipe; see @ref subsec_pipable_wims.
@@ -453,8 +453,8 @@ enum wimlib_progress_msg {
 	 * extracted.  @p info will point to ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END,
 
-	/** The WIM image's files resources are currently being extracted.  @p
-	 * info will point to ::wimlib_progress_info.extract. */
+	/** File data is currently being extracted.  @p info will point to
+	 * ::wimlib_progress_info.extract. */
 	WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
 
 	/** Starting to read a new part of a split pipable WIM over the pipe.
@@ -525,9 +525,7 @@ enum wimlib_progress_msg {
 	 * ::wimlib_progress_info.integrity. */
 	WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
 
-	/** Reserved.  (Previously used for WIMLIB_PROGRESS_MSG_JOIN_STREAMS,
-	 * but in wimlib v1.5.0 this was removed to simplify the code and now
-	 * you'll get ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages instead.)  */
+	/** Reserved.  */
 	WIMLIB_PROGRESS_MSG_RESERVED,
 
 	/** A wimlib_split() operation is in progress, and a new split part is
@@ -698,55 +696,80 @@ union wimlib_progress_info {
 		uint64_t num_bytes_scanned;
 	} scan;
 
-	/** Valid on messages ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
+	/** Valid on messages
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN,
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END,
-	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS, and
-	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END. */
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END,
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END, and
+	 * ::WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS.
+	 *
+	 * Note: most of the time of an extraction operation will be spent
+	 * extracting streams, and the application will receive
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS during this time.  Using @p
+	 * completed_bytes and @p total_bytes, the application can calculate a
+	 * percentage complete.  However, note that this message does not, in
+	 * general, actually provide information about which "file" is currently
+	 * being extracted.  This is because wimlib, by default, extracts the
+	 * individual data streams in whichever order it determines to be the
+	 * most efficient.  */
 	struct wimlib_progress_info_extract {
-		/** Number of the image being extracted (1-based). */
+		/** Number of the image from which files are being extracted
+		 * (1-based).  */
 		int image;
 
-		/** Flags passed to to wimlib_extract_image() */
+		/** Extraction flags being used.  */
 		int extract_flags;
 
-		/** Full path to the WIM file being extracted. */
+		/** Full path to the WIM file from which files are being
+		 * extracted, or @c NULL if the WIMStruct has no associated
+		 * on-disk file.  */
 		const wimlib_tchar *wimfile_name;
 
-		/** Name of the image being extracted. */
+		/** Name of the image from which files are being extracted, or
+		 * the empty string if the image is unnamed.  */
 		const wimlib_tchar *image_name;
 
-		/** Directory or NTFS volume to which the image is being
-		 * extracted. */
+		/** Path to the directory or NTFS volume to which the files are
+		 * being extracted.  */
 		const wimlib_tchar *target;
 
 		/** Reserved.  */
-		const wimlib_tchar *cur_path;
+		const wimlib_tchar *reserved;
 
 		/** Number of bytes of uncompressed data that will be extracted.
-		 * Takes into account hard links (they are not counted for each
-		 * link.)  */
+		 * If a file has multiple names (hard links), its size (or
+		 * sizes, in the case of named data streams) is only counted one
+		 * time.  For "reparse points" and symbolic links, the size to
+		 * be extracted is the size of the reparse data buffer.
+		 *
+		 * This number will stay constant throughout the extraction.  */
 		uint64_t total_bytes;
 
-		/** Number of bytes that have been written so far.  Will be 0
-		 * initially, and equal to @p total_bytes at the end. */
+		/** Number of bytes of uncompressed data that have been
+		 * extracted so far.  This initially be 0 and will equal to @p
+		 * total_bytes at the end of the extraction.  */
 		uint64_t completed_bytes;
 
-		/** Number of streams that will be extracted.  This may more or
-		 * less than the number of "files" to be extracted due to
-		 * special cases (hard links, symbolic links, and alternate data
-		 * streams.) */
+		/** Number of (not necessarily unique) streams that will be
+		 * extracted.  This may be more or less than the number of
+		 * "files" to be extracted due to hard links as well as
+		 * potentially multiple streams per file (named data streams).
+		 * A "stream" may be the default contents of a file, a named
+		 * data stream, or a reparse data buffer.  */
 		uint64_t num_streams;
 
-		/** Path to the root dentry within the WIM for the tree that is
-		 * being extracted.  Will be the empty string when extracting a
-		 * full image, or when extracting a set of paths using
-		 * wimlib_extract_paths() or wimlib_extract_pathlist().  */
+		/** When extracting files using wimlib_extract_files(), this
+		 * will be the path within the WIM image to the file or
+		 * directory tree currently being extracted.  Otherwise, this
+		 * will be the empty string.  */
 		const wimlib_tchar *extract_root_wim_source_path;
 
 		/** Currently only used for
 		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.  */
-
 		unsigned part_number;
 
 		/** Currently only used for
