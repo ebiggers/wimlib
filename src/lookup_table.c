@@ -619,7 +619,7 @@ read_wim_lookup_table(WIMStruct *wim)
 		if (cur_entry == NULL) {
 			ERROR("Not enough memory to read lookup table!");
 			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_lookup_table;
+			goto err;
 		}
 
 		part_number = le16_to_cpu(disk_entry->part_number);
@@ -639,7 +639,7 @@ read_wim_lookup_table(WIMStruct *wim)
 			if (reshdr.uncompressed_size != reshdr.size_in_wim) {
 				ERROR("Invalid resource entry!");
 				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-				goto out_free_cur_entry;
+				goto err;
 			}
 		}
 
@@ -663,12 +663,11 @@ read_wim_lookup_table(WIMStruct *wim)
 							struct wim_lookup_table_entry,
 							rspec_node);
 				lte_unbind_wim_resource_spec(prev_entry);
-				cur_rspec->uncompressed_size -= prev_entry->size;
 			}
 			if (cur_rspec != NULL) {
 				ret = validate_resource(cur_rspec);
 				if (ret)
-					goto out_free_cur_entry;
+					goto err;
 			}
 
 			/* Allocate the resource specification and initialize it
@@ -677,7 +676,7 @@ read_wim_lookup_table(WIMStruct *wim)
 			if (cur_rspec == NULL) {
 				ERROR("Not enough memory to read lookup table!");
 				ret = WIMLIB_ERR_NOMEM;
-				goto out_free_cur_entry;
+				goto err;
 			}
 			wim_res_hdr_to_spec(&reshdr, wim, cur_rspec);
 
@@ -691,10 +690,8 @@ read_wim_lookup_table(WIMStruct *wim)
 				cur_rspec->offset_in_wim = 0;
 			}
 
-			if (prev_entry) {
+			if (prev_entry)
 				lte_bind_wim_resource_spec(prev_entry, cur_rspec);
-				cur_rspec->uncompressed_size = prev_entry->size;
-			}
 		}
 
 		if ((reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
@@ -704,8 +701,19 @@ read_wim_lookup_table(WIMStruct *wim)
 			 * Transfer the values to the `struct
 			 * wim_resource_spec', and discard the current stream
 			 * since this lookup table entry did not, in fact,
-			 * correspond to a "stream".  */
+			 * correspond to a "stream".
+			 */
 
+			/* Uncompressed size of the resource pack is actually
+			 * stored in the header of the resource itself.  */
+			struct alt_chunk_table_header_disk hdr;
+
+			ret = full_pread(&wim->in_fd, &hdr,
+					 sizeof(hdr), reshdr.offset_in_wim);
+			if (ret)
+				goto err;
+
+			cur_rspec->uncompressed_size = le64_to_cpu(hdr.res_usize);
 			cur_rspec->offset_in_wim = reshdr.offset_in_wim;
 			cur_rspec->size_in_wim = reshdr.size_in_wim;
 			cur_rspec->flags = reshdr.flags;
@@ -725,10 +733,10 @@ read_wim_lookup_table(WIMStruct *wim)
 
 		if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 			/* Continuing the pack with another stream.  */
-			DEBUG("Continuing packed run with stream: "
-			      "%"PRIu64" uncompressed bytes @ resource offset %"PRIu64")",
+			DEBUG("Continuing pack with stream: "
+			      "%"PRIu64" uncompressed bytes @ "
+			      "resource offset %"PRIu64")",
 			      reshdr.size_in_wim, reshdr.offset_in_wim);
-			cur_rspec->uncompressed_size += reshdr.size_in_wim;
 		}
 
 		lte_bind_wim_resource_spec(cur_entry, cur_rspec);
@@ -766,7 +774,7 @@ read_wim_lookup_table(WIMStruct *wim)
 					print_lookup_table_entry(cur_entry, stderr);
 				}
 				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-				goto out_free_cur_entry;
+				goto err;
 			}
 
 			if (wim->hdr.part_number != 1) {
@@ -820,12 +828,13 @@ read_wim_lookup_table(WIMStruct *wim)
 		 * its SHA1 message digest.  */
 		lookup_table_insert(table, cur_entry);
 	}
+	cur_entry = NULL;
 
 	/* Validate the last resource.  */
 	if (cur_rspec != NULL) {
 		ret = validate_resource(cur_rspec);
 		if (ret)
-			goto out_free_lookup_table;
+			goto err;
 	}
 
 	if (wim->hdr.part_number == 1 && wim->current_image != wim->hdr.image_count) {
@@ -843,9 +852,10 @@ read_wim_lookup_table(WIMStruct *wim)
 	ret = 0;
 	goto out_free_buf;
 
-out_free_cur_entry:
+err:
+	if (cur_rspec && list_empty(&cur_rspec->stream_list))
+		FREE(cur_rspec);
 	free_lookup_table_entry(cur_entry);
-out_free_lookup_table:
 	free_lookup_table(table);
 out_free_buf:
 	FREE(buf);
