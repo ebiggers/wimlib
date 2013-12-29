@@ -2503,9 +2503,12 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		goto out_free_realtarget;
 
 	if (progress_func) {
-		progress_func(*wim_source_path ? WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END :
-			      WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END,
-			      &ctx.progress);
+		int msg;
+		if (*wim_source_path || (extract_flags & WIMLIB_EXTRACT_FLAG_PATHMODE))
+			msg = WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END;
+		else
+			msg = WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END;
+		progress_func(msg, &ctx.progress);
 	}
 
 	do_extract_warnings(&ctx);
