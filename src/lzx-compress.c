@@ -1199,7 +1199,8 @@ lzx_lz_get_matches_caching(struct lzx_compressor *ctx,
 }
 
 static u32
-lzx_get_prev_literal_cost(struct lzx_compressor *ctx)
+lzx_get_prev_literal_cost(struct lzx_compressor *ctx,
+			  struct lzx_lru_queue *queue)
 {
 	return lzx_literal_cost(ctx->window[ctx->match_window_pos - 1],
 				&ctx->costs);

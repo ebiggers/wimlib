@@ -195,9 +195,11 @@ typedef u32 (*lz_get_matches_t)(LZ_COMPRESSOR *ctx,
 typedef void (*lz_skip_bytes_t)(LZ_COMPRESSOR *ctx, input_idx_t n);
 
 /* Get the cost of the literal located at the position at which matches have
- * most recently been searched.  Note: this currently assumes that literals do
- * not affect the LZ_FORMAT_STATE.  */
-typedef u32 (lz_get_prev_literal_cost_t)(LZ_COMPRESSOR *ctx);
+ * most recently been searched.  This can optionally update the @state to take
+ * into account format-dependent state that affects match costs, such as repeat
+ * offsets.  */
+typedef u32 (lz_get_prev_literal_cost_t)(LZ_COMPRESSOR *ctx,
+					 LZ_FORMAT_STATE *state);
 
 /* Get the cost of a match.  This can optionally update the @state to take into
  * account format-dependent state that affects match costs, such as repeat
@@ -294,7 +296,7 @@ lz_get_near_optimal_match(struct lz_match_chooser *mc,
 	 * literal.  */
 	mc->optimum[0].state = *initial_state;
 	mc->optimum[1].state = mc->optimum[0].state;
-	mc->optimum[1].cost = (*get_prev_literal_cost)(ctx);
+	mc->optimum[1].cost = (*get_prev_literal_cost)(ctx, &mc->optimum[1].state);
 	mc->optimum[1].prev.link = 0;
 
 	/* Calculate the cost to reach any position up to and including that
@@ -364,12 +366,14 @@ lz_get_near_optimal_match(struct lz_match_chooser *mc,
 
 		/* Consider proceeding with a literal byte.  */
 		lz_mc_cost_t cur_cost = mc->optimum[cur_pos].cost;
+		LZ_FORMAT_STATE cur_plus_literal_state = mc->optimum[cur_pos].state;
 		lz_mc_cost_t cur_plus_literal_cost = cur_cost +
-				(*get_prev_literal_cost)(ctx);
+				(*get_prev_literal_cost)(ctx,
+							 &cur_plus_literal_state);
 		if (cur_plus_literal_cost < mc->optimum[cur_pos + 1].cost) {
 			mc->optimum[cur_pos + 1].cost = cur_plus_literal_cost;
 			mc->optimum[cur_pos + 1].prev.link = cur_pos;
-			mc->optimum[cur_pos + 1].state = mc->optimum[cur_pos].state;
+			mc->optimum[cur_pos + 1].state = cur_plus_literal_state;
 		}
 
 		if (num_possible_matches == 0)
@@ -383,7 +387,7 @@ lz_get_near_optimal_match(struct lz_match_chooser *mc,
 		for (input_idx_t len = 2, match_idx = num_possible_matches - 1;
 		     len <= new_len; len++)
 		{
-			LZX_ASSERT(match_idx < num_possible_matches);
+			LZ_ASSERT(match_idx < num_possible_matches);
 
 			LZ_FORMAT_STATE state = mc->optimum[cur_pos].state;
 			lz_mc_cost_t cost;

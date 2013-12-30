@@ -129,6 +129,12 @@ extern void
 lzms_init_lru_queues(struct lzms_lru_queues *lru);
 
 extern void
+lzms_update_lz_lru_queues(struct lzms_lz_lru_queues *lz);
+
+extern void
+lzms_update_delta_lru_queues(struct lzms_delta_lru_queues *delta);
+
+extern void
 lzms_update_lru_queues(struct lzms_lru_queues *lru);
 
 #endif /* _WIMLIB_LZMS_H  */

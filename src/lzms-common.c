@@ -290,7 +290,7 @@ lzms_init_lru_queues(struct lzms_lru_queues *lru)
         lzms_init_delta_lru_queues(&lru->delta);
 }
 
-static void
+void
 lzms_update_lz_lru_queues(struct lzms_lz_lru_queues *lz)
 {
 	if (lz->prev_offset != 0) {
@@ -301,7 +301,7 @@ lzms_update_lz_lru_queues(struct lzms_lz_lru_queues *lz)
 	lz->prev_offset = lz->upcoming_offset;
 }
 
-static void
+void
 lzms_update_delta_lru_queues(struct lzms_delta_lru_queues *delta)
 {
 	if (delta->prev_offset != 0) {

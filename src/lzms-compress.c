@@ -49,6 +49,17 @@
 
 #define LZMS_OPTIM_ARRAY_SIZE	1024
 
+struct lzms_compressor;
+struct lzms_cost_state {
+	struct lzms_lz_lru_queues lru;
+	u8 main_state;
+	u8 match_state;
+	u8 lz_match_state;
+};
+#define LZ_FORMAT_STATE struct lzms_cost_state
+#define LZ_COMPRESSOR	struct lzms_compressor
+#include "wimlib/lz_optimal.h"
+
 /* Stucture used for writing raw bits to the end of the LZMS-compressed data as
  * a series of 16-bit little endian coding units.  */
 struct lzms_output_bitstream {
@@ -179,6 +190,11 @@ struct lzms_compressor {
 
 	/* Suffix array match-finder.  */
 	struct lz_sarray lz_sarray;
+
+	struct raw_match matches[64];
+
+	/* Match-chooser.  */
+	struct lz_match_chooser mc;
 
 	/* Maximum block size this compressor instantiation allows.  This is the
 	 * allocated size of @window.  */
@@ -508,6 +524,10 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 {
 	int recent_offset_idx;
 
+	LZMS_ASSERT(!memcmp(&ctx->window[ctx->cur_window_pos],
+			    &ctx->window[ctx->cur_window_pos - offset],
+			    length));
+
 	lzms_begin_encode_item(ctx);
 
 	LZMS_DEBUG("Position %u: Encoding LZ match {length=%u, offset=%u}",
@@ -608,16 +628,13 @@ lzms_fast_encode(struct lzms_compressor *ctx)
 }
 
 /* Fast heuristic cost evaluation to use in the inner loop of the match-finder.
- * Unlike lzms_match_cost() which does a true cost evaluation, this simply
+ * Unlike lzms_get_match_cost(), which does a true cost evaluation, this simply
  * prioritize matches based on their offset.  */
 static input_idx_t
 lzms_match_cost_fast(input_idx_t length, input_idx_t offset, const void *_lru)
 {
 	const struct lzms_lz_lru_queues *lru = _lru;
 
-
-	/* It seems well worth it to take the time to give priority to recently
-	 * used offsets.  */
 	for (input_idx_t i = 0; i < LZMS_NUM_RECENT_OFFSETS; i++)
 		if (offset == lru->recent_offsets[i])
 			return i;
@@ -625,36 +642,179 @@ lzms_match_cost_fast(input_idx_t length, input_idx_t offset, const void *_lru)
 	return offset;
 }
 
+static u32
+lzms_rc_bit_cost(const struct lzms_range_encoder *enc, u8 *cur_state, int bit)
+{
+	u32 prob;
+	u32 cost;
+
+	prob = enc->prob_entries[*cur_state & enc->mask].num_recent_zero_bits;
+	if (prob == 0)
+		prob = 1;
+	else if (prob == LZMS_PROBABILITY_MAX)
+		prob = LZMS_PROBABILITY_MAX - 1;
+
+	if (bit == 0)
+		prob = LZMS_PROBABILITY_MAX - prob;
+
+	cost = prob * 2; /* TODO */
+
+	*cur_state = (*cur_state << 1) | bit;
+
+	return cost;
+}
+
+#define LZMS_COST_SCALE 64
+
+static u32
+lzms_huffman_symbol_cost(const struct lzms_huffman_encoder *enc, u32 sym)
+{
+	return enc->lens[sym] * LZMS_COST_SCALE;
+}
+
+static u32
+lzms_value_cost(const struct lzms_huffman_encoder *enc, u32 value)
+{
+	u32 slot;
+	u32 num_extra_bits;
+	u32 cost = 0;
+
+	slot = lzms_get_slot(value, enc->slot_base_tab, enc->num_syms);
+
+	cost += lzms_huffman_symbol_cost(enc, slot);
+
+	num_extra_bits = bsr32(enc->slot_base_tab[slot + 1] -
+			       enc->slot_base_tab[slot]);
+
+	cost += num_extra_bits * LZMS_COST_SCALE;
+
+	return cost;
+}
+
+static u32
+lzms_get_matches(struct lzms_compressor *ctx,
+		 const struct lzms_cost_state *cost_state,
+		 struct raw_match **matches_ret)
+{
+	u32 num_matches;
+	struct raw_match *matches = ctx->matches;
+
+	num_matches = lz_sarray_get_matches(&ctx->lz_sarray,
+					    matches,
+					    lzms_match_cost_fast,
+					    &cost_state->lru);
+
+#ifdef ENABLE_LZMS_DEBUG
+	u32 curpos = lz_sarray_get_pos(&ctx->lz_sarray) - 1;
+	LZMS_ASSERT(curpos >= 0);
+	for (u32 i = 0; i < num_matches; i++) {
+		LZMS_ASSERT(matches[i].len <= ctx->window_size - curpos);
+		LZMS_ASSERT(matches[i].offset > 0);
+		LZMS_ASSERT(matches[i].offset <= curpos);
+		LZMS_ASSERT(!memcmp(&ctx->window[curpos],
+				    &ctx->window[curpos - matches[i].offset],
+				    matches[i].len));
+		if (i > 0)
+			LZMS_ASSERT(matches[i - 1].len > matches[i].len);
+
+	}
+#endif
+
+	*matches_ret = matches;
+	return num_matches;
+}
+
 static void
-lzms_lz_skip_bytes(struct lzms_compressor *ctx, u32 n)
+lzms_skip_bytes(struct lzms_compressor *ctx, input_idx_t n)
 {
 	while (n--)
 		lz_sarray_skip_position(&ctx->lz_sarray);
 }
 
+static u32
+lzms_get_prev_literal_cost(struct lzms_compressor *ctx,
+			   struct lzms_cost_state *cost_state)
+{
+	u8 literal = ctx->window[lz_sarray_get_pos(&ctx->lz_sarray) - 1];
+	u32 cost = 0;
+
+	cost_state->lru.upcoming_offset = 0;
+	lzms_update_lz_lru_queues(&cost_state->lru);
+
+	cost += lzms_rc_bit_cost(&ctx->main_range_encoder,
+				 &cost_state->main_state, 0);
+	cost += lzms_huffman_symbol_cost(&ctx->literal_encoder, literal);
+
+	return cost;
+}
+
+static u32
+lzms_get_match_cost(struct lzms_compressor *ctx,
+		    struct lzms_cost_state *cost_state,
+		    input_idx_t length, input_idx_t offset)
+{
+	u32 cost = 0;
+	int recent_offset_idx;
+
+	cost += lzms_rc_bit_cost(&ctx->main_range_encoder,
+				 &cost_state->main_state, 1);
+	cost += lzms_rc_bit_cost(&ctx->match_range_encoder,
+				 &cost_state->match_state, 0);
+
+	for (recent_offset_idx = 0;
+	     recent_offset_idx < LZMS_NUM_RECENT_OFFSETS;
+	     recent_offset_idx++)
+		if (offset == cost_state->lru.recent_offsets[recent_offset_idx])
+			break;
+
+	if (recent_offset_idx == LZMS_NUM_RECENT_OFFSETS) {
+		/* Explicit offset.  */
+		cost += lzms_rc_bit_cost(&ctx->lz_match_range_encoder,
+					 &cost_state->lz_match_state, 0);
+
+		cost += lzms_value_cost(&ctx->lz_offset_encoder, offset);
+	} else {
+		int i;
+
+		/* Repeat offset.  */
+		cost += lzms_rc_bit_cost(&ctx->lz_match_range_encoder,
+					 &cost_state->lz_match_state, 1);
+
+		for (i = 0; i < recent_offset_idx; i++)
+			cost++; /* TODO */
+
+		if (i < LZMS_NUM_RECENT_OFFSETS - 1)
+			cost++; /* TODO */
+
+		/* Initial update of the LZ match offset LRU queue.  */
+		for (; i < LZMS_NUM_RECENT_OFFSETS; i++)
+			cost_state->lru.recent_offsets[i] = cost_state->lru.recent_offsets[i + 1];
+	}
+
+	cost += lzms_value_cost(&ctx->length_encoder, length);
+
+	cost_state->lru.upcoming_offset = offset;
+	lzms_update_lz_lru_queues(&cost_state->lru);
+
+	return cost;
+}
+
 static struct raw_match
 lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 {
-	struct raw_match matches[10];
-	u32 num_matches;
-
-	num_matches = lz_sarray_get_matches(&ctx->lz_sarray,
-					    matches,
-					    lzms_match_cost_fast,
-					    &ctx->lru.lz);
-	if (num_matches == 0)
-		return (struct raw_match) { .len = 0 };
-
-#if 0
-	fprintf(stderr, "Pos %u/%u: %u matches\n",
-		lz_sarray_get_pos(&ctx->lz_sarray) - 1,
-		ctx->window_size, num_matches);
-	for (u32 i = 0; i < num_matches; i++)
-		fprintf(stderr, "\tLen %u Offset %u\n", matches[i].len, matches[i].offset);
-#endif
-
-	lzms_lz_skip_bytes(ctx, matches[0].len - 1);
-	return matches[0];
+	struct lzms_cost_state initial_state = {
+		.lru = ctx->lru.lz,
+		.main_state = ctx->main_range_encoder.state,
+		.match_state = ctx->match_range_encoder.state,
+		.lz_match_state = ctx->lz_match_range_encoder.state,
+	};
+	return lz_get_near_optimal_match(&ctx->mc,
+					 lzms_get_matches,
+					 lzms_skip_bytes,
+					 lzms_get_prev_literal_cost,
+					 lzms_get_match_cost,
+					 ctx,
+					 &initial_state);
 }
 
 static void
@@ -665,11 +825,14 @@ lzms_slow_encode(struct lzms_compressor *ctx)
 	/* Load window into suffix array match-finder.  */
 	lz_sarray_load_window(&ctx->lz_sarray, ctx->window, ctx->window_size);
 
+	/* Reset the match-chooser.  */
+	lz_match_chooser_begin(&ctx->mc);
+
 	/* TODO */
 	while (ctx->cur_window_pos != ctx->window_size) {
 
 		match = lzms_get_near_optimal_match(ctx);
-		if (match.len == 0) {
+		if (match.len <= 1) {
 			/* Literal  */
 			lzms_encode_literal(ctx, ctx->window[ctx->cur_window_pos]);
 		} else {
@@ -942,6 +1105,7 @@ lzms_free_compressor(void *_ctx)
 		FREE(ctx->window);
 		FREE(ctx->prev_tab);
 		lz_sarray_destroy(&ctx->lz_sarray);
+		lz_match_chooser_destroy(&ctx->mc);
 		FREE(ctx);
 	}
 }
@@ -978,6 +1142,11 @@ lzms_create_compressor(size_t max_block_size,
 			    10))
 		goto oom;
 
+	if (!lz_match_chooser_init(&ctx->mc,
+				   LZMS_OPTIM_ARRAY_SIZE,
+				   32,
+				   max_block_size))
+		goto oom;
 
 	ctx->max_block_size = max_block_size;
 
