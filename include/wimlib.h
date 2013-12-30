@@ -491,9 +491,8 @@ enum wimlib_progress_msg {
 	 * ::wimlib_progress_info.scan. */
 	WIMLIB_PROGRESS_MSG_SCAN_END,
 
-	/**
-	 * File resources are currently being written to the WIM.
-	 * @p info will point to ::wimlib_progress_info.write_streams. */
+	/** File resources ("streams") are currently being written to the WIM.
+	 * @p info will point to ::wimlib_progress_info.write_streams.  */
 	WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
 
 	/**
@@ -561,43 +560,83 @@ union wimlib_progress_info {
 	/* N.B. I wanted these to be anonymous structs, but Doxygen won't
 	 * document them if they aren't given a name... */
 
-	/** Valid on messages ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS. */
+	/** Valid on the message ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS.  This is
+	 * the primary message for tracking the progress of writing a WIM file.
+	 */
 	struct wimlib_progress_info_write_streams {
-		/** Number of bytes that are going to be written for all the
-		 * streams combined.  This is the amount in uncompressed data.
-		 * (The actual number of bytes will be less if the data is being
-		 * written compressed.) */
+		/** Total number of uncompressed bytes of stream data being
+		 * written.  This can be thought of as the total uncompressed
+		 * size of the files being archived, with some caveats.  WIM
+		 * files use single-instance streams, so the size provided here
+		 * only counts distinct streams, except for the following
+		 * exception: the size provided here may include the sizes of
+		 * all newly added (e.g. with wimlib_add_image() streams,
+		 * pending automatic de-duplication during the write operation
+		 * itself.  When each such stream de-duplication occurs, this
+		 * number will be decreased by the size of the duplicate stream
+		 * that need not be written.
+		 *
+		 * In the case of a wimlib_overwrite() that the library opted to
+		 * perform in-place, both @p total_streams and @p total_bytes
+		 * will only count the streams actually being written and not
+		 * pre-existing streams in the WIM file.  */
 		uint64_t total_bytes;
 
-		/** Number of streams that are going to be written. */
+		/** Total number of streams being written.  This can be thought
+		 * of as the total number of files being archived, with some
+		 * caveats.  In general, a single file or directory may contain
+		 * multiple data streams, each of which will be represented
+		 * separately in this number.  Furthermore, WIM files use
+		 * single-instance streams, so the stream count provided here
+		 * only counts distinct streams, except for the following
+		 * exception: the stream count provided here may include newly
+		 * added (e.g. with wimlib_add_image() streams, pending
+		 * automatic de-duplication during the write operation itself.
+		 * When each such stream de-duplication occurs, this number will
+		 * be decreased by 1 to account for the duplicate stream that
+		 * need not be written.  */
 		uint64_t total_streams;
 
-		/** Number of uncompressed bytes that have been written so far.
-		 * Will be 0 initially, and equal to @p total_bytes at the end.
-		 * */
+		/** Number of uncompressed bytes of stream data that have been
+		 * written so far.  This number be 0 initially, and will be
+		 * equal to @p total_bytes at the end of the write operation.
+		 * Note that @p total_bytes (but not @p completed_bytes) may
+		 * decrease throughout the write operation due to the discovery
+		 * of stream duplications.  */
 		uint64_t completed_bytes;
 
-		/** Number of streams that have been written.  Will be 0
-		 * initially, and equal to @p total_streams at the end. */
+		/** Number of streams that have been written so far.  This
+		 * number will be 0 initially, and will be equal to @p
+		 * total_streams at the end of the write operation.  Note that
+		 * @p total_streams (but not @p completed_streams) may decrease
+		 * throughout the write operation due to the discovery of stream
+		 * duplications.
+		 *
+		 * For applications that wish to calculate a simple "percent
+		 * complete" for the write operation, it will likely be more
+		 * accurate to calculate the percentage from @p completed_bytes
+		 * and @p total_bytes rather than @p completed_streams and
+		 * @p total_streams because the time for the operation to
+		 * complete is mainly determined by the number of bytes that
+		 * need to be read, compressed, and written, not just the number
+		 * of files being archived.  */
 		uint64_t completed_streams;
 
-		/** Number of threads that are being used to compress resources
-		 * (if applicable).  */
-		unsigned num_threads;
+		/** Number of threads that are being used to compress streams,
+		 * or 1 if streams are being written uncompressed.  */
+		uint32_t num_threads;
 
-		/** The compression type being used to write the streams; either
-		 * ::WIMLIB_COMPRESSION_TYPE_NONE,
-		 * ::WIMLIB_COMPRESSION_TYPE_XPRESS, or
-		 * ::WIMLIB_COMPRESSION_TYPE_LZX. */
-		int	 compression_type;
+		/** The compression type being used to write the streams, as one
+		 * of the ::wimlib_compression_type constants.  */
+		int32_t	 compression_type;
 
 		/** Number of split WIM parts from which streams are being
 		 * written (may be 0 if irrelevant).  */
-		unsigned total_parts;
+		uint32_t total_parts;
 
 		/** Number of split WIM parts from which streams have been
 		 * written (may be 0 if irrelevant).  */
-		unsigned completed_parts;
+		uint32_t completed_parts;
 	} write_streams;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN,

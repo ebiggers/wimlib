@@ -282,23 +282,27 @@ struct write_streams_progress_data {
 
 static void
 do_write_streams_progress(struct write_streams_progress_data *progress_data,
-			  u64 size,
-			  bool discarded,
-			  struct wim_lookup_table_entry *cur_stream)
+			  struct wim_lookup_table_entry *cur_stream,
+			  u64 complete_size,
+			  u32 complete_count,
+			  bool discarded)
 {
 	union wimlib_progress_info *progress = &progress_data->progress;
 	bool new_wim_part;
 
 	if (discarded) {
-		progress->write_streams.total_bytes -= size;
+		progress->write_streams.total_bytes -= complete_size;
+		progress->write_streams.total_streams -= complete_count;
 		if (progress_data->next_progress != ~(uint64_t)0 &&
 		    progress_data->next_progress > progress->write_streams.total_bytes)
 		{
 			progress_data->next_progress = progress->write_streams.total_bytes;
 		}
 	} else {
-		progress->write_streams.completed_bytes += size;
+		progress->write_streams.completed_bytes += complete_size;
+		progress->write_streams.completed_streams += complete_count;
 	}
+
 	new_wim_part = false;
 	if (cur_stream->resource_location == RESOURCE_IN_WIM &&
 	    cur_stream->rspec->wim != progress_data->prev_wim_part)
@@ -309,7 +313,7 @@ do_write_streams_progress(struct write_streams_progress_data *progress_data,
 		}
 		progress_data->prev_wim_part = cur_stream->rspec->wim;
 	}
-	progress->write_streams.completed_streams++;
+
 	if (progress_data->progress_func
 	    && (progress->write_streams.completed_bytes >= progress_data->next_progress
 		|| new_wim_part))
@@ -368,20 +372,24 @@ struct write_streams_ctx {
 	/* List of streams that currently have chunks being compressed.  */
 	struct list_head pending_streams;
 
+	/* List of streams in the resource pack.  Streams are moved here after
+	 * @pending_streams only when writing a packed resource.  */
+	struct list_head pack_streams;
+
 	/* Set to true if the stream currently being read was a duplicate, and
 	 * therefore the corresponding stream entry needs to be freed once the
 	 * read finishes.  (In this case we add the duplicate entry to
 	 * pending_streams rather than the entry being read.)  */
 	bool stream_was_duplicate;
 
-	/* Current uncompressed offset in the resource being read.  */
-	u64 cur_read_res_offset;
+	/* Current uncompressed offset in the stream being read.  */
+	u64 cur_read_stream_offset;
 
-	/* Uncompressed size of the resource currently being read.  */
-	u64 cur_read_res_size;
+	/* Uncompressed size of the stream currently being read.  */
+	u64 cur_read_stream_size;
 
-	/* Current uncompressed offset in the resource being written.  */
-	u64 cur_write_res_offset;
+	/* Current uncompressed offset in the stream being written.  */
+	u64 cur_write_stream_offset;
 
 	/* Uncompressed size of resource currently being written.  */
 	u64 cur_write_res_size;
@@ -489,7 +497,7 @@ begin_write_resource(struct write_streams_ctx *ctx, u64 res_expected_size)
 	/* Output file descriptor is now positioned at the offset at which to
 	 * write the first chunk of the resource.  */
 	ctx->chunks_start_offset = ctx->out_fd->offset;
-	ctx->cur_write_res_offset = 0;
+	ctx->cur_write_stream_offset = 0;
 	ctx->cur_write_res_size = res_expected_size;
 	return 0;
 }
@@ -607,7 +615,8 @@ end_write_resource(struct write_streams_ctx *ctx, struct wim_reshdr *out_reshdr)
 	u64 res_uncompressed_size;
 	u64 res_offset_in_wim;
 
-	wimlib_assert(ctx->cur_write_res_size == ctx->cur_write_res_offset);
+	wimlib_assert(ctx->cur_write_stream_offset == ctx->cur_write_res_size ||
+		      (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS));
 	res_uncompressed_size = ctx->cur_write_res_size;
 
 	if (ctx->compressor) {
@@ -637,8 +646,8 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 
 	wimlib_assert(lte->size > 0);
 
-	ctx->cur_read_res_offset = 0;
-	ctx->cur_read_res_size = lte->size;
+	ctx->cur_read_stream_offset = 0;
+	ctx->cur_read_stream_size = lte->size;
 
 	/* As an optimization, we allow some streams to be "unhashed", meaning
 	 * their SHA1 message digests are unknown.  This is the case with
@@ -676,7 +685,8 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 				DEBUG("Discarding duplicate stream of "
 				      "length %"PRIu64, lte->size);
 				do_write_streams_progress(&ctx->progress_data,
-							  lte->size, true, lte);
+							  lte, lte->size,
+							  1, true);
 				list_del(&lte->write_streams_list);
 				list_del(&lte->lookup_table_list);
 				if (lte_new->will_be_in_output_wim)
@@ -766,11 +776,13 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 	int ret;
 
 	struct wim_lookup_table_entry *lte;
+	u32 completed_stream_count;
+	u32 completed_size;
 
 	lte = list_entry(ctx->pending_streams.next,
 			 struct wim_lookup_table_entry, write_streams_list);
 
-	if (ctx->cur_write_res_offset == 0 &&
+	if (ctx->cur_write_stream_offset == 0 &&
 	    !(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS))
 	{
 		/* Starting to write a new stream in non-packed mode.  */
@@ -817,51 +829,82 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 	if (ret)
 		goto error;
 
-	ctx->cur_write_res_offset += usize;
+	ctx->cur_write_stream_offset += usize;
 
-	do_write_streams_progress(&ctx->progress_data,
-				  usize, false, lte);
+	completed_size = usize;
+	completed_stream_count = 0;
+	if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
+		/* Wrote chunk in packed mode.  It may have finished multiple
+		 * streams.  */
+		while (ctx->cur_write_stream_offset > lte->size) {
+			struct wim_lookup_table_entry *next;
 
-	if (ctx->cur_write_res_offset == ctx->cur_write_res_size &&
-	    !(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS))
-	{
-		wimlib_assert(ctx->cur_write_res_offset == lte->size);
+			ctx->cur_write_stream_offset -= lte->size;
 
-		/* Finished writing a stream in non-packed mode.  */
+			wimlib_assert(!list_is_singular(&ctx->pending_streams) &&
+				      !list_empty(&ctx->pending_streams));
+			next = list_entry(lte->write_streams_list.next,
+					  struct wim_lookup_table_entry,
+					  write_streams_list);
+			list_move_tail(&lte->write_streams_list,
+				       &ctx->pack_streams);
+			lte = next;
+			completed_stream_count++;
+		}
+		if (ctx->cur_write_stream_offset == lte->size) {
+			ctx->cur_write_stream_offset = 0;
+			list_move_tail(&lte->write_streams_list,
+				       &ctx->pack_streams);
+			completed_stream_count++;
+		}
+	} else {
+		/* Wrote chunk in non-packed mode.  It may have finished a
+		 * stream.  */
+		if (ctx->cur_write_stream_offset == lte->size) {
 
-		ret = end_write_resource(ctx, &lte->out_reshdr);
-		if (ret)
-			return ret;
+			completed_stream_count++;
 
-		lte->out_reshdr.flags = filter_resource_flags(lte->flags);
-		if (ctx->compressor != NULL)
-			lte->out_reshdr.flags |= WIM_RESHDR_FLAG_COMPRESSED;
+			list_del(&lte->write_streams_list);
 
-		if (ctx->compressor != NULL &&
-		    lte->out_reshdr.size_in_wim >= lte->out_reshdr.uncompressed_size &&
-		    !(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) &&
-		    !(lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS))
-		{
-			/* Stream did not compress to less than its original
-			 * size.  If we're not writing a pipable WIM (which
-			 * could mean the output file descriptor is
-			 * non-seekable), and the stream isn't located in a
-			 * resource pack (which would make reading it again
-			 * costly), truncate the file to the start of the stream
-			 * and write it uncompressed instead.  */
-			DEBUG("Stream of size %"PRIu64" did not compress to "
-			      "less than original size; writing uncompressed.",
-			      lte->size);
-			ret = write_stream_uncompressed(lte, ctx->out_fd);
+			wimlib_assert(ctx->cur_write_stream_offset ==
+				      ctx->cur_write_res_size);
+
+			ret = end_write_resource(ctx, &lte->out_reshdr);
 			if (ret)
 				return ret;
+
+			lte->out_reshdr.flags = filter_resource_flags(lte->flags);
+			if (ctx->compressor != NULL)
+				lte->out_reshdr.flags |= WIM_RESHDR_FLAG_COMPRESSED;
+
+			if (ctx->compressor != NULL &&
+			    lte->out_reshdr.size_in_wim >= lte->out_reshdr.uncompressed_size &&
+			    !(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) &&
+			    !(lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS))
+			{
+				/* Stream did not compress to less than its original
+				 * size.  If we're not writing a pipable WIM (which
+				 * could mean the output file descriptor is
+				 * non-seekable), and the stream isn't located in a
+				 * resource pack (which would make reading it again
+				 * costly), truncate the file to the start of the stream
+				 * and write it uncompressed instead.  */
+				DEBUG("Stream of size %"PRIu64" did not compress to "
+				      "less than original size; writing uncompressed.",
+				      lte->size);
+				ret = write_stream_uncompressed(lte, ctx->out_fd);
+				if (ret)
+					return ret;
+			}
+			wimlib_assert(lte->out_reshdr.uncompressed_size == lte->size);
+
+			ctx->cur_write_stream_offset = 0;
 		}
-
-		wimlib_assert(lte->out_reshdr.uncompressed_size == lte->size);
-
-		list_del(&lte->write_streams_list);
-		ctx->cur_write_res_offset = 0;
 	}
+
+	do_write_streams_progress(&ctx->progress_data, lte,
+				  completed_size, completed_stream_count,
+				  false);
 
 	return 0;
 
@@ -911,7 +954,7 @@ write_stream_process_chunk(const void *chunk, size_t size, void *_ctx)
 		 ret = write_chunk(ctx, chunk, size, size);
 		 if (ret)
 			 return ret;
-		 ctx->cur_read_res_offset += size;
+		 ctx->cur_read_stream_offset += size;
 		 return 0;
 	}
 
@@ -929,8 +972,8 @@ write_stream_process_chunk(const void *chunk, size_t size, void *_ctx)
 		} else {
 			u64 res_bytes_remaining;
 
-			res_bytes_remaining = ctx->cur_read_res_size -
-					      ctx->cur_read_res_offset;
+			res_bytes_remaining = ctx->cur_read_stream_size -
+					      ctx->cur_read_stream_offset;
 			needed_chunk_size = min(ctx->out_chunk_size,
 						ctx->chunk_buf_filled +
 							res_bytes_remaining);
@@ -942,7 +985,7 @@ write_stream_process_chunk(const void *chunk, size_t size, void *_ctx)
 			/* No intermediate buffering needed.  */
 			resized_chunk = chunkptr;
 			chunkptr += needed_chunk_size;
-			ctx->cur_read_res_offset += needed_chunk_size;
+			ctx->cur_read_stream_offset += needed_chunk_size;
 		} else {
 			/* Intermediate buffering needed.  */
 			size_t bytes_consumed;
@@ -954,7 +997,7 @@ write_stream_process_chunk(const void *chunk, size_t size, void *_ctx)
 			       chunkptr, bytes_consumed);
 
 			chunkptr += bytes_consumed;
-			ctx->cur_read_res_offset += bytes_consumed;
+			ctx->cur_read_stream_offset += bytes_consumed;
 			ctx->chunk_buf_filled += bytes_consumed;
 			if (ctx->chunk_buf_filled == needed_chunk_size) {
 				resized_chunk = ctx->chunk_buf;
@@ -982,7 +1025,7 @@ write_stream_end_read(struct wim_lookup_table_entry *lte, int status, void *_ctx
 {
 	struct write_streams_ctx *ctx = _ctx;
 	if (status == 0)
-		wimlib_assert(ctx->cur_read_res_offset == ctx->cur_read_res_size);
+		wimlib_assert(ctx->cur_read_stream_offset == ctx->cur_read_stream_size);
 	if (ctx->stream_was_duplicate) {
 		free_lookup_table_entry(lte);
 	} else if (lte->unhashed && ctx->lookup_table != NULL) {
@@ -1144,7 +1187,8 @@ write_raw_copy_resources(struct list_head *raw_copy_resources,
 		ret = write_raw_copy_resource(lte->rspec, out_fd);
 		if (ret)
 			return ret;
-		do_write_streams_progress(progress_data, lte->size, false, lte);
+		do_write_streams_progress(progress_data, lte, lte->size,
+					  1, false);
 	}
 	return 0;
 }
@@ -1427,6 +1471,7 @@ write_stream_list(struct list_head *stream_list,
 	      ctx.progress_data.progress.write_streams.num_threads);
 
 	INIT_LIST_HEAD(&ctx.pending_streams);
+	INIT_LIST_HEAD(&ctx.pack_streams);
 
 	if (ctx.progress_data.progress_func) {
 		(*ctx.progress_data.progress_func)(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
@@ -1480,7 +1525,7 @@ write_stream_list(struct list_head *stream_list,
 		      reshdr.uncompressed_size);
 
 		offset_in_res = 0;
-		list_for_each_entry(lte, &ctx.pending_streams, write_streams_list) {
+		list_for_each_entry(lte, &ctx.pack_streams, write_streams_list) {
 			lte->out_reshdr.size_in_wim = lte->size;
 			lte->out_reshdr.flags = filter_resource_flags(lte->flags);
 			lte->out_reshdr.flags |= WIM_RESHDR_FLAG_PACKED_STREAMS;
