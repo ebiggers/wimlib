@@ -1993,7 +1993,7 @@ lzx_create_compressor(size_t window_size,
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
 		unsigned min_match_len = LZX_MIN_MATCH_LEN;
-		if (!ctx->params.alg_params.slow.use_len2_matches)
+		if (!params->alg_params.slow.use_len2_matches)
 			min_match_len = max(min_match_len, 3);
 
 		if (!lz_sarray_init(&ctx->lz_sarray,
