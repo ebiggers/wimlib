@@ -578,7 +578,7 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 	ret = 0;
 out_close:
 #ifdef WITH_NTDLL
-	if (func_NtSetSecurityObject)
+	if (func_NtSetSecurityObject && h != INVALID_HANDLE_VALUE)
 		CloseHandle(h);
 #endif
 	return ret;
