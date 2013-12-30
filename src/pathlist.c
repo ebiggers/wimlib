@@ -90,6 +90,7 @@ read_utf8_file_contents(const tchar *path, tchar **buf_ret, size_t *buflen_ret)
 	int ret;
 	char *buf_utf8;
 	size_t bufsize_utf8;
+	size_t offset_utf8;
 	tchar *buf_tstr;
 	size_t bufsize_tstr;
 
@@ -97,7 +98,15 @@ read_utf8_file_contents(const tchar *path, tchar **buf_ret, size_t *buflen_ret)
 	if (ret)
 		return ret;
 
-	ret = utf8_to_tstr(buf_utf8, bufsize_utf8, &buf_tstr, &bufsize_tstr);
+	/* Ignore UTF-8 BOM.  */
+	if (bufsize_utf8 >= 3 && (u8)buf_utf8[0] == 0xef &&
+	    (u8)buf_utf8[1] == 0xbb && (u8)buf_utf8[2] == 0xbf)
+		offset_utf8 = 3;
+	else
+		offset_utf8 = 0;
+
+	ret = utf8_to_tstr(buf_utf8 + offset_utf8, bufsize_utf8 - offset_utf8,
+			   &buf_tstr, &bufsize_tstr);
 	FREE(buf_utf8);
 	if (ret)
 		return ret;
@@ -127,11 +136,6 @@ parse_path_list_file(tchar *buf, size_t buflen,
 
 		line_begin = p;
 		line_end = nl;
-
-		/* Ignore UTF-8 BOM.  */
-		if (nl - line_begin >= 3 && (u8)line_begin[0] == 0xef &&
-		    (u8)line_begin[1] == 0xbb && (u8)line_begin[2] == 0xbf)
-			line_begin += 3;
 
 		/* Ignore leading whitespace.  */
 		while (line_begin < nl && istspace(*line_begin))
