@@ -162,9 +162,9 @@ wimlib_vmsg(const tchar *tag, const tchar *format,
 		tfputs(tag, stderr);
 		wimlib_vfprintf(stderr, format, va);
 		if (perror && errno_save != 0) {
-			tchar buf[50];
+			tchar buf[64];
 			int res;
-			res = tstrerror_r(errno_save, buf, sizeof(buf));
+			res = tstrerror_r(errno_save, buf, ARRAY_LEN(buf));
 			if (res) {
 				tsprintf(buf,
 					 T("unknown error (errno=%d)"),

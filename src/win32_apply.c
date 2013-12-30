@@ -540,8 +540,9 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 	if (func_NtSetSecurityObject) {
 		h = win32_open_existing_file(path, MAXIMUM_ALLOWED);
 		if (h == INVALID_HANDLE_VALUE) {
-			ERROR_WITH_ERRNO("Can't open %ls (%u)", path, GetLastError());
-			goto error;
+			set_errno_from_GetLastError();
+			ERROR_WITH_ERRNO("Can't open %ls", path);
+			return WIMLIB_ERR_SET_SECURITY;
 		}
 	}
 #endif
@@ -549,8 +550,10 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 	for (;;) {
 		err = do_win32_set_security_descriptor(h, path, info,
 						       (PSECURITY_DESCRIPTOR)desc);
-		if (err == ERROR_SUCCESS)
+		if (err == ERROR_SUCCESS) {
+			ret = 0;
 			break;
+		}
 		if ((err == ERROR_PRIVILEGE_NOT_HELD ||
 		     err == ERROR_ACCESS_DENIED) &&
 		    !(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS))
@@ -570,23 +573,18 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 			}
 			ctx->partial_security_descriptors--;
 			ctx->no_security_descriptors++;
+			ret = 0;
 			break;
 		}
-		SetLastError(err);
-		goto error;
+		set_errno_from_win32_error(err);
+		ret = WIMLIB_ERR_SET_SECURITY;
+		break;
 	}
-	ret = 0;
-out_close:
 #ifdef WITH_NTDLL
-	if (func_NtSetSecurityObject && h != INVALID_HANDLE_VALUE)
+	if (func_NtSetSecurityObject)
 		CloseHandle(h);
 #endif
 	return ret;
-
-error:
-	set_errno_from_GetLastError();
-	ret = WIMLIB_ERR_SET_SECURITY;
-	goto out_close;
 }
 
 static int
