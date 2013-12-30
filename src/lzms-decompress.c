@@ -346,23 +346,8 @@ struct lzms_decompressor {
 	struct lzms_huffman_decoder delta_power_decoder;
 	struct lzms_huffman_decoder delta_offset_decoder;
 
-	/* LRU (least-recently-used) queue of LZ match offsets.  */
-	u64 recent_lz_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
-
-	/* LRU (least-recently-used) queue of delta match powers.  */
-	u32 recent_delta_powers[LZMS_NUM_RECENT_OFFSETS + 1];
-
-	/* LRU (least-recently-used) queue of delta match offsets.  */
-	u32 recent_delta_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
-
-	/* These variables are used to delay updates to the LRU queues by one
-	 * decoded item.  */
-	u32 prev_lz_offset;
-	u32 prev_delta_power;
-	u32 prev_delta_offset;
-	u32 upcoming_lz_offset;
-	u32 upcoming_delta_power;
-	u32 upcoming_delta_offset;
+        /* LRU (least-recently-used) queues for match information.  */
+        struct lzms_lru_queues lru;
 
 	/* Used for postprocessing.  */
 	s32 last_target_usages[65536];
@@ -749,17 +734,17 @@ lzms_decode_lz_match(struct lzms_decompressor *ctx)
 			if (!lzms_range_decode_bit(&ctx->lz_repeat_match_range_decoders[i]))
 				break;
 
-		offset = ctx->recent_lz_offsets[i];
+		offset = ctx->lru.lz.recent_offsets[i];
 
 		for (; i < LZMS_NUM_RECENT_OFFSETS; i++)
-			ctx->recent_lz_offsets[i] = ctx->recent_lz_offsets[i + 1];
+			ctx->lru.lz.recent_offsets[i] = ctx->lru.lz.recent_offsets[i + 1];
 	}
 
 	/* Decode match length, which is always given explicitly (there is no
 	 * LRU queue for repeat lengths).  */
 	length = lzms_decode_value(&ctx->length_decoder);
 
-	ctx->upcoming_lz_offset = offset;
+	ctx->lru.lz.upcoming_offset = offset;
 
 	LZMS_DEBUG("Decoded %s LZ match: length=%u, offset=%u",
 		   (bit ? "repeat" : "explicit"), length, offset);
@@ -789,19 +774,19 @@ lzms_decode_delta_match(struct lzms_decompressor *ctx)
 			if (!lzms_range_decode_bit(&ctx->delta_repeat_match_range_decoders[i]))
 				break;
 
-		power = ctx->recent_delta_powers[i];
-		raw_offset = ctx->recent_delta_offsets[i];
+		power = ctx->lru.delta.recent_powers[i];
+		raw_offset = ctx->lru.delta.recent_offsets[i];
 
 		for (; i < LZMS_NUM_RECENT_OFFSETS; i++) {
-			ctx->recent_delta_powers[i] = ctx->recent_delta_powers[i + 1];
-			ctx->recent_delta_offsets[i] = ctx->recent_delta_offsets[i + 1];
+			ctx->lru.delta.recent_powers[i] = ctx->lru.delta.recent_powers[i + 1];
+			ctx->lru.delta.recent_offsets[i] = ctx->lru.delta.recent_offsets[i + 1];
 		}
 	}
 
 	length = lzms_decode_value(&ctx->length_decoder);
 
-	ctx->upcoming_delta_power = power;
-	ctx->upcoming_delta_offset = raw_offset;
+	ctx->lru.delta.upcoming_power = power;
+	ctx->lru.delta.upcoming_offset = raw_offset;
 
 	LZMS_DEBUG("Decoded %s delta match: length=%u, power=%u, raw_offset=%u",
 		   (bit ? "repeat" : "explicit"), length, power, raw_offset);
@@ -834,9 +819,9 @@ lzms_decode_item(struct lzms_decompressor *ctx)
 {
 	int ret;
 
-	ctx->upcoming_delta_offset = 0;
-	ctx->upcoming_lz_offset = 0;
-	ctx->upcoming_delta_power = 0;
+	ctx->lru.lz.upcoming_offset = 0;
+	ctx->lru.delta.upcoming_power = 0;
+	ctx->lru.delta.upcoming_offset = 0;
 
 	if (lzms_range_decode_bit(&ctx->main_range_decoder))
 		ret = lzms_decode_match(ctx);
@@ -847,24 +832,7 @@ lzms_decode_item(struct lzms_decompressor *ctx)
 		return ret;
 
 	/* Update LRU queues  */
-	if (ctx->prev_lz_offset != 0) {
-		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--)
-			ctx->recent_lz_offsets[i + 1] = ctx->recent_lz_offsets[i];
-		ctx->recent_lz_offsets[0] = ctx->prev_lz_offset;
-	}
-
-	if (ctx->prev_delta_offset != 0) {
-		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--) {
-			ctx->recent_delta_powers[i + 1] = ctx->recent_delta_powers[i];
-			ctx->recent_delta_offsets[i + 1] = ctx->recent_delta_offsets[i];
-		}
-		ctx->recent_delta_powers[0] = ctx->prev_delta_power;
-		ctx->recent_delta_offsets[0] = ctx->prev_delta_offset;
-	}
-
-	ctx->prev_lz_offset = ctx->upcoming_lz_offset;
-	ctx->prev_delta_offset = ctx->upcoming_delta_offset;
-	ctx->prev_delta_power = ctx->upcoming_delta_power;
+        lzms_update_lru_queues(&ctx->lru);
 	return 0;
 }
 
@@ -972,20 +940,8 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 		lzms_init_range_decoder(&ctx->delta_repeat_match_range_decoders[i],
 					&ctx->rd, LZMS_NUM_DELTA_REPEAT_MATCH_STATES);
 
-	/* Initialize the LRU queue for recent match offsets.  */
-	for (size_t i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++)
-		ctx->recent_lz_offsets[i] = i + 1;
-
-	for (size_t i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++) {
-		ctx->recent_delta_powers[i] = 0;
-		ctx->recent_delta_offsets[i] = i + 1;
-	}
-	ctx->prev_lz_offset = 0;
-	ctx->prev_delta_offset = 0;
-	ctx->prev_delta_power = 0;
-	ctx->upcoming_lz_offset = 0;
-	ctx->upcoming_delta_offset = 0;
-	ctx->upcoming_delta_power = 0;
+	/* Initialize LRU match information.  */
+        lzms_init_lru_queues(&ctx->lru);
 
 	LZMS_DEBUG("Decompressor successfully initialized");
 }

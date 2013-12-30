@@ -40,6 +40,7 @@
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lz_hash.h"
+#include "wimlib/lz_sarray.h"
 #include "wimlib/lzms.h"
 #include "wimlib/util.h"
 
@@ -174,6 +175,9 @@ struct lzms_compressor {
 	 * as the window.  */
 	u32 *prev_tab;
 
+	/* Suffix array match-finder.  */
+	struct lz_sarray lz_sarray;
+
 	/* Maximum block size this compressor instantiation allows.  This is the
 	 * allocated size of @window.  */
 	u32 max_block_size;
@@ -201,31 +205,11 @@ struct lzms_compressor {
 	struct lzms_huffman_encoder delta_power_encoder;
 	struct lzms_huffman_encoder delta_offset_encoder;
 
-	/* LRU (least-recently-used) queue of LZ match offsets.  */
-	u64 recent_lz_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
-
-	/* LRU (least-recently-used) queue of delta match powers.  */
-	u32 recent_delta_powers[LZMS_NUM_RECENT_OFFSETS + 1];
-
-	/* LRU (least-recently-used) queue of delta match offsets.  */
-	u32 recent_delta_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
-
-	/* These variables are used to delay updates to the LRU queues by one
-	 * decoded item.  */
-	u32 prev_lz_offset;
-	u32 prev_delta_power;
-	u32 prev_delta_offset;
-	u32 upcoming_lz_offset;
-	u32 upcoming_delta_power;
-	u32 upcoming_delta_offset;
+	/* LRU (least-recently-used) queues for match information.  */
+	struct lzms_lru_queues lru;
 
 	/* Used for preprocessing.  */
 	s32 last_target_usages[65536];
-};
-
-struct lzms_match {
-	u32 length;
-	u32 offset;
 };
 
 /* Initialize the output bitstream @os to write forwards to the specified
@@ -485,9 +469,9 @@ lzms_encode_value(struct lzms_huffman_encoder *enc, u32 value)
 static void
 lzms_begin_encode_item(struct lzms_compressor *ctx)
 {
-	ctx->upcoming_delta_offset = 0;
-	ctx->upcoming_lz_offset = 0;
-	ctx->upcoming_delta_power = 0;
+	ctx->lru.lz.upcoming_offset = 0;
+	ctx->lru.delta.upcoming_offset = 0;
+	ctx->lru.delta.upcoming_power = 0;
 }
 
 static void
@@ -495,26 +479,7 @@ lzms_end_encode_item(struct lzms_compressor *ctx, u32 length)
 {
 	LZMS_ASSERT(ctx->window_size - ctx->cur_window_pos >= length);
 	ctx->cur_window_pos += length;
-
-	/* Update LRU queues  */
-	if (ctx->prev_lz_offset != 0) {
-		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--)
-			ctx->recent_lz_offsets[i + 1] = ctx->recent_lz_offsets[i];
-		ctx->recent_lz_offsets[0] = ctx->prev_lz_offset;
-	}
-
-	if (ctx->prev_delta_offset != 0) {
-		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--) {
-			ctx->recent_delta_powers[i + 1] = ctx->recent_delta_powers[i];
-			ctx->recent_delta_offsets[i + 1] = ctx->recent_delta_offsets[i];
-		}
-		ctx->recent_delta_powers[0] = ctx->prev_delta_power;
-		ctx->recent_delta_offsets[0] = ctx->prev_delta_offset;
-	}
-
-	ctx->prev_lz_offset = ctx->upcoming_lz_offset;
-	ctx->prev_delta_offset = ctx->upcoming_delta_offset;
-	ctx->prev_delta_power = ctx->upcoming_delta_power;
+	lzms_update_lru_queues(&ctx->lru);
 }
 
 /* Encode a literal byte.  */
@@ -556,7 +521,7 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 	for (recent_offset_idx = 0;
 	     recent_offset_idx < LZMS_NUM_RECENT_OFFSETS;
 	     recent_offset_idx++)
-		if (offset == ctx->recent_lz_offsets[recent_offset_idx])
+		if (offset == ctx->lru.lz.recent_offsets[recent_offset_idx])
 			break;
 
 	if (recent_offset_idx == LZMS_NUM_RECENT_OFFSETS) {
@@ -587,7 +552,7 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 
 		/* Initial update of the LZ match offset LRU queue.  */
 		for (; i < LZMS_NUM_RECENT_OFFSETS; i++)
-			ctx->recent_lz_offsets[i] = ctx->recent_lz_offsets[i + 1];
+			ctx->lru.lz.recent_offsets[i] = ctx->lru.lz.recent_offsets[i + 1];
 	}
 
 	/* Encode the match length.  */
@@ -595,7 +560,7 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 
 	/* Save the match offset for later insertion at the front of the LZ
 	 * match offset LRU queue.  */
-	ctx->upcoming_lz_offset = offset;
+	ctx->lru.lz.upcoming_offset = offset;
 
 	lzms_end_encode_item(ctx, length);
 }
@@ -640,38 +605,77 @@ lzms_fast_encode(struct lzms_compressor *ctx)
 
 }
 
-#if 0
-
-static struct lzms_match
-lzms_get_best_match(struct lzms_compressor *ctx)
+/* Fast heuristic cost evaluation to use in the inner loop of the match-finder.
+ * Unlike lzms_match_cost() which does a true cost evaluation, this simply
+ * prioritize matches based on their offset.  */
+static input_idx_t
+lzms_match_cost_fast(input_idx_t length, input_idx_t offset, const void *_lru)
 {
-	struct lzms_match match;
+	const struct lzms_lz_lru_queues *lru = _lru;
 
-	/* TODO */
 
-	match.length = 0;
+	/* It seems well worth it to take the time to give priority to recently
+	 * used offsets.  */
+	for (input_idx_t i = 0; i < LZMS_NUM_RECENT_OFFSETS; i++)
+		if (offset == lru->recent_offsets[i])
+			return i;
 
-	return match;
+	return offset;
+}
+
+static void
+lzms_lz_skip_bytes(struct lzms_compressor *ctx, u32 n)
+{
+	while (n--)
+		lz_sarray_skip_position(&ctx->lz_sarray);
+}
+
+static struct raw_match
+lzms_get_near_optimal_match(struct lzms_compressor *ctx)
+{
+	struct raw_match matches[10];
+	u32 num_matches;
+
+	num_matches = lz_sarray_get_matches(&ctx->lz_sarray,
+					    matches,
+					    lzms_match_cost_fast,
+					    &ctx->lru.lz);
+	if (num_matches == 0)
+		return (struct raw_match) { .len = 0 };
+
+#if 0
+	fprintf(stderr, "Pos %u/%u: %u matches\n",
+		lz_sarray_get_pos(&ctx->lz_sarray) - 1,
+		ctx->window_size, num_matches);
+	for (u32 i = 0; i < num_matches; i++)
+		fprintf(stderr, "\tLen %u Offset %u\n", matches[i].len, matches[i].offset);
+#endif
+
+	lzms_lz_skip_bytes(ctx, matches[0].len - 1);
+	return matches[0];
 }
 
 static void
 lzms_slow_encode(struct lzms_compressor *ctx)
 {
-	struct lzms_match match;
+	struct raw_match match;
+
+	/* Load window into suffix array match-finder.  */
+	lz_sarray_load_window(&ctx->lz_sarray, ctx->window, ctx->window_size);
 
 	/* TODO */
 	while (ctx->cur_window_pos != ctx->window_size) {
-		match = lzms_get_best_match(ctx);
-		if (match.length == 0) {
+
+		match = lzms_get_near_optimal_match(ctx);
+		if (match.len == 0) {
 			/* Literal  */
 			lzms_encode_literal(ctx, ctx->window[ctx->cur_window_pos]);
 		} else {
 			/* LZ match  */
-			lzms_encode_lz_match(ctx, match.length, match.offset);
+			lzms_encode_lz_match(ctx, match.len, match.offset);
 		}
 	}
 }
-#endif
 
 static void
 lzms_init_range_encoder(struct lzms_range_encoder *enc,
@@ -775,20 +779,8 @@ lzms_init_compressor(struct lzms_compressor *ctx, const u8 *udata, u32 ulen,
 		lzms_init_range_encoder(&ctx->delta_repeat_match_range_encoders[i],
 					&ctx->rc, LZMS_NUM_DELTA_REPEAT_MATCH_STATES);
 
-	/* Initialize the LRU queue for recent match offsets.  */
-	for (size_t i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++)
-		ctx->recent_lz_offsets[i] = i + 1;
-
-	for (size_t i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++) {
-		ctx->recent_delta_powers[i] = 0;
-		ctx->recent_delta_offsets[i] = i + 1;
-	}
-	ctx->prev_lz_offset = 0;
-	ctx->prev_delta_offset = 0;
-	ctx->prev_delta_power = 0;
-	ctx->upcoming_lz_offset = 0;
-	ctx->upcoming_delta_offset = 0;
-	ctx->upcoming_delta_power = 0;
+	/* Initialize LRU match information.  */
+        lzms_init_lru_queues(&ctx->lru);
 }
 
 /* Flush the output streams, prepare the final compressed data, and return its
@@ -878,7 +870,10 @@ lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 
 	/* Determine and output a literal/match sequence that decompresses to
 	 * the preprocessed data.  */
-	lzms_fast_encode(ctx);
+	if (1)
+		lzms_slow_encode(ctx);
+	else
+		lzms_fast_encode(ctx);
 
 	/* Get and return the compressed data size.  */
 	compressed_size = lzms_finalize(ctx, compressed_data,
@@ -944,6 +939,7 @@ lzms_free_compressor(void *_ctx)
 	if (ctx) {
 		FREE(ctx->window);
 		FREE(ctx->prev_tab);
+		lz_sarray_destroy(&ctx->lz_sarray);
 		FREE(ctx);
 	}
 }
@@ -971,6 +967,15 @@ lzms_create_compressor(size_t max_block_size,
 	ctx->prev_tab = MALLOC(max_block_size * sizeof(ctx->prev_tab[0]));
 	if (ctx->prev_tab == NULL)
 		goto oom;
+
+	if (!lz_sarray_init(&ctx->lz_sarray,
+			    max_block_size,
+			    2,
+			    max_block_size,
+			    100,
+			    10))
+		goto oom;
+
 
 	ctx->max_block_size = max_block_size;
 

@@ -68,6 +68,39 @@ struct lzms_probability_entry {
 	u64 recent_bits;
 };
 
+/* LRU queues for LZ matches.  */
+struct lzms_lz_lru_queues {
+
+        /* Recent LZ match offsets  */
+	u32 recent_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
+
+        /* These variables are used to delay updates to the LRU queues by one
+         * decoded item.  */
+	u32 prev_offset;
+	u32 upcoming_offset;
+};
+
+/* LRU queues for delta matches.  */
+struct lzms_delta_lru_queues {
+
+        /* Recent delta match powers and offsets  */
+	u32 recent_powers[LZMS_NUM_RECENT_OFFSETS + 1];
+	u32 recent_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
+
+        /* These variables are used to delay updates to the LRU queues by one
+         * decoded item.  */
+	u32 prev_power;
+	u32 prev_offset;
+	u32 upcoming_power;
+	u32 upcoming_offset;
+};
+
+/* LRU (least-recently-used) queues for match information.  */
+struct lzms_lru_queues {
+        struct lzms_lz_lru_queues lz;
+        struct lzms_delta_lru_queues delta;
+};
+
 extern u32 lzms_position_slot_base[LZMS_MAX_NUM_OFFSET_SYMS + 1];
 
 extern u32 lzms_length_slot_base[LZMS_NUM_LEN_SYMS + 1];
@@ -91,5 +124,11 @@ lzms_get_length_slot(u32 value)
 	return lzms_get_slot(value, lzms_length_slot_base,
 			     LZMS_NUM_LEN_SYMS);
 }
+
+extern void
+lzms_init_lru_queues(struct lzms_lru_queues *lru);
+
+extern void
+lzms_update_lru_queues(struct lzms_lru_queues *lru);
 
 #endif /* _WIMLIB_LZMS_H  */

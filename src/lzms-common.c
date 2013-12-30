@@ -256,3 +256,70 @@ lzms_x86_filter(u8 data[restrict],
 		}
 	}
 }
+
+static void
+lzms_init_lz_lru_queues(struct lzms_lz_lru_queues *lz)
+{
+        /* Recent offsets for LZ matches  */
+	for (u32 i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++)
+		lz->recent_offsets[i] = i + 1;
+
+	lz->prev_offset = 0;
+	lz->upcoming_offset = 0;
+}
+
+static void
+lzms_init_delta_lru_queues(struct lzms_delta_lru_queues *delta)
+{
+        /* Recent offsets and powers for LZ matches  */
+	for (u32 i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++) {
+		delta->recent_offsets[i] = i + 1;
+		delta->recent_powers[i] = 0;
+	}
+	delta->prev_offset = 0;
+	delta->prev_power = 0;
+	delta->upcoming_offset = 0;
+	delta->upcoming_power = 0;
+}
+
+
+void
+lzms_init_lru_queues(struct lzms_lru_queues *lru)
+{
+        lzms_init_lz_lru_queues(&lru->lz);
+        lzms_init_delta_lru_queues(&lru->delta);
+}
+
+static void
+lzms_update_lz_lru_queues(struct lzms_lz_lru_queues *lz)
+{
+	if (lz->prev_offset != 0) {
+		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--)
+			lz->recent_offsets[i + 1] = lz->recent_offsets[i];
+		lz->recent_offsets[0] = lz->prev_offset;
+	}
+	lz->prev_offset = lz->upcoming_offset;
+}
+
+static void
+lzms_update_delta_lru_queues(struct lzms_delta_lru_queues *delta)
+{
+	if (delta->prev_offset != 0) {
+		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--) {
+			delta->recent_offsets[i + 1] = delta->recent_offsets[i];
+			delta->recent_powers[i + 1] = delta->recent_powers[i];
+		}
+		delta->recent_offsets[0] = delta->prev_offset;
+		delta->recent_powers[0] = delta->prev_power;
+	}
+
+	delta->prev_offset = delta->upcoming_offset;
+	delta->prev_power = delta->upcoming_power;
+}
+
+void
+lzms_update_lru_queues(struct lzms_lru_queues *lru)
+{
+        lzms_update_lz_lru_queues(&lru->lz);
+        lzms_update_delta_lru_queues(&lru->delta);
+}
