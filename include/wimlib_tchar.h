@@ -54,6 +54,7 @@ typedef wchar_t tchar;
 #  define tstrdup	wcsdup
 #  define ttempnam      _wtempnam
 #  define tgetenv	_wgetenv
+#  define totlower(c)	towlower((wchar_t)(c))
 /* The following "tchar" functions do not have exact wide-character equivalents
  * on Windows so require parameter rearrangement or redirection to a replacement
  * function defined ourselves. */
@@ -116,6 +117,7 @@ typedef char tchar;
 #  define tstrdup	strdup
 #  define ttempnam      tempnam
 #  define tgetenv	getenv
+#  define totlower(c)	tolower((unsigned char)(c))
 #  define TSTRDUP	STRDUP
 #  define tstrerror_r	strerror_r
 #  define trename	rename

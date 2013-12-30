@@ -27,6 +27,7 @@
 #  include "config.h"
 #endif
 
+#include <ctype.h>
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
@@ -43,10 +44,20 @@ struct match_dentry_ctx {
 	bool case_insensitive;
 };
 
+#define PLATFORM_SUPPORTS_FNMATCH
+
 #ifdef __WIN32__
+/* PathMatchSpec() could provide a fnmatch() alternative, but it isn't
+ * documented properly, nor does it work properly.  For example, it returns that
+ * any name matches *.* even if that name doesn't actually contain a period.  */
+#  undef PLATFORM_SUPPORTS_FNMATCH
+#endif
+
+#ifndef PLATFORM_SUPPORTS_FNMATCH
 static bool
-match_wildcard_case_sensitive(const tchar *string, size_t string_len,
-			      const tchar *wildcard, size_t wildcard_len)
+do_match_wildcard(const tchar *string, size_t string_len,
+		  const tchar *wildcard, size_t wildcard_len,
+		  bool ignore_case)
 {
 	for (;;) {
 		if (string_len == 0) {
@@ -57,58 +68,49 @@ match_wildcard_case_sensitive(const tchar *string, size_t string_len,
 			return (wildcard_len == 0);
 		} else if (wildcard_len == 0) {
 			return false;
-		} else if (*string == *wildcard || *wildcard == T('?')) {
+		} else if (*string == *wildcard || *wildcard == T('?') ||
+			   (ignore_case && totlower(*string) == totlower(*wildcard)))
+		{
 			string++;
 			string_len--;
 			wildcard_len--;
 			wildcard++;
 			continue;
 		} else if (*wildcard == T('*')) {
-			return match_wildcard_case_sensitive(
-					      string, string_len,
-					      wildcard + 1, wildcard_len - 1) ||
-			       match_wildcard_case_sensitive(
-					      string + 1, string_len - 1,
-					      wildcard, wildcard_len);
+			return do_match_wildcard(string, string_len,
+						 wildcard + 1, wildcard_len - 1,
+						 ignore_case) ||
+			       do_match_wildcard(string + 1, string_len - 1,
+						 wildcard, wildcard_len,
+						 ignore_case);
 		} else {
 			return false;
 		}
 	}
 }
-#endif /* __WIN32__ */
+#endif /* ! PLATFORM_SUPPORTS_FNMATCH  */
 
 static bool
 match_wildcard(const tchar *string, tchar *wildcard,
-	       size_t wildcard_len, bool case_insensitive)
+	       size_t wildcard_len, bool ignore_case)
 {
-	/* Note: in Windows builds fnmatch() calls a replacement function.  It
-	 * does not support case-sensitive globbing.  */
-#ifdef __WIN32__
-	if (case_insensitive)
-#endif
-	{
-		char orig;
-		int ret;
-		int flags = FNM_NOESCAPE;
-		if (case_insensitive)
-			flags |= FNM_CASEFOLD;
+#ifdef PLATFORM_SUPPORTS_FNMATCH
+	char orig;
+	int ret;
+	int flags = FNM_NOESCAPE;
+	if (ignore_case)
+		flags |= FNM_CASEFOLD;
 
-		orig = wildcard[wildcard_len];
-		wildcard[wildcard_len] = T('\0');
+	orig = wildcard[wildcard_len];
+	wildcard[wildcard_len] = T('\0');
 
-		ret = fnmatch(wildcard, string, flags);
+	ret = fnmatch(wildcard, string, flags);
 
-		wildcard[wildcard_len] = orig;
-		return (ret == 0);
-	}
-#ifdef __WIN32__
-	else
-	{
-		return match_wildcard_case_sensitive(string,
-						     tstrlen(string),
-						     wildcard,
-						     wildcard_len);
-	}
+	wildcard[wildcard_len] = orig;
+	return (ret == 0);
+#else
+	return do_match_wildcard(string, tstrlen(string),
+				 wildcard, wildcard_len, ignore_case);
 #endif
 }
 
