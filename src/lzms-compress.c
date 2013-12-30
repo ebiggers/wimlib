@@ -47,6 +47,8 @@
 #include <string.h>
 #include <limits.h>
 
+#define LZMS_OPTIM_ARRAY_SIZE	1024
+
 /* Stucture used for writing raw bits to the end of the LZMS-compressed data as
  * a series of 16-bit little endian coding units.  */
 struct lzms_output_bitstream {

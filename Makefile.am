@@ -93,6 +93,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/lookup_table.h	\
 	include/wimlib/lz.h		\
 	include/wimlib/lz_hash.h	\
+	include/wimlib/lz_optimal	\
 	include/wimlib/lz_sarray.h	\
 	include/wimlib/lzms.h		\
 	include/wimlib/lzx.h		\
