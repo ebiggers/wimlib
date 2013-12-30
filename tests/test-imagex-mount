@@ -75,24 +75,24 @@ for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
 		      "loaded, or you aren't a member of the FUSE group?"
 	fi
 	echo "Testing extracting file from mounted read-only WIM"
-	if ! cp tmp/lz77.c lz77.c; then
+	if ! cp tmp/write.c write.c; then
 		error "Failed to extract file from read-only mounted WIM"
 	fi
-	if ! diff -q dir/lz77.c lz77.c; then
+	if ! diff -q dir/write.c write.c; then
 		error "Extracted file does not match copy in mounted WIM"
 	fi
-	if ! diff -q tmp/lz77.c dir/lz77.c; then
+	if ! diff -q tmp/write.c dir/write.c; then
 		error "Extractef file does not match original"
 	fi
-	rm -f lz77.c
+	rm -f write.c
 	echo "Testing modifying mounted read-only WIM (should fail)"
-	if rm tmp/lz77.c; then
+	if rm tmp/write.c; then
 		error "Removing file from read-only mounted WIM didn't fail"
 	fi
 	if touch tmp/newfile; then
 		error "Creating file on read-only mounted WIM didn't fail"
 	fi
-	if echo 3 > tmp/lz77.c; then
+	if echo 3 > tmp/write.c; then
 		error "Writing to file on read-only mounted WIM didn't fail"
 	fi
 	echo "Testing diff of mounted read-only WIM with original directory"
@@ -137,10 +137,10 @@ echo "Testing removing file from mounted WIM"
 if ! imagex mountrw dir.wim dir tmp; then
 	error "Failed to re-mount test WIM read-write"
 fi
-if ! rm tmp/lz77.c; then
+if ! rm tmp/write.c; then
 	error "Failed to remove file from read-write mounted WIM"
 fi
-if test -f tmp/lz77.c; then
+if test -f tmp/write.c; then
 	error "Removing file from read-write mounted WIM failed"
 fi
 echo "Testing making directory in mounted WIM"

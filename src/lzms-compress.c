@@ -39,6 +39,7 @@
 #include "wimlib/compress_common.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
+#include "wimlib/lz_hash.h"
 #include "wimlib/lzms.h"
 #include "wimlib/util.h"
 

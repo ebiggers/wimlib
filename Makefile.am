@@ -41,7 +41,8 @@ libwim_la_SOURCES =		\
 	src/lzms-common.c	\
 	src/lzms-compress.c	\
 	src/lzms-decompress.c	\
-	src/lz77.c		\
+	src/lz_hash.c		\
+	src/lz_sarray.c		\
 	src/divsufsort/divsufsort.c		\
 	src/divsufsort/divsufsort.h		\
 	src/divsufsort/divsufsort_private.h	\
@@ -90,6 +91,9 @@ libwim_la_SOURCES =		\
 	include/wimlib/integrity.h	\
 	include/wimlib/list.h		\
 	include/wimlib/lookup_table.h	\
+	include/wimlib/lz.h		\
+	include/wimlib/lz_hash.h	\
+	include/wimlib/lz_sarray.h	\
 	include/wimlib/lzms.h		\
 	include/wimlib/lzx.h		\
 	include/wimlib/metadata.h	\

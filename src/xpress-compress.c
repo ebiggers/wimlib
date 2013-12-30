@@ -34,6 +34,7 @@
 #include "wimlib/compressor_ops.h"
 #include "wimlib/compress_common.h"
 #include "wimlib/error.h"
+#include "wimlib/lz_hash.h"
 #include "wimlib/util.h"
 #include "wimlib/xpress.h"
 

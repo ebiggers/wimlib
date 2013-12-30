@@ -276,9 +276,9 @@ suffix array construction code from divsufsort
 (https://code.google.com/p/libdivsufsort/) and algorithms from 7-Zip as well as
 several published papers.
 
-lz77.c contains a hash-table-based LZ77 matchfinder that is based on code from
-zlib but has been rewritten.  This code is applicable to XPRESS, LZX, and LZMS,
-all of which are partly based on LZ77 compression.
+lz_hash.c contains a hash-table-based LZ77 matchfinder that is based on code
+from zlib but has been rewritten.  This code is applicable to XPRESS, LZX, and
+LZMS, all of which are partly based on LZ77 compression.
 
 A limited number of other free programs can handle some parts of the WIM
 file format:

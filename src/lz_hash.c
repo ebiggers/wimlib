@@ -1,5 +1,5 @@
 /*
- * lz77.c
+ * lz_hash.c
  *
  * This file provides the code to analyze a buffer of uncompressed data for
  * matches, as per the LZ77 algorithm.  It uses a hash table to accelerate the
@@ -30,7 +30,7 @@
 #  include <config.h>
 #endif
 
-#include "wimlib/compress_common.h"
+#include "wimlib/lz_hash.h"
 #include "wimlib/util.h"
 
 #include <string.h>

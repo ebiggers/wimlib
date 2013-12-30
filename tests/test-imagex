@@ -272,13 +272,13 @@ fi
 if ! diff -q -r tmp/dir tmp/myname || ! diff -q -r dir tmp/dir; then
 	error "Recursive diff of applied WIM with original directory failed"
 fi
-if test "`get_link_count tmp/dir/lz77.c`" != 1; then
+if test "`get_link_count tmp/dir/write.c`" != 1; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`get_link_count tmp/myname/lz77.c`" != 1; then
+if test "`get_link_count tmp/myname/write.c`" != 1; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`get_inode_number tmp/myname/lz77.c`" = "`get_inode_number tmp/dir/lz77.c`"; then
+if test "`get_inode_number tmp/myname/write.c`" = "`get_inode_number tmp/dir/write.c`"; then
 	error "Incorrect inode number"
 fi
 rm -rf tmp
@@ -289,13 +289,13 @@ fi
 if ! diff -q -r tmp/dir tmp/myname || ! diff -q -r dir tmp/dir; then
 	error "Recursive diff of applied WIM with original directory failed"
 fi
-if test "`get_link_count tmp/dir/lz77.c`" != 2; then
+if test "`get_link_count tmp/dir/write.c`" != 2; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`get_link_count tmp/myname/lz77.c`" != 2; then
+if test "`get_link_count tmp/myname/write.c`" != 2; then
 	error "Incorrect link count on extracted file"
 fi
-if test "`get_inode_number tmp/myname/lz77.c`" != "`get_inode_number tmp/dir/lz77.c`"; then
+if test "`get_inode_number tmp/myname/write.c`" != "`get_inode_number tmp/dir/write.c`"; then
 	error "Incorrect inode number"
 fi
 rm -rf tmp
