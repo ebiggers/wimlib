@@ -1102,15 +1102,15 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	switch (msg) {
 	case WIMLIB_PROGRESS_MSG_WRITE_STREAMS:
 		{
-			static bool first = false;
-			if (!first) {
+			static bool first = true;
+			if (first) {
 				imagex_printf(T("Writing %"TS"-compressed data "
 						"using %u thread%"TS"\n"),
 					      wimlib_get_compression_type_string(
 							info->write_streams.compression_type),
 					info->write_streams.num_threads,
 					(info->write_streams.num_threads == 1) ? T("") : T("s"));
-				first = true;
+				first = false;
 			}
 		}
 		unit_shift = get_unit(info->write_streams.total_bytes, &unit_name);
