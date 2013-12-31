@@ -36,7 +36,10 @@ modification is to specify an executable or batch file for Windows PE to execute
 as soon as it starts up.  Use the \fB--start-script\fR \fIFILE\fR option to
 specify such a file.  You may also add arbitrary files to \fIboot.wim\fR by
 putting them in a directory, then specifying the \fB--overlay\fR \fIDIR\fR
-option.
+option.  However, for more extensive modifications, consider modifying the
+\fIboot.wim\fR file separately using \fB@IMAGEX_PROGNAME@ mountrw\fR or
+\fB@IMAGEX_PROGNAME@ update\fR, then providing it to \fBmkwinpeimg\fR using the
+\fB--wim\fR option.
 .PP
 \fBmkwinpeimg\fR can also make only a modified \fIboot.wim\fR, rather than a
 bootable ISO or disk image, if the \fB--only-wim\fR option is given.
