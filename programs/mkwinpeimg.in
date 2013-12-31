@@ -473,11 +473,26 @@ make_disk_img() {
 
 	export MTOOLSRC="$mtool_conf"
 
-	mformat -h 255 -s 63 -T $(( image_size / 512)) s:
-	mcopy -s "$tmp_dir"/* s:
+	mformat -h 255 -s 63 -T $(( image_size / 512)) s: || stat_fail
+	mcopy -s "$tmp_dir"/* s: || stat_fail
 
 	syslinux --install "$image"
-	mcopy /usr/lib/syslinux/chain.c32 s:
+
+	syslinuxdir="/usr/lib/syslinux"
+
+	if [ -d "$syslinuxdir/bios" ]; then
+		biosdir="$syslinuxdir/bios"
+	else
+		biosdir="$syslinuxdir"
+	fi
+
+	mcopy "$biosdir/chain.c32" s: || stat_fail
+	if [ -e "$biosdir/libcom32.c32" ]; then
+		mcopy "$biosdir/libcom32.c32" s:
+	fi
+	if [ -e "$biosdir/libutil.c32" ]; then
+		mcopy "$biosdir/libutil.c32" s:
+	fi
 	mcopy - 's:syslinux.cfg' <<- EOF
 		DEFAULT winpe
 		LABEL	winpe
