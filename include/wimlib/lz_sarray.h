@@ -1,7 +1,7 @@
 /*
  * lz_sarray.h
  *
- * Suffix array match-finder for LZ (Lempel-Ziv) compression.
+ * Suffix array match-finder for Lempel-Ziv compression.
  */
 
 /*
@@ -34,15 +34,26 @@
 #ifndef _WIMLIB_LZ_SARRAY_H
 #define _WIMLIB_LZ_SARRAY_H
 
-#include "wimlib/compiler.h"
-#include "wimlib/lz.h"
-#include "wimlib/types.h"
+#include "wimlib/compiler.h" /* must define '_always_inline_attribute'  */
+#include "wimlib/lz.h"	     /* must define 'struct raw_match', 'input_idx_t',
+			        and LZ_ASSERT().  */
+#include "wimlib/types.h"    /* must define 'bool', 'u8', 'u32'  */
 
 struct salink;
 
-/* Suffix array LZ (Lempel-Ziv) match-finder.  */
+/* State of the suffix array LZ (Lempel-Ziv) match-finder.
+ *
+ * This is defined here for benefit of the inlined code.  It's not intended for
+ * code outside the match-finder itself to read or write members from this
+ * structure.  */
 struct lz_sarray {
-	/* Allocated window size for the match-finder.  */
+	/* Allocated window size for the match-finder.
+	 *
+	 * Note: this match-finder does not store the window itself, as the
+	 * suffix array (@SA) and associated arrays (@ISA, @LCP, @salink) are
+	 * sufficient to find matches.  This number is the maximum length of
+	 * those arrays, or also the maximum window (block) size that can be
+	 * passed to lz_sarray_load_window().  */
 	input_idx_t max_window_size;
 
 	/* Minimum match length to return.  */
@@ -57,26 +68,20 @@ struct lz_sarray {
 	/* Maximum number of matches to return at each position.  */
 	u32 max_matches_to_return;
 
-	/* Current position in the window  */
+	/* Current position in the window.  */
 	input_idx_t cur_pos;
 
 	/* Current window size.  */
 	input_idx_t window_size;
 
-	/* Suffix array for window.
+	/* Suffix array for the current window.
 	 * This is a mapping from suffix rank to suffix position.  */
 	input_idx_t *SA;
 
-	/* Inverse suffix array for window.
+	/* Inverse suffix array for the current window.
 	 * This is a mapping from suffix position to suffix rank.
 	 * If 0 <= r < window_size, then ISA[SA[r]] == r.  */
 	input_idx_t *ISA;
-
-	/* Longest common prefix array corresponding to the suffix array SA.
-	 * LCP[i] is the length of the longest common prefix between the
-	 * suffixes with positions SA[i - 1] and  SA[i].  LCP[0] is undefined.
-	 */
-	input_idx_t *LCP;
 
 	/* Suffix array links.
 	 *
@@ -88,49 +93,67 @@ struct lz_sarray {
 	struct salink *salink;
 };
 
-/* Suffix array link  */
+/* Suffix array link; one of these exists for each position in the suffix array.
+ */
 struct salink {
 	/* Rank of highest ranked suffix that has rank lower than the suffix
 	 * corresponding to this structure and either has a lower position
 	 * (initially) or has a position lower than the highest position at
-	 * which matches have been searched for so far, or -1 if there is no
-	 * such suffix.  */
+	 * which matches have been searched for so far, or ~(input_idx_t)0 if
+	 * there is no such suffix.
+	 *
+	 * Think of this as a pointer to the closest position in the suffix
+	 * array to the left that corresponds to a suffix that begins at a
+	 * position in the current dictionary (i.e. before the current position
+	 * in the window).  */
 	input_idx_t prev;
 
 	/* Rank of lowest ranked suffix that has rank greater than the suffix
 	 * corresponding to this structure and either has a lower position
 	 * (intially) or has a position lower than the highest position at which
-	 * matches have been searched for so far, or -1 if there is no such
-	 * suffix.  */
+	 * matches have been searched for so far, or ~(input_idx_t)0 if there is
+	 * no such suffix.
+
+	 * Think of this as a pointer to the closest position in the suffix
+	 * array to the right that corresponds to a suffix that begins at a
+	 * position in the current dictionary (i.e. before the current position
+	 * in the window).  */
 	input_idx_t next;
 
 	/* Length of longest common prefix between the suffix corresponding to
-	 * this structure and the suffix with rank @prev, or 0 if @prev is -1.
-	 */
+	 * this structure and the suffix with rank @prev, or 0 if @prev is
+	 * ~(input_idx_t)0.  */
 	input_idx_t lcpprev;
 
 	/* Length of longest common prefix between the suffix corresponding to
-	 * this structure and the suffix with rank @next, or 0 if @next is -1.
-	 */
+	 * this structure and the suffix with rank @next, or 0 if @next is
+	 * ~(input_idx_t)0.  */
 	input_idx_t lcpnext;
 };
 
+/*-----------------------------------*/
+/* Functions defined in lz_sarray.c  */
+/*-----------------------------------*/
+
 extern bool
 lz_sarray_init(struct lz_sarray *mf,
-		input_idx_t max_window_size,
-		input_idx_t min_match_len,
-		input_idx_t max_match_len,
-		u32 max_matches_to_consider,
-		u32 max_matches_to_return);
+	       input_idx_t max_window_size,
+	       input_idx_t min_match_len,
+	       input_idx_t max_match_len,
+	       u32 max_matches_to_consider,
+	       u32 max_matches_to_return);
 
 extern void
 lz_sarray_destroy(struct lz_sarray *mf);
 
 extern void
-lz_sarray_load_window(struct lz_sarray *mf, const u8 window[],
-		      input_idx_t window_size);
+lz_sarray_load_window(struct lz_sarray *mf, const u8 T[], input_idx_t n);
 
-static inline input_idx_t
+/*-------------------*/
+/* Inline functions  */
+/*-------------------*/
+
+static _always_inline_attribute input_idx_t
 lz_sarray_get_pos(const struct lz_sarray *mf)
 {
 	return mf->cur_pos;
@@ -147,27 +170,24 @@ lz_sarray_update_salink(const input_idx_t i,
 	const input_idx_t r = ISA[i];
 
 	/* next = rank of LOWEST ranked suffix that is ranked HIGHER than the
-	 * current suffix AND has a LOWER position, or -1 if none exists.  */
+	 * current suffix AND has a LOWER position, or ~(input_idx_t)0 if none
+	 * exists.  */
 	const input_idx_t next = link[r].next;
 
 	/* prev = rank of HIGHEST ranked suffix that is ranked LOWER than the
-	 * current suffix AND has a LOWER position, or -1 if none exists.  */
+	 * current suffix AND has a LOWER position, or ~(input_idx_t)0 if none
+	 * exists.  */
 	const input_idx_t prev = link[r].prev;
 
 	/* Link the suffix at the current position into the linked list that
-	 * contains all suffixes in the suffix array that are appear at or
-	 * before the current position, sorted by rank.
-	 *
-	 * Save the values of all fields we overwrite so that rollback is
-	 * possible.  */
+	 * contains all suffixes referenced by the suffix array that appear at
+	 * or before the current position, sorted by rank.  */
 	if (next != ~(input_idx_t)0) {
-
 		link[next].prev = r;
 		link[next].lcpprev = link[r].lcpnext;
 	}
 
 	if (prev != ~(input_idx_t)0) {
-
 		link[prev].next = r;
 		link[prev].lcpnext = link[r].lcpprev;
 	}
@@ -185,21 +205,20 @@ typedef input_idx_t lz_sarray_cost_t;
 #define LZ_SARRAY_INFINITE_COST (~(lz_sarray_cost_t)0)
 
 /*
- * Use the suffix array match-finder to retrieve a list of LZ matches at the
+ * Use the suffix array match-finder to retrieve a list of matches at the
  * current position.
  *
  * Returns the number of matches written into @matches.  The matches are
  * returned in decreasing order by length, and each will be of unique length
- * between the minimum and maximum match lengths passed to lz_sarray_init().  Up
- * to @max_matches_to_return (passed to lz_sarray_init()) matches will be
- * returned.
+ * between the minimum and maximum match lengths (inclusively) passed to
+ * lz_sarray_init().  Up to @max_matches_to_return (passed to lz_sarray_init())
+ * matches will be returned.
  *
  * @eval_match_cost is a function for evaluating the cost of a match when
- * deciding which ones to return.  It is only used for comparing matches of the
- * same length.  It needs to be fast, and need not be exact; an implementation
- * might simply rank matches by their offset, for example, although
- * implementations may choose to take into account additional information such
- * as repeat offsets.
+ * deciding which ones to return.  It needs to be fast, and need not be exact;
+ * an implementation might simply rank matches by their offset, for example,
+ * although implementations may choose to take into account additional
+ * information such as repeat offsets.
  */
 static _always_inline_attribute u32
 lz_sarray_get_matches(struct lz_sarray *mf,
@@ -250,8 +269,7 @@ lz_sarray_get_matches(struct lz_sarray *mf,
 	/* best_cost = cost of lowest-cost match found so far.
 	 *
 	 * We keep track of this so that we can ignore shorter matches that do
-	 * not have lower costs than a longer matches already found.
-	 */
+	 * not have lower costs than longer matches already found.  */
 	lz_sarray_cost_t best_cost = LZ_SARRAY_INFINITE_COST;
 
 	/* count_remaining = maximum number of possible matches remaining to be
