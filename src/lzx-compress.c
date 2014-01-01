@@ -1675,7 +1675,7 @@ lzx_create_compressor(size_t window_size,
 		.alg_params = {
 			.slow = {
 				.use_len2_matches = 1,
-				.num_fast_bytes = 32,
+				.nice_match_length = 32,
 				.num_optim_passes = 2,
 				.max_search_depth = 50,
 				.max_matches_per_pos = 3,
@@ -1741,7 +1741,7 @@ lzx_create_compressor(size_t window_size,
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
 		if (!lz_match_chooser_init(&ctx->mc,
 					   LZX_OPTIM_ARRAY_SIZE,
-					   params->alg_params.slow.num_fast_bytes,
+					   params->alg_params.slow.nice_match_length,
 					   LZX_MAX_MATCH_LEN))
 			goto oom;
 	}

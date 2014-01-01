@@ -4014,10 +4014,11 @@ struct wimlib_lzx_compressor_params {
 
 			uint32_t slow_reserved1 : 31;
 
-			/** Matches with length (in bytes) longer than this
-			 * value are immediately taken without spending time on
-			 * minimum-cost measurements.  Suggested value: 32.  */
-			uint32_t num_fast_bytes;
+			/** Matches with length (in bytes) greater than or equal
+			 * to this value are immediately taken without spending
+			 * time on minimum-cost measurements.  Suggested value:
+			 * 32.  */
+			uint32_t nice_match_length;
 
 			/** Number of passes to compute a match/literal sequence
 			 * for each LZX block.  This is for an iterative

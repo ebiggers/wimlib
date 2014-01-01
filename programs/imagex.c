@@ -446,7 +446,7 @@ set_compress_slow(void)
 		.alg_params = {
 			.slow = {
 				.use_len2_matches = 1,
-				.num_fast_bytes = 96,
+				.nice_match_length = 96,
 				.num_optim_passes = 4,
 				.max_search_depth = 100,
 				.max_matches_per_pos = 10,
