@@ -50,14 +50,14 @@
 #define LZMS_OPTIM_ARRAY_SIZE	1024
 
 struct lzms_compressor;
-struct lzms_cost_state {
+struct lzms_adaptive_state {
 	struct lzms_lz_lru_queues lru;
 	u8 main_state;
 	u8 match_state;
 	u8 lz_match_state;
 };
-#define LZ_FORMAT_STATE struct lzms_cost_state
-#define LZ_COMPRESSOR	struct lzms_compressor
+#define LZ_ADAPTIVE_STATE struct lzms_adaptive_state
+#define LZ_COMPRESSOR	  struct lzms_compressor
 #include "wimlib/lz_optimal.h"
 
 /* Stucture used for writing raw bits to the end of the LZMS-compressed data as
@@ -693,7 +693,7 @@ lzms_value_cost(const struct lzms_huffman_encoder *enc, u32 value)
 
 static u32
 lzms_get_matches(struct lzms_compressor *ctx,
-		 const struct lzms_cost_state *cost_state,
+		 const struct lzms_adaptive_state *cost_state,
 		 struct raw_match **matches_ret)
 {
 	u32 num_matches;
@@ -733,7 +733,7 @@ lzms_skip_bytes(struct lzms_compressor *ctx, input_idx_t n)
 
 static u32
 lzms_get_prev_literal_cost(struct lzms_compressor *ctx,
-			   struct lzms_cost_state *cost_state)
+			   struct lzms_adaptive_state *cost_state)
 {
 	u8 literal = ctx->window[lz_sarray_get_pos(&ctx->lz_sarray) - 1];
 	u32 cost = 0;
@@ -750,7 +750,7 @@ lzms_get_prev_literal_cost(struct lzms_compressor *ctx,
 
 static u32
 lzms_get_match_cost(struct lzms_compressor *ctx,
-		    struct lzms_cost_state *cost_state,
+		    struct lzms_adaptive_state *cost_state,
 		    input_idx_t length, input_idx_t offset)
 {
 	u32 cost = 0;
@@ -802,7 +802,7 @@ lzms_get_match_cost(struct lzms_compressor *ctx,
 static struct raw_match
 lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 {
-	struct lzms_cost_state initial_state = {
+	struct lzms_adaptive_state initial_state = {
 		.lru = ctx->lru.lz,
 		.main_state = ctx->main_range_encoder.state,
 		.match_state = ctx->match_range_encoder.state,

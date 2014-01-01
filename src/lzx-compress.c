@@ -265,8 +265,8 @@ struct lzx_block_spec {
 };
 
 /* Include template for the match-choosing algorithm.  */
-#define LZ_COMPRESSOR	struct lzx_compressor
-#define LZ_FORMAT_STATE	struct lzx_lru_queue
+#define LZ_COMPRESSOR		struct lzx_compressor
+#define LZ_ADAPTIVE_STATE	struct lzx_lru_queue
 struct lzx_compressor;
 #include "wimlib/lz_optimal.h"
 
