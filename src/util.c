@@ -304,8 +304,7 @@ static const tchar *error_strings[] = {
 	[WIMLIB_ERR_INVALID_CHUNK_SIZE]
 		= T("The WIM chunk size was invalid"),
 	[WIMLIB_ERR_INVALID_COMPRESSION_TYPE]
-		= T("The WIM is compressed, but is not marked as having LZX or "
-			"XPRESS compression"),
+		= T("The WIM compression type was invalid"),
 	[WIMLIB_ERR_INVALID_HEADER]
 		= T("The WIM header was invalid"),
 	[WIMLIB_ERR_INVALID_IMAGE]
