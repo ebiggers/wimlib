@@ -24,8 +24,7 @@
 /* This a compressor for the LZMS compression format.  More details about this
  * format can be found in lzms-decompress.c.
  *
- * This is currently an unsophisticated implementation that is fast but does not
- * attain the best compression ratios allowed by the format.
+ * NOTE: this compressor currently does not code any delta matches.
  */
 
 #ifdef HAVE_CONFIG_H

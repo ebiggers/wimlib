@@ -61,15 +61,14 @@ commands and their syntax.  For additional documentation:
 
                                 COMPRESSION RATIO
 
-wimlib (and wimlib-imagex) can create XPRESS, LZX, or LZMS compressed WIM archives.
-The following tables compare the compression ratio and performance for creating
-a compressed x86_64 Windows PE image.  Note: these timings were done on Windows
-so that the times would be fully comparable; however, wimlib may have even
-better performance on other operating systems such as Linux.  Timings were done
-with 2 CPUs available, both of which automatically are used by wimlib for both
-XPRESS and LZX, and also by imagex.exe but apparently only for LZX.  Results for
-LZMS compression are excluded because the creation of LZMS compressed WIM
-archives is not yet recommended.
+wimlib (and wimlib-imagex) can create XPRESS, LZX, or LZMS compressed WIM
+archives.  The following tables compare the compression ratio and performance
+for creating a compressed x86_64 Windows PE image with XPRESS and LZX.  Note:
+these timings were done on Windows so that the times would be fully comparable;
+however, wimlib may have even better performance on other operating systems such
+as Linux.  Timings were done with 2 CPUs available, both of which automatically
+are used by wimlib for both XPRESS and LZX, and also by imagex.exe but
+apparently only for LZX.
 
         Table 1. WIM size
 

@@ -191,12 +191,10 @@ You may also specify the actual names of the compression algorithms, "XPRESS"
 and "LZX", instead of "fast" and "maximum", respectively.
 .IP ""
 As of wimlib v1.6.0, a third compression type, "recovery" or "LZMS", is also
-available.  Its use is not recommended because other than wimlib itself, as of
-Windows 8 it is only compatible with WIMGAPI and Windows Setup (not even ImageX
-or Dism).  Furthermore, wimlib's LZMS compressor is currently less well
-optimized than its LZX compressor.  However, LZMS is the compression algorithm
-used in packed resources created if the \fB--pack-streams\fR option is
-specified.
+available.  Its use is generally not recommended because other than wimlib
+itself, as of Windows 8 it is only compatible with WIMGAPI and Windows Setup
+(not even ImageX or Dism).  However, LZMS is the compression algorithm used in
+packed resources created if the \fB--pack-streams\fR option is specified.
 .TP
 \fB--compress-slow\fR
 Spend even more time compressing the data to achieve a very slightly better
