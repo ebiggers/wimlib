@@ -224,10 +224,11 @@ mounted with \fB@IMAGEX_PROGNAME@ mount\fR.  Also, WIMs created using this
 option use a different version number in their header and as of Windows 8 are
 only compatible with Windows Setup and WIMGAPI, not even ImageX and Dism.
 .IP ""
-Packed resources use a chunk size that is independent of the WIM's "default
-chunk size", the latter of which may be adjusted by the \fB--chunk-size\fR
-option.  For compatibility reasons, there is currently no option to change the
-compression algorithm or chunk size used in packed resources.
+Packed resources use a compression type and chunk size that is independent of
+the WIM's "default compression type" and "default chunk size" (which may be
+adjusted by the \fB--compress\fR and \fB--chunk-size\fR options, respectively).
+For compatibility reasons, \fB@IMAGEX_PROGNAME@ capture\fR currently has no
+option to change the compression type or chunk size used in packed resources.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of
@@ -530,6 +531,11 @@ Microsoft's software.
 Pipable WIMs are incompatible with Microsoft's software.  Pipable WIMs are
 created only if \fIWIMFILE\fR was specified as "-" (standard output) or if
 the \fB--pipable\fR flag was specified.
+.IP \[bu]
+WIMs captured with a non-default chunk size (with the \fB--chunk-size\fR option)
+or as solid archives (with the \fB--pack-streams\fR option) have varying levels
+of compatibility with Microsoft's software.  The best compatibility is achieved
+with WIMGAPI itelf (not ImageX or Dism) on Windows 8 or later.
 .SH EXAMPLES
 First example:  Create a new WIM 'mywim.wim' with "maximum" (LZX) compression
 that will contain a captured image of the directory tree 'somedir'.  Note that
