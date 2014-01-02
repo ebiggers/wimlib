@@ -194,7 +194,6 @@
 #include "wimlib/compress_common.h"
 #include "wimlib/decompressor_ops.h"
 #include "wimlib/decompress_common.h"
-#include "wimlib/error.h"
 #include "wimlib/lzms.h"
 #include "wimlib/util.h"
 
@@ -283,6 +282,8 @@ struct lzms_huffman_decoder {
 	 * This member need not be set if only raw Huffman symbols are being
 	 * read using this decoder.  */
 	const u32 *slot_base_tab;
+
+	const u8 *extra_bits_tab;
 
 	/* Number of symbols that have been read using this code far.  Reset to
 	 * 0 whenever the code is rebuilt.  */
@@ -628,19 +629,19 @@ lzms_decode_value(struct lzms_huffman_decoder *dec)
 	unsigned num_extra_bits;
 	u32 extra_bits;
 
+	LZMS_ASSERT(dec->slot_base_tab != NULL);
+	LZMS_ASSERT(dec->extra_bits_tab != NULL);
+
 	/* Read the slot (position slot, length slot, etc.), which is encoded as
 	 * a Huffman symbol.  */
 	slot = lzms_huffman_decode_symbol(dec);
 
-	LZMS_ASSERT(dec->slot_base_tab != NULL);
-
 	/* Get the number of extra bits needed to represent the range of values
 	 * that share the slot.  */
-	num_extra_bits = bsr32(dec->slot_base_tab[slot + 1] -
-			       dec->slot_base_tab[slot]);
+	num_extra_bits = dec->extra_bits_tab[slot];
 
-	/* Read the number of extra bits and add them to the slot to form the
-	 * final decoded value.  */
+	/* Read the number of extra bits and add them to the slot base to form
+	 * the final decoded value.  */
 	extra_bits = lzms_input_bitstream_read_bits(dec->is, num_extra_bits);
 	return dec->slot_base_tab[slot] + extra_bits;
 }
@@ -852,11 +853,14 @@ lzms_init_range_decoder(struct lzms_range_decoder *dec,
 static void
 lzms_init_huffman_decoder(struct lzms_huffman_decoder *dec,
 			  struct lzms_input_bitstream *is,
-			  const u32 *slot_base_tab, unsigned num_syms,
+			  const u32 *slot_base_tab,
+			  const u8 *extra_bits_tab,
+			  unsigned num_syms,
 			  unsigned rebuild_freq)
 {
 	dec->is = is;
 	dec->slot_base_tab = slot_base_tab;
+	dec->extra_bits_tab = extra_bits_tab;
 	dec->num_syms = num_syms;
 	dec->num_syms_read = rebuild_freq;
 	dec->rebuild_freq = rebuild_freq;
@@ -895,23 +899,29 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 	/* Initialize Huffman decoders for each alphabet used in the compressed
 	 * representation.  */
 	lzms_init_huffman_decoder(&ctx->literal_decoder, &ctx->is,
-				  NULL, LZMS_NUM_LITERAL_SYMS,
+				  NULL, NULL, LZMS_NUM_LITERAL_SYMS,
 				  LZMS_LITERAL_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_decoder(&ctx->lz_offset_decoder, &ctx->is,
-				  lzms_position_slot_base, num_position_slots,
+				  lzms_position_slot_base,
+				  lzms_extra_position_bits,
+				  num_position_slots,
 				  LZMS_LZ_OFFSET_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_decoder(&ctx->length_decoder, &ctx->is,
-				  lzms_length_slot_base, LZMS_NUM_LEN_SYMS,
+				  lzms_length_slot_base,
+				  lzms_extra_length_bits,
+				  LZMS_NUM_LEN_SYMS,
 				  LZMS_LENGTH_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_decoder(&ctx->delta_offset_decoder, &ctx->is,
-				  lzms_position_slot_base, num_position_slots,
+				  lzms_position_slot_base,
+				  lzms_extra_position_bits,
+				  num_position_slots,
 				  LZMS_DELTA_OFFSET_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_decoder(&ctx->delta_power_decoder, &ctx->is,
-				  NULL, LZMS_NUM_DELTA_POWER_SYMS,
+				  NULL, NULL, LZMS_NUM_DELTA_POWER_SYMS,
 				  LZMS_DELTA_POWER_CODE_REBUILD_FREQ);
 
 
@@ -1031,8 +1041,8 @@ lzms_create_decompressor(size_t max_block_size,
 	if (ctx == NULL)
 		return WIMLIB_ERR_NOMEM;
 
-	/* Initialize position and length slot bases if not done already.  */
-	lzms_init_slot_bases();
+	/* Initialize position and length slot data if not done already.  */
+	lzms_init_slots();
 
 	*ctx_ret = ctx;
 	return 0;

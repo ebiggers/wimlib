@@ -29,54 +29,85 @@
 #endif
 
 #include "wimlib/endianness.h"
-#include "wimlib/error.h"
 #include "wimlib/lzms.h"
 #include "wimlib/util.h"
 
 #include <pthread.h>
 
-/* A table that maps position slots to their base values.  These are constants
- * computed at runtime by lzms_compute_slot_bases().  */
+/***************************************************************
+ * Constant tables initialized by lzms_compute_slots():        *
+ ***************************************************************/
+
+/* Table: position slot => position slot base value  */
 u32 lzms_position_slot_base[LZMS_MAX_NUM_OFFSET_SYMS + 1];
 
-/* A table that maps length slots to their base values.  These are constants
- * computed at runtime by lzms_compute_slot_bases().  */
+/* Table: position slot => number of extra position bits  */
+u8 lzms_extra_position_bits[LZMS_MAX_NUM_OFFSET_SYMS];
+
+/* Table: log2(position) => [lower bound, upper bound] on position slot  */
+u16 lzms_order_to_position_slot_bounds[30][2];
+
+/* Table: length slot => length slot base value  */
 u32 lzms_length_slot_base[LZMS_NUM_LEN_SYMS + 1];
 
-/* Return the slot for the specified value.  */
-unsigned
+/* Table: length slot => number of extra length bits  */
+u8 lzms_extra_length_bits[LZMS_NUM_LEN_SYMS];
+
+/* Table: length (< LZMS_NUM_FAST_LENGTHS only) => length slot  */
+u8 lzms_length_slot_fast[LZMS_NUM_FAST_LENGTHS];
+
+u32
 lzms_get_slot(u32 value, const u32 slot_base_tab[], unsigned num_slots)
 {
-	/* TODO:  Speed this up.  */
-	unsigned slot = 0;
-
-	while (slot_base_tab[slot + 1] <= value)
-		slot++;
-
-	return slot;
+	u32 l = 0;
+	u32 r = num_slots - 1;
+	for (;;) {
+		LZMS_ASSERT(r >= l);
+		u32 slot = (l + r) / 2;
+		if (value >= slot_base_tab[slot]) {
+			if (value < slot_base_tab[slot + 1])
+				return slot;
+			else
+				l = slot + 1;
+		} else {
+			r = slot - 1;
+		}
+	}
 }
-
 
 static void
 lzms_decode_delta_rle_slot_bases(u32 slot_bases[],
-				 const u8 delta_run_lens[], size_t num_run_lens)
+				 u8 extra_bits[],
+				 const u8 delta_run_lens[],
+				 u32 num_run_lens,
+				 u32 final,
+				 u32 expected_num_slots)
 {
+	u32 order = 0;
 	u32 delta = 1;
 	u32 base = 0;
-	size_t slot = 0;
-	for (size_t i = 0; i < num_run_lens; i++) {
+	u32 slot = 0;
+	for (u32 i = 0; i < num_run_lens; i++) {
 		u8 run_len = delta_run_lens[i];
 		while (run_len--) {
 			base += delta;
-			slot_bases[slot++] = base;
+			if (slot > 0)
+				extra_bits[slot - 1] = order;
+			slot_bases[slot] = base;
+			slot++;
 		}
 		delta <<= 1;
+		order++;
 	}
+	LZMS_ASSERT(slot == expected_num_slots);
+
+	slot_bases[slot] = final;
+	extra_bits[slot - 1] = bsr32(slot_bases[slot] - slot_bases[slot - 1]);
 }
 
 /* Initialize the global position and length slot tables.  */
 static void
-lzms_compute_slot_bases(void)
+lzms_compute_slots(void)
 {
 	/* If an explicit formula that maps LZMS position and length slots to
 	 * slot bases exists, then it could be used here.  But until one is
@@ -96,31 +127,52 @@ lzms_compute_slot_bases(void)
 		1,
 	};
 
+	/* Position slots  */
 	lzms_decode_delta_rle_slot_bases(lzms_position_slot_base,
+					 lzms_extra_position_bits,
 					 position_slot_delta_run_lens,
-					 ARRAY_LEN(position_slot_delta_run_lens));
+					 ARRAY_LEN(position_slot_delta_run_lens),
+					 0x7fffffff,
+					 LZMS_MAX_NUM_OFFSET_SYMS);
 
-	lzms_position_slot_base[LZMS_MAX_NUM_OFFSET_SYMS] = 0x7fffffff;
+	for (u32 order = 0; order < 30; order++) {
+		lzms_order_to_position_slot_bounds[order][0] =
+			lzms_get_slot(1U << order, lzms_position_slot_base,
+				      LZMS_MAX_NUM_OFFSET_SYMS);
+		lzms_order_to_position_slot_bounds[order][1] =
+			lzms_get_slot((1U << (order + 1)) - 1, lzms_position_slot_base,
+				      LZMS_MAX_NUM_OFFSET_SYMS);
+	}
 
+	/* Length slots  */
 	lzms_decode_delta_rle_slot_bases(lzms_length_slot_base,
+					 lzms_extra_length_bits,
 					 length_slot_delta_run_lens,
-					 ARRAY_LEN(length_slot_delta_run_lens));
+					 ARRAY_LEN(length_slot_delta_run_lens),
+					 0x400108ab,
+					 LZMS_NUM_LEN_SYMS);
 
-	lzms_length_slot_base[LZMS_NUM_LEN_SYMS] = 0x400108ab;
+	/* Create table mapping short lengths to length slots.  */
+	for (u32 slot = 0, i = 0; i < LZMS_NUM_FAST_LENGTHS; i++) {
+		if (i >= lzms_length_slot_base[slot + 1])
+			slot++;
+		lzms_length_slot_fast[i] = slot;
+	}
 }
 
-/* Initialize the global position length slot tables if not done so already.  */
+/* Initialize the global position and length slot tables if not done so already.
+ * */
 void
-lzms_init_slot_bases(void)
+lzms_init_slots(void)
 {
+	static bool done = false;
 	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	static bool already_computed = false;
 
-	if (unlikely(!already_computed)) {
+	if (unlikely(!done)) {
 		pthread_mutex_lock(&mutex);
-		if (!already_computed) {
-			lzms_compute_slot_bases();
-			already_computed = true;
+		if (!done) {
+			lzms_compute_slots();
+			done = true;
 		}
 		pthread_mutex_unlock(&mutex);
 	}
@@ -261,7 +313,7 @@ lzms_x86_filter(u8 data[restrict],
 static void
 lzms_init_lz_lru_queues(struct lzms_lz_lru_queues *lz)
 {
-        /* Recent offsets for LZ matches  */
+	/* Recent offsets for LZ matches  */
 	for (u32 i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++)
 		lz->recent_offsets[i] = i + 1;
 
@@ -272,7 +324,7 @@ lzms_init_lz_lru_queues(struct lzms_lz_lru_queues *lz)
 static void
 lzms_init_delta_lru_queues(struct lzms_delta_lru_queues *delta)
 {
-        /* Recent offsets and powers for LZ matches  */
+	/* Recent offsets and powers for LZ matches  */
 	for (u32 i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++) {
 		delta->recent_offsets[i] = i + 1;
 		delta->recent_powers[i] = 0;
@@ -287,8 +339,8 @@ lzms_init_delta_lru_queues(struct lzms_delta_lru_queues *delta)
 void
 lzms_init_lru_queues(struct lzms_lru_queues *lru)
 {
-        lzms_init_lz_lru_queues(&lru->lz);
-        lzms_init_delta_lru_queues(&lru->delta);
+	lzms_init_lz_lru_queues(&lru->lz);
+	lzms_init_delta_lru_queues(&lru->delta);
 }
 
 void
@@ -321,6 +373,6 @@ lzms_update_delta_lru_queues(struct lzms_delta_lru_queues *delta)
 void
 lzms_update_lru_queues(struct lzms_lru_queues *lru)
 {
-        lzms_update_lz_lru_queues(&lru->lz);
-        lzms_update_delta_lru_queues(&lru->delta);
+	lzms_update_lz_lru_queues(&lru->lz);
+	lzms_update_delta_lru_queues(&lru->delta);
 }

@@ -8,6 +8,8 @@
 #ifdef ENABLE_LZMS_DEBUG
 #	define LZMS_DEBUG DEBUG
 #       define LZMS_ASSERT wimlib_assert
+#       include "wimlib/assert.h"
+#       include "wimlib/error.h"
 #else
 #	define LZMS_DEBUG(format, ...)
 #	define LZMS_ASSERT(...)
@@ -47,7 +49,7 @@
 
 /* Code shared between the LZMS decompressor and compressor.  */
 
-#include <wimlib/types.h>
+#include <wimlib/util.h>
 
 extern void
 lzms_x86_filter(u8 data[], s32 size, s32 last_target_usages[], bool undo);
@@ -103,26 +105,52 @@ struct lzms_lru_queues {
 
 extern u32 lzms_position_slot_base[LZMS_MAX_NUM_OFFSET_SYMS + 1];
 
+extern u8 lzms_extra_position_bits[LZMS_MAX_NUM_OFFSET_SYMS];
+
+extern u16 lzms_order_to_position_slot_bounds[30][2];
+
 extern u32 lzms_length_slot_base[LZMS_NUM_LEN_SYMS + 1];
 
-extern void
-lzms_init_slot_bases(void);
+#define LZMS_NUM_FAST_LENGTHS 1024
+extern u8 lzms_length_slot_fast[LZMS_NUM_FAST_LENGTHS];
 
+extern u8 lzms_extra_length_bits[LZMS_NUM_LEN_SYMS];
+
+extern void
+lzms_init_slots(void);
+
+/* Return the slot for the specified value.  */
 extern u32
-lzms_get_slot(u32 value, const u32 slot_base_tab[], unsigned num_slots);
+lzms_get_slot(u32 value, const u32 slot_base_tab[], u32 num_slots);
 
 static inline u32
-lzms_get_position_slot(u32 value)
+lzms_get_position_slot(u32 position)
 {
-	return lzms_get_slot(value, lzms_position_slot_base,
-			     LZMS_MAX_NUM_OFFSET_SYMS);
+	u32 order = bsr32(position);
+	u32 l = lzms_order_to_position_slot_bounds[order][0];
+	u32 r = lzms_order_to_position_slot_bounds[order][1];
+
+	for (;;) {
+		u32 slot = (l + r) / 2;
+		if (position >= lzms_position_slot_base[slot]) {
+			if (position < lzms_position_slot_base[slot + 1])
+				return slot;
+			else
+				l = slot + 1;
+		} else {
+			r = slot - 1;
+		}
+	}
 }
 
 static inline u32
-lzms_get_length_slot(u32 value)
+lzms_get_length_slot(u32 length)
 {
-	return lzms_get_slot(value, lzms_length_slot_base,
-			     LZMS_NUM_LEN_SYMS);
+	if (likely(length < LZMS_NUM_FAST_LENGTHS))
+		return lzms_length_slot_fast[length];
+	else
+		return lzms_get_slot(length, lzms_length_slot_base,
+				     LZMS_NUM_LEN_SYMS);
 }
 
 extern void

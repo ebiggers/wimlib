@@ -33,7 +33,6 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/assert.h"
 #include "wimlib/compiler.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/compress_common.h"
@@ -140,18 +139,13 @@ struct lzms_range_encoder {
 	struct lzms_probability_entry prob_entries[LZMS_MAX_NUM_STATES];
 };
 
-/* Structure used for Huffman encoding, optionally encoding larger "values" as a
- * Huffman symbol specifying a slot and a slot-dependent number of extra bits.
- * */
+/* Structure used for Huffman encoding.  */
 struct lzms_huffman_encoder {
 
 	/* Bitstream to write Huffman-encoded symbols and verbatim bits to.
 	 * Multiple lzms_huffman_encoder's share the same lzms_output_bitstream.
 	 */
 	struct lzms_output_bitstream *os;
-
-	/* Pointer to the slot base table to use.  */
-	const u32 *slot_base_tab;
 
 	/* Number of symbols that have been written using this code far.  Reset
 	 * to 0 whenever the code is rebuilt.  */
@@ -195,7 +189,8 @@ struct lzms_compressor {
 	/* Suffix array match-finder.  */
 	struct lz_sarray lz_sarray;
 
-	struct raw_match matches[64];
+	/* Temporary space to store found matches.  */
+	struct raw_match *matches;
 
 	/* Match-chooser.  */
 	struct lz_match_chooser mc;
@@ -460,29 +455,36 @@ lzms_huffman_encode_symbol(struct lzms_huffman_encoder *enc, u32 sym)
 	}
 }
 
-/* Encode a number as a Huffman symbol specifying a slot, plus a number of
- * slot-dependent extra bits.  */
 static void
-lzms_encode_value(struct lzms_huffman_encoder *enc, u32 value)
+lzms_encode_length(struct lzms_huffman_encoder *enc, u32 length)
 {
 	unsigned slot;
 	unsigned num_extra_bits;
 	u32 extra_bits;
 
-	LZMS_ASSERT(enc->slot_base_tab != NULL);
+	slot = lzms_get_length_slot(length);
 
-	slot = lzms_get_slot(value, enc->slot_base_tab, enc->num_syms);
+	num_extra_bits = lzms_extra_length_bits[slot];
 
-	/* Get the number of extra bits needed to represent the range of values
-	 * that share the slot.  */
-	num_extra_bits = bsr32(enc->slot_base_tab[slot + 1] -
-			       enc->slot_base_tab[slot]);
+	extra_bits = length - lzms_length_slot_base[slot];
 
-	/* Calculate the extra bits as the offset from the slot base.  */
-	extra_bits = value - enc->slot_base_tab[slot];
+	lzms_huffman_encode_symbol(enc, slot);
+	lzms_output_bitstream_put_bits(enc->os, extra_bits, num_extra_bits);
+}
 
-	/* Output the slot (Huffman-encoded), then the extra bits (verbatim).
-	 */
+static void
+lzms_encode_offset(struct lzms_huffman_encoder *enc, u32 offset)
+{
+	unsigned slot;
+	unsigned num_extra_bits;
+	u32 extra_bits;
+
+	slot = lzms_get_position_slot(offset);
+
+	num_extra_bits = lzms_extra_position_bits[slot];
+
+	extra_bits = offset - lzms_position_slot_base[slot];
+
 	lzms_huffman_encode_symbol(enc, slot);
 	lzms_output_bitstream_put_bits(enc->os, extra_bits, num_extra_bits);
 }
@@ -558,7 +560,7 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 		lzms_range_encode_bit(&ctx->lz_match_range_encoder, 0);
 
 		/* Encode the match offset.  */
-		lzms_encode_value(&ctx->lz_offset_encoder, offset);
+		lzms_encode_offset(&ctx->lz_offset_encoder, offset);
 	} else {
 		int i;
 
@@ -583,7 +585,7 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 	}
 
 	/* Encode the match length.  */
-	lzms_encode_value(&ctx->length_encoder, length);
+	lzms_encode_length(&ctx->length_encoder, length);
 
 	/* Save the match offset for later insertion at the front of the LZ
 	 * match offset LRU queue.  */
@@ -654,7 +656,7 @@ lzms_lz_match_cost_fast(input_idx_t length, input_idx_t offset, const void *_lru
 /*#define LZMS_RC_COSTS_USE_FLOATING_POINT*/
 
 static u32
-lzms_rc_costs[LZMS_PROBABILITY_MAX];
+lzms_rc_costs[LZMS_PROBABILITY_MAX + 1];
 
 #ifdef LZMS_RC_COSTS_USE_FLOATING_POINT
 #  include <math.h>
@@ -684,7 +686,7 @@ lzms_do_init_rc_costs(void)
 	 * really interpreted as 1 / 64 and 64 / 64 is really interpreted as
 	 * 63 / 64.
 	 */
-	for (u32 i = 0; i < LZMS_PROBABILITY_MAX; i++) {
+	for (u32 i = 0; i <= LZMS_PROBABILITY_MAX; i++) {
 		u32 prob = i;
 
 		if (prob == 0)
@@ -718,7 +720,7 @@ lzms_init_rc_costs(void)
 	static bool done = false;
 	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
-	if (!done) {
+	if (unlikely(!done)) {
 		pthread_mutex_lock(&mutex);
 		if (!done) {
 			lzms_do_init_rc_costs();
@@ -747,11 +749,6 @@ lzms_rc_bit_cost(const struct lzms_range_encoder *enc, u8 *cur_state, int bit)
 
 	*cur_state = (*cur_state << 1) | bit;
 
-	if (prob_zero == 0)
-		prob_zero = 1;
-	else if (prob_zero == LZMS_PROBABILITY_MAX)
-		prob_zero = LZMS_PROBABILITY_MAX - 1;
-
 	if (bit == 0)
 		prob_correct = prob_zero;
 	else
@@ -766,20 +763,36 @@ lzms_huffman_symbol_cost(const struct lzms_huffman_encoder *enc, u32 sym)
 	return enc->lens[sym] << LZMS_COST_SHIFT;
 }
 
-/* Compute the cost to encode a number with lzms_encode_value().  */
 static u32
-lzms_value_cost(const struct lzms_huffman_encoder *enc, u32 value)
+lzms_offset_cost(const struct lzms_huffman_encoder *enc, u32 offset)
 {
 	u32 slot;
 	u32 num_extra_bits;
 	u32 cost = 0;
 
-	slot = lzms_get_slot(value, enc->slot_base_tab, enc->num_syms);
+	slot = lzms_get_position_slot(offset);
 
 	cost += lzms_huffman_symbol_cost(enc, slot);
 
-	num_extra_bits = bsr32(enc->slot_base_tab[slot + 1] -
-			       enc->slot_base_tab[slot]);
+	num_extra_bits = lzms_extra_position_bits[slot];
+
+	cost += num_extra_bits << LZMS_COST_SHIFT;
+
+	return cost;
+}
+
+static u32
+lzms_length_cost(const struct lzms_huffman_encoder *enc, u32 length)
+{
+	u32 slot;
+	u32 num_extra_bits;
+	u32 cost = 0;
+
+	slot = lzms_get_length_slot(length);
+
+	cost += lzms_huffman_symbol_cost(enc, slot);
+
+	num_extra_bits = lzms_extra_length_bits[slot];
 
 	cost += num_extra_bits << LZMS_COST_SHIFT;
 
@@ -791,37 +804,11 @@ lzms_get_matches(struct lzms_compressor *ctx,
 		 const struct lzms_adaptive_state *state,
 		 struct raw_match **matches_ret)
 {
-	u32 num_matches;
-	struct raw_match *matches = ctx->matches;
-
-	num_matches = lz_sarray_get_matches(&ctx->lz_sarray,
-					    matches,
-					    lzms_lz_match_cost_fast,
-					    &state->lru);
-#if 0
-	fprintf(stderr, "Pos %u: %u matches\n",
-		lz_sarray_get_pos(&ctx->lz_sarray) - 1, num_matches);
-	for (u32 i = 0; i < num_matches; i++)
-		fprintf(stderr, "\tLen %u Offset %u\n", matches[i].len, matches[i].offset);
-#endif
-
-#ifdef ENABLE_LZMS_DEBUG
-	LZMS_ASSERT(lz_sarray_get_pos(&ctx->lz_sarray) > 0);
-	u32 curpos = lz_sarray_get_pos(&ctx->lz_sarray) - 1;
-	for (u32 i = 0; i < num_matches; i++) {
-		LZMS_ASSERT(matches[i].len <= ctx->window_size - curpos);
-		LZMS_ASSERT(matches[i].offset > 0);
-		LZMS_ASSERT(matches[i].offset <= curpos);
-		LZMS_ASSERT(!memcmp(&ctx->window[curpos],
-				    &ctx->window[curpos - matches[i].offset],
-				    matches[i].len));
-		if (i < num_matches - 1)
-			LZMS_ASSERT(matches[i].len > matches[i + 1].len);
-
-	}
-#endif
-	*matches_ret = matches;
-	return num_matches;
+	*matches_ret = ctx->matches;
+	return lz_sarray_get_matches(&ctx->lz_sarray,
+				     ctx->matches,
+				     lzms_lz_match_cost_fast,
+				     &state->lru);
 }
 
 static void
@@ -873,7 +860,7 @@ lzms_get_lz_match_cost(struct lzms_compressor *ctx,
 		cost += lzms_rc_bit_cost(&ctx->lz_match_range_encoder,
 					 &state->lz_match_state, 0);
 
-		cost += lzms_value_cost(&ctx->lz_offset_encoder, offset);
+		cost += lzms_offset_cost(&ctx->lz_offset_encoder, offset);
 	} else {
 		int i;
 
@@ -895,7 +882,7 @@ lzms_get_lz_match_cost(struct lzms_compressor *ctx,
 			state->lru.recent_offsets[i] = state->lru.recent_offsets[i + 1];
 	}
 
-	cost += lzms_value_cost(&ctx->length_encoder, length);
+	cost += lzms_length_cost(&ctx->length_encoder, length);
 
 	state->lru.upcoming_offset = offset;
 	lzms_update_lz_lru_queues(&state->lru);
@@ -980,12 +967,10 @@ lzms_init_range_encoder(struct lzms_range_encoder *enc,
 static void
 lzms_init_huffman_encoder(struct lzms_huffman_encoder *enc,
 			  struct lzms_output_bitstream *os,
-			  const u32 *slot_base_tab,
 			  unsigned num_syms,
 			  unsigned rebuild_freq)
 {
 	enc->os = os;
-	enc->slot_base_tab = slot_base_tab;
 	enc->num_syms_written = 0;
 	enc->rebuild_freq = rebuild_freq;
 	enc->num_syms = num_syms;
@@ -1028,23 +1013,23 @@ lzms_init_compressor(struct lzms_compressor *ctx, const u8 *udata, u32 ulen,
 	/* Initialize Huffman encoders for each alphabet used in the compressed
 	 * representation.  */
 	lzms_init_huffman_encoder(&ctx->literal_encoder, &ctx->os,
-				  NULL, LZMS_NUM_LITERAL_SYMS,
+				  LZMS_NUM_LITERAL_SYMS,
 				  LZMS_LITERAL_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_encoder(&ctx->lz_offset_encoder, &ctx->os,
-				  lzms_position_slot_base, num_position_slots,
+				  num_position_slots,
 				  LZMS_LZ_OFFSET_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_encoder(&ctx->length_encoder, &ctx->os,
-				  lzms_length_slot_base, LZMS_NUM_LEN_SYMS,
+				  LZMS_NUM_LEN_SYMS,
 				  LZMS_LENGTH_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_encoder(&ctx->delta_offset_encoder, &ctx->os,
-				  lzms_position_slot_base, num_position_slots,
+				  num_position_slots,
 				  LZMS_DELTA_OFFSET_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_encoder(&ctx->delta_power_encoder, &ctx->os,
-				  NULL, LZMS_NUM_DELTA_POWER_SYMS,
+				  LZMS_NUM_DELTA_POWER_SYMS,
 				  LZMS_DELTA_POWER_CODE_REBUILD_FREQ);
 
 	/* Initialize range encoders, all of which wrap around the same
@@ -1070,7 +1055,7 @@ lzms_init_compressor(struct lzms_compressor *ctx, const u8 *udata, u32 ulen,
 					&ctx->rc, LZMS_NUM_DELTA_REPEAT_MATCH_STATES);
 
 	/* Initialize LRU match information.  */
-        lzms_init_lru_queues(&ctx->lru);
+	lzms_init_lru_queues(&ctx->lru);
 }
 
 /* Flush the output streams, prepare the final compressed data, and return its
@@ -1162,8 +1147,9 @@ lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 
 	/* Compute and encode a literal/match sequence that decompresses to the
 	 * preprocessed data.  */
+#if 1
 	lzms_normal_encode(ctx);
-#if 0
+#else
 	lzms_fast_encode(ctx);
 #endif
 
@@ -1233,6 +1219,7 @@ lzms_free_compressor(void *_ctx)
 #if 0
 		FREE(ctx->prev_tab);
 #endif
+		FREE(ctx->matches);
 		lz_sarray_destroy(&ctx->lz_sarray);
 		lz_match_chooser_destroy(&ctx->mc);
 		FREE(ctx);
@@ -1289,6 +1276,13 @@ lzms_create_compressor(size_t max_block_size,
 		goto oom;
 #endif
 
+	ctx->matches = MALLOC(min(params->max_match_length -
+					params->min_match_length + 1,
+				  params->max_matches_per_pos) *
+				sizeof(ctx->matches[0]));
+	if (ctx->matches == NULL)
+		goto oom;
+
 	if (!lz_sarray_init(&ctx->lz_sarray, max_block_size,
 			    params->min_match_length,
 			    params->max_match_length,
@@ -1302,8 +1296,8 @@ lzms_create_compressor(size_t max_block_size,
 				   params->max_match_length))
 		goto oom;
 
-	/* Initialize position and length slot bases if not done already.  */
-	lzms_init_slot_bases();
+	/* Initialize position and length slot data if not done already.  */
+	lzms_init_slots();
 
 	/* Initialize range encoding cost table if not done already.  */
 	lzms_init_rc_costs();
