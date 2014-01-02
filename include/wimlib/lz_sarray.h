@@ -164,14 +164,8 @@ lz_sarray_get_pos(const struct lz_sarray *mf)
 
 /* Advance the suffix array match-finder to the next position.  */
 static _always_inline_attribute void
-lz_sarray_update_salink(const input_idx_t i,
-			const input_idx_t SA[const restrict],
-			const input_idx_t ISA[const restrict],
-			struct salink link[const restrict])
+lz_sarray_update_salink(const input_idx_t r, struct salink link[])
 {
-	/* r = Rank of the suffix at the current position.  */
-	const input_idx_t r = ISA[i];
-
 	/* next = rank of LOWEST ranked suffix that is ranked HIGHER than the
 	 * current suffix AND has a LOWER position, or ~(input_idx_t)0 if none
 	 * exists.  */
@@ -201,7 +195,7 @@ static _always_inline_attribute void
 lz_sarray_skip_position(struct lz_sarray *mf)
 {
 	LZ_ASSERT(mf->cur_pos < mf->window_size);
-	lz_sarray_update_salink(mf->cur_pos++, mf->SA, mf->ISA, mf->salink);
+	lz_sarray_update_salink(mf->ISA[mf->cur_pos++], mf->salink);
 }
 
 typedef input_idx_t lz_sarray_cost_t;
@@ -246,7 +240,7 @@ lz_sarray_get_matches(struct lz_sarray *mf,
 	const input_idx_t r = ISA[i];
 
 	/* Prepare for searching the current position.  */
-	lz_sarray_update_salink(i, SA, ISA, link);
+	lz_sarray_update_salink(r, link);
 
 	/* L = rank of next suffix to the left;
 	 * R = rank of next suffix to the right;
