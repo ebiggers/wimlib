@@ -8,12 +8,11 @@ Version 1.6.0:
 	image), but optimizations have been implemented for extraction.  These
 	new WIM files also typically use a new compression format (LZMS), which
 	is similar to LZMA and can offer a better compression ratio than LZX.
-	These new WIM files can be created with Dism using '/compress recovery',
-	or using `wimcapture' using '--pack-streams', although wimlib's LZMS
-	compressor is not yet very good, the latter is not recommended.  Note:
-	this new WIM format is used by the Windows 8 web downloader, but
-	important segments of the raw '.esd' files are encrypted, so wimlib will
-	not be able to extract such files until they are first decrypted.
+	These new WIM files can be created using `wimcapture' with
+	the '--compress=lzms --pack-streams' options.  Note: this new WIM format
+	is used by the Windows 8 web downloader, but important segments of the
+	raw '.esd' files are encrypted, so wimlib will not be able to extract
+	such files until they are first decrypted.
 
 	wimlib now supports extracting files and directories from a WIM image
 	based on a "listfile" that itself contains the list of paths to extract.
