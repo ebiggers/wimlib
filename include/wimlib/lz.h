@@ -5,12 +5,9 @@
 
 //#define ENABLE_LZ_DEBUG
 #ifdef ENABLE_LZ_DEBUG
-#  define LZ_DEBUG DEBUG
 #  define LZ_ASSERT wimlib_assert
 #  include "wimlib/assert.h"
-#  include "wimlib/error.h"
 #else
-#  define LZ_DEBUG(...)
 #  define LZ_ASSERT(...)
 #endif
 
