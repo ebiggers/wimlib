@@ -437,7 +437,6 @@ get_compression_type(const tchar *optarg)
 static void
 set_compress_slow(void)
 {
-	int ret;
 	static const struct wimlib_lzx_compressor_params lzx_slow_params = {
 		.hdr = {
 			.size = sizeof(struct wimlib_lzx_compressor_params),
