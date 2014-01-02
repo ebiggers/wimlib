@@ -2470,12 +2470,14 @@ wimlib_extract_image_from_pipe(int pipe_fd,
 			       wimlib_progress_func_t progress_func);
 
 /**
- * Similar to wimlib_extract_paths(), but the paths to extract from the WIM
- * image are specified in the UTF-8 text file named by @p path_list_file which
- * itself contains the list of paths to use, one per line.  Leading and trailing
- * whitespace, and otherwise empty lines and lines beginning with the ';'
- * character are ignored.  No quotes are needed as paths are otherwise delimited
- * by the newline character.
+ * @ingroup G_extracting_wims
+ *
+ * Since wimlib v1.6.0:  Similar to wimlib_extract_paths(), but the paths to
+ * extract from the WIM image are specified in the UTF-8 text file named by @p
+ * path_list_file which itself contains the list of paths to use, one per line.
+ * Leading and trailing whitespace, and otherwise empty lines and lines
+ * beginning with the ';' character are ignored.  No quotes are needed as paths
+ * are otherwise delimited by the newline character.
  */
 extern int
 wimlib_extract_pathlist(WIMStruct *wim, int image,
@@ -2485,8 +2487,10 @@ wimlib_extract_pathlist(WIMStruct *wim, int image,
 			wimlib_progress_func_t progress_func);
 
 /**
- * Similar to wimlib_extract_files(), but the files or directories to extract
- * from the WIM image are specified as an array of paths.
+ * @ingroup G_extracting_wims
+ *
+ * Since wimlib v1.6.0:  Similar to wimlib_extract_files(), but the files or
+ * directories to extract from the WIM image are specified as an array of paths.
  *
  * Each path will be extracted to a corresponding subdirectory of the @p target
  * based on its location in the WIM image.  For example, if one of the paths to
