@@ -45,8 +45,6 @@
 #include <limits.h>
 #include <pthread.h>
 
-#define LZMS_OPTIM_ARRAY_SIZE	1024
-
 struct lzms_compressor;
 struct lzms_adaptive_state {
 	struct lzms_lz_lru_queues lru;
@@ -877,9 +875,10 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
  * - The costs of literals and matches are estimated using the range encoder
  *   states and the semi-adaptive Huffman codes.  Except for range encoding
  *   states, costs are assumed to be constant throughout a single run of the
- *   parsing algorithm, which can parse up to LZMS_OPTIM_ARRAY_SIZE bytes of
- *   data.  This introduces a source of inaccuracy because the probabilities and
- *   Huffman codes can change over this part of the data.
+ *   parsing algorithm, which can parse up to @optim_array_length (from the
+ *   `struct wimlib_lzms_compressor_params') bytes of data.  This introduces a
+ *   source of inaccuracy because the probabilities and Huffman codes can change
+ *   over this part of the data.
  */
 static void
 lzms_encode(struct lzms_compressor *ctx)
