@@ -413,31 +413,34 @@ lz_get_near_optimal_match(struct lz_match_chooser *mc,
 	 * at that position after the minimum-cost path is taken.  The @cur_pos
 	 * variable stores the position at which the algorithm is currently
 	 * considering coding choices, and the @len_end variable stores the
-	 * greatest offset at which the costs of coding choices have been saved.
-	 * (The algorithm guarantees that all positions before @len_end are
-	 * reachable by at least one path and therefore have costs computed.)
+	 * greatest position at which the costs of coding choices have been
+	 * saved.  (Actually, the algorithm guarantees that all positions up to
+	 * and including @len_end are reachable by at least one path.)
 	 *
 	 * The loop terminates when any one of the following conditions occurs:
 	 *
-	 * 1. A match greater than @nice_len is found.  When this is found, the
-	 *    algorithm chooses this match unconditionally, and consequently the
-	 *    near-optimal match/literal sequence up to and including that match
-	 *    is fully determined.
+	 * 1. A match with length greater than or equal to @nice_len is found.
+	 *    When this occurs, the algorithm chooses this match
+	 *    unconditionally, and consequently the near-optimal match/literal
+	 *    sequence up to and including that match is fully determined and it
+	 *    can begin returning the match/literal list.
 	 *
 	 * 2. @cur_pos reaches a position not overlapped by a preceding match.
 	 *    In such cases, the near-optimal match/literal sequence up to
-	 *    @cur_pos is fully determined.
+	 *    @cur_pos is fully determined and it can begin returning the
+	 *    match/literal list.
 	 *
 	 * 3. Failing either of the above in a degenerate case, the loop
 	 *    terminates when space in the @mc->optimum array is exhausted.
 	 *    This terminates the algorithm and forces it to start returning
 	 *    matches/literals even though they may not be globally optimal.
 	 *
-	 * Upon loop termination, a nonempty list of matches/literals has been
-	 * produced and stored in the @optimum array.  They are linked in
-	 * reverse order, so the last thing this function does is reverse the
-	 * links and return the first match/literal, leaving the rest to be
-	 * returned immediately by subsequent calls to this function.
+	 * Upon loop termination, a nonempty list of matches/literals will have
+	 * been produced and stored in the @optimum array.  These
+	 * matches/literals are linked in reverse order, so the last thing this
+	 * function does is reverse this list and return the first
+	 * match/literal, leaving the rest to be returned immediately by
+	 * subsequent calls to this function.
 	 */
 	input_idx_t cur_pos = 0;
 	input_idx_t len_end = longest_match_len;
