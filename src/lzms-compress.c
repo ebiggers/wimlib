@@ -993,7 +993,6 @@ lzms_init_compressor(struct lzms_compressor *ctx, const u8 *udata, u32 ulen,
 
 	/* Copy the uncompressed data into the @ctx->window buffer.  */
 	memcpy(ctx->window, udata, ulen);
-	memset(&ctx->window[ulen], 0, 8);
 	ctx->cur_window_pos = 0;
 	ctx->window_size = ulen;
 
