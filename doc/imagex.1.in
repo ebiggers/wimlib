@@ -195,7 +195,7 @@ case-insensitive name.  In such cases, if there is a file or directory with an
 exactly matching name, it is chosen; otherwise, one of the case-insensitively
 matching file or directories is chosen arbitrarily.
 .PP
-The default behavior can be overwritten by explicitly setting the environmental
+The default behavior can be overridden by explicitly setting the environmental
 variable \fBWIMLIB_IMAGEX_IGNORE_CASE\fR to 1, in which case such paths will be
 treated case insensitively, or 0, in which such paths will be treated case
 sensitively.

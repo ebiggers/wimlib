@@ -23,7 +23,7 @@ Version 1.6.0:
 
 	For searching WIM files, wimlib now has configurable case sensitivity.
 	The default on Windows is still case-insensitive and the default on
-	UNIX-like systems is still case-sensitive, but this can be overwridden
+	UNIX-like systems is still case-sensitive, but this can be overridden
 	on either platform through flags to wimlib_global_init().  For
 	`wimlib-imagex', the environmental variable WIMLIB_IMAGEX_IGNORE_CASE
 	can be set to 1 or 0 for case-insensitive or case-sensitive behavior,

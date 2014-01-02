@@ -41,7 +41,7 @@ the WIM image, like those output by the \fB@IMAGEX_PROGNAME@ dir\fR (1) command.
 However, path separators may be either forward or backward slashes, and the
 leading slash is optional; also, on Windows, the paths are treated
 case-insensitively, while on UNIX, paths are treated case-sensitively, except
-when overwritten through the \fBWIMLIB_IMAGEX_IGNORE_CASE\fR environmental
+when overridden through the \fBWIMLIB_IMAGEX_IGNORE_CASE\fR environmental
 variable, as documented in \fB@IMAGEX_PROGNAME@\fR (1).
 .PP
 If no \fIPATH\fRs are provided, the default behavior is to extract the full
