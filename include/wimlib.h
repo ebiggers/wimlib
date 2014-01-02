@@ -688,8 +688,8 @@ union wimlib_progress_info {
 			const wimlib_tchar *wim_target_path;
 
 			/** For ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY and a status
-			 * of ::WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK, this is the
-			 * target of the absolute symbolic link or junction
+			 * of @p WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK, this is
+			 * the target of the absolute symbolic link or junction
 			 * point.  */
 			const wimlib_tchar *symlink_target;
 		};
@@ -1935,6 +1935,8 @@ enum wimlib_error_code {
 /** Used to specify all images in the WIM. */
 #define WIMLIB_ALL_IMAGES	(-1)
 
+/** @}  */
+
 /**
  * @ingroup G_modifying_wims
  *
@@ -2994,10 +2996,10 @@ wimlib_mount_image(WIMStruct *wim,
  * 	in the integrity table.
  * @retval ::WIMLIB_ERR_INVALID_CHUNK_SIZE
  * 	Resources in @p wim_file are compressed, but the chunk size was invalid
- * 	for the WIM's compression format.
+ * 	for the WIM's compression type.
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  * 	The header of @p wim_file says that resources in the WIM are compressed,
- * 	but the header flag indicating LZX or XPRESS compression is not set.
+ * 	but the header flag for a recognized compression type is not set.
  * @retval ::WIMLIB_ERR_INVALID_HEADER
  * 	The header of @p wim_file was otherwise invalid.
  * @retval ::WIMLIB_ERR_INVALID_INTEGRITY_TABLE
@@ -3005,9 +3007,7 @@ wimlib_mount_image(WIMStruct *wim,
  * 	wim_file contains an integrity table, but the integrity table is
  * 	invalid.
  * @retval ::WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY
- * 	The lookup table for the WIM contained duplicate entries that are not
- * 	for metadata resources, or it contained an entry with a SHA1 message
- * 	digest of all 0's.
+ * 	The lookup table for the WIM was invalid.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  *	@p wim_ret was @c NULL.
  * @retval ::WIMLIB_ERR_IS_SPLIT_WIM
@@ -3394,14 +3394,14 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  *
  * @param wim
  *	::WIMStruct for a WIM.
- * @param out_chunk_size
+ * @param chunk_size
  *	The chunk size (in bytes) to set.  The valid chunk sizes are dependent
  *	on the compression format.  The XPRESS and LZMS compression formats
  *	support chunk sizes that are powers of 2 with exponents between 15 and
  *	26 inclusively, whereas the LZX compression format supports chunk sizes
  *	that are powers of 2 with exponents between 15 and 21 inclusively.  As a
- *	special case, if @p out_chunk_size is specified as 0, the chunk size is
- *	set to the default for the currently selected output compression type.
+ *	special case, if @p chunk_size is specified as 0, the chunk size is set
+ *	to the default for the currently selected output compression type.
  *
  * @return 0 on success; nonzero on error.
  *
@@ -3952,10 +3952,7 @@ wimlib_write_to_fd(WIMStruct *wim,
  * decompressors currently support sliding windows, and there also exist
  * slightly different variants of these formats that are not supported
  * unmodified.
- */
-
-/**
- * @ingroup G_compression
+ *
  * @{
  */
 
@@ -4344,8 +4341,9 @@ wimlib_xpress_decompress(const void *cdata, unsigned clen,
 			 void *udata, unsigned ulen)
 		_wimlib_deprecated;
 
-/** @} */
-
+/**
+ * @}
+ */
 
 
 #ifdef __cplusplus
