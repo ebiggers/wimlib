@@ -1,13 +1,11 @@
-CFLAGS := -Wall -s
+CFLAGS := -Wall
 LDLIBS := -lwim
 
-all:applywim makewim
+EXE := applywim capturewim compressfile decompressfile
 
-applywim:applywim.c
-
-makewim:makewim.c
+all:$(EXE)
 
 clean:
-	rm -f applywim makewim
+	rm -f $(EXE)
 
 .PHONY: all clean
