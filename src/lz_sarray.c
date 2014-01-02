@@ -94,10 +94,10 @@ compute_inverse_suffix_array(input_idx_t ISA[restrict],
 			     const input_idx_t SA[restrict],
 			     input_idx_t n)
 {
-	input_idx_t i;
+	input_idx_t r;
 
-	for (i = 0; i < n; i++)
-		ISA[SA[i]] = i;
+	for (r = 0; r < n; r++)
+		ISA[SA[r]] = r;
 }
 
 
