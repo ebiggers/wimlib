@@ -162,8 +162,6 @@
 #include "wimlib/lz_sarray.h"
 #include "wimlib/lzx.h"
 #include "wimlib/util.h"
-#include <pthread.h>
-#include <math.h>
 #include <string.h>
 
 #ifdef ENABLE_LZX_DEBUG
