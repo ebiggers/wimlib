@@ -1168,7 +1168,9 @@ lzms_free_compressor(void *_ctx)
 }
 
 static const struct wimlib_lzms_compressor_params lzms_default = {
-	.hdr = sizeof(struct wimlib_lzms_compressor_params),
+	.hdr = {
+		.size = sizeof(struct wimlib_lzms_compressor_params),
+	},
 	.min_match_length = 2,
 	.max_match_length = UINT32_MAX,
 	.nice_match_length = 32,
