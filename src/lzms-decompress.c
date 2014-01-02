@@ -347,8 +347,8 @@ struct lzms_decompressor {
 	struct lzms_huffman_decoder delta_power_decoder;
 	struct lzms_huffman_decoder delta_offset_decoder;
 
-        /* LRU (least-recently-used) queues for match information.  */
-        struct lzms_lru_queues lru;
+	/* LRU (least-recently-used) queues for match information.  */
+	struct lzms_lru_queues lru;
 
 	/* Used for postprocessing.  */
 	s32 last_target_usages[65536];
@@ -833,7 +833,7 @@ lzms_decode_item(struct lzms_decompressor *ctx)
 	if (ret)
 		return ret;
 
-        lzms_update_lru_queues(&ctx->lru);
+	lzms_update_lru_queues(&ctx->lru);
 	return 0;
 }
 
@@ -948,7 +948,7 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 					&ctx->rd, LZMS_NUM_DELTA_REPEAT_MATCH_STATES);
 
 	/* Initialize LRU match information.  */
-        lzms_init_lru_queues(&ctx->lru);
+	lzms_init_lru_queues(&ctx->lru);
 
 	LZMS_DEBUG("Decompressor successfully initialized");
 }
