@@ -2071,9 +2071,8 @@ wimlib_add_image_multisource(WIMStruct *wim,
  * images.  No on-disk file is created until wimlib_write() is called.
  *
  * @param ctype
- * 	The type of compression to be used in the new WIM file.  Must be
- * 	::WIMLIB_COMPRESSION_TYPE_NONE, ::WIMLIB_COMPRESSION_TYPE_LZX, or
- * 	::WIMLIB_COMPRESSION_TYPE_XPRESS.
+ * 	The type of compression to be used in the new WIM file, as one of the
+ * 	::wimlib_compression_type constants.
  * @param wim_ret
  * 	On success, a pointer to an opaque ::WIMStruct for the new WIM file is
  * 	written to the memory location pointed to by this paramater.  The
@@ -2081,8 +2080,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
  * 	it.
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
- * 	@p ctype was not ::WIMLIB_COMPRESSION_TYPE_NONE,
- * 	::WIMLIB_COMPRESSION_TYPE_LZX, or ::WIMLIB_COMPRESSION_TYPE_XPRESS.
+ * 	@p ctype was not a supported compression type.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate needed memory.
  */
@@ -2568,12 +2566,11 @@ wimlib_free(WIMStruct *wim);
  * Converts a ::wimlib_compression_type value into a string.
  *
  * @param ctype
- * 	::WIMLIB_COMPRESSION_TYPE_NONE, ::WIMLIB_COMPRESSION_TYPE_LZX,
- * 	::WIMLIB_COMPRESSION_TYPE_XPRESS, or another value.
+ * 	The ::wimlib_compression_type value to convert.
  *
  * @return
- * 	A statically allocated string: "None", "LZX", "XPRESS", or "Invalid",
- * 	respectively.
+ * 	A statically allocated string naming the compression algorithm,
+ * 	such as "None", "LZX", "XPRESS", or "Invalid".
  */
 extern const wimlib_tchar *
 wimlib_get_compression_type_string(int ctype);
@@ -3024,8 +3021,7 @@ wimlib_mount_image(WIMStruct *wim,
  * @retval ::WIMLIB_ERR_UNEXPECTED_END_OF_FILE
  *	Unexpected end-of-file while reading data from @p wim_file.
  * @retval ::WIMLIB_ERR_UNKNOWN_VERSION
- * 	A number other than 0x10d00 is written in the version field of the WIM
- * 	header of @p wim_file.  (May be a pre-Vista WIM.)
+ * 	The WIM version number was not recognized. (May be a pre-Vista WIM.)
  * @retval ::WIMLIB_ERR_WIM_IS_READONLY
  *	::WIMLIB_OPEN_FLAG_WRITE_ACCESS was specified but the WIM file was
  *	considered read-only because of any of the reasons mentioned in the
