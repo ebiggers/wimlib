@@ -438,8 +438,11 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 			(u64)msgs_per_thread *
 			(u64)num_threads *
 			(u64)out_chunk_size
+			+ out_chunk_size
 			+ 1000000
-			+ (out_chunk_size * num_threads * 4);
+			+ num_threads * wimlib_get_compressor_needed_memory(out_ctype,
+									    out_chunk_size,
+									    NULL);
 		if (approx_mem_required <= max_memory)
 			break;
 

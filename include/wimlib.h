@@ -4118,6 +4118,8 @@ struct wimlib_decompressor;
  *
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  *	@p ctype was not a supported compression type.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	@p params were invalid.
  * @retval ::WIMLIB_ERR_NOMEM
  *	Not enough memory to duplicate the parameters (perhaps @c params->size
  *	was invalid).
@@ -4125,6 +4127,18 @@ struct wimlib_decompressor;
 extern int
 wimlib_set_default_compressor_params(enum wimlib_compression_type ctype,
 				     const struct wimlib_compressor_params_header *params);
+
+/**
+ * Returns the approximate number of bytes needed to allocate a compressor with
+ * wimlib_create_compressor() for the specified compression type, block size,
+ * and parameters.  @p params may be @c NULL, in which case the current default
+ * parameters for @p ctype are used.  Returns 0 if the compression type or
+ * parameters are invalid.
+ */
+extern uint64_t
+wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
+				    size_t max_block_size,
+				    const struct wimlib_compressor_params_header *params);
 
 /**
  * Allocate a compressor for the specified compression type using the specified

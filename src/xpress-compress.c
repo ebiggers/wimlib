@@ -314,7 +314,22 @@ oom:
 	return WIMLIB_ERR_NOMEM;
 }
 
+static u64
+xpress_get_needed_memory(size_t max_window_size,
+			 const struct wimlib_compressor_params_header *params)
+{
+	u64 size = 0;
+
+	size += sizeof(struct xpress_compressor);
+	size += max_window_size + 8;
+	size += max_window_size * sizeof(((struct xpress_compressor*)0)->matches[0]);
+	size += max_window_size * sizeof(((struct xpress_compressor*)0)->prev_tab[0]);
+
+	return size;
+}
+
 const struct compressor_ops xpress_compressor_ops = {
+	.get_needed_memory  = xpress_get_needed_memory,
 	.create_compressor  = xpress_create_compressor,
 	.compress	    = xpress_compress,
 	.free_compressor    = xpress_free_compressor,

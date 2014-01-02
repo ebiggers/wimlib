@@ -377,6 +377,12 @@ lz_sarray_init(struct lz_sarray *mf,
 	return true;
 }
 
+u64
+lz_sarray_get_needed_memory(input_idx_t max_window_size)
+{
+	return (u64)6 * sizeof(input_idx_t) * max_window_size;
+}
+
 /*
  * Prepare the suffix array match-finder to scan the specified window for
  * matches.

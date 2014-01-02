@@ -1226,7 +1226,7 @@ lzms_free_compressor(void *_ctx)
 	}
 }
 
-static const struct wimlib_lzms_compressor_params default_params = {
+static const struct wimlib_lzms_compressor_params lzms_default = {
 	.hdr = sizeof(struct wimlib_lzms_compressor_params),
 	.min_match_length = 2,
 	.max_match_length = UINT32_MAX,
@@ -1236,29 +1236,28 @@ static const struct wimlib_lzms_compressor_params default_params = {
 	.optim_array_length = 1024,
 };
 
+static const struct wimlib_lzms_compressor_params *
+lzms_get_params(const struct wimlib_compressor_params_header *_params)
+{
+	const struct wimlib_lzms_compressor_params *params =
+		(const struct wimlib_lzms_compressor_params*)_params;
+
+	if (params == NULL)
+		params = &lzms_default;
+
+	return params;
+}
+
 static int
 lzms_create_compressor(size_t max_block_size,
 		       const struct wimlib_compressor_params_header *_params,
 		       void **ctx_ret)
 {
 	struct lzms_compressor *ctx;
-	const struct wimlib_lzms_compressor_params *params;
+	const struct wimlib_lzms_compressor_params *params = lzms_get_params(_params);
 
 	if (max_block_size == 0 || max_block_size >= INT32_MAX) {
 		LZMS_DEBUG("Invalid max_block_size (%u)", max_block_size);
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-
-	if (_params)
-		params = (const struct wimlib_lzms_compressor_params*)_params;
-	else
-		params = &default_params;
-
-	if (params->max_match_length < params->min_match_length ||
-	    params->min_match_length < 2 ||
-	    params->optim_array_length == 0 ||
-	    min(params->max_match_length, params->nice_match_length) > 65536) {
-		LZMS_DEBUG("Invalid compression parameter!");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
@@ -1266,7 +1265,7 @@ lzms_create_compressor(size_t max_block_size,
 	if (ctx == NULL)
 		goto oom;
 
-	ctx->window = MALLOC(max_block_size + 8);
+	ctx->window = MALLOC(max_block_size);
 	if (ctx->window == NULL)
 		goto oom;
 
@@ -1312,7 +1311,46 @@ oom:
 	return WIMLIB_ERR_NOMEM;
 }
 
+static u64
+lzms_get_needed_memory(size_t max_block_size,
+		       const struct wimlib_compressor_params_header *_params)
+{
+	const struct wimlib_lzms_compressor_params *params = lzms_get_params(_params);
+
+	u64 size = 0;
+
+	size += max_block_size;
+	size += sizeof(struct lzms_compressor);
+	size += lz_sarray_get_needed_memory(max_block_size);
+	size += lz_match_chooser_get_needed_memory(params->optim_array_length,
+						   params->nice_match_length,
+						   params->max_match_length);
+	size += min(params->max_match_length -
+		    params->min_match_length + 1,
+		    params->max_matches_per_pos) *
+		sizeof(((struct lzms_compressor*)0)->matches[0]);
+	return size;
+}
+
+static bool
+lzms_params_valid(const struct wimlib_compressor_params_header *_params)
+{
+	const struct wimlib_lzms_compressor_params *params =
+		(const struct wimlib_lzms_compressor_params*)_params;
+
+	if (params->hdr.size != sizeof(*params) ||
+	    params->max_match_length < params->min_match_length ||
+	    params->min_match_length < 2 ||
+	    params->optim_array_length == 0 ||
+	    min(params->max_match_length, params->nice_match_length) > 65536)
+		return false;
+
+	return true;
+}
+
 const struct compressor_ops lzms_compressor_ops = {
+	.params_valid	    = lzms_params_valid,
+	.get_needed_memory  = lzms_get_needed_memory,
 	.create_compressor  = lzms_create_compressor,
 	.compress	    = lzms_compress,
 	.free_compressor    = lzms_free_compressor,

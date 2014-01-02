@@ -145,6 +145,16 @@ lz_match_chooser_init(struct lz_match_chooser *mc,
 	return true;
 }
 
+static inline u64
+lz_match_chooser_get_needed_memory(input_idx_t array_space,
+				   input_idx_t nice_len,
+				   input_idx_t max_match_len)
+{
+	input_idx_t extra_len = min(nice_len, max_match_len);
+	return ((u64)(array_space + extra_len) *
+		sizeof(((struct lz_match_chooser*)0)->optimum[0]));
+}
+
 /* Free memory allocated in lz_match_chooser_init().  */
 static void
 lz_match_chooser_destroy(struct lz_match_chooser *mc)

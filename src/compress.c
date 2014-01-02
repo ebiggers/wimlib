@@ -64,6 +64,11 @@ wimlib_set_default_compressor_params(enum wimlib_compression_type ctype,
 	if (!compressor_ctype_valid(ctype))
 		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 
+	if (params != NULL &&
+	    compressor_ops[ctype]->params_valid != NULL &&
+	    !compressor_ops[ctype]->params_valid(params))
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	dup = NULL;
 	if (params) {
 		dup = memdup(params, params->size);
@@ -84,6 +89,33 @@ cleanup_compressor_params(void)
 		compressor_default_params[i] = NULL;
 	}
 }
+
+WIMLIBAPI u64
+wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
+				    size_t max_block_size,
+				    const struct wimlib_compressor_params_header *extra_params)
+{
+	const struct compressor_ops *ops;
+	const struct wimlib_compressor_params_header *params;
+
+	if (!compressor_ctype_valid(ctype))
+		return 0;
+
+	ops = compressor_ops[ctype];
+	if (ops->get_needed_memory == NULL)
+		return 0;
+
+	if (extra_params) {
+		params = extra_params;
+		if (ops->params_valid && !ops->params_valid(params))
+			return 0;
+	} else {
+		params = compressor_default_params[ctype];
+	}
+
+	return ops->get_needed_memory(max_block_size, params);
+}
+
 
 WIMLIBAPI int
 wimlib_create_compressor(enum wimlib_compression_type ctype,
@@ -108,10 +140,15 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 		const struct wimlib_compressor_params_header *params;
 		int ret;
 
-		if (extra_params)
+		if (extra_params) {
 			params = extra_params;
-		else
+			if (c->ops->params_valid && !c->ops->params_valid(params)) {
+				FREE(c);
+				return WIMLIB_ERR_INVALID_PARAM;
+			}
+		} else {
 			params = compressor_default_params[ctype];
+		}
 		ret = c->ops->create_compressor(max_block_size,
 						params, &c->private);
 		if (ret) {

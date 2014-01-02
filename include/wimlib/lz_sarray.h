@@ -143,6 +143,9 @@ lz_sarray_init(struct lz_sarray *mf,
 	       u32 max_matches_to_consider,
 	       u32 max_matches_to_return);
 
+extern u64
+lz_sarray_get_needed_memory(input_idx_t max_window_size);
+
 extern void
 lz_sarray_destroy(struct lz_sarray *mf);
 

@@ -1577,53 +1577,6 @@ lzx_compress(const void *uncompressed_data, size_t uncompressed_size,
 	return compressed_size;
 }
 
-static bool
-lzx_params_valid(const struct wimlib_lzx_compressor_params *params)
-{
-	/* Validate parameters.  */
-	if (params->hdr.size != sizeof(struct wimlib_lzx_compressor_params)) {
-		LZX_DEBUG("Invalid parameter structure size!");
-		return false;
-	}
-
-	if (params->algorithm != WIMLIB_LZX_ALGORITHM_SLOW &&
-	    params->algorithm != WIMLIB_LZX_ALGORITHM_FAST)
-	{
-		LZX_DEBUG("Invalid algorithm.");
-		return false;
-	}
-
-	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
-		if (params->alg_params.slow.num_optim_passes < 1)
-		{
-			LZX_DEBUG("Invalid number of optimization passes!");
-			return false;
-		}
-
-		if (params->alg_params.slow.main_nostat_cost < 1 ||
-		    params->alg_params.slow.main_nostat_cost > 16)
-		{
-			LZX_DEBUG("Invalid main_nostat_cost!");
-			return false;
-		}
-
-		if (params->alg_params.slow.len_nostat_cost < 1 ||
-		    params->alg_params.slow.len_nostat_cost > 16)
-		{
-			LZX_DEBUG("Invalid len_nostat_cost!");
-			return false;
-		}
-
-		if (params->alg_params.slow.aligned_nostat_cost < 1 ||
-		    params->alg_params.slow.aligned_nostat_cost > 8)
-		{
-			LZX_DEBUG("Invalid aligned_nostat_cost!");
-			return false;
-		}
-	}
-	return true;
-}
-
 static void
 lzx_free_compressor(void *_ctx)
 {
@@ -1641,65 +1594,69 @@ lzx_free_compressor(void *_ctx)
 	}
 }
 
+static const struct wimlib_lzx_compressor_params lzx_fast_default = {
+	.hdr = {
+		.size = sizeof(struct wimlib_lzx_compressor_params),
+	},
+	.algorithm = WIMLIB_LZX_ALGORITHM_FAST,
+	.use_defaults = 0,
+	.alg_params = {
+		.fast = {
+		},
+	},
+};
+static const struct wimlib_lzx_compressor_params lzx_slow_default = {
+	.hdr = {
+		.size = sizeof(struct wimlib_lzx_compressor_params),
+	},
+	.algorithm = WIMLIB_LZX_ALGORITHM_SLOW,
+	.use_defaults = 0,
+	.alg_params = {
+		.slow = {
+			.use_len2_matches = 1,
+			.nice_match_length = 32,
+			.num_optim_passes = 2,
+			.max_search_depth = 50,
+			.max_matches_per_pos = 3,
+			.main_nostat_cost = 15,
+			.len_nostat_cost = 15,
+			.aligned_nostat_cost = 7,
+		},
+	},
+};
+
+static const struct wimlib_lzx_compressor_params *
+lzx_get_params(const struct wimlib_compressor_params_header *_params)
+{
+	const struct wimlib_lzx_compressor_params *params =
+		(const struct wimlib_lzx_compressor_params*)_params;
+
+	if (params == NULL) {
+		LZX_DEBUG("Using default algorithm and parameters.");
+		params = &lzx_slow_default;
+	} else {
+		if (params->use_defaults) {
+			if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW)
+				params = &lzx_slow_default;
+			else
+				params = &lzx_fast_default;
+		}
+	}
+	return params;
+}
+
 static int
 lzx_create_compressor(size_t window_size,
 		      const struct wimlib_compressor_params_header *_params,
 		      void **ctx_ret)
 {
-	const struct wimlib_lzx_compressor_params *params =
-		(const struct wimlib_lzx_compressor_params*)_params;
+	const struct wimlib_lzx_compressor_params *params = lzx_get_params(_params);
 	struct lzx_compressor *ctx;
 
 	LZX_DEBUG("Allocating LZX context...");
 
 	if (!lzx_window_size_valid(window_size))
 		return WIMLIB_ERR_INVALID_PARAM;
-
-	static const struct wimlib_lzx_compressor_params fast_default = {
-		.hdr = {
-			.size = sizeof(struct wimlib_lzx_compressor_params),
-		},
-		.algorithm = WIMLIB_LZX_ALGORITHM_FAST,
-		.use_defaults = 0,
-		.alg_params = {
-			.fast = {
-			},
-		},
-	};
-	static const struct wimlib_lzx_compressor_params slow_default = {
-		.hdr = {
-			.size = sizeof(struct wimlib_lzx_compressor_params),
-		},
-		.algorithm = WIMLIB_LZX_ALGORITHM_SLOW,
-		.use_defaults = 0,
-		.alg_params = {
-			.slow = {
-				.use_len2_matches = 1,
-				.nice_match_length = 32,
-				.num_optim_passes = 2,
-				.max_search_depth = 50,
-				.max_matches_per_pos = 3,
-				.main_nostat_cost = 15,
-				.len_nostat_cost = 15,
-				.aligned_nostat_cost = 7,
-			},
-		},
-	};
-
-	if (params) {
-		if (!lzx_params_valid(params))
-			return WIMLIB_ERR_INVALID_PARAM;
-	} else {
-		LZX_DEBUG("Using default algorithm and parameters.");
-		params = &slow_default;
-	}
-
-	if (params->use_defaults) {
-		if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW)
-			params = &slow_default;
-		else
-			params = &fast_default;
-	}
 
 	LZX_DEBUG("Allocating memory.");
 
@@ -1776,7 +1733,96 @@ oom:
 	return WIMLIB_ERR_NOMEM;
 }
 
+static u64
+lzx_get_needed_memory(size_t max_block_size,
+		      const struct wimlib_compressor_params_header *_params)
+{
+	const struct wimlib_lzx_compressor_params *params = lzx_get_params(_params);
+
+	u64 size = 0;
+
+	size += sizeof(struct lzx_compressor);
+
+	size += max_block_size + 12;
+
+	size += DIV_ROUND_UP(max_block_size, LZX_DIV_BLOCK_SIZE) *
+		sizeof(((struct lzx_compressor*)0)->block_specs[0]);
+
+	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
+		size += max_block_size * sizeof(((struct lzx_compressor*)0)->chosen_matches[0]);
+		size += lz_sarray_get_needed_memory(max_block_size);
+		size += lz_match_chooser_get_needed_memory(LZX_OPTIM_ARRAY_SIZE,
+							   params->alg_params.slow.nice_match_length,
+							   LZX_MAX_MATCH_LEN);
+		u32 cache_per_pos;
+
+		cache_per_pos = params->alg_params.slow.max_matches_per_pos;
+		if (cache_per_pos > LZX_MAX_CACHE_PER_POS)
+			cache_per_pos = LZX_MAX_CACHE_PER_POS;
+
+		size += max_block_size * (cache_per_pos + 1) *
+			sizeof(((struct lzx_compressor*)0)->cached_matches[0]);
+	} else {
+		size += max_block_size * sizeof(((struct lzx_compressor*)0)->prev_tab[0]);
+	}
+	return size;
+}
+
+static bool
+lzx_params_valid(const struct wimlib_compressor_params_header *_params)
+{
+	const struct wimlib_lzx_compressor_params *params =
+		(const struct wimlib_lzx_compressor_params*)_params;
+
+	if (params->hdr.size != sizeof(struct wimlib_lzx_compressor_params)) {
+		LZX_DEBUG("Invalid parameter structure size!");
+		return false;
+	}
+
+	if (params->algorithm != WIMLIB_LZX_ALGORITHM_SLOW &&
+	    params->algorithm != WIMLIB_LZX_ALGORITHM_FAST)
+	{
+		LZX_DEBUG("Invalid algorithm.");
+		return false;
+	}
+
+	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW &&
+	    !params->use_defaults)
+	{
+		if (params->alg_params.slow.num_optim_passes < 1)
+		{
+			LZX_DEBUG("Invalid number of optimization passes!");
+			return false;
+		}
+
+		if (params->alg_params.slow.main_nostat_cost < 1 ||
+		    params->alg_params.slow.main_nostat_cost > 16)
+		{
+			LZX_DEBUG("Invalid main_nostat_cost!");
+			return false;
+		}
+
+		if (params->alg_params.slow.len_nostat_cost < 1 ||
+		    params->alg_params.slow.len_nostat_cost > 16)
+		{
+			LZX_DEBUG("Invalid len_nostat_cost!");
+			return false;
+		}
+
+		if (params->alg_params.slow.aligned_nostat_cost < 1 ||
+		    params->alg_params.slow.aligned_nostat_cost > 8)
+		{
+			LZX_DEBUG("Invalid aligned_nostat_cost!");
+			return false;
+		}
+	}
+	return true;
+}
+
+
 const struct compressor_ops lzx_compressor_ops = {
+	.params_valid	    = lzx_params_valid,
+	.get_needed_memory  = lzx_get_needed_memory,
 	.create_compressor  = lzx_create_compressor,
 	.compress	    = lzx_compress,
 	.free_compressor    = lzx_free_compressor,

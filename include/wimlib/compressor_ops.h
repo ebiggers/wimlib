@@ -7,12 +7,17 @@
 #ifndef _WIMLIB_COMPRESSOR_OPS_H
 #define _WIMLIB_COMPRESSOR_OPS_H
 
-#include <stddef.h>
+#include <wimlib/types.h>
 
 struct compressor_ops {
 
+	bool (*params_valid)(const struct wimlib_compressor_params_header *params);
+
+	u64 (*get_needed_memory)(size_t max_block_size,
+				 const struct wimlib_compressor_params_header *params);
+
 	int (*create_compressor)(size_t max_block_size,
-				 const struct wimlib_compressor_params_header *extra_params,
+				 const struct wimlib_compressor_params_header *params,
 				 void **private_ret);
 
 	size_t (*compress)(const void *uncompressed_data,
