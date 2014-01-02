@@ -423,8 +423,15 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 
 	desired_num_threads = num_threads;
 
-	chunks_per_msg = MAX_CHUNKS_PER_MSG;
-	msgs_per_thread = 2;
+	if (out_chunk_size < ((u32)1 << 23)) {
+		chunks_per_msg = MAX_CHUNKS_PER_MSG;
+		msgs_per_thread = 2;
+	} else {
+		/* Big chunks: Just have one buffer per thread --- more would
+		 * just waste memory.  */
+		chunks_per_msg = 1;
+		msgs_per_thread = 1;
+	}
 	for (;;) {
 		approx_mem_required =
 			(u64)chunks_per_msg *
