@@ -54,6 +54,34 @@
 
 #define LZ_MC_INFINITE_COST (~(lz_mc_cost_t)0)
 
+struct lz_mc_pos_data;
+
+/* State of the Lempel-Ziv match-chooser.
+ *
+ * This is defined here for benefit of the inlined code.  It's not intended for
+ * code outside the match-chooser itself to read or write members from this
+ * structure.  */
+struct lz_match_chooser {
+	/* Temporary space used for the match-choosing algorithm.  The size of
+	 * this array must be at least one more than @nice_len but otherwise is
+	 * arbitrary.  More space decreases the frequency at which the algorithm
+	 * is forced to terminate early.  4096 spaces seems sufficient for most
+	 * real data.  */
+	struct lz_mc_pos_data *optimum;
+	input_idx_t array_space;
+
+	/* When a match with length greater than or equal to this length is
+	 * found, choose it immediately without further consideration.  */
+	input_idx_t nice_len;
+
+	/* When matches have been chosen, optimum_cur_idx is set to the position
+	 * in the window of the next match/literal to return and optimum_end_idx
+	 * is set to the position in the window at the end of the last
+	 * match/literal to return.  */
+	input_idx_t optimum_cur_idx;
+	input_idx_t optimum_end_idx;
+};
+
 /*
  * Match chooser position data:
  *
@@ -102,27 +130,6 @@ struct lz_mc_pos_data {
 	 * does not have any adaptive state that affects match costs,
 	 * LZ_ADAPTIVE_STATE could be set to a dummy structure of size 0.  */
 	LZ_ADAPTIVE_STATE state;
-};
-
-struct lz_match_chooser {
-	/* Temporary space used for the match-choosing algorithm.  The size of
-	 * this array must be at least one more than @nice_len but otherwise is
-	 * arbitrary.  More space decreases the frequency at which the algorithm
-	 * is forced to terminate early.  4096 spaces seems sufficient for most
-	 * real data.  */
-	struct lz_mc_pos_data *optimum;
-	input_idx_t array_space;
-
-	/* When a match with length greater than or equal to this length is
-	 * found, choose it immediately without further consideration.  */
-	input_idx_t nice_len;
-
-	/* When matches have been chosen, optimum_cur_idx is set to the position
-	 * in the window of the next match/literal to return and optimum_end_idx
-	 * is set to the position in the window at the end of the last
-	 * match/literal to return.  */
-	input_idx_t optimum_cur_idx;
-	input_idx_t optimum_end_idx;
 };
 
 /* Initialize the match-chooser.
