@@ -434,11 +434,11 @@ get_compression_type(const tchar *optarg)
 	}
 }
 
-static int
+static void
 set_compress_slow(void)
 {
 	int ret;
-	static const struct wimlib_lzx_compressor_params slow_params = {
+	static const struct wimlib_lzx_compressor_params lzx_slow_params = {
 		.hdr = {
 			.size = sizeof(struct wimlib_lzx_compressor_params),
 		},
@@ -456,11 +456,24 @@ set_compress_slow(void)
 			},
 		},
 	};
-	ret = wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZX,
-						   &slow_params.hdr);
-	if (ret)
-		imagex_error(T("Couldn't set slow compression parameters.!"));
-	return ret;
+
+	static const struct wimlib_lzms_compressor_params lzms_slow_params = {
+		.hdr = {
+			.size = sizeof(struct wimlib_lzms_compressor_params),
+		},
+		.min_match_length = 2,
+		.max_match_length = UINT32_MAX,
+		.nice_match_length = 96,
+		.max_search_depth = 100,
+		.max_matches_per_pos = 10,
+		.optim_array_length = 1024,
+	};
+
+	wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZX,
+					     &lzx_slow_params.hdr);
+
+	wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZMS,
+					     &lzms_slow_params.hdr);
 }
 
 struct string_set {
@@ -1768,6 +1781,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	struct wimlib_capture_source *capture_sources;
 	size_t num_sources;
 	bool name_defaulted;
+	bool compress_slow = false;
 
 	for_opt(c, capture_or_append_options) {
 		switch (c) {
@@ -1791,10 +1805,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_COMPRESS_SLOW_OPTION:
-			ret = set_compress_slow();
-			if (ret)
-				goto out_err;
-			compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
+			compress_slow = true;
 			break;
 		case IMAGEX_CHUNK_SIZE_OPTION:
 			chunk_size = parse_chunk_size(optarg);
@@ -1888,18 +1899,25 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	source = argv[0];
 	wimfile = argv[1];
 
-	/* Set default compression type.  */
-	if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID) {
-		struct wimlib_lzx_compressor_params params;
-		memset(&params, 0, sizeof(params));
-		params.hdr.size = sizeof(params);
-		params.algorithm = WIMLIB_LZX_ALGORITHM_FAST;
-		params.use_defaults = 1;
+	/* Set default compression type and parameters.  */
 
-		wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZX,
-						     &params.hdr);
+
+	if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID) {
 		compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
+
+		if (!compress_slow) {
+			struct wimlib_lzx_compressor_params params = {
+				.hdr.size = sizeof(params),
+				.algorithm = WIMLIB_LZX_ALGORITHM_FAST,
+				.use_defaults = 1,
+			};
+			wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZX,
+							     &params.hdr);
+		}
 	}
+
+	if (compress_slow)
+		set_compress_slow();
 
 	if (!tstrcmp(wimfile, T("-"))) {
 		/* Writing captured WIM to standard output.  */
@@ -3415,10 +3433,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_COMPRESS_SLOW_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
-			compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
-			ret = set_compress_slow();
-			if (ret)
-				goto out_err;
+			set_compress_slow();
 			break;
 		case IMAGEX_CHUNK_SIZE_OPTION:
 			chunk_size = parse_chunk_size(optarg);

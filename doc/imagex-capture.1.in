@@ -199,8 +199,9 @@ used in packed resources created if the \fB--pack-streams\fR option is
 specified.
 .TP
 \fB--compress-slow\fR
-Like \fB--compress\fR=\fImaximum\fR, but spend even more time compressing the
-data to achieve a very slightly better compression ratio.
+Spend even more time compressing the data to achieve a very slightly better
+compression ratio.  This currently only has an effect for LZX ("maximum", the
+default) and LZMS ("recovery") compression.
 .TP
 \fB--chunk-size\fR=\fISIZE\fR
 Set the WIM compression chunk size to \fISIZE\fR.  Using this option is not

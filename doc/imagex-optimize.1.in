@@ -38,14 +38,19 @@ better compression than Microsoft's, but is slightly slower.
 .TP
 \fB--recompress-slow\fR, \fB--compress-slow\fR
 Spend even more time compressing the data in order to achieve a more optimal
-compression ratio.  Compared to the default \fB--recompress\fR, this will make
-compression about twice as slow and will increase the compression ratio by maybe
-1%, depending on the data.  This option implies \fB--recompress\fR and
-\fB--compress\fR=\fImaximum\fR (recompress using LZX compression).
+compression ratio.  For LZX ("maximum") compression, compared to the default
+\fB--recompress\fR this will make compression about twice as slow and may
+improve the compression ratio by maybe 1%, depending on the data.  For LZMS
+("recovery") compression this option also has an effect.  For XPRESS ("fast")
+compression this option has no effect; however you may use \fB--compress\fR=LZX
+\fB--recompress-slow\fR to change the compression type to LZX and recompress
+slowly, as per this option.  In any case, this option implies
+\fB--recompress\fR.
 .TP
 \fB--compress\fR=\fITYPE\fR
 Recompress the WIM file using the specified compression type.  \fITYPE\fR may be
-"none", "fast", or "maximum".  This implies \fB--recompress\fR.
+"none", "fast" (or "XPRESS"), or "maximum" (or "LZX").  This implies
+\fB--recompress\fR.
 .IP ""
 \fITYPE\fR may also be "recovery" (or "LZMS"); however, this will result in
 reduced compatibility.  See the documentation for this option to

@@ -4061,6 +4061,42 @@ struct wimlib_lzx_compressor_params {
 	} alg_params;
 };
 
+/** LZMS compression parameters that can optionally be passed to
+ * wimlib_create_compressor() with the compression type
+ * ::WIMLIB_COMPRESSION_TYPE_LZMS.  */
+struct wimlib_lzms_compressor_params {
+	/** hdr.size Must be set to the size of this structure, in bytes.  */
+	struct wimlib_compressor_params_header hdr;
+
+	/** Minimum match length to output.  This must be at least 2.  Suggested
+	 * value: 2  */
+	uint32_t min_match_length;
+
+	/** Maximum match length to output.  This must be at least @p
+	 * min_match_length.  Suggested value: @p UINT32_MAX.  */
+	uint32_t max_match_length;
+
+	/** Matches with length (in bytes) greater than or equal to this value
+	 * are immediately taken without spending time on minimum-cost
+	 * measurements.  The minimum of @p max_match_length and @p
+	 * nice_match_length may not exceed 65536.  Suggested value: 32.  */
+	uint32_t nice_match_length;
+
+	/** Maximum depth to search for matches at each position.  Suggested
+	 * value: 50.  */
+	uint32_t max_search_depth;
+
+	/** Maximum number of potentially good matches to consider at each
+	 * position.  Suggested value: 3.  */
+	uint32_t max_matches_per_pos;
+
+	/** Length of the array for the near-optimal LZ parsing algorithm.  This
+	 * must be at least 1.  Suggested value: 1024.  */
+	uint32_t optim_array_length;
+
+	uint64_t reserved2[4];
+};
+
 /** Opaque compressor handle.  */
 struct wimlib_compressor;
 

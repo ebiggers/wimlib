@@ -204,7 +204,8 @@ lz_match_chooser_reverse_list(struct lz_match_chooser *mc, input_idx_t cur_pos)
  * be the number of matches found (which may be 0) and a pointer to the returned
  * matches must be written into @matches_ret.  Matches must be of distinct
  * lengths and sorted in decreasing order by length.  Furthermore, match lengths
- * may not exceed the @max_match_len passed to lz_match_chooser_init().  */
+ * may not exceed the @max_match_len passed to lz_match_chooser_init(), and all
+ * match lengths must be at least 2.  */
 typedef u32 (*lz_get_matches_t)(LZ_COMPRESSOR *ctx,
 				const LZ_ADAPTIVE_STATE *state,
 				struct raw_match **matches_ret);

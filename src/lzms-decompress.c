@@ -795,6 +795,7 @@ lzms_decode_delta_match(struct lzms_decompressor *ctx)
 	return lzms_copy_delta_match(ctx, length, power, raw_offset);
 }
 
+/* Decode a LZ or delta match.  */
 static int
 lzms_decode_match(struct lzms_decompressor *ctx)
 {
@@ -831,7 +832,6 @@ lzms_decode_item(struct lzms_decompressor *ctx)
 	if (ret)
 		return ret;
 
-	/* Update LRU queues  */
         lzms_update_lru_queues(&ctx->lru);
 	return 0;
 }
@@ -885,9 +885,6 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 	/* Initialize the input bitstream for Huffman symbols (reading
 	 * backwards)  */
 	lzms_input_bitstream_init(&ctx->is, cdata, clen / 2);
-
-	/* Initialize position and length slot bases if not done already.  */
-	lzms_init_slot_bases();
 
 	/* Calculate the number of position slots needed for this compressed
 	 * block.  */
@@ -1033,6 +1030,9 @@ lzms_create_decompressor(size_t max_block_size,
 	ctx = MALLOC(sizeof(struct lzms_decompressor));
 	if (ctx == NULL)
 		return WIMLIB_ERR_NOMEM;
+
+	/* Initialize position and length slot bases if not done already.  */
+	lzms_init_slot_bases();
 
 	*ctx_ret = ctx;
 	return 0;

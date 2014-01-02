@@ -47,6 +47,7 @@ u32 lzms_length_slot_base[LZMS_NUM_LEN_SYMS + 1];
 unsigned
 lzms_get_slot(u32 value, const u32 slot_base_tab[], unsigned num_slots)
 {
+	/* TODO:  Speed this up.  */
 	unsigned slot = 0;
 
 	while (slot_base_tab[slot + 1] <= value)
