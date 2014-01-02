@@ -237,16 +237,16 @@ typedef void (*lz_skip_bytes_t)(LZ_COMPRESSOR *ctx, input_idx_t n);
  * most recently been searched.  This can optionally update the @state to take
  * into account format-dependent state that affects match costs, such as repeat
  * offsets.  */
-typedef lz_mc_cost_t (lz_get_prev_literal_cost_t)(LZ_COMPRESSOR *ctx,
-						  LZ_ADAPTIVE_STATE *state);
+typedef lz_mc_cost_t (*lz_get_prev_literal_cost_t)(LZ_COMPRESSOR *ctx,
+						   LZ_ADAPTIVE_STATE *state);
 
 /* Get the cost of a match.  This can optionally update the @state to take into
  * account format-dependent state that affects match costs, such as repeat
  * offsets.  */
-typedef lz_mc_cost_t (lz_get_match_cost_t)(LZ_COMPRESSOR *ctx,
-					   LZ_ADAPTIVE_STATE *state,
-					   input_idx_t length,
-					   input_idx_t offset);
+typedef lz_mc_cost_t (*lz_get_match_cost_t)(LZ_COMPRESSOR *ctx,
+					    LZ_ADAPTIVE_STATE *state,
+					    input_idx_t length,
+					    input_idx_t offset);
 
 /*
  * lz_get_near_optimal_match() -
