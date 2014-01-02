@@ -37,7 +37,6 @@
 #include "wimlib/compress_common.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
-#include "wimlib/lz_hash.h"
 #include "wimlib/lz_sarray.h"
 #include "wimlib/lzms.h"
 #include "wimlib/util.h"
@@ -178,12 +177,6 @@ struct lzms_compressor {
 
 	/* Size of the data in @buffer.  */
 	u32 window_size;
-
-#if 0
-	/* Temporary array used by lz_analyze_block(); must be at least as long
-	 * as the window.  */
-	u32 *prev_tab;
-#endif
 
 	/* Suffix array match-finder.  */
 	struct lz_sarray lz_sarray;
@@ -593,48 +586,6 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 	lzms_end_encode_item(ctx, length);
 }
 
-#if 0
-static void
-lzms_record_literal(u8 literal, void *_ctx)
-{
-	struct lzms_compressor *ctx = _ctx;
-
-	lzms_encode_literal(ctx, literal);
-}
-
-static void
-lzms_record_match(unsigned length, unsigned offset, void *_ctx)
-{
-	struct lzms_compressor *ctx = _ctx;
-
-	lzms_encode_lz_match(ctx, length, offset);
-}
-
-static void
-lzms_fast_encode(struct lzms_compressor *ctx)
-{
-	static const struct lz_params lzms_lz_params = {
-		.min_match	= 3,
-		.max_match	= UINT_MAX,
-		.max_offset	= UINT_MAX,
-		.nice_match	= 64,
-		.good_match	= 32,
-		.max_chain_len	= 64,
-		.max_lazy_match = 258,
-		.too_far	= 4096,
-	};
-
-	lz_analyze_block(ctx->window,
-			 ctx->window_size,
-			 lzms_record_match,
-			 lzms_record_literal,
-			 ctx,
-			 &lzms_lz_params,
-			 ctx->prev_tab);
-
-}
-#endif
-
 /* Fast heuristic cost evaluation to use in the inner loop of the match-finder.
  * Unlike lzms_get_lz_match_cost(), which does a true cost evaluation, this
  * simply prioritize matches based on their offset.  */
@@ -931,7 +882,7 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
  *   Huffman codes can change over this part of the data.
  */
 static void
-lzms_normal_encode(struct lzms_compressor *ctx)
+lzms_encode(struct lzms_compressor *ctx)
 {
 	struct raw_match match;
 
@@ -1145,11 +1096,7 @@ lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 
 	/* Compute and encode a literal/match sequence that decompresses to the
 	 * preprocessed data.  */
-#if 1
-	lzms_normal_encode(ctx);
-#else
-	lzms_fast_encode(ctx);
-#endif
+	lzms_encode(ctx);
 
 	/* Get and return the compressed data size.  */
 	compressed_size = lzms_finalize(ctx, compressed_data,
@@ -1214,9 +1161,6 @@ lzms_free_compressor(void *_ctx)
 
 	if (ctx) {
 		FREE(ctx->window);
-#if 0
-		FREE(ctx->prev_tab);
-#endif
 		FREE(ctx->matches);
 		lz_sarray_destroy(&ctx->lz_sarray);
 		lz_match_chooser_destroy(&ctx->mc);
@@ -1266,12 +1210,6 @@ lzms_create_compressor(size_t max_block_size,
 	ctx->window = MALLOC(max_block_size);
 	if (ctx->window == NULL)
 		goto oom;
-
-#if 0
-	ctx->prev_tab = MALLOC(max_block_size * sizeof(ctx->prev_tab[0]));
-	if (ctx->prev_tab == NULL)
-		goto oom;
-#endif
 
 	ctx->matches = MALLOC(min(params->max_match_length -
 					params->min_match_length + 1,
