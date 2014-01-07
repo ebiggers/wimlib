@@ -1098,6 +1098,82 @@ read_full_stream_with_sha1(struct wim_lookup_table_entry *lte,
 	return read_full_stream_with_cbs(lte, &hasher_cbs);
 }
 
+static int
+read_packed_streams(struct wim_lookup_table_entry *first_stream,
+		    struct wim_lookup_table_entry *last_stream,
+		    u64 stream_count,
+		    size_t list_head_offset,
+		    const struct read_stream_list_callbacks *sink_cbs)
+{
+	struct data_range *ranges;
+	bool ranges_malloced;
+	struct wim_lookup_table_entry *cur_stream;
+	size_t i;
+	int ret;
+	u64 ranges_alloc_size;
+
+	DEBUG("Reading %"PRIu64" streams combined in same WIM resource",
+	      stream_count);
+
+	/* Setup data ranges array (one range per stream to read); this way
+	 * read_compressed_wim_resource() does not need to be aware of streams.
+	 */
+
+	ranges_alloc_size = stream_count * sizeof(ranges[0]);
+
+	if (unlikely((size_t)ranges_alloc_size != ranges_alloc_size)) {
+		ERROR("Too many streams in one resource!");
+		return WIMLIB_ERR_NOMEM;
+	}
+	if (likely(ranges_alloc_size <= STACK_MAX)) {
+		ranges = alloca(ranges_alloc_size);
+		ranges_malloced = false;
+	} else {
+		ranges = MALLOC(ranges_alloc_size);
+		if (ranges == NULL) {
+			ERROR("Too many streams in one resource!");
+			return WIMLIB_ERR_NOMEM;
+		}
+		ranges_malloced = true;
+	}
+
+	for (i = 0, cur_stream = first_stream;
+	     i < stream_count;
+	     i++, cur_stream = next_stream(cur_stream, list_head_offset))
+	{
+		ranges[i].offset = cur_stream->offset_in_res;
+		ranges[i].size = cur_stream->size;
+	}
+
+	struct streamifier_context streamifier_ctx = {
+		.cbs			= *sink_cbs,
+		.cur_stream		= first_stream,
+		.next_stream            = next_stream(first_stream, list_head_offset),
+		.cur_stream_offset	= 0,
+		.final_stream		= last_stream,
+		.list_head_offset	= list_head_offset,
+	};
+
+	ret = read_compressed_wim_resource(first_stream->rspec,
+					   ranges,
+					   stream_count,
+					   streamifier_cb,
+					   &streamifier_ctx);
+
+	if (ranges_malloced)
+		FREE(ranges);
+
+	if (ret) {
+		if (streamifier_ctx.cur_stream_offset != 0) {
+			ret = (*streamifier_ctx.cbs.end_stream)
+				(streamifier_ctx.cur_stream,
+				 ret,
+				 streamifier_ctx.cbs.end_stream_ctx);
+		}
+	}
+	return ret;
+}
+
 /*
  * Read a list of streams, each of which may be in any supported location (e.g.
  * in a WIM or in an external file).  Unlike read_stream_prefix() or the
@@ -1186,7 +1262,7 @@ read_stream_list(struct list_head *stream_list,
 
 			struct wim_lookup_table_entry *lte_next, *lte_last;
 			struct list_head *next2;
-			size_t stream_count;
+			u64 stream_count;
 
 			/* The next stream is a proper sub-sequence of a WIM
 			 * resource.  See if there are other streams in the same
@@ -1215,53 +1291,13 @@ read_stream_list(struct list_head *stream_list,
 				 * first stream in the resource that needs to be
 				 * read and @lte_last specifies the last stream
 				 * in the resource that needs to be read.  */
-
-				DEBUG("Reading %zu streams combined in same "
-				      "WIM resource", stream_count);
-
 				next = next2;
-
-				struct data_range ranges[stream_count];
-
-				{
-					struct list_head *next3;
-					size_t i;
-					struct wim_lookup_table_entry *lte_cur;
-
-					next3 = cur;
-					for (i = 0; i < stream_count; i++) {
-						lte_cur = (struct wim_lookup_table_entry*)
-							((u8*)next3 - list_head_offset);
-						ranges[i].offset = lte_cur->offset_in_res;
-						ranges[i].size = lte_cur->size;
-						next3 = next3->next;
-					}
-				}
-
-				struct streamifier_context streamifier_ctx = {
-					.cbs			= *sink_cbs,
-					.cur_stream		= lte,
-					.next_stream            = next_stream(lte, list_head_offset),
-					.cur_stream_offset	= 0,
-					.final_stream		= lte_last,
-					.list_head_offset	= list_head_offset,
-				};
-
-				ret = read_compressed_wim_resource(lte->rspec,
-								   ranges,
-								   stream_count,
-								   streamifier_cb,
-								   &streamifier_ctx);
-
-				if (ret) {
-					if (streamifier_ctx.cur_stream_offset != 0) {
-						ret = (*streamifier_ctx.cbs.end_stream)
-							(streamifier_ctx.cur_stream,
-							 ret,
-							 streamifier_ctx.cbs.end_stream_ctx);
-					}
+				ret = read_packed_streams(lte, lte_last,
+							  stream_count,
+							  list_head_offset,
+							  sink_cbs);
+				if (ret)
 					return ret;
-				}
 				continue;
 			}
 		}
