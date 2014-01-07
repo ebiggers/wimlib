@@ -170,6 +170,15 @@ struct alt_chunk_table_header_disk {
 	 * the chunks (4 bytes per entry).  */
 } _packed_attribute;
 
+static inline unsigned int
+get_chunk_entry_size(u64 res_size, bool is_alt)
+{
+	if (res_size <= UINT32_MAX || is_alt)
+		return 4;
+	else
+		return 8;
+}
+
 /* Functions to read streams  */
 
 extern int

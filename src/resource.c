@@ -253,11 +253,9 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 	const u64 num_chunk_entries = (alt_chunk_table ? num_chunks : num_chunks - 1);
 
 	/* Set the size of each chunk table entry based on the resource's
-	 * uncompressed size.  XXX:  Does the alternate chunk table really
-	 * always have 4-byte entries?  */
-	const u64 chunk_entry_size =
-		(rspec->uncompressed_size > (1ULL << 32) && !alt_chunk_table)
-			? 8 : 4;
+	 * uncompressed size.  */
+	const u64 chunk_entry_size = get_chunk_entry_size(rspec->uncompressed_size,
+							  alt_chunk_table);
 
 	/* Calculate the size of the chunk table in bytes.  */
 	const u64 chunk_table_size = num_chunk_entries * chunk_entry_size;
