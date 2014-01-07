@@ -802,45 +802,102 @@ static struct wim_dentry *
 get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path,
 		   CASE_SENSITIVITY_TYPE case_type)
 {
-	struct wim_dentry *cur_dentry, *parent_dentry;
-	const utf16lechar *p, *pp;
+	struct wim_dentry *cur_dentry;
+	const utf16lechar *name_start, *name_end;
 
-	cur_dentry = parent_dentry = wim_root_dentry(wim);
-	if (cur_dentry == NULL) {
-		errno = ENOENT;
-		return NULL;
-	}
-	p = path;
-	while (1) {
-		while (*p == cpu_to_le16(WIM_PATH_SEPARATOR))
-			p++;
-		if (*p == cpu_to_le16('\0'))
-			break;
-		pp = p;
-		while (*pp != cpu_to_le16(WIM_PATH_SEPARATOR) &&
-		       *pp != cpu_to_le16('\0'))
-			pp++;
+	/* Start with the root directory of the image.  Note: this will be NULL
+	 * if an image has been added directly with wimlib_add_empty_image() but
+	 * no files have been added yet; in that case we fail with ENOENT.  */
+	cur_dentry = wim_root_dentry(wim);
 
-		cur_dentry = get_dentry_child_with_utf16le_name(parent_dentry, p,
-								(u8*)pp - (u8*)p,
-								case_type);
-		if (cur_dentry == NULL)
-			break;
-		p = pp;
-		parent_dentry = cur_dentry;
-	}
-	if (cur_dentry == NULL) {
-		if (dentry_is_directory(parent_dentry))
+	name_start = path;
+	for (;;) {
+		if (cur_dentry == NULL) {
 			errno = ENOENT;
-		else
+			return NULL;
+		}
+
+		if (*name_start && !dentry_is_directory(cur_dentry)) {
 			errno = ENOTDIR;
+			return NULL;
+		}
+
+		while (*name_start == cpu_to_le16(WIM_PATH_SEPARATOR))
+			name_start++;
+
+		if (!*name_start)
+			return cur_dentry;
+
+		name_end = name_start;
+		do {
+			++name_end;
+		} while (*name_end != cpu_to_le16(WIM_PATH_SEPARATOR) && *name_end);
+
+		cur_dentry = get_dentry_child_with_utf16le_name(cur_dentry,
+								name_start,
+								(u8*)name_end - (u8*)name_start,
+								case_type);
+		name_start = name_end;
 	}
-	return cur_dentry;
 }
 
 /*
- * Returns the dentry in the currently selected WIM image named by @path
- * starting from the root of the WIM image, or NULL if there is no such dentry.
+ * WIM path lookup: translate a path in the currently selected WIM image to the
+ * corresponding dentry, if it exists.
+ *
+ * @wim
+ *	The WIMStruct for the WIM.  The search takes place in the currently
+ *	selected image.
+ *
+ * @path
+ *	The path to look up, given relative to the root of the WIM image.
+ *	Characters with value WIM_PATH_SEPARATOR are taken to be path
+ *	separators.  Leading path separators are ignored, whereas one or more
+ *	trailing path separators cause the path to only match a directory.
+ *
+ * @case_type
+ *	The case-sensitivity behavior of this function, as one of the following
+ *	constants:
+ *
+ *    - WIMLIB_CASE_SENSITIVE:  Perform the search case sensitively.  This means
+ *	that names must match exactly.
+ *
+ *    - WIMLIB_CASE_INSENSITIVE:  Perform the search case insensitively.  This
+ *	means that names are considered to match if they are equal when
+ *	transformed to upper case.  If a path component matches multiple names
+ *	case-insensitively, the name that matches the path component
+ *	case-sensitively is chosen, if existent; otherwise one
+ *	case-insensitively matching name is chosen arbitrarily.
+ *
+ *    - WIMLIB_CASE_PLATFORM_DEFAULT:  Perform either case-sensitive or
+ *	case-insensitive search, depending on the value of the global variable
+ *	default_ignore_case.
+ *
+ *    In any case, no Unicode normalization is done before comparing strings.
+ *
+ * Returns a pointer to the dentry that is the result of the lookup, or NULL if
+ * no such dentry exists.  If NULL is returned, errno is set to one of the
+ * following values:
+ *
+ *	ENOTDIR if one of the path components used as a directory existed but
+ *	was not, in fact, a directory.
+ *
+ *	ENOENT otherwise.
+ *
+ * Additional notes:
+ *
+ *    - This function does not consider a reparse point to be a directory, even
+ *	if it has FILE_ATTRIBUTE_DIRECTORY set.
+ *
+ *    - This function does not dereference symbolic links or junction points
+ *	when performing the search.
+ *
+ *    - Since this function ignores leading slashes, the empty path is valid and
+ *	names the root directory of the WIM image.
+ *
+ *    - An image added with wimlib_add_empty_image() does not have a root
+ *	directory yet, and this function will fail with ENOENT for any path on
+ *	such an image.
  */
 struct wim_dentry *
 get_dentry(WIMStruct *wim, const tchar *path, CASE_SENSITIVITY_TYPE case_type)
@@ -878,8 +935,10 @@ to_parent_name(tchar *buf, size_t len)
 	buf[i + 1] = T('\0');
 }
 
-/* Returns the dentry that corresponds to the parent directory of @path, or NULL
- * if the dentry is not found. */
+/* Similar to get_dentry(), but returns the dentry named by @path with the last
+ * component stripped off.
+ *
+ * Note: The returned dentry is NOT guaranteed to be a directory.  */
 struct wim_dentry *
 get_parent_dentry(WIMStruct *wim, const tchar *path,
 		  CASE_SENSITIVITY_TYPE case_type)
