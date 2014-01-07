@@ -1233,7 +1233,7 @@ remove_zero_length_streams(struct list_head *stream_list)
  * Write a list of streams to the output WIM file.
  *
  * @stream_list
- *	The list of streams to write, specifies a list of `struct
+ *	The list of streams to write, specified by a list of `struct
  *	wim_lookup_table_entry's linked by the 'write_streams_list' member.
  *
  * @out_fd
@@ -1244,20 +1244,20 @@ remove_zero_length_streams(struct list_head *stream_list)
  *
  *	WRITE_RESOURCE_FLAG_RECOMPRESS:
  *		Force compression of all resources, even if they could otherwise
- *		be re-used by caping the raw data, due to being located in a WIM
+ *		be re-used by copying the raw data, due to being located in a WIM
  *		file with compatible compression parameters.
  *
  *	WRITE_RESOURCE_FLAG_PIPABLE:
  *		Write the resources in the wimlib-specific pipable format, and
  *		furthermore do so in such a way that no seeking backwards in
- *		@out_fd will be performed (so it may be a pipe, contrary to the
- *		default behavior).
+ *		@out_fd will be performed (so it may be a pipe).
  *
  *	WRITE_RESOURCE_FLAG_PACK_STREAMS:
  *		Pack all the streams into a single resource rather than writing
- *		them in separate resources.  This format is only valid if the
- *		WIM version number is WIM_VERSION_PACKED_STREAMS.  This flag
- *		currently may not be combined with WRITE_RESOURCE_FLAG_PIPABLE.
+ *		them in separate resources.  This flag is only valid if the WIM
+ *		version number has been, or will be, set to
+ *		WIM_VERSION_PACKED_STREAMS.  This flag may not be combined with
+ *		WRITE_RESOURCE_FLAG_PIPABLE.
  *
  * @out_ctype
  *	Compression format to use to write the output streams, specified as one
@@ -1300,15 +1300,15 @@ remove_zero_length_streams(struct list_head *stream_list)
  * In both cases, the @out_reshdr of the `struct wim_lookup_table_entry' for
  * each stream written will be updated to specify its location, size, and flags
  * in the output WIM.  In the packed resource case,
- * WIM_RESHDR_FLAG_PACKED_STREAMS shall be set in the @flags field of the
- * @out_reshdr, and @out_res_offset_in_wim and @out_res_size_in_wim will also
- * be set to the offset and size, respectively, in the output WIM of the full
- * packed resource containing the corresponding stream.
+ * WIM_RESHDR_FLAG_PACKED_STREAMS will be set in the @flags field of each
+ * @out_reshdr, and furthermore @out_res_offset_in_wim and @out_res_size_in_wim
+ * of each @out_reshdr will be set to the offset and size, respectively, in the
+ * output WIM of the packed resource containing the corresponding stream.
  *
  * Each of the streams to write may be in any location supported by the
  * resource-handling code (specifically, read_stream_list()), such as the
  * contents of external file that has been logically added to the output WIM, or
- * a stream in another WIM file that has been imported, or even stream in the
+ * a stream in another WIM file that has been imported, or even a stream in the
  * "same" WIM file of which a modified copy is being written.  In the case that
  * a stream is already in a WIM file and uses compatible compression parameters,
  * by default this function will re-use the raw data instead of decompressing
@@ -1316,32 +1316,31 @@ remove_zero_length_streams(struct list_head *stream_list)
  * specified in @write_resource_flags, this is not done.
  *
  * As a further requirement, this function requires that the
- * @will_be_in_output_wim member be set on all streams in @stream_list as well
- * as any other streams not in @stream_list that will be in the output WIM file,
- * but not on any other streams in the output WIM's lookup table or sharing a
- * packed resource with a stream in @stream_list.  Still furthermore, if
- * on-the-fly deduplication of streams is possible, then all streams in
+ * @will_be_in_output_wim member be set to 1 on all streams in @stream_list as
+ * well as any other streams not in @stream_list that will be in the output WIM
+ * file, but set to 0 on any other streams in the output WIM's lookup table or
+ * sharing a packed resource with a stream in @stream_list.  Still furthermore,
+ * if on-the-fly deduplication of streams is possible, then all streams in
  * @stream_list must also be linked by @lookup_table_list along with any other
  * streams that have @will_be_in_output_wim set.
  *
  * This function handles on-the-fly deduplication of streams for which SHA1
- * message digests have not yet been calculated and it is therefore known
- * whether such streams are already in @stream_list or in the WIM's lookup table
- * at all.  If @lookup_table is non-NULL, then each stream in @stream_list that
- * has @unhashed set but not @unique_size set is checksummed immediately before
- * it would otherwise be read for writing in order to determine if it is
- * identical to another stream already being written or one that would be
- * filtered out of the output WIM using stream_filtered() with the context
- * @filter_ctx.  Each such duplicate stream will be removed from @stream_list, its
- * reference count transfered to the pre-existing duplicate stream, its memory
- * freed, and will not be written.  Alternatively, if a stream in @stream_list
- * is a duplicate with any stream in @lookup_table that has not been marked for
- * writing or would not be hard-filtered, it is freed and the pre-existing
- * duplicate is written instead, taking ownership of the reference count and
- * slot in the @lookup_table_list.
+ * message digests have not yet been calculated.  Such streams may or may not
+ * need to be written.  If @lookup_table is non-NULL, then each stream in
+ * @stream_list that has @unhashed set but not @unique_size set is checksummed
+ * immediately before it would otherwise be read for writing in order to
+ * determine if it is identical to another stream already being written or one
+ * that would be filtered out of the output WIM using stream_filtered() with the
+ * context @filter_ctx.  Each such duplicate stream will be removed from
+ * @stream_list, its reference count transfered to the pre-existing duplicate
+ * stream, its memory freed, and will not be written.  Alternatively, if a
+ * stream in @stream_list is a duplicate with any stream in @lookup_table that
+ * has not been marked for writing or would not be hard-filtered, it is freed
+ * and the pre-existing duplicate is written instead, taking ownership of the
+ * reference count and slot in the @lookup_table_list.
  *
- * Returns 0 if all streams were written successfully (or did not need to be
- * written); otherwise a non-zero error code.
+ * Returns 0 if every stream was either written successfully or did not need to
+ * be written; otherwise returns a non-zero error code.
  */
 static int
 write_stream_list(struct list_head *stream_list,
