@@ -3178,11 +3178,6 @@ wimlib_extract_paths(WIMStruct *wim,
 		     wimlib_progress_func_t progress_func)
 {
 	int ret;
-	struct append_dentry_ctx append_dentry_ctx = {
-		.dentries = NULL,
-		.num_dentries = 0,
-		.num_alloc_dentries = 0,
-	};
 	struct wim_dentry **trees;
 	size_t num_trees;
 
@@ -3202,6 +3197,13 @@ wimlib_extract_paths(WIMStruct *wim,
 		return ret;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_GLOB_PATHS) {
+
+		struct append_dentry_ctx append_dentry_ctx = {
+			.dentries = NULL,
+			.num_dentries = 0,
+			.num_alloc_dentries = 0,
+		};
+
 		u32 wildcard_flags = 0;
 
 		if (extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_GLOB)
@@ -3213,10 +3215,17 @@ wimlib_extract_paths(WIMStruct *wim,
 			wildcard_flags |= WILDCARD_FLAG_CASE_INSENSITIVE;
 
 		for (size_t i = 0; i < num_paths; i++) {
-			ret = expand_wildcard(wim, paths[i],
+			tchar *path = canonicalize_wim_path(paths[i]);
+			if (path == NULL) {
+				ret = WIMLIB_ERR_NOMEM;
+				trees = append_dentry_ctx.dentries;
+				goto out_free_trees;
+			}
+			ret = expand_wildcard(wim, path,
 					      append_dentry_cb,
 					      &append_dentry_ctx,
 					      wildcard_flags);
+			FREE(path);
 			if (ret) {
 				trees = append_dentry_ctx.dentries;
 				goto out_free_trees;
@@ -3230,8 +3239,16 @@ wimlib_extract_paths(WIMStruct *wim,
 			return WIMLIB_ERR_NOMEM;
 
 		for (size_t i = 0; i < num_paths; i++) {
-			trees[i] = get_dentry(wim, paths[i],
+
+			tchar *path = canonicalize_wim_path(paths[i]);
+			if (path == NULL) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_free_trees;
+			}
+
+			trees[i] = get_dentry(wim, path,
 					      WIMLIB_CASE_PLATFORM_DEFAULT);
+			FREE(path);
 			if (trees[i] == NULL) {
 				  ERROR("Path \"%"TS"\" does not exist "
 					"in WIM image %d",
