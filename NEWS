@@ -6,8 +6,8 @@ Version 1.6.1:
 	Stored files with size exactly 4 GiB (4,294,967,296 bytes) are now
 	decompressed correctly.
 
-	Paths passed to wimlib_extract_paths() may now use either forwards or
-	backwards slashes, as documented.
+	Paths passed to wimlib_extract_paths() and wimlib_iterate_dir_tree() may
+	now use either forwards or backwards slashes, as documented.
 
 	Fixed a potential stack overflow when extracting solid archives (packed
 	streams) containing more than about 100000 files.

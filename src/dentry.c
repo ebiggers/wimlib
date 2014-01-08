@@ -2705,10 +2705,16 @@ image_do_iterate_dir_tree(WIMStruct *wim)
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *path,
+wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *_path,
 			int flags,
 			wimlib_iterate_dir_tree_callback_t cb, void *user_ctx)
 {
+	tchar *path;
+	int ret;
+
+	path = canonicalize_wim_path(_path);
+	if (path == NULL)
+		return WIMLIB_ERR_NOMEM;
 	struct image_iterate_dir_tree_ctx ctx = {
 		.path = path,
 		.flags = flags,
@@ -2716,7 +2722,9 @@ wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *path,
 		.user_ctx = user_ctx,
 	};
 	wim->private = &ctx;
-	return for_image(wim, image, image_do_iterate_dir_tree);
+	ret = for_image(wim, image, image_do_iterate_dir_tree);
+	FREE(path);
+	return ret;
 }
 
 /* Returns %true iff the metadata of @inode and @template_inode are reasonably
