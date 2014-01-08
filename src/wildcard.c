@@ -129,7 +129,7 @@ wildcard_status(const tchar *wildcard)
 {
 	if (*wildcard == T('\0'))
 		return WILDCARD_STATUS_DONE_FULLY;
-	while (is_any_path_separator(*wildcard))
+	while (*wildcard == WIM_PATH_SEPARATOR)
 		wildcard++;
 	if (*wildcard == T('\0'))
 		return WILDCARD_STATUS_DONE_TRAILING_SLASHES;
@@ -209,12 +209,12 @@ expand_wildcard_recursive(struct wim_dentry *cur_dentry,
 	w = ctx->wildcard_path;
 
 	begin = ctx->cur_component_offset + ctx->cur_component_len;
-	while (is_any_path_separator(w[begin]))
+	while (w[begin] == WIM_PATH_SEPARATOR)
 		begin++;
 
 	end = begin;
 
-	while (w[end] != T('\0') && !is_any_path_separator(w[end]))
+	while (w[end] != T('\0') && w[end] != WIM_PATH_SEPARATOR)
 		end++;
 
 	len = end - begin;
@@ -243,9 +243,9 @@ expand_wildcard_recursive(struct wim_dentry *cur_dentry,
  *	wildcard.
  * @wildcard_path
  *	Wildcard path to expand, which may contain the '?' and '*' characters.
- *      Path separators may be either forward slashes, and leading path
- *      separators are ignored.  Trailing path separators indicate that the
- *      wildcard can only match directories.
+ *	Path separators must be WIM_PATH_SEPARATOR.  Leading path separators are
+ *	ignored, whereas one or more trailing path separators indicate that the
+ *	wildcard path can only match directories (and not reparse points).
  * @consume_dentry
  *	Callback function which will receive each directory entry matched by the
  *	wildcard.
