@@ -172,8 +172,8 @@ can_raw_copy(const struct wim_lookup_table_entry *lte,
 	if (rspec->flags & WIM_RESHDR_FLAG_COMPRESSED) {
 		/* Normal compressed resource: Must use same compression type
 		 * and chunk size.  */
-		return (rspec->wim->compression_type == out_ctype &&
-			rspec->wim->chunk_size == out_chunk_size);
+		return (rspec->compression_type == out_ctype &&
+			rspec->chunk_size == out_chunk_size);
 	}
 
 	/* XXX: For compatibility, we can't allow multiple packed resources per

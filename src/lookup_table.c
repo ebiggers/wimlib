@@ -680,16 +680,6 @@ read_wim_lookup_table(WIMStruct *wim)
 			}
 			wim_res_hdr_to_spec(&reshdr, wim, cur_rspec);
 
-			/* If this is a packed run, the current stream entry may
-			 * specify a stream within the resource, and not the
-			 * resource itself.  Zero possibly irrelevant data until
-			 * it is read for certain.  */
-			if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
-				cur_rspec->size_in_wim = 0;
-				cur_rspec->uncompressed_size = 0;
-				cur_rspec->offset_in_wim = 0;
-			}
-
 			if (prev_entry)
 				lte_bind_wim_resource_spec(prev_entry, cur_rspec);
 		}
@@ -705,7 +695,10 @@ read_wim_lookup_table(WIMStruct *wim)
 			 */
 
 			/* Uncompressed size of the resource pack is actually
-			 * stored in the header of the resource itself.  */
+			 * stored in the header of the resource itself.  Read
+			 * it, and also grab the chunk size and compression type
+			 * (which are not necessarily the defaults from the WIM
+			 * header).  */
 			struct alt_chunk_table_header_disk hdr;
 
 			ret = full_pread(&wim->in_fd, &hdr,
@@ -717,6 +710,17 @@ read_wim_lookup_table(WIMStruct *wim)
 			cur_rspec->offset_in_wim = reshdr.offset_in_wim;
 			cur_rspec->size_in_wim = reshdr.size_in_wim;
 			cur_rspec->flags = reshdr.flags;
+
+			/* Compression format numbers must be the same as in
+			 * WIMGAPI to be compatible here.  */
+			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
+			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZX != 1);
+			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_XPRESS != 2);
+			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZMS != 3);
+			cur_rspec->compression_type = le32_to_cpu(hdr.compression_format);
+
+			cur_rspec->chunk_size = le32_to_cpu(hdr.chunk_size);
+
 			DEBUG("Full pack is %"PRIu64" compressed bytes "
 			      "at file offset %"PRIu64" (flags 0x%02x)",
 			      cur_rspec->size_in_wim,

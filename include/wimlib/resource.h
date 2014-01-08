@@ -52,6 +52,13 @@ struct wim_resource_spec {
 
 	/* Temporary flag.  */
 	u32 raw_copy_ok : 1;
+
+	/* Compression type of this resource.  */
+	u32 compression_type : 22;
+
+	/* Compression chunk size of this resource.  Irrelevant if the resource
+	 * is uncompressed.  */
+	u32 chunk_size;
 };
 
 /* On-disk version of a WIM resource header.  */

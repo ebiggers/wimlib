@@ -175,37 +175,21 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 
 	/* Get the maximum size of uncompressed chunks in this resource, which
 	 * we require be a power of 2.  */
-	u32 chunk_size = 0;
 	u64 cur_read_offset = rspec->offset_in_wim;
-	int ctype = WIMLIB_COMPRESSION_TYPE_NONE;
+	int ctype = rspec->compression_type;
+	u32 chunk_size = rspec->chunk_size;
 	if (alt_chunk_table) {
 		/* Alternate chunk table format.  Its header specifies the chunk
-		 * size and compression format.  */
-		struct alt_chunk_table_header_disk hdr;
-
-		ret = full_pread(in_fd, &hdr, sizeof(hdr), cur_read_offset);
-		if (ret)
-			goto read_error;
-		cur_read_offset += sizeof(hdr);
-
-		chunk_size = le32_to_cpu(hdr.chunk_size);
-		ctype = le32_to_cpu(hdr.compression_format);
-
-		/* Format numbers must be the same as in WIMGAPI to be
-		 * compatible.  */
-		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
-		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZX != 1);
-		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_XPRESS != 2);
-		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZMS != 3);
-	} else {
-		/* "Normal" format: the maximum uncompressed chunk size and the
-		 * compression format default to those of the WIM itself.  */
-		chunk_size = rspec->wim->chunk_size;
-		ctype = rspec->wim->compression_type;
+		 * size and compression format.  Note: it could be read here;
+		 * however, the relevant data was already loaded into @rspec by
+		 * read_wim_lookup_table().  */
+		cur_read_offset += sizeof(struct alt_chunk_table_header_disk);
 	}
+
 	if (!is_power_of_2(chunk_size)) {
 		ERROR("Invalid compressed resource: "
-		      "expected power-of-2 chunk size (got %u)", chunk_size);
+		      "expected power-of-2 chunk size (got %"PRIu32")",
+		      chunk_size);
 		ret = WIMLIB_ERR_INVALID_CHUNK_SIZE;
 		goto out_free_memory;
 	}
@@ -1377,7 +1361,10 @@ sha1_stream(struct wim_lookup_table_entry *lte)
 }
 
 /* Convert a short WIM resource header to a stand-alone WIM resource
- * specification.  */
+ * specification.
+ *
+ * Note: for packed resources some fields still need to be overridden.
+ */
 void
 wim_res_hdr_to_spec(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		    struct wim_resource_spec *rspec)
@@ -1389,6 +1376,13 @@ wim_res_hdr_to_spec(const struct wim_reshdr *reshdr, WIMStruct *wim,
 	INIT_LIST_HEAD(&rspec->stream_list);
 	rspec->flags = reshdr->flags;
 	rspec->is_pipable = wim_is_pipable(wim);
+	if (rspec->flags & WIM_RESHDR_FLAG_COMPRESSED) {
+		rspec->compression_type = wim->compression_type;
+		rspec->chunk_size = wim->chunk_size;
+	} else {
+		rspec->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
+		rspec->chunk_size = 0;
+	}
 }
 
 /* Convert a stand-alone resource specification to a WIM resource header.  */
