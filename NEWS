@@ -1,5 +1,17 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.6.1:
+	This release is minor bug-fixes only:
+
+	Stored files with size exactly 4 GiB (4,294,967,296 bytes) are now
+	decompressed correctly.
+
+	Paths passed to wimlib_extract_paths() may now use either forwards or
+	backwards slashes, as documented.
+
+	Fixed a potential stack overflow when extracting solid archives (packed
+	streams) containing more than about 100000 files.
+
 Version 1.6.0:
 	Support for extracting and updating the new version 3584 WIMs has been
 	added.  These WIMs typically pack many streams ("files") together into a
