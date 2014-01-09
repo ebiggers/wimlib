@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (c) 2013 Eric Biggers.  All rights reserved.
+ * Copyright (c) 2013, 2014 Eric Biggers.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -51,17 +51,17 @@
  * WARNING: this is for debug use only as it does not necessarily run in linear
  * time!!!  */
 static void
-verify_suffix_array(const input_idx_t SA[restrict],
+verify_suffix_array(const lz_sarray_pos_t SA[restrict],
 		    const u8 T[restrict],
 		    bool found[restrict],
-		    input_idx_t n)
+		    lz_sarray_pos_t n)
 {
 #ifdef ENABLE_LZ_DEBUG
 	/* Ensure the SA contains exactly one of each i in [0, n - 1].  */
-	for (input_idx_t i = 0; i < n; i++)
+	for (lz_sarray_pos_t i = 0; i < n; i++)
 		found[i] = false;
-	for (input_idx_t r = 0; r < n; r++) {
-		input_idx_t i = SA[r];
+	for (lz_sarray_pos_t r = 0; r < n; r++) {
+		lz_sarray_pos_t i = SA[r];
 		LZ_ASSERT(i < n);
 		LZ_ASSERT(!found[i]);
 		found[i] = true;
@@ -69,13 +69,13 @@ verify_suffix_array(const input_idx_t SA[restrict],
 
 	/* Ensure the suffix with rank r is lexicographically lesser than the
 	 * suffix with rank (r + 1) for all r in [0, n - 2].  */
-	for (input_idx_t r = 0; r < n - 1; r++) {
+	for (lz_sarray_pos_t r = 0; r < n - 1; r++) {
 
-		input_idx_t i1 = SA[r];
-		input_idx_t i2 = SA[r + 1];
+		lz_sarray_pos_t i1 = SA[r];
+		lz_sarray_pos_t i2 = SA[r + 1];
 
-		input_idx_t n1 = n - i1;
-		input_idx_t n2 = n - i2;
+		lz_sarray_pos_t n1 = n - i1;
+		lz_sarray_pos_t n2 = n - i2;
 
 		int res = memcmp(&T[i1], &T[i2], min(n1, n2));
 		LZ_ASSERT(res < 0 || (res == 0 && n1 < n2));
@@ -90,11 +90,11 @@ verify_suffix_array(const input_idx_t SA[restrict],
  * the inverse suffix array is a mapping from suffix position to suffix rank.
  */
 static void
-compute_inverse_suffix_array(input_idx_t ISA[restrict],
-			     const input_idx_t SA[restrict],
-			     input_idx_t n)
+compute_inverse_suffix_array(lz_sarray_pos_t ISA[restrict],
+			     const lz_sarray_pos_t SA[restrict],
+			     lz_sarray_pos_t n)
 {
-	input_idx_t r;
+	lz_sarray_pos_t r;
 
 	for (r = 0; r < n; r++)
 		ISA[SA[r]] = r;
@@ -111,13 +111,13 @@ compute_inverse_suffix_array(input_idx_t ISA[restrict],
  * take into account that with bytes in the real world, there is no unique
  * symbol at the end of the string.  */
 static void
-compute_lcp_array(input_idx_t LCP[restrict],
-		  const input_idx_t SA[restrict],
-		  const input_idx_t ISA[restrict],
+compute_lcp_array(lz_sarray_pos_t LCP[restrict],
+		  const lz_sarray_pos_t SA[restrict],
+		  const lz_sarray_pos_t ISA[restrict],
 		  const u8 T[restrict],
-		  input_idx_t n)
+		  lz_sarray_pos_t n)
 {
-	input_idx_t h, i, r, j, lim;
+	lz_sarray_pos_t h, i, r, j, lim;
 
 	h = 0;
 	for (i = 0; i < n; i++) {
@@ -141,19 +141,19 @@ compute_lcp_array(input_idx_t LCP[restrict],
  * WARNING: this is for debug use only as it does not necessarily run in linear
  * time!!!  */
 static void
-verify_lcp_array(input_idx_t LCP[restrict],
-		 const input_idx_t SA[restrict],
+verify_lcp_array(lz_sarray_pos_t LCP[restrict],
+		 const lz_sarray_pos_t SA[restrict],
 		 const u8 T[restrict],
-		 input_idx_t n)
+		 lz_sarray_pos_t n)
 {
 #ifdef ENABLE_LZ_DEBUG
-	for (input_idx_t r = 0; r < n - 1; r++) {
-		input_idx_t i1 = SA[r];
-		input_idx_t i2 = SA[r + 1];
-		input_idx_t lcp = LCP[r + 1];
+	for (lz_sarray_pos_t r = 0; r < n - 1; r++) {
+		lz_sarray_pos_t i1 = SA[r];
+		lz_sarray_pos_t i2 = SA[r + 1];
+		lz_sarray_pos_t lcp = LCP[r + 1];
 
-		input_idx_t n1 = n - i1;
-		input_idx_t n2 = n - i2;
+		lz_sarray_pos_t n1 = n - i1;
+		lz_sarray_pos_t n2 = n - i2;
 
 		LZ_ASSERT(lcp <= min(n1, n2));
 
@@ -183,19 +183,19 @@ verify_lcp_array(input_idx_t LCP[restrict],
  */
 static void
 init_salink(struct salink link[restrict],
-	    const input_idx_t LCP[restrict],
-	    const input_idx_t SA[restrict],
+	    const lz_sarray_pos_t LCP[restrict],
+	    const lz_sarray_pos_t SA[restrict],
 	    const u8 T[restrict],
-	    input_idx_t n,
-	    input_idx_t max_match_len)
+	    lz_sarray_pos_t n,
+	    lz_sarray_len_t max_match_len)
 {
 	/* Compute salink.next and salink.lcpnext.  */
-	link[n - 1].next = ~(input_idx_t)0;
+	link[n - 1].next = LZ_SARRAY_POS_MAX;
 	link[n - 1].lcpnext = 0;
-	for (input_idx_t r = n - 2; r != ~(input_idx_t)0; r--) {
-		input_idx_t t = r + 1;
-		input_idx_t l = LCP[t];
-		while (t != ~(input_idx_t)0 && SA[t] > SA[r]) {
+	for (lz_sarray_pos_t r = n - 2; r != LZ_SARRAY_POS_MAX; r--) {
+		lz_sarray_pos_t t = r + 1;
+		lz_sarray_pos_t l = LCP[t];
+		while (t != LZ_SARRAY_POS_MAX && SA[t] > SA[r]) {
 			l = min(l, link[t].lcpnext);
 			t = link[t].next;
 		}
@@ -204,12 +204,12 @@ init_salink(struct salink link[restrict],
 	}
 
 	/* Compute salink.prev and salink.lcpprev.  */
-	link[0].prev = ~(input_idx_t)0;
+	link[0].prev = LZ_SARRAY_POS_MAX;
 	link[0].lcpprev = 0;
-	for (input_idx_t r = 1; r < n; r++) {
-		input_idx_t t = r - 1;
-		input_idx_t l = LCP[r];
-		while (t != ~(input_idx_t)0 && SA[t] > SA[r]) {
+	for (lz_sarray_pos_t r = 1; r < n; r++) {
+		lz_sarray_pos_t t = r - 1;
+		lz_sarray_pos_t l = LCP[r];
+		while (t != LZ_SARRAY_POS_MAX && SA[t] > SA[r]) {
 			l = min(l, link[t].lcpprev);
 			t = link[t].prev;
 		}
@@ -224,16 +224,16 @@ init_salink(struct salink link[restrict],
  * time!!!  */
 static void
 verify_salink(const struct salink link[],
-	      const input_idx_t SA[],
+	      const lz_sarray_pos_t SA[],
 	      const u8 T[],
-	      input_idx_t n,
-	      input_idx_t max_match_len)
+	      lz_sarray_pos_t n,
+	      lz_sarray_len_t max_match_len)
 {
 #ifdef ENABLE_LZ_DEBUG
-	for (input_idx_t r = 0; r < n; r++) {
-		for (input_idx_t prev = r; ; ) {
+	for (lz_sarray_pos_t r = 0; r < n; r++) {
+		for (lz_sarray_pos_t prev = r; ; ) {
 			if (prev == 0) {
-				LZ_ASSERT(link[r].prev == ~(input_idx_t)0);
+				LZ_ASSERT(link[r].prev == LZ_SARRAY_POS_MAX);
 				LZ_ASSERT(link[r].lcpprev == 0);
 				break;
 			}
@@ -259,9 +259,9 @@ verify_salink(const struct salink link[],
 			}
 		}
 
-		for (input_idx_t next = r; ; ) {
+		for (lz_sarray_pos_t next = r; ; ) {
 			if (next == n - 1) {
-				LZ_ASSERT(link[r].next == ~(input_idx_t)0);
+				LZ_ASSERT(link[r].next == LZ_SARRAY_POS_MAX);
 				LZ_ASSERT(link[r].lcpnext == 0);
 				break;
 			}
@@ -301,24 +301,17 @@ verify_salink(const struct salink link[],
  *	any memory that may have been allocated.
  *
  * @max_window_size
- *	The maximum window size to support.
+ *	The maximum window size to support.  This must be greater than 0.
  *
- *	In the current implementation, the memory needed will be
- *	(6 * sizeof(input_idx_t) * @max_window_size) bytes.
- *	For (sizeof(input_idx_t) == 4) that's 24 times the window size.
- *
- *	Memory is saved by saving neither the original window nor the LCP
- *	(Longest Common Prefix) array; otherwise 29 times the window size would
- *	be required.  (In practice the compressor will likely keep the original
- *	window around anyway, although based on this property of the
- *	match-finder it theoretically it could overwrite it with the compressed
- *	data.)
+ *	The amount of needed memory will depend on this value; see
+ *	lz_sarray_get_needed_memory() for details.
  *
  * @min_match_len
- *	The minimum length of each match to be found.
+ *	The minimum length of each match to be found.  Must be greater than 0.
  *
  * @max_match_len
- *	The maximum length of each match to be found.
+ *	The maximum length of each match to be found.  Must be greater than or
+ *	equal to @min_match_len.
  *
  * @max_matches_to_consider
  *	The maximum number of matches to consider at each position.  This should
@@ -353,12 +346,16 @@ verify_salink(const struct salink link[],
  */
 bool
 lz_sarray_init(struct lz_sarray *mf,
-	       input_idx_t max_window_size,
-	       input_idx_t min_match_len,
-	       input_idx_t max_match_len,
+	       lz_sarray_pos_t max_window_size,
+	       lz_sarray_len_t min_match_len,
+	       lz_sarray_len_t max_match_len,
 	       u32 max_matches_to_consider,
 	       u32 max_matches_to_return)
 {
+	LZ_ASSERT(min_match_len > 0);
+	LZ_ASSERT(max_window_size > 0);
+	LZ_ASSERT(max_match_len >= min_match_len);
+
 	mf->max_window_size = max_window_size;
 	mf->min_match_len = min_match_len;
 	mf->max_match_len = max_match_len;
@@ -366,10 +363,16 @@ lz_sarray_init(struct lz_sarray *mf,
 	mf->max_matches_to_return = max_matches_to_return;
 
 	/* SA and ISA will share the same storage block.  */
+	if ((u64)2 * max_window_size * sizeof(mf->SA[0]) !=
+		 2 * max_window_size * sizeof(mf->SA[0]))
+		return false;
 	mf->SA = MALLOC(2 * max_window_size * sizeof(mf->SA[0]));
 	if (mf->SA == NULL)
 		return false;
 
+	if ((u64)max_window_size * sizeof(mf->salink[0]) !=
+		 max_window_size * sizeof(mf->salink[0]))
+		return false;
 	mf->salink = MALLOC(max_window_size * sizeof(mf->salink[0]));
 	if (mf->salink == NULL)
 		return false;
@@ -377,10 +380,25 @@ lz_sarray_init(struct lz_sarray *mf,
 	return true;
 }
 
+/*
+ * Return the number of bytes of memory that lz_sarray_init() would allocate for
+ * the specified maximum window size.
+ *
+ * This should be (20 * @max_window_size) unless the type definitions have been
+ * changed.
+ */
 u64
-lz_sarray_get_needed_memory(input_idx_t max_window_size)
+lz_sarray_get_needed_memory(lz_sarray_pos_t max_window_size)
 {
-	return (u64)6 * sizeof(input_idx_t) * max_window_size;
+	u64 size = 0;
+
+	/* SA and ISA: 8 bytes per position  */
+	size += (u64)max_window_size * 2 * sizeof(((struct lz_sarray*)0)->SA[0]);
+
+	/* salink: 12 bytes per position  */
+	size += (u64)max_window_size * sizeof(((struct lz_sarray*)0)->salink[0]);
+
+	return size;
 }
 
 /*
@@ -397,9 +415,9 @@ lz_sarray_get_needed_memory(input_idx_t max_window_size)
  * This function runs in linear time (relative to @n).
  */
 void
-lz_sarray_load_window(struct lz_sarray *mf, const u8 T[], input_idx_t n)
+lz_sarray_load_window(struct lz_sarray *mf, const u8 T[], lz_sarray_pos_t n)
 {
-	input_idx_t *ISA, *LCP;
+	lz_sarray_pos_t *ISA, *LCP;
 
 	LZ_ASSERT(n > 0 && n <= mf->max_window_size);
 
@@ -418,7 +436,7 @@ lz_sarray_load_window(struct lz_sarray *mf, const u8 T[], input_idx_t n)
 		  >= 256 * sizeof(saidx_t));
 	LZ_ASSERT(mf->max_window_size * sizeof(mf->salink[0])
 		  >= 256 * 256 * sizeof(saidx_t));
-	BUILD_BUG_ON(sizeof(input_idx_t) != sizeof(saidx_t));
+	BUILD_BUG_ON(sizeof(lz_sarray_pos_t) != sizeof(saidx_t));
 
 	divsufsort(T, mf->SA, n, (saidx_t*)&mf->SA[n], (saidx_t*)mf->salink);
 
@@ -434,7 +452,7 @@ lz_sarray_load_window(struct lz_sarray *mf, const u8 T[], input_idx_t n)
 	 * end.  This is probably worth it because computing the ISA from the SA
 	 * is very fast, and since this match-finder is memory-hungry we'd like
 	 * to save as much memory as possible.  */
-	ISA = (input_idx_t*)mf->salink;
+	ISA = (lz_sarray_pos_t*)mf->salink;
 	compute_inverse_suffix_array(ISA, mf->SA, n);
 
 	/* Compute LCP (Longest Common Prefix) array.  */

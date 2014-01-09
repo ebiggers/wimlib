@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (c) 2013 Eric Biggers.  All rights reserved.
+ * Copyright (c) 2013, 2014 Eric Biggers.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -35,11 +35,25 @@
 #define _WIMLIB_LZ_SARRAY_H
 
 #include "wimlib/compiler.h" /* must define '_always_inline_attribute'  */
-#include "wimlib/lz.h"	     /* must define 'struct raw_match', 'input_idx_t',
-			        and LZ_ASSERT().  */
-#include "wimlib/types.h"    /* must define 'bool', 'u8', 'u32'  */
+#include "wimlib/lz.h"       /* must define 'struct raw_match' and LZ_ASSERT()  */
+#include "wimlib/types.h"    /* must define 'bool', 'u8', 'u16, and 'u32'  */
 
 struct salink;
+
+/* Position type --- must be an unsigned type large enough to hold the length of
+ * longest window for which the suffix array match-finder will be used.  */
+typedef u32 lz_sarray_pos_t;
+
+/* Length type --- must be an unsigned type large enough to hold the maximum
+ * match length.  */
+typedef u16 lz_sarray_len_t;
+
+/* Cost type, for the user-provided match cost evaluation function.  */
+typedef lz_sarray_pos_t lz_sarray_cost_t;
+
+#define LZ_SARRAY_LEN_MAX	((lz_sarray_len_t)~0UL)
+#define LZ_SARRAY_POS_MAX	((lz_sarray_pos_t)~0UL)
+#define LZ_SARRAY_INFINITE_COST	((lz_sarray_cost_t)~0UL)
 
 /* State of the suffix array LZ (Lempel-Ziv) match-finder.
  *
@@ -54,13 +68,13 @@ struct lz_sarray {
 	 * sufficient to find matches.  This number is the maximum length of
 	 * those arrays, or also the maximum window (block) size that can be
 	 * passed to lz_sarray_load_window().  */
-	input_idx_t max_window_size;
+	lz_sarray_pos_t max_window_size;
 
-	/* Minimum match length to return.  */
-	input_idx_t min_match_len;
+	/* Minimum length of matches to return.  */
+	lz_sarray_len_t min_match_len;
 
-	/* Maximum match length to return.  */
-	input_idx_t max_match_len;
+	/* Maximum length of matches to return.  */
+	lz_sarray_len_t max_match_len;
 
 	/* Maximum matches to consider at each position (max search depth).  */
 	u32 max_matches_to_consider;
@@ -69,19 +83,19 @@ struct lz_sarray {
 	u32 max_matches_to_return;
 
 	/* Current position in the window.  */
-	input_idx_t cur_pos;
+	lz_sarray_pos_t cur_pos;
 
 	/* Current window size.  */
-	input_idx_t window_size;
+	lz_sarray_pos_t window_size;
 
 	/* Suffix array for the current window.
 	 * This is a mapping from suffix rank to suffix position.  */
-	input_idx_t *SA;
+	lz_sarray_pos_t *SA;
 
 	/* Inverse suffix array for the current window.
 	 * This is a mapping from suffix position to suffix rank.
 	 * If 0 <= r < window_size, then ISA[SA[r]] == r.  */
-	input_idx_t *ISA;
+	lz_sarray_pos_t *ISA;
 
 	/* Suffix array links.
 	 *
@@ -99,36 +113,36 @@ struct salink {
 	/* Rank of highest ranked suffix that has rank lower than the suffix
 	 * corresponding to this structure and either has a lower position
 	 * (initially) or has a position lower than the highest position at
-	 * which matches have been searched for so far, or ~(input_idx_t)0 if
+	 * which matches have been searched for so far, or LZ_SARRAY_POS_MAX if
 	 * there is no such suffix.
 	 *
 	 * Think of this as a pointer to the closest position in the suffix
 	 * array to the left that corresponds to a suffix that begins at a
 	 * position in the current dictionary (i.e. before the current position
 	 * in the window).  */
-	input_idx_t prev;
+	lz_sarray_pos_t prev;
 
 	/* Rank of lowest ranked suffix that has rank greater than the suffix
 	 * corresponding to this structure and either has a lower position
 	 * (intially) or has a position lower than the highest position at which
-	 * matches have been searched for so far, or ~(input_idx_t)0 if there is
-	 * no such suffix.
+	 * matches have been searched for so far, or LZ_SARRAY_POS_MAX if there
+	 * is no such suffix.
 
 	 * Think of this as a pointer to the closest position in the suffix
 	 * array to the right that corresponds to a suffix that begins at a
 	 * position in the current dictionary (i.e. before the current position
 	 * in the window).  */
-	input_idx_t next;
+	lz_sarray_pos_t next;
 
 	/* Length of longest common prefix between the suffix corresponding to
 	 * this structure and the suffix with rank @prev, or 0 if @prev is
-	 * ~(input_idx_t)0.  */
-	input_idx_t lcpprev;
+	 * LZ_SARRAY_POS_MAX.  Capped to the maximum match length.  */
+	lz_sarray_len_t lcpprev;
 
 	/* Length of longest common prefix between the suffix corresponding to
 	 * this structure and the suffix with rank @next, or 0 if @next is
-	 * ~(input_idx_t)0.  */
-	input_idx_t lcpnext;
+	 * LZ_SARRAY_POS_MAX.  Capped to the maximum match length.  */
+	lz_sarray_len_t lcpnext;
 };
 
 /*-----------------------------------*/
@@ -137,26 +151,26 @@ struct salink {
 
 extern bool
 lz_sarray_init(struct lz_sarray *mf,
-	       input_idx_t max_window_size,
-	       input_idx_t min_match_len,
-	       input_idx_t max_match_len,
+	       lz_sarray_pos_t max_window_size,
+	       lz_sarray_len_t min_match_len,
+	       lz_sarray_len_t max_match_len,
 	       u32 max_matches_to_consider,
 	       u32 max_matches_to_return);
 
 extern u64
-lz_sarray_get_needed_memory(input_idx_t max_window_size);
+lz_sarray_get_needed_memory(lz_sarray_pos_t max_window_size);
 
 extern void
 lz_sarray_destroy(struct lz_sarray *mf);
 
 extern void
-lz_sarray_load_window(struct lz_sarray *mf, const u8 T[], input_idx_t n);
+lz_sarray_load_window(struct lz_sarray *mf, const u8 T[], lz_sarray_pos_t n);
 
 /*-------------------*/
 /* Inline functions  */
 /*-------------------*/
 
-static _always_inline_attribute input_idx_t
+static _always_inline_attribute lz_sarray_pos_t
 lz_sarray_get_pos(const struct lz_sarray *mf)
 {
 	return mf->cur_pos;
@@ -164,27 +178,27 @@ lz_sarray_get_pos(const struct lz_sarray *mf)
 
 /* Advance the suffix array match-finder to the next position.  */
 static _always_inline_attribute void
-lz_sarray_update_salink(const input_idx_t r, struct salink link[])
+lz_sarray_update_salink(const lz_sarray_pos_t r, struct salink link[])
 {
 	/* next = rank of LOWEST ranked suffix that is ranked HIGHER than the
-	 * current suffix AND has a LOWER position, or ~(input_idx_t)0 if none
+	 * current suffix AND has a LOWER position, or LZ_SARRAY_POS_MAX if none
 	 * exists.  */
-	const input_idx_t next = link[r].next;
+	const lz_sarray_pos_t next = link[r].next;
 
 	/* prev = rank of HIGHEST ranked suffix that is ranked LOWER than the
-	 * current suffix AND has a LOWER position, or ~(input_idx_t)0 if none
+	 * current suffix AND has a LOWER position, or LZ_SARRAY_POS_MAX if none
 	 * exists.  */
-	const input_idx_t prev = link[r].prev;
+	const lz_sarray_pos_t prev = link[r].prev;
 
 	/* Link the suffix at the current position into the linked list that
 	 * contains all suffixes referenced by the suffix array that appear at
 	 * or before the current position, sorted by rank.  */
-	if (next != ~(input_idx_t)0) {
+	if (next != LZ_SARRAY_POS_MAX) {
 		link[next].prev = r;
 		link[next].lcpprev = link[r].lcpnext;
 	}
 
-	if (prev != ~(input_idx_t)0) {
+	if (prev != LZ_SARRAY_POS_MAX) {
 		link[prev].next = r;
 		link[prev].lcpnext = link[r].lcpprev;
 	}
@@ -197,9 +211,6 @@ lz_sarray_skip_position(struct lz_sarray *mf)
 	LZ_ASSERT(mf->cur_pos < mf->window_size);
 	lz_sarray_update_salink(mf->ISA[mf->cur_pos++], mf->salink);
 }
-
-typedef input_idx_t lz_sarray_cost_t;
-#define LZ_SARRAY_INFINITE_COST (~(lz_sarray_cost_t)0)
 
 /*
  * Use the suffix array match-finder to retrieve a list of matches at the
@@ -221,23 +232,23 @@ static _always_inline_attribute u32
 lz_sarray_get_matches(struct lz_sarray *mf,
 		      struct raw_match matches[],
 		      lz_sarray_cost_t (*eval_match_cost)
-				(input_idx_t length,
-				 input_idx_t offset,
+				(lz_sarray_pos_t length,
+				 lz_sarray_pos_t offset,
 				 const void *ctx),
 		      const void *eval_match_cost_ctx)
 {
 	LZ_ASSERT(mf->cur_pos < mf->window_size);
-	const input_idx_t i = mf->cur_pos++;
+	const lz_sarray_pos_t i = mf->cur_pos++;
 
-	const input_idx_t * const restrict SA = mf->SA;
-	const input_idx_t * const restrict ISA = mf->ISA;
+	const lz_sarray_pos_t * const restrict SA = mf->SA;
+	const lz_sarray_pos_t * const restrict ISA = mf->ISA;
 	struct salink * const restrict link = mf->salink;
-	const input_idx_t min_match_len = mf->min_match_len;
+	const lz_sarray_pos_t min_match_len = mf->min_match_len;
 	const u32 max_matches_to_consider = mf->max_matches_to_consider;
 	const u32 max_matches_to_return = mf->max_matches_to_return;
 
 	/* r = Rank of the suffix at the current position.  */
-	const input_idx_t r = ISA[i];
+	const lz_sarray_pos_t r = ISA[i];
 
 	/* Prepare for searching the current position.  */
 	lz_sarray_update_salink(r, link);
@@ -255,10 +266,10 @@ lz_sarray_get_matches(struct lz_sarray *mf,
 	 * length on both sides in sync in order to choose the lowest-cost match
 	 * of each length.
 	 */
-	input_idx_t L = link[r].prev;
-	input_idx_t R = link[r].next;
-	input_idx_t lenL = link[r].lcpprev;
-	input_idx_t lenR = link[r].lcpnext;
+	lz_sarray_pos_t L = link[r].prev;
+	lz_sarray_pos_t R = link[r].next;
+	lz_sarray_pos_t lenL = link[r].lcpprev;
+	lz_sarray_pos_t lenR = link[r].lcpnext;
 
 	/* nmatches = number of matches found so far.  */
 	u32 nmatches = 0;
@@ -290,7 +301,7 @@ lz_sarray_get_matches(struct lz_sarray *mf,
 				if (--count_remaining == 0)
 					goto out_save_pending;
 
-				input_idx_t offset = i - SA[L];
+				lz_sarray_pos_t offset = i - SA[L];
 
 				/* Save match if it has smaller cost.  */
 				cost = (*eval_match_cost)(lenL, offset,
@@ -336,7 +347,7 @@ lz_sarray_get_matches(struct lz_sarray *mf,
 				if (--count_remaining == 0)
 					goto out_save_pending;
 
-				input_idx_t offset = i - SA[R];
+				lz_sarray_pos_t offset = i - SA[R];
 
 				/* Save match if it has smaller cost.  */
 				cost = (*eval_match_cost)(lenR,

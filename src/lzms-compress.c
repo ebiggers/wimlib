@@ -1179,6 +1179,9 @@ static const struct wimlib_lzms_compressor_params lzms_default = {
 	.optim_array_length = 1024,
 };
 
+static bool
+lzms_params_valid(const struct wimlib_compressor_params_header *);
+
 static const struct wimlib_lzms_compressor_params *
 lzms_get_params(const struct wimlib_compressor_params_header *_params)
 {
@@ -1187,6 +1190,8 @@ lzms_get_params(const struct wimlib_compressor_params_header *_params)
 
 	if (params == NULL)
 		params = &lzms_default;
+
+	LZMS_ASSERT(lzms_params_valid(&params->hdr));
 
 	return params;
 }
@@ -1221,7 +1226,7 @@ lzms_create_compressor(size_t max_block_size,
 
 	if (!lz_sarray_init(&ctx->lz_sarray, max_block_size,
 			    params->min_match_length,
-			    params->max_match_length,
+			    min(params->max_match_length, LZ_SARRAY_LEN_MAX),
 			    params->max_search_depth,
 			    params->max_matches_per_pos))
 		goto oom;
