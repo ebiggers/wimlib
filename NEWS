@@ -10,7 +10,7 @@ Version 1.6.1:
 	Fixed a potential stack overflow when extracting solid archives (packed
 	streams) containing more than about 100000 files.
 
-	Memory usage for LZMS and LZX compression has been decreased slightly.
+	Memory usage for LZMS and LZX compression has been decreased.
 
 Version 1.6.0:
 	Support for extracting and updating the new version 3584 WIMs has been

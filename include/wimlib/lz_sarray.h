@@ -51,8 +51,16 @@ typedef u16 lz_sarray_len_t;
 /* Cost type, for the user-provided match cost evaluation function.  */
 typedef lz_sarray_pos_t lz_sarray_cost_t;
 
+/* Type of distances in suffix array links.  A larger type would allow skipping
+ * irrelevant suffixes more quickly, which is especially helpful towards the
+ * start of the window.  However, even a single byte allows skipping 255 at a
+ * time, which where it matters is already a big improvement over the
+ * alternative of searching the suffixes consecutively.  */
+typedef u8 lz_sarray_delta_t;
+
 #define LZ_SARRAY_LEN_MAX	((lz_sarray_len_t)~0UL)
 #define LZ_SARRAY_POS_MAX	((lz_sarray_pos_t)~0UL)
+#define LZ_SARRAY_DELTA_MAX	((lz_sarray_delta_t)~0UL)
 #define LZ_SARRAY_INFINITE_COST	((lz_sarray_cost_t)~0UL)
 
 /* State of the suffix array LZ (Lempel-Ziv) match-finder.
@@ -103,47 +111,79 @@ struct lz_sarray {
 	 * used to keep track of which rank suffixes in the suffix array appear
 	 * before the current position.  Instead of searching in the original
 	 * suffix array, scans for matches at a given position traverse a linked
-	 * list containing only suffixes that appear before that position.  */
+	 * list containing (usually) only suffixes that appear before that
+	 * position.  */
 	struct salink *salink;
 };
 
-/* Suffix array link; one of these exists for each position in the suffix array.
- */
+/* Suffix array link.  An array of these structures, one per suffix rank, is
+ * used as a replacement for the raw LCP (Longest Common Prefix) array to allow
+ * skipping over suffixes that appear later in the window and hence cannot be
+ * used as LZ77 matches.  */
 struct salink {
-	/* Rank of highest ranked suffix that has rank lower than the suffix
-	 * corresponding to this structure and either has a lower position
-	 * (initially) or has a position lower than the highest position at
-	 * which matches have been searched for so far, or LZ_SARRAY_POS_MAX if
-	 * there is no such suffix.
-	 *
-	 * Think of this as a pointer to the closest position in the suffix
-	 * array to the left that corresponds to a suffix that begins at a
-	 * position in the current dictionary (i.e. before the current position
-	 * in the window).  */
-	lz_sarray_pos_t prev;
+	union {
+		/* Temporary fields used while this structure is being
+		 * initialized.
+		 *
+		 * Note: we want the entire `struct salink' to be only 6 bytes,
+		 * even though this makes "next_initial" unaligned.  */
+		struct {
+			lz_sarray_pos_t next_initial;
+			lz_sarray_len_t lcpnext_initial;
+		} _packed_attribute;
 
-	/* Rank of lowest ranked suffix that has rank greater than the suffix
-	 * corresponding to this structure and either has a lower position
-	 * (intially) or has a position lower than the highest position at which
-	 * matches have been searched for so far, or LZ_SARRAY_POS_MAX if there
-	 * is no such suffix.
+		struct {
+			/* Intially, the length, in bytes, of the longest common
+			 * prefix (LCP) between the suffix having this rank and
+			 * the suffix with the the smallest larger rank that
+			 * starts earlier in the window than the suffix having
+			 * this rank.
+			 *
+			 * Later, during match-finding, after the corresponding
+			 * suffix has entered the LZ77 dictionary, this value
+			 * may be updated by lz_sarray_update_salink() to refer
+			 * instead to a lexicographically closer (but still
+			 * larger) suffix that begins at a later position that
+			 * has entered the LZ77 dictionary.  */
+			lz_sarray_len_t   lcpnext;
 
-	 * Think of this as a pointer to the closest position in the suffix
-	 * array to the right that corresponds to a suffix that begins at a
-	 * position in the current dictionary (i.e. before the current position
-	 * in the window).  */
-	lz_sarray_pos_t next;
+			/* Initially, the length, in bytes, of the longest
+			 * common prefix (LCP) between the suffix having this
+			 * rank and the suffix with the the largest smaller rank
+			 * that starts earlier in the window than the suffix
+			 * having this rank.
+			 *
+			 * Later, during match-finding, after the corresponding
+			 * suffix has entered the LZ77 dictionary, this value
+			 * may be updated by lz_sarray_update_salink() to refer
+			 * instead to a lexicographically closer (but still
+			 * smaller) suffix that begins at a later position that
+			 * has entered the LZ77 dictionary.  */
+			lz_sarray_len_t   lcpprev;
 
-	/* Length of longest common prefix between the suffix corresponding to
-	 * this structure and the suffix with rank @prev, or 0 if @prev is
-	 * LZ_SARRAY_POS_MAX.  Capped to the maximum match length.  */
-	lz_sarray_len_t lcpprev;
+			/* Distance to the suffix referred to in the description
+			 * of "lcpnext" above, but capped to a maximum value to
+			 * save memory.  If the true distance was truncated,
+			 * this will give the distance to the rank of a suffix
+			 * that is lexicographically closer to the current
+			 * suffix than the desired suffix, but appears *later*
+			 * in the window and hence cannot be used as the basis
+			 * for a LZ77 match.  */
+			lz_sarray_delta_t dist_to_next;
 
-	/* Length of longest common prefix between the suffix corresponding to
-	 * this structure and the suffix with rank @next, or 0 if @next is
-	 * LZ_SARRAY_POS_MAX.  Capped to the maximum match length.  */
-	lz_sarray_len_t lcpnext;
+			/* Distance to the suffix referred to in the description
+			 * of "lcpprev" above, but capped to a maximum value to
+			 * save memory.  If the true distance was truncated,
+			 * this will give the distance to the rank of a suffix
+			 * that is lexicographically closer to the current
+			 * suffix than the desired suffix, but appears *later*
+			 * in the window and hence cannot be used as the basis
+			 * for a LZ77 match.  */
+			lz_sarray_delta_t dist_to_prev;
+		};
+	};
 };
+
 
 /*-----------------------------------*/
 /* Functions defined in lz_sarray.c  */
@@ -180,26 +220,16 @@ lz_sarray_get_pos(const struct lz_sarray *mf)
 static _always_inline_attribute void
 lz_sarray_update_salink(const lz_sarray_pos_t r, struct salink link[])
 {
-	/* next = rank of LOWEST ranked suffix that is ranked HIGHER than the
-	 * current suffix AND has a LOWER position, or LZ_SARRAY_POS_MAX if none
-	 * exists.  */
-	const lz_sarray_pos_t next = link[r].next;
+	const lz_sarray_pos_t next = r + link[r].dist_to_next;
+	const lz_sarray_pos_t prev = r - link[r].dist_to_prev;
 
-	/* prev = rank of HIGHEST ranked suffix that is ranked LOWER than the
-	 * current suffix AND has a LOWER position, or LZ_SARRAY_POS_MAX if none
-	 * exists.  */
-	const lz_sarray_pos_t prev = link[r].prev;
-
-	/* Link the suffix at the current position into the linked list that
-	 * contains all suffixes referenced by the suffix array that appear at
-	 * or before the current position, sorted by rank.  */
-	if (next != LZ_SARRAY_POS_MAX) {
-		link[next].prev = r;
+	if (next != r && link[r].dist_to_next < link[next].dist_to_prev) {
+		link[next].dist_to_prev = link[r].dist_to_next;
 		link[next].lcpprev = link[r].lcpnext;
 	}
 
-	if (prev != LZ_SARRAY_POS_MAX) {
-		link[prev].next = r;
+	if (prev != r && link[r].dist_to_prev < link[prev].dist_to_next) {
+		link[prev].dist_to_next = link[r].dist_to_prev;
 		link[prev].lcpnext = link[r].lcpprev;
 	}
 }
@@ -243,7 +273,6 @@ lz_sarray_get_matches(struct lz_sarray *mf,
 	const lz_sarray_pos_t * const restrict SA = mf->SA;
 	const lz_sarray_pos_t * const restrict ISA = mf->ISA;
 	struct salink * const restrict link = mf->salink;
-	const lz_sarray_pos_t min_match_len = mf->min_match_len;
 	const u32 max_matches_to_consider = mf->max_matches_to_consider;
 	const u32 max_matches_to_return = mf->max_matches_to_return;
 
@@ -266,8 +295,8 @@ lz_sarray_get_matches(struct lz_sarray *mf,
 	 * length on both sides in sync in order to choose the lowest-cost match
 	 * of each length.
 	 */
-	lz_sarray_pos_t L = link[r].prev;
-	lz_sarray_pos_t R = link[r].next;
+	lz_sarray_pos_t L = r - link[r].dist_to_prev;
+	lz_sarray_pos_t R = r + link[r].dist_to_next;
 	lz_sarray_pos_t lenL = link[r].lcpprev;
 	lz_sarray_pos_t lenR = link[r].lcpnext;
 
@@ -276,121 +305,197 @@ lz_sarray_get_matches(struct lz_sarray *mf,
 
 	/* best_cost = cost of lowest-cost match found so far.
 	 *
-	 * We keep track of this so that we can ignore shorter matches that do
-	 * not have lower costs than longer matches already found.  */
+	 * Shorter matches that do not have a lower cost than this are
+	 * discarded, since presumably it would be cheaper to output the bytes
+	 * from the longer match instead.  */
 	lz_sarray_cost_t best_cost = LZ_SARRAY_INFINITE_COST;
 
 	/* count_remaining = maximum number of possible matches remaining to be
 	 * considered.  */
 	u32 count_remaining = max_matches_to_consider;
 
-	/* pending = match currently being considered for a specific length.  */
-	struct raw_match pending;
-	lz_sarray_cost_t pending_cost;
+	/* pending_offset = offset of lowest-cost match found for the current
+	 * length, or 0 if no match has been found yet.  */
+	lz_sarray_pos_t pending_offset = 0;
 
-	while (lenL >= min_match_len || lenR >= min_match_len)
-	{
-		pending.len = lenL;
-		pending_cost = LZ_SARRAY_INFINITE_COST;
+	/* Note: some 'goto' statements are used in the remainder of this
+	 * function to remove unnecessary checks and create branches that the
+	 * CPU may predict better.  (This function is performance critical.)  */
+
+	if (lenL != 0 && lenL >= lenR)
+		goto extend_left;
+	else if (lenR != 0)
+		goto extend_right;
+	else
+		return 0;
+
+extend_left:
+	/* Search suffixes on the left until the match length has decreased
+	 * below the next match length on the right or to below the minimum
+	 * match length.  */
+	for (;;) {
+		lz_sarray_pos_t offset;
 		lz_sarray_cost_t cost;
+		lz_sarray_pos_t old_L;
+		lz_sarray_pos_t old_lenL;
 
-		/* Extend left.  */
-		if (lenL >= min_match_len && lenL >= lenR) {
-			for (;;) {
+		/* Check for hard cutoff on amount of work done.  */
+		if (count_remaining-- == 0) {
+			if (pending_offset != 0) {
+				/* Save pending match.  */
+				matches[nmatches++] = (struct raw_match){
+					.len = lenL,
+					.offset = pending_offset,
+				};
+			}
+			return nmatches;
+		}
 
-				if (--count_remaining == 0)
-					goto out_save_pending;
+		if (SA[L] < i) {
+			/* Suffix is in LZ77 dictionary.  (Check was needed
+			 * because the salink array caps distances to save
+			 * memory.)  */
 
-				lz_sarray_pos_t offset = i - SA[L];
+			offset = i - SA[L];
 
-				/* Save match if it has smaller cost.  */
-				cost = (*eval_match_cost)(lenL, offset,
-							  eval_match_cost_ctx);
-				if (cost < pending_cost) {
-					pending.offset = offset;
-					pending_cost = cost;
-				}
-
-				if (link[L].lcpprev < lenL) {
-					/* Match length decreased.  */
-
-					lenL = link[L].lcpprev;
-
-					/* Save the pending match unless the
-					 * right side still may have matches of
-					 * this length to be scanned, or if a
-					 * previous (longer) match had lower
-					 * cost.  */
-					if (pending.len > lenR) {
-						if (pending_cost < best_cost) {
-							best_cost = pending_cost;
-							matches[nmatches++] = pending;
-							if (nmatches == max_matches_to_return)
-								return nmatches;
-						}
-						pending.len = lenL;
-						pending_cost = LZ_SARRAY_INFINITE_COST;
-					}
-					if (lenL < min_match_len || lenL < lenR)
-						break;
-				}
-				L = link[L].prev;
+			/* Save match offset if it results in lower cost.  */
+			cost = (*eval_match_cost)(lenL, offset,
+						  eval_match_cost_ctx);
+			if (cost < best_cost) {
+				best_cost = cost;
+				pending_offset = offset;
 			}
 		}
 
-		pending.len = lenR;
+		/* Advance left to next suffix.  */
 
-		/* Extend right.  */
-		if (lenR >= min_match_len && lenR > lenL) {
-			for (;;) {
+		old_L = L;
+		old_lenL = lenL;
 
-				if (--count_remaining == 0)
-					goto out_save_pending;
+		L -= link[L].dist_to_prev;
 
-				lz_sarray_pos_t offset = i - SA[R];
+		if (link[old_L].lcpprev < old_lenL) {
+			/* Match length decreased.  */
 
-				/* Save match if it has smaller cost.  */
-				cost = (*eval_match_cost)(lenR,
-							  offset,
-							  eval_match_cost_ctx);
-				if (cost < pending_cost) {
-					pending.offset = offset;
-					pending_cost = cost;
+			lenL = link[old_L].lcpprev;
+
+			if (old_lenL > lenR) {
+				/* Neither the right side nor the left size has
+				 * any more matches of length @old_lenL.  If a
+				 * pending match exists, save it.  */
+				if (pending_offset != 0) {
+					matches[nmatches++] = (struct raw_match){
+						.len = old_lenL,
+						.offset = pending_offset,
+					};
+					if (nmatches == max_matches_to_return)
+						return nmatches;
+
+					pending_offset = 0;
 				}
 
-				if (link[R].lcpnext < lenR) {
-					/* Match length decreased.  */
-
-					lenR = link[R].lcpnext;
-
-					/* Save the pending match unless a
-					 * previous (longer) match had lower
-					 * cost.  */
-					if (pending_cost < best_cost) {
-						matches[nmatches++] = pending;
-						best_cost = pending_cost;
-						if (nmatches == max_matches_to_return)
-							return nmatches;
-					}
-
-					if (lenR < min_match_len || lenR <= lenL)
-						break;
-
-					pending.len = lenR;
-					pending_cost = LZ_SARRAY_INFINITE_COST;
+				if (lenL >= lenR) {
+					/* New match length on left is still at
+					 * least as large as the next match
+					 * length on the right:  Keep extending
+					 * left, unless the minimum match length
+					 * would be underrun.  */
+					if (lenL == 0)
+						return nmatches;
+					goto extend_left;
 				}
-				R = link[R].next;
+			}
+
+			/* Here we have lenL < lenR.  Extend right, unless the
+			 * minimum match length would be underrun.  */
+			if (lenR == 0)
+				return nmatches;
+			goto extend_right;
+		}
+	}
+
+extend_right:
+	/* Search suffixes on the right until the match length has decreased to
+	 * the next match length on the left or to below the minimum match
+	 * length.  */
+	for (;;) {
+		lz_sarray_pos_t offset;
+		lz_sarray_cost_t cost;
+		lz_sarray_pos_t old_R;
+		lz_sarray_pos_t old_lenR;
+
+		/* Check for hard cutoff on amount of work done.  */
+		if (count_remaining-- == 0) {
+			if (pending_offset != 0) {
+				/* Save pending match.  */
+				matches[nmatches++] = (struct raw_match){
+					.len = lenR,
+					.offset = pending_offset,
+				};
+			}
+			return nmatches;
+		}
+
+		if (SA[R] < i) {
+			/* Suffix is in LZ77 dictionary.  (Check was needed
+			 * because the salink array caps distances to save
+			 * memory.)  */
+
+			offset = i - SA[R];
+
+			/* Save match offset if it results in lower cost.  */
+			cost = (*eval_match_cost)(lenR,
+						  offset,
+						  eval_match_cost_ctx);
+			if (cost < best_cost) {
+				best_cost = cost;
+				pending_offset = offset;
+			}
+		}
+
+		/* Advance right to next suffix.  */
+
+		old_R = R;
+		old_lenR = lenR;
+
+		R += link[R].dist_to_next;
+
+		if (link[old_R].lcpnext < lenR) {
+			/* Match length decreased.  */
+
+			lenR = link[old_R].lcpnext;
+
+			/* Neither the right side nor the left size has any more
+			 * matches of length @old_lenR.  If a pending match
+			 * exists, save it.  */
+			if (pending_offset != 0) {
+				matches[nmatches++] = (struct raw_match){
+					.len = old_lenR,
+					.offset = pending_offset,
+				};
+				if (nmatches == max_matches_to_return)
+					return nmatches;
+
+				pending_offset = 0;
+			}
+
+			if (lenR > lenL) {
+				/* lenR > lenL:  Keep extending right, unless
+				 * the minimum match length would be underrun.
+				 */
+				if (lenR == 0)
+					return nmatches;
+			} else {
+				/* lenL >= lenR:  Extend left, unless the
+				 * minimum match length would be underrun, in
+				 * which case we are done.  */
+				if (lenL == 0)
+					return nmatches;
+
+				goto extend_left;
 			}
 		}
 	}
-	goto out;
-
-out_save_pending:
-	if (pending_cost != LZ_SARRAY_INFINITE_COST)
-		matches[nmatches++] = pending;
-
-out:
-	return nmatches;
 }
 
 #endif /* _WIMLIB_LZ_SARRAY_H */

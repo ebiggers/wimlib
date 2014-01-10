@@ -40,6 +40,9 @@
 #include "divsufsort/divsufsort.h"
 #include <string.h>
 
+#define DIVSUFSORT_TMP1_SIZE (256 * sizeof(saidx_t))
+#define DIVSUFSORT_TMP2_SIZE (256 * 256 * sizeof(saidx_t))
+
 /* If ENABLE_LZ_DEBUG is defined, verify that the suffix array satisfies its
  * definition.
  *
@@ -180,41 +183,112 @@ verify_lcp_array(lz_sarray_pos_t LCP[restrict],
  *
  * Note: We cap the lcpprev and lcpnext values to the maximum match length so
  * that the match-finder need not worry about it later, in the inner loop.
+ *
+ * Note: the LCP array is one of the inputs to this function, but it is used as
+ * temporary space and therefore will be invalidated.
  */
 static void
 init_salink(struct salink link[restrict],
-	    const lz_sarray_pos_t LCP[restrict],
+	    lz_sarray_pos_t LCP[restrict],
 	    const lz_sarray_pos_t SA[restrict],
 	    const u8 T[restrict],
 	    lz_sarray_pos_t n,
+	    lz_sarray_len_t min_match_len,
 	    lz_sarray_len_t max_match_len)
 {
-	/* Compute salink.next and salink.lcpnext.  */
-	link[n - 1].next = LZ_SARRAY_POS_MAX;
-	link[n - 1].lcpnext = 0;
+	/* Calculate salink.dist_to_next and salink.lcpnext.
+	 *
+	 * Pass 1 calculates, for each suffix rank, the corresponding
+	 * "next_initial" value which is the smallest larger rank that
+	 * corresponds to a suffix starting earlier in the string.  It also
+	 * calculates "lcpnext_initial", which is the number of bytes shared
+	 * with that suffix, although to eliminate checks in
+	 * lz_sarray_get_matches(), "lcpnext_initial" is set to 0 if it's less
+	 * than the minimum match length or set to the maximum match length if
+	 * it's greater than the maximum match length.
+	 *
+	 * Pass 2 translates each absolute "next_initial", a 4-byte value, into
+	 * a relative "dist_to_next", a 1-byte value.  This is done to save
+	 * memory.  In the case that the true relative distance cannot be
+	 * encoded in 1 byte, it is capped to 255.  This is valid as long as
+	 * lz_sarray_get_matches() validates each position before using it.
+	 * Note that "lcpnext" need not be updated in this case because it will
+	 * not be used until the actual next rank has been found anyway.
+	 */
+	link[n - 1].next_initial = LZ_SARRAY_POS_MAX;
+	link[n - 1].lcpnext_initial = 0;
 	for (lz_sarray_pos_t r = n - 2; r != LZ_SARRAY_POS_MAX; r--) {
 		lz_sarray_pos_t t = r + 1;
 		lz_sarray_pos_t l = LCP[t];
 		while (t != LZ_SARRAY_POS_MAX && SA[t] > SA[r]) {
-			l = min(l, link[t].lcpnext);
-			t = link[t].next;
+			l = min(l, link[t].lcpnext_initial);
+			t = link[t].next_initial;
 		}
-		link[r].next = t;
-		link[r].lcpnext = min(l, max_match_len);
+		link[r].next_initial = t;
+
+		if (l < min_match_len)
+			l = 0;
+		else if (l > max_match_len)
+			l = max_match_len;
+		link[r].lcpnext_initial = l;
+	}
+	for (lz_sarray_pos_t r = 0; r < n; r++) {
+		lz_sarray_pos_t next;
+		lz_sarray_len_t l;
+		lz_sarray_delta_t dist_to_next;
+
+		next = link[r].next_initial;
+		l = link[r].lcpnext_initial;
+
+		if (next == LZ_SARRAY_POS_MAX)
+			dist_to_next = 0;
+		else if (next - r <= LZ_SARRAY_DELTA_MAX)
+			dist_to_next = next - r;
+		else
+			dist_to_next = LZ_SARRAY_DELTA_MAX;
+
+		link[r].lcpnext = l;
+		link[r].dist_to_next = dist_to_next;
 	}
 
-	/* Compute salink.prev and salink.lcpprev.  */
-	link[0].prev = LZ_SARRAY_POS_MAX;
+	/* Calculate salink.dist_to_prev and salink.lcpprev.
+	 *
+	 * This is analgous to dist_to_next and lcpnext as described above, but
+	 * in the other direction.  That is, here we're interested in, for each
+	 * rank, the largest smaller rank that corresponds to a suffix starting
+	 * earlier in the string.
+	 *
+	 * To save memory we don't have a "prev_initial" field, but rather store
+	 * those values in the LCP array.
+	 */
+	LCP[0] = LZ_SARRAY_POS_MAX;
 	link[0].lcpprev = 0;
 	for (lz_sarray_pos_t r = 1; r < n; r++) {
 		lz_sarray_pos_t t = r - 1;
 		lz_sarray_pos_t l = LCP[r];
 		while (t != LZ_SARRAY_POS_MAX && SA[t] > SA[r]) {
 			l = min(l, link[t].lcpprev);
-			t = link[t].prev;
+			t = LCP[t];
 		}
-		link[r].prev = t;
-		link[r].lcpprev = min(l, max_match_len);
+		LCP[r] = t;
+
+		if (l < min_match_len)
+			l = 0;
+		else if (l > max_match_len)
+			l = max_match_len;
+
+		link[r].lcpprev = l;
+	}
+	for (lz_sarray_pos_t r = 0; r < n; r++) {
+
+		lz_sarray_pos_t prev = LCP[r];
+
+		if (prev == LZ_SARRAY_POS_MAX)
+			link[r].dist_to_prev = 0;
+		else if (r - prev <= LZ_SARRAY_DELTA_MAX)
+			link[r].dist_to_prev = r - prev;
+		else
+			link[r].dist_to_prev = LZ_SARRAY_DELTA_MAX;
 	}
 }
 
@@ -227,13 +301,14 @@ verify_salink(const struct salink link[],
 	      const lz_sarray_pos_t SA[],
 	      const u8 T[],
 	      lz_sarray_pos_t n,
+	      lz_sarray_len_t min_match_len,
 	      lz_sarray_len_t max_match_len)
 {
 #ifdef ENABLE_LZ_DEBUG
 	for (lz_sarray_pos_t r = 0; r < n; r++) {
 		for (lz_sarray_pos_t prev = r; ; ) {
 			if (prev == 0) {
-				LZ_ASSERT(link[r].prev == LZ_SARRAY_POS_MAX);
+				LZ_ASSERT(link[r].dist_to_prev == 0);
 				LZ_ASSERT(link[r].lcpprev == 0);
 				break;
 			}
@@ -241,27 +316,27 @@ verify_salink(const struct salink link[],
 			prev--;
 
 			if (SA[prev] < SA[r]) {
-				LZ_ASSERT(link[r].prev == prev);
-				LZ_ASSERT(link[r].lcpprev <= n - SA[prev]);
-				LZ_ASSERT(link[r].lcpprev <= n - SA[r]);
-				LZ_ASSERT(link[r].lcpprev <= max_match_len);
-				LZ_ASSERT(0 == memcmp(&T[SA[prev]],
-						      &T[SA[r]],
-						      link[r].lcpprev));
-				if (link[r].lcpprev < n - SA[prev] &&
-				    link[r].lcpprev < n - SA[r] &&
-				    link[r].lcpprev < max_match_len)
-				{
-					LZ_ASSERT(T[SA[prev] + link[r].lcpprev] !=
-						  T[SA[r] + link[r].lcpprev]);
-				}
+				LZ_ASSERT(link[r].dist_to_prev == min(r - prev, LZ_SARRAY_DELTA_MAX));
+
+				lz_sarray_pos_t lcpprev;
+				for (lcpprev = 0;
+				     lcpprev < min(n - SA[prev], n - SA[r]) &&
+					     T[SA[prev] + lcpprev] == T[SA[r] + lcpprev];
+				     lcpprev++)
+					;
+				if (lcpprev < min_match_len)
+					lcpprev = 0;
+				else if (lcpprev > max_match_len)
+					lcpprev = max_match_len;
+
+				LZ_ASSERT(lcpprev == link[r].lcpprev);
 				break;
 			}
 		}
 
 		for (lz_sarray_pos_t next = r; ; ) {
 			if (next == n - 1) {
-				LZ_ASSERT(link[r].next == LZ_SARRAY_POS_MAX);
+				LZ_ASSERT(link[r].dist_to_next == 0);
 				LZ_ASSERT(link[r].lcpnext == 0);
 				break;
 			}
@@ -269,21 +344,20 @@ verify_salink(const struct salink link[],
 			next++;
 
 			if (SA[next] < SA[r]) {
-				LZ_ASSERT(link[r].next == next);
-				LZ_ASSERT(link[r].lcpnext <= n - SA[next]);
-				LZ_ASSERT(link[r].lcpnext <= n - SA[r]);
-				LZ_ASSERT(link[r].lcpnext <= max_match_len);
-				LZ_ASSERT(0 == memcmp(&T[SA[next]],
-						      &T[SA[r]],
-						      link[r].lcpnext));
-				if (link[r].lcpnext < n - SA[next] &&
-				    link[r].lcpnext < n - SA[r] &&
-				    link[r].lcpnext < max_match_len)
-				{
-					LZ_ASSERT(T[SA[next] + link[r].lcpnext] !=
-						  T[SA[r] + link[r].lcpnext]);
+				LZ_ASSERT(link[r].dist_to_next == min(next - r, LZ_SARRAY_DELTA_MAX));
 
-				}
+				lz_sarray_pos_t lcpnext;
+				for (lcpnext = 0;
+				     lcpnext < min(n - SA[next], n - SA[r]) &&
+					     T[SA[next] + lcpnext] == T[SA[r] + lcpnext];
+				     lcpnext++)
+					;
+				if (lcpnext < min_match_len)
+					lcpnext = 0;
+				else if (lcpnext > max_match_len)
+					lcpnext = max_match_len;
+
+				LZ_ASSERT(lcpnext == link[r].lcpnext);
 				break;
 			}
 		}
@@ -366,14 +440,17 @@ lz_sarray_init(struct lz_sarray *mf,
 	if ((u64)2 * max_window_size * sizeof(mf->SA[0]) !=
 		 2 * max_window_size * sizeof(mf->SA[0]))
 		return false;
-	mf->SA = MALLOC(2 * max_window_size * sizeof(mf->SA[0]));
+	mf->SA = MALLOC(max_window_size * sizeof(mf->SA[0]) +
+			max(DIVSUFSORT_TMP1_SIZE,
+			    max_window_size * sizeof(mf->SA[0])));
 	if (mf->SA == NULL)
 		return false;
 
 	if ((u64)max_window_size * sizeof(mf->salink[0]) !=
 		 max_window_size * sizeof(mf->salink[0]))
 		return false;
-	mf->salink = MALLOC(max_window_size * sizeof(mf->salink[0]));
+	mf->salink = MALLOC(max(DIVSUFSORT_TMP2_SIZE,
+				max_window_size * sizeof(mf->salink[0])));
 	if (mf->salink == NULL)
 		return false;
 
@@ -384,7 +461,7 @@ lz_sarray_init(struct lz_sarray *mf,
  * Return the number of bytes of memory that lz_sarray_init() would allocate for
  * the specified maximum window size.
  *
- * This should be (20 * @max_window_size) unless the type definitions have been
+ * This should be (14 * @max_window_size) unless the type definitions have been
  * changed.
  */
 u64
@@ -393,10 +470,13 @@ lz_sarray_get_needed_memory(lz_sarray_pos_t max_window_size)
 	u64 size = 0;
 
 	/* SA and ISA: 8 bytes per position  */
-	size += (u64)max_window_size * 2 * sizeof(((struct lz_sarray*)0)->SA[0]);
+	size += (u64)max_window_size * sizeof(((struct lz_sarray*)0)->SA[0]) +
+		max(DIVSUFSORT_TMP1_SIZE,
+		    (u64)max_window_size * sizeof(((struct lz_sarray*)0)->SA[0]));
 
-	/* salink: 12 bytes per position  */
-	size += (u64)max_window_size * sizeof(((struct lz_sarray*)0)->salink[0]);
+	/* salink: 6 bytes per position  */
+	size += max(DIVSUFSORT_TMP2_SIZE,
+		    (u64)max_window_size * sizeof(((struct lz_sarray*)0)->salink[0]));
 
 	return size;
 }
@@ -424,18 +504,14 @@ lz_sarray_load_window(struct lz_sarray *mf, const u8 T[], lz_sarray_pos_t n)
 	/* Compute SA (Suffix Array).
 	 *
 	 * divsufsort() needs temporary space --- one array with 256 spaces and
-	 * one array with 65536 spaces.  The implementation has been modified
-	 * from the original to use the provided temporary space instead of
-	 * allocating its own.
+	 * one array with 65536 spaces.  The implementation of divsufsort() has
+	 * been modified from the original to use the provided temporary space
+	 * instead of allocating its own.
 	 *
 	 * We also check at build-time that divsufsort() uses the same integer
 	 * size expected by this code.  Unfortunately, divsufsort breaks if
 	 * 'sa_idx_t' is defined to be a 16-bit integer; however, that would
 	 * limit blocks to only 65536 bytes anyway.  */
-	LZ_ASSERT(mf->max_window_size * sizeof(mf->SA[0])
-		  >= 256 * sizeof(saidx_t));
-	LZ_ASSERT(mf->max_window_size * sizeof(mf->salink[0])
-		  >= 256 * 256 * sizeof(saidx_t));
 	BUILD_BUG_ON(sizeof(lz_sarray_pos_t) != sizeof(saidx_t));
 
 	divsufsort(T, mf->SA, n, (saidx_t*)&mf->SA[n], (saidx_t*)mf->salink);
@@ -452,6 +528,7 @@ lz_sarray_load_window(struct lz_sarray *mf, const u8 T[], lz_sarray_pos_t n)
 	 * end.  This is probably worth it because computing the ISA from the SA
 	 * is very fast, and since this match-finder is memory-hungry we'd like
 	 * to save as much memory as possible.  */
+	BUILD_BUG_ON(sizeof(mf->salink[0]) < sizeof(mf->ISA[0]));
 	ISA = (lz_sarray_pos_t*)mf->salink;
 	compute_inverse_suffix_array(ISA, mf->SA, n);
 
@@ -461,8 +538,10 @@ lz_sarray_load_window(struct lz_sarray *mf, const u8 T[], lz_sarray_pos_t n)
 	verify_lcp_array(LCP, mf->SA, T, n);
 
 	/* Initialize suffix array links.  */
-	init_salink(mf->salink, LCP, mf->SA, T, n, mf->max_match_len);
-	verify_salink(mf->salink, mf->SA, T, n, mf->max_match_len);
+	init_salink(mf->salink, LCP, mf->SA, T, n,
+		    mf->min_match_len, mf->max_match_len);
+	verify_salink(mf->salink, mf->SA, T, n,
+		      mf->min_match_len, mf->max_match_len);
 
 	/* Compute ISA (Inverse Suffix Array) in its final position.  */
 	ISA = mf->SA + n;
