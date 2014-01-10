@@ -40,8 +40,8 @@
 #include "divsufsort/divsufsort.h"
 #include <string.h>
 
-#define DIVSUFSORT_TMP1_SIZE (256 * sizeof(saidx_t))
-#define DIVSUFSORT_TMP2_SIZE (256 * 256 * sizeof(saidx_t))
+#define DIVSUFSORT_TMP1_SIZE (256 * sizeof(saidx_t))	   /* bucket_A  */
+#define DIVSUFSORT_TMP2_SIZE (256 * 256 * sizeof(saidx_t)) /* bucket_B  */
 
 /* If ENABLE_LZ_DEBUG is defined, verify that the suffix array satisfies its
  * definition.
@@ -201,15 +201,15 @@ init_salink(struct salink link[restrict],
 	 * Pass 1 calculates, for each suffix rank, the corresponding
 	 * "next_initial" value which is the smallest larger rank that
 	 * corresponds to a suffix starting earlier in the string.  It also
-	 * calculates "lcpnext_initial", which is the number of bytes shared
-	 * with that suffix, although to eliminate checks in
-	 * lz_sarray_get_matches(), "lcpnext_initial" is set to 0 if it's less
-	 * than the minimum match length or set to the maximum match length if
-	 * it's greater than the maximum match length.
+	 * calculates "lcpnext_initial", which is the longest common prefix with
+	 * that suffix, although to eliminate checks in lz_sarray_get_matches(),
+	 * "lcpnext_initial" is set to 0 if it's less than the minimum match
+	 * length or set to the maximum match length if it's greater than the
+	 * maximum match length.
 	 *
 	 * Pass 2 translates each absolute "next_initial", a 4-byte value, into
 	 * a relative "dist_to_next", a 1-byte value.  This is done to save
-	 * memory.  In the case that the true relative distance cannot be
+	 * memory.  In the case that the exact relative distance cannot be
 	 * encoded in 1 byte, it is capped to 255.  This is valid as long as
 	 * lz_sarray_get_matches() validates each position before using it.
 	 * Note that "lcpnext" need not be updated in this case because it will
@@ -259,8 +259,7 @@ init_salink(struct salink link[restrict],
 	 * earlier in the string.
 	 *
 	 * To save memory we don't have a "prev_initial" field, but rather store
-	 * those values in the LCP array.
-	 */
+	 * those values in the LCP array.  */
 	LCP[0] = LZ_SARRAY_POS_MAX;
 	link[0].lcpprev = 0;
 	for (lz_sarray_pos_t r = 1; r < n; r++) {

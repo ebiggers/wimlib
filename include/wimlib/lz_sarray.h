@@ -137,7 +137,7 @@ struct salink {
 			 * prefix (LCP) between the suffix having this rank and
 			 * the suffix with the the smallest larger rank that
 			 * starts earlier in the window than the suffix having
-			 * this rank.
+			 * this rank.  If no such suffix exists, this will be 0.
 			 *
 			 * Later, during match-finding, after the corresponding
 			 * suffix has entered the LZ77 dictionary, this value
@@ -151,7 +151,8 @@ struct salink {
 			 * common prefix (LCP) between the suffix having this
 			 * rank and the suffix with the the largest smaller rank
 			 * that starts earlier in the window than the suffix
-			 * having this rank.
+			 * having this rank.  If no such suffix exists, this
+			 * will be 0.
 			 *
 			 * Later, during match-finding, after the corresponding
 			 * suffix has entered the LZ77 dictionary, this value
@@ -163,22 +164,24 @@ struct salink {
 
 			/* Distance to the suffix referred to in the description
 			 * of "lcpnext" above, but capped to a maximum value to
-			 * save memory.  If the true distance was truncated,
-			 * this will give the distance to the rank of a suffix
-			 * that is lexicographically closer to the current
-			 * suffix than the desired suffix, but appears *later*
-			 * in the window and hence cannot be used as the basis
-			 * for a LZ77 match.  */
+			 * save memory; or, 0 if no such suffix exists.  If the
+			 * true distance was truncated, this will give the
+			 * distance to the rank of a suffix that is
+			 * lexicographically closer to the current suffix than
+			 * the desired suffix, but appears *later* in the window
+			 * and hence cannot be used as the basis for a LZ77
+			 * match.  */
 			lz_sarray_delta_t dist_to_next;
 
 			/* Distance to the suffix referred to in the description
 			 * of "lcpprev" above, but capped to a maximum value to
-			 * save memory.  If the true distance was truncated,
-			 * this will give the distance to the rank of a suffix
-			 * that is lexicographically closer to the current
-			 * suffix than the desired suffix, but appears *later*
-			 * in the window and hence cannot be used as the basis
-			 * for a LZ77 match.  */
+			 * save memory; or, 0 if no such suffix exists.  If the
+			 * true distance was truncated, this will give the
+			 * distance to the rank of a suffix that is
+			 * lexicographically closer to the current suffix than
+			 * the desired suffix, but appears *later* in the window
+			 * and hence cannot be used as the basis for a LZ77
+			 * match.  */
 			lz_sarray_delta_t dist_to_prev;
 		};
 	};
@@ -315,7 +318,7 @@ lz_sarray_get_matches(struct lz_sarray *mf,
 	u32 count_remaining = max_matches_to_consider;
 
 	/* pending_offset = offset of lowest-cost match found for the current
-	 * length, or 0 if no match has been found yet.  */
+	 * length, or 0 if none found yet.  */
 	lz_sarray_pos_t pending_offset = 0;
 
 	/* Note: some 'goto' statements are used in the remainder of this
@@ -367,7 +370,7 @@ extend_left:
 			}
 		}
 
-		/* Advance left to next suffix.  */
+		/* Advance left to previous suffix.  */
 
 		old_L = L;
 		old_lenL = lenL;
@@ -479,13 +482,7 @@ extend_right:
 				pending_offset = 0;
 			}
 
-			if (lenR > lenL) {
-				/* lenR > lenL:  Keep extending right, unless
-				 * the minimum match length would be underrun.
-				 */
-				if (lenR == 0)
-					return nmatches;
-			} else {
+			if (lenL >= lenR) {
 				/* lenL >= lenR:  Extend left, unless the
 				 * minimum match length would be underrun, in
 				 * which case we are done.  */
@@ -494,6 +491,10 @@ extend_right:
 
 				goto extend_left;
 			}
+			/* lenR > lenL:  Keep extending right.
+			 * (No check for whether the minimum match length has
+			 * been underrun is needed, provided that such lengths
+			 * are marked as 0.)  */
 		}
 	}
 }
