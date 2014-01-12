@@ -1304,25 +1304,19 @@ msg_unmount_finished_handler(const void *_msg, void *_handler_ctx)
 static int
 unmount_timed_out_cb(void *_handler_ctx)
 {
-	struct unmount_msg_handler_context *handler_ctx = _handler_ctx;
+	const struct unmount_msg_handler_context *handler_ctx = _handler_ctx;
 
-	if (handler_ctx->daemon_pid == 0) {
-		goto out_crashed;
-	} else {
-		kill(handler_ctx->daemon_pid, 0);
-		if (errno == ESRCH) {
-			goto out_crashed;
-		} else {
-			DEBUG("Filesystem daemon is still alive... "
-			      "Waiting another %d seconds\n",
-			      handler_ctx->hdr.timeout_seconds);
-			return 0;
-		}
+	if (handler_ctx->daemon_pid == 0 ||
+	    (kill(handler_ctx->daemon_pid, 0) != 0 && errno == ESRCH))
+	{
+		ERROR("The filesystem daemon has crashed!  Changes to the "
+		      "WIM may not have been commited.");
+		return WIMLIB_ERR_FILESYSTEM_DAEMON_CRASHED;
 	}
-out_crashed:
-	ERROR("The filesystem daemon has crashed!  Changes to the "
-	      "WIM may not have been commited.");
-	return WIMLIB_ERR_FILESYSTEM_DAEMON_CRASHED;
+
+	DEBUG("Filesystem daemon is still alive... "
+	      "Waiting another %d seconds", handler_ctx->hdr.timeout_seconds);
+	return 0;
 }
 
 static int
