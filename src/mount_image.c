@@ -1526,10 +1526,12 @@ execute_fusermount(const char *dir, bool lazy)
 				 "terminate");
 		return WIMLIB_ERR_FUSERMOUNT;
 	}
-	if (status != 0) {
+
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
 		ERROR("`umount' did not successfully complete");
 		return WIMLIB_ERR_FUSERMOUNT;
 	}
+
 	return 0;
 }
 
