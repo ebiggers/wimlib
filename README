@@ -102,14 +102,14 @@ Notes:
        no known equivalent for WIMGAPI.
        Compression chunk size is 32768 (the default for LZX).
 
-   [6] '--compress=recovery' or '--compress=lzms' for wimlib-imagex;
+   [6] '--compress=recovery' or '--compress=LZMS' for wimlib-imagex;
        no known way to create the equivalent with WIMGAPI.
        Compression chunk size is 131072 (the default for LZMS).  Note: this
        compression type is not generally recommended due to its limited
        compatibility with the MS implementations.
 
    [7] '--compress=recovery --packed-streams' or
-       '--compress=lzms --packed-streams' for wimlib-imagex;
+       '--compress=LZMS --packed-streams' for wimlib-imagex;
        WIMCreateFile with WIM_COMPRESSION_LZMS and flag 0x20000000 for WIMGAPI.
        Compression chunk size in packed resources is 33554432 for wimlib,
        67108864 for WIMGAPI.  Note: this compression type is not generally
@@ -140,9 +140,9 @@ data streams.
      | WIM (WIMGAPI, XPRESS)          | 825,410      |
      | WIM (wimlib, XPRESS)           | 792,024      |
      | tar.gz (gzip, default)         | 738,796      |
-     | ZIP (Info-Zip, default)        | 735,334      |
+     | ZIP (Info-ZIP, default)        | 735,334      |
      | tar.gz (gzip, -9)              | 733,971      |
-     | ZIP (Info-Zip, -9)             | 732,297      |
+     | ZIP (Info-ZIP, -9)             | 732,297      |
      | WIM (wimlib, LZX quick)        | 722,196      |
      | WIM (WIMGAPI, LZX)             | 651,766      |
      | WIM (wimlib, LZX normal)       | 639,464      |
