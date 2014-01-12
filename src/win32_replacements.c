@@ -380,6 +380,7 @@ win32_wglob(const wchar_t *pattern, int flags,
 	HANDLE hFind;
 	int ret;
 	size_t nspaces;
+	int errno_save;
 
 	const wchar_t *backslash, *end_slash;
 	size_t prefix_len;
@@ -409,9 +410,7 @@ win32_wglob(const wchar_t *pattern, int flags,
 			errno = 0;
 			return GLOB_NOMATCH;
 		} else {
-			/* The other possible error codes for FindFirstFile()
-			 * are undocumented. */
-			errno = EIO;
+			set_errno_from_win32_error(err);
 			return GLOB_ABORTED;
 		}
 	}
@@ -445,22 +444,21 @@ win32_wglob(const wchar_t *pattern, int flags,
 	} while (FindNextFileW(hFind, &dat));
 	err = GetLastError();
 	CloseHandle(hFind);
-	if (err == ERROR_NO_MORE_FILES) {
-		errno = 0;
-		return 0;
-	} else {
-		/* Other possible error codes for FindNextFile() are
-		 * undocumented */
-		errno = EIO;
+	if (err != ERROR_NO_MORE_FILES) {
+		set_errno_from_win32_error(err);
 		ret = GLOB_ABORTED;
 		goto fail_globfree;
 	}
+	return 0;
+
 oom:
 	CloseHandle(hFind);
 	errno = ENOMEM;
 	ret = GLOB_NOSPACE;
 fail_globfree:
+	errno_save = errno;
 	globfree(pglob);
+	errno = errno_save;
 	return ret;
 }
 
