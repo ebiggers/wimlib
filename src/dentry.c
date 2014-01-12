@@ -2237,7 +2237,7 @@ read_dentry_tree(const u8 * restrict metadata_resource,
 	for (parent = dentry->parent; !dentry_is_root(parent); parent = parent->parent)
 	{
 		if (unlikely(parent->subdir_offset == cur_offset)) {
-			ERROR("Cyclic directory structure directed: children "
+			ERROR("Cyclic directory structure detected: children "
 			      "of \"%"TS"\" coincide with children of \"%"TS"\"",
 			      dentry_full_path(dentry),
 			      dentry_full_path(parent));
