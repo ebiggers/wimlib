@@ -323,13 +323,34 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 /* UNIX version of getting and setting the data in reparse points */
 #if !defined(__WIN32__)
 
-/* Get the UNIX symlink target from a WIM inode.  The inode may be either a
- * "real" symlink (reparse tag WIM_IO_REPARSE_TAG_SYMLINK), or it may be a
- * junction point (reparse tag WIM_IO_REPARSE_TAG_MOUNT_POINT).
+/*
+ * Get the UNIX-style symlink target from the WIM inode for a reparse point.
+ * Specifically, this translates the target from UTF-16 to the current multibyte
+ * encoding, strips the drive prefix if present, and replaces backslashes with
+ * forward slashes.
  *
- * This has similar semantics to the UNIX readlink() function, except the path
- * argument is swapped out with the `struct wim_inode' for a reparse point, and
- * on failure a negated error code is returned rather than -1 with errno set.  */
+ * @inode
+ *	The inode to read the symlink from.  It must be a reparse point with
+ *	tag WIM_IO_REPARSE_TAG_SYMLINK (a real symlink) or
+ *	WIM_IO_REPARSE_TAG_MOUNT_POINT (a mount point or junction point).
+ *
+ * @buf
+ *	Buffer into which to place the link target.
+ *
+ * @bufsize
+ *	Available space in @buf, in bytes.
+ *
+ * @lte_override
+ *	If not NULL, the stream from which to read the reparse data.  Otherwise,
+ *	the reparse data will be read from the unnamed stream of @inode.
+ *
+ * If the entire symbolic link target was placed in the buffer, returns the
+ * number of bytes written.  The resulting string is not null-terminated.  If
+ * the symbolic link target was too large to be placed in the buffer, the first
+ * @bufsize bytes of it are placed in the buffer and
+ * -ENAMETOOLONG is returned.  Otherwise, a negative errno value indicating
+ *  another error is returned.
+ */
 ssize_t
 wim_inode_readlink(const struct wim_inode * restrict inode,
 		   char * restrict buf, size_t bufsize,
