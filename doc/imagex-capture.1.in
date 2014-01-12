@@ -215,7 +215,7 @@ compression, the maximum allowed chunk size is 2^21 (2097152), and for XPRESS
 ("fast") and LZMS ("recovery") compression, the maximum allowed chunk size is
 2^26 (67108644).
 .TP
-\fB--pack-streams\fR
+\fB--pack-streams\fR, \fB--solid\fR
 Create a "solid" archive that compresses multiple unique streams ("files")
 together, rather than each unique stream ("file") independently.  This can
 result in a significantly better compression ratio, but this format greatly

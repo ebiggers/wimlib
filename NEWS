@@ -14,10 +14,13 @@ Version 1.6.1:
 	Paths passed to wimlib_extract_paths() and wimlib_iterate_dir_tree() may
 	now use either forwards or backwards slashes, as documented.
 
-	Fixed a potential stack overflow when extracting solid archives (packed
-	streams) containing more than about 100000 files.
+	Fixed a potential stack overflow when extracting solid archives
+	containing more than about 100000 files.
 
 	Memory usage for LZMS and LZX compression has been decreased.
+
+	For wimcapture, wimoptimize, and wimexport, '--solid' may now be used as
+	an alias for '--pack-streams'.
 
 Version 1.6.0:
 	Support for extracting and updating the new version 3584 WIMs has been

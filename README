@@ -108,14 +108,13 @@ Notes:
        compression type is not generally recommended due to its limited
        compatibility with the MS implementations.
 
-   [7] '--compress=recovery --packed-streams' or
-       '--compress=LZMS --packed-streams' for wimlib-imagex;
-       WIMCreateFile with WIM_COMPRESSION_LZMS and flag 0x20000000 for WIMGAPI.
-       Compression chunk size in packed resources is 33554432 for wimlib,
-       67108864 for WIMGAPI.  Note: this compression type is not generally
-       recommended due to its limited compatibility with the MS implementations.
-       Also, due to the large chunk size, wimlib uses about 500MB of memory per
-       thread when compressing in this format.
+   [7] '--compress=recovery --solid' or '--compress=LZMS --solid' for
+       wimlib-imagex; WIMCreateFile with WIM_COMPRESSION_LZMS and flag
+       0x20000000 for WIMGAPI.  Compression chunk size in packed resources is
+       33554432 for wimlib, 67108864 for WIMGAPI.  Note: this compression type
+       is not generally recommended due to its limited compatibility with the MS
+       implementations.  Also, due to the large chunk size, wimlib uses about
+       500MB of memory per thread when compressing in this format.
 
 The above timings were done on Windows 8 (x86) so that side-by-side comparisons
 with the Microsoft implementation would be possible; however, wimlib may have

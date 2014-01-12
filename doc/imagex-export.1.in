@@ -79,7 +79,7 @@ and "LZX", instead of "fast" and "maximum", respectively.
 reduced compatibility.  See the documentation for this option to
 \fB@IMAGEX_PROGNAME@ capture\fR (1) for more details.
 .TP
-\fB--pack-streams\fR
+\fB--pack-streams\fR, \fB--solid\fR
 Create a "solid" archive that compresses multiple files together.  This can
 result in a higher compression ratio, but has disadvantages such as reduced
 compatibility; see the documentation for this option to
