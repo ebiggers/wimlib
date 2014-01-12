@@ -2031,7 +2031,7 @@ wimfs_readlink(const char *path, char *buf, size_t buf_len)
 	if (!inode_is_symlink(inode))
 		return -EINVAL;
 	if (buf_len == 0)
-		return -ENAMETOOLONG;
+		return -EINVAL;
 	ret = wim_inode_readlink(inode, buf, buf_len - 1, NULL);
 	if (ret >= 0) {
 		wimlib_assert(ret <= buf_len - 1);
