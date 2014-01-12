@@ -4,6 +4,13 @@ Version 1.6.1:
 	Stored files with size exactly 4 GiB (4,294,967,296 bytes) are now
 	decompressed correctly.
 
+	Fixed a minor compatibility issue with the LZMS compressor and
+	decompressor.  This is *not* the default compression type and was only
+	introduced in v1.6.0.  In the unlikely event that you created a
+	LZMS-compressed WIM with v1.6.0 and a checksum error is reported when
+	applying it with v1.6.1, decompress it with v1.6.0 then compress it with
+	v1.6.1.
+
 	Paths passed to wimlib_extract_paths() and wimlib_iterate_dir_tree() may
 	now use either forwards or backwards slashes, as documented.
 
