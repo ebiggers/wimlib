@@ -154,6 +154,33 @@ error:
 	return WIMLIB_ERR_MKDIR;
 }
 
+/* Delete a non-directory file, working around Windows quirks.  */
+static BOOL
+win32_delete_file_wrapper(const wchar_t *path)
+{
+	DWORD attrib;
+	DWORD err;
+
+	if (DeleteFile(path))
+		return TRUE;
+
+	err = GetLastError();
+	attrib = GetFileAttributes(path);
+	if (attrib & FILE_ATTRIBUTE_READONLY) {
+		/* Try again with FILE_ATTRIBUTE_READONLY cleared.  */
+		attrib &= ~FILE_ATTRIBUTE_READONLY;
+		if (SetFileAttributes(path, attrib)) {
+			if (DeleteFile(path))
+				return TRUE;
+			else
+				err = GetLastError();
+		}
+	}
+
+	SetLastError(err);
+	return FALSE;
+}
+
 static int
 win32_create_hardlink(const wchar_t *oldpath, const wchar_t *newpath,
 		      struct apply_ctx *ctx)
@@ -161,7 +188,7 @@ win32_create_hardlink(const wchar_t *oldpath, const wchar_t *newpath,
 	if (!CreateHardLink(newpath, oldpath, NULL)) {
 		if (GetLastError() != ERROR_ALREADY_EXISTS)
 			goto error;
-		if (!DeleteFile(newpath))
+		if (!win32_delete_file_wrapper(newpath))
 			goto error;
 		if (!CreateHardLink(newpath, oldpath, NULL))
 			goto error;
@@ -180,7 +207,7 @@ win32_create_symlink(const wchar_t *oldpath, const wchar_t *newpath,
 	if (!(*win32func_CreateSymbolicLinkW)(newpath, oldpath, 0)) {
 		if (GetLastError() != ERROR_ALREADY_EXISTS)
 			goto error;
-		if (!DeleteFile(newpath))
+		if (!win32_delete_file_wrapper(newpath))
 			goto error;
 		if (!(*win32func_CreateSymbolicLinkW)(newpath, oldpath, 0))
 			goto error;
