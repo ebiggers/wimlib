@@ -721,6 +721,19 @@ read_wim_lookup_table(WIMStruct *wim)
 			}
 			wim_res_hdr_to_spec(&reshdr, wim, cur_rspec);
 
+			/* If this is a packed run, the current stream entry may
+			 * specify a stream within the resource, and not the
+			 * resource itself.  Zero possibly irrelevant data until
+			 * it is read for certain.  (Note that the computation
+			 * of 'back_to_back_pack' tests if 'size_in_wim' is
+			 * nonzero to see if the resource info has been read;
+			 * hence we need to set it to 0 here.)  */
+			if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
+				cur_rspec->size_in_wim = 0;
+				cur_rspec->uncompressed_size = 0;
+				cur_rspec->offset_in_wim = 0;
+			}
+
 			if (prev_entry)
 				lte_bind_wim_resource_spec(prev_entry, cur_rspec);
 		}
