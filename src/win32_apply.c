@@ -158,15 +158,17 @@ error:
 static BOOL
 win32_delete_file_wrapper(const wchar_t *path)
 {
-	DWORD attrib;
 	DWORD err;
+	DWORD attrib;
 
 	if (DeleteFile(path))
 		return TRUE;
 
 	err = GetLastError();
 	attrib = GetFileAttributes(path);
-	if (attrib & FILE_ATTRIBUTE_READONLY) {
+	if ((attrib != INVALID_FILE_ATTRIBUTES) &&
+	    (attrib & FILE_ATTRIBUTE_READONLY))
+	{
 		/* Try again with FILE_ATTRIBUTE_READONLY cleared.  */
 		attrib &= ~FILE_ATTRIBUTE_READONLY;
 		if (SetFileAttributes(path, attrib)) {
