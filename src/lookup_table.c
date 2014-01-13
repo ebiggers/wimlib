@@ -28,22 +28,34 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/assert.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
-#include "wimlib/file_io.h"
-#include "wimlib/glob.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
-#include "wimlib/paths.h"
+#include "wimlib/ntfs_3g.h"
 #include "wimlib/resource.h"
 #include "wimlib/util.h"
 #include "wimlib/write.h"
 
-#include <errno.h>
 #include <stdlib.h>
-#ifdef WITH_FUSE
-#  include <unistd.h> /* for unlink() */
-#endif
+#include <string.h>
+#include <unistd.h> /* for unlink()  */
+
+/* WIM lookup table:
+ *
+ * This is a logical mapping from SHA1 message digests to the data streams
+ * contained in a WIM.
+ *
+ * Here it is implemented as a hash table.
+ *
+ * Note: Everything will break horribly if there is a SHA1 collision.
+ */
+struct wim_lookup_table {
+	struct hlist_head *array;
+	size_t num_entries;
+	size_t capacity;
+};
 
 struct wim_lookup_table *
 new_lookup_table(size_t capacity)
@@ -51,21 +63,48 @@ new_lookup_table(size_t capacity)
 	struct wim_lookup_table *table;
 	struct hlist_head *array;
 
-	table = CALLOC(1, sizeof(struct wim_lookup_table));
-	if (table) {
-		array = CALLOC(capacity, sizeof(array[0]));
-		if (array) {
-			table->num_entries = 0;
-			table->capacity = capacity;
-			table->array = array;
-		} else {
-			FREE(table);
-			table = NULL;
-			ERROR("Failed to allocate memory for lookup table "
-			      "with capacity %zu", capacity);
-		}
+	table = MALLOC(sizeof(struct wim_lookup_table));
+	if (table == NULL)
+		goto oom;
+
+	array = CALLOC(capacity, sizeof(array[0]));
+	if (array == NULL) {
+		FREE(table);
+		goto oom;
 	}
+
+	table->num_entries = 0;
+	table->capacity = capacity;
+	table->array = array;
 	return table;
+
+oom:
+	ERROR("Failed to allocate memory for lookup table "
+	      "with capacity %zu", capacity);
+	return NULL;
+}
+
+static int
+do_free_lookup_table_entry(struct wim_lookup_table_entry *entry, void *ignore)
+{
+	free_lookup_table_entry(entry);
+	return 0;
+}
+
+void
+free_lookup_table(struct wim_lookup_table *table)
+{
+	DEBUG("Freeing lookup table.");
+	if (table == NULL)
+		return;
+
+	if (table->array) {
+		for_lookup_table_entry(table,
+				       do_free_lookup_table_entry,
+				       NULL);
+		FREE(table->array);
+	}
+	FREE(table);
 }
 
 struct wim_lookup_table_entry *
@@ -74,14 +113,14 @@ new_lookup_table_entry(void)
 	struct wim_lookup_table_entry *lte;
 
 	lte = CALLOC(1, sizeof(struct wim_lookup_table_entry));
-	if (lte == NULL) {
-		ERROR("Out of memory (tried to allocate %zu bytes for "
-		      "lookup table entry)",
-		      sizeof(struct wim_lookup_table_entry));
+	if (lte == NULL)
 		return NULL;
-	}
+
 	lte->refcnt = 1;
+
+	/* lte->resource_location = RESOURCE_NONEXISTENT  */
 	BUILD_BUG_ON(RESOURCE_NONEXISTENT != 0);
+
 	return lte;
 }
 
@@ -144,6 +183,7 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 		break;
 	}
 	return new;
+
 out_free:
 	free_lookup_table_entry(new);
 	return NULL;
@@ -189,28 +229,51 @@ free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 	}
 }
 
-static int
-do_free_lookup_table_entry(struct wim_lookup_table_entry *entry, void *ignore)
-{
-	free_lookup_table_entry(entry);
-	return 0;
-}
-
-
+/* Decrements the reference count for the lookup table entry @lte.  If its
+ * reference count reaches 0, it is unlinked from the lookup table.  If,
+ * furthermore, the entry has no opened file descriptors associated with it, the
+ * entry is freed.  */
 void
-free_lookup_table(struct wim_lookup_table *table)
+lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
+		     struct wim_lookup_table *table)
 {
-	DEBUG("Freeing lookup table.");
-	if (table) {
-		if (table->array) {
-			for_lookup_table_entry(table,
-					       do_free_lookup_table_entry,
-					       NULL);
-			FREE(table->array);
+	wimlib_assert(lte->refcnt != 0);
+
+	if (--lte->refcnt == 0) {
+		if (lte->unhashed) {
+			list_del(&lte->unhashed_list);
+		#ifdef WITH_FUSE
+			/* If the stream has been extracted to a staging file
+			 * for a FUSE mount, unlink the staging file.  (Note
+			 * that there still may be open file descriptors to it.)
+			 * */
+			if (lte->resource_location == RESOURCE_IN_STAGING_FILE)
+				unlink(lte->staging_file_name);
+		#endif
+		} else {
+			lookup_table_unlink(table, lte);
 		}
-		FREE(table);
+
+		/* If FUSE mounts are enabled, we don't actually free the entry
+		 * until the last file descriptor has been closed by
+		 * lte_decrement_num_opened_fds().  */
+#ifdef WITH_FUSE
+		if (lte->num_opened_fds == 0)
+#endif
+			free_lookup_table_entry(lte);
 	}
 }
+
+#ifdef WITH_FUSE
+void
+lte_decrement_num_opened_fds(struct wim_lookup_table_entry *lte)
+{
+	wimlib_assert(lte->num_opened_fds != 0);
+
+	if (--lte->num_opened_fds == 0 && lte->refcnt == 0)
+		free_lookup_table_entry(lte);
+}
+#endif
 
 static void
 lookup_table_insert_raw(struct wim_lookup_table *table,
@@ -248,13 +311,7 @@ enlarge_lookup_table(struct wim_lookup_table *table)
 	FREE(old_array);
 }
 
-
-/*
- * Inserts an entry into the lookup table.
- *
- * @table:	A pointer to the lookup table.
- * @lte:	A pointer to the entry to insert.
- */
+/* Inserts an entry into the lookup table.  */
 void
 lookup_table_insert(struct wim_lookup_table *table,
 		    struct wim_lookup_table_entry *lte)
@@ -264,49 +321,33 @@ lookup_table_insert(struct wim_lookup_table *table,
 		enlarge_lookup_table(table);
 }
 
-static void
-finalize_lte(struct wim_lookup_table_entry *lte)
+/* Unlinks a lookup table entry from the table; does not free it.  */
+void
+lookup_table_unlink(struct wim_lookup_table *table,
+		    struct wim_lookup_table_entry *lte)
 {
-	#ifdef WITH_FUSE
-	if (lte->resource_location == RESOURCE_IN_STAGING_FILE) {
-		unlink(lte->staging_file_name);
-		list_del(&lte->unhashed_list);
-	}
-	#endif
-	free_lookup_table_entry(lte);
+	wimlib_assert(!lte->unhashed);
+	wimlib_assert(table->num_entries != 0);
+
+	hlist_del(&lte->hash_list);
+	table->num_entries--;
 }
 
-/* Decrements the reference count for the lookup table entry @lte.  If its
- * reference count reaches 0, it is unlinked from the lookup table.  If,
- * furthermore, the entry has no opened file descriptors associated with it, the
- * entry is freed.  */
-void
-lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
-		     struct wim_lookup_table *table)
+/* Given a SHA1 message digest, return the corresponding entry in the WIM's
+ * lookup table, or NULL if there is none.  */
+struct wim_lookup_table_entry *
+lookup_stream(const struct wim_lookup_table *table, const u8 hash[])
 {
-	wimlib_assert(lte != NULL);
-	wimlib_assert(lte->refcnt != 0);
-	if (--lte->refcnt == 0) {
-		if (lte->unhashed)
-			list_del(&lte->unhashed_list);
-		else
-			lookup_table_unlink(table, lte);
-	#ifdef WITH_FUSE
-		if (lte->num_opened_fds == 0)
-	#endif
-			finalize_lte(lte);
-	}
-}
+	size_t i;
+	struct wim_lookup_table_entry *lte;
+	struct hlist_node *pos;
 
-#ifdef WITH_FUSE
-void
-lte_decrement_num_opened_fds(struct wim_lookup_table_entry *lte)
-{
-	if (lte->num_opened_fds != 0)
-		if (--lte->num_opened_fds == 0 && lte->refcnt == 0)
-			finalize_lte(lte);
+	i = *(size_t*)hash % table->capacity;
+	hlist_for_each_entry(lte, pos, &table->array[i], hash_list)
+		if (hashes_equal(hash, lte->hash))
+			return lte;
+	return NULL;
 }
-#endif
 
 /* Calls a function on all the entries in the WIM lookup table.  Stop early and
  * return nonzero if any call to the function returns nonzero. */
@@ -814,7 +855,7 @@ read_wim_lookup_table(WIMStruct *wim)
 
 		/* Lookup table entry for a stream that is not a metadata
 		 * resource.  */
-		duplicate_entry = lookup_resource(table, cur_entry->hash);
+		duplicate_entry = lookup_stream(table, cur_entry->hash);
 		if (duplicate_entry) {
 			if (wimlib_print_errors) {
 				WARNING("The WIM lookup table contains two entries with the "
@@ -994,6 +1035,98 @@ lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *_ignore)
 	return 0;
 }
 
+/* Allocate a stream entry for the contents of the buffer, or re-use an existing
+ * entry in @lookup_table for the same stream.  */
+struct wim_lookup_table_entry *
+new_stream_from_data_buffer(const void *buffer, size_t size,
+			    struct wim_lookup_table *lookup_table)
+{
+	u8 hash[SHA1_HASH_SIZE];
+	struct wim_lookup_table_entry *lte, *existing_lte;
+
+	sha1_buffer(buffer, size, hash);
+	existing_lte = lookup_stream(lookup_table, hash);
+	if (existing_lte) {
+		wimlib_assert(existing_lte->size == size);
+		lte = existing_lte;
+		lte->refcnt++;
+	} else {
+		void *buffer_copy;
+		lte = new_lookup_table_entry();
+		if (lte == NULL)
+			return NULL;
+		buffer_copy = memdup(buffer, size);
+		if (buffer_copy == NULL) {
+			free_lookup_table_entry(lte);
+			return NULL;
+		}
+		lte->resource_location  = RESOURCE_IN_ATTACHED_BUFFER;
+		lte->attached_buffer    = buffer_copy;
+		lte->size               = size;
+		copy_hash(lte->hash, hash);
+		lookup_table_insert(lookup_table, lte);
+	}
+	return lte;
+}
+
+/* Calculate the SHA1 message digest of a stream and move it from the list of
+ * unhashed streams to the stream lookup table, possibly joining it with an
+ * existing lookup table entry for an identical stream.
+ *
+ * @lte:  An unhashed lookup table entry.
+ * @lookup_table:  Lookup table for the WIM.
+ * @lte_ret:  On success, write a pointer to the resulting lookup table
+ *            entry to this location.  This will be the same as @lte
+ *            if it was inserted into the lookup table, or different if
+ *            a duplicate stream was found.
+ *
+ * Returns 0 on success; nonzero if there is an error reading the stream.
+ */
+int
+hash_unhashed_stream(struct wim_lookup_table_entry *lte,
+		     struct wim_lookup_table *lookup_table,
+		     struct wim_lookup_table_entry **lte_ret)
+{
+	int ret;
+	struct wim_lookup_table_entry *duplicate_lte;
+	struct wim_lookup_table_entry **back_ptr;
+
+	wimlib_assert(lte->unhashed);
+
+	/* back_ptr must be saved because @back_inode and @back_stream_id are in
+	 * union with the SHA1 message digest and will no longer be valid once
+	 * the SHA1 has been calculated. */
+	back_ptr = retrieve_lte_pointer(lte);
+
+	ret = sha1_stream(lte);
+	if (ret)
+		return ret;
+
+	/* Look for a duplicate stream */
+	duplicate_lte = lookup_stream(lookup_table, lte->hash);
+	list_del(&lte->unhashed_list);
+	if (duplicate_lte) {
+		/* We have a duplicate stream.  Transfer the reference counts
+		 * from this stream to the duplicate and update the reference to
+		 * this stream (in an inode or ads_entry) to point to the
+		 * duplicate.  The caller is responsible for freeing @lte if
+		 * needed.  */
+		wimlib_assert(!(duplicate_lte->unhashed));
+		wimlib_assert(duplicate_lte->size == lte->size);
+		duplicate_lte->refcnt += lte->refcnt;
+		lte->refcnt = 0;
+		*back_ptr = duplicate_lte;
+		lte = duplicate_lte;
+	} else {
+		/* No duplicate stream, so we need to insert this stream into
+		 * the lookup table and treat it as a hashed stream. */
+		lookup_table_insert(lookup_table, lte);
+		lte->unhashed = 0;
+	}
+	*lte_ret = lte;
+	return 0;
+}
+
 void
 print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
 {
@@ -1139,556 +1272,4 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
 		}
 	}
 	return for_lookup_table_entry(wim->lookup_table, do_iterate_lte, &ctx);
-}
-
-/* Given a SHA1 message digest, return the corresponding entry in the WIM's
- * lookup table, or NULL if there is none.  */
-struct wim_lookup_table_entry *
-lookup_resource(const struct wim_lookup_table *table, const u8 hash[])
-{
-	size_t i;
-	struct wim_lookup_table_entry *lte;
-	struct hlist_node *pos;
-
-	wimlib_assert(table != NULL);
-	wimlib_assert(hash != NULL);
-
-	i = *(size_t*)hash % table->capacity;
-	hlist_for_each_entry(lte, pos, &table->array[i], hash_list)
-		if (hashes_equal(hash, lte->hash))
-			return lte;
-	return NULL;
-}
-
-#ifdef WITH_FUSE
-/*
- * Finds the dentry, lookup table entry, and stream index for a WIM file stream,
- * given a path name.
- *
- * This is only for pre-resolved inodes.
- */
-int
-wim_pathname_to_stream(WIMStruct *wim,
-		       const tchar *path,
-		       int lookup_flags,
-		       struct wim_dentry **dentry_ret,
-		       struct wim_lookup_table_entry **lte_ret,
-		       u16 *stream_idx_ret)
-{
-	struct wim_dentry *dentry;
-	struct wim_lookup_table_entry *lte;
-	u16 stream_idx;
-	const tchar *stream_name = NULL;
-	struct wim_inode *inode;
-	tchar *p = NULL;
-
-	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
-		stream_name = path_stream_name(path);
-		if (stream_name) {
-			p = (tchar*)stream_name - 1;
-			*p = T('\0');
-		}
-	}
-
-	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
-	if (p)
-		*p = T(':');
-	if (!dentry)
-		return -errno;
-
-	inode = dentry->d_inode;
-
-	if (!inode->i_resolved)
-		if (inode_resolve_ltes(inode, wim->lookup_table, false))
-			return -EIO;
-
-	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
-	      && inode_is_directory(inode))
-		return -EISDIR;
-
-	if (stream_name) {
-		struct wim_ads_entry *ads_entry;
-		u16 ads_idx;
-		ads_entry = inode_get_ads_entry(inode, stream_name,
-						&ads_idx);
-		if (ads_entry) {
-			stream_idx = ads_idx + 1;
-			lte = ads_entry->lte;
-			goto out;
-		} else {
-			return -ENOENT;
-		}
-	} else {
-		lte = inode_unnamed_stream_resolved(inode, &stream_idx);
-	}
-out:
-	if (dentry_ret)
-		*dentry_ret = dentry;
-	if (lte_ret)
-		*lte_ret = lte;
-	if (stream_idx_ret)
-		*stream_idx_ret = stream_idx;
-	return 0;
-}
-#endif
-
-int
-resource_not_found_error(const struct wim_inode *inode, const u8 *hash)
-{
-	if (wimlib_print_errors) {
-		ERROR("\"%"TS"\": resource not found", inode_first_full_path(inode));
-		tfprintf(stderr, T("        SHA-1 message digest of missing resource:\n        "));
-		print_hash(hash, stderr);
-		tputc(T('\n'), stderr);
-	}
-	return WIMLIB_ERR_RESOURCE_NOT_FOUND;
-}
-
-/*
- * Resolve an inode's lookup table entries.
- *
- * This replaces the SHA1 hash fields (which are used to lookup an entry in the
- * lookup table) with pointers directly to the lookup table entries.
- *
- * If @force is %false:
- *	If any needed SHA1 message digests are not found in the lookup table,
- *	WIMLIB_ERR_RESOURCE_NOT_FOUND is returned and the inode is left
- *	unmodified.
- * If @force is %true:
- *	If any needed SHA1 message digests are not found in the lookup table,
- *	new entries are allocated and inserted into the lookup table.
- */
-int
-inode_resolve_ltes(struct wim_inode *inode, struct wim_lookup_table *table,
-		   bool force)
-{
-	const u8 *hash;
-
-	if (!inode->i_resolved) {
-		struct wim_lookup_table_entry *lte, *ads_lte;
-
-		/* Resolve the default file stream */
-		lte = NULL;
-		hash = inode->i_hash;
-		if (!is_zero_hash(hash)) {
-			lte = lookup_resource(table, hash);
-			if (!lte) {
-				if (force) {
-					lte = new_lookup_table_entry();
-					if (!lte)
-						return WIMLIB_ERR_NOMEM;
-					copy_hash(lte->hash, hash);
-					lookup_table_insert(table, lte);
-				} else {
-					goto resource_not_found;
-				}
-			}
-		}
-
-		/* Resolve the alternate data streams */
-		struct wim_lookup_table_entry *ads_ltes[inode->i_num_ads];
-		for (u16 i = 0; i < inode->i_num_ads; i++) {
-			struct wim_ads_entry *cur_entry;
-
-			ads_lte = NULL;
-			cur_entry = &inode->i_ads_entries[i];
-			hash = cur_entry->hash;
-			if (!is_zero_hash(hash)) {
-				ads_lte = lookup_resource(table, hash);
-				if (!ads_lte) {
-					if (force) {
-						ads_lte = new_lookup_table_entry();
-						if (!ads_lte)
-							return WIMLIB_ERR_NOMEM;
-						copy_hash(ads_lte->hash, hash);
-						lookup_table_insert(table, ads_lte);
-					} else {
-						goto resource_not_found;
-					}
-				}
-			}
-			ads_ltes[i] = ads_lte;
-		}
-		inode->i_lte = lte;
-		for (u16 i = 0; i < inode->i_num_ads; i++)
-			inode->i_ads_entries[i].lte = ads_ltes[i];
-		inode->i_resolved = 1;
-	}
-	return 0;
-
-resource_not_found:
-	return resource_not_found_error(inode, hash);
-}
-
-void
-inode_unresolve_ltes(struct wim_inode *inode)
-{
-	if (inode->i_resolved) {
-		if (inode->i_lte)
-			copy_hash(inode->i_hash, inode->i_lte->hash);
-		else
-			zero_out_hash(inode->i_hash);
-
-		for (u16 i = 0; i < inode->i_num_ads; i++) {
-			if (inode->i_ads_entries[i].lte)
-				copy_hash(inode->i_ads_entries[i].hash,
-					  inode->i_ads_entries[i].lte->hash);
-			else
-				zero_out_hash(inode->i_ads_entries[i].hash);
-		}
-		inode->i_resolved = 0;
-	}
-}
-
-/*
- * Returns the lookup table entry for stream @stream_idx of the inode, where
- * stream_idx = 0 means the default un-named file stream, and stream_idx >= 1
- * corresponds to an alternate data stream.
- *
- * This works for both resolved and un-resolved inodes.
- */
-struct wim_lookup_table_entry *
-inode_stream_lte(const struct wim_inode *inode, unsigned stream_idx,
-		 const struct wim_lookup_table *table)
-{
-	if (inode->i_resolved)
-		return inode_stream_lte_resolved(inode, stream_idx);
-	else
-		return inode_stream_lte_unresolved(inode, stream_idx, table);
-}
-
-struct wim_lookup_table_entry *
-inode_unnamed_stream_resolved(const struct wim_inode *inode, u16 *stream_idx_ret)
-{
-	wimlib_assert(inode->i_resolved);
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		if (inode_stream_name_nbytes(inode, i) == 0 &&
-		    !is_zero_hash(inode_stream_hash_resolved(inode, i)))
-		{
-			*stream_idx_ret = i;
-			return inode_stream_lte_resolved(inode, i);
-		}
-	}
-	*stream_idx_ret = 0;
-	return NULL;
-}
-
-struct wim_lookup_table_entry *
-inode_unnamed_lte_resolved(const struct wim_inode *inode)
-{
-	u16 stream_idx;
-	return inode_unnamed_stream_resolved(inode, &stream_idx);
-}
-
-struct wim_lookup_table_entry *
-inode_unnamed_lte_unresolved(const struct wim_inode *inode,
-			     const struct wim_lookup_table *table)
-{
-	wimlib_assert(!inode->i_resolved);
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		if (inode_stream_name_nbytes(inode, i) == 0 &&
-		    !is_zero_hash(inode_stream_hash_unresolved(inode, i)))
-		{
-			return inode_stream_lte_unresolved(inode, i, table);
-		}
-	}
-	return NULL;
-}
-
-/* Return the lookup table entry for the unnamed data stream of an inode, or
- * NULL if there is none.
- *
- * You'd think this would be easier than it actually is, since the unnamed data
- * stream should be the one referenced from the inode itself.  Alas, if there
- * are named data streams, Microsoft's "imagex.exe" program will put the unnamed
- * data stream in one of the alternate data streams instead of inside the WIM
- * dentry itself.  So we need to check the alternate data streams too.
- *
- * Also, note that a dentry may appear to have more than one unnamed stream, but
- * if the SHA1 message digest is all 0's then the corresponding stream does not
- * really "count" (this is the case for the inode's own file stream when the
- * file stream that should be there is actually in one of the alternate stream
- * entries.).  This is despite the fact that we may need to extract such a
- * missing entry as an empty file or empty named data stream.
- */
-struct wim_lookup_table_entry *
-inode_unnamed_lte(const struct wim_inode *inode,
-		  const struct wim_lookup_table *table)
-{
-	if (inode->i_resolved)
-		return inode_unnamed_lte_resolved(inode);
-	else
-		return inode_unnamed_lte_unresolved(inode, table);
-}
-
-/* Returns the SHA1 message digest of the unnamed data stream of a WIM inode, or
- * 'zero_hash' if the unnamed data stream is missing has all zeroes in its SHA1
- * message digest field.  */
-const u8 *
-inode_unnamed_stream_hash(const struct wim_inode *inode)
-{
-	const u8 *hash;
-
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		if (inode_stream_name_nbytes(inode, i) == 0) {
-			hash = inode_stream_hash(inode, i);
-			if (!is_zero_hash(hash))
-				return hash;
-		}
-	}
-	return zero_hash;
-}
-
-struct wim_lookup_table_entry **
-retrieve_lte_pointer(struct wim_lookup_table_entry *lte)
-{
-	wimlib_assert(lte->unhashed);
-	struct wim_inode *inode = lte->back_inode;
-	u32 stream_id = lte->back_stream_id;
-	if (stream_id == 0)
-		return &inode->i_lte;
-	else
-		for (u16 i = 0; i < inode->i_num_ads; i++)
-			if (inode->i_ads_entries[i].stream_id == stream_id)
-				return &inode->i_ads_entries[i].lte;
-	wimlib_assert(0);
-	return NULL;
-}
-
-/* Calculate the SHA1 message digest of a stream and move it from the list of
- * unhashed streams to the stream lookup table, possibly joining it with an
- * existing lookup table entry for an identical stream.
- *
- * @lte:  An unhashed lookup table entry.
- * @lookup_table:  Lookup table for the WIM.
- * @lte_ret:  On success, write a pointer to the resulting lookup table
- *            entry to this location.  This will be the same as @lte
- *            if it was inserted into the lookup table, or different if
- *            a duplicate stream was found.
- *
- * Returns 0 on success; nonzero if there is an error reading the stream.
- */
-int
-hash_unhashed_stream(struct wim_lookup_table_entry *lte,
-		     struct wim_lookup_table *lookup_table,
-		     struct wim_lookup_table_entry **lte_ret)
-{
-	int ret;
-	struct wim_lookup_table_entry *duplicate_lte;
-	struct wim_lookup_table_entry **back_ptr;
-
-	wimlib_assert(lte->unhashed);
-
-	/* back_ptr must be saved because @back_inode and @back_stream_id are in
-	 * union with the SHA1 message digest and will no longer be valid once
-	 * the SHA1 has been calculated. */
-	back_ptr = retrieve_lte_pointer(lte);
-
-	ret = sha1_stream(lte);
-	if (ret)
-		return ret;
-
-	/* Look for a duplicate stream */
-	duplicate_lte = lookup_resource(lookup_table, lte->hash);
-	list_del(&lte->unhashed_list);
-	if (duplicate_lte) {
-		/* We have a duplicate stream.  Transfer the reference counts
-		 * from this stream to the duplicate and update the reference to
-		 * this stream (in an inode or ads_entry) to point to the
-		 * duplicate.  The caller is responsible for freeing @lte if
-		 * needed.  */
-		wimlib_assert(!(duplicate_lte->unhashed));
-		wimlib_assert(duplicate_lte->size == lte->size);
-		duplicate_lte->refcnt += lte->refcnt;
-		lte->refcnt = 0;
-		*back_ptr = duplicate_lte;
-		lte = duplicate_lte;
-	} else {
-		/* No duplicate stream, so we need to insert this stream into
-		 * the lookup table and treat it as a hashed stream. */
-		lookup_table_insert(lookup_table, lte);
-		lte->unhashed = 0;
-	}
-	*lte_ret = lte;
-	return 0;
-}
-
-static int
-lte_clone_if_new(struct wim_lookup_table_entry *lte, void *_lookup_table)
-{
-	struct wim_lookup_table *lookup_table = _lookup_table;
-
-	if (lookup_resource(lookup_table, lte->hash))
-		return 0;  /*  Resource already present.  */
-
-	lte = clone_lookup_table_entry(lte);
-	if (lte == NULL)
-		return WIMLIB_ERR_NOMEM;
-	lte->out_refcnt = 1;
-	lookup_table_insert(lookup_table, lte);
-	return 0;
-}
-
-static int
-lte_delete_if_new(struct wim_lookup_table_entry *lte, void *_lookup_table)
-{
-	struct wim_lookup_table *lookup_table = _lookup_table;
-
-	if (lte->out_refcnt) {
-		lookup_table_unlink(lookup_table, lte);
-		free_lookup_table_entry(lte);
-	}
-	return 0;
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_reference_resources(WIMStruct *wim,
-			   WIMStruct **resource_wims, unsigned num_resource_wims,
-			   int ref_flags)
-{
-	int ret;
-	unsigned i;
-
-	if (wim == NULL)
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	if (num_resource_wims != 0 && resource_wims == NULL)
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	for (i = 0; i < num_resource_wims; i++)
-		if (resource_wims[i] == NULL)
-			return WIMLIB_ERR_INVALID_PARAM;
-
-	for_lookup_table_entry(wim->lookup_table, lte_zero_out_refcnt, NULL);
-
-	for (i = 0; i < num_resource_wims; i++) {
-		ret = for_lookup_table_entry(resource_wims[i]->lookup_table,
-					     lte_clone_if_new,
-					     wim->lookup_table);
-		if (ret)
-			goto out_rollback;
-	}
-	return 0;
-
-out_rollback:
-	for_lookup_table_entry(wim->lookup_table, lte_delete_if_new,
-			       wim->lookup_table);
-	return ret;
-}
-
-static int
-reference_resource_paths(WIMStruct *wim,
-			 const tchar * const *resource_wimfiles,
-			 unsigned num_resource_wimfiles,
-			 int ref_flags,
-			 int open_flags,
-			 wimlib_progress_func_t progress_func)
-{
-	WIMStruct **resource_wims;
-	unsigned i;
-	int ret;
-
-	resource_wims = CALLOC(num_resource_wimfiles, sizeof(resource_wims[0]));
-	if (!resource_wims)
-		return WIMLIB_ERR_NOMEM;
-
-	for (i = 0; i < num_resource_wimfiles; i++) {
-		DEBUG("Referencing resources from path \"%"TS"\"",
-		      resource_wimfiles[i]);
-		ret = wimlib_open_wim(resource_wimfiles[i], open_flags,
-				      &resource_wims[i], progress_func);
-		if (ret)
-			goto out_free_resource_wims;
-	}
-
-	ret = wimlib_reference_resources(wim, resource_wims,
-					 num_resource_wimfiles, ref_flags);
-	if (ret)
-		goto out_free_resource_wims;
-
-	for (i = 0; i < num_resource_wimfiles; i++)
-		list_add_tail(&resource_wims[i]->subwim_node, &wim->subwims);
-
-	ret = 0;
-	goto out_free_array;
-
-out_free_resource_wims:
-	for (i = 0; i < num_resource_wimfiles; i++)
-		wimlib_free(resource_wims[i]);
-out_free_array:
-	FREE(resource_wims);
-	return ret;
-}
-
-static int
-reference_resource_glob(WIMStruct *wim, const tchar *refglob,
-			int ref_flags, int open_flags,
-			wimlib_progress_func_t progress_func)
-{
-	glob_t globbuf;
-	int ret;
-
-	/* Note: glob() is replaced in Windows native builds.  */
-	ret = tglob(refglob, GLOB_ERR | GLOB_NOSORT, NULL, &globbuf);
-	if (ret) {
-		if (ret == GLOB_NOMATCH) {
-			if (ref_flags & WIMLIB_REF_FLAG_GLOB_ERR_ON_NOMATCH) {
-				ERROR("Found no files for glob \"%"TS"\"", refglob);
-				return WIMLIB_ERR_GLOB_HAD_NO_MATCHES;
-			} else {
-				return reference_resource_paths(wim,
-								&refglob,
-								1,
-								ref_flags,
-								open_flags,
-								progress_func);
-			}
-		} else {
-			ERROR_WITH_ERRNO("Failed to process glob \"%"TS"\"", refglob);
-			if (ret == GLOB_NOSPACE)
-				return WIMLIB_ERR_NOMEM;
-			else
-				return WIMLIB_ERR_READ;
-		}
-	}
-
-	ret = reference_resource_paths(wim,
-				       (const tchar * const *)globbuf.gl_pathv,
-				       globbuf.gl_pathc,
-				       ref_flags,
-				       open_flags,
-				       progress_func);
-	globfree(&globbuf);
-	return ret;
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_reference_resource_files(WIMStruct *wim,
-				const tchar * const * resource_wimfiles_or_globs,
-				unsigned count,
-				int ref_flags,
-				int open_flags,
-				wimlib_progress_func_t progress_func)
-{
-	unsigned i;
-	int ret;
-
-	if (ref_flags & WIMLIB_REF_FLAG_GLOB_ENABLE) {
-		for (i = 0; i < count; i++) {
-			ret = reference_resource_glob(wim,
-						      resource_wimfiles_or_globs[i],
-						      ref_flags,
-						      open_flags,
-						      progress_func);
-			if (ret)
-				return ret;
-		}
-		return 0;
-	} else {
-		return reference_resource_paths(wim, resource_wimfiles_or_globs,
-						count, ref_flags,
-						open_flags, progress_func);
-	}
 }

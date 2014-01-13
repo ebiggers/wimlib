@@ -5,7 +5,6 @@
 #include "wimlib/compiler.h"
 
 #include <stdio.h>
-#include <stddef.h>
 
 #ifndef min
 #define min(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \

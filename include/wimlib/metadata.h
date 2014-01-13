@@ -9,7 +9,7 @@
 struct _ntfs_volume;
 #endif
 
-/* Metadata for a WIM image */
+/* Metadata for a WIM image  */
 struct wim_image_metadata {
 
 	/* Number of WIMStruct's that are sharing this image metadata (from
@@ -102,10 +102,9 @@ extern int
 append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd);
 
 extern struct wim_image_metadata *
-new_image_metadata(void);
+new_image_metadata(void) _malloc_attribute;
 
 extern struct wim_image_metadata **
-new_image_metadata_array(unsigned num_images);
-
+new_image_metadata_array(unsigned num_images) _malloc_attribute;
 
 #endif /* _WIMLIB_METADATA_H */

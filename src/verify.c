@@ -1,7 +1,7 @@
 /*
  * verify.c
  *
- * Verify WIM inodes and stream reference counts.
+ * Verify stream reference counts.
  */
 
 /*
@@ -32,73 +32,6 @@
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/security.h"
-
-/*
- * Verify a WIM inode:
- *
- * - Check to make sure the security ID is valid
- * - Check to make sure there is at most one unnamed stream
- * - Check to make sure there is at most one DOS name.
- *
- * Return values:
- *	WIMLIB_ERR_SUCCESS (0)
- */
-int
-verify_inode(struct wim_inode *inode, const struct wim_security_data *sd)
-{
-	struct wim_dentry *dentry;
-
-	/* Check the security ID.  -1 is valid and means "no security
-	 * descriptor".  Anything else has to be a valid index into the WIM
-	 * image's security descriptors table. */
-	if (inode->i_security_id < -1 ||
-	    (inode->i_security_id >= 0 &&
-	     inode->i_security_id >= sd->num_entries))
-	{
-		WARNING("\"%"TS"\" has an invalid security ID (%d)",
-			inode_first_full_path(inode), inode->i_security_id);
-		inode->i_security_id = -1;
-	}
-
-	/* Make sure there is only one unnamed data stream. */
-	unsigned num_unnamed_streams = 0;
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		const u8 *hash;
-		hash = inode_stream_hash(inode, i);
-		if (inode_stream_name_nbytes(inode, i) == 0 && !is_zero_hash(hash))
-			num_unnamed_streams++;
-	}
-	if (num_unnamed_streams > 1) {
-		WARNING("\"%"TS"\" has multiple (%u) un-named streams",
-			inode_first_full_path(inode), num_unnamed_streams);
-	}
-
-	/* Files cannot have multiple DOS names, even if they have multiple
-	 * names in multiple directories (i.e. hard links).
-	 * Source: NTFS-3g authors. */
-	struct wim_dentry *dentry_with_dos_name = NULL;
-	inode_for_each_dentry(dentry, inode) {
-		if (dentry_has_short_name(dentry)) {
-			if (dentry_with_dos_name) {
-				/* This was previously an error, but if we
-				 * capture a WIM from UDF on Windows, hard links
-				 * are supported but DOS names are automatically
-				 * generated for all names for an inode.  */
-			#if 0
-				ERROR("Hard-linked file has a DOS name at "
-				      "both `%"TS"' and `%"TS"'",
-				      dentry_full_path(dentry_with_dos_name),
-				      dentry_full_path(dentry));
-				return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-			#else
-				dentry->dos_name_invalid = 1;
-			#endif
-			}
-			dentry_with_dos_name = dentry;
-		}
-	}
-	return 0;
-}
 
 static int
 lte_fix_refcnt(struct wim_lookup_table_entry *lte, void *ctr)

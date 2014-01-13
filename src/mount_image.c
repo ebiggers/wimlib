@@ -41,6 +41,8 @@
 
 #include "wimlib/encoding.h"
 #include "wimlib/file_io.h"
+#include "wimlib/dentry.h"
+#include "wimlib/inode.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
@@ -152,12 +154,6 @@ wimfs_get_WIMStruct(void)
 	return wimfs_get_context()->wim;
 }
 
-static inline bool
-wimfs_ctx_readonly(const struct wimfs_context *ctx)
-{
-	return (ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) == 0;
-}
-
 static inline int
 get_lookup_flags(const struct wimfs_context *ctx)
 {
@@ -178,7 +174,6 @@ flags_writable(int open_flags)
  * @stream_id:	ID of the stream we're opening
  * @lte:	Lookup table entry for the stream (may be NULL)
  * @fd_ret:	Return the allocated file descriptor if successful.
- * @readonly:	True if this is a read-only mount.
  *
  * Return 0 iff successful or error code if unsuccessful.
  */
@@ -186,8 +181,7 @@ static int
 alloc_wimfs_fd(struct wim_inode *inode,
 	       u32 stream_id,
 	       struct wim_lookup_table_entry *lte,
-	       struct wimfs_fd **fd_ret,
-	       bool readonly)
+	       struct wimfs_fd **fd_ret)
 {
 	static const u16 fds_per_alloc = 8;
 	static const u16 max_fds = 0xffff;
@@ -236,7 +230,7 @@ alloc_wimfs_fd(struct wim_inode *inode,
 			*fd_ret         = fd;
 			inode->i_fds[i] = fd;
 			inode->i_num_opened_fds++;
-			if (lte && !readonly)
+			if (lte)
 				lte->num_opened_fds++;
 			DEBUG("Allocated fd (idx = %u)", fd->idx);
 			ret = 0;
@@ -678,8 +672,8 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 	new_lte->staging_file_name   = staging_file_name;
 	new_lte->size                = size;
 
-	lookup_table_insert_unhashed(ctx->wim->lookup_table, new_lte,
-				     inode, stream_id);
+	add_unhashed_stream(new_lte, inode, stream_id,
+			    &wim_get_current_image_metadata(ctx->wim)->unhashed_streams);
 	*retrieve_lte_pointer(new_lte) = new_lte;
 	*lte = new_lte;
 	return 0;
@@ -1872,8 +1866,7 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 		*back_ptr = lte;
 	}
 
-	ret = alloc_wimfs_fd(inode, stream_id, lte, &fd,
-			     wimfs_ctx_readonly(ctx));
+	ret = alloc_wimfs_fd(inode, stream_id, lte, &fd);
 	if (ret)
 		return ret;
 
@@ -1907,7 +1900,7 @@ wimfs_opendir(const char *path, struct fuse_file_info *fi)
 		return -errno;
 	if (!inode_is_directory(inode))
 		return -ENOTDIR;
-	ret = alloc_wimfs_fd(inode, 0, NULL, &fd, wimfs_ctx_readonly(ctx));
+	ret = alloc_wimfs_fd(inode, 0, NULL, &fd);
 	fi->fh = (uintptr_t)fd;
 	return ret;
 }
@@ -2431,15 +2424,12 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	imd = wim_get_current_image_metadata(wim);
 
-	if (imd->refcnt != 1) {
-		ERROR("Cannot mount image that was just exported with "
-		      "wimlib_export_image()");
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-
 	if (imd->modified) {
-		ERROR("Cannot mount image that was added "
-		      "with wimlib_add_image()");
+		/* wimfs_read() only supports a limited number of stream
+		 * locations, not including RESOURCE_IN_FILE_ON_DISK,
+		 * RESOURCE_IN_NTFS_VOLUME, etc. that might appear if files were
+		 * added to the WIM image.  */
+		ERROR("Cannot mount an image with newly added files!");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
@@ -2463,7 +2453,6 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	ctx.default_uid = getuid();
 	ctx.default_gid = getgid();
 	wimlib_assert(list_empty(&imd->unhashed_streams));
-	ctx.wim->lookup_table->unhashed_streams = &imd->unhashed_streams;
 	if (mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 		ctx.default_lookup_flags = LOOKUP_FLAG_ADS_OK;
 

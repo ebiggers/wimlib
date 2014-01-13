@@ -29,9 +29,9 @@
 
 #include "wimlib/apply.h"
 #include "wimlib/error.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/resource.h"
 #include "wimlib/timestamp.h"
+#include "wimlib/unix_data.h"
 
 #include <errno.h>
 #include <fcntl.h>

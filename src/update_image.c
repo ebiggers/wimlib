@@ -235,8 +235,8 @@ execute_add_command(WIMStruct *wim,
 		goto out_destroy_inode_table;
 
 	INIT_LIST_HEAD(&unhashed_streams);
-	wim->lookup_table->unhashed_streams = &unhashed_streams;
 	params.lookup_table = wim->lookup_table;
+	params.unhashed_streams = &unhashed_streams;
 	params.config = config;
 	params.add_flags = add_flags;
 	params.extra_arg = extra_arg;
@@ -262,7 +262,7 @@ execute_add_command(WIMStruct *wim,
 		 * the root of each branch from a capture
 		 * source.  (This will also set the root dentry
 		 * of the entire image to be unnamed.) */
-		ret = set_dentry_name(branch,
+		ret = dentry_set_name(branch,
 				      path_basename(wim_target_path));
 		if (ret)
 			goto out_ntfs_umount;

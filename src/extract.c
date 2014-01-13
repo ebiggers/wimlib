@@ -93,7 +93,7 @@ dentry_resolve_and_zero_lte_refcnt(struct wim_dentry *dentry, void *_ctx)
 	 * "resolve" the inode's streams anyway by allocating new entries.  */
 	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE)
 		force = true;
-	ret = inode_resolve_ltes(inode, ctx->wim->lookup_table, force);
+	ret = inode_resolve_streams(inode, ctx->wim->lookup_table, force);
 	if (ret)
 		return ret;
 	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
@@ -1508,7 +1508,7 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 
 		if ((found_lte->resource_location != RESOURCE_NONEXISTENT)
 		    && !(found_lte->flags & WIM_RESHDR_FLAG_METADATA)
-		    && (needed_lte = lookup_resource(lookup_table, found_lte->hash))
+		    && (needed_lte = lookup_stream(lookup_table, found_lte->hash))
 		    && (needed_lte->out_refcnt))
 		{
 			tchar *tmpfile_name = NULL;

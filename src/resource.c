@@ -27,12 +27,14 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/assert.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/resource.h"
 #include "wimlib/sha1.h"
+#include "wimlib/wim.h"
 
 #ifdef __WIN32__
 /* for read_win32_file_prefix(), read_win32_encrypted_file_prefix() */

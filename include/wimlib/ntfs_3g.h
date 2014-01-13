@@ -7,6 +7,17 @@
 struct wim_lookup_table_entry;
 struct _ntfs_volume;
 
+#ifdef WITH_NTFS_3G
+struct _ntfs_volume;
+struct ntfs_location {
+	tchar *path;
+	utf16lechar *stream_name;
+	u16 stream_name_nchars;
+	struct _ntfs_volume *ntfs_vol;
+	bool is_reparse_point;
+};
+#endif
+
 extern void
 libntfs3g_global_init(void);
 

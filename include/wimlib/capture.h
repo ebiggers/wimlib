@@ -2,6 +2,7 @@
 #define _WIMLIB_CAPTURE_H
 
 #include "wimlib.h"
+#include "wimlib/inode_table.h"
 #include "wimlib/list.h"
 #include "wimlib/security.h"
 #include "wimlib/util.h"
@@ -10,34 +11,15 @@ struct wim_lookup_table;
 struct wim_dentry;
 struct wim_inode;
 
-/* Hash table to find inodes, given an inode number (in the case of reading
- * a WIM images), or both an inode number and a device number (in the case of
- * capturing a WIM image). */
-struct wim_inode_table {
-	/* Fields for the hash table */
-	struct hlist_head *array;
-	u64 num_entries;
-	u64 capacity;
-
-	/*
-	 * Linked list of "extra" inodes.  These may be:
-	 *
-	 * - inodes with link count 1, which are all allowed to have 0 for their
-	 *   inode number, meaning we cannot insert them into the hash table.
-         *
-	 * - Groups we create ourselves by splitting a nominal inode due to
-	 *   inconsistencies in the dentries.  These inodes will share an inode
-	 *   number with some other inode until assign_inode_numbers() is
-	 *   called.
-	 */
-	struct list_head extra_inodes;
-};
-
 /* Common parameters to implementations of building an in-memory dentry tree
  * from an on-disk directory structure. */
 struct add_image_params {
-	/* Pointer to the lookup table of the WIM. */
+	/* Pointer to the lookup table of the WIM.  */
 	struct wim_lookup_table *lookup_table;
+
+	/* List of streams that have been added so far, but without their SHA1
+	 * message digests being calculated (as a shortcut).  */
+	struct list_head *unhashed_streams;
 
 	/* Hash table of inodes that have been captured for this tree so far. */
 	struct wim_inode_table inode_table;
@@ -102,12 +84,6 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 extern void
 inode_table_prepare_inode_list(struct wim_inode_table *table,
 			       struct list_head *head);
-
-static inline void
-destroy_inode_table(struct wim_inode_table *table)
-{
-	FREE(table->array);
-}
 
 
 #ifdef WITH_NTFS_3G

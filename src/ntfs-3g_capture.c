@@ -155,14 +155,13 @@ out:
 
 }
 
-/* Load the streams from a file or reparse point in the NTFS volume into the WIM
- * lookup table */
+/* Load the streams from a file or reparse point in the NTFS volume  */
 static int
 capture_ntfs_streams(struct wim_inode *inode,
 		     ntfs_inode *ni,
 		     char *path,
 		     size_t path_len,
-		     struct wim_lookup_table *lookup_table,
+		     struct list_head *unhashed_streams,
 		     ntfs_volume *vol,
 		     ATTR_TYPES type)
 {
@@ -274,8 +273,8 @@ capture_ntfs_streams(struct wim_inode *inode,
 			new_ads_entry->lte = lte;
 		}
 		if (lte) {
-			lookup_table_insert_unhashed(lookup_table, lte,
-						     inode, stream_id);
+			add_unhashed_stream(lte, inode,
+					    stream_id, unhashed_streams);
 		}
 	}
 	if (errno == ENOENT) {
@@ -605,7 +604,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	 * - Reparse points: capture reparse data only
 	 */
 	ret = capture_ntfs_streams(inode, ni, path, path_len,
-				   params->lookup_table, vol, stream_type);
+				   params->unhashed_streams, vol, stream_type);
 	if (ret)
 		goto out;
 

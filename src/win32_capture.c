@@ -30,6 +30,7 @@
 #include "wimlib/win32_common.h"
 
 #include "wimlib/capture.h"
+#include "wimlib/dentry.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
@@ -795,7 +796,8 @@ win32_get_encrypted_file_size(const wchar_t *path, u64 *size_ret)
  *
  * @inode:              WIM inode to save the stream into.
  *
- * @lookup_table:       Stream lookup table for the WIM.
+ * @unhashed_streams:   List of unhashed streams that have been added to the WIM
+ *                      image.
  *
  * @dat:                A `WIN32_FIND_STREAM_DATA' structure that specifies the
  *                      stream name.
@@ -806,7 +808,7 @@ static int
 win32_capture_stream(const wchar_t *path,
 		     size_t path_num_chars,
 		     struct wim_inode *inode,
-		     struct wim_lookup_table *lookup_table,
+		     struct list_head *unhashed_streams,
 		     WIN32_FIND_STREAM_DATA *dat)
 {
 	struct wim_ads_entry *ads_entry;
@@ -916,7 +918,7 @@ win32_capture_stream(const wchar_t *path,
 		stream_id = 0;
 		inode->i_lte = lte;
 	}
-	lookup_table_insert_unhashed(lookup_table, lte, inode, stream_id);
+	add_unhashed_stream(lte, inode, stream_id, unhashed_streams);
 	ret = 0;
 out_free_spath:
 	FREE(spath);
@@ -946,7 +948,7 @@ win32_capture_streams(HANDLE *hFile_p,
 		      const wchar_t *path,
 		      size_t path_num_chars,
 		      struct wim_inode *inode,
-		      struct wim_lookup_table *lookup_table,
+		      struct list_head *unhashed_streams,
 		      u64 file_size,
 		      unsigned vol_flags)
 {
@@ -1032,7 +1034,7 @@ win32_capture_streams(HANDLE *hFile_p,
 
 			/* Capture the stream.  */
 			ret = win32_capture_stream(path, path_num_chars, inode,
-						   lookup_table, &dat);
+						   unhashed_streams, &dat);
 			if (ret)
 				goto out_free_buf;
 		}
@@ -1089,7 +1091,7 @@ use_FindFirstStream:
 	do {
 		ret = win32_capture_stream(path,
 					   path_num_chars,
-					   inode, lookup_table,
+					   inode, unhashed_streams,
 					   &dat);
 		if (ret)
 			goto out_find_close;
@@ -1116,7 +1118,7 @@ unnamed_only:
 	wcscpy(dat.cStreamName, L"::$DATA");
 	dat.StreamSize.QuadPart = file_size;
 	return win32_capture_stream(path, path_num_chars,
-				    inode, lookup_table, &dat);
+				    inode, unhashed_streams, &dat);
 }
 
 static int
@@ -1266,7 +1268,7 @@ again:
 				    path,
 				    path_num_chars,
 				    inode,
-				    params->lookup_table,
+				    params->unhashed_streams,
 				    file_size,
 				    vol_flags);
 	if (ret)

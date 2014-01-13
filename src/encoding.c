@@ -528,3 +528,41 @@ cmp_utf16le_strings(const utf16lechar *s1, size_t n1,
 		return 0;
 	return (n1 < n2) ? -1 : 1;
 }
+
+/* Duplicates a string of system-dependent encoding into a UTF-16LE string and
+ * returns the string and its length, in bytes, in the pointer arguments.  Frees
+ * any existing string at the return location before overwriting it. */
+int
+get_utf16le_string(const tchar *name, utf16lechar **name_utf16le_ret,
+		   u16 *name_utf16le_nbytes_ret)
+{
+	utf16lechar *name_utf16le;
+	size_t name_utf16le_nbytes;
+	int ret;
+#if TCHAR_IS_UTF16LE
+	name_utf16le_nbytes = tstrlen(name) * sizeof(utf16lechar);
+	name_utf16le = MALLOC(name_utf16le_nbytes + sizeof(utf16lechar));
+	if (name_utf16le == NULL)
+		return WIMLIB_ERR_NOMEM;
+	memcpy(name_utf16le, name, name_utf16le_nbytes + sizeof(utf16lechar));
+	ret = 0;
+#else
+
+	ret = tstr_to_utf16le(name, tstrlen(name), &name_utf16le,
+			      &name_utf16le_nbytes);
+	if (ret == 0) {
+		if (name_utf16le_nbytes > 0xffff) {
+			FREE(name_utf16le);
+			ERROR("Multibyte string \"%"TS"\" is too long!", name);
+			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
+		}
+	}
+#endif
+	if (ret == 0) {
+		FREE(*name_utf16le_ret);
+		*name_utf16le_ret = name_utf16le;
+		*name_utf16le_nbytes_ret = name_utf16le_nbytes;
+	}
+	return ret;
+}
+

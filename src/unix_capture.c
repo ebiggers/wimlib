@@ -45,7 +45,7 @@ static int
 unix_capture_regular_file(const char *path,
 			  u64 size,
 			  struct wim_inode *inode,
-			  struct wim_lookup_table *lookup_table)
+			  struct list_head *unhashed_streams)
 {
 	inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
 
@@ -65,7 +65,7 @@ unix_capture_regular_file(const char *path,
 		lte->file_on_disk = file_on_disk;
 		lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
 		lte->size = size;
-		lookup_table_insert_unhashed(lookup_table, lte, inode, 0);
+		add_unhashed_stream(lte, inode, 0, unhashed_streams);
 		inode->i_lte = lte;
 	}
 	return 0;
@@ -278,7 +278,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	params->add_flags &= ~WIMLIB_ADD_FLAG_ROOT;
 	if (S_ISREG(stbuf.st_mode))
 		ret = unix_capture_regular_file(path, stbuf.st_size,
-						inode, params->lookup_table);
+						inode, params->unhashed_streams);
 	else if (S_ISDIR(stbuf.st_mode))
 		ret = unix_capture_directory(root, path, path_len, params);
 	else {

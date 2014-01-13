@@ -1,7 +1,7 @@
 /*
- * hardlink.c
+ * inode_fixup.c
  *
- * Code to deal with hard links in WIMs.
+ * See dentry_tree_fix_inodes() for description.
  */
 
 /*
@@ -27,47 +27,13 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
+#include "wimlib/inode.h"
+#include "wimlib/inode_table.h"
 #include "wimlib/lookup_table.h"
 
-/*                             NULL        NULL
- *                              ^           ^
- *         dentry               |           |
- *        /     \          -----------  -----------
- *        |      dentry<---|  struct  | |  struct  |---> dentry
- *        \     /          | wim_inode| | wim_inode|
- *         dentry          ------------ ------------
- *                              ^           ^
- *                              |           |
- *                              |           |                   dentry
- *                         -----------  -----------            /      \
- *               dentry<---|  struct  | |  struct  |---> dentry        dentry
- *              /          | wim_inode| | wim_inode|           \      /
- *         dentry          ------------ ------------            dentry
- *                              ^           ^
- *                              |           |
- *                            -----------------
- *    wim_inode_table->array  | idx 0 | idx 1 |
- *                            -----------------
- */
-
-
-int
-init_inode_table(struct wim_inode_table *table, size_t capacity)
-{
-	table->array = CALLOC(capacity, sizeof(table->array[0]));
-	if (!table->array) {
-		ERROR("Cannot initalize inode table: out of memory");
-		return WIMLIB_ERR_NOMEM;
-	}
-	table->num_entries  = 0;
-	table->capacity     = capacity;
-	INIT_LIST_HEAD(&table->extra_inodes);
-	return 0;
-}
-
+/* Manual link count of inode (normally we can just check i_nlink)  */
 static inline size_t
 inode_link_count(const struct wim_inode *inode)
 {
@@ -76,137 +42,6 @@ inode_link_count(const struct wim_inode *inode)
 	list_for_each(cur, &inode->i_dentry)
 		size++;
 	return size;
-}
-
-/* Insert a dentry into the inode table based on the inode number of the
- * attached inode (which came from the hard link group ID field of the on-disk
- * WIM dentry) */
-static int
-inode_table_insert(struct wim_dentry *dentry, void *_table)
-{
-	struct wim_inode_table *table = _table;
-	struct wim_inode *d_inode = dentry->d_inode;
-
-	if (d_inode->i_ino == 0) {
-		/* A dentry with a hard link group ID of 0 indicates that it's
-		 * in a hard link group by itself.  Add it to the list of extra
-		 * inodes rather than inserting it into the hash lists. */
-		list_add_tail(&d_inode->i_list, &table->extra_inodes);
-	} else {
-		size_t pos;
-		struct wim_inode *inode;
-		struct hlist_node *cur;
-
-		/* Try adding this dentry to an existing inode */
-		pos = d_inode->i_ino % table->capacity;
-		hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
-			if (inode->i_ino == d_inode->i_ino) {
-				if (unlikely((inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) ||
-					     (d_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)))
-				{
-					ERROR("Unsupported directory hard link "
-					      "\"%"TS"\" <=> \"%"TS"\"",
-					      dentry_full_path(dentry),
-					      dentry_full_path(inode_first_dentry(inode)));
-					return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-				}
-				inode_add_dentry(dentry, inode);
-				return 0;
-			}
-		}
-
-		/* No inode in the table has the same number as this one, so add
-		 * it to the table. */
-		hlist_add_head(&d_inode->i_hlist, &table->array[pos]);
-
-		/* XXX Make the table grow when too many entries have been
-		 * inserted. */
-		table->num_entries++;
-	}
-	return 0;
-}
-
-static struct wim_inode *
-inode_table_get_inode(struct wim_inode_table *table, u64 ino, u64 devno)
-{
-	u64 hash = hash_u64(hash_u64(ino) + hash_u64(devno));
-	size_t pos = hash % table->capacity;
-	struct wim_inode *inode;
-	struct hlist_node *cur;
-
-	hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
-		if (inode->i_ino == ino && inode->i_devno == devno) {
-			DEBUG("Using existing inode {devno=%"PRIu64", ino=%"PRIu64"}",
-			      devno, ino);
-			inode->i_nlink++;
-			return inode;
-		}
-	}
-	inode = new_timeless_inode();
-	if (inode) {
-		inode->i_ino = ino;
-		inode->i_devno = devno;
-		hlist_add_head(&inode->i_hlist, &table->array[pos]);
-		table->num_entries++;
-	}
-	return inode;
-}
-
-void
-inode_ref_streams(struct wim_inode *inode)
-{
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		struct wim_lookup_table_entry *lte;
-		lte = inode_stream_lte_resolved(inode, i);
-		if (lte)
-			lte->refcnt++;
-	}
-}
-
-/* Given a directory entry with the name @name for the file with the inode
- * number @ino and device number @devno, create a new WIM dentry with an
- * associated inode, where the inode is shared if an inode with the same @ino
- * and @devno has already been created.  On success, the new WIM dentry is
- * written to *dentry_ret, and its inode has i_nlink > 1 if a previously
- * existing inode was used.
- */
-int
-inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
-		       u64 ino, u64 devno, bool noshare,
-		       struct wim_dentry **dentry_ret)
-{
-	struct wim_dentry *dentry;
-	struct wim_inode *inode;
-	int ret;
-
-	if (noshare) {
-		/* File that cannot be hardlinked--- Return a new inode with its
-		 * inode and device numbers left at 0. */
-		ret = new_dentry_with_timeless_inode(name, &dentry);
-		if (ret)
-			return ret;
-		list_add_tail(&dentry->d_inode->i_list, &table->extra_inodes);
-	} else {
-		/* File that can be hardlinked--- search the table for an
-		 * existing inode matching the inode number and device;
-		 * otherwise create a new inode. */
-		ret = new_dentry(name, &dentry);
-		if (ret)
-			return ret;
-		inode = inode_table_get_inode(table, ino, devno);
-		if (!inode) {
-			free_dentry(dentry);
-			return WIMLIB_ERR_NOMEM;
-		}
-		/* If using an existing inode, we need to gain a reference to
-		 * each of its streams. */
-		if (inode->i_nlink > 1)
-			inode_ref_streams(inode);
-		dentry->d_inode = inode;
-		inode_add_dentry(dentry, inode);
-	}
-	*dentry_ret = dentry;
-	return 0;
 }
 
 static inline void
@@ -226,6 +61,15 @@ inconsistent_inode(const struct wim_inode *inode)
 		ERROR("The dentries are located at the following paths:");
 		print_inode_dentries(inode);
 	}
+}
+
+static bool
+ads_entries_have_same_name(const struct wim_ads_entry *entry_1,
+			   const struct wim_ads_entry *entry_2)
+{
+	return entry_1->stream_name_nbytes == entry_2->stream_name_nbytes &&
+	       memcmp(entry_1->stream_name, entry_2->stream_name,
+		      entry_1->stream_name_nbytes) == 0;
 }
 
 static bool
@@ -490,6 +334,55 @@ fix_inodes(struct wim_inode_table *table, struct list_head *inode_list,
 	return 0;
 }
 
+/* Insert a dentry into the inode table based on the inode number of the
+ * attached inode (which came from the hard link group ID field of the on-disk
+ * WIM dentry) */
+static int
+inode_table_insert(struct wim_dentry *dentry, void *_table)
+{
+	struct wim_inode_table *table = _table;
+	struct wim_inode *d_inode = dentry->d_inode;
+
+	if (d_inode->i_ino == 0) {
+		/* A dentry with a hard link group ID of 0 indicates that it's
+		 * in a hard link group by itself.  Add it to the list of extra
+		 * inodes rather than inserting it into the hash lists. */
+		list_add_tail(&d_inode->i_list, &table->extra_inodes);
+	} else {
+		size_t pos;
+		struct wim_inode *inode;
+		struct hlist_node *cur;
+
+		/* Try adding this dentry to an existing inode */
+		pos = d_inode->i_ino % table->capacity;
+		hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
+			if (inode->i_ino == d_inode->i_ino) {
+				if (unlikely((inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) ||
+					     (d_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)))
+				{
+					ERROR("Unsupported directory hard link "
+					      "\"%"TS"\" <=> \"%"TS"\"",
+					      dentry_full_path(dentry),
+					      dentry_full_path(inode_first_dentry(inode)));
+					return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
+				}
+				inode_add_dentry(dentry, inode);
+				return 0;
+			}
+		}
+
+		/* No inode in the table has the same number as this one, so add
+		 * it to the table. */
+		hlist_add_head(&d_inode->i_hlist, &table->array[pos]);
+
+		/* XXX Make the table grow when too many entries have been
+		 * inserted. */
+		table->num_entries++;
+	}
+	return 0;
+}
+
+
 /*
  * dentry_tree_fix_inodes():
  *
@@ -576,40 +469,4 @@ out_destroy_inode_table_raw:
 	destroy_inode_table(&inode_tab);
 out:
 	return ret;
-}
-
-/* Assign consecutive inode numbers to a new set of inodes from the inode table,
- * and append the inodes to a single list @head that contains the inodes already
- * existing in the WIM image.  */
-void
-inode_table_prepare_inode_list(struct wim_inode_table *table,
-			       struct list_head *head)
-{
-	struct wim_inode *inode, *tmp_inode;
-	struct hlist_node *cur, *tmp;
-	u64 cur_ino = 1;
-
-	/* Re-assign inode numbers in the existing list to avoid duplicates. */
-	list_for_each_entry(inode, head, i_list)
-		inode->i_ino = cur_ino++;
-
-	/* Assign inode numbers to the new inodes and move them to the image's
-	 * inode list. */
-	for (size_t i = 0; i < table->capacity; i++) {
-		hlist_for_each_entry_safe(inode, cur, tmp, &table->array[i], i_hlist)
-		{
-			inode->i_ino = cur_ino++;
-			inode->i_devno = 0;
-			list_add_tail(&inode->i_list, head);
-		}
-		INIT_HLIST_HEAD(&table->array[i]);
-	}
-	list_for_each_entry_safe(inode, tmp_inode, &table->extra_inodes, i_list)
-	{
-		inode->i_ino = cur_ino++;
-		inode->i_devno = 0;
-		list_add_tail(&inode->i_list, head);
-	}
-	INIT_LIST_HEAD(&table->extra_inodes);
-	table->num_entries = 0;
 }

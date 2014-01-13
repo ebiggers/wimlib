@@ -31,6 +31,7 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/case.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
@@ -44,35 +45,6 @@
 #include "wimlib/timestamp.h"
 
 #include <errno.h>
-
-/* WIM alternate data stream entry (on-disk format) */
-struct wim_ads_entry_on_disk {
-	/*  Length of the entry, in bytes.  This apparently includes all
-	 *  fixed-length fields, plus the stream name and null terminator if
-	 *  present, and the padding up to an 8 byte boundary.  wimlib is a
-	 *  little less strict when reading the entries, and only requires that
-	 *  the number of bytes from this field is at least as large as the size
-	 *  of the fixed length fields and stream name without null terminator.
-	 *  */
-	le64  length;
-
-	le64  reserved;
-
-	/* SHA1 message digest of the uncompressed stream; or, alternatively,
-	 * can be all zeroes if the stream has zero length. */
-	u8 hash[SHA1_HASH_SIZE];
-
-	/* Length of the stream name, in bytes.  0 if the stream is unnamed.  */
-	le16 stream_name_nbytes;
-
-	/* Stream name in UTF-16LE.  It is @stream_name_nbytes bytes long,
-	 * excluding the the null terminator.  There is a null terminator
-	 * character if @stream_name_nbytes != 0; i.e., if this stream is named.
-	 * */
-	utf16lechar stream_name[];
-} _packed_attribute;
-
-#define WIM_ADS_ENTRY_DISK_SIZE 38
 
 /* On-disk format of a WIM dentry (directory entry), located in the metadata
  * resource for a WIM image.  */
@@ -214,8 +186,6 @@ struct wim_dentry_on_disk {
 	/*utf16lechar short_name[];*/
 } _packed_attribute;
 
-#define WIM_DENTRY_DISK_SIZE 102
-
 /* Calculates the unaligned length, in bytes, of an on-disk WIM dentry that has
  * a file name and short name that take the specified numbers of bytes.  This
  * excludes any alternate data stream entries that may follow the dentry. */
@@ -244,50 +214,15 @@ dentry_correct_length_aligned(const struct wim_dentry *dentry)
 	return (len + 7) & ~7;
 }
 
-/* Duplicates a string of system-dependent encoding into a UTF-16LE string and
- * returns the string and its length, in bytes, in the pointer arguments.  Frees
- * any existing string at the return location before overwriting it. */
-static int
-get_utf16le_name(const tchar *name, utf16lechar **name_utf16le_ret,
-		 u16 *name_utf16le_nbytes_ret)
-{
-	utf16lechar *name_utf16le;
-	size_t name_utf16le_nbytes;
-	int ret;
-#if TCHAR_IS_UTF16LE
-	name_utf16le_nbytes = tstrlen(name) * sizeof(utf16lechar);
-	name_utf16le = MALLOC(name_utf16le_nbytes + sizeof(utf16lechar));
-	if (name_utf16le == NULL)
-		return WIMLIB_ERR_NOMEM;
-	memcpy(name_utf16le, name, name_utf16le_nbytes + sizeof(utf16lechar));
-	ret = 0;
-#else
-
-	ret = tstr_to_utf16le(name, tstrlen(name), &name_utf16le,
-			      &name_utf16le_nbytes);
-	if (ret == 0) {
-		if (name_utf16le_nbytes > 0xffff) {
-			FREE(name_utf16le);
-			ERROR("Multibyte string \"%"TS"\" is too long!", name);
-			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
-		}
-	}
-#endif
-	if (ret == 0) {
-		FREE(*name_utf16le_ret);
-		*name_utf16le_ret = name_utf16le;
-		*name_utf16le_nbytes_ret = name_utf16le_nbytes;
-	}
-	return ret;
-}
-
-/* Sets the name of a WIM dentry from a multibyte string. */
+/* Sets the name of a WIM dentry from a multibyte string.
+ * Only use this on dentries not inserted into the tree.  Use rename_wim_path()
+ * to do a real rename.  */
 int
-set_dentry_name(struct wim_dentry *dentry, const tchar *new_name)
+dentry_set_name(struct wim_dentry *dentry, const tchar *new_name)
 {
 	int ret;
-	ret = get_utf16le_name(new_name, &dentry->file_name,
-			       &dentry->file_name_nbytes);
+	ret = get_utf16le_string(new_name, &dentry->file_name,
+				 &dentry->file_name_nbytes);
 	if (ret == 0) {
 		/* Clear the short name and recalculate the dentry length */
 		if (dentry_has_short_name(dentry)) {
@@ -326,7 +261,8 @@ ads_entry_total_length(const struct wim_ads_entry *entry)
  * though there is already a field in the dentry itself for the unnamed stream
  * reference, which then goes to waste.
  */
-static inline bool inode_needs_dummy_stream(const struct wim_inode *inode)
+static inline bool
+inode_needs_dummy_stream(const struct wim_inode *inode)
 {
 	return (inode->i_num_ads > 0 &&
 		inode->i_num_ads < 0xffff && /* overflow check */
@@ -657,20 +593,6 @@ dentry_compare_names_case_sensitive(const struct wim_dentry *d1,
 				   false);
 }
 
-/* Return %true iff the alternate data stream entry @entry has the UTF-16LE
- * stream name @name that has length @name_nbytes bytes. */
-static inline bool
-ads_entry_has_name(const struct wim_ads_entry *entry,
-		   const utf16lechar *name, size_t name_nbytes,
-		   bool ignore_case)
-{
-	return 0 == cmp_utf16le_strings(name,
-					name_nbytes / 2,
-					entry->stream_name,
-					entry->stream_name_nbytes / 2,
-					ignore_case);
-}
-
 /* Default case sensitivity behavior for searches with
  * WIMLIB_CASE_PLATFORM_DEFAULT specified.  This can be modified by
  * wimlib_global_init().  */
@@ -681,18 +603,6 @@ bool default_ignore_case =
 	false
 #endif
 ;
-
-static bool
-will_ignore_case(CASE_SENSITIVITY_TYPE case_type)
-{
-	if (case_type == WIMLIB_CASE_SENSITIVE)
-		return false;
-	if (case_type == WIMLIB_CASE_INSENSITIVE)
-		return true;
-
-	return default_ignore_case;
-}
-
 
 /* Given a UTF-16LE filename and a directory, look up the dentry for the file.
  * Return it if found, otherwise NULL.  This is case-sensitive on UNIX and
@@ -951,6 +861,76 @@ get_parent_dentry(WIMStruct *wim, const tchar *path,
 	return get_dentry(wim, buf, case_type);
 }
 
+#ifdef WITH_FUSE
+/* Finds the dentry, lookup table entry, and stream index for a WIM file stream,
+ * given a path name.
+ *
+ * Currently, lookups of this type are only needed if FUSE is enabled.  */
+int
+wim_pathname_to_stream(WIMStruct *wim,
+		       const tchar *path,
+		       int lookup_flags,
+		       struct wim_dentry **dentry_ret,
+		       struct wim_lookup_table_entry **lte_ret,
+		       u16 *stream_idx_ret)
+{
+	struct wim_dentry *dentry;
+	struct wim_lookup_table_entry *lte;
+	u16 stream_idx;
+	const tchar *stream_name = NULL;
+	struct wim_inode *inode;
+	tchar *p = NULL;
+
+	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
+		stream_name = path_stream_name(path);
+		if (stream_name) {
+			p = (tchar*)stream_name - 1;
+			*p = T('\0');
+		}
+	}
+
+	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
+	if (p)
+		*p = T(':');
+	if (!dentry)
+		return -errno;
+
+	inode = dentry->d_inode;
+
+	if (!inode->i_resolved)
+		if (inode_resolve_streams(inode, wim->lookup_table, false))
+			return -EIO;
+
+	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
+	      && inode_is_directory(inode))
+		return -EISDIR;
+
+	if (stream_name) {
+		struct wim_ads_entry *ads_entry;
+		u16 ads_idx;
+		ads_entry = inode_get_ads_entry(inode, stream_name,
+						&ads_idx);
+		if (ads_entry) {
+			stream_idx = ads_idx + 1;
+			lte = ads_entry->lte;
+			goto out;
+		} else {
+			return -ENOENT;
+		}
+	} else {
+		lte = inode_unnamed_stream_resolved(inode, &stream_idx);
+	}
+out:
+	if (dentry_ret)
+		*dentry_ret = dentry;
+	if (lte_ret)
+		*lte_ret = lte;
+	if (stream_idx_ret)
+		*stream_idx_ret = stream_idx;
+	return 0;
+}
+#endif /* WITH_FUSE  */
+
 /* Prints the full path of a dentry. */
 int
 print_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
@@ -1072,35 +1052,6 @@ dentry_common_init(struct wim_dentry *dentry)
 	memset(dentry, 0, sizeof(struct wim_dentry));
 }
 
-struct wim_inode *
-new_timeless_inode(void)
-{
-	struct wim_inode *inode = CALLOC(1, sizeof(struct wim_inode));
-	if (inode) {
-		inode->i_security_id = -1;
-		inode->i_nlink = 1;
-		inode->i_next_stream_id = 1;
-		inode->i_not_rpfixed = 1;
-		inode->i_canonical_streams = 1;
-		INIT_LIST_HEAD(&inode->i_list);
-		INIT_LIST_HEAD(&inode->i_dentry);
-	}
-	return inode;
-}
-
-static struct wim_inode *
-new_inode(void)
-{
-	struct wim_inode *inode = new_timeless_inode();
-	if (inode) {
-		u64 now = get_wim_timestamp();
-		inode->i_creation_time = now;
-		inode->i_last_access_time = now;
-		inode->i_last_write_time = now;
-	}
-	return inode;
-}
-
 /* Creates an unlinked directory entry. */
 int
 new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
@@ -1113,7 +1064,7 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 		return WIMLIB_ERR_NOMEM;
 
 	dentry_common_init(dentry);
-	ret = set_dentry_name(dentry, name);
+	ret = dentry_set_name(dentry, name);
 	if (ret == 0) {
 		dentry->parent = dentry;
 		*dentry_ret = dentry;
@@ -1124,7 +1075,6 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 	}
 	return ret;
 }
-
 
 static int
 _new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
@@ -1194,75 +1144,10 @@ dentry_tree_clear_inode_visited(struct wim_dentry *root)
 	for_dentry_in_tree(root, dentry_clear_inode_visited, NULL);
 }
 
-static int
-init_ads_entry(struct wim_ads_entry *ads_entry, const void *name,
-	       size_t name_nbytes, bool is_utf16le)
-{
-	int ret = 0;
-	memset(ads_entry, 0, sizeof(*ads_entry));
-
-	if (is_utf16le) {
-		utf16lechar *p = MALLOC(name_nbytes + sizeof(utf16lechar));
-		if (p == NULL)
-			return WIMLIB_ERR_NOMEM;
-		memcpy(p, name, name_nbytes);
-		p[name_nbytes / 2] = cpu_to_le16(0);
-		ads_entry->stream_name = p;
-		ads_entry->stream_name_nbytes = name_nbytes;
-	} else {
-		if (name && *(const tchar*)name != T('\0')) {
-			ret = get_utf16le_name(name, &ads_entry->stream_name,
-					       &ads_entry->stream_name_nbytes);
-		}
-	}
-	return ret;
-}
-
-static void
-destroy_ads_entry(struct wim_ads_entry *ads_entry)
-{
-	FREE(ads_entry->stream_name);
-}
-
-/* Frees an inode. */
-void
-free_inode(struct wim_inode *inode)
-{
-	if (inode) {
-		if (inode->i_ads_entries) {
-			for (u16 i = 0; i < inode->i_num_ads; i++)
-				destroy_ads_entry(&inode->i_ads_entries[i]);
-			FREE(inode->i_ads_entries);
-		}
-		/* HACK: This may instead delete the inode from i_list, but the
-		 * hlist_del() behaves the same as list_del(). */
-		if (!hlist_unhashed(&inode->i_hlist))
-			hlist_del(&inode->i_hlist);
-		FREE(inode);
-	}
-}
-
-/* Decrements link count on an inode and frees it if the link count reaches 0.
- * */
-static void
-put_inode(struct wim_inode *inode)
-{
-	wimlib_assert(inode->i_nlink != 0);
-	if (--inode->i_nlink == 0) {
-	#ifdef WITH_FUSE
-		if (inode->i_num_opened_fds == 0)
-	#endif
-		{
-			free_inode(inode);
-		}
-	}
-}
-
 /* Frees a WIM dentry.
  *
  * The corresponding inode (if any) is freed only if its link count is
- * decremented to 0.
- */
+ * decremented to 0.  */
 void
 free_dentry(struct wim_dentry *dentry)
 {
@@ -1493,7 +1378,7 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 			return -ENOTDIR;
 	}
 
-	ret = set_dentry_name(src, path_basename(to));
+	ret = dentry_set_name(src, path_basename(to));
 	if (ret)
 		return -ENOMEM;
 	if (dst) {
@@ -1505,445 +1390,6 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 	if (src->_full_path)
 		for_dentry_in_tree(src, free_dentry_full_path, NULL);
 	return 0;
-}
-
-/*
- * Returns the alternate data stream entry belonging to @inode that has the
- * stream name @stream_name, or NULL if the inode has no alternate data stream
- * with that name.
- *
- * If @p stream_name is the empty string, NULL is returned --- that is, this
- * function will not return "unnamed" alternate data stream entries.
- */
-struct wim_ads_entry *
-inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
-		    u16 *idx_ret)
-{
-	if (inode->i_num_ads == 0) {
-		return NULL;
-	} else {
-		size_t stream_name_utf16le_nbytes;
-		u16 i;
-		struct wim_ads_entry *result;
-
-		if (stream_name[0] == T('\0'))
-			return NULL;
-
-	#if TCHAR_IS_UTF16LE
-		const utf16lechar *stream_name_utf16le;
-
-		stream_name_utf16le = stream_name;
-		stream_name_utf16le_nbytes = tstrlen(stream_name) * sizeof(tchar);
-	#else
-		utf16lechar *stream_name_utf16le;
-
-		{
-			int ret = tstr_to_utf16le(stream_name,
-						  tstrlen(stream_name) *
-						      sizeof(tchar),
-						  &stream_name_utf16le,
-						  &stream_name_utf16le_nbytes);
-			if (ret)
-				return NULL;
-		}
-	#endif
-		i = 0;
-		result = NULL;
-		do {
-			if (ads_entry_has_name(&inode->i_ads_entries[i],
-					       stream_name_utf16le,
-					       stream_name_utf16le_nbytes,
-					       default_ignore_case))
-			{
-				if (idx_ret)
-					*idx_ret = i;
-				result = &inode->i_ads_entries[i];
-				break;
-			}
-		} while (++i != inode->i_num_ads);
-	#if !TCHAR_IS_UTF16LE
-		FREE(stream_name_utf16le);
-	#endif
-		return result;
-	}
-}
-
-static struct wim_ads_entry *
-do_inode_add_ads(struct wim_inode *inode, const void *stream_name,
-		 size_t stream_name_nbytes, bool is_utf16le)
-{
-	u16 num_ads;
-	struct wim_ads_entry *ads_entries;
-	struct wim_ads_entry *new_entry;
-
-	wimlib_assert(stream_name_nbytes != 0);
-
-	if (inode->i_num_ads >= 0xfffe) {
-		ERROR("Too many alternate data streams in one inode!");
-		return NULL;
-	}
-	num_ads = inode->i_num_ads + 1;
-	ads_entries = REALLOC(inode->i_ads_entries,
-			      num_ads * sizeof(inode->i_ads_entries[0]));
-	if (ads_entries == NULL) {
-		ERROR("Failed to allocate memory for new alternate data stream");
-		return NULL;
-	}
-	inode->i_ads_entries = ads_entries;
-
-	new_entry = &inode->i_ads_entries[num_ads - 1];
-	if (init_ads_entry(new_entry, stream_name, stream_name_nbytes, is_utf16le))
-		return NULL;
-	new_entry->stream_id = inode->i_next_stream_id++;
-	inode->i_num_ads = num_ads;
-	return new_entry;
-}
-
-struct wim_ads_entry *
-inode_add_ads_utf16le(struct wim_inode *inode,
-		      const utf16lechar *stream_name,
-		      size_t stream_name_nbytes)
-{
-	DEBUG("Add alternate data stream \"%"WS"\"", stream_name);
-	return do_inode_add_ads(inode, stream_name, stream_name_nbytes, true);
-}
-
-/*
- * Add an alternate stream entry to a WIM inode.  On success, returns a pointer
- * to the new entry; on failure, returns NULL.
- *
- * @stream_name must be a nonempty string.
- */
-struct wim_ads_entry *
-inode_add_ads(struct wim_inode *inode, const tchar *stream_name)
-{
-	DEBUG("Add alternate data stream \"%"TS"\"", stream_name);
-	return do_inode_add_ads(inode, stream_name,
-				tstrlen(stream_name) * sizeof(tchar),
-				TCHAR_IS_UTF16LE);
-}
-
-static struct wim_lookup_table_entry *
-add_stream_from_data_buffer(const void *buffer, size_t size,
-			    struct wim_lookup_table *lookup_table)
-{
-	u8 hash[SHA1_HASH_SIZE];
-	struct wim_lookup_table_entry *lte, *existing_lte;
-
-	sha1_buffer(buffer, size, hash);
-	existing_lte = lookup_resource(lookup_table, hash);
-	if (existing_lte) {
-		wimlib_assert(existing_lte->size == size);
-		lte = existing_lte;
-		lte->refcnt++;
-	} else {
-		void *buffer_copy;
-		lte = new_lookup_table_entry();
-		if (lte == NULL)
-			return NULL;
-		buffer_copy = memdup(buffer, size);
-		if (buffer_copy == NULL) {
-			free_lookup_table_entry(lte);
-			return NULL;
-		}
-		lte->resource_location  = RESOURCE_IN_ATTACHED_BUFFER;
-		lte->attached_buffer    = buffer_copy;
-		lte->size               = size;
-		copy_hash(lte->hash, hash);
-		lookup_table_insert(lookup_table, lte);
-	}
-	return lte;
-}
-
-int
-inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
-			const void *value, size_t size,
-			struct wim_lookup_table *lookup_table)
-{
-	struct wim_ads_entry *new_ads_entry;
-
-	wimlib_assert(inode->i_resolved);
-
-	new_ads_entry = inode_add_ads(inode, name);
-	if (new_ads_entry == NULL)
-		return WIMLIB_ERR_NOMEM;
-
-	new_ads_entry->lte = add_stream_from_data_buffer(value, size,
-							 lookup_table);
-	if (new_ads_entry->lte == NULL) {
-		inode_remove_ads(inode, new_ads_entry - inode->i_ads_entries,
-				 lookup_table);
-		return WIMLIB_ERR_NOMEM;
-	}
-	return 0;
-}
-
-bool
-inode_has_named_stream(const struct wim_inode *inode)
-{
-	for (u16 i = 0; i < inode->i_num_ads; i++)
-		if (ads_entry_is_named_stream(&inode->i_ads_entries[i]))
-			return true;
-	return false;
-}
-
-/* Set the unnamed stream of a WIM inode, given a data buffer containing the
- * stream contents. */
-int
-inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
-			 struct wim_lookup_table *lookup_table)
-{
-	inode->i_lte = add_stream_from_data_buffer(data, len, lookup_table);
-	if (inode->i_lte == NULL)
-		return WIMLIB_ERR_NOMEM;
-	inode->i_resolved = 1;
-	return 0;
-}
-
-/* Remove an alternate data stream from a WIM inode  */
-void
-inode_remove_ads(struct wim_inode *inode, u16 idx,
-		 struct wim_lookup_table *lookup_table)
-{
-	struct wim_ads_entry *ads_entry;
-	struct wim_lookup_table_entry *lte;
-
-	wimlib_assert(idx < inode->i_num_ads);
-	wimlib_assert(inode->i_resolved);
-
-	ads_entry = &inode->i_ads_entries[idx];
-
-	DEBUG("Remove alternate data stream \"%"WS"\"", ads_entry->stream_name);
-
-	lte = ads_entry->lte;
-	if (lte)
-		lte_decrement_refcnt(lte, lookup_table);
-
-	destroy_ads_entry(ads_entry);
-
-	memmove(&inode->i_ads_entries[idx],
-		&inode->i_ads_entries[idx + 1],
-		(inode->i_num_ads - idx - 1) * sizeof(inode->i_ads_entries[0]));
-	inode->i_num_ads--;
-}
-
-bool
-inode_has_unix_data(const struct wim_inode *inode)
-{
-	for (u16 i = 0; i < inode->i_num_ads; i++)
-		if (ads_entry_is_unix_data(&inode->i_ads_entries[i]))
-			return true;
-	return false;
-}
-
-#ifndef __WIN32__
-int
-inode_get_unix_data(const struct wim_inode *inode,
-		    struct wimlib_unix_data *unix_data,
-		    u16 *stream_idx_ret)
-{
-	const struct wim_ads_entry *ads_entry;
-	const struct wim_lookup_table_entry *lte;
-	size_t size;
-	int ret;
-
-	wimlib_assert(inode->i_resolved);
-
-	ads_entry = inode_get_ads_entry((struct wim_inode*)inode,
-					WIMLIB_UNIX_DATA_TAG, NULL);
-	if (ads_entry == NULL)
-		return NO_UNIX_DATA;
-
-	if (stream_idx_ret)
-		*stream_idx_ret = ads_entry - inode->i_ads_entries;
-
-	lte = ads_entry->lte;
-	if (lte == NULL)
-		return NO_UNIX_DATA;
-
-	size = lte->size;
-	if (size != sizeof(struct wimlib_unix_data))
-		return BAD_UNIX_DATA;
-
-	ret = read_full_stream_into_buf(lte, unix_data);
-	if (ret)
-		return ret;
-
-	if (unix_data->version != 0)
-		return BAD_UNIX_DATA;
-	return 0;
-}
-
-int
-inode_set_unix_data(struct wim_inode *inode, uid_t uid, gid_t gid, mode_t mode,
-		    struct wim_lookup_table *lookup_table, int which)
-{
-	struct wimlib_unix_data unix_data;
-	int ret;
-	bool have_good_unix_data = false;
-	bool have_unix_data = false;
-	u16 stream_idx;
-
-	if (!(which & UNIX_DATA_CREATE)) {
-		ret = inode_get_unix_data(inode, &unix_data, &stream_idx);
-		if (ret == 0 || ret == BAD_UNIX_DATA || ret > 0)
-			have_unix_data = true;
-		if (ret == 0)
-			have_good_unix_data = true;
-	}
-	unix_data.version = 0;
-	if (which & UNIX_DATA_UID || !have_good_unix_data)
-		unix_data.uid = uid;
-	if (which & UNIX_DATA_GID || !have_good_unix_data)
-		unix_data.gid = gid;
-	if (which & UNIX_DATA_MODE || !have_good_unix_data)
-		unix_data.mode = mode;
-	ret = inode_add_ads_with_data(inode, WIMLIB_UNIX_DATA_TAG,
-				      &unix_data,
-				      sizeof(struct wimlib_unix_data),
-				      lookup_table);
-	if (ret == 0 && have_unix_data)
-		inode_remove_ads(inode, stream_idx, lookup_table);
-	return ret;
-}
-#endif /* !__WIN32__ */
-
-/*
- * Reads the alternate data stream entries of a WIM dentry.
- *
- * @p:
- *	Pointer to buffer that starts with the first alternate stream entry.
- *
- * @inode:
- *	Inode to load the alternate data streams into.  @inode->i_num_ads must
- *	have been set to the number of alternate data streams that are expected.
- *
- * @remaining_size:
- *	Number of bytes of data remaining in the buffer pointed to by @p.
- *
- * On success, inode->i_ads_entries is set to an array of `struct
- * wim_ads_entry's of length inode->i_num_ads.  On failure, @inode is not
- * modified.
- *
- * Return values:
- *	WIMLIB_ERR_SUCCESS (0)
- *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
- *	WIMLIB_ERR_NOMEM
- */
-static int
-read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
-		 size_t nbytes_remaining)
-{
-	u16 num_ads;
-	struct wim_ads_entry *ads_entries;
-	int ret;
-
-	BUILD_BUG_ON(sizeof(struct wim_ads_entry_on_disk) != WIM_ADS_ENTRY_DISK_SIZE);
-
-	/* Allocate an array for our in-memory representation of the alternate
-	 * data stream entries. */
-	num_ads = inode->i_num_ads;
-	ads_entries = CALLOC(num_ads, sizeof(inode->i_ads_entries[0]));
-	if (ads_entries == NULL)
-		goto out_of_memory;
-
-	/* Read the entries into our newly allocated buffer. */
-	for (u16 i = 0; i < num_ads; i++) {
-		u64 length;
-		struct wim_ads_entry *cur_entry;
-		const struct wim_ads_entry_on_disk *disk_entry =
-			(const struct wim_ads_entry_on_disk*)p;
-
-		cur_entry = &ads_entries[i];
-		ads_entries[i].stream_id = i + 1;
-
-		/* Do we have at least the size of the fixed-length data we know
-		 * need? */
-		if (nbytes_remaining < sizeof(struct wim_ads_entry_on_disk))
-			goto out_invalid;
-
-		/* Read the length field */
-		length = le64_to_cpu(disk_entry->length);
-
-		/* Make sure the length field is neither so small it doesn't
-		 * include all the fixed-length data nor so large it overflows
-		 * the metadata resource buffer. */
-		if (length < sizeof(struct wim_ads_entry_on_disk) ||
-		    length > nbytes_remaining)
-			goto out_invalid;
-
-		/* Read the rest of the fixed-length data. */
-
-		cur_entry->reserved = le64_to_cpu(disk_entry->reserved);
-		copy_hash(cur_entry->hash, disk_entry->hash);
-		cur_entry->stream_name_nbytes = le16_to_cpu(disk_entry->stream_name_nbytes);
-
-		/* If stream_name_nbytes != 0, this is a named stream.
-		 * Otherwise this is an unnamed stream, or in some cases (bugs
-		 * in Microsoft's software I guess) a meaningless entry
-		 * distinguished from the real unnamed stream entry, if any, by
-		 * the fact that the real unnamed stream entry has a nonzero
-		 * hash field. */
-		if (cur_entry->stream_name_nbytes) {
-			/* The name is encoded in UTF16-LE, which uses 2-byte
-			 * coding units, so the length of the name had better be
-			 * an even number of bytes... */
-			if (cur_entry->stream_name_nbytes & 1)
-				goto out_invalid;
-
-			/* Add the length of the stream name to get the length
-			 * we actually need to read.  Make sure this isn't more
-			 * than the specified length of the entry. */
-			if (sizeof(struct wim_ads_entry_on_disk) +
-			    cur_entry->stream_name_nbytes > length)
-				goto out_invalid;
-
-			cur_entry->stream_name = MALLOC(cur_entry->stream_name_nbytes + 2);
-			if (cur_entry->stream_name == NULL)
-				goto out_of_memory;
-
-			memcpy(cur_entry->stream_name,
-			       disk_entry->stream_name,
-			       cur_entry->stream_name_nbytes);
-			cur_entry->stream_name[cur_entry->stream_name_nbytes / 2] = cpu_to_le16(0);
-		} else {
-			/* Mark inode as having weird stream entries.  */
-			inode->i_canonical_streams = 0;
-		}
-
-		/* It's expected that the size of every ADS entry is a multiple
-		 * of 8.  However, to be safe, I'm allowing the possibility of
-		 * an ADS entry at the very end of the metadata resource ending
-		 * un-aligned.  So although we still need to increment the input
-		 * pointer by @length to reach the next ADS entry, it's possible
-		 * that less than @length is actually remaining in the metadata
-		 * resource. We should set the remaining bytes to 0 if this
-		 * happens. */
-		length = (length + 7) & ~(u64)7;
-		p += length;
-		if (nbytes_remaining < length)
-			nbytes_remaining = 0;
-		else
-			nbytes_remaining -= length;
-	}
-	inode->i_ads_entries = ads_entries;
-	inode->i_next_stream_id = inode->i_num_ads + 1;
-	ret = 0;
-	goto out;
-out_of_memory:
-	ret = WIMLIB_ERR_NOMEM;
-	goto out_free_ads_entries;
-out_invalid:
-	ERROR("An alternate data stream entry is invalid");
-	ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-out_free_ads_entries:
-	if (ads_entries) {
-		for (u16 i = 0; i < num_ads; i++)
-			destroy_ads_entry(&ads_entries[i]);
-		FREE(ads_entries);
-	}
-out:
-	return ret;
 }
 
 /*
@@ -2506,432 +1952,4 @@ write_dentry_tree(const struct wim_dentry * restrict root, u8 * restrict p)
 
 	/* Recursively write the rest of the dentry tree. */
 	return write_dentry_tree_recursive(root, p);
-}
-
-
-static int
-init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
-		   struct wim_dentry *dentry,
-		   const WIMStruct *wim,
-		   int flags)
-{
-	int ret;
-	size_t dummy;
-	const struct wim_inode *inode = dentry->d_inode;
-	struct wim_lookup_table_entry *lte;
-	const u8 *hash;
-
-#if TCHAR_IS_UTF16LE
-	wdentry->filename = dentry->file_name;
-	wdentry->dos_name = dentry->short_name;
-#else
-	if (dentry_has_long_name(dentry)) {
-		ret = utf16le_to_tstr(dentry->file_name,
-				      dentry->file_name_nbytes,
-				      (tchar**)&wdentry->filename,
-				      &dummy);
-		if (ret)
-			return ret;
-	}
-	if (dentry_has_short_name(dentry)) {
-		ret = utf16le_to_tstr(dentry->short_name,
-				      dentry->short_name_nbytes,
-				      (tchar**)&wdentry->dos_name,
-				      &dummy);
-		if (ret)
-			return ret;
-	}
-#endif
-	ret = calculate_dentry_full_path(dentry);
-	if (ret)
-		return ret;
-	wdentry->full_path = dentry->_full_path;
-
-	for (struct wim_dentry *d = dentry; !dentry_is_root(d); d = d->parent)
-		wdentry->depth++;
-
-	if (inode->i_security_id >= 0) {
-		const struct wim_security_data *sd = wim_const_security_data(wim);
-		wdentry->security_descriptor = sd->descriptors[inode->i_security_id];
-		wdentry->security_descriptor_size = sd->sizes[inode->i_security_id];
-	}
-	wdentry->reparse_tag = inode->i_reparse_tag;
-	wdentry->num_links = inode->i_nlink;
-	wdentry->attributes = inode->i_attributes;
-	wdentry->hard_link_group_id = inode->i_ino;
-	wdentry->creation_time = wim_timestamp_to_timespec(inode->i_creation_time);
-	wdentry->last_write_time = wim_timestamp_to_timespec(inode->i_last_write_time);
-	wdentry->last_access_time = wim_timestamp_to_timespec(inode->i_last_access_time);
-
-	lte = inode_unnamed_lte(inode, wim->lookup_table);
-	if (lte) {
-		lte_to_wimlib_resource_entry(lte, &wdentry->streams[0].resource);
-	} else if (!is_zero_hash(hash = inode_unnamed_stream_hash(inode))) {
-		if (flags & WIMLIB_ITERATE_DIR_TREE_FLAG_RESOURCES_NEEDED)
-			return resource_not_found_error(inode, hash);
-		copy_hash(wdentry->streams[0].resource.sha1_hash, hash);
-		wdentry->streams[0].resource.is_missing = 1;
-	}
-
-	for (unsigned i = 0; i < inode->i_num_ads; i++) {
-		if (!ads_entry_is_named_stream(&inode->i_ads_entries[i]))
-			continue;
-		lte = inode_stream_lte(inode, i + 1, wim->lookup_table);
-		wdentry->num_named_streams++;
-		if (lte) {
-			lte_to_wimlib_resource_entry(lte, &wdentry->streams[
-								wdentry->num_named_streams].resource);
-		} else if (!is_zero_hash(hash = inode_stream_hash(inode, i + 1))) {
-			if (flags & WIMLIB_ITERATE_DIR_TREE_FLAG_RESOURCES_NEEDED)
-				return resource_not_found_error(inode, hash);
-			copy_hash(wdentry->streams[
-				  wdentry->num_named_streams].resource.sha1_hash, hash);
-			wdentry->streams[
-				wdentry->num_named_streams].resource.is_missing = 1;
-		}
-	#if TCHAR_IS_UTF16LE
-		wdentry->streams[wdentry->num_named_streams].stream_name =
-				inode->i_ads_entries[i].stream_name;
-	#else
-		size_t dummy;
-
-		ret = utf16le_to_tstr(inode->i_ads_entries[i].stream_name,
-				      inode->i_ads_entries[i].stream_name_nbytes,
-				      (tchar**)&wdentry->streams[
-						wdentry->num_named_streams].stream_name,
-				      &dummy);
-		if (ret)
-			return ret;
-	#endif
-	}
-	return 0;
-}
-
-static void
-free_wimlib_dentry(struct wimlib_dir_entry *wdentry)
-{
-#if !TCHAR_IS_UTF16LE
-	FREE((tchar*)wdentry->filename);
-	FREE((tchar*)wdentry->dos_name);
-	for (unsigned i = 1; i <= wdentry->num_named_streams; i++)
-		FREE((tchar*)wdentry->streams[i].stream_name);
-#endif
-	FREE(wdentry);
-}
-
-struct iterate_dir_tree_ctx {
-	WIMStruct *wim;
-	int flags;
-	wimlib_iterate_dir_tree_callback_t cb;
-	void *user_ctx;
-};
-
-static int
-do_iterate_dir_tree(WIMStruct *wim,
-		    struct wim_dentry *dentry, int flags,
-		    wimlib_iterate_dir_tree_callback_t cb,
-		    void *user_ctx);
-
-static int
-call_do_iterate_dir_tree(struct wim_dentry *dentry, void *_ctx)
-{
-	struct iterate_dir_tree_ctx *ctx = _ctx;
-	return do_iterate_dir_tree(ctx->wim, dentry, ctx->flags,
-				   ctx->cb, ctx->user_ctx);
-}
-
-static int
-do_iterate_dir_tree(WIMStruct *wim,
-		    struct wim_dentry *dentry, int flags,
-		    wimlib_iterate_dir_tree_callback_t cb,
-		    void *user_ctx)
-{
-	struct wimlib_dir_entry *wdentry;
-	int ret = WIMLIB_ERR_NOMEM;
-
-
-	wdentry = CALLOC(1, sizeof(struct wimlib_dir_entry) +
-				  (1 + dentry->d_inode->i_num_ads) *
-					sizeof(struct wimlib_stream_entry));
-	if (wdentry == NULL)
-		goto out;
-
-	ret = init_wimlib_dentry(wdentry, dentry, wim, flags);
-	if (ret)
-		goto out_free_wimlib_dentry;
-
-	if (!(flags & WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN)) {
-		ret = (*cb)(wdentry, user_ctx);
-		if (ret)
-			goto out_free_wimlib_dentry;
-	}
-
-	if (flags & (WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE |
-		     WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN))
-	{
-		struct iterate_dir_tree_ctx ctx = {
-			.wim      = wim,
-			.flags    = flags &= ~WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN,
-			.cb       = cb,
-			.user_ctx = user_ctx,
-		};
-		ret = for_dentry_child(dentry, call_do_iterate_dir_tree, &ctx);
-	}
-out_free_wimlib_dentry:
-	free_wimlib_dentry(wdentry);
-out:
-	return ret;
-}
-
-struct image_iterate_dir_tree_ctx {
-	const tchar *path;
-	int flags;
-	wimlib_iterate_dir_tree_callback_t cb;
-	void *user_ctx;
-};
-
-
-static int
-image_do_iterate_dir_tree(WIMStruct *wim)
-{
-	struct image_iterate_dir_tree_ctx *ctx = wim->private;
-	struct wim_dentry *dentry;
-
-	dentry = get_dentry(wim, ctx->path, WIMLIB_CASE_PLATFORM_DEFAULT);
-	if (dentry == NULL)
-		return WIMLIB_ERR_PATH_DOES_NOT_EXIST;
-	return do_iterate_dir_tree(wim, dentry, ctx->flags, ctx->cb, ctx->user_ctx);
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *_path,
-			int flags,
-			wimlib_iterate_dir_tree_callback_t cb, void *user_ctx)
-{
-	tchar *path;
-	int ret;
-
-	path = canonicalize_wim_path(_path);
-	if (path == NULL)
-		return WIMLIB_ERR_NOMEM;
-	struct image_iterate_dir_tree_ctx ctx = {
-		.path = path,
-		.flags = flags,
-		.cb = cb,
-		.user_ctx = user_ctx,
-	};
-	wim->private = &ctx;
-	ret = for_image(wim, image, image_do_iterate_dir_tree);
-	FREE(path);
-	return ret;
-}
-
-/* Returns %true iff the metadata of @inode and @template_inode are reasonably
- * consistent with them being the same, unmodified file.  */
-static bool
-inode_metadata_consistent(const struct wim_inode *inode,
-			  const struct wim_inode *template_inode,
-			  const struct wim_lookup_table *template_lookup_table)
-{
-	/* Must have exact same creation time and last write time.  */
-	if (inode->i_creation_time != template_inode->i_creation_time ||
-	    inode->i_last_write_time != template_inode->i_last_write_time)
-		return false;
-
-	/* Last access time may have stayed the same or increased, but certainly
-	 * shouldn't have decreased.  */
-	if (inode->i_last_access_time < template_inode->i_last_access_time)
-		return false;
-
-	/* Must have same number of alternate data stream entries.  */
-	if (inode->i_num_ads != template_inode->i_num_ads)
-		return false;
-
-	/* If the stream entries for the inode are for some reason not resolved,
-	 * then the hashes are already available and the point of this function
-	 * is defeated.  */
-	if (!inode->i_resolved)
-		return false;
-
-	/* Iterate through each stream and do some more checks.  */
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		const struct wim_lookup_table_entry *lte, *template_lte;
-
-		lte = inode_stream_lte_resolved(inode, i);
-		template_lte = inode_stream_lte(template_inode, i,
-						template_lookup_table);
-
-		/* Compare stream sizes.  */
-		if (lte && template_lte) {
-			if (lte->size != template_lte->size)
-				return false;
-
-			/* If hash happens to be available, compare with template.  */
-			if (!lte->unhashed && !template_lte->unhashed &&
-			    !hashes_equal(lte->hash, template_lte->hash))
-				return false;
-
-		} else if (lte && lte->size) {
-			return false;
-		} else if (template_lte && template_lte->size) {
-			return false;
-		}
-	}
-
-	/* All right, barring a full checksum and given that the inodes share a
-	 * path and the user isn't trying to trick us, these inodes most likely
-	 * refer to the same file.  */
-	return true;
-}
-
-/**
- * Given an inode @inode that has been determined to be "the same" as another
- * inode @template_inode in either the same WIM or another WIM, retrieve some
- * useful stream information (e.g. checksums) from @template_inode.
- *
- * This assumes that the streams for @inode have been resolved (to point
- * directly to the appropriate `struct wim_lookup_table_entry's)  but do not
- * necessarily have checksum information filled in.
- */
-static int
-inode_copy_checksums(struct wim_inode *inode,
-		     struct wim_inode *template_inode,
-		     WIMStruct *wim,
-		     WIMStruct *template_wim)
-{
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		struct wim_lookup_table_entry *lte, *template_lte;
-		struct wim_lookup_table_entry *replace_lte;
-
-		lte = inode_stream_lte_resolved(inode, i);
-		template_lte = inode_stream_lte(template_inode, i,
-						template_wim->lookup_table);
-
-		/* Only take action if both entries exist, the entry for @inode
-		 * has no checksum calculated, but the entry for @template_inode
-		 * does.  */
-		if (lte == NULL || template_lte == NULL ||
-		    !lte->unhashed || template_lte->unhashed)
-			continue;
-
-		wimlib_assert(lte->refcnt == inode->i_nlink);
-
-		/* If the WIM of the template image is the same as the WIM of
-		 * the new image, then @template_lte can be used directly.
-		 *
-		 * Otherwise, look for a stream with the same hash in the WIM of
-		 * the new image.  If found, use it; otherwise re-use the entry
-		 * being discarded, filling in the hash.  */
-
-		if (wim == template_wim)
-			replace_lte = template_lte;
-		else
-			replace_lte = lookup_resource(wim->lookup_table,
-						      template_lte->hash);
-
-		list_del(&lte->unhashed_list);
-		if (replace_lte) {
-			free_lookup_table_entry(lte);
-		} else {
-			copy_hash(lte->hash, template_lte->hash);
-			lte->unhashed = 0;
-			lookup_table_insert(wim->lookup_table, lte);
-			lte->refcnt = 0;
-			replace_lte = lte;
-		}
-
-		if (i == 0)
-			inode->i_lte = replace_lte;
-		else
-			inode->i_ads_entries[i - 1].lte = replace_lte;
-
-		replace_lte->refcnt += inode->i_nlink;
-	}
-	return 0;
-}
-
-struct reference_template_args {
-	WIMStruct *wim;
-	WIMStruct *template_wim;
-};
-
-static int
-dentry_reference_template(struct wim_dentry *dentry, void *_args)
-{
-	int ret;
-	struct wim_dentry *template_dentry;
-	struct wim_inode *inode, *template_inode;
-	struct reference_template_args *args = _args;
-	WIMStruct *wim = args->wim;
-	WIMStruct *template_wim = args->template_wim;
-
-	if (dentry->d_inode->i_visited)
-		return 0;
-
-	ret = calculate_dentry_full_path(dentry);
-	if (ret)
-		return ret;
-
-	template_dentry = get_dentry(template_wim, dentry->_full_path,
-				     WIMLIB_CASE_SENSITIVE);
-	if (template_dentry == NULL) {
-		DEBUG("\"%"TS"\": newly added file", dentry->_full_path);
-		return 0;
-	}
-
-	inode = dentry->d_inode;
-	template_inode = template_dentry->d_inode;
-
-	if (inode_metadata_consistent(inode, template_inode,
-				      template_wim->lookup_table)) {
-		/*DEBUG("\"%"TS"\": No change detected", dentry->_full_path);*/
-		ret = inode_copy_checksums(inode, template_inode,
-					   wim, template_wim);
-		inode->i_visited = 1;
-	} else {
-		DEBUG("\"%"TS"\": change detected!", dentry->_full_path);
-		ret = 0;
-	}
-	return ret;
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_reference_template_image(WIMStruct *wim, int new_image,
-				WIMStruct *template_wim, int template_image,
-				int flags, wimlib_progress_func_t progress_func)
-{
-	int ret;
-	struct wim_image_metadata *new_imd;
-
-	if (wim == NULL || template_wim == NULL)
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	if (wim == template_wim && new_image == template_image)
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	if (new_image < 1 || new_image > wim->hdr.image_count)
-		return WIMLIB_ERR_INVALID_IMAGE;
-
-	if (!wim_has_metadata(wim))
-		return WIMLIB_ERR_METADATA_NOT_FOUND;
-
-	new_imd = wim->image_metadata[new_image - 1];
-	if (!new_imd->modified)
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	ret = select_wim_image(template_wim, template_image);
-	if (ret)
-		return ret;
-
-	struct reference_template_args args = {
-		.wim = wim,
-		.template_wim = template_wim,
-	};
-
-	ret = for_dentry_in_tree(new_imd->root_dentry,
-				 dentry_reference_template, &args);
-	dentry_tree_clear_inode_visited(new_imd->root_dentry);
-	return ret;
 }

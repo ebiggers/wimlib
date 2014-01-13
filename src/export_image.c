@@ -28,6 +28,7 @@
 #include "wimlib.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
+#include "wimlib/inode.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/xml.h"
@@ -42,7 +43,7 @@ inode_export_streams(struct wim_inode *inode,
 	const u8 *hash;
 	struct wim_lookup_table_entry *src_lte, *dest_lte;
 
-	inode_unresolve_ltes(inode);
+	inode_unresolve_streams(inode);
 	for (i = 0; i <= inode->i_num_ads; i++) {
 
 		/* Retrieve SHA1 message digest of stream to export.  */
@@ -52,14 +53,14 @@ inode_export_streams(struct wim_inode *inode,
 
 		/* Search for the stream (via SHA1 message digest) in the
 		 * destination WIM.  */
-		dest_lte = lookup_resource(dest_lookup_table, hash);
+		dest_lte = lookup_stream(dest_lookup_table, hash);
 		if (!dest_lte) {
 			/* Stream not yet present in destination WIM.  Search
 			 * for it in the source WIM, then export it into the
 			 * destination WIM.  */
-			src_lte = lookup_resource(src_lookup_table, hash);
+			src_lte = lookup_stream(src_lookup_table, hash);
 			if (!src_lte)
-				return resource_not_found_error(inode, hash);
+				return stream_not_found_error(inode, hash);
 
 			dest_lte = clone_lookup_table_entry(src_lte);
 			if (!dest_lte)

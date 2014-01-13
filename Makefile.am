@@ -33,9 +33,11 @@ libwim_la_SOURCES =		\
 	src/export_image.c	\
 	src/extract.c		\
 	src/file_io.c		\
-	src/hardlink.c		\
 	src/header.c		\
+	src/inode.c		\
+	src/inode_fixup.c	\
 	src/integrity.c		\
+	src/iterate_dir.c	\
 	src/join.c		\
 	src/lookup_table.c	\
 	src/lzms-common.c	\
@@ -57,10 +59,12 @@ libwim_la_SOURCES =		\
 	src/paths.c		\
 	src/resource.c		\
 	src/rbtree.c		\
+	src/reference.c		\
 	src/security.c		\
 	src/sha1.c		\
 	src/split.c		\
 	src/reparse.c		\
+	src/template.c		\
 	src/timestamp.c		\
 	src/update_image.c	\
 	src/util.c		\
@@ -75,6 +79,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/assert.h		\
 	include/wimlib/callback.h	\
 	include/wimlib/capture.h	\
+	include/wimlib/case.h		\
 	include/wimlib/compiler.h	\
 	include/wimlib/compressor_ops.h	\
 	include/wimlib/compress_common.h	\
@@ -88,6 +93,8 @@ libwim_la_SOURCES =		\
 	include/wimlib/file_io.h	\
 	include/wimlib/glob.h		\
 	include/wimlib/header.h		\
+	include/wimlib/inode.h		\
+	include/wimlib/inode_table.h	\
 	include/wimlib/integrity.h	\
 	include/wimlib/list.h		\
 	include/wimlib/lookup_table.h	\
@@ -108,6 +115,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/sha1.h		\
 	include/wimlib/timestamp.h	\
 	include/wimlib/types.h		\
+	include/wimlib/unix_data.h	\
 	include/wimlib/util.h		\
 	include/wimlib/version.h	\
 	include/wimlib/wildcard.h	\

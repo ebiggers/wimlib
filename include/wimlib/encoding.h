@@ -47,4 +47,9 @@ cmp_utf16le_strings(const utf16lechar *s1, size_t n1,
 		    const utf16lechar *s2, size_t n2,
 		    bool ignore_case);
 
+extern int
+get_utf16le_string(const tchar *name, utf16lechar **name_utf16le_ret,
+		   u16 *name_utf16le_nbytes_ret);
+
+
 #endif /* _WIMLIB_ENCODING_H */

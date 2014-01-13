@@ -39,6 +39,7 @@
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/header.h"
+#include "wimlib/inode.h"
 #include "wimlib/integrity.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
@@ -1842,7 +1843,7 @@ determine_stream_size_uniquity(struct list_head *stream_list,
 	struct stream_size_table tab;
 	struct wim_lookup_table_entry *lte;
 
-	ret = init_stream_size_table(&tab, lt->capacity);
+	ret = init_stream_size_table(&tab, 9001);
 	if (ret)
 		return ret;
 

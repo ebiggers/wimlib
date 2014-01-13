@@ -272,7 +272,7 @@ do_test 'echo -n 8 > file;
 	 setfattr -n user.ads3 anotherfile -v 33;
 	 echo -n > emptyfile;
 	 setfattr -n user.ads emptyfile -v 8;
-	 setfattr -n user.ads5 emptyfile -v"`cat $srcdir/src/hardlink.c`"
+	 setfattr -n user.ads5 emptyfile -v"`cat $srcdir/src/sha1.c`"
 	 mkdir dir/subdir;
 	 ln file dir/subdir/file;
 	 echo -n 8 > dir/subdir/file2;
