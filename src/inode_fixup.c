@@ -441,7 +441,8 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list)
 	if (ino_changes_needed) {
 		u64 cur_ino = 1;
 
-		WARNING("Re-assigning inode numbers due to inode inconsistencies");
+		WARNING("The WIM image contains invalid hard links.  Fixing.");
+
 		list_for_each_entry(inode, inode_list, i_list) {
 			if (inode->i_nlink > 1)
 				inode->i_ino = cur_ino++;

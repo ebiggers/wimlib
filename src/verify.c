@@ -37,13 +37,6 @@ static int
 lte_fix_refcnt(struct wim_lookup_table_entry *lte, void *ctr)
 {
 	if (lte->refcnt != lte->real_refcnt) {
-		if (wimlib_print_errors) {
-			WARNING("The following lookup table entry has a reference "
-				"count of %u, but", lte->refcnt);
-			WARNING("We found %u references to it",
-				lte->real_refcnt);
-			print_lookup_table_entry(lte, stderr);
-		}
 		lte->refcnt = lte->real_refcnt;
 		++*(unsigned long *)ctr;
 	}
@@ -98,9 +91,7 @@ wim_recalculate_refcnts(WIMStruct *wim)
 	for_lookup_table_entry(wim->lookup_table, lte_fix_refcnt,
 			       &num_ltes_with_bogus_refcnt);
 	if (num_ltes_with_bogus_refcnt != 0) {
-		WARNING("A total of %lu entries in the WIM's stream "
-			"lookup table had to have\n"
-			"          their reference counts fixed.",
+		WARNING("%lu stream(s) had incorrect reference count.",
 			num_ltes_with_bogus_refcnt);
 	}
 	wim->refcnts_ok = 1;
