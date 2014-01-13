@@ -1430,11 +1430,11 @@ write_stream_list(struct list_head *stream_list,
 	 * to do compression.  There are serial and parallel implementations of
 	 * the chunk_compressor interface.  We default to parallel using the
 	 * specified number of threads, unless the upper bound on the number
-	 * bytes needing to be compressed is less 2000000 (heuristic value).  */
+	 * bytes needing to be compressed is less than a heuristic value.  */
 	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
 
 	#ifdef ENABLE_MULTITHREADED_COMPRESSION
-		if (ctx.num_bytes_to_compress >= 2000000) {
+		if (ctx.num_bytes_to_compress > max(2000000, out_chunk_size)) {
 			ret = new_parallel_chunk_compressor(out_ctype,
 							    out_chunk_size,
 							    num_threads, 0,
