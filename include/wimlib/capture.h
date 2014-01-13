@@ -71,20 +71,6 @@ copy_and_canonicalize_capture_config(const struct wimlib_capture_config *config,
 extern void
 free_capture_config(struct wimlib_capture_config *config);
 
-/* hardlink.c */
-
-extern int
-init_inode_table(struct wim_inode_table *table, size_t capacity);
-
-extern int
-inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
-		       u64 ino, u64 devno, bool noshare,
-		       struct wim_dentry **dentry_ret);
-
-extern void
-inode_table_prepare_inode_list(struct wim_inode_table *table,
-			       struct list_head *head);
-
 
 #ifdef WITH_NTFS_3G
 /* ntfs-3g_capture.c */
