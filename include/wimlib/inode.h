@@ -61,10 +61,10 @@ struct wim_inode {
 
 	/* Field to place this inode into a list. */
 	union {
-		/* Hash list node- used in hardlink.c when the inodes are placed
-		 * into a hash table keyed by inode number and optionally device
-		 * number, in order to detect dentries that are aliases for the
-		 * same inode. */
+		/* Hash list node- used in inode_fixup.c when the inodes are
+		 * placed into a hash table keyed by inode number and optionally
+		 * device number, in order to detect dentries that are aliases
+		 * for the same inode. */
 		struct hlist_node i_hlist;
 
 		/* Normal list node- used to connect all the inodes of a WIM image

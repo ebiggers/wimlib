@@ -44,7 +44,7 @@ struct wim_security_data;
  * that Microsoft may have fixed this problem, since I've only noticed it in the
  * 'install.wim' for Windows 7).  For those dentries, we have to use the
  * conflicting fields to split up the hard link groups.  (See
- * dentry_tree_fix_inodes() in hardlink.c).
+ * dentry_tree_fix_inodes() in inode_fixup.c.)
  */
 struct wim_dentry {
 	/* Pointer to the inode for this dentry.  This will contain some
