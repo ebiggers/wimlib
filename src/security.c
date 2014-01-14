@@ -52,8 +52,7 @@ new_wim_security_data(void)
  *
  * @metadata_resource:	An array that contains the uncompressed metadata
  *				resource for the WIM image.
- * @metadata_resource_len:	The length of @metadata_resource.  It must be at
- *				least 8 bytes.
+ * @metadata_resource_len:	The length of @metadata_resource.
  * @sd_ret:	A pointer to a pointer to a wim_security_data structure that
  *		will be filled in with a pointer to a new wim_security_data
  *		structure containing the security data on success.
@@ -78,7 +77,8 @@ read_wim_security_data(const u8 metadata_resource[], size_t metadata_resource_le
 	const struct wim_security_data_disk *sd_disk;
 	const u8 *p;
 
-	wimlib_assert(metadata_resource_len >= 8);
+	if (metadata_resource_len < 8)
+		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 
 	sd = new_wim_security_data();
 	if (!sd)
@@ -165,6 +165,8 @@ out_align_total_length:
 			"%u bytes, but calculated %u bytes",
 			sd->total_length, (unsigned)total_len);
 	}
+	if (sd->total_length > metadata_resource_len)
+		goto out_invalid_sd;
 	*sd_ret = sd;
 	ret = 0;
 	goto out;

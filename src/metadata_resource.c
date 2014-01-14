@@ -73,17 +73,7 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	metadata_lte = imd->metadata_lte;
 	metadata_len = metadata_lte->size;
 
-	DEBUG("Reading metadata resource.");
-
-	/* There is no way the metadata resource could possibly be less than (8
-	 * + WIM_DENTRY_DISK_SIZE) bytes, where the 8 is for security data (with
-	 * no security descriptors) and WIM_DENTRY_DISK_SIZE is for the root
-	 * entry. */
-	if (metadata_len < 8 + WIM_DENTRY_DISK_SIZE) {
-		ERROR("Expected at least %u bytes for the metadata resource",
-		      8 + WIM_DENTRY_DISK_SIZE);
-		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-	}
+	DEBUG("Reading metadata resource (size=%"PRIu64").", metadata_len);
 
 	/* Read the metadata resource into memory.  (It may be compressed.) */
 	ret = read_full_stream_into_alloc_buf(metadata_lte, &buf);
@@ -158,19 +148,19 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 
 	inode_add_dentry(root, root->d_inode);
 
-	/* Now read the entire directory entry tree into memory. */
+	/* Now read the entire directory entry tree into memory.  */
 	DEBUG("Reading dentry tree");
 	ret = read_dentry_tree(buf, metadata_len, root);
 	if (ret)
 		goto out_free_dentry_tree;
 
-	/* Build hash table that maps hard link group IDs to dentry sets */
+	/* Calculate inodes.  */
 	ret = dentry_tree_fix_inodes(root, &imd->inode_list);
 	if (ret)
 		goto out_free_dentry_tree;
 
 
-	DEBUG("Running miscellaneous verifications on the dentry tree");
+	DEBUG("Verifying inodes.");
 	image_for_each_inode(inode, imd) {
 		ret = verify_inode(inode, security_data);
 		if (ret)
