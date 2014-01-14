@@ -142,9 +142,6 @@ for_image(WIMStruct *wim, int image, int (*visitor)(WIMStruct *));
 extern int
 wim_checksum_unhashed_streams(WIMStruct *wim);
 
-extern int
-reopen_wim(WIMStruct *wim);
-
 /* Internal open flags (pass to open_wim_as_WIMStruct(), not wimlib_open_wim())
  */
 #define WIMLIB_OPEN_FLAG_FROM_PIPE	0x80000000

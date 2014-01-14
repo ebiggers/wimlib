@@ -534,7 +534,7 @@ wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size)
 }
 
 static int
-do_open_wim(const tchar *filename, struct filedes *fd_ret)
+open_wim_file(const tchar *filename, struct filedes *fd_ret)
 {
 	int raw_fd;
 
@@ -544,23 +544,6 @@ do_open_wim(const tchar *filename, struct filedes *fd_ret)
 		return WIMLIB_ERR_OPEN;
 	}
 	filedes_init(fd_ret, raw_fd);
-	return 0;
-}
-
-int
-reopen_wim(WIMStruct *wim)
-{
-	wimlib_assert(!filedes_valid(&wim->in_fd));
-	return do_open_wim(wim->filename, &wim->in_fd);
-}
-
-int
-close_wim(WIMStruct *wim)
-{
-	if (filedes_valid(&wim->in_fd)) {
-		filedes_close(&wim->in_fd);
-		filedes_invalidate(&wim->in_fd);
-	}
 	return 0;
 }
 
@@ -582,7 +565,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 		wim->in_fd.is_pipe = 1;
 	} else {
 		wimfile = wim_filename_or_fd;
-		ret = do_open_wim(wimfile, &wim->in_fd);
+		ret = open_wim_file(wimfile, &wim->in_fd);
 		if (ret)
 			return ret;
 

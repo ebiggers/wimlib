@@ -3123,7 +3123,10 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags,
 		return ret;
 	}
 
-	close_wim(wim);
+	if (filedes_valid(&wim->in_fd)) {
+		filedes_close(&wim->in_fd);
+		filedes_invalidate(&wim->in_fd);
+	}
 
 	/* Rename the new WIM file to the original WIM file.  Note: on Windows
 	 * this actually calls win32_rename_replacement(), not _wrename(), so
