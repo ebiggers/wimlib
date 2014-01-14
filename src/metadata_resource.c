@@ -184,7 +184,7 @@ out_success:
 	ret = 0;
 	goto out_free_buf;
 out_free_dentry_tree:
-	free_dentry_tree(root, wim->lookup_table);
+	free_dentry_tree(root, NULL);
 out_free_security_data:
 	free_wim_security_data(security_data);
 out_free_buf:
