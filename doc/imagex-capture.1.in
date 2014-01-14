@@ -202,18 +202,23 @@ compression ratio.  This currently only has an effect for LZX ("maximum", the
 default) and LZMS ("recovery") compression.
 .TP
 \fB--chunk-size\fR=\fISIZE\fR
-Set the WIM compression chunk size to \fISIZE\fR.  Using this option is not
-recommended because WIM chunk sizes other than the default of 32768 have varying
-levels of compatibility with Microsoft's software (depending on the compression
-type, chunk size, and software version).  In addition, wimlib versions before
-1.6.0 do not support alternate chunk sizes.  But if you decide to use this
-option regardless, you can choose a chunk size that is a power of 2 greater than
-or equal to 2^15 (32768) up to a maximum determined by the compression format.
-Larger chunks mean larger LZ77 dictionaries and better compression ratios on
-sufficiently large files, but slower random access.  For LZX ("maximum")
-compression, the maximum allowed chunk size is 2^21 (2097152), and for XPRESS
-("fast") and LZMS ("recovery") compression, the maximum allowed chunk size is
-2^26 (67108644).
+Set the WIM compression chunk size to \fISIZE\fR.  Larger chunks mean larger
+LZ77 dictionaries and better compression ratios on sufficiently large files, but
+slower random access.  \fBUsing this option is generally not recommended because
+of the compatibility limitations detailed in the next paragraph.\fR  But if you
+decide to use this option regardless, you may choose a chunk size that is a
+power of 2 greater than or equal to 2^15 (32768) up to a maximum determined by
+the compression format.  For LZX ("maximum") compression, the maximum allowed
+chunk size is 2^21 (2097152), and for XPRESS ("fast") and LZMS ("recovery")
+compression, the maximum allowed chunk size is 2^26 (67108864).
+.IP ""
+For XPRESS and LZX compression, Microsoft's implementation (as of Windows 8)
+does not appear to support alternate chunk sizes; although it will still open
+such files, it will crash, extract the data incorrectly, or report that the data
+is invalid.  For LZMS compression, Micrososft's implementation (as of Windows 8)
+appears to only support chunk sizes that are powers of 2 between 2^15 (32768)
+and 2^20 (1048576) inclusively.  In addition, wimlib versions before 1.6.0 do
+not support alternate chunk sizes.
 .TP
 \fB--pack-streams\fR, \fB--solid\fR
 Create a "solid" archive that compresses multiple unique streams ("files")

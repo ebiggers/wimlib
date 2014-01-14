@@ -3383,23 +3383,21 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  * Set the compression chunk size of a WIM to use in subsequent calls to
  * wimlib_write() or wimlib_overwrite().
  *
- * A compression chunk size will result in a greater compression ratio, but the
- * speed of random access to the WIM will be reduced, and the effect of an
- * increased compression chunk size is limited by the size of each file being
- * compressed.
+ * For compatibility reasons, using this function is not generally recommended.
+ * See the documentation for the @c --chunk-size option of <b>wimlib-imagex
+ * capture</b> for more information.
  *
- * <b>WARNING: Microsoft's software is seemingly incompatible with LZX chunk
- * sizes other than 32768.  Chunk sizes other than 32768 (for any format) are
- * also incompatible with wimlib v1.5.3 and earlier.</b>
+ * A larger compression chunk size will likely result in a better compression
+ * ratio, but the speed of random access to the WIM will be reduced.
+ * Furthermore, the effect of a larger compression chunk size is limited by the
+ * size of each stream ("file") being compressed.
  *
  * @param wim
  *	::WIMStruct for a WIM.
  * @param chunk_size
  *	The chunk size (in bytes) to set.  The valid chunk sizes are dependent
- *	on the compression format.  The XPRESS and LZMS compression formats
- *	support chunk sizes that are powers of 2 with exponents between 15 and
- *	26 inclusively, whereas the LZX compression format supports chunk sizes
- *	that are powers of 2 with exponents between 15 and 21 inclusively.  As a
+ *	on the compression format; see the documentation for the @c --chunk-size
+ *	option of <b>wimlib-imagex capture</b> for more information.  As a
  *	special case, if @p chunk_size is specified as 0, the chunk size is set
  *	to the default for the currently selected output compression type.
  *
@@ -3416,7 +3414,8 @@ wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size);
  * @ingroup G_writing_and_overwriting_wims
  *
  * Similar to wimlib_set_output_chunk_size(), but set the chunk size for writing
- * packed streams.
+ * packed streams.  For compatibility reasons, using this function is not
+ * generally recommended.
  */
 extern int
 wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size);

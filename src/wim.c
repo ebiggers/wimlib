@@ -130,30 +130,14 @@ wim_chunk_size_valid(u32 chunk_size, int ctype)
 	 * 25		33554432
 	 * 26		67108864
 	 */
+
+	/* See the documentation for the --chunk-size option of `wimlib-imagex
+	 * capture' for information about allowed chunk sizes.  */
 	switch (ctype) {
 	case WIMLIB_COMPRESSION_TYPE_LZX:
-		/* For LZX compression, the chunk size corresponds to the LZX
-		 * window size, which according the LZX specification can be any
-		 * power of 2 between 2^15 and 2^21, inclusively.  All these are
-		 * supported by wimlib; however, unfortunately only 2^15 is
-		 * supported by WIMGAPI[1] so this value is used by default.
-		 *
-		 * [1] WIMGAPI (Windows 7) attempts to decompress LZX chunk
-		 * sizes > 2^15 but seems to have bug(s) that cause it to fail
-		 * or crash.  (I tried several tweaks to the LZX data but none
-		 * resulted in successful decompression.)  WIMGAPI (Windows 8)
-		 * appears to refuse to open WIMs with chunk size > 2^15
-		 * entirely.  */
 		return order >= 15 && order <= 21;
 
 	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		/* WIMGAPI (Windows 7, Windows 8) doesn't seem to support XPRESS
-		 * chunk size below 32768 bytes, but larger power-of-two sizes,
-		 * up ta 67108864 bytes, appear to work.  (Note, however, that
-		 * the offsets of XPRESS matches are still limited to 65535
-		 * bytes even when a much larger chunk size is used!)  */
-		return order >= 15 && order <= 26;
-
 	case WIMLIB_COMPRESSION_TYPE_LZMS:
 		return order >= 15 && order <= 26;
 	}
@@ -175,10 +159,10 @@ wim_default_chunk_size(int ctype)
 }
 
 /*
- * Calls a function on images in the WIM.  If @image is WIMLIB_ALL_IMAGES, @visitor
- * is called on the WIM once for each image, with each image selected as the
- * current image in turn.  If @image is a certain image, @visitor is called on
- * the WIM only once, with that image selected.
+ * Calls a function on images in the WIM.  If @image is WIMLIB_ALL_IMAGES,
+ * @visitor is called on the WIM once for each image, with each image selected
+ * as the current image in turn.  If @image is a certain image, @visitor is
+ * called on the WIM only once, with that image selected.
  */
 int
 for_image(WIMStruct *wim, int image, int (*visitor)(WIMStruct *))
