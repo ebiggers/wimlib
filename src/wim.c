@@ -87,8 +87,8 @@ new_wim_struct(void)
 {
 	WIMStruct *wim = CALLOC(1, sizeof(WIMStruct));
 	if (wim) {
-		wim->in_fd.fd = -1;
-		wim->out_fd.fd = -1;
+		filedes_invalidate(&wim->in_fd);
+		filedes_invalidate(&wim->out_fd);
 		wim->out_pack_compression_type = wim_default_pack_compression_type();
 		wim->out_pack_chunk_size = wim_default_pack_chunk_size(
 						wim->out_pack_compression_type);
