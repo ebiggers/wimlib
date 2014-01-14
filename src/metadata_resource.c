@@ -33,13 +33,7 @@
 #include "wimlib/write.h"
 
 /*
- * Reads a metadata resource for an image in the WIM file.  The metadata
- * resource consists of the security data, followed by the directory entry for
- * the root directory, followed by all the other directory entries in the
- * filesystem.  The subdir_offset field of each directory entry gives the start
- * of its child entries from the beginning of the metadata resource.  An
- * end-of-directory is signaled by a directory entry of length '0', really of
- * length 8, because that's how long the 'length' field is.
+ * Reads and parses a metadata resource for an image in the WIM file.
  *
  * @wim:
  *	Pointer to the WIMStruct for the WIM file.
@@ -61,27 +55,27 @@
 int
 read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 {
+	const struct wim_lookup_table_entry *metadata_lte;
 	void *buf;
 	int ret;
+	struct wim_security_data *sd;
 	struct wim_dentry *root;
-	const struct wim_lookup_table_entry *metadata_lte;
-	u64 metadata_len;
-	u8 hash[SHA1_HASH_SIZE];
-	struct wim_security_data *security_data;
 	struct wim_inode *inode;
 
 	metadata_lte = imd->metadata_lte;
-	metadata_len = metadata_lte->size;
 
-	DEBUG("Reading metadata resource (size=%"PRIu64").", metadata_len);
+	DEBUG("Reading metadata resource (size=%"PRIu64").", metadata_lte->size);
 
-	/* Read the metadata resource into memory.  (It may be compressed.) */
+	/* Read the metadata resource into memory.  (It may be compressed.)  */
 	ret = read_full_stream_into_alloc_buf(metadata_lte, &buf);
 	if (ret)
 		return ret;
 
+	/* Checksum the metadata resource.  */
 	if (!metadata_lte->dont_check_metadata_hash) {
-		sha1_buffer(buf, metadata_len, hash);
+		u8 hash[SHA1_HASH_SIZE];
+
+		sha1_buffer(buf, metadata_lte->size, hash);
 		if (!hashes_equal(metadata_lte->hash, hash)) {
 			ERROR("Metadata resource is corrupted "
 			      "(invalid SHA-1 message digest)!");
@@ -90,93 +84,51 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 		}
 	}
 
-	DEBUG("Finished reading metadata resource into memory.");
+	/* Parse the metadata resource.
+	 *
+	 * Notes: The metadata resource consists of the security data, followed
+	 * by the directory entry for the root directory, followed by all the
+	 * other directory entries in the filesystem.  The subdir_offset field
+	 * of each directory entry gives the start of its child entries from the
+	 * beginning of the metadata resource.  An end-of-directory is signaled
+	 * by a directory entry of length '0', really of length 8, because
+	 * that's how long the 'length' field is.  */
 
-	ret = read_wim_security_data(buf, metadata_len, &security_data);
+	ret = read_wim_security_data(buf, metadata_lte->size, &sd);
 	if (ret)
 		goto out_free_buf;
 
-	DEBUG("Reading root dentry");
-
-	/* Allocate memory for the root dentry and read it into memory */
-	root = MALLOC(sizeof(struct wim_dentry));
-	if (!root) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_security_data;
-	}
-
-	/* The root directory entry starts after security data, aligned on an
-	 * 8-byte boundary within the metadata resource.  Since
-	 * security_data->total_length was already rounded up to an 8-byte
-	 * boundary, its value can be used as the offset of the root directory
-	 * entry.  */
-	ret = read_dentry(buf, metadata_len,
-			  security_data->total_length, root);
-
-	if (ret == 0 && root->length == 0) {
-		WARNING("Metadata resource begins with end-of-directory entry "
-			"(treating as empty image)");
-		FREE(root);
-		root = NULL;
-		goto out_success;
-	}
-
-	if (ret) {
-		FREE(root);
-		goto out_free_security_data;
-	}
-
-	if (dentry_has_long_name(root) || dentry_has_short_name(root)) {
-		WARNING("The root directory has a nonempty name (removing it)");
-		FREE(root->file_name);
-		FREE(root->short_name);
-		root->file_name = NULL;
-		root->short_name = NULL;
-		root->file_name_nbytes = 0;
-		root->short_name_nbytes = 0;
-	}
-
-	if (!dentry_is_directory(root)) {
-		ERROR("Root of the WIM image must be a directory!");
-		FREE(root);
-		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-		goto out_free_security_data;
-	}
-
-	/* This is the root dentry, so set its parent to itself. */
-	root->parent = root;
-
-	inode_add_dentry(root, root->d_inode);
-
-	/* Now read the entire directory entry tree into memory.  */
-	DEBUG("Reading dentry tree");
-	ret = read_dentry_tree(buf, metadata_len, root);
+	ret = read_dentry_tree(buf, metadata_lte->size, sd->total_length, &root);
 	if (ret)
-		goto out_free_dentry_tree;
+		goto out_free_security_data;
 
-	/* Calculate inodes.  */
+	/* We have everything we need from the buffer now.  */
+	FREE(buf);
+	buf = NULL;
+
+	/* Calculate and validate inodes.  */
+
 	ret = dentry_tree_fix_inodes(root, &imd->inode_list);
 	if (ret)
 		goto out_free_dentry_tree;
 
-
-	DEBUG("Verifying inodes.");
 	image_for_each_inode(inode, imd) {
-		ret = verify_inode(inode, security_data);
+		ret = verify_inode(inode, sd);
 		if (ret)
 			goto out_free_dentry_tree;
 	}
-	DEBUG("Done reading image metadata");
-out_success:
+
+	/* Success; fill in the image_metadata structure.  */
 	imd->root_dentry = root;
-	imd->security_data = security_data;
+	imd->security_data = sd;
 	INIT_LIST_HEAD(&imd->unhashed_streams);
-	ret = 0;
-	goto out_free_buf;
+	DEBUG("Done parsing metadata resource.");
+	return 0;
+
 out_free_dentry_tree:
 	free_dentry_tree(root, NULL);
 out_free_security_data:
-	free_wim_security_data(security_data);
+	free_wim_security_data(sd);
 out_free_buf:
 	FREE(buf);
 	return ret;

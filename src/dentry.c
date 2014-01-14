@@ -1064,16 +1064,18 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 		return WIMLIB_ERR_NOMEM;
 
 	dentry_common_init(dentry);
-	ret = dentry_set_name(dentry, name);
-	if (ret == 0) {
-		dentry->parent = dentry;
-		*dentry_ret = dentry;
-	} else {
-		FREE(dentry);
-		ERROR("Failed to set name on new dentry with name \"%"TS"\"",
-		      name);
+	if (*name) {
+		ret = dentry_set_name(dentry, name);
+		if (ret) {
+			FREE(dentry);
+			ERROR("Failed to set name on new dentry with name \"%"TS"\"",
+			      name);
+			return ret;
+		}
 	}
-	return ret;
+	dentry->parent = dentry;
+	*dentry_ret = dentry;
+	return 0;
 }
 
 static int
@@ -1392,103 +1394,80 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 	return 0;
 }
 
-/*
- * Reads a WIM directory entry, including all alternate data stream entries that
- * follow it, from the WIM image's metadata resource.
- *
- * @metadata_resource:
- *		Pointer to the metadata resource buffer.
- *
- * @metadata_resource_len:
- *		Length of the metadata resource buffer, in bytes.
- *
- * @offset:	Offset of the dentry within the metadata resource.
- *
- * @dentry:	A `struct wim_dentry' that will be filled in by this function.
- *
- * Return 0 on success or nonzero on failure.  On failure, @dentry will have
- * been modified, but it will not be left with pointers to any allocated
- * buffers.  On success, the dentry->length field must be examined.  If zero,
- * this was a special "end of directory" dentry and not a real dentry.  If
- * nonzero, this was a real dentry.
- *
- * Return values:
- *	WIMLIB_ERR_SUCCESS (0)
- *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
- *	WIMLIB_ERR_NOMEM
- */
-int
-read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
-	    u64 offset, struct wim_dentry * restrict dentry)
+/* Reads a WIM directory entry, including all alternate data stream entries that
+ * follow it, from the WIM image's metadata resource.  */
+static int
+read_dentry(const u8 * restrict buf, size_t buf_len,
+	    u64 offset, struct wim_dentry **dentry_ret)
 {
-
-	u64 calculated_size;
-	utf16lechar *file_name;
-	utf16lechar *short_name;
+	u64 length;
+	const u8 *p;
+	const struct wim_dentry_on_disk *disk_dentry;
+	struct wim_dentry *dentry;
+	struct wim_inode *inode;
 	u16 short_name_nbytes;
 	u16 file_name_nbytes;
+	u64 calculated_size;
 	int ret;
-	struct wim_inode *inode;
-	const u8 *p = &metadata_resource[offset];
-	const struct wim_dentry_on_disk *disk_dentry =
-			(const struct wim_dentry_on_disk*)p;
 
 	BUILD_BUG_ON(sizeof(struct wim_dentry_on_disk) != WIM_DENTRY_DISK_SIZE);
-
-	if ((uintptr_t)p & 7)
-		WARNING("WIM dentry is not 8-byte aligned");
-
-	dentry_common_init(dentry);
 
 	/* Before reading the whole dentry, we need to read just the length.
 	 * This is because a dentry of length 8 (that is, just the length field)
 	 * terminates the list of sibling directory entries. */
-	if (offset + sizeof(u64) > metadata_resource_len ||
-	    offset + sizeof(u64) < offset)
+
+	/* Check for buffer overrun.  */
+	if (unlikely(offset + sizeof(u64) > buf_len ||
+		     offset + sizeof(u64) < offset))
 	{
 		ERROR("Directory entry starting at %"PRIu64" ends past the "
-		      "end of the metadata resource (size %"PRIu64")",
-		      offset, metadata_resource_len);
+		      "end of the metadata resource (size %zu)",
+		      offset, buf_len);
 		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 	}
-	dentry->length = le64_to_cpu(disk_dentry->length);
 
-	/* A zero length field (really a length of 8, since that's how big the
-	 * directory entry is...) indicates that this is the end of directory
-	 * dentry.  We do not read it into memory as an actual dentry, so just
-	 * return successfully in this case. */
-	if (dentry->length == 8)
-		dentry->length = 0;
-	if (dentry->length == 0)
+	/* Get pointer to the dentry data.  */
+	p = &buf[offset];
+	disk_dentry = (const struct wim_dentry_on_disk*)p;
+
+	if (unlikely((uintptr_t)p & 7))
+		WARNING("WIM dentry is not 8-byte aligned");
+
+	/* Get dentry length.  */
+	length = le64_to_cpu(disk_dentry->length);
+
+	/* Check for end-of-directory.  */
+	if (length <= 8) {
+		*dentry_ret = NULL;
 		return 0;
+	}
 
-	/* Now that we have the actual length provided in the on-disk structure,
-	 * again make sure it doesn't overflow the metadata resource buffer. */
-	if (offset + dentry->length > metadata_resource_len ||
-	    offset + dentry->length < offset)
+	/* Validate dentry length.  */
+	if (unlikely(length < sizeof(struct wim_dentry_on_disk))) {
+		ERROR("Directory entry has invalid length of %"PRIu64" bytes",
+		      length);
+		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
+	}
+
+	/* Check for buffer overrun.  */
+	if (unlikely(offset + length > buf_len ||
+		     offset + length < offset))
 	{
 		ERROR("Directory entry at offset %"PRIu64" and with size "
 		      "%"PRIu64" ends past the end of the metadata resource "
-		      "(size %"PRIu64")",
-		      offset, dentry->length, metadata_resource_len);
+		      "(size %zu)", offset, length, buf_len);
 		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 	}
 
-	/* Make sure the dentry length is at least as large as the number of
-	 * fixed-length fields */
-	if (dentry->length < sizeof(struct wim_dentry_on_disk)) {
-		ERROR("Directory entry has invalid length of %"PRIu64" bytes",
-		      dentry->length);
-		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-	}
+	/* Allocate new dentry structure, along with a preliminary inode.  */
+	ret = new_dentry_with_timeless_inode(T(""), &dentry);
+	if (ret)
+		return ret;
 
-	/* Allocate a `struct wim_inode' for this `struct wim_dentry'. */
-	inode = new_timeless_inode();
-	if (inode == NULL)
-		return WIMLIB_ERR_NOMEM;
+	dentry->length = length;
+	inode = dentry->d_inode;
 
-	/* Read more fields; some into the dentry, and some into the inode. */
-
+	/* Read more fields: some into the dentry, and some into the inode.  */
 	inode->i_attributes = le32_to_cpu(disk_dentry->attributes);
 	inode->i_security_id = le32_to_cpu(disk_dentry->security_id);
 	dentry->subdir_offset = le64_to_cpu(disk_dentry->subdir_offset);
@@ -1502,7 +1481,7 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	/* I don't know what's going on here.  It seems like M$ screwed up the
 	 * reparse points, then put the fields in the same place and didn't
 	 * document it.  So we have some fields we read for reparse points, and
-	 * some fields in the same place for non-reparse-point.s */
+	 * some fields in the same place for non-reparse-points.  */
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		inode->i_rp_unknown_1 = le32_to_cpu(disk_dentry->reparse.rp_unknown_1);
 		inode->i_reparse_tag = le32_to_cpu(disk_dentry->reparse.reparse_tag);
@@ -1511,22 +1490,23 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 		/* Leave inode->i_ino at 0.  Note that this means the WIM file
 		 * cannot archive hard-linked reparse points.  Such a thing
 		 * doesn't really make sense anyway, although I believe it's
-		 * theoretically possible to have them on NTFS. */
+		 * theoretically possible to have them on NTFS.  */
 	} else {
 		inode->i_rp_unknown_1 = le32_to_cpu(disk_dentry->nonreparse.rp_unknown_1);
 		inode->i_ino = le64_to_cpu(disk_dentry->nonreparse.hard_link_group_id);
 	}
-
 	inode->i_num_ads = le16_to_cpu(disk_dentry->num_alternate_data_streams);
+
+	/* Now onto reading the names.  There are two of them: the (long) file
+	 * name, and the short name.  */
 
 	short_name_nbytes = le16_to_cpu(disk_dentry->short_name_nbytes);
 	file_name_nbytes = le16_to_cpu(disk_dentry->file_name_nbytes);
 
-	if ((short_name_nbytes & 1) | (file_name_nbytes & 1))
-	{
-		ERROR("Dentry name is not valid UTF-16LE (odd number of bytes)!");
+	if (unlikely((short_name_nbytes & 1) | (file_name_nbytes & 1))) {
+		ERROR("Dentry name is not valid UTF-16 (odd number of bytes)!");
 		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-		goto out_free_inode;
+		goto err_free_dentry;
 	}
 
 	/* We now know the length of the file name and short name.  Make sure
@@ -1534,95 +1514,78 @@ read_dentry(const u8 * restrict metadata_resource, u64 metadata_resource_len,
 	 *
 	 * The calculated length here is unaligned to allow for the possibility
 	 * that the dentry->length names an unaligned length, although this
-	 * would be unexpected. */
+	 * would be unexpected.  */
 	calculated_size = dentry_correct_length_unaligned(file_name_nbytes,
 							  short_name_nbytes);
 
-	if (dentry->length < calculated_size) {
+	if (unlikely(dentry->length < calculated_size)) {
 		ERROR("Unexpected end of directory entry! (Expected "
 		      "at least %"PRIu64" bytes, got %"PRIu64" bytes.)",
 		      calculated_size, dentry->length);
 		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-		goto out_free_inode;
+		goto err_free_dentry;
 	}
 
+	/* Advance p to point past the base dentry, to the first name.  */
 	p += sizeof(struct wim_dentry_on_disk);
 
 	/* Read the filename if present.  Note: if the filename is empty, there
-	 * is no null terminator following it. */
+	 * is no null terminator following it.  */
 	if (file_name_nbytes) {
-		file_name = MALLOC(file_name_nbytes + 2);
-		if (file_name == NULL) {
-			ERROR("Failed to allocate %d bytes for dentry file name",
-			      file_name_nbytes + 2);
+		dentry->file_name = MALLOC(file_name_nbytes + 2);
+		if (dentry->file_name == NULL) {
 			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_inode;
+			goto err_free_dentry;
 		}
-		memcpy(file_name, p, file_name_nbytes);
+		dentry->file_name_nbytes = file_name_nbytes;
+		memcpy(dentry->file_name, p, file_name_nbytes);
 		p += file_name_nbytes + 2;
-		file_name[file_name_nbytes / 2] = cpu_to_le16(0);
-	} else {
-		file_name = NULL;
+		dentry->file_name[file_name_nbytes / 2] = cpu_to_le16(0);
 	}
-
 
 	/* Read the short filename if present.  Note: if there is no short
 	 * filename, there is no null terminator following it. */
 	if (short_name_nbytes) {
-		short_name = MALLOC(short_name_nbytes + 2);
-		if (short_name == NULL) {
-			ERROR("Failed to allocate %d bytes for dentry short name",
-			      short_name_nbytes + 2);
+		dentry->short_name = MALLOC(short_name_nbytes + 2);
+		if (dentry->short_name == NULL) {
 			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_file_name;
+			goto err_free_dentry;
 		}
-		memcpy(short_name, p, short_name_nbytes);
+		dentry->short_name_nbytes = short_name_nbytes;
+		memcpy(dentry->short_name, p, short_name_nbytes);
 		p += short_name_nbytes + 2;
-		short_name[short_name_nbytes / 2] = cpu_to_le16(0);
-	} else {
-		short_name = NULL;
+		dentry->short_name[short_name_nbytes / 2] = cpu_to_le16(0);
 	}
 
-	/* Align the dentry length */
+	/* Align the dentry length.  */
 	dentry->length = (dentry->length + 7) & ~7;
 
-	/*
-	 * Read the alternate data streams, if present.  dentry->num_ads tells
-	 * us how many they are, and they will directly follow the dentry
-	 * on-disk.
+	/* Read the alternate data streams, if present.  inode->i_num_ads tells
+	 * us how many they are, and they will directly follow the dentry in the
+	 * metadata resource buffer.
 	 *
 	 * Note that each alternate data stream entry begins on an 8-byte
 	 * aligned boundary, and the alternate data stream entries seem to NOT
-	 * be included in the dentry->length field for some reason.
-	 */
-	if (inode->i_num_ads != 0) {
+	 * be included in the dentry->length field for some reason.  */
+	if (unlikely(inode->i_num_ads != 0)) {
 		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-		if (offset + dentry->length > metadata_resource_len ||
-		    (ret = read_ads_entries(&metadata_resource[offset + dentry->length],
+		if (offset + dentry->length > buf_len ||
+		    (ret = read_ads_entries(&buf[offset + dentry->length],
 					    inode,
-					    metadata_resource_len - offset - dentry->length)))
+					    buf_len - offset - dentry->length)))
 		{
 			ERROR("Failed to read alternate data stream "
-			      "entries of WIM dentry \"%"WS"\"", file_name);
-			goto out_free_short_name;
+			      "entries of WIM dentry \"%"WS"\"",
+			      dentry->file_name);
+			goto err_free_dentry;
 		}
 	}
-	/* We've read all the data for this dentry.  Set the names and their
-	 * lengths, and we've done. */
-	dentry->d_inode           = inode;
-	dentry->file_name         = file_name;
-	dentry->short_name        = short_name;
-	dentry->file_name_nbytes  = file_name_nbytes;
-	dentry->short_name_nbytes = short_name_nbytes;
-	ret = 0;
-	goto out;
-out_free_short_name:
-	FREE(short_name);
-out_free_file_name:
-	FREE(file_name);
-out_free_inode:
-	free_inode(inode);
-out:
+
+	*dentry_ret = dentry;
+	return 0;
+
+err_free_dentry:
+	free_dentry(dentry);
 	return ret;
 }
 
@@ -1638,98 +1601,84 @@ dentry_get_file_type_string(const struct wim_dentry *dentry)
 		return T("file");
 }
 
-/* Reads the children of a dentry, and all their children, ..., etc. from the
- * metadata resource and into the dentry tree.
- *
- * @metadata_resource:
- *	An array that contains the uncompressed metadata resource for the WIM
- *	file.
- *
- * @metadata_resource_len:
- *	The length of the uncompressed metadata resource, in bytes.
- *
- * @dentry:
- *	A pointer to a `struct wim_dentry' that is the root of the directory
- *	tree and has already been read from the metadata resource.  It does not
- *	need to be the real root because this procedure is called recursively.
- *
- * Return values:
- *	WIMLIB_ERR_SUCCESS (0)
- *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
- *	WIMLIB_ERR_NOMEM
- */
-int
-read_dentry_tree(const u8 * restrict metadata_resource,
-		 u64 metadata_resource_len,
-		 struct wim_dentry * restrict dentry)
+static bool
+dentry_is_dot_or_dotdot(const struct wim_dentry *dentry)
 {
-	u64 cur_offset = dentry->subdir_offset;
-	struct wim_dentry *child;
-	struct wim_dentry *duplicate;
-	struct wim_dentry *parent;
-	struct wim_dentry cur_child;
-	int ret;
+	if (dentry->file_name_nbytes <= 4) {
+		if (dentry->file_name_nbytes == 4) {
+			if (dentry->file_name[0] == cpu_to_le16('.') &&
+			    dentry->file_name[1] == cpu_to_le16('.'))
+				return true;
+		} else if (dentry->file_name_nbytes == 2) {
+			if (dentry->file_name[0] == cpu_to_le16('.'))
+				return true;
+		}
+	}
+	return false;
+}
 
-	/*
-	 * If @dentry has no child dentries, nothing more needs to be done for
-	 * this branch.  This is the case for regular files, symbolic links, and
-	 * *possibly* empty directories (although an empty directory may also
-	 * have one child dentry that is the special end-of-directory dentry)
-	 */
-	if (cur_offset == 0)
-		return 0;
+static int
+read_dentry_tree_recursive(const u8 * restrict buf, size_t buf_len,
+			   struct wim_dentry * restrict dir)
+{
+	u64 cur_offset = dir->subdir_offset;
 
-	/* Check for cyclic directory structure */
-	for (parent = dentry->parent; !dentry_is_root(parent); parent = parent->parent)
+	/* Check for cyclic directory structure, which would cause infinite
+	 * recursion if not handled.  */
+	for (struct wim_dentry *d = dir->parent;
+	     !dentry_is_root(d); d = d->parent)
 	{
-		if (unlikely(parent->subdir_offset == cur_offset)) {
+		if (unlikely(d->subdir_offset == cur_offset)) {
 			ERROR("Cyclic directory structure detected: children "
 			      "of \"%"TS"\" coincide with children of \"%"TS"\"",
-			      dentry_full_path(dentry),
-			      dentry_full_path(parent));
+			      dentry_full_path(dir), dentry_full_path(d));
 			return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 		}
 	}
 
-	/* Find and read all the children of @dentry. */
 	for (;;) {
+		struct wim_dentry *child;
+		struct wim_dentry *duplicate;
+		int ret;
 
-		/* Read next child of @dentry into @cur_child. */
-		ret = read_dentry(metadata_resource, metadata_resource_len,
-				  cur_offset, &cur_child);
+		/* Read next child of @dir.  */
+		ret = read_dentry(buf, buf_len, cur_offset, &child);
 		if (ret)
-			break;
+			return ret;
 
-		/* Check for end of directory. */
-		if (cur_child.length == 0)
-			break;
-
-		/* Not end of directory.  Allocate this child permanently and
-		 * link it to the parent and previous child. */
-		child = memdup(&cur_child, sizeof(struct wim_dentry));
-		if (child == NULL) {
-			ERROR("Failed to allocate new dentry!");
-			ret = WIMLIB_ERR_NOMEM;
-			break;
-		}
+		/* Check for end of directory.  */
+		if (child == NULL)
+			return 0;
 
 		/* Advance to the offset of the next child.  Note: We need to
 		 * advance by the TOTAL length of the dentry, not by the length
-		 * cur_child.length, which although it does take into account
-		 * the padding, it DOES NOT take into account alternate stream
-		 * entries. */
+		 * child->length, which although it does take into account the
+		 * padding, it DOES NOT take into account alternate stream
+		 * entries.  */
 		cur_offset += dentry_in_total_length(child);
 
+		/* All dentries except the root should be named.  */
 		if (unlikely(!dentry_has_long_name(child))) {
 			WARNING("Ignoring unnamed dentry in "
-				"directory \"%"TS"\"",
-				dentry_full_path(dentry));
+				"directory \"%"TS"\"", dentry_full_path(dir));
 			free_dentry(child);
 			continue;
 		}
 
-		duplicate = dentry_add_child(dentry, child);
+		/* Don't allow files named "." or "..".  */
+		if (unlikely(dentry_is_dot_or_dotdot(child))) {
+			WARNING("Ignoring file named \".\" or \"..\"; "
+				"potentially malicious archive!!!");
+			free_dentry(child);
+			continue;
+		}
+
+		/* Link the child into the directory.  */
+		duplicate = dentry_add_child(dir, child);
 		if (unlikely(duplicate)) {
+			/* We already found a dentry with this same
+			 * case-sensitive long name.  Only keep the first one.
+			 */
 			const tchar *child_type, *duplicate_type;
 			child_type = dentry_get_file_type_string(child);
 			duplicate_type = dentry_get_file_type_string(duplicate);
@@ -1742,22 +1691,93 @@ read_dentry_tree(const u8 * restrict metadata_resource,
 			continue;
 		}
 
-		inode_add_dentry(child, child->d_inode);
-		/* If there are children of this child, call this
-		 * procedure recursively. */
+		/* If this child is a directory that itself has children, call
+		 * this procedure recursively.  */
 		if (child->subdir_offset != 0) {
 			if (likely(dentry_is_directory(child))) {
-				ret = read_dentry_tree(metadata_resource,
-						       metadata_resource_len,
-						       child);
+				ret = read_dentry_tree_recursive(buf,
+								 buf_len,
+								 child);
 				if (ret)
-					break;
+					return ret;
 			} else {
-				WARNING("Ignoring children of non-directory \"%"TS"\"",
+				WARNING("Ignoring children of "
+					"non-directory file \"%"TS"\"",
 					dentry_full_path(child));
 			}
 		}
 	}
+}
+
+/*
+ * Read a tree of dentries (directory entries) from a WIM metadata resource.
+ *
+ * @buf:
+ *	Buffer containing an uncompressed WIM metadata resource.
+ *
+ * @buf_len:
+ *	Length of the uncompressed metadata resource, in bytes.
+ *
+ * @root_offset
+ *	Offset in the metadata resource of the root of the dentry tree.
+ *
+ * @root_ret:
+ *	On success, either NULL or a pointer to the root dentry is written to
+ *	this location.  The former case only occurs in the unexpected case that
+ *	the tree began with an end-of-directory entry.
+ *
+ * Return values:
+ *	WIMLIB_ERR_SUCCESS (0)
+ *	WIMLIB_ERR_INVALID_METADATA_RESOURCE
+ *	WIMLIB_ERR_NOMEM
+ */
+int
+read_dentry_tree(const u8 *buf, size_t buf_len,
+		 u64 root_offset, struct wim_dentry **root_ret)
+{
+	int ret;
+	struct wim_dentry *root;
+
+	DEBUG("Reading dentry tree (root_offset=%"PRIu64")", root_offset);
+
+	ret = read_dentry(buf, buf_len, root_offset, &root);
+	if (ret)
+		return ret;
+
+	if (likely(root != NULL)) {
+		if (unlikely(dentry_has_long_name(root) ||
+			     dentry_has_short_name(root)))
+		{
+			WARNING("The root directory has a nonempty name; "
+				"removing it.");
+			FREE(root->file_name);
+			FREE(root->short_name);
+			root->file_name = NULL;
+			root->short_name = NULL;
+			root->file_name_nbytes = 0;
+			root->short_name_nbytes = 0;
+		}
+
+		if (unlikely(!dentry_is_directory(root))) {
+			ERROR("The root of the WIM image is not a directory!");
+			ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
+			goto err_free_dentry_tree;
+		}
+
+		if (likely(root->subdir_offset != 0)) {
+			ret = read_dentry_tree_recursive(buf, buf_len, root);
+			if (ret)
+				goto err_free_dentry_tree;
+		}
+	} else {
+		WARNING("The metadata resource has no directory entries; "
+			"treating as an empty image.");
+	}
+	*root_ret = root;
+	return 0;
+
+err_free_dentry_tree:
+	free_dentry_tree(root, NULL);
 	return ret;
 }
 

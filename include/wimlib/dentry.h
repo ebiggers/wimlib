@@ -279,14 +279,8 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 
 
 extern int
-read_dentry(const u8 * restrict metadata_resource,
-	    u64 metadata_resource_len, u64 offset,
-	    struct wim_dentry * restrict dentry);
-
-extern int
-read_dentry_tree(const u8 * restrict metadata_resource,
-		 u64 metadata_resource_len,
-		 struct wim_dentry * restrict dentry);
+read_dentry_tree(const u8 *buf, size_t buf_len,
+		 u64 root_offset, struct wim_dentry **root_ret);
 
 extern u8 *
 write_dentry_tree(const struct wim_dentry * restrict tree,

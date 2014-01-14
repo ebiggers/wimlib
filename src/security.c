@@ -165,8 +165,6 @@ out_align_total_length:
 			"%u bytes, but calculated %u bytes",
 			sd->total_length, (unsigned)total_len);
 	}
-	if (sd->total_length > metadata_resource_len)
-		goto out_invalid_sd;
 	*sd_ret = sd;
 	ret = 0;
 	goto out;

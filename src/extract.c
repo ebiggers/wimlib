@@ -1707,17 +1707,6 @@ file_name_valid(utf16lechar *name, size_t num_chars, bool fix)
 	return true;
 }
 
-static bool
-dentry_is_dot_or_dotdot(const struct wim_dentry *dentry)
-{
-	const utf16lechar *file_name = dentry->file_name;
-	return file_name != NULL &&
-		file_name[0] == cpu_to_le16('.') &&
-		(file_name[1] == cpu_to_le16('\0') ||
-		 (file_name[1] == cpu_to_le16('.') &&
-		  file_name[2] == cpu_to_le16('\0')));
-}
-
 static int
 dentry_mark_skipped(struct wim_dentry *dentry, void *_ignore)
 {
@@ -1754,14 +1743,6 @@ dentry_calculate_extraction_path(struct wim_dentry *dentry, void *_args)
 
 	if (!dentry_is_supported(dentry, &ctx->supported_features))
 		goto skip_dentry;
-
-	if (dentry_is_dot_or_dotdot(dentry)) {
-		/* WIM files shouldn't contain . or .. entries.  But if they are
-		 * there, don't attempt to extract them. */
-		WARNING("Skipping extraction of unexpected . or .. file "
-			"\"%"TS"\"", dentry_full_path(dentry));
-		goto skip_dentry;
-	}
 
 	if (!ctx->ops->supports_case_sensitive_filenames)
 	{
