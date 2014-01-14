@@ -26,7 +26,6 @@
 
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
-#include "wimlib/file_io.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/resource.h"
