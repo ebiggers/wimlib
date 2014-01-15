@@ -825,30 +825,6 @@ verify_inode(struct wim_inode *inode, const struct wim_security_data *sd)
 			inode_first_full_path(inode), num_unnamed_streams);
 	}
 
-	/* Files cannot have multiple DOS names, even if they have multiple
-	 * names in multiple directories (i.e. hard links).
-	 * Source: NTFS-3g authors. */
-	struct wim_dentry *dentry_with_dos_name = NULL;
-	inode_for_each_dentry(dentry, inode) {
-		if (dentry_has_short_name(dentry)) {
-			if (dentry_with_dos_name) {
-				/* This was previously an error, but if we
-				 * capture a WIM from UDF on Windows, hard links
-				 * are supported but DOS names are automatically
-				 * generated for all names for an inode.  */
-			#if 0
-				ERROR("Hard-linked file has a DOS name at "
-				      "both `%"TS"' and `%"TS"'",
-				      dentry_full_path(dentry_with_dos_name),
-				      dentry_full_path(dentry));
-				return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-			#else
-				dentry->dos_name_invalid = 1;
-			#endif
-			}
-			dentry_with_dos_name = dentry;
-		}
-	}
 	return 0;
 }
 

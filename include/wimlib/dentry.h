@@ -97,13 +97,6 @@ struct wim_dentry {
 	 * always be 0.  */
 	u8 is_win32_name : 1;
 
-	/* When verifying the dentry tree after reading it into memory, this
-	 * flag will be set on all dentries in a hard link group that have a
-	 * nonempty DOS name except one.  This is because it is supposed to be
-	 * illegal (on NTFS, at least) for a single inode to have multiple DOS
-	 * names.  */
-	u8 dos_name_invalid : 1;
-
 	u8 tmp_flag : 1;
 
 	u8 was_hardlinked : 1;
