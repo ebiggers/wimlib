@@ -372,22 +372,20 @@ differing only in case, one will be chosen to extract arbitrarily; however, with
 \fB--include-invalid-names\fR, all names will be sanitized and extracted in some
 form.
 .SH NOTES
+\fIData integrity\fR:  WIM files include SHA1 message digests for file data.
 \fB@IMAGEX_PROGNAME@ apply\fR calculates the SHA1 message digest of every file
-stream it extracts and verifies that it is the same as the SHA1 message digest
-provided in the WIM file.  It is an error if the message digests don't match.
-It's also considered to be an error if any WIM resources that need to be
-extracted cannot be found in the stream lookup table.  So you can be fairly
-certain that the file streams are extracted correctly, even though
-\fB@IMAGEX_PROGNAME@ apply\fR don't have a \fB/verify\fR option like Microsoft's
-ImageX does.  Note that this is separate from the integrity table of the WIM,
-which provides SHA1 message digests over raw chunks of the entire WIM file and
-is checked separately if the \fB--check\fR option is specified.
+it extracts and issues an error if it is not equal to the SHA1 message digest
+provided in the WIM.  (This default behavior seems equivalent to the
+\fB/verify\fR option of ImageX.)  Note that this is separate from the integrity
+table of the WIM, which provides SHA1 message digests over raw chunks of the
+entire WIM file and is checked separately if the \fB--check\fR option is
+specified.
 .PP
-wimlib v1.6.0 and later can extract files from version 3584 WIMs, which usually
-use packed, LZMS-compressed streams and may carry the \fI.esd\fR file extension
-rather than \fI.wim\fR.  However, \fI.esd\fR files downloaded directly by the
-Windows 8 web downloader have encrypted segments, and wimlib cannot extract such
-files until they are first decrypted.
+\fIESD files\fR: wimlib v1.6.0 and later can extract files from version 3584
+WIMs, which usually contain LZMS-compressed solid blocks and may carry the
+\fI.esd\fR file extension rather than \fI.wim\fR.  However, \fI.esd\fR files
+downloaded directly by the Windows 8 web downloader have encrypted segments, and
+wimlib cannot extract such files until they are first decrypted.
 .SH EXAMPLES
 Extract the first image from the Windows PE image on the Windows Vista/7/8
 installation media to the directory "boot":
@@ -431,16 +429,6 @@ partition!)
 An example of applying a pipable WIM from a pipe can be found in \fBPIPABLE
 WIMS\fR, and an example of applying a split WIM can be found in \fBSPLIT
 WIMS\fR.
-.PP
-And finally, just for fun, a silly way to recursively copy a directory tree
-\fIsrc\fR to \fIdst\fR (but subject to the documented limitations, e.g.
-platform and filesystem-dependent, of the capture and apply functionality of
-\fB@IMAGEX_PROGNAME@\fR):
-.RS
-.PP
-@IMAGEX_PROGNAME@ capture src - | @IMAGEX_PROGNAME@ apply - dst
-.RE
-.PP
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
 .BR @IMAGEX_PROGNAME@-capture (1)
