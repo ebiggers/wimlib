@@ -37,9 +37,6 @@ extern void
 destroy_sd_set(struct wim_sd_set *sd_set, bool rollback);
 
 extern int
-lookup_sd(struct wim_sd_set *set, const u8 hash[]);
-
-extern int
 sd_set_add_sd(struct wim_sd_set *sd_set, const char descriptor[],
 	      size_t size);
 

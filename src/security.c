@@ -398,7 +398,7 @@ insert_sd_node(struct wim_sd_set *set, struct sd_node *new)
 
 /* Returns the index of the security descriptor having a SHA1 message digest of
  * @hash.  If not found, return -1. */
-int
+static int
 lookup_sd(struct wim_sd_set *set, const u8 hash[SHA1_HASH_SIZE])
 {
 	struct rb_node *node = set->rb_root.rb_node;
