@@ -65,13 +65,20 @@ FIFOs, cannot be captured and will be excluded by default.
 Extended attributes.  This mainly includes extensions to the traditional UNIX
 security model, such as SELinux security labels, POSIX ACLs, and capabilities
 labels.
+.IP \[bu]
+Linux file attributes, as can be changed using the \fBchattr\fR (1) utility.
 .PP
-Notes: hard links and symbolic links are supported by the WIM format and
-\fIare\fR stored.  (Symbolic links are turned into "native" Windows symbolic
-links via reparse points; this process is reversible, e.g. automatically by
-\fB@IMAGEX_PROGNAME@ apply\fR.)  Timestamps are stored with 100 nanosecond
-granularity and include last modification time (mtime) and last access time
-(atime), but not last status change time (ctime).
+Notes: Timestamps are stored with 100 nanosecond granularity and include last
+modification time (mtime) and last access time (atime), but not last status
+change time (ctime).  Hard links and symbolic links are supported by the WIM
+format and \fIare\fR stored.  Symbolic links are turned into "native" Windows
+symbolic links, or "reparse points"; this process is fully reversible, e.g.
+automatically by \fB@IMAGEX_PROGNAME@ apply\fR, unless the symbolic link target
+contains backslash characters.
+.PP
+Pedantic note: A limitation of the WIM format prevents the unusual case where a
+single symbolic link file itself has multiple names (hard links); in this
+unlikely case, each symbolic link is stored as an independent file.
 .SH NTFS VOLUME CAPTURE (UNIX)
 This section documents how \fB@IMAGEX_PROGNAME@\fR captures files directly from
 an NTFS volume image on UNIX-like systems.
@@ -162,6 +169,14 @@ the above information, at least to the extent supported by the destination
 filesystem.  One exception is that since encrypted files are stored as
 encrypted, their data will not be available if restored on a Windows system
 that does not have the decryption key.
+.PP
+Pedantic note: since Windows is not fully compatible with its own filesystem
+(NTFS), on Windows wimlib cannot archive certain files that may exist on a valid
+NTFS filesystem but are inaccessible to the Windows API, for example two files
+with names differing only in case in the same directory, or a file whose name
+contains certain characters considered invalid by Windows.  If you run into
+problems archiving such files consider using the \fBNTFS VOLUME CAPTURE
+(UNIX)\fR mode from Linux.
 .SH OPTIONS
 .TP 6
 \fB--boot\fR
@@ -215,7 +230,7 @@ compression, the maximum allowed chunk size is 2^26 (67108864).
 For XPRESS and LZX compression, Microsoft's implementation (as of Windows 8)
 does not appear to support alternate chunk sizes; although it will still open
 such files, it will crash, extract the data incorrectly, or report that the data
-is invalid.  For LZMS compression, Micrososft's implementation (as of Windows 8)
+is invalid.  For LZMS compression, Microsoft's implementation (as of Windows 8)
 appears to only support chunk sizes that are powers of 2 between 2^15 (32768)
 and 2^20 (1048576) inclusively.  In addition, wimlib versions before 1.6.0 do
 not support alternate chunk sizes.
@@ -538,9 +553,11 @@ created only if \fIWIMFILE\fR was specified as "-" (standard output) or if
 the \fB--pipable\fR flag was specified.
 .IP \[bu]
 WIMs captured with a non-default chunk size (with the \fB--chunk-size\fR option)
-or as solid archives (with the \fB--pack-streams\fR option) have varying levels
-of compatibility with Microsoft's software.  The best compatibility is achieved
-with WIMGAPI itelf (not ImageX or Dism) on Windows 8 or later.
+or as solid archives (with the \fB--pack-streams\fR option) or with LZMS
+compression (with \fB--compress\fR=LZMS or \fB--compress\fR=recovery) have
+varying levels of compatibility with Microsoft's software.  The best
+compatibility is achieved with WIMGAPI itself (not ImageX or Dism) on Windows 8
+or later.
 .SH EXAMPLES
 First example:  Create a new WIM 'mywim.wim' with "maximum" (LZX) compression
 that will contain a captured image of the directory tree 'somedir'.  Note that
@@ -554,7 +571,7 @@ or, if the \fBwimcapture\fR hard link or batch file has been installed, the
 abbreviated form can be used:
 .RS
 .PP
-wimcapture somedir mywim.wim
+wimcapture somedir mywim.wim --compress=maximum
 .RE
 .PP
 The remaining examples will use the long form, however.  Next, append the image
