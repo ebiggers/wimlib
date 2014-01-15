@@ -1,0 +1,20 @@
+Some fun files:
+
+cyclic.wim:  This WIM has an image with a cyclic directory structure and should be
+detected as invalid.
+
+duplicate_names.wim:  This WIM has an image with multiple files with the same
+name in the same directory, and should be detected as invalid.
+
+dotdot.wim:  This WIM has an image with the path
+/../../../../../../../../../../../../../../../../etc/passwd, and should be
+detected as invalid.  (Fun fact: WIMGAPI is dumb and will extract .. files, and
+requires running with Admin rights, so given a malicious WIM file it will
+overwrite arbitrary files on the target drive.)
+
+longpaths.wim:  This WIM has an image with a path longer than MAX_PATH on Windows.
+This should still be extracted successfully.
+
+empty_dacl.wim:  This WIM has an image containing file with a security
+descriptor having an empty DACL.  This is valid and should be extracted
+successfully.
