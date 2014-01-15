@@ -9,7 +9,7 @@ file \fIWIMFILE\fR.
 This command is also available as simply \fBwimdelete\fR if the appropriate hard
 link or batch file has been installed.
 .PP
-\fIIMAGE\fR specifies the WIM image in \fIWIMFILE\fR to deleted.  It may be a
+\fIIMAGE\fR specifies the WIM image in \fIWIMFILE\fR to delete.  It may be a
 1-based index of an image in the WIM, the name of an image in the WIM, or the
 keyword "all" to indicate that all images are to be deleted.  Use the
 \fB@IMAGEX_PROGNAME@ info\fR (1) command to show what images a WIM file
