@@ -81,79 +81,6 @@ win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 	return 0;
 }
 
-/* Create a normal file, overwriting one already present.  */
-static int
-win32_create_file(const wchar_t *path, struct apply_ctx *ctx, u64 *cookie_ret)
-{
-	HANDLE h;
-	unsigned retry_count = 0;
-	DWORD dwFlagsAndAttributes = FILE_FLAG_BACKUP_SEMANTICS;
-
-retry:
-	/* WRITE_OWNER and WRITE_DAC privileges are required for some reason,
-	 * even through we're creating a new file.  */
-	h = CreateFile(path, WRITE_OWNER | WRITE_DAC, 0, NULL,
-		       CREATE_ALWAYS, dwFlagsAndAttributes, NULL);
-	if (h == INVALID_HANDLE_VALUE) {
-		/* File couldn't be created.  */
-		DWORD err = GetLastError();
-		if (err == ERROR_ACCESS_DENIED && retry_count == 0) {
-
-			/* Access denied error for the first time.  Try
-			 * adjusting file attributes.  */
-
-			/* Get attributes of the existing file.  */
-			DWORD attribs = GetFileAttributes(path);
-			if (attribs != INVALID_FILE_ATTRIBUTES &&
-			    (attribs & (FILE_ATTRIBUTE_HIDDEN |
-					FILE_ATTRIBUTE_SYSTEM |
-					FILE_ATTRIBUTE_READONLY)))
-			{
-				/* If the existing file has
-				 * FILE_ATTRIBUTE_HIDDEN and/or
-				 * FILE_ATTRIBUTE_SYSTEM, they must be set in
-				 * the call to CreateFile().  This is true even
-				 * when FILE_ATTRIBUTE_NORMAL was not specified,
-				 * contrary to the MS "documentation".  */
-				dwFlagsAndAttributes |= (attribs &
-							 (FILE_ATTRIBUTE_HIDDEN |
-							  FILE_ATTRIBUTE_SYSTEM));
-				/* If the existing file has
-				 * FILE_ATTRIBUTE_READONLY, it must be cleared
-				 * before attempting to create a new file over
-				 * it.  This is true even when the process has
-				 * the SE_RESTORE_NAME privilege and requested
-				 * the FILE_FLAG_BACKUP_SEMANTICS flag to
-				 * CreateFile().  */
-				if (attribs & FILE_ATTRIBUTE_READONLY) {
-					SetFileAttributes(path,
-							  attribs & ~FILE_ATTRIBUTE_READONLY);
-				}
-				retry_count++;
-				goto retry;
-			}
-		}
-		set_errno_from_win32_error(err);
-		return WIMLIB_ERR_OPEN;
-	}
-	CloseHandle(h);
-	return 0;
-}
-
-static int
-win32_create_directory(const wchar_t *path, struct apply_ctx *ctx,
-		       u64 *cookie_ret)
-{
-	if (!CreateDirectory(path, NULL))
-		if (GetLastError() != ERROR_ALREADY_EXISTS)
-			goto error;
-	return 0;
-
-error:
-	set_errno_from_GetLastError();
-	return WIMLIB_ERR_MKDIR;
-}
-
 /* Delete a non-directory file, working around Windows quirks.  */
 static BOOL
 win32_delete_file_wrapper(const wchar_t *path)
@@ -181,6 +108,60 @@ win32_delete_file_wrapper(const wchar_t *path)
 
 	SetLastError(err);
 	return FALSE;
+}
+
+
+/* Create a normal file, overwriting one already present.  */
+static int
+win32_create_file(const wchar_t *path, struct apply_ctx *ctx, u64 *cookie_ret)
+{
+	HANDLE h;
+
+	/* Notes:
+	 *
+	 * WRITE_OWNER and WRITE_DAC privileges are required for some reason,
+	 * even through we're creating a new file.
+	 *
+	 * FILE_FLAG_OPEN_REPARSE_POINT is required to prevent an existing
+	 * reparse point from redirecting the creation of the new file
+	 * (potentially to an arbitrary location).
+	 *
+	 * CREATE_ALWAYS could be used instead of CREATE_NEW.  However, there
+	 * are quirks that would need to be handled (e.g. having to set
+	 * FILE_ATTRIBUTE_HIDDEN and/or FILE_ATTRIBUTE_SYSTEM if the existing
+	 * file had them specified, and/or having to clear
+	 * FILE_ATTRIBUTE_READONLY on the existing file).  It's simpler to just
+	 * call win32_delete_file_wrapper() to delete the existing file in such
+	 * a way that already handles the FILE_ATTRIBUTE_READONLY quirk.
+	 */
+retry:
+	h = CreateFile(path, WRITE_OWNER | WRITE_DAC, 0, NULL, CREATE_NEW,
+		       FILE_FLAG_BACKUP_SEMANTICS |
+				FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+	if (h == INVALID_HANDLE_VALUE) {
+		DWORD err = GetLastError();
+
+		if (err == ERROR_FILE_EXISTS && win32_delete_file_wrapper(path))
+			goto retry;
+		set_errno_from_win32_error(err);
+		return WIMLIB_ERR_OPEN;
+	}
+	CloseHandle(h);
+	return 0;
+}
+
+static int
+win32_create_directory(const wchar_t *path, struct apply_ctx *ctx,
+		       u64 *cookie_ret)
+{
+	if (!CreateDirectory(path, NULL))
+		if (GetLastError() != ERROR_ALREADY_EXISTS)
+			goto error;
+	return 0;
+
+error:
+	set_errno_from_GetLastError();
+	return WIMLIB_ERR_MKDIR;
 }
 
 static int
