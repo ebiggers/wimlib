@@ -44,6 +44,10 @@
 #  include <utime.h>
 #endif
 
+#ifndef O_NOFOLLOW
+#  define O_NOFOLLOW 0
+#endif
+
 static int
 unix_start_extract(const char *target, struct apply_ctx *ctx)
 {
@@ -56,7 +60,7 @@ unix_start_extract(const char *target, struct apply_ctx *ctx)
 static int
 unix_create_file(const char *path, struct apply_ctx *ctx, u64 *cookie_ret)
 {
-	int fd = open(path, O_TRUNC | O_CREAT | O_WRONLY, 0644);
+	int fd = open(path, O_TRUNC | O_CREAT | O_WRONLY | O_NOFOLLOW, 0644);
 	if (fd < 0)
 		return WIMLIB_ERR_OPEN;
 	close(fd);
@@ -118,7 +122,7 @@ unix_extract_unnamed_stream(file_spec_t file,
 	int raw_fd;
 	int ret;
 
-	raw_fd = open(path, O_WRONLY | O_TRUNC);
+	raw_fd = open(path, O_WRONLY | O_TRUNC | O_NOFOLLOW);
 	if (raw_fd < 0)
 		return WIMLIB_ERR_OPEN;
 	filedes_init(&fd, raw_fd);
