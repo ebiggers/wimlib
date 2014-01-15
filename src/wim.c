@@ -469,7 +469,7 @@ wimlib_set_output_compression_type(WIMStruct *wim, int ctype)
 		return ret;
 
 	/* Reset the chunk size if it's no longer valid.  */
-	if (!wim_chunk_size_valid(ctype, wim->out_chunk_size))
+	if (!wim_chunk_size_valid(wim->out_chunk_size, ctype))
 		wim->out_chunk_size = wim_default_chunk_size(ctype);
 	return 0;
 }
@@ -483,7 +483,7 @@ wimlib_set_output_pack_compression_type(WIMStruct *wim, int ctype)
 		return ret;
 
 	/* Reset the chunk size if it's no longer valid.  */
-	if (!wim_chunk_size_valid(ctype, wim->out_pack_chunk_size))
+	if (!wim_chunk_size_valid(wim->out_pack_chunk_size, ctype))
 		wim->out_pack_chunk_size = wim_default_pack_chunk_size(ctype);
 	return 0;
 }
