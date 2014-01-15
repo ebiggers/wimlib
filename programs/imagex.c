@@ -144,6 +144,7 @@ enum {
 	IMAGEX_NO_ACLS_OPTION,
 	IMAGEX_NO_WILDCARDS_OPTION,
 	IMAGEX_NOT_PIPABLE_OPTION,
+	IMAGEX_PACK_CHUNK_SIZE_OPTION,
 	IMAGEX_PACK_STREAMS_OPTION,
 	IMAGEX_PATH_OPTION,
 	IMAGEX_PIPABLE_OPTION,
@@ -195,6 +196,8 @@ static const struct option capture_or_append_options[] = {
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
+	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
+	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
 	{T("pack-streams"), no_argument,      NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("solid"),       no_argument,      NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
@@ -237,6 +240,8 @@ static const struct option export_options[] = {
 	{T("pack-streams"),no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("solid"),       no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
+	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
+	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
 	{T("ref"),         required_argument, NULL, IMAGEX_REF_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
@@ -299,6 +304,8 @@ static const struct option optimize_options[] = {
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("recompress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
+	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
+	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
 	{T("pack-streams"),no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("solid"),       no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
@@ -1751,6 +1758,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	uint32_t chunk_size = UINT32_MAX;
+	uint32_t pack_chunk_size = UINT32_MAX;
 	const tchar *wimfile;
 	int wim_fd;
 	const tchar *name;
@@ -1812,6 +1820,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		case IMAGEX_CHUNK_SIZE_OPTION:
 			chunk_size = parse_chunk_size(optarg);
 			if (chunk_size == UINT32_MAX)
+				goto out_err;
+			break;
+		case IMAGEX_PACK_CHUNK_SIZE_OPTION:
+			pack_chunk_size = parse_chunk_size(optarg);
+			if (pack_chunk_size == UINT32_MAX)
 				goto out_err;
 			break;
 		case IMAGEX_PACK_STREAMS_OPTION:
@@ -2058,6 +2071,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	/* Set chunk size if non-default.  */
 	if (chunk_size != UINT32_MAX) {
 		ret = wimlib_set_output_chunk_size(wim, chunk_size);
+		if (ret)
+			goto out_free_wim;
+	}
+	if (pack_chunk_size != UINT32_MAX) {
+		ret = wimlib_set_output_pack_chunk_size(wim, pack_chunk_size);
 		if (ret)
 			goto out_free_wim;
 	}
@@ -2454,6 +2472,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	STRING_SET(refglobs);
 	unsigned num_threads = 0;
 	uint32_t chunk_size = UINT32_MAX;
+	uint32_t pack_chunk_size = UINT32_MAX;
 
 	for_opt(c, export_options) {
 		switch (c) {
@@ -2478,6 +2497,11 @@ imagex_export(int argc, tchar **argv, int cmd)
 		case IMAGEX_CHUNK_SIZE_OPTION:
 			chunk_size = parse_chunk_size(optarg);
 			if (chunk_size == UINT32_MAX)
+				goto out_err;
+			break;
+		case IMAGEX_PACK_CHUNK_SIZE_OPTION:
+			pack_chunk_size = parse_chunk_size(optarg);
+			if (pack_chunk_size == UINT32_MAX)
 				goto out_err;
 			break;
 		case IMAGEX_REF_OPTION:
@@ -2606,6 +2630,11 @@ imagex_export(int argc, tchar **argv, int cmd)
 	if (chunk_size != UINT32_MAX) {
 		/* Set destination chunk size.  */
 		ret = wimlib_set_output_chunk_size(dest_wim, chunk_size);
+		if (ret)
+			goto out_free_dest_wim;
+	}
+	if (pack_chunk_size != UINT32_MAX) {
+		ret = wimlib_set_output_pack_chunk_size(dest_wim, pack_chunk_size);
 		if (ret)
 			goto out_free_dest_wim;
 	}
@@ -3408,6 +3437,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	int write_flags = WIMLIB_WRITE_FLAG_REBUILD;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	uint32_t chunk_size = UINT32_MAX;
+	uint32_t pack_chunk_size = UINT32_MAX;
 	int ret;
 	WIMStruct *wim;
 	const tchar *wimfile;
@@ -3440,6 +3470,11 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		case IMAGEX_CHUNK_SIZE_OPTION:
 			chunk_size = parse_chunk_size(optarg);
 			if (chunk_size == UINT32_MAX)
+				goto out_err;
+			break;
+		case IMAGEX_PACK_CHUNK_SIZE_OPTION:
+			pack_chunk_size = parse_chunk_size(optarg);
+			if (pack_chunk_size == UINT32_MAX)
 				goto out_err;
 			break;
 		case IMAGEX_PACK_STREAMS_OPTION:
@@ -3483,6 +3518,11 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	if (chunk_size != UINT32_MAX) {
 		/* Change chunk size.  */
 		ret = wimlib_set_output_chunk_size(wim, chunk_size);
+		if (ret)
+			goto out_wimlib_free;
+	}
+	if (pack_chunk_size != UINT32_MAX) {
+		ret = wimlib_set_output_pack_chunk_size(wim, pack_chunk_size);
 		if (ret)
 			goto out_wimlib_free;
 	}

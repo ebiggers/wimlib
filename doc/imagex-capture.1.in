@@ -248,7 +248,18 @@ Packed resources use a compression type and chunk size that is independent of
 the WIM's "default compression type" and "default chunk size" (which may be
 adjusted by the \fB--compress\fR and \fB--chunk-size\fR options, respectively).
 For compatibility reasons, \fB@IMAGEX_PROGNAME@ capture\fR currently has no
-option to change the compression type or chunk size used in packed resources.
+option to change the compression type used in packed resources; however, the
+\fB--pack-chunk-size\fR option may be used to set the chunk size.
+.TP
+\fB--pack-chunk-size\fR=\fISIZE\fR, \fB--solid-chunk-size\fR=\fISIZE\fR
+Like \fB--chunk-size\fR, but set the chunk size used in packed resources.  The
+compression format is LZMS, so the chunk size can be any power of 2 between 2^15
+and 2^26, inclusively.  WIMGAPI (Windows 8) appears to be compatible with all
+these sizes, despite not being compatible with sizes greater than 2^20 in
+non-packed resources.  The default is currently 2^25 (33554432).  Note:
+currently, the LZMS compression algorithm uses about 15 times the chunk size in
+memory per thread, which is about 500 MB per thread for the default pack chunk
+size of 2^25 or 1 GB per thread if you change it to 2^26 (67108864).
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of

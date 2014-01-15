@@ -85,6 +85,9 @@ result in a higher compression ratio, but has disadvantages such as reduced
 compatibility; see the documentation for this option to
 \fB@IMAGEX_PROGNAME@ capture\fR (1) for more details.
 .TP
+\fB--pack-chunk-size\fR=\fISIZE\fR, \fB--solid-chunk-size\fR=\fISIZE\fR
+Like \fB--chunk-size\fR, but set the chunk size used in packed resources.
+.TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of
 processors).  Note: multiple compressor threads are not very useful when

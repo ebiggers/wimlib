@@ -3414,8 +3414,7 @@ wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size);
  * @ingroup G_writing_and_overwriting_wims
  *
  * Similar to wimlib_set_output_chunk_size(), but set the chunk size for writing
- * packed streams.  For compatibility reasons, using this function is not
- * generally recommended.
+ * packed streams.
  */
 extern int
 wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size);
@@ -3446,7 +3445,12 @@ wimlib_set_output_compression_type(WIMStruct *wim, int ctype);
  * @ingroup G_writing_and_overwriting_wims
  *
  * Similar to wimlib_set_output_compression_type(), but set the compression type
- * for writing packed streams.
+ * for writing packed streams (solid blocks).
+ *
+ * Note: based on testing, WIMGAPI is seemingly only compatible with LZMS
+ * compression in packed streams.  Therefore the use of this function is not
+ * recommended.  Also, with large chunk sizes, LZMS gives the best compression
+ * ratio among the alternatives anyway.
  */
 extern int
 wimlib_set_output_pack_compression_type(WIMStruct *wim, int ctype);
