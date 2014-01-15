@@ -409,10 +409,10 @@ extend_left:
 				}
 			}
 
-			/* Here we have lenL < lenR.  Extend right, unless the
-			 * minimum match length would be underrun.  */
-			if (lenR == 0)
-				return nmatches;
+			/* Here we have lenL < lenR.  Extend right.
+			 * (No check for whether the minimum match length has
+			 * been underrun is needed, provided that such lengths
+			 * are marked as 0.)  */
 			goto extend_right;
 		}
 	}
