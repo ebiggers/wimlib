@@ -91,6 +91,9 @@ See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 \fB--strict-acls\fR
 See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 .TP
+\fB--no-attributes\fR
+See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
+.TP
 \fB--include-invalid-names\fR
 See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 .TP

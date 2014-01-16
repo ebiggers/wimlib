@@ -1514,6 +1514,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * one of the provided globs did not match a file.  */
 #define WIMLIB_EXTRACT_FLAG_STRICT_GLOB			0x00080000
 
+/** Do not extract Windows file attributes such as readonly, hidden, etc.  */
+#define WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES		0x00100000
+
 /** @} */
 /** @ingroup G_mounting_wim_images
  * @{ */

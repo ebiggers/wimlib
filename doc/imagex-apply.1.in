@@ -352,6 +352,9 @@ combined with \fB--unix-data\fR to cause \fB@IMAGEX_PROGNAME@\fR to fail
 immediately if the UNIX owner, group, or mode on an extracted file cannot be set
 for any reason.
 .TP
+\fB--no-attributes\fR
+Do not restore Windows file attributes such as readonly, hidden, etc.
+.TP
 \fB--include-invalid-names\fR
 Extract files and directories with invalid names by replacing characters and
 appending a suffix rather than ignoring them.  Exactly what is considered an

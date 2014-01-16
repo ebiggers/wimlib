@@ -669,6 +669,7 @@ extract_file_attributes(const tchar *path, struct apply_ctx *ctx,
 	int ret;
 
 	if (ctx->ops->set_file_attributes &&
+	    !(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES) &&
 	    !(dentry == ctx->extract_root && ctx->root_dentry_is_special)) {
 		u32 attributes = dentry->d_inode->i_attributes;
 

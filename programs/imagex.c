@@ -145,6 +145,7 @@ enum {
 	IMAGEX_NORPFIX_OPTION,
 	IMAGEX_NOCHECK_OPTION,
 	IMAGEX_NO_ACLS_OPTION,
+	IMAGEX_NO_ATTRIBUTES_OPTION,
 	IMAGEX_NO_WILDCARDS_OPTION,
 	IMAGEX_ONE_FILE_ONLY_OPTION,
 	IMAGEX_NOT_PIPABLE_OPTION,
@@ -183,6 +184,7 @@ static const struct option apply_options[] = {
 	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
+	{T("no-attributes"), no_argument,     NULL, IMAGEX_NO_ATTRIBUTES_OPTION},
 	{T("rpfix"),       no_argument,       NULL, IMAGEX_RPFIX_OPTION},
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
 	{T("include-invalid-names"), no_argument,       NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
@@ -264,6 +266,7 @@ static const struct option extract_options[] = {
 	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
+	{T("no-attributes"), no_argument,     NULL, IMAGEX_NO_ATTRIBUTES_OPTION},
 	{T("dest-dir"),    required_argument, NULL, IMAGEX_DEST_DIR_OPTION},
 	{T("to-stdout"),   no_argument,       NULL, IMAGEX_TO_STDOUT_OPTION},
 	{T("include-invalid-names"), no_argument, NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
@@ -1617,6 +1620,9 @@ imagex_apply(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_STRICT_ACLS_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_STRICT_ACLS;
+			break;
+		case IMAGEX_NO_ATTRIBUTES_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES;
 			break;
 		case IMAGEX_NORPFIX_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_NORPFIX;
@@ -3008,6 +3014,9 @@ imagex_extract(int argc, tchar **argv, int cmd)
 		case IMAGEX_STRICT_ACLS_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_STRICT_ACLS;
 			break;
+		case IMAGEX_NO_ATTRIBUTES_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES;
+			break;
 		case IMAGEX_DEST_DIR_OPTION:
 			dest_dir = optarg;
 			break;
@@ -4042,8 +4051,9 @@ T(
 T(
 "    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME | all)]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--ref=\"GLOB\"]\n"
-"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
-"                    [--hardlink] [--symlink] [--include-invalid-names]\n"
+"                    [--no-acls] [--strict-acls] [--no-attributes]\n"
+"                    [--rpfix] [--norpfix] [--hardlink] [--symlink]\n"
+"                    [--include-invalid-names]\n"
 ),
 [CMD_CAPTURE] =
 T(
@@ -4075,7 +4085,7 @@ T(
 T(
 "    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) ([PATH...] | @LISTFILE)\n"
 "                    [--check] [--ref=\"GLOB\"] [--no-acls] [--strict-acls]\n"
-"                    [--to-stdout] [--dest-dir=CMD_DIR]\n"
+"                    [--no-attributes] [--to-stdout] [--dest-dir=CMD_DIR]\n"
 "                    [--include-invalid-names]\n"
 ),
 [CMD_INFO] =
