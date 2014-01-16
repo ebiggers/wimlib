@@ -798,8 +798,6 @@ out:
 int
 verify_inode(struct wim_inode *inode, const struct wim_security_data *sd)
 {
-	struct wim_dentry *dentry;
-
 	/* Check the security ID.  -1 is valid and means "no security
 	 * descriptor".  Anything else has to be a valid index into the WIM
 	 * image's security descriptors table. */
