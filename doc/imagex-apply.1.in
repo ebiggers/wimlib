@@ -232,6 +232,24 @@ be extracted by default; see \fB--include-invalid-names\fR.
 Files with full paths over 260 characters (the so-called MAX_PATH) will be
 extracted, but beware that such files will be inaccessible to most Windows
 software and may not be able to be deleted easily.
+.IP \[bu]
+On Windows, unless the \fB--no-acls\fR option is specified, wimlib will attempt
+to restore files' security descriptors exactly as they are provided in the WIM
+image.  Beware that typical Windows installations contain files whose security
+descriptors do not allow the Administrator to delete them.  Therefore, such
+files will not be able to be deleted, or in some cases even read, after
+extracting, unless processed with a specialized program that knows to acquire
+the SE_RESTORE_NAME and/or SE_BACKUP_NAME privileges which allow overriding
+access control lists.  This is not a bug in wimlib, which works as designed to
+correctly restore the data that was archived, but rather a problem with the
+access rights Windows uses on certain files.  But if you just want the file data
+and don't care about security descriptors, use \fB--no-acls\fR to skip restoring
+all security descriptors.
+.IP \[bu]
+A similar caveat to the above applies to file attributes such as Readonly,
+Hidden, and System.  By design, on Windows wimlib will restore such file
+attributes; therefore, extracted files may have those attributes.  If this is
+not what you want, use the \fB--no-attributes\fR option.
 .SH SPLIT WIMS
 You may use \fB@IMAGEX_PROGNAME@ apply\fR to apply images from a split WIM.  The
 \fIWIMFILE\fR argument must specify the first part of the split WIM, while the
