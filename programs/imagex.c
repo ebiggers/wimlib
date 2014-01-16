@@ -51,6 +51,7 @@
 #  define tbasename	win32_wbasename
 #  define OS_PREFERRED_PATH_SEPARATOR L'\\'
 #  define OS_PREFERRED_PATH_SEPARATOR_STRING L"\\"
+#  define print_security_descriptor     win32_print_security_descriptor
 #else /* __WIN32__ */
 #  include <glob.h>
 #  include <getopt.h>
@@ -58,6 +59,7 @@
 #  define tbasename	basename
 #  define OS_PREFERRED_PATH_SEPARATOR '/'
 #  define OS_PREFERRED_PATH_SEPARATOR_STRING "/"
+#  define print_security_descriptor	default_print_security_descriptor
 static inline void set_fd_to_binary_mode(int fd)
 {
 }
@@ -130,6 +132,7 @@ enum {
 	IMAGEX_DELTA_FROM_OPTION,
 	IMAGEX_DEREFERENCE_OPTION,
 	IMAGEX_DEST_DIR_OPTION,
+	IMAGEX_DETAILED_OPTION,
 	IMAGEX_EXTRACT_XML_OPTION,
 	IMAGEX_FLAGS_OPTION,
 	IMAGEX_FORCE_OPTION,
@@ -227,7 +230,8 @@ static const struct option delete_options[] = {
 };
 
 static const struct option dir_options[] = {
-	{T("path"), required_argument, NULL, IMAGEX_PATH_OPTION},
+	{T("path"),     required_argument, NULL, IMAGEX_PATH_OPTION},
+	{T("detailed"), no_argument,       NULL, IMAGEX_DETAILED_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -2366,11 +2370,205 @@ out_usage:
 	goto out;
 }
 
-static int
-print_full_path(const struct wimlib_dir_entry *wdentry, void *_ignore)
+struct print_dentry_options {
+	bool detailed;
+};
+
+static void
+print_dentry_full_path(const struct wimlib_dir_entry *dentry)
 {
-	int ret = tprintf(T("%"TS"\n"), wdentry->full_path);
-	return (ret >= 0) ? 0 : -1;
+	tprintf(T("%"TS"\n"), dentry->full_path);
+}
+
+static const struct {
+	uint32_t flag;
+	const tchar *name;
+} file_attr_flags[] = {
+	{WIMLIB_FILE_ATTRIBUTE_READONLY,	    T("READONLY")},
+	{WIMLIB_FILE_ATTRIBUTE_HIDDEN,		    T("HIDDEN")},
+	{WIMLIB_FILE_ATTRIBUTE_SYSTEM,		    T("SYSTEM")},
+	{WIMLIB_FILE_ATTRIBUTE_DIRECTORY,	    T("DIRECTORY")},
+	{WIMLIB_FILE_ATTRIBUTE_ARCHIVE,		    T("ARCHIVE")},
+	{WIMLIB_FILE_ATTRIBUTE_DEVICE,		    T("DEVICE")},
+	{WIMLIB_FILE_ATTRIBUTE_NORMAL,		    T("NORMAL")},
+	{WIMLIB_FILE_ATTRIBUTE_TEMPORARY,	    T("TEMPORARY")},
+	{WIMLIB_FILE_ATTRIBUTE_SPARSE_FILE,	    T("SPARSE_FILE")},
+	{WIMLIB_FILE_ATTRIBUTE_REPARSE_POINT,	    T("REPARSE_POINT")},
+	{WIMLIB_FILE_ATTRIBUTE_COMPRESSED,	    T("COMPRESSED")},
+	{WIMLIB_FILE_ATTRIBUTE_OFFLINE,		    T("OFFLINE")},
+	{WIMLIB_FILE_ATTRIBUTE_NOT_CONTENT_INDEXED, T("NOT_CONTENT_INDEXED")},
+	{WIMLIB_FILE_ATTRIBUTE_ENCRYPTED,	    T("ENCRYPTED")},
+	{WIMLIB_FILE_ATTRIBUTE_VIRTUAL,		    T("VIRTUAL")},
+};
+
+#define TIMESTR_MAX 100
+
+static void
+timespec_to_string(const struct timespec *spec, tchar *buf)
+{
+	time_t t = spec->tv_sec;
+	struct tm tm;
+	gmtime_r(&t, &tm);
+	tstrftime(buf, TIMESTR_MAX, T("%a %b %d %H:%M:%S %Y UTC"), &tm);
+	buf[TIMESTR_MAX - 1] = '\0';
+}
+
+static void
+print_time(const tchar *type, const struct timespec *spec)
+{
+	tchar timestr[TIMESTR_MAX];
+
+	timespec_to_string(spec, timestr);
+
+	tprintf(T("%-20"TS"= %"TS"\n"), type, timestr);
+}
+
+static void print_byte_field(const uint8_t field[], size_t len)
+{
+	while (len--)
+		tprintf(T("%02hhx"), *field++);
+}
+
+static void
+print_wim_information(const tchar *wimfile, const struct wimlib_wim_info *info)
+{
+	tputs(T("WIM Information:"));
+	tputs(T("----------------"));
+	tprintf(T("Path:           %"TS"\n"), wimfile);
+	tprintf(T("GUID:           0x"));
+	print_byte_field(info->guid, sizeof(info->guid));
+	tputchar(T('\n'));
+	tprintf(T("Version:        %u\n"), info->wim_version);
+	tprintf(T("Image Count:    %d\n"), info->image_count);
+	tprintf(T("Compression:    %"TS"\n"),
+		wimlib_get_compression_type_string(info->compression_type));
+	tprintf(T("Chunk Size:     %"PRIu32" bytes\n"),
+		info->chunk_size);
+	tprintf(T("Part Number:    %d/%d\n"), info->part_number, info->total_parts);
+	tprintf(T("Boot Index:     %d\n"), info->boot_index);
+	tprintf(T("Size:           %"PRIu64" bytes\n"), info->total_bytes);
+	tprintf(T("Integrity Info: %"TS"\n"),
+		info->has_integrity_table ? T("yes") : T("no"));
+	tprintf(T("Relative path junction: %"TS"\n"),
+		info->has_rpfix ? T("yes") : T("no"));
+	tprintf(T("Pipable:        %"TS"\n"),
+		info->pipable ? T("yes") : T("no"));
+	tputchar(T('\n'));
+}
+
+static int
+print_resource(const struct wimlib_resource_entry *resource,
+	       void *_ignore)
+{
+	tprintf(T("Hash                = 0x"));
+	print_byte_field(resource->sha1_hash, sizeof(resource->sha1_hash));
+	tputchar(T('\n'));
+
+	if (!resource->is_missing) {
+		tprintf(T("Uncompressed size   = %"PRIu64" bytes\n"),
+			resource->uncompressed_size);
+		if (resource->packed) {
+			tprintf(T("Raw compressed size = %"PRIu64" bytes\n"),
+				resource->raw_resource_compressed_size);
+
+			tprintf(T("Raw offset in WIM   = %"PRIu64" bytes\n"),
+				resource->raw_resource_offset_in_wim);
+
+			tprintf(T("Offset in raw       = %"PRIu64" bytes\n"),
+				resource->offset);
+		} else {
+			tprintf(T("Compressed size     = %"PRIu64" bytes\n"),
+				resource->compressed_size);
+
+			tprintf(T("Offset in WIM       = %"PRIu64" bytes\n"),
+				resource->offset);
+		}
+
+		tprintf(T("Part Number         = %u\n"), resource->part_number);
+		tprintf(T("Reference Count     = %u\n"), resource->reference_count);
+
+		tprintf(T("Flags               = "));
+		if (resource->is_compressed)
+			tprintf(T("WIM_RESHDR_FLAG_COMPRESSED  "));
+		if (resource->is_metadata)
+			tprintf(T("WIM_RESHDR_FLAG_METADATA  "));
+		if (resource->is_free)
+			tprintf(T("WIM_RESHDR_FLAG_FREE  "));
+		if (resource->is_spanned)
+			tprintf(T("WIM_RESHDR_FLAG_SPANNED  "));
+		if (resource->packed)
+			tprintf(T("WIM_RESHDR_FLAG_PACKED_STREAMS  "));
+		tputchar(T('\n'));
+	}
+	tputchar(T('\n'));
+	return 0;
+}
+
+static void
+print_lookup_table(WIMStruct *wim)
+{
+	wimlib_iterate_lookup_table(wim, 0, print_resource, NULL);
+}
+
+static void
+default_print_security_descriptor(const uint8_t *sd, size_t size)
+{
+	tprintf(T("Security Descriptor = "));
+	print_byte_field(sd, size);
+	tputchar(T('\n'));
+}
+
+static void
+print_dentry_detailed(const struct wimlib_dir_entry *dentry)
+{
+
+	tprintf(T(
+"----------------------------------------------------------------------------\n"));
+	tprintf(T("Full Path           = \"%"TS"\"\n"), dentry->full_path);
+	if (dentry->dos_name)
+		tprintf(T("Short Name          = \"%"TS"\"\n"), dentry->dos_name);
+	tprintf(T("Attributes          = 0x%08x\n"), dentry->attributes);
+	for (size_t i = 0; i < ARRAY_LEN(file_attr_flags); i++)
+		if (file_attr_flags[i].flag & dentry->attributes)
+			tprintf(T("    FILE_ATTRIBUTE_%"TS" is set\n"),
+				file_attr_flags[i].name);
+
+	if (dentry->security_descriptor) {
+		print_security_descriptor(dentry->security_descriptor,
+					  dentry->security_descriptor_size);
+	}
+
+	print_time(T("Creation Time"), &dentry->creation_time);
+	print_time(T("Last Write Time"), &dentry->last_write_time);
+	print_time(T("Last Access Time"), &dentry->last_access_time);
+
+
+	if (dentry->attributes & WIMLIB_FILE_ATTRIBUTE_REPARSE_POINT)
+		tprintf(T("Reparse Tag         = 0x%"PRIx32"\n"), dentry->reparse_tag);
+
+	tprintf(T("Link Group ID       = 0x%016"PRIx64"\n"), dentry->hard_link_group_id);
+	tprintf(T("Link Count          = %"PRIu32"\n"), dentry->num_links);
+
+	for (uint32_t i = 0; i <= dentry->num_named_streams; i++) {
+		if (dentry->streams[i].stream_name) {
+			tprintf(T("\tData stream \"%"TS"\":\n"),
+				dentry->streams[i].stream_name);
+		} else {
+			tprintf(T("\tUnnamed data stream:\n"));
+		}
+		print_resource(&dentry->streams[i].resource, NULL);
+	}
+}
+
+static int
+print_dentry(const struct wimlib_dir_entry *dentry, void *_options)
+{
+	const struct print_dentry_options *options = _options;
+	if (!options->detailed)
+		print_dentry_full_path(dentry);
+	else
+		print_dentry_detailed(dentry);
+	return 0;
 }
 
 /* Print the files contained in an image(s) in a WIM file. */
@@ -2383,11 +2581,17 @@ imagex_dir(int argc, tchar **argv, int cmd)
 	int ret;
 	const tchar *path = T("");
 	int c;
+	struct print_dentry_options options = {
+		.detailed = false,
+	};
 
 	for_opt(c, dir_options) {
 		switch (c) {
 		case IMAGEX_PATH_OPTION:
 			path = optarg;
+			break;
+		case IMAGEX_DETAILED_OPTION:
+			options.detailed = true;
 			break;
 		default:
 			goto out_usage;
@@ -2434,7 +2638,7 @@ imagex_dir(int argc, tchar **argv, int cmd)
 
 	ret = wimlib_iterate_dir_tree(wim, image, path,
 				      WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE,
-				      print_full_path, NULL);
+				      print_dentry, &options);
 out_wimlib_free:
 	wimlib_free(wim);
 out:
@@ -2902,91 +3106,6 @@ out_err:
 	goto out_free_refglobs;
 }
 
-static void print_byte_field(const uint8_t field[], size_t len)
-{
-	while (len--)
-		tprintf(T("%02hhx"), *field++);
-}
-
-static void
-print_wim_information(const tchar *wimfile, const struct wimlib_wim_info *info)
-{
-	tputs(T("WIM Information:"));
-	tputs(T("----------------"));
-	tprintf(T("Path:           %"TS"\n"), wimfile);
-	tprintf(T("GUID:           0x"));
-	print_byte_field(info->guid, sizeof(info->guid));
-	tputchar(T('\n'));
-	tprintf(T("Version:        %u\n"), info->wim_version);
-	tprintf(T("Image Count:    %d\n"), info->image_count);
-	tprintf(T("Compression:    %"TS"\n"),
-		wimlib_get_compression_type_string(info->compression_type));
-	tprintf(T("Chunk Size:     %"PRIu32" bytes\n"),
-		info->chunk_size);
-	tprintf(T("Part Number:    %d/%d\n"), info->part_number, info->total_parts);
-	tprintf(T("Boot Index:     %d\n"), info->boot_index);
-	tprintf(T("Size:           %"PRIu64" bytes\n"), info->total_bytes);
-	tprintf(T("Integrity Info: %"TS"\n"),
-		info->has_integrity_table ? T("yes") : T("no"));
-	tprintf(T("Relative path junction: %"TS"\n"),
-		info->has_rpfix ? T("yes") : T("no"));
-	tprintf(T("Pipable:        %"TS"\n"),
-		info->pipable ? T("yes") : T("no"));
-	tputchar(T('\n'));
-}
-
-static int
-print_resource(const struct wimlib_resource_entry *resource,
-	       void *_ignore)
-{
-	tprintf(T("Uncompressed size     = %"PRIu64" bytes\n"),
-		resource->uncompressed_size);
-	if (resource->packed) {
-		tprintf(T("Raw compressed size   = %"PRIu64" bytes\n"),
-			resource->raw_resource_compressed_size);
-
-		tprintf(T("Raw offset in WIM     = %"PRIu64" bytes\n"),
-			resource->raw_resource_offset_in_wim);
-
-		tprintf(T("Offset in raw         = %"PRIu64" bytes\n"),
-			resource->offset);
-	} else {
-		tprintf(T("Compressed size       = %"PRIu64" bytes\n"),
-			resource->compressed_size);
-
-		tprintf(T("Offset in WIM         = %"PRIu64" bytes\n"),
-			resource->offset);
-	}
-
-	tprintf(T("Part Number           = %u\n"), resource->part_number);
-	tprintf(T("Reference Count       = %u\n"), resource->reference_count);
-
-	tprintf(T("Hash                  = 0x"));
-	print_byte_field(resource->sha1_hash, sizeof(resource->sha1_hash));
-	tputchar(T('\n'));
-
-	tprintf(T("Flags                 = "));
-	if (resource->is_compressed)
-		tprintf(T("WIM_RESHDR_FLAG_COMPRESSED  "));
-	if (resource->is_metadata)
-		tprintf(T("WIM_RESHDR_FLAG_METADATA  "));
-	if (resource->is_free)
-		tprintf(T("WIM_RESHDR_FLAG_FREE  "));
-	if (resource->is_spanned)
-		tprintf(T("WIM_RESHDR_FLAG_SPANNED  "));
-	if (resource->packed)
-		tprintf(T("WIM_RESHDR_FLAG_PACKED_STREAMS  "));
-	tputchar(T('\n'));
-	tputchar(T('\n'));
-	return 0;
-}
-
-static void
-print_lookup_table(WIMStruct *wim)
-{
-	wimlib_iterate_lookup_table(wim, 0, print_resource, NULL);
-}
-
 /* Prints information about a WIM file; also can mark an image as bootable,
  * change the name of an image, or change the description of an image. */
 static int
@@ -2999,7 +3118,6 @@ imagex_info(int argc, tchar **argv, int cmd)
 	bool header       = false;
 	bool lookup_table = false;
 	bool xml          = false;
-	bool metadata     = false;
 	bool short_header = true;
 	const tchar *xml_out_file = NULL;
 	const tchar *wimfile;
@@ -3040,9 +3158,9 @@ imagex_info(int argc, tchar **argv, int cmd)
 			short_header = false;
 			break;
 		case IMAGEX_METADATA_OPTION:
-			metadata = true;
-			short_header = false;
-			break;
+			imagex_error(T("The --metadata option has been removed. "
+				       "Use 'wimdir --detail' instead."));
+			goto out_err;
 		default:
 			goto out_usage;
 		}
@@ -3163,11 +3281,6 @@ imagex_info(int argc, tchar **argv, int cmd)
 		if (short_header)
 			wimlib_print_available_images(wim, image);
 
-		if (metadata) {
-			ret = wimlib_print_metadata(wim, image);
-			if (ret)
-				goto out_wimlib_free;
-		}
 		ret = 0;
 	} else {
 
@@ -3944,7 +4057,7 @@ T(
 ),
 [CMD_DIR] =
 T(
-"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--path=PATH]\n"
+"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--path=PATH] [--detailed]\n"
 ),
 [CMD_EXPORT] =
 T(

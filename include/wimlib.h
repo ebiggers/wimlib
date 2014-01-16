@@ -3147,15 +3147,6 @@ extern void
 wimlib_print_header(const WIMStruct *wim) _wimlib_deprecated;
 
 /**
- * @ingroup G_wim_information
- *
- * Deprecated in favor of wimlib_iterate_dir_tree(), which provides the
- * information in a way that can be accessed programatically.
- */
-extern int
-wimlib_print_metadata(WIMStruct *wim, int image) _wimlib_deprecated;
-
-/**
  * @ingroup G_nonstandalone_wims
  *
  * Reference resources from other WIM files or split WIM parts.  This function
@@ -4344,9 +4335,18 @@ wimlib_xpress_decompress(const void *cdata, unsigned clen,
 			 void *udata, unsigned ulen)
 		_wimlib_deprecated;
 
+
 /**
  * @}
  */
+
+/** @ingroup G_wim_information
+ *
+ * Deprecated and will return ::WIMLIB_ERR_UNSUPPORTED.  Use
+ * wimlib_iterate_dir_tree() instead.  */
+extern int
+wimlib_print_metadata(WIMStruct *wim, int image)
+		_wimlib_deprecated;
 
 
 #ifdef __cplusplus

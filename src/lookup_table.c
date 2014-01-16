@@ -827,10 +827,7 @@ read_wim_lookup_table(WIMStruct *wim)
 			}
 
 			if (cur_entry->refcnt != 1) {
-				if (wimlib_print_errors) {
-					ERROR("Found metadata resource with refcnt != 1:");
-					print_lookup_table_entry(cur_entry, stderr);
-				}
+				ERROR("Found metadata resource with refcnt != 1");
 				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 				goto err;
 			}
@@ -870,14 +867,8 @@ read_wim_lookup_table(WIMStruct *wim)
 		 * resource.  */
 		duplicate_entry = lookup_stream(table, cur_entry->hash);
 		if (duplicate_entry) {
-			if (wimlib_print_errors) {
-				WARNING("The WIM lookup table contains two entries with the "
-				      "same SHA1 message digest!");
-				WARNING("The first entry is:");
-				print_lookup_table_entry(duplicate_entry, stderr);
-				WARNING("The second entry is:");
-				print_lookup_table_entry(cur_entry, stderr);
-			}
+			WARNING("The WIM lookup table contains two entries "
+				"with the same SHA1 message digest!");
 			free_lookup_table_entry(cur_entry);
 			continue;
 		}
@@ -1138,87 +1129,6 @@ hash_unhashed_stream(struct wim_lookup_table_entry *lte,
 	}
 	*lte_ret = lte;
 	return 0;
-}
-
-void
-print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out)
-{
-	if (lte == NULL) {
-		tputc(T('\n'), out);
-		return;
-	}
-
-
-	tprintf(T("Uncompressed size     = %"PRIu64" bytes\n"),
-		lte->size);
-	if (lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
-		tprintf(T("Offset                = %"PRIu64" bytes\n"),
-			lte->offset_in_res);
-
-		tprintf(T("Raw uncompressed size = %"PRIu64" bytes\n"),
-			lte->rspec->uncompressed_size);
-
-		tprintf(T("Raw compressed size   = %"PRIu64" bytes\n"),
-			lte->rspec->size_in_wim);
-
-		tprintf(T("Raw offset            = %"PRIu64" bytes\n"),
-			lte->rspec->offset_in_wim);
-	} else if (lte->resource_location == RESOURCE_IN_WIM) {
-		tprintf(T("Compressed size       = %"PRIu64" bytes\n"),
-			lte->rspec->size_in_wim);
-
-		tprintf(T("Offset                = %"PRIu64" bytes\n"),
-			lte->rspec->offset_in_wim);
-	}
-
-	tfprintf(out, T("Reference Count       = %u\n"), lte->refcnt);
-
-	if (lte->unhashed) {
-		tfprintf(out, T("(Unhashed: inode %p, stream_id = %u)\n"),
-			 lte->back_inode, lte->back_stream_id);
-	} else {
-		tfprintf(out, T("Hash                  = 0x"));
-		print_hash(lte->hash, out);
-		tputc(T('\n'), out);
-	}
-
-	tfprintf(out, T("Flags                 = "));
-	u8 flags = lte->flags;
-	if (flags & WIM_RESHDR_FLAG_COMPRESSED)
-		tfputs(T("WIM_RESHDR_FLAG_COMPRESSED, "), out);
-	if (flags & WIM_RESHDR_FLAG_FREE)
-		tfputs(T("WIM_RESHDR_FLAG_FREE, "), out);
-	if (flags & WIM_RESHDR_FLAG_METADATA)
-		tfputs(T("WIM_RESHDR_FLAG_METADATA, "), out);
-	if (flags & WIM_RESHDR_FLAG_SPANNED)
-		tfputs(T("WIM_RESHDR_FLAG_SPANNED, "), out);
-	if (flags & WIM_RESHDR_FLAG_PACKED_STREAMS)
-		tfputs(T("WIM_RESHDR_FLAG_PACKED_STREAMS, "), out);
-	tputc(T('\n'), out);
-	switch (lte->resource_location) {
-	case RESOURCE_IN_WIM:
-		if (lte->rspec->wim->filename) {
-			tfprintf(out, T("WIM file              = `%"TS"'\n"),
-				 lte->rspec->wim->filename);
-		}
-		break;
-#ifdef __WIN32__
-	case RESOURCE_WIN32_ENCRYPTED:
-#endif
-	case RESOURCE_IN_FILE_ON_DISK:
-		tfprintf(out, T("File on Disk          = `%"TS"'\n"),
-			 lte->file_on_disk);
-		break;
-#ifdef WITH_FUSE
-	case RESOURCE_IN_STAGING_FILE:
-		tfprintf(out, T("Staging File          = `%"TS"'\n"),
-				lte->staging_file_name);
-		break;
-#endif
-	default:
-		break;
-	}
-	tputc(T('\n'), out);
 }
 
 void

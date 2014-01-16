@@ -55,14 +55,9 @@ Shows detailed information from the WIM header.
 \fB--lookup-table\fR
 Prints all the entries in the stream lookup table of the WIM.
 .TP
-\fB--metadata\fR
-Prints the metadata, including the security data and the directory entry tree
-but not the XML data, for the specified image.  If no image is specified, the
-metadata for all images is printed.  This only works on standalone WIMs or on
-the first part of a split WIM.
-.TP
 \fB--xml\fR
 Prints the raw XML data from the WIM.  Note: the XML data will be encoded using
 UTF-16LE, and it will begin with a byte-order mark.
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
+.BR @IMAGEX_PROGNAME@-dir (1)

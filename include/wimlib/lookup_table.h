@@ -262,9 +262,6 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *lte)
 			_malloc_attribute;
 
 extern void
-print_lookup_table_entry(const struct wim_lookup_table_entry *lte, FILE *out);
-
-extern void
 lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
 		     struct wim_lookup_table *table);
 #ifdef WITH_FUSE

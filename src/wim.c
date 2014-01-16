@@ -56,15 +56,6 @@
 #include <unistd.h>
 
 static int
-image_print_metadata(WIMStruct *wim)
-{
-	DEBUG("Printing metadata for image %d", wim->current_image);
-	print_wim_security_data(wim_security_data(wim));
-	return for_dentry_in_tree(wim_root_dentry(wim), print_dentry,
-				  wim->lookup_table);
-}
-
-static int
 wim_default_pack_compression_type(void)
 {
 	return WIMLIB_COMPRESSION_TYPE_LZMS;
@@ -276,11 +267,6 @@ select_wim_image(WIMStruct *wim, int image)
 	if (imd->root_dentry || imd->modified) {
 		ret = 0;
 	} else {
-		#ifdef ENABLE_DEBUG
-		DEBUG("Reading metadata resource specified by the following "
-		      "lookup table entry:");
-		print_lookup_table_entry(imd->metadata_lte, stderr);
-		#endif
 		ret = read_metadata_resource(wim, imd);
 		if (ret)
 			wim->current_image = WIMLIB_NO_IMAGE;
@@ -364,12 +350,11 @@ wimlib_print_available_images(const WIMStruct *wim, int image)
 		print_image_info(wim->wim_info, i);
 }
 
-
-/* API function documented in wimlib.h  */
+/* TODO: Deprecated; remove this.  */
 WIMLIBAPI int
 wimlib_print_metadata(WIMStruct *wim, int image)
 {
-	return for_image(wim, image, image_print_metadata);
+	return WIMLIB_ERR_UNSUPPORTED;
 }
 
 /* API function documented in wimlib.h  */

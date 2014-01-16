@@ -132,7 +132,7 @@ if ! imagex info --extract-xml=dir.xml dir.wim; then
 	error "Failed to extract WIM XML data"
 fi
 echo "Testing printing WIM metadata"
-if ! imagex info --metadata dir.wim > /dev/null; then
+if ! imagex dir --detailed dir.wim > /dev/null; then
 	error "Failed to print WIM metadata"
 fi
 rm -rf dir.wim tmp dir.xml

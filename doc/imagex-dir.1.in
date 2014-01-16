@@ -19,13 +19,15 @@ to show what images a WIM file contains.
 \fB--path\fR=\fIPATH\fR
 List the files recursively from the \fIPATH\fR directory instead of from the
 root directory.
+.TP
+\fB--detailed\fR
+List detailed information about each file.
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ dir\fR supports split WIMs, but it will only work on the
 first part of the split WIM.
 .PP
-The DOS names of files are not displayed.
-.PP
-Alternate (named) data streams are not displayed.
+DOS names and alternate (named) data streams are not listed unless the
+\fB--detailed\fR mode is used.
 .SH EXAMPLES
 List all files in the first image of 'boot.wim':
 .RS

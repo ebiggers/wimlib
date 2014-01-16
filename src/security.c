@@ -31,7 +31,6 @@
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/security.h"
-#include "wimlib/security_descriptor.h"
 #include "wimlib/sha1.h"
 #include "wimlib/util.h"
 
@@ -213,116 +212,6 @@ write_wim_security_data(const struct wim_security_data * restrict sd,
 
 	DEBUG("Successfully wrote security data.");
 	return p;
-}
-
-static void
-print_acl(const wimlib_ACL *acl, const tchar *type, size_t max_size)
-{
-	const u8 *p;
-
-	if (max_size < sizeof(wimlib_ACL))
-		return;
-
-	u8 revision = acl->revision;
-	u16 acl_size = le16_to_cpu(acl->acl_size);
-	u16 ace_count = le16_to_cpu(acl->ace_count);
-
-	tprintf(T("    [%"TS" ACL]\n"), type);
-	tprintf(T("    Revision = %u\n"), revision);
-	tprintf(T("    ACL Size = %u\n"), acl_size);
-	tprintf(T("    ACE Count = %u\n"), ace_count);
-
-	p = (const u8*)acl + sizeof(wimlib_ACL);
-	for (u16 i = 0; i < ace_count; i++) {
-		if (max_size < p + sizeof(wimlib_ACCESS_ALLOWED_ACE) - (const u8*)acl)
-			break;
-		const wimlib_ACCESS_ALLOWED_ACE *aaa = (const wimlib_ACCESS_ALLOWED_ACE*)p;
-		tprintf(T("        [ACE]\n"));
-		tprintf(T("        ACE type  = %d\n"), aaa->hdr.type);
-		tprintf(T("        ACE flags = 0x%x\n"), aaa->hdr.flags);
-		tprintf(T("        ACE size  = %u\n"), le16_to_cpu(aaa->hdr.size));
-		tprintf(T("        ACE mask = %x\n"), le32_to_cpu(aaa->mask));
-		tprintf(T("        SID start = %u\n"), le32_to_cpu(aaa->sid_start));
-		p += le16_to_cpu(aaa->hdr.size);
-	}
-	tputchar(T('\n'));
-}
-
-static void
-print_sid(const wimlib_SID *sid, const tchar *type, size_t max_size)
-{
-	if (max_size < sizeof(wimlib_SID))
-		return;
-
-	tprintf(T("    [%"TS" SID]\n"), type);
-	tprintf(T("    Revision = %u\n"), sid->revision);
-	tprintf(T("    Subauthority count = %u\n"), sid->sub_authority_count);
-	tprintf(T("    Identifier authority = "));
-	print_byte_field(sid->identifier_authority,
-			 sizeof(sid->identifier_authority), stdout);
-	tputchar(T('\n'));
-	if (max_size < sizeof(wimlib_SID) + (size_t)sid->sub_authority_count * sizeof(u32))
-		return;
-	for (u8 i = 0; i < sid->sub_authority_count; i++) {
-		tprintf(T("    Subauthority %u = %u\n"),
-			i, le32_to_cpu(sid->sub_authority[i]));
-	}
-	tputchar(T('\n'));
-}
-
-static void
-print_security_descriptor(const wimlib_SECURITY_DESCRIPTOR_RELATIVE *descr,
-			  size_t size)
-{
-	u8 revision      = descr->revision;
-	u16 control      = le16_to_cpu(descr->control);
-	u32 owner_offset = le32_to_cpu(descr->owner_offset);
-	u32 group_offset = le32_to_cpu(descr->group_offset);
-	u32 dacl_offset  = le32_to_cpu(descr->dacl_offset);
-	u32 sacl_offset  = le32_to_cpu(descr->sacl_offset);
-
-	tprintf(T("Revision = %u\n"), revision);
-	tprintf(T("Security Descriptor Control = %#x\n"), control);
-	tprintf(T("Owner offset = %u\n"), owner_offset);
-	tprintf(T("Group offset = %u\n"), group_offset);
-	tprintf(T("Discretionary ACL offset = %u\n"), dacl_offset);
-	tprintf(T("System ACL offset = %u\n"), sacl_offset);
-
-	if (owner_offset != 0 && owner_offset <= size)
-		print_sid((const wimlib_SID*)((const u8*)descr + owner_offset),
-			  T("Owner"), size - owner_offset);
-
-	if (group_offset != 0 && group_offset <= size)
-		print_sid((const wimlib_SID*)((const u8*)descr + group_offset),
-			  T("Group"), size - group_offset);
-
-	if (dacl_offset != 0 && dacl_offset <= size)
-		print_acl((const wimlib_ACL*)((const u8*)descr + dacl_offset),
-			  T("Discretionary"), size - dacl_offset);
-
-	if (sacl_offset != 0 && sacl_offset <= size)
-		print_acl((const wimlib_ACL*)((const u8*)descr + sacl_offset),
-			  T("System"), size - sacl_offset);
-}
-
-/*
- * Prints the security data for a WIM file.
- */
-void
-print_wim_security_data(const struct wim_security_data *sd)
-{
-	tputs(T("[SECURITY DATA]"));
-	tprintf(T("Length            = %"PRIu32" bytes\n"), sd->total_length);
-	tprintf(T("Number of Entries = %"PRIu32"\n"), sd->num_entries);
-
-	for (u32 i = 0; i < sd->num_entries; i++) {
-		tprintf(T("[SECURITY_DESCRIPTOR_RELATIVE %"PRIu32", length = %"PRIu64"]\n"),
-			i, sd->sizes[i]);
-		print_security_descriptor((const wimlib_SECURITY_DESCRIPTOR_RELATIVE*)sd->descriptors[i],
-					  sd->sizes[i]);
-		tputchar(T('\n'));
-	}
-	tputchar(T('\n'));
 }
 
 void

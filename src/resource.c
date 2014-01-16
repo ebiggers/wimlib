@@ -991,6 +991,13 @@ hasher_consume_chunk(const void *chunk, size_t size, void *_ctx)
 		return (*ctx->cbs.consume_chunk)(chunk, size, ctx->cbs.consume_chunk_ctx);
 }
 
+static void
+get_sha1_string(const u8 md[SHA1_HASH_SIZE], tchar *str)
+{
+	for (size_t i = 0; i < SHA1_HASH_SIZE; i++)
+		str += tsprintf(str, T("%02x"), md[i]);
+}
+
 /* Callback for finishing reading a stream while calculating its SHA1 message
  * digest.  */
 static int
@@ -1023,9 +1030,14 @@ hasher_end_stream(struct wim_lookup_table_entry *lte, int status, void *_ctx)
 			 * that it is the same as the calculated value.  */
 			if (!hashes_equal(hash, lte->hash)) {
 				if (wimlib_print_errors) {
-					ERROR("Invalid SHA1 message digest "
-					      "on the following WIM stream:");
-					print_lookup_table_entry(lte, stderr);
+					tchar expected_hashstr[SHA1_HASH_SIZE * 2 + 1];
+					tchar actual_hashstr[SHA1_HASH_SIZE * 2 + 1];
+					get_sha1_string(lte->hash, expected_hashstr);
+					get_sha1_string(hash, actual_hashstr);
+					ERROR("The stream is corrupted!\n"
+					      "        (Expected SHA1=%s,\n"
+					      "              got SHA1=%s)",
+					      expected_hashstr, actual_hashstr);
 				}
 				ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
 				errno = EINVAL;
