@@ -48,15 +48,12 @@
 
 #ifdef __WIN32__
 #  include "imagex-win32.h"
-#  define tbasename	win32_wbasename
 #  define OS_PREFERRED_PATH_SEPARATOR L'\\'
 #  define OS_PREFERRED_PATH_SEPARATOR_STRING L"\\"
 #  define print_security_descriptor     win32_print_security_descriptor
 #else /* __WIN32__ */
-#  include <glob.h>
 #  include <getopt.h>
 #  include <langinfo.h>
-#  define tbasename	basename
 #  define OS_PREFERRED_PATH_SEPARATOR '/'
 #  define OS_PREFERRED_PATH_SEPARATOR_STRING "/"
 #  define print_security_descriptor	default_print_security_descriptor
@@ -76,6 +73,34 @@ static inline void set_fd_to_binary_mode(int fd)
 #endif
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
+
+static inline bool
+is_any_path_separator(tchar c)
+{
+	return c == T('/') || c == T('\\');
+}
+
+/* Like basename(), but handles both forward and backwards slashes.  */
+static tchar *
+tbasename(tchar *path)
+{
+	tchar *p = tstrchr(path, T('\0'));
+
+	for (;;) {
+		if (p == path)
+			return path;
+		if (!is_any_path_separator(*--p))
+			break;
+		*p = T('\0');
+	}
+
+	for (;;) {
+		if (p == path)
+			return path;
+		if (is_any_path_separator(*--p))
+			return ++p;
+	}
+}
 
 #define for_opt(c, opts) while ((c = getopt_long_only(argc, (tchar**)argv, T(""), \
 				opts, NULL)) != -1)
@@ -147,12 +172,14 @@ enum {
 	IMAGEX_NO_ACLS_OPTION,
 	IMAGEX_NO_ATTRIBUTES_OPTION,
 	IMAGEX_NO_WILDCARDS_OPTION,
+	IMAGEX_NULLGLOB_OPTION,
 	IMAGEX_ONE_FILE_ONLY_OPTION,
 	IMAGEX_NOT_PIPABLE_OPTION,
 	IMAGEX_PACK_CHUNK_SIZE_OPTION,
 	IMAGEX_PACK_STREAMS_OPTION,
 	IMAGEX_PATH_OPTION,
 	IMAGEX_PIPABLE_OPTION,
+	IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION,
 	IMAGEX_REBUILD_OPTION,
 	IMAGEX_RECOMPRESS_OPTION,
 	IMAGEX_RECURSIVE_OPTION,
@@ -164,7 +191,6 @@ enum {
 	IMAGEX_STAGING_DIR_OPTION,
 	IMAGEX_STREAMS_INTERFACE_OPTION,
 	IMAGEX_STRICT_ACLS_OPTION,
-	IMAGEX_STRICT_WILDCARDS_OPTION,
 	IMAGEX_SYMLINK_OPTION,
 	IMAGEX_THREADS_OPTION,
 	IMAGEX_TO_STDOUT_OPTION,
@@ -270,8 +296,9 @@ static const struct option extract_options[] = {
 	{T("dest-dir"),    required_argument, NULL, IMAGEX_DEST_DIR_OPTION},
 	{T("to-stdout"),   no_argument,       NULL, IMAGEX_TO_STDOUT_OPTION},
 	{T("include-invalid-names"), no_argument, NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
-	{T("strict-wildcards"), no_argument,  NULL, IMAGEX_STRICT_WILDCARDS_OPTION},
 	{T("no-wildcards"), no_argument,      NULL, IMAGEX_NO_WILDCARDS_OPTION},
+	{T("nullglob"),     no_argument,      NULL, IMAGEX_NULLGLOB_OPTION},
+	{T("preserve-dir-structure"), no_argument, NULL, IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1250,16 +1277,14 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			info->extract.target);
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN:
-		if (info->extract.extract_root_wim_source_path[0] != T('\0')) {
-			imagex_printf(T("Extracting "
-				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING"%"TS"\" "
-				  "from image %d (\"%"TS"\") "
-				  "in \"%"TS"\" to \"%"TS"\"\n"),
-				info->extract.extract_root_wim_source_path,
-				info->extract.image,
-				info->extract.image_name,
-				info->extract.wimfile_name,
-				info->extract.target);
+		if (info->extract.extract_root_wim_source_path[0]) {
+			imagex_printf(T("Extracting \"%"TS"\" from image %d "
+					"(\"%"TS"\") in \"%"TS"\" to \"%"TS"\"\n"),
+				      info->extract.extract_root_wim_source_path,
+				      info->extract.image,
+				      info->extract.image_name,
+				      info->extract.wimfile_name,
+				      info->extract.target);
 		}
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS:
@@ -2910,67 +2935,6 @@ out_err:
 	goto out_free_refglobs;
 }
 
-static bool
-is_root_wim_path(const tchar *path)
-{
-	const tchar *p;
-	for (p = path; *p; p++)
-		if (*p != T('\\') && *p != T('/'))
-			return false;
-	return true;
-}
-
-static void
-free_extract_commands(struct wimlib_extract_command *cmds, size_t num_cmds,
-		      const tchar *dest_dir)
-{
-	for (size_t i = 0; i < num_cmds; i++)
-		if (cmds[i].fs_dest_path != dest_dir)
-			free(cmds[i].fs_dest_path);
-	free(cmds);
-}
-
-static struct wimlib_extract_command *
-prepare_extract_commands(tchar **paths, unsigned num_paths,
-			 int extract_flags, tchar *dest_dir,
-			 size_t *num_cmds_ret)
-{
-	struct wimlib_extract_command *cmds;
-	size_t num_cmds;
-	tchar *emptystr = T("");
-
-	if (num_paths == 0) {
-		num_paths = 1;
-		paths = &emptystr;
-	}
-	num_cmds = num_paths;
-	cmds = calloc(num_cmds, sizeof(cmds[0]));
-	if (!cmds) {
-		imagex_error(T("Out of memory!"));
-		return NULL;
-	}
-
-	for (size_t i = 0; i < num_cmds; i++) {
-		cmds[i].extract_flags = extract_flags;
-		cmds[i].wim_source_path = paths[i];
-		if (is_root_wim_path(paths[i])) {
-			cmds[i].fs_dest_path = dest_dir;
-		} else {
-			size_t len = tstrlen(dest_dir) + 1 + tstrlen(paths[i]);
-			cmds[i].fs_dest_path = malloc((len + 1) * sizeof(tchar));
-			if (!cmds[i].fs_dest_path) {
-				free_extract_commands(cmds, num_cmds, dest_dir);
-				return NULL;
-			}
-			tsprintf(cmds[i].fs_dest_path,
-				 T("%"TS""OS_PREFERRED_PATH_SEPARATOR_STRING"%"TS),
-				 dest_dir, tbasename(paths[i]));
-		}
-	}
-	*num_cmds_ret = num_cmds;
-	return cmds;
-}
-
 /* Extract files or directories from a WIM image */
 static int
 imagex_extract(int argc, tchar **argv, int cmd)
@@ -2984,13 +2948,16 @@ imagex_extract(int argc, tchar **argv, int cmd)
 	const tchar *image_num_or_name;
 	const tchar *pathlist;
 	tchar *dest_dir = T(".");
-	int extract_flags = WIMLIB_EXTRACT_FLAG_NORPFIX;
-	int listfile_extract_flags = WIMLIB_EXTRACT_FLAG_GLOB_PATHS;
+	int extract_flags = WIMLIB_EXTRACT_FLAG_NORPFIX |
+			    WIMLIB_EXTRACT_FLAG_GLOB_PATHS |
+			    WIMLIB_EXTRACT_FLAG_STRICT_GLOB;
+	int notlist_extract_flags = WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE;
 
 	STRING_SET(refglobs);
 
 	struct wimlib_extract_command *cmds;
 	size_t num_cmds;
+	tchar *root_path = T("");
 
 	for_opt(c, extract_options) {
 		switch (c) {
@@ -3030,10 +2997,13 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS;
 			break;
 		case IMAGEX_NO_WILDCARDS_OPTION:
-			listfile_extract_flags &= ~WIMLIB_EXTRACT_FLAG_GLOB_PATHS;
+			extract_flags &= ~WIMLIB_EXTRACT_FLAG_GLOB_PATHS;
 			break;
-		case IMAGEX_STRICT_WILDCARDS_OPTION:
-			listfile_extract_flags |= WIMLIB_EXTRACT_FLAG_STRICT_GLOB;
+		case IMAGEX_NULLGLOB_OPTION:
+			extract_flags &= ~WIMLIB_EXTRACT_FLAG_STRICT_GLOB;
+			break;
+		case IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION:
+			notlist_extract_flags &= ~WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE;
 			break;
 		default:
 			goto out_usage;
@@ -3051,21 +3021,9 @@ imagex_extract(int argc, tchar **argv, int cmd)
 	argc -= 2;
 	argv += 2;
 
-	if (argc == 1 && argv[0][0] == T('@')) {
-		pathlist = argv[0] + 1;
-		cmds = NULL;
-		num_cmds = 0;
-	} else {
-		cmds = prepare_extract_commands(argv, argc, extract_flags, dest_dir,
-						&num_cmds);
-		if (cmds == NULL)
-			goto out_err;
-		pathlist = NULL;
-	}
-
 	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
 	if (ret)
-		goto out_free_cmds;
+		goto out_free_refglobs;
 
 	image = wimlib_resolve_image(wim, image_num_or_name);
 	ret = verify_image_exists_and_is_single(image,
@@ -3080,17 +3038,38 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			goto out_wimlib_free;
 	}
 
-	ret = 0;
-	if (ret == 0 && cmds != NULL) {
-		ret = wimlib_extract_files(wim, image, cmds, num_cmds, 0,
-					   imagex_progress_func);
+	if (argc == 0) {
+		argv = &root_path;
+		argc = 1;
+		extract_flags &= ~WIMLIB_EXTRACT_FLAG_GLOB_PATHS;
 	}
-	if (ret == 0 && pathlist != NULL) {
-		ret = wimlib_extract_pathlist(wim, image, dest_dir,
-					      pathlist,
-					      extract_flags | listfile_extract_flags,
-					      imagex_progress_func);
+
+	while (argc != 0 && ret == 0) {
+		int num_paths;
+
+		for (num_paths = 0;
+		     num_paths < argc && argv[num_paths][0] != T('@');
+		     num_paths++)
+			;
+
+		if (num_paths) {
+			ret = wimlib_extract_paths(wim, image, dest_dir,
+						   (const tchar **)argv,
+						   num_paths,
+						   extract_flags | notlist_extract_flags,
+						   imagex_progress_func);
+			argc -= num_paths;
+			argv += num_paths;
+		} else {
+			ret = wimlib_extract_pathlist(wim, image, dest_dir,
+						      argv[0] + 1,
+						      extract_flags,
+						      imagex_progress_func);
+			argc--;
+			argv++;
+		}
 	}
+
 	if (ret == 0) {
 		if (!imagex_be_quiet)
 			imagex_printf(T("Done extracting files.\n"));
@@ -3107,8 +3086,6 @@ imagex_extract(int argc, tchar **argv, int cmd)
 	}
 out_wimlib_free:
 	wimlib_free(wim);
-out_free_cmds:
-	free_extract_commands(cmds, num_cmds, dest_dir);
 out_free_refglobs:
 	string_set_destroy(&refglobs);
 	return ret;
@@ -4083,10 +4060,11 @@ T(
 ),
 [CMD_EXTRACT] =
 T(
-"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) ([PATH...] | @LISTFILE)\n"
-"                    [--check] [--ref=\"GLOB\"] [--no-acls] [--strict-acls]\n"
-"                    [--no-attributes] [--to-stdout] [--dest-dir=CMD_DIR]\n"
-"                    [--include-invalid-names]\n"
+"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) [(PATH | @LISTFILE)...]\n"
+"                    [--check] [--ref=\"GLOB\"] [--dest-dir=CMD_DIR]\n"
+"                    [--to-stdout] [--no-acls] [--strict-acls]\n"
+"                    [--no-attributes] [--include-invalid-names]\n"
+"                    [--no-wildcards] [--nullglob]\n"
 ),
 [CMD_INFO] =
 T(

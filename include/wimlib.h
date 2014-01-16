@@ -1517,6 +1517,12 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** Do not extract Windows file attributes such as readonly, hidden, etc.  */
 #define WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES		0x00100000
 
+/** For wimlib_extract_paths() and wimlib_extract_pathlist() only:  Do not
+ * preserve the directory structure of the archive when extracting --- that is,
+ * place each extracted files or directory tree directly in the target
+ * directory.  */
+#define WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE	0x00200000
+
 /** @} */
 /** @ingroup G_mounting_wim_images
  * @{ */

@@ -223,12 +223,21 @@ imagex extract test.wim 1 @pathlist --dest-dir=out.dir
 ../tree-cmp hello2 out.dir/hello2
 [ ! -e out.dir/otherfile ]
 
-msg "Testing path list extract (no match w/ strict; error expected)"
 cat > pathlist << EOF
 hello*
 EOF
 rm -rf out.dir
-! imagex extract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards --strict-wildcards
+msg "Testing path list extract (no wildcard, no match; error expected)"
+! imagex extract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
+
+cat > pathlist << EOF
+foobar*
+EOF
+rm -rf out.dir
+msg "Testing path list extract (wildcard, no match; error expected)"
+! imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+msg "Testing path list extract (wildcard, no match, nullglob; no error expected)"
+imagex extract test.wim 1 @pathlist --dest-dir=out.dir --nullglob
 
 msg "Testing path list extract (w/ wildcard)"
 cat > pathlist << EOF
@@ -265,10 +274,10 @@ cat > pathlist << EOF
 hello1
 EOF
 rm -rf out.dir
-! WIMLIB_IMAGEX_IGNORE_CASE=0 imagex extract test.wim 1 @pathlist \
-				--dest-dir=out.dir --strict-wildcards
-WIMLIB_IMAGEX_IGNORE_CASE=1 imagex extract test.wim 1 @pathlist \
-				--dest-dir=out.dir --strict-wildcards
+! WIMLIB_IMAGEX_IGNORE_CASE=0 imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+! WIMLIB_IMAGEX_IGNORE_CASE=0 imagex extract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
+WIMLIB_IMAGEX_IGNORE_CASE=1 imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+WIMLIB_IMAGEX_IGNORE_CASE=1 imagex extract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
 ../tree-cmp hello1 out.dir/HELLO1
 [ ! -e out.dir/topdir/hello1 ]
 

@@ -56,28 +56,6 @@ L"       Maybe try converting your text file to UTF-16LE?\n"
 	return NULL;
 }
 
-static inline bool
-is_path_separator(wchar_t c)
-{
-	return c == L'/' || c == L'\\';
-}
-
-/* basename() (modifying, trailing-slash stripping version) for wide-character
- * strings.  Understands both forward and backward slashes.  */
-wchar_t *
-win32_wbasename(wchar_t *path)
-{
-	wchar_t *p = wcschr(path, L'\0');
-
-	p--;
-	while (p >= path && is_path_separator(*p))
-		*p-- = '\0';
-	while (p >= path && !is_path_separator(*p))
-		p--;
-	p++;
-	return p;
-}
-
 /* Set a file descriptor to binary mode.  */
 void set_fd_to_binary_mode(int fd)
 {

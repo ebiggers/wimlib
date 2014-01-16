@@ -11,6 +11,20 @@ Version 1.6.1:
 	applying it with v1.6.1, decompress it with v1.6.0 then compress it with
 	v1.6.1.
 
+	wimextract now allows wildcard characters in paths specified on the
+	command line (not just in a list file, as was added in v1.6.0).
+
+	wimextract now allows a command line to contain multiple list files,
+	possibly interspersed with direct paths.
+
+	The '--strict-wildcards' option to wimextract has been removed and
+	replaced with the inverse option '--nullglob' --- that is, the default
+	behavior is now to issue an error when any path (possibly containing
+	wildcard characters) does not match any paths in the WIM image, and this
+	can be changed by specifying '--nullglob'.
+
+	Added '--preserve-dir-structure' option to wimextract.
+
 	Fixed more permissions problems when extracting files on Windows.
 
 	Memory usage for LZMS and LZX compression has been decreased.
