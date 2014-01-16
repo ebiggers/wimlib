@@ -22,6 +22,10 @@ root directory.
 .TP
 \fB--detailed\fR
 List detailed information about each file.
+.TP
+\fB--one-file-only\fR
+Show information about one file only.  Intended for use with both \fB--path\fR
+and \fB--detailed\fR.
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ dir\fR supports split WIMs, but it will only work on the
 first part of the split WIM.

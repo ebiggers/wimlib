@@ -146,6 +146,7 @@ enum {
 	IMAGEX_NOCHECK_OPTION,
 	IMAGEX_NO_ACLS_OPTION,
 	IMAGEX_NO_WILDCARDS_OPTION,
+	IMAGEX_ONE_FILE_ONLY_OPTION,
 	IMAGEX_NOT_PIPABLE_OPTION,
 	IMAGEX_PACK_CHUNK_SIZE_OPTION,
 	IMAGEX_PACK_STREAMS_OPTION,
@@ -232,6 +233,7 @@ static const struct option delete_options[] = {
 static const struct option dir_options[] = {
 	{T("path"),     required_argument, NULL, IMAGEX_PATH_OPTION},
 	{T("detailed"), no_argument,       NULL, IMAGEX_DETAILED_OPTION},
+	{T("one-file-only"), no_argument,  NULL, IMAGEX_ONE_FILE_ONLY_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -2584,6 +2586,7 @@ imagex_dir(int argc, tchar **argv, int cmd)
 	struct print_dentry_options options = {
 		.detailed = false,
 	};
+	int iterate_flags = WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE;
 
 	for_opt(c, dir_options) {
 		switch (c) {
@@ -2592,6 +2595,9 @@ imagex_dir(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_DETAILED_OPTION:
 			options.detailed = true;
+			break;
+		case IMAGEX_ONE_FILE_ONLY_OPTION:
+			iterate_flags &= ~WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE;
 			break;
 		default:
 			goto out_usage;
@@ -2636,8 +2642,7 @@ imagex_dir(int argc, tchar **argv, int cmd)
 		image = 1;
 	}
 
-	ret = wimlib_iterate_dir_tree(wim, image, path,
-				      WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE,
+	ret = wimlib_iterate_dir_tree(wim, image, path, iterate_flags,
 				      print_dentry, &options);
 out_wimlib_free:
 	wimlib_free(wim);
