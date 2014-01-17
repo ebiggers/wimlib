@@ -2634,7 +2634,8 @@ do_wimlib_extract_paths(WIMStruct *wim,
 		return ret;
 
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_NTFS |
-			      WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE)) ==
+			      WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE |
+			      WIMLIB_EXTRACT_FLAG_FILEMODE)) ==
 	    (WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE))
 	{
 		ret = mkdir_if_needed(target);
