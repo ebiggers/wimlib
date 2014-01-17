@@ -40,6 +40,7 @@
 #include "wimlib/xml.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/decompressor_ops.h"
+#include "wimlib/version.h"
 
 #ifdef __WIN32__
 #  include "wimlib/win32.h" /* for realpath() replacement */
@@ -975,6 +976,13 @@ test_locale_ctype_utf8(void)
 		!strstr(ctype, "utf8") ||
 		!strstr(ctype, "utf-8"));
 #endif
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI u32
+wimlib_get_version(void)
+{
+	return WIMLIB_VERSION_CODE;
 }
 
 /* API function documented in wimlib.h  */

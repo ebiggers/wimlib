@@ -2677,6 +2677,19 @@ wimlib_get_image_description(const WIMStruct *wim, int image);
 extern const wimlib_tchar *
 wimlib_get_image_name(const WIMStruct *wim, int image);
 
+/**
+ * @ingroup G_general
+ *
+ * Returns the version of wimlib as a 32-bit number whose top 12 bits contain
+ * the major version, the next 10 bits contain the minor version, and the low 10
+ * bits contain the patch version.
+ *
+ * In other words, the returned value is equal to <code>((WIMLIB_MAJOR_VERSION
+ * << 22) | (WIMLIB_MINOR_VERSION << 10) | WIMLIB_PATCH_VERSION)</code> for the
+ * corresponding header file.
+ */
+extern uint32_t
+wimlib_get_version(void);
 
 /**
  * @ingroup G_wim_information
