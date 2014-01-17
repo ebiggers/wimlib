@@ -2853,7 +2853,8 @@ do_wimlib_extract_image(WIMStruct *wim,
 	int ret;
 
 	if (extract_flags & (WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE |
-			     WIMLIB_EXTRACT_FLAG_TO_STDOUT))
+			     WIMLIB_EXTRACT_FLAG_TO_STDOUT |
+			     WIMLIB_EXTRACT_FLAG_GLOB_PATHS))
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (image == WIMLIB_ALL_IMAGES)
