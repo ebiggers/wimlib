@@ -4071,7 +4071,7 @@ T(
 "                    [--check] [--ref=\"GLOB\"] [--dest-dir=CMD_DIR]\n"
 "                    [--to-stdout] [--no-acls] [--strict-acls]\n"
 "                    [--no-attributes] [--include-invalid-names]\n"
-"                    [--no-wildcards] [--nullglob]\n"
+"                    [--no-wildcards] [--nullglob] [--preserve-dir-structure]\n"
 ),
 [CMD_INFO] =
 T(

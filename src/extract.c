@@ -71,7 +71,31 @@
 #define WIMLIB_EXTRACT_FLAG_FROM_PIPE   0x40000000
 #define WIMLIB_EXTRACT_FLAG_FILEMODE    0x20000000
 #define WIMLIB_EXTRACT_FLAG_IMAGEMODE   0x10000000
-#define WIMLIB_EXTRACT_MASK_PUBLIC      0x0fffffff
+
+/* Keep in sync with wimlib.h  */
+#define WIMLIB_EXTRACT_MASK_PUBLIC				\
+	(WIMLIB_EXTRACT_FLAG_NTFS			|	\
+	 WIMLIB_EXTRACT_FLAG_HARDLINK			|	\
+	 WIMLIB_EXTRACT_FLAG_SYMLINK			|	\
+	 WIMLIB_EXTRACT_FLAG_VERBOSE			|	\
+	 WIMLIB_EXTRACT_FLAG_SEQUENTIAL			|	\
+	 WIMLIB_EXTRACT_FLAG_UNIX_DATA			|	\
+	 WIMLIB_EXTRACT_FLAG_NO_ACLS			|	\
+	 WIMLIB_EXTRACT_FLAG_STRICT_ACLS		|	\
+	 WIMLIB_EXTRACT_FLAG_RPFIX			|	\
+	 WIMLIB_EXTRACT_FLAG_NORPFIX			|	\
+	 WIMLIB_EXTRACT_FLAG_TO_STDOUT			|	\
+	 WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES	| 	\
+	 WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS		|	\
+	 WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS		|	\
+	 WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES		|	\
+	 WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS		|	\
+	 WIMLIB_EXTRACT_FLAG_RESUME			|	\
+	 WIMLIB_EXTRACT_FLAG_FILE_ORDER			|	\
+	 WIMLIB_EXTRACT_FLAG_GLOB_PATHS			|	\
+	 WIMLIB_EXTRACT_FLAG_STRICT_GLOB		|	\
+	 WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES		|	\
+	 WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE)
 
 /* Given a WIM dentry in the tree to be extracted, resolve all streams in the
  * corresponding inode and set 'out_refcnt' in each to 0.  */
@@ -2881,9 +2905,12 @@ wimlib_extract_files(WIMStruct *wim,
 	default_extract_flags |= WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE;
 
 	for (size_t i = 0; i < num_cmds; i++) {
-		int cmd_flags = ((cmds[i].extract_flags |
-				  default_extract_flags) &
-					WIMLIB_EXTRACT_MASK_PUBLIC);
+		int cmd_flags = (cmds[i].extract_flags |
+				 default_extract_flags);
+
+		if (cmd_flags & ~WIMLIB_EXTRACT_MASK_PUBLIC)
+			return WIMLIB_ERR_INVALID_PARAM;
+
 		int cmd_link_flags = (cmd_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
 						   WIMLIB_EXTRACT_FLAG_HARDLINK));
 		if (i == 0) {
@@ -2904,9 +2931,8 @@ wimlib_extract_files(WIMStruct *wim,
 	}
 
 	for (size_t i = 0; i < num_cmds; i++) {
-		int extract_flags = ((cmds[i].extract_flags |
-				      default_extract_flags) &
-					WIMLIB_EXTRACT_MASK_PUBLIC);
+		int extract_flags = (cmds[i].extract_flags |
+				     default_extract_flags);
 		const tchar *target = cmds[i].fs_dest_path;
 		const tchar *wim_source_path = cmds[i].wim_source_path;
 
@@ -2933,7 +2959,8 @@ wimlib_extract_paths(WIMStruct *wim,
 {
 	int ret;
 
-	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
+	if (extract_flags & ~WIMLIB_EXTRACT_MASK_PUBLIC)
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	ret = do_wimlib_extract_paths(wim, image, target, paths, num_paths,
 				      extract_flags, progress_func);
@@ -2979,7 +3006,8 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 	int image;
 	unsigned i;
 
-	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
+	if (extract_flags & ~WIMLIB_EXTRACT_MASK_PUBLIC)
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -3136,7 +3164,8 @@ wimlib_extract_image(WIMStruct *wim,
 		     int extract_flags,
 		     wimlib_progress_func_t progress_func)
 {
-	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
+	if (extract_flags & ~WIMLIB_EXTRACT_MASK_PUBLIC)
+		return WIMLIB_ERR_INVALID_PARAM;
 	return do_wimlib_extract_image(wim, image, target, extract_flags,
 				       progress_func);
 }

@@ -113,6 +113,11 @@ wimlib_export_image(WIMStruct *src_wim,
 	u32 orig_dest_image_count;
 
 	/* Check for sane parameters.  */
+	if (export_flags & ~(WIMLIB_EXPORT_FLAG_BOOT |
+			     WIMLIB_EXPORT_FLAG_NO_NAMES |
+			     WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS))
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if (src_wim == NULL || dest_wim == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
 

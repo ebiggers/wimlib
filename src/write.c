@@ -2819,10 +2819,11 @@ wimlib_write(WIMStruct *wim, const tchar *path,
 	     int image, int write_flags, unsigned num_threads,
 	     wimlib_progress_func_t progress_func)
 {
-	if (!path)
+	if (write_flags & ~WIMLIB_WRITE_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
+	if (path == NULL || path[0] == T('\0'))
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	return write_standalone_wim(wim, path, image, write_flags,
 				    num_threads, progress_func);
@@ -2834,10 +2835,12 @@ wimlib_write_to_fd(WIMStruct *wim, int fd,
 		   int image, int write_flags, unsigned num_threads,
 		   wimlib_progress_func_t progress_func)
 {
+	if (write_flags & ~WIMLIB_WRITE_MASK_PUBLIC)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if (fd < 0)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
 	write_flags |= WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR;
 
 	return write_standalone_wim(wim, &fd, image, write_flags,
@@ -3200,9 +3203,7 @@ wimlib_overwrite(WIMStruct *wim, int write_flags,
 	int ret;
 	u32 orig_hdr_flags;
 
-	write_flags &= WIMLIB_WRITE_MASK_PUBLIC;
-
-	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR)
+	if (write_flags & ~WIMLIB_WRITE_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (!wim->filename)

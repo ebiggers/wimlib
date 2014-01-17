@@ -1181,6 +1181,9 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
 			    wimlib_iterate_lookup_table_callback_t cb,
 			    void *user_ctx)
 {
+	if (flags != 0)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	struct iterate_lte_context ctx = {
 		.cb = cb,
 		.user_ctx = user_ctx,

@@ -1309,7 +1309,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * scanned.  */
 #define WIMLIB_ADD_FLAG_VERBOSE			0x00000004
 
-/** Mark the image being added as the bootable image of the WIM. */
+/** Mark the image being added as the bootable image of the WIM.  Not valid for
+ * wimlib_update_image().  */
 #define WIMLIB_ADD_FLAG_BOOT			0x00000008
 
 /** Store the UNIX owner, group, and mode.  This is done by adding a special
@@ -1770,16 +1771,17 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** @ingroup G_nonstandalone_wims
  * @{ */
 
-/** wimlib_reference_resource_files() only:  Enable shell-style filename
- * globbing.  */
+/** For wimlib_reference_resource_files(), enable shell-style filename globbing.
+ * Ignored by wimlib_reference_resources().  */
 #define WIMLIB_REF_FLAG_GLOB_ENABLE		0x00000001
 
-/** wimlib_reference_resource_files() only:  Issue an error
+/** For wimlib_reference_resource_files(), issue an error
  * (::WIMLIB_ERR_GLOB_HAD_NO_MATCHES) if a glob did not match any files.  The
  * default behavior without this flag is to issue no error at that point, but
  * then attempt to open the glob as a literal path, which of course will fail
  * anyway if no file exists at that path.  No effect if
- * ::WIMLIB_REF_FLAG_GLOB_ENABLE is not also specified.  */
+ * ::WIMLIB_REF_FLAG_GLOB_ENABLE is not also specified.  Ignored by
+ * wimlib_reference_resources().  */
 #define WIMLIB_REF_FLAG_GLOB_ERR_ON_NOMATCH	0x00000002
 
 /** @} */

@@ -115,7 +115,7 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 				      &progress);
 		}
 
-		part_write_flags = write_flags & WIMLIB_WRITE_MASK_PUBLIC;
+		part_write_flags = write_flags;
 		part_write_flags |= WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES;
 		if (part_number != 1)
 			part_write_flags |= WIMLIB_WRITE_FLAG_NO_METADATA;
@@ -209,6 +209,9 @@ wimlib_split(WIMStruct *wim, const tchar *swm_name,
 	int ret;
 
 	if (swm_name == NULL || swm_name[0] == T('\0') || part_size == 0)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (write_flags & ~WIMLIB_WRITE_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (!wim_has_metadata(wim))

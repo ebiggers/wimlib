@@ -212,6 +212,9 @@ wimlib_reference_template_image(WIMStruct *wim, int new_image,
 	int ret;
 	struct wim_image_metadata *new_imd;
 
+	if (flags != 0)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if (wim == NULL || template_wim == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
 

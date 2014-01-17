@@ -33,6 +33,9 @@
 #include "wimlib/lookup_table.h"
 #include "wimlib/wim.h"
 
+#define WIMLIB_REF_MASK_PUBLIC (WIMLIB_REF_FLAG_GLOB_ENABLE | \
+				WIMLIB_REF_FLAG_GLOB_ERR_ON_NOMATCH)
+
 static int
 lte_clone_if_new(struct wim_lookup_table_entry *lte, void *_lookup_table)
 {
@@ -74,6 +77,9 @@ wimlib_reference_resources(WIMStruct *wim,
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (num_resource_wims != 0 && resource_wims == NULL)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (ref_flags & ~WIMLIB_REF_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	for (i = 0; i < num_resource_wims; i++)
@@ -194,6 +200,9 @@ wimlib_reference_resource_files(WIMStruct *wim,
 {
 	unsigned i;
 	int ret;
+
+	if (ref_flags & ~WIMLIB_REF_MASK_PUBLIC)
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (ref_flags & WIMLIB_REF_FLAG_GLOB_ENABLE) {
 		for (i = 0; i < count; i++) {

@@ -392,6 +392,12 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int whic
 {
 	int ret;
 
+	if (which & ~(WIMLIB_CHANGE_READONLY_FLAG |
+		      WIMLIB_CHANGE_GUID |
+		      WIMLIB_CHANGE_BOOT_INDEX |
+		      WIMLIB_CHANGE_RPFIX_FLAG))
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if (which & WIMLIB_CHANGE_READONLY_FLAG) {
 		if (info->is_marked_readonly)
 			wim->hdr.flags |= WIM_HDR_FLAG_READONLY;
@@ -721,7 +727,11 @@ WIMLIBAPI int
 wimlib_open_wim(const tchar *wimfile, int open_flags,
 		WIMStruct **wim_ret, wimlib_progress_func_t progress_func)
 {
-	open_flags &= WIMLIB_OPEN_MASK_PUBLIC;
+	if (open_flags & ~(WIMLIB_OPEN_FLAG_CHECK_INTEGRITY |
+			   WIMLIB_OPEN_FLAG_ERROR_IF_SPLIT |
+			   WIMLIB_OPEN_FLAG_WRITE_ACCESS))
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	return open_wim_as_WIMStruct(wimfile, open_flags, wim_ret,
 				     progress_func);
 }
@@ -975,6 +985,15 @@ wimlib_global_init(int init_flags)
 
 	if (already_inited)
 		return 0;
+
+	if (init_flags & ~(WIMLIB_INIT_FLAG_ASSUME_UTF8 |
+			   WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES |
+			   WIMLIB_INIT_FLAG_STRICT_CAPTURE_PRIVILEGES |
+			   WIMLIB_INIT_FLAG_STRICT_APPLY_PRIVILEGES |
+			   WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE |
+			   WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE))
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	libxml_global_init();
 	if (!(init_flags & WIMLIB_INIT_FLAG_ASSUME_UTF8)) {
 		wimlib_mbs_is_utf8 = test_locale_ctype_utf8();

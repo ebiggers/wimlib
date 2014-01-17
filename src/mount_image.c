@@ -2410,6 +2410,15 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	if (!wim || !dir)
 		return WIMLIB_ERR_INVALID_PARAM;
 
+	if (mount_flags & ~(WIMLIB_MOUNT_FLAG_READWRITE |
+			    WIMLIB_MOUNT_FLAG_DEBUG |
+			    WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE |
+			    WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR |
+			    WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS |
+			    WIMLIB_MOUNT_FLAG_UNIX_DATA |
+			    WIMLIB_MOUNT_FLAG_ALLOW_OTHER))
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = can_delete_from_wim(wim);
 		if (ret)
@@ -2569,6 +2578,13 @@ wimlib_unmount_image(const char *dir, int unmount_flags,
 {
 	int ret;
 	struct wimfs_context wimfs_ctx;
+
+	if (unmount_flags & ~(WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY |
+			      WIMLIB_UNMOUNT_FLAG_COMMIT |
+			      WIMLIB_UNMOUNT_FLAG_REBUILD |
+			      WIMLIB_UNMOUNT_FLAG_RECOMPRESS |
+			      WIMLIB_UNMOUNT_FLAG_LAZY))
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	init_wimfs_context(&wimfs_ctx);
 

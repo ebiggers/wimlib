@@ -465,6 +465,21 @@ check_add_command(struct wimlib_update_command *cmd,
 {
 	int add_flags = cmd->add.add_flags;
 
+	if (add_flags & ~(WIMLIB_ADD_FLAG_NTFS |
+			  WIMLIB_ADD_FLAG_DEREFERENCE |
+			  WIMLIB_ADD_FLAG_VERBOSE |
+			  /* BOOT doesn't make sense for wimlib_update_image()  */
+			  /*WIMLIB_ADD_FLAG_BOOT |*/
+			  WIMLIB_ADD_FLAG_UNIX_DATA |
+			  WIMLIB_ADD_FLAG_NO_ACLS |
+			  WIMLIB_ADD_FLAG_STRICT_ACLS |
+			  WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE |
+			  WIMLIB_ADD_FLAG_RPFIX |
+			  WIMLIB_ADD_FLAG_NORPFIX |
+			  WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE |
+			  WIMLIB_ADD_FLAG_WINCONFIG))
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	/* Are we adding the entire image or not?  An empty wim_target_path
 	 * indicates that the tree we're adding is to be placed in the root of
 	 * the image.  We consider this to be capturing the entire image,
@@ -535,6 +550,23 @@ check_add_command(struct wimlib_update_command *cmd,
 }
 
 static int
+check_delete_command(const struct wimlib_update_command *cmd)
+{
+	if (cmd->delete_.delete_flags & ~(WIMLIB_DELETE_FLAG_FORCE |
+					  WIMLIB_DELETE_FLAG_RECURSIVE))
+		return WIMLIB_ERR_INVALID_PARAM;
+	return 0;
+}
+
+static int
+check_rename_command(const struct wimlib_update_command *cmd)
+{
+	if (cmd->rename.rename_flags != 0)
+		return WIMLIB_ERR_INVALID_PARAM;
+	return 0;
+}
+
+static int
 check_update_command(struct wimlib_update_command *cmd,
 		     const struct wim_header *hdr)
 {
@@ -542,8 +574,9 @@ check_update_command(struct wimlib_update_command *cmd,
 	case WIMLIB_UPDATE_OP_ADD:
 		return check_add_command(cmd, hdr);
 	case WIMLIB_UPDATE_OP_DELETE:
+		return check_delete_command(cmd);
 	case WIMLIB_UPDATE_OP_RENAME:
-		break;
+		return check_rename_command(cmd);
 	}
 	return 0;
 }
@@ -666,6 +699,9 @@ wimlib_update_image(WIMStruct *wim,
 	int ret;
 	struct wimlib_update_command *cmds_copy;
 	bool deletion_requested = false;
+
+	if (update_flags & ~WIMLIB_UPDATE_FLAG_SEND_PROGRESS)
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	DEBUG("Updating image %d with %zu commands", image, num_cmds);
 

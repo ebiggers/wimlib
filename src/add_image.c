@@ -139,7 +139,7 @@ capture_sources_to_add_cmds(const struct wimlib_capture_source *sources,
 			      sources[i].fs_source_path,
 			      sources[i].wim_target_path);
 			add_cmds[i].op = WIMLIB_UPDATE_OP_ADD;
-			add_cmds[i].add.add_flags = add_flags;
+			add_cmds[i].add.add_flags = add_flags & ~WIMLIB_ADD_FLAG_BOOT;
 			add_cmds[i].add.config = (struct wimlib_capture_config*)config;
 			add_cmds[i].add.fs_source_path = sources[i].fs_source_path;
 			add_cmds[i].add.wim_target_path = sources[i].wim_target_path;
@@ -163,6 +163,10 @@ wimlib_add_image_multisource(WIMStruct *wim,
 
 	DEBUG("Adding image \"%"TS"\" from %zu sources (add_flags=%#x)",
 	      name, num_sources, add_flags);
+
+	for (size_t i = 0; i < num_sources; i++)
+		if (sources[i].reserved != 0)
+			return WIMLIB_ERR_INVALID_PARAM;
 
 	/* Add the new image (initially empty) */
 	ret = wimlib_add_empty_image(wim, name, NULL);

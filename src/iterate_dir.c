@@ -242,6 +242,11 @@ wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *_path,
 	tchar *path;
 	int ret;
 
+	if (flags & ~(WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE |
+		      WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN |
+		      WIMLIB_ITERATE_DIR_TREE_FLAG_RESOURCES_NEEDED))
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	path = canonicalize_wim_path(_path);
 	if (path == NULL)
 		return WIMLIB_ERR_NOMEM;
