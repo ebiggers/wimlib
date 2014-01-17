@@ -45,21 +45,24 @@ Each path, including those on the command line and those in listfiles, must be
 specified as an absolute path starting from the root of the WIM image, like
 those output by the \fB@IMAGEX_PROGNAME@ dir\fR (1) command.  However, path
 separators may be either forward or backward slashes, and the leading slash is
-optional.  In addition, on Windows, the paths are treated case-insensitively,
-whereas on UNIX-like systems, paths are treated case-sensitively, except when
-overridden through the \fBWIMLIB_IMAGEX_IGNORE_CASE\fR environmental variable,
-as documented in \fB@IMAGEX_PROGNAME@\fR (1).
+optional.
+.PP
+On Windows, by default paths are treated case-insensitively, whereas on
+UNIX-like systems, by default paths are treated case-sensitively.  In either
+case, the default behavior may be overridden through the
+\fBWIMLIB_IMAGEX_IGNORE_CASE\fR environmental variable, as documented in
+\fB@IMAGEX_PROGNAME@\fR (1).
 .PP
 By default, each path may contain the wildcard characters '?' and '*'.  The '?'
-character matches any character other than a path separator, whereas the '*'
-character matches zero or more non-path-separator characters.  Consequently, a
-single wildcard pattern may expand to multiple actual files or directories.
-Use the \fB--no-wildcards\fR option to disable wildcard matching and search for
-each path literally.
+character matches any non-path-separator character, whereas the '*' character
+matches zero or more non-path-separator characters.  Consequently, a single
+wildcard pattern may expand to multiple actual files or directories.  Use the
+\fB--no-wildcards\fR option to disable wildcard matching and search for each
+path literally.
 .PP
 Each \fILISTFILE\fR must be a UTF-8 text file that contains a list of paths to
-extract, one per line.  Wildcard characters are allowed by default.
-The following demonstrates an example listfile:
+extract, one per line.  Wildcard characters are allowed by default.  The
+following demonstrates an example listfile:
 .PP
 .RS
 .nf
@@ -99,7 +102,7 @@ current working directory.
 .TP
 \fB--to-stdout\fR
 Extract the files to standard output instead of to the filesystem.  This can
-only be provided if all the specified \fIPATH\fRs are to regular files (not
+only be provided if all the specified paths are to regular files (not
 directories or reparse points).  If present, alternate data streams are not
 extracted.
 .TP
@@ -119,18 +122,24 @@ See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 .TP
 \fB--no-wildcards\fR
-Do not interpret wildcard characters in paths.
+Do not interpret wildcard characters in paths.  Each path will be searched for
+literally.
 .TP
 \fB--nullglob\fR
-If a wildcard pattern does not match any paths, ignore it instead of failing
-with an error.
+If a wildcard pattern (a.k.a. a "glob") does not match any paths, ignore it and
+print a warning instead of failing with an error.  In other words, this option
+allows a wildcard pattern to successfully match zero files.  Note that this
+applies even if one of the paths does not contain wildcard characters.  Such a
+path is still treated as a "wildcard pattern", so with this option it may not
+match anything and therefore produce no error.  This option cannot be combined
+with \fB--no-wildcards\fR, as that would be meaningless.
 .TP
 \fB--preserve-dir-structure\fR
 When extracting paths, preserve the archive directory structure instead of
 extracting the file or directory tree named by each path directly to the
 destination directory.  Note: \fB--preserve-dir-structure\fR is already the
-default behavior for paths in listfiles (but not paths directly specified on the
-command line).
+default behavior for paths in listfiles, but not paths directly specified on the
+command line.
 .SH NOTES
 See the documentation \fB@IMAGEX_PROGNAME@ apply\fR (1) for documentation about
 what data and metadata are extracted on UNIX-like systems versus on Windows.

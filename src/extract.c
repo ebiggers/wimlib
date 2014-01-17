@@ -2565,7 +2565,7 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 			      WIMLIB_EXTRACT_FLAG_NORPFIX)) == 0)
 	{
 		/* Do reparse point fixups by default if the WIM header says
-		 * they are enabled and we are extracting a full image. */
+		 * they are enabled.  */
 		if (wim->hdr.flags & WIM_HDR_FLAG_RP_FIX)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_RPFIX;
 	}
@@ -2841,6 +2841,10 @@ do_wimlib_extract_image(WIMStruct *wim,
 {
 	int ret;
 
+	if (extract_flags & (WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE |
+			     WIMLIB_EXTRACT_FLAG_TO_STDOUT))
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	if (image == WIMLIB_ALL_IMAGES)
 		ret = extract_all_images(wim, target, extract_flags,
 					 progress_func);
@@ -2977,7 +2981,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 
 	extract_flags &= WIMLIB_EXTRACT_MASK_PUBLIC;
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT)
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	/* Read the WIM header from the pipe and get a WIMStruct to represent

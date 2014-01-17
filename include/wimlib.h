@@ -251,27 +251,22 @@
  *
  * @brief Extract files, directories, and images from a WIM.
  *
- * wimlib_extract_image() extracts, or "applies", an image from a WIM
- * (represented, as usual, by a ::WIMStruct).  This normally extracts the image
- * to a directory, but when supported by the build of the library there is also
- * a special NTFS volume extraction mode (entered when
- * ::WIMLIB_EXTRACT_FLAG_NTFS is specified) that allows extracting a WIM image
- * directly to an unmounted NTFS volume.  Various other flags allow further
- * customization of image extraction.
+ * wimlib_extract_image() extracts, or "applies", an image from a WIM,
+ * represented by a ::WIMStruct.  This normally extracts the image to a
+ * directory, but when supported by the build of the library there is also a
+ * special NTFS volume extraction mode (entered when ::WIMLIB_EXTRACT_FLAG_NTFS
+ * is specified) that allows extracting a WIM image directly to an unmounted
+ * NTFS volume.  Various other flags allow further customization of image
+ * extraction.
  *
- * Another function, wimlib_extract_files(), is also provided.  It can extract
- * certain files or directories from a WIM image, instead of a full image.
+ * wimlib_extract_paths() and wimlib_extract_pathlist() allow extracting a list
+ * of (possibly wildcard) paths from a WIM image.
  *
- * wimlib_extract_paths() and wimlib_extract_pathlist() allow extracting a set
- * of paths from a WIM image in a manner that may be easier to use than
- * wimlib_extract_files(), and also allow wildcard patterns.
+ * wimlib_extract_image_from_pipe() extracts an image from a pipable WIM sent
+ * over a pipe; see @ref subsec_pipable_wims.
  *
- * wimlib_extract_image_from_pipe() allows an image to be extracted from a
- * pipable WIM sent over a pipe; see @ref subsec_pipable_wims.
- *
- * Note that some details of how image extraction/application works are
- * documented more fully in the manual pages for <b>wimlib-imagex apply</b> and
- * <b>wimlib-imagex extract</b>.
+ * Some details of how WIM extraction works are documented more fully in the
+ * manual pages for <b>wimlib-imagex apply</b> and <b>wimlib-imagex extract</b>.
  */
 
 /** @defgroup G_mounting_wim_images Mounting WIM images
@@ -437,91 +432,113 @@ enum wimlib_compression_type {
 enum wimlib_progress_msg {
 
 	/** A WIM image is about to be extracted.  @p info will point to
-	 * ::wimlib_progress_info.extract. */
+	 * ::wimlib_progress_info.extract.  This message is received once per
+	 * image for calls to wimlib_extract_image() and
+	 * wimlib_extract_image_from_pipe().  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN = 0,
 
-	/** One or more file or directory trees within a WIM image (not the full
-	 * image) is about to be extracted.  @p info will point to
-	 * ::wimlib_progress_info.extract. */
+	/** One or more file or directory trees within a WIM image is about to
+	 * be extracted.  @p info will point to ::wimlib_progress_info.extract.
+	 * This message is received once per extraction command for
+	 * wimlib_extract_files(), but only once for wimlib_extract_paths() and
+	 * wimlib_extract_pathlist().  (In the latter cases, wimlib combines all
+	 * paths into a single extraction operation for optimization purposes.)
+	 */
 	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN,
 
-	/** The directory structure of the WIM image is about to be extracted.
-	 * @p info will point to ::wimlib_progress_info.extract. */
+	/** The directory structure and other preliminary metadata is about to
+	 * be extracted.  @p info will point to ::wimlib_progress_info.extract.
+	 * This message is received once after either
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN or
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN.  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
 
-	/** The directory structure of the WIM image has been successfully
-	 * extracted.  @p info will point to ::wimlib_progress_info.extract. */
+	/** Confirms that the directory structure and other preliminary metadata
+	 * has been successfully extracted.  @p info will point to
+	 * ::wimlib_progress_info.extract.  This message is paired with a
+	 * preceding ::WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN message.
+	 */
 	WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END,
 
 	/** File data is currently being extracted.  @p info will point to
-	 * ::wimlib_progress_info.extract. */
+	 * ::wimlib_progress_info.extract.  This is the main message to track
+	 * the progress of an extraction operation.  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
 
 	/** Starting to read a new part of a split pipable WIM over the pipe.
 	 * @p info will point to ::wimlib_progress_info.extract.  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
 
-	/** All the WIM files and directories have been extracted, and
-	 * timestamps are about to be applied.  @p info will point to
-	 * ::wimlib_progress_info.extract. */
+	/** All data for WIM files and directories have been extracted, and
+	 * final metadata such as timestamps is about to be extracted.  @p info
+	 * will point to ::wimlib_progress_info.extract.  This message is
+	 * received once before ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END or
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END.  */
 	WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS,
 
-	/** A WIM image has been successfully extracted.  @p info will point to
-	 * ::wimlib_progress_info.extract. */
+	/** Confirms that the image has been successfully extracted.  @p info
+	 * will point to ::wimlib_progress_info.extract.  This is paired with
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN.  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END,
 
-	/** A file or directory tree within a WIM image (not the full image) has
-	 * been successfully extracted.  @p info will point to
-	 * ::wimlib_progress_info.extract. */
+	/** Confirms that the files or directory trees have been successfully
+	 * extracted.  @p info will point to ::wimlib_progress_info.extract.
+	 * This is paired with ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN.  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END,
 
-	/** The directory or NTFS volume is about to be scanned to build a tree
-	 * of WIM dentries in-memory.  @p info will point to
-	 * ::wimlib_progress_info.scan. */
+	/** The directory or NTFS volume is about to be scanned for metadata.
+	 * @p info will point to ::wimlib_progress_info.scan.  This message is
+	 * received once per call to wimlib_add_image(), or once per capture
+	 * source passed to wimlib_add_image_multisource(), or once per add
+	 * command passed to wimlib_update_image().  */
 	WIMLIB_PROGRESS_MSG_SCAN_BEGIN,
 
-	/** A directory or file is being scanned.  @p info will point to
+	/** A directory or file has been scanned.  @p info will point to
 	 * ::wimlib_progress_info.scan, and its @p cur_path member will be
-	 * valid.  This message is only sent if ::WIMLIB_ADD_FLAG_VERBOSE
-	 * is passed to wimlib_add_image(). */
+	 * valid.  This message is only sent if ::WIMLIB_ADD_FLAG_VERBOSE has
+	 * been specified.  */
 	WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
 
-	/** The directory or NTFS volume has been successfully scanned, and a
-	 * tree of WIM dentries has been built in-memory. @p info will point to
-	 * ::wimlib_progress_info.scan. */
+	/** Confirms that the directory or NTFS volume has been successfully
+	 * scanned.  @p info will point to ::wimlib_progress_info.scan.  This is
+	 * paired with a previous ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN message,
+	 * possibly with many intervening ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY
+	 * messages.  */
 	WIMLIB_PROGRESS_MSG_SCAN_END,
 
 	/** File resources ("streams") are currently being written to the WIM.
-	 * @p info will point to ::wimlib_progress_info.write_streams.  */
+	 * @p info will point to ::wimlib_progress_info.write_streams.  This
+	 * message may be received many times while the WIM file is being
+	 * written or appended to with wimlib_write(), wimlib_overwrite(), or
+	 * wimlib_write_to_fd().  */
 	WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
 
-	/**
-	 * The metadata resource for each image is about to be written to the
-	 * WIM. @p info will not be valid. */
+	/** Per-image metadata is about to be written to the WIM file.  @p info
+	 * will not be valid. */
 	WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN,
 
-	/**
-	 * The metadata resource for each image has successfully been writen to
-	 * the WIM.  @p info will not be valid. */
+	/** Confirms that the metadata resource for each image has successfully
+	 * been writen to the WIM.  @p info will not be valid.  */
 	WIMLIB_PROGRESS_MSG_WRITE_METADATA_END,
 
-	/**
-	 * The temporary file has successfully been renamed to the original WIM
-	 * file.  Only happens when wimlib_overwrite() is called and the
-	 * overwrite is not done in-place.
-	 * @p info will point to ::wimlib_progress_info.rename. */
+	/** wimlib_overwrite() has successfully renamed the temporary file to
+	 * the original WIM file, thereby committing the update.  @p info will
+	 * point to ::wimlib_progress_info.rename.  Note: this message is not
+	 * received if wimlib_overwrite() chose to append to the WIM file
+	 * in-place.  */
 	WIMLIB_PROGRESS_MSG_RENAME,
 
-	/** The contents of the WIM are being checked against the integrity
-	 * table.  Only happens when wimlib_open_wim() is called with the
-	 * ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY flag.  @p info will point to
-	 * ::wimlib_progress_info.integrity. */
+	/** The contents of the WIM file are being checked against the integrity
+	 * table.  @p info will point to ::wimlib_progress_info.integrity.  This
+	 * message is only received (and may be received many times) when
+	 * wimlib_open_wim() is called with the
+	 * ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY flag.  */
 	WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY,
 
 	/** An integrity table is being calculated for the WIM being written.
-	 * Only happens when wimlib_write() or wimlib_overwrite() is called with
-	 * the ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY flag.  @p info will point to
-	 * ::wimlib_progress_info.integrity. */
+	 * @p info will point to ::wimlib_progress_info.integrity.  This message
+	 * is only received (and may be received many times) when a WIM is being
+	 * written with the flag ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY.  */
 	WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
 
 	/** Reserved.  */
@@ -529,23 +546,23 @@ enum wimlib_progress_msg {
 
 	/** A wimlib_split() operation is in progress, and a new split part is
 	 * about to be started.  @p info will point to
-	 * ::wimlib_progress_info.split. */
+	 * ::wimlib_progress_info.split.  */
 	WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART,
 
 	/** A wimlib_split() operation is in progress, and a split part has been
-	 * finished. @p info will point to ::wimlib_progress_info.split. */
+	 * finished. @p info will point to ::wimlib_progress_info.split.  */
 	WIMLIB_PROGRESS_MSG_SPLIT_END_PART,
 
-	/**
-	 * A WIM update command is just about to be executed; @p info will point
-	 * to ::wimlib_progress_info.update.
-	 */
+	/** A WIM update command is just about to be executed. @p info will
+	 * point to ::wimlib_progress_info.update.  This message is received
+	 * once per update command when wimlib_update_image() is called with the
+	 * flag ::WIMLIB_UPDATE_FLAG_SEND_PROGRESS.  */
 	WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND,
 
-	/**
-	 * A WIM update command has just been executed; @p info will point to
-	 * ::wimlib_progress_info.update.
-	 */
+	/** A WIM update command has just been executed. @p info will point to
+	 * ::wimlib_progress_info.update.  This message is received once per
+	 * update command when wimlib_update_image() is called with the flag
+	 * ::WIMLIB_UPDATE_FLAG_SEND_PROGRESS.  */
 	WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
 
 };
@@ -754,14 +771,21 @@ union wimlib_progress_info {
 	 * general, actually provide information about which "file" is currently
 	 * being extracted.  This is because wimlib, by default, extracts the
 	 * individual data streams in whichever order it determines to be the
-	 * most efficient.  */
+	 * most efficient.
+	 *
+	 * An additional caveat: wimlib_extract_files() will perform a separate
+	 * logical extraction operation, with separate byte counts, for each
+	 * extraction command (file or directory tree).  On the other hand,
+	 * wimlib_extract_paths() and wimlib_extract_pathlist() combine all the
+	 * paths to extract into a single logical extraction operation.
+	 */
 	struct wimlib_progress_info_extract {
 		/** Number of the image from which files are being extracted
 		 * (1-based).  */
-		int image;
+		uint32_t image;
 
 		/** Extraction flags being used.  */
-		int extract_flags;
+		uint32_t extract_flags;
 
 		/** Full path to the WIM file from which files are being
 		 * extracted, or @c NULL if the WIMStruct has no associated
@@ -809,11 +833,11 @@ union wimlib_progress_info {
 
 		/** Currently only used for
 		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.  */
-		unsigned part_number;
+		uint32_t part_number;
 
 		/** Currently only used for
 		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.  */
-		unsigned total_parts;
+		uint32_t total_parts;
 
 		/** Currently only used for
 		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.  */
@@ -1414,11 +1438,13 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_EXTRACT_FLAG_NTFS			0x00000001
 
 /** When identical files are extracted from the WIM, always hard link them
- * together.  */
+ * together.  This flag cannot be combined with ::WIMLIB_EXTRACT_FLAG_SYMLINK.
+ */
 #define WIMLIB_EXTRACT_FLAG_HARDLINK			0x00000002
 
 /** When identical files are extracted from the WIM, always symlink them
- * together.  */
+ * together.  This flag cannot be combined with ::WIMLIB_EXTRACT_FLAG_HARDLINK.
+ */
 #define WIMLIB_EXTRACT_FLAG_SYMLINK			0x00000004
 
 /** This flag no longer does anything but is reserved for future use.  */
@@ -1434,31 +1460,34 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * specified.  */
 #define WIMLIB_EXTRACT_FLAG_UNIX_DATA			0x00000020
 
-/** Do not extract security descriptors.  */
+/** Do not extract security descriptors.  This flag cannot be combined with
+ * ::WIMLIB_EXTRACT_FLAG_STRICT_ACLS.  */
 #define WIMLIB_EXTRACT_FLAG_NO_ACLS			0x00000040
 
 /** Fail immediately if the full security descriptor of any file or directory
  * cannot be set exactly as specified in the WIM file.  On Windows, the default
- * behavior without this flag is to fall back to setting the security descriptor
- * with the SACL omitted, then only the default inherited security descriptor,
- * if we do not have permission to set the desired one.  */
+ * behavior without this flag when wimlib does not have permission to set the
+ * correct security descriptor is to fall back to setting the security
+ * descriptor with the SACL omitted, then with the DACL omitted, then with the
+ * owner omitted, then not at all.  This flag cannot be combined with
+ * ::WIMLIB_EXTRACT_FLAG_NO_ACLS.  */
 #define WIMLIB_EXTRACT_FLAG_STRICT_ACLS			0x00000080
 
 /** This is the extraction equivalent to ::WIMLIB_ADD_FLAG_RPFIX.  This forces
  * reparse-point fixups on, so absolute symbolic links or junction points will
  * be fixed to be absolute relative to the actual extraction root.  Reparse
  * point fixups are done by default if WIM_HDR_FLAG_RP_FIX is set in the WIM
- * header.  This flag may only be specified when extracting a full image (not a
- * file or directory tree within one).  */
+ * header.  This flag cannot be combined with ::WIMLIB_EXTRACT_FLAG_NORPFIX.  */
 #define WIMLIB_EXTRACT_FLAG_RPFIX			0x00000100
 
 /** Force reparse-point fixups on extraction off, regardless of the state of the
- * WIM_HDR_FLAG_RP_FIX flag in the WIM header.  */
+ * WIM_HDR_FLAG_RP_FIX flag in the WIM header.  This flag cannot be combined
+ * with ::WIMLIB_EXTRACT_FLAG_RPFIX.  */
 #define WIMLIB_EXTRACT_FLAG_NORPFIX			0x00000200
 
-/** Extract the specified file to standard output.  This is only valid in an
- * extraction command that specifies the extraction of a regular file in the WIM
- * image.  */
+/** Extract the paths, each of which must name a regular file, to standard
+ * output.  Not valid for wimlib_extract_image() and
+ * wimlib_extract_image_from_pipe().  */
 #define WIMLIB_EXTRACT_FLAG_TO_STDOUT			0x00000400
 
 /** Instead of ignoring files and directories with names that cannot be
@@ -1497,16 +1526,14 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_EXTRACT_FLAG_FILE_ORDER			0x00020000
 
 /** For wimlib_extract_paths() and wimlib_extract_pathlist() only:  Treat the
- * paths in the WIM as "glob" patterns which may contain the wildcard characters
- * '?' and '*'.  The '?' character matches any character except a path
- * separator, whereas the '*' character matches zero or more non-path-separator
- * characters.  Each glob pattern may match zero or more paths in the WIM file.
- * If a glob pattern ends in a path separator, it will only match directories
- * (including reparse points with FILE_ATTRIBUTE_DIRECTORY set).  By default, if
- * a glob pattern does not match any files, a warning but not an error will be
- * issued, even if the glob pattern did not actually contain wildcard
- * characters.  Use ::WIMLIB_EXTRACT_FLAG_STRICT_GLOB to get an error instead.
- */
+ * paths to extract as wildcard patterns ("globs") which may contain the
+ * wildcard characters @c ? and @c *.  The @c ? character matches any
+ * non-path-separator character, whereas the @c * character matches zero or more
+ * non-path-separator characters.  Consequently, each glob may match zero or
+ * more actual paths in the WIM image.  By default, if a glob does not match any
+ * files, a warning but not an error will be issued, even if the glob did not
+ * actually contain wildcard characters.  Use ::WIMLIB_EXTRACT_FLAG_STRICT_GLOB
+ * to get an error instead.  */
 #define WIMLIB_EXTRACT_FLAG_GLOB_PATHS			0x00040000
 
 /** In combination with ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS, causes an error
@@ -1833,8 +1860,9 @@ struct wimlib_update_command {
 /** @ingroup G_extracting_wims
  * @{ */
 
-/** Specification of a file or directory tree to extract from a WIM image.  Used
- * in calls to wimlib_extract_files().  */
+/** DEPRECATED:  Specification of extracting a file or directory tree from a WIM
+ * image.  This is only used for calls to wimlib_extract_files(), which has been
+ * deprecated in favor of the easier-to-use wimlib_extract_paths().  */
 struct wimlib_extract_command {
 	/** Path to file or directory tree within the WIM image to extract.  It
 	 * must be provided as an absolute path from the root of the WIM image.
@@ -1844,7 +1872,7 @@ struct wimlib_extract_command {
 	/** Filesystem path to extract the file or directory tree to. */
 	wimlib_tchar *fs_dest_path;
 
-	/** Bitwise or of zero or more of the WIMLIB_EXTRACT_FLAG_* flags. */
+	/** Bitwise OR of zero or more of the WIMLIB_EXTRACT_FLAG_* flags. */
 	int extract_flags;
 };
 
@@ -2237,59 +2265,17 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  *
  * Extract zero or more files or directory trees from a WIM image.
  *
- * This generalizes the single-image extraction functionality of
- * wimlib_extract_image() to allow extracting only the specified subsets of the
- * image.
+ * As of wimlib v1.6.1, this function is deprecated in favor of
+ * wimlib_extract_paths() because wimlib_extract_paths() is easier to use and
+ * usually more efficient.
  *
- * @param wim
- *	The WIM from which to extract the files, specified as a pointer to the
- *	::WIMStruct for a standalone WIM file, a delta WIM file, or part 1 of a
- *	split WIM.  In the case of a WIM file that is not standalone, this
- *	::WIMStruct must have had any needed external resources previously
- *	referenced using wimlib_reference_resources() or
- *	wimlib_reference_resource_files().
- *
- * @param image
- *	The 1-based number of the image in @p wim from which the files or
- *	directory trees are to be extracted.  It cannot be ::WIMLIB_ALL_IMAGES.
- *
- * @param cmds
- *	An array of ::wimlib_extract_command structures that specifies the
- *	extractions to perform.
- *
- * @param num_cmds
- *	Number of commands in the @p cmds array.
- *
- * @param default_extract_flags
- *	Default extraction flags; the behavior shall be as if these flags had
- *	been specified in the ::wimlib_extract_command.extract_flags member in
- *	each extraction command, in combination with any flags already present.
- *
- * @param progress_func
- * 	If non-NULL, a function that will be called periodically with the
- * 	progress of the current operation.
- *
- * @return 0 on success; nonzero on error.  The possible error codes include
- * most of those documented as returned by wimlib_extract_image() as well as the
- * following additional error codes:
- *
- * @retval ::WIMLIB_ERR_INVALID_IMAGE
- *	@p image was ::WIMLIB_ALL_IMAGES (or was not otherwise a valid image in
- *	the WIM file).
- * @retval ::WIMLIB_ERR_PATH_DOES_NOT_EXIST
- *	The ::wimlib_extract_command.wim_source_path member in one of the
- *	extract commands did not exist in the WIM.
- * @retval ::WIMLIB_ERR_NOT_A_REGULAR_FILE
- *	::WIMLIB_EXTRACT_FLAG_TO_STDOUT was specified for an extraction command
- *	in which ::wimlib_extract_command.wim_source_path existed but was not a
- *	regular file or directory.
- * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	::WIMLIB_EXTRACT_FLAG_HARDLINK or ::WIMLIB_EXTRACT_FLAG_SYMLINK was
- *	specified for some commands but not all; or
- *	::wimlib_extract_command.fs_dest_path was @c NULL or the empty string
- *	for one or more commands; or ::WIMLIB_EXTRACT_FLAG_RPFIX was specified
- *	for a command in which ::wimlib_extract_command.wim_source_path did not
- *	specify the root directory of the WIM image.
+ * Notes: wimlib_extract_files() does not support the
+ * ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS flag, and
+ * ::WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE is always implied.  The same
+ * hardlink/symlink extraction mode must be set on all extraction commands.  An
+ * independent extraction operation (like a separate call to
+ * wimlib_extract_paths()) is done for each extraction command.  Otherwise, the
+ * documentation for wimlib_extract_paths() applies.
  */
 extern int
 wimlib_extract_files(WIMStruct *wim,
@@ -2297,13 +2283,13 @@ wimlib_extract_files(WIMStruct *wim,
 		     const struct wimlib_extract_command *cmds,
 		     size_t num_cmds,
 		     int default_extract_flags,
-		     wimlib_progress_func_t progress_func);
+		     wimlib_progress_func_t progress_func) _wimlib_deprecated;
 
 /**
  * @ingroup G_extracting_wims
  *
- * Extracts an image, or all images, from a WIM to a directory or directly to a
- * NTFS volume image.
+ * Extracts an image, or all images, from a WIM to a directory or NTFS volume
+ * image.
  *
  * The exact behavior of how wimlib extracts files from a WIM image is
  * controllable by the @p extract_flags parameter, but there also are
@@ -2311,12 +2297,6 @@ wimlib_extract_files(WIMStruct *wim,
  * page for <b>wimlib-imagex apply</b> for more information, including about the
  * special "NTFS volume extraction mode" entered by providing
  * ::WIMLIB_EXTRACT_FLAG_NTFS.
- *
- * All extracted data is SHA1-summed, and ::WIMLIB_ERR_INVALID_RESOURCE_HASH is
- * returned if any resulting SHA1 message digests do not match the values
- * provided in the WIM file.  Therefore, if this function is successful, you can
- * be fairly sure that any compressed data in the WIM was uncompressed
- * correctly.
  *
  * @param wim
  *	The WIM from which to extract the image(s), specified as a pointer to
@@ -2326,51 +2306,55 @@ wimlib_extract_files(WIMStruct *wim,
  *	referenced using wimlib_reference_resources() or
  *	wimlib_reference_resource_files().
  * @param image
- * 	The image to extract.  Can be the number of an image, or ::WIMLIB_ALL_IMAGES
- * 	to specify that all images are to be extracted.  ::WIMLIB_ALL_IMAGES cannot
- * 	be used if ::WIMLIB_EXTRACT_FLAG_NTFS is specified in @p extract_flags.
+ *	The image to extract, specified as either the 1-based index of a single
+ *	image to extract, or ::WIMLIB_ALL_IMAGES to specify that all images are
+ *	to be extracted.  ::WIMLIB_ALL_IMAGES cannot be used if
+ *	::WIMLIB_EXTRACT_FLAG_NTFS is specified in @p extract_flags.
  * @param target
- * 	Directory to extract the WIM image(s) to (created if it does not already
- * 	exist); or, with ::WIMLIB_EXTRACT_FLAG_NTFS in @p extract_flags, the
- * 	path to the unmounted NTFS volume to extract the image to.
+ *	Directory to extract the WIM image(s) to; or, with
+ *	::WIMLIB_EXTRACT_FLAG_NTFS specified in @p extract_flags, the path to
+ *	the unmounted NTFS volume to which to extract the image.
  * @param extract_flags
- * 	Bitwise OR of the flags prefixed with WIMLIB_EXTRACT_FLAG.
+ *	Bitwise OR of flags prefixed with WIMLIB_EXTRACT_FLAG.
  * @param progress_func
- * 	If non-NULL, a function that will be called periodically with the
- * 	progress of the current operation.
+ *	If non-NULL, a function that will be called periodically with the
+ *	progress of the current operation.  The main message to look for is
+ *	::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS; however, there are others as
+ *	well.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
- * 	Failed to decompress a resource to be extracted.
+ *	Failed to decompress data contained in the WIM.
+ * @retval ::WIMLIB_ERR_INVALID_METADATA_RESOURCE
+ *	The metadata for one of the images to extract was invalid.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	Both ::WIMLIB_EXTRACT_FLAG_HARDLINK and ::WIMLIB_EXTRACT_FLAG_SYMLINK
- * 	were specified in @p extract_flags; or both
- * 	::WIMLIB_EXTRACT_FLAG_STRICT_ACLS and ::WIMLIB_EXTRACT_FLAG_NO_ACLS were
- * 	specified in @p extract_flags; or both ::WIMLIB_EXTRACT_FLAG_RPFIX and
- * 	::WIMLIB_EXTRACT_FLAG_NORPFIX were specified in @p extract_flags; or
- * 	::WIMLIB_EXTRACT_FLAG_RESUME was specified in @p extract_flags; or if
- * 	::WIMLIB_EXTRACT_FLAG_NTFS was specified in @p extract_flags and
- * 	@p image was ::WIMLIB_ALL_IMAGES.
+ *	The extraction flags were invalid; more details may be found in the
+ *	documentation for the specific extraction flags that were specified.  Or
+ *	@p target was @c NULL or the empty string, or @p wim was @c NULL.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_HASH
- * 	The SHA1 message digest of an extracted stream did not match the SHA1
- * 	message digest given in the WIM file.
+ *	The SHA1 message digest of an extracted stream did not match the SHA1
+ *	message digest given in the WIM.
  * @retval ::WIMLIB_ERR_LINK
- * 	Failed to create a symbolic link or a hard link.
+ *	Failed to create a symbolic link or a hard link.
+ * @retval ::WIMLIB_ERR_METADATA_NOT_FOUND
+ *	The metadata resource for one of the images to extract was not found.
+ *	This can happen if @p wim represents a non-first part of a split WIM.
  * @retval ::WIMLIB_ERR_MKDIR
- * 	Failed create a directory.
+ *	Failed create a directory.
  * @retval ::WIMLIB_ERR_NOMEM
- * 	Failed to allocate needed memory.
+ *	Failed to allocate needed memory.
  * @retval ::WIMLIB_ERR_OPEN
- * 	Could not create a file, or failed to open an already-extracted file.
+ *	Could not create a file, or failed to open an already-extracted file.
  * @retval ::WIMLIB_ERR_READ
- * 	Failed to read data from the WIM file associated with @p wim.
+ *	Failed to read data from the WIM.
  * @retval ::WIMLIB_ERR_READLINK
  *	Failed to determine the target of a symbolic link in the WIM.
  * @retval ::WIMLIB_ERR_REPARSE_POINT_FIXUP_FAILED
  *	Failed to fix the target of an absolute symbolic link (e.g. if the
- *      target would have exceeded the maximum allowed length).  (Only if
- *      reparse data was supported by the extraction mode and
- *      ::WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS was specified in @p extract_flags.)
+ *	target would have exceeded the maximum allowed length).  (Only if
+ *	reparse data was supported by the extraction mode and
+ *	::WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS was specified in @p
+ *	extract_flags.)
  * @retval ::WIMLIB_ERR_RESOURCE_NOT_FOUND
  *	One of the files or directories that needed to be extracted referenced a
  *	stream not present in the WIM's lookup table (or in any of the lookup
@@ -2391,8 +2375,7 @@ wimlib_extract_files(WIMStruct *wim,
  *	Failed to set timestamps on a file (only if
  *	::WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS was specified in @p extract_flags).
  * @retval ::WIMLIB_ERR_UNEXPECTED_END_OF_FILE
- * 	Unexpected end-of-file occurred when reading data from the WIM file
- * 	associated with @p wim.
+ *	Unexpected end-of-file occurred when reading data from the WIM.
  * @retval ::WIMLIB_ERR_UNSUPPORTED
  *	A requested extraction flag, or the data or metadata that must be
  *	extracted to support it, is unsupported in the build and configuration
@@ -2404,21 +2387,13 @@ wimlib_extract_files(WIMStruct *wim,
  *	::WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS, ::WIMLIB_EXTRACT_FLAG_SYMLINK,
  *	and ::WIMLIB_EXTRACT_FLAG_HARDLINK.  For example, if
  *	::WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES is specified in @p
- *	extract_flags,
- *	::WIMLIB_ERR_UNSUPPORTED will be returned if the WIM image contains one
- *	or more files with short names, but extracting short names is not
- *	supported --- on Windows, this occurs if the target volume does not
- *	support short names, while on non-Windows, this occurs if
+ *	extract_flags, ::WIMLIB_ERR_UNSUPPORTED will be returned if the WIM
+ *	image contains one or more files with short names, but extracting short
+ *	names is not supported --- on Windows, this occurs if the target volume
+ *	does not support short names, while on non-Windows, this occurs if
  *	::WIMLIB_EXTRACT_FLAG_NTFS was not specified in @p extract_flags.
  * @retval ::WIMLIB_ERR_WRITE
  * 	Failed to write data to a file being extracted.
- *
- * This function can additionally return ::WIMLIB_ERR_DECOMPRESSION,
- * ::WIMLIB_ERR_INVALID_METADATA_RESOURCE, ::WIMLIB_ERR_METADATA_NOT_FOUND,
- * ::WIMLIB_ERR_NOMEM, ::WIMLIB_ERR_READ, or
- * ::WIMLIB_ERR_UNEXPECTED_END_OF_FILE, all of which indicate failure (for
- * different reasons) to read the metadata resource for an image that needed to
- * be extracted.
  */
 extern int
 wimlib_extract_image(WIMStruct *wim, int image,
@@ -2429,8 +2404,8 @@ wimlib_extract_image(WIMStruct *wim, int image,
 /**
  * @ingroup G_extracting_wims
  *
- * Since wimlib v1.5.0:  Extract one or more images from a pipe on which a
- * pipable WIM is being sent.
+ * Since wimlib v1.5.0:  Extract one image from a pipe on which a pipable WIM is
+ * being sent.
  *
  * See the documentation for ::WIMLIB_WRITE_FLAG_PIPABLE for more information
  * about pipable WIMs.
@@ -2455,17 +2430,16 @@ wimlib_extract_image(WIMStruct *wim, int image,
  *	Same as the corresponding parameter to wimlib_extract_image().
  * @param extract_flags
  *	Same as the corresponding parameter to wimlib_extract_image(), except
- *	for the following exceptions:  ::WIMLIB_EXTRACT_FLAG_SEQUENTIAL is
- *	always implied, since data is always read from @p pipe_fd sequentially
- *	in this mode; also, ::WIMLIB_EXTRACT_FLAG_TO_STDOUT is invalid and will
+ *	that ::WIMLIB_EXTRACT_FLAG_FILE_ORDER cannot be specified and will
  *	result in ::WIMLIB_ERR_INVALID_PARAM being returned.
  * @param progress_func
  *	Same as the corresponding parameter to wimlib_extract_image(), except
  *	::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN messages will also be
- *	received.
+ *	received by the progress function.
  *
  * @return 0 on success; nonzero on error.  The possible error codes include
- * those returned by wimlib_extract_image() as well as the following:
+ * those returned by wimlib_extract_image() and wimlib_open_wim() as well as the
+ * following:
  *
  * @retval ::WIMLIB_ERR_INVALID_PIPABLE_WIM
  *	Data read from the pipable WIM was invalid.
@@ -2487,6 +2461,11 @@ wimlib_extract_image_from_pipe(int pipe_fd,
  * Leading and trailing whitespace, and otherwise empty lines and lines
  * beginning with the ';' character are ignored.  No quotes are needed as paths
  * are otherwise delimited by the newline character.
+ *
+ * The error codes are the same as those returned by wimlib_extract_paths(),
+ * except that wimlib_extract_pathlist() returns an appropriate error code if it
+ * cannot read the path list file (::WIMLIB_ERR_OPEN, ::WIMLIB_ERR_STAT,
+ * ::WIMLIB_ERR_READ, ::WIMLIB_ERR_NOMEM, or ::WIMLIB_ERR_INVALID_UTF8_STRING).
  */
 extern int
 wimlib_extract_pathlist(WIMStruct *wim, int image,
@@ -2498,30 +2477,81 @@ wimlib_extract_pathlist(WIMStruct *wim, int image,
 /**
  * @ingroup G_extracting_wims
  *
- * Since wimlib v1.6.0:  Similar to wimlib_extract_files(), but the files or
- * directories to extract from the WIM image are specified as an array of paths.
+ * Since wimlib v1.6.0:  Extract zero or more paths (files or directory trees)
+ * from the specified WIM image.
  *
- * Each path will be extracted to a corresponding subdirectory of the @p target
- * based on its location in the WIM image.  For example, if one of the paths to
- * extract is "/Windows/explorer.exe" and the target is "outdir", the file will
- * be extracted to "outdir/Windows/explorer.exe".  Each path to extract must be
- * specified as the absolute path to a directory within the WIM image.
- * Separators in the paths to extract may be either forwards or backwards
- * slashes, and leading path separators are optional.  Symbolic links are not
- * dereferenced when interpreting paths to extract.  Paths to extract will be
- * interpreted either case-sensitively (UNIX default) or case-insensitively
- * (Windows default); this can be changed by wimlib_global_init().
+ * By default, each path will be extracted to a corresponding subdirectory of
+ * the target based on its location in the WIM image.  For example, if one of
+ * the paths to extract is "/Windows/explorer.exe" and the target is "outdir",
+ * the file will be extracted to "outdir/Windows/explorer.exe".  This behavior
+ * can be changed by providing the flag
+ * ::WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE, which will cause each file
+ * or directory tree to be placed directly in the target directory --- so the
+ * same example would extract "/Windows/explorer.exe" to "outdir/explorer.exe".
  *
- * The @p target path, on the other hand, is expected to be a native path.  On
- * UNIX-like systems it may not contain backslashes, for example.
+ * Symbolic links will not be dereferenced when paths in the WIM image are
+ * interpreted.
  *
- * By default, if any paths to extract do not exist,
- * ::WIMLIB_ERR_PATH_DOES_NOT_EXIST is issued.  This behavior changes if
- * ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS is specified.
+ * @param wim
+ *	WIM from which to extract the paths, specified as a pointer to the
+ *	::WIMStruct for a standalone WIM file, a delta WIM file, or part 1 of a
+ *	split WIM.  In the case of a WIM file that is not standalone, this
+ *	::WIMStruct must have had any needed external resources previously
+ *	referenced using wimlib_reference_resources() or
+ *	wimlib_reference_resource_files().
+ * @param image
+ *	1-based index of the WIM image from which to extract the paths.
+ * @param paths
+ *	Array of paths to extract.  Each element must be the absolute path to a
+ *	file or directory within the WIM image.  Separators may be either
+ *	forwards or backwards slashes, and leading path separators are optional.
+ *	The paths will be interpreted either case-sensitively (UNIX default) or
+ *	case-insensitively (Windows default); this can be changed by
+ *	wimlib_global_init().
+ *	<br/>
+ *	By default, the characters @c * and @c ? are interpreted literally.
+ *	This can be changed by specifying ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS in @p
+ *	extract_flags.
+ *	<br/>
+ *	By default, if any paths to extract do not exist, the error code
+ *	::WIMLIB_ERR_PATH_DOES_NOT_EXIST is returned.  This behavior changes if
+ *	::WIMLIB_EXTRACT_FLAG_GLOB_PATHS is specified in @p extract_flags.
+ * @param num_paths
+ *	Number of paths specified in @p paths.
+ * @param target
+ *	Directory to which to extract the paths; or with
+ *	::WIMLIB_EXTRACT_FLAG_NTFS specified in @p extract_flags, the path to an
+ *	unmounted NTFS volume to which to extract the paths.  Unlike the @p
+ *	paths being extracted, the @p target must be native path.  On UNIX-like
+ *	systems it may not contain backslashes, for example.
+ * @param extract_flags
+ *	Bitwise OR of flags prefixed with WIMLIB_EXTRACT_FLAG.
+ * @param progress_func
+ *	If non-NULL, a function that will be called periodically with the
+ *	progress of the current operation.  The main message to look for is
+ *	::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS; however, there are others as
+ *	well.  Note: because the extraction code is stream-based and not
+ *	file-based, there is no way to get information about which path is
+ *	currently being extracted, but based on byte count you can still
+ *	calculate an approximate percentage complete for the extraction overall
+ *	which may be all you really need anyway.
  *
- * With ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS specified in @p extract_flags, this
- * function additionally allows paths to be globs using the wildcard characters
- * '*' and '?'.
+ * @return 0 on success; nonzero on error.  Most of the error codes are the same
+ * as those returned by wimlib_extract_image().  Below, some of the error codes
+ * returned in situations specific to path-mode extraction are documented:
+ *
+ * @retval ::WIMLIB_ERR_INVALID_IMAGE
+ *	@p image was ::WIMLIB_ALL_IMAGES or was otherwise not a valid single
+ *	image in the WIM.
+ * @retval ::WIMLIB_ERR_PATH_DOES_NOT_EXIST
+ *	One of the paths to extract did not exist in the WIM image.  This error
+ *	code can only be returned if ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS was not
+ *	specified in @p extract_flags, or if both
+ *	::WIMLIB_EXTRACT_FLAG_GLOB_PATHS and ::WIMLIB_EXTRACT_FLAG_STRICT_GLOB
+ *	were specified in @p extract_flags.
+ * @retval ::WIMLIB_ERR_NOT_A_REGULAR_FILE
+ *	::WIMLIB_EXTRACT_FLAG_TO_STDOUT was specified in @p extract_flags, but
+ *	one of the paths to extract did not name a regular file.
  */
 extern int
 wimlib_extract_paths(WIMStruct *wim,
@@ -2917,7 +2947,7 @@ wimlib_join(const wimlib_tchar * const *swms,
  * @param dir
  * 	The path to an existing empty directory to mount the image on.
  * @param mount_flags
- * 	Bitwise OR of the flags prefixed with WIMLIB_MOUNT_FLAG.
+ * 	Bitwise OR of flags prefixed with WIMLIB_MOUNT_FLAG.
  * @param staging_dir
  * 	If non-NULL, the name of a directory in which the staging directory will
  * 	be created.  Ignored if ::WIMLIB_MOUNT_FLAG_READWRITE is not specified
@@ -3035,6 +3065,9 @@ wimlib_mount_image(WIMStruct *wim,
  *	Unexpected end-of-file while reading data from @p wim_file.
  * @retval ::WIMLIB_ERR_UNKNOWN_VERSION
  * 	The WIM version number was not recognized. (May be a pre-Vista WIM.)
+ * @retval ::WIMLIB_ERR_WIM_IS_ENCRYPTED
+ *	The WIM cannot be opened because it contains encrypted segments.  (It
+ *	may be a Windows 8 "ESD" file).
  * @retval ::WIMLIB_ERR_WIM_IS_READONLY
  *	::WIMLIB_OPEN_FLAG_WRITE_ACCESS was specified but the WIM file was
  *	considered read-only because of any of the reasons mentioned in the

@@ -167,14 +167,14 @@ enum {
 	IMAGEX_LAZY_OPTION,
 	IMAGEX_LOOKUP_TABLE_OPTION,
 	IMAGEX_METADATA_OPTION,
-	IMAGEX_NORPFIX_OPTION,
 	IMAGEX_NOCHECK_OPTION,
+	IMAGEX_NORPFIX_OPTION,
+	IMAGEX_NOT_PIPABLE_OPTION,
 	IMAGEX_NO_ACLS_OPTION,
 	IMAGEX_NO_ATTRIBUTES_OPTION,
 	IMAGEX_NO_WILDCARDS_OPTION,
 	IMAGEX_NULLGLOB_OPTION,
 	IMAGEX_ONE_FILE_ONLY_OPTION,
-	IMAGEX_NOT_PIPABLE_OPTION,
 	IMAGEX_PACK_CHUNK_SIZE_OPTION,
 	IMAGEX_PACK_STREAMS_OPTION,
 	IMAGEX_PATH_OPTION,
@@ -3014,6 +3014,13 @@ imagex_extract(int argc, tchar **argv, int cmd)
 
 	if (argc < 2)
 		goto out_usage;
+
+	if (!(extract_flags & (WIMLIB_EXTRACT_FLAG_GLOB_PATHS |
+			       WIMLIB_EXTRACT_FLAG_STRICT_GLOB)))
+	{
+		imagex_error(T("Can't combine --no-wildcards and --nullglob!"));
+		goto out_err;
+	}
 
 	wimfile = argv[0];
 	image_num_or_name = argv[1];
