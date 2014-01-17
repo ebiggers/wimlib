@@ -4,6 +4,10 @@ Version 1.6.1:
 	Stored files with size exactly 4 GiB (4,294,967,296 bytes) are now
 	decompressed correctly.
 
+	Fixed a bug in the LZX compressor introduced in v1.5.3.  The bug
+	occurred in an unlikely case, and due to validity checks it did not
+	affect successfully created archives.
+
 	Fixed a minor compatibility issue with the LZMS compressor and
 	decompressor.  This is *not* the default compression type and was only
 	introduced in v1.6.0.  In the unlikely event that you created a
@@ -11,44 +15,29 @@ Version 1.6.1:
 	applying it with v1.6.1, decompress it with v1.6.0 then compress it with
 	v1.6.1.
 
+	Memory usage for LZMS and LZX compression has been decreased.
+
 	wimextract now allows wildcard characters in paths specified on the
-	command line (not just in a list file, as was added in v1.6.0).
+	command line.  Also, the '--strict-wildcards' option has been removed
+	and replaced with the inverse option '--nullglob'.  See the
+	documentation for wimextract for more details and changes.
 
-	wimextract now allows a command line to contain multiple list files,
-	possibly interspersed with direct paths.
-
-	The '--strict-wildcards' option to wimextract has been removed and
-	replaced with the inverse option '--nullglob' --- that is, the default
-	behavior is now to issue an error when any path (possibly containing
-	wildcard characters) does not match any paths in the WIM image, and this
-	can be changed by specifying '--nullglob'.
-
-	Added '--preserve-dir-structure' option to wimextract.
+	The wimlib_extract_files() function is now considered deprecated in
+	favor of wimlib_extract_paths().
 
 	Fixed more permissions problems when extracting files on Windows.
-
-	Memory usage for LZMS and LZX compression has been decreased.
 
 	A new '--no-attributes' option has been added to wimapply and
 	wimextract.  The library flag is WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES.
 
 	The default chunk size is now set correctly when changing the
-	compression type of a WIM (this bug caused wimoptimize to fail when
-	changing the compression type from None to LZX with no chunk size
-	explicitly specified, for example).
+	compression type of a WIM, for example with 'wimoptimize'.
 
-	wiminfo no longer accepts the '--metadata' option.  Use the new
-	'--detailed' option to wimdir instead.  (This is primarily for
-	debugging.)
+	The '--metadata' option to wiminfo has been replaced with the
+	'--detailed' option to wimdir.
 
-	Paths passed to wimlib_extract_paths() and wimlib_iterate_dir_tree() may
-	now use either forwards or backwards slashes, as documented.
-
-	Fixed a potential stack overflow when extracting solid archives
-	containing more than about 100000 files.
-
-	For wimcapture, wimoptimize, and wimexport, '--solid' may now be used as
-	an alias for '--pack-streams'.
+	In relevant wimlib-imagex commands, '--solid' may now be used as an
+	alias for '--pack-streams'.
 
 Version 1.6.0:
 	Support for extracting and updating the new version 3584 WIMs has been
