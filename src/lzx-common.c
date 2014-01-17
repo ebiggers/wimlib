@@ -78,12 +78,37 @@ lzx_window_size_valid(size_t window_size)
 	return (order >= LZX_MIN_WINDOW_ORDER && order <= LZX_MAX_WINDOW_ORDER);
 }
 
-/* Given the specified valid window size, return the number of LZX main symbols
- * that will be needed.  (This depends on the number of position slots, which
- * itself depends on the window size.)  */
+/* Given a valid LZX window size, return the number of symbols that will exist
+ * in the main Huffman code.  */
 unsigned
 lzx_get_num_main_syms(u32 window_size)
 {
+	/* NOTE: the calculation *should* be as follows:
+	 *
+	 * u32 max_offset = window_size - LZX_MIN_MATCH_LEN;
+	 * u32 max_formatted_offset = max_offset + LZX_OFFSET_OFFSET;
+	 * u32 num_position_slots = 1 + lzx_get_position_slot_raw(max_formatted_offset);
+	 *
+	 * However since LZX_MIN_MATCH_LEN == LZX_OFFSET_OFFSET, we would get
+	 * max_formatted_offset == window_size, which would bump the number of
+	 * position slots up by 1 since every valid LZX window size is equal to
+	 * a position base value.  The format doesn't do this, and instead
+	 * disallows matches with minimum length and maximum offset.  This sets
+	 * max_formatted_offset = window_size - 1, so instead we must calculate:
+	 *
+	 * num_position_slots = 1 + lzx_get_position_slot_raw(window_size - 1);
+	 *
+	 * ... which is the same as
+	 *
+	 * num_position_slots = lzx_get_position_slot_raw(window_size);
+	 *
+	 * ... since every valid window size is equal to a position base value.
+	 */
 	unsigned num_position_slots = lzx_get_position_slot_raw(window_size);
+
+	/* Now calculate the number of main symbols as LZX_NUM_CHARS literal
+	 * symbols, plus 8 symbols per position slot (since there are 8 possible
+	 * length headers, and we need all (position slot, length header)
+	 * combinations).  */
 	return LZX_NUM_CHARS + (num_position_slots << 3);
 }
