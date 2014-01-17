@@ -1476,8 +1476,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 
 /** This is the extraction equivalent to ::WIMLIB_ADD_FLAG_RPFIX.  This forces
  * reparse-point fixups on, so absolute symbolic links or junction points will
- * be fixed to be absolute relative to the actual extraction root.  Reparse
- * point fixups are done by default if WIM_HDR_FLAG_RP_FIX is set in the WIM
+ * be fixed to be absolute relative to the actual extraction root.  Reparse-
+ * point fixups are done by default for wimlib_extract_image() and
+ * wimlib_extract_image_from_pipe() if WIM_HDR_FLAG_RP_FIX is set in the WIM
  * header.  This flag cannot be combined with ::WIMLIB_EXTRACT_FLAG_NORPFIX.  */
 #define WIMLIB_EXTRACT_FLAG_RPFIX			0x00000100
 
