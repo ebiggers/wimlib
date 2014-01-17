@@ -1965,212 +1965,144 @@ compute_supported_attributes_mask(const struct wim_features *supported_features)
 static int
 do_feature_check(const struct wim_features *required_features,
 		 const struct wim_features *supported_features,
-		 int extract_flags,
-		 const struct apply_operations *ops,
-		 bool warn)
+		 int extract_flags, const struct apply_operations *ops)
 {
-	const tchar *loc = T("the extraction operation");;
-	const tchar *mode = T("this extraction mode");
+	/* File attributes.  */
+	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES)) {
+		/* Note: Don't bother the user about FILE_ATTRIBUTE_ARCHIVE.
+		 * We're an archive program, so theoretically we can do what we
+		 * want with it.  */
 
-	if (warn) {
-		/* We're an archive program, so theoretically we can do what we want
-		 * with FILE_ATTRIBUTE_ARCHIVE (which is a dumb flag anyway).  Don't
-		 * bother the user about it.  */
-#if 0
-		if (required_features->archive_files && !supported_features->archive_files)
-		{
-			WARNING(
-		  "%lu files in %"TS" are marked as archived, but this attribute\n"
-	"          is not supported in %"TS".",
-				required_features->archive_files, loc, mode);
-		}
-#endif
+		if (required_features->hidden_files &&
+		    !supported_features->hidden_files)
+			WARNING("Ignoring FILE_ATTRIBUTE_HIDDEN of %lu files",
+				required_features->hidden_files);
 
-		if (required_features->hidden_files && !supported_features->hidden_files)
-		{
-			WARNING(
-		  "%lu files in %"TS" are marked as hidden, but this\n"
-	"          attribute is not supported in %"TS".",
-				required_features->hidden_files, loc, mode);
-		}
+		if (required_features->system_files &&
+		    !supported_features->system_files)
+			WARNING("Ignoring FILE_ATTRIBUTE_SYSTEM of %lu files",
+				required_features->system_files);
 
-		if (required_features->system_files && !supported_features->system_files)
-		{
-			WARNING(
-		  "%lu files in %"TS" are marked as system files,\n"
-	"          but this attribute is not supported in %"TS".",
-				required_features->system_files, loc, mode);
-		}
-
-		if (required_features->compressed_files && !supported_features->compressed_files)
-		{
-			WARNING(
-		  "%lu files in %"TS" are marked as being transparently\n"
-	"          compressed, but transparent compression is not supported in\n"
-	"          %"TS".  These files will be extracted as uncompressed.",
-				required_features->compressed_files, loc, mode);
-		}
-
-		if (required_features->encrypted_files && !supported_features->encrypted_files)
-		{
-			WARNING(
-		  "%lu files in %"TS" are marked as being encrypted,\n"
-	"           but encryption is not supported in %"TS".  These files\n"
-	"           will not be extracted.",
-				required_features->encrypted_files, loc, mode);
-		}
-
-		if (required_features->encrypted_directories &&
-		    !supported_features->encrypted_directories)
-		{
-			WARNING(
-		  "%lu directories in %"TS" are marked as being encrypted,\n"
-	"           but encryption is not supported in %"TS".\n"
-	"           These directories will be extracted as unencrypted.",
-				required_features->encrypted_directories, loc, mode);
-		}
+		if (required_features->compressed_files &&
+		    !supported_features->compressed_files)
+			WARNING("Ignoring FILE_ATTRIBUTE_COMPRESSED of %lu files",
+				required_features->compressed_files);
 
 		if (required_features->not_context_indexed_files &&
 		    !supported_features->not_context_indexed_files)
-		{
-			WARNING(
-		  "%lu files in %"TS" are marked as not content indexed,\n"
-	"          but this attribute is not supported in %"TS".",
-				required_features->not_context_indexed_files, loc, mode);
-		}
+			WARNING("Ignoring FILE_ATTRIBUTE_NOT_CONTENT_INDEXED of %lu files",
+				required_features->not_context_indexed_files);
 
-		if (required_features->sparse_files && !supported_features->sparse_files)
-		{
-			WARNING(
-		  "%lu files in %"TS" are marked as sparse, but creating\n"
-	"           sparse files is not supported in %"TS".  These files\n"
-	"           will be extracted as non-sparse.",
-				required_features->sparse_files, loc, mode);
-		}
+		if (required_features->sparse_files &&
+		    !supported_features->sparse_files)
+			WARNING("Ignoring FILE_ATTRIBUTE_SPARSE_FILE of %lu files",
+				required_features->sparse_files);
 
-		if (required_features->named_data_streams &&
-		    !supported_features->named_data_streams)
-		{
-			WARNING(
-		  "%lu files in %"TS" contain one or more alternate (named)\n"
-	"          data streams, which are not supported in %"TS".\n"
-	"          Alternate data streams will NOT be extracted.",
-				required_features->named_data_streams, loc, mode);
-		}
+		if (required_features->encrypted_directories &&
+		    !supported_features->encrypted_directories)
+			WARNING("Ignoring FILE_ATTRIBUTE_ENCRYPTED of %lu directories",
+				required_features->encrypted_directories);
+	}
 
-		if (unlikely(extract_flags & (WIMLIB_EXTRACT_FLAG_HARDLINK |
-					      WIMLIB_EXTRACT_FLAG_SYMLINK)) &&
-		    required_features->named_data_streams &&
-		    supported_features->named_data_streams)
-		{
-			WARNING(
-		  "%lu files in %"TS" contain one or more alternate (named)\n"
-	"          data streams, which are not supported in linked extraction mode.\n"
-	"          Alternate data streams will NOT be extracted.",
-				required_features->named_data_streams, loc);
-		}
+	/* Encrypted files.  */
+	if (required_features->encrypted_files &&
+	    !supported_features->encrypted_files)
+		WARNING("Ignoring %lu encrypted files",
+			required_features->encrypted_files);
 
-		if (required_features->hard_links && !supported_features->hard_links)
-		{
-			WARNING(
-		  "%lu files in %"TS" are hard links, but hard links are\n"
-	"          not supported in %"TS".  Hard links will be extracted as\n"
-	"          duplicate copies of the linked files.",
-				required_features->hard_links, loc, mode);
-		}
+	/* Named data streams.  */
+	if (required_features->named_data_streams &&
+	    (!supported_features->named_data_streams ||
+	     (extract_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
+			       WIMLIB_EXTRACT_FLAG_HARDLINK))))
+		WARNING("Ignoring named data streams of %lu files",
+			required_features->named_data_streams);
 
-		if (required_features->reparse_points && !supported_features->reparse_points)
-		{
-			if (supported_features->symlink_reparse_points) {
-				if (required_features->other_reparse_points) {
-					WARNING(
-		  "%lu files in %"TS" are reparse points that are neither\n"
-	"          symbolic links nor junction points and are not supported in\n"
-	"          %"TS".  These reparse points will not be extracted.",
-						required_features->other_reparse_points, loc,
-						mode);
-				}
-			} else {
-				WARNING(
-		  "%lu files in %"TS" are reparse points, which are\n"
-	"          not supported in %"TS" and will not be extracted.",
-					required_features->reparse_points, loc, mode);
+	/* Hard links.  */
+	if ((extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) &&
+	    !supported_features->hard_links)
+	{
+		ERROR("Extraction backend does not support hard links!");
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+	if (required_features->hard_links && !supported_features->hard_links)
+		WARNING("Extracting %lu hard links as independent files",
+			required_features->hard_links);
+
+	/* Symbolic links and reparse points.  */
+	if ((extract_flags & WIMLIB_EXTRACT_FLAG_SYMLINK) &&
+	    !supported_features->symlink_reparse_points)
+	{
+		ERROR("Extraction backend does not support symbolic links!");
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+	if ((extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS) &&
+	    required_features->symlink_reparse_points &&
+	    !supported_features->symlink_reparse_points &&
+	    !supported_features->reparse_points)
+	{
+		ERROR("Extraction backend does not support symbolic links!");
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+	if (required_features->reparse_points &&
+	    !supported_features->reparse_points)
+	{
+		if (supported_features->symlink_reparse_points) {
+			if (required_features->other_reparse_points) {
+				WARNING("Ignoring %lu non-symlink/junction "
+					"reparse point files",
+					required_features->other_reparse_points);
 			}
-		}
-
-		if (required_features->security_descriptors &&
-		    !supported_features->security_descriptors)
-		{
-			WARNING(
-		  "%lu files in %"TS" have Windows NT security descriptors,\n"
-	"          but extracting security descriptors is not supported in\n"
-	"          %"TS".  No security descriptors will be extracted.",
-				required_features->security_descriptors, loc, mode);
-		}
-
-		if (required_features->short_names && !supported_features->short_names)
-		{
-			WARNING(
-		  "%lu files in %"TS" have short (DOS) names, but\n"
-	"          extracting short names is not supported in %"TS".\n"
-	"          Short names will not be extracted.\n",
-				required_features->short_names, loc, mode);
+		} else {
+			WARNING("Ignoring %lu reparse point files",
+				required_features->reparse_points);
 		}
 	}
 
-	if ((extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) &&
-	    required_features->unix_data && !supported_features->unix_data)
-	{
-		ERROR("Extracting UNIX data is not supported in %"TS, mode);
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
-	if ((extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES) &&
-	    required_features->short_names && !supported_features->short_names)
-	{
-		ERROR("Extracting short names is not supported in %"TS"", mode);
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
-	if ((extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS) &&
-	    !ops->set_timestamps)
-	{
-		ERROR("Extracting timestamps is not supported in %"TS"", mode);
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
+	/* Security descriptors.  */
 	if (((extract_flags & (WIMLIB_EXTRACT_FLAG_STRICT_ACLS |
 			       WIMLIB_EXTRACT_FLAG_UNIX_DATA))
 	     == WIMLIB_EXTRACT_FLAG_STRICT_ACLS) &&
 	    required_features->security_descriptors &&
 	    !supported_features->security_descriptors)
 	{
-		ERROR("Extracting security descriptors is not supported in %"TS, mode);
+		ERROR("Extraction backend does not support security descriptors!");
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS) && 
+	    required_features->security_descriptors &&
+	    !supported_features->security_descriptors)
+		WARNING("Ignoring Windows NT security descriptors of %lu files",
+			required_features->security_descriptors);
+
+	/* UNIX data.  */
+	if ((extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) &&
+	    required_features->unix_data && !supported_features->unix_data)
+	{
+		ERROR("Extraction backend does not support UNIX data!");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
-	if ((extract_flags & WIMLIB_EXTRACT_FLAG_HARDLINK) &&
-	    !supported_features->hard_links)
+	/* DOS Names.  */
+	if (required_features->short_names &&
+	    !supported_features->short_names)
 	{
-		ERROR("Hard link extraction mode requested, but "
-		      "%"TS" does not support hard links!", mode);
+		if (extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES) {
+			ERROR("Extraction backend does not support DOS names!");
+			return WIMLIB_ERR_UNSUPPORTED;
+		}
+		WARNING("Ignoring DOS names of %lu files",
+			required_features->short_names);
+	}
+
+	/* Timestamps.  */
+	if ((extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS) &&
+	    !ops->set_timestamps)
+	{
+		ERROR("Extraction backend does not support timestamps!");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
-	if ((extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS) &&
-	    required_features->symlink_reparse_points &&
-	    !(supported_features->symlink_reparse_points ||
-	      supported_features->reparse_points))
-	{
-		ERROR("Extracting symbolic links is not supported in %"TS, mode);
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
-
-	if ((extract_flags & WIMLIB_EXTRACT_FLAG_SYMLINK) &&
-	    !supported_features->symlink_reparse_points)
-	{
-		ERROR("Symbolic link extraction mode requested, but "
-		      "%"TS" does not support symbolic "
-		      "links!", mode);
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
 	return 0;
 }
 
@@ -2306,7 +2238,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	/* Get and check the features required to extract the dentry tree.  */
 	dentry_tree_get_features(ctx.extract_root, &required_features);
 	ret = do_feature_check(&required_features, &ctx.supported_features,
-			       extract_flags, ctx.ops, true);
+			       extract_flags, ctx.ops);
 	if (ret)
 		goto out_finish_or_abort_extract;
 
