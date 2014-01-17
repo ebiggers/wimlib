@@ -2582,6 +2582,29 @@ append_dentry_cb(struct wim_dentry *dentry, void *_ctx)
 }
 
 static int
+mkdir_if_needed(const tchar *target)
+{
+	struct stat stbuf;
+	if (tstat(target, &stbuf)) {
+		if (errno == ENOENT) {
+			if (tmkdir(target, 0755)) {
+				ERROR_WITH_ERRNO("Failed to create directory "
+						 "\"%"TS"\"", target);
+				return WIMLIB_ERR_MKDIR;
+			}
+		} else {
+			ERROR_WITH_ERRNO("Failed to stat \"%"TS"\"", target);
+			return WIMLIB_ERR_STAT;
+		}
+	} else if (!S_ISDIR(stbuf.st_mode)) {
+		ERROR("\"%"TS"\" is not a directory", target);
+		return WIMLIB_ERR_NOTDIR;
+	}
+	return 0;
+}
+
+
+static int
 do_wimlib_extract_paths(WIMStruct *wim,
 			int image,
 			const tchar *target,
@@ -2609,6 +2632,15 @@ do_wimlib_extract_paths(WIMStruct *wim,
 	ret = wim_checksum_unhashed_streams(wim);
 	if (ret)
 		return ret;
+
+	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_NTFS |
+			      WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE)) ==
+	    (WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE))
+	{
+		ret = mkdir_if_needed(target);
+		if (ret)
+			return ret;
+	}
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_GLOB_PATHS) {
 
@@ -2723,7 +2755,6 @@ extract_all_images(WIMStruct *wim,
 	int ret;
 	int image;
 	const tchar *image_name;
-	struct stat stbuf;
 
 	extract_flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
 
@@ -2732,21 +2763,9 @@ extract_all_images(WIMStruct *wim,
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
-	if (tstat(target, &stbuf)) {
-		if (errno == ENOENT) {
-			if (tmkdir(target, 0755)) {
-				ERROR_WITH_ERRNO("Failed to create directory \"%"TS"\"", target);
-				return WIMLIB_ERR_MKDIR;
-			}
-		} else {
-			ERROR_WITH_ERRNO("Failed to stat \"%"TS"\"", target);
-			return WIMLIB_ERR_STAT;
-		}
-	} else if (!S_ISDIR(stbuf.st_mode)) {
-		ERROR("\"%"TS"\" is not a directory", target);
-		return WIMLIB_ERR_NOTDIR;
-	}
-
+	ret = mkdir_if_needed(target);
+	if (ret)
+		return ret;
 	tmemcpy(buf, target, output_path_len);
 	buf[output_path_len] = OS_PREFERRED_PATH_SEPARATOR;
 	for (image = 1; image <= wim->hdr.image_count; image++) {
