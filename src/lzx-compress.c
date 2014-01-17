@@ -1312,9 +1312,44 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 
 			raw_match = lzx_lz_get_near_optimal_match(ctx);
 			if (raw_match.len >= LZX_MIN_MATCH_LEN) {
-				lzx_match.data = lzx_tally_match(raw_match.len, raw_match.offset,
-								 &freqs, &ctx->queue);
-				i += raw_match.len;
+				if (unlikely(raw_match.len == LZX_MIN_MATCH_LEN &&
+					     raw_match.offset == ctx->max_window_size -
+								 LZX_MIN_MATCH_LEN))
+				{
+					/* Degenerate case where the parser
+					 * generated the minimum match length
+					 * with the maximum offset.  There
+					 * aren't actually enough position slots
+					 * to represent this offset, as noted in
+					 * the comments in
+					 * lzx_get_num_main_syms(), so we cannot
+					 * allow it.  Use literals instead.
+					 *
+					 * Note that this case only occurs if
+					 * the match-finder can generate matches
+					 * to the very start of the window.  The
+					 * suffix array match-finder can,
+					 * although typical hash chain and
+					 * binary tree match-finders use 0 as a
+					 * null value and therefore cannot
+					 * generate such matches.  */
+					BUILD_BUG_ON(LZX_MIN_MATCH_LEN != 2);
+					lzx_match.data = lzx_tally_literal(ctx->window[i],
+									   &freqs);
+					i += 1;
+					ctx->chosen_matches[spec->chosen_matches_start_pos +
+							    spec->num_chosen_matches++]
+							    = lzx_match;
+					lzx_match.data = lzx_tally_literal(ctx->window[i],
+									   &freqs);
+					i += 1;
+				} else {
+					lzx_match.data = lzx_tally_match(raw_match.len,
+									 raw_match.offset,
+									 &freqs,
+									 &ctx->queue);
+					i += raw_match.len;
+				}
 			} else {
 				lzx_match.data = lzx_tally_literal(ctx->window[i], &freqs);
 				i += 1;
