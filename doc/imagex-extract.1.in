@@ -206,6 +206,12 @@ Extract multiple files and directories in one command:
 .RE
 .RE
 .PP
+Extract many files to the current directory using a wildcard pattern:
+.RS
+.PP
+@IMAGEX_PROGNAME@ extract install.wim 1 "/Windows/Fonts/*.ttf"
+.RE
+.PP
 Extract files using a list file:
 .RS
 .PP
