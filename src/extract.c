@@ -1407,32 +1407,17 @@ out_delete_tmpfile:
 static int
 extract_stream_list(struct apply_ctx *ctx)
 {
-	if (!(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER)) {
-		/* Sequential extraction: read the streams in the order in which
-		 * they appear in the WIM file.  */
-		struct read_stream_list_callbacks cbs = {
-			.begin_stream		= begin_extract_stream_to_tmpfile,
-			.begin_stream_ctx	= ctx,
-			.consume_chunk		= extract_chunk_to_fd,
-			.consume_chunk_ctx	= &ctx->tmpfile_fd,
-			.end_stream		= end_extract_stream_to_tmpfile,
-			.end_stream_ctx		= ctx,
-		};
-		return read_stream_list(&ctx->stream_list,
-					offsetof(struct wim_lookup_table_entry, extraction_list),
-					&cbs, VERIFY_STREAM_HASHES);
-	} else {
-		/* Extract the streams in unsorted order.  */
-		struct wim_lookup_table_entry *lte;
-		int ret;
-
-		list_for_each_entry(lte, &ctx->stream_list, extraction_list) {
-			ret = extract_stream_instances(lte, lte, ctx);
-			if (ret)
-				return ret;
-		}
-		return 0;
-	}
+	struct read_stream_list_callbacks cbs = {
+		.begin_stream		= begin_extract_stream_to_tmpfile,
+		.begin_stream_ctx	= ctx,
+		.consume_chunk		= extract_chunk_to_fd,
+		.consume_chunk_ctx	= &ctx->tmpfile_fd,
+		.end_stream		= end_extract_stream_to_tmpfile,
+		.end_stream_ctx		= ctx,
+	};
+	return read_stream_list(&ctx->stream_list,
+				offsetof(struct wim_lookup_table_entry, extraction_list),
+				&cbs, VERIFY_STREAM_HASHES);
 }
 
 #define PWM_ALLOW_WIM_HDR 0x00001
