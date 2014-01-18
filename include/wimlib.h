@@ -517,8 +517,10 @@ enum wimlib_progress_msg {
 	 * will not be valid. */
 	WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN,
 
-	/** Confirms that the metadata resource for each image has successfully
-	 * been writen to the WIM.  @p info will not be valid.  */
+	/** Confirms that per-image metadata has been successfully been written
+	 * to the WIM file.  @p info will not be valid.  This message is paired
+	 * with a preceding ::WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN message.
+	 */
 	WIMLIB_PROGRESS_MSG_WRITE_METADATA_END,
 
 	/** wimlib_overwrite() has successfully renamed the temporary file to
@@ -537,8 +539,8 @@ enum wimlib_progress_msg {
 
 	/** An integrity table is being calculated for the WIM being written.
 	 * @p info will point to ::wimlib_progress_info.integrity.  This message
-	 * is only received (and may be received many times) when a WIM is being
-	 * written with the flag ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY.  */
+	 * is only received (and may be received many times) when a WIM file is
+	 * being written with the flag ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY.  */
 	WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
 
 	/** Reserved.  */
@@ -1548,8 +1550,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 
 /** For wimlib_extract_paths() and wimlib_extract_pathlist() only:  Do not
  * preserve the directory structure of the archive when extracting --- that is,
- * place each extracted files or directory tree directly in the target
- * directory.  */
+ * place each extracted file or directory tree directly in the target directory.
+ */
 #define WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE	0x00200000
 
 /** @} */
@@ -2270,7 +2272,7 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  *
  * As of wimlib v1.6.1, this function is deprecated in favor of
  * wimlib_extract_paths() because wimlib_extract_paths() is easier to use and
- * usually more efficient.
+ * more efficient.
  *
  * Notes: wimlib_extract_files() does not support the
  * ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS flag, and

@@ -1907,8 +1907,8 @@ dentry_list_calculate_extraction_names(struct list_head *dentry_list,
 	struct list_head *prev, *cur;
 
 	/* Can't use list_for_each_entry() because a call to
-	 * dentry_calculate_extraction_name() may the current dentry and its
-	 * children from the list.  */
+	 * dentry_calculate_extraction_name() may delete the current dentry and
+	 * its children from the list.  */
 
 	prev = dentry_list;
 	for (;;) {

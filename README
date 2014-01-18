@@ -65,7 +65,7 @@ wimlib (and wimlib-imagex) can create XPRESS, LZX, or LZMS compressed WIM
 archives.  wimlib includes its own compression codecs and does not use the
 compression API available on some versions of Windows.  The below table provides
 the results (file size, in bytes, and time to create, in seconds) of capturing a
-WIM containing a x86 Windows PE image, using various compression types and
+WIM containing an x86 Windows PE image, using various compression types and
 options.  When applicable, the results with the equivalent Microsoft
 implementation in WIMGAPI, which is the library used by ImageX and Dism, are
 included.

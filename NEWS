@@ -10,7 +10,7 @@ Version 1.6.1:
 
 	Fixed a minor compatibility issue with the LZMS compressor and
 	decompressor.  This is *not* the default compression type and was only
-	introduced in v1.6.0.  In the unlikely event that you created a
+	introduced in v1.6.0.  In the unlikely event that you created an
 	LZMS-compressed WIM with v1.6.0 and a checksum error is reported when
 	applying it with v1.6.1, decompress it with v1.6.0 then compress it with
 	v1.6.1.
