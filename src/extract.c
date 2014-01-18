@@ -1658,17 +1658,11 @@ dentry_reset_extraction_list_node(struct wim_dentry *dentry)
 	dentry->extraction_list = (struct list_head){NULL, NULL};
 }
 
-static void
-dentry_delete_from_list(struct wim_dentry *dentry)
+static int
+dentry_delete_from_list(struct wim_dentry *dentry, void *_ignore)
 {
 	list_del(&dentry->extraction_list);
 	dentry_reset_extraction_list_node(dentry);
-}
-
-static int
-do_dentry_delete_from_list(struct wim_dentry *dentry, void *_ignore)
-{
-	dentry_delete_from_list(dentry);
 	return 0;
 }
 
@@ -1885,7 +1879,7 @@ out_replace:
 	return 0;
 
 skip_dentry:
-	for_dentry_in_tree(dentry, do_dentry_delete_from_list, NULL);
+	for_dentry_in_tree(dentry, dentry_delete_from_list, NULL);
 	return 0;
 }
 
