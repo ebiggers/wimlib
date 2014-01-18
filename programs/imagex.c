@@ -2946,7 +2946,6 @@ imagex_extract(int argc, tchar **argv, int cmd)
 	int ret;
 	const tchar *wimfile;
 	const tchar *image_num_or_name;
-	const tchar *pathlist;
 	tchar *dest_dir = T(".");
 	int extract_flags = WIMLIB_EXTRACT_FLAG_NORPFIX |
 			    WIMLIB_EXTRACT_FLAG_GLOB_PATHS |
@@ -2955,8 +2954,6 @@ imagex_extract(int argc, tchar **argv, int cmd)
 
 	STRING_SET(refglobs);
 
-	struct wimlib_extract_command *cmds;
-	size_t num_cmds;
 	tchar *root_path = T("");
 
 	for_opt(c, extract_options) {
