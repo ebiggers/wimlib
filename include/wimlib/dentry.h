@@ -76,17 +76,6 @@ struct wim_dentry {
 	 * including the terminating null character. */
 	u32 full_path_nbytes;
 
-	/* For extraction operations, this flag will be set on dentries in the
-	 * tree being extracted.  Otherwise this will always be 0.  */
-	u8 in_extraction_tree : 1;
-
-	/* For extraction operations, this flag will be set when a dentry in the
-	 * tree being extracted is not being extracted for some reason (file
-	 * type not supported by target filesystem, contains invalid characters,
-	 * or not in one of the multiple sub-trees being extracted).  Otherwise
-	 * this will always be 0.  */
-	u8 extraction_skipped : 1;
-
 	/* During extraction extractions, this flag will be set after the
 	 * "skeleton" of the dentry has been extracted.  */
 	u8 skeleton_extracted : 1;
@@ -97,13 +86,18 @@ struct wim_dentry {
 	 * always be 0.  */
 	u8 is_win32_name : 1;
 
+	/* Temporary flag; always reset to 0 when done using.  */
 	u8 tmp_flag : 1;
 
-	u8 was_hardlinked : 1;
+	/* Set to 1 if this name was extracted as a link, so no streams need to
+	 * be extracted to it.  */
+	u8 was_linked : 1;
 
-	/* Temporary list field used to make lists of dentries in a few places.
-	 * */
+	/* Temporary list field  */
 	struct list_head tmp_list;
+
+	/* Links list of dentries being extracted  */
+	struct list_head extraction_list;
 
 	/* Linked list node that places this dentry in the list of aliases for
 	 * its inode (d_inode) */

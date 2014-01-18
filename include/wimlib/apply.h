@@ -217,7 +217,7 @@ struct apply_ctx {
 	bool root_dentry_is_special;
 	u32 supported_attributes_mask;
 
-	struct wim_dentry *extract_root;
+	struct wim_dentry *target_dentry;
 	tchar *realtarget;
 	size_t realtarget_nchars;
 	unsigned long invalid_sequence;

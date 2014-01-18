@@ -26,10 +26,9 @@
 
 /*
  * This file provides the API functions wimlib_extract_image(),
- * wimlib_extract_files(), and wimlib_extract_image_from_pipe().  Internally,
- * all end up calling extract_tree() zero or more times to extract a tree of
- * files from the currently selected WIM image to the specified target directory
- * or NTFS volume.
+ * wimlib_extract_image_from_pipe(), wimlib_extract_files(),
+ * wimlib_extract_paths(), and wimlib_extract_pathlist().  Internally, all end
+ * up calling do_wimlib_extract_paths() and extract_trees().
  *
  * Although wimlib supports multiple extraction modes/backends (NTFS-3g, UNIX,
  * Win32), this file does not itself have code to extract files or directories
@@ -97,36 +96,10 @@
 	 WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES		|	\
 	 WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE)
 
-/* Given a WIM dentry in the tree to be extracted, resolve all streams in the
- * corresponding inode and set 'out_refcnt' in each to 0.  */
-static int
-dentry_resolve_and_zero_lte_refcnt(struct wim_dentry *dentry, void *_ctx)
+static bool
+dentry_in_list(const struct wim_dentry *dentry)
 {
-	struct apply_ctx *ctx = _ctx;
-	struct wim_inode *inode = dentry->d_inode;
-	struct wim_lookup_table_entry *lte;
-	int ret;
-	bool force = false;
-
-	if (dentry->extraction_skipped)
-		return 0;
-
-	/* Special case:  when extracting from a pipe, the WIM lookup table is
-	 * initially empty, so "resolving" an inode's streams is initially not
-	 * possible.  However, we still need to keep track of which streams,
-	 * identified by SHA1 message digests, need to be extracted, so we
-	 * "resolve" the inode's streams anyway by allocating new entries.  */
-	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE)
-		force = true;
-	ret = inode_resolve_streams(inode, ctx->wim->lookup_table, force);
-	if (ret)
-		return ret;
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		lte = inode_stream_lte_resolved(inode, i);
-		if (lte)
-			lte->out_refcnt = 0;
-	}
-	return 0;
+	return dentry->extraction_list.next != NULL;
 }
 
 static inline bool
@@ -142,120 +115,6 @@ can_extract_named_data_streams(const struct apply_ctx *ctx)
 	return ctx->supported_features.named_data_streams &&
 		!is_linked_extraction(ctx);
 }
-
-static int
-ref_stream_to_extract(struct wim_lookup_table_entry *lte,
-		      struct wim_dentry *dentry, struct apply_ctx *ctx)
-{
-	if (!lte)
-		return 0;
-
-	/* Tally the size only for each extraction of the stream (not hard
-	 * links).  */
-	if (!(dentry->d_inode->i_visited &&
-	      ctx->supported_features.hard_links) &&
-	    (!is_linked_extraction(ctx) || (lte->out_refcnt == 0 &&
-					    lte->extracted_file == NULL)))
-	{
-		ctx->progress.extract.total_bytes += lte->size;
-		ctx->progress.extract.num_streams++;
-	}
-
-	/* Add stream to the extraction_list only one time, even if it's going
-	 * to be extracted to multiple locations.  */
-	if (lte->out_refcnt == 0) {
-		list_add_tail(&lte->extraction_list, &ctx->stream_list);
-		ctx->num_streams_remaining++;
-	}
-
-	if (!(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER)) {
-		struct wim_dentry **lte_dentries;
-
-		/* Append dentry to this stream's array of dentries referencing
-		 * it.  Use inline array to avoid memory allocation until the
-		 * number of dentries becomes too large.  */
-		if (lte->out_refcnt < ARRAY_LEN(lte->inline_lte_dentries)) {
-			lte_dentries = lte->inline_lte_dentries;
-		} else {
-			struct wim_dentry **prev_lte_dentries;
-			size_t alloc_lte_dentries;
-
-			if (lte->out_refcnt == ARRAY_LEN(lte->inline_lte_dentries)) {
-				prev_lte_dentries = NULL;
-				alloc_lte_dentries = ARRAY_LEN(lte->inline_lte_dentries);
-			} else {
-				prev_lte_dentries = lte->lte_dentries;
-				alloc_lte_dentries = lte->alloc_lte_dentries;
-			}
-
-			if (lte->out_refcnt == alloc_lte_dentries) {
-				alloc_lte_dentries *= 2;
-				lte_dentries = REALLOC(prev_lte_dentries,
-						       alloc_lte_dentries *
-							sizeof(lte_dentries[0]));
-				if (lte_dentries == NULL)
-					return WIMLIB_ERR_NOMEM;
-				if (prev_lte_dentries == NULL) {
-					memcpy(lte_dentries,
-					       lte->inline_lte_dentries,
-					       sizeof(lte->inline_lte_dentries));
-				}
-				lte->lte_dentries = lte_dentries;
-				lte->alloc_lte_dentries = alloc_lte_dentries;
-			}
-			lte_dentries = lte->lte_dentries;
-		}
-		lte_dentries[lte->out_refcnt] = dentry;
-	}
-	lte->out_refcnt++;
-	return 0;
-}
-
-/* Given a WIM dentry in the tree to be extracted, iterate through streams that
- * need to be extracted.  For each one, add it to the list of streams to be
- * extracted (ctx->stream_list) if not already done so, and also update the
- * progress information (ctx->progress) with the stream.  Furthermore, if doing
- * a sequential extraction, build a mapping from each the stream to the dentries
- * referencing it.
- *
- * This uses the i_visited member of the inodes (assumed to be 0 initially).  */
-static int
-dentry_add_streams_to_extract(struct wim_dentry *dentry, void *_ctx)
-{
-	struct apply_ctx *ctx = _ctx;
-	struct wim_inode *inode = dentry->d_inode;
-	int ret;
-
-	/* Don't process dentries marked as skipped.  */
-	if (dentry->extraction_skipped)
-		return 0;
-
-	/* The unnamed data stream will always be extracted, except in an
-	 * unlikely case.  */
-	if (!inode_is_encrypted_directory(inode)) {
-		ret = ref_stream_to_extract(inode_unnamed_lte_resolved(inode),
-					    dentry, ctx);
-		if (ret)
-			return ret;
-	}
-
-	/* Named data streams will be extracted only if supported in the current
-	 * extraction mode and volume, and to avoid complications, if not doing
-	 * a linked extraction.  */
-	if (can_extract_named_data_streams(ctx)) {
-		for (u16 i = 0; i < inode->i_num_ads; i++) {
-			if (!ads_entry_is_named_stream(&inode->i_ads_entries[i]))
-				continue;
-			ret = ref_stream_to_extract(inode->i_ads_entries[i].lte,
-						    dentry, ctx);
-			if (ret)
-				return ret;
-		}
-	}
-	inode->i_visited = 1;
-	return 0;
-}
-
 /* Inform library user of progress of stream extraction following the successful
  * extraction of a copy of the stream specified by @lte.  */
 static void
@@ -596,7 +455,7 @@ extract_streams(const tchar *path, struct apply_ctx *ctx,
 	file_spec_t file_spec;
 	int ret;
 
-	if (dentry->was_hardlinked)
+	if (dentry->was_linked)
 		return 0;
 
 #ifdef ENABLE_DEBUG
@@ -695,7 +554,7 @@ extract_file_attributes(const tchar *path, struct apply_ctx *ctx,
 
 	if (ctx->ops->set_file_attributes &&
 	    !(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES) &&
-	    !(dentry == ctx->extract_root && ctx->root_dentry_is_special)) {
+	    !(dentry == ctx->target_dentry && ctx->root_dentry_is_special)) {
 		u32 attributes = dentry->d_inode->i_attributes;
 
 		/* Clear unsupported attributes.  */
@@ -737,7 +596,7 @@ extract_short_name(const tchar *path, struct apply_ctx *ctx,
 
 	/* The root of the dentry tree being extracted may not be extracted to
 	 * its original name, so its short name should be ignored.  */
-	if (dentry == ctx->extract_root)
+	if (dentry == ctx->target_dentry)
 		return 0;
 
 	if (ctx->supported_features.short_names) {
@@ -768,7 +627,7 @@ extract_security(const tchar *path, struct apply_ctx *ctx,
 	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)
 		return 0;
 
-	if ((ctx->extract_root == dentry) && ctx->root_dentry_is_special)
+	if ((ctx->target_dentry == dentry) && ctx->root_dentry_is_special)
 		return 0;
 
 #ifndef __WIN32__
@@ -837,7 +696,7 @@ extract_timestamps(const tchar *path, struct apply_ctx *ctx,
 	struct wim_inode *inode = dentry->d_inode;
 	int ret;
 
-	if ((ctx->extract_root == dentry) && ctx->root_dentry_is_special)
+	if ((ctx->target_dentry == dentry) && ctx->root_dentry_is_special)
 		return 0;
 
 	if (ctx->ops->set_timestamps) {
@@ -885,7 +744,7 @@ dentry_is_supported(struct wim_dentry *dentry,
  * format understood by the callbacks in the apply_operations being used.
  *
  * Write the resulting path into @path, which must have room for at least
- * ctx->ops->max_path characters including the null-terminator.
+ * ctx->ops->path_max characters.
  *
  * Return %true if successful; %false if this WIM dentry doesn't actually need
  * to be extracted or if the calculated path exceeds ctx->ops->max_path
@@ -895,7 +754,7 @@ dentry_is_supported(struct wim_dentry *dentry,
  * until the extraction root.  */
 static bool
 build_extraction_path(tchar path[], struct wim_dentry *dentry,
-		      struct apply_ctx *ctx)
+		      const struct apply_ctx *ctx)
 {
 	size_t path_nchars;
 	LIST_HEAD(ancestor_list);
@@ -903,9 +762,6 @@ build_extraction_path(tchar path[], struct wim_dentry *dentry,
 	const tchar *target_prefix;
 	size_t target_prefix_nchars;
 	struct wim_dentry *d;
-
-	if (dentry->extraction_skipped)
-		return false;
 
 	path_nchars = ctx->ops->path_prefix_nchars;
 
@@ -921,8 +777,8 @@ build_extraction_path(tchar path[], struct wim_dentry *dentry,
 	}
 	path_nchars += target_prefix_nchars;
 
-	for (d = dentry; d != ctx->extract_root; d = d->parent) {
-		if (!d->in_extraction_tree || d->extraction_skipped)
+	for (d = dentry; d != ctx->target_dentry; d = d->parent) {
+		if (!dentry_in_list(d))
 			break;
 
 		path_nchars += d->extraction_name_nchars + 1;
@@ -981,7 +837,7 @@ extract_multiimage_symlink(const tchar *oldpath, const tchar *newpath,
 	int ret;
 
 	num_raw_path_components = 0;
-	for (d = dentry; d != ctx->extract_root; d = d->parent)
+	for (d = dentry; d != ctx->target_dentry; d = d->parent)
 		num_raw_path_components++;
 
 	if (ctx->ops->requires_realtarget_in_paths)
@@ -1073,7 +929,7 @@ do_dentry_extract_skeleton(tchar path[], struct wim_dentry *dentry,
 
 	/* Create this file or directory unless it's the extraction root, which
 	 * was already created if necessary.  */
-	if (dentry != ctx->extract_root) {
+	if (dentry != ctx->target_dentry) {
 		ret = extract_inode(path, ctx, inode);
 		if (ret)
 			return ret;
@@ -1139,14 +995,14 @@ symlink:
 	ret = extract_multiimage_symlink(oldpath, path, ctx, dentry);
 	if (ret)
 		return ret;
-	dentry->was_hardlinked = 1;
+	dentry->was_linked = 1;
 	return 0;
 
 hardlink:
 	ret = extract_hardlink(oldpath, path, ctx);
 	if (ret)
 		return ret;
-	dentry->was_hardlinked = 1;
+	dentry->was_linked = 1;
 	return 0;
 }
 
@@ -1156,9 +1012,8 @@ hardlink:
  * apply_operations.requires_short_name_reordering for more details about short
  * name reordering.  */
 static int
-dentry_extract_skeleton(struct wim_dentry *dentry, void *_ctx)
+dentry_extract_skeleton(struct wim_dentry *dentry, struct apply_ctx *ctx)
 {
-	struct apply_ctx *ctx = _ctx;
 	tchar path[ctx->ops->path_max];
 	struct wim_dentry *orig_dentry;
 	struct wim_dentry *other_dentry;
@@ -1176,8 +1031,7 @@ dentry_extract_skeleton(struct wim_dentry *dentry, void *_ctx)
 		inode_for_each_dentry(other_dentry, dentry->d_inode) {
 			if (dentry_has_short_name(other_dentry)
 			    && !other_dentry->skeleton_extracted
-			    && other_dentry->in_extraction_tree
-			    && !other_dentry->extraction_skipped)
+			    && dentry_in_list(other_dentry))
 			{
 				DEBUG("Creating %"TS" before %"TS" "
 				      "to guarantee correct DOS name extraction",
@@ -1207,20 +1061,11 @@ again:
 	return 0;
 }
 
-static int
-dentry_extract_dir_skeleton(struct wim_dentry *dentry, void *_ctx)
-{
-	if (dentry->d_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
-		return dentry_extract_skeleton(dentry, _ctx);
-	return 0;
-}
-
 /* Create a file or directory, then immediately extract all streams.  The WIM
  * may not be read sequentially by this function.  */
 static int
-dentry_extract(struct wim_dentry *dentry, void *_ctx)
+dentry_extract(struct wim_dentry *dentry, struct apply_ctx *ctx)
 {
-	struct apply_ctx *ctx = _ctx;
 	tchar path[ctx->ops->path_max];
 	int ret;
 
@@ -1232,6 +1077,89 @@ dentry_extract(struct wim_dentry *dentry, void *_ctx)
 		return 0;
 
 	return extract_streams(path, ctx, dentry, NULL, NULL);
+}
+
+/* Finish extracting a file, directory, or symbolic link by setting file
+ * security and timestamps.  */
+static int
+dentry_extract_final(struct wim_dentry *dentry, struct apply_ctx *ctx)
+{
+	int ret;
+	tchar path[ctx->ops->path_max];
+
+	if (!build_extraction_path(path, dentry, ctx))
+		return 0;
+
+	ret = extract_security(path, ctx, dentry);
+	if (ret)
+		return ret;
+
+	if (ctx->ops->requires_final_set_attributes_pass) {
+		/* Set file attributes (if supported).  */
+		ret = extract_file_attributes(path, ctx, dentry, 1);
+		if (ret)
+			return ret;
+	}
+
+	return extract_timestamps(path, ctx, dentry);
+}
+
+static int
+extract_structure(struct list_head *dentry_list, struct apply_ctx *ctx)
+{
+	struct wim_dentry *dentry;
+	int ret;
+
+	list_for_each_entry(dentry, dentry_list, extraction_list) {
+		ret = dentry_extract_skeleton(dentry, ctx);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+static int
+extract_dir_structure(struct list_head *dentry_list, struct apply_ctx *ctx)
+{
+	struct wim_dentry *dentry;
+	int ret;
+
+	list_for_each_entry(dentry, dentry_list, extraction_list) {
+		if (dentry_is_directory(dentry)) {
+			ret = dentry_extract_skeleton(dentry, ctx);
+			if (ret)
+				return ret;
+		}
+	}
+	return 0;
+}
+
+static int
+extract_dentries(struct list_head *dentry_list, struct apply_ctx *ctx)
+{
+	struct wim_dentry *dentry;
+	int ret;
+
+	list_for_each_entry(dentry, dentry_list, extraction_list) {
+		ret = dentry_extract(dentry, ctx);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+static int
+extract_final_metadata(struct list_head *dentry_list, struct apply_ctx *ctx)
+{
+	struct wim_dentry *dentry;
+	int ret;
+
+	list_for_each_entry_reverse(dentry, dentry_list, extraction_list) {
+		ret = dentry_extract_final(dentry, ctx);
+		if (ret)
+			return ret;
+	}
+	return 0;
 }
 
 /* Creates a temporary file opened for writing.  The open file descriptor is
@@ -1618,60 +1546,191 @@ resume_done:
 	return 0;
 }
 
-/* Finish extracting a file, directory, or symbolic link by setting file
- * security and timestamps.  */
-static int
-dentry_extract_final(struct wim_dentry *dentry, void *_ctx)
-{
-	struct apply_ctx *ctx = _ctx;
-	int ret;
-	tchar path[ctx->ops->path_max];
-
-	if (!build_extraction_path(path, dentry, ctx))
-		return 0;
-
-	ret = extract_security(path, ctx, dentry);
-	if (ret)
-		return ret;
-
-	if (ctx->ops->requires_final_set_attributes_pass) {
-		/* Set file attributes (if supported).  */
-		ret = extract_file_attributes(path, ctx, dentry, 1);
-		if (ret)
-			return ret;
-	}
-
-	return extract_timestamps(path, ctx, dentry);
-}
-
-/*
- * Extract a WIM dentry to standard output.
+/* Extract a WIM dentry to standard output.
  *
  * This obviously doesn't make sense in all cases.  We return an error if the
  * dentry does not correspond to a regular file.  Otherwise we extract the
- * unnamed data stream only.
- */
+ * unnamed data stream only.  */
 static int
-extract_dentry_to_stdout(struct wim_dentry *dentry)
+extract_dentry_to_stdout(struct wim_dentry *dentry,
+			 const struct wim_lookup_table *lookup_table)
 {
-	int ret = 0;
-	if (dentry->d_inode->i_attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
-					     FILE_ATTRIBUTE_DIRECTORY))
+	struct wim_inode *inode = dentry->d_inode;
+	struct wim_lookup_table_entry *lte;
+	struct filedes _stdout;
+
+	if (inode->i_attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
+				   FILE_ATTRIBUTE_DIRECTORY))
 	{
 		ERROR("\"%"TS"\" is not a regular file and therefore cannot be "
 		      "extracted to standard output", dentry_full_path(dentry));
-		ret = WIMLIB_ERR_NOT_A_REGULAR_FILE;
-	} else {
-		struct wim_lookup_table_entry *lte;
+		return WIMLIB_ERR_NOT_A_REGULAR_FILE;
+	}
 
-		lte = inode_unnamed_lte_resolved(dentry->d_inode);
-		if (lte) {
-			struct filedes _stdout;
-			filedes_init(&_stdout, STDOUT_FILENO);
-			ret = extract_full_stream_to_fd(lte, &_stdout);
+	lte = inode_unnamed_lte(inode, lookup_table);
+	if (!lte) {
+		const u8 *hash = inode_unnamed_stream_hash(inode);
+		if (!is_zero_hash(hash))
+			return stream_not_found_error(inode, hash);
+		return 0;
+	}
+
+	filedes_init(&_stdout, STDOUT_FILENO);
+	return extract_full_stream_to_fd(lte, &_stdout);
+}
+
+static int
+extract_dentries_to_stdout(struct wim_dentry **dentries, size_t num_dentries,
+			   const struct wim_lookup_table *lookup_table)
+{
+	for (size_t i = 0; i < num_dentries; i++) {
+		int ret = extract_dentry_to_stdout(dentries[i], lookup_table);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+/**********************************************************************/
+
+/*
+ * Removes duplicate dentries from the array.
+ *
+ * Returns the new number of dentries, packed at the front of the array.
+ */
+static size_t
+remove_duplicate_trees(struct wim_dentry **trees, size_t num_trees)
+{
+	size_t i, j = 0;
+	for (i = 0; i < num_trees; i++) {
+		if (!trees[i]->tmp_flag) {
+			/* Found distinct dentry.  */
+			trees[i]->tmp_flag = 1;
+			trees[j++] = trees[i];
 		}
 	}
-	return ret;
+	for (i = 0; i < j; i++)
+		trees[i]->tmp_flag = 0;
+	return j;
+}
+
+/*
+ * Remove dentries that are descendants of other dentries in the array.
+ *
+ * Returns the new number of dentries, packed at the front of the array.
+ */
+static size_t
+remove_contained_trees(struct wim_dentry **trees, size_t num_trees)
+{
+	size_t i, j = 0;
+	for (i = 0; i < num_trees; i++)
+		trees[i]->tmp_flag = 1;
+	for (i = 0; i < num_trees; i++) {
+		struct wim_dentry *d = trees[i];
+		while (!dentry_is_root(d)) {
+			d = d->parent;
+			if (d->tmp_flag)
+				goto tree_contained;
+		}
+		trees[j++] = trees[i];
+		continue;
+
+	tree_contained:
+		trees[i]->tmp_flag = 0;
+	}
+
+	for (i = 0; i < j; i++)
+		trees[i]->tmp_flag = 0;
+	return j;
+}
+
+static int
+dentry_append_to_list(struct wim_dentry *dentry, void *_dentry_list)
+{
+	struct list_head *dentry_list = _dentry_list;
+	list_add_tail(&dentry->extraction_list, dentry_list);
+	return 0;
+}
+
+static void
+dentry_reset_extraction_list_node(struct wim_dentry *dentry)
+{
+	dentry->extraction_list = (struct list_head){NULL, NULL};
+}
+
+static void
+dentry_delete_from_list(struct wim_dentry *dentry)
+{
+	list_del(&dentry->extraction_list);
+	dentry_reset_extraction_list_node(dentry);
+}
+
+static int
+do_dentry_delete_from_list(struct wim_dentry *dentry, void *_ignore)
+{
+	dentry_delete_from_list(dentry);
+	return 0;
+}
+
+/*
+ * Build the preliminary list of dentries to be extracted.
+ *
+ * The list maintains the invariant that if d1 and d2 are in the list and d1 is
+ * an ancestor of d2, then d1 appears before d2 in the list.
+ */
+static void
+build_dentry_list(struct list_head *dentry_list, struct wim_dentry **trees,
+		  size_t num_trees, bool add_ancestors)
+{
+	INIT_LIST_HEAD(dentry_list);
+
+	/* Add the trees recursively.  */
+	for (size_t i = 0; i < num_trees; i++)
+		for_dentry_in_tree(trees[i], dentry_append_to_list, dentry_list);
+
+	/* If requested, add ancestors of the trees.  */
+	if (add_ancestors) {
+		for (size_t i = 0; i < num_trees; i++) {
+			struct wim_dentry *dentry = trees[i];
+			struct wim_dentry *ancestor;
+			struct list_head *place_after;
+
+			if (dentry_is_root(dentry))
+				continue;
+
+			place_after = dentry_list;
+			ancestor = dentry;
+			do {
+				ancestor = ancestor->parent;
+				if (dentry_in_list(ancestor)) {
+					place_after = &ancestor->extraction_list;
+					break;
+				}
+			} while (!dentry_is_root(ancestor));
+
+			ancestor = dentry;
+			do {
+				ancestor = ancestor->parent;
+				if (dentry_in_list(ancestor))
+					break;
+				list_add(&ancestor->extraction_list, place_after);
+			} while (!dentry_is_root(ancestor));
+		}
+	}
+}
+
+static const struct apply_operations *
+select_apply_operations(int extract_flags)
+{
+#ifdef WITH_NTFS_3G
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS)
+		return &ntfs_3g_apply_ops;
+#endif
+#ifdef __WIN32__
+	return &win32_apply_ops;
+#else
+	return &unix_apply_ops;
+#endif
 }
 
 #ifdef __WIN32__
@@ -1722,37 +1781,12 @@ file_name_valid(utf16lechar *name, size_t num_chars, bool fix)
 }
 
 static int
-dentry_mark_skipped(struct wim_dentry *dentry, void *_ignore)
+dentry_calculate_extraction_name(struct wim_dentry *dentry,
+				 struct apply_ctx *ctx)
 {
-	dentry->extraction_skipped = 1;
-	return 0;
-}
-
-/*
- * dentry_calculate_extraction_path-
- *
- * Calculate the actual filename component at which a WIM dentry will be
- * extracted, handling invalid filenames "properly".
- *
- * dentry->extraction_name usually will be set the same as dentry->file_name (on
- * UNIX, converted into the platform's multibyte encoding).  However, if the
- * file name contains characters that are not valid on the current platform or
- * has some other format that is not valid, leave dentry->extraction_name as
- * NULL and set dentry->extraction_skipped to indicate that this dentry should
- * not be extracted, unless the appropriate flag
- * WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES is set in the extract flags, in
- * which case a substitute filename will be created and set instead.
- *
- * Conflicts with case-insensitive names on Windows are handled similarly; see
- * below.
- */
-static int
-dentry_calculate_extraction_path(struct wim_dentry *dentry, void *_args)
-{
-	struct apply_ctx *ctx = _args;
 	int ret;
 
-	if (dentry == ctx->extract_root || dentry->extraction_skipped)
+	if (dentry == ctx->target_dentry)
 		return 0;
 
 	if (!dentry_is_supported(dentry, &ctx->supported_features))
@@ -1764,7 +1798,7 @@ dentry_calculate_extraction_path(struct wim_dentry *dentry, void *_args)
 		list_for_each_entry(other, &dentry->case_insensitive_conflict_list,
 				    case_insensitive_conflict_list)
 		{
-			if (!other->extraction_skipped) {
+			if (dentry_in_list(other)) {
 				if (ctx->extract_flags &
 				    WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS) {
 					WARNING("\"%"TS"\" has the same "
@@ -1851,39 +1885,245 @@ out_replace:
 	return 0;
 
 skip_dentry:
-	for_dentry_in_tree(dentry, dentry_mark_skipped, NULL);
+	for_dentry_in_tree(dentry, do_dentry_delete_from_list, NULL);
 	return 0;
 }
 
-/* Clean up dentry and inode structure after extraction.  */
+/*
+ * Calculate the actual filename component at which each WIM dentry will be
+ * extracted, with special handling for dentries that are unsupported by the
+ * extraction backend or have invalid names.
+ *
+ * Note: this has a dependency on start_extract() being called because
+ * ctx.supported_features must be filled in in order to determine whether each
+ * dentry is supported.
+ *
+ * Possible error codes: WIMLIB_ERR_NOMEM, WIMLIB_ERR_INVALID_UTF16_STRING
+ */
 static int
-dentry_reset_needs_extraction(struct wim_dentry *dentry, void *_ignore)
+dentry_list_calculate_extraction_names(struct list_head *dentry_list,
+				       struct apply_ctx *ctx)
+{
+	struct list_head *prev, *cur;
+
+	/* Can't use list_for_each_entry() because a call to
+	 * dentry_calculate_extraction_name() may the current dentry and its
+	 * children from the list.  */
+
+	prev = dentry_list;
+	for (;;) {
+		struct wim_dentry *dentry;
+		int ret;
+
+		cur = prev->next;
+		if (cur == dentry_list)
+			break;
+
+		dentry = list_entry(cur, struct wim_dentry, extraction_list);
+
+		ret = dentry_calculate_extraction_name(dentry, ctx);
+		if (ret)
+			return ret;
+
+		if (prev->next == cur)
+			prev = cur;
+		else
+			; /* Current dentry and its children (which follow in
+			     the list) were deleted.  prev stays the same.  */
+	}
+	return 0;
+}
+
+static int
+dentry_resolve_streams(struct wim_dentry *dentry, int extract_flags,
+		       struct wim_lookup_table *lookup_table)
 {
 	struct wim_inode *inode = dentry->d_inode;
+	struct wim_lookup_table_entry *lte;
+	int ret;
+	bool force = false;
 
-	dentry->in_extraction_tree = 0;
-	dentry->extraction_skipped = 0;
-	dentry->was_hardlinked = 0;
-	dentry->skeleton_extracted = 0;
-	inode->i_visited = 0;
-	FREE(inode->i_extracted_file);
-	inode->i_extracted_file = NULL;
-	inode->i_dos_name_extracted = 0;
-	if ((void*)dentry->extraction_name != (void*)dentry->file_name)
-		FREE(dentry->extraction_name);
-	dentry->extraction_name = NULL;
+	/* Special case:  when extracting from a pipe, the WIM lookup table is
+	 * initially empty, so "resolving" an inode's streams is initially not
+	 * possible.  However, we still need to keep track of which streams,
+	 * identified by SHA1 message digests, need to be extracted, so we
+	 * "resolve" the inode's streams anyway by allocating new entries.  */
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE)
+		force = true;
+	ret = inode_resolve_streams(inode, lookup_table, force);
+	if (ret)
+		return ret;
+	for (u32 i = 0; i <= inode->i_num_ads; i++) {
+		lte = inode_stream_lte_resolved(inode, i);
+		if (lte)
+			lte->out_refcnt = 0;
+	}
+	return 0;
+}
+
+/*
+ * For each dentry to be extracted, resolve all streams in the corresponding
+ * inode and set 'out_refcnt' in each to 0.
+ *
+ * Possible error codes: WIMLIB_ERR_RESOURCE_NOT_FOUND, WIMLIB_ERR_NOMEM.
+ */
+static int
+dentry_list_resolve_streams(struct list_head *dentry_list,
+			    struct apply_ctx *ctx)
+{
+	struct wim_dentry *dentry;
+	int ret;
+
+	list_for_each_entry(dentry, dentry_list, extraction_list) {
+		ret = dentry_resolve_streams(dentry,
+					     ctx->extract_flags,
+					     ctx->wim->lookup_table);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+static int
+ref_stream(struct wim_lookup_table_entry *lte,
+	   struct wim_dentry *dentry, struct apply_ctx *ctx)
+{
+	if (!lte)
+		return 0;
+
+	/* Tally the size only for each extraction of the stream (not hard
+	 * links).  */
+	if (!(dentry->d_inode->i_visited &&
+	      ctx->supported_features.hard_links) &&
+	    (!is_linked_extraction(ctx) || (lte->out_refcnt == 0 &&
+					    lte->extracted_file == NULL)))
+	{
+		ctx->progress.extract.total_bytes += lte->size;
+		ctx->progress.extract.num_streams++;
+	}
+
+	/* Add stream to the dentry_list only one time, even if it's going
+	 * to be extracted to multiple locations.  */
+	if (lte->out_refcnt == 0) {
+		list_add_tail(&lte->extraction_list, &ctx->stream_list);
+		ctx->num_streams_remaining++;
+	}
+
+	if (!(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER)) {
+		struct wim_dentry **lte_dentries;
+
+		/* Append dentry to this stream's array of dentries referencing
+		 * it.  Use inline array to avoid memory allocation until the
+		 * number of dentries becomes too large.  */
+		if (lte->out_refcnt < ARRAY_LEN(lte->inline_lte_dentries)) {
+			lte_dentries = lte->inline_lte_dentries;
+		} else {
+			struct wim_dentry **prev_lte_dentries;
+			size_t alloc_lte_dentries;
+
+			if (lte->out_refcnt == ARRAY_LEN(lte->inline_lte_dentries)) {
+				prev_lte_dentries = NULL;
+				alloc_lte_dentries = ARRAY_LEN(lte->inline_lte_dentries);
+			} else {
+				prev_lte_dentries = lte->lte_dentries;
+				alloc_lte_dentries = lte->alloc_lte_dentries;
+			}
+
+			if (lte->out_refcnt == alloc_lte_dentries) {
+				alloc_lte_dentries *= 2;
+				lte_dentries = REALLOC(prev_lte_dentries,
+						       alloc_lte_dentries *
+							sizeof(lte_dentries[0]));
+				if (lte_dentries == NULL)
+					return WIMLIB_ERR_NOMEM;
+				if (prev_lte_dentries == NULL) {
+					memcpy(lte_dentries,
+					       lte->inline_lte_dentries,
+					       sizeof(lte->inline_lte_dentries));
+				}
+				lte->lte_dentries = lte_dentries;
+				lte->alloc_lte_dentries = alloc_lte_dentries;
+			}
+			lte_dentries = lte->lte_dentries;
+		}
+		lte_dentries[lte->out_refcnt] = dentry;
+	}
+	lte->out_refcnt++;
+	return 0;
+}
+
+static int
+dentry_ref_streams(struct wim_dentry *dentry, struct apply_ctx *ctx)
+{
+	struct wim_inode *inode = dentry->d_inode;
+	int ret;
+
+	/* The unnamed data stream will always be extracted, except in an
+	 * unlikely case.  */
+	if (!inode_is_encrypted_directory(inode)) {
+		ret = ref_stream(inode_unnamed_lte_resolved(inode),
+				 dentry, ctx);
+		if (ret)
+			return ret;
+	}
+
+	/* Named data streams will be extracted only if supported in the current
+	 * extraction mode and volume, and to avoid complications, if not doing
+	 * a linked extraction.  */
+	if (can_extract_named_data_streams(ctx)) {
+		for (u16 i = 0; i < inode->i_num_ads; i++) {
+			if (!ads_entry_is_named_stream(&inode->i_ads_entries[i]))
+				continue;
+			ret = ref_stream(inode->i_ads_entries[i].lte,
+					 dentry, ctx);
+			if (ret)
+				return ret;
+		}
+	}
+	inode->i_visited = 1;
+	return 0;
+}
+
+/*
+ * For each dentry to be extracted, iterate through the data streams of the
+ * corresponding inode.  For each such stream that is not to be ignored due to
+ * the supported features or extraction flags, add it to the list of streams to
+ * be extracted (ctx->stream_list) if not already done so.
+ *
+ * Also, if doing a sequential extraction, build a mapping from each stream to
+ * the dentries referencing it.
+ *
+ * This also initializes the extract progress info with byte and stream
+ * information.
+ *
+ * Note: This has a dependency on start_extract being called because
+ * ctx.supported_features must be filled in in order to determine whether named
+ * data streams are supported.
+ *
+ * Note: this uses the i_visited member of the inodes (assumed to be 0
+ * initially), but does not reset it.
+ *
+ * Possible error codes: WIMLIB_ERR_NOMEM.
+ */
+static int
+dentry_list_ref_streams(struct list_head *dentry_list, struct apply_ctx *ctx)
+{
+	struct wim_dentry *dentry;
+	int ret;
+
+	list_for_each_entry(dentry, dentry_list, extraction_list) {
+		ret = dentry_ref_streams(dentry, ctx);
+		if (ret)
+			return ret;
+	}
 	return 0;
 }
 
 /* Tally features necessary to extract a dentry and the corresponding inode.  */
-static int
-dentry_tally_features(struct wim_dentry *dentry, void *_features)
+static void
+dentry_tally_features(struct wim_dentry *dentry, struct wim_features *features)
 {
-	struct wim_features *features = _features;
 	struct wim_inode *inode = dentry->d_inode;
-
-	if (dentry->extraction_skipped)
-		return 0;
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_ARCHIVE)
 		features->archive_files++;
@@ -1921,22 +2161,28 @@ dentry_tally_features(struct wim_dentry *dentry, void *_features)
 	if (inode_has_unix_data(inode))
 		features->unix_data++;
 	inode->i_visited = 1;
-	return 0;
 }
 
-/* Tally the features necessary to extract a dentry tree.  */
+/* Tally the features necessary to extract the specified dentries.  */
 static void
-dentry_tree_get_features(struct wim_dentry *root, struct wim_features *features)
+dentry_list_get_features(struct list_head *dentry_list,
+			 struct wim_features *features)
 {
+	struct wim_dentry *dentry;
+
 	memset(features, 0, sizeof(struct wim_features));
-	for_dentry_in_tree(root, dentry_tally_features, features);
-	dentry_tree_clear_inode_visited(root);
+
+	list_for_each_entry(dentry, dentry_list, extraction_list)
+		dentry_tally_features(dentry, features);
+
+	list_for_each_entry(dentry, dentry_list, extraction_list)
+		dentry->d_inode->i_visited = 0;
 }
 
 static u32
 compute_supported_attributes_mask(const struct wim_features *supported_features)
 {
-	u32 mask = ~(u32)0;
+	u32 mask = (u32)~0UL;
 
 	if (!supported_features->archive_files)
 		mask &= ~FILE_ATTRIBUTE_ARCHIVE;
@@ -2069,7 +2315,7 @@ do_feature_check(const struct wim_features *required_features,
 		ERROR("Extraction backend does not support security descriptors!");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
-	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS) && 
+	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS) &&
 	    required_features->security_descriptors &&
 	    !supported_features->security_descriptors)
 		WARNING("Ignoring Windows NT security descriptors of %lu files",
@@ -2131,20 +2377,35 @@ do_extract_warnings(struct apply_ctx *ctx)
 #endif
 }
 
-static int
-dentry_set_skipped(struct wim_dentry *dentry, void *_ignore)
+static void
+destroy_dentry_list(struct list_head *dentry_list)
 {
-	dentry->in_extraction_tree = 1;
-	dentry->extraction_skipped = 1;
-	return 0;
+	struct wim_dentry *dentry, *tmp;
+	struct wim_inode *inode;
+
+	list_for_each_entry_safe(dentry, tmp, dentry_list, extraction_list) {
+		inode = dentry->d_inode;
+		dentry_reset_extraction_list_node(dentry);
+		dentry->was_linked = 0;
+		dentry->skeleton_extracted = 0;
+		inode->i_visited = 0;
+		FREE(inode->i_extracted_file);
+		inode->i_extracted_file = NULL;
+		inode->i_dos_name_extracted = 0;
+		if ((void*)dentry->extraction_name != (void*)dentry->file_name)
+			FREE(dentry->extraction_name);
+		dentry->extraction_name = NULL;
+	}
 }
 
-static int
-dentry_set_not_skipped(struct wim_dentry *dentry, void *_ignore)
+static void
+destroy_stream_list(struct list_head *stream_list)
 {
-	dentry->in_extraction_tree = 1;
-	dentry->extraction_skipped = 0;
-	return 0;
+	struct wim_lookup_table_entry *lte;
+
+	list_for_each_entry(lte, stream_list, extraction_list)
+		if (lte->out_refcnt > ARRAY_LEN(lte->inline_lte_dentries))
+			FREE(lte->lte_dentries);
 }
 
 static int
@@ -2152,10 +2413,15 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	      const tchar *target, int extract_flags,
 	      wimlib_progress_func_t progress_func)
 {
-	struct wim_features required_features;
-	struct apply_ctx ctx;
 	int ret;
-	struct wim_lookup_table_entry *lte;
+	struct apply_ctx ctx;
+	struct list_head dentry_list;
+	struct wim_features required_features;
+
+	/* Handle stdout extraction as a separate case.  */
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT)
+		return extract_dentries_to_stdout(trees, num_trees,
+						  wim->lookup_table);
 
 	/* Start initializing the apply_ctx.  */
 	memset(&ctx, 0, sizeof(struct apply_ctx));
@@ -2173,70 +2439,61 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 									wim->current_image);
 		ctx.progress.extract.target = target;
 	}
-	INIT_LIST_HEAD(&ctx.stream_list);
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_FILEMODE) {
-		/* File mode --- target is explicit.  */
+		/* Called from wimlib_extract_files().  There should be only 1
+		 * tree, and directory structure should not be preserved.  */
 		wimlib_assert(num_trees == 1);
+		wimlib_assert(extract_flags &
+			      WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE);
 		ret = calculate_dentry_full_path(trees[0]);
 		if (ret)
 			return ret;
 		ctx.progress.extract.extract_root_wim_source_path = trees[0]->_full_path;
-		ctx.extract_root = trees[0];
-		for_dentry_in_tree(ctx.extract_root, dentry_set_not_skipped, NULL);
+		ctx.target_dentry = trees[0];
 	} else {
-		/* Targets are to be set relative to the root of the image
-		 * (preserving original directory structure).  */
-
 		ctx.progress.extract.extract_root_wim_source_path = T("");
-		ctx.extract_root = wim_root_dentry(wim);
-		for_dentry_in_tree(ctx.extract_root, dentry_set_skipped, NULL);
-
-		for (size_t i = 0; i < num_trees; i++) {
-			struct wim_dentry *d;
-
-			for_dentry_in_tree(trees[i], dentry_set_not_skipped, NULL);
-			d = trees[i];
-
-			/* Extract directories up to image root if preserving
-			 * directory structure.  */
-			if (!(extract_flags & WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE)) {
-				while (d != ctx.extract_root) {
-					d = d->parent;
-					dentry_set_not_skipped(d, NULL);
-				}
-			}
-		}
+		ctx.target_dentry = wim_root_dentry(wim);
 	}
+	/* Note: ctx.target_dentry represents the dentry that gets extracted to
+	 * @target.  There may be none, in which case it gets set to the image
+	 * root and never matches any of the dentries actually being extracted.
+	 */
 
-	/* Select the appropriate apply_operations based on the
-	 * platform and extract_flags.  */
-#ifdef __WIN32__
-	ctx.ops = &win32_apply_ops;
-#else
-	ctx.ops = &unix_apply_ops;
-#endif
+	num_trees = remove_duplicate_trees(trees, num_trees);
 
-#ifdef WITH_NTFS_3G
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS)
-		ctx.ops = &ntfs_3g_apply_ops;
-#endif
+	/* All trees are now distinct.  */
+
+	num_trees = remove_contained_trees(trees, num_trees);
+
+	/* All trees are now distinct and non-overlapping.  */
+
+	/* Build list of dentries to be extracted.  */
+	build_dentry_list(&dentry_list, trees, num_trees,
+			  !(extract_flags & WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE));
+
+	/* Select the appropriate apply_operations based on the platform and
+	 * extract_flags.  */
+	ctx.ops = select_apply_operations(extract_flags);
+
+	/* Figure out whether the root dentry is being extracted to the root of
+	 * a volume and therefore needs to be treated "specially", for example
+	 * not being explicitly created and not having attributes set.  */
+	if (ctx.ops->target_is_root && ctx.ops->root_directory_is_special)
+		ctx.root_dentry_is_special = ctx.ops->target_is_root(target);
 
 	/* Call the start_extract() callback.  This gives the apply_operations
 	 * implementation a chance to do any setup needed to access the volume.
-	 * Furthermore, it's expected to set the supported features of this
-	 * extraction mode (ctx.supported_features), which are determined at
-	 * runtime as they may vary depending on the actual volume.  These
-	 * features are then compared with the actual features extracting this
-	 * dentry tree requires.  Some mismatches will merely produce warnings
-	 * and the unsupported data will be ignored; others will produce errors.
-	 */
+	 * Furthermore, start_extract() is expected to set the supported
+	 * features of this extraction mode (ctx.supported_features), which are
+	 * determined at runtime as they may vary depending on the actual
+	 * volume.  */
 	ret = ctx.ops->start_extract(target, &ctx);
 	if (ret)
-		goto out_dentry_reset_needs_extraction;
+		return ret;
 
-	/* Get and check the features required to extract the dentry tree.  */
-	dentry_tree_get_features(ctx.extract_root, &required_features);
+	/* Get and check the features required to extract the dentries.  */
+	dentry_list_get_features(&dentry_list, &required_features);
 	ret = do_feature_check(&required_features, &ctx.supported_features,
 			       extract_flags, ctx.ops);
 	if (ret)
@@ -2245,31 +2502,20 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	ctx.supported_attributes_mask =
 		compute_supported_attributes_mask(&ctx.supported_features);
 
-	/* Figure out whether the root dentry is being extracted to the root of
-	 * a volume and therefore needs to be treated "specially", for example
-	 * not being explicitly created and not having attributes set.  */
-	if (ctx.ops->target_is_root && ctx.ops->root_directory_is_special)
-		ctx.root_dentry_is_special = ctx.ops->target_is_root(target);
-
-	/* Calculate the actual filename component of each extracted dentry.  In
-	 * the process, set the dentry->extraction_skipped flag on dentries that
-	 * are being skipped because of filename or supported features problems.  */
-	ret = for_dentry_in_tree(ctx.extract_root,
-				 dentry_calculate_extraction_path, &ctx);
+	/* Calculate extraction name for each dentry and remove subtrees that
+	 * can't be extracted due to naming problems.  */
+	ret = dentry_list_calculate_extraction_names(&dentry_list, &ctx);
 	if (ret)
-		goto out_dentry_reset_needs_extraction;
+		goto out_destroy_dentry_list;
 
-	/* Build the list of the streams that need to be extracted and
-	 * initialize ctx.progress.extract with stream information.  */
-	ret = for_dentry_in_tree(ctx.extract_root,
-				 dentry_resolve_and_zero_lte_refcnt, &ctx);
+	/* Build list of streams to extract.  */
+	ret = dentry_list_resolve_streams(&dentry_list, &ctx);
 	if (ret)
-		goto out_dentry_reset_needs_extraction;
-
-	ret = for_dentry_in_tree(ctx.extract_root,
-				 dentry_add_streams_to_extract, &ctx);
+		goto out_destroy_dentry_list;
+	INIT_LIST_HEAD(&ctx.stream_list);
+	ret = dentry_list_ref_streams(&dentry_list, &ctx);
 	if (ret)
-		goto out_teardown_stream_list;
+		goto out_destroy_stream_list;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE) {
 		/* When extracting from a pipe, the number of bytes of data to
@@ -2292,20 +2538,6 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		}
 	}
 
-	/* Handle the special case of extracting a file to standard
-	 * output.  In that case, "root" should be a single file, not a
-	 * directory tree.  (If not, extract_dentry_to_stdout() will
-	 * return an error.)  */
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT) {
-		ret = 0;
-		for (size_t i = 0; i < num_trees; i++) {
-			ret = extract_dentry_to_stdout(trees[i]);
-			if (ret)
-				break;
-		}
-		goto out_teardown_stream_list;
-	}
-
 	if (ctx.ops->realpath_works_on_nonexisting_files &&
 	    ((extract_flags & WIMLIB_EXTRACT_FLAG_RPFIX) ||
 	     ctx.ops->requires_realtarget_in_paths))
@@ -2313,7 +2545,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		ctx.realtarget = realpath(target, NULL);
 		if (!ctx.realtarget) {
 			ret = WIMLIB_ERR_NOMEM;
-			goto out_teardown_stream_list;
+			goto out_destroy_stream_list;
 		}
 		ctx.realtarget_nchars = tstrlen(ctx.realtarget);
 	}
@@ -2327,12 +2559,10 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		progress_func(msg, &ctx.progress);
 	}
 
-	if (!ctx.root_dentry_is_special)
-	{
+	if (!ctx.root_dentry_is_special) {
 		tchar path[ctx.ops->path_max];
-		if (build_extraction_path(path, ctx.extract_root, &ctx))
-		{
-			ret = extract_inode(path, &ctx, ctx.extract_root->d_inode);
+		if (build_extraction_path(path, ctx.target_dentry, &ctx)) {
+			ret = extract_inode(path, &ctx, ctx.target_dentry->d_inode);
 			if (ret)
 				goto out_free_realtarget;
 		}
@@ -2359,8 +2589,10 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	}
 
 	if (ctx.ops->requires_short_name_reordering) {
-		ret = for_dentry_in_tree(ctx.extract_root, dentry_extract_dir_skeleton,
-					 &ctx);
+		if (progress_func)
+			progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
+				      &ctx.progress);
+		ret = extract_dir_structure(&dentry_list, &ctx);
 		if (ret)
 			goto out_free_realtarget;
 	}
@@ -2368,13 +2600,13 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	/* Finally, the important part: extract the tree of files.  */
 	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER)) {
 		/* Sequential extraction requested, so two passes are needed
-		 * (one for directory structure, one for streams.)  */
-		if (progress_func)
+		 * (one for file structure, one for streams.)  */
+		if (progress_func && !ctx.ops->requires_short_name_reordering)
 			progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
 				      &ctx.progress);
 
 		if (!(extract_flags & WIMLIB_EXTRACT_FLAG_RESUME)) {
-			ret = for_dentry_in_tree(ctx.extract_root, dentry_extract_skeleton, &ctx);
+			ret = extract_structure(&dentry_list, &ctx);
 			if (ret)
 				goto out_free_realtarget;
 		}
@@ -2391,10 +2623,10 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		/* Sequential extraction was not requested, so we can make do
 		 * with one pass where we both create the files and extract
 		 * streams.   */
-		if (progress_func)
+		if (progress_func && !ctx.ops->requires_short_name_reordering)
 			progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
 				      &ctx.progress);
-		ret = for_dentry_in_tree(ctx.extract_root, dentry_extract, &ctx);
+		ret = extract_dentries(&dentry_list, &ctx);
 		if (ret)
 			goto out_free_realtarget;
 		if (progress_func)
@@ -2426,7 +2658,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS,
 			      &ctx.progress);
-	ret = for_dentry_in_tree_depth(ctx.extract_root, dentry_extract_final, &ctx);
+	ret = extract_final_metadata(&dentry_list, &ctx);
 	if (ret)
 		goto out_free_realtarget;
 
@@ -2438,19 +2670,15 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 			msg = WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END;
 		progress_func(msg, &ctx.progress);
 	}
-
 	do_extract_warnings(&ctx);
-
 	ret = 0;
 out_free_realtarget:
 	FREE(ctx.realtarget);
-out_teardown_stream_list:
-	/* Free memory allocated as part of the mapping from each
-	 * wim_lookup_table_entry to the dentries that reference it.  */
+out_destroy_stream_list:
 	if (!(ctx.extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER))
-		list_for_each_entry(lte, &ctx.stream_list, extraction_list)
-			if (lte->out_refcnt > ARRAY_LEN(lte->inline_lte_dentries))
-				FREE(lte->lte_dentries);
+		destroy_stream_list(&ctx.stream_list);
+out_destroy_dentry_list:
+	destroy_dentry_list(&dentry_list);
 out_finish_or_abort_extract:
 	if (ret) {
 		if (ctx.ops->abort_extract)
@@ -2459,9 +2687,29 @@ out_finish_or_abort_extract:
 		if (ctx.ops->finish_extract)
 			ret = ctx.ops->finish_extract(&ctx);
 	}
-out_dentry_reset_needs_extraction:
-	for_dentry_in_tree(ctx.extract_root, dentry_reset_needs_extraction, NULL);
 	return ret;
+}
+
+static int
+mkdir_if_needed(const tchar *target)
+{
+	struct stat stbuf;
+	if (tstat(target, &stbuf)) {
+		if (errno == ENOENT) {
+			if (tmkdir(target, 0755)) {
+				ERROR_WITH_ERRNO("Failed to create directory "
+						 "\"%"TS"\"", target);
+				return WIMLIB_ERR_MKDIR;
+			}
+		} else {
+			ERROR_WITH_ERRNO("Failed to stat \"%"TS"\"", target);
+			return WIMLIB_ERR_STAT;
+		}
+	} else if (!S_ISDIR(stbuf.st_mode)) {
+		ERROR("\"%"TS"\" is not a directory", target);
+		return WIMLIB_ERR_NOTDIR;
+	}
+	return 0;
 }
 
 /* Make sure the extraction flags make sense, and update them if needed.  */
@@ -2497,7 +2745,7 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 #ifndef WITH_NTFS_3G
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 		ERROR("wimlib was compiled without support for NTFS-3g, so\n"
-		      "        we cannot apply a WIM image directly to a NTFS volume.");
+		      "        it cannot apply a WIM image directly to a NTFS volume.");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 #endif
@@ -2507,8 +2755,8 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 			      WIMLIB_EXTRACT_FLAG_IMAGEMODE)) ==
 					WIMLIB_EXTRACT_FLAG_IMAGEMODE)
 	{
-		/* Do reparse point fixups by default if the WIM header says
-		 * they are enabled.  */
+		/* For full-image extraction, do reparse point fixups by default
+		 * if the WIM header says they are enabled.  */
 		if (wim->hdr.flags & WIM_HDR_FLAG_RP_FIX)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_RPFIX;
 	}
@@ -2582,36 +2830,9 @@ append_dentry_cb(struct wim_dentry *dentry, void *_ctx)
 }
 
 static int
-mkdir_if_needed(const tchar *target)
-{
-	struct stat stbuf;
-	if (tstat(target, &stbuf)) {
-		if (errno == ENOENT) {
-			if (tmkdir(target, 0755)) {
-				ERROR_WITH_ERRNO("Failed to create directory "
-						 "\"%"TS"\"", target);
-				return WIMLIB_ERR_MKDIR;
-			}
-		} else {
-			ERROR_WITH_ERRNO("Failed to stat \"%"TS"\"", target);
-			return WIMLIB_ERR_STAT;
-		}
-	} else if (!S_ISDIR(stbuf.st_mode)) {
-		ERROR("\"%"TS"\" is not a directory", target);
-		return WIMLIB_ERR_NOTDIR;
-	}
-	return 0;
-}
-
-
-static int
-do_wimlib_extract_paths(WIMStruct *wim,
-			int image,
-			const tchar *target,
-			const tchar * const *paths,
-			size_t num_paths,
-			int extract_flags,
-			wimlib_progress_func_t progress_func)
+do_wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,
+			const tchar * const *paths, size_t num_paths,
+			int extract_flags, wimlib_progress_func_t progress_func)
 {
 	int ret;
 	struct wim_dentry **trees;
@@ -2717,9 +2938,9 @@ extract_single_image(WIMStruct *wim, int image,
 		     wimlib_progress_func_t progress_func)
 {
 	const tchar *path = T("");
+	extract_flags |= WIMLIB_EXTRACT_FLAG_IMAGEMODE;
 	return do_wimlib_extract_paths(wim, image, target, &path, 1,
-				       extract_flags | WIMLIB_EXTRACT_FLAG_IMAGEMODE,
-				       progress_func);
+				       extract_flags, progress_func);
 }
 
 static const tchar * const filename_forbidden_chars =
@@ -2828,10 +3049,8 @@ do_wimlib_extract_image(WIMStruct *wim,
 /* Note: new code should use wimlib_extract_paths() instead of
  * wimlib_extract_files() if possible.  */
 WIMLIBAPI int
-wimlib_extract_files(WIMStruct *wim,
-		     int image,
-		     const struct wimlib_extract_command *cmds,
-		     size_t num_cmds,
+wimlib_extract_files(WIMStruct *wim, int image,
+		     const struct wimlib_extract_command *cmds, size_t num_cmds,
 		     int default_extract_flags,
 		     wimlib_progress_func_t progress_func)
 {
@@ -2889,13 +3108,9 @@ wimlib_extract_files(WIMStruct *wim,
 }
 
 WIMLIBAPI int
-wimlib_extract_paths(WIMStruct *wim,
-		     int image,
-		     const tchar *target,
-		     const tchar * const *paths,
-		     size_t num_paths,
-		     int extract_flags,
-		     wimlib_progress_func_t progress_func)
+wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,
+		     const tchar * const *paths, size_t num_paths,
+		     int extract_flags, wimlib_progress_func_t progress_func)
 {
 	int ret;
 
@@ -2909,10 +3124,8 @@ wimlib_extract_paths(WIMStruct *wim,
 }
 
 WIMLIBAPI int
-wimlib_extract_pathlist(WIMStruct *wim, int image,
-			const tchar *target,
-			const tchar *path_list_file,
-			int extract_flags,
+wimlib_extract_pathlist(WIMStruct *wim, int image, const tchar *target,
+			const tchar *path_list_file, int extract_flags,
 			wimlib_progress_func_t progress_func)
 {
 	int ret;
@@ -3010,7 +3223,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 
 		if (wim_info_get_num_images(pwm->wim_info) != pwm->hdr.image_count) {
 			ERROR("Image count in XML data is not the same as in WIM header.");
-			ret = WIMLIB_ERR_XML;
+			ret = WIMLIB_ERR_IMAGE_COUNT;
 			goto out_wimlib_free;
 		}
 	}
@@ -3025,7 +3238,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 			ret = WIMLIB_ERR_INVALID_IMAGE;
 			goto out_wimlib_free;
 		} else if (image == WIMLIB_ALL_IMAGES) {
-			ERROR("Applying all images from a pipe is not supported.");
+			ERROR("Applying all images from a pipe is not supported!");
 			ret = WIMLIB_ERR_INVALID_IMAGE;
 			goto out_wimlib_free;
 		}
@@ -3073,7 +3286,7 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 		}
 
 		if (i == image) {
-			/* Metadata resource is for the images being extracted.
+			/* Metadata resource is for the image being extracted.
 			 * Parse it and save the metadata in memory.  */
 			ret = read_metadata_resource(pwm, imd);
 			if (ret)
@@ -3098,11 +3311,8 @@ out_wimlib_free:
 }
 
 WIMLIBAPI int
-wimlib_extract_image(WIMStruct *wim,
-		     int image,
-		     const tchar *target,
-		     int extract_flags,
-		     wimlib_progress_func_t progress_func)
+wimlib_extract_image(WIMStruct *wim, int image, const tchar *target,
+		     int extract_flags, wimlib_progress_func_t progress_func)
 {
 	if (extract_flags & ~WIMLIB_EXTRACT_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;

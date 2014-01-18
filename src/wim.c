@@ -224,6 +224,8 @@ out_free:
 	return ret;
 }
 
+/* Load the metadata for the specified WIM image into memory and set it as the
+ * WIMStruct's currently selected WIM image.  */
 int
 select_wim_image(WIMStruct *wim, int image)
 {
@@ -253,8 +255,8 @@ select_wim_image(WIMStruct *wim, int image)
 		return WIMLIB_ERR_METADATA_NOT_FOUND;
 	}
 
-	/* If a valid image is currently selected, it can be freed if it is not
-	 * modified.  */
+	/* If a valid image is currently selected, its metadata can be freed if
+	 * it has not been modified.  */
 	if (wim->current_image != WIMLIB_NO_IMAGE) {
 		imd = wim_get_current_image_metadata(wim);
 		if (!imd->modified) {
