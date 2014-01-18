@@ -1035,8 +1035,8 @@ hasher_end_stream(struct wim_lookup_table_entry *lte, int status, void *_ctx)
 					get_sha1_string(lte->hash, expected_hashstr);
 					get_sha1_string(hash, actual_hashstr);
 					ERROR("The stream is corrupted!\n"
-					      "        (Expected SHA1=%s,\n"
-					      "              got SHA1=%s)",
+					      "        (Expected SHA1=%"TS",\n"
+					      "              got SHA1=%"TS")",
 					      expected_hashstr, actual_hashstr);
 				}
 				ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
