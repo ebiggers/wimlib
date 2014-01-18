@@ -2490,7 +2490,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	 * volume.  */
 	ret = ctx.ops->start_extract(target, &ctx);
 	if (ret)
-		return ret;
+		goto out_destroy_dentry_list;
 
 	/* Get and check the features required to extract the dentries.  */
 	dentry_list_get_features(&dentry_list, &required_features);
@@ -2506,16 +2506,16 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	 * can't be extracted due to naming problems.  */
 	ret = dentry_list_calculate_extraction_names(&dentry_list, &ctx);
 	if (ret)
-		goto out_destroy_dentry_list;
+		goto out_finish_or_abort_extract;
 
 	/* Build list of streams to extract.  */
 	ret = dentry_list_resolve_streams(&dentry_list, &ctx);
 	if (ret)
-		goto out_destroy_dentry_list;
+		goto out_finish_or_abort_extract;
 	INIT_LIST_HEAD(&ctx.stream_list);
 	ret = dentry_list_ref_streams(&dentry_list, &ctx);
 	if (ret)
-		goto out_destroy_stream_list;
+		goto out_finish_or_abort_extract;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE) {
 		/* When extracting from a pipe, the number of bytes of data to
@@ -2677,8 +2677,6 @@ out_free_realtarget:
 out_destroy_stream_list:
 	if (!(ctx.extract_flags & WIMLIB_EXTRACT_FLAG_FILE_ORDER))
 		destroy_stream_list(&ctx.stream_list);
-out_destroy_dentry_list:
-	destroy_dentry_list(&dentry_list);
 out_finish_or_abort_extract:
 	if (ret) {
 		if (ctx.ops->abort_extract)
@@ -2687,6 +2685,8 @@ out_finish_or_abort_extract:
 		if (ctx.ops->finish_extract)
 			ret = ctx.ops->finish_extract(&ctx);
 	}
+out_destroy_dentry_list:
+	destroy_dentry_list(&dentry_list);
 	return ret;
 }
 
