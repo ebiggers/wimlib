@@ -2509,7 +2509,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	INIT_LIST_HEAD(&ctx.stream_list);
 	ret = dentry_list_ref_streams(&dentry_list, &ctx);
 	if (ret)
-		goto out_finish_or_abort_extract;
+		goto out_destroy_stream_list;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE) {
 		/* When extracting from a pipe, the number of bytes of data to
