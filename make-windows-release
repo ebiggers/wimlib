@@ -38,7 +38,7 @@ cp .libs/imagex.exe $DESTDIR/wimlib-imagex.exe
 cp .libs/libwim-*.dll $DESTDIR
 cp README* NEWS $DESTDIR
 
-for fil in ./doc/wimlib-imagex-*.1; do
+for fil in ./doc/wimlib-imagex.1 ./doc/wimlib-imagex-*.1; do
 	base=`basename $fil`
 	base=${base%%.1}
 	cmd=$(echo $base | sed s/wimlib-imagex-//)
