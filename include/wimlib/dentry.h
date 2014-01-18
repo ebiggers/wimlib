@@ -112,12 +112,6 @@ struct wim_dentry {
 	u64 length;
 	u64 subdir_offset;
 
-	/* These correspond to the two unused fields in the on-disk WIM dentry;
-	 * we read them into memory so we can write them unchanged.  These
-	 * fields are set to 0 on new dentries.  */
-	u64 d_unused_1;
-	u64 d_unused_2;
-
 	/* Pointer to the UTF-16LE short filename (malloc()ed buffer), or NULL
 	 * if this dentry has no short name.  */
 	utf16lechar *short_name;

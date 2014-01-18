@@ -1357,8 +1357,6 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	inode->i_attributes = le32_to_cpu(disk_dentry->attributes);
 	inode->i_security_id = le32_to_cpu(disk_dentry->security_id);
 	dentry->subdir_offset = le64_to_cpu(disk_dentry->subdir_offset);
-	dentry->d_unused_1 = le64_to_cpu(disk_dentry->unused_1);
-	dentry->d_unused_2 = le64_to_cpu(disk_dentry->unused_2);
 	inode->i_creation_time = le64_to_cpu(disk_dentry->creation_time);
 	inode->i_last_access_time = le64_to_cpu(disk_dentry->last_access_time);
 	inode->i_last_write_time = le64_to_cpu(disk_dentry->last_write_time);
@@ -1728,8 +1726,8 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	disk_dentry->attributes = cpu_to_le32(inode->i_attributes);
 	disk_dentry->security_id = cpu_to_le32(inode->i_security_id);
 	disk_dentry->subdir_offset = cpu_to_le64(dentry->subdir_offset);
-	disk_dentry->unused_1 = cpu_to_le64(dentry->d_unused_1);
-	disk_dentry->unused_2 = cpu_to_le64(dentry->d_unused_2);
+	disk_dentry->unused_1 = cpu_to_le64(0);
+	disk_dentry->unused_2 = cpu_to_le64(0);
 	disk_dentry->creation_time = cpu_to_le64(inode->i_creation_time);
 	disk_dentry->last_access_time = cpu_to_le64(inode->i_last_access_time);
 	disk_dentry->last_write_time = cpu_to_le64(inode->i_last_write_time);
