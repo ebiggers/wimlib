@@ -190,41 +190,47 @@ out_free:
 }
 
 void
+lte_put_resource(struct wim_lookup_table_entry *lte)
+{
+	switch (lte->resource_location) {
+	case RESOURCE_IN_WIM:
+		list_del(&lte->rspec_node);
+		if (list_empty(&lte->rspec->stream_list))
+			FREE(lte->rspec);
+		break;
+	case RESOURCE_IN_FILE_ON_DISK:
+#ifdef __WIN32__
+	case RESOURCE_WIN32_ENCRYPTED:
+#endif
+#ifdef WITH_FUSE
+	case RESOURCE_IN_STAGING_FILE:
+		BUILD_BUG_ON((void*)&lte->file_on_disk !=
+			     (void*)&lte->staging_file_name);
+#endif
+	case RESOURCE_IN_ATTACHED_BUFFER:
+		BUILD_BUG_ON((void*)&lte->file_on_disk !=
+			     (void*)&lte->attached_buffer);
+		FREE(lte->file_on_disk);
+		break;
+#ifdef WITH_NTFS_3G
+	case RESOURCE_IN_NTFS_VOLUME:
+		if (lte->ntfs_loc) {
+			FREE(lte->ntfs_loc->path);
+			FREE(lte->ntfs_loc->stream_name);
+			FREE(lte->ntfs_loc);
+		}
+		break;
+#endif
+	default:
+		break;
+	}
+}
+
+void
 free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 {
 	if (lte) {
-		switch (lte->resource_location) {
-		case RESOURCE_IN_WIM:
-			list_del(&lte->rspec_node);
-			if (list_empty(&lte->rspec->stream_list))
-				FREE(lte->rspec);
-			break;
-		case RESOURCE_IN_FILE_ON_DISK:
-	#ifdef __WIN32__
-		case RESOURCE_WIN32_ENCRYPTED:
-	#endif
-	#ifdef WITH_FUSE
-		case RESOURCE_IN_STAGING_FILE:
-			BUILD_BUG_ON((void*)&lte->file_on_disk !=
-				     (void*)&lte->staging_file_name);
-	#endif
-		case RESOURCE_IN_ATTACHED_BUFFER:
-			BUILD_BUG_ON((void*)&lte->file_on_disk !=
-				     (void*)&lte->attached_buffer);
-			FREE(lte->file_on_disk);
-			break;
-#ifdef WITH_NTFS_3G
-		case RESOURCE_IN_NTFS_VOLUME:
-			if (lte->ntfs_loc) {
-				FREE(lte->ntfs_loc->path);
-				FREE(lte->ntfs_loc->stream_name);
-				FREE(lte->ntfs_loc);
-			}
-			break;
-#endif
-		default:
-			break;
-		}
+		lte_put_resource(lte);
 		FREE(lte);
 	}
 }

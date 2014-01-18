@@ -366,6 +366,8 @@ lte_unbind_wim_resource_spec(struct wim_lookup_table_entry *lte)
 	lte->resource_location = RESOURCE_NONEXISTENT;
 }
 
+extern void
+lte_put_resource(struct wim_lookup_table_entry *lte);
 
 extern struct wim_lookup_table_entry *
 new_stream_from_data_buffer(const void *buffer, size_t size,

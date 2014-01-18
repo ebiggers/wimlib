@@ -667,6 +667,7 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 		}
 	}
 
+	lte_put_resource(new_lte);
 	new_lte->refcnt              = inode->i_nlink;
 	new_lte->resource_location   = RESOURCE_IN_STAGING_FILE;
 	new_lte->staging_file_name   = staging_file_name;
