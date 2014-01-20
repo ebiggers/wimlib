@@ -26,6 +26,7 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/assert.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
@@ -383,28 +384,29 @@ iconv_global_cleanup(void)
 #endif
 }
 
-/* Upper case table --- Borrowed from NTFS-3g
+/* A table that maps from UCS-2 characters to their upper case equivalents.
+ * Index and array values are both CPU endian.
+ * Note: this is only an *approximation* of real UTF-16 case folding.
+ */
+static u16 upcase[65536];
+
+/*
+ * Initialize the 'upcase' table.
+ *
+ * Code modified from NTFS-3g, original copyright notices below:
  *
  * Copyright (c) 2000-2004 Anton Altaparmakov
  * Copyright (c) 2002-2009 Szabolcs Szakacsits
  * Copyright (c) 2008-2011 Jean-Pierre Andre
  * Copyright (c) 2008      Bernhard Kaindl
  *
- * License is GPLv2 or later.
- */
-
-/**
- * ntfs_upcase_table_build - build the default upcase table for NTFS
- * @uc:		destination buffer where to store the built table
- * @uc_len:	size of destination buffer in bytes
+ * License GPLv2 or later.  (Or may actually be LGPL since it's in libntfs-3g.)
  *
- * ntfs_upcase_table_build() builds the default upcase table for NTFS and
- * stores it in the caller supplied buffer @uc of size @uc_len.
- *
- * Note, @uc_len must be at least 128kiB in size or bad things will happen!
+ * The expanded table itself is the same as that used by Windows Vista for
+ * NTFS case insensitivity.
  */
-static void
-ntfs_upcase_table_build(utf16lechar *uc, u32 uc_len)
+void
+init_upcase(void)
 {
 	/*
 	 *	This is the table as defined by Vista
@@ -413,7 +415,7 @@ ntfs_upcase_table_build(utf16lechar *uc, u32 uc_len)
 	 * "Start" is inclusive and "End" is exclusive, every value has the
 	 * value of "Add" added to it.
 	 */
-	static int uc_run_table[][3] = { /* Start, End, Add */
+	static const u16 uc_run_table[][3] = { /* Start, End, Add */
 	{0x0061, 0x007b,   -32}, {0x00e0, 0x00f7,  -32}, {0x00f8, 0x00ff, -32},
 	{0x0256, 0x0258,  -205}, {0x028a, 0x028c, -217}, {0x037b, 0x037e, 130},
 	{0x03ac, 0x03ad,   -38}, {0x03ad, 0x03b0,  -37}, {0x03b1, 0x03c2, -32},
@@ -429,13 +431,13 @@ ntfs_upcase_table_build(utf16lechar *uc, u32 uc_len)
 	{0x1fb3, 0x1fb4,     9}, {0x1fcc, 0x1fcd,   -9}, {0x1fd0, 0x1fd2,   8},
 	{0x1fe0, 0x1fe2,     8}, {0x1fe5, 0x1fe6,    7}, {0x1ffc, 0x1ffd,  -9},
 	{0x2170, 0x2180,   -16}, {0x24d0, 0x24ea,  -26}, {0x2c30, 0x2c5f, -48},
-	{0x2d00, 0x2d26, -7264}, {0xff41, 0xff5b,  -32}, {0}
+	{0x2d00, 0x2d26, -7264}, {0xff41, 0xff5b,  -32},
 	};
 	/*
 	 * "Start" is exclusive and "End" is inclusive, every second value is
 	 * decremented by one.
 	 */
-	static int uc_dup_table[][2] = { /* Start, End */
+	static const u16 uc_dup_table[][2] = { /* Start, End */
 	{0x0100, 0x012f}, {0x0132, 0x0137}, {0x0139, 0x0149}, {0x014a, 0x0178},
 	{0x0179, 0x017e}, {0x01a0, 0x01a6}, {0x01b3, 0x01b7}, {0x01cd, 0x01dd},
 	{0x01de, 0x01ef}, {0x01f4, 0x01f5}, {0x01f8, 0x01f9}, {0x01fa, 0x0220},
@@ -444,13 +446,13 @@ ntfs_upcase_table_build(utf16lechar *uc, u32 uc_len)
 	{0x048a, 0x04bf}, {0x04c1, 0x04c4}, {0x04c5, 0x04c8}, {0x04c9, 0x04ce},
 	{0x04ec, 0x04ed}, {0x04d0, 0x04eb}, {0x04ee, 0x04f5}, {0x04f6, 0x0513},
 	{0x1e00, 0x1e95}, {0x1ea0, 0x1ef9}, {0x2183, 0x2184}, {0x2c60, 0x2c61},
-	{0x2c67, 0x2c6c}, {0x2c75, 0x2c76}, {0x2c80, 0x2ce3}, {0}
+	{0x2c67, 0x2c6c}, {0x2c75, 0x2c76}, {0x2c80, 0x2ce3},
 	};
 	/*
 	 * Set the Unicode character at offset "Offset" to "Value".  Note,
 	 * "Value" is host endian.
 	 */
-	static int uc_byte_table[][2] = { /* Offset, Value */
+	static const u16 uc_byte_table[][2] = { /* Offset, Value */
 	{0x00ff, 0x0178}, {0x0180, 0x0243}, {0x0183, 0x0182}, {0x0185, 0x0184},
 	{0x0188, 0x0187}, {0x018c, 0x018b}, {0x0192, 0x0191}, {0x0195, 0x01f6},
 	{0x0199, 0x0198}, {0x019a, 0x023d}, {0x019e, 0x0220}, {0x01a8, 0x01a7},
@@ -462,37 +464,45 @@ ntfs_upcase_table_build(utf16lechar *uc, u32 uc_len)
 	{0x026b, 0x2c62}, {0x026f, 0x019c}, {0x0272, 0x019d}, {0x0275, 0x019f},
 	{0x027d, 0x2c64}, {0x0280, 0x01a6}, {0x0283, 0x01a9}, {0x0288, 0x01ae},
 	{0x0289, 0x0244}, {0x028c, 0x0245}, {0x0292, 0x01b7}, {0x03f2, 0x03f9},
-	{0x04cf, 0x04c0}, {0x1d7d, 0x2c63}, {0x214e, 0x2132}, {0}
+	{0x04cf, 0x04c0}, {0x1d7d, 0x2c63}, {0x214e, 0x2132},
 	};
-	int i, r;
-	int k, off;
 
-	memset((char*)uc, 0, uc_len);
-	uc_len >>= 1;
-	if (uc_len > 65536)
-		uc_len = 65536;
-	for (i = 0; (u32)i < uc_len; i++)
-		uc[i] = cpu_to_le16(i);
-	for (r = 0; uc_run_table[r][0]; r++) {
-		off = uc_run_table[r][2];
-		for (i = uc_run_table[r][0]; i < uc_run_table[r][1]; i++)
-			uc[i] = cpu_to_le16(i + off);
-	}
-	for (r = 0; uc_dup_table[r][0]; r++)
-		for (i = uc_dup_table[r][0]; i < uc_dup_table[r][1]; i += 2)
-			uc[i + 1] = cpu_to_le16(i);
-	for (r = 0; uc_byte_table[r][0]; r++) {
-		k = uc_byte_table[r][1];
-		uc[uc_byte_table[r][0]] = cpu_to_le16(k);
-	}
-}
+	for (u32 i = 0; i < 65536; i++)
+		upcase[i] = i;
 
-static utf16lechar upcase[65536];
+	for (u32 r = 0; r < ARRAY_LEN(uc_run_table); r++)
+		for (u32 i = uc_run_table[r][0]; i < uc_run_table[r][1]; i++)
+			upcase[i] = i + uc_run_table[r][2];
 
-void
-init_upcase(void)
-{
-	ntfs_upcase_table_build(upcase, ARRAY_LEN(upcase));
+	for (u32 r = 0; r < ARRAY_LEN(uc_dup_table); r++)
+		for (u32 i = uc_dup_table[r][0]; i < uc_dup_table[r][1]; i += 2)
+			upcase[i + 1] = i;
+
+	for (u32 r = 0; r < ARRAY_LEN(uc_byte_table); r++)
+		upcase[uc_byte_table[r][0]] = uc_byte_table[r][1];
+
+#if 0
+	/* Sanity checks  */
+	wimlib_assert(upcase['a'] == 'A');
+	wimlib_assert(upcase['A'] == 'A');
+	wimlib_assert(upcase['z'] == 'Z');
+	wimlib_assert(upcase['Z'] == 'Z');
+	wimlib_assert(upcase['1'] == '1');
+	wimlib_assert(upcase[0x00e9] == 0x00c9); /* Latin letter e, with acute accent  */
+	wimlib_assert(upcase[0x00c9] == 0x00c9);
+	wimlib_assert(upcase[0x03c1] == 0x03a1); /* Greek letter rho  */
+	wimlib_assert(upcase[0x03a1] == 0x03a1);
+	wimlib_assert(upcase[0x0436] == 0x0416); /* Cyrillic letter zhe  */
+	wimlib_assert(upcase[0x0416] == 0x0416);
+	wimlib_assert(upcase[0x0567] == 0x0537); /* Armenian letter eh  */
+	wimlib_assert(upcase[0x0537] == 0x0537);
+	wimlib_assert(upcase[0x24d0] == 0x24b6); /* Circled Latin letter A
+						    (is that a real character???)  */
+	wimlib_assert(upcase[0x24b6] == 0x24b6);
+	wimlib_assert(upcase[0x2603] == 0x2603); /* Note to self: Upper case
+						    snowman symbol does not
+						    exist.  */
+#endif
 }
 
 /* Compare UTF-16LE strings case-sensitively (%ignore_case == false) or
@@ -511,8 +521,8 @@ cmp_utf16le_strings(const utf16lechar *s1, size_t n1,
 
 	if (ignore_case) {
 		for (size_t i = 0; i < n; i++) {
-			u16 c1 = le16_to_cpu(upcase[le16_to_cpu(s1[i])]);
-			u16 c2 = le16_to_cpu(upcase[le16_to_cpu(s2[i])]);
+			u16 c1 = upcase[le16_to_cpu(s1[i])];
+			u16 c2 = upcase[le16_to_cpu(s2[i])];
 			if (c1 != c2)
 				return (c1 < c2) ? -1 : 1;
 		}
