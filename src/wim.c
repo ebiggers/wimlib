@@ -130,8 +130,9 @@ wim_chunk_size_valid(u32 chunk_size, int ctype)
 		return order >= 15 && order <= 21;
 
 	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-	case WIMLIB_COMPRESSION_TYPE_LZMS:
 		return order >= 15 && order <= 26;
+	case WIMLIB_COMPRESSION_TYPE_LZMS:
+		return order >= 15 && order <= 30;
 	}
 	return false;
 }
