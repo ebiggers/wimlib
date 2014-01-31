@@ -22,6 +22,7 @@
 #	define likely(x) __builtin_expect(!!(x), 1)
 #	define unlikely(x) __builtin_expect(!!(x), 0)
 #	define inline inline __attribute__((always_inline))
+#	define prefetch(x) __builtin_prefetch(x)
 #else
 #	define WIMLIBAPI
 #	define _always_inline_attribute inline
@@ -33,6 +34,7 @@
 #	define _aligned_attribute(size)
 #	define likely(x) (x)
 #	define unlikely(x) (x)
+#	define prefetch(x)
 #endif /* __GNUC__ */
 
 #endif /* _WIMLIB_COMPILER_H */

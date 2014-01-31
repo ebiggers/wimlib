@@ -34,7 +34,8 @@
 #ifndef _WIMLIB_LZ_SARRAY_H
 #define _WIMLIB_LZ_SARRAY_H
 
-#include "wimlib/compiler.h" /* must define '_always_inline_attribute'  */
+#include "wimlib/compiler.h" /* must define '_always_inline_attribute',
+				'likely()', and 'prefetch()'.  */
 #include "wimlib/lz.h"       /* must define 'struct raw_match' and LZ_ASSERT()  */
 #include "wimlib/types.h"    /* must define 'bool', 'u8', 'u16, and 'u32'  */
 
@@ -284,6 +285,19 @@ lz_sarray_get_matches(struct lz_sarray *mf,
 
 	/* Prepare for searching the current position.  */
 	lz_sarray_update_salink(r, link);
+
+#if 1
+	/* Prefetch next position in SA and link.
+	 *
+	 * This can improve performance on large windows since the locations in
+	 * SA and link at which each successive search begins are in general
+	 * randomly distributed.  */
+	if (likely(i + 1 < mf->window_size)) {
+		const lz_sarray_pos_t next_r = ISA[i + 1];
+		prefetch(&SA[next_r]);
+		prefetch(&link[next_r]);
+	}
+#endif
 
 	/* L = rank of next suffix to the left;
 	 * R = rank of next suffix to the right;
