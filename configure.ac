@@ -67,6 +67,7 @@ AC_CHECK_HEADERS([alloca.h		\
 		  sys/endian.h		\
 		  sys/file.h		\
 		  sys/param.h		\
+		  sys/sysctl.h		\
 		  sys/times.h		\
 		  time.h		\
 		  utime.h])

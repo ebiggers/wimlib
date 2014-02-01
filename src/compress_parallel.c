@@ -43,6 +43,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef HAVE_SYS_SYSCTL_H
+#  include <sys/sysctl.h>
+#endif
 
 struct message_queue {
 	struct list_head list;
@@ -116,12 +119,19 @@ get_avail_memory(void)
 	if (phys_bytes == 0)
 		goto default_size;
 	return phys_bytes;
-#else
+#elif defined(_SC_PAGESIZE) && defined(_SC_PHYS_PAGES)
 	long page_size = sysconf(_SC_PAGESIZE);
 	long num_pages = sysconf(_SC_PHYS_PAGES);
 	if (page_size <= 0 || num_pages <= 0)
 		goto default_size;
 	return ((u64)page_size * (u64)num_pages);
+#else
+	int mib[2] = {CTL_HW, HW_MEMSIZE};
+	u64 memsize;
+	size_t len = sizeof(memsize);
+	if (sysctl(mib, ARRAY_LEN(mib), &memsize, &len, NULL, 0) < 0 || len != 8)
+		goto default_size;
+	return memsize;
 #endif
 
 default_size:
