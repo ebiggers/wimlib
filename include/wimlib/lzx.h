@@ -148,6 +148,8 @@ struct lzx_lru_queue {
  * as (n + LZX_OFFSET_OFFSET).  */
 #define LZX_OFFSET_OFFSET	(LZX_NUM_RECENT_OFFSETS - 1)
 
+/* Initialize the LZX least-recently-used match offset queue at the beginning of
+ * a new window for either decompression or compression.  */
 static inline void
 lzx_lru_queue_init(struct lzx_lru_queue *queue)
 {

@@ -112,7 +112,7 @@
  *    Huffman codes that were computed for the block.
  *
  * Note: the algorithm does not yet attempt to split the input into multiple LZX
- * blocks, instead using a series of blocks of LZX_DIV_BLOCK_SIZE bytes.
+ * blocks; it instead uses a series of blocks of LZX_DIV_BLOCK_SIZE bytes.
  *
  * Fast algorithm
  * --------------
@@ -285,8 +285,8 @@ struct lzx_compressor {
 	 * chunks.
 	 *
 	 * We reserve a few extra bytes to potentially allow reading off the end
-	 * of the array in the match-finding code for optimization purposes.
-	 */
+	 * of the array in the match-finding code for optimization purposes
+	 * (currently only needed for the hash chain match-finder).  */
 	u8 *window;
 
 	/* Number of bytes of data to be compressed, which is the number of
@@ -415,13 +415,18 @@ lzx_make_huffman_codes(const struct lzx_freqs *freqs,
 }
 
 /*
- * Output an LZX match.
+ * Output a precomputed LZX match.
  *
- * @out:         The bitstream to write the match to.
- * @block_type:  The type of the LZX block (LZX_BLOCKTYPE_ALIGNED or LZX_BLOCKTYPE_VERBATIM)
- * @match:	 The match.
- * @codes:	 Pointer to a structure that contains the codewords for the
- *		 main, length, and aligned offset Huffman codes.
+ * @out:
+ *	The bitstream to which to write the match.
+ * @block_type:
+ *	The type of the LZX block (LZX_BLOCKTYPE_ALIGNED or
+ *	LZX_BLOCKTYPE_VERBATIM)
+ * @match:
+ *	The match, as a (length, offset) pair.
+ * @codes:
+ *	Pointer to a structure that contains the codewords for the main, length,
+ *	and aligned offset Huffman codes for the current LZX compressed block.
  */
 static void
 lzx_write_match(struct output_bitstream *out, int block_type,
@@ -499,6 +504,16 @@ lzx_write_match(struct output_bitstream *out, int block_type,
 		 * footer, in this case. */
 		bitstream_put_bits(out, position_footer, num_extra_bits);
 	}
+}
+
+/* Output an LZX literal (encoded with the main Huffman code).  */
+static void
+lzx_write_literal(struct output_bitstream *out, u8 literal,
+		  const struct lzx_codes *codes)
+{
+	bitstream_put_bits(out,
+			   codes->codewords.main[literal],
+			   codes->lens.main[literal]);
 }
 
 static unsigned
@@ -640,23 +655,33 @@ lzx_build_precode(const u8 lens[restrict],
 }
 
 /*
- * Writes a compressed Huffman code to the output, preceded by the precode for
- * it.
+ * Output a Huffman code in the compressed form used in LZX.
  *
- * The Huffman code is represented in the output as a series of path lengths
- * from which the canonical Huffman code can be reconstructed.  The path lengths
- * themselves are compressed using a separate Huffman code, the precode, which
- * consists of LZX_PRECODE_NUM_SYMBOLS (= 20) symbols that cover all possible
- * code lengths, plus extra codes for repeated lengths.  The path lengths of the
- * precode precede the path lengths of the larger code and are uncompressed,
- * consisting of 20 entries of 4 bits each.
+ * The Huffman code is represented in the output as a logical series of codeword
+ * lengths from which the Huffman code, which must be in canonical form, can be
+ * reconstructed.
  *
- * @out:		Bitstream to write the code to.
- * @lens:		The code lengths for the Huffman code, indexed by symbol.
- * @prev_lens:		Code lengths for this Huffman code, indexed by symbol,
- *			in the *previous block*, or all zeroes if this is the
- *			first block.
- * @num_syms:		The number of symbols in the code.
+ * The codeword lengths are themselves compressed using a separate Huffman code,
+ * the "precode", which contains a symbol for each possible codeword length in
+ * the larger code as well as several special symbols to represent repeated
+ * codeword lengths (a form of run-length encoding).  The precode is itself
+ * constructed in canonical form, and its codeword lengths are represented
+ * literally in 20 4-bit fields that immediately precede the compressed codeword
+ * lengths of the larger code.
+ *
+ * Furthermore, the codeword lengths of the larger code are actually represented
+ * as deltas from the codeword lengths of the corresponding code in the previous
+ * block.
+ *
+ * @out:
+ *	Bitstream to which to write the compressed Huffman code.
+ * @lens:
+ *	The codeword lengths, indexed by symbol, in the Huffman code.
+ * @prev_lens:
+ *	The codeword lengths, indexed by symbol, in the corresponding Huffman
+ *	code in the previous block, or all zeroes if this is the first block.
+ * @num_syms:
+ *	The number of symbols in the Huffman code.
  */
 static void
 lzx_write_compressed_code(struct output_bitstream *out,
@@ -715,20 +740,22 @@ lzx_write_compressed_code(struct output_bitstream *out,
 }
 
 /*
- * Writes all compressed matches and literal bytes in an LZX block to the the
- * output bitstream.
+ * Write all matches and literal bytes (which were precomputed) in an LZX
+ * compressed block to the output bitstream in the final compressed
+ * representation.
  *
  * @ostream
  *	The output bitstream.
  * @block_type
- *	The type of the block (LZX_BLOCKTYPE_ALIGNED or LZX_BLOCKTYPE_VERBATIM).
+ *	The chosen type of the LZX compressed block (LZX_BLOCKTYPE_ALIGNED or
+ *	LZX_BLOCKTYPE_VERBATIM).
  * @match_tab
- *	The array of matches/literals that will be output (length @match_count).
+ *	The array of matches/literals to output.
  * @match_count
- *	Number of matches/literals to be output.
+ *	Number of matches/literals to output (length of @match_tab).
  * @codes
- *	Pointer to a structure that contains the codewords for the main, length,
- *	and aligned offset Huffman codes.
+ *	The main, length, and aligned offset Huffman codes for the current
+ *	LZX compressed block.
  */
 static void
 lzx_write_matches_and_literals(struct output_bitstream *ostream,
@@ -740,18 +767,13 @@ lzx_write_matches_and_literals(struct output_bitstream *ostream,
 	for (unsigned i = 0; i < match_count; i++) {
 		struct lzx_match match = match_tab[i];
 
-		/* High bit of the match indicates whether the match is an
-		 * actual match (1) or a literal uncompressed byte (0)  */
-		if (match.data & 0x80000000) {
-			/* match */
-			lzx_write_match(ostream, block_type,
-					match, codes);
-		} else {
-			/* literal byte */
-			bitstream_put_bits(ostream,
-					   codes->codewords.main[match.data],
-					   codes->lens.main[match.data]);
-		}
+		/* The high bit of the 32-bit intermediate representation
+		 * indicates whether the item is an actual LZ-style match (1) or
+		 * a literal byte (0).  */
+		if (match.data & 0x80000000)
+			lzx_write_match(ostream, block_type, match, codes);
+		else
+			lzx_write_literal(ostream, match.data, codes);
 	}
 }
 
@@ -1137,8 +1159,8 @@ lzx_lz_skip_bytes(struct lzx_compressor *ctx, input_idx_t n)
 
 /* Retrieve a list of matches available at the next position in the input.
  *
- * The matches are written to ctx->matches in decreasing order of length, and
- * the return value is the number of matches found.  */
+ * A pointer to the matches array is written into @matches_ret, and the return
+ * value is the number of matches found.  */
 static u32
 lzx_lz_get_matches_caching(struct lzx_compressor *ctx,
 			   const struct lzx_lru_queue *queue,
@@ -1224,35 +1246,33 @@ lzx_lz_get_near_optimal_match(struct lzx_compressor *ctx)
 					 &ctx->queue);
 }
 
-/*
- * Set default symbol costs.
- */
+/* Set default symbol costs for the LZX Huffman codes.  */
 static void
 lzx_set_default_costs(struct lzx_costs * costs, unsigned num_main_syms)
 {
 	unsigned i;
 
-	/* Literal symbols  */
+	/* Main code (part 1): Literal symbols  */
 	for (i = 0; i < LZX_NUM_CHARS; i++)
 		costs->main[i] = 8;
 
-	/* Match header symbols  */
+	/* Main code (part 2): Match header symbols  */
 	for (; i < num_main_syms; i++)
 		costs->main[i] = 10;
 
-	/* Length symbols  */
+	/* Length code  */
 	for (i = 0; i < LZX_LENCODE_NUM_SYMBOLS; i++)
 		costs->len[i] = 8;
 
-	/* Aligned offset symbols  */
+	/* Aligned offset code  */
 	for (i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++)
 		costs->aligned[i] = 3;
 }
 
-/* Given the frequencies of symbols in a compressed block and the corresponding
- * Huffman codes, return LZX_BLOCKTYPE_ALIGNED or LZX_BLOCKTYPE_VERBATIM if an
- * aligned offset or verbatim block, respectively, will take fewer bits to
- * output.  */
+/* Given the frequencies of symbols in an LZX-compressed block and the
+ * corresponding Huffman codes, return LZX_BLOCKTYPE_ALIGNED or
+ * LZX_BLOCKTYPE_VERBATIM if an aligned offset or verbatim block, respectively,
+ * will take fewer bits to output.  */
 static int
 lzx_choose_verbatim_or_aligned(const struct lzx_freqs * freqs,
 			       const struct lzx_codes * codes)
@@ -1262,8 +1282,8 @@ lzx_choose_verbatim_or_aligned(const struct lzx_freqs * freqs,
 
 	/* Verbatim blocks have a constant 3 bits per position footer.  Aligned
 	 * offset blocks have an aligned offset symbol per position footer, plus
-	 * an extra 24 bits to output the lengths necessary to reconstruct the
-	 * aligned offset code itself.  */
+	 * an extra 24 bits per block to output the lengths necessary to
+	 * reconstruct the aligned offset code itself.  */
 	for (unsigned i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++) {
 		verbatim_cost += 3 * freqs->aligned[i];
 		aligned_cost += codes->lens.aligned[i] * freqs->aligned[i];
@@ -1276,8 +1296,8 @@ lzx_choose_verbatim_or_aligned(const struct lzx_freqs * freqs,
 }
 
 /* Find a near-optimal sequence of matches/literals with which to output the
- * specified LZX block, then set its type to that which has the minimum cost to
- * output.  */
+ * specified LZX block, then set the block's type to that which has the minimum
+ * cost to output (either verbatim or aligned).  */
 static void
 lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 		   unsigned num_passes)
@@ -1393,6 +1413,9 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
 	/* Set up a default cost model.  */
 	lzx_set_default_costs(&ctx->costs, ctx->num_main_syms);
 
+	/* TODO: The compression ratio could be slightly improved by performing
+	 * data-dependent block splitting instead of using fixed-size blocks.
+	 * Doing so well is a computationally hard problem, however.  */
 	ctx->num_blocks = DIV_ROUND_UP(ctx->window_size, LZX_DIV_BLOCK_SIZE);
 	for (unsigned i = 0; i < ctx->num_blocks; i++) {
 		unsigned pos = LZX_DIV_BLOCK_SIZE * i;
@@ -1851,7 +1874,6 @@ lzx_params_valid(const struct wimlib_compressor_params_header *_params)
 	}
 	return true;
 }
-
 
 const struct compressor_ops lzx_compressor_ops = {
 	.params_valid	    = lzx_params_valid,
