@@ -2476,8 +2476,10 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	DEBUG("Preparing arguments to fuse_main()");
 
 	dir_copy = STRDUP(dir);
-	if (!dir_copy)
+	if (!dir_copy) {
+		ret = WIMLIB_ERR_NOMEM;
 		goto out_free_message_queue_names;
+	}
 
 	argc = 0;
 	argv[argc++] = "wimlib";
