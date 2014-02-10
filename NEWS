@@ -1,5 +1,17 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
+Version 1.6.2 (BETA):
+	Case-insensitive comparisons of strings (e.g. filenames) containing
+	UTF-16 codepoints above 32767 are now done correctly.
+
+	Fixed build failure on Mac OS X.
+
+	The LZMS compression chunk size, or "dictionary size", may now be up to
+	1 GiB (2^30).
+
+	The performance of LZX and LZMS compression with large chunk sizes has
+	been slightly improved.
+
 Version 1.6.1:
 	Stored files with size exactly 4 GiB (4,294,967,296 bytes) are now
 	decompressed correctly.
