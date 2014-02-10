@@ -164,7 +164,8 @@ get_lookup_flags(const struct wimfs_context *ctx)
 static inline int
 flags_writable(int open_flags)
 {
-	return open_flags & (O_RDWR | O_WRONLY);
+	int accmode = (open_flags & O_ACCMODE);
+	return (accmode == O_RDWR || accmode == O_WRONLY);
 }
 
 /*
