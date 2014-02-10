@@ -176,7 +176,7 @@ flags_writable(int open_flags)
  * @lte:	Lookup table entry for the stream (may be NULL)
  * @fd_ret:	Return the allocated file descriptor if successful.
  *
- * Return 0 iff successful or error code if unsuccessful.
+ * Return 0 iff successful or negative error code if unsuccessful.
  */
 static int
 alloc_wimfs_fd(struct wim_inode *inode,
@@ -197,20 +197,18 @@ alloc_wimfs_fd(struct wim_inode *inode,
 		struct wimfs_fd **fds;
 		u16 num_new_fds;
 
-		if (inode->i_num_allocated_fds == max_fds) {
-			ret = -EMFILE;
-			goto out;
-		}
+		if (inode->i_num_allocated_fds == max_fds)
+			return -EMFILE;
+
 		num_new_fds = min(fds_per_alloc,
 				  max_fds - inode->i_num_allocated_fds);
 
 		fds = REALLOC(inode->i_fds,
 			      (inode->i_num_allocated_fds + num_new_fds) *
 			        sizeof(inode->i_fds[0]));
-		if (!fds) {
-			ret = -ENOMEM;
-			goto out;
-		}
+		if (!fds)
+			return -ENOMEM;
+
 		memset(&fds[inode->i_num_allocated_fds], 0,
 		       num_new_fds * sizeof(fds[0]));
 		inode->i_fds = fds;
@@ -219,10 +217,9 @@ alloc_wimfs_fd(struct wim_inode *inode,
 	for (u16 i = 0; ; i++) {
 		if (!inode->i_fds[i]) {
 			struct wimfs_fd *fd = CALLOC(1, sizeof(*fd));
-			if (!fd) {
-				ret = -ENOMEM;
-				break;
-			}
+			if (!fd)
+				return -ENOMEM;
+
 			fd->f_inode     = inode;
 			fd->f_lte       = lte;
 			filedes_invalidate(&fd->staging_fd);
@@ -234,12 +231,9 @@ alloc_wimfs_fd(struct wim_inode *inode,
 			if (lte)
 				lte->num_opened_fds++;
 			DEBUG("Allocated fd (idx = %u)", fd->idx);
-			ret = 0;
-			break;
+			return 0;
 		}
 	}
-out:
-	return ret;
 }
 
 static void
