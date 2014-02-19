@@ -179,7 +179,7 @@ wimlib_export_image(WIMStruct *src_wim,
 		/* Determine destination image name and description.  */
 
 		if (export_flags & WIMLIB_EXPORT_FLAG_NO_NAMES) {
-			next_dest_name = NULL;
+			next_dest_name = T("");
 		} else if (dest_name) {
 			next_dest_name = dest_name;
 		} else {
@@ -190,8 +190,8 @@ wimlib_export_image(WIMStruct *src_wim,
 		DEBUG("Using name \"%"TS"\"", next_dest_name);
 
 		if (export_flags & WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS) {
-			next_dest_description = NULL;
-		} if (dest_description) {
+			next_dest_description = T("");
+		} else if (dest_description) {
 			next_dest_description = dest_description;
 		} else {
 			next_dest_description = wimlib_get_image_description(
