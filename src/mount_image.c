@@ -388,7 +388,7 @@ remove_dentry(struct wim_dentry *dentry,
 	unsigned i;
 
 	for (i = 0; i <= inode->i_num_ads; i++) {
-		lte = inode_stream_lte_resolved(inode, i);
+		lte = inode_stream_lte(inode, i, lookup_table);
 		if (lte)
 			lte_decrement_refcnt(lte, lookup_table);
 	}
