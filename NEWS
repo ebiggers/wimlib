@@ -6,6 +6,11 @@ Version 1.6.2 (BETA):
 
 	Fixed build failure on Mac OS X.
 
+	wimunmount now provides the '--new-image' option to cause changes to a
+	read-write mounted image to be committed as a new image rather than as
+	an update of the same image.  (The corresponding new library flag is
+	WIMLIB_UNMOUNT_FLAG_NEW_IMAGE.)
+
 	The LZMS compression chunk size, or "dictionary size", may now be up to
 	1 GiB (2^30).
 

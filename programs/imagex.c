@@ -167,6 +167,7 @@ enum {
 	IMAGEX_LAZY_OPTION,
 	IMAGEX_LOOKUP_TABLE_OPTION,
 	IMAGEX_METADATA_OPTION,
+	IMAGEX_NEW_IMAGE_OPTION,
 	IMAGEX_NOCHECK_OPTION,
 	IMAGEX_NORPFIX_OPTION,
 	IMAGEX_NOT_PIPABLE_OPTION,
@@ -361,6 +362,7 @@ static const struct option unmount_options[] = {
 	{T("check"),   no_argument, NULL, IMAGEX_CHECK_OPTION},
 	{T("rebuild"), no_argument, NULL, IMAGEX_REBUILD_OPTION},
 	{T("lazy"),    no_argument, NULL, IMAGEX_LAZY_OPTION},
+	{T("new-image"), no_argument, NULL, IMAGEX_NEW_IMAGE_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -3755,6 +3757,9 @@ imagex_unmount(int argc, tchar **argv, int cmd)
 		case IMAGEX_LAZY_OPTION:
 			unmount_flags |= WIMLIB_UNMOUNT_FLAG_LAZY;
 			break;
+		case IMAGEX_NEW_IMAGE_OPTION:
+			unmount_flags |= WIMLIB_UNMOUNT_FLAG_NEW_IMAGE;
+			break;
 		default:
 			goto out_usage;
 		}
@@ -3763,6 +3768,15 @@ imagex_unmount(int argc, tchar **argv, int cmd)
 	argv += optind;
 	if (argc != 1)
 		goto out_usage;
+
+	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_NEW_IMAGE) {
+		if (!(unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT)) {
+			imagex_error(T("--new-image is meaningless "
+				       "without --commit also specified!"));
+			goto out_err;
+		}
+		imagex_printf(T("Committing changes as new image...\n"));
+	}
 
 	ret = wimlib_unmount_image(argv[0], unmount_flags,
 				   imagex_progress_func);
@@ -3773,6 +3787,7 @@ out:
 
 out_usage:
 	usage(CMD_UNMOUNT, stderr);
+out_err:
 	ret = -1;
 	goto out;
 }
@@ -4113,6 +4128,7 @@ T(
 [CMD_UNMOUNT] =
 T(
 "    %"TS" DIRECTORY [--commit] [--check] [--rebuild] [--lazy]\n"
+"                    [--new-image]\n"
 ),
 #endif
 [CMD_UPDATE] =

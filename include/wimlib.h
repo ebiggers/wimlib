@@ -1628,6 +1628,11 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** Do a "lazy" unmount (detach filesystem immediately, even if busy).  */
 #define WIMLIB_UNMOUNT_FLAG_LAZY			0x00000010
 
+/** In combination with ::WIMLIB_UNMOUNT_FLAG_COMMIT for a read-write mounted
+ * image, causes the modified image to be committed as a new, unnamed image
+ * appended to the archive.  The original image will be unmodified.  */
+#define WIMLIB_UNMOUNT_FLAG_NEW_IMAGE			0x00000020
+
 /** @} */
 /** @ingroup G_modifying_wims
  * @{ */

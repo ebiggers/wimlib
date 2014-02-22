@@ -136,7 +136,12 @@ struct wim_lookup_table_entry {
 	 * be extracted.
 	 *
 	 * During image export, this is set to the number of references of this
-	 * stream that originated from the source WIM.  */
+	 * stream that originated from the source WIM.
+	 *
+	 * When mounting a WIM image read-write, this is set to the number of
+	 * extra references to this stream preemptively taken to allow later
+	 * saving the modified image as a new image and leaving the original
+	 * image alone.  */
 	u32 out_refcnt;
 
 #ifdef WITH_FUSE
@@ -225,6 +230,9 @@ struct wim_lookup_table_entry {
 
 		/* Links streams being exported.  */
 		struct list_head export_stream_list;
+
+		/* Links original list of streams in the read-write mounted image.  */
+		struct list_head orig_stream_list;
 	};
 
 	/* Links streams that are still unhashed after being been added to a

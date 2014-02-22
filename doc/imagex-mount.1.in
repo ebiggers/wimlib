@@ -162,6 +162,11 @@ where the filesystem is detached immediately even if it is still busy.  However,
 even with this option, \fB@IMAGEX_PROGNAME@ unmount\fR still waits for the
 filesystem to become unbusy; \fB--lazy\fR will only stop the unmount from
 immediately failing.
+.TP
+\fB--new-image\fR
+In combination with \fB--commit\fR for a read-write mounted image, causes the
+modified image to be committed as a new, unnamed image appended to the WIM
+archive.  The original image will be unmodified.
 .SH IMPLEMENTATION DETAILS
 Since a WIM is an archive and not a filesystem, \fB@IMAGEX_PROGNAME@ mountrw\fR creates a
 temporary staging directory to contain files that are created or modified.  This

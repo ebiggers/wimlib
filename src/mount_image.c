@@ -114,6 +114,10 @@ struct wimfs_context {
 	/* List of inodes in the mounted image */
 	struct list_head *image_inode_list;
 
+	/* Original list of streams in the mounted image, linked by
+	 * mount_orig_stream_list.  */
+	struct list_head orig_stream_list;
+
 	/* Name and message queue descriptors for message queues between the
 	 * filesystem daemon process and the unmount process.  These are used
 	 * when the filesystem is unmounted and the process running
@@ -186,7 +190,6 @@ alloc_wimfs_fd(struct wim_inode *inode,
 {
 	static const u16 fds_per_alloc = 8;
 	static const u16 max_fds = 0xffff;
-	int ret;
 
 	DEBUG("Allocating fd for stream ID %u from inode %#"PRIx64" "
 	      "(open = %u, allocated = %u)",
@@ -1101,7 +1104,9 @@ send_unmount_request_msg(mqd_t mq, int unmount_flags, u8 want_progress_messages)
 	DEBUG("Sending unmount request msg");
 	struct msg_unmount_request msg = {
 		.hdr = {
-			.min_version = WIMLIB_MAKEVERSION(1, 2, 1),
+			.min_version = ((unmount_flags & WIMLIB_UNMOUNT_FLAG_NEW_IMAGE) ?
+						WIMLIB_MAKEVERSION(1, 6, 1) :
+						WIMLIB_MAKEVERSION(1, 2, 1)),
 			.cur_version = WIMLIB_VERSION_CODE,
 			.msg_type    = MSG_TYPE_UNMOUNT_REQUEST,
 			.msg_size    = sizeof(msg),
@@ -1181,6 +1186,78 @@ unmount_progress_func(enum wimlib_progress_msg msg,
 	return 0;
 }
 
+static void
+release_extra_refcnts(struct wimfs_context *ctx)
+{
+	struct list_head *list = &ctx->orig_stream_list;
+	struct wim_lookup_table *lookup_table = ctx->wim->lookup_table;
+	struct wim_lookup_table_entry *lte, *tmp;
+
+	list_for_each_entry_safe(lte, tmp, list, orig_stream_list)
+		while (lte->out_refcnt--)
+			lte_decrement_refcnt(lte, lookup_table);
+}
+
+/* Moves the currently selected image, which may have been modified, to a new
+ * index, and sets the original index to refer to a reset (unmodified) copy of
+ * the image.  */
+static int
+renew_current_image(struct wimfs_context *ctx)
+{
+	WIMStruct *wim = ctx->wim;
+	int ret;
+	int idx = wim->current_image - 1;
+	struct wim_image_metadata *imd = wim->image_metadata[idx];
+	struct wim_image_metadata *replace_imd;
+	struct wim_lookup_table_entry *new_lte;
+
+	if (imd->metadata_lte->resource_location != RESOURCE_IN_WIM) {
+		ERROR("Can't reset modified image that doesn't yet "
+		      "exist in the on-disk WIM file!");
+		return WIMLIB_ERR_METADATA_NOT_FOUND;
+	}
+
+	/* Create 'replace_imd' structure to use for the reset original,
+	 * unmodified image.  */
+	replace_imd = new_image_metadata();
+	if (!replace_imd)
+		return WIMLIB_ERR_NOMEM;
+
+	/* Create new stream reference for the modified image's metadata
+	 * resource, which doesn't exist yet.  */
+	ret = WIMLIB_ERR_NOMEM;
+	new_lte = new_lookup_table_entry();
+	if (!new_lte)
+		goto err_put_replace_imd;
+	new_lte->flags = WIM_RESHDR_FLAG_METADATA;
+	new_lte->unhashed = 1;
+
+	/* Make the image being moved available at a new index.  Increments the
+	 * WIM's image count, but does not increment the reference count of the
+	 * 'struct image_metadata'.  */
+	ret = append_image_metadata(wim, imd);
+	if (ret)
+		goto err_free_new_lte;
+
+	ret = xml_add_image(wim, T(""));
+	if (ret)
+		goto err_undo_append;
+
+	replace_imd->metadata_lte = imd->metadata_lte;
+	imd->metadata_lte = new_lte;
+	wim->image_metadata[idx] = replace_imd;
+	wim->current_image = wim->hdr.image_count;
+	return 0;
+
+err_undo_append:
+	wim->hdr.image_count--;
+err_free_new_lte:
+	free_lookup_table_entry(new_lte);
+err_put_replace_imd:
+	put_image_metadata(replace_imd, NULL);
+	return ret;
+}
+
 static int
 msg_unmount_request_handler(const void *_msg, void *_handler_ctx)
 {
@@ -1215,6 +1292,18 @@ msg_unmount_request_handler(const void *_msg, void *_handler_ctx)
 
 	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		if (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT) {
+
+			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_NEW_IMAGE) {
+				ret = renew_current_image(wimfs_ctx);
+				if (ret) {
+					status = ret;
+					goto out;
+				}
+			} else {
+				release_extra_refcnts(wimfs_ctx);
+			}
+			INIT_LIST_HEAD(&wimfs_ctx->orig_stream_list);
+
 			int write_flags = 0;
 			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY)
 				write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
@@ -2525,16 +2614,47 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	}
 #endif
 
-	/* Mark dentry tree as modified if read-write mount. */
-	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
-		imd->modified = 1;
-
-	/* Resolve the lookup table entries for every inode in the image, and
-	 * assign inode numbers */
-	DEBUG("Resolving lookup table entries and assigning inode numbers");
+	/* Assign inode numbers.  Also, if a read-write mount was requested,
+	 * mark the dentry tree as modified, and add each streams referenced by
+	 * files in the image to a list and preemptively double the number of
+	 * references to each.  The latter is done to allow implementing the
+	 * WIMLIB_UNMOUNT_FLAG_NEW_IMAGE semantics.  */
 	ctx.next_ino = 1;
-	image_for_each_inode(inode, imd)
-		inode->i_ino = ctx.next_ino++;
+	INIT_LIST_HEAD(&ctx.orig_stream_list);
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+		imd->modified = 1;
+		image_for_each_inode(inode, imd) {
+			inode->i_ino = ctx.next_ino++;
+			for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+				struct wim_lookup_table_entry *lte;
+
+				lte = inode_stream_lte(inode, i, wim->lookup_table);
+				if (lte) {
+					lte->orig_stream_list = (struct list_head){NULL, NULL};
+					lte->out_refcnt = 0;
+				}
+			}
+		}
+		image_for_each_inode(inode, imd) {
+			for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+				struct wim_lookup_table_entry *lte;
+
+				lte = inode_stream_lte(inode, i,
+						       wim->lookup_table);
+				if (lte) {
+					if (lte->out_refcnt == 0)
+						list_add(&lte->orig_stream_list,
+							 &ctx.orig_stream_list);
+					lte->out_refcnt += inode->i_nlink;
+					lte->refcnt += inode->i_nlink;
+				}
+			}
+		}
+	} else {
+		image_for_each_inode(inode, imd)
+			inode->i_ino = ctx.next_ino++;
+	}
+
 	DEBUG("(next_ino = %"PRIu64")", ctx.next_ino);
 
 	DEBUG("Calling fuse_main()");
@@ -2555,6 +2675,8 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		send_unmount_finished_msg(ctx.daemon_to_unmount_mq, ret);
 		close_message_queues(&ctx);
 	}
+
+	release_extra_refcnts(&ctx);
 
 	/* Try to delete the staging directory if a deletion wasn't yet
 	 * attempted due to an earlier error */
@@ -2581,7 +2703,8 @@ wimlib_unmount_image(const char *dir, int unmount_flags,
 			      WIMLIB_UNMOUNT_FLAG_COMMIT |
 			      WIMLIB_UNMOUNT_FLAG_REBUILD |
 			      WIMLIB_UNMOUNT_FLAG_RECOMPRESS |
-			      WIMLIB_UNMOUNT_FLAG_LAZY))
+			      WIMLIB_UNMOUNT_FLAG_LAZY |
+			      WIMLIB_UNMOUNT_FLAG_NEW_IMAGE))
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	init_wimfs_context(&wimfs_ctx);
