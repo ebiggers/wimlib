@@ -171,6 +171,20 @@ fix_true_inode(struct wim_inode *inode, struct list_head *inode_list)
 	return 0;
 }
 
+/* Returns true iff the specified dentry has any data streams with nonzero hash.
+ */
+static bool
+dentry_has_data_streams(const struct wim_dentry *dentry)
+{
+	const struct wim_inode *inode = dentry->d_inode;
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+		const u8 *hash = inode_stream_hash(inode, i);
+		if (!is_zero_hash(hash))
+			return true;
+	}
+	return false;
+}
+
 /*
  * Fixes up a nominal inode.
  *
@@ -202,19 +216,10 @@ fix_nominal_inode(struct wim_inode *inode, struct list_head *inode_list,
          * least one data stream with a non-zero hash, and another list that
          * contains the dentries that have a zero hash for all data streams. */
 	inode_for_each_dentry(dentry, inode) {
-		for (unsigned i = 0; i <= dentry->d_inode->i_num_ads; i++) {
-			const u8 *hash;
-			hash = inode_stream_hash(dentry->d_inode, i);
-			if (!is_zero_hash(hash)) {
-				list_add(&dentry->tmp_list,
-					 &dentries_with_data_streams);
-				goto next_dentry;
-			}
-		}
-		list_add(&dentry->tmp_list,
-			 &dentries_with_no_data_streams);
-	next_dentry:
-		;
+		if (dentry_has_data_streams(dentry))
+			list_add(&dentry->tmp_list, &dentries_with_data_streams);
+		else
+			list_add(&dentry->tmp_list, &dentries_with_no_data_streams);
 	}
 
 	/* If there are no dentries with data streams, we require the nominal
