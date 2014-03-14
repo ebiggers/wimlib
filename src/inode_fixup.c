@@ -120,25 +120,39 @@ static bool
 inodes_consistent(const struct wim_inode *ref_inode,
 		  const struct wim_inode *inode)
 {
-	if (ref_inode->i_security_id != inode->i_security_id)
+	if (ref_inode->i_security_id != inode->i_security_id) {
+		ERROR("Security ID mismatch: %d != %d",
+		      ref_inode->i_security_id, inode->i_security_id);
 		return false;
+	}
 
-	if (ref_inode->i_attributes != inode->i_attributes)
+	if (ref_inode->i_attributes != inode->i_attributes) {
+		ERROR("Attributes mismatch: 0x%08x != 0x%08x",
+		      ref_inode->i_attributes, inode->i_attributes);
 		return false;
+	}
 
 	if (inode_has_data_streams(inode)) {
-		if (ref_inode->i_num_ads != inode->i_num_ads)
+		if (ref_inode->i_num_ads != inode->i_num_ads) {
+			ERROR("Stream count mismatch: %u != %u",
+			      ref_inode->i_num_ads, inode->i_num_ads);
 			return false;
+		}
 		for (unsigned i = 0; i <= ref_inode->i_num_ads; i++) {
 			const u8 *ref_hash, *hash;
 
 			ref_hash = inode_stream_hash(ref_inode, i);
 			hash = inode_stream_hash(inode, i);
-			if (!hashes_equal(ref_hash, hash) && !is_zero_hash(hash))
+			if (!hashes_equal(ref_hash, hash) && !is_zero_hash(hash)) {
+				ERROR("Stream hash mismatch");
 				return false;
+			}
 			if (i && !ads_entries_have_same_name(&ref_inode->i_ads_entries[i - 1],
 							     &inode->i_ads_entries[i - 1]))
+			{
+				ERROR("Stream name mismatch");
 				return false;
+			}
 		}
 	}
 	return true;
