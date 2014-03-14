@@ -1,4 +1,4 @@
-.TH WIMLIB-IMAGEX "1" "January 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "March 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-extract \- Extract files or directories from a WIM image
 .SH SYNOPSIS

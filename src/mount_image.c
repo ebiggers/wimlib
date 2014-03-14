@@ -1105,7 +1105,7 @@ send_unmount_request_msg(mqd_t mq, int unmount_flags, u8 want_progress_messages)
 	struct msg_unmount_request msg = {
 		.hdr = {
 			.min_version = ((unmount_flags & WIMLIB_UNMOUNT_FLAG_NEW_IMAGE) ?
-						WIMLIB_MAKEVERSION(1, 6, 1) :
+						WIMLIB_MAKEVERSION(1, 6, 2) :
 						WIMLIB_MAKEVERSION(1, 2, 1)),
 			.cur_version = WIMLIB_VERSION_CODE,
 			.msg_type    = MSG_TYPE_UNMOUNT_REQUEST,
