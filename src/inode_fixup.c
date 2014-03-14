@@ -97,27 +97,49 @@ ref_inodes_consistent(const struct wim_inode * restrict ref_inode_1,
 	return true;
 }
 
+/* Returns true iff the specified inode has any data streams with nonzero hash.
+ */
 static bool
-inodes_consistent(const struct wim_inode * restrict ref_inode,
-		  const struct wim_inode * restrict inode)
+inode_has_data_streams(const struct wim_inode *inode)
 {
-	wimlib_assert(ref_inode != inode);
+	for (unsigned i = 0; i <= inode->i_num_ads; i++)
+		if (!is_zero_hash(inode_stream_hash(inode, i)))
+			return true;
+	return false;
+}
 
-	if (ref_inode->i_num_ads != inode->i_num_ads &&
-	    inode->i_num_ads != 0)
+/* Returns true iff the specified dentry has any data streams with nonzero hash.
+ */
+static bool
+dentry_has_data_streams(const struct wim_dentry *dentry)
+{
+	return inode_has_data_streams(dentry->d_inode);
+}
+
+static bool
+inodes_consistent(const struct wim_inode *ref_inode,
+		  const struct wim_inode *inode)
+{
+	if (ref_inode->i_security_id != inode->i_security_id)
 		return false;
-	if (ref_inode->i_security_id != inode->i_security_id
-	    || ref_inode->i_attributes != inode->i_attributes)
+
+	if (ref_inode->i_attributes != inode->i_attributes)
 		return false;
-	for (unsigned i = 0; i <= min(ref_inode->i_num_ads, inode->i_num_ads); i++) {
-		const u8 *ref_hash, *hash;
-		ref_hash = inode_stream_hash(ref_inode, i);
-		hash = inode_stream_hash(inode, i);
-		if (!hashes_equal(ref_hash, hash) && !is_zero_hash(hash))
+
+	if (inode_has_data_streams(inode)) {
+		if (ref_inode->i_num_ads != inode->i_num_ads)
 			return false;
-		if (i && !ads_entries_have_same_name(&ref_inode->i_ads_entries[i - 1],
-						     &inode->i_ads_entries[i - 1]))
-			return false;
+		for (unsigned i = 0; i <= ref_inode->i_num_ads; i++) {
+			const u8 *ref_hash, *hash;
+
+			ref_hash = inode_stream_hash(ref_inode, i);
+			hash = inode_stream_hash(inode, i);
+			if (!hashes_equal(ref_hash, hash) && !is_zero_hash(hash))
+				return false;
+			if (i && !ads_entries_have_same_name(&ref_inode->i_ads_entries[i - 1],
+							     &inode->i_ads_entries[i - 1]))
+				return false;
+		}
 	}
 	return true;
 }
@@ -169,20 +191,6 @@ fix_true_inode(struct wim_inode *inode, struct list_head *inode_list)
 	ref_inode->i_last_access_time = last_atime;
 	wimlib_assert(inode_link_count(ref_inode) == ref_inode->i_nlink);
 	return 0;
-}
-
-/* Returns true iff the specified dentry has any data streams with nonzero hash.
- */
-static bool
-dentry_has_data_streams(const struct wim_dentry *dentry)
-{
-	const struct wim_inode *inode = dentry->d_inode;
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		const u8 *hash = inode_stream_hash(inode, i);
-		if (!is_zero_hash(hash))
-			return true;
-	}
-	return false;
 }
 
 /*
