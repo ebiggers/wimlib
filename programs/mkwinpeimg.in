@@ -116,7 +116,7 @@ EOF
 }
 
 version() {
-	echo "$script_name (wimlib $WIMLIB_VERSION)"
+	echo "$script_name (distributed with wimlib $WIMLIB_VERSION)"
 	exit 0
 }
 

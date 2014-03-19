@@ -8,14 +8,14 @@ Version 1.6.2 (BETA):
 
 	wimunmount now provides the '--new-image' option to cause changes to a
 	read-write mounted image to be committed as a new image rather than as
-	an update of the same image.  (The corresponding new library flag is
+	an update of the mounted image.  (The corresponding new library flag is
 	WIMLIB_UNMOUNT_FLAG_NEW_IMAGE.)
 
-	The LZMS compression chunk size, or "dictionary size", may now be up to
-	1 GiB (2^30).
+	The LZMS ("recovery") compression chunk size, or "dictionary size", may
+	now be up to 1 GiB (1,073,741,824 bytes).
 
-	The performance of LZX and LZMS compression with large chunk sizes has
-	been slightly improved.
+	The performance of LZX ("maximum") and LZMS ("recovery") compression
+	with large chunk sizes has been slightly improved.
 
 Version 1.6.1:
 	Stored files with size exactly 4 GiB (4,294,967,296 bytes) are now

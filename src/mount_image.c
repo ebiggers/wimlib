@@ -2615,7 +2615,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 #endif
 
 	/* Assign inode numbers.  Also, if a read-write mount was requested,
-	 * mark the dentry tree as modified, and add each streams referenced by
+	 * mark the dentry tree as modified, and add each stream referenced by
 	 * files in the image to a list and preemptively double the number of
 	 * references to each.  The latter is done to allow implementing the
 	 * WIMLIB_UNMOUNT_FLAG_NEW_IMAGE semantics.  */
@@ -2629,10 +2629,8 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 				struct wim_lookup_table_entry *lte;
 
 				lte = inode_stream_lte(inode, i, wim->lookup_table);
-				if (lte) {
-					lte->orig_stream_list = (struct list_head){NULL, NULL};
+				if (lte)
 					lte->out_refcnt = 0;
-				}
 			}
 		}
 		image_for_each_inode(inode, imd) {
