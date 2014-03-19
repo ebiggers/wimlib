@@ -148,18 +148,26 @@ To export the first image of this split WIM to a new or existing WIM file
 @IMAGEX_PROGNAME@ export mywim.swm 1 other.wim --ref="mywim*.swm"
 .RE
 .SH NOTES
-It is safe to abort an \fB@IMAGEX_PROGNAME@ export\fR command partway through;
-however, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
+\fIData integrity\fR:  It is safe to abort a \fB@IMAGEX_PROGNAME@ export\fR command partway through.
+However, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
 optimize\fR on the destination WIM to remove any data that was appended to the
 physical WIM file but not yet incorporated into the structure of the WIM, unless
-the WIM was being rebuild (e.g. with \fB--rebuild\fR), in which case you should
+the WIM was being rebuilt (e.g. with \fB--rebuild\fR), in which case you should
 delete the temporary file left over.
 .PP
-Since the WIM format uses single-instancing (streams are content-addressed by
-SHA1 message digests), when an image is exported, only the streams not already
-present in the destination WIM need to be copied.  However, a new copy of the
-image's metadata resource always needs to be created.
+\fISingle instancing\fR: The WIM format uses single-instance streams (roughly,
+"files").  When an image is exported, only the streams ("files") not already
+present in the destination WIM will be copied.  However, a new copy of the
+image's metadata resource, which describes the full directory structure, will
+always be created.
 .PP
+\fIESD files\fR: wimlib v1.6.0 and later can export images from version 3584
+WIMs, which usually contain LZMS-compressed solid blocks and may carry the
+\fI.esd\fR file extension rather than \fI.wim\fR.  However, \fI.esd\fR files
+downloaded directly by the Windows 8 web downloader have encrypted segments, and
+wimlib cannot export images from files until they are first decrypted.  In
+addition, to ensure the destination archive is created in the original WIM
+format rather than in the newer format, specify \fB--compress\fR=\fImaximum\fR.
 .SH EXAMPLES
 Export the second image of 'boot.wim' to the new WIM file 'new.wim':
 .RS
