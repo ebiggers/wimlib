@@ -56,9 +56,9 @@ static void
 inconsistent_inode(const struct wim_inode *inode)
 {
 	if (wimlib_print_errors) {
-		ERROR("An inconsistent hard link group that cannot be corrected has "
-		      "been detected");
-		ERROR("The dentries are located at the following paths:");
+		WARNING("An inconsistent hard link group that cannot be corrected has "
+			"been detected");
+		WARNING("The dentries are located at the following paths:");
 		print_inode_dentries(inode);
 	}
 }
@@ -121,21 +121,21 @@ inodes_consistent(const struct wim_inode *ref_inode,
 		  const struct wim_inode *inode)
 {
 	if (ref_inode->i_security_id != inode->i_security_id) {
-		ERROR("Security ID mismatch: %d != %d",
-		      ref_inode->i_security_id, inode->i_security_id);
+		WARNING("Security ID mismatch: %d != %d",
+			ref_inode->i_security_id, inode->i_security_id);
 		return false;
 	}
 
 	if (ref_inode->i_attributes != inode->i_attributes) {
-		ERROR("Attributes mismatch: 0x%08x != 0x%08x",
-		      ref_inode->i_attributes, inode->i_attributes);
+		WARNING("Attributes mismatch: 0x%08x != 0x%08x",
+			ref_inode->i_attributes, inode->i_attributes);
 		return false;
 	}
 
 	if (inode_has_data_streams(inode)) {
 		if (ref_inode->i_num_ads != inode->i_num_ads) {
-			ERROR("Stream count mismatch: %u != %u",
-			      ref_inode->i_num_ads, inode->i_num_ads);
+			WARNING("Stream count mismatch: %u != %u",
+				ref_inode->i_num_ads, inode->i_num_ads);
 			return false;
 		}
 		for (unsigned i = 0; i <= ref_inode->i_num_ads; i++) {
@@ -144,13 +144,13 @@ inodes_consistent(const struct wim_inode *ref_inode,
 			ref_hash = inode_stream_hash(ref_inode, i);
 			hash = inode_stream_hash(inode, i);
 			if (!hashes_equal(ref_hash, hash) && !is_zero_hash(hash)) {
-				ERROR("Stream hash mismatch");
+				WARNING("Stream hash mismatch");
 				return false;
 			}
 			if (i && !ads_entries_have_same_name(&ref_inode->i_ads_entries[i - 1],
 							     &inode->i_ads_entries[i - 1]))
 			{
-				ERROR("Stream name mismatch");
+				WARNING("Stream name mismatch");
 				return false;
 			}
 		}
@@ -189,10 +189,8 @@ fix_true_inode(struct wim_inode *inode, struct list_head *inode_list)
 
 	inode_for_each_dentry(dentry, ref_inode) {
 		if (dentry != ref_dentry) {
-			if (!inodes_consistent(ref_inode, dentry->d_inode)) {
+			if (!inodes_consistent(ref_inode, dentry->d_inode))
 				inconsistent_inode(ref_inode);
-				return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-			}
 			/* Free the unneeded `struct wim_inode'. */
 			wimlib_assert(dentry->d_inode->i_nlink == 1);
 			free_inode(dentry->d_inode);
