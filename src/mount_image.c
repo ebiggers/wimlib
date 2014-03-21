@@ -2345,14 +2345,12 @@ wimfs_unlink(const char *path)
 static int
 wimfs_utimens(const char *path, const struct timespec tv[2])
 {
-	struct wim_dentry *dentry;
 	struct wim_inode *inode;
 	WIMStruct *wim = wimfs_get_WIMStruct();
 
-	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
-	if (!dentry)
+	inode = wim_pathname_to_inode(wim, path);
+	if (!inode)
 		return -errno;
-	inode = dentry->d_inode;
 
 	if (tv[0].tv_nsec != UTIME_OMIT) {
 		if (tv[0].tv_nsec == UTIME_NOW)
@@ -2372,14 +2370,12 @@ wimfs_utimens(const char *path, const struct timespec tv[2])
 static int
 wimfs_utime(const char *path, struct utimbuf *times)
 {
-	struct wim_dentry *dentry;
 	struct wim_inode *inode;
 	WIMStruct *wim = wimfs_get_WIMStruct();
 
-	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
-	if (!dentry)
+	inode = wim_pathname_to_inode(wim, path);
+	if (!inode)
 		return -errno;
-	inode = dentry->d_inode;
 
 	inode->i_last_write_time = unix_timestamp_to_wim(times->modtime);
 	inode->i_last_access_time = unix_timestamp_to_wim(times->actime);
