@@ -8,7 +8,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -2045,32 +2045,6 @@ wimfs_read(const char *path, char *buf, size_t size,
 	return ret;
 }
 
-struct fill_params {
-	void *buf;
-	fuse_fill_dir_t filler;
-};
-
-static int
-dentry_fuse_fill(struct wim_dentry *dentry, void *arg)
-{
-	struct fill_params *fill_params = arg;
-
-	char *file_name_mbs;
-	size_t file_name_mbs_nbytes;
-	int ret;
-
-	ret = utf16le_to_tstr(dentry->file_name,
-			      dentry->file_name_nbytes,
-			      &file_name_mbs,
-			      &file_name_mbs_nbytes);
-	if (ret)
-		return -errno;
-
-	ret = fill_params->filler(fill_params->buf, file_name_mbs, NULL, 0);
-	FREE(file_name_mbs);
-	return ret;
-}
-
 /* Fills in the entries of the directory specified by @path using the
  * FUSE-provided function @filler.  */
 static int
@@ -2079,22 +2053,38 @@ wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 {
 	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
 	struct wim_inode *inode;
+	struct wim_dentry *child;
+	int ret;
 
 	if (!fd)
 		return -EBADF;
 
 	inode = fd->f_inode;
 
-	struct fill_params fill_params = {
-		.buf = buf,
-		.filler = filler,
-	};
+	ret = filler(buf, ".", NULL, 0);
+	if (ret)
+		return ret;
+	ret = filler(buf, "..", NULL, 0);
+	if (ret)
+		return ret;
 
-	filler(buf, ".", NULL, 0);
-	filler(buf, "..", NULL, 0);
+	for_inode_child(child, inode) {
+		char *file_name_mbs;
+		size_t file_name_mbs_nbytes;
 
-	return for_dentry_in_rbtree(inode->i_children.rb_node,
-				    dentry_fuse_fill, &fill_params);
+		ret = utf16le_to_tstr(child->file_name,
+				      child->file_name_nbytes,
+				      &file_name_mbs,
+				      &file_name_mbs_nbytes);
+		if (ret)
+			return -errno;
+
+		ret = filler(buf, file_name_mbs, NULL, 0);
+		FREE(file_name_mbs);
+		if (ret)
+			return ret;
+	}
+	return 0;
 }
 
 

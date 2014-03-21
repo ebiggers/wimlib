@@ -154,22 +154,39 @@ for_dentry_in_tree(struct wim_dentry *root,
 		   void *args);
 
 extern int
-for_dentry_in_rbtree(struct rb_node *node,
-		     int (*visitor)(struct wim_dentry *, void *),
-		     void *arg);
-
-extern int
-for_dentry_child(const struct wim_dentry *dentry,
-		 int (*visitor)(struct wim_dentry *, void *),
-		 void *arg);
-
-extern int
 for_dentry_in_tree_depth(struct wim_dentry *root,
 			 int (*visitor)(struct wim_dentry*, void*),
 			 void *args);
 
+/* Iterate through each @child dentry of the @parent inode,
+ * in sorted order (by case sensitive name).  */
+#define for_inode_child(child, parent)						\
+	for (struct rb_node *_tmp = rb_first(&parent->i_children);		\
+	     _tmp &&								\
+		((child = rb_entry(_tmp, struct wim_dentry, rb_node)), 1);	\
+	     _tmp = rb_next(_tmp))
+
+/* Iterate through each @child dentry of the @parent dentry,
+ * in sorted order (by case sensitive name).  */
+#define for_dentry_child(child, parent) \
+	for_inode_child(child, parent->d_inode)
+
+/* Iterate through each @child dentry of the @parent inode,
+ * in postorder (safe for freeing).  */
+#define for_inode_child_postorder(child, parent)					\
+	for (struct rb_node *_tmp = rb_first_postorder(&parent->i_children), *_parent;	\
+	     _tmp &&									\
+		((child = rb_entry(_tmp, struct wim_dentry, rb_node)), 1) &&		\
+		((_parent = rb_parent(_tmp)), 1);					\
+	     _tmp = rb_next_postorder(_tmp, _parent))
+
+/* Iterate through each @child dentry of the @parent dentry,
+ * in postorder (safe for freeing).  */
+#define for_dentry_child_postorder(child, parent) \
+	for_inode_child_postorder(child, parent->d_inode)
+
 extern void
-calculate_subdir_offsets(struct wim_dentry *dentry, u64 *subdir_offset_p);
+calculate_subdir_offsets(struct wim_dentry *root, u64 *subdir_offset_p);
 
 extern int
 dentry_set_name(struct wim_dentry *dentry, const tchar *new_name);
@@ -258,8 +275,7 @@ read_dentry_tree(const u8 *buf, size_t buf_len,
 		 u64 root_offset, struct wim_dentry **root_ret);
 
 extern u8 *
-write_dentry_tree(const struct wim_dentry * restrict tree,
-		  u8 * restrict p);
+write_dentry_tree(struct wim_dentry *root, u8 *p);
 
 static inline bool
 dentry_is_root(const struct wim_dentry *dentry)

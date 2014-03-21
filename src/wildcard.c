@@ -138,9 +138,8 @@ wildcard_status(const tchar *wildcard)
 }
 
 static int
-match_dentry(struct wim_dentry *cur_dentry, void *_ctx)
+match_dentry(struct wim_dentry *cur_dentry, struct match_dentry_ctx *ctx)
 {
-	struct match_dentry_ctx *ctx = _ctx;
 	tchar *name;
 	size_t name_len;
 	int ret;
@@ -205,6 +204,7 @@ expand_wildcard_recursive(struct wim_dentry *cur_dentry,
 	size_t offset_save;
 	size_t len_save;
 	int ret;
+	struct wim_dentry *child;
 
 	w = ctx->wildcard_path;
 
@@ -228,7 +228,12 @@ expand_wildcard_recursive(struct wim_dentry *cur_dentry,
 	ctx->cur_component_offset = begin;
 	ctx->cur_component_len = len;
 
-	ret = for_dentry_child(cur_dentry, match_dentry, ctx);
+	ret = 0;
+	for_dentry_child(child, cur_dentry) {
+		ret = match_dentry(child, ctx);
+		if (ret)
+			break;
+	}
 
 	ctx->cur_component_len = len_save;
 	ctx->cur_component_offset = offset_save;
@@ -268,9 +273,6 @@ expand_wildcard_recursive(struct wim_dentry *cur_dentry,
  *
  * @return 0 on success; a positive error code on error; or the first nonzero
  * value returned by @consume_dentry.
- *
- * Note: this function uses the @tmp_list field of dentries it attempts to
- * match.
  */
 int
 expand_wildcard(WIMStruct *wim,

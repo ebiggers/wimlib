@@ -9,7 +9,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -301,93 +301,39 @@ dentry_in_total_length(const struct wim_dentry *dentry)
 	return (length + 7) & ~7;
 }
 
-int
-for_dentry_in_rbtree(struct rb_node *root,
-		     int (*visitor)(struct wim_dentry *, void *),
-		     void *arg)
-{
-	int ret;
-	struct rb_node *node = root;
-	LIST_HEAD(stack);
-	while (1) {
-		if (node) {
-			list_add(&rbnode_dentry(node)->tmp_list, &stack);
-			node = node->rb_left;
-		} else {
-			struct list_head *next;
-			struct wim_dentry *dentry;
-
-			next = stack.next;
-			if (next == &stack)
-				return 0;
-			dentry = container_of(next, struct wim_dentry, tmp_list);
-			list_del(next);
-			ret = visitor(dentry, arg);
-			if (ret != 0)
-				return ret;
-			node = dentry->rb_node.rb_right;
-		}
-	}
-}
-
 static int
-for_dentry_tree_in_rbtree_depth(struct rb_node *node,
-				int (*visitor)(struct wim_dentry*, void*),
-				void *arg)
+do_for_dentry_in_tree(struct wim_dentry *dentry,
+		      int (*visitor)(struct wim_dentry *, void *), void *arg)
 {
 	int ret;
-	if (node) {
-		ret = for_dentry_tree_in_rbtree_depth(node->rb_left,
-						      visitor, arg);
-		if (ret != 0)
-			return ret;
-		ret = for_dentry_tree_in_rbtree_depth(node->rb_right,
-						      visitor, arg);
-		if (ret != 0)
-			return ret;
-		ret = for_dentry_in_tree_depth(rbnode_dentry(node), visitor, arg);
-		if (ret != 0)
+	struct wim_dentry *child;
+
+	ret = (*visitor)(dentry, arg);
+	if (unlikely(ret))
+		return ret;
+
+	for_dentry_child(child, dentry) {
+		ret = for_dentry_in_tree(child, visitor, arg);
+		if (unlikely(ret))
 			return ret;
 	}
 	return 0;
 }
 
+
 static int
-for_dentry_tree_in_rbtree(struct rb_node *node,
-			  int (*visitor)(struct wim_dentry*, void*),
-			  void *arg)
+do_for_dentry_in_tree_depth(struct wim_dentry *dentry,
+			    int (*visitor)(struct wim_dentry *, void *), void *arg)
 {
 	int ret;
-	if (node) {
-		ret = for_dentry_tree_in_rbtree(node->rb_left, visitor, arg);
-		if (ret)
-			return ret;
-		ret = for_dentry_in_tree(rbnode_dentry(node), visitor, arg);
-		if (ret)
-			return ret;
-		ret = for_dentry_tree_in_rbtree(node->rb_right, visitor, arg);
-		if (ret)
+	struct wim_dentry *child;
+
+	for_dentry_child_postorder(child, dentry) {
+		ret = for_dentry_in_tree_depth(child, visitor, arg);
+		if (unlikely(ret))
 			return ret;
 	}
-	return 0;
-}
-
-/*
- * Iterate over all children of @dentry, calling the function @visitor, passing
- * it a child dentry and the extra argument @arg.
- *
- * Note: this function iterates over ALL child dentries, even those with the
- * same case-insensitive name.
- *
- * Note: this function clobbers the tmp_list field of the child dentries.  */
-int
-for_dentry_child(const struct wim_dentry *dentry,
-		 int (*visitor)(struct wim_dentry *, void *),
-		 void *arg)
-{
-	return for_dentry_in_rbtree(dentry->d_inode->i_children.rb_node,
-				    visitor,
-				    arg);
+	return unlikely((*visitor)(dentry, arg));
 }
 
 /* Calls a function on all directory entries in a WIM dentry tree.  Logically,
@@ -396,35 +342,22 @@ for_dentry_child(const struct wim_dentry *dentry,
  * */
 int
 for_dentry_in_tree(struct wim_dentry *root,
-		   int (*visitor)(struct wim_dentry*, void*), void *arg)
+		   int (*visitor)(struct wim_dentry *, void *), void *arg)
 {
-	int ret;
-
-	if (root == NULL)
+	if (unlikely(!root))
 		return 0;
-	ret = (*visitor)(root, arg);
-	if (ret)
-		return ret;
-	return for_dentry_tree_in_rbtree(root->d_inode->i_children.rb_node,
-					 visitor,
-					 arg);
+	return do_for_dentry_in_tree(root, visitor, arg);
 }
 
 /* Like for_dentry_in_tree(), but the visitor function is always called on a
  * dentry's children before on itself. */
 int
 for_dentry_in_tree_depth(struct wim_dentry *root,
-			 int (*visitor)(struct wim_dentry*, void*), void *arg)
+			 int (*visitor)(struct wim_dentry *, void *), void *arg)
 {
-	int ret;
-
-	if (root == NULL)
+	if (unlikely(!root))
 		return 0;
-	ret = for_dentry_tree_in_rbtree_depth(root->d_inode->i_children.rb_node,
-					      visitor, arg);
-	if (ret)
-		return ret;
-	return (*visitor)(root, arg);
+	return do_for_dentry_in_tree_depth(root, visitor, arg);
 }
 
 /* Calculate the full path of @dentry.  The full path of its parent must have
@@ -522,53 +455,36 @@ dentry_full_path(struct wim_dentry *dentry)
 }
 
 static int
-increment_subdir_offset(struct wim_dentry *dentry, void *subdir_offset_p)
+dentry_calculate_subdir_offset(struct wim_dentry *dentry, void *_subdir_offset_p)
 {
-	*(u64*)subdir_offset_p += dentry_out_total_length(dentry);
-	return 0;
-}
 
-static int
-call_calculate_subdir_offsets(struct wim_dentry *dentry, void *subdir_offset_p)
-{
-	calculate_subdir_offsets(dentry, subdir_offset_p);
+	if (dentry_is_directory(dentry)) {
+		u64 *subdir_offset_p = _subdir_offset_p;
+		struct wim_dentry *child;
+
+		/* Set offset of directory's child dentries  */
+		dentry->subdir_offset = *subdir_offset_p;
+
+		/* Account for child dentries  */
+		for_dentry_child(child, dentry)
+			*subdir_offset_p += dentry_out_total_length(child);
+
+		/* Account for end-of-directory entry  */
+		*subdir_offset_p += 8;
+	} else {
+		/* Not a directory; set subdir_offset to 0  */
+		dentry->subdir_offset = 0;
+	}
 	return 0;
 }
 
 /*
- * Recursively calculates the subdir offsets for a directory tree.
- *
- * @dentry:  The root of the directory tree.
- * @subdir_offset_p:  The current subdirectory offset; i.e., the subdirectory
- *		      offset for @dentry.
+ * Calculates the subdir offsets for a directory tree.
  */
 void
-calculate_subdir_offsets(struct wim_dentry *dentry, u64 *subdir_offset_p)
+calculate_subdir_offsets(struct wim_dentry *root, u64 *subdir_offset_p)
 {
-	struct rb_node *node;
-
-	dentry->subdir_offset = *subdir_offset_p;
-	node = dentry->d_inode->i_children.rb_node;
-	if (node) {
-		/* Advance the subdir offset by the amount of space the children
-		 * of this dentry take up. */
-		for_dentry_in_rbtree(node, increment_subdir_offset, subdir_offset_p);
-
-		/* End-of-directory dentry on disk. */
-		*subdir_offset_p += 8;
-
-		/* Recursively call calculate_subdir_offsets() on all the
-		 * children. */
-		for_dentry_in_rbtree(node, call_calculate_subdir_offsets, subdir_offset_p);
-	} else {
-		/* On disk, childless directories have a valid subdir_offset
-		 * that points to an 8-byte end-of-directory dentry.  Regular
-		 * files or reparse points have a subdir_offset of 0. */
-		if (dentry_is_directory(dentry))
-			*subdir_offset_p += 8;
-		else
-			dentry->subdir_offset = 0;
-	}
+	for_dentry_in_tree(root, dentry_calculate_subdir_offset, subdir_offset_p);
 }
 
 static int
@@ -1172,7 +1088,7 @@ dentry_add_child(struct wim_dentry * restrict parent,
 		if (existing) {
 			list_add(&child->case_insensitive_conflict_list,
 				 &existing->case_insensitive_conflict_list);
-			child->rb_node_case_insensitive.__rb_parent_color = 0;
+			rb_clear_node(&child->rb_node_case_insensitive);
 		} else {
 			INIT_LIST_HEAD(&child->case_insensitive_conflict_list);
 		}
@@ -1190,7 +1106,7 @@ unlink_dentry(struct wim_dentry *dentry)
 		return;
 	rb_erase(&dentry->rb_node, &parent->d_inode->i_children);
 
-	if (dentry->rb_node_case_insensitive.__rb_parent_color) {
+	if (!rb_empty_node(&dentry->rb_node_case_insensitive)) {
 		/* This dentry was in the case-insensitive red-black tree. */
 		rb_erase(&dentry->rb_node_case_insensitive,
 			 &parent->d_inode->i_children_case_insensitive);
@@ -1788,48 +1704,23 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 }
 
 static int
-write_dentry_cb(struct wim_dentry *dentry, void *_p)
+write_dir_dentries(struct wim_dentry *dir, void *_pp)
 {
-	u8 **p = _p;
-	*p = write_dentry(dentry, *p);
+	if (dentry_is_directory(dir)) {
+		u8 **pp = _pp;
+		u8 *p = *pp;
+		struct wim_dentry *child;
+
+		/* write child dentries */
+		for_dentry_child(child, dir)
+			p = write_dentry(child, p);
+
+		/* write end of directory entry */
+		*(u64*)p = 0;
+		p += 8;
+		*pp = p;
+	}
 	return 0;
-}
-
-static u8 *
-write_dentry_tree_recursive(const struct wim_dentry *parent, u8 *p);
-
-static int
-write_dentry_tree_recursive_cb(struct wim_dentry *dentry, void *_p)
-{
-	u8 **p = _p;
-	*p = write_dentry_tree_recursive(dentry, *p);
-	return 0;
-}
-
-/* Recursive function that writes a dentry tree rooted at @parent, not including
- * @parent itself, which has already been written. */
-static u8 *
-write_dentry_tree_recursive(const struct wim_dentry *parent, u8 *p)
-{
-	/* Nothing to do if this dentry has no children. */
-	if (parent->subdir_offset == 0)
-		return p;
-
-	/* Write child dentries and end-of-directory entry.
-	 *
-	 * Note: we need to write all of this dentry's children before
-	 * recursively writing the directory trees rooted at each of the child
-	 * dentries, since the on-disk dentries for a dentry's children are
-	 * always located at consecutive positions in the metadata resource! */
-	for_dentry_child(parent, write_dentry_cb, &p);
-
-	/* write end of directory entry */
-	*(le64*)p = cpu_to_le64(0);
-	p += 8;
-
-	/* Recurse on children. */
-	for_dentry_child(parent, write_dentry_tree_recursive_cb, &p);
-	return p;
 }
 
 /* Writes a directory tree to the metadata resource.
@@ -1840,20 +1731,18 @@ write_dentry_tree_recursive(const struct wim_dentry *parent, u8 *p)
  * Returns pointer to the byte after the last byte we wrote.
  */
 u8 *
-write_dentry_tree(const struct wim_dentry * restrict root, u8 * restrict p)
+write_dentry_tree(struct wim_dentry *root, u8 *p)
 {
 	DEBUG("Writing dentry tree.");
 	wimlib_assert(dentry_is_root(root));
 
-	/* If we're the root dentry, we have no parent that already
-	 * wrote us, so we need to write ourselves. */
+	/* write root dentry and end-of-directory entry following it */
 	p = write_dentry(root, p);
-
-	/* Write end of directory entry after the root dentry just to be safe;
-	 * however the root dentry obviously cannot have any siblings. */
-	*(le64*)p = cpu_to_le64(0);
+	*(u64*)p = 0;
 	p += 8;
 
-	/* Recursively write the rest of the dentry tree. */
-	return write_dentry_tree_recursive(root, p);
+	/* write the rest of the dentry tree */
+	for_dentry_in_tree(root, write_dir_dentries, &p);
+
+	return p;
 }

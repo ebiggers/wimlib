@@ -387,7 +387,7 @@ inode_is_symlink(const struct wim_inode *inode)
 static inline bool
 inode_has_children(const struct wim_inode *inode)
 {
-	return inode->i_children.rb_node != NULL;
+	return !rb_empty_root(&inode->i_children);
 }
 
 extern int

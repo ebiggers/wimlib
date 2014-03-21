@@ -149,27 +149,6 @@ free_wimlib_dentry(struct wimlib_dir_entry *wdentry)
 	FREE(wdentry);
 }
 
-struct iterate_dir_tree_ctx {
-	WIMStruct *wim;
-	int flags;
-	wimlib_iterate_dir_tree_callback_t cb;
-	void *user_ctx;
-};
-
-static int
-do_iterate_dir_tree(WIMStruct *wim,
-		    struct wim_dentry *dentry, int flags,
-		    wimlib_iterate_dir_tree_callback_t cb,
-		    void *user_ctx);
-
-static int
-call_do_iterate_dir_tree(struct wim_dentry *dentry, void *_ctx)
-{
-	struct iterate_dir_tree_ctx *ctx = _ctx;
-	return do_iterate_dir_tree(ctx->wim, dentry, ctx->flags,
-				   ctx->cb, ctx->user_ctx);
-}
-
 static int
 do_iterate_dir_tree(WIMStruct *wim,
 		    struct wim_dentry *dentry, int flags,
@@ -199,13 +178,16 @@ do_iterate_dir_tree(WIMStruct *wim,
 	if (flags & (WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE |
 		     WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN))
 	{
-		struct iterate_dir_tree_ctx ctx = {
-			.wim      = wim,
-			.flags    = flags &= ~WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN,
-			.cb       = cb,
-			.user_ctx = user_ctx,
-		};
-		ret = for_dentry_child(dentry, call_do_iterate_dir_tree, &ctx);
+		struct wim_dentry *child;
+
+		ret = 0;
+		for_dentry_child(child, dentry) {
+			ret = do_iterate_dir_tree(wim, child,
+						  flags & ~WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN,
+						  cb, user_ctx);
+			if (ret)
+				break;
+		}
 	}
 out_free_wimlib_dentry:
 	free_wimlib_dentry(wdentry);

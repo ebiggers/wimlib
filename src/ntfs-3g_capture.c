@@ -386,9 +386,8 @@ lookup_dos_name(const struct dos_name_map *map, u64 ntfs_ino)
 }
 
 static int
-set_dentry_dos_name(struct wim_dentry *dentry, void *arg)
+set_dentry_dos_name(struct wim_dentry *dentry, const struct dos_name_map *map)
 {
-	const struct dos_name_map *map = arg;
 	const struct dos_name_node *node;
 
 	if (dentry->is_win32_name) {
@@ -626,8 +625,14 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			ERROR_WITH_ERRNO("Error reading directory \"%s\"", path);
 			ret = WIMLIB_ERR_NTFS_3G;
 		} else {
-			ret = for_dentry_child(root, set_dentry_dos_name,
-					       &dos_name_map);
+			struct wim_dentry *child;
+
+			ret = 0;
+			for_dentry_child(child, root) {
+				ret = set_dentry_dos_name(child, &dos_name_map);
+				if (ret)
+					break;
+			}
 		}
 		destroy_dos_name_map(&dos_name_map);
 		if (ret)
