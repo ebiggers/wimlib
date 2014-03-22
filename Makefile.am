@@ -19,6 +19,7 @@ libwim_la_LDFLAGS = -version-info 14:0:5 $(WINDOWS_LDFLAGS)
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
+	src/avl_tree.c		\
 	src/capture_common.c	\
 	src/compat.c		\
 	src/compress.c		\
@@ -58,7 +59,6 @@ libwim_la_SOURCES =		\
 	src/pathlist.c		\
 	src/paths.c		\
 	src/resource.c		\
-	src/rbtree.c		\
 	src/reference.c		\
 	src/security.c		\
 	src/sha1.c		\
@@ -77,6 +77,7 @@ libwim_la_SOURCES =		\
 	src/xpress-decompress.c \
 	include/wimlib/apply.h		\
 	include/wimlib/assert.h		\
+	include/wimlib/avl_tree.h	\
 	include/wimlib/callback.h	\
 	include/wimlib/capture.h	\
 	include/wimlib/case.h		\
@@ -107,7 +108,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/metadata.h	\
 	include/wimlib/pathlist.h	\
 	include/wimlib/paths.h		\
-	include/wimlib/rbtree.h		\
 	include/wimlib/reparse.h	\
 	include/wimlib/resource.h	\
 	include/wimlib/security.h	\
