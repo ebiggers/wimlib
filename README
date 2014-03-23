@@ -372,7 +372,8 @@ WIM, I recommend you take a look at SquashFS (http://squashfs.sourceforge.net/).
                                     LICENSE
 
 As of version 1.0.0, wimlib and all programs and scripts distributed with it are
-released under the GNU GPL version 3.0 or later.
+released under the GNU GPL version 3.0 or later.  See COPYING for details.
+Some individual source files are also released under more permissive licenses.
 
 wimlib is independently developed and does not contain any code, data, or files
 copyrighted by Microsoft.  It is not known to be affected by any patents.
