@@ -4,7 +4,6 @@
 #include "wimlib/assert.h"
 #include "wimlib/list.h"
 #include "wimlib/lookup_table.h"
-#include "wimlib/rbtree.h"
 #include "wimlib/sha1.h"
 #include "wimlib/unix_data.h"
 
@@ -15,6 +14,7 @@ struct wim_dentry;
 struct wim_security_data;
 struct wim_lookup_table;
 struct wimfs_fd;
+struct avl_tree_node;
 
 /*
  * WIM inode.
@@ -47,13 +47,17 @@ struct wim_inode {
 	 * this inode. */
 	u32 i_attributes;
 
-	/* Root of a red-black tree storing the child dentries of this inode, if
-	 * any.  Keyed by wim_dentry->file_name, case sensitively. */
-	struct rb_root i_children;
+	/* Root of a balanced binary search tree storing the child directory
+	 * entries of this inode, if any.  Keyed by wim_dentry->file_name, case
+	 * sensitively.  If this inode is not a directory or if it has no
+	 * children then this will be an empty tree (NULL).  */
+	struct avl_tree_node *i_children;
 
-	/* Root of a red-black tree storing the children of this inode, if any.
-	 * Keyed by wim_dentry->file_name, case insensitively. */
-	struct rb_root i_children_case_insensitive;
+	/* Root of a balanced binary search tree storing the child directory
+	 * entries of this inode, if any.  Keyed by wim_dentry->file_name, case
+	 * insensitively.  If this inode is not a directory or if it has no
+	 * children then this will be an empty tree (NULL).  */
+	struct avl_tree_node *i_children_ci;
 
 	/* List of dentries that are aliases for this inode.  There will be
 	 * i_nlink dentries in this list.  */
@@ -382,12 +386,12 @@ inode_is_symlink(const struct wim_inode *inode)
 
 /* Does the inode have children?
  * Currently (based on read_dentry_tree()), this can only return true for inodes
- * for which inode_is_directory() returns true.  However, if a directory is
- * empty, this returns false.  */
+ * for which inode_is_directory() returns true.  (This also returns false on
+ * empty directories.)  */
 static inline bool
 inode_has_children(const struct wim_inode *inode)
 {
-	return !rb_empty_root(&inode->i_children);
+	return inode->i_children != NULL;
 }
 
 extern int

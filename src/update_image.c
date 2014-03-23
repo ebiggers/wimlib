@@ -42,8 +42,6 @@
 static int
 do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 {
-	struct rb_root *rb_root;
-
 	DEBUG("Doing overlay \"%"WS"\" => \"%"WS"\"",
 	      branch->file_name, target->file_name);
 
@@ -53,10 +51,9 @@ do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
 		return WIMLIB_ERR_INVALID_OVERLAY;
 	}
 
-	rb_root = &branch->d_inode->i_children;
 	LIST_HEAD(moved_children);
-	while (rb_root->rb_node) { /* While @branch has children... */
-		struct wim_dentry *child = rbnode_dentry(rb_root->rb_node);
+	while (dentry_has_children(branch)) {
+		struct wim_dentry *child = dentry_any_child(branch);
 		struct wim_dentry *existing;
 
 		/* Move @child to the directory @target */

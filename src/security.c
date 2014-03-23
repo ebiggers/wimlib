@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -28,6 +28,7 @@
 #endif
 
 #include "wimlib/assert.h"
+#include "wimlib/avl_tree.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/security.h"
@@ -232,16 +233,19 @@ free_wim_security_data(struct wim_security_data *sd)
 struct sd_node {
 	int security_id;
 	u8 hash[SHA1_HASH_SIZE];
-	struct rb_node rb_node;
+	struct avl_tree_node index_node;
 };
 
+#define SD_NODE(avl_node) \
+	avl_tree_entry(avl_node, struct sd_node, index_node)
+
 static void
-free_sd_tree(struct rb_node *node)
+free_sd_tree(struct avl_tree_node *node)
 {
 	if (node) {
-		free_sd_tree(node->rb_left);
-		free_sd_tree(node->rb_right);
-		FREE(container_of(node, struct sd_node, rb_node));
+		free_sd_tree(node->left);
+		free_sd_tree(node->right);
+		FREE(SD_NODE(node));
 	}
 }
 
@@ -257,32 +261,23 @@ destroy_sd_set(struct wim_sd_set *sd_set, bool rollback)
 			FREE(*descriptors++);
 		sd->num_entries = sd_set->orig_num_entries;
 	}
-	free_sd_tree(sd_set->rb_root.rb_node);
+	free_sd_tree(sd_set->root);
 }
 
-/* Inserts a a new node into the security descriptor index tree. */
+static int
+_avl_cmp_nodes_by_hash(const struct avl_tree_node *n1,
+		       const struct avl_tree_node *n2)
+{
+	return hashes_cmp(SD_NODE(n1)->hash, SD_NODE(n2)->hash);
+}
+
+/* Inserts a a new node into the security descriptor index tree.  Returns true
+ * if successful (not a duplicate).  */
 static bool
 insert_sd_node(struct wim_sd_set *set, struct sd_node *new)
 {
-	struct rb_root *root = &set->rb_root;
-	struct rb_node **p = &(root->rb_node);
-	struct rb_node *rb_parent = NULL;
-
-	while (*p) {
-		struct sd_node *this = container_of(*p, struct sd_node, rb_node);
-		int cmp = hashes_cmp(new->hash, this->hash);
-
-		rb_parent = *p;
-		if (cmp < 0)
-			p = &((*p)->rb_left);
-		else if (cmp > 0)
-			p = &((*p)->rb_right);
-		else
-			return false; /* Duplicate security descriptor */
-	}
-	rb_link_node(&new->rb_node, rb_parent, p);
-	rb_insert_color(&new->rb_node, root);
-	return true;
+	return NULL == avl_tree_insert(&set->root, &new->index_node,
+				       _avl_cmp_nodes_by_hash);
 }
 
 /* Returns the index of the security descriptor having a SHA1 message digest of
@@ -290,19 +285,15 @@ insert_sd_node(struct wim_sd_set *set, struct sd_node *new)
 static int
 lookup_sd(struct wim_sd_set *set, const u8 hash[SHA1_HASH_SIZE])
 {
-	struct rb_node *node = set->rb_root.rb_node;
+	struct avl_tree_node *res;
+	struct sd_node dummy;
 
-	while (node) {
-		struct sd_node *sd_node = container_of(node, struct sd_node, rb_node);
-		int cmp = hashes_cmp(hash, sd_node->hash);
-		if (cmp < 0)
-			node = node->rb_left;
-		else if (cmp > 0)
-			node = node->rb_right;
-		else
-			return sd_node->security_id;
-	}
-	return -1;
+	copy_hash(dummy.hash, hash);
+	res = avl_tree_lookup_node(set->root, &dummy.index_node,
+				   _avl_cmp_nodes_by_hash);
+	if (!res)
+		return -1;
+	return SD_NODE(res)->security_id;
 }
 
 /*
@@ -383,7 +374,7 @@ init_sd_set(struct wim_sd_set *sd_set, struct wim_security_data *sd)
 	int ret;
 
 	sd_set->sd = sd;
-	sd_set->rb_root.rb_node = NULL;
+	sd_set->root = NULL;
 
 	/* Remember the original number of security descriptors so that newly
 	 * added ones can be rolled back if needed. */

@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -301,17 +301,28 @@ out_put_actx:
 	return ret;
 }
 
-/* Red-black tree that maps NTFS inode numbers to DOS names */
+/* Binary tree that maps NTFS inode numbers to DOS names */
 struct dos_name_map {
-	struct rb_root rb_root;
+	struct avl_tree_node *root;
 };
 
 struct dos_name_node {
-	struct rb_node rb_node;
+	struct avl_tree_node index_node;
 	char dos_name[24];
 	int name_nbytes;
 	le64 ntfs_ino;
 };
+
+#define DOS_NAME_NODE(avl_node) \
+	avl_tree_entry(avl_node, struct dos_name_node, index_node)
+
+static int
+_avl_cmp_by_ntfs_ino(const struct avl_tree_node *n1,
+		     const struct avl_tree_node *n2)
+{
+	return cmp_u64(DOS_NAME_NODE(n1)->ntfs_ino,
+		       DOS_NAME_NODE(n2)->ntfs_ino);
+}
 
 /* Inserts a new DOS name into the map */
 static int
@@ -319,9 +330,6 @@ insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
 		size_t name_nbytes, le64 ntfs_ino)
 {
 	struct dos_name_node *new_node;
-	struct rb_node **p;
-	struct rb_root *root;
-	struct rb_node *rb_parent;
 
 	DEBUG("DOS name_len = %zu", name_nbytes);
 	new_node = MALLOC(sizeof(struct dos_name_node));
@@ -333,35 +341,23 @@ insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
 	wimlib_assert(name_nbytes <= sizeof(new_node->dos_name));
 
 	/* Initialize the DOS name, DOS name length, and NTFS inode number of
-	 * the red-black tree node */
+	 * the search tree node */
 	memcpy(new_node->dos_name, dos_name, name_nbytes);
 	new_node->name_nbytes = name_nbytes;
 	new_node->ntfs_ino = ntfs_ino;
 
-	/* Insert the red-black tree node */
-	root = &map->rb_root;
-	p = &root->rb_node;
-	rb_parent = NULL;
-	while (*p) {
-		struct dos_name_node *this;
-
-		this = container_of(*p, struct dos_name_node, rb_node);
-		rb_parent = *p;
-		if (new_node->ntfs_ino < this->ntfs_ino)
-			p = &((*p)->rb_left);
-		else if (new_node->ntfs_ino > this->ntfs_ino)
-			p = &((*p)->rb_right);
-		else {
-			/* This should be impossible since a NTFS inode cannot
-			 * have multiple DOS names, and we only should get each
-			 * DOS name entry once from the ntfs_readdir() calls. */
-			ERROR("NTFS inode %"PRIu64" has multiple DOS names",
-				le64_to_cpu(ntfs_ino));
-			return -1;
-		}
+	/* Insert the search tree node */
+	if (avl_tree_insert(&map->root, &new_node->index_node,
+			    _avl_cmp_by_ntfs_ino))
+	{
+		/* This should be impossible since a NTFS inode cannot
+		 * have multiple DOS names, and we only should get each
+		 * DOS name entry once from the ntfs_readdir() calls. */
+		ERROR("NTFS inode %"PRIu64" has multiple DOS names",
+			le64_to_cpu(ntfs_ino));
+		FREE(new_node);
+		return -1;
 	}
-	rb_link_node(&new_node->rb_node, rb_parent, p);
-	rb_insert_color(&new_node->rb_node, root);
 	DEBUG("Inserted DOS name for inode %"PRIu64, le64_to_cpu(ntfs_ino));
 	return 0;
 }
@@ -371,18 +367,16 @@ insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
 static struct dos_name_node *
 lookup_dos_name(const struct dos_name_map *map, u64 ntfs_ino)
 {
-	struct rb_node *node = map->rb_root.rb_node;
-	while (node) {
-		struct dos_name_node *this;
-		this = container_of(node, struct dos_name_node, rb_node);
-		if (ntfs_ino < this->ntfs_ino)
-			node = node->rb_left;
-		else if (ntfs_ino > this->ntfs_ino)
-			node = node->rb_right;
-		else
-			return this;
-	}
-	return NULL;
+	struct dos_name_node dummy;
+	struct avl_tree_node *res;
+
+	dummy.ntfs_ino = cpu_to_le64(ntfs_ino);
+
+	res = avl_tree_lookup_node(map->root, &dummy.index_node,
+				   _avl_cmp_by_ntfs_ino);
+	if (!res)
+		return NULL;
+	return DOS_NAME_NODE(res);
 }
 
 static int
@@ -412,18 +406,18 @@ set_dentry_dos_name(struct wim_dentry *dentry, const struct dos_name_map *map)
 }
 
 static void
-free_dos_name_tree(struct rb_node *node) {
+free_dos_name_tree(struct avl_tree_node *node) {
 	if (node) {
-		free_dos_name_tree(node->rb_left);
-		free_dos_name_tree(node->rb_right);
-		FREE(container_of(node, struct dos_name_node, rb_node));
+		free_dos_name_tree(node->left);
+		free_dos_name_tree(node->right);
+		FREE(DOS_NAME_NODE(node));
 	}
 }
 
 static void
 destroy_dos_name_map(struct dos_name_map *map)
 {
-	free_dos_name_tree(map->rb_root.rb_node);
+	free_dos_name_tree(map->root);
 }
 
 struct readdir_ctx {
@@ -611,7 +605,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 
 		/* Recurse to directory children */
 		s64 pos = 0;
-		struct dos_name_map dos_name_map = { .rb_root = {.rb_node = NULL} };
+		struct dos_name_map dos_name_map = { .root = NULL };
 		struct readdir_ctx ctx = {
 			.parent          = root,
 			.path            = path,

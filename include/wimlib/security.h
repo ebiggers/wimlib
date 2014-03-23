@@ -1,15 +1,17 @@
 #ifndef _WIMLIB_SECURITY_H
 #define _WIMLIB_SECURITY_H
 
-#include "wimlib/rbtree.h"
 #include "wimlib/types.h"
 
-/* Red-black tree that maps SHA1 message digests of security descriptors to
- * security IDs, which are themselves indices into the table of security
- * descriptors in the 'struct wim_security_data'. */
+struct wim_security_data;
+struct avl_tree_node;
+
+/* Map from SHA1 message digests of security descriptors to security IDs, which
+ * are themselves indices into the table of security descriptors in the 'struct
+ * wim_security_data'. */
 struct wim_sd_set {
 	struct wim_security_data *sd;
-	struct rb_root rb_root;
+	struct avl_tree_node *root;
 	int32_t orig_num_entries;
 };
 

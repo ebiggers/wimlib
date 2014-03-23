@@ -1,11 +1,11 @@
 #ifndef _WIMLIB_DENTRY_H
 #define _WIMLIB_DENTRY_H
 
+#include "wimlib/avl_tree.h"
 #include "wimlib/case.h"
 #include "wimlib/compiler.h"
 #include "wimlib/inode.h"
 #include "wimlib/list.h"
-#include "wimlib/rbtree.h"
 #include "wimlib/types.h"
 
 struct wim_inode;
@@ -52,17 +52,17 @@ struct wim_dentry {
 	 * to all dentries in a hard link group.  */
 	struct wim_inode *d_inode;
 
-	/* Node for the parent's red-black tree of child dentries, sorted by
-	 * case sensitive long name. */
-	struct rb_node rb_node;
+	/* Node for the parent's balanced binary search tree of child dentries
+	 * sorted by case sensitive long name (root i_children).  */
+	struct avl_tree_node d_index_node;
 
-	/* Node for the parent's red-black tree of child dentries, sorted by
-	 * case insensitive long name. */
-	struct rb_node rb_node_case_insensitive;
+	/* Node for the parent's balanced binary search tree of child dentries,
+	 * sorted by case insensitive long name (root i_children_ci). */
+	struct avl_tree_node d_index_node_ci;
 
 	/* List of dentries in a directory that have different case sensitive
-	 * long names but share the same case insensitive long name */
-	struct list_head case_insensitive_conflict_list;
+	 * long names but share the same case insensitive long name.  */
+	struct list_head d_ci_conflict_list;
 
 	/* Length of UTF-16LE encoded short filename, in bytes, not including
 	 * the terminating zero wide-character. */
@@ -137,8 +137,6 @@ struct wim_dentry {
 	size_t extraction_name_nchars;
 };
 
-#define rbnode_dentry(node) container_of(node, struct wim_dentry, rb_node)
-
 static inline bool
 dentry_is_first_in_inode(const struct wim_dentry *dentry)
 {
@@ -158,32 +156,47 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 			 int (*visitor)(struct wim_dentry*, void*),
 			 void *args);
 
-/* Iterate through each @child dentry of the @parent inode,
+/* Iterate through each @child dentry of the @dir directory inode,
  * in sorted order (by case sensitive name).  */
-#define for_inode_child(child, parent)						\
-	for (struct rb_node *_tmp = rb_first(&parent->i_children);		\
+#define for_inode_child(child, dir)						\
+	for (struct avl_tree_node *_tmp =					\
+			avl_tree_first_in_order((dir)->i_children);		\
 	     _tmp &&								\
-		((child = rb_entry(_tmp, struct wim_dentry, rb_node)), 1);	\
-	     _tmp = rb_next(_tmp))
+		(((child) = avl_tree_entry(_tmp, struct wim_dentry,		\
+					 d_index_node)), 1);			\
+	     _tmp = avl_tree_next_in_order(_tmp))
 
 /* Iterate through each @child dentry of the @parent dentry,
  * in sorted order (by case sensitive name).  */
 #define for_dentry_child(child, parent) \
-	for_inode_child(child, parent->d_inode)
+	for_inode_child((child), (parent)->d_inode)
 
-/* Iterate through each @child dentry of the @parent inode,
- * in postorder (safe for freeing).  */
-#define for_inode_child_postorder(child, parent)					\
-	for (struct rb_node *_tmp = rb_first_postorder(&parent->i_children), *_parent;	\
-	     _tmp &&									\
-		((child = rb_entry(_tmp, struct wim_dentry, rb_node)), 1) &&		\
-		((_parent = rb_parent(_tmp)), 1);					\
-	     _tmp = rb_next_postorder(_tmp, _parent))
+/* Iterate through each @child dentry of the @dir directory inode,
+ * in postorder (safe for freeing the child dentries).  */
+#define for_inode_child_postorder(child, dir)				\
+	for (struct avl_tree_node *_parent, *_tmp =			\
+			avl_tree_first_in_postorder(			\
+				(dir)->i_children);			\
+	     _tmp &&							\
+		(((child) = avl_tree_entry(_tmp, struct wim_dentry,	\
+					 d_index_node)), 1) &&		\
+		((_parent = avl_get_parent(_tmp)), 1);			\
+	     _tmp = avl_tree_next_in_postorder(_tmp, _parent))
 
 /* Iterate through each @child dentry of the @parent dentry,
- * in postorder (safe for freeing).  */
+ * in postorder (safe for freeing the child dentries).  */
 #define for_dentry_child_postorder(child, parent) \
-	for_inode_child_postorder(child, parent->d_inode)
+	for_inode_child_postorder((child), (parent)->d_inode)
+
+/* Get any child dentry of the @dir directory inode.  Requires
+ * inode_has_children(@dir) == true.  */
+#define inode_any_child(dir)	\
+	avl_tree_entry((dir)->i_children, struct wim_dentry, d_index_node)
+
+/* Get any child dentry of the @parent dentry.  Requires
+ * dentry_has_children(@parent) == true.  */
+#define dentry_any_child(parent) \
+	inode_any_child((parent)->d_inode)
 
 extern void
 calculate_subdir_offsets(struct wim_dentry *root, u64 *subdir_offset_p);
@@ -262,8 +275,7 @@ extern void
 unlink_dentry(struct wim_dentry *dentry);
 
 extern struct wim_dentry *
-dentry_add_child(struct wim_dentry * restrict parent,
-		 struct wim_dentry * restrict child);
+dentry_add_child(struct wim_dentry *parent, struct wim_dentry *child);
 
 extern int
 rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,

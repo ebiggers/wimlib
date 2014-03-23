@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -1789,8 +1789,8 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 	if (!ctx->ops->supports_case_sensitive_filenames)
 	{
 		struct wim_dentry *other;
-		list_for_each_entry(other, &dentry->case_insensitive_conflict_list,
-				    case_insensitive_conflict_list)
+		list_for_each_entry(other, &dentry->d_ci_conflict_list,
+				    d_ci_conflict_list)
 		{
 			if (dentry_in_list(other)) {
 				if (ctx->extract_flags &
