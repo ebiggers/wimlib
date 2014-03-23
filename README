@@ -36,6 +36,10 @@ images.
 A WIM file may be either stand-alone or split into multiple parts.  Split WIMs
 are read-only and cannot be modified.
 
+Since version 1.6.0, wimlib also supports ESD (.esd) files, except when
+encrypted.  These are still WIM files but they use a newer version of the file
+format.
+
                              IMAGEX IMPLEMENTATION
 
 wimlib itself is a C library, and it provides a documented public API (See:

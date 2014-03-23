@@ -57,6 +57,9 @@ following:
     uncompressed files in compressed directories, or files with alternate data
     streams and multiple hard links.
 
+  * wimlib-imagex also supports ESD (.esd) files, except when encrypted.  (These
+    use a newer version of the WIM file format.)
+
   * wimlib and wimlib-imagex are free software, so you can modify and/or audit
     the source code.
 
