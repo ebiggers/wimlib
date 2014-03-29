@@ -1193,9 +1193,11 @@ release_extra_refcnts(struct wimfs_context *ctx)
 	struct wim_lookup_table *lookup_table = ctx->wim->lookup_table;
 	struct wim_lookup_table_entry *lte, *tmp;
 
-	list_for_each_entry_safe(lte, tmp, list, orig_stream_list)
-		while (lte->out_refcnt--)
+	list_for_each_entry_safe(lte, tmp, list, orig_stream_list) {
+		u32 n = lte->out_refcnt;
+		while (n--)
 			lte_decrement_refcnt(lte, lookup_table);
+	}
 }
 
 /* Moves the currently selected image, which may have been modified, to a new
