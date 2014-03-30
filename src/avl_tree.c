@@ -397,61 +397,80 @@ avl_handle_subtree_shrink(struct avl_tree_node *parent,
 	return parent;
 }
 
-/* Swaps node X, which must have 2 children, with its in-order successor.
- * This adjusts all the necessary pointers and balance factors.  */
-static AVL_INLINE void
-avl_tree_swap_with_successor(struct avl_tree_node * const X)
+/* Swaps node X, which must have 2 children, with its in-order successor, then
+ * unlinks node X.  Returns the parent of X just before unlinking, without its
+ * balance factor having been updated to account for the unlink.  */
+static AVL_INLINE struct avl_tree_node *
+avl_tree_swap_with_successor(struct avl_tree_node **root_ptr,
+			     struct avl_tree_node *X,
+			     bool *left_deleted_ret)
 {
-	struct avl_tree_node * const Y		= avl_tree_next_in_order(X);
-	struct avl_tree_node * const Y_right	= Y->right;
-	struct avl_tree_node * const Y_parent   = avl_get_parent(Y);
-	struct avl_tree_node * const X_parent	= avl_get_parent(X);
-	const int Y_balance_factor		= avl_get_balance_factor(Y);
+	struct avl_tree_node *Y, *P, *ret;
 
-	/* Set child pointer to Y when placed in X's position  */
-	if (X_parent) {
-		if (X == X_parent->left)
-			X_parent->left = Y;
-		else
-			X_parent->right = Y;
-	}
+	Y = X->right;
+	if (!Y->left) {
+		/*
+		 *     P?           P?           P?
+		 *     |            |            |
+		 *     X            Y            Y
+		 *    / \          / \          / \
+		 *   A   Y    =>  A   X    =>  A   B?
+		 *      / \          / \
+		 *    (0)  B?      (0)  B?
+		 *
+		 * [ X removed, Y returned ]
+		 */
+		ret = Y;
+		*left_deleted_ret = false;
+	} else {
+		struct avl_tree_node *Q;
 
-	/* Set child pointer to X when placed in Y's position.  Also set
-	 * the right pointer of Y (it may point to X if the nodes are
-	 * adjacent)  */
-	if (Y_parent != X) {
-		if (Y == Y_parent->left)
-			Y_parent->left = X;
-		else
-			Y_parent->right = X;
+		do {
+			Q = Y;
+			Y = Y->left;
+		} while (Y->left);
+
+		/*
+		 *     P?           P?           P?
+		 *     |            |            |
+		 *     X            Y            Y
+		 *    / \          / \          / \
+		 *   A   ...  =>  A  ...   =>  A  ...
+		 *       |            |            |
+		 *       Q            Q            Q
+		 *      /            /            /
+		 *     Y            X            B?
+		 *    / \          / \
+		 *  (0)  B?      (0)  B?
+		 *
+		 *
+		 * [ X removed, Q returned ]
+		 */
+
+		Q->left = Y->right;
+		if (Q->left)
+			avl_set_parent(Q->left, Q);
 		Y->right = X->right;
-	} else {
-		Y->right = X;
-	}
-
-	/* Set parent pointer to X when placed in Y's position  */
-	if (Y_right)
-		avl_set_parent(Y_right, X);
-
-	/* Note: Y has no left child since it is the in-order sucessor of X.  */
-
-	/* Set parent pointers to Y when placed in X's position, as well as X's
-	 * parent when placed in Y's position.  */
-	avl_set_parent(X->left, Y);
-	if (X->right != Y) {
 		avl_set_parent(X->right, Y);
-		avl_set_parent(X, Y_parent);
-	} else {
-		avl_set_parent(X, Y);
+		ret = Q;
+		*left_deleted_ret = true;
 	}
 
-	avl_set_parent(Y, X_parent);
 	Y->left = X->left;
-	avl_set_balance_factor(Y, avl_get_balance_factor(X));
+	avl_set_parent(X->left, Y);
 
-	X->left = NULL;
-	X->right = Y_right;
-	avl_set_balance_factor(X, Y_balance_factor);
+	Y->parent_balance = X->parent_balance;
+	P = avl_get_parent(X);
+	if (P) {
+		if (P->left == X)
+			P->left = Y;
+		else
+			P->right = Y;
+	} else {
+		*root_ptr = Y;
+	}
+
+	return ret;
 }
 
 /* Removes the specified @node from the AVL tree.  @root_ptr must point to the
@@ -466,33 +485,37 @@ avl_tree_remove(struct avl_tree_node **root_ptr, struct avl_tree_node *node)
 	struct avl_tree_node *child, *parent;
 	bool left_deleted;
 
-	if (node->left && node->right)
-		avl_tree_swap_with_successor(node);
-
-	/* Unlink @node  */
-	child = node->left ? node->left : node->right;
-	parent = avl_get_parent(node);
-	if (parent) {
-		if (node == parent->left) {
-			parent->left = child;
-			left_deleted = true;
-		} else {
-			parent->right = child;
-			left_deleted = false;
-		}
+	if (node->left && node->right) {
+		parent = avl_tree_swap_with_successor(root_ptr, node,
+						      &left_deleted);
 	} else {
-		*root_ptr = child;
+		/* Unlink @node  */
+		child = node->left ? node->left : node->right;
+		parent = avl_get_parent(node);
+		if (parent) {
+			if (node == parent->left) {
+				parent->left = child;
+				left_deleted = true;
+			} else {
+				parent->right = child;
+				left_deleted = false;
+			}
+		} else {
+			*root_ptr = child;
+		}
+		if (child)
+			avl_set_parent(child, parent);
+		if (!parent)
+			return;
 	}
-	if (child)
-		avl_set_parent(child, parent);
 
 	/* Rebalance the tree  */
-	while (parent) {
+	do {
 		if (left_deleted)
 			parent = avl_handle_subtree_shrink(parent, +1, &left_deleted);
 		else
 			parent = avl_handle_subtree_shrink(parent, -1, &left_deleted);
-	}
+	} while (parent);
 
 	/* Due to rotations, *root_ptr may no longer point to the root of the
 	 * tree.  Fix it.  */
