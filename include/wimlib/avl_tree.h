@@ -98,8 +98,7 @@ avl_tree_rebalance_after_insert(struct avl_tree_node **root_ptr,
  *	Comparison callback.  Must return < 0, 0, or > 0 if the first argument
  *	is less than, equal to, or greater than the second argument,
  *	respectively.  The first argument will be @cmp_ctx and the second
- *	argument will be a pointer to the AVL tree node contained in the item
- *	inserted into the AVL tree.
+ *	argument will be a pointer to the AVL tree node of an item in the tree.
  *
  * Returns a pointer to the AVL tree node embedded in the resulting item, or
  * NULL if the item was not found.
