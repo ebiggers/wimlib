@@ -110,6 +110,14 @@ avl_set_parent(struct avl_tree_node *node, struct avl_tree_node *parent)
 		(node->parent_balance & 3) | (uintptr_t)parent;
 }
 
+/* Sets the parent and balance factor of the AVL tree @node.  */
+static AVL_INLINE void
+avl_set_parent_balance(struct avl_tree_node *node, struct avl_tree_node *parent,
+		       int balance_factor)
+{
+	node->parent_balance = (uintptr_t)parent | (balance_factor + 1);
+}
+
 /* Returns the balance factor of the specified AVL tree node --- that is, the
  * height of its right subtree minus the height of its left subtree.  */
 static AVL_INLINE int
@@ -162,7 +170,8 @@ avl_adjust_balance_factor(struct avl_tree_node *node, int amount)
  * This updates pointers but not balance factors!
  */
 static AVL_INLINE void
-avl_rotate(struct avl_tree_node * const A, const int sign)
+avl_rotate(struct avl_tree_node ** const root_ptr,
+	   struct avl_tree_node * const A, const int sign)
 {
 	struct avl_tree_node * const B = avl_get_child(A, -sign);
 	struct avl_tree_node * const C = avl_get_child(A, +sign);
@@ -184,29 +193,84 @@ avl_rotate(struct avl_tree_node * const A, const int sign)
 			avl_set_child(X, +sign, B);
 		else
 			avl_set_child(X, -sign, B);
+	} else {
+		*root_ptr = B;
 	}
 }
 
-/* See description in avl_handle_subtree_growth()  */
+/*
+ * Template for performing a double rotation ---
+ *
+ * Rotate counterclockwise (left) rooted at B, then clockwise (right) rooted at
+ * A (sign > 0):
+ *
+ *           A             A           E
+ *          / \           / \        /   \
+ *         B   C   =>    E   C  =>  B     A
+ *        / \           / \        / \   / \
+ *       D   E         B   G      D   F G   C
+ *          / \       / \
+ *         F   G     D   F
+ *
+ * Rotate clockwise (right) rooted at B, then counterclockwise (left) rooted at
+ * A (sign < 0):
+ *
+ *         A           A               E
+ *        / \         / \            /   \
+ *       C   B   =>  C   E    =>    A     B
+ *          / \         / \        / \   / \
+ *         E   D       G   B      C   G F   D
+ *        / \             / \
+ *       G   F           F   D
+ *
+ * Returns a pointer to E, the new root, and updates balance factors.  Except
+ * for that, this is equivalent to:
+ *	avl_rotate(root_ptr, B, -sign);
+ *	avl_rotate(root_ptr, A, +sign);
+ *
+ */
 static AVL_INLINE struct avl_tree_node *
-avl_do_double_rotate(struct avl_tree_node * const B,
+avl_do_double_rotate(struct avl_tree_node ** const root_ptr,
+		     struct avl_tree_node * const B,
 		     struct avl_tree_node * const A, const int sign)
 {
-
-	struct avl_tree_node * const E = avl_get_child(B, -sign);
+	struct avl_tree_node * const E = avl_get_child(B, +sign);
+	struct avl_tree_node * const F = avl_get_child(E, -sign);
+	struct avl_tree_node * const G = avl_get_child(E, +sign);
+	struct avl_tree_node * const X = avl_get_parent(A);
 	const int e = avl_get_balance_factor(E);
 
-	avl_rotate(B, +sign);
-	avl_rotate(A, -sign);
-	avl_set_balance_factor(A, ((sign * e <= 0) ? 0 : -e));
-	avl_set_balance_factor(B, ((sign * e >= 0) ? 0 : -e));
-	avl_set_balance_factor(E, 0);
+	avl_set_child(A, -sign, G);
+	avl_set_parent_balance(A, E, ((sign * e >= 0) ? 0 : -e));
+
+	avl_set_child(B, +sign, F);
+	avl_set_parent_balance(B, E, ((sign * e <= 0) ? 0 : -e));
+
+	avl_set_child(E, +sign, A);
+	avl_set_child(E, -sign, B);
+	avl_set_parent_balance(E, X, 0);
+
+	if (G)
+		avl_set_parent(G, A);
+
+	if (F)
+		avl_set_parent(F, B);
+
+	if (X) {
+		if (avl_get_child(X, +sign) == A)
+			avl_set_child(X, +sign, E);
+		else
+			avl_set_child(X, -sign, E);
+	} else {
+		*root_ptr = E;
+	}
 
 	return E;
 }
 
 static AVL_INLINE bool
-avl_handle_subtree_growth(struct avl_tree_node * const node,
+avl_handle_subtree_growth(struct avl_tree_node ** const root_ptr,
+			  struct avl_tree_node * const node,
 			  struct avl_tree_node * const parent,
 			  const int sign)
 {
@@ -214,8 +278,9 @@ avl_handle_subtree_growth(struct avl_tree_node * const node,
 	 * Adjust @parent's balance factor and check whether rotations need to
 	 * be done.  */
 
-	const int old_balance_factor = avl_get_balance_factor(parent);
-	const int new_balance_factor = old_balance_factor + sign;
+	int old_balance_factor, new_balance_factor;
+
+	old_balance_factor = avl_get_balance_factor(parent);
 
 	if (old_balance_factor == 0) {
 		/* Parent has increased in height but is still sufficiently
@@ -223,6 +288,8 @@ avl_handle_subtree_growth(struct avl_tree_node * const node,
 		avl_adjust_balance_factor(parent, sign);
 		return false;
 	}
+
+	new_balance_factor = old_balance_factor + sign;
 
 	if (new_balance_factor == 0) {
 		/* Parent is balanced; nothing more to to.  */
@@ -270,10 +337,9 @@ avl_handle_subtree_growth(struct avl_tree_node * const node,
 		 *	balance(A) = 0
 		 */
 
-		avl_rotate(parent, -sign);
-
-		avl_set_balance_factor(node, 0);   /* B */
-		avl_set_balance_factor(parent, 0); /* A */
+		avl_rotate(root_ptr, parent, -sign);
+		avl_adjust_balance_factor(parent, -sign); /* A */
+		avl_adjust_balance_factor(node, -sign);   /* B */
 	} else {
 		/* Child node (@node, also B below) is right-heavy.
 		 * It must have balance_factor == +1.
@@ -309,7 +375,7 @@ avl_handle_subtree_growth(struct avl_tree_node * const node,
 		 *	height(E) = x + 2
 		 *	balance(E) = 0
 		 */
-		avl_do_double_rotate(node, parent, sign);
+		avl_do_double_rotate(root_ptr, node, parent, -sign);
 	}
 	return true;
 }
@@ -332,17 +398,17 @@ avl_tree_rebalance_after_insert(struct avl_tree_node **root_ptr,
 		/* Height of @node subtree has increased by 1  */
 
 		if (node == parent->left)
-			done = avl_handle_subtree_growth(node, parent, -1);
+			done = avl_handle_subtree_growth(root_ptr, node,
+							 parent, -1);
 		else
-			done = avl_handle_subtree_growth(node, parent, +1);
+			done = avl_handle_subtree_growth(root_ptr, node,
+							 parent, +1);
 	}
-	/* Due to rotations, *root_ptr may no longer be the root of the tree  */
-	while (avl_get_parent(*root_ptr))
-		*root_ptr = avl_get_parent(*root_ptr);
 }
 
 static AVL_INLINE struct avl_tree_node *
-avl_handle_subtree_shrink(struct avl_tree_node *parent,
+avl_handle_subtree_shrink(struct avl_tree_node ** const root_ptr,
+			  struct avl_tree_node *parent,
 			  const int sign,
 			  bool * const left_deleted_ret)
 {
@@ -376,19 +442,57 @@ avl_handle_subtree_shrink(struct avl_tree_node *parent,
 		 * child node has a balance factor of 0.  */
 
 		if (sign * avl_get_balance_factor(node) >= 0) {
-			avl_rotate(parent, -sign);
+			avl_rotate(root_ptr, parent, -sign);
 
 			if (avl_get_balance_factor(node) == 0) {
-				avl_set_balance_factor(node,   -sign);
-				avl_set_balance_factor(parent, +sign);
+				/* Child node (@node, also B below) is balanced.
+				 * Do a clockwise ("right") rotation rooted at
+				 * @parent (A below):
+				 *
+				 *           A              B
+				 *          / \           /   \
+				 *         B   C   =>    D     A
+				 *        / \           / \   / \
+				 *       D   E         F   G E   C
+				 *      / \
+				 *     F   G
+				 *
+				 * Before the rotation:
+				 *	balance(A) = -2
+				 *	balance(B) =  0
+				 * Let x = height(C).  Then:
+				 *	height(B) = x + 2
+				 *	height(D) = x + 1
+				 *	height(E) = x + 1
+				 *	max(height(F), height(G)) = x.
+				 *
+				 * After the rotation:
+				 *	height(D) = max(height(F), height(G)) + 1
+				 *		  = x + 1
+				 *	height(A) = max(height(E), height(C)) + 1
+				 *		  = max(x + 1, x) + 1 = x + 2
+				 *	balance(A) = -1
+				 *	balance(B) = +1
+				 */
+
+				/* A: -2 => -1 (sign < 0)
+				 * or +2 => +1 (sign > 0)
+				 * No change needed --- that's the same as
+				 * old_balance_factor.  */
+
+				/* B: 0 => +1 (sign < 0)
+				 * or 0 => -1 (sign > 0)  */
+				avl_adjust_balance_factor(node, -sign);
+
 				/* Height is unchanged; nothing more to do.  */
 				return NULL;
 			} else {
-				avl_set_balance_factor(node, 0);
-				avl_set_balance_factor(parent, 0);
+				avl_adjust_balance_factor(parent, -sign);
+				avl_adjust_balance_factor(node, -sign);
 			}
 		} else {
-			node = avl_do_double_rotate(node, parent, sign);
+			node = avl_do_double_rotate(root_ptr, node,
+						    parent, -sign);
 		}
 	}
 	parent = avl_get_parent(node);
@@ -512,14 +616,10 @@ avl_tree_remove(struct avl_tree_node **root_ptr, struct avl_tree_node *node)
 	/* Rebalance the tree  */
 	do {
 		if (left_deleted)
-			parent = avl_handle_subtree_shrink(parent, +1, &left_deleted);
+			parent = avl_handle_subtree_shrink(root_ptr, parent,
+							   +1, &left_deleted);
 		else
-			parent = avl_handle_subtree_shrink(parent, -1, &left_deleted);
+			parent = avl_handle_subtree_shrink(root_ptr, parent,
+							   -1, &left_deleted);
 	} while (parent);
-
-	/* Due to rotations, *root_ptr may no longer point to the root of the
-	 * tree.  Fix it.  */
-	if (*root_ptr)
-		while (avl_get_parent(*root_ptr))
-			*root_ptr = avl_get_parent(*root_ptr);
 }
