@@ -16,11 +16,13 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <inttypes.h>		/* for uintptr_t */
-#include <wimlib/compiler.h>	/* for _always_inline_attribute. You can
-				   instead define it below if you want.  */
+#include <inttypes.h> /* for uintptr_t */
 
-#define AVL_INLINE _always_inline_attribute
+#ifdef __GNUC__
+#  define AVL_INLINE inline __attribute__((always_inline))
+#else
+#  define AVL_INLINE inline
+#endif
 
 /* Node in an AVL tree.  Embed this in some other data structure.  */
 struct avl_tree_node {
