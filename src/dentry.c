@@ -313,7 +313,7 @@ do_for_dentry_in_tree(struct wim_dentry *dentry,
 		return ret;
 
 	for_dentry_child(child, dentry) {
-		ret = for_dentry_in_tree(child, visitor, arg);
+		ret = do_for_dentry_in_tree(child, visitor, arg);
 		if (unlikely(ret))
 			return ret;
 	}
@@ -329,7 +329,7 @@ do_for_dentry_in_tree_depth(struct wim_dentry *dentry,
 	struct wim_dentry *child;
 
 	for_dentry_child_postorder(child, dentry) {
-		ret = for_dentry_in_tree_depth(child, visitor, arg);
+		ret = do_for_dentry_in_tree_depth(child, visitor, arg);
 		if (unlikely(ret))
 			return ret;
 	}
@@ -1745,7 +1745,7 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 static int
 write_dir_dentries(struct wim_dentry *dir, void *_pp)
 {
-	if (dentry_is_directory(dir)) {
+	if (dir->subdir_offset != 0) {
 		u8 **pp = _pp;
 		u8 *p = *pp;
 		struct wim_dentry *child;
