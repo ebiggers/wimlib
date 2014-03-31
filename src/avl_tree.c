@@ -274,7 +274,9 @@ avl_handle_subtree_growth(struct avl_tree_node ** const root_ptr,
 			  struct avl_tree_node * const parent,
 			  const int sign)
 {
-	/* Height of @node subtree of @parent has increased by 1.
+	/* The subtree rooted at @node, which is a child of @parent, has
+	 * increased by 1.
+	 *
 	 * Adjust @parent's balance factor and check whether rotations need to
 	 * be done.  */
 
@@ -386,24 +388,47 @@ avl_tree_rebalance_after_insert(struct avl_tree_node **root_ptr,
 				struct avl_tree_node *inserted)
 {
 	struct avl_tree_node *node, *parent;
-	bool done = false;
+	bool done;
 
 	inserted->left = NULL;
 	inserted->right = NULL;
 
-	for (node = inserted, parent = avl_get_parent(node);
-	     parent && !done;
-	     node = parent, parent = avl_get_parent(parent))
-	{
-		/* Height of @node subtree has increased by 1  */
+	node = inserted;
 
+	/* Adjust balance factor of new node's parent.
+	 * No rotation will need to be done at this level.  */
+
+	parent = avl_get_parent(node);
+	if (!parent)
+		return;
+
+	if (node == parent->left)
+		avl_adjust_balance_factor(parent, -1);
+	else
+		avl_adjust_balance_factor(parent, +1);
+
+	if (avl_get_balance_factor(parent) == 0)
+		/* @parent did not change in height.  Nothing more to do.  */
+		return;
+
+	/* The subtree rooted at @parent increased in height by 1.  */
+
+	do {
+		/* Adjust balance factor of next ancestor.  */
+
+		node = parent;
+		parent = avl_get_parent(node);
+		if (!parent)
+			return;
+
+		/* The subtree rooted at @node has increased in height by 1.  */
 		if (node == parent->left)
 			done = avl_handle_subtree_growth(root_ptr, node,
 							 parent, -1);
 		else
 			done = avl_handle_subtree_growth(root_ptr, node,
 							 parent, +1);
-	}
+	} while (!done);
 }
 
 static AVL_INLINE struct avl_tree_node *
