@@ -400,7 +400,7 @@ static u16 upcase[65536];
  * Copyright (c) 2008-2011 Jean-Pierre Andre
  * Copyright (c) 2008      Bernhard Kaindl
  *
- * License GPLv2 or later.  (Or may actually be LGPL since it's in libntfs-3g.)
+ * License GPLv2 or later.
  *
  * The expanded table itself is the same as that used by Windows Vista for
  * NTFS case insensitivity.
