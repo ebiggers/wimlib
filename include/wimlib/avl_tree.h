@@ -103,6 +103,34 @@ avl_tree_rebalance_after_insert(struct avl_tree_node **root_ptr,
  *
  * Returns a pointer to the AVL tree node of the resulting item, or NULL if the
  * item was not found.
+ *
+ * Example:
+ *
+ * struct int_wrapper {
+ *	int data;
+ *	struct avl_tree_node index_node;
+ * };
+ *
+ * static int _avl_cmp_int_to_node(const void *intptr,
+ *				   const struct avl_tree_node *nodeptr)
+ * {
+ *	int n1 = *(const int *)intptr;
+ *	int n2 = avl_tree_entry(nodeptr, struct int_wrapper, index_node)->data;
+ *	if (n1 < n2)
+ *		return -1;
+ *	else if (n1 > n2)
+ *		return 1;
+ *	else
+ *		return 0;
+ * }
+ *
+ * bool contains_int(struct avl_tree_node *root, int n)
+ * {
+ *	struct avl_tree_node *result;
+ *
+ *	result = avl_tree_lookup(root, &n, _avl_cmp_int_to_node);
+ *	return result ? true : false;
+ * }
  */
 static AVL_INLINE struct avl_tree_node *
 avl_tree_lookup(const struct avl_tree_node *root,
@@ -164,6 +192,40 @@ avl_tree_lookup_node(const struct avl_tree_node *root,
  * @item and returns NULL.  Otherwise does nothing and returns a pointer to the
  * AVL tree node embedded in the previously-inserted item which compared equal
  * to @item.
+ *
+ * Example:
+ *
+ * struct int_wrapper {
+ *	int data;
+ *	struct avl_tree_node index_node;
+ * };
+ *
+ * #define GET_DATA(i) avl_tree_entry((i), struct int_wrapper, index_node)->data
+ *
+ * static int _avl_cmp_ints(const struct avl_tree_node *node1,
+ *			    const struct avl_tree_node *node2)
+ * {
+ *	int n1 = GET_DATA(node1);
+ *	int n2 = GET_DATA(node2);
+ *	if (n1 < n2)
+ *		return -1;
+ *	else if (n1 > n2)
+ *		return 1;
+ *	else
+ *		return 0;
+ * }
+ *
+ * bool insert_int(struct avl_tree_node **root_ptr, int data)
+ * {
+ *	struct int_wrapper *i = malloc(sizeof(struct int_wrapper));
+ *	i->data = data;
+ *	if (avl_tree_insert(root_ptr, &i->index_node, _avl_cmp_ints)) {
+ *		// Duplicate.
+ *		free(i);
+ *		return false;
+ *	}
+ *	return true;
+ * }
  */
 static AVL_INLINE struct avl_tree_node *
 avl_tree_insert(struct avl_tree_node **root_ptr,
@@ -209,5 +271,57 @@ avl_tree_first_in_postorder(const struct avl_tree_node *root);
 extern struct avl_tree_node *
 avl_tree_next_in_postorder(const struct avl_tree_node *prev,
 			   const struct avl_tree_node *prev_parent);
+
+/*
+ * Iterate through the nodes in an AVL tree in sorted order.
+ * You may not modify the tree during the iteration.
+ *
+ * @child_struct
+ *	Variable that will receive a pointer to each struct inserted into the
+ *	tree.
+ * @root
+ *	Root of the AVL tree.
+ * @struct_name
+ *	Type of *child_struct.
+ * @struct_member
+ *	Member of @struct_name type that is the AVL tree node.
+ *
+ * Example:
+ *
+ * struct int_wrapper {
+ *	int data;
+ *	struct avl_tree_node index_node;
+ * };
+ *
+ * void print_ints(struct avl_tree_node *root)
+ * {
+ *	struct int_wrapper *i;
+ *
+ *	avl_tree_for_each_in_order(i, root, struct int_wrapper, index_node)
+ *		printf("%d\n", i->data);
+ * }
+ */
+#define avl_tree_for_each_in_order(child_struct, root,			\
+				   struct_name, struct_member)		\
+	for (struct avl_tree_node *_cur =				\
+		avl_tree_first_in_order(root);				\
+	     _cur && ((child_struct) =					\
+		      avl_tree_entry(_cur, struct_name,			\
+				     struct_member), 1);		\
+	     _cur = avl_tree_next_in_order(_cur))
+
+/*
+ * Like avl_tree_for_each_in_order(), but iterates through the nodes in
+ * postorder, so the current node may be deleted or freed.
+ */
+#define avl_tree_for_each_in_postorder(child_struct, root,		\
+				       struct_name, struct_member)	\
+	for (struct avl_tree_node *_cur =				\
+		avl_tree_first_in_postorder(root), *_parent;		\
+	     _cur && ((child_struct) =					\
+		      avl_tree_entry(_cur, struct_name,			\
+				     struct_member), 1)			\
+	          && (_parent = avl_get_parent(_cur), 1);		\
+	     _cur = avl_tree_next_in_postorder(_cur, _parent))
 
 #endif /* _AVL_TREE_H_ */

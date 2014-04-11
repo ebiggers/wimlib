@@ -159,12 +159,8 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 /* Iterate through each @child dentry of the @dir directory inode,
  * in sorted order (by case sensitive name).  */
 #define for_inode_child(child, dir)						\
-	for (struct avl_tree_node *_tmp =					\
-			avl_tree_first_in_order((dir)->i_children);		\
-	     _tmp &&								\
-		(((child) = avl_tree_entry(_tmp, struct wim_dentry,		\
-					 d_index_node)), 1);			\
-	     _tmp = avl_tree_next_in_order(_tmp))
+	avl_tree_for_each_in_order((child), (dir)->i_children,			\
+				   struct wim_dentry, d_index_node)
 
 /* Iterate through each @child dentry of the @parent dentry,
  * in sorted order (by case sensitive name).  */
@@ -174,14 +170,8 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 /* Iterate through each @child dentry of the @dir directory inode,
  * in postorder (safe for freeing the child dentries).  */
 #define for_inode_child_postorder(child, dir)				\
-	for (struct avl_tree_node *_parent, *_tmp =			\
-			avl_tree_first_in_postorder(			\
-				(dir)->i_children);			\
-	     _tmp &&							\
-		(((child) = avl_tree_entry(_tmp, struct wim_dentry,	\
-					 d_index_node)), 1) &&		\
-		((_parent = avl_get_parent(_tmp)), 1);			\
-	     _tmp = avl_tree_next_in_postorder(_tmp, _parent))
+	avl_tree_for_each_in_postorder((child), (dir)->i_children,	\
+				       struct wim_dentry, d_index_node)
 
 /* Iterate through each @child dentry of the @parent dentry,
  * in postorder (safe for freeing the child dentries).  */
