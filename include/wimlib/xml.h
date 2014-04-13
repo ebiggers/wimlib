@@ -19,6 +19,9 @@ wim_info_get_image_total_bytes(const struct wim_info *info, int image);
 extern unsigned
 wim_info_get_num_images(const struct wim_info *info);
 
+extern void
+wim_info_set_wimboot(struct wim_info *info, int image, bool value);
+
 extern int
 xml_export_image(const struct wim_info *old_wim_info, int image,
 		 struct wim_info **new_wim_info_p,

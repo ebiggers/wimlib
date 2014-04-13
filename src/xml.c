@@ -89,6 +89,7 @@ struct image_info {
 	tchar *display_name;
 	tchar *display_description;
 	tchar *flags;
+	bool wimboot;
 	struct wim_lookup_table *lookup_table; /* temporary field */
 };
 
@@ -165,6 +166,12 @@ wim_info_get_num_images(const struct wim_info *info)
 		return info->num_images;
 	else
 		return 0;
+}
+
+void
+wim_info_set_wimboot(struct wim_info *info, int image, bool value)
+{
+	info->images[image - 1].wimboot = value;
 }
 
 /* Architecture constants are from w64 mingw winnt.h  */
@@ -520,6 +527,10 @@ xml_read_image_info(xmlNode *image_node, struct image_info *image_info)
 			ret = node_get_string(child, &image_info->display_name);
 		} else if (node_name_is(child, "DISPLAYDESCRIPTION")) {
 			ret = node_get_string(child, &image_info->display_description);
+		} else if (node_name_is(child, "WIMBOOT")) {
+			if (node_get_u64(child) == 1) {
+				image_info->wimboot = true;
+			}
 		}
 		if (ret != 0)
 			return ret;
@@ -944,6 +955,12 @@ xml_write_image_info(xmlTextWriter *writer, const struct image_info *image_info)
 	if (rc)
 		return rc;
 
+	if (image_info->wimboot) {
+		rc = xmlTextWriterWriteFormatElement(writer, "WIMBOOT", "%d", 1);
+		if (rc < 0)
+			return rc;
+	}
+
 	rc = xmlTextWriterEndElement(writer); /* </IMAGE> */
 	if (rc < 0)
 		return rc;
@@ -1336,6 +1353,8 @@ print_image_info(const struct wim_info *wim_info, int image)
 		print_windows_info(&image_info->windows_info);
 	if (image_info->flags)
 		tprintf(T("Flags:                  %"TS"\n"), image_info->flags);
+	tprintf(T("WIMBoot compatible:     %"TS"\n"),
+		image_info->wimboot ? T("yes") : T("no"));
 	tputchar('\n');
 }
 

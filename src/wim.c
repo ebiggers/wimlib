@@ -130,7 +130,7 @@ wim_chunk_size_valid(u32 chunk_size, int ctype)
 		return order >= 15 && order <= 21;
 
 	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		return order >= 15 && order <= 26;
+		return order >= 12 && order <= 26;
 	case WIMLIB_COMPRESSION_TYPE_LZMS:
 		return order >= 15 && order <= 30;
 	}
@@ -621,7 +621,8 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 	if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESSION) {
 		if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_LZX) {
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
-		} else if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_XPRESS) {
+		} else if (wim->hdr.flags & (WIM_HDR_FLAG_COMPRESS_XPRESS |
+					     WIM_HDR_FLAG_COMPRESS_XPRESS_2)) {
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
 		} else if (wim->hdr.flags & WIM_HDR_FLAG_COMPRESS_LZMS) {
 			wim->compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
