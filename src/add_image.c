@@ -139,7 +139,8 @@ capture_sources_to_add_cmds(const struct wimlib_capture_source *sources,
 			      sources[i].fs_source_path,
 			      sources[i].wim_target_path);
 			add_cmds[i].op = WIMLIB_UPDATE_OP_ADD;
-			add_cmds[i].add.add_flags = add_flags & ~WIMLIB_ADD_FLAG_BOOT;
+			add_cmds[i].add.add_flags = add_flags & ~(WIMLIB_ADD_FLAG_BOOT |
+								  WIMLIB_ADD_FLAG_WIMBOOT);
 			add_cmds[i].add.config = (struct wimlib_capture_config*)config;
 			add_cmds[i].add.fs_source_path = sources[i].fs_source_path;
 			add_cmds[i].add.wim_target_path = sources[i].wim_target_path;
@@ -191,6 +192,8 @@ wimlib_add_image_multisource(WIMStruct *wim,
 	/* Success; set boot index if requested. */
 	if (add_flags & WIMLIB_ADD_FLAG_BOOT)
 		wim->hdr.boot_idx = wim->hdr.image_count;
+	if (add_flags & WIMLIB_ADD_FLAG_WIMBOOT)
+		wim_info_set_wimboot(wim->wim_info, wim->hdr.image_count, true);
 	ret = 0;
 	goto out;
 out_delete_image:

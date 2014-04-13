@@ -1381,6 +1381,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  */
 #define WIMLIB_ADD_FLAG_WINCONFIG		0x00000800
 
+/** Capture image as WIMBoot compatible.  */
+#define WIMLIB_ADD_FLAG_WIMBOOT			0x00001000
+
 #define WIMLIB_ADD_IMAGE_FLAG_NTFS		WIMLIB_ADD_FLAG_NTFS
 #define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	WIMLIB_ADD_FLAG_DEREFERENCE
 #define WIMLIB_ADD_IMAGE_FLAG_VERBOSE		WIMLIB_ADD_FLAG_VERBOSE
@@ -1394,6 +1397,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_ADD_IMAGE_FLAG_NO_UNSUPPORTED_EXCLUDE \
 						WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE
 #define WIMLIB_ADD_IMAGE_FLAG_WINCONFIG		WIMLIB_ADD_FLAG_WINCONFIG
+#define WIMLIB_ADD_IMAGE_FLAG_WIMBOOT		WIMLIB_ADD_FLAG_WIMBOOT
+
 
 /** @} */
 /** @ingroup G_modifying_wims

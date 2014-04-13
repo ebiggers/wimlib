@@ -465,8 +465,10 @@ check_add_command(struct wimlib_update_command *cmd,
 	if (add_flags & ~(WIMLIB_ADD_FLAG_NTFS |
 			  WIMLIB_ADD_FLAG_DEREFERENCE |
 			  WIMLIB_ADD_FLAG_VERBOSE |
-			  /* BOOT doesn't make sense for wimlib_update_image()  */
+			  /* BOOT doesn't make sense for wimlib_update_image().
+			   * Same with WIMBOOT.  */
 			  /*WIMLIB_ADD_FLAG_BOOT |*/
+			  /*WIMLIB_ADD_FLAG_WIMBOOT |*/
 			  WIMLIB_ADD_FLAG_UNIX_DATA |
 			  WIMLIB_ADD_FLAG_NO_ACLS |
 			  WIMLIB_ADD_FLAG_STRICT_ACLS |
