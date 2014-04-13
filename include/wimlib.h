@@ -1227,6 +1227,7 @@ struct wimlib_dir_entry {
 #define WIMLIB_REPARSE_TAG_DFS			0x8000000A
 #define WIMLIB_REPARSE_TAG_DFSR			0x80000012
 #define WIMLIB_REPARSE_TAG_FILTER_MANAGER	0x8000000B
+#define WIMLIB_REPARSE_TAG_WIMBOOT		0x80000017
 #define WIMLIB_REPARSE_TAG_SYMLINK		0xA000000C
 	/** If the file is a reparse point (FILE_ATTRIBUTE_DIRECTORY set in the
 	 * attributes), this will give the reparse tag.  This tells you whether
