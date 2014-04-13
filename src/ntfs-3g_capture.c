@@ -245,12 +245,19 @@ capture_ntfs_streams(struct wim_inode *inode,
 			 * dentry's inode. */
 			if (inode->i_lte) {
 				if (lte) {
-					ERROR("Found two un-named data streams for \"%s\" "
-					      "(sizes = %"PRIu64", %"PRIu64")",
-					      path, inode->i_lte->size,
-					      lte->size);
-					ret = WIMLIB_ERR_NTFS_3G;
-					goto out_free_lte;
+					if (!(inode->i_attributes &
+					      FILE_ATTRIBUTE_REPARSE_POINT))
+					{
+						WARNING("Found two un-named "
+							"data streams for \"%s\" "
+							"(sizes = %"PRIu64", "
+							"%"PRIu64")",
+							path,
+							inode->i_lte->size,
+							lte->size);
+					}
+					free_lookup_table_entry(lte);
+					continue;
 				}
 			} else {
 				stream_id = 0;
@@ -528,7 +535,6 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	int ret;
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode = NULL;
-	ATTR_TYPES stream_type;
 
 	if (exclude_path(path, path_len, params->config, false)) {
 		/* Exclude a file or directory tree based on the capture
@@ -584,20 +590,30 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	inode->i_attributes       = le32_to_cpu(attributes);
 	inode->i_resolved         = 1;
 
-	if (attributes & FILE_ATTR_REPARSE_POINT)
-		stream_type = AT_REPARSE_POINT;
-	else
-		stream_type = AT_DATA;
+	/* Capture streams.  */
 
-	/* Capture the file's streams; more specifically, this is supposed to:
+	if (attributes & FILE_ATTR_REPARSE_POINT) {
+		/* Capture reparse data stream.  */
+		ret = capture_ntfs_streams(inode, ni, path, path_len,
+					   params->unhashed_streams,
+					   vol, AT_REPARSE_POINT);
+		if (ret)
+			goto out;
+	}
+
+	/* Capture data streams.
 	 *
-	 * - Regular files: capture unnamed data stream and any named data
-	 *   streams
-	 * - Directories: capture any named data streams
-	 * - Reparse points: capture reparse data only
-	 */
+	 * Directories should not have an unnamed data stream, but they may have
+	 * named data streams.
+	 *
+	 * Reparse points may have an unnamed data stream (which will be ignored
+	 * in favor of the reparse data stream), and they also may have named
+	 * data streams.
+	 *
+	 * Regular files can have an unnamed data stream as well as named data
+	 * streams.  */
 	ret = capture_ntfs_streams(inode, ni, path, path_len,
-				   params->unhashed_streams, vol, stream_type);
+				   params->unhashed_streams, vol, AT_DATA);
 	if (ret)
 		goto out;
 
