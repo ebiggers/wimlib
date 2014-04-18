@@ -78,7 +78,7 @@ fi
 
 echo "Testing capture of WIM with default boot flag"
 imagex capture dir dir.wim
-if ! test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "0"; then
+if ! test "`imagex info dir.wim | grep '^Boot Index' | awk '{print $3}'`" = "0"; then
 	error "WIM boot flag not set correctly"
 fi
 
@@ -86,21 +86,21 @@ echo "Testing changing image bootable flag"
 if ! imagex info dir.wim 1 --boot; then
 	error "Failed to change bootable image"
 fi
-if ! test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "1"; then
+if ! test "`imagex info dir.wim | grep '^Boot Index' | awk '{print $3}'`" = "1"; then
 	error "Bootable image not changed correctly"
 fi
 echo "Testing changing image bootable flag"
 if ! imagex info dir.wim 0 --boot; then
 	error "Failed to reset bootable image"
 fi
-if ! test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "0"; then
+if ! test "`imagex info dir.wim | grep '^Boot Index' | awk '{print $3}'`" = "0"; then
 	error "Bootable image not reset correctly"
 fi
 echo "Testing changing image bootable flag to invalid image (this should generate errors)"
 if imagex info dir.wim 2 --boot; then
 	error "Succeeded in changing bootable image to invalid number"
 fi
-if ! test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "0"; then
+if ! test "`imagex info dir.wim | grep '^Boot Index' | awk '{print $3}'`" = "0"; then
 	error "Boot flag was changed even though the change command was supposed to fail"
 fi
 rm -rf dir.wim tmp
@@ -141,7 +141,7 @@ echo "Testing capture of bootable WIM"
 if ! imagex capture dir dir.wim --boot; then
 	error "Failed to capture bootable WIM"
 fi
-if ! test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "1"; then
+if ! test "`imagex info dir.wim | grep '^Boot Index' | awk '{print $3}'`" = "1"; then
 	error "Boot flag on bootable WIM not set correctly"
 fi
 rm -rf dir.wim tmp
@@ -235,7 +235,7 @@ fi
 if ! test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" = "yes"; then
 	error "Integrity check not found"
 fi
-if ! test "`imagex info dir.wim | grep Boot | awk '{print $3}'`" = "1"; then
+if ! test "`imagex info dir.wim | grep '^Boot Index' | awk '{print $3}'`" = "1"; then
 	error "Bootable image not set correctly"
 fi
 echo "Testing appending non-directory (should generate errors)"
