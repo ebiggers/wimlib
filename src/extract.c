@@ -94,7 +94,8 @@
 	 WIMLIB_EXTRACT_FLAG_GLOB_PATHS			|	\
 	 WIMLIB_EXTRACT_FLAG_STRICT_GLOB		|	\
 	 WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES		|	\
-	 WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE)
+	 WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE  |	\
+	 WIMLIB_EXTRACT_FLAG_WIMBOOT)
 
 static bool
 dentry_in_list(const struct wim_dentry *dentry)
@@ -2740,6 +2741,13 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 		ERROR("wimlib was compiled without support for NTFS-3g, so\n"
 		      "        it cannot apply a WIM image directly to a NTFS volume.");
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+#endif
+
+#ifndef __WIN32__
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT) {
+		ERROR("WIMBoot extraction is only supported on Windows!");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 #endif

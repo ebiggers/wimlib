@@ -32,6 +32,22 @@
 #include "wimlib/apply.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
+#include "wimlib/xml.h"
+#include "wimlib/wim.h"
+#include "wimlib/wimboot.h"
+
+static void
+ctx_save_data_source_id(struct apply_ctx *ctx, u64 data_source_id)
+{
+	ctx->private[0] = data_source_id & 0xFFFFFFFF;
+	ctx->private[1] = data_source_id >> 32;
+}
+
+static u64
+ctx_get_data_source_id(const struct apply_ctx *ctx)
+{
+	return (u32)ctx->private[0] | ((u64)(u32)ctx->private[1] << 32);
+}
 
 static int
 win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
@@ -78,6 +94,24 @@ win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 
 	if (supports_SetFileShortName)
 		ctx->supported_features.short_names = 1;
+
+	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT) {
+
+		u64 data_source_id;
+
+		if (!wim_info_get_wimboot(ctx->wim->wim_info,
+					  ctx->wim->current_image))
+			WARNING("Image is not marked as WIMBoot compatible!");
+
+		ret = wimboot_alloc_data_source_id(ctx->wim->filename,
+						   ctx->wim->current_image,
+						   path, &data_source_id);
+		if (ret)
+			return ret;
+
+		ctx_save_data_source_id(ctx, data_source_id);
+	}
+
 	return 0;
 }
 
@@ -265,6 +299,16 @@ win32_extract_unnamed_stream(file_spec_t file,
 			     struct wim_lookup_table_entry *lte,
 			     struct apply_ctx *ctx)
 {
+	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT
+	    && lte
+	    && lte->resource_location == RESOURCE_IN_WIM
+	    && lte->rspec->wim == ctx->wim)
+	{
+		return wimboot_set_pointer(file.path,
+					   ctx_get_data_source_id(ctx),
+					   lte->hash);
+	}
+
 	return win32_extract_stream(file.path, NULL, 0, lte, ctx);
 }
 

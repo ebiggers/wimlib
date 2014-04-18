@@ -1227,7 +1227,7 @@ struct wimlib_dir_entry {
 #define WIMLIB_REPARSE_TAG_DFS			0x8000000A
 #define WIMLIB_REPARSE_TAG_DFSR			0x80000012
 #define WIMLIB_REPARSE_TAG_FILTER_MANAGER	0x8000000B
-#define WIMLIB_REPARSE_TAG_WIMBOOT		0x80000017
+#define WIMLIB_REPARSE_TAG_WOF			0x80000017
 #define WIMLIB_REPARSE_TAG_SYMLINK		0xA000000C
 	/** If the file is a reparse point (FILE_ATTRIBUTE_DIRECTORY set in the
 	 * attributes), this will give the reparse tag.  This tells you whether
@@ -1382,7 +1382,20 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  */
 #define WIMLIB_ADD_FLAG_WINCONFIG		0x00000800
 
-/** Capture image as WIMBoot compatible.  */
+/**
+ * Capture image as WIMBoot compatible.
+ *
+ * Note: this will not by itself change the compression type.  Before writing
+ * the WIM file, it's recommended to also do:
+ *
+ * \code
+ *	wimlib_set_output_compression_type(wim, WIMLIB_COMPRESSION_TYPE_XPRESS);
+ *	wimlib_set_output_chunk_size(wim, 4096);
+ * \endcode
+ *
+ * since that makes access to the data faster (at the cost of a worse
+ * compression ratio compared to the 32768-byte LZX chunks usually used).
+ */
 #define WIMLIB_ADD_FLAG_WIMBOOT			0x00001000
 
 #define WIMLIB_ADD_IMAGE_FLAG_NTFS		WIMLIB_ADD_FLAG_NTFS
@@ -1559,6 +1572,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * place each extracted file or directory tree directly in the target directory.
  */
 #define WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE	0x00200000
+
+/** Windows only: Extract files as "pointers" back to the WIM archive.  */
+#define WIMLIB_EXTRACT_FLAG_WIMBOOT			0x00400000
 
 /** @} */
 /** @ingroup G_mounting_wim_images
@@ -1979,6 +1995,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_WRITE,
 	WIMLIB_ERR_XML,
 	WIMLIB_ERR_WIM_IS_ENCRYPTED,
+	WIMLIB_ERR_WIMBOOT,
 };
 
 
@@ -2408,6 +2425,9 @@ wimlib_extract_files(WIMStruct *wim,
  *	names is not supported --- on Windows, this occurs if the target volume
  *	does not support short names, while on non-Windows, this occurs if
  *	::WIMLIB_EXTRACT_FLAG_NTFS was not specified in @p extract_flags.
+ * @retval ::WIMLIB_ERR_WIMBOOT
+ *	::WIMLIB_EXTRACT_FLAG_WIMBOOT was specified in @p extract_flags, but
+ *	there was a problem creating WIMBoot pointer files.
  * @retval ::WIMLIB_ERR_WRITE
  * 	Failed to write data to a file being extracted.
  */

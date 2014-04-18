@@ -425,6 +425,8 @@ static const tchar *error_strings[] = {
 		= T("The XML data of the WIM is invalid"),
 	[WIMLIB_ERR_WIM_IS_ENCRYPTED]
 		= T("The WIM file (or parts of it) is encrypted"),
+	[WIMLIB_ERR_WIMBOOT]
+		= T("Failed to set WIMBoot pointer data"),
 };
 
 /* API function documented in wimlib.h  */
