@@ -174,6 +174,12 @@ wim_info_set_wimboot(struct wim_info *info, int image, bool value)
 	info->images[image - 1].wimboot = value;
 }
 
+bool
+wim_info_get_wimboot(const struct wim_info *info, int image)
+{
+	return info->images[image - 1].wimboot;
+}
+
 /* Architecture constants are from w64 mingw winnt.h  */
 #define PROCESSOR_ARCHITECTURE_INTEL 0
 #define PROCESSOR_ARCHITECTURE_MIPS 1
