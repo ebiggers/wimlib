@@ -392,6 +392,13 @@ default, invalid names will be ignored, and if there are multiple names
 differing only in case, one will be chosen to extract arbitrarily; however, with
 \fB--include-invalid-names\fR, all names will be sanitized and extracted in some
 form.
+.TP
+\fB--wimboot\fR
+Windows only: Instead of extracting the files themselves, extract "pointer
+files" back to the original WIM.  This is only expected to work on Windows 8.1
+and later, since only those versions of Windows contain the Windows Overlay File
+System Filter Driver that is necessary for this feature.  See Microsoft's
+documentation for "WIMBoot" for more information.
 .SH NOTES
 \fIData integrity\fR:  WIM files include SHA1 message digests for file data.
 \fB@IMAGEX_PROGNAME@ apply\fR calculates the SHA1 message digest of every file

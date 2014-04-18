@@ -485,6 +485,16 @@ metadata, but this is typically only a small fraction of a WIM's total size.
 .IP ""
 This option can be specified multiple times, in which case the resulting delta
 WIM will only contain streams not present in any of the specified base
+.TP
+\fB--wimboot\fR
+Windows only: mark the image as WIMBoot-compatible.  See Microsoft's
+documentation for more information about WIMBoot.  This option will, by default,
+change the compression type to XPRESS and the chunk size to 4096 bytes; these
+can, however, still be overridden through the \fB--compress\fR and
+\fB--chunk-size\fR parameters, respectively.  In addition, this option will, by
+default, set the configuration file to
+\fISOURCE\fR\\Windows\\System32\\WimBootCompress.ini if present and accessible;
+however, this may still be overridden through the \fB--config\fR parameter.
 \fIWIMFILE\fRs.
 .IP ""
 To operate on the resulting delta WIM using other commands such as

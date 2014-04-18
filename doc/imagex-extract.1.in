@@ -140,6 +140,9 @@ extracting the file or directory tree named by each path directly to the
 destination directory.  Note: \fB--preserve-dir-structure\fR is already the
 default behavior for paths in listfiles, but not paths directly specified on the
 command line.
+.TP
+\fB--wimboot\fR
+See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 .SH NOTES
 See the documentation \fB@IMAGEX_PROGNAME@ apply\fR (1) for documentation about
 what data and metadata are extracted on UNIX-like systems versus on Windows.

@@ -198,6 +198,7 @@ enum {
 	IMAGEX_UNIX_DATA_OPTION,
 	IMAGEX_UPDATE_OF_OPTION,
 	IMAGEX_VERBOSE_OPTION,
+	IMAGEX_WIMBOOT_OPTION,
 	IMAGEX_XML_OPTION,
 };
 
@@ -218,6 +219,7 @@ static const struct option apply_options[] = {
 
 	/* --resume is undocumented for now as it needs improvement.  */
 	{T("resume"),      no_argument,       NULL, IMAGEX_RESUME_OPTION},
+	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -250,6 +252,7 @@ static const struct option capture_or_append_options[] = {
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
 	{T("update-of"),   required_argument, NULL, IMAGEX_UPDATE_OF_OPTION},
 	{T("delta-from"),  required_argument, NULL, IMAGEX_DELTA_FROM_OPTION},
+	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -301,6 +304,7 @@ static const struct option extract_options[] = {
 	{T("no-wildcards"), no_argument,      NULL, IMAGEX_NO_WILDCARDS_OPTION},
 	{T("nullglob"),     no_argument,      NULL, IMAGEX_NULLGLOB_OPTION},
 	{T("preserve-dir-structure"), no_argument, NULL, IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION},
+	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -408,6 +412,17 @@ imagex_error(const tchar *format, ...)
 	va_list va;
 	va_start(va, format);
 	tfputs(T("ERROR: "), stderr);
+	tvfprintf(stderr, format, va);
+	tputc(T('\n'), stderr);
+	va_end(va);
+}
+
+static void _format_attribute(printf, 1, 2)
+imagex_warning(const tchar *format, ...)
+{
+	va_list va;
+	va_start(va, format);
+	tfputs(T("WARNING: "), stderr);
 	tvfprintf(stderr, format, va);
 	tputc(T('\n'), stderr);
 	va_end(va);
@@ -714,7 +729,7 @@ static bool
 is_comment_line(const tchar *line, size_t len)
 {
 	for (;;) {
-		if (*line == T('#'))
+		if (*line == T('#') || *line == T(';'))
 			return true;
 		if (!istspace(*line) && *line != T('\0'))
 			return false;
@@ -856,8 +871,8 @@ check_config_section(tchar *line, size_t len,
 			 "of capture config file\n"),
 		       stderr);
 	} else {
-		imagex_error(T("Invalid capture config file section \"%"TS"\""),
-			     line - 1);
+		imagex_warning(T("Unknown capture config file section \"%"TS"\""),
+			       line - 1);
 		return CAPTURE_CONFIG_INVALID_SECTION;
 	}
 	return CAPTURE_CONFIG_CHANGED_SECTION;
@@ -894,9 +909,8 @@ parse_capture_config_line(tchar *line, size_t len,
 	int ret;
 
 	ret = check_config_section(line, len, cur_section);
-	if (ret == CAPTURE_CONFIG_INVALID_SECTION)
-		return false;
-	if (ret == CAPTURE_CONFIG_CHANGED_SECTION)
+	if (ret == CAPTURE_CONFIG_CHANGED_SECTION ||
+	    ret == CAPTURE_CONFIG_INVALID_SECTION)
 		return true;
 
 	switch (*cur_section) {
@@ -941,6 +955,10 @@ parse_capture_config(tchar **contents_p, size_t nchars,
 		tchar *endp = tmemchr(p, T('\n'), nchars);
 		size_t len = endp - p + 1;
 		*endp = T('\0');
+		if (p != endp && *(endp - 1) == T('\r')) {
+			*(endp - 1) = '\0';
+			len--;
+		}
 		if (!is_comment_line(p, len))
 			if (!parse_capture_config_line(p, len, &cur_section, config))
 				return -1;
@@ -1665,6 +1683,9 @@ imagex_apply(int argc, tchar **argv, int cmd)
 		case IMAGEX_RESUME_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_RESUME;
 			break;
+		case IMAGEX_WIMBOOT_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_WIMBOOT;
+			break;
 		default:
 			goto out_usage;
 		}
@@ -1820,7 +1841,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	tchar *source;
 	tchar *source_copy;
 
-	const tchar *config_file = NULL;
+	tchar *config_file = NULL;
 	tchar *config_str;
 	struct wimlib_capture_config *config;
 
@@ -1941,6 +1962,9 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 				goto out_free_base_wimfiles;
 			write_flags |= WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS;
 			break;
+		case IMAGEX_WIMBOOT_OPTION:
+			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_WIMBOOT;
+			break;
 		default:
 			goto out_usage;
 		}
@@ -1958,21 +1982,45 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 
 
 	if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID) {
-		compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
-
-		if (!compress_slow) {
-			struct wimlib_lzx_compressor_params params = {
-				.hdr.size = sizeof(params),
-				.algorithm = WIMLIB_LZX_ALGORITHM_FAST,
-				.use_defaults = 1,
-			};
-			wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZX,
-							     &params.hdr);
+		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_WIMBOOT) {
+			compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
+		} else {
+			compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
+			if (!compress_slow) {
+				struct wimlib_lzx_compressor_params params = {
+					.hdr.size = sizeof(params),
+					.algorithm = WIMLIB_LZX_ALGORITHM_FAST,
+					.use_defaults = 1,
+				};
+				wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZX,
+								     &params.hdr);
+			}
 		}
+
 	}
 
 	if (compress_slow)
 		set_compress_slow();
+
+	/* Set default configuration file  */
+#ifdef __WIN32__
+	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_WIMBOOT) && !config) {
+		struct stat st;
+
+		config_file = alloca(wcslen(source) * sizeof(wchar_t) + 100);
+		swprintf(config_file, L"%ls\\%ls",
+			 source,  L"Windows\\System32\\WimBootCompress.ini");
+
+		if (tstat(config_file, &st)) {
+			imagex_printf(L"\"%ls\" does not exist; using "
+				      "default configuration\n",
+				      config_file);
+			config_file = NULL;
+		} else {
+			add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_WINCONFIG;
+		}
+	}
+#endif
 
 	if (!tstrcmp(wimfile, T("-"))) {
 		/* Writing captured WIM to standard output.  */
@@ -2111,6 +2159,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	/* Set chunk size if non-default.  */
 	if (chunk_size != UINT32_MAX) {
 		ret = wimlib_set_output_chunk_size(wim, chunk_size);
+		if (ret)
+			goto out_free_wim;
+	} else if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_WIMBOOT) &&
+		   compression_type == WIMLIB_COMPRESSION_TYPE_XPRESS) {
+		ret = wimlib_set_output_chunk_size(wim, 4096);
 		if (ret)
 			goto out_free_wim;
 	}
@@ -3008,6 +3061,9 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION:
 			notlist_extract_flags &= ~WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE;
+			break;
+		case IMAGEX_WIMBOOT_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_WIMBOOT;
 			break;
 		default:
 			goto out_usage;
