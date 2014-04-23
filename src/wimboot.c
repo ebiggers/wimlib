@@ -65,6 +65,47 @@ win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7])
 	return 0;
 }
 
+/* Try to attach an instance of the Windows Overlay File System Filter Driver to
+ * the specified drive (such as C:)  */
+static bool
+try_to_attach_wof(const wchar_t *drive)
+{
+	HMODULE fltlib;
+	bool retval = false;
+
+	/* Use FilterAttach() from Fltlib.dll.  */
+
+	fltlib = LoadLibrary(L"Fltlib.dll");
+
+	if (!fltlib) {
+		WARNING("Failed to load Fltlib.dll");
+		return retval;
+	}
+
+	HRESULT (WINAPI *func_FilterAttach)(LPCWSTR lpFilterName,
+					    LPCWSTR lpVolumeName,
+					    LPCWSTR lpInstanceName,
+					    DWORD dwCreatedInstanceNameLength,
+					    LPWSTR lpCreatedInstanceName);
+
+	func_FilterAttach = (void *)GetProcAddress(fltlib, "FilterAttach");
+
+	if (func_FilterAttach) {
+		HRESULT res;
+
+		res = (*func_FilterAttach)(L"WoF", drive, NULL, 0, NULL);
+
+		if (res == S_OK)
+			retval = true;
+	} else {
+		WARNING("FilterAttach() does not exist in Fltlib.dll");
+	}
+
+	FreeLibrary(fltlib);
+
+	return retval;
+}
+
 /*
  * Allocate a WOF data source ID for a WIM file.
  *
@@ -98,6 +139,7 @@ wimboot_alloc_data_source_id(const wchar_t *wim_path, int image,
 	int ret;
 	const wchar_t *prefix = L"\\??\\";
 	const size_t prefix_nchars = 4;
+	bool tried_to_attach_wof = false;
 
 	ret = win32_get_drive_path(target, drive_path);
 	if (ret)
@@ -133,13 +175,14 @@ wimboot_alloc_data_source_id(const wchar_t *wim_path, int image,
 	wmemcpy(&wim_info->wim_file_name[0], prefix, prefix_nchars);
 	wmemcpy(&wim_info->wim_file_name[prefix_nchars], wim_path, wim_path_nchars);
 
+retry_ioctl:
 	h = CreateFile(drive_path, GENERIC_WRITE,
 		       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
 		       NULL, OPEN_EXISTING, 0, NULL);
 
 	if (h == INVALID_HANDLE_VALUE) {
 		set_errno_from_GetLastError();
-		ERROR_WITH_ERRNO("Failed to open \"%ls\"", drive_path);
+		ERROR_WITH_ERRNO("Failed to open \"%ls\"", drive_path + 4);
 		ret = WIMLIB_ERR_OPEN;
 		goto out_free_in;
 	}
@@ -149,11 +192,29 @@ wimboot_alloc_data_source_id(const wchar_t *wim_path, int image,
 			     &data_source_id, sizeof(data_source_id),
 			     &bytes_returned, NULL))
 	{
-		set_errno_from_GetLastError();
-		ERROR_WITH_ERRNO("Failed to add overlay source \"%ls\" "
-				 "to volume \"%ls\"", wim_path, drive_path);
-		ret = WIMLIB_ERR_WIMBOOT;
-		goto out_close_handle;
+		DWORD err = GetLastError();
+		if (err == ERROR_INVALID_FUNCTION) {
+			if (!tried_to_attach_wof) {
+				CloseHandle(h);
+				h = INVALID_HANDLE_VALUE;
+				tried_to_attach_wof = true;
+				if (try_to_attach_wof(drive_path + 4))
+					goto retry_ioctl;
+			}
+			ERROR("The version of Windows you are running does not appear to support\n"
+			      "        the Windows Overlay File System Filter Driver.  Therefore, wimlib\n"
+			      "        cannot apply WIMBoot information.  Please run from Windows 8.1\n"
+			      "        Update 1 or later.");
+			ret = WIMLIB_ERR_UNSUPPORTED;
+			goto out_close_handle;
+		} else {
+			set_errno_from_win32_error(err);
+			ERROR_WITH_ERRNO("Failed to add overlay source \"%ls\" "
+					 "to volume \"%ls\" (err=0x%08"PRIu32")",
+					 wim_path, drive_path + 4, (uint32_t)err);
+			ret = WIMLIB_ERR_WIMBOOT;
+			goto out_close_handle;
+		}
 	}
 
 	if (bytes_returned != sizeof(data_source_id)) {
@@ -161,7 +222,7 @@ wimboot_alloc_data_source_id(const wchar_t *wim_path, int image,
 		ret = WIMLIB_ERR_WIMBOOT;
 		ERROR("Unexpected result size when adding "
 		      "overlay source \"%ls\" to volume \"%ls\"",
-		      wim_path, drive_path);
+		      wim_path, drive_path + 4);
 		goto out_close_handle;
 	}
 
@@ -219,7 +280,10 @@ wimboot_set_pointer(const wchar_t *path, u64 data_source_id,
 	if (!DeviceIoControl(h, FSCTL_SET_EXTERNAL_BACKING,
 			     &in, sizeof(in), NULL, 0, &bytes_returned, NULL))
 	{
-		set_errno_from_GetLastError();
+		DWORD err = GetLastError();
+		set_errno_from_win32_error(err);
+		ERROR_WITH_ERRNO("\"%ls\": Couldn't set WIMBoot pointer data "
+				 "(err=0x%08x)", path, (uint32_t)err);
 		ret = WIMLIB_ERR_WIMBOOT;
 		goto out_close_handle;
 	}
