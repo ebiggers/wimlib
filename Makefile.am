@@ -258,23 +258,23 @@ pkgconfig_DATA	= wimlib.pc
 $(pkgconfig_DATA): config.status
 
 wimlib_manpages =				\
-	doc/@IMAGEX_PROGNAME@.1			\
-	doc/@IMAGEX_PROGNAME@-append.1		\
-	doc/@IMAGEX_PROGNAME@-apply.1		\
-	doc/@IMAGEX_PROGNAME@-capture.1		\
-	doc/@IMAGEX_PROGNAME@-delete.1		\
-	doc/@IMAGEX_PROGNAME@-dir.1		\
-	doc/@IMAGEX_PROGNAME@-export.1		\
-	doc/@IMAGEX_PROGNAME@-extract.1		\
-	doc/@IMAGEX_PROGNAME@-info.1		\
-	doc/@IMAGEX_PROGNAME@-join.1		\
-	doc/@IMAGEX_PROGNAME@-mount.1		\
-	doc/@IMAGEX_PROGNAME@-mountrw.1		\
-	doc/@IMAGEX_PROGNAME@-optimize.1	\
-	doc/@IMAGEX_PROGNAME@-split.1		\
-	doc/@IMAGEX_PROGNAME@-unmount.1		\
-	doc/@IMAGEX_PROGNAME@-update.1		\
-	doc/mkwinpeimg.1
+	doc/man1/@IMAGEX_PROGNAME@.1			\
+	doc/man1/@IMAGEX_PROGNAME@-append.1		\
+	doc/man1/@IMAGEX_PROGNAME@-apply.1		\
+	doc/man1/@IMAGEX_PROGNAME@-capture.1		\
+	doc/man1/@IMAGEX_PROGNAME@-delete.1		\
+	doc/man1/@IMAGEX_PROGNAME@-dir.1		\
+	doc/man1/@IMAGEX_PROGNAME@-export.1		\
+	doc/man1/@IMAGEX_PROGNAME@-extract.1		\
+	doc/man1/@IMAGEX_PROGNAME@-info.1		\
+	doc/man1/@IMAGEX_PROGNAME@-join.1		\
+	doc/man1/@IMAGEX_PROGNAME@-mount.1		\
+	doc/man1/@IMAGEX_PROGNAME@-mountrw.1		\
+	doc/man1/@IMAGEX_PROGNAME@-optimize.1	\
+	doc/man1/@IMAGEX_PROGNAME@-split.1		\
+	doc/man1/@IMAGEX_PROGNAME@-unmount.1		\
+	doc/man1/@IMAGEX_PROGNAME@-update.1		\
+	doc/man1/mkwinpeimg.1
 
 man1_MANS = $(wimlib_manpages)
 DISTCLEANFILES = $(wimlib_manpages)
