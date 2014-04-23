@@ -395,10 +395,23 @@ form.
 .TP
 \fB--wimboot\fR
 Windows only: Instead of extracting the files themselves, extract "pointer
-files" back to the original WIM.  This is only expected to work on Windows 8.1
-and later, since only those versions of Windows contain the Windows Overlay File
-System Filter Driver that is necessary for this feature.  See Microsoft's
-documentation for "WIMBoot" for more information.
+files" back to the WIM archive.  This can result in significant space savings.
+However, it comes at several potential costs, such as not being able to delete
+the WIM archive and possibly having slower access to files.  See Microsoft's
+documentation for "WIMBoot" for more information.  Also, this option only works
+when several conditions hold:
+.RS
+.IP \[bu] 4
+The operating system is Windows 8.1 update 1 or later, since that is the first
+version of Windows that contains the Windows Overlay File System Filter Driver
+("WOF") necessary for this feature.
+.IP \[bu]
+The program is run as an Administrator.
+.IP \[bu]
+The WIM archive is not solid (i.e. is not an "ESD file").
+.IP \[bu]
+The target volume is NTFS or another filesystem that supports reparse points.
+.RE
 .SH NOTES
 \fIData integrity\fR:  WIM files include SHA1 message digests for file data.
 \fB@IMAGEX_PROGNAME@ apply\fR calculates the SHA1 message digest of every file

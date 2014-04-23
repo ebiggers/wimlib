@@ -485,17 +485,6 @@ metadata, but this is typically only a small fraction of a WIM's total size.
 .IP ""
 This option can be specified multiple times, in which case the resulting delta
 WIM will only contain streams not present in any of the specified base
-.TP
-\fB--wimboot\fR
-Windows only: mark the image as WIMBoot-compatible.  See Microsoft's
-documentation for more information about WIMBoot.  This option will, by default,
-change the compression type to XPRESS and the chunk size to 4096 bytes; these
-can, however, still be overridden through the \fB--compress\fR and
-\fB--chunk-size\fR parameters, respectively.  In addition, this option will, by
-default, set the configuration file to
-\fISOURCE\fR\\Windows\\System32\\WimBootCompress.ini if present and accessible;
-however, this may still be overridden through the \fB--config\fR parameter.
-\fIWIMFILE\fRs.
 .IP ""
 To operate on the resulting delta WIM using other commands such as
 \fB@IMAGEX_PROGNAME@ apply\fR, you must specify the delta WIM as the WIM file to
@@ -543,6 +532,16 @@ fact combine \fB--pipable\fR and \fB--delta-from\fR to create pipable delta
 WIMs.  In such cases, the base WIM(s) must be captured as pipable as well as the
 delta WIM, and when applying an image, the base WIM(s) must be sent over the
 pipe after the delta WIM.
+.TP
+\fB--wimboot\fR
+Windows only: mark the image as WIMBoot-compatible.  See Microsoft's
+documentation for more information about WIMBoot.  This option will, by default,
+change the compression type to XPRESS and the chunk size to 4096 bytes; these
+can, however, still be overridden through the \fB--compress\fR and
+\fB--chunk-size\fR parameters, respectively.  In addition, this option will, by
+default, set the configuration file to
+\fISOURCE\fR\\Windows\\System32\\WimBootCompress.ini if present and accessible;
+however, this may still be overridden through the \fB--config\fR parameter.
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ append\fR does not support appending an image to a split WIM.
 .PP
