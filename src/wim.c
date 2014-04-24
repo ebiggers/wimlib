@@ -354,13 +354,6 @@ wimlib_print_available_images(const WIMStruct *wim, int image)
 		print_image_info(wim->wim_info, i);
 }
 
-/* TODO: Deprecated; remove this.  */
-WIMLIBAPI int
-wimlib_print_metadata(WIMStruct *wim, int image)
-{
-	return WIMLIB_ERR_UNSUPPORTED;
-}
-
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)

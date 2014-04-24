@@ -26,9 +26,9 @@
 
 /*
  * This file provides the API functions wimlib_extract_image(),
- * wimlib_extract_image_from_pipe(), wimlib_extract_files(),
- * wimlib_extract_paths(), and wimlib_extract_pathlist().  Internally, all end
- * up calling do_wimlib_extract_paths() and extract_trees().
+ * wimlib_extract_image_from_pipe(), wimlib_extract_paths(), and
+ * wimlib_extract_pathlist().  Internally, all end up calling
+ * do_wimlib_extract_paths() and extract_trees().
  *
  * Although wimlib supports multiple extraction modes/backends (NTFS-3g, UNIX,
  * Win32), this file does not itself have code to extract files or directories
@@ -68,8 +68,7 @@
 
 #define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE 0x80000000
 #define WIMLIB_EXTRACT_FLAG_FROM_PIPE   0x40000000
-#define WIMLIB_EXTRACT_FLAG_FILEMODE    0x20000000
-#define WIMLIB_EXTRACT_FLAG_IMAGEMODE   0x10000000
+#define WIMLIB_EXTRACT_FLAG_IMAGEMODE   0x20000000
 
 /* Keep in sync with wimlib.h  */
 #define WIMLIB_EXTRACT_MASK_PUBLIC				\
@@ -2435,21 +2434,8 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		ctx.progress.extract.target = target;
 	}
 
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_FILEMODE) {
-		/* Called from wimlib_extract_files().  There should be only 1
-		 * tree, and directory structure should not be preserved.  */
-		wimlib_assert(num_trees == 1);
-		wimlib_assert(extract_flags &
-			      WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE);
-		ret = calculate_dentry_full_path(trees[0]);
-		if (ret)
-			return ret;
-		ctx.progress.extract.extract_root_wim_source_path = trees[0]->_full_path;
-		ctx.target_dentry = trees[0];
-	} else {
-		ctx.progress.extract.extract_root_wim_source_path = T("");
-		ctx.target_dentry = wim_root_dentry(wim);
-	}
+	ctx.progress.extract.extract_root_wim_source_path = T("");
+	ctx.target_dentry = wim_root_dentry(wim);
 	/* Note: ctx.target_dentry represents the dentry that gets extracted to
 	 * @target.  There may be none, in which case it gets set to the image
 	 * root and never matches any of the dentries actually being extracted.
@@ -2857,8 +2843,7 @@ do_wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,
 		return ret;
 
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_NTFS |
-			      WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE |
-			      WIMLIB_EXTRACT_FLAG_FILEMODE)) ==
+			      WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE)) ==
 	    (WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE))
 	{
 		ret = mkdir_if_needed(target);
@@ -3047,67 +3032,6 @@ do_wimlib_extract_image(WIMStruct *wim,
 /****************************************************************************
  *                          Extraction API                                  *
  ****************************************************************************/
-
-/* Note: new code should use wimlib_extract_paths() instead of
- * wimlib_extract_files() if possible.  */
-WIMLIBAPI int
-wimlib_extract_files(WIMStruct *wim, int image,
-		     const struct wimlib_extract_command *cmds, size_t num_cmds,
-		     int default_extract_flags,
-		     wimlib_progress_func_t progress_func)
-{
-	int all_flags = 0;
-	int link_flags;
-	int ret;
-
-	if (num_cmds == 0)
-		return 0;
-
-	default_extract_flags |= WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE;
-
-	for (size_t i = 0; i < num_cmds; i++) {
-		int cmd_flags = (cmds[i].extract_flags |
-				 default_extract_flags);
-
-		if (cmd_flags & ~WIMLIB_EXTRACT_MASK_PUBLIC)
-			return WIMLIB_ERR_INVALID_PARAM;
-
-		int cmd_link_flags = (cmd_flags & (WIMLIB_EXTRACT_FLAG_SYMLINK |
-						   WIMLIB_EXTRACT_FLAG_HARDLINK));
-		if (i == 0) {
-			link_flags = cmd_link_flags;
-		} else {
-			if (cmd_link_flags != link_flags) {
-				ERROR("The same symlink or hardlink extraction mode "
-				      "must be set on all extraction commands!");
-				return WIMLIB_ERR_INVALID_PARAM;
-			}
-		}
-		all_flags |= cmd_flags;
-	}
-	if (all_flags & WIMLIB_EXTRACT_FLAG_GLOB_PATHS) {
-		ERROR("Glob paths not supported for wimlib_extract_files(). "
-		      "Use wimlib_extract_paths() instead.");
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-
-	for (size_t i = 0; i < num_cmds; i++) {
-		int extract_flags = (cmds[i].extract_flags |
-				     default_extract_flags);
-		const tchar *target = cmds[i].fs_dest_path;
-		const tchar *wim_source_path = cmds[i].wim_source_path;
-
-		ret = do_wimlib_extract_paths(wim, image, target,
-					      &wim_source_path, 1,
-					      extract_flags | WIMLIB_EXTRACT_FLAG_FILEMODE,
-					      progress_func);
-		if (ret)
-			break;
-	}
-
-	clear_lte_extracted_file(wim, all_flags);
-	return ret;
-}
 
 WIMLIBAPI int
 wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,

@@ -21,7 +21,6 @@ libwim_la_SOURCES =		\
 	src/add_image.c		\
 	src/avl_tree.c		\
 	src/capture_common.c	\
-	src/compat.c		\
 	src/compress.c		\
 	src/compress_common.c	\
 	src/compress_parallel.c	\

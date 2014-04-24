@@ -319,7 +319,7 @@
  * created from one of these on-disk files initially only partially represents
  * the full WIM and needs to, in effect, be logically combined with other
  * ::WIMStruct's before performing certain operations, such as extracting files
- * with wimlib_extract_image() or wimlib_extract_files().  This is done by
+ * with wimlib_extract_image() or wimlib_extract_paths().  This is done by
  * calling wimlib_reference_resource_files() or wimlib_reference_resources().
  *
  * wimlib_write() can create delta WIMs as well as standalone WIMs, but a
@@ -439,11 +439,9 @@ enum wimlib_progress_msg {
 
 	/** One or more file or directory trees within a WIM image is about to
 	 * be extracted.  @p info will point to ::wimlib_progress_info.extract.
-	 * This message is received once per extraction command for
-	 * wimlib_extract_files(), but only once for wimlib_extract_paths() and
-	 * wimlib_extract_pathlist().  (In the latter cases, wimlib combines all
-	 * paths into a single extraction operation for optimization purposes.)
-	 */
+	 * This message is received only once per wimlib_extract_paths() and
+	 * wimlib_extract_pathlist(), since wimlib combines all paths into a
+	 * single extraction operation for optimization purposes.  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN,
 
 	/** The directory structure and other preliminary metadata is about to
@@ -774,12 +772,6 @@ union wimlib_progress_info {
 	 * being extracted.  This is because wimlib, by default, extracts the
 	 * individual data streams in whichever order it determines to be the
 	 * most efficient.
-	 *
-	 * An additional caveat: wimlib_extract_files() will perform a separate
-	 * logical extraction operation, with separate byte counts, for each
-	 * extraction command (file or directory tree).  On the other hand,
-	 * wimlib_extract_paths() and wimlib_extract_pathlist() combine all the
-	 * paths to extract into a single logical extraction operation.
 	 */
 	struct wimlib_progress_info_extract {
 		/** Number of the image from which files are being extracted
@@ -827,10 +819,7 @@ union wimlib_progress_info {
 		 * data stream, or a reparse data buffer.  */
 		uint64_t num_streams;
 
-		/** When extracting files using wimlib_extract_files(), this
-		 * will be the path within the WIM image to the file or
-		 * directory tree currently being extracted.  Otherwise, this
-		 * will be the empty string.  */
+		/** This will be the empty string.  */
 		const wimlib_tchar *extract_root_wim_source_path;
 
 		/** Currently only used for
@@ -1843,27 +1832,6 @@ struct wimlib_update_command {
 };
 
 /** @} */
-/** @ingroup G_extracting_wims
- * @{ */
-
-/** DEPRECATED:  Specification of extracting a file or directory tree from a WIM
- * image.  This is only used for calls to wimlib_extract_files(), which has been
- * deprecated in favor of the easier-to-use wimlib_extract_paths().  */
-struct wimlib_extract_command {
-	/** Path to file or directory tree within the WIM image to extract.  It
-	 * must be provided as an absolute path from the root of the WIM image.
-	 * The path separators may be either forward slashes or backslashes. */
-	wimlib_tchar *wim_source_path;
-
-	/** Filesystem path to extract the file or directory tree to. */
-	wimlib_tchar *fs_dest_path;
-
-	/** Bitwise OR of zero or more of the WIMLIB_EXTRACT_FLAG_* flags. */
-	int extract_flags;
-};
-
-
-/** @} */
 /** @ingroup G_general
  * @{ */
 
@@ -2252,30 +2220,6 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
 		    int export_flags,
 		    wimlib_progress_func_t progress_func);
 
-/**
- * @ingroup G_extracting_wims
- *
- * Extract zero or more files or directory trees from a WIM image.
- *
- * As of wimlib v1.6.1, this function is deprecated in favor of
- * wimlib_extract_paths() because wimlib_extract_paths() is easier to use and
- * more efficient.
- *
- * Notes: wimlib_extract_files() does not support the
- * ::WIMLIB_EXTRACT_FLAG_GLOB_PATHS flag, and
- * ::WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE is always implied.  The same
- * hardlink/symlink extraction mode must be set on all extraction commands.  An
- * independent extraction operation (like a separate call to
- * wimlib_extract_paths()) is done for each extraction command.  Otherwise, the
- * documentation for wimlib_extract_paths() applies.
- */
-extern int
-wimlib_extract_files(WIMStruct *wim,
-		     int image,
-		     const struct wimlib_extract_command *cmds,
-		     size_t num_cmds,
-		     int default_extract_flags,
-		     wimlib_progress_func_t progress_func) _wimlib_deprecated;
 
 /**
  * @ingroup G_extracting_wims
@@ -4338,65 +4282,9 @@ extern void
 wimlib_free_decompressor(struct wimlib_decompressor *decompressor);
 
 
-struct wimlib_lzx_params_old;
-struct wimlib_lzx_context_old;
-
-/** Deprecated; do not use.  */
-extern int
-wimlib_lzx_set_default_params(const struct wimlib_lzx_params_old *params)
-		_wimlib_deprecated;
-
-/** Deprecated; do not use.  */
-extern int
-wimlib_lzx_alloc_context(const struct wimlib_lzx_params_old *params,
-			 struct wimlib_lzx_context_old **ctx_pp)
-		_wimlib_deprecated;
-
-/** Deprecated; do not use.  */
-extern void
-wimlib_lzx_free_context(struct wimlib_lzx_context_old *ctx)
-		_wimlib_deprecated;
-
-/** Deprecated; do not use.  */
-extern unsigned
-wimlib_lzx_compress2(const void *udata, unsigned ulen, void *cdata,
-		     struct wimlib_lzx_context_old *ctx)
-		_wimlib_deprecated;
-
-/** Deprecated; do not use.  */
-extern unsigned
-wimlib_lzx_compress(const void *udata, unsigned ulen, void *cdata)
-		_wimlib_deprecated;
-
-/** Deprecated; do not use.  */
-extern unsigned
-wimlib_xpress_compress(const void *udata, unsigned ulen, void *cdata)
-		_wimlib_deprecated;
-
-/** Deprecated; do not use.  */
-extern int
-wimlib_lzx_decompress(const void *cdata, unsigned clen,
-		      void *udata, unsigned ulen)
-		_wimlib_deprecated;
-
-/** Deprecated; do not use.  */
-extern int
-wimlib_xpress_decompress(const void *cdata, unsigned clen,
-			 void *udata, unsigned ulen)
-		_wimlib_deprecated;
-
-
 /**
  * @}
  */
-
-/** @ingroup G_wim_information
- *
- * Deprecated and will return ::WIMLIB_ERR_UNSUPPORTED.  Use
- * wimlib_iterate_dir_tree() instead.  */
-extern int
-wimlib_print_metadata(WIMStruct *wim, int image)
-		_wimlib_deprecated;
 
 
 #ifdef __cplusplus
