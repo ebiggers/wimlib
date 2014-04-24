@@ -72,6 +72,16 @@ do_capture_progress(struct add_image_params *params, int status,
 static int
 mangle_pat(tchar *pat, const tchar *path, unsigned long line_no)
 {
+	/* Remove quotes  */
+	if (pat[0] == T('"') || pat[0] == T('\'')) {
+		tchar quote = pat[0];
+		tchar *last = pat + tstrlen(pat) - 1;
+		if (last > pat && *last == quote) {
+			tmemmove(pat, pat + 1, last - (pat + 1));
+			*(last - 1) = T('\0');
+		}
+	}
+
 	if (!is_any_path_separator(pat[0]) &&
 	    pat[0] != T('\0') && pat[1] == T(':'))
 	{
