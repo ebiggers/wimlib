@@ -60,20 +60,21 @@ wildcard pattern may expand to multiple actual files or directories.  Use the
 \fB--no-wildcards\fR option to disable wildcard matching and search for each
 path literally.
 .PP
-Each \fILISTFILE\fR must be a UTF-8 text file that contains a list of paths to
-extract, one per line.  Wildcard characters are allowed by default.  The
-following demonstrates an example listfile:
+Each \fILISTFILE\fR must be a text file (UTF-8 or UTF-16LE encoded) that
+contains a list of paths to extract, one per line.  Wildcard characters are
+allowed by default.  The following demonstrates an example listfile:
 .PP
 .RS
 .nf
 
 ; This is a comment (begins with semicolon)
+# This is also a comment (begins with number sign)
 /Users
 /Windows/explorer.exe
 /Windows/System32/en-US/*
 
 ; Both forward and backslashes are valid.
-; Don't quote paths containing spaces.
+; It's not necessary to quote paths containing internal spaces.
 \\Program Files\\A*
 
 ; Leading and trailing whitespace is ignored

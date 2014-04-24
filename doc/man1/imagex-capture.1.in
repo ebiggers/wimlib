@@ -280,8 +280,9 @@ image.
 to, rather than archiving the links themselves.
 .TP
 \fB--config\fR=\fIFILE\fR
-Specifies a configuration file for capturing the new image.  The configuration
-file specifies files that are to be treated specially during the image capture.
+Specifies a configuration file (UTF-8 or UTF-16LE encoded) for capturing the new
+image.  The configuration file specifies files that are to be treated specially
+during the image capture.
 .IP ""
 The format of the configuration file is a number of sections containing path
 globs one per line, where each section begins with the tag [ExclusionList],
@@ -303,9 +304,10 @@ path into that directory through a symbolic link.
 .IP ""
 For compatibility with Windows, the path separators in the globs may be either
 forward slashes or backslashes, and the line separators may be either UNIX-style
-or DOS-style.  Globs with spaces in them must be quoted, and leading and
-trailing whitespace is not significant.  Empty lines and lines beginning with
-\'#' or whitespace followed by '#' are ignored.
+or DOS-style.  Trailing and leading whitespace is ignored.  Lines beginning with
+the '#' or ';' characters are treated as comments and ignored.  Globs with
+whitespace in them need not be quoted, unless the whitespace is leading or
+trailing.  Both double and single quotes are accepted.
 .IP ""
 Paths may not have drive letters in them, as they are all relative to the root
 of capture and not absolute external paths.
@@ -320,7 +322,7 @@ used:
 \\$ntfs.log
 \\hiberfil.sys
 \\pagefile.sys
-"\\System Volume Information"
+\\System Volume Information
 \\RECYCLER
 \\Windows\\CSC
 .RE
