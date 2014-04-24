@@ -959,46 +959,6 @@ struct wimlib_capture_source {
 	long reserved;
 };
 
-/** Structure that specifies a list of path patterns. */
-struct wimlib_pattern_list {
-	/** Array of patterns.  The patterns may be modified by library code,
-	 * but the @p pats pointer itself will not.  See the man page for
-	 * <b>wimlib-imagex capture</b> for more information about allowed
-	 * patterns. */
-	wimlib_tchar **pats;
-
-	/** Number of patterns in the @p pats array. */
-	size_t num_pats;
-
-	/** Ignored; may be used by the calling code. */
-	size_t num_allocated_pats;
-};
-
-/** A structure that contains lists of wildcards that match paths to treat
- * specially when capturing a WIM image. */
-struct wimlib_capture_config {
-	/** Paths matching any pattern this list are excluded from being
-	 * captured, except if the same path appears in @p
-	 * exclusion_exception_pats. */
-	struct wimlib_pattern_list exclusion_pats;
-
-	/** Paths matching any pattern in this list are never excluded from
-	 * being captured. */
-	struct wimlib_pattern_list exclusion_exception_pats;
-
-	/** Reserved for future capture configuration options. */
-	struct wimlib_pattern_list reserved1;
-
-	/** Reserved for future capture configuration options. */
-	struct wimlib_pattern_list reserved2;
-
-	/** Library internal use only. */
-	wimlib_tchar *_prefix;
-
-	/** Library internal use only. */
-	size_t _prefix_num_tchars;
-};
-
 /** Set or unset the WIM header flag that marks it read-only
  * (WIM_HDR_FLAG_READONLY in Microsoft's documentation), based on the
  * ::wimlib_wim_info.is_marked_readonly member of the @p info parameter.  This
@@ -1362,19 +1322,13 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * such a file is encountered.  */
 #define WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE	0x00000400
 
-/** Automatically select a capture configuration appropriate for capturing
- * filesystems containing Windows operating systems.  When this flag is
- * specified, the corresponding @p config parameter or member must be @c NULL.
+/**
+ * Automatically select a capture configuration appropriate for capturing
+ * filesystems containing Windows operating systems.  For example,
+ * "pagefile.sys" and "System Volume Information" will be excluded.
  *
- * Currently, selecting this capture configuration will cause the following
- * files and directories to be excluded from capture:
- *
- * - "\$ntfs.log"
- * - "\hiberfil.sys"
- * - "\pagefile.sys"
- * - "\System Volume Information"
- * - "\RECYCLER"
- * - "\Windows\CSC"
+ * When this flag is specified, the corresponding @p config parameter or member
+ * must be @c NULL.
  *
  * Note that the default behavior--- that is, when this flag is not specified
  * and @p config is @c NULL--- is to use no capture configuration, meaning that
@@ -1383,7 +1337,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_ADD_FLAG_WINCONFIG		0x00000800
 
 /**
- * Capture image as WIMBoot compatible.
+ * Capture image as WIMBoot compatible.  In addition, use the capture
+ * configuration file <c>$SOURCE/Windows/System32/WimBootCompress.ini</c> if it
+ * exists, where <c>$SOURCE</c> is the directory being captured.
  *
  * Note: this will not by itself change the compression type.  Before writing
  * the WIM file, it's recommended to also do:
@@ -1841,11 +1797,9 @@ struct wimlib_add_command {
 	 * WIM image. */
 	wimlib_tchar *wim_target_path;
 
-	/** Configuration for excluded files.  @c NULL means
-	 * exclude no files (use no configuration), unless
-	 * ::WIMLIB_ADD_FLAG_WINCONFIG is specified in @p
-	 * add_flags.  */
-	struct wimlib_capture_config *config;
+	/** Path to capture configuration file to use, or @c NULL for default.
+	 */
+	wimlib_tchar *config_file;
 
 	/** Bitwise OR of WIMLIB_ADD_FLAG_* flags. */
 	int add_flags;
@@ -2072,10 +2026,15 @@ wimlib_add_empty_image(WIMStruct *wim,
  *	Name to give the new image.  If @c NULL or empty, the new image is given
  *	no name.  If nonempty, it must specify a name that does not already
  *	exist in @p wim.
- * @param config
- * 	Capture configuration that specifies files, directories, or path globs
- * 	to exclude from being captured.  If @c NULL, a dummy configuration where
- * 	no paths are treated specially is used.
+ * @param config_file
+ *	Path to capture configuration file, or @c NULL.  This file may specify,
+ *	among other things, which files to exclude from capture.  See the man
+ *	page for <b>wimlib-imagex capture</b> (<b>--config</b> option) for
+ *	details of the file format.  If @c NULL, the default capture
+ *	configuration shall be used.  Ordinarily, the default capture
+ *	configuration will result in no files being excluded from capture purely
+ *	based on name; however, the ::WIMLIB_ADD_FLAG_WINCONFIG and
+ *	::WIMLIB_ADD_FLAG_WIMBOOT flags modify the default.
  * @param add_flags
  * 	Bitwise OR of flags prefixed with WIMLIB_ADD_FLAG.
  * @param progress_func
@@ -2099,7 +2058,7 @@ extern int
 wimlib_add_image(WIMStruct *wim,
 		 const wimlib_tchar *source,
 		 const wimlib_tchar *name,
-		 const struct wimlib_capture_config *config,
+		 const wimlib_tchar *config_file,
 		 int add_flags,
 		 wimlib_progress_func_t progress_func);
 
@@ -2128,7 +2087,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 			     const struct wimlib_capture_source *sources,
 			     size_t num_sources,
 			     const wimlib_tchar *name,
-			     const struct wimlib_capture_config *config,
+			     const wimlib_tchar *config_file,
 			     int add_flags,
 			     wimlib_progress_func_t progress_func);
 

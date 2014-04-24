@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -37,6 +37,7 @@
 #include "wimlib/xml.h"
 
 #include <errno.h>
+#include <sys/stat.h>
 
 /* Overlays @branch onto @target, both of which must be directories. */
 static int
@@ -164,6 +165,82 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	}
 }
 
+const tchar wincfg[] =
+T(
+"[ExclusionList]\n"
+"/$ntfs.log\n"
+"/hiberfil.sys\n"
+"/pagefile.sys\n"
+"/System Volume Information\n"
+"/RECYCLER\n"
+"/Windows/CSC\n"
+);
+
+static int
+get_capture_config(const tchar *config_file, struct capture_config *config,
+		   int add_flags, const tchar *fs_source_path)
+{
+	int ret;
+	tchar *tmp_config_file = NULL;
+
+	memset(config, 0, sizeof(*config));
+
+	/* For WIMBoot capture, check for default capture configuration file
+	 * unless one was explicitly specified.  */
+	if (!config_file && (add_flags & WIMLIB_ADD_FLAG_WIMBOOT)) {
+
+		/* XXX: Handle loading file correctly when in NTFS volume.  */
+
+		const tchar *wimboot_cfgfile =
+			T("/Windows/System32/WimBootCompress.ini");
+		size_t len = tstrlen(fs_source_path) +
+			     tstrlen(wimboot_cfgfile);
+		tmp_config_file = MALLOC((len + 1) * sizeof(tchar));
+		struct stat st;
+
+		tsprintf(tmp_config_file, T("%"TS"%"TS),
+			 fs_source_path, wimboot_cfgfile);
+		if (!tstat(tmp_config_file, &st)) {
+			config_file = tmp_config_file;
+			add_flags &= ~WIMLIB_ADD_FLAG_WINCONFIG;
+		} else {
+			WARNING("\"%"TS"\" does not exist.\n"
+				"          Using default capture configuration!",
+				tmp_config_file);
+		}
+	}
+
+	if (add_flags & WIMLIB_ADD_FLAG_WINCONFIG) {
+
+		/* Use Windows default.  */
+
+		tchar *wincfg_copy;
+		const size_t wincfg_len = ARRAY_LEN(wincfg) - 1;
+
+		if (config_file)
+			return WIMLIB_ERR_INVALID_PARAM;
+
+		wincfg_copy = memdup(wincfg, wincfg_len * sizeof(wincfg[0]));
+		if (!wincfg_copy)
+			return WIMLIB_ERR_NOMEM;
+
+		ret = do_read_capture_config_file(T("wincfg"), wincfg_copy,
+						  wincfg_len, config);
+		if (ret)
+			FREE(wincfg_copy);
+	} else if (config_file) {
+		/* Use the specified configuration file.  */
+		ret = do_read_capture_config_file(config_file, NULL, 0, config);
+	} else {
+		/* ... Or don't use any configuration file at all.  No files
+		 * will be excluded from capture, all files will be compressed,
+		 * etc.  */
+		ret = 0;
+	}
+	FREE(tmp_config_file);
+	return ret;
+}
+
 static int
 execute_add_command(WIMStruct *wim,
 		    const struct wimlib_update_command *add_cmd,
@@ -179,7 +256,8 @@ execute_add_command(WIMStruct *wim,
 	int (*capture_tree)(struct wim_dentry **,
 			    const tchar *,
 			    struct add_image_params *);
-	struct wimlib_capture_config *config;
+	const tchar *config_file;
+	struct capture_config config;
 #ifdef WITH_NTFS_3G
 	struct _ntfs_volume *ntfs_vol = NULL;
 #endif
@@ -192,7 +270,8 @@ execute_add_command(WIMStruct *wim,
 	add_flags = add_cmd->add.add_flags;
 	fs_source_path = add_cmd->add.fs_source_path;
 	wim_target_path = add_cmd->add.wim_target_path;
-	config = add_cmd->add.config;
+	config_file = add_cmd->add.config_file;
+
 	DEBUG("fs_source_path=\"%"TS"\", wim_target_path=\"%"TS"\", add_flags=%#x",
 	      fs_source_path, wim_target_path, add_flags);
 
@@ -222,10 +301,14 @@ execute_add_command(WIMStruct *wim,
 		extra_arg = NULL;
 	}
 
+	ret = get_capture_config(config_file, &config,
+				 add_flags, fs_source_path);
+	if (ret)
+		goto out;
 
 	ret = init_inode_table(&params.inode_table, 9001);
 	if (ret)
-		goto out;
+		goto out_destroy_config;
 
 	ret = init_sd_set(&params.sd_set, imd->security_data);
 	if (ret)
@@ -234,7 +317,7 @@ execute_add_command(WIMStruct *wim,
 	INIT_LIST_HEAD(&unhashed_streams);
 	params.lookup_table = wim->lookup_table;
 	params.unhashed_streams = &unhashed_streams;
-	params.config = config;
+	params.config = &config;
 	params.add_flags = add_flags;
 	params.extra_arg = extra_arg;
 
@@ -243,10 +326,9 @@ execute_add_command(WIMStruct *wim,
 	params.progress.scan.wim_target_path = wim_target_path;
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &params.progress);
-	if (config) {
-		config->_prefix = fs_source_path;
-		config->_prefix_num_tchars = tstrlen(fs_source_path);
-	}
+
+	config.prefix = fs_source_path;
+	config.prefix_num_tchars = tstrlen(fs_source_path);
 
 	if (wim_target_path[0] == T('\0'))
 		params.add_flags |= WIMLIB_ADD_FLAG_ROOT;
@@ -291,6 +373,8 @@ out_destroy_sd_set:
 	destroy_sd_set(&params.sd_set, rollback_sd);
 out_destroy_inode_table:
 	destroy_inode_table(&params.inode_table);
+out_destroy_config:
+	destroy_capture_config(&config);
 out:
 	return ret;
 }
@@ -440,22 +524,6 @@ execute_update_commands(WIMStruct *wim,
 }
 
 
-tchar *winpats[] = {
-	T("/$ntfs.log"),
-	T("/hiberfil.sys"),
-	T("/pagefile.sys"),
-	T("/System Volume Information"),
-	T("/RECYCLER"),
-	T("/Windows/CSC"),
-};
-
-static const struct wimlib_capture_config winconfig = {
-	.exclusion_pats = {
-		.num_pats = ARRAY_LEN(winpats),
-		.pats = winpats,
-	},
-};
-
 static int
 check_add_command(struct wimlib_update_command *cmd,
 		  const struct wim_header *hdr)
@@ -465,10 +533,9 @@ check_add_command(struct wimlib_update_command *cmd,
 	if (add_flags & ~(WIMLIB_ADD_FLAG_NTFS |
 			  WIMLIB_ADD_FLAG_DEREFERENCE |
 			  WIMLIB_ADD_FLAG_VERBOSE |
-			  /* BOOT doesn't make sense for wimlib_update_image().
-			   * Same with WIMBOOT.  */
+			  /* BOOT doesn't make sense for wimlib_update_image().  */
 			  /*WIMLIB_ADD_FLAG_BOOT |*/
-			  /*WIMLIB_ADD_FLAG_WIMBOOT |*/
+			  WIMLIB_ADD_FLAG_WIMBOOT |
 			  WIMLIB_ADD_FLAG_UNIX_DATA |
 			  WIMLIB_ADD_FLAG_NO_ACLS |
 			  WIMLIB_ADD_FLAG_STRICT_ACLS |
@@ -603,7 +670,7 @@ free_update_commands(struct wimlib_update_command *cmds, size_t num_cmds)
 			case WIMLIB_UPDATE_OP_ADD:
 				FREE(cmds[i].add.fs_source_path);
 				FREE(cmds[i].add.wim_target_path);
-				free_capture_config(cmds[i].add.config);
+				FREE(cmds[i].add.config_file);
 				break;
 			case WIMLIB_UPDATE_OP_DELETE:
 				FREE(cmds[i].delete_.wim_path);
@@ -625,7 +692,6 @@ copy_update_commands(const struct wimlib_update_command *cmds,
 {
 	int ret;
 	struct wimlib_update_command *cmds_copy;
-	const struct wimlib_capture_config *config;
 
 	cmds_copy = CALLOC(num_cmds, sizeof(cmds[0]));
 	if (!cmds_copy)
@@ -642,14 +708,10 @@ copy_update_commands(const struct wimlib_update_command *cmds,
 			if (!cmds_copy[i].add.fs_source_path ||
 			    !cmds_copy[i].add.wim_target_path)
 				goto oom;
-			config = cmds[i].add.config;
-			if (cmds[i].add.add_flags & WIMLIB_ADD_FLAG_WINCONFIG)
-				config = &winconfig;
-			if (config) {
-				ret = copy_and_canonicalize_capture_config(config,
-									   &cmds_copy[i].add.config);
-				if (ret)
-					goto err;
+			if (cmds[i].add.config_file) {
+				cmds_copy[i].add.config_file = TSTRDUP(cmds[i].add.config_file);
+				if (!cmds_copy[i].add.config_file)
+					goto oom;
 			}
 			cmds_copy[i].add.add_flags = cmds[i].add.add_flags;
 			break;

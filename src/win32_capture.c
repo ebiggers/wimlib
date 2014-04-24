@@ -1424,9 +1424,9 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	/* Update pattern prefix.  */
 	if (params->config != NULL)
 	{
-		params->config->_prefix = TSTRDUP(path);
-		params->config->_prefix_num_tchars = path_nchars;
-		if (params->config->_prefix == NULL)
+		params->config->prefix = TSTRDUP(path);
+		params->config->prefix_num_tchars = path_nchars;
+		if (params->config->prefix == NULL)
 		{
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_path;
@@ -1438,7 +1438,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 						path_nchars, params,
 						&state, vol_flags);
 	if (params->config != NULL)
-		FREE(params->config->_prefix);
+		FREE(params->config->prefix);
 out_free_path:
 	FREE(path);
 	if (ret == 0)

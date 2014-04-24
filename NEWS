@@ -8,6 +8,12 @@ Version 1.6.3-BETA:
 	archive.  See the documentation for the new '--wimboot' option to
 	wimcapture and wimapply, respectively, for more information.
 
+	The shared library version has been bumped up; however, there are only
+	small incompatibilities:
+
+		- wimlib_capture_config has been removed.  The library now takes
+		  the configuration file directly.
+
 Version 1.6.2:
 	Case-insensitive comparisons of strings (e.g. filenames) containing
 	UTF-16 codepoints above 32767 are now done correctly.

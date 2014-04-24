@@ -15,7 +15,7 @@ endif
 
 lib_LTLIBRARIES = libwim.la
 
-libwim_la_LDFLAGS = -version-info 14:0:5 $(WINDOWS_LDFLAGS)
+libwim_la_LDFLAGS = -version-info 15:0:0 $(WINDOWS_LDFLAGS)
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
@@ -65,6 +65,7 @@ libwim_la_SOURCES =		\
 	src/split.c		\
 	src/reparse.c		\
 	src/template.c		\
+	src/textfile.c		\
 	src/timestamp.c		\
 	src/update_image.c	\
 	src/util.c		\
@@ -113,6 +114,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/security.h	\
 	include/wimlib/security_descriptor.h	\
 	include/wimlib/sha1.h		\
+	include/wimlib/textfile.h	\
 	include/wimlib/timestamp.h	\
 	include/wimlib/types.h		\
 	include/wimlib/unix_data.h	\

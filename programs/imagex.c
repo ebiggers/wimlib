@@ -417,17 +417,6 @@ imagex_error(const tchar *format, ...)
 	va_end(va);
 }
 
-static void _format_attribute(printf, 1, 2)
-imagex_warning(const tchar *format, ...)
-{
-	va_list va;
-	va_start(va, format);
-	tfputs(T("WARNING: "), stderr);
-	tvfprintf(stderr, format, va);
-	tputc(T('\n'), stderr);
-	va_end(va);
-}
-
 /* Print formatted error message to stderr. */
 static void _format_attribute(printf, 1, 2)
 imagex_error_with_errno(const tchar *format, ...)
@@ -825,147 +814,6 @@ parse_source_list(tchar **source_list_contents_p, size_t source_list_nchars,
 	}
 	*nsources_ret = j;
 	return sources;
-}
-
-
-enum capture_config_section {
-	CAPTURE_CONFIG_NO_SECTION,
-	CAPTURE_CONFIG_EXCLUSION_SECTION,
-	CAPTURE_CONFIG_EXCLUSION_EXCEPTION_SECTION,
-	CAPTURE_CONFIG_IGNORE_SECTION,
-};
-
-enum {
-	CAPTURE_CONFIG_INVALID_SECTION,
-	CAPTURE_CONFIG_CHANGED_SECTION,
-	CAPTURE_CONFIG_SAME_SECTION,
-};
-
-static int
-check_config_section(tchar *line, size_t len,
-		     enum capture_config_section *cur_section)
-{
-	while (istspace(*line))
-		line++;
-
-	if (*line != T('['))
-		return CAPTURE_CONFIG_SAME_SECTION;
-
-	line++;
-	tchar *endbrace = tstrrchr(line, T(']'));
-	if (!endbrace)
-		return CAPTURE_CONFIG_SAME_SECTION;
-
-	if (!tmemcmp(line, T("ExclusionList"), endbrace - line)) {
-		*cur_section = CAPTURE_CONFIG_EXCLUSION_SECTION;
-	} else if (!tmemcmp(line, T("ExclusionException"), endbrace - line)) {
-		*cur_section = CAPTURE_CONFIG_EXCLUSION_EXCEPTION_SECTION;
-	} else if (!tmemcmp(line, T("CompressionExclusionList"), endbrace - line)) {
-		*cur_section = CAPTURE_CONFIG_IGNORE_SECTION;
-		tfputs(T("WARNING: Ignoring [CompressionExclusionList] section "
-			 "of capture config file\n"),
-		       stderr);
-	} else if (!tmemcmp(line, T("AlignmentList"), endbrace - line)) {
-		*cur_section = CAPTURE_CONFIG_IGNORE_SECTION;
-		tfputs(T("WARNING: Ignoring [AlignmentList] section "
-			 "of capture config file\n"),
-		       stderr);
-	} else {
-		imagex_warning(T("Unknown capture config file section \"%"TS"\""),
-			       line - 1);
-		return CAPTURE_CONFIG_INVALID_SECTION;
-	}
-	return CAPTURE_CONFIG_CHANGED_SECTION;
-}
-
-
-static bool
-pattern_list_add_pattern(struct wimlib_pattern_list *pat_list,
-			 tchar *pat)
-{
-	if (pat_list->num_pats == pat_list->num_allocated_pats) {
-		tchar **pats;
-		size_t num_allocated_pats = pat_list->num_pats + 8;
-
-		pats = realloc(pat_list->pats,
-			       num_allocated_pats * sizeof(pat_list->pats[0]));
-		if (!pats) {
-			imagex_error(T("Out of memory!"));
-			return false;
-		}
-		pat_list->pats = pats;
-		pat_list->num_allocated_pats = num_allocated_pats;
-	}
-	pat_list->pats[pat_list->num_pats++] = pat;
-	return true;
-}
-
-static bool
-parse_capture_config_line(tchar *line, size_t len,
-			  enum capture_config_section *cur_section,
-			  struct wimlib_capture_config *config)
-{
-	tchar *filename;
-	int ret;
-
-	ret = check_config_section(line, len, cur_section);
-	if (ret == CAPTURE_CONFIG_CHANGED_SECTION ||
-	    ret == CAPTURE_CONFIG_INVALID_SECTION)
-		return true;
-
-	switch (*cur_section) {
-	case CAPTURE_CONFIG_NO_SECTION:
-		imagex_error(T("Line \"%"TS"\" is not in a section "
-			       "(such as [ExclusionList]"), line);
-		return false;
-	case CAPTURE_CONFIG_EXCLUSION_SECTION:
-		if (parse_string(&line, &len, &filename) != PARSE_STRING_SUCCESS)
-			return false;
-		return pattern_list_add_pattern(&config->exclusion_pats,
-						filename);
-	case CAPTURE_CONFIG_EXCLUSION_EXCEPTION_SECTION:
-		if (parse_string(&line, &len, &filename) != PARSE_STRING_SUCCESS)
-			return false;
-		return pattern_list_add_pattern(&config->exclusion_exception_pats,
-						filename);
-	case CAPTURE_CONFIG_IGNORE_SECTION:
-		return true;
-	}
-	return false;
-}
-
-static int
-parse_capture_config(tchar **contents_p, size_t nchars,
-		     struct wimlib_capture_config *config)
-{
-	ssize_t nlines;
-	tchar *p;
-	size_t i;
-	enum capture_config_section cur_section;
-
-	memset(config, 0, sizeof(*config));
-
-	nlines = text_file_count_lines(contents_p, &nchars);
-	if (nlines < 0)
-		return -1;
-
-	cur_section = CAPTURE_CONFIG_NO_SECTION;
-	p = *contents_p;
-	for (i = 0; i < nlines; i++) {
-		tchar *endp = tmemchr(p, T('\n'), nchars);
-		size_t len = endp - p + 1;
-		*endp = T('\0');
-		if (p != endp && *(endp - 1) == T('\r')) {
-			*(endp - 1) = '\0';
-			len--;
-		}
-		if (!is_comment_line(p, len))
-			if (!parse_capture_config_line(p, len, &cur_section, config))
-				return -1;
-		p = endp + 1;
-
-	}
-	return 0;
 }
 
 /* Reads the contents of a file into memory. */
@@ -1842,8 +1690,6 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	tchar *source_copy;
 
 	tchar *config_file = NULL;
-	tchar *config_str;
-	struct wimlib_capture_config *config;
 
 	bool source_list = false;
 	size_t source_list_nchars = 0;
@@ -2002,26 +1848,6 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	if (compress_slow)
 		set_compress_slow();
 
-	/* Set default configuration file  */
-#ifdef __WIN32__
-	if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_WIMBOOT) && !config) {
-		struct stat st;
-
-		config_file = alloca(wcslen(source) * sizeof(wchar_t) + 100);
-		swprintf(config_file, L"%ls\\%ls",
-			 source,  L"Windows\\System32\\WimBootCompress.ini");
-
-		if (tstat(config_file, &st)) {
-			imagex_printf(L"\"%ls\" does not exist; using "
-				      "default configuration\n",
-				      config_file);
-			config_file = NULL;
-		} else {
-			add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_WINCONFIG;
-		}
-	}
-#endif
-
 	if (!tstrcmp(wimfile, T("-"))) {
 		/* Writing captured WIM to standard output.  */
 	#if 0
@@ -2126,27 +1952,6 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		source_list_contents = NULL;
 	}
 
-	if (config_file) {
-		/* Read and parse capture configuration file.  */
-		size_t config_len;
-
-		config_str = file_get_text_contents(config_file, &config_len);
-		if (!config_str) {
-			ret = -1;
-			goto out_free_capture_sources;
-		}
-
-		config = alloca(sizeof(*config));
-		ret = parse_capture_config(&config_str, config_len, config);
-		if (ret)
-			goto out_free_config;
-	} else {
-		/* No capture configuration file specified; use default
-		 * configuration for capturing Windows operating systems.  */
-		config = NULL;
-		add_image_flags |= WIMLIB_ADD_FLAG_WINCONFIG;
-	}
-
 	/* Open the existing WIM, or create a new one.  */
 	if (cmd == CMD_APPEND)
 		ret = wimlib_open_wim(wimfile, open_flags, &wim,
@@ -2154,7 +1959,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	else
 		ret = wimlib_create_new_wim(compression_type, &wim);
 	if (ret)
-		goto out_free_config;
+		goto out_free_capture_sources;
 
 	/* Set chunk size if non-default.  */
 	if (chunk_size != UINT32_MAX) {
@@ -2294,7 +2099,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 					   capture_sources,
 					   num_sources,
 					   name,
-					   config,
+					   config_file,
 					   add_image_flags,
 					   imagex_progress_func);
 	if (ret)
@@ -2364,12 +2169,6 @@ out_free_base_wims:
 	free(base_wims);
 out_free_wim:
 	wimlib_free(wim);
-out_free_config:
-	if (config) {
-		free(config->exclusion_pats.pats);
-		free(config->exclusion_exception_pats.pats);
-		free(config_str);
-	}
 out_free_capture_sources:
 	if (capture_sources_malloced)
 		free(capture_sources);
@@ -3863,7 +3662,8 @@ imagex_update(int argc, tchar **argv, int cmd)
 	int write_flags = 0;
 	int update_flags = WIMLIB_UPDATE_FLAG_SEND_PROGRESS;
 	int default_add_flags = WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE |
-				WIMLIB_ADD_FLAG_VERBOSE;
+				WIMLIB_ADD_FLAG_VERBOSE |
+				WIMLIB_ADD_FLAG_WINCONFIG;
 	int default_delete_flags = 0;
 	unsigned num_threads = 0;
 	int c;
@@ -3872,10 +3672,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 	struct wimlib_update_command *cmds;
 	size_t num_cmds;
 	tchar *command_str = NULL;
-
-	const tchar *config_file = NULL;
-	tchar *config_str;
-	struct wimlib_capture_config *config;
+	tchar *config_file = NULL;
 
 	for_opt(c, update_options) {
 		switch (c) {
@@ -3973,25 +3770,6 @@ imagex_update(int argc, tchar **argv, int cmd)
 		image = 1;
 	}
 
-	/* Parse capture configuration file if specified */
-	if (config_file) {
-		size_t config_len;
-
-		config_str = file_get_text_contents(config_file, &config_len);
-		if (!config_str) {
-			ret = -1;
-			goto out_wimlib_free;
-		}
-
-		config = alloca(sizeof(*config));
-		ret = parse_capture_config(&config_str, config_len, config);
-		if (ret)
-			goto out_free_config;
-	} else {
-		config = NULL;
-		default_add_flags |= WIMLIB_ADD_FLAG_WINCONFIG;
-	}
-
 	/* Read update commands from standard input, or the command string if
 	 * specified.  */
 	if (command_str) {
@@ -4006,7 +3784,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 		cmd_file_contents = stdin_get_text_contents(&cmd_file_nchars);
 		if (!cmd_file_contents) {
 			ret = -1;
-			goto out_free_config;
+			goto out_wimlib_free;
 		}
 
 		/* Parse the update commands */
@@ -4023,7 +3801,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
 			cmds[i].add.add_flags |= default_add_flags;
-			cmds[i].add.config = config;
+			cmds[i].add.config_file = config_file;
 			break;
 		case WIMLIB_UPDATE_OP_DELETE:
 			cmds[i].delete_.delete_flags |= default_delete_flags;
@@ -4046,12 +3824,6 @@ out_free_cmds:
 	free(cmds);
 out_free_cmd_file_contents:
 	free(cmd_file_contents);
-out_free_config:
-	if (config) {
-		free(config->exclusion_pats.pats);
-		free(config->exclusion_exception_pats.pats);
-		free(config_str);
-	}
 out_wimlib_free:
 	wimlib_free(wim);
 out_free_command_str:

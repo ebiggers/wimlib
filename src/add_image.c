@@ -124,7 +124,7 @@ static struct wimlib_update_command *
 capture_sources_to_add_cmds(const struct wimlib_capture_source *sources,
 			    size_t num_sources,
 			    int add_flags,
-			    const struct wimlib_capture_config *config)
+			    const tchar *config_file)
 {
 	struct wimlib_update_command *add_cmds;
 
@@ -139,9 +139,8 @@ capture_sources_to_add_cmds(const struct wimlib_capture_source *sources,
 			      sources[i].fs_source_path,
 			      sources[i].wim_target_path);
 			add_cmds[i].op = WIMLIB_UPDATE_OP_ADD;
-			add_cmds[i].add.add_flags = add_flags & ~(WIMLIB_ADD_FLAG_BOOT |
-								  WIMLIB_ADD_FLAG_WIMBOOT);
-			add_cmds[i].add.config = (struct wimlib_capture_config*)config;
+			add_cmds[i].add.add_flags = add_flags & ~WIMLIB_ADD_FLAG_BOOT;
+			add_cmds[i].add.config_file = (tchar *)config_file;
 			add_cmds[i].add.fs_source_path = sources[i].fs_source_path;
 			add_cmds[i].add.wim_target_path = sources[i].wim_target_path;
 		}
@@ -155,7 +154,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 			     const struct wimlib_capture_source *sources,
 			     size_t num_sources,
 			     const tchar *name,
-			     const struct wimlib_capture_config *config,
+			     const tchar *config_file,
 			     int add_flags,
 			     wimlib_progress_func_t progress_func)
 {
@@ -176,7 +175,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 
 	/* Translate the "capture sources" into generic update commands. */
 	add_cmds = capture_sources_to_add_cmds(sources, num_sources,
-					       add_flags, config);
+					       add_flags, config_file);
 	if (add_cmds == NULL) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_delete_image;
@@ -211,7 +210,7 @@ WIMLIBAPI int
 wimlib_add_image(WIMStruct *wim,
 		 const tchar *source,
 		 const tchar *name,
-		 const struct wimlib_capture_config *config,
+		 const tchar *config_file,
 		 int add_flags,
 		 wimlib_progress_func_t progress_func)
 {
@@ -223,6 +222,6 @@ wimlib_add_image(WIMStruct *wim,
 		.reserved = 0,
 	};
 	return wimlib_add_image_multisource(wim, &capture_src, 1, name,
-					    config, add_flags,
+					    config_file, add_flags,
 					    progress_func);
 }

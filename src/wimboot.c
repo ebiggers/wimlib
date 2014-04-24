@@ -29,13 +29,12 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
-#ifndef __WIN32__
-#  error "This file contains Windows code!"
-#endif
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
+
+#ifdef __WIN32__
 
 #include "wimlib/win32_common.h"
 #include "wimlib/win32.h"
@@ -293,3 +292,5 @@ out_close_handle:
 out:
 	return ret;
 }
+
+#endif /* __WIN32__ */
