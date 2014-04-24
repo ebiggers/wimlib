@@ -109,11 +109,14 @@ do_read_capture_config_file(const tchar *config_file, const void *buf,
 			    size_t bufsize, struct capture_config *config)
 {
 	int ret;
+	STRING_SET(prepopulate_pats);
 	struct text_file_section sections[] = {
 		{T("ExclusionList"),
 			&config->exclusion_pats},
 		{T("ExclusionException"),
 			&config->exclusion_exception_pats},
+		{T("PrepopulateList"),
+			&prepopulate_pats},
 	};
 	void *mem;
 
@@ -122,6 +125,8 @@ do_read_capture_config_file(const tchar *config_file, const void *buf,
 				LOAD_TEXT_FILE_REMOVE_QUOTES, mangle_pat);
 	if (ret)
 		return ret;
+
+	FREE(prepopulate_pats.strings);
 
 	config->buf = mem;
 	return 0;
