@@ -3431,11 +3431,6 @@ wimlib_set_output_compression_type(WIMStruct *wim, int ctype);
  *
  * Similar to wimlib_set_output_compression_type(), but set the compression type
  * for writing packed streams (solid blocks).
- *
- * Note: based on testing, WIMGAPI is seemingly only compatible with LZMS
- * compression in packed streams.  Therefore the use of this function is not
- * recommended.  Also, with large chunk sizes, LZMS gives the best compression
- * ratio among the alternatives anyway.
  */
 extern int
 wimlib_set_output_pack_compression_type(WIMStruct *wim, int ctype);
