@@ -410,11 +410,11 @@ enum wimlib_compression_type {
 	/** The WIM does not include any compressed resources. */
 	WIMLIB_COMPRESSION_TYPE_NONE = 0,
 
-	/** Compressed resources in the WIM use LZX compression. */
-	WIMLIB_COMPRESSION_TYPE_LZX = 1,
-
 	/** Compressed resources in the WIM use XPRESS compression. */
-	WIMLIB_COMPRESSION_TYPE_XPRESS = 2,
+	WIMLIB_COMPRESSION_TYPE_XPRESS = 1,
+
+	/** Compressed resources in the WIM use LZX compression. */
+	WIMLIB_COMPRESSION_TYPE_LZX = 2,
 
 	/** Compressed resources in the WIM use LZMS compression.  Note: LZMS
 	 * compression is only compatible with wimlib v1.6.0 and later and with

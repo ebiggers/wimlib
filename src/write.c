@@ -569,8 +569,8 @@ end_chunk_table(struct write_streams_ctx *ctx, u64 res_actual_size,
 			hdr.chunk_size = cpu_to_le32(ctx->out_chunk_size);
 			hdr.compression_format = cpu_to_le32(ctx->out_ctype);
 
-			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZX != 1);
-			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_XPRESS != 2);
+			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_XPRESS != 1);
+			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZX != 2);
 			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZMS != 3);
 
 			ret = full_pwrite(ctx->out_fd, &hdr, sizeof(hdr),

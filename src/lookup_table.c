@@ -774,8 +774,8 @@ read_wim_lookup_table(WIMStruct *wim)
 			/* Compression format numbers must be the same as in
 			 * WIMGAPI to be compatible here.  */
 			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
-			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZX != 1);
-			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_XPRESS != 2);
+			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_XPRESS != 1);
+			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZX != 2);
 			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZMS != 3);
 			cur_rspec->compression_type = le32_to_cpu(hdr.compression_format);
 
