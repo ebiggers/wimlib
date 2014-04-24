@@ -17,7 +17,7 @@ struct capture_config {
 	struct string_set exclusion_exception_pats;
 	tchar *prefix;
 	size_t prefix_num_tchars;
-	tchar *buf;
+	void *buf;
 };
 
 /* Common parameters to implementations of building an in-memory dentry tree
@@ -65,11 +65,19 @@ do_capture_progress(struct add_image_params *params, int status,
 		    const struct wim_inode *inode);
 
 extern int
-do_read_capture_config_file(const tchar *config_file, tchar *buf, size_t buflen,
-			    struct capture_config *config);
+mangle_pat(tchar *pat, const tchar *path, unsigned long line_no);
+
+extern int
+do_read_capture_config_file(const tchar *config_file, const void *buf,
+			    size_t bufsize, struct capture_config *config);
 
 extern void
 destroy_capture_config(struct capture_config *config);
+
+extern bool
+match_pattern(const tchar *path,
+	      const tchar *path_basename,
+	      const struct string_set *list);
 
 extern bool
 exclude_path(const tchar *path, size_t path_len,

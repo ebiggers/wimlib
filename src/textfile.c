@@ -40,12 +40,12 @@
 #include <unistd.h>
 
 static int
-read_file_contents(const tchar *path, u8 **buf_ret, size_t *bufsize_ret)
+read_file_contents(const tchar *path, void **buf_ret, size_t *bufsize_ret)
 {
 	int raw_fd;
 	struct filedes fd;
 	struct stat st;
-	u8 *buf;
+	void *buf;
 	int ret;
 	int errno_save;
 
@@ -87,20 +87,14 @@ read_file_contents(const tchar *path, u8 **buf_ret, size_t *bufsize_ret)
 }
 
 static int
-read_text_file_contents(const tchar *path,
-			tchar **buf_ret, size_t *buflen_ret)
+translate_text_buffer(const u8 *buf_raw, size_t bufsize_raw,
+		      tchar **tstr_ret, size_t *tstr_nchars_ret)
 {
-	int ret;
-	u8 *buf_raw;
-	size_t bufsize_raw;
 	size_t offset_raw;
 	bool utf8;
 	tchar *buf_tstr;
 	size_t bufsize_tstr;
-
-	ret = read_file_contents(path, &buf_raw, &bufsize_raw);
-	if (ret)
-		return ret;
+	int ret;
 
 	/* Guess the encoding: UTF-8 or UTF-16LE.  (Something weirder and you're
 	 * out of luck, sorry...)  */
@@ -144,6 +138,7 @@ read_text_file_contents(const tchar *path,
 			memcpy(buf_tstr, buf_raw + offset_raw, bufsize_tstr);
 			((u8*)buf_tstr)[bufsize_tstr + 0] = 0;
 			((u8*)buf_tstr)[bufsize_tstr + 1] = 0;
+			ret = 0;
 		} else {
 			ret = WIMLIB_ERR_NOMEM;
 		}
@@ -153,12 +148,11 @@ read_text_file_contents(const tchar *path,
 				      &buf_tstr, &bufsize_tstr);
 	#endif
 	}
-	FREE(buf_raw);
 	if (ret)
 		return ret;
 
-	*buf_ret = buf_tstr;
-	*buflen_ret = bufsize_tstr / sizeof(tchar);
+	*tstr_ret = buf_tstr;
+	*tstr_nchars_ret = bufsize_tstr / sizeof(tchar);
 	return 0;
 }
 
@@ -248,16 +242,22 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
 				}
 			}
 			line_begin[line_len - 1] = T(']');
-			if (current_section < 0)
-				WARNING("%"TS":%lu: Unrecognized section \"%"TS"\"",
-					path, line_no, line_begin);
+			if (current_section < 0) {
+				if (!(flags & LOAD_TEXT_FILE_NO_WARNINGS)) {
+					WARNING("%"TS":%lu: Unrecognized section \"%"TS"\"",
+						path, line_no, line_begin);
+				}
+			}
 			continue;
 		}
 
 		if (current_section < 0) {
-			if (current_section == NOT_IN_SECTION)
-				WARNING("%"TS":%lu: Not in a bracketed section!",
-					path, line_no);
+			if (current_section == NOT_IN_SECTION) {
+				if (!(flags & LOAD_TEXT_FILE_NO_WARNINGS)) {
+					WARNING("%"TS":%lu: Not in a bracketed section!",
+						path, line_no);
+				}
+			}
 			continue;
 		}
 
@@ -300,7 +300,7 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
  *	If NULL, the data will be read from the @path file.  Otherwise the data
  *	will be read from this buffer, which must be newline-terminated.
  * @buflen
- *	Length of buffer in 'tchars'; ignored if @buf is NULL.
+ *	Length of buffer in bytes; ignored if @buf is NULL.
  * @buf_ret
  *	On success, a pointer to a buffer backing the parsed lines is stored
  *	here.  If @buf is not NULL, this will be @buf.  Otherwise, this will be
@@ -324,8 +324,8 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
  */
 int
 do_load_text_file(const tchar *path,
-		  tchar *buf, size_t buflen,
-		  tchar **buf_ret,
+		  const void *buf, size_t bufsize,
+		  void **mem_ret,
 		  const struct text_file_section *pos_sections,
 		  int num_pos_sections,
 		  int flags,
@@ -333,29 +333,32 @@ do_load_text_file(const tchar *path,
 {
 	int ret;
 	bool pathmode = (buf == NULL);
+	tchar *tstr;
+	size_t tstr_nchars;
 
 	if (pathmode) {
-		ret = read_text_file_contents(path, &buf, &buflen);
+		ret = read_file_contents(path, (void **)&buf, &bufsize);
 		if (ret)
 			return ret;
-
-		/* Overwrite '\0' with '\n' to avoid special case of last line
-		 * not terminated with '\n'.  */
-		buf[buflen++] = T('\n');
-	} else {
-		wimlib_assert(buflen > 0 && buf[buflen - 1] == T('\n'));
 	}
 
-	ret = parse_text_file(path, buf, buflen, pos_sections,
+	ret = translate_text_buffer(buf, bufsize, &tstr, &tstr_nchars);
+	if (pathmode)
+		FREE((void *)buf);
+	if (ret)
+		return ret;
+
+	tstr[tstr_nchars++] = T('\n');
+
+	ret = parse_text_file(path, tstr, tstr_nchars, pos_sections,
 			      num_pos_sections, flags, mangle_line);
 	if (ret) {
 		for (int i = 0; i < num_pos_sections; i++)
 			FREE(pos_sections[i].strings->strings);
-		if (pathmode)
-			FREE(buf);
+		FREE(tstr);
 		return ret;
 	}
 
-	*buf_ret = buf;
+	*mem_ret = tstr;
 	return 0;
 }

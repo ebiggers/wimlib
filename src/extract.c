@@ -494,7 +494,8 @@ extract_streams(const tchar *path, struct apply_ctx *ctx,
 				}
 			} else {
 				ret = ctx->ops->extract_unnamed_stream(
-							file_spec, lte, ctx);
+							file_spec, lte, ctx,
+							dentry);
 				if (ret)
 					goto error;
 			}

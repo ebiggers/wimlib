@@ -284,7 +284,8 @@ out:
 static int
 ntfs_3g_extract_unnamed_stream(file_spec_t file,
 			       struct wim_lookup_table_entry *lte,
-			       struct apply_ctx *ctx)
+			       struct apply_ctx *ctx,
+			       struct wim_dentry *_ignore)
 {
 	return ntfs_3g_extract_stream(file, NULL, 0, lte, ctx);
 }

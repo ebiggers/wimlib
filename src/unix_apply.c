@@ -115,7 +115,7 @@ unix_create_symlink(const tchar *oldpath, const tchar *newpath,
 static int
 unix_extract_unnamed_stream(file_spec_t file,
 			    struct wim_lookup_table_entry *lte,
-			    struct apply_ctx *ctx)
+			    struct apply_ctx *ctx, struct wim_dentry *_ignore)
 {
 	const char *path = file.path;
 	struct filedes fd;

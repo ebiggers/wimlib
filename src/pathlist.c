@@ -40,7 +40,7 @@ read_path_list_file(const tchar *listfile,
 		.name = T(""),
 		.strings = &paths,
 	};
-	tchar *buf;
+	void *buf;
 	int ret;
 
 	ret = load_text_file(listfile, &buf, &tmp, 1, NULL);
@@ -49,6 +49,6 @@ read_path_list_file(const tchar *listfile,
 
 	*paths_ret = paths.strings;
 	*num_paths_ret = paths.num_strings;
-	*mem_ret = (void *)buf;
+	*mem_ret = buf;
 	return 0;
 }

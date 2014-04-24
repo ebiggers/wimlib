@@ -30,8 +30,12 @@
 #include "wimlib/win32_common.h"
 
 #include "wimlib/apply.h"
+#include "wimlib/capture.h"
+#include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
+#include "wimlib/paths.h"
+#include "wimlib/textfile.h"
 #include "wimlib/xml.h"
 #include "wimlib/wim.h"
 #include "wimlib/wimboot.h"
@@ -47,6 +51,110 @@ static u64
 ctx_get_data_source_id(const struct apply_ctx *ctx)
 {
 	return (u32)ctx->private[0] | ((u64)(u32)ctx->private[1] << 32);
+}
+
+static void
+set_prepopulate_pats(struct apply_ctx *ctx, struct string_set *s)
+{
+	ctx->private[2] = (intptr_t)s;
+}
+
+static struct string_set *
+alloc_prepopulate_pats(struct apply_ctx *ctx)
+{
+	struct string_set *s = CALLOC(1, sizeof(*s));
+	set_prepopulate_pats(ctx, s);
+	return s;
+}
+
+static struct string_set *
+get_prepopulate_pats(struct apply_ctx *ctx)
+{
+	return (struct string_set *)(ctx->private[2]);
+}
+
+static void
+free_prepopulate_pats(struct apply_ctx *ctx)
+{
+	struct string_set *s;
+
+	s = get_prepopulate_pats(ctx);
+	if (s) {
+		FREE(s->strings);
+		FREE(s);
+	}
+	set_prepopulate_pats(ctx, NULL);
+
+	FREE((void *)ctx->private[3]);
+	ctx->private[3] = (intptr_t)NULL;
+}
+
+static int
+load_prepopulate_pats(struct apply_ctx *ctx)
+{
+	int ret;
+	struct wim_dentry *dentry;
+	struct wim_lookup_table_entry *lte;
+	struct string_set *s;
+	const tchar *path = WIMLIB_WIM_PATH_SEPARATOR_STRING T("Windows")
+			    WIMLIB_WIM_PATH_SEPARATOR_STRING T("System32")
+			    WIMLIB_WIM_PATH_SEPARATOR_STRING T("WimBootCompress.ini");
+	void *buf;
+	void *mem;
+	struct text_file_section sec;
+
+	dentry = get_dentry(ctx->wim, path, WIMLIB_CASE_INSENSITIVE);
+	if (!dentry ||
+	    (dentry->d_inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+					      FILE_ATTRIBUTE_REPARSE_POINT |
+					      FILE_ATTRIBUTE_ENCRYPTED)) ||
+	    !(lte = inode_unnamed_lte(dentry->d_inode, ctx->wim->lookup_table)))
+	{
+		WARNING("%"TS" does not exist in WIM image!", path);
+		return WIMLIB_ERR_PATH_DOES_NOT_EXIST;
+	}
+
+	ret = read_full_stream_into_alloc_buf(lte, &buf);
+	if (ret)
+		return ret;
+
+	s = alloc_prepopulate_pats(ctx);
+	if (!s) {
+		FREE(buf);
+		return WIMLIB_ERR_NOMEM;
+	}
+
+	sec.name = T("PrepopulateList");
+	sec.strings = s;
+
+	ret = do_load_text_file(path, buf, lte->size, &mem, &sec, 1,
+				LOAD_TEXT_FILE_REMOVE_QUOTES |
+					LOAD_TEXT_FILE_NO_WARNINGS,
+				mangle_pat);
+	FREE(buf);
+	if (ret) {
+		free_prepopulate_pats(ctx);
+		return ret;
+	}
+	ctx->private[3] = (intptr_t)mem;
+	return 0;
+}
+
+static bool
+in_prepopulate_list(struct wim_dentry *dentry,
+		    struct apply_ctx *ctx)
+{
+	struct string_set *pats;
+	const tchar *path;
+
+	pats = get_prepopulate_pats(ctx);
+	if (!pats)
+		return false;
+	path = dentry_full_path(dentry);
+	if (!path)
+		return false;
+
+	return match_pattern(path, path_basename(path), pats);
 }
 
 static int
@@ -97,6 +205,10 @@ win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 
 	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT) {
 
+		ret = load_prepopulate_pats(ctx);
+		if (ret == WIMLIB_ERR_NOMEM)
+			return ret;
+
 		u64 data_source_id;
 
 		if (!wim_info_get_wimboot(ctx->wim->wim_info,
@@ -106,12 +218,21 @@ win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 		ret = wimboot_alloc_data_source_id(ctx->wim->filename,
 						   ctx->wim->current_image,
 						   path, &data_source_id);
-		if (ret)
+		if (ret) {
+			free_prepopulate_pats(ctx);
 			return ret;
+		}
 
 		ctx_save_data_source_id(ctx, data_source_id);
 	}
 
+	return 0;
+}
+
+static int
+win32_finish_extract(struct apply_ctx *ctx)
+{
+	free_prepopulate_pats(ctx);
 	return 0;
 }
 
@@ -297,12 +418,14 @@ error:
 static int
 win32_extract_unnamed_stream(file_spec_t file,
 			     struct wim_lookup_table_entry *lte,
-			     struct apply_ctx *ctx)
+			     struct apply_ctx *ctx,
+			     struct wim_dentry *dentry)
 {
 	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT
 	    && lte
 	    && lte->resource_location == RESOURCE_IN_WIM
-	    && lte->rspec->wim == ctx->wim)
+	    && lte->rspec->wim == ctx->wim
+	    && !in_prepopulate_list(dentry, ctx))
 	{
 		return wimboot_set_pointer(file.path,
 					   ctx_get_data_source_id(ctx),
@@ -767,6 +890,8 @@ const struct apply_operations win32_apply_ops = {
 
 	.target_is_root           = win32_path_is_root_of_drive,
 	.start_extract            = win32_start_extract,
+	.finish_extract		  = win32_finish_extract,
+	.abort_extract		  = win32_finish_extract,
 	.create_file              = win32_create_file,
 	.create_directory         = win32_create_directory,
 	.create_hardlink          = win32_create_hardlink,

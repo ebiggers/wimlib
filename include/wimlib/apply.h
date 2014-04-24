@@ -72,7 +72,7 @@ struct apply_operations {
 	/* REQUIRED:  Extract unnamed data stream.  */
 	int (*extract_unnamed_stream)
 		(file_spec_t file, struct wim_lookup_table_entry *lte,
-		 struct apply_ctx *ctx);
+		 struct apply_ctx *ctx, struct wim_dentry *dentry);
 
 	/* OPTIONAL:  Extracted named data stream.  In start_extract(), set
 	 * ctx->supported_features.alternate_data_streams if supported.  */

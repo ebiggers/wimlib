@@ -165,16 +165,14 @@ attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
 	}
 }
 
-const tchar wincfg[] =
-T(
+static const char wincfg[] =
 "[ExclusionList]\n"
 "/$ntfs.log\n"
 "/hiberfil.sys\n"
 "/pagefile.sys\n"
 "/System Volume Information\n"
 "/RECYCLER\n"
-"/Windows/CSC\n"
-);
+"/Windows/CSC\n";
 
 static int
 get_capture_config(const tchar *config_file, struct capture_config *config,
@@ -211,23 +209,11 @@ get_capture_config(const tchar *config_file, struct capture_config *config,
 	}
 
 	if (add_flags & WIMLIB_ADD_FLAG_WINCONFIG) {
-
 		/* Use Windows default.  */
-
-		tchar *wincfg_copy;
-		const size_t wincfg_len = ARRAY_LEN(wincfg) - 1;
-
 		if (config_file)
 			return WIMLIB_ERR_INVALID_PARAM;
-
-		wincfg_copy = memdup(wincfg, wincfg_len * sizeof(wincfg[0]));
-		if (!wincfg_copy)
-			return WIMLIB_ERR_NOMEM;
-
-		ret = do_read_capture_config_file(T("wincfg"), wincfg_copy,
-						  wincfg_len, config);
-		if (ret)
-			FREE(wincfg_copy);
+		ret = do_read_capture_config_file(T("wincfg"), wincfg,
+						  sizeof(wincfg) - 1, config);
 	} else if (config_file) {
 		/* Use the specified configuration file.  */
 		ret = do_read_capture_config_file(config_file, NULL, 0, config);

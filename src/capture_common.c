@@ -69,7 +69,7 @@ do_capture_progress(struct add_image_params *params, int status,
 	}
 }
 
-static int
+int
 mangle_pat(tchar *pat, const tchar *path, unsigned long line_no)
 {
 	if (!is_any_path_separator(pat[0]) &&
@@ -105,8 +105,8 @@ mangle_pat(tchar *pat, const tchar *path, unsigned long line_no)
 }
 
 int
-do_read_capture_config_file(const tchar *config_file, tchar *buf, size_t buflen,
-			    struct capture_config *config)
+do_read_capture_config_file(const tchar *config_file, const void *buf,
+			    size_t bufsize, struct capture_config *config)
 {
 	int ret;
 	struct text_file_section sections[] = {
@@ -115,14 +115,15 @@ do_read_capture_config_file(const tchar *config_file, tchar *buf, size_t buflen,
 		{T("ExclusionException"),
 			&config->exclusion_exception_pats},
 	};
+	void *mem;
 
-	ret = do_load_text_file(config_file, buf, buflen, &buf,
+	ret = do_load_text_file(config_file, buf, bufsize, &mem,
 				sections, ARRAY_LEN(sections),
 				LOAD_TEXT_FILE_REMOVE_QUOTES, mangle_pat);
 	if (ret)
 		return ret;
 
-	config->buf = buf;
+	config->buf = mem;
 	return 0;
 }
 
@@ -134,7 +135,7 @@ destroy_capture_config(struct capture_config *config)
 	FREE(config->buf);
 }
 
-static bool
+bool
 match_pattern(const tchar *path,
 	      const tchar *path_basename,
 	      const struct string_set *list)
