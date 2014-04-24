@@ -177,6 +177,7 @@ enum {
 	IMAGEX_NULLGLOB_OPTION,
 	IMAGEX_ONE_FILE_ONLY_OPTION,
 	IMAGEX_PACK_CHUNK_SIZE_OPTION,
+	IMAGEX_PACK_COMPRESS_OPTION,
 	IMAGEX_PACK_STREAMS_OPTION,
 	IMAGEX_PATH_OPTION,
 	IMAGEX_PIPABLE_OPTION,
@@ -233,6 +234,8 @@ static const struct option capture_or_append_options[] = {
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
 	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
+	{T("pack-compress"), required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
+	{T("solid-compress"),required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
 	{T("pack-streams"), no_argument,      NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("solid"),       no_argument,      NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
@@ -281,6 +284,8 @@ static const struct option export_options[] = {
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
 	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
+	{T("pack-compress"), required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
+	{T("solid-compress"),required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
 	{T("ref"),         required_argument, NULL, IMAGEX_REF_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
@@ -348,6 +353,8 @@ static const struct option optimize_options[] = {
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
 	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
+	{T("pack-compress"), required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
+	{T("solid-compress"),required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
 	{T("pack-streams"),no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("solid"),       no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
@@ -1668,6 +1675,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	uint32_t chunk_size = UINT32_MAX;
 	uint32_t pack_chunk_size = UINT32_MAX;
+	int pack_ctype = WIMLIB_COMPRESSION_TYPE_INVALID;
 	const tchar *wimfile;
 	int wim_fd;
 	const tchar *name;
@@ -1732,6 +1740,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		case IMAGEX_PACK_CHUNK_SIZE_OPTION:
 			pack_chunk_size = parse_chunk_size(optarg);
 			if (pack_chunk_size == UINT32_MAX)
+				goto out_err;
+			break;
+		case IMAGEX_PACK_COMPRESS_OPTION:
+			pack_ctype = get_compression_type(optarg);
+			if (pack_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
 		case IMAGEX_PACK_STREAMS_OPTION:
@@ -1832,7 +1845,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
 		} else {
 			compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
-			if (!compress_slow) {
+			if (!compress_slow && pack_ctype != WIMLIB_COMPRESSION_TYPE_LZX) {
 				struct wimlib_lzx_compressor_params params = {
 					.hdr.size = sizeof(params),
 					.algorithm = WIMLIB_LZX_ALGORITHM_FAST,
@@ -1842,7 +1855,6 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 								     &params.hdr);
 			}
 		}
-
 	}
 
 	if (compress_slow)
@@ -1969,6 +1981,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	} else if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_WIMBOOT) &&
 		   compression_type == WIMLIB_COMPRESSION_TYPE_XPRESS) {
 		ret = wimlib_set_output_chunk_size(wim, 4096);
+		if (ret)
+			goto out_free_wim;
+	}
+	if (pack_ctype != WIMLIB_COMPRESSION_TYPE_INVALID) {
+		ret = wimlib_set_output_pack_compression_type(wim, pack_ctype);
 		if (ret)
 			goto out_free_wim;
 	}
@@ -2568,6 +2585,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	unsigned num_threads = 0;
 	uint32_t chunk_size = UINT32_MAX;
 	uint32_t pack_chunk_size = UINT32_MAX;
+	int pack_ctype = WIMLIB_COMPRESSION_TYPE_INVALID;
 
 	for_opt(c, export_options) {
 		switch (c) {
@@ -2601,6 +2619,11 @@ imagex_export(int argc, tchar **argv, int cmd)
 		case IMAGEX_PACK_CHUNK_SIZE_OPTION:
 			pack_chunk_size = parse_chunk_size(optarg);
 			if (pack_chunk_size == UINT32_MAX)
+				goto out_err;
+			break;
+		case IMAGEX_PACK_COMPRESS_OPTION:
+			pack_ctype = get_compression_type(optarg);
+			if (pack_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
 		case IMAGEX_REF_OPTION:
@@ -2729,6 +2752,11 @@ imagex_export(int argc, tchar **argv, int cmd)
 	if (chunk_size != UINT32_MAX) {
 		/* Set destination chunk size.  */
 		ret = wimlib_set_output_chunk_size(dest_wim, chunk_size);
+		if (ret)
+			goto out_free_dest_wim;
+	}
+	if (pack_ctype != WIMLIB_COMPRESSION_TYPE_INVALID) {
+		ret = wimlib_set_output_pack_compression_type(dest_wim, pack_ctype);
 		if (ret)
 			goto out_free_dest_wim;
 	}
@@ -3408,6 +3436,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	uint32_t chunk_size = UINT32_MAX;
 	uint32_t pack_chunk_size = UINT32_MAX;
+	int pack_ctype = WIMLIB_COMPRESSION_TYPE_INVALID;
 	int ret;
 	WIMStruct *wim;
 	const tchar *wimfile;
@@ -3445,6 +3474,11 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		case IMAGEX_PACK_CHUNK_SIZE_OPTION:
 			pack_chunk_size = parse_chunk_size(optarg);
 			if (pack_chunk_size == UINT32_MAX)
+				goto out_err;
+			break;
+		case IMAGEX_PACK_COMPRESS_OPTION:
+			pack_ctype = get_compression_type(optarg);
+			if (pack_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
 		case IMAGEX_PACK_STREAMS_OPTION:
@@ -3488,6 +3522,11 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	if (chunk_size != UINT32_MAX) {
 		/* Change chunk size.  */
 		ret = wimlib_set_output_chunk_size(wim, chunk_size);
+		if (ret)
+			goto out_wimlib_free;
+	}
+	if (pack_ctype != WIMLIB_COMPRESSION_TYPE_INVALID) {
+		ret = wimlib_set_output_pack_compression_type(wim, pack_ctype);
 		if (ret)
 			goto out_wimlib_free;
 	}
