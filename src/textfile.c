@@ -189,7 +189,7 @@ string_set_append(struct string_set *set, tchar *str)
 static int
 parse_text_file(const tchar *path, tchar *buf, size_t buflen,
 		const struct text_file_section *pos_sections,
-		int num_pos_sections, line_mangle_t mangle_line)
+		int num_pos_sections, int flags, line_mangle_t mangle_line)
 {
 	int current_section = NOT_IN_SECTION;
 	bool have_named_sections = false;
@@ -261,6 +261,19 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
 			continue;
 		}
 
+		if (flags & LOAD_TEXT_FILE_REMOVE_QUOTES) {
+			if (line_begin[0] == T('"') || line_begin[0] == T('\'')) {
+				tchar quote = line_begin[0];
+				if (line_len >= 2 &&
+				    line_begin[line_len - 1] == quote)
+				{
+					line_begin++;
+					line_len -= 2;
+					line_begin[line_len] = T('\0');
+				}
+			}
+		}
+
 		if (mangle_line) {
 			ret = (*mangle_line)(line_begin, path, line_no);
 			if (ret)
@@ -300,6 +313,8 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
  *	not in any section.
  * @num_pos_sections
  *	Length of @pos_sections array.
+ * @flags
+ *	LOAD_TEXT_FILE_REMOVE_QUOTES or 0.
  * @mangle_line
  *	Optional callback to modify each line being read.
  *
@@ -313,6 +328,7 @@ do_load_text_file(const tchar *path,
 		  tchar **buf_ret,
 		  const struct text_file_section *pos_sections,
 		  int num_pos_sections,
+		  int flags,
 		  line_mangle_t mangle_line)
 {
 	int ret;
@@ -331,7 +347,7 @@ do_load_text_file(const tchar *path,
 	}
 
 	ret = parse_text_file(path, buf, buflen, pos_sections,
-			      num_pos_sections, mangle_line);
+			      num_pos_sections, flags, mangle_line);
 	if (ret) {
 		for (int i = 0; i < num_pos_sections; i++)
 			FREE(pos_sections[i].strings->strings);

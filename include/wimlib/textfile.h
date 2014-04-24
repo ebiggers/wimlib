@@ -23,10 +23,13 @@ struct text_file_section {
 	struct string_set *strings;
 };
 
+#define LOAD_TEXT_FILE_REMOVE_QUOTES 0x00000001
+
 extern int
 do_load_text_file(const tchar *path, tchar *buf, size_t buflen, tchar **buf_ret,
 		  const struct text_file_section *pos_sections,
-		  int num_pos_sections, line_mangle_t mangle_line);
+		  int num_pos_sections, int flags,
+		  line_mangle_t mangle_line);
 
 static inline int
 load_text_file(const tchar *path, tchar **buf_ret,
@@ -34,7 +37,8 @@ load_text_file(const tchar *path, tchar **buf_ret,
 	       int num_pos_sections, line_mangle_t mangle_line)
 {
 	return do_load_text_file(path, NULL, 0, buf_ret,
-				 pos_sections, num_pos_sections, mangle_line);
+				 pos_sections, num_pos_sections,
+				 LOAD_TEXT_FILE_REMOVE_QUOTES, mangle_line);
 }
 
 static inline int
@@ -43,7 +47,8 @@ load_text_buffer(tchar *buf, size_t buflen,
 		 int num_pos_sections, line_mangle_t mangle_line)
 {
 	return do_load_text_file(NULL, buf, buflen, &buf,
-				 pos_sections, num_pos_sections, mangle_line);
+				 pos_sections, num_pos_sections,
+				 LOAD_TEXT_FILE_REMOVE_QUOTES, mangle_line);
 }
 
 #endif /* _WIMLIB_TEXTFILE_H_ */
