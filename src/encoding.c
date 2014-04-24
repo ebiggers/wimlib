@@ -39,6 +39,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#endif
+
 bool wimlib_mbs_is_utf8 = !TCHAR_IS_UTF16LE;
 
 /* List of iconv_t conversion descriptors for a specific character conversion.
@@ -139,12 +143,25 @@ varname1##_to_##varname2##_nbytes(const chartype1 *in, size_t in_nbytes,\
 	if (cd == NULL)							\
 		return WIMLIB_ERR_ICONV_NOT_AVAILABLE;			\
 									\
+	chartype2 *buf;							\
+	size_t bufsize;							\
+	bool buf_onheap;						\
+	bufsize = (worst_case_len_expr) * sizeof(chartype2);		\
 	/* Worst case length */						\
-	chartype2 buf[worst_case_len_expr];				\
+	if (bufsize <= STACK_MAX) { 					\
+		buf = alloca(bufsize);					\
+		buf_onheap = false;					\
+	} else {							\
+		buf = MALLOC(bufsize);					\
+		if (!buf)						\
+			return WIMLIB_ERR_NOMEM;			\
+		buf_onheap = true;					\
+	}								\
+									\
 	char *inbuf = (char*)in;					\
 	size_t inbytesleft = in_nbytes;					\
 	char *outbuf = (char*)buf;					\
-	size_t outbytesleft = sizeof(buf);				\
+	size_t outbytesleft = bufsize;					\
 	size_t len;							\
 	int ret;							\
 									\
@@ -157,10 +174,12 @@ varname1##_to_##varname2##_nbytes(const chartype1 *in, size_t in_nbytes,\
 		}							\
 		ret = err_return;					\
 	} else {							\
-		*out_nbytes_ret = sizeof(buf) - outbytesleft;		\
+		*out_nbytes_ret = bufsize - outbytesleft;		\
 		ret = 0;						\
 	}								\
 	put_iconv(cd);							\
+	if (buf_onheap)							\
+		FREE(buf);						\
 	return ret;							\
 }									\
 									\
