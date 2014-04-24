@@ -536,7 +536,7 @@ delta WIM, and when applying an image, the base WIM(s) must be sent over the
 pipe after the delta WIM.
 .TP
 \fB--wimboot\fR
-Windows only: mark the image as WIMBoot-compatible.  See Microsoft's
+Mark the image as WIMBoot-compatible.  See Microsoft's
 documentation for more information about WIMBoot.  This option will, by default,
 change the compression type to XPRESS and the chunk size to 4096 bytes; these
 can, however, still be overridden through the \fB--compress\fR and
