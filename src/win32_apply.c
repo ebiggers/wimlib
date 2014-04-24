@@ -60,14 +60,6 @@ set_prepopulate_pats(struct apply_ctx *ctx, struct string_set *s)
 }
 
 static struct string_set *
-alloc_prepopulate_pats(struct apply_ctx *ctx)
-{
-	struct string_set *s = CALLOC(1, sizeof(*s));
-	set_prepopulate_pats(ctx, s);
-	return s;
-}
-
-static struct string_set *
 get_prepopulate_pats(struct apply_ctx *ctx)
 {
 	return (struct string_set *)(ctx->private[2]);
@@ -118,7 +110,7 @@ load_prepopulate_pats(struct apply_ctx *ctx)
 	if (ret)
 		return ret;
 
-	s = alloc_prepopulate_pats(ctx);
+	s = CALLOC(1, sizeof(struct string_set));
 	if (!s) {
 		FREE(buf);
 		return WIMLIB_ERR_NOMEM;
@@ -133,9 +125,10 @@ load_prepopulate_pats(struct apply_ctx *ctx)
 				mangle_pat);
 	FREE(buf);
 	if (ret) {
-		free_prepopulate_pats(ctx);
+		FREE(s);
 		return ret;
 	}
+	set_prepopulate_pats(ctx, s);
 	ctx->private[3] = (intptr_t)mem;
 	return 0;
 }
