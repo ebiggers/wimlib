@@ -209,7 +209,7 @@ retry_ioctl:
 		} else {
 			set_errno_from_win32_error(err);
 			ERROR_WITH_ERRNO("Failed to add overlay source \"%ls\" "
-					 "to volume \"%ls\" (err=0x%08"PRIu32")",
+					 "to volume \"%ls\" (err=0x%08"PRIx32")",
 					 wim_path, drive_path + 4, (uint32_t)err);
 			ret = WIMLIB_ERR_WIMBOOT;
 			goto out_close_handle;
@@ -282,7 +282,7 @@ wimboot_set_pointer(const wchar_t *path, u64 data_source_id,
 		DWORD err = GetLastError();
 		set_errno_from_win32_error(err);
 		ERROR_WITH_ERRNO("\"%ls\": Couldn't set WIMBoot pointer data "
-				 "(err=0x%08x)", path, (uint32_t)err);
+				 "(err=0x%08"PRIx32")", path, (uint32_t)err);
 		ret = WIMLIB_ERR_WIMBOOT;
 		goto out_close_handle;
 	}
