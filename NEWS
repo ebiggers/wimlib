@@ -15,7 +15,7 @@ Version 1.6.3-BETA:
 		  WIMLIB_COMPRESSION_TYPE_LZX is now 2 (so it's the same as
 		  WIMGAPI).
 
-		- 'struct' wimlib_capture_config has been removed.  The library
+		- 'struct wimlib_capture_config' has been removed.  The library
 		  now takes the path to the configuration file directly.  This
 		  affects wimlib_add_image(), wimlib_add_image_multisource(),
 		  and wimlib_update_image().  However no code changes are
