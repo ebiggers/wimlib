@@ -174,6 +174,9 @@ static const char wincfg[] =
 "/RECYCLER\n"
 "/Windows/CSC\n";
 
+static const tchar *wimboot_cfgfile =
+		T("/Windows/System32/WimBootCompress.ini");
+
 static int
 get_capture_config(const tchar *config_file, struct capture_config *config,
 		   int add_flags, const tchar *fs_source_path)
@@ -189,8 +192,6 @@ get_capture_config(const tchar *config_file, struct capture_config *config,
 
 		/* XXX: Handle loading file correctly when in NTFS volume.  */
 
-		const tchar *wimboot_cfgfile =
-			T("/Windows/System32/WimBootCompress.ini");
 		size_t len = tstrlen(fs_source_path) +
 			     tstrlen(wimboot_cfgfile);
 		tmp_config_file = MALLOC((len + 1) * sizeof(tchar));
@@ -225,6 +226,32 @@ get_capture_config(const tchar *config_file, struct capture_config *config,
 	}
 	FREE(tmp_config_file);
 	return ret;
+}
+
+static int
+replace_wimboot_cfg(WIMStruct *wim, const tchar *config_file)
+{
+	struct wimlib_update_command cmds[] = {
+		{
+			.op = WIMLIB_UPDATE_OP_DELETE,
+			.delete_ = {
+				.wim_path = (tchar *)wimboot_cfgfile,
+				.delete_flags = WIMLIB_DELETE_FLAG_FORCE |
+						WIMLIB_DELETE_FLAG_RECURSIVE,
+			},
+		},
+		{
+			.op = WIMLIB_UPDATE_OP_ADD,
+			.add = {
+				.fs_source_path = (tchar *)config_file,
+				.wim_target_path = (tchar *)wimboot_cfgfile,
+				.add_flags = 0,
+				.config_file = NULL,
+			},
+		},
+	};
+	return wimlib_update_image(wim, wim->current_image,
+				   cmds, ARRAY_LEN(cmds), 0, NULL);
 }
 
 static int
@@ -337,6 +364,22 @@ execute_add_command(WIMStruct *wim,
 		if (ret)
 			goto out_ntfs_umount;
 	}
+
+	if (config_file && (add_flags & WIMLIB_ADD_FLAG_WIMBOOT) &&
+	    wim_target_path[0] == T('\0'))
+	{
+		/* Save configuration file as \Windows\System32\WimBootCompress.ini  */
+		ret = replace_wimboot_cfg(wim, config_file);
+		if (ret) {
+			/* Undo attach_branch()  */
+			if (imd->root_dentry == branch)
+				imd->root_dentry = NULL;
+			else
+				branch = NULL;
+			goto out_ntfs_umount;
+		}
+	}
+
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &params.progress);
 	list_splice_tail(&unhashed_streams, &imd->unhashed_streams);

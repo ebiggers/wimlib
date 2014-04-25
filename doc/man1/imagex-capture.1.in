@@ -284,23 +284,32 @@ Specifies a configuration file (UTF-8 or UTF-16LE encoded) for capturing the new
 image.  The configuration file specifies files that are to be treated specially
 during the image capture.
 .IP ""
-The format of the configuration file is a number of sections containing path
-globs one per line, where each section begins with the tag [ExclusionList],
-[ExclusionException], [CompressionExclusionList], or [AlignmentList].
-Currently, only the [ExclusionList] and [ExclusionException] sections are
-implemented.  The [ExclusionList] section specifies a list of path globs to
-exclude from capture, while the [ExclusionException] section specifies a list of
-path globs to include in the capture even if the matched file or directory name
-also appears in the [ExclusionList].
+The format of the configuration file is INI-style; that is, it is arranged in
+bracketed sections.  Currently, only the following sections are recognized:
+.RS
+.IP \[bu] 4
+[ExclusionList] ---  contains a list of path globs to exclude from capture.  If
+a directory is matched, both the directory and its contents are excluded.
+.IP \[bu]
+[ExclusionException] --- contains a list of path globs to include in the
+capture, even when the file or directory also matches a glob in [ExclusionList].
+.IP \[bu]
+[PrepopulateList] --- this does not affect capture, but if the image is
+applied later with \fB--wimboot\fR, these are globs of files that shall be
+extracted normally, not as WIMBoot "pointer files".  Note that these globs do
+\fInot\fR match recursively; so, for example, you may want to use \\Boot\\* and
+\\Boot\\*\\* rather than simply \\Boot.
+.RE
+.IP ""
+Any unrecognized sections will be ignored, with a warning printed.  Sections
+dealing with compression (e.g. [CompressionExclusion]) are not particularly
+important.
 .IP ""
 Relative globs with only one path component (e.g. *.mp3) match against a
 filename in any directory.  Relative globs with multiple path components (e.g.
 dir/file), as well as absolute globs (e.g. /dir/file), are treated as paths
 starting at the root directory of capture, or the root of the NTFS volume for
-NTFS volume capture mode.  If a directory is matched by a glob in the
-[ExclusionList], the entire directory tree rooted at that directory is excluded
-from the capture, unless \fB--dereference\fR is specified and there is another
-path into that directory through a symbolic link.
+NTFS volume capture mode.
 .IP ""
 For compatibility with Windows, the path separators in the globs may be either
 forward slashes or backslashes, and the line separators may be either UNIX-style
@@ -328,6 +337,14 @@ used:
 .RE
 .RE
 .fi
+.IP ""
+However, special behavior applies if \fB--wimboot\fR is also specified.  By
+default, with \fB--wimboot\fR specified, the file
+Windows/System32/WimBootCompress.ini in the directory being captured will be
+used as the configuration file.  However, this can be overridden using
+\fB--config\fR; and this also causes the specified configuration file to be
+saved in the WIM image as Windows/System32/WimBootCompress.ini, overriding any
+that may be present on the filesystem.
 .TP
 \fB--unix-data\fR
 (UNIX-like systems only) Store the UNIX owner, group, and mode of all captured
