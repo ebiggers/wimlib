@@ -878,6 +878,34 @@ wim_reshdr_to_data(const struct wim_reshdr *reshdr, WIMStruct *wim, void **buf_r
 	return wim_resource_spec_to_data(&rspec, buf_ret);
 }
 
+int
+wim_reshdr_to_hash(const struct wim_reshdr *reshdr, WIMStruct *wim,
+		   u8 hash[SHA1_HASH_SIZE])
+{
+	struct wim_resource_spec rspec;
+	int ret;
+	struct wim_lookup_table_entry *lte;
+
+	wim_res_hdr_to_spec(reshdr, wim, &rspec);
+
+	lte = new_lookup_table_entry();
+	if (lte == NULL)
+		return WIMLIB_ERR_NOMEM;
+
+	lte_bind_wim_resource_spec(lte, &rspec);
+	lte->flags = rspec.flags;
+	lte->size = rspec.uncompressed_size;
+	lte->offset_in_res = 0;
+	lte->unhashed = 1;
+
+	ret = sha1_stream(lte);
+
+	lte_unbind_wim_resource_spec(lte);
+	copy_hash(hash, lte->hash);
+	free_lookup_table_entry(lte);
+	return ret;
+}
+
 struct streamifier_context {
 	struct read_stream_list_callbacks cbs;
 	struct wim_lookup_table_entry *cur_stream;

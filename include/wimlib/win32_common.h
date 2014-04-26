@@ -84,6 +84,9 @@ extern NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 						   PSECURITY_DESCRIPTOR SecurityDescriptor);
 
 extern DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
+
+extern NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
+			(PCUNICODE_STRING VolumeRootPath);
 #endif
 
 

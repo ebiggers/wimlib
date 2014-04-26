@@ -563,6 +563,9 @@ NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 					    SECURITY_INFORMATION SecurityInformation,
 					    PSECURITY_DESCRIPTOR SecurityDescriptor);
 
+NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
+		(PCUNICODE_STRING VolumeRootPath);
+
 #endif /* WITH_NTDLL */
 
 static OSVERSIONINFO windows_version_info = {
@@ -640,6 +643,8 @@ win32_global_init(int init_flags)
 
 			func_NtSetSecurityObject    =
 				(void*)GetProcAddress(hNtdll, "NtSetSecurityObject");
+			func_RtlCreateSystemVolumeInformationFolder =
+				(void*)GetProcAddress(hNtdll, "RtlCreateSystemVolumeInformationFolder");
 		}
 	}
 
@@ -651,6 +656,8 @@ win32_global_init(int init_flags)
 	DEBUG("NtQueryDirectoryFile   @ %p", func_NtQueryDirectoryFile);
 	DEBUG("NtQueryInformationFile @ %p", func_NtQueryInformationFile);
 	DEBUG("NtSetSecurityObject    @ %p", func_NtSetSecurityObject);
+	DEBUG("RtlCreateSystemVolumeInformationFolder    @ %p",
+	      func_RtlCreateSystemVolumeInformationFolder);
 #endif
 
 	return 0;

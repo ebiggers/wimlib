@@ -227,7 +227,7 @@ struct apply_ctx {
 	tchar *tmpfile_name;
 	u64 num_streams_remaining;
 	uint64_t next_progress;
-	intptr_t private[8];
+	intptr_t private[10];
 };
 
 #ifdef __WIN32__

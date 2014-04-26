@@ -40,9 +40,795 @@
 #include "wimlib/win32.h"
 #include "wimlib/assert.h"
 #include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
 #include "wimlib/util.h"
 #include "wimlib/wimboot.h"
 #include "wimlib/wof.h"
+
+static HANDLE
+open_file(const wchar_t *device_name, DWORD desiredAccess)
+{
+	return CreateFile(device_name, desiredAccess,
+			  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+			  NULL, OPEN_EXISTING,
+			  FILE_FLAG_BACKUP_SEMANTICS, NULL);
+}
+
+static BOOL
+query_device(HANDLE h, DWORD code, void *out, DWORD out_size)
+{
+	DWORD bytes_returned;
+	return DeviceIoControl(h, code, NULL, 0, out, out_size,
+			       &bytes_returned, NULL);
+}
+
+/*
+ * Gets partition and drive information for the specified path.
+ *
+ * @path
+ *	Absolute path which must begin with a drive letter.  For example, if the
+ *	path is D:\install.wim, this function will query information about the
+ *	D: volume.
+ * @part_info_ret
+ *	Partition info is returned here.
+ * @drive_info_ret
+ *	Drive info is returned here.  The contained partition info will not be
+ *	valid.
+ *
+ * Returns 0 on success, or a positive error code on failure.
+ */
+static int
+query_partition_and_disk_info(const wchar_t *path,
+			      PARTITION_INFORMATION_EX *part_info_ret,
+			      DRIVE_LAYOUT_INFORMATION_EX *drive_info_ret)
+{
+	HANDLE h;
+	wchar_t vol_name[] = L"\\\\.\\X:";
+	wchar_t disk_name[] = L"\\\\?\\PhysicalDriveXXXXXXXXXX";
+
+	PARTITION_INFORMATION_EX part_info;
+	size_t extents_size = sizeof(VOLUME_DISK_EXTENTS) + 4 * sizeof(DISK_EXTENT);
+	VOLUME_DISK_EXTENTS *extents = alloca(extents_size);
+	size_t drive_info_size = sizeof(DRIVE_LAYOUT_INFORMATION_EX) +
+					8 * sizeof(PARTITION_INFORMATION_EX);
+	DRIVE_LAYOUT_INFORMATION_EX *drive_info = alloca(drive_info_size);
+
+	wimlib_assert(path[0] != L'\0' && path[1] == L':');
+
+	*(wcschr(vol_name, L'X')) = path[0];
+
+	h = open_file(vol_name, GENERIC_READ);
+	if (h == INVALID_HANDLE_VALUE) {
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("\"%ls\": Can't open volume device", vol_name);
+		return WIMLIB_ERR_OPEN;
+	}
+
+	if (!query_device(h, IOCTL_DISK_GET_PARTITION_INFO_EX,
+			  &part_info, sizeof(part_info)))
+	{
+		ERROR("\"%ls\": Can't get partition info (err=0x%08"PRIx32")",
+		      vol_name, (u32)GetLastError());
+		CloseHandle(h);
+		return WIMLIB_ERR_READ;
+	}
+
+	if (!query_device(h, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS,
+			  extents, extents_size))
+	{
+		ERROR("\"%ls\": Can't get volume extent info (err=0x%08"PRIx32")",
+		      vol_name, (u32)GetLastError());
+		CloseHandle(h);
+		return WIMLIB_ERR_READ;
+	}
+
+	CloseHandle(h);
+
+	if (extents->NumberOfDiskExtents != 1) {
+		ERROR("\"%ls\": This volume has %"PRIu32" disk extents, "
+		      "but this code is untested for more than 1",
+		      vol_name, (u32)extents->NumberOfDiskExtents);
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+
+	wsprintf(wcschr(disk_name, L'X'), L"%"PRIu32,
+		 extents->Extents[0].DiskNumber);
+
+	h = open_file(disk_name, GENERIC_READ);
+	if (h == INVALID_HANDLE_VALUE) {
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("\"%ls\": Can't open disk device", disk_name);
+		return WIMLIB_ERR_OPEN;
+	}
+
+	if (!query_device(h, IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+			  drive_info, drive_info_size))
+	{
+		ERROR("\"%ls\": Can't get disk info (err=0x%08"PRIx32")",
+		      disk_name, (u32)GetLastError());
+		CloseHandle(h);
+		return WIMLIB_ERR_READ;
+	}
+
+	CloseHandle(h);
+
+	if (drive_info->PartitionStyle != part_info.PartitionStyle) {
+		ERROR("\"%ls\", \"%ls\": Inconsistent partition table type!",
+		      vol_name, disk_name);
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+
+	if (part_info.PartitionStyle == PARTITION_STYLE_GPT) {
+		BUILD_BUG_ON(sizeof(part_info.Gpt.PartitionId) !=
+			     sizeof(drive_info->Gpt.DiskId));
+		if (!memcmp(&part_info.Gpt.PartitionId,
+			    &drive_info->Gpt.DiskId,
+			    sizeof(drive_info->Gpt.DiskId)))
+		{
+			ERROR("\"%ls\", \"%ls\": Partition GUID is the "
+			      "same as the disk GUID???", vol_name, disk_name);
+			return WIMLIB_ERR_UNSUPPORTED;
+		}
+	}
+
+	if (part_info.PartitionStyle != PARTITION_STYLE_MBR &&
+	    part_info.PartitionStyle != PARTITION_STYLE_GPT)
+	{
+		ERROR("\"%ls\": Unknown partition style 0x%08"PRIx32,
+		      vol_name, (u32)part_info.PartitionStyle);
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+
+	*part_info_ret = part_info;
+	*drive_info_ret = *drive_info;
+	return 0;
+}
+
+/*
+ * Allocate a new WIM data source ID.
+ *
+ * @old_hdr
+ *	Previous WimOverlay.dat contents, or NULL if file did not exist.
+ *
+ * Returns the new data source ID.
+ */
+static u64
+alloc_new_data_source_id(const struct WimOverlay_dat_header *old_hdr)
+{
+	if (!old_hdr)
+		return 0;
+
+	for (u64 id = 0; ; id++) {
+		for (u32 i = 0; i < old_hdr->num_entries_1; i++)
+			if (id == old_hdr->entry_1s[i].data_source_id)
+				goto next;
+		return id;
+	next:
+		;
+	}
+}
+
+/*
+ * Calculate the size of WimOverlay.dat with one entry added.
+ *
+ * @old_hdr
+ *	Previous WimOverlay.dat contents, or NULL if file did not exist.
+ * @new_entry_2_size
+ *	Size of entry_2 being added.
+ * @size_ret
+ *	Size will be returned here.
+ *
+ * Returns 0 on success, or WIMLIB_ERR_UNSUPPORTED if size overflows 32 bits.
+ */
+static int
+calculate_wimoverlay_dat_size(const struct WimOverlay_dat_header *old_hdr,
+			      u32 new_entry_2_size, u32 *size_ret)
+{
+	u64 size_64;
+	u32 size;
+
+	size_64 = sizeof(struct WimOverlay_dat_header);
+	if (old_hdr) {
+		for (u32 i = 0; i < old_hdr->num_entries_1; i++) {
+			size_64 += sizeof(struct WimOverlay_dat_entry_1);
+			size_64 += old_hdr->entry_1s[i].entry_2_length;
+		}
+	}
+	size_64 += sizeof(struct WimOverlay_dat_entry_1);
+	size_64 += new_entry_2_size;
+
+	size = size_64;
+	if (size_64 != size)
+		return WIMLIB_ERR_UNSUPPORTED;
+
+	*size_ret = size;
+	return 0;
+}
+
+/*
+ * Writes @size bytes of @contents to the named file @path.
+ *
+ * Returns 0 on success; WIMLIB_ERR_OPEN or WIMLIB_ERR_WRITE on failure.
+ */
+static int
+write_wimoverlay_dat(const wchar_t *path, const void *contents, u32 size)
+{
+	HANDLE h;
+	DWORD bytes_written;
+
+	h = CreateFile(path, GENERIC_WRITE, 0, NULL,
+		       CREATE_ALWAYS, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+	if (h == INVALID_HANDLE_VALUE) {
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("\"%ls\": Can't open file for writing", path);
+		return WIMLIB_ERR_OPEN;
+	}
+
+	if (!WriteFile(h, contents, size, &bytes_written, NULL) ||
+	    bytes_written != size)
+	{
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("\"%ls\": Can't write file", path);
+		CloseHandle(h);
+		return WIMLIB_ERR_WRITE;
+	}
+
+	if (!CloseHandle(h)) {
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("\"%ls\": Can't close handle", path);
+		return WIMLIB_ERR_WRITE;
+	}
+
+	return 0;
+}
+
+/*
+ * Generates the contents of WimOverlay.dat in memory, with one entry added.
+ *
+ * @buf
+ *	Buffer large enough to hold the new contents.
+ * @old_hdr
+ *	Old contents of WimOverlay.dat, or NULL if it did not exist.
+ * @wim_path
+ *	Absolute path to the WIM file.  It must begin with a drive letter; for
+ *	example, D:\install.wim.
+ * @wim_guid
+ *	GUID of the WIM, from the WIM header.
+ * @image
+ *	Number of the image in the WIM to specify in the new entry.
+ * @new_data_source_id
+ *	Data source ID to use for the new entry.
+ * @part_info
+ *	Partition information for the WIM file.
+ * @disk_info
+ *	Disk information for the WIM file.
+ * @new_entry_2_size
+ *	Size, in bytes, of the new location information structure ('struct
+ *	WimOverlay_dat_entry_2').
+ *
+ * Returns a pointer one past the last byte of @buf filled in.
+ */
+static u8 *
+fill_in_wimoverlay_dat(u8 *buf,
+		       const struct WimOverlay_dat_header *old_hdr,
+		       const wchar_t *wim_path,
+		       const u8 wim_guid[WIM_GID_LEN],
+		       int image,
+		       u64 new_data_source_id,
+		       const PARTITION_INFORMATION_EX *part_info,
+		       const DRIVE_LAYOUT_INFORMATION_EX *disk_info,
+		       u32 new_entry_2_size)
+{
+	struct WimOverlay_dat_header *new_hdr;
+	struct WimOverlay_dat_entry_1 *new_entry_1;
+	struct WimOverlay_dat_entry_2 *new_entry_2;
+	u32 entry_2_offset;
+	u8 *p = buf;
+
+	new_hdr = (struct WimOverlay_dat_header *)p;
+
+	/* Fill in new header  */
+	new_hdr->magic = WIMOVERLAY_DAT_MAGIC;
+	new_hdr->wim_provider_version = WIM_PROVIDER_CURRENT_VERSION;
+	new_hdr->unknown_0x08 = 0x00000028;
+	new_hdr->num_entries_1 = (old_hdr ? old_hdr->num_entries_1 : 0) + 1;
+	new_hdr->num_entries_2 = (old_hdr ? old_hdr->num_entries_2 : 0) + 1;
+	new_hdr->unknown_0x14 = 0x00000000;
+
+	p += sizeof(struct WimOverlay_dat_header);
+
+	/* Copy WIM-specific information for old entries  */
+	entry_2_offset = sizeof(struct WimOverlay_dat_header) +
+			(new_hdr->num_entries_1 * sizeof(struct WimOverlay_dat_entry_1));
+	if (old_hdr) {
+		for (u32 i = 0; i < old_hdr->num_entries_1; i++) {
+			new_entry_1 = (struct WimOverlay_dat_entry_1 *)p;
+
+			p = mempcpy(p, &old_hdr->entry_1s[i],
+				    sizeof(struct WimOverlay_dat_entry_1));
+
+			new_entry_1->entry_2_offset = entry_2_offset;
+			entry_2_offset += new_entry_1->entry_2_length;
+		}
+	}
+
+	/* Generate WIM-specific information for new entry  */
+	new_entry_1 = (struct WimOverlay_dat_entry_1 *)p;
+
+	new_entry_1->data_source_id = new_data_source_id;
+	new_entry_1->entry_2_offset = entry_2_offset;
+	new_entry_1->entry_2_length = new_entry_2_size;
+	new_entry_1->wim_type = WIM_BOOT_NOT_OS_WIM;
+	new_entry_1->wim_index = image;
+	BUILD_BUG_ON(sizeof(new_entry_1->guid) != WIM_GID_LEN);
+	memcpy(new_entry_1->guid, wim_guid, WIM_GID_LEN);
+
+	p += sizeof(struct WimOverlay_dat_entry_1);
+
+	/* Copy WIM location information for old entries  */
+	if (old_hdr) {
+		for (u32 i = 0; i < old_hdr->num_entries_1; i++) {
+			wimlib_assert(new_hdr->entry_1s[i].entry_2_offset == p - buf);
+			wimlib_assert(old_hdr->entry_1s[i].entry_2_length ==
+				      new_hdr->entry_1s[i].entry_2_length);
+			p = mempcpy(p,
+				    ((const u8 *)old_hdr + old_hdr->entry_1s[i].entry_2_offset),
+				    old_hdr->entry_1s[i].entry_2_length);
+		}
+	}
+
+	/* Generate WIM location information for new entry  */
+	new_entry_2 = (struct WimOverlay_dat_entry_2 *)p;
+
+	new_entry_2->unknown_0x00 = 0x00000000;
+	new_entry_2->unknown_0x04 = 0x00000000;
+	new_entry_2->entry_2_length = new_entry_2_size;
+	new_entry_2->unknown_0x0C = 0x00000000;
+	new_entry_2->unknown_0x10 = 0x00000005;
+	new_entry_2->unknown_0x14 = 0x00000001;
+	new_entry_2->inner_struct_size = new_entry_2_size - 0x14;
+	new_entry_2->unknown_0x1C = 0x00000005;
+	new_entry_2->unknown_0x20 = 0x00000006;
+	new_entry_2->unknown_0x24 = 0x00000000;
+	new_entry_2->unknown_0x28 = 0x00000048;
+	new_entry_2->unknown_0x2C = 0x00000000;
+	new_entry_2->unknown_0x40 = 0x00000000;
+
+	if (part_info->PartitionStyle == PARTITION_STYLE_MBR) {
+		new_entry_2->partition.mbr.part_start_offset = part_info->StartingOffset.QuadPart;
+		new_entry_2->partition.mbr.padding = 0;
+		new_entry_2->partition_table_type = WIMOVERLAY_PARTITION_TYPE_MBR;
+		new_entry_2->disk.mbr.disk_id = disk_info->Mbr.Signature;
+		new_entry_2->disk.mbr.padding[0] = 0x00000000;
+		new_entry_2->disk.mbr.padding[1] = 0x00000000;
+		new_entry_2->disk.mbr.padding[2] = 0x00000000;
+	} else {
+		BUILD_BUG_ON(sizeof(new_entry_2->partition.gpt.part_unique_guid) !=
+			     sizeof(part_info->Gpt.PartitionId));
+		memcpy(new_entry_2->partition.gpt.part_unique_guid,
+		       &part_info->Gpt.PartitionId,
+		       sizeof(part_info->Gpt.PartitionId));
+		new_entry_2->partition_table_type = WIMOVERLAY_PARTITION_TYPE_GPT;
+
+		BUILD_BUG_ON(sizeof(new_entry_2->disk.gpt.disk_guid) !=
+			     sizeof(disk_info->Gpt.DiskId));
+		memcpy(new_entry_2->disk.gpt.disk_guid,
+		       &disk_info->Gpt.DiskId,
+		       sizeof(disk_info->Gpt.DiskId));
+
+		BUILD_BUG_ON(sizeof(new_entry_2->disk.gpt.disk_guid) !=
+			     sizeof(new_entry_2->partition.gpt.part_unique_guid));
+	}
+	new_entry_2->unknown_0x58[0] = 0x00000000;
+	new_entry_2->unknown_0x58[1] = 0x00000000;
+	new_entry_2->unknown_0x58[2] = 0x00000000;
+	new_entry_2->unknown_0x58[3] = 0x00000000;
+
+	wimlib_assert(wim_path[2] == L'\\');
+	return mempcpy(new_entry_2->wim_file_name,
+		       wim_path + 2,
+		       new_entry_2_size - sizeof(struct WimOverlay_dat_entry_2));
+}
+
+/*
+ * Prepares the new contents of WimOverlay.dat in memory, with one entry added.
+ *
+ * @old_hdr
+ *	Old contents of WimOverlay.dat, or NULL if it did not exist.
+ * @wim_path
+ *	Absolute path to the WIM file.  It must begin with a drive letter; for
+ *	example, D:\install.wim.
+ * @wim_guid
+ *	GUID of the WIM, from the WIM header.
+ * @image
+ *	Number of the image in the WIM to specify in the new entry.
+ * @new_contents_ret
+ *	Location into which to return the new contents as a malloc()ed buffer on
+ *	success.
+ * @new_contents_size_ret
+ *	Location into which to return the size, in bytes, of the new contents on
+ *	success.
+ * @new_data_source_id_ret
+ *	Location into which to return the data source ID of the new entry on
+ *	success.
+ *
+ * Returns 0 on success, or a positive error code on failure.
+ */
+static int
+prepare_wimoverlay_dat(const struct WimOverlay_dat_header *old_hdr,
+		       const wchar_t *wim_path,
+		       const u8 wim_guid[WIM_GID_LEN],
+		       int image,
+		       void **new_contents_ret,
+		       u32 *new_contents_size_ret,
+		       u64 *new_data_source_id_ret)
+{
+	int ret;
+	PARTITION_INFORMATION_EX part_info;
+	DRIVE_LAYOUT_INFORMATION_EX disk_info;
+	u64 new_data_source_id;
+	u32 new_entry_2_size;
+	u32 new_contents_size;
+	u8 *buf;
+	u8 *end;
+
+	ret = query_partition_and_disk_info(wim_path, &part_info, &disk_info);
+	if (ret)
+		return ret;
+
+	new_data_source_id = alloc_new_data_source_id(old_hdr);
+
+	new_entry_2_size = sizeof(struct WimOverlay_dat_entry_2) +
+				((wcslen(wim_path) - 2 + 1) * sizeof(wchar_t));
+	ret = calculate_wimoverlay_dat_size(old_hdr, new_entry_2_size,
+					    &new_contents_size);
+	if (ret)
+		return ret;
+
+	buf = MALLOC(new_contents_size);
+	if (!buf)
+		return WIMLIB_ERR_NOMEM;
+
+	end = fill_in_wimoverlay_dat(buf, old_hdr, wim_path, wim_guid, image,
+				     new_data_source_id,
+				     &part_info, &disk_info, new_entry_2_size);
+
+	wimlib_assert(end - buf == new_contents_size);
+
+	*new_contents_ret = buf;
+	*new_contents_size_ret = new_contents_size;
+	*new_data_source_id_ret = new_data_source_id;
+	return 0;
+}
+
+/*
+ * Reads and validates a WimOverlay.dat file.
+ *
+ * @path
+ *	Path to the WimOverlay.dat file, such as
+ *	C:\System Volume Information\WimOverlay.dat
+ * @contents_ret
+ *	Location into which to return the contents as a malloc()ed buffer on
+ *	success.  This can be cast to 'struct WimOverlay_dat_header', and its
+ *	contents are guaranteed to be valid.  Alternatively, if the file does
+ *	not exist, NULL will be returned here.
+ *
+ * Returns 0 on success, or a positive error code on failure.
+ */
+static int
+read_wimoverlay_dat(const wchar_t *path, void **contents_ret)
+{
+	HANDLE h;
+	BY_HANDLE_FILE_INFORMATION info;
+	int ret;
+	void *contents;
+	const struct WimOverlay_dat_header *hdr;
+	DWORD bytes_read;
+	bool already_retried = false;
+
+retry:
+	h = open_file(path, GENERIC_READ);
+	if (h == INVALID_HANDLE_VALUE) {
+		DWORD err = GetLastError();
+		if (err == ERROR_FILE_NOT_FOUND) {
+			*contents_ret = NULL;
+			return 0;
+		}
+		if (err == ERROR_PATH_NOT_FOUND &&
+		    func_RtlCreateSystemVolumeInformationFolder)
+		{
+			wchar_t volume_root_path[] = L"\\??\\X:\\";
+
+			*(wcschr(volume_root_path, L'X')) = path[0];
+
+			UNICODE_STRING str = {
+				.Length = sizeof(volume_root_path) - sizeof(wchar_t),
+				.MaximumLength = sizeof(volume_root_path),
+				.Buffer = volume_root_path,
+			};
+			NTSTATUS status;
+			DWORD err2;
+
+			status = (*func_RtlCreateSystemVolumeInformationFolder)(&str);
+
+			err2 = (*func_RtlNtStatusToDosError)(status);
+			if (err2 == ERROR_SUCCESS) {
+				if (!already_retried) {
+					already_retried = true;
+					goto retry;
+				}
+			} else {
+				err = err2;
+			}
+		}
+		set_errno_from_win32_error(err);
+		ERROR_WITH_ERRNO("\"%ls\": Can't open for reading", path);
+		return WIMLIB_ERR_OPEN;
+	}
+	if (!GetFileInformationByHandle(h, &info)) {
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("\"%ls\": Can't query metadata", path);
+		CloseHandle(h);
+		return WIMLIB_ERR_STAT;
+	}
+
+	contents = NULL;
+	if (!info.nFileSizeHigh)
+		contents = MALLOC(info.nFileSizeLow);
+	if (!contents) {
+		ERROR("\"%ls\": File is too large to fit into memory", path);
+		CloseHandle(h);
+		return WIMLIB_ERR_NOMEM;
+	}
+
+	if (!ReadFile(h, contents, info.nFileSizeLow, &bytes_read, NULL) ||
+	    bytes_read != info.nFileSizeLow)
+	{
+		set_errno_from_GetLastError();
+		ERROR_WITH_ERRNO("\"%ls\": Can't read data", path);
+		CloseHandle(h);
+		ret = WIMLIB_ERR_READ;
+		goto out_free_contents;
+	}
+
+	CloseHandle(h);
+
+	if (info.nFileSizeLow < sizeof(struct WimOverlay_dat_header)) {
+		ERROR("\"%ls\": File is unexpectedly small (only %"PRIu32" bytes)",
+		      path, (u32)info.nFileSizeLow);
+		ret = WIMLIB_ERR_UNSUPPORTED;
+		goto out_free_contents;
+	}
+
+	hdr = (const struct WimOverlay_dat_header *)contents;
+
+	if (hdr->magic != WIMOVERLAY_DAT_MAGIC ||
+	    hdr->wim_provider_version != WIM_PROVIDER_CURRENT_VERSION ||
+	    hdr->unknown_0x08 != 0x00000028 ||
+	    (hdr->num_entries_1 != hdr->num_entries_2) ||
+	    hdr->unknown_0x14 != 0x00000000)
+	{
+		ERROR("\"%ls\": Header contains unexpected data:", path);
+		if (wimlib_print_errors) {
+			print_byte_field((const u8 *)hdr,
+					 sizeof(struct WimOverlay_dat_header),
+					 stderr);
+			fputc('\n', stderr);
+		}
+		ret = WIMLIB_ERR_UNSUPPORTED;
+		goto out_free_contents;
+	}
+
+	if ((u64)hdr->num_entries_1 * sizeof(struct WimOverlay_dat_entry_1) >
+	    info.nFileSizeLow - sizeof(struct WimOverlay_dat_header))
+	{
+		ERROR("\"%ls\": File is unexpectedly small "
+		      "(only %"PRIu32" bytes, but has %"PRIu32" entries)",
+		      path, (u32)info.nFileSizeLow, hdr->num_entries_1);
+		ret = WIMLIB_ERR_UNSUPPORTED;
+		goto out_free_contents;
+	}
+
+	for (u32 i = 0; i < hdr->num_entries_1; i++) {
+		const struct WimOverlay_dat_entry_1 *entry_1;
+		const struct WimOverlay_dat_entry_2 *entry_2;
+		u32 wim_file_name_length;
+
+		entry_1 = &hdr->entry_1s[i];
+
+		if (((u64)entry_1->entry_2_offset +
+		     (u64)entry_1->entry_2_length) >
+		    info.nFileSizeLow)
+		{
+			ERROR("\"%ls\": entry %"PRIu32" (2) "
+			      "(data source ID 0x%016"PRIx64") "
+			      "overflows file",
+			      path, i, entry_1->data_source_id);
+			ret = WIMLIB_ERR_UNSUPPORTED;
+			goto out_free_contents;
+		}
+		if (entry_1->entry_2_length < sizeof(struct WimOverlay_dat_entry_2)) {
+			ERROR("\"%ls\": entry %"PRIu32" (2) "
+			      "(data source ID 0x%016"PRIx64") "
+			      "is too short",
+			      path, i, entry_1->data_source_id);
+			ret = WIMLIB_ERR_UNSUPPORTED;
+			goto out_free_contents;
+		}
+
+		if (entry_1->entry_2_offset % 2 != 0) {
+			ERROR("\"%ls\": entry %"PRIu32" (2) "
+			      "(data source ID 0x%016"PRIx64") "
+			      "is misaligned",
+			      path, i, entry_1->data_source_id);
+			ret = WIMLIB_ERR_UNSUPPORTED;
+			goto out_free_contents;
+		}
+
+		entry_2 = (const struct WimOverlay_dat_entry_2 *)
+				((const u8 *)hdr + entry_1->entry_2_offset);
+
+		wim_file_name_length = entry_1->entry_2_length -
+					sizeof(struct WimOverlay_dat_entry_2);
+		if ((wim_file_name_length < 2 * sizeof(wchar_t)) ||
+		    (wim_file_name_length % sizeof(wchar_t) != 0) ||
+		    (wmemchr(entry_2->wim_file_name, L'\0',
+			     wim_file_name_length / sizeof(wchar_t))
+		     != &entry_2->wim_file_name[wim_file_name_length /
+						sizeof(wchar_t) - 1]))
+		{
+			ERROR("\"%ls\": entry %"PRIu32" (2) "
+			      "(data source ID 0x%016"PRIx64") "
+			      "has invalid WIM file name",
+			      path, i, entry_1->data_source_id);
+			if (wimlib_print_errors) {
+				print_byte_field((const u8 *)entry_2->wim_file_name,
+						 wim_file_name_length, stderr);
+				fputc('\n', stderr);
+			}
+			ret = WIMLIB_ERR_UNSUPPORTED;
+			goto out_free_contents;
+		}
+
+		if (entry_2->unknown_0x00 != 0x00000000 ||
+		    entry_2->unknown_0x04 != 0x00000000 ||
+		    entry_2->unknown_0x0C != 0x00000000 ||
+		    entry_2->entry_2_length != entry_1->entry_2_length ||
+		    entry_2->unknown_0x10 != 0x00000005 ||
+		    entry_2->unknown_0x14 != 0x00000001 ||
+		    entry_2->inner_struct_size != entry_1->entry_2_length - 0x14 ||
+		    entry_2->unknown_0x1C != 0x00000005 ||
+		    entry_2->unknown_0x20 != 0x00000006 ||
+		    entry_2->unknown_0x24 != 0x00000000 ||
+		    entry_2->unknown_0x28 != 0x00000048 ||
+		    entry_2->unknown_0x2C != 0x00000000 ||
+		    entry_2->unknown_0x40 != 0x00000000 ||
+		    (entry_2->partition_table_type != WIMOVERLAY_PARTITION_TYPE_GPT &&
+		     entry_2->partition_table_type != WIMOVERLAY_PARTITION_TYPE_MBR) ||
+		    (entry_2->partition_table_type == WIMOVERLAY_PARTITION_TYPE_MBR &&
+		     entry_2->partition.mbr.padding != 0) ||
+		    (entry_2->partition_table_type == WIMOVERLAY_PARTITION_TYPE_GPT &&
+		     entry_2->partition.mbr.padding == 0) ||
+		    entry_2->unknown_0x58[0] != 0x00000000 ||
+		    entry_2->unknown_0x58[1] != 0x00000000 ||
+		    entry_2->unknown_0x58[2] != 0x00000000 ||
+		    entry_2->unknown_0x58[3] != 0x00000000)
+		{
+			ERROR("\"%ls\": entry %"PRIu32" (2) "
+			      "(data source ID 0x%016"PRIx64") "
+			      "contains unexpected data!",
+			      path, i, entry_1->data_source_id);
+			if (wimlib_print_errors) {
+				print_byte_field((const u8 *)entry_2,
+						 entry_1->entry_2_length,
+						 stderr);
+				fputc('\n', stderr);
+			}
+			ret = WIMLIB_ERR_UNSUPPORTED;
+			goto out_free_contents;
+		}
+	}
+
+	*contents_ret = contents;
+	return 0;
+
+out_free_contents:
+	FREE(contents);
+	return ret;
+}
+
+/*
+ * Update WimOverlay.dat manually in order to add a WIM data source to the
+ * target volume.
+ *
+ * THIS CODE IS EXPERIMENTAL AS I HAD TO REVERSE ENGINEER THE FILE FORMAT!
+ *
+ * @path
+ *	Target drive.  Must be a letter followed by a colon (e.g. D:).
+ * @wim_path
+ *	Absolute path to the WIM file.  It must begin with a drive letter; for
+ *	example, D:\install.wim.
+ * @wim_guid
+ *	GUID of the WIM, from the WIM header.
+ * @image
+ *	Number of the image in the WIM to specify in the new entry.
+ * @data_source_id_ret
+ *	On success, the allocated data source ID is returned here.
+ */
+static int
+update_wimoverlay_manually(const wchar_t *drive, const wchar_t *wim_path,
+			   const u8 wim_guid[WIM_GID_LEN],
+			   int image, u64 *data_source_id_ret)
+{
+	wchar_t path_main[] = L"A:\\System Volume Information\\WimOverlay.dat";
+	wchar_t path_backup[] = L"A:\\System Volume Information\\WimOverlay.backup";
+	wchar_t path_wimlib_backup[] = L"A:\\System Volume Information\\WimOverlay.wimlib_backup";
+	wchar_t path_new[] = L"A:\\System Volume Information\\WimOverlay.wimlib_new";
+	void *old_contents;
+	void *new_contents;
+	u32 new_contents_size;
+	u64 new_data_source_id;
+	int ret;
+
+	wimlib_assert(drive[0] != L'\0' &&
+		      drive[1] == L':' &&
+		      drive[2] == L'\0');
+
+	path_main[0]          = drive[0];
+	path_backup[0]        = drive[0];
+	path_wimlib_backup[0] = drive[0];
+	path_new[0]           = drive[0];
+
+	ret = read_wimoverlay_dat(path_main, &old_contents);
+	if (ret)
+		goto out;
+
+	ret = prepare_wimoverlay_dat(old_contents, wim_path, wim_guid, image,
+				     &new_contents, &new_contents_size,
+				     &new_data_source_id);
+	FREE(old_contents);
+	if (ret)
+		goto out;
+
+	/* Write WimOverlay.wimlib_new  */
+	ret = write_wimoverlay_dat(path_new,
+				   new_contents, new_contents_size);
+	if (ret)
+		goto out_free_new_contents;
+
+	/* Write WimOverlay.backup  */
+	ret = write_wimoverlay_dat(path_backup,
+				   new_contents, new_contents_size);
+	if (ret)
+		goto out_free_new_contents;
+
+	if (old_contents) {
+		/* Rename WimOverlay.dat => WimOverlay.wimlib_backup  */
+		ret = win32_rename_replacement(path_main, path_wimlib_backup);
+		if (ret) {
+			ERROR_WITH_ERRNO("Can't rename \"%ls\" => \"%ls\"",
+					 path_main, path_wimlib_backup);
+			goto out_free_new_contents;
+		}
+	}
+
+	/* Rename WimOverlay.wimlib_new => WimOverlay.dat  */
+	ret = win32_rename_replacement(path_new, path_main);
+	if (ret) {
+		ERROR_WITH_ERRNO("Can't rename \"%ls\" => \"%ls\"",
+				 path_new, path_main);
+	}
+out_free_new_contents:
+	FREE(new_contents);
+out:
+	if (ret == WIMLIB_ERR_UNSUPPORTED) {
+		ERROR("Please report to developer ("PACKAGE_BUGREPORT").\n"
+		      "        If possible send the file \"%ls\".\n\n", path_main);
+	}
+	if (ret == 0)
+		*data_source_id_ret = new_data_source_id;
+	return ret;
+}
 
 static int
 win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7])
@@ -111,8 +897,10 @@ try_to_attach_wof(const wchar_t *drive)
  * @wim_path
  *	Absolute path to the WIM file.  This must include a drive letter and use
  *	backslash path separators.
+ * @wim_guid
+ *	GUID of the WIM, from the WIM header.
  * @image
- *	Index of the image in the WIM being applied.
+ *	Number of the image in the WIM being applied.
  * @target
  *	Path to the target drive.
  * @data_source_id_ret
@@ -122,8 +910,10 @@ try_to_attach_wof(const wchar_t *drive)
  * Returns 0 on success, or a positive error code on failure.
  */
 int
-wimboot_alloc_data_source_id(const wchar_t *wim_path, int image,
-			     const wchar_t *target, u64 *data_source_id_ret)
+wimboot_alloc_data_source_id(const wchar_t *wim_path,
+			     const u8 wim_guid[WIM_GID_LEN],
+			     int image, const wchar_t *target,
+			     u64 *data_source_id_ret, bool *wof_running_ret)
 {
 	tchar drive_path[7];
 	size_t wim_path_nchars;
@@ -175,9 +965,7 @@ wimboot_alloc_data_source_id(const wchar_t *wim_path, int image,
 	wmemcpy(&wim_info->wim_file_name[prefix_nchars], wim_path, wim_path_nchars);
 
 retry_ioctl:
-	h = CreateFile(drive_path, GENERIC_WRITE,
-		       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-		       NULL, OPEN_EXISTING, 0, NULL);
+	h = open_file(drive_path, GENERIC_WRITE);
 
 	if (h == INVALID_HANDLE_VALUE) {
 		set_errno_from_GetLastError();
@@ -200,17 +988,13 @@ retry_ioctl:
 				if (try_to_attach_wof(drive_path + 4))
 					goto retry_ioctl;
 			}
-			ERROR("The version of Windows you are running does not appear to support\n"
-			      "        the Windows Overlay File System Filter Driver.  Therefore, wimlib\n"
-			      "        cannot apply WIMBoot information.  Please run from Windows 8.1\n"
-			      "        Update 1 or later.");
 			ret = WIMLIB_ERR_UNSUPPORTED;
 			goto out_close_handle;
 		} else {
 			set_errno_from_win32_error(err);
 			ERROR_WITH_ERRNO("Failed to add overlay source \"%ls\" "
 					 "to volume \"%ls\" (err=0x%08"PRIx32")",
-					 wim_path, drive_path + 4, (uint32_t)err);
+					 wim_path, drive_path + 4, (u32)err);
 			ret = WIMLIB_ERR_WIMBOOT;
 			goto out_close_handle;
 		}
@@ -225,6 +1009,7 @@ retry_ioctl:
 		goto out_close_handle;
 	}
 
+	*wof_running_ret = true;
 	*data_source_id_ret = data_source_id;
 	ret = 0;
 
@@ -233,6 +1018,21 @@ out_close_handle:
 out_free_in:
 	FREE(in);
 out:
+	if (ret == WIMLIB_ERR_UNSUPPORTED) {
+	#if 0
+		WARNING(
+		"The version of Windows you are running does not appear to support\n"
+		"        the Windows Overlay File System Filter Driver.  This is normally\n"
+		"        available on Windows 8.1 Update 1 or later.  Therefore, wimlib\n"
+		"        will attempt to update the WimOverlay.dat file directly.\n");
+	#else
+		WARNING("WOF driver is not available; updating WimOverlay.dat directly.");
+	#endif
+		ret = update_wimoverlay_manually(drive_path + 4, wim_path,
+						 wim_guid, image,
+						 data_source_id_ret);
+		*wof_running_ret = false;
+	}
 	return ret;
 }
 
@@ -240,35 +1040,36 @@ out:
 /*
  * Set WIMBoot information on the specified file.
  *
+ * This turns it into a reparse point that redirects accesses to it, to the
+ * corresponding resource in the WIM archive.
+ *
  * @path
  *	Path to extracted file (already created).
+ * @lte
+ *	Unnamed data stream of the file.
  * @data_source_id
- *	Identifier for backing WIM file.
- * @hash
- *	SHA-1 message digest of the file's unnamed data stream.
+ *	Allocated identifier for the WIM data source on the destination volume.
+ * @lookup_table_hash
+ *	SHA-1 message digest of the WIM's lookup table.
+ * @wof_running
+ *	%true if the WOF driver appears to be available and working; %false if
+ *	not.
  *
  * Returns 0 on success, or a positive error code on failure.
  */
 int
-wimboot_set_pointer(const wchar_t *path, u64 data_source_id,
-		    const u8 hash[20])
+wimboot_set_pointer(const wchar_t *path,
+		    const struct wim_lookup_table_entry *lte,
+		    u64 data_source_id,
+		    const u8 lookup_table_hash[SHA1_HASH_SIZE],
+		    bool wof_running)
 {
-	struct {
-		struct wof_external_info wof_info;
-		struct wim_provider_external_info wim_info;
-	} in;
 	HANDLE h;
 	DWORD bytes_returned;
 	int ret;
 
-	in.wof_info.version = WOF_CURRENT_VERSION;
-	in.wof_info.provider = WOF_PROVIDER_WIM;
 
-	in.wim_info.version = WIM_PROVIDER_CURRENT_VERSION;
-	in.wim_info.flags = 0;
-	in.wim_info.data_source_id = data_source_id;
-	memcpy(in.wim_info.resource_hash, hash, 20);
-
+	/* Open the file  */
 	h = win32_open_existing_file(path, GENERIC_WRITE);
 	if (h == INVALID_HANDLE_VALUE) {
 		set_errno_from_GetLastError();
@@ -276,21 +1077,99 @@ wimboot_set_pointer(const wchar_t *path, u64 data_source_id,
 		goto out;
 	}
 
-	if (!DeviceIoControl(h, FSCTL_SET_EXTERNAL_BACKING,
-			     &in, sizeof(in), NULL, 0, &bytes_returned, NULL))
-	{
-		DWORD err = GetLastError();
-		set_errno_from_win32_error(err);
-		ERROR_WITH_ERRNO("\"%ls\": Couldn't set WIMBoot pointer data "
-				 "(err=0x%08"PRIx32")", path, (uint32_t)err);
-		ret = WIMLIB_ERR_WIMBOOT;
-		goto out_close_handle;
+	if (wof_running) {
+		/* The WOF driver is running.  We can create the reparse point
+		 * using FSCTL_SET_EXTERNAL_BACKING.  */
+
+		struct {
+			struct wof_external_info wof_info;
+			struct wim_provider_external_info wim_info;
+		} in;
+
+		in.wof_info.version = WOF_CURRENT_VERSION;
+		in.wof_info.provider = WOF_PROVIDER_WIM;
+
+		in.wim_info.version = WIM_PROVIDER_CURRENT_VERSION;
+		in.wim_info.flags = 0;
+		in.wim_info.data_source_id = data_source_id;
+		copy_hash(in.wim_info.resource_hash, lte->hash);
+
+		/* lookup_table_hash is not necessary  */
+
+		if (!DeviceIoControl(h, FSCTL_SET_EXTERNAL_BACKING,
+				     &in, sizeof(in), NULL, 0, &bytes_returned, NULL))
+			goto fail;
+	} else {
+
+		/* The WOF driver is running.  We need to create the reparse
+		 * point manually.  */
+
+		struct {
+			struct {
+				le32 rptag;
+				le16 rpdatalen;
+				le16 rpreserved;
+			} hdr;
+			struct wof_external_info wof_info;
+			struct wim_provider_rpdata wim_info;
+		} in;
+
+		BUILD_BUG_ON(sizeof(in) != 8 +
+			     sizeof(struct wof_external_info) +
+			     sizeof(struct wim_provider_rpdata));
+
+		in.hdr.rptag = WIMLIB_REPARSE_TAG_WOF;
+		in.hdr.rpdatalen = sizeof(in) - sizeof(in.hdr);
+		in.hdr.rpreserved = 0;
+
+		in.wof_info.version = WOF_CURRENT_VERSION;
+		in.wof_info.provider = WOF_PROVIDER_WIM;
+
+		in.wim_info.version = 2;
+		in.wim_info.flags = 0;
+		in.wim_info.data_source_id = data_source_id;
+		copy_hash(in.wim_info.resource_hash, lte->hash);
+		copy_hash(in.wim_info.wim_lookup_table_hash, lookup_table_hash);
+		in.wim_info.stream_uncompressed_size = lte->size;
+		in.wim_info.stream_compressed_size = lte->rspec->size_in_wim;
+		in.wim_info.stream_offset_in_wim = lte->rspec->offset_in_wim;
+
+		if (!DeviceIoControl(h, FSCTL_SET_REPARSE_POINT,
+				     &in, sizeof(in), NULL, 0, &bytes_returned, NULL))
+			goto fail;
+
+		/* We also need to create an unnamed data stream of the correct
+		 * size.  Otherwise the file shows up as zero length.  It can be
+		 * a sparse stream containing all zeroes; its contents
+		 * are unimportant.  */
+		if (!DeviceIoControl(h, FSCTL_SET_SPARSE, NULL, 0, NULL, 0,
+				     &bytes_returned, NULL))
+			goto fail;
+
+		if (!SetFilePointerEx(h,
+				      (LARGE_INTEGER){ .QuadPart = lte->size},
+				      NULL, FILE_BEGIN))
+			goto fail;
+
+		if (!SetEndOfFile(h))
+			goto fail;
 	}
+
 	ret = 0;
 out_close_handle:
 	CloseHandle(h);
 out:
 	return ret;
+
+fail:
+	{
+		DWORD err = GetLastError();
+		set_errno_from_win32_error(err);
+		ERROR_WITH_ERRNO("\"%ls\": Couldn't set WIMBoot pointer data "
+				 "(err=0x%08"PRIx32")", path, (u32)err);
+		ret = WIMLIB_ERR_WIMBOOT;
+		goto out_close_handle;
+	}
 }
 
 #endif /* __WIN32__ */

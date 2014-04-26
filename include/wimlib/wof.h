@@ -10,6 +10,7 @@
 #define _WOF_H_
 
 #include "wimlib/types.h"
+#include "wimlib/compiler.h"
 
 #define WOF_CURRENT_VERSION	1
 #define WOF_PROVIDER_WIM	1
@@ -27,56 +28,234 @@ struct wof_external_info {
 	u32 provider;
 };
 
-/* WOF reparse points can't be directly manipulated on Windows; setting the
- * reparse data doesn't seem to work, and the WOF driver hides the reparse
- * points so their data can't be read from Windows 8.1 and later.  Use the
- * ioctls (FSCTL_SET_EXTERNAL_BACKING, FSCTL_GET_EXTERNAL_BACKING,
- * FSCTL_DELETE_EXTERNAL_BACKING) instead.  */
-#if 0
+/* On Windows, WOF reparse points can only be directly created when the WOF
+ * driver is NOT running on the volume.  Otherwise, the WOF ioctl
+ * (FSCTL_SET_EXTERNAL_BACKING, FSCTL_GET_EXTERNAL_BACKING,
+ * FSCTL_DELETE_EXTERNAL_BACKING) must be used instead.  */
+
 /*
  * Format of the reparse data of WoF (Windows Overlay File System Filter)
  * reparse points.  These include WIMBoot "pointer files".
  *
+ * This is not documented by Microsoft!!!
+ *
  * Notes:
+ *	- 'struct wim_provider_rpdata' must be preceded by
+ *	  'struct wof_external_info'.
  *	- Reparse tag is 0x80000017
  *	- Don't make these if the file has no unnamed data stream, has an empty
  *	  unnamed data stream, or already is a reparse point.
  *	- There is nowhere to put named data streams.  They have to copied
  *	  literally to the reparse point file.
  */
-struct wof_rpdata_disk {
-	struct wof_external_info info;
-	union {
-		struct {
-			/* (Guess) Version of this structure --- set to 2.  */
-			u64 version;
+struct wim_provider_rpdata {
+	/* Set to 2.  Uncertain meaning.  */
+	le32 version;
 
-			/* Integer ID that identifies the WIM.  */
-			u64 data_source_id;
+	/* 0 when WIM provider active, otherwise
+	 * WIM_PROVIDER_EXTERNAL_FLAG_NOT_ACTIVE or
+	 * WIM_PROVIDER_EXTERNAL_FLAG_SUSPENDED.  */
+	le32 flags;
 
-			/* SHA1 message digest of the file's unnamed data
-			 * stream.  */
-			u8 stream_sha1[20];
+	/* Integer ID that identifies the WIM.  */
+	le64 data_source_id;
 
-			/* SHA1 message digest of the WIM's lookup table.  */
-			u8 wim_lookup_table_sha1[20];
+	/* SHA1 message digest of the file's unnamed data stream.  */
+	u8 resource_hash[20];
 
-			/* Uncompressed size of the file's unnamed data stream,
-			 * in bytes.  */
-			u64 stream_uncompressed_size;
+	/* SHA1 message digest of the WIM's lookup table.  */
+	u8 wim_lookup_table_hash[20];
 
-			/* Compressed size of the file's unnamed data stream, in
-			 * bytes.  If stream is stored uncompressed, set this
-			 * the same as the uncompressed size.  */
-			u64 stream_compressed_size;
+	/* Uncompressed size of the file's unnamed data stream, in bytes.  */
+	le64 stream_uncompressed_size;
 
-			/* Byte offset of the file's unnamed data stream in the
-			 * WIM.  */
-			u64 stream_offset_in_wim;
-		} wim;
-	} provider_data;
-};
-#endif
+	/* Compressed size of the file's unnamed data stream, in bytes.  If
+	 * stream is stored uncompressed, set this the same as the uncompressed
+	 * size.  */
+	le64 stream_compressed_size;
+
+	/* Byte offset of the file's unnamed data stream in the WIM.  */
+	le64 stream_offset_in_wim;
+} _packed_attribute;
+
+/* WIM-specific information about a WIM data source  */
+struct WimOverlay_dat_entry_1 {
+
+	/* Identifier for the WIM data source, (normally allocated by
+	 * FSCTL_ADD_OVERLAY).  Every 'WimOverlay_dat_entry_1' should have a
+	 * different value for this.  */
+	le64 data_source_id;
+
+	/* Byte offset, from the beginning of the file, of the corresponding
+	 * 'struct WimOverlay_dat_entry_2' for this WIM data source.  */
+	le32 entry_2_offset;
+
+	/* Size, in bytes, of the corresponding 'struct WimOverlay_dat_entry_2
+	 * for this WIM data source, including wim_file_name and its null
+	 * terminator.  */
+	le32 entry_2_length;
+
+	/* Type of the WIM file: WIM_BOOT_OS_WIM or WIM_BOOT_NOT_OS_WIM.  */
+	le32 wim_type;
+
+	/* Index of the image in the WIM to use??? (This doesn't really make
+	 * sense, since WIM files combine streams for all images into a single
+	 * table.  Set to 1 if unsure...)  */
+	le32 wim_index;
+
+	/* GUID of the WIM file (copied from the WIM header, offset +0x18).  */
+	u8 guid[16];
+} _packed_attribute;
+
+/*
+ * Format of file: "\System Volume Information\WimOverlay.dat"
+ *
+ * Not documented by Microsoft.
+ *
+ * The file consists of a 'struct WimOverlay_dat_header' followed by one or more
+ * 'struct WimOverlay_dat_entry_1', followed by the same number of 'struct
+ * WimOverlay_dat_entry_2'.  Note that 'struct WimOverlay_dat_entry_1' is of
+ * fixed length, whereas 'struct WimOverlay_dat_entry_2' is of variable length.
+ */
+struct WimOverlay_dat_header {
+	/* Set to WIMOVERLAY_DAT_MAGIC  */
+	le32 magic;
+#define WIMOVERLAY_DAT_MAGIC 0x66436F57
+
+	/* Set to 1 (WIM_PROVIDER_CURRENT_VERSION)  */
+	le32 wim_provider_version;
+
+	/* Set to 0x00000028  */
+	le32 unknown_0x08;
+
+	/* Set to number of WIMs registered;
+	 * also the number of 'struct WimOverlay_dat_entry_1' that follow.  */
+	le32 num_entries_1;
+
+	/* Set to number of WIMs registered;
+	 * also the number of 'struct WimOverlay_dat_entry_2' that follow.  */
+	le32 num_entries_2;
+
+	/* Set to 0  */
+	le32 unknown_0x14;
+
+	struct WimOverlay_dat_entry_1 entry_1s[];
+} _packed_attribute;
+
+/* Location information about a WIM data source  */
+struct WimOverlay_dat_entry_2 {
+	/* Set to 0  */
+	le32 unknown_0x00;
+
+	/* Set to 0  */
+	le32 unknown_0x04;
+
+	/* Size, in bytes, of this 'struct WimOverlay_dat_entry_2', including
+	 * wim_file_name and its null terminator.  */
+	le32 entry_2_length;
+
+	/* Set to 0  */
+	le32 unknown_0x0C;
+
+	/* Set to 5  */
+	le32 unknown_0x10;
+
+	struct {
+		/* Set to 1  */
+		le32 unknown_0x14;
+
+		/* Size of this inner structure, in bytes.  */
+		le32 inner_struct_size;
+
+		/* Set to 5  */
+		le32 unknown_0x1C;
+
+		/* Set to 6  */
+		le32 unknown_0x20;
+
+		/* Set to 0  */
+		le32 unknown_0x24;
+
+		/* Set to 0x48  */
+		le32 unknown_0x28;
+
+		/* Set to 0  */
+		le32 unknown_0x2C;
+
+		/*************************
+		 * Partition information
+		 ************************/
+
+		/* Partition identifier  */
+		union {
+			/* (For MBR-formatted disks)  */
+			struct {
+				/* Offset, in bytes, of the MBR partition, from
+				 * the beginning of the disk.  */
+				le64 part_start_offset;
+
+				/* Set to 0  */
+				le64 padding;
+			} mbr;
+
+			/* (For GPT-formatted disks)  */
+			struct {
+				/* Unique GUID of the GPT partition  */
+				u8 part_unique_guid[16];
+			} gpt;
+		} partition;
+
+		/* Set to 0  */
+		le32 unknown_0x40;
+
+		/***********************
+		 * Disk information
+		 **********************/
+
+		/* 1 for MBR, 0 for GPT  */
+		le32 partition_table_type;
+	#define WIMOVERLAY_PARTITION_TYPE_MBR 1
+	#define WIMOVERLAY_PARTITION_TYPE_GPT 0
+
+		/* Disk identifier  */
+		union {
+			/* (For MBR-formatted disks)  */
+			struct {
+				/* 4-byte ID of the MBR disk  */
+				le32 disk_id;
+
+				/* Set to 0  */
+				le32 padding[3];
+			} mbr;
+
+			/* (For GPT-formatted disks)  */
+			struct {
+				/* GUID of the GPT disk  */
+				u8 disk_guid[16];
+			} gpt;
+		} disk;
+
+		/* Set to 0.  (This is the right size for some sort of optional
+		 * GUID...)  */
+		le32 unknown_0x58[4];
+
+		/**************************
+		 * Location in filesystem
+		 *************************/
+
+		/* Null-terminated path to WIM file.  Begins with \ but does
+		 * *not* include drive letter!  */
+		utf16lechar wim_file_name[];
+	} _packed_attribute;
+} _packed_attribute;
+
+static inline void
+wof_check_structs(void)
+{
+	BUILD_BUG_ON(sizeof(struct WimOverlay_dat_header) != 24);
+	BUILD_BUG_ON(sizeof(struct WimOverlay_dat_entry_1) != 40);
+	BUILD_BUG_ON(sizeof(struct WimOverlay_dat_entry_2) != 104);
+}
 
 /*****************************************************************************
  *

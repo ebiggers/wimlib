@@ -35,50 +35,40 @@
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/paths.h"
+#include "wimlib/resource.h"
 #include "wimlib/textfile.h"
 #include "wimlib/xml.h"
 #include "wimlib/wim.h"
 #include "wimlib/wimboot.h"
 
-static void
-ctx_save_data_source_id(struct apply_ctx *ctx, u64 data_source_id)
-{
-	ctx->private[0] = data_source_id & 0xFFFFFFFF;
-	ctx->private[1] = data_source_id >> 32;
-}
+struct win32_apply_private_data {
+	u64 data_source_id;
+	struct string_set *prepopulate_pats;
+	void *mem_prepopulate_pats;
+	u8 wim_lookup_table_hash[SHA1_HASH_SIZE];
+	bool wof_running;
+};
 
-static u64
-ctx_get_data_source_id(const struct apply_ctx *ctx)
+static struct win32_apply_private_data *
+get_private_data(struct apply_ctx *ctx)
 {
-	return (u32)ctx->private[0] | ((u64)(u32)ctx->private[1] << 32);
-}
-
-static void
-set_prepopulate_pats(struct apply_ctx *ctx, struct string_set *s)
-{
-	ctx->private[2] = (intptr_t)s;
-}
-
-static struct string_set *
-get_prepopulate_pats(struct apply_ctx *ctx)
-{
-	return (struct string_set *)(ctx->private[2]);
+	BUILD_BUG_ON(sizeof(ctx->private) < sizeof(struct win32_apply_private_data));
+	return (struct win32_apply_private_data *)(ctx->private);
 }
 
 static void
-free_prepopulate_pats(struct apply_ctx *ctx)
+free_prepopulate_pats(struct win32_apply_private_data *dat)
 {
-	struct string_set *s;
-
-	s = get_prepopulate_pats(ctx);
-	if (s) {
-		FREE(s->strings);
-		FREE(s);
+	if (dat->prepopulate_pats) {
+		FREE(dat->prepopulate_pats->strings);
+		FREE(dat->prepopulate_pats);
+		dat->prepopulate_pats = NULL;
 	}
-	set_prepopulate_pats(ctx, NULL);
 
-	FREE((void *)ctx->private[3]);
-	ctx->private[3] = (intptr_t)NULL;
+	if (dat->mem_prepopulate_pats) {
+		FREE(dat->mem_prepopulate_pats);
+		dat->mem_prepopulate_pats = NULL;
+	}
 }
 
 static int
@@ -94,6 +84,7 @@ load_prepopulate_pats(struct apply_ctx *ctx)
 	void *buf;
 	void *mem;
 	struct text_file_section sec;
+	struct win32_apply_private_data *dat = get_private_data(ctx);
 
 	dentry = get_dentry(ctx->wim, path, WIMLIB_CASE_INSENSITIVE);
 	if (!dentry ||
@@ -128,19 +119,18 @@ load_prepopulate_pats(struct apply_ctx *ctx)
 		FREE(s);
 		return ret;
 	}
-	set_prepopulate_pats(ctx, s);
-	ctx->private[3] = (intptr_t)mem;
+	dat->prepopulate_pats = s;
+	dat->mem_prepopulate_pats = mem;
 	return 0;
 }
 
 static bool
-in_prepopulate_list(struct wim_dentry *dentry,
-		    struct apply_ctx *ctx)
+in_prepopulate_list(struct wim_dentry *dentry, struct apply_ctx *ctx)
 {
 	struct string_set *pats;
 	const tchar *path;
 
-	pats = get_prepopulate_pats(ctx);
+	pats = get_private_data(ctx)->prepopulate_pats;
 	if (!pats)
 		return false;
 	path = dentry_full_path(dentry);
@@ -151,15 +141,22 @@ in_prepopulate_list(struct wim_dentry *dentry,
 }
 
 static int
+hash_lookup_table(WIMStruct *wim, u8 hash[SHA1_HASH_SIZE])
+{
+	return wim_reshdr_to_hash(&wim->hdr.lookup_table_reshdr, wim, hash);
+}
+
+static int
 win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 {
 	int ret;
 	unsigned vol_flags;
 	bool supports_SetFileShortName;
+	struct win32_apply_private_data *dat = get_private_data(ctx);
 
 	ret = win32_get_vol_flags(path, &vol_flags, &supports_SetFileShortName);
 	if (ret)
-		return ret;
+		goto err;
 
 	ctx->supported_features.archive_files = 1;
 	ctx->supported_features.hidden_files = 1;
@@ -200,32 +197,38 @@ win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 
 		ret = load_prepopulate_pats(ctx);
 		if (ret == WIMLIB_ERR_NOMEM)
-			return ret;
-
-		u64 data_source_id;
+			goto err;
 
 		if (!wim_info_get_wimboot(ctx->wim->wim_info,
 					  ctx->wim->current_image))
 			WARNING("Image is not marked as WIMBoot compatible!");
 
-		ret = wimboot_alloc_data_source_id(ctx->wim->filename,
-						   ctx->wim->current_image,
-						   path, &data_source_id);
-		if (ret) {
-			free_prepopulate_pats(ctx);
-			return ret;
-		}
 
-		ctx_save_data_source_id(ctx, data_source_id);
+		ret = hash_lookup_table(ctx->wim, dat->wim_lookup_table_hash);
+		if (ret)
+			goto err;
+
+		ret = wimboot_alloc_data_source_id(ctx->wim->filename,
+						   ctx->wim->hdr.guid,
+						   ctx->wim->current_image,
+						   path,
+						   &dat->data_source_id,
+						   &dat->wof_running);
+		if (ret)
+			goto err;
 	}
 
 	return 0;
+
+err:
+	free_prepopulate_pats(dat);
+	return ret;
 }
 
 static int
 win32_finish_extract(struct apply_ctx *ctx)
 {
-	free_prepopulate_pats(ctx);
+	free_prepopulate_pats(get_private_data(ctx));
 	return 0;
 }
 
@@ -418,11 +421,16 @@ win32_extract_unnamed_stream(file_spec_t file,
 	    && lte
 	    && lte->resource_location == RESOURCE_IN_WIM
 	    && lte->rspec->wim == ctx->wim
+	    && lte->size == lte->rspec->uncompressed_size
 	    && !in_prepopulate_list(dentry, ctx))
 	{
-		return wimboot_set_pointer(file.path,
-					   ctx_get_data_source_id(ctx),
-					   lte->hash);
+		const struct win32_apply_private_data *dat;
+
+		dat = get_private_data(ctx);
+		return wimboot_set_pointer(file.path, lte,
+					   dat->data_source_id,
+					   dat->wim_lookup_table_hash,
+					   dat->wof_running);
 	}
 
 	return win32_extract_stream(file.path, NULL, 0, lte, ctx);
