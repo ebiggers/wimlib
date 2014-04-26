@@ -68,7 +68,7 @@ static wchar_t *
 get_security_descriptor_string(PSECURITY_DESCRIPTOR desc)
 {
 	wchar_t *str = NULL;
-	/* 53 characters!!!  */
+	/* 52 characters!!!  */
 	ConvertSecurityDescriptorToStringSecurityDescriptorW(
 			desc,
 			SDDL_REVISION_1,

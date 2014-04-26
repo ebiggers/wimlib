@@ -1476,7 +1476,7 @@ parse_update_command_file(tchar **cmd_file_contents_p, size_t cmd_file_nchars,
 	return cmds;
 }
 
-/* Apply one image, or all images, from a WIM file into a directory, OR apply
+/* Apply one image, or all images, from a WIM file to a directory, OR apply
  * one image from a WIM file to a NTFS volume.  */
 static int
 imagex_apply(int argc, tchar **argv, int cmd)
@@ -4226,7 +4226,7 @@ main(int argc, char **argv)
 		exit(2);
 	}
 
-	/* Enable warning and error messages in wimlib be more user-friendly.
+	/* Enable warning and error messages in wimlib to be more user-friendly.
 	 * */
 	wimlib_set_print_errors(true);
 
