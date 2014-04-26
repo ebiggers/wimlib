@@ -1326,9 +1326,12 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_ADD_FLAG_WINCONFIG		0x00000800
 
 /**
- * Capture image as WIMBoot compatible.  In addition, use the capture
- * configuration file <c>$SOURCE/Windows/System32/WimBootCompress.ini</c> if it
- * exists, where <c>$SOURCE</c> is the directory being captured.
+ * Capture image as WIMBoot compatible.  In addition, if no capture
+ * configuration file is explicitly specified use the capture configuration file
+ * <c>$SOURCE/Windows/System32/WimBootCompress.ini</c> if it exists, where
+ * <c>$SOURCE</c> is the directory being captured; or, if a capture
+ * configuration file is explicitly specified, use it and also place it at
+ * /Windows/System32/WimBootCompress.ini in the WIM image.
  *
  * Note: this will not by itself change the compression type.  Before writing
  * the WIM file, it's recommended to also do:
@@ -1518,7 +1521,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  */
 #define WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE	0x00200000
 
-/** Windows only: Extract files as "pointers" back to the WIM archive.  */
+/** Windows only: Extract files as "pointers" back to the WIM archive.  See the
+ * documentation for the <b>--wimboot</b> option of <b>wimlib-imagex apply</b>
+ * for more information.  */
 #define WIMLIB_EXTRACT_FLAG_WIMBOOT			0x00400000
 
 /** @} */

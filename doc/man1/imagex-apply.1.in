@@ -398,20 +398,31 @@ Windows only: Instead of extracting the files themselves, extract "pointer
 files" back to the WIM archive.  This can result in significant space savings.
 However, it comes at several potential costs, such as not being able to delete
 the WIM archive and possibly having slower access to files.  See Microsoft's
-documentation for "WIMBoot" for more information.  Also, this option only works
-when several conditions hold:
-.RS
-.IP \[bu] 4
-The operating system is Windows 8.1 update 1 or later, since that is the first
-version of Windows that contains the Windows Overlay File System Filter Driver
-("WOF") necessary for this feature.
-.IP \[bu]
-The program is run as an Administrator.
-.IP \[bu]
-The WIM archive is not solid (i.e. is not an "ESD file").
-.IP \[bu]
-The target volume is NTFS or another filesystem that supports reparse points.
-.RE
+documentation for "WIMBoot" for more information.
+.IP ""
+If it exists, the [PrepopulateList] section of the file
+\\Windows\\System32\\WimBootCompress.ini in the WIM image will be read.  Files
+matching any of these patterns will be extracted normally, not as WIMBoot
+"pointer files".  This is helpful for certain files that Windows needs to read
+early in the boot process.
+.IP ""
+This option only works when the program is run as an Administrator and the
+target volume is NTFS or another filesystem that supports reparse points.
+.IP ""
+In addition, this option works best when running on Windows 8.1 Update 1 or
+later, since that is the first version of Windows that contains the Windows
+Overlay File System Filter Driver ("WOF").  If the WOF driver is detected,
+wimlib will create the WIMBoot "pointer files" using documented ioctls provided
+by WOF.
+.IP ""
+Otherwise, if the WOF driver is not detected, wimlib will create the reparse
+points and edit the file "\\System Volume Information\\WimOverlay.dat" on the
+target volume manually.  This is potentially subject to problems, since although
+the code works in certain tested cases, neither of these data formats is
+actually documented by Microsoft.  Before overwriting this file, wimlib will
+save the previous version in "\\System Volume
+Information\\WimOverlay.wimlib_backup", which you potentially could restore if
+you needed to.
 .SH NOTES
 \fIData integrity\fR:  WIM files include SHA1 message digests for file data.
 \fB@IMAGEX_PROGNAME@ apply\fR calculates the SHA1 message digest of every file
