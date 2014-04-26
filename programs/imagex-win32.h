@@ -9,9 +9,6 @@
 extern wchar_t *
 win32_mbs_to_wcs(const char *mbs, size_t mbs_nbytes, size_t *num_wchars_ret);
 
-extern wchar_t *
-win32_wbasename(wchar_t *path);
-
 extern void
 win32_print_security_descriptor(const uint8_t *sd, size_t size);
 
