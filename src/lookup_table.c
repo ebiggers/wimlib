@@ -684,9 +684,27 @@ read_wim_lookup_table(WIMStruct *wim)
 		if (!(reshdr.flags & (WIM_RESHDR_FLAG_PACKED_STREAMS |
 				      WIM_RESHDR_FLAG_COMPRESSED))) {
 			if (reshdr.uncompressed_size != reshdr.size_in_wim) {
-				ERROR("Invalid resource entry!");
-				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-				goto err;
+				/* So ... This is an uncompressed resource, but
+				 * its uncompressed size is NOT the same as its
+				 * "compressed" size (size_in_wim).  What to do
+				 * with it?
+				 *
+				 * Based on a simple test, WIMGAPI seems to
+				 * handle this as follows:
+				 *
+				 * if (size_in_wim > uncompressed_size) {
+				 *	Ignore uncompressed_size; use
+				 *	size_in_wim instead.
+				 * } else {
+				 *	Honor uncompressed_size, but treat the
+				 *	part of the file data above size_in_wim
+				 *	as all zeros.
+				 * }
+				 *
+				 * So we will do the same.
+				 */
+				if (reshdr.size_in_wim > reshdr.uncompressed_size)
+					reshdr.uncompressed_size = reshdr.size_in_wim;
 			}
 		}
 
