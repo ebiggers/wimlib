@@ -615,6 +615,7 @@ read_wim_lookup_table(WIMStruct *wim)
 	struct wim_resource_spec *cur_rspec;
 	void *buf;
 	bool back_to_back_pack;
+	size_t num_duplicate_entries = 0;
 
 	DEBUG("Reading lookup table.");
 
@@ -891,8 +892,7 @@ read_wim_lookup_table(WIMStruct *wim)
 		 * resource.  */
 		duplicate_entry = lookup_stream(table, cur_entry->hash);
 		if (duplicate_entry) {
-			WARNING("The WIM lookup table contains two entries "
-				"with the same SHA1 message digest!");
+			num_duplicate_entries++;
 			free_lookup_table_entry(cur_entry);
 			continue;
 		}
@@ -920,6 +920,12 @@ read_wim_lookup_table(WIMStruct *wim)
 			put_image_metadata(wim->image_metadata[i], NULL);
 		wim->hdr.image_count = wim->current_image;
 	}
+
+	if (num_duplicate_entries > 0) {
+		WARNING("Ignoring %zu duplicate streams in the WIM lookup table",
+			num_duplicate_entries);
+	}
+
 	DEBUG("Done reading lookup table.");
 	wim->lookup_table = table;
 	ret = 0;
