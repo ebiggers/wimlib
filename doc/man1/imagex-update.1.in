@@ -37,6 +37,10 @@ The \fBadd\fR command supports a subset of the options accepted by
 \fB@IMAGEX_PROGNAME@-capture\fR; namely, \fB--dereference\fR,
 \fB--unix-data\fR, \fB--no-acls\fR, and \fB--strict-acls\fR.  See
 \fB@IMAGEX_PROGNAME@-capture\fR (1) for explanations of these options.
+.PP
+In addition, the \fBadd\fR command supports the \fB--no-replace\fR option, which
+causes the \fBadd\fR command to refuse to overwrite existing nondirectory files
+in the WIM image.
 .SS \fBdelete\fR [\fIOPTION\fR...] \fIPATH\fR
 Delete a file or directory tree from the WIM image.  \fIPATH\fR must specify the
 path inside the WIM image of the file or directory tree to delete.
@@ -74,6 +78,9 @@ Use \fB--no-acls\fR for all \fBadd\fR commands.
 .TP
 \fB--strict-acls\fR
 Use \fB--strict-acls\fR for all \fBadd\fR commands.
+.TP
+\fB--no-replace\fR
+Use \fB--no-replace\fR for all \fBadd\fR commands.
 .TP
 \fB--config\fR=\fIFILE\fR
 Set the capture configuration file for all \fBadd\fR commands.  See the

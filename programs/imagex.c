@@ -173,6 +173,7 @@ enum {
 	IMAGEX_NOT_PIPABLE_OPTION,
 	IMAGEX_NO_ACLS_OPTION,
 	IMAGEX_NO_ATTRIBUTES_OPTION,
+	IMAGEX_NO_REPLACE_OPTION,
 	IMAGEX_NO_WILDCARDS_OPTION,
 	IMAGEX_NULLGLOB_OPTION,
 	IMAGEX_ONE_FILE_ONLY_OPTION,
@@ -401,6 +402,7 @@ static const struct option update_options[] = {
 	{T("noacls"),      no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
+	{T("no-replace"),  no_argument,       NULL, IMAGEX_NO_REPLACE_OPTION},
 
 	{NULL, 0, NULL, 0},
 };
@@ -3777,6 +3779,9 @@ imagex_update(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_STRICT_ACLS_OPTION:
 			default_add_flags |= WIMLIB_ADD_FLAG_STRICT_ACLS;
+			break;
+		case IMAGEX_NO_REPLACE_OPTION:
+			default_add_flags |= WIMLIB_ADD_FLAG_NO_REPLACE;
 			break;
 		default:
 			goto out_usage;
