@@ -663,19 +663,24 @@ finish_resource(struct wim_resource_spec *rspec)
 }
 
 /*
- * Reads the lookup table from a WIM file.  Each entry specifies a stream that
- * the WIM file contains, along with its location and SHA1 message digest.
+ * Reads the lookup table from a WIM file.  Usually, each entry specifies a
+ * stream that the WIM file contains, along with its location and SHA1 message
+ * digest.
  *
- * Saves lookup table entries for non-metadata streams in a hash table, and
- * saves the metadata entry for each image in a special per-image location (the
- * image_metadata array).
+ * Saves lookup table entries for non-metadata streams in a hash table (set to
+ * wim->lookup_table), and saves the metadata entry for each image in a special
+ * per-image location (the wim->image_metadata array).
  *
- * Return values:
+ * This works for both version WIM_VERSION_DEFAULT (68864) and version
+ * WIM_VERSION_PACKED_STREAMS (3584) WIMs.
+ *
+ * Possible return values:
  *	WIMLIB_ERR_SUCCESS (0)
  *	WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY
- *	WIMLIB_ERR_RESOURCE_NOT_FOUND
+ *	WIMLIB_ERR_NOMEM
  *
- *	Or an error code caused by failure to read the lookup table into memory.
+ *	Or an error code caused by failure to read the lookup table from the WIM
+ *	file.
  */
 int
 read_wim_lookup_table(WIMStruct *wim)
@@ -849,14 +854,13 @@ read_wim_lookup_table(WIMStruct *wim)
 			 * Transfer the values to the `struct
 			 * wim_resource_spec', and discard the current stream
 			 * since this lookup table entry did not, in fact,
-			 * correspond to a "stream".
-			 */
+			 * correspond to a "stream".  */
 
-			/* Uncompressed size of the resource pack is actually
-			 * stored in the header of the resource itself.  Read
-			 * it, and also grab the chunk size and compression type
-			 * (which are not necessarily the defaults from the WIM
-			 * header).  */
+			/* The uncompressed size of the packed resource is
+			 * actually stored in the header of the resource itself.
+			 * Read it, and also grab the chunk size and compression
+			 * type (which are not necessarily the defaults from the
+			 * WIM header).  */
 			struct alt_chunk_table_header_disk hdr;
 
 			ret = full_pread(&wim->in_fd, &hdr,
@@ -887,20 +891,26 @@ read_wim_lookup_table(WIMStruct *wim)
 			goto free_cur_entry_and_continue;
 		}
 
-		/* Ignore streams with zero hash.  */
+		/* Ignore entries with all zeroes in the hash field.  */
 		if (is_zero_hash(cur_entry->hash))
 			goto free_cur_entry_and_continue;
 
 		if (reshdr.flags & WIM_RESHDR_FLAG_METADATA) {
+
 			/* Lookup table entry for a metadata resource.  */
 
-			/* Metadata entries with no references must be ignored;
-			 * see, for example, the WinPE WIMs from the WAIK v2.1.
+			/* Metadata entries with no references must be ignored.
+			 * See, for example, the WinPE WIMs from the WAIK v2.1.
 			 */
 			if (cur_entry->refcnt == 0)
 				goto free_cur_entry_and_continue;
 
 			if (cur_entry->refcnt != 1) {
+				/* We don't currently support this case due to
+				 * the complications of multiple images sharing
+				 * the same metadata resource or a metadata
+				 * resource also being referenced by files.
+				 */
 				ERROR("Found metadata resource with refcnt != 1");
 				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 				goto out;
@@ -911,18 +921,22 @@ read_wim_lookup_table(WIMStruct *wim)
 					"non-first part of the split WIM");
 				goto free_cur_entry_and_continue;
 			}
+
+			/* The number of entries in the lookup table with
+			 * WIM_RESHDR_FLAG_METADATA set should be the same as
+			 * the image_count field in the WIM header.  */
 			if (image_index == wim->hdr.image_count) {
 				WARNING("Found more metadata resources than images");
 				goto free_cur_entry_and_continue;
 			}
 
 			/* Notice very carefully:  We are assigning the metadata
-			 * resources in the exact order mirrored by their lookup
-			 * table entries on disk, which is the behavior of
-			 * Microsoft's software.  In particular, this overrides
-			 * the actual locations of the metadata resources
-			 * themselves in the WIM file as well as any information
-			 * written in the XML data.  */
+			 * resources to images in the same order in which their
+			 * lookup table entries occur on disk.  (This is also
+			 * the behavior of Microsoft's software.)  In
+			 * particular, this overrides the actual locations of
+			 * the metadata resources themselves in the WIM file as
+			 * well as any information written in the XML data.  */
 			DEBUG("Found metadata resource for image %"PRIu32" at "
 			      "offset %"PRIu64".",
 			      image_index + 1,
@@ -930,8 +944,7 @@ read_wim_lookup_table(WIMStruct *wim)
 
 			wim->image_metadata[image_index++]->metadata_lte = cur_entry;
 		} else {
-			/* Lookup table entry for a stream that is not a metadata
-			 * resource.  */
+			/* Lookup table entry for a non-metadata stream.  */
 
 			/* Ignore this stream if it's a duplicate.  */
 			duplicate_entry = lookup_stream(table, cur_entry->hash);
@@ -940,8 +953,8 @@ read_wim_lookup_table(WIMStruct *wim)
 				goto free_cur_entry_and_continue;
 			}
 
-			/* Insert the stream into the lookup table (keyed by its
-			 * SHA1 message digest).  */
+			/* Insert the stream into the in-memory lookup table,
+			 * keyed by its SHA1 message digest.  */
 			lookup_table_insert(table, cur_entry);
 		}
 
