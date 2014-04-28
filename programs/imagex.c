@@ -1055,28 +1055,13 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		percent_done = TO_PERCENT(info->write_streams.completed_bytes,
 					  info->write_streams.total_bytes);
 
-		if (info->write_streams.total_parts <= 1) {
-			imagex_printf(T("\r%"PRIu64" %"TS" of %"PRIu64" %"TS" (uncompressed) "
-				"written (%u%% done)"),
-				info->write_streams.completed_bytes >> unit_shift,
-				unit_name,
-				info->write_streams.total_bytes >> unit_shift,
-				unit_name,
-				percent_done);
-		} else {
-			imagex_printf(T("\rWriting resources from part %u of %u: "
-				  "%"PRIu64 " %"TS" of %"PRIu64" %"TS" (%u%%) written"),
-				(info->write_streams.completed_parts ==
-					info->write_streams.total_parts) ?
-						info->write_streams.completed_parts :
-						info->write_streams.completed_parts + 1,
-				info->write_streams.total_parts,
-				info->write_streams.completed_bytes >> unit_shift,
-				unit_name,
-				info->write_streams.total_bytes >> unit_shift,
-				unit_name,
-				percent_done);
-		}
+		imagex_printf(T("\r%"PRIu64" %"TS" of %"PRIu64" %"TS" (uncompressed) "
+			"written (%u%% done)"),
+			info->write_streams.completed_bytes >> unit_shift,
+			unit_name,
+			info->write_streams.total_bytes >> unit_shift,
+			unit_name,
+			percent_done);
 		if (info->write_streams.completed_bytes >= info->write_streams.total_bytes)
 			imagex_printf(T("\n"));
 		break;

@@ -278,7 +278,6 @@ struct write_streams_progress_data {
 	wimlib_progress_func_t progress_func;
 	union wimlib_progress_info progress;
 	uint64_t next_progress;
-	WIMStruct *prev_wim_part;
 };
 
 static void
@@ -289,7 +288,6 @@ do_write_streams_progress(struct write_streams_progress_data *progress_data,
 			  bool discarded)
 {
 	union wimlib_progress_info *progress = &progress_data->progress;
-	bool new_wim_part;
 
 	if (discarded) {
 		progress->write_streams.total_bytes -= complete_size;
@@ -304,20 +302,8 @@ do_write_streams_progress(struct write_streams_progress_data *progress_data,
 		progress->write_streams.completed_streams += complete_count;
 	}
 
-	new_wim_part = false;
-	if (cur_stream->resource_location == RESOURCE_IN_WIM &&
-	    cur_stream->rspec->wim != progress_data->prev_wim_part)
-	{
-		if (progress_data->prev_wim_part) {
-			new_wim_part = true;
-			progress->write_streams.completed_parts++;
-		}
-		progress_data->prev_wim_part = cur_stream->rspec->wim;
-	}
-
 	if (progress_data->progress_func
-	    && (progress->write_streams.completed_bytes >= progress_data->next_progress
-		|| new_wim_part))
+	    && (progress->write_streams.completed_bytes >= progress_data->next_progress))
 	{
 		progress_data->progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
 					     progress);
@@ -1061,7 +1047,6 @@ compute_stream_list_stats(struct list_head *stream_list,
 	ctx->progress_data.progress.write_streams.total_parts       = total_parts;
 	ctx->progress_data.progress.write_streams.completed_parts   = 0;
 	ctx->progress_data.next_progress = 0;
-	ctx->progress_data.prev_wim_part = NULL;
 }
 
 /* Find streams in @stream_list that can be copied to the output WIM in raw form

@@ -653,11 +653,10 @@ union wimlib_progress_info {
 		int32_t	 compression_type;
 
 		/** Number of split WIM parts from which streams are being
-		 * written (may be 0 if irrelevant).  */
+		 * written (may be 0 if irrelevant).   */
 		uint32_t total_parts;
 
-		/** Number of split WIM parts from which streams have been
-		 * written (may be 0 if irrelevant).  */
+		/** This is currently broken and will always be 0.  */
 		uint32_t completed_parts;
 	} write_streams;
 
