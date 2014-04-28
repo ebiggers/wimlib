@@ -201,6 +201,7 @@ enum {
 	IMAGEX_UPDATE_OF_OPTION,
 	IMAGEX_VERBOSE_OPTION,
 	IMAGEX_WIMBOOT_OPTION,
+	IMAGEX_WIMBOOT_CONFIG_OPTION,
 	IMAGEX_XML_OPTION,
 };
 
@@ -387,6 +388,7 @@ static const struct option update_options[] = {
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
 	{T("command"),     required_argument, NULL, IMAGEX_COMMAND_OPTION},
+	{T("wimboot-config"), required_argument, NULL, IMAGEX_WIMBOOT_CONFIG_OPTION},
 
 	/* Default delete options */
 	{T("force"),       no_argument,       NULL, IMAGEX_FORCE_OPTION},
@@ -3720,6 +3722,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 	size_t num_cmds;
 	tchar *command_str = NULL;
 	tchar *config_file = NULL;
+	tchar *wimboot_config = NULL;
 
 	for_opt(c, update_options) {
 		switch (c) {
@@ -3749,6 +3752,9 @@ imagex_update(int argc, tchar **argv, int cmd)
 				imagex_error(T("Out of memory!"));
 				goto out_err;
 			}
+			break;
+		case IMAGEX_WIMBOOT_CONFIG_OPTION:
+			wimboot_config = optarg;
 			break;
 		/* Default delete options */
 		case IMAGEX_FORCE_OPTION:
@@ -3826,7 +3832,11 @@ imagex_update(int argc, tchar **argv, int cmd)
 		cmd_file_contents = NULL;
 		cmds = parse_update_command_file(&command_str, tstrlen(command_str),
 						 &num_cmds);
-	} else {
+		if (!cmds) {
+			ret = -1;
+			goto out_free_cmd_file_contents;
+		}
+	} else if (!wimboot_config) {
 		if (isatty(STDIN_FILENO)) {
 			tputs(T("Reading update commands from standard input..."));
 			recommend_man_page(CMD_UPDATE, stdout);
@@ -3840,10 +3850,14 @@ imagex_update(int argc, tchar **argv, int cmd)
 		/* Parse the update commands */
 		cmds = parse_update_command_file(&cmd_file_contents, cmd_file_nchars,
 						 &num_cmds);
-	}
-	if (!cmds) {
-		ret = -1;
-		goto out_free_cmd_file_contents;
+		if (!cmds) {
+			ret = -1;
+			goto out_free_cmd_file_contents;
+		}
+	} else {
+		cmd_file_contents = NULL;
+		cmds = NULL;
+		num_cmds = 0;
 	}
 
 	/* Set default flags and capture config on the update commands */
@@ -3866,6 +3880,26 @@ imagex_update(int argc, tchar **argv, int cmd)
 				  imagex_progress_func);
 	if (ret)
 		goto out_free_cmds;
+
+	if (wimboot_config) {
+		/* --wimboot-config=FILE is short for an
+		 * "add FILE /Windows/System32/WimBootCompress.ini" command.
+		 */
+		struct wimlib_update_command cmd = {
+			.op = WIMLIB_UPDATE_OP_ADD,
+			.add = {
+				.fs_source_path = wimboot_config,
+				.wim_target_path =
+					T("/Windows/System32/WimBootCompress.ini"),
+				.config_file = NULL,
+				.add_flags = 0,
+			},
+		};
+		ret = wimlib_update_image(wim, image, &cmd, 1,
+					  update_flags, imagex_progress_func);
+		if (ret)
+			goto out_free_cmds;
+	}
 
 	/* Overwrite the updated WIM */
 	ret = wimlib_overwrite(wim, write_flags, num_threads,

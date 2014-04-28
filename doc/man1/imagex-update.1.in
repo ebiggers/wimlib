@@ -128,6 +128,22 @@ quotes and single quotes for the inner quotes.  Example:
 .RE
 .RE
 .fi
+.TP
+\fB--wimboot-config\fR=\fIFILE\fR
+If this option is specified, no commands shall be read from standard input, and
+instead the following command shall be executed:
+.IP
+.nf
+.RS
+.RS
+\fBadd\fR \fIFILE\fR /Windows/System32/WimBootCompress.ini
+.RE
+.RE
+.fi
+.IP
+This sets \fIFILE\fR as the WIMBoot configuration file for the image.  See the
+documentation for the \fB--wimboot\fR option of \fB@IMAGEX_PROGNAME@ apply\fR
+(1) for more information.
 .SH NOTES
 \fB@IMAGEX_PROGNAME@ update\fR is partly redundant with \fB@IMAGEX_PROGNAME@
 mountrw\fR, since if a WIM image can be mounted read-write, then there
