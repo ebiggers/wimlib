@@ -235,10 +235,30 @@ free_lookup_table_entry(struct wim_lookup_table_entry *lte)
 	}
 }
 
-/* Decrements the reference count for the lookup table entry @lte.  If its
- * reference count reaches 0, it is unlinked from the lookup table.  If,
- * furthermore, the entry has no opened file descriptors associated with it, the
- * entry is freed.  */
+/* Should this stream be retained even if it has no references?  */
+static bool
+should_retain_lte(const struct wim_lookup_table_entry *lte)
+{
+	return lte->resource_location == RESOURCE_IN_WIM;
+}
+
+static void
+finalize_lte(struct wim_lookup_table_entry *lte)
+{
+	if (!should_retain_lte(lte))
+		free_lookup_table_entry(lte);
+}
+
+/*
+ * Decrements the reference count for the lookup table entry @lte, which must be
+ * inserted in the stream lookup table @table.
+ *
+ * If the reference count reaches 0, this may cause @lte to be destroyed.
+ * However, we may retain entries with 0 reference count.  This does not affect
+ * correctness, but it prevents the entries for valid streams in a WIM archive,
+ * which will continue to be present after appending to the file, from being
+ * lost merely because we dropped all references to them.
+ */
 void
 lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
 		     struct wim_lookup_table *table)
@@ -257,7 +277,8 @@ lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
 				unlink(lte->staging_file_name);
 		#endif
 		} else {
-			lookup_table_unlink(table, lte);
+			if (!should_retain_lte(lte))
+				lookup_table_unlink(table, lte);
 		}
 
 		/* If FUSE mounts are enabled, we don't actually free the entry
@@ -266,7 +287,7 @@ lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
 #ifdef WITH_FUSE
 		if (lte->num_opened_fds == 0)
 #endif
-			free_lookup_table_entry(lte);
+			finalize_lte(lte);
 	}
 }
 
@@ -277,7 +298,7 @@ lte_decrement_num_opened_fds(struct wim_lookup_table_entry *lte)
 	wimlib_assert(lte->num_opened_fds != 0);
 
 	if (--lte->num_opened_fds == 0 && lte->refcnt == 0)
-		free_lookup_table_entry(lte);
+		finalize_lte(lte);
 }
 #endif
 

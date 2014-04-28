@@ -87,10 +87,12 @@ lte_unexport(struct wim_lookup_table_entry *lte, void *_lookup_table)
 {
 	struct wim_lookup_table *lookup_table = _lookup_table;
 
-	lte->refcnt -= lte->out_refcnt;
-	if (lte->refcnt == 0) {
-		lookup_table_unlink(lookup_table, lte);
-		free_lookup_table_entry(lte);
+	if (lte->out_refcnt) {
+		lte->refcnt -= lte->out_refcnt;
+		if (lte->refcnt == 0) {
+			lookup_table_unlink(lookup_table, lte);
+			free_lookup_table_entry(lte);
+		}
 	}
 	return 0;
 }
