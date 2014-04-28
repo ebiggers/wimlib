@@ -169,7 +169,8 @@ wimlib_join(const tchar * const *swm_names,
 		return WIMLIB_ERR_INVALID_PARAM;
 	num_additional_swms = num_swms - 1;
 
-	additional_swms = CALLOC(num_additional_swms, sizeof(additional_swms[0]));
+	additional_swms = CALLOC((num_additional_swms + 1),
+				 sizeof(additional_swms[0]));
 	if (!additional_swms)
 		return WIMLIB_ERR_NOMEM;
 
@@ -188,6 +189,7 @@ wimlib_join(const tchar * const *swm_names,
 	}
 
 	if (!swm0) {
+		ERROR("Part 1 of the split WIM was not specified!");
 		ret = WIMLIB_ERR_SPLIT_INVALID;
 		goto out_free_swms;
 	}
@@ -210,7 +212,7 @@ wimlib_join(const tchar * const *swm_names,
 			   wim_write_flags | WIMLIB_WRITE_FLAG_STREAMS_OK,
 			   1, progress_func);
 out_free_swms:
-	for (i = 0; i < num_additional_swms; i++)
+	for (i = 0; i < num_additional_swms + 1; i++)
 		wimlib_free(additional_swms[i]);
 	FREE(additional_swms);
 	wimlib_free(swm0);
