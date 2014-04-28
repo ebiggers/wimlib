@@ -201,6 +201,8 @@ wimlib_join(const tchar * const *swm_names,
 	if (ret)
 		goto out_free_swms;
 
+	swm0->guid_set_explicitly = 1;
+
 	/* It is reasonably safe to provide, WIMLIB_WRITE_FLAG_STREAMS_OK, as we
 	 * have verified that the specified split WIM parts form a spanned set.
 	 */
