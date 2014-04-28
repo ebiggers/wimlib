@@ -727,7 +727,6 @@ read_wim_lookup_table(WIMStruct *wim)
 			&((const struct wim_lookup_table_entry_disk*)buf)[i];
 		struct wim_reshdr reshdr;
 		u16 part_number;
-		struct wim_lookup_table_entry *duplicate_entry;
 
 		/* Get the resource header  */
 		get_wim_reshdr(&disk_entry->reshdr, &reshdr);
@@ -947,8 +946,7 @@ read_wim_lookup_table(WIMStruct *wim)
 			/* Lookup table entry for a non-metadata stream.  */
 
 			/* Ignore this stream if it's a duplicate.  */
-			duplicate_entry = lookup_stream(table, cur_entry->hash);
-			if (duplicate_entry) {
+			if (lookup_stream(table, cur_entry->hash)) {
 				num_duplicate_entries++;
 				goto free_cur_entry_and_continue;
 			}
