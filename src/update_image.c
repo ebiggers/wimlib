@@ -1022,28 +1022,23 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 		return -EBUSY;
 
 	if (j) {
+		if (dst)
+			if (journaled_unlink(j, dst))
+				return -ENOMEM;
+		if (journaled_unlink(j, src))
+			return -ENOMEM;
 		if (journaled_change_name(j, src, path_basename(to)))
+			return -ENOMEM;
+		if (journaled_link(j, src, parent_of_dst))
 			return -ENOMEM;
 	} else {
 		ret = dentry_set_name(src, path_basename(to));
 		if (ret)
 			return -ENOMEM;
-	}
-	if (dst) {
-		if (j) {
-			if (journaled_unlink(j, dst))
-				return -ENOMEM;
-		} else {
+		if (dst) {
 			unlink_dentry(dst);
 			free_dentry_tree(dst, wim->lookup_table);
 		}
-	}
-	if (j) {
-		if (journaled_unlink(j, src))
-			return -ENOMEM;
-		if (journaled_link(j, src, parent_of_dst))
-			return -ENOMEM;
-	} else {
 		unlink_dentry(src);
 		dentry_add_child(parent_of_dst, src);
 	}
