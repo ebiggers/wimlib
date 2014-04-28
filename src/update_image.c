@@ -949,6 +949,19 @@ free_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
 	return 0;
 }
 
+/* Is @d1 a (possibly nonproper) ancestor of @d2?  */
+static bool
+is_ancestor(struct wim_dentry *d1, struct wim_dentry *d2)
+{
+	for (;;) {
+		if (d2 == d1)
+			return true;
+		if (dentry_is_root(d2))
+			return false;
+		d2 = d2->parent;
+	}
+}
+
 /* Rename a file or directory in the WIM.
  *
  * This returns a -errno value.
@@ -1002,6 +1015,11 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 		if (!dentry_is_directory(parent_of_dst))
 			return -ENOTDIR;
 	}
+
+	/* @src can't be an ancestor of @dst.  Otherwise we're unlinking @src
+	 * from the tree and creating a loop...  */
+	if (is_ancestor(src, parent_of_dst))
+		return -EBUSY;
 
 	if (j) {
 		if (journaled_change_name(j, src, path_basename(to)))
@@ -1059,6 +1077,9 @@ execute_rename_command(struct update_command_journal *j,
 			ret = WIMLIB_ERR_NOTDIR;
 			break;
 		case ENOTEMPTY:
+		case EBUSY:
+			/* XXX: EBUSY is returned when the rename would create a
+			 * loop.  It maybe should have its own error code.  */
 			ret = WIMLIB_ERR_NOTEMPTY;
 			break;
 		case EISDIR:
