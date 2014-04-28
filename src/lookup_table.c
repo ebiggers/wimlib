@@ -578,36 +578,88 @@ struct wim_lookup_table_entry_disk {
 
 #define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
 
+static int
+cmp_streams_by_offset_in_res(const void *p1, const void *p2)
+{
+	const struct wim_lookup_table_entry *lte1, *lte2;
+
+	lte1 = *(const struct wim_lookup_table_entry**)p1;
+	lte2 = *(const struct wim_lookup_table_entry**)p2;
+
+	return cmp_u64(lte1->offset_in_res, lte2->offset_in_res);
+}
+
 /* Validate the size and location of a WIM resource.  */
 static int
-validate_resource(const struct wim_resource_spec *rspec)
+validate_resource(struct wim_resource_spec *rspec)
 {
 	struct wim_lookup_table_entry *lte;
-	u64 cur_offset;
+	bool out_of_order;
+	u64 expected_next_offset;
+	int ret;
 
-	/* Verify that calculating the offset of the end of the resource doesn't
-	 * overflow.  */
+	/* Verify that the resource itself has a valid offset and size.  */
 	if (rspec->offset_in_wim + rspec->size_in_wim < rspec->size_in_wim)
-		goto invalid;
+		goto invalid_due_to_overflow;
 
-	/* Verify that each stream in the resource has a valid offset and size,
-	 * and that no streams overlap, and that the streams were added in order
-	 * of increasing offset.  */
-	cur_offset = 0;
+	/* Verify that each stream in the resource has a valid offset and size.
+	 */
+	expected_next_offset = 0;
+	out_of_order = false;
 	list_for_each_entry(lte, &rspec->stream_list, rspec_node) {
 		if (lte->offset_in_res + lte->size < lte->size ||
-		    lte->offset_in_res + lte->size > rspec->uncompressed_size ||
-		    lte->offset_in_res < cur_offset)
-			goto invalid;
+		    lte->offset_in_res + lte->size > rspec->uncompressed_size)
+			goto invalid_due_to_overflow;
 
-		cur_offset = lte->offset_in_res + lte->size;
+		if (lte->offset_in_res >= expected_next_offset)
+			expected_next_offset = lte->offset_in_res + lte->size;
+		else
+			out_of_order = true;
 	}
+
+	/* If the streams were not located at strictly increasing positions (not
+	 * allowing for overlap), sort them.  Then make sure that none overlap.
+	 */
+	if (out_of_order) {
+		ret = sort_stream_list(&rspec->stream_list,
+				       offsetof(struct wim_lookup_table_entry,
+						rspec_node),
+				       cmp_streams_by_offset_in_res);
+		if (ret)
+			return ret;
+
+		expected_next_offset = 0;
+		list_for_each_entry(lte, &rspec->stream_list, rspec_node) {
+			if (lte->offset_in_res >= expected_next_offset)
+				expected_next_offset = lte->offset_in_res + lte->size;
+			else
+				goto invalid_due_to_overlap;
+		}
+	}
+
 	return 0;
 
-invalid:
-
-	ERROR("Invalid resource entry!");
+invalid_due_to_overflow:
+	ERROR("Invalid resource entry (offset overflow)");
 	return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+
+invalid_due_to_overlap:
+	ERROR("Invalid resource entry (streams in packed resource overlap)");
+	return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+}
+
+/* Validate the resource, or free it if unused.  */
+static int
+finish_resource(struct wim_resource_spec *rspec)
+{
+	if (!list_empty(&rspec->stream_list)) {
+		/* This resource contains at least one stream.  */
+		return validate_resource(rspec);
+	} else {
+		/* No streams are in this resource.  Get rid of it.  */
+		FREE(rspec);
+		return 0;
+	}
 }
 
 /*
@@ -629,14 +681,14 @@ int
 read_wim_lookup_table(WIMStruct *wim)
 {
 	int ret;
-	size_t i;
 	size_t num_entries;
-	struct wim_lookup_table *table;
-	struct wim_lookup_table_entry *cur_entry, *duplicate_entry;
-	struct wim_resource_spec *cur_rspec;
-	void *buf;
-	bool back_to_back_pack;
+	void *buf = NULL;
+	struct wim_lookup_table *table = NULL;
+	struct wim_lookup_table_entry *cur_entry = NULL;
+	struct wim_resource_spec *cur_rspec = NULL;
 	size_t num_duplicate_entries = 0;
+	size_t num_wrong_part_entries = 0;
+	u32 image_index = 0;
 
 	DEBUG("Reading lookup table.");
 
@@ -644,7 +696,7 @@ read_wim_lookup_table(WIMStruct *wim)
 	BUILD_BUG_ON(sizeof(struct wim_lookup_table_entry_disk) !=
 		     WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE);
 
-	/* Calculate number of entries in the lookup table.  */
+	/* Calculate the number of entries in the lookup table.  */
 	num_entries = wim->hdr.lookup_table_reshdr.uncompressed_size /
 		      sizeof(struct wim_lookup_table_entry_disk);
 
@@ -656,53 +708,56 @@ read_wim_lookup_table(WIMStruct *wim)
 	/* Allocate a hash table to map SHA1 message digests into stream
 	 * specifications.  This is the in-memory "lookup table".  */
 	table = new_lookup_table(num_entries * 2 + 1);
-	if (table == NULL) {
-		ERROR("Not enough memory to read lookup table.");
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_buf;
-	}
+	if (!table)
+		goto oom;
 
-	/* Allocate and initalize stream entries from the raw lookup table
-	 * buffer.  */
-	wim->current_image = 0;
-	cur_rspec = NULL;
-	for (i = 0; i < num_entries; i++) {
+	/* Allocate and initalize stream entries ('struct
+	 * wim_lookup_table_entry's) from the raw lookup table buffer.  Each of
+	 * these entries will point to a 'struct wim_resource_spec' that
+	 * describes the underlying resource.  In WIMs with version number
+	 * WIM_VERSION_PACKED_STREAMS, a resource may contain multiple streams.
+	 */
+	for (size_t i = 0; i < num_entries; i++) {
 		const struct wim_lookup_table_entry_disk *disk_entry =
 			&((const struct wim_lookup_table_entry_disk*)buf)[i];
-		u16 part_number;
 		struct wim_reshdr reshdr;
+		u16 part_number;
+		struct wim_lookup_table_entry *duplicate_entry;
 
+		/* Get the resource header  */
 		get_wim_reshdr(&disk_entry->reshdr, &reshdr);
 
 		DEBUG("reshdr: size_in_wim=%"PRIu64", "
 		      "uncompressed_size=%"PRIu64", "
 		      "offset_in_wim=%"PRIu64", "
-		      "flags=0x%02x",
+		      "flags=0x%02x\n",
 		      reshdr.size_in_wim, reshdr.uncompressed_size,
 		      reshdr.offset_in_wim, reshdr.flags);
 
+		/* Ignore PACKED_STREAMS flag if it isn't supposed to be used in
+		 * this WIM version  */
 		if (wim->hdr.wim_version == WIM_VERSION_DEFAULT)
 			reshdr.flags &= ~WIM_RESHDR_FLAG_PACKED_STREAMS;
 
+		/* Allocate a 'struct wim_lookup_table_entry'  */
 		cur_entry = new_lookup_table_entry();
-		if (cur_entry == NULL) {
-			ERROR("Not enough memory to read lookup table!");
-			ret = WIMLIB_ERR_NOMEM;
-			goto err;
-		}
+		if (!cur_entry)
+			goto oom;
 
+		/* Get the part number, reference count, and hash.  */
 		part_number = le16_to_cpu(disk_entry->part_number);
 		cur_entry->refcnt = le32_to_cpu(disk_entry->refcnt);
 		copy_hash(cur_entry->hash, disk_entry->hash);
 
+		/* Verify that the part number matches that of the underlying
+		 * WIM file.  */
 		if (part_number != wim->hdr.part_number) {
-			WARNING("A lookup table entry in part %hu of the WIM "
-				"points to part %hu (ignoring it)",
-				wim->hdr.part_number, part_number);
-			free_lookup_table_entry(cur_entry);
-			continue;
+			num_wrong_part_entries++;
+			goto free_cur_entry_and_continue;
 		}
 
+		/* If resource is uncompressed, check for (unexpected) size
+		 * mismatch.  */
 		if (!(reshdr.flags & (WIM_RESHDR_FLAG_PACKED_STREAMS |
 				      WIM_RESHDR_FLAG_COMPRESSED))) {
 			if (reshdr.uncompressed_size != reshdr.size_in_wim) {
@@ -730,62 +785,65 @@ read_wim_lookup_table(WIMStruct *wim)
 			}
 		}
 
-		back_to_back_pack = false;
-		if (!(reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) ||
-		    cur_rspec == NULL ||
-		    (back_to_back_pack =
-		     ((reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
-		      reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER &&
-		      cur_rspec != NULL &&
-		      cur_rspec->size_in_wim != 0)))
+		/*
+		 * Possibly start a new resource.
+		 *
+		 * We need to start a new resource if:
+		 *
+		 * - There is no previous resource (cur_rspec).
+		 *
+		 *   OR
+		 *
+		 * - The resource header did not have PACKED_STREAMS set, so it
+		 *   specifies a new, single-stream resource.
+		 *
+		 *   OR
+		 *
+		 * - The resource header had PACKED_STREAMS set, and it's a
+		 *   special entry that specifies the resource itself as opposed
+		 *   to a stream, and we already encountered one such entry in
+		 *   the current resource.  We will interpret this as the
+		 *   beginning of a new packed resource.  (However, note that
+		 *   wimlib does not currently allow create WIMs with multiple
+		 *   packed resources, as to remain compatible with WIMGAPI.)
+		 */
+		if (likely(!cur_rspec) ||
+		    !(reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) ||
+		      (reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER &&
+		       cur_rspec->size_in_wim != 0))
 		{
-			/* Starting new run of streams that share the same WIM
-			 * resource.  */
-			struct wim_lookup_table_entry *prev_entry = NULL;
-
-			if (back_to_back_pack &&
-			    !list_empty(&cur_rspec->stream_list))
-			{
-				prev_entry = list_entry(cur_rspec->stream_list.prev,
-							struct wim_lookup_table_entry,
-							rspec_node);
-				lte_unbind_wim_resource_spec(prev_entry);
-			}
-			if (cur_rspec != NULL) {
-				ret = validate_resource(cur_rspec);
+			/* Finish previous resource (if existent)  */
+			if (cur_rspec) {
+				ret = finish_resource(cur_rspec);
+				cur_rspec = NULL;
 				if (ret)
-					goto err;
+					goto out;
 			}
 
 			/* Allocate the resource specification and initialize it
 			 * with values from the current stream entry.  */
 			cur_rspec = MALLOC(sizeof(*cur_rspec));
-			if (cur_rspec == NULL) {
-				ERROR("Not enough memory to read lookup table!");
-				ret = WIMLIB_ERR_NOMEM;
-				goto err;
-			}
+			if (!cur_rspec)
+				goto oom;
+
 			wim_res_hdr_to_spec(&reshdr, wim, cur_rspec);
 
 			/* If this is a packed run, the current stream entry may
 			 * specify a stream within the resource, and not the
 			 * resource itself.  Zero possibly irrelevant data until
-			 * it is read for certain.  (Note that the computation
-			 * of 'back_to_back_pack' tests if 'size_in_wim' is
-			 * nonzero to see if the resource info has been read;
-			 * hence we need to set it to 0 here.)  */
+			 * it is read for certain.  */
 			if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 				cur_rspec->size_in_wim = 0;
 				cur_rspec->uncompressed_size = 0;
 				cur_rspec->offset_in_wim = 0;
 			}
-
-			if (prev_entry)
-				lte_bind_wim_resource_spec(prev_entry, cur_rspec);
 		}
 
-		if ((reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
-		    reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER)
+		/* Now cur_rspec != NULL.  */
+
+		/* Checked for packed resource specification.  */
+		if (unlikely((reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
+			     reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER))
 		{
 			/* Found the specification for the packed resource.
 			 * Transfer the values to the `struct
@@ -804,7 +862,7 @@ read_wim_lookup_table(WIMStruct *wim)
 			ret = full_pread(&wim->in_fd, &hdr,
 					 sizeof(hdr), reshdr.offset_in_wim);
 			if (ret)
-				goto err;
+				goto out;
 
 			cur_rspec->uncompressed_size = le64_to_cpu(hdr.res_usize);
 			cur_rspec->offset_in_wim = reshdr.offset_in_wim;
@@ -826,23 +884,68 @@ read_wim_lookup_table(WIMStruct *wim)
 			      cur_rspec->size_in_wim,
 			      cur_rspec->offset_in_wim,
 			      cur_rspec->flags);
-			free_lookup_table_entry(cur_entry);
-			continue;
+			goto free_cur_entry_and_continue;
 		}
 
-		if (is_zero_hash(cur_entry->hash)) {
-			free_lookup_table_entry(cur_entry);
-			continue;
+		/* Ignore streams with zero hash.  */
+		if (is_zero_hash(cur_entry->hash))
+			goto free_cur_entry_and_continue;
+
+		if (reshdr.flags & WIM_RESHDR_FLAG_METADATA) {
+			/* Lookup table entry for a metadata resource.  */
+
+			/* Metadata entries with no references must be ignored;
+			 * see, for example, the WinPE WIMs from the WAIK v2.1.
+			 */
+			if (cur_entry->refcnt == 0)
+				goto free_cur_entry_and_continue;
+
+			if (cur_entry->refcnt != 1) {
+				ERROR("Found metadata resource with refcnt != 1");
+				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+				goto out;
+			}
+
+			if (wim->hdr.part_number != 1) {
+				WARNING("Ignoring metadata resource found in a "
+					"non-first part of the split WIM");
+				goto free_cur_entry_and_continue;
+			}
+			if (image_index == wim->hdr.image_count) {
+				WARNING("Found more metadata resources than images");
+				goto free_cur_entry_and_continue;
+			}
+
+			/* Notice very carefully:  We are assigning the metadata
+			 * resources in the exact order mirrored by their lookup
+			 * table entries on disk, which is the behavior of
+			 * Microsoft's software.  In particular, this overrides
+			 * the actual locations of the metadata resources
+			 * themselves in the WIM file as well as any information
+			 * written in the XML data.  */
+			DEBUG("Found metadata resource for image %"PRIu32" at "
+			      "offset %"PRIu64".",
+			      image_index + 1,
+			      reshdr.offset_in_wim);
+
+			wim->image_metadata[image_index++]->metadata_lte = cur_entry;
+		} else {
+			/* Lookup table entry for a stream that is not a metadata
+			 * resource.  */
+
+			/* Ignore this stream if it's a duplicate.  */
+			duplicate_entry = lookup_stream(table, cur_entry->hash);
+			if (duplicate_entry) {
+				num_duplicate_entries++;
+				goto free_cur_entry_and_continue;
+			}
+
+			/* Insert the stream into the lookup table (keyed by its
+			 * SHA1 message digest).  */
+			lookup_table_insert(table, cur_entry);
 		}
 
-		if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
-			/* Continuing the pack with another stream.  */
-			DEBUG("Continuing pack with stream: "
-			      "%"PRIu64" uncompressed bytes @ "
-			      "resource offset %"PRIu64")",
-			      reshdr.size_in_wim, reshdr.offset_in_wim);
-		}
-
+		/* Add the stream to the current resource specification.  */
 		lte_bind_wim_resource_spec(cur_entry, cur_rspec);
 		if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 			/* In packed runs, the offset field is used for
@@ -852,6 +955,8 @@ read_wim_lookup_table(WIMStruct *wim)
 			cur_entry->offset_in_res = reshdr.offset_in_wim;
 			cur_entry->size = reshdr.size_in_wim;
 			cur_entry->flags = reshdr.flags;
+			/* cur_rspec stays the same  */
+
 		} else {
 			/* Normal case: The stream corresponds one-to-one with
 			 * the resource entry.  */
@@ -860,86 +965,26 @@ read_wim_lookup_table(WIMStruct *wim)
 			cur_entry->flags = reshdr.flags;
 			cur_rspec = NULL;
 		}
+		continue;
 
-		if (cur_entry->flags & WIM_RESHDR_FLAG_METADATA) {
-			/* Lookup table entry for a metadata resource */
-
-			/* Metadata entries with no references must be ignored;
-			 * see for example the WinPE WIMs from the WAIK v2.1.
-			 * */
-			if (cur_entry->refcnt == 0) {
-				free_lookup_table_entry(cur_entry);
-				continue;
-			}
-
-			if (cur_entry->refcnt != 1) {
-				ERROR("Found metadata resource with refcnt != 1");
-				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
-				goto err;
-			}
-
-			if (wim->hdr.part_number != 1) {
-				WARNING("Ignoring metadata resource found in a "
-					"non-first part of the split WIM");
-				free_lookup_table_entry(cur_entry);
-				continue;
-			}
-			if (wim->current_image == wim->hdr.image_count) {
-				WARNING("The WIM header says there are %u images "
-					"in the WIM, but we found more metadata "
-					"resources than this (ignoring the extra)",
-					wim->hdr.image_count);
-				free_lookup_table_entry(cur_entry);
-				continue;
-			}
-
-			/* Notice very carefully:  We are assigning the metadata
-			 * resources in the exact order mirrored by their lookup
-			 * table entries on disk, which is the behavior of
-			 * Microsoft's software.  In particular, this overrides
-			 * the actual locations of the metadata resources
-			 * themselves in the WIM file as well as any information
-			 * written in the XML data. */
-			DEBUG("Found metadata resource for image %u at "
-			      "offset %"PRIu64".",
-			      wim->current_image + 1,
-			      cur_entry->rspec->offset_in_wim);
-			wim->image_metadata[
-				wim->current_image++]->metadata_lte = cur_entry;
-			continue;
-		}
-
-		/* Lookup table entry for a stream that is not a metadata
-		 * resource.  */
-		duplicate_entry = lookup_stream(table, cur_entry->hash);
-		if (duplicate_entry) {
-			num_duplicate_entries++;
-			free_lookup_table_entry(cur_entry);
-			continue;
-		}
-
-		/* Finally, insert the stream into the lookup table, keyed by
-		 * its SHA1 message digest.  */
-		lookup_table_insert(table, cur_entry);
+	free_cur_entry_and_continue:
+		free_lookup_table_entry(cur_entry);
 	}
 	cur_entry = NULL;
 
 	/* Validate the last resource.  */
-	if (cur_rspec != NULL) {
-		ret = validate_resource(cur_rspec);
+	if (cur_rspec) {
+		ret = finish_resource(cur_rspec);
+		cur_rspec = NULL;
 		if (ret)
-			goto err;
+			goto out;
 	}
 
-	if (wim->hdr.part_number == 1 && wim->current_image != wim->hdr.image_count) {
-		WARNING("The header of \"%"TS"\" says there are %u images in\n"
-			"          the WIM, but we only found %d metadata resources!  Acting as if\n"
-			"          the header specified only %d images instead.",
-			wim->filename, wim->hdr.image_count,
-			wim->current_image, wim->current_image);
-		for (int i = wim->current_image; i < wim->hdr.image_count; i++)
+	if (wim->hdr.part_number == 1 && image_index != wim->hdr.image_count) {
+		WARNING("Could not find metadata resources for all images");
+		for (u32 i = image_index; i < wim->hdr.image_count; i++)
 			put_image_metadata(wim->image_metadata[i], NULL);
-		wim->hdr.image_count = wim->current_image;
+		wim->hdr.image_count = image_index;
 	}
 
 	if (num_duplicate_entries > 0) {
@@ -947,20 +992,25 @@ read_wim_lookup_table(WIMStruct *wim)
 			num_duplicate_entries);
 	}
 
+	if (num_wrong_part_entries > 0) {
+		WARNING("Ignoring %zu streams with wrong part number",
+			num_wrong_part_entries);
+	}
+
 	DEBUG("Done reading lookup table.");
 	wim->lookup_table = table;
+	table = NULL;
 	ret = 0;
-	goto out_free_buf;
-
-err:
+	goto out;
+oom:
+	ERROR("Not enough memory to read lookup table!");
+	ret = WIMLIB_ERR_NOMEM;
+out:
 	if (cur_rspec && list_empty(&cur_rspec->stream_list))
 		FREE(cur_rspec);
 	free_lookup_table_entry(cur_entry);
 	free_lookup_table(table);
-out_free_buf:
 	FREE(buf);
-out:
-	wim->current_image = 0;
 	return ret;
 }
 
