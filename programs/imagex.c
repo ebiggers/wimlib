@@ -3958,7 +3958,7 @@ T(
 "                    [--nocheck] [--flags EDITION_ID] [--dereference]\n"
 "                    [--config=FILE] [--threads=NUM_THREADS] [--source-list]\n"
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
-"                    [--update-of=[WIMFILE:]IMAGE]\n"
+"                    [--update-of=[WIMFILE:]IMAGE] [--wimboot]\n"
 ),
 [CMD_APPLY] =
 T(
@@ -3966,7 +3966,7 @@ T(
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--ref=\"GLOB\"]\n"
 "                    [--no-acls] [--strict-acls] [--no-attributes]\n"
 "                    [--rpfix] [--norpfix] [--hardlink] [--symlink]\n"
-"                    [--include-invalid-names]\n"
+"                    [--include-invalid-names] [--wimboot]\n"
 ),
 [CMD_CAPTURE] =
 T(
@@ -3976,7 +3976,7 @@ T(
 "                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
 "                    [--source-list] [--no-acls] [--strict-acls] [--rpfix]\n"
 "                    [--norpfix] [--update-of=[WIMFILE:]IMAGE]\n"
-"                    [--delta-from=WIMFILE]\n"
+"                    [--delta-from=WIMFILE] [--wimboot]\n"
 ),
 [CMD_DELETE] =
 T(
@@ -4047,7 +4047,8 @@ T(
 T(
 "    %"TS" WIMFILE [IMAGE_NUM | IMAGE_NAME] [--check] [--rebuild]\n"
 "                    [--threads=NUM_THREADS] [DEFAULT_ADD_OPTIONS]\n"
-"                    [DEFAULT_DELETE_OPTIONS] [--command=STRING] [< CMDFILE]\n"
+"                    [DEFAULT_DELETE_OPTIONS] [--command=STRING]\n"
+"                    [--wimboot-config=FILE| [< CMDFILE]\n"
 ),
 };
 
