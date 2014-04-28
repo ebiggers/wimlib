@@ -1218,7 +1218,7 @@ again:
 	 * only 1 link and refuse to hard link them.  This is because Windows
 	 * has a bug where it can return duplicate File IDs for files and
 	 * directories on the FAT filesystem. */
-	ret = inode_table_new_dentry(&params->inode_table,
+	ret = inode_table_new_dentry(params->inode_table,
 				     path_basename_with_len(path, path_num_chars),
 				     ((u64)file_info.nFileIndexHigh << 32) |
 					 (u64)file_info.nFileIndexLow,
@@ -1252,7 +1252,7 @@ again:
 	    && (vol_flags & FILE_PERSISTENT_ACLS))
 	{
 		ret = win32_get_security_descriptor(hFile, path, inode,
-						    &params->sd_set, state,
+						    params->sd_set, state,
 						    params->add_flags);
 		if (ret)
 			goto out;

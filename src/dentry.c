@@ -214,6 +214,17 @@ dentry_correct_length_aligned(const struct wim_dentry *dentry)
 	return (len + 7) & ~7;
 }
 
+static int
+dentry_clear_short_name(struct wim_dentry *dentry)
+{
+	if (dentry_has_short_name(dentry)) {
+		FREE(dentry->short_name);
+		dentry->short_name = NULL;
+		dentry->short_name_nbytes = 0;
+	}
+	return 0;
+}
+
 /* Sets the name of a WIM dentry from a multibyte string.
  * Only use this on dentries not inserted into the tree.  Use rename_wim_path()
  * to do a real rename.  */
@@ -221,17 +232,42 @@ int
 dentry_set_name(struct wim_dentry *dentry, const tchar *new_name)
 {
 	int ret;
+
 	ret = get_utf16le_string(new_name, &dentry->file_name,
 				 &dentry->file_name_nbytes);
-	if (ret == 0) {
-		/* Clear the short name and recalculate the dentry length */
-		if (dentry_has_short_name(dentry)) {
-			FREE(dentry->short_name);
-			dentry->short_name = NULL;
-			dentry->short_name_nbytes = 0;
-		}
+	if (ret)
+		return ret;
+
+	return dentry_clear_short_name(dentry);
+}
+
+/* Sets the name of a WIM dentry from a UTF-16LE string.
+ * Only use this on dentries not inserted into the tree.  Use rename_wim_path()
+ * to do a real rename.  */
+int
+dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *new_name)
+{
+	utf16lechar *name = NULL;
+	size_t name_nbytes = 0;
+
+	if (new_name && *new_name) {
+		const utf16lechar *tmp;
+
+		tmp = new_name;
+		do {
+			name_nbytes += sizeof(utf16lechar);
+		} while (*++tmp);
+
+		name = memdup(new_name, name_nbytes + sizeof(utf16lechar));
+		if (!name)
+			return WIMLIB_ERR_NOMEM;
 	}
-	return ret;
+
+	FREE(dentry->file_name);
+	dentry->file_name = name;
+	dentry->file_name_nbytes = name_nbytes;
+
+	return dentry_clear_short_name(dentry);
 }
 
 /* Returns the total length of a WIM alternate data stream entry on-disk,
@@ -360,8 +396,7 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 	return do_for_dentry_in_tree_depth(root, visitor, arg);
 }
 
-/* Calculate the full path of @dentry.  The full path of its parent must have
- * already been calculated, or it must be the root dentry. */
+/* Calculate the full path of @dentry.  */
 int
 calculate_dentry_full_path(struct wim_dentry *dentry)
 {
@@ -1025,7 +1060,7 @@ do_free_dentry(struct wim_dentry *dentry, void *_lookup_table)
 }
 
 /*
- * Unlinks and frees a dentry tree.
+ * Recursively frees all directory entries in the specified tree.
  *
  * @root:
  *	The root of the tree.
@@ -1034,6 +1069,10 @@ do_free_dentry(struct wim_dentry *dentry, void *_lookup_table)
  *	The lookup table for dentries.  If non-NULL, the reference counts in the
  *	lookup table for the lookup table entries corresponding to the dentries
  *	will be decremented.
+ *
+ * This also puts references to the corresponding inodes.
+ *
+ * This does *not* unlink @root from its parent directory (if it has one).
  */
 void
 free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
@@ -1163,76 +1202,6 @@ unlink_dentry(struct wim_dentry *dentry)
 		}
 	}
 	list_del(&dentry->d_ci_conflict_list);
-}
-
-static int
-free_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
-{
-	FREE(dentry->_full_path);
-	dentry->_full_path = NULL;
-	return 0;
-}
-
-/* Rename a file or directory in the WIM.  */
-int
-rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
-		CASE_SENSITIVITY_TYPE case_type)
-{
-	struct wim_dentry *src;
-	struct wim_dentry *dst;
-	struct wim_dentry *parent_of_dst;
-	int ret;
-
-	/* This rename() implementation currently only supports actual files
-	 * (not alternate data streams) */
-
-	src = get_dentry(wim, from, case_type);
-	if (!src)
-		return -errno;
-
-	dst = get_dentry(wim, to, case_type);
-
-	if (dst) {
-		/* Destination file exists */
-
-		if (src == dst) /* Same file */
-			return 0;
-
-		if (!dentry_is_directory(src)) {
-			/* Cannot rename non-directory to directory. */
-			if (dentry_is_directory(dst))
-				return -EISDIR;
-		} else {
-			/* Cannot rename directory to a non-directory or a non-empty
-			 * directory */
-			if (!dentry_is_directory(dst))
-				return -ENOTDIR;
-			if (dentry_has_children(dst))
-				return -ENOTEMPTY;
-		}
-		parent_of_dst = dst->parent;
-	} else {
-		/* Destination does not exist */
-		parent_of_dst = get_parent_dentry(wim, to, case_type);
-		if (!parent_of_dst)
-			return -errno;
-
-		if (!dentry_is_directory(parent_of_dst))
-			return -ENOTDIR;
-	}
-
-	ret = dentry_set_name(src, path_basename(to));
-	if (ret)
-		return -ENOMEM;
-	if (dst) {
-		unlink_dentry(dst);
-		free_dentry_tree(dst, wim->lookup_table);
-	}
-	unlink_dentry(src);
-	dentry_add_child(parent_of_dst, src);
-	if (src->_full_path)
-		for_dentry_in_tree(src, free_dentry_full_path, NULL);
-	return 0;
 }
 
 /* Reads a WIM directory entry, including all alternate data stream entries that

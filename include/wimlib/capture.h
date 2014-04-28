@@ -31,11 +31,11 @@ struct add_image_params {
 	struct list_head *unhashed_streams;
 
 	/* Hash table of inodes that have been captured for this tree so far. */
-	struct wim_inode_table inode_table;
+	struct wim_inode_table *inode_table;
 
 	/* The set of security descriptors that have been captured for this
 	 * image so far. */
-	struct wim_sd_set sd_set;
+	struct wim_sd_set *sd_set;
 
 	/* Pointer to the capture configuration.  */
 	struct capture_config *config;
@@ -85,6 +85,9 @@ exclude_path(const tchar *path, size_t path_len,
 	     bool exclude_prefix);
 
 
+typedef int (*capture_tree_t)(struct wim_dentry **, const tchar *,
+			      struct add_image_params *);
+
 #ifdef WITH_NTFS_3G
 /* ntfs-3g_capture.c */
 extern int
@@ -99,12 +102,14 @@ extern int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const tchar *root_disk_path,
 			struct add_image_params *params);
+#define platform_default_capture_tree win32_build_dentry_tree
 #else
 /* unix_capture.c */
 extern int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const tchar *root_disk_path,
 		       struct add_image_params *params);
+#define platform_default_capture_tree unix_build_dentry_tree
 #endif
 
 #define WIMLIB_ADD_FLAG_ROOT	0x80000000

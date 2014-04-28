@@ -93,6 +93,9 @@ struct wim_dentry {
 	 * be extracted to it.  */
 	u8 was_linked : 1;
 
+	/* Used by wimlib_update_image()  */
+	u8 is_orphan : 1;
+
 	/* Temporary list field  */
 	struct list_head tmp_list;
 
@@ -194,6 +197,9 @@ calculate_subdir_offsets(struct wim_dentry *root, u64 *subdir_offset_p);
 extern int
 dentry_set_name(struct wim_dentry *dentry, const tchar *new_name);
 
+extern int
+dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *new_name);
+
 extern struct wim_dentry *
 get_dentry(struct WIMStruct *wim, const tchar *path,
 	   CASE_SENSITIVITY_TYPE case_type);
@@ -267,9 +273,12 @@ unlink_dentry(struct wim_dentry *dentry);
 extern struct wim_dentry *
 dentry_add_child(struct wim_dentry *parent, struct wim_dentry *child);
 
+struct update_command_journal;
+
 extern int
 rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
-		CASE_SENSITIVITY_TYPE case_type);
+		CASE_SENSITIVITY_TYPE case_type,
+		struct update_command_journal *j);
 
 
 extern int

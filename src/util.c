@@ -54,7 +54,7 @@
 #include <time.h>
 #include <unistd.h>
 
-static size_t
+size_t
 utf16le_strlen(const utf16lechar *s)
 {
 	const utf16lechar *p = s;

@@ -2163,7 +2163,7 @@ static int
 wimfs_rename(const char *from, const char *to)
 {
 	return rename_wim_path(wimfs_get_WIMStruct(), from, to,
-			       WIMLIB_CASE_SENSITIVE);
+			       WIMLIB_CASE_SENSITIVE, NULL);
 }
 
 /* Remove a directory */

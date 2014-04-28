@@ -249,18 +249,21 @@ free_sd_tree(struct avl_tree_node *node)
 	}
 }
 
+void
+rollback_new_security_descriptors(struct wim_sd_set *sd_set)
+{
+	struct wim_security_data *sd = sd_set->sd;
+	u8 **descriptors = sd->descriptors + sd_set->orig_num_entries;
+	u32 num_entries  = sd->num_entries - sd_set->orig_num_entries;
+	while (num_entries--)
+		FREE(*descriptors++);
+	sd->num_entries = sd_set->orig_num_entries;
+}
+
 /* Frees a security descriptor index set. */
 void
-destroy_sd_set(struct wim_sd_set *sd_set, bool rollback)
+destroy_sd_set(struct wim_sd_set *sd_set)
 {
-	if (rollback) {
-		struct wim_security_data *sd = sd_set->sd;
-		u8 **descriptors = sd->descriptors + sd_set->orig_num_entries;
-		u32 num_entries  = sd->num_entries - sd_set->orig_num_entries;
-		while (num_entries--)
-			FREE(*descriptors++);
-		sd->num_entries = sd_set->orig_num_entries;
-	}
 	free_sd_tree(sd_set->root);
 }
 
@@ -395,7 +398,7 @@ init_sd_set(struct wim_sd_set *sd_set, struct wim_security_data *sd)
 	ret = 0;
 	goto out;
 out_destroy_sd_set:
-	destroy_sd_set(sd_set, false);
+	destroy_sd_set(sd_set);
 out:
 	return ret;
 }

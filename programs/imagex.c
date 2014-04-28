@@ -1235,6 +1235,10 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			break;
 		}
 		break;
+	case WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM:
+		imagex_printf(T("Updating \"%"TS"\" in WIM image\n"),
+			      info->replace.path_in_wim);
+		break;
 	default:
 		break;
 	}
@@ -1298,6 +1302,8 @@ update_command_add_option(int op, const tchar *option,
 			cmd->add.add_flags |= WIMLIB_ADD_FLAG_STRICT_ACLS;
 		else if (!tstrcmp(option, T("--dereference")))
 			cmd->add.add_flags |= WIMLIB_ADD_FLAG_DEREFERENCE;
+		else if (!tstrcmp(option, T("--no-replace")))
+			cmd->add.add_flags |= WIMLIB_ADD_FLAG_NO_REPLACE;
 		else
 			recognized = false;
 		break;

@@ -242,7 +242,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out;
 	}
 
-	ret = inode_table_new_dentry(&params->inode_table,
+	ret = inode_table_new_dentry(params->inode_table,
 				     path_basename_with_len(path, path_len),
 				     stbuf.st_ino, stbuf.st_dev,
 				     S_ISDIR(stbuf.st_mode), &root);
@@ -342,13 +342,6 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 			return WIMLIB_ERR_STAT;
 		}
 
-		if ((params->add_flags & WIMLIB_ADD_FLAG_ROOT) &&
-		    !S_ISDIR(root_stbuf.st_mode))
-		{
-			ERROR("Root of capture \"%s\" is not a directory",
-			      root_disk_path);
-			return WIMLIB_ERR_NOTDIR;
-		}
 		params->capture_root_ino = root_stbuf.st_ino;
 		params->capture_root_dev = root_stbuf.st_dev;
 	}

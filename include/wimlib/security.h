@@ -36,7 +36,10 @@ struct wim_security_data {
 };
 
 extern void
-destroy_sd_set(struct wim_sd_set *sd_set, bool rollback);
+rollback_new_security_descriptors(struct wim_sd_set *sd_set);
+
+extern void
+destroy_sd_set(struct wim_sd_set *sd_set);
 
 extern int
 sd_set_add_sd(struct wim_sd_set *sd_set, const char descriptor[],

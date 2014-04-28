@@ -565,6 +565,11 @@ enum wimlib_progress_msg {
 	 * ::WIMLIB_UPDATE_FLAG_SEND_PROGRESS.  */
 	WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
 
+	/** A file in the WIM image is being replaced as a result of a
+	 * ::wimlib_add_command without ::WIMLIB_ADD_FLAG_NO_REPLACE specified.
+	 * This is only received when ::WIMLIB_ADD_FLAG_VERBOSE is also
+	 * specified in the add command.  */
+	WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM,
 };
 
 /** A pointer to this union is passed to the user-supplied
@@ -914,6 +919,12 @@ union wimlib_progress_info {
 		 * finished (::WIMLIB_PROGRESS_MSG_SPLIT_END_PART). */
 		const wimlib_tchar *part_name;
 	} split;
+
+	/** Valid on messages ::WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM  */
+	struct wimlib_progress_info_replace {
+		/** Path to the file in the WIM image that is being replaced  */
+		const wimlib_tchar *path_in_wim;
+	} replace;
 };
 
 /** A user-supplied function that will be called periodically during certain WIM
@@ -1345,6 +1356,15 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * compression ratio compared to the 32768-byte LZX chunks usually used).
  */
 #define WIMLIB_ADD_FLAG_WIMBOOT			0x00001000
+
+/**
+ * If the add command involves adding a non-directory file to a location at
+ * which there already exists a nondirectory file in the WIM image, issue
+ * ::WIMLIB_ERR_INVALID_OVERLAY instead of replacing the file.  This only has an
+ * effect when updating an existing image with wimlib_update_image().
+ * This was the default behavior in wimlib v1.6.2 and earlier.
+ */
+#define WIMLIB_ADD_FLAG_NO_REPLACE		0x00002000
 
 #define WIMLIB_ADD_IMAGE_FLAG_NTFS		WIMLIB_ADD_FLAG_NTFS
 #define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	WIMLIB_ADD_FLAG_DEREFERENCE
@@ -3721,9 +3741,9 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  *	If non-NULL, a function that will be called periodically with the
  *	progress of the current operation.
  *
- * @return 0 on success; nonzero on error.  On failure, some but not all of the
- * update commands may have been executed.  No individual update command will
- * have been partially executed.  Possible error codes include:
+ * @return 0 on success; nonzero on error.  On failure, all update commands will
+ * be rolled back, and no visible changes shall have been made to @p wim.
+ * Possible error codes include:
  *
  * @retval ::WIMLIB_ERR_INVALID_CAPTURE_CONFIG
  *	The capture configuration structure specified for an add command was

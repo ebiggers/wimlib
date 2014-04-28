@@ -27,6 +27,7 @@
 
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
+#include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
@@ -38,131 +39,675 @@
 
 #include <errno.h>
 #include <sys/stat.h>
+#include <stdlib.h>
 
-/* Overlays @branch onto @target, both of which must be directories. */
-static int
-do_overlay(struct wim_dentry *target, struct wim_dentry *branch)
+#ifdef HAVE_ALLOCA_H
+#  include <alloca.h>
+#endif
+
+/* Saved specification of a "primitive" update operation that was performed.  */
+struct update_primitive {
+	enum {
+		/* Unlinked a dentry from its parent directory.  */
+		UNLINK_DENTRY,
+
+		/* Linked a dentry into its parent directory.  */
+		LINK_DENTRY,
+
+		/* Changed the file name of a dentry.  */
+		CHANGE_FILE_NAME,
+
+		/* Changed the short name of a dentry.  */
+		CHANGE_SHORT_NAME,
+	} type;
+
+	union {
+		/* For UNLINK_DENTRY and LINK_DENTRY operations  */
+		struct {
+			/* Dentry that was linked or unlinked.  */
+			struct wim_dentry *subject;
+
+			/* For link operations, the directory into which
+			 * @subject was linked, or NULL if @subject was set as
+			 * the root of the image.
+			 *
+			 * For unlink operations, the directory from which
+			 * @subject was unlinked, or NULL if @subject was unset
+			 * as the root of the image.  */
+			struct wim_dentry *parent;
+		} link;
+
+		/* For CHANGE_FILE_NAME and CHANGE_SHORT_NAME operations  */
+		struct {
+			/* Dentry that had its name changed.  */
+			struct wim_dentry *subject;
+
+			/* The old name.  */
+			utf16lechar *old_name;
+		} name;
+	};
+};
+
+/* Chronological list of primitive operations that were executed for a single
+ * logical update command, such as 'add', 'delete', or 'rename'.  */
+struct update_primitive_list {
+	struct update_primitive *entries;
+	struct update_primitive inline_entries[4];
+	size_t num_entries;
+	size_t num_alloc_entries;
+};
+
+/* Journal for managing the executing of zero or more logical update commands,
+ * such as 'add', 'delete', or 'rename'.  This allows either committing or
+ * rolling back the commands.  */
+struct update_command_journal {
+	/* Number of update commands this journal contains.  */
+	size_t num_cmds;
+
+	/* Index of currently executing update command.  */
+	size_t cur_cmd;
+
+	/* Location of the WIM image's root pointer.  */
+	struct wim_dentry **root_p;
+
+	/* Pointer to the lookup table of the WIM (may needed for rollback)  */
+	struct wim_lookup_table *lookup_table;
+
+	/* List of dentries that are currently unlinked from the WIM image.
+	 * These must be freed when no longer needed for commit or rollback.  */
+	struct list_head orphans;
+
+	/* Per-command logs.  */
+	struct update_primitive_list cmd_prims[];
+};
+
+static void
+init_update_primitive_list(struct update_primitive_list *l)
 {
-	DEBUG("Doing overlay \"%"WS"\" => \"%"WS"\"",
-	      branch->file_name, target->file_name);
+	l->entries = l->inline_entries;
+	l->num_entries = 0;
+	l->num_alloc_entries = ARRAY_LEN(l->inline_entries);
+}
 
-	if (!dentry_is_directory(branch) || !dentry_is_directory(target)) {
-		ERROR("Cannot overlay \"%"WS"\" onto existing dentry: "
-		      "is not directory-on-directory!", branch->file_name);
-		return WIMLIB_ERR_INVALID_OVERLAY;
+/* Allocates a new journal for managing the execution of up to @num_cmds update
+ * commands.  */
+static struct update_command_journal *
+new_update_command_journal(size_t num_cmds, struct wim_dentry **root_p,
+			   struct wim_lookup_table *lookup_table)
+{
+	struct update_command_journal *j;
+
+	j = MALLOC(sizeof(*j) + num_cmds * sizeof(j->cmd_prims[0]));
+	if (j) {
+		j->num_cmds = num_cmds;
+		j->cur_cmd = 0;
+		j->root_p = root_p;
+		j->lookup_table = lookup_table;
+		INIT_LIST_HEAD(&j->orphans);
+		for (size_t i = 0; i < num_cmds; i++)
+			init_update_primitive_list(&j->cmd_prims[i]);
+	}
+	return j;
+}
+
+/* Don't call this directly; use commit_update() or rollback_update() instead.
+ */
+static void
+free_update_command_journal(struct update_command_journal *j)
+{
+	struct wim_dentry *orphan;
+
+	/* Free orphaned dentry trees  */
+	while (!list_empty(&j->orphans)) {
+		orphan = list_first_entry(&j->orphans,
+					  struct wim_dentry, tmp_list);
+		list_del(&orphan->tmp_list);
+		free_dentry_tree(orphan, j->lookup_table);
 	}
 
-	LIST_HEAD(moved_children);
-	while (dentry_has_children(branch)) {
-		struct wim_dentry *child = dentry_any_child(branch);
-		struct wim_dentry *existing;
+	for (size_t i = 0; i < j->num_cmds; i++)
+		if (j->cmd_prims[i].entries != j->cmd_prims[i].inline_entries)
+			FREE(j->cmd_prims[i].entries);
+	FREE(j);
+}
 
-		/* Move @child to the directory @target */
-		unlink_dentry(child);
-		existing = dentry_add_child(target, child);
+/* Add the entry @prim to the update command journal @j.  */
+static int
+record_update_primitive(struct update_command_journal *j,
+			struct update_primitive prim)
+{
+	struct update_primitive_list *l;
 
-		/* File or directory with same name already exists */
-		if (existing) {
-			int ret;
-			ret = do_overlay(existing, child);
-			if (ret) {
-				/* Overlay failed.  Revert the changes. */
-				dentry_add_child(branch, child);
-				list_for_each_entry(child, &moved_children, tmp_list)
-				{
-					unlink_dentry(child);
-					dentry_add_child(branch, child);
-				}
-				return ret;
-			}
+	l = &j->cmd_prims[j->cur_cmd];
+
+	if (l->num_entries == l->num_alloc_entries) {
+		struct update_primitive *new_entries;
+		size_t new_num_alloc_entries;
+		size_t new_size;
+
+		new_num_alloc_entries = l->num_alloc_entries * 2;
+		new_size = new_num_alloc_entries * sizeof(new_entries[0]);
+		if (l->entries == l->inline_entries) {
+			new_entries = MALLOC(new_size);
+			if (!new_entries)
+				return WIMLIB_ERR_NOMEM;
+			memcpy(new_entries, l->inline_entries,
+			       sizeof(l->inline_entries));
 		} else {
-			list_add(&child->tmp_list, &moved_children);
+			new_entries = REALLOC(l->entries, new_size);
+			if (!new_entries)
+				return WIMLIB_ERR_NOMEM;
 		}
+		l->entries = new_entries;
+		l->num_alloc_entries = new_num_alloc_entries;
 	}
-	free_dentry(branch);
+	l->entries[l->num_entries++] = prim;
 	return 0;
 }
 
-/* Attach or overlay a branch onto the WIM image.
- *
- * @root_p:
- *	Pointer to the root of the WIM image, or pointer to NULL if it has not
- *	been created yet.
- * @branch
- *	Branch to add.
- * @target_path:
- *	Path in the WIM image to add the branch, with leading and trailing
- *	slashes stripped.
- */
-static int
-attach_branch(struct wim_dentry **root_p, struct wim_dentry *branch,
-	      tchar *target_path, CASE_SENSITIVITY_TYPE case_type)
+static void
+do_unlink(struct wim_dentry *subject, struct wim_dentry *parent,
+	  struct wim_dentry **root_p)
 {
-	tchar *slash;
-	struct wim_dentry *dentry, *parent, *target;
+	if (parent) {
+		/* Unlink @subject from its @parent.  */
+		wimlib_assert(subject->parent == parent);
+		unlink_dentry(subject);
+	} else {
+		/* Unset @subject as the root of the image.  */
+		*root_p = NULL;
+	}
+	subject->parent = subject;
+}
+
+static void
+do_link(struct wim_dentry *subject, struct wim_dentry *parent,
+	struct wim_dentry **root_p)
+{
+	if (parent) {
+		/* Link @subject to its @parent  */
+		struct wim_dentry *existing;
+
+		existing = dentry_add_child(parent, subject);
+		wimlib_assert(!existing);
+	} else {
+		/* Set @subject as root of the image  */
+		*root_p = subject;
+	}
+}
+
+/* Undo a link operation.  */
+static void
+rollback_link(struct wim_dentry *subject, struct wim_dentry *parent,
+	      struct wim_dentry **root_p, struct list_head *orphans)
+{
+	/* Unlink is the opposite of link  */
+	do_unlink(subject, parent, root_p);
+
+	/* @subject is now unlinked.  Add it to orphans. */
+	list_add(&subject->tmp_list, orphans);
+	subject->is_orphan = 1;
+}
+
+/* Undo an unlink operation.  */
+static void
+rollback_unlink(struct wim_dentry *subject, struct wim_dentry *parent,
+		struct wim_dentry **root_p)
+{
+	/* Link is the opposite of unlink  */
+	do_link(subject, parent, root_p);
+
+	/* @subject is no longer unlinked.  Delete it from orphans. */
+	list_del(&subject->tmp_list);
+	subject->is_orphan = 0;
+}
+
+/* Rollback a name change operation.  */
+static void
+rollback_name_change(utf16lechar *old_name,
+		     utf16lechar **name_ptr, u16 *name_nbytes_ptr)
+{
+	/* Free the new name, then replace it with the old name.  */
+	FREE(*name_ptr);
+	if (old_name) {
+		*name_ptr = old_name;
+		*name_nbytes_ptr = utf16le_strlen(old_name);
+	} else {
+		*name_ptr = NULL;
+		*name_nbytes_ptr = 0;
+	}
+}
+
+/* Rollback a primitive update operation.  */
+static void
+rollback_update_primitive(const struct update_primitive *prim,
+			  struct wim_dentry **root_p,
+			  struct list_head *orphans)
+{
+	switch (prim->type) {
+	case LINK_DENTRY:
+		rollback_link(prim->link.subject, prim->link.parent, root_p,
+			      orphans);
+		break;
+	case UNLINK_DENTRY:
+		rollback_unlink(prim->link.subject, prim->link.parent, root_p);
+		break;
+	case CHANGE_FILE_NAME:
+		rollback_name_change(prim->name.old_name,
+				     &prim->name.subject->file_name,
+				     &prim->name.subject->file_name_nbytes);
+		break;
+	case CHANGE_SHORT_NAME:
+		rollback_name_change(prim->name.old_name,
+				     &prim->name.subject->short_name,
+				     &prim->name.subject->short_name_nbytes);
+		break;
+	}
+}
+
+/* Rollback a logical update command  */
+static void
+rollback_update_command(const struct update_primitive_list *l,
+			struct wim_dentry **root_p,
+			struct list_head *orphans)
+{
+	size_t i = l->num_entries;
+
+	/* Rollback each primitive operation, in reverse order.  */
+	while (i--)
+		rollback_update_primitive(&l->entries[i], root_p, orphans);
+}
+
+/****************************************************************************/
+
+/* Link @subject into the directory @parent; or, if @parent is NULL, set
+ * @subject as the root of the WIM image.
+ *
+ * This is the journaled version, so it can be rolled back.  */
+static int
+journaled_link(struct update_command_journal *j,
+	       struct wim_dentry *subject, struct wim_dentry *parent)
+{
+	struct update_primitive prim = {
+		.type = LINK_DENTRY,
+		.link = {
+			.subject = subject,
+			.parent = parent,
+		},
+	};
 	int ret;
 
-	DEBUG("Attaching branch \"%"WS"\" => \"%"TS"\"",
-	      branch->file_name, target_path);
+	ret = record_update_primitive(j, prim);
+	if (ret)
+		return ret;
 
-	if (*target_path == T('\0')) {
-		/* Target: root directory */
-		if (*root_p) {
-			/* Overlay on existing root */
-			return do_overlay(*root_p, branch);
-		} else {
-			if (!dentry_is_directory(branch)) {
-				ERROR("Cannot set non-directory as root of WIM image");
-				return WIMLIB_ERR_NOTDIR;
+	do_link(subject, parent, j->root_p);
+
+	if (subject->is_orphan) {
+		list_del(&subject->tmp_list);
+		subject->is_orphan = 0;
+	}
+	return 0;
+}
+
+/* Unlink @subject from the WIM image.
+ *
+ * This is the journaled version, so it can be rolled back.  */
+static int
+journaled_unlink(struct update_command_journal *j, struct wim_dentry *subject)
+{
+	int ret;
+	struct wim_dentry *parent;
+
+	if (dentry_is_root(subject))
+		parent = NULL;
+	else
+		parent = subject->parent;
+
+	struct update_primitive prim = {
+		.type = UNLINK_DENTRY,
+		.link = {
+			.subject = subject,
+			.parent = parent,
+		},
+	};
+
+	ret = record_update_primitive(j, prim);
+	if (ret)
+		return ret;
+
+	do_unlink(subject, parent, j->root_p);
+
+	list_add(&subject->tmp_list, &j->orphans);
+	subject->is_orphan = 1;
+	return 0;
+}
+
+/* Change the name of @dentry to @new_name_tstr.
+ *
+ * This is the journaled version, so it can be rolled back.  */
+static int
+journaled_change_name(struct update_command_journal *j,
+		      struct wim_dentry *dentry, const tchar *new_name_tstr)
+{
+	int ret;
+	utf16lechar *new_name = NULL;
+	u16 new_name_nbytes = 0;
+	struct update_primitive prim;
+
+	/* Set the long name.  */
+	ret = get_utf16le_string(new_name_tstr, &new_name, &new_name_nbytes);
+	if (ret)
+		return ret;
+
+	prim.type = CHANGE_FILE_NAME;
+	prim.name.subject = dentry;
+	prim.name.old_name = dentry->file_name;
+	ret = record_update_primitive(j, prim);
+	if (ret)
+		return ret;
+
+	dentry->file_name = new_name;
+	dentry->file_name_nbytes = new_name_nbytes;
+
+	/* Clear the short name.  */
+	prim.type = CHANGE_SHORT_NAME;
+	prim.name.subject = dentry;
+	prim.name.old_name = dentry->short_name;
+	ret = record_update_primitive(j, prim);
+	if (ret)
+		return ret;
+
+	dentry->short_name = NULL;
+	dentry->short_name_nbytes = 0;
+	return 0;
+}
+
+static void
+next_command(struct update_command_journal *j)
+{
+	j->cur_cmd++;
+}
+
+static void
+commit_update(struct update_command_journal *j)
+{
+	for (size_t i = 0; i < j->num_cmds; i++)
+	{
+		for (size_t k = 0; k < j->cmd_prims[i].num_entries; k++)
+		{
+			if (j->cmd_prims[i].entries[k].type == CHANGE_FILE_NAME ||
+			    j->cmd_prims[i].entries[k].type == CHANGE_SHORT_NAME)
+			{
+				FREE(j->cmd_prims[i].entries[k].name.old_name);
 			}
-			/* Set as root */
-			*root_p = branch;
-			return 0;
+		}
+	}
+	free_update_command_journal(j);
+}
+
+static void
+rollback_update(struct update_command_journal *j)
+{
+	/* Rollback each logical update command, in reverse order.  */
+	size_t i = j->cur_cmd;
+	if (i < j->num_cmds)
+		i++;
+	while (i--)
+		rollback_update_command(&j->cmd_prims[i], j->root_p, &j->orphans);
+	free_update_command_journal(j);
+}
+
+static int
+set_branch_name(struct wim_dentry *branch, const utf16lechar *target)
+{
+	const utf16lechar *p;
+
+	p = target;
+	while (*p)
+		p++;
+
+	/* No trailing slashes allowed  */
+	wimlib_assert(p == target || *(p - 1) != cpu_to_le16(WIM_PATH_SEPARATOR));
+
+	while (p > target && *(p - 1) != cpu_to_le16(WIM_PATH_SEPARATOR))
+		p--;
+
+	return dentry_set_name_utf16le(branch, p);
+}
+
+static int
+handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
+		struct update_command_journal *j,
+		int add_flags, wimlib_progress_func_t progress_func)
+{
+	bool branch_is_dir = dentry_is_directory(branch);
+	bool existing_is_dir = dentry_is_directory(existing);
+
+	if (branch_is_dir != existing_is_dir) {
+		if (existing_is_dir)  {
+			ERROR("\"%"TS"\" is a directory!\n"
+			      "        Specify the path at which "
+			      "to place the file inside this directory.",
+			      dentry_full_path(existing));
+			return WIMLIB_ERR_IS_DIRECTORY;
+		} else {
+			ERROR("Can't place directory at \"%"TS"\" because "
+			      "a nondirectory file already exists there!",
+			      dentry_full_path(existing));
+			return WIMLIB_ERR_NOTDIR;
 		}
 	}
 
-	/* Adding a non-root branch.  Create root if it hasn't been created
-	 * already. */
-	if (!*root_p) {
-		ret  = new_filler_directory(T(""), root_p);
+	if (branch_is_dir) {
+		/* Directory overlay  */
+		while (dentry_has_children(branch)) {
+			struct wim_dentry *new_child;
+			struct wim_dentry *existing_child;
+			int ret;
+
+			new_child = dentry_any_child(branch);
+
+			existing_child =
+				get_dentry_child_with_utf16le_name(existing,
+								   new_child->file_name,
+								   new_child->file_name_nbytes,
+								   WIMLIB_CASE_PLATFORM_DEFAULT);
+			unlink_dentry(new_child);
+			if (existing_child) {
+				ret = handle_conflict(new_child, existing_child,
+						      j, add_flags, progress_func);
+			} else {
+				ret = journaled_link(j, new_child, existing);
+			}
+			if (ret) {
+				dentry_add_child(branch, new_child);
+				return ret;
+			}
+		}
+		free_dentry(branch);
+		return 0;
+	} else if (add_flags & WIMLIB_ADD_FLAG_NO_REPLACE) {
+		/* Can't replace nondirectory file  */
+		ERROR("Refusing to overwrite nondirectory file \"%"TS"\"",
+		      dentry_full_path(existing));
+		return WIMLIB_ERR_INVALID_OVERLAY;
+	} else {
+		/* Replace nondirectory file  */
+		struct wim_dentry *parent;
+		int ret;
+
+		parent = existing->parent;
+
+		ret = calculate_dentry_full_path(existing);
 		if (ret)
 			return ret;
-	}
 
-	/* Walk the path to the branch, creating filler directories as needed.
-	 * */
-	parent = *root_p;
-	while ((slash = tstrchr(target_path, WIM_PATH_SEPARATOR))) {
-		*slash = T('\0');
-		dentry = get_dentry_child_with_name(parent, target_path,
-						    case_type);
-		if (!dentry) {
-			ret = new_filler_directory(target_path, &dentry);
-			if (ret)
-				return ret;
-			dentry_add_child(parent, dentry);
+		ret = journaled_unlink(j, existing);
+		if (ret)
+			return ret;
+
+		ret = journaled_link(j, branch, parent);
+		if (ret)
+			return ret;
+
+		if (progress_func && (add_flags & WIMLIB_ADD_FLAG_VERBOSE)) {
+			union wimlib_progress_info info;
+
+			info.replace.path_in_wim = existing->_full_path;
+			progress_func(WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM, &info);
 		}
-		parent = dentry;
-		target_path = slash;
-		/* Skip over slashes.  Note: this cannot overrun the length of
-		 * the string because the last character cannot be a slash, as
-		 * trailing slashes were tripped.  */
-		do {
-			++target_path;
-		} while (*target_path == WIM_PATH_SEPARATOR);
-	}
-
-	/* If the target path already existed, overlay the branch onto it.
-	 * Otherwise, set the branch as the target path. */
-	target = get_dentry_child_with_utf16le_name(parent, branch->file_name,
-						    branch->file_name_nbytes,
-						    case_type);
-	if (target) {
-		return do_overlay(target, branch);
-	} else {
-		dentry_add_child(parent, branch);
 		return 0;
 	}
+}
+
+static int
+do_attach_branch(struct wim_dentry *branch, utf16lechar *target,
+		 struct update_command_journal *j,
+		 int add_flags, wimlib_progress_func_t progress_func)
+{
+	struct wim_dentry *parent;
+	struct wim_dentry *existing;
+	utf16lechar empty_name[1] = {0};
+	utf16lechar *cur_component_name;
+	utf16lechar *next_component_name;
+	int ret;
+
+	/* Attempt to create root directory before proceeding to the "real"
+	 * first component  */
+	parent = NULL;
+	existing = *j->root_p;
+	cur_component_name = empty_name;
+
+	/* Skip leading slashes  */
+	next_component_name = target;
+	while (*next_component_name == cpu_to_le16(WIM_PATH_SEPARATOR))
+		next_component_name++;
+
+	while (*next_component_name) { /* While not the last component ... */
+		utf16lechar *end;
+
+		if (existing) {
+			/* Descend into existing directory  */
+			if (!dentry_is_directory(existing)) {
+				ERROR("\"%"TS"\" in the WIM image "
+				      "is not a directory!",
+				      dentry_full_path(existing));
+				return WIMLIB_ERR_NOTDIR;
+			}
+		} else {
+			/* A parent directory of the target didn't exist.  Make
+			 * the way by creating a filler directory.  */
+			struct wim_dentry *filler;
+
+			ret = new_filler_directory(T(""), &filler);
+			if (ret)
+				return ret;
+			ret = dentry_set_name_utf16le(filler,
+						      cur_component_name);
+			if (ret) {
+				free_dentry(filler);
+				return ret;
+			}
+			ret = journaled_link(j, filler, parent);
+			if (ret) {
+				free_dentry(filler);
+				return ret;
+			}
+			existing = filler;
+		}
+
+		/* Advance to next component  */
+
+		cur_component_name = next_component_name;
+		end = cur_component_name + 1;
+		while (*end && *end != cpu_to_le16(WIM_PATH_SEPARATOR))
+			end++;
+
+		next_component_name = end;
+		if (*end) {
+			/* There will still be more components after this.  */
+			*end = 0;
+			do {
+			} while (*++next_component_name == cpu_to_le16(WIM_PATH_SEPARATOR));
+			wimlib_assert(*next_component_name);  /* No trailing slashes  */
+		} else {
+			/* This will be the last component  */
+			next_component_name = end;
+		}
+		parent = existing;
+		existing = get_dentry_child_with_utf16le_name(
+					parent,
+					cur_component_name,
+					(end - cur_component_name) * sizeof(utf16lechar),
+					WIMLIB_CASE_PLATFORM_DEFAULT);
+	}
+
+	/* Last component  */
+	if (existing) {
+		return handle_conflict(branch, existing, j,
+				       add_flags, progress_func);
+	} else {
+		return journaled_link(j, branch, parent);
+	}
+}
+
+/*
+ * Place the directory entry tree @branch at the path @target_tstr in the WIM
+ * image.
+ *
+ * @target_tstr cannot contain trailing slashes, and all path separators must be
+ * WIM_PATH_SEPARATOR.
+ *
+ * On success, @branch is committed to the journal @j.
+ * Otherwise @branch is freed.
+ *
+ * The relevant @add_flags are WIMLIB_ADD_FLAG_NO_REPLACE and
+ * WIMLIB_ADD_FLAG_VERBOSE.
+ */
+static int
+attach_branch(struct wim_dentry *branch, const tchar *target_tstr,
+	      struct update_command_journal *j,
+	      int add_flags, wimlib_progress_func_t progress_func)
+{
+	int ret;
+	utf16lechar *target;
+
+	if (unlikely(!branch))
+		return 0;
+
+#if TCHAR_IS_UTF16LE
+	target = memdup(target_tstr,
+			(tstrlen(target_tstr) + 1) * sizeof(target_tstr[0]));
+	if (!target) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_free_branch;
+	}
+#else
+	{
+		size_t target_nbytes;
+		ret = tstr_to_utf16le(target_tstr,
+				      tstrlen(target_tstr) * sizeof(target_tstr[0]),
+				      &target, &target_nbytes);
+		if (ret)
+			goto out_free_branch;
+	}
+#endif
+
+	ret = set_branch_name(branch, target);
+	if (ret)
+		goto out_free_target;
+
+	ret = do_attach_branch(branch, target, j, add_flags, progress_func);
+	if (ret)
+		goto out_free_target;
+	/* branch was successfully committed to the journal  */
+	branch = NULL;
+out_free_target:
+	FREE(target);
+out_free_branch:
+	free_dentry_tree(branch, j->lookup_table);
+	return ret;
 }
 
 static const char wincfg[] =
@@ -175,7 +720,9 @@ static const char wincfg[] =
 "/Windows/CSC\n";
 
 static const tchar *wimboot_cfgfile =
-		T("/Windows/System32/WimBootCompress.ini");
+	    WIMLIB_WIM_PATH_SEPARATOR_STRING T("Windows")
+	    WIMLIB_WIM_PATH_SEPARATOR_STRING T("System32")
+	    WIMLIB_WIM_PATH_SEPARATOR_STRING T("WimBootCompress.ini");
 
 static int
 get_capture_config(const tchar *config_file, struct capture_config *config,
@@ -229,56 +776,27 @@ get_capture_config(const tchar *config_file, struct capture_config *config,
 }
 
 static int
-replace_wimboot_cfg(WIMStruct *wim, const tchar *config_file)
-{
-	struct wimlib_update_command cmds[] = {
-		{
-			.op = WIMLIB_UPDATE_OP_DELETE,
-			.delete_ = {
-				.wim_path = (tchar *)wimboot_cfgfile,
-				.delete_flags = WIMLIB_DELETE_FLAG_FORCE |
-						WIMLIB_DELETE_FLAG_RECURSIVE,
-			},
-		},
-		{
-			.op = WIMLIB_UPDATE_OP_ADD,
-			.add = {
-				.fs_source_path = (tchar *)config_file,
-				.wim_target_path = (tchar *)wimboot_cfgfile,
-				.add_flags = 0,
-				.config_file = NULL,
-			},
-		},
-	};
-	return wimlib_update_image(wim, wim->current_image,
-				   cmds, ARRAY_LEN(cmds), 0, NULL);
-}
-
-static int
-execute_add_command(WIMStruct *wim,
+execute_add_command(struct update_command_journal *j,
+		    WIMStruct *wim,
 		    const struct wimlib_update_command *add_cmd,
+		    struct wim_inode_table *inode_table,
+		    struct wim_sd_set *sd_set,
+		    struct list_head *unhashed_streams,
 		    wimlib_progress_func_t progress_func)
 {
 	int ret;
 	int add_flags;
 	tchar *fs_source_path;
 	tchar *wim_target_path;
-	struct wim_image_metadata *imd;
-	struct list_head unhashed_streams;
-	struct add_image_params params;
-	int (*capture_tree)(struct wim_dentry **,
-			    const tchar *,
-			    struct add_image_params *);
 	const tchar *config_file;
+	struct add_image_params params;
 	struct capture_config config;
+	capture_tree_t capture_tree = platform_default_capture_tree;
 #ifdef WITH_NTFS_3G
 	struct _ntfs_volume *ntfs_vol = NULL;
 #endif
-	void *extra_arg;
+	void *extra_arg = NULL;
 	struct wim_dentry *branch;
-	bool rollback_sd = true;
-
-	wimlib_assert(add_cmd->op == WIMLIB_UPDATE_OP_ADD);
 
 	add_flags = add_cmd->add.add_flags;
 	fs_source_path = add_cmd->add.fs_source_path;
@@ -290,13 +808,11 @@ execute_add_command(WIMStruct *wim,
 
 	memset(&params, 0, sizeof(params));
 
-	imd = wim->image_metadata[wim->current_image - 1];
-
 	if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
 	#ifdef WITH_NTFS_3G
 		capture_tree = build_dentry_tree_ntfs;
 		extra_arg = &ntfs_vol;
-		if (imd->ntfs_vol != NULL) {
+		if (wim_get_current_image_metadata(wim)->ntfs_vol != NULL) {
 			ERROR("NTFS volume already set");
 			ret = WIMLIB_ERR_INVALID_PARAM;
 			goto out;
@@ -305,13 +821,6 @@ execute_add_command(WIMStruct *wim,
 		ret = WIMLIB_ERR_INVALID_PARAM;
 		goto out;
 	#endif
-	} else {
-	#ifdef __WIN32__
-		capture_tree = win32_build_dentry_tree;
-	#else
-		capture_tree = unix_build_dentry_tree;
-	#endif
-		extra_arg = NULL;
 	}
 
 	ret = get_capture_config(config_file, &config,
@@ -319,17 +828,10 @@ execute_add_command(WIMStruct *wim,
 	if (ret)
 		goto out;
 
-	ret = init_inode_table(&params.inode_table, 9001);
-	if (ret)
-		goto out_destroy_config;
-
-	ret = init_sd_set(&params.sd_set, imd->security_data);
-	if (ret)
-		goto out_destroy_inode_table;
-
-	INIT_LIST_HEAD(&unhashed_streams);
 	params.lookup_table = wim->lookup_table;
-	params.unhashed_streams = &unhashed_streams;
+	params.unhashed_streams = unhashed_streams;
+	params.inode_table = inode_table;
+	params.sd_set = sd_set;
 	params.config = &config;
 	params.add_flags = add_flags;
 	params.extra_arg = extra_arg;
@@ -347,61 +849,56 @@ execute_add_command(WIMStruct *wim,
 		params.add_flags |= WIMLIB_ADD_FLAG_ROOT;
 	ret = (*capture_tree)(&branch, fs_source_path, &params);
 	if (ret)
-		goto out_destroy_sd_set;
+		goto out_destroy_config;
 
-	if (branch) {
-		/* Use the target name, not the source name, for
-		 * the root of each branch from a capture
-		 * source.  (This will also set the root dentry
-		 * of the entire image to be unnamed.) */
-		ret = dentry_set_name(branch,
-				      path_basename(wim_target_path));
-		if (ret)
-			goto out_ntfs_umount;
+	if (progress_func)
+		progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &params.progress);
 
-		ret = attach_branch(&imd->root_dentry, branch, wim_target_path,
-				    WIMLIB_CASE_PLATFORM_DEFAULT);
-		if (ret)
-			goto out_ntfs_umount;
+	if (wim_target_path[0] == T('\0') &&
+	    branch && !dentry_is_directory(branch))
+	{
+		ERROR("\"%"TS"\" is not a directory!", fs_source_path);
+		ret = WIMLIB_ERR_NOTDIR;
+		free_dentry_tree(branch, wim->lookup_table);
+		goto out_cleanup_after_capture;
 	}
+
+	ret = attach_branch(branch, wim_target_path, j,
+			    add_flags, params.progress_func);
+	if (ret)
+		goto out_cleanup_after_capture;
 
 	if (config_file && (add_flags & WIMLIB_ADD_FLAG_WIMBOOT) &&
 	    wim_target_path[0] == T('\0'))
 	{
-		/* Save configuration file as \Windows\System32\WimBootCompress.ini  */
-		ret = replace_wimboot_cfg(wim, config_file);
-		if (ret) {
-			/* Undo attach_branch()  */
-			if (imd->root_dentry == branch)
-				imd->root_dentry = NULL;
-			else
-				branch = NULL;
-			goto out_ntfs_umount;
-		}
+		params.add_flags = 0;
+		params.progress_func = NULL;
+		params.config = NULL;
+
+		/* If a capture configuration file was explicitly specified when
+		 * capturing an image in WIMBoot mode, save it as
+		 * /Windows/System32/WimBootCompress.ini in the WIM image. */
+		ret = platform_default_capture_tree(&branch, config_file, &params);
+		if (ret)
+			goto out_cleanup_after_capture;
+
+		ret = attach_branch(branch, wimboot_cfgfile, j, 0, NULL);
+		if (ret)
+			goto out_cleanup_after_capture;
 	}
 
-	if (progress_func)
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &params.progress);
-	list_splice_tail(&unhashed_streams, &imd->unhashed_streams);
 #ifdef WITH_NTFS_3G
-	imd->ntfs_vol = ntfs_vol;
+	wim_get_current_image_metadata(wim)->ntfs_vol = ntfs_vol;
 #endif
-	inode_table_prepare_inode_list(&params.inode_table, &imd->inode_list);
-	ret = 0;
-	rollback_sd = false;
 	if (add_flags & WIMLIB_ADD_FLAG_RPFIX)
 		wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
-	goto out_destroy_sd_set;
-out_ntfs_umount:
+	ret = 0;
+	goto out_destroy_config;
+out_cleanup_after_capture:
 #ifdef WITH_NTFS_3G
 	if (ntfs_vol)
 		do_ntfs_umount(ntfs_vol);
 #endif
-	free_dentry_tree(branch, wim->lookup_table);
-out_destroy_sd_set:
-	destroy_sd_set(&params.sd_set, rollback_sd);
-out_destroy_inode_table:
-	destroy_inode_table(&params.inode_table);
 out_destroy_config:
 	destroy_capture_config(&config);
 out:
@@ -409,15 +906,14 @@ out:
 }
 
 static int
-execute_delete_command(WIMStruct *wim,
+execute_delete_command(struct update_command_journal *j,
+		       WIMStruct *wim,
 		       const struct wimlib_update_command *delete_cmd)
 {
 	int flags;
 	const tchar *wim_path;
 	struct wim_dentry *tree;
-	bool is_root;
 
-	wimlib_assert(delete_cmd->op == WIMLIB_UPDATE_OP_DELETE);
 	flags = delete_cmd->delete_.delete_flags;
 	wim_path = delete_cmd->delete_.wim_path;
 
@@ -442,25 +938,113 @@ execute_delete_command(WIMStruct *wim,
 		return WIMLIB_ERR_IS_DIRECTORY;
 	}
 
-	is_root = dentry_is_root(tree);
-	unlink_dentry(tree);
-	free_dentry_tree(tree, wim->lookup_table);
-	if (is_root)
-		wim->image_metadata[wim->current_image - 1]->root_dentry = NULL;
-	return 0;
+	return journaled_unlink(j, tree);
 }
 
 static int
-execute_rename_command(WIMStruct *wim,
+free_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
+{
+	FREE(dentry->_full_path);
+	dentry->_full_path = NULL;
+	return 0;
+}
+
+/* Rename a file or directory in the WIM.
+ *
+ * This returns a -errno value.
+ *
+ * The journal @j is optional.
+ */
+int
+rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
+		CASE_SENSITIVITY_TYPE case_type,
+		struct update_command_journal *j)
+{
+	struct wim_dentry *src;
+	struct wim_dentry *dst;
+	struct wim_dentry *parent_of_dst;
+	int ret;
+
+	/* This rename() implementation currently only supports actual files
+	 * (not alternate data streams) */
+
+	src = get_dentry(wim, from, case_type);
+	if (!src)
+		return -errno;
+
+	dst = get_dentry(wim, to, case_type);
+
+	if (dst) {
+		/* Destination file exists */
+
+		if (src == dst) /* Same file */
+			return 0;
+
+		if (!dentry_is_directory(src)) {
+			/* Cannot rename non-directory to directory. */
+			if (dentry_is_directory(dst))
+				return -EISDIR;
+		} else {
+			/* Cannot rename directory to a non-directory or a non-empty
+			 * directory */
+			if (!dentry_is_directory(dst))
+				return -ENOTDIR;
+			if (dentry_has_children(dst))
+				return -ENOTEMPTY;
+		}
+		parent_of_dst = dst->parent;
+	} else {
+		/* Destination does not exist */
+		parent_of_dst = get_parent_dentry(wim, to, case_type);
+		if (!parent_of_dst)
+			return -errno;
+
+		if (!dentry_is_directory(parent_of_dst))
+			return -ENOTDIR;
+	}
+
+	if (j) {
+		if (journaled_change_name(j, src, path_basename(to)))
+			return -ENOMEM;
+	} else {
+		ret = dentry_set_name(src, path_basename(to));
+		if (ret)
+			return -ENOMEM;
+	}
+	if (dst) {
+		if (j) {
+			if (journaled_unlink(j, dst))
+				return -ENOMEM;
+		} else {
+			unlink_dentry(dst);
+			free_dentry_tree(dst, wim->lookup_table);
+		}
+	}
+	if (j) {
+		if (journaled_unlink(j, src))
+			return -ENOMEM;
+		if (journaled_link(j, src, parent_of_dst))
+			return -ENOMEM;
+	} else {
+		unlink_dentry(src);
+		dentry_add_child(parent_of_dst, src);
+	}
+	if (src->_full_path)
+		for_dentry_in_tree(src, free_dentry_full_path, NULL);
+	return 0;
+}
+
+
+static int
+execute_rename_command(struct update_command_journal *j,
+		       WIMStruct *wim,
 		       const struct wimlib_update_command *rename_cmd)
 {
 	int ret;
 
-	wimlib_assert(rename_cmd->op == WIMLIB_UPDATE_OP_RENAME);
-
 	ret = rename_wim_path(wim, rename_cmd->rename.wim_source_path,
 			      rename_cmd->rename.wim_target_path,
-			      WIMLIB_CASE_PLATFORM_DEFAULT);
+			      WIMLIB_CASE_PLATFORM_DEFAULT, j);
 	if (ret) {
 		ret = -ret;
 		errno = ret;
@@ -505,6 +1089,16 @@ update_op_to_str(int op)
 	}
 }
 
+static bool
+have_command_type(const struct wimlib_update_command *cmds, size_t num_cmds,
+		  enum wimlib_update_op op)
+{
+	for (size_t i = 0; i < num_cmds; i++)
+		if (cmds[i].op == op)
+			return true;
+	return false;
+}
+
 static int
 execute_update_commands(WIMStruct *wim,
 			const struct wimlib_update_command *cmds,
@@ -512,10 +1106,47 @@ execute_update_commands(WIMStruct *wim,
 			int update_flags,
 			wimlib_progress_func_t progress_func)
 {
-	int ret = 0;
+	struct wim_inode_table *inode_table;
+	struct wim_sd_set *sd_set;
+	struct list_head unhashed_streams;
+	struct update_command_journal *j;
 	union wimlib_progress_info info;
+	int ret;
+
+	if (have_command_type(cmds, num_cmds, WIMLIB_UPDATE_OP_ADD)) {
+		/* If we have at least one "add" command, create the inode and
+		 * security descriptor tables to index new inodes and new
+		 * security descriptors, respectively.  */
+		inode_table = alloca(sizeof(struct wim_inode_table));
+		sd_set = alloca(sizeof(struct wim_sd_set));
+
+		ret = init_inode_table(inode_table, 9001);
+		if (ret)
+			goto out;
+
+		ret = init_sd_set(sd_set, wim_security_data(wim));
+		if (ret)
+			goto out_destroy_inode_table;
+
+		INIT_LIST_HEAD(&unhashed_streams);
+	} else {
+		inode_table = NULL;
+		sd_set = NULL;
+	}
+
+	/* Start an in-memory journal to allow rollback if something goes wrong
+	 */
+	j = new_update_command_journal(num_cmds,
+				       &wim_get_current_image_metadata(wim)->root_dentry,
+				       wim->lookup_table);
+	if (!j) {
+		ret = WIMLIB_ERR_NOMEM;
+		goto out_destroy_sd_set;
+	}
+
 	info.update.completed_commands = 0;
 	info.update.total_commands = num_cmds;
+	ret = 0;
 	for (size_t i = 0; i < num_cmds; i++) {
 		DEBUG("Executing update command %zu of %zu (op=%"TS")",
 		      i + 1, num_cmds, update_op_to_str(cmds[i].op));
@@ -526,21 +1157,22 @@ execute_update_commands(WIMStruct *wim,
 			(*progress_func)(WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND,
 					 &info);
 		}
+		ret = WIMLIB_ERR_INVALID_PARAM;
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
-			ret = execute_add_command(wim, &cmds[i], progress_func);
+			ret = execute_add_command(j, wim, &cmds[i], inode_table,
+						  sd_set, &unhashed_streams,
+						  progress_func);
 			break;
 		case WIMLIB_UPDATE_OP_DELETE:
-			ret = execute_delete_command(wim, &cmds[i]);
+			ret = execute_delete_command(j, wim, &cmds[i]);
 			break;
 		case WIMLIB_UPDATE_OP_RENAME:
-			ret = execute_rename_command(wim, &cmds[i]);
+			ret = execute_rename_command(j, wim, &cmds[i]);
 			break;
-		default:
-			wimlib_assert(0);
 		}
-		if (ret)
-			break;
+		if (unlikely(ret))
+			goto rollback;
 		info.update.completed_commands++;
 		if (update_flags & WIMLIB_UPDATE_FLAG_SEND_PROGRESS &&
 		    progress_func)
@@ -548,7 +1180,31 @@ execute_update_commands(WIMStruct *wim,
 			(*progress_func)(WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
 					 &info);
 		}
+		next_command(j);
 	}
+
+	commit_update(j);
+	if (inode_table) {
+		struct wim_image_metadata *imd;
+
+		imd = wim_get_current_image_metadata(wim);
+
+		list_splice_tail(&unhashed_streams, &imd->unhashed_streams);
+		inode_table_prepare_inode_list(inode_table, &imd->inode_list);
+	}
+	goto out_destroy_sd_set;
+
+rollback:
+	if (sd_set)
+		rollback_new_security_descriptors(sd_set);
+	rollback_update(j);
+out_destroy_sd_set:
+	if (sd_set)
+		destroy_sd_set(sd_set);
+out_destroy_inode_table:
+	if (inode_table)
+		destroy_inode_table(inode_table);
+out:
 	return ret;
 }
 
@@ -564,7 +1220,6 @@ check_add_command(struct wimlib_update_command *cmd,
 			  WIMLIB_ADD_FLAG_VERBOSE |
 			  /* BOOT doesn't make sense for wimlib_update_image().  */
 			  /*WIMLIB_ADD_FLAG_BOOT |*/
-			  WIMLIB_ADD_FLAG_WIMBOOT |
 			  WIMLIB_ADD_FLAG_UNIX_DATA |
 			  WIMLIB_ADD_FLAG_NO_ACLS |
 			  WIMLIB_ADD_FLAG_STRICT_ACLS |
@@ -572,7 +1227,9 @@ check_add_command(struct wimlib_update_command *cmd,
 			  WIMLIB_ADD_FLAG_RPFIX |
 			  WIMLIB_ADD_FLAG_NORPFIX |
 			  WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE |
-			  WIMLIB_ADD_FLAG_WINCONFIG))
+			  WIMLIB_ADD_FLAG_WINCONFIG |
+			  WIMLIB_ADD_FLAG_WIMBOOT |
+			  WIMLIB_ADD_FLAG_NO_REPLACE))
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	/* Are we adding the entire image or not?  An empty wim_target_path
@@ -788,18 +1445,13 @@ wimlib_update_image(WIMStruct *wim,
 {
 	int ret;
 	struct wimlib_update_command *cmds_copy;
-	bool deletion_requested = false;
 
 	if (update_flags & ~WIMLIB_UPDATE_FLAG_SEND_PROGRESS)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	DEBUG("Updating image %d with %zu commands", image, num_cmds);
 
-	for (size_t i = 0; i < num_cmds; i++)
-		if (cmds[i].op == WIMLIB_UPDATE_OP_DELETE)
-			deletion_requested = true;
-
-	if (deletion_requested)
+	if (have_command_type(cmds, num_cmds, WIMLIB_UPDATE_OP_DELETE))
 		ret = can_delete_from_wim(wim);
 	else
 		ret = can_modify_wim(wim);
@@ -810,11 +1462,6 @@ wimlib_update_image(WIMStruct *wim,
 	/* Load the metadata for the image to modify (if not loaded already) */
 	ret = select_wim_image(wim, image);
 	if (ret)
-		goto out;
-
-	/* Short circuit a successful return if no commands were specified.
-	 * Avoids problems with trying to allocate 0 bytes of memory. */
-	if (num_cmds == 0)
 		goto out;
 
 	DEBUG("Preparing %zu update commands", num_cmds);
