@@ -3870,16 +3870,14 @@ imagex_update(int argc, tchar **argv, int cmd)
 		/* --wimboot-config=FILE is short for an
 		 * "add FILE /Windows/System32/WimBootCompress.ini" command.
 		 */
-		struct wimlib_update_command cmd = {
-			.op = WIMLIB_UPDATE_OP_ADD,
-			.add = {
-				.fs_source_path = wimboot_config,
-				.wim_target_path =
-					T("/Windows/System32/WimBootCompress.ini"),
-				.config_file = NULL,
-				.add_flags = 0,
-			},
-		};
+		struct wimlib_update_command cmd;
+
+		cmd.op = WIMLIB_UPDATE_OP_ADD;
+		cmd.add.fs_source_path = wimboot_config;
+		cmd.add.wim_target_path = T("/Windows/System32/WimBootCompress.ini");
+		cmd.add.config_file = NULL;
+		cmd.add.add_flags = 0;
+
 		ret = wimlib_update_image(wim, image, &cmd, 1,
 					  update_flags, imagex_progress_func);
 		if (ret)

@@ -328,14 +328,12 @@ static int
 journaled_link(struct update_command_journal *j,
 	       struct wim_dentry *subject, struct wim_dentry *parent)
 {
-	struct update_primitive prim = {
-		.type = LINK_DENTRY,
-		.link = {
-			.subject = subject,
-			.parent = parent,
-		},
-	};
+	struct update_primitive prim;
 	int ret;
+
+	prim.type = LINK_DENTRY;
+	prim.link.subject = subject;
+	prim.link.parent = parent;
 
 	ret = record_update_primitive(j, prim);
 	if (ret)
@@ -356,21 +354,18 @@ journaled_link(struct update_command_journal *j,
 static int
 journaled_unlink(struct update_command_journal *j, struct wim_dentry *subject)
 {
-	int ret;
 	struct wim_dentry *parent;
+	struct update_primitive prim;
+	int ret;
 
 	if (dentry_is_root(subject))
 		parent = NULL;
 	else
 		parent = subject->parent;
 
-	struct update_primitive prim = {
-		.type = UNLINK_DENTRY,
-		.link = {
-			.subject = subject,
-			.parent = parent,
-		},
-	};
+	prim.type = UNLINK_DENTRY;
+	prim.link.subject = subject;
+	prim.link.parent = parent;
 
 	ret = record_update_primitive(j, prim);
 	if (ret)
