@@ -1141,12 +1141,10 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	DWORD desiredAccess;
 
 
-	if (exclude_path(path, path_num_chars, params->config, true)) {
-		if (params->add_flags & WIMLIB_ADD_FLAG_ROOT) {
-			ERROR("Cannot exclude the root directory from capture");
-			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
-			goto out;
-		}
+	if (exclude_path(path + params->capture_root_nchars,
+			 path_num_chars - params->capture_root_nchars,
+			 params->config))
+	{
 		ret = 0;
 		goto out_progress;
 	}
@@ -1413,32 +1411,12 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		wmemcpy(path, root_disk_path, path_nchars + 1);
 	}
 
-	/* Strip trailing slashes.  */
-	while (path_nchars >= 2 &&
-	       is_any_path_separator(path[path_nchars - 1]) &&
-	       path[path_nchars - 2] != L':')
-	{
-		path[--path_nchars] = L'\0';
-	}
-
-	/* Update pattern prefix.  */
-	if (params->config != NULL)
-	{
-		params->config->prefix = TSTRDUP(path);
-		params->config->prefix_num_tchars = path_nchars;
-		if (params->config->prefix == NULL)
-		{
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_path;
-		}
-	}
+	params->capture_root_nchars = path_nchars;
 
 	memset(&state, 0, sizeof(state));
 	ret = win32_build_dentry_tree_recursive(root_ret, path,
 						path_nchars, params,
 						&state, vol_flags);
-	if (params->config != NULL)
-		FREE(params->config->prefix);
 out_free_path:
 	FREE(path);
 	if (ret == 0)

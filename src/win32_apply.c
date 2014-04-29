@@ -30,14 +30,14 @@
 #include "wimlib/win32_common.h"
 
 #include "wimlib/apply.h"
-#include "wimlib/capture.h"
+#include "wimlib/capture.h" /* for mangle_pat()  */
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
-#include "wimlib/paths.h"
 #include "wimlib/resource.h"
 #include "wimlib/textfile.h"
 #include "wimlib/xml.h"
+#include "wimlib/wildcard.h"
 #include "wimlib/wim.h"
 #include "wimlib/wimboot.h"
 
@@ -114,6 +114,7 @@ load_prepopulate_pats(struct apply_ctx *ctx)
 				LOAD_TEXT_FILE_REMOVE_QUOTES |
 					LOAD_TEXT_FILE_NO_WARNINGS,
 				mangle_pat);
+	BUILD_BUG_ON(OS_PREFERRED_PATH_SEPARATOR != WIM_PATH_SEPARATOR);
 	FREE(buf);
 	if (ret) {
 		FREE(s);
@@ -129,15 +130,24 @@ in_prepopulate_list(struct wim_dentry *dentry, struct apply_ctx *ctx)
 {
 	struct string_set *pats;
 	const tchar *path;
+	size_t path_nchars;
 
 	pats = get_private_data(ctx)->prepopulate_pats;
-	if (!pats)
+	if (!pats || !pats->num_strings)
 		return false;
+
 	path = dentry_full_path(dentry);
 	if (!path)
 		return false;
 
-	return match_pattern(path, path_basename(path), pats);
+	path_nchars = tstrlen(path);
+
+	for (size_t i = 0; i < pats->num_strings; i++)
+		if (match_path(path, path_nchars, pats->strings[i],
+			       OS_PREFERRED_PATH_SEPARATOR, true))
+			return true;
+
+	return false;
 }
 
 static int

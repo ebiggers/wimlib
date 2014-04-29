@@ -83,6 +83,36 @@ canonicalize_fs_path(const tchar *fs_path)
 	return TSTRDUP(fs_path);
 }
 
+/* Collapse and translate path separators, and strip trailing slashes.  Doesn't
+ * add or delete a leading slash.
+ *
+ * @in may alias @out.
+ */
+void
+do_canonicalize_path(const tchar *in, tchar *out)
+{
+	tchar *orig_out = out;
+
+	while (*in) {
+		if (is_any_path_separator(*in)) {
+			/* Collapse multiple path separators into one  */
+			*out++ = WIM_PATH_SEPARATOR;
+			do {
+				in++;
+			} while (is_any_path_separator(*in));
+		} else {
+			/* Copy non-path-separator character  */
+			*out++ = *in++;
+		}
+	}
+
+	/* Remove trailing slash if existent  */
+	if (out - orig_out > 1 && *(out - 1) == WIM_PATH_SEPARATOR)
+		--out;
+
+	*out = T('\0');
+}
+
 /*
  * canonicalize_wim_path() - Given a user-provided path to a file within a WIM
  * image, translate it into a "canonical" path.
@@ -126,24 +156,7 @@ canonicalize_wim_path(const tchar *wim_path)
 	if (!is_any_path_separator(*in))
 		*out++ = WIM_PATH_SEPARATOR;
 
-	while (*in) {
-		if (is_any_path_separator(*in)) {
-			/* Collapse multiple path separators into one  */
-			*out++ = WIM_PATH_SEPARATOR;
-			do {
-				in++;
-			} while (is_any_path_separator(*in));
-		} else {
-			/* Copy non-path-separator character  */
-			*out++ = *in++;
-		}
-	}
-
-	/* Remove trailing slash if existent  */
-	if (*(out - 1) == WIM_PATH_SEPARATOR && (out - 1) != result)
-		--out;
-
-	*out = T('\0');
+	do_canonicalize_path(in, out);
 
 	return result;
 }

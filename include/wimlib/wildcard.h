@@ -16,19 +16,8 @@ expand_wildcard(WIMStruct *wim,
 		void *consume_dentry_ctx,
 		u32 flags);
 
-#ifdef __WIN32__
-extern int
-fnmatch(const tchar *pattern, const tchar *string, int flags);
-#  define FNM_CASEFOLD 0x1
-#  define FNM_PATHNAME 0x2
-#  define FNM_NOESCAPE 0x4
-#  define FNM_NOMATCH 1
-#else
-#  include <fnmatch.h>
-#  ifndef FNM_CASEFOLD
-#    warning "FNM_CASEFOLD not defined!"
-#    define FNM_CASEFOLD 0
-#  endif
-#endif
+extern bool
+match_path(const tchar *path, size_t path_nchars,
+	   const tchar *wildcard, tchar path_sep, bool prefix_ok);
 
 #endif /* _WIMLIB_WILDCARD_H  */

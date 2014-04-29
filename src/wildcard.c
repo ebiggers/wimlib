@@ -32,6 +32,7 @@
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
+#include "wimlib/paths.h"
 #include "wimlib/wildcard.h"
 
 struct match_dentry_ctx {
@@ -44,16 +45,6 @@ struct match_dentry_ctx {
 	bool case_insensitive;
 };
 
-#define PLATFORM_SUPPORTS_FNMATCH
-
-#ifdef __WIN32__
-/* PathMatchSpec() could provide a fnmatch() alternative, but it isn't
- * documented properly, nor does it work properly.  For example, it returns that
- * any name matches *.* even if that name doesn't actually contain a period.  */
-#  undef PLATFORM_SUPPORTS_FNMATCH
-#endif
-
-#ifndef PLATFORM_SUPPORTS_FNMATCH
 static bool
 do_match_wildcard(const tchar *string, size_t string_len,
 		  const tchar *wildcard, size_t wildcard_len,
@@ -88,30 +79,86 @@ do_match_wildcard(const tchar *string, size_t string_len,
 		}
 	}
 }
-#endif /* ! PLATFORM_SUPPORTS_FNMATCH  */
 
 static bool
-match_wildcard(const tchar *string, tchar *wildcard,
+match_wildcard(const tchar *string, const tchar *wildcard,
 	       size_t wildcard_len, bool ignore_case)
 {
-#ifdef PLATFORM_SUPPORTS_FNMATCH
-	char orig;
-	int ret;
-	int flags = FNM_NOESCAPE;
-	if (ignore_case)
-		flags |= FNM_CASEFOLD;
-
-	orig = wildcard[wildcard_len];
-	wildcard[wildcard_len] = T('\0');
-
-	ret = fnmatch(wildcard, string, flags);
-
-	wildcard[wildcard_len] = orig;
-	return (ret == 0);
-#else
 	return do_match_wildcard(string, tstrlen(string),
 				 wildcard, wildcard_len, ignore_case);
-#endif
+}
+
+/*
+ * Determines whether a path matches a wildcard pattern.
+ *
+ * @path
+ *	The path to match.  Assumptions:  All path separators must be @path_sep,
+ *	there cannot be consecutive path separators, there cannot be a trailing
+ *	path separator, and there must be exactly one leading path separator.
+ *
+ * @path_nchars
+ *	Number of characters in @path.
+ *
+ * @wildcard
+ *	The wildcard pattern to match.  It can contain the wildcard characters
+ *	'*' and '?'.  The former matches zero or more characters except
+ *	@path_sep, and the latter matches any character except @path_sep.  All
+ *	path separators in the pattern must be @path_sep, and there cannot be
+ *	consecutive path separators, and there cannot be a trailing path
+ *	separator.  If there is a leading path separator, the match is attempted
+ *	with the filename only; otherwise, the matchis attempted with the whole
+ *	path.
+ *
+ * @path_sep
+ *	Path separator character in @path and @wildcard.
+ *
+ * @prefix_ok
+ *	If %true, allow a prefix of @path, terminated by a path separator, to
+ *	match, in addition to @path itself.  a.k.a. also return true if the
+ *	wildcard actually matches one of the ancestor directories of @path.
+ *
+ * Returns %true if there was a match; %false if there was not.
+ */
+bool
+match_path(const tchar *path, size_t path_nchars,
+	   const tchar *wildcard, tchar path_sep, bool prefix_ok)
+{
+	if (*wildcard != path_sep) {
+		/* Pattern doesn't begin with path separator.  Try to match the
+		 * file name only.  */
+		return match_wildcard(path_basename_with_len(path, path_nchars),
+				      wildcard, tstrlen(wildcard),
+				      default_ignore_case);
+	} else {
+		/* Pattern begins with path separator.  Try to match the whole
+		 * path.  */
+		do {
+			if (!*wildcard) {
+				/* Path has more components than pattern  */
+				return prefix_ok;
+			}
+
+			size_t path_component_len = 0;
+			size_t wildcard_component_len = 0;
+
+			do {
+				path_component_len++;
+			} while (path[path_component_len] != path_sep &&
+				 path[path_component_len] != T('\0'));
+			do {
+				wildcard_component_len++;
+			} while (wildcard[wildcard_component_len] != path_sep &&
+				 wildcard[wildcard_component_len] != T('\0'));
+			if (!do_match_wildcard(path, path_component_len,
+					       wildcard, wildcard_component_len,
+					       default_ignore_case))
+				return false;
+			path += path_component_len;
+			wildcard += wildcard_component_len;
+		} while (*path);
+
+		return (*wildcard == '\0');
+	}
 }
 
 static int

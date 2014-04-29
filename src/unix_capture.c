@@ -209,7 +209,10 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	struct wim_inode *inode = NULL;
 	struct stat stbuf;
 
-	if (exclude_path(path, path_len, params->config, true)) {
+	if (exclude_path(path + params->capture_root_nchars,
+			 path_len - params->capture_root_nchars,
+			 params->config))
+	{
 		ret = 0;
 		goto out_progress;
 	}
@@ -356,6 +359,8 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 	if (!path_buf)
 		return WIMLIB_ERR_NOMEM;
 	memcpy(path_buf, root_disk_path, path_len + 1);
+
+	params->capture_root_nchars = path_len;
 
 	ret = unix_build_dentry_tree_recursive(root_ret, path_buf,
 					       path_len, params);

@@ -536,7 +536,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode = NULL;
 
-	if (exclude_path(path, path_len, params->config, false)) {
+	if (exclude_path(path, path_len, params->config)) {
 		/* Exclude a file or directory tree based on the capture
 		 * configuration file.  */
 		ret = 0;

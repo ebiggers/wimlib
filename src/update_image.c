@@ -849,9 +849,6 @@ execute_add_command(struct update_command_journal *j,
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &params.progress);
 
-	config.prefix = fs_source_path;
-	config.prefix_num_tchars = tstrlen(fs_source_path);
-
 	if (WIMLIB_IS_WIM_ROOT_PATH(wim_target_path))
 		params.add_flags |= WIMLIB_ADD_FLAG_ROOT;
 	ret = (*capture_tree)(&branch, fs_source_path, &params);

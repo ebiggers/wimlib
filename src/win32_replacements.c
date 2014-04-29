@@ -189,16 +189,6 @@ err_set_errno:
 	return -1;
 }
 
-/* Replacement for POSIX fnmatch() (partial functionality only) */
-int
-fnmatch(const wchar_t *pattern, const wchar_t *string, int flags)
-{
-	if (PathMatchSpecW(string, pattern))
-		return 0;
-	else
-		return FNM_NOMATCH;
-}
-
 /* truncate() replacement */
 int
 win32_truncate_replacement(const wchar_t *path, off_t size)

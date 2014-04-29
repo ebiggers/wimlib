@@ -81,10 +81,11 @@ mangle_pat(tchar *pat, const tchar *path, unsigned long line_no)
 			 * relative to the current working directory on the c:
 			 * drive.  We require paths with drive letters to be
 			 * absolute. */
-			ERROR("%"TS":%lu: Invalid path \"%"TS"\"; paths including "
-			      "drive letters must be absolute!\n"
-			      "        Maybe try \"%"TC":\\%"TS"\"?",
-			      path, line_no, pat, pat[0], &pat[2]);
+			ERROR("%"TS":%lu: Invalid pattern \"%"TS"\":\n"
+			      "        Patterns including drive letters must be absolute!\n"
+			      "        Maybe try \"%"TC":%"TC"%"TS"\"?\n",
+			      path, line_no, pat,
+			      pat[0], OS_PREFERRED_PATH_SEPARATOR, &pat[2]);
 			return WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
 		}
 
@@ -96,11 +97,24 @@ mangle_pat(tchar *pat, const tchar *path, unsigned long line_no)
 		tmemmove(pat, pat + 2, tstrlen(pat + 2) + 1);
 	}
 
-	/* Translate all possible path separators into the operating system's
-	 * preferred path separator.  */
-	for (tchar *p = pat; *p; p++)
-		if (is_any_path_separator(*p))
-			*p = OS_PREFERRED_PATH_SEPARATOR;
+	/* Collapse and translate path separators.
+	 *
+	 * Note: we require that this works for filesystem paths and WIM paths,
+	 * so the desired path separators must be the same.  */
+	BUILD_BUG_ON(OS_PREFERRED_PATH_SEPARATOR != WIM_PATH_SEPARATOR);
+	do_canonicalize_path(pat, pat);
+
+	/* Relative patterns can only match file names.  */
+	if (pat[0] != OS_PREFERRED_PATH_SEPARATOR &&
+	    tstrchr(pat, OS_PREFERRED_PATH_SEPARATOR))
+	{
+		ERROR("%"TS":%lu: Invalid path \"%"TS"\":\n"
+		      "        Relative patterns can only include one path component!\n"
+		      "        Maybe try \"%"TC"%"TS"\"?",
+		      path, line_no, pat, OS_PREFERRED_PATH_SEPARATOR, pat);
+		return WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+	}
+
 	return 0;
 }
 
@@ -109,7 +123,12 @@ do_read_capture_config_file(const tchar *config_file, const void *buf,
 			    size_t bufsize, struct capture_config *config)
 {
 	int ret;
+
+	/* [PrepopulateList] is used for apply, not capture.  But since we do
+	 * understand it, recognize it (avoiding unrecognized section warning)
+	 * and discard the strings.  */
 	STRING_SET(prepopulate_pats);
+
 	struct text_file_section sections[] = {
 		{T("ExclusionList"),
 			&config->exclusion_pats},
@@ -141,68 +160,48 @@ destroy_capture_config(struct capture_config *config)
 }
 
 bool
-match_pattern(const tchar *path,
-	      const tchar *path_basename,
-	      const struct string_set *list)
+match_pattern_list(const tchar *path, size_t path_len,
+		   const struct string_set *list)
 {
-	for (size_t i = 0; i < list->num_strings; i++) {
-
-		const tchar *pat = list->strings[i];
-		const tchar *string;
-
-		if (*pat == OS_PREFERRED_PATH_SEPARATOR) {
-			/* Absolute path from root of capture */
-			string = path;
-		} else {
-			if (tstrchr(pat, OS_PREFERRED_PATH_SEPARATOR))
-				/* Relative path from root of capture */
-				string = path + 1;
-			else
-				/* A file name pattern */
-				string = path_basename;
-		}
-
-		/* Warning: on Windows native builds, fnmatch() calls the
-		 * replacement function in win32.c. */
-		if (fnmatch(pat, string, FNM_PATHNAME | FNM_NOESCAPE
-				#ifdef FNM_CASEFOLD
-					| FNM_CASEFOLD
-				#endif
-			    ) == 0)
-		{
-			DEBUG("\"%"TS"\" matches the pattern \"%"TS"\"",
-			      string, pat);
+	for (size_t i = 0; i < list->num_strings; i++)
+		if (match_path(path, path_len, list->strings[i],
+			       OS_PREFERRED_PATH_SEPARATOR, true))
 			return true;
-		}
-	}
 	return false;
 }
 
-/* Return true if the image capture configuration file indicates we should
+/*
+ * Return true if the image capture configuration file indicates we should
  * exclude the filename @path from capture.
  *
- * If @exclude_prefix is %true, the part of the path up and including the name
- * of the directory being captured is not included in the path for matching
- * purposes.  This allows, for example, a pattern like /hiberfil.sys to match a
- * file /mnt/windows7/hiberfil.sys if we are capturing the /mnt/windows7
- * directory.
+ * The passed in @path must be given relative to the root of the capture, but
+ * with a leading path separator.  For example, if the file "in/file" is being
+ * tested and the library user ran wimlib_add_image(wim, "in", ...), then the
+ * directory "in" is the root of the capture and the path should be specified as
+ * "/file".
+ *
+ * Also, all path separators in @path must be OS_PREFERRED_PATH_SEPARATOR, and
+ * there cannot be trailing slashes.
+ *
+ * As a special case, the empty string will be interpreted as a single path
+ * separator.
  */
 bool
-exclude_path(const tchar *path, size_t path_len,
-	     const struct capture_config *config, bool exclude_prefix)
+exclude_path(const tchar *path, size_t path_nchars,
+	     const struct capture_config *config)
 {
+	tchar dummy[2];
+
 	if (!config)
 		return false;
-	const tchar *basename = path_basename_with_len(path, path_len);
-	if (exclude_prefix) {
-		wimlib_assert(path_len >= config->prefix_num_tchars);
-		if (!tmemcmp(config->prefix, path, config->prefix_num_tchars) &&
-		    path[config->prefix_num_tchars] == OS_PREFERRED_PATH_SEPARATOR)
-		{
-			path += config->prefix_num_tchars;
-		}
+
+	if (!*path) {
+		dummy[0] = OS_PREFERRED_PATH_SEPARATOR;
+		dummy[1] = T('\0');
+		path = dummy;
 	}
-	return match_pattern(path, basename, &config->exclusion_pats) &&
-		!match_pattern(path, basename, &config->exclusion_exception_pats);
+
+	return match_pattern_list(path, path_nchars, &config->exclusion_pats) &&
+	      !match_pattern_list(path, path_nchars, &config->exclusion_exception_pats);
 
 }

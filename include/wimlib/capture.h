@@ -15,8 +15,6 @@ struct wim_inode;
 struct capture_config {
 	struct string_set exclusion_pats;
 	struct string_set exclusion_exception_pats;
-	tchar *prefix;
-	size_t prefix_num_tchars;
 	void *buf;
 };
 
@@ -47,14 +45,17 @@ struct add_image_params {
 	 * libntfs-3g capture.  */
 	void *extra_arg;
 
-	u64 capture_root_ino;
-	u64 capture_root_dev;
 
 	/* If non-NULL, the user-supplied progress function. */
 	wimlib_progress_func_t progress_func;
 
 	/* Progress data.  */
 	union wimlib_progress_info progress;
+
+	/* Can be used by the capture implementation.  */
+	u64 capture_root_ino;
+	u64 capture_root_dev;
+	size_t capture_root_nchars;
 };
 
 
@@ -75,15 +76,12 @@ extern void
 destroy_capture_config(struct capture_config *config);
 
 extern bool
-match_pattern(const tchar *path,
-	      const tchar *path_basename,
-	      const struct string_set *list);
+match_pattern_list(const tchar *path, size_t path_nchars,
+		   const struct string_set *list);
 
 extern bool
 exclude_path(const tchar *path, size_t path_len,
-	     const struct capture_config *config,
-	     bool exclude_prefix);
-
+	     const struct capture_config *config);
 
 typedef int (*capture_tree_t)(struct wim_dentry **, const tchar *,
 			      struct add_image_params *);
