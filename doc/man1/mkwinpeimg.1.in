@@ -24,7 +24,8 @@ required so that the FAT filesystem can be created without root privileges.
 .PP
 The other type of bootable image that \fBmkwinpeimg\fR can make is a bootable
 ISO image.  To make this type of image, give the \fB--iso\fR option.
-\fBmkisofs\fR(1) is required to make this type of image.
+\fBmkisofs\fR(1) is required to make this type of image.  In \fB--iso\fR mode,
+you can specify \fIIMAGE\fR as "-" to write the ISO image to standard output.
 .PP
 If you make a disk image, you could put it on a USB drive, and if you make an
 ISO image, you could put it on a CD.  In addition, both types of images can be

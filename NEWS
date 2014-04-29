@@ -14,6 +14,9 @@ Version 1.6.3-BETA:
 	Fixed reading out-of-order entries in lookup table of version 3584 WIM /
 	ESD files.
 
+	The 'mkwinpeimg' script now supports writing the ISO image to standard
+	output.
+
 	The shared library version has been bumped up; however, there are only a
 	few incompatibilities:
 

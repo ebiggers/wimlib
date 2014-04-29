@@ -256,7 +256,7 @@ EOF
 
 check_needed_programs() {
 	if [ -z "$waik_dir" -o -n "$modify_wim" ]; then
-		if ! type -P @IMAGEX_PROGNAME@ &> /dev/null ; then
+		if ! type -P "$imagex" &> /dev/null ; then
 			cat << EOF
 ERROR: To make a customized image of Windows PE, we need the "$imagex" program
 from "wimlib" so that we can modify the boot.wim file.  However, "$imagex"
@@ -446,7 +446,7 @@ make_iso_img() {
 
 	mkisofs -sysid ""  -A ""  -V "Microsoft Windows PE ($arch)"  -d -N \
 		-b etfsboot.com  -no-emul-boot   -c boot.cat  -hide etfsboot.com  \
-		-hide boot.cat -quiet -o "$image" "$tmp_dir" || stat_fail
+		-hide boot.cat -quiet -o "$image" "$tmp_dir" 1>&4 || stat_fail
 
 	stat_done
 }
@@ -506,6 +506,22 @@ make_disk_img() {
 calc_columns
 tmp_dir="$(mktemp -d)"
 process_command_line "$@"
+
+if [ "$image" = "-" ] ; then
+	# Writing image to standard output
+	if [ "$make" != iso ]; then
+		echo "ERROR: Writing image to standard output is only supported in --iso mode!"
+		exit 1
+	fi
+	# We can't print anything to standard output except the ISO image
+	# itself.  Play with the file descriptors.
+
+	exec 4>&1  # 4 is now the original standard output.
+	exec 1>&2  # Anything that goes to standard output now, by default,
+		   # actually goes to standard error.
+else
+	exec 4>&1  # 4 is now a copy of standard output
+fi
 if [ -z "$waik_dir" ]; then
 	find_windows_dir
 fi
@@ -538,4 +554,6 @@ elif [ $make = disk ]; then
 	make_disk_img "$image"
 fi
 
-echo "The image ($image) is $(stat -c %s "$image") bytes."
+if [ "$image" != "-" ]; then
+	echo "The image ($image) is $(stat -c %s "$image") bytes."
+fi
