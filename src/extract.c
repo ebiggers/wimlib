@@ -2529,6 +2529,18 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 			goto out_destroy_stream_list;
 		}
 		ctx.realtarget_nchars = tstrlen(ctx.realtarget);
+	#ifdef __WIN32__
+	       /* Strip trailing slashes.  If we don't do this, we may create a
+		* path with multiple consecutive backslashes, which for some
+		* reason causes Windows to report that the file cannot be found.
+		*/
+		while (ctx.realtarget_nchars >= 2
+		       && ctx.realtarget[ctx.realtarget_nchars - 1] == L'\\'
+		       && ctx.realtarget[ctx.realtarget_nchars - 2] != L':')
+		{
+			ctx.realtarget[--ctx.realtarget_nchars] = L'\0';
+		}
+	#endif
 	}
 
 	if (progress_func) {

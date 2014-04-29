@@ -1411,6 +1411,16 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		wmemcpy(path, root_disk_path, path_nchars + 1);
 	}
 
+       /* Strip trailing slashes.  If we don't do this, we may create a path
+	* with multiple consecutive backslashes, which for some reason causes
+	* Windows to report that the file cannot be found.  */
+	while (path_nchars >= 2 &&
+	       path[path_nchars - 1] == L'\\' &&
+	       path[path_nchars - 2] != L':')
+	{
+		path[--path_nchars] = L'\0';
+	}
+
 	params->capture_root_nchars = path_nchars;
 
 	memset(&state, 0, sizeof(state));
