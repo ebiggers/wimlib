@@ -811,10 +811,10 @@ read_wim_lookup_table(WIMStruct *wim)
 		 *   wimlib does not currently allow create WIMs with multiple
 		 *   packed resources, as to remain compatible with WIMGAPI.)
 		 */
-		if (likely(!(reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS))
-		    || !cur_rspec
-		    || (reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER &&
-			cur_rspec->size_in_wim != 0))
+		if (likely(!cur_rspec) ||
+		    !(reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) ||
+		      (reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER &&
+		       cur_rspec->size_in_wim != 0))
 		{
 			/* Finish previous resource (if existent)  */
 			if (cur_rspec) {
@@ -974,6 +974,7 @@ read_wim_lookup_table(WIMStruct *wim)
 			cur_entry->offset_in_res = 0;
 			cur_entry->size = reshdr.uncompressed_size;
 			cur_entry->flags = reshdr.flags;
+			cur_rspec = NULL;
 		}
 		continue;
 
