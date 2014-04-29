@@ -431,16 +431,27 @@ win32_extract_unnamed_stream(file_spec_t file,
 	    && lte
 	    && lte->resource_location == RESOURCE_IN_WIM
 	    && lte->rspec->wim == ctx->wim
-	    && lte->size == lte->rspec->uncompressed_size
-	    && !in_prepopulate_list(dentry, ctx))
+	    && lte->size == lte->rspec->uncompressed_size)
 	{
-		const struct win32_apply_private_data *dat;
+		if (in_prepopulate_list(dentry, ctx)) {
+			if (ctx->progress_func) {
+				union wimlib_progress_info info;
 
-		dat = get_private_data(ctx);
-		return wimboot_set_pointer(file.path, lte,
-					   dat->data_source_id,
-					   dat->wim_lookup_table_hash,
-					   dat->wof_running);
+				info.wimboot_exclude.path_in_wim = dentry->_full_path;
+				info.wimboot_exclude.extraction_path = file.path;
+
+				ctx->progress_func(WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE,
+						   &info);
+			}
+		} else {
+			const struct win32_apply_private_data *dat;
+
+			dat = get_private_data(ctx);
+			return wimboot_set_pointer(file.path, lte,
+						   dat->data_source_id,
+						   dat->wim_lookup_table_hash,
+						   dat->wof_running);
+		}
 	}
 
 	return win32_extract_stream(file.path, NULL, 0, lte, ctx);

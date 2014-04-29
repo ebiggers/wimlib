@@ -1208,6 +1208,10 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		imagex_printf(T("Updating \"%"TS"\" in WIM image\n"),
 			      info->replace.path_in_wim);
 		break;
+	case WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE:
+		imagex_printf(T("\nExtracting \"%"TS"\" as normal file (not WIMBoot pointer)\n"),
+			      info->wimboot_exclude.path_in_wim);
+		break;
 	default:
 		break;
 	}

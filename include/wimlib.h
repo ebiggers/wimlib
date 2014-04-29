@@ -576,9 +576,18 @@ enum wimlib_progress_msg {
 
 	/** A file in the WIM image is being replaced as a result of a
 	 * ::wimlib_add_command without ::WIMLIB_ADD_FLAG_NO_REPLACE specified.
-	 * This is only received when ::WIMLIB_ADD_FLAG_VERBOSE is also
-	 * specified in the add command.  */
+	 * @p info will point to ::wimlib_progress_info.replace.  This is only
+	 * received when ::WIMLIB_ADD_FLAG_VERBOSE is also specified in the add
+	 * command.  */
 	WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM,
+
+	/** A WIM image is being applied with ::WIMLIB_EXTRACT_FLAG_WIMBOOT, and
+	 * a file is being extracted normally (not as a WIMBoot "pointer file")
+	 * due to it matching a pattern in the [PrepopulateList] section of the
+	 * configuration file \Windows\System32\WimBootCompress.ini in the WIM
+	 * image.  @info will point to ::wimlib_progress_info.wimboot_exclude.
+	 */
+	WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE,
 };
 
 /** A pointer to this union is passed to the user-supplied
@@ -930,6 +939,15 @@ union wimlib_progress_info {
 		/** Path to the file in the WIM image that is being replaced  */
 		const wimlib_tchar *path_in_wim;
 	} replace;
+
+	/** Valid on messages ::WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE  */
+	struct wimlib_progress_info_wimboot_exclude {
+		/** Path to the file in the WIM image  */
+		const wimlib_tchar *path_in_wim;
+
+		/** Path to which the file is being extracted  */
+		const wimlib_tchar *extraction_path;
+	} wimboot_exclude;
 };
 
 /** A user-supplied function that will be called periodically during certain WIM
