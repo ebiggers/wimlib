@@ -148,7 +148,7 @@ process_command_line() {
 			windows_dir="$2"
 			windows_dir_specified=yes
 			if [ -n "$waik_dir" ]; then
-				echo "ERROR: Cannot specify both --windows-dir and --waik-dir!"
+				echo 1>&2 "ERROR: Cannot specify both --windows-dir and --waik-dir!"
 				exit 1
 			fi
 			shift
@@ -156,7 +156,7 @@ process_command_line() {
 		-A|--waik-dir)
 			waik_dir="$2"
 			if [ -n "$windows_dir" ]; then
-				echo "ERROR: Cannot specify both --windows-dir and --waik-dir!"
+				echo 1>&2 "ERROR: Cannot specify both --windows-dir and --waik-dir!"
 				exit 1
 			fi
 			shift
@@ -192,7 +192,7 @@ process_command_line() {
 				arch="AMD64"
 				arch_id="3"
 			else
-				echo "ERROR: $2 is not a valid arch (x86/amd64)"
+				echo 1>&2 "ERROR: $2 is not a valid arch (x86/amd64)"
 				exit 1
 			fi
 			shift
@@ -209,7 +209,7 @@ process_command_line() {
 			break
 			;;
 		*)
-			echo "Invalid option \"$1\""
+			echo 1>&2 "Invalid option \"$1\""
 			usage
 			exit 1
 			;;
@@ -218,8 +218,8 @@ process_command_line() {
 	done
 
 	if [ $# -ne 1 ]; then
-		echo "You must specify the name of the image file to create!"
-		echo "Run \"$script_name -h\" to see usage information."
+		echo 1>&2 "You must specify the name of the image file to create!"
+		echo 1>&2 "Run \"$script_name -h\" to see usage information."
 		exit 1
 	else
 		image="$1"
@@ -236,17 +236,17 @@ find_windows_dir() {
 	fi
 	if [ ! -d "$windows_dir" ]; then
 		if [ -z "$windows_dir_specified" ]; then
-			cat << EOF
+			cat 1>&2 << EOF
 ERROR: Could not find the directory that the Windows 7 or 8 ISO image is mounted
 on!  Please specify this directory using the --windows-dir option.
 EOF
 		else
-			echo "ERROR: Could not find the directory \"$windows_dir\"!"
+			echo 1>&2 "ERROR: Could not find the directory \"$windows_dir\"!"
 		fi
 		exit 1
 	fi
 	if [ ! -d "$windows_dir/sources" ]; then
-		cat << EOF
+		cat 1>&2 << EOF
 ERROR: The directory "$windows_dir" exists, but it seems that the Windows 7 or 8
 ISO image is not mounted on it.  Please mount the image to continue.
 EOF
@@ -257,7 +257,7 @@ EOF
 check_needed_programs() {
 	if [ -z "$waik_dir" -o -n "$modify_wim" ]; then
 		if ! type -P "$imagex" &> /dev/null ; then
-			cat << EOF
+			cat 1>&2 << EOF
 ERROR: To make a customized image of Windows PE, we need the "$imagex" program
 from "wimlib" so that we can modify the boot.wim file.  However, "$imagex"
 doesn't seem to be installed.  Please install "wimlib" to continue.
@@ -268,7 +268,7 @@ EOF
 
 	if [ $make = iso ]; then
 		if ! type -P mkisofs &> /dev/null ; then
-			cat << EOF
+			cat 1>&2 << EOF
 ERROR: To make a bootable ISO image of Windows PE, we need the "mkisofs"
 program, but it doesn't seem to be installed.  Please install the "cdrkit"
 package to continue, or try omitting the --iso option to make a disk image
@@ -278,7 +278,7 @@ EOF
 		fi
 	elif [ $make = disk ] ; then
 		if ! type -P syslinux &> /dev/null ; then
-			cat << EOF
+			cat 1>&2 << EOF
 ERROR: To make a bootable disk image of Windows PE, we need the "syslinux"
 program, but it doesn't seem to be installed.  Please install the "syslinux"
 package to continue, or try using the --iso option to make an ISO image instead
@@ -288,7 +288,7 @@ EOF
 		fi
 
 		if ! type -P mformat mcopy &> /dev/null; then
-			cat << EOF
+			cat 1>&2 << EOF
 ERROR: To make a bootable disk image of Windows PE, we need the "mformat" and
 "mcopy" programs from the "mtools" package.  These programs allow us to
 format a FAT filesystem and copy files to it without needing root privileges.
@@ -300,7 +300,7 @@ EOF
 
 	if [ -n "$waik_dir" ] &&  [ -f "$waik_dir"/wAIK${arch}.msi ]; then
 		if ! type -P cabextract &> /dev/null ; then
-			cat << EOF
+			cat 1>&2 << EOF
 ERROR: The boot files in the Windows Automated Installation Kit (WAIK) are
 inside cabinet archives.  To extract these files, we need the "cabextract"
 program, but it doesn't seem to be installed.  Please install "cabextract" to
@@ -510,7 +510,7 @@ process_command_line "$@"
 if [ "$image" = "-" ] ; then
 	# Writing image to standard output
 	if [ "$make" != iso ]; then
-		echo "ERROR: Writing image to standard output is only supported in --iso mode!"
+		echo 1>&2 "ERROR: Writing image to standard output is only supported in --iso mode!"
 		exit 1
 	fi
 	# We can't print anything to standard output except the ISO image
