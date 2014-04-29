@@ -974,7 +974,10 @@ read_wim_lookup_table(WIMStruct *wim)
 			cur_entry->offset_in_res = 0;
 			cur_entry->size = reshdr.uncompressed_size;
 			cur_entry->flags = reshdr.flags;
+			ret = validate_resource(cur_rspec);
 			cur_rspec = NULL;
+			if (ret)
+				goto out;
 		}
 		continue;
 
