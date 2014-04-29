@@ -100,8 +100,8 @@ Split a standalone WIM into multiple parts (\fB@IMAGEX_PROGNAME@ split\fR)
 Easily remove wasted space in a WIM file and optionally recompress it (\fB
 @IMAGEX_PROGNAME@ optimize\fR)
 .IP \[bu]
-Support for all WIM compression types, both compression and decompression (LZX,
-XPRESS, and none)
+Support for all WIM compression types, both compression and decompression
+(XPRESS, LZX, LZMS, and None).
 .IP \[bu]
 WIM integrity table is supported (\fB--check\fR option to many commands)
 .SH DIFFERENCES FROM MICROSOFT IMAGEX
