@@ -32,6 +32,7 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/assert.h"
 #include "wimlib/compiler.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/compress_common.h"
