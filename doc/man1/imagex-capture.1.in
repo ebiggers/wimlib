@@ -280,9 +280,9 @@ image.
 to, rather than archiving the links themselves.
 .TP
 \fB--config\fR=\fIFILE\fR
-Specifies a configuration file (UTF-8 or UTF-16LE encoded) for capturing the new
-image.  The configuration file specifies files that are to be treated specially
-during the image capture.
+Specifies a configuration file (UTF-8 or UTF-16LE encoded; plain ASCII also
+works) for capturing the new image.  The configuration file specifies files that
+are to be treated specially during the image capture.
 .IP ""
 The format of the configuration file is INI-style; that is, it is arranged in
 bracketed sections.  Currently, only the following sections are recognized:
@@ -294,32 +294,26 @@ a directory is matched, both the directory and its contents are excluded.
 [ExclusionException] --- contains a list of path globs to include in the
 capture, even when the file or directory also matches a glob in [ExclusionList].
 .IP \[bu]
-[PrepopulateList] --- this does not affect capture, but if the image is
-applied later with \fB--wimboot\fR, these are globs of files that shall be
-extracted normally, not as WIMBoot "pointer files".  Note that these globs do
-\fInot\fR match recursively; so, for example, you may want to use \\Boot\\* and
-\\Boot\\*\\* rather than simply \\Boot.
+[PrepopulateList] --- this does not affect capture, but if the image is applied
+later with \fB--wimboot\fR, these are globs of files that shall be extracted
+normally, not as WIMBoot "pointer files".  If a directory is matched, all files
+and subdirectories are also matched recursively.
 .RE
 .IP ""
 Any unrecognized sections will be ignored, with a warning printed.  Sections
 dealing with compression (e.g. [CompressionExclusion]) are not particularly
 important.
 .IP ""
-Relative globs with only one path component (e.g. *.mp3) match against a
-filename in any directory.  Relative globs with multiple path components (e.g.
-dir/file), as well as absolute globs (e.g. /dir/file), are treated as paths
-starting at the root directory of capture, or the root of the NTFS volume for
-NTFS volume capture mode.
+Path globs may contain the '*' and '?' meta-characters.  Relative globs (e.g.
+*.mp3) match against a filename in any directory.  Absolute globs (e.g.
+/dir/file), are treated as paths starting at the main directory being captured,
+or the root of the NTFS volume for NTFS volume capture mode.  Do not use drive
+letters in the paths; they will be ignored.  Path separators may be either
+forwards slashes or backwards slashes.
 .IP ""
-For compatibility with Windows, the path separators in the globs may be either
-forward slashes or backslashes, and the line separators may be either UNIX-style
-or DOS-style.  Trailing and leading whitespace is ignored.  Lines beginning with
-the '#' or ';' characters are treated as comments and ignored.  Globs with
-whitespace in them need not be quoted, unless the whitespace is leading or
-trailing.  Both double and single quotes are accepted.
-.IP ""
-Paths may not have drive letters in them, as they are all relative to the root
-of capture and not absolute external paths.
+Lines beginning with the '#' or ';' characters are treated as comments and
+ignored.  Globs with whitespace in them need not be quoted; however, if they
+are, both double and single quotes are accepted.
 .IP ""
 If this option is not specified the following default configuration file is
 used:
