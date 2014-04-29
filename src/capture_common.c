@@ -199,6 +199,7 @@ exclude_path(const tchar *path, size_t path_nchars,
 		dummy[0] = OS_PREFERRED_PATH_SEPARATOR;
 		dummy[1] = T('\0');
 		path = dummy;
+		path_nchars = 1;
 	}
 
 	return match_pattern_list(path, path_nchars, &config->exclusion_pats) &&

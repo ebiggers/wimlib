@@ -80,7 +80,7 @@ match_pattern_list(const tchar *path, size_t path_nchars,
 		   const struct string_set *list);
 
 extern bool
-exclude_path(const tchar *path, size_t path_len,
+exclude_path(const tchar *path, size_t path_nchars,
 	     const struct capture_config *config);
 
 typedef int (*capture_tree_t)(struct wim_dentry **, const tchar *,

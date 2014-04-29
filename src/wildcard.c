@@ -106,16 +106,17 @@ match_wildcard(const tchar *string, const tchar *wildcard,
  *	path separators in the pattern must be @path_sep, and there cannot be
  *	consecutive path separators, and there cannot be a trailing path
  *	separator.  If there is a leading path separator, the match is attempted
- *	with the filename only; otherwise, the matchis attempted with the whole
+ *	with the filename only; otherwise, the match is attempted with the whole
  *	path.
  *
  * @path_sep
- *	Path separator character in @path and @wildcard.
+ *	Path separator character used in @path and @wildcard.
  *
  * @prefix_ok
  *	If %true, allow a prefix of @path, terminated by a path separator, to
- *	match, in addition to @path itself.  a.k.a. also return true if the
- *	wildcard actually matches one of the ancestor directories of @path.
+ *	match the pattern, in addition to @path itself.  In other words, return
+ *	%true if the pattern actually matches one of the ancestor directories of
+ *	@path.
  *
  * Returns %true if there was a match; %false if there was not.
  */

@@ -973,7 +973,7 @@ struct wimlib_capture_source {
 	 * filesystem to be included in the WIM image. */
 	wimlib_tchar *fs_source_path;
 
-	/** Destination path in the WIM image.  Use WIMLIB_WIM_ROOT_PATH to
+	/** Destination path in the WIM image.  Use ::WIMLIB_WIM_ROOT_PATH to
 	 * specify the root directory of the WIM image.  */
 	wimlib_tchar *wim_target_path;
 
@@ -1828,7 +1828,7 @@ struct wimlib_add_command {
 	/** Filesystem path to the file or directory tree to add.  */
 	wimlib_tchar *fs_source_path;
 
-	/** Destination path in the WIM image.  Use WIMLIB_WIM_ROOT_PATH to
+	/** Destination path in the WIM image.  Use ::WIMLIB_WIM_ROOT_PATH to
 	 * specify the root directory of the WIM image.  */
 	wimlib_tchar *wim_target_path;
 
