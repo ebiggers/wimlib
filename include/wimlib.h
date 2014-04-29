@@ -392,6 +392,15 @@ typedef char wimlib_tchar;
 #  define WIMLIB_WIM_PATH_SEPARATOR_STRING "/"
 #endif
 
+/** Use this to specify the root directory of the WIM image.  */
+#define WIMLIB_WIM_ROOT_PATH WIMLIB_WIM_PATH_SEPARATOR_STRING
+
+/** Use this to test if the specified path refers to the root directory of the
+ * WIM image.  */
+#define WIMLIB_IS_WIM_ROOT_PATH(path) \
+		((path)[0] == WIMLIB_WIM_PATH_SEPARATOR &&	\
+		 (path)[1] == 0)
+
 #ifdef __GNUC__
 #  define _wimlib_deprecated __attribute__((deprecated))
 #else
@@ -702,10 +711,7 @@ union wimlib_progress_info {
 		union {
 			/** Target path in the WIM image.  Only valid on
 			 * messages ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN and
-			 * ::WIMLIB_PROGRESS_MSG_SCAN_END.  If capturing a full
-			 * image, this will be the empty string; otherwise it
-			 * will name the place in the WIM image at which the
-			 * directory tree is being added.  */
+			 * ::WIMLIB_PROGRESS_MSG_SCAN_END.  */
 			const wimlib_tchar *wim_target_path;
 
 			/** For ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY and a status
@@ -823,8 +829,8 @@ union wimlib_progress_info {
 		 * data stream, or a reparse data buffer.  */
 		uint64_t num_streams;
 
-		/** This will be the empty string.  */
-		const wimlib_tchar *extract_root_wim_source_path;
+		/** Reserved.  */
+		const wimlib_tchar *reserved_2;
 
 		/** Currently only used for
 		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.  */
@@ -949,9 +955,8 @@ struct wimlib_capture_source {
 	 * filesystem to be included in the WIM image. */
 	wimlib_tchar *fs_source_path;
 
-	/** Destination path in the WIM image.  Leading and trailing slashes are
-	 * ignored.  The empty string or @c NULL means the root directory of the
-	 * WIM image. */
+	/** Destination path in the WIM image.  Use WIMLIB_WIM_ROOT_PATH to
+	 * specify the root directory of the WIM image.  */
 	wimlib_tchar *wim_target_path;
 
 	/** Reserved; set to 0. */
@@ -1802,12 +1807,11 @@ enum wimlib_update_op {
 
 /** Data for a ::WIMLIB_UPDATE_OP_ADD operation. */
 struct wimlib_add_command {
-	/** Filesystem path to the file or directory tree to
-	 * add. */
+	/** Filesystem path to the file or directory tree to add.  */
 	wimlib_tchar *fs_source_path;
-	/** Path, specified from the root of the WIM image, at
-	 * which to add the file or directory tree within the
-	 * WIM image. */
+
+	/** Destination path in the WIM image.  Use WIMLIB_WIM_ROOT_PATH to
+	 * specify the root directory of the WIM image.  */
 	wimlib_tchar *wim_target_path;
 
 	/** Path to capture configuration file to use, or @c NULL for default.
@@ -1820,25 +1824,27 @@ struct wimlib_add_command {
 
 /** Data for a ::WIMLIB_UPDATE_OP_DELETE operation. */
 struct wimlib_delete_command {
-	/** Path, specified from the root of the WIM image, for
-	 * the file or directory tree within the WIM image to be
-	 * deleted. */
+
+	/** Path, specified from the root of the WIM image, for the file or
+	 * directory tree within the WIM image to be deleted.  */
 	wimlib_tchar *wim_path;
-	/** Bitwise OR of WIMLIB_DELETE_FLAG_* flags. */
+
+	/** Bitwise OR of WIMLIB_DELETE_FLAG_* flags.  */
 	int delete_flags;
 };
 
 /** Data for a ::WIMLIB_UPDATE_OP_RENAME operation. */
 struct wimlib_rename_command {
-	/** Path, specified from the root of the WIM image, for
-	 * the source file or directory tree within the WIM
-	 * image. */
+
+	/** Path, specified from the root of the WIM image, for the source file
+	 * or directory tree within the WIM image.  */
 	wimlib_tchar *wim_source_path;
-	/** Path, specified from the root of the WIM image, for
-	 * the destination file or directory tree within the WIM
-	 * image. */
+
+	/** Path, specified from the root of the WIM image, for the destination
+	 * file or directory tree within the WIM image.  */
 	wimlib_tchar *wim_target_path;
-	/** Reserved; set to 0. */
+
+	/** Reserved; set to 0.  */
 	int rename_flags;
 };
 

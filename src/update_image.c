@@ -453,20 +453,32 @@ rollback_update(struct update_command_journal *j)
 	free_update_command_journal(j);
 }
 
+/*
+ * Set the name of @branch for placing it at @target in the WIM image.  This
+ * assumes that @target is in "canonical form", as produced by
+ * canonicalize_wim_path().
+ *
+ * Note: for the root target this produces the empty name.
+ */
 static int
 set_branch_name(struct wim_dentry *branch, const utf16lechar *target)
 {
 	const utf16lechar *p;
 
+	/* Find end of string.  (We can assume it contains at least one
+	 * character, the leading slash.)   */
+	wimlib_assert(target[0] == cpu_to_le16(WIM_PATH_SEPARATOR));
 	p = target;
-	while (*p)
+	do {
 		p++;
+	} while (*p);
 
-	/* No trailing slashes allowed  */
-	wimlib_assert(p == target || *(p - 1) != cpu_to_le16(WIM_PATH_SEPARATOR));
-
-	while (p > target && *(p - 1) != cpu_to_le16(WIM_PATH_SEPARATOR))
+	while (*(p - 1) != cpu_to_le16(WIM_PATH_SEPARATOR))
 		p--;
+
+
+	/* We're assuming no trailing slashes.  */
+	wimlib_assert(*p || p == &target[1]);
 
 	return dentry_set_name_utf16le(branch, p);
 }
@@ -840,7 +852,7 @@ execute_add_command(struct update_command_journal *j,
 	config.prefix = fs_source_path;
 	config.prefix_num_tchars = tstrlen(fs_source_path);
 
-	if (wim_target_path[0] == T('\0'))
+	if (WIMLIB_IS_WIM_ROOT_PATH(wim_target_path))
 		params.add_flags |= WIMLIB_ADD_FLAG_ROOT;
 	ret = (*capture_tree)(&branch, fs_source_path, &params);
 	if (ret)
@@ -849,7 +861,7 @@ execute_add_command(struct update_command_journal *j,
 	if (progress_func)
 		progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &params.progress);
 
-	if (wim_target_path[0] == T('\0') &&
+	if (WIMLIB_IS_WIM_ROOT_PATH(wim_target_path) &&
 	    branch && !dentry_is_directory(branch))
 	{
 		ERROR("\"%"TS"\" is not a directory!", fs_source_path);
@@ -864,7 +876,7 @@ execute_add_command(struct update_command_journal *j,
 		goto out_cleanup_after_capture;
 
 	if (config_file && (add_flags & WIMLIB_ADD_FLAG_WIMBOOT) &&
-	    wim_target_path[0] == T('\0'))
+	    WIMLIB_IS_WIM_ROOT_PATH(wim_target_path))
 	{
 		params.add_flags = 0;
 		params.progress_func = NULL;
@@ -1243,12 +1255,7 @@ check_add_command(struct wimlib_update_command *cmd,
 			  WIMLIB_ADD_FLAG_NO_REPLACE))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	/* Are we adding the entire image or not?  An empty wim_target_path
-	 * indicates that the tree we're adding is to be placed in the root of
-	 * the image.  We consider this to be capturing the entire image,
-	 * although it could potentially be an overlay on an existing root as
-	 * well. */
-	bool is_entire_image = cmd->add.wim_target_path[0] == T('\0');
+	bool is_entire_image = WIMLIB_IS_WIM_ROOT_PATH(cmd->add.wim_target_path);
 
 #ifdef __WIN32__
 	/* Check for flags not supported on Windows */

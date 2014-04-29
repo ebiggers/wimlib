@@ -48,14 +48,10 @@
 
 #ifdef __WIN32__
 #  include "imagex-win32.h"
-#  define OS_PREFERRED_PATH_SEPARATOR L'\\'
-#  define OS_PREFERRED_PATH_SEPARATOR_STRING L"\\"
 #  define print_security_descriptor     win32_print_security_descriptor
 #else /* __WIN32__ */
 #  include <getopt.h>
 #  include <langinfo.h>
-#  define OS_PREFERRED_PATH_SEPARATOR '/'
-#  define OS_PREFERRED_PATH_SEPARATOR_STRING "/"
 #  define print_security_descriptor	default_print_security_descriptor
 static inline void set_fd_to_binary_mode(int fd)
 {
@@ -1067,12 +1063,11 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		break;
 	case WIMLIB_PROGRESS_MSG_SCAN_BEGIN:
 		imagex_printf(T("Scanning \"%"TS"\""), info->scan.source);
-		if (*info->scan.wim_target_path) {
-			imagex_printf(T(" (loading as WIM path: "
-				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING"%"TS"\")...\n"),
-			       info->scan.wim_target_path);
-		} else {
+		if (WIMLIB_IS_WIM_ROOT_PATH(info->scan.wim_target_path)) {
 			imagex_printf(T("\n"));
+		} else {
+			imagex_printf(T(" (loading as WIM path: \"%"TS"\")...\n"),
+				      info->scan.wim_target_path);
 		}
 		memset(&last_scan_progress, 0, sizeof(last_scan_progress));
 		break;
@@ -1141,17 +1136,6 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			 T("NTFS volume") : T("directory")),
 			info->extract.target);
 		break;
-	case WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN:
-		if (info->extract.extract_root_wim_source_path[0]) {
-			imagex_printf(T("Extracting \"%"TS"\" from image %d "
-					"(\"%"TS"\") in \"%"TS"\" to \"%"TS"\"\n"),
-				      info->extract.extract_root_wim_source_path,
-				      info->extract.image,
-				      info->extract.image_name,
-				      info->extract.wimfile_name,
-				      info->extract.target);
-		}
-		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS:
 		percent_done = TO_PERCENT(info->extract.completed_bytes,
 					  info->extract.total_bytes);
@@ -1174,8 +1158,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		}
 		break;
 	case WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS:
-		if (info->extract.extract_root_wim_source_path[0] == T('\0'))
-			imagex_printf(T("Setting timestamps on all extracted files...\n"));
+		imagex_printf(T("Setting timestamps on all extracted files...\n"));
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:
 		if (info->extract.extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
@@ -1208,14 +1191,11 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	case WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND:
 		switch (info->update.command->op) {
 		case WIMLIB_UPDATE_OP_DELETE:
-			imagex_printf(T("Deleted WIM path "
-				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING "%"TS"\"\n"),
+			imagex_printf(T("Deleted WIM path \"%"TS"\"\n"),
 				info->update.command->delete_.wim_path);
 			break;
 		case WIMLIB_UPDATE_OP_RENAME:
-			imagex_printf(T("Renamed WIM path "
-				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING "%"TS"\" => "
-				  "\""WIMLIB_WIM_PATH_SEPARATOR_STRING "%"TS"\"\n"),
+			imagex_printf(T("Renamed WIM path \"%"TS"\" => \"%"TS"\"\n"),
 				info->update.command->rename.wim_source_path,
 				info->update.command->rename.wim_target_path);
 			break;
@@ -1952,7 +1932,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		/* Set up capture source in non-source-list mode.  */
 		capture_sources = alloca(sizeof(struct wimlib_capture_source));
 		capture_sources[0].fs_source_path = source;
-		capture_sources[0].wim_target_path = NULL;
+		capture_sources[0].wim_target_path = WIMLIB_WIM_ROOT_PATH;
 		capture_sources[0].reserved = 0;
 		num_sources = 1;
 		capture_sources_malloced = false;
@@ -2479,7 +2459,7 @@ imagex_dir(int argc, tchar **argv, int cmd)
 	WIMStruct *wim = NULL;
 	int image;
 	int ret;
-	const tchar *path = T("");
+	const tchar *path = WIMLIB_WIM_ROOT_PATH;
 	int c;
 	struct print_dentry_options options = {
 		.detailed = false,
@@ -2836,7 +2816,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 
 	STRING_SET(refglobs);
 
-	tchar *root_path = T("");
+	tchar *root_path = WIMLIB_WIM_ROOT_PATH;
 
 	for_opt(c, extract_options) {
 		switch (c) {

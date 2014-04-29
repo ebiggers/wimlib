@@ -30,6 +30,9 @@ Version 1.6.3-BETA:
 		- Removed deprecated functions: some (de)compression functions,
 		  wimlib_extract_files(), and wimlib_print_metadata().
 
+		- WIM paths passed to progress functions now have a leading
+		  slash.
+
 Version 1.6.2:
 	Case-insensitive comparisons of strings (e.g. filenames) containing
 	UTF-16 codepoints above 32767 are now done correctly.

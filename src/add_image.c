@@ -218,7 +218,7 @@ wimlib_add_image(WIMStruct *wim,
 	 * */
 	const struct wimlib_capture_source capture_src = {
 		.fs_source_path = (tchar*)source,
-		.wim_target_path = T(""),
+		.wim_target_path = WIMLIB_WIM_ROOT_PATH,
 		.reserved = 0,
 	};
 	return wimlib_add_image_multisource(wim, &capture_src, 1, name,

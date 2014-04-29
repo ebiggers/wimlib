@@ -2435,7 +2435,6 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		ctx.progress.extract.target = target;
 	}
 
-	ctx.progress.extract.extract_root_wim_source_path = T("");
 	ctx.target_dentry = wim_root_dentry(wim);
 	/* Note: ctx.target_dentry represents the dentry that gets extracted to
 	 * @target.  There may be none, in which case it gets set to the image
@@ -2925,7 +2924,7 @@ extract_single_image(WIMStruct *wim, int image,
 		     const tchar *target, int extract_flags,
 		     wimlib_progress_func_t progress_func)
 {
-	const tchar *path = T("");
+	const tchar *path = WIMLIB_WIM_ROOT_PATH;
 	extract_flags |= WIMLIB_EXTRACT_FLAG_IMAGEMODE;
 	return do_wimlib_extract_paths(wim, image, target, &path, 1,
 				       extract_flags, progress_func);

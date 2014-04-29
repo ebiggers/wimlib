@@ -87,38 +87,63 @@ canonicalize_fs_path(const tchar *fs_path)
  * canonicalize_wim_path() - Given a user-provided path to a file within a WIM
  * image, translate it into a "canonical" path.
  *
- * To do this, translate all supported path separators (is_any_path_separator())
- * into the WIM_PATH_SEPARATOR, and strip any leading and trailing slashes.  The
- * returned string is allocated.  Note that there still may be consecutive path
- * separators within the string.  Furthermore, the string may be empty, which
- * indicates the root dentry of the WIM image.
+ * - Translate both types of slash into a consistent type (WIM_PATH_SEPARATOR).
+ * - Collapse path separators.
+ * - Add leading slash if missing.
+ * - Strip trailing slashes.
+ *
+ * Examples (with WIM_PATH_SEPARATOR == '/'):
+ *
+ * 		=> /		[ either NULL or empty string ]
+ * /		=> /
+ * \		=> /
+ * hello	=> /hello
+ * \hello	=> /hello
+ * \hello	=> /hello
+ * /hello/	=> /hello
+ * \hello/	=> /hello
+ * /hello//1	=> /hello/1
+ * \\hello\\1\\	=> /hello/1
  */
 tchar *
 canonicalize_wim_path(const tchar *wim_path)
 {
-	tchar *canonical_path;
-	tchar *p;
+	const tchar *in;
+	tchar *out;
+	tchar *result;
 
-	if (wim_path == NULL) {
-		wim_path = T("");
-	} else {
-		/* Strip leading path separators.  */
-		while (is_any_path_separator(*wim_path))
-			wim_path++;
-	}
+	in = wim_path;
+	if (!in)
+		in = T("");
 
-	canonical_path = TSTRDUP(wim_path);
-	if (canonical_path == NULL)
+	result = MALLOC((1 + tstrlen(in) + 1) * sizeof(result[0]));
+	if (!result)
 		return NULL;
 
-	/* Translate all path separators to WIM_PATH_SEPARATOR.  */
-	for (p = canonical_path; *p; p++)
-		if (is_any_path_separator(*p))
-			*p = WIM_PATH_SEPARATOR;
+	out = result;
 
-	/* Strip trailing path separators.  */
-	while (p > canonical_path && *--p == WIM_PATH_SEPARATOR)
-		*p = T('\0');
+	/* Add leading slash if missing  */
+	if (!is_any_path_separator(*in))
+		*out++ = WIM_PATH_SEPARATOR;
 
-	return canonical_path;
+	while (*in) {
+		if (is_any_path_separator(*in)) {
+			/* Collapse multiple path separators into one  */
+			*out++ = WIM_PATH_SEPARATOR;
+			do {
+				in++;
+			} while (is_any_path_separator(*in));
+		} else {
+			/* Copy non-path-separator character  */
+			*out++ = *in++;
+		}
+	}
+
+	/* Remove trailing slash if existent  */
+	if (*(out - 1) == WIM_PATH_SEPARATOR && (out - 1) != result)
+		--out;
+
+	*out = T('\0');
+
+	return result;
 }
