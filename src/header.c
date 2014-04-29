@@ -117,7 +117,8 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 	if (hdr->wim_version != WIM_VERSION_DEFAULT &&
 	    hdr->wim_version != WIM_VERSION_PACKED_STREAMS)
 	{
-		ERROR("\"%"TS"\": Unknown WIM version: %u", hdr->wim_version);
+		ERROR("\"%"TS"\": Unknown WIM version: %u",
+		      filename, hdr->wim_version);
 		return WIMLIB_ERR_UNKNOWN_VERSION;
 	}
 

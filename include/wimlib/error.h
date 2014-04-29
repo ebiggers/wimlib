@@ -19,8 +19,8 @@ wimlib_printf(const tchar *format, ...) _format_attribute(printf, 1, 2);
 #endif /* !__WIN32__ */
 
 
-static inline int
-dummy_tprintf(const tchar *format, ...) _format_attribute(printf, 1, 2)
+static inline int _format_attribute(printf, 1, 2)
+dummy_tprintf(const tchar *format, ...)
 {
 	return 0;
 }

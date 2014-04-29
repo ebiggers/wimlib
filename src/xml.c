@@ -1575,7 +1575,7 @@ write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 	size_t xml_len;
 
 	DEBUG("Writing WIM XML data (image=%d, offset=%"PRIu64")",
-	      image, total_bytes, wim->out_fd.offset);
+	      image, wim->out_fd.offset);
 
 	ret = prepare_wim_xml_data(wim, image, total_bytes,
 				   &xml_data, &xml_len);

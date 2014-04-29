@@ -531,7 +531,9 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 		if (ret) {
 			errno = ret;
 			ret = WIMLIB_ERR_NOMEM;
-			WARNING_WITH_ERRNO("Failed to create compressor thread %u of %u");
+			WARNING_WITH_ERRNO("Failed to create compressor thread %u of %u",
+					   ctx->num_started_threads + 1,
+					   num_threads);
 			goto err;
 		}
 	}
