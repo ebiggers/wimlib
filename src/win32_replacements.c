@@ -311,33 +311,6 @@ pwrite(int fd, const void *buf, size_t count, off_t offset)
 	return do_pread_or_pwrite(fd, (void*)buf, count, offset, true);
 }
 
-#if 0
-/* Dumb Windows implementation of writev().  It writes the vectors one at a
- * time. */
-ssize_t writev(int fd, const struct iovec *iov, int iovcnt)
-{
-	ssize_t total_bytes_written = 0;
-
-	if (iovcnt <= 0) {
-		errno = EINVAL;
-		return -1;
-	}
-	for (int i = 0; i < iovcnt; i++) {
-		ssize_t bytes_written;
-
-		bytes_written = write(fd, iov[i].iov_base, iov[i].iov_len);
-		if (bytes_written >= 0)
-			total_bytes_written += bytes_written;
-		if (bytes_written != iov[i].iov_len) {
-			if (total_bytes_written == 0)
-				total_bytes_written = -1;
-			break;
-		}
-	}
-	return total_bytes_written;
-}
-#endif
-
 int
 win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret)
 {
