@@ -166,8 +166,8 @@ struct alt_chunk_table_header_disk {
 
 	/* Compression format used for compressed chunks:
 	 * 0 = None
-	 * 1 = LZX
-	 * 2 = XPRESS
+	 * 1 = XPRESS
+	 * 2 = LZX
 	 * 3 = LZMS
 	 *
 	 * This overrides the compression type specified by the WIM header.  */
