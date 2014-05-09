@@ -193,6 +193,7 @@ struct wim_lookup_table_entry {
 				struct {
 					u64 out_res_offset_in_wim;
 					u64 out_res_size_in_wim;
+					u64 out_res_uncompressed_size;
 				};
 			};
 

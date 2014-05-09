@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -1021,16 +1021,16 @@ read_wim_lookup_table(WIMStruct *wim)
 
 		/* cur_entry is now a stream bound to a resource.  */
 
+		/* Ignore entries with all zeroes in the hash field.  */
+		if (is_zero_hash(cur_entry->hash))
+			goto free_cur_entry_and_continue;
+
 		/* Verify that the part number matches that of the underlying
 		 * WIM file.  */
 		if (part_number != wim->hdr.part_number) {
 			num_wrong_part_entries++;
 			goto free_cur_entry_and_continue;
 		}
-
-		/* Ignore entries with all zeroes in the hash field.  */
-		if (is_zero_hash(cur_entry->hash))
-			goto free_cur_entry_and_continue;
 
 		if (reshdr.flags & WIM_RESHDR_FLAG_METADATA) {
 
@@ -1156,6 +1156,10 @@ put_wim_lookup_table_entry(struct wim_lookup_table_entry_disk *disk_entry,
 	copy_hash(disk_entry->hash, hash);
 }
 
+/* Note: the list of stream entries must be sorted so that all entries for the
+ * same packed resource are consecutive.  In addition, entries with
+ * WIM_RESHDR_FLAG_METADATA set must be in the same order as the indices of the
+ * underlying images.  */
 int
 write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 					struct filedes *out_fd,
@@ -1169,6 +1173,8 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 	struct wim_lookup_table_entry_disk *table_buf_ptr;
 	int ret;
 	u64 prev_res_offset_in_wim = ~0ULL;
+	u64 prev_uncompressed_size;
+	u64 logical_offset;
 
 	table_size = 0;
 	list_for_each_entry(lte, stream_list, lookup_table_list) {
@@ -1194,38 +1200,46 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 	table_buf_ptr = table_buf;
 
 	prev_res_offset_in_wim = ~0ULL;
+	prev_uncompressed_size = 0;
+	logical_offset = 0;
 	list_for_each_entry(lte, stream_list, lookup_table_list) {
+		if (lte->out_reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
+			struct wim_reshdr tmp_reshdr;
 
-		put_wim_lookup_table_entry(table_buf_ptr++,
-					   &lte->out_reshdr,
-					   part_number,
-					   lte->out_refcnt,
-					   lte->hash);
-		if (lte->out_reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS &&
-		    lte->out_res_offset_in_wim != prev_res_offset_in_wim)
-		{
-			/* Put the main resource entry for the pack.  */
+			/* Eww.  When WIMGAPI sees multiple resource packs, it
+			 * expects the offsets to be adjusted as if there were
+			 * really only one pack.  */
 
-			struct wim_reshdr reshdr;
+			if (lte->out_res_offset_in_wim != prev_res_offset_in_wim) {
+				/* Put the resource entry for pack  */
+				tmp_reshdr.offset_in_wim = lte->out_res_offset_in_wim;
+				tmp_reshdr.size_in_wim = lte->out_res_size_in_wim;
+				tmp_reshdr.uncompressed_size = WIM_PACK_MAGIC_NUMBER;
+				tmp_reshdr.flags = WIM_RESHDR_FLAG_PACKED_STREAMS;
 
-			reshdr.offset_in_wim = lte->out_res_offset_in_wim;
-			reshdr.size_in_wim = lte->out_res_size_in_wim;
-			reshdr.uncompressed_size = WIM_PACK_MAGIC_NUMBER;
-			reshdr.flags = WIM_RESHDR_FLAG_PACKED_STREAMS;
+				put_wim_lookup_table_entry(table_buf_ptr++,
+							   &tmp_reshdr,
+							   part_number,
+							   1, zero_hash);
 
-			DEBUG("Putting main entry for pack: "
-			      "size_in_wim=%"PRIu64", "
-			      "offset_in_wim=%"PRIu64", "
-			      "uncompressed_size=%"PRIu64,
-			      reshdr.size_in_wim,
-			      reshdr.offset_in_wim,
-			      reshdr.uncompressed_size);
+				logical_offset += prev_uncompressed_size;
 
+				prev_res_offset_in_wim = lte->out_res_offset_in_wim;
+				prev_uncompressed_size = lte->out_res_uncompressed_size;
+			}
+			tmp_reshdr = lte->out_reshdr;
+			tmp_reshdr.offset_in_wim += logical_offset;
 			put_wim_lookup_table_entry(table_buf_ptr++,
-						   &reshdr,
+						   &tmp_reshdr,
 						   part_number,
-						   1, zero_hash);
-			prev_res_offset_in_wim = lte->out_res_offset_in_wim;
+						   lte->out_refcnt,
+						   lte->hash);
+		} else {
+			put_wim_lookup_table_entry(table_buf_ptr++,
+						   &lte->out_reshdr,
+						   part_number,
+						   lte->out_refcnt,
+						   lte->hash);
 		}
 
 	}

@@ -169,7 +169,6 @@ can_raw_copy(const struct wim_lookup_table_entry *lte,
 	if (rspec->is_pipable != !!(write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE))
 		return false;
 
-
 	if (rspec->flags & WIM_RESHDR_FLAG_COMPRESSED) {
 		/* Normal compressed resource: Must use same compression type
 		 * and chunk size.  */
@@ -177,15 +176,12 @@ can_raw_copy(const struct wim_lookup_table_entry *lte,
 			rspec->chunk_size == out_chunk_size);
 	}
 
-	/* XXX: For compatibility, we can't allow multiple packed resources per
-	 * WIM.  */
-#if 0
 	if ((rspec->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
 	    (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS))
 	{
 		/* Packed resource: Such resources may contain multiple streams,
 		 * and in general only a subset of them need to be written.  As
-		 * a heuristic, re-use the raw data if at least half the
+		 * a heuristic, re-use the raw data if more than two-thirds the
 		 * uncompressed size is being written.  */
 
 		/* Note: packed resources contain a header that specifies the
@@ -200,9 +196,8 @@ can_raw_copy(const struct wim_lookup_table_entry *lte,
 			if (res_stream->will_be_in_output_wim)
 				write_size += res_stream->size;
 
-		return (write_size > rspec->uncompressed_size / 2);
+		return (write_size > rspec->uncompressed_size * 2 / 3);
 	}
-#endif
 
 	return false;
 }
@@ -234,7 +229,7 @@ stream_set_out_reshdr_for_reuse(struct wim_lookup_table_entry *lte)
 
 		lte->out_res_offset_in_wim = rspec->offset_in_wim;
 		lte->out_res_size_in_wim = rspec->size_in_wim;
-		/*lte->out_res_uncompressed_size = rspec->uncompressed_size;*/
+		lte->out_res_uncompressed_size = rspec->uncompressed_size;
 	} else {
 		wimlib_assert(!(lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS));
 
@@ -1050,20 +1045,20 @@ compute_stream_list_stats(struct list_head *stream_list,
 }
 
 /* Find streams in @stream_list that can be copied to the output WIM in raw form
- * rather than compressed.  Delete these streams from @stream_list, and move one
- * per resource to @raw_copy_resources.  Return the total uncompressed size of
- * the streams that need to be compressed.  */
+ * rather than compressed.  Delete these streams from @stream_list and move them
+ * to @raw_copy_streams.  Return the total uncompressed size of the streams that
+ * need to be compressed.  */
 static u64
-find_raw_copy_resources(struct list_head *stream_list,
-			int write_resource_flags,
-			int out_ctype,
-			u32 out_chunk_size,
-			struct list_head *raw_copy_resources)
+find_raw_copy_streams(struct list_head *stream_list,
+		      int write_resource_flags,
+		      int out_ctype,
+		      u32 out_chunk_size,
+		      struct list_head *raw_copy_streams)
 {
 	struct wim_lookup_table_entry *lte, *tmp;
 	u64 num_bytes_to_compress = 0;
 
-	INIT_LIST_HEAD(raw_copy_resources);
+	INIT_LIST_HEAD(raw_copy_streams);
 
 	/* Initialize temporary raw_copy_ok flag.  */
 	list_for_each_entry(lte, stream_list, write_streams_list)
@@ -1074,13 +1069,14 @@ find_raw_copy_resources(struct list_head *stream_list,
 		if (lte->resource_location == RESOURCE_IN_WIM &&
 		    lte->rspec->raw_copy_ok)
 		{
-			list_del(&lte->write_streams_list);
+			list_move_tail(&lte->write_streams_list,
+				       raw_copy_streams);
 		} else if (can_raw_copy(lte, write_resource_flags,
 				 out_ctype, out_chunk_size))
 		{
 			lte->rspec->raw_copy_ok = 1;
 			list_move_tail(&lte->write_streams_list,
-				       raw_copy_resources);
+				       raw_copy_streams);
 		} else {
 			num_bytes_to_compress += lte->size;
 		}
@@ -1151,20 +1147,28 @@ write_raw_copy_resource(struct wim_resource_spec *in_rspec,
 	return 0;
 }
 
-/* Copy a list of raw compressed resources located other WIM file(s) to the WIM
- * file being written.  */
+/* Copy a list of raw compressed resources located in other WIM file(s) to the
+ * WIM file being written.  */
 static int
-write_raw_copy_resources(struct list_head *raw_copy_resources,
+write_raw_copy_resources(struct list_head *raw_copy_streams,
 			 struct filedes *out_fd,
 			 struct write_streams_progress_data *progress_data)
 {
 	struct wim_lookup_table_entry *lte;
 	int ret;
 
-	list_for_each_entry(lte, raw_copy_resources, write_streams_list) {
-		ret = write_raw_copy_resource(lte->rspec, out_fd);
-		if (ret)
-			return ret;
+	list_for_each_entry(lte, raw_copy_streams, write_streams_list)
+		lte->rspec->raw_copy_ok = 1;
+
+	list_for_each_entry(lte, raw_copy_streams, write_streams_list) {
+		if (lte->rspec->raw_copy_ok) {
+			/* Write each packed resource only one time, no matter
+			 * how many streams reference it.  */
+			ret = write_raw_copy_resource(lte->rspec, out_fd);
+			if (ret)
+				return ret;
+			lte->rspec->raw_copy_ok = 0;
+		}
 		do_write_streams_progress(progress_data, lte, lte->size,
 					  1, false);
 	}
@@ -1341,7 +1345,7 @@ write_stream_list(struct list_head *stream_list,
 {
 	int ret;
 	struct write_streams_ctx ctx;
-	struct list_head raw_copy_resources;
+	struct list_head raw_copy_streams;
 
 	wimlib_assert((write_resource_flags &
 		       (WRITE_RESOURCE_FLAG_PACK_STREAMS |
@@ -1391,11 +1395,11 @@ write_stream_list(struct list_head *stream_list,
 
 	ctx.progress_data.progress_func = progress_func;
 
-	ctx.num_bytes_to_compress = find_raw_copy_resources(stream_list,
-							    write_resource_flags,
-							    out_ctype,
-							    out_chunk_size,
-							    &raw_copy_resources);
+	ctx.num_bytes_to_compress = find_raw_copy_streams(stream_list,
+							  write_resource_flags,
+							  out_ctype,
+							  out_chunk_size,
+							  &raw_copy_streams);
 
 	DEBUG("Writing stream list "
 	      "(offset = %"PRIu64", write_resource_flags=0x%08x, "
@@ -1510,7 +1514,7 @@ write_stream_list(struct list_head *stream_list,
 			lte->out_reshdr.offset_in_wim = offset_in_res;
 			lte->out_res_offset_in_wim = reshdr.offset_in_wim;
 			lte->out_res_size_in_wim = reshdr.size_in_wim;
-			/*lte->out_res_uncompressed_size = reshdr.uncompressed_size;*/
+			lte->out_res_uncompressed_size = reshdr.uncompressed_size;
 			offset_in_res += lte->size;
 		}
 		wimlib_assert(offset_in_res == reshdr.uncompressed_size);
@@ -1519,7 +1523,7 @@ write_stream_list(struct list_head *stream_list,
 out_write_raw_copy_resources:
 	/* Copy any compressed resources for which the raw data can be reused
 	 * without decompression.  */
-	ret = write_raw_copy_resources(&raw_copy_resources, ctx.out_fd,
+	ret = write_raw_copy_resources(&raw_copy_streams, ctx.out_fd,
 				       &ctx.progress_data);
 
 out_destroy_context:
@@ -1545,6 +1549,11 @@ wim_write_stream_list(WIMStruct *wim,
 	int write_resource_flags;
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
+
+	/* wimlib v1.6.3: pack streams by default if the WIM version number is
+	 * that usually used in solid archives.  */
+	if (wim->hdr.wim_version == WIM_VERSION_PACKED_STREAMS)
+		write_resource_flags |= WRITE_RESOURCE_FLAG_PACK_STREAMS;
 
 	if (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
 		out_chunk_size = wim->out_pack_chunk_size;
@@ -3158,14 +3167,6 @@ can_overwrite_wim_inplace(const WIMStruct *wim, int write_flags)
 	/* Pipable WIMs cannot be updated in place, nor can a non-pipable WIM be
 	 * turned into a pipable WIM in-place.  */
 	if (wim_is_pipable(wim) || (write_flags & WIMLIB_WRITE_FLAG_PIPABLE))
-		return false;
-
-	/* wimlib allows multiple packs in a single WIM, but they don't seem to
-	 * be compatible with WIMGAPI, so force all streams to be repacked if
-	 * the WIM already may have contained a pack and PACK_STREAMS was
-	 * requested.  */
-	if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS &&
-	    wim->hdr.wim_version == WIM_VERSION_PACKED_STREAMS)
 		return false;
 
 	/* The default compression type and compression chunk size selected for
