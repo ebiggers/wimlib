@@ -74,15 +74,6 @@ path_stream_name(const tchar *path)
 		return stream_name + 1;
 }
 
-/* Duplicate a path; return empty string for NULL input.  */
-tchar *
-canonicalize_fs_path(const tchar *fs_path)
-{
-	if (fs_path == NULL)
-		fs_path = T("");
-	return TSTRDUP(fs_path);
-}
-
 /* Collapse and translate path separators, and strip trailing slashes.  Doesn't
  * add or delete a leading slash.
  *

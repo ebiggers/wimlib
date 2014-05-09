@@ -1403,7 +1403,7 @@ copy_update_commands(const struct wimlib_update_command *cmds,
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
 			cmds_copy[i].add.fs_source_path =
-				canonicalize_fs_path(cmds[i].add.fs_source_path);
+				TSTRDUP(cmds[i].add.fs_source_path);
 			cmds_copy[i].add.wim_target_path =
 				canonicalize_wim_path(cmds[i].add.wim_target_path);
 			if (!cmds_copy[i].add.fs_source_path ||

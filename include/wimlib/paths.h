@@ -19,7 +19,4 @@ do_canonicalize_path(const tchar *in, tchar *out);
 extern tchar *
 canonicalize_wim_path(const tchar *wim_path) _malloc_attribute;
 
-extern tchar *
-canonicalize_fs_path(const tchar *fs_path) _malloc_attribute;
-
 #endif /* _WIMLIB_PATHS_H */
