@@ -1,13 +1,13 @@
 #!/bin/bash
 
-oldver='1\.6\.1'
-oldmonth=January
+oldver='1\.6\.2'
+oldmonth=March
 oldyear=2014
 
 newmajor=1
 newminor=6
-newpatch=2
-newmonth=March
+newpatch=3
+newmonth=May
 newyear=2014
 
 
@@ -23,7 +23,7 @@ sed -i -e 's/\(#define WIMLIB_MAJOR_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'$newm
        -e 's/\(the library interface of wimlib \)'$oldver'/\1'$newver'/' \
 	  include/wimlib.h
 
-sed -i -e "1s/$oldmonth $oldyear/$newmonth $newyear/" doc/*.1.in
+sed -i -e "1s/$oldmonth $oldyear/$newmonth $newyear/" doc/man[1-9]/*.[1-9].in
 
 sed -i "s/pkgver=$oldver/pkgver=$newver/" archlinux/PKGBUILD
 
