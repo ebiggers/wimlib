@@ -479,7 +479,9 @@ verify_image_exists_and_is_single(int image, const tchar *image_name,
 static int
 get_compression_type(const tchar *optarg)
 {
-	if (!tstrcasecmp(optarg, T("maximum")) || !tstrcasecmp(optarg, T("lzx")))
+	if (!tstrcasecmp(optarg, T("maximum")) ||
+	    !tstrcasecmp(optarg, T("lzx")) ||
+	    !tstrcasecmp(optarg, T("max")))
 		return WIMLIB_COMPRESSION_TYPE_LZX;
 	else if (!tstrcasecmp(optarg, T("fast")) || !tstrcasecmp(optarg, T("xpress")))
 		return WIMLIB_COMPRESSION_TYPE_XPRESS;
