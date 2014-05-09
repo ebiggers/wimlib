@@ -578,6 +578,182 @@ struct wim_lookup_table_entry_disk {
 
 #define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
 
+/* Given a nonempty run of consecutive lookup table entries with the
+ * PACKED_STREAMS flag set, count how many specify resources (as opposed to
+ * streams within those resources).
+ *
+ * Returns the resulting count.  */
+static size_t
+count_subpacks(const struct wim_lookup_table_entry_disk *entries, size_t max)
+{
+	size_t count = 0;
+	do {
+		struct wim_reshdr reshdr;
+
+		get_wim_reshdr(&(entries++)->reshdr, &reshdr);
+
+		if (!(reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS)) {
+			/* Run was terminated by a stand-alone stream entry.  */
+			break;
+		}
+
+		if (reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER) {
+			/* This is a resource entry.  */
+			count++;
+		}
+	} while (--max);
+	return count;
+}
+
+/* Given a run of consecutive lookup table entries with the PACKED_STREAMS flag
+ * set and having @num_subpacks resource entries, load resource information from
+ * them into the resource specifications in the @subpacks array.
+ *
+ * Returns 0 on success, or a nonzero error code on failure.  */
+static int
+do_load_subpack_info(WIMStruct *wim, struct wim_resource_spec **subpacks,
+		     size_t num_subpacks,
+		     const struct wim_lookup_table_entry_disk *entries)
+{
+	for (size_t i = 0; i < num_subpacks; i++) {
+		struct wim_reshdr reshdr;
+		struct alt_chunk_table_header_disk hdr;
+		struct wim_resource_spec *rspec;
+		int ret;
+
+		/* Advance to next resource entry.  */
+
+		do {
+			get_wim_reshdr(&(entries++)->reshdr, &reshdr);
+		} while (reshdr.uncompressed_size != WIM_PACK_MAGIC_NUMBER);
+
+		rspec = subpacks[i];
+
+		wim_res_hdr_to_spec(&reshdr, wim, rspec);
+
+		/* For packed resources, the uncompressed size, compression
+		 * type, and chunk size are stored in the resource itself, not
+		 * in the lookup table.  */
+
+		ret = full_pread(&wim->in_fd, &hdr,
+				 sizeof(hdr), reshdr.offset_in_wim);
+		if (ret) {
+			ERROR("Failed to read header of packed resource "
+			      "(offset_in_wim=%"PRIu64")",
+			      reshdr.offset_in_wim);
+			return ret;
+		}
+
+		rspec->uncompressed_size = le64_to_cpu(hdr.res_usize);
+
+		/* Compression format numbers must be the same as in
+		 * WIMGAPI to be compatible here.  */
+		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
+		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_XPRESS != 1);
+		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZX != 2);
+		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZMS != 3);
+		rspec->compression_type = le32_to_cpu(hdr.compression_format);
+
+		rspec->chunk_size = le32_to_cpu(hdr.chunk_size);
+
+		DEBUG("Subpack %zu/%zu: %"PRIu64" => %"PRIu64" "
+		      "(%"TS"/%"PRIu32") @ +%"PRIu64"",
+		      i + 1, num_subpacks,
+		      rspec->uncompressed_size,
+		      rspec->size_in_wim,
+		      wimlib_get_compression_type_string(rspec->compression_type),
+		      rspec->chunk_size,
+		      rspec->offset_in_wim);
+
+	}
+	return 0;
+}
+
+/* Given a nonempty run of consecutive lookup table entries with the
+ * PACKED_STREAMS flag set, allocate a 'struct wim_resource_spec' for each
+ * resource within that run.
+ *
+ * Returns 0 on success, or a nonzero error code on failure.
+ * Returns the pointers and count in *subpacks_ret and *num_subpacks_ret.
+ */
+static int
+load_subpack_info(WIMStruct *wim,
+		  const struct wim_lookup_table_entry_disk *entries,
+		  size_t num_remaining_entries,
+		  struct wim_resource_spec ***subpacks_ret,
+		  size_t *num_subpacks_ret)
+{
+	size_t num_subpacks;
+	struct wim_resource_spec **subpacks;
+	size_t i;
+	int ret;
+
+	num_subpacks = count_subpacks(entries, num_remaining_entries);
+	subpacks = CALLOC(num_subpacks, sizeof(subpacks[0]));
+	if (!subpacks)
+		return WIMLIB_ERR_NOMEM;
+
+	for (i = 0; i < num_subpacks; i++) {
+		subpacks[i] = MALLOC(sizeof(struct wim_resource_spec));
+		if (!subpacks[i]) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_free_subpacks;
+		}
+	}
+
+	ret = do_load_subpack_info(wim, subpacks, num_subpacks, entries);
+	if (ret)
+		goto out_free_subpacks;
+
+	*subpacks_ret = subpacks;
+	*num_subpacks_ret = num_subpacks;
+	return 0;
+
+out_free_subpacks:
+	for (i = 0; i < num_subpacks; i++)
+		FREE(subpacks[i]);
+	FREE(subpacks);
+	return ret;
+}
+
+/* Given a 'struct wim_lookup_table_entry' allocated for a stream entry with
+ * PACKED_STREAMS set, try to bind it to a subpack of the current PACKED_STREAMS
+ * run.  */
+static int
+bind_stream_to_subpack(const struct wim_reshdr *reshdr,
+		       struct wim_lookup_table_entry *stream,
+		       struct wim_resource_spec **subpacks,
+		       size_t num_subpacks)
+{
+	u64 offset = reshdr->offset_in_wim;
+
+	/* XXX: This linear search will be slow in the degenerate case where the
+	 * number of subpacks is huge.  */
+	stream->size = reshdr->size_in_wim;
+	stream->flags = reshdr->flags;
+	for (size_t i = 0; i < num_subpacks; i++) {
+		if (offset + stream->size <= subpacks[i]->uncompressed_size) {
+			stream->offset_in_res = offset;
+			lte_bind_wim_resource_spec(stream, subpacks[i]);
+			return 0;
+		}
+		offset -= subpacks[i]->uncompressed_size;
+	}
+	ERROR("Packed stream could not be assigned to any resource");
+	return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+}
+
+static void
+free_subpack_info(struct wim_resource_spec **subpacks, size_t num_subpacks)
+{
+	if (subpacks) {
+		for (size_t i = 0; i < num_subpacks; i++)
+			if (list_empty(&subpacks[i]->stream_list))
+				FREE(subpacks[i]);
+		FREE(subpacks);
+	}
+}
+
 static int
 cmp_streams_by_offset_in_res(const void *p1, const void *p2)
 {
@@ -648,18 +824,17 @@ invalid_due_to_overlap:
 	return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 }
 
-/* Validate the resource, or free it if unused.  */
 static int
-finish_resource(struct wim_resource_spec *rspec)
+finish_subpacks(struct wim_resource_spec **subpacks, size_t num_subpacks)
 {
-	if (!list_empty(&rspec->stream_list)) {
-		/* This resource contains at least one stream.  */
-		return validate_resource(rspec);
-	} else {
-		/* No streams are in this resource.  Get rid of it.  */
-		FREE(rspec);
-		return 0;
+	int ret = 0;
+	for (size_t i = 0; i < num_subpacks; i++) {
+		ret = validate_resource(subpacks[i]);
+		if (ret)
+			break;
 	}
+	free_subpack_info(subpacks, num_subpacks);
+	return ret;
 }
 
 /*
@@ -672,7 +847,16 @@ finish_resource(struct wim_resource_spec *rspec)
  * per-image location (the wim->image_metadata array).
  *
  * This works for both version WIM_VERSION_DEFAULT (68864) and version
- * WIM_VERSION_PACKED_STREAMS (3584) WIMs.
+ * WIM_VERSION_PACKED_STREAMS (3584) WIMs.  In the latter, a consecutive run of
+ * lookup table entries that all have flag WIM_RESHDR_FLAG_PACKED_STREAMS (0x10)
+ * set is a "packed run".  A packed run logically contains zero or more
+ * resources, each of which logically contains zero or more streams.
+ * Physically, in such a run, a "lookup table entry" with uncompressed size
+ * WIM_PACK_MAGIC_NUMBER (0x100000000) specifies a resource, whereas any other
+ * entry specifies a stream.  Within such a run, stream entries and resource
+ * entries need not be in any particular order, except that the order of the
+ * resource entries is important, as it affects how streams are assigned to
+ * resources.  See the code for details.
  *
  * Possible return values:
  *	WIMLIB_ERR_SUCCESS (0)
@@ -690,10 +874,11 @@ read_wim_lookup_table(WIMStruct *wim)
 	void *buf = NULL;
 	struct wim_lookup_table *table = NULL;
 	struct wim_lookup_table_entry *cur_entry = NULL;
-	struct wim_resource_spec *cur_rspec = NULL;
 	size_t num_duplicate_entries = 0;
 	size_t num_wrong_part_entries = 0;
 	u32 image_index = 0;
+	struct wim_resource_spec **cur_subpacks = NULL;
+	size_t cur_num_subpacks = 0;
 
 	DEBUG("Reading lookup table.");
 
@@ -734,16 +919,16 @@ read_wim_lookup_table(WIMStruct *wim)
 		DEBUG("reshdr: size_in_wim=%"PRIu64", "
 		      "uncompressed_size=%"PRIu64", "
 		      "offset_in_wim=%"PRIu64", "
-		      "flags=0x%02x\n",
+		      "flags=0x%02x",
 		      reshdr.size_in_wim, reshdr.uncompressed_size,
 		      reshdr.offset_in_wim, reshdr.flags);
 
 		/* Ignore PACKED_STREAMS flag if it isn't supposed to be used in
-		 * this WIM version  */
+		 * this WIM version.  */
 		if (wim->hdr.wim_version == WIM_VERSION_DEFAULT)
 			reshdr.flags &= ~WIM_RESHDR_FLAG_PACKED_STREAMS;
 
-		/* Allocate a 'struct wim_lookup_table_entry'  */
+		/* Allocate a new 'struct wim_lookup_table_entry'.  */
 		cur_entry = new_lookup_table_entry();
 		if (!cur_entry)
 			goto oom;
@@ -753,140 +938,93 @@ read_wim_lookup_table(WIMStruct *wim)
 		cur_entry->refcnt = le32_to_cpu(disk_entry->refcnt);
 		copy_hash(cur_entry->hash, disk_entry->hash);
 
-		/* Verify that the part number matches that of the underlying
-		 * WIM file.  */
-		if (part_number != wim->hdr.part_number) {
-			num_wrong_part_entries++;
-			goto free_cur_entry_and_continue;
-		}
+		if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
 
-		/* If resource is uncompressed, check for (unexpected) size
-		 * mismatch.  */
-		if (!(reshdr.flags & (WIM_RESHDR_FLAG_PACKED_STREAMS |
-				      WIM_RESHDR_FLAG_COMPRESSED))) {
-			if (reshdr.uncompressed_size != reshdr.size_in_wim) {
-				/* So ... This is an uncompressed resource, but
-				 * its uncompressed size is NOT the same as its
-				 * "compressed" size (size_in_wim).  What to do
-				 * with it?
-				 *
-				 * Based on a simple test, WIMGAPI seems to
-				 * handle this as follows:
-				 *
-				 * if (size_in_wim > uncompressed_size) {
-				 *	Ignore uncompressed_size; use
-				 *	size_in_wim instead.
-				 * } else {
-				 *	Honor uncompressed_size, but treat the
-				 *	part of the file data above size_in_wim
-				 *	as all zeros.
-				 * }
-				 *
-				 * So we will do the same.
-				 */
-				if (reshdr.size_in_wim > reshdr.uncompressed_size)
-					reshdr.uncompressed_size = reshdr.size_in_wim;
-			}
-		}
+			/* PACKED_STREAMS entry  */
 
-		/*
-		 * Possibly start a new resource.
-		 *
-		 * We need to start a new resource if:
-		 *
-		 * - There is no previous resource (cur_rspec).
-		 *
-		 *   OR
-		 *
-		 * - The resource header did not have PACKED_STREAMS set, so it
-		 *   specifies a new, single-stream resource.
-		 *
-		 *   OR
-		 *
-		 * - The resource header had PACKED_STREAMS set, and it's a
-		 *   special entry that specifies the resource itself as opposed
-		 *   to a stream, and we already encountered one such entry in
-		 *   the current resource.  We will interpret this as the
-		 *   beginning of a new packed resource.  (However, note that
-		 *   wimlib does not currently allow create WIMs with multiple
-		 *   packed resources, as to remain compatible with WIMGAPI.)
-		 */
-		if (likely(!cur_rspec) ||
-		    !(reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) ||
-		      (reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER &&
-		       cur_rspec->size_in_wim != 0))
-		{
-			/* Finish previous resource (if existent)  */
-			if (cur_rspec) {
-				ret = finish_resource(cur_rspec);
-				cur_rspec = NULL;
+			if (!cur_subpacks) {
+				/* Starting new run  */
+				ret = load_subpack_info(wim, disk_entry,
+							num_entries - i,
+							&cur_subpacks,
+							&cur_num_subpacks);
 				if (ret)
 					goto out;
 			}
 
-			/* Allocate the resource specification and initialize it
-			 * with values from the current stream entry.  */
-			cur_rspec = MALLOC(sizeof(*cur_rspec));
-			if (!cur_rspec)
-				goto oom;
-
-			wim_res_hdr_to_spec(&reshdr, wim, cur_rspec);
-
-			/* If this is a packed run, the current stream entry may
-			 * specify a stream within the resource, and not the
-			 * resource itself.  Zero possibly irrelevant data until
-			 * it is read for certain.  */
-			if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
-				cur_rspec->size_in_wim = 0;
-				cur_rspec->uncompressed_size = 0;
-				cur_rspec->offset_in_wim = 0;
+			if (reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER) {
+				/* Resource entry, not stream entry  */
+				goto free_cur_entry_and_continue;
 			}
-		}
 
-		/* Now cur_rspec != NULL.  */
+			/* Stream entry  */
 
-		/* Checked for packed resource specification.  */
-		if (unlikely((reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
-			     reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER))
-		{
-			/* Found the specification for the packed resource.
-			 * Transfer the values to the `struct
-			 * wim_resource_spec', and discard the current stream
-			 * since this lookup table entry did not, in fact,
-			 * correspond to a "stream".  */
-
-			/* The uncompressed size of the packed resource is
-			 * actually stored in the header of the resource itself.
-			 * Read it, and also grab the chunk size and compression
-			 * type (which are not necessarily the defaults from the
-			 * WIM header).  */
-			struct alt_chunk_table_header_disk hdr;
-
-			ret = full_pread(&wim->in_fd, &hdr,
-					 sizeof(hdr), reshdr.offset_in_wim);
+			ret = bind_stream_to_subpack(&reshdr,
+						     cur_entry,
+						     cur_subpacks,
+						     cur_num_subpacks);
 			if (ret)
 				goto out;
 
-			cur_rspec->uncompressed_size = le64_to_cpu(hdr.res_usize);
-			cur_rspec->offset_in_wim = reshdr.offset_in_wim;
-			cur_rspec->size_in_wim = reshdr.size_in_wim;
-			cur_rspec->flags = reshdr.flags;
+		} else {
+			/* Normal stream/resource entry; PACKED_STREAMS not set.
+			 */
 
-			/* Compression format numbers must be the same as in
-			 * WIMGAPI to be compatible here.  */
-			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
-			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_XPRESS != 1);
-			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZX != 2);
-			BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZMS != 3);
-			cur_rspec->compression_type = le32_to_cpu(hdr.compression_format);
+			struct wim_resource_spec *rspec;
 
-			cur_rspec->chunk_size = le32_to_cpu(hdr.chunk_size);
+			if (unlikely(cur_subpacks)) {
+				/* This entry terminated a packed run.  */
+				ret = finish_subpacks(cur_subpacks,
+						      cur_num_subpacks);
+				cur_subpacks = NULL;
+				if (ret)
+					goto out;
+			}
 
-			DEBUG("Full pack is %"PRIu64" compressed bytes "
-			      "at file offset %"PRIu64" (flags 0x%02x)",
-			      cur_rspec->size_in_wim,
-			      cur_rspec->offset_in_wim,
-			      cur_rspec->flags);
+			/* How to handle an uncompressed resource with its
+			 * uncompressed size different from its compressed size?
+			 *
+			 * Based on a simple test, WIMGAPI seems to handle this
+			 * as follows:
+			 *
+			 * if (size_in_wim > uncompressed_size) {
+			 *	Ignore uncompressed_size; use size_in_wim
+			 *	instead.
+			 * } else {
+			 *	Honor uncompressed_size, but treat the part of
+			 *	the file data above size_in_wim as all zeros.
+			 * }
+			 *
+			 * So we will do the same.  */
+			if (unlikely(!(reshdr.flags &
+				       WIM_RESHDR_FLAG_COMPRESSED) &&
+				     (reshdr.size_in_wim >
+				      reshdr.uncompressed_size)))
+			{
+				reshdr.uncompressed_size = reshdr.size_in_wim;
+			}
+
+			/* Set up a resource specification for this stream.  */
+
+			rspec = MALLOC(sizeof(struct wim_resource_spec));
+			if (!rspec)
+				goto oom;
+
+			wim_res_hdr_to_spec(&reshdr, wim, rspec);
+
+			cur_entry->offset_in_res = 0;
+			cur_entry->size = reshdr.uncompressed_size;
+			cur_entry->flags = reshdr.flags;
+
+			lte_bind_wim_resource_spec(cur_entry, rspec);
+		}
+
+		/* cur_entry is now a stream bound to a resource.  */
+
+		/* Verify that the part number matches that of the underlying
+		 * WIM file.  */
+		if (part_number != wim->hdr.part_number) {
+			num_wrong_part_entries++;
 			goto free_cur_entry_and_continue;
 		}
 
@@ -908,8 +1046,7 @@ read_wim_lookup_table(WIMStruct *wim)
 				/* We don't currently support this case due to
 				 * the complications of multiple images sharing
 				 * the same metadata resource or a metadata
-				 * resource also being referenced by files.
-				 */
+				 * resource also being referenced by files.  */
 				ERROR("Found metadata resource with refcnt != 1");
 				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 				goto out;
@@ -956,40 +1093,20 @@ read_wim_lookup_table(WIMStruct *wim)
 			lookup_table_insert(table, cur_entry);
 		}
 
-		/* Add the stream to the current resource specification.  */
-		lte_bind_wim_resource_spec(cur_entry, cur_rspec);
-		if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
-			/* In packed runs, the offset field is used for
-			 * in-resource offset, not the in-WIM offset, and the
-			 * size field is used for the uncompressed size, not the
-			 * compressed size.  */
-			cur_entry->offset_in_res = reshdr.offset_in_wim;
-			cur_entry->size = reshdr.size_in_wim;
-			cur_entry->flags = reshdr.flags;
-			/* cur_rspec stays the same  */
-
-		} else {
-			/* Normal case: The stream corresponds one-to-one with
-			 * the resource entry.  */
-			cur_entry->offset_in_res = 0;
-			cur_entry->size = reshdr.uncompressed_size;
-			cur_entry->flags = reshdr.flags;
-			ret = validate_resource(cur_rspec);
-			cur_rspec = NULL;
-			if (ret)
-				goto out;
-		}
 		continue;
 
 	free_cur_entry_and_continue:
+		if (cur_subpacks &&
+		    cur_entry->resource_location == RESOURCE_IN_WIM)
+			lte_unbind_wim_resource_spec(cur_entry);
 		free_lookup_table_entry(cur_entry);
 	}
 	cur_entry = NULL;
 
-	/* Validate the last resource.  */
-	if (cur_rspec) {
-		ret = finish_resource(cur_rspec);
-		cur_rspec = NULL;
+	if (cur_subpacks) {
+		/* End of lookup table terminated a packed run.  */
+		ret = finish_subpacks(cur_subpacks, cur_num_subpacks);
+		cur_subpacks = NULL;
 		if (ret)
 			goto out;
 	}
@@ -1013,17 +1130,17 @@ read_wim_lookup_table(WIMStruct *wim)
 
 	DEBUG("Done reading lookup table.");
 	wim->lookup_table = table;
-	table = NULL;
 	ret = 0;
-	goto out;
+	goto out_free_buf;
+
 oom:
 	ERROR("Not enough memory to read lookup table!");
 	ret = WIMLIB_ERR_NOMEM;
 out:
-	if (cur_rspec && list_empty(&cur_rspec->stream_list))
-		FREE(cur_rspec);
+	free_subpack_info(cur_subpacks, cur_num_subpacks);
 	free_lookup_table_entry(cur_entry);
 	free_lookup_table(table);
+out_free_buf:
 	FREE(buf);
 	return ret;
 }
