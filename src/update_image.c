@@ -1369,9 +1369,7 @@ free_update_commands(struct wimlib_update_command *cmds, size_t num_cmds)
 		for (size_t i = 0; i < num_cmds; i++) {
 			switch (cmds[i].op) {
 			case WIMLIB_UPDATE_OP_ADD:
-				FREE(cmds[i].add.fs_source_path);
 				FREE(cmds[i].add.wim_target_path);
-				FREE(cmds[i].add.config_file);
 				break;
 			case WIMLIB_UPDATE_OP_DELETE:
 				FREE(cmds[i].delete_.wim_path);
@@ -1402,18 +1400,12 @@ copy_update_commands(const struct wimlib_update_command *cmds,
 		cmds_copy[i].op = cmds[i].op;
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
-			cmds_copy[i].add.fs_source_path =
-				TSTRDUP(cmds[i].add.fs_source_path);
+			cmds_copy[i].add.fs_source_path = cmds[i].add.fs_source_path;
 			cmds_copy[i].add.wim_target_path =
 				canonicalize_wim_path(cmds[i].add.wim_target_path);
-			if (!cmds_copy[i].add.fs_source_path ||
-			    !cmds_copy[i].add.wim_target_path)
+			if (!cmds_copy[i].add.wim_target_path)
 				goto oom;
-			if (cmds[i].add.config_file) {
-				cmds_copy[i].add.config_file = TSTRDUP(cmds[i].add.config_file);
-				if (!cmds_copy[i].add.config_file)
-					goto oom;
-			}
+			cmds_copy[i].add.config_file = cmds[i].add.config_file;
 			cmds_copy[i].add.add_flags = cmds[i].add.add_flags;
 			break;
 		case WIMLIB_UPDATE_OP_DELETE:
