@@ -60,7 +60,8 @@ wildcard pattern may expand to multiple actual files or directories.  Use the
 \fB--no-wildcards\fR option to disable wildcard matching and search for each
 path literally.
 .PP
-Each \fILISTFILE\fR must be a text file (UTF-8 or UTF-16LE encoded) that
+Each \fILISTFILE\fR must be a text file (UTF-8 or UTF-16LE encoded; plain ASCII
+is also fine) that
 contains a list of paths to extract, one per line.  Wildcard characters are
 allowed by default.  The following demonstrates an example listfile:
 .PP
