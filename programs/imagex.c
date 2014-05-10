@@ -1822,9 +1822,19 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 
 
 	if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID) {
+		/* No compression type specified.  Use the default.  */
+
 		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_WIMBOOT) {
+			/* With --wimboot, default to XPRESS compression.  */
 			compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
+		} else if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS) {
+			/* With --pack-streams or --solid, default to LZMS
+			 * compression.  (However, this will not affect packed
+			 * resources!)  */
+			compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
 		} else {
+			/* Otherwise, default to LZX compression in fast mode.
+			 */
 			compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
 			if (!compress_slow && pack_ctype != WIMLIB_COMPRESSION_TYPE_LZX) {
 				struct wimlib_lzx_compressor_params params = {
@@ -2716,9 +2726,13 @@ imagex_export(int argc, tchar **argv, int cmd)
 
 		if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID) {
 			/* The user did not specify a compression type; default
-			 * to that of the source WIM.  */
+			 * to that of the source WIM, unless --pack-streams or
+			 * --solid was specified.   */
 
-			compression_type = src_info.compression_type;
+			if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
+				compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
+			else
+				compression_type = src_info.compression_type;
 		}
 		ret = wimlib_create_new_wim(compression_type, &dest_wim);
 		if (ret)
