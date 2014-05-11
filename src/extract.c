@@ -1171,6 +1171,7 @@ create_temporary_file(struct filedes *fd_ret, tchar **name_ret)
 {
 	tchar *name;
 	int raw_fd;
+	int open_flags;
 
 retry:
 	name = ttempnam(NULL, T("wimlib"));
@@ -1179,7 +1180,11 @@ retry:
 		return WIMLIB_ERR_NOMEM;
 	}
 
-	raw_fd = topen(name, O_WRONLY | O_CREAT | O_EXCL | O_BINARY, 0600);
+	open_flags = O_WRONLY | O_CREAT | O_EXCL | O_BINARY;
+#ifdef __WIN32__
+	open_flags |= _O_SHORT_LIVED;
+#endif
+	raw_fd = topen(name, open_flags, 0600);
 
 	if (raw_fd < 0) {
 		if (errno == EEXIST) {
