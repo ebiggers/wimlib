@@ -1273,14 +1273,23 @@ need_tmpfile_to_extract(struct wim_lookup_table_entry *lte,
 }
 
 static int
-begin_extract_stream_to_tmpfile(struct wim_lookup_table_entry *lte,
-				bool is_partial_res,
-				void *_ctx)
+begin_extract_stream(struct wim_lookup_table_entry *lte,
+		     u32 flags, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
 	int ret;
 
-	if (!need_tmpfile_to_extract(lte, is_partial_res)) {
+	if (flags & BEGIN_STREAM_FLAG_WHOLE_STREAM) {
+		DEBUG("Whole stream (size=%"PRIu64") will be read into memory",
+		      lte->size);
+		ctx->cur_stream = lte;
+		filedes_invalidate(&ctx->tmpfile_fd);
+		return 0;
+	}
+
+	if (!need_tmpfile_to_extract(lte,
+				     (flags & BEGIN_STREAM_FLAG_PARTIAL_RESOURCE)))
+	{
 		DEBUG("Temporary file not needed "
 		      "for stream (size=%"PRIu64")", lte->size);
 		ret = extract_stream_instances(lte, lte, ctx);
@@ -1295,13 +1304,41 @@ begin_extract_stream_to_tmpfile(struct wim_lookup_table_entry *lte,
 }
 
 static int
-end_extract_stream_to_tmpfile(struct wim_lookup_table_entry *lte,
-			      int status, void *_ctx)
+extract_chunk(const void *chunk, size_t size, void *_ctx)
+{
+	struct apply_ctx *ctx = _ctx;
+	int ret;
+
+	if (filedes_valid(&ctx->tmpfile_fd)) {
+		ret = full_write(&ctx->tmpfile_fd, chunk, size);
+		if (ret)
+			ERROR_WITH_ERRNO("Error writing to file descriptor");
+	} else {
+		struct wim_lookup_table_entry lte_override;
+
+		memcpy(&lte_override, ctx->cur_stream,
+		       sizeof(struct wim_lookup_table_entry));
+
+		lte_override.resource_location = RESOURCE_IN_ATTACHED_BUFFER;
+		lte_override.size = size;
+		lte_override.attached_buffer = (void *)chunk;
+
+		ret = extract_stream_instances(ctx->cur_stream, &lte_override, ctx);
+	}
+	return ret;
+}
+
+static int
+end_extract_stream(struct wim_lookup_table_entry *lte,
+		   int status, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
 	struct wim_lookup_table_entry lte_override;
 	int ret;
 	int errno_save = errno;
+
+	if (!filedes_valid(&ctx->tmpfile_fd))
+		return status;
 
 	ret = filedes_close(&ctx->tmpfile_fd);
 
@@ -1342,11 +1379,11 @@ static int
 extract_stream_list(struct apply_ctx *ctx)
 {
 	struct read_stream_list_callbacks cbs = {
-		.begin_stream		= begin_extract_stream_to_tmpfile,
+		.begin_stream		= begin_extract_stream,
 		.begin_stream_ctx	= ctx,
-		.consume_chunk		= extract_chunk_to_fd,
-		.consume_chunk_ctx	= &ctx->tmpfile_fd,
-		.end_stream		= end_extract_stream_to_tmpfile,
+		.consume_chunk		= extract_chunk,
+		.consume_chunk_ctx	= ctx,
+		.end_stream		= end_extract_stream,
 		.end_stream_ctx		= ctx,
 	};
 	return read_stream_list(&ctx->stream_list,

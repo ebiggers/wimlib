@@ -216,10 +216,9 @@ skip_wim_stream(struct wim_lookup_table_entry *lte);
  * @lte:
  *	Stream that is about to be read.
  *
- * @is_partial_res:
- *	Set to true if the stream is just one of several being read from a
- *	single pack and therefore would be extra expensive to read
- *	independently.
+ * @flags:
+ *	Bitwise OR of BEGIN_STREAM_FLAG_PARTIAL_RESOURCE and/or
+ *	BEGIN_STREAM_FLAG_WHOLE_STREAM.
  *
  * @ctx:
  *	User-provided context.
@@ -230,8 +229,16 @@ skip_wim_stream(struct wim_lookup_table_entry *lte);
  * (without calling @consume_chunk or @end_stream).
  */
 typedef int (*read_stream_list_begin_stream_t)(struct wim_lookup_table_entry *lte,
-					       bool is_partial_res,
+					       u32 flags,
 					       void *ctx);
+
+/* Set to true if the stream is just one of several being read from a single
+ * pack and therefore would be extra expensive to read independently.  */
+#define BEGIN_STREAM_FLAG_PARTIAL_RESOURCE	0x00000001
+
+/* This is purely advisory and indicates that the entire stream data will be
+ * provided in one call to consume_chunk().  */
+#define BEGIN_STREAM_FLAG_WHOLE_STREAM		0x00000002
 
 #define BEGIN_STREAM_STATUS_SKIP_STREAM	-1
 

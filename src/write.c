@@ -613,7 +613,7 @@ end_write_resource(struct write_streams_ctx *ctx, struct wim_reshdr *out_reshdr)
 /* Begin processing a stream for writing.  */
 static int
 write_stream_begin_read(struct wim_lookup_table_entry *lte,
-			bool is_partial_res, void *_ctx)
+			u32 flags, void *_ctx)
 {
 	struct write_streams_ctx *ctx = _ctx;
 	int ret;
@@ -637,7 +637,7 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 	ctx->stream_was_duplicate = false;
 	if (ctx->lookup_table != NULL && lte->unhashed && !lte->unique_size) {
 
-		wimlib_assert(!is_partial_res);
+		wimlib_assert(!(flags & BEGIN_STREAM_FLAG_PARTIAL_RESOURCE));
 
 		struct wim_lookup_table_entry *lte_new;
 

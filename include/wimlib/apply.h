@@ -223,6 +223,7 @@ struct apply_ctx {
 	unsigned long invalid_sequence;
 	unsigned long partial_security_descriptors;
 	unsigned long no_security_descriptors;
+	struct wim_lookup_table_entry *cur_stream;
 	struct filedes tmpfile_fd;
 	tchar *tmpfile_name;
 	u64 num_streams_remaining;
