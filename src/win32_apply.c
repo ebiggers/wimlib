@@ -402,23 +402,48 @@ win32_extract_stream(const wchar_t *path, const wchar_t *stream_name,
 		       creationDisposition, FILE_FLAG_BACKUP_SEMANTICS |
 					    FILE_FLAG_OPEN_REPARSE_POINT,
 		       NULL);
-	if (h == INVALID_HANDLE_VALUE)
-		goto error;
+	if (h == INVALID_HANDLE_VALUE) {
+		set_errno_from_GetLastError();
+		ret = WIMLIB_ERR_OPEN;
+		goto out;
+	}
 
-	ret = 0;
-	if (!lte)
+	if (!lte) {
+		ret = 0;
 		goto out_close_handle;
-	ret = extract_stream(lte, lte->size, win32_extract_wim_chunk, h);
-out_close_handle:
-	if (!CloseHandle(h))
-		goto error;
-	if (ret && !errno)
-		errno = -1;
-	return ret;
+	}
 
-error:
+	if (!SetFilePointerEx(h,
+			      (LARGE_INTEGER) { .QuadPart = lte->size},
+			      NULL,
+			      FILE_BEGIN))
+		goto write_error;
+
+	if (!SetEndOfFile(h))
+		goto write_error;
+
+	if (!SetFilePointerEx(h,
+			      (LARGE_INTEGER) { .QuadPart = 0},
+			      NULL,
+			      FILE_BEGIN))
+		goto write_error;
+
+	ret = extract_stream(lte, lte->size, win32_extract_wim_chunk, h);
+	goto out_close_handle;
+
+write_error:
 	set_errno_from_GetLastError();
-	return WIMLIB_ERR_WRITE;
+	ret = WIMLIB_ERR_WRITE;
+
+out_close_handle:
+	if (!CloseHandle(h)) {
+		if (!ret) {
+			set_errno_from_GetLastError();
+			ret = WIMLIB_ERR_WRITE;
+		}
+	}
+out:
+	return ret;
 }
 
 static int
