@@ -470,18 +470,6 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 	return 0;
 }
 
-static int
-do_calculate_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
-{
-	return calculate_dentry_full_path(dentry);
-}
-
-int
-calculate_dentry_tree_full_paths(struct wim_dentry *root)
-{
-	return for_dentry_in_tree(root, do_calculate_dentry_full_path, NULL);
-}
-
 tchar *
 dentry_full_path(struct wim_dentry *dentry)
 {
