@@ -53,7 +53,7 @@ struct chunk_compressor {
 	 * successfully retrieved, or %false if there are no chunks currently
 	 * being compressed.  */
 	bool (*get_chunk)(struct chunk_compressor *,
-			  const void **, unsigned *, unsigned *);
+			  const void **, u32 *, u32 *);
 };
 
 

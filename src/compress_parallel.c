@@ -67,8 +67,8 @@ struct compressor_thread_data {
 struct message {
 	u8 *uncompressed_chunks[MAX_CHUNKS_PER_MSG];
 	u8 *compressed_chunks[MAX_CHUNKS_PER_MSG];
-	unsigned uncompressed_chunk_sizes[MAX_CHUNKS_PER_MSG];
-	unsigned compressed_chunk_sizes[MAX_CHUNKS_PER_MSG];
+	u32 uncompressed_chunk_sizes[MAX_CHUNKS_PER_MSG];
+	u32 compressed_chunk_sizes[MAX_CHUNKS_PER_MSG];
 	size_t num_filled_chunks;
 	size_t num_alloc_chunks;
 	struct list_head list;
@@ -361,8 +361,8 @@ parallel_chunk_compressor_submit_chunk(struct chunk_compressor *_ctx,
 
 static bool
 parallel_chunk_compressor_get_chunk(struct chunk_compressor *_ctx,
-				    const void **cdata_ret, unsigned *csize_ret,
-				    unsigned *usize_ret)
+				    const void **cdata_ret, u32 *csize_ret,
+				    u32 *usize_ret)
 {
 	struct parallel_chunk_compressor *ctx = (struct parallel_chunk_compressor *)_ctx;
 	struct message *msg;
@@ -417,7 +417,6 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 	unsigned desired_num_threads;
 
 	wimlib_assert(out_chunk_size > 0);
-	wimlib_assert(out_ctype != WIMLIB_COMPRESSION_TYPE_NONE);
 
 	if (num_threads == 0)
 		num_threads = get_default_num_threads();

@@ -896,8 +896,8 @@ submit_chunk_for_compression(struct write_streams_ctx *ctx,
 	 * compressed chunk.  */
 	while (!ctx->compressor->submit_chunk(ctx->compressor, chunk, size)) {
 		const void *cchunk;
-		unsigned csize;
-		unsigned usize;
+		u32 csize;
+		u32 usize;
 		bool bret;
 		int ret;
 
@@ -1180,8 +1180,8 @@ static int
 finish_remaining_chunks(struct write_streams_ctx *ctx)
 {
 	const void *cdata;
-	unsigned csize;
-	unsigned usize;
+	u32 csize;
+	u32 usize;
 	int ret;
 
 	if (ctx->compressor == NULL)

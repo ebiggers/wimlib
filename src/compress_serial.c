@@ -38,8 +38,8 @@ struct serial_chunk_compressor {
 	struct wimlib_compressor *compressor;
 	u8 *udata;
 	u8 *cdata;
-	unsigned ulen;
-	unsigned clen;
+	u32 ulen;
+	u32 clen;
 };
 
 static void
@@ -75,8 +75,8 @@ serial_chunk_compressor_submit_chunk(struct chunk_compressor *_ctx,
 
 static bool
 serial_chunk_compressor_get_chunk(struct chunk_compressor *_ctx,
-				  const void **cdata_ret, unsigned *csize_ret,
-				  unsigned *usize_ret)
+				  const void **cdata_ret, u32 *csize_ret,
+				  u32 *usize_ret)
 {
 	struct serial_chunk_compressor *ctx = (struct serial_chunk_compressor*)_ctx;
 
@@ -106,6 +106,8 @@ new_serial_chunk_compressor(int out_ctype, u32 out_chunk_size,
 {
 	struct serial_chunk_compressor *ctx;
 	int ret;
+
+	wimlib_assert(out_chunk_size > 0);
 
 	ctx = CALLOC(1, sizeof(*ctx));
 	if (ctx == NULL)
