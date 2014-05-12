@@ -1285,8 +1285,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * ::WIMLIB_ADD_FLAG_UNIX_DATA.   */
 #define WIMLIB_ADD_FLAG_NTFS			0x00000001
 
-/** Follow symlinks; archive and dump the files they point to.  Cannot be used
- * with ::WIMLIB_ADD_FLAG_NTFS. */
+/** Follow symlinks; archive and dump the files they point to.  Currently only
+ * supported on UNIX-like systems.  */
 #define WIMLIB_ADD_FLAG_DEREFERENCE		0x00000002
 
 /** Call the progress function with the message
@@ -1302,7 +1302,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * alternate data stream to each regular file, symbolic link, and directory to
  * contain this information.  Please note that this flag is for convenience
  * only; Microsoft's implementation will not understand this special
- * information.  This flag cannot be combined with ::WIMLIB_ADD_FLAG_NTFS.  */
+ * information.  */
 #define WIMLIB_ADD_FLAG_UNIX_DATA		0x00000010
 
 /** Do not capture security descriptors.  Only has an effect in NTFS capture
@@ -1339,8 +1339,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_ADD_FLAG_NORPFIX			0x00000200
 
 /** Do not automatically exclude unsupported files or directories from capture;
- * e.g. encrypted directories in NTFS-3g capture mode, or device files and FIFOs
- * on UNIX-like systems.  Instead, fail with ::WIMLIB_ERR_UNSUPPORTED_FILE when
+ * e.g. encrypted files in NTFS-3g capture mode, or device files and FIFOs on
+ * UNIX-like systems.  Instead, fail with ::WIMLIB_ERR_UNSUPPORTED_FILE when
  * such a file is encountered.  */
 #define WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE	0x00000400
 
