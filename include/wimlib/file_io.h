@@ -41,9 +41,6 @@ struct iovec {
 struct iovec;
 #endif
 
-extern int
-full_writev(struct filedes *fd, struct iovec *iov, int iovcnt);
-
 #ifndef __WIN32__
 #  define O_BINARY 0
 #endif

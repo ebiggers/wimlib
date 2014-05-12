@@ -206,45 +206,6 @@ full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
 	return 0;
 }
 
-#if 0
-/* Wrapper around writev() that checks for errors and keep retrying until all
- * requested bytes have been written.
- *
- * Return values:
- *	WIMLIB_ERR_SUCCESS	(0)
- *	WIMLIB_ERR_WRITE	(errno set)
- * */
-int
-full_writev(struct filedes *fd, struct iovec *iov, int iovcnt)
-{
-	size_t total_bytes_written = 0;
-	while (iovcnt > 0) {
-		ssize_t bytes_written;
-
-		bytes_written = writev(fd->fd, iov, iovcnt);
-		if (unlikely(bytes_written < 0)) {
-			if (errno == EINTR)
-				continue;
-			return WIMLIB_ERR_WRITE;
-		}
-		total_bytes_written += bytes_written;
-		while (bytes_written) {
-			if (bytes_written >= iov[0].iov_len) {
-				bytes_written -= iov[0].iov_len;
-				iov++;
-				iovcnt--;
-			} else {
-				iov[0].iov_base += bytes_written;
-				iov[0].iov_len -= bytes_written;
-				bytes_written = 0;
-			}
-		}
-	}
-	fd->offset += total_bytes_written;
-	return 0;
-}
-#endif
-
 ssize_t
 raw_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
 {
