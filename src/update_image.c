@@ -722,6 +722,7 @@ static const char wincfg[] =
 "/$ntfs.log\n"
 "/hiberfil.sys\n"
 "/pagefile.sys\n"
+"/swapfile.sys\n"
 "/System Volume Information\n"
 "/RECYCLER\n"
 "/Windows/CSC\n";

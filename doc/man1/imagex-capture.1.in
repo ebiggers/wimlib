@@ -325,6 +325,7 @@ used:
 \\$ntfs.log
 \\hiberfil.sys
 \\pagefile.sys
+\\swapfile.sys
 \\System Volume Information
 \\RECYCLER
 \\Windows\\CSC
