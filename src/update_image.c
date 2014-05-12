@@ -815,8 +815,8 @@ execute_add_command(struct update_command_journal *j,
 
 	memset(&params, 0, sizeof(params));
 
+#ifdef WITH_NTFS_3G
 	if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
-	#ifdef WITH_NTFS_3G
 		capture_tree = build_dentry_tree_ntfs;
 		extra_arg = &ntfs_vol;
 		if (wim_get_current_image_metadata(wim)->ntfs_vol != NULL) {
@@ -824,11 +824,8 @@ execute_add_command(struct update_command_journal *j,
 			ret = WIMLIB_ERR_INVALID_PARAM;
 			goto out;
 		}
-	#else
-		ret = WIMLIB_ERR_INVALID_PARAM;
-		goto out;
-	#endif
 	}
+#endif
 
 	ret = get_capture_config(config_file, &config,
 				 add_flags, fs_source_path);
@@ -1254,13 +1251,17 @@ check_add_command(struct wimlib_update_command *cmd,
 
 	bool is_entire_image = WIMLIB_IS_WIM_ROOT_PATH(cmd->add.wim_target_path);
 
-#ifdef __WIN32__
-	/* Check for flags not supported on Windows */
+#ifndef WITH_NTFS_3G
 	if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
-		ERROR("wimlib was compiled without support for NTFS-3g, so");
-		ERROR("we cannot capture a WIM image directly from a NTFS volume");
+		ERROR("wimlib was compiled without support for NTFS-3g, so\n"
+		      "        we cannot capture a WIM image directly "
+		      "from an NTFS volume");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
+#endif
+
+#ifdef __WIN32__
+	/* Check for flags not supported on Windows */
 	if (add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {
 		ERROR("Capturing UNIX-specific data is not supported on Windows");
 		return WIMLIB_ERR_UNSUPPORTED;
