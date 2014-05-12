@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -25,7 +25,6 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/assert.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
@@ -36,6 +35,22 @@
 
 #include <string.h>
 
+/*
+ * Tally a file (or directory) that has been scanned for a capture operation,
+ * and possibly call the progress function provided by the library user.
+ *
+ * @params
+ *	Flags, optional progress function, and progress data for the capture
+ *	operation.
+ * @status
+ *	Status of the scanned file (ok, unsupported, excluded, or excluded
+ *	symlink).
+ * @inode
+ *	If @status is WIMLIB_SCAN_DENTRY_OK, this is a pointer to the WIM inode
+ *	that has been created for the scanned file.  The first time the file is
+ *	seen, inode->i_nlink will be 1.  On subsequent visits of the same inode
+ *	via additional hard links, inode->i_nlink will be greater than 1.
+ */
 void
 do_capture_progress(struct add_image_params *params, int status,
 		    const struct wim_inode *inode)
@@ -52,35 +67,52 @@ do_capture_progress(struct add_image_params *params, int status,
 	}
 	params->progress.scan.status = status;
 	if (status == WIMLIB_SCAN_DENTRY_OK && inode->i_nlink == 1) {
+
+		/* Successful scan, and visiting inode for the first time  */
+
+		/* Tally size of all data streams.  */
 		const struct wim_lookup_table_entry *lte;
 		for (unsigned i = 0; i <= inode->i_num_ads; i++) {
 			lte = inode_stream_lte_resolved(inode, i);
-			if (lte != NULL)
+			if (lte)
 				params->progress.scan.num_bytes_scanned += lte->size;
 		}
+
+		/* Tally the file itself.  */
 		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
 			params->progress.scan.num_dirs_scanned++;
 		else
 			params->progress.scan.num_nondirs_scanned++;
 	}
+	/* Call the user-provided progress function.  */
 	if (params->progress_func) {
 		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
 				      &params->progress);
 	}
 }
 
+/*
+ * Given a null-terminated pathname pattern @pat that has been read from line
+ * @line_no of the file @path, validate and canonicalize the pattern.
+ *
+ * On success, returns 0.
+ * On failure, returns WIMLIB_ERR_INVALID_CAPTURE_CONFIG.
+ * In either case, @pat may have been modified in-place (and possibly
+ * shortened).
+ */
 int
 mangle_pat(tchar *pat, const tchar *path, unsigned long line_no)
 {
 	if (!is_any_path_separator(pat[0]) &&
 	    pat[0] != T('\0') && pat[1] == T(':'))
 	{
-		/* Pattern begins with drive letter */
+		/* Pattern begins with drive letter.  */
+
 		if (!is_any_path_separator(pat[2])) {
 			/* Something like c:file, which is actually a path
 			 * relative to the current working directory on the c:
 			 * drive.  We require paths with drive letters to be
-			 * absolute. */
+			 * absolute.  */
 			ERROR("%"TS":%lu: Invalid pattern \"%"TS"\":\n"
 			      "        Patterns including drive letters must be absolute!\n"
 			      "        Maybe try \"%"TC":%"TC"%"TS"\"?\n",
@@ -97,18 +129,21 @@ mangle_pat(tchar *pat, const tchar *path, unsigned long line_no)
 		tmemmove(pat, pat + 2, tstrlen(pat + 2) + 1);
 	}
 
-	/* Collapse and translate path separators.
+	/* Collapse consecutive path separators, and translate both / and \ into
+	 * / (UNIX) or \ (Windows).
 	 *
-	 * Note: we require that this works for filesystem paths and WIM paths,
-	 * so the desired path separators must be the same.  */
+	 * Note: we expect that this function produces patterns that can be used
+	 * for both filesystem paths and WIM paths, so the desired path
+	 * separators must be the same.  */
 	BUILD_BUG_ON(OS_PREFERRED_PATH_SEPARATOR != WIM_PATH_SEPARATOR);
 	do_canonicalize_path(pat, pat);
 
-	/* Relative patterns can only match file names.  */
+	/* Relative patterns can only match file names, so they must be
+	 * single-component only.  */
 	if (pat[0] != OS_PREFERRED_PATH_SEPARATOR &&
 	    tstrchr(pat, OS_PREFERRED_PATH_SEPARATOR))
 	{
-		ERROR("%"TS":%lu: Invalid path \"%"TS"\":\n"
+		ERROR("%"TS":%lu: Invalid pattern \"%"TS"\":\n"
 		      "        Relative patterns can only include one path component!\n"
 		      "        Maybe try \"%"TC"%"TS"\"?",
 		      path, line_no, pat, OS_PREFERRED_PATH_SEPARATOR, pat);
@@ -118,15 +153,30 @@ mangle_pat(tchar *pat, const tchar *path, unsigned long line_no)
 	return 0;
 }
 
+/*
+ * Read, parse, and validate a capture configuration file from either an on-disk
+ * file or an in-memory buffer.
+ *
+ * To read from a file, specify @config_file, and use NULL for @buf.
+ * To read from a buffer, specify @buf and @bufsize.
+ *
+ * @config must be initialized to all 0's.
+ *
+ * On success, 0 will be returned, and the resulting capture configuration will
+ * be stored in @config.
+ *
+ * On failure, a positive error code will be returned, and the contents of
+ * @config will be invalidated.
+ */
 int
-do_read_capture_config_file(const tchar *config_file, const void *buf,
-			    size_t bufsize, struct capture_config *config)
+read_capture_config(const tchar *config_file, const void *buf,
+		    size_t bufsize, struct capture_config *config)
 {
 	int ret;
 
 	/* [PrepopulateList] is used for apply, not capture.  But since we do
-	 * understand it, recognize it (avoiding unrecognized section warning)
-	 * and discard the strings.  */
+	 * understand it, recognize it, thereby avoiding the unrecognized
+	 * section warning, but discard the resulting strings.  */
 	STRING_SET(prepopulate_pats);
 
 	struct text_file_section sections[] = {
@@ -159,36 +209,40 @@ destroy_capture_config(struct capture_config *config)
 	FREE(config->buf);
 }
 
+/*
+ * Determine whether a path matches any wildcard pattern in a list.
+ *
+ * Special rules apply about what form @path must be in; see match_path().
+ */
 bool
-match_pattern_list(const tchar *path, size_t path_len,
+match_pattern_list(const tchar *path, size_t path_nchars,
 		   const struct string_set *list)
 {
 	for (size_t i = 0; i < list->num_strings; i++)
-		if (match_path(path, path_len, list->strings[i],
+		if (match_path(path, path_nchars, list->strings[i],
 			       OS_PREFERRED_PATH_SEPARATOR, true))
 			return true;
 	return false;
 }
 
 /*
- * Return true if the image capture configuration file indicates we should
- * exclude the filename @path from capture.
+ * Determine whether the filesystem @path should be excluded from capture, based
+ * on the current capture configuration file.
  *
- * The passed in @path must be given relative to the root of the capture, but
- * with a leading path separator.  For example, if the file "in/file" is being
- * tested and the library user ran wimlib_add_image(wim, "in", ...), then the
- * directory "in" is the root of the capture and the path should be specified as
- * "/file".
+ * The @path must be given relative to the root of the capture, but with a
+ * leading path separator.  For example, if the file "in/file" is being tested
+ * and the library user ran wimlib_add_image(wim, "in", ...), then the directory
+ * "in" is the root of the capture and the path should be specified as "/file".
  *
- * Also, all path separators in @path must be OS_PREFERRED_PATH_SEPARATOR, and
- * there cannot be trailing slashes.
+ * Also, all path separators in @path must be OS_PREFERRED_PATH_SEPARATOR, there
+ * cannot be trailing slashes, and there cannot be consecutive path separators.
  *
  * As a special case, the empty string will be interpreted as a single path
- * separator.
+ * separator (which means the root of capture itself).
  */
 bool
-exclude_path(const tchar *path, size_t path_nchars,
-	     const struct capture_config *config)
+should_exclude_path(const tchar *path, size_t path_nchars,
+		    const struct capture_config *config)
 {
 	tchar dummy[2];
 

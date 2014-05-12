@@ -69,8 +69,8 @@ extern int
 mangle_pat(tchar *pat, const tchar *path, unsigned long line_no);
 
 extern int
-do_read_capture_config_file(const tchar *config_file, const void *buf,
-			    size_t bufsize, struct capture_config *config);
+read_capture_config(const tchar *config_file, const void *buf,
+		    size_t bufsize, struct capture_config *config);
 
 extern void
 destroy_capture_config(struct capture_config *config);
@@ -80,8 +80,8 @@ match_pattern_list(const tchar *path, size_t path_nchars,
 		   const struct string_set *list);
 
 extern bool
-exclude_path(const tchar *path, size_t path_nchars,
-	     const struct capture_config *config);
+should_exclude_path(const tchar *path, size_t path_nchars,
+		    const struct capture_config *config);
 
 typedef int (*capture_tree_t)(struct wim_dentry **, const tchar *,
 			      struct add_image_params *);

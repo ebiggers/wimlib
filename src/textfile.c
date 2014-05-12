@@ -298,29 +298,30 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
  *	Path to the file on disk to read, or a dummy name for the buffer.
  * @buf
  *	If NULL, the data will be read from the @path file.  Otherwise the data
- *	will be read from this buffer, which must be newline-terminated.
- * @buflen
+ *	will be read from this buffer.
+ * @bufsize
  *	Length of buffer in bytes; ignored if @buf is NULL.
- * @buf_ret
+ * @mem_ret
  *	On success, a pointer to a buffer backing the parsed lines is stored
- *	here.  If @buf is not NULL, this will be @buf.  Otherwise, this will be
- *	an allocated buffer that must be freed when finished with the lines.
+ *	here.  This must be freed after the parsed lines are done being used.
  * @pos_sections
  *	Specifications of allowed sections in the file.  Each such specification
  *	consists of the name of the section (e.g. [ExclusionList], like in the
  *	INI file format), along with a pointer to the list of lines parsed for
  *	that section.  Use an empty name to indicate the destination of lines
- *	not in any section.
+ *	not in any section.  Each list must be initialized to an empty string
+ *	set.
  * @num_pos_sections
- *	Length of @pos_sections array.
+ *	Number of entries in the @pos_sections array.
  * @flags
- *	LOAD_TEXT_FILE_REMOVE_QUOTES or 0.
+ *	Flags: LOAD_TEXT_FILE_REMOVE_QUOTES, LOAD_TEXT_FILE_NO_WARNINGS.
  * @mangle_line
- *	Optional callback to modify each line being read.
+ *	Optional callback to validate and/or modify each line being read.
  *
- * Returns 0 on success or a positive error code on failure.
+ * Returns 0 on success; nonzero on failure.
  *
- * Unknown sections are ignored (warning printed).
+ * Unknown sections are ignored, but a warning is printed for each, unless
+ * LOAD_TEXT_FILE_NO_WARNINGS is specified.
  */
 int
 do_load_text_file(const tchar *path,

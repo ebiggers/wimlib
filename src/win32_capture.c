@@ -1141,9 +1141,9 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	DWORD desiredAccess;
 
 
-	if (exclude_path(path + params->capture_root_nchars,
-			 path_num_chars - params->capture_root_nchars,
-			 params->config))
+	if (should_exclude_path(path + params->capture_root_nchars,
+				path_num_chars - params->capture_root_nchars,
+				params->config))
 	{
 		ret = 0;
 		goto out_progress;

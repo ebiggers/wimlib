@@ -768,11 +768,11 @@ get_capture_config(const tchar *config_file, struct capture_config *config,
 		/* Use Windows default.  */
 		if (config_file)
 			return WIMLIB_ERR_INVALID_PARAM;
-		ret = do_read_capture_config_file(T("wincfg"), wincfg,
-						  sizeof(wincfg) - 1, config);
+		ret = read_capture_config(T("wincfg"), wincfg,
+					  sizeof(wincfg) - 1, config);
 	} else if (config_file) {
 		/* Use the specified configuration file.  */
-		ret = do_read_capture_config_file(config_file, NULL, 0, config);
+		ret = read_capture_config(config_file, NULL, 0, config);
 	} else {
 		/* ... Or don't use any configuration file at all.  No files
 		 * will be excluded from capture, all files will be compressed,

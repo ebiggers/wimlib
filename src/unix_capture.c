@@ -209,9 +209,9 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	struct wim_inode *inode = NULL;
 	struct stat stbuf;
 
-	if (exclude_path(path + params->capture_root_nchars,
-			 path_len - params->capture_root_nchars,
-			 params->config))
+	if (should_exclude_path(path + params->capture_root_nchars,
+				path_len - params->capture_root_nchars,
+				params->config))
 	{
 		ret = 0;
 		goto out_progress;
