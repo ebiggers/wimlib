@@ -508,6 +508,10 @@ verify_inode(struct wim_inode *inode, const struct wim_security_data *sd);
 extern void
 inode_ref_streams(struct wim_inode *inode);
 
+extern void
+inode_unref_streams(struct wim_inode *inode,
+		    struct wim_lookup_table *lookup_table);
+
 /* inode_fixup.c  */
 extern int
 dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list);

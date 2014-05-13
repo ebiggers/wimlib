@@ -837,6 +837,20 @@ inode_ref_streams(struct wim_inode *inode)
 	}
 }
 
+void
+inode_unref_streams(struct wim_inode *inode,
+		    struct wim_lookup_table *lookup_table)
+{
+	struct wim_lookup_table_entry *lte;
+	unsigned i;
+
+	for (i = 0; i <= inode->i_num_ads; i++) {
+		lte = inode_stream_lte(inode, i, lookup_table);
+		if (lte)
+			lte_decrement_refcnt(lte, lookup_table);
+	}
+}
+
 int
 init_inode_table(struct wim_inode_table *table, size_t capacity)
 {

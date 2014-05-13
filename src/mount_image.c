@@ -370,32 +370,21 @@ wim_pathname_to_inode(WIMStruct *wim, const tchar *path)
 		return NULL;
 }
 
-/* Remove a dentry from a mounted WIM image; i.e. remove an alias for the
- * corresponding inode.
- *
- * If there are no remaining references to the inode either through dentries or
- * open file descriptors, the inode is freed.  Otherwise, the inode is not
- * removed, but the dentry is unlinked and freed.
- *
- * Either way, all lookup table entries referenced by the inode have their
- * reference count decremented.  If a lookup table entry has no open file
- * descriptors and no references remaining, it is freed, and the corresponding
- * staging file is unlinked.
+/*
+ * Remove a dentry from a mounted WIM image; i.e. remove an alias for an inode.
  */
 static void
 remove_dentry(struct wim_dentry *dentry,
 	      struct wim_lookup_table *lookup_table)
 {
-	struct wim_inode *inode = dentry->d_inode;
-	struct wim_lookup_table_entry *lte;
-	unsigned i;
+	/* Put a reference to each stream the inode contains.  */
+	inode_unref_streams(dentry->d_inode, lookup_table);
 
-	for (i = 0; i <= inode->i_num_ads; i++) {
-		lte = inode_stream_lte(inode, i, lookup_table);
-		if (lte)
-			lte_decrement_refcnt(lte, lookup_table);
-	}
+	/* Unlink the dentry from the image's dentry tree.  */
 	unlink_dentry(dentry);
+
+	/* Delete the dentry.  This will also decrement the link count of the
+	 * corresponding inode.  */
 	free_dentry(dentry);
 }
 

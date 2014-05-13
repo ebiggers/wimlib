@@ -998,10 +998,13 @@ dentry_tree_clear_inode_visited(struct wim_dentry *root)
 	for_dentry_in_tree(root, dentry_clear_inode_visited, NULL);
 }
 
-/* Frees a WIM dentry.
+/*
+ * Free a WIM dentry.
  *
- * The corresponding inode (if any) is freed only if its link count is
- * decremented to 0.  */
+ * In addition to freeing the dentry itself, this decrements the link count of
+ * the corresponding inode (if any).  If the inode's link count reaches 0, the
+ * inode is freed as well.
+ */
 void
 free_dentry(struct wim_dentry *dentry)
 {
@@ -1022,16 +1025,8 @@ do_free_dentry(struct wim_dentry *dentry, void *_lookup_table)
 {
 	struct wim_lookup_table *lookup_table = _lookup_table;
 
-	if (lookup_table) {
-		struct wim_inode *inode = dentry->d_inode;
-		for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-			struct wim_lookup_table_entry *lte;
-
-			lte = inode_stream_lte(inode, i, lookup_table);
-			if (lte)
-				lte_decrement_refcnt(lte, lookup_table);
-		}
-	}
+	if (lookup_table)
+		inode_unref_streams(dentry->d_inode, lookup_table);
 	free_dentry(dentry);
 	return 0;
 }
