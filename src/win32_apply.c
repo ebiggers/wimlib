@@ -193,7 +193,7 @@ win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 
 	if (vol_flags & FILE_SUPPORTS_REPARSE_POINTS) {
 		ctx->supported_features.reparse_points = 1;
-		if (win32func_CreateSymbolicLinkW)
+		if (func_CreateSymbolicLinkW)
 			ctx->supported_features.symlink_reparse_points = 1;
 	}
 
@@ -348,12 +348,12 @@ static int
 win32_create_symlink(const wchar_t *oldpath, const wchar_t *newpath,
 		     struct apply_ctx *ctx)
 {
-	if (!(*win32func_CreateSymbolicLinkW)(newpath, oldpath, 0)) {
+	if (!(*func_CreateSymbolicLinkW)(newpath, oldpath, 0)) {
 		if (GetLastError() != ERROR_ALREADY_EXISTS)
 			goto error;
 		if (!win32_delete_file_wrapper(newpath))
 			goto error;
-		if (!(*win32func_CreateSymbolicLinkW)(newpath, oldpath, 0))
+		if (!(*func_CreateSymbolicLinkW)(newpath, oldpath, 0))
 			goto error;
 	}
 	return 0;

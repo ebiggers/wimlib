@@ -511,9 +511,9 @@ win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess)
 /* Pointers to dynamically loaded functions  */
 
 /* kernel32.dll:  Vista and later */
-BOOL (WINAPI *win32func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
-					     const wchar_t *lpTargetFileName,
-					     DWORD dwFlags);
+BOOL (WINAPI *func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
+					const wchar_t *lpTargetFileName,
+					DWORD dwFlags);
 
 /* ntdll.dll  */
 
@@ -554,10 +554,6 @@ static OSVERSIONINFO windows_version_info = {
 	.dwOSVersionInfoSize = sizeof(OSVERSIONINFO),
 };
 
-static HMODULE hKernel32 = NULL;
-
-static HMODULE hNtdll = NULL;
-
 static bool acquired_privileges = false;
 
 bool
@@ -568,32 +564,102 @@ windows_version_is_at_least(unsigned major, unsigned minor)
 		 windows_version_info.dwMinorVersion >= minor);
 }
 
-#define NTDLL_SYM(name) { (void **)&func_##name, #name }
-static const struct ntdll_sym {
+struct dll_sym {
 	void **func_ptr;
 	const char *name;
-} ntdll_syms[] = {
-	NTDLL_SYM(RtlNtStatusToDosError),
-	NTDLL_SYM(NtQueryInformationFile),
-	NTDLL_SYM(NtQuerySecurityObject),
-	NTDLL_SYM(NtQueryDirectoryFile),
-	NTDLL_SYM(NtSetSecurityObject),
-	{NULL, NULL},
+	bool required;
 };
-#undef NTDLL_SYM
+
+#define DLL_SYM(name, required) { (void **)&func_##name, #name, required }
+
+#define for_each_sym(sym, spec) \
+	for ((sym) = (spec)->syms; (sym)->name; (sym)++)
+
+struct dll_spec {
+	const wchar_t *name;
+	HMODULE handle;
+	const struct dll_sym syms[];
+};
+
+struct dll_spec ntdll_spec = {
+	.name = L"ntdll.dll",
+	.syms = {
+		DLL_SYM(RtlNtStatusToDosError, true),
+		DLL_SYM(NtQueryInformationFile, true),
+		DLL_SYM(NtQuerySecurityObject, true),
+		DLL_SYM(NtQueryDirectoryFile, true),
+		DLL_SYM(NtSetSecurityObject, true),
+		DLL_SYM(RtlCreateSystemVolumeInformationFolder, false),
+		{NULL, NULL},
+	},
+};
+
+struct dll_spec kernel32_spec = {
+	.name = L"kernel32.dll",
+	.syms = {
+		DLL_SYM(CreateSymbolicLinkW, false),
+		{NULL, NULL},
+	},
+};
+
+static int
+init_dll(struct dll_spec *spec)
+{
+	const struct dll_sym *sym;
+	void *addr;
+
+	if (!spec->handle)
+		spec->handle = LoadLibrary(spec->name);
+	if (!spec->handle) {
+		for_each_sym(sym, spec) {
+			if (sym->required) {
+				ERROR("%ls could not be loaded!", spec->name);
+				return WIMLIB_ERR_UNSUPPORTED;
+			}
+		}
+		return 0;
+	}
+	for_each_sym(sym, spec) {
+		addr = (void *)GetProcAddress(spec->handle, sym->name);
+		if (addr) {
+			*(sym->func_ptr) = addr;
+		} else if (sym->required) {
+			ERROR("Can't find %s in %ls", sym->name, spec->name);
+			return WIMLIB_ERR_UNSUPPORTED;
+		}
+	}
+	return 0;
+}
+
+static void
+cleanup_dll(struct dll_spec *spec)
+{
+	const struct dll_sym *sym;
+
+	if (spec->handle) {
+		FreeLibrary(spec->handle);
+		spec->handle = NULL;
+
+		for_each_sym(sym, spec)
+			*(sym->func_ptr) = NULL;
+	}
+}
 
 /* One-time initialization for Windows capture/apply code.  */
 int
 win32_global_init(int init_flags)
 {
+	int ret;
+
 	/* Try to acquire useful privileges.  */
 	if (!(init_flags & WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES)) {
+		ret = WIMLIB_ERR_INSUFFICIENT_PRIVILEGES;
 		if (!win32_modify_capture_privileges(true))
 			if (init_flags & WIMLIB_INIT_FLAG_STRICT_CAPTURE_PRIVILEGES)
-				goto insufficient_privileges;
+				goto out_drop_privs;
 		if (!win32_modify_apply_privileges(true))
 			if (init_flags & WIMLIB_INIT_FLAG_STRICT_APPLY_PRIVILEGES)
-				goto insufficient_privileges;
+				goto out_drop_privs;
 		acquired_privileges = true;
 	}
 
@@ -601,38 +667,21 @@ win32_global_init(int init_flags)
 	GetVersionEx(&windows_version_info);
 
 	/* Try to dynamically load some functions.  */
-	if (hKernel32 == NULL)
-		hKernel32 = LoadLibrary(L"Kernel32.dll");
+	ret = init_dll(&kernel32_spec);
+	if (ret)
+		goto out_drop_privs;
 
-	if (hKernel32) {
-		win32func_CreateSymbolicLinkW =
-			(void *)GetProcAddress(hKernel32, "CreateSymbolicLinkW");
-	}
+	ret = init_dll(&ntdll_spec);
+	if (ret)
+		goto out_cleanup_kernel32;
 
-	if (hNtdll == NULL)
-		hNtdll = LoadLibrary(L"ntdll.dll");
-
-	if (!hNtdll) {
-		ERROR("ntdll.dll could not be loaded!");
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
-
-	for (const struct ntdll_sym *sym = ntdll_syms; sym->name; sym++) {
-		void *addr = (void *)GetProcAddress(hNtdll, sym->name);
-		if (!addr) {
-			ERROR("Can't find %s() in ntdll.dll", sym->name);
-			return WIMLIB_ERR_UNSUPPORTED;
-		}
-		*(sym->func_ptr) = addr;
-	}
-
-	func_RtlCreateSystemVolumeInformationFolder =
-		(void *)GetProcAddress(hNtdll, "RtlCreateSystemVolumeInformationFolder");
 	return 0;
 
-insufficient_privileges:
+out_cleanup_kernel32:
+	cleanup_dll(&kernel32_spec);
+out_drop_privs:
 	win32_release_capture_and_apply_privileges();
-	return WIMLIB_ERR_INSUFFICIENT_PRIVILEGES;
+	return ret;
 }
 
 void
@@ -640,18 +689,9 @@ win32_global_cleanup(void)
 {
 	if (acquired_privileges)
 		win32_release_capture_and_apply_privileges();
-	if (hKernel32 != NULL) {
-		FreeLibrary(hKernel32);
-		win32func_CreateSymbolicLinkW = NULL;
-		hKernel32 = NULL;
-	}
-	if (hNtdll != NULL) {
-		FreeLibrary(hNtdll);
-		for (const struct ntdll_sym *sym = ntdll_syms; sym->name; sym++)
-			*(sym->func_ptr) = NULL;
-		func_RtlCreateSystemVolumeInformationFolder = NULL;
-		hNtdll = NULL;
-	}
+
+	cleanup_dll(&kernel32_spec);
+	cleanup_dll(&ntdll_spec);
 }
 
 #endif /* __WIN32__ */

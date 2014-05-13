@@ -32,19 +32,9 @@ extern HANDLE
 win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess);
 
 /* Vista and later */
-extern HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
-						   STREAM_INFO_LEVELS InfoLevel,
-						   LPVOID lpFindStreamData,
-						   DWORD dwFlags);
-
-/* Vista and later */
-extern BOOL (WINAPI *win32func_FindNextStreamW)(HANDLE hFindStream,
-						LPVOID lpFindStreamData);
-
-/* Vista and later */
-extern BOOL (WINAPI *win32func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
-						    const wchar_t *lpTargetFileName,
-						    DWORD dwFlags);
+extern BOOL (WINAPI *func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
+					       const wchar_t *lpTargetFileName,
+					       DWORD dwFlags);
 
 /* ntdll functions  */
 
