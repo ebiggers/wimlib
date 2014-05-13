@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -730,23 +730,6 @@ error:
 	return WIMLIB_ERR_WRITE; /* XXX: need better error code */
 }
 
-static DWORD
-do_win32_set_security_descriptor(HANDLE h, const wchar_t *path,
-				 SECURITY_INFORMATION info,
-				 PSECURITY_DESCRIPTOR desc)
-{
-#ifdef WITH_NTDLL
-	if (func_NtSetSecurityObject) {
-		return (*func_RtlNtStatusToDosError)(
-				(*func_NtSetSecurityObject)(h, info, desc));
-	}
-#endif
-	if (SetFileSecurity(path, info, desc))
-		return ERROR_SUCCESS;
-	else
-		return GetLastError();
-}
-
 /*
  * Set an arbitrary security descriptor on an arbitrary file (or directory),
  * working around bugs and design flaws in the Windows operating system.
@@ -761,7 +744,9 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 			      size_t desc_size, struct apply_ctx *ctx)
 {
 	SECURITY_INFORMATION info;
+	DWORD dwDesiredAccess;
 	HANDLE h;
+	DWORD status;
 	int ret;
 
 	/* We really just want to set entire the security descriptor as-is, but
@@ -773,8 +758,6 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 	info = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
 	       DACL_SECURITY_INFORMATION  | SACL_SECURITY_INFORMATION;
 
-	h = INVALID_HANDLE_VALUE;
-
 	/* Prefer NtSetSecurityObject() to SetFileSecurity().  SetFileSecurity()
 	 * itself necessarily uses NtSetSecurityObject() as the latter is the
 	 * underlying system call for setting security information, but
@@ -784,83 +767,69 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 	 * Administrator can have access denied.  (Of course, this not mentioned
 	 * in the MS "documentation".)  */
 
-#ifdef WITH_NTDLL
-	if (func_NtSetSecurityObject) {
-		DWORD dwDesiredAccess;
+	/* Open a handle for NtSetSecurityObject() with as many relevant
+	 * access rights as possible.
+	 *
+	 * We don't know which rights will be actually granted.  It
+	 * could be less than what is needed to actually assign the full
+	 * security descriptor, especially if the process is running as
+	 * a non-Administrator.  However, by default we just do the best
+	 * we can, unless WIMLIB_EXTRACT_FLAG_STRICT_ACLS has been
+	 * enabled.  The MAXIMUM_ALLOWED access right is seemingly
+	 * designed for this use case; however, it does not work
+	 * properly in all cases: it can cause CreateFile() to fail with
+	 * ERROR_ACCESS_DENIED, even though by definition
+	 * MAXIMUM_ALLOWED access only requests access rights that are
+	 * *not* denied.  (Needless to say, MS does not document this
+	 * bug.)  */
 
-		/* Open a handle for NtSetSecurityObject() with as many relevant
-		 * access rights as possible.
-		 *
-		 * We don't know which rights will be actually granted.  It
-		 * could be less than what is needed to actually assign the full
-		 * security descriptor, especially if the process is running as
-		 * a non-Administrator.  However, by default we just do the best
-		 * we can, unless WIMLIB_EXTRACT_FLAG_STRICT_ACLS has been
-		 * enabled.  The MAXIMUM_ALLOWED access right is seemingly
-		 * designed for this use case; however, it does not work
-		 * properly in all cases: it can cause CreateFile() to fail with
-		 * ERROR_ACCESS_DENIED, even though by definition
-		 * MAXIMUM_ALLOWED access only requests access rights that are
-		 * *not* denied.  (Needless to say, MS does not document this
-		 * bug.)  */
-
-		dwDesiredAccess = WRITE_DAC |
-				  WRITE_OWNER |
-				  ACCESS_SYSTEM_SECURITY;
-		for (;;) {
-			DWORD err;
-
-			h = win32_open_existing_file(path, dwDesiredAccess);
-			if (h != INVALID_HANDLE_VALUE)
-				break;
-			err = GetLastError();
-			if (err == ERROR_ACCESS_DENIED ||
-			    err == ERROR_PRIVILEGE_NOT_HELD)
-			{
-				/* Don't increment partial_security_descriptors
-				 * here or check WIMLIB_EXTRACT_FLAG_STRICT_ACLS
-				 * here.  It will be done later if needed; here
-				 * we are just trying to get as many relevant
-				 * access rights as possible.  */
-				if (dwDesiredAccess & ACCESS_SYSTEM_SECURITY) {
-					dwDesiredAccess &= ~ACCESS_SYSTEM_SECURITY;
-					continue;
-				}
-				if (dwDesiredAccess & WRITE_DAC) {
-					dwDesiredAccess &= ~WRITE_DAC;
-					continue;
-				}
-				if (dwDesiredAccess & WRITE_OWNER) {
-					dwDesiredAccess &= ~WRITE_OWNER;
-					continue;
-				}
-			}
-			/* Other error, or couldn't open the file even with no
-			 * access rights specified.  Something else must be
-			 * wrong.  */
-			set_errno_from_win32_error(err);
-			return WIMLIB_ERR_SET_SECURITY;
-		}
-	}
-#endif
-
-	/* Try setting the security descriptor.  */
-	for (;;) {
+	dwDesiredAccess = WRITE_DAC | WRITE_OWNER | ACCESS_SYSTEM_SECURITY;
+	while ((h = win32_open_existing_file(path,
+					     dwDesiredAccess)) == INVALID_HANDLE_VALUE)
+	{
 		DWORD err;
 
-		err = do_win32_set_security_descriptor(h, path, info,
-						       (PSECURITY_DESCRIPTOR)desc);
-		if (err == ERROR_SUCCESS) {
-			ret = 0;
-			break;
+		err = GetLastError();
+		if (err == ERROR_ACCESS_DENIED ||
+		    err == ERROR_PRIVILEGE_NOT_HELD)
+		{
+			/* Don't increment partial_security_descriptors
+			 * here or check WIMLIB_EXTRACT_FLAG_STRICT_ACLS
+			 * here.  It will be done later if needed; here
+			 * we are just trying to get as many relevant
+			 * access rights as possible.  */
+			if (dwDesiredAccess & ACCESS_SYSTEM_SECURITY) {
+				dwDesiredAccess &= ~ACCESS_SYSTEM_SECURITY;
+				continue;
+			}
+			if (dwDesiredAccess & WRITE_DAC) {
+				dwDesiredAccess &= ~WRITE_DAC;
+				continue;
+			}
+			if (dwDesiredAccess & WRITE_OWNER) {
+				dwDesiredAccess &= ~WRITE_OWNER;
+				continue;
+			}
 		}
+		/* Other error, or couldn't open the file even with no
+		 * access rights specified.  Something else must be
+		 * wrong.  */
+		set_errno_from_win32_error(err);
+		return WIMLIB_ERR_SET_SECURITY;
+	}
 
+	/* Try setting the security descriptor.  */
+	ret = 0;
+	while (!(NT_SUCCESS(status = (*func_NtSetSecurityObject)(h,
+								 info,
+								 (PSECURITY_DESCRIPTOR)desc))))
+	{
 		/* Failed to set the requested parts of the security descriptor.
 		 * If the error was permissions-related, try to set fewer parts
 		 * of the security descriptor, unless
 		 * WIMLIB_EXTRACT_FLAG_STRICT_ACLS is enabled.  */
-		if ((err == ERROR_PRIVILEGE_NOT_HELD ||
-		     err == ERROR_ACCESS_DENIED) &&
+		if ((status == STATUS_PRIVILEGE_NOT_HELD ||
+		     status == STATUS_ACCESS_DENIED) &&
 		    !(ctx->extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS))
 		{
 			if (info & SACL_SECURITY_INFORMATION) {
@@ -884,16 +853,13 @@ win32_set_security_descriptor(const wchar_t *path, const u8 *desc,
 		 * security descriptor could not be set.  */
 		if (!(info & SACL_SECURITY_INFORMATION))
 			ctx->partial_security_descriptors--;
-		set_errno_from_win32_error(err);
+		set_errno_from_nt_status(status);
 		ret = WIMLIB_ERR_SET_SECURITY;
 		break;
 	}
 
 	/* Close handle opened for NtSetSecurityObject().  */
-#ifdef WITH_NTDLL
-	if (func_NtSetSecurityObject)
-		CloseHandle(h);
-#endif
+	CloseHandle(h);
 	return ret;
 }
 

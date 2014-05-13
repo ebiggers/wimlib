@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -29,9 +29,7 @@
 
 #include <errno.h>
 
-#ifdef WITH_NTDLL
-#  include <winternl.h>
-#endif
+#include <winternl.h>
 
 #include "wimlib/win32_common.h"
 #include "wimlib/assert.h"
@@ -320,13 +318,11 @@ set_errno_from_GetLastError(void)
 	set_errno_from_win32_error(GetLastError());
 }
 
-#ifdef WITH_NTDLL
 void
 set_errno_from_nt_status(NTSTATUS status)
 {
 	set_errno_from_win32_error((*func_RtlNtStatusToDosError)(status));
 }
-#endif
 
 /* Given a Windows-style path, return the number of characters of the prefix
  * that specify the path to the root directory of a drive, or return 0 if the
@@ -512,26 +508,14 @@ win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess)
 			  NULL /* hTemplateFile */);
 }
 
-/* Pointers to functions that are not available on all targetted versions of
- * Windows (XP and later).  NOTE: The WINAPI annotations seem to be important; I
- * assume it specifies a certain calling convention. */
+/* Pointers to dynamically loaded functions  */
 
-/* Vista and later */
-HANDLE (WINAPI *win32func_FindFirstStreamW)(LPCWSTR lpFileName,
-					    STREAM_INFO_LEVELS InfoLevel,
-					    LPVOID lpFindStreamData,
-					    DWORD dwFlags) = NULL;
-
-/* Vista and later */
-BOOL (WINAPI *win32func_FindNextStreamW)(HANDLE hFindStream,
-					 LPVOID lpFindStreamData) = NULL;
-
-/* Vista and later */
+/* kernel32.dll:  Vista and later */
 BOOL (WINAPI *win32func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
 					     const wchar_t *lpTargetFileName,
-					     DWORD dwFlags) = NULL;
+					     DWORD dwFlags);
 
-#ifdef WITH_NTDLL
+/* ntdll.dll  */
 
 DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
 
@@ -566,17 +550,13 @@ NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
 		(PCUNICODE_STRING VolumeRootPath);
 
-#endif /* WITH_NTDLL */
-
 static OSVERSIONINFO windows_version_info = {
 	.dwOSVersionInfoSize = sizeof(OSVERSIONINFO),
 };
 
 static HMODULE hKernel32 = NULL;
 
-#ifdef WITH_NTDLL
 static HMODULE hNtdll = NULL;
-#endif
 
 static bool acquired_privileges = false;
 
@@ -587,6 +567,20 @@ windows_version_is_at_least(unsigned major, unsigned minor)
 		(windows_version_info.dwMajorVersion == major &&
 		 windows_version_info.dwMinorVersion >= minor);
 }
+
+#define NTDLL_SYM(name) { (void **)&func_##name, #name }
+static const struct ntdll_sym {
+	void **func_ptr;
+	const char *name;
+} ntdll_syms[] = {
+	NTDLL_SYM(RtlNtStatusToDosError),
+	NTDLL_SYM(NtQueryInformationFile),
+	NTDLL_SYM(NtQuerySecurityObject),
+	NTDLL_SYM(NtQueryDirectoryFile),
+	NTDLL_SYM(NtSetSecurityObject),
+	{NULL, NULL},
+};
+#undef NTDLL_SYM
 
 /* One-time initialization for Windows capture/apply code.  */
 int
@@ -611,55 +605,29 @@ win32_global_init(int init_flags)
 		hKernel32 = LoadLibrary(L"Kernel32.dll");
 
 	if (hKernel32) {
-		win32func_FindFirstStreamW = (void*)GetProcAddress(hKernel32,
-								   "FindFirstStreamW");
-		if (win32func_FindFirstStreamW) {
-			win32func_FindNextStreamW = (void*)GetProcAddress(hKernel32,
-									  "FindNextStreamW");
-			if (!win32func_FindNextStreamW)
-				win32func_FindFirstStreamW = NULL;
-		}
-		win32func_CreateSymbolicLinkW = (void*)GetProcAddress(hKernel32,
-								      "CreateSymbolicLinkW");
+		win32func_CreateSymbolicLinkW =
+			(void *)GetProcAddress(hKernel32, "CreateSymbolicLinkW");
 	}
 
-#ifdef WITH_NTDLL
 	if (hNtdll == NULL)
 		hNtdll = LoadLibrary(L"ntdll.dll");
 
-	if (hNtdll) {
-		func_RtlNtStatusToDosError  =
-			(void*)GetProcAddress(hNtdll, "RtlNtStatusToDosError");
-		if (func_RtlNtStatusToDosError) {
-
-			func_NtQuerySecurityObject  =
-				(void*)GetProcAddress(hNtdll, "NtQuerySecurityObject");
-
-			func_NtQueryDirectoryFile   =
-				(void*)GetProcAddress(hNtdll, "NtQueryDirectoryFile");
-
-			func_NtQueryInformationFile =
-				(void*)GetProcAddress(hNtdll, "NtQueryInformationFile");
-
-			func_NtSetSecurityObject    =
-				(void*)GetProcAddress(hNtdll, "NtSetSecurityObject");
-			func_RtlCreateSystemVolumeInformationFolder =
-				(void*)GetProcAddress(hNtdll, "RtlCreateSystemVolumeInformationFolder");
-		}
+	if (!hNtdll) {
+		ERROR("ntdll.dll could not be loaded!");
+		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
-	DEBUG("FindFirstStreamW       @ %p", win32func_FindFirstStreamW);
-	DEBUG("FindNextStreamW        @ %p", win32func_FindNextStreamW);
-	DEBUG("CreateSymbolicLinkW    @ %p", win32func_CreateSymbolicLinkW);
-	DEBUG("RtlNtStatusToDosError  @ %p", func_RtlNtStatusToDosError);
-	DEBUG("NtQuerySecurityObject  @ %p", func_NtQuerySecurityObject);
-	DEBUG("NtQueryDirectoryFile   @ %p", func_NtQueryDirectoryFile);
-	DEBUG("NtQueryInformationFile @ %p", func_NtQueryInformationFile);
-	DEBUG("NtSetSecurityObject    @ %p", func_NtSetSecurityObject);
-	DEBUG("RtlCreateSystemVolumeInformationFolder    @ %p",
-	      func_RtlCreateSystemVolumeInformationFolder);
-#endif
+	for (const struct ntdll_sym *sym = ntdll_syms; sym->name; sym++) {
+		void *addr = (void *)GetProcAddress(hNtdll, sym->name);
+		if (!addr) {
+			ERROR("Can't find %s() in ntdll.dll", sym->name);
+			return WIMLIB_ERR_UNSUPPORTED;
+		}
+		*(sym->func_ptr) = addr;
+	}
 
+	func_RtlCreateSystemVolumeInformationFolder =
+		(void *)GetProcAddress(hNtdll, "RtlCreateSystemVolumeInformationFolder");
 	return 0;
 
 insufficient_privileges:
@@ -674,14 +642,16 @@ win32_global_cleanup(void)
 		win32_release_capture_and_apply_privileges();
 	if (hKernel32 != NULL) {
 		FreeLibrary(hKernel32);
+		win32func_CreateSymbolicLinkW = NULL;
 		hKernel32 = NULL;
 	}
-#ifdef WITH_NTDLL
 	if (hNtdll != NULL) {
 		FreeLibrary(hNtdll);
+		for (const struct ntdll_sym *sym = ntdll_syms; sym->name; sym++)
+			*(sym->func_ptr) = NULL;
+		func_RtlCreateSystemVolumeInformationFolder = NULL;
 		hNtdll = NULL;
 	}
-#endif
 }
 
 #endif /* __WIN32__ */

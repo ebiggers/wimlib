@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -31,6 +31,7 @@
 
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
+#include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
@@ -47,13 +48,6 @@ struct win32_capture_state {
 	unsigned long num_long_path_warnings;
 };
 
-
-static const wchar_t *capture_access_denied_msg =
-L"         If you are not running this program as the administrator, you may\n"
- "         need to do so, so that all data and metadata can be backed up.\n"
- "         Otherwise, there may be no way to access the desired data or\n"
- "         metadata without taking ownership of the file or directory.\n"
- ;
 
 int
 read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
@@ -92,7 +86,6 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 		if (ret)
 			break;
 	}
-out_close_handle:
 	CloseHandle(hFile);
 	return ret;
 }
@@ -136,7 +129,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	void *file_ctx;
 	int ret;
 
-	DEBUG("Reading %"PRIu64" bytes from encryted file \"%ls\"",
+	DEBUG("Reading %"PRIu64" bytes from encrypted file \"%ls\"",
 	      size, lte->file_on_disk);
 
 	export_ctx.read_prefix_cb = cb;
@@ -187,113 +180,28 @@ FILETIME_to_u64(const FILETIME *ft)
  * short names are essentially obsolete anyway.
  */
 static int
-win32_get_short_name(HANDLE hFile, const wchar_t *path, struct wim_dentry *dentry)
+win32_get_short_name(HANDLE hFile, struct wim_dentry *dentry)
 {
 
 	/* It's not any harder to just make the NtQueryInformationFile() system
 	 * call ourselves, and it saves a dumb call to FindFirstFile() which of
 	 * course has to create its own handle.  */
-#ifdef WITH_NTDLL
-	if (func_NtQueryInformationFile) {
-		NTSTATUS status;
-		IO_STATUS_BLOCK io_status;
-		u8 buf[128] _aligned_attribute(8);
-		const FILE_NAME_INFORMATION *info;
+	NTSTATUS status;
+	IO_STATUS_BLOCK io_status;
+	u8 buf[128] _aligned_attribute(8);
+	const FILE_NAME_INFORMATION *info;
 
-		status = (*func_NtQueryInformationFile)(hFile, &io_status, buf, sizeof(buf),
-							FileAlternateNameInformation);
-		info = (const FILE_NAME_INFORMATION*)buf;
-		if (status == STATUS_SUCCESS && info->FileNameLength != 0) {
-			dentry->short_name = MALLOC(info->FileNameLength + 2);
-			if (!dentry->short_name)
-				return WIMLIB_ERR_NOMEM;
-			memcpy(dentry->short_name, info->FileName,
-			       info->FileNameLength);
-			dentry->short_name[info->FileNameLength / 2] = L'\0';
-			dentry->short_name_nbytes = info->FileNameLength;
-		}
-		return 0;
+	status = (*func_NtQueryInformationFile)(hFile, &io_status, buf, sizeof(buf),
+						FileAlternateNameInformation);
+	info = (const FILE_NAME_INFORMATION*)buf;
+	if (NT_SUCCESS(status) && info->FileNameLength != 0) {
+		dentry->short_name = utf16le_dupz(info->FileName,
+						  info->FileNameLength);
+		if (!dentry->short_name)
+			return WIMLIB_ERR_NOMEM;
+		dentry->short_name_nbytes = info->FileNameLength;
 	}
-#endif
-
-	WIN32_FIND_DATAW dat;
-	HANDLE hFind;
-	int ret = 0;
-
-	hFind = FindFirstFile(path, &dat);
-	if (hFind != INVALID_HANDLE_VALUE) {
-		if (dat.cAlternateFileName[0] != L'\0') {
-			DEBUG("\"%ls\": short name \"%ls\"", path, dat.cAlternateFileName);
-			size_t short_name_nbytes = wcslen(dat.cAlternateFileName) *
-						   sizeof(wchar_t);
-			size_t n = short_name_nbytes + sizeof(wchar_t);
-			dentry->short_name = MALLOC(n);
-			if (dentry->short_name) {
-				memcpy(dentry->short_name, dat.cAlternateFileName, n);
-				dentry->short_name_nbytes = short_name_nbytes;
-			} else {
-				ret = WIMLIB_ERR_NOMEM;
-			}
-		}
-		FindClose(hFind);
-	}
-	return ret;
-}
-
-/*
- * win32_query_security_descriptor() - Query a file's security descriptor
- *
- * We need the file's security descriptor in SECURITY_DESCRIPTOR_RELATIVE
- * format, and we currently have a handle opened with as many relevant
- * permissions as possible.  At this point, on Windows there are a number of
- * options for reading a file's security descriptor:
- *
- * GetFileSecurity():  This takes in a path and returns the
- * SECURITY_DESCRIPTOR_RELATIVE.  Problem: this uses an internal handle, not
- * ours, and the handle created internally doesn't specify
- * FILE_FLAG_BACKUP_SEMANTICS.  Therefore there can be access denied errors on
- * some files and directories, even when running as the Administrator.
- *
- * GetSecurityInfo():  This takes in a handle and returns the security
- * descriptor split into a bunch of different parts.  This should work, but it's
- * dumb because we have to put the security descriptor back together again.
- *
- * BackupRead():  This can read the security descriptor, but this is a
- * difficult-to-use API, probably only works as the Administrator, and the
- * format of the returned data is not well documented.
- *
- * NtQuerySecurityObject():  This is exactly what we need, as it takes in a
- * handle and returns the security descriptor in SECURITY_DESCRIPTOR_RELATIVE
- * format.  Only problem is that it's a ntdll function and therefore not
- * officially part of the Win32 API.  Oh well.
- */
-static DWORD
-win32_query_security_descriptor(HANDLE hFile, const wchar_t *path,
-				SECURITY_INFORMATION requestedInformation,
-				SECURITY_DESCRIPTOR *buf,
-				DWORD bufsize, DWORD *lengthNeeded)
-{
-#ifdef WITH_NTDLL
-	if (func_NtQuerySecurityObject) {
-		NTSTATUS status;
-
-		status = (*func_NtQuerySecurityObject)(hFile,
-						       requestedInformation, buf,
-						       bufsize, lengthNeeded);
-		/* Since it queries an already-open handle, NtQuerySecurityObject()
-		 * apparently returns STATUS_ACCESS_DENIED rather than
-		 * STATUS_PRIVILEGE_NOT_HELD.  */
-		if (status == STATUS_ACCESS_DENIED)
-			return ERROR_PRIVILEGE_NOT_HELD;
-		else
-			return (*func_RtlNtStatusToDosError)(status);
-	}
-#endif
-	if (GetFileSecurity(path, requestedInformation, buf,
-			    bufsize, lengthNeeded))
-		return ERROR_SUCCESS;
-	else
-		return GetLastError();
+	return 0;
 }
 
 static int
@@ -309,7 +217,7 @@ win32_get_security_descriptor(HANDLE hFile,
 	u8 *buf;
 	size_t bufsize;
 	DWORD lenNeeded;
-	DWORD err;
+	NTSTATUS status;
 	int ret;
 
 	requestedInformation = DACL_SECURITY_INFORMATION |
@@ -318,46 +226,67 @@ win32_get_security_descriptor(HANDLE hFile,
 			       GROUP_SECURITY_INFORMATION;
 	buf = _buf;
 	bufsize = sizeof(_buf);
-	for (;;) {
-		err = win32_query_security_descriptor(hFile, path,
-						      requestedInformation,
-						      (SECURITY_DESCRIPTOR*)buf,
-						      bufsize, &lenNeeded);
-		switch (err) {
-		case ERROR_SUCCESS:
-			goto have_descriptor;
-		case ERROR_INSUFFICIENT_BUFFER:
+
+	/*
+	 * We need the file's security descriptor in SECURITY_DESCRIPTOR_RELATIVE
+	 * format, and we currently have a handle opened with as many relevant
+	 * permissions as possible.  At this point, on Windows there are a number of
+	 * options for reading a file's security descriptor:
+	 *
+	 * GetFileSecurity():  This takes in a path and returns the
+	 * SECURITY_DESCRIPTOR_RELATIVE.  Problem: this uses an internal handle, not
+	 * ours, and the handle created internally doesn't specify
+	 * FILE_FLAG_BACKUP_SEMANTICS.  Therefore there can be access denied errors on
+	 * some files and directories, even when running as the Administrator.
+	 *
+	 * GetSecurityInfo():  This takes in a handle and returns the security
+	 * descriptor split into a bunch of different parts.  This should work, but it's
+	 * dumb because we have to put the security descriptor back together again.
+	 *
+	 * BackupRead():  This can read the security descriptor, but this is a
+	 * difficult-to-use API, probably only works as the Administrator, and the
+	 * format of the returned data is not well documented.
+	 *
+	 * NtQuerySecurityObject():  This is exactly what we need, as it takes in a
+	 * handle and returns the security descriptor in SECURITY_DESCRIPTOR_RELATIVE
+	 * format.  Only problem is that it's a ntdll function and therefore not
+	 * officially part of the Win32 API.  Oh well.
+	 */
+	while (!(NT_SUCCESS(status = (*func_NtQuerySecurityObject)(hFile,
+								   requestedInformation,
+								   (PSECURITY_DESCRIPTOR)buf,
+								   bufsize,
+								   &lenNeeded))))
+	{
+		switch (status) {
+		case STATUS_BUFFER_OVERFLOW:
 			wimlib_assert(buf == _buf);
 			buf = MALLOC(lenNeeded);
 			if (!buf)
 				return WIMLIB_ERR_NOMEM;
 			bufsize = lenNeeded;
 			break;
-		case ERROR_PRIVILEGE_NOT_HELD:
-			if (add_flags & WIMLIB_ADD_FLAG_STRICT_ACLS)
-				goto fail;
+		case STATUS_PRIVILEGE_NOT_HELD:
+		case STATUS_ACCESS_DENIED:
+			if (add_flags & WIMLIB_ADD_FLAG_STRICT_ACLS) {
+		default:
+				set_errno_from_nt_status(status);
+				ERROR_WITH_ERRNO("\"%ls\": Failed to "
+						 "read security descriptor", path);
+				ret = WIMLIB_ERR_READ;
+				goto out_free_buf;
+			}
 			if (requestedInformation & SACL_SECURITY_INFORMATION) {
 				state->num_get_sacl_priv_notheld++;
 				requestedInformation &= ~SACL_SECURITY_INFORMATION;
 				break;
 			}
-			/* Fall through */
-		case ERROR_ACCESS_DENIED:
-			if (add_flags & WIMLIB_ADD_FLAG_STRICT_ACLS)
-				goto fail;
 			state->num_get_sd_access_denied++;
 			ret = 0;
-			goto out_free_buf;
-		default:
-		fail:
-			set_errno_from_win32_error(err);
-			ERROR_WITH_ERRNO("Failed to read security descriptor of \"%ls\"", path);
-			ret = WIMLIB_ERR_READ;
 			goto out_free_buf;
 		}
 	}
 
-have_descriptor:
 	inode->i_security_id = sd_set_add_sd(sd_set, buf, lenNeeded);
 	if (inode->i_security_id < 0)
 		ret = WIMLIB_ERR_NOMEM;
@@ -393,48 +322,23 @@ win32_recurse_directory(HANDLE hDir,
 	DEBUG("Recurse to directory \"%ls\"", dir_path);
 
 	/* Using NtQueryDirectoryFile() we can re-use the same open handle,
-	 * which we opened with FILE_FLAG_BACKUP_SEMANTICS (probably not the
-	 * case for the FindFirstFile() API; it's not documented).  */
-#ifdef WITH_NTDLL
-	if (!func_NtQueryDirectoryFile)
-		goto use_FindFirstFile;
+	 * which we opened with FILE_FLAG_BACKUP_SEMANTICS.  */
 
 	NTSTATUS status;
 	IO_STATUS_BLOCK io_status;
 	const size_t bufsize = 8192;
-	u8 *buf;
-	BOOL restartScan = TRUE;
-	const FILE_NAMES_INFORMATION *info;
+	void *buf;
 
 	buf = MALLOC(bufsize);
 	if (!buf)
 		return WIMLIB_ERR_NOMEM;
-	for (;;) {
-		status = (*func_NtQueryDirectoryFile)(hDir, NULL, NULL, NULL,
-						      &io_status, buf, bufsize,
-						      FileNamesInformation,
-						      FALSE, NULL, restartScan);
-		restartScan = FALSE;
-		if (status != STATUS_SUCCESS) {
-			if (status == STATUS_NO_MORE_FILES ||
-			    status == STATUS_NO_MORE_ENTRIES ||
-			    status == STATUS_NO_MORE_MATCHES) {
-				ret = 0;
-			} else if (status == STATUS_NOT_IMPLEMENTED ||
-				   status == STATUS_NOT_SUPPORTED ||
-				   status == STATUS_INVALID_INFO_CLASS) {
-				FREE(buf);
-				goto use_FindFirstFile;
-			} else {
-				set_errno_from_nt_status(status);
-				ERROR_WITH_ERRNO("Failed to read directory "
-						 "\"%ls\"", dir_path);
-				ret = WIMLIB_ERR_READ;
-			}
-			goto out_free_buf;
-		}
-		wimlib_assert(io_status.Information != 0);
-		info = (const FILE_NAMES_INFORMATION*)buf;
+
+	while (NT_SUCCESS(status = (*func_NtQueryDirectoryFile)(hDir, NULL, NULL, NULL,
+								&io_status, buf, bufsize,
+								FileNamesInformation,
+								FALSE, NULL, FALSE)))
+	{
+		const FILE_NAMES_INFORMATION *info = buf;
 		for (;;) {
 			if (!(info->FileNameLength == 2 && info->FileName[0] == L'.') &&
 			    !(info->FileNameLength == 4 && info->FileName[0] == L'.' &&
@@ -466,80 +370,18 @@ win32_recurse_directory(HANDLE hDir,
 			}
 			if (info->NextEntryOffset == 0)
 				break;
-			info = (const FILE_NAMES_INFORMATION*)
-					((const u8*)info + info->NextEntryOffset);
+			info = (const FILE_NAMES_INFORMATION *)
+					((const u8 *)info + info->NextEntryOffset);
 		}
+	}
+
+	if (status != STATUS_NO_MORE_FILES) {
+		set_errno_from_nt_status(status);
+		ERROR_WITH_ERRNO("Failed to read directory \"%ls\"", dir_path);
+		ret = WIMLIB_ERR_READ;
 	}
 out_free_buf:
 	FREE(buf);
-	return ret;
-#endif
-
-use_FindFirstFile:
-	;
-	WIN32_FIND_DATAW dat;
-	HANDLE hFind;
-	DWORD err;
-
-	/* Begin reading the directory by calling FindFirstFileW.  Unlike UNIX
-	 * opendir(), FindFirstFileW has file globbing built into it.  But this
-	 * isn't what we actually want, so just add a dummy glob to get all
-	 * entries. */
-	dir_path[dir_path_num_chars] = OS_PREFERRED_PATH_SEPARATOR;
-	dir_path[dir_path_num_chars + 1] = L'*';
-	dir_path[dir_path_num_chars + 2] = L'\0';
-	hFind = FindFirstFile(dir_path, &dat);
-	dir_path[dir_path_num_chars] = L'\0';
-
-	if (hFind == INVALID_HANDLE_VALUE) {
-		err = GetLastError();
-		if (err == ERROR_FILE_NOT_FOUND) {
-			return 0;
-		} else {
-			set_errno_from_win32_error(err);
-			ERROR_WITH_ERRNO("Failed to read directory \"%ls\"",
-					 dir_path);
-			return WIMLIB_ERR_READ;
-		}
-	}
-	ret = 0;
-	do {
-		/* Skip . and .. entries */
-		if (dat.cFileName[0] == L'.' &&
-		    (dat.cFileName[1] == L'\0' ||
-		     (dat.cFileName[1] == L'.' &&
-		      dat.cFileName[2] == L'\0')))
-			continue;
-		size_t filename_len = wcslen(dat.cFileName);
-
-		dir_path[dir_path_num_chars] = OS_PREFERRED_PATH_SEPARATOR;
-		wmemcpy(dir_path + dir_path_num_chars + 1,
-			dat.cFileName,
-			filename_len + 1);
-
-		struct wim_dentry *child;
-		size_t path_len = dir_path_num_chars + 1 + filename_len;
-		ret = win32_build_dentry_tree_recursive(&child,
-							dir_path,
-							path_len,
-							params,
-							state,
-							vol_flags);
-		dir_path[dir_path_num_chars] = L'\0';
-		if (ret)
-			goto out_find_close;
-		if (child)
-			dentry_add_child(root, child);
-	} while (FindNextFile(hFind, &dat));
-	err = GetLastError();
-	if (err != ERROR_NO_MORE_FILES) {
-		set_errno_from_win32_error(err);
-		ERROR_WITH_ERRNO("Failed to read directory \"%ls\"", dir_path);
-		if (ret == 0)
-			ret = WIMLIB_ERR_READ;
-	}
-out_find_close:
-	FindClose(hFind);
 	return ret;
 }
 
@@ -932,8 +774,8 @@ out_invalid_stream_name:
 
 /* Load information about the streams of an open file into a WIM inode.
  *
- * By default, we use the NtQueryInformationFile() system call instead of
- * FindFirstStream() and FindNextStream().  This is done for two reasons:
+ * We use the NtQueryInformationFile() system call instead of FindFirstStream()
+ * and FindNextStream().  This is done for two reasons:
  *
  * - FindFirstStream() opens its own handle to the file or directory and
  *   apparently does so without specifying FILE_FLAG_BACKUP_SEMANTICS, thereby
@@ -952,59 +794,55 @@ win32_capture_streams(HANDLE *hFile_p,
 		      u64 file_size,
 		      unsigned vol_flags)
 {
-	WIN32_FIND_STREAM_DATA dat;
 	int ret;
-#ifdef WITH_NTDLL
 	u8 _buf[8192] _aligned_attribute(8);
 	u8 *buf;
 	size_t bufsize;
 	IO_STATUS_BLOCK io_status;
 	NTSTATUS status;
 	const FILE_STREAM_INFORMATION *info;
-#endif
-	HANDLE hFind;
-	DWORD err;
 
 	DEBUG("Capturing streams from \"%ls\"", path);
-
-	if (!(vol_flags & FILE_NAMED_STREAMS))
-		goto unnamed_only;
-
-#ifdef WITH_NTDLL
-	if (!func_NtQueryInformationFile)
-		goto use_FindFirstStream;
 
 	buf = _buf;
 	bufsize = sizeof(_buf);
 
+	if (!(vol_flags & FILE_NAMED_STREAMS))
+		goto unnamed_only;
+
 	/* Get a buffer containing the stream information.  */
-	for (;;) {
-		status = (*func_NtQueryInformationFile)(*hFile_p, &io_status,
-							buf, bufsize,
-							FileStreamInformation);
-		if (status == STATUS_SUCCESS) {
-			break;
-		} else if (status == STATUS_BUFFER_OVERFLOW) {
-			u8 *newbuf;
+	while (!NT_SUCCESS(status = (*func_NtQueryInformationFile)(*hFile_p,
+								   &io_status,
+								   buf,
+								   bufsize,
+								   FileStreamInformation)))
+	{
 
-			bufsize *= 2;
-			if (buf == _buf)
-				newbuf = MALLOC(bufsize);
-			else
-				newbuf = REALLOC(buf, bufsize);
+		switch (status) {
+		case STATUS_BUFFER_OVERFLOW:
+			{
+				u8 *newbuf;
 
-			if (!newbuf) {
-				ret = WIMLIB_ERR_NOMEM;
-				goto out_free_buf;
+				bufsize *= 2;
+				if (buf == _buf)
+					newbuf = MALLOC(bufsize);
+				else
+					newbuf = REALLOC(buf, bufsize);
+				if (!newbuf) {
+					ret = WIMLIB_ERR_NOMEM;
+					goto out_free_buf;
+				}
+				buf = newbuf;
 			}
-			buf = newbuf;
-		} else if (status == STATUS_NOT_IMPLEMENTED ||
-			   status == STATUS_NOT_SUPPORTED ||
-			   status == STATUS_INVALID_INFO_CLASS) {
-			goto use_FindFirstStream;
-		} else {
+			break;
+		case STATUS_NOT_IMPLEMENTED:
+		case STATUS_NOT_SUPPORTED:
+		case STATUS_INVALID_INFO_CLASS:
+			goto unnamed_only;
+		default:
 			set_errno_from_nt_status(status);
-			ERROR_WITH_ERRNO("Failed to read streams of %ls", path);
+			ERROR_WITH_ERRNO("\"%ls\": Failed to query "
+					 "stream information", path);
 			ret = WIMLIB_ERR_READ;
 			goto out_free_buf;
 		}
@@ -1025,8 +863,10 @@ win32_capture_streams(HANDLE *hFile_p,
 	}
 
 	/* Parse one or more stream information structures.  */
-	info = (const FILE_STREAM_INFORMATION*)buf;
+	info = (const FILE_STREAM_INFORMATION *)buf;
 	for (;;) {
+		WIN32_FIND_STREAM_DATA dat;
+
 		if (info->StreamNameLength <= sizeof(dat.cStreamName) - 2) {
 			dat.StreamSize = info->StreamSize;
 			memcpy(dat.cStreamName, info->StreamName, info->StreamNameLength);
@@ -1040,85 +880,39 @@ win32_capture_streams(HANDLE *hFile_p,
 		}
 		if (info->NextEntryOffset == 0) {
 			/* No more stream information.  */
-			ret = 0;
 			break;
 		}
 		/* Advance to next stream information.  */
-		info = (const FILE_STREAM_INFORMATION*)
-				((const u8*)info + info->NextEntryOffset);
+		info = (const FILE_STREAM_INFORMATION *)
+				((const u8 *)info + info->NextEntryOffset);
+	}
+	ret = 0;
+	goto out_free_buf;
+
+unnamed_only:
+	/* The volume does not support named streams.  Only capture the unnamed
+	 * data stream. */
+	DEBUG("Only capturing unnamed data stream");
+	if (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+				   FILE_ATTRIBUTE_REPARSE_POINT))
+	{
+		ret = 0;
+		goto out_free_buf;
+	}
+
+	{
+		WIN32_FIND_STREAM_DATA dat;
+
+		wcscpy(dat.cStreamName, L"::$DATA");
+		dat.StreamSize.QuadPart = file_size;
+		ret = win32_capture_stream(path, path_num_chars,
+					   inode, unhashed_streams, &dat);
 	}
 out_free_buf:
 	/* Free buffer if allocated on heap.  */
 	if (buf != _buf)
 		FREE(buf);
 	return ret;
-#endif /* WITH_NTDLL */
-
-use_FindFirstStream:
-	if (win32func_FindFirstStreamW == NULL)
-		goto unnamed_only;
-	hFind = win32func_FindFirstStreamW(path, FindStreamInfoStandard, &dat, 0);
-	if (hFind == INVALID_HANDLE_VALUE) {
-		err = GetLastError();
-		if (err == ERROR_CALL_NOT_IMPLEMENTED ||
-		    err == ERROR_NOT_SUPPORTED ||
-		    err == ERROR_INVALID_FUNCTION ||
-		    err == ERROR_INVALID_PARAMETER)
-			goto unnamed_only;
-
-		/* Seems legal for this to return ERROR_HANDLE_EOF on reparse
-		 * points and directories */
-		if ((inode->i_attributes &
-		    (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
-		    && err == ERROR_HANDLE_EOF)
-		{
-			DEBUG("ERROR_HANDLE_EOF (ok)");
-			return 0;
-		} else {
-			if (err == ERROR_ACCESS_DENIED) {
-				WARNING("Failed to look up data streams "
-					"of \"%ls\": Access denied!\n%ls",
-					path, capture_access_denied_msg);
-				return 0;
-			} else {
-				set_errno_from_win32_error(err);
-				ERROR_WITH_ERRNO("Failed to look up data streams "
-						 "of \"%ls\"", path);
-				return WIMLIB_ERR_READ;
-			}
-		}
-	}
-	do {
-		ret = win32_capture_stream(path,
-					   path_num_chars,
-					   inode, unhashed_streams,
-					   &dat);
-		if (ret)
-			goto out_find_close;
-	} while (win32func_FindNextStreamW(hFind, &dat));
-	err = GetLastError();
-	if (err != ERROR_HANDLE_EOF) {
-		set_errno_from_win32_error(err);
-		ERROR_WITH_ERRNO("Error reading data streams from "
-				 "\"%ls\"", path);
-		ret = WIMLIB_ERR_READ;
-	}
-out_find_close:
-	FindClose(hFind);
-	return ret;
-
-unnamed_only:
-	/* FindFirstStream() API is not available, or the volume does not
-	 * support named streams.  Only capture the unnamed data stream. */
-	DEBUG("Only capturing unnamed data stream");
-	if (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
-				   FILE_ATTRIBUTE_REPARSE_POINT))
-		return 0;
-
-	wcscpy(dat.cStreamName, L"::$DATA");
-	dat.StreamSize.QuadPart = file_size;
-	return win32_capture_stream(path, path_num_chars,
-				    inode, unhashed_streams, &dat);
 }
 
 static int
@@ -1227,7 +1021,7 @@ again:
 	if (ret)
 		goto out;
 
-	ret = win32_get_short_name(hFile, path, root);
+	ret = win32_get_short_name(hFile, root);
 	if (ret)
 		goto out;
 
@@ -1361,16 +1155,6 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	unsigned vol_flags;
 	DWORD dret;
 
-	if (!win32func_FindFirstStreamW
-#ifdef WITH_NTDLL
-	    && !func_NtQueryInformationFile
-#endif
-	   )
-	{
-		WARNING("Running on Windows XP or earlier; "
-			"alternate data streams will not be captured.");
-	}
-
 	path_nchars = wcslen(root_disk_path);
 	if (path_nchars > WINDOWS_NT_MAX_PATH)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -1427,7 +1211,6 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	ret = win32_build_dentry_tree_recursive(root_ret, path,
 						path_nchars, params,
 						&state, vol_flags);
-out_free_path:
 	FREE(path);
 	if (ret == 0)
 		win32_do_capture_warnings(root_disk_path, &state, params->add_flags);

@@ -206,25 +206,6 @@ case "$host" in
 		;;
 esac
 
-AC_ARG_WITH([ntdll],
-	    AS_HELP_STRING([--without-ntdll], [Windows only:  do not try to
-			    use functions from ntdll.  By default, in some parts
-			    of its code, wimlib uses Windows NT system calls to
-			    work around flaws in the Win32 API.  This support
-			    can be omitted if needed, but some annoying bugs
-			    will surface (e.g.  permission denied errors even
-					  when running as the Administrator).]),
-	[WITH_NTDLL=$withval],
-	[WITH_NTDLL=yes])
-
-if test "x$WINDOWS_NATIVE_BUILD" = "xyes"; then
-	if test "x$WITH_NTDLL" = "xyes"; then
-		WINDOWS_LDADD="$WINDOWS_LDADD"
-		AC_DEFINE([WITH_NTDLL], [1], [Define to 1 to try to use ntdll
-						functions])
-	fi
-fi
-
 AC_SUBST([VISIBILITY_CFLAGS], [$VISIBILITY_CFLAGS])
 AC_SUBST([WINDOWS_LDFLAGS], [$WINDOWS_LDFLAGS])
 AC_SUBST([WINDOWS_LDADD], [$WINDOWS_LDADD])

@@ -9,10 +9,8 @@
 #include "wimlib/types.h"
 #include "wimlib/win32.h"
 
-#ifdef WITH_NTDLL
-#  include <ntstatus.h>
-#  include <winternl.h>
-#endif
+#include <ntstatus.h>
+#include <winternl.h>
 
 extern void
 set_errno_from_GetLastError(void);
@@ -20,10 +18,8 @@ set_errno_from_GetLastError(void);
 extern void
 set_errno_from_win32_error(DWORD err);
 
-#ifdef WITH_NTDLL
 extern void
 set_errno_from_nt_status(NTSTATUS status);
-#endif
 
 extern bool
 win32_path_is_root_of_drive(const wchar_t *path);
@@ -51,8 +47,6 @@ extern BOOL (WINAPI *win32func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFile
 						    DWORD dwFlags);
 
 /* ntdll functions  */
-
-#ifdef WITH_NTDLL
 
 extern NTSTATUS (WINAPI *func_NtQueryInformationFile)(HANDLE FileHandle,
 						      PIO_STATUS_BLOCK IoStatusBlock,
@@ -87,8 +81,6 @@ extern DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
 
 extern NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
 			(PCUNICODE_STRING VolumeRootPath);
-#endif
-
 
 
 extern bool
