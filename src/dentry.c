@@ -1018,15 +1018,17 @@ free_dentry(struct wim_dentry *dentry)
 	}
 }
 
-/* This function is passed as an argument to for_dentry_in_tree_depth() in order
- * to free a directory tree. */
 static int
-do_free_dentry(struct wim_dentry *dentry, void *_lookup_table)
+do_free_dentry(struct wim_dentry *dentry, void *_ignore)
 {
-	struct wim_lookup_table *lookup_table = _lookup_table;
+	free_dentry(dentry);
+	return 0;
+}
 
-	if (lookup_table)
-		inode_unref_streams(dentry->d_inode, lookup_table);
+static int
+do_free_dentry_and_unref_streams(struct wim_dentry *dentry, void *lookup_table)
+{
+	inode_unref_streams(dentry->d_inode, lookup_table);
 	free_dentry(dentry);
 	return 0;
 }
@@ -1049,7 +1051,14 @@ do_free_dentry(struct wim_dentry *dentry, void *_lookup_table)
 void
 free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
 {
-	for_dentry_in_tree_depth(root, do_free_dentry, lookup_table);
+	int (*f)(struct wim_dentry *, void *);
+
+	if (lookup_table)
+		f = do_free_dentry_and_unref_streams;
+	else
+		f = do_free_dentry;
+
+	for_dentry_in_tree_depth(root, f, lookup_table);
 }
 
 /* Insert the @child dentry into the case sensitive index of the @dir directory.
