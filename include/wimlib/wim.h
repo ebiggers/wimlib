@@ -145,7 +145,6 @@ wim_checksum_unhashed_streams(WIMStruct *wim);
 /* Internal open flags (pass to open_wim_as_WIMStruct(), not wimlib_open_wim())
  */
 #define WIMLIB_OPEN_FLAG_FROM_PIPE	0x80000000
-#define WIMLIB_OPEN_MASK_PUBLIC		0x7fffffff
 
 extern int
 open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
