@@ -189,7 +189,7 @@ static int
 match_dentry(struct wim_dentry *cur_dentry, struct match_dentry_ctx *ctx)
 {
 	const tchar *name;
-	size_t name_len;
+	size_t name_nchars;
 	int ret;
 
 	if (cur_dentry->file_name_nbytes == 0)
@@ -197,15 +197,16 @@ match_dentry(struct wim_dentry *cur_dentry, struct match_dentry_ctx *ctx)
 
 	ret = utf16le_get_tstr(cur_dentry->file_name,
 			       cur_dentry->file_name_nbytes,
-			       &name, &name_len);
+			       &name, &name_nchars);
 	if (ret)
 		return ret;
-	name_len /= sizeof(tchar);
+	name_nchars /= sizeof(tchar);
 
-	if (match_wildcard(name,
-			   &ctx->wildcard_path[ctx->cur_component_offset],
-			   ctx->cur_component_len,
-			   ctx->case_insensitive))
+	if (do_match_wildcard(name,
+			      name_nchars,
+			      &ctx->wildcard_path[ctx->cur_component_offset],
+			      ctx->cur_component_len,
+			      ctx->case_insensitive))
 	{
 		switch (wildcard_status(&ctx->wildcard_path[
 				ctx->cur_component_offset +
