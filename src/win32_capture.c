@@ -38,16 +38,11 @@
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 
-#define MAX_GET_SD_ACCESS_DENIED_WARNINGS 1
-#define MAX_GET_SACL_PRIV_NOTHELD_WARNINGS 1
-#define MAX_CAPTURE_LONG_PATH_WARNINGS 5
-
 struct win32_capture_state {
 	unsigned long num_get_sd_access_denied;
 	unsigned long num_get_sacl_priv_notheld;
 	unsigned long num_long_path_warnings;
 };
-
 
 int
 read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
@@ -942,18 +937,6 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		ret = 0;
 		goto out_progress;
 	}
-
-#if 0
-	if (path_num_chars >= 4 &&
-	    !wmemcmp(path, L"\\\\?\\", 4) &&
-	    path_num_chars + 1 - 4 > MAX_PATH &&
-	    state->num_long_path_warnings < MAX_CAPTURE_LONG_PATH_WARNINGS)
-	{
-		WARNING("Path \"%ls\" exceeds MAX_PATH", path);
-		if (++state->num_long_path_warnings == MAX_CAPTURE_LONG_PATH_WARNINGS)
-			WARNING("Suppressing further warnings about long paths.");
-	}
-#endif
 
 	desiredAccess = FILE_READ_DATA | FILE_READ_ATTRIBUTES |
 			READ_CONTROL | ACCESS_SYSTEM_SECURITY;
