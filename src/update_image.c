@@ -1106,7 +1106,7 @@ execute_update_commands(WIMStruct *wim,
 		if (ret)
 			goto out;
 
-		ret = init_sd_set(sd_set, wim_security_data(wim));
+		ret = init_sd_set(sd_set, wim_get_current_security_data(wim));
 		if (ret)
 			goto out_destroy_inode_table;
 

@@ -46,34 +46,28 @@ struct wim_image_metadata {
 #endif
 };
 
+/* Retrieve the metadata of the image in @wim currently selected with
+ * select_wim_image().  */
 static inline struct wim_image_metadata *
 wim_get_current_image_metadata(WIMStruct *wim)
 {
 	return wim->image_metadata[wim->current_image - 1];
 }
 
-static inline const struct wim_image_metadata *
-wim_get_const_current_image_metadata(const WIMStruct *wim)
-{
-	return wim->image_metadata[wim->current_image - 1];
-}
-
+/* Retrieve the root dentry of the image in @wim currently selected with
+ * select_wim_image().  */
 static inline struct wim_dentry *
-wim_root_dentry(WIMStruct *wim)
+wim_get_current_root_dentry(WIMStruct *wim)
 {
 	return wim_get_current_image_metadata(wim)->root_dentry;
 }
 
+/* Retrieve the security data of the image in @wim currently selected with
+ * select_wim_image().  */
 static inline struct wim_security_data *
-wim_security_data(WIMStruct *wim)
+wim_get_current_security_data(WIMStruct *wim)
 {
 	return wim_get_current_image_metadata(wim)->security_data;
-}
-
-static inline const struct wim_security_data *
-wim_const_security_data(const WIMStruct *wim)
-{
-	return wim_get_const_current_image_metadata(wim)->security_data;
 }
 
 /* Iterate over each inode in a WIM image that has not yet been hashed */

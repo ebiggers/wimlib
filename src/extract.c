@@ -658,11 +658,11 @@ extract_security(const tchar *path, struct apply_ctx *ctx,
 	if (ctx->supported_features.security_descriptors &&
 	    inode->i_security_id != -1)
 	{
-		const struct wim_security_data *sd;
+		struct wim_security_data *sd;
 		const u8 *desc;
 		size_t desc_size;
 
-		sd = wim_const_security_data(ctx->wim);
+		sd = wim_get_current_security_data(ctx->wim);
 		desc = sd->descriptors[inode->i_security_id];
 		desc_size = sd->sizes[inode->i_security_id];
 
@@ -2472,7 +2472,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		ctx.progress.extract.target = target;
 	}
 
-	ctx.target_dentry = wim_root_dentry(wim);
+	ctx.target_dentry = wim_get_current_root_dentry(wim);
 	/* Note: ctx.target_dentry represents the dentry that gets extracted to
 	 * @target.  There may be none, in which case it gets set to the image
 	 * root and never matches any of the dentries actually being extracted.

@@ -326,7 +326,7 @@ expand_wildcard(WIMStruct *wim,
 	struct wim_dentry *root;
 	int ret;
 
-	root = wim_root_dentry(wim);
+	root = wim_get_current_root_dentry(wim);
 	if (root == NULL)
 		goto no_match;
 

@@ -40,10 +40,8 @@
 #include "wimlib/wim.h"
 
 static int
-init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
-		   struct wim_dentry *dentry,
-		   const WIMStruct *wim,
-		   int flags)
+init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
+		   WIMStruct *wim, int flags)
 {
 	int ret;
 	size_t dummy;
@@ -70,7 +68,9 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
 		wdentry->depth++;
 
 	if (inode->i_security_id >= 0) {
-		const struct wim_security_data *sd = wim_const_security_data(wim);
+		struct wim_security_data *sd;
+
+		sd = wim_get_current_security_data(wim);
 		wdentry->security_descriptor = sd->descriptors[inode->i_security_id];
 		wdentry->security_descriptor_size = sd->sizes[inode->i_security_id];
 	}

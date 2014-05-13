@@ -649,7 +649,7 @@ get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path,
 	/* Start with the root directory of the image.  Note: this will be NULL
 	 * if an image has been added directly with wimlib_add_empty_image() but
 	 * no files have been added yet; in that case we fail with ENOENT.  */
-	cur_dentry = wim_root_dentry(wim);
+	cur_dentry = wim_get_current_root_dentry(wim);
 
 	name_start = path;
 	for (;;) {
