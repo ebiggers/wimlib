@@ -38,6 +38,13 @@ extern BOOL (WINAPI *func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
 
 /* ntdll functions  */
 
+extern NTSTATUS (WINAPI *func_NtOpenFile) (PHANDLE FileHandle,
+					   ACCESS_MASK DesiredAccess,
+					   POBJECT_ATTRIBUTES ObjectAttributes,
+					   PIO_STATUS_BLOCK IoStatusBlock,
+					   ULONG ShareAccess,
+					   ULONG OpenOptions);
+
 extern NTSTATUS (WINAPI *func_NtQueryInformationFile)(HANDLE FileHandle,
 						      PIO_STATUS_BLOCK IoStatusBlock,
 						      PVOID FileInformation,
@@ -66,6 +73,8 @@ extern NTSTATUS (WINAPI *func_NtQueryDirectoryFile) (HANDLE FileHandle,
 extern NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 						   SECURITY_INFORMATION SecurityInformation,
 						   PSECURITY_DESCRIPTOR SecurityDescriptor);
+
+extern NTSTATUS (WINAPI *func_NtClose) (HANDLE Handle);
 
 extern DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
 

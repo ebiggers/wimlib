@@ -517,7 +517,12 @@ BOOL (WINAPI *func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
 
 /* ntdll.dll  */
 
-DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
+NTSTATUS (WINAPI *func_NtOpenFile) (PHANDLE FileHandle,
+				    ACCESS_MASK DesiredAccess,
+				    POBJECT_ATTRIBUTES ObjectAttributes,
+				    PIO_STATUS_BLOCK IoStatusBlock,
+				    ULONG ShareAccess,
+				    ULONG OpenOptions);
 
 NTSTATUS (WINAPI *func_NtQueryInformationFile)(HANDLE FileHandle,
 					       PIO_STATUS_BLOCK IoStatusBlock,
@@ -546,6 +551,10 @@ NTSTATUS (WINAPI *func_NtQueryDirectoryFile) (HANDLE FileHandle,
 NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 					    SECURITY_INFORMATION SecurityInformation,
 					    PSECURITY_DESCRIPTOR SecurityDescriptor);
+
+NTSTATUS (WINAPI *func_NtClose) (HANDLE Handle);
+
+DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
 
 NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
 		(PCUNICODE_STRING VolumeRootPath);
@@ -584,11 +593,13 @@ struct dll_spec {
 struct dll_spec ntdll_spec = {
 	.name = L"ntdll.dll",
 	.syms = {
-		DLL_SYM(RtlNtStatusToDosError, true),
+		DLL_SYM(NtOpenFile, true),
 		DLL_SYM(NtQueryInformationFile, true),
 		DLL_SYM(NtQuerySecurityObject, true),
 		DLL_SYM(NtQueryDirectoryFile, true),
 		DLL_SYM(NtSetSecurityObject, true),
+		DLL_SYM(NtClose, true),
+		DLL_SYM(RtlNtStatusToDosError, true),
 		DLL_SYM(RtlCreateSystemVolumeInformationFolder, false),
 		{NULL, NULL},
 	},
