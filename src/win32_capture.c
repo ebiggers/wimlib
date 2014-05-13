@@ -830,7 +830,7 @@ win32_capture_streams(HANDLE *hFile_p,
 		      DWORD vol_flags)
 {
 	int ret;
-	u8 _buf[8192] _aligned_attribute(8);
+	u8 _buf[1024] _aligned_attribute(8);
 	u8 *buf;
 	size_t bufsize;
 	IO_STATUS_BLOCK io_status;
