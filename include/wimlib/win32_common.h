@@ -45,6 +45,16 @@ extern NTSTATUS (WINAPI *func_NtOpenFile) (PHANDLE FileHandle,
 					   ULONG ShareAccess,
 					   ULONG OpenOptions);
 
+extern NTSTATUS (WINAPI *func_NtReadFile) (HANDLE FileHandle,
+					   HANDLE Event,
+					   PIO_APC_ROUTINE ApcRoutine,
+					   PVOID ApcContext,
+					   PIO_STATUS_BLOCK IoStatusBlock,
+					   PVOID Buffer,
+					   ULONG Length,
+					   PLARGE_INTEGER ByteOffset,
+					   PULONG Key);
+
 extern NTSTATUS (WINAPI *func_NtQueryInformationFile)(HANDLE FileHandle,
 						      PIO_STATUS_BLOCK IoStatusBlock,
 						      PVOID FileInformation,

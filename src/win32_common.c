@@ -524,6 +524,23 @@ NTSTATUS (WINAPI *func_NtOpenFile) (PHANDLE FileHandle,
 				    ULONG ShareAccess,
 				    ULONG OpenOptions);
 
+NTSTATUS (WINAPI *func_NtReadFile) (HANDLE FileHandle,
+				    HANDLE Event,
+				    PIO_APC_ROUTINE ApcRoutine,
+				    PVOID ApcContext,
+				    PIO_STATUS_BLOCK IoStatusBlock,
+				    PVOID Buffer,
+				    ULONG Length,
+				    PLARGE_INTEGER ByteOffset,
+				    PULONG Key);
+
+NTSTATUS (WINAPI *func_NtOpenFile) (PHANDLE FileHandle,
+				    ACCESS_MASK DesiredAccess,
+				    POBJECT_ATTRIBUTES ObjectAttributes,
+				    PIO_STATUS_BLOCK IoStatusBlock,
+				    ULONG ShareAccess,
+				    ULONG OpenOptions);
+
 NTSTATUS (WINAPI *func_NtQueryInformationFile)(HANDLE FileHandle,
 					       PIO_STATUS_BLOCK IoStatusBlock,
 					       PVOID FileInformation,
@@ -594,6 +611,7 @@ struct dll_spec ntdll_spec = {
 	.name = L"ntdll.dll",
 	.syms = {
 		DLL_SYM(NtOpenFile, true),
+		DLL_SYM(NtReadFile, true),
 		DLL_SYM(NtQueryInformationFile, true),
 		DLL_SYM(NtQuerySecurityObject, true),
 		DLL_SYM(NtQueryDirectoryFile, true),
