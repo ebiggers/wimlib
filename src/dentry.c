@@ -890,14 +890,12 @@ wim_pathname_to_stream(WIMStruct *wim,
 		if (ads_entry) {
 			stream_idx = ads_idx + 1;
 			lte = ads_entry->lte;
-			goto out;
 		} else {
 			return -ENOENT;
 		}
 	} else {
 		lte = inode_unnamed_stream_resolved(inode, &stream_idx);
 	}
-out:
 	if (dentry_ret)
 		*dentry_ret = dentry;
 	if (lte_ret)
