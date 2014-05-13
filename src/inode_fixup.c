@@ -430,8 +430,8 @@ inode_table_insert(struct wim_dentry *dentry, void *_table)
  * WIM) is examined for consistency and may be split into multiple "true" inodes
  * that are maximally sized consistent sets of dentries.
  *
- * On success, the list of "true" inodes, linked by the i_hlist field,
- * is returned in the hlist @inode_list.
+ * On success, the list of "true" inodes, linked by the i_list field,
+ * is returned in the list @inode_list.
  *
  * Return values:
  *	WIMLIB_ERR_SUCCESS (0)
