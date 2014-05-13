@@ -141,7 +141,7 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 	DEBUG("part_number = %u, total_parts = %u, image_count = %u",
 	      hdr->part_number, hdr->total_parts, hdr->image_count);
 
-	if (hdr->image_count >= INT_MAX) {
+	if (unlikely(hdr->image_count > MAX_IMAGES)) {
 		ERROR("\"%"TS"\": Invalid image count (%u)",
 		      filename, hdr->image_count);
 		return WIMLIB_ERR_IMAGE_COUNT;

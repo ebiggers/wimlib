@@ -572,8 +572,9 @@ xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info_ret)
 	num_images = 0;
 	for_node_child(wim_node, child) {
 		if (node_is_element(child) && node_name_is(child, "IMAGE")) {
-			if (num_images == INT_MAX) {
-				return WIMLIB_ERR_IMAGE_COUNT;
+			if (unlikely(num_images == MAX_IMAGES)) {
+				ret = WIMLIB_ERR_IMAGE_COUNT;
+				goto err;
 			}
 			num_images++;
 		}
@@ -623,7 +624,8 @@ xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info_ret)
 				ERROR("WIM images are not indexed [1...%d] "
 				      "in XML data as expected",
 				      num_images);
-				return WIMLIB_ERR_IMAGE_COUNT;
+				ret = WIMLIB_ERR_IMAGE_COUNT;
+				goto err;
 			}
 		}
 

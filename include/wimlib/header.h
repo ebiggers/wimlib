@@ -5,6 +5,8 @@
 #include "wimlib/types.h"
 #include "wimlib/endianness.h"
 
+#include <limits.h>
+
 /* Length of "Globally Unique ID" field in WIM header.  */
 #define WIM_GUID_LEN    16
 
@@ -115,6 +117,7 @@ struct wim_header_disk {
 	/* +0xd0 (208)  */
 } _packed_attribute;
 
+#define MAX_IMAGES (((INT_MAX < INT32_MAX) ? INT_MAX : INT32_MAX) - 1)
 
 /* In-memory representation of a WIM header.  See `struct wim_header_disk' for
  * field descriptions.  */
