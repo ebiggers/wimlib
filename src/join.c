@@ -112,7 +112,7 @@ verify_swm_set(WIMStruct *wim, WIMStruct **additional_swms,
 				      "chunk size");
 				return WIMLIB_ERR_SPLIT_INVALID;
 			}
-			if (memcmp(guid, swm->hdr.guid, WIM_GID_LEN) != 0) {
+			if (memcmp(guid, swm->hdr.guid, WIM_GUID_LEN) != 0) {
 				ERROR("The split WIMs do not all have the same "
 				      "GUID");
 				return WIMLIB_ERR_SPLIT_INVALID;

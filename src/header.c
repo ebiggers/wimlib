@@ -124,7 +124,7 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 
 	hdr->flags = le32_to_cpu(disk_hdr.wim_flags);
 	hdr->chunk_size = le32_to_cpu(disk_hdr.chunk_size);
-	memcpy(hdr->guid, disk_hdr.guid, WIM_GID_LEN);
+	memcpy(hdr->guid, disk_hdr.guid, WIM_GUID_LEN);
 	hdr->part_number = le16_to_cpu(disk_hdr.part_number);
 	hdr->total_parts = le16_to_cpu(disk_hdr.total_parts);
 
@@ -181,7 +181,7 @@ write_wim_header_at_offset(const struct wim_header *hdr, struct filedes *out_fd,
 		disk_hdr.chunk_size = cpu_to_le32(hdr->chunk_size);
 	else
 		disk_hdr.chunk_size = 0;
-	memcpy(disk_hdr.guid, hdr->guid, WIM_GID_LEN);
+	memcpy(disk_hdr.guid, hdr->guid, WIM_GUID_LEN);
 
 	disk_hdr.part_number = cpu_to_le16(hdr->part_number);
 	disk_hdr.total_parts = cpu_to_le16(hdr->total_parts);
@@ -312,7 +312,7 @@ wimlib_print_header(const WIMStruct *wim)
 
 	tprintf(T("Chunk Size                  = %u\n"), hdr->chunk_size);
 	tfputs (T("GUID                        = "), stdout);
-	print_byte_field(hdr->guid, WIM_GID_LEN, stdout);
+	print_byte_field(hdr->guid, WIM_GUID_LEN, stdout);
 	tputchar(T('\n'));
 	tprintf(T("Part Number                 = %hu\n"), hdr->part_number);
 	tprintf(T("Total Parts                 = %hu\n"), hdr->total_parts);

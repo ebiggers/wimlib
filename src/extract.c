@@ -1471,7 +1471,7 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 	pwm_flags = PWM_ALLOW_WIM_HDR;
 	if ((ctx->extract_flags & WIMLIB_EXTRACT_FLAG_RESUME))
 		pwm_flags |= PWM_SILENT_EOF;
-	memcpy(ctx->progress.extract.guid, ctx->wim->hdr.guid, WIM_GID_LEN);
+	memcpy(ctx->progress.extract.guid, ctx->wim->hdr.guid, WIM_GUID_LEN);
 	ctx->progress.extract.part_number = ctx->wim->hdr.part_number;
 	ctx->progress.extract.total_parts = ctx->wim->hdr.total_parts;
 	if (ctx->progress_func)
@@ -1561,12 +1561,12 @@ extract_streams_from_pipe(struct apply_ctx *ctx)
 			if (part_number != ctx->progress.extract.part_number ||
 			    total_parts != ctx->progress.extract.total_parts ||
 			    memcmp(pwm_hdr.guid, ctx->progress.extract.guid,
-				   WIM_GID_LEN))
+				   WIM_GUID_LEN))
 			{
 				ctx->progress.extract.part_number = part_number;
 				ctx->progress.extract.total_parts = total_parts;
 				memcpy(ctx->progress.extract.guid,
-				       pwm_hdr.guid, WIM_GID_LEN);
+				       pwm_hdr.guid, WIM_GUID_LEN);
 				if (ctx->progress_func) {
 					ctx->progress_func(
 						WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,

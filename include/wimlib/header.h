@@ -6,7 +6,7 @@
 #include "wimlib/endianness.h"
 
 /* Length of "Globally Unique ID" field in WIM header.  */
-#define WIM_GID_LEN    16
+#define WIM_GUID_LEN    16
 
 /* Length of the WIM header on disk.  wimlib currently requires that the header
  * be exactly this size.  */
@@ -73,7 +73,7 @@ struct wim_header_disk {
 
 	/* +0x18: Globally unique identifier for the WIM file.  Basically a
 	 * bunch of random bytes.  */
-	u8 guid[WIM_GID_LEN];
+	u8 guid[WIM_GUID_LEN];
 
 	/* +0x28: Number of this WIM part in the split WIM file, indexed from 1,
 	 * or 1 if the WIM is not split.  */
@@ -123,7 +123,7 @@ struct wim_header {
 	u32 wim_version;
 	u32 flags;
 	u32 chunk_size;
-	u8 guid[WIM_GID_LEN];
+	u8 guid[WIM_GUID_LEN];
 	u16 part_number;
 	u16 total_parts;
 	u32 image_count;

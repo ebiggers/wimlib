@@ -429,7 +429,7 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 
 		/* Different (possibly split) WIMs?  */
 		if (wim1 != wim2) {
-			v = memcmp(wim1->hdr.guid, wim2->hdr.guid, WIM_GID_LEN);
+			v = memcmp(wim1->hdr.guid, wim2->hdr.guid, WIM_GUID_LEN);
 			if (v)
 				return v;
 		}
