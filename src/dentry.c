@@ -906,13 +906,6 @@ wim_pathname_to_stream(WIMStruct *wim,
 }
 #endif /* WITH_FUSE  */
 
-/* Initializations done on every `struct wim_dentry'. */
-static void
-dentry_common_init(struct wim_dentry *dentry)
-{
-	memset(dentry, 0, sizeof(struct wim_dentry));
-}
-
 /* Creates an unlinked directory entry. */
 int
 new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
@@ -920,11 +913,10 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 	struct wim_dentry *dentry;
 	int ret;
 
-	dentry = MALLOC(sizeof(struct wim_dentry));
-	if (dentry == NULL)
+	dentry = CALLOC(1, sizeof(struct wim_dentry));
+	if (!dentry)
 		return WIMLIB_ERR_NOMEM;
 
-	dentry_common_init(dentry);
 	if (*name) {
 		ret = dentry_set_name(dentry, name);
 		if (ret) {
