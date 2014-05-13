@@ -299,7 +299,7 @@ win32_get_security_descriptor(HANDLE h,
 								   &lenNeeded))))
 	{
 		switch (status) {
-		case STATUS_BUFFER_OVERFLOW:
+		case STATUS_BUFFER_TOO_SMALL:
 			wimlib_assert(buf == _buf);
 			buf = MALLOC(lenNeeded);
 			if (!buf)
