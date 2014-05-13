@@ -50,12 +50,13 @@ new_wim_security_data(void)
 /*
  * Reads the security data from the metadata resource of a WIM image.
  *
- * @metadata_resource:	An array that contains the uncompressed metadata
- *				resource for the WIM image.
- * @metadata_resource_len:	The length of @metadata_resource.
- * @sd_ret:	A pointer to a pointer to a wim_security_data structure that
- *		will be filled in with a pointer to a new wim_security_data
- *		structure containing the security data on success.
+ * @buf
+ *	Buffer containing an uncompressed WIM metadata resource.
+ * @buf_len
+ *	Length of the uncompressed metadata resource, in bytes.
+ * @sd_ret
+ *	On success, a pointer to the resulting security data structure will be
+ *	returned here.
  *
  * Note: There is no `offset' argument because the security data is located at
  * the beginning of the metadata resource.
@@ -66,7 +67,7 @@ new_wim_security_data(void)
  *	WIMLIB_ERR_NOMEM
  */
 int
-read_wim_security_data(const u8 metadata_resource[], size_t metadata_resource_len,
+read_wim_security_data(const u8 *buf, size_t buf_len,
 		       struct wim_security_data **sd_ret)
 {
 	struct wim_security_data *sd;
@@ -77,14 +78,14 @@ read_wim_security_data(const u8 metadata_resource[], size_t metadata_resource_le
 	const struct wim_security_data_disk *sd_disk;
 	const u8 *p;
 
-	if (metadata_resource_len < 8)
+	if (buf_len < 8)
 		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 
 	sd = new_wim_security_data();
 	if (!sd)
 		goto out_of_memory;
 
-	sd_disk = (const struct wim_security_data_disk*)metadata_resource;
+	sd_disk = (const struct wim_security_data_disk *)buf;
 	sd->total_length = le32_to_cpu(sd_disk->total_length);
 	sd->num_entries = le32_to_cpu(sd_disk->num_entries);
 
@@ -112,7 +113,7 @@ read_wim_security_data(const u8 metadata_resource[], size_t metadata_resource_le
 	 * integer, even though each security descriptor size is a 64-bit
 	 * integer.  This is stupid, and we need to be careful not to actually
 	 * let the security descriptor sizes be over 0xffffffff.  */
-	if (sd->total_length > metadata_resource_len)
+	if (sd->total_length > buf_len)
 		goto out_invalid_sd;
 
 	sizes_size = (u64)sd->num_entries * sizeof(u64);

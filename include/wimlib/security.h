@@ -52,12 +52,12 @@ extern struct wim_security_data *
 new_wim_security_data(void);
 
 extern int
-read_wim_security_data(const u8 metadata_resource[], size_t
-		       metadata_resource_len, struct wim_security_data **sd_p);
+read_wim_security_data(const u8 *buf, size_t buf_len,
+		       struct wim_security_data **sd_ret);
 
 extern u8 *
-write_wim_security_data(const struct wim_security_data * restrict sd, u8 *
-			restrict p);
+write_wim_security_data(const struct wim_security_data * restrict sd,
+			u8 * restrict p);
 
 extern void
 print_wim_security_data(const struct wim_security_data *sd);
