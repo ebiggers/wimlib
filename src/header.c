@@ -49,8 +49,8 @@
  * Reads the header from a WIM file.
  *
  * @wim
- *	WIM to read the header from; @wim->in_fd must be positioned at the
- *	offset at which to read the header.
+ *	WIM to read the header from.  @wim->in_fd must be positioned at the
+ *	beginning of the file.
  *
  * @hdr
  *	Structure to read the header into.
