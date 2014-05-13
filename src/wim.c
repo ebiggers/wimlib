@@ -225,6 +225,109 @@ out_free:
 	return ret;
 }
 
+static void
+destroy_image_metadata(struct wim_image_metadata *imd,
+		       struct wim_lookup_table *table,
+		       bool free_metadata_lte)
+{
+	free_dentry_tree(imd->root_dentry, table);
+	imd->root_dentry = NULL;
+	free_wim_security_data(imd->security_data);
+	imd->security_data = NULL;
+
+	if (free_metadata_lte) {
+		free_lookup_table_entry(imd->metadata_lte);
+		imd->metadata_lte = NULL;
+	}
+	if (table == NULL) {
+		struct wim_lookup_table_entry *lte, *tmp;
+		list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, unhashed_list)
+			free_lookup_table_entry(lte);
+	}
+	INIT_LIST_HEAD(&imd->unhashed_streams);
+	INIT_LIST_HEAD(&imd->inode_list);
+#ifdef WITH_NTFS_3G
+	if (imd->ntfs_vol) {
+		do_ntfs_umount(imd->ntfs_vol);
+		imd->ntfs_vol = NULL;
+	}
+#endif
+}
+
+void
+put_image_metadata(struct wim_image_metadata *imd,
+		   struct wim_lookup_table *table)
+{
+	if (imd && --imd->refcnt == 0) {
+		destroy_image_metadata(imd, table, true);
+		FREE(imd);
+	}
+}
+
+/* Appends the specified image metadata structure to the array of image metadata
+ * for a WIM, and increments the image count. */
+int
+append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd)
+{
+	struct wim_image_metadata **imd_array;
+
+	DEBUG("Reallocating image metadata array for image_count = %u",
+	      wim->hdr.image_count + 1);
+	imd_array = REALLOC(wim->image_metadata,
+			    sizeof(wim->image_metadata[0]) * (wim->hdr.image_count + 1));
+
+	if (imd_array == NULL)
+		return WIMLIB_ERR_NOMEM;
+	wim->image_metadata = imd_array;
+	imd_array[wim->hdr.image_count++] = imd;
+	return 0;
+}
+
+struct wim_image_metadata *
+new_image_metadata(void)
+{
+	struct wim_image_metadata *imd;
+
+	imd = CALLOC(1, sizeof(*imd));
+	if (imd) {
+		imd->refcnt = 1;
+		INIT_LIST_HEAD(&imd->inode_list);
+		INIT_LIST_HEAD(&imd->unhashed_streams);
+		DEBUG("Created new image metadata (refcnt=1)");
+	} else {
+		ERROR_WITH_ERRNO("Failed to allocate new image metadata structure");
+	}
+	return imd;
+}
+
+static struct wim_image_metadata **
+new_image_metadata_array(unsigned num_images)
+{
+	struct wim_image_metadata **imd_array;
+
+	DEBUG("Creating new image metadata array for %u images",
+	      num_images);
+
+	imd_array = CALLOC(num_images, sizeof(imd_array[0]));
+
+	if (imd_array == NULL) {
+		ERROR("Failed to allocate memory for %u image metadata structures",
+		      num_images);
+		return NULL;
+	}
+	for (unsigned i = 0; i < num_images; i++) {
+		imd_array[i] = new_image_metadata();
+		if (imd_array[i] == NULL) {
+			for (unsigned j = 0; j < i; j++)
+				put_image_metadata(imd_array[j], NULL);
+			FREE(imd_array);
+			return NULL;
+		}
+	}
+	return imd_array;
+}
+
+
 /* Load the metadata for the specified WIM image into memory and set it as the
  * WIMStruct's currently selected WIM image.  */
 int
@@ -732,109 +835,6 @@ wimlib_open_wim(const tchar *wimfile, int open_flags,
 
 	return open_wim_as_WIMStruct(wimfile, open_flags, wim_ret,
 				     progress_func);
-}
-
-void
-destroy_image_metadata(struct wim_image_metadata *imd,
-		       struct wim_lookup_table *table,
-		       bool free_metadata_lte)
-{
-	free_dentry_tree(imd->root_dentry, table);
-	imd->root_dentry = NULL;
-	free_wim_security_data(imd->security_data);
-	imd->security_data = NULL;
-
-	if (free_metadata_lte) {
-		free_lookup_table_entry(imd->metadata_lte);
-		imd->metadata_lte = NULL;
-	}
-	if (table == NULL) {
-		struct wim_lookup_table_entry *lte, *tmp;
-		list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, unhashed_list)
-			free_lookup_table_entry(lte);
-	}
-	INIT_LIST_HEAD(&imd->unhashed_streams);
-	INIT_LIST_HEAD(&imd->inode_list);
-#ifdef WITH_NTFS_3G
-	if (imd->ntfs_vol) {
-		do_ntfs_umount(imd->ntfs_vol);
-		imd->ntfs_vol = NULL;
-	}
-#endif
-}
-
-void
-put_image_metadata(struct wim_image_metadata *imd,
-		   struct wim_lookup_table *table)
-{
-	if (imd && --imd->refcnt == 0) {
-		destroy_image_metadata(imd, table, true);
-		FREE(imd);
-	}
-}
-
-/* Appends the specified image metadata structure to the array of image metadata
- * for a WIM, and increments the image count. */
-int
-append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd)
-{
-	struct wim_image_metadata **imd_array;
-
-	DEBUG("Reallocating image metadata array for image_count = %u",
-	      wim->hdr.image_count + 1);
-	imd_array = REALLOC(wim->image_metadata,
-			    sizeof(wim->image_metadata[0]) * (wim->hdr.image_count + 1));
-
-	if (imd_array == NULL)
-		return WIMLIB_ERR_NOMEM;
-	wim->image_metadata = imd_array;
-	imd_array[wim->hdr.image_count++] = imd;
-	return 0;
-}
-
-
-struct wim_image_metadata *
-new_image_metadata(void)
-{
-	struct wim_image_metadata *imd;
-
-	imd = CALLOC(1, sizeof(*imd));
-	if (imd) {
-		imd->refcnt = 1;
-		INIT_LIST_HEAD(&imd->inode_list);
-		INIT_LIST_HEAD(&imd->unhashed_streams);
-		DEBUG("Created new image metadata (refcnt=1)");
-	} else {
-		ERROR_WITH_ERRNO("Failed to allocate new image metadata structure");
-	}
-	return imd;
-}
-
-struct wim_image_metadata **
-new_image_metadata_array(unsigned num_images)
-{
-	struct wim_image_metadata **imd_array;
-
-	DEBUG("Creating new image metadata array for %u images",
-	      num_images);
-
-	imd_array = CALLOC(num_images, sizeof(imd_array[0]));
-
-	if (imd_array == NULL) {
-		ERROR("Failed to allocate memory for %u image metadata structures",
-		      num_images);
-		return NULL;
-	}
-	for (unsigned i = 0; i < num_images; i++) {
-		imd_array[i] = new_image_metadata();
-		if (imd_array[i] == NULL) {
-			for (unsigned j = 0; j < i; j++)
-				put_image_metadata(imd_array[j], NULL);
-			FREE(imd_array);
-			return NULL;
-		}
-	}
-	return imd_array;
 }
 
 /* Checksum all streams that are unhashed (other than the metadata streams),

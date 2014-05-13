@@ -84,11 +84,6 @@ wim_get_current_security_data(WIMStruct *wim)
 	list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, unhashed_list)
 
 extern void
-destroy_image_metadata(struct wim_image_metadata *imd,
-		       struct wim_lookup_table *table,
-		       bool free_metadata_lte);
-
-extern void
 put_image_metadata(struct wim_image_metadata *imd,
 		   struct wim_lookup_table *table);
 
@@ -97,8 +92,5 @@ append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd);
 
 extern struct wim_image_metadata *
 new_image_metadata(void) _malloc_attribute;
-
-extern struct wim_image_metadata **
-new_image_metadata_array(unsigned num_images) _malloc_attribute;
 
 #endif /* _WIMLIB_METADATA_H */
