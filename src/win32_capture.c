@@ -1080,7 +1080,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				    inode,
 				    params->unhashed_streams,
 				    ((u64)file_info.nFileSizeHigh << 32) |
-					file_info.nFileIndexLow,
+					file_info.nFileSizeLow,
 				    vol_flags);
 	if (ret)
 		goto out;
