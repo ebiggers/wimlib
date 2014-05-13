@@ -1221,9 +1221,6 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	p = &buf[offset];
 	disk_dentry = (const struct wim_dentry_on_disk*)p;
 
-	if (unlikely((uintptr_t)p & 7))
-		WARNING("WIM dentry is not 8-byte aligned");
-
 	/* Get dentry length.  */
 	length = le64_to_cpu(disk_dentry->length);
 
