@@ -214,13 +214,6 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	return ret;
 }
 
-
-static u64
-FILETIME_to_u64(const FILETIME *ft)
-{
-	return ((u64)ft->dwHighDateTime << 32) | (u64)ft->dwLowDateTime;
-}
-
 /* Load the short name of a file into a WIM dentry.
  *
  * If we can't read the short filename for some reason, we just ignore the error
@@ -964,7 +957,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	HANDLE h = INVALID_HANDLE_VALUE;
 	int ret;
 	NTSTATUS status;
-	BY_HANDLE_FILE_INFORMATION file_info;
+	FILE_ALL_INFORMATION file_info;
 	u8 *rpbuf;
 	u16 rpbuflen;
 	u16 not_rpfixed;
@@ -993,39 +986,65 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out;
 	}
 
-	if (!GetFileInformationByHandle(h, &file_info)) {
-		set_errno_from_GetLastError();
-		ERROR_WITH_ERRNO("\"%ls\": Can't get file information", full_path);
-		ret = WIMLIB_ERR_STAT;
-		goto out;
+	{
+		IO_STATUS_BLOCK iosb;
+
+		status = (*func_NtQueryInformationFile)(h, &iosb,
+							&file_info, sizeof(file_info),
+							FileAllInformation);
+		if (!NT_SUCCESS(status) && status != STATUS_BUFFER_OVERFLOW) {
+			set_errno_from_GetLastError();
+			ERROR_WITH_ERRNO("\"%ls\": Can't get file information", full_path);
+			ret = WIMLIB_ERR_STAT;
+			goto out;
+		}
 	}
 
 	if (!cur_dir) {
 		/* Root directory; get volume information.  */
-		FILE_FS_ATTRIBUTE_INFORMATION info;
+		FILE_FS_ATTRIBUTE_INFORMATION attr_info;
+		FILE_FS_VOLUME_INFORMATION vol_info;
 		IO_STATUS_BLOCK iosb;
 
-		params->capture_root_ino =
-			((u64)file_info.nFileIndexHigh << 32) |
-				file_info.nFileIndexLow;
-		params->capture_root_dev = file_info.dwVolumeSerialNumber;
-
+		/* Get volume flags  */
 		status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
-							      &info, sizeof(info),
+							      &attr_info, sizeof(attr_info),
 							      FileFsAttributeInformation);
 		if ((NT_SUCCESS(status) || (status == STATUS_BUFFER_OVERFLOW)) &&
-		    iosb.Information >= sizeof(FILE_FS_ATTRIBUTE_INFORMATION))
+		    iosb.Information >= offsetof(FILE_FS_ATTRIBUTE_INFORMATION,
+						 FileSystemAttributes) +
+					sizeof(attr_info.FileSystemAttributes))
 		{
-			vol_flags = info.FileSystemAttributes;
+			vol_flags = attr_info.FileSystemAttributes;
 		} else {
 			set_errno_from_nt_status(status);
-			WARNING_WITH_ERRNO("\"%ls\": Can't get volume information",
+			WARNING_WITH_ERRNO("\"%ls\": Can't get volume attributes",
 					   full_path);
 			vol_flags = 0;
 		}
+
+		/* Set inode number of root directory  */
+		params->capture_root_ino = file_info.InternalInformation.IndexNumber.QuadPart;
+
+		/* Get volume ID  */
+		status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
+							      &vol_info, sizeof(vol_info),
+							      FileFsVolumeInformation);
+		if ((NT_SUCCESS(status) || (status == STATUS_BUFFER_OVERFLOW)) &&
+		    iosb.Information >= offsetof(FILE_FS_VOLUME_INFORMATION,
+						 VolumeSerialNumber) +
+					sizeof(vol_info.VolumeSerialNumber))
+		{
+			params->capture_root_dev = vol_info.VolumeSerialNumber;
+		} else {
+			set_errno_from_nt_status(status);
+			WARNING_WITH_ERRNO("\"%ls\": Can't get volume ID",
+					   full_path);
+			params->capture_root_dev = 0;
+		}
 	}
 
-	if (file_info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+	if (file_info.BasicInformation.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		rpbuf = alloca(REPARSE_POINT_MAX_SIZE);
 		ret = win32_get_reparse_data(h, full_path,
 					     params, rpbuf, &rpbuflen);
@@ -1053,11 +1072,13 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	 * directories on the FAT filesystem. */
 	ret = inode_table_new_dentry(params->inode_table,
 				     filename,
-				     ((u64)file_info.nFileIndexHigh << 32) |
-					 (u64)file_info.nFileIndexLow,
-				     file_info.dwVolumeSerialNumber,
-				     (file_info.nNumberOfLinks <= 1 ||
-				        (file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)),
+				     file_info.InternalInformation.IndexNumber.QuadPart,
+				     0, /* We don't follow mount points, so we
+					   currently don't need to get the
+					   volume ID / device number.  */
+				     (file_info.StandardInformation.NumberOfLinks <= 1 ||
+				        (file_info.BasicInformation.FileAttributes &
+					 FILE_ATTRIBUTE_DIRECTORY)),
 				     &root);
 	if (ret)
 		goto out;
@@ -1076,10 +1097,10 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out_progress;
 	}
 
-	inode->i_attributes = file_info.dwFileAttributes;
-	inode->i_creation_time = FILETIME_to_u64(&file_info.ftCreationTime);
-	inode->i_last_write_time = FILETIME_to_u64(&file_info.ftLastWriteTime);
-	inode->i_last_access_time = FILETIME_to_u64(&file_info.ftLastAccessTime);
+	inode->i_attributes = file_info.BasicInformation.FileAttributes;
+	inode->i_creation_time = file_info.BasicInformation.CreationTime.QuadPart;
+	inode->i_last_write_time = file_info.BasicInformation.LastWriteTime.QuadPart;
+	inode->i_last_access_time = file_info.BasicInformation.LastAccessTime.QuadPart;
 	inode->i_resolved = 1;
 
 	params->add_flags &= ~WIMLIB_ADD_FLAG_ROOT;
@@ -1104,8 +1125,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				    full_path_nchars,
 				    inode,
 				    params->unhashed_streams,
-				    ((u64)file_info.nFileSizeHigh << 32) |
-					file_info.nFileSizeLow,
+				    file_info.StandardInformation.EndOfFile.QuadPart,
 				    vol_flags);
 	if (ret)
 		goto out;
