@@ -347,7 +347,7 @@ fix_inodes(struct wim_inode_table *table, struct list_head *inode_list,
 	struct hlist_node *cur, *tmp;
 	int ret;
 	INIT_LIST_HEAD(inode_list);
-	for (u64 i = 0; i < table->capacity; i++) {
+	for (size_t i = 0; i < table->capacity; i++) {
 		hlist_for_each_entry_safe(inode, cur, tmp, &table->array[i], i_hlist) {
 			hlist_del_init(&inode->i_hlist);
 			ret = fix_nominal_inode(inode, inode_list, ino_changes_needed);
