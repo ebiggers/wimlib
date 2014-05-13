@@ -94,17 +94,11 @@ do_free_lookup_table_entry(struct wim_lookup_table_entry *entry, void *ignore)
 void
 free_lookup_table(struct wim_lookup_table *table)
 {
-	DEBUG("Freeing lookup table.");
-	if (table == NULL)
-		return;
-
-	if (table->array) {
-		for_lookup_table_entry(table,
-				       do_free_lookup_table_entry,
-				       NULL);
+	if (table) {
+		for_lookup_table_entry(table, do_free_lookup_table_entry, NULL);
 		FREE(table->array);
+		FREE(table);
 	}
-	FREE(table);
 }
 
 struct wim_lookup_table_entry *
