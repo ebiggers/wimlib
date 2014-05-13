@@ -1375,18 +1375,6 @@ err_free_dentry:
 	return ret;
 }
 
-static const tchar *
-dentry_get_file_type_string(const struct wim_dentry *dentry)
-{
-	const struct wim_inode *inode = dentry->d_inode;
-	if (inode_is_directory(inode))
-		return T("directory");
-	else if (inode_is_symlink(inode))
-		return T("symbolic link");
-	else
-		return T("file");
-}
-
 static bool
 dentry_is_dot_or_dotdot(const struct wim_dentry *dentry)
 {
@@ -1465,14 +1453,10 @@ read_dentry_tree_recursive(const u8 * restrict buf, size_t buf_len,
 			/* We already found a dentry with this same
 			 * case-sensitive long name.  Only keep the first one.
 			 */
-			const tchar *child_type, *duplicate_type;
-			child_type = dentry_get_file_type_string(child);
-			duplicate_type = dentry_get_file_type_string(duplicate);
-			WARNING("Ignoring duplicate %"TS" \"%"TS"\" "
-				"(the WIM image already contains a %"TS" "
+			WARNING("Ignoring duplicate file \"%"TS"\" "
+				"(the WIM image already contains a file "
 				"at that path with the exact same name)",
-				child_type, dentry_full_path(duplicate),
-				duplicate_type);
+				dentry_full_path(duplicate));
 			free_dentry(child);
 			continue;
 		}
