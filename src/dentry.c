@@ -1652,11 +1652,6 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	while ((uintptr_t)p & 7)
 		*p++ = 0;
 
-	/* We calculate the correct length of the dentry ourselves because the
-	 * dentry->length field may been set to an unexpected value from when we
-	 * read the dentry in (for example, there may have been unknown data
-	 * appended to the end of the dentry...).  Furthermore, the dentry may
-	 * have been renamed, thus changing its needed length. */
 	disk_dentry->length = cpu_to_le64(p - orig_p);
 
 	if (use_dummy_stream) {
