@@ -141,53 +141,52 @@ struct wim_ads_entry *
 inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 		    u16 *idx_ret)
 {
-	if (inode->i_num_ads == 0) {
+	size_t stream_name_utf16le_nbytes;
+	u16 i;
+	struct wim_ads_entry *result;
+
+	if (inode->i_num_ads == 0)
 		return NULL;
-	} else {
-		size_t stream_name_utf16le_nbytes;
-		u16 i;
-		struct wim_ads_entry *result;
 
-		if (stream_name[0] == T('\0'))
+	if (stream_name[0] == T('\0'))
+		return NULL;
+
+#if TCHAR_IS_UTF16LE
+	const utf16lechar *stream_name_utf16le;
+
+	stream_name_utf16le = stream_name;
+	stream_name_utf16le_nbytes = tstrlen(stream_name) * sizeof(tchar);
+#else
+	utf16lechar *stream_name_utf16le;
+
+	{
+		int ret = tstr_to_utf16le(stream_name,
+					  tstrlen(stream_name) *
+					      sizeof(tchar),
+					  &stream_name_utf16le,
+					  &stream_name_utf16le_nbytes);
+		if (ret)
 			return NULL;
-
-	#if TCHAR_IS_UTF16LE
-		const utf16lechar *stream_name_utf16le;
-
-		stream_name_utf16le = stream_name;
-		stream_name_utf16le_nbytes = tstrlen(stream_name) * sizeof(tchar);
-	#else
-		utf16lechar *stream_name_utf16le;
-
-		{
-			int ret = tstr_to_utf16le(stream_name,
-						  tstrlen(stream_name) *
-						      sizeof(tchar),
-						  &stream_name_utf16le,
-						  &stream_name_utf16le_nbytes);
-			if (ret)
-				return NULL;
-		}
-	#endif
-		i = 0;
-		result = NULL;
-		do {
-			if (ads_entry_has_name(&inode->i_ads_entries[i],
-					       stream_name_utf16le,
-					       stream_name_utf16le_nbytes,
-					       default_ignore_case))
-			{
-				if (idx_ret)
-					*idx_ret = i;
-				result = &inode->i_ads_entries[i];
-				break;
-			}
-		} while (++i != inode->i_num_ads);
-	#if !TCHAR_IS_UTF16LE
-		FREE(stream_name_utf16le);
-	#endif
-		return result;
 	}
+#endif
+	i = 0;
+	result = NULL;
+	do {
+		if (ads_entry_has_name(&inode->i_ads_entries[i],
+				       stream_name_utf16le,
+				       stream_name_utf16le_nbytes,
+				       default_ignore_case))
+		{
+			if (idx_ret)
+				*idx_ret = i;
+			result = &inode->i_ads_entries[i];
+			break;
+		}
+	} while (++i != inode->i_num_ads);
+#if !TCHAR_IS_UTF16LE
+	FREE(stream_name_utf16le);
+#endif
+	return result;
 }
 
 static int
