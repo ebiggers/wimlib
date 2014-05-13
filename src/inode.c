@@ -294,10 +294,10 @@ int
 inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
 			 struct wim_lookup_table *lookup_table)
 {
+	wimlib_assert(inode->i_resolved);
 	inode->i_lte = new_stream_from_data_buffer(data, len, lookup_table);
 	if (inode->i_lte == NULL)
 		return WIMLIB_ERR_NOMEM;
-	inode->i_resolved = 1;
 	return 0;
 }
 
