@@ -1428,7 +1428,7 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
 		.cb = cb,
 		.user_ctx = user_ctx,
 	};
-	if (wim->hdr.part_number == 1) {
+	if (wim_has_metadata(wim)) {
 		int ret;
 		for (int i = 0; i < wim->hdr.image_count; i++) {
 			ret = do_iterate_lte(wim->image_metadata[i]->metadata_lte,
