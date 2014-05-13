@@ -73,11 +73,9 @@ ads_entries_have_same_name(const struct wim_ads_entry *entry_1,
 }
 
 static bool
-ref_inodes_consistent(const struct wim_inode * restrict ref_inode_1,
-		      const struct wim_inode * restrict ref_inode_2)
+ref_inodes_consistent(const struct wim_inode *ref_inode_1,
+		      const struct wim_inode *ref_inode_2)
 {
-	wimlib_assert(ref_inode_1 != ref_inode_2);
-
 	if (ref_inode_1->i_num_ads != ref_inode_2->i_num_ads)
 		return false;
 	if (ref_inode_1->i_security_id != ref_inode_2->i_security_id
